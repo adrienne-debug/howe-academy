@@ -62,7 +62,7 @@ console.log("── (1) ✎ on the Laundry card is Mom's; the sheet ──");
   T.run("laundryEditLoad('"+LID+"')"); const C=T.card();
   ok("✎ opens the sheet under that load (and repaints Mom's Day)", /class="laundry-edit"/.test(C)&&T.renders.includes("plan"));
   ok("Name field holds the load's name", new RegExp('id="le-name-'+LID+'"[^>]*value="Lucy started laundry"').test(C), C);
-  ok("Stage: bin · prewash · washer · dryer · fold pile, washer selected", /value="bin"/.test(C)&&/value="prewash"/.test(C)&&/value="washer" selected/.test(C)&&/value="dryer"/.test(C)&&/value="fold">🧺 Fold pile/.test(C), C);
+  ok("Stage: bin · prewash · washer · dryer · fold pile, washer selected", /value="bin"/.test(C)&&/value="prewash"/.test(C)&&/value="washer" selected/.test(C)&&/value="dryer"/.test(C)&&/value="fold">🧺 Folded — put it away/.test(C), C);
   ok("Started at = 09:39 (a time field)", new RegExp('id="le-ts-'+LID+'" type="time" value="09:39"').test(C), C);
   ok("Whose: Mom · Dad · Lincoln · Ellis · Lucy · Julian, Lucy selected", /value="mom">Mom/.test(C)&&/value="dad">Dad/.test(C)&&/value="lincoln">Lincoln/.test(C)&&/value="julian">Julian/.test(C)&&/value="lucy" selected>Lucy/.test(C), C);
   ok("💦 Wet checkbox, off for a dry load", new RegExp('id="le-wet-'+LID+'" type="checkbox">').test(C), C);
@@ -164,7 +164,7 @@ console.log("── (2) hole 2: the dryer block's button reads Folded ✓ (text 
   ok("the other blocks keep their buttons: → Dryer, ✓ Put away", /laundryAdvance\('a'\)[^>]*>→ Dryer</.test(S)&&/laundryAdvance\('b'\)[^>]*>✓ Put away</.test(S), S);
 }
 { const T=mk({laundry:{d:{label:"Towels",stage:"dryer",ts:at(H(9,0))}}});
-  ok("Mom's Day Laundry card keeps → Fold (only the block and the nudge changed)", /laundryAdvance\('d'\)[^>]*>→ Fold</.test(T.card()));
+  ok("Mom's Day Laundry card keeps Folded ✓ (only the block and the nudge changed)", /laundryAdvance\('d'\)[^>]*>Folded ✓</.test(T.card()));
 }
 ok("the NOW nudge's dryer button reads Folded ✓ (and the washer's stays → Dryer) — in laundryNudgeRowHTML (PR 61 merged)", /\(x\.kind==="dryer"&&typeof LAUNDRY_FOLDED_BTN!=="undefined"(&&\(.*?\))?\)\?LAUNDRY_FOLDED_BTN:laundryAdvanceLabel\(l\.stage(,l)?\)/.test(src));
 ok("LAUNDRY_FOLDED_BTN = 'Folded ✓'", /const LAUNDRY_FOLDED_BTN="Folded ✓";/.test(src));
@@ -180,7 +180,7 @@ console.log("── (3) hole 8: Dad's load on Mom's schedule is information only
   T.ctx.laundryData.dl.stage="dryer"; T.ctx.laundryData.dl.ts=at(H(10,0)); T.ctx._nowM=H(11,5); S=T.sched();
   ok("the dryer: '✅ Towels is done in the dryer · Dad's', no button", /done in the dryer · Dad's/.test(S)&&!/<button/.test(S), S);
   T.ctx.laundryData.dl.stage="fold"; T.ctx.laundryData.dl.ts=at(H(11,0)); S=T.sched();
-  ok("the fold pile: '🧺 Towels is in the fold pile · Dad's', no button", /🧺 <b>Towels<\/b> is in the fold pile · Dad's/.test(S)&&!/<button/.test(S), S);
+  ok("the fold pile: '🧺 Towels is folded · Dad's', no button", /🧺 <b>Towels<\/b> is folded · Dad's/.test(S)&&!/<button/.test(S), S);
   ok("Mom's Day Laundry card keeps its buttons for Dad's load (✓ Put away, ↶, ✎, ✕)", /laundryAdvance\('dl'\)[^>]*>✓ Put away</.test(T.card())&&/laundryBack\('dl'\)/.test(T.card())&&/laundryEditLoad\('dl'\)/.test(T.card())&&/laundryDel\('dl'\)/.test(T.card()), T.card());
 }
 { const T=mk({laundry:{ml:{label:"Sheets",stage:"washer",ts:at(H(9,0))},kl:{label:"Lucy started laundry",stage:"washer",ts:at(H(9,0)),by:"lucy"}},nowMin:H(10,0)});

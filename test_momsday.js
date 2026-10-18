@@ -452,7 +452,7 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   M.laundryAdvance(lid);
   ok("advance → dryer writes stage", dbWrites.length === 1 && dbWrites[0][1].stage === "dryer", dbWrites);
   M.renderMomsDay(elStub);
-  ok("dryer load: nudge gone, → Fold offered", !elStub.innerHTML.includes("before it sours") && elStub.innerHTML.includes("→ Fold"), null);
+  ok("dryer load: nudge gone, Folded ✓ offered", !elStub.innerHTML.includes("before it sours") && elStub.innerHTML.includes("Folded ✓"), null);
   M.laundryAdvance(lid);
   ok("advance → fold offers put away", M.laundryData[lid].stage === "fold", null);
   dbRemoves.length = 0; toasts.length = 0;

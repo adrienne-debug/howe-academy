@@ -6,10 +6,10 @@
  * checked "Start a load of laundry" (morning step 8) at 9:01 AM → KIDLAUNDRY wrote laundry/lk_week2_wednesday_taylor_mstep8
  * {label:"Taylor started laundry", stage:"washer", by:"taylor"}. settings/laundryTimes {wash:50, dry:60, grace:5},
  * settings/laundryBlockMins {move:5, fold:15}. momBlocks/2026-10-14 is empty — Sarah never blocked time; she moved the load along
- * from Mom's Day (→ Dryer, → Fold, ✓ Put away). momSchedLaundry skipped stage "fold", so the moment the load reached the fold
+ * from Mom's Day (→ Dryer, Folded ✓, ✓ Put away). momSchedLaundry skipped stage "fold", so the moment the load reached the fold
  * pile it had no row, no question, no block, and ✓ Put away was never on her schedule at all.
  *
- * The fix: the fold pile is a row the minute it lands (it has no machine clock) — "🧺 <load> is in the fold pile. Block out time
+ * The fix: the fold pile is a row the minute it lands (it has no machine clock) — "🧺 <load> is folded. Block out time
  * to put it away?" with How long · Now · After · Not now, a real block (step "putaway", 10 min the first time, remembered) her Mom
  * cards step over, ✓ Put away on the block, and "✓ Put away: <load>" kept where it ended. Washer / dryer / prewash: unchanged.
  *                                                                                                run: node test_laundry_fold.js
@@ -83,12 +83,12 @@ ok("10:06 — 🌀 in the dryer · started 10:05, ⏳ done ~11:05 (dry 60); the 
 T.now(H(11,10)); T.A=T.agenda();
 ok("11:10 — ✅ done in the dryer. Block out time to fold it? (How long 15)", T.rowAt("11:05 AM","✅ <b>Taylor started laundry</b> is done in the dryer\\. Block out time to fold it\\?")&&/lb-min-lk_week2_wednesday_taylor_mstep8_dryer[^>]*value="15"/.test(T.A), T.A);
 
-console.log("── 11:15 she taps → Fold on Mom's Day: the load is in the fold pile — this is where it vanished ──");
+console.log("── 11:15 she taps Folded ✓ on Mom's Day: the load is folded — this is where it vanished ──");
 T.now(H(11,15)); T.run("laundryAdvance('"+LID+"')");
 ok("stage fold, ts 11:15 (her tap)", T.ctx.laundryData[LID].stage==="fold"&&T.ctx.laundryData[LID].ts===at(H(11,15)));
 T.now(H(11,16)); T.A=T.agenda();
 ok("the load is still on her schedule (the bug: nothing mentioned it)", /Taylor started laundry/.test(T.A), T.A);
-ok("one row at 11:15: '🧺 Taylor started laundry is in the fold pile. Block out time to put it away?'", T.rowAt("11:15 AM","🧺 <b>Taylor started laundry</b> is in the fold pile\\. Block out time to put it away\\?"), BOX_AT(T.A,"11:15 AM"));
+ok("one row at 11:15: '🧺 Taylor started laundry is folded. Block out time to put it away?'", T.rowAt("11:15 AM","🧺 <b>Taylor started laundry</b> is folded\\. Block out time to put it away\\?"), BOX_AT(T.A,"11:15 AM"));
 ok("How long? 10 min the first time · Now · After Andrew's Arithmetic 2 · Not now (asks when)", /lb-min-lk_week2_wednesday_taylor_mstep8_fold[^>]*value="10"/.test(T.A)
   &&/laundryBlockSet\('lk_week2_wednesday_taylor_mstep8','fold','now'\)[^>]*>Now</.test(T.A)
   &&new RegExp("laundryBlockSet\\('lk_week2_wednesday_taylor_mstep8','fold','after','"+a1.id+"'\\)[^>]*>After Andrew's Arithmetic 2<").test(T.A)
@@ -106,7 +106,7 @@ ok("momBlockOpen() holds it: 11:20–11:30", (b=>b.length===1&&b[0].at==="now"&&
 ok("Andrew's Arithmetic steps over it → 11:30, Makenzie follows Mom's chain → 11:50; Caleb's own work stays 11:20", T.at(a1.id)==="11:30 AM"&&T.at(k1.id)==="11:50 AM"&&T.at(own.id)==="11:20 AM", [T.at(a1.id),T.at(k1.id),T.at(own.id)]);
 ok("the block row at 11:20: '🧺 Put away: Taylor started laundry · [10] min' with the ✓ Put away button", T.rowAt("11:20 AM","🧺 Put away: <b>Taylor started laundry</b> · <input type=\"number\"[^>]*value=\"10\" onchange=\"laundryBlockMinsEdit\\('lk_week2_wednesday_taylor_mstep8_fold',this\\.value\\)\"")
   &&new RegExp("laundryAdvance\\('"+LID+"'\\)[^>]*>✓ Put away<").test(BOX_AT(T.A,"11:20 AM")), BOX_AT(T.A,"11:20 AM"));
-ok("the pile row stays at 11:15 as a marker, the question is gone", T.rowAt("11:15 AM","🧺 <b>Taylor started laundry</b> is in the fold pile</span>")&&!/Block out time/.test(T.A), T.A);
+ok("the pile row stays at 11:15 as a marker, the question is gone", T.rowAt("11:15 AM","🧺 <b>Taylor started laundry</b> is folded</span>")&&!/Block out time/.test(T.A), T.A);
 ok("the schedule repainted", T.renders.includes("all"));
 
 console.log("── 11:25 ✓ Put away ──");
@@ -115,7 +115,7 @@ ok("laundry/<id> removed; the block marked done at 11:25 (update); nothing else 
   &&T.writes.some(w=>w[0]==="update"&&w[1]==="momBlocks/"+ISO+"/"+LID+"_fold"&&w[2].done===true&&w[2].doneMin===H(11,25))&&T.writes.length===2, T.writes);
 ok("the load is gone from laundryData and from momBlockOpen()", !T.ctx.laundryData[LID]&&T.run("momBlockOpen()").length===0);
 ok("'✓ Put away: Taylor started laundry' kept on the timeline at 11:25", T.rowAt("11:25 AM","✓ Put away: <b>Taylor started laundry</b>"), T.A);
-ok("no live row, no question, no block left for the load", !/is in the fold pile/.test(T.A)&&!/Block out time/.test(T.A)&&!/🧺 Put away:/.test(T.A), T.A);
+ok("no live row, no question, no block left for the load", !/is folded/.test(T.A)&&!/Block out time/.test(T.A)&&!/🧺 Put away:/.test(T.A), T.A);
 ok("Andrew's Arithmetic is free again — laid from now (11:25), no block ahead of it", T.at(a1.id)==="11:25 AM", T.at(a1.id));
 
 console.log("── Not now → When? → a time, Don't schedule it, After ──");
@@ -128,7 +128,7 @@ console.log("── Not now → When? → a time, Don't schedule it, After ─�
 }
 { const T3=mk({tasks:TASKS,laundry:{[LID]:{label:"Taylor started laundry",stage:"fold",ts:at(H(11,15)),by:"taylor"}},nowMin:H(11,16)}); T3.agenda();
   T3.run("laundryBlockSet('"+LID+"','fold','skip')"); T3.A=T3.agenda();
-  ok("Don't schedule it: the pile row keeps ✓ Put away, no block, nothing held", T3.rowAt("11:15 AM","🧺 <b>Taylor started laundry</b> is in the fold pile</span><button onclick=\"laundryAdvance\\('"+LID+"'\\)\"[^>]*>✓ Put away<")&&T3.run("momBlockOpen()").length===0&&T3.at(a1.id)==="11:20 AM", T3.A);
+  ok("Don't schedule it: the pile row keeps ✓ Put away, no block, nothing held", T3.rowAt("11:15 AM","🧺 <b>Taylor started laundry</b> is folded</span><button onclick=\"laundryAdvance\\('"+LID+"'\\)\"[^>]*>✓ Put away<")&&T3.run("momBlockOpen()").length===0&&T3.at(a1.id)==="11:20 AM", T3.A);
   T3.now(H(11,30)); T3.run("laundryAdvance('"+LID+"')"); T3.A=T3.agenda();
   ok("✓ Put away after a skip: the load is gone and nothing is drawn (a skipped block leaves no ✓ row — as the washer/dryer do)", !T3.ctx.laundryData[LID]&&!/Taylor started laundry/.test(T3.A), T3.A);
 }
@@ -140,7 +140,7 @@ console.log("── Not now → When? → a time, Don't schedule it, After ─�
 
 console.log("── edges ──");
 { const T5=mk({tasks:TASKS,laundry:{old:{label:"Towels",stage:"fold",ts:at(H(9))-24*60*60000}},nowMin:H(10)}); T5.A=T5.agenda();
-  ok("a pile from yesterday shows at now (10:00), still asking", T5.rowAt("10:00 AM","🧺 <b>Towels</b> is in the fold pile\\. Block out time to put it away\\?"), T5.A); }
+  ok("a pile from yesterday shows at now (10:00), still asking", T5.rowAt("10:00 AM","🧺 <b>Towels</b> is folded\\. Block out time to put it away\\?"), T5.A); }
 { const T6=mk({tasks:TASKS,laundry:{[LID]:{label:"Taylor started laundry",stage:"fold",ts:at(H(11,15)),by:"taylor"}},nowMin:H(11,16),dry:true}); T6.agenda();
   T6.run("laundryBlockSet('"+LID+"','fold','now')");
   ok("?dryrun=1: the block lives locally, nothing is written", T6.run("momBlockOpen()").length===1&&T6.writes.length===0, T6.writes); }
@@ -156,7 +156,7 @@ ok("laundryBlockStep: washer→move, dryer→fold, fold→putaway", /function la
 ok("laundryBlockDefault: 5 / 15 / 10", /\(k==="fold"\?15:k==="putaway"\?10:5\)/.test(src));
 ok("the MOMSCHED_LAUNDRY loop takes stage fold and names the fix", /l\.stage!=="prewash"&&l\.stage!=="fold"(&&l\.stage!=="airdry"&&l\.stage!=="custom")?\)\) return;/.test(MS)&&/LAUNDRY_FOLD \(her report 2026-10-15/.test(MS));
 ok("the finished row says ✓ Put away for a fold block", /b\.stage==="fold"\?'Put away: ':\(?b\.stage==="dryer"(\|\|b\.stage==="airdry"\))?\?'Folded: '/.test(MS));
-ok("laundryAdvance is untouched (→ Fold still ends the dryer block; ✓ Put away still removes the load)", /laundryBlockDone\(id,l\.stage\)/.test(fn("laundryAdvance"))&&/delete laundryData\[id\]; \/\/ put away — load complete/.test(fn("laundryAdvance")));
+ok("laundryAdvance is untouched (Folded ✓ still ends the dryer block; ✓ Put away still removes the load)", /laundryBlockDone\(id,l\.stage\)/.test(fn("laundryAdvance"))&&/delete laundryData\[id\]; \/\/ put away — load complete/.test(fn("laundryAdvance")));
 ok("Mom's Day card, the NOW nudge and Dad's schedule are not changed by this fix", /function mdCardLaundry\(noAdd\)\{   \/\/ 🧺 LAUNDRYADD/.test(src)&&/function laundryNudgeKind\(l,now\)\{/.test(src)&&/function dadSchedLaundry\(\)\{/.test(src));
 
 console.log(pass+" passed, "+fail+" failed"); if(fail) process.exit(1);

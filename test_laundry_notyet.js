@@ -70,5 +70,5 @@ console.log("── an answered block is unchanged, whatever the clock says ─�
 }
 console.log("── a load with no machine clock: the fold pile is a row now (LAUNDRY_FOLD, 2026-10-15 — replayed in test_laundry_fold.js) ──");
 { const T=mk({tasks:TASKS,laundry:{f:{label:"Folded",stage:"fold",ts:at(H(9))}},times:DW,nowMin:H(10)}); const A=T.agenda();
-  ok("a fold-pile load draws its row the minute it lands — no ⏳ wait, no 'done in the' text", /🧺 <b>Folded<\/b> is in the fold pile\. Block out time to put it away\?/.test(A)&&!/⏳/.test(A)&&!/is done in the/.test(A), A); }
+  ok("a fold-pile load draws its row the minute it lands — no ⏳ wait, no 'done in the' text", /🧺 <b>Folded<\/b> is folded\. Block out time to put it away\?/.test(A)&&!/⏳/.test(A)&&!/is done in the/.test(A), A); }
 console.log(pass+" passed, "+fail+" failed"); if(fail) process.exit(1);

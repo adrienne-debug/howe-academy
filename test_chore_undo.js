@@ -88,7 +88,7 @@ console.log("(4) The ledger");
   ok("collapsed: header counts done / open / loads", (()=>{ const h=c.mdCardChoreLedger(); return /Today’s ledger · ✓ 1 · ☐ 3 · 🧺 2/.test(h)&&!/choreUndo/.test(h); })(), c.mdCardChoreLedger());
   vm.runInContext("cuLedgerOpen=true",c); const h=c.mdCardChoreLedger();
   ok("open: the done chore has ↶ Undo (with its check time), the open ones ✓ Done", /choreUndo\('chores','lucy','thursday',1\)/.test(h)&&/9:05 AM/.test(h)&&/choreRedo\('chores','lucy','thursday',0\)/.test(h)&&/choreRedo\('morning','lucy','thursday',1\)/.test(h), h);
-  ok("open: laundry rows — Towels ↶ back to the washer + → Fold; the bin load has no ↶", /laundryBack\('l1'\)/.test(h)&&/In the washer/.test(h)&&/→ Fold/.test(h)&&!/laundryBack\('l2'\)/.test(h));
+  ok("open: laundry rows — Towels ↶ back to the washer + Folded ✓; the bin load has no ↶", /laundryBack\('l1'\)/.test(h)&&/In the washer/.test(h)&&/Folded ✓/.test(h)&&!/laundryBack\('l2'\)/.test(h));
   c.choreUndo("chores","lucy","thursday",1); const h2=c.mdCardChoreLedger();
   ok("after an undo the row shows ☐ + ✓ Done and '↶ undone'", /choreRedo\('chores','lucy','thursday',1\)/.test(h2)&&/↶ undone/.test(h2));
   const w=mk(); vm.runInContext("rtWave('chores','lucy','thursday',0)",w); vm.runInContext("cuLedgerOpen=true",w);

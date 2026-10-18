@@ -45,14 +45,14 @@ console.log("2. A wet towel load: bin → Prewash 45 → Wash 50 → Air dry 5 h
   ok("the button: → Wash", c.laundryAdvanceLabel(L.t.stage,L.t)==="→ Wash");
   c.laundryAdvance("t"); ok("→ the wash (washer, step 1), 50 min", L.t.stage==="washer"&&L.t.step===1&&c.laundryDoneAt(Object.assign({},L.t,{ts:T0}))===T0+50*60000);
   ok("the button: → Air dry (not → Dryer)", c.laundryAdvanceLabel(L.t.stage,L.t)==="→ Air dry");
-  c.laundryAdvance("t"); ok("→ air dry (stage airdry, step 2), 5 hrs; the button → Fold", L.t.stage==="airdry"&&L.t.step===2&&c.laundryDoneAt(Object.assign({},L.t,{ts:T0}))===T0+300*60000&&c.laundryAdvanceLabel(L.t.stage,L.t)==="→ Fold");
+  c.laundryAdvance("t"); ok("→ air dry (stage airdry, step 2), 5 hrs; the button Folded ✓", L.t.stage==="airdry"&&L.t.step===2&&c.laundryDoneAt(Object.assign({},L.t,{ts:T0}))===T0+300*60000&&c.laundryAdvanceLabel(L.t.stage,L.t)==="Folded ✓");
   c.laundryAdvance("t"); ok("→ the fold pile (step past the end)", L.t.stage==="fold"&&L.t.step===3&&c.laundryAdvanceLabel(L.t.stage,L.t)==="✓ Put away");
   c.laundryAdvance("t"); ok("✓ put away: gone, as always", !L.t&&c.writes[c.writes.length-1][0]==="rm");
 }
 console.log("3. Reminders on each step's own time");
 { const L={t:Object.assign(wet(),{stage:"airdry",step:2,ts:T0})}, c=mk(L);
   ok("air dry, 4 hrs in: nothing yet", c.laundryNudgeKind(L.t,T0+240*60000)==="");
-  ok("air dry, 5 hrs + 30 min: 'it should be dry; fold it' with → Fold", c.laundryNudgeKind(L.t,T0+331*60000)==="airdry"&&/has been air drying since .* — it should be dry; fold it/.test(c.laundryNudgeRowHTML({id:"t",l:L.t,kind:"airdry"}))&&/>→ Fold</.test(c.laundryNudgeRowHTML({id:"t",l:L.t,kind:"airdry"})));
+  ok("air dry, 5 hrs + 30 min: 'it should be dry; fold it' with Folded ✓", c.laundryNudgeKind(L.t,T0+331*60000)==="airdry"&&/has been air drying since .* — it should be dry; fold it/.test(c.laundryNudgeRowHTML({id:"t",l:L.t,kind:"airdry"}))&&/>Folded ✓</.test(c.laundryNudgeRowHTML({id:"t",l:L.t,kind:"airdry"})));
   const s={label:"Rug",stage:"custom",step:0,ts:T0,cycle:[{k:"custom",n:"Soak",m:20},{k:"wash"}]};
   ok("a 20-min Soak: reminds at 50 min, names the step, → Wash", c.laundryNudgeKind(s,T0+49*60000)===""&&c.laundryNudgeKind(s,T0+50*60000)==="custom"&&/Rug<\/b> — Soak since/.test(c.laundryNudgeRowHTML({id:"s",l:s,kind:"custom"}))&&/>→ Wash</.test(c.laundryNudgeRowHTML({id:"s",l:s,kind:"custom"})));
   const d={label:"Sheets",stage:"dryer",step:0,ts:T0,cycle:[{k:"dry",m:40},{k:"airdry",m:120}]};
