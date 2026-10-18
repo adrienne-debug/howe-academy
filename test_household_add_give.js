@@ -100,5 +100,6 @@ console.log("HH_ADD_FORM: emoji row and the Area pick");
   c.hhAddSet("level",3); c.dom["hh-add-label"]={value:"Wipe the kids table"}; const id2=c.hhAddSave(); ok("left on Guess: Cleaning, and a Level 3 row waits for the gate", c.hhJobs()[id2].area==="cleaning"&&!c.rtStepsFor("chores","lincoln",true).some(s=>s._hh===id2));
   ok("no duplicate emoji in the row", c.get("new Set(HH_EMOJI).size===HH_EMOJI.length")===true);
 }
+ok("🐸 the frog is in the emoji picker, with the dogs, bunny and lizard (her ask 2026-10-18)", /const HH_EMOJI=\[[^\]]*"🦎","🐸","🐾"/.test(src));
 ok("no 🔀", src.indexOf("🔀")<0);
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
