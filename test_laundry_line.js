@@ -68,7 +68,7 @@ console.log("6. The card");
   ok("Mom: ↑ ↓, Up next, − + per weekday", /llMove\('lucy',-1\)/.test(h)&&/llSetNext\('lincoln'\)/.test(h)&&/llCapStep\(0,1\)/.test(h));
   ok("Ellis marked up next; today is the first row of the two weeks", /Ellis's clothes <span[^>]*>▶ up next/.test(h)&&/>Today</.test(h));
   { const H=cut("function hhLaundryHTML(","// HH_LAUNDRY_END"), at=k=>H.indexOf(k);   // her order 2026-10-18
-    ok("the laundry tab: machines now (Home Base's own card) → 📅 schedule → the line → ⚡ quick buttons → the chore grid", at("mc=mdCardLaundry(true)")>0&&at("mc=mdCardLaundry(true)")<at("h+=llWeekCardHTML()")&&at("h+=llWeekCardHTML()")<at("h+=llCardHTML(true)")&&at("h+=llCardHTML(true)")<at("h+=qlCardHTML()")&&at("h+=qlCardHTML()")<at("// the week grid\n")); }
+    ok("the laundry tab: machines now (Home Base's own card) → 📅 schedule → the line → ⚡ quick buttons → the chore grid", at("mc=mdCardLaundry(true)")>0&&at("mc=mdCardLaundry(true)")<at("h+=llWeekCardHTML()")&&at("h+=llWeekCardHTML()")<at("h+=llCardHTML(true)")&&at("h+=llCardHTML(true)")<at("h+=qlCardHTML()")&&at("h+=qlCardHTML()")<at("  return h;")); }
   ok("the line card can leave its grid off (noGrid)", !/This week/.test(c.llCardHTML(true))&&/This week/.test(c.llCardHTML())&&/📅 The laundry schedule/.test(c.llWeekCardHTML()));
   ok("the listener reads laundryLine", /db\.ref\("laundryLine"\)\.on\("value"/.test(src));
 }
