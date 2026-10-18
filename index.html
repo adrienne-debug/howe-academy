@@ -6215,6 +6215,7 @@ function renderSettings(el,ah){
   pinHtml+='</div>';
   pinHtml+='<div id="celeb-cfg-msg" style="font-size:12px;color:#16a34a;min-height:16px;margin-top:6px"></div>';
   pinHtml+='</div></div></div>';
+  if(typeof picMoveCardHtml==="function") pinHtml+=picMoveCardHtml();   // 🖼 PICMOVE: copy + check the pictures (Mom only)
 
   renderRules(el, pinHtml);
 }
@@ -50129,6 +50130,167 @@ function picStore(dataUrl,parts){
   });
 }
 // PICSTORE_END
+// PICMOVE_START — Change 2 of the picture move: COPY + CHECK, no database writes (her yes 2026-10-18). A Mom-only
+// "🖼 Pictures" card in Settings finds every picture still saved as text (imageUrl = data:image… under unitStudies or
+// mastery — 279 today, 243 different photos), uploads each DIFFERENT photo once to pictures/moved/<md5>.<ext>, then asks
+// Storage for the file's own size + md5 (computed by Storage from what it stored) and marks ✓ only when both match the
+// original exactly. Named by fingerprint so Change 3 can match a picture to its copy by content (card positions shift
+// when a card is removed), duplicates upload once, and a re-run skips what's already copied + checked. A check page
+// shows old next to new. Dry run uploads nothing. Nothing here writes to the database or changes any picture.
+let picMove=null;   // {busy, done, total, dry, groups:[{md5,ext,type,bytes,items:[{path,label,dataUrl}],st,why,url,skipped}]}
+let _picMoveCache=null;   // {sig, groups} — fingerprints are worked out once per set of pictures
+function picMd5Hex(bytes){
+  const S=[7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,5,9,14,20,5,9,14,20,5,9,14,20,5,9,14,20,4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23,6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21];
+  const K=new Int32Array(64); for(let i=0;i<64;i++) K[i]=Math.floor(Math.abs(Math.sin(i+1))*4294967296)|0;
+  const n=bytes.length, nb=((n+8)>>>6)+1, W=new Int32Array(nb*16);
+  for(let i=0;i<n;i++) W[i>>2]|=bytes[i]<<((i%4)*8);
+  W[n>>2]|=0x80<<((n%4)*8);
+  W[nb*16-2]=(n*8)|0; W[nb*16-1]=Math.floor(n/536870912)|0;
+  let a0=0x67452301, b0=0xefcdab89|0, c0=0x98badcfe|0, d0=0x10325476;
+  for(let o=0;o<W.length;o+=16){
+    let A=a0,B=b0,C=c0,D=d0;
+    for(let i=0;i<64;i++){
+      let F,g;
+      if(i<16){ F=(B&C)|(~B&D); g=i; } else if(i<32){ F=(D&B)|(~D&C); g=(5*i+1)%16; }
+      else if(i<48){ F=B^C^D; g=(3*i+5)%16; } else { F=C^(B|~D); g=(7*i)%16; }
+      const t=D; D=C; C=B; const x=(A+F+K[i]+W[o+g])|0; B=(B+((x<<S[i])|(x>>>(32-S[i]))))|0; A=t;
+    }
+    a0=(a0+A)|0; b0=(b0+B)|0; c0=(c0+C)|0; d0=(d0+D)|0;
+  }
+  let hex=""; [a0,b0,c0,d0].forEach(v=>{ for(let i=0;i<4;i++) hex+=((v>>>(i*8))&255).toString(16).padStart(2,"0"); });
+  return hex;
+}
+function picHexToB64(hex){ let s=""; for(let i=0;i<hex.length;i+=2) s+=String.fromCharCode(parseInt(hex.slice(i,i+2),16)); return btoa(s); }
+function picDataUrlBytes(dataUrl){
+  const m=/^data:(image\/[A-Za-z0-9.+-]+);base64,(.*)$/.exec(String(dataUrl||"")); if(!m) return null;
+  const bin=atob(m[2]); const u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i);
+  return {type:m[1].toLowerCase(), bytes:u};
+}
+function picExtFor(type){ return ({"image/jpeg":"jpg","image/jpg":"jpg","image/png":"png","image/gif":"gif","image/webp":"webp"})[type]||"img"; }
+// Every picture still saved as text, with a plain label ("Transformers · Optimus Prime", "Julian · Dinosaurs T-Rex").
+function picMoveScan(){
+  const out=[];
+  const walk=(o,p,label)=>{
+    if(typeof o==="string"){ if(p[p.length-1]==="imageUrl"&&/^data:image\//.test(o)) out.push({path:p.join("/"),label:label,dataUrl:o}); return; }
+    if(!o||typeof o!=="object") return;
+    for(const k in o){
+      let lb=label;
+      if(p.length===1&&p[0]==="unitStudies"){ const u=o[k]||{}; lb=String(u.title||u.name||k); }
+      else if(p.length===1&&p[0]==="mastery"){ lb=cap(String(k).replace(/_visuals$/,"")); }
+      else if(p.length===2&&p[0]==="unitStudies"&&k==="visuals"){ lb=label; }
+      else if(p.length===3&&p[0]==="unitStudies"&&p[2]==="visuals"){ lb=label+" · "+String(k).replace(/_/g," "); }
+      else if(p.length===2&&p[0]==="mastery"){ const v=o[k]; lb=label+" · "+(/_visuals$/.test(p[1])?String(k).replace(/_/g," "):((v&&v.prompt)?((v.subject?v.subject+" ":"")+v.prompt):("card "+k))); }
+      walk(o[k],p.concat(k),lb);
+    }
+  };
+  walk((typeof unitStudies!=="undefined"&&unitStudies)||{},["unitStudies"],"");
+  walk((typeof masteryData!=="undefined"&&masteryData)||{},["mastery"],"");
+  return out;
+}
+// The same photo saved in two places is one file — grouped by its fingerprint.
+function picMoveGroups(items){
+  const sig=items.length+":"+items.reduce((a,x)=>a+x.dataUrl.length,0)+":"+items.map(x=>x.path).join("|").length;
+  if(_picMoveCache&&_picMoveCache.sig===sig) return _picMoveCache.groups;
+  const by={}, groups=[];
+  items.forEach(it=>{ const b=picDataUrlBytes(it.dataUrl); if(!b) return; const md5=picMd5Hex(b.bytes);
+    if(!by[md5]){ by[md5]={md5:md5,ext:picExtFor(b.type),type:b.type,bytes:b.bytes,items:[],st:"",why:"",url:""}; groups.push(by[md5]); }
+    by[md5].items.push(it); });
+  _picMoveCache={sig:sig,groups:groups};
+  return groups;
+}
+function _picWithTimeout(p,ms,task){ return new Promise((res,rej)=>{ const t=setTimeout(()=>{ try{ if(task&&task.cancel) task.cancel(); }catch(e){} rej(new Error("timed out")); },ms); Promise.resolve(p).then(v=>{ clearTimeout(t); res(v); },e=>{ clearTimeout(t); rej(e); }); }); }
+async function picMoveOne(g,dry){
+  g.st=""; g.why=""; g.skipped=false;
+  if(dry){ g.st="dry"; g.why="dry run — nothing uploaded"; return; }
+  if(!db||typeof firebase==="undefined"||typeof firebase.storage!=="function"){ g.st="bad"; g.why="Storage isn't available on this device"; return; }
+  const ref=firebase.storage().ref("pictures/moved/"+g.md5+"."+g.ext);
+  const want={size:g.bytes.length, md5:picHexToB64(g.md5)};
+  const same=m=>!!(m&&Number(m.size)===want.size&&m.md5Hash===want.md5);
+  try{
+    let m=null; try{ m=await _picWithTimeout(ref.getMetadata(),20000); }catch(e){ m=null; }   // not there yet
+    if(same(m)) g.skipped=true;
+    else {
+      const task=ref.put(new Blob([g.bytes],{type:g.type}),{contentType:g.type,cacheControl:"public,max-age=31536000"});
+      await _picWithTimeout(task,60000,task);
+      m=await _picWithTimeout(ref.getMetadata(),20000);
+    }
+    if(!same(m)){ g.st="bad"; g.why=m?("Storage's copy doesn't match ("+m.size+" bytes, expected "+want.size+")"):"no file after the upload"; return; }
+    g.url=await _picWithTimeout(ref.getDownloadURL(),20000);
+    g.st="ok";
+  }catch(e){ g.st="bad"; g.why=String((e&&(e.code||e.message))||"upload failed"); }
+}
+async function picMoveRun(){
+  if(!momHere()||(picMove&&picMove.busy)) return;
+  if(!_haMastReady||!_haUnitsReady){ if(typeof gwShowToast==="function") gwShowToast("Pictures are still loading — try again in a moment"); return; }
+  const groups=picMoveGroups(picMoveScan());
+  picMove={busy:true,done:0,total:groups.length,dry:_dryRun(),groups:groups};
+  picMoveRefresh();
+  let next=0;
+  const worker=async()=>{ while(next<groups.length){ const g=groups[next++]; await picMoveOne(g,picMove.dry); picMove.done++; picMoveRefresh(); } };
+  await Promise.all([worker(),worker(),worker()]);
+  picMove.busy=false; picMoveRefresh();
+  picMoveCheckOpen();
+}
+function _picMoveBody(){
+  if(!_haMastReady||!_haUnitsReady) return '<div style="font-size:12px;color:var(--muted)">Loading pictures…</div>';
+  const items=picMoveScan();
+  const mb=(items.reduce((a,x)=>a+x.dataUrl.length,0)/1e6).toFixed(1);
+  let h='<div style="font-size:13px;margin-bottom:8px"><b>'+items.length+'</b> picture'+(items.length===1?'':'s')+' saved inside the database ('+mb+' MB)';
+  if(items.length) h+=' — '+picMoveGroups(items).length+' different photos';
+  h+='.</div>';
+  if(picMove){
+    const ok=picMove.groups.filter(g=>g.st==="ok").length, bad=picMove.groups.filter(g=>g.st==="bad").length;
+    if(picMove.busy) h+='<div style="font-size:12px;margin-bottom:8px">⏳ Copying '+picMove.done+' of '+picMove.total+'…</div>';
+    else if(picMove.dry) h+='<div style="font-size:12px;margin-bottom:8px">Dry run — nothing was uploaded.</div>';
+    else h+='<div style="font-size:12px;margin-bottom:8px">✓ <b>'+ok+'</b> copied and checked'+(bad?(' · <b style="color:#b5394a">✗ '+bad+'</b> didn\'t copy'):'')+'</div>';
+  }
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+  const busy=!!(picMove&&picMove.busy);
+  h+='<button onclick="picMoveRun()"'+(busy||!items.length?' disabled':'')+' style="padding:7px 14px;border-radius:9px;border:none;background:'+(busy||!items.length?'#9ca3af':'var(--header)')+';color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(picMove&&!busy?'Copy again (skips what\'s done)':'Copy to Storage')+'</button>';
+  if(picMove&&!busy) h+='<button onclick="picMoveCheckOpen()" style="padding:7px 14px;border-radius:9px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Open check page</button>';
+  h+='</div>';
+  h+='<div style="font-size:10.5px;color:var(--muted);margin-top:8px;line-height:1.45">Copies only — every device keeps using the pictures it has now. Nothing in the app changes until the switch (a later step).</div>';
+  return h;
+}
+function picMoveCardHtml(){
+  if(!momHere()) return "";
+  return '<div class="rules-wrap"><div class="rules-hdr">🖼 Pictures</div>'+
+    '<div class="rules-sub">Pictures saved inside the database make every device download all of them each time it opens. This copies them to Storage and checks each copy.</div>'+
+    '<div class="rules-card open"><div class="rules-card-body" id="pic-move-body">'+_picMoveBody()+'</div></div></div>';
+}
+function picMoveRefresh(){ try{ const el=document.getElementById("pic-move-body"); if(el) el.innerHTML=_picMoveBody(); }catch(e){} }
+function picMoveCheckClose(){ const ov=document.getElementById("pic-move-check"); if(ov) ov.remove(); }
+function picMoveCheckOpen(){
+  if(!picMove) return;
+  picMoveCheckClose();
+  const ok=picMove.groups.filter(g=>g.st==="ok").length, bad=picMove.groups.filter(g=>g.st==="bad");
+  let h='<div class="dlg-box" style="max-width:760px;width:96vw;text-align:left;max-height:90vh;overflow:auto">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-family:\'Fraunces\',serif;font-size:19px;font-weight:700">🖼 Check the copies</div>'+
+     '<button onclick="picMoveCheckClose()" style="border:none;background:none;font-size:20px;cursor:pointer">✕</button></div>';
+  h+='<div style="font-size:12px;color:var(--muted);margin:4px 0 12px">'+(picMove.dry?'Dry run — nothing was uploaded. ':'')+'✓ '+ok+' of '+picMove.groups.length+' different photos copied and checked'+(bad.length?' · ✗ '+bad.length+' didn\'t':'')+'. Each row: the picture now (left) and its copy in Storage (right).</div>';
+  const areas={}, order=[];
+  picMove.groups.forEach(g=>g.items.forEach(it=>{ const a=String(it.label).split(" · ")[0]||"Other"; if(!areas[a]){ areas[a]=[]; order.push(a); } areas[a].push({g:g,it:it}); }));
+  order.forEach(a=>{
+    h+='<div style="font-size:12px;font-weight:800;color:#374151;margin:12px 0 6px">'+esc(a)+' <span style="font-weight:500;color:var(--muted)">('+areas[a].length+')</span></div>';
+    h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px">';
+    areas[a].forEach(({g,it})=>{
+      const mark=g.st==="ok"?'<span style="color:#15803d;font-weight:800">✓</span>':g.st==="dry"?'<span style="color:var(--muted)">—</span>':'<span style="color:#b5394a;font-weight:800">✗</span>';
+      h+='<div style="border:1.5px solid '+(g.st==="bad"?'#fecaca':'var(--border)')+';border-radius:10px;padding:6px">';
+      h+='<div style="display:flex;gap:4px"><img src="'+esc(it.dataUrl)+'" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:6px;background:#f3f4f6">';
+      h+=g.url?'<img src="'+esc(g.url)+'" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:6px;background:#f3f4f6">':'<div style="width:64px;height:64px;border-radius:6px;background:#f3f4f6"></div>';
+      h+='</div><div style="font-size:10.5px;font-weight:700;margin-top:4px;line-height:1.2">'+mark+' '+esc(String(it.label).split(" · ").slice(1).join(" · ")||it.path)+'</div>';
+      if(g.st==="bad") h+='<div style="font-size:9.5px;color:#b5394a;line-height:1.2">'+esc(g.why)+'</div>';
+      if(g.items.length>1) h+='<div style="font-size:9px;color:var(--muted)">same photo as '+(g.items.length-1)+' other'+(g.items.length>2?'s':'')+'</div>';
+      h+='</div>';
+    });
+    h+='</div>';
+  });
+  h+='<div style="display:flex;justify-content:flex-end;margin-top:14px"><button onclick="picMoveCheckClose()" style="padding:9px 18px;border-radius:10px;border:none;background:var(--header);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Done</button></div>';
+  h+='</div>';
+  const ov=document.createElement("div"); ov.id="pic-move-check"; ov.className="dlg-overlay"; ov.style.display="flex"; ov.style.zIndex="9999";
+  ov.innerHTML=h; document.body.appendChild(ov);
+}
+// PICMOVE_END
 function mastCompressImg(file,maxPx,quality){
   return new Promise((resolve,reject)=>{
     if(!maxPx) maxPx=400;
