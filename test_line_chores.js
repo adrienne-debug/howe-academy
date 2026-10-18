@@ -84,6 +84,26 @@ console.log("5b. Mom's and Dad's checklists (her ask 2026-10-18: \"go to my chec
   ok("no line set up: no rows", mk({line:null}).llParentRows("mom","morning").length===0);
   const M=fn("momDayStripHTML"); ok("the checklist counts them in the slot and draws them under her own rows (today only)", /_lr=typeof llParentRows==="function"&&typeof llToday==="function"&&iso===llToday\(\)\?llParentRows\(P\.dad\?"dad":"mom",sl\)/.test(M)&&/tot=ids\.length\+sp\+_lr\.length/.test(M)&&/h\+=_lrc\.map\(r=>llParentRowHTML\(r,P\.dad\?"dad":"mom"\)\)/.test(M));
 }
+console.log("5c. Ticked everywhere at once (her rule 2026-10-18: \"checked off automatically if they are checked off in any other areas\")");
+{ const c=mk(); const saved=[];
+  c.get("slState={}; activeWk=function(){ return 'week30'; }; nowTs=function(){ return '9:05 AM'; }; slBefore=function(){ return {}; }; morningComplete=function(){ return false; }; rtComplete=function(){ return false; };");
+  c.get("var _base=rtStepsFor; rtStepsFor=function(sl,kid,raw,dn){ const b=_base(sl,kid,raw); return raw?b:llRtSteps(sl,kid,b,dn||'monday'); };");
+  c.slSaveChanged=(wk,b)=>saved.push(wk); c.get("slSaveChanged=this.slSaveChanged");
+  c.llStart("lincoln");   // Mom starts it from Home Base
+  const m=c.get("slState['week30_monday_lincoln_mstep2']");
+  ok("Mom starts Lincoln's load on Home Base → his Morning row reads ✓ (auto, 0 ⭐), saved once", m&&m.done===true&&m.pts===0&&m.auto==="line"&&saved.length===1, [m,saved]);
+  const lid=Object.keys(c.get("laundryData"))[0]; c.llPutAway(lid);
+  const f=c.get("slState['week30_monday_lincoln_astep0']"); ok("put away anywhere → his Afternoon 'Fold + put away' reads ✓ (auto)", f&&f.done===true&&f.auto==="line", f);
+  const u=mk(); u.get("slState={}; activeWk=function(){ return 'week30'; }; nowTs=function(){ return ''; }; slBefore=function(){ return {}; }; slSaveChanged=function(){}; morningComplete=function(){ return false; }; rtComplete=function(){ return false; };");
+  u.get("var _base=rtStepsFor; rtStepsFor=function(sl,kid,raw,dn){ const b=_base(sl,kid,raw); return raw?b:llRtSteps(sl,kid,b,dn||'monday'); };");
+  u.llStart("lincoln"); const ul=Object.keys(u.get("laundryData"))[0]; u.llUnlog(ul,u.get("laundryData")[ul]);
+  ok("back in line (✕ in the washer) → the automatic ✓ comes off", u.get("slState['week30_monday_lincoln_mstep2'].done")===false);
+  const k=mk(); k.get("slState={week30_monday_lincoln_mstep2:{done:true,pts:30,bid:'b1'}}; activeWk=function(){ return 'week30'; }; nowTs=function(){ return ''; }; slBefore=function(){ return {}; }; slSaveChanged=function(){}; morningComplete=function(){ return false; }; rtComplete=function(){ return false; };");
+  k.get("var _base=rtStepsFor; rtStepsFor=function(sl,kid,raw,dn){ const b=_base(sl,kid,raw); return raw?b:llRtSteps(sl,kid,b,dn||'monday'); };");
+  k.llStart("lincoln"); const kl=Object.keys(k.get("laundryData"))[0]; k.llUnlog(kl,k.get("laundryData")[kl]);
+  ok("Lincoln's OWN tick (paid 30 ⭐) is never undone by the line", k.get("slState['week30_monday_lincoln_mstep2'].done")===true&&k.get("slState['week30_monday_lincoln_mstep2'].pts")===30);
+  ok("Home Base's ✓ Put away syncs too", /if\(l\.line&&typeof llSyncKidRows==="function"\) llSyncKidRows\(\);/.test(fn("laundryAdvance")));
+}
 console.log("6. Wiring");
 ok("rtStepsFor appends the line's rows; the raw (editor) path is untouched", /if\(raw\) return steps;[^\n]*\n\s*const _r=rtApplyRot\(slot,kid,steps,dayName\);\n\s*return \(typeof llRtSteps==="function"\)\?llRtSteps\(slot,kid,_r,dayName\):_r;/.test(src));
 ok("Morning's ✓ calls the laundry hook only for the line's own row", /if\(_st&&_st\.line&&typeof laundryKidHook==="function"\) laundryKidHook\(kid,_st,sk,now\);/.test(fn("toggleMorningStep")));

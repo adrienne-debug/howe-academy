@@ -68,7 +68,8 @@ console.log("4. Derived, never written");
   ok("drawing the cards writes nothing", c.writes.length===0);
   ok("wired after the 🏡 House card on the kid's Day page", /hhHouseCardHTML\(kid,day,tasks\); \}catch\(e\)\{\} \}[^\n]*\n  if\(_singleKid&&typeof llKidCardHTML==="function"\)\{ try\{ h\+=llKidCardHTML\(kid,day\)/.test(src));
   const code=BLOCK.split("\n").map(l=>l.replace(/^\s*\/\/.*$/,"").replace(/\s\/\/ .*$/,"")).join("\n");
-  ok("the block's code never touches week tasks (no activeWk, no tasks path)", !/activeWk\(|ref\([^)]*tasks|["']tasks["']|\/tasks/.test(code));
+  const noSync=code.replace(/function llSyncKidRows\([\s\S]*?\n  return n; \}/,"");   // 🧺 LINE_CHORES sync writes routine ticks (wk/sl via slSaveChanged), never cards
+  ok("the block's code never touches week tasks (no tasks path anywhere; activeWk only in the routine-tick sync)", !/ref\([^)]*tasks|["']tasks["']|\/tasks/.test(code)&&!/activeWk\(/.test(noSync)&&/function llSyncKidRows/.test(code));
 }
 ok("no 🔀", src.indexOf("🔀")<0);
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

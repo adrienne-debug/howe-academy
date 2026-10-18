@@ -13200,6 +13200,7 @@ function llStart(item,by){ const it=llAll()[item]; if(!it) return; const t=llTod
     if(laundryLine.extras[item].next){ laundryLine.log[t][item].prevNext=laundryLine.extras[item].next; delete laundryLine.extras[item].next; u["extras/"+item+"/next"]=null; } }   // 🗓 washed today (her next-due is used up)
   llEnsureItems(u); llStore();
   if(typeof _lbWrite==="function"&&_lbWrite()){ db.ref('laundry/'+lid).set(laundryData[lid]); llWrite(u); }
+  try{ llSyncKidRows(); }catch(e){}   // 🧺 the kid's row ticks itself
   if(typeof mwToast==="function") mwToast('🫧 '+(riders.length?llLabelFull(item):it.label)+' — in the washer'); llRerender(); }
 // ✕ on a line load still in the washer (a mistake) takes its log entry back, so the line puts it back where it was.
 function llUnlog(lid,l){ if(l&&l.wet&&l.jumpDay&&(l.stage==="bin"||l.stage==="prewash")){ const j=laundryLine.jump&&laundryLine.jump[l.jumpDay]; if(j&&j[lid]){ delete j[lid]; llStore(); const u={}; u["jump/"+l.jumpDay+"/"+lid]=null; llWrite(u); } return; }   // 💦 a jump-in ✕'d before it was washed gives its slot back
@@ -13207,7 +13208,7 @@ function llUnlog(lid,l){ if(l&&l.wet&&l.jumpDay&&(l.stage==="bin"||l.stage==="pr
   if(!e||e.load!==lid) return; delete laundryLine.log[l.lineDay][l.line]; const u={}; u["log/"+l.lineDay+"/"+l.line]=null;
   Object.keys(laundryLine.log[l.lineDay]||{}).forEach(function(r){ const x=laundryLine.log[l.lineDay][r]; if(x&&x.load===lid&&x.with){ delete laundryLine.log[l.lineDay][r]; u["log/"+l.lineDay+"/"+r]=null; } });   // 🔗 its riders come out too
   const x=laundryLine.extras&&laundryLine.extras[l.line]; if(x&&x.last===l.lineDay){ x.last=e.prevLast||null; u["extras/"+l.line+"/last"]=x.last; if(e.prevEst){ x.est=true; u["extras/"+l.line+"/est"]=true; } if(e.prevNext){ x.next=e.prevNext; u["extras/"+l.line+"/next"]=e.prevNext; } }   // 🗓 not washed after all
-  llStore(); llWrite(u); }
+  llStore(); llWrite(u); try{ llSyncKidRows(); }catch(x){} }
 // The line chips under Start a load (Mom's and Dad's 🏡 My day): today's line loads not started yet, one tap each. Only once she has set the line up.
 function llStripHTML(by){ if(!laundryLine||!Object.keys(laundryLine).length) return ""; const r=llProjectNow(1)[0], it=llAll(), t=llToday(), left=r.loads.filter(function(id){ return r.started.indexOf(id)<0&&r.waited.indexOf(id)<0; });
   const top='<div style="display:flex;justify-content:flex-end;margin-top:6px">'+llMomSickBtn()+'</div>'+llCoverAskHTML()+((typeof llTdTodayHTML==="function")?llTdTodayHTML(by==="dad"?"dad":"mom"):'');   // 👤 step 5 · 📝 her laundry to-dos
@@ -13487,7 +13488,26 @@ function llParentTick(id,kind,who){ const t=llToday(), e=laundryLine.log&&laundr
 function llPutAway(lid){ const LD=(typeof laundryData!=="undefined"&&laundryData)||{}, l=LD[lid]; if(!l) return;
   try{ if(typeof laundryBlockDone==="function") laundryBlockDone(lid,l.stage); }catch(x){} try{ if(typeof laundryAwayRemember==="function") laundryAwayRemember(lid,l); }catch(x){}
   delete LD[lid]; try{ HA_LS.setItem('ha_laundry',JSON.stringify(LD)); }catch(x){} if(typeof _lbWrite==="function"&&_lbWrite()) db.ref('laundry/'+lid).remove();
+  try{ llSyncKidRows(); }catch(x){}   // 🧺 the kid's Fold row ticks itself
   if(typeof mwToast==="function") mwToast('🧺 '+(l.label||'Laundry')+' put away!'); }
+// 🧺 LINE_CHORES sync (her rule 2026-10-18: "they will need to be checked off automatically if they are checked off in any other areas"). A
+// kid's line rows read their tick from slState like every other row, so whenever the line moves (a load in — from any page — back in
+// line, or put away) the kid's matching row is written: ticked with auto:"line" and pts 0 (no stars — the kid didn't do it; un-ticking it
+// later reverses nothing), and un-ticked again only if it was that automatic tick. A kid's own tick is never touched. The list's done flag
+// follows. One targeted slSaveChanged, dry-run inert like every check-off; today only.
+function llKidRowLineDone(st){ const t=llToday(), e=laundryLine&&laundryLine.log&&laundryLine.log[t]&&laundryLine.log[t][st.line], LD=(typeof laundryData!=="undefined"&&laundryData)||{};
+  if(st.laundry===true) return !!e; if(st.laundry==="lineFold") return !!e&&!(e.load&&LD[e.load]); return false; }
+function llSyncKidRows(){ if(typeof slState==="undefined"||typeof activeWk!=="function"||typeof _todayDay!=="string"||typeof rtStepsFor!=="function") return 0;
+  const wk=activeWk(), dn=_todayDay, before=(typeof slBefore==="function")?slBefore():null, ts=(typeof nowTs==="function")?nowTs():""; let n=0;
+  llPeople().slice(2).forEach(function(kid){ if(!llDrivesKid(kid)) return;
+    [["morning","mstep"],["afternoon",((typeof RT_ABBR!=="undefined"&&RT_ABBR.afternoon)||"a")+"step"]].forEach(function(p){ let ch=false;
+      (rtStepsFor(p[0],kid,false,dn)||[]).forEach(function(st,i){ if(!st||!st.line) return; const want=llKidRowLineDone(st), sk=wk+"_"+dn+"_"+kid+"_"+p[1]+i, cur=slState[sk];
+        if(want&&!(cur&&cur.done)){ slState[sk]={done:true,ts:ts,pts:0,bid:null,auto:"line"}; ch=true; }
+        else if(!want&&cur&&cur.done&&cur.auto==="line"){ slState[sk]={done:false,ts:"",pts:null,bid:null}; ch=true; } });
+      if(ch){ n++; const done=p[0]==="morning"?((typeof morningComplete==="function")&&morningComplete(kid,dn)):((typeof rtComplete==="function")&&rtComplete(p[0],kid,dn)), fk=wk+"_"+dn+"_"+kid+"_"+p[0], fc=slState[fk];
+        if(!!(fc&&fc.done)!==!!done) slState[fk]={done:!!done,ts:done?ts:""}; } }); });
+  if(n&&before&&typeof slSaveChanged==="function") slSaveChanged(wk,before);
+  return n; }
 // ✓ / un-✓ on a line row (laundryKidHook hands it over). Today only — back-filling another day starts nothing.
 function llKidRowHook(kid,st,now){ if(typeof _todayDay==="string"&&typeof day!=="undefined"&&day!==_todayDay) return;
   const t=llToday(), id=st.line; if(!llKnown(id)) return; const e=laundryLine.log&&laundryLine.log[t]&&laundryLine.log[t][id], LD=(typeof laundryData!=="undefined"&&laundryData)||{};
@@ -13820,6 +13840,7 @@ function laundryAdvance(id){
     try{ if(typeof laundryAwayRemember==="function") laundryAwayRemember(id,l); }catch(e){}   // ↶ CHOREUNDO: this device can bring it back today
     delete laundryData[id]; // put away — load complete
     if(_lbWrite()) db.ref('laundry/'+id).remove();
+    try{ if(l.line&&typeof llSyncKidRows==="function") llSyncKidRows(); }catch(e){}   // 🧺 LINE_CHORES: the kid's Fold row ticks itself
     if(typeof mwToast==='function') mwToast('🧺 '+(l.label||'Load')+' put away!');
   } else {
     l.stage=LAUNDRY_STAGES[i+1]; l.ts=Date.now();
