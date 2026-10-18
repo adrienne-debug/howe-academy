@@ -22,11 +22,11 @@ function constFrom(text, name) { const i = text.indexOf("const " + name + "="); 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) { if (cond) { pass++; console.log("  ok  - " + name); } else { fail++; console.log("  FAIL- " + name + (extra !== undefined ? "  (" + JSON.stringify(extra).slice(0, 300) + ")" : "")); } }
 
-const FN = ["mdMine", "momDayStripHTML", "_mcRow", "mcDueIn", "mcDueToday", "mcAll", "mcDoneOn", "mcSlotOf", "tdRunning", "mpSlotNow",
+const FN = ["cadChipsHTML", "cadChipDays", "cadChipStyle", "cadChipNext", "mdMine", "momDayStripHTML", "_mcRow", "mcDueIn", "mcDueToday", "mcAll", "mcDoneOn", "mcSlotOf", "tdRunning", "mpSlotNow",
   "ddDueToday", "dcAll", "dcDoneOn", "ddPopHTML", "ddSlotGroups", "ddToggleManage", "dcRepaint",
   "mdCardKidsToday", "slCellState", "mdSlotCounts", "_boardTaskCounts", "activeWk", "slKey", "getSlot",
   "renderDadsDay", "mdCardLaundry", "techToggle", "techTaken", "techLost"];
-const CONSTS = ["MC_DEFAULT", "MC_SLOTS", "MC_SLOT_ORDER"];
+const CONSTS = ["MC_DEFAULT", "MC_SLOTS", "MC_SLOT_ORDER", "CAD_DAYL"];
 const ROSTER = ["ava", "ben"], NAMES = { ava: "Ava", ben: "Ben" }, COLS = { ava: "#e11d48", ben: "#2563eb" };
 
 // A fixed fixture world. `text` is either the branch or origin/main source.
@@ -66,7 +66,7 @@ function world(text, o) {
   };
   const fns = FN.map(n => sliceFrom(text, n)).filter(Boolean).join("\n");
   const body = "let day='monday', mcManage=" + !!o.mcManage + ", ddManage=" + !!o.ddManage + ", mpSlot=" + JSON.stringify(o.slot || null) + ";\n" +
-    CONSTS.map(c => constFrom(text, c)).join("\n") + "\nfunction mpSlotAuto(){ return 'morning'; }\n" + fns +
+    CONSTS.map(c => { try { return constFrom(text, c); } catch (e) { if (c === "CAD_DAYL") return ""; throw e; } }).join("\n")   /* CAD_DAYL is new (📅 CAD_CHIPS) — origin/main may not have it yet */ + "\nfunction mpSlotAuto(){ return 'morning'; }\n" + fns +
     "\nreturn { momDayStripHTML, mdCardKidsToday, renderDadsDay:typeof renderDadsDay==='function'?renderDadsDay:null, techToggle, mdMine:typeof mdMine==='function'?mdMine:null, setDdManage:v=>{ddManage=v;} };";
   const keys = Object.keys(env);
   const api = new Function(...keys, body)(...keys.map(k => env[k]));
@@ -86,17 +86,19 @@ const DAD = {
 };
 
 console.log("── Mom's Home Base is byte-identical to origin/main ──");
+// 📅 CAD_CHIPS (her ask 2026-10-18): the add box's day chips are the one intended change — set aside on both sides before comparing.
+const _cadNorm = h => String(h).replace(/<div style="flex:1 1 100%"><input type="hidden" id="mc-cad(-q)?"[\s\S]*?<\/span><\/div>/g, "").replace(/\+?<select id="mc-cad"[\s\S]*?<\/select>/g, "").replace('<div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap"><input type="text" id="mc-new"', '<div style="display:flex;gap:5px;margin-top:6px"><input type="text" id="mc-new"');
 if (!old) { ok("origin/main source available (git show)", false); }
 else {
   ["morning", "afternoon", "night"].forEach(sl => [false, true].forEach(mg => {
     const o = Object.assign({}, MOM, { slot: sl, mcManage: mg });
-    const a = world(old, o).api.momDayStripHTML("2026-10-12", "monday");
-    const b = world(src, o).api.momDayStripHTML("2026-10-12", "monday");
+    const a = _cadNorm(world(old, o).api.momDayStripHTML("2026-10-12", "monday"));
+    const b = _cadNorm(world(src, o).api.momDayStripHTML("2026-10-12", "monday"));
     ok("🏡 My day, " + sl + (mg ? " (✎ editing)" : "") + ": same bytes (" + a.length + ")", a === b && a.length > 1000);
   }));
   {
     const o = { slot: "afternoon" };   // empty list → code defaults; afternoon has none → ✨ seed button path
-    ok("🏡 My day with the defaults + empty slot: same bytes", world(old, o).api.momDayStripHTML("2026-10-12", "tuesday") === world(src, o).api.momDayStripHTML("2026-10-12", "tuesday"));
+    ok("🏡 My day with the defaults + empty slot: same bytes", _cadNorm(world(old, o).api.momDayStripHTML("2026-10-12", "tuesday")) === _cadNorm(world(src, o).api.momDayStripHTML("2026-10-12", "tuesday")));
   }
   [true, false].forEach(sd => {
     const a = world(old, MOM).api.mdCardKidsToday("monday", sd, true), b = world(src, MOM).api.mdCardKidsToday("monday", sd, true);
@@ -111,7 +113,10 @@ else {
   const unnudge = s => String(s).replace(/  \/\/ Load sitting in the washer[\s\S]*?(?=  \/\/ Bills that can't wait)/, "  /*laundry nudge*/\n");
   ok("renderMomsDay source untouched", unnudge(unroute(sliceFrom(old, "renderMomsDay"))) === unnudge(unroute(sliceFrom(src, "renderMomsDay"))));
   // 🏡 HOUSEHOLD_TAKEOVER (PR 3, 2026-10-09) routes Mom's list writes through _mcDb; that one line is normalized away here so the guard keeps asking "nothing ELSE changed".
-  ok("Mom's starter seeds / editor / add untouched", ["mcSeedSlot", "mcAdd", "mcToggle", "momChoresCardHTML", "mcPopHTML", "grMdShopHTML"].every(n => unroute(sliceFrom(old, n)) === unroute(sliceFrom(src, n))));
+  ok("Mom's starter seeds / editor untouched", ["mcSeedSlot", "mcToggle", "mcPopHTML", "grMdShopHTML"].every(n => unroute(sliceFrom(old, n)) === unroute(sliceFrom(src, n))));
+  // 📅 CAD_CHIPS (her ask 2026-10-18): mcAdd and the ✎ card's add row changed on purpose — and only this:
+  ok("mcAdd reads the day chips beside the box she typed in (mc-cad-q on My day, mc-cad on the ✎ card)", /getElementById\(inp&&inp\.id==="mc-new"\?'mc-cad-q':'mc-cad'\)/.test(sliceFrom(src, "mcAdd")));
+  ok("the ✎ card's add row: day chips in place of the one-day dropdown", /cadChipsHTML\("mc-cad","daily",\[\["2w","2 wks"\]\]\)/.test(sliceFrom(src, "momChoresCardHTML"))&&!/<select id="mc-cad"/.test(sliceFrom(src, "momChoresCardHTML")));
 }
 
 console.log("\n── Dad's 🏡 My day: his chores by slot, his done stamps ──");
