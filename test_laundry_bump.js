@@ -13,7 +13,8 @@ const iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+Stri
 const MON="2026-10-19", TUE="2026-10-20";
 function mk(o){
   o=o||{}; const writes=[], toasts=[], ls={};
-  const ctx={console,Object,Array,String,Number,parseInt,Math,JSON,Date,
+  const ctx={LL_DEFAULT_MODE:"rotate",   // these replay the plain rotation; 📅 home days: test_laundry_home.js
+    console,Object,Array,String,Number,parseInt,Math,JSON,Date,
     HA_LS:{getItem:k=>ls[k]||null,setItem:(k,v)=>{ ls[k]=v; }},
     db:{ref:p=>({update:v=>writes.push(["update",p,JSON.parse(JSON.stringify(v))]),set:v=>writes.push(["set",p,JSON.parse(JSON.stringify(v))])})},
     _lbWrite:()=>!o.dry, isMom:!o.noMom, momHere:()=>ctx.isMom, kitPinGate:()=>{ ctx.gated=true; }, gated:false,
