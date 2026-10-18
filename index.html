@@ -1948,6 +1948,45 @@ let routineTimes={eveningHour:18};  // config/routineTimes
 let rtCadOpen=null;                 // "slot_kid_i" of the open cadence picker (one at a time)
 let rtOpen={};                      // "slot_kid" -> false when collapsed (default open; auto-collapses when done)
 let routineLog={};                  // routineLog/{kid}/{wk}/{day}/{key} = {label,slot,act,ts,at,pts,flagged?,penalty?}
+// RLWIN_START — routine history: two weeks live at startup, the rest when first needed (her yes 2026-10-18, after the
+// startup measure: routineLog = 15 weeks × 4 kids = 554 KB every device pulled at startup, the LG over long-polling).
+// Live: routineLog/<kid>/<this week> and <last week> for each kid (last week covers Monday look-backs), moved forward
+// when the week changes (attachWeekListeners). Older weeks feed only the Household numbers — overdue chips, habits, the
+// review, chores levels — the cleaning plan, and Home Base's "ready for the next level" reminders. rlHistReady() loads
+// every week once (one read per kid) the first time one of those is drawn; until then they WAIT (a loading line, no
+// level reminder) instead of counting from two weeks, and the once-job sweep (it saves) never runs on partial history.
+// Writes are unchanged — every check-off still writes routineLog/<kid>/<wk>/<day>/<key> as before.
+let _rlWin={key:"", refs:[], full:false, loading:false};
+function rlPrevWk(wk){ const m=/^week(\d+)$/.exec(String(wk||"")); return (m&&+m[1]>1)?"week"+(+m[1]-1):""; }
+function rlWindowWeeks(wk){ return [wk,rlPrevWk(wk)].filter(Boolean); }
+function rlWindowAttach(wk){
+  if(typeof db==="undefined"||!db) return;
+  const wks=rlWindowWeeks(wk||activeWk()), kids=[...ROSTER], key=wks.join(",")+"|"+kids.join(",");
+  if(_rlWin.key===key) return;   // already listening to exactly these
+  _rlWin.refs.forEach(r=>{ try{ r.off(); }catch(e){} }); _rlWin.refs=[]; _rlWin.key=key;
+  kids.forEach(kid=>wks.forEach(w=>{
+    const r=db.ref("routineLog/"+kid+"/"+w);
+    r.on("value",s=>{ const v=s.val(); routineLog[kid]=routineLog[kid]||{}; if(v) routineLog[kid][w]=v; else delete routineLog[kid][w]; });
+    _rlWin.refs.push(r);
+  }));
+}
+function rlHistFull(){ return _rlWin.full||typeof db==="undefined"||!db; }   // no db: what's here is all there is
+function rlHistReady(){
+  if(rlHistFull()) return true;
+  if(_rlWin.loading) return false;
+  _rlWin.loading=true;
+  const kids=[...new Set([...ROSTER,...Object.keys(routineLog||{})])];
+  Promise.all(kids.map(kid=>db.ref("routineLog/"+kid).once("value").then(s=>[kid,s.val()||{}]))).then(rs=>{
+    const live=(_rlWin.key.split("|")[0]||"").split(",");
+    rs.forEach(([kid,v])=>{ routineLog[kid]=routineLog[kid]||{}; Object.keys(v).forEach(w=>{ if(live.indexOf(w)<0||!routineLog[kid][w]) routineLog[kid][w]=v[w]; }); });   // the live weeks keep their listener's copy
+    _rlWin.full=true; _rlWin.loading=false;
+    if(typeof _hhLogCache!=="undefined") _hhLogCache=null;
+    if(typeof renderAll==="function") renderAll();
+  }).catch(()=>{ _rlWin.loading=false; });
+  return false;
+}
+function rlLoadingHTML(what){ return '<div style="padding:28px 16px;text-align:center;color:var(--muted);font-size:13px">⏳ Loading '+(what||"chore history")+'…</div>'; }
+// RLWIN_END
 let routineRules={loseTechEnabled:false,loseTechHour:10}; // config/routineRules
 // ── ⭐ STAR STORE (the rewards side of the same economy) ──────────────────────
 // A buy is a Star Bank withdrawal, so it shows up in the Wins statement automatically.
@@ -3321,6 +3360,7 @@ function detachWeekListeners(){
 function attachWeekListeners(wk){
   detachWeekListeners();
   _ckPending=null; _ckReplayTries=0;   // 🔁 pending refused check-offs are per week
+  try{ if(typeof rlWindowAttach==="function") rlWindowAttach(wk); }catch(e){}   // RLWIN: routine history follows the week
   DAY_DT={}; // Clear stale dates so Sunday guard fires until meta arrives
   fbCheckedLoaded=false; // Reset so cascade waits for fresh data from Firebase
   fbTasksLoaded=false;
@@ -4233,7 +4273,7 @@ function initFb() {
     db.ref("config/morningRoutine").on("value",s=>{ hhLive.morningRoutine=s.val()||{}; if(!hhTakeoverOn()) morningRoutineCfg=hhLive.morningRoutine; });   // 🏡 HOUSEHOLD_TAKEOVER
     db.ref("config/routines").on("value",s=>{ hhLive.routines=s.val()||{}; if(!hhTakeoverOn()) routineCfg2=hhLive.routines; });                          // 🏡 HOUSEHOLD_TAKEOVER
     db.ref("config/routineTimes").on("value",s=>{ routineTimes=Object.assign({eveningHour:18}, s.val()||{}); });
-    db.ref("routineLog").on("value",s=>{ routineLog=s.val()||{}; });
+    rlWindowAttach(activeWk());   // RLWIN: this week + last week live; older weeks load when first needed
     db.ref("waved").on("value",s=>{ wavedOnValue(s.val()||{}); if(tab==="moms-plan"||tab==="kids"||tab==="schedule") renderAll(); });   // WAVE
     db.ref("spotChecks").on("value",s=>{ spotOnValue(s.val()||{}); if(tab==="moms-plan"&&momHere()) renderAll(); });   // 🔎 SPOTCHECK
     db.ref("settings/spotCheck").on("value",s=>{ if(typeof spotSetOnValue==="function") spotSetOnValue(s.val()); if(tab==="moms-plan"&&momHere()) renderAll(); });   // 🔎 SPOTCHECK ⚙
@@ -11887,6 +11927,7 @@ function hhTodayHTML(){
 }
 function renderHousehold(el){
   try{ if(typeof hhOnceSweep==="function") hhOnceSweep(); }catch(e){}   // ☑️ HH_PROJECTS: a checked once-job retires with its date
+  if(typeof rlHistReady==="function"&&!rlHistReady()){ if(el) el.innerHTML=rlLoadingHTML("chore history"); return; }   // RLWIN: the numbers need every week (the sweep above waits for it on its own)
   let h='<div style="font-family:\'DM Sans\',sans-serif;padding-bottom:20px">'+mwBanner('Household — every chore in one place, read-only until Take over')+mpSubnav('house');
   const chip=function(v,lbl){ return '<button onclick="hhGo(\''+v+'\')" style="padding:7px 12px;border-radius:20px;border:1.5px solid '+(hhView===v?'#2B7A78':'#cbd5e1')+';background:'+(hhView===v?'#2B7A78':'#fff')+';color:'+(hhView===v?'#fff':'#334155')+';font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;padding:10px 12px 0">'+chip('review','📋 Review')+chip('habits','📈 Habits')+chip('week','📆 Week')+chip('area','🗂 Area')+chip('room','🚪 Room')+chip('levels','🪜 Levels')+(typeof hhRotationsHTML==="function"?chip('rot','🔁 Rotations'):'')+(typeof hhLaundryHTML==="function"?chip('laundry','🧺 Laundry'):'')+(typeof hhOnceHTML==="function"?chip('once','☑️ Once'):'')+(typeof hhProjectsHTML==="function"?chip('proj','🧰 Projects'):'')+chip('today','📅 Today')+'</div>';   // 🧹 HOUSEHOLD_GRID chips · HH_ROTATE
@@ -12194,8 +12235,11 @@ function hhTakeoverCardHTML(missing){
 // the 80%"). A person whose own meter reads three full weeks at 80%+ at their current level gets one line in Now, with
 // ▴ Move up (their dial, one tap) and Not now (hides it for that level: household/levels/<who>/readySeen). It rides the same
 // reminder list as bills and laundry, so the badge and the ding reach her phone. Nothing moves on its own.
-function hhLevelReadyList(){
+function hhLevelReadyList(opts){
   const out=[]; if(typeof hhReady!=="function"||!hhJobs||!Object.keys(hhJobs()).length) return out;
+  // RLWIN: "ready" counts 4 weeks of habits — wait for every week. By default it only PEEKS (Home Base's alert badge), so a
+  // kid's tablet never pulls the old weeks just for the badge; Mom's day passes {load:true} and the Household tab loads them.
+  if(typeof rlHistFull==="function"&&!rlHistFull()){ if(opts&&opts.load&&typeof rlHistReady==="function") rlHistReady(); return out; }
   HH_WHO.forEach(function(who){ if(who==="grab") return; const lv=hhLevelCurFor(who); if(lv>=3) return;
     const seen=parseInt(householdData&&householdData.levels&&householdData.levels[who]&&householdData.levels[who].readySeen,10)||0; if(seen>=lv+1) return;
     let R=null; try{ R=hhReady(lv,who); }catch(e){} if(!R||!R.ready) return;
@@ -12206,7 +12250,7 @@ function hhLevelReadySeen(who,next){ if(typeof momHere==="function"&&!momHere())
   householdData.levels=householdData.levels||{}; householdData.levels[who]=Object.assign({},householdData.levels[who],{readySeen:next}); householdOnValue(householdData);
   if(_hhWrite()) db.ref("household/levels/"+who+"/readySeen").set(next); if(typeof renderAll==="function") renderAll(); }
 function hhLevelReadyNowHTML(){
-  const list=hhLevelReadyList(); if(!list.length) return {n:0,html:""};
+  const list=hhLevelReadyList({load:true});   // RLWIN: Mom's day starts the history load if(!list.length) return {n:0,html:""};
   let h='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:10px 0 6px">🪜 Ready to move up</div>';
   list.forEach(function(it){ h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:#ecfdf5;border-left:3px solid #16a34a;border-radius:8px;margin-bottom:6px">'
     +'<span style="flex:1;font-size:13px"><b>'+hhWhoName(it.who)+'</b> is ready for Level '+it.next+' — three weeks at 80%+ <span style="color:#6b6560;font-size:11px">('+it.weeks.map(function(w){ return hhPct(w.done,w.due); }).join(" · ")+')</span></span>'
@@ -12667,7 +12711,9 @@ function hhSortChipHTML(){ return '<div style="padding:8px 12px 0;display:flex;g
 function hhIsOnce(j){ return !!j&&(j.cad==="once"); }
 function hhIsProject(j){ return !!j&&(j.layer==="project"); }
 function hhOnceSweep(){
-  if(typeof momHere==="function"&&!momHere()) return []; const jobs=hhJobs(), upd={}, out=[];
+  if(typeof momHere==="function"&&!momHere()) return [];
+  if(typeof rlHistFull==="function"&&!rlHistFull()) return [];   // RLWIN: never retire from partial history
+  const jobs=hhJobs(), upd={}, out=[];
   Object.keys(jobs).forEach(function(id){ const j=jobs[id]; if(!hhIsOnce(j)||j.status==="retired") return; let st=null; try{ st=hhStats(j); }catch(e){} if(!st||!st.last) return;
     upd["household/jobs/"+id+"/status"]="retired"; upd["household/jobs/"+id+"/done"]=st.last; j.status="retired"; j.done=st.last; out.push(id); });
   if(out.length){ householdOnValue(householdData); if(_hhWrite()) db.ref().update(upd); }
@@ -12860,7 +12906,9 @@ function hhPlanPanelHTML(who,iso){
 }
 function hhPlanWaitHTML(){ return '<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);padding:14px 12px;margin-bottom:10px;text-align:center;font-size:13px;color:var(--muted)">🧽 Mom is making today’s plan — your list is coming.</div>'; }
 function hhPlanHomeHTML(iso){
-  if(typeof momHere==="function"&&!momHere()) return ""; const jobs=hhJobs(), R=hhCleanRules(), who=HH_WHO.filter(function(w){ return w!=="grab"; });
+  if(typeof momHere==="function"&&!momHere()) return "";
+  if(typeof rlHistReady==="function"&&!rlHistReady()) return rlLoadingHTML("the cleaning plan");   // RLWIN: the plan ranks by how overdue each job is
+  const jobs=hhJobs(), R=hhCleanRules(), who=HH_WHO.filter(function(w){ return w!=="grab"; });
   const sel=function(id,cur,can){ return '<select onchange="hhPlanGive(\''+iso+'\',\''+id+'\',this.value)" style="padding:3px 5px;border:1.5px solid #e5e7eb;border-radius:7px;font-size:11px;font-family:\'DM Sans\',sans-serif">'+who.map(function(w){ return '<option value="'+w+'"'+(w===cur?' selected':'')+(can.indexOf(w)<0?' disabled':'')+'>'+esc(hhWhoName(w))+(can.indexOf(w)<0?' ✕':'')+'</option>'; }).join('')+'</select>'; };
   if(hhPlanSent(iso)){
     let h='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:10px 12px;margin-bottom:10px"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:13px;font-weight:800">📨 Today’s plan is out</span><span style="flex:1"></span>'+_hhBtn("hhPlanUnsend('"+iso+"')",'✎ Change it',false,'#64748b')+'</div><div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px">';
