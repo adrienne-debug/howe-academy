@@ -13133,10 +13133,11 @@ function llCoverAskHTML(){ if(!laundryLine||!Object.keys(laundryLine).length) re
 function llMomSickBtn(){ const on=llOut("mom",llToday()); return '<button onclick="llMomSick()" style="padding:4px 9px;border-radius:8px;border:1.5px solid '+(on?'#b45309':'#cbd5e1')+';background:'+(on?'#fef3c7':'#fff')+';color:'+(on?'#92400e':'#475569')+';font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">🤒 '+(on?'Mom\'s sick today ✓':'Mom\'s sick today')+'</button>'; }
 // 🫧 Start a line load: the same load Start a load makes (laundry/<id> in the washer now — the timers, nudges and Mom blocks work as
 // always) with line:<item> + lineDay on it, and the log entry that moves the line. by = "dad" from his Day.
-function llStart(item,by){ const it=llAll()[item]; if(!it) return; const t=llToday(), now=Date.now(), lid="l"+now.toString(36);
+function llStart(item,by){ const it=llAll()[item]; if(!it) return; const t=llToday(), now=Date.now(), lid="l"+now.toString(36)+Math.random().toString(36).slice(2,5);   // a random tail: two quick taps never share an id
   if(llLog(t).indexOf(item)>=0) return;   // already started today
   const kidBy=llPeople().indexOf(by)>=2?by:"";   // 🧺 step 6: a kid's own tap
   laundryData[lid]={label:it.label,stage:"washer",ts:now,line:item,lineDay:t}; if(by==="dad"||kidBy) laundryData[lid].by=by;
+  { const S=(typeof lcClean==="function")?lcClean(it.cycle):[]; if(S.length){ laundryData[lid].cycle=S; laundryData[lid].step=0; laundryData[lid].stage=lcStageOf(S,0); } }   // 🌀 its own steps
   try{ HA_LS.setItem('ha_laundry',JSON.stringify(laundryData)); }catch(e){}
   laundryLine.log=laundryLine.log||{}; laundryLine.log[t]=laundryLine.log[t]||{}; laundryLine.log[t][item]={at:now,load:lid,by:by==="dad"?"dad":kidBy||"mom"};
   const u={}; u["log/"+t+"/"+item]=laundryLine.log[t][item];
@@ -13147,7 +13148,7 @@ function llStart(item,by){ const it=llAll()[item]; if(!it) return; const t=llTod
   if(typeof mwToast==="function") mwToast('🫧 '+it.label+' — in the washer'); llRerender(); }
 // ✕ on a line load still in the washer (a mistake) takes its log entry back, so the line puts it back where it was.
 function llUnlog(lid,l){ if(l&&l.wet&&l.jumpDay&&(l.stage==="bin"||l.stage==="prewash")){ const j=laundryLine.jump&&laundryLine.jump[l.jumpDay]; if(j&&j[lid]){ delete j[lid]; llStore(); const u={}; u["jump/"+l.jumpDay+"/"+lid]=null; llWrite(u); } return; }   // 💦 a jump-in ✕'d before it was washed gives its slot back
-  if(!l||!l.line||!l.lineDay||l.stage!=="washer") return; const e=laundryLine.log&&laundryLine.log[l.lineDay]&&laundryLine.log[l.lineDay][l.line];
+  if(!l||!l.line||!l.lineDay) return; if((typeof lcHas==="function"&&lcHas(l))?lcStep(l)!==0:l.stage!=="washer") return;   /* 🌀 a cycle load: still on its first step */ const e=laundryLine.log&&laundryLine.log[l.lineDay]&&laundryLine.log[l.lineDay][l.line];
   if(!e||e.load!==lid) return; delete laundryLine.log[l.lineDay][l.line]; const u={}; u["log/"+l.lineDay+"/"+l.line]=null;
   const x=laundryLine.extras&&laundryLine.extras[l.line]; if(x&&x.last===l.lineDay){ x.last=e.prevLast||null; u["extras/"+l.line+"/last"]=x.last; if(e.prevEst){ x.est=true; u["extras/"+l.line+"/est"]=true; } }   // 🗓 not washed after all
   llStore(); llWrite(u); }
@@ -13187,7 +13188,7 @@ function llExtrasHTML(mom,today){
   ids.forEach(function(id){ const x=X[id], e=llEvery(x), due=llDue(x), late=due&&due<=today;
     h+='<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding:4px 0;border-top:1px solid #f3f4f6;font-size:12px"><span>'+esc(x.emoji||'🧺')+'</span><span style="flex:1;min-width:110px;font-weight:700">'+esc(x.label)
       +'<div style="font-weight:400;font-size:10.5px;color:#6b6560">every '+e.n+' '+(e.unit==="m"?(e.n===1?'month':'months'):(e.n===1?'week':'weeks'))+(x.last&&!x.est?' · washed '+md(x.last):'')+(due?' · <b style="color:'+(late?'#b45309':'#6b6560')+'">'+(late?'due now':(x.est?'first due ':'due ')+md(due))+'</b>':'')+'</div></span>'
-      +(mom?btn("llDoerNext('"+id+"')","👤 "+esc(llName(llDoer(id))))+btn("llXEvery('"+id+"',-1)","−")+btn("llXEvery('"+id+"',1)","+")+btn("llXUnit('"+id+"')",e.unit==="m"?"→ wks":"→ mos")+btn("llXDel('"+id+"')","✕"):'')+'</div>'; });
+      +(mom?btn("llDoerNext('"+id+"')","👤 "+esc(llName(llDoer(id))))+llCyChip(id,btn)+btn("llXEvery('"+id+"',-1)","−")+btn("llXEvery('"+id+"',1)","+")+btn("llXUnit('"+id+"')",e.unit==="m"?"→ wks":"→ mos")+btn("llXDel('"+id+"')","✕"):'')+(mom?llCyEditorHTML(id):'')+'</div>'; });
   if(llXOpen&&mom) h+='<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding-top:6px;font-size:11.5px"><input id="llx-label" placeholder="What (e.g. Shower mats)" style="flex:1;min-width:130px;padding:6px 8px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:12px">'
     +'<span>every</span><input id="llx-every" type="number" min="1" max="52" value="8" style="width:48px;padding:6px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:12px"><select id="llx-unit" style="padding:6px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:12px"><option value="w">weeks</option><option value="m">months</option></select>'
     +'<span>last washed</span><input id="llx-last" type="date" value="'+today+'" style="padding:5px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:12px">'
@@ -13218,6 +13219,30 @@ function llKidCardHTML(kid,dayName){ if(!laundryLine||!Object.keys(laundryLine).
     h+='<div style="display:flex;align-items:center;gap:6px;margin-top:5px;font-size:12.5px"><span>'+esc(A[id].emoji||'🧺')+'</span><span style="flex:1;font-weight:700">'+esc(A[id].label)+(st?' <span style="font-weight:600;color:#15803d">· '+st+'</span>':'')+'</span>'
       +((isT&&!st)?'<button onclick="event.stopPropagation();llStart(\''+id+'\',\''+kid+'\')" style="padding:5px 10px;border-radius:9px;border:none;background:#2563eb;color:#fff;font-size:12px;font-weight:800;cursor:pointer">🫧 It\'s in the washer</button>':'')+'</div>'; });
   return h+'</div></div></div></div></div>'; }
+// 🌀 A cycle per line load (custom wash cycles part 3, her plan 2026-10-17): a load with a cycle runs its own steps when it's started
+// (🫧 Start, the Today's line chips, a kid's "It's in the washer"); none = Normal (washer → dryer → fold), as before.
+// laundryLine/items/<id>/cycle or extras/<id>/cycle = [{k,m,n}] — Mom only, one path.
+let llCyEdit=null, llCyDraft=null;
+function llCyOpen(id){ llMomGo(function(){ if(llCyEdit===id){ llCyEdit=null; llCyDraft=null; hhRender(); return; } const x=llAll()[id]; if(!x) return;
+  const S=lcSteps({cycle:x.cycle}); llCyEdit=id; llCyDraft=S.length?S.map(function(y){ return Object.assign({},y); }):[{k:"wash"},{k:"dry"}]; hhRender(); }); }
+function llCyStepSet(i,f,v){ const x=llCyDraft&&llCyDraft[i]; if(!x) return; if(f==="m"){ const n=parseInt(v,10); if(n>0&&n<=24*60) x.m=n; else delete x.m; } else if(f==="k"){ x.k=LC_KINDS[v]?v:"wash"; hhRender(); } else x[f]=String(v); }
+function llCyStepAdd(){ if(llCyDraft){ llCyDraft.push({k:"wash"}); hhRender(); } }
+function llCyStepDel(i){ if(llCyDraft){ llCyDraft.splice(i,1); hhRender(); } }
+function llCyStepMove(i,d){ const S=llCyDraft, j=i+d; if(!S||j<0||j>=S.length) return; S.splice(j,0,S.splice(i,1)[0]); hhRender(); }
+function _llCyPut(id,val){ const u={}, ex=laundryLine.extras&&laundryLine.extras[id];
+  if(ex){ if(val) ex.cycle=val; else delete ex.cycle; u["extras/"+id+"/cycle"]=val||null; }
+  else { if(llOrder().indexOf(id)<0) return; llEnsureItems(u); if(val) laundryLine.items[id].cycle=val; else delete laundryLine.items[id].cycle; if(!u["items/"+id]) u["items/"+id+"/cycle"]=val||null; }
+  llStore(); llWrite(u); }
+function llCySave(){ llMomGo(function(){ const id=llCyEdit; if(!id) return; const c=lcClean(llCyDraft); _llCyPut(id,c.length?c:null); llCyEdit=null; llCyDraft=null;
+  if(typeof mwToast==="function") mwToast('🌀 '+llAll()[id].label+': '+lcSummary(c)); hhRender(); }); }
+function llCyNormal(){ llMomGo(function(){ const id=llCyEdit; if(!id) return; _llCyPut(id,null); llCyEdit=null; llCyDraft=null; hhRender(); }); }
+function llCyChip(id,btn){ if(typeof lcSummary!=="function") return ""; return btn("llCyOpen('"+id+"')","🌀 "+esc(lcSummary((llAll()[id]||{}).cycle))); }
+function llCyEditorHTML(id){ if(llCyEdit!==id||!llCyDraft) return "";
+  return '<div style="flex:1 1 100%;margin-top:4px;padding:8px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:9px;font-size:12px"><div style="font-weight:800;margin-bottom:4px">🌀 '+esc(llAll()[id].label)+' — its steps</div>'
+    +lcStepRowsHTML(llCyDraft,"llCy")
+    +'<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button onclick="llCySave()" style="flex:1;padding:7px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:12.5px;font-weight:800;cursor:pointer">Save</button>'
+    +'<button onclick="llCyNormal()" style="padding:7px 10px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;color:#475569;font-size:12px;font-weight:700;cursor:pointer">Normal</button>'
+    +'<button onclick="llCyOpen(\''+id+'\')" style="padding:7px 10px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;color:#475569;font-size:12px;font-weight:700;cursor:pointer">Cancel</button></div></div>'; }
 // ▶ up next = the front of the live line: the first load laid from now on that hasn't gone in (a load moved at 8 PM is the front).
 function llFront(){ const R=llProjectNow(21); for(let i=0;i<R.length;i++){ for(let k=0;k<R[i].loads.length;k++){ if(R[i].started.indexOf(R[i].loads[k])<0) return R[i].loads[k]; } } return llNext(); }
 function llCardHTML(){
@@ -13229,8 +13254,8 @@ function llCardHTML(){
   // the order
   o.forEach(function(id,n){ const x=it[id], up=id===nx;
     h+='<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px;padding:5px 12px;border-top:1px solid #eef2f0;font-size:12.5px;'+(up?'background:#f0fdf4':'')+'"><span style="width:16px;color:#6b6560;font-size:11px">'+(n+1)+'</span><span>'+esc(x.emoji||'🧺')+'</span><span style="flex:1;min-width:130px;font-weight:700">'+esc(x.label)+(up?' <span style="color:#16a34a;font-size:11px">▶ up next</span>':'')+'</span>'
-      +(mom?'<span style="display:flex;gap:4px;flex-wrap:wrap;margin-left:auto">'+btn("llDoerNext('"+id+"')","👤 "+esc(llName(llDoer(id))))+btn("llMove('"+id+"',-1)","↑",n===0)+btn("llMove('"+id+"',1)","↓",n===o.length-1)+(up?'':btn("llSetNext('"+id+"')","Up next"))
-        +(tb.indexOf(id)>=0&&ts.indexOf(id)<0?btn("llBump('"+id+"')","↩ Unbump"):(tl.indexOf(id)<0?btn("llBump('"+id+"')","⏫ Today"):''))+'</span>':'')+'</div>'; });
+      +(mom?'<span style="display:flex;gap:4px;flex-wrap:wrap;margin-left:auto">'+btn("llDoerNext('"+id+"')","👤 "+esc(llName(llDoer(id))))+llCyChip(id,btn)+btn("llMove('"+id+"',-1)","↑",n===0)+btn("llMove('"+id+"',1)","↓",n===o.length-1)+(up?'':btn("llSetNext('"+id+"')","Up next"))
+        +(tb.indexOf(id)>=0&&ts.indexOf(id)<0?btn("llBump('"+id+"')","↩ Unbump"):(tl.indexOf(id)<0?btn("llBump('"+id+"')","⏫ Today"):''))+'</span>':'')+(mom?llCyEditorHTML(id):'')+'</div>'; });
   // caps per weekday
   h+='<div style="padding:8px 12px;border-top:1px solid #eef2f0"><div style="font-size:11.5px;font-weight:800;margin-bottom:5px">Loads a day (cap)</div><div style="display:flex;gap:5px;flex-wrap:wrap">'
     +LL_DL.map(function(d,x){ const c=llCap(x); return '<div style="text-align:center;border:1px solid #eef2f0;border-radius:9px;padding:4px 5px;min-width:44px;background:'+(c?'#f0fdf4':'#f8fafc')+'"><div style="font-size:10.5px;color:#6b6560">'+d+'</div><div style="font-size:14px;font-weight:800">'+c+'</div>'
@@ -13357,6 +13382,7 @@ function momDayStripHTML(iso,today,who){
   { let _ln=0; try{ _ln=Object.keys(laundryData||{}).length; }catch(e){}
     h+='<div style="margin-top:10px;padding-top:9px;border-top:1px dashed var(--border)">'+colHd('🧺','Laundry',_ln?'<span style="margin-left:auto;color:#2563eb">'+_ln+' running</span>':'')
       +'<div style="display:flex;gap:5px">'
+      +((typeof laundryCyclePickHTML==="function")?laundryCyclePickHTML():'')   // 🌀 Normal, or like a quick button
       +'<input type="text" id="laundry-label" placeholder="Start a load (Towels…)" onkeydown="if(event.key===\'Enter\')laundryAdd('+(P.dad?'\'dad\'':'')+')" style="flex:1;min-width:0;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:12.5px;font-family:\'DM Sans\',sans-serif">'
       +'<button onclick="laundryAdd('+(P.dad?'\'dad\'':'')+')" style="padding:8px 12px;border-radius:9px;border:none;background:#2563eb;color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap">🫧 Start</button></div>'   // 👨 DADFIX: his loads are his
       +((typeof llStripHTML==="function")?llStripHTML(P.dad?'dad':''):"")   // 🧺 LAUNDRYLINE: today's line loads, one tap each
@@ -13466,6 +13492,18 @@ function lcAdvance(l){ if(!lcHas(l)||l.stage==="fold") return false; const S=lcS
 function lcBack(l){ if(!lcHas(l)) return null; const S=lcSteps(l);
   if(l.stage==="fold") return {stage:lcStageOf(S,S.length-1),step:S.length-1};
   const i=lcStep(l); if(i>0) return {stage:lcStageOf(S,i-1),step:i-1}; if(i===0&&(l.bin||l.wet)) return {stage:"bin",step:null}; return null; }
+// The step rows of a cycle editor (quick buttons, line loads): pfx names the handlers — pfx+"StepSet(i,f,v)", pfx+"StepMove(i,d)",
+// pfx+"StepDel(i)", pfx+"StepAdd()" (custom wash cycles part 3, 2026-10-17: one editor, two homes).
+function lcStepRowsHTML(steps,pfx){ const inp='padding:5px 7px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12px', K=["prewash","wash","dry","airdry","custom"];
+  return (steps||[]).map(function(x,i){ return '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:4px"><span style="width:14px;color:#6b6560">'+(i+1)+'</span>'
+    +'<select onchange="'+pfx+'StepSet('+i+',\'k\',this.value)" style="'+inp+'">'+K.map(function(k){ return '<option value="'+k+'"'+(k===x.k?' selected':'')+'>'+LC_KINDS[k][0]+' '+LC_KINDS[k][1]+'</option>'; }).join('')+'</select>'
+    +(x.k==="custom"?'<input value="'+esc(x.n||"")+'" placeholder="Name it (Soak)" oninput="'+pfx+'StepSet('+i+',\'n\',this.value)" style="width:110px;'+inp+'">':'')
+    +'<input type="number" min="1" max="1440" value="'+(x.m||"")+'" placeholder="'+lcDefMins(x.k)+'" oninput="'+pfx+'StepSet('+i+',\'m\',this.value)" style="width:58px;'+inp+'"><span>min</span>'
+    +'<button onclick="'+pfx+'StepMove('+i+',-1)" style="border:none;background:none;cursor:pointer">↑</button><button onclick="'+pfx+'StepDel('+i+')" style="border:none;background:none;color:#9ca3af;cursor:pointer">✕</button></div>'; }).join('')
+    +'<button onclick="'+pfx+'StepAdd()" style="padding:3px 9px;border-radius:7px;border:1.5px dashed #93c5fd;background:#fff;color:#1d4ed8;font-size:11.5px;font-weight:700;cursor:pointer">＋ Step</button>'; }
+function lcSummary(steps){ const S=lcSteps({cycle:steps}); return S.length?S.map(lcStepName).join(" → "):"Normal"; }
+// A clean copy of edited steps for saving: known kinds, minutes only when set, a custom step's name.
+function lcClean(steps){ return lcSteps({cycle:steps}).map(function(x){ const o={k:x.k}; const m=parseInt(x.m,10); if(m>0&&m<=24*60) o.m=m; if(x.k==="custom"&&String(x.n||"").trim()) o.n=String(x.n).trim(); return o; }); }
 // LAUNDRY_CYCLE_END
 const LAUNDRY_STALE_MIN=90; // washer-sitting threshold before the NOW nudge (mildew guard) — now = washer minutes + reminder (60 + 30 by default)
 // 🧺 LAUNDRYTIMES (her ask 2026-10-06): Mom sets how long the washer and dryer take and how long after a cycle ends to remind her.
@@ -13501,12 +13539,18 @@ function laundryTimesEditorHTML(){
     +'<div style="display:flex;gap:8px;margin-top:8px"><button onclick="laundryTimesSave()" style="flex:1;padding:9px;border-radius:9px;border:none;background:#2563eb;color:#fff;font-size:13px;font-weight:800;cursor:pointer">Save</button>'
     +'<button onclick="laundryEditToggle()" style="padding:9px 14px;border-radius:9px;border:1.5px solid #cbd5e1;background:#fff;color:#475569;font-size:13px;font-weight:700;cursor:pointer">Cancel</button></div></div>';
 }
+// 🌀 The Start a load box's cycle pick: Normal, or "Like: <quick button>" (its steps). Hidden when she has no quick buttons.
+function laundryCyclePickHTML(){ const ids=(typeof qlIds==="function")?qlIds():[]; if(!ids.length) return ""; const A=qlAll();
+  return '<select id="laundry-cycle" title="Which steps" style="max-width:110px;padding:6px 4px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:12px"><option value="">🌀 Normal</option>'
+    +ids.map(function(id){ return '<option value="'+id+'">Like: '+esc(A[id].label)+'</option>'; }).join('')+'</select>'; }
 function laundryAdd(by){   // 👨 DADFIX: by="dad" from his Day → the load is his (his 🗓 schedule); Mom's call is unchanged
   const inp=document.getElementById('laundry-label'); const label=((inp&&inp.value)||"").trim();
   if(!label) return;
   const id="l"+Date.now().toString(36);
   laundryData[id]={label,stage:"washer",ts:Date.now()};
   if(by==="dad") laundryData[id].by="dad";
+  { const pk=document.getElementById('laundry-cycle'), q=(pk&&pk.value&&typeof qlAll==="function")?qlAll()[pk.value]:null, S=q?lcClean(q.steps):[];   // 🌀 "Like: <quick button>" — its steps, straight in
+    if(S.length){ laundryData[id].cycle=S; laundryData[id].step=0; laundryData[id].stage=lcStageOf(S,0); } }
   try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
   if(_lbWrite()) db.ref('laundry/'+id).set(laundryData[id]);
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
@@ -14154,12 +14198,7 @@ function qlEditorHTML(){ const q=qlDraft; if(!q) return ""; const inp='padding:5
   let h='<div style="margin-top:6px;padding:8px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:9px;font-size:12px">'
     +'<div style="display:flex;gap:6px;margin-bottom:6px"><input value="'+esc(q.emoji||"")+'" oninput="qlSet(\'emoji\',this.value)" style="width:46px;text-align:center;'+inp+'"><input id="ql-label" value="'+esc(q.label||"")+'" placeholder="Name (e.g. Rugs)" oninput="qlSet(\'label\',this.value)" style="flex:1;min-width:0;'+inp+'"></div>'
     +'<div style="font-weight:800;margin:4px 0">Steps</div>';
-  q.steps.forEach(function(x,i){ h+='<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:4px"><span style="width:14px;color:#6b6560">'+(i+1)+'</span>'
-    +'<select onchange="qlStepSet('+i+',\'k\',this.value)" style="'+inp+'">'+QL_STEPK.map(function(k){ return '<option value="'+k+'"'+(k===x.k?' selected':'')+'>'+LC_KINDS[k][0]+' '+LC_KINDS[k][1]+'</option>'; }).join('')+'</select>'
-    +(x.k==="custom"?'<input value="'+esc(x.n||"")+'" placeholder="Name it (Soak)" oninput="qlStepSet('+i+',\'n\',this.value)" style="width:110px;'+inp+'">':'')
-    +'<input type="number" min="1" max="1440" value="'+(x.m||"")+'" placeholder="'+lcDefMins(x.k)+'" oninput="qlStepSet('+i+',\'m\',this.value)" style="width:58px;'+inp+'"><span>min</span>'
-    +'<button onclick="qlStepMove('+i+',-1)" style="border:none;background:none;cursor:pointer">↑</button><button onclick="qlStepDel('+i+')" style="border:none;background:none;color:#9ca3af;cursor:pointer">✕</button></div>'; });
-  h+='<button onclick="qlStepAdd()" style="padding:3px 9px;border-radius:7px;border:1.5px dashed #93c5fd;background:#fff;color:#1d4ed8;font-size:11.5px;font-weight:700;cursor:pointer">＋ Step</button>'
+  h+=lcStepRowsHTML(q.steps,"ql")
     +'<div style="font-weight:800;margin:8px 0 4px">Shows on</div><div style="display:flex;gap:4px;flex-wrap:wrap">'
     +qlPeople().map(function(w){ const on=q.who&&q.who[w]; return '<button onclick="qlWho(\''+w+'\')" style="padding:3px 9px;border-radius:8px;border:1.5px solid '+(on?'#2563eb':'#cbd5e1')+';background:'+(on?'#2563eb':'#fff')+';color:'+(on?'#fff':'#475569')+';font-size:11.5px;font-weight:700;cursor:pointer">'+esc(qlWhoName(w))+'</button>'; }).join('')+'</div>'
     +'<label style="display:flex;gap:6px;align-items:center;margin-top:8px"><input type="checkbox"'+(q.bin?' checked':'')+' onchange="qlSet(\'bin\',this.checked)"> Starts in the wash-today bin (tap now, start it later)</label>'
