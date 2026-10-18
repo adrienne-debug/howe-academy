@@ -37977,18 +37977,22 @@ function _unitEditOverlay(){
     '<textarea id="unit-edit-bio" style="width:100%;box-sizing:border-box;min-height:130px;padding:9px 11px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif;line-height:1.5">'+esc(card.bio||card.info||"")+'</textarea>'+
     '<div style="display:flex;gap:8px;margin-top:14px">'+
       '<button onclick="unitEditClose()" style="flex:1;padding:11px;border-radius:10px;border:none;background:#f3f4f6;color:#374151;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancel</button>'+
-      '<button onclick="unitEditSave()" style="flex:1;padding:11px;border-radius:10px;border:none;background:#2d6a4f;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save</button>'+
+      '<button id="unit-edit-save" onclick="unitEditSave()" style="flex:1;padding:11px;border-radius:10px;border:none;background:#2d6a4f;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save</button>'+
     '</div></div>';
   document.body.appendChild(ov);
 }
 function unitEditPhoto(input){
   const f=input.files&&input.files[0]; if(!f) return;
   if(typeof mastCompressImg!=="function"){ alert("Image tool not ready."); return; }
-  mastCompressImg(f,420,0.82).then(function(dataUrl){ if(unitEdit){ unitEdit.newImg=dataUrl; _unitEditOverlay(); } }).catch(function(e){ alert("Image failed: "+(e&&e.message||e)); });
+  // PICSTORE: Save waits while the picture uploads (button only — redrawing the sheet would drop typed text)
+  const _ue=unitEdit; const _busy=function(on){ if(_ue) _ue.picBusy=on; const b=document.getElementById("unit-edit-save"); if(b){ b.disabled=on; b.textContent=on?"Saving picture…":"Save"; } };
+  _busy(true);
+  mastCompressImg(f,420,0.82).then(function(dataUrl){ return picStore(dataUrl,["units",_ue&&_ue.unitId,_ue&&_ue.deckKey,_ue&&_ue.order]); })
+    .then(function(dataUrl){ _busy(false); if(unitEdit&&unitEdit===_ue){ unitEdit.newImg=dataUrl; _unitEditOverlay(); } }).catch(function(e){ _busy(false); alert("Image failed: "+(e&&e.message||e)); });
 }
 function unitEditClose(){ unitEdit=null; const ov=document.getElementById("unit-edit-dlg"); if(ov) ov.remove(); }
 function unitEditSave(){
-  if(!unitEdit) return;
+  if(!unitEdit||unitEdit.picBusy) return;   // PICSTORE: a picture is still uploading
   const u=unitStudies[unitEdit.unitId]; if(!u) return;
   const di=(u.decks||[]).findIndex(d=>d.key===unitEdit.deckKey); const deck=u.decks[di];
   const ci=(deck.cards||[]).findIndex(c=>(c.order||0)===unitEdit.order); const card=deck.cards[ci]; if(!card) return;
@@ -49988,6 +49992,7 @@ function mastSetVisual(cat,name,val){
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 }
 function mastBankAddItem(){ if(!momHere()&&!mastAdminPinOk) return;
+  if(mastBankAddImgUploading){ alert("The picture is still saving — one moment."); return; }   // PICSTORE
   const kid=masteryKid||"julian";
   const cat=mastBankAddNewCat||mastBankAddCat;
   const name=mastBankAddName.trim();
@@ -50090,6 +50095,40 @@ function mastBankAddBatch(){ if(!momHere()&&!mastAdminPinOk) return;
   mastBankAddNewCat="";mastBankAddMode="";
   _mastRe();
 }
+// PICSTORE_START — new pictures save to Firebase Storage, not inside the database (her yes 2026-10-18, after the Stage-0
+// measure: 279 pictures saved as text = 9.3 MB of the 16 MB every device downloads at startup, the LG over long-polling).
+// Every screen already draws imageUrl as <img src> (the unit Wikipedia pictures are links already), so only the SAVE
+// changes: the shrunk JPEG uploads to pictures/<area>/<who>/<card>_<stamp>.jpg and its https link goes in the SAME
+// imageUrl spot. Any failure — offline, upload error, 20 s timeout, Storage rules, dry run, no db — resolves the original
+// data URL, so the picture is saved exactly the way it was before and nothing is lost. Existing pictures are untouched.
+const PICSTORE_TIMEOUT_MS=20000;
+function _picSlug(s){ return String(s==null?"":s).replace(/[^A-Za-z0-9_-]+/g,"_").replace(/^_+|_+$/g,"").slice(0,60)||"pic"; }
+function picStorePath(parts){ return "pictures/"+(parts||[]).map(_picSlug).join("/")+"_"+Date.now().toString(36)+".jpg"; }
+function picDataUrlToBlob(dataUrl){
+  const m=/^data:([^;,]+);base64,(.*)$/.exec(String(dataUrl||"")); if(!m) return null;
+  const bin=atob(m[2]); const u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i);
+  return new Blob([u],{type:m[1]});
+}
+function picStore(dataUrl,parts){
+  return new Promise(function(resolve){
+    let done=false, task=null;
+    const fin=function(v){ if(!done){ done=true; resolve(v); } };
+    try{
+      if(!/^data:image\//.test(String(dataUrl||""))) return fin(dataUrl);
+      if(!db||(typeof _dryRun==="function"&&_dryRun())||typeof firebase==="undefined"||typeof firebase.storage!=="function") return fin(dataUrl);
+      if(typeof navigator!=="undefined"&&navigator.onLine===false) return fin(dataUrl);
+      const blob=picDataUrlToBlob(dataUrl); if(!blob) return fin(dataUrl);
+      const ref=firebase.storage().ref(picStorePath(parts));
+      const t=setTimeout(function(){ try{ if(task&&task.cancel) task.cancel(); }catch(e){} console.warn("[HA] picture upload timed out — saved inside the database instead"); fin(dataUrl); },PICSTORE_TIMEOUT_MS);
+      // Each file name is new (stamped), never overwritten — so devices may keep it cached for a year.
+      task=ref.put(blob,{contentType:blob.type,cacheControl:"public,max-age=31536000"});
+      Promise.resolve(task).then(function(){ return ref.getDownloadURL(); })
+        .then(function(url){ clearTimeout(t); fin(/^https:\/\//.test(String(url||""))?url:dataUrl); })
+        .catch(function(e){ clearTimeout(t); console.warn("[HA] picture upload failed — saved inside the database instead",e); fin(dataUrl); });
+    }catch(e){ fin(dataUrl); }
+  });
+}
+// PICSTORE_END
 function mastCompressImg(file,maxPx,quality){
   return new Promise((resolve,reject)=>{
     if(!maxPx) maxPx=400;
@@ -50118,7 +50157,7 @@ function mastBankUploadImg(file){
   if(!file) return;
   if(file.size>10*1024*1024){ alert("Image too large (max 10MB)"); return; }
   mastBankAddImgUploading=true; _mastRe();
-  mastCompressImg(file,400,0.8).then(dataUrl=>{
+  mastCompressImg(file,400,0.8).then(dataUrl=>picStore(dataUrl,["mastery",masteryKid||"julian","bank"])).then(dataUrl=>{   // PICSTORE
     mastBankAddImg=dataUrl; mastBankAddEmoji=""; mastBankAddImgUploading=false; _mastRe();
   }).catch(err=>{ alert("Image failed: "+err.message); mastBankAddImgUploading=false; _mastRe(); });
 }
@@ -50147,7 +50186,9 @@ function mastVisEditUpload(file){
   if(!file||!mastVisEditKey) return;
   if(file.size>10*1024*1024){ alert("Image too large (max 10MB)"); return; }
   const kid=masteryKid||"julian";
-  mastCompressImg(file,400,0.8).then(dataUrl=>{
+  const _pk=mastVisEditKey;
+  mastCompressImg(file,400,0.8).then(dataUrl=>picStore(dataUrl,["mastery",kid,_pk.cat+"_"+_pk.name])).then(dataUrl=>{   // PICSTORE
+    if(mastVisEditKey!==_pk) return;   // closed or switched cards while it uploaded = cancelled
     mastSetVisual(mastVisEditKey.cat,mastVisEditKey.name,{imageUrl:dataUrl});
     let items=masteryData[kid]||[];
     if(!Array.isArray(items)) items=Object.values(items);
@@ -50962,7 +51003,7 @@ function mastUploadImage(file){
   if(file.size>10*1024*1024){ alert("Image too large (max 10MB)"); return; }
   mastAddUploading=true;
   const c=document.getElementById("content"); if(c) renderMastery(c);
-  mastCompressImg(file,400,0.8).then(dataUrl=>{
+  mastCompressImg(file,400,0.8).then(dataUrl=>picStore(dataUrl,["mastery",masteryKid||"julian","card"])).then(dataUrl=>{   // PICSTORE
     mastAddImageUrl=dataUrl;
     mastAddUploading=false;
     const c=document.getElementById("content"); if(c) renderMastery(c);
@@ -50976,6 +51017,7 @@ function mastUploadImage(file){
 function mastRemoveImage(){ mastAddImageUrl=""; const c=document.getElementById("content"); if(c) renderMastery(c); }
 
 function mastAddItems(){ if(!momHere()&&!mastAdminPinOk) return;
+  if(mastAddUploading){ alert("The picture is still saving — one moment."); return; }   // PICSTORE
   const isJ=!!MAST_BANK_MAP[masteryKid];
   let prompts=[];
 
