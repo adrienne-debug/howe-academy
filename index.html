@@ -50249,7 +50249,8 @@ function _picMoveBody(){
   h+='<button onclick="picMoveRun()"'+(busy||!items.length?' disabled':'')+' style="padding:7px 14px;border-radius:9px;border:none;background:'+(busy||!items.length?'#9ca3af':'var(--header)')+';color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(picMove&&!busy?'Copy again (skips what\'s done)':'Copy to Storage')+'</button>';
   if(picMove&&!busy) h+='<button onclick="picMoveCheckOpen()" style="padding:7px 14px;border-radius:9px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Open check page</button>';
   h+='</div>';
-  h+='<div style="font-size:10.5px;color:var(--muted);margin-top:8px;line-height:1.45">Copies only — every device keeps using the pictures it has now. Nothing in the app changes until the switch (a later step).</div>';
+  h+='<div style="font-size:10.5px;color:var(--muted);margin-top:8px;line-height:1.45">Copying changes nothing in the app — every device keeps using the pictures it has now until you switch below.</div>';
+  if(typeof _picSwitchHtml==="function") h+=_picSwitchHtml();   // PICSWITCH
   return h;
 }
 function picMoveCardHtml(){
@@ -50291,6 +50292,104 @@ function picMoveCheckOpen(){
   ov.innerHTML=h; document.body.appendChild(ov);
 }
 // PICMOVE_END
+// PICSWITCH_START — Change 3 of the picture move: the SWITCH, backup first, with put-back (her yes 2026-10-18). On the
+// 🖼 Pictures card, Mom switches one area at a time (units, then Mastery). For each picture still saved as text:
+//   a. re-check its Storage copy NOW (pictures/moved/<md5>.<ext>: Storage's own size + md5 must match) — else skip;
+//   b. save the original FIRST to picturesBackup/<area>/<md5 of its path> {path, was, now, at} — if that fails, skip;
+//   c. only then switch that ONE imageUrl spot to the link, by transaction, and only if it still holds the original.
+// Put back restores each backed-up original, only where the spot still holds the link it was switched to. Nothing is
+// deleted. No device listens to picturesBackup (it never adds to startup); picturesBackupMeta/<area> {count, at} is
+// the tiny note the card reads so Put back shows on any day. Dry run writes nothing. Mom only.
+const PIC_AREAS={units:{root:"unitStudies",label:"Unit pictures",btn:"unit pictures"},mastery:{root:"mastery",label:"Mastery pictures",btn:"Mastery pictures"}};
+let picSwitch={};   // area → {busy, done, total, ok, skips:[{label,why}], dry, kind:"switch"|"back"}
+let picSwitchMeta=null, _picSwitchMetaAsked=false;   // picturesBackupMeta, read once per page load
+function picSwitchAreaItems(area){ const root=PIC_AREAS[area].root+"/"; return picMoveScan().filter(it=>it.path.indexOf(root)===0); }
+function picBackupKey(path){ return picMd5Hex(new TextEncoder().encode(String(path))); }
+function _picSwitchLoadMeta(){
+  if(_picSwitchMetaAsked||!db) return; _picSwitchMetaAsked=true;
+  try{ db.ref("picturesBackupMeta").once("value").then(s=>{ picSwitchMeta=s.val()||{}; picMoveRefresh(); }).catch(()=>{ _picSwitchMetaAsked=false; }); }catch(e){ _picSwitchMetaAsked=false; }
+}
+async function picSwitchOne(area,it){
+  const b=picDataUrlBytes(it.dataUrl); if(!b) return {why:"not a picture"};
+  const md5=picMd5Hex(b.bytes), ref=firebase.storage().ref("pictures/moved/"+md5+"."+picExtFor(b.type));
+  let m=null; try{ m=await _picWithTimeout(ref.getMetadata(),20000); }catch(e){ return {why:"needs copying first — tap Copy again"}; }
+  if(!(m&&Number(m.size)===b.bytes.length&&m.md5Hash===picHexToB64(md5))) return {why:"its Storage copy doesn't match — tap Copy again"};
+  let link=""; try{ link=await _picWithTimeout(ref.getDownloadURL(),20000); }catch(e){ return {why:"couldn't get its link"}; }
+  if(!/^https:\/\//.test(link)) return {why:"couldn't get its link"};
+  try{ await _picWithTimeout(db.ref("picturesBackup/"+area+"/"+picBackupKey(it.path)).set({path:it.path,was:it.dataUrl,now:link,at:Date.now()}),30000); }
+  catch(e){ return {why:"the backup didn't save — not switched"}; }
+  try{
+    const r=await _picWithTimeout(db.ref(it.path).transaction(cur=>(cur===it.dataUrl?link:undefined)),30000);
+    return (r&&r.committed)?{ok:true}:{why:"it changed since — left alone"};
+  }catch(e){ return {why:"the switch didn't save"}; }
+}
+async function _picBumpMeta(area,delta){
+  try{ await db.ref("picturesBackupMeta/"+area).transaction(cur=>({count:Math.max(0,((cur&&cur.count)||0)+delta),at:Date.now()}));
+    picSwitchMeta=picSwitchMeta||{}; const c=(picSwitchMeta[area]&&picSwitchMeta[area].count)||0; picSwitchMeta[area]={count:Math.max(0,c+delta),at:Date.now()}; }catch(e){}
+}
+async function _picRunPool(list,fn,st){
+  let next=0;
+  const worker=async()=>{ while(next<list.length){ const x=list[next++]; const r=await fn(x); if(r&&r.ok) st.ok++; else st.skips.push({label:x.label||x.path,why:(r&&r.why)||"skipped"}); st.done++; picMoveRefresh(); } };
+  await Promise.all([worker(),worker(),worker()]);
+}
+async function picSwitchRun(area){
+  if(!momHere()||!PIC_AREAS[area]||(picSwitch[area]&&picSwitch[area].busy)||(picMove&&picMove.busy)) return;
+  if(!_haMastReady||!_haUnitsReady){ if(typeof gwShowToast==="function") gwShowToast("Pictures are still loading — try again in a moment"); return; }
+  const items=picSwitchAreaItems(area); if(!items.length) return;
+  const dry=_dryRun();
+  if(!dry&&!confirm("Switch "+items.length+" "+PIC_AREAS[area].btn+" to their Storage copies?\n\nEach original is saved first, and you can put them back.")) return;
+  const st=picSwitch[area]={busy:true,done:0,total:items.length,ok:0,skips:[],dry:dry,kind:"switch"};
+  picMoveRefresh();
+  if(dry){ st.done=st.total; st.busy=false; picMoveRefresh(); return; }
+  if(!db||typeof firebase==="undefined"||typeof firebase.storage!=="function"){ st.skips.push({label:"",why:"Storage isn't available on this device"}); st.busy=false; picMoveRefresh(); return; }
+  await _picRunPool(items,it=>picSwitchOne(area,it),st);
+  if(st.ok) await _picBumpMeta(area,st.ok);
+  st.busy=false; picMoveRefresh();
+}
+async function picBackRun(area){
+  if(!momHere()||!PIC_AREAS[area]||(picSwitch[area]&&picSwitch[area].busy)) return;
+  const dry=_dryRun();
+  if(!dry&&!confirm("Put the original "+PIC_AREAS[area].btn+" back?\n\nOnly pictures still pointing at their Storage copy are put back.")) return;
+  if(!db) return;
+  const st=picSwitch[area]={busy:true,done:0,total:0,ok:0,skips:[],dry:dry,kind:"back"};
+  picMoveRefresh();
+  let all={}; try{ all=(await _picWithTimeout(db.ref("picturesBackup/"+area).once("value"),60000)).val()||{}; }catch(e){ st.skips.push({label:"",why:"couldn't read the backup"}); st.busy=false; picMoveRefresh(); return; }
+  const list=Object.values(all).filter(x=>x&&x.path&&x.was&&x.now);
+  st.total=list.length;
+  if(dry){ st.done=st.total; st.busy=false; picMoveRefresh(); return; }
+  await _picRunPool(list,async x=>{
+    try{ const r=await _picWithTimeout(db.ref(x.path).transaction(cur=>(cur===x.now?x.was:undefined)),30000);
+      return (r&&r.committed)?{ok:true}:{why:"changed since the switch — left alone"}; }catch(e){ return {why:"didn't save"}; }
+  },st);
+  if(st.ok) await _picBumpMeta(area,-st.ok);
+  st.busy=false; picMoveRefresh();
+}
+function _picSwitchHtml(){
+  _picSwitchLoadMeta();
+  const btn=(on,txt,call,bg)=>'<button onclick="'+call+'"'+(on?'':' disabled')+' style="padding:6px 12px;border-radius:9px;border:'+(bg?'none':'1.5px solid var(--border)')+';background:'+(on?(bg||'#fff'):'#e5e7eb')+';color:'+(bg&&on?'#fff':'#374151')+';font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+txt+'</button>';
+  let h='<div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px">';
+  h+='<div style="font-size:12px;font-weight:800;margin-bottom:6px">Switch to the Storage copies</div>';
+  Object.keys(PIC_AREAS).forEach(area=>{
+    const A=PIC_AREAS[area], n=picSwitchAreaItems(area).length, st=picSwitch[area], busy=!!(st&&st.busy);
+    const backed=(picSwitchMeta&&picSwitchMeta[area]&&picSwitchMeta[area].count)||0;
+    h+='<div style="margin-bottom:10px"><div style="font-size:12px;margin-bottom:4px"><b>'+A.label+':</b> '+n+' saved as text'+(backed?' · '+backed+' switched (originals backed up)':'')+'</div>';
+    if(st){
+      const verb=st.kind==="back"?"Putting back":"Switching";
+      if(st.busy) h+='<div style="font-size:11.5px;margin-bottom:4px">⏳ '+verb+' '+st.done+' of '+st.total+'…</div>';
+      else if(st.dry) h+='<div style="font-size:11.5px;margin-bottom:4px">Dry run — nothing saved (would '+(st.kind==="back"?"put back":"switch")+' up to '+st.total+').</div>';
+      else h+='<div style="font-size:11.5px;margin-bottom:4px">✓ <b>'+st.ok+'</b> '+(st.kind==="back"?"put back":"switched · backup kept")+(st.skips.length?' · <b style="color:#b5394a">✗ '+st.skips.length+' skipped</b>':'')+'</div>';
+      if(!st.busy&&st.skips.length) h+='<div style="font-size:10.5px;color:#b5394a;line-height:1.35;margin-bottom:4px">'+st.skips.slice(0,8).map(s=>esc((s.label?s.label+": ":"")+s.why)).join("<br>")+(st.skips.length>8?'<br>…and '+(st.skips.length-8)+' more':'')+'</div>';
+    }
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+    h+=btn(n>0&&!busy,'Switch '+A.btn,"picSwitchRun('"+area+"')",'var(--header)');
+    if(backed||(st&&st.kind==="switch"&&st.ok)) h+=btn(!busy,'Put '+A.btn+' back',"picBackRun('"+area+"')");
+    h+='</div></div>';
+  });
+  h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.45">Switch units first and check them in the app, then Mastery. Each original is saved before its picture switches.</div>';
+  h+='</div>';
+  return h;
+}
+// PICSWITCH_END
 function mastCompressImg(file,maxPx,quality){
   return new Promise((resolve,reject)=>{
     if(!maxPx) maxPx=400;
