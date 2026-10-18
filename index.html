@@ -24,7 +24,9 @@
 <script src="vendor-firebase-database-v8.js"></script>
 <script src="vendor-firebase-auth-v8.js"></script>
 <script src="vendor-firebase-storage-v8.js"></script>
-<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<!-- XLSXLAZY (2026-10-18): the SheetJS spreadsheet library is no longer loaded here — haNeedXlsx() fetches it the first
+     time Upload Curriculum or Download Template is used (the only two users). -->
+
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -28740,6 +28742,28 @@ function currParseDynamic(rows,format){
   return {keyMap,subjects,dataStart:format.dataStart};
 }
 
+// XLSXLAZY_START — the spreadsheet library loads only when it's used (her yes 2026-10-18). It was a blocking <script> at
+// the top of the page: every device downloaded ~294 KB (950 KB unpacked) from cdn.sheetjs.com and waited for it before
+// drawing anything, for two Mom-only tools — Upload Curriculum and Download Template. Same file, same version, fetched
+// once per page load on first use; a failure or a 30 s wait gives up and lets her try again. Nothing it saves changes.
+const XLSX_SRC="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
+let _xlsxLoading=null;
+function haNeedXlsx(){
+  if(typeof XLSX!=="undefined"&&XLSX&&XLSX.utils) return Promise.resolve(XLSX);
+  if(_xlsxLoading) return _xlsxLoading;
+  _xlsxLoading=new Promise((res,rej)=>{
+    let done=false, t=null;
+    const fin=(ok,v)=>{ if(done) return; done=true; clearTimeout(t); if(ok) res(v); else { _xlsxLoading=null; rej(v); } };
+    const s=document.createElement("script"); s.src=XLSX_SRC; s.async=true;
+    s.onload=()=>{ (typeof XLSX!=="undefined"&&XLSX&&XLSX.utils)?fin(true,XLSX):fin(false,new Error("spreadsheet tools missing")); };
+    s.onerror=()=>fin(false,new Error("couldn't load the spreadsheet tools"));
+    t=setTimeout(()=>fin(false,new Error("timed out")),30000);
+    document.head.appendChild(s);
+  });
+  return _xlsxLoading;
+}
+const XLSX_FAIL_MSG="Couldn't load the spreadsheet tools — check the internet and try again.";
+// XLSXLAZY_END
 function uploadCurriculum(){
   const msg=document.getElementById("admin-msg");
   if(!momHere()){msg.textContent="Enter Mom PIN first (Rules tab).";return;}
@@ -28914,10 +28938,17 @@ function uploadCurriculum(){
       console.error("Curriculum parse error:",err);
     }
   };
-  reader.readAsArrayBuffer(f);
+  msg.textContent="Loading spreadsheet tools…";   // XLSXLAZY: the reading and saving above are unchanged
+  haNeedXlsx().then(()=>{ msg.textContent="Parsing curriculum..."; reader.readAsArrayBuffer(f); })
+    .catch(()=>{ msg.textContent=XLSX_FAIL_MSG; });
 }
 
 function downloadCurrTemplate(){
+  if(typeof XLSX==="undefined"||!XLSX||!XLSX.utils){   // XLSXLAZY: fetch the library first, then build the template as before
+    if(typeof gwShowToast==="function") gwShowToast("Loading spreadsheet tools…");
+    haNeedXlsx().then(()=>downloadCurrTemplate()).catch(()=>{ if(typeof gwShowToast==="function") gwShowToast(XLSX_FAIL_MSG); else alert(XLSX_FAIL_MSG); });
+    return;
+  }
   const kids=SL_KIDS.filter(k=>k!=="mom");
   const wb=XLSX.utils.book_new();
   kids.forEach(kid=>{
