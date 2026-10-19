@@ -53,7 +53,10 @@ console.log("2. ✓ in the morning → the line load starts; then fold shows in 
 }
 console.log("3. Un-✓ the start while it's still in the washer → back in line");
 { const c=mk(); const row=c.llRtSteps("morning","lincoln",MORNING,"monday")[2]; c.laundryKidHook("lincoln",row,"k",true); c.writes.length=0;
-  c.laundryKidHook("lincoln",row,"k",false); ok("one null on the log; Monday's Lincoln is waiting again", c.writes.length===1&&c.writes[0][2]["log/"+MON+"/lincoln"]===null&&c.llProject(MON,1,false)[0].started.length===0, c.writes);
+  c.laundryKidHook("lincoln",row,"k",false); ok("un-✓: the load leaves the washer (laundry/<id> removed) AND the log is nulled; Lincoln waits again", c.writes.length===2&&c.writes[0][0]==="rm"&&c.writes[1][2]["log/"+MON+"/lincoln"]===null&&!Object.keys(c.get("laundryData")).length&&c.llProject(MON,1,false)[0].started.length===0, c.writes);
+  // her report 2026-10-19: ✓ ✗ ✓ ✗ ✓ left three "Lincoln's clothes" in the washer (9:14:05, 9:14:09, 10:41:11)
+  const r=mk(); const rr=r.llRtSteps("morning","lincoln",MORNING,"monday")[2]; [true,false,true,false,true].forEach(v=>r.laundryKidHook("lincoln",rr,"k",v));
+  const left=Object.values(r.get("laundryData")); ok("her replay — ✓ ✗ ✓ ✗ ✓: ONE load in the washer, and it's the one the line counts", left.length===1&&r.get("laundryLine.log['"+MON+"'].lincoln.load")===Object.keys(r.get("laundryData"))[0], left.map(l=>l.label));
   const b=mk({dayName:"tuesday"}); const r2=b.llRtSteps("morning","lincoln",MORNING,"monday")[2]; b.get("day='monday'"); b.get("_todayDay='tuesday'"); b.laundryKidHook("lincoln",r2,"k",true);
   ok("back-filling yesterday's list starts nothing", b.writes.length===0);
 }
@@ -79,7 +82,9 @@ console.log("5b. Mom's and Dad's checklists (her ask 2026-10-18: \"go to my chec
   const lid=set[1].slice(8); c.writes.length=0; c.llParentTick("towels","fold","mom");
   ok("Mom ticks Fold + put away → put away (laundry/<id> removed), the row reads done", c.writes.some(w=>w[0]==="rm"&&w[1]==="laundry/"+lid)&&c.llParentRows("mom","afternoon")[0].done, c.writes);
   const u=mk({line:L}); u.llParentTick("sheets","start","mom"); u.writes.length=0; u.llParentTick("sheets","start","mom");
-  ok("ticking Start again while it's still in the washer: back in line", u.writes.length===1&&u.writes[0][2]["log/"+MON+"/sheets"]===null, u.writes);
+  ok("ticking Start again while it's still in the washer: back in line and out of the washer", u.writes.length===2&&u.writes[0][0]==="rm"&&u.writes[1][2]["log/"+MON+"/sheets"]===null&&!Object.keys(u.get("laundryData")).length, u.writes);
+  const mv=mk({line:L}); mv.llParentTick("sheets","start","mom"); const ml=Object.keys(mv.get("laundryData"))[0]; mv.get("laundryData['"+ml+"'].stage='dryer'"); mv.writes.length=0; mv.llParentTick("sheets","start","mom");
+  ok("once it's in the dryer, a second tap leaves it alone", mv.writes.length===0&&mv.get("laundryData['"+ml+"']"));
   ok("the row: blue, '🧺 line', a ✓ circle", /🧺 line/.test(c.llParentRowHTML(mm[0],"mom"))&&/llParentTick\('sheets','start','mom'\)/.test(c.llParentRowHTML(mm[0],"mom")));
   ok("no line set up: no rows", mk({line:null}).llParentRows("mom","morning").length===0);
   const M=fn("momDayStripHTML"); ok("the checklist counts them in the slot and draws them under her own rows (today only)", /_lr=typeof llParentRows==="function"&&typeof llToday==="function"&&iso===llToday\(\)\?llParentRows\(P\.dad\?"dad":"mom",sl\)/.test(M)&&/tot=ids\.length\+sp\+_lr\.length/.test(M)&&/h\+=_lrc\.map\(r=>llParentRowHTML\(r,P\.dad\?"dad":"mom"\)\)/.test(M));

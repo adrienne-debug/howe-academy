@@ -13553,9 +13553,17 @@ function llParentRowHTML(r,who){ const done=r.done, on="llParentTick('"+r.id+"',
     +'<div onclick="'+on+'" style="cursor:pointer;width:19px;height:19px;border-radius:50%;border:2px solid '+(done?'#16a34a':'#2563eb')+';background:'+(done?'#16a34a':'#fff')+';color:'+(done?'#fff':'transparent')+';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;flex-shrink:0">✓</div>'
     +'<div onclick="'+on+'" style="cursor:pointer;flex:1;min-width:0;font-size:12.5px;font-weight:600;color:'+(done?'#6b6560':'#1a1a1a')+';'+(done?'text-decoration:line-through':'')+'">'+esc(r.emoji)+' '+esc(r.label)+'</div>'
     +'<span style="font-size:9.5px;font-weight:700;color:#2563eb;white-space:nowrap">🧺 line</span></div>'; }
+// ↶ Un-start (her report 2026-10-19: "lincoln clicked his clothes and now 3 are in the washer" — un-✓ put the line load back in line
+// but left laundry/<id> in the washer, so every re-✓ started another: 9:14:05, 9:14:09, 10:41). Taking a Start back now removes the
+// load too — only while it's still on its first step, like ✕ in the washer — with no confirm box. One laundry/<id> remove + the log null.
+function llUnstart(lid){ const LD=(typeof laundryData!=="undefined"&&laundryData)||{}, l=LD[lid]; if(!l) return false;
+  if((typeof lcHas==="function"&&lcHas(l))?lcStep(l)!==0:l.stage!=="washer") return false;   // it moved on — keep it
+  try{ if(typeof _cuDropBlock==="function") _cuDropBlock(lid,l.stage); }catch(x){}
+  delete LD[lid]; try{ HA_LS.setItem('ha_laundry',JSON.stringify(LD)); }catch(x){} if(typeof _lbWrite==="function"&&_lbWrite()) db.ref('laundry/'+lid).remove();
+  llUnlog(lid,l); return true; }
 // ✓ a Start row = 🫧 Start (Dad's is his); again while it's still on its first step = back in line. ✓ a Fold row = put away.
 function llParentTick(id,kind,who){ const t=llToday(), e=laundryLine.log&&laundryLine.log[t]&&laundryLine.log[t][id], LD=(typeof laundryData!=="undefined"&&laundryData)||{};
-  if(kind==="start"){ if(!e) llStart(id,who==="dad"?"dad":undefined); else if(e.load&&LD[e.load]) llUnlog(e.load,LD[e.load]); llRerender(); return; }
+  if(kind==="start"){ if(!e) llStart(id,who==="dad"?"dad":undefined); else if(e.load&&LD[e.load]) llUnstart(e.load); llRerender(); return; }
   if(kind==="fold"&&e&&e.load&&LD[e.load]) llPutAway(e.load); llRerender(); }
 // Put a line load away (the kids' Fold row and Mom's / Dad's): ends its block, remembers it for ↶, removes laundry/<id>.
 function llPutAway(lid){ const LD=(typeof laundryData!=="undefined"&&laundryData)||{}, l=LD[lid]; if(!l) return;
@@ -13584,7 +13592,7 @@ function llSyncKidRows(){ if(typeof slState==="undefined"||typeof activeWk!=="fu
 // ✓ / un-✓ on a line row (laundryKidHook hands it over). Today only — back-filling another day starts nothing.
 function llKidRowHook(kid,st,now){ if(typeof _todayDay==="string"&&typeof day!=="undefined"&&day!==_todayDay) return;
   const t=llToday(), id=st.line; if(!llKnown(id)) return; const e=laundryLine.log&&laundryLine.log[t]&&laundryLine.log[t][id], LD=(typeof laundryData!=="undefined"&&laundryData)||{};
-  if(st.laundry===true){ if(now){ if(!e) llStart(id,kid); } else if(e&&e.load&&LD[e.load]) llUnlog(e.load,LD[e.load]); return; }
+  if(st.laundry===true){ if(now){ if(!e) llStart(id,kid); } else if(e&&e.load&&LD[e.load]) llUnstart(e.load); return; }
   if(st.laundry==="lineFold"&&now){ const lid=(e&&e.load&&LD[e.load])?e.load:Object.keys(LD).find(function(k){ return LD[k]&&LD[k].line===id&&LD[k].lineDay===t; }); if(lid) llPutAway(lid); } }
 // ▶ up next = the front of the live line: the first load laid from now on that hasn't gone in (a load moved at 8 PM is the front).
 function llFront(){ const R=llProjectNow(21); for(let i=0;i<R.length;i++){ for(let k=0;k<R[i].loads.length;k++){ if(R[i].started.indexOf(R[i].loads[k])<0) return R[i].loads[k]; } } return llNext(); }
