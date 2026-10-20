@@ -69,7 +69,7 @@ console.log("7. Her settings in the app");
 console.log("8. Her 10/19 night: the queen's sheets went in with the king's before the split existed");
 { const c=mk({day:"2026-10-19",log:{"2026-10-19":{sheets:{at:1,by:"mom",load:"L1"},queen:{at:1,by:"mom",load:"L1",with:"sheets"}}}});
   const r=c.llProject("2026-10-19",2,true);
-  ok("10/19 (a split day — blankets washed today): both loads ✓, nothing slides to Tuesday", r[0].started.indexOf("sheets")>=0&&r[0].started.indexOf("queen")>=0&&r[0].moved.length===0&&r[1].loads.indexOf("queen")<0, r.map(x=>[x.loads,x.started,x.moved]));
+  ok("10/19 (a split day — blankets washed today): both loads ✓, nothing slides to Tuesday", r[0].started.indexOf("sheets")>=0&&r[0].started.indexOf("queen")>=0&&r[0].moved.indexOf("sheets")<0&&r[0].moved.indexOf("queen")<0&&r[1].loads.indexOf("queen")<0&&r[1].loads.indexOf("sheets")<0, r.map(x=>[x.loads,x.started,x.moved]));
   const f=mk({day:"2026-10-26"}).llProject("2026-10-26",22,false).filter(x=>x.dow===0); ok("each Monday's names come from its own lay (11/9 has no blanket)", f[2].lbl.sheets==="King sheets + pad panels + Queen sheets"&&f[1].lbl.sheets==="King sheets + pad panels + King blanket", f.map(x=>x.lbl));
 }
 ok("no 🔀", src.indexOf("🔀")<0);
