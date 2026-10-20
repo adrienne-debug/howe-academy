@@ -13095,7 +13095,7 @@ function llKnown(id){ return llOrder().indexOf(id)>=0||!!llExtras()[id]||!!llOnc
 // with rideWith:<that bed's sheets item>: it never takes a slot of its own; it's due on a sheets day when its date lands within 3 days of
 // it (either side), and it goes in with them — starting the load washes it (its 2 weeks restart). Washed on that very day still counts as
 // that day's blanket, so the split never flips once a load is in. _llLx = the lay's walking "last washed" (projection), else the stored one.
-let _llLx=null;
+let _llLx=null, _llCurR=null;
 const LL_BLANKET_WIN=3;
 function llBlanketsOf(host){ const X=llExtras(); return Object.keys(X).filter(function(k){ return X[k].rideWith===host; }); }
 function llBlanketDue(xid,iso){ const x=llExtras()[xid]; if(!x) return false; const last=(_llLx&&(xid in _llLx))?_llLx[xid]:(x.last||""); if(last===iso) return true;
@@ -13188,7 +13188,7 @@ function llLayDay(Q,iso,closed){
     if(Q.credit[id]){ delete Q.credit[id]; return; }   // …unless an early wash already covered this one
     Q.q.push(id); });
   if(fz) llArr(fz).forEach(function(id){ if(llKnown(id)&&!llWith(id,iso)&&loads.indexOf(id)<0){ Q.take(id); loads.push(id); } });
-  st.forEach(function(id){ if(LGd[id]&&LGd[id].with) return; if(llWith(id,iso)) return; if(loads.indexOf(id)<0){ Q.take(id); loads.push(id); } });   // 🔗 a rider / 🛏 a blanket went in with its host
+  st.forEach(function(id){ const _x=llExtras()[id]; if(_x&&_x.rideWith) return; if(llWith(id,iso)) return; if(loads.indexOf(id)<0){ Q.take(id); loads.push(id); } });   // 🛏 a blanket went in with its sheets; 🔗 a rider still riding went in with its host — a rider that went in with it on a SPLIT day counts as its own load, in (her 10/19: the queen's sheets went in with the king's before the split existed)
   bu.forEach(function(id){ if(loads.indexOf(id)<0){ Q.take(id); loads.push(id); } });   // ⏫ bumped onto this day: ahead of the line
   st.forEach(function(id){ if(id in Q.lastX&&!(Q.lastX[id]>iso)) Q.lastX[id]=iso; });   // 🗓 an extra that went in is washed that day
   if(!Q.home) llExtraIds().forEach(function(id){ if(llExtras()[id].rideWith) return; const l=Q.lastX[id], d=llDue(llExtras()[id],l||undefined); if(Q.q.indexOf(id)<0&&loads.indexOf(id)<0&&d&&d<=iso) Q.q.push(id); });   // 🗓 plain rotation: come due → behind what's waiting
@@ -13206,7 +13206,8 @@ function llLayDay(Q,iso,closed){
     if(!wt(id)) [id].concat(llRiders(id,iso)).forEach(function(h){ llBlanketsDueOn(h,iso).forEach(function(b){ Q.lastX[b]=iso; }); }); });   // 🛏 the lay assumes its blanket goes in with it   // the lay assumes a laid extra / one-time load gets washed that day
   if(!closed){ const w=loads.filter(wt); if(w.length) Q.q=w.concat(Q.q.filter(function(id){ return w.indexOf(id)<0; })); }   // ⏸ waits a day: at the front tomorrow
   if(closed&&left.length){ const back=left.filter(function(id){ return !(Q.home&&(llOnce()[id]||llExtras()[id])); }); Q.q=back.concat(Q.q.filter(function(id){ return back.indexOf(id)<0; })); }   // ☑️ an unwashed one-time load just looks for room again
-  return {iso:iso,dow:dow,brk:br?br.name:"",tag:(b&&b.run)?b.name:"",cap:c,loads:loads,started:st,bumped:bu,jumps:jp,waited:loads.filter(wt),moved:closed?left:[]};
+  const lbl={}, sh={}; loads.forEach(function(id){ lbl[id]=llLabelFull(id,iso); sh[id]=llShortFull(id,iso); });   // 🛏 names fixed as the day is laid (blankets / riders as of THAT day)
+  return {iso:iso,dow:dow,brk:br?br.name:"",tag:(b&&b.run)?b.name:"",cap:c,loads:loads,started:st,bumped:bu,jumps:jp,waited:loads.filter(wt),moved:closed?left:[],lbl:lbl,sh:sh};
 }
 // ⏫ the loads bumped onto a date (first-bumped first) · 💦 the jump-ins reported that date [{id,label}]
 function llBumps(iso){ const B=(laundryLine&&laundryLine.bump&&laundryLine.bump[iso])||{}, o=llOrder(); return Object.keys(B).filter(function(id){ return o.indexOf(id)>=0&&B[id]; }).sort(function(a,b){ return (B[a]||0)-(B[b]||0); }); }
@@ -13701,10 +13702,11 @@ function llWeekGridHTML(today,closeToday,mom,by){
   llProject(today,7*(llWeek+1)-llDow(today),closeToday).forEach(function(r){ byIso[r.iso]=r; });   // the re-lay starts today; earlier days show what really went in
   const nb=function(d,t,dis){ return '<button onclick="llWeekNav('+d+')"'+(dis?' disabled':'')+' style="padding:1px 9px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;font-size:13px;font-weight:800;cursor:pointer;'+(dis?'opacity:.3':'')+'">'+t+'</button>'; };
   const md=function(iso){ const p=iso.split("-"); return (+p[1])+'/'+(+p[2]); };
-  const load=function(id,mark,extra){ return '<div style="text-align:center;padding-top:4px;line-height:1.15;'+(mark==="moved"?'opacity:.45':'')+'"><div style="font-size:15px">'+esc(it[id].emoji||'🧺')+'</div><div style="font-size:9.5px;font-weight:700;letter-spacing:-.2px;overflow-wrap:normal;word-break:normal">'+(mark==="done"?'<span style="color:#16a34a">✓</span> ':mark==="moved"?'→ ':mark==="bump"?'⏫ ':'')+esc(llShortFull(id))+'</div>'+(extra||'')+'</div>'; };
+  const load=function(id,mark,extra){ return '<div style="text-align:center;padding-top:4px;line-height:1.15;'+(mark==="moved"?'opacity:.45':'')+'"><div style="font-size:15px">'+esc(it[id].emoji||'🧺')+'</div><div style="font-size:9.5px;font-weight:700;letter-spacing:-.2px;overflow-wrap:normal;word-break:normal">'+(mark==="done"?'<span style="color:#16a34a">✓</span> ':mark==="moved"?'→ ':mark==="bump"?'⏫ ':'')+esc((_llCurR&&_llCurR.sh&&_llCurR.sh[id])||llShortFull(id))+'</div>'+(extra||'')+'</div>'; };
   let h='<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><span style="font-size:11.5px;font-weight:800;flex:1">'+(llWeek===0?'This week':llWeek===1?'Next week':'Week of '+md(mon))+' <span style="font-weight:400;color:#6b6560">· '+md(mon)+'–'+md(sun)+'</span></span>'+nb(-1,'‹',llWeek===0)+nb(1,'›',llWeek===8)+'</div>';
   h+='<div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px">';
   for(let d=0;d<7;d++){ const iso=llAddDays(mon,d), r=byIso[iso], past=iso<today, isT=iso===today, pl=past?llLog(iso):[];
+    _llCurR=past?null:(r||null);   // 🛏 the day's own load names
     const tds=(typeof llTodosOn==="function")?llTodosOn(iso,today):[], tdUsed={}, tdAfter=function(id){ return tds.filter(function(t){ return !tdUsed[t]&&llTodos()[t].after===id; }).map(function(t){ tdUsed[t]=1; return llTdChip(t,iso,today,isT); }).join(''); };   // 📝 right after its load
     h+='<div style="border:1.5px solid '+(isT?'#2B7A78':'#eef2f0')+';border-radius:8px;padding:4px 1px;min-height:64px;background:'+(past||(r&&r.brk&&!r.loads.length)?'#f8fafc':(r&&r.loads.length)?'#f0fdf4':'#fff')+';'+(past?'opacity:.6':'')+'">'
       +'<div style="text-align:center;font-size:10px;color:'+(isT?'#2B7A78':'#6b6560')+';font-weight:'+(isT?'800':'600')+'">'+(isT?'Today':LL_DL[d])+'<div style="font-weight:400">'+md(iso)+'</div></div>'
