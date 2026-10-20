@@ -13096,7 +13096,7 @@ function llKnown(id){ return llOrder().indexOf(id)>=0||!!llExtras()[id]||!!llOnc
 // it (either side), and it goes in with them — starting the load washes it (its 2 weeks restart). Washed on that very day still counts as
 // that day's blanket, so the split never flips once a load is in. _llLx = the lay's walking "last washed" (projection), else the stored one.
 let _llLx=null, _llCurR=null;
-const LL_BLANKET_WIN=3;
+const LL_BLANKET_WIN=3, LL_WET_WIN=3;
 function llBlanketsOf(host){ const X=llExtras(); return Object.keys(X).filter(function(k){ return X[k].rideWith===host; }); }
 function llBlanketDue(xid,iso){ const x=llExtras()[xid]; if(!x) return false; const last=(_llLx&&(xid in _llLx))?_llLx[xid]:(x.last||""); if(last===iso) return true;
   const d=llDue(x,last||undefined); if(!d) return false; return d<=llAddDays(iso,LL_BLANKET_WIN)&&d>=llAddDays(iso,-LL_BLANKET_WIN*100); }   // due on or before (iso+3) — and anything overdue
@@ -13185,10 +13185,12 @@ function llQueue(carry,next){
 function llLayDay(Q,iso,closed){
   const dow=llDow(iso), b=llBreakOn(iso), br=(b&&!b.run)?b:null, c=br?0:llCap(dow), st=llLog(iso), bu=llBumps(iso), jp=llJumps(iso), o=(_llLx=Q.lastX,llLineOrder(iso)), fz=laundryLine&&laundryLine.plan&&laundryLine.plan[iso], loads=[], LGd=llDayLog(iso);   // 🛏 the walking last-washed for blanket checks
   if(Q.home) o.forEach(function(id){ if(llHome(id)!==dow||Q.q.indexOf(id)>=0) return;   // 📅 its home day: joins behind what's waiting…
-    if(Q.credit[id]){ delete Q.credit[id]; return; }   // …unless an early wash already covered this one
+    if(Q.credit[id]){ const c=Q.credit[id]; delete Q.credit[id];   // …unless an early wash already covered this one
+      const wd=(typeof c==="string"&&/^w:/.test(c))?c.slice(2):"";   // 💦 an accident wash covers it only within 3 days (her pick 2026-10-19)
+      if(!wd||wd>=llAddDays(iso,-LL_WET_WIN)){ llRiders(id,iso).forEach(function(r){ if(Q.q.indexOf(r)<0) Q.q.push(r); }); return; } }   // a rider that rode it goes on its own that day
     Q.q.push(id); });
   if(fz) llArr(fz).forEach(function(id){ if(llKnown(id)&&!llWith(id,iso)&&loads.indexOf(id)<0){ Q.take(id); loads.push(id); } });
-  st.forEach(function(id){ const _x=llExtras()[id]; if(_x&&_x.rideWith) return; if(llWith(id,iso)) return; if(loads.indexOf(id)<0){ Q.take(id); loads.push(id); } });   // 🛏 a blanket went in with its sheets; 🔗 a rider still riding went in with its host — a rider that went in with it on a SPLIT day counts as its own load, in (her 10/19: the queen's sheets went in with the king's before the split existed)
+  st.forEach(function(id){ const _x=llExtras()[id]; if(_x&&_x.rideWith) return; if(llWith(id,iso)) return; if(loads.indexOf(id)<0){ Q.take(id); loads.push(id); if(LGd[id]&&LGd[id].early&&Q.credit[id]===true) Q.credit[id]="w:"+iso; } });   // 💦 an accident wash: a dated credit   // 🛏 a blanket went in with its sheets; 🔗 a rider still riding went in with its host — a rider that went in with it on a SPLIT day counts as its own load, in (her 10/19: the queen's sheets went in with the king's before the split existed)
   bu.forEach(function(id){ if(loads.indexOf(id)<0){ Q.take(id); loads.push(id); } });   // ⏫ bumped onto this day: ahead of the line
   st.forEach(function(id){ if(id in Q.lastX&&!(Q.lastX[id]>iso)) Q.lastX[id]=iso; });   // 🗓 an extra that went in is washed that day
   if(!Q.home) llExtraIds().forEach(function(id){ if(llExtras()[id].rideWith) return; const l=Q.lastX[id], d=llDue(llExtras()[id],l||undefined); if(Q.q.indexOf(id)<0&&loads.indexOf(id)<0&&d&&d<=iso) Q.q.push(id); });   // 🗓 plain rotation: come due → behind what's waiting
@@ -13291,6 +13293,55 @@ function llCoverAskHTML(){ if(!laundryLine||!Object.keys(laundryLine).length) re
       +P.map(function(w){ return '<button onclick="llCover(\''+id+'\',\''+w+'\')" style="padding:4px 9px;border-radius:8px;border:1.5px solid #2563eb;background:#fff;color:#1d4ed8;font-size:11.5px;font-weight:700;cursor:pointer">'+esc(llName(w))+'</button>'; }).join('')
       +'<button onclick="llCover(\''+id+'\',\'wait\')" style="padding:4px 9px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;color:#475569;font-size:11.5px;font-weight:700;cursor:pointer">⏸ Wait a day</button></div></div>'; }).join(''); }
 function llMomSickBtn(){ const on=llOut("mom",llToday()); return '<button onclick="llMomSick()" style="padding:4px 9px;border-radius:8px;border:1.5px solid '+(on?'#b45309':'#cbd5e1')+';background:'+(on?'#fef3c7':'#fff')+';color:'+(on?'#92400e':'#475569')+';font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">🤒 '+(on?'Mom\'s sick today ✓':'Mom\'s sick today')+'</button>'; }
+// 💦 WET_ASK (her plan 2026-10-19: "when we have the PP accident and it says like wash bedding, I would like it to be like, did you have to
+// do comforter? … we know that we've already done it 2 days ago … if the king size was done 2 days before its actual time, then it
+// could get pushed back"). After a 💦 Sheets quick button, the bed's question: what got wet? Its sheets item (log early:true on the wet
+// load → a dated credit: that bed's next sheets day is skipped only if it's within 3 days; a rider that rode it goes alone that day),
+// its blanket / pillows / shams (last = today, their schedules restart). The bed = the quick button's bedItem, else the line load whose
+// label starts with the word in its brackets ("Sheets (king)" → "King sheets…"); its items = blankets riding it + every-few-weeks items
+// whose label starts with that word. This device holds the open question until Save / Skip.
+let llWetAsk=null; try{ llWetAsk=JSON.parse(HA_LS.getItem('ha_ll_wetask')||"null"); }catch(e){}
+function _llWetStore(){ try{ HA_LS.setItem('ha_ll_wetask',JSON.stringify(llWetAsk)); }catch(e){} }
+function llBedHostFor(q){ if(q&&q.bedItem&&llItems()[q.bedItem]) return q.bedItem; const m=/\(([^)]+)\)/.exec(String((q&&q.label)||"")); if(!m) return ""; const w=m[1].trim().toLowerCase();
+  return llOrder().find(function(id){ const l=String(llItems()[id].label||"").toLowerCase(); return l.indexOf(w+" ")===0&&/sheet/.test(l); })||""; }
+function llBedWord(host){ return String((llItems()[host]||{}).label||"").split(/\s+/)[0]||""; }
+function llBedExtras(host){ const w=llBedWord(host).toLowerCase(), X=llExtras(); return llExtraIds().filter(function(k){ return X[k].rideWith===host||X[k].bedOf===host||(w&&String(X[k].label||"").toLowerCase().indexOf(w+" ")===0); }); }
+function llWetOpen(host,lid){ if(!laundryLine||!Object.keys(laundryLine).length||!llItems()[host]) return; llWetAsk={host:host,load:lid||"",day:llToday()}; _llWetStore(); }
+function llWetSkip(){ llWetAsk=null; _llWetStore(); llRerender(); }
+function llWetSave(by){ const a=llWetAsk; if(!a||a.day!==llToday()) { llWetSkip(); return; } const t=llToday(), now=Date.now(), u={}, chk=function(k){ const e=(typeof document!=="undefined")?document.getElementById("lwa-"+k):null; return !!(e&&e.checked); };
+  const who=(by==="dad")?"dad":"mom", got=[];
+  if(chk("sheets")&&!llLog(t).some(function(id){ return id===a.host; })){ laundryLine.log=laundryLine.log||{}; laundryLine.log[t]=laundryLine.log[t]||{}; laundryLine.log[t][a.host]={at:now,by:who,early:true,load:a.load||null}; u["log/"+t+"/"+a.host]=laundryLine.log[t][a.host]; got.push(llItems()[a.host].label); }
+  llBedExtras(a.host).forEach(function(k){ if(!chk(k)) return; const x=laundryLine.extras[k]; x.last=t; u["extras/"+k+"/last"]=t; if(x.est){ delete x.est; u["extras/"+k+"/est"]=null; } if(x.next){ delete x.next; u["extras/"+k+"/next"]=null; } got.push(x.label); });
+  llWetAsk=null; _llWetStore(); if(Object.keys(u).length){ llEnsureItems(u); llStore(); llWrite(u); try{ llSyncKidRows(); }catch(e){} }
+  if(typeof mwToast==="function") mwToast(got.length?'💦 Counted as washed today: '+got.join(', '):'💦 Nothing else counted'); llRerender(); }
+function llWetAskHTML(by){ const a=llWetAsk; if(!a||a.day!==llToday()||!llItems()[a.host]) return ""; const t=llToday(), X=llExtras();
+  const ago=function(d){ if(!d) return ""; const n=Math.round((new Date(t+"T12:00")-new Date(d+"T12:00"))/864e5); return n<=0?"washed today":n===1?"washed yesterday":"washed "+n+" days ago"; };
+  const row=function(k,label,note,on){ return '<label style="display:flex;align-items:center;gap:7px;padding:4px 0;font-size:12.5px"><input type="checkbox" id="lwa-'+k+'"'+(on?' checked':'')+'><span style="flex:1;font-weight:700">'+esc(label)+'</span><span style="font-size:10.5px;color:#6b6560">'+esc(note)+'</span></label>'; };
+  const host=llItems()[a.host], hd=(function(){ for(let i=0;i<7;i++){ const d=llAddDays(t,i); if(llHome(a.host)===llDow(d)) return d; } return ""; })(), n=hd?Math.round((new Date(hd+"T12:00")-new Date(t+"T12:00"))/864e5):9;
+  let h='<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:11px;padding:9px 11px;margin-top:6px"><div style="font-size:12.5px;font-weight:800;color:#1d4ed8;margin-bottom:4px">💦 '+esc(llBedWord(a.host))+' bed — what got wet?</div>';
+  h+=row("sheets",host.label,(n>0&&n<=LL_WET_WIN)?'its '+LL_DL[llDow(hd)]+' wash will be skipped':(n===0?'counts as today\'s':'its '+(hd?LL_DL[llDow(hd)]:'')+' wash still happens'),true);
+  llBedExtras(a.host).forEach(function(k){ const x=X[k]; h+=row(k,x.label,(x.last&&!x.est)?ago(x.last):(llDue(x)?'due '+(+llDue(x).split("-")[1])+'/'+(+llDue(x).split("-")[2]):''),false); });
+  return h+'<div style="display:flex;gap:6px;margin-top:6px"><button onclick="llWetSave(\''+(by==="dad"?"dad":"mom")+'\')" style="flex:1;padding:7px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:12.5px;font-weight:800;cursor:pointer">Save</button><button onclick="llWetSkip()" style="padding:7px 12px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;color:#475569;font-size:12.5px;font-weight:700;cursor:pointer">Skip</button></div></div>'; }
+// 🛏 BED_ASK (her plan 2026-10-19: "when that is asked, to see if we're doing the comforter, or tell us to do the comforter or the
+// pillowcases"). When a bed's sheets go in (🫧 Start / a ✓ / a kid's tick), that bed's every-few-weeks items (not its blankets — they're in
+// the load on their weeks) are asked about: due ones highlighted ("due now — do it today?"), recent ones say when. Ticked = washed today.
+let llBedAskQ=null; try{ llBedAskQ=JSON.parse(HA_LS.getItem('ha_ll_bedask')||"null"); }catch(e){}
+function _llBedStore(){ try{ HA_LS.setItem('ha_ll_bedask',JSON.stringify(llBedAskQ)); }catch(e){} }
+function llBedAskItems(host){ return llBedExtras(host).filter(function(k){ return !llExtras()[k].rideWith; }); }
+function llBedAskOpen(host){ if(!llBedAskItems(host).length) return; llBedAskQ={host:host,day:llToday()}; _llBedStore(); }
+function llBedAskSkip(){ llBedAskQ=null; _llBedStore(); llRerender(); }
+function llBedAskSave(){ const a=llBedAskQ; if(!a||a.day!==llToday()){ llBedAskSkip(); return; } const t=llToday(), u={}, got=[];
+  llBedAskItems(a.host).forEach(function(k){ const e=(typeof document!=="undefined")?document.getElementById("lba-"+k):null; if(!(e&&e.checked)) return; const x=laundryLine.extras[k];
+    x.last=t; u["extras/"+k+"/last"]=t; if(x.est){ delete x.est; u["extras/"+k+"/est"]=null; } if(x.next){ delete x.next; u["extras/"+k+"/next"]=null; } got.push(x.label); });
+  llBedAskQ=null; _llBedStore(); if(Object.keys(u).length){ llStore(); llWrite(u); }
+  if(typeof mwToast==="function") mwToast(got.length?'🛏 Washed today: '+got.join(', '):'🛏 Just the sheets today'); llRerender(); }
+function llBedAskHTML(){ const a=llBedAskQ; if(!a||a.day!==llToday()||!llItems()[a.host]) return ""; const t=llToday(), X=llExtras(), ids=llBedAskItems(a.host); if(!ids.length) return "";
+  const md=function(d){ const p=d.split("-"); return (+p[1])+'/'+(+p[2]); };
+  let h='<div style="background:#f5f3ff;border:1.5px solid #c4b5fd;border-radius:11px;padding:9px 11px;margin-top:6px"><div style="font-size:12.5px;font-weight:800;color:#6d28d9;margin-bottom:4px">🛏 '+esc(llBedWord(a.host))+' bed — washing anything else today?</div>';
+  ids.forEach(function(k){ const x=X[k], d=llDue(x), soon=d&&d<=llAddDays(t,LL_BLANKET_WIN), n=(x.last&&!x.est)?Math.round((new Date(t+"T12:00")-new Date(x.last+"T12:00"))/864e5):null;
+    const note=soon?'<b style="color:#b45309">due '+(d<=t?'now':md(d))+' — do it today?</b>':(n!=null?(n===0?'washed today':n===1?'washed yesterday':'washed '+n+' days ago'):(d?'due '+md(d):''));
+    h+='<label style="display:flex;align-items:center;gap:7px;padding:4px 0;font-size:12.5px;'+(soon?'background:#fffbeb;border-radius:7px;padding:4px 6px':'')+'"><input type="checkbox" id="lba-'+k+'"><span style="flex:1;font-weight:700">'+esc(x.label)+'</span><span style="font-size:10.5px;color:#6b6560">'+note+'</span></label>'; });
+  return h+'<div style="display:flex;gap:6px;margin-top:6px"><button onclick="llBedAskSave()" style="flex:1;padding:7px;border-radius:8px;border:none;background:#7c3aed;color:#fff;font-size:12.5px;font-weight:800;cursor:pointer">Save</button><button onclick="llBedAskSkip()" style="padding:7px 12px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;color:#475569;font-size:12.5px;font-weight:700;cursor:pointer">Just the sheets</button></div></div>'; }
 // ✓ DONE (her ask 2026-10-19: Lincoln's clothes were washed and put up for real, but every tracked load had been ✕'d, so the line still
 // offered 🫧 Start and after 8 PM slid him to tomorrow; "but also will they be linked as well?" — yes). ✓ Done records the load as done
 // TODAY with nothing in the washer: the same log/<day>/<item> record a Start makes ({at,by,done:true}, no load), so the schedule, the kids'
@@ -13335,6 +13386,7 @@ function llStart(item,by){ const it=llAll()[item]; if(!it) return; const t=llTod
   llEnsureItems(u); llStore();
   if(typeof _lbWrite==="function"&&_lbWrite()){ db.ref('laundry/'+lid).set(laundryData[lid]); llWrite(u); }
   try{ llSyncKidRows(); }catch(e){}   // 🧺 the kid's row ticks itself
+  try{ [item].concat(riders).some(function(h){ if(llBedAskItems(h).length){ llBedAskOpen(h); return true; } return false; }); }catch(e){}   // 🛏 BED_ASK
   if(typeof mwToast==="function") mwToast('🫧 '+laundryData[lid].label+' — in the washer'); llRerender(); }
 // ✕ on a line load still in the washer (a mistake) takes its log entry back, so the line puts it back where it was.
 function llUnlog(lid,l){ if(l&&l.wet&&l.jumpDay&&(l.stage==="bin"||l.stage==="prewash")){ const j=laundryLine.jump&&laundryLine.jump[l.jumpDay]; if(j&&j[lid]){ delete j[lid]; llStore(); const u={}; u["jump/"+l.jumpDay+"/"+lid]=null; llWrite(u); } return; }   // 💦 a jump-in ✕'d before it was washed gives its slot back
@@ -13346,7 +13398,7 @@ function llUnlog(lid,l){ if(l&&l.wet&&l.jumpDay&&(l.stage==="bin"||l.stage==="pr
   llStore(); llWrite(u); try{ llSyncKidRows(); }catch(x){} }
 // The line chips under Start a load (Mom's and Dad's 🏡 My day): today's line loads not started yet, one tap each. Only once she has set the line up.
 function llStripHTML(by){ if(!laundryLine||!Object.keys(laundryLine).length) return ""; const r=llProjectNow(1)[0], it=llAll(), t=llToday(), left=r.loads.filter(function(id){ return r.started.indexOf(id)<0&&r.waited.indexOf(id)<0; });
-  const top='<div style="display:flex;justify-content:flex-end;margin-top:6px">'+llMomSickBtn()+'</div>'+llCoverAskHTML()+((typeof llTdTodayHTML==="function")?llTdTodayHTML(by==="dad"?"dad":"mom"):'');   // 👤 step 5 · 📝 her laundry to-dos
+  const top=llWetAskHTML(by)+llBedAskHTML()+'<div style="display:flex;justify-content:flex-end;margin-top:6px">'+llMomSickBtn()+'</div>'+llCoverAskHTML()+((typeof llTdTodayHTML==="function")?llTdTodayHTML(by==="dad"?"dad":"mom"):'');   // 👤 step 5 · 📝 her laundry to-dos
   if(!left.length) return top; return top+'<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:6px"><span style="font-size:11px;color:var(--muted);font-weight:700">Today\'s line:</span>'
     +left.map(function(id){ return '<button onclick="llStart(\''+id+'\''+(by==="dad"?',\'dad\'':'')+')" style="padding:5px 9px;border-radius:9px;border:1.5px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-size:11.5px;font-weight:700;cursor:pointer">🫧 '+esc(it[id].emoji||'🧺')+' '+esc(llLabelFull(id))+(function(){ const w=llWho(id,t); return w.covered||w.who!==id?' · '+esc(llName(w.who)):''; })()+'</button>'
       +'<button onclick="llMarkDone(\''+id+'\''+(by==="dad"?',\'dad\'':'')+')" title="Already washed and put away — mark it done" style="padding:5px 7px;border-radius:9px;border:1.5px solid #16a34a;background:#f0fdf4;color:#15803d;font-size:11px;font-weight:800;cursor:pointer">✓</button>'; }).join('')+'</div>'; }   // ✓ DONE
@@ -13393,7 +13445,7 @@ function llLoadStage(id,iso){ const e=llDayLog(iso)[id]; if(!e) return ""; const
   const cm=(l&&typeof lcMeta==="function")?lcMeta(l):null; if(cm) return cm[0]+" "+cm[1];   // LAUNDRY_CYCLE
   return !l?"✓ put away":l.stage==="dryer"?"🌀 in the dryer":l.stage==="fold"?"🧺 folded — put away":"🫧 in the washer"; }   // FOLD_WORDS
 function llDadCardHTML(){ if(!laundryLine||!Object.keys(laundryLine).length) return ""; const t=llToday(), r=llProjectNow(1)[0], A=llAll();
-  let h='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);margin-bottom:10px;padding:10px 12px"><div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span style="font-size:13px;font-weight:800;flex:1">🧺 The laundry line</span>'+llMomSickBtn()+'</div>'+llCoverAskHTML();
+  let h='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);margin-bottom:10px;padding:10px 12px"><div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span style="font-size:13px;font-weight:800;flex:1">🧺 The laundry line</span>'+llMomSickBtn()+'</div>'+llWetAskHTML("dad")+llBedAskHTML()+llCoverAskHTML();
   h+='<div style="display:flex;align-items:center;gap:6px;margin:8px 0 3px"><span style="font-size:11.5px;font-weight:800;flex:1">Today</span>'+llTdBtn()+'</div>'+llTdFormHTML()+llTdTodayHTML("dad");   // 📝
   h+=(r.loads.length||r.jumps.length)?r.jumps.map(function(j){ return '<div style="font-size:12px;padding:3px 0;color:#1d4ed8">💦 '+esc(String(j.label))+' <span style="color:#6b6560">· jump-in</span></div>'; }).join('')+r.loads.map(function(id){ const w=llWho(id,t), st=llLoadStage(id,t), wtd=r.waited.indexOf(id)>=0, mv=r.moved.indexOf(id)>=0;
       return '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px'+(wtd||mv?';opacity:.55':'')+'"><span>'+esc(A[id].emoji||'🧺')+'</span><span style="flex:1;font-weight:700">'+esc(llLabelFull(id))+' <span style="font-weight:400;color:#6b6560">· '+(wtd?'⏸ waits a day':mv?'→ tomorrow':st?'👤 '+esc(llName(((laundryLine.log[t]||{})[id]||{}).by||w.who)):w.need?'❓ who?':'👤 '+esc(llName(w.who)))+(st?' · '+st:'')+'</span></span>'
@@ -14562,6 +14614,7 @@ function qlTap(id,person){ const q=qlAll()[id]; if(!q) return null; const S=qlSt
   laundryData[lid]=rec; try{ HA_LS.setItem('ha_laundry',JSON.stringify(laundryData)); }catch(e){}
   if(_qlWrite()) db.ref('laundry/'+lid).set(rec);
   let slid=""; if(q.slot){ try{ if(typeof llJumpAdd==="function") slid=llJumpAdd(lid,q.label); }catch(e){} }   // 🧺 LAUNDRYLINE: holds a slot today
+  try{ if(typeof llBedHostFor==="function"){ const bh=llBedHostFor(q); if(bh) llWetOpen(bh,lid); } }catch(e){}   // 💦 WET_ASK: the bed's "what got wet?"
   const td=String(q.todo||"").trim();
   if(td){ const t={text:td,done:false,ts:Date.now(),src:"quickload"};
     if(person==="dad"){ try{ const cur=Object.assign({},daddayData[iso]); const T=Object.assign({},cur.todos); T[lid]=t; cur.todos=T; daddayData[iso]=cur; HA_LS.setItem('ha_dadday',JSON.stringify(daddayData)); }catch(e){} if(_qlWrite()) db.ref('dadday/'+iso+'/todos/'+lid).set(t); }
