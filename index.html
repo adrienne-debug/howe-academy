@@ -9048,10 +9048,14 @@ function taskTierOf(t){
 function bumpSkippedInTier(done){
   if(!done||String(done.id||"").endsWith("_c")) return;
   const isNb=x=>(x.title||"").toLowerCase().includes("notebook");
-  if(isNb(done)) return;
+  if(isNb(done)||done.famBlock) return;
   const tier=taskTierOf(done);
   const doneMin=toMin(done.time);
-  const skipped=weekData.tasks.filter(x=>x!==done&&x.who===done.who&&x.day===done.day
+  // 🏡 BUMPFAM (her report 2026-10-19, DeWalt: "makenzies history isnt at the same time as everyone else … those are
+  // family and stuck at a certain time"): live 11:09 Makenzie checked Typing (laid 2:50 PM, behind the family block) and
+  // this rotation slid her 🏡 History / Science / Read Aloud to 1:30 / 2:00 / 2:50 while the other three kids stayed at
+  // 1:00 / 1:30 / 2:00. Family time is held at the family's time — never one of the slots that rotate.
+  const skipped=weekData.tasks.filter(x=>x!==done&&x.who===done.who&&x.day===done.day&&!x.famBlock
     &&!String(x.id||"").endsWith("_c")&&!checked[x.id]&&!claimed[x.id]&&!isNb(x)
     &&taskTierOf(x)===tier&&toMin(x.time)<doneMin)
     .sort((a,b)=>toMin(a.time)-toMin(b.time));
@@ -29328,7 +29332,8 @@ function haNbContext(kid){
   let quantBank=null; try{ quantBank=nbQbCtx(kid); }catch(e){}   // Mom's number-reasoning bank (Lincoln) — null = built-in math questions
   let convBank=null; try{ convBank=nbCvCtx(kid); }catch(e){}   // Mom's conventions bank (Lincoln) — null = built-in fix-the-sentence items
   let spelling=null; try{ if(typeof nbSpellCtx==="function") spelling=nbSpellCtx(kid,tasks,dates); }catch(e){}   // 📝 NBSPELL: the weekly Spelling page (off until Mom picks it)
-  return { nbKidName:kid.charAt(0).toUpperCase()+kid.slice(1), spelling:spelling, wordBank:wordBank, cogatBank:cogatBank, quantBank:quantBank, convBank:convBank, dailyGrams:dailyGrams, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, numberCursor:((((notebookSettings||{})[kid])||{}).numberCursor)||null, letterCursor:((((notebookSettings||{})[kid])||{}).letterCursor)||null, countEmoji:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).count_emoji)||null), letterSounds:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).definitions)||null), masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true };
+  let loe=null; try{ if(typeof loeTaught==="function") loe=loeTaught(kid)||null; }catch(e){}   // LU_PHONO: the phonograms LOE Foundations B has taught this kid (Lucy's phonogram of the day) — null = static list
+  return { nbKidName:kid.charAt(0).toUpperCase()+kid.slice(1), spelling:spelling, wordBank:wordBank, cogatBank:cogatBank, quantBank:quantBank, convBank:convBank, dailyGrams:dailyGrams, loe:loe, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, numberCursor:((((notebookSettings||{})[kid])||{}).numberCursor)||null, letterCursor:((((notebookSettings||{})[kid])||{}).letterCursor)||null, countEmoji:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).count_emoji)||null), letterSounds:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).definitions)||null), masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true };
 }
 async function haNbOpen(kid,which){
   const lib=window.HoweNotebooks; if(!lib){ alert("Notebook builder not loaded yet."); return; }
@@ -48923,6 +48928,7 @@ function mastIsDue(item,pn){
   return (pn-1)%iv===(cy-1)%iv;
 }
 
+const MAST_LEARN_FLOOR=2;   // LEARNFLOOR: learning cards per category that reviews can't crowd out
 function mastDueItems(kid,pn){
   let items=masteryData[kid];
   if(!items) return [];
@@ -48959,7 +48965,13 @@ function mastDueItems(kid,pn){
     // Active ladder reviews are NEVER cut — they sit on booked slots, and skipping one
     // breaks the spacing cursor. The per-category cap only limits how many ⭐ learning
     // cards ride along after them.
-    const introRoom=Math.max(0,cap-bucket.active.length);
+    // LEARNFLOOR_START — every category keeps at least MAST_LEARN_FLOOR ⭐ learning cards even when
+    // reviews fill its cap (her yes 2026-10-19). Live 10/19: Lucy back after 8 missed school days had
+    // 5–11 reviews in every category, so introRoom was 0 everywhere and NONE of her learning cards
+    // (man, that, van, think, wish…) showed — only old reviews. Never more than the category's own
+    // cap, so a deck Mom capped at 0 or 1 stays that way. Reviews are still never cut.
+    const introRoom=Math.max(Math.min(MAST_LEARN_FLOOR,cap),cap-bucket.active.length);
+    // LEARNFLOOR_END
     capped.push(...bucket.active,...bucket.intro.slice(0,introRoom));
   });
   // Daily learning cap (max_learn_per_drill, 0 = off): with many categories the learning

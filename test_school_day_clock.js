@@ -17,7 +17,7 @@ vm.runInContext(`
   var paceData={plans:{s:{start:"2026-04-20",end:"2026-09-01",kids:["lucy"],schoolDays:["Mon","Tue","Wed","Thu"]}}};
   var masteryKid="ellis", masteryData={}, SETTINGS={max_per_cat:5,cat_caps:{},max_learn_per_drill:0,max_overdue_per_drill:0};
   function mastDrillSettings(){ return SETTINGS; } function mastIsNeverDrill(){ return false; } function mastIsParked(i){ return i.status==="parked"; }
-  `+fn("calToday")+"\n"+fn("getSchoolDays")+"\n"+blk("const MAST_CLOCK_EPOCH","\n// ── Ladder slot scheduling")+"\n"+fn("mastIsDue")+"\n"+blk("function mastDueItems","\nlet mastLogMode"),ctx);
+  `+fn("calToday")+"\n"+fn("getSchoolDays")+"\n"+blk("const MAST_CLOCK_EPOCH","\n// ── Ladder slot scheduling")+"\n"+fn("mastIsDue")+"\n"+blk("const MAST_LEARN_FLOOR","\nlet mastLogMode"),ctx);
 const run=e=>vm.runInContext(e,ctx);
 const n=(k,d)=>run(`mastSchoolDayNum(${JSON.stringify(k)},${JSON.stringify(d)})`);
 ok("a normal Mon→Mon week ticks 5", n("lucy","2026-10-12")-n("lucy","2026-10-05")===5, n("lucy","2026-10-12")-n("lucy","2026-10-05"));
@@ -36,7 +36,7 @@ ok("before the epoch reads 0", n("ellis","2025-12-31")===0);
 run(`var mk=(id,nd)=>({id:id,subject:"S",status:"active",tier:"weekly",next_due:nd});
   masteryData.ellis=[mk("a",90),mk("b",95),mk("c",97),mk("d",100),mk("e",100),mk("f",101),{id:"i1",subject:"S",status:"introduction",tier:"daily"}];`);
 const ids=()=>run(`mastDueItems("ellis",100).map(i=>i.id).join(",")`);
-run("SETTINGS.max_overdue_per_drill=0"); ok("softener OFF (default) → every overdue review rides", ids()==="a,b,c,d,e", ids());
+run("SETTINGS.max_overdue_per_drill=0"); ok("softener OFF (default) → every overdue review rides (+ the learning card, LEARNFLOOR 2026-10-19)", ids()==="a,b,c,d,e,i1", ids());
 run("SETTINGS.max_overdue_per_drill=2"); ok("softener 2 → two oldest overdue + today's + learning; the rest wait", ids()==="a,b,d,e,i1", ids());
 run("SETTINGS.max_overdue_per_drill=0");
 ok("softener defaults to OFF for every kid", /max_overdue_per_drill:s\.max_overdue_per_drill\?\?0/.test(src));
