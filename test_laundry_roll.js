@@ -86,7 +86,7 @@ console.log("6. 🫧 Start");
   ok("and one laundryLine update: log/<today>/lincoln", up&&up[1]==="laundryLine"&&up[2]["log/"+MON+"/lincoln"]&&up[2]["log/"+MON+"/lincoln"].load===set[1].slice(8), up);
   ok("today now: Lincoln ✓, Ellis, Lucy", (r=>r.started.join()==="lincoln"&&r.loads.join()==="lincoln,ellis,lucy")(c.llProject(MON,1,false)[0]));
   c.writes.length=0; c.llStart("lincoln"); ok("Start again on the same load: nothing", c.writes.length===0);
-  const lid=set[1].slice(8), l=c.get("laundryData")[lid]; c.llUnlog(lid,l);
+  const lid=set[1].slice(8), l=c.get("laundryData")[lid]; c.get("delete laundryData['"+lid+"']"); c.llUnlog(lid,l);   // as ✕ does: the record first (🔗 LL_LINK)
   ok("✕ while it's in the washer: the log entry comes back out (one null)", c.writes.length===1&&c.writes[0][2]["log/"+MON+"/lincoln"]===null&&c.llProject(MON,1,false)[0].started.length===0, c.writes);
   c.writes.length=0; c.llUnlog(lid,Object.assign({},l,{stage:"dryer"})); ok("✕ on a load past the washer: the line keeps it", c.writes.length===0);
   const d=mk({dry:true,line:{caps:caps3,asOf:MON}}); d.llStart("ellis"); ok("dry run: nothing written", d.writes.length===0);

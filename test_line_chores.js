@@ -21,7 +21,7 @@ function mk(o){
   const ctx={console,Object,Array,String,Number,parseInt,Math,JSON,Date,RegExp,
     HA_LS:{getItem:k=>ls[k]||null,setItem:(k,v)=>{ ls[k]=v; }},
     db:{ref:p=>({update:v=>writes.push(["update",p,JSON.parse(JSON.stringify(v))]),set:v=>writes.push(["set",p,JSON.parse(JSON.stringify(v))]),remove:()=>writes.push(["rm",p])})},
-    _lbWrite:()=>true, momHere:()=>true, laundryData:{}, calDateForWeekDay:d=>DAYS[d]||null, day:o.dayName||"monday", _todayDay:o.dayName||"monday", tab:"kids", renderAll:()=>{},
+    _lbWrite:()=>true, momHere:()=>true, _kioskD:()=>false, laundryData:{}, calDateForWeekDay:d=>DAYS[d]||null, day:o.dayName||"monday", _todayDay:o.dayName||"monday", tab:"kids", renderAll:()=>{},
     calendarData:{holidays:{},vacations:{},kidOverrides:{}}, calNormDate:s=>s,
     rtStepsFor:(sl,kid,raw)=>sl==="chores"?LINCOLN_CHORES:sl==="morning"?MORNING:[],
     ROSTER:["lincoln","ellis","lucy","julian"], KID_NAME:{lincoln:"Lincoln",ellis:"Ellis",lucy:"Lucy",julian:"Julian"}, cap:s=>s.charAt(0).toUpperCase()+s.slice(1),
@@ -101,13 +101,42 @@ console.log("5c. Ticked everywhere at once (her rule 2026-10-18: \"checked off a
   const f=c.get("slState['week30_monday_lincoln_astep0']"); ok("put away anywhere → his Afternoon 'Fold + put away' reads ✓ (auto)", f&&f.done===true&&f.auto==="line", f);
   const u=mk(); u.get("slState={}; activeWk=function(){ return 'week30'; }; nowTs=function(){ return ''; }; slBefore=function(){ return {}; }; slSaveChanged=function(){}; morningComplete=function(){ return false; }; rtComplete=function(){ return false; };");
   u.get("var _base=rtStepsFor; rtStepsFor=function(sl,kid,raw,dn){ const b=_base(sl,kid,raw); return raw?b:llRtSteps(sl,kid,b,dn||'monday'); };");
-  u.llStart("lincoln"); const ul=Object.keys(u.get("laundryData"))[0]; u.llUnlog(ul,u.get("laundryData")[ul]);
+  u.llStart("lincoln"); const ul=Object.keys(u.get("laundryData"))[0]; u.llUnstart(ul);   // ✕ in the washer: record out, back in line
   ok("back in line (✕ in the washer) → the automatic ✓ comes off", u.get("slState['week30_monday_lincoln_mstep2'].done")===false);
   const k=mk(); k.get("slState={week30_monday_lincoln_mstep2:{done:true,pts:30,bid:'b1'}}; activeWk=function(){ return 'week30'; }; nowTs=function(){ return ''; }; slBefore=function(){ return {}; }; slSaveChanged=function(){}; morningComplete=function(){ return false; }; rtComplete=function(){ return false; };");
   k.get("var _base=rtStepsFor; rtStepsFor=function(sl,kid,raw,dn){ const b=_base(sl,kid,raw); return raw?b:llRtSteps(sl,kid,b,dn||'monday'); };");
-  k.llStart("lincoln"); const kl=Object.keys(k.get("laundryData"))[0]; k.llUnlog(kl,k.get("laundryData")[kl]);
+  k.llStart("lincoln"); const kl=Object.keys(k.get("laundryData"))[0]; k.llUnstart(kl);
   ok("Lincoln's OWN tick (paid 30 ⭐) is never undone by the line", k.get("slState['week30_monday_lincoln_mstep2'].done")===true&&k.get("slState['week30_monday_lincoln_mstep2'].pts")===30);
   ok("Home Base's ✓ Put away syncs too", /if\(l\.line&&typeof llSyncKidRows==="function"\) llSyncKidRows\(\);/.test(fn("laundryAdvance")));
+}
+console.log("5d. 🔗 Every click linked (her rule 2026-10-19) — a load in the washer the log lost still counts");
+{ const c=mk({line:{caps:{"0":2},asOf:MON,homeFrom:MON}}); const T=Date.now();
+  c.get("laundryData.lmv1={label:\"Lincoln's clothes\",stage:'washer',ts:"+(T-3*3600e3)+",line:'lincoln',lineDay:'"+MON+"',by:'lincoln'}");   // her 9:14:05 load, no log record
+  ok("the schedule counts it: Lincoln started, no 🫧 Start on his cell", c.llProject(MON,1,false)[0].started.join()==="lincoln"&&!/llStart\('lincoln'/.test(c.llWeekGridHTML(MON,false,true)));
+  ok("his ☀️ row reads ✓ and a re-tick starts nothing", c.llKidRowLineDone({line:"lincoln",laundry:true})&&(c.llStart("lincoln"),!c.writes.some(w=>w[0]==="set")));
+  ok("Mom's checklist / Dad's card see it as in", c.llLoadStage("lincoln",MON)==="🫧 in the washer");
+  c.writes.length=0; const n=c.llHealLog(); ok("llHealLog writes the missing record once (log/<day>/lincoln → that load)", n===1&&c.writes[0][2]["log/"+MON+"/lincoln"].load==="lmv1", c.writes);
+  c.writes.length=0; c.llHealLog(); ok("…and not again", c.writes.length===0);
+  const f=mk({line:{caps:{"0":2},asOf:MON,homeFrom:MON}}); f.get("laundryData.lmv2={label:'x',stage:'washer',ts:"+(Date.now()-10e3)+",line:'lincoln',lineDay:'"+MON+"'}"); f.llHealLog();
+  ok("a load younger than 2 minutes isn't healed (never races a ✕ in progress)", f.writes.length===0);
+  ok("laundryDel removes the record BEFORE taking it off the line", (s=>s.indexOf("db.ref('laundry/'+id).remove()")<s.indexOf("llUnlog(id,l)"))(fn("laundryDel")));
+}
+console.log("5e. ✓ Done (her ask 2026-10-19): washed and put up for real, nothing tracked — linked everywhere");
+{ const c=mk({line:{caps:{"0":2,"1":1},asOf:MON,homeFrom:MON}});
+  c.get("slState={}; activeWk=function(){ return 'week30'; }; nowTs=function(){ return ''; }; slBefore=function(){ return {}; }; slSaveChanged=function(){}; morningComplete=function(){ return false; }; rtComplete=function(){ return false; };");
+  c.get("var _base=rtStepsFor; rtStepsFor=function(sl,kid,raw,dn){ const b=_base(sl,kid,raw); return raw?b:llRtSteps(sl,kid,b,dn||'monday'); };");
+  const g0=c.llWeekGridHTML(MON,true,true).split('border-radius:8px;padding:4px 1px').slice(1);
+  ok("10:25 PM, nothing tracked: Lincoln faded '→' on Monday, and the cell offers ✓Done", /→ Lincoln/.test(g0[0])&&/llMarkDone\('lincoln'\)/.test(g0[0]), g0[0]);
+  c.llMarkDone("lincoln");
+  const w=c.writes.find(x=>x[2]&&x[2]["log/"+MON+"/lincoln"]); ok("✓ Done: log/<today>/lincoln {done:true}, NO load in the washer", w&&w[2]["log/"+MON+"/lincoln"].done===true&&!w[2]["log/"+MON+"/lincoln"].load&&!c.writes.some(x=>x[0]==="set"&&/^laundry\//.test(x[1])), c.writes);
+  const r=c.llProject(MON,2,true); ok("after 8 PM: Monday shows Lincoln ✓ (not moved), Tuesday is Ellis — no Lincoln", r[0].started.join()==="lincoln"&&r[0].moved.length===0&&r[1].loads.join()==="ellis", r.map(x=>[x.loads,x.started,x.moved]));
+  ok("linked: his ☀️ and 🌤 rows read ✓ (auto, 0 ⭐), Dad's card says put away", c.get("slState['week30_monday_lincoln_mstep2'].auto")==="line"&&c.get("slState['week30_monday_lincoln_astep0'].done")===true&&c.llLoadStage("lincoln",MON)==="✓ put away");
+  c.writes.length=0; c.llStart("lincoln"); ok("🫧 Start afterwards does nothing (already done today)", !c.writes.some(x=>x[0]==="set"));
+  ok("the cell offers ↶ to take it back", /llUndone\('lincoln'\)/.test(c.llWeekGridHTML(MON,false,true)));
+  c.writes.length=0; c.llUndone("lincoln"); ok("↶: the record comes off; Lincoln is waiting again", c.writes.some(x=>x[2]&&x[2]["log/"+MON+"/lincoln"]===null)&&c.llProject(MON,1,false)[0].started.length===0);
+  const x=mk({line:{caps:{"0":2},asOf:MON,homeFrom:MON,extras:{x_m:{label:"Shower mats",every:2,unit:"w",last:"2026-10-01",est:true}}}}); x.get("slState={}"); x.llMarkDone("x_m");
+  ok("an every-few-weeks item: ✓ Done counts as washed today (last = today, estimate cleared)", x.get("laundryLine.extras.x_m.last")===MON&&!x.get("laundryLine.extras.x_m.est"));
+  ok("Today's line buttons and Dad's card have ✓ too", /llMarkDone\(/.test(c.llStripHTML(""))&&/llMarkDone\('ellis','dad'\)|llMarkDone\('lincoln','dad'\)/.test(c.llDadCardHTML()));
 }
 console.log("6. Wiring");
 ok("rtStepsFor appends the line's rows; the raw (editor) path is untouched", /if\(raw\) return steps;[^\n]*\n\s*const _r=rtApplyRot\(slot,kid,steps,dayName\);\n\s*return \(typeof llRtSteps==="function"\)\?llRtSteps\(slot,kid,_r,dayName\):_r;/.test(src));
