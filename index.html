@@ -13041,12 +13041,19 @@ function ktSection(j){ const cad=hhPlanCad(j)||j.cad||"daily", l=String(j.label|
 const KT_SECTIONS=[["reset","🍽 Daily reset","Every day — the kitchen's standing jobs."],["weekly","🗓 Weekly rotation","Each on its days of the week."],["appl","🧊 Appliances","Every few weeks or months — the machines."],["food","🧼 Food safety","Sponges, towels, boards."],["deep","🧽 Deep clean","Cabinets, pantry, the big ones."],["once","☑️ Once","Done one time, then gone."],["asneeded","✋ As needed","Never due on their own."]];
 // 📅 today's kitchen rows, with the row's own tick. Mom's / Dad's via their lists; a kid's via mdKidTick (Mom's tick, from any device).
 function ktTodayRows(){ const J=hhJobs(), iso=_hhIsoLocal(Date.now()), dn=(typeof _todayDay==="string")?_todayDay:"", out=[]; if(!dn) return out;
-  ktRows().forEach(function(id){ const j=J[id], who=j.who; if(who==="grab") return;
+  // 🔁 a rotating job (rot) travels between kids by the day: the ROW is one kid's, but what they hold today may be another room's job
+  // (her report 2026-10-21: "pick up livingroom shouldnt be in the today of kitchen tab" — Ellis's row is the living-room pickup; today he
+  // held the kitchen one). So Today files each kid's step by the room of what it SAYS today (hhGuessRoom on the rotated label), and
+  // walks every kid's kitchen-or-rotating row so whoever holds "Pickup kitchen" today shows here and the living-room holder never does.
+  const seen={}; Object.keys(J).forEach(function(id){ const j=J[id], who=j.who; if(!j||j.status==="retired"||j.free||who==="grab") return;
+    const kitchenRow=hhRoomOf(j)==="kitchen"; if(!kitchenRow&&!(j.rot&&hhIsKid(who))) return;
     if(hhIsKid(who)){ const slot=j.slot; if(SL_SLOTS.indexOf(slot)<0) return; const raw=rtStepsFor(slot,who,true)||[], disp=rtStepsFor(slot,who,false,dn)||[]; const idx=raw.findIndex(function(st){ return st&&st._hh===id; }); if(idx<0) return;
       const st=disp[idx]; if(!st||st.cad==="none") return; if(typeof rtWaved==="function"&&rtWaved(slot,who,dn,idx)) return;
+      if(j.rot){ const roomToday=hhGuessRoom({label:st.label,area:j.area,who:who}); if(roomToday!=="kitchen") return; }   // 🔁 file by today's job, not the row's
+      else if(!kitchenRow) return;
       const due=(typeof stepWindowOk!=="function"||stepWindowOk(st,dn))&&cadDueOn(st.cad||"daily",dn), late=(typeof rtLateDays==="function")?(rtLateDays(slot,who,idx)>0):false; if(!due&&!late) return;
       out.push({id:id,job:j,who:who,slot:slot,label:st.label||j.label,emoji:st.emoji||j.emoji||"",done:(slot==="morning"&&typeof mStepDoneOn==="function")?mStepDoneOn(who,dn,idx):(typeof rtDoneOn==="function"?rtDoneOn(slot,who,dn,idx):false),late:late&&!due,on:"mdKidTick('"+slot+"','"+who+"','"+dn+"',"+idx+")"}); }
-    else { const key=(j.src&&j.src.id)||id, list=(who==="dad")?((typeof dcAll==="function")?dcAll():{}):((typeof mcAll==="function")?mcAll():{}); if(!list[key]) return; if(!cadDueOn(j.cad||"daily",dn)) return;
+    else { if(!kitchenRow) return; const key=(j.src&&j.src.id)||id, list=(who==="dad")?((typeof dcAll==="function")?dcAll():{}):((typeof mcAll==="function")?mcAll():{}); if(!list[key]) return; if(!cadDueOn(j.cad||"daily",dn)) return;
       const doneOn=(who==="dad")?(typeof dcDoneOn==="function"?dcDoneOn:null):(typeof mcDoneOn==="function"?mcDoneOn:null);
       out.push({id:id,job:j,who:who,slot:j.slot||"",label:j.label,emoji:j.emoji||"",done:doneOn?doneOn(iso,key):false,late:false,on:(who==="dad"?"dcToggle('":"mcToggle('")+key+"')"}); } });
   const SO={morning:0,afternoon:1,chores:1,evening:2,night:2,"":3}; out.sort(function(a,b){ return (SO[a.slot]-SO[b.slot])||((a.job.order||0)-(b.job.order||0)); }); return out; }
