@@ -4127,6 +4127,7 @@ function initFb() {
       Object.keys(laundryData).forEach(k=>{ delete laundryData[k]; });
       Object.keys(v).forEach(k=>{ laundryData[k]=v[k]; });
       try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
+      try{ if(typeof llMemoReset==="function") llMemoReset(); }catch(e){}   // ⚡ LL_MEMO: a load moved — lay again
       try{ if(typeof llHealLog==="function") llHealLog(); }catch(e){}   // 🔗 LL_LINK: a line load the log lost gets its record back
       if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
       else if(tab==="schedule"&&kid==="mom") renderAll();   // MOMSCHED_LAUNDRY
@@ -13072,8 +13073,15 @@ function llDefaultItems(){ const K=(typeof KID_NAME!=="undefined"&&KID_NAME)||{}
   [["lincoln","👕"],["ellis","👕"],["lucy","👗"],["julian","👕"]].forEach(function(p,i){ out[p[0]]={label:(K[p[0]]||cap(p[0]))+"'s clothes",emoji:p[1],order:i}; });
   out.momdad={label:"Mom & Dad's clothes",emoji:"👫",order:4}; out.towels={label:"Towels",emoji:"🛁",order:5}; return out; }
 let laundryLine={}; try{ laundryLine=JSON.parse(HA_LS.getItem('ha_laundry_line')||"{}")||{}; }catch(e){}
-function llStore(){ try{ HA_LS.setItem('ha_laundry_line',JSON.stringify(laundryLine)); }catch(e){} }
-function laundryLineOnValue(v){ laundryLine=v||{}; llStore(); try{ llRoll(); }catch(e){} try{ llHealLog(); }catch(e){} }   // 🔗 LL_LINK   // the listener: store, then save the roll if a day has passed
+// ⚡ LL_MEMO (her report 2026-10-20: "the app is super slow on the lg stand by me and the kids old fire tablet … taps dont register right
+// away"). Every card, list row, checklist and question re-laid the whole line on its own — dozens of identical lays per tap. Now a lay
+// (and a kid's line-driven list) is worked out once and reused until anything changes — llStore (every line edit), the laundry/ listener
+// (a load moved), or 15 s for the calendar. Browser only (window); the Node tests run without it, so every lay there is fresh.
+let llVer=0, _llM={};
+function llMemoReset(){ llVer++; _llM={}; }
+function llMemo(key,fn){ if(typeof window==="undefined") return fn(); const m=_llM[key], now=Date.now(); if(m&&now-m.t<15000) return m.v; const v=fn(); _llM[key]={t:now,v:v}; return v; }
+function llStore(){ llMemoReset(); try{ HA_LS.setItem('ha_laundry_line',JSON.stringify(laundryLine)); }catch(e){} }
+function laundryLineOnValue(v){ laundryLine=v||{}; llStore();   /* llStore bumps the memo */ try{ llRoll(); }catch(e){} try{ llHealLog(); }catch(e){} }   // 🔗 LL_LINK   // the listener: store, then save the roll if a day has passed
 function llArr(a){ return Array.isArray(a)?a:(a&&typeof a==="object")?Object.keys(a).sort(function(x,y){ return x-y; }).map(function(k){ return a[k]; }):[]; }   // Firebase may hand an array back as {0:…,1:…}
 function llItems(){ const it=(laundryLine&&laundryLine.items&&Object.keys(laundryLine.items).length)?laundryLine.items:llDefaultItems(); return it; }
 function llOrder(){ const it=llItems(); return Object.keys(it).sort(function(a,b){ return ((it[a].order||0)-(it[b].order||0))||(a<b?-1:1); }); }
@@ -13222,7 +13230,8 @@ function llStateAt(day){ const fresh=llHomeFresh(), Q=llQueue(fresh?[]:(laundryL
   if(iso<llAddDays(day,-LL_FOLD_MAX)) iso=llAddDays(day,-LL_FOLD_MAX);
   try{ for(let g=0;iso<day&&g<=LL_FOLD_MAX;g++){ llLayDay(Q,iso,true); iso=llAddDays(iso,1); } } finally { _llLx=null; } return Q; }
 // The re-lay: nDays from fromIso (today). closeToday = it's past 8 PM, so today's unstarted loads are already back at the front.
-function llProject(fromIso,nDays,closeToday){ const Q=llStateAt(fromIso), out=[];
+function llProject(fromIso,nDays,closeToday){ return llMemo("P|"+fromIso+"|"+nDays+"|"+(!!closeToday)+"|"+llToday(),function(){ return _llProjectRaw(fromIso,nDays,closeToday); }); }   // ⚡ LL_MEMO
+function _llProjectRaw(fromIso,nDays,closeToday){ const Q=llStateAt(fromIso), out=[];
   try{ for(let d=0;d<nDays;d++) out.push(llLayDay(Q,llAddDays(fromIso,d),d===0&&!!closeToday)); } finally { _llLx=null; } return out; }   // 🛏 the walking context never leaks
 function llProjectNow(nDays){ return llProject(llToday(),nDays,llNowMin()>=LL_SWEEP_MIN); }
 // The roll, saved: once a day is behind us, write where the line stands so the fold stays short. It is the fold — every device gets the
@@ -13653,7 +13662,10 @@ function llKidDayLoads(kid,iso){ const t=llToday(); if(!iso) return [];
   const r=llProject(t,n+1,false)[n], out=r.loads.filter(function(id){ return llWho(id,iso).who===kid&&r.waited.indexOf(id)<0; });
   _llKidMemo[key]={at:now,v:JSON.stringify(laundryLine).length,r:out}; return out; }
 function llKidFoldLoads(kid,iso){ const L=llDayLog(iso); return Object.keys(L).filter(function(id){ return llKnown(id)&&L[id]&&!L[id].with&&(L[id].by===kid||llWho(id,iso).who===kid); }); }
-function llRtSteps(slot,kid,steps,dayName){ if(!llDrivesKid(kid)) return steps;
+function llRtSteps(slot,kid,steps,dayName){ if(typeof window==="undefined") return _llRtStepsRaw(slot,kid,steps,dayName);   // ⚡ LL_MEMO: same input steps → same list
+  const dn=dayName||(typeof day!=="undefined"?day:""), key="R|"+slot+"|"+kid+"|"+dn+"|"+llToday(), m=_llM[key], now=Date.now();
+  if(m&&m.s===steps&&now-m.t<15000) return m.v; const v=_llRtStepsRaw(slot,kid,steps,dayName); _llM[key]={t:now,v:v,s:steps}; return v; }
+function _llRtStepsRaw(slot,kid,steps,dayName){ if(!llDrivesKid(kid)) return steps;
   const out=steps.map(function(st){ return llOldLaundryRow(st)?Object.assign({},st,{cad:"none",llHidden:true}):st; });
   const dn=dayName||(typeof day!=="undefined"?day:""), iso=(dn&&typeof calDateForWeekDay==="function")?calDateForWeekDay(dn):null; if(!iso) return out;
   const A=llAll();
@@ -49132,7 +49144,7 @@ function mastShuffleDeck(list){
   return out;
 }
 
-function mastSetKid(k,noRender){ masteryKid=k; mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastSessionKey=""; mastSlideIdx=0; mastScoreItemId=null; mastAdminLocal=null; const cats=Object.keys(MAST_BANK_MAP[k]||{}); mastAddCat=cats[0]||""; if(noRender) return; const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastSetKid(k,noRender){ _mastResumed=""; masteryKid=k; mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastSessionKey=""; mastSlideIdx=0; mastScoreItemId=null; mastAdminLocal=null; const cats=Object.keys(MAST_BANK_MAP[k]||{}); mastAddCat=cats[0]||""; if(noRender) return; const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastSetView(v){ mastView=v; mastScoreItemId=null; mastManualScore=false; _mastRe(); }
 function mastOpenManualScore(){ mastManualScore=true; mastManualDate=new Date().toISOString().slice(0,10); mastManualC=0; mastManualM=0; mastManualT=0; mastManualS=0; _mastRe(); }
 function mastCloseManualScore(){ mastManualScore=false; _mastRe(); }
@@ -49208,7 +49220,7 @@ function mastLogPause(){
   else mastLogPauseAt=Date.now();
   mastPersistLog(); _mastRe();
 }
-function mastStartLog(){ mastLogMode=true; mastLogScores={}; mastLogStartTs=null; mastLogPausedMs=0; mastLogPauseAt=null; mastSlideIdx=0; mastOrderedDue(mastGetPrintNum()); /* reuse the frozen quiz order (or build it now if going straight to Log) — never reshuffle */ mastPersistLog(); const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastStartLog(){ _mastResumed=""; mastLogMode=true; mastLogScores={}; mastLogStartTs=null; mastLogPausedMs=0; mastLogPauseAt=null; mastSlideIdx=0; mastOrderedDue(mastGetPrintNum()); /* reuse the frozen quiz order (or build it now if going straight to Log) — never reshuffle */ mastPersistLog(); const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastCancelLog(){
   // All-or-nothing: nothing has been written yet, so Cancel really does throw the
   // session away — make sure that's what was meant when scores are already down.
@@ -49393,7 +49405,15 @@ function mastApplyScores(items,due,scores,pn,_jset,opts){
 
   return {touched:touched,minted:minted,changes:changes};
 }
+// 📝 DRILL_UNMARKED — Save with cards still unmarked: show them; Go back = the slideshow jumps to the first unmarked card; Save anyway =
+// record the marked ones only (mastSaveResults already skips cards with no score — pass 1 touches only scored ids — so nothing new is
+// written for them; they stay due). Cancel closes it.
+let mastSaveAsking=false;
+function mastSaveAsk(){ mastSaveAsking=true; _mastRe(); }
+function mastSaveGoBack(){ mastSaveAsking=false; mastSlideIdx=mastNextUnmarkedIdx(); mastFlipped=false; _mastRe(); }
+function mastSaveAnyway(){ mastSaveAsking=false; mastSaveResults(); }
 function mastSaveResults(){
+  mastSaveAsking=false;
   const pn=mastGetPrintNum();
   const due=mastSessionDue(pn);
   const TIER_LADDER=mastDrillSettings().ladder;
@@ -51421,14 +51441,21 @@ function mastPersistLog(){
   try{ HA_LS.setItem("ha_mast_log_"+masteryKid,JSON.stringify({date:new Date().toISOString().slice(0,10),scores:mastLogScores,startTs:mastLogStartTs,pausedMs:mastLogPausedMs,pauseAt:mastLogPauseAt,slideIdx:mastSlideIdx})); }catch(e){}   // 🃏 + the card they were on (2026-09-23)
 }
 function mastClearLogPersist(){ try{HA_LS.removeItem("ha_mast_log_"+masteryKid);}catch(e){} }
+// 🎯 DRILL_RESUME (her report 2026-10-20: "i had to go to another page and come back and it didnt keep the drill at my last spot").
+// The 9/23 fix saved the card index, but only a RELOAD restored it: on a plain tab switch Log mode was still on in memory, so this bailed
+// at its first line while the slideshow re-drew from card 1 (and Mom HQ's mastSetKid zeroes the index on the way back). Now a resume —
+// either path — lands on the first card with no mark yet; nothing stored to trust.
+function mastNextUnmarkedIdx(){ try{ const due=mastSessionDue(mastGetPrintNum()), sl=due.filter(i=>i.status==="introduction"||!mastItemIsQuiz(masteryKid,i));
+    for(let k=0;k<sl.length;k++){ if(!mastLogScores[sl[k].id]) return k; } return sl.length?sl.length-1:0; }catch(e){ return 0; } }
+let _mastResumed="";   // kid+date already placed this render-cycle — a resume places the card once, then her ← → taps own it
 function mastRestoreLog(){
-  if(mastLogMode) return;
+  if(mastLogMode){ const k=masteryKid+"|"+new Date().toISOString().slice(0,10); if(_mastResumed!==k&&Object.keys(mastLogScores||{}).length){ _mastResumed=k; mastSlideIdx=mastNextUnmarkedIdx(); } return; }   // 🎯 a tab switch: Log mode survived, the card didn't
   try{
     const s=JSON.parse(HA_LS.getItem("ha_mast_log_"+masteryKid)||"null");
     if(!s) return;
     const _today=new Date().toISOString().slice(0,10);
     const _has=s.scores&&Object.keys(s.scores).length;
-    if(s.date===_today&&_has){ mastLogMode=true; mastLogScores=s.scores; mastLogStartTs=s.startTs||null; mastLogPausedMs=s.pausedMs||0; mastLogPauseAt=s.pauseAt||null; if(typeof s.slideIdx==="number") mastSlideIdx=s.slideIdx; }   // 🃏 resume on the same card
+    if(s.date===_today&&_has){ mastLogMode=true; mastLogScores=s.scores; mastLogStartTs=s.startTs||null; mastLogPausedMs=s.pausedMs||0; mastLogPauseAt=s.pauseAt||null; _mastResumed=masteryKid+"|"+_today; mastSlideIdx=mastNextUnmarkedIdx(); }   // 🎯 DRILL_RESUME: the next unmarked card (was the stored index — right after a reload, wrong after a tab switch)
     else if(_has) mastRescueStaleLog(s);  // a prior day's half-log is the ONLY copy of those scores — offer to bank it, never silently drop it (lost Lucy's 7/7 drill to the old delete)
     else mastClearLogPersist();
   }catch(e){}
@@ -57813,8 +57840,14 @@ function _renderMasteryInner(el){
       const scored=mastLogScoredCount(due,mastLogScores);   // DRILLSWEEP 5: only cards still in today's drill
       const allScored=scored===due.length;
       h+='<div class="mast-save-bar"><span class="mast-save-count">'+scored+' / '+due.length+' scored</span>';
-      h+='<button class="mast-save-btn" onclick="mastSaveResults()"'+(allScored?'':' disabled')+'>Save Results</button></div>';
-      if(!allScored) h+='<div style="padding:4px 14px 0;text-align:right;font-size:11px;color:var(--muted)">Save turns on when all '+due.length+' cards are marked ('+(due.length-scored)+' to go) \u2014 nothing is saved until you tap it.</div>';   // 💡 DRILL_TIPS
+      h+='<button class="mast-save-btn" onclick="'+(allScored?'mastSaveResults()':'mastSaveAsk()')+'">Save Results</button></div>';   // 📝 DRILL_UNMARKED: always tappable — unmarked cards are shown, not hidden behind a grey button
+      if(!allScored&&!mastSaveAsking) h+='<div style="padding:4px 14px 0;text-align:right;font-size:11px;color:var(--muted)">'+(due.length-scored)+' of '+due.length+' not marked yet \u2014 tap Save to see which.</div>';
+      if(!allScored&&mastSaveAsking){ const _un=due.filter(i=>i&&!mastLogScores[i.id]);   // 📝 DRILL_UNMARKED (her ask 2026-10-20: "could we make it pop up the ones not answered?")
+        h+='<div style="margin:8px 14px 0;padding:10px 12px;background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px"><div style="font-size:13px;font-weight:800;color:#92400e">\u{1F4DD} '+_un.length+' card'+(_un.length===1?'':'s')+' not marked yet</div>'
+          +'<div style="font-size:12.5px;color:#78350f;margin:4px 0 8px;line-height:1.5">'+_un.slice(0,12).map(i=>'<b>'+esc(i.prompt||i.name||i.id)+'</b>').join(' \u00B7 ')+(_un.length>12?' \u00B7 +'+(_un.length-12)+' more':'')+'</div>'
+          +'<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="mast-log-btn" onclick="mastSaveGoBack()" style="background:#2563eb;color:#fff;border-color:transparent">\u2190 Go back</button>'
+          +'<button class="mast-log-btn" onclick="mastSaveAnyway()">Save anyway</button><button class="mast-log-btn" onclick="mastSaveAsking=false;_mastRe()">Cancel</button></div>'
+          +'<div style="font-size:10.5px;color:#92400e;margin-top:6px">Save anyway records only the marked cards \u2014 the rest are left for next time, not counted either way.</div></div>'; }
       // ⏸ Pause — for an interruption caught in the moment, so the clock (and therefore how
       // long we think a drill takes) doesn't swallow it. Only offered once the clock is
       // actually running: it starts on the first score tap, studying before that is free.
