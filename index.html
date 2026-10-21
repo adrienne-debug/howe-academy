@@ -11044,6 +11044,7 @@ function renderDadsDay(el){
   try{ h+=mdCardCheckLog(); }catch(e){}   // 🧾 Today's check-offs · −100 (Dad's Day too)
   try{ h+=mdCardDinner(iso); }catch(e){}
   try{ h+=mdCardBills(iso); }catch(e){}
+  try{ if(typeof ktAskHTML==="function") h+=ktAskHTML(); }catch(e){}   // 🍳 KITCHEN_ASK: the weekly kitchen question, just above the laundry line's card
   try{ if(typeof llDadCardHTML==="function") h+=llDadCardHTML(); }catch(e){}   // 🧺 LAUNDRYLINE step 6: the line on Dad's Day
   try{ h+=mdCardLaundry(true); }catch(e){}   // 👨 DADMYDAY: running loads — Start a load is in his My day
   h+='</div>';
@@ -11942,7 +11943,7 @@ function renderHousehold(el){
   if(typeof hhAddHTML==="function") h+=hhAddHTML();   // HH_ADDGIVE: + Add a chore
   if((hhView==='review'||hhView==='room')&&typeof hhSortChipHTML==="function") h+=hhSortChipHTML();   // HH_SETTINGS_METER
   const body=(hhView==='today')?hhTodayHTML():(hhView==='habits')?hhHabitsHTML():(hhView==='week'&&typeof hhWeekHTML==="function")?hhWeekHTML():(hhView==='area'&&typeof hhAreaHTML==="function")?hhAreaHTML():(hhView==='room'&&typeof hhRoomHTML==="function")?hhRoomHTML():(hhView==='levels'&&typeof hhLevelsHTML==="function")?hhLevelsHTML():(hhView==='rot'&&typeof hhRotationsHTML==="function")?hhRotationsHTML():(hhView==='proj'&&typeof hhProjectsHTML==="function")?hhProjectsHTML():(hhView==='once'&&typeof hhOnceHTML==="function")?hhOnceHTML():(hhView==='laundry'&&typeof hhLaundryHTML==="function")?hhLaundryHTML():(hhView==='kitchen'&&typeof hhKitchenHTML==="function")?hhKitchenHTML():hhReviewHTML();
-  h+='<div style="padding:10px 12px 24px">'+body+'</div></div>';
+  h+='<div style="padding:10px 12px 24px">'+((hhView==='kitchen'&&typeof ktAskSettingHTML==="function")?ktAskSettingHTML():'')+body+'</div></div>';   // 🍳 KITCHEN_ASK: the question-day chips sit above the Kitchen tab
   el.innerHTML=h;
 }
 // HOUSEHOLD_END
@@ -13094,6 +13095,57 @@ function hhKitchenHTML(){ const J=hhJobs(), ids=ktRows(), mom=(typeof momHere===
     +(ktPullOpen?(pc.length?'<div style="padding:0 12px 6px;font-size:11px;color:var(--muted)">Rows filed in another room whose words say kitchen. One tap moves the row here — it is the same row, not a copy.</div>'+pc.map(function(id){ const j=J[id], r=HH_ROOMS.find(function(x){ return x[0]===hhRoomOf(j); }); return '<div style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-top:1px solid #eef2f0;font-size:12.5px"><span>'+esc(j.emoji||'☐')+'</span><span style="flex:1;font-weight:700">'+esc(j.label)+'</span>'+_hhChip(esc(hhWhoName(j.who)),'#f3f4f6','#475569')+_hhChip(esc(r?r[1]:'—'),'#f8fafc','#94a3b8')+_hhBtn("hhSet('"+id+"','room','kitchen')",'→ Kitchen',false,'#2B7A78')+'</div>'; }).join(''):'<div style="padding:4px 12px 10px;font-size:12px;color:var(--muted)">Nothing filed elsewhere looks like kitchen.</div>'):''));
   return h; }
 // KITCHEN_TAB_END
+// KITCHEN_ASK_START — 🍳 The weekly kitchen question (her ask 2026-10-20: modeled exactly on the bedding question). On the kitchen day
+// (household/meta/kitchenAskDow, 0–6 Mon=0, default Monday) when Mom ticks her "Kitchen close-down" row: "🍳 Kitchen this week — anything
+// else today?" — every interval kitchen row (2w / 28d / 42d / Nd), due ones highlighted ("due now — do it today?"), the rest "done N days
+// ago". Ticked = the same write ✓ Done today makes (lastDone = today, lastBy). Held per device (HA_LS) until Save / "Just the close-down",
+// like llBedAskQ, and shown in the same three places (Mom's + Dad's 🏡 My day strip, Dad's card — hooked at their callers, not inside the
+// laundry line). Link (a): when the fridge clean-out is due and the weekly purge row was ticked 3+ times in the last 6 weeks, it reads
+// "still needed? (purged N× lately)" instead of "due now". Writes: household/jobs/<id>/lastDone|lastBy and household/meta/kitchenAskDow —
+// targeted, Mom only (momHere()), inert under ?dryrun=1 (_hhWrite()). Link (b), the dish towels, writes nothing (see the PR).
+let ktAskQ=null; try{ ktAskQ=JSON.parse(HA_LS.getItem('ha_kt_ask')||"null"); }catch(e){}
+function _ktAskStore(){ try{ HA_LS.setItem('ha_kt_ask',JSON.stringify(ktAskQ)); }catch(e){} }
+function _ktAskMom(){ return typeof momHere==="function"&&momHere(); }
+function ktAskDow(){ const n=parseInt(householdData&&householdData.meta&&householdData.meta.kitchenAskDow,10); return (n>=0&&n<=6)?n:0; }   // Mon=0
+function ktAskDowSet(n){ if(!_ktAskMom()) return; n=parseInt(n,10); if(!(n>=0&&n<=6)) return;
+  householdData.meta=householdData.meta||{}; householdData.meta.kitchenAskDow=n; householdOnValue(householdData); if(_hhWrite()) db.ref("household/meta/kitchenAskDow").set(n);
+  if(typeof mwToast==="function") mwToast('🍳 Kitchen question — '+["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"][n]+'s'); hhRender(); }
+// the tiny chip row on the Kitchen tab (renderHousehold puts it above the tab)
+function ktAskSettingHTML(){ if(!_ktAskMom()) return ""; const cur=ktAskDow();
+  return '<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:8px"><span style="font-size:11px;color:var(--muted);font-weight:700">🍳 Kitchen question on:</span>'
+    +["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(function(d,i){ return _hhBtn("ktAskDowSet("+i+")",d,cur===i,'#ea580c'); }).join('')+'</div>'; }
+// the interval kitchen rows (not the weekly / daily ones, not "once"): 2w, 28d, 42d, Nd …
+function ktAskItems(){ const J=hhJobs(); return ktRows().filter(function(id){ const j=J[id], cad=hhPlanCad(j)||j.cad||""; return hhInterval(j)&&cad!=="once"&&!/^(wk:|sat|sun|daily)/.test(cad); }); }
+// ticks of a row in the last 6 weeks (42 days up to yesterday). hhStats().done8 is 8 weeks (56 days), so this walks the same days the same way
+// (hhWindow / _hhDayCheck / hhLogState) over the shorter span.
+function ktAskDone6(j){ let n=0; try{ const W=hhWindow(), S=hhLogState(); for(let d=W.end-41;d<=W.end;d++){ const c=_hhDayCheck(j,d,S); if(c&&c.done) n++; } }catch(e){} return n; }
+// the weekly purge row (the one ticked most) — its ticks feed the clean-out
+function ktAskPurges(skipId){ const J=hhJobs(); let best=0; ktRows().forEach(function(id){ const j=J[id]; if(id===skipId||!/purge|toss|expired|leftover/i.test(j.label||"")) return; best=Math.max(best,ktAskDone6(j)); }); return best; }
+function ktAskRows(){ const J=hhJobs(), rows=[];
+  ktAskItems().forEach(function(id){ const j=J[id], nd=hhNeed(j), due=!!nd&&(nd.never||nd.pct>=100); let kind="recent", note="";
+    if(due){ const clean=/clean[- ]?out/i.test(j.label||""), p=clean?ktAskPurges(id):0; if(clean&&p>=3){ kind="still"; note="still needed? (purged "+p+"× lately)"; } else { kind="due"; note="due now — do it today?"; } }
+    else if(nd&&nd.days!=null) note=nd.days<=0?"done today":nd.days===1?"done yesterday":"done "+nd.days+" days ago";
+    rows.push({id:id,job:j,kind:kind,note:note,key:nd?(nd.never?1e9:nd.pct):0}); });
+  rows.sort(function(a,b){ return ((b.kind!=="recent")-(a.kind!=="recent"))||(b.key-a.key); }); return rows; }
+function ktAskOpen(){ if(!ktAskItems().length) return; ktAskQ={day:_hhIsoLocal(Date.now())}; _ktAskStore(); }
+// called by mcToggle when Mom ticks a chore ON: only her kitchen close-down row, only on the kitchen day
+function ktAskOnMomTick(key){ if(!_ktAskMom()) return; if(_hhDow(_hhIsoLocal(Date.now()))!==ktAskDow()) return; const J=hhJobs();
+  if(ktRows().some(function(id){ const j=J[id]; return j.who==="mom"&&/close-down/i.test(j.label||"")&&((j.src&&j.src.id)||id)===key; })) ktAskOpen(); }
+function ktAskSkip(){ ktAskQ=null; _ktAskStore(); if(typeof llRerender==="function") llRerender(); else hhRender(); }
+function _ktAskTicked(id){ let on=false; if(typeof document!=="undefined"&&document.querySelectorAll){ try{ document.querySelectorAll('input[data-kta="'+id+'"]').forEach(function(e){ if(e.checked) on=true; }); }catch(e){} } return on; }   // Dad's page can show two copies
+function ktAskSave(){ const a=ktAskQ, t=_hhIsoLocal(Date.now()); if(!a||a.day!==t||!_ktAskMom()){ ktAskSkip(); return; } const J=hhJobs(), got=[];
+  ktAskItems().forEach(function(id){ if(!_ktAskTicked(id)) return; const j=J[id]; j.lastDone=t; j.lastBy="mom"; if(_hhWrite()) db.ref("household/jobs/"+id).update({lastDone:t,lastBy:"mom"}); got.push(j.label); });   // the write ktDoneToday makes
+  ktAskQ=null; _ktAskStore(); if(got.length) householdOnValue(householdData);
+  if(typeof mwToast==="function") mwToast(got.length?'🍳 Done today: '+got.join(', '):'🍳 Just the close-down today'); if(typeof llRerender==="function") llRerender(); else hhRender(); }
+function ktAskHTML(){ const a=ktAskQ; if(!a||a.day!==_hhIsoLocal(Date.now())||!_ktAskMom()) return ""; const R=ktAskRows(); if(!R.length) return "";
+  let h='<div style="background:#fff7ed;border:1.5px solid #fdba74;border-radius:11px;padding:9px 11px;margin:6px 0"><div style="font-size:12.5px;font-weight:800;color:#c2410c;margin-bottom:4px">🍳 Kitchen this week — anything else today?</div>';
+  R.forEach(function(r){ const hot=r.kind==="due", note=r.kind==="recent"?esc(r.note):'<b style="color:#b45309">'+esc(r.note)+'</b>';
+    h+='<label style="display:flex;align-items:center;gap:7px;padding:4px 0;font-size:12.5px;'+(hot?'background:#fffbeb;border-radius:7px;padding:4px 6px':'')+'"><input type="checkbox" data-kta="'+r.id+'"><span style="flex:1;font-weight:700">'+esc((r.job.emoji?r.job.emoji+' ':'')+r.job.label)+'</span><span style="font-size:10.5px;color:#6b6560">'+note+'</span></label>'; });
+  return h+'<div style="display:flex;gap:6px;margin-top:6px"><button onclick="ktAskSave()" style="flex:1;padding:7px;border-radius:8px;border:none;background:#ea580c;color:#fff;font-size:12.5px;font-weight:800;cursor:pointer">Save</button><button onclick="ktAskSkip()" style="padding:7px 12px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;color:#475569;font-size:12.5px;font-weight:700;cursor:pointer">Just the close-down</button></div></div>'; }
+// the tick hook: mcToggle is guarded byte-for-byte (test_dads_day_my_day), so it is wrapped here rather than edited. Before the original runs,
+// a tick ON of her close-down on the kitchen day opens the question — the original's own repaint then draws it.
+if(typeof mcToggle==="function"){ const _ktAskMc=mcToggle; mcToggle=function(id){ try{ if(mcAll()[id]&&!mcDoneOn(_todayStr(),id)) ktAskOnMomTick(id); }catch(e){} return _ktAskMc.apply(this,arguments); }; }
+// KITCHEN_ASK_END
 // HH_LAUNDRY_START — 🧺 Laundry view (her 2026-10-12: "a laundry section that shows who has laundry which days"). A readout of the
 // same rows: the machines right now (the 🧺 card's loads), a who × weekday grid of every laundry row (tap a cell for the rows
 // with ✎ Edit), the every-few-weeks laundry with its need, and the laundry still in the once pile with Send to. No new data.
@@ -13942,6 +13994,7 @@ function momDayStripHTML(iso,today,who){
         :'<button onclick="laundryAdd('+(P.dad?'\'dad\'':'')+')" style="padding:8px 12px;border-radius:9px;border:none;background:#2563eb;color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap">🫧 Start</button>')   // no line set up: the box exactly as before
       +((typeof llOnceFromBox==="function"&&typeof laundryLine!=="undefined"&&laundryLine&&Object.keys(laundryLine).length)?'<button onclick="llOnceFromBox('+(P.dad?'\'dad\'':'\'mom\'')+')" title="A one-time load in the next open room on the laundry line" style="padding:8px 10px;border-radius:9px;border:1.5px solid #2563eb;background:#fff;color:#1d4ed8;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap">☑️ Add to the line</button>':'')+'</div>'   // ☑️ her pick 2026-10-18: start now, or the line   // 👨 DADFIX: his loads are his
       +((typeof llStripHTML==="function")?llStripHTML(P.dad?'dad':''):"")   // 🧺 LAUNDRYLINE: today's line loads, one tap each
+      +((typeof ktAskHTML==="function")?ktAskHTML():"")   // 🍳 KITCHEN_ASK: the weekly kitchen question, next to the bedding one
       +((typeof wtRowHTML==="function")?wtRowHTML(who):"")   // 💦 WASHTODAY
       +'</div>'; }
   // shopping sits under the to-dos, in the same column
