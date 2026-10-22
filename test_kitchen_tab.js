@@ -15,7 +15,8 @@ const TODAY=iso(new Date()), DN=["sunday","monday","tuesday","wednesday","thursd
 const JOBS={
   k_close:{label:"Kitchen close-down (counters + stove)",emoji:"🌙",cad:"daily",who:"mom",slot:"night",room:"kitchen",area:"cleaning",status:"active",src:{kind:"momChore",id:"k_close"},order:0},
   k_dishes:{label:"Dishes",emoji:"🍽️",cad:"daily",who:"dad",slot:"night",room:"kitchen",area:"cleaning",status:"active",src:{kind:"dadChore",id:"k_dishes"},order:0},
-  k_pickup:{label:"Pickup kitchen",emoji:"🍽️",cad:"daily",who:"lucy",slot:"afternoon",area:"pickup",status:"active",order:1},            // room blank → the guess says kitchen (health/pickup rows too)
+  k_pickup:{label:"Pickup kitchen",emoji:"🍽️",cad:"daily",who:"lucy",slot:"afternoon",area:"pickup",status:"active",order:1,rot:"downstairs"},            // room blank → the guess says kitchen (health/pickup rows too)
+  e_living:{label:"Pickup living room",emoji:"🛋️",cad:"daily",who:"ellis",slot:"afternoon",area:"pickup",room:"entry",status:"active",order:1,rot:"downstairs"},   // 🔁 her 10/21 report: Ellis's row, but today he holds the kitchen job
   k_micro:{label:"Microwave inside + the air fryer",emoji:"🧽",cad:"wk:1",who:"lincoln",slot:"chores",room:"kitchen",area:"cleaning",status:"active",order:2},
   k_fridge:{label:"Fridge clean-out (Lincoln hauls)",emoji:"🥬",cad:"42d",who:"mom",room:"kitchen",area:"cleaning",status:"active",src:{kind:"momChore",id:"k_fridge"},order:3},
   k_tops:{label:"Tops of the kitchen cabinets",emoji:"🪜",cad:"wk:5",who:"dad",room:"kitchen",area:"cleaning",status:"active",src:{kind:"dadChore",id:"k_tops"},order:4},
@@ -36,7 +37,10 @@ function mk(o){ o=o||{}; const writes=[], ticks=[], ls={};
     hhGive:"", hhGiveBtn:id=>"<g "+id+">", hhEditBtn:id=>"<e "+id+">", hhEditHTML:()=>"", _hhGiveOrRot:()=>"", hhGiveHTML:id=>"<give "+id+">", hhGiveToggle:()=>{},
     // the lists: Mom's/Dad's chores exist by src id; Lucy's afternoon list has the kitchen pickup at index 0; Lincoln's chores list has the microwave at index 0
     mcAll:()=>({k_close:1,k_fridge:1}), dcAll:()=>({k_dishes:1,k_tops:1}), mcDoneOn:(d,k)=>k==="k_close"&&!!o.closeDone, dcDoneOn:()=>false,
-    rtStepsFor:(slot,kid,raw)=>{ if(kid==="lucy"&&slot==="afternoon") return [{_hh:"k_pickup",label:"Pickup kitchen",emoji:"🍽️",cad:"daily"}]; if(kid==="lincoln"&&slot==="chores") return [{_hh:"k_micro",label:"Microwave inside + the air fryer",cad:"wk:1"}]; return []; },
+    rtStepsFor:(slot,kid,raw)=>{ if(kid==="lucy"&&slot==="afternoon") return [{_hh:"k_pickup",label:raw?"Pickup kitchen":(o.rotate?"Pickup living room":"Pickup kitchen"),emoji:"🍽️",cad:"daily",rot:"downstairs"}];
+      if(kid==="ellis"&&slot==="afternoon") return [{_hh:"e_living",label:raw?"Pickup living room":(o.rotate?"Pickup kitchen":"Pickup living room"),emoji:"🛋️",cad:"daily",rot:"downstairs"}];
+      if(kid==="lincoln"&&slot==="chores") return [{_hh:"k_micro",label:"Microwave inside + the air fryer",cad:"wk:1"}]; return []; },
+    hhGuessRoom:j=>/kitchen/i.test(j.label||"")?"kitchen":/living/i.test(j.label||"")?"living":"any",
     rtDoneOn:(slot,kid)=>kid==="lucy"&&!!o.lucyDone, mStepDoneOn:()=>false, cadDueOn:(cad,dn)=>cad==="daily"||cad==="wk:"+[6,0,1,2,3,4,5][new Date().getDay()], stepWindowOk:()=>true, rtLateDays:()=>0, rtWaved:()=>false,
     hhCleanDay:d=>d===o.cleanDay, writes, ticks};
   vm.createContext(ctx);
@@ -56,7 +60,10 @@ console.log("1. Which rows — one table, no copies");
 }
 console.log("2. 🔴 Today — with the row's own tick");
 { const c=mk(); const T=c.ktTodayRows();
-  ok("today: Mom's close-down, Dad's dishes, Lucy's pickup (the kid's via mdKidTick); grab rows left out", T.map(r=>r.id).sort().join()==="k_close,k_dishes,k_pickup"&&T.find(r=>r.id==="k_pickup").on.indexOf("mdKidTick('afternoon','lucy'")===0&&T.find(r=>r.id==="k_close").on==="mcToggle('k_close')", T.map(r=>[r.id,r.on]));
+  ok("today: Mom's close-down, Dad's dishes, Lucy's pickup (the kid's via mdKidTick); grab rows left out; Ellis's living-room row NOT here", T.map(r=>r.id).sort().join()==="k_close,k_dishes,k_pickup"&&T.find(r=>r.id==="k_pickup").on.indexOf("mdKidTick('afternoon','lucy'")===0&&T.find(r=>r.id==="k_close").on==="mcToggle('k_close')", T.map(r=>[r.id,r.on]));
+  const r=mk({rotate:true}); const R=r.ktTodayRows();   // 🔁 her 10/21 report: the downstairs rotation hands Ellis "Pickup kitchen" today
+  ok("rotation day: ELLIS's row shows (he holds 'Pickup kitchen' today), ticks via HIS list; Lucy's row (she holds the living room) is off the kitchen Today", R.map(x=>x.id).sort().join()==="e_living,k_close,k_dishes"&&R.find(x=>x.id==="e_living").label==="Pickup kitchen"&&R.find(x=>x.id==="e_living").on.indexOf("mdKidTick('afternoon','ellis'")===0, R.map(x=>[x.id,x.label]));
+  ok("the rotation itself is untouched by the tab (no write to rot / who)", !/\/rot"|"rot"|hhGiveTo\(/.test(KT.split("function ktTodayRows")[1].split("function ktNextCleanDay")[0]));
   const d=mk({closeDone:true,lucyDone:true}); const h=d.hhKitchenHTML();
   ok("the card counts 2 / 3 done, ticked rows struck through", /🔴 Today <span[^>]*>· 2 \/ 3 done/.test(h)&&(h.match(/text-decoration:line-through/g)||[]).length>=2);
   const k=mk({noMom:true}); const kh=k.hhKitchenHTML();
