@@ -6,6 +6,7 @@ const fn=name=>{ const a=src.indexOf("function "+name+"("); if(a<0) throw new Er
 const blockA=src.indexOf("// KIT_ROT_EDIT_START"), blockZ=src.indexOf("// KIT_ROT_EDIT_END");
 ok("marked block exists", blockA>0&&blockZ>blockA);
 const block=src.slice(blockA,blockZ);
+const sides=src.slice(src.indexOf("// KITSIDES_START"),src.indexOf("// KITSIDES_END"));   // the sd slot reads through kitRotSdStr (2026-10-22)
 
 // ── a tiny app: one code-shipped default (like 🍂 Fall), nothing stored yet ──
 const DEF={fall:{name:"Fall",emoji:"🍂",weeks:[[{d:"Tacos",b:"Pancakes",l:"PB&J",s:"Popcorn"},{d:"Chili",b:"Oatmeal"}]],ts:0}};
@@ -16,7 +17,7 @@ const env=`
   const db={ref:p=>({set:v=>writes.push(["set",p,JSON.parse(JSON.stringify(v))]),update:v=>writes.push(["update",p,JSON.parse(JSON.stringify(v))]),remove:()=>writes.push(["remove",p])})};
   const mwToast=t=>toasts.push(t); const esc=s=>String(s); const kitRotRender=()=>{}; const kitPinGate=(then)=>then();
   const KIT_ROT_DAYS=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-  ${fn("kitRotAll")} ${fn("kitRotEnsure")} ${block}
+  ${fn("kitRotAll")} ${fn("kitRotEnsure")} ${sides} ${block}
   return {get rot(){return kitRotations;}, get edit(){return kitRotEdit;}, writes, toasts, start:kitRotEditStart, set:kitRotEditSet, save:kitRotEditSave, cancel:kitRotEditCancel, diff:kitRotEditDiff, html:kitRotEditHTML, all:kitRotAll};
 `;
 const A=new Function(env)();

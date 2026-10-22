@@ -14,7 +14,7 @@ const MOMLOOP=cut("// MOMLOOP_START","// MOMLOOP_END");
 const LTIMES=src.slice(src.indexOf("// 🧺 LAUNDRYTIMES (her ask"), src.indexOf("\n}\n",src.indexOf("function laundryTimesEditorHTML("))+3);
 const MS=cut("// MOMSCHED_LAUNDRY_START","// MOMSCHED_LAUNDRY_END");
 const MP=cut("// MEALPREP_BLOCK_START","// MEALPREP_BLOCK_END");
-const KIT=[line("kitPrepMins"),fn("kitWhenMin"),fn("kitWhenLabel"),fn("kitIsoPlus"),fn("kitPlanFor"),fn("kitPrepSteps"),fn("kitDuePrepHTML"),
+const KIT=[line("kitPrepMins"),fn("kitWhenMin"),fn("kitWhenLabel"),fn("kitIsoPlus"),cut("// KITSIDES_START","// KITSIDES_END"),fn("kitPlanFor"),fn("kitPrepSteps"),fn("kitDuePrepHTML"),
   fn("kitDuePrep"),fn("kitMarkPrep"),fn("_kitEditMealGo"),fn("_kitStash"),fn("kitAddPrepRow"),fn("kitSaveMeal"),fn("kitEditorHTML")].join("\n");
 const H=(h,m)=>h*60+(m||0);
 const iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");

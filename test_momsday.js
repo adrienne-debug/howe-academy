@@ -1360,7 +1360,7 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   const rot = { name: "Fall", weeks: [[{ d: "Turkey Curry", sd: "peas · rice", l: "PB&J" }, { d: "Burgers · fries" }, {}, {}, {}, {}, {}]] };
   M.kitPlan["2026-10-05"] = { sides: "old", l: { txt: "x" } };
   const plan = M.kitRotPlanFor(rot, "2026-10-05");
-  ok("rotation: linked dinner + sides", plan["2026-10-05"].mid === "mS" && plan["2026-10-05"].sides === "peas · rice" && plan["2026-10-05"].l.txt === "PB&J", plan["2026-10-05"]);
+  ok("rotation: linked dinner + sides (KITSIDES 2026-10-22: the sd text becomes a side list, one entry per · part)", plan["2026-10-05"].mid === "mS" && JSON.stringify(plan["2026-10-05"].sideList) === JSON.stringify([{ txt: "peas" }, { txt: "rice" }]) && !("sides" in plan["2026-10-05"]) && plan["2026-10-05"].l.txt === "PB&J", plan["2026-10-05"]);
   ok("rotation: no sd → old sides cleared", !("sides" in plan["2026-10-06"]) && plan["2026-10-06"].txt === "Burgers · fries", plan["2026-10-06"]);
   M.kitPlan["2026-10-06"] = { sides: "stale" };
   ok("rotation: a new dinner drops stale sides", !("sides" in M.kitRotPlanFor(rot, "2026-10-05")["2026-10-06"]), null);
@@ -1369,7 +1369,7 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   ok("kitPlanFor carries sides with the recipe", pf.mid === "mS" && pf.meal && pf.sides === "peas · rice", pf);
   ok("kitPlanFor: no sides key when none", !("sides" in M.kitPlanFor("2026-10-06")), null);
   const cap = M.kitRotCapture("2026-10-05", 1);
-  ok("capture: sides saved as sd", cap.weeks[0][0].sd === "peas · rice" && cap.weeks[0][0].d === "Turkey Curry" && !("sd" in cap.weeks[0][1]), cap.weeks[0].slice(0,2));
+  ok("capture: sides saved as sd (KITSIDES: a list of names)", JSON.stringify(cap.weeks[0][0].sd) === JSON.stringify(["peas", "rice"]) && cap.weeks[0][0].d === "Turkey Curry" && !("sd" in cap.weeks[0][1]), cap.weeks[0].slice(0,2));
   M.kitPlan[TODAY] = { mid: "mS", sides: "peas · rice" };
   M.kitPlan[M.kitIsoPlus(TODAY, 1)] = { txt: "Burgers", sides: "carrot sticks · fries" };
   M.renderKitchen(elStub);
