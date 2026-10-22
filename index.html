@@ -2199,7 +2199,7 @@ function _rtSwTodayLay(){
     return _rtSwLay;
   }catch(e){ return null; }
 }
-function rtSchoolworkDone(kid,d,skipFam){ const _lay=(d===_todayDay)?_rtSwTodayLay():null; const ts=(_lay||getActiveTasks()).filter(t=>t.who===kid&&effectiveDay(t)===d&&!t.id.endsWith("_c")&&!t._eowOverflow&&!(skipFam&&t.famBlock&&typeof famCelebOf==="function"&&famCelebOf(famDefs()[t.famBlock]))&&!/lunch/i.test(t.title)&&!((t._offDay||t._dayDrop)&&!checked[t.id])); return ts.length===0?true:ts.every(t=>!!checked[t.id]||!!(typeof claimed!=="undefined"&&claimed&&claimed[t.id])); }
+function rtSchoolworkDone(kid,d,skipFam){ const _lay=(d===_todayDay)?_rtSwTodayLay():null; const ts=(_lay||getActiveTasks()).filter(t=>t.who===kid&&effectiveDay(t)===d&&!t.id.endsWith("_c")&&!t._eowOverflow&&!(skipFam&&t.famBlock&&typeof famCelebOf==="function"&&famCelebOf(famDefs()[t.famBlock]))&&!(typeof famIsAbsent==="function"&&famIsAbsent(t))&&!/lunch/i.test(t.title)&&!((t._offDay||t._dayDrop)&&!checked[t.id])); return ts.length===0?true:ts.every(t=>!!checked[t.id]||!!(typeof claimed!=="undefined"&&claimed&&claimed[t.id])); }
 // Afternoon (2026-08-18, her rule): opens when schoolwork is done — or at the afternoon hour (default
 // 4:00 PM) regardless, so a slow school day never holds the chores hostage. Past days: always open.
 function rtAfternoonHour(){ const h=parseInt(routineTimes&&routineTimes.afternoonHour,10); return isNaN(h)?16:h; }
@@ -10754,6 +10754,7 @@ function tapTask(id){
       else famKidRateOpen(id);
       return;
     }
+    if(typeof famAttendKidTap==="function"&&famAttendKidTap(t)) return;   // 🏡 FAMATTEND: this copy was "not here"
     if(typeof gwShowToast==="function") gwShowToast(checked[id]?"\u2713 Mom checked off family time":"\u{1F3E1} Family time \u2014 Mom checks this off for everyone"); return; }
   // ⭐ points (step C): Mom's ✓ on a family card that pays opens her one screen — every kid at full stars
   if(t.famBlock&&momHereCards()&&!checked[id]&&typeof famPtsMax==="function"&&famPtsMax(t)>0){ famRateOpen(id); return; }
@@ -10771,6 +10772,7 @@ function tapTask(id){
   const mtBtn=document.getElementById("dlg-movetoday");   // 📅 MOVETODAY
   pushBtn.style.display="none"; disBtn.style.display="none"; disChoice.style.display="none"; if(mtBtn) mtBtn.style.display="none";
   document.getElementById("dlg-title").textContent=t.title;
+  try{ if(typeof famAttendDlg==="function") famAttendDlg(t,isDone||isClaimed); }catch(e){ dbg("family attend dlg: "+e); }   // 🏡 FAMATTEND: who was here?
   if(isDone){
     document.getElementById("dlg-detail").textContent="Completed: "+checked[id];
     btn.style.display="none"; unBtn.style.display="block"; unBtn.innerHTML="&#x21A9; Unmark";
@@ -10874,6 +10876,7 @@ document.getElementById("dlg-ok").onclick=()=>{
     try{ if(typeof coSpinOnClaim==="function") coSpinOnClaim(id); }catch(e){ dbg("closeout spin-on-send: "+e); }   // ✅ CLOSEOUT: spin now, points held until Mom's check
     return;
   }
+  try{ if(t.famBlock&&typeof famAttendSave==="function"&&famAttendSave(t,ts)){ dbg("write checked (family, with absent) id="+id); closeDlg(); renderAll(); return; } }catch(e){ dbg("family attend save: "+e); }   // 🏡 FAMATTEND
   if(finalizeDone(id, ts, null)===false){
     // Refused by the sequential-order guard. Nothing was written — so no spin, no score
     // prompt, and no "write checked" line in the log claiming otherwise. Mom gets the
@@ -30806,6 +30809,7 @@ function famSiblings(t){
 }
 // Mom un-marks one copy → un-mark them all (same targeted removes the dialog's own Unmark does).
 function famUncheckSiblings(t){
+  try{ if(typeof famAttendClear==="function") famAttendClear(t); }catch(e){ dbg("family attend clear: "+e); }   // 🏡 FAMATTEND: "not here" flags come off
   const sib=famSiblings(t).filter(function(x){ return checked[x.id]; }); if(!sib.length) return 0;
   const hist=ld(WK+"_history")||{};
   sib.forEach(function(x){
@@ -30862,6 +30866,7 @@ function famRateOpen(id){
   const grp=famGroup(t).filter(function(x){ return !checked[x.id]; }); if(!grp.length) return;
   famRateState={ids:grp.map(function(x){ return x.id; }),stars:{}};
   grp.forEach(function(x){ famRateState.stars[x.id]=5; });
+  if(typeof famAttendOpen==="function") famAttendOpen(grp);   // 🏡 FAMATTEND: who was here?
   famRateRender();
 }
 function famRateSet(id,n){ if(!famRateState) return; famRateState.stars[id]=Math.max(0,Math.min(5,n|0)); famRateRender(); }
@@ -30870,9 +30875,11 @@ function famRateSave(){
   if(!momHere()||!famRateState) return;
   const st=famRateState, first=weekData.tasks.find(function(x){ return x.id===st.ids[0]; });
   famRateClose(); if(!first) return;
+  if(typeof famAttendLate==="function"&&famAttendLate(st)){ renderAll(); return; }   // 🏡 FAMATTEND: re-opened on "not here" copies
   famOnce(famPaidKey(first),function(){   // same once-lock as the kids' path, so the two can never both pay
     const ts=nowTs(), paid=[];
     st.ids.forEach(function(id){ const c=weekData.tasks.find(function(x){ return x.id===id; }); if(!c||checked[c.id]) return;
+      if(typeof famAttendPay==="function"&&famAttendPay(c)) return;   // 🏡 FAMATTEND: "not here" → flagged, not paid
       famPayCard(c,st.stars[id],ts,"Mom"); paid.push(cap(c.who)+" +"+famPtsFor(famPtsMax(c),st.stars[id])+"⭐"); });
     if(typeof gwShowToast==="function"&&paid.length) gwShowToast(FAM_ICON+" Paid: "+paid.join(", "));
   });
@@ -30890,7 +30897,7 @@ function famRateRender(){
   h+='<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:800">'+FAM_ICON+' '+esc(it.name||"Family time")+'</div>';
   h+='<div style="font-size:12px;color:var(--muted);margin:2px 0 10px">Up to '+max+' ⭐ each. Everyone starts at full — lower anyone who didn’t bring a good attitude.</div>';
   st.ids.forEach(function(id){ const c=weekData.tasks.find(function(x){ return x.id===id; }); if(!c) return; const n=st.stars[id];
-    h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f3f4f6"><div style="flex:1;font-weight:800;font-size:15px">'+esc(cap(c.who))+'</div>'+
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f3f4f6"><div style="flex:1;font-weight:800;font-size:15px">'+esc(cap(c.who))+(typeof famAttendChip==="function"?' '+famAttendChip(c,true):'')+'</div>'+
       _famStarBtns(n,function(i){ return "famRateSet('"+id+"',"+i+")"; },26)+
       '<div style="width:52px;text-align:right;font-weight:800;color:#b45309">'+famPtsFor(max,n)+' ⭐</div></div>'; });
   h+='<div style="display:flex;gap:8px;justify-content:flex-end;padding-top:12px"><button onclick="famRateClose()" style="padding:10px 14px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-weight:700;cursor:pointer">Cancel</button>'+
@@ -30973,6 +30980,7 @@ function famBeforeUncheck(id){
 }
 // The card's line: what this kid can earn / gave / earned.
 function famRowHTML(t,done,viewKid){
+  if(!done&&typeof famIsAbsent==="function"&&famIsAbsent(t)) return famAttendRowHTML(t,viewKid);   // 🏡 FAMATTEND: wasn't here
   const mx=famPtsMax(t), sc=done?famScore(t):null, me=(viewKid===t.who);
   const _ls=(typeof famLessonFor==="function")?famLessonFor(t):"";   // 📚
   let txt;
@@ -31186,6 +31194,112 @@ function famSettingsCardHTML(){
   return h+'</div>';
 }
 // FAMBLOCK_END
+// FAMATTEND_START ── 🏡 "NOT HERE" PER KID ON MOM'S DONE (her ask 2026-10-22 — session D of the 10/22 pack) ──────
+// The hole: Mom's one tap on a Family Time card marked EVERY kid's copy done and paid every kid — a kid who left sick
+// mid-morning was recorded present and paid. A PLANNED absence is handled at generation (smapIsKidOff drops the copy);
+// this is the unplanned one. In BOTH of Mom's paths (the plain "Done — everyone" dialog in tapTask and the ⭐ famRateOpen
+// screen) there is one chip per member kid, default "here"; a tap flips it to "not here". On save:
+//   · every "here" copy finalizes exactly as today (the tapped card first, then the siblings — the same finalizeDone calls)
+//   · every "not here" copy gets ONE targeted write, WK/tasks/<id>/famAbsent = true — never the whole tasks node — and is
+//     NOT finalized and NOT paid; its card reads "wasn't here" (famRowHTML) and it never blocks that kid's day-done
+//     (rtSchoolworkDone). The block still counts as taught: the ≥1-checked rule (famCellDone) and the lesson place moving
+//     once (FAMLESSONS famCheckPre) are untouched.
+//   · Mom's Unmark (dlg-uncheck → famUncheckSiblings) clears famAbsent on every copy — targeted removes.
+//   · No chip touched → famAttendSave says false and today's path runs unchanged, byte for byte.
+// Someone has to be here: the last "here" chip can't be flipped (if no one was there, the card simply stays unchecked).
+// Kids were already locked out of family cards; a kid's tap on their own "wasn't here" copy only says so.
+let famAttendOff={};        // {cardId:true} — the chips flipped to "not here" in the open dialog / screen
+let famAttendDlgId=null;    // the card the plain dialog's chips belong to (famAttendSave answers only for it)
+function famIsAbsent(t){ return !!(t&&t.famBlock&&t.famAbsent); }
+function famAttendGrp(t){ return famGroup(t).filter(function(x){ return !checked[x.id]; }); }   // the copies still open
+// Opening: chips start from what is already recorded — a copy flagged on an earlier save starts "not here".
+function famAttendOpen(grp){ famAttendOff={}; (grp||[]).forEach(function(x){ if(x&&x.famAbsent&&!checked[x.id]) famAttendOff[x.id]=true; }); }
+function famAttendFlip(id){
+  const t=weekData.tasks.find(function(x){ return x.id===id; }); if(!t) return;
+  if(famAttendOff[id]) delete famAttendOff[id];
+  else {
+    const here=famAttendGrp(t).filter(function(x){ return !famAttendOff[x.id]; });
+    if(here.length<=1){ if(typeof gwShowToast==="function") gwShowToast(FAM_ICON+" Someone has to be here \u2014 if no one was, just leave it unchecked."); return; }
+    famAttendOff[id]=true;
+  }
+  if(famRateState&&typeof famRateRender==="function") famRateRender();
+  const el=document.getElementById("fam-attend"); if(el&&famAttendDlgId){ const d=weekData.tasks.find(function(x){ return x.id===famAttendDlgId; }); if(d) el.innerHTML=famAttendChipsHTML(d); }
+}
+function famAttendChip(x,small){
+  const off=!!famAttendOff[x.id];
+  return '<button onclick="event.stopPropagation();famAttendFlip(\''+_fdJ(x.id)+'\')" style="padding:'+(small?'2px 8px':'5px 11px')+';border-radius:14px;border:1.5px solid '+(off?'#fca5a5':'#86efac')+
+    ';background:'+(off?'#fef2f2':'#f0fdf4')+';color:'+(off?'#b91c1c':'#166534')+';font-size:'+(small?'11px':'13px')+';font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+
+    (off?'\u2715 ':'\u2713 ')+(small?(off?'Not here':'Here'):esc(cap(x.who))+(off?' \u2014 not here':''))+'</button>';
+}
+function famAttendChipsHTML(t){
+  const grp=famAttendGrp(t); if(!grp.length) return "";
+  return '<div style="font-size:11px;color:var(--muted);font-weight:700;margin-bottom:5px">Who was here? Tap a name if they weren\u2019t.</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+grp.map(function(x){ return famAttendChip(x,false); }).join('')+'</div>';
+}
+// The plain dialog (tapTask): chips under the detail line for Mom on an open family card; removed for every other card.
+function famAttendDlg(t,skip){
+  let el=document.getElementById("fam-attend");
+  const show=!!(t&&t.famBlock&&!skip&&momHereCards()&&!checked[t.id]);
+  if(!show){ famAttendDlgId=null; if(el) el.remove(); return false; }
+  famAttendDlgId=t.id; famAttendOpen(famAttendGrp(t));
+  if(!el){ const d=document.getElementById("dlg-detail"); if(!d||!d.parentNode) return false; el=document.createElement("div"); el.id="fam-attend"; el.style.cssText="margin:10px 0 2px"; d.parentNode.insertBefore(el,d.nextSibling); }
+  el.innerHTML=famAttendChipsHTML(t);
+  return true;
+}
+// The one write: WK/tasks/<id>/famAbsent = true (on) · removed (off). One leaf — never the whole tasks node.
+function famAttendWrite(x,on){
+  if(on) x.famAbsent=true; else delete x.famAbsent;
+  sv(WK+"_tasks",weekData.tasks); lastTasksWrite=Date.now();
+  if(db&&!_dryRun()){ const r=db.ref(WK+"/tasks/"+x.id+"/famAbsent"); if(on) r.set(true); else r.remove(); }
+  dbg("family attend: "+x.id+" "+(on?"not here":"here"));
+}
+// Mom's "Done — everyone" (dlg-ok). false = nobody marked "not here" → the caller's own path runs unchanged.
+function famAttendSave(t,ts){
+  if(!t||!t.famBlock||famAttendDlgId!==t.id) return false;   // the chips weren't for this card
+  const grp=famAttendGrp(t);
+  const off=grp.filter(function(x){ return famAttendOff[x.id]; }), here=grp.filter(function(x){ return !famAttendOff[x.id]; });
+  here.forEach(function(x){ if(x.famAbsent) famAttendWrite(x,false); });   // flipped back to "here" → the flag comes off; the check follows
+  if(!off.length) return false;
+  famAttendDlgId=null;
+  if(!here.length){ if(typeof gwShowToast==="function") gwShowToast(FAM_ICON+" "+off.map(function(x){ return cap(x.who); }).join(", ")+" marked not here \u2014 tap the name if they were here after all."); return true; }
+  off.forEach(function(x){ famAttendWrite(x,true); });
+  here.forEach(function(x){ if(!checked[x.id]) finalizeDone(x.id,ts,null); });   // the tapped card is first in the group, as today
+  dbg("family attend: "+here.length+" checked, "+off.length+" not here ("+off.map(function(x){ return x.who; }).join(",")+")");
+  if(typeof gwShowToast==="function") gwShowToast(FAM_ICON+" Done for "+here.map(function(x){ return cap(x.who); }).join(", ")+" \u00B7 not here: "+off.map(function(x){ return cap(x.who); }).join(", "));
+  return true;
+}
+// Mom's ⭐ screen (famRateSave), per copy: true = this kid was "not here" → flagged, not paid, not checked.
+function famAttendPay(c){
+  if(!famAttendOff[c.id]){ if(c.famAbsent) famAttendWrite(c,false); return false; }
+  famAttendWrite(c,true); return true;
+}
+// The ⭐ screen re-opened on copies already marked "not here" (the group was paid, its once-lock is taken): a kid flipped
+// back to "here" is paid now, no lock needed — the others' copies are already checked. false = a normal first save.
+function famAttendLate(st){
+  const cards=(st&&st.ids||[]).map(function(id){ return weekData.tasks.find(function(x){ return x.id===id; }); }).filter(function(c){ return c&&!checked[c.id]; });
+  if(!cards.length||!cards.every(function(c){ return c.famAbsent; })) return false;
+  const ts=nowTs(), paid=[];
+  cards.forEach(function(c){ if(famAttendOff[c.id]) return; famAttendWrite(c,false); famPayCard(c,st.stars[c.id],ts,"Mom"); paid.push(cap(c.who)+" +"+famPtsFor(famPtsMax(c),st.stars[c.id])+"\u2B50"); });
+  if(typeof gwShowToast==="function") gwShowToast(paid.length?FAM_ICON+" Paid: "+paid.join(", "):FAM_ICON+" Still marked not here.");
+  return true;
+}
+// Unmark (famUncheckSiblings): every copy's flag comes off, targeted removes, so the group is a plain open family card again.
+function famAttendClear(t){
+  const flagged=famGroup(t).filter(function(x){ return x&&x.famAbsent; }); if(!flagged.length) return 0;
+  flagged.forEach(function(x){ famAttendWrite(x,false); });
+  return flagged.length;
+}
+// The card's line for a copy that wasn't here (famRowHTML) — muted, no points, no "Mom checks this off".
+function famAttendRowHTML(t,viewKid){
+  const me=(viewKid===t.who);
+  return '<div style="margin-top:4px;font-size:11px;font-weight:700;color:var(--muted)">'+FAM_ICON+' '+(me?'You weren\u2019t here for this one':esc(cap(t.who))+' wasn\u2019t here for this one')+'</div>';
+}
+// A kid's tap on their own "wasn't here" copy (tapTask, kid branch): true = handled, nothing to do.
+function famAttendKidTap(t){
+  if(!famIsAbsent(t)||checked[t.id]) return false;
+  if(typeof gwShowToast==="function") gwShowToast(FAM_ICON+" You weren\u2019t here for this one \u2014 nothing to do");
+  return true;
+}
+// FAMATTEND_END
 // FAMCELEB_START ── 🎉 FAMILY-TIME CELEBRATIONS (her design 2026-10-04) ───────────────────────────────────────
 // "it can have a add celebratory song option when making the family block" · "when mom clicks it says it's celebrating
 // all the kids who are done … anyone who is left will get it again for them" · "a celebrate with just the confetti etc
