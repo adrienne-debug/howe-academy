@@ -13833,14 +13833,29 @@ function llUnstart(lid){ const LD=(typeof laundryData!=="undefined"&&laundryData
   try{ if(typeof _cuDropBlock==="function") _cuDropBlock(lid,l.stage); }catch(x){}
   delete LD[lid]; try{ HA_LS.setItem('ha_laundry',JSON.stringify(LD)); }catch(x){} if(typeof _lbWrite==="function"&&_lbWrite()) db.ref('laundry/'+lid).remove();
   llUnlog(lid,l); return true; }
-// ✓ a Start row = 🫧 Start (Dad's is his); again while it's still on its first step = back in line. ✓ a Fold row = put away.
+// FOLD_BACK_START — her ask 2026-10-21 (Lucy ticked "Fold" while her clothes were still in the washer; the load vanished from Machines now
+// and the un-tick did nothing): un-ticking a Fold row brings the load back, to the machine it was really in, from ANY device. Putting a line
+// load away now leaves a note beside its own day-log entry — log/<day>/<item>/away = {at, load:<the load as it was>} — the un-tick reads
+// the note, writes the load back under laundry/<id> with a fresh clock, clears the note, and the kid's row un-ticks itself (llSyncKidRows).
+// Stars never move (the auto-tick paid none). Mom's / Dad's "Fold" checklist row un-ticks the same way. Targeted writes only.
+function llNoteAway(lid,l){ if(!l||!l.line||!l.lineDay||!laundryLine||!Object.keys(laundryLine).length) return false; const g=laundryLine.log&&laundryLine.log[l.lineDay], e=g&&g[l.line]; if(!e||e.load!==lid) return false;
+  const a={at:Date.now(),load:JSON.parse(JSON.stringify(l))}; e.away=a; llStore(); const u={}; u["log/"+l.lineDay+"/"+l.line+"/away"]=a; llWrite(u); return true; }
+function llAwayStageWords(l){ const cm=(l&&typeof lcMeta==="function"&&typeof lcHas==="function"&&lcHas(l))?lcMeta(l):null; if(cm) return cm[0]+" "+cm[1]; return l.stage==="dryer"?"🌀 in the dryer":l.stage==="fold"?"🧺 in the fold pile":"🫧 in the washer"; }
+function llUnputawayLine(id){ const t=llToday(), g=laundryLine&&laundryLine.log&&laundryLine.log[t], e=g&&g[id], LD=(typeof laundryData!=="undefined"&&laundryData)||{};
+  if(!e||!e.load||LD[e.load]||!e.away||!e.away.load) return false;
+  const rec=Object.assign({},e.away.load,{ts:Date.now(),line:id,lineDay:t}); LD[e.load]=rec; try{ HA_LS.setItem('ha_laundry',JSON.stringify(LD)); }catch(x){} if(typeof _lbWrite==="function"&&_lbWrite()) db.ref('laundry/'+e.load).set(rec);
+  delete e.away; llStore(); const u={}; u["log/"+t+"/"+id+"/away"]=null; llWrite(u);
+  try{ llSyncKidRows(); }catch(x){} if(typeof mwToast==="function") mwToast('🧺 '+(rec.label||'Laundry')+' — back, '+llAwayStageWords(rec)); return true; }
+// FOLD_BACK_END
+// ✓ a Start row = 🫧 Start (Dad's is his); again while it's still on its first step = back in line. ✓ a Fold row = put away; un-✓ = back (FOLD_BACK).
 function llParentTick(id,kind,who){ const t=llToday(), e=llDayLog(t)[id], LD=(typeof laundryData!=="undefined"&&laundryData)||{};
   if(kind==="start"){ if(!e) llStart(id,who==="dad"?"dad":undefined); else if(e.load&&LD[e.load]) llUnstart(e.load); llRerender(); return; }
-  if(kind==="fold"&&e&&e.load&&LD[e.load]) llPutAway(e.load); llRerender(); }
+  if(kind==="fold"&&e&&e.load){ if(LD[e.load]) llPutAway(e.load); else llUnputawayLine(id); } llRerender(); }
 // Put a line load away (the kids' Fold row and Mom's / Dad's): ends its block, remembers it for ↶, removes laundry/<id>.
 function llPutAway(lid){ const LD=(typeof laundryData!=="undefined"&&laundryData)||{}, l=LD[lid]; if(!l) return;
   try{ if(typeof laundryBlockDone==="function") laundryBlockDone(lid,l.stage); }catch(x){} try{ if(typeof laundryAwayRemember==="function") laundryAwayRemember(lid,l); }catch(x){}
   delete LD[lid]; try{ HA_LS.setItem('ha_laundry',JSON.stringify(LD)); }catch(x){} if(typeof _lbWrite==="function"&&_lbWrite()) db.ref('laundry/'+lid).remove();
+  try{ llNoteAway(lid,l); }catch(x){}   /* FOLD_BACK: the note the un-tick reads */
   try{ llSyncKidRows(); }catch(x){}   // 🧺 the kid's Fold row ticks itself
   if(typeof mwToast==="function") mwToast('🧺 '+(l.label||'Laundry')+' put away!'); }
 // 🧺 LINE_CHORES sync (her rule 2026-10-18: "they will need to be checked off automatically if they are checked off in any other areas"). A
@@ -13865,7 +13880,8 @@ function llSyncKidRows(){ if(typeof slState==="undefined"||typeof activeWk!=="fu
 function llKidRowHook(kid,st,now){ if(typeof _todayDay==="string"&&typeof day!=="undefined"&&day!==_todayDay) return;
   const t=llToday(), id=st.line; if(!llKnown(id)) return; const e=llDayLog(t)[id], LD=(typeof laundryData!=="undefined"&&laundryData)||{};
   if(st.laundry===true){ if(now){ if(!e) llStart(id,kid); } else if(e&&e.load&&LD[e.load]) llUnstart(e.load); return; }
-  if(st.laundry==="lineFold"&&now){ const lid=(e&&e.load&&LD[e.load])?e.load:Object.keys(LD).find(function(k){ return LD[k]&&LD[k].line===id&&LD[k].lineDay===t; }); if(lid) llPutAway(lid); } }
+  if(st.laundry==="lineFold"&&now){ const lid=(e&&e.load&&LD[e.load])?e.load:Object.keys(LD).find(function(k){ return LD[k]&&LD[k].line===id&&LD[k].lineDay===t; }); if(lid) llPutAway(lid); }
+  else if(st.laundry==="lineFold"&&!now) llUnputawayLine(id); }   /* FOLD_BACK: un-✓ brings the load back to the machine it was in */
 // ▶ up next = the front of the live line: the first load laid from now on that hasn't gone in (a load moved at 8 PM is the front).
 function llFront(){ const R=llProjectNow(21); for(let i=0;i<R.length;i++){ for(let k=0;k<R[i].loads.length;k++){ if(R[i].started.indexOf(R[i].loads[k])<0) return R[i].loads[k]; } } return llNext(); }
 // 📅 The laundry schedule as its own card (her ask 2026-10-18: the laundry tab reads machines now → the schedule → the rest).
@@ -14193,6 +14209,7 @@ function laundryAdvance(id){
     if(_lbWrite()) db.ref('laundry/'+id).set(l);
   } else if(i<0||i===LAUNDRY_STAGES.length-1){
     try{ if(typeof laundryAwayRemember==="function") laundryAwayRemember(id,l); }catch(e){}   // ↶ CHOREUNDO: this device can bring it back today
+    try{ if(l.line&&typeof llNoteAway==="function") llNoteAway(id,l); }catch(e){}   // FOLD_BACK: any device can, from the kid's Fold row
     delete laundryData[id]; // put away — load complete
     if(_lbWrite()) db.ref('laundry/'+id).remove();
     try{ if(l.line&&typeof llSyncKidRows==="function") llSyncKidRows(); }catch(e){}   // 🧺 LINE_CHORES: the kid's Fold row ticks itself
@@ -14594,6 +14611,7 @@ function laundryKidMove(kid,to){
   try{ if(typeof laundryBlockDone==="function") laundryBlockDone(id,from); }catch(e){}   // ends that stage's block, as laundryAdvance does
   if(to==="putaway"){
     try{ if(typeof laundryAwayRemember==="function") laundryAwayRemember(id,l); }catch(e){}   // ↶ CHOREUNDO, as laundryAdvance does
+    try{ if(l&&l.line&&typeof llNoteAway==="function") llNoteAway(id,l); }catch(e){}   // FOLD_BACK
     delete laundryData[id];
     if(_lbWrite()) db.ref('laundry/'+id).remove();
   } else {
