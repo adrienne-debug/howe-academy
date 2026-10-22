@@ -104,7 +104,11 @@ else {
     const o = { slot: "afternoon" };   // empty list → code defaults; afternoon has none → ✨ seed button path
     ok("🏡 My day with the defaults + empty slot: same bytes", _cadNorm(world(old, o).api.momDayStripHTML("2026-10-12", "tuesday")) === _cadNorm(world(src, o).api.momDayStripHTML("2026-10-12", "tuesday")));
   }
-  [true, false].forEach(sd => {
+  // KIDROWS2 (2026-10-22) took the 📅 pill and the 📋 lists pill out of the rows on purpose; while only this side carries the
+  // marker the kid-rows byte-compare is skipped — it resumes by itself once this is on main (both sides then carry it).
+  const _kr2 = src.indexOf("KIDROWS2_START") >= 0 && old.indexOf("KIDROWS2_START") < 0;
+  if (_kr2) ok("🧒 kid rows byte-compare skipped this once: KIDROWS2 changed the rows on purpose (resumes once it is on main)", /mpBankAsk\('ava',1\)/.test(world(src, MOM).api.mdCardKidsToday("monday", true, true)));
+  else [true, false].forEach(sd => {
     const a = world(old, MOM).api.mdCardKidsToday("monday", sd, true), b = world(src, MOM).api.mdCardKidsToday("monday", sd, true);
     ok("🧒 kid rows (Mom's Day, school day=" + sd + "): same bytes", a === b && /mpBankAsk\('ava',1\)/.test(b));
     ok("🧒 plain Kids today (no bank): same bytes", world(old, MOM).api.mdCardKidsToday("monday", sd) === world(src, MOM).api.mdCardKidsToday("monday", sd));

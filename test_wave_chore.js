@@ -1,7 +1,8 @@
 /*
  * 🙋 WAVE — "✕ today": Mom waves a kid's chore for one day (her ask 2026-10-10). Not due, not paid, not late, no "— not done",
  * the list completes without it, the kid sees a greyed row, the check-off log shows "waved", the Household numbers count it
- * as not due. Mom's Day ▸ Kids today ▸ 📋 lists is the only place with the button.               run: node test_wave_chore.js
+ * as not due. Mom's Day / Dad's Day ▸ Kids today ▸ the 🌅 ☀️ 🧹 🌙 pop-up rows carry the button (KIDROWS2 2026-10-22; it was
+ * the 📋 lists panel).                                                                            run: node test_wave_chore.js
  */
 const fs=require("fs"), vm=require("vm");
 const src=fs.readFileSync(__dirname+"/index.html","utf8");
@@ -9,7 +10,7 @@ let pass=0, fail=0; const ok=(n,c,x)=>{ if(c){pass++;console.log("  ok  - "+n);}
 function slice(name){ const sig="function "+name+"("; const i=src.indexOf(sig); if(i<0) throw new Error("not found: "+name); let d=0; for(let k=src.indexOf("{",i);k<src.length;k++){ if(src[k]==="{")d++; else if(src[k]==="}"){ d--; if(d===0) return src.slice(i,k+1);} } throw new Error("unbalanced: "+name); }
 const cut=(a,b)=>{ const i=src.indexOf(a), j=src.indexOf(b,i); if(i<0||j<0) throw new Error("missing "+a); return src.slice(i,j); };
 const WAVE=cut("// WAVE_START","// WAVE_END"), SUN=cut("// SUNDAY_FIRST_START","// SUNDAY_FIRST_END");
-const NAMES=["_rtDayPassed","_rtLastDueIdx","_rtPrevDueIdx","_rtDueIso","_rtBeforeFrom","rtLateDays","rtDoneOnWk","_prevWkKey","rtDueOrLate","rtComplete","_rtLogLateMiss","morningDueIdx","mdSlotCounts","ckLogToday","rtSlotHTML"];
+const NAMES=["kr2WaveBtnHTML","_rtDayPassed","_rtLastDueIdx","_rtPrevDueIdx","_rtDueIso","_rtBeforeFrom","rtLateDays","rtDoneOnWk","_prevWkKey","rtDueOrLate","rtComplete","_rtLogLateMiss","morningDueIdx","mdSlotCounts","ckLogToday","rtSlotHTML"];
 const W={sunday:"2026-10-04",monday:"2026-10-05",tuesday:"2026-10-06",wednesday:"2026-10-07",thursday:"2026-10-08",friday:"2026-10-09",saturday:"2026-10-10"};
 function mk(o){
   o=o||{}; const writes=[], ls={}, misses=[];
@@ -47,14 +48,14 @@ console.log("Wave a weekday chore: not late later in the week, no '— not done'
   c._rtLogLateMiss("chores","lucy",0,"wk:0","Take sheets off beds",15); ok("…and no miss is filed", c.misses.length===0);
   ok("still due next Monday as normal", c.rtDueOrLate("chores","lucy","monday",0,st)===false&&(()=>{ const d=mk({today:"monday"}); return d.rtDueOrLate("chores","lucy","monday",0,st)===true; })());
 }
-console.log("A done step cannot be waved from the panel; dry run writes nothing; the panel");
-{ const c=mk({cur:{"week26_saturday_lucy_astep0":{done:true}}}); const h=c.mdKidListsHTML("lucy","saturday");
-  ok("Kids today lists: ✅ for the done one with no ✕, ✕ today on the open ones, slots labelled", /✅/.test(h)&&!/rtWave\('afternoon','lucy','saturday',0\)/.test(h)&&/rtWave\('chores','lucy','saturday',0\)|rtWave\('morning','lucy','saturday',0\)/.test(h)&&/Morning<\/div>/.test(h));
+console.log("The pop-up row's button; dry run writes nothing");
+{ const c=mk(); const POP=slice("boardStatPop");
+  ok("Kids today pop-up: a done row gets no ✕; every open row's ✕ today / undo is kr2WaveBtnHTML → rtWave with that row's slot, kid, day, index", /\(_waveOk&&r\.i!=null&&!r\.done\)\?kr2WaveBtnHTML\(slot,kid,_d,r\.i,!!r\.wv\):''/.test(POP)&&/rtWave\('chores','lucy','saturday',0\);boardStatPop\('lucy','chores','saturday'\)"[^>]*>✕ today</.test(c.kr2WaveBtnHTML("chores","lucy","saturday",0,false))&&/>undo</.test(c.kr2WaveBtnHTML("chores","lucy","saturday",0,true)));
   const d=mk({dry:true}); d.rtWave("afternoon","lucy","saturday",0); ok("?dryrun=1 → nothing written, waved locally", d.writes.length===0&&d.rtWaved("afternoon","lucy","saturday",0));
   const e=mk({nodb:true}); e.rtWave("afternoon","lucy","saturday",0); ok("db null → no throw", e.rtWaved("afternoon","lucy","saturday",0));
 }
 console.log("Wiring");
-ok("📋 lists pill on the bank row — Mom's Day AND Dad's Day (LISTS_TAP 2026-10-21: \"match dads up to moms\") — only when the wave code is present", /bank&&typeof mpKidListsToggle==="function"/.test(src)&&/bank&&typeof mdKidListsHTML==="function"&&mpKidOpen===kid/.test(src)&&!/dadCtl===undefined&&typeof mpKidListsToggle/.test(src));
+ok("no 📋 lists pill or panel on the bank row any more (KIDROWS2 2026-10-22) — the pop-ups carry ✕ today on Mom's Day AND Dad's Day", !/mpKidListsToggle|mdKidListsHTML|mpKidOpen===kid/.test(slice("mdCardKidsToday"))&&/kr2WaveBtnHTML\(slot,kid,_d,r\.i,!!r\.wv\)/.test(slice("boardStatPop")));
 ok("waved listener; Household numbers skip a waved day; log card shows 🙋 waved with no dock", /db\.ref\("waved"\)\.on\("value"/.test(src)&&/S\.wave\[job\.who/.test(src)&&/i\.kind==="wave"\) h\+='<span[^>]*>🙋 waved/.test(src));
 ok("no 🔀", src.indexOf("🔀")<0);
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

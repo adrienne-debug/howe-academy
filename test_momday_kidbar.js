@@ -92,7 +92,7 @@ console.log("── lights in front of each fraction ──");
   ROSTER.forEach((k, ki) => Object.keys(want).forEach(sl => { const l = light(rs[ki], want[sl]); if (!l || l.done !== !!w.api.slCellState(sl, k).done) same = false; }));
   ok("every routine light matches the All tab's state for that kid + slot", same);
   ok("Ava: 🌅 lit, ☀️ lit, 🧹 dark, 🌙 dark", light(rs[0], "🌅").done && light(rs[0], "☀️").done && !light(rs[0], "🧹").done && !light(rs[0], "🌙").done);
-  ok("📅 light: Ava 1/2 dark, Ben 1/1 lit, Cy 0/0 dark", !light(rs[0], "📅").done && light(rs[0], "📅").frac === "1/2" && light(rs[1], "📅").done && light(rs[1], "📅").frac === "1/1" && !light(rs[2], "📅").done);
+  ok("no 📅 school pill on any row (KIDROWS2 2026-10-22: Mom's Day ▸ Schedule is the schedule), and no 'tasks' pop-up from the row", rs.every(r => !/📅/.test(r) && !/boardStatPop\('\w+','tasks'/.test(r)));
   ok("lit = ✓ in the kid's colour", /border:2px solid #e11d48;background:#e11d4822;color:#e11d48">✓<\/span>🌅/.test(rs[0]));
 }
 {
@@ -113,7 +113,7 @@ console.log("\n── rooms line, then stars + give/dock box ──");
   ok("no 'why' box at the bottom any more; amount ids unique", !/mpbank-note/.test(card) && !/>why</.test(card) && (card.match(/id="mpbank-\w+"/g) || []).length === 3);
   ok("the old top-row ⭐ pill isn't doubled", (rs[0].match(/boardStatPop\('ava','stars'/g) || []).length === 1);
   const ns = rows(world(STATE).api.mdCardKidsToday(TODAY, false, true));
-  ok("not a school day → no 📅, lights + stars stay", !/📅/.test(ns[0]) && light(ns[0], "🌅") && /🏦 1,234/.test(ns[0]));
+  ok("not a school day → still no 📅, lights + stars stay", !/📅/.test(ns[0]) && light(ns[0], "🌅") && /🏦 1,234/.test(ns[0]));
 }
 
 console.log("\n── Dad's Day unchanged ──");
