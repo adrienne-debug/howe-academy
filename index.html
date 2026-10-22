@@ -1606,7 +1606,7 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
     (document.body||document.documentElement).appendChild(o);
   }
   show(); document.addEventListener("DOMContentLoaded",show);
-  var again=function(){ try{ location.reload(); }catch(e){} };
+  var again=function(){ try{ sessionStorage.setItem("ha_reload_why","no-family-retry"); }catch(e){} try{ location.reload(); }catch(e){} };   // ⏱ CDBOOTS label
   window.addEventListener("online",again);
   setInterval(function(){ if(navigator.onLine!==false) again(); },20000);
 })();
@@ -1620,6 +1620,7 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
   if(m&&el){ el.textContent="The "+m[1]+" Family"; el.style.display=""; } }catch(e){} })();
 </script>
 <script>
+var _cdT={js0:(typeof performance!=="undefined"&&performance.now)?performance.now():-1};   // ⏱ CDBOOTS: when the main script started running (ms since the page was asked for)
 // ── FIREBASE CONFIG — per-family, from family-config.js (window.HA_FAMILY).
 //    The Howe literals stay as the fallback so a missing/stale config file
 //    boots identically to every deploy before it existed. ──
@@ -1660,7 +1661,13 @@ window.HA_LS=(function(){
 })();
 
 // ── CODE VERSION — auto-computed hash, no manual bumping needed ──
+// ⏱ CDBOOTS: HA_BUILD names the build in the connection diary (CODE_VERSION stays the deploy-reload trigger). It is the
+// first 8 characters of the main commit this build was cut from (a commit can't hold its own hash) — UPDATE IT BY HAND
+// IN EVERY DEPLOY so each deploy shows one name on every device.
+const HA_BUILD="851f7f7f";
+try{ _cdT.cv0=performance.now(); }catch(e){}
 const CODE_VERSION = (function(){var s=document.documentElement.outerHTML;var h=0;for(var i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0;}return Math.abs(h);})();
+try{ _cdT.cv1=performance.now(); }catch(e){}
 
 // Register the network-first service worker so every load pulls the latest deployed code
 // automatically — no cache-clearing, private windows, or manual reloads ever again. Once
@@ -1673,7 +1680,7 @@ if('serviceWorker' in navigator && location.protocol==='https:'){
       // When a new SW takes control (a fresh deploy of sw.js itself), reload once so the
       // page is served by the new worker. Guarded against reload loops.
       navigator.serviceWorker.addEventListener('controllerchange', function(){
-        if(!sessionStorage.getItem('ha_sw_reloaded')){ sessionStorage.setItem('ha_sw_reloaded','1'); location.reload(); }
+        if(!sessionStorage.getItem('ha_sw_reloaded')){ sessionStorage.setItem('ha_sw_reloaded','1'); try{ sessionStorage.setItem('ha_reload_why','sw-update'); }catch(e){} location.reload(); }   // ⏱ CDBOOTS label
       });
       // Poll for a new SW version every few minutes so long-running tablets pick up deploys.
       setInterval(function(){ try{ reg.update(); }catch(e){} }, 5*60*1000);
@@ -3172,7 +3179,7 @@ function cdOnConn(on){
     return;
   }
   let ended=null;
-  if(!_cdEverOn){ _cdEverOn=true; d.firstConnSec.push(Math.round((now-_cdBootAt)/100)/10); if(d.firstConnSec.length>20) d.firstConnSec=d.firstConnSec.slice(-20); }
+  if(!_cdEverOn){ try{ cdMark("connMs"); }catch(eM){} _cdEverOn=true; d.firstConnSec.push(Math.round((now-_cdBootAt)/100)/10); if(d.firstConnSec.length>20) d.firstConnSec=d.firstConnSec.slice(-20); }
   if(_cdOffAt){
     const ms=now-_cdOffAt;
     if(ms>=CD_MIN_MS){
@@ -3186,10 +3193,78 @@ function cdOnConn(on){
   const ua=(typeof navigator!=="undefined"&&navigator.userAgent)||"", label=cdLabel(ua,(typeof navigator!=="undefined"&&navigator.maxTouchPoints)||0);
   try{ if(db) db.ref("connDiary/"+d.day+"/"+cdDevId()).set({label:label,ua:String(ua).slice(0,180),transport:cdTransport(),build:String(CODE_VERSION),
     loads:d.loads,deployLoads:d.deployLoads,outages:d.outages,totalMin:Math.round(d.totalMs/6000)/10,longestMin:Math.round(d.longestMs/6000)/10,
-    firstConnSec:d.firstConnSec,last:d.last,updated:now}); }catch(e){}
+    firstConnSec:d.firstConnSec,last:d.last,updated:now,...((d.boots&&d.boots.length)?{boots:d.boots}:{})}); }catch(e){}
   if(ended&&ended.min*60000>=CD_LOG_MS) dbg("📶 "+label+": back online after "+ended.min+" min"+(ended.hidden?" (screen was hidden)":"")+" — today "+d.outages+" outage"+(d.outages===1?"":"s")+", "+(Math.round(d.totalMs/6000)/10)+" min, longest "+(Math.round(d.longestMs/6000)/10)+" min, "+d.loads+" page loads ("+d.deployLoads+" deploy)");
 }
 try{ cdBoot(); }catch(e){}
+// CDBOOTS_START — ⏱ boot timings per page load (her yes 2026-10-22, Stage 0b of the LG lite build: "measure before
+// building"). RECORD ONLY — nothing about how the app loads, draws, schedules or saves changes. Every page load on every
+// device keeps one entry: WHY it loaded, how big the page was and how long it took to download (transport / size), how
+// long until the main script ran (parse — on the LG mostly 5.3 MB of code), how long the top-level setup and the
+// CODE_VERSION hash took, first paint, first connect, when this week's cards / Mastery / the archive arrived (data
+// size — the archive is no longer on the device since LS_ARCHIVE, it always comes from the server), how many full
+// repaints (renderAll) ran in the first 30 s and how long they took, how long the page was too busy to answer a tap,
+// the device's storage (_haAuthDiagNow's total KB + 1 KB test write) and HA_BUILD. 30 s after load the entry joins the
+// last 10 in today's diary row: ONE targeted write, connDiary/<day>/<deviceId>/boots (dry-run honoured). Nobody listens.
+const CD_BOOT_WIN=30000, CD_BOOTS_MAX=10;
+let _cdB={renders:0,renderMs:0,maxRenderMs:0,paintMs:-1,busyMs:0,longestMs:0,marks:{},done:false,po:null};
+function cdNow(){ try{ return (typeof performance!=="undefined"&&performance.now)?performance.now():-1; }catch(e){ return -1; } }
+function cdMark(k){ if(_cdB.marks[k]===undefined){ const t=cdNow(); if(t>=0) _cdB.marks[k]=Math.round(t); } }
+function cdRenderStart(){ try{ if(_cdB.done) return -1; return cdNow(); }catch(e){ return -1; } }
+function cdRenderEnd(t0){
+  try{ if(t0<0||_cdB.done) return; const t=cdNow(); if(t<0) return; const dt=t-t0;
+    if(_cdB.paintMs<0) _cdB.paintMs=Math.round(t);
+    if(t0<=CD_BOOT_WIN){ _cdB.renders++; _cdB.renderMs+=dt; if(dt>_cdB.maxRenderMs) _cdB.maxRenderMs=dt; } }catch(e){}
+}
+function cdWhy(){
+  let ss=null; try{ ss=(typeof sessionStorage!=="undefined")?sessionStorage:null; }catch(e){}
+  const g=k=>{ try{ return ss?ss.getItem(k):null; }catch(e){ return null; } };
+  const tag=g("ha_reload_why"); if(tag){ try{ ss.removeItem("ha_reload_why"); }catch(e){} }
+  const first=!g("ha_cd_seen"); try{ if(ss) ss.setItem("ha_cd_seen","1"); }catch(e){}
+  if(tag) return tag;
+  try{ if(typeof document!=="undefined"&&document.wasDiscarded) return "tv-discarded"; }catch(e){}
+  try{ if(g("ha_cv_reload")===String(CODE_VERSION)) return "deploy"; }catch(e){}
+  let type="";
+  try{ const n=performance.getEntriesByType("navigation")[0]; type=n?String(n.type):""; }catch(e){}
+  if(!type){ try{ type=["navigate","reload","back_forward"][performance.navigation.type]||""; }catch(e){} }
+  if(type==="reload") return "reload";
+  if(type==="back_forward") return "back";
+  if(first) return g("ha_h_tried")?"launch+bounce":"launch";   // line 15 re-loaded the page to add ?_h= (a 2nd full download)
+  return type||"?";
+}
+function cdBootEntry(why){
+  const r=x=>(typeof x==="number"&&x>=0)?Math.round(x):-1, T=(typeof _cdT!=="undefined"&&_cdT)||{}, M=_cdB.marks;
+  let nav=null; try{ nav=performance.getEntriesByType("navigation")[0]||null; }catch(e){}
+  let st=null; try{ st=(typeof _haAuthDiagNow==="function")?_haAuthDiagNow():null; }catch(e){}
+  return {at:cdHM(_cdBootAt), why:why, b:(typeof HA_BUILD!=="undefined"?HA_BUILD:"?"),
+    kb:nav?Math.round((nav.transferSize||0)/1024):-1, dlMs:nav?r(nav.responseEnd-nav.requestStart):-1,
+    jsMs:(nav&&T.js0>=0)?r(T.js0-nav.responseEnd):-1, evalMs:(T.js1>=0&&T.js0>=0)?r(T.js1-T.js0):-1,
+    cvMs:(T.cv1>=0&&T.cv0>=0)?r(T.cv1-T.cv0):-1, paintMs:r(_cdB.paintMs),
+    connMs:r(M.connMs), weekMs:r(M.weekMs), mastMs:r(M.mastMs), archMs:r(M.archMs),
+    renders:_cdB.renders, renderMs:r(_cdB.renderMs), maxRenderMs:r(_cdB.maxRenderMs),
+    busyMs:r(_cdB.busyMs), longestMs:r(_cdB.longestMs),
+    lsKB:(st&&typeof st.lsKB==="number")?st.lsKB:-1, lsWrite:st?String(st.write).slice(0,40):"?"};
+}
+let _cdWhy="?"; try{ _cdWhy=cdWhy(); }catch(e){}
+function cdBootsFinish(){
+  if(_cdB.done) return; _cdB.done=true;
+  try{ if(_cdB.po) _cdB.po.disconnect(); }catch(e){}
+  try{
+    const e=cdBootEntry(_cdWhy), d=cdLoad();
+    d.boots=(Array.isArray(d.boots)?d.boots:[]).concat([e]).slice(-CD_BOOTS_MAX); cdSave(d);
+    const dry=(typeof _dryRun==="function")&&_dryRun();
+    if(typeof db!=="undefined"&&db&&!dry) db.ref("connDiary/"+d.day+"/"+cdDevId()+"/boots").set(d.boots);
+  }catch(e){}
+}
+// In the page only (a test harness has no window): watch for long tasks, and close the entry 30 s after the load began.
+if(typeof window!=="undefined"&&typeof setTimeout==="function"){
+  try{ if(typeof PerformanceObserver!=="undefined"){
+    _cdB.po=new PerformanceObserver(l=>{ try{ l.getEntries().forEach(x=>{ if(x.startTime<=CD_BOOT_WIN){ _cdB.busyMs+=x.duration; if(x.duration>_cdB.longestMs) _cdB.longestMs=x.duration; } }); }catch(e){} });
+    try{ _cdB.po.observe({type:"longtask",buffered:true}); }catch(e){ _cdB.po.observe({entryTypes:["longtask"]}); }
+  } }catch(e){}
+  try{ setTimeout(cdBootsFinish,Math.max(1000,CD_BOOT_WIN-Math.max(0,cdNow()))); }catch(e){}
+}
+// CDBOOTS_END
 // CONNDIARY_END
 
 // OUTBOX_START — 📮 taps made offline survive a reload (her yes 2026-09-23, "yes also chores and claims")
@@ -3461,6 +3536,7 @@ function attachWeekListeners(wk){
     if(incoming.length>fbTasksHighWater) fbTasksHighWater=incoming.length;
     const firstLoad=!fbTasksLoaded;
     fbTasksLoaded=true;
+    try{ if(typeof cdMark==="function") cdMark("weekMs"); }catch(eM){}   // ⏱ CDBOOTS
     // Compare full task fingerprint (id+day+time), not just IDs — catches cascade moves
     const fingerprint = ts => ts.map(t=>t.id+"|"+t.day+"|"+t.time).sort().join(",");
     const inFP=fingerprint(incoming);
@@ -3637,7 +3713,7 @@ function haAuthSubmit(ev){
   haAuthShow("");
   firebase.auth().signInWithEmailAndPassword(String(e).trim(),p).then(function(cred){
     _haAuthProbe=null; _haAuthUser=cred&&cred.user||null; _haAuthOk=true; haAuthHide();
-    if(db){ try{ haAuthDiagReport("after sign-in, reloading"); }catch(eAD){} location.reload(); return; }   // mid-session: listeners were cut when the rules locked → clean re-attach
+    if(db){ try{ haAuthDiagReport("after sign-in, reloading"); }catch(eAD){} try{ sessionStorage.setItem("ha_reload_why","signin"); }catch(eW){} location.reload(); return; }   // mid-session: listeners were cut when the rules locked → clean re-attach
     initFb(); renderAll();
     setTimeout(function(){ try{ haAuthDiagReport("after sign-in"); }catch(eAD){} },2500);
   }).catch(function(err){
@@ -3738,7 +3814,7 @@ function haAuthDiagReport(when){
 }
 // AUTHDIAG_END
 // From an Admin console: haSignOut() forgets this device's session and reloads (it will ask again).
-function haSignOut(){ try{ firebase.auth().signOut().then(function(){ location.reload(); }); }catch(e){ location.reload(); } }
+function haSignOut(){ try{ sessionStorage.setItem("ha_reload_why","signout"); }catch(e){} try{ firebase.auth().signOut().then(function(){ location.reload(); }); }catch(e){ location.reload(); } }   // ⏱ CDBOOTS label
 // AUTH_GATE_END
 // CVRELOAD_START — a code-version reload waits for an idle moment (her report 2026-09-22)
 // Every deploy — and every stale device that reconnects and republishes its OLD hash — used to
@@ -3979,6 +4055,7 @@ function initFb() {
     });
     db.ref("archive").on("value",s=>{
       fbArchiveLoaded=true;
+      try{ if(typeof cdMark==="function") cdMark("archMs"); }catch(eM){}   // ⏱ CDBOOTS (live from the server — no device copy since LS_ARCHIVE)
       archive=s.val()||{};
       try{HA_LS.setItem("ha_archive",JSON.stringify(archive));}catch(e){}
       if(tab==="history"){const el=document.getElementById("content");if(el)renderHistory(el);}
@@ -4059,7 +4136,7 @@ function initFb() {
       if(v&&!Array.isArray(v)&&typeof v==="object") v=Object.values(v);
       if(Array.isArray(v)&&v.length){
         var str=JSON.stringify(v);
-        if(str!==HA_LS.getItem("ha_family")){ HA_LS.setItem("ha_family",str); location.reload(); }
+        if(str!==HA_LS.getItem("ha_family")){ HA_LS.setItem("ha_family",str); try{ sessionStorage.setItem("ha_reload_why","family"); }catch(e){} location.reload(); }   // ⏱ CDBOOTS label
       }
     });
     db.ref("settings/celebration_songs").on("value",s=>{
@@ -4272,6 +4349,7 @@ function initFb() {
       const v=s.val()||{};
       masteryData={...v};
       const _mastFirst=!_haMastReady;
+      try{ if(_mastFirst&&typeof cdMark==="function") cdMark("mastMs"); }catch(eM){}   // ⏱ CDBOOTS
       _haMastReady=true;   // MASTGATE: real data is in — Mastery writes allowed from here on
       // NO_MIRROR: there is no local copy any more, so the first arrival repaints whatever is
       // showing (Mastery HQ, Editor-in-Chief cards, drill strips), not just the Mastery tab.
@@ -4605,6 +4683,8 @@ function _preserveUI(fn){
   _uiLastSig=sig;
 }
 function renderAll(){
+  const _cdR0=(typeof cdRenderStart==="function")?cdRenderStart():-1;   // ⏱ CDBOOTS: counted, never in the way
+  try{
   _preserveUI(_renderAllInner);
   // An OPEN subject-card sheet re-renders with every renderAll — the 🧱 pacing
   // form inside it repaints via renderAll (all cb* handlers end there), and the
@@ -4617,6 +4697,7 @@ function renderAll(){
   // so the overlay has to rebuild or it shows the balance from before the tap.
   try{ if(popView&&popKid&&document.getElementById("kid-pop")) _popPaint(); }catch(e){}
   try{ hbAlertsSoon(); }catch(e){}   // 🔴 HBALERT: the Mom's Day tab's red number + the person-waiting ding
+  } finally { try{ if(typeof cdRenderEnd==="function") cdRenderEnd(_cdR0); }catch(e){} }   // ⏱ CDBOOTS
 }
 function _renderAllInner(){
   try{ if(tab==="schedule"&&!momSchedView){ _momSuspend(); if(kid==="mom") kid="all"; } else _momResume(); }catch(e){}   // 🧒 KIDSLENS
@@ -6296,7 +6377,7 @@ function famSave(){
   if(!out.length){ alert("You need at least one kid."); return; }
   var msg=document.getElementById("fam-save-msg"); if(msg){ msg.textContent="Saving…"; msg.style.color="var(--muted)"; }
   HA_LS.setItem("ha_family",JSON.stringify(out));
-  var done=function(){ location.reload(); };
+  var done=function(){ try{ sessionStorage.setItem("ha_reload_why","family-save"); }catch(e){} location.reload(); };   // ⏱ CDBOOTS label
   if(typeof db!=="undefined"&&db){ db.ref("settings/family").set(out).then(done).catch(done); } else { done(); }
 }
 function renderFamilyCard(){
@@ -68174,6 +68255,7 @@ function gwCommit(){
 // ── INIT ── runs LAST, after every declaration above exists (2026-09-30; it used to sit at ~45700, before
 // `let mathSprints…` and the RETR_* tables — see the note left there). Nothing between the old spot and here
 // runs at top level (functions, literals, one class), so this changes only WHEN boot runs, not what it does.
+try{ _cdT.js1=performance.now(); }catch(e){}   // ⏱ CDBOOTS: top-level setup done
 boot();
 if(_kiosk()){ tab="play"; document.body.classList.add("kiosk"); }
 if(_kioskR()){ tab="schedule"; kid="all"; document.body.classList.add("kioskr"); kkArm(); }
