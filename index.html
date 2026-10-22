@@ -16711,12 +16711,111 @@ function kitIsoPlus(iso,n){
 function kitNowMin(){ const d=new Date(); return d.getHours()*60+d.getMinutes(); }
 function kitPlanFor(iso){
   const p=kitPlan[iso]; if(!p) return null;
-  const sd=p.sides?{sides:String(p.sides)}:{};   // 🥗 veggie + side riding with the dinner (her chart: "Peanut Chicken · peas · rice")
+  const sd=kitSidesFields(p);   // 🥗 veggie + side riding with the dinner (her chart: "Peanut Chicken · peas · rice") — KITSIDES: a list of sides when the day has one, the old text otherwise
   if(p.mid) return Object.assign({mid:p.mid,meal:kitMeals[p.mid]||null},sd);
   if(p.txt) return Object.assign({txt:p.txt},sd);
   return null;
 }
 function kitSidesTxt(pl){ return (pl&&pl.sides)?String(pl.sides):""; }
+// KITSIDES_START — sides as a LIST, each linked to a library recipe or plain text, feeding the grocery list.
+// Sara DeWalt's ask 2026-10-22 (relayed by Adrienne): "she loves the meal planner and wants real sides."
+//   kitchen/plan/{iso}/sideList = [{mid} | {txt}]  — {mid} a library meal used as a side, {txt} a plain side ("steamed broccoli").
+//   The old one-line kitchen/plan/{iso}/sides string (2026-10-03) stays readable: a day with no sideList shows that text as
+//   before, and the FIRST edit of that day's sides turns the text into ONE {txt} entry (targeted write of sideList only;
+//   the old string is left in place, that day only). Removing the last side clears both sideList and the old string, so
+//   the text can't come back from under the empty list.
+//   Rotations: the sd slot may be the old "peas · rice" string or a list of names; Apply maps each name to {mid} by a
+//   case-insensitive library match, else {txt} — exactly like a dinner (kitRotSlotVal).
+//   Display (kitPlanFor → pl.sides): the sides joined with " · ", a linked side with its emoji — so the Mom's Day card, the
+//   week list, the calendar and the Kids' Corner (_calDinnerOf) all show the same line they showed for the old text.
+//   Grocery (grWeekSources → kitSideGrocerySrcs): a linked side's ing lines ride the SAME meal-chip path a dinner uses
+//   (lbl = its recipe name + the day); a plain side is ONE line under the dinner's name + the day, so it is a meal chip
+//   too and starts unticked when it is already in the pantry. Repeats merge the way grIngRows merges every repeat.
+//   Mom-only like the rest of the Kitchen: the editor shows where the day sheet's dinner buttons show; every write asks
+//   momHere() or Mom's PIN. Writes go through db only when db && !_dryRun().
+function kitSideRaw(p){   // the stored list of a plan day as a clean array ([] when the day has none) — Firebase may hand a list back as {0:…,1:…}
+  const L=p&&p.sideList; if(!L||typeof L!=="object") return [];
+  const arr=Array.isArray(L)?L:Object.keys(L).sort((a,b)=>a-b).map(k=>L[k]);
+  return arr.filter(x=>x&&(x.mid||x.txt)).map(x=>x.mid?{mid:String(x.mid)}:{txt:String(x.txt)});
+}
+function kitSideHasList(p){ return kitSideRaw(p).length>0; }
+function kitSideStart(p){   // the list an edit starts from: the stored list, else the old text as ONE plain side (the migration)
+  if(kitSideHasList(p)) return kitSideRaw(p);
+  const t=(p&&p.sides)?String(p.sides).trim():""; return t?[{txt:t}]:[];
+}
+function kitSideResolve(x){ if(x.mid) return {mid:x.mid,meal:(typeof kitMeals!=="undefined"&&kitMeals[x.mid])||null}; return {txt:x.txt}; }
+function kitSideName(x){   // what a side is called on screen: "🥦 Roasted Broccoli" · "rice" · "(side removed)"
+  if(x.mid){ const m=x.meal||((typeof kitMeals!=="undefined"&&kitMeals[x.mid])||null); return m?((m.emoji?m.emoji+" ":"")+String(m.name||"")):"(side removed)"; }
+  return String(x.txt||"");
+}
+function kitSidesJoin(list){ return list.map(kitSideName).filter(Boolean).join(" · "); }
+function kitSidesFields(p){   // kitPlanFor hangs this on the plan: {sides:"display text", sideList:[resolved]} — the old string alone when there is no list, {} when neither
+  if(!p) return {};
+  if(kitSideHasList(p)){ const sl=kitSideRaw(p).map(kitSideResolve); return {sides:kitSidesJoin(sl),sideList:sl}; }
+  return p.sides?{sides:String(p.sides)}:{};
+}
+// 🛒 grWeekSources: the [{lines,lbl}] a day's sides add to the week's shopping. No list → the old text, split as before.
+function kitSideGrocerySrcs(p,day){
+  if(!kitSideHasList(p)) return p.sides?[{lines:String(p.sides).split(/\s*(?:·|,|\+|&|\band\b)\s*/i).join("\n"),lbl:"sides ("+day+")"}]:[];
+  const dn=(p.mid&&kitMeals[p.mid]&&kitMeals[p.mid].name)||(p.txt?String(p.txt):"")||"sides";
+  const out=[];
+  kitSideRaw(p).forEach(x=>{
+    if(x.mid){ const m=kitMeals[x.mid]; if(m) out.push({lines:m.ing,lbl:(m.name||"side")+" ("+day+")"}); }   // its recipe → the same chip a dinner gets
+    else out.push({lines:String(x.txt).split(/\s*·\s*/).filter(Boolean).join("\n"),lbl:dn+" ("+day+")"});    // one line, tagged to the dinner and the day
+  });
+  return out;
+}
+// 📅 rotations: the sd slot both ways
+function kitRotSdNames(sd){ if(Array.isArray(sd)) return sd.map(x=>String(x||"").trim()).filter(Boolean); return String(sd||"").split(/\s*·\s*/).map(x=>x.trim()).filter(Boolean); }
+function kitRotSdStr(sd){ return Array.isArray(sd)?kitRotSdNames(sd).join(" · "):String(sd||""); }   // the editor's one text box
+function kitRotSideList(sd){ return kitRotSdNames(sd).map(kitRotSlotVal); }   // names → {mid} when the library has it, else {txt}
+function kitRotSdOf(p){   // capture: a day's sides as a list of names; the old string when that is all the day has; null when none
+  if(kitSideHasList(p)) return kitSideRaw(p).map(x=>x.mid?kitRotSlotName(x):String(x.txt)).filter(Boolean);
+  return p.sides?String(p.sides):null;
+}
+// ✎ the editor on the calendar day sheet (beside the dinner row)
+function kitSideLibPick(){   // meals tagged "side" when any are; the whole library otherwise — A–Z by name
+  const all=Object.keys(kitMeals||{}).filter(k=>kitMeals[k]&&kitMeals[k].name);
+  const tagged=all.filter(k=>Array.isArray(kitMeals[k].tags)&&kitMeals[k].tags.includes("side"));
+  return (tagged.length?tagged:all).sort((a,b)=>String(kitMeals[a].name).localeCompare(String(kitMeals[b].name)));
+}
+function kitSidesEditHTML(iso){
+  const p=kitPlan[iso]||{}; const list=kitSideStart(p).map(kitSideResolve); const pick=kitSideLibPick();
+  let h='<div class="row" style="flex-wrap:wrap"><span class="lbl">Sides</span><span style="flex:1;min-width:130px;display:flex;flex-wrap:wrap;gap:5px;align-items:center">';
+  list.forEach((x,i)=>{
+    h+='<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 4px 2px 9px;border-radius:10px;background:#f0fdf4;color:#166534;font-size:12px;font-weight:700">'+esc(kitSideName(x))
+      +(x.mid&&x.meal?' <span onclick="kitOpenRecipe(\''+esc(x.mid)+'\')" title="Open the recipe" style="cursor:pointer;font-size:11px">\u{1F4D6}</span>':'')
+      +'<span onclick="kitSideRemove(\''+iso+'\','+i+')" title="Remove this side" style="cursor:pointer;color:#9ca3af;font-weight:800;padding:0 4px">✕</span></span>';
+  });
+  if(!list.length) h+='<span style="color:#9ca3af;font-size:12px">none yet</span>';
+  h+='</span></div>';
+  h+='<div class="row" style="flex-wrap:wrap;border-top:none;padding-top:0"><span class="lbl"></span>'
+    +'<input type="text" id="kit-side-in-'+iso+'" placeholder="Type a side (steamed broccoli)…" onkeydown="if(event.key===\'Enter\')kitSideAddTyped(\''+iso+'\')" style="flex:1;min-width:120px;padding:6px 9px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif">'
+    +'<button class="act" style="background:#dcfce7;color:#166534" onclick="kitSideAddTyped(\''+iso+'\')">＋ Add</button>'
+    +(pick.length?'<select onchange="if(this.value)kitSideAddMid(\''+iso+'\',this.value);this.value=\'\'" style="max-width:150px;padding:5px 7px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:11.5px;font-family:\'DM Sans\',sans-serif;background:#fff"><option value="">\u{1F4DA} From the library…</option>'
+      +pick.map(k=>'<option value="'+esc(k)+'">'+esc((kitMeals[k].emoji?kitMeals[k].emoji+' ':'')+kitMeals[k].name)+'</option>').join('')+'</select>':'')
+    +'</div>';
+  return h;
+}
+function kitSideSave(iso,list){   // ONE targeted write: the list, or (list emptied) null for both the list and the old text
+  const cur=Object.assign({},kitPlan[iso]||{});
+  if(list.length) cur.sideList=list; else { delete cur.sideList; delete cur.sides; }
+  kitPlan[iso]=cur;
+  try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
+  if(typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun())){
+    if(list.length) db.ref('kitchen/plan/'+iso+'/sideList').set(list);
+    else db.ref('kitchen/plan/'+iso).update({sideList:null,sides:null});
+  }
+  _kitRefresh();
+}
+function kitSideChange(iso,fn){   // Mom (her PIN on a shared device), then fn(working list) → the new list, or null for "nothing to do"
+  const go=()=>{ const next=fn(kitSideStart(kitPlan[iso]||{})); if(next) kitSideSave(iso,next); };
+  if(typeof momHere==="function"&&momHere()) go(); else kitPinGate(go,"Changing the sides is for Mom.");
+}
+function kitSideAddTyped(iso){ const el=document.getElementById('kit-side-in-'+iso); const v=el?String(el.value||"").trim().slice(0,80):""; if(!v) return; kitSideChange(iso,l=>l.concat([{txt:v}])); }
+function kitSideAddMid(iso,mid){ if(!mid||!kitMeals[mid]) return; kitSideChange(iso,l=>l.some(x=>x.mid===mid)?null:l.concat([{mid:mid}])); }
+function kitSideRemove(iso,i){ i=+i; kitSideChange(iso,l=>{ if(!(i>=0&&i<l.length)) return null; l.splice(i,1); return l; }); }
+// KITSIDES_END
 function kitWhenMin(w){
   if(w==="nb") return null;
   const m=/^(\d{1,2}):(\d{2})$/.exec(w||"");
@@ -16789,7 +16888,7 @@ function kitAssign(iso,val){ // val = {mid} | {txt} | null (clear the day)
   // Dinner changes keep the day's b/l/s slots; clearing drops the whole day.
   if(val){
     const cur=Object.assign({},kitPlan[iso]);
-    delete cur.mid; delete cur.txt; delete cur.sides;   // a different dinner doesn't inherit the old sides
+    delete cur.mid; delete cur.txt; delete cur.sides; delete cur.sideList;   // a different dinner doesn't inherit the old sides (KITSIDES: nor the list)
     kitPlan[iso]=Object.assign(cur,val);
   } else delete kitPlan[iso];
   kitPickIso=null;
@@ -18043,7 +18142,7 @@ function grWeekSources(fromIso,days){
     const day=gwParseDate(iso).toLocaleDateString("en-US",{weekday:"short"});
     if(!p.eaten&&!p.skipped){
       if(p.mid&&kitMeals[p.mid]) out.push({lines:kitMeals[p.mid].ing,lbl:(kitMeals[p.mid].name||"dinner")+" ("+day+")"});
-      if(p.sides) out.push({lines:String(p.sides).split(/\s*(?:·|,|\+|&|\band\b)\s*/i).join("\n"),lbl:"sides ("+day+")"});
+      kitSideGrocerySrcs(p,day).forEach(s=>out.push(s));   // KITSIDES: linked sides as their own recipe, plain sides one line each (the old text split as before)
     }
     ["b","l","s"].forEach(sl=>{ const v=p[sl]; if(v&&v.mid&&kitMeals[v.mid]) out.push({lines:kitMeals[v.mid].ing,lbl:(kitMeals[v.mid].name||"meal")+" ("+day+")"}); });
   }
@@ -19627,7 +19726,7 @@ function kitMarkSkipped(iso){
 const KIT_MOVE_NAMES={d:["dinner","dinners"],b:["breakfast","breakfasts"],l:["lunch","lunches"],s:["snack","snacks"]};
 function _kitMvGet(iso,slot){
   const p=kitPlan[iso]; if(!p) return null;
-  if(slot==="d"){ const v=p.mid?{mid:p.mid}:(p.txt?{txt:p.txt}:null); if(v&&p.sides) v.sides=p.sides; return v; }
+  if(slot==="d"){ const v=p.mid?{mid:p.mid}:(p.txt?{txt:p.txt}:null); if(v&&p.sides) v.sides=p.sides; if(v&&p.sideList) v.sideList=p.sideList; return v; }   // KITSIDES: the list rides along like the old text
   const v=p[slot]; return (v&&(v.mid||v.txt))?v:null;
 }
 function _kitMvFixed(iso,slot){ const p=kitPlan[iso]; return slot==="d"&&!!p&&!!(p.eaten||p.skipped); }
@@ -19665,8 +19764,10 @@ function kitMoveForward(iso,slot){
   const put=(dIso,s,val)=>{
     const cur=Object.assign({},kitPlan[dIso]);
     if(s==="d"){
-      delete cur.mid; delete cur.txt; delete cur.sides; if(val) Object.assign(cur,val);
+      const hadSL=!!cur.sideList;   // KITSIDES: the sideList path is written only where a list is involved — a plan with no lists writes exactly what it wrote before
+      delete cur.mid; delete cur.txt; delete cur.sides; delete cur.sideList; if(val) Object.assign(cur,val);
       up["plan/"+dIso+"/mid"]=(val&&val.mid)||null; up["plan/"+dIso+"/txt"]=(val&&val.txt)||null; up["plan/"+dIso+"/sides"]=(val&&val.sides)||null;
+      if(hadSL||(val&&val.sideList)) up["plan/"+dIso+"/sideList"]=(val&&val.sideList)||null;
     } else {
       if(val) cur[s]=val; else delete cur[s];
       up["plan/"+dIso+"/"+s]=val||null;
@@ -19821,7 +19922,7 @@ function kitRotPlanFor(rot,mondayIso){
       if(!day) return;
       const iso=kitIsoPlus(mondayIso,w*7+i);
       const cur=Object.assign({},kitPlan[iso]||{});
-      if(day.d){ delete cur.mid; delete cur.txt; delete cur.sides; Object.assign(cur,kitRotSlotVal(day.d)); if(day.sd) cur.sides=String(day.sd); }
+      if(day.d){ delete cur.mid; delete cur.txt; delete cur.sides; delete cur.sideList; Object.assign(cur,kitRotSlotVal(day.d)); const _sl=kitRotSideList(day.sd); if(_sl.length) cur.sideList=_sl; }   // KITSIDES: sd (string or names) → a list; a name the library knows links
       [["b",day.b],["l",day.l],["s",day.s]].forEach(p=>{ if(p[1]) cur[p[0]]=kitRotSlotVal(p[1]); });
       if(Object.keys(cur).length) out[iso]=cur;
     });
@@ -19836,7 +19937,7 @@ function kitRotCapture(mondayIso,nWeeks){
     for(let i=0;i<7;i++){
       const iso=kitIsoPlus(mondayIso,w*7+i); const p=kitPlan[iso]||{};
       const day={d:kitRotSlotName(p.mid?{mid:p.mid}:(p.txt?{txt:p.txt}:null)),b:kitRotSlotName(p.b),l:kitRotSlotName(p.l),s:kitRotSlotName(p.s)};
-      if(day.d&&p.sides) day.sd=String(p.sides);
+      if(day.d){ const _sd=kitRotSdOf(p); if(_sd&&_sd.length) day.sd=_sd; }   // KITSIDES: a list of names when the day has a side list, the old text otherwise
       if(day.d||day.b||day.l||day.s) filled++;
       wk.push(day);
     }
@@ -19906,7 +20007,7 @@ const KIT_ROT_SLOTS=[["d","🍽","Dinner"],["sd","🥦","Side"],["b","🌅","Bre
 function kitRotEditStart(id){
   kitPinGate(()=>{
     const rot=kitRotAll()[id]; if(!rot) return;
-    const weeks=(Array.isArray(rot.weeks)?rot.weeks:[]).map(wk=>{ const out=[]; for(let i=0;i<7;i++){ const d=(Array.isArray(wk)&&wk[i])||{}; out.push({d:String(d.d||""),sd:String(d.sd||""),b:String(d.b||""),l:String(d.l||""),s:String(d.s||"")}); } return out; });
+    const weeks=(Array.isArray(rot.weeks)?rot.weeks:[]).map(wk=>{ const out=[]; for(let i=0;i<7;i++){ const d=(Array.isArray(wk)&&wk[i])||{}; out.push({d:String(d.d||""),sd:kitRotSdStr(d.sd),b:String(d.b||""),l:String(d.l||""),s:String(d.s||"")}); } return out; });
     kitRotEdit={id:id,weeks:weeks};
     kitRotOpen=id; kitRotRender();
   },'Changing a rotation is for Mom.');
@@ -19920,7 +20021,7 @@ function kitRotEditDiff(rot,weeks){
   const old=Array.isArray(rot&&rot.weeks)?rot.weeks:[];
   (weeks||[]).forEach((wk,w)=>(wk||[]).forEach((day,i)=>{
     const o=(Array.isArray(old[w])&&old[w][i])||{};
-    KIT_ROT_SLOTS.forEach(s=>{ const k=s[0]; const nv=String((day||{})[k]||"").trim(), ov=String(o[k]||""); if(nv!==ov) up["weeks/"+w+"/"+i+"/"+k]=nv||null; });
+    KIT_ROT_SLOTS.forEach(s=>{ const k=s[0]; const nv=String((day||{})[k]||"").trim(), ov=(k==="sd")?kitRotSdStr(o[k]):String(o[k]||""); if(nv!==ov) up["weeks/"+w+"/"+i+"/"+k]=nv||null; });   // KITSIDES: sd compares as its text
   }));
   return up;
 }
@@ -20080,7 +20181,7 @@ function kitEditorHTML(){
 }
 
 // ── 🍽 recipe extras (2026-10-01): picture · source link · tags · yield. Mom-only: the editor lives on Mom's Day. ──
-const KIT_TAGS=[["gf","Gluten-free"],["df","Dairy-free"],["kid","Kid-friendly"],["batch","Batch / make-ahead"],["juice","Juice or smoothie"]];
+const KIT_TAGS=[["gf","Gluten-free"],["df","Dairy-free"],["kid","Kid-friendly"],["batch","Batch / make-ahead"],["juice","Juice or smoothie"],["side","Side dish"]];   // KITSIDES: "side" narrows the day sheet's side picker
 function kitTagLabel(t){ const x=KIT_TAGS.find(a=>a[0]===t); return x?x[1]:t; }
 function kitTagToggle(t){ _kitStash(); const d=kitEditDraft=kitEditDraft||{}; d.tags=Array.isArray(d.tags)?d.tags.slice():[]; const i=d.tags.indexOf(t); if(i>=0) d.tags.splice(i,1); else d.tags.push(t); const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
 function kitPhotoClear(){ _kitStash(); if(kitEditDraft) kitEditDraft.photo=""; const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
@@ -32934,6 +33035,7 @@ function calDaySheetHTML(iso,L,dinnerOf,who,opts){
       h+='<span style="flex:1;color:#9ca3af">No dinner planned</span>'+((typeof tab!=="undefined"&&tab==="moms-plan"&&kitEatGate())?'<button class="act" style="background:#fff7ed;color:#c2410c" onclick="mpGoto(\'meals\');kitPickDay(\''+iso+'\')">\u{1F5D3} Plan it</button>':'');
     }
     h+='</div>';
+    if(din&&kitEatGate()&&typeof kitSidesEditHTML==="function") h+=kitSidesEditHTML(iso);   // KITSIDES: 🥗 the sides — add by typing or from the library, ✕ to remove
   }
   if(kidMode){
     if(!rows||(rows===1&&L.meals)) h+='<div class="row" style="color:#9ca3af;font-size:12.5px">Nothing else on this day yet.</div>';
