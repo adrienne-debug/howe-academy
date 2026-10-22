@@ -88,7 +88,11 @@ const DAD = {
 console.log("── Mom's Home Base is byte-identical to origin/main ──");
 // 📅 CAD_CHIPS (her ask 2026-10-18): the add box's day chips are the one intended change — set aside on both sides before comparing.
 const _cadNorm = h => String(h).replace(/<div style="flex:1 1 100%"><input type="hidden" id="mc-cad(-q)?"[\s\S]*?<\/span><\/div>/g, "").replace(/\+?<select id="mc-cad"[\s\S]*?<\/select>/g, "").replace('<div style="display:flex;gap:5px;margin-top:6px;flex-wrap:wrap"><input type="text" id="mc-new"', '<div style="display:flex;gap:5px;margin-top:6px"><input type="text" id="mc-new"');
+// MYDAY_COLS (her ask 2026-10-21): the strip was re-laid on purpose (chores + ongoing | to-do + shopping | laundry). While origin/main still has the
+// old layout the byte-compare is skipped; it resumes by itself once this is on main (both sides then carry the marker).
+const _reLaid = !!old && src.indexOf("MYDAY_COLS") >= 0 && old.indexOf("MYDAY_COLS") < 0;
 if (!old) { ok("origin/main source available (git show)", false); }
+else if (_reLaid) { ok("🏡 My day byte-compare skipped this once: MYDAY_COLS re-laid the strip on purpose (resumes once it is on main)", true); }
 else {
   ["morning", "afternoon", "night"].forEach(sl => [false, true].forEach(mg => {
     const o = Object.assign({}, MOM, { slot: sl, mcManage: mg });

@@ -19,7 +19,7 @@ ok("Mom's Day card: no start box of its own", !/id="laundry-label"/.test(card(on
 ok("Mom's Day card hides when nothing is running", card({}, true) === "");
 const strip = slice("momDayStripHTML");
 const iTodo = strip.indexOf('id="\'+P.todoInp+\'"'), iLaun = strip.indexOf('id="laundry-label"'), iShop = strip.indexOf("colHd('🛒','Shopping'");
-ok("Home Base: Start a load sits right under the to-do box, before Shopping", iTodo > 0 && iLaun > iTodo && iShop > iLaun);
+ok("Home Base (MYDAY_COLS 2026-10-21): to-do then Shopping in the middle column; Start a load heads the last column", iTodo > 0 && iShop > iTodo && iLaun > iShop);   // was: right under the to-do box
 ok("…same start action (laundryAdd)", /onclick="laundryAdd\((\)|'\+\(P\.dad\?'\\'dad\\'':''\)\+'\))"/.test(strip.slice(iLaun - 400, iLaun + 900)));
 // 🧺 LL_MYDAY (her ask 2026-10-21): the running loads moved up into 🏡 My day's Laundry section on both pages — the bottom cards are gone.
 ok("Mom's Day: running loads live in 🏡 My day now (LL_MYDAY), not a card at the bottom", !/h\+=mdCardLaundry\(true\);/.test(slice("renderMomsDay")) && /LL_MYDAY/.test(slice("renderMomsDay")) && /llMyDayLaundryHTML\(P\.dad\?'dad':'mom'\)/.test(strip));
