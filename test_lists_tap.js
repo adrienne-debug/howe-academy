@@ -44,10 +44,9 @@ console.log("2. Dad's Day");
 }
 console.log("3. Wiring");
 { const KT=fn("mdCardKidsToday"), W=fn("rtWave");
-  ok("📋 lists pill on Dad's Day too: the bank row draws it with or without Dad control", /\(bank&&typeof mpKidListsToggle==="function"\)\?'<span onclick="mpKidListsToggle/.test(KT)&&!/dadCtl===undefined&&typeof mpKidListsToggle/.test(KT));
-  ok("…and the panel opens there too", /if\(bank&&typeof mdKidListsHTML==="function"&&mpKidOpen===kid\)/.test(KT));
+  ok("KIDROWS2 2026-10-22: the 📋 lists pill and its panel are gone from the row (Mom's Day and Dad's Day alike)", !/mpKidListsToggle|mdKidListsHTML|mpKidOpen|📋 lists</.test(KT)&&!/function mdKidListsHTML\(|function mpKidListsToggle\(/.test(src));
+  ok("…✕ today lives on every open pop-up row instead (kr2WaveBtnHTML → rtWave)", /\(_waveOk&&r\.i!=null&&!r\.done\)\?kr2WaveBtnHTML\(slot,kid,_d,r\.i,!!r\.wv\):''/.test(fn("boardStatPop")));
   ok("the ledger and the spot check stay Mom's Day only (not asked for)", /bank&&dadCtl===undefined&&typeof mdCardChoreLedger/.test(KT)&&/bank&&dadCtl===undefined&&typeof mdCardSpotCheck/.test(KT));
-  ok("the pill's look is unchanged (same padding, radius, colours)", /mpKidListsToggle\(\\''\+kid\+'\\'\)" style="cursor:pointer;font-size:11px;font-weight:800;padding:1px 8px;border-radius:9px;background:'\+\(mpKidOpen===kid\?'#2B7A78':'#eef6f5'\)/.test(KT));
   ok("a wave: Mom or an unlocked Dad; logged as who waved", /!momHere\(\)&&!\(typeof dadAwardOk==="function"&&dadAwardOk\(\)\)\) return;/.test(W)&&/by:_by\}/.test(W)&&/waved by "\+\(_by==="dad"\?"Dad":"Mom"\)/.test(W));
   ok("mdKidTick's gate takes an unlocked Dad", /!momHere\(\)&&!\(typeof dadAwardOk==="function"&&dadAwardOk\(\)\)\) return false;/.test(fn("mdKidTick")));
   ok("no new Firebase write anywhere in this change (the pop-up block writes nothing)", !/db\.ref/.test(fn("boardStatPop")));

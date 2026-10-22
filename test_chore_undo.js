@@ -93,7 +93,7 @@ console.log("(4) The ledger");
   ok("after an undo the row shows ☐ + ✓ Done and '↶ undone'", /choreRedo\('chores','lucy','thursday',1\)/.test(h2)&&/↶ undone/.test(h2));
   const w=mk(); vm.runInContext("rtWave('chores','lucy','thursday',0)",w); vm.runInContext("cuLedgerOpen=true",w);
   ok("a waved chore stays WAVE's, not in the ledger", !/choreRedo\('chores','lucy','thursday',0\)/.test(w.mdCardChoreLedger()));
-  ok("Kids today 📋 lists: a done row gets ↶ undo, its ✅ tap flips through the ledger path", (()=>{ const k=mk({sl:{"week7_thursday_lucy_cstep1":{done:true}}}); const t=k.mdKidListsHTML("lucy","thursday"); return /choreUndo\('chores','lucy','thursday',1\)/.test(t)&&/choreFlip\('chores','lucy','thursday',1\)/.test(t); })());
+  ok("Kids today (KIDROWS2 2026-10-22): the 📋 lists panel is gone; its rows live in the pill pop-ups — a done row keeps its ✅ tap, ✕ today / undo on the open rows goes through rtWave; ↶ undo stays on the ledger", !/function mdKidListsHTML\(/.test(src)&&/\(_waveOk&&r\.i!=null&&!r\.done\)\?kr2WaveBtnHTML\(/.test(slice("boardStatPop"))&&/choreUndo\('chores','lucy','thursday',1\)/.test(h));
 }
 console.log("(6) Laundry: move back a stage");
 { const now=Date.now();

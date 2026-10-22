@@ -1,23 +1,26 @@
 /*
  * ✅ KIDTICK — the ☐ on Mom's Day ▸ Kids today is the kid's own check-off (her ask 2026-10-11: "check off things but don't make
- * anything bigger"). Same stars, same log; the day is the row's day; Mom's tap passes the hour lock.   run: node test_kids_today_tick.js
+ * anything bigger"). Same stars, same log; the day is the row's day; Mom's tap passes the hour lock. The rows live in the 🌅 ☀️ 🧹 🌙
+ * pop-ups since KIDROWS2 2026-10-22 (the 📋 lists panel is gone).                                      run: node test_kids_today_tick.js
  */
 const fs=require("fs"), path=require("path"), vm=require("vm");
 const src=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
 let pass=0, fail=0; const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  ("+JSON.stringify(x).slice(0,300)+")":"")); } };
 const fn=name=>{ const i=src.indexOf("function "+name+"("); if(i<0) throw new Error("missing "+name); let d=0; for(let k=src.indexOf("{",i);k<src.length;k++){ if(src[k]==="{") d++; else if(src[k]==="}"&&--d===0) return src.slice(i,k+1); } throw new Error("unbalanced "+name); };
 function mk(o){
-  o=o||{}; const calls=[], ctx={console,Object,Array,String,Number,parseInt,isNaN,Math,JSON,Date,RegExp,Error,
+  o=o||{}; const calls=[], html=[], ctx={console,Object,Array,String,Number,parseInt,isNaN,Math,JSON,Date,RegExp,Error,
     momHere:()=>!o.noMom, ROSTER:["lincoln","ellis","lucy","julian"], SL_SLOTS:["morning","afternoon","chores","evening"], SL_SLBL:{morning:"Morning",afternoon:"Afternoon",chores:"Chores",evening:"Evening"},
-    day:"monday", _todayDay:"saturday", document:{getElementById:()=>({})}, renderMomsPlan:()=>calls.push(["render"]),
+    day:"monday", _todayDay:"saturday", document:{getElementById:id=>id==="content"?{}:null,body:{insertAdjacentHTML:(w,h)=>html.push(h)}}, renderMomsPlan:()=>calls.push(["render"]),
+    dadAwardOk:()=>false, RT_ABBR:{afternoon:"a",chores:"c",evening:"e"}, slState:{}, activeWk:()=>"week26", morningDueIdx:()=>[0], cap:s=>s, rtWave:()=>calls.push(["wave"]),
     toggleRtStep:(sl,k,i)=>calls.push(["rt",sl,k,i,vm.runInContext("day",ctx),vm.runInContext("_rtMomTick",ctx)]), toggleMorningStep:(k,i)=>calls.push(["mr",k,i,vm.runInContext("day",ctx),vm.runInContext("_rtMomTick",ctx)]),
-    morningStepsFor:()=>[{label:"Brush teeth",cad:"daily"}], rtStepsFor:(sl,k)=>sl==="afternoon"?[{emoji:"🍽️",label:"Pickup kitchen",cad:"daily"}]:[], rtWaved:()=>false, stepWindowOk:()=>true, cadDueOn:()=>true, rtDueOrLate:()=>true, mStepDoneOn:()=>!!o.mrDone, rtDoneOn:()=>!!o.rtDone, esc:s=>String(s), calls};
-  vm.createContext(ctx); vm.runInContext("let _rtMomTick=false;\n"+fn("mdKidTick")+"\n"+fn("mdKidListsHTML"),ctx); ctx.get=e=>vm.runInContext(e,ctx); return ctx;
+    morningStepsFor:()=>[{label:"Brush teeth",cad:"daily"}], rtStepsFor:(sl,k)=>sl==="afternoon"?[{emoji:"🍽️",label:"Pickup kitchen",cad:"daily"}]:[], rtWaved:()=>false, stepWindowOk:()=>true, cadDueOn:()=>true, rtDueOrLate:()=>true, mStepDoneOn:()=>!!o.mrDone, rtDoneOn:()=>!!o.rtDone, esc:s=>String(s), calls, html};
+  vm.createContext(ctx); vm.runInContext("let _rtMomTick=false;\n"+fn("mdKidTick")+"\n"+fn("boardStatPopClose")+"\n"+fn("boardStatPop")+"\n"+fn("kr2WaveBtnHTML"),ctx); ctx.get=e=>vm.runInContext(e,ctx);
+  ctx.pop=(slot,d)=>{ html.length=0; vm.runInContext("boardStatPop('lucy','"+slot+"','"+d+"')",ctx); return html[html.length-1]||""; }; return ctx;
 }
 console.log("The tap");
-{ const c=mk(); const h=c.mdKidListsHTML("lucy","saturday");
-  ok("every open row's ☐ is a tap with the row's slot, kid, day and index; nothing else grew", /onclick="event\.stopPropagation\(\);mdKidTick\('afternoon','lucy','saturday',0\)"[^>]*>☐</.test(h)&&/mdKidTick\('morning','lucy','saturday',0\)/.test(h)&&/rtWave\('afternoon','lucy','saturday',0\)/.test(h));
-  ok("…and a done row's ✅ is a tap too (undo)", /mdKidTick\('afternoon','lucy','saturday',0\)"[^>]*>✅</.test(mk({rtDone:true}).mdKidListsHTML("lucy","saturday")));
+{ const c=mk(); const h=c.pop("afternoon","saturday");
+  ok("every open row's ○ is a tap with the row's slot, kid, day and index, and ✕ today beside it", /onclick="event\.stopPropagation\(\);mdKidTick\('afternoon','lucy','saturday',0\);boardStatPop\('lucy','afternoon','saturday'\)"[^>]*>○</.test(h)&&/mdKidTick\('morning','lucy','saturday',0\)/.test(c.pop("morning","saturday"))&&/rtWave\('afternoon','lucy','saturday',0\)/.test(h));
+  ok("…and a done row's ✅ is a tap too (undo)", /mdKidTick\('afternoon','lucy','saturday',0\);boardStatPop\('lucy','afternoon','saturday'\)"[^>]*>✅</.test(mk({rtDone:true}).pop("afternoon","saturday")));
   const r=c.mdKidTick("afternoon","lucy","saturday",0);
   ok("the tap runs the kid's own check-off with the day set to the row's day and the Mom flag up, then puts the day back and the flag down", r===true&&c.calls[0][0]==="rt"&&c.calls[0][1]==="afternoon"&&c.calls[0][2]==="lucy"&&c.calls[0][3]===0&&c.calls[0][4]==="saturday"&&c.calls[0][5]===true&&c.get("day")==="monday"&&c.get("_rtMomTick")===false, c.calls);
   ok("it re-renders Mom's Day", c.calls.some(x=>x[0]==="render"));

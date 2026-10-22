@@ -156,7 +156,7 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   ok("ahead chip", h.includes("On track · 1 ahead"), null);
   ok("plain on-track chip", h.includes(">On track<"), null);
   ok("pace throw → no chip, kid still renders", h.includes("Julian"), null);
-  ok("school seg shows 2/5", h.includes("📅 2/5"), null);
+  ok("no 📅 school seg on the kid rows (KIDROWS2 2026-10-22: Mom's Day ▸ Schedule is the schedule)", !h.includes("📅 2/5") && !/boardStatPop\('\w+','tasks'/.test(h), null);
   ok("stars row (🧒 KIDBAR: ⭐ today under the rooms + − [5] + box)", h.includes("⭐ +7 ") && h.includes('id="mpbank-lincoln"'), null);
   ok("one Star Bank give/dock box per kid (separate ⭐ card folded in)", (h.match(/id="mpbank-(?!note")\w+"/g) || []).length === 4, null);
   ok("claims/board/calendar/subnav embedded", ["claims","evbanner","upcoming","subnav"].every(id => h.includes('id="'+id+'"')), null);

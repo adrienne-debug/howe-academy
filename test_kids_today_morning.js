@@ -37,7 +37,7 @@ ok("the as-needed step is never counted as due", [ "monday", "tuesday", "wednesd
 
 console.log("\n── the wiring ──");
 ok("Kids today counts that day's due steps", /const _mDue=morningDueIdx\(kid,_kd\); mT=_mDue\.length;\s*_mDue\.forEach\(i=>\{ if\(mStepDoneOn\(kid,_kd,i\)\) mD\+\+; \}\);/.test(src));
-ok("its pop-up lists only due steps, plus an as-needed one that was done", /if\(!_due&&!\(st\.cad==="asneeded"&&_dn\)\) return;/.test(src) && /\(_due\?"":" \(as needed\)"\)/.test(src));
+ok("its pop-up lists only due steps, plus an as-needed one that was done (and a waved one, greyed — KIDROWS2)", /if\(!_due&&!_wv&&!\(st\.cad==="asneeded"&&_dn\)\) return;/.test(src) && /\(\(_due\|\|_wv\)\?"":" \(as needed\)"\)/.test(src));
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
