@@ -2199,7 +2199,7 @@ function _rtSwTodayLay(){
     return _rtSwLay;
   }catch(e){ return null; }
 }
-function rtSchoolworkDone(kid,d,skipFam){ const _lay=(d===_todayDay)?_rtSwTodayLay():null; const ts=(_lay||getActiveTasks()).filter(t=>t.who===kid&&effectiveDay(t)===d&&!t.id.endsWith("_c")&&!t._eowOverflow&&!(skipFam&&t.famBlock&&typeof famCelebOf==="function"&&famCelebOf(famDefs()[t.famBlock]))&&!/lunch/i.test(t.title)&&!((t._offDay||t._dayDrop)&&!checked[t.id])); return ts.length===0?true:ts.every(t=>!!checked[t.id]||!!(typeof claimed!=="undefined"&&claimed&&claimed[t.id])); }
+function rtSchoolworkDone(kid,d,skipFam){ const _lay=(d===_todayDay)?_rtSwTodayLay():null; const ts=(_lay||getActiveTasks()).filter(t=>t.who===kid&&effectiveDay(t)===d&&!t.id.endsWith("_c")&&!t._eowOverflow&&!(skipFam&&t.famBlock&&typeof famCelebOf==="function"&&famCelebOf(famDefs()[t.famBlock]))&&!(typeof famIsAbsent==="function"&&famIsAbsent(t))&&!/lunch/i.test(t.title)&&!(t.famBlock&&typeof famBoState==="function"&&famBoState(t))&&!((t._offDay||t._dayDrop)&&!checked[t.id])); return ts.length===0?true:ts.every(t=>!!checked[t.id]||!!(typeof claimed!=="undefined"&&claimed&&claimed[t.id])); }
 // Afternoon (2026-08-18, her rule): opens when schoolwork is done — or at the afternoon hour (default
 // 4:00 PM) regardless, so a slow school day never holds the chores hostage. Past days: always open.
 function rtAfternoonHour(){ const h=parseInt(routineTimes&&routineTimes.afternoonHour,10); return isNaN(h)?16:h; }
@@ -7525,7 +7525,7 @@ function _hlpIsToday(t){ try{ return ((typeof _mlDayOf==="function")?_mlDayOf(t)
 function helperHolds(t){
   try{
     if(!t||!t.who||!pageOn("helpers")) return null;
-    if(t.mom!=="required"&&t.mom!=="maybe") return null;   // 🙋 her rule 10/3: kids do independent work alone
+    if(t.mom!=="required"&&t.mom!=="maybe"&&!(typeof famPresGivable==="function"&&famPresGivable(t))) return null;   // 🙋 her rule 10/3: kids do independent work alone · 🏡 FAMPRESENCE: a Mom-led family card can be given
     { const g=(typeof helperGivenTo==="function")?helperGivenTo(t):null; if(g) return g; }   // 🙋 HELPERGIVE: Mom handed it over for today
     if(!t.subjectKey) return null;
     const ss=helperSessionsToday(); const ids=Object.keys(ss); if(!ids.length) return null;
@@ -7546,7 +7546,7 @@ function helperIcon(id){ return ((helpersData&&helpersData[id])||{}).icon||"🙋
 function helperTasksToday(id){
   const p=helpersData[id]; if(!p) return [];
   let all=[]; try{ all=(typeof getActiveTasks==="function"?getActiveTasks():weekData.tasks)||[]; }catch(e){ all=[]; }
-  return all.filter(t=>t&&!String(t.id||"").endsWith("_c")&&!/lunch/i.test(t.title||"")&&(t.mom==="required"||t.mom==="maybe")&&_hlpIsToday(t)&&(_hlpApproved(p,t)||(typeof helperGivenTo==="function"&&helperGivenTo(t)===id)))   // 🙋 + what Mom gave her today
+  return all.filter(t=>t&&!String(t.id||"").endsWith("_c")&&!/lunch/i.test(t.title||"")&&(t.mom==="required"||t.mom==="maybe"||(typeof famPresGivable==="function"&&famPresGivable(t)))&&_hlpIsToday(t)&&(_hlpApproved(p,t)||(typeof helperGivenTo==="function"&&helperGivenTo(t)===id)))   // 🙋 + what Mom gave her today
     .sort((a,b)=>(toMin(a.time)-toMin(b.time))||String(a.who).localeCompare(String(b.who)));
 }
 // Session writes: one leaf under helperDays/<today>/<id>, mirrored locally (and so in dry-run too).
@@ -7825,7 +7825,7 @@ function _hlpGiveOk(id){ return !!helperWinToday(id)||(typeof helperDadId==="fun
 // Which helper Mom handed this card to today → helper id, or null.
 function helperGivenTo(t){
   try{
-    if(!t||!t.id||!pageOn("helpers")||t.mom!=="required") return null;
+    if(!t||!t.id||!pageOn("helpers")||(t.mom!=="required"&&!(typeof famPresGivable==="function"&&famPresGivable(t)))) return null;   // 🏡 FAMPRESENCE: a Mom-led family card too
     if(String(t.id).endsWith("_c")||!_hlpIsToday(t)) return null;
     const g=helperGiveToday(), k=_hlpKey(t.id), ss=helperSessionsToday();
     const ids=Object.keys(g).filter(_hlpIdOk).filter(id=>helpersData[id]).sort(_hlpByAge);
@@ -7845,10 +7845,11 @@ function helperGiveCands(){
   let all=[]; try{ all=(typeof getActiveTasks==="function"?getActiveTasks():weekData.tasks)||[]; }catch(e){ all=[]; }
   return all.filter(t=>t&&t.id&&t.who&&t.mom==="required"&&!String(t.id).endsWith("_c")&&!t._eowOverflow&&!t.famBlock
       &&!/lunch/i.test(t.title||"")&&_hlpIsToday(t)&&!(typeof checked!=="undefined"&&checked&&checked[t.id]))
+    .concat((typeof famPresGiveCands==="function")?famPresGiveCands(all):[])   // 🏡 FAMPRESENCE: Mom-led family time, one row per subject
     .sort((a,b)=>(toMin(a.time)-toMin(b.time))||String(a.who).localeCompare(String(b.who)));
 }
 // A kid's cards of one subject today move together (lessons stay in order).
-function _hlpGiveGroup(t,list){ return list.filter(x=>x.who===t.who&&(t.subjectKey?x.subjectKey===t.subjectKey:x.id===t.id)); }
+function _hlpGiveGroup(t,list){ if(t&&t.famBlock&&typeof famPresGiveGroup==="function") return famPresGiveGroup(t); return list.filter(x=>x.who===t.who&&(t.subjectKey?x.subjectKey===t.subjectKey:x.id===t.id)); }
 // Tick = hand it (and its subject-mates) to this helper for today; untick / ↩ Undo = Mom's again.
 function helperGiveToggle(id,taskId){
   if(!momHere()){ if(typeof kitPinGate==="function") kitPinGate(function(){ helperGiveToggle(id,taskId); },"Handing cards to a helper is for Mom."); return; }
@@ -8620,6 +8621,7 @@ function renderSchedule(el){
   if(kid==="mom"&&typeof famMomView==="function") allDay=famMomView(allDay);   // 🏡 one family row, not one per kid
   else if(kid!=="all") allDay=allDay.filter(t=>t.who===kid);
   else if(typeof helperViewActive==="function"&&helperViewActive()) allDay=allDay.filter(t=>helperHolds(t)===helperView);   // 🙋 her list
+  if(kid==="all"&&typeof helperViewActive==="function"&&helperViewActive()&&typeof famMomView==="function") allDay=famMomView(allDay);   // 🏡 FAMPRESENCE: one family row on her list, as on Mom's Day
 
   // Within-week rolled-forward work (unfinished, effectiveDay===today) shows INLINE in the
   // day's list like normal work — no separate box. Only end-of-week overflow (over the
@@ -9207,6 +9209,7 @@ function finalizeDone(id, doneTs, score){
     if(_famPre&&_famPre.label) entry.famLabel=_famPre.label;   // 📚 what the family actually did
     if(_famPre&&_famPre.madeUp) entry.famMadeUp=_famPre.madeUp;   // 📚 FAMMAKEUP: the missed day this check made up
     try{ const _sb=(typeof _spBy==="function")?_spBy():null; if(_sb) entry.by=_sb; }catch(e){}   // 🔎 SPOTCHECK: Mom's / Dad's check isn't the kid's own
+    try{ if(!entry.by&&typeof famPresBy==="function"){ const _pb=famPresBy(t); if(_pb) entry.by=_pb; } }catch(e){}   // 🏡 FAMPRESENCE: a helper led family time → by:<helperId>
     try{ const _hp=(typeof helperHolds==="function")?helperHolds(t):null; if(_hp) entry.helper=helperName(_hp); else if(typeof dadTapCtx!=="undefined"&&dadTapCtx) entry.helper=dadTapName(); }catch(e){}   // 🙋 "done with Grandma" · 👨 DADFIX: Dad's tap → "done with Dad"
     if(t.lid){ entry.lid=t.lid; entry.pid=t.who+"__"+t.subjectKey; }   // frozen record is lid-resolvable without title parsing
     hist[id]=entry; histState[id]=entry; sv(WK+"_history",hist); if(db) db.ref(WK+"/history/"+id).set(entry);
@@ -10747,16 +10750,18 @@ function tapTask(id){
   if(checkoffHeld()){ _checkoffHeldToast(); return; }
   if(typeof stTapGate==="function"&&stTapGate(t)) return;   // 📝 STTESTCARD: Mom opens the test · the lesson waits for it
   // 👨‍👩‍👧 Family time: Mom checks it off once for everyone (her rule 2026-10-03) — a kid's tap only says so.
-  if(t.famBlock&&!momHereCards()){
+  if(t.famBlock&&typeof famBoState==="function"&&famBoState(t)){ const _bs=famBoState(t); if(typeof gwShowToast==="function") gwShowToast(_bs.missed?"\u26D4 Family time is missed \u2014 "+_bs.missed:"\u{1F6AB} "+cap(t.who)+" is out \u2014 "+_bs.out); return; }   // 🚫 FAMBLOCKOUT: not checkable
+  if(t.famBlock&&!momHereCards()&&!(typeof famPresLeads==="function"&&famPresLeads(t))){   // 🏡 FAMPRESENCE: the helper given it leads like Mom
     // ⭐ "rate each other" (step C): the kid's tap opens THEIR rating of the others — that is their check-off
     if(!checked[id]&&typeof famKidsRate==="function"&&famKidsRate(t)){
       if(t.famGave&&Object.keys(t.famGave).length){ if(typeof gwShowToast==="function") gwShowToast("\u2B50 Your stars are in \u2014 waiting for the others to rate you"); }
       else famKidRateOpen(id);
       return;
     }
+    if(typeof famAttendKidTap==="function"&&famAttendKidTap(t)) return;   // 🏡 FAMATTEND: this copy was "not here"
     if(typeof gwShowToast==="function") gwShowToast(checked[id]?"\u2713 Mom checked off family time":"\u{1F3E1} Family time \u2014 Mom checks this off for everyone"); return; }
   // ⭐ points (step C): Mom's ✓ on a family card that pays opens her one screen — every kid at full stars
-  if(t.famBlock&&momHereCards()&&!checked[id]&&typeof famPtsMax==="function"&&famPtsMax(t)>0){ famRateOpen(id); return; }
+  if(t.famBlock&&(momHereCards()||(typeof famPresLeads==="function"&&famPresLeads(t)))&&!checked[id]&&typeof famPtsMax==="function"&&famPtsMax(t)>0){ famRateOpen(id); return; }   // 🏡 FAMPRESENCE: the helper too
   const isDone=!!checked[id];
   const isClaimed=!isDone&&!!claimed[id];
   const future=DAYS.indexOf(t.day)>DAYS.indexOf(day);
@@ -10771,6 +10776,7 @@ function tapTask(id){
   const mtBtn=document.getElementById("dlg-movetoday");   // 📅 MOVETODAY
   pushBtn.style.display="none"; disBtn.style.display="none"; disChoice.style.display="none"; if(mtBtn) mtBtn.style.display="none";
   document.getElementById("dlg-title").textContent=t.title;
+  try{ if(typeof famAttendDlg==="function") famAttendDlg(t,isDone||isClaimed); }catch(e){ dbg("family attend dlg: "+e); }   // 🏡 FAMATTEND: who was here?
   if(isDone){
     document.getElementById("dlg-detail").textContent="Completed: "+checked[id];
     btn.style.display="none"; unBtn.style.display="block"; unBtn.innerHTML="&#x21A9; Unmark";
@@ -10874,6 +10880,7 @@ document.getElementById("dlg-ok").onclick=()=>{
     try{ if(typeof coSpinOnClaim==="function") coSpinOnClaim(id); }catch(e){ dbg("closeout spin-on-send: "+e); }   // ✅ CLOSEOUT: spin now, points held until Mom's check
     return;
   }
+  try{ if(t.famBlock&&typeof famAttendSave==="function"&&famAttendSave(t,ts)){ dbg("write checked (family, with absent) id="+id); closeDlg(); renderAll(); return; } }catch(e){ dbg("family attend save: "+e); }   // 🏡 FAMATTEND
   if(finalizeDone(id, ts, null)===false){
     // Refused by the sequential-order guard. Nothing was written — so no spin, no score
     // prompt, and no "write checked" line in the log claiming otherwise. Mom gets the
@@ -30802,10 +30809,11 @@ function famMomView(list){
 function famSiblings(t){
   if(!famIsCard(t)) return [];
   const tasks=((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]);
-  return tasks.filter(function(x){ return x&&x.id!==t.id&&x.famBlock===t.famBlock&&x.famItem===t.famItem&&x.day===t.day; });
+  return tasks.filter(function(x){ return x&&x.id!==t.id&&x.famBlock===t.famBlock&&x.famItem===t.famItem&&x.day===t.day&&!(typeof famBoState==="function"&&famBoState(x)); });   // 🚫 FAMBLOCKOUT: an out copy isn't checked with the others
 }
 // Mom un-marks one copy → un-mark them all (same targeted removes the dialog's own Unmark does).
 function famUncheckSiblings(t){
+  try{ if(typeof famAttendClear==="function") famAttendClear(t); }catch(e){ dbg("family attend clear: "+e); }   // 🏡 FAMATTEND: "not here" flags come off
   const sib=famSiblings(t).filter(function(x){ return checked[x.id]; }); if(!sib.length) return 0;
   const hist=ld(WK+"_history")||{};
   sib.forEach(function(x){
@@ -30857,23 +30865,26 @@ function famOnce(key,fn){
 // ── Mom's screen: every kid at full stars ──
 let famRateState=null;   // {ids:[cardId…], stars:{cardId:n}}
 function famRateOpen(id){
-  if(!momHere()) return;
+  if(!momHere()&&!(typeof famPresLeadsId==="function"&&famPresLeadsId(id))) return;   // 🏡 FAMPRESENCE: the helper who was given it leads
   const t=weekData.tasks.find(function(x){ return x.id===id; }); if(!t) return;
   const grp=famGroup(t).filter(function(x){ return !checked[x.id]; }); if(!grp.length) return;
   famRateState={ids:grp.map(function(x){ return x.id; }),stars:{}};
   grp.forEach(function(x){ famRateState.stars[x.id]=5; });
+  if(typeof famAttendOpen==="function") famAttendOpen(grp);   // 🏡 FAMATTEND: who was here?
   famRateRender();
 }
 function famRateSet(id,n){ if(!famRateState) return; famRateState.stars[id]=Math.max(0,Math.min(5,n|0)); famRateRender(); }
 function famRateClose(){ famRateState=null; const o=document.getElementById("fam-rate-ov"); if(o) o.remove(); }
 function famRateSave(){
-  if(!momHere()||!famRateState) return;
+  if(!famRateState||(!momHere()&&!(typeof famPresLeadsId==="function"&&famPresLeadsId(famRateState.ids[0])))) return;   // 🏡 FAMPRESENCE
   const st=famRateState, first=weekData.tasks.find(function(x){ return x.id===st.ids[0]; });
   famRateClose(); if(!first) return;
+  if(typeof famAttendLate==="function"&&famAttendLate(st)){ renderAll(); return; }   // 🏡 FAMATTEND: re-opened on "not here" copies
   famOnce(famPaidKey(first),function(){   // same once-lock as the kids' path, so the two can never both pay
     const ts=nowTs(), paid=[];
     st.ids.forEach(function(id){ const c=weekData.tasks.find(function(x){ return x.id===id; }); if(!c||checked[c.id]) return;
-      famPayCard(c,st.stars[id],ts,"Mom"); paid.push(cap(c.who)+" +"+famPtsFor(famPtsMax(c),st.stars[id])+"⭐"); });
+      if(typeof famAttendPay==="function"&&famAttendPay(c)) return;   // 🏡 FAMATTEND: "not here" → flagged, not paid
+      famPayCard(c,st.stars[id],ts,momHere()?"Mom":((typeof famPresLeadName==="function"&&famPresLeadName(c))||"Mom")); paid.push(cap(c.who)+" +"+famPtsFor(famPtsMax(c),st.stars[id])+"⭐"); });
     if(typeof gwShowToast==="function"&&paid.length) gwShowToast(FAM_ICON+" Paid: "+paid.join(", "));
   });
   renderAll();
@@ -30890,7 +30901,7 @@ function famRateRender(){
   h+='<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:800">'+FAM_ICON+' '+esc(it.name||"Family time")+'</div>';
   h+='<div style="font-size:12px;color:var(--muted);margin:2px 0 10px">Up to '+max+' ⭐ each. Everyone starts at full — lower anyone who didn’t bring a good attitude.</div>';
   st.ids.forEach(function(id){ const c=weekData.tasks.find(function(x){ return x.id===id; }); if(!c) return; const n=st.stars[id];
-    h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f3f4f6"><div style="flex:1;font-weight:800;font-size:15px">'+esc(cap(c.who))+'</div>'+
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f3f4f6"><div style="flex:1;font-weight:800;font-size:15px">'+esc(cap(c.who))+(typeof famAttendChip==="function"?' '+famAttendChip(c,true):'')+'</div>'+
       _famStarBtns(n,function(i){ return "famRateSet('"+id+"',"+i+")"; },26)+
       '<div style="width:52px;text-align:right;font-weight:800;color:#b45309">'+famPtsFor(max,n)+' ⭐</div></div>'; });
   h+='<div style="display:flex;gap:8px;justify-content:flex-end;padding-top:12px"><button onclick="famRateClose()" style="padding:10px 14px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-weight:700;cursor:pointer">Cancel</button>'+
@@ -30973,6 +30984,8 @@ function famBeforeUncheck(id){
 }
 // The card's line: what this kid can earn / gave / earned.
 function famRowHTML(t,done,viewKid){
+  { const _bs=(!done&&typeof famBoState==="function")?famBoState(t):null; if(_bs) return famBoRowHTML(t,_bs); }   // 🚫 FAMBLOCKOUT: out / missed under a blockout
+  if(!done&&typeof famIsAbsent==="function"&&famIsAbsent(t)) return famAttendRowHTML(t,viewKid);   // 🏡 FAMATTEND: wasn't here
   const mx=famPtsMax(t), sc=done?famScore(t):null, me=(viewKid===t.who);
   const _ls=(typeof famLessonFor==="function")?famLessonFor(t):"";   // 📚
   let txt;
@@ -30985,7 +30998,7 @@ function famRowHTML(t,done,viewKid){
   }
   else txt=(mx>0?'⭐ Up to '+mx+' ⭐ · ':'')+'\u{1F469} Mom checks this off for everyone';
   return (_ls?'<div style="margin-top:3px;font-size:12px;font-weight:800;color:#3b0764">\u{1F4DA} '+esc(_ls)+'</div>':'')+'<div style="margin-top:4px;font-size:11px;font-weight:700;color:#6d28d9">'+txt+'</div>'+
-    ((!done&&typeof famDrillBtnHTML==="function")?famDrillBtnHTML(t,me):'');
+    ((!done&&typeof famDrillBtnHTML==="function")?famDrillBtnHTML(t,me):'')+((!done&&typeof famPresRowHTML==="function")?famPresRowHTML(t,done):'');   // 🏡 FAMPRESENCE: waiting on Mom · sitter hours
 }
 // FAM_DRILLS_START — 🧠 a family-time item can open each kid's own drills (her ask 2026-10-04: "linked to their
 // shared time … with a button to point them to the right drills"). DeWalt's Fact Review block: Andrew + Kenzie
@@ -31186,6 +31199,112 @@ function famSettingsCardHTML(){
   return h+'</div>';
 }
 // FAMBLOCK_END
+// FAMATTEND_START ── 🏡 "NOT HERE" PER KID ON MOM'S DONE (her ask 2026-10-22 — session D of the 10/22 pack) ──────
+// The hole: Mom's one tap on a Family Time card marked EVERY kid's copy done and paid every kid — a kid who left sick
+// mid-morning was recorded present and paid. A PLANNED absence is handled at generation (smapIsKidOff drops the copy);
+// this is the unplanned one. In BOTH of Mom's paths (the plain "Done — everyone" dialog in tapTask and the ⭐ famRateOpen
+// screen) there is one chip per member kid, default "here"; a tap flips it to "not here". On save:
+//   · every "here" copy finalizes exactly as today (the tapped card first, then the siblings — the same finalizeDone calls)
+//   · every "not here" copy gets ONE targeted write, WK/tasks/<id>/famAbsent = true — never the whole tasks node — and is
+//     NOT finalized and NOT paid; its card reads "wasn't here" (famRowHTML) and it never blocks that kid's day-done
+//     (rtSchoolworkDone). The block still counts as taught: the ≥1-checked rule (famCellDone) and the lesson place moving
+//     once (FAMLESSONS famCheckPre) are untouched.
+//   · Mom's Unmark (dlg-uncheck → famUncheckSiblings) clears famAbsent on every copy — targeted removes.
+//   · No chip touched → famAttendSave says false and today's path runs unchanged, byte for byte.
+// Someone has to be here: the last "here" chip can't be flipped (if no one was there, the card simply stays unchecked).
+// Kids were already locked out of family cards; a kid's tap on their own "wasn't here" copy only says so.
+let famAttendOff={};        // {cardId:true} — the chips flipped to "not here" in the open dialog / screen
+let famAttendDlgId=null;    // the card the plain dialog's chips belong to (famAttendSave answers only for it)
+function famIsAbsent(t){ return !!(t&&t.famBlock&&t.famAbsent); }
+function famAttendGrp(t){ return famGroup(t).filter(function(x){ return !checked[x.id]; }); }   // the copies still open
+// Opening: chips start from what is already recorded — a copy flagged on an earlier save starts "not here".
+function famAttendOpen(grp){ famAttendOff={}; (grp||[]).forEach(function(x){ if(x&&x.famAbsent&&!checked[x.id]) famAttendOff[x.id]=true; }); }
+function famAttendFlip(id){
+  const t=weekData.tasks.find(function(x){ return x.id===id; }); if(!t) return;
+  if(famAttendOff[id]) delete famAttendOff[id];
+  else {
+    const here=famAttendGrp(t).filter(function(x){ return !famAttendOff[x.id]; });
+    if(here.length<=1){ if(typeof gwShowToast==="function") gwShowToast(FAM_ICON+" Someone has to be here \u2014 if no one was, just leave it unchecked."); return; }
+    famAttendOff[id]=true;
+  }
+  if(famRateState&&typeof famRateRender==="function") famRateRender();
+  const el=document.getElementById("fam-attend"); if(el&&famAttendDlgId){ const d=weekData.tasks.find(function(x){ return x.id===famAttendDlgId; }); if(d) el.innerHTML=famAttendChipsHTML(d); }
+}
+function famAttendChip(x,small){
+  const off=!!famAttendOff[x.id];
+  return '<button onclick="event.stopPropagation();famAttendFlip(\''+_fdJ(x.id)+'\')" style="padding:'+(small?'2px 8px':'5px 11px')+';border-radius:14px;border:1.5px solid '+(off?'#fca5a5':'#86efac')+
+    ';background:'+(off?'#fef2f2':'#f0fdf4')+';color:'+(off?'#b91c1c':'#166534')+';font-size:'+(small?'11px':'13px')+';font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+
+    (off?'\u2715 ':'\u2713 ')+(small?(off?'Not here':'Here'):esc(cap(x.who))+(off?' \u2014 not here':''))+'</button>';
+}
+function famAttendChipsHTML(t){
+  const grp=famAttendGrp(t); if(!grp.length) return "";
+  return '<div style="font-size:11px;color:var(--muted);font-weight:700;margin-bottom:5px">Who was here? Tap a name if they weren\u2019t.</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+grp.map(function(x){ return famAttendChip(x,false); }).join('')+'</div>';
+}
+// The plain dialog (tapTask): chips under the detail line for Mom on an open family card; removed for every other card.
+function famAttendDlg(t,skip){
+  let el=document.getElementById("fam-attend");
+  const show=!!(t&&t.famBlock&&!skip&&momHereCards()&&!checked[t.id]);
+  if(!show){ famAttendDlgId=null; if(el) el.remove(); return false; }
+  famAttendDlgId=t.id; famAttendOpen(famAttendGrp(t));
+  if(!el){ const d=document.getElementById("dlg-detail"); if(!d||!d.parentNode) return false; el=document.createElement("div"); el.id="fam-attend"; el.style.cssText="margin:10px 0 2px"; d.parentNode.insertBefore(el,d.nextSibling); }
+  el.innerHTML=famAttendChipsHTML(t);
+  return true;
+}
+// The one write: WK/tasks/<id>/famAbsent = true (on) · removed (off). One leaf — never the whole tasks node.
+function famAttendWrite(x,on){
+  if(on) x.famAbsent=true; else delete x.famAbsent;
+  sv(WK+"_tasks",weekData.tasks); lastTasksWrite=Date.now();
+  if(db&&!_dryRun()){ const r=db.ref(WK+"/tasks/"+x.id+"/famAbsent"); if(on) r.set(true); else r.remove(); }
+  dbg("family attend: "+x.id+" "+(on?"not here":"here"));
+}
+// Mom's "Done — everyone" (dlg-ok). false = nobody marked "not here" → the caller's own path runs unchanged.
+function famAttendSave(t,ts){
+  if(!t||!t.famBlock||famAttendDlgId!==t.id) return false;   // the chips weren't for this card
+  const grp=famAttendGrp(t);
+  const off=grp.filter(function(x){ return famAttendOff[x.id]; }), here=grp.filter(function(x){ return !famAttendOff[x.id]; });
+  here.forEach(function(x){ if(x.famAbsent) famAttendWrite(x,false); });   // flipped back to "here" → the flag comes off; the check follows
+  if(!off.length) return false;
+  famAttendDlgId=null;
+  if(!here.length){ if(typeof gwShowToast==="function") gwShowToast(FAM_ICON+" "+off.map(function(x){ return cap(x.who); }).join(", ")+" marked not here \u2014 tap the name if they were here after all."); return true; }
+  off.forEach(function(x){ famAttendWrite(x,true); });
+  here.forEach(function(x){ if(!checked[x.id]) finalizeDone(x.id,ts,null); });   // the tapped card is first in the group, as today
+  dbg("family attend: "+here.length+" checked, "+off.length+" not here ("+off.map(function(x){ return x.who; }).join(",")+")");
+  if(typeof gwShowToast==="function") gwShowToast(FAM_ICON+" Done for "+here.map(function(x){ return cap(x.who); }).join(", ")+" \u00B7 not here: "+off.map(function(x){ return cap(x.who); }).join(", "));
+  return true;
+}
+// Mom's ⭐ screen (famRateSave), per copy: true = this kid was "not here" → flagged, not paid, not checked.
+function famAttendPay(c){
+  if(!famAttendOff[c.id]){ if(c.famAbsent) famAttendWrite(c,false); return false; }
+  famAttendWrite(c,true); return true;
+}
+// The ⭐ screen re-opened on copies already marked "not here" (the group was paid, its once-lock is taken): a kid flipped
+// back to "here" is paid now, no lock needed — the others' copies are already checked. false = a normal first save.
+function famAttendLate(st){
+  const cards=(st&&st.ids||[]).map(function(id){ return weekData.tasks.find(function(x){ return x.id===id; }); }).filter(function(c){ return c&&!checked[c.id]; });
+  if(!cards.length||!cards.every(function(c){ return c.famAbsent; })) return false;
+  const ts=nowTs(), paid=[];
+  cards.forEach(function(c){ if(famAttendOff[c.id]) return; famAttendWrite(c,false); famPayCard(c,st.stars[c.id],ts,"Mom"); paid.push(cap(c.who)+" +"+famPtsFor(famPtsMax(c),st.stars[c.id])+"\u2B50"); });
+  if(typeof gwShowToast==="function") gwShowToast(paid.length?FAM_ICON+" Paid: "+paid.join(", "):FAM_ICON+" Still marked not here.");
+  return true;
+}
+// Unmark (famUncheckSiblings): every copy's flag comes off, targeted removes, so the group is a plain open family card again.
+function famAttendClear(t){
+  const flagged=famGroup(t).filter(function(x){ return x&&x.famAbsent; }); if(!flagged.length) return 0;
+  flagged.forEach(function(x){ famAttendWrite(x,false); });
+  return flagged.length;
+}
+// The card's line for a copy that wasn't here (famRowHTML) — muted, no points, no "Mom checks this off".
+function famAttendRowHTML(t,viewKid){
+  const me=(viewKid===t.who);
+  return '<div style="margin-top:4px;font-size:11px;font-weight:700;color:var(--muted)">'+FAM_ICON+' '+(me?'You weren\u2019t here for this one':esc(cap(t.who))+' wasn\u2019t here for this one')+'</div>';
+}
+// A kid's tap on their own "wasn't here" copy (tapTask, kid branch): true = handled, nothing to do.
+function famAttendKidTap(t){
+  if(!famIsAbsent(t)||checked[t.id]) return false;
+  if(typeof gwShowToast==="function") gwShowToast(FAM_ICON+" You weren\u2019t here for this one \u2014 nothing to do");
+  return true;
+}
+// FAMATTEND_END
 // FAMCELEB_START ── 🎉 FAMILY-TIME CELEBRATIONS (her design 2026-10-04) ───────────────────────────────────────
 // "it can have a add celebratory song option when making the family block" · "when mom clicks it says it's celebrating
 // all the kids who are done … anyone who is left will get it again for them" · "a celebrate with just the confetti etc
@@ -31204,7 +31323,7 @@ function famCelebSong(b){
 function _famCelebHas(key){ const u=ld(WK+"_celeb_used")||{}; return !!u[key]; }
 function _famCelebMark(key){ const u=ld(WK+"_celeb_used")||{}; u[key]=true; sv(WK+"_celeb_used",u); if(db) db.ref(WK+"/celeb_used/"+key).set(true); }
 function _famCelebNames(list){ list=list.map(cap); return list.length>1?list.slice(0,-1).join(", ")+" & "+list[list.length-1]:(list[0]||""); }
-function _famCelebCards(d){ const lay=(d===_todayDay&&typeof _rtSwTodayLay==="function")?_rtSwTodayLay():null; return (lay||getActiveTasks()).filter(function(t){ return t&&t.famBlock&&effectiveDay(t)===d; }); }
+function _famCelebCards(d){ const lay=(d===_todayDay&&typeof _rtSwTodayLay==="function")?_rtSwTodayLay():null; return (lay||getActiveTasks()).filter(function(t){ return t&&t.famBlock&&effectiveDay(t)===d&&!(typeof famBoState==="function"&&famBoState(t)); }); }   // 🚫 FAMBLOCKOUT: an out copy isn't waited on
 // 1️⃣ A kid's own work is done and a celebrating family time is still ahead → confetti, never a song (her rule 10/4).
 function famCelebOwnWork(kid,d){
   if(d!==_todayDay||hasCelebrated(kid,d)||_famCelebHas(kid+"_"+d+"_own")) return false;
@@ -31492,6 +31611,102 @@ function famSheetRender(){
   o.scrollTop=sc;
 }
 // FAMTOGETHER_END
+// FAMBLOCKOUT_START ── 🚫 A BLOCKOUT DURING FAMILY TIME (her two holes 2026-10-22, session C of the 10/22 pack) ─────────
+// A 1 PM appointment blockout left the block pinned at 1 PM with nobody there and nothing on the card said so; and
+// track.missed defaulted to "skip", so the lost day was never made up unless the mom found the setting.
+// Family time still happens at its time or not at all (her rule): NOTHING here moves a card to another slot or day.
+//   · a blockout (timed or full-day) that covers a kid during a card's window → that kid's copy is OUT: the card reads
+//     "Out — <blockout>", can't be checked (Mom's one check skips it, a tap only says so) and doesn't count toward that
+//     kid's day-done. The other kids' copies are untouched.
+//   · every member covered, OR a Mom-led block under Mom's own blockout (the sitter blockout = Mom away from its start
+//     until she returns; or a blockout whose kids list names "mom") → the block is MISSED that day: every copy reads
+//     "Missed — <why>", and the date is OWED to the make-up (famOwedList) the same day, so the next run day's card
+//     already shows the doubled lesson. A checked copy means it happened — never out, never missed.
+//   · famBoMarkMissed(block,item,date,why) is the hook session B calls for a Mom-off day — same owed path, no new data.
+//   · a NEW lesson track defaults "If a day is missed" to "next day" for every family but Howe's (Howe keeps "skip");
+//     tracks that already exist are untouched (DeWalt's two live ones keep their value until she flips them).
+// Blockouts have no name of their own, so the card says the type and window ("all day", "1:00 PM–2:00 PM", "<sitter> hours").
+// Everything is derived from this week's `blockouts` on demand (famBoState); the lay-time `_famOut` stamp from
+// runDisplacement's family skip is display-only like `_offDay`, never stored. No blockouts → every answer is null/"".
+function famBoAll(){ const B=(typeof blockouts!=="undefined"&&blockouts)||{}; return Object.keys(B).map(function(k){ return B[k]; }).filter(function(bo){ return bo&&bo.day; }); }
+function famBoName(bo){
+  if(!bo) return "";
+  const own=bo.name||bo.label||bo.title||bo.reason; if(own) return String(own);
+  if(bo.type==="fullDay") return "all day";
+  if(bo.type==="babysitter") return ((typeof SITTER_NAME!=="undefined"&&SITTER_NAME)||"sitter")+" hours"+(bo.momReturn?" — Mom back "+bo.momReturn:"");
+  return String(bo.start||"")+"–"+String(bo.end||"");
+}
+// Does a blockout cover the window [s,e) on its day? Full day = yes; timed = any overlap with its hours.
+function famBoWin(bo,s,e){ if(bo.type==="fullDay") return true; const bS=toMin(bo.start||""), bE=toMin(bo.end||""); if(!bS||!bE||isNaN(bS)||isNaN(bE)) return false; return s<bE&&e>bS; }
+// One card's window: its block's CURRENT layout (famWindowOf), else the card's own time (auto blocks, deleted blocks).
+function famBoCardWin(t){ let w=null; try{ w=famWindowOf(t,t.day); }catch(e){} if(w&&!isNaN(w.s)) return w; const a=toMin(t.time||""); return (!a||isNaN(a))?null:{s:a,e:a+((t.dur|0)||30)}; }
+// Is this KID out for this card under this blockout? The sitter blockout keeps the kids home — only Mom is away.
+function famBoKidOut(t,bo){ if(!t||!bo||bo.type==="babysitter"||bo.day!==t.day||(bo.kids||[]).indexOf(t.who)<0) return false; const w=famBoCardWin(t); return !!w&&famBoWin(bo,w.s,w.e); }
+// Is MOM away for this card under this blockout? The sitter blockout (from its start until she returns), or any blockout naming "mom".
+function famBoMomOut(t,bo){
+  if(!t||!bo||bo.day!==t.day) return false; const w=famBoCardWin(t); if(!w) return false;
+  if(bo.type==="babysitter"){ const s=toMin(bo.start||""), e=toMin(bo.momReturn||bo.end||""); return !!(s&&e&&!isNaN(s)&&!isNaN(e))&&w.s<e&&w.e>s; }
+  return (bo.kids||[]).indexOf("mom")>=0&&famBoWin(bo,w.s,w.e);
+}
+// Session B's hook: mark a subject missed on a date (a Mom-off day) → owed like a blockout. In memory, this device; "" clears.
+let _famBoMarks={};
+function famBoMarkMissed(id,key,ds,why){
+  const k=id+"|"+key+"|"+ds, v=why?String(why):"";
+  if(v){ if(_famBoMarks[k]===v) return; _famBoMarks[k]=v; } else { if(!(k in _famBoMarks)) return; delete _famBoMarks[k]; }
+  try{ _famLmMemo={}; }catch(e){}
+}
+function famBoDateOf(dn){ try{ return (typeof routineDateISO==="function"&&routineDateISO(dn))||""; }catch(e){ return ""; } }
+// The day name this date falls on in the active week ("" when it isn't this week's).
+function famBoDayOf(ds){ const D=(typeof DAYS_ALL!=="undefined"&&DAYS_ALL)||["monday","tuesday","wednesday","thursday","friday","saturday"]; return D.find(function(dn){ return famBoDateOf(dn)===ds; })||""; }
+function famBoMarkedState(t){ const ds=famBoDateOf(t.day), why=ds?_famBoMarks[t.famBlock+"|"+t.famItem+"|"+ds]:""; return why?{missed:why,out:why,marked:true}:null; }
+// The state of ONE family card: null (nothing), {out:"<blockout>"} (this kid is out), or {missed:"<why>",out,mom?} (the whole
+// block is missed). `tasks` = where the siblings are read from (the week by default; runDisplacement's copy when it asks).
+function famBoState(t,tasks){
+  if(!t||!t.famBlock||(typeof checked!=="undefined"&&checked&&checked[t.id])) return null;
+  const bos=famBoAll(); if(!bos.length) return famBoMarkedState(t);
+  const mine=bos.find(function(bo){ return famBoKidOut(t,bo); }), out=mine?famBoName(mine):"";
+  if(famCardMomLeads(t)){ const mb=bos.find(function(bo){ return famBoMomOut(t,bo); }); if(mb) return {missed:"Mom’s out ("+famBoName(mb)+")",out:out||famBoName(mb),mom:true}; }
+  if(!out) return famBoMarkedState(t);
+  const all=(tasks||((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[])).filter(function(x){ return x&&x.id!==t.id&&x.famBlock===t.famBlock&&x.famItem===t.famItem&&x.day===t.day; });
+  const ck=(typeof checked!=="undefined"&&checked)||{}, everyone=all.every(function(x){ return !ck[x.id]&&bos.some(function(bo){ return famBoKidOut(x,bo); }); });
+  return everyone?{missed:"everyone’s out ("+out+")",out:out}:{out:out};
+}
+// Is this subject missed on this date? → why, or "". The registry first, then this week's blockouts through the laid
+// cards (a date with no cards — co-op, off, not generated yet — is nothing to miss).
+function famBoMissedAt(id,key,ds){
+  const m=_famBoMarks[id+"|"+key+"|"+ds]; if(m) return m;
+  if(!famBoAll().length) return "";
+  const dn=famBoDayOf(ds); if(!dn) return "";
+  const tasks=((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]);
+  const c=tasks.find(function(x){ return x&&x.famBlock===id&&x.famItem===key&&x.day===dn; }); if(!c) return "";
+  const st=famBoState(c,tasks); return (st&&st.missed)||"";
+}
+// What the lesson map's memo depends on here: the blockouts and the marks.
+function famBoSig(){ try{ return JSON.stringify((typeof blockouts!=="undefined"&&blockouts)||{})+JSON.stringify(_famBoMarks); }catch(e){ return ""; } }
+// runDisplacement's family skip (Phase 0, blockout × card, on its own copy of the week): stamp the copy, display-only
+// like `_offDay`. The card never joins displacedIds — nothing moves.
+function famBoMark(t,bo){ try{ if(!t._famOut&&!(typeof checked!=="undefined"&&checked&&checked[t.id])&&famBoKidOut(t,bo)) t._famOut=famBoName(bo); }catch(e){} }
+// The card's row in place of "Mom checks this off for everyone".
+function famBoMakeupNote(t){
+  try{ const it=famItemOf(t), tr=famTrack(it); if(!tr) return ""; const m=famMissedMode(tr);
+    const ds=famBoDateOf(t.day), wd=ds?FAM_ABBR[gwParseDate(ds).getDay()]:"";
+    return m==="next"?"made up the next day it runs":(m==="same"?"made up next "+(wd||"same weekday"):"not made up (skip)"); }catch(e){ return ""; }
+}
+function famBoRowHTML(t,st){
+  const _ls=(typeof famLessonFor==="function")?famLessonFor(t):"", note=st.missed?famBoMakeupNote(t):"";
+  return (_ls?'<div style="margin-top:3px;font-size:12px;font-weight:800;color:#6b7280">\u{1F4DA} '+esc(_ls)+'</div>':'')+
+    '<div style="margin-top:4px;font-size:11px;font-weight:800;color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:3px 8px;display:inline-block">'+
+    (st.missed?'⛔ Missed — '+esc(st.missed):'\u{1F6AB} Out — '+esc(st.out))+(note?' <span style="font-weight:600;color:#b45309">· '+esc(note)+'</span>':'')+'</div>';
+}
+// A new track's default: "next day" for every family but Howe's (her pick 2026-10-22); an existing track is never touched.
+function famBoTrackDefault(tr){
+  try{ const fid=(typeof window!=="undefined"&&window.HA_FAMILY&&window.HA_FAMILY.familyId)||"howe";
+    if(fid!=="howe"&&tr&&!tr.missed){ tr.missed="next"; tr.missedFrom=cbTodayISO(); } }catch(e){}
+  return tr;
+}
+// The editor's plain words for the setting.
+function famBoMissedWords(tr){ const m=(typeof famMissedMode==="function")?famMissedMode(tr):"skip"; return "If a day is missed: "+(m==="next"?"next day":(m==="same"?"same weekday":"skip")); }
+// FAMBLOCKOUT_END
 // FAMLESSONS_START ── 📚 LESSONS FOR FAMILY SUBJECTS (step 2, her yes 10/4 — DeWalt BiblioPlan + Space Science) ─────────
 // An item may carry track:
 //   {mode:"week", book, startDate:"YYYY-MM-DD", startWeek:7, total:34, days:{Mon:"Day 1",…,Fri:"Presidents"}, topics:{7:"…"}}
@@ -31577,10 +31792,10 @@ function famOwedList(id,it,dates,today,hasLesson){
   const tr=famTrack(it); if(!tr||famMissedMode(tr)==="skip") return [];
   const from=String(tr.missedFrom||""); if(!/^\d{4}-\d{2}-\d{2}$/.test(from)) return [];
   const made=famMadeUpSet(id,it.key);
-  return dates.filter(function(d){ return d>=from&&d<today&&hasLesson(d)&&!made[d]&&!famRecordAt(id,it.key,d); });
+  return dates.filter(function(d){ return d>=from&&(d<today||(typeof famBoMissedAt==="function"&&famBoMissedAt(id,it.key,d)))&&hasLesson(d)&&!made[d]&&!famRecordAt(id,it.key,d); });   // 🚫 FAMBLOCKOUT: or marked missed
 }
 // Does the owed day land here? "next" = the first open day; "same" = the first open day with the same weekday.
-function famMakeupLands(tr,missed,d){ return famMissedMode(tr)==="same"?(gwParseDate(missed).getDay()===gwParseDate(d).getDay()):true; }
+function famMakeupLands(tr,missed,d){ return d>missed&&(famMissedMode(tr)==="same"?(gwParseDate(missed).getDay()===gwParseDate(d).getDay()):true); }   // 🚫 FAMBLOCKOUT: a make-up follows its miss (a day marked missed ahead of time never lands on today)
 // A cheap signature of the records the map depends on (checked copies this week + archive size) for the memo key.
 function famRecSig(id,key){ let n=0; try{ ((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]).forEach(function(t){ if(t&&t.famBlock===id&&t.famItem===key&&checked[t.id]) n++; }); }catch(e){} try{ n+=1000*Object.keys((typeof archive!=="undefined"&&archive)||{}).length; }catch(e){} return n; }
 // FAMMAKEUP_END
@@ -31590,10 +31805,10 @@ function famLessonMap(b,id,it){
   const tr=famTrack(it); if(!tr) return {byDate:{},ends:null,now:"",none:true};
   const today=(typeof cbTodayISO==="function")?cbTodayISO():new Date().toISOString().slice(0,10);
   const dates=famRunDatesC(b,id,it);
-  const mk=[id,it.key,JSON.stringify(tr),famDoneN(id,it.key),today,dates.length,dates[0]||"",famCellDone(b,id,it,today)?1:0,JSON.stringify(b.days||[]),JSON.stringify(it.days||[]),famRecSig(id,it.key)].join("|");
+  const mk=[id,it.key,JSON.stringify(tr),famDoneN(id,it.key),today,dates.length,dates[0]||"",famCellDone(b,id,it,today)?1:0,JSON.stringify(b.days||[]),JSON.stringify(it.days||[]),famRecSig(id,it.key),(typeof famBoSig==="function"?famBoSig():"")].join("|");   // 🚫 FAMBLOCKOUT: the blockouts too
   if(_famLmMemo[mk]) return _famLmMemo[mk];
   const out={byDate:{},short:{},ends:null,now:"",madeUp:{},owed:[]};
-  const openDay=function(d){ return d>=today&&!(d===today&&famCellDone(b,id,it,today)); };   // FAMMAKEUP: a day a make-up can still land on
+  const openDay=function(d){ return d>=today&&!(d===today&&famCellDone(b,id,it,today))&&!(typeof famBoMissedAt==="function"&&famBoMissedAt(id,it.key,d)); };   // FAMMAKEUP: a day a make-up can still land on (🚫 FAMBLOCKOUT: not a missed one)
   if(tr.mode==="week"){
     const startMon=famMonISO(tr.startDate||today), total=parseInt(tr.total,10)||0, sw=parseInt(tr.startWeek,10)||1;
     const weeks=[]; dates.forEach(function(d){ if(d<startMon) return; const m=famMonISO(d); if(weeks.indexOf(m)<0) weeks.push(m); });
@@ -31622,7 +31837,7 @@ function famLessonMap(b,id,it){
     dates.forEach(function(d){
       const _sh=function(full){ const k=sit.indexOf(full); return k>=0?sh[k]:full; };
       const _shC=function(full){ return String(full).split(" + ").map(_sh).join(" + "); };
-      if(d<today){ const r=famRecordAt(id,it.key,d); if(r&&r.label){ out.byDate[d]=r.label; out.short[d]=_shC(r.label); if(r.madeUp) out.madeUp[d]=r.madeUp; } return; }
+      if(d<today||(typeof famBoMissedAt==="function"&&famBoMissedAt(id,it.key,d))){ const r=famRecordAt(id,it.key,d); if(r&&r.label){ out.byDate[d]=r.label; out.short[d]=_shC(r.label); if(r.madeUp) out.madeUp[d]=r.madeUp; } return; }   // 🚫 FAMBLOCKOUT: a missed day takes no sitting
       if(d===today&&famCellDone(b,id,it,today)){ const r=famRecordAt(id,it.key,d); out.byDate[d]=(r&&r.label)||sit[idx-1]||""; out.short[d]=_shC(out.byDate[d]); if(r&&r.madeUp) out.madeUp[d]=r.madeUp; return; }
       if(idx<sit.length){ out.byDate[d]=sit[idx]; out.short[d]=sh[idx]; out.ends=d;
         const k=idx+1<sit.length?rem.findIndex(function(m){ return famMakeupLands(tr,m,d); }):-1;
@@ -31657,7 +31872,7 @@ function famFmtDate(ds){ const d=gwParseDate(ds); return ["Jan","Feb","Mar","Apr
 function famTrackStart(id,i,mode){
   const its=famItems(id); if(!its[i]) return;
   const nextMon=(function(){ const t=gwParseDate(cbTodayISO()); const d=new Date(t); d.setDate(t.getDate()+((8-t.getDay())%7||7)); if(t.getDay()===1) return cbTodayISO(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); })();
-  its[i].track=mode==="week"?{mode:"week",book:"",startDate:nextMon,startWeek:1,total:0,days:{Mon:"Day 1",Tue:"Day 2",Wed:"Day 3",Thu:"Day 4",Fri:"Day 5"},topics:{}}:{mode:"seq",list:[]};
+  its[i].track=(typeof famBoTrackDefault==="function"?famBoTrackDefault:function(x){ return x; })(mode==="week"?{mode:"week",book:"",startDate:nextMon,startWeek:1,total:0,days:{Mon:"Day 1",Tue:"Day 2",Wed:"Day 3",Thu:"Day 4",Fri:"Day 5"},topics:{}}:{mode:"seq",list:[]});   // 🚫 FAMBLOCKOUT: "next day" for every family but Howe's
   famWrite(id+"/items",its);
 }
 function famTrackRemove(id,i){ const its=famItems(id); if(!its[i]||!confirm("Remove the lessons from “"+(its[i].name||"")+"”? The card goes back to just its name.")) return; delete its[i].track; famWrite(id+"/items",its); }
@@ -31698,7 +31913,7 @@ function famLessonsEditorHTML(id,b,it,i,ed){
   const btn=function(lbl,fn,prim){ return '<button onclick="'+fn+'" style="padding:4px 11px;border-radius:8px;border:'+(prim?'none':'1.5px solid #c4b5fd')+';background:'+(prim?'#7c3aed':'#fff')+';color:'+(prim?'#fff':'#5b21b6')+';font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
   if(!tr) return ed?box('<span style="font-size:10px;color:var(--muted);margin-right:6px">\u{1F4DA} Lessons</span>'+btn('＋ In order (a list)',"famTrackStart('"+J(id)+"',"+i+",'seq')")+' '+btn('＋ Week by week (like BiblioPlan)',"famTrackStart('"+J(id)+"',"+i+",'week')")):'';
   const m=famLessonMap(b,id,it);
-  const status='<div style="font-size:11px;font-weight:700;color:#5b21b6;padding-bottom:4px">\u{1F4DA} '+(m.now?'Next: '+esc(m.now):'Nothing scheduled yet')+(m.ends?' · ends '+famFmtDate(m.ends):'')+((m.owed&&m.owed.length)?' · <span style="color:#b45309">'+m.owed.length+' to make up</span>':'')+'</div>';
+  const status='<div style="font-size:11px;font-weight:700;color:#5b21b6;padding-bottom:4px">\u{1F4DA} '+(m.now?'Next: '+esc(m.now):'Nothing scheduled yet')+(m.ends?' · ends '+famFmtDate(m.ends):'')+((m.owed&&m.owed.length)?' · <span style="color:#b45309">'+m.owed.length+' to make up</span>':'')+(typeof famBoMissedWords==="function"?' · <span style="font-weight:600;color:var(--muted)">'+esc(famBoMissedWords(tr))+'</span>':'')+'</div>';   // 🚫 FAMBLOCKOUT: the setting in plain words
   if(!ed) return box(status);
   let h=status;
   if(tr.mode==="seq"){
@@ -31732,6 +31947,83 @@ function famLessonsEditorHTML(id,b,it,i,ed){
   return box(h);
 }
 // FAMLESSONS_END
+// FAMPRESENCE_START ── 👩 MOM OFF · 🙋 A HELPER LEADS · 🧑 SITTER HOURS, for Family Time (session pack B, her yes 2026-10-22) ──
+// Family Time assumed Mom is always there. Three holes, one block (momLeads:false blocks are untouched by all of it):
+//  (a) MOM OFF (mlMomOff — her 2026-09-05 switch): a Mom-led family card is pinned like a class, so the Mom-off sink (which
+//      only moves Mom-REQUIRED cards) never touched it — it sat there saying "Mom checks this off" while nobody could. Now every
+//      Mom-led copy for today, and Mom's own row, say "⏸ Waiting on Mom" while the switch is on. NOTHING MOVES: the cards stay
+//      pinned exactly as laid, and the switch clears itself overnight as it always did. If the day ends with Mom still off and
+//      no copy checked, the date is OWED by the existing FAMMAKEUP rule (a run day with no checked copy and no make-up —
+//      famOwedList) — proven in test_fam_presence, no new hook needed.
+//  (b) HELPERS: a Mom-led family card can be GIVEN to a helper exactly like a Mom card — same "Give Grandma more today" list
+//      (one row per subject, like Mom's Day), same helperGivenTo / helperHolds answer, one tick hands EVERY kid's copy. On her
+//      list (the green chip) her tap opens Mom's own Done dialog: one tap fans out to every copy, a paying subject opens the
+//      stars screen and pays as Mom's would (score.by = her name), and each history entry carries by:<helperId> on top of the
+//      usual helper:"Grandma". The Dad helper leads from his own page the same way. Kids still can't check it.
+//  (c) SITTER: on a babysitter day a Mom-led block at lunch or a clock time can sit inside the sitter's hours. "Scheduler
+//      picks" blocks already land after sitterEnd (the packer seeds Mom's start there: momStart) — proven, not changed. A pinned
+//      block is NOT moved (her time is her time) but its cards are stamped famSitter when the week is laid, the card says
+//      "during sitter hours", and the Grid's audit strip lists it so she sees it before the day.
+// Hooks (one line each): famRowHTML · famRateOpen/famRateSave · helperGivenTo · helperHolds · helperTasksToday · helperGiveCands ·
+// _hlpGiveGroup · the helper's list filter · tapTask (2) · finalizeDone · gwBuildDayTasks (famCards push) · gvAuditFindings/Render.
+function famPresGivable(t){ try{ return !!(t&&t.famBlock&&typeof famIsMomCard==="function"&&famIsMomCard(t)); }catch(e){ return false; } }
+function famPresToday(t){ try{ return ((typeof _mlDayOf==="function")?_mlDayOf(t):t.day)===_todayDay; }catch(e){ return false; } }
+function famPresHolder(t){ try{ return (famPresGivable(t)&&typeof helperHolds==="function")?helperHolds(t):null; }catch(e){ return null; } }
+// (a) ── is this copy waiting on Mom right now? Today's unchecked Mom-led copy, switch on, no helper holding it.
+function famPresWaiting(t){
+  try{ if(!famPresGivable(t)||checked[t.id]||!famPresToday(t)) return false;
+    if(!(typeof mlMomOff==="function"&&mlMomOff())) return false;
+    return !famPresHolder(t); }catch(e){ return false; }
+}
+// The card's extra line(s) — kid copies and Mom's Day row alike (famRowHTML draws both). Nothing on a done card.
+function famPresRowHTML(t,done){
+  if(done||!famPresGivable(t)) return "";
+  let h="";
+  if(famPresWaiting(t)) h+='<div style="margin-top:4px;font-size:11px;font-weight:800;color:#b45309">⏸ Waiting on Mom — she’s not available right now</div>';
+  if(t.famSitter) h+='<div style="margin-top:4px;font-size:11px;font-weight:800;color:#b45309">\u{1F9D1} During sitter hours — Mom isn’t home then</div>';
+  return h;
+}
+// (b) ── the give list: one row per Mom-led subject today (like Mom's Day), unchecked, no carry twins.
+function famPresGiveCands(all){
+  try{ const rows=(all||[]).filter(function(t){ return t&&t.id&&t.who&&famPresGivable(t)&&!t._eowOverflow&&!String(t.id).endsWith("_c")
+      &&(typeof _hlpIsToday!=="function"||_hlpIsToday(t))&&!(typeof checked!=="undefined"&&checked&&checked[t.id]); });
+    return (typeof famMomView==="function")?famMomView(rows):rows; }catch(e){ return []; }
+}
+// One tick hands every kid's copy (unchecked) — the copies stay together, as they do for Mom's check.
+function famPresGiveGroup(t){ try{ return famGroup(t).filter(function(x){ return !(typeof checked!=="undefined"&&checked&&checked[x.id]); }); }catch(e){ return [t]; } }
+// Does THIS device lead the card? The given helper's list is open here (selHelper), or it's the Dad helper's card on his page.
+function famPresLeads(t){
+  try{ const g=famPresHolder(t); if(!g) return false;
+    if(typeof helperViewActive==="function"&&helperViewActive()&&helperView===g) return true;
+    if(typeof helperDadId==="function"&&g===helperDadId()&&typeof helperDadCanAct==="function"&&helperDadCanAct()) return true;
+  }catch(e){}
+  return false;
+}
+function famPresLeadsId(id){ try{ const t=weekData.tasks.find(function(x){ return x.id===id; }); return !!t&&famPresLeads(t); }catch(e){ return false; } }
+function famPresBy(t){ return famPresLeads(t)?famPresHolder(t):null; }   // history entry by:<helperId>
+function famPresLeadName(t){ const g=famPresBy(t); return g&&typeof helperName==="function"?helperName(g):""; }
+// (c) ── at generation: the stamp for a pinned Mom-led card inside the sitter window (null = no stamp, the object is unchanged).
+function famPresSitterStamp(fc,dayConfig){
+  try{ const dc=dayConfig||{}; if(!dc.isSitter||!(dc.sitterEnd>dc.sitterStart)) return null;
+    if(!famMomLeads(famDefs()[fc.b])) return null;
+    return (fc.s<dc.sitterEnd&&fc.e>dc.sitterStart)?{famSitter:true}:null; }catch(e){ return null; }
+}
+// The Grid audit strip: one line per flagged subject on this kid's days, today forward.
+function famPresAudit(kid){
+  const out=[];
+  try{ const today=(typeof cbTodayISO==="function")?cbTodayISO():"", seen={};
+    (((typeof weekData!=="undefined"&&weekData)||{}).tasks||[]).forEach(function(t){
+      if(!t||t.who!==kid||!t.famSitter||!famPresGivable(t)) return;
+      const ds=(typeof routineDateISO==="function")?(routineDateISO(t.day)||""):""; if(ds&&today&&ds<today) return;
+      const k=t.famBlock+"|"+t.famItem+"|"+t.day; if(seen[k]) return; seen[k]=1;
+      out.push({type:"famsitter",date:ds,dn:0,sk:"",disp:String(t.title||"Family time"),day:t.day,time:t.time||"",txt:""});
+    }); }catch(e){}
+  return out;
+}
+function famPresAuditRowHTML(f){
+  return '<div style="padding:7px 0;border-top:1px solid #fde68a"><div style="font-size:11.5px;color:#78350f;line-height:1.45;margin-bottom:5px"><b>'+esc(f.disp)+'</b> — '+esc(cap(f.day||""))+(f.time?' at '+esc(f.time):'')+' falls during the sitter’s hours. It stays at its time (Mom leads it) — move the sitter, the block, or lead it later.</div></div>';
+}
+// FAMPRESENCE_END
 
 
 // ── WHEN THE DOOR IS OPEN ──
@@ -43027,6 +43319,7 @@ function gvAuditFindings(kid){
   const rank={dup:0,order:1,back:2,gap:3,dash:4};
   const bydate=(a,b)=>(a.date||"").localeCompare(b.date||"")||rank[a.type]-rank[b.type];
   out.now.sort(bydate); out.past.sort(bydate);
+  try{ if(typeof famPresAudit==="function") out.now=out.now.concat(famPresAudit(kid)); }catch(e){}   // 🏡 FAMPRESENCE: Mom-led family time inside sitter hours
   return out;
 }
 
@@ -43291,7 +43584,8 @@ function gvAuditRender(kid,col){
         fix='<button onclick="gvAuditFixGap(\''+kid+'\',\''+f.sk+'\','+f.dn+',\''+esc(_js(f.after))+'\',\''+esc(_js(f.missing))+'\')" style="border:1px solid #d97706;background:#fff;color:#b45309;'+BTN+'">Add it back…</button>'; }
     } else if(f.type==="order"){
       txt='<b>'+esc(f.disp)+'</b> — “'+esc(f.txt)+'” sits after “'+esc(f.after)+'” ('+esc(f.date)+')';
-    } else {
+    } else if(f.type==="famsitter"){ return (typeof famPresAuditRowHTML==="function")?famPresAuditRowHTML(f):""; }   // 🏡 FAMPRESENCE
+    else {
       txt='<b>'+esc(f.disp)+'</b> — goes backwards: “'+esc(f.a)+'” then “'+esc(f.b)+'” ('+esc(f.date)+')';
     }
     return '<div style="padding:7px 0;border-top:1px solid #fde68a"><div style="font-size:11.5px;color:#78350f;line-height:1.45;margin-bottom:5px">'+txt+'</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+fix+jump+'</div></div>';
@@ -60329,7 +60623,7 @@ function runDisplacement(){
     tasks.forEach(function(t){
       if(t.day!==bo.day||kids.indexOf(t.who)<0) return;
       if(_checkedBeforeBlockout(t,bo)) return; // done ahead of schedule — keeps its original slot
-      if(t.famBlock) return;   // 👨‍👩‍👧 family time is never moved to another slot or day
+      if(t.famBlock){ if(typeof famBoMark==="function") famBoMark(t,bo); return; }   // 👨‍👩‍👧 family time is never moved to another slot or day — FAMBLOCKOUT: a covered kid's copy is stamped out
       if(bo.type==="fullDay"){ displacedIds.add(t.id); return; }
       var tMin=toMin(t.time), bS=toMin(bo.start||""), bE=toMin(bo.end||"");
       if(bS&&bE&&tMin>=bS&&tMin<bE) displacedIds.add(t.id);
@@ -65186,99 +65480,6 @@ function gwGetSubjects(kid){
   return currData.subjects[kid]||{};
 }
 
-// ====== SHARED CURRICULUM — combined subjects (plan: shared-curriculum-combined-subjects) ======
-// SHAREDCURR_START
-// A combined subject = ONE block taught to 2+ kids at the same time (Mom teaches once).
-// Stored as a group registry (currData.groups[gk]) = single source of truth for the
-// shared attributes + the one canonical lesson sequence + the one shared cursor; each
-// participant carries a thin auto-managed stub subjects[kid][gk]={sharedGroup:gk}. These
-// helpers are pure/additive (S1) — nothing routes through them yet.
-function isGroupStub(s){ return !!(s&&s.sharedGroup); }
-function isCombinedTask(t){ return !!(t&&t.groupId); }
-function getGroup(gk){ return ((currData&&currData.groups)||{})[gk]||null; }
-
-// Active participants = group members whose per-kid stub exists and isn't paused.
-function groupParticipants(gk){
-  var g=getGroup(gk); if(!g) return [];
-  return (g.participants||[]).filter(function(k){
-    var sub=(((currData&&currData.subjects)||{})[k]||{})[gk];
-    return sub&&!sub.paused;
-  });
-}
-
-// gwGetSubjects, but each membership stub is resolved to look like a normal subject by
-// merging the group's shared attributes onto it (so gwByCategory / the generator can treat
-// a combined block like any other subject). Dangling stubs (no group) pass through as-is.
-function gwGetSubjectsResolved(kid){
-  var raw=gwGetSubjects(kid), out={};
-  for(var key in raw){
-    var s=raw[key];
-    if(s&&s.sharedGroup){
-      var g=getGroup(s.sharedGroup);
-      if(!g){ out[key]=s; continue; }
-      out[key]={ display:g.display, device:g.device, mom:g.mom, minutes:g.minutes,
-        rules:g.rules, allowedDays:g.allowedDays, timesPerWeek:g.timesPerWeek,
-        total:g.total, priority:g.priority, tracking:g.tracking,
-        sharedGroup:s.sharedGroup, _group:true, _groupKey:s.sharedGroup,
-        paused:!!(g.paused||s.paused) };
-    } else out[key]=s;
-  }
-  return out;
-}
-
-// Canonical lesson sequence for a group: explicit lessonSeq, else auto-numbered from total.
-function buildGroupLessons(gk){
-  var g=getGroup(gk); if(!g) return [];
-  if(g.lessonSeq&&g.lessonSeq.length) return g.lessonSeq.map(function(l,i){ return {dayNum:90000+i,lesson:l,date:""}; });
-  var total=g.total||0, out=[];
-  for(var i=0;i<total;i++) out.push({dayNum:90000+i,lesson:"Lesson "+(i+1),date:""});
-  return out;
-}
-
-// How many group blocks have been TAUGHT (decision #3): a scheduled day-block counts when
-// ≥1 participant is checked off. Counted once per distinct day+time block (not per kid), so
-// the per-kid fan-out never multiplies the count. Mirrors paceAutoCount's week+archive sweep.
-function groupAutoCount(gk,excludeWeek){
-  if(!gk) return 0;
-  var count=0;
-  function tally(tasks,checkedMap,label){
-    if(excludeWeek&&label===excludeWeek) return;
-    var byBlock={};
-    (tasks||[]).forEach(function(t){
-      if(t&&t.groupId===gk&&!String(t.id||"").endsWith("_c")){
-        var k=(t.day||"")+"|"+(t.time||"");
-        (byBlock[k]=byBlock[k]||[]).push(t);
-      }
-    });
-    for(var bk in byBlock){
-      if(byBlock[bk].some(function(t){ return chainDone(t.id,checkedMap,tasks); })) count+=1;
-    }
-  }
-  if(!excludeWeek||excludeWeek!==WK) tally(weekData.tasks,checked,WK);
-  var currStart=currFirstWeekNum();
-  Object.values(archive).forEach(function(aw){
-    var awNum=parseInt(((aw.weekLabel||"").match(/\d+/)||[0])[0])||0;
-    if(awNum>0&&awNum<currStart) return;
-    tally(aw.tasks,aw.checked||{},aw.weekLabel);
-  });
-  return count;
-}
-
-// One shared cursor for the whole group (advance together). offset/adjust mirror paceData.
-function computeGroupCursor(gk,excludeWeek){
-  var g=getGroup(gk); if(!g) return 0;
-  return (g.offset||0)+groupAutoCount(gk,excludeWeek)+(g.adjust||0);
-}
-
-// The next N lessons for a group from its shared cursor (rendered identically for all kids).
-function getNextGroupLessons(gk,count){
-  var seq=buildGroupLessons(gk); if(!seq.length) return [];
-  var cursor=computeGroupCursor(gk), out=[];
-  for(var i=cursor;i<seq.length&&out.length<(count||1);i++) out.push(seq[i]);
-  return out;
-}
-// SHAREDCURR_END
-
 function gwByCategory(kid,tasksDict){
   const subjects=gwGetSubjects(kid);
   const buckets={first:[],computer:[],ipad:[],phone:[],independent:[],maybe_paper:[],required_paper:[],last:[]};
@@ -65970,8 +66171,8 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
       detail:gwSubjectDetail(mm.kid,mm.key),mom:_lsd?_lsd.mom:(s.mom||"none"),cascade:true,device:s.device||"paper",subjectKey:mm.key});
   });
   famCards.forEach(function(fc){
-    tasks.push({id:prefix+(counter++),who:fc.who,day:dayName,time:fromMin(fc.s),dur:fc.e-fc.s,title:fc.title,
-      detail:fc.detail,mom:"none",cascade:true,device:"paper",famBlock:fc.b,famItem:fc.k});
+    tasks.push(Object.assign({id:prefix+(counter++),who:fc.who,day:dayName,time:fromMin(fc.s),dur:fc.e-fc.s,title:fc.title,
+      detail:fc.detail,mom:"none",cascade:true,device:"paper",famBlock:fc.b,famItem:fc.k},(typeof famPresSitterStamp==="function")?famPresSitterStamp(fc,dayConfig):null));   // 🏡 FAMPRESENCE: famSitter inside the sitter window
   });
   famPh.forEach(function(ph){
     if(!ph.time||overflowSet.has(ph)){ dbg("family time "+ph._fam.b+": no common slot on "+dayName); return; }
