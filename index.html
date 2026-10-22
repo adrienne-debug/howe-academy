@@ -51753,15 +51753,18 @@ function mastRebalanceKid(kid){
     load[best]=(load[best]||0)+1;
     if(it.next_due!==best){ it.next_due=best; changes[idxOf.get(it)+"/next_due"]=best; changed++; }
   });
-  if(db && changed) db.ref("mastery/"+kid).update(changes);
+  // EVENOUT_HONEST (her report 2026-10-21: Even out took Lincoln 117 → 68, Start still said "of 177", a reload showed 177): the toast
+  // said ✓ whether or not the write was sent — in ?dryrun=1 (her Mac reopens that way) nothing is saved and the reload shows the truth.
+  const sent=!!(db&&changed&&!(typeof _dryRun==="function"&&_dryRun()));
+  if(sent) db.ref("mastery/"+kid).update(changes);
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
-  return {changed:changed,cards:sched.length};
+  return {changed:changed,cards:sched.length,sent:sent};
 }
 function mastRebalanceNow(){
   const kid=masteryKid;
   if(!confirm("Even out "+cap(kid)+"’s review dates?\n\nRe-spreads all booked review cards across the coming days so quiz counts stay steady — no empty days, no huge piles. Cards keep their normal intervals; this only changes WHEN each next appears.")) return;
   const r=mastRebalanceKid(kid);
-  if(typeof gwShowToast==="function") gwShowToast("Evened out "+r.changed+" review card"+(r.changed!==1?"s":"")+" for "+cap(kid)+" ✓");
+  if(typeof gwShowToast==="function") gwShowToast(r.sent?("Evened out "+r.changed+" review card"+(r.changed!==1?"s":"")+" for "+cap(kid)+" ✓"):(r.changed?"Dry run — "+r.changed+" cards would move, nothing saved":"Nothing to even out"));   // EVENOUT_HONEST
   _mastRe();
 }
 // ── MST_ENGINE_START ──
@@ -51781,6 +51784,7 @@ const MST_SESSION_DEFAULTS = {
   audio: "front",
   order: "bank",
   maxCards: 0,    // cards in one sitting (learning + new); 0 = no limit. Booked reviews always ride.
+  mixFinish: 20,  // MIX_FINISH: a Daily Mix sitting is this many reviews (oldest due first); done at that line, Keep going for the rest. 0 = all
   focusDecks: 0   // how many decks introduce at once; 0 = every deck in the session
 };
 
@@ -51840,6 +51844,7 @@ function mstSessions(kid) {
       audio: rec.audio || MST_SESSION_DEFAULTS.audio,
       order: rec.order || MST_SESSION_DEFAULTS.order,
       maxCards: rec.maxCards != null ? rec.maxCards : MST_SESSION_DEFAULTS.maxCards,
+      mixFinish: rec.mixFinish != null ? rec.mixFinish : MST_SESSION_DEFAULTS.mixFinish,
       focusDecks: rec.focusDecks != null ? rec.focusDecks : MST_SESSION_DEFAULTS.focusDecks,
       skipDecks: rec.skipDecks || [],
       pattern: mstPatternClean(rec.pattern),
@@ -51989,9 +51994,21 @@ function mstPile(kid, sid, pn, todayLog) {
       mastIsDue(item, pn) &&
       !scoredIds.has(item.id)
     );
+    // MIX_FINISH_START — her ask 2026-10-21: "he can go complete say the cap of 20 but he can keep going and those register … has to do
+    // the 20 first to get to check it off and then can keep going to get his amount bottlenecking down". The Mix had no limit: every
+    // graduated card lands here and all of them that are due show (Lincoln 10/21: ~36 of 96 due). Now a sitting is the oldest-due
+    // session.mixFinish reviews (default 20); saving it logs the session as done for the day (the kid's card reads mstLogGet), and the
+    // view then offers "Keep going (N left)" — a fresh sitting of the next batch through the same save, so every extra card books its
+    // next date. 0 = the old behaviour (all). Order: oldest next_due first (the backlog drains in order), ties by the day's shuffle.
     const mixRng = _mstMulberry32(_mstHashStr(String(pn) + ":" + sid));
     mixReviews = _mstShuffle(mixReviews, mixRng);
-    return { reviews: mixReviews, learning: [], newNames: [] };
+    const finish = Number(session.mixFinish != null ? session.mixFinish : MST_SESSION_DEFAULTS.mixFinish) || 0;
+    const mixLeft = mixReviews.length;
+    if (finish > 0 && mixReviews.length > finish) {
+      mixReviews = mixReviews.slice().sort((a, b) => ((a.next_due == null ? -1 : a.next_due) - (b.next_due == null ? -1 : b.next_due))).slice(0, finish);
+    }
+    return { reviews: mixReviews, learning: [], newNames: [], mixLeft: mixLeft, mixFinish: finish };
+    // MIX_FINISH_END
   }
 
   let reviews = items.filter(item =>
@@ -54224,14 +54241,18 @@ function renderMastStudy(opts){
   } else if(mstDone){
     h+='<div style="background:#fff7ed;border:2px solid #fed7aa;border-radius:20px;padding:24px;text-align:center;font-family:\'DM Sans\',sans-serif">';
     h+='<div style="font-size:32px;margin-bottom:8px">\u{1F389}</div><div style="font-size:17px;font-weight:800;color:#16a34a;margin-bottom:6px">Nice work!</div>';
-    h+='<div style="font-size:14px;color:var(--muted);font-weight:600">'+mstDone.total+' cards · '+mstDone.correct+' good · '+mstDone.miss+' again</div></div>';
+    h+='<div style="font-size:14px;color:var(--muted);font-weight:600">'+mstDone.total+' cards · '+mstDone.correct+' good · '+mstDone.miss+' again</div>';
+    { const _mx=(session.kind==="mix"&&pile&&pile.mixLeft>0)?pile.mixLeft:0;   // MIX_FINISH: the rest of the backlog, if he wants it
+      if(_mx) h+='<div style="margin-top:12px"><button onclick="mstStart()" style="min-height:48px;padding:0 24px;border-radius:14px;border:1.5px solid #7c3aed;background:#fff;color:#6d28d9;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Keep going · '+_mx+' left</button><div style="font-size:11.5px;color:var(--muted);margin-top:6px">Today\'s Mix is done \u2713 \u2014 this is extra, and every card counts.</div></div>'; }
+    h+='</div>';
   } else {
     const donePile=!(pile.newNames||[]).length&&!(pile.reviews||[]).length&&!(pile.learning||[]).length;
     if(todayLog&&donePile){
       h+='<div style="text-align:center;padding:30px 20px;color:#16a34a;font-weight:800;font-size:16px;font-family:\'DM Sans\',sans-serif">All done for today ✓</div>';
     } else {
       const resume=mstHasPersisted(session.sid);
-      h+='<div style="text-align:center;margin-top:8px"><button onclick="mstStart()" style="min-height:56px;padding:0 40px;border-radius:16px;border:none;background:#7c3aed;color:#fff;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(resume?"Resume":"Start")+'</button></div>';
+      h+='<div style="text-align:center;margin-top:8px"><button onclick="mstStart()" style="min-height:56px;padding:0 40px;border-radius:16px;border:none;background:#7c3aed;color:#fff;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(resume?"Resume":"Start")+'</button>'
+        +((session.kind==="mix"&&pile&&pile.mixFinish>0&&pile.mixLeft>pile.mixFinish)?'<div style="font-size:11.5px;color:var(--muted);margin-top:6px">'+pile.mixFinish+' of '+pile.mixLeft+' due \u2014 done at '+pile.mixFinish+', keep going if you like</div>':'')+'</div>';   // MIX_FINISH
     }
   }
   return h;
@@ -55296,6 +55317,7 @@ function mhqSessSave() {
     rec.handOffAt = mhqSessForm.handOffAt;
     rec.order = mhqSessForm.order || "bank";
     rec.maxCards = mhqSessForm.maxCards || 0;
+    if (mhqSessForm.kind === "mix") rec.mixFinish = Number(mhqSessForm.mixFinish != null ? mhqSessForm.mixFinish : 20) || 0;   // MIX_FINISH
     rec.focusDecks = mhqSessForm.focusDecks || 0;
     const _pat = mstPatternClean(mhqSessForm.pattern); if (_pat) rec.pattern = _pat;
     if (mhqSessForm.bothWays) rec.bothWays = true;
@@ -55308,6 +55330,7 @@ function mhqSessSave() {
     rec.handOffAt = mhqSessForm.handOffAt;
     rec.order = mhqSessForm.order || "bank";
     rec.maxCards = mhqSessForm.maxCards || 0;
+    if (mhqSessForm.kind === "mix") rec.mixFinish = Number(mhqSessForm.mixFinish != null ? mhqSessForm.mixFinish : 20) || 0;   // MIX_FINISH
     rec.focusDecks = mhqSessForm.focusDecks || 0;
     const _pat = mstPatternClean(mhqSessForm.pattern); if (_pat) rec.pattern = _pat;
   }
@@ -55392,6 +55415,7 @@ function _mhqRenderSessForm(kid) {
     h += '<div><div style="' + lbl + '">New/day</div>' + _mhqStepper(f.newPerDay, "newPerDay", 0) + '</div>';
     h += '<div><div style="' + lbl + '">Passes</div>' + _mhqStepper(f.passes, "passes", 1) + '</div>';
     h += '<div><div style="' + lbl + '">Cards a sitting</div>' + _mhqStepper(f.maxCards || 0, "maxCards", 0) + '</div>';
+    if (f.kind === "mix") h += '<div><div style="' + lbl + '">Mix finish line</div>' + _mhqStepper(f.mixFinish != null ? f.mixFinish : 20, "mixFinish", 0) + '<div style="font-size:10.5px;color:var(--muted)">done at this many; Keep going for the rest. 0 = all</div></div>';   // MIX_FINISH
     h += '<div><div style="' + lbl + '">Decks at once</div>' + _mhqStepper(f.focusDecks || 0, "focusDecks", 0) + '</div>';
     h += '</div>';
     h += '<div style="font-size:11px;color:var(--muted);margin-top:-2px">' +
