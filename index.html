@@ -2114,12 +2114,14 @@ function rtWaveKey(slot,i){ return slot+"step"+i; }
 function rtWaved(slot,kid,d,i,wk){ wk=wk||activeWk(); const w=wavedData&&wavedData[wk]; return !!(w&&w[d]&&w[d][kid]&&w[d][kid][rtWaveKey(slot,i)]); }
 function rtWave(slot,kid,d,i){
   const wk=activeWk(), key=rtWaveKey(slot,i), steps=(slot==="morning"&&typeof morningStepsFor==="function")?morningStepsFor(kid):(rtStepsFor(slot,kid,false,d)||[]), st=steps[i]; if(!st) return;
+  if(typeof momHere==="function"&&!momHere()&&!(typeof dadAwardOk==="function"&&dadAwardOk())) return;   // LISTS_TAP: Mom, or an unlocked Dad (Dad's Day has the 📋 lists now)
+  const _by=(typeof momHere==="function"&&!momHere())?"dad":"mom";
   const on=!rtWaved(slot,kid,d,i);
   wavedData[wk]=wavedData[wk]||{}; wavedData[wk][d]=wavedData[wk][d]||{}; wavedData[wk][d][kid]=wavedData[wk][d][kid]||{};
   routineLog[kid]=routineLog[kid]||{}; routineLog[kid][wk]=routineLog[kid][wk]||{}; routineLog[kid][wk][d]=routineLog[kid][wk][d]||{};
   if(on){
-    const rec={ts:nowTs(),at:Date.now(),label:st.label||"",by:"mom"}; wavedData[wk][d][kid][key]=rec;
-    const lrec={label:(st.label||"Chore")+" — waved by Mom",slot:slot,act:"wave",ts:rec.ts,at:rec.at,pts:0}; routineLog[kid][wk][d]["wave_"+key]=lrec;
+    const rec={ts:nowTs(),at:Date.now(),label:st.label||"",by:_by}; wavedData[wk][d][kid][key]=rec;
+    const lrec={label:(st.label||"Chore")+" — waved by "+(_by==="dad"?"Dad":"Mom"),slot:slot,act:"wave",ts:rec.ts,at:rec.at,pts:0}; routineLog[kid][wk][d]["wave_"+key]=lrec;   // LISTS_TAP: Dad's wave says Dad
     if(_wvWrite()){ db.ref("waved/"+wk+"/"+d+"/"+kid+"/"+key).set(rec); db.ref("routineLog/"+kid+"/"+wk+"/"+d+"/wave_"+key).set(lrec); }
   } else {
     delete wavedData[wk][d][kid][key]; delete routineLog[kid][wk][d]["wave_"+key];
@@ -2138,7 +2140,7 @@ function mpKidListsToggle(kid){ mpKidOpen=(mpKidOpen===kid)?"":kid; const el=doc
 // row's day, and with Mom's tap allowed past the afternoon/evening hour lock (the kid's own lock is untouched). ✅ taps undo.
 let _rtMomTick=false;
 function mdKidTick(slot,kid,d,i){
-  if(typeof momHere==="function"&&!momHere()) return false; if(ROSTER.indexOf(kid)<0||SL_SLOTS.indexOf(slot)<0) return false; i=parseInt(i,10); if(!(i>=0)) return false;
+  if(typeof momHere==="function"&&!momHere()&&!(typeof dadAwardOk==="function"&&dadAwardOk())) return false;   /* LISTS_TAP: an unlocked Dad may tick too (her 2026-10-21) */ if(ROSTER.indexOf(kid)<0||SL_SLOTS.indexOf(slot)<0) return false; i=parseInt(i,10); if(!(i>=0)) return false;
   const _pd=(typeof day!=="undefined")?day:null; try{ day=d; _rtMomTick=true; if(slot==="morning"){ if(typeof toggleMorningStep==="function") toggleMorningStep(kid,i); } else if(typeof toggleRtStep==="function") toggleRtStep(slot,kid,i); }
   finally{ _rtMomTick=false; if(_pd!==null) day=_pd; }
   try{ const el=document.getElementById('content'); if(el&&typeof renderMomsPlan==="function") renderMomsPlan(el); }catch(e){}
@@ -8281,7 +8283,7 @@ function boardStatPop(kid,slot,d){
     morningStepsFor(kid).forEach((st,i)=>{ const rec=slState[activeWk()+"_"+day+"_"+kid+"_mstep"+i]||{};
       const _due=_mDue.indexOf(i)>=0, _dn=mStepDoneOn(kid,day,i);
       if(!_due&&!(st.cad==="asneeded"&&_dn)) return;
-      rows.push({lab:(st.emoji?st.emoji+" ":"")+(st.label||("Step "+(i+1)))+(_due?"":" (as needed)"),done:_dn,ts:rec.ts||""}); });
+      rows.push({lab:(st.emoji?st.emoji+" ":"")+(st.label||("Step "+(i+1)))+(_due?"":" (as needed)"),done:_dn,ts:rec.ts||"",i:i}); });   // LISTS_TAP: i → the ○/✅ is a tap
   } else if(slot==="tasks"){ title="📅 School work";
     getActiveTasks().filter(t=>t.who===kid&&effectiveDay(t)===day&&!t.id.endsWith("_c")&&!t._eowOverflow&&!/lunch/i.test(t.title))
       .forEach(t=>{ const cv=checked[t.id]; rows.push({lab:t.title||"",done:!!cv,ts:(cv&&cv.ts)||(typeof cv==="string"?cv:"")}); });
@@ -8295,14 +8297,19 @@ function boardStatPop(kid,slot,d){
   } else { const names={afternoon:"☀️ Afternoon",chores:"🧹 Chores",evening:"🌙 Evening"}; title=names[slot]||slot;
     const steps=rtStepsFor(slot,kid,false,day);
     steps.forEach((st,i)=>{ if(!cadDueOn(st.cad||"daily",day)) return; const rec=slState[activeWk()+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i]||{};
-      rows.push({lab:(st.emoji?st.emoji+" ":"")+st.label+(st.pts?" +"+st.pts+" ⭐":""),done:rtDoneOn(slot,kid,day,i),ts:rec.ts||""}); });
+      rows.push({lab:(st.emoji?st.emoji+" ":"")+st.label+(st.pts?" +"+st.pts+" ⭐":""),done:rtDoneOn(slot,kid,day,i),ts:rec.ts||"",i:i}); });   // LISTS_TAP
   }
+  // LISTS_TAP (her ask 2026-10-21: "make on both mom and dads day all the lists clickable but do not change the look or size on any" —
+  // "each individual list you can open for each kid like morning etc"): the ○/✅ on a morning / afternoon / chores / evening row is the
+  // kid's own check-off (mdKidTick — same stars, same log, same late ledger), for Mom or an unlocked Dad; the pop-up redraws itself.
+  // School work and stars stay read-only. Same rows, same size — only the cursor changes.
+  const _tapOk=(typeof mdKidTick==="function")&&SL_SLOTS.indexOf(slot)>=0&&((typeof momHere==="function"&&momHere())||(typeof dadAwardOk==="function"&&dadAwardOk())), _d=day;
   const dn=rows.filter(r=>r.done).length;
   const isStars=(slot==="stars");
   const total=rows.reduce((n,r)=>n+(r.amt||0),0);
   const hdrCount=isStars?(total+" ⭐"):(dn+"/"+rows.length);
   let inner=rows.length?rows.map(r=>'<div style="display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid #f3f4f6;font-size:13px">'+
-      (isStars?'':'<span style="width:20px;text-align:center">'+(r.done?"✅":"○")+'</span>')+
+      (isStars?'':'<span'+((_tapOk&&r.i!=null)?' onclick="event.stopPropagation();mdKidTick(\''+slot+'\',\''+kid+'\',\''+_d+'\','+r.i+');boardStatPop(\''+kid+'\',\''+slot+'\',\''+_d+'\')" style="width:20px;text-align:center;cursor:pointer"':' style="width:20px;text-align:center"')+'>'+(r.done?"✅":"○")+'</span>')+   // LISTS_TAP
       '<span style="flex:1;min-width:0;'+(r.done?'':'color:var(--muted)')+'">'+esc(r.lab)+'</span>'+
       (r.amt!=null?'<span style="font-weight:800;color:'+(r.amt<0?"#b91c1c":"#b45309")+';white-space:nowrap">'+(r.amt<0?"−"+(-r.amt):"+"+r.amt)+' ⭐</span>':'')+
       (r.ts?'<span style="font-size:10.5px;color:var(--muted);white-space:nowrap">'+esc(r.ts)+'</span>':'')+'</div>').join('')
@@ -14859,7 +14866,7 @@ function cuUnpay(kid,bid,label){
   return true;
 }
 function _cuDone(slot,kid,d,i){ return slot==="morning"?!!(typeof mStepDoneOn==="function"&&mStepDoneOn(kid,d,i)):!!rtDoneOn(slot,kid,d,i); }
-function _cuMomOk(){ return typeof momHere==="function"&&momHere(); }
+function _cuMomOk(){ return (typeof momHere==="function"&&momHere())||(typeof dadAwardOk==="function"&&dadAwardOk()); }   // LISTS_TAP: Mom, or an unlocked Dad
 function choreUndo(slot,kid,d,i){
   if(!_cuMomOk()||!_cuDone(slot,kid,d,i)) return false;
   _cuMom=true; try{ mdKidTick(slot,kid,d,i); } finally { _cuMom=false; }
@@ -15908,7 +15915,7 @@ function mdCardKidsToday(today,isSchoolDay,bank,dadCtl){   // bank=true: Mom's D
       +seg("☀️",af.done,af.due,af.due&&af.done===af.due,"afternoon")
       +seg("🧹",ch.done,ch.due,ch.due&&ch.done===ch.due,"chores")
       +seg("🌙",ev.done,ev.due,ev.due&&ev.done===ev.due,"evening")
-      +((bank&&dadCtl===undefined&&typeof mpKidListsToggle==="function")?'<span onclick="mpKidListsToggle(\''+kid+'\')" style="cursor:pointer;font-size:11px;font-weight:800;padding:1px 8px;border-radius:9px;background:'+(mpKidOpen===kid?'#2B7A78':'#eef6f5')+';color:'+(mpKidOpen===kid?'#fff':'#2B7A78')+'">📋 lists</span>':'')   // WAVE: Mom's Day only
+      +((bank&&typeof mpKidListsToggle==="function")?'<span onclick="mpKidListsToggle(\''+kid+'\')" style="cursor:pointer;font-size:11px;font-weight:800;padding:1px 8px;border-radius:9px;background:'+(mpKidOpen===kid?'#2B7A78':'#eef6f5')+';color:'+(mpKidOpen===kid?'#fff':'#2B7A78')+'">📋 lists</span>':'')   // WAVE; LISTS_TAP 2026-10-21: Dad's Day too ("match dads up to moms where she has the checkable lists button")
       +(bank?'</span>':'')
       +(bank?'':'<span onclick="boardStatPop(\''+kid+'\',\'stars\',\''+_kd+'\')" style="cursor:pointer;font-size:11px;font-weight:800;color:#b45309">⭐ '+pts+'</span>')
       +'</div>';
@@ -15921,7 +15928,7 @@ function mdCardKidsToday(today,isSchoolDay,bank,dadCtl){   // bank=true: Mom's D
       +'<span>🧺 eve <b>'+esc(pE?pE.replace(/pickup/i,"").trim():"—")+'</b></span>'
       +'</div>';
     if(chores.length) h+='<div style="margin-top:3px;font-size:11px;color:#6b6560">🧹 '+esc(chores.join(" · "))+'</div>';
-    if(bank&&dadCtl===undefined&&typeof mdKidListsHTML==="function"&&mpKidOpen===kid){ const _pd2=day; try{ day=_kd; h+=mdKidListsHTML(kid,_kd); } finally { day=_pd2; } }   // WAVE: ✓ state + ✕ today per chore
+    if(bank&&typeof mdKidListsHTML==="function"&&mpKidOpen===kid){   /* LISTS_TAP: Mom's Day and Dad's Day */ const _pd2=day; try{ day=_kd; h+=mdKidListsHTML(kid,_kd); } finally { day=_pd2; } }   // WAVE: ✓ state + ✕ today per chore
     // 🧒 KIDBAR: stars under the rooms — today's ⭐ (tap → what earned them), 🏦 balance, and the Star Bank's − [5] + box.
     if(bank) h+='</div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;margin-top:2px;flex:0 0 auto;margin-left:auto;max-width:100%"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">'
       +'<span onclick="boardStatPop(\''+kid+'\',\'stars\',\''+_kd+'\')" style="cursor:pointer;font-size:13px;font-weight:800;color:#b45309">⭐ +'+pts+' <span style="font-size:11px;font-weight:700;color:#78716c">today</span></span>'

@@ -54,7 +54,7 @@ console.log("A done step cannot be waved from the panel; dry run writes nothing;
   const e=mk({nodb:true}); e.rtWave("afternoon","lucy","saturday",0); ok("db null → no throw", e.rtWaved("afternoon","lucy","saturday",0));
 }
 console.log("Wiring");
-ok("📋 lists pill only on Mom's Day's card (bank, no Dad control), only when the wave code is present", /bank&&dadCtl===undefined&&typeof mpKidListsToggle==="function"/.test(src)&&/bank&&dadCtl===undefined&&typeof mdKidListsHTML==="function"&&mpKidOpen===kid/.test(src));
+ok("📋 lists pill on the bank row — Mom's Day AND Dad's Day (LISTS_TAP 2026-10-21: \"match dads up to moms\") — only when the wave code is present", /bank&&typeof mpKidListsToggle==="function"/.test(src)&&/bank&&typeof mdKidListsHTML==="function"&&mpKidOpen===kid/.test(src)&&!/dadCtl===undefined&&typeof mpKidListsToggle/.test(src));
 ok("waved listener; Household numbers skip a waved day; log card shows 🙋 waved with no dock", /db\.ref\("waved"\)\.on\("value"/.test(src)&&/S\.wave\[job\.who/.test(src)&&/i\.kind==="wave"\) h\+='<span[^>]*>🙋 waved/.test(src));
 ok("no 🔀", src.indexOf("🔀")<0);
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
