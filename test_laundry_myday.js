@@ -39,7 +39,7 @@ function mk(o){
 console.log("1. Mom's 🏡 My day: machines now, then the line, as Mom");
 { const c=mk({line:LINE,loads:LOADS}); const h=c.get("llMyDayLaundryHTML('mom')");
   const iM=h.indexOf("🫧 Machines now"), iL=h.indexOf("🧺 The laundry line"), iT=h.indexOf(">Today<"), iG=h.indexOf("llWeekNav(");
-  ok("order: 🫧 Machines now → 🧺 The laundry line → Today → the week grid", iM>=0&&iL>iM&&iT>iL&&iG>iT, [iM,iL,iT,iG]);
+  ok("order: 🫧 Machines now → 🧺 The laundry line → Today — and NO week grid inside My day (her 2026-10-21: \"i do not like the this week laundry thing in my day\")", iM>=0&&iL>iM&&iT>iL&&iG<0, [iM,iL,iT,iG]);
   ok("machines now shows Lincoln's clothes in the dryer with its Move button, no blue card header", /Lincoln's clothes/.test(h.slice(iM,iL))&&/laundryAdvance\('l1'\)/.test(h)&&!/<span>🧺<\/span> Laundry<span style="flex:1">/.test(h));
   ok("the line: Ellis is today's open load with ✓ Done and 🫧 Start — logged as MOM", /llMarkDone\('ellis','mom'\)/.test(h)&&/llStart\('ellis','mom'\)/.test(h)&&!/'dad'\)/.test(h));
   ok("the started load shows in the line too, with its stage, and no buttons", /Lincoln's clothes <span[^>]*>· 👤 [^<]*· 🌀/.test(h)&&!/llStart\('lincoln'/.test(h), h.match(/Lincoln's clothes <span[^<]*/g));
