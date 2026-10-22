@@ -152,7 +152,7 @@ console.log("── edges ──");
   ok("the wash-today bin still draws nothing (no clock, not in the machines)", !/Sheets/.test(T9.A), T9.A); }
 
 console.log("── the code ──");
-ok("laundryBlockStep: washer→move, dryer→fold, fold→putaway", /function laundryBlockStep\(stage\)\{ return \(?stage==="dryer"(\|\|stage==="airdry"\))?\?"fold":stage==="fold"\?"putaway":"move"; \}/.test(src));
+ok("laundryBlockStep: washer→move, dryer→fold, fold→putaway", /function laundryBlockStep\(stage\)\{ return \(?stage==="dryer"(\|\|stage==="airdry")?(\|\|stage==="basket")?\)?\?"fold":stage==="fold"\?"putaway":"move"; \}/.test(src));
 ok("laundryBlockDefault: 5 / 15 / 10", /\(k==="fold"\?15:k==="putaway"\?10:5\)/.test(src));
 ok("the MOMSCHED_LAUNDRY loop takes stage fold and names the fix", /l\.stage!=="prewash"&&l\.stage!=="fold"(&&l\.stage!=="airdry"&&l\.stage!=="custom")?\)\) return;/.test(MS)&&/LAUNDRY_FOLD \(her report 2026-10-15/.test(MS));
 ok("the finished row says ✓ Put away for a fold block", /b\.stage==="fold"\?'Put away: ':\(?b\.stage==="dryer"(\|\|b\.stage==="airdry"\))?\?'Folded: '/.test(MS));

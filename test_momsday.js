@@ -454,6 +454,8 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   M.renderMomsDay(elStub);
   ok("dryer load: nudge gone, Folded ✓ offered", !elStub.innerHTML.includes("before it sours") && elStub.innerHTML.includes("Folded ✓"), null);
   M.laundryAdvance(lid);
+  ok("BASKET (2026-10-21): the dryer's tap asks first — Fold now, or into the basket? — the load stays in the dryer", M.laundryData[lid].stage === "dryer", null);
+  M.laundryAdvance(lid, "fold");   // her answer: Fold now
   ok("advance → fold offers put away", M.laundryData[lid].stage === "fold", null);
   dbRemoves.length = 0; toasts.length = 0;
   M.laundryAdvance(lid);
