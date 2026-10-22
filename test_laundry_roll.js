@@ -122,6 +122,6 @@ console.log("9. ▶ up next follows the live line");
 }
 console.log("10. Wiring");
 ok("laundryDel takes a washer line load back out of the log", /llUnlog\(id,l\)/.test(cut("function laundryDel(","\n}")));
-ok("the Start a load box shows the line chips", /llStripHTML\(P\.dad\?'dad':''\)/.test(src));
+ok("the Start a load box shows the line (LL_MYDAY 2026-10-21: the full line card, in place of the chips)", /llMyDayLaundryHTML\(P\.dad\?'dad':'mom'\)/.test(src));
 ok("no 🔀", src.indexOf("🔀")<0);
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

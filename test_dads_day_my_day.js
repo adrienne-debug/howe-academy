@@ -108,7 +108,8 @@ else {
   const unroute = s => String(s).replace(/_mcDb\('mom',id,null,momChoresData\[id\]\);\s*\/\/ 🏡 HOUSEHOLD_TAKEOVER/g, "if(typeof db!=='undefined'&&db) db.ref('momChores/'+id).set(momChoresData[id]);")
     .replace(/\n\s*try\{ const _lr=hhLevelReadyNowHTML\(\); nowN\+=_lr\.n; h\+=_lr\.html; \}catch\(e\)\{\}[^\n]*/g, "")
     .replace(/\n\s*try\{ h\+=hhCleanHomeHTML\(iso,today\); \}catch\(e\)\{\}[^\n]*/g, "")   // 🧽 CLEANINGDAY (2026-10-11): one Home Base line, normalized away
-    .replace(/\n\s*try\{ if\(typeof hhCleanOn==="function"&&hhCleanOn\(iso\)\) h\+=[^\n]*/g, "");   // 🧽 CLEANINGDAY: one Dad's Day line   // 🪜 LEVELREADY (2026-10-10): one Now line, normalized away so the guard still asks "nothing ELSE changed"
+    .replace(/\n\s*try\{ if\(typeof hhCleanOn==="function"&&hhCleanOn\(iso\)\) h\+=[^\n]*/g, "")   // 🧽 CLEANINGDAY: one Dad's Day line
+    .replace(/\n\s*h\+=mdCardLaundry\(true\);   \/\/ 🧺 LAUNDRYADD[^\n]*/g, "").replace(/\n\s*\/\/ 🧺 LL_MYDAY[^\n]*/g, "");   // 🧺 LL_MYDAY (2026-10-21): the running-loads card moved up into My day — that one line, normalized away on both sides   // 🪜 LEVELREADY (2026-10-10): one Now line, normalized away so the guard still asks "nothing ELSE changed"
   // LAUNDRY_NUDGE (2026-10-15, hole 3) rewrites renderMomsDay's 🔴 NOW laundry rows on purpose — test_laundry_nudges.js covers them.
   const unnudge = s => String(s).replace(/  \/\/ Load sitting in the washer[\s\S]*?(?=  \/\/ Bills that can't wait)/, "  /*laundry nudge*/\n");
   ok("renderMomsDay source untouched", unnudge(unroute(sliceFrom(old, "renderMomsDay"))) === unnudge(unroute(sliceFrom(src, "renderMomsDay"))));
@@ -146,8 +147,9 @@ function dadPage(o) { const w = world(src, Object.assign({}, DAD, o)); const el 
   ok("old separate checklist / to-do / grocery cards gone", !/> My checklist/.test(h) && !/> My to-do/.test(h) && !/🛒 Grocery list<span/.test(h));
   ok("old ⭐ Star Bank card no longer drawn (folded into kid rows)", !/<!--STARBANK-->/.test(h) && (h.match(/<\/span> Kids today/g) || []).length === 1);
   ok("ids unique: one dc-new, one laundry-label, one dd-todo-new", ["dc-new", "laundry-label", "dd-todo-new"].every(id => (h.match(new RegExp('id="' + id + '"', "g")) || []).length === 1));
-  const order = ["<!--BP-->", "</span> Kids today", "<!--CHECKLOG-->", "<!--DINNER-->", "<!--BILLS-->", "</span> Laundry"].map(x => h.indexOf(x));
-  ok("rest of his cards in the same order: BP · kids · check log · dinner · bills · laundry", order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1])), order);
+  const order = ["<!--BP-->", "</span> Kids today", "<!--CHECKLOG-->", "<!--DINNER-->", "<!--BILLS-->"].map(x => h.indexOf(x));
+  ok("rest of his cards in the same order: BP · kids · check log · dinner · bills", order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1])), order);
+  ok("🧺 LL_MYDAY (2026-10-21): the running-loads card is no longer a card at the bottom — it lives in his 🏡 My day Laundry section", !/<span>🧺<\/span> Laundry<span style="flex:1">/.test(h));
   ok("laundry card = running loads only (no second start box)", (h.match(/Start a load/g) || []).length === 1);
   ok("✎ Edit pop-up closed by default", !/id="dd-pop"/.test(h));
 }

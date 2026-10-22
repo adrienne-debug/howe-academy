@@ -157,6 +157,6 @@ ok("laundryBlockDefault: 5 / 15 / 10", /\(k==="fold"\?15:k==="putaway"\?10:5\)/.
 ok("the MOMSCHED_LAUNDRY loop takes stage fold and names the fix", /l\.stage!=="prewash"&&l\.stage!=="fold"(&&l\.stage!=="airdry"&&l\.stage!=="custom")?\)\) return;/.test(MS)&&/LAUNDRY_FOLD \(her report 2026-10-15/.test(MS));
 ok("the finished row says ✓ Put away for a fold block", /b\.stage==="fold"\?'Put away: ':\(?b\.stage==="dryer"(\|\|b\.stage==="airdry"\))?\?'Folded: '/.test(MS));
 ok("laundryAdvance is untouched (Folded ✓ still ends the dryer block; ✓ Put away still removes the load)", /laundryBlockDone\(id,l\.stage\)/.test(fn("laundryAdvance"))&&/delete laundryData\[id\]; \/\/ put away — load complete/.test(fn("laundryAdvance")));
-ok("Mom's Day card, the NOW nudge and Dad's schedule are not changed by this fix", /function mdCardLaundry\(noAdd\)\{   \/\/ 🧺 LAUNDRYADD/.test(src)&&/function laundryNudgeKind\(l,now\)\{/.test(src)&&/function dadSchedLaundry\(\)\{/.test(src));
+ok("Mom's Day card, the NOW nudge and Dad's schedule are not changed by this fix", /function mdCardLaundry\(noAdd,bare\)\{   \/\/ 🧺 LAUNDRYADD/.test(src)&&/function laundryNudgeKind\(l,now\)\{/.test(src)&&/function dadSchedLaundry\(\)\{/.test(src));
 
 console.log(pass+" passed, "+fail+" failed"); if(fail) process.exit(1);

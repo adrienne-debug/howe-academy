@@ -38,7 +38,7 @@ console.log("1. Dad's Day");
   d.llStart("lincoln","dad"); const set=d.writes.find(w=>w[0]==="set"); ok("…by:dad on the load and the log", set[2].by==="dad"&&d.get("laundryLine.log['"+MON+"'].lincoln.by")==="dad");
   ok("once it's in, the card names who started it (Dad), not the usual doer", /Lincoln's clothes <span[^>]*>· 👤 Dad · 🫧 in the washer/.test(d.llDadCardHTML()));
   ok("not set up: nothing on his Day", mk({dad:true}).llDadCardHTML()==="");
-  ok("wired after his bills, before the running loads", /llDadCardHTML\(\); \}catch\(e\)\{\}   \/\/ 🧺 LAUNDRYLINE step 6: the line on Dad's Day\n  try\{ h\+=mdCardLaundry\(true\)/.test(src));
+  ok("wired into his 🏡 My day Laundry section (LL_MYDAY 2026-10-21), no longer a card at the bottom of Dad's Day", /llMyDayLaundryHTML\(P\.dad\?'dad':'mom'\)/.test(src)&&!/h\+=llDadCardHTML\(\)/.test(src));   // was: after his bills, before the running loads
 }
 console.log("2. A kid's Day page");
 { const c=mk({tab:"kids",noMom:true,line:{caps:caps(2),asOf:MON}});

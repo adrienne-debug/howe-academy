@@ -51,7 +51,7 @@ console.log("4. Skip, and nothing ticked");
 }
 console.log("5. Wiring");
 ok("a 💦 quick button opens its bed's question", /const bh=llBedHostFor\(q\); if\(bh\) llWetOpen\(bh,lid\);/.test(src));
-ok("it shows on Mom's / Dad's My day and Dad's card", /const top=llWetAskHTML\(by\)/.test(src)&&/llWetAskHTML\("dad"\)\+llBedAskHTML\(\)\+llCoverAskHTML\(\)/.test(src));
+ok("it shows on Mom's / Dad's My day and Dad's card", /const top=llWetAskHTML\(by\)/.test(src)&&/llWetAskHTML\(by\)\+llBedAskHTML\(\)\+llCoverAskHTML\(\)/.test(src));   // LL_MYDAY: the card is drawn as either parent now
 console.log("6. 🛏 The Monday question (step 2)");
 { const c=mk("2026-11-09"); c.get("laundryLine.extras.x_king_shams.last='2026-10-12'; laundryLine.extras.x_king_pillows.last='2026-11-07'; delete laundryLine.extras.x_king_pillows.est;");
   c.llStart("sheets"); const h=c.llBedAskHTML();

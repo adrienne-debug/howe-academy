@@ -21,7 +21,8 @@ const strip = slice("momDayStripHTML");
 const iTodo = strip.indexOf('id="\'+P.todoInp+\'"'), iLaun = strip.indexOf('id="laundry-label"'), iShop = strip.indexOf("colHd('🛒','Shopping'");
 ok("Home Base: Start a load sits right under the to-do box, before Shopping", iTodo > 0 && iLaun > iTodo && iShop > iLaun);
 ok("…same start action (laundryAdd)", /onclick="laundryAdd\((\)|'\+\(P\.dad\?'\\'dad\\'':''\)\+'\))"/.test(strip.slice(iLaun - 400, iLaun + 900)));
-ok("Mom's Day draws the card in running-loads mode", /h\+=mdCardLaundry\(true\);/.test(slice("renderMomsDay")));
-ok("Dad's Day (👨 DADMYDAY): Start a load lives in his 🏡 My day, card in running-loads mode", /h\+=mdCardLaundry\(true\);/.test(slice("renderDadsDay")) && /momDayStripHTML\(iso,dn,"dad"\)/.test(slice("renderDadsDay")));
+// 🧺 LL_MYDAY (her ask 2026-10-21): the running loads moved up into 🏡 My day's Laundry section on both pages — the bottom cards are gone.
+ok("Mom's Day: running loads live in 🏡 My day now (LL_MYDAY), not a card at the bottom", !/h\+=mdCardLaundry\(true\);/.test(slice("renderMomsDay")) && /LL_MYDAY/.test(slice("renderMomsDay")) && /llMyDayLaundryHTML\(P\.dad\?'dad':'mom'\)/.test(strip));
+ok("Dad's Day (👨 DADMYDAY): Start a load and the running loads live in his 🏡 My day", !/h\+=mdCardLaundry\(true\);/.test(slice("renderDadsDay")) && /momDayStripHTML\(iso,dn,"dad"\)/.test(slice("renderDadsDay")));
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
