@@ -202,7 +202,7 @@ console.log("8. the real runDisplacement, replayed: the copy is stamped _famOut,
 console.log("9. source: the hooks sit where they must");
 { ok("FAMBLOCKOUT block sits between FAMTOGETHER_END and FAMLESSONS_START", src.indexOf("// FAMTOGETHER_END")<src.indexOf("// FAMBLOCKOUT_START")&&src.indexOf("// FAMBLOCKOUT_END")<src.indexOf("// FAMLESSONS_START"));
   const tap=src.slice(src.indexOf("function tapTask(id){"),src.indexOf("function tapTask(id){")+2500);
-  ok("tapTask: an out / missed copy only says so, before the kid's and Mom's family paths", tap.indexOf("famBoState(t)")>0&&tap.indexOf("famBoState(t)")<tap.indexOf("if(t.famBlock&&!momHereCards()){")&&/return; \}   \/\/ 🚫 FAMBLOCKOUT: not checkable/.test(tap));
+  ok("tapTask: an out / missed copy only says so, before the kid's and Mom's family paths", tap.indexOf("famBoState(t)")>0&&tap.indexOf("famBoState(t)")<tap.indexOf("if(t.famBlock&&!momHereCards()")&&/return; \}   \/\/ 🚫 FAMBLOCKOUT: not checkable/.test(tap));
   ok("famSiblings skips an out copy (Mom's one check, the ratings, the dialog's names)", /x\.day===t\.day&&!\(typeof famBoState==="function"&&famBoState\(x\)\); \}\);   \/\/ 🚫 FAMBLOCKOUT/.test(FAM));
   ok("rtSchoolworkDone leaves an open out copy out of the count", /&&!\(t\.famBlock&&typeof famBoState==="function"&&famBoState\(t\)\)&&!\(\(t\._offDay\|\|t\._dayDrop\)&&!checked\[t\.id\]\)/.test(grab("rtSchoolworkDone")));
   ok("the block celebration doesn't wait on an out copy", /_famCelebCards[\s\S]{0,300}famBoState\(t\)\)/.test(src.slice(src.indexOf("function _famCelebCards"),src.indexOf("function _famCelebCards")+400)));
