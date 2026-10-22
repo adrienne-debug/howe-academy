@@ -1,7 +1,7 @@
 /*
  * 🍳 KITCHEN_ASK (her ask 2026-10-20: the weekly kitchen question, modeled exactly on the bedding one). On the kitchen day, when Mom ticks
  * her "Kitchen close-down" row: "Kitchen this week — anything else today?" — every interval kitchen row, due ones highlighted, the rest
- * "done N days ago"; Save writes lastDone/lastBy per ticked row. Link (a): the weekly purge feeds the 6-week fridge clean-out.
+ * "done N days ago"; Save writes lastDone/lastBy per ticked row.
  * Link (b): the dish-towels laundry extra (documented in the PR, never written) rides the Friday Towels load.   run: node test_kitchen_ask.js
  *
  * Replay: the real hhNeed / hhStats / _hhDayCheck / cadDueOn / mcToggle run against a fixed Monday (2026-10-19, 8 PM) and Mom's tick log.
@@ -17,8 +17,6 @@ const LL=cut("// LAUNDRYLINE_START","// LAUNDRYLINE_END");
 const iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 const MON="2026-10-19", TUE="2026-10-20";   // 10/19/2026 is a Monday
 
-// Mom's tick log: the weekly fridge purge ("mc_purge", Fridays) ticked on these dates
-const FRIDAYS_6WK=["2026-09-11","2026-09-18","2026-09-25","2026-10-02","2026-10-09","2026-10-16"];   // the six Fridays before Monday 10/19
 const JOBS=()=>({
   k_close:{label:"Kitchen close-down (counters + stove)",emoji:"🌙",cad:"daily",who:"mom",slot:"night",room:"kitchen",area:"cleaning",status:"active",src:{kind:"momChore",id:"mc_kclose"},order:0},
   k_purge:{label:"Fridge purge — toss expired + leftovers",emoji:"🥬",cad:"wk:4",who:"mom",room:"kitchen",area:"cleaning",status:"active",src:{kind:"momChore",id:"mc_purge"},order:1},
@@ -48,15 +46,14 @@ function mk(o){ o=o||{}; const writes=[], ls=o.ls||{}, boxes={}, toasts=[], NOW=
     writes, toasts, boxes};
   vm.createContext(ctx);
   const tail=["_CAD_DOW","HH_ROOMS","HH_AREAS"].map(n=>"const "+n+"="+cut("const "+n+"=",";\n").slice(("const "+n+"=").length)+";").join("\n");
-  const log={}; (o.purgeOn||[]).forEach(d=>{ log[d]={chores:{mc_purge:1}}; });
-  vm.runInContext(tail+"\nconst _HH_DN="+cut("const _HH_DN=",";\n").slice("const _HH_DN=".length)+";\nconst HH_MIN_DEFAULT={health:2,animals:3,pickup:5,cleaning:10};\nlet routineLog={}, momdayData="+JSON.stringify(log)+", daddayData={}, _hhLogCache=null, DAY_DT=undefined;\n"
+  vm.runInContext(tail+"\nconst _HH_DN="+cut("const _HH_DN=",";\n").slice("const _HH_DN=".length)+";\nconst HH_MIN_DEFAULT={health:2,animals:3,pickup:5,cleaning:10};\nlet routineLog={}, momdayData={}, daddayData={}, _hhLogCache=null, DAY_DT=undefined;\n"
     +CORE_FNS.map(fn).join("\n")+"\n"+fn("mcToggle")+"\n"+KT+"\n"+KA, ctx);
   ctx.get=e=>vm.runInContext(e,ctx); ctx.J=J; return ctx; }
 const HOUSEHOLD=c=>c.writes.filter(w=>/^household\//.test(w[1]));
 const rowOf=(h,label)=>{ const m=new RegExp('<label[^>]*>(?:(?!</label>).)*'+label.replace(/[()+]/g,"\\$&")+'(?:(?!</label>).)*</label>').exec(h); return m?m[0]:""; };
 
 console.log("1. The close-down ticked on the kitchen day (Monday, default) opens the question");
-{ const c=mk({purgeOn:["2026-10-09","2026-10-16"]});   // 2 purges lately — not enough to feed the clean-out
+{ const c=mk();
   ok("nothing asked before the tick", c.ktAskHTML()==="");
   c.mcToggle("mc_kclose");
   ok("ticking her close-down (Mon) holds the question on this device for today", !!c.get("ktAskQ")&&c.get("ktAskQ").day===MON, c.get("ktAskQ"));
@@ -81,23 +78,7 @@ console.log("2. Only the close-down row, only when ticked on, only on the kitche
   const r=mk({jobs:{k_close:{label:"Kitchen close-down (counters + stove)",cad:"daily",who:"mom",room:"kitchen",area:"cleaning",status:"retired",src:{kind:"momChore",id:"mc_kclose"}}}}); r.mcToggle("mc_kclose"); ok("a retired close-down row doesn't ask", r.get("ktAskQ")===null);
 }
 
-console.log("3. Link (a): the weekly purge feeds the 6-week clean-out");
-{ const c=mk({purgeOn:["2026-09-25","2026-10-02","2026-10-09","2026-10-16"]}); c.mcToggle("mc_kclose"); const h=c.ktAskHTML(), row=rowOf(h,"Fridge clean-out");
-  ok("clean-out due + purge ticked 4× in 6 weeks → 'still needed? (purged 4× lately)', no 'due now'", /still needed\? \(purged 4× lately\)/.test(row)&&!/due now/.test(row), row);
-  ok("…it isn't highlighted as due (the hood filter still is)", !/fffbeb/.test(row)&&/fffbeb/.test(rowOf(h,"Hood filter")));
-  ok("the other due row (hood filter) is unaffected: still 'due now'", /due now — do it today\?/.test(rowOf(h,"Hood filter")));
-  const e=mk({purgeOn:["2026-10-02","2026-10-09","2026-10-16"]}); e.mcToggle("mc_kclose"); ok("exactly 3 ticks counts", /purged 3× lately/.test(rowOf(e.ktAskHTML(),"Fridge clean-out")));
-  const two=mk({purgeOn:["2026-10-09","2026-10-16"]}); two.mcToggle("mc_kclose"); ok("2 ticks isn't enough: 'due now'", /due now/.test(rowOf(two.ktAskHTML(),"Fridge clean-out")));
-  const old=mk({purgeOn:["2026-08-28","2026-09-04","2026-09-11","2026-10-16"]}); old.mcToggle("mc_kclose");   // 8/28 + 9/4 sit in weeks 7–8: done8 would say 4, six weeks say 2
-  ok("ticks older than 6 weeks don't count (hhStats.done8 spans 8 weeks — this walks 42 days)", old.get("hhStats(J.k_purge).done8")===4&&old.ktAskDone6(old.J.k_purge)===2&&/due now/.test(rowOf(old.ktAskHTML(),"Fridge clean-out")), [old.get("hhStats(J.k_purge).done8"),old.ktAskDone6(old.J.k_purge)]);
-  const rec=mk({purgeOn:["2026-09-25","2026-10-02","2026-10-09","2026-10-16"],jobs:{k_fridge:Object.assign(JOBS().k_fridge,{lastDone:"2026-10-10"})}}); rec.mcToggle("mc_kclose");
-  ok("clean-out not due (done 9 days ago) → 'done 9 days ago', the purge link stays out of it", /done 9 days ago/.test(rowOf(rec.ktAskHTML(),"Fridge clean-out"))&&!/still needed/.test(rec.ktAskHTML()));
-  const nev=mk({purgeOn:FRIDAYS_6WK.slice(2),jobs:{k_fridge:Object.assign(JOBS().k_fridge,{lastDone:undefined})}}); nev.mcToggle("mc_kclose");
-  ok("a clean-out never done counts as due too → 'still needed?' with the purges", /still needed\? \(purged 4× lately\)/.test(rowOf(nev.ktAskHTML(),"Fridge clean-out")));
-  const none=mk({purgeOn:FRIDAYS_6WK,jobs:{k_purge:null}}); delete none.J.k_purge; none.mcToggle("mc_kclose"); ok("no purge row at all → plain 'due now'", /due now/.test(rowOf(none.ktAskHTML(),"Fridge clean-out")));
-}
-
-console.log("4. Save writes lastDone / lastBy for exactly the ticked rows");
+console.log("3. Save writes lastDone / lastBy for exactly the ticked rows");
 { const c=mk(); c.mcToggle("mc_kclose"); c.writes.length=0; c.ktAskHTML(); c.boxes.k_oven=true; c.ktAskSave();
   ok("one ticked → one write: household/jobs/k_oven update {lastDone: today, lastBy: mom} — the write ✓ Done today makes", c.writes.length===1&&c.writes[0][0]==="update"&&c.writes[0][1]==="household/jobs/k_oven"&&JSON.stringify(c.writes[0][2])===JSON.stringify({lastDone:MON,lastBy:"mom"}), c.writes);
   ok("in memory too: the oven reads done today", c.J.k_oven.lastDone===MON&&c.hhNeed(c.J.k_oven).days===0);
@@ -112,7 +93,7 @@ console.log("4. Save writes lastDone / lastBy for exactly the ticked rows");
   ok("'Just the close-down' (skip) writes nothing even with a box ticked", sk.writes.length===0&&sk.get("ktAskQ")===null&&sk.J.k_oven.lastDone==="2026-10-13");
 }
 
-console.log("5. Held per device until answered, like the bedding question");
+console.log("4. Held per device until answered, like the bedding question");
 { const ls={}; const a=mk({ls}); a.mcToggle("mc_kclose");
   const b=mk({ls}); ok("a reload on the same device still has the question (HA_LS ha_kt_ask)", b.get("ktAskQ")&&b.get("ktAskQ").day===MON&&b.ktAskHTML().indexOf("anything else today")>=0, ls);
   b.ktAskSkip(); const c=mk({ls}); ok("answered once → gone after a reload", c.get("ktAskQ")===null&&c.ktAskHTML()==="");
@@ -120,7 +101,7 @@ console.log("5. Held per device until answered, like the bedding question");
   const other=mk(); ok("another device (empty HA_LS) has no question", other.ktAskHTML()==="");
 }
 
-console.log("6. The kitchen day is a setting: household/meta/kitchenAskDow (Mon=0, default Mon)");
+console.log("5. The kitchen day is a setting: household/meta/kitchenAskDow (Mon=0, default Mon)");
 { const c=mk(); ok("default: Monday (0)", c.ktAskDow()===0);
   ok("the chip row on the Kitchen tab: Mon–Sun, Monday lit", (()=>{ const h=c.ktAskSettingHTML(); return ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].every(d=>h.indexOf(">"+d+"<")>=0)&&/ktAskDowSet\(0\)/.test(h)&&/ktAskDowSet\(6\)/.test(h)&&/background:#ea580c[^>]*>Mon</.test(h); })(), c.ktAskSettingHTML());
   c.ktAskDowSet(1);
@@ -133,7 +114,7 @@ console.log("6. The kitchen day is a setting: household/meta/kitchenAskDow (Mon=
   ok("Sunday (6) is a valid day", mk({meta:{kitchenAskDow:6},at:"2026-10-25T20:00:00"}).get("(function(){ return _hhDow(_hhIsoLocal(Date.now()))===ktAskDow(); })()"));
 }
 
-console.log("7. A kid's device (not Mom) sees nothing and can change nothing");
+console.log("6. A kid's device (not Mom) sees nothing and can change nothing");
 { const ls={}; mk({ls}).mcToggle("mc_kclose");   // the question is held in this device's storage…
   const k=mk({ls,noMom:true});
   ok("…but a device that isn't in Mom mode draws nothing", k.get("ktAskQ")!==null&&k.ktAskHTML()==="");
@@ -143,12 +124,12 @@ console.log("7. A kid's device (not Mom) sees nothing and can change nothing");
   const t=mk({noMom:true}); t.mcToggle("mc_kclose"); ok("a close-down tick on a non-Mom device doesn't open it", t.get("ktAskQ")===null);
 }
 
-console.log("8. ?dryrun=1 stays inert");
+console.log("7. ?dryrun=1 stays inert");
 { const c=mk({dry:true}); c.mcToggle("mc_kclose"); c.writes.length=0; c.boxes.k_oven=true; c.ktAskSave(); c.ktAskDowSet(2);
   ok("no household/ writes at all in dry-run (Save and the day chip)", HOUSEHOLD(c).length===0, c.writes);
 }
 
-console.log("9. The block's writes are exactly the two allowed paths, each guarded");
+console.log("8. The block's writes are exactly the two allowed paths, each guarded");
 { const refs=KA.match(/db\.ref\([^)]*\)\.\w+\(/g)||[];
   ok("only household/jobs/<id>.update and household/meta/kitchenAskDow.set", refs.length===2&&refs.some(r=>/household\/jobs\/"\+id\)\.update/.test(r))&&refs.some(r=>/household\/meta\/kitchenAskDow"\)\.set/.test(r)), refs);
   ok("every write is behind _hhWrite()", (KA.match(/if\(_hhWrite\(\)\) db\.ref\(/g)||[]).length===2);
@@ -157,7 +138,7 @@ console.log("9. The block's writes are exactly the two allowed paths, each guard
   ok("the block doesn't use the 🔀 emoji", !/🔀/.test(KA)&&!/🔀/.test(src));
 }
 
-console.log("10. Wiring: shown in the bedding question's three places; the owned blocks are untouched");
+console.log("9. Wiring: shown in the bedding question's three places; the owned blocks are untouched");
 { ok("Mom's + Dad's 🏡 My day strip: ktAskHTML() beside llStripHTML (its caller, outside LAUNDRYLINE)", /llStripHTML\(P\.dad\?'dad':''\)[^\n]*\n\s*\+\(\(typeof ktAskHTML==="function"\)\?ktAskHTML\(\):""\)/.test(src));
   ok("Dad's card: ktAskHTML() right above llDadCardHTML() (its caller, outside LAUNDRYLINE)", /try\{ if\(typeof ktAskHTML==="function"\) h\+=ktAskHTML\(\); \}catch\(e\)\{\}[^\n]*\n\s*try\{ if\(typeof llDadCardHTML==="function"\) h\+=llDadCardHTML\(\); \}/.test(src));
   ok("Kitchen tab: the chip row sits above the tab's body in renderHousehold; hhKitchenHTML's call is as it was", /\(hhView==='kitchen'&&typeof ktAskSettingHTML==="function"\)\?ktAskSettingHTML\(\):''\)\+body/.test(src)&&/\(hhView==='kitchen'&&typeof hhKitchenHTML==="function"\)\?hhKitchenHTML\(\):hhReviewHTML\(\);/.test(src));
@@ -166,7 +147,7 @@ console.log("10. Wiring: shown in the bedding question's three places; the owned
   ok("the new block sits right after KITCHEN_TAB_END", src.indexOf("// KITCHEN_TAB_END\n// KITCHEN_ASK_START")>0);
 }
 
-console.log("11. Link (b): the dish-towels extra rides the Friday Towels load (documented in the PR, never written by this feature)");
+console.log("10. Link (b): the dish-towels extra rides the Friday Towels load (documented in the PR, never written by this feature)");
 { const OBJ={label:"Dish + hand towels",emoji:"🧺",every:1,unit:"w",last:"2026-10-16",order:6,rideWith:"towels"};   // = laundryLine/extras/x_dish_towels
   const ls={}, ctx={console,Object,Array,String,Number,parseInt,Math,JSON,Date,
     HA_LS:{getItem:k=>ls[k]||null,setItem:(k,v)=>{ ls[k]=v; }}, document:{getElementById:()=>null}, db:{ref:()=>({update(){},set(){},remove(){}})},
