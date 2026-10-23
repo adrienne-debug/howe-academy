@@ -129,7 +129,7 @@ function stEnv(E) {
       writes:writes,toasts:toasts,banked:banked,hist:hist,checked:checked,weekData:weekData,renders:function(){ return renders; },cascades:function(){ return cascades; },
       rd:function(){ return rulesData; },cd:function(){ return currData; },dom:dom,setDayDt:function(m){ DAY_DT=m; }};
     var DAY_DT={};
-    if(typeof stFamStart==="function") Object.assign(X,{stFamStart,stFamAt,stFxAt,stLunchFor,stLunchCtx,stLunchWin,stLunchRule,stInfo,stCanClock,stClockHTML,stOpen,stClose,stSetTime,stMove,stPastYes,stPastNo,stClashes,stClashMove,stClashTime,stCommit,stClear,stClearAt,stWrite,stCheckAt,stCalRowsHTML,stTsAt,stIsPast,
+    if(typeof stFamStart==="function") Object.assign(X,{stFamStart,stFamAt,stFxAt,stLunchFor,stLunchCtx,stLunchWin,stLunchRule,stInfo,stCanClock,stClockHTML,sttOpen,sttClose,stSetTime,stMove,stPastYes,stPastNo,stClashes,stClashMove,stClashTime,stCommit,stClear,stClearAt,stWrite,stCheckAt,stCalRowsHTML,stTsAt,stIsPast,
       state:function(){ return stState; },sheet:function(){ const o=dom["st-ov"]; return o?o.innerHTML:""; }});
     return X;
   `);
@@ -311,9 +311,9 @@ console.log("5. the ⏰ — Mom, today, open family / fixed-class cards only");
   const tasks = famCards("monday", ["1:35 PM", "2:05 PM", "2:35 PM"]).concat([{ id: "sp", who: "andrew", day: "monday", time: "1:00 PM", dur: 30, subjectKey: "speech" }, { id: "ma", who: "andrew", day: "monday", time: "9:00 AM", dur: 20, subjectKey: "math" }, { id: "sp_tue", who: "andrew", day: "tuesday", time: "1:00 PM", dur: 30, subjectKey: "speech" }]);
   const E = stEnv({ rulesData: rules({ [ID]: MON }), currData: { subjects: clone(SUBJECTS) }, dayISO: WEEK, tasks: tasks, todayDay: "monday" });
   const fam = tasks[0], sp = tasks.find(t => t.id === "sp"), ma = tasks.find(t => t.id === "ma");
-  ok("Mom, today, a family card → the ⏰", /st-clock/.test(E.stClockHTML(fam, false, false, false, false)) && /stOpen\('fam','fbmusz3l9q','',''\)/.test(E.stClockHTML(fam, false, false, false, false)));
+  ok("Mom, today, a family card → the ⏰", /st-clock/.test(E.stClockHTML(fam, false, false, false, false)) && /sttOpen\('fam','fbmusz3l9q','',''\)/.test(E.stClockHTML(fam, false, false, false, false)));
   ok("…same spot and size as the ✗ (20px, margin-left auto when nothing sits beside it)", /width:20px;height:20px/.test(E.stClockHTML(fam, false, false, false, false)) && /margin-left:auto/.test(E.stClockHTML(fam, false, false, false, false)) && /margin-left:4px/.test(E.stClockHTML(fam, false, false, false, true)));
-  ok("a fixed-class card today → the ⏰ (opens for that kid + subject)", /stOpen\('fx','andrew','speech',''\)/.test(E.stClockHTML(sp, false, false, false, false)));
+  ok("a fixed-class card today → the ⏰ (opens for that kid + subject)", /sttOpen\('fx','andrew','speech',''\)/.test(E.stClockHTML(sp, false, false, false, false)));
   ok("a plain lesson card → nothing", E.stClockHTML(ma, false, false, false, false) === "");
   ok("a done card, a sent-to-Mom card, a read-only card → nothing", E.stClockHTML(fam, true, false, false, false) === "" && E.stClockHTML(fam, false, true, false, false) === "" && E.stClockHTML(fam, false, false, true, false) === "");
   ok("tomorrow's class card → nothing (today only from the card)", E.stClockHTML(tasks.find(t => t.id === "sp_tue"), false, false, false, false) === "");
@@ -321,7 +321,7 @@ console.log("5. the ⏰ — Mom, today, open family / fixed-class cards only");
   ok("a kid's device (not Mom) → nothing, on every card", tasks.every(t => K.stClockHTML(t, false, false, false, false) === ""));
   const KT = stEnv({ rulesData: rules({ [ID]: MON }), currData: { subjects: clone(SUBJECTS) }, dayISO: WEEK, tasks: tasks, todayDay: "monday", kidsTab: true });
   ok("Mom on the Kids tab (momHereCards false) → nothing", tasks.every(t => KT.stClockHTML(t, false, false, false, false) === ""));
-  ok("the ⏰ never appears in the kids' copy of a family card's own row (famRowHTML untouched)", !/st-clock|stOpen/.test(extractFn("famRowHTML")));
+  ok("the ⏰ never appears in the kids' copy of a family card's own row (famRowHTML untouched)", !/st-clock|sttOpen/.test(extractFn("famRowHTML")));
 }
 
 console.log("6. a past time is a question — No writes nothing; Yes writes the leaf + the ✓ for every present kid at that time");
@@ -329,7 +329,7 @@ console.log("6. a past time is a question — No writes nothing; Yes writes the 
   const tasks = famCards("monday", ["1:35 PM", "2:05 PM", "2:35 PM"]).concat(famCards("tuesday", ["1:00 PM", "1:30 PM", "2:00 PM"]));
   tasks.find(t => t.id === "monday_hist_caleb").famAbsent = true;   // Caleb was marked "not here" earlier for History
   const E = stEnv({ rulesData: rules({ [ID]: MON }), currData: { subjects: clone(SUBJECTS) }, dayISO: WEEK, tasks: tasks, todayDay: "monday", today: "2026-10-26", nowMin: toMin("11:20 AM") });
-  E.stOpen("fam", ID, "", "");
+  E.sttOpen("fam", ID, "", "");
   const st0 = E.state();
   ok("the sheet opens on today with the block's current time (1:35 PM) and no leaf", st0 && st0.iso === "2026-10-26" && st0.time === "1:35 PM" && /Today only/.test(E.sheet()) && /usually 1:35 PM/.test(E.sheet()) && !/Back to normal/.test(E.sheet()));
   E.stSetTime("10:00");
@@ -357,12 +357,12 @@ console.log("6. a past time is a question — No writes nothing; Yes writes the 
   ok("the sheet closed, the day re-lays (schedCascade + renderAll), the toast says so", E.state() === null && E.cascades() === 1 && E.renders() >= 1 && /⏰ 🏡 Family Time at 10:00 AM today · ✓ checked off then/.test(E.toasts[E.toasts.length - 1]), E.toasts);
   // a time still ahead today asks nothing
   const F = stEnv({ rulesData: rules({ [ID]: MON }), currData: { subjects: clone(SUBJECTS) }, dayISO: WEEK, tasks: famCards("monday", ["1:35 PM", "2:05 PM", "2:35 PM"]), todayDay: "monday", today: "2026-10-26", nowMin: toMin("11:20 AM") });
-  F.stOpen("fam", ID, "", ""); F.stSetTime("15:00"); F.stMove();
+  F.sttOpen("fam", ID, "", ""); F.stSetTime("15:00"); F.stMove();
   ok("3:00 PM (ahead of now, no overlap) → written straight away, nothing checked, toast '🏡 Family Time at 3:00 PM today'", upd(F).length === 1 && upd(F)[0]["config/rules/familyBlocks/" + ID + "/atByDate/2026-10-26"] === "3:00 PM" && Object.keys(F.checked).length === 0 && F.toasts[0] === "⏰ 🏡 Family Time at 3:00 PM today");
   ok("…the cards never show in the past: every laid copy now sits at 3:00 / 3:30 / 4:00", F.famLayout(F.famDefs()[ID], "monday").map(x => fromMin(x.s)).join() === "3:00 PM,3:30 PM,4:00 PM");
   // a class, already past
   const G = stEnv({ rulesData: rules({ [ID]: MON }), currData: { subjects: clone(SUBJECTS) }, dayISO: WEEK, tasks: [{ id: "sp", who: "andrew", day: "monday", time: "1:00 PM", dur: 30, subjectKey: "speech" }], todayDay: "monday", today: "2026-10-26", nowMin: toMin("11:20 AM") });
-  G.stOpen("fx", "andrew", "speech", ""); G.stSetTime("09:30"); G.stMove();
+  G.sttOpen("fx", "andrew", "speech", ""); G.stSetTime("09:30"); G.stMove();
   ok("a class moved to 9:30 (past) asks the same question", G.state().step === "past" && /9:30 AM is already past/.test(G.sheet()));
   G.stPastYes();
   ok("Yes → the class leaf curriculum/subjects/andrew/speech/fixedTimeByDate/2026-10-26 and Andrew's card checked at 9:30", upd(G).length === 1 && upd(G)[0]["curriculum/subjects/andrew/speech/fixedTimeByDate/2026-10-26"] === "9:30 AM" && G.checked.sp === "09:30 AM Oct 26" && G.stTsAt("2026-10-26", toMin("9:30 AM")) === G.stTsAt("2026-10-26", toMin("9:30 AM")) );   // nowTs's own 2-digit hour
@@ -372,14 +372,14 @@ console.log("7. the collision list — the class and the lunch it runs into; the
 {
   const mk = () => stEnv({ rulesData: rules({ [ID]: BLOCK }), currData: { subjects: clone(SUBJECTS) }, dayISO: WEEK, tasks: famCards("monday", ["1:00 PM", "1:30 PM", "2:00 PM"]), todayDay: "monday", today: "2026-10-26", nowMin: toMin("9:00 AM") });
   const E = mk();
-  E.stOpen("fam", ID, "", ""); E.stSetTime("11:45"); E.stMove();
+  E.sttOpen("fam", ID, "", ""); E.stSetTime("11:45"); E.stMove();
   const st = E.state();
   ok("11:45 AM for an 80-minute block (11:45–1:05) → the list, earliest first: everyone — lunch 12:00–1:00, Andrew — Speech 1:00–1:30 (Piano at 2:00 is clear)", st.step === "clash" && st.clashes.map(c => c.name).join("|") === "everyone — lunch|Andrew — Speech" && E.writes.length === 0, st.clashes);
   ok("the sheet says it plainly, one choice per line, Keep its time on by default", /At 11:45 AM this runs into:/.test(E.sheet()) && /everyone — lunch/.test(E.sheet()) && /12:00 PM–1:00 PM/.test(E.sheet()) && /Andrew — Speech/.test(E.sheet()) && /1:00 PM–1:30 PM/.test(E.sheet()) && /Keep its time — work packs around both/.test(E.sheet()) && /Move it today →/.test(E.sheet()) && st.clashes.every(c => !c.move));
   E.stMove();
   ok("[Move] with Keep → only the block's own leaf is written", upd(E).length === 1 && Object.keys(upd(E)[0]).join() === "config/rules/familyBlocks/" + ID + "/atByDate/2026-10-26");
   const E2 = mk();
-  E2.stOpen("fam", ID, "", ""); E2.stSetTime("13:45"); E2.stMove();
+  E2.sttOpen("fam", ID, "", ""); E2.stSetTime("13:45"); E2.stMove();
   const c2 = E2.state().clashes;
   ok("1:45 PM (1:45–3:05) → Taylor — Piano 2:00–2:45 only (lunch 12:00–1:00 is clear)", c2.length === 1 && c2[0].name === "Taylor — Piano" && c2[0].kind === "fx" && c2[0].kid === "taylor" && c2[0].sk === "piano" && fromMin(c2[0].s) === "2:00 PM" && fromMin(c2[0].e) === "2:45 PM");
   E2.stClashMove("fx|taylor|piano", true);
@@ -390,7 +390,7 @@ console.log("7. the collision list — the class and the lunch it runs into; the
   ok("…the toast names both", /⏰ 🏡 Family Time at 1:45 PM today · Taylor — Piano → 3:15 PM/.test(E2.toasts[0]), E2.toasts);
   // lunch moved too
   const E3 = mk();
-  E3.stOpen("fam", ID, "", ""); E3.stSetTime("12:30"); E3.stMove();
+  E3.sttOpen("fam", ID, "", ""); E3.stSetTime("12:30"); E3.stMove();
   ok("12:30 (12:30–1:50) → lunch and Speech; lunch is moved, Speech kept", E3.state().clashes.map(c => c.kind).join() === "lunch,fx");
   E3.stClashMove("lunch", true); E3.stClashTime("lunch", "11:00"); E3.stMove();
   const u3 = upd(E3)[0];
@@ -398,11 +398,11 @@ console.log("7. the collision list — the class and the lunch it runs into; the
   ok("…the lunch window for the date follows on this device; Tuesday's doesn't", JSON.stringify(E3.stLunchWin("taylor", "2026-10-26", "monday")) === JSON.stringify({ s: toMin("11:00 AM"), e: toMin("12:00 PM") }) && JSON.stringify(E3.stLunchWin("taylor", "2026-10-27", "tuesday")) === JSON.stringify({ s: toMin("12:00 PM"), e: toMin("1:00 PM") }));
   // a class moved into the family block
   const E4 = mk();
-  E4.stOpen("fx", "taylor", "piano", ""); E4.stSetTime("13:15"); E4.stMove();
+  E4.sttOpen("fx", "taylor", "piano", ""); E4.stSetTime("13:15"); E4.stMove();
   const c4 = E4.state().clashes;
   ok("Piano to 1:15 (1:15–2:00) runs into 🏡 Family Time 1:00–2:20 — listed, with the move offered", c4.length === 1 && c4[0].kind === "fam" && c4[0].id === ID && /Family Time/.test(c4[0].name) && fromMin(c4[0].s) === "1:00 PM" && fromMin(c4[0].e) === "2:20 PM");
   ok("…a class never lists itself", !c4.some(c => c.kind === "fx" && c.sk === "piano"));
-  const E5 = mk(); E5.stOpen("fam", ID, "", ""); E5.stSetTime("15:00"); E5.stMove();
+  const E5 = mk(); E5.sttOpen("fam", ID, "", ""); E5.stSetTime("15:00"); E5.stMove();
   ok("no overlap → no list, written straight away", upd(E5).length === 1 && E5.state() === null);
 }
 
@@ -410,16 +410,16 @@ console.log("8. Back to normal removes the leaf; dry run is inert");
 {
   const b = Object.assign({}, MON, { atByDate: { "2026-10-26": "2:15 PM" } });
   const E = stEnv({ rulesData: rules({ [ID]: b }), currData: { subjects: clone(SUBJECTS) }, dayISO: WEEK, tasks: famCards("monday", ["2:15 PM", "2:45 PM", "3:15 PM"]), todayDay: "monday", today: "2026-10-26", nowMin: toMin("9:00 AM") });
-  E.stOpen("fam", ID, "", "");
+  E.sttOpen("fam", ID, "", "");
   ok("the sheet shows the leaf and offers Back to normal", /set for this day: 2:15 PM/.test(E.sheet()) && /usually 1:35 PM/.test(E.sheet()) && /stClear\(\)/.test(E.sheet()));
   E.stClear();
   ok("Back to normal → the one leaf removed (null in the update), this Monday back at 1:35", upd(E).length === 1 && JSON.stringify(upd(E)[0]) === JSON.stringify({ ["config/rules/familyBlocks/" + ID + "/atByDate/2026-10-26"]: null }) && fromMin(E.famStartFor(E.famDefs()[ID], "monday", "2026-10-26")) === "1:35 PM" && !("2026-10-26" in (E.famDefs()[ID].atByDate || {})));
   ok("…the toast", /back to its usual time/.test(E.toasts[0]));
   const D = stEnv({ rulesData: rules({ [ID]: MON }), currData: { subjects: clone(SUBJECTS) }, dayISO: WEEK, tasks: famCards("monday", ["1:35 PM", "2:05 PM", "2:35 PM"]), todayDay: "monday", today: "2026-10-26", nowMin: toMin("9:00 AM"), dry: true });
-  D.stOpen("fam", ID, "", ""); D.stSetTime("15:00"); D.stMove();
+  D.sttOpen("fam", ID, "", ""); D.stSetTime("15:00"); D.stMove();
   ok("?dryrun=1 → nothing reaches Firebase; this device's copy still shows the move", D.writes.length === 0 && fromMin(D.famStartFor(D.famDefs()[ID], "monday", "2026-10-26")) === "3:00 PM");
   const N = stEnv({ rulesData: rules({ [ID]: MON }), currData: { subjects: clone(SUBJECTS) }, dayISO: WEEK, tasks: [], todayDay: "monday", mom: false });
-  N.stOpen("fam", ID, "", "");
+  N.sttOpen("fam", ID, "", "");
   ok("not Mom → the sheet never opens, nothing written", N.state() === null && N.writes.length === 0);
   ok("stWrite refuses an empty update and a non-Mom caller", (() => { const M = stEnv({ rulesData: rules({ [ID]: MON }), dayISO: WEEK }); return M.stWrite({}) === false && M.writes.length === 0; })());
 }
@@ -430,8 +430,8 @@ console.log("9. the Month day sheet — a row per block and per class that day, 
   const E = stEnv({ rulesData: rules({ [ID]: b }), currData: { subjects: clone(SUBJECTS) }, dayISO: WEEK, tasks: [], todayDay: "monday", today: "2026-10-26" });
   const R = E.stCalRowsHTML("2026-11-02", { school: true }, null, false);
   ok("another Monday: three School rows — Family Time, Andrew — Speech, Taylor — Piano", R.n === 3 && (R.html.match(/<span class="lbl">School<\/span>/g) || []).length === 3 && /🏡 Family Time/.test(R.html) && /Andrew — Speech/.test(R.html) && /Taylor — Piano/.test(R.html));
-  ok("the block row: 2:15–3:35 · this day only: 2:15 PM (usually 1:35 PM) · ⏰ · Back to normal", /2:15 PM–3:35 PM · this day only: 2:15 PM \(usually 1:35 PM\)/.test(R.html) && /stOpen\('fam','fbmusz3l9q','','2026-11-02'\)/.test(R.html) && /stClearAt\('fam','fbmusz3l9q','','2026-11-02'\)/.test(R.html));
-  ok("the class rows carry the ⏰ for THAT date and no Back to normal (no leaf)", /stOpen\('fx','taylor','piano','2026-11-02'\)/.test(R.html) && !/stClearAt\('fx'/.test(R.html) && /2:00 PM–2:45 PM/.test(R.html));
+  ok("the block row: 2:15–3:35 · this day only: 2:15 PM (usually 1:35 PM) · ⏰ · Back to normal", /2:15 PM–3:35 PM · this day only: 2:15 PM \(usually 1:35 PM\)/.test(R.html) && /sttOpen\('fam','fbmusz3l9q','','2026-11-02'\)/.test(R.html) && /stClearAt\('fam','fbmusz3l9q','','2026-11-02'\)/.test(R.html));
+  ok("the class rows carry the ⏰ for THAT date and no Back to normal (no leaf)", /sttOpen\('fx','taylor','piano','2026-11-02'\)/.test(R.html) && !/stClearAt\('fx'/.test(R.html) && /2:00 PM–2:45 PM/.test(R.html));
   ok("a Tuesday: the block at 1:00–2:20, no classes (they meet Mondays)", (() => { const T = E.stCalRowsHTML("2026-11-03", { school: true }, null, false); return T.n === 1 && /1:00 PM–2:20 PM/.test(T.html) && !/this day only/.test(T.html); })());
   ok("a Saturday → nothing", E.stCalRowsHTML("2026-11-07", { school: true }, null, false).n === 0);
   ok("the School layer off (and no kid lens) → nothing", E.stCalRowsHTML("2026-11-02", { school: false }, null, false).n === 0);
@@ -441,7 +441,7 @@ console.log("9. the Month day sheet — a row per block and per class that day, 
   ok("the rows carry no kid-facing control and never write on draw", E.writes.length === 0 && !/tapTask|famRateOpen/.test(R.html));
   ok("the sheet's hook sits after the Dad rows and before the kid's School rows", src.indexOf("_st=stCalRowsHTML(iso,L,who,kidMode)") > src.indexOf("_calDadChoresFor(iso).forEach") && src.indexOf("_st=stCalRowsHTML(iso,L,who,kidMode)") < src.indexOf("if(who&&!opts.noWork){\n    const _ls=_calLessonsFor(who,iso);"));
   // the row's ⏰ opens the same sheet for THAT date
-  E.stOpen("fam", ID, "", "2026-11-02");
+  E.sttOpen("fam", ID, "", "2026-11-02");
   ok("⏰ on the row → the sheet for Mon, Nov 2 only, time 2:15 PM, Back to normal offered", E.state().iso === "2026-11-02" && E.state().time === "2:15 PM" && /Mon, Nov 2 only/.test(E.sheet()) && /stClear\(\)/.test(E.sheet()));
   E.stClearAt("fam", ID, "", "2026-11-02");
   ok("the row's Back to normal removes that date's leaf only", upd(E).length === 1 && JSON.stringify(upd(E)[0]) === JSON.stringify({ ["config/rules/familyBlocks/" + ID + "/atByDate/2026-11-02"]: null }));
@@ -450,19 +450,20 @@ console.log("9. the Month day sheet — a row per block and per class that day, 
 console.log("10. another day — a past date asks too; a future day never does");
 {
   const E = stEnv({ rulesData: rules({ [ID]: MON }), currData: { subjects: clone(SUBJECTS) }, dayISO: WEEK, tasks: famCards("monday", ["1:35 PM", "2:05 PM", "2:35 PM"]), todayDay: "wednesday", today: "2026-10-28", nowMin: toMin("9:00 AM") });
-  E.stOpen("fam", ID, "", "2026-10-26"); E.stSetTime("15:00"); E.stMove();
+  E.sttOpen("fam", ID, "", "2026-10-26"); E.stSetTime("15:00"); E.stMove();
   ok("Monday the 26th (two days ago), 3:00 PM → asks 'already past' even though 3:00 is after now", E.state().step === "past" && /3:00 PM is already past/.test(E.sheet()));
   E.stPastYes();
   ok("Yes → the leaf for that date and Monday's cards checked at 3:00 / 3:30 / 4:00 (this plan week)", upd(E)[0]["config/rules/familyBlocks/" + ID + "/atByDate/2026-10-26"] === "3:00 PM" && E.checked["monday_hist_taylor"] === "03:00 PM Oct 26" && E.checked["monday_ra_caleb"] === "04:00 PM Oct 26");
   const P = stEnv({ rulesData: rules({ [ID]: MON }), currData: { subjects: clone(SUBJECTS) }, dayISO: WEEK, tasks: famCards("monday", ["1:35 PM", "2:05 PM", "2:35 PM"]), todayDay: "monday", today: "2026-10-26", nowMin: toMin("9:00 AM") });
-  P.stOpen("fam", ID, "", "2026-10-19"); P.stSetTime("10:00"); P.stMove(); P.stPastYes();
+  P.sttOpen("fam", ID, "", "2026-10-19"); P.stSetTime("10:00"); P.stMove(); P.stPastYes();
   ok("a Monday of ANOTHER week, Yes → the leaf only, no card on the board to check, the toast says so", upd(P).length === 1 && upd(P)[0]["config/rules/familyBlocks/" + ID + "/atByDate/2026-10-19"] === "10:00 AM" && Object.keys(P.checked).length === 0 && /no cards on this day’s board to check/.test(P.toasts[0]));
   const F = stEnv({ rulesData: rules({ [ID]: MON }), currData: { subjects: clone(SUBJECTS) }, dayISO: WEEK, tasks: [], todayDay: "monday", today: "2026-10-26", nowMin: toMin("3:00 PM") });
-  F.stOpen("fam", ID, "", "2026-10-27"); F.stSetTime("09:30"); F.stMove();
+  F.sttOpen("fam", ID, "", "2026-10-27"); F.stSetTime("09:30"); F.stMove();
   ok("tomorrow at 9:30 AM (earlier than now's clock) → no question: a future day takes any time", upd(F).length === 1 && upd(F)[0]["config/rules/familyBlocks/" + ID + "/atByDate/2026-10-27"] === "9:30 AM" && F.state() === null && /⏰ 🏡 Family Time at 9:30 AM Tue, Oct 27/.test(F.toasts[0]));
-  ok("…the collision alert still runs for a future day (9:30 with Taylor's Latin? none — only classes and lunch count): Tue 12:00 → lunch listed", (() => { const G = stEnv({ rulesData: rules({ [ID]: MON }), currData: { subjects: clone(SUBJECTS) }, dayISO: WEEK, tasks: [], todayDay: "monday", today: "2026-10-26", nowMin: toMin("9:00 AM") }); G.stOpen("fam", ID, "", "2026-10-27"); G.stSetTime("12:00"); G.stMove(); return G.state().step === "clash" && G.state().clashes[0].kind === "lunch"; })());
+  ok("…the collision alert still runs for a future day (9:30 with Taylor's Latin? none — only classes and lunch count): Tue 12:00 → lunch listed", (() => { const G = stEnv({ rulesData: rules({ [ID]: MON }), currData: { subjects: clone(SUBJECTS) }, dayISO: WEEK, tasks: [], todayDay: "monday", today: "2026-10-26", nowMin: toMin("9:00 AM") }); G.sttOpen("fam", ID, "", "2026-10-27"); G.stSetTime("12:00"); G.stMove(); return G.state().step === "clash" && G.state().clashes[0].kind === "lunch"; })());
   ok("stIsPast: yesterday yes, tomorrow no, today by the clock", E.stIsPast("2026-10-27", 0) && !E.stIsPast("2026-10-29", 0) && E.stIsPast("2026-10-28", toMin("8:59 AM")) && !E.stIsPast("2026-10-28", toMin("9:00 AM")));
 }
 
+ok("every function the block defines is defined exactly once in the whole file (review 2026-10-23: stOpen/stClose/stRender collided with the spelling test's; now sttOpen/sttClose/sttRender)", (function(){ const a=src.indexOf("// SETTIME_TODAY_START"), b=src.indexOf("// SETTIME_TODAY_END"); const names=(src.slice(a,b).match(/^function ([A-Za-z0-9_$]+)\(/mg)||[]).map(x=>x.replace(/^function /,"").replace(/\($/,"")); return names.length>10&&names.every(n=>(src.match(new RegExp("^function "+n.replace(/\$/g,"\\$")+"\\(","mg"))||[]).length===1); })());
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
