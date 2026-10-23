@@ -56298,6 +56298,18 @@ function ckResultTier(res){
   return {status:"introduction",tier:"daily"};
 }
 // ── App side (DOM + writes) ──────────────────────────────────────────────────
+// CKMIX (Sara's report via Adrienne 2026-10-23: "the checkups are in order, so it's really easy for her to use that logic to get the
+// answer correct"; her pick: every check-up, spelling too): the cards a sitting ASKS come in a mixed order — across families as well
+// as within one (3×7, 8×4, 3×2 …), so counting up never helps. The order is fixed for the sitting: seeded by the kid, the session and
+// the day, so a stop and a resume show the same next card. ckPlan itself stays in card order (the families' state, "the 5 hardest
+// first", the pass/full/done rules and its tests are untouched); only what Mom is shown and grades is mixed. Nothing is written.
+function ckSeed(str){ let h=2166136261; for(let i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=Math.imul(h,16777619)>>>0; } return h>>>0; }
+function ckMix(queue,kid,sid,dk){
+  const out=(queue||[]).slice(); let x=ckSeed(String(kid)+"|"+String(sid)+"|"+String(dk))||1;
+  const rnd=function(){ x^=x<<13; x>>>=0; x^=x>>>17; x^=x<<5; x>>>=0; return x/4294967296; };   // xorshift32: tiny, deterministic
+  for(let i=out.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); const t=out[i]; out[i]=out[j]; out[j]=t; }
+  return out;
+}
 let ckRun=null;     // {kid,sid,ts,extra} — a sitting in progress (answers are already saved)
 let ckTimerIv=null;
 function ckDayKey(){ return (typeof mstTodayKey==="function")?mstTodayKey():new Date().toISOString().slice(0,10).replace(/-/g,""); }
@@ -56344,6 +56356,7 @@ function ckRenderHtml(kid,session){
   const cards=ckCards(session);
   if(!cards.length) return '<div style="'+box+'">This check-up’s unit isn’t in your family yet.</div>';
   const st=ckState(kid,session.sid), p=ckPlan(cards,session,st), dk=ckDayKey();
+  p.queue=ckMix(p.queue,kid,session.sid,dk);   // CKMIX: the asked order is mixed for the sitting
   const running=ckRun&&ckRun.kid===kid&&ckRun.sid===session.sid;
   const left=Math.min(p.queue.length,ckTodayLeft(session,st,dk,running?ckRun.extra:0));
   let h='<div style="'+box+'"><div style="font-size:22px;font-weight:800;color:#0f766e">\u{1FA7A} '+ckEsc(session.name||"Check-up")+'</div>';
@@ -56430,6 +56443,7 @@ function ckTap(r,name){
   const cards=ckCards(s), dk=ckDayKey();
   const st=JSON.parse(JSON.stringify(ckState(kid,sid)));
   const p=ckPlan(cards,s,st); if(!p.queue.length){ ckStop(); return; }
+  p.queue=ckMix(p.queue,kid,sid,dk);   // CKMIX: the same mixed order the screen showed
   const it=name?p.queue.find(x=>x&&String(x.card.name)===String(name)):p.queue[0]; if(!it) return;   // CKWRITTEN: a named row, else the front card
   const secs=name?null:Math.round((Date.now()-ckRun.ts)/100)/10;   // the written list has no clock
   const prevM=ckFamState(st,s,it.slug).m;
