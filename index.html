@@ -5255,6 +5255,7 @@ function dailyPaceTracker(dayTasks, dayKey){
   const _plSd=((typeof rulesData!=="undefined"&&rulesData)||{}).schoolDay||{}, _plOv=(_plSd.overrides||{})[dayKey]||{};
   let LUNCH_S=toMin(_plOv.lunchStart||_plSd.lunchStart||"1:00 PM"), LUNCH_E=toMin(_plOv.lunchEnd||_plSd.lunchEnd||"2:00 PM");
   if(!(LUNCH_S>0&&LUNCH_E>LUNCH_S)){ LUNCH_S=0; LUNCH_E=0; }
+  try{ const _lw=(typeof stLunchFor==="function"&&typeof calDateForWeekDay==="function")?stLunchFor(null,calDateForWeekDay(dayKey)):null; if(_lw){ LUNCH_S=_lw.s; LUNCH_E=_lw.e; } }catch(e){}   // ⏰ SETTIME_TODAY: this date's own lunch
   const projWithLunch=(startMin,workMin)=>{
     if(startMin>=LUNCH_E || startMin+workMin<=LUNCH_S) return startMin+workMin;
     return LUNCH_E+Math.max(0, workMin-Math.max(0, LUNCH_S-startMin));
@@ -10554,7 +10555,7 @@ function taskCard(t, fromDay, readOnly, doneId){
     '<div class="task-cb'+(done?" checked":"")+(readOnly?" readonly":"")+'"'+(claimedHere?' style="border-color:#f59e0b;color:#f59e0b;background:#fffbeb"':'')+(readOnly?"":' onclick="'+((typeof dadTapView!=="undefined"&&dadTapView)?'dadTap':'tapTask')+'(\''+t.id+'\')"')+'>'+(done?"✓":claimedHere?"⏳":"")+'</div>'+
     '<div class="card-body">'+
     '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
-    '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+pushLabel+(_eicL?eicCardTitle(t):taskTitleShow(t))+'</div>'+mb+((typeof mntXHTML==="function"&&mntXHTML(t,done,claimedHere,readOnly,!!mb))||"")+'</div>'+   // MOMNOTTODAY: Mom's ✗
+    '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+pushLabel+(_eicL?eicCardTitle(t):taskTitleShow(t))+'</div>'+mb+((typeof mntXHTML==="function"&&mntXHTML(t,done,claimedHere,readOnly,!!mb))||"")+((typeof stClockHTML==="function"&&stClockHTML(t,done,claimedHere,readOnly,!!mb))||"")+'</div>'+   // MOMNOTTODAY: Mom's ✗ · SETTIME_TODAY: Mom's ⏰
     '<div class="task-detail">'+cleanDetail+'</div>'+famRow+dr+spinBtn+classRow+linkRow+wbRow+eicRow+rvRow+msRow+llRow+stRow+prRow+nbAnsRow+nbRedoRow+mpdRow+_lr.menu+_lr.kids+((typeof mmCardRow==="function"&&mmCardRow(t,done,claimedHere,readOnly))||"")+   // ⏱ MINMINUTES
     '</div></div></div>';
 }
@@ -32921,7 +32922,7 @@ function fxRunsOn(s,dateStr,dayName){
 }
 function fxWindow(s,dateStr,dayName){
   if(!fxRunsOn(s,dateStr,dayName)) return null;
-  const st=toMin(s.fixedTime);
+  const st=toMin((typeof stFxAt==="function"&&stFxAt(s,dateStr))||s.fixedTime);   // ⏰ SETTIME_TODAY: this date's own time first
   if(st==null||isNaN(st)) return null;
   const dur=Math.max(5,parseInt(s.minutes,10)||45);
   return {s:st,e:st+dur};
@@ -33036,9 +33037,9 @@ function famRunsOn(days,dayName){
   return !!tok&&d.indexOf(tok)>=0;
 }
 // The block's items on one day, back to back from its start → [{it,s,e}] (minutes).
-function famLayout(b,dayName){
+function famLayout(b,dayName,ds){   // ⏰ SETTIME_TODAY: ds (optional) = the date laid; without it famStartFor takes this plan week's
   if(!b||b.off||!famRunsOn(b.days,dayName)) return [];
-  let at=(typeof famStartFor==='function')?famStartFor(b,dayName):famStartMin(b,dayName); if(at==null||isNaN(at)) return [];   // 🕰 FAMDAYSTART: a day's own start
+  let at=(typeof famStartFor==='function')?famStartFor(b,dayName,ds):famStartMin(b,dayName); if(at==null||isNaN(at)) return [];   // 🕰 FAMDAYSTART: a day's own start
   const out=[];
   famList(b.items).forEach(function(it){
     if(!it||!it.key||!famRunsOn(it.days,dayName)) return;
@@ -33068,7 +33069,7 @@ const FAM_ICON="\u{1F3E1}";   // 🏡 — the family ZWJ emoji draws as an empty
 function famDayCards(dayName,ds,hasSchool){
   const defs=famDefs(), out=[];
   Object.keys(defs).forEach(function(id){
-    const b=defs[id], L=famLayout(b,dayName); if(!L.length) return;
+    const b=defs[id], L=famLayout(b,dayName,ds); if(!L.length) return;   // ⏰ SETTIME_TODAY: this date's own start
     const kids=famList(b.kids).filter(function(k){ return famKidIn(k,ds,L[0].s,hasSchool); });
     if(!kids.length) return;
     L.forEach(function(x){
@@ -34421,6 +34422,7 @@ function famDsDays(b){ return FAM_DAYS.filter(function(d){ return !!famDsAt(b,d)
 // THE resolver: minutes from midnight for this block on this day (NaN when the scheduler picks). ds is the date (unused
 // today — the lunch override is per weekday — kept so a per-date start can land here without touching any reader).
 function famStartFor(b,dayName,ds){
+  { const _st=(typeof stFamStart==="function")?stFamStart(b,dayName,ds):null; if(_st!=null) return _st; }   // ⏰ SETTIME_TODAY: this date's own start (or its own lunch) first
   const ov=famDsAt(b,dayName);
   if(ov){ const m=toMin(ov); if(m!=null&&!isNaN(m)) return m; }
   return famStartMin(b,dayName);
@@ -34644,6 +34646,262 @@ function famWhoSave(){
   return true;
 }
 // FAMEDITORHOME_END
+// SETTIME_TODAY_START ── ⏰ SET A TIME JUST FOR TODAY (her ask 2026-10-23: "if you're actively on a day, a mom in her schedule
+// could click something that has a set time, say history or science, and say move to a new set time just for today … allow
+// the schedule to move around it just as it would otherwise … and then that option on the calendar for other days") ────────
+// A Family Time block, or a kid's fixed-time class, moves to a new start for ONE date — from the card today (Mom lens) or from
+// the Month calendar's day sheet for another day. The day packs around the moved window exactly as it does now: NO new lay or
+// pack rule. Per-date leaves are read FIRST by the existing resolvers, so famLayout → famDayCards / famWindowOf / the packer /
+// the family band / "Next:" / Mom's Day / the kids' cards all follow with no further change:
+//   config/rules/familyBlocks/<id>/atByDate/<YYYY-MM-DD>            = "2:15 PM"    (famStartFor reads it before famDsAt)
+//   curriculum/subjects/<kid>/<sk>/fixedTimeByDate/<YYYY-MM-DD>     = "10:30 AM"   (fxWindow reads it before s.fixedTime)
+//   config/rules/schoolDay/lunchByDate/<YYYY-MM-DD>/<kid|all>      = {start:"12:30 PM",end:"1:15 PM"}   (the lunch window
+//        for that date: a kid's own leaf, then "all", then the rule — the packer's one lunch gap reads "all")
+// Each leaf is written only when Mom sets it and removed by "Back to normal"; every write of a move goes in ONE multi-path
+// update (db.ref().update) so a half-saved day can't happen; db && !_dryRun() only, so ?dryrun=1 stays inert.
+// Her two decisions 10/23: (1) the moved block wins its window, AND when it runs into a kid's fixed class or lunch the sheet
+// lists them with one choice per line — keep its time (work packs around both) or move it today too (its own leaf, same
+// update). (2) a time already past is never laid in the past: the sheet asks "did you already do it then?" — YES writes the
+// leaf and checks the family card off for every present kid at that time through the Mom ✓ path the card takes today
+// (famOnce lock · famAttendPay leaves out a kid who was "not here" · famPayCard = points + history, or finalizeDone for a
+// block with no points), the done time stamped as the chosen time so the card shows there (DONEAT); NO goes back to the picker.
+// Kids never see any of it (momHereCards / the Mom lens); the Grid's Family editor and "Some days" (atByDay) are untouched.
+// Names: sttOpen / sttClose / sttRender (the spelling test already owns stOpen / stClose / stRender — a later definition would win; review 2026-10-23).
+// Hooks (one line each): famStartFor (stFamStart first) · famLayout/famDayCards carry ds · fxWindow (stFxAt first) ·
+// packAround + the generator's _packCtx (stLunchCtx) · the Mom's Day projection (stLunchFor) · taskCard header (stClockHTML,
+// beside MOMNOTTODAY's ✗) · calDaySheetHTML (stCalRowsHTML, School layer).
+const ST_DN=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
+function stJ(x){ return String(x==null?"":x).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }   // quote-safe for onclick args
+function stTodayIso(){ try{ if(typeof calToday==="function") return calToday(); }catch(e){} const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function stDsOf(dayName){ try{ return (typeof calDateForWeekDay==="function")?(calDateForWeekDay(dayName)||null):null; }catch(e){ return null; } }   // this plan week's date for a weekday
+function stDayNameOf(iso){ const d=new Date(String(iso||"")+"T12:00:00"); return isNaN(d.getTime())?"":ST_DN[d.getDay()]; }
+function stNowMin(){ const n=new Date(); return n.getHours()*60+n.getMinutes(); }
+function stIsoOk(iso){ return /^\d{4}-\d{2}-\d{2}$/.test(String(iso||"")); }
+function stSpan(s,e){ return fromMin(s)+"–"+fromMin(e); }
+// A done stamp in nowTs's own shape ("10:00 AM Oct 23") for a clock time on a date — what DONEAT reads back (_parseCheckTs).
+function stTsAt(iso,min){ const d=new Date(String(iso)+"T12:00:00"); d.setHours(Math.floor(min/60),min%60,0,0); return d.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit"})+" "+d.toLocaleDateString("en-US",{month:"short",day:"numeric"}); }
+// ── the three resolvers (read FIRST by famStartFor / fxWindow / the lunch window) ──
+function stFamAt(b,ds){ const o=(b&&b.atByDate&&typeof b.atByDate==="object"&&!Array.isArray(b.atByDate))?b.atByDate:null; const v=(o&&ds)?o[ds]:""; return (typeof v==="string"&&v.trim())?v.trim():""; }
+// This date's own start for the block (minutes), else — for an at:"lunch" block on a day with no "Some days" start — the end
+// of this date's own lunch; null = nothing of its own (famStartFor goes on as before).
+function stFamStart(b,dayName,ds){
+  if(!b||(!(b.atByDate&&typeof b.atByDate==="object")&&!stLunchAny())) return null;   // nothing written anywhere → no date lookup, the old path exactly
+  ds=ds||stDsOf(dayName); if(!ds) return null;
+  const v=stFamAt(b,ds); if(v){ const m=toMin(v); if(m!=null&&!isNaN(m)) return m; }
+  if(String(b.at||"lunch")==="lunch"&&!(typeof famDsAt==="function"&&famDsAt(b,dayName))){ const w=stLunchFor(null,ds); if(w) return w.e; }
+  return null;
+}
+function stFxAt(s,ds){ const o=(s&&s.fixedTimeByDate&&typeof s.fixedTimeByDate==="object"&&!Array.isArray(s.fixedTimeByDate))?s.fixedTimeByDate:null; const v=(o&&ds)?o[ds]:""; if(typeof v!=="string"||!v.trim()) return ""; const m=toMin(v.trim()); return (m==null||isNaN(m))?"":v.trim(); }   // a bad leaf → "" → fixedTime as before
+function stLunchAny(){ const sd=(((typeof rulesData!=="undefined"&&rulesData)||{}).schoolDay)||{}; return !!(sd.lunchByDate&&typeof sd.lunchByDate==="object"); }
+function stLunchLeaf(ds){ const sd=(((typeof rulesData!=="undefined"&&rulesData)||{}).schoolDay)||{}; const o=sd.lunchByDate; return (o&&typeof o==="object"&&ds&&o[ds]&&typeof o[ds]==="object")?o[ds]:null; }
+// The lunch window written for this date: the kid's own leaf, then "all"; null = the rule applies.
+function stLunchFor(kid,ds){
+  const L=stLunchLeaf(ds); if(!L) return null;
+  const v=(kid&&L[kid]&&typeof L[kid]==="object")?L[kid]:L.all; if(!v||typeof v!=="object") return null;
+  const s=toMin(v.start), e=toMin(v.end); if(s==null||e==null||isNaN(s)||isNaN(e)||e<=s) return null;
+  return {s:s,e:e};
+}
+// The packer's one lunch gap for the date it packs ("all"): a copy of ctx with the date's lunch, or ctx itself untouched.
+function stLunchCtx(ctx,ds){ const w=(ctx&&ds)?stLunchFor(null,ds):null; if(!w) return ctx; return Object.assign({},ctx,{lunchStart:w.s,lunchEnd:w.e}); }
+function stLunchRule(dayName){ const sd=(((typeof rulesData!=="undefined"&&rulesData)||{}).schoolDay)||{}; const ov=(sd.overrides||{})[dayName]||{}; return {s:toMin(ov.lunchStart||sd.lunchStart||"1:00 PM"),e:toMin(ov.lunchEnd||sd.lunchEnd||"2:00 PM")}; }
+function stLunchWin(kid,ds,dayName){ return stLunchFor(kid,ds)||stLunchRule(dayName); }
+// ── what the thing is: a block or a class on a date ──
+function stClassOf(t){ try{ const s=(t&&t.subjectKey&&typeof gwGetSubjects==="function")?(gwGetSubjects(t.who)||{})[t.subjectKey]:null; return (s&&typeof fxIsClass==="function"&&fxIsClass(s))?s:null; }catch(e){ return null; } }
+function stSubj(kid,sk){ try{ return (typeof gwGetSubjects==="function")?((gwGetSubjects(kid)||{})[sk]||null):null; }catch(e){ return null; } }
+// {name, kids, s, e, dur, usual, leaf} for the sheet and the rows; null when it doesn't run that day.
+function stInfo(st){
+  const dn=st.dn, iso=st.iso;
+  if(st.kind==="fam"){
+    const b=famDefs()[st.id]; if(!b) return null;
+    const L=famLayout(b,dn,iso); if(!L.length) return null;
+    const leaf=stFamAt(b,iso); let usual=L[0].s;
+    if(leaf){ const b0=Object.assign({},b,{atByDate:null}); const L0=famLayout(b0,dn,iso); usual=L0.length?L0[0].s:L[0].s; }
+    return {name:FAM_ICON+" "+(b.name||"Family time"),kids:famList(b.kids),s:L[0].s,e:L[L.length-1].e,dur:L[L.length-1].e-L[0].s,usual:usual,leaf:leaf};
+  }
+  const s=stSubj(st.kid,st.sk); const w=s?fxWindow(s,iso,dn):null; if(!w) return null;
+  const leaf=stFxAt(s,iso), u=toMin(s.fixedTime);
+  return {name:cap(st.kid)+" — "+(s.display||st.sk),kids:[st.kid],s:w.s,e:w.e,dur:w.e-w.s,usual:(u==null||isNaN(u))?w.s:u,leaf:leaf};
+}
+// ── the ⏰ on a card (Mom lens, today, open family / fixed-class card) — the same spot and size as MOMNOTTODAY's ✗ ──
+function stCanClock(t,done,claimedHere,readOnly){
+  if(readOnly||done||claimedHere||!t||typeof momHereCards!=="function"||!momHereCards()) return false;
+  if(typeof dadTapView!=="undefined"&&dadTapView) return false;
+  if(String(t.id||"").endsWith("_c")||t._eowOverflow) return false;
+  if(!(typeof _todayDay==="string"&&effectiveDay(t)===_todayDay)) return false;
+  if(t.famBlock) return !!famDefs()[t.famBlock];
+  return !!stClassOf(t);
+}
+function stClockHTML(t,done,claimedHere,readOnly,hasBadge){
+  if(!stCanClock(t,done,claimedHere,readOnly)) return "";
+  const hasX=(typeof mntCanX==="function")&&mntCanX(t,done,claimedHere,readOnly);
+  const oc=t.famBlock?"sttOpen('fam','"+stJ(t.famBlock)+"','','')":"sttOpen('fx','"+stJ(t.who)+"','"+stJ(t.subjectKey)+"','')";
+  return '<span class="st-clock" onclick="event.stopPropagation();'+oc+'" title="Set a time just for today" style="margin-left:'+((hasBadge||hasX)?'4px':'auto')+';flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:7px;border:1.5px solid #d1d5db;background:#fff;color:#6b7280;font-size:12px;font-weight:800;cursor:pointer;line-height:1">&#9200;</span>';
+}
+// ── the sheet ──
+let stState=null;   // {kind:"fam"|"fx", id, kid, sk, iso, dn, time, step:"pick"|"past"|"clash", didIt, clashes:[{key,kind,kid,sk,id,name,s,e,move,time}]}
+function sttOpen(kind,a,b,iso){
+  if(!momHere()) return;
+  iso=stIsoOk(iso)?iso:stTodayIso(); const dn=stDayNameOf(iso); if(!dn) return;
+  const st=(kind==="fam")?{kind:"fam",id:a,iso:iso,dn:dn}:{kind:"fx",kid:a,sk:b,iso:iso,dn:dn};
+  const info=stInfo(st); if(!info) return;
+  st.time=fromMin(info.s); st.step="pick"; st.didIt=false; st.clashes=[];
+  stState=st; sttRender();
+}
+function sttClose(){ stState=null; const o=document.getElementById("st-ov"); if(o) o.remove(); }
+function stSetTime(v){ if(!stState) return; const t=to12h(String(v||"")); if(toMin(t)!=null&&!isNaN(toMin(t))) stState.time=t; }
+function stClashTime(key,v){ if(!stState) return; const c=stState.clashes.find(function(x){ return x.key===key; }); if(!c) return; const t=to12h(String(v||"")); if(toMin(t)!=null&&!isNaN(toMin(t))) c.time=t; }
+function stClashMove(key,on){ if(!stState) return; const c=stState.clashes.find(function(x){ return x.key===key; }); if(!c) return; c.move=!!on; sttRender(); }
+function stIsPast(iso,min){ const today=stTodayIso(); if(iso<today) return true; if(iso>today) return false; return min<stNowMin(); }
+// The new window [t, t+minutes] on that date against, per kid in it: fixed classes, lunch (kid's leaf → all → rule), and —
+// for a moved class — the family blocks the kid is in. One line per thing; lunch once ("everyone").
+function stClashes(st,m){
+  const info=stInfo(st); if(!info) return [];
+  const s=m, e=m+info.dur, out=[], seen={};
+  const hit=function(w){ return w&&w.s<e&&w.e>s; };
+  info.kids.forEach(function(kid){
+    (typeof fxWindowsFor==="function"?fxWindowsFor(kid,st.iso,st.dn):[]).forEach(function(w){
+      if(st.kind==="fx"&&kid===st.kid&&w.sk===st.sk) return;
+      const key="fx|"+kid+"|"+w.sk; if(seen[key]||!hit(w)) return; seen[key]=1;
+      out.push({key:key,kind:"fx",kid:kid,sk:w.sk,name:cap(kid)+" — "+String(w.display||w.sk),s:w.s,e:w.e,move:false,time:fromMin(e)});
+    });
+    const lw=stLunchWin(kid,st.iso,st.dn);
+    if(hit(lw)&&!seen["lunch"]){ seen["lunch"]=1; out.push({key:"lunch",kind:"lunch",kid:"all",name:"everyone — lunch",s:lw.s,e:lw.e,move:false,time:fromMin(e)}); }
+    if(st.kind==="fx"){ const defs=famDefs(); Object.keys(defs).forEach(function(id){ const b=defs[id]; if(!b||famList(b.kids).indexOf(kid)<0) return;
+      const L=famLayout(b,st.dn,st.iso); if(!L.length) return; const w={s:L[0].s,e:L[L.length-1].e}; const key="fam|"+id; if(seen[key]||!hit(w)) return; seen[key]=1;
+      out.push({key:key,kind:"fam",id:id,name:FAM_ICON+" "+(b.name||"Family time"),s:w.s,e:w.e,move:false,time:fromMin(e)}); }); }
+  });
+  return out.sort(function(a,b){ return a.s-b.s; });
+}
+// [Move]: a past time is a question first; then the collision list; then the one update.
+function stMove(){
+  const st=stState; if(!st||!momHere()) return;
+  const m=toMin(st.time); if(m==null||isNaN(m)) return;
+  if(!st.didIt&&stIsPast(st.iso,m)){ st.step="past"; sttRender(); return; }
+  if(!st.didIt&&st.step!=="clash"){ const cl=stClashes(st,m); if(cl.length){ st.clashes=cl; st.step="clash"; sttRender(); return; } }
+  stCommit(st,m);
+}
+function stPastYes(){ if(!stState) return; stState.didIt=true; stState.step="pick"; stMove(); }   // the time stands; the card is checked off there
+function stPastNo(){ if(!stState) return; stState.step="pick"; sttRender(); }
+// Every chosen leaf in ONE multi-path update, then the ✓ for a time already past, then the day re-lays.
+function stCommit(st,m){
+  const info=stInfo(st); if(!info) return;
+  const upd={}, moved=[];
+  upd[stMainPath(st)]=fromMin(m);
+  (st.clashes||[]).forEach(function(c){
+    if(!c.move) return; const t=toMin(c.time); if(t==null||isNaN(t)) return;
+    if(c.kind==="fx") upd["curriculum/subjects/"+c.kid+"/"+c.sk+"/fixedTimeByDate/"+st.iso]=fromMin(t);
+    else if(c.kind==="fam") upd["config/rules/familyBlocks/"+c.id+"/atByDate/"+st.iso]=fromMin(t);
+    else if(c.kind==="lunch") upd["config/rules/schoolDay/lunchByDate/"+st.iso+"/all"]={start:fromMin(t),end:fromMin(t+(c.e-c.s))};
+    moved.push(c.name+" → "+fromMin(t));
+  });
+  if(!stWrite(upd)) return;
+  let checkedN=0;
+  if(st.didIt){ try{ checkedN=stCheckAt(st,m); }catch(e){ dbg("settime check: "+e); } }
+  sttClose();
+  if(typeof schedCascade==="function") schedCascade();
+  if(typeof renderAll==="function") renderAll();
+  const when=(st.iso===stTodayIso())?"today":stDateWords(st.iso);
+  let msg="⏰ "+info.name+" at "+fromMin(m)+" "+when+(moved.length?" · "+moved.join(" · "):"");
+  if(st.didIt) msg+=checkedN?" · ✓ checked off then":" · no cards on this day’s board to check";
+  if(typeof gwShowToast==="function") gwShowToast(msg);
+}
+// "Back to normal": the one leaf goes away (the lunch / class leaves it moved along stay — each has its own row on the calendar).
+function stClear(){
+  const st=stState; if(!st||!momHere()) return; const info=stInfo(st); if(!info) return;
+  const upd={}; upd[stMainPath(st)]=null; if(!stWrite(upd)) return;
+  sttClose(); if(typeof schedCascade==="function") schedCascade(); if(typeof renderAll==="function") renderAll();
+  if(typeof gwShowToast==="function") gwShowToast("⏰ "+info.name+" back to its usual time");
+}
+function stClearAt(kind,a,b,iso){ if(!momHere()||!stIsoOk(iso)) return; const dn=stDayNameOf(iso); if(!dn) return; const st=(kind==="fam")?{kind:"fam",id:a,iso:iso,dn:dn}:{kind:"fx",kid:a,sk:b,iso:iso,dn:dn}; stState=st; stClear(); }   // the calendar row's button
+function stMainPath(st){ return st.kind==="fam"?("config/rules/familyBlocks/"+st.id+"/atByDate/"+st.iso):("curriculum/subjects/"+st.kid+"/"+st.sk+"/fixedTimeByDate/"+st.iso); }
+// The write: every path applied to this device's copy (rulesData / currData) and ONE db.ref().update — targeted leaves only.
+function stApplyLocal(path,val){
+  const parts=String(path).split("/"); let o=null, i=0;
+  if(parts[0]==="config"&&parts[1]==="rules"){ if(typeof rulesData==="undefined"||!rulesData) rulesData={}; o=rulesData; i=2; }
+  else if(parts[0]==="curriculum"){ if(typeof currData==="undefined"||!currData) currData={}; o=currData; i=1; }
+  else return;
+  for(;i<parts.length-1;i++){ if(!o[parts[i]]||typeof o[parts[i]]!=="object") o[parts[i]]={}; o=o[parts[i]]; }
+  if(val===null) delete o[parts[parts.length-1]]; else o[parts[parts.length-1]]=val;
+}
+function stWrite(upd){
+  if(!momHere()) return false; const keys=Object.keys(upd||{}); if(!keys.length) return false;
+  keys.forEach(function(p){ stApplyLocal(p,upd[p]); });
+  if(db&&!_dryRun()){ try{ db.ref().update(upd); }catch(e){ dbg("settime write: "+e); } }   // one multi-path update, never a whole node
+  return true;
+}
+// "Yes — we did it at 10:00 AM": the block's cards for that date, checked off through the Mom ✓ path the card takes today
+// (per item: famOnce lock · "not here" copies left out · famPayCard pays, or finalizeDone for a block with no points), each
+// copy stamped at its item's start in the moved layout (the first = the chosen time). A class: its kid's card, at that time.
+function stCheckAt(st,m){
+  const tasks=((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]);
+  if(stDsOf(st.dn)!==st.iso) return 0;   // the cards on the board are this plan week's — another week has none to check
+  let n=0;
+  if(st.kind==="fam"){
+    const b=famDefs()[st.id]; const L=b?famLayout(b,st.dn,st.iso):[]; if(!L.length) return 0;
+    L.forEach(function(x){
+      const grp=tasks.filter(function(t){ return t&&t.famBlock===st.id&&t.famItem===x.it.key&&t.day===st.dn&&!checked[t.id]&&!(typeof famBoState==="function"&&famBoState(t)); });
+      if(!grp.length) return; n+=grp.length;   // counted here: with a live db the lock's callback runs later
+      const ts=stTsAt(st.iso,x.s);
+      if(typeof famAttendOpen==="function") famAttendOpen(grp);
+      famOnce(famPaidKey(grp[0]),function(){
+        grp.forEach(function(c){ if(checked[c.id]) return;
+          if(typeof famAttendPay==="function"&&famAttendPay(c)) return;   // 🏡 FAMATTEND: "not here" → flagged, not paid
+          if(famPtsMax(c)>0) famPayCard(c,5,ts,"Mom"); else finalizeDone(c.id,ts,null); });
+      });
+    });
+    return n;
+  }
+  const c=tasks.find(function(t){ return t&&t.who===st.kid&&t.subjectKey===st.sk&&t.day===st.dn&&!String(t.id||"").endsWith("_c")&&!checked[t.id]; });
+  if(c&&finalizeDone(c.id,stTsAt(st.iso,m),null)!==false) n++;
+  return n;
+}
+function stDateWords(iso){ const d=new Date(String(iso)+"T12:00:00"); return isNaN(d.getTime())?String(iso):d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}); }
+function sttRender(){
+  const st=stState; if(!st) return; const info=stInfo(st); if(!info){ sttClose(); return; }
+  const today=(st.iso===stTodayIso()), when=today?"Today only":stDateWords(st.iso)+" only", m=toMin(st.time);
+  const btn=function(oc,lbl,bg,fg){ return '<button onclick="'+oc+'" style="padding:9px 13px;border-radius:10px;border:'+(bg?'none':'1.5px solid var(--border)')+';background:'+(bg||'#fff')+';color:'+(fg||'#111')+';font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;font-size:13px">'+lbl+'</button>'; };
+  let h='<div style="background:#fff;border-radius:18px;max-width:460px;width:100%;padding:18px 18px 14px;box-shadow:0 20px 50px rgba(0,0,0,.25);font-family:\'DM Sans\',sans-serif">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:800">⏰ '+esc(info.name)+'</div>';
+  h+='<div style="font-size:12px;color:var(--muted);margin:2px 0 10px"><b>'+esc(when)+'</b> · usually '+esc(fromMin(info.usual))+(info.leaf?' · set for this day: '+esc(info.leaf):'')+'</div>';
+  if(st.step==="past"){
+    h+='<div style="font-size:14px;font-weight:700;line-height:1.45;margin:6px 0 12px">'+esc(fromMin(m))+' is already past. Did you already do it then?</div>';
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">'+btn("stPastNo()","No, pick a later time")+btn("stPastYes()","Yes — we did it at "+esc(fromMin(m)),"#16a34a","#fff")+'</div>';
+  } else {
+    h+='<div style="display:flex;align-items:center;gap:10px;margin:4px 0 10px"><span style="font-size:13px;font-weight:700">Starts at</span><input type="time" id="st-time" value="'+esc(ampmTo24(st.time))+'" onchange="stSetTime(this.value)" style="padding:7px 9px;border:1.5px solid var(--border);border-radius:9px;font-size:15px;font-family:\'DM Sans\',sans-serif"></div>';
+    if(st.step==="clash"&&st.clashes.length){
+      h+='<div style="font-size:12.5px;font-weight:700;color:#78350f;background:#fef3c7;border-radius:10px;padding:8px 10px;line-height:1.45">At '+esc(fromMin(m))+' this runs into:</div>';
+      st.clashes.forEach(function(c){
+        h+='<div style="padding:8px 0;border-bottom:1px solid #f3f4f6"><div style="font-size:13px;font-weight:800">'+esc(c.name)+' <span style="color:var(--muted);font-weight:600">'+esc(stSpan(c.s,c.e))+'</span></div>';
+        h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:5px">'+_famChip(!c.move,"Keep its time — work packs around both","stClashMove('"+stJ(c.key)+"',false)",true)+_famChip(c.move,"Move it "+(today?"today":"this day")+" →","stClashMove('"+stJ(c.key)+"',true)",true)
+          +(c.move?'<input type="time" value="'+esc(ampmTo24(c.time))+'" onchange="stClashTime(\''+stJ(c.key)+'\',this.value)" style="padding:4px 7px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif">':'')+'</div></div>';
+      });
+    }
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;padding-top:12px">'+btn("sttClose()","Never mind")+(info.leaf?btn("stClear()","Back to normal"):'')+btn("stMove()","Move","#7c3aed","#fff")+'</div>';
+  }
+  h+='</div>';
+  let o=document.getElementById("st-ov");
+  if(!o){ o=document.createElement("div"); o.id="st-ov"; o.style.cssText="position:fixed;inset:0;z-index:9000;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:16px"; o.onclick=function(e){ if(e.target===o) sttClose(); }; document.body.appendChild(o); }
+  o.innerHTML=h;
+}
+// ── the Month day sheet (Mom lens, School layer): a row per Family Time block and per fixed class that meets that day ──
+function stCalRowsHTML(iso,L,who,kidMode){
+  const out={n:0,html:""};
+  try{
+    if(kidMode||!(typeof onecalMom==="function"&&onecalMom())||!(L&&(L.school||who))||!stIsoOk(iso)) return out;
+    const dn=stDayNameOf(iso); if(!dn) return out;
+    const row=function(kind,a,b,info){
+      out.n++;
+      out.html+='<div class="row"><span class="lbl">School</span><span style="flex:1">'+(kind==="fam"?'':'\u{1F570} ')+'<b>'+esc(info.name)+'</b> <span style="color:#6b7280">· '+esc(stSpan(info.s,info.e))+(info.leaf?' · this day only: '+esc(info.leaf)+' (usually '+esc(fromMin(info.usual))+')':'')+'</span></span>'
+        +'<button class="act" style="background:#f5f3ff;color:#5b21b6" title="Set a time just for this day" onclick="sttOpen(\''+kind+'\',\''+stJ(a)+'\',\''+stJ(b)+'\',\''+iso+'\')">⏰</button>'
+        +(info.leaf?'<button class="act" style="background:#f1f5f9;color:#475569" onclick="stClearAt(\''+kind+'\',\''+stJ(a)+'\',\''+stJ(b)+'\',\''+iso+'\')">Back to normal</button>':'')+'</div>';
+    };
+    const defs=famDefs();
+    Object.keys(defs).forEach(function(id){ const b=defs[id]; if(!b||(who&&famList(b.kids).indexOf(who)<0)) return; const info=stInfo({kind:"fam",id:id,iso:iso,dn:dn}); if(info) row("fam",id,"",info); });
+    (who?[who]:ROSTER).forEach(function(kid){ (typeof fxWindowsFor==="function"?fxWindowsFor(kid,iso,dn):[]).forEach(function(w){ const info=stInfo({kind:"fx",kid:kid,sk:w.sk,iso:iso,dn:dn}); if(info) row("fx",kid,w.sk,info); }); });
+  }catch(e){ dbg("settime rows: "+e); }
+  return out;
+}
+// SETTIME_TODAY_END
 
 
 // ── WHEN THE DOOR IS OPEN ──
@@ -36020,6 +36278,7 @@ function calDaySheetHTML(iso,L,dinnerOf,who,opts){
   if(L.dad){ _calDadChoresFor(iso).forEach(function(c){ rows++;
     const m=(typeof MC_SLOTS!=="undefined"&&MC_SLOTS[c.slot])||null;
     h+='<div class="row"><span class="lbl">Dad</span><span style="flex:1;'+(c.done?'opacity:.55;text-decoration:line-through':'')+'">'+(c.done?'\u2713 ':'')+'\u{1F468} '+esc(c.label)+(m?' <span style="color:#6b7280">\u00b7 '+m.ic+' '+esc(m.nm)+'</span>':'')+'</span></div>'; }); }
+  if(typeof stCalRowsHTML==="function"){ const _st=stCalRowsHTML(iso,L,who,kidMode); rows+=_st.n; h+=_st.html; }   // ⏰ SETTIME_TODAY: Family Time + fixed classes that day, with the ⏰ (Mom lens)
   if(who&&!opts.noWork){
     const _ls=_calLessonsFor(who,iso);
     _ls.forEach(function(l){ rows++; h+='<div class="row"><span class="lbl">School</span><span style="flex:1">\u{1F4DA} <b>'+esc(l.name)+'</b> <span style="color:#6b7280">\u00b7 '+esc(l.text)+'</span></span></div>'; });
@@ -69144,6 +69403,7 @@ function packDay(items, ctx){
 //   existing / newTasks: task objects {id, who, time, dur, device, mom}
 //   ctx: {start, end, lunchStart, lunchEnd, momStart?, kidStart?, busy?, momBusy?, laneBusy?, allowOvertime?, overtimeMax?}
 function packAround(existing, newTasks, ctx){
+  if(ctx&&ctx.fxDate&&typeof stLunchCtx==="function") ctx=stLunchCtx(ctx,ctx.fxDate);   // ⏰ SETTIME_TODAY: this date's own lunch (copy-on-write; no leaf → ctx untouched)
   // \u{1F3A7} Fixed-time classes are PINNED at their clock time and taken out of the pack; their
   // windows go to the packer as busy time so the rest of the day lays AROUND them. Opt-in via
   // ctx.fxDate (the ISO date being packed) — without it this block is a no-op.
@@ -69527,6 +69787,7 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   const _packCtx={start:schoolStart,end:cutoff,lunchStart:r.lunchStart,lunchEnd:r.lunchEnd,
     kidStart:kidStart,momStart:(isSitter?sitterEnd:0),busy:fxBusy,momBusy:fxMomBusy,laneBusy:fxLaneBusy,lanes:["computer","screen","ipadLucy","keyboard"],laneCap:gwDeviceCaps(),
     helperFor:(typeof helperPlanWin==="function")?function(it){ const mm=meta[it.id]; return mm?helperPlanWin(dayName,mm.kid,mm.key):null; }:null};   // 🙋 Grandma's regular window
+  if(typeof stLunchCtx==="function"){ const _lc=stLunchCtx(_packCtx,dayConfig.dateStr); _packCtx.lunchStart=_lc.lunchStart; _packCtx.lunchEnd=_lc.lunchEnd; }   // ⏰ SETTIME_TODAY: this date's own lunch
   // 🔁 LOOP_PACK: kids with no saved Workflow Orders lay the way the Mom loop runs the day; everyone else exactly as before
   const overflow=(typeof gwLoopPack==="function")?gwLoopPack(toPack,_packCtx,KIDS,function(it){ const mm=meta[it.id]; return mm?{rules:(mm.s&&mm.s.rules)||"",key:mm.key}:{}; })
     :packAround([],toPack,_packCtx);
