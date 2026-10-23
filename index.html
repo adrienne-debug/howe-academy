@@ -4364,6 +4364,7 @@ function initFb() {
     db.ref("settings/quickLoads").on("value",s=>{ if(typeof quickLoadsOnValue==="function") quickLoadsOnValue(s.val()); if(tab==="moms-plan"){ const el=document.getElementById("content"); if(el) renderMomsPlan(el); } });   // ⚡ QUICKLOADS
     db.ref("settings/myDayOrder").on("value",s=>{ if(typeof myDayOrderOnValue==="function") myDayOrderOnValue(s.val()); if(tab==="moms-plan"){ const el=document.getElementById("content"); if(el) renderMomsPlan(el); } });   // 🏡 MYDAY_WIDGETS: each person's column order
     ["mom","dad"].forEach(w=>db.ref("settings/"+w+"DayOrder").on("value",s=>{ if(typeof ssOrderOnValue==="function"&&ssOrderOnValue(w,s.val())&&tab==="moms-plan"){ const el=document.getElementById("content"); if(el) renderMomsPlan(el); } }));   // STICKYSTACK: each person's Today section order
+    db.ref("settings/mealWords").on("value",s=>{ if(typeof kitMealWordsOnValue==="function"&&kitMealWordsOnValue(s.val())&&typeof renderAll==="function") renderAll(); });   // 🍽 KITDINNEREDIT: the family's word for the evening meal
     db.ref("settings/laundryBlockMins").on("value",s=>{ if(typeof laundryBlockMinsOnValue==="function") laundryBlockMinsOnValue(s.val()); });   // 🧺 MOMSCHED_LAUNDRY
     momBlocksListen();   // 🧺 MOMSCHED_LAUNDRY: everyone's Mom cards lay around her block · MOMBLOCKS_DAYROLL: follows the day (dayRollCheck re-binds it after midnight)
     db.ref("settings/momTips").on("value",s=>{ if(typeof momTipsOnValue==="function") momTipsOnValue(s.val()); });   // 👋 Mom how-to banners she has closed
@@ -17098,13 +17099,15 @@ function mdCardDinner(iso){
   const dpl=kitPlanFor(iso);
   const dMeal=(dpl&&dpl.meal)?dpl.meal:null;
   h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
-    +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#E07B39;color:#fff;font-weight:800;font-size:13px"><span>🍽️</span> Tonight\'s dinner'
+    +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#E07B39;color:#fff;font-weight:800;font-size:13px"><span>🍽️</span> Tonight\'s '+(typeof kitDinnerWord==="function"?kitDinnerWord().toLowerCase():"dinner")+''
     +'<span style="margin-left:auto;display:flex;gap:6px;align-items:center">'
     +((kitPlan[iso]||{}).eaten
       ?'<span style="font-size:11px;font-weight:800;background:rgba(255,255,255,0.25);border-radius:8px;padding:3px 10px">✓ Eaten</span>'
       :((typeof kitOutIs==="function"&&kitOutIs(iso,'d'))?'<span style="font-size:11px;font-weight:800;background:rgba(255,255,255,0.25);border-radius:8px;padding:3px 10px">\u{1F37D} Eating out</span>'   // KITFLAG: no ✓ We ate it, so no rating is asked
       :((dpl&&kitEatGate())?'<button onclick="kitMarkEaten(\''+iso+'\')" style="border:none;background:rgba(255,255,255,0.25);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">✓ We ate it</button>':'')))
+    +((typeof kitDinCardBtn==="function")?kitDinCardBtn(iso,dpl):'')   // KITDINNEREDIT: ✎ Change the planned dinner (the card had no way to)
     +'<button onclick="mpGoto(\'meals\')" style="border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">🗓 Plan week →</button></span></div>';
+  if(typeof kitDinPickerHTML==="function") h+=kitDinPickerHTML(iso,"card");   // KITDINNEREDIT: the same library picker, under the header
   if(dMeal){
     const dSteps=kitPrepSteps(iso);
     h+='<div onclick="kitOpenRecipe(\''+dpl.mid+'\')" style="cursor:pointer;padding:12px 14px">'
@@ -17834,7 +17837,7 @@ function kitAssign(iso,val){ // val = {mid} | {txt} | null (clear the day)
   } else if(!(typeof kitRotClearKeep==='function'&&kitRotClearKeep(iso))) delete kitPlan[iso];   // KITROT2: a day a rotation wrote keeps its stamp when cleared
   kitPickIso=null;
   try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
-  if(typeof db!=='undefined'&&db){
+  if(typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun())){   // KITDINNEREDIT: ?dryrun=1 stays inert here too
     if(kitPlan[iso]) db.ref('kitchen/plan/'+iso).set(kitPlan[iso]);   // KITROT2: a kept stamp is set, not removed
     else db.ref('kitchen/plan/'+iso).remove();
   }
@@ -17846,7 +17849,7 @@ function kitPickDay(iso){
 }
 function kitPlanText(iso){
   const cur=kitPlanFor(iso);
-  const v=prompt("Dinner plan:",(cur&&cur.txt)||"");
+  const v=prompt((typeof kitDinnerWord==="function"?kitDinnerWord():"Dinner")+" plan:",(cur&&cur.txt)||"");   // KITDINNEREDIT: the family's word
   if(v===null) return;
   kitAssign(iso,v.trim()?{txt:v.trim()}:null);
 }
@@ -21001,7 +21004,7 @@ function kitRotEditHTML(ed){
     h+='<div style="margin-top:8px"><b style="font-size:11px;color:#92400e">Wk '+(w+1)+'</b>';
     wk.forEach((day,i)=>{
       h+='<div style="display:grid;grid-template-columns:34px repeat(auto-fit,minmax(118px,1fr));gap:4px;align-items:center;margin-top:4px"><span style="font-size:11px;color:#9ca3af;font-weight:700">'+KIT_ROT_DAYS[i]+'</span>'
-        +KIT_ROT_SLOTS.map(s=>'<input type="text" list="kit-rot-meal-names" value="'+esc(day[s[0]]||"")+'" placeholder="'+s[1]+' '+s[2]+'" oninput="kitRotEditSet('+w+','+i+',\''+s[0]+'\',this.value)" style="min-width:0;padding:6px 7px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:11.5px;font-family:\'DM Sans\',sans-serif">').join('')
+        +KIT_ROT_SLOTS.map(s=>'<input type="text" list="kit-rot-meal-names" value="'+esc(day[s[0]]||"")+'" placeholder="'+s[1]+' '+(s[0]==="d"&&typeof kitDinnerWord==="function"?kitDinnerWord():s[2])+'" oninput="kitRotEditSet('+w+','+i+',\''+s[0]+'\',this.value)" style="min-width:0;padding:6px 7px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:11.5px;font-family:\'DM Sans\',sans-serif">').join('')
         +'</div>';
     });
     h+='</div>';
@@ -21051,7 +21054,7 @@ let kitRotPick=null;   // the open slot picker: {kind:"b",w,i,slot} (builder) | 
 let kitRotSynced={plan:false,rots:false};   // flipped by the kitchen/plan + kitchen/rotations listeners — auto-start never writes from a stale device copy
 function kitRotDb(){ return (typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()))?db:null; }
 function kitRotIsoOk(s){ return /^\d{4}-\d{2}-\d{2}$/.test(String(s||"")); }
-function kitRotTypeMeta(t){ const pm=(typeof kitSlotsPartMeta==="function")?kitSlotsPartMeta(t):null; return pm||KIT_ROT_TYPES.find(x=>x[0]===t)||[t,"","Meal"]; }   // KITSLOTS: "b_veg" → Breakfast · vegetable
+function kitRotTypeMeta(t){ const pm=(typeof kitSlotsPartMeta==="function")?kitSlotsPartMeta(t):null; const m=pm||KIT_ROT_TYPES.find(x=>x[0]===t)||[t,"","Meal"]; return (t==="d"&&typeof kitDinTypeMeta==="function")?kitDinTypeMeta(m):m; }   // KITDINNEREDIT: "d" carries the family's word (Dinner / Supper)   // KITSLOTS: "b_veg" → Breakfast · vegetable
 function kitRotTypes(rot){ const ok=KIT_ROT_TYPES.map(t=>t[0]); const t=Array.isArray(rot&&rot.types)?ok.filter(x=>rot.types.indexOf(x)>=0):[]; return t.length?t:ok.slice(); }
 function kitRotStatus(rot,today){
   if(!rot||!kitRotIsoOk(rot.startDate)||!kitRotIsoOk(rot.endDate)||rot.endDate<rot.startDate) return "";
@@ -21424,7 +21427,7 @@ function kitRotBHTML(){
     +'<input type="text" id="kit-rotb-emoji" value="'+esc(B.emoji)+'" oninput="kitRotBField(\'emoji\',this.value)" placeholder="🍂" maxlength="4" style="width:52px;text-align:center;'+inp+';font-size:16px">'
     +'<label style="font-size:11px;font-weight:700;color:#6b6560">weeks <input type="number" value="'+B.weeks.length+'" min="1" max="8" onchange="kitRotBWeeks(this.value)" style="width:52px;'+inp+'"></label></div>';
   h+='<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-bottom:4px"><span style="font-size:11px;font-weight:700;color:#6b6560">covers</span>'
-    +KIT_ROT_TYPES.map(t=>{ const on=B.types.indexOf(t[0])>=0; return '<span onclick="kitRotBType(\''+t[0]+'\')" style="cursor:pointer;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;border:1.5px solid '+(on?'#B45309;background:#B45309;color:#fff':'#fcd34d;background:#fff;color:#92400e')+'">'+t[1]+' '+t[2]+'</span>'; }).join('')+'</div>';
+    +KIT_ROT_TYPES.map(t=>{ const on=B.types.indexOf(t[0])>=0; return '<span onclick="kitRotBType(\''+t[0]+'\')" style="cursor:pointer;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;border:1.5px solid '+(on?'#B45309;background:#B45309;color:#fff':'#fcd34d;background:#fff;color:#92400e')+'">'+t[1]+' '+kitRotTypeMeta(t[0])[2]+'</span>'; }).join('')+'</div>';   // KITDINNEREDIT: the dinner chip reads the family's word
   const cols=B.types.length+(B.types.indexOf("d")>=0?1:0);
   B.weeks.forEach((wk,w)=>{
     h+='<div style="margin-top:8px;padding:6px 8px;background:#fff;border:1.5px solid #e8e4de;border-radius:9px">';
@@ -21612,8 +21615,10 @@ function kitSlotsPick(iso,key){   // a field tapped: open the picker on it (tap 
   const P=kitRotPick; if(P&&P.kind==="p"&&P.iso===iso&&P.slot===key){ kitRotPick=null; _kitRefresh(); return; }
   kitRotPickOpen({kind:"p",iso:iso,slot:key});
 }
-function kitSlotsPickCur(P){ const k=kitSlotsKeyOf(P.slot); const parts=kitSlotsParts((kitPlan[P.iso]||{})[k.slot])||{}; return parts[k.part]?kitSlotsPartText(parts[k.part]):""; }
-function kitSlotsPickSet(P,val){ const k=kitSlotsKeyOf(P.slot); kitSlotsSet(P.iso,k.slot,k.part,val); }
+function kitSlotsPickCur(P){ if(P.slot==="d"&&typeof kitDinPickCur==="function") return kitDinPickCur(P);   // KITDINNEREDIT: the dinner itself
+  const k=kitSlotsKeyOf(P.slot); const parts=kitSlotsParts((kitPlan[P.iso]||{})[k.slot])||{}; return parts[k.part]?kitSlotsPartText(parts[k.part]):""; }
+function kitSlotsPickSet(P,val){ if(P.slot==="d"&&typeof kitDinPickSet==="function") return kitDinPickSet(P,val);   // KITDINNEREDIT: the dinner itself → kitAssign
+  const k=kitSlotsKeyOf(P.slot); kitSlotsSet(P.iso,k.slot,k.part,val); }
 function kitSlotsClear(iso,key){ const k=kitSlotsKeyOf(key); kitSlotsSet(iso,k.slot,k.part,null); }
 // THE write: one part of a day's b|l. val = {mid} | {txt} | null (clear). kitchen/plan/{iso}/{slot} = {parts:{…}} — the old
 // {mid|txt} becomes parts.main right here (the migration, that day only) — or the slot removed when no part is left (the
@@ -21644,6 +21649,95 @@ function kitSlotsPrompt(iso,slot){
   kitSlotsSet(iso,slot,"main",t.trim()?kitRotSlotVal(t.trim()):null); return true;
 }
 // KITSLOTS_END
+// KITDINNEREDIT_START — ✎ Change a dinner right on the day sheet and the Tonight card, plus the family's word for it (Dinner / Supper).
+//   Her report 2026-10-23: "am I able to edit the meals in the calendar for supper? it looked like I couldn't." She couldn't: the
+//   day sheet's dinner row had ✓ We ate it · ✗ Didn't happen · ➡ Move forward · 🍽 Eating out and the 🥗 sides, but changing the
+//   dinner itself meant Mom's Day ▸ Meals (the week list chips) or the rotation's This month view. Sara's family says "supper".
+//   ✎ CHANGE (the day sheet's Mom-view dinner row — Mom's Day Today's "Also today", Schedule ▸ Calendar — when kitEatGate()):
+//     on a day whose dinner is planned, owed or marked eating out; never a day already eaten or didn't-happen (those keep
+//     their buttons). It opens the SAME library picker the Breakfast / Lunch parts use (KITSLOTS: kitRotPick kind "p"), on
+//     slot "d" — search, tag chips, ✎ Type it, ✕ Clear, Close — right under the row. The picker's two kind-"p" handlers
+//     (kitSlotsPickCur / kitSlotsPickSet) hand slot "d" here. Picking / typing / clearing writes through kitAssign(iso,
+//     {mid}|{txt}|null) exactly as the week list's chips do: the old sides go with the old dinner (KITSIDES), prep steps and
+//     the grocery list follow the new meal, and the day's fromRot stamp stays — so KITROT2's kitRotHandEdited sees a dinner
+//     that differs from its rotation and the running rotation leaves the day alone (verified in test_kitchen_dinner_edit.js,
+//     not re-implemented). ✕ Clear is the week list's ✕ Clear: the day's plan node goes (a rotation-written day keeps its
+//     stamp, kitRotClearKeep). 🗓 Plan it on an empty day opens the same picker in place; "or plan the week ›" keeps the old
+//     route to Meals (Mom's Day only, as before).
+//   The same ✎ Change sits in the Tonight's dinner card header on Mom's / Dad's Day (it had ✓ We ate it and 🗓 Plan week only;
+//     mdCardDinner had no way to change a planned dinner). The picker opens under the header. A picker carries the src it
+//     was opened from ("sheet" | "card") so the card and the "Also today" sheet on one page never both draw it.
+//   THE WORD: settings/mealWords/dinner = "Dinner" | "Supper" — Settings ▸ Family rules ▸ 🍽 The evening meal, Mom only, ONE
+//     targeted write, default "Dinner"; kept on the device (ha_kit_mealwords) so kids' screens read it before sign-in. Every
+//     "Dinner" label for the d slot reads kitDinnerWord(): the day sheet (the kids' row, Mom's row, "No dinner planned"),
+//     the week list header, the Mom's Day card (its Today jump-row marker stays a literal — ssSec's scan needs one), the
+//     typed-dinner prompt, the rotation builder's
+//     type chips, the old grid's placeholder, and kitRotTypeMeta("d") — the picker header, This month's row label, the
+//     builder's column head and the kinds text. Nothing else is renamed. With the default word every hooked read is
+//     byte-identical to before.
+//   WRITES: kitchen/plan/{iso} through kitAssign (its existing targeted set / remove — now behind !_dryRun() too, the one
+//     line changed outside this block) and settings/mealWords/dinner. Both only when db && !_dryRun().
+const KIT_DINNER_WORDS=["Dinner","Supper"];
+let kitMealWords={};   // settings/mealWords → {dinner:"Dinner"|"Supper"}
+function kitDinnerWord(){ const w=kitMealWords&&kitMealWords.dinner; return KIT_DINNER_WORDS.indexOf(w)>=0?w:"Dinner"; }
+function kitDinTypeMeta(m){ return [m[0],m[1],kitDinnerWord()]; }   // kitRotTypeMeta("d") with the family's word
+function kitMealWordsLoad(){ try{ const v=JSON.parse(HA_LS.getItem('ha_kit_mealwords')||"null"); if(v&&typeof v==="object") kitMealWords=v; }catch(e){} }
+// the listener's hand-off: true when the word really changed (the caller repaints then, never on the first echo)
+function kitMealWordsOnValue(v){ const next=(v&&typeof v==="object")?v:{}; const was=kitDinnerWord(); kitMealWords=next; try{HA_LS.setItem('ha_kit_mealwords',JSON.stringify(kitMealWords));}catch(e){} return kitDinnerWord()!==was; }
+function kitDinnerWordSet(w){   // Settings ▸ Family rules: ONE targeted write
+  if(typeof momHere!=="function"||!momHere()) return;
+  if(KIT_DINNER_WORDS.indexOf(w)<0) return;
+  kitMealWords=Object.assign({},kitMealWords,{dinner:w});
+  try{HA_LS.setItem('ha_kit_mealwords',JSON.stringify(kitMealWords));}catch(e){}
+  if(typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref('settings/mealWords/dinner').set(w);
+  if(typeof renderAll==="function") renderAll();
+}
+function kitDinWordRuleHTML(){
+  const w=kitDinnerWord();
+  const radio=v=>'<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;padding:4px 0"><input type="radio" name="kit-din-word" '+(w===v?'checked':'')+' onchange="kitDinnerWordSet(\''+v+'\')"><b>'+v+'</b></label>';
+  return '<div class="rules-wrap" id="kit-din-word"><div class="rules-hdr">\u{1F37D} The evening meal</div>'
+    +'<div class="rules-sub">What your family calls it. The calendar, Mom’s Day, the week list and the rotations all use this word.</div>'
+    +'<div class="rules-row" style="gap:18px">'+radio("Dinner")+radio("Supper")+'</div></div>';
+}
+// ── the picker on the dinner (kitRotPick = {kind:"p", iso, slot:"d", src}) ──
+function kitDinPickOn(iso,src){ const P=(typeof kitRotPick!=="undefined")?kitRotPick:null; return !!(P&&P.kind==="p"&&P.slot==="d"&&P.iso===iso&&(!src||(P.src||"sheet")===src)); }
+function kitDinPickOpen(iso,src){   // ✎ Change / 🗓 Plan it tapped: open the picker on this day's dinner (tap again to close)
+  if(!kitEatGate()) return;
+  src=src||"sheet";
+  if(kitDinPickOn(iso,src)){ kitRotPick=null; _kitRefresh(); return; }
+  kitRotPickOpen({kind:"p",iso:iso,slot:"d",src:src});
+}
+function kitDinPickCur(P){ return kitRotRecName(kitPlan[P.iso],'d'); }   // what is REALLY on the calendar — a queued "coming" day reads blank, so ✕ Clear never offers to clear what isn't there
+function kitDinPickSet(P,val){   // val = {mid} | {txt} | null — THE write, through kitAssign (sides dropped, stamp kept)
+  if(!kitEatGate()) return;
+  kitRotPick=null;
+  kitAssign(P.iso,val);
+  _kitRefresh();
+}
+function kitDinPickerHTML(iso,src){
+  if(!kitDinPickOn(iso,src)) return '';
+  return src==="card"?'<div style="padding:0 14px 10px">'+kitRotPickHTML()+'</div>':'<div class="row" style="border-top:none;padding-top:0;display:block">'+kitRotPickHTML()+'</div>';
+}
+// the day sheet: ✎ Change beside the row's buttons for a planned / owed / eating-out dinner
+function kitDinEditBtn(iso,st){
+  if(!kitEatGate()||["planned","owed","out"].indexOf(st)<0) return '';
+  const on=kitDinPickOn(iso,"sheet");
+  return '<button class="act" style="background:'+(on?'#B45309;color:#fff':'#fff7ed;color:#9a3412')+'" onclick="kitDinPickOpen(\''+iso+'\',\'sheet\')">✎ Change</button>';
+}
+// the day sheet's empty day: 🗓 Plan it opens the picker here; the old route to Meals stays as a small link (Mom's Day only, as before)
+function kitDinPlanBtns(iso){
+  if(!kitEatGate()) return '';
+  return '<button class="act" style="background:#fff7ed;color:#c2410c" onclick="kitDinPickOpen(\''+iso+'\',\'sheet\')">\u{1F5D3} Plan it</button>'
+    +((typeof tab!=="undefined"&&tab==="moms-plan")?'<span onclick="mpGoto(\'meals\');kitPickDay(\''+iso+'\')" style="cursor:pointer;font-size:11px;font-weight:700;color:#9a3412;align-self:center;white-space:nowrap">or plan the week ›</span>':'');
+}
+// Mom's Day's Tonight card: ✎ Change in the header when a dinner is planned and not yet marked
+function kitDinCardBtn(iso,dpl){
+  const rec=(typeof kitPlan!=="undefined"&&kitPlan[iso])||{};
+  if(!dpl||rec.eaten||rec.skipped||!kitEatGate()) return '';
+  return '<button onclick="kitDinPickOpen(\''+iso+'\',\'card\')" style="border:none;background:rgba(255,255,255,'+(kitDinPickOn(iso,"card")?'0.45':'0.25')+');color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">✎ Change</button>';
+}
+kitMealWordsLoad();
+// KITDINNEREDIT_END
 function kitRotationsCardHTML(){
   if(typeof kitRotAutoStart==='function') kitRotAutoStart();   // KITROT2: a rotation whose start date has come gets its days (Mom's device)
   const rots=kitRotAll();
@@ -22412,7 +22506,7 @@ function renderKitchen(el){
   h+=kitStartHTML();   // 🧭 disappears once recipes, a planned week and a rotation exist
   // ── 🗓 The week — tonight + the next six days, tap a day to plan it ──
   h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
-  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#E07B39;color:#fff;font-weight:800;font-size:13px"><span>🗓</span> This week\'s dinners'
+  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#E07B39;color:#fff;font-weight:800;font-size:13px"><span>🗓</span> This week\'s '+(typeof kitDinnerWord==="function"?kitDinnerWord().toLowerCase():"dinner")+'s'
     +'<button onclick="grFromWeek()" style="margin-left:auto;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">🛒 Shop for the week</button>'
     +'<button onclick="kitWkImportToggle()" style="margin-left:6px;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">'+(kitWkImportOpen?'✕ Close':'📥 Import week')+'</button></div>';
   h+='<div style="padding:8px 14px 12px">';
@@ -35037,11 +35131,11 @@ function calDaySheetHTML(iso,L,dinnerOf,who,opts){
     // a kid's view: what's for dinner, no buttons — the pantry and the plan are Mom's
     const _sr=_calSlotRows(iso,who); if(_sr.n){ h+=_sr.html; rows+=_sr.n; }
     const din=dinnerOf?dinnerOf(iso):null; rows++;
-    h+='<div class="row"><span class="lbl">Dinner</span><span style="flex:1">'+(din?('<b>'+esc(din.name)+'</b>'+(din.st==="ate"?' <span style="font-size:11px;color:#15803d;font-weight:700">✓ eaten</span>':din.st==="skip"?' <span style="font-size:11px;color:#9ca3af;font-weight:700">didn’t happen</span>':din.st==="out"?' <span style="font-size:11px;color:#0f766e;font-weight:700">\u{1F37D} eating out</span>':'')):'<span style="color:#9ca3af">nothing planned yet</span>')+'</span></div>';   // KITFLAG: a kid sees "eating out", no buttons
+    h+='<div class="row"><span class="lbl">'+(typeof kitDinnerWord==="function"?kitDinnerWord():"Dinner")+'</span><span style="flex:1">'+(din?('<b>'+esc(din.name)+'</b>'+(din.st==="ate"?' <span style="font-size:11px;color:#15803d;font-weight:700">✓ eaten</span>':din.st==="skip"?' <span style="font-size:11px;color:#9ca3af;font-weight:700">didn’t happen</span>':din.st==="out"?' <span style="font-size:11px;color:#0f766e;font-weight:700">\u{1F37D} eating out</span>':'')):'<span style="color:#9ca3af">nothing planned yet</span>')+'</span></div>';   // KITFLAG: a kid sees "eating out", no buttons
   } else if(L.meals){
     const _sr=_calSlotRows(iso,null); if(_sr.n){ h+=_sr.html; rows+=_sr.n; }
     const din=dinnerOf?dinnerOf(iso):null; rows++;
-    h+='<div class="row" style="flex-wrap:wrap"><span class="lbl">Dinner</span>';
+    h+='<div class="row" style="flex-wrap:wrap"><span class="lbl">'+(typeof kitDinnerWord==="function"?kitDinnerWord():"Dinner")+'</span>';   // KITDINNEREDIT: the family's word
     if(din){
       const _mvBtn=(typeof kitOutBtn==="function"?kitOutBtn(iso,'d'):'')+'<button class="act" style="background:#eff6ff;color:#1d4ed8" onclick="kitMoveForward(\''+iso+'\',\'d\')">➡ Move forward</button>';   // KITFLAG: 🍽 Eating out rides beside ✗ Didn’t happen / ➡ Move forward (a planned day ahead too — the grocery list sees it)
       h+='<span style="flex:1;min-width:130px"><b>'+esc(din.name)+'</b>'+(typeof kitFlagMark==="function"?kitFlagMark(din.pl&&din.pl.mid):'')+(din.pl&&din.pl.mid&&din.pl.meal?' <span onclick="kitOpenRecipe(\''+din.pl.mid+'\')" style="cursor:pointer;font-size:11px;font-weight:700;color:#E07B39">\u{1F4D6} recipe</span>':'');
@@ -35056,10 +35150,12 @@ function calDaySheetHTML(iso,L,dinnerOf,who,opts){
       else if(din.st==="planned") h+=_mvBtn;
       else if(din.st==="out") h+=(typeof kitOutBtn==="function"?kitOutBtn(iso,'d'):'');   // KITFLAG: tap again puts the day back
       else if(din.st==="skip") h+='<button class="act" style="background:#dcfce7;color:#166534" onclick="kitMarkEaten(\''+iso+'\')">Actually, we ate it</button>';
+      if(typeof kitDinEditBtn==="function") h+=kitDinEditBtn(iso,din.st);   // KITDINNEREDIT: ✎ Change on a planned / owed / eating-out dinner (her report 2026-10-23)
     } else {
-      h+='<span style="flex:1;color:#9ca3af">No dinner planned</span>'+((typeof tab!=="undefined"&&tab==="moms-plan"&&kitEatGate())?'<button class="act" style="background:#fff7ed;color:#c2410c" onclick="mpGoto(\'meals\');kitPickDay(\''+iso+'\')">\u{1F5D3} Plan it</button>':'');
+      h+='<span style="flex:1;color:#9ca3af">No '+(typeof kitDinnerWord==="function"?kitDinnerWord().toLowerCase():"dinner")+' planned</span>'+((typeof kitDinPlanBtns==="function")?kitDinPlanBtns(iso):((typeof tab!=="undefined"&&tab==="moms-plan"&&kitEatGate())?'<button class="act" style="background:#fff7ed;color:#c2410c" onclick="mpGoto(\'meals\');kitPickDay(\''+iso+'\')">\u{1F5D3} Plan it</button>':''));   // KITDINNEREDIT: 🗓 Plan it opens the picker here
     }
     h+='</div>';
+    if(typeof kitDinPickerHTML==="function") h+=kitDinPickerHTML(iso,"sheet");   // KITDINNEREDIT: the library picker, open under the row
     if(din&&kitEatGate()&&typeof kitSidesEditHTML==="function") h+=kitSidesEditHTML(iso);   // KITSIDES: 🥗 the sides — add by typing or from the library, ✕ to remove
   }
   if(kidMode){
@@ -64234,7 +64330,7 @@ function haFamilyKeyClear(){ if(!momHere()) return; if(!confirm("Remove the fami
 function renderFamilyRulesWrap(){
   return '<div class="rules-wrap"><div class="rules-hdr">Family rules</div>'+
     '<div class="rules-sub">The shape of every school day — hours and lunch, sitter, workflow order, devices, overlap, carry-over &amp; Saturday, calendar. Per-subject settings (device, Mom, minutes, days, cap, priority) stay with the subject on the Grid.</div>'+
-    rulesFamilyCardsHTML(true)+'</div>'+(typeof famHomeDoorHTML==="function"?famHomeDoorHTML():(typeof famSettingsCardHTML==="function"?famSettingsCardHTML():''))+(typeof mmRulesCardHTML==="function"?mmRulesCardHTML():'');   // ⏱ MINMINUTES: Timed cards · 🏡 FAMEDITORHOME: the Family time door (the editor lives on the Grid)
+    rulesFamilyCardsHTML(true)+'</div>'+(typeof famHomeDoorHTML==="function"?famHomeDoorHTML():(typeof famSettingsCardHTML==="function"?famSettingsCardHTML():''))+(typeof mmRulesCardHTML==="function"?mmRulesCardHTML():'')+(typeof kitDinWordRuleHTML==="function"?kitDinWordRuleHTML():'');   // 🍽 KITDINNEREDIT: Dinner / Supper · ⏱ MINMINUTES: Timed cards · 🏡 FAMEDITORHOME: the Family time door (the editor lives on the Grid)
 }
 
 // 🔁⏩ Bonus % (Admin ▸ Adjust Slots ▸ Bonus points) — one targeted set under config/slot_config/bonus
