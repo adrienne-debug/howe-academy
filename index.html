@@ -16155,6 +16155,255 @@ function kcOtherKidsHTML(k){
 }
 // KIDROWS2_END
 
+// TROPHYSHELF_START — 🏆 Trophy Shelf (her decisions 2026-10-22: the kid-facing section is the Trophy Shelf; "Wins" stays her
+// word for her keepsake). A 🏆 Trophies button in a kid's top strip in Kids' Corner opens a shelf section INSIDE the Corner
+// (not a tab, not the Wins page). Sections, each only when it has something: Book trophies (Book Milestones + Reading Log),
+// Finished curriculum (a subject whose plan reached its last lesson per curriculum/done — one trophy per subject, name + finish
+// date), the Reading Log's recent entries, and Streaks. (No spot-check section: her rule 2026-10-15 keeps the
+// spot check SILENT on the kid's side — never on a kid's page — and test_spot_check holds the app to it; the shelf reads nothing of spotChecks.) The Star Bank and the ledger stay
+// where they are — the shelf links to them. Three streaks, counted from RECORDS, never from card check marks:
+//   drills   — a day with at least one drill (mastery/history/<kid>/<yyyymmdd>) or study session (mastery/studyLog/<kid>/<sid>/<yyyymmdd>).
+//   cards    — the kid's own timeline complete that day: rtSchoolworkDone for a day of the live week; an archived week's own
+//              record (every card of the kid's checked or carrying a finished history entry, none "_missed") for older days.
+//   routines — every routine list done that day: rtDayDone's lists for a day of the live week; for older days the day's
+//              routineLog ticks (net on/off, a wave counts as not due) against the lists' steps due that weekday. Only the
+//              two live weeks of routineLog are on a device at startup (RLWIN, her yes 2026-10-18) — a kid's page never pulls
+//              the older weeks just to draw the button: a day in a week that isn't loaded counts as nothing (skipped), the
+//              routines streak pays no bonus and shows no nudge until the history is whole, and the one-time rlHistReady load
+//              (the Household cards' own) is asked for only when it matters: the shelf is open, Mom's Day draws the line, or
+//              the routines streak as loaded looks like a nudge or a new best and needs the whole history to be sure.
+// SCHOOL DAYS ONLY (her rule): weekends, holidays/vacations, a kid's off days (kidOverrides), full-day AND timed co-op days
+// are skipped, never broken. A school day with nothing of that kind to do (no cards laid, no list steps due) is skipped too.
+// Each streak shows best · last · now ("best 5 · last 3 · now 2"). Today joins a streak only once it is done; until then the
+// streak stands as of the last school day. Nudge: one day from the best (now = best or best−1, best ≥ 2) → the streak's line
+// glows on the shelf and a short line shows in the top strip. Bonus: the day a streak beats its best (now > every earlier run
+// and > the remembered best, now ≥ 2), 5 ⭐ once via bankDirect ("beat your best <streak> streak"); the new best is remembered
+// at trophies/streaks/<kid>/<streak>/best = {n,date} (one targeted set) so the same best never pays twice. The streak records
+// sit under trophies/streaks, beside the kids, because trophies/<kid>/<id> is the Wins trophy case (kidTrophies enumerates
+// every child) and a streak record must never draw there as a stray trophy. Mom's Day kid rows get one small line
+// ("🔥 drills 4 · cards 2 · routines 7"), nothing else. History before today is cached per kid per day in memory; today is
+// read live; no new Firebase node holds the numbers. Kid-safe wording throughout — nothing here counts what a child missed.
+// Writes (only when db && !_dryRun(), from the kid's own Corner page): trophies/streaks/<kid>/<streak>/best (set) ·
+// bank/<kid>/adjustments/<id> (bankDirect, the usual note). The shelf's open/closed state lives on the device only.
+const TS_STREAKS=[{id:"drills",label:"drills",emoji:"\u{1F9E0}",what:"a drill or study session done"},
+                  {id:"cards",label:"school cards",short:"cards",emoji:"\u{1F4D6}",what:"every school card done"},
+                  {id:"routines",label:"routine lists",short:"routines",emoji:"✅",what:"every routine list done"}];
+const TS_BONUS=5, TS_LOOKBACK=200, TS_RECENT=6;
+let tsOpenKid="";     // whose shelf is open on this device (memory only; switching kids closes it)
+let _tsCache={};      // kid -> {key, days:[{iso,drills,cards,routines}]} — the school days before today, once per kid per day
+function tsIso(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function tsIsoAdd(iso,n){ const d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()+n); return tsIso(d); }
+function tsToday(){ try{ if(typeof calToday==="function") return calToday(); }catch(e){} return tsIso(new Date()); }
+function tsFmt(iso){ try{ return new Date(iso+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}); }catch(e){ return iso||""; } }
+function tsTsTail(ts){ return (String(ts||"").match(/([A-Z][a-z]{2} \d{1,2})$/)||[])[1]||""; }   // nowTs() "08:35 PM Jul 14" → "Jul 14"
+// A week's day label ("Oct 20", DAY_DT / archive dates) → ISO. The year is this one, or last year's when that would land it more
+// than a week ahead of today (a December week read in January).
+function tsLabelIso(label,today){
+  if(!label) return null; label=String(label); if(/^\d{4}-\d{2}-\d{2}$/.test(label)) return label;
+  today=today||tsToday(); const yr=parseInt(today.slice(0,4),10)||new Date().getFullYear();
+  let d=new Date(label+", "+yr); if(isNaN(d.getTime())) return null;
+  let iso=tsIso(d); if(iso>tsIsoAdd(today,7)){ d=new Date(label+", "+(yr-1)); if(isNaN(d.getTime())) return null; iso=tsIso(d); }
+  return iso;
+}
+// Every day the app has a week record for: {iso:{wk,dn,live}} — the live week (DAY_DT) wins over an archived copy of itself.
+function tsWeekDays(today){
+  const map={}; const A=(typeof archive!=="undefined"&&archive)||{};
+  Object.keys(A).forEach(function(wk){ const a=A[wk]; if(!a||!a.dates) return; Object.keys(a.dates).forEach(function(dn){ const iso=tsLabelIso(a.dates[dn],today); if(iso) map[iso]={wk:wk,dn:String(dn).toLowerCase(),live:false}; }); });
+  let live=""; try{ live=(typeof activeWk==="function")?activeWk():((typeof WK!=="undefined")?WK:""); }catch(e){}
+  const dd=(typeof DAY_DT==="object"&&DAY_DT)||{};
+  Object.keys(dd).forEach(function(dn){ const iso=tsLabelIso(dd[dn],today); if(iso) map[iso]={wk:live,dn:String(dn).toLowerCase(),live:true}; });
+  return map;
+}
+// School day for this kid? Weekends, holidays/vacations, the kid's own off days and any co-op day (full-day or timed) are not.
+function tsSchoolDay(kid,iso){
+  const dow=new Date(iso+"T12:00:00").getDay(); if(dow===0||dow===6) return false;
+  try{ if(typeof smapIsKidOff==="function"&&smapIsKidOff(kid,iso)) return false; }catch(e){}
+  try{ if(typeof coopTimedNameFor==="function"&&coopTimedNameFor(kid,iso)) return false; }catch(e){}
+  return true;
+}
+function tsHistFull(){ try{ return (typeof rlHistFull==="function")?!!rlHistFull():true; }catch(e){ return true; } }   // the older routine weeks are here
+function tsHistLoad(){ try{ if(typeof rlHistReady==="function") rlHistReady(); }catch(e){} }                            // ask for them once (RLWIN)
+// ── the three day-records (true done · false not · null nothing to count that day) ──
+function tsDrillDay(kid,iso){
+  const k=String(iso).replace(/-/g,""), M=(typeof masteryData!=="undefined"&&masteryData)||{};
+  if((((M.history||{})[kid])||{})[k]) return true;
+  const sl=((M.studyLog||{})[kid])||{}; for(const sid in sl){ if(sl[sid]&&sl[sid][k]) return true; }
+  return false;
+}
+function tsCardsDay(kid,iso,wd){
+  const w=wd[iso]; if(!w) return null;
+  const mine=function(t,dn){ return t&&t.who===kid&&!String(t.id||"").endsWith("_c")&&!/lunch/i.test(t.title||"")&&String(dn||"").toLowerCase()===w.dn; };
+  if(w.live){
+    let ts=[]; try{ ts=((typeof getActiveTasks==="function")?getActiveTasks():[]).filter(function(t){ return mine(t,(typeof effectiveDay==="function")?effectiveDay(t):t.day); }); }catch(e){ ts=[]; }
+    if(!ts.length) return null;
+    try{ return (typeof rtSchoolworkDone==="function")?!!rtSchoolworkDone(kid,w.dn):null; }catch(e){ return null; }
+  }
+  const a=((typeof archive!=="undefined"&&archive)||{})[w.wk]; if(!a||!Array.isArray(a.tasks)) return null;
+  const ck=a.checked||{}, hs=a.history||{};
+  const ts=a.tasks.filter(function(t){ return mine(t,t.day); }); if(!ts.length) return null;
+  return ts.every(function(t){ const h=hs[t.id]; return !hs[t.id+"_missed"]&&(!!ck[t.id]||!!ck[t.id+"_c"]||!!(h&&h.ts&&!h.missed)); });
+}
+function tsRoutinesDay(kid,iso,wd){
+  const w=wd[iso]; if(!w) return null;
+  if(w.live){ try{ if(typeof rtDayLists!=="function") return null; const L=rtDayLists(kid,w.dn); if(!L.length) return null; return L.every(function(x){ return !!x.done; }); }catch(e){ return null; } }
+  const wkLog=(((typeof routineLog!=="undefined"&&routineLog)||{})[kid]||{})[w.wk];
+  if(!wkLog&&!tsHistFull()) return null;   // a week not on this device yet: nothing to count, never a break
+  const recs=(wkLog||{})[w.dn]||{};
+  const net={}; Object.values(recs).sort(function(a,b){ return ((a&&a.at)||0)-((b&&b.at)||0); }).forEach(function(r){
+    if(!r||!r.slot||!r.label) return;
+    if(r.act==="wave"){ net[r.slot+"|"+String(r.label).replace(/\s+—\s+waved by .*$/,"")]=true; return; }   // ✕ today: not due that day
+    const key=r.slot+"|"+r.label; if(r.act==="on") net[key]=true; else if(r.act==="off") delete net[key]; });
+  const slots=(typeof activeSlots==="function")?activeSlots():["morning","afternoon","chores","evening"];
+  let due=0, ok=true;
+  slots.forEach(function(slot){
+    let steps=[]; try{ steps=(slot==="morning"&&typeof morningStepsFor==="function")?morningStepsFor(kid):((typeof rtStepsFor==="function")?rtStepsFor(slot,kid,false,w.dn):[]); }catch(e){ steps=[]; }
+    (steps||[]).forEach(function(st){ if(!st||!st.label) return; try{ if(typeof cadDueOn==="function"&&!cadDueOn(st.cad||"daily",w.dn)) return; }catch(e){} due++; if(!net[slot+"|"+st.label]) ok=false; });
+  });
+  if(!due) return null; return ok;
+}
+function tsDayStatus(kid,iso,wd){ return {iso:iso,drills:tsDrillDay(kid,iso),cards:tsCardsDay(kid,iso,wd),routines:tsRoutinesDay(kid,iso,wd)}; }
+// The school days before today that have anything to count, oldest first (at most TS_LOOKBACK days back).
+function tsHistoryDays(kid,today,wd){
+  const M=(typeof masteryData!=="undefined"&&masteryData)||{}; let first=today;
+  Object.keys(wd).forEach(function(iso){ if(iso<first) first=iso; });
+  Object.keys(((M.history||{})[kid])||{}).forEach(function(k){ const iso=k.length===8?(k.slice(0,4)+"-"+k.slice(4,6)+"-"+k.slice(6,8)):""; if(iso&&iso<first) first=iso; });
+  const floor=tsIsoAdd(today,-TS_LOOKBACK); if(first<floor) first=floor;
+  const out=[];
+  for(let iso=first; iso<today; iso=tsIsoAdd(iso,1)){ if(!tsSchoolDay(kid,iso)) continue; const s=tsDayStatus(kid,iso,wd); if(s.drills!==null||s.cards!==null||s.routines!==null) out.push(s); }
+  return out;
+}
+// ── the streak math (pure) ── days=[{iso,ok}] in date order, school days only; today is in the list only when done.
+function tsRuns(days){ const runs=[]; let cur=0; (days||[]).forEach(function(d){ if(d.ok) cur++; else { if(cur) runs.push(cur); cur=0; } }); if(cur) runs.push(cur); return {runs:runs,now:cur}; }
+function tsNumbers(days,storedN){
+  const r=tsRuns(days), now=r.now, prev=now?r.runs.slice(0,-1):r.runs.slice();
+  const last=prev.length?prev[prev.length-1]:0;
+  let bestBefore=Math.max(0,parseInt(storedN,10)||0); prev.forEach(function(n){ if(n>bestBefore) bestBefore=n; });
+  const best=Math.max(bestBefore,now);
+  return {best:best,last:last,now:now,bestBefore:bestBefore,newBest:now>=2&&now>bestBefore,nudge:now>=1&&best>=2&&best-now<=1};
+}
+function tsBestRec(kid,id){ try{ return (((((typeof trophies!=="undefined"&&trophies)||{}).streaks||{})[kid]||{})[id]||{}).best||null; }catch(e){ return null; } }
+// All three streaks for a kid: {ready, drills:{best,last,now,…}, cards:{…}, routines:{…}}.
+function tsStreaks(kid){
+  const today=tsToday(), ready=tsHistFull(), wd=tsWeekDays(today);
+  const M=(typeof masteryData!=="undefined"&&masteryData)||{}, RL=(typeof routineLog!=="undefined"&&routineLog)||{};
+  const key=[today,ready?1:0,Object.keys(wd).length,Object.keys((typeof checked!=="undefined"&&checked)||{}).length,
+    Object.keys(((M.history||{})[kid])||{}).length,Object.keys(RL[kid]||{}).map(function(w){ return w+":"+Object.keys(RL[kid][w]||{}).length; }).join(","),
+    Object.keys((((typeof currData!=="undefined"&&currData)||{}).done||{})[kid]||{}).map(function(sk){ return Object.keys(currData.done[kid][sk]||{}).length; }).join(",")].join("|");
+  let c=_tsCache[kid]; if(!c||c.key!==key){ c={key:key,days:tsHistoryDays(kid,today,wd)}; _tsCache[kid]=c; }   // the key carries the ready flag
+  const td=tsSchoolDay(kid,today)?tsDayStatus(kid,today,wd):null;
+  const out={ready:ready,today:today};
+  TS_STREAKS.forEach(function(st){
+    const days=[]; c.days.forEach(function(d){ if(d[st.id]!==null) days.push({iso:d.iso,ok:!!d[st.id]}); });
+    if(td&&td[st.id]===true) days.push({iso:today,ok:true});
+    const rec=tsBestRec(kid,st.id); out[st.id]=tsNumbers(days,rec&&rec.n); out[st.id].doneToday=!!(td&&td[st.id]===true); out[st.id].bestToday=!!(rec&&rec.date===today&&(parseInt(rec.n,10)||0)===out[st.id].now&&out[st.id].now>=2);
+  });
+  return out;
+}
+// The bonus: pays once per new best, from the kid's own page. Routines waits for the whole history (and asks for it). → ids paid.
+function tsBonusSettle(kid,S){
+  if(!kid||!S) return []; if(typeof db==="undefined"||!db||(typeof _dryRun==="function"&&_dryRun())) return [];
+  const paid=[];
+  TS_STREAKS.forEach(function(st){
+    const s=S[st.id]; if(!s||!s.newBest) return;
+    if(st.id==="routines"&&!S.ready){ tsHistLoad(); return; }
+    const rec=tsBestRec(kid,st.id); if(rec&&(parseInt(rec.n,10)||0)>=s.now) return;   // another device already wrote this best
+    const best={n:s.now,date:S.today};
+    try{ trophies.streaks=trophies.streaks||{}; trophies.streaks[kid]=trophies.streaks[kid]||{}; trophies.streaks[kid][st.id]=trophies.streaks[kid][st.id]||{}; trophies.streaks[kid][st.id].best=best; }catch(e){}
+    try{ db.ref("trophies/streaks/"+kid+"/"+st.id+"/best").set(best); }catch(e){}
+    try{ if(typeof bankDirect==="function") bankDirect(kid,TS_BONUS,"beat your best "+st.label+" streak"); }catch(e){}
+    s.bestBefore=s.now; paid.push(st.id);
+  });
+  if(paid.length){ try{ if(typeof gwShowToast==="function") gwShowToast("⭐ +"+TS_BONUS*paid.length+" — you beat your best "+paid.map(function(id){ return (TS_STREAKS.find(function(x){ return x.id===id; })||{}).label; }).join(" and ")+" streak!"); }catch(e){} }
+  return paid;
+}
+// The top-strip line: a new best today, else one day from the best (the nearest streak wins).
+function tsNudgeText(S){
+  if(!S) return "";
+  const TS=TS_STREAKS.filter(function(st){ return st.id!=="routines"||S.ready; });   // routines speaks only from the whole history
+  for(const st of TS){ const s=S[st.id]; if(s&&(s.newBest||s.bestToday)) return "new best "+st.label+" streak — "+s.now+" days!"; }
+  for(const st of TS){ const s=S[st.id]; if(s&&s.nudge&&s.now===s.best) return "one more day beats your best "+st.label+" streak"; }
+  for(const st of TS){ const s=S[st.id]; if(s&&s.nudge) return "two more days beat your best "+st.label+" streak"; }
+  return "";
+}
+function tsToggle(k){ tsOpenKid=(tsOpenKid===k)?"":k; try{ renderAll(); }catch(e){} }
+// ── the shelf's contents ──
+function tsBooks(kid){
+  const T=((typeof trophies!=="undefined"&&trophies)||{})[kid]||{}, out=[], seen={};
+  Object.keys(T).forEach(function(id){ const t=T[id]; if(!t||(t.type!=="book"&&t.type!=="read")) return; seen[t.type==="read"?("read_"+(t.key||"")):id]=1; out.push({name:t.name||"",when:tsTsTail(t.ts),size:t.size||"",kind:t.type,at:t.ts||""}); });
+  const B=(((typeof readingLog!=="undefined"&&readingLog)||{})[kid]||{}).books||{};
+  Object.keys(B).forEach(function(id){ const b=B[id]; if(!b||b.status!=="done"||seen["read_"+id]) return; out.push({name:b.title||"",when:tsTsTail(b.doneTs),size:b.size||"",kind:"read",at:b.doneTs||""}); });
+  return out.filter(function(b){ return b.name; }).sort(function(a,b){ return String(b.at).localeCompare(String(a.at)); });
+}
+// Finished curriculum from the done records: the plan's LAST lesson id has a record → finished on that record's day.
+function tsFinishedSubjects(kid){
+  const C=(typeof currData!=="undefined"&&currData)||{}; const subs=(C.subjects||{})[kid]||{}, done=(C.done||{})[kid]||{}, out=[], seen={};
+  Object.keys(subs).forEach(function(sk){
+    const s=subs[sk]; if(!s||s.tracking==="daily") return;
+    let ids=null; try{ ids=(typeof lidsFor==="function")?lidsFor(kid,sk):(Array.isArray(s.lessonIds)?s.lessonIds:null); }catch(e){ ids=null; }
+    if(!ids||!ids.length) return; const rec=(done[sk]||{})[ids[ids.length-1]]; if(!rec) return;
+    seen[sk]=1; out.push({sk:sk,name:s.display||sk,date:rec.day||"",when:rec.day?tsFmt(rec.day):tsTsTail(rec.ts)});
+  });
+  const T=((typeof trophies!=="undefined"&&trophies)||{})[kid]||{};   // a subject finished before its lessons were stamped keeps its trophy
+  Object.keys(T).forEach(function(id){ const t=T[id]; if(!t||t.type!=="subject"||seen[t.key]) return; seen[t.key]=1; out.push({sk:t.key||id,name:t.name||t.key||"",date:"",when:tsTsTail(t.ts)}); });
+  return out.sort(function(a,b){ return String(b.date).localeCompare(String(a.date)); });
+}
+function tsReadingRecent(kid){
+  const R=((typeof readingLog!=="undefined"&&readingLog)||{})[kid]||{}; const E=R.entries||{}, B=R.books||{};
+  return Object.keys(E).sort().reverse().slice(0,TS_RECENT).map(function(id){ const e=E[id]||{}; const b=B[e.bookId]||{};
+    return {title:b.title||"",pages:(e.fromPage!=null&&e.toPage!=null)?("pp. "+e.fromPage+"–"+e.toPage):"",when:tsTsTail(e.ts)||(e.day?String(e.day).slice(0,3):"")}; }).filter(function(x){ return x.title; });
+}
+function tsStreakLineHTML(st,s,big){
+  const glow=s.nudge||s.newBest;
+  return '<div style="display:flex;align-items:center;gap:8px;padding:'+(big?'8px 10px':'6px 10px')+';border-radius:10px;margin-top:4px;'+(glow?'background:#fffbeb;box-shadow:0 0 0 2px #fbbf24,0 0 14px #fcd34d;':'background:#f8fafc;')+'">'
+    +'<span style="font-size:'+(big?'18px':'15px')+'">'+st.emoji+'</span><span style="flex:1;min-width:0;font-weight:800;color:#334155;font-size:'+(big?'14px':'12.5px')+'">'+esc(st.label)+' <span style="font-weight:600;color:#64748b">— '+esc(st.what)+'</span></span>'
+    +'<span style="font-weight:800;color:#b45309;font-size:'+(big?'13px':'12px')+';white-space:nowrap">best '+s.best+' · last '+s.last+' · now '+s.now+'</span></div>';
+}
+function tsShelfHTML(k){
+  const col=(typeof KID_COLOR!=="undefined"&&KID_COLOR[k])||"#2B7A78", name=(typeof KID_NAME!=="undefined"&&KID_NAME[k])||cap(k), big=(typeof kcLittle==="function")&&kcLittle(k);
+  tsHistLoad();   // the shelf is open: the older routine weeks are worth one read now
+  let S=null; try{ S=tsStreaks(k); }catch(e){ S=null; }
+  const books=tsBooks(k), subs=tsFinishedSubjects(k), reads=tsReadingRecent(k);
+  const streaks=S?TS_STREAKS.filter(function(st){ return S[st.id]&&S[st.id].best>0&&(st.id!=="routines"||S.ready); }):[];
+  const fs=big?'14px':'12.5px';
+  const sec=function(title,body){ return '<div style="padding:8px 14px 4px"><div style="font-size:11px;font-weight:800;color:#b45309;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px">'+title+'</div>'+body+'</div>'; };
+  const row=function(ic,main,when){ return '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid #f1f5f9;font-size:'+fs+'"><span>'+ic+'</span><span style="flex:1;min-width:0;font-weight:700;color:#334155">'+main+'</span>'+(when?'<span style="font-size:11px;color:#94a3b8;white-space:nowrap">'+esc(when)+'</span>':'')+'</div>'; };
+  let h='<div style="margin:12px 12px 0;background:#fff;border-radius:14px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
+  h+='<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:linear-gradient(135deg,#fffbeb,#fef3c7);border-bottom:1.5px solid #fcd34d"><span style="font-size:22px">\u{1F3C6}</span><div style="flex:1;font-family:\'Fraunces\',serif;font-size:'+(big?'19px':'17px')+';font-weight:700;color:#92400e">'+esc(name)+'’s Trophy Shelf</div>'
+    +'<button onclick="event.stopPropagation();tsToggle(\''+k+'\')" style="border:none;background:rgba(146,64,14,0.12);color:#92400e;border-radius:9px;padding:5px 10px;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✕ close</button></div>';
+  let any=false;
+  if(books.length){ any=true; h+=sec('\u{1F4DA} Book trophies',books.map(function(b){ return row(b.kind==="read"?'\u{1F4D5}':'\u{1F4D8}',esc(b.name)+(b.size?' <span style="font-weight:600;color:#64748b">('+esc(b.size)+')</span>':''),b.when); }).join('')); }
+  if(subs.length){ any=true; h+=sec('\u{1F393} Finished curriculum',subs.map(function(s){ return row('\u{1F3C6}',esc(s.name),s.when?('finished '+s.when):''); }).join('')); }
+  if(reads.length){ any=true; h+=sec('\u{1F4D6} Reading log',reads.map(function(r){ return row('\u{1F4D6}',esc(r.title)+(r.pages?' <span style="font-weight:600;color:#64748b">'+esc(r.pages)+'</span>':''),r.when); }).join('')); }
+  if(S&&(streaks.length||!S.ready)){ if(streaks.length) any=true;
+    h+=sec('\u{1F525} Streaks <span style="font-weight:600;text-transform:none;letter-spacing:0;color:#92400e">\u2014 school days in a row</span>',streaks.map(function(st){ return tsStreakLineHTML(st,S[st.id],big); }).join('')
+      +(S.ready?'':'<div style="padding:6px 10px;font-size:'+fs+';color:#64748b;font-weight:700">\u2705 routine lists \u2014 \u23F3 still counting your school days\u2026</div>')); }
+  if(!any&&(!S||S.ready)) h+='<div style="padding:14px;text-align:center;font-size:'+fs+';color:#64748b;font-weight:700">Your shelf is ready for its first trophy! Finish a book, do your drills, or finish every card in a day — it shows up here.</div>';
+  h+='<div style="padding:8px 14px 12px;font-size:'+fs+';color:#475569;font-weight:700;border-top:1px solid #f1f5f9;margin-top:4px">⭐ Your stars live in your <span onclick="event.stopPropagation();popOpen(\''+k+'\',\'bank\')" style="color:'+col+';cursor:pointer;text-decoration:underline">Star Bank ›</span></div>';
+  h+='</div>';
+  return h;
+}
+// The kid's top strip: the 🏆 Trophies button (+ the nudge line). The bonus settles here — the kid's own page, history whole.
+function tsStripHTML(k){
+  const big=(typeof kcLittle==="function")&&kcLittle(k), open=tsOpenKid===k;
+  let S=null; try{ S=tsStreaks(k); }catch(e){ S=null; }
+  try{ if(S&&typeof kcKid!=="undefined"&&kcKid===k) tsBonusSettle(k,S); }catch(e){}
+  if(S&&!S.ready&&S.routines&&(S.routines.newBest||S.routines.nudge)) tsHistLoad();   // a routines nudge/best as loaded: be sure first
+  const nudge=tsNudgeText(S);
+  return '<div style="position:relative;z-index:1;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">'
+    +'<button onclick="event.stopPropagation();tsToggle(\''+k+'\')" style="border:2px solid rgba(255,255,255,0.75);background:'+(open?'#fff':'rgba(255,255,255,0.22)')+';color:'+(open?'#92400e':'#fff')+';border-radius:20px;padding:'+(big?'8px 14px':'6px 12px')+';font-size:'+(big?'13px':'11px')+';font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">\u{1F3C6} Trophies'+(open?' ▴':'')+'</button>'
+    +(nudge?'<span style="font-size:'+(big?'13px':'12px')+';font-weight:800;color:#fff;background:rgba(0,0,0,0.18);border-radius:12px;padding:4px 10px">✨ '+esc(nudge)+'</span>':'')
+    +'</div>';
+}
+// Mom's Day kid row: one small line with the current streaks; nothing when the kid has none yet (or the history is still loading —
+// Mom's device asks for it here, as her Household cards do).
+function tsMomLineHTML(kid){
+  let S=null; try{ S=tsStreaks(kid); }catch(e){ return ''; }
+  if(S&&!S.ready) tsHistLoad();
+  if(!S||!S.ready||!TS_STREAKS.some(function(st){ return S[st.id]&&S[st.id].best>0; })) return '';
+  return '<div style="margin-top:3px;font-size:11px;color:#6b6560">\u{1F525} '+TS_STREAKS.map(function(st){ return esc(st.short||st.label)+' '+S[st.id].now; }).join(' · ')+'</div>';
+}
+// TROPHYSHELF_END
+
 // ── ⭐ Star Bank card ─────────────────────────
 // Extracted from renderMomsDay (2026-08-15) so Dad's Day renders the SAME card against
 // the SAME data. One truth — not a second copy that can drift.
@@ -16504,6 +16753,7 @@ function mdCardKidsToday(today,isSchoolDay,bank,dadCtl){   // bank=true: Mom's D
       +'<span>🧺 eve <b>'+esc(pE?pE.replace(/pickup/i,"").trim():"—")+'</b></span>'
       +'</div>';
     if(chores.length) h+='<div style="margin-top:3px;font-size:11px;color:#6b6560">🧹 '+esc(chores.join(" · "))+'</div>';
+    if(bank&&dadCtl===undefined&&typeof tsMomLineHTML==="function"){ try{ h+=tsMomLineHTML(kid); }catch(e){} }   // TROPHYSHELF: one line of current streaks (Mom's Day only)
     // 🧒 KIDBAR: stars under the rooms — today's ⭐ (tap → what earned them), 🏦 balance, and the Star Bank's − [5] + box.
     if(bank) h+='</div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;margin-top:2px;flex:0 0 auto;margin-left:auto;max-width:100%"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">'
       +'<span onclick="boardStatPop(\''+kid+'\',\'stars\',\''+_kd+'\')" style="cursor:pointer;font-size:13px;font-weight:800;color:#b45309">⭐ +'+pts+' <span style="font-size:11px;font-weight:700;color:#78716c">today</span></span>'
@@ -33760,8 +34010,9 @@ function renderKidsCorner(el){
       +'<div style="flex:1;min-width:0"><div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;margin-bottom:2px">'+esc(name)+'\u2019s Corner</div>'
       +'<div style="font-size:12px;opacity:0.9;font-weight:600">'+((kcCalGet(k)==="today")?'Your day, your stars, your school.':(kcCalGet(k)==="lists")?'Your lists for today \u2014 tap to tick.':(kcLittle(k)?'Tap a day!':'Tap a day to see what\u2019s up \u2014 and add your own things.'))+'</div></div>'
       +((typeof kcOtherKidsHTML==="function")?kcOtherKidsHTML(k):'')   // KIDROWS2 (her ask 2026-10-22): the other kids as buttons, one tap switches — in place of "Not <name>?"
-      +'</div></div>';
+      +'</div>'+((typeof tsStripHTML==="function")?tsStripHTML(k):'')+'</div>';   // TROPHYSHELF (her decisions 2026-10-22): 🏆 Trophies + the streak nudge in the top strip
     {
+      if(typeof tsShelfHTML==="function"&&typeof tsOpenKid!=="undefined"&&tsOpenKid===k) h+=tsShelfHTML(k);   // TROPHYSHELF: the shelf section, inside the Corner, when open
       h+=kcCalToggleHTML(k);
       h+=kcModeBodyHTML(k);   // KC_LISTS: Today | My Lists | Month
     }
