@@ -1,6 +1,9 @@
 /*
  * 🏆 TROPHYSHELF (her decisions 2026-10-22): a 🏆 Trophies button in a kid's top strip in Kids' Corner opens the Trophy Shelf
- * INSIDE the Corner — Book trophies, Finished curriculum (from curriculum/done), the Reading Log's recent entries, and three streaks (drills · school cards · routine lists) counted on SCHOOL DAYS ONLY from records (weekends,
+ * INSIDE the Corner — the Trophies shelf (her ask 2026-10-23: the Wins page's own trophy-case drawing, tsTroShelf — SVG trophies and
+ * real book spines from the kid's minted trophies, drawn narrower for the Corner with name + date under every piece; the Wins page
+ * renders byte-identically to the saved snapshot test_trophy_shelf_wins_snapshot.html), the Reading Log's recent entries, and three
+ * streaks (drills · school cards · routine lists) counted on SCHOOL DAYS ONLY from records (weekends,
  * holidays and co-op days are skipped, never broken). best · last · now per streak; a nudge one day from the best. The stars
  * (her decision 2026-10-22, final): a school day that keeps a streak going (now ≥ 2) is OWED, never banked by itself —
  * trophies/streaks/<kid>/<streak>/owed/<iso> = true once per day per streak; the shelf's "⭐ Collect" tap banks 1 ⭐ per owed
@@ -29,6 +32,8 @@ ok("no spot-check section: her rule 2026-10-15 keeps the spot check silent on th
 { const rk=fn("renderKidsCorner");
   ok("Kids' Corner: the strip hook sits inside the header, one line", (rk.match(/tsStripHTML/g)||[]).length===2&&/\+'<\/div>'\+\(\(typeof tsStripHTML==="function"\)\?tsStripHTML\(k\):''\)\+'<\/div>';/.test(rk));
   ok("…the shelf section draws before the Today | My Lists | Month toggle, only when open", /tsOpenKid===k\) h\+=tsShelfHTML\(k\);\s*\/\/[^\n]*\n\s*h\+=kcCalToggleHTML\(k\);\s*\n\s*h\+=kcModeBodyHTML\(k\);/.test(rk));
+  ok("Wins page: _troShelfHTML is a one-line hook into the block's tsTroShelf; the Wins page (renderPace) still calls it exactly as before", fn("_troShelfHTML")==="function _troShelfHTML(troph,kid){ return tsTroShelf(troph,kid); }"&&(fn("renderPace").match(/_troShelfHTML\(troph,kid\)/g)||[]).length===1&&(src.match(/function tsTroShelf\(/g)||[]).length===1&&BLOCK.indexOf("function tsTroShelf(")>0);
+  ok("the shelf reads the kid's minted trophies (kidTrophies) — no readingLog done-books, no curriculum/done lists any more", /kidTrophies\(k\)/.test(BLOCK)&&!/tsBooks|tsFinishedSubjects|status!=="done"/.test(BLOCK));
   const md=fn("mdCardKidsToday");
   ok("Mom's Day kid row: one line, Mom's Day only (bank && no dadCtl), after the chores line", /esc\(chores\.join\(" · "\)\)\+'<\/div>';\n\s*if\(bank&&dadCtl===undefined&&typeof tsMomLineHTML==="function"\)\{ try\{ h\+=tsMomLineHTML\(kid\); \}catch\(e\)\{\} \}/.test(md)&&(md.match(/tsMomLineHTML/g)||[]).length===2);
 }
@@ -36,6 +41,9 @@ ok("no spot-check section: her rule 2026-10-15 keeps the spot check silent on th
 // ── the world: Lucy, today Fri 2026-10-23. Live week30 Oct 19–23; archived week29 Oct 12–16 and week28 Oct 5–9.
 // Off the count: weekends · Mon Oct 12 (holiday) · Wed Oct 14 and Wed Oct 21 (co-op). ──
 const TODAY="2026-10-23";
+const NOW=new Date(TODAY+"T12:00:00");   // a fixed clock: the NEW! badge (7 days) and the snapshot never drift with the calendar
+class FixedDate extends Date{ constructor(...a){ if(a.length) super(...a); else super(NOW.getTime()); } static now(){ return NOW.getTime(); } }
+const WINS_FNS=["_troIsNew","_troCup","_troGoblet","_troStarTro","_troRibbon","_troSVG","kidTrophies","_troShelfHTML"];   // the Wins page's trophy drawing, as shipped
 function world(o){
   o=o||{}; const writes=[], banks=[], toasts=[], renders=[], loads=[];
   const h=k=>({date:k}); const hist={lucy:{}}; ["20261005","20261006","20261007","20261008","20261013","20261015","20261016","20261019","20261020","20261022"].forEach(k=>hist.lucy[k]=h(k));
@@ -64,9 +72,9 @@ function world(o){
             thursday:{a:on("morning","Brush teeth"),b:on("afternoon","Shower")},friday:{}}}};
   if(o.loading) delete routineLog.lucy.week28;   // only the two live weeks are on the device (RLWIN)
   const steps={morning:{lucy:[{label:"Brush teeth",cad:"daily"}]},afternoon:{lucy:[{label:"Shower",cad:"daily"},{label:"Sweep",cad:"mon"}]},chores:{lucy:[]},evening:{lucy:[]}};
-  const ctx={console,Object,Array,String,Number,parseInt,isNaN,Math,JSON,Date,RegExp,Error,Set,
+  const ctx={console,Object,Array,String,Number,parseInt,isNaN,Math,JSON,Date:FixedDate,RegExp,Error,Set,
     writes,banks,toasts,renders,loads,
-    esc:s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"), cap:s=>s.charAt(0).toUpperCase()+s.slice(1),
+    cap:s=>s.charAt(0).toUpperCase()+s.slice(1),
     KID_COLOR:{lucy:"#d946ef",ellis:"#0ea5e9"}, KID_NAME:{lucy:"Lucy",ellis:"Ellis"}, ROSTER:["lucy","ellis"], kcLittle:()=>false,
     kcKid:("kcKid" in o)?o.kcKid:"lucy", renderAll:()=>renders.push(1), popOpen:()=>{}, gwShowToast:m=>toasts.push(m),
     calToday:()=>TODAY, activeWk:()=>"week30", WK:"week30", DAY_DT:{monday:"Oct 19",tuesday:"Oct 20",wednesday:"Oct 21",thursday:"Oct 22",friday:"Oct 23"},
@@ -87,6 +95,7 @@ function world(o){
     _dryRun:()=>!!o.dry};
   if(o.db) ctx.db={ref:p=>({set:v=>writes.push([p,v]),update:v=>writes.push([p,v])})};
   vm.createContext(ctx);
+  ["esc"].concat(WINS_FNS).forEach(n=>vm.runInContext(fn(n),ctx));   // the app's own esc + the Wins drawing
   vm.runInContext(BLOCK,ctx);
   ctx.get=e=>vm.runInContext(e,ctx);
   return ctx;
@@ -259,13 +268,21 @@ console.log("4b. Keeping it going: a star OWED per streak per school day, claime
 console.log("5. The shelf: sections only when they have something; the bank is a link, not a copy");
 { const w=world(); const h=w.tsShelfHTML("lucy");
   ok("titled for the kid, with a close button", /Lucy’s Trophy Shelf/.test(h)&&/tsToggle\('lucy'\)/.test(h));
-  ok("📚 Book trophies: the read book (once — trophy and log book are the same book), the milestone book, the log's other finished book", /Book trophies/.test(h)&&(h.split("Finished curriculum")[0].match(/Charlotte's Web/g)||[]).length===1&&/Singapore 5A/.test(h)&&/Owl Moon/.test(h)&&!/Frog and Toad<\/span>/.test(h.split("Reading log")[0]));
-  ok("🎓 Finished curriculum from the done records: Singapore 5B finished Oct 20; Science (last lesson open) and Handwriting (daily) are not", /Finished curriculum/.test(h)&&/Singapore 5B/.test(h)&&/finished Oct 20/.test(h)&&!/>Science</.test(h)&&!/Handwriting/.test(h));
-  ok("…a subject finished before its lessons were stamped keeps its trophy (Story of the World 2)", /Story of the World 2/.test(h));
+  const shelf=w.tsTroShelf(w.kidTrophies("lucy"),"lucy",{corner:true});
+  ok("🏆 Trophies: ONE section, the wooden shelf — the old Book trophies / Finished curriculum text lists are gone", /🏆 Trophies/.test(h)&&(h.match(/class="tro-shelf"/g)||[]).length===1&&!/Book trophies|Finished curriculum/.test(h));
+  ok("…it is the Corner drawing of the kid's minted trophies, newest first: the read book as a spine, the milestone book and the subject as SVG trophies", h.indexOf(shelf)>h.indexOf("🏆 Trophies")&&h.indexOf(shelf)<h.indexOf("Reading log")&&/class="tro-bk medium"/.test(shelf)&&/url\(#troBc\)/.test(shelf)&&/url\(#troSc\)/.test(shelf)&&(function(){ const at=w.kidTrophies("lucy").map(t=>shelf.indexOf('<div class="nm">'+t.name+'</div>')); return at.length===3&&at.every((x,i)=>x>0&&(i===0||x>at[i-1])); })());
+  ok("…every piece — the book too — stands in an 84px trophy cell (three fit a phone) with its name and date on the plaque underneath", (shelf.match(/<div class="tro" style="width:84px" /g)||[]).length===3&&/<div class="tro-empty" style="width:84px">/.test(shelf)&&/<div class="tro" style="width:84px" onclick="rlBookPopup\('lucy','bk1'\)"><div class="tro-bk medium" style="[^"]*"><span class="t">Charlotte's Web<\/span><span class="s">⭐<\/span><\/div><div class="tro-plq"><div class="nm">Charlotte's Web<\/div><div class="pt">\+30 ⭐ · Oct 2<\/div><\/div><\/div>/.test(shelf)&&/<div class="nm">Singapore 5A<\/div><div class="pt">\+20 ⭐ · Sep 30<\/div>/.test(shelf)&&/<div class="nm">Story of the World 2<\/div><div class="pt">\+50 ⭐ · Sep 12<\/div>/.test(shelf));
+  ok("…a book finished in the log but not yet celebrated (Owl Moon: no trophy) and a subject finished per curriculum/done without a trophy (Singapore 5B) stay OFF the shelf, as on the Wins page", !/Owl Moon|Singapore 5B|finished Oct 20|>Science<|Handwriting/.test(h));
+  ok("…three to a row in the Corner: 3 trophies + the next-trophy slot = two shelf boards (the Wins page fits them on one)", (shelf.match(/class="tro-row"/g)||[]).length===2&&(shelf.match(/class="tro-board"/g)||[]).length===2&&/next trophy<br>goes here!/.test(shelf)&&(w.tsTroShelf(w.kidTrophies("lucy"),"lucy").match(/class="tro-row"/g)||[]).length===1);
+  ok("…the Trophies section sits first, before the Reading log and Streaks", h.indexOf("🏆 Trophies")<h.indexOf("Reading log")&&h.indexOf("Reading log")<h.indexOf("Streaks"));
   ok("📖 Reading log: recent entries, newest first, with pages", /Reading log/.test(h)&&h.indexOf("pp. 12–24")<h.indexOf("pp. 1–12")&&/Frog and Toad/.test(h));
   ok("🔥 Streaks: three lines, best · last · now", /Streaks/.test(h)&&/best 11 · last 0 · now 11/.test(h)&&/best 7 · last 7 · now 0/.test(h)&&/best 3 · last 3 · now 3/.test(h));
   { const lines=h.slice(h.indexOf("Streaks")).split('<div style="display:flex;align-items:center;gap:8px;padding:').slice(1); const L=n=>lines.find(x=>x.indexOf(n)>=0)||"";
     ok("…the drills (new best) and routine lists (tied) lines glow, the school cards line does not", lines.length===3&&/#fbbf24/.test(L("drills"))&&/#fbbf24/.test(L("routine lists"))&&!/#fbbf24/.test(L("school cards"))); }
+  { const S=w.tsStreaks("lucy"); const want=w.get("TS_STREAKS").map(st=>w.tsStreakLineHTML(st,S[st.id],false,"lucy")).join("");
+    ok("…the Streaks rows under the shelf are tsStreakLineHTML's lines exactly, with their ⭐ Collect buttons", want.length>0&&h.indexOf(want)>h.indexOf("Streaks")&&(want.match(/⭐ Collect \d/g)||[]).length===(h.match(/⭐ Collect \d/g)||[]).length); }
+  { const t=world({trophies:{lucy:{}}}); const ht=t.tsShelfHTML("lucy");
+    ok("no trophies yet but streaks and a reading log → no shelf, no empty-slot board; the other sections stand", !/tro-shelf|🏆 Trophies|next trophy/.test(ht)&&/Reading log/.test(ht)&&/Streaks/.test(ht)&&!/ready for its first trophy/.test(ht)); }
   ok("the Star Bank is a link (popOpen bank), no balance or ledger copied in", /popOpen\('lucy','bank'\)/.test(h)&&!/in your bank/.test(h)&&!/adjustments/.test(h));
   ok("no counting of what a child did wrong", !/miss|wrong|not done|behind|late|no\b/i.test(h.replace(/<[^>]+>/g," ").replace(/Owl Moon|Story of the World/g,"")));
   const l=world({loading:true}); const hl=l.tsShelfHTML("lucy");
@@ -274,6 +291,31 @@ console.log("5. The shelf: sections only when they have something; the bank is a
   ok("a kid with no records: the friendly line, no sections, still the bank link", /ready for its first trophy/.test(he)&&!/Book trophies|Finished curriculum|Reading log|Streaks/.test(he)&&/popOpen\('ellis','bank'\)/.test(he));
   const se=e.tsStreaks("ellis");
   ok("…and zero streaks", se.drills.best===0&&se.cards.best===0&&se.routines.best===0&&e.tsNudgeText(se)==="");
+}
+
+console.log("5a. The shared drawing: the Wins trophy case renders byte-identically to the saved snapshot; the Corner mode differs only as designed");
+{ const w=world();
+  // the fixture behind test_trophy_shelf_wins_snapshot.html — rendered by the 2026-10-23 _troShelfHTML on main, clock fixed at Oct 23
+  const FIX=[
+    {type:"read",key:"bk3",name:"Owl Moon",size:"little",ts:"09:00 AM Oct 20",points:10},
+    {type:"session",key:"fall26",name:"Fall Session",ts:"03:30 PM Oct 16",points:100},
+    {type:"drills",key:"math",name:"math Drills",ts:"11:00 AM Oct 9",points:40},
+    {type:"read",key:"bk1",name:"Charlotte's Web",size:"medium",ts:"03:10 PM Oct 2",points:30},
+    {type:"book",key:"math",name:"Singapore 5A",ts:"01:00 PM Sep 30",points:20},
+    {type:"subject",key:"hist",name:"Story of the World 2",ts:"02:00 PM Sep 12",points:50},
+    {type:"read",key:"bk4",name:"Frog & Toad Together",size:"mini",ts:"04:00 PM Sep 3"}];
+  const snap=fs.readFileSync(path.join(__dirname,"test_trophy_shelf_wins_snapshot.html"),"utf8");
+  ok("the snapshot is today's Wins drawing: two boards, one NEW! badge, three spine sizes, gold · silver · bronze · purple, the next-trophy slot", (snap.match(/class="tro-row"/g)||[]).length===2&&(snap.match(/NEW!/g)||[]).length===1&&/tro-bk little/.test(snap)&&/tro-bk medium/.test(snap)&&/tro-bk mini/.test(snap)&&/troGc\)/.test(snap)&&/troSc\)/.test(snap)&&/troBc\)/.test(snap)&&/troPc\)/.test(snap)&&/next trophy<br>goes here!/.test(snap)&&/Frog &amp; Toad Together/.test(snap));
+  const wins=w._troShelfHTML(FIX,"lucy");
+  ok("_troShelfHTML(troph,kid) === the snapshot, byte for byte", wins===snap, {len:wins.length,snap:snap.length,at:[...wins].findIndex((c,i)=>c!==snap[i])});
+  ok("…and so does tsTroShelf with no options / with corner:false", w.tsTroShelf(FIX,"lucy")===snap&&w.tsTroShelf(FIX,"lucy",{corner:false})===snap);
+  const c=w.tsTroShelf(FIX,"lucy",{corner:true});
+  ok("Corner mode: the same defs, sparks, SVG trophies and spines…", c.indexOf(snap.slice(0,snap.indexOf('<div class="tro-row">')))===0&&(c.match(/<svg width="(?!0")/g)||[]).length===(snap.match(/<svg width="(?!0")/g)||[]).length&&(function(){ const strip=x=>x.replace(/<[^>]+>/g,"").replace(/\s+/g,""); return strip(c).replace("OwlMoon+10⭐·Oct20","").replace("Charlotte'sWeb+30⭐·Oct2","").replace("Frog&amp;ToadTogether+0⭐·Sep3","")===strip(snap); })());   // the same words, plus a plaque under each book
+  ok("…but three pieces a board: 7 trophies + the slot = 8 cells → three boards (Wins: two)", (c.match(/class="tro-row"/g)||[]).length===3&&(c.match(/class="tro-board"/g)||[]).length===3);
+  ok("…each book spine on its own stand with the tap on the stand, the NEW! badge still on the newest, and a plaque with name · +⭐ · date", /<div class="tro" style="width:84px" onclick="rlBookPopup\('lucy','bk3'\)"><div class="tro-bk little" style="[^"]*"><div class="tro-new" style="font-size:7px">NEW!<\/div><span class="t">Owl Moon<\/span><span class="s">⭐<\/span><\/div><div class="tro-plq"><div class="nm">Owl Moon<\/div><div class="pt">\+10 ⭐ · Oct 20<\/div><\/div><\/div>/.test(c)&&/<div class="nm">Frog &amp; Toad Together<\/div><div class="pt">\+0 ⭐ · Sep 3<\/div>/.test(c)&&!/<div class="tro-bk [a-z]+" onclick/.test(c));
+  ok("…the trophies' own cells are the Wins drawing's, only 84px wide", ["Fall Session","math Drills","Singapore 5A","Story of the World 2"].every(n=>{ const m=snap.match(new RegExp('<div class="tro" onclick="troWobble\\(this\\)">(?:(?!<div class="tro").)*?<div class="nm">'+n.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+'</div>(?:(?!<div class="tro").)*?</div></div></div>')); return m&&c.indexOf(m[0].replace('<div class="tro" ','<div class="tro" style="width:84px" '))>=0; }));
+  ok("the Corner never draws the drawing's data from anything but what it is handed — no readingLog / currData reads in tsTroShelf", !/readingLog|currData|trophies\b/.test(fn("tsTroShelf")));
+  ok("tsTroShelf is read-only: no db, no bank, no write", !/db\.|bankDirect|obSet|\.set\(|\.update\(/.test(fn("tsTroShelf")));
 }
 
 console.log("6. The top strip and Mom's Day line");
