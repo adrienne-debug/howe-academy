@@ -97,7 +97,7 @@ console.log("CSS — big only under .kc-big");
   ok("the item checkbox (inline 20px) is overridden to 36–40px under .kc-big", /\.kc-big \.sl-checkbox\{width:3[6-9]px!important;height:3[6-9]px!important/.test(css)||/\.kc-big \.sl-checkbox\{width:40px!important;height:40px!important/.test(css));
   ok(".kc-big .mr-step is padded ~16px with min-height 60px", /\.kc-big \.mr-step\{[^}]*padding:16px[^}]*min-height:60px/.test(css));
   ok(".kc-big .sl-slot-name is 18–20px", /\.kc-big \.sl-slot-name\{font-size:(18|19|20)px/.test(css));
-  ok(".kc-big .mr-steps has no left indent; .mr-pts 14px; .cadtag smaller or hidden", /\.kc-big \.mr-steps\{margin-left:0/.test(css)&&/\.kc-big \.mr-pts\{font-size:14px/.test(css)&&/\.kc-big \.cadtag\{(display:none|font-size:[0-9.]+px)/.test(css));
+  ok(".kc-big .mr-steps sits indented under its header (her 2026-10-23 ask, test_kc_lists_headers.js; was margin-left:0); .mr-pts 14px; .cadtag smaller or hidden", /\.kc-big \.mr-steps\{margin-left:(1[6-9]|2[0-9]|3[0-4])px/.test(css)&&/\.kc-big \.mr-pts\{font-size:14px/.test(css)&&/\.kc-big \.cadtag\{(display:none|font-size:[0-9.]+px)/.test(css));
   const big=css.split("\n").filter(l=>/kc-big/.test(l));
   ok("every kc-big rule is scoped under .kc-big (nothing leaks to the Schedule tab or the pop-up)", big.length>0&&big.every(l=>/^\.kc-big /.test(l)||/^\/\* KC_LISTS/.test(l)), big);
   ok("the base rows are exactly as before", /^\.mr-step\{display:flex;align-items:center;gap:10px;padding:8px 12px;/m.test(css)&&/^\.sl-checkbox\{width:24px;height:24px;/m.test(css)&&/^\.sl-slot-name\{font-size:14px;font-weight:600\}/m.test(css)&&/^\.mr-steps\{margin:-2px 0 8px 34px;/m.test(css)&&/^\.mr-pts\{font-size:11px;/m.test(css)&&/^\.cadtag\{font-size:10px;/m.test(css));
