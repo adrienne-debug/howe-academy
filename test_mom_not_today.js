@@ -25,6 +25,7 @@ const BLOCK=cut("// MOMNOTTODAY_START","// MOMNOTTODAY_END");
 console.log("The block");
 ok("MOMNOTTODAY block sits right after the momMoves code (undoMomMove) and before MOVETODAY", src.indexOf("function undoMomMove(")<src.indexOf("// MOMNOTTODAY_START")&&src.indexOf("// MOMNOTTODAY_START")<src.indexOf("// MOVETODAY_START"));
 ok("rtSchoolworkDone's gate names the waive (an open waived card, like an open _offDay card, is left out)", /!t\._eowOverflow&&!\(\(typeof mntWaived==="function"&&mntWaived\(t\)\)&&!checked\[t\.id\]\)&&/.test(one("rtSchoolworkDone"))&&/&&!\(\(t\._offDay\|\|t\._dayDrop\)&&!checked\[t\.id\]\)\); return ts\.length===0/.test(one("rtSchoolworkDone")));
+ok("the end-of-day claim gate (schoolDoneOn) names the waive — a waived daily never blocks the kid's claim", (()=>{ const i=src.indexOf("function schoolDoneOn("); const b=src.slice(i,i+900); return /mntWaived\(t\)/.test(b); })());
 ok("the last-card celebration check (pace toast) names the waive", /!_dismissed\(x\) && !\(typeof mntWaived==="function"&&mntWaived\(x\)\)/.test(src));
 ok("effectiveDay keeps a waived card on its own day", /if\(_mv&&_mv\.mode==="waive"\) return t\.day;/.test(fn("effectiveDay")));
 ok("the sweep leaves a waived card (right after its _dayDrop rule)", /if\(t\._dayDrop\) return;[^\n]*\n    if\(typeof mntWaived==="function"&&mntWaived\(t\)\) return;/.test(fn("cascadeIntraWeek")));
