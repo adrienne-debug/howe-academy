@@ -23,16 +23,17 @@ const stackBlk = src.slice(src.indexOf("// NAVSTACK_START"), src.indexOf("// NAV
 console.log("── the sticky stack is measured, not typed ──");
 ok("the stack's variables exist with fallbacks", /:root\{--hdr-h:\d+px;--nav-h:\d+px;--sub-h:\d+px;--day-h:\d+px\}/.test(css));
 ok("the navy nav row sticks at the header's real height", /position:sticky;top:var\(--hdr-h\);/.test(rule("#nav-tabs")));
-ok("Schedule sub-tabs stick under header + nav", /top:calc\(var\(--hdr-h\) \+ var\(--nav-h\)\);/.test(rule("#sched-subtabs")));
-ok("the day row sticks under header + nav + sub-tabs", /top:calc\(var\(--hdr-h\) \+ var\(--nav-h\) \+ var\(--sub-h\)\);/.test(rule("#day-tabs")));
-ok("the kid row sticks under all four", /top:calc\(var\(--hdr-h\) \+ var\(--nav-h\) \+ var\(--sub-h\) \+ var\(--day-h\)\);/.test(rule("#kid-filter")));
+// STICKYSTACK (2026-10-22): Mom's Day's menu row (--mp-h) joined the stack right under the navy bars — it measures 0 everywhere but Mom's Day ▸ Schedule.
+ok("Schedule sub-tabs stick under header + nav (+ Mom's Day's menu row)", /top:calc\(var\(--hdr-h\) \+ var\(--nav-h\) \+ var\(--mp-h\)\);/.test(rule("#sched-subtabs")));
+ok("the day row sticks under header + nav + menu row + sub-tabs", /top:calc\(var\(--hdr-h\) \+ var\(--nav-h\) \+ var\(--mp-h\) \+ var\(--sub-h\)\);/.test(rule("#day-tabs")));
+ok("the kid row sticks under all five", /top:calc\(var\(--hdr-h\) \+ var\(--nav-h\) \+ var\(--mp-h\) \+ var\(--sub-h\) \+ var\(--day-h\)\);/.test(rule("#kid-filter")));
 ["#app-header", "#nav-tabs", "#sched-subtabs", "#day-tabs", "#kid-filter"].forEach(sel => {
   const r = rule(sel); const typed = r.match(/(^|;)top:\d+px/);
   ok(sel + " has no typed pixel top" + (sel === "#app-header" ? " except 0" : ""), sel === "#app-header" ? /top:0;/.test(r) : !typed, typed && typed[0]);
 });
 ok("the old fixed offsets are gone for good (52 / 88 / 122 / 166 / 182 px)", !/top:(52|88|122|166|182)px/.test(src.replace(/body\.kioskr[^\n]*/g, "")));
 ok("no script sets the kid row's top by hand any more", !/kf\.style\.top=/.test(src) && !/kid-filter"\)\.style\.top/.test(src));
-ok("in-page bars under the stack use the variables too (Mastery kid row, Schedule ▸ Admin tabs)", /top:calc\(var\(--hdr-h\) \+ var\(--nav-h\)\);z-index:96/.test(src) && /top:calc\(var\(--hdr-h\) \+ var\(--nav-h\) \+ var\(--sub-h\)\);z-index:90/.test(src));
+ok("in-page bars under the stack use the variables too (Mastery kid row, Schedule ▸ Admin tabs)", /top:calc\(var\(--hdr-h\) \+ var\(--nav-h\)\);z-index:96/.test(src) && /top:calc\(var\(--hdr-h\) \+ var\(--nav-h\) \+ var\(--mp-h\) \+ var\(--sub-h\)\);z-index:90/.test(src));
 ok("the stack is documented in one comment block (header → nav-tabs → page bars) with the how-to-add rule", /#app-header \(top:0\) → #nav-tabs → #sched-subtabs → #day-tabs → #kid-filter/.test(css) && /To add a bar to the stack/.test(css));
 ok("the page can never scroll sideways (html only — body too would break sticky)", /\nhtml\{overflow-x:hidden\}/.test(src) && !/\nbody\{[^}]*overflow-x/.test(src));
 

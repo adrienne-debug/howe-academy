@@ -67,7 +67,8 @@ console.log("\n── the page itself ──");
 {
   const w = world({ give: "<b>Give Grandma</b>" }); w.api.msvEnter(); w.api.renderSchedSubtabs();
   const bar = w.els["msv-bar"];
-  ok("Mom's Day tabs + Today·Week·Month strip shown above the Schedule", bar.style.display === "block" && /<nav>cal<\/nav>/.test(bar.innerHTML) && /mpSchSet\('today'\)/.test(bar.innerHTML) && /mpSchSet\('month'\)/.test(bar.innerHTML));
+  // STICKYSTACK (2026-10-22): the strip is display:contents, so the sub-menu inside it can stick against the page itself
+  ok("Mom's Day tabs + Today·Week·Month strip shown above the Schedule", /^(block|contents)$/.test(bar.style.display) && /<nav>cal<\/nav>/.test(bar.innerHTML) && /mpSchSet\('today'\)/.test(bar.innerHTML) && /mpSchSet\('month'\)/.test(bar.innerHTML));
   ok("🙋 Give Grandma more rides in that strip", /Give Grandma/.test(bar.innerHTML));
   w.api.showTab("schedule"); w.api.renderSchedSubtabs();
   ok("the kids' Schedule has no strip", bar.style.display === "none" && bar.innerHTML === "");
