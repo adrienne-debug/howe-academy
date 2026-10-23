@@ -43,7 +43,7 @@ function stage7() {
   }
   return cards;
 }
-const run = new Function(stubs + engine + ck + `
+const run = new Function(stubs + engine + ck + "\nckMix=function(q){ return q; };   // CKMIX (2026-10-23): this sitting walks the plan in card order; the mixed order has its own test, test_checkup_mix.js\n" + `
 return {ckSlug,ckFactors,ckHard,ckQuickPicks,ckFamilies,ckPlan,ckTodayLeft,ckGrade,ckResultTier,ckCardLine,ckRenderHtml,ckTap,ckStart,ckFlip,ckStop,ckMomStart,unitStageCheckup,ckIsSpelling,ckFmtGet,ckFmtSet,ckState,
   mstSessions,mstOwns,mstOwnedIds,mstPile,
   get:()=>({masteryData,WRITES,TOASTS,unitStudies,adminPinUnlocked,PINGATE,RENDERS}), set:(k,v)=>{ if(k==="MOM") MOM=v; if(k==="DAYKEY") DAYKEY=v; if(k==="unitStageForm") unitStageForm=v; if(k==="unitStudies") unitStudies=v; if(k==="masteryData") masteryData=v; },
