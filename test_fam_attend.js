@@ -305,7 +305,7 @@ console.log("8. the kid's view + structure");
   ok("FAMATTEND block sits immediately after FAMBLOCK_END", src.indexOf("// FAMBLOCK_END\n// FAMATTEND_START") >= 0);
   ok("…and ends before FAMTOGETHER_START", src.indexOf("// FAMATTEND_END") < src.indexOf("// FAMTOGETHER_START") && src.indexOf("// FAMATTEND_END") > src.indexOf("// FAMATTEND_START"));
   const BLOCK = slice("// FAMATTEND_START", "// FAMATTEND_END");
-  const outside = src.replace(BLOCK, "");
+  const outside = src.replace(BLOCK, "").replace(slice("// SETTIME_TODAY_START", "// SETTIME_TODAY_END"), "");   // SETTIME_TODAY (2026-10-23): "did you already do it then?" checks the block off through the same ✓ path — its own famAttendOpen / famAttendPay calls live in that block, tested by test_settime_today
   const hooks = outside.split("\n").filter(l => /famAttend|famIsAbsent/.test(l));
   ok("ten one-line hooks outside the block (tapTask ×2, dlg-ok, famUncheckSiblings, famRateOpen, famRateRender, famRateSave ×2, famRowHTML, rtSchoolworkDone)", hooks.length === 10, hooks.map(l => l.trim().slice(0, 60)));
   ok("every hook is guarded by typeof (the FAMBLOCK-only tests still run)", hooks.every(l => /typeof fam(Attend\w+|IsAbsent)==="function"/.test(l)));

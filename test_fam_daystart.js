@@ -132,7 +132,7 @@ console.log("0. shape and hooks");
   ok("the block writes only through famWrite (no db.ref of its own)", !/db\.ref\(/.test(DS) && /famWrite\(id\+"\/atByDay\/"\+day/.test(DS));
   ok("no 🔀 anywhere", src.indexOf("\u{1F500}") < 0);
   const hooks = [
-    ["famLayout → famStartFor", /let at=\(typeof famStartFor==='function'\)\?famStartFor\(b,dayName\):famStartMin\(b,dayName\);/],
+    ["famLayout → famStartFor", /let at=\(typeof famStartFor==='function'\)\?famStartFor\(b,dayName,ds\):famStartMin\(b,dayName\);/],   // SETTIME_TODAY: the layout carries its date
     ["famAutoUnits skips a pinned day", /\|\|\(typeof famAutoOn==='function'&&!famAutoOn\(b,dayName\)\)\) return;/],
     ["famMinOn", /if\(typeof famAutoOn==='function'\?famAutoOn\(b,dayName\):famIsAuto\(b\)\)\{/],
     ["famWhenLabel", /if\(typeof famAutoOn==="function"\?famAutoOn\(b,dn\):famIsAuto\(b\)\) return "scheduler picks";/],
