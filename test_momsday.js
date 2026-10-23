@@ -1255,7 +1255,7 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   delete domVals["mc-new"]; delete domVals["mc-cad"];
 })();
 
-// ── 📅 KITCHEN · Rotations: code-side 🍂 Fall default, apply-from-Monday, save, delete ─
+// ── 📅 KITCHEN · Rotations: code-side 🍂 Fall default, ▶ Run from a start to a cut-off (KITROT2, 2026-10-23), save, delete ─
 (() => {
   TODAY = "2026-09-14"; // a Monday
   Object.keys(M.kitMeals).forEach(k => { delete M.kitMeals[k]; });
@@ -1290,27 +1290,29 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   ok("kitRotPlanFor: nothing written to kitPlan by the pure fn", M.kitPlan["2026-10-13"] === undefined, null);
   ok("kitRotPlanFor: empty rotation → {}", Object.keys(M.kitRotPlanFor({ weeks: [] }, "2026-10-12")).length === 0, null);
 
-  // apply: date input, confirm, writes
+  // ▶ Run (kitRotApply routes to kitRotRun): start + cut-off inputs, confirm, ONE multi-path update under kitchen/plan
   dbWrites.length = 0; toasts.length = 0;
-  domVals["kit-rot-from-fall2026"] = { value: "" };
+  domVals["kit-rot-from-fall2026"] = { value: "" }; domVals["kit-rot-to-fall2026"] = { value: "" };
   M.kitRotApply("fall2026");
-  ok("apply: no date → toast, no writes", toasts.length === 1 && dbWrites.length === 0, toasts);
-  domVals["kit-rot-from-fall2026"] = { value: "2026-10-12" };
+  ok("run: no dates → toast, no writes", toasts.length === 1 && dbWrites.length === 0, toasts);
+  domVals["kit-rot-from-fall2026"] = { value: "2026-09-14" }; domVals["kit-rot-to-fall2026"] = { value: "2026-10-11" };   // today (a Monday) → 4 weeks
   CONFIRM = false; M.kitRotApply("fall2026");
-  ok("apply: cancel → nothing written", dbWrites.length === 0 && M.kitPlan["2026-10-13"] === undefined, dbWrites.length);
+  ok("run: cancel → nothing written", dbWrites.length === 0 && M.kitPlan["2026-09-15"] === undefined, dbWrites.length);
   CONFIRM = true; toasts.length = 0; M.kitRotApply("fall2026");
-  const planWrites = dbWrites.filter(w => w[0].indexOf("kitchen/plan/") === 0);
-  ok("apply: 28 kitchen/plan/<iso> writes", planWrites.length === 28, planWrites.length);
-  ok("apply: writes carry mid for library meals + txt for the rest", planWrites.find(w => w[0] === "kitchen/plan/2026-10-12")[1].mid === "m2" && planWrites.find(w => w[0] === "kitchen/plan/2026-10-14")[1].txt === "Turkey Chili", null);
-  ok("apply: in-memory plan updated + toast", M.kitPlan["2026-10-13"].mid === "m3" && toasts[0].indexOf("28 days planned") >= 0, toasts);
-  ok("apply: never touches kitchen/rotations or meals", dbWrites.every(w => w[0].indexOf("kitchen/plan/") === 0), dbWrites.map(w => w[0]).filter(p => p.indexOf("kitchen/plan/") !== 0));
-  ok("apply: unknown id is a no-op", (dbWrites.length = 0, M.kitRotApply("nope"), dbWrites.length === 0), null);
+  const planWrites = dbWrites.filter(w => w[0] === "kitchen/plan");
+  const up = planWrites.length ? planWrites[0][1] : {};
+  const upDays = Object.keys(up).map(k => k.split("/")[0]).filter((v, i, a) => a.indexOf(v) === i);
+  ok("run: one multi-path update under kitchen/plan covering 28 days, start to cut-off", planWrites.length === 1 && upDays.length === 28 && upDays[0] === "2026-09-14" && upDays[27] === "2026-10-11" && !up["2026-10-12/mid"], upDays.length);
+  ok("run: keys carry mid for library meals + txt for the rest + a fromRot stamp per kind", up["2026-09-14/mid"] === "m2" && up["2026-09-16/txt"] === "Turkey Chili" && JSON.stringify(up["2026-10-11/fromRot/d"]) === '{"id":"fall2026","wk":3,"dow":6}' && JSON.stringify(up["2026-10-11/fromRot/s"]) === '{"id":"fall2026","wk":3,"dow":6}', null);
+  ok("run: in-memory plan updated + toast", M.kitPlan["2026-09-15"].mid === "m3" && toasts[0].indexOf("28 days planned") >= 0, toasts);
+  ok("run: seeds the Fall default, then stores only its dates (no whole-node rewrite)", dbWrites.some(w => w[0] === "kitchen/rotations/fall2026" && w[1].weeks) && dbWrites.some(w => w[0] === "kitchen/rotations/_seeded") && dbWrites.some(w => w[0] === "kitchen/rotations/fall2026" && w[1].startDate === "2026-09-14" && w[1].endDate === "2026-10-11" && !w[1].weeks) && dbWrites.every(w => /^kitchen\/(plan|rotations\/)/.test(w[0])), dbWrites.map(w => w[0]));
+  ok("run: unknown id is a no-op", (dbWrites.length = 0, M.kitRotApply("nope"), dbWrites.length === 0), null);
 
   // render: card, default row, apply control, preview toggle
   M.renderKitchen(elStub);
   let h = elStub.innerHTML;
   ok("card renders with the Fall default", h.includes("📅</span> Rotations") && h.includes("🍂 Fall") && h.includes("4 weeks · 28 days"), null);
-  ok("card: per-rotation date input defaults to the next Monday", h.includes('id="kit-rot-from-fall2026" value="2026-09-14"'), null);
+  ok("card: the run row shows the stored start + cut-off and a running badge", h.includes('id="kit-rot-from-fall2026" value="2026-09-14"') && h.includes('id="kit-rot-to-fall2026" value="2026-10-11"') && h.includes("running · until Oct 11"), null);
   ok("card: Apply + delete + save buttons wired", h.includes("kitRotApply('fall2026')") && h.includes("kitRotDel('fall2026')") && h.includes("kitRotSaveToggle()"), null);
   ok("card: preview closed by default", !h.includes("Wk 1</b>"), null);
   M.kitRotToggle("fall2026"); M.renderKitchen(elStub); h = elStub.innerHTML;
@@ -1327,10 +1329,10 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   domVals["kit-rot-name"] = { value: "Test Fortnight" }; domVals["kit-rot-save-from"] = { value: "2027-01-04" };
   M.kitRotSave();
   ok("save: empty range → toast, nothing written", toasts.length === 2 && dbWrites.length === 0, toasts);
-  domVals["kit-rot-save-from"] = { value: "2026-10-12" };
+  domVals["kit-rot-save-from"] = { value: "2026-09-14" };
   M.kitRotSave();
   const rotWrites = dbWrites.filter(w => w[0].indexOf("kitchen/rotations/") === 0);
-  ok("save: seeds the Fall default + _seeded sentinel + the new rotation", rotWrites.some(w => w[0] === "kitchen/rotations/fall2026") && rotWrites.some(w => w[0] === "kitchen/rotations/_seeded" && w[1] === true) && rotWrites.some(w => /^kitchen\/rotations\/r[0-9a-z]+_\d+$/.test(w[0])), rotWrites.map(w => w[0]));
+  ok("save: writes the new rotation only (the Fall default + _seeded were seeded at Run)", rotWrites.length === 1 && rotWrites.some(w => /^kitchen\/rotations\/r[0-9a-z]+_\d+$/.test(w[0])), rotWrites.map(w => w[0]));
   const saved = rotWrites.find(w => /_\d+$/.test(w[0]) && w[0].indexOf("fall2026") < 0)[1];
   ok("save: captured 2 weeks by NAME from the applied plan", saved.name === "Test Fortnight" && saved.weeks.length === 2 && saved.weeks[0][0].d === "Shank & Rice Bowls" && saved.weeks[0][2].d === "Turkey Chili" && saved.weeks[0][0].b === "PB banana toast", saved.weeks[0][0]);
   ok("save: kitRotAll now lists stored rotations only (no double Fall)", Object.keys(M.kitRotAll()).length === 2 && !("_seeded" in M.kitRotAll()), Object.keys(M.kitRotAll()));
@@ -1345,13 +1347,13 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   Object.keys(M.kitRotations).forEach(k => { if (k !== "_seeded") delete M.kitRotations[k]; });
   ok("delete-all: sentinel blocks the default from resurrecting", Object.keys(M.kitRotAll()).length === 0, Object.keys(M.kitRotAll()));
   M.renderKitchen(elStub);
-  ok("empty card hints how to save one", elStub.innerHTML.includes("No rotations saved"), null);
+  ok("empty card hints how to build or save one", elStub.innerHTML.includes("No rotations yet"), null);
 
   // wipe module state so no later group inherits it
   Object.keys(M.kitRotations).forEach(k => { delete M.kitRotations[k]; });
   Object.keys(M.kitPlan).forEach(k => { delete M.kitPlan[k]; });
   Object.keys(M.kitMeals).forEach(k => { delete M.kitMeals[k]; });
-  ["kit-rot-from-fall2026","kit-rot-name","kit-rot-save-from","kit-rot-weeks"].forEach(k => { delete domVals[k]; });
+  ["kit-rot-from-fall2026","kit-rot-to-fall2026","kit-rot-name","kit-rot-save-from","kit-rot-weeks"].forEach(k => { delete domVals[k]; });
   dbWrites.length = 0; dbRemoves.length = 0; toasts.length = 0;
 })();
 
