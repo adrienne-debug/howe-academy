@@ -4276,6 +4276,7 @@ function initFb() {
       try{HA_LS.setItem('ha_kit_rotations',JSON.stringify(kitRotations));}catch(e){}
       if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
     });
+    if(typeof kitFlagListen==="function") kitFlagListen();   // KITFLAG: kitchen/flags → kitFlags (the device copy first)
     db.ref("kitchen/prepDone").on("value",s=>{
       const v=s.val()||{};
       Object.keys(kitPrepDone).forEach(k=>{ delete kitPrepDone[k]; });
@@ -17101,7 +17102,8 @@ function mdCardDinner(iso){
     +'<span style="margin-left:auto;display:flex;gap:6px;align-items:center">'
     +((kitPlan[iso]||{}).eaten
       ?'<span style="font-size:11px;font-weight:800;background:rgba(255,255,255,0.25);border-radius:8px;padding:3px 10px">✓ Eaten</span>'
-      :((dpl&&kitEatGate())?'<button onclick="kitMarkEaten(\''+iso+'\')" style="border:none;background:rgba(255,255,255,0.25);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">✓ We ate it</button>':''))
+      :((typeof kitOutIs==="function"&&kitOutIs(iso,'d'))?'<span style="font-size:11px;font-weight:800;background:rgba(255,255,255,0.25);border-radius:8px;padding:3px 10px">\u{1F37D} Eating out</span>'   // KITFLAG: no ✓ We ate it, so no rating is asked
+      :((dpl&&kitEatGate())?'<button onclick="kitMarkEaten(\''+iso+'\')" style="border:none;background:rgba(255,255,255,0.25);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">✓ We ate it</button>':'')))
     +'<button onclick="mpGoto(\'meals\')" style="border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">🗓 Plan week →</button></span></div>';
   if(dMeal){
     const dSteps=kitPrepSteps(iso);
@@ -17140,7 +17142,7 @@ function mdCardDinner(iso){
         const val=sv?(sv.meal?sv.meal.name:(sv.txt||"")):"";
         h+='<div onclick="'+(sv&&sv.meal?'kitOpenRecipe(\''+sv.mid+'\')':'kitSlotText(\''+iso+'\',\''+sp[0]+'\')')+'" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 10px;background:#f8f7f4;border:1.5px solid #e8e4de;border-radius:8px;margin-bottom:5px">'
           +'<span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;flex:0 0 88px">'+sp[1]+' '+sp[2]+'</span>'
-          +'<span style="flex:1;font-size:13px;font-weight:600">'+(val?esc(val):'<span style="color:var(--muted);font-weight:500">tap to add</span>')+'</span>'
+          +'<span style="flex:1;font-size:13px;font-weight:600">'+(val?esc(val):'<span style="color:var(--muted);font-weight:500">tap to add</span>')+(typeof kitOutLbl==="function"?kitOutLbl(iso,sp[0]):'')+'</span>'
           +(sv&&!sv.meal?'<span style="color:#9ca3af;font-size:11px">✎</span>':'')+'</div>';
       });
       h+='</div>';
@@ -17440,6 +17442,7 @@ function renderMomsDay(el){
     nowN+=_dp.n; h+=_dp.html;
   }catch(e){}
   try{ const _ro=grRanOutHTML(); if(_ro){ nowN++; h+=_ro; } }catch(e){}   // 🛒 ran out after a meal → on the list
+  try{ const _kf=kitFlagNowHTML(); nowN+=_kf.n; h+=_kf.html; }catch(e){}   // KITFLAG: ⚠ a meal the kids rate low → ✓ Got it · Swap…
   try{ const _pa=grPantryAlertsHTML(); nowN+=_pa.n; h+=_pa.html; }catch(e){}
   try{ const _pu=grPutAlertHTML(); nowN+=_pu.n; h+=_pu.html; const _us=grUseSoonHTML(); nowN+=_us.n; h+=_us.html; }catch(e){}   // 🧺 to put away · 📅 use or freeze by   // 🥫 may be old · 🍽 this week's meals need
   if(morningWaiting.length){
@@ -17772,6 +17775,7 @@ function kitPrepMins(s){ const v=parseInt(s&&s.mins,10); return (v>0&&v<=240)?v:
 function kitPrepSteps(iso){
   const pl=kitPlanFor(iso);
   if(!pl||!pl.meal||!Array.isArray(pl.meal.prep)) return [];
+  if(typeof kitOutIs==="function"&&kitOutIs(iso,'d')) return [];   // KITFLAG: 🍽 eating out — no prep tonight
   const done=kitPrepDone[iso]||{};
   return pl.meal.prep.map((s,i)=>({iso:iso,mid:pl.mid,idx:i,when:s.when,label:s.label||"",mins:kitPrepMins(s),
     mealName:pl.meal.name||"",done:!!done[pl.mid+"_"+i]}));
@@ -19075,7 +19079,7 @@ function grFromRecipe(mid){
 function grWeekSources(fromIso,days){
   const out=[];
   for(let i=0;i<(days||7);i++){
-    const iso=kitIsoPlus(fromIso,i), p=(typeof kitPlanRec==='function')?kitPlanRec(iso):kitPlan[iso]; if(!p) continue;   // KITROT2: a queued rotation's day shops too
+    const iso=kitIsoPlus(fromIso,i); let p=(typeof kitPlanRec==='function')?kitPlanRec(iso):kitPlan[iso]; if(typeof kitOutStrip==='function') p=kitOutStrip(iso,p); if(!p) continue;   // KITROT2: a queued rotation's day shops too · KITFLAG: an eating-out slot (and its sides) doesn't shop
     const day=gwParseDate(iso).toLocaleDateString("en-US",{weekday:"short"});
     if(!p.eaten&&!p.skipped){
       if(p.mid&&kitMeals[p.mid]) out.push({lines:kitMeals[p.mid].ing,lbl:(kitMeals[p.mid].name||"dinner")+" ("+day+")"});
@@ -19952,6 +19956,7 @@ function grEatApply(quick){
   if(plan.skipped){ delete plan.skipped; if(typeof db!=='undefined'&&db) db.ref('kitchen/plan/'+E.iso+'/skipped').remove(); }
   try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
   if(typeof db!=='undefined'&&db) db.ref('kitchen/plan/'+E.iso+'/eaten').set(plan.eaten);
+  if(typeof kitFlagServed==="function") kitFlagServed(E.iso,E.mid);   // KITFLAG: the kids' votes ride onto this serving
   _grEatUndo=undo; const took=E.rows.filter(r=>r.on&&r.pid&&undo.pan[r.pid]!==undefined).map(r=>(r.pname||r.name)+" −"+r.qty);
   const mid=E.mid; _grEat=null; grPopClose();
   if(quick) grEatBar((mid&&kitMeals[mid]?kitMeals[mid].name:"Dinner")+" eaten"+(took.length?" — "+took.join(", "):""),mid);
@@ -20117,7 +20122,7 @@ function grNeedSkip(name){ const v=(grData.skipneed||{})[kitSlug(name)]; return 
 function grWeekNeeds(){
   const out=[], seen={}, from=_todayStr();
   for(let i=0;i<7;i++){
-    const iso=kitIsoPlus(from,i), p=(typeof kitPlanRec==='function')?kitPlanRec(iso):kitPlan[iso]; if(!p) continue;   // KITROT2: a queued rotation's day counts
+    const iso=kitIsoPlus(from,i); let p=(typeof kitPlanRec==='function')?kitPlanRec(iso):kitPlan[iso]; if(typeof kitOutStrip==='function') p=kitOutStrip(iso,p); if(!p) continue;   // KITROT2: a queued rotation's day counts · KITFLAG: an eating-out slot doesn't
     const day=gwParseDate(iso).toLocaleDateString("en-US",{weekday:"short"});
     const meals=[]; if(p.mid&&!p.eaten&&!p.skipped) meals.push(p.mid); ["b","l","s"].forEach(sl=>{ const v=p[sl]; if(v&&v.mid) meals.push(v.mid); });
     meals.forEach(mid=>{ const m=kitMeals[mid]; if(!m) return;
@@ -20666,7 +20671,7 @@ function _kitMvGet(iso,slot){
   if(slot==="d"){ const v=p.mid?{mid:p.mid}:(p.txt?{txt:p.txt}:null); if(v&&p.sides) v.sides=p.sides; if(v&&p.sideList) v.sideList=p.sideList; return v; }   // KITSIDES: the list rides along like the old text
   const v=p[slot]; return (v&&(v.mid||v.txt))?v:null;
 }
-function _kitMvFixed(iso,slot){ const p=kitPlan[iso]; return slot==="d"&&!!p&&!!(p.eaten||p.skipped); }
+function _kitMvFixed(iso,slot){ const p=kitPlan[iso]; return (slot==="d"&&!!p&&!!(p.eaten||p.skipped))||(typeof kitOutIs==="function"&&kitOutIs(iso,slot)); }   // KITFLAG: an eating-out slot stays put — the slide hops it, nothing lands on it
 // The slide for one category: [{iso,val}] in order — first = the day being moved, last = the
 // empty day that absorbs it. null when `iso` has nothing movable in that category.
 function kitMoveChain(iso,slot){
@@ -21428,7 +21433,7 @@ function kitRotBHTML(){
       h+='<span style="font-weight:800;color:#9ca3af;align-self:center">'+KIT_ROT_DAYS[i]+'</span>';
       B.types.forEach(t=>{
         const v=String(day[t]||""); const picking=kitRotPick&&kitRotPick.kind==="b"&&kitRotPick.w===w&&kitRotPick.i===i&&kitRotPick.slot===t;
-        h+='<span onclick="kitRotBPick('+w+','+i+',\''+t+'\')" style="cursor:pointer;padding:5px 6px;border-radius:6px;background:'+(v?'#fff7ed':'#f8f7f4')+';border:1.5px solid '+(picking?'#B45309':'#e8e4de')+';min-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(v?esc(v):'<span style="color:#9ca3af">＋ pick</span>')+'</span>';
+        h+='<span onclick="kitRotBPick('+w+','+i+',\''+t+'\')" style="cursor:pointer;padding:5px 6px;border-radius:6px;background:'+(v?'#fff7ed':'#f8f7f4')+';border:1.5px solid '+(picking?'#B45309':'#e8e4de')+';min-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(v?esc(v)+(typeof kitFlagMarkName==="function"?kitFlagMarkName(v):''):'<span style="color:#9ca3af">＋ pick</span>')+'</span>';   // KITFLAG: ⚠ on the slot that holds a low-rated meal
         if(t==="d") h+='<input type="text" value="'+esc(day.sd||"")+'" placeholder="🥦 peas · rice" oninput="kitRotBSet('+w+','+i+',\'sd\',this.value,true)" style="min-width:0;padding:4px 6px;border:1.5px solid #e8e4de;border-radius:6px;font-size:10.5px;font-family:\'DM Sans\',sans-serif">';
       });
     });
@@ -21532,6 +21537,7 @@ function kitRate(kind,id,kid){
     if(next) db.ref('kitchen/'+node+'/'+id+'/ratings/'+kid).set(next);
     else db.ref('kitchen/'+node+'/'+id+'/ratings/'+kid).remove();
   }
+  if(kind==="meal"&&typeof kitFlagStampRate==="function") kitFlagStampRate(id,kid,next);   // KITFLAG: a kid's vote within a day and a half of a serving lands on that serving
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
 function kitRateChips(kind,id){
@@ -21543,6 +21549,188 @@ function kitRateChips(kind,id){
     return '<span onclick="kitRate(\''+kind+'\',\''+id+'\',\''+k+'\')" title="'+cap(k)+' — tap to cycle 😍 love / 🙂 like / 🚫 won\'t eat" style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:800;padding:2px 7px;border-radius:10px;border:1.5px solid '+(m?m[2]:'#e5e7eb')+';background:'+(m?m[1]:'#f8f7f4')+';color:'+col+'">'+cap(k).slice(0,2)+' '+(m?m[0]:'–')+'</span>';
   }).join('');
 }
+
+// KITFLAG_START — ⚠ flag a meal the kids rate low, ONE note to Mom suggesting a swap, 🍽 eating out on a day.
+//   Her decisions 2026-10-22 (final): FLAG a meal whose kid ratings average under two stars over its last three
+//   servings; send Mom ONE note suggesting a swap in the rotation; an EATING-OUT mark on a day drops that meal's
+//   ingredients from the grocery list and does not move the rotation.
+//   STARS: the kids' 😍 / 🙂 / 🚫 votes read as 5 / 3 / 1 stars. A SERVING is a dinner day marked ✓ We ate it
+//   (plan/{iso}.eaten) whose dinner is this meal. A serving carries the kids' votes as they stood when it was marked
+//   eaten (kitFlagServed copies SL_KIDS' votes off kitchen/meals/{mid}/ratings — Mom's and Dad's never count) plus any
+//   vote a kid changes within a day and a half of it (kitRate → kitFlagStampRate), so "How was it?" after dinner and
+//   next morning's library tap both land on THAT night:
+//     kitchen/plan/{iso}/rate/{kid} = love|like|no          (targeted update / set / remove per kid)
+//   FLAG: kitMealFlagged(mid) — the last three servings (newest first) each carry at least one kid vote and the
+//   average of all those votes is under 2★. Fewer than three servings, or one of the three unrated → never flagged.
+//   ⚠ shows on the library row, the week list, the day sheet and the builder slot that holds the meal.
+//   NOTE: the first time a meal is flagged, Mom's device (momHere, flags + plan listeners synced) writes
+//     kitchen/flags/{mid} = {at, avg, noted:true}            (targeted set — the one note per flag)
+//   and 🔴 Now shows "<Meal> isn't landing — 1.7★ over the last 3. Swap it in <rotation>?" with ✓ Got it
+//   (kitchen/flags/{mid}/got = ts — the row goes, the record stays so it never fires twice) and Swap… (the builder
+//   open on the slot that holds the meal — what ✎ Edit then a tap on the slot does; a meal in no rotation opens the
+//   day sheet of its next planned day). A serving that lifts the average to 2★ or more clears the record (remove);
+//   a new drop under 2★ flags and notes again.
+//   EATING OUT: 🍽 Eating out on the day sheet, beside ✗ Didn't happen (dinner) and ➡ Move (breakfast/lunch/snack):
+//     kitchen/plan/{iso}/{slot}/out = true                   (targeted set; a second tap removes the leaf)
+//   The slot keeps its meal and reads "eating out" everywhere (week list, calendar cell + day sheet, Mom's Day card,
+//   kids' screens as text only); the grocery feeders skip its meal and sides (kitOutStrip), its prep steps are
+//   hidden, no ✓ We ate it (so no rating is asked), the move chain hops over it and nothing slides — the rotation
+//   stays put, unlike ➡ Move forward. Only a day really on the calendar can be marked (not a queued "coming" copy).
+//   Writes go through db only when db && !_dryRun(). Nothing flagged and nothing out → every read returns exactly
+//   what it returned before (test_kitchen_flag.js checks byte-identity).
+let kitFlags={};               // kitchen/flags/{mid} → {at, avg, noted:true, got?}
+let kitFlagSynced=false;       // the kitchen/flags listener fired — the sync never writes from a stale device copy
+const KIT_FLAG_STARS={love:5,like:3,no:1};
+const KIT_FLAG_N=3, KIT_FLAG_UNDER=2, KIT_FLAG_STAMP_MS=36*3600*1000, KIT_FLAG_LOOK=60;
+function kitFlagDb(){ return (typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()))?db:null; }
+function kitFlagLS(){ try{HA_LS.setItem('ha_kit_flags',JSON.stringify(kitFlags));}catch(e){} }
+function kitFlagPlanLS(){ try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){} }
+function kitFlagListen(){   // once, from the kitchen listeners: the device copy first, then the live node
+  try{ const v=HA_LS.getItem('ha_kit_flags'); if(v) Object.assign(kitFlags,JSON.parse(v)); }catch(e){}
+  if(typeof db==='undefined'||!db) return;
+  db.ref("kitchen/flags").on("value",s=>{
+    const v=s.val()||{};
+    Object.keys(kitFlags).forEach(k=>{ delete kitFlags[k]; });
+    Object.keys(v).forEach(k=>{ kitFlags[k]=v[k]; });
+    kitFlagSynced=true; kitFlagLS();
+    if(typeof tab!=='undefined'&&tab==="moms-plan"){ const el=document.getElementById("content"); if(el) renderMomsPlan(el); }
+  });
+}
+function kitFlagKidVotes(r){ const out={}; if(r&&typeof r==="object") Object.keys(r).forEach(k=>{ if(SL_KIDS.indexOf(k)>=0&&KIT_FLAG_STARS[r[k]]) out[k]=r[k]; }); return out; }
+// The meal's servings, newest first: [{iso, eaten, votes}] — dinner days marked eaten whose dinner is this meal.
+function kitFlagServings(mid){
+  if(!mid) return [];
+  return Object.keys(kitPlan).filter(iso=>{ const p=kitPlan[iso]; return !!(p&&p.eaten&&p.mid===mid); })
+    .sort((a,b)=>((kitPlan[b].eaten||0)-(kitPlan[a].eaten||0))||(a<b?1:(a>b?-1:0)))
+    .map(iso=>({iso:iso,eaten:kitPlan[iso].eaten,votes:kitFlagKidVotes(kitPlan[iso].rate)}));
+}
+// The last three servings' average — {avg, n, servings} — null with fewer than three, or when one of them has no kid vote.
+function kitFlagAvg(mid){
+  const last=kitFlagServings(mid).slice(0,KIT_FLAG_N);
+  if(last.length<KIT_FLAG_N) return null;
+  let sum=0, n=0;
+  for(const s of last){ const ks=Object.keys(s.votes); if(!ks.length) return null; ks.forEach(k=>{ sum+=KIT_FLAG_STARS[s.votes[k]]; n++; }); }
+  return {avg:sum/n,n:n,servings:last};
+}
+function kitMealFlagged(mid){ const a=kitFlagAvg(mid); return !!(a&&a.avg<KIT_FLAG_UNDER); }
+function kitFlagStars(avg){ return (Math.round(avg*10)/10).toFixed(1)+"★"; }
+function kitFlagMark(mid){ if(!mid||!kitMealFlagged(mid)) return ''; return '<span title="The kids rate this low — '+kitFlagStars(kitFlagAvg(mid).avg)+' over the last '+KIT_FLAG_N+'" style="font-size:11px;color:#b45309;margin-left:3px">⚠</span>'; }
+function kitFlagMarkName(name){ const mid=(typeof kitRotMealByName==="function")?kitRotMealByName(name):null; return mid?kitFlagMark(mid):''; }
+// ✓ We ate it — the kids' votes as they stand ride onto this serving (only kids, only votes that are set).
+function kitFlagServed(iso,mid){
+  const m=mid&&kitMeals[mid]; if(!m||!kitPlan[iso]) return;
+  const votes=kitFlagKidVotes(m.ratings); if(!Object.keys(votes).length) return;
+  kitPlan[iso].rate=Object.assign({},kitPlan[iso].rate,votes); kitFlagPlanLS();
+  const d=kitFlagDb(); if(d) d.ref('kitchen/plan/'+iso+'/rate').update(votes);
+  kitFlagSync();
+}
+// A kid's vote changed (kitRate) — within a day and a half of the meal's latest serving it lands on that serving too.
+function kitFlagStampRate(mid,kid,val){
+  if(SL_KIDS.indexOf(kid)<0) return;
+  const s=kitFlagServings(mid)[0]; if(!s||(Date.now()-s.eaten)>KIT_FLAG_STAMP_MS) return;
+  const p=kitPlan[s.iso]; const rate=Object.assign({},p.rate);
+  if(val) rate[kid]=val; else delete rate[kid];
+  if(Object.keys(rate).length) p.rate=rate; else delete p.rate;
+  kitFlagPlanLS();
+  const d=kitFlagDb(); if(d){ if(val) d.ref('kitchen/plan/'+s.iso+'/rate/'+kid).set(val); else d.ref('kitchen/plan/'+s.iso+'/rate/'+kid).remove(); }
+  kitFlagSync();
+}
+// Mom's device keeps kitchen/flags true to the math: a meal newly under 2★ gets its one note; one back at 2★+ loses its record.
+function kitFlagSync(){
+  const d=kitFlagDb(); if(!d||!kitFlagSynced||!(typeof momHere==="function"&&momHere())) return;
+  if(typeof kitRotSynced!=="undefined"&&!kitRotSynced.plan) return;
+  Object.keys(kitMeals).forEach(mid=>{
+    const on=kitMealFlagged(mid), rec=kitFlags[mid];
+    if(on&&!rec){ const a=kitFlagAvg(mid); kitFlags[mid]={at:Date.now(),avg:Math.round(a.avg*100)/100,noted:true}; d.ref('kitchen/flags/'+mid).set(kitFlags[mid]); }
+    else if(!on&&rec){ delete kitFlags[mid]; d.ref('kitchen/flags/'+mid).remove(); }
+  });
+  kitFlagLS();
+}
+// The rotation slot that holds the meal — {id, name, emoji, w, i, slot} — the running one first, then a queued one, then any.
+function kitFlagRotSlot(mid){
+  const m=kitMeals[mid]; if(!m||typeof kitRotAll!=="function") return null;
+  const key=kitRotNorm(m.name); if(!key) return null;
+  const rots=kitRotAll(), today=_todayStr(), rank={running:0,upcoming:1};
+  const ids=Object.keys(rots).sort((a,b)=>{ const ra=rank[kitRotStatus(rots[a],today)], rb=rank[kitRotStatus(rots[b],today)]; return (ra==null?2:ra)-(rb==null?2:rb); });
+  for(const id of ids){
+    const r=rots[id]||{}; const weeks=Array.isArray(r.weeks)?r.weeks:[]; const types=kitRotTypes(r);
+    for(let w=0;w<weeks.length;w++){ const wk=Array.isArray(weeks[w])?weeks[w]:[]; for(let i=0;i<wk.length;i++){ const day=wk[i]||{}; for(const t of types){ if(kitRotNorm(day[t])===key) return {id:id,name:String(r.name||"Rotation"),emoji:String(r.emoji||""),w:w,i:i,slot:t}; } } }
+  }
+  return null;
+}
+// The next calendar day (today on) that has the meal planned, in any slot — null when none in the next 60 days.
+function kitFlagNextDay(mid){
+  const today=_todayStr();
+  for(let k=0;k<KIT_FLAG_LOOK;k++){ const iso=kitIsoPlus(today,k); const p=(typeof kitPlanRec==='function')?kitPlanRec(iso):kitPlan[iso]; if(!p) continue;
+    if(p.mid===mid||["b","l","s"].some(s=>p[s]&&p[s].mid===mid)) return iso; }
+  return null;
+}
+function kitFlagFmt(iso){ return gwParseDate(iso).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}); }
+// 🔴 Now: one row per meal whose note is out and not yet ✓ Got it (and still flagged).
+function kitFlagNowHTML(){
+  kitFlagSync();
+  let html='', n=0;
+  const b='padding:4px 10px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;';
+  Object.keys(kitFlags).forEach(mid=>{
+    const rec=kitFlags[mid], m=kitMeals[mid]; if(!m||!rec||!rec.noted||rec.got||!kitMealFlagged(mid)) return;
+    const a=kitFlagAvg(mid), rs=kitFlagRotSlot(mid), nd=rs?null:kitFlagNextDay(mid);
+    n++;
+    html+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:#fffbeb;border-left:3px solid #b45309;border-radius:8px;margin-bottom:6px">'
+      +'<span style="flex:1;font-size:13px">⚠ <b>'+esc((m.emoji?m.emoji+' ':'')+(m.name||"This meal"))+'</b> isn’t landing — '+kitFlagStars(a.avg)+' over the last '+KIT_FLAG_N+'. '
+      +(rs?'Swap it in '+esc((rs.emoji?rs.emoji+' ':'')+rs.name)+'?':(nd?'Swap it on '+esc(kitFlagFmt(nd))+'?':'Swap it for something else?'))+'</span>'
+      +'<button onclick="kitFlagGotIt(\''+mid+'\')" style="'+b+'border:none;background:#b45309;color:#fff">✓ Got it</button>'
+      +'<button onclick="kitFlagSwap(\''+mid+'\')" style="'+b+'border:1.5px solid #b45309;background:#fff;color:#b45309">Swap…</button></div>';
+  });
+  return {html:html,n:n};
+}
+function kitFlagGotIt(mid){
+  if(!(typeof momHere==="function"&&momHere())) return;
+  const rec=kitFlags[mid]; if(!rec) return;
+  rec.got=Date.now(); kitFlagLS();
+  const d=kitFlagDb(); if(d) d.ref('kitchen/flags/'+mid+'/got').set(rec.got);
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+// Swap… — the builder on the slot that holds the meal (its picker open), else the day sheet of its next planned day.
+function kitFlagSwap(mid){
+  const rs=kitFlagRotSlot(mid);
+  if(rs){ kitPinGate(()=>{ kitRotBStart(rs.id); kitRotPickOpen({kind:"b",w:rs.w,i:rs.i,slot:rs.slot}); mpGoto('meals'); },'Changing a rotation is for Mom.'); return; }
+  const nd=kitFlagNextDay(mid);
+  if(nd){
+    if(typeof mpSchMode!=="undefined"){ mpSchMode="month"; try{ HA_LS.setItem("ha_mp_schmode","month"); }catch(e){} }
+    if(typeof mpSchWho!=="undefined"&&mpSchWho!=="all"&&mpSchWho!=="mom") mpSchWho="all";
+    calPreviewMonth=nd.slice(0,7); calDaySel=nd; mpGoto('cal'); return;
+  }
+  mpGoto('meals');
+}
+// ── 🍽 Eating out ──
+// Read off the day as it is on the calendar (kitPlan), never a queued "coming" copy — a run would overwrite the slot.
+function kitOutIs(iso,slot){ const p=kitPlan[iso]; const v=p&&p[slot]; return !!(v&&typeof v==="object"&&v.out); }
+function kitOutToggle(iso,slot){
+  if(!kitEatGate()) return;
+  if(!/^[dbls]$/.test(slot)||!kitPlan[iso]) return;
+  const p=kitPlan[iso], on=!kitOutIs(iso,slot);
+  const v=Object.assign({},p[slot]); if(on) v.out=true; else delete v.out;
+  if(Object.keys(v).length) p[slot]=v; else delete p[slot];
+  kitFlagPlanLS();
+  const d=kitFlagDb(); if(d){ if(on) d.ref('kitchen/plan/'+iso+'/'+slot+'/out').set(true); else d.ref('kitchen/plan/'+iso+'/'+slot+'/out').remove(); }
+  if(typeof mwToast==='function') mwToast(on?'\u{1F37D} Eating out — off the grocery list, the plan stays put':'Back on the plan');
+  _kitRefresh();
+}
+function kitOutLbl(iso,slot){ return kitOutIs(iso,slot)?' <span style="font-size:10px;font-weight:800;color:#0f766e;background:#f0fdfa;border-radius:8px;padding:1px 6px;white-space:nowrap">\u{1F37D} eating out</span>':''; }
+function kitOutTxt(iso,slot){ return kitOutIs(iso,slot)?" · eating out":""; }
+function kitOutBtn(iso,slot){
+  if(!kitPlan[iso]||(typeof kitRotComingAt==="function"&&kitRotComingAt(iso,slot))) return '';   // not on the calendar yet — nothing to mark
+  const on=kitOutIs(iso,slot);
+  return '<button class="act" style="background:'+(on?'#0f766e;color:#fff':'#f0fdfa;color:#0f766e')+'" onclick="kitOutToggle(\''+iso+'\',\''+slot+'\')">\u{1F37D} Eating out'+(on?' ✓':'')+'</button>';
+}
+// The grocery feeders' view of a day: out slots gone (the dinner takes its sides with it). The SAME object back when nothing is out.
+function kitOutStrip(iso,p){
+  if(!p) return p;
+  let out=p;
+  ["d","b","l","s"].forEach(s=>{ if(!kitOutIs(iso,s)) return; if(out===p) out=Object.assign({},p); if(s==="d"){ delete out.mid; delete out.txt; delete out.sides; delete out.sideList; } else delete out[s]; });
+  return out;
+}
+// KITFLAG_END
 
 function kitEditorHTML(){
   const d=kitEditDraft||{};
@@ -22066,6 +22254,7 @@ function renderKitchen(el){
     else if(pl&&pl.txt) what='<b>'+esc(pl.txt)+'</b>'+(kitSidesTxt(pl)?' <span style="font-size:11px;color:#6b6560">· '+esc(kitSidesTxt(pl))+'</span>':'')+' <span style="font-size:10px;color:var(--muted)">(typed)</span>';
     else what='<span style="color:var(--muted)">tap to plan</span>';
     if(_cm) what+=' <span style="font-size:10px;font-weight:800;color:#9ca3af">'+esc(kitRotComingLbl(_cm))+'</span>';   // KITROT2
+    if(typeof kitOutLbl==="function") what+=kitFlagMark(pl&&pl.mid)+kitOutLbl(iso,'d');   // KITFLAG: ⚠ + 🍽 eating out
     const nPrep=(pl&&pl.meal&&Array.isArray(pl.meal.prep))?pl.meal.prep.length:0;
     h+='<div onclick="kitPickDay(\''+iso+'\')" style="'+(_cm?'opacity:.6;':'')+'cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 10px;background:'+(i===0?'#fff7ed':'#f8f7f4')+';border:1.5px solid '+(kitPickIso===iso?'#E07B39':(i===0?'#fed7aa':'#e8e4de'))+';border-radius:9px;margin-bottom:6px">'
       +'<span style="flex:0 0 92px;font-size:11px;font-weight:800;color:'+(i===0?'#c2410c':'#6b6560')+'">'+dayLbl+'</span>'
@@ -22075,7 +22264,7 @@ function renderKitchen(el){
     const slotBits=[];
     [["b","🌅"],["l","☀️"],["s","🍎"]].forEach(sp=>{
       const sv=kitPlanSlot(iso,sp[0]);
-      if(sv) slotBits.push(sp[1]+' '+esc(sv.meal?sv.meal.name:(sv.txt||"")));
+      if(sv) slotBits.push(sp[1]+' '+esc(sv.meal?sv.meal.name:(sv.txt||""))+(typeof kitOutLbl==="function"?kitFlagMark(sv.mid)+kitOutLbl(iso,sp[0]):''));   // KITFLAG
     });
     if(slotBits.length) h+='<div style="margin:-3px 0 7px;padding:0 10px;font-size:11px;color:#6b6560;line-height:1.5">'+slotBits.join(' · ')+'</div>';
     if(kitPickIso===iso){
@@ -22109,7 +22298,7 @@ function renderKitchen(el){
     const nPrep=Array.isArray(m.prep)?m.prep.length:0;
     h+='<div data-kit-mid="'+mid+'" style="display:'+(kitLibMatch(m)?'flex':'none')+';align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:#f8f7f4;border:1.5px solid #e8e4de;border-radius:9px;margin-bottom:6px">'
       +(m.photo?'<img src="'+m.photo+'" alt="" onclick="kitOpenRecipe(\''+mid+'\')" style="width:34px;height:34px;object-fit:cover;border-radius:8px;cursor:pointer;flex:none">':'')
-      +'<span onclick="kitOpenRecipe(\''+mid+'\')" style="cursor:pointer;flex:1;font-size:13px;font-weight:700">'+(m.emoji?esc(m.emoji)+' ':'')+esc(m.name)+'</span>'
+      +'<span onclick="kitOpenRecipe(\''+mid+'\')" style="cursor:pointer;flex:1;font-size:13px;font-weight:700">'+(m.emoji?esc(m.emoji)+' ':'')+esc(m.name)+'</span>'+(typeof kitFlagMark==="function"?kitFlagMark(mid):'')   // KITFLAG: ⚠ the kids rate it low
       +kitRateChips('meal',mid)
       +(nPrep?'<span style="font-size:10px;font-weight:800;color:#c2410c">⏲ '+nPrep+'</span>':'')
       +'<button onclick="kitOpenRecipe(\''+mid+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid #E07B39;background:#fff;color:#c2410c;font-size:11px;font-weight:700;cursor:pointer">📖</button>'
@@ -34245,7 +34434,7 @@ function _calDinnerOf(iso){
   let name=pl.meal?((pl.meal.emoji?pl.meal.emoji+" ":"")+(pl.meal.name||"")):(pl.txt?pl.txt:(pl.mid?"(meal removed)":""));
   if(!name) return null;
   if(pl.sides) name+=" · "+pl.sides;
-  const st=raw.eaten?"ate":(raw.skipped?"skip":(iso<calToday()?"owed":"planned"));
+  const st=raw.eaten?"ate":(raw.skipped?"skip":((typeof kitOutIs==="function"&&kitOutIs(iso,'d'))?"out":(iso<calToday()?"owed":"planned")));   // KITFLAG: 🍽 eating out is its own state
   return {name:name,st:st,pl:pl};
 }
 function calRenderMonthPreview(opts){
@@ -34345,9 +34534,9 @@ function calRenderMonthPreview(opts){
     // lunch, snack, then dinner (the one that carries a status)
     if(L.meals&&typeof kitPlanSlot==="function"&&typeof KIT_SLOTS!=="undefined"){
       KIT_SLOTS.forEach(function(sp){ const sv=kitPlanSlot(iso,sp[0]); if(!sv) return;
-        const nm=sv.meal?((sv.meal.emoji?sv.meal.emoji+" ":"")+(sv.meal.name||"")):(sv.txt||""); if(nm) items.push({c:"gmd-meal"+((typeof kitRotComingAt==="function"&&kitRotComingAt(iso,sp[0]))?" coming":""),t:sp[1]+" "+nm}); });   // KITROT2: a queued day is pale
+        const nm=sv.meal?((sv.meal.emoji?sv.meal.emoji+" ":"")+(sv.meal.name||"")):(sv.txt||""); if(nm) items.push({c:"gmd-meal"+((typeof kitRotComingAt==="function"&&kitRotComingAt(iso,sp[0]))?" coming":""),t:sp[1]+" "+nm+(typeof kitOutTxt==="function"?kitOutTxt(iso,sp[0]):'')}); });   // KITROT2: a queued day is pale · KITFLAG: eating out
     }
-    if(_din) items.push({c:"gmd-meal "+_din.st+((typeof kitRotComingAt==="function"&&kitRotComingAt(iso,'d'))?" coming":""),t:"\u{1F37D} "+_din.name});   // KITROT2: a queued day is pale
+    if(_din) items.push({c:"gmd-meal "+_din.st+((typeof kitRotComingAt==="function"&&kitRotComingAt(iso,'d'))?" coming":""),t:"\u{1F37D} "+_din.name+(typeof kitOutTxt==="function"?kitOutTxt(iso,'d'):'')});   // KITROT2: a queued day is pale · KITFLAG: eating out
     const MAXL=who?5:(L.school?6:4), shown=items.slice(0,MAXL), more=items.length-shown.length;   // 📚 room for the kids' lesson lines
     const tip=items.map(x=>x.t+(x.c.indexOf("owed")>=0?" (not marked)":x.c.indexOf("ate")>=0?" (eaten)":x.c.indexOf("skip")>=0?" (didn't happen)":"")).join(" · ");
     h+='<div class="'+cls+'" onclick="calDayClick(\''+iso+'\')" title="'+esc(tip||"Tap for the day")+'">'+
@@ -34471,8 +34660,8 @@ function _calSlotRows(iso,who){
   KIT_SLOTS.forEach(function(sp){
     const sv=kitPlanSlot(iso,sp[0]); if(!sv) return; n++;
     const name=sv.meal?((sv.meal.emoji?sv.meal.emoji+" ":"")+(sv.meal.name||"")):(sv.txt||"");
-    html+='<div class="row"><span class="lbl">'+sp[2]+'</span><span style="flex:1">'+sp[1]+' <b>'+esc(name)+'</b>'+((typeof kitRotComingAt==='function'&&kitRotComingAt(iso,sp[0]))?' <span style="font-size:10px;color:#9ca3af;font-weight:700">'+esc(kitRotComingLbl(kitRotComingAt(iso,sp[0])))+'</span>':'')+'</span>'   // KITROT2
-      +((who||!kitEatGate())?'':'<button class="act" style="background:#fff7ed;color:#c2410c" onclick="kitSlotText(\''+iso+'\',\''+sp[0]+'\')">✎</button><button class="act" style="background:#eff6ff;color:#1d4ed8" onclick="kitMoveForward(\''+iso+'\',\''+sp[0]+'\')">➡ Move</button>')+'</div>';
+    html+='<div class="row"><span class="lbl">'+sp[2]+'</span><span style="flex:1">'+sp[1]+' <b>'+esc(name)+'</b>'+(typeof kitOutLbl==="function"?kitFlagMark(sv.mid)+kitOutLbl(iso,sp[0]):'')+((typeof kitRotComingAt==='function'&&kitRotComingAt(iso,sp[0]))?' <span style="font-size:10px;color:#9ca3af;font-weight:700">'+esc(kitRotComingLbl(kitRotComingAt(iso,sp[0])))+'</span>':'')+'</span>'   // KITROT2
+      +((who||!kitEatGate())?'':'<button class="act" style="background:#fff7ed;color:#c2410c" onclick="kitSlotText(\''+iso+'\',\''+sp[0]+'\')">✎</button><button class="act" style="background:#eff6ff;color:#1d4ed8" onclick="kitMoveForward(\''+iso+'\',\''+sp[0]+'\')">➡ Move</button>'+(typeof kitOutBtn==="function"?kitOutBtn(iso,sp[0]):''))+'</div>';   // KITFLAG: 🍽 Eating out beside ➡ Move
   });
   return {html:html,n:n};
 }
@@ -34535,22 +34724,24 @@ function calDaySheetHTML(iso,L,dinnerOf,who,opts){
     // a kid's view: what's for dinner, no buttons — the pantry and the plan are Mom's
     const _sr=_calSlotRows(iso,who); if(_sr.n){ h+=_sr.html; rows+=_sr.n; }
     const din=dinnerOf?dinnerOf(iso):null; rows++;
-    h+='<div class="row"><span class="lbl">Dinner</span><span style="flex:1">'+(din?('<b>'+esc(din.name)+'</b>'+(din.st==="ate"?' <span style="font-size:11px;color:#15803d;font-weight:700">✓ eaten</span>':din.st==="skip"?' <span style="font-size:11px;color:#9ca3af;font-weight:700">didn’t happen</span>':'')):'<span style="color:#9ca3af">nothing planned yet</span>')+'</span></div>';
+    h+='<div class="row"><span class="lbl">Dinner</span><span style="flex:1">'+(din?('<b>'+esc(din.name)+'</b>'+(din.st==="ate"?' <span style="font-size:11px;color:#15803d;font-weight:700">✓ eaten</span>':din.st==="skip"?' <span style="font-size:11px;color:#9ca3af;font-weight:700">didn’t happen</span>':din.st==="out"?' <span style="font-size:11px;color:#0f766e;font-weight:700">\u{1F37D} eating out</span>':'')):'<span style="color:#9ca3af">nothing planned yet</span>')+'</span></div>';   // KITFLAG: a kid sees "eating out", no buttons
   } else if(L.meals){
     const _sr=_calSlotRows(iso,null); if(_sr.n){ h+=_sr.html; rows+=_sr.n; }
     const din=dinnerOf?dinnerOf(iso):null; rows++;
     h+='<div class="row" style="flex-wrap:wrap"><span class="lbl">Dinner</span>';
     if(din){
-      const _mvBtn='<button class="act" style="background:#eff6ff;color:#1d4ed8" onclick="kitMoveForward(\''+iso+'\',\'d\')">➡ Move forward</button>';
-      h+='<span style="flex:1;min-width:130px"><b>'+esc(din.name)+'</b>'+(din.pl&&din.pl.mid&&din.pl.meal?' <span onclick="kitOpenRecipe(\''+din.pl.mid+'\')" style="cursor:pointer;font-size:11px;font-weight:700;color:#E07B39">\u{1F4D6} recipe</span>':'');
+      const _mvBtn=(typeof kitOutBtn==="function"?kitOutBtn(iso,'d'):'')+'<button class="act" style="background:#eff6ff;color:#1d4ed8" onclick="kitMoveForward(\''+iso+'\',\'d\')">➡ Move forward</button>';   // KITFLAG: 🍽 Eating out rides beside ✗ Didn’t happen / ➡ Move forward (a planned day ahead too — the grocery list sees it)
+      h+='<span style="flex:1;min-width:130px"><b>'+esc(din.name)+'</b>'+(typeof kitFlagMark==="function"?kitFlagMark(din.pl&&din.pl.mid):'')+(din.pl&&din.pl.mid&&din.pl.meal?' <span onclick="kitOpenRecipe(\''+din.pl.mid+'\')" style="cursor:pointer;font-size:11px;font-weight:700;color:#E07B39">\u{1F4D6} recipe</span>':'');
       if(din.st==="ate"){ const ts=(kitPlan[iso]||{}).eaten; h+='<div style="font-size:11px;color:#15803d;font-weight:700">✓ Eaten'+(ts?' · '+new Date(ts).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):'')+'</div>'; }
       else if(din.st==="skip") h+='<div style="font-size:11px;color:#9ca3af;font-weight:700">✗ Didn’t happen</div>';
       else if(din.st==="owed") h+='<div style="font-size:11px;color:#c2410c;font-weight:700">● Not marked yet</div>';
+      else if(din.st==="out") h+='<div style="font-size:11px;color:#0f766e;font-weight:700">\u{1F37D} Eating out</div>';   // KITFLAG
       else { const _cm=(typeof kitRotComingAt==='function')?kitRotComingAt(iso,'d'):null; h+='<div style="font-size:11px;color:'+(_cm?'#9ca3af':'#6b7280')+';font-weight:700">'+(_cm?esc(kitRotComingLbl(_cm)):'planned')+'</div>'; }   // KITROT2: a queued day says so
       h+='</span>';
       if(!kitEatGate()){ /* a kid on a shared screen: status only, no buttons */ }
       else if(din.st==="owed"||(din.st==="planned"&&iso===todayIso)) h+='<button class="act" style="background:#dcfce7;color:#166534" onclick="kitMarkEaten(\''+iso+'\')">✓ We ate it</button><button class="act" style="background:#f1f5f9;color:#475569" onclick="kitMarkSkipped(\''+iso+'\')">✗ Didn’t happen</button>'+_mvBtn;
       else if(din.st==="planned") h+=_mvBtn;
+      else if(din.st==="out") h+=(typeof kitOutBtn==="function"?kitOutBtn(iso,'d'):'');   // KITFLAG: tap again puts the day back
       else if(din.st==="skip") h+='<button class="act" style="background:#dcfce7;color:#166534" onclick="kitMarkEaten(\''+iso+'\')">Actually, we ate it</button>';
     } else {
       h+='<span style="flex:1;color:#9ca3af">No dinner planned</span>'+((typeof tab!=="undefined"&&tab==="moms-plan"&&kitEatGate())?'<button class="act" style="background:#fff7ed;color:#c2410c" onclick="mpGoto(\'meals\');kitPickDay(\''+iso+'\')">\u{1F5D3} Plan it</button>':'');
