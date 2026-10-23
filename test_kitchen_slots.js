@@ -129,7 +129,7 @@ console.log("\n── display everywhere = the parts joined with ' · ', a linke
   // the other three screens read kitPlanSlot's (sv.txt||"") — the line reaches them without code of their own
   const momsDay=src.slice(src.indexOf("const anySlot=kitPlanSlot(iso,'b')"),src.indexOf("const anySlot=kitPlanSlot(iso,'b')")+900);
   ok("Mom's Day rows read sv.meal ? name : sv.txt", /const val=sv\?\(sv\.meal\?sv\.meal\.name:\(sv\.txt\|\|""\)\):"";/.test(momsDay));
-  ok("the week list reads the same", /slotBits\.push\(sp\[1\]\+' '\+esc\(sv\.meal\?sv\.meal\.name:\(sv\.txt\|\|""\)\)\)/.test(src));
+  ok("the week list reads the same (KITFLAG may wrap the line for an eating-out slot)", /slotBits\.push\(sp\[1\]\+' '\+[^\n]*esc\(sv\.meal\?sv\.meal\.name:\(sv\.txt\|\|""\)\)/.test(src));
   ok("the calendar month cell reads the same", /const nm=sv\.meal\?\(\(sv\.meal\.emoji\?sv\.meal\.emoji\+" ":""\)\+\(sv\.meal\.name\|\|""\)\):\(sv\.txt\|\|""\); if\(nm\) items\.push/.test(src));
   ok("Mom's Day's tap on a parts slot edits the MAIN only (the hook sits in kitSlotText)", /if\(typeof kitSlotsPrompt==="function"&&kitSlotsPrompt\(iso,slot\)\) return;/.test(fn("kitSlotText")));
   W.prompt="Tacos"; W.run("kitSlotText('"+MON+"','b')");
