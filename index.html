@@ -13789,9 +13789,14 @@ function hhLaundryCellPick(who,dow){ hhLaundrySel=(hhLaundrySel===who+"|"+dow)?"
 // jump:{<iso>:{<wtId>:{label,at}}}, extras:{<x_id>:{label,emoji,every,unit:"w"|"m",last:<iso>,order,doer}},
 // cover:{<iso>:{<item>:<who>|"wait"}}, momSick:{<iso>:true}} — targeted writes, dry-run inert.
 const LL_DL=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], LL_CAP_MAX=4, LL_SWEEP_MIN=20*60, LL_FOLD_MAX=120;
+// LL_FAMILY (her report 2026-10-23, DeWalt: "it has my full family on her rotation including my kids names"): the default loads
+// are THIS family's kids, from ROSTER, in roster order — Howe's own four (Lucy's 👗) only on Howe. The Node tests run with
+// HA_IS_HOWE undefined, which reads as Howe. Nothing is written: a family with no laundry/line of its own just sees its own names.
+function llIsHowe(){ return (typeof HA_IS_HOWE==="undefined")||!!HA_IS_HOWE; }
 function llDefaultItems(){ const K=(typeof KID_NAME!=="undefined"&&KID_NAME)||{}, out={};
-  [["lincoln","👕"],["ellis","👕"],["lucy","👗"],["julian","👕"]].forEach(function(p,i){ out[p[0]]={label:(K[p[0]]||cap(p[0]))+"'s clothes",emoji:p[1],order:i}; });
-  out.momdad={label:"Mom & Dad's clothes",emoji:"👫",order:4}; out.towels={label:"Towels",emoji:"🛁",order:5}; return out; }
+  const kids=llIsHowe()?[["lincoln","👕"],["ellis","👕"],["lucy","👗"],["julian","👕"]]:((typeof ROSTER!=="undefined"&&Array.isArray(ROSTER))?ROSTER:[]).map(function(k){ return [k,"👕"]; });
+  kids.forEach(function(p,i){ out[p[0]]={label:(K[p[0]]||cap(p[0]))+"'s clothes",emoji:p[1],order:i}; });
+  out.momdad={label:"Mom & Dad's clothes",emoji:"👫",order:kids.length}; out.towels={label:"Towels",emoji:"🛁",order:kids.length+1}; return out; }
 let laundryLine={}; try{ laundryLine=JSON.parse(HA_LS.getItem('ha_laundry_line')||"{}")||{}; }catch(e){}
 // ⚡ LL_MEMO (her report 2026-10-20: "the app is super slow on the lg stand by me and the kids old fire tablet … taps dont register right
 // away"). Every card, list row, checklist and question re-laid the whole line on its own — dozens of identical lays per tap. Now a lay
@@ -13891,9 +13896,11 @@ function llLog(iso){ const L=llDayLog(iso); return Object.keys(L).filter(functio
 // waiting pays off that missed turn; one that goes in while it ISN'T waiting (a ⏫ bump, an early wash) earns a credit that covers its
 // next home day — so a late wash never cancels next week, and a bump never washes twice. Credits ride with the saved roll (credit:{id}). laundryLine.mode "home" (default) | "rotate" (the old round-and-round, her switch);
 // items/<id>/home = 0–6 (Mon=0). Defaults are her little schedule's days: Lincoln Mon, Ellis Tue, Lucy + Julian Wed, ours Thu, towels Fri.
-const LL_HOME_DEF={lincoln:0,ellis:1,lucy:2,julian:2,momdad:3,towels:4};
+const LL_HOME_DEF={lincoln:0,ellis:1,lucy:2,julian:2,momdad:3,towels:4};   // Howe's little schedule (LL_FAMILY: Howe only)
+const LL_HOME_DEF_FAM={momdad:3,towels:4};   // LL_FAMILY: any other family — the kids take Mon, Tue, Wed… in roster order (llHome's fallback), ours Thu, towels Fri
+function llHomeDef(id){ const m=llIsHowe()?LL_HOME_DEF:LL_HOME_DEF_FAM; return m.hasOwnProperty(id)?m[id]:null; }
 function llMode(){ const m=laundryLine&&laundryLine.mode; return (m==="rotate"||m==="home")?m:((typeof LL_DEFAULT_MODE!=="undefined")?LL_DEFAULT_MODE:"home"); }
-function llHome(id){ const x=llItems()[id], v=x?parseInt(x.home,10):NaN; if(v>=0&&v<=6) return v; if(LL_HOME_DEF.hasOwnProperty(id)) return LL_HOME_DEF[id]; const i=llOrder().indexOf(id); return i<0?0:i%6; }
+function llHome(id){ const x=llItems()[id], v=x?parseInt(x.home,10):NaN; if(v>=0&&v<=6) return v; const hd=llHomeDef(id); if(hd!=null) return hd; const i=llOrder().indexOf(id); return i<0?0:i%(llIsHowe()?6:5); }   // LL_FAMILY
 function llQueue(carry,next){
   const o=llLineOrder(), n=o.length, X=llExtras(), OO=llOnce(), Q={q:[],ptr:Math.max(0,o.indexOf(next)),lastX:{},home:llMode()==="home",credit:Object.assign({},(laundryLine&&laundryLine.credit)||{}),onceDone:{}};   // 🔗 riders never stand in line
   Object.keys(X).forEach(function(k){ Q.lastX[k]=X[k].last||""; });   // 🗓 when each extra was last washed, as the lay walks forward
