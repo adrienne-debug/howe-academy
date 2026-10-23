@@ -180,7 +180,8 @@ ok("Dad's Day draws it under the helper card", /helperDadCardHTML\(\); \}catch\(
 // LAUNDRY_NUDGE (2026-10-15, hole 3) rewrites renderMomsDay's 🔴 NOW laundry rows on purpose — test_laundry_nudges.js covers them.
 const unnudge = s => String(s).replace(/  \/\/ Load sitting in the washer[\s\S]*?(?=  \/\/ Bills that can't wait)/, "  /*laundry nudge*/\n")
   .replace(/\n\s*h\+=mdCardLaundry\(true\);   \/\/ 🧺 LAUNDRYADD[^\n]*/g, "").replace(/\n\s*\/\/ 🧺 LL_MYDAY[^\n]*/g, "")   // 🧺 LL_MYDAY (2026-10-21): Mom's Day's running-loads card moved up into My day — that one line, normalized away on both sides
-  .replace(/\n[^\n]*\/\/ STICKYSTACK[^\n]*/g, "");   // STICKYSTACK (2026-10-22): the Today section markers — whole new lines, each tagged — normalized away on both sides
+  .replace(/\n[^\n]*\/\/ STICKYSTACK[^\n]*/g, "")   // STICKYSTACK (2026-10-22): the Today section markers — whole new lines, each tagged — normalized away on both sides
+  .replace(/\n[^\n]*\/\/ ⏱ MINMINUTES[^\n]*/g, "");   // ⏱ MINMINUTES (2026-10-23): one 🔴 Now line (timed-card alerts), tagged — normalized away so the guard still asks "nothing ELSE changed"
 if (old) ok("Mom's lane is byte-identical: momAgendaHtml · momSchedPrep · momSchedHouse · renderMomsDay (momSchedLaundry has its own test — LAUNDRY_WHEN changes it on purpose)", ["momAgendaHtml", "momSchedPrep", "momSchedHouse", "renderMomsDay", "mpSchTasks", "mpSchAgendaHTML"].every(n => unnudge(sliceFrom(src, n)) === unnudge(sliceFrom(old, n))));
 
 console.log("D — a card Mom sent him");
