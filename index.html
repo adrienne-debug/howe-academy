@@ -181,7 +181,7 @@ html{overflow-x:hidden}   /* NAVSTACK: a too-wide row can never push the page (a
 .gcal-month-day.sel{outline:2px solid #E07B39;outline-offset:-1px}
 .gmd-line{display:block;font-size:11px;line-height:1.3;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700}
 .gmd-brk{color:#92400e}.gmd-coop{color:#1d4ed8}.gmd-ev{color:#9d174d}.gmd-ev.pend{color:#b45309;opacity:.85}.gmd-les{color:#0f766e}.gmd-chore{color:#6d28d9}.gmd-dad{color:#2C5F8A}.gmd-hab{color:#15803d;letter-spacing:2px}
-.gmd-meal{color:#9a3412}.gmd-meal.ate{color:#15803d}.gmd-meal.skip{color:#9ca3af;text-decoration:line-through}.gmd-meal.owed::before{content:"\25CF ";color:#f97316}
+.gmd-meal{color:#9a3412}.gmd-meal.ate{color:#15803d}.gmd-meal.skip{color:#9ca3af;text-decoration:line-through}.gmd-meal.coming{color:#b7a99a;font-style:italic}.gmd-meal.owed::before{content:"\25CF ";color:#f97316}
 .gcal-month-day.lay .gmd-more{display:block;font-size:10px;color:var(--muted);font-weight:800;margin:0}
 /* narrow screens: a phone cell is ~50px wide, so a text line is one letter — show one coloured
    dot per thing instead (the day sheet carries the words); the count still folds into +N */
@@ -4264,6 +4264,7 @@ function initFb() {
       const v=s.val()||{};
       Object.keys(kitPlan).forEach(k=>{ delete kitPlan[k]; });
       Object.keys(v).forEach(k=>{ kitPlan[k]=v[k]; });
+      if(typeof kitRotSynced!=="undefined") kitRotSynced.plan=true;   // KITROT2: the live plan is here — a rotation's start may now write
       try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
       if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
     });
@@ -4271,6 +4272,7 @@ function initFb() {
       const v=s.val()||{};
       Object.keys(kitRotations).forEach(k=>{ delete kitRotations[k]; });
       Object.keys(v).forEach(k=>{ kitRotations[k]=v[k]; });
+      if(typeof kitRotSynced!=="undefined") kitRotSynced.rots=true;   // KITROT2
       try{HA_LS.setItem('ha_kit_rotations',JSON.stringify(kitRotations));}catch(e){}
       if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
     });
@@ -17332,7 +17334,7 @@ function kitIsoPlus(iso,n){
 }
 function kitNowMin(){ const d=new Date(); return d.getHours()*60+d.getMinutes(); }
 function kitPlanFor(iso){
-  const p=kitPlan[iso]; if(!p) return null;
+  const p=(typeof kitPlanRec==='function')?kitPlanRec(iso):kitPlan[iso]; if(!p) return null;   // KITROT2: planned or queued (pale "coming") day
   const sd=kitSidesFields(p);   // 🥗 veggie + side riding with the dinner (her chart: "Peanut Chicken · peas · rice") — KITSIDES: a list of sides when the day has one, the old text otherwise
   if(p.mid) return Object.assign({mid:p.mid,meal:kitMeals[p.mid]||null},sd);
   if(p.txt) return Object.assign({txt:p.txt},sd);
@@ -17512,11 +17514,11 @@ function kitAssign(iso,val){ // val = {mid} | {txt} | null (clear the day)
     const cur=Object.assign({},kitPlan[iso]);
     delete cur.mid; delete cur.txt; delete cur.sides; delete cur.sideList;   // a different dinner doesn't inherit the old sides (KITSIDES: nor the list)
     kitPlan[iso]=Object.assign(cur,val);
-  } else delete kitPlan[iso];
+  } else if(!(typeof kitRotClearKeep==='function'&&kitRotClearKeep(iso))) delete kitPlan[iso];   // KITROT2: a day a rotation wrote keeps its stamp when cleared
   kitPickIso=null;
   try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
   if(typeof db!=='undefined'&&db){
-    if(val) db.ref('kitchen/plan/'+iso).set(kitPlan[iso]);
+    if(kitPlan[iso]) db.ref('kitchen/plan/'+iso).set(kitPlan[iso]);   // KITROT2: a kept stamp is set, not removed
     else db.ref('kitchen/plan/'+iso).remove();
   }
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
@@ -18760,7 +18762,7 @@ function grFromRecipe(mid){
 function grWeekSources(fromIso,days){
   const out=[];
   for(let i=0;i<(days||7);i++){
-    const iso=kitIsoPlus(fromIso,i), p=kitPlan[iso]; if(!p) continue;
+    const iso=kitIsoPlus(fromIso,i), p=(typeof kitPlanRec==='function')?kitPlanRec(iso):kitPlan[iso]; if(!p) continue;   // KITROT2: a queued rotation's day shops too
     const day=gwParseDate(iso).toLocaleDateString("en-US",{weekday:"short"});
     if(!p.eaten&&!p.skipped){
       if(p.mid&&kitMeals[p.mid]) out.push({lines:kitMeals[p.mid].ing,lbl:(kitMeals[p.mid].name||"dinner")+" ("+day+")"});
@@ -19802,7 +19804,7 @@ function grNeedSkip(name){ const v=(grData.skipneed||{})[kitSlug(name)]; return 
 function grWeekNeeds(){
   const out=[], seen={}, from=_todayStr();
   for(let i=0;i<7;i++){
-    const iso=kitIsoPlus(from,i), p=kitPlan[iso]; if(!p) continue;
+    const iso=kitIsoPlus(from,i), p=(typeof kitPlanRec==='function')?kitPlanRec(iso):kitPlan[iso]; if(!p) continue;   // KITROT2: a queued rotation's day counts
     const day=gwParseDate(iso).toLocaleDateString("en-US",{weekday:"short"});
     const meals=[]; if(p.mid&&!p.eaten&&!p.skipped) meals.push(p.mid); ["b","l","s"].forEach(sl=>{ const v=p[sl]; if(v&&v.mid) meals.push(v.mid); });
     meals.forEach(mid=>{ const m=kitMeals[mid]; if(!m) return;
@@ -20451,7 +20453,7 @@ function kitSlotText(iso,slot){
 }
 // One slot of a day's plan: 'b' | 'l' | 's' → {mid, meal} | {txt} | null.
 function kitPlanSlot(iso,slot){
-  const p=kitPlan[iso]; if(!p||!p[slot]) return null;
+  const p=(typeof kitPlanRec==='function')?kitPlanRec(iso):kitPlan[iso]; if(!p||!p[slot]) return null;   // KITROT2: planned or queued
   const v=p[slot];
   if(v.mid) return {mid:v.mid,meal:kitMeals[v.mid]||null};
   if(v.txt) return {txt:v.txt};
@@ -20571,6 +20573,7 @@ function kitRotRender(){ const el=document.getElementById('content'); if(el) ren
 function kitRotToggle(id){ kitRotOpen=(kitRotOpen===id)?null:id; kitRotRender(); }
 function kitRotSaveToggle(){ kitRotSaveOpen=!kitRotSaveOpen; kitRotRender(); }
 function kitRotApply(id){
+  if(typeof kitRotRun==='function') return kitRotRun(id);   // KITROT2: ▶ Run from <start> until <cut-off>
   const rot=kitRotAll()[id]; if(!rot) return;
   const from=String(((document.getElementById('kit-rot-from-'+id)||{}).value)||"");
   if(!/^\d{4}-\d{2}-\d{2}$/.test(from)){ if(typeof mwToast==='function') mwToast('Pick the Monday to start from'); return; }
@@ -20614,6 +20617,7 @@ function kitRotDel(id){
   if(typeof db!=='undefined'&&db) db.ref('kitchen/rotations/'+id).remove();
   if(kitRotOpen===id) kitRotOpen=null;
   if(kitRotEdit&&kitRotEdit.id===id) kitRotEdit=null;   // ✎ an open editor on the deleted rotation closes too
+  if(typeof kitRotBClose==='function') kitRotBClose(id);   // KITROT2: and an open builder on it
   kitRotRender();
 }
 const KIT_ROT_DAYS=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
@@ -20629,6 +20633,7 @@ const KIT_ROT_SLOTS=[["d","🍽","Dinner"],["sd","🥦","Side"],["b","🌅","Bre
 function kitRotEditStart(id){
   kitPinGate(()=>{
     const rot=kitRotAll()[id]; if(!rot) return;
+    if(typeof kitRotBStart==='function'){ kitRotBStart(id); return; }   // KITROT2: ✎ Edit opens the builder (⌨ inside it reaches this typed grid)
     const weeks=(Array.isArray(rot.weeks)?rot.weeks:[]).map(wk=>{ const out=[]; for(let i=0;i<7;i++){ const d=(Array.isArray(wk)&&wk[i])||{}; out.push({d:String(d.d||""),sd:kitRotSdStr(d.sd),b:String(d.b||""),l:String(d.l||""),s:String(d.s||"")}); } return out; });
     kitRotEdit={id:id,weeks:weeks};
     kitRotOpen=id; kitRotRender();
@@ -20685,17 +20690,476 @@ function kitRotEditHTML(ed){
   return h;
 }
 // KIT_ROT_EDIT_END
+// KITROT2_START — build a rotation IN the app, run it from a start date to a cut-off, queue the next one.
+//   Her decisions 2026-10-22 (final): build rotations in the app from the library; a rotation has a START DATE and a
+//   CUT-OFF DATE on any weekday and stops at the cut-off even mid-cycle; a NEXT rotation can be built while the current
+//   one runs and is queued — it starts the day after the cut-off at its week 1; queued days show on the calendar as pale
+//   "coming" days so the grocery list two weeks out sees them; one running rotation per meal type; the calendar stays the
+//   truth for shopping; never overwrite a hand-edited day without asking; "edit just this month" = calendar edits shown
+//   in rotation shape, no second copy.
+//   RECORD SHAPES (the next sessions — template slots, the rating flag / eating-out mark — build on these):
+//     kitchen/rotations/{id} = {name, emoji?, note?, weeks:[[{d,sd,b,l,s}×7 Mon..Sun]×N] (slots are meal NAMES; sd is the
+//                               one-line "peas · rice" or a list of names), types:["d","b","l","s"] (any subset; absent =
+//                               all four), startDate:"YYYY-MM-DD", endDate:"YYYY-MM-DD" (the cut-off, inclusive), ts}.
+//                               status is never stored — derived at render: upcoming / running / ended.
+//     kitchen/plan/{iso}/fromRot/{kind} = {id, wk, dow} — the stamp a run leaves under each meal kind it fills on a day
+//                               (kind d|b|l|s; wk 0-based, dow 0 = Mon). Per kind, not per day, because one rotation runs per
+//                               meal kind: a dinner rotation and a snack rotation may both write the same day, each its own
+//                               stamp. The rest of the day keeps its shape: mid|txt (+sides|sideList) for dinner, b/l/s = {mid}|{txt}.
+//                               A slot that differs from what its stamp implies (or holds food with no stamp) was edited by hand.
+//   RUN: week-1 day-1 is the start date's weekday in the Mon–Sun grid (earlier weekdays of week 1 unused); weeks repeat;
+//   the LAST day written is the cut-off. Only days inside [start, cut-off] (from today on) and only covered slots are
+//   written — ONE multi-path update under kitchen/plan ({iso}/mid|txt|sides|sideList|b|l|s and {iso}/fromRot/{kind}). Blank
+//   slots and uncovered meal kinds are never written. Hand-edited days are listed in the confirm and kept unless Mom ticks
+//   "overwrite those too". Eaten / didn't-happen days are never rewritten. Moving a cut-off (or start) so that days the
+//   rotation already wrote fall outside it clears its own unedited slots on those days (from today on) in the same update —
+//   the cut-off is the last day it fills, even mid-cycle.
+//   QUEUE: a rotation whose start is still ahead writes nothing. kitRotQueuedFor(iso) says what it will put on a day and
+//   kitPlanRec(iso) — the ONE planned-or-queued helper every reader goes through (kitPlanFor, kitPlanSlot, the calendar
+//   month + day sheet, the week list, Mom's Day, grWeekSources / grWeekNeeds) — hands those days back pale, labelled
+//   "coming · <rotation>". On Mom's device, on or after the start date, kitRotAutoStart writes the running rotation's days
+//   from today on (hand-edited days kept, nothing asked). Starting a second rotation for a meal type that is already
+//   running asks to end the current one the day before. With no rotation queued, kitPlanRec returns the very record the
+//   readers read before — a family with no rotations sees byte-identical plan and grocery.
+//   Writes go through db only when db && !_dryRun(); Mom PIN on building, Mom/Dad gate on a day's edit (like the day sheet).
+const KIT_ROT_TYPES=[["d","🍽","Dinner"],["b","🌅","Breakfast"],["l","☀️","Lunch"],["s","🍎","Snack"]];
+let kitRotB=null;      // the builder while open: {id|null, name, emoji, types:[...], weeks:[[{d,sd,b,l,s}×7]×N]}
+let kitRotPick=null;   // the open slot picker: {kind:"b",w,i,slot} (builder) | {kind:"m",iso,slot} (This month) + q, tag
+let kitRotSynced={plan:false,rots:false};   // flipped by the kitchen/plan + kitchen/rotations listeners — auto-start never writes from a stale device copy
+function kitRotDb(){ return (typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()))?db:null; }
+function kitRotIsoOk(s){ return /^\d{4}-\d{2}-\d{2}$/.test(String(s||"")); }
+function kitRotTypeMeta(t){ return KIT_ROT_TYPES.find(x=>x[0]===t)||[t,"","Meal"]; }
+function kitRotTypes(rot){ const ok=KIT_ROT_TYPES.map(t=>t[0]); const t=Array.isArray(rot&&rot.types)?ok.filter(x=>rot.types.indexOf(x)>=0):[]; return t.length?t:ok.slice(); }
+function kitRotStatus(rot,today){
+  if(!rot||!kitRotIsoOk(rot.startDate)||!kitRotIsoOk(rot.endDate)||rot.endDate<rot.startDate) return "";
+  today=today||_todayStr();
+  return today<rot.startDate?"upcoming":(today>rot.endDate?"ended":"running");
+}
+function kitRotFmt(iso){ return gwParseDate(iso).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}); }
+function kitRotFmtShort(iso){ return gwParseDate(iso).toLocaleDateString("en-US",{month:"short",day:"numeric"}); }
+function kitRotDaysBetween(a,b){ return Math.round((gwParseDate(b)-gwParseDate(a))/864e5); }
+// Pure: which rotation day a calendar date gets — {wk, dow, day} — or null outside [start, cut-off].
+function kitRotDayAt(rot,iso){
+  const weeks=Array.isArray(rot&&rot.weeks)?rot.weeks:[]; const n=weeks.length;
+  if(!n||!kitRotIsoOk(rot.startDate)||!kitRotIsoOk(rot.endDate)||iso<rot.startDate||iso>rot.endDate) return null;
+  const idx=((gwParseDate(rot.startDate).getDay()+6)%7)+kitRotDaysBetween(rot.startDate,iso);   // week-1 day-1 = the start's weekday
+  const wk=Math.floor(idx/7)%n, dow=idx%7;
+  return {wk:wk,dow:dow,day:(Array.isArray(weeks[wk])&&weeks[wk][dow])||{}};
+}
+function kitRotHas(rec,t){ if(!rec) return false; if(t==="d") return !!(rec.mid||rec.txt); const v=rec[t]; return !!(v&&(v.mid||v.txt)); }
+function kitRotRecName(rec,t){ if(!rec) return ""; return t==="d"?kitRotSlotName(rec.mid?{mid:rec.mid}:(rec.txt?{txt:rec.txt}:null)):kitRotSlotName(rec[t]); }
+function kitRotDayKeys(t){ return t==="d"?["mid","txt","sides","sideList"]:[t]; }
+// Pure: the keys a rotation day puts on a calendar day — only covered kinds with something in them. {} when nothing.
+function kitRotDayUp(rot,info){
+  const up={}; const day=(info&&info.day)||{};
+  kitRotTypes(rot).forEach(t=>{
+    const name=String(day[t]||"").trim(); if(!name) return;
+    const v=kitRotSlotVal(name);
+    if(t==="d"){ up.mid=v.mid||null; up.txt=v.txt||null; up.sides=null; const sl=kitRotSideList(day.sd); up.sideList=sl.length?sl:null; }
+    else up[t]=v;
+  });
+  return up;
+}
+function kitRotApplyUp(base,up){ const out=Object.assign({},base||{}); Object.keys(up).forEach(k=>{ if(up[k]==null) delete out[k]; else out[k]=up[k]; }); return out; }
+function kitRotNorm(s){ return String(s||"").trim().toLowerCase(); }
+// Pure: was this calendar day changed by hand, for these meal kinds? No record = blank. Food in a slot with no stamp =
+// hers. A stamped slot is compared with what its stamp implies — the slot's name, and the sides on a dinner. A stamp
+// whose rotation (or day) is gone can't be checked, so anything there is treated as hers.
+function kitRotStampOf(rec,t){ const st=rec&&rec.fromRot; return (st&&st[t]&&st[t].id)?st[t]:null; }
+function kitRotHandEdited(iso,types){
+  const rec=kitPlan[iso]; if(!rec) return false;
+  const rots=kitRotAll();
+  return (types||[]).some(t=>{
+    const st=kitRotStampOf(rec,t); const srot=st?rots[st.id]:null;
+    const sday=(srot&&Array.isArray(srot.weeks)&&Array.isArray(srot.weeks[st.wk]))?srot.weeks[st.wk][st.dow]:null;
+    if(!sday) return kitRotHas(rec,t);
+    if(kitRotNorm(kitRotRecName(rec,t))!==kitRotNorm(sday[t])) return true;
+    if(t==="d"&&kitRotNorm(kitRotSdNames(kitRotSdOf(rec)||[]).join(" · "))!==kitRotNorm(kitRotSdNames(sday.sd).join(" · "))) return true;
+    return false;
+  });
+}
+// Pure: the run — {up:{"iso/key":val}, days:[iso], kept:[iso], same:n}. A day already carrying exactly this rotation's
+// stamps and food is left alone (same); a hand-edited day is kept unless opts.overwrite; an eaten / didn't-happen day is
+// never rewritten; opts.from narrows the first day (a run writes from today on). Each kind it fills gets its own stamp.
+function kitRotRunPlan(rot,id,opts){
+  opts=opts||{}; const out={up:{},days:[],kept:[],same:0}; const types=kitRotTypes(rot);
+  if(!rot||!kitRotIsoOk(rot.startDate)||!kitRotIsoOk(rot.endDate)||rot.endDate<rot.startDate) return out;
+  let iso=(opts.from&&opts.from>rot.startDate)?opts.from:rot.startDate;
+  for(let g=0;iso<=rot.endDate&&g<400;g++,iso=kitIsoPlus(iso,1)){
+    const info=kitRotDayAt(rot,iso); if(!info) continue;
+    const up=kitRotDayUp(rot,info); if(!Object.keys(up).length) continue;
+    const rec=kitPlan[iso];
+    if(rec&&(rec.eaten||rec.skipped)) continue;
+    const kinds=types.filter(t=>t==="d"?(up.mid||up.txt):up[t]);
+    const hand=kitRotHandEdited(iso,types);
+    const same=kinds.every(t=>{ const st=kitRotStampOf(rec,t); return st&&st.id===id&&st.wk===info.wk&&st.dow===info.dow; });
+    if(same&&!hand){ out.same++; continue; }
+    if(hand&&!opts.overwrite){ out.kept.push(iso); continue; }
+    Object.keys(up).forEach(k=>{ out.up[iso+"/"+k]=up[k]; });
+    kinds.forEach(t=>{ out.up[iso+"/fromRot/"+t]={id:id,wk:info.wk,dow:info.dow}; });
+    out.days.push(iso);
+  }
+  return out;
+}
+// Pure: the days a rotation wrote that now fall outside its new [from,to] — from today on, its own unedited slots are
+// cleared ({"iso/key":null}, the stamp with them). A hand-edited or eaten day is left alone.
+function kitRotTrimPlan(rot,id,from,to){
+  const out={up:{},days:[]}; if(!rot||!kitRotIsoOk(rot.startDate)||!kitRotIsoOk(rot.endDate)) return out;
+  const today=_todayStr(); let iso=rot.startDate>today?rot.startDate:today;
+  for(let g=0;iso<=rot.endDate&&g<400;g++,iso=kitIsoPlus(iso,1)){
+    if(iso>=from&&iso<=to) continue;
+    const rec=kitPlan[iso]; if(!rec||rec.eaten||rec.skipped) continue;
+    let hit=false;
+    kitRotTypes(rot).forEach(t=>{ const st=kitRotStampOf(rec,t); if(!st||st.id!==id||kitRotHandEdited(iso,[t])) return; kitRotDayKeys(t).forEach(k=>{ out.up[iso+"/"+k]=null; }); out.up[iso+"/fromRot/"+t]=null; hit=true; });
+    if(hit) out.days.push(iso);
+  }
+  return out;
+}
+function kitRotRunWrite(plan){   // local state, then ONE multi-path update under kitchen/plan
+  const paths=Object.keys(plan.up); if(!paths.length) return 0;
+  paths.forEach(p=>{ const q=p.split("/"); const iso=q[0]; const cur=Object.assign({},kitPlan[iso]||{}); const v=plan.up[p];
+    if(q[1]==="fromRot"){ const st=Object.assign({},cur.fromRot||{}); if(v==null) delete st[q[2]]; else st[q[2]]=v; if(Object.keys(st).length) cur.fromRot=st; else delete cur.fromRot; }
+    else if(v==null) delete cur[q[1]]; else cur[q[1]]=v;
+    if(Object.keys(cur).length) kitPlan[iso]=cur; else delete kitPlan[iso]; });
+  try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
+  const d=kitRotDb(); if(d) d.ref('kitchen/plan').update(plan.up);
+  return plan.days.length;
+}
+// Pure: what a queued (not yet started) rotation will put on a day — {id,name,emoji,wk,dow,types,by,rec} — or null.
+// The earliest-starting queued rotation takes a slot; another may fill the kinds it leaves blank. A day already
+// planned by hand (for the kinds it covers) gets nothing — exactly what the run will do.
+function kitRotQueuedFor(iso){
+  const today=_todayStr(); const rots=kitRotAll(); let out=null;
+  Object.keys(rots).filter(k=>kitRotStatus(rots[k],today)==="upcoming").sort((a,b)=>String(rots[a].startDate).localeCompare(String(rots[b].startDate))).forEach(k=>{
+    const rot=rots[k]; const info=kitRotDayAt(rot,iso); if(!info||kitRotHandEdited(iso,kitRotTypes(rot))) return;   // a day she planned by hand stays hers — the run will keep it
+    const up=kitRotDayUp(rot,info); if(!Object.keys(up).length) return;
+    const rec=out?out.rec:{}; const got=[];
+    kitRotTypes(rot).forEach(t=>{ if(kitRotHas(rec,t)||!(t==="d"?(up.mid||up.txt):up[t])) return; kitRotDayKeys(t).forEach(x=>{ if(up[x]!=null) rec[x]=up[x]; }); got.push(t); });
+    if(!got.length) return;
+    const who={id:k,name:String(rot.name||"Rotation"),emoji:String(rot.emoji||"")};
+    if(!out) out={id:k,name:who.name,emoji:who.emoji,wk:info.wk,dow:info.dow,types:[],by:{},rec:rec};
+    got.forEach(t=>{ out.types.push(t); out.by[t]=who; });
+  });
+  return out;
+}
+// THE planned-or-queued helper. The very record (identity) when nothing is queued for the day — a family with no
+// rotations reads exactly what it read before. Otherwise the real record with the queued kinds it lacks filled in.
+function kitPlanRec(iso){
+  const p=kitPlan[iso]; const q=kitRotQueuedFor(iso); if(!q) return p;
+  if(!p) return q.rec;
+  const out=Object.assign({},p);
+  q.types.forEach(t=>{ if(kitRotHas(p,t)) return; kitRotDayKeys(t).forEach(x=>{ delete out[x]; if(q.rec[x]!=null) out[x]=q.rec[x]; }); });
+  return out;
+}
+// Which rotation the shown slot is "coming" from — null when the slot is really on the calendar or nothing is queued.
+function kitRotComingAt(iso,t){ const q=kitRotQueuedFor(iso); if(!q||q.types.indexOf(t)<0||kitRotHas(kitPlan[iso],t)) return null; return q.by[t]; }
+function kitRotComingLbl(who){ return who?('coming · '+(who.emoji?who.emoji+' ':'')+who.name):''; }
+// Pure: other scheduled rotations whose dates overlap [from,to] and share a meal kind with `types`.
+function kitRotClash(id,types,from,to){
+  const rots=kitRotAll();
+  return Object.keys(rots).filter(k=>{ if(k===id) return false; const r=rots[k]; if(!kitRotIsoOk(r.startDate)||!kitRotIsoOk(r.endDate)) return false;
+    if(r.endDate<from||r.startDate>to) return false; return kitRotTypes(r).some(t=>types.indexOf(t)>=0); }).map(k=>Object.assign({id:k},rots[k]));
+}
+// Where the next one starts by default: the day after the running (or already queued) rotation for the same meal kind
+// ends; else `fallback` (next Monday, as before).
+function kitRotNextStart(id,types,fallback){
+  const today=_todayStr(); const rots=kitRotAll(); let best=null;
+  Object.keys(rots).forEach(k=>{ if(k===id) return; const r=rots[k]; const st=kitRotStatus(r,today); if((st!=="running"&&st!=="upcoming")||!kitRotTypes(r).some(t=>types.indexOf(t)>=0)) return; if(!best||r.endDate>best) best=r.endDate; });
+  return best?kitIsoPlus(best,1):fallback;
+}
+function kitRotDaysTxt(list){ let last=""; return list.map(iso=>{ const m=gwParseDate(iso).toLocaleDateString("en-US",{month:"short"}); const s=(m===last?"":m+" ")+(+iso.slice(8)); last=m; return s; }).join(", "); }   // "Oct 14, 20, 27" · "Oct 29, Nov 3"
+function kitRotKindsTxt(types){ return types.map(t=>kitRotTypeMeta(t)[2].toLowerCase()+(t==="l"?"es":"s")).join(", "); }
+// ▶ Run from <start> until <cut-off> (the card's Run button; kitRotApply routes here)
+function kitRotRun(id){
+  const rot=kitRotAll()[id]; if(!rot) return;
+  const from=String(((document.getElementById('kit-rot-from-'+id)||{}).value)||""), to=String(((document.getElementById('kit-rot-to-'+id)||{}).value)||"");
+  const ow=!!((document.getElementById('kit-rot-ow-'+id)||{}).checked);
+  if(!kitRotIsoOk(from)||!kitRotIsoOk(to)){ if(typeof mwToast==='function') mwToast('Pick the start and the cut-off'); return; }
+  if(to<from){ if(typeof mwToast==='function') mwToast('The cut-off is before the start'); return; }
+  const types=kitRotTypes(rot); const kinds=kitRotKindsTxt(types); const nm=(rot.emoji?rot.emoji+' ':'')+rot.name;
+  const endOthers={}; const clash=kitRotClash(id,types,from,to);
+  for(let c=0;c<clash.length;c++){
+    const o=clash[c]; const onm=(o.emoji?o.emoji+' ':'')+o.name;
+    if(o.startDate>=from){ if(typeof mwToast==='function') mwToast(onm+' already has those meals from '+kitRotFmt(o.startDate)+' — set this cut-off before it, or change its dates'); return; }
+    const last=kitIsoPlus(from,-1);
+    if(!confirm('One rotation runs the '+kinds+' at a time.\n\nEnd '+onm+' on '+kitRotFmt(last)+' so '+nm+' takes over on '+kitRotFmt(from)+'? Days it filled after that are cleared unless you changed them.')) return;
+    endOthers[o.id]=last;
+  }
+  const today=_todayStr(); const queued=from>today;
+  const draft=Object.assign({},rot,{startDate:from,endDate:to});
+  const plan=queued?{up:{},days:[],kept:[],same:0}:kitRotRunPlan(draft,id,{overwrite:ow,from:today});
+  const n=plan.days.length;
+  if(!queued&&!n&&!plan.kept.length&&!plan.same){ if(typeof mwToast==='function') mwToast('That rotation has nothing to put on those days'); return; }
+  const trim=kitRotTrimPlan(rot,id,from,to); const trimUp=Object.assign({},trim.up);   // its own days now outside the dates are cleared
+  Object.keys(endOthers).forEach(k=>{ const o=kitRotAll()[k]; Object.assign(trimUp,kitRotTrimPlan(o,k,o.startDate,endOthers[k]).up); });   // the ended rotation lets go of the days after its new cut-off
+  plan.up=Object.assign(trimUp,plan.up);   // clears first, this run's keys win on a day both touch
+  let msg;
+  if(queued) msg='Queue '+nm+' from '+kitRotFmt(from)+' until '+kitRotFmt(to)+'?\n\nIts '+kinds+' show pale as "coming" until it starts — nothing goes on the calendar before '+kitRotFmtShort(from)+'.';
+  else {
+    msg='Run '+nm+' from '+kitRotFmt(from)+' until '+kitRotFmt(to)+'?\n\n'+n+' day'+(n===1?'':'s')+' get'+(n===1?'s':'')+' its '+kinds+(from<today?' (from today on)':'')+'.'+(plan.same?' '+plan.same+' already there.':'');
+    if(plan.kept.length) msg+='\n\n'+plan.kept.length+' day'+(plan.kept.length===1?'':'s')+' you changed by hand will be kept — '+kitRotDaysTxt(plan.kept)+'. Tick "overwrite those too" to replace them.';
+  }
+  if(trim.days.length) msg+='\n\n'+trim.days.length+' day'+(trim.days.length===1?'':'s')+' it filled outside these dates '+(trim.days.length===1?'is':'are')+' cleared.';
+  if(!confirm(msg)) return;
+  kitRotEnsure();
+  const d=kitRotDb(); const now=Date.now();
+  Object.keys(endOthers).forEach(k=>{ if(kitRotations[k]){ kitRotations[k].endDate=endOthers[k]; kitRotations[k].ts=now; } if(d) d.ref('kitchen/rotations/'+k).update({endDate:endOthers[k],ts:now}); });
+  const cur=Object.assign({},kitRotations[id]||rot,{startDate:from,endDate:to,ts:now});
+  kitRotations[id]=cur;
+  try{HA_LS.setItem('ha_kit_rotations',JSON.stringify(kitRotations));}catch(e){}
+  if(d) d.ref('kitchen/rotations/'+id).update({startDate:from,endDate:to,ts:now});
+  kitRotRunWrite(plan);
+  kitRotOpen=null;
+  if(typeof mwToast==='function') mwToast('📅 '+nm+' · '+(queued?'queued from '+kitRotFmtShort(from):n+' day'+(n===1?'':'s')+' planned')+' · until '+kitRotFmtShort(to));
+  kitRotRender();
+}
+// On Mom's device: a running rotation whose days aren't on the calendar yet gets them written from today on — the
+// queued → running hand-off. Hand-edited days are kept (nothing asked); days already carrying its stamp are left alone.
+function kitRotAutoStart(){
+  if(typeof momHere!=="function"||!momHere()||!kitRotSynced.plan||!kitRotSynced.rots) return 0;
+  const today=_todayStr(); const rots=kitRotAll(); let n=0;
+  Object.keys(rots).forEach(id=>{ const rot=rots[id]; if(kitRotStatus(rot,today)!=="running") return;
+    const plan=kitRotRunPlan(rot,id,{from:today}); if(plan.days.length) n+=kitRotRunWrite(plan); });
+  return n;
+}
+// ✕ Clear on a day a rotation wrote keeps its stamps ({fromRot} alone) so the running rotation doesn't fill it again;
+// the blank then counts as hand-edited. true = handled (kitAssign then sets the node instead of removing it).
+function kitRotClearKeep(iso){ const st=kitPlan[iso]&&kitPlan[iso].fromRot; if(!st) return false; kitPlan[iso]={fromRot:st}; return true; }
+// ── 🗓 This month: the calendar's days for the running rotation, in rotation shape. A cell is that day's targeted
+//    calendar write only — the saved rotation never changes; the day then counts as hand-edited (✎).
+function kitRotMPick(iso,t){ if(!kitEatGate()) return; const P=kitRotPick; if(P&&P.kind==="m"&&P.iso===iso&&P.slot===t){ kitRotPick=null; kitRotRender(); return; } kitRotPickOpen({kind:"m",iso:iso,slot:t}); }
+function kitRotDaySet(iso,slot,val){   // val = {mid} | {txt} | null (clear that slot)
+  if(!kitEatGate()) return;
+  const up={};
+  if(slot==="d"){ up.mid=(val&&val.mid)||null; up.txt=(val&&val.txt)||null; up.sides=null; up.sideList=null; }
+  else up[slot]=val||null;
+  const cur=kitRotApplyUp(kitPlan[iso],up);
+  if(Object.keys(cur).length) kitPlan[iso]=cur; else delete kitPlan[iso];
+  try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
+  const d=kitRotDb(); if(d) d.ref('kitchen/plan/'+iso).update(up);
+  kitRotPick=null; kitRotRender();
+}
+function kitRotMonthHTML(){
+  const today=_todayStr(); const rots=kitRotAll();
+  const run=Object.keys(rots).filter(k=>kitRotStatus(rots[k],today)==="running").sort((a,b)=>String(rots[a].name||"").localeCompare(String(rots[b].name||"")));
+  if(!run.length) return '';
+  const ym=today.slice(0,7); const first=ym+"-01"; const mon=kitRotMondayOf(first);
+  const mName=gwParseDate(first).toLocaleDateString("en-US",{month:"long"});
+  let h='';
+  run.forEach(id=>{
+    const rot=rots[id]; const types=kitRotTypes(rot); const nm=(rot.emoji?rot.emoji+' ':'')+rot.name;
+    h+='<div style="margin-top:10px;padding:8px 10px;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:9px">';
+    h+='<div style="font-size:12px;font-weight:800;color:#92400e">🗓 This month — '+esc(mName)+' · '+esc(nm)+' <span style="font-weight:600;color:#6b6560">what the calendar really has · ✎ = changed by hand · tap a cell to change that day only</span></div>';
+    for(let w=0;w<6;w++){
+      const wkMon=kitIsoPlus(mon,w*7); if(wkMon.slice(0,7)>ym) break;
+      h+='<div style="display:grid;grid-template-columns:62px repeat(7,minmax(0,1fr));gap:3px;margin-top:6px;font-size:10.5px">';
+      h+='<span></span>'+KIT_ROT_DAYS.map((dn,i)=>{ const iso=kitIsoPlus(wkMon,i); const inM=iso.slice(0,7)===ym; return '<span style="text-align:center;font-weight:800;color:'+(iso===today?'#c2410c':(inM?'#6b6560':'#d1d5db'))+'">'+dn+' '+(+iso.slice(8))+'</span>'; }).join('');
+      types.forEach(t=>{ const meta=kitRotTypeMeta(t);
+        h+='<span style="font-weight:800;color:#92400e;align-self:center">'+meta[1]+' '+meta[2]+'</span>';
+        for(let i=0;i<7;i++){ const iso=kitIsoPlus(wkMon,i); const inRun=iso>=rot.startDate&&iso<=rot.endDate&&iso.slice(0,7)===ym;
+          if(!inRun){ h+='<span style="background:#f3f4f6;border-radius:5px;min-height:22px"></span>'; continue; }
+          const rec=kitPlan[iso]; const cm=kitRotComingAt(iso,t); const nmv=cm?kitRotRecName(kitPlanRec(iso),t):(kitRotRecName(rec,t)||(rec&&t==="d"&&rec.mid?"(meal removed)":""));
+          const hand=kitRotHandEdited(iso,[t]); const picking=kitRotPick&&kitRotPick.kind==="m"&&kitRotPick.iso===iso&&kitRotPick.slot===t;
+          h+='<span onclick="kitRotMPick(\''+iso+'\',\''+t+'\')" title="'+esc(kitRotFmt(iso)+(cm?' · '+kitRotComingLbl(cm):''))+'" style="cursor:pointer;padding:3px 4px;border-radius:5px;min-height:22px;background:#fff;border:1.5px solid '+(picking?'#B45309':(hand?'#fbbf24':'#e8e4de'))+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap'+(cm?';color:#9ca3af;font-style:italic':'')+'">'+(hand?'✎ ':'')+(nmv?esc(nmv):'<span style="color:#d1d5db">＋</span>')+'</span>';
+        }
+      });
+      h+='</div>';
+      if(kitRotPick&&kitRotPick.kind==="m"&&kitRotPick.iso>=wkMon&&kitRotPick.iso<=kitIsoPlus(wkMon,6)) h+=kitRotPickHTML();
+    }
+    h+='</div>';
+  });
+  return h;
+}
+// ── the slot picker (builder cells and This-month cells share it): from the library — search, a tag filter when the
+//    library has tags — or ✎ Type it. Search filters in place (like the library's 🔎) so typing never loses focus.
+function kitRotPickOpen(target){ kitRotPick=Object.assign({q:"",tag:""},target); kitRotRender(); }
+function kitRotPickClose(){ kitRotPick=null; kitRotRender(); }
+function kitRotPickCur(){
+  const P=kitRotPick; if(!P) return "";
+  if(P.kind==="b") return String((kitRotB&&kitRotB.weeks[P.w]&&kitRotB.weeks[P.w][P.i]&&kitRotB.weeks[P.w][P.i][P.slot])||"");
+  return kitRotRecName(kitPlan[P.iso],P.slot);
+}
+function kitRotPickGo(mid){ const P=kitRotPick; const m=kitMeals[mid]; if(!P||!m) return; if(P.kind==="b") kitRotBSet(P.w,P.i,P.slot,String(m.name||"")); else kitRotDaySet(P.iso,P.slot,{mid:mid}); }
+function kitRotPickTyped(){ const P=kitRotPick; if(!P) return; const v=prompt(kitRotTypeMeta(P.slot)[2]+":",kitRotPickCur()); if(v===null) return; if(P.kind==="b") kitRotBSet(P.w,P.i,P.slot,v.trim()); else kitRotDaySet(P.iso,P.slot,v.trim()?{txt:v.trim()}:null); }
+function kitRotPickClear(){ const P=kitRotPick; if(!P) return; if(P.kind==="b") kitRotBSet(P.w,P.i,P.slot,""); else kitRotDaySet(P.iso,P.slot,null); }
+function kitRotPickMatch(m,q){ return !q||(String(m.name||"")+" \n"+String(m.ing||"")).toLowerCase().includes(q); }
+function kitRotPickQ(v){ if(kitRotPick) kitRotPick.q=String(v||""); const q=String(v||"").trim().toLowerCase(); document.querySelectorAll('[data-rotpick]').forEach(r=>{ r.style.display=kitRotPickMatch(kitMeals[r.getAttribute('data-rotpick')]||{},q)?"":"none"; }); }
+function kitRotPickTag(t){ if(!kitRotPick) return; kitRotPick.tag=(kitRotPick.tag===t)?"":t; kitRotRender(); }
+function kitRotPickHTML(){
+  const P=kitRotPick; if(!P) return '';
+  const meta=kitRotTypeMeta(P.slot); const cur=kitRotPickCur(); const q=String(P.q||"").trim().toLowerCase();
+  const where=P.kind==="b"?('week '+(P.w+1)+' · '+KIT_ROT_DAYS[P.i]):kitRotFmt(P.iso);
+  const mids=Object.keys(kitMeals).sort((a,b)=>String((kitMeals[a]||{}).name||"").localeCompare(String((kitMeals[b]||{}).name||"")));
+  const tags=KIT_TAGS.filter(t=>mids.some(k=>Array.isArray((kitMeals[k]||{}).tags)&&kitMeals[k].tags.includes(t[0])));
+  const btn='cursor:pointer;font-size:11px;font-weight:800;padding:4px 10px;border-radius:12px;background:#fff;';
+  let h='<div style="padding:8px 10px;background:#fff;border:1.5px dashed #B45309;border-radius:9px;margin-top:6px">';
+  h+='<div style="font-size:11px;font-weight:800;color:#92400e;margin-bottom:5px">'+meta[1]+' '+meta[2]+' · '+esc(where)+(cur?' · now: '+esc(cur):'')+'</div>';
+  h+='<input type="search" value="'+esc(P.q||"")+'" oninput="kitRotPickQ(this.value)" placeholder="🔎 From the library — search" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:12px;font-family:\'DM Sans\',sans-serif">';
+  if(tags.length) h+='<div style="display:flex;gap:4px;flex-wrap:wrap;margin:5px 0">'+tags.map(t=>'<span onclick="kitRotPickTag(\''+t[0]+'\')" style="cursor:pointer;padding:2px 9px;border-radius:999px;font-size:10.5px;font-weight:700;border:1.5px solid '+(P.tag===t[0]?'#6B4C93;background:#6B4C93;color:#fff':'#ddd6fe;background:#fff;color:#6B4C93')+'">'+esc(t[1])+'</span>').join('')+'</div>';
+  h+='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:5px;max-height:170px;overflow:auto">';
+  let shown=0;
+  mids.forEach(k=>{ const m=kitMeals[k]||{}; if(P.tag&&!(Array.isArray(m.tags)&&m.tags.includes(P.tag))) return; shown++;
+    const on=kitRotNorm(m.name)===kitRotNorm(cur);
+    h+='<span data-rotpick="'+k+'" onclick="kitRotPickGo(\''+k+'\')" style="display:'+(kitRotPickMatch(m,q)?'inline-block':'none')+';'+btn+'border:1.5px solid '+(on?'#B45309;background:#fff7ed;color:#92400e':'#e5e7eb;color:#4b5563')+'">'+(m.emoji?esc(m.emoji)+' ':'')+esc(m.name||"")+'</span>'; });
+  if(!shown) h+='<span style="font-size:11px;color:var(--muted)">'+(mids.length?'Nothing with that tag — ':'Nothing in the library yet — ')+'type it instead.</span>';
+  h+='</div><div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:7px">'
+    +'<span onclick="kitRotPickTyped()" style="'+btn+'border:1.5px dashed #9ca3af;color:#6b7280">✎ Type it…</span>'
+    +(cur?'<span onclick="kitRotPickClear()" style="'+btn+'border:1.5px solid #fca5a5;color:#b91c1c">✕ Clear</span>':'')
+    +'<span onclick="kitRotPickClose()" style="'+btn+'border:1.5px solid #cbd5e1;color:#6b6560">Close</span></div></div>';
+  return h;
+}
+// ── the builder: ＋ New rotation (name, emoji, weeks 1–8, which meal kinds it covers) and ✎ Edit on a saved one.
+//    Tap a slot → the picker; the 🥦 side keeps its one-line "peas · rice" box; copy a week to the next; reorder;
+//    remove a week. Save = a new kitchen/rotations/{id} record, or on a saved rotation ONE multi-path update of only
+//    what changed (weeks/{w}/{i}/{slot} via kitRotEditDiff, dropped weeks, name, emoji, types) — never the whole node.
+function kitRotBBlankWeek(){ const w=[]; for(let i=0;i<7;i++) w.push({d:"",sd:"",b:"",l:"",s:""}); return w; }
+function kitRotBWeeksOf(rot){ return (Array.isArray(rot&&rot.weeks)?rot.weeks:[]).map(wk=>{ const out=[]; for(let i=0;i<7;i++){ const d=(Array.isArray(wk)&&wk[i])||{}; out.push({d:String(d.d||""),sd:kitRotSdStr(d.sd),b:String(d.b||""),l:String(d.l||""),s:String(d.s||"")}); } return out; }); }
+function kitRotBNew(){ kitPinGate(()=>{ kitRotB={id:null,name:"",emoji:"",types:["d"],weeks:[kitRotBBlankWeek()]}; kitRotEdit=null; kitRotPick=null; kitRotSaveOpen=false; kitRotRender(); },'Building a rotation is for Mom.'); }
+function kitRotBStart(id){   // ✎ Edit (already behind the Mom PIN in kitRotEditStart)
+  const rot=kitRotAll()[id]; if(!rot) return;
+  const weeks=kitRotBWeeksOf(rot); if(!weeks.length) weeks.push(kitRotBBlankWeek());
+  kitRotB={id:id,name:String(rot.name||""),emoji:String(rot.emoji||""),types:kitRotTypes(rot),weeks:weeks};
+  kitRotEdit=null; kitRotPick=null; kitRotOpen=id; kitRotRender();
+}
+function kitRotBClose(id){ if(kitRotB&&(id==null||kitRotB.id===id)){ kitRotB=null; kitRotPick=null; } }
+function kitRotBCancel(){ kitRotBClose(null); kitRotRender(); }
+function kitRotBField(k,v){ if(kitRotB&&(k==="name"||k==="emoji")) kitRotB[k]=String(v||""); }   // in place — a repaint would drop focus mid-typing
+function kitRotBType(t){
+  if(!kitRotB) return; const i=kitRotB.types.indexOf(t);
+  if(i>=0){ if(kitRotB.types.length===1){ if(typeof mwToast==='function') mwToast('Keep at least one kind of meal'); return; } kitRotB.types.splice(i,1); } else kitRotB.types.push(t);
+  kitRotB.types=KIT_ROT_TYPES.map(x=>x[0]).filter(x=>kitRotB.types.indexOf(x)>=0); kitRotPick=null; kitRotRender();
+}
+function kitRotBWeeks(n){ if(!kitRotB) return; n=parseInt(n)||1; if(n<1) n=1; if(n>8) n=8; while(kitRotB.weeks.length<n) kitRotB.weeks.push(kitRotBBlankWeek()); if(kitRotB.weeks.length>n) kitRotB.weeks.length=n; kitRotPick=null; kitRotRender(); }
+function kitRotBWeekFilled(wk){ return (wk||[]).some(d=>KIT_ROT_SLOTS.some(s=>String((d||{})[s[0]]||"").trim())); }
+function kitRotBCopy(w){   // ⧉ copy this week onto the next (added when this is the last; a filled next week asks first)
+  const W=kitRotB&&kitRotB.weeks; if(!W||!W[w]) return;
+  const copy=JSON.parse(JSON.stringify(W[w]));
+  if(w===W.length-1){ if(W.length>=8){ if(typeof mwToast==='function') mwToast('8 weeks is the most'); return; } W.push(copy); }
+  else { if(kitRotBWeekFilled(W[w+1])&&!confirm('Replace week '+(w+2)+' with a copy of week '+(w+1)+'?')) return; W[w+1]=copy; }
+  kitRotPick=null; kitRotRender();
+}
+function kitRotBMove(w,dir){ const W=kitRotB&&kitRotB.weeks; if(!W) return; const j=w+dir; if(j<0||j>=W.length||!W[w]) return; const t=W[w]; W[w]=W[j]; W[j]=t; kitRotPick=null; kitRotRender(); }
+function kitRotBDelWeek(w){ const W=kitRotB&&kitRotB.weeks; if(!W||!W[w]) return; if(W.length===1){ if(typeof mwToast==='function') mwToast('A rotation needs one week'); return; } if(kitRotBWeekFilled(W[w])&&!confirm('Remove week '+(w+1)+'?')) return; W.splice(w,1); kitRotPick=null; kitRotRender(); }
+function kitRotBSet(w,i,slot,val,quiet){ const D=kitRotB&&kitRotB.weeks[w]&&kitRotB.weeks[w][i]; if(!D) return; D[slot]=String(val||""); if(quiet) return; kitRotPick=null; kitRotRender(); }
+function kitRotBPick(w,i,slot){ const P=kitRotPick; if(P&&P.kind==="b"&&P.w===w&&P.i===i&&P.slot===slot){ kitRotPick=null; kitRotRender(); return; } kitRotPickOpen({kind:"b",w:w,i:i,slot:slot}); }
+function kitRotBTyped(){ if(!kitRotB||!kitRotB.id) return; const id=kitRotB.id, weeks=kitRotB.weeks; kitRotB=null; kitRotPick=null; kitRotEdit={id:id,weeks:weeks}; kitRotOpen=id; kitRotRender(); }   // ⌨ the typed grid, with what's built so far
+// Pure: the record a NEW build saves — blank slots left out; a kind the rotation doesn't cover is left out (never written).
+function kitRotBClean(B){
+  return B.weeks.map(wk=>wk.map(d=>{ const o={}; B.types.forEach(t=>{ const v=String((d||{})[t]||"").trim(); if(!v) return; o[t]=v; if(t==="d"){ const sd=String(d.sd||"").trim(); if(sd) o.sd=sd; } }); return o; }));
+}
+// Pure: the targeted update a build makes on a saved rotation — kitRotEditDiff's slot paths + dropped weeks + name/emoji/types.
+function kitRotBDiff(rot,B,name,emoji){
+  const up=kitRotEditDiff(rot,B.weeks);
+  const oldN=(Array.isArray(rot.weeks)?rot.weeks:[]).length; for(let w=B.weeks.length;w<oldN;w++) up["weeks/"+w]=null;
+  if(name!==String(rot.name||"")) up.name=name;
+  if(emoji!==String(rot.emoji||"")) up.emoji=emoji||null;
+  if(B.types.join(",")!==kitRotTypes(rot).join(",")) up.types=B.types.slice();
+  return up;
+}
+function kitRotBSave(){
+  const B=kitRotB; if(!B) return;
+  const name=String(((document.getElementById('kit-rotb-name')||{}).value)||B.name||"").trim(), emoji=String(((document.getElementById('kit-rotb-emoji')||{}).value)||B.emoji||"").trim();
+  if(!name){ if(typeof mwToast==='function') mwToast('Name the rotation first'); return; }
+  if(!B.weeks.some(wk=>wk.some(d=>B.types.some(t=>String((d||{})[t]||"").trim())))){ if(typeof mwToast==='function') mwToast('Fill at least one slot'); return; }
+  kitRotEnsure();
+  const d=kitRotDb(); const now=Date.now();
+  if(!B.id){
+    const id="r"+now.toString(36)+"_b"+Object.keys(kitRotations).length;
+    const rot={name:name,types:B.types.slice(),weeks:kitRotBClean(B),ts:now}; if(emoji) rot.emoji=emoji;
+    kitRotations[id]=rot;
+    try{HA_LS.setItem('ha_kit_rotations',JSON.stringify(kitRotations));}catch(e){}
+    if(d) d.ref('kitchen/rotations/'+id).set(rot);
+    kitRotB=null; kitRotPick=null; kitRotOpen=id;
+    if(typeof mwToast==='function') mwToast('📅 Saved '+name+' · '+rot.weeks.length+' week'+(rot.weeks.length===1?'':'s')+' — pick its start and cut-off, then ▶ Run');
+    kitRotRender(); return;
+  }
+  const rot=kitRotAll()[B.id]; if(!rot){ kitRotB=null; kitRotPick=null; kitRotRender(); return; }
+  const up=kitRotBDiff(rot,B,name,emoji); const n=Object.keys(up).length;
+  if(!n){ kitRotB=null; kitRotPick=null; if(typeof mwToast==='function') mwToast('Nothing changed'); kitRotRender(); return; }
+  const cur=JSON.parse(JSON.stringify(kitRotations[B.id]||rot)); cur.weeks=Array.isArray(cur.weeks)?cur.weeks:[];
+  Object.keys(up).forEach(p=>{ const q=p.split("/");
+    if(q[0]==="weeks"&&q.length===2){ if(cur.weeks.length>+q[1]) cur.weeks.length=+q[1]; return; }
+    if(q[0]==="weeks"){ const w=+q[1],i=+q[2],k=q[3]; if(!cur.weeks[w]) cur.weeks[w]=[]; if(!cur.weeks[w][i]) cur.weeks[w][i]={}; if(up[p]==null) delete cur.weeks[w][i][k]; else cur.weeks[w][i][k]=up[p]; return; }
+    if(up[p]==null) delete cur[p]; else cur[p]=up[p]; });
+  cur.ts=now; up.ts=now;
+  kitRotations[B.id]=cur;
+  try{HA_LS.setItem('ha_kit_rotations',JSON.stringify(kitRotations));}catch(e){}
+  if(d) d.ref('kitchen/rotations/'+B.id).update(up);   // only what changed
+  kitRotB=null; kitRotPick=null;
+  if(typeof mwToast==='function') mwToast('✎ '+name+' · '+n+' change'+(n===1?'':'s')+' saved');
+  kitRotRender();
+}
+function kitRotBHTML(){
+  const B=kitRotB; if(!B) return '';
+  const inp='padding:7px 9px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:12px;font-family:\'DM Sans\',sans-serif';
+  const sm='cursor:pointer;border:1.5px solid #e8e4de;background:#fff;color:#6b6560;border-radius:7px;padding:2px 7px;font-size:10.5px;font-weight:700';
+  let h='<div style="padding:10px;background:#fffbeb;border:1.5px dashed #B45309;border-radius:9px;margin-bottom:10px">';
+  h+='<div style="font-size:12px;font-weight:800;color:#92400e;margin-bottom:6px">'+(B.id?'✎ Edit rotation':'＋ New rotation')+'</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">'
+    +'<input type="text" id="kit-rotb-name" value="'+esc(B.name)+'" oninput="kitRotBField(\'name\',this.value)" placeholder="Name it (Winter, Spring…)" style="flex:2;min-width:140px;'+inp+';font-size:13px">'
+    +'<input type="text" id="kit-rotb-emoji" value="'+esc(B.emoji)+'" oninput="kitRotBField(\'emoji\',this.value)" placeholder="🍂" maxlength="4" style="width:52px;text-align:center;'+inp+';font-size:16px">'
+    +'<label style="font-size:11px;font-weight:700;color:#6b6560">weeks <input type="number" value="'+B.weeks.length+'" min="1" max="8" onchange="kitRotBWeeks(this.value)" style="width:52px;'+inp+'"></label></div>';
+  h+='<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-bottom:4px"><span style="font-size:11px;font-weight:700;color:#6b6560">covers</span>'
+    +KIT_ROT_TYPES.map(t=>{ const on=B.types.indexOf(t[0])>=0; return '<span onclick="kitRotBType(\''+t[0]+'\')" style="cursor:pointer;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;border:1.5px solid '+(on?'#B45309;background:#B45309;color:#fff':'#fcd34d;background:#fff;color:#92400e')+'">'+t[1]+' '+t[2]+'</span>'; }).join('')+'</div>';
+  const cols=B.types.length+(B.types.indexOf("d")>=0?1:0);
+  B.weeks.forEach((wk,w)=>{
+    h+='<div style="margin-top:8px;padding:6px 8px;background:#fff;border:1.5px solid #e8e4de;border-radius:9px">';
+    h+='<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap"><b style="font-size:11px;color:#92400e;flex:1">Week '+(w+1)+'</b>'
+      +(w>0?'<button onclick="kitRotBMove('+w+',-1)" title="Move this week up" style="'+sm+'">▲</button>':'')
+      +(w<B.weeks.length-1?'<button onclick="kitRotBMove('+w+',1)" title="Move this week down" style="'+sm+'">▼</button>':'')
+      +'<button onclick="kitRotBCopy('+w+')" style="'+sm+'">⧉ Copy to next week</button>'
+      +'<button onclick="kitRotBDelWeek('+w+')" style="'+sm+';color:#b91c1c">✕ Remove week</button></div>';
+    h+='<div style="display:grid;grid-template-columns:34px repeat('+cols+',minmax(84px,1fr));gap:3px;margin-top:4px;font-size:10.5px">';
+    h+='<span></span>'+B.types.map(t=>{ const m=kitRotTypeMeta(t); let s='<span style="font-weight:800;color:#6b6560">'+m[1]+' '+m[2]+'</span>'; if(t==="d") s+='<span style="font-weight:800;color:#6b6560">🥦 Side</span>'; return s; }).join('');
+    wk.forEach((day,i)=>{
+      h+='<span style="font-weight:800;color:#9ca3af;align-self:center">'+KIT_ROT_DAYS[i]+'</span>';
+      B.types.forEach(t=>{
+        const v=String(day[t]||""); const picking=kitRotPick&&kitRotPick.kind==="b"&&kitRotPick.w===w&&kitRotPick.i===i&&kitRotPick.slot===t;
+        h+='<span onclick="kitRotBPick('+w+','+i+',\''+t+'\')" style="cursor:pointer;padding:5px 6px;border-radius:6px;background:'+(v?'#fff7ed':'#f8f7f4')+';border:1.5px solid '+(picking?'#B45309':'#e8e4de')+';min-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(v?esc(v):'<span style="color:#9ca3af">＋ pick</span>')+'</span>';
+        if(t==="d") h+='<input type="text" value="'+esc(day.sd||"")+'" placeholder="🥦 peas · rice" oninput="kitRotBSet('+w+','+i+',\'sd\',this.value,true)" style="min-width:0;padding:4px 6px;border:1.5px solid #e8e4de;border-radius:6px;font-size:10.5px;font-family:\'DM Sans\',sans-serif">';
+      });
+    });
+    h+='</div>';
+    if(kitRotPick&&kitRotPick.kind==="b"&&kitRotPick.w===w) h+=kitRotPickHTML();
+    h+='</div>';
+  });
+  h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:9px">'
+    +'<button onclick="kitRotBSave()" style="padding:7px 14px;border-radius:9px;border:none;background:#B45309;color:#fff;font-size:12px;font-weight:800;cursor:pointer">Save</button>'
+    +'<button onclick="kitRotBCancel()" style="padding:7px 12px;border-radius:9px;border:1.5px solid #cbd5e1;background:#fff;color:#6b6560;font-size:12px;font-weight:700;cursor:pointer">Cancel</button>'
+    +(B.id?'<button onclick="kitRotBTyped()" title="Type every slot in one grid" style="padding:7px 12px;border-radius:9px;border:1.5px solid #cbd5e1;background:#fff;color:#6b6560;font-size:12px;font-weight:700;cursor:pointer">⌨ Type the whole grid</button>':'')
+    +'<span style="font-size:11px;color:var(--muted)">Tap a slot to pick from the library or type it. Blank slots and meal kinds it doesn\'t cover never go on the calendar. Saving changes the rotation only — days already on the calendar stay until you ▶ Run it.</span></div></div>';
+  return h;
+}
+// The card's per-rotation run row: status (derived), start + cut-off, ▶ Run, the overwrite tick.
+function kitRotRunRowHTML(id,r,nextMon){
+  const today=_todayStr(); const st=kitRotStatus(r,today); const types=kitRotTypes(r); const nW=(Array.isArray(r.weeks)?r.weeks:[]).length||1;
+  let from=r.startDate, to=r.endDate;
+  if(!st||st==="ended"){ from=kitRotNextStart(id,types,nextMon); to=kitIsoPlus(from,7*nW-1); }
+  const badge=st==="running"?['▶ running · until '+kitRotFmtShort(r.endDate),'#dcfce7','#166534']:st==="upcoming"?['⏳ coming · starts '+kitRotFmtShort(r.startDate),'#fef3c7','#92400e']:st==="ended"?['ended '+kitRotFmtShort(r.endDate),'#f3f4f6','#6b7280']:['not scheduled','#f3f4f6','#6b7280'];
+  const inp='padding:6px 8px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif';
+  return '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px">'
+    +'<span style="font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:9px;background:'+badge[1]+';color:'+badge[2]+'">'+esc(badge[0])+'</span>'
+    +'<span title="'+esc(kitRotKindsTxt(types))+'" style="font-size:11px">'+types.map(t=>kitRotTypeMeta(t)[1]).join('')+'</span>'
+    +'<label style="font-size:11px;font-weight:700;color:#6b6560">from <input type="date" id="kit-rot-from-'+id+'" value="'+esc(from)+'" style="'+inp+'"></label>'
+    +'<label style="font-size:11px;font-weight:700;color:#6b6560">until <input type="date" id="kit-rot-to-'+id+'" value="'+esc(to)+'" style="'+inp+'"></label>'
+    +'<button onclick="kitRotApply(\''+id+'\')" style="padding:6px 12px;border-radius:8px;border:none;background:#B45309;color:#fff;font-size:11px;font-weight:800;cursor:pointer">▶ Run</button>'
+    +'<label style="font-size:10.5px;color:#6b6560"><input type="checkbox" id="kit-rot-ow-'+id+'"> overwrite days I changed by hand</label></div>';
+}
+// KITROT2_END
 function kitRotationsCardHTML(){
+  if(typeof kitRotAutoStart==='function') kitRotAutoStart();   // KITROT2: a rotation whose start date has come gets its days (Mom's device)
   const rots=kitRotAll();
   const ids=Object.keys(rots).sort((a,b)=>String((rots[a]||{}).name||"").localeCompare(String((rots[b]||{}).name||"")));
   const today=_todayStr();
   const nextMon=kitWkIso('mon',false)||today;
   const thisMon=kitRotMondayOf(today);
   let h='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
-  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#B45309;color:#fff;font-weight:800;font-size:13px"><span>📅</span> Rotations'
-    +'<button onclick="kitRotFromFavorites()" style="margin-left:auto;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">😍 From favorites</button>'
+  h+='<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:11px 14px;background:#B45309;color:#fff;font-weight:800;font-size:13px"><span>📅</span> Rotations'
+    +'<button onclick="kitRotBNew()" style="margin-left:auto;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">＋ New rotation</button>'   // KITROT2: build one from the library
+    +'<button onclick="kitRotFromFavorites()" style="margin-left:6px;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">😍 From favorites</button>'
     +'<button onclick="kitRotSaveToggle()" style="margin-left:6px;border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">'+(kitRotSaveOpen?'✕ Close':'＋ Save current plan')+'</button></div>';
   h+='<div style="padding:10px 14px 12px">';
+  if(typeof kitRotB!=='undefined'&&kitRotB) h+=kitRotBHTML();   // KITROT2: the builder (＋ New rotation / ✎ Edit)
   if(kitRotSaveOpen){
     h+='<div style="padding:9px 10px;background:#fffbeb;border:1.5px dashed #B45309;border-radius:9px;margin-bottom:10px">'
       +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
@@ -20711,10 +21175,9 @@ function kitRotationsCardHTML(){
     h+='<div style="padding:8px 10px;background:#f8f7f4;border:1.5px solid '+(open?'#B45309':'#e8e4de')+';border-radius:9px;margin-bottom:6px">'
       +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
       +'<span onclick="kitRotToggle(\''+id+'\')" style="cursor:pointer;flex:1;min-width:120px;font-size:13px;font-weight:700">'+(r.emoji?esc(r.emoji)+' ':'')+esc(r.name||"Rotation")+' <span style="font-size:11px;font-weight:600;color:#6b6560">'+weeks.length+' week'+(weeks.length===1?'':'s')+' · '+days+' days '+(open?'▴':'▾')+'</span></span>'
-      +'<input type="date" id="kit-rot-from-'+id+'" value="'+nextMon+'" style="padding:6px 8px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif">'
-      +'<button onclick="kitRotApply(\''+id+'\')" style="padding:6px 12px;border-radius:8px;border:none;background:#B45309;color:#fff;font-size:11px;font-weight:800;cursor:pointer">Apply</button>'
       +'<button onclick="kitRotEditStart(\''+id+'\')" title="Edit this rotation" style="padding:6px 10px;border-radius:8px;border:1.5px solid #B45309;background:#fff;color:#B45309;font-size:11px;font-weight:800;cursor:pointer">✎ Edit</button>'
-      +'<button onclick="kitRotDel(\''+id+'\')" style="border:none;background:none;color:#9ca3af;font-size:14px;cursor:pointer;padding:2px 4px">✕</button></div>';
+      +'<button onclick="kitRotDel(\''+id+'\')" style="border:none;background:none;color:#9ca3af;font-size:14px;cursor:pointer;padding:2px 4px">✕</button></div>'
+      +((typeof kitRotRunRowHTML==='function')?kitRotRunRowHTML(id,r,nextMon):'');   // KITROT2: status · from <start> until <cut-off> · ▶ Run (replaces the Monday + Apply pair)
     if(r.note) h+='<div style="font-size:11px;color:#6b6560;margin-top:4px">'+esc(r.note)+'</div>';
     if(kitRotEdit&&kitRotEdit.id===id) h+=kitRotEditHTML(kitRotEdit);   // ✎ the edit grid replaces the preview
     else if(open){
@@ -20725,8 +21188,9 @@ function kitRotationsCardHTML(){
     }
     h+='</div>';
   });
-  if(!ids.length) h+='<div style="font-size:12px;color:var(--muted)">No rotations saved. Plan a few weeks on the grid, then ＋ Save current plan to keep them for next season.</div>';
-  h+='<div style="font-size:11px;color:var(--muted);margin-top:6px">Apply fills the week grid from the Monday you pick — meals matched to the library by name, the rest typed in. Days already planned in that range are replaced.</div>';
+  if(!ids.length) h+='<div style="font-size:12px;color:var(--muted)">No rotations yet. ＋ New rotation builds one from the library, or plan a few weeks on the grid and ＋ Save current plan.</div>';
+  if(typeof kitRotMonthHTML==='function') h+=kitRotMonthHTML();   // KITROT2: 🗓 This month, in rotation shape
+  h+='<div style="font-size:11px;color:var(--muted);margin-top:6px">▶ Run puts a rotation on the calendar from its start to its cut-off — week 1 begins on the start\'s weekday, the weeks repeat, and the cut-off is the last day it fills. A start that is still ahead queues it: those days show pale as \'coming\' until then, and the grocery list already sees them. Days you changed by hand are kept unless you tick overwrite.</div>';
   h+='</div></div>';
   return h;
 }
@@ -21282,13 +21746,15 @@ function renderKitchen(el){
     const d=gwParseDate(iso);
     const dayLbl=(i===0?'Tonight':(i===1?'Tomorrow':d.toLocaleDateString("en-US",{weekday:"short"})))+' · '+(d.getMonth()+1)+'/'+d.getDate();
     const pl=kitPlanFor(iso);
+    const _cm=(typeof kitRotComingAt==='function')?kitRotComingAt(iso,'d'):null;   // KITROT2: a queued rotation's day — pale, labelled
     let what;
     if(pl&&pl.meal) what=kitWkNameHTML(pl)+(kitSidesTxt(pl)?' <span style="font-size:11px;color:#6b6560">· '+esc(kitSidesTxt(pl))+'</span>':'');
     else if(pl&&pl.mid) what='<span style="color:#b91c1c;font-weight:700">(meal removed — tap to re-pick)</span>';
     else if(pl&&pl.txt) what='<b>'+esc(pl.txt)+'</b>'+(kitSidesTxt(pl)?' <span style="font-size:11px;color:#6b6560">· '+esc(kitSidesTxt(pl))+'</span>':'')+' <span style="font-size:10px;color:var(--muted)">(typed)</span>';
     else what='<span style="color:var(--muted)">tap to plan</span>';
+    if(_cm) what+=' <span style="font-size:10px;font-weight:800;color:#9ca3af">'+esc(kitRotComingLbl(_cm))+'</span>';   // KITROT2
     const nPrep=(pl&&pl.meal&&Array.isArray(pl.meal.prep))?pl.meal.prep.length:0;
-    h+='<div onclick="kitPickDay(\''+iso+'\')" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 10px;background:'+(i===0?'#fff7ed':'#f8f7f4')+';border:1.5px solid '+(kitPickIso===iso?'#E07B39':(i===0?'#fed7aa':'#e8e4de'))+';border-radius:9px;margin-bottom:6px">'
+    h+='<div onclick="kitPickDay(\''+iso+'\')" style="'+(_cm?'opacity:.6;':'')+'cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 10px;background:'+(i===0?'#fff7ed':'#f8f7f4')+';border:1.5px solid '+(kitPickIso===iso?'#E07B39':(i===0?'#fed7aa':'#e8e4de'))+';border-radius:9px;margin-bottom:6px">'
       +'<span style="flex:0 0 92px;font-size:11px;font-weight:800;color:'+(i===0?'#c2410c':'#6b6560')+'">'+dayLbl+'</span>'
       +'<span style="flex:1;font-size:13px">'+what+'</span>'
       +(nPrep?'<span style="font-size:10px;font-weight:800;color:#c2410c">⏲ '+nPrep+'</span>':'')
@@ -21308,7 +21774,7 @@ function renderKitchen(el){
       });
       if(!sortedMids.length) h+='<span style="font-size:12px;color:var(--muted)">No meals in the library yet — add one below.</span>';
       h+='<span onclick="kitPlanText(\''+iso+'\')" style="cursor:pointer;font-size:12px;font-weight:800;padding:4px 11px;border-radius:12px;border:1.5px dashed #9ca3af;color:#6b7280;background:#fff">✎ Type it…</span>';
-      if(pl) h+='<span onclick="kitAssign(\''+iso+'\',null)" style="cursor:pointer;font-size:12px;font-weight:800;padding:4px 11px;border-radius:12px;border:1.5px solid #fca5a5;color:#b91c1c;background:#fff">✕ Clear</span>';
+      if(pl&&!_cm) h+='<span onclick="kitAssign(\''+iso+'\',null)" style="cursor:pointer;font-size:12px;font-weight:800;padding:4px 11px;border-radius:12px;border:1.5px solid #fca5a5;color:#b91c1c;background:#fff">✕ Clear</span>';
       h+='</div>';
     }
   }
@@ -33566,9 +34032,9 @@ function calRenderMonthPreview(opts){
     // lunch, snack, then dinner (the one that carries a status)
     if(L.meals&&typeof kitPlanSlot==="function"&&typeof KIT_SLOTS!=="undefined"){
       KIT_SLOTS.forEach(function(sp){ const sv=kitPlanSlot(iso,sp[0]); if(!sv) return;
-        const nm=sv.meal?((sv.meal.emoji?sv.meal.emoji+" ":"")+(sv.meal.name||"")):(sv.txt||""); if(nm) items.push({c:"gmd-meal",t:sp[1]+" "+nm}); });
+        const nm=sv.meal?((sv.meal.emoji?sv.meal.emoji+" ":"")+(sv.meal.name||"")):(sv.txt||""); if(nm) items.push({c:"gmd-meal"+((typeof kitRotComingAt==="function"&&kitRotComingAt(iso,sp[0]))?" coming":""),t:sp[1]+" "+nm}); });   // KITROT2: a queued day is pale
     }
-    if(_din) items.push({c:"gmd-meal "+_din.st,t:"\u{1F37D} "+_din.name});
+    if(_din) items.push({c:"gmd-meal "+_din.st+((typeof kitRotComingAt==="function"&&kitRotComingAt(iso,'d'))?" coming":""),t:"\u{1F37D} "+_din.name});   // KITROT2: a queued day is pale
     const MAXL=who?5:(L.school?6:4), shown=items.slice(0,MAXL), more=items.length-shown.length;   // 📚 room for the kids' lesson lines
     const tip=items.map(x=>x.t+(x.c.indexOf("owed")>=0?" (not marked)":x.c.indexOf("ate")>=0?" (eaten)":x.c.indexOf("skip")>=0?" (didn't happen)":"")).join(" · ");
     h+='<div class="'+cls+'" onclick="calDayClick(\''+iso+'\')" title="'+esc(tip||"Tap for the day")+'">'+
@@ -33692,7 +34158,7 @@ function _calSlotRows(iso,who){
   KIT_SLOTS.forEach(function(sp){
     const sv=kitPlanSlot(iso,sp[0]); if(!sv) return; n++;
     const name=sv.meal?((sv.meal.emoji?sv.meal.emoji+" ":"")+(sv.meal.name||"")):(sv.txt||"");
-    html+='<div class="row"><span class="lbl">'+sp[2]+'</span><span style="flex:1">'+sp[1]+' <b>'+esc(name)+'</b></span>'
+    html+='<div class="row"><span class="lbl">'+sp[2]+'</span><span style="flex:1">'+sp[1]+' <b>'+esc(name)+'</b>'+((typeof kitRotComingAt==='function'&&kitRotComingAt(iso,sp[0]))?' <span style="font-size:10px;color:#9ca3af;font-weight:700">'+esc(kitRotComingLbl(kitRotComingAt(iso,sp[0])))+'</span>':'')+'</span>'   // KITROT2
       +((who||!kitEatGate())?'':'<button class="act" style="background:#fff7ed;color:#c2410c" onclick="kitSlotText(\''+iso+'\',\''+sp[0]+'\')">✎</button><button class="act" style="background:#eff6ff;color:#1d4ed8" onclick="kitMoveForward(\''+iso+'\',\''+sp[0]+'\')">➡ Move</button>')+'</div>';
   });
   return {html:html,n:n};
@@ -33767,7 +34233,7 @@ function calDaySheetHTML(iso,L,dinnerOf,who,opts){
       if(din.st==="ate"){ const ts=(kitPlan[iso]||{}).eaten; h+='<div style="font-size:11px;color:#15803d;font-weight:700">✓ Eaten'+(ts?' · '+new Date(ts).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):'')+'</div>'; }
       else if(din.st==="skip") h+='<div style="font-size:11px;color:#9ca3af;font-weight:700">✗ Didn’t happen</div>';
       else if(din.st==="owed") h+='<div style="font-size:11px;color:#c2410c;font-weight:700">● Not marked yet</div>';
-      else h+='<div style="font-size:11px;color:#6b7280;font-weight:700">planned</div>';
+      else { const _cm=(typeof kitRotComingAt==='function')?kitRotComingAt(iso,'d'):null; h+='<div style="font-size:11px;color:'+(_cm?'#9ca3af':'#6b7280')+';font-weight:700">'+(_cm?esc(kitRotComingLbl(_cm)):'planned')+'</div>'; }   // KITROT2: a queued day says so
       h+='</span>';
       if(!kitEatGate()){ /* a kid on a shared screen: status only, no buttons */ }
       else if(din.st==="owed"||(din.st==="planned"&&iso===todayIso)) h+='<button class="act" style="background:#dcfce7;color:#166534" onclick="kitMarkEaten(\''+iso+'\')">✓ We ate it</button><button class="act" style="background:#f1f5f9;color:#475569" onclick="kitMarkSkipped(\''+iso+'\')">✗ Didn’t happen</button>'+_mvBtn;
