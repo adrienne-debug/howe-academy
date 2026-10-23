@@ -30360,6 +30360,7 @@ function ceRenderAddSheet(){
 
   let h='<div class="ce-sheet" onclick="if(event.target===this)ceCloseSheet()"><div class="ce-sheet-box">';
   h+='<div class="ce-sheet-title">Add Subject for '+cap(kid)+'</div>';
+  if(typeof famWhoRowHTML==="function") h+=famWhoRowHTML(f);   // 🏡 FAMEDITORHOME: "Who does this?" — 2+ kids = one Family Time subject
 
   // Subject name
   h+='<div class="ce-sheet-lbl">Subject Name</div>';
@@ -30618,6 +30619,7 @@ function ceAddToggleRule(r){
 }
 
 function ceAddSave(){
+  if(typeof famWhoSave==="function"&&famWhoSave()) return;   // 🏡 FAMEDITORHOME: 2+ kids → one Family Time subject, no per-kid subject
   const nameEl=document.getElementById("ce-add-name");
   if(nameEl) ceAddForm.name=nameEl.value;
   const name=ceAddForm.name.trim();
@@ -32999,6 +33001,7 @@ function famTogetherRender(){
 }
 // Open Settings ▸ Family time from anywhere (the Grid strip / Family view).
 function famGoEdit(){
+  if(typeof famHomeGo==="function"){ famHomeGo(); return; }   // 🏡 FAMEDITORHOME: the editor lives on the Grid's Family chip now
   try{ if(typeof setAdminSub==="function") setAdminSub("settings"); }catch(e){}
   setTimeout(function(){ const e=document.getElementById("fam-settings"); if(e) e.scrollIntoView({block:"start"}); },60);
 }
@@ -33658,6 +33661,135 @@ function famDsAuditRowHTML(f){
   return '<div style="padding:7px 0;border-top:1px solid #fde68a"><div style="font-size:11.5px;color:#78350f;line-height:1.45;margin-bottom:5px"><b>'+FAM_ICON+' '+esc(f.disp)+'</b> — '+esc(f.txt)+' Nothing moves by itself: give that day its own start in Settings ▸ Family time.</div></div>';
 }
 // FAMDAYSTART_END
+// FAMEDITORHOME_START ── ⚙ FAMILY TIME IS EDITED WHERE IT LIVES: THE GRID (her ask 2026-10-22) + "WHO DOES THIS?" ON ADD SUBJECT ──
+// "A new mom never finds the Family Time editor under Settings; it belongs on the Grid where the block lives, and Add
+// Subject should let her pick several kids and get a shared item instead of per-kid subjects."
+// ONE editor, two doors:
+//   · the Grid's 🏡 Family chip gets a "⚙ Family time" bar at the top (modelled on a kid's ⚙ Rules & day cap bar): tap to
+//     open, every field the Settings editor had (famSettingsCardHTML — name · who · days · starts incl. Some days · Mom
+//     leads · celebration · subjects in order with kids / minutes / points / lessons · off · delete · ＋ Add family time),
+//     tap again to close, never leaving the page. The same famWrite targeted paths, the same momHere() gate.
+//   · Settings ▸ Family rules keeps ONE line, "🏡 Family time — edit it on the Grid →" (famHomeDoorHTML), that opens the
+//     Grid's Family chip with the panel open (famHomeGo). The old Settings render is not drawn there any more.
+//   The 🏡 Together strip chips and the audit lines call famGoEdit, which now lands on the Grid panel too.
+// "Who does this?" on the Add Subject sheet: a row of kid chips, the current kid pre-selected (ceAddForm.who; absent =
+//   just that kid). ONE kid → the sheet behaves exactly as today (that kid's own subject, byte for byte). TWO or more →
+//   Save makes ONE Family Time subject instead of per-kid subjects (famWhoSave), the same data 🧩 Do together writes:
+//     · a block whose kids are EXACTLY the picks exists → the item joins it (famWrite(<id>/items, items + the new one));
+//     · otherwise a new block named after the subject: config/rules/familyBlocks/<id> = {name, kids: the picks, days: the
+//       sheet's days (none picked = Mon–Fri), at: the start picked on the sheet ("lunch" | "auto" | "1:00 PM"), items:[it]}.
+//       momLeads is left absent = Mom leads it (the editor's own convention: absent/null = on, false = kids on their own).
+//     · the item = {key, name, minutes: the sheet's Duration, track?: {mode:"seq", list:[{t,n}…]}} — the lessons the sheet
+//       captured (auto-number from "start at" to Total, or the typed list; n = Days per lesson) become the item's in-order
+//       lesson track. Daily tracking = no track. No points (not on the sheet).
+//     · NO per-kid subject is written (curriculum/subjects/… is never touched), and nothing is paused — unlike 🧩 Do
+//       together there is no existing subject to pause (no from:, no pausedFor).
+//   Then the sheet closes and the Grid's Family chip opens with the panel open on that block.
+// Data: config/rules/familyBlocks/<id> and config/rules/familyBlocks/<id>/items, through famWrite only (Mom only; dry run
+// inert). A family with no blocks sees every kid's Grid and Settings exactly as before, apart from the door line.
+// Hooks (one line each): renderFamilyRulesWrap (the door instead of the card) · renderCurrGrid's Family branch (the panel
+// above the family grid) · famGoEdit (lands on the panel) · ceRenderAddSheet (the "Who does this?" row) · ceAddSave (first
+// line: 2+ kids → famWhoSave handles it).
+let famHomeOpen=false;   // the ⚙ Family time panel on the Grid's Family chip is open
+function famHomeToggle(){ famHomeOpen=!famHomeOpen; if(typeof renderAll==="function") renderAll(); }
+// The bar + (open) the ONE editor — famSettingsCardHTML, unchanged, every block as a collapsible card + ＋ Add family time.
+function famHomePanelHTML(){
+  let h='<div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px"><button onclick="famHomeToggle()" style="padding:5px 12px;border-radius:10px;border:1px solid var(--border);background:'+(famHomeOpen?'var(--bg)':'#fff')+';font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">⚙ Family time '+(famHomeOpen?'▴':'▾')+'</button></div>';
+  if(famHomeOpen) h+='<div id="fam-home-panel" style="background:#fff;border:1px solid var(--border);border-radius:12px;margin-bottom:10px">'+famSettingsCardHTML()+'</div>';
+  return h;
+}
+// Settings ▸ Family rules: the one line that opens the Grid with the panel open.
+function famHomeDoorHTML(){
+  return '<div class="rules-wrap" id="fam-settings-door"><button onclick="famHomeGo()" style="width:100%;text-align:left;padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:var(--text)">'+FAM_ICON+' Family time — edit it on the Grid →</button></div>';
+}
+// Open the Grid's 🏡 Family chip with the panel open — on one family time (its card expanded) when an id is given.
+function famHomeGo(id){
+  famHomeOpen=true;
+  if(id){ try{ rulesOpen["fam_"+id]=true; }catch(e){} }
+  try{ if(typeof gvKid!=="undefined"){ gvKid="__fam"; gvEdit=null; } }catch(e){}
+  try{ if(typeof currInnerTab!=="undefined") currInnerTab="grid"; }catch(e){}
+  try{ if(typeof setAdminSub==="function") setAdminSub("curriculum"); else if(typeof renderAll==="function") renderAll(); }catch(e){}
+  try{ setTimeout(function(){ const e=document.getElementById("fam-home-panel"); if(e) e.scrollIntoView({block:"start"}); },60); }catch(e){}
+}
+// ── "Who does this?" on the Add Subject sheet ──
+function famWhoPicks(f){
+  const who=famList(f&&f.who), me=(typeof ceAddKid!=="undefined")?ceAddKid:null;
+  const out=ROSTER.filter(function(k){ return who.indexOf(k)>=0; });
+  return out.length?out:(me&&ROSTER.indexOf(me)>=0?[me]:[]);
+}
+function famWhoToggle(k){
+  if(ROSTER.indexOf(k)<0) return;
+  const cur=famWhoPicks(ceAddForm), has=cur.indexOf(k)>=0;
+  if(has&&cur.length===1) return;                          // somebody has to do it
+  ceAddForm.who=ROSTER.filter(function(x){ return has?(x!==k&&cur.indexOf(x)>=0):(x===k||cur.indexOf(x)>=0); });
+  if(typeof ceRenderAddSheet==="function") ceRenderAddSheet();
+}
+function famWhoSetStart(mode){ ceAddForm.famAt=(mode==="auto"||mode==="time")?mode:"lunch"; if(typeof ceRenderAddSheet==="function") ceRenderAddSheet(); }
+function famWhoSetTime(v){ const t=to12h(v); if(t&&!isNaN(toMin(t))) ceAddForm.famTime=t; if(typeof ceRenderAddSheet==="function") ceRenderAddSheet(); }
+// The block's start for a NEW family time, from the sheet: "lunch" (default) | "auto" | "1:00 PM".
+function famWhoAt(f){ const m=String((f&&f.famAt)||"lunch"); return m==="auto"?"auto":(m==="time"?String((f&&f.famTime)||(f&&f.fixedTime)||"1:00 PM"):"lunch"); }
+// The one block whose kids are EXACTLY these (a live one before an off one), or null.
+function famWhoBlockFor(kids){
+  const defs=famDefs(), want=kids.slice().sort().join("|"); let hit=null;
+  Object.keys(defs).forEach(function(id){ const b=defs[id]; if(!b||famList(b.kids).slice().sort().join("|")!==want) return; if(!hit||(defs[hit].off&&!b.off)) hit=id; });
+  return hit;
+}
+// The lessons the sheet captured → the item's in-order track list [{t,n}] ([] = none / daily).
+function famWhoLessons(f){
+  if(!f||f.tracking==="daily") return [];
+  const n=Math.max(1,Math.min(10,parseInt(f.daysPerLesson,10)||1)), out=[];
+  if(f.lessonSource==="auto"){ for(let i=Math.max(1,parseInt(f.startAt,10)||1);i<=(parseInt(f.total,10)||0);i++) out.push({t:String(f.prefix||"Lesson")+" "+i,n:n}); }
+  else String(f.manualLessons||"").split("\n").map(function(l){ return l.trim(); }).filter(Boolean).forEach(function(t){ out.push({t:t,n:n}); });
+  return out;
+}
+function famWhoRowHTML(f){
+  const picks=famWhoPicks(f), J=function(s){ return String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); };
+  let h='<div class="ce-sheet-lbl">Who does this?</div><div class="ce-chips">';
+  ROSTER.forEach(function(k){ h+='<div class="ce-chip'+(picks.indexOf(k)>=0?" sel":"")+'" onclick="famWhoToggle(\''+J(k)+'\')">'+esc(cap(k))+'</div>'; });
+  h+='</div><div style="font-size:10px;color:var(--muted);margin-top:4px">Picking 2 or more makes this a Family Time subject they do together.</div>';
+  if(picks.length>1){
+    const id=famWhoBlockFor(picks), b=id?famDefs()[id]:null, names=picks.map(cap).join(" & "), at=famWhoAt(f), mode=String(f.famAt||"lunch");
+    h+='<div style="margin-top:8px;padding:10px;background:#faf5ff;border-radius:8px;border:1px solid #c4b5fd">';
+    h+='<div style="font-size:11px;font-weight:700;color:#5b21b6">'+FAM_ICON+' '+(b?'Joins “'+esc(b.name||"Family time")+'” — the family time '+esc(names)+' already share.':'Makes a new family time for '+esc(names)+', named after this subject. Mom leads it.')+'</div>';
+    if(!b){
+      h+='<div style="font-size:11px;font-weight:600;margin-top:8px;margin-bottom:4px">Starts</div><div class="ce-chips">';
+      [["lunch","Right after lunch"],["time","At a set time"],["auto","Scheduler picks"]].forEach(function(p){ h+='<div class="ce-chip'+(mode===p[0]?" sel":"")+'" onclick="famWhoSetStart(\''+p[0]+'\')">'+p[1]+'</div>'; });
+      h+='</div>';
+      if(mode==="time") h+='<div style="display:flex;gap:8px;align-items:center;margin-top:6px"><span style="font-size:10px;font-weight:700;color:var(--muted)">Starts at</span><input type="time" class="rules-time" value="'+esc(ampmTo24(at))+'" onchange="famWhoSetTime(this.value)"></div>';
+      else if(mode==="auto") h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">The earliest morning time when everyone in it is free.</div>';
+    }
+    h+='<div style="font-size:10px;color:var(--muted);margin-top:6px">Duration, Days and the Lessons below ride along. Device, Mom requirement, scheduling rules and priority belong to a kid’s own subject and don’t apply here. Points can be set on the Grid.</div></div>';
+  }
+  return h;
+}
+// Save with 2+ kids → true (handled: one family-time item, nothing per kid). One kid → false (today's path, for that kid).
+function famWhoSave(){
+  const f=ceAddForm, picks=famWhoPicks(f);
+  if(picks.length<2){ if(picks.length===1&&picks[0]!==ceAddKid) ceAddKid=picks[0]; return false; }
+  try{ const nameEl=document.getElementById("ce-add-name"); if(nameEl) f.name=nameEl.value; }catch(e){}
+  const name=String(f.name||"").trim();
+  if(!name){ alert("Enter a subject name."); return true; }
+  if(!momHere()){ alert("Mom mode to make a Family Time subject."); return true; }
+  if(f.tracking!=="daily"&&f.lessonSource!=="auto"){ try{ const ta=document.getElementById("ce-add-lessons"); if(ta) f.manualLessons=ta.value; }catch(e){} }
+  const list=famWhoLessons(f);
+  if(f.tracking!=="daily"&&!list.length){ alert("Add at least one lesson."); return true; }
+  const it={key:"i"+Date.now().toString(36),name:name,minutes:Math.max(5,Math.min(240,parseInt(f.minutes,10)||30))};
+  if(list.length) it.track=(typeof famBoTrackDefault==="function"?famBoTrackDefault:function(x){ return x; })({mode:"seq",list:list});
+  let id=famWhoBlockFor(picks);
+  if(id){ const its=famItems(id); its.push(it); if(!famWrite(id+"/items",its)) return true; }   // joins — the write 🧩 Do together makes
+  else {
+    const dayArr=String(f.days||"").split(/[\s,]+/).map(function(x){ return x.trim(); }).filter(function(d){ return FAM_DAYS.indexOf(d)>=0; });
+    const days=dayArr.length?FAM_DAYS.filter(function(d){ return dayArr.indexOf(d)>=0; }):["Mon","Tue","Wed","Thu","Fri"];
+    id="fb"+Date.now().toString(36);
+    try{ rulesOpen["fam_"+id]=true; }catch(e){}
+    if(!famWrite(id,{name:name,kids:picks,days:days,at:famWhoAt(f),items:[it]})) return true;
+  }
+  try{ if(typeof ceCloseSheet==="function") ceCloseSheet(); }catch(e){}
+  famHomeGo(id);
+  try{ if(typeof gwShowToast==="function") gwShowToast(FAM_ICON+" "+name+" — a Family Time subject for "+picks.map(cap).join(" & ")); }catch(e){}
+  return true;
+}
+// FAMEDITORHOME_END
 
 
 // ── WHEN THE DOOR IS OPEN ──
@@ -46667,6 +46799,7 @@ function renderCurrGrid(el){
   if(gvKid!=="__fam") h+='<button onclick="ceOpenAdd(\''+gvKid+'\')" style="margin-left:auto;padding:5px 14px;border-radius:20px;border:1.5px dashed var(--border);background:#fff;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Add Subject</button>';
   h+='</div>';
   // 🏡 Family view: the split grid of family subjects (no kid tools, no lesson table)
+  if(gvKid==="__fam"&&typeof famHomePanelHTML==="function") h+=famHomePanelHTML();   // 🏡 FAMEDITORHOME: the ⚙ Family time panel sits above the family grid
   if(gvKid==="__fam"){ h+=(typeof famGridHTML==="function"?famGridHTML():"")+'</div>'; el.innerHTML+=h; return; }
 
   // ── Kid-level tools, ported from the Subjects page + Builder tab (their last
@@ -63729,7 +63862,7 @@ function haFamilyKeyClear(){ if(!momHere()) return; if(!confirm("Remove the fami
 function renderFamilyRulesWrap(){
   return '<div class="rules-wrap"><div class="rules-hdr">Family rules</div>'+
     '<div class="rules-sub">The shape of every school day — hours and lunch, sitter, workflow order, devices, overlap, carry-over &amp; Saturday, calendar. Per-subject settings (device, Mom, minutes, days, cap, priority) stay with the subject on the Grid.</div>'+
-    rulesFamilyCardsHTML(true)+'</div>'+(typeof famSettingsCardHTML==="function"?famSettingsCardHTML():'')+(typeof mmRulesCardHTML==="function"?mmRulesCardHTML():'');   // ⏱ MINMINUTES: Timed cards
+    rulesFamilyCardsHTML(true)+'</div>'+(typeof famHomeDoorHTML==="function"?famHomeDoorHTML():(typeof famSettingsCardHTML==="function"?famSettingsCardHTML():''))+(typeof mmRulesCardHTML==="function"?mmRulesCardHTML():'');   // ⏱ MINMINUTES: Timed cards · 🏡 FAMEDITORHOME: the Family time door (the editor lives on the Grid)
 }
 
 // 🔁⏩ Bonus % (Admin ▸ Adjust Slots ▸ Bonus points) — one targeted set under config/slot_config/bonus
