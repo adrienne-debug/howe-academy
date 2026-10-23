@@ -33781,7 +33781,7 @@ function famBoSig(){ try{ return JSON.stringify((typeof blockouts!=="undefined"&
 function famBoMark(t,bo){ try{ if(!t._famOut&&!(typeof checked!=="undefined"&&checked&&checked[t.id])&&famBoKidOut(t,bo)) t._famOut=famBoName(bo); }catch(e){} }
 // The card's row in place of "Mom checks this off for everyone".
 function famBoMakeupNote(t){
-  try{ const it=famItemOf(t), tr=famTrack(it); if(!tr) return ""; const m=famMissedMode(tr);
+  try{ const it=famItemOf(t), tr=famTrack(it); if(!tr) return ""; const m=(typeof famMissedModeFor==="function")?famMissedModeFor(tr,famBoDateOf(t.day)):famMissedMode(tr);   // FAMMAKEUP_ROLES: by that day's role
     const ds=famBoDateOf(t.day), wd=ds?FAM_ABBR[gwParseDate(ds).getDay()]:"";
     return m==="next"?"made up the next day it runs":(m==="same"?"made up next "+(wd||"same weekday"):"not made up (skip)"); }catch(e){ return ""; }
 }
@@ -33882,16 +33882,69 @@ function famMadeUpSet(id,key){
 function famMissedMode(tr){ const m=tr&&tr.missed; if(m==="next") return "next"; if(m==="same"&&tr.mode==="week") return "same"; return "skip"; }
 // The owed days, oldest first: run days from missedFrom up to yesterday that had a lesson, no checked copy, and no make-up yet.
 function famOwedList(id,it,dates,today,hasLesson){
-  const tr=famTrack(it); if(!tr||famMissedMode(tr)==="skip") return [];
+  const tr=famTrack(it); if(!tr||!famMissedAny(tr)) return [];   // FAMMAKEUP_ROLES: the track's setting, or any role's
   const from=String(tr.missedFrom||""); if(!/^\d{4}-\d{2}-\d{2}$/.test(from)) return [];
   const made=famMadeUpSet(id,it.key);
-  return dates.filter(function(d){ return d>=from&&(d<today||(typeof famBoMissedAt==="function"&&famBoMissedAt(id,it.key,d)))&&hasLesson(d)&&!made[d]&&!famRecordAt(id,it.key,d); });   // 🚫 FAMBLOCKOUT: or marked missed
+  return dates.filter(function(d){ return d>=from&&(d<today||(typeof famBoMissedAt==="function"&&famBoMissedAt(id,it.key,d)))&&hasLesson(d)&&famMissedModeFor(tr,d)!=="skip"&&!made[d]&&!famRecordAt(id,it.key,d); });   // 🚫 FAMBLOCKOUT: or marked missed · FAMMAKEUP_ROLES: by the missed day's role
 }
 // Does the owed day land here? "next" = the first open day; "same" = the first open day with the same weekday.
-function famMakeupLands(tr,missed,d){ return d>missed&&(famMissedMode(tr)==="same"?(gwParseDate(missed).getDay()===gwParseDate(d).getDay()):true); }   // 🚫 FAMBLOCKOUT: a make-up follows its miss (a day marked missed ahead of time never lands on today)
+function famMakeupLands(tr,missed,d){ return d>missed&&(famMissedModeFor(tr,missed)==="same"?(gwParseDate(missed).getDay()===gwParseDate(d).getDay()):true); }   // 🚫 FAMBLOCKOUT: a make-up follows its miss (a day marked missed ahead of time never lands on today)
 // A cheap signature of the records the map depends on (checked copies this week + archive size) for the memo key.
 function famRecSig(id,key){ let n=0; try{ ((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]).forEach(function(t){ if(t&&t.famBlock===id&&t.famItem===key&&checked[t.id]) n++; }); }catch(e){} try{ n+=1000*Object.keys((typeof archive!=="undefined"&&archive)||{}).length; }catch(e){} return n; }
 // FAMMAKEUP_END
+// FAMMAKEUP_ROLES_START ── make up a missed day BY ITS WEEKDAY ROLE (Sara DeWalt's answers 2026-10-16, worksheet history_skip_1016) ──
+// Sara skips a reading day (Day 1/2/3) → she doubles up the next day and reads both; skips a Presidents Friday → the next
+// Presidents day does two. One `missed` per track couldn't say both. A week-by-week track may carry
+//   track.missedByRole = {"<role>":"next"|"same"|"skip"}   keyed by the role text in track.days, e.g. {"Presidents":"same"}
+// A missed day whose role has an entry uses it; every other day uses the track's own `missed`. In-order (seq) tracks ignore it.
+// No missedByRole → every answer below is the track's own, so cards, Grid and "Next:" are byte-identical to before.
+// "Finish last week first" (her words): the owed days are a queue, oldest first, and each open day takes the oldest one that
+// lands on it — a Monday after a short week reads "Wk 8 · Day 1 + Wk 7 · Day 3 (missed …)" and the rest keep doubling forward,
+// never more than 2 on a card (proven in test_fam_makeup_roles, no code of its own).
+// Saved at config/rules/familyBlocks/<block>/items/<i>/track/missedByRole/<role> — one leaf per role; clearing removes the leaf.
+const FAM_ROLE_MODES=["next","same","skip"];
+// A role label as a Firebase key: ". # $ / [ ]" can't be in a key and become "_" ("Day 1", "Map work", "Presidents" are unchanged).
+function famRoleKey(role){ return String(role==null?"":role).trim().replace(/[.#$\/\[\]]/g,"_"); }
+// The role of a date in a week-by-week track ("Presidents" on a Friday); "" when that weekday has none or the track isn't weekly.
+function famRoleOf(tr,d){ try{ return (tr&&tr.mode==="week"&&String(((tr.days||{})[FAM_ABBR[gwParseDate(d).getDay()]])||"").trim())||""; }catch(e){ return ""; } }
+// The distinct roles of a week-by-week track, in weekday order (the editor's rows).
+function famRoles(tr){ const out=[]; if(!tr||tr.mode!=="week") return out; ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].forEach(function(a){ const r=String(((tr.days||{})[a])||"").trim(); if(r&&out.indexOf(r)<0) out.push(r); }); return out; }
+// This role's own setting ("next" | "same" | "skip"), or "" when it follows the track's.
+function famRoleMissed(tr,role){ const k=famRoleKey(role), M=tr&&tr.mode==="week"&&tr.missedByRole; const v=(k&&M&&typeof M==="object")?M[k]:""; return FAM_ROLE_MODES.indexOf(v)>=0?v:""; }
+// famMissedMode, role-aware: what happens when THIS date is missed.
+function famMissedModeFor(tr,d){ return famRoleMissed(tr,famRoleOf(tr,d))||famMissedMode(tr); }
+// Is anything on this track made up at all — the track's own setting, or any one role's?
+function famMissedAny(tr){ if(!tr) return false; if(famMissedMode(tr)!=="skip") return true; return famRoles(tr).some(function(r){ const v=famRoleMissed(tr,r); return v==="next"||v==="same"; }); }
+// "Save weeks" rebuilds the track: the role settings ride along, trimmed to the roles that still exist (famKeepMissed calls this).
+function famKeepMissedRoles(oldTr,newTr){
+  if(oldTr&&oldTr.missedByRole&&typeof oldTr.missedByRole==="object"&&newTr&&newTr.mode==="week"){
+    const keep={}; famRoles(newTr).forEach(function(r){ const v=famRoleMissed(oldTr,r); if(v) keep[famRoleKey(r)]=v; });
+    if(Object.keys(keep).length){ newTr.missedByRole=keep; if(oldTr.missedFrom&&!newTr.missedFrom) newTr.missedFrom=oldTr.missedFrom; } }
+  return newTr;
+}
+// The editor's picker for one role. "" = follow the track's setting (the leaf is removed); next / same / skip write one leaf.
+function famTrackSetMissedRole(id,i,role,val){
+  if(!momHere()) return;
+  const its=famItems(id), tr=its[i]&&its[i].track; if(!tr||tr.mode!=="week") return;
+  const k=famRoleKey(role); if(!k||famRoles(tr).map(famRoleKey).indexOf(k)<0) return;
+  val=String(val||""); if(val&&FAM_ROLE_MODES.indexOf(val)<0) return;
+  _famLmMemo={};
+  if(val&&val!=="skip"&&!/^\d{4}-\d{2}-\d{2}$/.test(String(tr.missedFrom||""))) famWrite(id+"/items/"+i+"/track/missedFrom",cbTodayISO());   // a make-up needs a first date that counts
+  famWrite(id+"/items/"+i+"/track/missedByRole/"+k,val||null);   // targeted: this role's leaf only — null removes it
+}
+// Plain words for the "same weekday" choice of a role: "next presidents day"; a numbered reading day says the weekday instead.
+function famRoleSameWords(r){ return /^day\b/i.test(r)?"Make it up on the next same weekday":"Make it up on the next "+String(r).toLowerCase()+" day"; }
+// The rows under "If a day is missed" (week by week only): one small picker per distinct role — "Presidents: next presidents day".
+function famMissedRolesHTML(id,i,tr,inp){
+  const roles=famRoles(tr); if(!roles.length) return "";
+  const J=function(s){ return String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }, base=famMissedMode(tr);
+  const W={next:"next day it runs",same:"next same weekday",skip:"skip it"};
+  return roles.map(function(r){ const v=famRoleMissed(tr,r), O=function(val,l){ return '<option value="'+val+'"'+(v===val?' selected':'')+'>'+esc(l)+'</option>'; };
+    return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:3px 0 0 12px;font-size:11px"><span style="min-width:72px;color:var(--muted)">'+esc(r)+':</span>'+
+      '<select onchange="famTrackSetMissedRole(\''+J(id)+'\','+i+',\''+esc(J(r))+'\',this.value)" style="flex:1;min-width:0;'+inp+'">'+
+      O("","Same as above ("+W[base]+")")+O("next","Make it up the next day it runs")+O("same",famRoleSameWords(r))+O("skip","Skip it")+'</select></div>'; }).join('');
+}
+// FAMMAKEUP_ROLES_END
 let _famLmMemo={};
 // {byDate:{date:label}, ends:date|null, now:label, total, left} for one family subject.
 function famLessonMap(b,id,it){
@@ -33988,12 +34041,12 @@ function famTrackSaveWeek(id,i){
   famWrite(id+"/items",its);
 }
 // FAMMAKEUP: the "If a day is missed" setting rides along when the lessons are re-saved; its own control saves at once.
-function famKeepMissed(oldTr,newTr){ if(oldTr&&oldTr.missed){ newTr.missed=oldTr.missed; if(oldTr.missedFrom) newTr.missedFrom=oldTr.missedFrom; } return newTr; }
+function famKeepMissed(oldTr,newTr){ if(oldTr&&oldTr.missed){ newTr.missed=oldTr.missed; if(oldTr.missedFrom) newTr.missedFrom=oldTr.missedFrom; } return famKeepMissedRoles(oldTr,newTr); }   // FAMMAKEUP_ROLES: the role settings ride along too
 function famTrackSetMissed(id,i,field,val){
   const its=famItems(id); if(!its[i]||!its[i].track) return;
   const tr=its[i].track;
   if(field==="missed"){ if(["skip","next","same"].indexOf(val)<0||(val==="same"&&tr.mode!=="week")) return;   // "same weekday" only means something week by week
-    if(val==="skip"){ delete tr.missed; delete tr.missedFrom; } else { tr.missed=val; if(!tr.missedFrom) tr.missedFrom=cbTodayISO(); } }
+    if(val==="skip"){ delete tr.missed; if(!famMissedAny(tr)) delete tr.missedFrom; } else { tr.missed=val; if(!tr.missedFrom) tr.missedFrom=cbTodayISO(); } }
   else if(field==="missedFrom"){ if(!/^\d{4}-\d{2}-\d{2}$/.test(String(val||""))) return; tr.missedFrom=val; }
   else return;
   _famLmMemo={}; famWrite(id+"/items",its);
@@ -34034,8 +34087,9 @@ function famLessonsEditorHTML(id,b,it,i,ed){
   { const ms=famMissedMode(tr), mf=tr.missedFrom||"", S=function(v,l){ return '<option value="'+v+'"'+(ms===v?' selected':'')+'>'+l+'</option>'; };
     h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px;padding-top:6px;border-top:1px dashed #e9d5ff;font-size:11px"><span style="font-weight:700">If a day is missed</span>'+
       '<select onchange="famTrackSetMissed(\''+J(id)+'\','+i+',\'missed\',this.value)" style="flex:1;min-width:0;'+inp+'">'+S("skip","Skip it — the date decides")+S("next","Make it up the next day it runs (2 lessons that day)")+(tr.mode==="week"?S("same","Make it up on the next same weekday (2 lessons that day)"):'')+'</select>'+
-      (ms!=="skip"?'<span>counting from</span><input type="date" value="'+esc(mf)+'" onchange="famTrackSetMissed(\''+J(id)+'\','+i+',\'missedFrom\',this.value)" style="'+inp+'">':'')+'</div>';
-    if(ms!=="skip") h+='<div style="font-size:10px;color:var(--muted);padding-top:3px">Never more than 2 lessons on one day — anything else waits for the next day. A day only counts as missed if the subject really ran (co-op days and days off don’t).</div>'; }
+      (famMissedAny(tr)?'<span>counting from</span><input type="date" value="'+esc(mf)+'" onchange="famTrackSetMissed(\''+J(id)+'\','+i+',\'missedFrom\',this.value)" style="'+inp+'">':'')+'</div>';
+    h+=famMissedRolesHTML(id,i,tr,inp);   // FAMMAKEUP_ROLES: one row per role (week by week only)
+    if(famMissedAny(tr)) h+='<div style="font-size:10px;color:var(--muted);padding-top:3px">Never more than 2 lessons on one day — anything else waits for the next day. A day only counts as missed if the subject really ran (co-op days and days off don’t).</div>'; }
   h+='<div style="text-align:right;padding-top:4px"><button onclick="famTrackRemove(\''+J(id)+'\','+i+')" style="border:none;background:none;color:#dc2626;font-size:10px;cursor:pointer">Remove lessons</button></div>';
   return box(h);
 }
