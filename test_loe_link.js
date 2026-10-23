@@ -76,7 +76,7 @@ console.log("\n── the wiring ──");
 ok("the sprint prompt limits words to the taught phonograms", /plus ONLY these multi-letter phonograms, the only ones "\+kidName\+" has been taught so far/.test(src) && /"All words decodable with LOE Foundations A\+B only\."; \}\)\(\)\}/.test(src));
 ok("no lookup still reads SPRINT_LOE_B by name for a pill/log", !/SPRINT_LOE_B\.find\(/.test(src));
 ok("both pill grids show the whole catalog (B then C)", (src.match(/SPRINT_LOE_ALL\.forEach\(p=>\{/g) || []).length === 2);
-ok("both ladders (Lucy, Ellis review) still build from SPRINT_LOE_B", (src.match(/stages:SPRINT_LOE_B\.map\(p=>\(\{key:p\.pg,label:p\.pg\}\)\)/g) || []).length === 2);
+ok("all three ladders (Lucy, Ellis review, Lincoln review — 2026-10-23) still build from SPRINT_LOE_B", (src.match(/stages:SPRINT_LOE_B\.map\(p=>\(\{key:p\.pg,label:p\.pg\}\)\)/g) || []).length ===3);
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
