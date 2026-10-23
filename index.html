@@ -31222,7 +31222,7 @@ function famRunsOn(days,dayName){
 // The block's items on one day, back to back from its start → [{it,s,e}] (minutes).
 function famLayout(b,dayName){
   if(!b||b.off||!famRunsOn(b.days,dayName)) return [];
-  let at=famStartMin(b,dayName); if(at==null||isNaN(at)) return [];
+  let at=(typeof famStartFor==='function')?famStartFor(b,dayName):famStartMin(b,dayName); if(at==null||isNaN(at)) return [];   // 🕰 FAMDAYSTART: a day's own start
   const out=[];
   famList(b.items).forEach(function(it){
     if(!it||!it.key||!famRunsOn(it.days,dayName)) return;
@@ -31272,7 +31272,7 @@ function famDayCards(dayName,ds,hasSchool){
 function famAutoUnits(dayName,ds){
   const defs=famDefs(), out=[];
   Object.keys(defs).forEach(function(id){
-    const b=defs[id]; if(!famIsAuto(b)||b.off||!famRunsOn(b.days,dayName)) return;
+    const b=defs[id]; if(!famIsAuto(b)||b.off||!famRunsOn(b.days,dayName)||(typeof famAutoOn==='function'&&!famAutoOn(b,dayName))) return;   // 🕰 FAMDAYSTART: a day with its own start is pinned, not picked
     // a co-op day doesn't drop anyone here: the packer already starts each kid after they're home (kidStart)
     const kids=famList(b.kids).filter(function(k){ return famKidIn(k,ds,Infinity,null); });
     if(!kids.length) return;
@@ -31603,24 +31603,23 @@ function famDelBlock(id){ const b=famDefs()[id]; if(!b) return; if(!confirm("Del
   for(let i=famItems(id).length-1;i>=0;i--){ if(famItems(id)[i]&&famItems(id)[i].from&&typeof famMoveBack==="function") famMoveBack(id,i,true); }   // 🧩 give them their own back first
   famWrite(id,null); }
 function famPreviewHTML(b){
-  const rows=[];
-  if(famIsAuto(b)){
-    FAM_DAYS.slice(0,5).forEach(function(d){
+  const rows=[]; let nAuto=0, nPin=0;
+  const autoOn=function(d){ return typeof famAutoOn==="function"?famAutoOn(b,FAM_DN[d]):famIsAuto(b); };   // 🕰 FAMDAYSTART: a day with its own start is pinned inside a "scheduler picks" block
+  FAM_DAYS.slice(0,5).forEach(function(d){
+    if(autoOn(d)){
       if(b.off||!famRunsOn(b.days,FAM_DN[d])) return;
       const its=famList(b.items).filter(function(it){ return it&&famRunsOn(it.days,FAM_DN[d]); }); if(!its.length) return;
       const tot=its.reduce(function(a,it){ return a+Math.max(5,parseInt(it.minutes,10)||30); },0);
-      rows.push('<div style="font-size:11px;color:var(--text);padding:2px 0"><b>'+d+'</b> '+tot+' min, the scheduler picks the time · '+its.map(function(it){ return esc(it.name||""); }).join(' · ')+'</div>');
-    });
-    return rows.length?rows.join('')+'<div style="font-size:10px;color:var(--muted);padding-top:3px">The earliest morning time when everyone in it is free. If the morning starts late, it moves with them, together.</div>'
-      :'<div style="font-size:11px;color:var(--muted)">Nothing scheduled yet — add a subject and pick days.</div>';
-  }
-  FAM_DAYS.slice(0,5).forEach(function(d){
+      rows.push('<div style="font-size:11px;color:var(--text);padding:2px 0"><b>'+d+'</b> '+tot+' min, the scheduler picks the time · '+its.map(function(it){ return esc(it.name||""); }).join(' · ')+'</div>'); nAuto++;
+      return;
+    }
     const L=famLayout(b,FAM_DN[d]); if(!L.length) return;
     rows.push('<div style="font-size:11px;color:var(--text);padding:2px 0"><b>'+d+'</b> '+fromMin(L[0].s)+'–'+fromMin(L[L.length-1].e)+' · '+
-      L.map(function(x){ const ik=famItemKids(b,x.it); return esc(x.it.name||"")+' '+fromMin(x.s).replace(/ [AP]M$/,"")+(ik.length<famList(b.kids).length?' ('+ik.map(cap).join(' + ')+')':''); }).join(' · ')+'</div>');
+      L.map(function(x){ const ik=famItemKids(b,x.it); return esc(x.it.name||"")+' '+fromMin(x.s).replace(/ [AP]M$/,"")+(ik.length<famList(b.kids).length?' ('+ik.map(cap).join(' + ')+')':''); }).join(' · ')+'</div>'); nPin++;
   });
-  return rows.length?rows.join('')+'<div style="font-size:10px;color:var(--muted);padding-top:3px">A kid still at co-op at the start, or marked off that day, is skipped automatically.</div>'
-    :'<div style="font-size:11px;color:var(--muted)">Nothing scheduled yet — add a subject and pick days.</div>';
+  if(!rows.length) return '<div style="font-size:11px;color:var(--muted)">Nothing scheduled yet — add a subject and pick days.</div>';
+  return rows.join('')+(nAuto?'<div style="font-size:10px;color:var(--muted);padding-top:3px">The earliest morning time when everyone in it is free. If the morning starts late, it moves with them, together.</div>':'')
+    +(nPin?'<div style="font-size:10px;color:var(--muted);padding-top:3px">A kid still at co-op at the start, or marked off that day, is skipped automatically.</div>':'');
 }
 function famBlockEditorHTML(id,b,collapsible){
   const ed=momHere(), J=function(s){ return String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); };
@@ -31648,6 +31647,7 @@ function famBlockEditorHTML(id,b,collapsible){
     if(!lunch&&!auto) h+='<input type="time" class="rules-time" value="'+ampmTo24(b.at)+'" onchange="famBlkSet(\''+J(id)+'\',\'at\',to12h(this.value))">';
   } else h+='<span style="font-size:12px">'+(lunch?'Right after lunch':(auto?'Scheduler picks':esc(b.at)))+'</span>';
   h+='</div>';
+  if(typeof famDsEditorHTML==="function") h+=famDsEditorHTML(id,b,ed,J);   // 🕰 FAMDAYSTART: "Different on some days"
   h+='<div class="rules-row"><div class="rules-label">Mom</div>'+_famChip(famMomLeads(b),'\u{1F469} Mom leads it',ed?"famBlkSet('"+J(id)+"','momLeads',"+(famMomLeads(b)?'false':'null')+")":"")+
     '<span style="font-size:11px;color:var(--muted);padding-left:6px">'+(famMomLeads(b)?'Her time is held too':'Kids do it on their own')+'</span></div>';
   if(typeof famCelebRowHTML==="function") h+=famCelebRowHTML(id,b,ed,J);
@@ -31908,7 +31908,7 @@ function famMinOn(kid,dayName,ds,mom){
   Object.keys(defs).forEach(function(id){
     const b=defs[id]; if(!b||b.off||famList(b.kids).indexOf(kid)<0) return;
     if(mom!==undefined&&famMomLeads(b)!==mom) return;
-    if(famIsAuto(b)){
+    if(typeof famAutoOn==='function'?famAutoOn(b,dayName):famIsAuto(b)){   // 🕰 FAMDAYSTART
       if(!famRunsOn(b.days,dayName)||!famKidIn(kid,ds,Infinity,null)) return;
       famList(b.items).forEach(function(it){ if(it&&famRunsOn(it.days,dayName)&&famItemKids(b,it).indexOf(kid)>=0) m+=Math.max(5,parseInt(it.minutes,10)||30); });
       return;
@@ -31990,8 +31990,8 @@ function famGoEdit(){
 }
 // When an item meets today/this week, a short "when" label for the strip and the Family view.
 function famWhenLabel(b,it){
-  if(famIsAuto(b)) return "scheduler picks";
   const dn=FAM_DN[FAM_DAYS.find(function(d){ return famRunsOn(b.days,FAM_DN[d])&&famRunsOn(it.days,FAM_DN[d]); })||"Mon"];
+  if(typeof famAutoOn==="function"?famAutoOn(b,dn):famIsAuto(b)) return "scheduler picks";   // 🕰 FAMDAYSTART
   const L=famLayout(b,dn).find(function(x){ return x.it.key===it.key; });
   return L?fromMin(L.s):"";
 }
@@ -32029,7 +32029,7 @@ function famGridDates(){
 function famCellState(b,it,ds){
   const dn=famDayOfISO(ds);
   if(b.off||!famRunsOn(b.days,dn)||!famRunsOn(it.days,dn)) return {runs:false};
-  const L=famIsAuto(b)?null:famLayout(b,dn), x=L?L.find(function(v){ return v.it.key===it.key; }):null;
+  const L=(typeof famAutoOn==="function"?famAutoOn(b,dn):famIsAuto(b))?null:famLayout(b,dn), x=L?L.find(function(v){ return v.it.key===it.key; }):null;   // 🕰 FAMDAYSTART
   const st=x?x.s:Infinity, ik=famItemKids(b,it);
   const inK=ik.filter(function(k){ return famKidIn(k,ds,st,null); });
   if(inK.length) return {runs:true,kids:inK,out:ik.filter(function(k){ return inK.indexOf(k)<0; }),min:Math.max(5,parseInt(it.minutes,10)||30),at:x?x.s:null};
@@ -32061,7 +32061,7 @@ function famGridHTML(){
   // band row: one boxed band per family time
   h+='<tr class="gv-bandrow"><th class="gv-fix" style="height:36px"></th><th class="gv-min" style="height:36px"></th>';
   groups.forEach(function(g){ const b=g.b;
-    const when=famIsAuto(b)?'scheduler picks':(String(b.at||"lunch")==="lunch"?'after lunch':esc(b.at));
+    const when=(function(w){ return typeof famDsWords==="function"?famDsWords(b,w):w; })(famIsAuto(b)?'scheduler picks':(String(b.at||"lunch")==="lunch"?'after lunch':esc(b.at)));   // 🕰 FAMDAYSTART: "· Mon 1:35 PM"
     h+='<th colspan="'+g.items.length+'" onclick="famSheetOpen(\''+g.id+'\')" title="Open '+esc(b.name||"Family time")+'" style="cursor:pointer;height:36px;padding:3px 8px;background:'+g.col+'1f;border-top:3px solid '+g.col+';border-left:3px solid '+g.col+';border-right:3px solid '+g.col+';color:'+g.col+';text-transform:none;letter-spacing:0;white-space:nowrap'+(b.off?';opacity:.55':'')+'">'+
       '<div style="font-size:11px;font-weight:800">'+(famList(b.items).some(function(x){ return x&&x.from; })?'\u{1F9E9} ':FAM_ICON+' ')+esc(b.name||"Family time")+(b.off?' · off':'')+'</div>'+
       '<div style="font-size:9px;font-weight:700;opacity:.9">'+when+' · '+who(famList(b.kids),ROSTER.length)+' · '+(famMomLeads(b)?'\u{1F469} Mom leads':'kids on their own')+'</div></th>'; });
@@ -32259,7 +32259,7 @@ function famRunDates(b,it){ return famGridDates().map(function(r){ return r.date
 let _famRdCache={t:0,v:{}};
 function famRunDatesC(b,id,it){
   const now=Date.now(); if(now-_famRdCache.t>1500) _famRdCache={t:now,v:{}};
-  const k=id+"|"+it.key+"|"+JSON.stringify([b.days,it.days,it.kids,b.kids,b.at,b.off,b.items&&famList(b.items).map(function(x){ return x&&[x.key,x.minutes]; })]);
+  const k=id+"|"+it.key+"|"+JSON.stringify([b.days,it.days,it.kids,b.kids,b.at,b.off,b.items&&famList(b.items).map(function(x){ return x&&[x.key,x.minutes]; }),b.atByDay||null]);   // 🕰 FAMDAYSTART: a day's own start is part of the key
   if(!_famRdCache.v[k]) _famRdCache.v[k]=famRunDates(b,it);
   return _famRdCache.v[k];
 }
@@ -32525,6 +32525,125 @@ function famPresAuditRowHTML(f){
   return '<div style="padding:7px 0;border-top:1px solid #fde68a"><div style="font-size:11.5px;color:#78350f;line-height:1.45;margin-bottom:5px"><b>'+esc(f.disp)+'</b> — '+esc(cap(f.day||""))+(f.time?' at '+esc(f.time):'')+' falls during the sitter’s hours. It stays at its time (Mom leads it) — move the sitter, the block, or lead it later.</div></div>';
 }
 // FAMPRESENCE_END
+// FAMDAYSTART_START ── 🕰 A DIFFERENT START ON CHOSEN DAYS (Sara's ask 2026-10-22 — Andrew's Monday Speech) ───────────
+// DeWalt: Andrew's Speech is a fixed-time class, Mondays 1:00 PM for 30 min, on the computer — the very minute Family Time
+// starts after lunch (1:00). Sara wants the WHOLE block to start at 1:35 on Mondays only; every other day stays at lunch.
+// Data: config/rules/familyBlocks/<id>/atByDay/<Day> = "1:35 PM" (Day = Mon…Sat), ONE leaf per day, written and removed
+// per day (famDsSet → famWrite). A day with an override starts there; a day without keeps block.at. Works for at:"lunch"
+// and at:"<time>" blocks; for an at:"auto" block the override PINS that day at the given time (laid like a lunch block by
+// famDayCards, held like a class) while the other days still auto-place (famAutoUnits skips the pinned day).
+// famStartFor(block, dayName, ds) is THE resolver for the block's start — minutes from midnight (NaN = the scheduler picks):
+// the day's own time, else lunch END (with the per-day lunch override), else block.at. Every reader goes through it:
+// famLayout (→ famDayCards, famWindowOf for fxSplitDay / dsRetime / the Mom-loop hold / seGuard, famMinOn, famCellState,
+// famWhenLabel, the preview), famAutoUnits, the Family Grid band, FAMBLOCKOUT's window and FAMPRESENCE's sitter stamp (both
+// read the laid window), the celebrations (they sort the laid cards). A day's own start never changes WHICH days run
+// (famRunDates / famCellState are untouched). No atByDay anywhere → every lay and every screen is byte-identical.
+// Clash note, NO auto-move (her rule: family time happens at its time or not at all): a member's fixed-time class that
+// overlaps the block on a day with no override shows one line under that day in the editor ("Mon: Andrew's Speech 1:00–1:30
+// overlaps — set a later start?") and on the Grid audit strip of every member. Nothing moves by itself.
+// Hooks (one line each): famLayout · famAutoUnits · famMinOn · famWhenLabel · famCellState · famPreviewHTML (autoOn) ·
+// famRunDatesC key · famBlockEditorHTML (after Starts) · famGridHTML band · gvAuditFindings · gvAuditRender.
+function famDsTok(dayName){ const s=String(dayName||""); return FX_DOW[s.toLowerCase()]||(FAM_DAYS.indexOf(s)>=0?s:""); }
+// The day's own start as written ("1:35 PM"), or "" when the day has none.
+function famDsAt(b,dayName){ const tok=famDsTok(dayName), o=(b&&b.atByDay&&typeof b.atByDay==="object")?b.atByDay:null; const v=tok&&o?o[tok]:""; return (typeof v==="string"&&v.trim())?v.trim():""; }
+function famDsDays(b){ return FAM_DAYS.filter(function(d){ return !!famDsAt(b,d); }); }
+// THE resolver: minutes from midnight for this block on this day (NaN when the scheduler picks). ds is the date (unused
+// today — the lunch override is per weekday — kept so a per-date start can land here without touching any reader).
+function famStartFor(b,dayName,ds){
+  const ov=famDsAt(b,dayName);
+  if(ov){ const m=toMin(ov); if(m!=null&&!isNaN(m)) return m; }
+  return famStartMin(b,dayName);
+}
+// Does the scheduler still pick this day? An at:"auto" block with no override for the day.
+function famAutoOn(b,dayName){ return famIsAuto(b)&&!famDsAt(b,dayName); }
+// Words for a band / chip: the base words plus "· Mon 1:35 PM" per day that differs (nothing added without one).
+function famDsWords(b,base){ const ds=famDsDays(b); return String(base||"")+ds.map(function(d){ return " · "+d+" "+esc(famDsAt(b,d)); }).join(""); }
+function famDsDayWords(d){ const n=FAM_DN[d]||String(d||"").toLowerCase(); return cap(n)+"s"; }   // "Mondays"
+// ── writes: one leaf per day, through famWrite (Mom only; dry run stays inert) ──
+let _famDsOpen={};   // "<id>|<Day>" → the time field is open on this screen (nothing is written until a time is picked)
+function famDsSet(id,day,val){
+  if(!momHere()) return false; const b=famDefs()[id]; if(!b||FAM_DAYS.indexOf(day)<0) return false;
+  const v=String(val||"").trim(), m=v?toMin(v):null;
+  if(v&&(m==null||isNaN(m))) return false;
+  if(!v) delete _famDsOpen[id+"|"+day];
+  return famWrite(id+"/atByDay/"+day,v||null);   // one leaf: config/rules/familyBlocks/<id>/atByDay/<Day>
+}
+function famDsToggle(id,day){
+  if(!momHere()) return; const b=famDefs()[id]; if(!b||FAM_DAYS.indexOf(day)<0) return;
+  if(famDsAt(b,day)){ famDsSet(id,day,null); return; }   // tap again → the day goes back to the block's usual start
+  const k=id+"|"+day; if(_famDsOpen[k]) delete _famDsOpen[k]; else _famDsOpen[k]=true;
+  if(typeof renderAll==="function") renderAll();
+  try{ if(typeof famSheetRender==="function"&&famSheetId) famSheetRender(); }catch(e){}
+}
+// ── the clash note ──
+// Does this fixed-time class meet on this weekday? Its real dates when it has them, else its day set, else every day.
+function famDsClassOn(s,dayName){
+  const tok=famDsTok(dayName); if(!tok) return false;
+  const fd=(typeof fxDateList==="function")?fxDateList(s):null;
+  if(fd) return fd.some(function(d){ try{ const p=String(d).split("-"); return FAM_DAYS[(new Date(+p[0],+p[1]-1,+p[2]).getDay()+6)%7]===tok; }catch(e){ return false; } });
+  const al=famList(s.allowedDays).map(String); if(al.length) return al.indexOf(tok)>=0;
+  const dz=String(s.days||"").trim(); if(dz) return dz.split(/[\s,]+/).indexOf(tok)>=0;
+  return true;
+}
+// A member's fixed-time classes that overlap the block's window on this day — only a day with NO override is asked.
+function famDsClashes(b,dayName){
+  const out=[]; if(!b||b.off||famDsAt(b,dayName)||!famRunsOn(b.days,dayName)) return out;
+  const L=famLayout(b,dayName); if(!L.length) return out;
+  const bs=L[0].s, be=L[L.length-1].e, subs=(((typeof currData!=="undefined"&&currData)||{}).subjects)||{};
+  famList(b.kids).forEach(function(kid){
+    const mine=subs[kid]||{};
+    Object.keys(mine).forEach(function(sk){
+      const s=mine[sk]; if(!s||s.paused||!(typeof fxIsClass==="function"&&fxIsClass(s))||!famDsClassOn(s,dayName)) return;
+      const st=toMin(s.fixedTime); if(st==null||isNaN(st)) return;
+      const en=st+Math.max(5,parseInt(s.minutes,10)||45);
+      if(st<be&&en>bs) out.push({kid:kid,sk:sk,name:String(s.display||sk),s:st,e:en});
+    });
+  });
+  return out;
+}
+function famDsClashLine(day,c){ const t=function(m){ return fromMin(m).replace(/ [AP]M$/,""); }; return famDsTok(day)+": "+cap(c.kid)+"’s "+c.name+" "+t(c.s)+"–"+t(c.e)+" overlaps — set a later start?"; }
+// Every clash line for the block, in day order → [{day:"Mon", kid, txt}].
+function famDsClashList(b){
+  const out=[];
+  FAM_DAYS.forEach(function(d){ if(!famRunsOn(b&&b.days,FAM_DN[d])) return; famDsClashes(b,FAM_DN[d]).forEach(function(c){ out.push({day:d,kid:c.kid,txt:famDsClashLine(d,c)}); }); });
+  return out;
+}
+// ── Settings ▸ Family time, under "Starts": "Different on some days" ──
+function famDsEditorHTML(id,b,ed,J){
+  J=J||function(s){ return String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); };
+  const days=famList(b.days).length?FAM_DAYS.filter(function(d){ return famRunsOn(b.days,FAM_DN[d]); }):FAM_DAYS.slice();
+  const set=famDsDays(b), clashes=famDsClashList(b);
+  const words=set.map(function(d){ return famDsDayWords(d)+" start "+esc(famDsAt(b,d)); });
+  if(!ed&&!set.length&&!clashes.length) return "";
+  let h='<div class="rules-row" style="align-items:flex-start"><div class="rules-label">Some days</div><div style="flex:1;min-width:0">';
+  if(ed){
+    h+='<div style="font-size:11px;color:var(--muted);padding-bottom:4px">Different on some days — tap a day to give it its own start; tap it again to clear.</div>';
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;padding:2px 0 4px">'+days.map(function(d){ const ov=famDsAt(b,d); return _famChip(!!ov,d+(ov?' '+esc(ov):''),"famDsToggle('"+J(id)+"','"+d+"')",true); }).join('')+'</div>';
+    days.forEach(function(d){
+      const ov=famDsAt(b,d); if(!ov&&!_famDsOpen[id+"|"+d]) return;
+      const cur=ov||(function(){ const m=famStartMin(b,FAM_DN[d]); return (m==null||isNaN(m))?"1:00 PM":fromMin(m); })();
+      h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:2px 0"><span style="font-size:12px;font-weight:700;width:34px">'+d+'</span><span style="font-size:11px;color:var(--muted)">starts</span>'+
+        '<input type="time" class="rules-time" value="'+ampmTo24(cur)+'" onchange="famDsSet(\''+J(id)+'\',\''+d+'\',to12h(this.value))">'+
+        '<button onclick="famDsSet(\''+J(id)+'\',\''+d+'\',null)" title="Back to the usual start" style="border:none;background:none;cursor:pointer;font-size:12px;color:#ef4444;font-weight:700;font-family:\'DM Sans\',sans-serif">✕ Clear</button></div>';
+    });
+  }
+  if(words.length) h+='<div style="font-size:12px;font-weight:700;color:#5b21b6;padding:2px 0">'+words.join(' · ')+'</div>';
+  else if(ed) h+='<div style="font-size:11px;color:var(--muted);padding:2px 0">Same start every day.</div>';
+  clashes.forEach(function(c){ h+='<div style="font-size:11px;font-weight:700;color:#b45309;padding:2px 0">⚠ '+esc(c.txt)+'</div>'; });
+  return h+'</div></div>';
+}
+// ── the Grid audit strip: one line per clash on every member's Grid (the block is theirs too) ──
+function famDsAudit(kid){
+  const out=[];
+  try{ const defs=famDefs();
+    Object.keys(defs).forEach(function(id){ const b=defs[id]; if(!b||b.off||famList(b.kids).indexOf(kid)<0) return;
+      famDsClashList(b).forEach(function(c){ out.push({type:"famclash",date:"",dn:0,sk:"",disp:String(b.name||"Family time"),day:c.day,kid:c.kid,txt:c.txt,id:id}); }); }); }catch(e){}
+  return out;
+}
+function famDsAuditRowHTML(f){
+  return '<div style="padding:7px 0;border-top:1px solid #fde68a"><div style="font-size:11.5px;color:#78350f;line-height:1.45;margin-bottom:5px"><b>'+FAM_ICON+' '+esc(f.disp)+'</b> — '+esc(f.txt)+' Nothing moves by itself: give that day its own start in Settings ▸ Family time.</div></div>';
+}
+// FAMDAYSTART_END
 
 
 // ── WHEN THE DOOR IS OPEN ──
@@ -43822,6 +43941,7 @@ function gvAuditFindings(kid){
   const bydate=(a,b)=>(a.date||"").localeCompare(b.date||"")||rank[a.type]-rank[b.type];
   out.now.sort(bydate); out.past.sort(bydate);
   try{ if(typeof famPresAudit==="function") out.now=out.now.concat(famPresAudit(kid)); }catch(e){}   // 🏡 FAMPRESENCE: Mom-led family time inside sitter hours
+  try{ if(typeof famDsAudit==="function") out.now=out.now.concat(famDsAudit(kid)); }catch(e){}   // 🕰 FAMDAYSTART: a fixed-time class on top of family time
   return out;
 }
 
@@ -44087,6 +44207,7 @@ function gvAuditRender(kid,col){
     } else if(f.type==="order"){
       txt='<b>'+esc(f.disp)+'</b> — “'+esc(f.txt)+'” sits after “'+esc(f.after)+'” ('+esc(f.date)+')';
     } else if(f.type==="famsitter"){ return (typeof famPresAuditRowHTML==="function")?famPresAuditRowHTML(f):""; }   // 🏡 FAMPRESENCE
+    else if(f.type==="famclash"){ return (typeof famDsAuditRowHTML==="function")?famDsAuditRowHTML(f):""; }   // 🕰 FAMDAYSTART
     else {
       txt='<b>'+esc(f.disp)+'</b> — goes backwards: “'+esc(f.a)+'” then “'+esc(f.b)+'” ('+esc(f.date)+')';
     }
