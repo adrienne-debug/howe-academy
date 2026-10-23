@@ -85,7 +85,8 @@ console.log("5. Mom's and Dad's schedules");
 console.log("6. A load with no cycle is exactly as before");
 { const L={p:plain()}, c=mk(L);
   ok("→ Dryer / 60 min / laundryMeta = In the washer", c.laundryAdvanceLabel("washer",L.p)==="→ Dryer"&&c.laundryDoneAt(L.p)===T0+60*60000&&c.laundryMeta(L.p)[1]==="In the washer");
-  c.laundryAdvance("p"); ok("advance: washer → dryer, no step field", L.p.stage==="dryer"&&L.p.step===undefined);
+  c.laundryAdvance("p"); ok("advance: the washer asks where first (LAUNDRY_SPLIT 2026-10-22) — nothing moved yet", L.p.stage==="washer");
+  c.get("laundrySplitWhereAnswer('dryer')"); ok("advance: washer → dryer, no step field", L.p.stage==="dryer"&&L.p.step===undefined);
   const B={b:{label:"💦 Towels",stage:"bin",wet:true,ts:T0}}, b=mk(B); b.laundryAdvance("b"); b.laundryAdvance("b");
   ok("an old wet load: bin → prewash → washer, as before", B.b.stage==="washer"&&B.b.step===undefined);
 }

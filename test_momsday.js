@@ -450,6 +450,8 @@ const M = new Function(block + `; return {mdTodayName,momdayGet,momdayEdit,mdSlo
   ok("stale washer load nudges in NOW", elStub.innerHTML.includes("before it sours"), null);
   dbWrites.length = 0;
   M.laundryAdvance(lid);
+  ok("LAUNDRY_SPLIT (2026-10-22): the washer's tap asks where first — the load stays in the washer, nothing written", dbWrites.length === 0 && M.laundryData[lid].stage === "washer", dbWrites);
+  M.laundryAdvance(lid, "dryer");   // her answer: Into the dryer
   ok("advance → dryer writes stage", dbWrites.length === 1 && dbWrites[0][1].stage === "dryer", dbWrites);
   M.renderMomsDay(elStub);
   ok("dryer load: nudge gone, Folded ✓ offered", !elStub.innerHTML.includes("before it sours") && elStub.innerHTML.includes("Folded ✓"), null);

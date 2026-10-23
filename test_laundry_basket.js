@@ -63,7 +63,7 @@ console.log("4. A custom-cycle load (wash → dry) does the same");
 console.log("5. Kids, the editor, the cards");
 { const c=mk({loads:{a:{label:"A",stage:"basket",ts:NOW-H(1)},b:{label:"B",stage:"washer",ts:NOW}}});
   ok("a kid's 'Folded' move takes the basket load", c.get("laundryKidMovePick('fold')")==="a");
-  ok("✎ Times offers the basket between dryer and fold", JSON.stringify(c.get("LAUNDRY_EDIT_STAGES"))==='["bin","prewash","washer","dryer","basket","fold"]');
+  ok("✎ Times offers the basket between dryer and fold (and the wet basket after the washer — LAUNDRY_SPLIT 2026-10-22)", JSON.stringify(c.get("LAUNDRY_EDIT_STAGES"))==='["bin","prewash","washer","wetbasket","dryer","basket","fold"]');
   ok("the basket's schedule block is the folding", c.get("laundryBlockStep('basket')")==="fold");
   ok("Machines now: the trail shows 🧺 basket as the current chip between the dryer and folded", /\(l\.stage==="basket"\?STG\.slice\(0,STG\.indexOf\("fold"\)\)\.concat\(\["basket","fold"\]\):STG\)/.test(fn("mdCardLaundry")));
   ok("the laundry tab's machines list, Dad's schedule and Mom's schedule all know the stage", /l\.stage==="basket"\); \}\);/.test(fn("hhLaundryHTML"))&&/l\.stage==="fold"\|\|l\.stage==="basket"\)\{ place/.test(fn("dadSchedLaundry"))&&/fold=l\.stage==="fold"\|\|l\.stage==="basket"/.test(fn("momSchedLaundry"))&&/is in the basket/.test(fn("momSchedLaundry")));

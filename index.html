@@ -4328,6 +4328,7 @@ function initFb() {
     });
     db.ref("config/helpers").on("value",s=>{ helpersOnValue(s.val()); });
     db.ref("settings/laundryTimes").on("value",s=>{ if(typeof laundryTimesOnValue==="function") laundryTimesOnValue(s.val()); });   // 🧺 LAUNDRYTIMES
+    db.ref("settings/laundry").on("value",s=>{ if(typeof laundrySplitSettingsOnValue==="function") laundrySplitSettingsOnValue(s.val()); });   // 🧺 LAUNDRY_SPLIT: wetBasketMins, airDryHours
     db.ref("settings/quickLoads").on("value",s=>{ if(typeof quickLoadsOnValue==="function") quickLoadsOnValue(s.val()); if(tab==="moms-plan"){ const el=document.getElementById("content"); if(el) renderMomsPlan(el); } });   // ⚡ QUICKLOADS
     db.ref("settings/myDayOrder").on("value",s=>{ if(typeof myDayOrderOnValue==="function") myDayOrderOnValue(s.val()); if(tab==="moms-plan"){ const el=document.getElementById("content"); if(el) renderMomsPlan(el); } });   // 🏡 MYDAY_WIDGETS: each person's column order
     db.ref("settings/laundryBlockMins").on("value",s=>{ if(typeof laundryBlockMinsOnValue==="function") laundryBlockMinsOnValue(s.val()); });   // 🧺 MOMSCHED_LAUNDRY
@@ -13691,6 +13692,7 @@ function llStart(item,by){ const it=llAll()[item]; if(!it) return; const t=llTod
   const kidBy=llPeople().indexOf(by)>=2?by:"";   // 🧺 step 6: a kid's own tap
   const riders=(typeof llRiders==="function")?llRiders(item,t):[], _bl=llBlanketsDueOn(item,t).length+[].concat.apply([],riders.map(function(r){ return llBlanketsDueOn(r,t); })).length;   // 🔗 · 🛏 Wash with: one load, one slot
   laundryData[lid]={label:(riders.length||_bl)?llLabelFull(item,t):it.label,stage:"washer",ts:now,line:item,lineDay:t}; if(by==="dad"||kidBy) laundryData[lid].by=by;
+  if(it.alert) laundryData[lid].alert=String(it.alert).slice(0,160);   // LAUNDRY_SPLIT W3: the alert rides the load
   { const S=(typeof lcClean==="function")?lcClean(it.cycle):[]; if(S.length){ laundryData[lid].cycle=S; laundryData[lid].step=0; laundryData[lid].stage=lcStageOf(S,0); } }   // 🌀 its own steps
   try{ HA_LS.setItem('ha_laundry',JSON.stringify(laundryData)); }catch(e){}
   laundryLine.log=laundryLine.log||{}; laundryLine.log[t]=laundryLine.log[t]||{}; laundryLine.log[t][item]={at:now,load:lid,by:by==="dad"?"dad":kidBy||"mom"};
@@ -13760,7 +13762,7 @@ function llExtrasHTML(mom,today){
   return h+'</div>';
 }
 // 👨 Dad's Day: the line, his way — today's loads (who, where they are, 🫧 Start as his), the question, 🤒, the week grid. No settings.
-function llLoadStage(id,iso){ const e=llDayLog(iso)[id]; if(!e) return ""; const l=(typeof laundryData!=="undefined"&&laundryData&&e.load)?laundryData[e.load]:null;
+function llLoadStage(id,iso){ const e=llDayLog(iso)[id]; if(!e) return ""; const sp=(typeof laundrySplitLineStage==="function")?laundrySplitLineStage(e.load):""; if(sp) return sp;   /* LAUNDRY_SPLIT: a wet basket, a hung load, both halves */ const l=(typeof laundryData!=="undefined"&&laundryData&&e.load)?laundryData[e.load]:null;
   const cm=(l&&typeof lcMeta==="function")?lcMeta(l):null; if(cm) return cm[0]+" "+cm[1];   // LAUNDRY_CYCLE
   return !l?"✓ put away":l.stage==="dryer"?"🌀 in the dryer":l.stage==="basket"?"🧺 in the basket":l.stage==="fold"?"🧺 folded — put away":"🫧 in the washer"; }   // FOLD_WORDS · BASKET
 // 🧺 LL_MYDAY (her ask 2026-10-21: "move that up to be merged into the bottom of my day … for both Mom and for Dad"): by = "dad" (default, Dad's
@@ -13851,6 +13853,7 @@ function llEdSave(id){ llChange(function(){ if(llOrder().indexOf(id)<0) return f
   const wv=(w&&w!==id&&llOrder().indexOf(w)>=0&&!(llItems()[w]||{}).with)?w:""; if(wv!==(x.with||"")){ if(wv) x.with=wv; else delete x.with; if(!fresh) u["items/"+id+"/with"]=wv||null; }
   { const se=(typeof document!=="undefined")?document.getElementById("lle-split"):null, sp=!!(se&&se.checked&&wv); if(sp!==!!x.splitBlanket){ if(sp) x.splitBlanket=true; else delete x.splitBlanket; if(!fresh) u["items/"+id+"/splitBlanket"]=sp?true:null; } }   // 🛏 BEDDING
   if(llRiders(id).length&&wv){ if(typeof mwToast==="function") mwToast("🔗 "+x.label+" has loads riding with it — it can't ride with another"); return false; }
+  if(typeof laundrySplitEdSave==="function") laundrySplitEdSave(id,x,u,fresh);   // LAUNDRY_SPLIT W3: items/<id>/alert
   llEdId=""; llStore(); llWrite(u); }); }
 function llRemove(id){ const x=llItems()[id]; if(!x) return; if(typeof confirm==="function"&&!confirm('Take "'+x.label+'" off the laundry line?')) return;
   llChange(function(){ const u={}; llEnsureItems(u); delete laundryLine.items[id]; u["items/"+id]=null;
@@ -13867,6 +13870,7 @@ function llEdLoadHTML(id){ if(llEdId!==id) return ""; const x=llItems()[id]||{},
     +'<input id="lle-emoji" value="'+esc(x.emoji||"🧺")+'" style="width:42px;text-align:center;'+_llInp+'"><input id="lle-label" value="'+esc(x.label||"")+'" style="flex:1;min-width:140px;'+_llInp+'">'
     +'<span>🔗 Wash with</span><select id="lle-with" style="'+_llInp+'"><option value="">— its own load —</option>'+hosts.map(function(h){ return '<option value="'+h+'"'+(h===(x.with||cur)?' selected':'')+'>'+esc(llItems()[h].label)+'</option>'; }).join('')+'</select>'
     +'<label style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="lle-split"'+(x.splitBlanket?' checked':'')+'> its own load when a blanket is due</label>'   // 🛏 BEDDING
+    +((typeof laundrySplitEdAlertHTML==="function")?laundrySplitEdAlertHTML(x):'')   // LAUNDRY_SPLIT W3: the load's alert
     +'<button onclick="llEdSave(\''+id+'\')" style="padding:6px 12px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:12px;font-weight:800;cursor:pointer">Save</button>'
     +'<button onclick="llRemove(\''+id+'\')" style="padding:6px 10px;border-radius:8px;border:1.5px solid #fecaca;background:#fff;color:#b91c1c;font-size:12px;font-weight:700;cursor:pointer">✕ Remove</button></div>'; }
 // ☑️ one-time loads
@@ -14021,10 +14025,10 @@ function llUnstart(lid){ const LD=(typeof laundryData!=="undefined"&&laundryData
 // load away now leaves a note beside its own day-log entry — log/<day>/<item>/away = {at, load:<the load as it was>} — the un-tick reads
 // the note, writes the load back under laundry/<id> with a fresh clock, clears the note, and the kid's row un-ticks itself (llSyncKidRows).
 // Stars never move (the auto-tick paid none). Mom's / Dad's "Fold" checklist row un-ticks the same way. Targeted writes only.
-function llNoteAway(lid,l){ if(!l||!l.line||!l.lineDay||!laundryLine||!Object.keys(laundryLine).length) return false; const g=laundryLine.log&&laundryLine.log[l.lineDay], e=g&&g[l.line]; if(!e||e.load!==lid) return false;
+function llNoteAway(lid,l){ if(typeof laundrySplitNoteAway==="function"&&laundrySplitNoteAway(lid,l)) return true;   /* LAUNDRY_SPLIT: the hung half's own note */ if(!l||!l.line||!l.lineDay||!laundryLine||!Object.keys(laundryLine).length) return false; const g=laundryLine.log&&laundryLine.log[l.lineDay], e=g&&g[l.line]; if(!e||e.load!==lid) return false;
   const a={at:Date.now(),load:JSON.parse(JSON.stringify(l))}; e.away=a; llStore(); const u={}; u["log/"+l.lineDay+"/"+l.line+"/away"]=a; llWrite(u); return true; }
 function llAwayStageWords(l){ const cm=(l&&typeof lcMeta==="function"&&typeof lcHas==="function"&&lcHas(l))?lcMeta(l):null; if(cm) return cm[0]+" "+cm[1]; return l.stage==="dryer"?"🌀 in the dryer":l.stage==="basket"?"🧺 in the basket":l.stage==="fold"?"🧺 in the fold pile":"🫧 in the washer"; }
-function llUnputawayLine(id){ const t=llToday(), g=laundryLine&&laundryLine.log&&laundryLine.log[t], e=g&&g[id], LD=(typeof laundryData!=="undefined"&&laundryData)||{};
+function llUnputawayLine(id){ if(typeof laundrySplitUnputaway==="function"&&laundrySplitUnputaway(id)) return true;   /* LAUNDRY_SPLIT: both halves back */ const t=llToday(), g=laundryLine&&laundryLine.log&&laundryLine.log[t], e=g&&g[id], LD=(typeof laundryData!=="undefined"&&laundryData)||{};
   if(!e||!e.load||LD[e.load]||!e.away||!e.away.load) return false;
   const rec=Object.assign({},e.away.load,{ts:Date.now(),line:id,lineDay:t}); LD[e.load]=rec; try{ HA_LS.setItem('ha_laundry',JSON.stringify(LD)); }catch(x){} if(typeof _lbWrite==="function"&&_lbWrite()) db.ref('laundry/'+e.load).set(rec);
   delete e.away; llStore(); const u={}; u["log/"+t+"/"+id+"/away"]=null; llWrite(u);
@@ -14033,7 +14037,7 @@ function llUnputawayLine(id){ const t=llToday(), g=laundryLine&&laundryLine.log&
 // ✓ a Start row = 🫧 Start (Dad's is his); again while it's still on its first step = back in line. ✓ a Fold row = put away; un-✓ = back (FOLD_BACK).
 function llParentTick(id,kind,who){ const t=llToday(), e=llDayLog(t)[id], LD=(typeof laundryData!=="undefined"&&laundryData)||{};
   if(kind==="start"){ if(!e) llStart(id,who==="dad"?"dad":undefined); else if(e.load&&LD[e.load]) llUnstart(e.load); llRerender(); return; }
-  if(kind==="fold"&&e&&e.load){ if(LD[e.load]) llPutAway(e.load); else llUnputawayLine(id); } llRerender(); }
+  if(kind==="fold"&&e&&e.load){ if(LD[e.load]) llPutAway(e.load); else if(typeof laundrySplitHung==="function"&&laundrySplitHung(e.load)) llPutAway(laundrySplitHalfId(e.load)); else llUnputawayLine(id); } llRerender(); }   // LAUNDRY_SPLIT: the hung half next
 // Put a line load away (the kids' Fold row and Mom's / Dad's): ends its block, remembers it for ↶, removes laundry/<id>.
 function llPutAway(lid){ const LD=(typeof laundryData!=="undefined"&&laundryData)||{}, l=LD[lid]; if(!l) return;
   try{ if(typeof laundryBlockDone==="function") laundryBlockDone(lid,l.stage); }catch(x){} try{ if(typeof laundryAwayRemember==="function") laundryAwayRemember(lid,l); }catch(x){}
@@ -14047,7 +14051,7 @@ function llPutAway(lid){ const LD=(typeof laundryData!=="undefined"&&laundryData
 // later reverses nothing), and un-ticked again only if it was that automatic tick. A kid's own tick is never touched. The list's done flag
 // follows. One targeted slSaveChanged, dry-run inert like every check-off; today only.
 function llKidRowLineDone(st){ const t=llToday(), e=llDayLog(t)[st.line], LD=(typeof laundryData!=="undefined"&&laundryData)||{};
-  if(st.laundry===true) return !!e; if(st.laundry==="lineFold") return !!e&&!(e.load&&LD[e.load]); return false; }
+  if(st.laundry===true) return !!e; if(st.laundry==="lineFold") return !!e&&!(e.load&&(LD[e.load]||(typeof laundrySplitHung==="function"&&laundrySplitHung(e.load)))); return false; }   // LAUNDRY_SPLIT: done only when the hung half is away too
 function llSyncKidRows(){ if(typeof slState==="undefined"||typeof activeWk!=="function"||typeof _todayDay!=="string"||typeof rtStepsFor!=="function") return 0;
   const wk=activeWk(), dn=_todayDay, before=(typeof slBefore==="function")?slBefore():null, ts=(typeof nowTs==="function")?nowTs():""; let n=0;
   llPeople().slice(2).forEach(function(kid){ if(!llDrivesKid(kid)) return;
@@ -14334,7 +14338,7 @@ function momChoresCardHTML(iso,today){
 
 // ── 🧺 Laundry — loads move washer → dryer → fold → put away (gone) ────
 const LAUNDRY_STAGES=["washer","dryer","fold"];
-const LAUNDRY_STAGE_META={washer:["🫧","In the washer"],dryer:["🌀","In the dryer"],fold:["🧺","Folded — put it away"],basket:["🧺","In the basket"],bin:["🪣","Wash today"],prewash:["🫧","Prewash"],airdry:["🌬","Air drying"],custom:["⏳","In progress"]};   // bin, prewash = 💦 WASHTODAY · airdry, custom = LAUNDRY_CYCLE
+const LAUNDRY_STAGE_META={washer:["🫧","In the washer"],wetbasket:["🧺","Waiting for the dryer"],dryer:["🌀","In the dryer"],fold:["🧺","Folded — put it away"],basket:["🧺","In the basket"],bin:["🪣","Wash today"],prewash:["🫧","Prewash"],airdry:["🌬","Air drying"],custom:["⏳","In progress"]};   // bin, prewash = 💦 WASHTODAY · airdry, custom = LAUNDRY_CYCLE
 const LAUNDRY_WET_STAGES=["prewash","washer","dryer","fold"];   // 💦 WASHTODAY: wet things are washed twice (they stink otherwise — her rule 2026-10-09)
 // LAUNDRY_CYCLE_START — custom wash cycles, part 1: the engine (her ask 2026-10-16: "a custom wash cycle where u can make certain quick
 // buttons and can put in things like pre wash, wash, dry, air dry, or a custom and then time for each"; her picks 2026-10-17: air dry →
@@ -14354,7 +14358,7 @@ function lcDefMins(k){ return (k==="wash"||k==="prewash")?laundryT("wash"):k==="
 function lcMins(x){ const v=parseInt(x&&x.m,10); return (v>0&&v<=24*60)?v:lcDefMins(x&&x.k); }
 function lcStepName(x){ return x?((x.k==="custom"&&x.n)?String(x.n):LC_KINDS[x.k][1]):""; }
 // Where a cycle load is: [emoji, words]. Not a cycle load, or in the bin / fold pile → null (the caller keeps LAUNDRY_STAGE_META).
-function lcMeta(l){ const i=lcStep(l); if(i<0) return null; const S=lcSteps(l); return [LC_KINDS[S[i].k][0],lcStepName(S[i])+" ("+(i+1)+" of "+S.length+")"]; }
+function lcMeta(l){ if(typeof laundrySplitMeta==="function"){ const m=laundrySplitMeta(l); if(m) return m; }   /* LAUNDRY_SPLIT: a hung load says "Hanging to dry" */ const i=lcStep(l); if(i<0) return null; const S=lcSteps(l); return [LC_KINDS[S[i].k][0],lcStepName(S[i])+" ("+(i+1)+" of "+S.length+")"]; }
 function laundryMeta(l){ return lcMeta(l)||LAUNDRY_STAGE_META[l&&l.stage]||["🧺",String((l&&l.stage)||"")]; }
 // The next button's words: "▶ Start: Prewash" from the bin, "→ <next step>", then "→ Fold". Null → the stage's usual words.
 function lcNextLabel(l){ if(!lcHas(l)) return null; const S=lcSteps(l); if(l.stage==="bin") return "▶ Start: "+lcStepName(S[0]); const i=lcStep(l); if(i<0) return null; return i<S.length-1?"→ "+lcStepName(S[i+1]):"Folded ✓"; }   // FOLD_WORDS
@@ -14382,6 +14386,142 @@ function lcSummary(steps){ const S=lcSteps({cycle:steps}); return S.length?S.map
 // A clean copy of edited steps for saving: known kinds, minutes only when set, a custom step's name.
 function lcClean(steps){ return lcSteps({cycle:steps}).map(function(x){ const o={k:x.k}; const m=parseInt(x.m,10); if(m>0&&m<=24*60) o.m=m; if(x.k==="custom"&&String(x.n||"").trim()) o.n=String(x.n).trim(); return o; }); }
 // LAUNDRY_CYCLE_END
+// LAUNDRY_SPLIT_START — three laundry asks in one block (Adrienne's 2026-10-22 fix list, item 5; Sara DeWalt's asks too).
+//   W1 🧺 Wet basket (Sara): after the washer a load may wait in a basket, wet, so the washer is free for the next load. Stage
+//       "wetbasket" sits between the washer and the dryer — a side stage like the after-dryer basket, which stays exactly as it is (both
+//       exist). The washer's forward tap (any page) asks first: "Where is it going?" 🌀 Into the dryer · 🧺 A basket for now · 🌬 Hang it
+//       all · 🌬 Hang some, the rest to the dryer — Not yet closes it and nothing moves. A wet-basket load reads "🧺 Waiting for the
+//       dryer"; its own tap asks the same question without the basket. Once it has sat longer than settings/laundry/wetBasketMins
+//       (default 90) a gentle nudge joins 🔴 NOW. ↶ takes it back to the washer. ✎ Times can set a load to / from it.
+//   W2 🌬 Hang-to-dry split (Adrienne): at the washer a load can go all to the dryer, all hung, or part hung. A split makes two tracked
+//       halves of ONE load: the dryer half keeps the load's id (so the line's log entry, Dad's card and the kids' rows still point at it)
+//       as "<name> — dryer half" on the normal path; the hung half is laundry/<id>_h, "<name> — hanging", on the EXISTING airdry stage
+//       as a one-step air-dry cycle timed by settings/laundry/airDryHours (default 8) — then "Dry ✓ — take it down" → the fold pile →
+//       put away. The load is done (the kid's Fold row ticks, the line reads put away) only when BOTH halves are put away, and the Fold
+//       un-tick brings back every half that is away (log/<day>/<item>/away for the dryer half, /awayH for the hung half). "Hang it all"
+//       puts the whole load on that air-dry step (↶ = back to the washer, its own cycle restored). No second air-dry stage is invented.
+//   W3 ⚠️ Load alerts (Sara): a free-text alert per load — typed on the laundry line's ✎ (laundryLine/items/<id>/alert, where a line load
+//       is defined) or on a running load's ✎ (laundry/<id>/alert) — copied onto the load when it starts. When the load leaves the washer
+//       (dryer, wet basket, hang or split) a confirm pop-up shows the alert: "Yes, done" moves it; "Not yet" leaves it in the washer.
+//       The words are Mom's; the app only shows them. A kid's chore move (LAUNDRY_KIDMOVE) never sees the alert — it is for the parent.
+// Writes, every one targeted and dry-run inert (_lbWrite): laundry/<id> update {stage,ts[,step]} · laundry/<id> update
+// {stage,ts,hang,cycle,step[,was]} · laundry/<id> update {label,split,stage,ts[,step]} + laundry/<id>_h set · laundry/<id>/alert (✎)
+// · laundryLine/items/<id>/alert (✎ on the line) · laundryLine/log/<day>/<item>/awayH · settings/laundry/{wetBasketMins,airDryHours}.
+// An unsplit load with no alert that goes to the dryer takes the old path exactly — laundryAdvance's own laundry/<id> set, same fields.
+let laundrySplitSettings={}; try{ laundrySplitSettings=JSON.parse(HA_LS.getItem('ha_laundry_split')||"{}")||{}; }catch(e){}
+function laundrySplitSettingsOnValue(v){ laundrySplitSettings=v||{}; try{ HA_LS.setItem('ha_laundry_split',JSON.stringify(laundrySplitSettings)); }catch(e){} }
+function laundryWetBasketMins(){ const v=parseInt((laundrySplitSettings||{}).wetBasketMins,10); return (v>0&&v<=600)?v:90; }
+function laundryAirDryHours(){ const v=parseInt((laundrySplitSettings||{}).airDryHours,10); return (v>0&&v<=72)?v:8; }
+function laundryAirDryStep(){ return [{k:"airdry",m:laundryAirDryHours()*60}]; }   // the hung half's one step, her hours
+// ✎ Times: two more rows (row = the editor's own row maker) and their save — settings/laundry, only what changed.
+function laundrySplitTimesRowsHTML(row){ return row('laundry-t-wetbasket','🧺 A wet basket nudges me after',laundryWetBasketMins(),'A load waiting for the dryer, still wet')
+  +row('laundry-t-airdry','🌬 Hung laundry is dry after',laundryAirDryHours(),'',laundryAirDryHours()===1?'hr':'hrs',72); }
+function laundrySplitTimesSave(){ const rd=function(id,d,max){ const v=parseInt((((typeof document!=="undefined"&&document.getElementById(id))||{}).value||""),10); return (v>0&&v<=max)?v:d; };
+  const was={wetBasketMins:laundryWetBasketMins(),airDryHours:laundryAirDryHours()}, now={wetBasketMins:rd('laundry-t-wetbasket',was.wetBasketMins,600),airDryHours:rd('laundry-t-airdry',was.airDryHours,72)}, ch={};
+  Object.keys(now).forEach(function(k){ if(now[k]!==was[k]) ch[k]=now[k]; });
+  if(!Object.keys(ch).length) return ch;
+  laundrySplitSettingsOnValue(Object.assign({},laundrySplitSettings,ch));
+  if(_lbWrite()) db.ref('settings/laundry').update(ch); return ch; }
+const LAUNDRY_SPLIT_PICKS=["dryer","wetbasket","hang","split"];
+let _lspId=null, _lspAlertId=null, _lspPick=null, _lspOk=null;   // the where-to question · the alert waiting, and the pick it holds · the load whose alert was just answered Yes
+function laundrySplitHalfId(id){ return String(id)+"_h"; }
+function laundrySplitHung(id){ const LD=(typeof laundryData!=="undefined"&&laundryData)||{}; return !!(id&&LD[laundrySplitHalfId(id)]); }   // its hung half is still around
+// The tap that takes a load out of the washer: a plain load in the washer, or a cycle load on a wash step whose next step is the dryer.
+function laundrySplitLeavingWasher(l){ if(!l||l.stage!=="washer") return false; if(!(typeof lcHas==="function"&&lcHas(l))) return true; const S=lcSteps(l), i=lcStep(l); return i>=0&&!!S[i+1]&&S[i+1].k==="dry"; }
+function laundrySplitCanSplit(id,l){ return !!l&&!l.split&&!l.hang&&!laundrySplitHung(id); }   // a half, or a hung load, never splits again
+// A wet basket, or a hung load (hang:true on its one air-dry step): [emoji, words] — lcMeta asks first, so every page says the same thing.
+function laundrySplitMeta(l){ if(!l) return null; if(l.stage==="wetbasket") return ["🧺","Waiting for the dryer"];   // a cycle load in the wet basket too (not "Wash (2 of 3)")
+  if(!l.hang||l.stage!=="airdry"||typeof lcSteps!=="function") return null; const S=lcSteps(l); return (S.length===1&&S[0].k==="airdry")?["🌬","Hanging to dry"]:null; }
+function laundrySplitAdvLabel(stage,l){ if(stage==="wetbasket") return "→ Dryer"; if(l&&laundrySplitMeta(l)) return "Dry ✓ — take it down"; return null; }
+function laundrySplitBackStage(l){ if(!l) return undefined; if(l.stage==="wetbasket") return "washer"; if(l.hang&&!l.split&&laundrySplitMeta(l)) return "washer"; return undefined; }
+// ↶ out of the wet basket, or a hung load back in the washer (its cycle from before the hang restored): laundryBack hands over here.
+function laundrySplitBack(id,l){ const from=l.stage; if(typeof _cuDropBlock==="function"){ _cuDropBlock(id,from); _cuDropBlock(id,"washer"); }
+  const up={stage:"washer",ts:Date.now()-laundryT("wash")*60000};
+  if(from==="airdry"){ up.hang=null; if(l.was&&l.was.cycle){ up.cycle=l.was.cycle; up.step=(l.was.step>0)?l.was.step:0; } else { up.cycle=null; up.step=null; } up.was=null; }
+  _lspSave(id,up); _lspRe(); return {from:from,to:"washer"}; }
+// 🔴 NOW: a wet basket nudges, gently, after her minutes — never the sour-washer words. null = not this block's load.
+function laundrySplitNudgeKind(l,now){ if(!l||l.stage!=="wetbasket") return null; const mins=Math.round(((now||Date.now())-(l.ts||0))/60000); return mins>=laundryWetBasketMins()?"wetbasket":""; }
+function laundrySplitNudgeTxt(x){ if(!x||x.kind!=="wetbasket") return ""; return '🧺 <b>'+esc(x.l.label||"Load")+'</b> has been waiting for the dryer since '+laundrySince(x.l.ts)+' — move it along when the dryer\'s free'; }
+// Mom's Day trail: the wet basket's chip sits between the washer and the dryer. null = the usual trail.
+function laundrySplitTrail(l,STG){ if(!l||l.stage!=="wetbasket") return null; const i=STG.indexOf("washer"); return i<0?null:STG.slice(0,i+1).concat(["wetbasket"],STG.slice(i+1)); }
+function _lspRe(){ if(typeof tab!=="undefined"&&tab==="schedule"&&typeof renderAll==="function"){ renderAll(); return; } const el=(typeof document!=="undefined")?document.getElementById('content'):null; if(el&&typeof renderMomsPlan==="function") renderMomsPlan(el); }
+function _lspSave(id,up){ const l=laundryData[id]; if(!l) return; Object.keys(up).forEach(function(f){ if(up[f]===null) delete l[f]; else l[f]=up[f]; }); try{ HA_LS.setItem('ha_laundry',JSON.stringify(laundryData)); }catch(e){} if(_lbWrite()) db.ref('laundry/'+id).update(up); }
+// laundryAdvance's first line. true = handled here (a question is up, or the move was made and drawn); false = the usual path.
+function laundrySplitAsk(id,l,pick){
+  const fromW=laundrySplitLeavingWasher(l), fromB=l.stage==="wetbasket"; if(!fromW&&!fromB) return false;
+  if(LAUNDRY_SPLIT_PICKS.indexOf(pick)<0||(fromB&&pick==="wetbasket")||((pick==="hang"||pick==="split")&&!laundrySplitCanSplit(id,l))){ laundrySplitWhereAsk(id); return true; }   // W1/W2: ask where
+  if(fromW&&String(l.alert||"").trim()&&_lspOk!==id){ laundryAlertAsk(id,pick); return true; }   // W3: the alert first — Yes, done comes back here with _lspOk set
+  _lspOk=null;
+  if(pick==="dryer"&&fromW) return false;   // into the dryer, no alert in the way = the old path, byte for byte
+  try{ if(typeof laundryBlockDone==="function") laundryBlockDone(id,l.stage); }catch(e){}   // MOMSCHED_LAUNDRY: ends the washer's block
+  const now=Date.now(), cyc=typeof lcHas==="function"&&lcHas(l), label=String(l.label||"Load");
+  if(pick==="dryer"){ const up={stage:"dryer",ts:now}; if(cyc){ const c=Object.assign({},l); lcAdvance(c); up.stage=c.stage; up.step=c.step; } _lspSave(id,up);   // out of the wet basket (a cycle load: its own dry step)
+    if(typeof mwToast==="function") mwToast('🌀 '+label+' — in the dryer'); }
+  else if(pick==="wetbasket"){ _lspSave(id,{stage:"wetbasket",ts:now}); if(typeof mwToast==="function") mwToast('🧺 '+label+' — waiting for the dryer'); }
+  else if(pick==="hang"){ const up={stage:"airdry",ts:now,hang:true,cycle:laundryAirDryStep(),step:0}; if(cyc) up.was={cycle:lcSteps(l),step:lcStep(l)}; _lspSave(id,up);
+    if(typeof mwToast==="function") mwToast('🌬 '+label+' — hanging to dry'); }
+  else { const hid=laundrySplitHalfId(id), h={label:label+" — hanging",stage:"airdry",ts:now,hang:true,cycle:laundryAirDryStep(),step:0,split:{of:id,part:"hang"}};
+    ["line","lineDay","by"].forEach(function(f){ if(l[f]!=null) h[f]=l[f]; });   // the hung half is the same line load, the same person's
+    const up={label:label+" — dryer half",split:{part:"dryer",half:hid},stage:"dryer",ts:now}; if(cyc){ const c=Object.assign({},l); lcAdvance(c); up.stage=c.stage; up.step=c.step; }
+    laundryData[hid]=h; _lspSave(id,up); if(_lbWrite()) db.ref('laundry/'+hid).set(h);
+    if(typeof mwToast==="function") mwToast('🌬 '+label+' — the dryer half is in the dryer, the rest is hanging'); }
+  _lspRe(); return true; }
+// The where-to question (a pop-up like the dryer's). Not yet = nothing moves.
+function laundrySplitWhereAsk(id){ _lspId=id; _lspAlertId=null; _lspPick=null; _lspPaint(); }
+function laundrySplitWhereAnswer(pick){ const id=_lspId; _lspId=null; _lspPaint(); if(!id||!pick) return; const l=laundryData[id]; if(!l||!(laundrySplitLeavingWasher(l)||l.stage==="wetbasket")) return;   /* moved on another device meanwhile — the answer is dropped */ laundryAdvance(id,pick); }
+function laundrySplitWhereHTML(id,l){
+  const big='padding:12px 16px;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;', fromB=l.stage==="wetbasket", can=laundrySplitCanSplit(id,l);
+  const b=function(pick,txt,solid){ return '<button onclick="laundrySplitWhereAnswer(\''+pick+'\')" style="'+big+(solid?'border:none;background:#2563eb;color:#fff':'border:1.5px solid #93c5fd;background:#fff;color:#1d4ed8')+'">'+txt+'</button>'; };
+  return '<div onclick="laundrySplitWhereAnswer()" style="position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px">'
+    +'<div onclick="event.stopPropagation()" style="background:#fff;border-radius:16px;padding:22px 20px;width:100%;max-width:360px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.35)">'
+    +'<div style="font-size:40px">'+(fromB?'🧺':'🫧')+'</div><div style="font-weight:800;font-size:18px;margin:4px 0 4px">'+esc(l.label||"Laundry")+(fromB?' — out of the basket':' — out of the washer')+'</div>'
+    +'<div style="font-size:14px;color:#475569;margin-bottom:14px">Where is it going?</div>'
+    +'<div style="display:flex;flex-direction:column;gap:8px">'+b('dryer','🌀 Into the dryer',true)+(fromB?'':b('wetbasket','🧺 A basket for now — the washer\'s needed',false))
+    +(can?b('hang','🌬 Hang it all to dry',false)+b('split','🌬 Hang some, the rest to the dryer',false):'')+'</div>'
+    +'<button onclick="laundrySplitWhereAnswer()" style="margin-top:12px;border:none;background:none;color:#64748b;font-size:13px;font-weight:700;cursor:pointer">Not yet</button></div></div>'; }
+// W3 the alert: "Yes, done" makes the move she picked; "Not yet" leaves the load in the washer.
+function laundryAlertAsk(id,pick){ _lspAlertId=id; _lspPick=pick; _lspId=null; _lspPaint(); }
+function laundryAlertAnswer(yes){ const id=_lspAlertId, pick=_lspPick; _lspAlertId=null; _lspPick=null; _lspPaint(); if(!id) return; const l=laundryData[id]; if(yes&&pick&&l&&laundrySplitLeavingWasher(l)){ _lspOk=id; laundryAdvance(id,pick); } }
+function laundryAlertHTML(l){
+  const big='padding:14px 18px;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;';
+  return '<div style="position:fixed;inset:0;z-index:100001;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px">'
+    +'<div style="background:#fff;border-radius:16px;padding:22px 20px;width:100%;max-width:340px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.35)">'
+    +'<div style="font-size:40px">⚠️</div><div style="font-weight:800;font-size:18px;margin:4px 0 4px">'+esc(l.label||"Laundry")+' — before it moves on</div>'
+    +'<div style="font-size:16px;color:#1e293b;margin:10px 0 16px;padding:10px 12px;background:#fef3c7;border-radius:10px">'+esc(l.alert||"")+'</div>'
+    +'<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">'
+    +'<button onclick="laundryAlertAnswer(true)" style="'+big+'border:none;background:#2563eb;color:#fff">✓ Yes, done</button>'
+    +'<button onclick="laundryAlertAnswer(false)" style="'+big+'border:1.5px solid #cbd5e1;background:#fff;color:#475569">Not yet</button></div></div></div>'; }
+function _lspPaint(){ if(typeof document==="undefined"||!document.body) return; let w=document.getElementById("lsp-wrap"); if(!w){ w=document.createElement("div"); w.id="lsp-wrap"; document.body.appendChild(w); }
+  const LD=(typeof laundryData!=="undefined"&&laundryData)||{}, a=_lspAlertId&&LD[_lspAlertId], q=_lspId&&LD[_lspId]; w.innerHTML=a?laundryAlertHTML(a):q?laundrySplitWhereHTML(_lspId,q):""; }
+// ── the laundry line, both halves ──
+// What the line says about a load (Dad's card, the kid's card): a wet basket, a hung load, or both halves. "" = the usual words.
+function laundrySplitLineStage(lid){ const LD=(typeof laundryData!=="undefined"&&laundryData)||{}, l=lid?LD[lid]:null, h=lid?LD[laundrySplitHalfId(lid)]:null;
+  const w=function(x){ if(!x) return ""; if(x.stage==="wetbasket") return "🧺 waiting for the dryer"; return laundrySplitMeta(x)?"🌬 hanging to dry":""; };
+  if(!h) return w(l);
+  const cm=(l&&typeof lcMeta==="function")?lcMeta(l):null;
+  const a=!l?"✓ dryer half put away":w(l)||(cm?cm[0]+" "+cm[1]:l.stage==="dryer"?"🌀 dryer half in the dryer":l.stage==="basket"?"🧺 dryer half in the basket":l.stage==="fold"?"🧺 dryer half folded — put away":"🫧 dryer half in the washer");
+  const b=h.stage==="fold"?"🧺 hung half folded — put away":h.stage==="basket"?"🧺 hung half in the basket":"🌬 hanging to dry";
+  return a+" · "+b; }
+// Putting the hung half away leaves its own note (log/<day>/<item>/awayH) beside the dryer half's; the un-tick reads both.
+function laundrySplitNoteAway(lid,l){ if(!l||!l.split||l.split.part!=="hang"||!l.line||!l.lineDay||typeof laundryLine==="undefined"||!laundryLine||!Object.keys(laundryLine).length) return false;
+  const g=laundryLine.log&&laundryLine.log[l.lineDay], e=g&&g[l.line]; if(!e||e.load!==l.split.of) return false;
+  const a={at:Date.now(),load:JSON.parse(JSON.stringify(l))}; e.awayH=a; llStore(); const u={}; u["log/"+l.lineDay+"/"+l.line+"/awayH"]=a; llWrite(u); return true; }
+// The Fold un-tick on a split load: every half that is away comes back, to where it was, with a fresh clock. false = not a split (the usual path).
+function laundrySplitUnputaway(item){ const t=llToday(), g=laundryLine&&laundryLine.log&&laundryLine.log[t], e=g&&g[item], LD=(typeof laundryData!=="undefined"&&laundryData)||{}; if(!e||!e.load) return false;
+  const hid=laundrySplitHalfId(e.load), u={}, back=[];
+  if(e.awayH&&e.awayH.load&&!LD[hid]){ const r=Object.assign({},e.awayH.load,{ts:Date.now(),line:item,lineDay:t}); LD[hid]=r; if(_lbWrite()) db.ref('laundry/'+hid).set(r); delete e.awayH; u["log/"+t+"/"+item+"/awayH"]=null; back.push(r); }
+  if(e.away&&e.away.load&&e.away.load.split&&!LD[e.load]){ const r=Object.assign({},e.away.load,{ts:Date.now(),line:item,lineDay:t}); LD[e.load]=r; if(_lbWrite()) db.ref('laundry/'+e.load).set(r); delete e.away; u["log/"+t+"/"+item+"/away"]=null; back.push(r); }
+  if(!back.length) return false;
+  try{ HA_LS.setItem('ha_laundry',JSON.stringify(LD)); }catch(x){} llStore(); llWrite(u); try{ llSyncKidRows(); }catch(x){}
+  if(typeof mwToast==="function") mwToast('🧺 '+back.map(function(r){ return r.label||'Laundry'; }).join(' · ')+' — back'); return true; }
+// ── W3 where the alert is typed ──
+// The laundry line's ✎ (where a line load is defined): one more field. Saved as laundryLine/items/<id>/alert; blank clears it.
+function laundrySplitEdAlertHTML(x){ return '<label style="flex:1 1 100%;display:flex;gap:5px;align-items:center">⚠️ Alert <input id="lle-alert" value="'+esc((x&&x.alert)||"")+'" placeholder="Shown when it leaves the washer (pull the 3 shirts to air dry)" maxlength="160" style="flex:1;min-width:160px;'+_llInp+'"></label>'; }
+function laundrySplitEdSave(id,x,u,fresh){ const el=(typeof document!=="undefined")?document.getElementById("lle-alert"):null; if(!el) return; const a=String(el.value||"").trim().slice(0,160); if(a===(x.alert||"")) return; if(a) x.alert=a; else delete x.alert; if(!fresh) u["items/"+id+"/alert"]=a||null; }
+// A running load's ✎ (Mom only, like the rest of the sheet): laundry/<id>/alert.
+function laundrySplitEditRowHTML(row,k,l){ return row('⚠️ Alert','<input id="le-alert-'+k+'" type="text" value="'+esc(l.alert||"")+'" placeholder="Shown when it leaves the washer" maxlength="160" style="flex:1;padding:5px 8px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:12.5px;font-family:\'DM Sans\',sans-serif">'); }
+function laundrySplitEditSave(g,l,up){ const el=g('alert'); if(!el) return; const a=String(el.value||"").trim().slice(0,160); if(a!==(l.alert||"")) up.alert=a||null; }
+// LAUNDRY_SPLIT_END
 const LAUNDRY_STALE_MIN=90; // washer-sitting threshold before the NOW nudge (mildew guard) — now = washer minutes + reminder (60 + 30 by default)
 // 🧺 LAUNDRYTIMES (her ask 2026-10-06): Mom sets how long the washer and dryer take and how long after a cycle ends to remind her.
 // settings/laundryTimes {wash,dry,grace} minutes, one per family (defaults 60 / 60 / 30 — the old 90-minute washer nudge exactly).
@@ -14391,7 +14531,7 @@ function laundryTimesOnValue(v){ laundryTimes=v||{}; try{ HA_LS.setItem('ha_laun
 function laundryT(k){ const d={wash:60,dry:60,grace:30}[k]; const v=parseInt((laundryTimes||{})[k],10); return (v>0&&v<=600)?v:d; }
 // LAUNDRY_NUDGE (audit 2026-10-15 hole 3): settings/laundryTimes/foldHrs = hours a fold pile sits before 🔴 NOW asks to put it away (default 3, 1–72).
 function laundryFoldHrs(){ const v=parseInt((laundryTimes||{}).foldHrs,10); return (v>0&&v<=72)?v:3; }
-function laundryDoneAt(l){ if(typeof lcHas==="function"&&lcHas(l)){ const i=lcStep(l); return i>=0?(l.ts||0)+lcMins(lcSteps(l)[i])*60000:0; }   // LAUNDRY_CYCLE: this step's own minutes
+function laundryDoneAt(l){ if(l&&l.stage==="wetbasket") return 0;   /* LAUNDRY_SPLIT: a wet basket has no machine clock (its nudge is the sitting time) */ if(typeof lcHas==="function"&&lcHas(l)){ const i=lcStep(l); return i>=0?(l.ts||0)+lcMins(lcSteps(l)[i])*60000:0; }   // LAUNDRY_CYCLE: this step's own minutes
   const m=(l&&(l.stage==="washer"||l.stage==="prewash"))?laundryT("wash"):(l&&l.stage==="dryer")?laundryT("dry"):0; return m?(l.ts||0)+m*60000:0; }   // prewash = 💦 WASHTODAY
 function laundryDoneTxt(l){ const d=laundryDoneAt(l); if(!d) return ""; const t=laundrySince(d); return Date.now()>=d?' · <b style="color:#16a34a">done at '+t+'</b>':' · done ~'+t; }
 function laundryEditToggle(){ const go=function(){ laundryEditOpen=!laundryEditOpen; const el=document.getElementById('content'); if(el) renderMomsPlan(el); };
@@ -14400,6 +14540,7 @@ function laundryTimesSave(){
   const rd=function(id,d){ const v=parseInt(((document.getElementById(id)||{}).value||""),10); return (v>0&&v<=600)?v:d; };
   const rh=function(id,d){ const v=parseInt(((document.getElementById(id)||{}).value||""),10); return (v>0&&v<=72)?v:d; };   // LAUNDRY_NUDGE: fold-pile hours
   laundryTimes={wash:rd('laundry-t-wash',laundryT('wash')),dry:rd('laundry-t-dry',laundryT('dry')),grace:rd('laundry-t-grace',laundryT('grace')),foldHrs:rh('laundry-t-foldhrs',laundryFoldHrs())};
+  try{ if(typeof laundrySplitTimesSave==="function") laundrySplitTimesSave(); }catch(e){}   // LAUNDRY_SPLIT: settings/laundry/{wetBasketMins,airDryHours}, only what changed
   try{ HA_LS.setItem('ha_laundry_times',JSON.stringify(laundryTimes)); }catch(e){}
   if(_lbWrite()) db.ref('settings/laundryTimes').set(laundryTimes);
   laundryEditOpen=false; if(typeof mwToast==='function') mwToast('🧺 Laundry times saved'); const el=document.getElementById('content'); if(el) renderMomsPlan(el);
@@ -14413,6 +14554,7 @@ function laundryTimesEditorHTML(){
     +row('laundry-t-dry','🌀 The dryer takes',laundryT('dry'))
     +row('laundry-t-grace','⏰ Remind me after it\'s done for',laundryT('grace'),'Then it shows on Mom\'s Day so nothing sits and sours')
     +row('laundry-t-foldhrs','🧺 Remind me to put away a folded load after',laundryFoldHrs(),'',laundryFoldHrs()===1?'hr':'hrs',72)   // LAUNDRY_NUDGE
+    +((typeof laundrySplitTimesRowsHTML==="function")?laundrySplitTimesRowsHTML(row):'')   // LAUNDRY_SPLIT: the wet basket's minutes, the air-dry hours
     +'<div style="display:flex;gap:8px;margin-top:8px"><button onclick="laundryTimesSave()" style="flex:1;padding:9px;border-radius:9px;border:none;background:#2563eb;color:#fff;font-size:13px;font-weight:800;cursor:pointer">Save</button>'
     +'<button onclick="laundryEditToggle()" style="padding:9px 14px;border-radius:9px;border:1.5px solid #cbd5e1;background:#fff;color:#475569;font-size:13px;font-weight:700;cursor:pointer">Cancel</button></div></div>';
 }
@@ -14434,6 +14576,7 @@ function laundryAdd(by){   // 👨 DADFIX: by="dad" from his Day → the load is
 }
 function laundryAdvance(id,pick){   // BASKET: pick = "fold" | "basket", the answer to the dryer's question; nothing passed = ask first
   const l=laundryData[id]; if(!l) return;
+  if(typeof laundrySplitAsk==="function"&&laundrySplitAsk(id,l,pick)) return;   // LAUNDRY_SPLIT: the washer's "where is it going?" (dryer · wet basket · hang · split), the wet basket's move on, the load's alert — nothing moves until answered
   if(typeof laundryBasketLeavingDryer==="function"&&laundryBasketLeavingDryer(l)&&pick!=="fold"&&pick!=="basket"){ laundryBasketAsk(id); return; }   // BASKET: the question — nothing moves yet
   try{ if(typeof laundryBlockDone==="function") laundryBlockDone(id,l.stage); }catch(e){}   // MOMSCHED_LAUNDRY: ends that stage's block
   const i=LAUNDRY_STAGES.indexOf(l.stage);
@@ -14472,6 +14615,7 @@ function laundryDel(id){
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
 function laundryAdvanceLabel(stage,l){
+  if(typeof laundrySplitAdvLabel==="function"){ const t=laundrySplitAdvLabel(stage,l); if(t) return t; }   // LAUNDRY_SPLIT: the wet basket's → Dryer, a hung load's "Dry ✓ — take it down"
   if(l&&typeof lcNextLabel==="function"){ const t=lcNextLabel(l); if(t) return t; }   // LAUNDRY_CYCLE
   return stage==="bin"?"🫧 Start prewash":stage==="prewash"?"🫧 Second wash":stage==="washer"?"→ Dryer":(stage==="dryer"||stage==="basket")?"Folded ✓":"✓ Put away";   /* BASKET: from the basket too */   /* FOLD_WORDS (her yes 2026-10-18): the dryer's button is "Folded ✓" everywhere */   // bin, prewash = 💦 WASHTODAY
 }
@@ -14489,6 +14633,7 @@ function laundryAdvanceLabel(stage,l){
 const LAUNDRY_BIN_NAG_HRS=14;
 function laundryNudgeKind(l,now){
   if(!l||!l.stage) return "";
+  if(typeof laundrySplitNudgeKind==="function"){ const k=laundrySplitNudgeKind(l,now); if(k!=null) return k; }   // LAUNDRY_SPLIT: a wet basket, after her minutes
   const mins=Math.round(((now||Date.now())-(l.ts||0))/60000);
   if(typeof lcStep==="function"&&lcStep(l)>=0){ const x=lcSteps(l)[lcStep(l)]; if(mins<lcMins(x)+laundryT("grace")) return "";   // LAUNDRY_CYCLE: this step's own minutes
     return l.stage==="dryer"?"dryer":l.stage==="airdry"?"airdry":l.stage==="custom"?"custom":"washer"; }
@@ -14506,13 +14651,13 @@ function laundryNudgeList(now,only){
 }
 function laundryNudgeRowHTML(x){
   const l=x.l, lbl='<b>'+esc(l.label||"Load")+'</b>', since=laundrySince(l.ts);
-  const txt=x.kind==="bin"?'💦 <b>'+esc(String(l.label||"Load").replace(/^💦\s*/,""))+'</b> is still in the wash-today bin — start the prewash?'
+  const txt=((typeof laundrySplitNudgeTxt==="function")?laundrySplitNudgeTxt(x):"")||(x.kind==="bin"?'💦 <b>'+esc(String(l.label||"Load").replace(/^💦\s*/,""))+'</b> is still in the wash-today bin — start the prewash?'
     :x.kind==="dryer"?'🌀 '+lbl+' has been in the dryer since '+since+' — time to fold it'
     :x.kind==="fold"?'🧺 '+lbl+' has been folded since '+since+' — put it away'
     :x.kind==="basket"?'🧺 '+lbl+' has been in the basket since '+since+' — fold it'   // BASKET
     :x.kind==="airdry"?'🌬 '+lbl+' has been air drying since '+since+' — it should be dry; fold it'   // LAUNDRY_CYCLE (her pick: remind me, then fold pile)
     :x.kind==="custom"?'⏳ '+lbl+' — '+esc(lcStepName(lcSteps(l)[lcStep(l)]))+' since '+since+' — time for the next step'
-    :'🫧 '+lbl+' has been in the washer since '+since+' — move it before it sours';
+    :'🫧 '+lbl+' has been in the washer since '+since+' — move it before it sours');   // LAUNDRY_SPLIT: the wet basket's own words first
   return '<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#eff6ff;border-left:3px solid #2563eb;border-radius:8px;margin-bottom:6px">'
     +'<span style="flex:1;font-size:13px">'+txt+'</span>'
     +'<button onclick="laundryAdvance(\''+x.id+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+((x.kind==="dryer"&&typeof LAUNDRY_FOLDED_BTN!=="undefined"&&(typeof lcHas!=="function"||!lcHas(l)||lcNextIsFold(l)))?LAUNDRY_FOLDED_BTN:laundryAdvanceLabel(l.stage,l))+'</button></div>';   // LAUNDRY_FOLDED: the dryer nudge's button matches the block (merge of PR 61 + 62)
@@ -14906,7 +15051,7 @@ function laundryBasketAskHTML(l){
   const big='padding:14px 18px;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;';
   return '<div onclick="laundryBasketAnswer()" style="position:fixed;inset:0;z-index:100000;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:20px">'
     +'<div onclick="event.stopPropagation()" style="background:#fff;border-radius:16px;padding:22px 20px;width:100%;max-width:340px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.35)">'
-    +'<div style="font-size:40px">\u{1F9FA}</div><div style="font-weight:800;font-size:18px;margin:4px 0 4px">'+esc(l.label||"Laundry")+' — out of the dryer</div>'
+    +'<div style="font-size:40px">\u{1F9FA}</div><div style="font-weight:800;font-size:18px;margin:4px 0 4px">'+esc(l.label||"Laundry")+(l.hang?' — dry, take it down':' — out of the dryer')+'</div>'
     +'<div style="font-size:14px;color:#475569;margin-bottom:14px">Fold now, or into the basket?</div>'
     +'<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">'
     +'<button onclick="laundryBasketAnswer(\'fold\')" style="'+big+'border:none;background:#2563eb;color:#fff">\u{1F455} Fold now</button>'
@@ -15166,6 +15311,7 @@ function choreUndoBtnHTML(slot,kid,d,i){ return _cuMomOk()?_cuBtn("choreUndo('"+
 // ── laundry: back a stage ──
 function laundryBackStage(l){
   if(!l||!l.stage||l.stage==="bin") return null;
+  if(typeof laundrySplitBackStage==="function"){ const p=laundrySplitBackStage(l); if(p!==undefined) return p; }   // LAUNDRY_SPLIT: the wet basket / a hung load → the washer
   if(l.stage==="basket") return (typeof lcHas==="function"&&lcHas(l))?lcStageOf(lcSteps(l),lcSteps(l).length-1):"dryer";   // BASKET: back out of the basket = the dryer (a cycle's last step)
   if(typeof lcBack==="function"&&lcHas(l)){ const p=lcBack(l); return p?p.stage:null; }   // LAUNDRY_CYCLE
   const STG=(l.wet||l.stage==="prewash")?["bin"].concat(LAUNDRY_WET_STAGES):LAUNDRY_STAGES; const i=STG.indexOf(l.stage);
@@ -15186,6 +15332,7 @@ function _cuRe(){
 function laundryBack(id){
   if(!_cuMomOk()) return null;
   const l=laundryData[id], prev=laundryBackStage(l); if(!prev) return null;
+  if(typeof laundrySplitBack==="function"&&laundrySplitBackStage(l)==="washer") return laundrySplitBack(id,l);   // LAUNDRY_SPLIT: out of the wet basket, or a hung load, back in the washer
   const from=l.stage; _cuDropBlock(id,from); _cuDropBlock(id,prev);
   const _cb=(typeof lcBack==="function"&&lcHas(l)&&from!=="basket")?lcBack(l):null;   // LAUNDRY_CYCLE: back one of its own steps (BASKET: the basket isn't a step)
   if(_cb){ l.stage=_cb.stage; if(_cb.step==null) delete l.step; else l.step=_cb.step; l.ts=Date.now()-(_cb.step==null?0:lcMins(lcSteps(l)[_cb.step]))*60000; }
@@ -15742,7 +15889,7 @@ function mdCardBills(iso){
 // Save = ONE targeted update on laundry/<id> (changed fields only; mom = by removed, wet off = wet removed). A stage change also
 // removes today's Mom blocks for the old and the new stage, the way ↶ laundryBack (CHOREUNDO) does, so no stale "block out time?"
 // answer or orphan block is left. Writes (dry-run inert, _lbWrite): laundry/<id> update · momBlocks/<iso>/<load>_<stage> remove.
-const LAUNDRY_EDIT_STAGES=["bin","prewash","washer","dryer","basket","fold"];   // BASKET (2026-10-21): editable to / from the basket
+const LAUNDRY_EDIT_STAGES=["bin","prewash","washer","wetbasket","dryer","basket","fold"];   // BASKET (2026-10-21): editable to / from the basket · LAUNDRY_SPLIT: the wet basket too
 let laundryEditId=null;
 function _leHM(ts){ const d=new Date(ts||0); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }
 function _leRe(){
@@ -15778,6 +15925,7 @@ function laundryEditSheetHTML(id){
     +row('Started at','<input id="le-ts-'+k+'" type="time" value="'+_leHM(l.ts)+'" style="'+inp+'">')
     +row('Whose','<select id="le-by-'+k+'" style="'+inp+'">'+who+'</select>')
     +row('💦 Wet','<input id="le-wet-'+k+'" type="checkbox"'+(l.wet?' checked':'')+'> <span style="font-weight:600;color:#475569">Wet or soiled (washed twice)</span>')
+    +((typeof laundrySplitEditRowHTML==="function")?laundrySplitEditRowHTML(row,k,l):'')   // LAUNDRY_SPLIT W3: the load's alert
     +'<div style="display:flex;gap:8px;margin-top:6px"><button onclick="laundryEditSave(\''+_lbQ(id)+'\')" style="flex:1;padding:7px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:12.5px;font-weight:800;cursor:pointer">Save</button>'
     +'<button onclick="laundryEditLoad(\''+_lbQ(id)+'\')" style="padding:7px 12px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;color:#475569;font-size:12.5px;font-weight:700;cursor:pointer">Cancel</button></div></div>';
 }
@@ -15800,6 +15948,7 @@ function laundryEditSave(id){
   } else if(up.stage||up.step!==undefined) up.ts=Date.now();   // a new stage, clock untouched → that stage starts now (as → Dryer does)
   const by=byEl&&byEl.value; if(by&&by!==(l.by||"mom")) up.by=(by==="mom")?null:by;
   if(wetEl&&!!wetEl.checked!==!!l.wet) up.wet=wetEl.checked?true:null;
+  if(typeof laundrySplitEditSave==="function") laundrySplitEditSave(g,l,up);   // LAUNDRY_SPLIT W3: laundry/<id>/alert
   laundryEditId=null;
   if(!Object.keys(up).length){ _leRe(); return up; }
   if(up.stage){ _cuDropBlock(id,l.stage); _cuDropBlock(id,up.stage); }   // ↶ CHOREUNDO's way: no stale question, no orphan block
@@ -15824,9 +15973,9 @@ function mdCardLaundry(noAdd,bare){   // 🧺 LAUNDRYADD: noAdd = Mom's Day, whe
       const STG=(l.wet||l.stage==="prewash")?LAUNDRY_WET_STAGES:LAUNDRY_STAGES;   // 💦 WASHTODAY: wet = washed twice
       const trail=(typeof lcHas==="function"&&lcHas(l)&&l.stage!=="bin")?lcSteps(l).map(function(x,j){ const cur=lcStep(l), on=l.stage==="fold"||j<=cur;   // LAUNDRY_CYCLE: the load's own steps
           return '<span style="font-size:10px;font-weight:800;padding:1px 7px;border-radius:8px;background:'+(j===cur?'#dbeafe':(on?'#f0fdf4':'#f3f4f6'))+';color:'+(j===cur?'#1d4ed8':(on?'#166534':'#9ca3af'))+'">'+LC_KINDS[x.k][0]+' '+esc(lcStepName(x))+' '+lcMins(x)+'m</span>'; }).join('')
-        :(l.stage==="bin")?'<span style="font-size:10px;font-weight:800;padding:1px 7px;border-radius:8px;background:#fef3c7;color:#92400e">🪣 wash today</span>':(l.stage==="basket"?STG.slice(0,STG.indexOf("fold")).concat(["basket","fold"]):STG).map((s,_j,_L)=>{   // BASKET: its chip sits between the dryer and folded
+        :(l.stage==="bin")?'<span style="font-size:10px;font-weight:800;padding:1px 7px;border-radius:8px;background:#fef3c7;color:#92400e">🪣 wash today</span>':((typeof laundrySplitTrail==="function"&&laundrySplitTrail(l,STG))||(l.stage==="basket"?STG.slice(0,STG.indexOf("fold")).concat(["basket","fold"]):STG)).map((s,_j,_L)=>{   // BASKET: its chip sits between the dryer and folded · LAUNDRY_SPLIT: the wet basket's between the washer and the dryer
         const on=_L.indexOf(s)<=_L.indexOf(l.stage);
-        return '<span style="font-size:10px;font-weight:800;padding:1px 7px;border-radius:8px;background:'+(s===l.stage?'#dbeafe':(on?'#f0fdf4':'#f3f4f6'))+';color:'+(s===l.stage?'#1d4ed8':(on?'#166534':'#9ca3af'))+'">'+(LAUNDRY_STAGE_META[s][0])+' '+(s==="fold"?"folded":s)+'</span>';
+        return '<span style="font-size:10px;font-weight:800;padding:1px 7px;border-radius:8px;background:'+(s===l.stage?'#dbeafe':(on?'#f0fdf4':'#f3f4f6'))+';color:'+(s===l.stage?'#1d4ed8':(on?'#166534':'#9ca3af'))+'">'+(LAUNDRY_STAGE_META[s][0])+' '+(s==="fold"?"folded":s==="wetbasket"?"wet basket":s)+'</span>';
       }).join('');
       h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#f8fafc;border-left:3px solid #2563eb;border-radius:8px;margin-bottom:6px;flex-wrap:wrap">'
         +'<span style="font-size:13px;font-weight:700">'+esc(l.label)+'</span>'+trail
