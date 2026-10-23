@@ -52599,6 +52599,181 @@ function mastMatchToggleSpeak(){
   _mastRe();
 }
 function mastMatchSetPair(v){ matchPairMode=v; matchState=null; _mastRe(); }
+// MATCH_THEN_START — Memory "say it first" (her yes 2026-10-23; PLAN_practice_games_2026-10-23.md build #1).
+// Why: a hidden-tile hunt is recognition — nothing makes the kid PRODUCE the fact. Recall beats
+// recognition (Rowland 2014) and saying it beats looking even at five (Icht & Mama 2015). So in
+// Memory flip the board now locks after the FIRST tile of a turn until the kid answers:
+//   "say"  — says it out loud, taps "I said it", THEN the app speaks the answer (hear-it check).
+//            Age default for Pre-K to 2nd: nothing to read, no clock shown, no chips.
+//   "pick" — three chips: the right answer + two lures from the SAME deck (believable by construction;
+//            number answers take the two nearest values, 7×8 → 54 · 63). Right = soft ding. Wrong = soft
+//            bonk, the right chip lights, and the card comes back in a clear-up round once the board is
+//            empty (misses re-asked in the same sitting). Age default for 3rd grade up.
+//   "none" — the game exactly as before.
+// A card is asked once per game (the first time one of its tiles is the first flip). Memory flip only;
+// Face-up shows every answer on the board so there is nothing to retrieve. Never touches the ladder.
+// Writes: <kid>_settings/match_then (the per-kid choice, this key only) + the existing match_best / matchLog.
+function mastMatchThen(){
+  const s=masteryData[masteryKid+"_settings"]||{};
+  if(s.match_then==="say"||s.match_then==="pick"||s.match_then==="none") return s.match_then;
+  const g=(typeof ckGradeOf==="function")?ckGradeOf(masteryKid):null;   // Settings ▸ Family grade when Mom set one
+  if(g!=null) return g<=2?"say":"pick";
+  return (typeof kcLittle==="function"&&kcLittle(masteryKid))?"say":"pick";   // no grade: Pre-K says, school-age picks
+}
+function mastMatchSetThen(v){
+  if(v!=="say"&&v!=="pick"&&v!=="none") return;
+  const k=masteryKid;
+  const s=masteryData[k+"_settings"]||(masteryData[k+"_settings"]={});
+  s.match_then=v;
+  if(db) db.ref("mastery/"+k+"_settings/match_then").set(v);   // this key only
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  matchState=null; _mastRe();   // a game shape, like Style / Pairs → fresh board
+}
+// Tiles carry HTML (<u> target words, .mast-hl spans, pictures) — the voice and the lure
+// de-dupe need plain words.
+function _matchPlain(h){ return String(h||"").replace(/<[^>]*>/g," ").replace(/&nbsp;/g," ").replace(/\s+/g," ").trim(); }
+// What a flipped tile asks for. isPrompt = the word/picture tile; the other tile is its meaning/picture.
+//   say  — the spoken instruction; pick — the chip instruction; speak — what the app says after "I said it";
+//   chipOf — renders a card as a chip on the asked side (lures use the same renderer, so they look alike).
+function _matchAsk(st,t,it){
+  const word=c=>'<span style="font-size:15px;font-weight:800;color:#c2410c;pointer-events:none;word-break:break-word">'+(c.prompt||"")+'</span>';
+  if(st.pairMode==="same") return {say:"Say its name",pick:"Pick its name",speak:_matchPlain(it.prompt),chipOf:word};
+  if(!t.isPrompt) return {say:"Say the word",pick:"Pick the word",speak:_matchPlain(it.prompt),chipOf:word};
+  const pic=!!_smTileVis(it,true);
+  if(pic) return {say:"Read it out loud",pick:"Pick its picture",speak:_matchPlain(it.prompt),chipOf:c=>_matchPairHtml(c)};
+  const ans=_matchPlain(_matchPairHtml(it));
+  if(/^[-\d.,\s\/⁄․]+$/.test(ans)) return {say:"Say the answer",pick:"Pick the answer",speak:ans,chipOf:c=>_matchPairHtml(c)};   // a math fact: "answer", not "meaning"
+  return {say:"Say what it means",pick:"Pick what it means",speak:ans,chipOf:c=>_matchPairHtml(c)};
+}
+// Two believable wrong answers from the same deck. Numbers: the nearest values (the classic
+// near-miss). Anything else: random, never a duplicate of the right chip or of each other.
+function _matchLures(it,pool,chipOf,n){
+  n=n||2;
+  const mine=_matchPlain(chipOf(it)); const seen={}; seen[mine]=1;
+  const cands=[];
+  (pool||[]).forEach(c=>{ if(!c||c.id===it.id) return; const h=chipOf(c); const k=_matchPlain(h); if(!h||!k||seen[k]) return; seen[k]=1; cands.push({it:c,h:h,k:k}); });
+  const num=s=>{ const v=parseFloat(String(s).replace(/,/g,"")); return isNaN(v)?null:v; };
+  const mv=num(mine);
+  if(mv!=null&&cands.length&&cands.every(c=>num(c.k)!=null)) cands.sort((a,b)=>(Math.abs(num(a.k)-mv)-Math.abs(num(b.k)-mv))||(Math.random()-0.5));
+  else for(let i=cands.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=cands[i]; cands[i]=cands[j]; cands[j]=t; }
+  return cands.slice(0,n);
+}
+function _matchItem(pid){
+  let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  return items.find(x=>x&&x.id===pid)||null;
+}
+// The gate for one card: {pid,kind,ask,speak,chips?,picked,openedAt,clearup?,qhtml?}. A deck whose
+// other cards all share one meaning (rule decks) has no lure to offer → that card falls back to "say".
+function _matchGateBuild(st,t,it){
+  const a=_matchAsk(st,t,it);
+  const g={pid:it.id,kind:st.then,ask:st.then==="pick"?a.pick:a.say,speak:a.speak,picked:null,openedAt:Date.now()};
+  if(g.kind==="pick"){
+    let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+    const pool=items.filter(i=>i&&i.subject===st.deck&&(i.status==="active"||i.status==="introduction")&&_matchEligible(i));
+    const lures=_matchLures(it,pool,a.chipOf,2);
+    if(!lures.length){ g.kind="say"; g.ask=a.say; }
+    else {
+      const chips=[{pid:it.id,html:a.chipOf(it),ok:true}].concat(lures.map(l=>({pid:l.it.id,html:l.h,ok:false})));
+      for(let i=chips.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const c=chips[i]; chips[i]=chips[j]; chips[j]=c; }
+      g.chips=chips;
+    }
+  }
+  return g;
+}
+function _matchGateOpen(st,t){
+  const it=_matchItem(t.pid); if(!it) return;
+  st.asked[t.pid]=true;
+  st.gate=_matchGateBuild(st,t,it);
+}
+// "I said it" — the app answers AFTER the kid did, so the word is a check, not a hand-out.
+function mastMatchSaid(){
+  const st=matchState, g=st&&st.gate; if(!g||g.kind!=="say") return;
+  if(g.speak) try{ mastSpeak(g.speak); }catch(e){}
+  st.said=(st.said||0)+1;
+  _matchGateClose(st);
+}
+function mastMatchPick(ci){
+  const st=matchState, g=st&&st.gate; if(!g||g.kind!=="pick"||g.picked!=null) return;
+  const c=g.chips&&g.chips[ci]; if(!c) return;
+  g.picked=ci;
+  if(g.clearup){
+    // Clear-up round: a second miss just shows the answer; nothing is scored twice.
+    if(c.ok) matchDing(); else matchBonk();
+    _mastRe();
+    setTimeout(()=>{ if(matchState===st) _matchClearNext(st); },c.ok?500:1400);
+    return;
+  }
+  if(c.ok){ st.res[g.pid]="c"; matchDing(); }
+  else { st.res[g.pid]="m"; st.missed.push(g.pid); matchBonk(); }
+  _mastRe();
+  setTimeout(()=>_matchGateClose(st),c.ok?450:1400);
+}
+// The gate is untimed: its seconds come off the clock like a pause, so Pick it measures the hunt,
+// not the thinking.
+function _matchGateClose(st){
+  if(!st||!st.gate||st!==matchState) return;
+  if(st.startTs&&!st.endTs&&st.gate.openedAt) st.pausedTotal+=Date.now()-st.gate.openedAt;
+  st.gate=null; _mastRe();
+}
+function _matchBoardDone(st){
+  st.endTs=Date.now();   // the hunt is over — the clock stops here; the clear-up round is untimed
+  if(st.then==="pick"&&st.missed.length){ st.phase="clearup"; st.cq=st.missed.slice(); _matchClearNext(st); return; }
+  st.phase="done"; mastMatchFinish();
+}
+function _matchClearNext(st){
+  if(!st||st!==matchState) return;
+  const pid=st.cq.shift();
+  if(!pid){ st.gate=null; st.phase="done"; mastMatchFinish(); _mastRe(); return; }
+  const it=_matchItem(pid); if(!it){ _matchClearNext(st); return; }
+  const t=st.tiles.find(x=>x.pid===pid&&(st.pairMode==="same"||x.isPrompt))||{isPrompt:true};
+  const g=_matchGateBuild(st,t,it);
+  if(g.kind!=="pick"){ _matchClearNext(st); return; }   // no lures → nothing to re-ask on chips
+  g.clearup=true; g.qhtml=t.html||'<span style="font-size:22px;font-weight:800;color:#c2410c">'+(it.prompt||"")+'</span>';
+  st.gate=g; _mastRe();
+}
+// Two soft tones for Pick it — the app had no right/wrong sounds. Same unlocked context as the
+// chime: a context made outside a tap stays muted on iPad (the Math Sprint lesson, 2026-10-01).
+function _matchTone(freqs,dur,vol){
+  try{
+    if(!bbAlarmCtx||bbAlarmCtx.state==="closed") bbAlarmCtx=new (window.AudioContext||window.webkitAudioContext)();
+    const ctx=bbAlarmCtx;
+    if(ctx.state==="suspended"){ try{ ctx.resume().catch(function(){}); }catch(e){} }
+    freqs.forEach((f,i)=>{
+      const o=ctx.createOscillator(),g=ctx.createGain();
+      o.connect(g); g.connect(ctx.destination); o.type=i?"sine":"triangle"; o.frequency.value=f;
+      const t0=ctx.currentTime+i*dur*0.6;
+      g.gain.setValueAtTime(0.001,t0);
+      g.gain.exponentialRampToValueAtTime(vol,t0+0.02);
+      g.gain.exponentialRampToValueAtTime(0.001,t0+dur);
+      o.start(t0); o.stop(t0+dur+0.02);
+    });
+  }catch(e){}
+}
+function matchDing(){ _matchTone([784,1175],0.22,0.15); }
+function matchBonk(){ _matchTone([196,160],0.3,0.12); }
+function _matchGateHtml(st,color){
+  const g=st.gate; if(!g) return "";
+  let h='<div style="margin-top:10px;padding:12px;border-radius:14px;border:2px solid '+color+';background:#fff">';
+  if(g.clearup){
+    h+='<div style="font-size:11px;font-weight:800;color:var(--muted);margin-bottom:6px">\u{1F9F9} Clear-up \u{00B7} '+(st.cq.length+1)+' to go</div>';
+    h+='<div style="min-height:70px;display:flex;align-items:center;justify-content:center;text-align:center;margin-bottom:8px">'+g.qhtml+'</div>';
+  }
+  h+='<div style="font-size:13.5px;font-weight:800;color:#57534e;text-align:center;margin-bottom:8px">'+esc(g.ask)+(g.clearup?'':' \u{2014} then go find it')+'</div>';
+  if(g.kind==="say"){
+    h+='<div style="display:flex;justify-content:center"><button onclick="mastMatchSaid()" style="padding:12px 28px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F3A4} I said it</button></div>';
+  } else {
+    h+='<div style="display:grid;grid-template-columns:repeat('+Math.min(3,g.chips.length)+',1fr);gap:8px">';
+    g.chips.forEach((c,i)=>{
+      const done=g.picked!=null, mine=g.picked===i;
+      const bd=done?(c.ok?'#16a34a':(mine?'#dc2626':'#e2ddd6')):'#e2ddd6', bg=done?(c.ok?'#f0fdf4':(mine?'#fef2f2':'#fff')):'#fff';
+      h+='<div onclick="mastMatchPick('+i+')" style="min-height:56px;display:flex;align-items:center;justify-content:center;text-align:center;padding:6px;border-radius:12px;border:2.5px solid '+bd+';background:'+bg+';cursor:'+(done?'default':'pointer')+'">'+c.html+'</div>';
+    });
+    h+='</div>';
+  }
+  h+='</div>';
+  return h;
+}
+// MATCH_THEN_END
 function _matchPairHtml(it){
   const vis=_smTileVis(it,true);   // noGlyph: pair tile must not be the word itself
   if(vis) return vis;
@@ -52650,7 +52825,7 @@ function mastMatchStart(deck){
       tiles.push({pid:it.id,matched:false,miss:false,up:false,html:v});
       tiles.push({pid:it.id,matched:false,miss:false,up:false,html:v});
     } else {
-      tiles.push({pid:it.id,matched:false,miss:false,up:false,html:'<span style="font-size:'+((it.prompt||"").length<=4?26:15)+'px;font-weight:800;color:#c2410c;pointer-events:none;word-break:break-word">'+it.prompt+'</span>'});
+      tiles.push({pid:it.id,matched:false,miss:false,up:false,isPrompt:true,html:'<span style="font-size:'+((it.prompt||"").length<=4?26:15)+'px;font-weight:800;color:#c2410c;pointer-events:none;word-break:break-word">'+it.prompt+'</span>'});
       tiles.push({pid:it.id,matched:false,miss:false,up:false,html:_matchPairHtml(it)});
     }
   });
@@ -52658,7 +52833,9 @@ function mastMatchStart(deck){
   if(matchStyle==="match") tiles.forEach(t=>{ t.up=true; });   // face-up style: everything visible
   // ⏱ startTs stays null until the FIRST tap — studying the board is free; the clock
   // starts when the kid commits.
-  matchState={deck:deck,style:matchStyle,pairMode:matchPairMode,tiles:tiles,sel:-1,lock:false,startTs:null,endTs:null,pausedAt:null,pausedTotal:0};
+  // MATCH_THEN: the then-step is a Memory-flip thing (Face-up shows every answer already).
+  matchState={deck:deck,style:matchStyle,pairMode:matchPairMode,tiles:tiles,sel:-1,lock:false,startTs:null,endTs:null,pausedAt:null,pausedTotal:0,
+    then:(matchStyle==="memory"?mastMatchThen():"none"),asked:{},res:{},missed:[],gate:null,phase:"play",cq:[]};
   if(window._matchTick) clearInterval(window._matchTick);
   window._matchTick=setInterval(()=>{
     if(!matchState||matchState.endTs||mastView!=="match"){ clearInterval(window._matchTick); window._matchTick=null; return; }
@@ -52677,7 +52854,7 @@ function _matchElapsed(st){
 // ⏸ Pause: freezes the clock AND hides the board — otherwise a paused kid studies the
 // layout for free. Resume picks the clock up where it left off.
 function mastMatchPause(){
-  const st=matchState; if(!st||!st.startTs||st.endTs) return;
+  const st=matchState; if(!st||!st.startTs||st.endTs||st.gate) return;   // MATCH_THEN: the gate is already untimed
   if(st.pausedAt){ st.pausedTotal+=Date.now()-st.pausedAt; st.pausedAt=null; }
   else st.pausedAt=Date.now();
   _mastRe();
@@ -52692,20 +52869,22 @@ function _matchSpeakTile(t){
   if(it&&it.prompt) mastSpeak(String(it.prompt));
 }
 function mastMatchTap(ix){
-  const st=matchState; if(!st||st.lock||st.endTs||st.pausedAt) return;
+  const st=matchState; if(!st||st.lock||st.endTs||st.pausedAt||st.gate) return;   // MATCH_THEN: locked until the kid answers
   const t=st.tiles[ix]; if(!t||t.matched) return;
-  _matchSpeakTile(t);
-  if(!st.startTs) st.startTs=Date.now();   // clock starts on the first tap
+  // MATCH_THEN: the first flip of a turn is the question — the voice must not read it out before the kid does.
+  const quiz=st.style==="memory"&&!t.up&&st.sel<0&&st.then&&st.then!=="none"&&!st.asked[t.pid];
+  if(!quiz) _matchSpeakTile(t);
+  if(!st.startTs){ st.startTs=Date.now(); try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){} }   // clock starts on the first tap; the tap also unlocks the ding/bonk
   if(st.style==="memory"){
     if(t.up) return;
     t.up=true;
-    if(st.sel<0){ st.sel=ix; _mastRe(); return; }
+    if(st.sel<0){ st.sel=ix; if(quiz) _matchGateOpen(st,t); _mastRe(); return; }
     const a=st.tiles[st.sel];
     if(a.pid===t.pid){
       // Linger: the pair stays face-up (green) before vanishing, so the kid actually sees
       // what matched. Non-blocking — other cards stay tappable, so no clock penalty.
       a.matched=t.matched=true; a.linger=t.linger=true; st.sel=-1;
-      if(st.tiles.every(x=>x.matched)){ st.endTs=Date.now(); mastMatchFinish(); }
+      if(st.tiles.every(x=>x.matched)) _matchBoardDone(st);   // MATCH_THEN: misses get a clear-up round first
       _mastRe();
       setTimeout(()=>{ a.linger=t.linger=false; _mastRe(); },1500);
     } else {
@@ -52734,9 +52913,14 @@ function mastMatchFinish(){
   const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
   if(!s.match_best) s.match_best={};
   // Separate bests per game shape — a memory time and a face-up time aren't comparable.
-  const key=st.deck+(st.style==="memory"?" \u{00B7} memory":"")+(st.pairMode==="same"?" \u{00B7} same":"");
+  // MATCH_THEN: nor is a say-it / pick-it round against a plain one — its own key.
+  const key=st.deck+(st.style==="memory"?" \u{00B7} memory":"")+(st.pairMode==="same"?" \u{00B7} same":"")+(st.then==="pick"?" \u{00B7} pick":st.then==="say"?" \u{00B7} say":"");
+  st.ofN=Object.keys(st.res||{}).length; st.firstTry=Object.keys(st.res||{}).filter(k=>st.res[k]==="c").length;
   const prev=s.match_best[key];
-  st.isPB=(prev==null||sec<prev); st.prevBest=prev; st.sec=sec; st.bestKey=key;
+  st.isPB=st.then!=="say"&&(prev==null||sec<prev); st.prevBest=prev; st.sec=sec; st.bestKey=key;   // say-it has no clock to beat
+  // A clean sheet on Pick it (every card right first try) or a new best gets the confetti — the
+  // only practice mode that had none. No points, no song: a 30-second game, not a day done.
+  try{ if((st.then==="pick"&&st.ofN>0&&st.firstTry===st.ofN)||st.isPB){ if(typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F3AF} "+st.deck+" cleared!",{noSong:true}); } }catch(e){}
   if(st.isPB){
     s.match_best[key]=sec;
     if(db) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:sec});  // this key only
@@ -52843,7 +53027,8 @@ function mastTraceOpen(glyph){
 // goof-around rounds don't flood the Scores page; one tap documents the game.
 function mastMatchLogResult(){
   const st=matchState; if(!st||!st.endTs||st.logged) return;
-  const entry={date:new Date().toISOString().slice(0,10),deck:st.deck,style:st.style,pair:st.pairMode,sec:st.sec,isPB:!!st.isPB,ts:Date.now()};
+  const entry={date:new Date().toISOString().slice(0,10),deck:st.deck,style:st.style,pair:st.pairMode,sec:st.sec,isPB:!!st.isPB,ts:Date.now(),
+    then:st.then||"none",first:st.firstTry||0,of:st.ofN||0,missed:(st.missed||[]).slice()};   // MATCH_THEN: what was asked, what was missed
   if(!masteryData.matchLog) masteryData.matchLog={};
   if(!Array.isArray(masteryData.matchLog[masteryKid])) masteryData.matchLog[masteryKid]=Object.values(masteryData.matchLog[masteryKid]||{});
   masteryData.matchLog[masteryKid].push(entry);
@@ -52872,6 +53057,14 @@ function buildMatchHtml(color){
   h+=_tog(matchPairMode==="same","\u{1F46F} Same pair","mastMatchSetPair(\'same\')");
   h+='<span style="font-size:9.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-left:8px">Voice</span>';
   h+=_tog(mastDrillSettings().match_speak,"\u{1F5E3} Say the word","mastMatchToggleSpeak()");
+  if(matchStyle==="memory"){
+    // MATCH_THEN: what the first flip of a turn asks for. Per kid, persisted; age default until Mom picks.
+    const th=mastMatchThen();
+    h+='<span style="font-size:9.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-left:8px">Then</span>';
+    h+=_tog(th==="say","\u{1F3A4} Say it first","mastMatchSetThen(\'say\')");
+    h+=_tog(th==="pick","\u{1F3AF} Pick it first","mastMatchSetThen(\'pick\')");
+    h+=_tog(th==="none","\u{23ED} Just find pairs","mastMatchSetThen(\'none\')");
+  }
   h+='</div>';
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 12px">';
   decks.forEach(dk=>{
@@ -52889,15 +53082,18 @@ function buildMatchHtml(color){
     }
   }catch(e){}
   const st=matchState;
-  if(!st){ h+='<div style="font-size:12.5px;color:var(--muted)">Pick a deck \u{2014} '+(matchStyle==="memory"?'flip two cards, find the pairs, they disappear!':'match each word to its picture or meaning as fast as you can!')+' \u{23F1} The clock starts on your first tap.</div></div>'; return h; }
+  if(!st){
+    const _th=matchStyle==="memory"?mastMatchThen():"none";
+    h+='<div style="font-size:12.5px;color:var(--muted)">Pick a deck \u{2014} '+(matchStyle==="memory"?(_th==="say"?'flip a card, say it out loud, then find its pair!':_th==="pick"?'flip a card, pick its answer, then find its pair!':'flip two cards, find the pairs, they disappear!'):'match each word to its picture or meaning as fast as you can!')+(_th==="say"?'':' \u{23F1} The clock starts on your first tap.')+'</div></div>'; return h; }
   const s=masteryData[masteryKid+"_settings"]||{};
   const best=(s.match_best||{})[st.deck+(st.style==="memory"?" \u{00B7} memory":"")+(st.pairMode==="same"?" \u{00B7} same":"")];
   h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px">';
   h+='<span style="display:flex;align-items:center;gap:8px">';
-  h+='<span id="match-clock" style="font-family:\'DM Mono\',monospace;font-size:22px;font-weight:800;color:'+color+'">'+(_matchElapsed(st)/1000).toFixed(1)+'s</span>';
+  if(st.then==="say") h+='<span style="font-size:13px;font-weight:800;color:'+color+'">\u{1F3A4} Say it, then find it</span>';   // MATCH_THEN: no clock on a little kid's round
+  else h+='<span id="match-clock" style="font-family:\'DM Mono\',monospace;font-size:22px;font-weight:800;color:'+color+'">'+(_matchElapsed(st)/1000).toFixed(1)+'s</span>';
   if(st.startTs&&!st.endTs) h+='<button onclick="mastMatchPause()" title="'+(st.pausedAt?'Resume':'Pause')+'" style="width:34px;height:34px;border-radius:50%;border:1.5px solid '+color+';background:'+(st.pausedAt?color:'#fff')+';color:'+(st.pausedAt?'#fff':color)+';font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center">'+(st.pausedAt?'\u{25B6}':'\u{23F8}')+'</button>';
   h+='</span>';
-  h+='<span style="font-size:11px;color:var(--muted);font-weight:700">'+(best!=null?'\u{1F3C6} best '+best+'s':(st.startTs?'':'tap a card to start \u{23F1}'))+'</span>';
+  h+='<span style="font-size:11px;color:var(--muted);font-weight:700">'+(st.then==="say"?'':(best!=null?'\u{1F3C6} best '+best+'s':(st.startTs?'':'tap a card to start \u{23F1}')))+'</span>';
   h+='</div>';
   if(typeof deckInstrStripHtml==="function") h+=deckInstrStripHtml(masteryKid,st.deck);   // DECKINSTR: this round's deck
   if(st.pausedAt&&!st.endTs){
@@ -52907,6 +53103,8 @@ function buildMatchHtml(color){
     h+='<div style="font-size:13px;font-weight:800;color:var(--muted)">Paused \u{2014} the cards are hiding</div>';
     h+='<button onclick="mastMatchPause()" style="padding:9px 24px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{25B6} Resume</button>';
     h+='</div>';
+  } else if(st.phase==="clearup"&&st.gate){
+    h+=_matchGateHtml(st,color);   // MATCH_THEN: the board is empty — the missed cards come back one at a time
   } else {
   h+='<div style="display:grid;grid-template-columns:repeat('+(st.tiles.length>=12?4:3)+',1fr);gap:8px">';
   st.tiles.forEach((t,ix)=>{
@@ -52923,10 +53121,14 @@ function buildMatchHtml(color){
     }
   });
   h+='</div>';
+  if(st.gate&&!st.endTs) h+=_matchGateHtml(st,color);   // MATCH_THEN: say it / pick it before the hunt goes on
   }
-  if(st.endTs){
+  if(st.endTs&&st.phase!=="clearup"){
     h+='<div style="margin-top:14px;text-align:center;padding:14px;border-radius:14px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
-    h+='<div style="font-family:\'Fraunces\',serif;font-size:19px;font-weight:800">'+(st.isPB?'\u{1F3C6} New best \u{2014} '+st.sec+'s!':'\u{2713} '+st.sec+'s'+(st.prevBest!=null?' \u{00B7} best '+st.prevBest+'s':''))+'</div>';
+    // MATCH_THEN: Pick it leads with first-try right (the retrieval), the clock second; Say it has no clock line.
+    if(st.then==="pick") h+='<div style="font-family:\'Fraunces\',serif;font-size:19px;font-weight:800">\u{1F3AF} '+st.firstTry+' of '+st.ofN+' right first try</div><div style="font-size:13px;font-weight:800;color:#57534e;margin-top:4px">'+(st.isPB?'\u{1F3C6} New best \u{2014} '+st.sec+'s!':st.sec+'s'+(st.prevBest!=null?' \u{00B7} best '+st.prevBest+'s':''))+'</div>';
+    else if(st.then==="say") h+='<div style="font-family:\'Fraunces\',serif;font-size:19px;font-weight:800">\u{2713} All '+(st.tiles.length/2)+' pairs found \u{2014} and said!</div>';
+    else h+='<div style="font-family:\'Fraunces\',serif;font-size:19px;font-weight:800">'+(st.isPB?'\u{1F3C6} New best \u{2014} '+st.sec+'s!':'\u{2713} '+st.sec+'s'+(st.prevBest!=null?' \u{00B7} best '+st.prevBest+'s':''))+'</div>';
     h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:10px;flex-wrap:wrap">';
     h+='<button onclick="mastMatchStart(\''+st.deck.replace(/'/g,"\\'")+'\')" style="padding:9px 22px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F501} Play again</button>';
     h+=st.logged
