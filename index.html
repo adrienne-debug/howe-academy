@@ -2231,7 +2231,7 @@ function _rtSwTodayLay(){
     return _rtSwLay;
   }catch(e){ return null; }
 }
-function rtSchoolworkDone(kid,d,skipFam){ const _lay=(d===_todayDay)?_rtSwTodayLay():null; const ts=(_lay||getActiveTasks()).filter(t=>t.who===kid&&effectiveDay(t)===d&&!t.id.endsWith("_c")&&!t._eowOverflow&&!(skipFam&&t.famBlock&&typeof famCelebOf==="function"&&famCelebOf(famDefs()[t.famBlock]))&&!(typeof famIsAbsent==="function"&&famIsAbsent(t))&&!/lunch/i.test(t.title)&&!(t.famBlock&&typeof famBoState==="function"&&famBoState(t))&&!((t._offDay||t._dayDrop)&&!checked[t.id])); return ts.length===0?true:ts.every(t=>!!checked[t.id]||!!(typeof claimed!=="undefined"&&claimed&&claimed[t.id])); }
+function rtSchoolworkDone(kid,d,skipFam){ const _lay=(d===_todayDay)?_rtSwTodayLay():null; const ts=(_lay||getActiveTasks()).filter(t=>t.who===kid&&effectiveDay(t)===d&&!t.id.endsWith("_c")&&!t._eowOverflow&&!((typeof mntWaived==="function"&&mntWaived(t))&&!checked[t.id])&&!(skipFam&&t.famBlock&&typeof famCelebOf==="function"&&famCelebOf(famDefs()[t.famBlock]))&&!(typeof famIsAbsent==="function"&&famIsAbsent(t))&&!/lunch/i.test(t.title)&&!(t.famBlock&&typeof famBoState==="function"&&famBoState(t))&&!((t._offDay||t._dayDrop)&&!checked[t.id])); return ts.length===0?true:ts.every(t=>!!checked[t.id]||!!(typeof claimed!=="undefined"&&claimed&&claimed[t.id])); }
 // Afternoon (2026-08-18, her rule): opens when schoolwork is done — or at the afternoon hour (default
 // 4:00 PM) regardless, so a slow school day never holds the chores hostage. Past days: always open.
 function rtAfternoonHour(){ const h=parseInt(routineTimes&&routineTimes.afternoonHour,10); return isNaN(h)?16:h; }
@@ -5458,7 +5458,7 @@ function showPaceToast(taskId, doneMinOverride, opts){
   const _dayOf=x=>(momMoves[x.id]?effectiveDay(x):(displacedResult?x.day:effectiveDay(x)));
   const taskDay=momMoves[taskId]?effectiveDay(t):(dt?dt.day:effectiveDay(t));
   const kidDaySource=dsRetime(displacedResult?displacedResult.tasks:weekData.tasks);
-  const kidDayTasks=kidDaySource.filter(x=>x.who===t.who && _dayOf(x)===taskDay && !x.title.toLowerCase().includes("lunch") && !_dismissed(x));
+  const kidDayTasks=kidDaySource.filter(x=>x.who===t.who && _dayOf(x)===taskDay && !x.title.toLowerCase().includes("lunch") && !_dismissed(x) && !(typeof mntWaived==="function"&&mntWaived(x)));   // MOMNOTTODAY: a waived daily doesn't hold the day
   const kidDayDone=kidDayTasks.filter(x=>!!checked[x.id]||(_asClaim&&!!claimed[x.id])).length;
   const isLastTask=kidDayDone===kidDayTasks.length;
 
@@ -10524,6 +10524,7 @@ function taskCard(t, fromDay, readOnly, doneId){
   // a silently-vanished subject is how you lose track of what didn't get taught. Mom (and only
   // Mom) can still tap it to undo. Takes precedence over `missed`: why it's not happening is
   // more useful than the fact that its day has passed.
+  { const _mnt=(typeof mntCardHTML==="function")?mntCardHTML(t,srcId,done,claimedHere,readOnly,klbl,mb,cleanDetail):""; if(_mnt) return _mnt; }   // MOMNOTTODAY: Mom's ✗ waived it for the day
   if(_dis){
     const _forGood=_pf.mode==="drop";
     const _dlbl=_forGood?"Skipped for good":"Dismissed";
@@ -10553,7 +10554,7 @@ function taskCard(t, fromDay, readOnly, doneId){
     '<div class="task-cb'+(done?" checked":"")+(readOnly?" readonly":"")+'"'+(claimedHere?' style="border-color:#f59e0b;color:#f59e0b;background:#fffbeb"':'')+(readOnly?"":' onclick="'+((typeof dadTapView!=="undefined"&&dadTapView)?'dadTap':'tapTask')+'(\''+t.id+'\')"')+'>'+(done?"✓":claimedHere?"⏳":"")+'</div>'+
     '<div class="card-body">'+
     '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
-    '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+pushLabel+(_eicL?eicCardTitle(t):taskTitleShow(t))+'</div>'+mb+'</div>'+
+    '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+pushLabel+(_eicL?eicCardTitle(t):taskTitleShow(t))+'</div>'+mb+((typeof mntXHTML==="function"&&mntXHTML(t,done,claimedHere,readOnly,!!mb))||"")+'</div>'+   // MOMNOTTODAY: Mom's ✗
     '<div class="task-detail">'+cleanDetail+'</div>'+famRow+dr+spinBtn+classRow+linkRow+wbRow+eicRow+rvRow+msRow+llRow+stRow+prRow+nbAnsRow+nbRedoRow+mpdRow+_lr.menu+_lr.kids+((typeof mmCardRow==="function"&&mmCardRow(t,done,claimedHere,readOnly))||"")+   // ⏱ MINMINUTES
     '</div></div></div>';
 }
@@ -25473,7 +25474,7 @@ function _carryBlocked(t,doneKeys){
   // Dismissed for good: the generator's cursor has already been moved past this lesson, so a
   // carry-over mirror would drag back the one lesson Mom said to stop teaching. "Skip for now"
   // is deliberately NOT blocked — it's meant to come back.
-  { const _m=momMoves[t.id]||momMoves[baseId(t.id||"")]; if(_m&&_m.mode==="drop") return true; }
+  { const _m=momMoves[t.id]||momMoves[baseId(t.id||"")]; if(_m&&(_m.mode==="drop"||_m.mode==="waive")) return true; }   // MOMNOTTODAY: a waived daily was for its day only
   const ck=(t.who||"")+"|"+(t.subjectKey||"")+"|"+(t.title||"");
   return !!(doneKeys&&doneKeys.has(ck));
 }
@@ -37293,6 +37294,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
     // until the landing day arrives, after which normal rules resume.
     if(_dismissed(t)) return;
     if(t._dayDrop) return;   // DAYDROP (2026-10-08): a daily dropped for its day stays there — day-bound, never carried
+    if(typeof mntWaived==="function"&&mntWaived(t)) return;   // MOMNOTTODAY: a waived daily stays on its day
     if(momMoves[t.id]&&momMoves[t.id].mode==="push"&&dayOrder.indexOf(momMoves[t.id].toDay)>todayIdx) return;
     if(subjNoCarry(t)){ // day-bound (notebooks, reflex, card noCarry): a missed day is just missed
       // Snap-back self-heal: a pre-guard sweep (or a flag clicked after one) left this
@@ -49185,6 +49187,120 @@ function undoMomMove(id){
   dbg("undo mom move id="+id);
   closeDlg(); schedCascade(); renderAll();
 }
+// MOMNOTTODAY_START — ✗ Not today on a subject card (Mom-only; her ask 2026-10-23: "the same small ✗ the routine items have,
+// on my view of a kid's subject cards — one tap, no dialog"). An OVERRIDE layer on momMoves; t.day is never rewritten and no
+// lay, pack, re-lay or sweep code changes. Shown only to Mom (momHereCards), on today's open card (unchecked, not sent to Mom,
+// not a carry mirror, not Family Time, not already moved). Kids never see the ✗.
+//  · A LESSON card (a lesson id / a place in the subject's sequence) → the dialog's own "➡️ Push to <Day>" with the day
+//    chosen for her: the dialog's next-school-day walk (_nextSchoolDay: kid-off days, holidays, co-op), then the first of
+//    those days the subject may land on this week (allowedDays / noCoopDays through subjDaysFor — a co-op week and a
+//    week with no co-op differ). No pattern day left this week → the dialog's own answer (its next school day), so the ✗
+//    is never worse than the button. Record: the SAME push record the dialog writes ({mode:"push", toDay, fromDays:[today],
+//    ts}) — the lesson keeps its place in the sequence, nothing is consumed, and the push rolls it forward again if that
+//    day passes unfinished. Undo = the dialog's own ↩ Un-push (undoMomMove).
+//  · A DAILY card (no lesson number: tracking "daily", notebooks, Reflex, retrieval, a class) → WAIVED for the day:
+//    momMoves/<id> = {mode:"waive", ts}. No points, no spin, no history, no curriculum/done. The card stays on its day,
+//    greyed: Mom sees "✗ not today · undo", the kid sees "Mom said not today" with no checkbox. The day-done gate
+//    (rtSchoolworkDone, and the last-card check that fires the celebration) treats it like an open `_offDay` card — it does
+//    not hold the day open — so the celebration, afternoon chores and the day-done claim fire as if it were done. Day-bound:
+//    effectiveDay never rolls it forward, the 8 PM sweep leaves it, it never carries to next week; tomorrow's copy is normal.
+// Writes (only when db && !_dryRun()): <WK>/momMoves/<id> set (push or waive) · <WK>/momMoves/<id> remove (undo a waive).
+function mntWaived(t){ const m=(t&&typeof momMoves!=="undefined"&&momMoves)?momMoves[t.id]:null; return !!(m&&m.mode==="waive"); }
+// Has this card a lesson? Daily-tracked subjects never; a stamped lesson id or a place in the sequence always; then the
+// day-bound kinds (subjNoCarry) are dailies; a subject that carries a sequence deals lessons; last resort, a number in the ref.
+function mntIsLesson(t){
+  try{
+    const s=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[t.who]||{})[t.subjectKey]||{};
+    if(s.tracking==="daily") return false;
+    if(t.lid) return true;
+    if(typeof _lessonPos==="function"&&_lessonPos(t)>=0) return true;
+    if(typeof subjNoCarry==="function"&&subjNoCarry(t)) return false;
+    if((s.lessonIds||[]).length||(s.lessonSeq||[]).length) return true;
+    const ref=(typeof taskLessonRef==="function")?taskLessonRef(t):""; return /\d/.test(ref||"");
+  }catch(e){ return false; }
+}
+// The dialog's day, then the subject's own days this week. null = no school day left this week (the dialog hides its button).
+function mntNextDay(t,from){
+  const first=_nextSchoolDay(t.who,from); if(!first) return null;
+  let s=null; try{ s=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[t.who]||{})[t.subjectKey]||null; }catch(e){ s=null; }
+  if(!s||!Array.isArray(s.allowedDays)||!s.allowedDays.length||typeof subjDaysFor!=="function") return first;
+  const AB={monday:"Mon",tuesday:"Tue",wednesday:"Wed",thursday:"Thu",friday:"Fri",saturday:"Sat"};
+  let dn=first, g=0;
+  while(dn&&g++<7){
+    let days=[]; try{ days=subjDaysFor(t.who,s,_pushDateStr(dn))||[]; }catch(e){ days=[]; }
+    if(!days.length||days.indexOf(AB[dn])>=0) return dn;
+    dn=_nextSchoolDay(t.who,dn);
+  }
+  return first;
+}
+function _mntSave(id,rec){
+  momMoves[id]=rec; sv(WK+"_momMoves",momMoves);
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref(WK+"/momMoves/"+id).set(rec);   // targeted per-id, like _saveMomMove
+}
+function _mntRedraw(){
+  const el=(typeof document!=="undefined")?document.getElementById("content"):null;
+  if(typeof tab!=="undefined"&&tab==="moms-plan"&&el&&typeof renderMomsPlan==="function") renderMomsPlan(el); else if(typeof renderAll==="function") renderAll();
+}
+// May the ✗ draw on this card? Mom's view, today's card, open, not a mirror / Family Time / overflow, not already moved.
+function mntCanX(t,done,claimedHere,readOnly){
+  if(readOnly||done||claimedHere||!t||!momHereCards()) return false;
+  if(String(t.id||"").endsWith("_c")||t.famBlock||t._eowOverflow) return false;
+  if(typeof dadTapView!=="undefined"&&dadTapView) return false;
+  if(typeof momMoves!=="undefined"&&momMoves&&momMoves[t.id]) return false;
+  return typeof _todayDay==="string"&&effectiveDay(t)===_todayDay;
+}
+function mntXHTML(t,done,claimedHere,readOnly,hasBadge){
+  if(!mntCanX(t,done,claimedHere,readOnly)) return "";
+  return '<span class="mnt-x" onclick="event.stopPropagation();momNotToday(\''+t.id+'\')" title="Not today" style="margin-left:'+(hasBadge?'4px':'auto')+';flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:7px;border:1.5px solid #d1d5db;background:#fff;color:#6b7280;font-size:12px;font-weight:800;cursor:pointer;line-height:1">&#10007;</span>';
+}
+// The greyed card a waived daily draws (both views). "" = not waived → the normal card.
+function mntCardHTML(t,srcId,done,claimedHere,readOnly,klbl,mb,cleanDetail){
+  if(done||claimedHere||readOnly||!mntWaived(t)) return "";
+  const mom=momHereCards();
+  const lbl=mom?'&#10007; not today':'Mom said not today';
+  const ttl=mom?'Mom said not today — the day can finish without it. Undo puts it back.':'Mom said not today — you don’t need to do this one.';
+  const undo=mom?' <span onclick="event.stopPropagation();momNotTodayUndo(\''+t.id+'\')" title="Put it back on today" style="display:inline-block;font-size:10px;font-weight:700;color:#2B7A78;background:#fff;border:1px solid #2B7A78;padding:1px 7px;border-radius:8px;margin-bottom:4px;cursor:pointer">undo</span>':'';
+  return '<div class="task-card mnt-waived" style="opacity:0.6;border-left:3px solid #cbd5e1;background:#f9fafb">'+
+    '<div class="card-inner">'+
+    '<div class="card-body">'+
+    '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
+    '<div class="task-title" style="color:#6b7280"><div style="font-size:10px;font-weight:700;color:#4b5563;background:#e5e7eb;display:inline-block;padding:1px 7px;border-radius:8px;margin-bottom:4px" title="'+ttl+'">'+lbl+'</div>'+undo+'<br>'+((typeof taskTitleShow==="function")?taskTitleShow(t):t.title)+'</div>'+mb+'</div>'+
+    '<div class="task-detail" style="color:#9ca3af">'+cleanDetail+'</div>'+
+    '</div></div></div>';
+}
+// The tap. Lesson → the dialog's push with the day chosen; daily → waived for the day.
+function momNotToday(id){
+  if(!momHere()) return;
+  const t=((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]).find(x=>x&&x.id===id); if(!t) return;
+  if(String(t.id).endsWith("_c")||t.famBlock||t._eowOverflow) return;
+  if(checked[id]||(typeof claimed!=="undefined"&&claimed&&claimed[id])||momMoves[id]) return;
+  const from=effectiveDay(t);
+  if(mntIsLesson(t)){
+    const to=mntNextDay(t,from);
+    if(!to){ if(typeof gwShowToast==="function") gwShowToast("No school day left this week — it'll carry over."); return; }
+    _mntSave(id,{mode:"push",toDay:to,fromDays:[from],ts:nowTs()});   // the dialog's own record (pushTaskForward's first hop)
+    dbg("✗ not today (lesson) id="+id+" "+from+" → "+to);
+    if(typeof schedCascade==="function") schedCascade(); _mntRedraw();
+    if(typeof gwShowToast==="function") gwShowToast("Moved to "+cap(to)+" ✓");
+    return;
+  }
+  _mntSave(id,{mode:"waive",ts:nowTs()});
+  dbg("✗ not today (daily) id="+id+" waived on "+from);
+  _mntRedraw();
+  // the day may be finished now — the same celebration a last check-off fires (fire-once inside)
+  try{ if(typeof _todayDay==="string"&&from===_todayDay&&typeof rtSchoolworkDone==="function"&&rtSchoolworkDone(t.who,_todayDay)) setTimeout(function(){ try{ celebrateDayComplete(t.who,_todayDay); }catch(e){} },600); }catch(e){}
+  if(typeof gwShowToast==="function") gwShowToast("Not today ✓");
+}
+// Undo a waive: the record goes, the card is exactly as it was. (A pushed lesson undoes through the dialog's ↩ Un-push.)
+function momNotTodayUndo(id){
+  if(!momHere()) return;
+  const rec=momMoves[id]; if(!rec||rec.mode!=="waive") return;
+  delete momMoves[id]; sv(WK+"_momMoves",momMoves);
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref(WK+"/momMoves/"+id).remove();
+  dbg("undo ✗ not today id="+id);
+  _mntRedraw();
+}
+// MOMNOTTODAY_END
 // MOVETODAY_START — 📅 MOVETODAY (Mom-only; Sara's ask, her pick (b) 2026-10-08). Mom taps an open lesson card that sits on a
 // LATER day this week:
 //  · DURING SCHOOL (now is before today's Settings school end) → "📅 Move to today": the card comes to today, right after
@@ -50697,6 +50813,7 @@ function effectiveDay(t){
   // "Dismissed" — rolling it forward would put it back in tomorrow's work, which is the exact
   // opposite of dismissing it.
   if(_mv&&(_mv.mode==="skip"||_mv.mode==="drop")) return _mv.fromDays[0];
+  if(_mv&&_mv.mode==="waive") return t.day;   // MOMNOTTODAY: waived for its day — day-bound, never rolls forward
   // Pushed: the landing day IS its day from here on, and every rule below applies from there —
   // so a pushed task behaves exactly like one always scheduled for the landing day (it rolls
   // forward again if that day passes unfinished). The push deliberately outranks the day-bound
