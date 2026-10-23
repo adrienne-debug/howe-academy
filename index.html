@@ -17778,6 +17778,7 @@ function kitSidesEditHTML(iso){
   return h;
 }
 function kitSideSave(iso,list){   // ONE targeted write: the list, or (list emptied) null for both the list and the old text
+  if(typeof grSyncWatch==="function") grSyncWatch();   // GROSYNC: a side added / removed feeds or pulls from the list
   const cur=Object.assign({},kitPlan[iso]||{});
   if(list.length) cur.sideList=list; else { delete cur.sideList; delete cur.sides; }
   kitPlan[iso]=cur;
@@ -17867,6 +17868,7 @@ function kitMarkPrep(iso,key){
 // ── week-grid plan writes ──────────────────────────────────────────
 function kitAssign(iso,val){ // val = {mid} | {txt} | null (clear the day)
   // Dinner changes keep the day's b/l/s slots; clearing drops the whole day.
+  if(typeof grSyncWatch==="function") grSyncWatch();   // GROSYNC: the grocery list hears a dinner come off / go on the plan (her decisions 2026-10-23)
   if(val){
     const cur=Object.assign({},kitPlan[iso]);
     delete cur.mid; delete cur.txt; delete cur.sides; delete cur.sideList;   // a different dinner doesn't inherit the old sides (KITSIDES: nor the list)
@@ -18485,13 +18487,13 @@ function grNearSame(){
   const it=grMergeQty(cur,P.p);
   const src=(it.src||[]).slice(); if(P.src&&!src.some(s=>s.k===P.src.k&&s.who===P.src.who&&s.lbl===P.src.lbl)) src.push(P.src); it.src=src;
   if(it.done){ delete it.done; delete it.doneTs; }   /* asked for more → back on the to-get list */
-  grPut(id,it); mwToast("🛒 "+it.name+" · "+grQtyTxt(it)); grRepaint(); grNearEnd();
+  grPut(id,it); if(P.row&&typeof grSyncRec==="function") grSyncRec(id,P.row); mwToast("🛒 "+it.name+" · "+grQtyTxt(it)); grRepaint(); grNearEnd();   /* GROSYNC: a combined import row keeps its meal srcs */
 }
-function grNearBoth(){ const P=_grNearPend; if(!P) return grPopClose(); grCreate(P.p,P.src,P.stores); mwToast("🛒 Added "+P.p.name); grRepaint(); grNearEnd(); }
+function grNearBoth(){ const P=_grNearPend; if(!P) return grPopClose(); const nid=grCreate(P.p,P.src,P.stores); if(P.row&&typeof grSyncRec==="function") grSyncRec(nid,P.row); mwToast("🛒 Added "+P.p.name); grRepaint(); grNearEnd(); }   /* GROSYNC */
 function grNearSkip(){ const P=_grNearPend; if(!P) return grPopClose(); mwToast("👍 Left it as is"); grNearEnd(); }
 // imports: the rows that look like something already there wait their turn, one question each
 function grNearQueue(list){ (list||[]).forEach(x=>_grNearQ.push(x)); if(!_grNearPend) grNearNext(); }
-function grNearNext(){ const x=_grNearQ.shift(); if(!x) return; grAskNear(x.near,x.p,x.src,x.stores,null); }
+function grNearNext(){ const x=_grNearQ.shift(); if(!x) return; grAskNear(x.near,x.p,x.src,x.stores,null); if(x.row&&_grNearPend) _grNearPend.row=x.row; }   /* GROSYNC: an import row's meal srcs follow it through the question */
 // GR_NEARDUP_END
 function grSave(){ try{
   const strip=o=>{ const r={}; Object.keys(o||{}).forEach(k=>{ const v=o[k]; if(v&&v.photo){ const c=Object.assign({},v); delete c.photo; r[k]=c; } else r[k]=v; }); return r; };
@@ -19090,9 +19092,9 @@ function grImpAdd(){
       const dup=grFindDup(r.p.name);
       if(dup&&dup.kind==="item"){   // already on the list → add the amount, keep both sources (no pop-up per row)
         const it=grMergeQty(dup.it,r.p); const ss=(it.src||[]).slice(); if(!ss.some(s=>s.k==="meal"&&s.lbl===src.lbl)) ss.push(src); it.src=ss;
-        if(it.done){ delete it.done; delete it.doneTs; } grPut(dup.id,it); merged++;
-      } else { const near=grNearDup(r.p.name); if(near){ nearQ.push({near:near,p:r.p,src:src,stores:null}); return; }   /* GR_NEARDUP: ask after */
-        grCreate(r.p,src,null); added++; }
+        if(it.done){ delete it.done; delete it.doneTs; } grPut(dup.id,it); merged++; if(typeof grSyncRec==="function") grSyncRec(dup.id,r);   /* GROSYNC: the meal's amount on the item */
+      } else { const near=grNearDup(r.p.name); if(near){ nearQ.push({near:near,p:r.p,src:src,stores:null,row:r}); return; }   /* GR_NEARDUP: ask after · GROSYNC: the row rides along for its srcs */
+        const nid=grCreate(r.p,src,null); added++; if(typeof grSyncRec==="function") grSyncRec(nid,r); }   /* GROSYNC */
     });
     _grImp=null; grPopClose(); mwToast("🛒 "+added+" added"+(merged?" · "+merged+" already on the list, amounts added":"")+(nearQ.length?" · "+nearQ.length+" to look at":"")); grRepaint();
     if(nearQ.length) grNearQueue(nearQ);
@@ -19133,7 +19135,8 @@ function grWeekSources(fromIso,days){
 }
 function grFromWeek(){
   const src=grWeekSources(_todayStr(),7);
-  grImpOpen("Shop for this week's meals",grIngRows(src),"Nothing planned with a recipe in the next 7 days — plan dinners on 🍽 Meals",true);
+  const rows=grIngRows(src); if(typeof grSyncRows==="function") grSyncRows(rows,_todayStr(),7);   // GROSYNC: each row remembers which planned meal asked for how much
+  grImpOpen("Shop for this week's meals",rows,"Nothing planned with a recipe in the next 7 days — plan dinners on 🍽 Meals",true);
 }
 // 🥫 a pantry chip / 📝 a Mom's Day to-do → the list (Mom's, like the Mom's Day box)
 function grMomAdd(text,src,after){
@@ -19773,6 +19776,7 @@ function grSetQty(id,q,unit){
   q=Math.max(1,Math.round(q*100)/100); it.qty=q; if(unit!==undefined){ if(unit) it.unit=unit; else delete it.unit; }
   grSave();
   if(typeof db!=='undefined'&&db){ const up={qty:q}; if(unit!==undefined) up.unit=unit||null; db.ref('kitchen/grocery/items/'+id).update(up); }
+  if(typeof grSyncManual==="function") grSyncManual(id);   // GROSYNC: the part no meal asked for stays hers
   grRepaint();
 }
 function grStep(id,d){ grQtyGate(function(){ const it=grData.items[id]; if(!it) return; grSetQty(id,(it.qty>0?it.qty:1)+d); }); }
@@ -20433,6 +20437,306 @@ function grPutAlertHTML(){
   return {n:1,html:'<div onclick="grPutOpen()" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:7px 10px;background:#f0fdf4;border-left:3px solid #16a34a;border-radius:8px;margin-bottom:6px"><span style="font-size:13px">🧺 <b>'+n+' thing'+(n===1?'':'s')+'</b> to put away — tap when you\'re unloading</span></div>'};
 }
 // GROCERY_LIST_END
+// GROSYNC_START — the grocery list follows meal changes (Adrienne's decisions 2026-10-23, final; Sara Dewalt shops from it daily too).
+//   Until now 🛒 Shop for the week put a meal's ingredients on the list and nothing ever took them off again: a dinner swapped
+//   or marked "didn't happen" left its 2 lb of beef on the list, and a meal added after shopping had to be shopped by hand.
+//   Her rules: (a) when a meal that already fed the list comes off the plan, ASK "pull these from the list?" and remove ONLY that
+//   recipe's amounts (a shared ingredient shrinks); (b) when a meal is added to a week whose list exists, ASK "add this meal's
+//   items?" showing what she already has; (c) the app never removes a list item by itself; (d) rotation ▶ Run with days she
+//   planned by hand in range asks EVERY time, three plain choices, nothing remembered; (e) the snack row shows on every day in
+//   Mom mode with the same picker; (f) ✕ Clear in the dinner picker clears only the dinner.
+//   1. SOURCES ON ITEMS. kitchen/grocery/items/{id}/srcs/{iso}_{slot}_{mid} = {qty, unit?, meal, day} — one per contributing
+//      planned meal (slot d = the dinner, sd = a side, b/l/s = a breakfast / lunch / snack or one of its parts; a plain-text side
+//      or part keys as t<slug>). Written when Shop for the week or the add sheet puts a row on the list (grSyncRec, after the
+//      list's own merge — a new item, a merged duplicate, a near-duplicate she combined). items/{id}/manual = the amount that is
+//      NOT from meals (what she typed, or what the item already held when its first meal joined) — so qty = manual + the sum of
+//      its srcs; grSetQty keeps manual true when she retypes the amount. An item with no srcs is untouched by all of this.
+//   2. THE RECONCILE. Every plan-change hook calls grSyncWatch() FIRST: it snapshots the meals the next 14 days feed the list
+//      with (the very view grWeekSources shops: kitPlanRec, kitOutStrip, no eaten / didn't-happen dinner) and runs
+//      grSyncReconcile on the next microtask, after the change has landed. Hooks (one line each): kitAssign (the week list,
+//      ✎ Change, 🗓 Plan it), kitSideSave, kitSlotsSet, kitSlotText, kitMarkSkipped, kitMoveForward, kitOutToggle, kitRotDaySet
+//      (This month), kitRotRun (before the run's write; kitRotAutoStart is NOT hooked — the queued→running hand-off writes
+//      days the list already counted as "coming", nothing changed for the shopper). The diff: a meal gone from a day and the
+//      same meal (slot + recipe) arrived on another day inside the window = a MOVE — its srcs keys move (targeted), nothing
+//      asked. What is left: gone meals with srcs on the list → the pull sheet; arrived meals with ingredients → the add sheet,
+//      only when the list already holds something a meal put there (srcs, or an old meal chip). Pull first, then add.
+//   3. THE PULL SHEET. "<Meal> (Tue) came off the plan. Pull its items from the list?" — each item with its "−qty" and the
+//      result ("2 lb → 1 lb", "1 → 0 · off the list"); ticked by default; an item already in the cart starts unticked and says
+//      "already bought". Pull = targeted writes: items/{id}/srcs/{key} = null, items/{id}/qty, items/{id}/extra when a
+//      mismatched-unit piece leaves; an item nothing else needs is removed (items/{id}, cleared/{id} so ↩ Put back works).
+//      Keep = nothing written. The result is manual + what the other meals still need while the bookkeeping adds up; else the
+//      item's amount minus this meal's, never below nothing while another meal still needs it.
+//   4. THE ADD SHEET. "Add <Meal> (Thu)'s items?" — every ingredient line with a state chip: "on the list (have 2 lb, +1 lb)"
+//      (ticked), "in the pantry ✓" / "have it ✓" (unticked), "🧂 basic" (unticked, as Shop for the week does), "new" (ticked).
+//      Add = the SAME path as Shop for the week (grImpAdd: merge into the duplicate, near-duplicates asked, else a new item),
+//      with the srcs recorded.
+//   5. ▶ RUN WITH HAND-PLANNED DAYS. kitRotRun hands the kept days here instead of the old "kept unless overwrite is ticked"
+//      (the checkbox is gone). One sheet lists the days and what she planned on them, three choices, asked every time, nothing
+//      remembered: Keep my day and drop that meal (today's keep) · Keep my day and slide the rotation around it
+//      (grSyncRotSlidePlan: every later rotation meal OF THAT KIND moves one day later, chaining through the following weeks
+//      like kitMoveForward — the weekday pattern stays shifted; a slid day's stamp is {id, wk, dow, slid:true} and
+//      kitRotRunPlan counts a slid stamp as the rotation's own, so the auto-start never snaps it back) · Replace my day
+//      (today's overwrite). The cut-off stays a hard stop: meals a slide pushes past it are left off and the sheet names them
+//      ("<Meal> won't fit before <cut-off> and will be left off"). The choice then runs kitRotRun(id,{choice}) — no second confirm.
+//   6. SNACK ON EVERY DAY. _calSlotRows shows Mom a Snack row on every day (it showed only when planned): the one slot,
+//      ✎ opens the same library picker the Breakfast / Lunch parts use (kitRotPick kind "p", slot "s"; picking / typing /
+//      ✕ Clear = ONE targeted update kitchen/plan/{iso} {s}), ➡ Move and 🍽 Eating out when something is planned.
+//   7. ✕ CLEAR ON THE DINNER ROW. kitDinPickSet(P,null) comes here: ONE targeted update kitchen/plan/{iso}
+//      {mid,txt,sides,sideList: null} — breakfast, lunch and snack stay. The day's fromRot stamp is KEPT on purpose (KITROT2's
+//      rule: a cleared rotation day is not refilled by the running rotation — without the stamp kitRotAutoStart would put the
+//      dinner back at the next load). The Meals page week-list ✕ Clear (kitAssign(iso,null)) is unchanged.
+//   Kid screens are untouched (every hook and row asks kitEatGate / momHere). ?dryrun=1: the sheets show, nothing is written
+//   (grSyncDb). grWeekNeeds is unchanged. No auto-removal anywhere.
+const GR_SYNC_DAYS=14;
+let _grSyncPend=null;   // the snapshot a hook took; grSyncReconcile runs on the next microtask (grSyncReconcile() by hand = now)
+let _grSyncAsk=null;    // the open sheet: {kind:"pull",rows,then} | {kind:"run",id,from,to}
+function grSyncDb(){ return (typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()))?db:null; }
+function grSyncQ(q,unit){ q=Math.round((q>0?q:0)*100)/100; return q+(unit?" "+unit:""); }
+function grSyncDayLbl(iso){ return gwParseDate(iso).toLocaleDateString("en-US",{weekday:"short"}); }
+function grSyncLines(txt){ return String(txt||"").split(/\s*·\s*/).filter(Boolean).join("\n"); }
+function grSyncTid(txt){ return "t"+(kitSlug(txt)||"x"); }
+// ── the meals one day feeds the list with: [{key, iso, slot, mid, meal, day, lines}] — the view grWeekSources shops ──
+function grSyncDayMeals(iso){
+  let p=(typeof kitPlanRec==='function')?kitPlanRec(iso):kitPlan[iso]; if(typeof kitOutStrip==='function') p=kitOutStrip(iso,p); if(!p) return [];
+  const day=grSyncDayLbl(iso), out=[];
+  const add=(slot,mid,meal,lines)=>{ if(!mid||!String(lines||"").trim()) return; out.push({key:iso+"_"+slot+"_"+mid,iso:iso,slot:slot,mid:mid,meal:meal,day:day,lines:lines}); };
+  if(!p.eaten&&!p.skipped){
+    const dm=(p.mid&&kitMeals[p.mid])||null; if(dm) add("d",p.mid,dm.name||"dinner",dm.ing);
+    const dn=(dm&&dm.name)||(p.txt?String(p.txt):"")||"sides";
+    if(typeof kitSideHasList==="function"&&kitSideHasList(p)) kitSideRaw(p).forEach(x=>{ if(x.mid){ const m=kitMeals[x.mid]; if(m) add("sd",x.mid,m.name||"side",m.ing); } else add("sd",grSyncTid(x.txt),dn,grSyncLines(x.txt)); });
+    else if(p.sides) add("sd","txt",dn,String(p.sides).split(/\s*(?:·|,|\+|&|\band\b)\s*/i).join("\n"));
+  }
+  ["b","l","s"].forEach(sl=>{ const v=p[sl]; if(!v) return;
+    if(v.parts&&typeof kitSlotsParts==="function"){ const parts=kitSlotsParts(v)||{}; const mn=parts.main; const pn=(mn&&mn.mid&&kitMeals[mn.mid]&&kitMeals[mn.mid].name)||(mn&&mn.txt?String(mn.txt):"")||kitSlotsLabel(sl);
+      kitSlotsList(parts).forEach(x=>{ if(x.mid){ const m=kitMeals[x.mid]; if(m) add(sl,x.mid,m.name||"meal",m.ing); } else if(x.key!=="main") add(sl,grSyncTid(x.txt),pn,grSyncLines(x.txt)); }); return; }
+    if(v.mid&&kitMeals[v.mid]) add(sl,v.mid,kitMeals[v.mid].name||"meal",kitMeals[v.mid].ing); });
+  return out;
+}
+function grSyncWinMeals(fromIso,days){ const out=[]; for(let i=0;i<(days||GR_SYNC_DAYS);i++) grSyncDayMeals(kitIsoPlus(fromIso,i)).forEach(m=>out.push(m)); return out; }
+function grSyncSnap(){ const o={}; grSyncWinMeals(_todayStr(),GR_SYNC_DAYS).forEach(m=>{ o[m.key]=m; }); return o; }
+// one meal's lines → {grKey: {name, qty?, unit?}} — the very split and merge grIngRows uses, so a row and its srcs agree
+function grSyncParse(lines){
+  const by={};
+  String(lines||"").split("\n").reduce((a,l)=>a.concat(l.split(/\s\+\s/)),[]).forEach(line=>{ const p=grIngParse(line); if(!p) return; const k=grKey(p.name); if(!k) return; by[k]=by[k]?grMergeQty(by[k],p):p; });
+  return by;
+}
+function grSyncNames(list){   // "Tacos (Tue)" · "Tacos, Roasted Broccoli (Tue)" · "Tacos (Tue), Burgers (Thu)"
+  const days=[]; list.forEach(m=>{ if(days.indexOf(m.day)<0) days.push(m.day); });
+  const uniq=a=>a.filter((x,i)=>a.indexOf(x)===i);
+  if(days.length===1) return uniq(list.map(m=>m.meal)).join(", ")+" ("+days[0]+")";
+  return uniq(list.map(m=>m.meal+" ("+m.day+")")).join(", ");
+}
+// ── 1. sources on items ──
+function grSyncSum(it,skip){ let n=0; const S=(it&&it.srcs)||{}; Object.keys(S).forEach(k=>{ if(skip&&skip[k]) return; const s=S[k]; if(s&&(s.unit||"")===(it.unit||"")) n+=(s.qty>0?s.qty:1); }); return Math.round(n*100)/100; }
+// Shop for the week / the add sheet: hang each row's per-meal amounts on it (rows match by name, before any ✨ tidy)
+function grSyncRows(rows,fromIso,days,meals){
+  const list=meals||grSyncWinMeals(fromIso,days);
+  const byKey={}; rows.forEach(r=>{ r.srcs=r.srcs||[]; const k=grKey(r.p.name); if(k&&!byKey[k]) byKey[k]=r; });
+  list.forEach(m=>{ const by=grSyncParse(m.lines); Object.keys(by).forEach(k=>{ const r=byKey[k]; if(!r) return; const p=by[k]; const s={key:m.key,meal:m.meal,day:m.day,qty:p.qty>0?p.qty:1}; if(p.unit) s.unit=p.unit; r.srcs.push(s); }); });
+  return rows;
+}
+// after the list took a row (a new item, or the amount merged into an existing one): its srcs, and manual once
+function grSyncRec(id,row){
+  const it=grData.items[id]; if(!it||!row||!row.srcs||!row.srcs.length) return;
+  const had=!!(it.srcs&&Object.keys(it.srcs).length); const srcs=Object.assign({},it.srcs||{}); const up={}; let added=0;
+  row.srcs.forEach(s=>{ const rec={qty:s.qty,meal:s.meal,day:s.day}; if(s.unit) rec.unit=s.unit; srcs[s.key]=rec; up["srcs/"+s.key]=rec; if((s.unit||"")===(it.unit||"")) added+=s.qty; });
+  it.srcs=srcs;
+  if(!had&&it.manual==null){ const m=Math.round(Math.max(0,grQtyN(it)-added)*100)/100; if(m>0){ it.manual=m; up.manual=m; } }   // what was already there is hers
+  grSave();
+  const d=grSyncDb(); if(d) d.ref('kitchen/grocery/items/'+id).update(up);
+}
+function grSyncManual(id){   // she retyped the amount: manual = the part no meal asked for
+  const it=grData.items[id]; if(!it||!it.srcs||!Object.keys(it.srcs).length) return;
+  const m=Math.round(Math.max(0,grQtyN(it)-grSyncSum(it))*100)/100; if((it.manual||0)===m) return;
+  if(m>0) it.manual=m; else delete it.manual; grSave();
+  const d=grSyncDb(); if(d) d.ref('kitchen/grocery/items/'+id+'/manual').set(m>0?m:null);
+}
+function grSyncItemsFor(key){ const I=grData.items||{}; return Object.keys(I).filter(id=>I[id]&&I[id].srcs&&I[id].srcs[key]); }
+function grSyncListFed(){ const I=grData.items||{}; return Object.keys(I).some(id=>{ const it=I[id]; return !!(it&&((it.srcs&&Object.keys(it.srcs).length)||(Array.isArray(it.src)&&it.src.some(s=>s&&s.k==="meal")))); }); }
+// ── 2. the reconcile ──
+function grSyncWatch(){ if(_grSyncPend) return; try{ _grSyncPend=grSyncSnap(); }catch(e){ _grSyncPend=null; return; } Promise.resolve().then(grSyncReconcile); }
+function grSyncReconcile(){
+  const before=_grSyncPend; _grSyncPend=null; if(!before) return;
+  let after; try{ after=grSyncSnap(); }catch(e){ return; }
+  const gone=Object.keys(before).filter(k=>!after[k]).map(k=>before[k]);
+  const came=Object.keys(after).filter(k=>!before[k]).map(k=>after[k]);
+  const moves=[], left=[];
+  gone.forEach(g=>{ const i=came.findIndex(c=>c.slot===g.slot&&c.mid===g.mid); if(i>=0){ moves.push([g,came[i]]); came.splice(i,1); } else left.push(g); });   // the same meal on another day = a move
+  if(moves.length) grSyncMove(moves);
+  const pull=left.filter(g=>grSyncItemsFor(g.key).length);
+  const add=came.filter(c=>Object.keys(grSyncParse(c.lines)).length);
+  const then=()=>{ if(add.length&&grSyncListFed()) grSyncAddAsk(add); };
+  if(pull.length) grSyncPullAsk(pull,then); else then();
+}
+function grSyncMove(moves){   // srcs keys follow a moved meal — targeted, nothing asked
+  const up={}; let n=0;
+  moves.forEach(mv=>{ const g=mv[0], c=mv[1]; grSyncItemsFor(g.key).forEach(id=>{ const it=grData.items[id]; const s=Object.assign({},it.srcs[g.key],{day:c.day}); delete it.srcs[g.key]; it.srcs[c.key]=s; up[id+"/srcs/"+g.key]=null; up[id+"/srcs/"+c.key]=s; n++; }); });
+  if(!n) return; grSave();
+  const d=grSyncDb(); if(d) d.ref('kitchen/grocery/items').update(up);
+}
+// ── 3. the pull sheet ──
+function grSyncPullCalc(it,keys){   // pure: what pulling these meals' amounts does to one item
+  const S=it.srcs||{}; const cur=grQtyN(it); const skip={}; keys.forEach(k=>{ skip[k]=1; });
+  let minus=0; const minusX=[];
+  keys.forEach(k=>{ const s=S[k]; if(!s) return; const q=s.qty>0?s.qty:1; if((s.unit||"")===(it.unit||"")) minus+=q; else minusX.push(s.unit?grSyncQ(q,s.unit):"×"+(Math.round(q*100)/100)); });   // the piece grMergeQty parked in extra, spelled as it spelled it
+  minus=Math.round(minus*100)/100;
+  const remain=Object.keys(S).filter(k=>!skip[k]&&S[k]);
+  const tidy=Math.abs(cur-((it.manual||0)+grSyncSum(it)))<0.005;   // the bookkeeping adds up → manual + what the other meals still need
+  let q=Math.round((tidy?(it.manual||0)+grSyncSum(it,skip):Math.max(0,cur-minus))*100)/100;
+  let extra=it.extra||""; minusX.forEach(x=>{ const parts=extra?extra.split(" + "):[]; const i=parts.indexOf(x); if(i>=0) parts.splice(i,1); extra=parts.join(" + "); });
+  const remove=!remain.length&&q<=0&&!extra;
+  if(q<=0&&!remove) q=cur;   // another meal still needs it — the amount is left alone
+  const minusTxt=[minus>0?"−"+grSyncQ(minus,it.unit):""].concat(minusX.map(x=>"−"+x)).filter(Boolean).join(" ");
+  const resultTxt=remove?(grSyncQ(cur,it.unit)+" → 0 · off the list"):(grSyncQ(cur,it.unit)+" → "+grSyncQ(q,it.unit)+(extra!==(it.extra||"")&&extra?" + "+extra:""));
+  return {keys:keys,remain:remain,minus:minus,minusX:minusX,q:q,cur:cur,extra:extra,remove:remove,minusTxt:minusTxt,resultTxt:resultTxt};
+}
+function grSyncPullRows(gone){
+  const byId={}, order=[];
+  gone.forEach(g=>grSyncItemsFor(g.key).forEach(id=>{ if(!byId[id]){ byId[id]=[]; order.push(id); } byId[id].push(g.key); }));
+  return order.map(id=>{ const it=grData.items[id]; const r=grSyncPullCalc(it,byId[id]); r.id=id; r.name=String(it.name||""); r.done=!!it.done; r.on=!it.done; return r; });
+}
+function grSyncPullAsk(gone,then){
+  const rows=grSyncPullRows(gone); if(!rows.length){ if(then) then(); return; }
+  _grSyncAsk={kind:"pull",rows:rows,gone:gone,then:then||null}; grSyncPullDraw();
+}
+function grSyncPullDraw(){
+  const A=_grSyncAsk; if(!A||A.kind!=="pull") return;
+  const n=A.rows.filter(r=>r.on).length, many=A.gone.length>1;
+  let h='<div style="font-weight:800;font-size:15px">🛒 '+esc(grSyncNames(A.gone))+' came off the plan.</div>'
+    +'<div style="font-size:13px;color:#334155;margin:4px 0 8px">Pull '+(many?'their':'its')+' items from the list? Only '+(many?'these meals’':'this meal’s')+' amounts come off — what other meals need stays.</div>'
+    +'<div style="border-top:1px solid #eef2f0">';
+  A.rows.forEach((r,i)=>{
+    h+='<label style="display:flex;align-items:flex-start;gap:9px;padding:8px 2px;border-bottom:1px solid #eef2f0;cursor:pointer">'
+      +'<input type="checkbox" '+(r.on?'checked ':'')+'onchange="_grSyncAsk.rows['+i+'].on=this.checked;grSyncPullCount()" style="width:18px;height:18px;margin-top:2px;flex:0 0 auto">'
+      +'<span style="flex:1;min-width:0"><span style="font-size:13.5px;font-weight:700'+(r.on?'':';color:#94a3b8')+'">'+esc(r.name)+'</span>'
+      +(r.minusTxt?' <span style="font-size:12px;font-weight:800;color:#b91c1c">'+esc(r.minusTxt)+'</span>':'')
+      +(r.done?' <span style="font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:10px;background:#fef3c7;color:#92400e">already bought</span>':'')
+      +'<span style="display:block;font-size:11px;color:#64748b">'+esc(r.resultTxt)+'</span></span></label>';
+  });
+  h+='</div><button id="gr-sync-pull-go" onclick="grSyncPullGo()" style="'+GR_BTN+'border:none;background:#3A7D44;color:#fff;margin-top:12px">Pull '+n+' from the list</button>'
+    +'<button onclick="grSyncPullKeep()" style="'+GR_BTN+'border:none;background:#f1f5f9;color:#334155">Keep the list as it is</button>';
+  grPop(h);
+}
+function grSyncPullCount(){ const b=document.getElementById("gr-sync-pull-go"); if(b&&_grSyncAsk&&_grSyncAsk.kind==="pull") b.textContent="Pull "+_grSyncAsk.rows.filter(r=>r.on).length+" from the list"; }
+function grSyncPullKeep(){ const A=_grSyncAsk; _grSyncAsk=null; grPopClose(); if(A&&A.then) A.then(); }   // nothing written
+function grSyncPullGo(){
+  const A=_grSyncAsk; if(!A||A.kind!=="pull") return grPopClose();
+  const go=()=>{
+    const up={}, rm=[]; let n=0;
+    A.rows.forEach(r=>{ if(!r.on) return; const it=grData.items[r.id]; if(!it||!it.srcs) return;
+      const keys=r.keys.filter(k=>it.srcs[k]); if(!keys.length) return; const c=grSyncPullCalc(it,keys); n++;
+      if(c.remove){ rm.push(r.id); return; }
+      keys.forEach(k=>{ delete it.srcs[k]; up[r.id+"/srcs/"+k]=null; }); if(!Object.keys(it.srcs).length) delete it.srcs;
+      if(c.q!==c.cur||it.qty>0){ it.qty=c.q; up[r.id+"/qty"]=c.q; }
+      if(c.extra!==(it.extra||"")){ if(c.extra) it.extra=c.extra; else delete it.extra; up[r.id+"/extra"]=c.extra||null; }
+    });
+    const d=grSyncDb();
+    rm.forEach(id=>{ const it=grData.items[id]; if(d&&typeof grClearedPush==="function") grClearedPush(id,it,"removed"); delete grData.items[id]; if(d) d.ref('kitchen/grocery/items/'+id).remove(); });
+    grSave(); if(d&&Object.keys(up).length) d.ref('kitchen/grocery/items').update(up);
+    _grSyncAsk=null; grPopClose(); mwToast("🛒 Pulled "+n+" from the list"); grRepaint(); if(A.then) A.then();
+  };
+  if(typeof momHere==="function"&&momHere()) go(); else kitPinGate(go,"Changing the grocery list is for Mom.");
+}
+// ── 4. the add sheet (Shop for the week's own rows, chips, and merge path) ──
+function grSyncAddRows(came){
+  const rows=grSyncRows(grIngRows(came.map(m=>({lines:m.lines,lbl:m.meal+" ("+m.day+")"}))),null,null,came);
+  rows.forEach(r=>{
+    const dup=grFindDup(r.p.name), have=grHaveIt(r.p.name);
+    if(dup&&dup.kind==="item"){ r.why="on the list (have "+(grQtyTxt(dup.it)||"1")+", +"+grSyncQ(r.p.qty>0?r.p.qty:1,r.p.unit)+")"; r.on=true; }
+    else if(dup){ r.why="on the list ("+dup.row.tag+")"; r.on=false; }
+    else if(have){ r.why=have==="🥫 in pantry"?"in the pantry ✓":"have it ✓"; r.on=false; }
+    else if(grIsBasic(r.p.name)){ r.why="🧂 basic"; r.on=false; }
+    else { r.why="new"; r.on=true; }
+  });
+  return rows;
+}
+function grSyncAddAsk(came){
+  const rows=grSyncAddRows(came); if(!rows.length) return;
+  const nm=grSyncNames(came);
+  _grImp={title:(came.length===1?"Add "+nm+"’s items?":"Add the items for "+nm+"?"),rows:rows,many:true}; grImpDraw();
+}
+// ── 5. ▶ Run with hand-planned days: the three-choice sheet and the slide ──
+// Pure, the shape of kitRotRunPlan plus dropped:[{iso,kind,name}] — a hand-planned kind pushes every later rotation meal of
+// that kind one day later; the cut-off is a hard stop. A slid day's stamp carries slid:true.
+function grSyncRotSlidePlan(rot,id,opts){
+  opts=opts||{}; const out={up:{},days:[],kept:[],same:0,dropped:[],slid:true}; const types=kitRotTypes(rot);
+  if(!rot||!kitRotIsoOk(rot.startDate)||!kitRotIsoOk(rot.endDate)||rot.endDate<rot.startDate) return out;
+  const shift={}; types.forEach(t=>{ shift[t]=0; });
+  const foodOf=(up,t)=>t==="d"?!!(up.mid||up.txt):!!up[t];
+  let iso=(opts.from&&opts.from>rot.startDate)?opts.from:rot.startDate;
+  for(let g=0;iso<=rot.endDate&&g<400;g++,iso=kitIsoPlus(iso,1)){
+    const rec=kitPlan[iso]; if(rec&&(rec.eaten||rec.skipped)) continue;
+    let wrote=false, kept=false, sameN=0, foodN=0;
+    types.forEach(t=>{
+      const info=kitRotDayAt(rot,kitIsoPlus(iso,-shift[t])); if(!info) return;
+      const up=kitRotDayUp(rot,info); const has=foodOf(up,t); const st=kitRotStampOf(rec,t);
+      if(kitRotHandEdited(iso,[t])){ if(has){ kept=true; shift[t]++; } return; }   // hers: this kind slides past her day
+      if(!has){ if(st&&st.id===id){ kitRotDayKeys(t).forEach(k=>{ out.up[iso+"/"+k]=null; }); out.up[iso+"/fromRot/"+t]=null; wrote=true; } return; }   // the slid pattern is blank here — an older run's own meal leaves
+      foodN++;
+      if(st&&st.id===id&&st.wk===info.wk&&st.dow===info.dow){ sameN++; return; }
+      kitRotDayKeys(t).forEach(k=>{ if(k in up) out.up[iso+"/"+k]=up[k]; });
+      const stamp={id:id,wk:info.wk,dow:info.dow}; if(shift[t]) stamp.slid=true; out.up[iso+"/fromRot/"+t]=stamp; wrote=true;
+    });
+    if(kept) out.kept.push(iso);
+    if(wrote) out.days.push(iso); else if(foodN&&sameN===foodN&&!kept) out.same++;
+  }
+  types.forEach(t=>{ for(let s=shift[t];s>0;s--){ const srcIso=kitIsoPlus(rot.endDate,1-s); if(srcIso<rot.startDate) continue; const info=kitRotDayAt(rot,srcIso); if(!info) continue; const up=kitRotDayUp(rot,info); if(!foodOf(up,t)) continue;
+    const name=t==="d"?kitRotSlotName(up.mid?{mid:up.mid}:{txt:up.txt}):kitRotSlotName(up[t]); out.dropped.push({iso:srcIso,kind:t,name:name||kitRotTypeMeta(t)[2]}); } });
+  return out;
+}
+function grSyncRunAsk(id,draft,plan){   // kitRotRun's hand-off: the kept days, three choices, nothing remembered
+  const rot=kitRotAll()[id]||draft; const types=kitRotTypes(draft); const nm=(draft.emoji?draft.emoji+' ':'')+draft.name; const today=_todayStr();
+  const slide=grSyncRotSlidePlan(draft,id,{from:today});
+  const trim=(typeof kitRotTrimPlan==="function")?kitRotTrimPlan(rot,id,draft.startDate,draft.endDate):{days:[]};
+  _grSyncAsk={kind:"run",id:id,from:draft.startDate,to:draft.endDate};
+  const btn=(fn,title,sub,main)=>'<button onclick="grSyncRunGo(\''+fn+'\')" style="'+GR_BTN+'text-align:left;line-height:1.3;'+(main?'border:none;background:#B45309;color:#fff':'border:1.5px solid #B45309;background:#fff;color:#92400e')+'">'+title+'<span style="display:block;font-size:11.5px;font-weight:600;opacity:.85;margin-top:2px">'+sub+'</span></button>';
+  let h='<div style="font-weight:800;font-size:15px">▶ Run '+esc(nm)+' from '+esc(kitRotFmt(draft.startDate))+' until '+esc(kitRotFmt(draft.endDate))+'</div>'
+    +'<div style="font-size:12.5px;color:#334155;margin:4px 0 8px">'+plan.days.length+' day'+(plan.days.length===1?'':'s')+' get'+(plan.days.length===1?'s':'')+' its '+esc(kitRotKindsTxt(types))+'.'+(plan.same?' '+plan.same+' already there.':'')+(trim.days.length?' '+trim.days.length+' day'+(trim.days.length===1?'':'s')+' it filled outside these dates '+(trim.days.length===1?'is':'are')+' cleared.':'')+'</div>'
+    +'<div style="font-size:13px;font-weight:800;margin-top:6px">'+plan.kept.length+' day'+(plan.kept.length===1?'':'s')+' you planned by hand '+(plan.kept.length===1?'is':'are')+' in those dates:</div>'
+    +'<div style="font-size:12.5px;color:#334155;margin:3px 0 10px;line-height:1.5">'
+    +plan.kept.map(iso=>{ const rec=kitPlan[iso]; const what=types.filter(t=>kitRotHas(rec,t)).map(t=>esc(kitRotRecName(rec,t))+' <span style="color:#94a3b8">('+esc(kitRotTypeMeta(t)[2].toLowerCase())+')</span>'); return '<div>• <b>'+esc(kitRotFmt(iso))+'</b>'+(what.length?' · '+what.join(' · '):' · (left blank)')+'</div>'; }).join('')+'</div>'
+    +btn('drop','Keep my day and drop that meal','Your day stays as you planned it. The rotation’s meal for that day is left off.',true)
+    +btn('slide','Keep my day and slide the rotation around it','Your day stays. Every later '+esc(types.map(t=>kitRotTypeMeta(t)[2].toLowerCase()).join(" / "))+' in the rotation moves one day later, through the following weeks, until '+esc(kitRotFmtShort(draft.endDate))+'.'
+      +(slide.dropped.length?'<span style="display:block;margin-top:3px;color:#b91c1c">'+slide.dropped.map(x=>esc(x.name)+' won’t fit before '+esc(kitRotFmtShort(draft.endDate))+' and will be left off.').join('<br>')+'</span>':''),false)
+    +btn('replace','Replace my day','The rotation’s meals go on that day instead of what you planned.',false)
+    +'<button onclick="_grSyncAsk=null;grPopClose()" style="'+GR_BTN+'border:none;background:#f1f5f9;color:#334155">Cancel</button>';
+  grPop(h);
+}
+function grSyncRunGo(choice){ const A=_grSyncAsk; if(!A||A.kind!=="run") return grPopClose(); _grSyncAsk=null; grPopClose(); kitRotRun(A.id,{choice:choice,from:A.from,to:A.to}); }
+// ── 6. the snack row on every day (Mom), the one slot through the library picker ──
+function grSyncSnackRowHTML(iso,sp){
+  const slot=sp[0]; const sv=kitPlanSlot(iso,slot); const name=sv?(sv.meal?((sv.meal.emoji?sv.meal.emoji+" ":"")+(sv.meal.name||"")):(sv.txt||"")):"";
+  const cm=(typeof kitRotComingAt==='function')?kitRotComingAt(iso,slot):null; const on=!!(kitRotPick&&kitRotPick.kind==="p"&&kitRotPick.iso===iso&&kitRotPick.slot===slot);
+  let h='<div class="row" style="flex-wrap:wrap"><span class="lbl">'+sp[2]+'</span><span style="flex:1;min-width:130px">'+sp[1]+' '+(name?'<b>'+esc(name)+'</b>':'<span style="color:#9ca3af">nothing yet</span>')
+    +(sv&&typeof kitFlagMark==="function"?kitFlagMark(sv.mid):'')+(sv&&typeof kitOutLbl==="function"?kitOutLbl(iso,slot):'')
+    +(cm?' <span style="font-size:10px;color:#9ca3af;font-weight:700">'+esc(kitRotComingLbl(cm))+'</span>':'')+'</span>'
+    +'<button class="act" style="background:'+(on?'#B45309;color:#fff':'#fff7ed;color:#c2410c')+'" onclick="grSyncSnackPick(\''+iso+'\')">✎</button>'
+    +(sv?'<button class="act" style="background:#eff6ff;color:#1d4ed8" onclick="kitMoveForward(\''+iso+'\',\''+slot+'\')">➡ Move</button>'+(typeof kitOutBtn==="function"?kitOutBtn(iso,slot):''):'')+'</div>';
+  if(on) h+='<div class="row" style="border-top:none;padding-top:0;display:block">'+kitRotPickHTML()+'</div>';
+  return h;
+}
+function grSyncSnackPick(iso){ if(!kitEatGate()) return; const P=kitRotPick; if(P&&P.kind==="p"&&P.iso===iso&&P.slot==="s"){ kitRotPick=null; _kitRefresh(); return; } kitRotPickOpen({kind:"p",iso:iso,slot:"s"}); }
+function grSyncSnackCur(P){ return kitRotRecName(kitPlan[P.iso],"s"); }
+function grSyncSnackSet(P,val){   // val = {mid} | {txt} | null — ONE targeted update of the s slot
+  if(!kitEatGate()) return;
+  kitRotPick=null; grSyncWatch();
+  const iso=P.iso, up={s:val||null}; const cur=kitRotApplyUp(kitPlan[iso],up);
+  if(Object.keys(cur).length) kitPlan[iso]=cur; else delete kitPlan[iso];
+  try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
+  const d=grSyncDb(); if(d) d.ref('kitchen/plan/'+iso).update(up);
+  _kitRefresh();
+}
+// ── 7. ✕ Clear in the dinner picker: the dinner only ──
+function grSyncDinClear(iso){
+  if(!kitEatGate()) return;
+  kitRotPick=null; grSyncWatch();
+  const up={mid:null,txt:null,sides:null,sideList:null}; const cur=kitRotApplyUp(kitPlan[iso],up);
+  if(Object.keys(cur).length) kitPlan[iso]=cur; else delete kitPlan[iso];
+  try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
+  const d=grSyncDb(); if(d) d.ref('kitchen/plan/'+iso).update(up);
+  _kitRefresh();
+}
+// GROSYNC_END
 
 // ── 🥫 pantry snapshot — loose, dated, fades honestly ──────────────
 // Zones carry a rough shelf-life in days. An item is fresh for the first 60%
@@ -20695,6 +20999,7 @@ function _kitRefresh(){ if(typeof renderAll==="function") renderAll(); else { co
 function kitMarkSkipped(iso){
   if(!kitEatGate()) return;
   const plan=kitPlan[iso]; if(!plan||plan.eaten||plan.skipped) return;
+  if(typeof grSyncWatch==="function") grSyncWatch();   // GROSYNC: a dinner that didn't happen may come off the list (asked)
   plan.skipped=Date.now();
   try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
   if(typeof db!=='undefined'&&db) db.ref('kitchen/plan/'+iso+'/skipped').set(plan.skipped);
@@ -20731,6 +21036,7 @@ function kitMoveChain(iso,slot){
 }
 function kitMoveForward(iso,slot){
   if(!kitEatGate()) return;
+  if(typeof grSyncWatch==="function") grSyncWatch();   // GROSYNC: a move inside the window carries the list's srcs along; one that leaves it asks
   const chains=[];
   (slot==="all"?["d","b","l","s"]:[slot]).forEach(s=>{ const c=kitMoveChain(iso,s); if(c) chains.push([s,c]); });
   if(!chains.length){ if(typeof mwToast==='function') mwToast('Nothing to move on this day'); return; }
@@ -20796,6 +21102,7 @@ function kitMoveForward(iso,slot){
 function kitSlotText(iso,slot){
   if(!kitEatGate()) return;
   const meta=KIT_SLOTS.find(s=>s[0]===slot); if(!meta) return;
+  if(typeof grSyncWatch==="function") grSyncWatch();   // GROSYNC: a typed slot change → the list may ask
   if(typeof kitSlotsPrompt==="function"&&kitSlotsPrompt(iso,slot)) return;   // KITSLOTS: a parts slot — the prompt edits the main only, the other parts stay
   const sv=kitPlanSlot(iso,slot);
   const v=prompt(meta[1]+" "+meta[2]+":",(sv&&sv.txt)||"");
@@ -21074,8 +21381,9 @@ function kitRotEditHTML(ed){
 //   RUN: week-1 day-1 is the start date's weekday in the Mon–Sun grid (earlier weekdays of week 1 unused); weeks repeat;
 //   the LAST day written is the cut-off. Only days inside [start, cut-off] (from today on) and only covered slots are
 //   written — ONE multi-path update under kitchen/plan ({iso}/mid|txt|sides|sideList|b|l|s and {iso}/fromRot/{kind}). Blank
-//   slots and uncovered meal kinds are never written. Hand-edited days are listed in the confirm and kept unless Mom ticks
-//   "overwrite those too". Eaten / didn't-happen days are never rewritten. Moving a cut-off (or start) so that days the
+//   slots and uncovered meal kinds are never written. Hand-edited days in range: GROSYNC's sheet asks every time — keep my
+//   day and drop that meal · keep my day and slide the rotation around it · replace my day (2026-10-23; the "overwrite those
+//   too" tick is gone). Eaten / didn't-happen days are never rewritten. Moving a cut-off (or start) so that days the
 //   rotation already wrote fall outside it clears its own unedited slots on those days (from today on) in the same update —
 //   the cut-off is the last day it fills, even mid-cycle.
 //   QUEUE: a rotation whose start is still ahead writes nothing. kitRotQueuedFor(iso) says what it will put on a day and
@@ -21155,7 +21463,7 @@ function kitRotRunPlan(rot,id,opts){
     if(rec&&(rec.eaten||rec.skipped)) continue;
     const kinds=types.filter(t=>t==="d"?(up.mid||up.txt):up[t]);
     const hand=kitRotHandEdited(iso,types);
-    const same=kinds.every(t=>{ const st=kitRotStampOf(rec,t); return st&&st.id===id&&st.wk===info.wk&&st.dow===info.dow; });
+    const same=kinds.every(t=>{ const st=kitRotStampOf(rec,t); return st&&st.id===id&&(st.slid||(st.wk===info.wk&&st.dow===info.dow)); });   // GROSYNC: a day the slide moved (stamp slid:true) is the rotation's own — never snapped back
     if(same&&!hand){ out.same++; continue; }
     if(hand&&!opts.overwrite){ out.kept.push(iso); continue; }
     Object.keys(up).forEach(k=>{ out.up[iso+"/"+k]=up[k]; });
@@ -21233,13 +21541,19 @@ function kitRotNextStart(id,types,fallback){
 function kitRotDaysTxt(list){ let last=""; return list.map(iso=>{ const m=gwParseDate(iso).toLocaleDateString("en-US",{month:"short"}); const s=(m===last?"":m+" ")+(+iso.slice(8)); last=m; return s; }).join(", "); }   // "Oct 14, 20, 27" · "Oct 29, Nov 3"
 function kitRotKindsTxt(types){ return types.map(t=>kitRotTypeMeta(t)[2].toLowerCase()+(t==="l"?"es":"s")).join(", "); }
 // ▶ Run from <start> until <cut-off> (the card's Run button; kitRotApply routes here)
-function kitRotRun(id){
+function kitRotRun(id,opts){
+  opts=opts||{}; const choice=String(opts.choice||"");   // GROSYNC: {choice:"drop"|"slide"|"replace",from,to} is the sheet's answer for days she planned by hand (asked every time)
   const rot=kitRotAll()[id]; if(!rot) return;
-  const from=String(((document.getElementById('kit-rot-from-'+id)||{}).value)||""), to=String(((document.getElementById('kit-rot-to-'+id)||{}).value)||"");
-  const ow=!!((document.getElementById('kit-rot-ow-'+id)||{}).checked);
+  const from=String(opts.from||((document.getElementById('kit-rot-from-'+id)||{}).value)||""), to=String(opts.to||((document.getElementById('kit-rot-to-'+id)||{}).value)||"");
   if(!kitRotIsoOk(from)||!kitRotIsoOk(to)){ if(typeof mwToast==='function') mwToast('Pick the start and the cut-off'); return; }
   if(to<from){ if(typeof mwToast==='function') mwToast('The cut-off is before the start'); return; }
   const types=kitRotTypes(rot); const kinds=kitRotKindsTxt(types); const nm=(rot.emoji?rot.emoji+' ':'')+rot.name;
+  const today=_todayStr(); const queued=from>today;
+  const draft=Object.assign({},rot,{startDate:from,endDate:to});
+  const plan=queued?{up:{},days:[],kept:[],same:0}:(choice==="slide"&&typeof grSyncRotSlidePlan==="function")?grSyncRotSlidePlan(draft,id,{from:today}):kitRotRunPlan(draft,id,{overwrite:choice==="replace",from:today});
+  const n=plan.days.length;
+  if(!queued&&!n&&!plan.kept.length&&!plan.same){ if(typeof mwToast==='function') mwToast('That rotation has nothing to put on those days'); return; }
+  if(!queued&&plan.kept.length&&!choice&&typeof grSyncRunAsk==="function"){ grSyncRunAsk(id,draft,plan); return; }   // GROSYNC: hand-planned days in range → the three-choice sheet; it comes back here with the choice
   const endOthers={}; const clash=kitRotClash(id,types,from,to);
   for(let c=0;c<clash.length;c++){
     const o=clash[c]; const onm=(o.emoji?o.emoji+' ':'')+o.name;
@@ -21248,11 +21562,6 @@ function kitRotRun(id){
     if(!confirm('One rotation runs the '+kinds+' at a time.\n\nEnd '+onm+' on '+kitRotFmt(last)+' so '+nm+' takes over on '+kitRotFmt(from)+'? Days it filled after that are cleared unless you changed them.')) return;
     endOthers[o.id]=last;
   }
-  const today=_todayStr(); const queued=from>today;
-  const draft=Object.assign({},rot,{startDate:from,endDate:to});
-  const plan=queued?{up:{},days:[],kept:[],same:0}:kitRotRunPlan(draft,id,{overwrite:ow,from:today});
-  const n=plan.days.length;
-  if(!queued&&!n&&!plan.kept.length&&!plan.same){ if(typeof mwToast==='function') mwToast('That rotation has nothing to put on those days'); return; }
   const trim=kitRotTrimPlan(rot,id,from,to); const trimUp=Object.assign({},trim.up);   // its own days now outside the dates are cleared
   Object.keys(endOthers).forEach(k=>{ const o=kitRotAll()[k]; Object.assign(trimUp,kitRotTrimPlan(o,k,o.startDate,endOthers[k]).up); });   // the ended rotation lets go of the days after its new cut-off
   plan.up=Object.assign(trimUp,plan.up);   // clears first, this run's keys win on a day both touch
@@ -21260,10 +21569,11 @@ function kitRotRun(id){
   if(queued) msg='Queue '+nm+' from '+kitRotFmt(from)+' until '+kitRotFmt(to)+'?\n\nIts '+kinds+' show pale as "coming" until it starts — nothing goes on the calendar before '+kitRotFmtShort(from)+'.';
   else {
     msg='Run '+nm+' from '+kitRotFmt(from)+' until '+kitRotFmt(to)+'?\n\n'+n+' day'+(n===1?'':'s')+' get'+(n===1?'s':'')+' its '+kinds+(from<today?' (from today on)':'')+'.'+(plan.same?' '+plan.same+' already there.':'');
-    if(plan.kept.length) msg+='\n\n'+plan.kept.length+' day'+(plan.kept.length===1?'':'s')+' you changed by hand will be kept — '+kitRotDaysTxt(plan.kept)+'. Tick "overwrite those too" to replace them.';
+    if(plan.kept.length) msg+='\n\n'+plan.kept.length+' day'+(plan.kept.length===1?'':'s')+' you changed by hand will be kept — '+kitRotDaysTxt(plan.kept)+'.';
   }
   if(trim.days.length) msg+='\n\n'+trim.days.length+' day'+(trim.days.length===1?'':'s')+' it filled outside these dates '+(trim.days.length===1?'is':'are')+' cleared.';
-  if(!confirm(msg)) return;
+  if(!choice&&!confirm(msg)) return;   // GROSYNC: the sheet already asked when a choice came back with it
+  if(typeof grSyncWatch==="function") grSyncWatch();   // GROSYNC: the list hears what the run puts on / takes off the next 14 days (asked, never silent)
   kitRotEnsure();
   const d=kitRotDb(); const now=Date.now();
   Object.keys(endOthers).forEach(k=>{ if(kitRotations[k]){ kitRotations[k].endDate=endOthers[k]; kitRotations[k].ts=now; } if(d) d.ref('kitchen/rotations/'+k).update({endDate:endOthers[k],ts:now}); });
@@ -21293,6 +21603,7 @@ function kitRotClearKeep(iso){ const st=kitPlan[iso]&&kitPlan[iso].fromRot; if(!
 function kitRotMPick(iso,t){ if(!kitEatGate()) return; const P=kitRotPick; if(P&&P.kind==="m"&&P.iso===iso&&P.slot===t){ kitRotPick=null; kitRotRender(); return; } kitRotPickOpen({kind:"m",iso:iso,slot:t}); }
 function kitRotDaySet(iso,slot,val){   // val = {mid} | {txt} | null (clear that slot)
   if(!kitEatGate()) return;
+  if(typeof grSyncWatch==="function") grSyncWatch();   // GROSYNC: a This-month cell change → the list may ask
   const up={};
   if(slot==="d"){ up.mid=(val&&val.mid)||null; up.txt=(val&&val.txt)||null; up.sides=null; up.sideList=null; }
   else up[slot]=val||null;
@@ -21508,8 +21819,7 @@ function kitRotRunRowHTML(id,r,nextMon){
     +'<span title="'+esc(kitRotKindsTxt(types))+'" style="font-size:11px">'+types.map(t=>kitRotTypeMeta(t)[1]).join('')+'</span>'
     +'<label style="font-size:11px;font-weight:700;color:#6b6560">from <input type="date" id="kit-rot-from-'+id+'" value="'+esc(from)+'" style="'+inp+'"></label>'
     +'<label style="font-size:11px;font-weight:700;color:#6b6560">until <input type="date" id="kit-rot-to-'+id+'" value="'+esc(to)+'" style="'+inp+'"></label>'
-    +'<button onclick="kitRotApply(\''+id+'\')" style="padding:6px 12px;border-radius:8px;border:none;background:#B45309;color:#fff;font-size:11px;font-weight:800;cursor:pointer">▶ Run</button>'
-    +'<label style="font-size:10.5px;color:#6b6560"><input type="checkbox" id="kit-rot-ow-'+id+'"> overwrite days I changed by hand</label></div>';
+    +'<button onclick="kitRotApply(\''+id+'\')" style="padding:6px 12px;border-radius:8px;border:none;background:#B45309;color:#fff;font-size:11px;font-weight:800;cursor:pointer">▶ Run</button></div>';   // GROSYNC: the "overwrite" tick is gone — days she planned by hand are asked about on the run's sheet, every time
 }
 // KITROT2_END
 // KITSLOTS_START — lunch and breakfast as four parts: main · vegetable · fruit · extra (each a library item or text).
@@ -21654,8 +21964,10 @@ function kitSlotsPick(iso,key){   // a field tapped: open the picker on it (tap 
   kitRotPickOpen({kind:"p",iso:iso,slot:key});
 }
 function kitSlotsPickCur(P){ if(P.slot==="d"&&typeof kitDinPickCur==="function") return kitDinPickCur(P);   // KITDINNEREDIT: the dinner itself
+  if(P.slot==="s"&&typeof grSyncSnackCur==="function") return grSyncSnackCur(P);   // GROSYNC: the snack row's one slot
   const k=kitSlotsKeyOf(P.slot); const parts=kitSlotsParts((kitPlan[P.iso]||{})[k.slot])||{}; return parts[k.part]?kitSlotsPartText(parts[k.part]):""; }
 function kitSlotsPickSet(P,val){ if(P.slot==="d"&&typeof kitDinPickSet==="function") return kitDinPickSet(P,val);   // KITDINNEREDIT: the dinner itself → kitAssign
+  if(P.slot==="s"&&typeof grSyncSnackSet==="function") return grSyncSnackSet(P,val);   // GROSYNC: the snack row's one slot → one targeted update
   const k=kitSlotsKeyOf(P.slot); kitSlotsSet(P.iso,k.slot,k.part,val); }
 function kitSlotsClear(iso,key){ const k=kitSlotsKeyOf(key); kitSlotsSet(iso,k.slot,k.part,null); }
 // THE write: one part of a day's b|l. val = {mid} | {txt} | null (clear). kitchen/plan/{iso}/{slot} = {parts:{…}} — the old
@@ -21664,6 +21976,7 @@ function kitSlotsClear(iso,key){ const k=kitSlotsKeyOf(key); kitSlotsSet(iso,k.s
 function kitSlotsSet(iso,slot,part,val){
   if(!kitEatGate()) return;
   if(KIT_PART_SLOTS.indexOf(slot)<0||!KIT_PARTS.some(p=>p[0]===part)) return;
+  if(typeof grSyncWatch==="function") grSyncWatch();   // GROSYNC: a part changed → the list may ask
   const cur=Object.assign({},kitPlan[iso]||{}); const parts=kitSlotsParts(cur[slot])||{};
   const nv=kitSlotsPartVal(val); if(nv) parts[part]=nv; else delete parts[part];
   const ordered={}; KIT_PARTS.forEach(p=>{ if(parts[p[0]]) ordered[p[0]]=parts[p[0]]; });
@@ -21748,6 +22061,7 @@ function kitDinPickOpen(iso,src){   // ✎ Change / 🗓 Plan it tapped: open th
 function kitDinPickCur(P){ return kitRotRecName(kitPlan[P.iso],'d'); }   // what is REALLY on the calendar — a queued "coming" day reads blank, so ✕ Clear never offers to clear what isn't there
 function kitDinPickSet(P,val){   // val = {mid} | {txt} | null — THE write, through kitAssign (sides dropped, stamp kept)
   if(!kitEatGate()) return;
+  if(!val&&typeof grSyncDinClear==="function") return grSyncDinClear(P.iso);   // GROSYNC: ✕ Clear takes only the dinner — breakfast, lunch and snack stay (her decision 2026-10-23)
   kitRotPick=null;
   kitAssign(P.iso,val);
   _kitRefresh();
@@ -22020,6 +22334,7 @@ function kitOutIs(iso,slot){ const p=kitPlan[iso]; const v=p&&p[slot]; return !!
 function kitOutToggle(iso,slot){
   if(!kitEatGate()) return;
   if(!/^[dbls]$/.test(slot)||!kitPlan[iso]) return;
+  if(typeof grSyncWatch==="function") grSyncWatch();   // GROSYNC: eating out takes the meal off the list's view — it asks to pull
   const p=kitPlan[iso], on=!kitOutIs(iso,slot);
   const v=Object.assign({},p[slot]); if(on) v.out=true; else delete v.out;
   if(Object.keys(v).length) p[slot]=v; else delete p[slot];
@@ -35789,6 +36104,7 @@ function _calSlotRows(iso,who){
   if(typeof kitPlanSlot!=="function"||typeof KIT_SLOTS==="undefined") return {html:html,n:n};
   KIT_SLOTS.forEach(function(sp){
     if(!who&&kitEatGate()&&(sp[0]==="b"||sp[0]==="l")&&typeof kitSlotsRowHTML==="function"){ html+=kitSlotsRowHTML(iso,sp); n++; return; }   // KITSLOTS: Mom's Breakfast / Lunch rows carry main · veg · fruit · extra (shown even when empty)
+    if(!who&&kitEatGate()&&sp[0]==="s"&&typeof grSyncSnackRowHTML==="function"){ html+=grSyncSnackRowHTML(iso,sp); n++; return; }   // GROSYNC: Mom's Snack row on every day, the same picker (her decision 2026-10-23)
     const sv=kitPlanSlot(iso,sp[0]); if(!sv) return; n++;
     const name=sv.meal?((sv.meal.emoji?sv.meal.emoji+" ":"")+(sv.meal.name||"")):(sv.txt||"");
     html+='<div class="row"><span class="lbl">'+sp[2]+'</span><span style="flex:1">'+sp[1]+' <b>'+esc(name)+'</b>'+(typeof kitOutLbl==="function"?kitFlagMark(sv.mid)+kitOutLbl(iso,sp[0]):'')+((typeof kitRotComingAt==='function'&&kitRotComingAt(iso,sp[0]))?' <span style="font-size:10px;color:#9ca3af;font-weight:700">'+esc(kitRotComingLbl(kitRotComingAt(iso,sp[0])))+'</span>':'')+'</span>'   // KITROT2

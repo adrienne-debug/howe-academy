@@ -3,7 +3,9 @@
  *   · run: week-1 day-1 is the start's weekday (earlier weekdays of week 1 unused); weeks repeat; the cut-off is the
  *     last day written, even mid-cycle; only covered meal kinds, only filled slots — ONE multi-path update under
  *     kitchen/plan, every day stamped kitchen/plan/{iso}/fromRot = {id, wk, dow}
- *   · a day changed by hand is listed in the confirm and kept; overwritten only when "overwrite those too" is ticked
+ *   · a day changed by hand is listed in the confirm and kept; replaced only when the run comes back with {choice:"replace"}
+ *     (GROSYNC 2026-10-23: the "overwrite those too" tick is gone — in the app the three-choice sheet asks every time; here the
+ *     block is not loaded, so kitRotRun falls through to its confirm and the choice is passed by hand)
  *   · a queued rotation (start still ahead) writes nothing; kitRotQueuedFor says what it will put there; on its start
  *     date (Mom's device) its days are written; one running rotation per meal kind — the other is asked to end the day before
  *   · 🗓 This month: a cell edit is that day's targeted calendar write only, never the rotation; the day is then ✎ hand-edited
@@ -98,22 +100,23 @@ console.log("\n── the run: mid-week start, cut-off mid-cycle, only covered +
   ok("cancel writes nothing", (W.writes.length=0, W.yes=false, W.runBtn("fall","2026-10-28","2026-12-01"), W.writes.length===0&&W.rots().fall.endDate==="2026-11-10"));
 }
 
-console.log("\n── hand edits are kept: listed in the confirm, skipped unless 'overwrite those too' is ticked ──");
+console.log("\n── hand edits are kept: listed in the confirm, skipped unless the run comes back with choice 'replace' ──");
 { const W=world({today:"2026-10-28",plan:{"2026-10-29":{mid:"m2",b:{txt:"eggs"}},"2026-11-03":{txt:"Grandma's"},"2026-11-05":{l:{txt:"PB&J"}},"2026-11-04":{mid:"m1",eaten:123}}});
   W.setRot("fall",ROT);
   W.runBtn("fall","2026-10-28","2026-11-10");
   const up=W.planWrites()[0][2];
-  ok("the confirm lists the hand-planned days by date and says they are kept", /2 days you changed by hand will be kept — Oct 29, Nov 3\. Tick "overwrite those too"/.test(W.confirms[0]), W.confirms[0]);
+  ok("the confirm lists the hand-planned days by date and says they are kept", /2 days you changed by hand will be kept — Oct 29, Nov 3\.$/.test(W.confirms[0])&&!/overwrite/.test(W.confirms[0]), W.confirms[0]);
   ok("…days in one month list as 'Oct 14, 20, 27'", W.run("kitRotDaysTxt(['2026-10-14','2026-10-20','2026-10-27','2026-11-02'])")==="Oct 14, 20, 27, Nov 2");
   ok("…and they are not in the update", !Object.keys(up).some(k=>/^2026-10-29\//.test(k)||/^2026-11-03\//.test(k)));
   ok("a day with only an uncovered kind of its own (a lunch) is not hand-edited for the dinner — it merges", up["2026-11-05/txt"]==="Soup"&&W.plan()["2026-11-05"].l.txt==="PB&J"&&W.plan()["2026-11-05"].txt==="Soup");
   ok("an eaten day is never rewritten", !Object.keys(up).some(k=>/^2026-11-04\//.test(k))&&W.plan()["2026-11-04"].eaten===123);
   ok("the kept days still hold what she typed", W.plan()["2026-10-29"].mid==="m2"&&W.plan()["2026-11-03"].txt==="Grandma's");
   W.writes.length=0; W.confirms.length=0;
-  W.runBtn("fall","2026-10-28","2026-11-10",true);   // ✓ overwrite those too
+  W.run("kitRotRun('fall',{choice:'replace',from:'2026-10-28',to:'2026-11-10'})");   // the sheet's "Replace my day" (GROSYNC) — no second confirm
   const up2=W.planWrites()[0][2];
-  ok("ticked: the hand-planned days are written and stamped; a slot the rotation leaves blank (Thu breakfast) stays hers", up2["2026-10-29/mid"]==="m1"&&!("2026-10-29/b" in up2)&&W.plan()["2026-10-29"].b.txt==="eggs"&&up2["2026-11-03/mid"]==="m1"&&up2["2026-11-03/fromRot/d"].dow===1&&!/kept/.test(W.confirms[0]));
-  ok("ticked: the eaten day is still left alone", !Object.keys(up2).some(k=>/^2026-11-04\//.test(k)));
+  ok("replace: the hand-planned days are written and stamped; a slot the rotation leaves blank (Thu breakfast) stays hers; nothing asked again", up2["2026-10-29/mid"]==="m1"&&!("2026-10-29/b" in up2)&&W.plan()["2026-10-29"].b.txt==="eggs"&&up2["2026-11-03/mid"]==="m1"&&up2["2026-11-03/fromRot/d"].dow===1&&W.confirms.length===0);
+  ok("replace: the eaten day is still left alone", !Object.keys(up2).some(k=>/^2026-11-04\//.test(k)));
+  ok("the run row has no overwrite tick any more (the sheet asks instead)", !/kit-rot-ow-/.test(W.run("kitRotRunRowHTML('fall',kitRotations.fall,'2026-11-02')")));
   // a day a run wrote, then changed by hand: the stamp says what it should be
   ok("a stamped day with the rotation's own food is not hand-edited", W.run("kitRotHandEdited('2026-10-28',['d'])")===false);
   W.run("kitPlan['2026-10-28'].txt='Leftovers'");
