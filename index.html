@@ -2712,7 +2712,7 @@ function todayDay(){ return DOW_NAMES[new Date().getDay()]; }
 Object.defineProperty(window,"_todayDay",{get:todayDay,configurable:true});
 // Open on the actual day — including Saturday and Sunday. The old Mon–Fri clamp meant a kid
 // opening the app on the weekend saw MONDAY's routines instead of today's.
-let tab="schedule", day=todayDay(), kid="all", supDay="all";
+let tab="schedule", day=todayDay(), kid="all";
 // `day` is the day the kid is LOOKING at, so it can't re-derive — but when the date rolls
 // under a long-open tablet it has to follow, or the kid wakes up still pointed at yesterday
 // (and, since routineEditable() locks off-today, locked out of their own morning list).
@@ -2735,7 +2735,7 @@ setInterval(function(){ try{ if(typeof mlEveningSweep==="function") mlEveningSwe
 setInterval(dayRollCheck,60000);
 document.addEventListener("visibilitychange",function(){ if(!document.hidden) dayRollCheck(); });
 window.addEventListener("focus",dayRollCheck);
-let collCats={}, pendingId=null;
+let pendingId=null;
 let archive={};
 let sessionDone={};        // {kid: {planKey: ts}} — sessions whose completion has been celebrated (fire-once, cross-device)
 let trophies={};           // {kid: {trophyId: {type,key,name,ts,points}}} — permanent trophy case (subjects/sessions finished)
@@ -4276,6 +4276,7 @@ function initFb() {
       try{HA_LS.setItem('ha_kit_rotations',JSON.stringify(kitRotations));}catch(e){}
       if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
     });
+    if(typeof lrListen==="function") lrListen();   // LESSONRES: curriculum/resources + supplies/staples (reads)
     if(typeof kitFlagListen==="function") kitFlagListen();   // KITFLAG: kitchen/flags → kitFlags (the device copy first)
     db.ref("kitchen/prepDone").on("value",s=>{
       const v=s.val()||{};
@@ -4452,7 +4453,6 @@ function boot() {
   slState=ld(WK+"_sl")||{};
   _loadPrevSl();          // last week's routine state, for cross-week chore lateness
   supplies=ld(WK+"_supplies")||{};
-  const savedSupDef=ld(WK+"_supplies_def"); if(savedSupDef&&Array.isArray(savedSupDef)) SUP=savedSupDef;
   try{ const a=HA_LS.getItem("ha_archive"); if(a) archive=JSON.parse(a); }catch(e){}
   try{ const af=HA_LS.getItem('act_favs'); if(af) actFavs=JSON.parse(af); }catch(e){}
   try{ const md=HA_LS.getItem("momday_data"); if(md) momdayData=JSON.parse(md); }catch(e){}
@@ -4906,9 +4906,9 @@ function renderDayTabs(){
   // Built before the break check so it stays reachable even on holiday/vacation days.
   const onSupp=tab==="supplies";
   const suppBtn='<button class="day-tab'+(onSupp?" active":"")+'" style="--day-color:#0891b2;position:sticky;right:0;margin-left:auto;flex-shrink:0;background:#fff;box-shadow:-10px 0 8px -7px rgba(0,0,0,.18);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0" '+
-    'onclick="'+(onSupp?"showTab('schedule')":"openSuppliesForDay()")+'" title="Supplies for this day">'+
+    'onclick="'+(onSupp?"showTab('schedule')":"openSuppliesForDay()")+'" title="Sunday list — what this week and next need">'+
     '<span style="font-size:15px;line-height:1.1">\u{1F9FA}</span>'+
-    '<span style="font-size:9px;font-weight:700;letter-spacing:.3px">Supplies</span></button>';
+    '<span style="font-size:9px;font-weight:700;letter-spacing:.3px">Sunday list</span></button>';
   // During a holiday/vacation the Schedule shows a single "no school" card, so
   // hide the day picker — but keep the Supplies button on the row.
   // ▸ the arrow over to a week that's built but hasn't started yet (T1 parks it, this peeks at it)
@@ -10476,7 +10476,8 @@ function taskCard(t, fromDay, readOnly, doneId){
   // LESSONLINK_CARD_START — "▶ Nicole the Math Lady →": the lesson's own page/video, when one
   // resolves for this card (override, else the subject template). Not on done or read-only cards.
   const _llS=(!readOnly&&!done&&typeof llUrlFor==="function")?llSubjectFor(t):null;
-  const _llU=_llS?llUrlFor(t,_llS):"";
+  let _llU=_llS?llUrlFor(t,_llS):"";
+  const _lr=((typeof lrCardParts==="function")?lrCardParts(t,_llS,_llU,readOnly,done):null)||{menu:"",kids:""}; if(_lr.menu) _llU="";   // LESSONRES: 2+ links → one small menu; 🎒 bring: … for the kids
   const llRow=_llU?'<div style="margin-top:5px"><a href="'+esc(_llU)+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif;text-decoration:none">▶ '+esc(llLabelFor(_llS))+' →</a></div>':"";
   // LESSONLINK_CARD_END
   // A fixed-time class: the card is his door into the class. Opens the in-app class
@@ -10547,7 +10548,7 @@ function taskCard(t, fromDay, readOnly, doneId){
     '<div class="card-body">'+
     '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
     '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+pushLabel+(_eicL?eicCardTitle(t):taskTitleShow(t))+'</div>'+mb+'</div>'+
-    '<div class="task-detail">'+cleanDetail+'</div>'+famRow+dr+spinBtn+classRow+linkRow+wbRow+eicRow+rvRow+msRow+llRow+stRow+prRow+nbAnsRow+nbRedoRow+mpdRow+((typeof mmCardRow==="function"&&mmCardRow(t,done,claimedHere,readOnly))||"")+   // ⏱ MINMINUTES
+    '<div class="task-detail">'+cleanDetail+'</div>'+famRow+dr+spinBtn+classRow+linkRow+wbRow+eicRow+rvRow+msRow+llRow+stRow+prRow+nbAnsRow+nbRedoRow+mpdRow+_lr.menu+_lr.kids+((typeof mmCardRow==="function"&&mmCardRow(t,done,claimedHere,readOnly))||"")+   // ⏱ MINMINUTES
     '</div></div></div>';
 }
 
@@ -17443,6 +17444,7 @@ function renderMomsDay(el){
   }catch(e){}
   try{ const _ro=grRanOutHTML(); if(_ro){ nowN++; h+=_ro; } }catch(e){}   // 🛒 ran out after a meal → on the list
   try{ const _kf=kitFlagNowHTML(); nowN+=_kf.n; h+=_kf.html; }catch(e){}   // KITFLAG: ⚠ a meal the kids rate low → ✓ Got it · Swap…
+  try{ const _lr=lrNowHTML(); nowN+=_lr.n; h+=_lr.html; }catch(e){}   // LESSONRES: 🧺 check out / order by — due within two days → ✓ Got it
   try{ const _pa=grPantryAlertsHTML(); nowN+=_pa.n; h+=_pa.html; }catch(e){}
   try{ const _pu=grPutAlertHTML(); nowN+=_pu.n; h+=_pu.html; const _us=grUseSoonHTML(); nowN+=_us.n; h+=_us.html; }catch(e){}   // 🧺 to put away · 📅 use or freeze by   // 🥫 may be old · 🍽 this week's meals need
   if(morningWaiting.length){
@@ -23490,77 +23492,8 @@ function mwToast(msg){
 }
 
 
-// ── SUPPLIES ──────────────────────────────────────────────────────
-let SUP_DEFAULT=(typeof HA_IS_HOWE!=="undefined"&&!HA_IS_HOWE)?[]:[   // HOWE_HOUSE_DEFAULTS: Howe's school-room supplies (her kids, Maggie's days) — Howe only
-  {id:"s1",name:"AAS Level 1 Book",detail:"Lincoln spelling — every school day",days:["monday","tuesday","wednesday","thursday","friday"],cat:"Books and Workbooks"},
-  {id:"s2",name:"Letter Tiles (AAS)",detail:"Tile review and word building daily",days:["monday","tuesday","wednesday","thursday","friday"],cat:"Books and Workbooks"},
-  {id:"s3",name:"Singapore Math 5A",detail:"Lincoln Ch.3 this week",days:["monday","tuesday","wednesday","thursday","friday"],cat:"Books and Workbooks"},
-  {id:"s4",name:"Singapore Math 3B",detail:"Ellis Ch.8 this week",days:["monday","tuesday","wednesday","thursday","friday"],cat:"Books and Workbooks"},
-  {id:"s5",name:"MR5 Math Reasoning",detail:"Lincoln pp.68-79",days:["tuesday","thursday","friday"],cat:"Books and Workbooks"},
-  {id:"s6",name:"HWT Printing Power",detail:"Ellis pages 5-8",days:["monday","tuesday","wednesday","thursday"],cat:"Books and Workbooks"},
-  {id:"s7",name:"Language Smarts Level D",detail:"Ellis pp.17-33",days:["monday","tuesday","wednesday","thursday"],cat:"Books and Workbooks"},
-  {id:"s8",name:"Daily Science Gr.3",detail:"Ellis Unit 1→2",days:["monday","tuesday","wednesday","thursday","friday"],cat:"Books and Workbooks"},
-  {id:"s9",name:"Daily Geography Gr.3",detail:"Ellis pp.25-31",days:["monday","tuesday","wednesday","thursday","friday"],cat:"Books and Workbooks"},
-  {id:"s10",name:"Student Notebooks",detail:"Lincoln written expression + dictation",days:["monday","tuesday","wednesday","thursday","friday"],cat:"Books and Workbooks"},
-  {id:"s11",name:"Index Cards",detail:"Conventions rules desk cards — Lincoln",days:["monday","tuesday"],cat:"Books and Workbooks"},
-  {id:"s12",name:"Computer",detail:"Lincoln Gemm+TTRS 10–11. Ellis TTRS+Reflex+Rosetta after.",days:["monday","tuesday","wednesday","thursday","friday"],cat:"Tech and Prep"},
-  {id:"s13",name:"iPad",detail:"Ellis NZK+Eggspress. Lucy RE+FP+NZK+Mathseeds.",days:["monday","tuesday","wednesday","thursday","friday"],cat:"Tech and Prep"},
-  {id:"s14",name:"Phone (Lucy backup)",detail:"Only when iPad confirmed occupied by Ellis",days:["monday","tuesday","wednesday","thursday","friday"],cat:"Tech and Prep"},
-  {id:"s15",name:"Desk Index Card — Lincoln",detail:"Conventions rules — stays on desk all week",days:["monday","tuesday","wednesday","thursday","friday"],cat:"Tech and Prep"},
-  {id:"s16",name:"Watercolor set + paper",detail:"Julian Monday morning",days:["monday"],cat:"Art and Craft"},
-  {id:"s17",name:"Construction paper + stickers",detail:"Julian Tuesday sticker collage",days:["tuesday"],cat:"Art and Craft"},
-  {id:"s18",name:"Sidewalk chalk",detail:"Julian Wednesday outdoor",days:["wednesday"],cat:"Art and Craft"},
-  {id:"s19",name:"Playdough + tools",detail:"Julian Thursday + Friday Maggie",days:["thursday","friday"],cat:"Playdough Station"},
-  {id:"s20",name:"Duplo / LEGO Duplo",detail:"Julian zoo build Monday",days:["monday"],cat:"Building and Play"},
-  {id:"s21",name:"Toy cars + painter's tape",detail:"Julian Tuesday car ramp",days:["tuesday"],cat:"Building and Play"},
-  {id:"s22",name:"Stuffed animals",detail:"Julian Tuesday hospital",days:["tuesday"],cat:"Building and Play"},
-  {id:"s23",name:"Floor puzzle 24–48 pc",detail:"Julian Tuesday",days:["tuesday"],cat:"Games and Puzzles"},
-  {id:"s24",name:"Candy Land / Zingo / Go Fish",detail:"Julian + Lucy afternoons",days:["monday","tuesday","thursday","friday"],cat:"Games and Puzzles"},
-  {id:"s25",name:"Baking soda + vinegar + food coloring",detail:"Julian Thursday science",days:["thursday"],cat:"Sensory and Science"},
-  {id:"s26",name:"Sensory bin rice/beans",detail:"Julian Thursday dig",days:["thursday"],cat:"Sensory and Science"},
-  {id:"s27",name:"Egg shakers / rhythm sticks",detail:"Julian Friday Maggie",days:["friday"],cat:"Music Movement and Outdoor"},
-  {id:"s28",name:"Bubble wand + solution",detail:"Julian + Lucy afternoons",days:["tuesday","thursday"],cat:"Music Movement and Outdoor"},
-  {id:"s29",name:"Picture books 5–10",detail:"Julian quiet time + Lucy reads to Julian",days:["monday","tuesday","wednesday","thursday","friday"],cat:"Books and Quiet Time"},
-];
-const SUP_CATS_DEFAULT=["Books and Workbooks","Tech and Prep","Art and Craft","Building and Play","Sensory and Science","Games and Puzzles","Music Movement and Outdoor","Playdough Station","Books and Quiet Time"];
-let SUP=[...SUP_DEFAULT];
-let SUP_CATS=[...SUP_CATS_DEFAULT];
-
-function renderSupplies(el){
-  const con=el||document.getElementById("content"); if(!con)return;
-  const filt=supDay==="all"?SUP:SUP.filter(s=>s.days.includes(supDay));
-  let h='<div class="sup-filter">'+
-    ["all","monday","tuesday","wednesday","thursday","friday"].map(d=>
-      '<button class="sup-day-btn'+(d===supDay?" active":"")+'" onclick="selSupDay(\''+d+'\')">'+(d==="all"?"All Days":(DAY_LBL[d]||d))+(d!=="all"?" ("+SUP.filter(s=>s.days.includes(d)&&!supplies[s.id]).length+")":"")+'</button>'
-    ).join("")+'</div><div style="padding-bottom:12px">';
-  SUP_CATS.forEach(cat=>{
-    const items=filt.filter(s=>s.cat===cat); if(!items.length)return;
-    const done=items.filter(s=>supplies[s.id]).length, col=collCats[cat];
-    h+='<div class="sup-cat"><div class="cat-hdr" onclick="togCat(\''+cat.replace(/'/g,"\\'")+'\')">' +
-      '<span>'+cat+' ('+done+'/'+items.length+')</span><span>'+(col?'▶':'▼')+'</span></div>';
-    if(!col){
-      h+='<div class="cat-body">'+items.map(s=>
-        '<div class="sup-item'+(supplies[s.id]?" done":"")+'" onclick="togSup(\''+s.id+'\')">'+
-        '<div class="sup-cb'+(supplies[s.id]?" on":"")+'">'+( supplies[s.id]?"✓":"")+'</div>'+
-        '<div><div class="sup-name">'+s.name+'</div><div class="sup-detail">'+s.detail+'</div>'+
-        '<div class="sup-days">'+s.days.map(d=>'<span class="sup-chip">'+(DAY_LBL[d]||d).substring(0,3)+'</span>').join("")+'</div></div>'+
-        '</div>').join("")+'</div>';
-    }
-    h+='</div>';
-  });
-  if(!SUP.length) h+='<div style="padding:18px 14px;text-align:center;color:var(--muted);font-size:13px">No supplies list yet.</div>';   // HOWE_HOUSE_DEFAULTS: another family's empty start
-  h+='</div>';
-  con.innerHTML=h;
-}
-function togSup(id){ supplies[id]=!supplies[id]; sv(WK+"_supplies",supplies); if(db)db.ref(WK+"/supplies/"+id).set(supplies[id]); renderSupplies(); }
-function togCat(c){ collCats[c]=!collCats[c]; renderSupplies(); }
-function selSupDay(d){ supDay=d; renderSupplies(); }
-// Open the Supplies view pre-filtered to the day currently selected on the schedule.
-function openSuppliesForDay(){
-  const wd=["monday","tuesday","wednesday","thursday","friday"];
-  supDay=wd.includes(day)?day:"all";
-  showTab("supplies");
-}
+// ── SUPPLIES ── the Sunday list now lives in the LESSONRES block (renderSupplies / openSuppliesForDay); the 29 hard-coded Howe
+//   items (SUP_DEFAULT) and their categories are gone, not migrated — her decision 2026-10-23.
 
 // ── HISTORY ───────────────────────────────────────────────────────
 const HIST_KCOL_LIGHT={lincoln:"#93c5fd",ellis:"#86efac",lucy:"#c4b5fd",julian:"#fdba74"};
@@ -25391,8 +25324,6 @@ function loadJson(){
         for(const id in snapChecked){ if(!commitIds.has(id)) delete snapChecked[id]; }
         for(const id in snapHist){ if(!commitIds.has(id)) delete snapHist[id]; }
         WK=activeWK; weekData=d; checked=snapChecked; slState=snapSl;
-        if(d.supplies&&Array.isArray(d.supplies)){SUP=d.supplies;sv(WK+"_supplies_def",d.supplies);}
-        if(d.supplyCategories&&Array.isArray(d.supplyCategories)) SUP_CATS=d.supplyCategories;
         applyWeekMeta(d);
         sv(WK+"_tasks",d.tasks); sv(WK+"_babysitter",d.babysitter||null);
         sv(WK+"_checked",snapChecked); sv(WK+"_history",snapHist); sv(WK+"_sl",snapSl);
@@ -25440,8 +25371,6 @@ function loadJson(){
         WK=d.week; HA_LS.setItem("ha_active_wk",WK);
         if(db) db.ref("ha_active_wk").set(WK);
         weekData=d; checked={}; slState={};
-        if(d.supplies&&Array.isArray(d.supplies)){SUP=d.supplies;sv(WK+"_supplies_def",d.supplies);}
-        if(d.supplyCategories&&Array.isArray(d.supplyCategories)) SUP_CATS=d.supplyCategories;
         sv(WK+"_tasks",d.tasks); sv(WK+"_babysitter",d.babysitter||null);
         sv(WK+"_checked",{}); sv(WK+"_sl",{}); sv(WK+"_history",{});
         sv(WK+"_meta",{week:d.week,dates:d.dates||{},constraints:d.constraints||{},windows:d.windows||{}});
@@ -34330,6 +34259,573 @@ function llLessonChoices(kid,sk){
   }).filter(function(c){ return !!c.key; });
 }
 // LESSONLINK_END
+// LESSONRES_START — a lesson carries what it needs (her design doc + the supplies sit-down 2026-10-23): links, supplies,
+// books to check out, things to order, and Mom's notes. The record hangs on the lesson row the Grid already keys:
+//   curriculum/resources/<kid>/<subjectKey>/<lid>      = {links:[{url,label}], supplies:[{name,qty?,kids:true|false}],
+//                                                        books:[{title,by?,checkoutBy?}], orders:[{name,url?,orderBy?}], notes}  (any part absent)
+//   curriculum/resources/<kid>/<subjectKey>/_subject   = the same shape — the subject default, used by every lesson of that
+//                                                        subject that says nothing for that part.
+// Every write is ONE targeted part — …/<lid>/<part> or …/_subject/<part> — never the whole node; Mom-only (momHere());
+// db && !_dryRun() only, so ?dryrun=1 stays inert. The LESSONLINK link stays exactly as it was; `links` adds beside it, and a
+// card with two or more links shows one small "Links ▾" menu instead of one button.
+// Kids: a card shows ONE line — "🎒 bring: glue stick, ruler" — from the supplies whose kids flag is on. Notes are never kid-facing.
+// The Sunday list (the old Supplies tab's slot) is DERIVED from the laid lessons of THIS week and NEXT: supplies, books and
+// orders, grouped by kid then by kind, one tick per item per week. The 29 hard-coded Howe items are gone, not migrated (her
+// decision 2026-10-23); the list starts empty. Ticks keep the <week>/supplies/<id> path; the id is kid + subject + kind + item,
+// so a tick survives a re-lay. Lead-time dates (check out by, order by) are optional; the ones due within two days also sit on
+// Mom's Day 🔴 Now with ✓ Got it (the tick). Staples (pencils, glue sticks, printer paper…) have no subject: supplies/staples/<id>
+// = {name, state: have|low|out}, tap to cycle — the Kitchen's staples pattern, its own data; low and out ones join the list.
+// 📷 From a photo: a photo (shrunk with _cbShrinkImage) or pasted text goes to Claude through the same call the Kitchen capture
+// uses (kitCapAsk, the family key); the answer lands as DRAFT rows Mom ticks, each with a lesson picker pre-filled when the
+// printed reference ("Lesson 12") matches a laid lesson (llParseRef), else the subject default. Nothing is written until Save;
+// unticked rows are dropped. No key → the button says where to add one (Settings, as the Kitchen does).
+// Nothing in the scheduler, generator or lay changes. Family Time items are untouched. A deeper Builder planner view over this
+// same record is a later session.
+const LR_PARTS=["links","supplies","books","orders","notes"];
+const LR_SUBJECT="_subject";
+const LR_KIND_LABEL={supplies:"🎒 Supplies",books:"📚 Books",orders:"🛒 To order"};
+const LR_DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+function lrISO(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function lrToday(){ return (typeof cbTodayISO==="function")?cbTodayISO():lrISO(new Date()); }
+function lrEsc(s){ return (typeof esc==="function")?esc(s):String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function lrCap(s){ return (typeof cap==="function")?cap(s):String(s||""); }
+function lrMom(){ return (typeof momHere==="function")?momHere():false; }
+function lrDry(){ return (typeof _dryRun==="function")?_dryRun():false; }
+function lrSafeUrl(u){ if(typeof llSafeUrl==="function") return llSafeUrl(u); const s=String(u||"").trim(); return /^https:\/\//i.test(s)?s:""; }
+function lrHost(u){ try{ return new URL(u).hostname.replace(/^www\./,""); }catch(e){ return "link"; } }
+function lrFilled(v){ return (typeof gvFilled==="function")?gvFilled(v):!!(v&&v!=="—"&&String(v).trim()); }
+function lrSubjName(kid,sk){ const s=((((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[kid]||{})[sk])||{}; return String(s.display||s.name||sk||""); }
+function lrSubjects(kid){ return (((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[kid])||{}; }
+// ── the record ──
+function lrRoot(){ return ((typeof currData!=="undefined"&&currData&&currData.resources)||{}); }
+function lrRaw(kid,sk,key){ return ((((lrRoot()[kid]||{})[sk])||{})[key])||{}; }
+function lrList(v){ if(Array.isArray(v)) return v.filter(Boolean); if(v&&typeof v==="object") return Object.keys(v).sort().map(k=>v[k]).filter(Boolean); return []; }
+function lrStr(v,n){ return String(v==null?"":v).trim().slice(0,n||120); }
+function lrDate(v){ const m=/^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(String(v||"").trim()); return m?m[1]+"-"+m[2].padStart(2,"0")+"-"+m[3].padStart(2,"0"):""; }
+// One part, cleaned to its shape (what gets written, what gets read).
+function lrClean(part,v){
+  if(part==="notes") return lrStr(v,2000);
+  const L=lrList(v), out=[];
+  L.forEach(x=>{
+    if(!x||typeof x!=="object") return;
+    if(part==="links"){ const url=lrSafeUrl(x.url); if(!url) return; const o={url:url}; const lb=lrStr(x.label,60); if(lb) o.label=lb; out.push(o); }
+    else if(part==="supplies"){ const name=lrStr(x.name,80); if(!name) return; const o={name:name,kids:x.kids!==false}; const q=lrStr(x.qty,20); if(q) o.qty=q; out.push(o); }
+    else if(part==="books"){ const title=lrStr(x.title,120); if(!title) return; const o={title:title}; const by=lrStr(x.by,80); if(by) o.by=by; const d=lrDate(x.checkoutBy); if(d) o.checkoutBy=d; out.push(o); }
+    else if(part==="orders"){ const name=lrStr(x.name,120); if(!name) return; const o={name:name}; const u=lrSafeUrl(x.url); if(u) o.url=u; const d=lrDate(x.orderBy); if(d) o.orderBy=d; out.push(o); }
+  });
+  return out;
+}
+function lrSaid(part,v){ return part==="notes"?!!lrStr(v):lrClean(part,v).length>0; }
+// The record a lesson lives by: each part is the lesson's own when it says something, else the subject default.
+// _from[part] = "lesson" | "subject" | "none" tells the panel which it is showing.
+function lrFor(kid,sk,key){
+  const own=lrRaw(kid,sk,key), def=lrRaw(kid,sk,LR_SUBJECT); const out={_from:{}};
+  LR_PARTS.forEach(p=>{
+    if(key!==LR_SUBJECT&&lrSaid(p,own[p])){ out[p]=lrClean(p,own[p]); out._from[p]="lesson"; }
+    else if(lrSaid(p,def[p])){ out[p]=lrClean(p,def[p]); out._from[p]=key===LR_SUBJECT?"lesson":"subject"; }
+    else { out[p]=p==="notes"?"":[]; out._from[p]="none"; }
+  });
+  return out;
+}
+function lrKeyForTask(t){ return (typeof llLessonKey==="function")?(llLessonKey(t)||""):""; }
+function lrForTask(t){ if(!t||!t.who||!t.subjectKey) return lrFor("","",""); return lrFor(t.who,t.subjectKey,lrKeyForTask(t)||"__none__"); }
+// The ONE targeted write: curriculum/resources/<kid>/<sk>/<key>/<part>. An empty list or empty notes clears the part
+// (set null) — the lesson "says nothing" again and the subject default shows through. Mom only; dry-run inert.
+function lrPath(kid,sk,key,part){ return "curriculum/resources/"+kid+"/"+sk+"/"+key+"/"+part; }
+function lrWrite(kid,sk,key,part,value){
+  if(!lrMom()||!kid||!sk||!key||LR_PARTS.indexOf(part)<0) return false;
+  if(typeof currData==="undefined"||!currData) return false;
+  const v=lrSaid(part,value)?lrClean(part,value):null;
+  if(!currData.resources) currData.resources={};
+  const R=currData.resources; R[kid]=R[kid]||{}; R[kid][sk]=R[kid][sk]||{}; R[kid][sk][key]=R[kid][sk][key]||{};
+  if(v===null){ delete R[kid][sk][key][part]; if(!Object.keys(R[kid][sk][key]).length) delete R[kid][sk][key]; }
+  else R[kid][sk][key][part]=v;
+  if(typeof db!=="undefined"&&db&&!lrDry()) db.ref(lrPath(kid,sk,key,part)).set(v);
+  return true;
+}
+// Live copy on every device (kids' cards read it too): one listener on curriculum/resources, a read.
+function lrListen(){
+  if(typeof db==="undefined"||!db) return;
+  try{ db.ref("curriculum/resources").on("value",s=>{ if(typeof currData!=="undefined"&&currData){ currData.resources=s.val()||{}; if(typeof renderAll==="function"&&(tab==="schedule"||tab==="supplies"||tab==="curriculum"||tab==="moms-plan")) renderAll(); } }); }catch(e){}
+  lrStaplesListen();
+}
+// ── the card: links menu + the kids' line ──
+// [{url,label}] — the LESSONLINK link first (it already resolved for this card), then the record's links, no repeats.
+function lrLinksFor(t,subj,llUrl,rec){
+  const out=[]; if(llUrl) out.push({url:llUrl,label:(typeof llLabelFor==="function")?llLabelFor(subj):"Open lesson"});
+  const r=rec||lrForTask(t);
+  (r.links||[]).forEach(l=>{ const u=lrSafeUrl(l.url); if(u&&!out.some(x=>x.url===u)) out.push({url:u,label:l.label||lrHost(u)}); });
+  return out;
+}
+function lrLinkA(l,extra){ return '<a href="'+lrEsc(l.url)+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif;text-decoration:none'+(extra||'')+'">▶ '+lrEsc(l.label)+' →</a>'; }
+// Two or more links: one small menu button; tapping it drops the list open right on the card (no re-render, no popup).
+function lrLinkMenuHTML(links,id){
+  const mid="lr-lm-"+String(id||"").replace(/[^A-Za-z0-9_-]/g,"_");
+  let h='<div style="margin-top:5px" data-lr-menu="1"><span onclick="event.stopPropagation();lrMenuToggle(\''+mid+'\')" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1d4ed8;cursor:pointer;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">▶ Links ('+links.length+') ▾</span>';
+  h+='<div id="'+mid+'" style="display:none;margin-top:4px;gap:4px;flex-wrap:wrap">'+links.map(l=>lrLinkA(l,';margin:2px 4px 2px 0')).join("")+'</div></div>';
+  return h;
+}
+function lrMenuToggle(id){ const el=document.getElementById(id); if(!el) return; el.style.display=(el.style.display==="none")?"flex":"none"; }
+// "🎒 bring: glue stick, ruler" — only supplies whose kids flag is on; never notes, books or orders.
+function lrKidLineHTML(rec){
+  const names=(rec&&rec.supplies||[]).filter(s=>s&&s.kids!==false).map(s=>(s.qty?s.qty+" ":"")+s.name);
+  if(!names.length) return "";
+  return '<div style="margin-top:5px;font-size:11px;font-weight:700;color:#0e7490">🎒 bring: '+lrEsc(names.join(", "))+'</div>';
+}
+// taskCard's hook → {menu, kids}. menu is non-empty only when it REPLACES the LESSONLINK button (2+ links, or the
+// only link is from the record); the caller blanks its own button then. Done cards carry nothing.
+function lrCardParts(t,subj,llUrl,readOnly,done){
+  const out={menu:"",kids:""};
+  if(!t||!t.who||!t.subjectKey||done) return out;
+  const r=lrForTask(t);
+  if(!readOnly){
+    const links=lrLinksFor(t,subj,llUrl,r);
+    if(links.length>1) out.menu=lrLinkMenuHTML(links,t.id);
+    else if(links.length===1&&!llUrl) out.menu='<div style="margin-top:5px">'+lrLinkA(links[0])+'</div>';
+  }
+  out.kids=lrKidLineHTML(r);
+  return out;
+}
+// ── what the Grid has laid ──
+// Monday..Sunday for this week (+offset weeks). On a Sunday "this week" is the week that starts tomorrow — that is the
+// week the Sunday list is for.
+function lrWeekRange(offset,todayISO){
+  const d=new Date((todayISO||lrToday())+"T12:00:00"); const dow=d.getDay();
+  const mon=new Date(d); mon.setDate(d.getDate()+(dow===0?1:1-dow)+7*(offset||0));
+  const sun=new Date(mon); sun.setDate(mon.getDate()+6);
+  return {from:lrISO(mon),to:lrISO(sun)};
+}
+// The lesson id for a cell's text (stamped subjects): the first unfinished line with that text, else the first.
+function lrLidForText(kid,sk,text){
+  const ids=(typeof lidsFor==="function")?lidsFor(kid,sk):null; if(!ids) return null;
+  const seq=(lrSubjects(kid)[sk]||{}).lessonSeq||[]; const norm=(typeof _lidNorm==="function")?_lidNorm:(x=>String(x||"").trim().toLowerCase());
+  const k=norm(text); const done=(typeof lidDoneSet==="function"&&lidDoneSet(kid,sk))||new Set(); let first=null;
+  for(let i=0;i<seq.length;i++){ if(norm(seq[i])!==k) continue; if(first===null) first=ids[i]; if(!done.has(ids[i])) return ids[i]; }
+  return first;
+}
+function lrKeyForText(kid,sk,text){ const lid=lrLidForText(kid,sk,text); if(lid) return String(lid); return (typeof llKeyForRef==="function")?llKeyForRef(text):String(text||"").trim().toLowerCase().replace(/[.#$\/\[\]\s]+/g,"_"); }
+// Every laid lesson for one kid between two dates: [{kid,sk,key,text,date,dn}], by date. Stored cells by day; a plan-backed
+// FUTURE cell shows the derived lesson (the identity the Grid draws — gvDerivedColumn, once per subject), as GVIDENT does.
+function lrLaidLessons(kid,fromISO,toISO){
+  const out=[]; const L=(((typeof currData!=="undefined"&&currData&&currData.lessons)||{})[kid])||{}; const subs=lrSubjects(kid);
+  const today=lrToday(); const der={};
+  Object.keys(subs).forEach(sk=>{ der[sk]=null; try{ if(typeof planBacked==="function"&&planBacked(kid,sk)&&typeof gvDerivedColumn==="function"){ const d=gvDerivedColumn(kid,sk); if(d&&!d.err) der[sk]=d; } }catch(e){ der[sk]=null; } });
+  Object.keys(L).forEach(dn=>{
+    const l=L[dn]; if(!l||!l.date||l.date<fromISO||l.date>toISO) return;
+    Object.keys(subs).forEach(sk=>{
+      let text=String(l[sk]||""), lid=null;
+      if(der[sk]&&l.date>=today){ const e=(der[sk].byDate||{})[l.date]; if(e&&lrFilled(e.text)){ text=String(e.text); lid=e.lid||null; } }
+      if(!lrFilled(text)) return;
+      out.push({kid:kid,sk:sk,key:lid?String(lid):lrKeyForText(kid,sk,text),text:text,date:l.date,dn:Number(dn)});
+    });
+  });
+  out.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:(a.sk<b.sk?-1:a.sk>b.sk?1:0));
+  return out;
+}
+// ── the Sunday list ──
+function lrSlug(s){ return String(s||"").toLowerCase().replace(/[.#$\/\[\]]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,40)||"item"; }
+// Stable: kid + subject + kind + item — the same item on two lessons of one subject is one tick, and a re-lay keeps it.
+function lrItemId(kid,sk,kind,name){ return "lr_"+kid+"_"+sk+"_"+kind+"_"+lrSlug(name); }
+function lrNextWk(wk){ const m=/^week(\d+)$/.exec(String(wk||"")); return m?"week"+(parseInt(m[1],10)+1):""; }
+function lrWk(w){ const cur=(typeof activeWk==="function")?activeWk():(typeof WK!=="undefined"?WK:""); return w?lrNextWk(cur):cur; }
+let lrTicksNext={}, lrTicksNextWk="";
+function lrTicked(id,w,ticks0,ticks1){ const t=w?(ticks1||lrTicksNext):(ticks0||((typeof supplies!=="undefined"&&supplies)||{})); return !!t[id]; }
+// "by Thu" inside the next week, "by today", "by 10/30" further out, "was due 10/20" when it slipped.
+function lrByLabel(iso,todayISO){
+  if(!iso) return ""; const t=todayISO||lrToday();
+  const d=Math.round((new Date(iso+"T12:00:00")-new Date(t+"T12:00:00"))/86400000);
+  const dt=new Date(iso+"T12:00:00"); const md=(dt.getMonth()+1)+"/"+dt.getDate();
+  if(d<0) return "was due "+md; if(d===0) return "by today"; if(d<7) return "by "+LR_DOW[dt.getDay()]; return "by "+md;
+}
+function lrDaysUntil(iso,todayISO){ if(!iso) return null; return Math.round((new Date(iso+"T12:00:00")-new Date((todayISO||lrToday())+"T12:00:00"))/86400000); }
+// The list itself (pure over currData + the two week ranges):
+//   {w0,w1, kids:[{kid, kinds:[{kind,label,items:[...]}]}], items:[...], staples:[...], n}
+//   item = {id,kid,sk,kind,name,detail,url,byISO,by,weeks:[0|1…],lessons:[{sk,text,date,w}]}
+function lrBuildList(opts){
+  opts=opts||{}; const today=opts.today||lrToday(); const roster=opts.roster||((typeof ROSTER!=="undefined")?ROSTER:[]);
+  const w0=lrWeekRange(0,today), w1=lrWeekRange(1,today); const kids=[], all=[];
+  roster.forEach(kid=>{
+    const byId={}, order=[];
+    const add=(kind,L,w,name,detail,byISO,url)=>{
+      name=lrStr(name,120); if(!name) return; const id=lrItemId(kid,L.sk,kind,name);
+      let it=byId[id]; if(!it){ it=byId[id]={id:id,kid:kid,sk:L.sk,kind:kind,name:name,detail:detail||"",url:url||"",byISO:byISO||"",weeks:[],lessons:[]}; order.push(id); }
+      if(it.weeks.indexOf(w)<0) it.weeks.push(w);
+      if(byISO&&(!it.byISO||byISO<it.byISO)) it.byISO=byISO;
+      if(!it.url&&url) it.url=url; if(!it.detail&&detail) it.detail=detail;
+      if(!it.lessons.some(x=>x.sk===L.sk&&x.text===L.text)) it.lessons.push({sk:L.sk,text:L.text,date:L.date,w:w});
+    };
+    [[lrLaidLessons(kid,w0.from,w0.to),0],[lrLaidLessons(kid,w1.from,w1.to),1]].forEach(pair=>{
+      pair[0].forEach(L=>{
+        const r=lrFor(kid,L.sk,L.key);
+        r.supplies.forEach(s=>add("supplies",L,pair[1],s.name,s.qty||"",null,null));
+        r.books.forEach(b=>add("books",L,pair[1],b.title,b.by?"by "+b.by:"",b.checkoutBy||null,null));
+        r.orders.forEach(o=>add("orders",L,pair[1],o.name,"",o.orderBy||null,o.url||null));
+      });
+    });
+    if(!order.length) return;
+    const kinds=["supplies","books","orders"].map(kind=>({kind:kind,label:LR_KIND_LABEL[kind],items:order.map(id=>byId[id]).filter(it=>it.kind===kind)})).filter(k=>k.items.length);
+    kinds.forEach(k=>k.items.forEach(it=>{ it.by=lrByLabel(it.byISO,today); all.push(it); }));
+    kids.push({kid:kid,kinds:kinds});
+  });
+  const staples=lrStaplesNeeded(opts.staples);
+  return {w0:w0,w1:w1,today:today,kids:kids,items:all,staples:staples,n:all.length+staples.length};
+}
+// Lead-time items due within two days and not yet ticked for their week → Mom's Day 🔴 Now rows.
+function lrDueSoon(list,ticks0,ticks1){
+  const L=list||lrBuildList(); const out=[];
+  L.items.forEach(it=>{
+    if(!it.byISO) return; const d=lrDaysUntil(it.byISO,L.today); if(d===null||d>2) return;
+    const w=it.weeks.indexOf(0)>=0?0:1; if(lrTicked(it.id,w,ticks0,ticks1)) return;
+    out.push(Object.assign({w:w,days:d},it));
+  });
+  return out.sort((a,b)=>(a.byISO<b.byISO?-1:a.byISO>b.byISO?1:0));
+}
+function lrNowRowHTML(it){
+  const verb=it.kind==="books"?"📚 Check out":it.kind==="orders"?"🛒 Order":"🎒 Get";
+  const who=lrCap(it.kid)+" · "+lrEsc(lrSubjName(it.kid,it.sk));
+  return '<div style="display:flex;align-items:center;gap:6px;padding:7px 10px;background:#ecfeff;border-left:3px solid #0891b2;border-radius:8px;margin-bottom:6px;flex-wrap:wrap">'
+    +'<span style="flex:1;min-width:180px;font-size:13px">'+verb+' <b>'+lrEsc(it.name)+'</b> <span style="color:#0e7490;font-weight:700">'+lrEsc(it.by)+'</span> <span style="color:var(--muted);font-size:11px">'+who+'</span></span>'
+    +'<button onclick="lrTick(\''+lrEsc(it.id)+'\','+it.w+')" style="padding:4px 10px;border-radius:8px;border:none;background:#0891b2;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">✓ Got it</button></div>';
+}
+// Mom's Day 🔴 Now hook → {n, html}, the shape the study-alert and KITFLAG rows beside it use.
+function lrNowHTML(){
+  const due=lrDueSoon(); if(!due.length) return {n:0,html:""};
+  return {n:due.length,html:'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:10px 0 6px">🧺 Sunday list — due soon</div>'+due.map(lrNowRowHTML).join("")};
+}
+// One tick: <week>/supplies/<id> — this week's under the active week key, next week's under the next (week<n+1>).
+function lrTick(id,w){
+  const wk=lrWk(w); if(!wk||!id) return;
+  const t=w?lrTicksNext:((typeof supplies!=="undefined"&&supplies)||{});
+  const on=!t[id]; if(on) t[id]=true; else delete t[id];
+  try{ if(typeof sv==="function") sv(wk+"_supplies",t); }catch(e){}
+  if(typeof db!=="undefined"&&db&&!lrDry()) db.ref(wk+"/supplies/"+id).set(on?true:null);
+  if(typeof renderAll==="function") renderAll();
+}
+// Next week's ticks: one listener, started when the list first renders (this week's already arrive with the week).
+function lrEnsureNextTicks(){
+  const wk=lrWk(1); if(!wk||wk===lrTicksNextWk) return; lrTicksNextWk=wk;
+  try{ if(typeof ld==="function") lrTicksNext=ld(wk+"_supplies")||{}; }catch(e){ lrTicksNext={}; }
+  if(typeof db==="undefined"||!db) return;
+  try{ db.ref(wk+"/supplies").on("value",s=>{ lrTicksNext=s.val()||{}; try{ sv(wk+"_supplies",lrTicksNext); }catch(e){} if(tab==="supplies"&&typeof renderSupplies==="function") renderSupplies(); }); }catch(e){}
+}
+// ── staples: supplies/staples/<id> = {name, state} — have → low → out → have. Hers to edit (Mom only). ──
+const LR_STATES=["have","low","out"];
+const LR_STATE_META={have:["✅","#f0fdf4","#166534","#bbf7d0"],low:["🟡","#fefce8","#a16207","#fde68a"],out:["❌","#fef2f2","#b91c1c","#fecaca"]};
+let lrStaples=(function(){ try{ return (typeof ld==="function"&&ld("ha_lr_staples"))||{}; }catch(e){ return {}; } })();
+let lrStapleManage=false;
+function lrStaplesListen(){
+  if(typeof db==="undefined"||!db) return;
+  try{ db.ref("supplies/staples").on("value",s=>{ const v=s.val()||{}; Object.keys(lrStaples).forEach(k=>{ delete lrStaples[k]; }); Object.keys(v).forEach(k=>{ lrStaples[k]=v[k]; }); try{ sv("ha_lr_staples",lrStaples); }catch(e){} if(tab==="supplies"&&typeof renderSupplies==="function") renderSupplies(); }); }catch(e){}
+}
+function lrStapleCycle(id){
+  if(!lrMom()) return; const s=lrStaples[id]; if(!s) return;
+  s.state=LR_STATES[(LR_STATES.indexOf(s.state)+1)%LR_STATES.length];
+  try{ sv("ha_lr_staples",lrStaples); }catch(e){}
+  if(typeof db!=="undefined"&&db&&!lrDry()) db.ref("supplies/staples/"+id).set({name:s.name,state:s.state});
+  if(typeof renderSupplies==="function") renderSupplies();
+}
+function lrStapleAdd(name){
+  if(!lrMom()) return; const inp=document.getElementById("lr-staple-new"); name=lrStr(name!=null?name:(inp&&inp.value),80); if(!name) return;
+  const id="st"+Date.now().toString(36); lrStaples[id]={name:name,state:"have"};
+  try{ sv("ha_lr_staples",lrStaples); }catch(e){}
+  if(typeof db!=="undefined"&&db&&!lrDry()) db.ref("supplies/staples/"+id).set(lrStaples[id]);
+  if(typeof renderSupplies==="function") renderSupplies();
+}
+function lrStapleDel(id){
+  if(!lrMom()) return; const s=lrStaples[id]; if(!s) return;
+  if(!confirm('Take "'+(s.name||"this")+'" off the staples list?')) return;
+  delete lrStaples[id]; try{ sv("ha_lr_staples",lrStaples); }catch(e){}
+  if(typeof db!=="undefined"&&db&&!lrDry()) db.ref("supplies/staples/"+id).remove();
+  if(typeof renderSupplies==="function") renderSupplies();
+}
+function lrStaplesAll(st){ const S=st||lrStaples; return Object.keys(S).map(id=>Object.assign({id:id},S[id]||{})).filter(s=>s.name).sort((a,b)=>String(a.name).localeCompare(String(b.name))); }
+function lrStaplesNeeded(st){ return lrStaplesAll(st).filter(s=>s.state==="low"||s.state==="out"); }
+function lrStapleChip(s,manage){
+  const m=LR_STATE_META[s.state]||LR_STATE_META.have;
+  return '<span onclick="lrStapleCycle(\''+lrEsc(s.id)+'\')" title="Tap: have → low → out" style="cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:4px 10px;border-radius:12px;border:1.5px solid '+m[3]+';background:'+m[1]+';color:'+m[2]+'">'+m[0]+' '+lrEsc(s.name)
+    +(manage?'<span onclick="event.stopPropagation();lrStapleDel(\''+lrEsc(s.id)+'\')" style="color:#9ca3af;font-weight:800;padding:0 2px">✕</span>':'')+'</span>';
+}
+// ── the Sunday list tab (the Supplies tab's slot) ──
+const LR_EMPTY_LINE="Add supplies to a lesson, snap a photo of a materials list, or set your staples — they show up here.";
+function lrMD(iso){ const d=new Date(iso+"T12:00:00"); return (d.getMonth()+1)+"/"+d.getDate(); }
+function lrTickBox(it,w,ticks0,ticks1){
+  const on=lrTicked(it.id,w,ticks0,ticks1);
+  return '<span onclick="lrTick(\''+lrEsc(it.id)+'\','+w+')" title="'+(w?"next week":"this week")+'" style="display:inline-flex;flex-direction:column;align-items:center;gap:1px;cursor:pointer"><span class="sup-cb'+(on?' on':'')+'">'+(on?'✓':'')+'</span><span style="font-size:9px;font-weight:700;color:var(--muted)">'+(w?"next":"this")+'</span></span>';
+}
+function lrItemRowHTML(it,ticks0,ticks1){
+  const allOn=it.weeks.every(w=>lrTicked(it.id,w,ticks0,ticks1));
+  let h='<div class="sup-item'+(allOn?' done':'')+'" style="cursor:default">';
+  h+='<div style="display:flex;gap:8px">'+[0,1].filter(w=>it.weeks.indexOf(w)>=0).map(w=>lrTickBox(it,w,ticks0,ticks1)).join("")+'</div>';
+  h+='<div style="flex:1"><div class="sup-name">'+lrEsc(it.name)+(it.detail?' <span style="font-weight:400;color:var(--muted)">'+lrEsc(it.detail)+'</span>':'')
+    +(it.by?' <span style="font-size:11px;font-weight:800;color:'+(/^was/.test(it.by)?'#b91c1c':'#0e7490')+'">'+lrEsc(it.by)+'</span>':'')
+    +(it.url?' <a href="'+lrEsc(it.url)+'" target="_blank" rel="noopener noreferrer" style="font-size:11px;font-weight:700;color:#1d4ed8">open →</a>':'')+'</div>';
+  h+='<div class="sup-detail">'+lrEsc(lrSubjName(it.kid,it.sk))+' — '+it.lessons.map(l=>lrEsc(l.text)+' <span style="font-size:10px">('+LR_DOW[new Date(l.date+"T12:00:00").getDay()]+' '+lrMD(l.date)+')</span>').join(" · ")+'</div></div></div>';
+  return h;
+}
+function lrSundayHTML(list,ticks0,ticks1){
+  const L=list||lrBuildList(); const mom=lrMom();
+  let h='<div style="padding:12px 12px 0"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
+  h+='<div style="flex:1;min-width:160px"><div style="font-size:15px;font-weight:800">🧺 Sunday list</div><div style="font-size:11.5px;color:var(--muted)">What this week and next need — '+lrMD(L.w0.from)+' – '+lrMD(L.w1.to)+', from the lessons on the Grid.</div></div>';
+  if(mom) h+=lrCapButtonsHTML("list");
+  h+='</div>';
+  if(mom&&lrCapState&&lrCapState.where==="list") h+=lrCapHTML();
+  if(!L.n) h+='<div style="padding:22px 14px;text-align:center;color:var(--muted);font-size:13px;line-height:1.5">'+LR_EMPTY_LINE+'</div>';
+  h+='</div>';
+  L.kids.forEach(K=>{
+    const col=(typeof KID_COLOR!=="undefined"&&KID_COLOR[K.kid])||"var(--header)";
+    h+='<div class="sup-cat"><div class="cat-hdr" style="background:'+col+';cursor:default"><span>'+lrEsc(lrCap(K.kid))+'</span><span style="font-size:11px;font-weight:700;opacity:.85">'+K.kinds.reduce((n,k)=>n+k.items.length,0)+' items</span></div><div class="cat-body">';
+    K.kinds.forEach(k=>{ h+='<div style="padding:7px 14px 3px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)">'+k.label+'</div>'+k.items.map(it=>lrItemRowHTML(it,ticks0,ticks1)).join(""); });
+    h+='</div></div>';
+  });
+  // Staples — no kid, no subject. Low and out ones are the list; the rest sit under "all staples" for a tap.
+  const allSt=lrStaplesAll();
+  h+='<div class="sup-cat"><div class="cat-hdr" style="cursor:default"><span>🧷 Staples</span><span style="font-size:11px;font-weight:700;opacity:.85">'+(L.staples.length?L.staples.length+' low or out':'all stocked')+'</span></div><div class="cat-body" style="padding:10px 14px">';
+  if(L.staples.length) h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'+L.staples.map(s=>lrStapleChip(s,mom&&lrStapleManage)).join("")+'</div>';
+  const rest=allSt.filter(s=>s.state==="have");
+  if(rest.length) h+='<div style="font-size:10.5px;color:var(--muted);margin-bottom:4px">All stocked:</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+rest.map(s=>lrStapleChip(s,mom&&lrStapleManage)).join("")+'</div>';
+  if(!allSt.length) h+='<div style="font-size:12px;color:var(--muted)">No staples yet'+(mom?' — add the things every lesson leans on (pencils, glue sticks, printer paper, dry-erase markers, notebook paper).':'.')+'</div>';
+  if(mom) h+='<div style="display:flex;gap:6px;margin-top:10px;align-items:center"><input id="lr-staple-new" placeholder="Add a staple…" onkeydown="if(event.key===\'Enter\') lrStapleAdd()" style="flex:1;padding:7px 10px;border:1.5px solid var(--border);border-radius:9px;font-size:12.5px;font-family:\'DM Sans\',sans-serif"><button onclick="lrStapleAdd()" style="padding:7px 12px;border-radius:9px;border:none;background:var(--header);color:#fff;font-size:12px;font-weight:800;cursor:pointer">Add</button><button onclick="lrStapleManage=!lrStapleManage;renderSupplies()" style="padding:7px 10px;border-radius:9px;border:1px solid var(--border);background:#fff;font-size:12px;font-weight:700;cursor:pointer">'+(lrStapleManage?'Done':'Edit')+'</button></div>';
+  h+='</div></div><div style="height:16px"></div>';
+  return h;
+}
+function renderSupplies(el){
+  const con=el||document.getElementById("content"); if(!con) return;
+  lrEnsureNextTicks();
+  con.innerHTML=lrSundayHTML();
+}
+// The day row's 🧺 button opens the list (it used to pre-filter the old checklist by day; the list has no days to filter).
+function openSuppliesForDay(){ showTab("supplies"); }
+// ── the Grid panel: one lesson's resources (Mom only) ──
+let lrPanel=null;   // {kid, sk, key, text, edit:{part,i}|null}
+function lrOpenPanel(kid,dn,sk){
+  if(!lrMom()) return;
+  let text="", key="";
+  try{ const idn=(typeof gvCellIdentity==="function")?gvCellIdentity(kid,dn,sk):null; text=String((idn&&idn.text)||((((currData||{}).lessons||{})[kid]||{})[dn]||{})[sk]||""); if(idn&&idn.mode==="plan"&&idn.lid) key=String(idn.lid); }catch(e){}
+  if(!key){ try{ const c=(typeof gvCellLesson==="function")?gvCellLesson(kid,dn,sk):null; if(c&&c.lid) key=String(c.lid); }catch(e){} }
+  if(!key) key=lrKeyForText(kid,sk,text);
+  lrPanel={kid:kid,sk:sk,key:key,text:text,edit:null}; lrCapState=null;
+  if(typeof gvMenu!=="undefined") gvMenu=null;
+  if(typeof renderAll==="function") renderAll();
+}
+function lrClosePanel(){ lrPanel=null; lrCapState=null; if(typeof renderAll==="function") renderAll(); }
+function lrGridBtnHTML(kid,dn,sk){ return '<button onclick="lrOpenPanel(\''+lrEsc(kid)+'\','+Number(dn)+',\''+lrEsc(sk)+'\')" title="Links, supplies, books, orders and notes for this lesson" style="border:1px solid var(--border);background:#fff;border-radius:8px;padding:3px 7px;font-size:12px;cursor:pointer;line-height:1.3;color:#0e7490">📎</button>'; }
+const LR_FIELDS={links:[["url","https://… the page or video"],["label","Label (optional)"]],supplies:[["name","What they need"],["qty","How many (optional)"]],books:[["title","Book title"],["by","Author (optional)"],["checkoutBy","date"]],orders:[["name","What to order"],["url","https://… where (optional)"],["orderBy","date"]]};
+const LR_PART_LABEL={links:"🔗 Links",supplies:"🎒 Supplies",books:"📚 Books to check out",orders:"🛒 To order",notes:"📝 Notes (Mom only — never on a card)"};
+function lrItemText(part,x){
+  if(part==="links") return (x.label||lrHost(x.url))+' <span style="color:var(--muted);font-weight:400">'+lrEsc(x.url)+'</span>';
+  if(part==="supplies") return lrEsc(x.name)+(x.qty?' <span style="color:var(--muted);font-weight:400">× '+lrEsc(x.qty)+'</span>':'')+(x.kids===false?' <span style="font-size:10px;font-weight:700;color:#9ca3af">hidden from kids</span>':' <span style="font-size:10px;font-weight:700;color:#0e7490">kids see it</span>');
+  if(part==="books") return lrEsc(x.title)+(x.by?' <span style="color:var(--muted);font-weight:400">by '+lrEsc(x.by)+'</span>':'')+(x.checkoutBy?' <span style="font-size:10px;font-weight:700;color:#0e7490">check out by '+lrEsc(lrMD(x.checkoutBy))+'</span>':'');
+  if(part==="orders") return lrEsc(x.name)+(x.url?' <a href="'+lrEsc(x.url)+'" target="_blank" rel="noopener noreferrer" style="font-size:11px;color:#1d4ed8">open →</a>':'')+(x.orderBy?' <span style="font-size:10px;font-weight:700;color:#0e7490">order by '+lrEsc(lrMD(x.orderBy))+'</span>':'');
+  return "";
+}
+function lrPanelHTML(kid){
+  if(!lrPanel||lrPanel.kid!==kid||!lrMom()) return "";
+  const P=lrPanel, r=lrFor(P.kid,P.sk,P.key), isDef=P.key===LR_SUBJECT, subj=lrSubjName(P.kid,P.sk);
+  let h='<div style="position:fixed;left:0;right:0;bottom:0;max-height:78vh;overflow:auto;background:#fff;border-top:3px solid #0e7490;box-shadow:0 -8px 30px rgba(0,0,0,.18);z-index:60;padding:12px 14px 20px;font-family:\'DM Sans\',sans-serif" onclick="event.stopPropagation()">';
+  h+='<div style="display:flex;align-items:flex-start;gap:8px"><div style="flex:1"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#0e7490">📎 Resources'+(isDef?' — every lesson':'')+'</div><div style="font-size:14px;font-weight:800">'+lrEsc(subj)+(isDef?'':' — '+lrEsc(P.text))+'</div><div style="font-size:11px;color:var(--muted)">'+(isDef?'What every '+lrEsc(subj)+' lesson needs unless the lesson says otherwise.':lrCap(P.kid)+' · a part the lesson leaves empty uses the subject default.')+'</div></div>';
+  h+=lrCapButtonsHTML("panel");
+  h+='<button onclick="lrClosePanel()" style="border:1px solid var(--border);background:#fff;border-radius:8px;padding:4px 9px;font-size:13px;cursor:pointer">×</button></div>';
+  if(lrCapState&&lrCapState.where==="panel") h+=lrCapHTML();
+  ["links","supplies","books","orders"].forEach(part=>{
+    const from=r._from[part], items=r[part];
+    h+='<div style="margin-top:12px;border:1px solid var(--border);border-radius:10px;padding:8px 10px"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:12.5px;font-weight:800;flex:1">'+LR_PART_LABEL[part]+'</span>';
+    if(!isDef&&from==="subject") h+='<span style="font-size:10px;font-weight:700;color:#6b7280;background:#f3f4f6;border-radius:8px;padding:1px 7px">subject default</span>';
+    if(!isDef&&from==="lesson") h+='<button onclick="lrUseDefault(\''+part+'\')" title="Clear this lesson\'s own list — it uses the subject default again" style="border:1px solid var(--border);background:#fff;border-radius:8px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;color:#6b7280">use default</button>';
+    if(!isDef&&items.length) h+='<button onclick="lrSetSubjectDefault(\''+part+'\')" title="Every '+lrEsc(subj)+' lesson that says nothing here gets this list" style="border:1px solid #a5f3fc;background:#ecfeff;border-radius:8px;padding:2px 8px;font-size:10.5px;font-weight:700;cursor:pointer;color:#0e7490">Set for every '+lrEsc(subj)+' lesson</button>';
+    h+='</div>';
+    if(items.length) h+='<div style="margin-top:6px">'+items.map((x,i)=>'<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-top:1px solid #f3f4f6;font-size:12.5px"><span style="flex:1;font-weight:600">'+lrItemText(part,x)+'</span>'
+      +'<button onclick="lrEditItem(\''+part+'\','+i+')" title="Edit" style="border:none;background:none;cursor:pointer;font-size:12px">✎</button><button onclick="lrRemoveItem(\''+part+'\','+i+')" title="Remove" style="border:none;background:none;cursor:pointer;font-size:12px;color:#b5394a">✕</button></div>').join("")+'</div>';
+    else h+='<div style="font-size:11.5px;color:var(--muted);margin-top:4px">Nothing yet.</div>';
+    const ed=(P.edit&&P.edit.part===part)?items[P.edit.i]||{}:{};
+    h+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;align-items:center">';
+    LR_FIELDS[part].forEach(f=>{ const isDate=f[1]==="date"; h+='<input id="lr-in-'+part+'-'+f[0]+'" '+(isDate?'type="date" title="'+(part==="books"?"Check out by":"Order by")+'"':'placeholder="'+f[1]+'"')+' value="'+lrEsc(ed[f[0]]||"")+'" onkeydown="if(event.key===\'Enter\') lrAddItem(\''+part+'\')" style="flex:'+(f[0]==="url"||f[0]==="name"||f[0]==="title"?'2 1 160px':'1 1 90px')+';padding:6px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif">'; });
+    if(part==="supplies") h+='<label style="font-size:11px;font-weight:700;display:inline-flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="lr-in-supplies-kids" '+(ed.kids===false?'':'checked')+'> kids can see this</label>';
+    h+='<button onclick="lrAddItem(\''+part+'\')" style="padding:6px 12px;border-radius:8px;border:none;background:#0e7490;color:#fff;font-size:12px;font-weight:800;cursor:pointer">'+(P.edit&&P.edit.part===part?'Save':'+ Add')+'</button>';
+    if(P.edit&&P.edit.part===part) h+='<button onclick="lrPanel.edit=null;renderAll()" style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:12px;cursor:pointer">Cancel</button>';
+    h+='</div></div>';
+  });
+  h+='<div style="margin-top:12px;border:1px solid var(--border);border-radius:10px;padding:8px 10px"><div style="display:flex;align-items:center;gap:6px"><span style="font-size:12.5px;font-weight:800;flex:1">'+LR_PART_LABEL.notes+'</span>'+(!isDef&&r._from.notes==="subject"?'<span style="font-size:10px;font-weight:700;color:#6b7280;background:#f3f4f6;border-radius:8px;padding:1px 7px">subject default</span>':'')+'</div>'
+    +'<textarea id="lr-in-notes" rows="3" placeholder="Prep, page numbers, what to print…" style="width:100%;box-sizing:border-box;margin-top:6px;padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif">'+lrEsc(r._from.notes==="lesson"||isDef?r.notes:"")+'</textarea>'
+    +'<div style="display:flex;gap:6px;margin-top:6px"><button onclick="lrSaveNotes()" style="padding:6px 12px;border-radius:8px;border:none;background:#0e7490;color:#fff;font-size:12px;font-weight:800;cursor:pointer">Save notes</button>'+(!isDef?'<button onclick="lrSetSubjectDefault(\'notes\')" style="padding:6px 10px;border-radius:8px;border:1px solid #a5f3fc;background:#ecfeff;color:#0e7490;font-size:11px;font-weight:700;cursor:pointer">Set for every '+lrEsc(subj)+' lesson</button>':'')+'</div></div>';
+  if(!isDef) h+='<div style="margin-top:10px;text-align:center"><button onclick="lrOpenSubjectDefault()" style="border:none;background:none;color:#0e7490;font-size:12px;font-weight:700;cursor:pointer;text-decoration:underline">Edit the subject default for every '+lrEsc(subj)+' lesson →</button></div>';
+  h+='</div>';
+  return h;
+}
+function lrOpenSubjectDefault(){ if(!lrPanel) return; lrPanel={kid:lrPanel.kid,sk:lrPanel.sk,key:LR_SUBJECT,text:"",edit:null}; lrCapState=null; if(typeof renderAll==="function") renderAll(); }
+// The lesson's own list to edit: its own when it has one, else a COPY of the subject default (adding one supply must not
+// make the default's items vanish from this lesson's card).
+function lrOwnOrCopy(kid,sk,key,part){
+  const own=lrRaw(kid,sk,key)[part];
+  if(key!==LR_SUBJECT&&lrSaid(part,own)) return lrClean(part,own);
+  if(key===LR_SUBJECT) return lrClean(part,own);
+  return lrClean(part,lrRaw(kid,sk,LR_SUBJECT)[part]);
+}
+function lrReadItem(part){
+  const g=id=>{ const el=document.getElementById("lr-in-"+part+"-"+id); return el?String(el.value||"").trim():""; }; const o={};
+  if(part==="links"){ o.url=g("url"); o.label=g("label"); if(!o.url) return {err:"Paste the link first."}; if(!lrSafeUrl(o.url)) return {err:"The link has to start with https://"}; }
+  else if(part==="supplies"){ o.name=g("name"); o.qty=g("qty"); const k=document.getElementById("lr-in-supplies-kids"); o.kids=k?!!k.checked:true; if(!o.name) return {err:"Type what they need first."}; }
+  else if(part==="books"){ o.title=g("title"); o.by=g("by"); o.checkoutBy=g("checkoutBy"); if(!o.title) return {err:"Type the book's title first."}; }
+  else if(part==="orders"){ o.name=g("name"); o.url=g("url"); o.orderBy=g("orderBy"); if(!o.name) return {err:"Type what to order first."}; if(o.url&&!lrSafeUrl(o.url)) return {err:"The link has to start with https://"}; }
+  return {item:o};
+}
+function lrAddItem(part){
+  if(!lrPanel||!lrMom()) return; const P=lrPanel; const r=lrReadItem(part);
+  if(r.err){ if(typeof gwShowToast==="function") gwShowToast(r.err); else alert(r.err); return; }
+  const list=lrOwnOrCopy(P.kid,P.sk,P.key,part);
+  if(P.edit&&P.edit.part===part&&list[P.edit.i]) list[P.edit.i]=r.item; else list.push(r.item);
+  P.edit=null; lrWrite(P.kid,P.sk,P.key,part,list); if(typeof renderAll==="function") renderAll();
+}
+function lrEditItem(part,i){ if(!lrPanel) return; lrPanel.edit={part:part,i:i}; if(typeof renderAll==="function") renderAll(); }
+function lrRemoveItem(part,i){
+  if(!lrPanel||!lrMom()) return; const P=lrPanel; const list=lrOwnOrCopy(P.kid,P.sk,P.key,part); list.splice(i,1); P.edit=null;
+  lrWrite(P.kid,P.sk,P.key,part,list); if(typeof renderAll==="function") renderAll();
+}
+function lrSaveNotes(){ if(!lrPanel||!lrMom()) return; const el=document.getElementById("lr-in-notes"); lrWrite(lrPanel.kid,lrPanel.sk,lrPanel.key,"notes",el?el.value:""); if(typeof gwShowToast==="function") gwShowToast("✓ Notes saved"); if(typeof renderAll==="function") renderAll(); }
+function lrUseDefault(part){ if(!lrPanel||!lrMom()||lrPanel.key===LR_SUBJECT) return; lrWrite(lrPanel.kid,lrPanel.sk,lrPanel.key,part,null); if(typeof renderAll==="function") renderAll(); }
+// "Set for every <subject> lesson": this lesson's list (as shown) becomes the subject default — one write to _subject/<part>.
+function lrSetSubjectDefault(part){
+  if(!lrPanel||!lrMom()) return; const P=lrPanel; const r=lrFor(P.kid,P.sk,P.key);
+  const v=part==="notes"?((document.getElementById("lr-in-notes")||{}).value||r.notes):r[part];
+  if(!lrSaid(part,v)) return;
+  if(!confirm("Use this for every "+lrSubjName(P.kid,P.sk)+" lesson that doesn't say otherwise?")) return;
+  lrWrite(P.kid,P.sk,LR_SUBJECT,part,v); if(typeof gwShowToast==="function") gwShowToast("✓ Set for every "+lrSubjName(P.kid,P.sk)+" lesson"); if(typeof renderAll==="function") renderAll();
+}
+// ── 📷 From a photo — the Kitchen's capture, pointed at a materials list ──
+let lrCapState=null;   // {where:"list"|"panel", kid, sk, defaultKey, mode:null|"text", busy, msg, drafts:null|[...]}
+const LR_CAP_PROMPT='This is a photo (or the text) of a homeschool materials list, a lesson\'s "you will need" box, or a supply page. '
+  +'List every item it asks for. Use ONLY what is there — never invent items, amounts or lesson numbers; leave a field empty if it is not printed. '
+  +'Return ONLY strict JSON, no commentary: {"items":[{"item":"the thing, short","qty":"the amount as printed, or empty","ref":"the lesson or chapter it is for, exactly as printed (e.g. Lesson 12, Ch. 3), or empty","kind":"supply|book|order"}]}. '
+  +'kind: book for a book to borrow or read, order for something that must be bought or ordered, otherwise supply.';
+function lrCapKey(){ return (typeof kitCapKey==="function")?kitCapKey():((typeof mastAIKey!=="undefined"&&mastAIKey)||(typeof haGetKey==="function"?haGetKey():"")||""); }
+function lrCapRerender(){ if(typeof renderAll==="function") renderAll(); }
+function lrCapOpen(where){
+  if(!lrMom()) return;
+  let kid, sk, def=LR_SUBJECT;
+  if(where==="panel"&&lrPanel){ kid=lrPanel.kid; sk=lrPanel.sk; def=lrPanel.key; }
+  else { kid=(lrCapState&&lrCapState.kid)||(typeof gvKid!=="undefined"&&gvKid&&gvKid!=="__fam"?gvKid:null)||((typeof ROSTER!=="undefined")?ROSTER[0]:""); sk=(lrCapState&&lrCapState.sk)||Object.keys(lrSubjects(kid))[0]||""; }
+  lrCapState={where:where,kid:kid,sk:sk,defaultKey:def,mode:null,busy:false,msg:"",drafts:null};
+  if(!lrCapKey()) lrCapState.msg="Needs a Claude key — Admin ▸ Settings ▸ ✨ AI key. Adding items by hand always works.";
+  lrCapRerender();
+}
+function lrCapClose(){ lrCapState=null; lrCapRerender(); }
+function lrCapButtonsHTML(where){
+  const open=lrCapState&&lrCapState.where===where; const key=lrCapKey();
+  const st='padding:5px 11px;border-radius:999px;border:1.5px solid #a5f3fc;background:'+(open?'#0e7490;color:#fff':'#ecfeff;color:#0e7490')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  // With a key the button IS the file picker; without one it opens the capture box, whose first line says where the key goes.
+  if(key&&!open) return '<label style="'+st+'"><input type="file" accept="image/*" multiple onchange="lrCapOpen(\''+where+'\');lrCapAddPhotos(this)" style="display:none">📷 From a photo</label>';
+  return '<button onclick="'+(open?'lrCapClose()':'lrCapOpen(\''+where+'\')')+'" style="'+st+'">📷 From a photo'+(open?' ×':'')+'</button>';
+}
+function lrCapSet(k,v){ if(!lrCapState) return; lrCapState[k]=v; if(k==="kid") lrCapState.sk=Object.keys(lrSubjects(v))[0]||""; lrCapState.drafts=null; lrCapRerender(); }
+// What the picker can point a draft at: the subject's laid lessons for this week and next, then "every lesson".
+function lrCapLaid(kid,sk){ const w0=lrWeekRange(0), w1=lrWeekRange(1); const seen={}; return lrLaidLessons(kid,w0.from,w1.to).filter(L=>L.sk===sk&&!seen[L.key]&&(seen[L.key]=true)); }
+function lrCapHTML(){
+  const C=lrCapState; if(!C) return ""; const key=lrCapKey(); const subs=lrSubjects(C.kid);
+  let h='<div style="background:#ecfeff;border:1.5px solid #a5f3fc;border-radius:10px;padding:9px 11px;margin-top:10px">';
+  h+='<div style="font-size:12px;font-weight:800;color:#0e7490">📷 From a photo — a materials list, a lesson\'s "you will need" box, a supply page</div>';
+  if(C.where==="list") h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center"><span style="font-size:11px;font-weight:700">For</span><select onchange="lrCapSet(\'kid\',this.value)" style="padding:5px 8px;border-radius:8px;border:1.5px solid var(--border);font-size:12px">'+((typeof ROSTER!=="undefined")?ROSTER:[]).map(k=>'<option value="'+k+'"'+(k===C.kid?' selected':'')+'>'+lrEsc(lrCap(k))+'</option>').join("")+'</select>'
+    +'<select onchange="lrCapSet(\'sk\',this.value)" style="padding:5px 8px;border-radius:8px;border:1.5px solid var(--border);font-size:12px;max-width:220px">'+Object.keys(subs).map(sk=>'<option value="'+lrEsc(sk)+'"'+(sk===C.sk?' selected':'')+'>'+lrEsc(lrSubjName(C.kid,sk))+'</option>').join("")+'</select></div>';
+  if(!key) h+='<div style="font-size:11.5px;color:#92400e;margin-top:6px">Needs a Claude key — Admin ▸ Settings ▸ ✨ AI key. Adding items by hand always works.</div>';
+  else if(!C.drafts){
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center">';
+    h+='<label style="padding:5px 11px;border-radius:999px;border:1.5px solid #67e8f9;background:#fff;color:#0e7490;font-size:12px;font-weight:700;cursor:pointer"><input type="file" accept="image/*" multiple onchange="lrCapAddPhotos(this)" style="display:none">📸 Pick photos</label>';
+    h+='<button onclick="lrCapSet(\'mode\',\''+(C.mode==="text"?'':'text')+'\')" style="padding:5px 11px;border-radius:999px;border:1.5px solid #67e8f9;background:'+(C.mode==="text"?'#0e7490;color:#fff':'#fff;color:#0e7490')+';font-size:12px;font-weight:700;cursor:pointer">📋 Pasted text</button>';
+    if(C.busy) h+='<span style="font-size:12px;font-weight:700;color:#0e7490">⏳ Reading…</span>';
+    h+='</div>';
+    if(C.mode==="text") h+='<textarea id="lr-cap-text" rows="5" placeholder="Paste the list — Claude sorts it into items for you to check." style="width:100%;box-sizing:border-box;margin-top:8px;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:12.5px;font-family:\'DM Sans\',sans-serif"></textarea><button onclick="lrCapRunText()" '+(C.busy?'disabled':'')+' style="margin-top:6px;padding:8px 14px;border-radius:9px;border:none;background:#0e7490;color:#fff;font-size:12px;font-weight:800;cursor:pointer">Turn it into items</button>';
+  } else h+=lrCapDraftsHTML();
+  if(C.msg) h+='<div style="font-size:11.5px;color:'+(/^✓/.test(C.msg)?'#15803d':'#b45309')+';margin-top:6px">'+lrEsc(C.msg)+'</div>';
+  return h+'</div>';
+}
+// The answer → [{item,qty,ref,kind}]. Strict shape, nothing invented here either.
+function lrCapParse(txt){
+  const s=String(txt||""); const a=s.indexOf("{"), z=s.lastIndexOf("}");
+  if(a<0||z<=a) throw new Error("Couldn't read a list out of that.");
+  const j=JSON.parse(s.slice(a,z+1)); const L=Array.isArray(j.items)?j.items:(Array.isArray(j)?j:[]);
+  return L.map(x=>{ if(!x) return null; if(typeof x==="string") x={item:x}; const kind=String(x.kind||"").toLowerCase(); return {item:lrStr(x.item||x.name,120),qty:lrStr(x.qty,20),ref:lrStr(x.ref,60),kind:kind==="book"?"book":kind==="order"?"order":"supply"}; }).filter(x=>x&&x.item);
+}
+// Each item → a draft row, its lesson picker set to the laid lesson whose ref matches the printed one (lesson number, and
+// the chapter / book when both sides print them), else the default key (the subject default, or the panel's own lesson).
+function lrCapMatch(ref,laid){
+  const p=(typeof llParseRef==="function")?llParseRef(ref):{lesson:"",chapter:"",book:""}; if(!p.lesson&&!p.chapter) return null;
+  const q=L=>(typeof llParseRef==="function")?llParseRef(L.text):{lesson:"",chapter:"",book:""};
+  const same=(a,b)=>!a||!b||a===b;
+  let m=null;
+  if(p.lesson) m=laid.find(L=>{ const r=q(L); return r.lesson===p.lesson&&same(r.chapter,p.chapter)&&same(r.book,p.book); });
+  if(!m&&!p.lesson&&p.chapter) m=laid.find(L=>{ const r=q(L); return r.chapter===p.chapter&&same(r.book,p.book); });
+  return m||null;
+}
+function lrCapMap(items,laid,defaultKey){
+  return (items||[]).map(it=>{ const m=it.ref?lrCapMatch(it.ref,laid||[]):null; return {on:true,item:it.item,qty:it.qty||"",ref:it.ref||"",kind:it.kind||"supply",key:m?m.key:(defaultKey||LR_SUBJECT),matched:!!m,kids:true}; });
+}
+function lrCapDraftsHTML(){
+  const C=lrCapState; const laid=lrCapLaid(C.kid,C.sk); const subj=lrSubjName(C.kid,C.sk);
+  const opts=d=>'<option value="'+LR_SUBJECT+'"'+(d.key===LR_SUBJECT?' selected':'')+'>Every '+lrEsc(subj)+' lesson</option>'+laid.map(L=>'<option value="'+lrEsc(L.key)+'"'+(d.key===L.key?' selected':'')+'>'+lrEsc(L.text)+' ('+LR_DOW[new Date(L.date+"T12:00:00").getDay()]+' '+lrMD(L.date)+')</option>').join("")
+    +((d.key!==LR_SUBJECT&&!laid.some(L=>L.key===d.key))?'<option value="'+lrEsc(d.key)+'" selected>'+lrEsc(lrPanel&&lrPanel.key===d.key?lrPanel.text:d.key)+'</option>':'');
+  let h='<div style="font-size:11.5px;color:#0e7490;margin-top:8px">Check what to keep, pick the lesson each one is for, then Save. Nothing is written until you do; unchecked rows are dropped.</div>';
+  const n=C.drafts.filter(d=>d.on&&lrStr(d.item)).length;
+  C.drafts.forEach((d,i)=>{
+    h+='<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding:6px 0;border-top:1px solid #cffafe;font-size:12px">';
+    h+='<input type="checkbox" '+(d.on?'checked':'')+' onchange="lrCapDraft('+i+',\'on\',this.checked)">';
+    h+='<input value="'+lrEsc(d.item)+'" oninput="lrCapDraft('+i+',\'item\',this.value)" style="flex:2 1 140px;padding:5px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif">';
+    h+='<input value="'+lrEsc(d.qty)+'" placeholder="qty" oninput="lrCapDraft('+i+',\'qty\',this.value)" style="flex:0 1 60px;padding:5px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif">';
+    h+='<select onchange="lrCapDraft('+i+',\'kind\',this.value)" style="padding:5px 6px;border-radius:8px;border:1.5px solid var(--border);font-size:12px">'+[["supply","🎒 supply"],["book","📚 book"],["order","🛒 order"]].map(k=>'<option value="'+k[0]+'"'+(d.kind===k[0]?' selected':'')+'>'+k[1]+'</option>').join("")+'</select>';
+    h+='<select onchange="lrCapDraft('+i+',\'key\',this.value)" title="'+(d.ref?'Printed: '+lrEsc(d.ref):'No lesson printed')+'" style="padding:5px 6px;border-radius:8px;border:1.5px solid '+(d.matched?'#67e8f9':'var(--border)')+';font-size:12px;max-width:230px">'+opts(d)+'</select>';
+    if(d.kind==="supply") h+='<label style="font-size:11px;font-weight:700;display:inline-flex;align-items:center;gap:3px"><input type="checkbox" '+(d.kids?'checked':'')+' onchange="lrCapDraft('+i+',\'kids\',this.checked)"> kids see it</label>';
+    h+='</div>';
+  });
+  h+='<div style="display:flex;gap:6px;margin-top:8px"><button onclick="lrCapSave()" '+(n?'':'disabled')+' style="padding:8px 14px;border-radius:9px;border:none;background:#0e7490;color:#fff;font-size:12px;font-weight:800;cursor:pointer">Save '+n+' item'+(n===1?'':'s')+'</button><button onclick="lrCapClose()" style="padding:8px 12px;border-radius:9px;border:1px solid var(--border);background:#fff;font-size:12px;cursor:pointer">Cancel</button></div>';
+  return h;
+}
+function lrCapDraft(i,k,v){ if(!lrCapState||!lrCapState.drafts||!lrCapState.drafts[i]) return; lrCapState.drafts[i][k]=v; if(k==="kind") lrCapRerender(); }
+async function lrCapAddPhotos(input){
+  const files=[...((input&&input.files)||[])]; if(input) input.value=""; if(!files.length||!lrCapState) return;
+  if(!lrCapKey()){ lrCapState.msg="Needs a Claude key — Admin ▸ Settings ▸ ✨ AI key. Adding items by hand always works."; lrCapRerender(); return; }
+  if(typeof _cbShrinkImage!=="function"||typeof kitCapAsk!=="function"){ lrCapState.msg="The photo reader isn't in this build."; lrCapRerender(); return; }
+  lrCapState.busy=true; lrCapState.msg=""; lrCapRerender();
+  try{
+    const imgs=await Promise.all(files.slice(0,6).map(_cbShrinkImage));
+    const content=[]; imgs.forEach((b64,i)=>{ content.push({type:"text",text:"Photo "+(i+1)+":"}); content.push({type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}}); });
+    content.push({type:"text",text:LR_CAP_PROMPT});
+    const txt=await kitCapAsk(content,null,{raw:true,maxTokens:2500});
+    lrCapApply(lrCapParse(txt));
+  }catch(e){ if(lrCapState) lrCapState.msg=String(e&&e.message||e); }
+  if(lrCapState) lrCapState.busy=false; lrCapRerender();
+}
+async function lrCapRunText(){
+  const C=lrCapState; if(!C) return; const t=((document.getElementById("lr-cap-text")||{}).value||"").trim();
+  if(!t){ C.msg="Paste the list first."; lrCapRerender(); return; }
+  if(typeof kitCapAsk!=="function"){ C.msg="The reader isn't in this build."; lrCapRerender(); return; }
+  C.busy=true; C.msg=""; lrCapRerender();
+  try{ const txt=await kitCapAsk([{type:"text",text:LR_CAP_PROMPT+"\n\nMATERIAL:\n"+t.slice(0,12000)}],null,{raw:true,maxTokens:2500}); lrCapApply(lrCapParse(txt)); }
+  catch(e){ if(lrCapState) lrCapState.msg=String(e&&e.message||e); }
+  if(lrCapState) lrCapState.busy=false; lrCapRerender();
+}
+function lrCapApply(items){
+  const C=lrCapState; if(!C) return;
+  C.drafts=lrCapMap(items,lrCapLaid(C.kid,C.sk),C.defaultKey); C.mode=null;
+  C.msg=C.drafts.length?"✓ "+C.drafts.length+" item"+(C.drafts.length===1?"":"s")+" found — check each one, then Save.":"Couldn't find any items in that.";
+}
+// Pure: the ticked drafts → the writes, ONE per lesson + part, appended to what that lesson already owns (or a copy of the
+// subject default). Unticked and blank rows are dropped. Returns [{kid,sk,key,part,value}].
+function lrCapPlanWrites(drafts,kid,sk){
+  const groups={}, order=[];
+  (drafts||[]).forEach(d=>{
+    if(!d||!d.on||!lrStr(d.item)) return;
+    const part=d.kind==="book"?"books":d.kind==="order"?"orders":"supplies"; const key=d.key||LR_SUBJECT; const g=key+"\u0001"+part;
+    if(!groups[g]){ groups[g]={key:key,part:part,items:[]}; order.push(g); }
+    groups[g].items.push(part==="books"?{title:d.item}:part==="orders"?{name:d.item}:{name:d.item,qty:d.qty||"",kids:d.kids!==false});
+  });
+  return order.map(g=>{ const G=groups[g]; const base=lrOwnOrCopy(kid,sk,G.key,G.part); return {kid:kid,sk:sk,key:G.key,part:G.part,value:base.concat(G.items)}; });
+}
+function lrCapSave(){
+  const C=lrCapState; if(!C||!C.drafts||!lrMom()) return;
+  const w=lrCapPlanWrites(C.drafts,C.kid,C.sk);
+  w.forEach(x=>lrWrite(x.kid,x.sk,x.key,x.part,x.value));
+  lrCapState=null;
+  if(typeof gwShowToast==="function") gwShowToast(w.length?"✓ Saved to "+lrSubjName(C.kid,C.sk):"Nothing was checked — nothing saved.");
+  lrCapRerender();
+}
+// LESSONRES_END
 function fxOpenClassScreen(kid,sk,taskId){
   const s=((gwGetSubjects(kid)||{})[sk])||null;
   if(!s) return;
@@ -47739,6 +48235,7 @@ function renderCurrGrid(el){
           }
         }
         if(!past&&addedV!==undefined) m+=_mb("✕ make-up","gvMenuOffAdded("+_arg+")","Remove this make-up sitting","#b45309");
+        if(gvFilled(v)&&momHere()&&typeof lrGridBtnHTML==="function") m+=lrGridBtnHTML(gvKid,dn,sk);   // LESSONRES: 📎 links · supplies · books · orders · notes
         m+=_mb("×","gvCancelEdit()","Close");
         m+='</div>';
         h+='<td style="white-space:nowrap;min-width:130px">'+m+'</td>';
@@ -47813,6 +48310,7 @@ function renderCurrGrid(el){
   // A build can start from a subject card opened HERE (column-header tap) — the
   // Keep/Dismiss sheet must render on this tab too.
   if(typeof cbGate!=="undefined"&&cbGate) h+=cbRenderGate();
+  if(typeof lrPanelHTML==="function") h+=lrPanelHTML(gvKid);   // LESSONRES: the 📎 resources sheet for the tapped lesson
   el.innerHTML+=h;
 
   // Restore scroll + focus the open editor (renderAll rebuilds the DOM)
