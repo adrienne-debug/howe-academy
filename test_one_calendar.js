@@ -145,6 +145,12 @@ console.log("4. The school-day line and 🖨 Print");
   ok("the line reads '<N> school days · <M> off' for the dated lessons' span (Aug 17, 2026 – May 21, 2027)", new RegExp('>'+st.school+'</b> school days · '+st.off+' off <span[^>]*>· Aug 17, 2026 – May 21, 2027</span>').test(g), g.match(/school days[^<]*<span[^>]*>[^<]*/));
   ok("…holidays and vacations count as off (Thanksgiving 5 + Labor Day 1 + beach weekdays 9)", st.off===15&&st.school>150, st);
   ok("no dated lessons → no line", !/school days/.test(world({mom:true,lessons:{}}).calRenderMonthPreview()));
+  { const run=Object.assign({},LESSONS,{ellis:{"1":{date:"2026-10-05",week:"Week 1",typing:"d1"},"2":{date:"2029-06-06",week:"Week 140",typing:"d678"}}});
+    const g2=world({mom:true,lessons:run}).calRenderMonthPreview();
+    ok("one kid's grid dated to 2029 (DeWalt, review 2026-10-23) does not stretch the year: still Aug 17, 2026 – May 21, 2027", /· Aug 17, 2026 – May 21, 2027</.test(g2), g2.match(/school days[^<]*<span[^>]*>[^<]*/));
+    const wp=world({mom:true,lessons:run}); wp.run("var paceData={plans:{y1:{start:'2026-08-10',end:'2027-05-28'},y0:{start:'2026-08-12',end:'2027-05-14'}}}");
+    const g3=wp.calRenderMonthPreview();
+    ok("the family's Pace plans, when it has any, are the year: earliest start → latest end (Aug 10, 2026 – May 28, 2027)", /· Aug 10, 2026 – May 28, 2027</.test(g3), g3.match(/school days[^<]*<span[^>]*>[^<]*/)); }
   ok("the Howe year is no longer typed into the code", src.indexOf('"2026-06-09"')<0&&src.indexOf('"2027-05-22"')<0&&src.indexOf('class="gcal-stats"')<0);
   ok("🖨 Print sits beside the layer chips on the Mom lens", /class="cal-chip" style="margin-left:auto" onclick="onecalPrint\(\)">🖨 Print<\/button><\/div>/.test(g));
   ok("Print opens a window with the grid as shown and calls print (lmCalPrint's approach)", /window\.open\("","_blank"\)/.test(fn("onecalPrint"))&&/querySelector\("\.gcal-month-grid\.lay"\)/.test(fn("onecalPrint"))&&/grid\.outerHTML/.test(fn("onecalPrint"))&&/win\.print\(\)/.test(fn("onecalPrint")));

@@ -36786,10 +36786,27 @@ function onecalListsHTML(kidWho){
 }
 // ── the school-day line: "<N> school days · <M> off" for the family's school year = the span of the dated Lesson Map
 // (first dated lesson row → last), Mon–Fri, holidays and vacations off. No dated lessons → no line. Never a typed-in date.
+// Which span (review 2026-10-23, DeWalt data: one kid's grid is dated to 2029, so "the last dated lesson" is not a year):
+//  1. the Pace plans when the family has any (paceData.plans — Mom's own start/end): earliest start → latest end;
+//  2. else the dated lessons PER KID: start = the earliest first lesson; end = the upper-median of the kids' last lessons,
+//     so one runaway list never stretches the year (3 kids ending May 26, May 27 and Jun 2029 → May 27).
 function onecalYearSpan(){
-  let a=null, b=null;
-  try{ const cm=(typeof lmCalData==="function")?(lmCalData().cellMap||{}):{}; Object.keys(cm).forEach(function(d){ const n=(typeof calNormDate==="function")?calNormDate(d):d; if(!n||!/^\d{4}-\d{2}-\d{2}$/.test(n)) return; if(!a||n<a) a=n; if(!b||n>b) b=n; }); }catch(e){}
-  return (a&&b)?{start:a,end:b}:null;
+  const ok=function(n){ return !!n&&/^\d{4}-\d{2}-\d{2}$/.test(n); };
+  const norm=function(d){ return (typeof calNormDate==="function")?calNormDate(d):d; };
+  try{
+    const plans=(typeof paceData!=="undefined"&&paceData&&paceData.plans)?Object.values(paceData.plans):[];
+    let pa=null, pb=null;
+    plans.forEach(function(p){ if(!p) return; const s=norm(p.start), e=norm(p.end); if(!ok(s)||!ok(e)) return; if(!pa||s<pa) pa=s; if(!pb||e>pb) pb=e; });
+    if(pa&&pb) return {start:pa,end:pb};
+  }catch(e){}
+  try{
+    const rows=((typeof currData!=="undefined"&&currData)||{}).lessons||{}; let a=null; const ends=[];
+    Object.keys(rows).forEach(function(k){ const m=rows[k]; if(!m) return; let f=null, l=null;
+      (Array.isArray(m)?m:Object.values(m)).forEach(function(r){ const n=r&&norm(r.date); if(!ok(n)) return; if(!f||n<f) f=n; if(!l||n>l) l=n; });
+      if(!f) return; if(!a||f<a) a=f; ends.push(l); });
+    if(!a||!ends.length) return null;
+    ends.sort(); return {start:a,end:ends[ends.length>>1]};
+  }catch(e){ return null; }
 }
 function onecalSchoolLineHTML(){
   if(!onecalMom()) return ''; const sp=onecalYearSpan(); if(!sp) return '';
