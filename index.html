@@ -19081,7 +19081,8 @@ function grWeekSources(fromIso,days){
       if(p.mid&&kitMeals[p.mid]) out.push({lines:kitMeals[p.mid].ing,lbl:(kitMeals[p.mid].name||"dinner")+" ("+day+")"});
       kitSideGrocerySrcs(p,day).forEach(s=>out.push(s));   // KITSIDES: linked sides as their own recipe, plain sides one line each (the old text split as before)
     }
-    ["b","l","s"].forEach(sl=>{ const v=p[sl]; if(v&&v.mid&&kitMeals[v.mid]) out.push({lines:kitMeals[v.mid].ing,lbl:(kitMeals[v.mid].name||"meal")+" ("+day+")"}); });
+    ["b","l","s"].forEach(sl=>{ const v=p[sl]; if(v&&v.parts&&typeof kitSlotsGrocerySrcs==="function"){ kitSlotsGrocerySrcs(v,sl,day).forEach(s=>out.push(s)); return; }   // KITSLOTS: linked parts as their recipe, text veg/fruit/extra one line each
+      if(v&&v.mid&&kitMeals[v.mid]) out.push({lines:kitMeals[v.mid].ing,lbl:(kitMeals[v.mid].name||"meal")+" ("+day+")"}); });
   }
   return out;
 }
@@ -20119,7 +20120,7 @@ function grWeekNeeds(){
   for(let i=0;i<7;i++){
     const iso=kitIsoPlus(from,i), p=(typeof kitPlanRec==='function')?kitPlanRec(iso):kitPlan[iso]; if(!p) continue;   // KITROT2: a queued rotation's day counts
     const day=gwParseDate(iso).toLocaleDateString("en-US",{weekday:"short"});
-    const meals=[]; if(p.mid&&!p.eaten&&!p.skipped) meals.push(p.mid); ["b","l","s"].forEach(sl=>{ const v=p[sl]; if(v&&v.mid) meals.push(v.mid); });
+    const meals=[]; if(p.mid&&!p.eaten&&!p.skipped) meals.push(p.mid); ["b","l","s"].forEach(sl=>{ const v=p[sl]; if(v&&v.parts&&typeof kitSlotsMids==="function"){ kitSlotsMids(v).forEach(m=>meals.push(m)); return; } if(v&&v.mid) meals.push(v.mid); });   // KITSLOTS: every linked part
     meals.forEach(mid=>{ const m=kitMeals[mid]; if(!m) return;
       const names=(Array.isArray(m.uses)&&m.uses.length)?m.uses.map(u=>u&&u.name).filter(Boolean)
         :String(m.ing||"").split("\n").reduce((a,l)=>a.concat(l.split(/\s\+\s/)),[]).map(l=>grIngParse(l)).filter(x=>x&&!/^(tsps?|t|teaspoons?|tbsps?|tbs|tablespoons?|pinch|dash)$/i.test(x.unit||"")).map(x=>x.name);
@@ -20664,7 +20665,7 @@ const KIT_MOVE_NAMES={d:["dinner","dinners"],b:["breakfast","breakfasts"],l:["lu
 function _kitMvGet(iso,slot){
   const p=kitPlan[iso]; if(!p) return null;
   if(slot==="d"){ const v=p.mid?{mid:p.mid}:(p.txt?{txt:p.txt}:null); if(v&&p.sides) v.sides=p.sides; if(v&&p.sideList) v.sideList=p.sideList; return v; }   // KITSIDES: the list rides along like the old text
-  const v=p[slot]; return (v&&(v.mid||v.txt))?v:null;
+  const v=p[slot]; return (v&&(v.mid||v.txt||(typeof kitSlotsHas==="function"&&kitSlotsHas(v))))?v:null;   // KITSLOTS: four parts move as the slot's one value
 }
 function _kitMvFixed(iso,slot){ const p=kitPlan[iso]; return slot==="d"&&!!p&&!!(p.eaten||p.skipped); }
 // The slide for one category: [{iso,val}] in order — first = the day being moved, last = the
@@ -20749,6 +20750,7 @@ function kitMoveForward(iso,slot){
 function kitSlotText(iso,slot){
   if(!kitEatGate()) return;
   const meta=KIT_SLOTS.find(s=>s[0]===slot); if(!meta) return;
+  if(typeof kitSlotsPrompt==="function"&&kitSlotsPrompt(iso,slot)) return;   // KITSLOTS: a parts slot — the prompt edits the main only, the other parts stay
   const sv=kitPlanSlot(iso,slot);
   const v=prompt(meta[1]+" "+meta[2]+":",(sv&&sv.txt)||"");
   if(v===null) return;
@@ -20768,6 +20770,7 @@ function kitSlotText(iso,slot){
 function kitPlanSlot(iso,slot){
   const p=(typeof kitPlanRec==='function')?kitPlanRec(iso):kitPlan[iso]; if(!p||!p[slot]) return null;   // KITROT2: planned or queued
   const v=p[slot];
+  if(v.parts&&typeof kitSlotsView==="function") return kitSlotsView(v);   // KITSLOTS: main · veg · fruit · extra → {txt:"🥣 Oatmeal · banana", parts:[…]}
   if(v.mid) return {mid:v.mid,meal:kitMeals[v.mid]||null};
   if(v.txt) return {txt:v.txt};
   return null;
@@ -20844,6 +20847,7 @@ function kitRotMealByName(name){
 function kitRotSlotVal(name){ const mid=kitRotMealByName(name); return mid?{mid:mid}:{txt:String(name).trim()}; }
 function kitRotSlotName(v){
   if(!v) return "";
+  if(v.parts&&typeof kitSlotsNames==="function") return kitSlotsNames(v);   // KITSLOTS: the parts' names, " · " joined
   if(v.mid){ const m=kitMeals[v.mid]; return m?String(m.name||""):""; }
   return String(v.txt||"");
 }
@@ -20860,7 +20864,7 @@ function kitRotPlanFor(rot,mondayIso){
       const iso=kitIsoPlus(mondayIso,w*7+i);
       const cur=Object.assign({},kitPlan[iso]||{});
       if(day.d){ delete cur.mid; delete cur.txt; delete cur.sides; delete cur.sideList; Object.assign(cur,kitRotSlotVal(day.d)); const _sl=kitRotSideList(day.sd); if(_sl.length) cur.sideList=_sl; }   // KITSIDES: sd (string or names) → a list; a name the library knows links
-      [["b",day.b],["l",day.l],["s",day.s]].forEach(p=>{ if(p[1]) cur[p[0]]=kitRotSlotVal(p[1]); });
+      [["b",day.b],["l",day.l],["s",day.s]].forEach(p=>{ const v=(typeof kitSlotsRotVal==="function")?kitSlotsRotVal(p[1]):(p[1]?kitRotSlotVal(p[1]):null); if(v) cur[p[0]]=v; });   // KITSLOTS: a four-part slot → {parts}
       if(Object.keys(cur).length) out[iso]=cur;
     });
   });
@@ -20873,7 +20877,7 @@ function kitRotCapture(mondayIso,nWeeks){
     const wk=[];
     for(let i=0;i<7;i++){
       const iso=kitIsoPlus(mondayIso,w*7+i); const p=kitPlan[iso]||{};
-      const day={d:kitRotSlotName(p.mid?{mid:p.mid}:(p.txt?{txt:p.txt}:null)),b:kitRotSlotName(p.b),l:kitRotSlotName(p.l),s:kitRotSlotName(p.s)};
+      const day={d:kitRotSlotName(p.mid?{mid:p.mid}:(p.txt?{txt:p.txt}:null)),b:(typeof kitSlotsCapture==="function"?kitSlotsCapture(p.b):kitRotSlotName(p.b)),l:(typeof kitSlotsCapture==="function"?kitSlotsCapture(p.l):kitRotSlotName(p.l)),s:kitRotSlotName(p.s)};   // KITSLOTS: parts capture as {main,veg,…} names
       if(day.d){ const _sd=kitRotSdOf(p); if(_sd&&_sd.length) day.sd=_sd; }   // KITSIDES: a list of names when the day has a side list, the old text otherwise
       if(day.d||day.b||day.l||day.s) filled++;
       wk.push(day);
@@ -20882,7 +20886,7 @@ function kitRotCapture(mondayIso,nWeeks){
   }
   return {weeks:weeks,filled:filled};
 }
-function kitRotRender(){ const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
+function kitRotRender(){ if(typeof kitRotPick!=="undefined"&&kitRotPick&&kitRotPick.kind==="p"&&typeof _kitRefresh==="function"){ _kitRefresh(); return; } const el=document.getElementById('content'); if(el) renderMomsPlan(el); }   // KITSLOTS: a day-sheet part picker repaints the calendar, not Mom's plan
 function kitRotToggle(id){ kitRotOpen=(kitRotOpen===id)?null:id; kitRotRender(); }
 function kitRotSaveToggle(){ kitRotSaveOpen=!kitRotSaveOpen; kitRotRender(); }
 function kitRotApply(id){
@@ -20961,7 +20965,8 @@ function kitRotEditDiff(rot,weeks){
   const old=Array.isArray(rot&&rot.weeks)?rot.weeks:[];
   (weeks||[]).forEach((wk,w)=>(wk||[]).forEach((day,i)=>{
     const o=(Array.isArray(old[w])&&old[w][i])||{};
-    KIT_ROT_SLOTS.forEach(s=>{ const k=s[0]; const nv=String((day||{})[k]||"").trim(), ov=(k==="sd")?kitRotSdStr(o[k]):String(o[k]||""); if(nv!==ov) up["weeks/"+w+"/"+i+"/"+k]=nv||null; });   // KITSIDES: sd compares as its text
+    KIT_ROT_SLOTS.forEach(s=>{ const k=s[0]; if(typeof kitSlotsRotDiff==="function"&&kitSlotsRotDiff(up,w,i,k,day,o)) return;   // KITSLOTS: b/l compare as their parts
+      const nv=String((day||{})[k]||"").trim(), ov=(k==="sd")?kitRotSdStr(o[k]):String(o[k]||""); if(nv!==ov) up["weeks/"+w+"/"+i+"/"+k]=nv||null; });   // KITSIDES: sd compares as its text
   }));
   return up;
 }
@@ -21041,7 +21046,7 @@ let kitRotPick=null;   // the open slot picker: {kind:"b",w,i,slot} (builder) | 
 let kitRotSynced={plan:false,rots:false};   // flipped by the kitchen/plan + kitchen/rotations listeners — auto-start never writes from a stale device copy
 function kitRotDb(){ return (typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()))?db:null; }
 function kitRotIsoOk(s){ return /^\d{4}-\d{2}-\d{2}$/.test(String(s||"")); }
-function kitRotTypeMeta(t){ return KIT_ROT_TYPES.find(x=>x[0]===t)||[t,"","Meal"]; }
+function kitRotTypeMeta(t){ const pm=(typeof kitSlotsPartMeta==="function")?kitSlotsPartMeta(t):null; return pm||KIT_ROT_TYPES.find(x=>x[0]===t)||[t,"","Meal"]; }   // KITSLOTS: "b_veg" → Breakfast · vegetable
 function kitRotTypes(rot){ const ok=KIT_ROT_TYPES.map(t=>t[0]); const t=Array.isArray(rot&&rot.types)?ok.filter(x=>rot.types.indexOf(x)>=0):[]; return t.length?t:ok.slice(); }
 function kitRotStatus(rot,today){
   if(!rot||!kitRotIsoOk(rot.startDate)||!kitRotIsoOk(rot.endDate)||rot.endDate<rot.startDate) return "";
@@ -21059,15 +21064,14 @@ function kitRotDayAt(rot,iso){
   const wk=Math.floor(idx/7)%n, dow=idx%7;
   return {wk:wk,dow:dow,day:(Array.isArray(weeks[wk])&&weeks[wk][dow])||{}};
 }
-function kitRotHas(rec,t){ if(!rec) return false; if(t==="d") return !!(rec.mid||rec.txt); const v=rec[t]; return !!(v&&(v.mid||v.txt)); }
+function kitRotHas(rec,t){ if(!rec) return false; if(t==="d") return !!(rec.mid||rec.txt); const v=rec[t]; return !!(v&&(v.mid||v.txt||(typeof kitSlotsHas==="function"&&kitSlotsHas(v)))); }   // KITSLOTS: a parts slot is food too
 function kitRotRecName(rec,t){ if(!rec) return ""; return t==="d"?kitRotSlotName(rec.mid?{mid:rec.mid}:(rec.txt?{txt:rec.txt}:null)):kitRotSlotName(rec[t]); }
 function kitRotDayKeys(t){ return t==="d"?["mid","txt","sides","sideList"]:[t]; }
 // Pure: the keys a rotation day puts on a calendar day — only covered kinds with something in them. {} when nothing.
 function kitRotDayUp(rot,info){
   const up={}; const day=(info&&info.day)||{};
   kitRotTypes(rot).forEach(t=>{
-    const name=String(day[t]||"").trim(); if(!name) return;
-    const v=kitRotSlotVal(name);
+    const v=(typeof kitSlotsRotVal==="function")?kitSlotsRotVal(day[t]):(String(day[t]||"").trim()?kitRotSlotVal(String(day[t]).trim()):null); if(!v) return;   // KITSLOTS: a b/l slot may be four parts → {parts}
     if(t==="d"){ up.mid=v.mid||null; up.txt=v.txt||null; up.sides=null; const sl=kitRotSideList(day.sd); up.sideList=sl.length?sl:null; }
     else up[t]=v;
   });
@@ -21086,7 +21090,7 @@ function kitRotHandEdited(iso,types){
     const st=kitRotStampOf(rec,t); const srot=st?rots[st.id]:null;
     const sday=(srot&&Array.isArray(srot.weeks)&&Array.isArray(srot.weeks[st.wk]))?srot.weeks[st.wk][st.dow]:null;
     if(!sday) return kitRotHas(rec,t);
-    if(kitRotNorm(kitRotRecName(rec,t))!==kitRotNorm(sday[t])) return true;
+    if(kitRotNorm(kitRotRecName(rec,t))!==kitRotNorm(typeof kitSlotsRotStr==="function"?kitSlotsRotStr(sday[t]):sday[t])) return true;   // KITSLOTS: a four-part rotation slot compares as its names
     if(t==="d"&&kitRotNorm(kitRotSdNames(kitRotSdOf(rec)||[]).join(" · "))!==kitRotNorm(kitRotSdNames(sday.sd).join(" · "))) return true;
     return false;
   });
@@ -21286,15 +21290,16 @@ function kitRotMonthHTML(){
 // ── the slot picker (builder cells and This-month cells share it): from the library — search, a tag filter when the
 //    library has tags — or ✎ Type it. Search filters in place (like the library's 🔎) so typing never loses focus.
 function kitRotPickOpen(target){ kitRotPick=Object.assign({q:"",tag:""},target); kitRotRender(); }
-function kitRotPickClose(){ kitRotPick=null; kitRotRender(); }
+function kitRotPickClose(){ const onSheet=!!(kitRotPick&&kitRotPick.kind==="p"); kitRotPick=null; if(onSheet&&typeof _kitRefresh==="function"){ _kitRefresh(); return; } kitRotRender(); }   // KITSLOTS: the day sheet repaints its own screen
 function kitRotPickCur(){
   const P=kitRotPick; if(!P) return "";
   if(P.kind==="b") return String((kitRotB&&kitRotB.weeks[P.w]&&kitRotB.weeks[P.w][P.i]&&kitRotB.weeks[P.w][P.i][P.slot])||"");
+  if(P.kind==="p"&&typeof kitSlotsPickCur==="function") return kitSlotsPickCur(P);   // KITSLOTS: one part of a day-sheet slot
   return kitRotRecName(kitPlan[P.iso],P.slot);
 }
-function kitRotPickGo(mid){ const P=kitRotPick; const m=kitMeals[mid]; if(!P||!m) return; if(P.kind==="b") kitRotBSet(P.w,P.i,P.slot,String(m.name||"")); else kitRotDaySet(P.iso,P.slot,{mid:mid}); }
-function kitRotPickTyped(){ const P=kitRotPick; if(!P) return; const v=prompt(kitRotTypeMeta(P.slot)[2]+":",kitRotPickCur()); if(v===null) return; if(P.kind==="b") kitRotBSet(P.w,P.i,P.slot,v.trim()); else kitRotDaySet(P.iso,P.slot,v.trim()?{txt:v.trim()}:null); }
-function kitRotPickClear(){ const P=kitRotPick; if(!P) return; if(P.kind==="b") kitRotBSet(P.w,P.i,P.slot,""); else kitRotDaySet(P.iso,P.slot,null); }
+function kitRotPickGo(mid){ const P=kitRotPick; const m=kitMeals[mid]; if(!P||!m) return; if(P.kind==="p"&&typeof kitSlotsPickSet==="function"){ kitSlotsPickSet(P,{mid:mid}); return; } if(P.kind==="b") kitRotBSet(P.w,P.i,P.slot,String(m.name||"")); else kitRotDaySet(P.iso,P.slot,{mid:mid}); }
+function kitRotPickTyped(){ const P=kitRotPick; if(!P) return; const v=prompt(kitRotTypeMeta(P.slot)[2]+":",kitRotPickCur()); if(v===null) return; if(P.kind==="p"&&typeof kitSlotsPickSet==="function"){ kitSlotsPickSet(P,v.trim()?{txt:v.trim()}:null); return; } if(P.kind==="b") kitRotBSet(P.w,P.i,P.slot,v.trim()); else kitRotDaySet(P.iso,P.slot,v.trim()?{txt:v.trim()}:null); }
+function kitRotPickClear(){ const P=kitRotPick; if(!P) return; if(P.kind==="p"&&typeof kitSlotsPickSet==="function"){ kitSlotsPickSet(P,null); return; } if(P.kind==="b") kitRotBSet(P.w,P.i,P.slot,""); else kitRotDaySet(P.iso,P.slot,null); }
 function kitRotPickMatch(m,q){ return !q||(String(m.name||"")+" \n"+String(m.ing||"")).toLowerCase().includes(q); }
 function kitRotPickQ(v){ if(kitRotPick) kitRotPick.q=String(v||""); const q=String(v||"").trim().toLowerCase(); document.querySelectorAll('[data-rotpick]').forEach(r=>{ r.style.display=kitRotPickMatch(kitMeals[r.getAttribute('data-rotpick')]||{},q)?"":"none"; }); }
 function kitRotPickTag(t){ if(!kitRotPick) return; kitRotPick.tag=(kitRotPick.tag===t)?"":t; kitRotRender(); }
@@ -21326,7 +21331,7 @@ function kitRotPickHTML(){
 //    remove a week. Save = a new kitchen/rotations/{id} record, or on a saved rotation ONE multi-path update of only
 //    what changed (weeks/{w}/{i}/{slot} via kitRotEditDiff, dropped weeks, name, emoji, types) — never the whole node.
 function kitRotBBlankWeek(){ const w=[]; for(let i=0;i<7;i++) w.push({d:"",sd:"",b:"",l:"",s:""}); return w; }
-function kitRotBWeeksOf(rot){ return (Array.isArray(rot&&rot.weeks)?rot.weeks:[]).map(wk=>{ const out=[]; for(let i=0;i<7;i++){ const d=(Array.isArray(wk)&&wk[i])||{}; out.push({d:String(d.d||""),sd:kitRotSdStr(d.sd),b:String(d.b||""),l:String(d.l||""),s:String(d.s||"")}); } return out; }); }
+function kitRotBWeeksOf(rot){ return (Array.isArray(rot&&rot.weeks)?rot.weeks:[]).map(wk=>{ const out=[]; for(let i=0;i<7;i++){ const d=(Array.isArray(wk)&&wk[i])||{}; const row={d:String(d.d||""),sd:kitRotSdStr(d.sd),b:String(d.b||""),l:String(d.l||""),s:String(d.s||"")}; if(typeof kitSlotsBLoad==="function") kitSlotsBLoad(row,d); out.push(row); } return out; }); }   // KITSLOTS: a {main,veg,…} slot → main + b_veg/b_fruit/b_extra
 function kitRotBNew(){ kitPinGate(()=>{ kitRotB={id:null,name:"",emoji:"",types:["d"],weeks:[kitRotBBlankWeek()]}; kitRotEdit=null; kitRotPick=null; kitRotSaveOpen=false; kitRotRender(); },'Building a rotation is for Mom.'); }
 function kitRotBStart(id){   // ✎ Edit (already behind the Mom PIN in kitRotEditStart)
   const rot=kitRotAll()[id]; if(!rot) return;
@@ -21343,7 +21348,7 @@ function kitRotBType(t){
   kitRotB.types=KIT_ROT_TYPES.map(x=>x[0]).filter(x=>kitRotB.types.indexOf(x)>=0); kitRotPick=null; kitRotRender();
 }
 function kitRotBWeeks(n){ if(!kitRotB) return; n=parseInt(n)||1; if(n<1) n=1; if(n>8) n=8; while(kitRotB.weeks.length<n) kitRotB.weeks.push(kitRotBBlankWeek()); if(kitRotB.weeks.length>n) kitRotB.weeks.length=n; kitRotPick=null; kitRotRender(); }
-function kitRotBWeekFilled(wk){ return (wk||[]).some(d=>KIT_ROT_SLOTS.some(s=>String((d||{})[s[0]]||"").trim())); }
+function kitRotBWeekFilled(wk){ return (wk||[]).some(d=>KIT_ROT_SLOTS.some(s=>String((d||{})[s[0]]||"").trim())||(typeof kitSlotsBAny==="function"&&kitSlotsBAny(d))); }   // KITSLOTS: a veg/fruit/extra counts
 function kitRotBCopy(w){   // ⧉ copy this week onto the next (added when this is the last; a filled next week asks first)
   const W=kitRotB&&kitRotB.weeks; if(!W||!W[w]) return;
   const copy=JSON.parse(JSON.stringify(W[w]));
@@ -21358,7 +21363,8 @@ function kitRotBPick(w,i,slot){ const P=kitRotPick; if(P&&P.kind==="b"&&P.w===w&
 function kitRotBTyped(){ if(!kitRotB||!kitRotB.id) return; const id=kitRotB.id, weeks=kitRotB.weeks; kitRotB=null; kitRotPick=null; kitRotEdit={id:id,weeks:weeks}; kitRotOpen=id; kitRotRender(); }   // ⌨ the typed grid, with what's built so far
 // Pure: the record a NEW build saves — blank slots left out; a kind the rotation doesn't cover is left out (never written).
 function kitRotBClean(B){
-  return B.weeks.map(wk=>wk.map(d=>{ const o={}; B.types.forEach(t=>{ const v=String((d||{})[t]||"").trim(); if(!v) return; o[t]=v; if(t==="d"){ const sd=String(d.sd||"").trim(); if(sd) o.sd=sd; } }); return o; }));
+  return B.weeks.map(wk=>wk.map(d=>{ const o={}; B.types.forEach(t=>{ if((t==="b"||t==="l")&&typeof kitSlotsBOf==="function"){ const pv=kitSlotsBOf(d,t); if(pv) o[t]=pv; return; }   // KITSLOTS: the one name, or {main,veg,fruit,extra}
+      const v=String((d||{})[t]||"").trim(); if(!v) return; o[t]=v; if(t==="d"){ const sd=String(d.sd||"").trim(); if(sd) o.sd=sd; } }); return o; }));
 }
 // Pure: the targeted update a build makes on a saved rotation — kitRotEditDiff's slot paths + dropped weeks + name/emoji/types.
 function kitRotBDiff(rot,B,name,emoji){
@@ -21373,7 +21379,7 @@ function kitRotBSave(){
   const B=kitRotB; if(!B) return;
   const name=String(((document.getElementById('kit-rotb-name')||{}).value)||B.name||"").trim(), emoji=String(((document.getElementById('kit-rotb-emoji')||{}).value)||B.emoji||"").trim();
   if(!name){ if(typeof mwToast==='function') mwToast('Name the rotation first'); return; }
-  if(!B.weeks.some(wk=>wk.some(d=>B.types.some(t=>String((d||{})[t]||"").trim())))){ if(typeof mwToast==='function') mwToast('Fill at least one slot'); return; }
+  if(!B.weeks.some(wk=>wk.some(d=>B.types.some(t=>typeof kitSlotsBFilled==="function"?kitSlotsBFilled(d,t):String((d||{})[t]||"").trim())))){ if(typeof mwToast==='function') mwToast('Fill at least one slot'); return; }   // KITSLOTS: a veg/fruit/extra alone fills a slot
   kitRotEnsure();
   const d=kitRotDb(); const now=Date.now();
   if(!B.id){
@@ -21427,6 +21433,7 @@ function kitRotBHTML(){
     wk.forEach((day,i)=>{
       h+='<span style="font-weight:800;color:#9ca3af;align-self:center">'+KIT_ROT_DAYS[i]+'</span>';
       B.types.forEach(t=>{
+        if((t==="b"||t==="l")&&typeof kitSlotsBCellHTML==="function"){ h+=kitSlotsBCellHTML(w,i,t,day); return; }   // KITSLOTS: four small cells — main · veg · fruit · extra
         const v=String(day[t]||""); const picking=kitRotPick&&kitRotPick.kind==="b"&&kitRotPick.w===w&&kitRotPick.i===i&&kitRotPick.slot===t;
         h+='<span onclick="kitRotBPick('+w+','+i+',\''+t+'\')" style="cursor:pointer;padding:5px 6px;border-radius:6px;background:'+(v?'#fff7ed':'#f8f7f4')+';border:1.5px solid '+(picking?'#B45309':'#e8e4de')+';min-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(v?esc(v):'<span style="color:#9ca3af">＋ pick</span>')+'</span>';
         if(t==="d") h+='<input type="text" value="'+esc(day.sd||"")+'" placeholder="🥦 peas · rice" oninput="kitRotBSet('+w+','+i+',\'sd\',this.value,true)" style="min-width:0;padding:4px 6px;border:1.5px solid #e8e4de;border-radius:6px;font-size:10.5px;font-family:\'DM Sans\',sans-serif">';
@@ -21459,6 +21466,179 @@ function kitRotRunRowHTML(id,r,nextMon){
     +'<label style="font-size:10.5px;color:#6b6560"><input type="checkbox" id="kit-rot-ow-'+id+'"> overwrite days I changed by hand</label></div>';
 }
 // KITROT2_END
+// KITSLOTS_START — lunch and breakfast as four parts: main · vegetable · fruit · extra (each a library item or text).
+//   Her decision 2026-10-22 (final; built 2026-10-23): Sara's ten-day lunch pattern — main + vegetable + fruit + extra —
+//   is the template for lunches and breakfasts. None of the four is required. Dinner keeps its sides list (KITSIDES);
+//   snack keeps its one slot.
+//   DATA: kitchen/plan/{iso}/b and /l are {mid}|{txt} as before (that value IS the main) OR
+//         {parts:{main:{mid|txt}, veg:{mid|txt}, fruit:{mid|txt}, extra:{mid|txt}}} with any part absent.
+//         The old shape keeps working everywhere. The FIRST edit of a day's breakfast or lunch (a part picked, typed or
+//         cleared) writes that slot as {parts:…} with the old {mid|txt} carried into parts.main — ONE targeted write of
+//         kitchen/plan/{iso}/{b|l}, that day only, nothing else on the day touched. Clearing the last part removes the
+//         slot (kitchen/plan/{iso}/{b|l}), or the day when nothing else is on it (as ✎ blank does).
+//   DISPLAY: kitPlanSlot hands a parts slot back as {txt:"🥣 Oatmeal · banana", parts:[…]} — the parts joined with " · ",
+//         a linked part with its emoji — so Mom's Day, the week list, the calendar month, the day sheet and the Kids'
+//         Corner show one line through the (sv.txt||"") they already read. Kid screens: text only, no buttons.
+//   DAY SHEET (_calSlotRows, Mom/Dad view): the Breakfast and Lunch rows (shown even when empty) carry four small fields,
+//         main · veg · fruit · extra. A field opens the rotations' library picker (search, tag chips, ✎ Type it) as
+//         kitRotPick kind "p" {iso, slot:"b"|"b_veg"|…}; ✕ clears one part; 📖 opens a linked part's recipe.
+//         Mom's Day's tap on a parts slot (kitSlotText) edits the MAIN only; the other parts stay.
+//   ROTATIONS: a builder/stored b or l slot is the old one name (= the main, writes {mid|txt} exactly as before) or
+//         {main, veg, fruit, extra} of names (kitRotBClean collapses a main-only object back to the one name). Run maps
+//         each name by case-insensitive library match to {mid}, else {txt} (kitRotSlotVal), and writes {parts} as the
+//         slot's value inside its one multi-path update; fromRot/{kind} stamps the slot as before; hand-edit detection
+//         compares the slot's part names (kitRotSlotName → kitSlotsNames) with the rotation's (kitSlotsRotStr).
+//   GROCERY (grWeekSources → kitSlotsGrocerySrcs): a linked part's recipe rides the same meal-chip path a dinner uses
+//         (lbl = its name + the day); a text veg/fruit/extra is ONE line chipped to the main's name (else Breakfast /
+//         Lunch) and the day — exactly a plain side in KITSIDES; a text main is the meal's name and shops nothing, as a
+//         typed dinner doesn't. grWeekNeeds counts every linked part's recipe. No new feeder code.
+//   MOVE / DIDN'T HAPPEN / kitAssign: the slot's value is carried or dropped whole, parts included (_kitMvGet); a day
+//         marked didn't-happen keeps its breakfast and lunch as it keeps {mid|txt}.
+//   A plan with no parts reads byte-identical to before through display, rotations and grocery. Every edit asks
+//   kitEatGate() (Mom, or Dad on his link / with his code — the gate ✎ and ➡ Move on the same row use); writes go through
+//   db only when db && !_dryRun().
+const KIT_PARTS=[["main","Main"],["veg","Vegetable"],["fruit","Fruit"],["extra","Extra"]];
+const KIT_PART_SLOTS=["b","l"];
+function kitSlotsPartVal(x){ if(!x||typeof x!=="object") return null; if(x.mid) return {mid:String(x.mid)}; if(x.txt!=null&&String(x.txt).trim()) return {txt:String(x.txt)}; return null; }
+function kitSlotsIsParts(v){ return !!(v&&typeof v==="object"&&v.parts); }
+// A slot's parts, clean: {main:{mid|txt}, veg:…} with only the parts it really has — the old {mid|txt} as its main; null when nothing.
+function kitSlotsParts(v){
+  if(!v||typeof v!=="object") return null;
+  const out={};
+  if(v.parts&&typeof v.parts==="object"){ KIT_PARTS.forEach(p=>{ const x=kitSlotsPartVal(v.parts[p[0]]); if(x) out[p[0]]=x; }); }
+  else { const x=kitSlotsPartVal(v); if(x) out.main=x; }
+  return Object.keys(out).length?out:null;
+}
+function kitSlotsHas(v){ return kitSlotsIsParts(v)&&!!kitSlotsParts(v); }   // in the parts shape with at least one real part
+function kitSlotsList(parts){ return KIT_PARTS.filter(p=>parts&&parts[p[0]]).map(p=>Object.assign({key:p[0]},parts[p[0]])); }   // in order: main, veg, fruit, extra
+function kitSlotsPartName(x){   // on screen: "🥣 Oatmeal" · "banana" · "(meal removed)"
+  if(x.mid){ const m=(typeof kitMeals!=="undefined"&&kitMeals[x.mid])||null; return m?((m.emoji?m.emoji+" ":"")+String(m.name||"")):"(meal removed)"; }
+  return String(x.txt||"");
+}
+function kitSlotsText(parts){ return kitSlotsList(parts).map(kitSlotsPartName).filter(Boolean).join(" · "); }
+// kitPlanSlot → {txt:"🥣 Oatmeal · banana", parts:[{key,mid,meal}|{key,txt}]}; null when every part is empty
+function kitSlotsView(v){
+  const parts=kitSlotsParts(v); if(!parts) return null;
+  return {txt:kitSlotsText(parts),parts:kitSlotsList(parts).map(x=>x.mid?{key:x.key,mid:x.mid,meal:(typeof kitMeals!=="undefined"&&kitMeals[x.mid])||null}:{key:x.key,txt:x.txt})};
+}
+function kitSlotsMids(v){ return kitSlotsList(kitSlotsParts(v)).filter(x=>x.mid).map(x=>x.mid); }   // grWeekNeeds: every linked part's recipe
+function kitSlotsLabel(slot){ const m=(typeof KIT_SLOTS!=="undefined"&&KIT_SLOTS.find(s=>s[0]===slot))||null; return m?m[2]:"Meal"; }
+function kitSlotsPartText(x){ return x.mid?kitRotSlotName({mid:x.mid}):String(x.txt||""); }   // the plain name (no emoji) — what a rotation stores
+function kitSlotsNames(v){ return kitSlotsList(kitSlotsParts(v)).map(kitSlotsPartText).filter(Boolean).join(" · "); }   // kitRotSlotName on a parts slot
+// 🛒 grWeekSources: a parts slot's [{lines,lbl}] — linked parts as their recipe, text veg/fruit/extra one line each under the main's name
+function kitSlotsGrocerySrcs(v,slot,day){
+  const parts=kitSlotsParts(v)||{}; const out=[]; const mn=parts.main;
+  const dn=(mn&&mn.mid&&kitMeals[mn.mid]&&kitMeals[mn.mid].name)||(mn&&mn.txt?String(mn.txt):"")||kitSlotsLabel(slot);
+  kitSlotsList(parts).forEach(x=>{
+    if(x.mid){ const m=kitMeals[x.mid]; if(m) out.push({lines:m.ing,lbl:(m.name||"meal")+" ("+day+")"}); }   // its recipe → the same chip a dinner gets
+    else if(x.key!=="main") out.push({lines:String(x.txt).split(/\s*·\s*/).filter(Boolean).join("\n"),lbl:dn+" ("+day+")"});   // one line, tagged to the meal and the day
+  });
+  return out;
+}
+// ── 📅 rotations: a b/l slot both ways ──
+// Canonical rotation slot: the one name (string) when only a main is filled, {main?,veg?,fruit?,extra?} of names otherwise, null when blank.
+function kitSlotsRotCanon(raw){
+  if(raw==null) return null;
+  if(typeof raw!=="object"){ const n=String(raw).trim(); return n||null; }
+  const o={}; KIT_PARTS.forEach(p=>{ const n=String(raw[p[0]]||"").trim(); if(n) o[p[0]]=n; });
+  const ks=Object.keys(o); if(!ks.length) return null; if(ks.length===1&&o.main) return o.main; return o;
+}
+function kitSlotsRotStr(raw){ const c=kitSlotsRotCanon(raw); if(!c) return ""; if(typeof c==="string") return c; return KIT_PARTS.map(p=>c[p[0]]).filter(Boolean).join(" · "); }   // for the hand-edit compare and the typed grid
+// Run / Apply: what a rotation slot puts on the calendar — {mid}|{txt} for a one-name slot (as before), {parts:{…}} for four parts, null for blank
+function kitSlotsRotVal(raw){
+  const c=kitSlotsRotCanon(raw); if(!c) return null;
+  if(typeof c==="string") return kitRotSlotVal(c);
+  const parts={}; KIT_PARTS.forEach(p=>{ if(c[p[0]]) parts[p[0]]=kitRotSlotVal(c[p[0]]); });
+  return {parts:parts};
+}
+// Capture: a plan slot back into rotation shape (names) — the one name for the old shape, {main,veg,…} for parts, "" for nothing
+function kitSlotsCapture(v){
+  if(!kitSlotsIsParts(v)) return kitRotSlotName(v);
+  const o={}; kitSlotsList(kitSlotsParts(v)).forEach(x=>{ const n=kitSlotsPartText(x); if(n) o[x.key]=n; });
+  return kitSlotsRotCanon(o)||"";
+}
+// The builder's working day keeps the main under the slot key (b, l — so every older path still sees it) and the other
+// parts beside it as b_veg, b_fruit, b_extra (l_…). The picker's slot for a part is that key.
+function kitSlotsPartKey(t,part){ return part==="main"?t:t+"_"+part; }
+function kitSlotsKeyOf(key){ const q=String(key||"").split("_"); return {slot:q[0],part:q[1]||"main"}; }
+function kitSlotsPartMeta(key){   // kitRotTypeMeta("b_veg") → ["b_veg","🌅","Breakfast · vegetable"]; null for anything that isn't a part key
+  const m=/^([bl])_(veg|fruit|extra)$/.exec(String(key||"")); if(!m) return null;
+  const tm=KIT_ROT_TYPES.find(x=>x[0]===m[1]), pm=KIT_PARTS.find(p=>p[0]===m[2]);
+  return [key,tm[1],tm[2]+" · "+pm[1].toLowerCase()];
+}
+function kitSlotsBLoad(row,d){   // kitRotBWeeksOf: a stored {main,veg,…} slot → the builder's main + part keys
+  KIT_PART_SLOTS.forEach(t=>{ const raw=(d||{})[t]; if(!raw||typeof raw!=="object") return; const c=kitSlotsRotCanon(raw);
+    row[t]=(c&&typeof c==="object")?(c.main||""):(c||"");
+    KIT_PARTS.slice(1).forEach(p=>{ if(c&&typeof c==="object"&&c[p[0]]) row[kitSlotsPartKey(t,p[0])]=c[p[0]]; }); });
+}
+function kitSlotsBOf(d,t){ const o={}; KIT_PARTS.forEach(p=>{ o[p[0]]=String((d||{})[kitSlotsPartKey(t,p[0])]||""); }); return kitSlotsRotCanon(o); }   // a builder day's b/l slot in rotation shape
+function kitSlotsBFilled(d,t){ return KIT_PART_SLOTS.indexOf(t)>=0?!!kitSlotsBOf(d,t):!!String((d||{})[t]||"").trim(); }
+function kitSlotsBAny(d){ return KIT_PART_SLOTS.some(t=>kitSlotsBFilled(d,t)); }
+// kitRotEditDiff: a b/l slot compares as its canonical shape (so an untouched four-part slot writes nothing) — true = handled
+function kitSlotsRotDiff(up,w,i,k,day,o){ if(KIT_PART_SLOTS.indexOf(k)<0) return false; const nv=kitSlotsBOf(day,k), ov=kitSlotsRotCanon((o||{})[k]); if(JSON.stringify(nv)!==JSON.stringify(ov)) up["weeks/"+w+"/"+i+"/"+k]=nv; return true; }
+function kitSlotsBCellHTML(w,i,t,day){   // the builder's b/l cell: four small cells, main · veg · fruit · extra, each → the picker
+  let h='<span style="display:flex;flex-direction:column;gap:2px;min-width:0">';
+  KIT_PARTS.forEach(p=>{ const key=kitSlotsPartKey(t,p[0]); const v=String((day||{})[key]||""); const picking=kitRotPick&&kitRotPick.kind==="b"&&kitRotPick.w===w&&kitRotPick.i===i&&kitRotPick.slot===key;
+    h+='<span onclick="kitRotBPick('+w+','+i+',\''+key+'\')" title="'+esc(p[1])+'" style="cursor:pointer;padding:3px 5px;border-radius:5px;background:'+(v?'#fff7ed':'#f8f7f4')+';border:1.5px solid '+(picking?'#B45309':'#e8e4de')+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(v?esc(v):'<span style="color:#9ca3af">＋ '+esc(p[0])+'</span>')+'</span>'; });
+  return h+'</span>';
+}
+// ── 🗓 the day sheet (Mom/Dad view): the Breakfast / Lunch row with its four fields ──
+function kitSlotsRowHTML(iso,sp){
+  const slot=sp[0]; const sv=kitPlanSlot(iso,slot); const name=sv?(sv.meal?((sv.meal.emoji?sv.meal.emoji+" ":"")+(sv.meal.name||"")):(sv.txt||"")):"";
+  const cm=(typeof kitRotComingAt==='function')?kitRotComingAt(iso,slot):null;
+  let h='<div class="row" style="flex-wrap:wrap"><span class="lbl">'+sp[2]+'</span><span style="flex:1;min-width:130px">'+sp[1]+' '+(name?'<b>'+esc(name)+'</b>':'<span style="color:#9ca3af">nothing yet</span>')
+    +(cm?' <span style="font-size:10px;color:#9ca3af;font-weight:700">'+esc(kitRotComingLbl(cm))+'</span>':'')+'</span>'
+    +(sv?'<button class="act" style="background:#eff6ff;color:#1d4ed8" onclick="kitMoveForward(\''+iso+'\',\''+slot+'\')">➡ Move</button>':'')+'</div>';
+  const parts=kitSlotsParts((kitPlan[iso]||{})[slot])||{};   // the REAL record — a queued "coming" day's fields start empty
+  h+='<div class="row" style="flex-wrap:wrap;border-top:none;padding-top:0"><span class="lbl"></span><span style="flex:1;display:flex;flex-wrap:wrap;gap:5px;align-items:center">';
+  KIT_PARTS.forEach(p=>{ const key=kitSlotsPartKey(slot,p[0]); const x=parts[p[0]]; const on=!!(kitRotPick&&kitRotPick.kind==="p"&&kitRotPick.iso===iso&&kitRotPick.slot===key);
+    if(x) h+='<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 4px 2px 9px;border-radius:10px;background:#fff7ed;color:#9a3412;font-size:12px;font-weight:700;border:1.5px solid '+(on?'#B45309':'#fff7ed')+'">'
+      +'<span onclick="kitSlotsPick(\''+iso+'\',\''+key+'\')" title="'+esc(p[1])+' — tap to change" style="cursor:pointer"><span style="font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:#b45309">'+esc(p[0])+'</span> '+esc(kitSlotsPartName(x))+'</span>'
+      +(x.mid&&kitMeals[x.mid]?' <span onclick="kitOpenRecipe(\''+esc(x.mid)+'\')" title="Open the recipe" style="cursor:pointer;font-size:11px">\u{1F4D6}</span>':'')
+      +'<span onclick="kitSlotsClear(\''+iso+'\',\''+key+'\')" title="Clear this part" style="cursor:pointer;color:#9ca3af;font-weight:800;padding:0 4px">✕</span></span>';
+    else h+='<span onclick="kitSlotsPick(\''+iso+'\',\''+key+'\')" title="'+esc(p[1])+'" style="cursor:pointer;padding:2px 9px;border-radius:10px;border:1.5px dashed '+(on?'#B45309':'#d1d5db')+';color:#9ca3af;font-size:11.5px;font-weight:700">＋ '+esc(p[0])+'</span>';
+  });
+  h+='</span></div>';
+  if(kitRotPick&&kitRotPick.kind==="p"&&kitRotPick.iso===iso&&kitSlotsKeyOf(kitRotPick.slot).slot===slot) h+='<div class="row" style="border-top:none;padding-top:0;display:block">'+kitRotPickHTML()+'</div>';
+  return h;
+}
+function kitSlotsPick(iso,key){   // a field tapped: open the picker on it (tap again to close)
+  if(!kitEatGate()) return;
+  const P=kitRotPick; if(P&&P.kind==="p"&&P.iso===iso&&P.slot===key){ kitRotPick=null; _kitRefresh(); return; }
+  kitRotPickOpen({kind:"p",iso:iso,slot:key});
+}
+function kitSlotsPickCur(P){ const k=kitSlotsKeyOf(P.slot); const parts=kitSlotsParts((kitPlan[P.iso]||{})[k.slot])||{}; return parts[k.part]?kitSlotsPartText(parts[k.part]):""; }
+function kitSlotsPickSet(P,val){ const k=kitSlotsKeyOf(P.slot); kitSlotsSet(P.iso,k.slot,k.part,val); }
+function kitSlotsClear(iso,key){ const k=kitSlotsKeyOf(key); kitSlotsSet(iso,k.slot,k.part,null); }
+// THE write: one part of a day's b|l. val = {mid} | {txt} | null (clear). kitchen/plan/{iso}/{slot} = {parts:{…}} — the old
+// {mid|txt} becomes parts.main right here (the migration, that day only) — or the slot removed when no part is left (the
+// day removed when nothing else is on it). ONE targeted write.
+function kitSlotsSet(iso,slot,part,val){
+  if(!kitEatGate()) return;
+  if(KIT_PART_SLOTS.indexOf(slot)<0||!KIT_PARTS.some(p=>p[0]===part)) return;
+  const cur=Object.assign({},kitPlan[iso]||{}); const parts=kitSlotsParts(cur[slot])||{};
+  const nv=kitSlotsPartVal(val); if(nv) parts[part]=nv; else delete parts[part];
+  const ordered={}; KIT_PARTS.forEach(p=>{ if(parts[p[0]]) ordered[p[0]]=parts[p[0]]; });
+  const has=Object.keys(ordered).length>0;
+  if(has) cur[slot]={parts:ordered}; else delete cur[slot];
+  if(Object.keys(cur).length) kitPlan[iso]=cur; else delete kitPlan[iso];
+  kitRotPick=null;
+  try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
+  if(typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun())){
+    if(has) db.ref('kitchen/plan/'+iso+'/'+slot).set({parts:ordered});
+    else if(kitPlan[iso]) db.ref('kitchen/plan/'+iso+'/'+slot).remove();
+    else db.ref('kitchen/plan/'+iso).remove();
+  }
+  _kitRefresh();
+}
+// Mom's Day's tap (kitSlotText) on a parts slot: the prompt edits the MAIN only; a typed name the library knows links. true = handled.
+function kitSlotsPrompt(iso,slot){
+  const v=(kitPlan[iso]||{})[slot]; if(!kitSlotsIsParts(v)) return false;
+  const parts=kitSlotsParts(v)||{}; const cur=parts.main?kitSlotsPartText(parts.main):"";
+  const t=prompt(kitSlotsLabel(slot)+" (main):",cur); if(t===null) return true;
+  kitSlotsSet(iso,slot,"main",t.trim()?kitRotSlotVal(t.trim()):null); return true;
+}
+// KITSLOTS_END
 function kitRotationsCardHTML(){
   if(typeof kitRotAutoStart==='function') kitRotAutoStart();   // KITROT2: a rotation whose start date has come gets its days (Mom's device)
   const rots=kitRotAll();
@@ -34469,6 +34649,7 @@ function _calSlotRows(iso,who){
   let html="", n=0;
   if(typeof kitPlanSlot!=="function"||typeof KIT_SLOTS==="undefined") return {html:html,n:n};
   KIT_SLOTS.forEach(function(sp){
+    if(!who&&kitEatGate()&&(sp[0]==="b"||sp[0]==="l")&&typeof kitSlotsRowHTML==="function"){ html+=kitSlotsRowHTML(iso,sp); n++; return; }   // KITSLOTS: Mom's Breakfast / Lunch rows carry main · veg · fruit · extra (shown even when empty)
     const sv=kitPlanSlot(iso,sp[0]); if(!sv) return; n++;
     const name=sv.meal?((sv.meal.emoji?sv.meal.emoji+" ":"")+(sv.meal.name||"")):(sv.txt||"");
     html+='<div class="row"><span class="lbl">'+sp[2]+'</span><span style="flex:1">'+sp[1]+' <b>'+esc(name)+'</b>'+((typeof kitRotComingAt==='function'&&kitRotComingAt(iso,sp[0]))?' <span style="font-size:10px;color:#9ca3af;font-weight:700">'+esc(kitRotComingLbl(kitRotComingAt(iso,sp[0])))+'</span>':'')+'</span>'   // KITROT2
