@@ -60,8 +60,9 @@ console.log("Prewash: bin → prewash → washer → dryer → fold; normal load
   ok("bin → prewash, set, fresh clock", w.length===1&&w[0][0]==="set"&&w[0][2].stage==="prewash"&&w[0][2].ts>1000, w);
   c.laundryAdvance("a"); w=c.writes.filter(x=>x[1]==="laundry/a");
   ok("prewash → washer (second wash), fresh clock", w.length===2&&w[1][2].stage==="washer"&&w[1][2].ts>1000, w);
-  c.laundryAdvance("a"); w=c.writes.filter(x=>x[1]==="laundry/a"); ok("washer → dryer", w.length===3&&w[2][2].stage==="dryer");
-  c.laundryAdvance("b"); ok("a normal washer load still goes to the dryer", c.writes.some(x=>x[1]==="laundry/b"&&x[2].stage==="dryer"));
+  c.laundryAdvance("a"); ok("washer: asks where first (LAUNDRY_SPLIT 2026-10-22) — nothing written yet", c.writes.filter(x=>x[1]==="laundry/a").length===2);
+  c.laundrySplitWhereAnswer("dryer"); w=c.writes.filter(x=>x[1]==="laundry/a"); ok("washer → dryer", w.length===3&&w[2][2].stage==="dryer");
+  c.laundryAdvance("b"); c.laundrySplitWhereAnswer("dryer"); ok("a normal washer load still goes to the dryer", c.writes.some(x=>x[1]==="laundry/b"&&x[2].stage==="dryer"));
   c.laundryAdvance("f"); ok("fold → put away still removes", c.writes.some(x=>x[1]==="laundry/f"&&x[0]==="rm"));
   ok("prewash has the washer clock; bin has none", c.laundryDoneAt({stage:"prewash",ts:0})===60*60000&&c.laundryDoneAt({stage:"bin",ts:0})===0);
   ok("wet trail is prewash → washer → dryer → fold", /const LAUNDRY_WET_STAGES=\["prewash","washer","dryer","fold"\]/.test(src));
