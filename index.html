@@ -4277,6 +4277,7 @@ function initFb() {
       if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
     });
     if(typeof lrListen==="function") lrListen();   // LESSONRES: curriculum/resources + supplies/staples (reads)
+    if(typeof kitLabListen==="function") kitLabListen();   // KITLABELS: kitchen/labels → kitLabels / kitLabHidden (the device copy first)
     if(typeof kitFlagListen==="function") kitFlagListen();   // KITFLAG: kitchen/flags → kitFlags (the device copy first)
     db.ref("kitchen/prepDone").on("value",s=>{
       const v=s.val()||{};
@@ -17895,6 +17896,7 @@ function _kitEditMealGo(id){
   kitEditPrep=(m.prep||[]).map(s=>({when:s.when,label:s.label,mins:kitPrepMins(s)}));   // 🍳 MEALPREP_BLOCK: how long
   kitEditDraft={name:m.name||"",emoji:m.emoji||"",ing:m.ing||"",steps:m.steps||"",photo:m.photo||"",url:m.url||"",yield:m.yield||"",tags:Array.isArray(m.tags)?m.tags.slice():[]};
   kitCap={mode:null,busy:false,msg:"",photos:[]};   // a fresh photo tray for each recipe
+  if(typeof kitLabNew!=="undefined") kitLabNew=false;   // KITLABELS: the ＋ new label box starts closed
   mpGoto('meals');
 }
 // Keep typed-but-unsaved fields across the re-renders the prep builder causes.
@@ -17931,7 +17933,7 @@ function kitSaveMeal(){
   // 🍽 recipe fields (2026-10-01): a small picture (data URI ≤ ~60 KB, works on the free Firebase plan), where it came from, tags, how much it makes
   if((d.url||"").trim()) m.url=String(d.url).trim();
   if((d.yield||"").trim()) m.yield=String(d.yield).trim();
-  if(Array.isArray(d.tags)&&d.tags.length) m.tags=d.tags.slice();
+  const tg=(typeof kitLabTagsClean==="function")?kitLabTagsClean(d.tags):(Array.isArray(d.tags)?d.tags.slice():[]); if(tg.length) m.tags=tg;   // KITLABELS: built-in ids + label ids; an id nobody knows is never written back
   if(d.photo&&String(d.photo).slice(0,10)==="data:image") m.photo=d.photo;
   kitMeals[id]=m;
   kitEditId=null; kitEditDraft=null; kitEditPrep=[]; kitView=id;
@@ -21312,21 +21314,21 @@ function kitRotPickTyped(){ const P=kitRotPick; if(!P) return; const v=prompt(ki
 function kitRotPickClear(){ const P=kitRotPick; if(!P) return; if(P.kind==="p"&&typeof kitSlotsPickSet==="function"){ kitSlotsPickSet(P,null); return; } if(P.kind==="b") kitRotBSet(P.w,P.i,P.slot,""); else kitRotDaySet(P.iso,P.slot,null); }
 function kitRotPickMatch(m,q){ return !q||(String(m.name||"")+" \n"+String(m.ing||"")).toLowerCase().includes(q); }
 function kitRotPickQ(v){ if(kitRotPick) kitRotPick.q=String(v||""); const q=String(v||"").trim().toLowerCase(); document.querySelectorAll('[data-rotpick]').forEach(r=>{ r.style.display=kitRotPickMatch(kitMeals[r.getAttribute('data-rotpick')]||{},q)?"":"none"; }); }
-function kitRotPickTag(t){ if(!kitRotPick) return; kitRotPick.tag=(kitRotPick.tag===t)?"":t; kitRotRender(); }
+function kitRotPickTag(t){ if(!kitRotPick) return; if(typeof kitLabFiltToggle==="function") kitLabFiltToggle("pick",t); else kitRotPick.tag=(kitRotPick.tag===t)?"":t; kitRotRender(); }   // KITLABELS: chips combine, remembered this session
 function kitRotPickHTML(){
   const P=kitRotPick; if(!P) return '';
   const meta=kitRotTypeMeta(P.slot); const cur=kitRotPickCur(); const q=String(P.q||"").trim().toLowerCase();
   const where=P.kind==="b"?('week '+(P.w+1)+' · '+KIT_ROT_DAYS[P.i]):kitRotFmt(P.iso);
   const mids=Object.keys(kitMeals).sort((a,b)=>String((kitMeals[a]||{}).name||"").localeCompare(String((kitMeals[b]||{}).name||"")));
-  const tags=KIT_TAGS.filter(t=>mids.some(k=>Array.isArray((kitMeals[k]||{}).tags)&&kitMeals[k].tags.includes(t[0])));
+  const tags=(typeof kitLabPickTags==="function")?kitLabPickTags(mids):KIT_TAGS.filter(t=>mids.some(k=>Array.isArray((kitMeals[k]||{}).tags)&&kitMeals[k].tags.includes(t[0])));   // KITLABELS: visible built-ins + the family's labels
   const btn='cursor:pointer;font-size:11px;font-weight:800;padding:4px 10px;border-radius:12px;background:#fff;';
   let h='<div style="padding:8px 10px;background:#fff;border:1.5px dashed #B45309;border-radius:9px;margin-top:6px">';
   h+='<div style="font-size:11px;font-weight:800;color:#92400e;margin-bottom:5px">'+meta[1]+' '+meta[2]+' · '+esc(where)+(cur?' · now: '+esc(cur):'')+'</div>';
   h+='<input type="search" value="'+esc(P.q||"")+'" oninput="kitRotPickQ(this.value)" placeholder="🔎 From the library — search" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:12px;font-family:\'DM Sans\',sans-serif">';
-  if(tags.length) h+='<div style="display:flex;gap:4px;flex-wrap:wrap;margin:5px 0">'+tags.map(t=>'<span onclick="kitRotPickTag(\''+t[0]+'\')" style="cursor:pointer;padding:2px 9px;border-radius:999px;font-size:10.5px;font-weight:700;border:1.5px solid '+(P.tag===t[0]?'#6B4C93;background:#6B4C93;color:#fff':'#ddd6fe;background:#fff;color:#6B4C93')+'">'+esc(t[1])+'</span>').join('')+'</div>';
+  if(tags.length) h+='<div style="display:flex;gap:4px;flex-wrap:wrap;margin:5px 0">'+tags.map(t=>'<span onclick="kitRotPickTag(\''+t[0]+'\')" style="cursor:pointer;padding:2px 9px;border-radius:999px;font-size:10.5px;font-weight:700;border:1.5px solid '+(((typeof kitLabFiltActive==="function")?kitLabFiltActive("pick").includes(t[0]):P.tag===t[0])?'#6B4C93;background:#6B4C93;color:#fff':'#ddd6fe;background:#fff;color:#6B4C93')+'">'+esc(t[1])+'</span>').join('')+'</div>';   // KITLABELS
   h+='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:5px;max-height:170px;overflow:auto">';
   let shown=0;
-  mids.forEach(k=>{ const m=kitMeals[k]||{}; if(P.tag&&!(Array.isArray(m.tags)&&m.tags.includes(P.tag))) return; shown++;
+  mids.forEach(k=>{ const m=kitMeals[k]||{}; if((typeof kitLabFiltMatch==="function")?!kitLabFiltMatch("pick",m):(P.tag&&!(Array.isArray(m.tags)&&m.tags.includes(P.tag)))) return; shown++;   // KITLABELS: every picked label must be on it
     const on=kitRotNorm(m.name)===kitRotNorm(cur);
     h+='<span data-rotpick="'+k+'" onclick="kitRotPickGo(\''+k+'\')" style="display:'+(kitRotPickMatch(m,q)?'inline-block':'none')+';'+btn+'border:1.5px solid '+(on?'#B45309;background:#fff7ed;color:#92400e':'#e5e7eb;color:#4b5563')+'">'+(m.emoji?esc(m.emoji)+' ':'')+esc(m.name||"")+'</span>'; });
   if(!shown) h+='<span style="font-size:11px;color:var(--muted)">'+(mids.length?'Nothing with that tag — ':'Nothing in the library yet — ')+'type it instead.</span>';
@@ -22045,8 +22047,180 @@ function kitEditorHTML(){
 
 // ── 🍽 recipe extras (2026-10-01): picture · source link · tags · yield. Mom-only: the editor lives on Mom's Day. ──
 const KIT_TAGS=[["gf","Gluten-free"],["df","Dairy-free"],["kid","Kid-friendly"],["batch","Batch / make-ahead"],["juice","Juice or smoothie"],["side","Side dish"]];   // KITSIDES: "side" narrows the day sheet's side picker
-function kitTagLabel(t){ const x=KIT_TAGS.find(a=>a[0]===t); return x?x[1]:t; }
+function kitTagLabel(t){ const x=KIT_TAGS.find(a=>a[0]===t); return x?x[1]:((typeof kitLabName==="function")?kitLabName(t):t); }   // KITLABELS: a family label shows its words
 function kitTagToggle(t){ _kitStash(); const d=kitEditDraft=kitEditDraft||{}; d.tags=Array.isArray(d.tags)?d.tags.slice():[]; const i=d.tags.indexOf(t); if(i>=0) d.tags.splice(i,1); else d.tags.push(t); const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
+// KITLABELS_START — a family's own meal labels (Quick, Crockpot, Sunday big cook, Kids love it…) beside the built-in tags,
+//   and the built-ins can be taken off the list. Adrienne's ask 2026-10-23: "labels I make for myself to sort through meals,
+//   usable as filters everywhere a meal is picked" + "delete the ones I had", so a family ends up with only the labels it wants.
+//   DATA (every write targeted, through kitFlagDb() so ?dryrun=1 stays inert):
+//     kitchen/labels/{id}         = {name, emoji?, order}   — a family label; id = "l" + base36 time (never the word "hidden")
+//     kitchen/labels/hidden/{tag} = true                    — a built-in (gf, df, kid, batch, juice, side) the family removed; the
+//                                                             KIT_TAGS constant itself is never touched, ↩ Restore removes the flag
+//     kitchen/meals/{mid}/tags    = [...]                   — one recipe at a time, when a deleted label / a removed built-in (Yes) is stripped
+//   A recipe's tags[] holds built-in ids and label ids side by side. An id nobody knows is ignored everywhere and never written
+//   back (kitSaveMeal cleans it). A removed built-in disappears from every chip row and filter, but a recipe still carrying it keeps
+//   working where the app reads the tag itself (side → the sides picker, batch/juice → Prep's 🫙 Batch & make-ahead) until stripped.
+//   The 🏷 Labels card (Mom's Day ▸ Meals) adds, renames, reorders and deletes — behind the Mom PIN like the recipe editor.
+//   DEVICE-ONLY: the active filter (library, shared picker) lives in sessionStorage for this session; "group by label" in HA_LS.
+//   New families start with no labels and nothing hidden — so does Howe (no migration) — and every screen stays byte-identical.
+let kitLabels={}, kitLabHidden={}, kitLabSynced=false, kitLabEdit=null, kitLabNew=false;
+function kitLabLS(){ try{ HA_LS.setItem('ha_kit_labels',JSON.stringify({labels:kitLabels,hidden:kitLabHidden})); }catch(e){} }
+function kitLabApply(v){   // the live node → kitLabels (family labels) + kitLabHidden (removed built-ins); junk records are skipped
+  v=v||{}; Object.keys(kitLabels).forEach(k=>{ delete kitLabels[k]; }); Object.keys(kitLabHidden).forEach(k=>{ delete kitLabHidden[k]; });
+  Object.keys(v).forEach(k=>{
+    if(k==="hidden"){ Object.keys(v.hidden||{}).forEach(t=>{ if(v.hidden[t]&&KIT_TAGS.some(x=>x[0]===t)) kitLabHidden[t]=true; }); return; }
+    const r=v[k]; if(/^[\w-]+$/.test(k)&&r&&typeof r==="object"&&String(r.name||"").trim()) kitLabels[k]={name:String(r.name).trim(),emoji:String(r.emoji||"").trim(),order:Number(r.order)||0};
+  });
+}
+function kitLabListen(){   // once, from the kitchen listeners: the device copy first, then the live node
+  try{ const s=HA_LS.getItem('ha_kit_labels'); if(s){ const o=JSON.parse(s)||{}; Object.assign(kitLabels,o.labels||{}); Object.assign(kitLabHidden,o.hidden||{}); } }catch(e){}
+  if(typeof db==='undefined'||!db) return;
+  db.ref("kitchen/labels").on("value",s=>{
+    kitLabApply(s.val()); kitLabSynced=true; kitLabLS();
+    if(typeof tab!=='undefined'&&tab==="moms-plan"){ const el=document.getElementById("content"); if(el) renderMomsPlan(el); }
+  });
+}
+// ── lookups ──
+function kitLabList(){ return Object.keys(kitLabels).map(id=>Object.assign({id:id},kitLabels[id])).sort((a,b)=>(a.order-b.order)||String(a.name).localeCompare(String(b.name))); }
+function kitLabBuiltIns(){ return KIT_TAGS.filter(t=>!kitLabHidden[t[0]]); }   // the built-ins still on the list, in KIT_TAGS order
+function kitLabChoices(){ return kitLabBuiltIns().concat(kitLabList().map(l=>[l.id,(l.emoji?l.emoji+" ":"")+l.name])); }   // [[id, words]] — visible built-ins, then the family's own
+function kitLabKnown(t){ return KIT_TAGS.some(k=>k[0]===t)||!!kitLabels[t]; }   // a removed built-in is still known — a recipe may carry it
+function kitLabShown(t){ return kitLabChoices().some(c=>c[0]===t); }   // on the chip rows: a built-in not removed, or a family label
+function kitLabName(t){ const l=kitLabels[t]; return l?((l.emoji?l.emoji+" ":"")+l.name):t; }
+function kitLabTagsClean(tags){ return Array.isArray(tags)?tags.filter((t,i,a)=>typeof t==="string"&&kitLabKnown(t)&&a.indexOf(t)===i):[]; }   // what a save may write
+function kitLabCount(t){ return Object.keys(kitMeals||{}).filter(k=>Array.isArray((kitMeals[k]||{}).tags)&&kitMeals[k].tags.includes(t)).length; }
+// ── writes ──
+function kitLabWrite(patch){ const d=(typeof kitFlagDb==="function")?kitFlagDb():null; if(d&&Object.keys(patch).length) d.ref().update(patch); }   // one multi-path update of only the paths named
+function kitLabStrip(t){   // take one id off every recipe that carries it (the device copy now) → the kitchen/meals/{mid}/tags paths to write
+  const patch={};
+  Object.keys(kitMeals||{}).forEach(k=>{ const m=kitMeals[k]; if(!m||!Array.isArray(m.tags)||!m.tags.includes(t)) return;
+    const left=m.tags.filter(x=>x!==t); if(left.length) m.tags=left; else delete m.tags; patch['kitchen/meals/'+k+'/tags']=left.length?left:null; });
+  if(Object.keys(patch).length&&typeof kitMealsLSSave==="function") kitMealsLSSave();
+  return patch;
+}
+function kitLabAdd(name,emoji){   // → the new id, or null (blank, or a name already on the list)
+  name=String(name||"").trim().slice(0,30); emoji=String(emoji||"").trim().slice(0,4); if(!name) return null;
+  if(kitLabList().some(l=>l.name.toLowerCase()===name.toLowerCase())||kitLabBuiltIns().some(t=>t[1].toLowerCase()===name.toLowerCase())){ alert('You already have a label called "'+name+'".'); return null; }
+  let id="l"+Date.now().toString(36); while(kitLabels[id]) id+="x";
+  const rec={name:name,order:kitLabList().reduce((m,l)=>Math.max(m,l.order),0)+1}; if(emoji) rec.emoji=emoji;
+  kitLabels[id]={name:name,emoji:emoji,order:rec.order}; kitLabLS();
+  const d=(typeof kitFlagDb==="function")?kitFlagDb():null; if(d) d.ref('kitchen/labels/'+id).set(rec);
+  return id;
+}
+function kitLabRename(id,name,emoji){
+  const l=kitLabels[id]; if(!l) return false; name=String(name||"").trim().slice(0,30); emoji=String(emoji||"").trim().slice(0,4); if(!name) return false;
+  if(kitLabList().some(o=>o.id!==id&&o.name.toLowerCase()===name.toLowerCase())){ alert('You already have a label called "'+name+'".'); return false; }
+  const patch={}; if(name!==l.name) patch['kitchen/labels/'+id+'/name']=name; if(emoji!==(l.emoji||"")) patch['kitchen/labels/'+id+'/emoji']=emoji||null;
+  l.name=name; l.emoji=emoji; kitLabLS(); kitLabWrite(patch); return true;
+}
+function kitLabMove(id,dir){   // ↑ / ↓ one step; every label whose place changed gets its order written (1-based, gaps closed)
+  const L=kitLabList(); const i=L.findIndex(l=>l.id===id), j=i+dir; if(i<0||j<0||j>=L.length) return false;
+  const arr=L.slice(); arr[i]=L[j]; arr[j]=L[i]; const patch={};
+  arr.forEach((l,n)=>{ if(kitLabels[l.id].order!==n+1){ kitLabels[l.id].order=n+1; patch['kitchen/labels/'+l.id+'/order']=n+1; } });
+  kitLabLS(); kitLabWrite(patch); return true;
+}
+function kitLabDelete(id){   // confirms with how many recipes carry it, then the label record goes and each of those recipes loses the id
+  const l=kitLabels[id]; if(!l) return false; const n=kitLabCount(id);
+  if(!confirm('Delete the label "'+l.name+'"?'+(n?' It comes off the '+n+' recipe'+(n===1?'':'s')+' that '+(n===1?'has':'have')+' it.':''))) return false;
+  const patch=kitLabStrip(id); patch['kitchen/labels/'+id]=null;
+  delete kitLabels[id]; if(kitLabEdit===id) kitLabEdit=null; kitLabLS(); kitLabWrite(patch); kitLabFiltDrop(id); return true;
+}
+function kitLabHide(t){   // ✕ on a built-in: the hidden flag, then "Also take it off the N recipes that have it?" — Yes strips, No leaves them
+  const b=KIT_TAGS.find(k=>k[0]===t); if(!b||kitLabHidden[t]) return false; const n=kitLabCount(t);
+  if(!confirm('Take "'+b[1]+'" off your labels? (↩ Restore at the bottom of the card brings it back.)')) return false;
+  const patch={}; patch['kitchen/labels/hidden/'+t]=true;
+  if(n&&confirm('Also take it off the '+n+' recipe'+(n===1?'':'s')+' that '+(n===1?'has':'have')+' it?')) Object.assign(patch,kitLabStrip(t));
+  kitLabHidden[t]=true; kitLabLS(); kitLabWrite(patch); kitLabFiltDrop(t); return true;
+}
+function kitLabRestore(t){ if(!kitLabHidden[t]) return false; delete kitLabHidden[t]; kitLabLS(); const d=(typeof kitFlagDb==="function")?kitFlagDb():null; if(d) d.ref('kitchen/labels/hidden/'+t).remove(); return true; }
+// ── the 🏷 Labels card (Mom's Day ▸ Meals) ──
+function kitLabUi(what,id){ kitPinGate(function(){ kitLabDo(what,id); },'Changing labels is for Mom.'); }
+function kitLabDo(what,id){
+  const g=i=>((document.getElementById(i)||{}).value||"");
+  if(what==="add"){ const nid=kitLabAdd(g('kit-lab-name'),g('kit-lab-emoji')); if(nid&&typeof mwToast==='function') mwToast('\u{1F3F7} '+kitLabName(nid)+' added'); }
+  else if(what==="edit") kitLabEdit=id;
+  else if(what==="cancel") kitLabEdit=null;
+  else if(what==="save"){ if(kitLabRename(id,g('kit-lab-ename'),g('kit-lab-eemoji'))) kitLabEdit=null; }
+  else if(what==="up") kitLabMove(id,-1);
+  else if(what==="down") kitLabMove(id,1);
+  else if(what==="del") kitLabDelete(id);
+  else if(what==="hide") kitLabHide(id);
+  else if(what==="restore") kitLabRestore(id);
+  const el=document.getElementById('content'); if(el) renderMomsPlan(el);
+}
+function kitLabCardHTML(){
+  const L=kitLabList(); const hid=KIT_TAGS.filter(t=>kitLabHidden[t[0]]);
+  const inp='padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif';
+  const sm='border:none;background:none;color:#9ca3af;font-size:13px;cursor:pointer;padding:2px 4px';
+  const row=(lbl,btns,n)=>'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 10px;background:#f8f7f4;border:1.5px solid #e8e4de;border-radius:9px;margin-bottom:5px"><span style="flex:1;font-size:13px;font-weight:700">'+lbl+'</span><span style="font-size:11px;color:#9ca3af;white-space:nowrap">'+n+' recipe'+(n===1?'':'s')+'</span>'+btns+'</div>';
+  let h='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
+  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#6B4C93;color:#fff;font-weight:800;font-size:13px"><span>\u{1F3F7}</span> Labels</div>';
+  h+='<div style="padding:10px 14px 12px">';
+  h+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Labels sort your meals. Put them on a recipe in ✎ Edit, then filter by label in the library and in every picker. ✕ takes a label off your list.</div>';
+  KIT_TAGS.forEach(t=>{ if(kitLabHidden[t[0]]) return;
+    h+=row(esc(t[1])+' <span style="font-size:10px;font-weight:700;color:#9ca3af">built-in</span>','<button onclick="kitLabUi(\'hide\',\''+t[0]+'\')" title="Take this label off your list" style="'+sm+'">✕</button>',kitLabCount(t[0])); });
+  L.forEach((l,i)=>{
+    if(kitLabEdit===l.id){
+      h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:6px 10px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:9px;margin-bottom:5px">'
+        +'<input type="text" id="kit-lab-eemoji" value="'+esc(l.emoji||"")+'" placeholder="\u{1F372}" maxlength="4" style="width:48px;text-align:center;'+inp+'">'
+        +'<input type="text" id="kit-lab-ename" value="'+esc(l.name)+'" maxlength="30" onkeydown="if(event.key===\'Enter\')kitLabUi(\'save\',\''+l.id+'\')" style="flex:1;min-width:120px;'+inp+'">'
+        +'<button onclick="kitLabUi(\'save\',\''+l.id+'\')" style="padding:8px 14px;border-radius:9px;border:none;background:#2B7A78;color:#fff;font-size:12px;font-weight:700;cursor:pointer">Save</button>'
+        +'<button onclick="kitLabUi(\'cancel\')" style="'+sm+'">Cancel</button></div>';
+      return;
+    }
+    h+=row(esc((l.emoji?l.emoji+' ':'')+l.name),
+      '<button onclick="kitLabUi(\'up\',\''+l.id+'\')"'+(i?'':' disabled')+' title="Move up" style="'+sm+'">↑</button>'
+      +'<button onclick="kitLabUi(\'down\',\''+l.id+'\')"'+(i<L.length-1?'':' disabled')+' title="Move down" style="'+sm+'">↓</button>'
+      +'<button onclick="kitLabUi(\'edit\',\''+l.id+'\')" title="Rename" style="'+sm+'">✎</button>'
+      +'<button onclick="kitLabUi(\'del\',\''+l.id+'\')" title="Delete this label" style="'+sm+'">✕</button>',kitLabCount(l.id));
+  });
+  if(!L.length) h+='<div style="font-size:12px;color:var(--muted);margin:2px 0 8px">Make your own — Quick, Crockpot, Sunday big cook, Kids love it…</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">'
+    +'<input type="text" id="kit-lab-emoji" placeholder="\u{1F372}" maxlength="4" style="width:48px;text-align:center;'+inp+'">'
+    +'<input type="text" id="kit-lab-name" placeholder="New label (Quick…)" maxlength="30" onkeydown="if(event.key===\'Enter\')kitLabUi(\'add\')" style="flex:1;min-width:140px;'+inp+'">'
+    +'<button onclick="kitLabUi(\'add\')" style="padding:8px 16px;border-radius:9px;border:none;background:#6B4C93;color:#fff;font-size:13px;font-weight:700;cursor:pointer">＋ Add</button></div>';
+  if(hid.length) h+='<div style="font-size:11px;color:var(--muted);margin-top:9px">Built-ins you took off: '+hid.map(t=>'<span style="display:inline-flex;align-items:center;gap:4px;margin:2px 4px 0 0;padding:2px 8px;border-radius:999px;border:1.5px solid #e5e7eb;color:#6b7280;font-weight:700">'+esc(t[1])+' <span onclick="kitLabUi(\'restore\',\''+t[0]+'\')" style="cursor:pointer;color:#6B4C93">↩ Restore</span></span>').join('')+'</div>';
+  h+='</div></div>';
+  return h;
+}
+// ── the recipe editor: visible built-ins + the family's labels as tap-to-toggle chips, then ＋ new label (makes it and turns it on) ──
+function kitLabEditChipsHTML(tags){
+  const chip=(id,lbl)=>'<span onclick="kitTagToggle(\''+id+'\')" style="cursor:pointer;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;border:1.5px solid '+(tags.includes(id)?'#2B7A78;background:#2B7A78;color:#fff':'#cbd5e1;background:#fff;color:#475569')+'">'+esc(lbl)+'</span>';
+  let h=kitLabChoices().map(c=>chip(c[0],c[1])).join('');
+  if(kitLabNew) h+='<span style="display:inline-flex;align-items:center;gap:4px"><input type="text" id="kit-lab-newname" placeholder="New label" maxlength="30" onkeydown="if(event.key===\'Enter\')kitLabNewGo()" style="width:130px;padding:3px 9px;border:1.5px solid #2B7A78;border-radius:999px;font-size:11px;font-family:\'DM Sans\',sans-serif">'
+    +'<span onclick="kitLabNewGo()" style="cursor:pointer;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;background:#2B7A78;color:#fff">Add</span>'
+    +'<span onclick="kitLabNewOpen(false)" style="cursor:pointer;padding:3px 6px;font-size:11px;color:#9ca3af">✕</span></span>';
+  else h+='<span onclick="kitLabNewOpen(true)" style="cursor:pointer;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;border:1.5px dashed #9ca3af;color:#6b7280;background:#fff">＋ new label</span>';
+  return h;
+}
+function kitLabNewOpen(on){ _kitStash(); kitLabNew=!!on; const el=document.getElementById('content'); if(el) renderMomsPlan(el); if(on) setTimeout(()=>{ const i=document.getElementById('kit-lab-newname'); if(i) i.focus(); },30); }
+function kitLabNewGo(){ const name=((document.getElementById('kit-lab-newname')||{}).value||"").trim(); if(!name) return; const id=kitLabAdd(name,""); if(!id) return; kitLabNew=false; kitTagToggle(id); }   // the editor is already behind the PIN
+// ── filters: the library and the shared picker — chips COMBINE (every picked label must be on the recipe); this device, this session ──
+const kitLabFilt={lib:null,pick:null};
+function kitLabFiltGet(which){
+  if(!kitLabFilt[which]){ let v=[]; try{ v=JSON.parse(sessionStorage.getItem('ha_kitlab_'+which)||"[]"); }catch(e){} kitLabFilt[which]=Array.isArray(v)?v.filter(x=>typeof x==="string"):[]; }
+  return kitLabFilt[which];
+}
+function kitLabFiltSet(which,arr){ kitLabFilt[which]=arr; try{ sessionStorage.setItem('ha_kitlab_'+which,JSON.stringify(arr)); }catch(e){} }
+function kitLabFiltToggle(which,t){ const a=kitLabFiltGet(which).slice(); const i=a.indexOf(t); if(i>=0) a.splice(i,1); else a.push(t); kitLabFiltSet(which,a); }
+function kitLabFiltDrop(t){ ["lib","pick"].forEach(w=>{ const a=kitLabFiltGet(w); if(a.includes(t)) kitLabFiltSet(w,a.filter(x=>x!==t)); }); }   // a deleted label / removed built-in can't stay picked
+function kitLabFiltActive(which){ return kitLabFiltGet(which).filter(kitLabShown); }   // an id no longer on the chips is ignored
+function kitLabFiltMatch(which,m){ return kitLabFiltActive(which).every(t=>Array.isArray(m&&m.tags)&&m.tags.includes(t)); }
+function kitLabLibChipsHTML(){ const on=kitLabFiltActive("lib"); return kitLabChoices().map(t=>'<span onclick="kitLibTagSet(\''+t[0]+'\')" style="cursor:pointer;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;border:1.5px solid '+(on.includes(t[0])?'#6B4C93;background:#6B4C93;color:#fff':'#ddd6fe;background:#fff;color:#5b21b6')+'">'+esc(t[1])+'</span>').join(''); }
+function kitLabPickTags(mids){ const on=kitLabFiltActive("pick"); return kitLabChoices().filter(t=>on.includes(t[0])||mids.some(k=>Array.isArray((kitMeals[k]||{}).tags)&&kitMeals[k].tags.includes(t[0]))); }   // the picker's chips: labels in use, plus any picked
+// ── the library's "group by label" switch (this device) — each label's recipes under a heading, unlabelled last ──
+function kitLabGroupOn(){ try{ return HA_LS.getItem('ha_kitlab_group')==="1"; }catch(e){ return false; } }
+function kitLabGroupToggle(){ try{ HA_LS.setItem('ha_kitlab_group',kitLabGroupOn()?"0":"1"); }catch(e){} const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
+function kitLabGroupSwitchHTML(){ if(!kitLabList().length) return ''; return '<label style="display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:#5b21b6;margin-bottom:8px;cursor:pointer"><input type="checkbox" onchange="kitLabGroupToggle()"'+(kitLabGroupOn()?' checked':'')+'> Group by label</label>'; }
+function kitLabGroupHTML(mids,row){   // null = plain list (no labels, or the switch is off); otherwise the grouped rows
+  if(!kitLabList().length||!kitLabGroupOn()) return null;
+  const head=t=>'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:6px 0 4px">'+esc(t)+'</div>';
+  let h=''; const seen={};
+  kitLabChoices().forEach(c=>{ const ids=mids.filter(k=>Array.isArray((kitMeals[k]||{}).tags)&&kitMeals[k].tags.includes(c[0])); if(!ids.length) return; ids.forEach(k=>{ seen[k]=1; }); h+=head(c[1])+ids.map(row).join(''); });
+  const rest=mids.filter(k=>!seen[k]); if(rest.length) h+=head('No label')+rest.map(row).join('');
+  return h;
+}
+// KITLABELS_END
 function kitPhotoClear(){ _kitStash(); if(kitEditDraft) kitEditDraft.photo=""; const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
 // shrink in the browser → a small JPEG data URI (longest side 480 px, ~30–60 KB) that lives in the recipe record itself
 function kitPhotoPick(input){
@@ -22424,10 +22598,10 @@ function kitStartHTML(){
 }
 // ── 🔎 library search + tag filter (phase 4): shows once the box holds 8+ recipes ──
 let kitLibQ="", kitLibTag="";
-function kitLibMatch(m){ if(kitLibTag&&!(Array.isArray(m.tags)&&m.tags.includes(kitLibTag))) return false;
+function kitLibMatch(m){ if((typeof kitLabFiltMatch==="function")?!kitLabFiltMatch("lib",m):(kitLibTag&&!(Array.isArray(m.tags)&&m.tags.includes(kitLibTag)))) return false;   // KITLABELS: chips combine
   const q=kitLibQ.trim().toLowerCase(); if(!q) return true; return (String(m.name||"")+" \n"+String(m.ing||"")).toLowerCase().includes(q); }
 function kitLibFilter(v){ kitLibQ=String(v||""); document.querySelectorAll('[data-kit-mid]').forEach(r=>{ const m=kitMeals[r.getAttribute('data-kit-mid')]||{}; r.style.display=kitLibMatch(m)?"":"none"; }); }
-function kitLibTagSet(t){ kitLibTag=(kitLibTag===t)?"":t; const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
+function kitLibTagSet(t){ if(typeof kitLabFiltToggle==="function") kitLabFiltToggle("lib",t); else kitLibTag=(kitLibTag===t)?"":t; const el=document.getElementById('content'); if(el) renderMomsPlan(el); }   // KITLABELS: on/off in the session's set
 function kitRecipeExtrasEditorHTML(d){
   const tags=Array.isArray(d.tags)?d.tags:[];
   let h='<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:9px">';
@@ -22437,11 +22611,11 @@ function kitRecipeExtrasEditorHTML(d){
   h+='<input type="text" id="kit-url" value="'+esc(d.url||"")+'" placeholder="Link — where the recipe lives (optional)" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:12px;font-family:\'DM Sans\',sans-serif">';
   h+='<input type="text" id="kit-yield" value="'+esc(d.yield||"")+'" placeholder="Makes — 6 servings · 1 gallon · 36 balls (optional)" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:12px;font-family:\'DM Sans\',sans-serif">';
   h+='</div></div>';
-  h+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px">'+KIT_TAGS.map(t=>'<span onclick="kitTagToggle(\''+t[0]+'\')" style="cursor:pointer;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;border:1.5px solid '+(tags.includes(t[0])?'#2B7A78;background:#2B7A78;color:#fff':'#cbd5e1;background:#fff;color:#475569')+'">'+esc(t[1])+'</span>').join('')+'</div>';
+  h+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px">'+((typeof kitLabEditChipsHTML==="function")?kitLabEditChipsHTML(tags):KIT_TAGS.map(t=>'<span onclick="kitTagToggle(\''+t[0]+'\')" style="cursor:pointer;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;border:1.5px solid '+(tags.includes(t[0])?'#2B7A78;background:#2B7A78;color:#fff':'#cbd5e1;background:#fff;color:#475569')+'">'+esc(t[1])+'</span>').join(''))+'</div>';   // KITLABELS: visible built-ins + the family's labels + ＋ new label
   return h;
 }
 function kitRecipeExtrasHTML(m){
-  const tags=Array.isArray(m.tags)?m.tags:[]; let h='';
+  const tags=(Array.isArray(m.tags)?m.tags:[]).filter(t=>typeof kitLabShown!=="function"||kitLabShown(t)); let h='';   // KITLABELS: an unknown or removed id shows nowhere
   if(m.photo) h+='<img src="'+m.photo+'" alt="" style="width:100%;max-height:220px;object-fit:cover;border-radius:10px;margin-bottom:10px">';
   if(tags.length||m.yield) h+='<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-bottom:8px">'+tags.map(t=>'<span style="padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:#e6f4f3;color:#2B7A78">'+esc(kitTagLabel(t))+'</span>').join('')+(m.yield?'<span style="font-size:12px;color:var(--muted)">Makes '+esc(m.yield)+'</span>':'')+'</div>';
   if(m.url){ const u=String(m.url); const safe=/^https?:\/\//i.test(u)?u:("https://"+u); h+='<div style="font-size:12px;margin-bottom:8px"><a href="'+esc(safe)+'" target="_blank" rel="noopener" style="color:#2B7A78;font-weight:700">🔗 Open the original recipe</a></div>'; }
@@ -22567,12 +22741,13 @@ function renderKitchen(el){
   if(kitImp.open) h+=kitImportHTML();
   if(sortedMids.length>=8){
     h+='<input id="kit-lib-q" type="search" value="'+esc(kitLibQ)+'" oninput="kitLibFilter(this.value)" placeholder="🔎 Search recipes or ingredients" style="width:100%;box-sizing:border-box;padding:8px 11px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif;margin-bottom:6px">';
-    h+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">'+KIT_TAGS.map(t=>'<span onclick="kitLibTagSet(\''+t[0]+'\')" style="cursor:pointer;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;border:1.5px solid '+(kitLibTag===t[0]?'#6B4C93;background:#6B4C93;color:#fff':'#ddd6fe;background:#fff;color:#5b21b6')+'">'+esc(t[1])+'</span>').join('')+'</div>';
+    h+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">'+((typeof kitLabLibChipsHTML==="function")?kitLabLibChipsHTML():KIT_TAGS.map(t=>'<span onclick="kitLibTagSet(\''+t[0]+'\')" style="cursor:pointer;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;border:1.5px solid '+(kitLibTag===t[0]?'#6B4C93;background:#6B4C93;color:#fff':'#ddd6fe;background:#fff;color:#5b21b6')+'">'+esc(t[1])+'</span>').join(''))+'</div>';   // KITLABELS: visible built-ins + the family's labels, combined
   }
-  sortedMids.forEach(mid=>{
+  if(typeof kitLabGroupSwitchHTML==="function") h+=kitLabGroupSwitchHTML();   // KITLABELS: "group by label" (this device), only once the family has a label
+  const kitLibRow=mid=>{
     const m=kitMeals[mid];
     const nPrep=Array.isArray(m.prep)?m.prep.length:0;
-    h+='<div data-kit-mid="'+mid+'" style="display:'+(kitLibMatch(m)?'flex':'none')+';align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:#f8f7f4;border:1.5px solid #e8e4de;border-radius:9px;margin-bottom:6px">'
+    return '<div data-kit-mid="'+mid+'" style="display:'+(kitLibMatch(m)?'flex':'none')+';align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:#f8f7f4;border:1.5px solid #e8e4de;border-radius:9px;margin-bottom:6px">'
       +(m.photo?'<img src="'+m.photo+'" alt="" onclick="kitOpenRecipe(\''+mid+'\')" style="width:34px;height:34px;object-fit:cover;border-radius:8px;cursor:pointer;flex:none">':'')
       +'<span onclick="kitOpenRecipe(\''+mid+'\')" style="cursor:pointer;flex:1;font-size:13px;font-weight:700">'+(m.emoji?esc(m.emoji)+' ':'')+esc(m.name)+'</span>'+(typeof kitFlagMark==="function"?kitFlagMark(mid):'')   // KITFLAG: ⚠ the kids rate it low
       +kitRateChips('meal',mid)
@@ -22580,9 +22755,13 @@ function renderKitchen(el){
       +'<button onclick="kitOpenRecipe(\''+mid+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid #E07B39;background:#fff;color:#c2410c;font-size:11px;font-weight:700;cursor:pointer">📖</button>'
       +'<button onclick="kitEditMeal(\''+mid+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid #6B4C93;background:#fff;color:#6B4C93;font-size:11px;font-weight:700;cursor:pointer">✎</button>'
       +'<button onclick="kitDelMeal(\''+mid+'\')" style="border:none;background:none;color:#9ca3af;font-size:14px;cursor:pointer;padding:2px 4px">✕</button></div>';
-  });
+  };
+  const kitLibGrouped=(typeof kitLabGroupHTML==="function")?kitLabGroupHTML(sortedMids,kitLibRow):null;   // KITLABELS: grouped under label headings when the switch is on
+  if(kitLibGrouped!==null) h+=kitLibGrouped; else sortedMids.forEach(mid=>{ h+=kitLibRow(mid); });
   if(!sortedMids.length) h+='<div style="font-size:12px;color:var(--muted)">Your recipe box is empty. ＋ New meal adds one — name, ingredients, instructions, and the prep timers that will nudge you in 🔴 NOW.</div>';
   h+='</div></div>';
+
+  if(typeof kitLabCardHTML==="function") h+=kitLabCardHTML();   // KITLABELS: 🏷 Labels — the family's own, and the built-ins it keeps
 
   // ── 📅 Rotations — a saved month, re-applied from any Monday ─────
   h+=kitRotationsCardHTML();
