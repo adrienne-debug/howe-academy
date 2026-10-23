@@ -16176,19 +16176,35 @@ function kcOtherKidsHTML(k){
 // are skipped, never broken. A school day with nothing of that kind to do (no cards laid, no list steps due) is skipped too.
 // Each streak shows best · last · now ("best 5 · last 3 · now 2"). Today joins a streak only once it is done; until then the
 // streak stands as of the last school day. Nudge: one day from the best (now = best or best−1, best ≥ 2) → the streak's line
-// glows on the shelf and a short line shows in the top strip. Bonus: the day a streak beats its best (now > every earlier run
-// and > the remembered best, now ≥ 2), 5 ⭐ once via bankDirect ("beat your best <streak> streak"); the new best is remembered
-// at trophies/streaks/<kid>/<streak>/best = {n,date} (one targeted set) so the same best never pays twice. The streak records
-// sit under trophies/streaks, beside the kids, because trophies/<kid>/<id> is the Wins trophy case (kidTrophies enumerates
-// every child) and a streak record must never draw there as a stray trophy. Mom's Day kid rows get one small line
-// ("🔥 drills 4 · cards 2 · routines 7"), nothing else. History before today is cached per kid per day in memory; today is
-// read live; no new Firebase node holds the numbers. Kid-safe wording throughout — nothing here counts what a child missed.
+// glows on the shelf and a short line shows in the top strip.
+// THE STARS (her decision 2026-10-22, final — replacing the first rule, which paid 5 ⭐ every day a kid extended a best-ever run,
+// up to 15 a day; she caught it the same day):
+//   Keeping it going — a CLAIM, not automatic. Each school day a streak is confirmed continuing (today done for it, now ≥ 2) the
+//     day is recorded as owed at trophies/streaks/<kid>/<streak>/owed/<iso> = true, with owedDay = <iso> beside it (one targeted
+//     multi-path update on the streak's node, once per kid per streak per day, from whichever device renders first; never banked
+//     by itself — owedDay keeps a collected day from being owed again the same day). The shelf's streak line shows a "⭐ Collect" button
+//     while a streak has owed days; the kid's tap banks 1 ⭐ per owed day via bankDirect ("kept your <streak> streak going
+//     (day N)"), removes those owed leaves and toasts the total. The 🏆 Trophies button carries a small count of uncollected
+//     stars. Owed days older than TS_OWED_DAYS school days are dropped the moment a new day is owed (the shelf says "stars
+//     wait a week, then they're gone"). Three streaks → at most 3 ⭐ a day. The tap is the kid's own (kcKid), no Mom code.
+//   A new best — automatic, 5 ⭐ ONCE PER RUN: the day a run first passes the old best (now > every earlier run and > the
+//     remembered best, now ≥ 2), via bankDirect ("beat your best <streak> streak"); the record trophies/streaks/<kid>/<streak>/best
+//     = {n,date,runStart} (one targeted set) carries the run's first day. Later days on the same run (same runStart) are a new
+//     best but not a new payout: n and date move silently so the shelf's best stays right. Once the run breaks, a later run that
+//     beats n pays once again with its own runStart. A kid already on a best-ever run when the shelf first appears gets that one
+//     5 ⭐ that day and nothing more for the run.
+// The streak records sit under trophies/streaks, beside the kids, because trophies/<kid>/<id> is the Wins trophy case
+// (kidTrophies enumerates every child) and a streak record must never draw there as a stray trophy. Mom's Day kid rows get one
+// small line ("🔥 drills 4 · cards 2 · routines 7"), nothing else. History before today is cached per kid per day in memory;
+// today is read live; no new Firebase node holds the numbers. Kid-safe wording throughout — nothing here counts what a child missed.
 // Writes (only when db && !_dryRun(), from the kid's own Corner page): trophies/streaks/<kid>/<streak>/best (set) ·
-// bank/<kid>/adjustments/<id> (bankDirect, the usual note). The shelf's open/closed state lives on the device only.
+// trophies/streaks/<kid>/<streak> (one multi-path update: owed/<iso> true, owedDay, and nulls for the week-old drop) ·
+// trophies/streaks/<kid>/<streak>/owed (the Collect tap: one multi-path update of nulls) · bank/<kid>/adjustments/<id>
+// (bankDirect, the usual note). The shelf's open/closed state lives on the device only.
 const TS_STREAKS=[{id:"drills",label:"drills",emoji:"\u{1F9E0}",what:"a drill or study session done"},
                   {id:"cards",label:"school cards",short:"cards",emoji:"\u{1F4D6}",what:"every school card done"},
                   {id:"routines",label:"routine lists",short:"routines",emoji:"✅",what:"every routine list done"}];
-const TS_BONUS=5, TS_LOOKBACK=200, TS_RECENT=6;
+const TS_BONUS=5, TS_DAILY=1, TS_OWED_DAYS=7, TS_LOOKBACK=200, TS_RECENT=6;
 let tsOpenKid="";     // whose shelf is open on this device (memory only; switching kids closes it)
 let _tsCache={};      // kid -> {key, days:[{iso,drills,cards,routines}]} — the school days before today, once per kid per day
 function tsIso(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
@@ -16273,15 +16289,26 @@ function tsHistoryDays(kid,today,wd){
   return out;
 }
 // ── the streak math (pure) ── days=[{iso,ok}] in date order, school days only; today is in the list only when done.
-function tsRuns(days){ const runs=[]; let cur=0; (days||[]).forEach(function(d){ if(d.ok) cur++; else { if(cur) runs.push(cur); cur=0; } }); if(cur) runs.push(cur); return {runs:runs,now:cur}; }
+function tsRuns(days){
+  const runs=[], pos={}; let cur=0, start="";   // pos: iso → that day's number in its run (day 1, day 2, …)
+  (days||[]).forEach(function(d){ if(d.ok){ if(!cur) start=d.iso; cur++; pos[d.iso]=cur; } else { if(cur) runs.push(cur); cur=0; start=""; } });
+  if(cur) runs.push(cur); return {runs:runs,now:cur,runStart:cur?start:"",pos:pos};
+}
 function tsNumbers(days,storedN){
   const r=tsRuns(days), now=r.now, prev=now?r.runs.slice(0,-1):r.runs.slice();
   const last=prev.length?prev[prev.length-1]:0;
   let bestBefore=Math.max(0,parseInt(storedN,10)||0); prev.forEach(function(n){ if(n>bestBefore) bestBefore=n; });
   const best=Math.max(bestBefore,now);
-  return {best:best,last:last,now:now,bestBefore:bestBefore,newBest:now>=2&&now>bestBefore,nudge:now>=1&&best>=2&&best-now<=1};
+  return {best:best,last:last,now:now,bestBefore:bestBefore,newBest:now>=2&&now>bestBefore,nudge:now>=1&&best>=2&&best-now<=1,runStart:r.runStart,pos:r.pos};
 }
-function tsBestRec(kid,id){ try{ return (((((typeof trophies!=="undefined"&&trophies)||{}).streaks||{})[kid]||{})[id]||{}).best||null; }catch(e){ return null; } }
+// The streak's record: {best:{n,date,runStart}, owed:{iso:true}, owedDay} — read from memory, written one targeted write at a time.
+function tsStreakRec(kid,id){ try{ return ((((typeof trophies!=="undefined"&&trophies)||{}).streaks||{})[kid]||{})[id]||{}; }catch(e){ return {}; } }
+function tsBestRec(kid,id){ return tsStreakRec(kid,id).best||null; }
+function tsRecSet(kid,id,key,val){ try{ trophies.streaks=trophies.streaks||{}; trophies.streaks[kid]=trophies.streaks[kid]||{}; trophies.streaks[kid][id]=trophies.streaks[kid][id]||{}; if(val===null) delete trophies.streaks[kid][id][key]; else trophies.streaks[kid][id][key]=val; }catch(e){} }
+function tsOwedDays(kid,id){ const o=tsStreakRec(kid,id).owed||{}; return Object.keys(o).filter(function(iso){ return !!o[iso]; }).sort(); }   // uncollected days, oldest first
+function tsOwedCount(kid){ let n=0; TS_STREAKS.forEach(function(st){ n+=tsOwedDays(kid,st.id).length; }); return n; }
+// The oldest school day a star still waits for: TS_OWED_DAYS school days back from today (weekends, holidays, co-op days don't count).
+function tsOwedFloor(kid,today){ let iso=today, n=0; for(let i=0;i<120&&n<TS_OWED_DAYS;i++){ iso=tsIsoAdd(iso,-1); if(tsSchoolDay(kid,iso)) n++; } return iso; }
 // All three streaks for a kid: {ready, drills:{best,last,now,…}, cards:{…}, routines:{…}}.
 function tsStreaks(kid){
   const today=tsToday(), ready=tsHistFull(), wd=tsWeekDays(today);
@@ -16296,25 +16323,58 @@ function tsStreaks(kid){
     const days=[]; c.days.forEach(function(d){ if(d[st.id]!==null) days.push({iso:d.iso,ok:!!d[st.id]}); });
     if(td&&td[st.id]===true) days.push({iso:today,ok:true});
     const rec=tsBestRec(kid,st.id); out[st.id]=tsNumbers(days,rec&&rec.n); out[st.id].doneToday=!!(td&&td[st.id]===true); out[st.id].bestToday=!!(rec&&rec.date===today&&(parseInt(rec.n,10)||0)===out[st.id].now&&out[st.id].now>=2);
+    out[st.id].owed=tsOwedDays(kid,st.id);
   });
   return out;
 }
-// The bonus: pays once per new best, from the kid's own page. Routines waits for the whole history (and asks for it). → ids paid.
+// The stars settle here, from the kid's own page (her decision 2026-10-22): a day kept → owed (recorded, never banked by itself);
+// a new best → 5 ⭐ once per run. Routines waits for the whole history (and asks for it). → {best:[ids paid], owed:[ids recorded]}.
 function tsBonusSettle(kid,S){
-  if(!kid||!S) return []; if(typeof db==="undefined"||!db||(typeof _dryRun==="function"&&_dryRun())) return [];
-  const paid=[];
+  const out={best:[],owed:[]};
+  if(!kid||!S) return out; if(typeof db==="undefined"||!db||(typeof _dryRun==="function"&&_dryRun())) return out;
+  const today=S.today;
   TS_STREAKS.forEach(function(st){
-    const s=S[st.id]; if(!s||!s.newBest) return;
+    const s=S[st.id]; if(!s) return;
+    const kept=!!s.doneToday&&s.now>=2, best=!!s.newBest; if(!kept&&!best) return;
     if(st.id==="routines"&&!S.ready){ tsHistLoad(); return; }
-    const rec=tsBestRec(kid,st.id); if(rec&&(parseInt(rec.n,10)||0)>=s.now) return;   // another device already wrote this best
-    const best={n:s.now,date:S.today};
-    try{ trophies.streaks=trophies.streaks||{}; trophies.streaks[kid]=trophies.streaks[kid]||{}; trophies.streaks[kid][st.id]=trophies.streaks[kid][st.id]||{}; trophies.streaks[kid][st.id].best=best; }catch(e){}
-    try{ db.ref("trophies/streaks/"+kid+"/"+st.id+"/best").set(best); }catch(e){}
-    try{ if(typeof bankDirect==="function") bankDirect(kid,TS_BONUS,"beat your best "+st.label+" streak"); }catch(e){}
-    s.bestBefore=s.now; paid.push(st.id);
+    const rec=tsStreakRec(kid,st.id), base="trophies/streaks/"+kid+"/"+st.id;
+    if(kept&&rec.owedDay!==today&&!(rec.owed&&rec.owed[today])){   // today kept the streak: one star owed, claimed on the shelf
+      const owed=Object.assign({},rec.owed||{}), floor=tsOwedFloor(kid,today), u={};   // owedDay: the day stays recorded once it is collected
+      Object.keys(owed).forEach(function(iso){ if(iso<floor){ u["owed/"+iso]=null; delete owed[iso]; } });   // a week-old star is gone
+      owed[today]=true; u["owed/"+today]=true; u.owedDay=today;
+      tsRecSet(kid,st.id,"owed",owed); tsRecSet(kid,st.id,"owedDay",today); s.owed=tsOwedDays(kid,st.id);
+      try{ db.ref(base).update(u); }catch(e){}   // one targeted multi-path update on the streak's own node
+      out.owed.push(st.id);
+    }
+    if(best){
+      const old=rec.best||null; if(old&&(parseInt(old.n,10)||0)>=s.now) return;   // another device already wrote this best
+      const sameRun=!!(old&&old.runStart&&s.runStart&&old.runStart===s.runStart);   // this run was paid the day it passed the old best
+      const b={n:s.now,date:today,runStart:sameRun?old.runStart:(s.runStart||today)};
+      tsRecSet(kid,st.id,"best",b);
+      try{ db.ref(base+"/best").set(b); }catch(e){}
+      s.bestBefore=s.now; if(sameRun) return;   // the shelf's best moves; no second payout for the same run
+      try{ if(typeof bankDirect==="function") bankDirect(kid,TS_BONUS,"beat your best "+st.label+" streak"); }catch(e){}
+      out.best.push(st.id);
+    }
   });
-  if(paid.length){ try{ if(typeof gwShowToast==="function") gwShowToast("⭐ +"+TS_BONUS*paid.length+" — you beat your best "+paid.map(function(id){ return (TS_STREAKS.find(function(x){ return x.id===id; })||{}).label; }).join(" and ")+" streak!"); }catch(e){} }
-  return paid;
+  if(out.best.length){ try{ if(typeof gwShowToast==="function") gwShowToast("⭐ +"+TS_BONUS*out.best.length+" — you beat your best "+out.best.map(tsLabel).join(" and ")+" streak!"); }catch(e){} }
+  return out;
+}
+function tsLabel(id){ return (TS_STREAKS.find(function(x){ return x.id===id; })||{}).label||id; }
+// ⭐ Collect — the kid's own tap on the shelf: 1 ⭐ per owed day, the leaves removed in one multi-path update, one toast. → stars banked.
+function tsCollect(kid,id){
+  const st=TS_STREAKS.find(function(x){ return x.id===id; }); if(!kid||!st) return 0;
+  if(typeof kcKid==="undefined"||kcKid!==kid) return 0;   // the kid's own page only
+  if(typeof db==="undefined"||!db||(typeof _dryRun==="function"&&_dryRun())) return 0;
+  const days=tsOwedDays(kid,id); if(!days.length) return 0;
+  let pos={}; try{ pos=(tsStreaks(kid)[id]||{}).pos||{}; }catch(e){ pos={}; }
+  const gone={}; let n=0;
+  days.forEach(function(iso){ gone[iso]=null; try{ if(typeof bankDirect==="function") bankDirect(kid,TS_DAILY,"kept your "+st.label+" streak going"+(pos[iso]?" (day "+pos[iso]+")":"")); n+=TS_DAILY; }catch(e){} });
+  tsRecSet(kid,id,"owed",null);
+  try{ db.ref("trophies/streaks/"+kid+"/"+id+"/owed").update(gone); }catch(e){}
+  try{ if(typeof gwShowToast==="function") gwShowToast("⭐ +"+n+" — "+(days.length>1?days.length+" stars":"a star")+" for keeping your "+st.label+" streak going!"); }catch(e){}
+  try{ renderAll(); }catch(e){}
+  return n;
 }
 // The top-strip line: a new best today, else one day from the best (the nearest streak wins).
 function tsNudgeText(S){
@@ -16352,11 +16412,13 @@ function tsReadingRecent(kid){
   return Object.keys(E).sort().reverse().slice(0,TS_RECENT).map(function(id){ const e=E[id]||{}; const b=B[e.bookId]||{};
     return {title:b.title||"",pages:(e.fromPage!=null&&e.toPage!=null)?("pp. "+e.fromPage+"–"+e.toPage):"",when:tsTsTail(e.ts)||(e.day?String(e.day).slice(0,3):"")}; }).filter(function(x){ return x.title; });
 }
-function tsStreakLineHTML(st,s,big){
-  const glow=s.nudge||s.newBest;
+function tsStreakLineHTML(st,s,big,kid){
+  const glow=s.nudge||s.newBest, owed=(s.owed||[]).length;
   return '<div style="display:flex;align-items:center;gap:8px;padding:'+(big?'8px 10px':'6px 10px')+';border-radius:10px;margin-top:4px;'+(glow?'background:#fffbeb;box-shadow:0 0 0 2px #fbbf24,0 0 14px #fcd34d;':'background:#f8fafc;')+'">'
     +'<span style="font-size:'+(big?'18px':'15px')+'">'+st.emoji+'</span><span style="flex:1;min-width:0;font-weight:800;color:#334155;font-size:'+(big?'14px':'12.5px')+'">'+esc(st.label)+' <span style="font-weight:600;color:#64748b">— '+esc(st.what)+'</span></span>'
-    +'<span style="font-weight:800;color:#b45309;font-size:'+(big?'13px':'12px')+';white-space:nowrap">best '+s.best+' · last '+s.last+' · now '+s.now+'</span></div>';
+    +'<span style="font-weight:800;color:#b45309;font-size:'+(big?'13px':'12px')+';white-space:nowrap">best '+s.best+' · last '+s.last+' · now '+s.now+'</span>'
+    +(owed&&kid?'<button onclick="event.stopPropagation();tsCollect(\''+kid+'\',\''+st.id+'\')" style="border:none;background:#f59e0b;color:#fff;border-radius:9px;padding:'+(big?'7px 11px':'5px 9px')+';font-size:'+(big?'13px':'11.5px')+';font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">⭐ Collect '+owed+'</button>':'')
+    +'</div>';
 }
 function tsShelfHTML(k){
   const col=(typeof KID_COLOR!=="undefined"&&KID_COLOR[k])||"#2B7A78", name=(typeof KID_NAME!=="undefined"&&KID_NAME[k])||cap(k), big=(typeof kcLittle==="function")&&kcLittle(k);
@@ -16375,8 +16437,9 @@ function tsShelfHTML(k){
   if(subs.length){ any=true; h+=sec('\u{1F393} Finished curriculum',subs.map(function(s){ return row('\u{1F3C6}',esc(s.name),s.when?('finished '+s.when):''); }).join('')); }
   if(reads.length){ any=true; h+=sec('\u{1F4D6} Reading log',reads.map(function(r){ return row('\u{1F4D6}',esc(r.title)+(r.pages?' <span style="font-weight:600;color:#64748b">'+esc(r.pages)+'</span>':''),r.when); }).join('')); }
   if(S&&(streaks.length||!S.ready)){ if(streaks.length) any=true;
-    h+=sec('\u{1F525} Streaks <span style="font-weight:600;text-transform:none;letter-spacing:0;color:#92400e">\u2014 school days in a row</span>',streaks.map(function(st){ return tsStreakLineHTML(st,S[st.id],big); }).join('')
-      +(S.ready?'':'<div style="padding:6px 10px;font-size:'+fs+';color:#64748b;font-weight:700">\u2705 routine lists \u2014 \u23F3 still counting your school days\u2026</div>')); }
+    h+=sec('\u{1F525} Streaks <span style="font-weight:600;text-transform:none;letter-spacing:0;color:#92400e">\u2014 school days in a row</span>',streaks.map(function(st){ return tsStreakLineHTML(st,S[st.id],big,k); }).join('')
+      +(S.ready?'':'<div style="padding:6px 10px;font-size:'+fs+';color:#64748b;font-weight:700">\u2705 routine lists \u2014 \u23F3 still counting your school days\u2026</div>')
+      +(streaks.some(function(st){ return (S[st.id].owed||[]).length; })?'<div style="padding:6px 10px 2px;font-size:11px;color:#64748b;font-weight:700">⭐ A star for every school day you keep a streak going \u2014 tap Collect to bank them. Stars wait a week, then they\u2019re gone.</div>':'')); }
   if(!any&&(!S||S.ready)) h+='<div style="padding:14px;text-align:center;font-size:'+fs+';color:#64748b;font-weight:700">Your shelf is ready for its first trophy! Finish a book, do your drills, or finish every card in a day — it shows up here.</div>';
   h+='<div style="padding:8px 14px 12px;font-size:'+fs+';color:#475569;font-weight:700;border-top:1px solid #f1f5f9;margin-top:4px">⭐ Your stars live in your <span onclick="event.stopPropagation();popOpen(\''+k+'\',\'bank\')" style="color:'+col+';cursor:pointer;text-decoration:underline">Star Bank ›</span></div>';
   h+='</div>';
@@ -16387,10 +16450,10 @@ function tsStripHTML(k){
   const big=(typeof kcLittle==="function")&&kcLittle(k), open=tsOpenKid===k;
   let S=null; try{ S=tsStreaks(k); }catch(e){ S=null; }
   try{ if(S&&typeof kcKid!=="undefined"&&kcKid===k) tsBonusSettle(k,S); }catch(e){}
-  if(S&&!S.ready&&S.routines&&(S.routines.newBest||S.routines.nudge)) tsHistLoad();   // a routines nudge/best as loaded: be sure first
-  const nudge=tsNudgeText(S);
+  if(S&&!S.ready&&S.routines&&(S.routines.newBest||S.routines.nudge||(S.routines.doneToday&&S.routines.now>=2))) tsHistLoad();   // a routines nudge/best/kept day as loaded: be sure first
+  const nudge=tsNudgeText(S), owed=tsOwedCount(k);   // uncollected stars, every streak
   return '<div style="position:relative;z-index:1;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">'
-    +'<button onclick="event.stopPropagation();tsToggle(\''+k+'\')" style="border:2px solid rgba(255,255,255,0.75);background:'+(open?'#fff':'rgba(255,255,255,0.22)')+';color:'+(open?'#92400e':'#fff')+';border-radius:20px;padding:'+(big?'8px 14px':'6px 12px')+';font-size:'+(big?'13px':'11px')+';font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">\u{1F3C6} Trophies'+(open?' ▴':'')+'</button>'
+    +'<button onclick="event.stopPropagation();tsToggle(\''+k+'\')" style="border:2px solid rgba(255,255,255,0.75);background:'+(open?'#fff':'rgba(255,255,255,0.22)')+';color:'+(open?'#92400e':'#fff')+';border-radius:20px;padding:'+(big?'8px 14px':'6px 12px')+';font-size:'+(big?'13px':'11px')+';font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">\u{1F3C6} Trophies'+(owed?' <span style="background:#f59e0b;color:#fff;border-radius:10px;padding:1px 7px;margin-left:2px">⭐ '+owed+'</span>':'')+(open?' ▴':'')+'</button>'
     +(nudge?'<span style="font-size:'+(big?'13px':'12px')+';font-weight:800;color:#fff;background:rgba(0,0,0,0.18);border-radius:12px;padding:4px 10px">✨ '+esc(nudge)+'</span>':'')
     +'</div>';
 }

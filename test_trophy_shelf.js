@@ -1,9 +1,12 @@
 /*
  * 🏆 TROPHYSHELF (her decisions 2026-10-22): a 🏆 Trophies button in a kid's top strip in Kids' Corner opens the Trophy Shelf
  * INSIDE the Corner — Book trophies, Finished curriculum (from curriculum/done), the Reading Log's recent entries, and three streaks (drills · school cards · routine lists) counted on SCHOOL DAYS ONLY from records (weekends,
- * holidays and co-op days are skipped, never broken). best · last · now per streak; a nudge one day from the best; 5 ⭐ once
- * the day a streak beats its best, remembered at trophies/streaks/<kid>/<streak>/best; one line of current streaks on Mom's
- * Day kid rows; with the shelf closed the Corner renders byte-identically to base plus the button.
+ * holidays and co-op days are skipped, never broken). best · last · now per streak; a nudge one day from the best. The stars
+ * (her decision 2026-10-22, final): a school day that keeps a streak going (now ≥ 2) is OWED, never banked by itself —
+ * trophies/streaks/<kid>/<streak>/owed/<iso> = true once per day per streak; the shelf's "⭐ Collect" tap banks 1 ⭐ per owed
+ * day and clears them; owed days older than 7 school days drop when a new one is owed; the 🏆 button counts the uncollected
+ * stars. A new best pays 5 ⭐ automatically ONCE PER RUN (best = {n,date,runStart}); the same run never pays twice. One line
+ * of current streaks on Mom's Day kid rows; with the shelf closed the Corner renders byte-identically to base plus the button.
  *                                                                                                  run: node test_trophy_shelf.js
  */
 const fs=require("fs"), path=require("path"), vm=require("vm");
@@ -15,9 +18,12 @@ const BLOCK=cut("// TROPHYSHELF_START","// TROPHYSHELF_END");
 
 console.log("0. The block and its hooks");
 ok("marked, right after the KIDROWS2 block", src.indexOf("// TROPHYSHELF_START")>src.indexOf("// KIDROWS2_END")&&src.indexOf("// TROPHYSHELF_START")-src.indexOf("// KIDROWS2_END")<40);
-ok("its only Firebase write is the remembered best (one targeted set)", (BLOCK.match(/db\.ref\(/g)||[]).length===1&&/db\.ref\("trophies\/streaks\/"\+kid\+"\/"\+st\.id\+"\/best"\)\.set\(best\)/.test(BLOCK)&&!/db\.ref\([^)]*\)\.(update|remove|push)\(/.test(BLOCK));
-ok("the bonus goes through bankDirect with the plain note", /bankDirect\(kid,TS_BONUS,"beat your best "\+st\.label\+" streak"\)/.test(BLOCK)&&/TS_BONUS=5\b/.test(BLOCK));
-ok("writes only when db && !_dryRun()", /typeof db==="undefined"\|\|!db\|\|\(typeof _dryRun==="function"&&_dryRun\(\)\)\) return \[\]/.test(BLOCK));
+{ const refs=BLOCK.match(/db\.ref\([^)]*\)\.(set|update|remove|push)\(/g)||[];
+  ok("its Firebase writes are all targeted under trophies/streaks/<kid>/<streak>: best (set) · the streak node (one multi-path update: owed/<iso>, owedDay, the drop's nulls) · owed (the Collect tap's update of nulls) — no remove/push, no whole-node set",
+    refs.length===3&&/db\.ref\(base\+"\/best"\)\.set\(b\)/.test(BLOCK)&&/db\.ref\(base\)\.update\(u\)/.test(BLOCK)&&/db\.ref\("trophies\/streaks\/"\+kid\+"\/"\+id\+"\/owed"\)\.update\(gone\)/.test(BLOCK)&&!/db\.ref\([^)]*\)\.(remove|push)\(/.test(BLOCK)&&/, base="trophies\/streaks\/"\+kid\+"\/"\+st\.id;/.test(BLOCK), refs); }
+ok("the bonus and the collected stars go through bankDirect with the plain notes", /bankDirect\(kid,TS_BONUS,"beat your best "\+st\.label\+" streak"\)/.test(BLOCK)&&/bankDirect\(kid,TS_DAILY,"kept your "\+st\.label\+" streak going"/.test(BLOCK)&&/TS_BONUS=5, TS_DAILY=1, TS_OWED_DAYS=7\b/.test(BLOCK));
+ok("writes only when db && !_dryRun() — the settle and the Collect tap", (BLOCK.match(/typeof db==="undefined"\|\|!db\|\|\(typeof _dryRun==="function"&&_dryRun\(\)\)\) return/g)||[]).length===2);
+ok("the Collect tap is the kid's own: kcKid must be the kid; no momHere / Mom code in the block", /if\(typeof kcKid==="undefined"\|\|kcKid!==kid\) return 0;/.test(BLOCK)&&!/momHere|_kioskD|adminPin/.test(BLOCK));
 ok("no 🔀", src.indexOf("🔀")<0);
 ok("no spot-check section: her rule 2026-10-15 keeps the spot check silent on the kid's side (test_spot_check holds it)", !/spotData|spotChecks|Spot check/.test(BLOCK.replace(/^\/\/.*$/gm,"")));
 { const rk=fn("renderKidsCorner");
@@ -79,7 +85,7 @@ function world(o){
               done:{lucy:{math:{m1:{day:"2026-09-01",ts:"x"},m3:{day:"2026-10-20",ts:"10:00 AM Oct 20"}},sci:{s1:{day:"2026-10-01"}},hand:{h1:{day:"2026-10-01"}}}}},
     bankDirect:(k,p,n)=>{ banks.push([k,p,n]); return "bd1"; },
     _dryRun:()=>!!o.dry};
-  if(o.db) ctx.db={ref:p=>({set:v=>writes.push([p,v])})};
+  if(o.db) ctx.db={ref:p=>({set:v=>writes.push([p,v]),update:v=>writes.push([p,v])})};
   vm.createContext(ctx);
   vm.runInContext(BLOCK,ctx);
   ctx.get=e=>vm.runInContext(e,ctx);
@@ -149,25 +155,39 @@ console.log("3. The streak math (pure) — best · last · now, the nudge at bes
   ok("…nothing close → no line", w.tsNudgeText({ready:true,drills:{best:5,now:1},cards:{best:0,now:0},routines:{best:0,now:0}})==="");
 }
 
-console.log("4. The bonus pays once, records the best, and stays inert in dry-run / off the kid's page");
+console.log("4. The new best pays 5 ⭐ automatically, ONCE PER RUN; inert in dry-run / off the kid's page");
 { const w=world({db:true}); const S=w.tsStreaks("lucy");
+  ok("the current drills run started Oct 5 (one run across the weekend, holiday and co-op days)", S.drills.runStart==="2026-10-05"&&S.drills.pos["2026-10-22"]===11&&S.drills.pos["2026-10-05"]===1, S.drills.runStart);
   const paid=w.tsBonusSettle("lucy",S);
-  ok("drills beat its best (11 > 7 before) → paid once", JSON.stringify(paid)==='["drills"]'&&w.banks.length===1&&w.banks[0][0]==="lucy"&&w.banks[0][1]===5&&w.banks[0][2]==="beat your best drills streak", w.banks);
-  ok("the best is remembered at trophies/streaks/lucy/drills/best = {n,date} — the only write", w.writes.length===1&&w.writes[0][0]==="trophies/streaks/lucy/drills/best"&&w.writes[0][1].n===11&&w.writes[0][1].date===TODAY, w.writes);
-  ok("routines tied its best (3 = 3) → nothing", !paid.includes("routines")&&!paid.includes("cards"));
+  ok("drills beat its best (11 > 7 before) → paid once", JSON.stringify(paid.best)==='["drills"]'&&w.banks.length===1&&w.banks[0][0]==="lucy"&&w.banks[0][1]===5&&w.banks[0][2]==="beat your best drills streak", w.banks);
+  ok("the best is remembered at trophies/streaks/lucy/drills/best = {n,date,runStart} — the only write (nothing done today → nothing owed)", w.writes.length===1&&w.writes[0][0]==="trophies/streaks/lucy/drills/best"&&w.writes[0][1].n===11&&w.writes[0][1].date===TODAY&&w.writes[0][1].runStart==="2026-10-05", w.writes);
+  ok("routines tied its best (3 = 3) → nothing; cards (now 0) → nothing", !paid.best.includes("routines")&&!paid.best.includes("cards")&&paid.owed.length===0);
   ok("a kid-safe toast", w.toasts.length===1&&/\+5/.test(w.toasts[0])&&/beat your best drills streak/.test(w.toasts[0]), w.toasts);
   const S2=w.tsStreaks("lucy"); const again=w.tsBonusSettle("lucy",S2);
-  ok("the same best never pays twice: the record now says 11, so best 11 · now 11, no new best", again.length===0&&w.banks.length===1&&S2.drills.best===11&&!S2.drills.newBest&&S2.drills.bestToday===true, S2.drills);
+  ok("the same best never pays twice: the record now says 11, so best 11 · now 11, no new best", again.best.length===0&&w.banks.length===1&&S2.drills.best===11&&!S2.drills.newBest&&S2.drills.bestToday===true, S2.drills);
   ok("…and the strip still celebrates today's new best", w.tsNudgeText(S2)==="new best drills streak — 11 days!");
-  const w2=world({db:true,drillToday:true,trophies:{streaks:{lucy:{drills:{best:{n:11,date:TODAY}}}}}}); const S3=w2.tsStreaks("lucy");
-  ok("tomorrow's extension (12 > 11) is a new best again — one more 5 ⭐", S3.drills.now===12&&S3.drills.newBest===true&&w2.tsBonusSettle("lucy",S3).length===1&&w2.writes[0][1].n===12);
+  // the flaw she caught 2026-10-22: the next day on the same run is "now > n" again — it must NOT pay again
+  const w2=world({db:true,drillToday:true,trophies:{streaks:{lucy:{drills:{best:{n:11,date:"2026-10-22",runStart:"2026-10-05"}}}}}}); const S3=w2.tsStreaks("lucy");
+  const p3=w2.tsBonusSettle("lucy",S3);
+  ok("the next day on the SAME run (12 > 11, runStart Oct 5 = stored) → no 5 ⭐: only the owed star for the day kept", S3.drills.now===12&&S3.drills.newBest===true&&p3.best.length===0&&w2.banks.length===0&&JSON.stringify(p3.owed)==='["drills"]', {p3,banks:w2.banks});
+  ok("…but best.n and date move silently (12, today) with the same runStart, so the shelf's best stays right", (()=>{ const b=w2.writes.find(x=>x[0]==="trophies/streaks/lucy/drills/best"); return b&&b[1].n===12&&b[1].date===TODAY&&b[1].runStart==="2026-10-05"&&w2.tsStreaks("lucy").drills.best===12; })(), w2.writes);
+  ok("…no toast for a silent move", w2.toasts.length===0);
+  ok("…the strip still says new best (12 days)", w2.tsNudgeText(w2.tsStreaks("lucy"))==="new best drills streak — 12 days!");
+  // a broken run, then a later run that beats the record: pays once more, with its own runStart
+  const w4=world({db:true,trophies:{streaks:{lucy:{drills:{best:{n:11,date:"2026-10-22",runStart:"2026-10-05"}},routines:{best:{n:2,date:"2026-10-07",runStart:"2026-10-05"}}}}},routinesToday:true}); const S4=w4.tsStreaks("lucy");
+  const p4=w4.tsBonusSettle("lucy",S4);
+  ok("routines: the Oct 5–7 run (stored best 2, runStart Oct 5) broke; the Oct 19→23 run reaches 4 → 5 ⭐ once, runStart Oct 19", S4.routines.now===4&&S4.routines.runStart==="2026-10-19"&&JSON.stringify(p4.best)==='["routines"]'&&w4.banks.some(b=>b[1]===5&&b[2]==="beat your best routine lists streak")&&(w4.writes.find(x=>x[0]==="trophies/streaks/lucy/routines/best")||[])[1].runStart==="2026-10-19", {S4:S4.routines,writes:w4.writes});
+  ok("…the same run the next day would not pay again", (()=>{ const r=w4.tsStreaks("lucy").routines; const b=w4.tsBestRec("lucy","routines"); return b.n===4&&b.runStart===r.runStart&&!r.newBest; })());
+  // first open: a kid already on a best-ever run gets the one 5 ⭐ that day (the base world above IS that case: no record yet, now 11)
+  const f=world({db:true,drillToday:true}); const pf=f.tsBonusSettle("lucy",f.tsStreaks("lucy"));
+  ok("first open on a best-ever run, done today: the one 5 ⭐ + today owed, nothing more for the run", JSON.stringify(pf.best)==='["drills"]'&&JSON.stringify(pf.owed)==='["drills"]'&&f.banks.length===1&&f.banks[0][1]===5&&f.tsBestRec("lucy","drills").runStart==="2026-10-05");
   const d=world({db:true,dry:true}); d.tsBonusSettle("lucy",d.tsStreaks("lucy"));
   ok("?dryrun=1 → no bank line, no write", d.banks.length===0&&d.writes.length===0);
   const n=world(); n.tsBonusSettle("lucy",n.tsStreaks("lucy"));
   ok("no db → nothing", n.banks.length===0);
   const l=world({db:true,loading:true,routinesToday:true}); const pl=l.tsBonusSettle("lucy",l.tsStreaks("lucy"));
-  ok("older routine weeks not loaded: drills (whole data) still pays; routines looks like a new best (4 > 3 as loaded) but waits and asks for the history instead", JSON.stringify(pl)==='["drills"]'&&l.banks.length===1&&l.loads.length===1&&!l.writes.some(w=>/routines/.test(w[0])));
-  const r=world({db:true,trophies:{streaks:{lucy:{drills:{best:{n:11,date:"2026-10-22"}}}}}}); r.tsBonusSettle("lucy",r.tsStreaks("lucy"));
+  ok("older routine weeks not loaded: drills (whole data) still pays; routines looks like a new best (4 > 3 as loaded) but waits and asks for the history instead", JSON.stringify(pl.best)==='["drills"]'&&l.banks.length===1&&l.loads.length===1&&!l.writes.some(w=>/routines/.test(w[0])));
+  const r=world({db:true,trophies:{streaks:{lucy:{drills:{best:{n:11,date:"2026-10-22",runStart:"2026-10-05"}}}}}}); r.tsBonusSettle("lucy",r.tsStreaks("lucy"));
   ok("another device already wrote this best → nothing", r.banks.length===0&&r.writes.length===0);
   const m=world({db:true,kcKid:"ellis"}); m.tsStripHTML("lucy");
   ok("the strip settles only on the kid's own page (another kid's device draws Lucy's strip → no pay)", m.banks.length===0);
@@ -175,6 +195,65 @@ console.log("4. The bonus pays once, records the best, and stays inert in dry-ru
   ok("…on Lucy's own page the strip settles it", s.banks.length===1&&s.writes.length===1);
   const mm=world({db:true}); mm.tsMomLineHTML("lucy");
   ok("Mom's Day line never pays", mm.banks.length===0&&mm.writes.length===0);
+}
+
+console.log("4b. Keeping it going: a star OWED per streak per school day, claimed with ⭐ Collect — never banked by itself");
+{ const w=world({db:true,drillToday:true,routinesToday:true,cardsToday:true}); const S=w.tsStreaks("lucy");
+  ok("today done for drills (now 12) and routines (now 4); cards (now 1) is not a kept streak yet", S.drills.doneToday&&S.drills.now===12&&S.routines.doneToday&&S.routines.now===4&&S.cards.doneToday&&S.cards.now===1);
+  const p=w.tsBonusSettle("lucy",S);
+  ok("drills and routines → owed today (cards: now < 2 → nothing)", JSON.stringify(p.owed)==='["drills","routines"]', p);
+  ok("recorded at trophies/streaks/lucy/<streak>: owed/2026-10-23 = true + owedDay, one targeted multi-path update each", (()=>{ const U=id=>w.writes.filter(x=>x[0]==="trophies/streaks/lucy/"+id); return U("drills").length===1&&JSON.stringify(U("drills")[0][1])===JSON.stringify({["owed/"+TODAY]:true,owedDay:TODAY})&&U("routines").length===1&&JSON.stringify(U("routines")[0][1])===JSON.stringify({["owed/"+TODAY]:true,owedDay:TODAY})&&U("cards").length===0; })(), w.writes);
+  ok("NOTHING banked for the kept days (the 5 ⭐ new bests still bank: drills 11→12 is a first-open best, routines 4 > 3)", w.banks.every(b=>b[1]===5)&&w.banks.length===2, w.banks);
+  const before=w.writes.length; const p2=w.tsBonusSettle("lucy",w.tsStreaks("lucy"));
+  ok("owed once per day per streak: a second render writes nothing more", p2.owed.length===0&&w.writes.length===before);
+  ok("the numbers carry the owed days", w.tsStreaks("lucy").drills.owed.length===1&&w.tsStreaks("lucy").routines.owed.length===1&&w.tsStreaks("lucy").cards.owed.length===0);
+  ok("the 🏆 button counts the uncollected stars (2)", /🏆 Trophies <span[^>]*>⭐ 2<\/span>/.test(w.tsStripHTML("lucy")), w.tsStripHTML("lucy"));
+  const h=w.tsShelfHTML("lucy");
+  ok("the shelf: ⭐ Collect on the drills and routine lists lines, none on school cards; the week line", /tsCollect\('lucy','drills'\)[^<]*>⭐ Collect 1</.test(h)&&/tsCollect\('lucy','routines'\)[^<]*>⭐ Collect 1</.test(h)&&!/tsCollect\('lucy','cards'\)/.test(h)&&/Stars wait a week, then they’re gone/.test(h));
+  // the tap
+  const nb=w.banks.length, nt=w.toasts.length; const got=w.tsCollect("lucy","drills");
+  ok("Collect banks exactly the owed count (1 ⭐) with the plain note, day 12 of the run", got===1&&w.banks.length===nb+1&&w.banks[nb][1]===1&&w.banks[nb][2]==="kept your drills streak going (day 12)", w.banks);
+  ok("…clears the owed leaves in one multi-path update of nulls and redraws", w.writes[w.writes.length-1][0]==="trophies/streaks/lucy/drills/owed"&&JSON.stringify(w.writes[w.writes.length-1][1])===JSON.stringify({[TODAY]:null})&&w.tsStreaks("lucy").drills.owed.length===0&&w.renders.length===1);
+  ok("…toasts the total", w.toasts.length===nt+1&&/⭐ \+1/.test(w.toasts[nt])&&/drills streak going/.test(w.toasts[nt]), w.toasts);
+  ok("…the button is gone from drills, still on routines; the badge says 1", !/tsCollect\('lucy','drills'\)/.test(w.tsShelfHTML("lucy"))&&/tsCollect\('lucy','routines'\)/.test(w.tsShelfHTML("lucy"))&&/⭐ 1<\/span>/.test(w.tsStripHTML("lucy")));
+  ok("a second tap banks nothing", w.tsCollect("lucy","drills")===0&&w.banks.length===nb+1);
+  ok("…and a later render never owes today again after a collect (owedDay remembers the day): no second star the same day", (()=>{ const n=w.writes.length; const p=w.tsBonusSettle("lucy",w.tsStreaks("lucy")); return p.owed.length===0&&w.writes.length===n&&w.tsOwedDays("lucy","drills").length===0; })());
+  // several owed days → several stars, each with its own day number
+  const T=(iso,d)=>({[iso]:true}); const w2=world({db:true,drillToday:true,trophies:{streaks:{lucy:{drills:{best:{n:11,date:"2026-10-22",runStart:"2026-10-05"},owed:{"2026-10-20":true,"2026-10-22":true}}}}}});
+  w2.tsBonusSettle("lucy",w2.tsStreaks("lucy"));
+  ok("three owed days (Oct 20 · 22 · today) → badge 3, Collect 3", w2.tsOwedDays("lucy","drills").length===3&&/⭐ Collect 3</.test(w2.tsShelfHTML("lucy"))&&/⭐ 3<\/span>/.test(w2.tsStripHTML("lucy")));
+  const g=w2.tsCollect("lucy","drills");
+  ok("Collect banks 3 × 1 ⭐ — days 10, 11 and 12 of the run — and clears all three", g===3&&w2.banks.filter(b=>b[1]===1).map(b=>b[2]).join("|")==="kept your drills streak going (day 10)|kept your drills streak going (day 11)|kept your drills streak going (day 12)"&&JSON.stringify(w2.writes[w2.writes.length-1][1])===JSON.stringify({"2026-10-20":null,"2026-10-22":null,[TODAY]:null})&&/\+3 — 3 stars/.test(w2.toasts[w2.toasts.length-1]), w2.banks);
+  // the cap: three streaks → at most 3 owed a day
+  const w3=world({db:true}); const F=n=>({doneToday:true,now:n,newBest:false,runStart:"2026-10-19",pos:{}});
+  const p3=w3.tsBonusSettle("lucy",{ready:true,today:TODAY,drills:F(5),cards:F(2),routines:F(3)});
+  ok("three streaks kept → 3 owed, no more (one star each)", p3.owed.length===3&&w3.tsOwedCount("lucy")===3&&w3.writes.length===3&&w3.banks.length===0);
+  // the week-old drop
+  ok("7 school days back from Fri Oct 23 is Fri Oct 9 (Oct 21 co-op, Oct 12 holiday, weekends skipped)", w3.tsOwedFloor("lucy",TODAY)==="2026-10-09");
+  const w4=world({db:true,drillToday:true,trophies:{streaks:{lucy:{drills:{best:{n:11,date:"2026-10-22",runStart:"2026-10-05"},owed:{"2026-10-07":true,"2026-10-08":true,"2026-10-09":true,"2026-10-20":true}}}}}});
+  const p4=w4.tsBonusSettle("lucy",w4.tsStreaks("lucy"));
+  ok("when today is owed, days older than 7 school days (Oct 7, 8) drop — Oct 9, 20 and today stay", p4.owed.length===1&&w4.tsOwedDays("lucy","drills").join(",")==="2026-10-09,2026-10-20,"+TODAY, w4.tsOwedDays("lucy","drills"));
+  ok("…the drop rides the same one multi-path update as today's owed day: nulls for Oct 7 and 8, owed/today true, owedDay", (()=>{ const u=w4.writes.filter(x=>x[0]==="trophies/streaks/lucy/drills"); return u.length===1&&JSON.stringify(u[0][1])===JSON.stringify({"owed/2026-10-07":null,"owed/2026-10-08":null,["owed/"+TODAY]:true,owedDay:TODAY}); })(), w4.writes);
+  const w5=world({db:true,trophies:{streaks:{lucy:{drills:{best:{n:11,date:"2026-10-22",runStart:"2026-10-05"},owed:{"2026-10-07":true}}}}}});
+  w5.tsBonusSettle("lucy",w5.tsStreaks("lucy"));
+  ok("…nothing drops on a day nothing new is owed (not done today): Oct 7 still waits, no write", w5.tsOwedDays("lucy","drills").length===1&&w5.writes.length===0);
+  // nothing without the tap, kid-only, dry-run
+  const w6=world({db:true,drillToday:true}); w6.tsStripHTML("lucy"); w6.tsShelfHTML("lucy"); w6.tsMomLineHTML("lucy");
+  ok("rendering the strip, the shelf and Mom's line never banks the owed star (only the first-open 5 ⭐)", w6.banks.length===1&&w6.banks[0][1]===5&&w6.tsOwedDays("lucy","drills").length===1);
+  const k=world({db:true,kcKid:"ellis",trophies:{streaks:{lucy:{drills:{owed:{"2026-10-22":true}}}}}});
+  ok("Collect from another kid's device → nothing", k.tsCollect("lucy","drills")===0&&k.banks.length===0&&k.writes.length===0);
+  const dd=world({db:true,dry:true,drillToday:true,trophies:{streaks:{lucy:{drills:{owed:{"2026-10-22":true}}}}}}); dd.tsBonusSettle("lucy",dd.tsStreaks("lucy"));
+  ok("?dryrun=1: no owed write, no bank on Collect", dd.writes.length===0&&dd.tsCollect("lucy","drills")===0&&dd.banks.length===0);
+  const nd=world({trophies:{streaks:{lucy:{drills:{owed:{"2026-10-22":true}}}}}});
+  ok("no db → Collect does nothing", nd.tsCollect("lucy","drills")===0&&nd.banks.length===0);
+  const w7=world({db:true,loading:true,routinesToday:true}); const p7=w7.tsBonusSettle("lucy",w7.tsStreaks("lucy"));
+  ok("routines kept as loaded but the older weeks missing → waits and asks for the history; no owed write for routines", !p7.owed.includes("routines")&&w7.loads.length===1&&!w7.writes.some(x=>/routines/.test(x[0])));
+  { const q=world({db:true,loading:true,routinesToday:true,trophies:{streaks:{lucy:{routines:{best:{n:9,date:"2026-09-01",runStart:"2026-08-20"}}}}}}); q.tsStripHTML("lucy");
+    ok("the strip asks for the older weeks when the routines day as loaded is kept (now ≥ 2) even with no best or nudge near", q.loads.length>=1); }
+  const one=world({db:true}); const S1={ready:true,today:TODAY,drills:{doneToday:true,now:1,newBest:false,runStart:TODAY,pos:{}},cards:{doneToday:false,now:5},routines:{doneToday:false,now:0}};
+  ok("a first day (now 1) owes nothing; a streak not done today owes nothing", one.tsBonusSettle("lucy",S1).owed.length===0&&one.writes.length===0);
+  ok("a shelf with nothing owed shows no Collect button and no week line", !/Collect/.test(world().tsShelfHTML("lucy"))&&!/Stars wait/.test(world().tsShelfHTML("lucy")));
+  ok("kid-safe: no counting of what a child missed on the shelf with stars waiting", !/miss|wrong|not done|behind|late/i.test(w2.tsShelfHTML("lucy").replace(/<[^>]+>/g," ").replace(/Owl Moon|Story of the World/g,"")));
 }
 
 console.log("5. The shelf: sections only when they have something; the bank is a link, not a copy");
