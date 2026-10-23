@@ -6,7 +6,7 @@
  *   · layers are a per-device view preference — default on, remembered, never data
  *   · breaks on a date come from the holiday/vacation ranges that already exist
  *   · "didn't happen" marks a day without touching the pantry; eaten clears it
- *   · Admin ▸ Calendar and Mom HQ ▸ Calendar render through the SAME month function
+ *   · Mom's Day ▸ Month and Dad's Calendar render through the SAME month function (the Admin page retired 2026-10-23, ONECAL)
  *
  *   run:  node test_calendar_layers.js
  */
@@ -93,10 +93,10 @@ console.log("\n── didn't happen / eaten ──");
 console.log("\n── one lens, two doors ──");
 {
   ok("tapping a day opens/closes its sheet", (() => { const w = world(); w.call("calDayClick('2026-08-12')"); const a = w.call("calDaySel"); w.call("calDayClick('2026-08-12')"); return a === "2026-08-12" && w.call("calDaySel") === null; })());
-  const mp = slice("_calPageBody"), adm = src.slice(src.indexOf("function renderCalendarView("), src.indexOf("function renderCalendarView(") + 1500);
-  ok("Mom HQ ▸ Calendar renders calRenderMonthPreview (family, or one kid's lens)", /calRenderMonthPreview\(who\?\{who:who\}:undefined\)/.test(mp));
-  ok("Admin ▸ Calendar renders the same function", /calRenderMonthPreview\(\)/.test(adm));
-  ok("the event form is the existing one", /calRenderEventForm\(\)/.test(mp));
+  const mp = slice("_calPageBody"), mom = slice("mpSchBody"), onecal = src.slice(src.indexOf("// ONECAL_START"), src.indexOf("// ONECAL_END"));
+  ok("Dad's Calendar renders calRenderMonthPreview (family, or one kid's lens)", /calRenderMonthPreview\(who\?\{who:who\}:undefined\)/.test(mp));
+  ok("Mom's Day ▸ Month renders the same function (ONECAL: it is THE calendar now; the Admin page is gone)", /calRenderMonthPreview\(kidWho\?\{who:kidWho\}:undefined\)/.test(mom) && src.indexOf("function renderCalendarView(") < 0);
+  ok("the event form is the existing one, drawn through the one form slot", /onecalTopFormHTML\(\)/.test(mp) && /onecalTopFormHTML\(\)/.test(mom) && /if\(calAddMode==="event"\) h\+=calRenderEventForm\(\);/.test(onecal));
   ok("the sheet's eaten button is the kitchen's own function", /onclick="kitMarkEaten\(/.test(slice("calDaySheetHTML")));
   ok("the subnav has the Calendar entry", /btn\('cal','🗓 Schedule'\)/.test(slice("mpSubnav")));
 }

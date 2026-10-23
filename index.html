@@ -1175,6 +1175,7 @@ body.kioskr #kiosk-kids::-webkit-scrollbar{display:none}
 /* ── GLOBAL CALENDAR ── */
 .gcal-section{margin-bottom:24px}
 .gcal-hdr{font-family:'Fraunces',serif;font-size:15px;font-weight:700;color:#c45e1a;margin-bottom:10px;padding-bottom:6px;border-bottom:1.5px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.onecal-sum::-webkit-details-marker{display:none}   /* ONECAL: the folded lists draw their own ▸ / ▾ */
 .gcal-card{background:#fff;border:1px solid var(--border);border-radius:12px;margin-bottom:10px;overflow:hidden}
 .gcal-row{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #f3f1ee}
 .gcal-row:last-child{border-bottom:none}
@@ -4065,7 +4066,7 @@ function initFb() {
       if(!calendarData.events) calendarData.events={};   // T4 family events
       try{HA_LS.setItem("ha_calendar",JSON.stringify(calendarData));}catch(e){}
       if(currData) buildCurrPaceCum();
-      if(tab==="schedule"&&schedShowAdmin&&adminSubTab==="calendar"){const el=document.getElementById("content");if(el)renderAll();}
+      if(tab==="moms-plan"&&mpSubView==="cal"){const el=document.getElementById("content");if(el)renderAll();}   // ONECAL: the calendar page redraws on live changes (was the Admin page)
     });
     db.ref("session_done").on("value",s=>{ sessionDone=s.val()||{}; });
     db.ref("trophies").on("value",s=>{ trophies=s.val()||{}; });
@@ -6756,7 +6757,8 @@ function toggleSchedHistory(){ schedShowHistory=!schedShowHistory; schedShowAdmi
 function toggleSchedPace(){ schedShowPace=!schedShowPace; schedShowAdmin=false; schedShowHistory=false; schedShowBoard=false; renderAll(); }
 function toggleSchedBoard(){ schedShowBoard=!schedShowBoard; schedShowAdmin=false; schedShowHistory=false; schedShowPace=false; schedShowPeek=false; renderAll(); }
 function goToStars(){ if(tab!=="schedule") showTab("schedule"); schedShowPace=true; schedShowAdmin=false; schedShowHistory=false; schedShowBoard=false; renderAll(); }
-function setAdminSub(s){ if((s==="purchases"&&!pageOn("purchases"))||(s==="mastery"&&!pageOn("mastery"))) s="hq"; adminSubTab=s; renderAll(); }
+function setAdminSub(s){ if(s==="calendar"&&typeof onecalGo==="function"){ onecalGo(); return; }   // ONECAL: the retired page's callers land on Mom's Day ▸ Schedule ▸ Month
+  if((s==="purchases"&&!pageOn("purchases"))||(s==="mastery"&&!pageOn("mastery"))) s="hq"; adminSubTab=s; renderAll(); }
 
 // ── MOM HQ HUB (phase 1: pure navigation — every row deep-links to an existing
 // screen; no feature lives here, so nothing can break) ──────────────────────
@@ -8166,7 +8168,6 @@ function renderMomHQ(el,ah){
   ]);
   h+=_hqGroup("👪","Family & App",[
     _hqRow("settings","⚙️","Settings","Kids & colors, PIN, babysitter, page switches, family rules, slots & on-time spins, songs"),
-    _hqRow("calendar","🏖","Breaks & vacations","Holidays, vacations, co-ops, family events, per-kid overrides"),
     pageOn("purchases")?_hqRowFn("setAdminSub('purchases')","💰","Purchases & ESA","Orders, wishlist, two budgets — the ESA grant and family money"):""
   ]);
   h+=_hqGroup("📊","Reports",[
@@ -8780,7 +8781,7 @@ function renderSchedule(el){
       return;
     }
     let ah='<div style="position:sticky;top:calc(var(--hdr-h) + var(--nav-h) + var(--mp-h) + var(--sub-h));z-index:90;background:var(--bg);display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:0">';   // NAVSTACK: under header → nav → Schedule sub-tabs
-    ["hq","settings","curriculum","mastery","calendar","chores","purchases"].filter(s=>(s!=="purchases"||pageOn("purchases"))&&(s!=="mastery"||pageOn("mastery"))).forEach(s=>{   // 🧩 💰 / 🧠 only for families with the page on
+    ["hq","settings","curriculum","mastery","chores","purchases"].filter(s=>(s!=="purchases"||pageOn("purchases"))&&(s!=="mastery"||pageOn("mastery"))).forEach(s=>{   // 🧩 💰 / 🧠 only for families with the page on
       const active=adminSubTab===s||(s==="settings"&&adminSubTab==="rules");
       const label=s==="hq"?"🏡 HQ":s==="purchases"?"💰":s==="mastery"?"🧠 Mastery":s.charAt(0).toUpperCase()+s.slice(1);
       ah+='<button style="flex:1;padding:10px 4px;font-size:12px;font-weight:700;border:none;background:none;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:'+(active?"var(--text)":"var(--muted)")+';border-bottom:2px solid '+(active?"var(--header)":"transparent")+';margin-bottom:-2px" onclick="setAdminSub(\''+s+'\')">'+label+'</button>';
@@ -8791,7 +8792,6 @@ function renderSchedule(el){
     else if(adminSubTab==="generate"){ renderAdminGenerate(el,ah); }
     else if(adminSubTab==="curriculum"){ renderCurriculumView(el,ah); }
     else if(adminSubTab==="mastery"){ renderMasteryHQ(el,ah); }
-    else if(adminSubTab==="calendar"){ renderCalendarView(el,ah); }
     else if(adminSubTab==="chores"){ renderChorePlan(el,ah); }
     else if(adminSubTab==="purchases"){ renderPurchasesView(el,ah); }
     return;
@@ -13176,15 +13176,7 @@ function hhCleanHomeHTML(iso,dn){
   if(cd&&typeof hhPlanHomeHTML==="function") h+=hhPlanHomeHTML(iso); else if(cd||go) h+=hhCleanPanelHTML("mom",iso,dn);   // 🧽 HH_CLEANPLAN: Mom builds and sends the day here
   return h;
 }
-// Admin ▸ Calendar: the cleaning days, upcoming first, add by date.
-function hhCleanDaysEditorHTML(){
-  const m=(calendarData&&calendarData.cleaningDays)||{}, today=(typeof calToday==="function")?calToday():_todayStr(); const days=Object.keys(m).sort();
-  let h='<div class="gcal-section"><div class="gcal-hdr"><span>🧽 Cleaning days</span><span style="font-size:11px;font-weight:400;color:var(--muted)">'+days.length+' set · school pauses, chores stay</span></div>';
-  if(days.length){ h+='<div class="gcal-card">'; days.forEach(function(iso){ const past=iso<today; h+='<div class="gcal-row" style="'+(past?'opacity:0.5':'')+'"><div><div class="gcal-row-name">Cleaning day</div><div class="gcal-row-dates">'+esc(iso)+'</div></div><div class="gcal-row-actions"><button onclick="hhCleanDayToggle(\''+iso+'\')" title="Remove">&#128465;</button></div></div>'; }); h+='</div>'; }
-  else h+='<div class="gcal-empty">No cleaning days set</div>';
-  h+='<div style="display:flex;gap:6px;align-items:center;margin-top:6px"><input type="date" id="hh-cd-date" value="'+today+'" style="padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif"><button class="gcal-add-btn" style="margin:0" onclick="var e=document.getElementById(\'hh-cd-date\'); if(e&&e.value) hhCleanDayToggle(e.value)">+ Add cleaning day</button></div></div>';
-  return h;
-}
+// The cleaning-days list (hhCleanDaysEditorHTML) moved to the ONECAL block as calCleaningSectionHTML (2026-10-23): same rows, same hhCleanDayToggle.
 // CLEANINGDAY_END
 // HOUSECARDS_START — 🏡 house work on the timelines (PR 5 of the Household plan; her "go" 2026-10-11, the DERIVED card).
 // Kids: one trailing "🏡 House" card drawn on the kid's Day page after their last laid card, at max(school end, last card end),
@@ -23427,8 +23419,9 @@ function mpSchBody(){
   if(mode==="month"){
     const kidWho=(ROSTER.indexOf(who)>=0)?who:null;
     h+='<div style="padding:12px 12px 0">';
-    if(calAddMode==="event") h+=calRenderEventForm();
+    if(typeof onecalTopFormHTML==="function") h+=onecalTopFormHTML();   // ONECAL: whichever form is open (event / holiday / vacation / kid off / co-op), started from the day sheet
     h+=calRenderMonthPreview(kidWho?{who:kidWho}:undefined);
+    if(typeof onecalListsHTML==="function") h+=onecalListsHTML(kidWho);   // ONECAL: the six lists, folded shut (Mom lens)
     h+='</div>';
     return h;
   }
@@ -23670,15 +23663,15 @@ function _calPageBody(){
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;padding:10px 12px 0">'+wb('family','\u{1F3E1} Family','#2B7A78')+ROSTER.map(function(k){ return wb(k,kcEmoji(k)+' '+esc(KID_NAME[k]||cap(k)),KID_COLOR[k]||'#64748b'); }).join('')+'</div>';
   if(mode==="month"){
     h+='<div style="padding:12px 12px 0">';
-    if(calAddMode==="event") h+=calRenderEventForm();
+    if(typeof onecalTopFormHTML==="function") h+=onecalTopFormHTML();   // ONECAL
     h+=calRenderMonthPreview(who?{who:who}:undefined);
     h+='</div>';
   } else if(who){
-    if(calAddMode==="event") h+='<div style="padding:12px 12px 0">'+calRenderEventForm()+'</div>';
+    if(typeof onecalTopFormHTML==="function") h+='<div style="padding:12px 12px 0">'+onecalTopFormHTML()+'</div>';   // ONECAL
     h+=kcTodayHTML(who);
   } else {
     // the whole family today: the day sheet with Mom's actions, then each kid's day at a glance
-    if(calAddMode==="event") h+='<div style="padding:12px 12px 0">'+calRenderEventForm()+'</div>';
+    if(typeof onecalTopFormHTML==="function") h+='<div style="padding:12px 12px 0">'+onecalTopFormHTML()+'</div>';   // ONECAL
     try{ h+='<div style="padding:12px 12px 0">'+calDaySheetHTML(calToday(),{breaks:true,coops:true,events:true,meals:true},_calDinnerOf,null,{noClose:true,flat:true})+'</div>'; }catch(e){}
     ROSTER.forEach(function(k){
       h+='<div onclick="mpCalWhoSet(\''+k+'\')" style="cursor:pointer">'+kcPointsHTML(k)+'</div>';
@@ -32881,142 +32874,8 @@ function _cpRoutineRulesHTML(){
   try{ h+=chSettingsClickoffLogHTML(); }catch(e){}
   return h;
 }
-function renderCalendarView(el, headerHtml){
-  let h=headerHtml||'';
-  h+='<div style="padding:12px 12px 80px">';
-
-  // ── Stats bar ──
-  const stats=getSchoolDays("2026-06-09","2027-05-22",["Mon","Tue","Wed","Thu","Fri"],null);
-  const holidayCount=Object.keys(calendarData.holidays||{}).length;
-  const vacationCount=Object.keys(calendarData.vacations||{}).length;
-  h+='<div class="gcal-stats">'+
-    '<div class="gcal-stat"><div class="gcal-stat-val">'+stats.school+'</div><div class="gcal-stat-lbl">School Days</div></div>'+
-    '<div class="gcal-stat"><div class="gcal-stat-val">'+stats.off+'</div><div class="gcal-stat-lbl">Days Off</div></div>'+
-    '<div class="gcal-stat"><div class="gcal-stat-val">'+holidayCount+'</div><div class="gcal-stat-lbl">Holidays</div></div>'+
-    '<div class="gcal-stat"><div class="gcal-stat-val">'+vacationCount+'</div><div class="gcal-stat-lbl">Vacations</div></div>'+
-  '</div>';
-  // The month at a glance — school/holiday/vacation colouring plus family events. Tap a day to add
-  // one. (This grid existed as an unused function; nothing ever rendered it.)
-  h+=calRenderMonthPreview();
-
-  // ── Month calendar (lessons placed on academic days) ──
-  h+=lmRenderCalendar();
-
-  // ── Holidays section ──
-  h+='<div class="gcal-section">';
-  h+='<div class="gcal-hdr"><span>Holidays</span><span style="font-size:11px;font-weight:400;color:var(--muted)">'+holidayCount+' set</span></div>';
-  const hols=Object.entries(calendarData.holidays||{}).sort((a,b)=>(a[1].start||"").localeCompare(b[1].start||""));
-  if(hols.length){
-    h+='<div class="gcal-card">';
-    hols.forEach(([id,hol])=>{
-      const past=hol.end&&hol.end<calToday();
-      h+='<div class="gcal-row" style="'+(past?"opacity:0.5":"")+'">'+
-        '<div><div class="gcal-row-name">'+(hol.name||"Unnamed")+'</div>'+
-        '<div class="gcal-row-dates">'+calFmtRange(hol.start,hol.end||hol.start)+'</div></div>'+
-        '<div class="gcal-row-actions">'+
-        '<button onclick="calEditHoliday(\''+id+'\')" title="Edit">&#9998;</button>'+
-        '<button onclick="calDeleteHoliday(\''+id+'\')" title="Delete">&#128465;</button>'+
-        '</div></div>';
-    });
-    h+='</div>';
-  } else {
-    h+='<div class="gcal-empty">No holidays set yet</div>';
-  }
-  if(calAddMode==="holiday") h+=calRenderAddForm("holiday");
-  else h+='<button class="gcal-add-btn" onclick="calStartAdd(\'holiday\')">+ Add Holiday</button>';
-  h+='</div>';
-
-  // ── Vacations section ──
-  h+='<div class="gcal-section">';
-  h+='<div class="gcal-hdr"><span>Vacations</span><span style="font-size:11px;font-weight:400;color:var(--muted)">'+vacationCount+' set</span></div>';
-  const vacs=Object.entries(calendarData.vacations||{}).sort((a,b)=>(a[1].start||"").localeCompare(b[1].start||""));
-  if(vacs.length){
-    h+='<div class="gcal-card">';
-    vacs.forEach(([id,vac])=>{
-      const past=vac.end&&vac.end<calToday();
-      h+='<div class="gcal-row" style="'+(past?"opacity:0.5":"")+'">'+
-        '<div><div class="gcal-row-name">'+(vac.name||"Unnamed")+'</div>'+
-        '<div class="gcal-row-dates">'+calFmtRange(vac.start,vac.end||vac.start)+'</div></div>'+
-        '<div class="gcal-row-actions">'+
-        '<button onclick="calEditVacation(\''+id+'\')" title="Edit">&#9998;</button>'+
-        '<button onclick="calDeleteVacation(\''+id+'\')" title="Delete">&#128465;</button>'+
-        '</div></div>';
-    });
-    h+='</div>';
-  } else {
-    h+='<div class="gcal-empty">No vacation blocks set yet</div>';
-  }
-  if(calAddMode==="vacation") h+=calRenderAddForm("vacation");
-  else h+='<button class="gcal-add-btn" onclick="calStartAdd(\'vacation\')">+ Add Vacation</button>';
-  h+='</div>';
-  if(typeof hhCleanDaysEditorHTML==="function") h+=hhCleanDaysEditorHTML();   // 🧽 CLEANINGDAY
-
-  // ── Family events (birthday parties, appointments, outings) ──
-  h+='<div class="gcal-section">';
-  const _evs=Object.entries(calEvents()).sort((a,b)=>(a[1].date||"").localeCompare(b[1].date||""));
-  h+='<div class="gcal-hdr"><span>Family Events</span><span style="font-size:11px;font-weight:400;color:var(--muted)">'+_evs.length+' set</span></div>';
-  if(_evs.length){
-    h+='<div class="gcal-card">';
-    _evs.forEach(function(pair){
-      const id=pair[0], ev=pair[1], past=ev.date&&ev.date<calToday();
-      h+='<div class="gcal-row" style="'+(past?"opacity:0.5":"")+'">'+
-        '<div><div class="gcal-row-name">'+esc(ev.emoji||"🎉")+' '+esc(ev.title||"Untitled")+
-          (ev.who&&ev.who!=="family"?' <span style="font-size:11px;color:var(--muted)">('+esc(cap(ev.who))+')</span>':'')+'</div>'+
-        '<div class="gcal-row-dates">'+esc(ev.date||"")+(ev.time?' · '+esc(ev.time):'')+'</div></div>'+
-        '<div class="gcal-row-actions">'+
-        '<button onclick="calEditEvent(\''+id+'\')" title="Edit">&#9998;</button>'+
-        '<button onclick="calDeleteEvent(\''+id+'\')" title="Delete">&#128465;</button>'+
-        '</div></div>';
-    });
-    h+='</div>';
-  } else { h+='<div class="gcal-empty">No family events yet</div>'; }
-  if(calAddMode==="event") h+=calRenderEventForm();
-  else h+='<button class="gcal-add-btn" onclick="calStartAdd(\'event\')">+ Add Family Event</button>';
-  h+='</div>';
-
-  // ── Co-ops / Custom days ──
-  h+=renderCoopSection();
-
-  // ── Per-kid overrides ──
-  h+='<div class="gcal-section">';
-  h+='<div class="gcal-hdr"><span>Per-Kid Overrides</span></div>';
-  h+='<p style="font-size:11px;color:var(--muted);margin-bottom:10px">Individual exceptions — a kid can have school on a holiday, or an extra day off that only applies to them.</p>';
-  h+='<div class="gcal-card">';
-  [...ROSTER].forEach(k=>{
-    const col=SL_KCOL[k]||"#666";
-    const ovs=Object.entries((calendarData.kidOverrides||{})[k]||{}).sort((a,b)=>a[0].localeCompare(b[0]));
-    h+='<div class="gcal-override-kid">';
-    h+='<div class="gcal-override-kid-hdr">'+
-      '<div class="gcal-override-kid-dot" style="background:'+col+'"></div>'+
-      '<div class="gcal-override-kid-name">'+SL_KLBL[k]+'</div>'+
-      '<span style="font-size:11px;color:var(--muted)">'+ovs.length+' override'+(ovs.length!==1?"s":"")+'</span>'+
-      '</div>';
-    if(ovs.length){
-      ovs.forEach(([date,ov])=>{
-        const past=date<calToday();
-        h+='<div class="gcal-override-item" style="'+(past?"opacity:0.5":"")+'">'+
-          '<div>'+calFmtDate(date)+
-          '<span class="gcal-override-badge '+(ov.school?"on":"off")+'">'+(ov.school?"School On":"Day Off")+'</span>'+
-          (ov.note?'<span style="font-size:10px;color:var(--muted);margin-left:6px">'+ov.note+'</span>':'')+
-          '</div>'+
-          '<div class="gcal-row-actions">'+
-          '<button onclick="calDeleteOverride(\''+k+'\',\''+date+'\')" title="Remove">&#128465;</button>'+
-          '</div></div>';
-      });
-    }
-    if(calAddMode==="override"&&calOverrideKid===k){
-      h+=calRenderOverrideForm(k);
-    } else {
-      h+='<button class="gcal-add-btn" style="margin:4px 0 0 18px;width:calc(100% - 18px)" onclick="calStartAddOverride(\''+k+'\')">+ Add Override for '+SL_KLBL[k]+'</button>';
-    }
-    h+='</div>';
-  });
-  h+='</div>';
-  h+='</div>';
-
-  h+='</div>';
-  el.innerHTML=h;
-}
+// renderCalendarView — Admin ▸ Breaks & vacations — retired 2026-10-23 (her design "One Calendar"): its lists, forms and
+// writes live on Mom's Day ▸ Schedule ▸ Month now (ONECAL block). Nothing written here changed path or shape.
 
 // FIXEDCLASS_START
 // ── FIXED-TIME CLASSES ────────────────────────────────────────────
@@ -35852,35 +35711,7 @@ function coopDelete(id){
   try{ cwdRelayKids((c&&c.kids)||[],"coop-dates"); }catch(e){}   // 🏫 COOPWEEKDAYS: those weeks no longer have a co-op
   renderAll();
 }
-function renderCoopSection(){
-  const list=Object.entries(coopsMap()).sort((a,b)=>(a[1].name||"").localeCompare(b[1].name||""));
-  let h='<div class="gcal-section">';
-  h+='<div class="gcal-hdr"><span>\u{1F3EB} Co-ops / Custom Days</span><span style="font-size:11px;font-weight:400;color:var(--muted)">'+list.length+' set</span></div>';
-  h+='<p style="font-size:11px;color:var(--muted);margin-bottom:10px">Named days a kid is out part of the day (school work packs in after they’re home) or all day. Regenerate a week to reflow around new dates.</p>';
-  if(list.length){
-    h+='<div class="gcal-card">';
-    list.forEach(([id,c])=>{
-      const when=c.mode==="fullDay"?"Full day off":((c.start||"?")+"–"+(c.end||"?"));
-      const noMomBox=c.mode==="timed"?'<label style="display:inline-flex;align-items:center;gap:5px;margin-top:4px;font-size:11px;color:'+(c.noMomBase!==false?"#6d28d9":"var(--muted)")+';cursor:pointer"><input type="checkbox" '+(c.noMomBase!==false?'checked':'')+' onchange="coopToggleNoMom(\''+id+'\',this.checked)" style="margin:0">No Mom-required lessons on these days</label>':'';
-      const kidsTxt=(c.kids||[]).map(k=>cap(k)).join(", ")||"no kids";
-      const nDates=(c.dates||[]).length;
-      h+='<div class="gcal-row">'+
-        '<div><div class="gcal-row-name"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:'+(c.color||"#7c3aed")+';margin-right:6px;vertical-align:middle"></span>'+esc(c.name||"Unnamed")+'</div>'+
-        '<div class="gcal-row-dates">'+when+' \xB7 '+esc(kidsTxt)+' \xB7 '+nDates+' date'+(nDates!==1?"s":"")+'</div>'+noMomBox+'</div>'+
-        '<div class="gcal-row-actions">'+
-        '<button onclick="coopStartEdit(\''+id+'\')" title="Edit">&#9998;</button>'+
-        '<button onclick="coopDelete(\''+id+'\')" title="Delete">&#128465;</button>'+
-        '</div></div>';
-    });
-    h+='</div>';
-  } else {
-    h+='<div class="gcal-empty">No co-ops set yet</div>';
-  }
-  if(coopEditId) h+=renderCoopForm();
-  else h+='<button class="gcal-add-btn" onclick="coopStartAdd()">+ Add Co-op / Custom Day</button>';
-  h+='</div>';
-  return h;
-}
+// renderCoopSection → calCoopsSectionHTML in the ONECAL block (2026-10-23): the same rows, the same coopStartEdit / coopDelete / coopToggleNoMom.
 function renderCoopForm(){
   const f=coopForm; if(!f) return '';
   let h='<div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:8px">';
@@ -35976,6 +35807,7 @@ function calRenderMonthPreview(opts){
   if(!kidMode){   // layer chips are a Mom/Dad setting — a kid's Corner shows everything, no switches
     h+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px">';
     CAL_LAYERS.forEach(function(c){ h+='<button class="cal-chip'+(L[c[0]]?' on':'')+'" onclick="calLayerToggle(\''+c[0]+'\')">'+c[1]+'</button>'; });
+    if(typeof onecalPrintBtnHTML==="function") h+=onecalPrintBtnHTML();   // ONECAL: 🖨 Print the month as shown (Mom lens)
     h+='</div>';
   }
   h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">';
@@ -35983,6 +35815,7 @@ function calRenderMonthPreview(opts){
   h+='<div class="gcal-month-label" style="margin:0">'+monthName+'</div>';
   h+='<button class="smap-nav-btn" onclick="calNavMonth(1)">&#8250;</button>';
   h+='</div>';
+  if(!kidMode&&typeof onecalSchoolLineHTML==="function") h+=onecalSchoolLineHTML();   // ONECAL: "<N> school days · <M> off" from the dated lessons (Mom lens)
   h+='<div class="gcal-month-grid lay">';
   ["S","M","T","W","T","F","S"].forEach(d=>{ h+='<div class="gcal-month-hdr">'+d+'</div>'; });
   for(let i=0;i<firstDay;i++) h+='<div class="gcal-month-day outside"></div>';
@@ -36173,10 +36006,10 @@ function calDaySheetHTML(iso,L,dinnerOf,who,opts){
   let h='<div class="cal-sheet"'+(opts.flat?' style="margin:0 0 12px;border-color:'+(KID_COLOR[who]||"#E07B39")+'"':'')+'><h4><span style="flex:1">'+esc(opts.title||lbl)+(iso===todayIso&&!opts.title?' <span style="font-size:10px;font-weight:800;color:#E07B39">TODAY</span>':'')+'</span>'
     +(opts.noClose?'':'<button class="act" style="background:#f1f5f9;color:#475569" onclick="calDayClick(\''+iso+'\')">✕</button>')+'</h4>';
   let rows=0;
-  if(L.breaks){ calBreaksOn(iso).forEach(function(b){ rows++; h+='<div class="row"><span class="lbl">Break</span><span style="flex:1">'+(b.kind==="holiday"?"\u{1F389} ":b.kind==="cleaning"?"\u{1F9FD} ":"\u{1F3D6} ")+esc(b.name)+'</span></div>'; }); }
+  if(L.breaks){ calBreaksOn(iso).forEach(function(b){ rows++; h+='<div class="row"><span class="lbl">Break</span><span style="flex:1">'+(b.kind==="holiday"?"\u{1F389} ":b.kind==="cleaning"?"\u{1F9FD} ":"\u{1F3D6} ")+esc(b.name)+(typeof onecalBreakSpan==="function"?onecalBreakSpan(b,kidMode):'')+'</span>'+(typeof onecalBreakActs==="function"?onecalBreakActs(b,kidMode):'')+'</div>'; }); }   // ONECAL: span + ✎ / 🗑 on the Mom lens
   if(L.coops&&typeof coopsOnDate==="function"){ _calCoopsFor(iso,who).forEach(function(c){ rows++;
     const kids=(Array.isArray(c.kids)&&c.kids.length)?c.kids.map(function(k){ return cap(k); }).join(", "):"everyone";
-    h+='<div class="row"><span class="lbl">Co-op</span><span style="flex:1">\u{1F3EB} <b>'+esc(c.name||"Co-op")+'</b> <span style="color:#6b7280">· '+(c.mode==="fullDay"?"all day":("out "+esc(c.start||"?")+" – back "+esc(c.end||"?")))+' · '+esc(kids)+'</span></span></div>'; }); }
+    h+='<div class="row"><span class="lbl">Co-op</span><span style="flex:1">\u{1F3EB} <b>'+esc(c.name||"Co-op")+'</b> <span style="color:#6b7280">· '+(c.mode==="fullDay"?"all day":("out "+esc(c.start||"?")+" – back "+esc(c.end||"?")))+' · '+esc(kids)+'</span></span>'+(typeof onecalCoopActs==="function"?onecalCoopActs(c,kidMode):'')+'</div>'; }); }   // ONECAL: ✎ on the Mom lens
   if(L.dad){ _calDadChoresFor(iso).forEach(function(c){ rows++;
     const m=(typeof MC_SLOTS!=="undefined"&&MC_SLOTS[c.slot])||null;
     h+='<div class="row"><span class="lbl">Dad</span><span style="flex:1;'+(c.done?'opacity:.55;text-decoration:line-through':'')+'">'+(c.done?'\u2713 ':'')+'\u{1F468} '+esc(c.label)+(m?' <span style="color:#6b7280">\u00b7 '+m.ic+' '+esc(m.nm)+'</span>':'')+'</span></div>'; }); }
@@ -36256,7 +36089,7 @@ function calDaySheetHTML(iso,L,dinnerOf,who,opts){
     if(kcAddIso!==iso) h+='<div class="row" style="justify-content:flex-end"><button class="act" style="background:'+(KID_COLOR[who]||"#2B7A78")+';color:#fff;padding:7px 13px;font-size:12px" onclick="kcAddOpen(\''+iso+'\')">＋ Add something</button></div>';
   } else if(kitEatGate()){
     const _mvAll=L.meals&&typeof kitMoveChain==="function"&&["d","b","l","s"].filter(function(s){ return kitMoveChain(iso,s); }).length>1;
-    h+='<div class="row" style="justify-content:flex-end;flex-wrap:wrap">'+(_mvAll?'<button class="act" style="background:#eff6ff;color:#1d4ed8" onclick="kitMoveForward(\''+iso+'\',\'all\')">➡ Move the whole day forward</button>':'')+'<button class="act" style="background:#fdf2f8;color:#9d174d" onclick="calDayAddEvent(\''+iso+'\')">＋ Add event</button></div>';
+    h+='<div class="row" style="justify-content:flex-end;flex-wrap:wrap">'+(_mvAll?'<button class="act" style="background:#eff6ff;color:#1d4ed8" onclick="kitMoveForward(\''+iso+'\',\'all\')">➡ Move the whole day forward</button>':'')+((typeof onecalAddBtnHTML==="function"&&onecalMom())?onecalAddBtnHTML(iso):'<button class="act" style="background:#fdf2f8;color:#9d174d" onclick="calDayAddEvent(\''+iso+'\')">＋ Add event</button>')+'</div>'+(typeof onecalSheetPickHTML==="function"?onecalSheetPickHTML(iso,who):'');   // ONECAL: ＋ Add to this day → six choices (Mom lens)
   }
   h+='</div>';
   return h;
@@ -36636,7 +36469,7 @@ function calRenderAddForm(type){
   return '<div class="gcal-form">'+
     '<div class="gcal-form-title">'+title+'</div>'+
     '<div class="gcal-form-row"><label>Name</label><input type="text" id="cal-add-name" placeholder="e.g. '+(type==="holiday"?"Thanksgiving":"Beach Trip")+'" value="'+(existing?existing.name:"")+'"></div>'+
-    '<div class="gcal-form-row"><label>Start</label><input type="date" id="cal-add-start" value="'+(existing?existing.start:"")+'"><label>End</label><input type="date" id="cal-add-end" value="'+(existing?existing.end||existing.start:"")+'"></div>'+
+    '<div class="gcal-form-row"><label>Start</label><input type="date" id="cal-add-start" value="'+(existing?existing.start:calPrefillDate||"")+'"><label>End</label><input type="date" id="cal-add-end" value="'+(existing?existing.end||existing.start:calPrefillDate||"")+'"></div>'+   // ONECAL: a day tapped on the month is start AND end
     // What actually pauses — school always stops; Mom decides how much of daily life stops with it.
     '<div class="gcal-form-row"><label>Pauses</label><select id="cal-add-pause" onchange="calLaundryFollow()">'+
       ["school","chores","all"].map(function(p){ return '<option value="'+p+'"'+(((existing&&existing.pause)||"school")===p?" selected":"")+'>'+BREAK_PAUSE_LBL[p]+'</option>'; }).join("")+
@@ -36654,7 +36487,7 @@ function calRenderAddForm(type){
 function calRenderOverrideForm(kid){
   return '<div class="gcal-form" style="margin:8px 0 0 18px;width:calc(100% - 18px)">'+
     '<div class="gcal-form-title">Add Override for '+SL_KLBL[kid]+'</div>'+
-    '<div class="gcal-form-row"><label>Date</label><input type="date" id="cal-ov-date"></div>'+
+    '<div class="gcal-form-row"><label>Date</label><input type="date" id="cal-ov-date" value="'+esc(calPrefillDate||"")+'"></div>'+   // ONECAL: the tapped day
     '<div class="gcal-form-row"><label>Type</label><select id="cal-ov-type"><option value="off">Day Off</option><option value="on">School On (override holiday)</option></select></div>'+
     '<div class="gcal-form-row"><label>Note</label><input type="text" id="cal-ov-note" placeholder="e.g. Orthodontist"></div>'+
     '<div class="gcal-form-btns">'+
@@ -36766,6 +36599,237 @@ function calDeleteOverride(kid,date){
   if(!confirm("Remove this override?")) return;
   db.ref("calendar/kidOverrides/"+kid+"/"+date).remove();
 }
+// ONECAL_START — 🗓 One calendar (her design 2026-10-23, doc "One Calendar"): Mom's Day ▸ Schedule ▸ Month is THE calendar.
+// Holidays, vacations, cleaning days, co-ops, family events and kid off days are added and edited HERE — from the day sheet
+// (every row has the pencil the event rows had; "＋ Add to this day" offers all six) and from the lists folded under the
+// grid. The Admin ▸ Breaks & vacations page (renderCalendarView) retired the same day, its Mom HQ row with it. Nothing new
+// is written: the same forms and the same functions write calendar/holidays|vacations/<id> (calSave), calendar/cleaningDays/
+// <iso> (hhCleanDayToggle), calendar/events/<id> (calSaveEvent), calendar/coops/<id> (coopSave, with cwdRelayKids),
+// calendar/kidOverrides/<kid>/<date> (calSaveOverride). A kid looking (Kids' Corner, a kid's device — kidMode) sees none of
+// it: no pencils on breaks and co-ops, no add row, no lists, no Print, no school-day line; that page is byte-identical.
+// The four Admin stat tiles (a school year typed into the code) became one line from the family's own dated lessons.
+let onecalOpen={};         // which lists under the grid are unfolded on this device (they fold shut by default)
+let onecalPick=null;       // {kind:"menu"|"coop"|"kid", iso} — the sheet's add row and its second step (which co-op / which kid)
+let onecalSheetForm=true;  // the open form was started from the day sheet → it draws above the grid; from a list → inside that list
+function onecalMom(){ return !!(typeof momHere==="function"&&momHere()); }   // the Mom lens: Mom (or the PIN) on this device
+function onecalS(){ onecalSheetForm=true; onecalPick=null; calPrefillDate=""; }                    // before an edit started on the sheet
+function onecalL(key){ onecalSheetForm=false; onecalPick=null; calPrefillDate=""; onecalOpen[key]=true; }   // before an add/edit started in a list
+function onecalFold(key,open){ onecalOpen[key]=!!open; }
+// ── the one open form, drawn above the grid when it came from the sheet (the lists draw their own when it came from them) ──
+function onecalFormHTML(){
+  let h='';
+  if(calAddMode==="event") h+=calRenderEventForm();
+  else if(calAddMode==="holiday"||calAddMode==="vacation") h+=calRenderAddForm(calAddMode);
+  else if(calAddMode==="override"&&calOverrideKid) h+=calRenderOverrideForm(calOverrideKid);
+  if(coopEditId) h+=renderCoopForm();
+  return h;
+}
+function onecalTopFormHTML(){
+  if(!calAddMode&&!coopEditId){ onecalSheetForm=true; return ''; }   // nothing open: the next form comes from the sheet unless a list says otherwise
+  return onecalSheetForm?onecalFormHTML():'';
+}
+// ── the day sheet (Mom lens only) ──
+// "Thanksgiving · Nov 23 – 27": the span a holiday / vacation row shows beside its name.
+function onecalSpanTxt(s,e){
+  const a=new Date(s+"T12:00:00"), b=new Date((e||s)+"T12:00:00"); if(isNaN(a)||isNaN(b)) return "";
+  const ma=a.toLocaleDateString("en-US",{month:"short"}), mb=b.toLocaleDateString("en-US",{month:"short"});
+  if(!e||s===e) return ma+" "+a.getDate();
+  return ma+" "+a.getDate()+" – "+(ma===mb?"":mb+" ")+b.getDate();
+}
+function onecalBreakSpan(b,kidMode){
+  if(kidMode||!onecalMom()||!b||b.kind==="cleaning") return '';
+  const r=(((typeof calendarData!=="undefined"&&calendarData)||{})[b.kind==="holiday"?"holidays":"vacations"]||{})[b.id];
+  if(!r||!r.start) return '';
+  return ' <span style="color:#6b7280">· '+esc(onecalSpanTxt(r.start,r.end||r.start))+'</span>';
+}
+function onecalBreakActs(b,kidMode){
+  if(kidMode||!onecalMom()||!b) return '';
+  if(b.kind==="cleaning") return '<button class="act" style="background:#fef2f2;color:#b91c1c" onclick="hhCleanDayToggle(\''+esc(b.id)+'\')" title="Not a cleaning day after all">\u{1F5D1}</button>';
+  return '<button class="act" style="background:#fdf2f8;color:#9d174d" onclick="onecalS();'+(b.kind==="holiday"?"calEditHoliday":"calEditVacation")+'(\''+esc(b.id)+'\')">✎</button>';
+}
+function onecalCoopActs(c,kidMode){
+  if(kidMode||!onecalMom()||!c) return '';
+  const m=coopsMap(); const id=Object.keys(m).find(function(k){ return m[k]===c; }); if(!id) return '';
+  return '<button class="act" style="background:#fdf2f8;color:#9d174d" onclick="onecalS();coopStartEdit(\''+esc(id)+'\')">✎</button>';
+}
+// "＋ Add to this day" → the six choices; a co-op date and a kid off ask one more question in the same row.
+function onecalAddBtnHTML(iso){
+  const open=!!(onecalPick&&onecalPick.iso===iso);
+  return '<button class="act" style="background:'+(open?'#f1f5f9':'#fdf2f8')+';color:'+(open?'#475569':'#9d174d')+'" onclick="onecalMenu(\''+iso+'\')">'+(open?'Never mind':'＋ Add to this day')+'</button>';
+}
+function onecalMenu(iso){ onecalPick=(onecalPick&&onecalPick.iso===iso)?null:{kind:"menu",iso:iso}; renderAll(); }
+function onecalSheetPickHTML(iso,who){
+  if(!onecalMom()||!onecalPick||onecalPick.iso!==iso) return '';
+  const btn=function(lbl,call,col){ return '<button class="act" style="background:#fff;color:#0f172a;border:1.5px solid '+(col||'#cbd5e1')+'" onclick="'+call+'">'+lbl+'</button>'; };
+  const kid=(who&&ROSTER.indexOf(who)>=0)?who:"";
+  let h='<div class="row" style="flex-wrap:wrap;gap:6px;background:#f8fafc;border-radius:10px;padding:8px;border-top:none">';
+  if(onecalPick.kind==="menu"){
+    h+=btn('\u{1F389} Family event',"onecalAdd('event','"+iso+"')")
+      +btn('\u{1F389} Holiday',"onecalAdd('holiday','"+iso+"')")
+      +btn('\u{1F3D6} Vacation',"onecalAdd('vacation','"+iso+"')")
+      +((typeof hhCleanDay==="function"&&hhCleanDay(iso))?'':btn('\u{1F9FD} Cleaning day',"onecalAdd('cleaning','"+iso+"')"))
+      +btn('\u{1F3EB} Co-op date',"onecalAdd('coop','"+iso+"')")
+      +btn('\u{1F637} Kid off / school on',"onecalAdd('override','"+iso+"','"+kid+"')",kid?(KID_COLOR[kid]||''):'');
+  } else if(onecalPick.kind==="coop"){
+    h+='<span style="flex-basis:100%;font-size:11.5px;font-weight:800;color:#475569">Which co-op meets '+esc(calFmtDate(iso))+'?</span>';
+    const m=coopsMap(); Object.keys(m).sort(function(a,b){ return (m[a].name||"").localeCompare(m[b].name||""); }).forEach(function(id){ const c=m[id];
+      h+=btn('\u{1F3EB} '+esc(c.name||"Co-op"),"onecalAdd('coop','"+iso+"','"+esc(id)+"')",c.color||''); });
+    h+=btn('＋ New co-op',"onecalAdd('coop','"+iso+"','__new__')")+btn('Never mind',"onecalMenu('"+iso+"')");
+  } else if(onecalPick.kind==="kid"){
+    h+='<span style="flex-basis:100%;font-size:11.5px;font-weight:800;color:#475569">Which kid?</span>';
+    ROSTER.forEach(function(k){ h+=btn(kcEmoji(k)+' '+esc(KID_NAME[k]||cap(k)),"onecalAdd('override','"+iso+"','"+k+"')",KID_COLOR[k]||''); });
+    h+=btn('Never mind',"onecalMenu('"+iso+"')");
+  }
+  return h+'</div>';
+}
+// One tap on the sheet → the existing start function, the tapped day already filled in.
+function onecalAdd(kind,iso,arg){
+  if(!onecalMom()||!/^\d{4}-\d{2}-\d{2}$/.test(String(iso||""))) return;
+  onecalPick=null; onecalSheetForm=true;
+  if(kind==="event"){ calDayAddEvent(iso); return; }                                   // the family-event form, as before
+  if(kind==="holiday"||kind==="vacation"){ calPrefillDate=iso; calStartAdd(kind); return; }   // start = end = the day
+  if(kind==="cleaning"){ hhCleanDayToggle(iso); return; }                               // one tap: calendar/cleaningDays/<iso>
+  if(kind==="override"){
+    const kid=(ROSTER.indexOf(arg)>=0)?arg:null;
+    if(!kid){ onecalPick={kind:"kid",iso:iso}; renderAll(); return; }
+    calPrefillDate=iso; calStartAddOverride(kid); return;
+  }
+  if(kind==="coop"){
+    if(arg==="__new__"){ coopStartAdd(); if(coopForm){ coopForm.dates=[iso]; } onecalSheetForm=true; renderAll(); return; }   // the date pre-added
+    if(arg){ onecalCoopDate(arg,iso); return; }
+    onecalPick={kind:"coop",iso:iso}; renderAll();
+  }
+}
+// An existing co-op meets on this day too: the date joins its list and saves through coopSave (calendar/coops/<id> + re-lay).
+function onecalCoopDate(id,iso){
+  if(!onecalMom()) return false; const c=coopsMap()[id]; if(!c) return false;
+  onecalPick=null;
+  if((c.dates||[]).indexOf(iso)>=0){ if(typeof gwShowToast==="function") gwShowToast((c.name||"Co-op")+" already meets that day"); renderAll(); return false; }
+  coopStartEdit(id); if(!coopForm) return false;                                       // the form state exactly as ✎ builds it
+  if(coopForm.dates.indexOf(iso)<0) coopForm.dates.push(iso); coopForm.dates.sort();
+  coopSave(); return true;
+}
+// ── the lists under the grid (Mom lens): six <details>, folded shut, the count in the summary; upcoming first, past folded ──
+function onecalRow(name,dates,acts,past,extra){
+  return '<div class="gcal-row" style="'+(past?'opacity:0.5':'')+'"><div><div class="gcal-row-name">'+name+'</div><div class="gcal-row-dates">'+dates+'</div>'+(extra||'')+'</div><div class="gcal-row-actions">'+acts+'</div></div>';
+}
+function onecalRowsHTML(key,rows,emptyTxt){   // rows: [{past,html}] in date order
+  const up=rows.filter(function(r){ return !r.past; }), past=rows.filter(function(r){ return r.past; });
+  let h=up.length?('<div class="gcal-card">'+up.map(function(r){ return r.html; }).join('')+'</div>'):('<div class="gcal-empty">'+(rows.length?'Nothing coming up':emptyTxt)+'</div>');
+  if(past.length) h+='<details'+(onecalOpen[key+'_past']?' open':'')+' ontoggle="onecalFold(\''+key+'_past\',this.open)" style="margin:0 0 10px"><summary style="cursor:pointer;font-size:11.5px;font-weight:800;color:var(--muted);padding:4px 2px">Past · '+past.length+'</summary><div class="gcal-card">'+past.map(function(r){ return r.html; }).join('')+'</div></details>';
+  return h;
+}
+function onecalSection(key,title,count,body,hint){
+  const open=!!onecalOpen[key];
+  return '<details class="gcal-section" style="margin-bottom:14px"'+(open?' open':'')+' ontoggle="onecalFold(\''+key+'\',this.open)">'
+    +'<summary class="gcal-hdr onecal-sum" style="cursor:pointer;list-style:none"><span>'+title+' <span style="font-weight:400;font-size:12px;color:var(--muted)">· '+count+'</span></span><span style="font-size:12px;font-weight:400;color:var(--muted)">'+(open?'▾':'▸')+'</span></summary>'
+    +(hint?'<p style="font-size:11px;color:var(--muted);margin:0 0 10px">'+hint+'</p>':'')+body+'</details>';
+}
+function onecalBreakSectionHTML(type){
+  const key=type==="holiday"?"holidays":"vacations", m=((typeof calendarData!=="undefined"&&calendarData)||{})[key]||{}, today=calToday();
+  const ed=type==="holiday"?"calEditHoliday":"calEditVacation", del=type==="holiday"?"calDeleteHoliday":"calDeleteVacation";
+  const rows=Object.entries(m).sort(function(a,b){ return (a[1].start||"").localeCompare(b[1].start||""); }).map(function(p){ const id=p[0], r=p[1], end=r.end||r.start, past=!!end&&end<today;
+    return {past:past, html:onecalRow(esc(r.name||"Unnamed"),r.start?calFmtRange(r.start,end):"",'<button onclick="onecalL(\''+key+'\');'+ed+'(\''+esc(id)+'\')" title="Edit">&#9998;</button><button onclick="'+del+'(\''+esc(id)+'\')" title="Delete">&#128465;</button>',past)}; });
+  let body=onecalRowsHTML(key,rows,type==="holiday"?"No holidays set yet":"No vacation blocks set yet");
+  body+=(calAddMode===type&&!onecalSheetForm)?calRenderAddForm(type):'<button class="gcal-add-btn" onclick="onecalL(\''+key+'\');calStartAdd(\''+type+'\')">+ Add '+(type==="holiday"?"Holiday":"Vacation")+'</button>';
+  return onecalSection(key,type==="holiday"?"\u{1F389} Holidays":"\u{1F3D6} Vacations",rows.length,body);
+}
+function calHolidaysSectionHTML(){ return onecalBreakSectionHTML("holiday"); }
+function calVacationsSectionHTML(){ return onecalBreakSectionHTML("vacation"); }
+function calEventsSectionHTML(){
+  const today=calToday(), evs=Object.entries(calEvents()).sort(function(a,b){ return (a[1].date||"").localeCompare(b[1].date||""); });
+  const rows=evs.map(function(p){ const id=p[0], ev=p[1], past=!!ev.date&&ev.date<today;
+    return {past:past, html:onecalRow(esc(ev.emoji||"\u{1F389}")+' '+esc(ev.title||"Untitled")+(ev.who&&ev.who!=="family"?' <span style="font-size:11px;color:var(--muted)">('+esc(cap(ev.who))+')</span>':'')+(ev.pending?' <span style="font-size:10px;font-weight:800;color:#b45309;background:#fef3c7;border-radius:8px;padding:1px 6px">✋ waiting for you</span>':''),
+      esc(ev.date||"")+(ev.time?' · '+esc(ev.time):''),'<button onclick="onecalL(\'events\');calEditEvent(\''+esc(id)+'\')" title="Edit">&#9998;</button><button onclick="calDeleteEvent(\''+esc(id)+'\')" title="Delete">&#128465;</button>',past)}; });
+  let body=onecalRowsHTML("events",rows,"No family events yet");
+  body+=(calAddMode==="event"&&!onecalSheetForm)?calRenderEventForm():'<button class="gcal-add-btn" onclick="onecalL(\'events\');calStartAdd(\'event\')">+ Add Family Event</button>';
+  return onecalSection("events","\u{1F389} Family events",rows.length,body);
+}
+function calCoopsSectionHTML(){
+  const today=calToday(), m=coopsMap(), list=Object.entries(m).sort(function(a,b){ return (a[1].name||"").localeCompare(b[1].name||""); });
+  const rows=list.map(function(p){ const id=p[0], c=p[1], ds=(c.dates||[]).slice().sort(), past=!!ds.length&&ds[ds.length-1]<today;
+    const when=c.mode==="fullDay"?"Full day off":((c.start||"?")+"–"+(c.end||"?"));
+    const noMomBox=c.mode==="timed"?'<label style="display:inline-flex;align-items:center;gap:5px;margin-top:4px;font-size:11px;color:'+(c.noMomBase!==false?"#6d28d9":"var(--muted)")+';cursor:pointer"><input type="checkbox" '+(c.noMomBase!==false?'checked':'')+' onchange="coopToggleNoMom(\''+esc(id)+'\',this.checked)" style="margin:0">No Mom-required lessons on these days</label>':'';
+    const kidsTxt=(c.kids||[]).map(function(k){ return cap(k); }).join(", ")||"no kids";
+    return {past:past, html:onecalRow('<span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:'+(c.color||"#7c3aed")+';margin-right:6px;vertical-align:middle"></span>'+esc(c.name||"Unnamed"),
+      when+' · '+esc(kidsTxt)+' · '+ds.length+' date'+(ds.length!==1?"s":""),'<button onclick="onecalL(\'coops\');coopStartEdit(\''+esc(id)+'\')" title="Edit">&#9998;</button><button onclick="coopDelete(\''+esc(id)+'\')" title="Delete">&#128465;</button>',past,noMomBox)}; });
+  let body=onecalRowsHTML("coops",rows,"No co-ops set yet");
+  body+=(coopEditId&&!onecalSheetForm)?renderCoopForm():'<button class="gcal-add-btn" onclick="onecalL(\'coops\');coopStartAdd()">+ Add Co-op / Custom Day</button>';
+  return onecalSection("coops","\u{1F3EB} Co-ops / Custom days",rows.length,body,"Named days a kid is out part of the day (school work packs in after they’re home) or all day. Regenerate a week to reflow around new dates.");
+}
+// 🧽 the cleaning days (CLEANINGDAY's editor, moved here 2026-10-23): upcoming first, remove with 🗑, add by date — hhCleanDayToggle either way.
+function calCleaningSectionHTML(){
+  const m=((typeof calendarData!=="undefined"&&calendarData)||{}).cleaningDays||{}, today=(typeof calToday==="function")?calToday():_todayStr(); const days=Object.keys(m).sort();
+  const rows=days.map(function(iso){ return {past:iso<today, html:onecalRow("Cleaning day",esc(typeof calFmtDate==="function"?calFmtDate(iso):iso),'<button onclick="hhCleanDayToggle(\''+esc(iso)+'\')" title="Remove">&#128465;</button>',iso<today)}; });
+  let body=onecalRowsHTML("cleaning",rows,"No cleaning days set");
+  body+='<div style="display:flex;gap:6px;align-items:center;margin-top:8px"><input type="date" id="hh-cd-date" value="'+today+'" style="padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif"><button class="gcal-add-btn" style="margin:0" onclick="var e=document.getElementById(\'hh-cd-date\'); if(e&&e.value) hhCleanDayToggle(e.value)">+ Add cleaning day</button></div>';
+  return onecalSection("cleaning","\u{1F9FD} Cleaning days",rows.length,body,"School pauses, chores stay.");
+}
+function calOverridesSectionHTML(kidWho){
+  const today=calToday(), all=((typeof calendarData!=="undefined"&&calendarData)||{}).kidOverrides||{}, kids=(kidWho&&ROSTER.indexOf(kidWho)>=0)?[kidWho]:[...ROSTER];
+  let body='', count=0;
+  kids.forEach(function(k){
+    const col=SL_KCOL[k]||"#666", ovs=Object.entries(all[k]||{}).sort(function(a,b){ return a[0].localeCompare(b[0]); }); count+=ovs.length;
+    const rows=ovs.map(function(p){ const date=p[0], ov=p[1], past=date<today;
+      return {past:past, html:'<div class="gcal-override-item" style="'+(past?"opacity:0.5":"")+'"><div>'+calFmtDate(date)+'<span class="gcal-override-badge '+(ov.school?"on":"off")+'">'+(ov.school?"School On":"Day Off")+'</span>'+(ov.note?'<span style="font-size:10px;color:var(--muted);margin-left:6px">'+esc(ov.note)+'</span>':'')+'</div>'
+        +'<div class="gcal-row-actions"><button onclick="calDeleteOverride(\''+k+'\',\''+esc(date)+'\')" title="Remove">&#128465;</button></div></div>'}; });
+    body+='<div class="gcal-override-kid"><div class="gcal-override-kid-hdr"><div class="gcal-override-kid-dot" style="background:'+col+'"></div><div class="gcal-override-kid-name">'+SL_KLBL[k]+'</div><span style="font-size:11px;color:var(--muted)">'+ovs.length+' override'+(ovs.length!==1?"s":"")+'</span></div>';
+    if(ovs.length) body+=onecalRowsHTML("ov_"+k,rows,"");
+    body+=(calAddMode==="override"&&calOverrideKid===k&&!onecalSheetForm)?calRenderOverrideForm(k):'<button class="gcal-add-btn" style="margin:4px 0 0 18px;width:calc(100% - 18px)" onclick="onecalL(\'overrides\');calStartAddOverride(\''+k+'\')">+ Add Override for '+SL_KLBL[k]+'</button>';
+    body+='</div>';
+  });
+  return onecalSection("overrides","\u{1F637} Per-kid overrides"+(kids.length===1?" · "+esc(KID_NAME[kids[0]]||cap(kids[0])):""),count,'<div class="gcal-card">'+body+'</div>',"Individual exceptions — a kid can have school on a holiday, or an extra day off that only applies to them.");
+}
+function onecalListsHTML(kidWho){
+  if(!onecalMom()) return '';
+  return '<div style="margin-top:4px">'+calEventsSectionHTML()+calHolidaysSectionHTML()+calVacationsSectionHTML()+calCoopsSectionHTML()+calCleaningSectionHTML()+calOverridesSectionHTML(kidWho)+'</div>';
+}
+// ── the school-day line: "<N> school days · <M> off" for the family's school year = the span of the dated Lesson Map
+// (first dated lesson row → last), Mon–Fri, holidays and vacations off. No dated lessons → no line. Never a typed-in date.
+// Which span (review 2026-10-23, DeWalt data: one kid's grid is dated to 2029, so "the last dated lesson" is not a year):
+//  1. the Pace plans when the family has any (paceData.plans — Mom's own start/end): earliest start → latest end;
+//  2. else the dated lessons PER KID: start = the earliest first lesson; end = the upper-median of the kids' last lessons,
+//     so one runaway list never stretches the year (3 kids ending May 26, May 27 and Jun 2029 → May 27).
+function onecalYearSpan(){
+  const ok=function(n){ return !!n&&/^\d{4}-\d{2}-\d{2}$/.test(n); };
+  const norm=function(d){ return (typeof calNormDate==="function")?calNormDate(d):d; };
+  try{
+    const plans=(typeof paceData!=="undefined"&&paceData&&paceData.plans)?Object.values(paceData.plans):[];
+    let pa=null, pb=null;
+    plans.forEach(function(p){ if(!p) return; const s=norm(p.start), e=norm(p.end); if(!ok(s)||!ok(e)) return; if(!pa||s<pa) pa=s; if(!pb||e>pb) pb=e; });
+    if(pa&&pb) return {start:pa,end:pb};
+  }catch(e){}
+  try{
+    const rows=((typeof currData!=="undefined"&&currData)||{}).lessons||{}; let a=null; const ends=[];
+    Object.keys(rows).forEach(function(k){ const m=rows[k]; if(!m) return; let f=null, l=null;
+      (Array.isArray(m)?m:Object.values(m)).forEach(function(r){ const n=r&&norm(r.date); if(!ok(n)) return; if(!f||n<f) f=n; if(!l||n>l) l=n; });
+      if(!f) return; if(!a||f<a) a=f; ends.push(l); });
+    if(!a||!ends.length) return null;
+    ends.sort(); return {start:a,end:ends[ends.length>>1]};
+  }catch(e){ return null; }
+}
+function onecalSchoolLineHTML(){
+  if(!onecalMom()) return ''; const sp=onecalYearSpan(); if(!sp) return '';
+  const st=getSchoolDays(sp.start,sp.end,["Mon","Tue","Wed","Thu","Fri"],null);
+  return '<div style="text-align:center;font-size:11.5px;color:var(--muted);margin:-2px 0 8px"><b style="color:#c45e1a">'+st.school+'</b> school days · '+st.off+' off <span style="color:#9ca3af">· '+esc(calFmtRange(sp.start,sp.end))+'</span></div>';
+}
+// ── 🖨 Print: the month AS SHOWN — the grid with whatever layers are on — in a print window (lmCalPrint's approach; the
+// Lesson Map's own printable calendar is no longer drawn anywhere).
+function onecalPrintBtnHTML(){ return onecalMom()?'<button class="cal-chip" style="margin-left:auto" onclick="onecalPrint()">\u{1F5A8} Print</button>':''; }
+function onecalPrint(){
+  const grid=document.querySelector(".gcal-month-grid.lay"); if(!grid) return;
+  const lblEl=document.querySelector(".gcal-month-label"), lbl=(lblEl&&lblEl.textContent)||"";
+  const css=Array.prototype.map.call(document.querySelectorAll("style"),function(s){ return s.textContent||""; }).join("\n");
+  const win=window.open("","_blank"); if(!win) return;
+  win.document.write('<html><head><title>'+esc(lbl)+'</title><style>'+css+'</style>'
+    +'<style>@page{size:landscape;margin:12mm}body{background:#fff;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;color:#111}h1{font-family:Georgia,serif;font-size:20px;margin:0 0 10px}'
+    +'.gcal-month-day.lay{min-height:110px;overflow:visible}.gmd-line{white-space:normal}.gcal-month-day.sel{outline:none}.gcal-month-day.lay.today{border-width:1.5px}</style></head><body><h1>'+esc(lbl)+'</h1>'+grid.outerHTML+'</body></html>');
+  win.document.close();
+  setTimeout(function(){ try{ win.focus(); win.print(); }catch(e){} },300);
+}
+// Where the old page's callers land now: Mom's Day ▸ Schedule ▸ Month.
+function onecalGo(){ if(typeof mpSchMode!=="undefined"){ mpSchMode="month"; try{ HA_LS.setItem("ha_mp_schmode","month"); }catch(e){} } mpGoto('cal'); }
+// ONECAL_END
 
 // ── ADMIN ─────────────────────────────────────────────────────────
 // ⏱ "Started at" — one button per kid. Tapping it says "this child began now", and every
@@ -49949,18 +50013,16 @@ function lmRenderMovePicker(k,sk,col,weekLabels,weekDays,lessons){
 let lmViewMode="subject"; // single subject-grid Lesson Map (By-Week branch kept but unreachable)
 let lmSubjKey=null;      // selected subject in the subject grid
 let lmSubjWk=null;       // focus week for the subject-grid window (null = current)
-let lmCalYM=null;        // calendar: target month as (year*12+month), null = current
-let lmCalKid="all";      // calendar: kid filter ("all" | kid)
-let lmCalDay=null;       // calendar: date string of the open day-detail popup (null = closed)
 let lmMovePick=null;     // {date, added} — slot whose Move picker is open
 let lmMoveWeek=null;     // week label chosen inside the move picker
 let lmLastMove=null;     // {kid,sk,fromDate,toDate,snapFrom,snapTo} — last move, for Undo
 let lmEditSlot=null;     // "kid|dayNum|sk" whose lesson text is being edited
 function lmSetView(m){ lmViewMode=m; lmMovePick=null; lmMoveWeek=null; lmEditSlot=null; renderAll(); }
 
-// ── MONTH / 4-WEEK CALENDAR VIEW (all kids, read-only) ──────────────────────
-// Places planned lessons on their calendar dates from currData.lessons. Read-only —
-// no writes. Color by kid; week-numbered rows; clickable week scrubber; print.
+// ── the dated Lesson Map, by calendar date (all kids, read-only) ──────────────
+// lmCalData places planned lessons on their dates from currData.lessons. Its month view, week scrubber, day popup and
+// print (lmRenderCalendar / lmCalGrid / lmCalNav / lmCalJump / lmCalSetKid / lmCalDayPopup / lmCalPrint) were drawn only
+// on the retired Admin ▸ Breaks & vacations page and went with it (ONECAL, 2026-10-23); Mom's Day ▸ Month prints itself.
 function lmCalData(){
   const KIDS=[...ROSTER];
   const cellMap={}, wkSet={};
@@ -49990,68 +50052,6 @@ function _lmWeekMon(wn){
     rr=gwWeekDateRange(wn+off); if(rr){ const d=gwParseDate(rr.start); d.setDate(d.getDate()-off*7); return d; }
   }
   return null;
-}
-function _lmWeekYM(wn){ const d=_lmWeekMon(wn); if(!d) return null; return d.getFullYear()*12+d.getMonth(); }
-function _lmMonthRange(data){
-  if(!data.weekNums.length) return null;
-  let a=_lmWeekYM(data.weekNums[0]); let b=a;
-  const dl=_lmWeekMon(data.weekNums[data.weekNums.length-1]);
-  if(dl){ const d=new Date(dl); d.setDate(d.getDate()+4); b=d.getFullYear()*12+d.getMonth(); }
-  if(a==null) a=b; if(b==null) b=a;
-  return (a==null)?null:{min:a,max:b};
-}
-function _lmCalYM(data){
-  const now=new Date(); const nowYM=now.getFullYear()*12+now.getMonth();
-  const rng=_lmMonthRange(data); if(!rng) return nowYM;
-  const cw=_lmWeekYM(currWeekNum());
-  let ym=(lmCalYM!==null)?lmCalYM:(cw!=null?cw:rng.min);
-  return Math.max(rng.min,Math.min(rng.max,ym));
-}
-// Weeks whose Mon–Fri intersect the target month (a straddling week appears in both months).
-function _lmWeeksInMonth(data,ym){
-  const out=[];
-  data.weekNums.forEach(function(wn){
-    const mon=_lmWeekMon(wn); if(!mon) return;
-    for(let i=0;i<5;i++){ const d=new Date(mon); d.setDate(d.getDate()+i); if(d.getFullYear()*12+d.getMonth()===ym){ out.push(wn); return; } }
-  });
-  return out;
-}
-function lmCalNav(delta){ lmCalYM=_lmCalYM(lmCalData())+delta; renderAll(); }
-function lmCalJump(wk){ const ym=_lmWeekYM(wk); if(ym!=null) lmCalYM=ym; renderAll(); }
-function lmCalSetKid(kid){ lmCalKid=kid; renderAll(); }
-function lmCalOpenDay(ds){ lmCalDay=ds; renderAll(); }
-function lmCalCloseDay(){ lmCalDay=null; renderAll(); }
-// Day-detail popup — clicking a calendar cell shows EVERY item that day for all kids.
-function lmCalDayPopup(ds,data){
-  const KIDS=[...ROSTER];
-  const KC=KID_COLOR;
-  const d=gwParseDate(ds);
-  const dlabel=d.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"});
-  let body='';
-  const scope=(lmCalKid==="all")?KIDS:[lmCalKid];
-  scope.forEach(function(kid){
-    const off=_lmKidOff(kid,ds);
-    const e=(data.cellMap[ds]||{})[kid];
-    const subs=(currData.subjects||{})[kid]||{};
-    const ov=schedOv(ds,kid)||{};
-    const items=[];
-    if(!off){
-      if(e) Object.keys(e).forEach(function(key){ if(key==="date"||key==="week") return; if(ov.removed&&ov.removed[key]) return; const s=subs[key]; if(!s||s.paused) return; const v=e[key]; if(v==null||v==="—"||v==="nan"||!String(v).trim()) return; items.push({disp:s.display||key,val:v}); });
-      if(ov.added) Object.keys(ov.added).forEach(function(key){ if(!ov.added[key]) return; const s=subs[key]; if(!s||s.paused) return; const av=ov.added[key]; items.push({disp:s.display||key,val:(typeof av==='string'&&av.trim())?av:"(make-up)"}); });
-    }
-    if(!off&&!items.length) return;
-    body+='<div style="margin-bottom:12px"><div style="display:flex;align-items:center;gap:7px;margin-bottom:5px"><span style="width:9px;height:9px;border-radius:50%;background:'+(KC[kid]||"#888")+'"></span><span style="font-size:13px;font-weight:700;color:'+(KC[kid]||"#333")+'">'+cap(kid)+'</span></div>';
-    if(off) body+='<div style="font-size:12px;color:var(--muted);font-style:italic;padding-left:16px">'+esc(String(off))+'</div>';
-    else items.forEach(function(it){ body+='<div style="font-size:12px;padding:2px 0 2px 16px"><span style="color:var(--muted)">'+esc(it.disp)+'</span> &middot; '+esc(it.val)+'</div>'; });
-    body+='</div>';
-  });
-  if(!body) body='<div style="color:var(--muted);font-size:12px">Nothing scheduled this day.</div>';
-  let h='<div onclick="if(event.target===this)lmCalCloseDay()" style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:320;display:flex;align-items:center;justify-content:center;padding:20px">';
-  h+='<div style="background:#fff;border-radius:14px;max-width:430px;width:100%;max-height:82vh;overflow-y:auto;padding:18px 20px">';
-  h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:10px"><div style="font-family:\'Fraunces\',serif;font-size:17px;font-weight:700">'+esc(dlabel)+'</div><button onclick="lmCalCloseDay()" aria-label="Close" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--muted);line-height:1;flex:none">&times;</button></div>';
-  h+=body;
-  h+='</div></div>';
-  return h;
 }
 // Whether a kid is off this day — Calendar tab holidays/vacations/kidOverrides (smapIsKidOff)
 // OR a Lesson Map "day off" override (scheduleOverrides).
@@ -50089,130 +50089,6 @@ function _lmDayKind(ds){
   for(const v of Object.values(calendarData.holidays||{})){ const s=calNormDate(v.start||v.date),e=calNormDate(v.end||v.start||v.date); if(s&&dn>=s&&dn<=e) return "holiday"; }
   for(const v of Object.values(calendarData.vacations||{})){ const s=calNormDate(v.start||v.date),e=calNormDate(v.end||v.start||v.date); if(s&&dn>=s&&dn<=e) return "vacation"; }
   return null;
-}
-function lmCalGrid(weeks,scope,data,ym){
-  const KC=KID_COLOR;
-  const MON=["#0F6E56","#534AB7","#993C1D","#185FA5","#854F0B","#993556"];
-  const WD={0:"Sun",1:"Mon",2:"Tue",3:"Wed",4:"Thu",5:"Fri",6:"Sat"};
-  const SH={0:"Jan",1:"Feb",2:"Mar",3:"Apr",4:"May",5:"Jun",6:"Jul",7:"Aug",8:"Sep",9:"Oct",10:"Nov",11:"Dec"};
-  const today=_todayStr();
-  let h='';
-  weeks.forEach(function(wn){
-    const mon=_lmWeekMon(wn); if(!mon) return;
-    h+='<div onclick="lmCalJump('+wn+')" style="display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;cursor:pointer;color:'+(wn===currWeekNum()?"var(--header)":"var(--muted)")+'">Wk '+wn+'</div>';
-    for(let i=0;i<5;i++){
-      const d=new Date(mon); d.setDate(d.getDate()+i);
-      const ds=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
-      const cur=(d.getFullYear()*12+d.getMonth())===ym;
-      const reasons=scope.map(function(kid){return _lmKidOff(kid,ds);});
-      const off=reasons.length&&reasons.every(function(r){return !!r;});
-      const kind=_lmDayKind(ds);
-      const isToday=ds===today;
-      let bg="#f0fdf4", tcol="#15803d";
-      if(!cur){ bg="#f6f6f8"; tcol="#9ca3af"; }
-      else if(kind==="holiday"){ bg="#fef3c7"; tcol="#92400e"; }
-      else if(kind==="vacation"||off){ bg="#fef2f2"; tcol="#991b1b"; }
-      h+='<div onclick="lmCalOpenDay(\''+ds+'\')" style="background:'+bg+';'+(isToday?"border:2px solid var(--header);":"border:0.5px solid var(--border);")+'border-radius:8px;padding:6px 7px;min-height:82px;cursor:pointer">';
-      h+='<div style="display:flex;align-items:baseline;gap:4px;margin-bottom:4px"><span style="font-size:10px;color:var(--muted)">'+WD[d.getDay()]+'</span><span style="font-size:12px;font-weight:700;color:'+tcol+'">'+(cur?"":SH[d.getMonth()]+" ")+d.getDate()+'</span>'+(isToday?'<span style="font-size:9px;color:var(--header);margin-left:auto">today</span>':'')+'</div>';
-      if(off){
-        h+='<div style="font-size:10px;color:'+tcol+';font-style:italic">'+esc(String(reasons.find(function(r){return !!r;})||"Off"))+'</div>';
-      } else {
-        coopsOnDate(ds).forEach(function(c){ if(c.mode!=="timed") return; if(!scope.some(function(k){return (c.kids||[]).indexOf(k)>=0;})) return; h+='<div title="'+esc(c.name+" "+(c.start||"")+"–"+(c.end||""))+'" style="display:flex;align-items:center;gap:5px;font-size:10px;line-height:1.3;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700;color:'+(c.color||"#7c3aed")+'"><span style="width:7px;height:7px;border-radius:2px;background:'+(c.color||"#7c3aed")+';flex:none"></span>\u{1F3EB} '+esc(c.name)+'</div>'; });
-        const chips=lmCalDayChips(ds,scope,data.cellMap);
-        chips.slice(0,4).forEach(function(c){
-          h+='<div style="display:flex;align-items:center;gap:5px;font-size:11px;line-height:1.3;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="width:7px;height:7px;border-radius:50%;background:'+(KC[c.kid]||"#888")+';flex:none"></span>'+esc(c.text)+'</div>';
-        });
-        if(chips.length>4) h+='<div style="font-size:11px;color:var(--muted);margin-top:1px">+'+(chips.length-4)+' more</div>';
-        else if(!chips.length) h+='<div style="font-size:10px;color:var(--border)">&mdash;</div>';
-      }
-      h+='</div>';
-    }
-    h+='<div></div>';
-  });
-  return h;
-}
-function lmRenderCalendar(){
-  const data=lmCalData();
-  if(!data.weekNums.length) return '<div style="font-size:12px;color:var(--muted);padding:24px;text-align:center">No dated lessons yet — upload a master schedule first.</div>';
-  const KIDS=[...ROSTER];
-  const KC=KID_COLOR;
-  const MON=["#0F6E56","#534AB7","#993C1D","#185FA5","#854F0B","#993556"];
-  const ym=_lmCalYM(data); const Y=Math.floor(ym/12), M=ym%12, mc=MON[M%6];
-  const weeks=_lmWeeksInMonth(data,ym);
-  const scope=(lmCalKid==="all")?KIDS:[lmCalKid];
-  const monthLbl=new Date(Y,M,1).toLocaleDateString("en-US",{month:"long",year:"numeric"});
-  let h='';
-  h+='<div style="display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:12px">';
-  h+='<button onclick="lmCalNav(-1)" aria-label="Previous month" style="width:34px;height:34px;border:1px solid var(--border);background:#fff;border-radius:9px;cursor:pointer;font-size:19px;line-height:1">&#8249;</button>';
-  h+='<span style="font-family:\'Fraunces\',serif;font-size:28px;font-weight:700;text-align:center;min-width:210px;color:var(--text)">'+esc(monthLbl)+'</span>';
-  h+='<button onclick="lmCalNav(1)" aria-label="Next month" style="width:34px;height:34px;border:1px solid var(--border);background:#fff;border-radius:9px;cursor:pointer;font-size:19px;line-height:1">&#8250;</button>';
-  h+='</div>';
-  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center">';
-  const allOn=lmCalKid==="all";
-  h+='<button onclick="lmCalSetKid(\'all\')" style="font-size:12px;padding:4px 12px;border-radius:999px;border:1.5px solid '+(allOn?"transparent":"var(--border)")+';background:'+(allOn?"#111827":"#fff")+';color:'+(allOn?"#fff":"var(--muted)")+';cursor:pointer;font-family:\'DM Sans\',sans-serif">All kids</button>';
-  KIDS.forEach(function(kid){ const on=lmCalKid===kid; h+='<button onclick="lmCalSetKid(\''+kid+'\')" style="font-size:12px;padding:4px 12px;border-radius:999px;border:1.5px solid '+(on?"transparent":"var(--border)")+';background:'+(on?KC[kid]:"#fff")+';color:'+(on?"#fff":KC[kid])+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cap(kid)+'</button>'; });
-  h+='<button onclick="lmCalPrint()" style="margin-left:auto;border:1px solid var(--border);background:#fff;border-radius:8px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Print</button>';
-  h+='</div>';
-  h+='<div style="display:flex;gap:12px;flex-wrap:wrap;margin:0 0 8px;font-size:10px;color:var(--muted)">';
-  h+='<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:#f0fdf4;border:0.5px solid #bbf7d0"></span>School</span>';
-  h+='<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:#fef2f2;border:0.5px solid #fecaca"></span>Vacation</span>';
-  h+='<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:#fef3c7;border:0.5px solid #fde68a"></span>Holiday</span>';
-  h+='<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#7c3aed"></span>\u{1F3EB} Co-op (timed) · full-day shows as off</span>';
-  h+='</div>';
-  h+='<div style="display:grid;grid-template-columns:38px repeat(5,1fr) 38px;gap:6px;margin-bottom:6px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px"><div></div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div></div></div>';
-  h+=weeks.length?('<div style="display:grid;grid-template-columns:38px repeat(5,1fr) 38px;gap:6px">'+lmCalGrid(weeks,scope,data,ym)+'</div>'):('<div style="padding:24px;text-align:center;color:var(--muted);font-size:12px">No school weeks in '+esc(monthLbl)+'.</div>');
-  h+='<div style="margin-top:16px"><div style="font-size:11px;color:var(--muted);margin-bottom:7px;padding:0 64px">Jump to week</div><div style="display:flex;align-items:center;gap:6px;padding:0 64px">';
-  h+='<button onclick="var s=document.getElementById(\'lm-scrub\');if(s)s.scrollBy({left:-220,behavior:\'smooth\'})" aria-label="Scroll weeks left" style="flex:none;width:26px;height:26px;border:1px solid var(--border);background:#fff;border-radius:7px;cursor:pointer;font-size:13px;line-height:1">&#8249;</button>';
-  h+='<div id="lm-scrub" style="display:flex;gap:4px;overflow-x:auto;flex:1;padding:2px 0;scrollbar-width:thin">';
-  data.weekNums.forEach(function(w){
-    const inView=weeks.indexOf(w)>=0, cur=w===currWeekNum();
-    let st='flex:none;font-size:11px;min-width:22px;text-align:center;padding:3px 6px;border-radius:6px;cursor:pointer;';
-    if(cur) st+='background:var(--header);color:#fff;';
-    else if(inView) st+='background:#eef2ff;color:var(--header);';
-    else st+='border:0.5px solid var(--border);color:var(--muted);';
-    h+='<span onclick="lmCalJump('+w+')" style="'+st+'" title="Week '+w+'">'+w+'</span>';
-  });
-  h+='</div>';
-  h+='<button onclick="var s=document.getElementById(\'lm-scrub\');if(s)s.scrollBy({left:220,behavior:\'smooth\'})" aria-label="Scroll weeks right" style="flex:none;width:26px;height:26px;border:1px solid var(--border);background:#fff;border-radius:7px;cursor:pointer;font-size:13px;line-height:1">&#8250;</button>';
-  h+='</div></div>';
-  if(lmCalDay) h+=lmCalDayPopup(lmCalDay,data);
-  return h;
-}
-function lmCalPrint(){
-  const data=lmCalData(); if(!data.weekNums.length) return;
-  const KIDS=[...ROSTER];
-  const KC=KID_COLOR;
-  const ym=_lmCalYM(data);
-  const weeks=_lmWeeksInMonth(data,ym);
-  const scope=(lmCalKid==="all")?KIDS:[lmCalKid];
-  let rows='';
-  weeks.forEach(function(wn){
-    const mon=_lmWeekMon(wn); if(!mon) return;
-    rows+='<tr><td class="wk">Wk '+wn+'</td>';
-    for(let i=0;i<5;i++){
-      const d=new Date(mon); d.setDate(d.getDate()+i);
-      const ds=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
-      const reasons=scope.map(function(kid){return _lmKidOff(kid,ds);});
-      const off=reasons.length&&reasons.every(function(r){return !!r;});
-      let cell='<div class="dn">'+((d.getFullYear()*12+d.getMonth())!==ym?["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()]+" ":"")+d.getDate()+'</div>';
-      if(off) cell+='<div class="off">'+esc(String(reasons.find(function(r){return !!r;})||"Off"))+'</div>';
-      else lmCalDayChips(ds,scope,data.cellMap).forEach(function(c){ cell+='<div class="ch"><span class="dot" style="background:'+(KC[c.kid]||"#888")+'"></span>'+esc(c.text)+'</div>'; });
-      rows+='<td>'+cell+'</td>';
-    }
-    rows+='</tr>';
-  });
-  const title=new Date(Math.floor(ym/12),ym%12,1).toLocaleDateString("en-US",{month:"long",year:"numeric"});
-  const win=window.open("","_blank"); if(!win) return;
-  win.document.write('<html><head><title>Lesson plan — '+title+'</title><style>'+
-    'body{font-family:Arial,Helvetica,sans-serif;margin:24px;color:#111}h1{font-size:18px;margin:0 0 14px}'+
-    'table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid #ccc;vertical-align:top;padding:5px;font-size:10px}'+
-    'th{background:#f3f4f6;font-size:11px}td.wk,th.wk{width:36px;text-align:center;font-weight:bold;background:#f9fafb}'+
-    '.dn{color:#666;font-size:11px;margin-bottom:3px}.ch{display:flex;align-items:center;gap:4px;margin-bottom:1px}'+
-    '.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex:none}.off{color:#999;font-style:italic}'+
-    '</style></head><body><h1>Lesson plan — '+title+(lmCalKid!=="all"?" · "+cap(lmCalKid):"")+'</h1>'+
-    '<table><thead><tr><th class="wk"></th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th></tr></thead><tbody>'+rows+'</tbody></table></body></html>');
-  win.document.close();
-  setTimeout(function(){ try{win.focus();win.print();}catch(e){} },300);
 }
 function lmSelSubj(sk){ lmSubjKey=sk; lmMovePick=null; lmMoveWeek=null; lmEditSlot=null; renderAll(); }
 function lmEditSlotOpen(kid,dayNum,sk){

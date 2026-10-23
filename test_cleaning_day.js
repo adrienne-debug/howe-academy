@@ -44,7 +44,7 @@ function mk(o){
     MC_DEFAULT:{}, mcDoneOn:()=>false, dcDoneOn:()=>!!o.dadDone, gbList:()=>[],
     routineLog:{}, momdayData:{}, daddayData:{}, momChoresData:{_seeded:true,mc_a:{label:"Kitchen close-down",cad:"daily",ts:1},mc_b:{label:"Vitamins",cad:"daily",ts:1}}, dadChoresData:{dc_a:{label:"Dishes",cad:"daily",ts:1}}, activeWk:()=>"week26", _todayDay:DN, _todayStr:()=>TODAY, mdTodayName:()=>DN,
     cap:s=>s.charAt(0).toUpperCase()+s.slice(1), esc:s=>String(s==null?"":s), mwBanner:s=>"", mpSubnav:v=>"", mwToast:()=>{}, renderAll:()=>{}, renderMomsPlan:()=>{}, document:{getElementById:()=>null}, writes, taps};
-  vm.createContext(ctx); vm.runInContext(CAD+"\n"+ROT+"\n"+fn("rtStepsFor")+"\n"+fn("mcAll")+"\n"+fn("dcAll")+"\n"+BLOCK, ctx);
+  vm.createContext(ctx); vm.runInContext(CAD+"\n"+ROT+"\n"+fn("rtStepsFor")+"\n"+fn("mcAll")+"\n"+fn("dcAll")+"\n"+BLOCK+"\nlet onecalOpen={};\n"+fn("onecalRow")+"\n"+fn("onecalRowsHTML")+"\n"+fn("onecalSection")+"\n"+fn("calCleaningSectionHTML"), ctx);   // the cleaning-days list lives in the ONECAL block since 2026-10-23
   ctx.get=expr=>vm.runInContext(expr,ctx);
   ctx.hhImport(); ctx.hhTakeover(true);
   // rooms: the vacuum and the table are kitchen, the couch is living; Sunny is animals (no room, never in the panel)
@@ -79,7 +79,7 @@ console.log("4. The screens");
   ok("the day card on a kid's device: paused, their panel, Mom's undo button", /School is paused today/.test(card)&&/🧽 Cleaning day · Lincoln/.test(card)&&/Not a cleaning day after all/.test(card));
   const home=c.hhCleanHomeHTML(TODAY,DN); ok("Home Base on a cleaning day: the state, back-to-normal, Mom's own panel", /Cleaning day — school is paused/.test(home)&&/back to normal/.test(home)&&/🧽 Cleaning day · Mom/.test(home));
   c.hhCleanDayToggle(TODAY); const h2=c.hhCleanHomeHTML(TODAY,DN); ok("a normal day: 'Everyone go clean?' with both switches, no panel", /Everyone go clean\?/.test(h2)&&/hhGoCleanToggle/.test(h2)&&/hhCleanDayToggle/.test(h2)&&!/· Mom/.test(h2));
-  ok("the editor section lists the day with a remove and an add-by-date", (()=>{ c.hhCleanDayToggle("2026-11-07"); const e=c.hhCleanDaysEditorHTML(); return /2026-11-07/.test(e)&&/hhCleanDayToggle\('2026-11-07'\)/.test(e)&&/hh-cd-date/.test(e); })());
+  ok("the list section (Mom's Day ▸ Month) lists the day with a remove and an add-by-date", (()=>{ c.hhCleanDayToggle("2026-11-07"); const e=c.calCleaningSectionHTML(); return /2026-11-07/.test(e)&&/hhCleanDayToggle\('2026-11-07'\)/.test(e)&&/hh-cd-date/.test(e)&&/Cleaning days/.test(e); })());
   const k=mk({noMom:true}); ok("a kid's device: no switches, no banner button, no undo", k.hhCleanHomeHTML(TODAY,DN)===""&&k.hhCleanDayBtnHTML(DN)===""&&!/Not a cleaning day/.test(k.hhCleanCardHTML()));
 }
 console.log("5. Wiring");
@@ -91,6 +91,6 @@ ok("the afternoon list opens while a switch is on, today only", /function rtAvai
 { const c={_todayDay:"monday",_todayStr:()=>"2026-10-12",rtAlwaysOpen:()=>false,rtSchoolworkDone:()=>false,rtAfternoonHour:()=>99,rtEveningHour:()=>99,hhCleanOn:()=>true,Date}; vm.createContext(c); vm.runInContext(fn("rtAvailable"),c);
   ok("…afternoon today opens; evening keeps its hour; another day unchanged", c.rtAvailable("afternoon","lincoln","monday")===true&&c.rtAvailable("evening","lincoln","monday")===false&&c.rtAvailable("afternoon","lincoln","tuesday")===true);
   c.hhCleanOn=()=>false; ok("…and stays shut without a switch", c.rtAvailable("afternoon","lincoln","monday")===false); }
-ok("the calendar: month colouring, the day sheet line, the breaks list, the CSS", /cls\+=" cleanday";/.test(src)&&/b\.kind==="cleaning"\?"\\u\{1F9FD\} "/.test(src)&&/kind:"cleaning",name:"Cleaning day"/.test(src)&&/\.gcal-month-day\.cleanday\{/.test(src)&&/h\+=hhCleanDaysEditorHTML\(\);/.test(src));
+ok("the calendar: month colouring, the day sheet line, the breaks list, the CSS", /cls\+=" cleanday";/.test(src)&&/b\.kind==="cleaning"\?"\\u\{1F9FD\} "/.test(src)&&/kind:"cleaning",name:"Cleaning day"/.test(src)&&/\.gcal-month-day\.cleanday\{/.test(src)&&/calCleaningSectionHTML\(\)/.test(fn("onecalListsHTML")));
 ok("no 🔀", src.indexOf("🔀")<0);
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

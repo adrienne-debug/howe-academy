@@ -13,7 +13,7 @@ function mk(cal){
   const writes=[], els={};
   const ctx={console,Object,Array,String,Number,parseInt,Math,JSON,Date,alert:()=>{},
     BREAK_PAUSE_LBL:{school:"School only",chores:"School + chores",all:"Everything"},
-    calendarData:cal||{holidays:{},vacations:{}}, calEditId:null, calAddMode:null, calNormDate:s=>s, calGenId:n=>"id_"+n.toLowerCase().replace(/\W+/g,""), renderAll:()=>{},
+    calendarData:cal||{holidays:{},vacations:{}}, calEditId:null, calAddMode:null, calPrefillDate:"", calNormDate:s=>s, calGenId:n=>"id_"+n.toLowerCase().replace(/\W+/g,""), renderAll:()=>{},
     document:{getElementById:id=>els[id]||null}, els,
     db:{ref:p=>({set:v=>writes.push(["set",p,v]),update:v=>writes.push(["update",p,v])})}, writes,
     HA_LS:{getItem:()=>null,setItem:()=>{}}, KID_NAME:{lincoln:"Lincoln",ellis:"Ellis",lucy:"Lucy",julian:"Julian"}, cap:s=>s.charAt(0).toUpperCase()+s.slice(1),
