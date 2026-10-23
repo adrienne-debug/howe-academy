@@ -45281,6 +45281,43 @@ function cbUnitsClear(){ cbForm.units=null; cbScanStatus=""; cbPreviewRes=null; 
 // Apply the previewed build: one multi-path update on curriculum/, with an
 // undo snapshot of every touched path. Local currData is patched in step
 // (curriculum loads via .once, so the mirror doesn't refresh itself).
+// GRIDPRUNE_START — 🧱 trailing empty rows go when a build clears past the grid end (her ask 2026-10-23: "they should just go as
+// far as the longest subject and can grow if things get pushed back"). DeWalt/Makenzie 10/18: one sparse AAS build laid lessons
+// out to the 800-day extension horizon (June 2029), minting 489 placeholder rows; the re-lay two minutes later cleared those
+// cells, but no code path ever deleted a row (the Grid only HIDES trailing empties — gvEnd, her 2026-09-03 ask). Now every
+// build's apply prunes, in the SAME multi-path update: rows that sit strictly after the new grid end (the Grid's own rule —
+// the latest stored cell of any subject, or a derived/projected cell), hold no cell of any subject, carry no hand-added
+// make-up slot for that date, and are after today. Trailing only — a mid-grid gap stays (later builds land there); nothing on
+// or before today ever goes. Their day numbers leave weekDays/<kid>/<wk> (a week left empty goes too). Snapped for ↩ Undo like
+// every other build write. Rows still grow when a projection slips later: this only trims what nothing uses.
+function cbTrailingEmptyRows(kid,today){
+  const rows=((currData||{}).lessons||{})[kid]||{}, subs=((currData||{}).subjects||{})[kid]||{};
+  const filled=v=>!!(v&&v!=="—"&&v!=="nan"&&String(v).trim());
+  let end="";
+  Object.keys(rows).forEach(dn=>{ const l=rows[dn]; if(!l||!l.date) return; Object.keys(l).forEach(k=>{ if(k!=="date"&&k!=="week"&&filled(l[k])&&l.date>end) end=l.date; }); });
+  if(typeof gvDerivedColumn==="function"){ Object.keys(subs).forEach(sk=>{ try{ const der=gvDerivedColumn(kid,sk); const bd=der&&der.byDate; if(!bd) return;
+    Object.keys(bd).forEach(ds=>{ const e=bd[ds]; if(e&&(filled(e.text)||e.extra)&&ds>end) end=ds; }); }catch(e){} }); }
+  const added=d=>{ try{ const a=(((scheduleOverrides||{})[d]||{})[kid]||{}).added||{}; return Object.keys(a).some(k=>a[k]!==undefined&&a[k]!==null&&a[k]!==false); }catch(e){ return false; } };
+  const out=[];
+  Object.keys(rows).forEach(dn=>{ const l=rows[dn]; if(!l||!l.date) return;
+    if(l.date<=today||(end&&l.date<=end)) return;
+    if(Object.keys(l).some(k=>k!=="date"&&k!=="week"&&filled(l[k]))) return;
+    if(added(l.date)) return;
+    out.push(parseInt(dn,10)); });
+  return {end:end,dayNums:out.filter(n=>!isNaN(n)).sort((a,b)=>a-b)};
+}
+// Called by cbApply after cbPatchLocal (the grid already holds this build's cells and clears) and before its one update.
+function cbPruneTrailingRows(kid,up,snap){
+  const today=cbTodayISO(); const t=cbTrailingEmptyRows(kid,today); if(!t.dayNums.length) return 0;
+  const rows=currData.lessons[kid]||{}; const wd=(currData.weekDays=currData.weekDays||{}); wd[kid]=wd[kid]||{};
+  const byWk={};
+  t.dayNums.forEach(dn=>{ const l=rows[dn]; const p="lessons/"+kid+"/"+dn; snap(p,l); up[p]=null; if(l&&l.week) (byWk[l.week]=byWk[l.week]||[]).push(dn); delete rows[dn]; });
+  Object.keys(byWk).forEach(wk=>{ const prev=wd[kid][wk]; const arr=(Array.isArray(prev)?prev:Object.values(prev||{})).map(Number).filter(n=>byWk[wk].indexOf(n)<0);
+    const p="weekDays/"+kid+"/"+wk; snap(p,prev); if(arr.length){ up[p]=arr; wd[kid][wk]=arr; } else { up[p]=null; delete wd[kid][wk]; } });
+  try{ dbg("🧱 pruned "+t.dayNums.length+" trailing empty rows for "+kid+" after "+(t.end||"(no cells)")); }catch(e){}
+  return t.dayNums.length;
+}
+// GRIDPRUNE_END
 function cbApply(){
   const res=cbPreviewRes;
   if(!res||res.error||!db||!cbKid||!cbSubjKey) return;
@@ -45469,6 +45506,7 @@ function cbApply(){
   snap("subjects/"+kid+"/"+sk+"/total",s.total);
   up["subjects/"+kid+"/"+sk+"/total"]=total;
   currData.subjects[kid][sk].total=total;
+  let _pruned=0; try{ if(typeof cbPruneTrailingRows==="function") _pruned=cbPruneTrailingRows(kid,up,snap); }catch(e){ dbg("prune: "+e); }   // 🧱 GRIDPRUNE: trailing empty rows leave in this same update
 
   db.ref("curriculum").update(up).catch(err=>{ cbMsg="⚠ Firebase error: "+err.message; renderAll(); });
   // A 🗑 delete triggered this build: fold its snapshots into this Undo so one ↩
@@ -45487,7 +45525,8 @@ function cbApply(){
   delete cbBacklogStash[_blKey]; delete cbDecisions[_blKey];
   const _nMoved=_bl.split.stale.length, _nDis=_disSet.size;
   cbMsg="✓ Built "+(s.display||sk)+" into the map — "+res.stats.placed+" days, finishing "+res.stats.lastDate+"."
-    +(_nMoved?" ↪ "+(_nMoved-_nDis)+" leftover"+((_nMoved-_nDis)!==1?"s":"")+" moved forward"+(_nDis?", "+_nDis+" dismissed":"")+".":"");
+    +(_nMoved?" ↪ "+(_nMoved-_nDis)+" leftover"+((_nMoved-_nDis)!==1?"s":"")+" moved forward"+(_nDis?", "+_nDis+" dismissed":"")+".":"")
+    +(_pruned?" 🧱 "+_pruned+" empty row"+(_pruned!==1?"s":"")+" past the end trimmed.":"");   // GRIDPRUNE
   // The build just rewrote this subject's cells — refresh the cached expected-pace
   // table, or same-session generation computes catch-up against the PRE-rebuild map
   // (every rebuilt subject looked a week behind until an app reload or commit).
