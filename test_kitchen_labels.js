@@ -218,7 +218,7 @@ console.log("\n── no labels and nothing hidden → byte-identical to the cod
   ok("the library filter (a built-in picked)", (()=>{ A.run("kitLibTagSet('gf')"); B.run("kitLibTagSet('gf')"); return A.lib().slice(0,A.lib().indexOf("data-kit-mid"))===B.lib().slice(0,B.lib().indexOf("data-kit-mid"))&&A.run("kitLibMatch(kitMeals.m4)")===false&&B.run("kitLibMatch(kitMeals.m4)")===false; })());
   ok("the recipe view", A.run("kitRecipeExtrasHTML(kitMeals.m1)")===B.run("kitRecipeExtrasHTML(kitMeals.m1)"));
   ok("the editor's chips, plus only the ＋ new label chip", B.editorChips(["gf"])===A.editorChips(["gf"]).replace("</span></div>","</span>"+'<span onclick="kitLabNewOpen(true)" style="cursor:pointer;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;border:1.5px dashed #9ca3af;color:#6b7280;background:#fff">＋ new label</span></div>'));
-  ok("a save with only built-in ids writes the same tags as before", (()=>{ [A,B].forEach(X=>{ X.els["kit-name"]={value:"Burgers"}; X.run("kitEditId='m1'; kitEditDraft={name:'Burgers',tags:['gf','kid']}; kitSaveMeal()"); }); return J(A.writes[A.writes.length-1])===J(B.writes[B.writes.length-1]); })());
+  ok("a save with only built-in ids writes the same tags as before", (()=>{ [A,B].forEach(X=>{ X.els["kit-name"]={value:"Burgers"}; X.run("kitEditId='m1'; kitEditDraft={name:'Burgers',tags:['gf','kid']}; kitSaveMeal()"); }); const w=X=>{ const r=X.writes[X.writes.length-1]; return [r[0],r[1],r[2].name,r[2].tags]; }; return J(w(A))===J(w(B))&&J(w(A)[3])===J(["gf","kid"]); })());   // (ts is the clock — compared without it)
 }
 
 console.log("\n"+pass+" passed, "+fail+" failed");
