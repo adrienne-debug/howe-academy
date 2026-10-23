@@ -9412,7 +9412,7 @@ function finalizeDone(id, doneTs, score){
     if(origDateStr){const yr=new Date().getFullYear();const od=new Date(origDateStr+", "+yr);const td=new Date();od.setHours(0,0,0,0);td.setHours(0,0,0,0);daysLate=Math.round((td-od)/864e5);}
     const entry={id:id,title:t.title,who:t.who,day:t.day,originalDay:origDay,checkedOnDay:effectiveDay(t),daysLate:daysLate,ts:doneTs,week:WK};
     if(score) entry.score=score;
-    if(_mmSpent!=null) entry.spent=_mmSpent;   // ⏱ MINMINUTES: whole minutes from ▶ Start to this check
+    if(_mmSpent!=null){ entry.spent=_mmSpent; const _mf=(typeof mmSpentFrom==="function")?mmSpentFrom(id):""; if(_mf) entry.spentFrom=_mf; }   // ⏱ MINMINUTES: whole minutes from the card's clock to this check (+ which clock, when no ▶ Start was tapped)
     if(_famPre&&_famPre.label) entry.famLabel=_famPre.label;   // 📚 what the family actually did
     if(_famPre&&_famPre.madeUp) entry.famMadeUp=_famPre.madeUp;   // 📚 FAMMAKEUP: the missed day this check made up
     try{ const _sb=(typeof _spBy==="function")?_spBy():null; if(_sb) entry.by=_sb; }catch(e){}   // 🔎 SPOTCHECK: Mom's / Dad's check isn't the kid's own
@@ -10979,6 +10979,17 @@ function bbMomCardHtml(k){
 //   History:     a finished card's history entry carries spent = whole minutes from ▶ Start to the check (to the kid's
 //                "send to Mom" when the card was claimed); Mom's view of the ✓ done row shows it as ⏱ N min.
 //   Mom's own tap (Mom mode) and Dad's never wait and never alert; Family Time cards and _c twins are never timed.
+//   A forgotten Start never traps a kid (her decision 2026-10-23): when a timed card has no ▶ Start tap, the clock counts
+//   from the kid's most recent check-off today (any of their cards, by its finished stamp; a "send to Mom" counts as the
+//   kid's check-off), or from their recorded day start when nothing is checked yet — crediting at most MM_FALLBACK_CAP
+//   minutes of that gap, so a long lunch never hands a kid more than 15 minutes. An explicit Start always wins. The card
+//   says which clock it is reading ("since your last check-off" / "since your day started") and keeps ▶ Start, which
+//   switches to the real clock from that moment. Mom's early-check line and the history entry carry the same note
+//   (spentFrom). The overrun line keys off the Start tap only — a fallback clock never fires it. Nothing new is written.
+const MM_FALLBACK_CAP=15;   // minutes — the most a fallback clock (last check-off / day start) can credit
+const MM_FROM_NOTE={check:"no Start tap — counted from the last check-off",day:"no Start tap — counted from the day start"};
+const MM_FROM_KID={check:"since your last check-off",day:"since your day started"};
+let mmSpentSrc={};   // {cardId: "start"|"check"|"day"} — which clock mmOnDone just used, read by the history hook (mmSpentFrom)
 const MM_PRACTICE_RE=/(practice|piano|instrument|\bread(ing)?\b)/i;
 let started={}, minAlerts={};   // {cardId: ms} · {key: record} — the active week's, mirrored in HA_LS like checked/claimed
 function mmSubjOf(t){ try{ return (t&&t.who&&t.subjectKey&&typeof gwGetSubjects==="function")?(((gwGetSubjects(t.who)||{})[t.subjectKey])||null):null; }catch(e){ return null; } }
@@ -10999,18 +11010,51 @@ function mmRules(){
 }
 function mmTsMs(v){ if(v==null) return null; if(typeof v==="number") return v; const d=(typeof _parseCheckTs==="function")?_parseCheckTs(v):null; return d?d.getTime():null; }
 function mmStartMs(id){ return mmTsMs((started||{})[id]); }
-function mmElapsed(id,nowMs){ const s=mmStartMs(id); if(s==null) return null; return Math.max(0,((nowMs||Date.now())-s)/60000); }
+function mmTaskOf(id){ const list=(typeof weekData!=="undefined"&&weekData&&Array.isArray(weekData.tasks))?weekData.tasks:[]; return list.find(function(x){ return x&&x.id===id; })||null; }
+// The kid's most recent check-off today before nowMs (checked or sent to Mom; the card itself never counts), as ms — or null.
+function mmLastCheckMs(kid,nowMs,skipId){
+  const list=(typeof weekData!=="undefined"&&weekData&&Array.isArray(weekData.tasks))?weekData.tasks:[];
+  const ck=(typeof checked!=="undefined"&&checked)||{}, cl=(typeof claimed!=="undefined"&&claimed)||{};
+  const now=new Date(nowMs); let best=null;
+  list.forEach(function(x){
+    if(!x||!x.id||x.id===skipId||x.who!==kid) return;
+    const ms=mmTsMs(ck[x.id]||cl[x.id]); if(ms==null||ms>nowMs) return;
+    const d=new Date(ms); if(d.getMonth()!==now.getMonth()||d.getDate()!==now.getDate()) return;   // today's check-offs only
+    if(best==null||ms>best) best=ms;
+  });
+  return best;
+}
+// The kid's recorded day start ("10:34 AM" in dayStarts for today) as ms on nowMs's date — or null.
+function mmDayStartMs(kid,nowMs){
+  let s=""; try{ s=(typeof dsFor==="function")?dsFor(kid):(((((typeof dayStarts!=="undefined"&&dayStarts)||{})[_todayDay])||{})[kid]||""); }catch(e){ s=""; }
+  const m=/(\d{1,2}):(\d{2})\s*([AP]M)/i.exec(String(s||"")); if(!m) return null;
+  let h=parseInt(m[1],10)%12; if(m[3].toUpperCase()==="PM") h+=12;
+  const d=new Date(nowMs); d.setHours(h,parseInt(m[2],10),0,0);
+  return d.getTime()<=nowMs?d.getTime():null;
+}
+// The clock a card reads: {ms, from:"start"|"check"|"day"} — the ▶ Start tap when there is one; otherwise the kid's last
+// check-off today, else their day start, each credited at most MM_FALLBACK_CAP minutes back from nowMs. null = no clock.
+function mmClock(id,nowMs){
+  nowMs=nowMs||Date.now();
+  const s=mmStartMs(id); if(s!=null) return {ms:s,from:"start"};
+  const t=mmTaskOf(id); if(!t||!t.who) return null;
+  const cap=nowMs-MM_FALLBACK_CAP*60000;
+  const c=mmLastCheckMs(t.who,nowMs,id); if(c!=null) return {ms:Math.max(c,cap),from:"check"};
+  const d=mmDayStartMs(t.who,nowMs); if(d!=null) return {ms:Math.max(d,cap),from:"day"};
+  return null;
+}
+function mmElapsed(id,nowMs){ nowMs=nowMs||Date.now(); const c=mmClock(id,nowMs); if(!c) return null; return Math.max(0,(nowMs-c.ms)/60000); }
 function mmSubjName(t){ const s=mmSubjOf(t); if(s&&s.display) return s.display; try{ const n=(typeof taskSubject==="function")?taskSubject(t):""; if(n) return n; }catch(e){} return (t&&t.title)||"this card"; }
 function mmKidName(k){ return (typeof KID_NAME!=="undefined"&&KID_NAME&&KID_NAME[k])||(typeof cap==="function"?cap(k):String(k)); }
 function mmDayIso(){ try{ return _todayStr(); }catch(e){ const n=new Date(); return n.getFullYear()+"-"+String(n.getMonth()+1).padStart(2,"0")+"-"+String(n.getDate()).padStart(2,"0"); } }
-// → "" (no minimum, or not started) · "12 min left" (whole minutes down to the subject's time) · "ready ✓" (at target − grace).
+// → "" (no minimum, or no clock at all) · "12 min left" (whole minutes down to the subject's time) · "ready ✓" (at target − grace).
 function mmCountdownText(t,nowMs){
   const target=mmTarget(t); if(!target) return "";
   const el=mmElapsed(t.id,nowMs); if(el==null) return "";
   if(el>=Math.max(0,target-mmRules().grace)) return "ready ✓";
   return Math.ceil(target-el)+" min left";
 }
-// Whole minutes still to go before the check can land (0 = it can). A card never started counts as 0 minutes (her rule).
+// Whole minutes still to go before the check can land (0 = it can). A card with no clock at all counts as 0 minutes (her rule).
 function mmToGo(t,nowMs){
   const target=mmTarget(t); if(!target) return 0;
   const el=mmElapsed(t.id,nowMs)||0;
@@ -11026,27 +11070,30 @@ function mmTapGate(t){
   const target=mmTarget(t); if(!target) return false;
   const togo=mmToGo(t); if(!togo) return false;
   if(mmRules().early==="tell") return false;   // Let it through — the check lands as today and mmOnDone tells Mom
-  const begun=mmStartMs(t.id)!=null;
-  if(typeof gwShowToast==="function") gwShowToast("⏱ Not yet — "+togo+" min to go"+(begun?"":" (tap ▶ Start on the card first)"));
+  if(typeof gwShowToast==="function") gwShowToast("⏱ Not yet — "+togo+" min to go");   // the fallback clock already counts (2026-10-23) — no "tap Start first"
   return true;
 }
-// finalizeDone / "send to Mom" hook → whole minutes spent (▶ Start → this check), or null when the card was never started.
+// finalizeDone / "send to Mom" hook → whole minutes spent (the card's clock → this check), or null when it had no clock at all.
 // Under "Let it through and tell me" an early check sends Mom ONE line — the once-a-day key means a kid's claim and Mom's
-// later approve never tell her twice. A card never started counts as 0 minutes. Mom's own check never alerts, and under
-// "Not yet" nothing does (a check that still lands early there came from Mom or a system path, not the kid's tap).
+// later approve never tell her twice. With no Start tap the fallback clock counts (last check-off / day start, capped) and
+// the line says so; a card with no clock at all counts as 0 minutes. Mom's own check never alerts, and under "Not yet"
+// nothing does (a check that still lands early there came from Mom or a system path, not the kid's tap).
 function mmOnDone(id,doneTs){
-  const list=(typeof weekData!=="undefined"&&weekData&&Array.isArray(weekData.tasks))?weekData.tasks:[];
-  const t=list.find(function(x){ return x&&x.id===id; }); if(!t) return null;
+  const t=mmTaskOf(id); if(!t) return null;
   const endMs=mmTsMs((typeof claimed!=="undefined"&&claimed&&claimed[id])||doneTs)||Date.now();
-  const startMs=mmStartMs(id);
-  const el=(startMs!=null)?Math.max(0,(endMs-startMs)/60000):0;
-  const spent=(startMs!=null)?Math.floor(el):null;
+  const c=mmClock(id,endMs);   // this card's own stamp is already in checked/claimed here — mmLastCheckMs skips it
+  const el=c?Math.max(0,(endMs-c.ms)/60000):0;
+  const spent=c?Math.floor(el):null;
+  mmSpentSrc[id]=c?c.from:"";
   const target=mmTarget(t);
   const today=!(typeof effectiveDay==="function"&&typeof _todayDay==="string")||effectiveDay(t)===_todayDay;
   if(target&&today&&!mmMomTap()&&mmRules().early==="tell"&&el<Math.max(0,target-mmRules().grace))   // only the rule that asked to be told
-    mmAlertSend("early",t,mmKidName(t.who)+" finished "+mmSubjName(t)+" at "+Math.floor(el)+" of "+target+" minutes"+(startMs==null?" (never started)":""));
+    mmAlertSend("early",t,mmKidName(t.who)+" finished "+mmSubjName(t)+" at "+Math.floor(el)+" of "+target+" minutes"+(!c?" (no Start tap)":(MM_FROM_NOTE[c.from]?" ("+MM_FROM_NOTE[c.from]+")":"")));
   return spent;
 }
+// finalizeDone hook, right after mmOnDone → "check"|"day" when that card's minutes came from a fallback clock (lands on the
+// history entry as spentFrom so Mom's done row can say so on any device), "" when ▶ Start was tapped or there was no clock.
+function mmSpentFrom(id){ const f=mmSpentSrc[id]||""; return (f==="check"||f==="day")?f:""; }
 // ── ▶ Start ──
 function mmStart(id){
   if(!id||(typeof checked!=="undefined"&&checked&&checked[id])||mmStartMs(id)!=null) return;
@@ -11100,32 +11147,37 @@ function mmTick(nowMs){
       if((typeof checked!=="undefined"&&checked&&checked[t.id])||(typeof claimed!=="undefined"&&claimed&&claimed[t.id])) return;
       if(typeof effectiveDay==="function"&&effectiveDay(t)!==td) return;
       const target=mmTarget(t); if(!target) return;
-      const el=mmElapsed(t.id,nowMs); if(el==null) return;
-      if(el<target+1) sig+="|"+t.id+"@"+Math.floor(nowMs/60000);
-      if(r.over&&el>=target*2) mmAlertSend("over",t,mmKidName(t.who)+"’s "+mmSubjName(t)+" has been open "+Math.floor(el)+" minutes ("+target+" planned)");
+      const c=mmClock(t.id,nowMs); if(!c) return;
+      const el=Math.max(0,(nowMs-c.ms)/60000);
+      if(el<target+1&&(c.from==="start"||el<MM_FALLBACK_CAP)) sig+="|"+t.id+"@"+Math.floor(nowMs/60000);   // a capped fallback clock stops moving
+      if(r.over&&c.from==="start"&&el>=target*2) mmAlertSend("over",t,mmKidName(t.who)+"’s "+mmSubjName(t)+" has been open "+Math.floor(el)+" minutes ("+target+" planned)");   // ▶ Start only — a fallback clock never overruns
     });
   }catch(e){}
   return sig;
 }
 // ── the card ──
-// taskCard hook → the ▶ Start button (today's open card, not started yet) or the countdown line (started). "" for a subject
-// with no minimum, so an untimed card renders exactly as before.
+// taskCard hook → today's open card: the countdown line (from ▶ Start, or from the fallback clock with "since your last
+// check-off" / "since your day started" in small words under it) and, until Start is tapped, the ▶ Start button. "" for a
+// subject with no minimum, so an untimed card renders exactly as before.
 function mmCardRow(t,done,claimedHere,readOnly){
   if(!t||!t.id||done||claimedHere||readOnly) return "";
   const target=mmTarget(t); if(!target) return "";
   if(typeof effectiveDay==="function"&&typeof _todayDay==="string"&&effectiveDay(t)!==_todayDay) return "";
-  if(mmStartMs(t.id)==null)
-    return '<div style="margin-top:5px"><span onclick="event.stopPropagation();mmStart(\''+esc(t.id)+'\')" title="Start the clock — this card can be checked after '+target+' min" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:800;color:#fff;cursor:pointer;background:#0f766e;border-radius:9px;padding:4px 11px">▶ Start <span style="font-weight:600;opacity:.85">'+target+' min</span></span></div>';
-  if(!mmShowOf(mmSubjOf(t))) return "";
-  const txt=mmCountdownText(t); if(!txt) return "";
-  const ready=txt.indexOf("ready")===0;
-  return '<div style="margin-top:5px;font-size:11px;font-weight:800;color:'+(ready?"#166534":"#92400e")+'">⏱ '+esc(txt)+'</div>';
+  const c=mmClock(t.id);
+  const startBtn=(c&&c.from==="start")?"":'<div style="margin-top:5px"><span onclick="event.stopPropagation();mmStart(\''+esc(t.id)+'\')" title="Start the clock — this card can be checked after '+target+' min" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:800;color:#fff;cursor:pointer;background:#0f766e;border-radius:9px;padding:4px 11px">▶ Start <span style="font-weight:600;opacity:.85">'+target+' min</span></span></div>';
+  if(!c||!mmShowOf(mmSubjOf(t))) return startBtn;
+  const txt=mmCountdownText(t); if(!txt) return startBtn;
+  const ready=txt.indexOf("ready")===0, note=MM_FROM_KID[c.from]||"";
+  return '<div style="margin-top:5px;font-size:11px;font-weight:800;color:'+(ready?"#166534":"#92400e")+'">⏱ '+esc(txt)+'</div>'
+    +(note?'<div style="font-size:10px;font-weight:600;color:var(--muted)">'+esc(note)+'</div>':'')+startBtn;
 }
-// ✓ done row hook (Mom's view only) → " ⏱ 14 min" from the history entry's spent, "" otherwise.
+// ✓ done row hook (Mom's view only) → " ⏱ 14 min" from the history entry's spent, with the fallback note when spentFrom says
+// the minutes were counted from the last check-off / day start; "" otherwise.
 function mmSpentChip(id){
   const h=(typeof histState!=="undefined"&&histState)?histState[id]:null;
   if(!h||h.spent==null||!(typeof momHereCards==="function"&&momHereCards())) return "";
-  return ' <span title="Minutes from ▶ Start to the check" style="display:inline-block;margin-left:6px;font-size:10px;font-weight:700;color:#9a3412;background:#ffedd5;padding:1px 7px;border-radius:8px">⏱ '+parseInt(h.spent,10)+' min</span>';
+  const note=MM_FROM_NOTE[h.spentFrom]||"";
+  return ' <span title="'+esc(note||"Minutes from ▶ Start to the check")+'" style="display:inline-block;margin-left:6px;font-size:10px;font-weight:700;color:#9a3412;background:#ffedd5;padding:1px 7px;border-radius:8px">⏱ '+parseInt(h.spent,10)+' min'+(note?' <span style="font-weight:600;color:#9a3412;opacity:.8">('+esc(note)+')</span>':'')+'</span>';
 }
 // ── the week's nodes (mirrored like checked/claimed) ──
 function mmLoadLocal(wk){ started=ld(wk+"_started")||{}; minAlerts=ld(wk+"_minAlerts")||{}; }
@@ -11172,7 +11224,7 @@ function mmRulesCardHTML(){
   const r=mmRules();
   const radio=function(v,label,sub){ return '<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;padding:4px 0"><input type="radio" name="mm-early" '+(r.early===v?"checked":"")+' onchange="mmRuleSet(\'early\',\''+v+'\')" style="margin-top:3px"><span><b>'+label+'</b><span style="display:block;font-size:11px;color:var(--muted)">'+sub+'</span></span></label>'; };
   let h='<div class="rules-wrap" id="mm-settings"><div class="rules-hdr">⏱ Timed cards</div>';
-  h+='<div class="rules-sub">A subject can need a minimum time before its card can be checked — set it on the subject (Edit Subject ▸ ⏱ Timed card). Practice subjects such as piano and reading are on by default at their own minutes; lesson work is off. The kid taps ▶ Start and the card counts down.</div>';
+  h+='<div class="rules-sub">A subject can need a minimum time before its card can be checked — set it on the subject (Edit Subject ▸ ⏱ Timed card). Practice subjects such as piano and reading are on by default at their own minutes; lesson work is off. The kid taps ▶ Start and the card counts down; a forgotten Start counts from their last check-off (or their day start), up to 15 minutes.</div>';
   h+='<div class="rules-row"><div class="rules-label">Grace <span style="font-weight:400;color:var(--muted)">— this much under the target still counts</span></div><input type="number" min="0" max="30" class="rules-time" style="width:64px" value="'+r.grace+'" onchange="mmRuleSet(\'grace\',this.value)"><span style="font-size:12px;color:var(--muted)">min</span></div>';
   h+='<div class="rules-row" style="flex-direction:column;align-items:stretch;gap:2px"><div class="rules-label">When a card is checked early</div>'
     +radio("wait","Not yet","The check waits; the card says how long to go.")

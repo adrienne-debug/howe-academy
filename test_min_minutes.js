@@ -4,6 +4,8 @@
  * day: a subject's default (practice on, lesson off — derived, never written), the countdown text,
  * "Not yet" vs "Let it through and tell me", a card never started, the overrun line once per card
  * per day, Mom's ⏱ N min on the done row, and an untimed subject rendering exactly as before.
+ * Section 12 (her decision 2026-10-23): a forgotten Start counts from the kid's last check-off today
+ * (or their day start), crediting at most 15 minutes; an explicit Start wins; the fallback never overruns.
  *
  *   run: node test_min_minutes.js
  */
@@ -154,16 +156,16 @@ console.log("\n── 4. 'Let it through and tell me' checks and sends exactly o
   ok("14 of 15 (inside grace): checks, no line", w2.run("mmOnDone('p1','10:00 AM Oct 23')") === 14 && w2.writes.length === 0);
 }
 
-console.log("\n── 5. a card never started, checked anyway (counts as 0 minutes) ──");
+console.log("\n── 5. a card with no clock at all (no Start, nothing checked, no day start) — counts as 0 minutes ──");
 {
   const w = world({ tasks: [card("p1", "piano")] });
-  ok("Not yet: blocked, 13 min to go, told to tap Start", w.run("mmTapGate(weekData.tasks[0])") === true && w.toasts[0] === "⏱ Not yet — 13 min to go (tap ▶ Start on the card first)", w.toasts[0]);
+  ok("Not yet: blocked, 'Not yet — 13 min to go' and nothing more", w.run("mmTapGate(weekData.tasks[0])") === true && w.toasts[0] === "⏱ Not yet — 13 min to go", w.toasts[0]);
   const w2 = world({ tasks: [card("p1", "piano")], rules: { minMinutes: { early: "tell" } } });
   ok("Let it through: the tap goes through", w2.run("mmTapGate(weekData.tasks[0])") === false);
   const spent = w2.run("mmOnDone('p1','10:00 AM Oct 23')");
   const al = w2.writes.filter(x => /minAlerts/.test(x.path));
-  ok("one line: 'Lincoln finished Piano at 0 of 15 minutes (never started)'", al.length === 1 && al[0].val.text === "Lincoln finished Piano at 0 of 15 minutes (never started)", al);
-  ok("no start → no spent minutes in history", spent === null);
+  ok("one line: 'Lincoln finished Piano at 0 of 15 minutes (no Start tap)' — no '(never started)'", al.length === 1 && al[0].val.text === "Lincoln finished Piano at 0 of 15 minutes (no Start tap)", al);
+  ok("no clock → no spent minutes in history, no spentFrom", spent === null && w2.run("mmSpentFrom('p1')") === "");
 }
 
 console.log("\n── 6. Mom's own tap never waits and never alerts; Dad's neither ──");
@@ -266,10 +268,102 @@ console.log("\n── 11. an untimed subject is untouched — and the hooks are 
   const tc0 = src.indexOf("function taskCard(t, fromDay, readOnly, doneId){"); const tc = src.slice(tc0, src.indexOf("// ── BRAIN BREAK", tc0));
   ok("taskCard: the row and the chip are each one typeof-guarded call", /\(\(typeof mmCardRow==="function"&&mmCardRow\(t,done,claimedHere,readOnly\)\)\|\|""\)/.test(tc) && /\(\(typeof mmSpentChip==="function"&&mmSpentChip\(srcId\)\)\|\|""\)/.test(tc));
   const fd = src.slice(src.indexOf("function finalizeDone(id, doneTs, score){"), src.indexOf("// EFPULL_START"));
-  ok("finalizeDone: spent is read before the claim is cleared and lands on the history entry", fd.indexOf("_mmSpent=mmOnDone(id,doneTs)") > 0 && fd.indexOf("_mmSpent=mmOnDone(id,doneTs)") < fd.indexOf("if(claimed[id]!=null){") && /if\(_mmSpent!=null\) entry\.spent=_mmSpent;/.test(fd));
+  ok("finalizeDone: spent is read before the claim is cleared and lands on the history entry (with spentFrom when a fallback clock counted)", fd.indexOf("_mmSpent=mmOnDone(id,doneTs)") > 0 && fd.indexOf("_mmSpent=mmOnDone(id,doneTs)") < fd.indexOf("if(claimed[id]!=null){") && /if\(_mmSpent!=null\)\{ entry\.spent=_mmSpent; const _mf=\(typeof mmSpentFrom==="function"\)\?mmSpentFrom\(id\):""; if\(_mf\) entry\.spentFrom=_mf; \}/.test(fd));
+  ok("the history hook is still one line", (fd.match(/mmSpentFrom/g) || []).length === 2 && fd.split("\n").filter(l => /mmSpentFrom/.test(l)).length === 1);
   ok("the block itself never writes a whole node (every write is …/<id> or …/<field>)", !/db\.ref\(WK\+"\/(started|minAlerts)"\)\.set/.test(BLOCK) && !/db\.ref\("config\/rules\/minMinutes"\)\.set/.test(BLOCK));
   ok("no scheduler code is touched (no lay / pack / sweep calls in the block)", !/mlQueueLay|dsRetime|cascadeIntraWeek|efPullNext|bumpSkippedInTier|pushTaskForward/.test(BLOCK));
   ok("no 🔀 anywhere", src.indexOf("🔀") < 0);
+}
+
+console.log("\n── 12. a forgotten Start counts from the last check-off (or the day start), up to 15 minutes (her decision 2026-10-23) ──");
+{
+  const AGO = m => { const d = new Date(BASE - m * 60000); let h = d.getHours(), ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12; return String(h).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0") + " " + ap + " Oct 23"; };
+  const tasks = () => [card("p1", "piano"), card("r1", "reading"), card("m1", "math"), card("e1", "piano", { who: "ellis" })];
+  ok("MM_FALLBACK_CAP is 15 and sits in the block", world().run("MM_FALLBACK_CAP") === 15 && /const MM_FALLBACK_CAP=15;/.test(BLOCK));
+  // no Start, last check-off 20 min ago, minimum 15 → ready
+  const w = world({ tasks: tasks() });
+  w.run("checked.m1=" + JSON.stringify(AGO(20)));
+  ok("no Start, Math checked 20 min ago: Piano reads 'ready ✓' (credited 15, the cap)", w.run("mmCountdownText(weekData.tasks[0])") === "ready ✓" && (w.run("mmElapsed('p1')") | 0) === 15, w.run("mmCountdownText(weekData.tasks[0])"));
+  ok("…and the check goes through under Not yet", w.run("mmTapGate(weekData.tasks[0])") === false && w.toasts.length === 0);
+  ok("the clock says where it counts from", JSON.stringify(w.run("mmClock('p1')")) === JSON.stringify({ ms: BASE - 15 * 60000, from: "check" }), w.run("mmClock('p1')"));
+  // no Start, last check-off 9 min ago → Not yet — 4 min to go
+  const w2 = world({ tasks: tasks() });
+  w2.run("checked.m1=" + JSON.stringify(AGO(9)));
+  ok("no Start, Math checked 9 min ago: Piano reads '6 min left'", w2.run("mmCountdownText(weekData.tasks[0])") === "6 min left", w2.run("mmCountdownText(weekData.tasks[0])"));
+  ok("the tap stops with 'Not yet — 4 min to go' (grace 2) and no 'tap Start first'", w2.run("mmTapGate(weekData.tasks[0])") === true && w2.toasts[0] === "⏱ Not yet — 4 min to go", w2.toasts[0]);
+  const row = w2.run("mmCardRow(weekData.tasks[0],false,false,false)");
+  ok("the card shows the countdown, 'since your last check-off' under it, and still ▶ Start", /⏱ 6 min left/.test(row) && /since your last check-off/.test(row) && /mmStart\('p1'\)/.test(row) && row.indexOf("6 min left") < row.indexOf("since your last") && row.indexOf("since your last") < row.indexOf("mmStart"), row);
+  ok("a kid's 'send to Mom' counts as their check-off too", (w2.run("delete checked.m1; claimed.m1=" + JSON.stringify(AGO(9)) + "; mmElapsed('p1')") | 0) === 9);
+  ok("another kid's check-off is not this kid's", w2.run("delete claimed.m1; checked.e1=" + JSON.stringify(AGO(9)) + "; mmElapsed('p1')") === null);
+  ok("a check-off from another day is not today's", w2.run("checked.m1='10:00 AM Oct 22'; mmElapsed('p1')") === null);
+  ok("the most RECENT check-off wins", (w2.run("checked.m1=" + JSON.stringify(AGO(12)) + "; checked.r1=" + JSON.stringify(AGO(4)) + "; mmElapsed('p1')") | 0) === 4);
+  // a 60-minute lunch gap credits 15
+  const w3 = world({ tasks: tasks() });
+  w3.run("checked.m1=" + JSON.stringify(AGO(60)));
+  ok("60-min gap: Piano (15 min) is ready", w3.run("mmCountdownText(weekData.tasks[0])") === "ready ✓" && w3.run("mmTapGate(weekData.tasks[0])") === false);
+  ok("60-min gap: Reading (20 min) shows 5 min left…", w3.run("mmCountdownText(weekData.tasks[1])") === "5 min left", w3.run("mmCountdownText(weekData.tasks[1])"));
+  ok("…and 'Not yet — 3 min to go' with grace 2", w3.run("mmTapGate(weekData.tasks[1])") === true && w3.toasts[w3.toasts.length - 1] === "⏱ Not yet — 3 min to go", w3.toasts);
+  // first card of the day uses the day start
+  const w4 = world({ tasks: tasks() });
+  w4.ctx.dayStarts = { friday: { lincoln: "9:50 AM" } };
+  ok("nothing checked yet: the day start (9:50) counts → 10 min elapsed, '5 min left'", (w4.run("mmElapsed('p1')") | 0) === 10 && w4.run("mmCountdownText(weekData.tasks[0])") === "5 min left", w4.run("mmElapsed('p1')"));
+  const row4 = w4.run("mmCardRow(weekData.tasks[0],false,false,false)");
+  ok("the card says 'since your day started' and keeps ▶ Start", /since your day started/.test(row4) && /mmStart\('p1'\)/.test(row4), row4);
+  ok("a day start 40 min back is capped at 15 → ready", w4.run("dayStarts.friday.lincoln='9:20 AM'; mmCountdownText(weekData.tasks[0])") === "ready ✓");
+  ok("another kid's day start is not this kid's", w4.run("dayStarts.friday={ellis:'9:20 AM'}; mmElapsed('p1')") === null);
+  ok("a check-off beats the day start", (w4.run("dayStarts.friday.lincoln='9:20 AM'; checked.m1=" + JSON.stringify(AGO(3)) + "; mmElapsed('p1')") | 0) === 3 && w4.run("mmClock('p1').from") === "check");
+  // an explicit Start wins over a later check-off
+  const w5 = world({ tasks: tasks() });
+  w5.startAgo("p1", 12); w5.run("checked.m1=" + JSON.stringify(AGO(3)));
+  ok("Start 12 min ago, Math checked 3 min ago: the Start clock counts (12)", (w5.run("mmElapsed('p1')") | 0) === 12 && w5.run("mmClock('p1').from") === "start");
+  const row5 = w5.run("mmCardRow(weekData.tasks[0],false,false,false)");
+  ok("a started card shows no fallback note and no ▶ Start", /⏱ 3 min left/.test(row5) && !/since your/.test(row5) && !/mmStart/.test(row5), row5);
+  // tapping Start switches to the real clock from that moment
+  const w6 = world({ tasks: tasks() });
+  w6.run("checked.m1=" + JSON.stringify(AGO(9)));
+  ok("fallback at 9 min…", (w6.run("mmElapsed('p1')") | 0) === 9);
+  w6.run("mmStart('p1')");
+  ok("…▶ Start restarts at 0 from now (the real clock wins)", w6.run("mmElapsed('p1')") === 0 && w6.run("mmCountdownText(weekData.tasks[0])") === "15 min left" && w6.writes.length === 1 && w6.writes[0].path === "week8/started/p1");
+  // the fallback never fires the overrun alert
+  const w7 = world({ tasks: tasks() });
+  w7.run("checked.m1=" + JSON.stringify(AGO(90)));
+  w7.run("mmTick()"); w7.setNow(BASE + 60 * 60000); w7.run("mmTick()");
+  ok("a fallback clock never sends the overrun line (Start tap only)", w7.writes.length === 0, w7.writes);
+  ok("a capped fallback clock no longer forces a re-render each minute", w7.run("mmTick()") === "");
+  const w7b = world({ tasks: tasks() });
+  w7b.run("checked.m1=" + JSON.stringify(AGO(4)));
+  const s1 = w7b.run("mmTick()"); w7b.setNow(BASE + 60000); const s2 = w7b.run("mmTick()");
+  ok("while a fallback countdown is moving the tick signature changes each minute", s1 && s2 && s1 !== s2, [s1, s2]);
+  // Mom's early-check line and the history entry carry the note
+  const w8 = world({ tasks: tasks(), rules: { minMinutes: { early: "tell" } } });
+  w8.run("checked.m1=" + JSON.stringify(AGO(9)) + "; checked.p1=" + JSON.stringify(AGO(0)));   // finalizeDone has already stamped p1 when mmOnDone runs
+  const spent8 = w8.run("mmOnDone('p1','10:00 AM Oct 23')");
+  const al8 = w8.writes.filter(x => /minAlerts/.test(x.path));
+  ok("Let it through: spent = 9 from the fallback, the card's own stamp is skipped", spent8 === 9, spent8);
+  ok("Mom's line: 'Lincoln finished Piano at 9 of 15 minutes (no Start tap — counted from the last check-off)'", al8.length === 1 && al8[0].val.text === "Lincoln finished Piano at 9 of 15 minutes (no Start tap — counted from the last check-off)", al8);
+  ok("the history hook learns the clock: spentFrom = 'check'", w8.run("mmSpentFrom('p1')") === "check");
+  w8.run("histState.p1={id:'p1',ts:'10:00 AM Oct 23',spent:9,spentFrom:'check'}");
+  const kidChip = w8.run("mmSpentChip('p1')");
+  ok("the kid's view shows no chip", kidChip === "");
+  w8.ctx.momHereCards = () => true;
+  const chip = w8.run("mmSpentChip('p1')");
+  ok("Mom's done row: ⏱ 9 min (no Start tap — counted from the last check-off)", /⏱ 9 min/.test(chip) && /\(no Start tap — counted from the last check-off\)/.test(chip), chip);
+  w8.run("histState.p2={id:'p2',ts:'10:00 AM Oct 23',spent:14}");
+  ok("a started card's chip carries no note", /⏱ 14 min/.test(w8.run("mmSpentChip('p2')")) && !/no Start tap/.test(w8.run("mmSpentChip('p2')")));
+  const w9 = world({ tasks: tasks(), rules: { minMinutes: { early: "tell" } } });
+  w9.ctx.dayStarts = { friday: { lincoln: "9:55 AM" } }; w9.run("checked.p1=" + JSON.stringify(AGO(0)));
+  const spent9 = w9.run("mmOnDone('p1','10:00 AM Oct 23')");
+  ok("first card of the day: 5 min from the day start, the line says '(no Start tap — counted from the day start)'", spent9 === 5 && w9.writes[0].val.text === "Lincoln finished Piano at 5 of 15 minutes (no Start tap — counted from the day start)" && w9.run("mmSpentFrom('p1')") === "day", w9.writes);
+  // a started card is untouched by all this
+  const w10 = world({ tasks: tasks(), rules: { minMinutes: { early: "tell" } } });
+  w10.startAgo("p1", 9); w10.run("checked.m1=" + JSON.stringify(AGO(2)));
+  ok("Start tapped: the line has no note and spentFrom is ''", w10.run("mmOnDone('p1','10:00 AM Oct 23')") === 9 && w10.writes[0].val.text === "Lincoln finished Piano at 9 of 15 minutes" && w10.run("mmSpentFrom('p1')") === "");
+  // untimed and Family Time stay out
+  const w11 = world({ tasks: tasks().concat([card("f1", "piano", { famBlock: "fb1" })]) });
+  w11.run("checked.m1=" + JSON.stringify(AGO(9)));
+  ok("a card with no minMin (math) is byte-identical to base: no row, no gate, no clock use", w11.run("mmCardRow(weekData.tasks[2],false,false,false)") === "" && w11.run("mmTapGate(weekData.tasks[2])") === false && w11.run("mmCountdownText(weekData.tasks[2])") === "" && w11.run("mmOnDone('m1','10:00 AM Oct 23')") === null);
+  ok("a Family Time card stays untimed", w11.run("mmCardRow(weekData.tasks[4],false,false,false)") === "" && w11.run("mmTapGate(weekData.tasks[4])") === false);
+  ok("nothing new was written to Firebase by any of this", w11.writes.length === 0 && w.writes.length === 0 && w2.writes.length === 0 && w3.writes.length === 0 && w4.writes.length === 0);
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");
