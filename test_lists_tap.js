@@ -46,7 +46,7 @@ console.log("3. Wiring");
 { const KT=fn("mdCardKidsToday"), W=fn("rtWave");
   ok("KIDROWS2 2026-10-22: the 📋 lists pill and its panel are gone from the row (Mom's Day and Dad's Day alike)", !/mpKidListsToggle|mdKidListsHTML|mpKidOpen|📋 lists</.test(KT)&&!/function mdKidListsHTML\(|function mpKidListsToggle\(/.test(src));
   ok("…✕ today lives on every open pop-up row instead (kr2WaveBtnHTML → rtWave)", /\(_waveOk&&r\.i!=null&&!r\.done\)\?kr2WaveBtnHTML\(slot,kid,_d,r\.i,!!r\.wv\):''/.test(fn("boardStatPop")));
-  ok("the ledger and the spot check stay Mom's Day only (not asked for)", /bank&&dadCtl===undefined&&typeof mdCardChoreLedger/.test(KT)&&/bank&&dadCtl===undefined&&typeof mdCardSpotCheck/.test(KT));
+  ok("the spot check stays Mom's Day only (not asked for); the ledger is gone (UNDOLISTS 2026-10-24)", !/mdCardChoreLedger/.test(KT)&&/bank&&dadCtl===undefined&&typeof mdCardSpotCheck/.test(KT));
   ok("a wave: Mom or an unlocked Dad; logged as who waved", /!momHere\(\)&&!\(typeof dadAwardOk==="function"&&dadAwardOk\(\)\)\) return;/.test(W)&&/by:_by\}/.test(W)&&/waved by "\+\(_by==="dad"\?"Dad":"Mom"\)/.test(W));
   ok("mdKidTick's gate takes an unlocked Dad", /!momHere\(\)&&!\(typeof dadAwardOk==="function"&&dadAwardOk\(\)\)\) return false;/.test(fn("mdKidTick")));
   ok("no new Firebase write anywhere in this change (the pop-up block writes nothing)", !/db\.ref/.test(fn("boardStatPop")));

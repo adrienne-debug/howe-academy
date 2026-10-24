@@ -5,8 +5,8 @@
  *
  * Checks: (1) ↶ Undo returns a checked chore to not done; (2) the wages come back off as a logged REVERSAL (a −paid bank entry
  * "↶ Mom undid", the +paid entry left standing, routineLog "off" with undo:"mom"), a held payment is removed as before, and a kid's
- * own uncheck is untouched; (3) ✓ Done re-checks and banks again; (4) the ledger card renders both ways; (5) Mom gate — nothing
- * moves and nothing renders without Mom; (6) laundry ↶ back a stage (washer ← dryer ← fold ← put away; wet: bin ← prewash ←
+ * own uncheck is untouched; (3) ✓ Done re-checks and banks again; (4) the ledger card is gone (UNDOLISTS 2026-10-24 — see
+ * test_undo_on_lists.js); (5) Mom gate — nothing moves and nothing renders without Mom; (6) laundry ↶ back a stage (washer ← dryer ← fold ← put away; wet: bin ← prewash ←
  * washer), today's blocks for both stages removed (no orphan — audit hole 10), dry run writes nothing; (7) wiring.
  *                                                                                                 run: node test_chore_undo.js
  */
@@ -72,28 +72,19 @@ console.log("A held (chore-verify) payment never reached the kid → removed, as
 { const c=mk({verify:true});
   c.choreRedo("chores","lucy","thursday",1); const held=adj(c,"lucy"); ok("setup: held +15", held.length===1&&held[0].held===true);
   c.choreUndo("chores","lucy","thursday",1); ok("undo removes the held entry, no reversal entry", adj(c,"lucy").length===0&&!c.rtDoneOn("chores","lucy","thursday",1));
-  const k=mk({unlocked:true}); k.toggleRtStep("chores","lucy",1); k.toggleRtStep("chores","lucy",1);
+  const k=mk({unlocked:true,notMom:true}); k.toggleRtStep("chores","lucy",1); k.toggleRtStep("chores","lucy",1);
   ok("the kid's own check + uncheck: entry removed, no reversal line, log 'off' without undo", adj(k,"lucy").length===0&&rlog(k,"lucy").every(r=>!r.undo));
 }
 console.log("(5) Mom gate");
 { const c=mk({notMom:true,sl:{"week7_thursday_lucy_cstep1":{done:true,pts:15,bid:"b1"}},bank:{lucy:{adjustments:{b1:{amount:15,src:"earn"}}}}});
   ok("not Mom: undo refused, still done, bank untouched, nothing written", c.choreUndo("chores","lucy","thursday",1)===false&&c.rtDoneOn("chores","lucy","thursday",1)&&adj(c,"lucy").length===1&&c.writes.length===0);
   ok("not Mom: ✓ Done refused", c.choreRedo("chores","lucy","thursday",0)===false&&!c.rtDoneOn("chores","lucy","thursday",0));
-  ok("not Mom: the ledger renders nothing, no ↶ undo button", c.mdCardChoreLedger()===""&&c.choreUndoBtnHTML("chores","lucy","thursday",1)==="");
+  ok("not Mom: no ↶ undo button", c.choreUndoBtnHTML("chores","lucy","thursday",1)==="");
   ok("not Mom: laundry ↶ refused", (()=>{ const d=mk({notMom:true,laundry:{l1:{label:"Towels",stage:"dryer",ts:1}}}); return d.laundryBack("l1")===null&&d.laundryData.l1.stage==="dryer"&&d.laundryBackBtnHTML("l1",d.laundryData.l1)===""; })());
 }
-console.log("(4) The ledger");
-{ const c=mk({sl:{"week7_thursday_lucy_cstep1":{done:true,ts:"9:05 AM Oct 15",pts:15,bid:"b1"}},bank:{lucy:{adjustments:{b1:{amount:15,src:"earn"}}}},
-    laundry:{l1:{label:"Towels",stage:"dryer",ts:1},l2:{label:"💦 Sheets (king)",stage:"bin",ts:2,wet:true}}});
-  ok("collapsed: header counts done / open / loads", (()=>{ const h=c.mdCardChoreLedger(); return /Today’s ledger · ✓ 1 · ☐ 3 · 🧺 2/.test(h)&&!/choreUndo/.test(h); })(), c.mdCardChoreLedger());
-  vm.runInContext("cuLedgerOpen=true",c); const h=c.mdCardChoreLedger();
-  ok("open: the done chore has ↶ Undo (with its check time), the open ones ✓ Done", /choreUndo\('chores','lucy','thursday',1\)/.test(h)&&/9:05 AM/.test(h)&&/choreRedo\('chores','lucy','thursday',0\)/.test(h)&&/choreRedo\('morning','lucy','thursday',1\)/.test(h), h);
-  ok("open: laundry rows — Towels ↶ back to the washer + Folded ✓; the bin load has no ↶", /laundryBack\('l1'\)/.test(h)&&/In the washer/.test(h)&&/Folded ✓/.test(h)&&!/laundryBack\('l2'\)/.test(h));
-  c.choreUndo("chores","lucy","thursday",1); const h2=c.mdCardChoreLedger();
-  ok("after an undo the row shows ☐ + ✓ Done and '↶ undone'", /choreRedo\('chores','lucy','thursday',1\)/.test(h2)&&/↩︎ undone/.test(h2));
-  const w=mk(); vm.runInContext("rtWave('chores','lucy','thursday',0)",w); vm.runInContext("cuLedgerOpen=true",w);
-  ok("a waved chore stays WAVE's, not in the ledger", !/choreRedo\('chores','lucy','thursday',0\)/.test(w.mdCardChoreLedger()));
-  ok("Kids today (KIDROWS2 2026-10-22): the 📋 lists panel is gone; its rows live in the pill pop-ups — a done row keeps its ✅ tap, ✕ today / undo on the open rows goes through rtWave; ↶ undo stays on the ledger", !/function mdKidListsHTML\(/.test(src)&&/\(_waveOk&&r\.i!=null&&!r\.done\)\?kr2WaveBtnHTML\(/.test(slice("boardStatPop"))&&/choreUndo\('chores','lucy','thursday',1\)/.test(h));
+console.log("(4) The ledger is gone (UNDOLISTS 2026-10-24: Mom unchecks on the lists instead)");
+{ ok("no ledger functions left", !/function (mdCardChoreLedger|cuLedgerRows|cuLedgerToggle)\(/.test(src)&&!/cuLedgerOpen/.test(src));
+  ok("Kids today (KIDROWS2 2026-10-22): the 📋 lists panel is gone; its rows live in the pill pop-ups — ✕ today on the open rows goes through rtWave", !/function mdKidListsHTML\(/.test(src)&&/\(_waveOk&&r\.i!=null&&!r\.done\)\?kr2WaveBtnHTML\(/.test(slice("boardStatPop")));
 }
 console.log("(6) Laundry: move back a stage");
 { const now=Date.now();
@@ -116,7 +107,6 @@ console.log("Put away → ↶ back to the fold pile (this device remembers today
 { const c=mk({laundry:{l1:{label:"Towels",stage:"fold",ts:1,by:"taylor"}},blocks:{"l1_fold":{iso:ISO,load:"l1",stage:"fold",at:"now",mins:10}}});
   c.laundryAdvance("l1");
   ok("✓ Put away deletes the load as before (laundry/l1 removed) and remembers it here", !c.laundryData.l1&&c.writes.some(w=>w[0]==="rm"&&w[1]==="laundry/l1")&&c.laundryAwayList().length===1);
-  vm.runInContext("cuLedgerOpen=true",c); ok("the ledger lists it with ↶ back to the fold pile", /laundryUnputaway\('l1'\)/.test(c.mdCardChoreLedger()));
   c.writes.length=0; const rec=c.laundryUnputaway("l1");
   ok("restored to the fold pile, same label and by", rec&&c.laundryData.l1.stage==="fold"&&c.laundryData.l1.by==="taylor"&&c.laundryData.l1.label==="Towels");
   ok("writes: laundry/l1 set + the done fold block removed", c.writes.some(w=>w[0]==="set"&&w[1]==="laundry/l1"&&w[2].stage==="fold")&&c.writes.some(w=>w[0]==="rm"&&w[1]==="momBlocks/2026-10-15/l1_fold")&&!c.momBlocks.l1_fold, c.writes);
@@ -130,9 +120,9 @@ console.log("A kid's 'Start a load' undone by Mom takes the load off (KIDLAUNDRY
   c.choreUndo("chores","lucy","thursday",0); ok("undo: the load is gone and the +10 reversed", !c.laundryData[id]&&bal(c,"lucy")===0);
 }
 console.log("(7) Wiring");
-ok("both check-offs route the uncheck through cuUnpay and tag the log line", (src.match(/cuUnpay\(kid,cur\.bid,/g)||[]).length===2&&(src.match(/\{undo:"mom"\}:null\)/g)||[]).length===2);
+ok("both check-offs route the uncheck through cuUnpay and tag the log line", (src.match(/cuUnpay\(kid,cur\.bid,/g)||[]).length===2&&(src.match(/\(!now&&typeof cuUndoTag==="function"\)\?cuUndoTag\(\):null\)/g)||[]).length===2);
 ok("rlogAppend takes the extra fields", /function rlogAppend\(kid,slot,label,act,pts,extra\)/.test(src));
-ok("the ledger sits under Kids today on Mom's Day only (bank row, no Dad control); renderMomsDay untouched", /if\(bank&&dadCtl===undefined&&typeof mdCardChoreLedger==="function"\)\{ try\{ h\+=mdCardChoreLedger\(\); \}catch\(e\)\{\} \}/.test(slice("mdCardKidsToday"))&&(src.match(/h\+=mdCardChoreLedger\(\)/g)||[]).length===1&&!/mdCardChoreLedger/.test(slice("renderMomsDay"))&&!/mdCardChoreLedger/.test(slice("renderDadsDay")));
+ok("the ledger no longer renders anywhere (Kids today, Mom's Day, Dad's Day)", !/mdCardChoreLedger/.test(src));
 ok("Laundry card: a ↶ before the forward button; ✓ Put away remembers the load", /laundryBackBtnHTML\(id,l\)/.test(src)&&/laundryAwayRemember\(id,l\)/.test(slice("laundryAdvance")));
 ok("laundryDel also drops the load's block (audit hole 10, 2026-10-15; see test_laundry_tiny.js)", /_cuDropBlock\(id,l\.stage\)/.test(slice("laundryDel")));
 ok("no 🔀", src.indexOf("🔀")<0);
