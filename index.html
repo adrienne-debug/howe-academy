@@ -35609,6 +35609,32 @@ function lrLaidLessons(kid,fromISO,toISO){
   out.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:(a.sk<b.sk?-1:a.sk>b.sk?1:0));
   return out;
 }
+// LRCACHE_START — Home Base speed (her report 2026-10-24 9:30 AM: "the app is extremely slow this morning … clicking back to
+// the home base tab from other tabs takes more time than all the others"). Measured on the live app: lrBuildList() ~1.0 s per
+// call on the Mac (several seconds on her iPad) — every Home Base draw re-laid every plan-backed subject of every kid twice
+// (gvDerivedColumn inside lrLaidLessons, this week + next). Her yes: "keep the due-soon list and rebuild it only when lessons,
+// plans or check-offs change". The laid lessons per kid+week are kept with a fingerprint of everything the lay reads — today,
+// the active week, all curriculum data (lessons, subjects, done = check-offs, plans), this week's cards, the calendar — and
+// re-laid the moment any of it changes (plus at most every 5 minutes, for anything the fingerprint can't see). Supplies,
+// books, staples and ticks are still read fresh on every draw. Pure: nothing is written.
+const LR_CACHE_MAX_MS=5*60*1000;
+let _lrLaidCache={};
+function _lrHash(str){ let h=5381; for(let i=0;i<str.length;i++){ h=((h<<5)+h+str.charCodeAt(i))|0; } return h; }
+function lrLaySig(){
+  try{
+    const parts=[(typeof currData!=="undefined")?currData:null,(typeof weekData!=="undefined")?weekData:null,(typeof calendarData!=="undefined")?calendarData:null];
+    return [lrToday(),(typeof activeWk==="function")?activeWk():"",_lrHash(JSON.stringify(parts))].join("|");
+  }catch(e){ return null; }   // can't fingerprint → never reuse
+}
+function lrLaidLessonsCached(kid,fromISO,toISO,sig){
+  if(sig===undefined) sig=lrLaySig();
+  const key=kid+"|"+fromISO+"|"+toISO, hit=_lrLaidCache[key], now=Date.now();
+  if(sig&&hit&&hit.sig===sig&&(now-hit.at)<LR_CACHE_MAX_MS) return hit.out;
+  const out=lrLaidLessons(kid,fromISO,toISO);
+  if(sig) _lrLaidCache[key]={sig:sig,at:now,out:out};
+  return out;
+}
+// LRCACHE_END
 // ── the Sunday list ──
 function lrSlug(s){ return String(s||"").toLowerCase().replace(/[.#$\/\[\]]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,40)||"item"; }
 // Stable: kid + subject + kind + item — the same item on two lessons of one subject is one tick, and a re-lay keeps it.
@@ -35631,6 +35657,7 @@ function lrDaysUntil(iso,todayISO){ if(!iso) return null; return Math.round((new
 function lrBuildList(opts){
   opts=opts||{}; const today=opts.today||lrToday(); const roster=opts.roster||((typeof ROSTER!=="undefined")?ROSTER:[]);
   const w0=lrWeekRange(0,today), w1=lrWeekRange(1,today); const kids=[], all=[];
+  const _laySig=(typeof lrLaySig==="function")?lrLaySig():null;   // LRCACHE: one fingerprint per build
   roster.forEach(kid=>{
     const byId={}, order=[];
     const add=(kind,L,w,name,detail,byISO,url)=>{
@@ -35641,7 +35668,7 @@ function lrBuildList(opts){
       if(!it.url&&url) it.url=url; if(!it.detail&&detail) it.detail=detail;
       if(!it.lessons.some(x=>x.sk===L.sk&&x.text===L.text)) it.lessons.push({sk:L.sk,text:L.text,date:L.date,w:w});
     };
-    [[lrLaidLessons(kid,w0.from,w0.to),0],[lrLaidLessons(kid,w1.from,w1.to),1]].forEach(pair=>{
+    [[lrLaidLessonsCached(kid,w0.from,w0.to,_laySig),0],[lrLaidLessonsCached(kid,w1.from,w1.to,_laySig),1]].forEach(pair=>{   // LRCACHE
       pair[0].forEach(L=>{
         const r=lrFor(kid,L.sk,L.key);
         r.supplies.forEach(s=>add("supplies",L,pair[1],s.name,s.qty||"",null,null));
