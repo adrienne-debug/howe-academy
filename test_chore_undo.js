@@ -52,7 +52,7 @@ console.log("(1)(2) ↶ Undo a chore the kid checked: back to not done, the star
   const before=adj(c,"lucy").length; c.writes.length=0;
   ok("↶ Undo → not done", c.choreUndo("chores","lucy","thursday",1)===true&&!c.rtDoneOn("chores","lucy","thursday",1));
   const A=adj(c,"lucy");
-  ok("the +15 entry is NOT deleted; a −15 '↶ Mom undid' entry is added beside it", A.length===before+1&&A.some(a=>a.amount===15)&&A.some(a=>a.amount===-15&&/↶ Mom undid: Unload the dishwasher/.test(a.note)&&a.src==="earn"&&a.day==="thursday"&&a.wk==="week7"), A);
+  ok("the +15 entry is NOT deleted; a −15 '↶ Mom undid' entry is added beside it", A.length===before+1&&A.some(a=>a.amount===15)&&A.some(a=>a.amount===-15&&/↩︎ Mom undid: Unload the dishwasher/.test(a.note)&&a.src==="earn"&&a.day==="thursday"&&a.wk==="week7"), A);
   ok("the balance is back where it was (0)", bal(c,"lucy")===0);
   ok("routineLog: an 'off' line carrying undo:'mom' (act stays 'off' so the Household numbers read it)", rlog(c,"lucy").some(r=>r.act==="off"&&r.undo==="mom"&&r.label==="Unload the dishwasher"&&r.pts===15), rlog(c,"lucy"));
   ok("bank write is a targeted set on bank/lucy/adjustments/<new id>; nothing removes the original", c.writes.some(w=>w[0]==="set"&&/^bank\/lucy\/adjustments\/bd/.test(w[1])&&w[2].amount===-15)&&!c.writes.some(w=>w[0]==="rm"&&/^bank\//.test(w[1])), c.writes);
@@ -90,7 +90,7 @@ console.log("(4) The ledger");
   ok("open: the done chore has ↶ Undo (with its check time), the open ones ✓ Done", /choreUndo\('chores','lucy','thursday',1\)/.test(h)&&/9:05 AM/.test(h)&&/choreRedo\('chores','lucy','thursday',0\)/.test(h)&&/choreRedo\('morning','lucy','thursday',1\)/.test(h), h);
   ok("open: laundry rows — Towels ↶ back to the washer + Folded ✓; the bin load has no ↶", /laundryBack\('l1'\)/.test(h)&&/In the washer/.test(h)&&/Folded ✓/.test(h)&&!/laundryBack\('l2'\)/.test(h));
   c.choreUndo("chores","lucy","thursday",1); const h2=c.mdCardChoreLedger();
-  ok("after an undo the row shows ☐ + ✓ Done and '↶ undone'", /choreRedo\('chores','lucy','thursday',1\)/.test(h2)&&/↶ undone/.test(h2));
+  ok("after an undo the row shows ☐ + ✓ Done and '↶ undone'", /choreRedo\('chores','lucy','thursday',1\)/.test(h2)&&/↩︎ undone/.test(h2));
   const w=mk(); vm.runInContext("rtWave('chores','lucy','thursday',0)",w); vm.runInContext("cuLedgerOpen=true",w);
   ok("a waved chore stays WAVE's, not in the ledger", !/choreRedo\('chores','lucy','thursday',0\)/.test(w.mdCardChoreLedger()));
   ok("Kids today (KIDROWS2 2026-10-22): the 📋 lists panel is gone; its rows live in the pill pop-ups — a done row keeps its ✅ tap, ✕ today / undo on the open rows goes through rtWave; ↶ undo stays on the ledger", !/function mdKidListsHTML\(/.test(src)&&/\(_waveOk&&r\.i!=null&&!r\.done\)\?kr2WaveBtnHTML\(/.test(slice("boardStatPop"))&&/choreUndo\('chores','lucy','thursday',1\)/.test(h));

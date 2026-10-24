@@ -108,7 +108,7 @@ console.log("(3) ✓ / ✗ — ✗ is CHOREUNDO's undo for that item");
   vm.runInContext("spotData={lucy:{'"+ISO+"':{n:2,picks:[{k:'s:chores:1',kind:'step',slot:'chores',i:1,d:'thursday',label:'Unload the dishwasher',type:'chore',pts:15},{k:'s:chores:0',kind:'step',slot:'chores',i:0,d:'thursday',label:'Start a load of laundry',type:'laundry',pts:10}]}}}",c);
   c.writes.length=0;
   ok("✗ Not done → the chore is back to not done", c.spResolve("lucy",0,"no")===true&&!c.rtDoneOn("chores","lucy","thursday",1));
-  ok("its own 15 ⭐ come back off as '↶ Mom undid' (nothing else docked)", bal(c,"lucy")===10&&adj(c,"lucy").some(a=>a.amount===-15&&/↶ Mom undid: Unload the dishwasher/.test(a.note))&&!adj(c,"lucy").some(a=>a.amount===-100), adj(c,"lucy"));
+  ok("its own 15 ⭐ come back off as '↶ Mom undid' (nothing else docked)", bal(c,"lucy")===10&&adj(c,"lucy").some(a=>a.amount===-15&&/↩︎ Mom undid: Unload the dishwasher/.test(a.note))&&!adj(c,"lucy").some(a=>a.amount===-100), adj(c,"lucy"));
   ok("the log line says Mom undid it", Object.values(c.routineLog.lucy.week7.thursday).some(r=>r.act==="off"&&r.undo==="mom"));
   ok("result written: spotChecks/lucy/<iso>/results/0 {r:'no', n:2}", c.writes.some(w=>w[0]==="set"&&w[1]==="spotChecks/lucy/"+ISO+"/results/0"&&w[2].r==="no"&&w[2].n===2), c.writes);
   ok("a pick is resolved once", c.spResolve("lucy",0,"ok")===false);
@@ -214,7 +214,7 @@ console.log("(9) −pts if not done — settings/spotCheck/penalty, off unless s
   ok("off: the confirm says nothing about a penalty", c.confirms.length===1&&!/rule/.test(c.confirms[0]), c.confirms);
   const o=mk({set:{penalty:{on:true,pts:100}}}); kidTick(o,"chores",1); vm.runInContext(PICK,o); o.writes.length=0;
   ok("on: ✗ resolves", o.spResolve("lucy",0,"no")===true);
-  ok("on: the item's own 15 ⭐ come back off ('↶ Mom undid')", adj(o,"lucy").some(a=>a.amount===-15&&/↶ Mom undid: Unload the dishwasher/.test(a.note)));
+  ok("on: the item's own 15 ⭐ come back off ('↶ Mom undid')", adj(o,"lucy").some(a=>a.amount===-15&&/↩︎ Mom undid: Unload the dishwasher/.test(a.note)));
   ok("on: AND −100 banked as '🔎 Spot check: not done — Unload the dishwasher'", adj(o,"lucy").some(a=>a.amount===-100&&a.note==="🔎 Spot check: not done — Unload the dishwasher")&&bal(o,"lucy")===-100, adj(o,"lucy"));
   ok("on: the −100 is a targeted bank/lucy/adjustments/<id> write", o.writes.some(w=>w[0]==="set"&&/^bank\/lucy\/adjustments\/bd/.test(w[1])&&w[2].amount===-100), o.writes);
   ok("on: the confirm names both amounts", /its 15 ⭐ come back off/.test(o.confirms[0])&&/−100 ⭐ more for not doing it/.test(o.confirms[0]), o.confirms);
