@@ -1,7 +1,8 @@
 /*
  * 🎯 New-card budget (her yes 2026-10-23). One daily total per kid; study sessions take a share by role:
  * fixed (German 5) → keeps pace with the book (Science, Social Studies) → takes what's left (Daily Study).
- * Senses load: over 60 reviews due → 2 fewer; over 90 → pace/rest take 1. Budget off → nothing changes.
+ * Senses load: over 60 reviews a day on the ladder → 2 fewer; over 90 → pace/rest take 1. Budget off → nothing changes.
+ * Since the review engine (2026-10-24) the load is the WHOLE ladder — Σ cards ÷ their rung's school days — not today's due.
  *   run:  node test_new_budget.js
  */
 const fs=require("fs"), path=require("path"), vm=require("vm");
@@ -17,7 +18,8 @@ function sandbox(o){
   const items=[], bank={};
   const add=(deck,n,status,opts)=>{ for(let k=0;k<n;k++) items.push(Object.assign({id:deck+"_"+status+k,subject:deck,prompt:deck+" "+status+" "+k,status,tier:status==="active"?"weekly":"daily",next_due:status==="active"?(o.dueAt!=null?o.dueAt:500):undefined},opts||{})); };
   add("German",4,"active"); add("Science",3,"active"); add("Discover",2,"active"); add("Grammar",2,"active");
-  if(o.reviewsDue) add("Grammar",o.reviewsDue,"active",{next_due:100});   // due today (pn 204)
+  if(o.eod) add("Grammar",o.eod,"active",{tier:"every_other_day",next_due:o.dueAt!=null?o.dueAt:500});   // ½ a review a day each
+  if(o.lincoln){ add("German",149,"active",{tier:"every_other_day"}); add("Science",107,"active",{tier:"weekly"}); add("Discover",26,"active",{tier:"bi_weekly"}); add("Grammar",35,"active",{tier:"monthly"}); }
   bank.Science=Array.from({length:o.sciWaiting!=null?o.sciWaiting:58},(_,k)=>"sci word "+k);
   bank.Discover=Array.from({length:o.ssWaiting!=null?o.ssWaiting:6},(_,k)=>"ss word "+k);
   bank.Grammar=["g1","g2"];
@@ -29,6 +31,7 @@ function sandbox(o){
     {sid:"daily_mix",name:"Daily Mix",kind:"mix",decks:[],budgetRole:null}];
   const writes=[];
   const ctx={console,Math,Object,Array,String,Number,JSON,Set,
+    MAST_TIER_INT:{daily:1,every_other_day:2,every_third_day:3,weekly:5,bi_weekly:10,monthly:20,learned:60,graduated:null},
     masteryData:{lincoln:items,lincoln_settings:o.settings||{new_budget:12}},
     mstSessions:()=>sessions,
     mastBankEligible:(kid,d)=>bank[d]||[],
@@ -45,7 +48,7 @@ const shares=p=>Object.fromEntries(Object.entries(p.by).map(([k,v])=>[k,v.n]));
 console.log("🎯 a normal day: fixed → book pace → what's left");
 {
   const p=plan(sandbox());
-  ok("light load (no reviews due) → full budget of 12",p.level==="ok"&&p.room===12,[p.level,p.room,p.load]);
+  ok("light load (11 weekly cards ≈ 2 a day) → full budget of 12",p.level==="ok"&&p.room===12&&p.load===2,[p.level,p.room,p.load]);
   ok("German fixed at 5",p.by.german.n===5);
   ok("Science keeps pace: 58 waiting ÷ 15 days → 4",p.by.science.n===4&&p.by.science.waiting===58,p.by.science);
   ok("Social Studies keeps pace: 6 waiting → 1",p.by.social.n===1,p.by.social);
@@ -64,16 +67,17 @@ console.log("📖 the book sets the pace, inside its New/day");
   ok("Daily Study never takes more than its New/day (budget 30 → 8)",plan(sandbox({settings:{new_budget:30}})).by.dailystudy.n===8);
 }
 
-console.log("⚖️ it senses his review load");
+console.log("⚖️ it senses his whole review load");
 {
-  const busy=plan(sandbox({reviewsDue:70}));
-  ok("70 reviews due → busy day, budget 12 − 2 = 10",busy.level==="busy"&&busy.room===10,[busy.level,busy.room,busy.load]);
+  const busy=plan(sandbox({eod:130}));
+  ok("130 every-other-day cards + 11 weekly → 67 reviews a day → busy, budget 12 − 2 = 10",busy.level==="busy"&&busy.room===10&&busy.load===67,[busy.level,busy.room,busy.load]);
   ok("…German stays 5, Science 4, SS 1, Daily Study squeezed to its floor of 1",busy.by.german.n===5&&busy.by.science.n===4&&busy.by.social.n===1&&busy.by.dailystudy.n===1,shares(busy));
-  const heavy=plan(sandbox({reviewsDue:195}));
-  ok("195 reviews due (Lincoln today) → heavy day",heavy.level==="heavy"&&heavy.load>=195,[heavy.level,heavy.load]);
+  const heavy=plan(sandbox({lincoln:true}));
+  ok("Lincoln's ladder 2026-10-24 (149 EOD · 107 weekly · 26 bi-weekly · 35 monthly ≈ 100) + the 11 above = 102 a day → heavy",heavy.level==="heavy"&&heavy.load===102,[heavy.level,heavy.load]);
   ok("…German still 5, the flexible sessions take 1 each",heavy.by.german.n===5&&heavy.by.science.n===1&&heavy.by.social.n===1&&heavy.by.dailystudy.n===1,shares(heavy));
-  ok("a book-paced session with nothing waiting stays at 0 on a heavy day",plan(sandbox({reviewsDue:195,ssWaiting:0})).by.social.n===0);
-  ok("reviews not due today don't count",plan(sandbox()).load===0);
+  ok("a book-paced session with nothing waiting stays at 0 on a heavy day",plan(sandbox({lincoln:true,ssWaiting:0})).by.social.n===0);
+  ok("leveling can't hide it: the same ladder reads the same load whether everything is due today or nothing is",plan(sandbox({eod:130,dueAt:100})).load===plan(sandbox({eod:130,dueAt:900})).load);
+  ok("learning (introduction) and parked cards don't count",(()=>{ const S=sandbox(); S.run('masteryData.lincoln.push({id:"i",status:"introduction",tier:"daily"},{id:"p",status:"parked",tier:"weekly"})'); return S.run('nbLoad("lincoln",204)')===2; })());
 }
 
 console.log("📴 off means off");

@@ -11,7 +11,7 @@ const blk=(a,z)=>{ const i=src.indexOf(a); if(i<0) throw new Error("missing "+a)
 const ctx={}; vm.createContext(ctx);
 vm.runInContext(`
   var MAST_TIER_ORDER=["daily","every_other_day","every_third_day","weekly","bi_weekly","monthly","learned","graduated"];
-  var MAST_TIER_INT={daily:1,every_other_day:2,every_third_day:3,weekly:7,bi_weekly:14,monthly:28,learned:60,graduated:null};
+  var MAST_TIER_INT={daily:1,every_other_day:2,every_third_day:3,weekly:5,bi_weekly:10,monthly:20,learned:60,graduated:null};
   var masteryKid="lucy", masteryData={}, SETTINGS={max_per_cat:5,cat_caps:{},max_learn_per_drill:0,max_overdue_per_drill:0};
   function mastDrillSettings(){ return SETTINGS; } function mastIsNeverDrill(){ return false; } function mastIsParked(i){ return i.status==="parked"; }
   `+fn("mastIsDue")+"\n"+blk("const MAST_LEARN_FLOOR","\nlet mastLogMode"),ctx);

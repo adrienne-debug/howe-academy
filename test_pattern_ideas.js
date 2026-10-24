@@ -25,7 +25,7 @@ const CARDS={
 };
 const ctx={console,Math,Object,Array,String,Number,JSON,Set,Date,setTimeout:(f,ms)=>{ ctx._timers.push({f,ms}); },_timers:[],
   masteryData:{},masteryKid:"ellis",mstSid:"s1",mstFlipped:false,mstState:null,_redraws:0,_taps:[],
-  MAST_TIER_ORDER:["daily","every_other_day","weekly","bi_weekly","monthly","graduated"],MAST_TIER_INT:{daily:1,every_other_day:2,weekly:7,bi_weekly:14,monthly:28,graduated:null},
+  MAST_TIER_ORDER:["daily","every_other_day","weekly","bi_weekly","monthly","graduated"],MAST_TIER_INT:{daily:1,every_other_day:2,weekly:5,bi_weekly:10,monthly:20,graduated:null},
   mastDrillSettings:()=>({ladder:["every_other_day","weekly","bi_weekly","monthly","graduated"]}),mastIsDue:()=>false,mastIsParked:()=>false,mastIsNeverDrill:()=>false,mastFullBank:()=>({}),
   mstCardDef:c=>(CARDS[c&&c.name]||{}).answer||"",
   mstIsRuleCard:c=>!!(CARDS[c&&c.name]||{}).rule,

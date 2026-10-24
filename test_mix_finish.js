@@ -15,12 +15,12 @@ cards.push({id:"lrn",subject:"German",tier:"daily",status:"introduction",prompt:
 function mk(o){ o=o||{}; const writes=[], toasts=[];
   const ctx={console,Object,Array,String,Number,parseInt,Math,JSON,Date,Set,Map,Infinity,
     masteryData:{lincoln:JSON.parse(JSON.stringify(cards)),lincoln_sessions:{daily_mix:{name:"Daily Mix",kind:"mix",mixFinish:o.finish},german:{name:"German",kind:"deck",decks:["German"],mixInAt:"every_other_day",handOffAt:"bi_weekly"},ds:{name:"Daily Study",kind:"all",mixInAt:"every_other_day",handOffAt:"bi_weekly"}}},
-    masteryKid:"lincoln", MAST_TIER_ORDER:["daily","every_other_day","every_third_day","weekly","bi_weekly","monthly","learned","graduated"], MAST_TIER_INT:{daily:1,every_other_day:2,every_third_day:3,weekly:7,bi_weekly:14,monthly:28,learned:60,graduated:null},
+    masteryKid:"lincoln", MAST_TIER_ORDER:["daily","every_other_day","every_third_day","weekly","bi_weekly","monthly","learned","graduated"], MAST_TIER_INT:{daily:1,every_other_day:2,every_third_day:3,weekly:5,bi_weekly:10,monthly:20,learned:60,graduated:null},
     mastDrillSettings:()=>({ladder:["every_other_day","weekly","bi_weekly","monthly","graduated"]}), mastIsParked:()=>false, mastIsNeverDrill:()=>false, mastFullBank:()=>({}), mastGetPrintNum:()=>PN,
     db:{ref:p=>({update:v=>writes.push(["update",p,v]),set:v=>writes.push(["set",p,v])})}, _dryRun:()=>!!o.dry, HA_LS:{setItem:()=>{},getItem:()=>null}, gwShowToast:t=>toasts.push(t), confirm:()=>true, _mastRe:()=>{}, cap:s=>s[0].toUpperCase()+s.slice(1), mastItemIsQuiz:()=>false,
     writes, toasts};
   vm.createContext(ctx);
-  vm.runInContext(cut("const MST_SESSION_DEFAULTS =","\n};")+"\n};\n"+cut("const MST_PATTERN_MODES",";\n")+";\n"+cut("const MST_HOWTO_MAX",";\n")+";\n"+["mstPatternClean","mstHowtoClean","mstTierIdx","mstSessions","mstMixOwns","mstOwns","mstPile","mastIsDue","_mstMulberry32","_mstHashStr","_mstShuffle","evo2TodayKey","evo2LastTested","evo2ReviewedToday","evo2Plan","mastRebalanceKid","mastRebalanceNow"].map(fn).join("\n"),ctx);
+  vm.runInContext(cut("const RE_SHARE_PLUS",";\n")+";\n"+cut("const MST_SESSION_DEFAULTS =","\n};")+"\n};\n"+cut("const MST_PATTERN_MODES",";\n")+";\n"+cut("const MST_HOWTO_MAX",";\n")+";\n"+["mstPatternClean","mstHowtoClean","mstTierIdx","mstSessions","mstMixOwns","mstOwns","mstPile","mastIsDue","_mstMulberry32","_mstHashStr","_mstShuffle","evo2LastTested","reScheduled","reReviewedOn","rePlan","reApply","mastRebalanceKid","mastRebalanceNow"].map(fn).join("\n"),ctx);
   ctx.get=e=>vm.runInContext(e,ctx); return ctx; }
 
 console.log("1. The Mix finish line");

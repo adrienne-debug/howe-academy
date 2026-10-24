@@ -20,7 +20,7 @@ console.log("── 1 · check-up ✗ feeds Word Workout ──");
   const stubs = `
 var masteryData={}, masteryKid=null, unitStudies={}, currData={subjects:{}}, unitStageForm=null;
 var MAST_TIER_ORDER=["daily","every_other_day","every_third_day","weekly","bi_weekly","monthly","learned","graduated"];
-var MAST_TIER_INT={daily:1,every_other_day:2,every_third_day:3,weekly:7,bi_weekly:14,monthly:28,learned:60,graduated:null};
+var MAST_TIER_INT={daily:1,every_other_day:2,every_third_day:3,weekly:5,bi_weekly:10,monthly:20,learned:60,graduated:null};
 function mastDrillSettings(){ return {ladder:["every_other_day","weekly","bi_weekly","monthly","graduated"]}; }
 function mastIsDue(i,pn){ const iv=MAST_TIER_INT[i.tier||"daily"]; if(iv==null) return false; if(i.next_due!=null&&iv>1) return pn>=i.next_due; return true; }
 function mastIsParked(i){ return i&&i.status==="parked"; } function mastIsNeverDrill(){ return false; }
