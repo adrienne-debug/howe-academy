@@ -86,7 +86,7 @@ console.log("\n── it never guesses from a list comparison ──");
 }
 console.log("\n── the wiring in index.html ──");
 ok("finalizeDone notes the check, clears it on confirm, keeps it on refusal", /ckNotePending\(id,doneTs\); const _w=db\.ref\(WK\+"\/checked\/"\+id\)\.set\(doneTs\); if\(_w&&typeof _w\.then==="function"\) _w\.then\(function\(\)\{ ckConfirmed\(id,doneTs\); \},function\(err\)\{ ckNoteRefused\(id,doneTs,err\); \}\);/.test(src));
-ok("the checked snapshot handler triggers the replay after fbCheckedLoaded", /fbCheckedLoaded=true;\s*schedCascade\(\);\s*renderAll\(\);\s*try\{ ckReplayPending\(\); \}catch\(e\)\{\}/.test(src));
+ok("the checked snapshot handler triggers the replay after fbCheckedLoaded", /fbCheckedLoaded=true;\s*schedCascade\(\);\s*renderAllSoon\(\);\s*try\{ ckReplayPending\(\); \}catch\(e\)\{\}/.test(src));
 ok("attaching a week resets the per-week pending cache", /detachWeekListeners\(\);\s*_ckPending=null; _ckReplayTries=0;/.test(src));
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

@@ -38,7 +38,7 @@ function mk(o){
   const T={ctx,writes,renders,run:e=>vm.runInContext(e,ctx)};
   T.lay=()=>{ const laid=T.run("mlQueueLay("+JSON.stringify(o.tasks)+")"); T.laid=laid; T.at=id=>laid.find(t=>t.id===id).time; return laid; };
   T.agenda=()=>{ T.lay(); ctx.__d=T.laid.filter(t=>t.mom==="required"||t.mom==="maybe"); return T.run("momAgendaHtml(__d)"); };
-  ctx.renderAll=()=>{ renders.push("all"); };
+  ctx.renderAll=()=>{ renders.push("all"); }; ctx.renderAllSoon=ctx.renderAll;
   T.dbOn=()=>{ ctx.db={ref:p=>({set:v=>writes.push(["set",p,v]),update:v=>writes.push(["update",p,v])})}; };
   return T;
 }
@@ -126,6 +126,6 @@ console.log("── wiring ──");
 ok("the agenda gets the laundry rows with its cards", /momSchedLaundry\(day,dayTasks\)/.test(src)&&/c\.lau\.map\(x=>x\.html\)/.test(src));
 ok("the Mom chain steps over the blocks", /const Ls=lunchOf\(e\.kid\)\.concat\(fixedOf\(e\.kid\)\)\.concat\(_blkIv\);/.test(src));
 ok("listens for today's blocks and her minutes", /db\.ref\("momBlocks\/"\+mwTodayIso\(\)\)\.on\("value"/.test(src)&&/db\.ref\("settings\/laundryBlockMins"\)\.on\("value"/.test(src));
-ok("the laundry listener repaints the Mom-mode schedule", /else if\(tab==="schedule"&&kid==="mom"\) renderAll\(\);   \/\/ MOMSCHED_LAUNDRY/.test(src));
+ok("the laundry listener repaints the Mom-mode schedule", /else if\(tab==="schedule"&&kid==="mom"\) renderAllSoon\(\);   \/\/ MOMSCHED_LAUNDRY/.test(src));
 ok("momAgendaHtml is what the Mom-mode schedule renders", /if\(kid==="mom" && unlocked\)\{\n\s*h\+=momAgendaHtml\(tasks\);/.test(src));
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

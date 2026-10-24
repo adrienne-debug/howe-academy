@@ -25,7 +25,7 @@ function mkEnv(mom) {
     createElement: () => { const el = { style: {}, dataset: {}, innerHTML: "", remove() { delete els[el.id]; delete els["ws-panel-in"]; } }; return el; },
   };
   const ref = p => ({ set: v => writes.push(["set", p, v]), update: v => writes.push(["update", p, v]) });
-  const ctx = { HA_IS_HOWE: mom.howe !== false, document, db: { ref }, _dryRun: () => false, kitPinGate: f => { pinAsks.push(f); },  momHere: () => mom.v, renderAll: () => renders.push(1), confirm: () => mom.confirm !== false, setTimeout: f => f(), console };
+  const ctx = { HA_IS_HOWE: mom.howe !== false, document, db: { ref }, _dryRun: () => false, kitPinGate: f => { pinAsks.push(f); },  momHere: () => mom.v, renderAll: () => renders.push(1), renderAllSoon: () => renders.push(1), confirm: () => mom.confirm !== false, setTimeout: f => f(), console };
   vm.createContext(ctx);
   new vm.Script(escLine + block + "\nthis.wsDataGet=()=>wsData;this.msgDraftGet=()=>msgDraft;").runInContext(ctx);
   return { ctx, els, writes, renders, pinAsks };
@@ -161,7 +161,7 @@ const WS = () => ({
   process.exit(fail ? 1 : 0);
 })();
 // 7. wiring in the real file
-ok("listener wired beside config/rules", /db\.ref\("worksheets"\)\.on\("value",s=>\{ wsOnValue\(s\.val\(\)\); \}\);[^\n]*\n\s*db\.ref\("messages"\)\.on\("value",s=>\{ msgOnValue\(s\.val\(\)\); \}\);[^\n]*\n\s*db\.ref\("config\/rules"\)/.test(src));
+ok("listener wired beside config/rules", /db\.ref\("worksheets"\)\.on\("value",s=>\{ wsOnValue\(s\.val\(\)\); \}\);[^\n]*\n\s*db\.ref\("messages"\)\.on\("value",s=>\{ msgOnValue\(s\.val\(\),true\); \}\);[^\n]*\n\s*db\.ref\("config\/rules"\)/.test(src));
 ok("card wired into Mom HQ, no auto-pop", /function renderMomHQ\(el,ah\)\{[\s\S]{0,400}h\+=wsBannerHTML\(\);/.test(src) && !/wsMaybePop/.test(src));
 ok("task wired into Mom's Day under her own day", /h\+=momDayStripHTML\(iso,today\); \}catch\(e\)\{\}\n  try\{ h\+=wsTaskHTML\(\); \}catch\(e\)\{\}/.test(src));
 

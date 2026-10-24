@@ -158,7 +158,7 @@ console.log("🧠 the review engine's morning run (her worry 2026-10-24: the LG)
 
 console.log("the renderAll counter is never in the way");
 { const src=html.match(/function renderAll\(\)\{\n[\s\S]*?\n\}\n(?=function _renderAllInner)/)[0];
-  ok("renderAll counts around its own body, in place",/^function renderAll\(\)\{\n  const _cdR0=\(typeof cdRenderStart==="function"\)\?cdRenderStart\(\):-1;[^\n]*\n  try\{\n  _preserveUI\(_renderAllInner\);/.test(src)&&/\n  \} finally \{ try\{ if\(typeof cdRenderEnd==="function"\) cdRenderEnd\(_cdR0\); \}catch\(e\)\{\} \}[^\n]*\n\}\n$/.test(src));
+  ok("renderAll counts around its own body, in place",/^function renderAll\(\)\{\n(?:  try\{ if\(typeof renderAllSoonDrop==="function"\) renderAllSoonDrop\(\); \}catch\(e\)\{\}[^\n]*\n)?  const _cdR0=\(typeof cdRenderStart==="function"\)\?cdRenderStart\(\):-1;[^\n]*\n  try\{\n  _preserveUI\(_renderAllInner\);/.test(src)&&/\n  \} finally \{ try\{ if\(typeof cdRenderEnd==="function"\) cdRenderEnd\(_cdR0\); \}catch\(e\)\{\} \}[^\n]*\n\}\n$/.test(src));
   const run=(start,end,pre)=>new Function("cdRenderStart","cdRenderEnd","_preserveUI","_renderAllInner",src+"\nreturn renderAll;")(start,end,pre,()=>{});
   let ended=0, ran=0;
   run(()=>1,()=>{ ended++; },()=>{ ran++; })(); ok("normal repaint: body runs once, counted once",ran===1&&ended===1);
