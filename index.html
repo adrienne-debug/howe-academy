@@ -4246,10 +4246,12 @@ function initFb() {
       try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
       try{ if(typeof llMemoReset==="function") llMemoReset(); }catch(e){}   // ⚡ LL_MEMO: a load moved — lay again
       try{ if(typeof llHealLog==="function") llHealLog(); }catch(e){}   // 🔗 LL_LINK: a line load the log lost gets its record back
+      try{ if(typeof luPaint==="function") luPaint(); }catch(e){}   // ↩︎ LAUNDRYUNDO: the undo bar goes if its load moved on another device
       if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
       else if(tab==="schedule"&&kid==="mom") renderAll();   // MOMSCHED_LAUNDRY
     });
     db.ref("laundryLine").on("value",s=>{ if(typeof laundryLineOnValue==="function") laundryLineOnValue(s.val()); if(tab==="moms-plan"&&mpSubView==="house"){ const el=document.getElementById("content"); if(el) renderMomsPlan(el); } });   // 🧺 LAUNDRYLINE
+    db.ref("laundryAway").on("value",s=>{ if(typeof luAwayOnValue==="function") luAwayOnValue(s.val()); if(tab==="moms-plan"){ const el=document.getElementById("content"); if(el) renderMomsPlan(el); } });   // ↩︎ LAUNDRYUNDO: 🧺 Put away today, every device
     db.ref("household").on("value",s=>{ householdOnValue(s.val()||{}); if(tab==="moms-plan"&&mpSubView==="house"){ const el=document.getElementById("content"); if(el) renderMomsPlan(el); } });   // 🏡 HOUSEHOLD
     db.ref("momChores").on("value",s=>{
       hhLive.momChores=s.val()||{}; const v=hhTakeoverOn()?hhDerivePerson("mom"):hhLive.momChores;   // 🏡 HOUSEHOLD_TAKEOVER
@@ -14098,6 +14100,7 @@ function llMarkDone(item,by){ const go=function(){ const it=llAll()[item]; if(!i
     const x=laundryLine.extras&&laundryLine.extras[item];
     if(x){ e.prevLast=x.last||null; x.last=t; u["extras/"+item+"/last"]=t; if(x.est){ e.prevEst=true; delete x.est; u["extras/"+item+"/est"]=null; } if(x.next){ e.prevNext=x.next; delete x.next; u["extras/"+item+"/next"]=null; } }
     llEnsureItems(u); llStore(); llWrite(u); try{ llSyncKidRows(); }catch(z){}
+    try{ if(typeof luNoteDone==="function") luNoteDone(item); }catch(z){}   // ↩︎ LAUNDRYUNDO: the undo bar
     if(typeof mwToast==="function") mwToast('✓ '+llLabelFull(item)+' — done today'); llRerender(); };
   if((typeof momHere==="function"&&momHere())||by==="dad"||(typeof _kioskD==="function"&&_kioskD())) go(); else if(typeof kitPinGate==="function") kitPinGate(go,"Marking laundry done is Mom's or Dad's."); }
 function llUndone(item){ const go=function(){ const t=llToday(), g=laundryLine.log&&laundryLine.log[t], e=g&&g[item]; if(!e||!e.done||e.load) return; const u={};
@@ -14111,6 +14114,7 @@ function llIsDoneOnly(item,iso){ const e=laundryLine&&laundryLine.log&&laundryLi
 // always) with line:<item> + lineDay on it, and the log entry that moves the line. by = "dad" from his Day.
 function llStart(item,by){ const it=llAll()[item]; if(!it) return; const t=llToday(), now=Date.now(), lid="l"+now.toString(36)+Math.random().toString(36).slice(2,5);   // a random tail: two quick taps never share an id
   if(llLog(t).indexOf(item)>=0) return;   // already started today
+  const _lu=(typeof luSnap==="function")?luSnap():null;   // ↩︎ LAUNDRYUNDO: what it was, for the undo bar
   const kidBy=llPeople().indexOf(by)>=2?by:"";   // 🧺 step 6: a kid's own tap
   const riders=(typeof llRiders==="function")?llRiders(item,t):[], _bl=llBlanketsDueOn(item,t).length+[].concat.apply([],riders.map(function(r){ return llBlanketsDueOn(r,t); })).length;   // 🔗 · 🛏 Wash with: one load, one slot
   laundryData[lid]={label:(riders.length||_bl)?llLabelFull(item,t):it.label,stage:"washer",ts:now,line:item,lineDay:t}; if(by==="dad"||kidBy) laundryData[lid].by=by;
@@ -14130,6 +14134,7 @@ function llStart(item,by){ const it=llAll()[item]; if(!it) return; const t=llTod
   if(typeof _lbWrite==="function"&&_lbWrite()){ db.ref('laundry/'+lid).set(laundryData[lid]); llWrite(u); }
   try{ llSyncKidRows(); }catch(e){}   // 🧺 the kid's row ticks itself
   try{ [item].concat(riders).some(function(h){ if(llBedAskItems(h).length){ llBedAskOpen(h); return true; } return false; }); }catch(e){}   // 🛏 BED_ASK
+  try{ if(_lu) luNote(_lu); }catch(e){}   // ↩︎ LAUNDRYUNDO: the undo bar
   if(typeof mwToast==="function") mwToast('🫧 '+laundryData[lid].label+' — in the washer'); llRerender(); }
 // ✕ on a line load still in the washer (a mistake) takes its log entry back, so the line puts it back where it was.
 function llUnlog(lid,l){ if(l&&l.wet&&l.jumpDay&&(l.stage==="bin"||l.stage==="prewash")){ const j=laundryLine.jump&&laundryLine.jump[l.jumpDay]; if(j&&j[lid]){ delete j[lid]; llStore(); const u={}; u["jump/"+l.jumpDay+"/"+lid]=null; llWrite(u); } return; }   // 💦 a jump-in ✕'d before it was washed gives its slot back
@@ -14207,6 +14212,7 @@ function llDadCardHTML(by,bare){ if(!laundryLine||!Object.keys(laundryLine).leng
 function llMyDayLaundryHTML(who){ let h=""; who=who==="dad"?"dad":"mom";
   try{ if(typeof mdCardLaundry==="function") h+=mdCardLaundry(true,true); }catch(e){}
   try{ if(typeof laundryLine!=="undefined"&&laundryLine&&Object.keys(laundryLine).length) h+=llDadCardHTML(who,true); }catch(e){}
+  try{ if(typeof luAwayRowsHTML==="function") h+=luAwayRowsHTML(true); }catch(e){}   // ↩︎ LAUNDRYUNDO: 🧺 Put away today
   return h; }
 // LL_MYDAY_END
 // 🧒 the kid's derived "🧺 Your laundry" card (their Day page, after the 🏡 House card). Only the loads this kid runs that day.
@@ -14470,10 +14476,14 @@ function llUnstart(lid){ const LD=(typeof laundryData!=="undefined"&&laundryData
 function llNoteAway(lid,l){ if(typeof laundrySplitNoteAway==="function"&&laundrySplitNoteAway(lid,l)) return true;   /* LAUNDRY_SPLIT: the hung half's own note */ if(!l||!l.line||!l.lineDay||!laundryLine||!Object.keys(laundryLine).length) return false; const g=laundryLine.log&&laundryLine.log[l.lineDay], e=g&&g[l.line]; if(!e||e.load!==lid) return false;
   const a={at:Date.now(),load:JSON.parse(JSON.stringify(l))}; e.away=a; llStore(); const u={}; u["log/"+l.lineDay+"/"+l.line+"/away"]=a; llWrite(u); return true; }
 function llAwayStageWords(l){ const cm=(l&&typeof lcMeta==="function"&&typeof lcHas==="function"&&lcHas(l))?lcMeta(l):null; if(cm) return cm[0]+" "+cm[1]; return l.stage==="dryer"?"🌀 in the dryer":l.stage==="basket"?"🧺 in the basket":l.stage==="fold"?"🧺 in the fold pile":"🫧 in the washer"; }
-function llUnputawayLine(id){ if(typeof laundrySplitUnputaway==="function"&&laundrySplitUnputaway(id)) return true;   /* LAUNDRY_SPLIT: both halves back */ const t=llToday(), g=laundryLine&&laundryLine.log&&laundryLine.log[t], e=g&&g[id], LD=(typeof laundryData!=="undefined"&&laundryData)||{};
+// ↩︎ LAUNDRYUNDO (3): the day whose log holds this item's away note — today's, else the latest earlier day's (a load started on an earlier
+// day keeps its note under its own lineDay: Ellis's Bed, started 2026-10-20, put away 10-23, could never come back).
+function llAwayDay(id){ const t=llToday(), G=(laundryLine&&laundryLine.log)||{}, LD=(typeof laundryData!=="undefined"&&laundryData)||{}, has=function(d){ const e=G[d]&&G[d][id]; return !!(e&&e.load&&!LD[e.load]&&e.away&&e.away.load); };
+  return has(t)?t:(Object.keys(G).filter(function(d){ return d<t&&has(d); }).sort().pop()||t); }
+function llUnputawayLine(id){ if(typeof laundrySplitUnputaway==="function"&&laundrySplitUnputaway(id)) return true;   /* LAUNDRY_SPLIT: both halves back */ const t=llAwayDay(id), g=laundryLine&&laundryLine.log&&laundryLine.log[t], e=g&&g[id], LD=(typeof laundryData!=="undefined"&&laundryData)||{};   /* ↩︎ LAUNDRYUNDO (3): its own lineDay */
   if(!e||!e.load||LD[e.load]||!e.away||!e.away.load) return false;
   const rec=Object.assign({},e.away.load,{ts:Date.now(),line:id,lineDay:t}); LD[e.load]=rec; try{ HA_LS.setItem('ha_laundry',JSON.stringify(LD)); }catch(x){} if(typeof _lbWrite==="function"&&_lbWrite()) db.ref('laundry/'+e.load).set(rec);
-  delete e.away; llStore(); const u={}; u["log/"+t+"/"+id+"/away"]=null; llWrite(u);
+  delete e.away; llStore(); const u={}; u["log/"+t+"/"+id+"/away"]=null; llWrite(u); try{ if(typeof luAwayClear==="function") luAwayClear(e.load); }catch(x){}   /* ↩︎ LAUNDRYUNDO: off the list */
   try{ llSyncKidRows(); }catch(x){} if(typeof mwToast==="function") mwToast('🧺 '+(rec.label||'Laundry')+' — back, '+llAwayStageWords(rec)); return true; }
 // FOLD_BACK_END
 // ✓ a Start row = 🫧 Start (Dad's is his); again while it's still on its first step = back in line. ✓ a Fold row = put away; un-✓ = back (FOLD_BACK).
@@ -14481,11 +14491,12 @@ function llParentTick(id,kind,who){ const t=llToday(), e=llDayLog(t)[id], LD=(ty
   if(kind==="start"){ if(!e) llStart(id,who==="dad"?"dad":undefined); else if(e.load&&LD[e.load]) llUnstart(e.load); llRerender(); return; }
   if(kind==="fold"&&e&&e.load){ if(LD[e.load]) llPutAway(e.load); else if(typeof laundrySplitHung==="function"&&laundrySplitHung(e.load)) llPutAway(laundrySplitHalfId(e.load)); else llUnputawayLine(id); } llRerender(); }   // LAUNDRY_SPLIT: the hung half next
 // Put a line load away (the kids' Fold row and Mom's / Dad's): ends its block, remembers it for ↶, removes laundry/<id>.
-function llPutAway(lid){ const LD=(typeof laundryData!=="undefined"&&laundryData)||{}, l=LD[lid]; if(!l) return;
+function llPutAway(lid){ const LD=(typeof laundryData!=="undefined"&&laundryData)||{}, l=LD[lid]; if(!l) return; const _lu=(typeof luSnap==="function")?luSnap():null;   // ↩︎ LAUNDRYUNDO
   try{ if(typeof laundryBlockDone==="function") laundryBlockDone(lid,l.stage); }catch(x){} try{ if(typeof laundryAwayRemember==="function") laundryAwayRemember(lid,l); }catch(x){}
   delete LD[lid]; try{ HA_LS.setItem('ha_laundry',JSON.stringify(LD)); }catch(x){} if(typeof _lbWrite==="function"&&_lbWrite()) db.ref('laundry/'+lid).remove();
   try{ llNoteAway(lid,l); }catch(x){}   /* FOLD_BACK: the note the un-tick reads */
   try{ llSyncKidRows(); }catch(x){}   // 🧺 the kid's Fold row ticks itself
+  try{ if(_lu) luNote(_lu); }catch(x){}   // ↩︎ LAUNDRYUNDO: the undo bar
   if(typeof mwToast==="function") mwToast('🧺 '+(l.label||'Laundry')+' put away!'); }
 // 🧺 LINE_CHORES sync (her rule 2026-10-18: "they will need to be checked off automatically if they are checked off in any other areas"). A
 // kid's line rows read their tick from slState like every other row, so whenever the line moves (a load in — from any page — back in
@@ -14506,11 +14517,13 @@ function llSyncKidRows(){ if(typeof slState==="undefined"||typeof activeWk!=="fu
   if(n&&before&&typeof slSaveChanged==="function") slSaveChanged(wk,before);
   return n; }
 // ✓ / un-✓ on a line row (laundryKidHook hands it over). Today only — back-filling another day starts nothing.
-function llKidRowHook(kid,st,now){ if(typeof _todayDay==="string"&&typeof day!=="undefined"&&day!==_todayDay) return;
+function llKidRowHook(kid,st,now){ if(typeof _luQ!=="undefined") _luQ++; try{   // ↩︎ LAUNDRYUNDO: a kid's own row tick makes no undo bar — un-ticking the row is its undo
+  if(typeof _todayDay==="string"&&typeof day!=="undefined"&&day!==_todayDay) return;
   const t=llToday(), id=st.line; if(!llKnown(id)) return; const e=llDayLog(t)[id], LD=(typeof laundryData!=="undefined"&&laundryData)||{};
   if(st.laundry===true){ if(now){ if(!e) llStart(id,kid); } else if(e&&e.load&&LD[e.load]) llUnstart(e.load); return; }
   if(st.laundry==="lineFold"&&now){ const lid=(e&&e.load&&LD[e.load])?e.load:Object.keys(LD).find(function(k){ return LD[k]&&LD[k].line===id&&LD[k].lineDay===t; }); if(lid) llPutAway(lid); }
-  else if(st.laundry==="lineFold"&&!now) llUnputawayLine(id); }   /* FOLD_BACK: un-✓ brings the load back to the machine it was in */
+  else if(st.laundry==="lineFold"&&!now) llUnputawayLine(id);
+  } finally { if(typeof _luQ!=="undefined") _luQ--; } }   /* FOLD_BACK: un-✓ brings the load back to the machine it was in */
 // ▶ up next = the front of the live line: the first load laid from now on that hasn't gone in (a load moved at 8 PM is the front).
 function llFront(){ const R=llProjectNow(21); for(let i=0;i<R.length;i++){ for(let k=0;k<R[i].loads.length;k++){ if(R[i].started.indexOf(R[i].loads[k])<0) return R[i].loads[k]; } } return llNext(); }
 // 📅 The laundry schedule as its own card (her ask 2026-10-18: the laundry tab reads machines now → the schedule → the rest).
@@ -14576,7 +14589,7 @@ function llWeekGridHTML(today,closeToday,mom,by){
         if(wtd) return load(id,"moved",sub)+tdAfter(id);
         if(mv&&isT&&mom) return load(id,"moved",sub+(llLateStartOK(r,id)?llLateStartBtn(id,by):'')+'<button onclick="llMarkDone(\''+id+'\''+(by?',\''+by+'\'':'')+')" title="It was done — mark it done today" style="margin-top:2px;padding:1px 3px;border-radius:6px;border:1px solid #16a34a;background:#f0fdf4;color:#15803d;font-size:9px;font-weight:700;cursor:pointer;white-space:nowrap;max-width:100%">✓Done</button>')+tdAfter(id);   // ✓ DONE after 8 PM · 🫧 LL_LATESTART
         const _dn=(isT&&!done&&mom)?'<button onclick="llMarkDone(\''+id+'\''+(by?',\''+by+'\'':'')+')" title="Washed and put away without being tracked — mark it done today" style="margin-top:2px;padding:1px 3px;border-radius:6px;border:1px solid #16a34a;background:#f0fdf4;color:#15803d;font-size:9px;font-weight:700;cursor:pointer;white-space:nowrap;max-width:100%">✓Done</button>':'';   // ✓ DONE
-        const _un=(isT&&done&&mom&&llIsDoneOnly(id,iso))?'<button onclick="llUndone(\''+id+'\')" title="Not done after all" style="margin-top:2px;padding:1px 4px;border-radius:6px;border:1px solid #cbd5e1;background:#fff;color:#64748b;font-size:9px;font-weight:700;cursor:pointer">↶</button>':'';
+        const _un=(isT&&done&&mom&&llIsDoneOnly(id,iso))?'<button onclick="llUndone(\''+id+'\')" title="Not done after all" style="margin-top:2px;padding:1px 4px;border-radius:6px;border:1px solid #cbd5e1;background:#fff;color:#64748b;font-size:9px;font-weight:700;cursor:pointer">↩︎</button>':'';
         return load(id,done?"done":mv?"moved":(r.bumped.indexOf(id)>=0?"bump":""),sub+((isT&&!done&&!mv&&mom)?'<button onclick="llStart(\''+id+'\''+(by?',\''+by+'\'':'')+')" style="margin-top:2px;padding:1px 3px;border-radius:6px;border:1px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-size:9px;font-weight:700;cursor:pointer;white-space:nowrap;max-width:100%">🫧Start</button>':'')+_dn+_un)+tdAfter(id); }).join('');
     else if(r&&r.brk) h+='<div style="text-align:center;font-size:10px;color:#6b6560;padding-top:4px;line-height:1.2">⏸<br>'+esc(r.brk)+'</div>';
     else if(!tds.length) h+='<div style="text-align:center;font-size:10px;color:#9ca3af;padding-top:4px">no laundry</div>';
@@ -14597,6 +14610,7 @@ function hhLaundryHTML(){
   try{ if(typeof llWeekCardHTML==="function"&&typeof laundryLine!=="undefined") h+=llWeekCardHTML(); }catch(e){}   // 📅 the schedule
   try{ h+=llCardHTML(true); }catch(e){}   // 🧺 LAUNDRYLINE: order, caps, every few weeks, one-time
   try{ if(typeof qlCardHTML==="function") h+=qlCardHTML(); }catch(e){}   // ⚡ QUICKLOADS: her quick buttons, edited here
+  try{ if(typeof luAwayRowsHTML==="function") h+=luAwayRowsHTML(); }catch(e){}   // ↩︎ LAUNDRYUNDO: 🧺 Put away today, at the bottom
   return h;
 }
 // HH_LAUNDRY_END
@@ -15026,7 +15040,8 @@ function laundryAdd(by){   // 👨 DADFIX: by="dad" from his Day → the load is
 }
 function laundryAdvance(id,pick){   // BASKET: pick = "fold" | "basket", the answer to the dryer's question; nothing passed = ask first
   const l=laundryData[id]; if(!l) return;
-  if(typeof laundrySplitAsk==="function"&&laundrySplitAsk(id,l,pick)) return;   // LAUNDRY_SPLIT: the washer's "where is it going?" (dryer · wet basket · hang · split), the wet basket's move on, the load's alert — nothing moves until answered
+  const _lu=(typeof luSnap==="function")?luSnap():null;   // ↩︎ LAUNDRYUNDO: what it was, for the undo bar
+  if(typeof laundrySplitAsk==="function"&&laundrySplitAsk(id,l,pick)){ try{ if(_lu) luNote(_lu); }catch(e){} return; }   // LAUNDRY_SPLIT: the washer's "where is it going?" (dryer · wet basket · hang · split), the wet basket's move on, the load's alert — nothing moves until answered
   if(typeof laundryBasketLeavingDryer==="function"&&laundryBasketLeavingDryer(l)&&pick!=="fold"&&pick!=="basket"){ laundryBasketAsk(id); return; }   // BASKET: the question — nothing moves yet
   try{ if(typeof laundryBlockDone==="function") laundryBlockDone(id,l.stage); }catch(e){}   // MOMSCHED_LAUNDRY: ends that stage's block
   const i=LAUNDRY_STAGES.indexOf(l.stage);
@@ -15050,6 +15065,7 @@ function laundryAdvance(id,pick){   // BASKET: pick = "fold" | "basket", the ans
     if(_lbWrite()) db.ref('laundry/'+id).set(l);
   }
   try{HA_LS.setItem('ha_laundry',JSON.stringify(laundryData));}catch(e){}
+  try{ if(_lu) luNote(_lu); }catch(e){}   // ↩︎ LAUNDRYUNDO: the undo bar for this step
   if(typeof tab!=='undefined'&&tab==="schedule"&&typeof renderAll==='function'){ renderAll(); return; }   // MOMSCHED_LAUNDRY: tapped on the schedule
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
@@ -15740,7 +15756,7 @@ function cuUnpay(kid,bid,label){
   if(!_cuMom) return false;
   const a=(typeof bank!=="undefined"&&bank[kid]&&bank[kid].adjustments&&bank[kid].adjustments[bid])||null;
   if(!a||a.held||!(a.amount>0)) return false;   // held = never paid → the old removal is the reversal
-  bankDirect(kid,-a.amount,"↶ Mom undid: "+(label||"chore"));
+  bankDirect(kid,-a.amount,"↩︎ Mom undid: "+(label||"chore"));
   return true;
 }
 function _cuDone(slot,kid,d,i){ return slot==="morning"?!!(typeof mStepDoneOn==="function"&&mStepDoneOn(kid,d,i)):!!rtDoneOn(slot,kid,d,i); }
@@ -15757,7 +15773,7 @@ function choreRedo(slot,kid,d,i){
 }
 function choreFlip(slot,kid,d,i){ return _cuDone(slot,kid,d,i)?choreUndo(slot,kid,d,i):choreRedo(slot,kid,d,i); }
 function _cuBtn(on,txt,col,title){ return '<button onclick="event.stopPropagation();'+on+'"'+(title?' title="'+title+'"':'')+' style="flex-shrink:0;padding:2px 8px;border-radius:7px;border:1.5px solid '+col+';background:#fff;color:'+col+';font-size:10.5px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">'+txt+'</button>'; }
-function choreUndoBtnHTML(slot,kid,d,i){ return _cuMomOk()?_cuBtn("choreUndo('"+slot+"','"+kid+"','"+d+"',"+i+")","↶ undo","#b45309","Not really done — back to not done, stars back off"):""; }
+function choreUndoBtnHTML(slot,kid,d,i){ return _cuMomOk()?_cuBtn("choreUndo('"+slot+"','"+kid+"','"+d+"',"+i+")","↩︎ undo","#b45309","Not really done — back to not done, stars back off"):""; }
 // ── laundry: back a stage ──
 function laundryBackStage(l){
   if(!l||!l.stage||l.stage==="bin") return null;
@@ -15791,17 +15807,17 @@ function laundryBack(id){
   if(_lbWrite()) db.ref('laundry/'+id).update(_cb?{stage:l.stage,step:(_cb.step==null?null:_cb.step),ts:l.ts}:(from==="basket"&&l.step!=null)?{stage:l.stage,ts:l.ts,step:l.step}:{stage:l.stage,ts:l.ts});
   _cuRe(); return {from:from,to:prev};
 }
-function laundryBackBtnHTML(id,l){ const p=laundryBackStage(l); return (p&&_cuMomOk())?_cuBtn("laundryBack('"+_lbQ(id)+"')","↶","#64748b","Back to "+_cuStageName(p)):""; }
+function laundryBackBtnHTML(id,l){ const p=laundryBackStage(l); return (p&&_cuMomOk())?_cuBtn("laundryBack('"+_lbQ(id)+"')","↩︎","#64748b","Back to "+_cuStageName(p)):""; }
 // Put away today, remembered on this device only.
 function _cuAwayGet(){ try{ const o=JSON.parse(HA_LS.getItem('ha_laundry_away')||"null"); return (o&&o.iso===mwTodayIso()&&o.v)?o.v:{}; }catch(e){ return {}; } }
 function _cuAwayPut(v){ try{ HA_LS.setItem('ha_laundry_away',JSON.stringify({iso:mwTodayIso(),v:v})); }catch(e){} }
-function laundryAwayRemember(id,l){ if(!l) return; const v=_cuAwayGet(); v[id]={load:JSON.parse(JSON.stringify(l)),at:Date.now()}; _cuAwayPut(v); }
+function laundryAwayRemember(id,l){ if(!l) return; const v=_cuAwayGet(); v[id]={load:JSON.parse(JSON.stringify(l)),at:Date.now()}; _cuAwayPut(v); try{ if(typeof luAwayWrite==="function") luAwayWrite(id,l); }catch(e){} }   // ↩︎ LAUNDRYUNDO: and on every device (laundryAway/<iso>/<id>)
 function laundryAwayList(){ const v=_cuAwayGet(); return Object.keys(v).filter(function(id){ return !laundryData[id]&&v[id]&&v[id].load; }).map(function(id){ return {id:id,load:v[id].load,at:v[id].at||0}; }).sort(function(a,b){ return b.at-a.at; }); }
 function laundryUnputaway(id){
   if(!_cuMomOk()) return null;
   const v=_cuAwayGet(), r=v[id]; if(!r||!r.load||laundryData[id]) return null;
   _cuDropBlock(id,"fold");   // LAUNDRY_FOLD's ✓ Put away row goes; the pile asks again
-  const rec=Object.assign({},r.load,{stage:"fold",ts:Date.now()}); laundryData[id]=rec; delete v[id]; _cuAwayPut(v);
+  const rec=Object.assign({},r.load,{stage:"fold",ts:Date.now()}); laundryData[id]=rec; delete v[id]; _cuAwayPut(v); try{ if(typeof luAwayClear==="function") luAwayClear(id); }catch(e){}   // ↩︎ LAUNDRYUNDO: off every device's list too
   try{ HA_LS.setItem('ha_laundry',JSON.stringify(laundryData)); }catch(e){}
   if(_lbWrite()) db.ref('laundry/'+id).set(rec);
   _cuRe(); return rec;
@@ -15829,7 +15845,7 @@ function mdCardChoreLedger(){
   if(!kids.length&&!lids.length&&!away.length) return "";
   let nDone=0, nOpen=0; kids.forEach(function(x){ x.rows.forEach(function(r){ if(r.done) nDone++; else nOpen++; }); });
   let h='<div style="margin:10px 12px;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
-  h+='<div onclick="cuLedgerToggle()" style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#92400e;color:#fff;font-weight:800;font-size:13px;cursor:pointer"><span>↶</span> Today’s ledger · ✓ '+nDone+' · ☐ '+nOpen+(lids.length||away.length?' · 🧺 '+(lids.length+away.length):'')+'<span style="margin-left:auto;font-size:12px;opacity:.8">'+(cuLedgerOpen?'▲':'▼')+'</span></div>';
+  h+='<div onclick="cuLedgerToggle()" style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#92400e;color:#fff;font-weight:800;font-size:13px;cursor:pointer"><span>↩︎</span> Today’s ledger · ✓ '+nDone+' · ☐ '+nOpen+(lids.length||away.length?' · 🧺 '+(lids.length+away.length):'')+'<span style="margin-left:auto;font-size:12px;opacity:.8">'+(cuLedgerOpen?'▲':'▼')+'</span></div>';
   if(!cuLedgerOpen) return h+'</div>';
   h+='<div style="padding:6px 14px 10px">';
   kids.forEach(function(x){
@@ -15840,23 +15856,123 @@ function mdCardChoreLedger(){
       const q="'"+r.slot+"','"+x.kid+"','"+d+"',"+r.i;
       h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f3f4f6;font-size:12px;font-weight:600">'
         +'<span>'+(r.done?'✅':'☐')+'</span><span style="flex:1;min-width:0">'+(r.emoji?r.emoji+' ':'')+esc(r.label)+(r.pts>0?' <span style="color:#b45309;font-weight:800">'+r.pts+'⭐</span>':'')
-        +(r.ts?' <span style="font-size:10.5px;color:var(--muted)">'+esc(r.ts)+'</span>':'')+(r.undone?' <span style="font-size:10.5px;color:#b45309;font-weight:800">↶ undone'+(r.undone>1?' ×'+r.undone:'')+'</span>':'')+'</span>'
-        +(r.done?_cuBtn("choreUndo("+q+")","↶ Undo","#b45309","Not really done — back to not done, stars back off"):_cuBtn("choreRedo("+q+")","✓ Done","#16a34a","It was done — check it off, stars banked"))+'</div>';
+        +(r.ts?' <span style="font-size:10.5px;color:var(--muted)">'+esc(r.ts)+'</span>':'')+(r.undone?' <span style="font-size:10.5px;color:#b45309;font-weight:800">↩︎ undone'+(r.undone>1?' ×'+r.undone:'')+'</span>':'')+'</span>'
+        +(r.done?_cuBtn("choreUndo("+q+")","↩︎ Undo","#b45309","Not really done — back to not done, stars back off"):_cuBtn("choreRedo("+q+")","✓ Done","#16a34a","It was done — check it off, stars banked"))+'</div>';
     });
   });
   if(lids.length||away.length){
     h+='<div style="font-size:11px;font-weight:800;color:#1d4ed8;margin:10px 0 2px">🧺 Laundry</div>';
     lids.forEach(function(id){ const l=laundryData[id], p=laundryBackStage(l);
       h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f3f4f6;font-size:12px;font-weight:600;flex-wrap:wrap"><span style="flex:1;min-width:0">'+esc(l.label||'Load')+' <span style="font-size:10.5px;color:#1d4ed8;font-weight:800">'+esc(_cuStageName(l.stage))+'</span></span>'
-        +(p?_cuBtn("laundryBack('"+_lbQ(id)+"')","↶ "+esc(_cuStageName(p)),"#64748b","Move it back a stage"):'')+_cuBtn("laundryAdvance('"+_lbQ(id)+"')",laundryAdvanceLabel(l.stage,l),"#2563eb","")+'</div>'; });
+        +(p?_cuBtn("laundryBack('"+_lbQ(id)+"')","↩︎ "+esc(_cuStageName(p)),"#64748b","Move it back a stage"):'')+_cuBtn("laundryAdvance('"+_lbQ(id)+"')",laundryAdvanceLabel(l.stage,l),"#2563eb","")+'</div>'; });
     away.forEach(function(a){
       h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f3f4f6;font-size:12px;font-weight:600;color:#64748b"><span style="flex:1;min-width:0">✓ Put away '+esc(laundrySince(a.at))+': '+esc(a.load.label||'Load')+'</span>'
-        +_cuBtn("laundryUnputaway('"+_lbQ(a.id)+"')","↶ "+esc(_cuStageName("fold")),"#64748b","Not put away — back to folded")+'</div>'; });
+        +_cuBtn("laundryUnputaway('"+_lbQ(a.id)+"')","↩︎ "+esc(_cuStageName("fold")),"#64748b","Not put away — back to folded")+'</div>'; });
   }
-  h+='<div style="font-size:10.5px;color:var(--muted);margin-top:8px">↶ Undo takes the stars back off (the Star Bank shows “↶ Mom undid”); ✓ Done banks them. A load moved back shows as finished in that machine, and its schedule question comes back.</div>';
+  h+='<div style="font-size:10.5px;color:var(--muted);margin-top:8px">↩︎ Undo takes the stars back off (the Star Bank shows “↩︎ Mom undid”); ✓ Done banks them. A load moved back shows as finished in that machine, and its schedule question comes back.</div>';
   return h+'</div></div>';
 }
 // CHOREUNDO_END
+// LAUNDRYUNDO_START — ↩︎ Laundry undo (her report 2026-10-23, ~11:30 PM: "I accidentally clicked … the put it away button and it fell off the
+// laundry, so I can't pull it back. Maybe … an undo button at the bottom … And then if something else gets hit, then you can assume that it
+// was meant to happen." Her yes 2026-10-24: an undo bar right after a laundry tap that stays until the next one; a "Put away today" list
+// with undo on every device until the next morning; "↩︎ Undo" for "↶" app-wide — "the undo button looks like a shower head").
+//   (1) The bar: a laundry step that changes a load on THIS device — 🫧 Start, → Dryer / basket / hang, Folded ✓, ✓ Put away (any page's
+//       button, Mom's / Dad's checklist rows), ✓ Done — leaves one slim bar at the bottom of the screen: "🧺 Towels — put away · ↩︎ Undo".
+//       It stays until the next laundry step on this device replaces it, or the page reloads (it lives in memory only); it goes by itself
+//       if that load changes on another device. ↩︎ Undo reverses exactly that one step: each load the step touched goes back to the record
+//       it was (a put-away load comes back as it was; a moved load to the stage, step and clock it had; a started load back in line through
+//       llUnstart; a split's hung half removed), today's Mom blocks for both stages drop the way ↶ laundryBack drops them (the "block out
+//       time?" question comes back), and ✓ Done goes back through llUndone. It is the tapper's own: a kid undoes their own tap on their own
+//       device without Mom mode. A kid's checklist-row tick makes no bar — un-ticking that row is its undo (FOLD_BACK) and keeps the row and
+//       its stars straight.
+//   (2) 🧺 Put away today (the bottom of Household ▸ Laundry, and 🏡 My day's laundry; Mom, or Dad): every load put away since local midnight
+//       on ANY device, each with "↩︎ Undo — back to folded"; last night's stay listed until 8 AM, so an 11:30 PM slip is fixable at breakfast.
+//       Every put away (laundryAwayRemember — the button, a kid's Fold row, a chore move) also writes laundryAway/<local date>/<load id> =
+//       {load:<the record as it was>, at, by} and drops days older than yesterday. A path of its own, not FOLD_BACK's note: a load off the
+//       line has no log entry to hang a note on. This device's old ha_laundry_away list still shows too.
+//   (3) llUnputawayLine finds the away note under the load's own lineDay (a load started on an earlier day), not only today's log.
+// Writes, all targeted, dry-run inert (_lbWrite / llWrite): laundry/<id> set / remove · laundryAway multi-path update (<iso>/<id> set or null,
+// <old iso> null) · laundryLine log/<day>/<item>/away (awayH for a hung half) null · momBlocks/<iso>/<load>_<stage> remove. Reads: laundryAway.
+let luLast=null, laundryAway={}, _luQ=0;   // _luQ > 0 while a kid's own checklist row moves the line (no bar for that)
+const LU_MORNING_H=8;   // last night's put-aways stay listed until 8 AM
+const LU_WORDS={washer:["🫧","in the washer"],prewash:["🫧","in the washer"],dryer:["🌀","in the dryer"],fold:["🧺","folded"],basket:["🧺","in the basket"],wetbasket:["🧺","waiting for the dryer"],airdry:["🌬","hanging to dry"],bin:["🪣","back in the wash-today bin"]};
+function luParentOk(){ return (typeof _cuMomOk==="function"&&_cuMomOk())||(typeof _kioskD==="function"&&_kioskD()); }
+function luWho(){ if(typeof momHere==="function"&&momHere()) return "mom"; if(typeof _kioskD==="function"&&_kioskD()) return "dad"; if(typeof kcKid!=="undefined"&&kcKid) return String(kcKid); return (typeof kid==="string"&&kid&&kid!=="mom")?kid:""; }
+function luByName(b){ return b==="mom"?"Mom":b==="dad"?"Dad":((typeof KID_NAME!=="undefined"&&KID_NAME[b])||(b?b.charAt(0).toUpperCase()+b.slice(1):"")); }
+function _luCopy(v){ return v==null?null:JSON.parse(JSON.stringify(v)); }
+function _luIsoBefore(iso){ const p=String(iso).split("-"); return _hhIsoLocal(new Date(+p[0],+p[1]-1,+p[2]-1,12).getTime()); }
+function _luSame(a,b){ return !!a&&!!b&&a.stage===b.stage&&(a.step==null?null:a.step)===(b.step==null?null:b.step); }   // the clock may be re-set (Earlier…) — still the same step
+// ── (1) the bar ──
+function luSnap(){ return _luCopy((typeof laundryData!=="undefined"&&laundryData)||{}); }
+function luNote(snap){ if(!snap||_luQ>0) return null; const L=laundryData||{}, did=[];
+  Object.keys(snap).forEach(function(id){ const b=snap[id], a=L[id]; if(!a) did.push({id:id,before:b,after:null}); else if(!_luSame(a,b)) did.push({id:id,before:b,after:_luCopy(a)}); });
+  Object.keys(L).forEach(function(id){ if(!snap[id]) did.push({id:id,before:null,after:_luCopy(L[id])}); });
+  if(!did.length) return null;
+  luLast={did:did,at:Date.now(),words:_luWords(did)}; luPaint(); return luLast; }
+function luNoteDone(item){ if(_luQ>0) return null; luLast={done:item,iso:llToday(),at:Date.now(),words:"✓ "+((typeof llLabelFull==="function"&&llLabelFull(item))||"Laundry")+" — done today"}; luPaint(); return luLast; }
+function _luWords(did){ const m=did.filter(function(x){ return x.before; })[0]||did[0], l=m.before||m.after||{}, lbl=l.label||"Laundry";
+  if(!m.after) return "🧺 "+lbl+" — put away"; if(!m.before) return "🫧 "+lbl+" — started";
+  const w=LU_WORDS[m.after.stage]||(function(t){ return [t[0],String(t[1]||"").toLowerCase()]; })((typeof laundryMeta==="function")?laundryMeta(m.after):["🧺",m.after.stage]);
+  return w[0]+" "+lbl+" — "+w[1]; }
+function luValid(r){ if(!r) return false;
+  if(r.done) return r.iso===llToday()&&typeof llIsDoneOnly==="function"&&llIsDoneOnly(r.done,r.iso);
+  const L=laundryData||{}; return r.did.every(function(x){ const c=L[x.id]; return x.after?_luSame(c,x.after):!c; }); }
+function luUndo(){ const r=luLast; luLast=null; luPaint(); if(!r) return false;
+  if(!luValid(r)){ if(typeof mwToast==="function") mwToast("🧺 That load has moved on since — nothing undone"); return false; }
+  if(r.done){ llUndone(r.done); return true; }   // ✓ Done's own undo (Mom or Dad)
+  const LD=laundryData;
+  r.did.forEach(function(x){
+    if(x.before&&!x.after) _luBack(x.id,x.before,false);   // put away → back as it was
+    else if(x.before){ _cuDropBlock(x.id,x.after.stage); _cuDropBlock(x.id,x.before.stage); LD[x.id]=_luCopy(x.before); if(_lbWrite()) db.ref('laundry/'+x.id).set(LD[x.id]); }   // moved → the stage, step and clock it had
+    else { const a=x.after, g=a.line&&typeof laundryLine!=="undefined"&&laundryLine&&laundryLine.log&&laundryLine.log[a.lineDay], e=g&&g[a.line];   // started (or a split's hung half) → gone
+      if(e&&e.load===x.id&&typeof llUnstart==="function"&&llUnstart(x.id)) return;   // a line load: back in line, its log entry off
+      _cuDropBlock(x.id,a.stage); delete LD[x.id]; if(_lbWrite()) db.ref('laundry/'+x.id).remove(); } });
+  _luAfter("↩︎ Undone — "+r.words.replace(/ — .*$/,"")+" is back"); return true; }
+function luBarHTML(r){ return '<div style="position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom, 0px));z-index:9998;display:flex;align-items:center;gap:10px;width:max-content;max-width:calc(100vw - 24px);box-sizing:border-box;padding:7px 7px 7px 14px;background:#475569;color:#fff;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.28);font-family:\'DM Sans\',sans-serif;font-size:13px;font-weight:700">'
+  +'<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.words)+'</span>'
+  +'<button onclick="luUndo()" style="flex-shrink:0;padding:6px 12px;border-radius:8px;border:none;background:#fff;color:#334155;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">↩︎ Undo</button></div>'; }
+function luPaint(){ if(luLast&&!luValid(luLast)) luLast=null;
+  if(typeof document==="undefined"||!document.body) return; let w=document.getElementById("lu-wrap"); if(!w){ w=document.createElement("div"); w.id="lu-wrap"; document.body.appendChild(w); }
+  w.innerHTML=luLast?luBarHTML(luLast):""; }
+// ── (2) put away today, on every device ──
+function luAwayOnValue(v){ laundryAway=v||{}; try{ luPaint(); }catch(e){} }
+function luAwayWrite(id,l){ if(!l) return; const iso=mwTodayIso(), y=_luIsoBefore(iso), rec={load:_luCopy(l),at:Date.now(),by:luWho()}, u={};
+  laundryAway=laundryAway||{}; laundryAway[iso]=laundryAway[iso]||{}; laundryAway[iso][id]=rec; u[iso+"/"+id]=rec;
+  Object.keys(laundryAway).forEach(function(d){ if(d<y){ delete laundryAway[d]; u[d]=null; } });   // older than yesterday: gone
+  if(_lbWrite()) db.ref('laundryAway').update(u); }
+function luAwayClear(id){ const u={}; Object.keys(laundryAway||{}).forEach(function(d){ if(laundryAway[d]&&laundryAway[d][id]){ delete laundryAway[d][id]; u[d+"/"+id]=null; } });
+  if(Object.keys(u).length&&_lbWrite()) db.ref('laundryAway').update(u);
+  try{ const v=_cuAwayGet(); if(v[id]){ delete v[id]; _cuAwayPut(v); } }catch(e){} }
+// → [{id, load, at, by, day}] newest first: today's (and until 8 AM last night's) from Firebase, plus this device's own list; loads back in the machines left out.
+function luAwayList(nowMs){ const now=nowMs||Date.now(), iso=_hhIsoLocal(now), days=[iso].concat(new Date(now).getHours()<LU_MORNING_H?[_luIsoBefore(iso)]:[]), LD=laundryData||{}, seen={}, out=[];
+  days.forEach(function(d){ const g=(laundryAway||{})[d]||{}; Object.keys(g).forEach(function(id){ const r=g[id]; if(!r||!r.load||LD[id]||seen[id]) return; seen[id]=1; out.push({id:id,load:r.load,at:r.at||0,by:r.by||"",day:d}); }); });
+  try{ if(typeof laundryAwayList==="function") laundryAwayList().forEach(function(a){ if(!seen[a.id]){ seen[a.id]=1; out.push({id:a.id,load:a.load,at:a.at||0,by:"",day:iso}); } }); }catch(e){}
+  return out.sort(function(a,b){ return b.at-a.at; }); }
+// Bring a put-away load back: as it was (the bar), or into the fold pile with a fresh clock (the list). Its away records all go.
+function _luBack(id,load,fold){ const LD=laundryData; if(!load||LD[id]) return null;
+  const rec=_luCopy(load); if(fold){ rec.stage="fold"; rec.ts=Date.now(); }
+  _cuDropBlock(id,"fold"); if(rec.stage!=="fold") _cuDropBlock(id,rec.stage);   // LAUNDRY_FOLD's ✓ Put away row goes; the pile asks again
+  LD[id]=rec; if(_lbWrite()) db.ref('laundry/'+id).set(rec);
+  luAwayClear(id); _luClearNote(id,rec); return rec; }
+function _luClearNote(id,l){ if(!l||!l.line||!l.lineDay||typeof laundryLine==="undefined"||!laundryLine||!laundryLine.log) return;
+  const e=laundryLine.log[l.lineDay]&&laundryLine.log[l.lineDay][l.line]; if(!e) return;
+  const f=(l.split&&l.split.part==="hang")?"awayH":"away"; if(!e[f]||e.load!==(f==="awayH"?l.split.of:id)) return;   // LAUNDRY_SPLIT: the hung half's note is awayH
+  delete e[f]; llStore(); const u={}; u["log/"+l.lineDay+"/"+l.line+"/"+f]=null; llWrite(u); }
+function _luAfter(msg){ try{ HA_LS.setItem('ha_laundry',JSON.stringify(laundryData)); }catch(e){} try{ if(typeof llSyncKidRows==="function") llSyncKidRows(); }catch(e){}   // the kid's automatic Fold / Start tick follows
+  if(typeof mwToast==="function") mwToast(msg); luPaint(); _cuRe(); }
+function luUnputaway(id){ if(!luParentOk()) return null;
+  const a=luAwayList().filter(function(x){ return x.id===id; })[0]; if(!a) return null;
+  const rec=_luBack(id,a.load,true); if(!rec) return null;
+  _luAfter("🧺 "+(rec.label||"Laundry")+" — back to folded"); return rec; }
+function luAwayRowsHTML(bare){ if(!luParentOk()) return ""; const A=luAwayList(); if(!A.length) return ""; const today=mwTodayIso();
+  let h=(bare?'<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">':'<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:10px 12px;margin-bottom:10px">')
+    +'<div style="font-size:11.5px;font-weight:800;margin-bottom:3px">🧺 Put away today</div>';
+  A.forEach(function(a){ h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f3f4f6;font-size:12px;font-weight:600;flex-wrap:wrap"><span style="flex:1;min-width:0">'+esc(a.load.label||"Load")
+    +' <span style="font-size:10.5px;color:var(--muted)">· '+(a.day!==today?'last night ':'')+esc(laundrySince(a.at))+(a.by?' · '+esc(luByName(a.by)):'')+'</span></span>'
+    +_cuBtn("luUnputaway('"+_lbQ(a.id)+"')","↩︎ Undo — back to folded","#64748b","Not put away — back to folded")+'</div>'; });
+  return h+'</div>'; }
+// LAUNDRYUNDO_END
 // SPOTCHECK_START — 🔎 Spot check (her ask 2026-10-15: "All the things the kids do each day, a rotation or a random pick of a few
 // things handed to Mom to check each day, and keep a record. If things are checked and not actually done, they become something
 // that gets checked more — we are having an issue with lying and checking off things, and this is not acceptable. If a kid has
@@ -40772,7 +40888,7 @@ function wbBarRender(){
     ((v.eic&&!wbMomEyes()&&window.eicCountBtn)?window.eicCountBtn(v):"")+   // 🔢 step 3 (eic.js): his "how many" guess on a review page
     btn("✏️","wbTool(\'pen\')",v.tool==="pen")+
     btn("🩹 Erase","wbTool(\'erase\')",v.tool==="erase")+
-    btn("↶ Undo","wbUndo()")+
+    btn("↩︎ Undo","wbUndo()")+
     btn("🧽 Clear","wbClear()")+
     btn(v.penOnly?"✍️ Pencil only":"👆 Finger too","wbTogglePen()",v.penOnly)+
     btn(v.dirty?"💾 Save":"✓ Saved","wbSave()",v.dirty);
@@ -61641,9 +61757,9 @@ const WHATS_NEW=[{id:"2026-10-23",title:"New in the app",date:"Oct 22–23",sect
 ],foot:"All of this is on your app now. Two things to do: set Monday's speech start under Some days on your Family Time block, and give each rotation an until date before you run it again. Come back to this any time — ✨ Updates on the From Adrienne card opens every note, newest first."},
 {id:"2026-10-15",title:"New in the app",date:"Oct 15",sections:[   // her ask 2026-10-15: "send an updated features to dewalt with any instructions that are relevant"
   ["🧺 Laundry — the fold pile is on your schedule now",["When a load reaches the fold pile it shows on your Mom-mode schedule right away: <b>🧺 … is in the fold pile. Block out time to put it away?</b> — How long · Now · After … · Not now, same as the washer and dryer. Your pick is a real block your Mom cards step over, with <b>✓ Put away</b> on it.","The dryer block's button now reads <b>Folded ✓</b> — tap it when the folding is <i>done</i>, not when you start.","Mom's Day reminds you about a prewash, a fold pile that's sat a while (<b>✎ Times</b> ▸ fold pile hours, 3 by default) and a wet load still in the wash-today bin the next morning — that last one shows on Dad's Day too."]],
-  ["✎ Edit a load · ↶ back a stage",["Each load on the Laundry card has a <b>✎</b>: change its name, which machine it's in, when it started, whose it is, and wet or not. Moving it back a stage clears the old block so the \"block out time?\" question comes back fresh.","<b>↶</b> on a load moves it back one stage. On the schedule, a load a kid checked off that was never really a load has <b>✕ not a load</b>.","Loads Dad started show on your schedule as information only — no question, none of your time held."]],
+  ["✎ Edit a load · ↩︎ back a stage",["Each load on the Laundry card has a <b>✎</b>: change its name, which machine it's in, when it started, whose it is, and wet or not. Moving it back a stage clears the old block so the \"block out time?\" question comes back fresh.","<b>↩︎</b> on a load moves it back one stage. On the schedule, a load a kid checked off that was never really a load has <b>✕ not a load</b>.","Loads Dad started show on your schedule as information only — no question, none of your time held."]],
   ["🧒 Kids can move a load now — one thing to set",["On a Chore Plan row or an Up for Grabs row, the 🧺 picker now offers <b>move to the dryer</b>, <b>move to the fold pile</b> and <b>put away</b>. A kid checking that step moves the newest load waiting at the stage before and ends that stage's block for you.","<b>Please do this once:</b> open Up for Grabs, find <b>Fold and put away a load of laundry</b>, and pick <b>put away</b> in its 🧺 picker. The app doesn't guess it from the words.","When a kid checks a step that starts a load, it asks once: <b>In the washer now?</b> Yes, or Earlier… with a time — so the done-time is right even if they check their morning list all at once."]],
-  ["↶ Undo a check-off · Today's ledger",["In Mom mode, a checked chore in Kids today has <b>↶ undo</b>: it goes back to not done and the stars come off as a visible <b>↶ Mom undid</b> entry in the Star Bank — nothing is deleted silently.","<b>↶ Today's ledger</b> (a card under Kids today) lists every kid's chores for today, done and not, each flippable either way, plus every laundry load with its back-a-stage button."]],
+  ["↩︎ Undo a check-off · Today's ledger",["In Mom mode, a checked chore in Kids today has <b>↩︎ undo</b>: it goes back to not done and the stars come off as a visible <b>↩︎ Mom undid</b> entry in the Star Bank — nothing is deleted silently.","<b>↩︎ Today's ledger</b> (a card under Kids today) lists every kid's chores for today, done and not, each flippable either way, plus every laundry load with its back-a-stage button."]],
   ["🔎 Spot check",["At the end of the school day (<b>🎲 Draw now</b> any time) the app picks <b>2 things per kid</b> at random from what they checked off themselves, and shows them on a <b>🔎 Spot check</b> card under Kids today. Tap <b>✓ Really done</b> or <b>✗ Not done</b>.","<b>✗ Not done</b> flips it back and takes that item's stars back off. Each ✗ adds one check a day for that kid (up to 5) and keeps that kind of item in the picks; each clean day takes one away (down to 2). <b>📜</b> opens the kid's record.","<b>⚙ on the card:</b> choose what it picks from — Chores, Laundry, School cards (all on to start; all off pauses it). You can also switch on <b>✗ Not done also takes off [100] ⭐</b> and set the amount — it stays off unless you turn it on.","It's on your 🏡 My day list under Afternoon too: <b>🔎 Spot check — tap to draw</b>, then <b>N to check</b>; it ticks itself once you've checked them all.","The kids see nothing — no hint a check is coming, and it never shows on the shared kitchen tablet. Your own ticks are never picked (from tonight on; ticks you made earlier today could show up once)."]],
   ["🔴 The red number on Mom's Day",["Tap the <b>red number</b> on the Mom's Day tab to see what it's counting: <b>Waiting for you</b> lists each thing in plain words — 🔔 someone's waiting · ⏳ cards to check · 🔴 things to close out · ⏰ reminders. Tap a line to jump to it.","Opening the list doesn't clear anything; visiting Mom's Day clears the number, same as before."]],
   ["📚 Taylor's study cards from Kids' Corner",["Tapping <b>📂 Open Taylor's study cards →</b> in her Kids' Corner now opens her 📚 Study right there, under a <b>← Kids' Corner · Taylor</b> bar in her color, no app menus. Study only — check-ups are still yours in Mom mode."]],
@@ -69130,7 +69246,7 @@ function buildSprintBookHtml(color){
   if(lastR){ const r=lastR.run;
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:center;margin-top:10px;padding-top:10px;border-top:1px dashed #e2ddd6;font-size:12px;color:#57534e">Last run: Sprint '+lastR.n+' · '+esc_(String(r.sheet||"").toUpperCase())+' <b style="color:'+(r.met?"#16a34a":"#b91c1c")+'">'+(r.met?"Met ✓":"Not ✗")+'</b>'+
       '<button onclick="msEditRun(\''+kid+'\','+(!r.met)+')" style="padding:5px 10px;border-radius:8px;border:1.5px solid #e2ddd6;background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">✎ Change to '+(r.met?"Not ✗":"Met ✓")+'</button>'+
-      '<button onclick="if(confirm(\'Undo the last run (Sprint '+lastR.n+' · '+esc_(String(r.sheet||"").toUpperCase())+')?\'))msUndoRun(\''+kid+'\')" style="padding:5px 10px;border-radius:8px;border:1.5px solid #e2ddd6;background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">↶ Undo</button></div>'; }
+      '<button onclick="if(confirm(\'Undo the last run (Sprint '+lastR.n+' · '+esc_(String(r.sheet||"").toUpperCase())+')?\'))msUndoRun(\''+kid+'\')" style="padding:5px 10px;border-radius:8px;border:1.5px solid #e2ddd6;background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">↩︎ Undo</button></div>'; }
   h+='</div>';
   // ── the book ──
   h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:12px 14px;margin-bottom:14px">';
