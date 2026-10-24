@@ -9,8 +9,14 @@ let pass=0, fail=0; const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n)
 const fn=name=>{ const i=src.indexOf("function "+name+"("); if(i<0) throw new Error("missing "+name); let d=0; for(let k=src.indexOf("{",i);k<src.length;k++){ if(src[k]==="{") d++; else if(src[k]==="}"&&--d===0) return src.slice(i,k+1); } throw new Error("unbalanced "+name); };
 const cut=(a,b)=>{ const i=src.indexOf(a), j=src.indexOf(b,i); if(i<0||j<0) throw new Error("missing "+a); return src.slice(i,j); };
 const KT=cut("// KITCHEN_TAB_START","// KITCHEN_TAB_END");
+// 2026-10-24: pinned to Wed 2026-10-21 (her rotation report's day; neither kitchen weekly row — Lincoln's microwave on Tue,
+// Dad's cabinet tops on Sat — is due). The test used the real clock, so on a Saturday the cabinet tops came due and three checks
+// failed on main (and on a Tuesday the microwave would). FDate = Date with "now" fixed; everything
+// else (new FDate(y,m,d), parsing) behaves exactly like Date.
+const FIXED_NOW=new Date(2026,9,21,12,0,0).getTime();
+class FDate extends Date { constructor(...a){ if(a.length) super(...a); else super(FIXED_NOW); } static now(){ return FIXED_NOW; } }
 const iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
-const TODAY=iso(new Date()), DN=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][new Date().getDay()];
+const TODAY=iso(new FDate()), DN=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][new FDate().getDay()];
 // her real rows (household/jobs 2026-10-19), trimmed
 const JOBS={
   k_close:{label:"Kitchen close-down (counters + stove)",emoji:"🌙",cad:"daily",who:"mom",slot:"night",room:"kitchen",area:"cleaning",status:"active",src:{kind:"momChore",id:"k_close"},order:0},
@@ -28,7 +34,7 @@ const JOBS={
   bed:{label:"Make the king (new sheets)",emoji:"🛏️",cad:"wk:0",who:"ellis",slot:"chores",room:"ours",area:"cleaning",status:"active",order:10}};
 function mk(o){ o=o||{}; const writes=[], ticks=[], ls={};
   const J=JSON.parse(JSON.stringify(JOBS));
-  const ctx={console,Object,Array,String,Number,parseInt,Math,JSON,Date,RegExp,Infinity,
+  const ctx={console,Object,Array,String,Number,parseInt,Math,JSON,Date:FDate,RegExp,Infinity,
     HA_LS:{getItem:k=>ls[k]||null,setItem:(k,v)=>{ ls[k]=v; }},
     db:{ref:p=>({set:v=>writes.push(["set",p,v]),update:v=>writes.push(["update",p,JSON.parse(JSON.stringify(v))]),remove:()=>writes.push(["rm",p])})},
     momHere:()=>!o.noMom, householdData:{jobs:J}, householdOnValue:()=>{}, hhRender:()=>{}, mwToast:()=>{}, _dryRun:()=>false,
@@ -41,7 +47,7 @@ function mk(o){ o=o||{}; const writes=[], ticks=[], ls={};
       if(kid==="ellis"&&slot==="afternoon") return [{_hh:"e_living",label:raw?"Pickup living room":(o.rotate?"Pickup kitchen":"Pickup living room"),emoji:"🛋️",cad:"daily",rot:"downstairs"}];
       if(kid==="lincoln"&&slot==="chores") return [{_hh:"k_micro",label:"Microwave inside + the air fryer",cad:"wk:1"}]; return []; },
     hhGuessRoom:j=>/kitchen/i.test(j.label||"")?"kitchen":/living/i.test(j.label||"")?"living":"any",
-    rtDoneOn:(slot,kid)=>kid==="lucy"&&!!o.lucyDone, mStepDoneOn:()=>false, cadDueOn:(cad,dn)=>cad==="daily"||cad==="wk:"+[6,0,1,2,3,4,5][new Date().getDay()], stepWindowOk:()=>true, rtLateDays:()=>0, rtWaved:()=>false,
+    rtDoneOn:(slot,kid)=>kid==="lucy"&&!!o.lucyDone, mStepDoneOn:()=>false, cadDueOn:(cad,dn)=>cad==="daily"||cad==="wk:"+[6,0,1,2,3,4,5][new FDate().getDay()], stepWindowOk:()=>true, rtLateDays:()=>0, rtWaved:()=>false,
     hhCleanDay:d=>d===o.cleanDay, writes, ticks};
   vm.createContext(ctx);
   const CORE=["hhJobs","hhRoomOf","hhGuessRoom","hhPlanCad","hhIsProject","hhIsKid","hhWhoName","hhInterval","hhNeed","hhNeedPct","hhNeedChip","hhStats","hhPct","_hhChip","_hhBtn","_hhDayNum","_hhIsoOf","_hhIsoLocal","hhSet","_hhWrite","cadLabel","hhLogState","_hhDayCheck","hhDoneOnDay"].map(n=>{ try{ return fn(n); }catch(e){ return ""; } }).join("\n");
