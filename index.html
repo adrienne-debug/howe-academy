@@ -68422,6 +68422,7 @@ function sprintGenerateFromPool(){
   if(!Array.isArray(items)) items=Object.values(items);
   const pool=sprintDrillPool(masteryKid,items,settings,masteryData.history);
   if(!pool.length) return;
+  if(!sprintMinAllows(pool.length)) return;   // SPRINTMIN: below 20 only through Mom's Sprint anyway
   const words=pool.map(it=>String(it.prompt||it.answer||it.id));
   const {cols,rows}=sprintDrillGrid(words.length);  // DRILLGRID: Fit (the old 4-across auto-size) or S / M / L
   const label=sprintDeck==="__all__"?"All decks":sprintDeck;
@@ -68467,6 +68468,59 @@ function sprintDrillGridPillsHtml(color,poolLen){
   return h;
 }
 // DRILLGRID_END
+// SPRINTMIN_START — 🏁 A drill sprint needs at least 20 ready cards (her complaint 2026-10-23: "some of the sprints
+// don't even have enough to sprint and it's kind of pointless if it doesn't have a certain amount for them to really
+// even try to beat a 1 minute clock"; PLAN_mastery_system_2026-10-23 §1.1 rule 1, step A1a). Live case: Ellis's
+// Math Facts drill sprint had 11 eligible cards, so the sheet padded with "—" tiles. Drill source only — the
+// phonogram, Editor, Unit and Book sprints are untouched. With 1–19 ready, the Grid Size pills + Generate give way
+// to a panel: "Not enough to sprint yet: N of 20 ready · M more climbing · about X", where M = cards in this set on
+// the ladder with the Sprint switch on but not past the gate yet, and X = when the 20th card should clear the gate
+// (each climbing card's _unitLadderDaysToGate, sorted, the (20−N)th smallest; same "~this week" / "~2 wk" labels as
+// the unit ETA). Too few climbing → "add more cards to this deck to sprint it". Mom (momHere) gets a small
+// "Sprint anyway" link that builds the sheets exactly as before; kids never see it. sprintGenerateFromPool itself
+// refuses below 20 unless it is called through Sprint anyway, so no other path gets around the minimum.
+// A constant, not a setting. Display + in-memory only — no Firebase writes.
+const SPRINT_MIN_DRILL=20;
+let _sprintMinBypass=false;   // true only for the length of one sprintAnyway() call
+function sprintMinShort(n){ return n>0&&n<SPRINT_MIN_DRILL; }
+function sprintMinAllows(n){ return n>=SPRINT_MIN_DRILL||_sprintMinBypass; }
+// Days-to-gate for each card in the set that is still climbing (on the ladder, Sprint switch on, not past the gate).
+function sprintMinClimbDays(kid,scoped,settings,history){
+  const cfg=_unitKidLadderCfg(kid); cfg.gate=settings.gate_tier||cfg.gate;
+  const out=[];
+  (scoped||[]).forEach(it=>{
+    if(!it||it.status==="introduction"||it.status==="parked"||it.dir==="prod") return;
+    const kt=mastKnowledgeType(it); if(kt==="concept"||kt==="transfer") return;
+    if(!mastSprintSwitch(it,settings)) return;
+    if(mastTierAtLeast(it.tier,cfg.gate)) return;
+    const acc=history?mastUntimedAccuracy(history,kid,it.id):undefined;
+    if(typeof acc==="number"&&acc>=0.9) return;   // already past the gate by accuracy
+    out.push(_unitLadderDaysToGate(it.tier,it.consecutive_correct||0,cfg));
+  });
+  return out.sort((a,b)=>a-b);
+}
+function sprintMinLine(n,climbDays){
+  const need=SPRINT_MIN_DRILL-n, m=climbDays.length;
+  let t="Not enough to sprint yet: "+n+" of "+SPRINT_MIN_DRILL+" ready \u{00B7} "+m+" more climbing \u{00B7} ";
+  if(m<need) return t+"add more cards to this deck to sprint it";
+  const lbl=_unitEtaLbl(Math.max(1,Math.ceil(climbDays[need-1])));
+  return t+"about "+lbl.replace(/^~/,"");
+}
+function sprintMinPanelHtml(color,n,climbDays){
+  let h='<div class="sp-min" style="background:#fffbeb;border:1.5px solid #fcd34d;border-radius:14px;padding:16px;margin:14px 0 16px;text-align:center">';
+  h+='<div style="font-size:14px;font-weight:700;color:#92400e;line-height:1.5">\u{1F3C1} '+sprintMinLine(n,climbDays)+'</div>';
+  h+='<div style="font-size:11px;color:#a16207;margin-top:6px;line-height:1.5">A one-minute sprint needs at least '+SPRINT_MIN_DRILL+' cards to race the clock.</div>';
+  if(typeof momHere==="function"&&momHere()) h+='<button class="sp-min-anyway" onclick="sprintAnyway()" style="margin-top:10px;background:none;border:none;padding:2px 4px;color:#78716c;font-size:11px;text-decoration:underline;cursor:pointer;font-family:\'DM Sans\',sans-serif">Sprint anyway</button>';
+  h+='</div>';
+  return h;
+}
+// Mom only: build the sheets exactly as before, below the minimum.
+function sprintAnyway(){
+  if(!(typeof momHere==="function"&&momHere())) return;
+  _sprintMinBypass=true;
+  try{ sprintGenerateFromPool(); } finally{ _sprintMinBypass=false; }
+}
+// SPRINTMIN_END
 // MSPRINT_START — 🔢 Book Sprints (Singapore Math Sprints books; her design 2026-09-24, "kinda like Editor in Chief")
 // Per kid: a book + the sprint they are on (editable any time, moves logged) and a run history — like EIC, every
 // kid runs their own level. A session = 4 timed 60-second runs. Each run is ONE sheet of the current sprint, in
@@ -69548,9 +69602,12 @@ function buildSprintFromDrillHtml(color){
     h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:4px 14px">';
     h+=sprintFoldHtml("drill",'\u{1F4CB} The '+pool.length+' item'+(pool.length===1?"":"s")+' in this set',list,false);
     h+='</div>';
-    h+=sprintDrillGridPillsHtml(color,pool.length);   // DRILLGRID: Fit / Small / Medium / Large
-    // R3: build offline A/B sprint sheets from this pooled set (two shuffles = first/second pass).
-    h+='<button onclick="sprintGenerateFromPool()" style="width:100%;padding:13px;border-radius:12px;border:none;background:'+color+';color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin:14px 0 16px">\u{2728} Generate A &amp; B sprint sheets ('+pool.length+' item'+(pool.length===1?'':'s')+')</button>';
+    if(sprintMinShort(pool.length)) h+=sprintMinPanelHtml(color,pool.length,sprintMinClimbDays(masteryKid,scoped,settings,history));   // SPRINTMIN: under 20 → not enough yet
+    else{
+      h+=sprintDrillGridPillsHtml(color,pool.length);   // DRILLGRID: Fit / Small / Medium / Large
+      // R3: build offline A/B sprint sheets from this pooled set (two shuffles = first/second pass).
+      h+='<button onclick="sprintGenerateFromPool()" style="width:100%;padding:13px;border-radius:12px;border:none;background:'+color+';color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin:14px 0 16px">\u{2728} Generate A &amp; B sprint sheets ('+pool.length+' item'+(pool.length===1?'':'s')+')</button>';
+    }
     h+=sprintScoreRowHtml();
     h+='<div id="sp-sheets"></div>';
   } else {
