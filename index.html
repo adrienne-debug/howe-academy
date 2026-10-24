@@ -1708,10 +1708,19 @@ window.HA_LS=(function(){
 })();
 
 // ── CODE VERSION — auto-computed hash, no manual bumping needed ──
-// ⏱ CDBOOTS: HA_BUILD names the build in the connection diary (CODE_VERSION stays the deploy-reload trigger). It is the
-// first 8 characters of the main commit this build was cut from (a commit can't hold its own hash) — UPDATE IT BY HAND
-// IN EVERY DEPLOY so each deploy shows one name on every device.
-const HA_BUILD="851f7f7f";
+// ⏱ CDBOOTS: HA_BUILD names the build in the connection diary (CODE_VERSION stays the deploy-reload trigger). AUTOMATIC since
+// 2026-10-24 (her yes "LG measuring"): it used to be a commit typed by hand that no deploy updated, so every entry from 10/22 on
+// said "851f7f7f" whatever was running. Now it is the time the server published this file — its Last-Modified header, which
+// the page reads as document.lastModified (GitHub Pages stamps every file of a deploy with the deploy's time) — as UTC
+// "YYYY-MM-DDTHH:MM:SSZ": one name per deploy on every device, and its commit is the last push to main before that time.
+// "?" when the server sent no date (the browser then reports the current time). One string read: no network, no storage.
+const HA_BUILD=(function(){ try{
+  const m=/^(\d\d)\/(\d\d)\/(\d{4}) (\d\d):(\d\d):(\d\d)$/.exec(String(document.lastModified||""));   // MM/DD/YYYY hh:mm:ss, local time
+  if(!m) return "?";
+  const t=new Date(+m[3],+m[1]-1,+m[2],+m[4],+m[5],+m[6]);
+  if(isNaN(t.getTime())||Math.abs(Date.now()-t.getTime())<5000) return "?";
+  return t.toISOString().slice(0,19)+"Z";
+}catch(e){ return "?"; } })();
 try{ _cdT.cv0=performance.now(); }catch(e){}
 const CODE_VERSION = (function(){var s=document.documentElement.outerHTML;var h=0;for(var i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0;}return Math.abs(h);})();
 try{ _cdT.cv1=performance.now(); }catch(e){}
@@ -3238,10 +3247,12 @@ try{ cdBoot(); }catch(e){}
 // CODE_VERSION hash took, first paint, first connect, when this week's cards / Mastery / the archive arrived (data
 // size — the archive is no longer on the device since LS_ARCHIVE, it always comes from the server), how many full
 // repaints (renderAll) ran in the first 30 s and how long they took, how long the page was too busy to answer a tap,
-// the device's storage (_haAuthDiagNow's total KB + 1 KB test write) and HA_BUILD. 30 s after load the entry joins the
-// last 10 in today's diary row: ONE targeted write, connDiary/<day>/<deviceId>/boots (dry-run honoured). Nobody listens.
+// the device's storage (_haAuthDiagNow's total KB + 1 KB test write), HA_BUILD (the deploy's time, automatic since 10/24)
+// and CODE_VERSION (cv), and — since 2026-10-24 — the review engine's morning run if it ran on this device (re). 30 s after
+// load the entry joins the last 10 in today's diary row: ONE targeted write, connDiary/<day>/<deviceId>/boots (dry-run
+// honoured); a review-engine run after the 30 s rewrites that same list once. Nobody listens.
 const CD_BOOT_WIN=30000, CD_BOOTS_MAX=10;
-let _cdB={renders:0,renderMs:0,maxRenderMs:0,paintMs:-1,busyMs:0,longestMs:0,marks:{},done:false,po:null};
+let _cdB={renders:0,renderMs:0,maxRenderMs:0,paintMs:-1,busyMs:0,longestMs:0,marks:{},done:false,po:null,re:[],mine:null};
 function cdNow(){ try{ return (typeof performance!=="undefined"&&performance.now)?performance.now():-1; }catch(e){ return -1; } }
 function cdMark(k){ if(_cdB.marks[k]===undefined){ const t=cdNow(); if(t>=0) _cdB.marks[k]=Math.round(t); } }
 function cdRenderStart(){ try{ if(_cdB.done) return -1; return cdNow(); }catch(e){ return -1; } }
@@ -3270,24 +3281,46 @@ function cdBootEntry(why){
   const r=x=>(typeof x==="number"&&x>=0)?Math.round(x):-1, T=(typeof _cdT!=="undefined"&&_cdT)||{}, M=_cdB.marks;
   let nav=null; try{ nav=performance.getEntriesByType("navigation")[0]||null; }catch(e){}
   let st=null; try{ st=(typeof _haAuthDiagNow==="function")?_haAuthDiagNow():null; }catch(e){}
-  return {at:cdHM(_cdBootAt), why:why, b:(typeof HA_BUILD!=="undefined"?HA_BUILD:"?"),
+  return {at:cdHM(_cdBootAt), why:why, b:(typeof HA_BUILD!=="undefined"?HA_BUILD:"?"), cv:(typeof CODE_VERSION!=="undefined"?String(CODE_VERSION):"?"),
     kb:nav?Math.round((nav.transferSize||0)/1024):-1, dlMs:nav?r(nav.responseEnd-nav.requestStart):-1,
     jsMs:(nav&&T.js0>=0)?r(T.js0-nav.responseEnd):-1, evalMs:(T.js1>=0&&T.js0>=0)?r(T.js1-T.js0):-1,
     cvMs:(T.cv1>=0&&T.cv0>=0)?r(T.cv1-T.cv0):-1, paintMs:r(_cdB.paintMs),
     connMs:r(M.connMs), weekMs:r(M.weekMs), mastMs:r(M.mastMs), archMs:r(M.archMs),
     renders:_cdB.renders, renderMs:r(_cdB.renderMs), maxRenderMs:r(_cdB.maxRenderMs),
     busyMs:r(_cdB.busyMs), longestMs:r(_cdB.longestMs),
-    lsKB:(st&&typeof st.lsKB==="number")?st.lsKB:-1, lsWrite:st?String(st.write).slice(0,40):"?"};
+    lsKB:(st&&typeof st.lsKB==="number")?st.lsKB:-1, lsWrite:st?String(st.write).slice(0,40):"?",
+    ...(_cdB.re.length?{re:_cdB.re.slice()}:{})};
 }
 let _cdWhy="?"; try{ _cdWhy=cdWhy(); }catch(e){}
+// The list is kept on the device and sent to its one path — by the 30-s close, and again by a late review-engine run.
+function cdBootsWrite(d){
+  cdSave(d);
+  const dry=(typeof _dryRun==="function")&&_dryRun();
+  if(typeof db!=="undefined"&&db&&!dry) db.ref("connDiary/"+d.day+"/"+cdDevId()+"/boots").set(d.boots);
+}
 function cdBootsFinish(){
   if(_cdB.done) return; _cdB.done=true;
   try{ if(_cdB.po) _cdB.po.disconnect(); }catch(e){}
   try{
     const e=cdBootEntry(_cdWhy), d=cdLoad();
-    d.boots=(Array.isArray(d.boots)?d.boots:[]).concat([e]).slice(-CD_BOOTS_MAX); cdSave(d);
-    const dry=(typeof _dryRun==="function")&&_dryRun();
-    if(typeof db!=="undefined"&&db&&!dry) db.ref("connDiary/"+d.day+"/"+cdDevId()+"/boots").set(d.boots);
+    d.boots=(Array.isArray(d.boots)?d.boots:[]).concat([e]).slice(-CD_BOOTS_MAX); _cdB.mine=e; cdBootsWrite(d);
+  }catch(e){}
+}
+// 🧠 The review engine's morning run on THIS device (her worry 2026-10-24: the LG). Called by reMorningKid once it has won
+// today's leveled_on for a kid (one device a day), so a device that didn't run it records nothing. One item per kid:
+// k = kid, at = ms since the page was asked for, ms = how long the plan + save took here, mv / n = cards moved / review
+// cards. Mastery reaches the LG 25–30 s after load (10/23 diary), so a run after the 30-s close is added to this load's
+// saved entry and the list is sent again (same path). A device left open past midnight: the new day's row has no entry
+// for this load, so nothing is written.
+function cdReviewRun(kid,t0,res){
+  try{
+    const t=cdNow(); if(t<0||_cdB.re.length>=20) return;
+    _cdB.re.push({k:String(kid),at:Math.round(t),ms:(t0>=0)?Math.round(t-t0):-1,
+      mv:(res&&typeof res.changed==="number")?res.changed:-1,n:(res&&typeof res.cards==="number")?res.cards:-1});
+    if(!_cdB.done||!_cdB.mine) return;
+    const d=cdLoad(), B=Array.isArray(d.boots)?d.boots:[], M=_cdB.mine;
+    for(let i=B.length-1;i>=0;i--){ const e=B[i];
+      if(e&&e.at===M.at&&e.why===M.why&&e.paintMs===M.paintMs&&e.connMs===M.connMs&&e.dlMs===M.dlMs){ e.re=_cdB.re.slice(); cdBootsWrite(d); return; } }
   }catch(e){}
 }
 // In the page only (a test harness has no window): watch for long tasks, and close the entry 30 s after the load began.
@@ -57081,7 +57114,9 @@ function reMorningKid(kid,today){
     if(!r||!r.committed) return;   // another device leveled today
     if(!masteryData[sk]) masteryData[sk]={};
     masteryData[sk].leveled_on=today;
+    const _cdRe0=(typeof cdNow==="function")?cdNow():-1;   // ⏱ CDBOOTS: how long this run takes on this device
     const pn=mastGetPrintNum(kid), res=reApply(kid,pn,reReviewedOn(kid,pn)?pn+1:pn);
+    try{ if(typeof cdReviewRun==="function") cdReviewRun(kid,_cdRe0,res); }catch(eC){}   // ⏱ CDBOOTS (record only)
     console.log("[HA] review engine: "+kid+" leveled "+today+" (school day "+pn+") — "+res.changed+" of "+res.cards+" review cards moved");
   }).catch(()=>{ if(_reBusy[kid]===today) _reBusy[kid]=null; });
   return true;
