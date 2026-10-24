@@ -46436,6 +46436,34 @@ function renderCurrBuilder(el){
   const _dp=document.getElementById("cb-daypin-scroll"); if(_dp) _dp.scrollTop=cbDayPinScroll;
 }
 
+// CBTODAYNOTE_START — 🔁 the Build preview says when TODAY's open card is about to move (her pick 2026-10-24, after Makenzie's AAS 4
+// rebuild on Fri 10/23 moved the unchecked "Lesson 6 · day 2 of 5" to Monday and slid every later lesson a day). A plan-backed
+// build lays everything unfinished from the next open day, so an unchecked card today is re-laid ahead while today's dealt card
+// stays on the schedule — if it gets done today, the moved copy repeats it. Display only: nothing is written.
+// Returns {text, to} when today's row holds this subject's lesson, today's card for it isn't checked/claimed, and the preview
+// puts that same lesson on a later date; else null.
+function cbTodayMoveNote(kid,sk,res){
+  try{
+    if(!res||res.error||!Array.isArray(res.assignments)) return null;
+    const today=cbTodayISO(), rows=(((typeof currData!=="undefined"&&currData)||{}).lessons||{})[kid]||{};
+    const filled=v=>!!(v&&v!=="—"&&v!=="nan"&&String(v).trim());
+    let T=""; Object.keys(rows).forEach(dn=>{ const r=rows[dn]; if(r&&r.date===today&&filled(r[sk])) T=String(r[sk]).trim(); });
+    if(!T) return null;
+    const tasks=((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]).filter(t=>t&&t.who===kid&&t.subjectKey===sk&&typeof _todayDay==="string"&&effectiveDay(t)===_todayDay&&!String(t.id||"").endsWith("_c"));
+    if(tasks.some(t=>(typeof checked!=="undefined"&&checked&&checked[t.id])||(typeof claimed!=="undefined"&&claimed&&claimed[t.id]))) return null;   // done today → the build just moves on
+    const a=res.assignments.filter(x=>x&&x.date>today&&String(x.text||"").trim()===T).sort((x,y)=>x.date<y.date?-1:1)[0];
+    return a?{text:T,to:a.date}:null;
+  }catch(e){ return null; }
+}
+function cbTodayMoveHTML(kid,sk,res){
+  const n=cbTodayMoveNote(kid,sk,res); if(!n) return "";
+  const s=(((currData||{}).subjects||{})[kid]||{})[sk]||{}, nm=s.display||sk;
+  const d=gwParseDate(n.to), when=d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+  return '<div style="font-size:11.5px;color:#7c2d12;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:7px 9px;margin-bottom:6px;line-height:1.45">'
+    +'🔁 <b>Today\u2019s '+esc(nm)+' card isn\u2019t checked off yet</b> ('+esc(n.text)+'). This build puts that lesson on <b>'+esc(when)+'</b> and moves every later lesson along with it. '
+    +'If it gets done today, check it off first, then build \u2014 otherwise '+esc(when.split(",")[0])+' repeats it.</div>';
+}
+// CBTODAYNOTE_END
 function cbRenderForm(col,embedded){
   const kid=cbKid, sk=cbSubjKey, f=cbForm;
   const s=currData.subjects[kid][sk];
@@ -46602,6 +46630,7 @@ function cbRenderForm(col,embedded){
       if(r.stats.newRows) h+='<div style="font-size:11px;color:var(--muted);margin-bottom:4px">➕ Extends the map by '+r.stats.newRows+' new day'+(r.stats.newRows!==1?'s':'')+' past its current end.</div>';
       if(r.clears.length) h+='<div style="font-size:11px;color:var(--muted);margin-bottom:4px">♻ '+r.clears.length+' old future placement'+(r.clears.length!==1?'s':'')+' of this subject will be replaced. Past days are untouched.</div>';
       r.warnings.forEach(w=>{ h+='<div style="font-size:11px;color:#92400e;background:#fffbeb;border-radius:6px;padding:5px 8px;margin-bottom:4px">⚠ '+esc(w)+'</div>'; });
+      if(typeof cbTodayMoveHTML==="function") h+=cbTodayMoveHTML(cbKid,cbSubjKey,r);   // 🔁 CBTODAYNOTE: today's open card is about to move
       // Sample: first 3 weeks + last
       const byWk={}; const order=[];
       r.assignments.forEach(a=>{ if(!byWk[a.week]){byWk[a.week]=[];order.push(a.week);} byWk[a.week].push(a); });
