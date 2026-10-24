@@ -35640,6 +35640,124 @@ function lrCapSave(){
   lrCapRerender();
 }
 // LESSONRES_END
+// LRPLANNER_START — the Builder planner view (her design notes 2026-10-22, #13): "the same panel for a whole subject at once, a
+// table with one row per lesson, so a mom who wants to plan a unit in one sitting can. One record, two doors, no second copy."
+// In the Curriculum Builder's subject view, "📋 Plan resources" opens a table for that kid + subject: a first row "Subject
+// default", then one row per lesson of subjects[kid][sk].lessonSeq. Columns: Lesson · Links · Supplies · Books · To order · Notes.
+// Each row is keyed EXACTLY as the Grid's 📎 panel keys that lesson (lrOpenPanel): the lesson id when the subject carries
+// lessonIds (lidsFor — the id at that row, the identity a plan-backed Grid cell gives), else lrKeyForText(kid,sk,text).
+// A cell shows the lesson's own items; what it inherits from the subject default is faded and labelled "default" (lrFor's _from).
+// Tapping a row (or a cell) opens the SAME 📎 panel for that lesson, so every edit is the existing lrAddItem / lrEditItem /
+// lrRemoveItem / lrSaveNotes / lrSetSubjectDefault → lrWrite: one targeted part, Mom-only, ?dryrun=1 inert. Nothing new is
+// stored. "📷 From a photo" is the existing capture (lrCapOpen) preset to this kid and subject. Mom-only throughout (the
+// table carries notes). Rows wrap into stacked cells at phone width — no horizontal scroll. Scheduler, generator, lay and
+// the Grid are untouched.
+let lrpOpen=null;   // {kid, sk} while the table is open in the Builder subject view
+const LRP_COLS=["links","supplies","books","orders","notes"];
+const LRP_COL_LABEL={links:"🔗 Links",supplies:"🎒 Supplies",books:"📚 Books",orders:"🛒 To order",notes:"📝 Notes"};
+// [{i, key, label, done}] — the default row is NOT in here (key LR_SUBJECT, drawn first by the table).
+function lrpRows(kid,sk){
+  const s=lrSubjects(kid)[sk]; if(!s) return [];
+  const seq=Array.isArray(s.lessonSeq)?s.lessonSeq:[];
+  const ids=(typeof lidsFor==="function")?lidsFor(kid,sk):null;
+  const done=(typeof lidDoneSet==="function"&&lidDoneSet(kid,sk))||null;
+  const out=[];
+  seq.forEach((x,i)=>{
+    const label=String(x==null?"":x); if(!lrFilled(label)) return;
+    const key=ids&&ids[i]!=null&&String(ids[i])?String(ids[i]):lrKeyForText(kid,sk,label);
+    if(!key) return;
+    out.push({i:i,key:key,label:label,done:!!(ids&&done&&done.has(String(ids[i])))});
+  });
+  return out;
+}
+function lrpIsOpen(kid,sk){ return !!(lrpOpen&&lrpOpen.kid===kid&&lrpOpen.sk===sk); }
+function lrpToggle(kid,sk){
+  if(!lrMom()) return;
+  lrpOpen=lrpIsOpen(kid,sk)?null:{kid:kid,sk:sk};
+  lrPanel=null; if(lrCapState&&lrCapState.where==="planner") lrCapState=null;
+  if(typeof renderAll==="function") renderAll();
+}
+// A row (or one of its cells) → the Grid's own 📎 panel for that lesson; the tapped part's first box gets the cursor.
+function lrpEdit(kid,sk,key,part){
+  if(!lrMom()||!key) return;
+  const row=key===LR_SUBJECT?null:lrpRows(kid,sk).find(r=>r.key===key);
+  if(key!==LR_SUBJECT&&!row) return;
+  lrPanel={kid:kid,sk:sk,key:key,text:row?row.label:"",edit:null}; lrCapState=null;
+  if(typeof renderAll==="function") renderAll();
+  if(part&&LR_PARTS.indexOf(part)>=0&&typeof document!=="undefined"&&typeof setTimeout==="function") setTimeout(()=>{
+    const id=part==="notes"?"lr-in-notes":"lr-in-"+part+"-"+LR_FIELDS[part][0][0];
+    const el=document.getElementById(id); if(el&&el.focus){ try{ el.scrollIntoView({block:"center"}); }catch(e){} el.focus(); }
+  },0);
+}
+// 📷 the existing capture, pointed at this kid + subject (drafts default to the subject default; the picker offers the
+// subject's laid lessons this week and next, as on the Sunday list).
+function lrpCapOpen(kid,sk){
+  if(!lrMom()) return;
+  lrPanel=null; lrCapState={kid:kid,sk:sk};
+  lrCapOpen("planner");
+}
+function lrpCapButtonHTML(kid,sk){
+  const open=lrCapState&&lrCapState.where==="planner"; const key=lrCapKey();
+  const st='padding:5px 11px;border-radius:999px;border:1.5px solid #a5f3fc;background:'+(open?'#0e7490;color:#fff':'#ecfeff;color:#0e7490')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap';
+  const a='\''+lrEsc(kid)+'\',\''+lrEsc(sk)+'\'';
+  if(key&&!open) return '<label style="'+st+'"><input type="file" accept="image/*" multiple onchange="lrpCapOpen('+a+');lrCapAddPhotos(this)" style="display:none">📷 From a photo</label>';
+  return '<button onclick="'+(open?'lrCapClose()':'lrpCapOpen('+a+')')+'" style="'+st+'">📷 From a photo'+(open?' ×':'')+'</button>';
+}
+// One cell: own items plain, inherited ones faded + "default". The default row shows its own items plain.
+function lrpItemName(part,x){
+  if(part==="links") return x.label||lrHost(x.url);
+  if(part==="supplies") return (x.qty?x.qty+" ":"")+x.name;
+  if(part==="books") return x.title;
+  if(part==="orders") return x.name;
+  return "";
+}
+function lrpCellHTML(rec,part,isDef){
+  const from=rec._from[part], inh=!isDef&&from==="subject";
+  const tag=inh?' <span data-lrp-default="1" style="font-size:9.5px;font-weight:700;color:#6b7280;background:#f3f4f6;border-radius:6px;padding:0 5px">default</span>':'';
+  if(part==="notes"){
+    const n=String(rec.notes||""); if(!n) return '<span style="color:#cbd5e1">—</span>';
+    return '<span'+(inh?' data-lrp-inherited="1" style="opacity:.55"':'')+'>'+lrEsc(n.length>80?n.slice(0,79)+"…":n)+'</span>'+tag;
+  }
+  const items=rec[part]||[]; if(!items.length) return '<span style="color:#cbd5e1">—</span>';
+  return '<span'+(inh?' data-lrp-inherited="1" style="opacity:.55"':'')+'>'+items.map(x=>lrEsc(lrpItemName(part,x))).join(", ")+'</span>'+tag;
+}
+function lrpRowHTML(kid,sk,key,label,opt){
+  opt=opt||{}; const isDef=key===LR_SUBJECT; const rec=lrFor(kid,sk,key);
+  const a='\''+lrEsc(kid)+'\',\''+lrEsc(sk)+'\',\''+lrEsc(key)+'\'';
+  const on=lrPanel&&lrPanel.kid===kid&&lrPanel.sk===sk&&lrPanel.key===key;
+  let h='<div class="lrp-row" data-lrp-key="'+lrEsc(key)+'" style="display:flex;flex-wrap:wrap;gap:4px 8px;padding:7px 8px;border-top:1px solid #eef0f3;font-size:12px;line-height:1.35;background:'+(on?'#ecfeff':isDef?'#f8fafc':'#fff')+'">';
+  h+='<div class="lrp-lesson" onclick="lrpEdit('+a+')" style="flex:1 1 130px;min-width:0;font-weight:'+(isDef?'800':'700')+';cursor:pointer;color:'+(opt.done?'var(--muted)':'var(--text)')+';overflow-wrap:anywhere">'+(isDef?'⭐ Subject default':lrEsc(label))+(opt.done?' <span style="font-size:10px;color:#15803d">✓ done</span>':'')+(isDef?'<div style="font-size:10px;font-weight:400;color:var(--muted)">every lesson that says nothing</div>':'')+'</div>';
+  LRP_COLS.forEach(p=>{
+    h+='<div class="lrp-cell" data-lrp-part="'+p+'" onclick="lrpEdit('+a+',\''+p+'\')" style="flex:1 1 110px;min-width:0;cursor:pointer;overflow-wrap:anywhere"><div class="lrp-cap" style="font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--muted)">'+LRP_COL_LABEL[p]+'</div>'+lrpCellHTML(rec,p,isDef)+'</div>';
+  });
+  return h+'</div>';
+}
+function lrpTableHTML(kid,sk){
+  if(!lrMom()) return "";
+  const rows=lrpRows(kid,sk), subj=lrSubjName(kid,sk);
+  let h='<div data-lrp-table="1" style="border:1.5px solid #a5f3fc;border-radius:12px;margin:0 0 12px;overflow:hidden;max-width:100%;box-sizing:border-box">';
+  // Wide screens: one header line and no per-cell captions; phones: no header, every cell carries its caption.
+  h+='<style>.lrp-hd{display:none}@media(min-width:700px){.lrp-hd{display:flex}.lrp-row .lrp-cap{display:none}}</style>';
+  h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 10px;background:#ecfeff"><div style="flex:1;min-width:160px"><div style="font-size:13px;font-weight:800;color:#0e7490">📋 Resources for '+lrEsc(subj)+'</div><div style="font-size:11px;color:var(--muted)">'+lrEsc(lrCap(kid))+' · tap a row to edit it — the same 📎 record the Grid opens. Faded = from the subject default.</div></div>'+lrpCapButtonHTML(kid,sk)+'</div>';
+  if(lrCapState&&lrCapState.where==="planner"&&lrCapState.kid===kid&&lrCapState.sk===sk) h+='<div style="padding:0 10px 8px;background:#ecfeff">'+lrCapHTML()+'</div>';
+  h+='<div class="lrp-hd" style="gap:4px 8px;padding:5px 8px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);background:#f8fafc"><div style="flex:1 1 130px;min-width:0">Lesson</div>'+LRP_COLS.map(p=>'<div style="flex:1 1 110px;min-width:0">'+LRP_COL_LABEL[p]+'</div>').join("")+'</div>';
+  h+=lrpRowHTML(kid,sk,LR_SUBJECT,"",{});
+  if(!rows.length) h+='<div style="padding:12px 10px;font-size:12px;color:var(--muted);border-top:1px solid #eef0f3">No lessons in this subject yet — what you set as the subject default goes on every '+lrEsc(subj)+' card.</div>';
+  rows.forEach(r=>{ h+=lrpRowHTML(kid,sk,r.key,r.label,{done:r.done}); });
+  return h+'</div>';
+}
+// cbRenderForm's hook (the Builder subject view, not the embedded card form): the toggle, and — while open — the table and
+// the 📎 panel (the Grid draws the panel on its own tab; the Builder is a different tab, so it is never drawn twice).
+function lrpBuilderHTML(kid,sk){
+  if(!lrMom()||!kid||!sk) return "";
+  const open=lrpIsOpen(kid,sk);
+  let h='<div style="margin:0 0 10px"><button onclick="lrpToggle(\''+lrEsc(kid)+'\',\''+lrEsc(sk)+'\')" style="padding:6px 12px;border-radius:999px;border:1.5px solid #a5f3fc;background:'+(open?'#0e7490;color:#fff':'#ecfeff;color:#0e7490')+';font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">📋 Plan resources'+(open?' ×':'')+'</button></div>';
+  if(!open) return h;
+  h+=lrpTableHTML(kid,sk);
+  if(lrPanel&&lrPanel.kid===kid&&lrPanel.sk===sk) h+=lrPanelHTML(kid);
+  return h;
+}
+// LRPLANNER_END
 function fxOpenClassScreen(kid,sk,taskId){
   const s=((gwGetSubjects(kid)||{})[sk])||null;
   if(!s) return;
@@ -45920,6 +46038,7 @@ function cbRenderForm(col,embedded){
     h+='<span style="font-size:11px;color:var(--muted)">'+(s.minutes||20)+' min/day</span>';
     h+='</div>';
   }
+  if(!embedded&&typeof lrpBuilderHTML==="function") h+=lrpBuilderHTML(kid,sk);   // LRPLANNER: 📋 Plan resources — the whole subject's 📎 record
 
   // Mode chips
   h+='<div class="ce-sheet-lbl">How should it be paced?</div><div class="ce-chips">';
