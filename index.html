@@ -25049,6 +25049,7 @@ function renderHistoryReport(){
     const wins=[];
     (kd.mastery&&kd.mastery.pbs||[]).forEach(p=>wins.push('🏆 New personal best — '+p.deck+' ('+p.best+' words/60s)'));
     if(kd.reading&&kd.reading.pages>0) wins.push('📖 '+kd.reading.pages+' pages read across '+kd.reading.sessions+' session'+(kd.reading.sessions===1?'':'s'));
+    try{ const _st=(typeof scStudyWeek==="function")?scStudyWeek(((typeof masteryData!=="undefined"&&masteryData)||{}).studyLog,k,rep.range):null; if(_st&&_st.sittings) wins.push(scStudyWeekLine(_st)); }catch(e){}   // 📚 STUDYCOUNTS
     if(kd.mastery&&kd.mastery.sessions>0) wins.push('🎯 '+kd.mastery.sessions+' review session'+(kd.mastery.sessions===1?'':'s')+(kd.mastery.avgPct!=null?' · '+kd.mastery.avgPct+'% avg':''));
     if(wins.length){ h+='<div style="font-size:12px;line-height:1.8;padding:6px 0;border-top:1px solid var(--border)">'+wins.join('<br>')+'</div>'; }
     // consistency dots
@@ -32352,7 +32353,7 @@ function haNbContext(kid){
   // the item's lifetime drop_count — this ages out as he recovers.
   let mItems=(mastery[kid]||[]);
   try{
-    const kh=(masteryData.history&&masteryData.history[kid])||{};
+    const kh=(typeof scHistoryFor==="function")?scHistoryFor(masteryData.history,kid):((masteryData.history&&masteryData.history[kid])||{});   // 📚 STUDYCOUNTS: study misses flag too
     const recentKeys=Object.keys(kh).sort().reverse().slice(0,6); // ~most recent drill sessions
     const miss={};
     for(const dk of recentKeys){
@@ -54936,7 +54937,7 @@ function mastSprintSwitch(item,settings){
 function mastUntimedAccuracy(history,kid,itemId,opts){
   opts=opts||{};
   const window=opts.window||0;
-  const kh=(history&&history[kid])||{};
+  const kh=(typeof scHistoryFor==="function")?scHistoryFor(history,kid,opts.studyLog):((history&&history[kid])||{});   // 📚 STUDYCOUNTS: study sittings' grades count too
   const keys=Object.keys(kh).sort().reverse(); // YYYYMMDD desc = most-recent first
   let correct=0,total=0;
   for(const k of keys){
@@ -59171,6 +59172,129 @@ function wwBtnHtml(kid){
   return '<button onclick="wwOpen(\''+kid+'\')" title="Words missed twice — a few minutes a day until they\'re right on 3 days" style="height:32px;padding:0 11px;border-radius:16px;border:1.5px solid #fed7aa;background:#fff7ed;color:#7c2d12;font-size:13px;font-weight:800;cursor:pointer;flex-shrink:0;white-space:nowrap">🏋️ Word Workout ('+n+')</button>';
 }
 // WORDWORKOUT_END
+// STUDYCOUNTS_START — 📚 Study sessions count everywhere (F3 of PLAN_learning_system, her yes 2026-10-24). A study
+// sitting logs to mastery/studyLog/<kid>/<sid>/<yyyymmdd>, but Scores, the Weekly report, sprint readiness (the ≥ 90%
+// untimed check) and the notebook's 🔁 review flags read only the drill's mastery/history/<kid>/<yyyymmdd>, so Lincoln —
+// almost all of whose work is in study sessions — looked like he'd done nothing, and a spelling word he missed in a study
+// session never reached Word Workout. These helpers only READ; the one write is the Word Workout note (item.ww) the drill
+// save already writes, riding the study save's own targeted update (so ?dryrun=1 keeps it inert).
+//   graded = "c" / "m" / "~" only — "shown" (a new card just shown) never counts.
+//   A card graded in BOTH the drill and a study session on the same day counts once that day, and a miss in either is
+//   the day's grade (worst of the two: ✗ < ~ < ✓). Inside one source nothing changes — a kid with no study logs reads
+//   exactly as before. Both logs are keyed by the same UTC day (the drill's _todayKey / mstTodayKey).
+const SC_RANK={m:0,"~":1,c:2};
+const SC_LEFT_OPEN_SECS=2*60*60;   // a sitting over 2 hours was left open on the screen — its time isn't counted as minutes
+function scVals(x){ return Array.isArray(x)?x:(x&&typeof x==="object"?Object.values(x):[]); }
+function scGraded(r){ return r==="c"||r==="m"||r==="~"; }
+function scDash(k){ k=String(k||""); return /^\d{8}$/.test(k)?k.slice(0,4)+"-"+k.slice(4,6)+"-"+k.slice(6,8):k; }
+// Every study sitting-day of one kid: [{sid, day:"yyyymmdd", entry}].
+function scStudyEntries(studyLog,kid){
+  const out=[], sl=(studyLog&&studyLog[kid])||{};
+  Object.keys(sl).forEach(sid=>{ const days=sl[sid]||{}; if(typeof days!=="object") return;
+    Object.keys(days).forEach(day=>{ const e=days[day]; if(e&&typeof e==="object") out.push({sid:sid,day:day,entry:e}); }); });
+  return out;
+}
+// The shared helper: one kid's GRADED results per school day from the drill history AND the study logs.
+// → {yyyymmdd: {day, drill:<history entry>|null, study:[{sid,entry}], items:[{id,prompt,result,src:"drill"|"study"|"both",
+//    sid, day, printNum}]}}. A day with only shown cards is still a day (items []).
+function scGradedDays(kid,history,studyLog){
+  const out={}, dh=(history&&history[kid])||{};
+  const dayOf=k=>out[k]||(out[k]={day:k,drill:null,study:[],items:[]});
+  Object.keys(dh).forEach(k=>{ const e=dh[k]; if(!e||typeof e!=="object") return; const d=dayOf(k); d.drill=e;
+    scVals(e.items).forEach(it=>{ if(it&&scGraded(it.result)) d.items.push({id:it.id,prompt:it.prompt,result:it.result,src:"drill",sid:null,day:k,printNum:e.printNum??null}); }); });
+  scStudyEntries(studyLog,kid).forEach(s=>{ const d=dayOf(s.day); d.study.push({sid:s.sid,entry:s.entry});
+    scVals(s.entry.items).forEach(it=>{ if(it&&scGraded(it.result)) d.items.push({id:it.id,prompt:it.name,result:it.result,src:"study",sid:s.sid,day:s.day,printNum:s.entry.printNum??null}); }); });
+  Object.keys(out).forEach(k=>{ const d=out[k];
+    const inDrill=new Set(d.items.filter(x=>x.src==="drill").map(x=>x.id));
+    const both=new Set(d.items.filter(x=>x.src==="study"&&inDrill.has(x.id)).map(x=>x.id));
+    if(!both.size) return;
+    const merged=[], one={};
+    d.items.forEach(x=>{ if(!both.has(x.id)){ merged.push(x); return; }
+      const m=one[x.id];
+      if(!m){ one[x.id]=Object.assign({},x,{src:"both"}); merged.push(one[x.id]); return; }
+      if(SC_RANK[x.result]<SC_RANK[m.result]) m.result=x.result;
+      if(x.sid&&!m.sid) m.sid=x.sid; });
+    d.items=merged; });
+  return out;
+}
+// History-shaped view for readers written against mastery/history: {yyyymmdd:{date, printNum, items:[graded]}} — every
+// drill day, plus each study day that graded something.
+// No study log for this kid → the kid's drill history exactly as it was. `studyLog` undefined = the live study log, but
+// only when `history` is the live drill history (a hand-built history in a test stays drill-only). Memoized per kid.
+let _scMemo={};
+function _scSig(dh,sl){
+  let s=Object.keys(dh||{}).length+"";
+  const last=Object.keys(dh||{}).sort().pop(); if(last) s+=":"+last+":"+scVals((dh[last]||{}).items).length;
+  Object.keys(sl||{}).forEach(sid=>{ const ds=Object.keys(sl[sid]||{}).sort(), l=ds[ds.length-1];
+    s+="|"+sid+":"+ds.length+(l?":"+l+":"+scVals((sl[sid][l]||{}).items).length:""); });
+  return s;
+}
+function scHistoryFor(history,kid,studyLog){
+  if(studyLog===undefined) studyLog=(typeof masteryData!=="undefined"&&masteryData&&history===masteryData.history)?masteryData.studyLog:null;
+  const dh=(history&&history[kid])||{}, sl=studyLog&&studyLog[kid];
+  if(!sl||typeof sl!=="object"||!Object.keys(sl).length) return dh;
+  const m=_scMemo[kid], sig=_scSig(dh,sl);
+  if(m&&m.h===history&&m.s===studyLog&&m.sig===sig) return m.out;
+  const days=scGradedDays(kid,history,studyLog), out={};
+  Object.keys(days).forEach(k=>{ const d=days[k];
+    if(!d.drill&&!d.items.length) return;   // a study day of only new cards shown isn't a practice day for these readers (keeps the notebook's last-6-days window on real grades)
+    out[k]={date:(d.drill&&d.drill.date)||scDash(k),printNum:(d.drill&&d.drill.printNum)??((d.study[0]||{}).entry||{}).printNum??null,items:d.items}; });
+  _scMemo[kid]={h:history,s:studyLog,sig:sig,out:out};
+  return out;
+}
+// 📊 Scores: each study sitting-day as a score card beside the drill's ("📚 Study · <session>" vs "🎯 Drill").
+// Same shape as a drill history entry, plus study:true / sid / sname. Read-only (no 🗑 Delete, no ⏱ interrupted tap).
+function scScoreEntries(kid){
+  const md=(typeof masteryData!=="undefined"&&masteryData)||{};
+  let ses=[]; try{ ses=(typeof mstSessions==="function")?mstSessions(kid):[]; }catch(e){}
+  return scStudyEntries(md.studyLog,kid).map(s=>{ const e=s.entry, its=scVals(e.items).filter(Boolean);
+    let c=0,m=0,t=0,sh=0; its.forEach(x=>{ if(x.result==="c") c++; else if(x.result==="m") m++; else if(x.result==="~") t++; else sh++; });
+    const scored=c+m+t, sits=scVals(e.sits).map(x=>x&&x.secs).filter(x=>typeof x==="number");
+    const rec=ses.find(x=>x&&x.sid===s.sid);
+    return {date:scDash(e.date||s.day),printNum:e.printNum,total:e.total!=null?e.total:its.length,scored:scored,correct:c,miss:m,close:t,shown:sh,
+      pct:scored?Math.round(c/scored*100):0,secs:e.secs??null,sessTimes:sits.length?sits:null,
+      items:its.map(x=>({id:x.id,prompt:x.name!=null?x.name:x.id,result:x.result})),
+      study:true,sid:s.sid,sname:(rec&&rec.name)||s.sid};
+  });
+}
+function scScoreTag(e){
+  const q=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  return e&&e.study
+    ?' <span style="display:inline-block;font-size:9px;font-weight:800;color:#0e7490;background:#ecfeff;border-radius:6px;padding:1px 6px;vertical-align:middle">\u{1F4DA} Study \u{00B7} '+q(e.sname)+'</span>'
+    :' <span style="display:inline-block;font-size:9px;font-weight:800;color:#5b3a8c;background:#f3f0fa;border-radius:6px;padding:1px 6px;vertical-align:middle">\u{1F3AF} Drill</span>';
+}
+// 📅 Weekly report: one kid's study sittings inside the report week (range {from,to} as yyyymmdd).
+function scStudyWeek(studyLog,kid,range){
+  const r=range||{}, days=new Set();
+  const o={sittings:0,days:0,cards:0,graded:0,correct:0,secs:0,pct:null};
+  if(!r.from) return o;
+  scStudyEntries(studyLog,kid).forEach(s=>{ if(s.day<r.from||s.day>r.to) return; const e=s.entry, its=scVals(e.items).filter(Boolean);
+    const sits=scVals(e.sits).filter(Boolean);
+    o.sittings+=sits.length||1; days.add(s.day);
+    o.cards+=e.total!=null?e.total:its.length;
+    its.forEach(x=>{ if(scGraded(x.result)){ o.graded++; if(x.result==="c") o.correct++; } });
+    (sits.length?sits.map(x=>x.secs):[e.secs]).forEach(v=>{ if(typeof v==="number"&&v>0&&v<=SC_LEFT_OPEN_SECS) o.secs+=v; }); });
+  o.days=days.size; o.minutes=Math.round(o.secs/60); o.pct=o.graded?Math.round(o.correct/o.graded*100):null;
+  return o;
+}
+function scStudyWeekLine(o){
+  if(!o||!o.sittings) return "";
+  return '\u{1F4DA} Study sessions \u{2014} '+o.sittings+' sitting'+(o.sittings===1?'':'s')+' on '+o.days+' day'+(o.days===1?'':'s')
+    +' \u{00B7} '+o.cards+' card'+(o.cards===1?'':'s')+' \u{00B7} '+o.minutes+' min'
+    +(o.graded?' \u{00B7} '+o.pct+'% right of '+o.graded+' graded':' \u{00B7} all new cards (none graded yet)');
+}
+// 🏋️ Word Workout from a study sitting: a spelling card (WW_DECKS) missed in the sitting counts as a miss day — the
+// same wwNote the drill save calls. Only "m"; never "shown". Marks the card touched so the study save's targeted
+// update writes its ww (mastery/<kid>/<i>/ww). Called before that write.
+function scStudyWw(items,scores,touched,day){
+  if(typeof wwNote!=="function") return 0;
+  day=day||((typeof wwToday==="function")?wwToday():undefined); let n=0;
+  Object.keys(scores||{}).forEach(id=>{ if(scores[id]!=="m") return;
+    const it=(items||[]).find(x=>x&&x.id===id); if(!it) return;
+    if(wwNote(it,"miss",day)){ n++; if(touched&&touched.indexOf(it)<0) touched.push(it); } });
+  return n;
+}
+// STUDYCOUNTS_END
 // CKSTART_START — 🩺 Start a check-up any time (step 7 of the AAS plan; her rules 2026-10-04: "a mom could activate checkup
 // for any kid based on what they have finished … pick which books and areas … do all … or pull three … and if one is wrong
 // pull all of them"; size "adjustable and a recommendation per age"). The 🩺 Check-up engine (CHECKUP) only started at
@@ -60192,6 +60316,7 @@ function _mstSaveInner(){
   const _wasLearning=new Set(items.filter(i=>i&&i.status==="introduction").map(i=>i.id));
   let r; try{ r=mastApplyScores(items,due,scores,pn,settings,{prevShown:prevShownIds,autoPull:false,chain:false}); }catch(e){ r={touched:[],minted:[],changes:0}; }
   const touched=r.touched||[];
+  try{ if(typeof scStudyWw==="function") scStudyWw(items,scores,touched); }catch(e){}   // 📚 STUDYCOUNTS → 🏋️ a spelling miss in a sitting counts for Word Workout
   const mintedAll=minted.slice();
   (r.minted||[]).forEach(it=>{ if(mintedAll.indexOf(it)===-1) mintedAll.push(it); });
   // ↔ BOTH DIRECTIONS: a card that finished learning in this sitting gets its 🇬🇧→🇩🇪 twin —
@@ -60252,6 +60377,7 @@ function _mstSaveInner(){
       upd[ix+"/next_due"]=it.next_due??null;
       upd[ix+"/dynamic"]=it.dynamic?true:null; upd[ix+"/dynSource"]=it.dynamic?(it.dynSource||null):null;
       upd[ix+"/dynFromTier"]=it.dynamic?(it.dynFromTier||null):null; upd[ix+"/dynAddedAt"]=it.dynamic?(it.dynAddedAt||null):null;
+      if(it.ww) upd[ix+"/ww"]=it.ww;   // 🏋️ STUDYCOUNTS: Word Workout miss days, as the drill save writes them
     });
     mintedAll.forEach(it=>{ const ix=items.indexOf(it); if(ix>=0) upd[ix]=JSON.parse(JSON.stringify(it)); });  // strips undefined fields Firebase would refuse
     if(Object.keys(upd).length) db.ref("mastery/"+kid).update(upd);
@@ -62995,7 +63121,10 @@ function _renderMasteryInner(el){
   // ── SCORES VIEW ──
   if(mastView==="scores"){
     const hist=masteryData.history&&masteryData.history[masteryKid]?masteryData.history[masteryKid]:{};
-    const entries=Object.values(hist).sort((a,b)=>b.date.localeCompare(a.date));
+    const entries=Object.values(hist);
+    try{ if(typeof scScoreEntries==="function") scScoreEntries(masteryKid).forEach(x=>entries.push(x)); }catch(e){}   // 📚 STUDYCOUNTS: study sittings beside the drills
+    entries.sort((a,b)=>b.date.localeCompare(a.date)||((a.study?1:0)-(b.study?1:0)));
+    const _scAny=entries.some(x=>x&&x.study);   // label 📚 Study vs 🎯 Drill only when there are both kinds
 
     // Add past score button + form
     if(mastManualScore){
@@ -63197,7 +63326,7 @@ function _renderMasteryInner(el){
           const x=pad+i*step;
           const y=ht-pad-(e.pct/100)*(ht-2*pad);
           const col=e.pct>=80?"#16a34a":e.pct>=60?"#d97706":"#dc2626";
-          const tip=e.date+' \u{2014} '+e.pct+'% ('+(e.correct||0)+'\u{2713} '+(e.miss||0)+'\u{2717}'+((e.close||0)?' '+e.close+'~':'')+')';
+          const tip=(e.study?'\u{1F4DA} '+e.sname+' \u{00B7} ':'')+e.date+' \u{2014} '+e.pct+'% ('+(e.correct||0)+'\u{2713} '+(e.miss||0)+'\u{2717}'+((e.close||0)?' '+e.close+'~':'')+')';
           dots+='<circle cx="'+x+'" cy="'+y+'" r="4" fill="'+col+'" stroke="white" stroke-width="1.5"><title>'+tip+'</title></circle>';
         });
         h+='<div class="mast-chart"><div class="mast-chart-title">Score Trend</div>';
@@ -63221,7 +63350,7 @@ function _renderMasteryInner(el){
 
         h+='<div class="mast-score-card">';
         h+='<div style="display:flex;align-items:center;justify-content:space-between">';
-        h+='<div><div class="mast-score-date">'+dateLbl+' \u{00B7} Day #'+e.printNum+'</div>';
+        h+='<div><div class="mast-score-date">'+dateLbl+' \u{00B7} Day #'+e.printNum+((_scAny&&typeof scScoreTag==="function")?scScoreTag(e):'')+'</div>';
         // Learning-only session (everything still introduction, nothing scored on the ladder yet):
         // a 0% reads like a failing grade, so show a calm "Learning" label instead — the % only
         // appears once items graduate onto the ladder and are actually scored.
@@ -63229,9 +63358,9 @@ function _renderMasteryInner(el){
                     :'<div class="mast-score-pct" style="color:#6366f1;font-size:15px">\u{1F4D8} Learning</div>');
         h+='</div>';
         h+='<div style="text-align:right"><div style="font-size:10px;color:var(--muted)">'+e.scored+' scored'+(e.shown?' + '+e.shown+' shown':'')+'</div>';
-        h+='<div style="font-size:10px;color:var(--muted)">of '+e.total+' due</div>';
+        h+='<div style="font-size:10px;color:var(--muted)">of '+e.total+(e.study?' cards':' due')+'</div>';
         const dateKey=e.date.replace(/-/g,"");
-        h+='<button onclick="event.stopPropagation();mastDeleteScore(\''+dateKey+'\')" style="margin-top:4px;font-size:9px;color:#991b1b;background:none;border:none;cursor:pointer;font-weight:600;font-family:\'DM Sans\',sans-serif">\u{1F5D1}\u{FE0F} Delete</button>';
+        if(!e.study) h+='<button onclick="event.stopPropagation();mastDeleteScore(\''+dateKey+'\')" style="margin-top:4px;font-size:9px;color:#991b1b;background:none;border:none;cursor:pointer;font-weight:600;font-family:\'DM Sans\',sans-serif">\u{1F5D1}\u{FE0F} Delete</button>';
         h+='</div></div>';
 
         h+='<div class="mast-score-breakdown">';
@@ -63243,7 +63372,8 @@ function _renderMasteryInner(el){
         {
           const _fT=s=>Math.floor(s/60)+":"+String(s%60).padStart(2,"0");
           const _ts=(e.sessTimes&&e.sessTimes.length)?e.sessTimes:(e.secs!=null?[e.secs]:[]);
-          if(_ts.length) h+='<span onclick="event.stopPropagation();mastToggleBad(\''+dateKey+'\')" title="'+(e.bad?"Marked interrupted — this time is ignored when working out how long a drill takes. Tap to count it again.":"Tap if you were interrupted — the scores stay, but this time stops counting toward how long a drill takes.")+'" style="cursor:pointer;font-size:10px;font-weight:700;'+(e.bad?'color:#92400e;background:#fef3c7;text-decoration:line-through':'color:#0e7490;background:#ecfeff')+';border-radius:6px;padding:2px 6px">\u{23F1} '+_ts.map(_fT).join(" \u{2192} ")+(e.bad?' interrupted':'')+'</span>';
+          if(_ts.length&&e.study) h+='<span style="font-size:10px;font-weight:700;color:#0e7490;background:#ecfeff;border-radius:6px;padding:2px 6px">\u{23F1} '+_ts.map(_fT).join(" \u{2192} ")+'</span>';
+          else if(_ts.length) h+='<span onclick="event.stopPropagation();mastToggleBad(\''+dateKey+'\')" title="'+(e.bad?"Marked interrupted — this time is ignored when working out how long a drill takes. Tap to count it again.":"Tap if you were interrupted — the scores stay, but this time stops counting toward how long a drill takes.")+'" style="cursor:pointer;font-size:10px;font-weight:700;'+(e.bad?'color:#92400e;background:#fef3c7;text-decoration:line-through':'color:#0e7490;background:#ecfeff')+';border-radius:6px;padding:2px 6px">\u{23F1} '+_ts.map(_fT).join(" \u{2192} ")+(e.bad?' interrupted':'')+'</span>';
         }
         if(e.shown) h+='<span class="sc-s">\u{1F441}\u{FE0F} '+e.shown+'</span>';
         h+='</div>';
