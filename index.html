@@ -55130,7 +55130,7 @@ function mastSprintBestTrend(entries){
     return {date:e.date||null,a:e.a??null,b:e.b??null,best,runningBest:run,isPB,deck:e.deck||null,
       gain,gainPct,pctA:e.pctA??null,pctB:e.pctB??null,total:e.total??null,snum:e.snum??null,src:e.src||null,
       diff:e.diff||null,gs:e.gs||null,nw:e.nw||null,ps:e.ps||null,
-      rpm,rpmPB,secsA:e.secsA??null,secsB:e.secsB??null,clk:e.clk??null,finA:!!e.finA,finB:!!e.finB,errA:e.errA??null,errB:e.errB??null};
+      rpm,rpmPB,passes:e.passes??null,secsA:e.secsA??null,secsB:e.secsB??null,clk:e.clk??null,finA:!!e.finA,finB:!!e.finB,errA:e.errA??null,errB:e.errB??null};
   });
   return {series,count:series.length,currentBest:run,lastIsPB:series.length?series[series.length-1].isPB:false};
 }
@@ -63310,6 +63310,7 @@ function _renderMasteryInner(el){
         else if(s.total!=null) chips.push(s.total+'w');
         if(s.nw==='yes') chips.push('+nonsense');
         if(s.ps&&s.ps!=='none') chips.push(s.ps==='both'?'phrases+sent.':s.ps);
+        if(s.src==='momsays') chips.push('\u{1F5E3} Mom says'+(s.errA!=null?' \u{00B7} '+s.errA+' miss'+(s.errA===1?'':'es'):'')+(s.passes!=null?' \u{00B7} '+s.passes+' pass'+(s.passes===1?'':'es'):''));   // MOMSAYS
         const chipHtml=chips.length?chips.map(c=>'<span style="display:inline-block;background:#f3f1ee;border-radius:8px;padding:1px 7px;font-size:9px;color:#6b5b8c;font-weight:600;margin:2px 3px 0 0">'+c+'</span>').join(''):'';
         if(det||chipHtml) h+='<div style="margin:1px 0 9px 96px;font-size:10px;color:#1c1917;line-height:1.55">'+det+(chipHtml?'<br>'+chipHtml:'')+'</div>';
       });
@@ -69623,6 +69624,7 @@ function buildSprintSourceToggle(color){
   let s='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:10px;margin-bottom:14px">';
   s+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin-bottom:7px">Sprint Source</div>';
   s+='<div style="display:flex;gap:8px;flex-wrap:wrap">'+opt("phonogram","\u{1F524} Phonogram")+opt("drill","\u{1F5C2}\u{FE0F} From drill items")
+    +((typeof momHere==="function"&&momHere())?opt("momsays","\u{1F5E3}\u{FE0F} Mom says"):"")   // 🗣 MOMSAYS: never on a kid's device
     +(haKidUnits(masteryKid).length?opt("unit","\u{1F393} Unit"):"")
     +(laUnitFor(masteryKid)?opt("editor","\u{270F}\u{FE0F} Rules"):"")
     +(msEnabled(masteryKid)?opt("book","\u{1F522} Book sprints"):"")+'</div>';   // 🔢 Singapore Math Sprints books
@@ -70269,6 +70271,279 @@ function buildSprintFromDrillHtml(color){
   return h;
 }
 
+// MOMSAYS_START — 🗣 Mom-says sprint (PLAN_learning_system_2026-10-24 §4; her yes 2026-10-24 "lets go forward with 3",
+// pass rule included). How she runs Lincoln's spelling: he stands where he can't see the screen, she says the word, he
+// spells it, he passes on hard ones — against the clock. Her screen shows each prompt WITH its answer beside it, so
+// checking costs her no thinking ("not because she doesn't know it, but because our brains are doing so many other
+// things"). Mom only (momHere): the source pill, the run and the results never draw on a kid's device.
+// The set = the existing sprint pool (sprintDrillPool → mastSprintPool: past the gate — tier ≥ the gate rung or ≥ 90%
+// untimed — with the Sprint switch on), each card once, shuffled. SPRINTMIN's 20 applies, with her "Sprint anyway".
+// The clock is the kid's sprint length (1 minute unless she set it). Taps: ✓ right · ✗ wrong (the first ✗ = "try once
+// more"; a second ✗ = a miss) · Pass. After 3 s on one card the Pass button lights up ("3 s — pass?"); it never passes
+// by itself. The last card stops the clock and keeps the seconds (SPRINTRATE). At the end: right, misses, passes,
+// seconds, right per minute vs HIS OWN best for this deck (never a sibling's), and a "Say these" list (misses + passes
+// with their answers) for her to say once. Nothing is written until she taps Save.
+// What Save does, per card (her rules, approved 2026-10-24):
+//  • ✓ on a card that is DUE today (mastIsDue) = that card's review through the ladder engine (mastApplyScores, "c").
+//    ✓ on a card NOT due = logged only — it never moves early (the review engine's rest gate holds).
+//  • ✗ (after the retry) = a miss: logged; the card stays where it is and keeps its normal review.
+//  • Pass — spelling decks (AAS Words, Spelling, SpellingYouSee = WW_DECKS): no credit, no penalty; the same word passed
+//    in 3 Mom-says sprints in a row → its Word Workout turns on (item.ww.on, the 🏋️ list). Every other deck: a pass
+//    counts like a miss.
+//  • Missed (or, not spelling, passed) in 2 Mom-says sprints in a row (a ✓ in between starts it over; a spelling pass
+//    doesn't break or add to it) → back to learning, the drill's own drop path: status "introduction", dots 0, streak
+//    0, drop count 0, rung "daily", no booked review — it comes back with the learning cards and climbs again after its
+//    usual shown-days. A drop / Workout resets that card's count.
+// Writes (db && !_dryRun()): one push to mastery/sprintLog/<kid> ({src:"momsays", deck, a, best, errA, passes, clk,
+// secsA, finA, rpmA, rpm, cards:[{id,r,due?,retry?}], rev[], drop[], ww[]}) + one targeted multi-path update of the
+// changed cards' fields under mastery/<kid>/<ix>/… (never the whole list). The streaks are read back from that log.
+let msaysUI=null;   // {kid,deck,label,ids[],i,res{id:{r,retry}},retry,phase:"run"|"done"|"saved",t0,secs,used,fin,cardT0,saved}
+let msaysTick=null, _msaysAnyway=false;
+const MSAYS_PASS_CUE_MS=3000, MSAYS_MISS_DROP=2, MSAYS_PASS_WW=3;
+function msaysIsSpell(it){ return typeof wwIsSpell==="function"&&wwIsSpell(it); }
+function msaysItems(kid){ let items=(masteryData||{})[kid]||[]; if(!Array.isArray(items)) items=Object.values(items); return items; }
+function msaysPool(kid){ const items=msaysItems(kid); return sprintDrillPool(kid,items,mastDrillSettings(),(masteryData||{}).history); }
+function msaysDeckLabel(){ return "Mom says \u{00B7} "+(sprintDeck==="__all__"?"All decks":sprintDeck); }
+// What Mom sees beside the prompt: a spelling word letter by letter; otherwise the card's back (the drill's flip answer).
+function msaysAnswer(kid,it){
+  if(!it) return "";
+  if(msaysIsSpell(it)) return String(typeof wwWord==="function"?wwWord(it):(it.answer||it.prompt||"")).split("").join(" ");
+  const p=String(it.prompt||"");
+  const d=(typeof mastGetDef==="function"&&p)?mastGetDef(kid,p):"";
+  return d||((it.answer!=null&&String(it.answer)!==p)?String(it.answer):"");
+}
+// Does this result count toward "back to learning"? Spelling pass = neutral (null); a non-spelling pass = a miss.
+function msaysMissKind(r,spell){ if(r==="m") return true; if(r==="p") return spell?null:true; if(r==="c") return false; return null; }
+function _msaysEntryCards(e){ const c=e&&e.cards; if(!c) return []; return Array.isArray(c)?c:Object.values(c); }
+function _msaysHas(list,id){ if(!list) return false; return (Array.isArray(list)?list:Object.values(list)).indexOf(id)>=0; }
+// Earlier Mom-says sprints for one card, newest first: [{r,drop,ww}].
+function msaysHistory(log,id){
+  if(!log) return []; if(!Array.isArray(log)) log=Object.values(log);
+  const out=[];
+  log.filter(e=>e&&e.src==="momsays").sort((a,b)=>(b.ts||0)-(a.ts||0)).forEach(e=>{
+    const c=_msaysEntryCards(e).find(x=>x&&x.id===id); if(!c) return;
+    out.push({r:c.r,drop:_msaysHas(e.drop,id),ww:_msaysHas(e.ww,id)});
+  });
+  return out;
+}
+// Misses in a row before this sprint (a ✓ ends it; a spelling pass is skipped; a drop starts it over).
+function msaysMissRun(log,id,spell){
+  let n=0;
+  for(const h of msaysHistory(log,id)){ if(h.drop) break; const k=msaysMissKind(h.r,spell); if(k===null) continue; if(!k) break; n++; }
+  return n;
+}
+// Spelling passes in a row before this sprint (anything else ends it; a Workout start starts it over).
+function msaysPassRun(log,id){
+  let n=0;
+  for(const h of msaysHistory(log,id)){ if(h.ww||h.r!=="p") break; n++; }
+  return n;
+}
+// The plan for one finished sprint — pure: what each card's result will do on Save.
+function msaysPlan(kid,items,ids,res,log,pn){
+  const out={cards:[],rev:[],logOnly:[],drop:[],ww:[],right:0,miss:0,pass:0};
+  (ids||[]).forEach(id=>{
+    const x=res&&res[id]; if(!x) return;   // not reached before the clock ran out
+    const it=(items||[]).find(i=>i&&i.id===id); if(!it) return;
+    const spell=msaysIsSpell(it), due=it.status!=="introduction"&&mastIsDue(it,pn);
+    const c={id:id,r:x.r}; if(due) c.due=true; if(x.retry) c.retry=true;
+    out.cards.push(c);
+    if(x.r==="c"){ out.right++; (due?out.rev:out.logOnly).push(id); return; }
+    if(x.r==="m") out.miss++; else out.pass++;
+    if(msaysMissKind(x.r,spell)===true&&msaysMissRun(log,id,spell)+1>=MSAYS_MISS_DROP){ out.drop.push(id); return; }
+    if(x.r==="p"&&spell&&!(it.ww&&it.ww.on)&&msaysPassRun(log,id)+1>=MSAYS_PASS_WW) out.ww.push(id);
+  });
+  return out;
+}
+// Apply a plan to the cards (in place). Returns the cards that changed.
+function msaysApply(kid,items,plan,pn,settings,day){
+  const touched=[];
+  if(plan.rev.length){
+    const scores={}; plan.rev.forEach(id=>{ scores[id]="c"; });
+    const r=mastApplyScores(items,plan.rev.map(id=>({id})),scores,pn,settings,{autoPull:false,chain:false});
+    (r.touched||[]).forEach(it=>{ if(touched.indexOf(it)<0) touched.push(it); });
+  }
+  plan.drop.forEach(id=>{
+    const it=items.find(i=>i&&i.id===id); if(!it) return;
+    it.status="introduction"; it.tally_dots=0; it.consecutive_correct=0; it.drop_count=0; it.tier="daily"; delete it.next_due;
+    if(touched.indexOf(it)<0) touched.push(it);
+  });
+  plan.ww.forEach(id=>{
+    const it=items.find(i=>i&&i.id===id); if(!it) return;
+    const ww=Object.assign({m:0,r:[]},it.ww||{}); ww.on=true; ww.since=day; ww.r=[]; delete ww.out; ww.pass=true;
+    it.ww=ww; if(touched.indexOf(it)<0) touched.push(it);
+  });
+  return touched;
+}
+function msaysElapsed(now){ const u=msaysUI; if(!u) return 0; return Math.min(u.secs,Math.max(1,Math.round((now-u.t0)/1000))); }
+function msaysStopTick(){ if(msaysTick){ clearInterval(msaysTick); msaysTick=null; } }
+function _msaysRe(){ if(typeof document!=="undefined"&&document.getElementById&&!document.getElementById("msays-panel")) return; if(typeof _mastRe==="function") _mastRe(); }
+function msaysStart(){
+  if(!(typeof momHere==="function"&&momHere())) return;
+  const kid=masteryKid, pool=msaysPool(kid);
+  if(!pool.length) return;
+  if(!(sprintMinAllows(pool.length)||_msaysAnyway)) return;   // SPRINTMIN: below 20 only through Sprint anyway
+  const ids=pool.map(it=>it.id);
+  for(let i=ids.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [ids[i],ids[j]]=[ids[j],ids[i]]; }
+  const now=Date.now();
+  msaysUI={kid:kid,deck:msaysDeckLabel(),ids:ids,i:0,res:{},retry:false,phase:"run",t0:now,cardT0:now,secs:sprintCurrentSeconds(),used:null,fin:false,saved:null};
+  msaysStopTick();
+  msaysTick=setInterval(msaysOnTick,250);
+  _mastRe();
+}
+function msaysAnyway(){ if(!(typeof momHere==="function"&&momHere())) return; _msaysAnyway=true; try{ msaysStart(); } finally{ _msaysAnyway=false; } }
+function msaysOnTick(){
+  const u=msaysUI; if(!u||u.phase!=="run"){ msaysStopTick(); return; }
+  const now=Date.now();
+  if(now-u.t0>=u.secs*1000){ msaysEnd(false); return; }
+  if(typeof document==="undefined") return;
+  const left=Math.max(0,Math.ceil((u.t0+u.secs*1000-now)/1000));
+  const t=document.getElementById("msays-clock"); if(t) t.textContent=Math.floor(left/60)+":"+String(left%60).padStart(2,"0");
+  const pb=document.getElementById("msays-pass"); if(pb){ const cue=now-u.cardT0>=MSAYS_PASS_CUE_MS; pb.textContent=cue?"\u{23F3} 3 s \u{2014} Pass":"Pass"; pb.style.background=cue?"#fde68a":"#fff"; }
+}
+function msaysEnd(finished){
+  const u=msaysUI; if(!u||u.phase!=="run") return;
+  msaysStopTick();
+  u.used=finished?msaysElapsed(Date.now()):(Date.now()-u.t0>=u.secs*1000?u.secs:msaysElapsed(Date.now()));
+  u.fin=!!finished; u.phase="done";
+  _msaysRe();
+}
+// ✓ "c" · ✗ "x" (first = try once more, second = a miss) · Pass "p"
+function msaysMark(kind){
+  const u=msaysUI; if(!u||u.phase!=="run"||!(typeof momHere==="function"&&momHere())) return;
+  const id=u.ids[u.i]; if(id==null) return;
+  if(kind==="x"&&!u.retry){ u.retry=true; _mastRe(); return; }
+  u.res[id]={r:kind==="c"?"c":kind==="p"?"p":"m",retry:u.retry};
+  u.i++; u.retry=false; u.cardT0=Date.now();
+  if(u.i>=u.ids.length){ msaysEnd(true); return; }
+  _mastRe();
+}
+function msaysUndo(){
+  const u=msaysUI; if(!u||u.phase!=="run") return;
+  if(u.retry) u.retry=false;
+  else if(u.i>0){ u.i--; delete u.res[u.ids[u.i]]; }
+  u.cardT0=Date.now(); _mastRe();
+}
+function msaysStop(){ if(msaysUI&&msaysUI.phase==="run") msaysEnd(false); }
+function msaysDiscard(){ if(msaysUI&&msaysUI.phase==="done"&&!confirm("Throw away this sprint? Nothing has been saved yet.")) return; msaysStopTick(); msaysUI=null; _mastRe(); }
+function msaysSave(){
+  const u=msaysUI; if(!u||u.phase!=="done"||!(typeof momHere==="function"&&momHere())) return;
+  const kid=u.kid, pn=mastGetPrintNum(kid);
+  let items=masteryData[kid]; if(!items) items=[]; if(!Array.isArray(items)) items=Object.values(items);
+  if(!masteryData.sprintLog) masteryData.sprintLog={};
+  if(!Array.isArray(masteryData.sprintLog[kid])) masteryData.sprintLog[kid]=Object.values(masteryData.sprintLog[kid]||{});
+  const log=masteryData.sprintLog[kid];
+  const plan=msaysPlan(kid,items,u.ids,u.res,log,pn);
+  const day=(typeof wwToday==="function")?wwToday():new Date().toISOString().slice(0,10);
+  const touched=msaysApply(kid,items,plan,pn,mastDrillSettings(),day);
+  const entry={date:sprintDate,deck:u.deck,src:"momsays",a:plan.right,best:plan.right,total:u.ids.length,errA:plan.miss,passes:plan.pass,
+    snum:sprintNum,ts:Date.now(),cards:plan.cards};
+  if(u.fin) entry.finA=true;
+  Object.assign(entry,sprintRateFields(plan.right,null,{used:u.used,fin:u.fin},null,u.secs));   // SPRINTRATE: seconds + per minute
+  if(plan.rev.length) entry.rev=plan.rev.slice();
+  if(plan.drop.length) entry.drop=plan.drop.slice();
+  if(plan.ww.length) entry.ww=plan.ww.slice();
+  log.push(entry);
+  masteryData[kid]=items;
+  if(db&&!_dryRun()){
+    const upd={};
+    touched.forEach(it=>{
+      const ix=items.indexOf(it); if(ix<0) return;
+      upd[ix+"/tier"]=it.tier; upd[ix+"/consecutive_correct"]=it.consecutive_correct||0;
+      upd[ix+"/cycle"]=it.cycle||1; upd[ix+"/drop_count"]=it.drop_count||0;
+      upd[ix+"/status"]=it.status||"active"; upd[ix+"/tally_dots"]=it.tally_dots??0;
+      upd[ix+"/next_due"]=it.next_due??null;
+      if(it.ww) upd[ix+"/ww"]=it.ww;
+    });
+    if(Object.keys(upd).length) db.ref("mastery/"+kid).update(upd);
+    db.ref("mastery/sprintLog/"+kid).push(entry);
+  }
+  try{ HA_LS.setItem("ha_mastery",JSON.stringify(masteryData)); }catch(e){}
+  u.phase="saved"; u.savedTs=entry.ts; u.saved={rev:plan.rev.length,logOnly:plan.logOnly.length,drop:plan.drop.slice(),ww:plan.ww.slice()};
+  _mastRe();
+}
+function msaysNew(){ msaysStopTick(); msaysUI=null; _mastRe(); }
+// ── the screens ──
+function _msaysEsc(v){ return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function _msaysBtn(bg,fg,bd){ return 'padding:16px 10px;border-radius:14px;border:2px solid '+bd+';background:'+bg+';color:'+fg+';font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;flex:1;min-width:0'; }
+function msaysRunHtml(color){
+  const u=msaysUI, kid=u.kid, items=msaysItems(kid), id=u.ids[u.i], it=items.find(x=>x&&x.id===id)||{prompt:id};
+  const left=Math.max(0,Math.ceil((u.t0+u.secs*1000-Date.now())/1000)), ans=msaysAnswer(kid,it);
+  let h='<div id="msays-panel" style="background:#fff;border:2px solid '+color+';border-radius:16px;padding:16px;margin-bottom:14px">';
+  h+='<div id="msays-run" style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><div id="msays-clock" style="font-family:\'DM Mono\',monospace;font-size:30px;font-weight:800;color:'+color+'">'+Math.floor(left/60)+':'+String(left%60).padStart(2,'0')+'</div>';
+  h+='<div style="flex:1;font-size:12px;color:#78716c">Card '+(u.i+1)+' of '+u.ids.length+' \u{00B7} '+Object.values(u.res).filter(x=>x.r==="c").length+' right</div>';
+  h+='<button onclick="msaysUndo()" style="padding:6px 10px;border-radius:9px;border:1.5px solid #e2ddd6;background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{21A9}\u{FE0E} Undo</button>';
+  h+='<button onclick="msaysStop()" style="padding:6px 10px;border-radius:9px;border:none;background:#dc2626;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{25A0} Stop</button></div>';
+  h+='<div style="display:flex;gap:12px;align-items:stretch;flex-wrap:wrap;margin-bottom:14px">';
+  h+='<div style="flex:1 1 180px;background:#faf8f5;border-radius:12px;padding:14px;text-align:center"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#78716c">Say</div><div class="msays-prompt" style="font-family:\'Fraunces\',serif;font-size:30px;font-weight:800;color:#1c1917;line-height:1.2;margin-top:4px">'+_msaysEsc(it.prompt||id)+'</div></div>';
+  h+='<div style="flex:1 1 180px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:14px;text-align:center"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#15803d">Answer</div><div class="msays-answer" style="font-family:\'DM Mono\',monospace;font-size:24px;font-weight:800;color:#15803d;line-height:1.3;margin-top:6px">'+(ans?_msaysEsc(ans):'<span style="font-size:13px;color:#78716c;font-family:\'DM Sans\',sans-serif">no answer on this card</span>')+'</div></div>';
+  h+='</div>';
+  if(u.retry) h+='<div style="text-align:center;font-size:14px;font-weight:800;color:#b45309;margin:-4px 0 10px">\u{21BB} One more try</div>';
+  h+='<div style="display:flex;gap:10px">';
+  h+='<button onclick="msaysMark(\'c\')" style="'+_msaysBtn("#16a34a","#fff","#16a34a")+'">\u{2713} Right</button>';
+  h+='<button onclick="msaysMark(\'x\')" style="'+_msaysBtn("#fff","#b91c1c","#ef4444")+'">\u{2717} '+(u.retry?"Wrong":"No")+'</button>';
+  h+='<button id="msays-pass" onclick="msaysMark(\'p\')" style="'+_msaysBtn("#fff","#57534e","#d6d3d1")+'">Pass</button>';
+  h+='</div>';
+  h+='<div style="font-size:11px;color:#78716c;text-align:center;margin-top:10px">Say the answer after the timer, not during. About 3 s with no answer \u{2248} a pass.</div>';
+  return h+'</div>';
+}
+function msaysDoneHtml(color){
+  const u=msaysUI, kid=u.kid, items=msaysItems(kid), pn=mastGetPrintNum(kid);
+  let log=((masteryData||{}).sprintLog||{})[kid]; if(log&&!Array.isArray(log)) log=Object.values(log);
+  const plan=msaysPlan(kid,items,u.ids,u.res,log,pn);
+  const rpm=sprintRate(plan.right,u.used), nm=id=>{ const it=items.find(x=>x&&x.id===id); return it?it.prompt:id; };
+  let h='<div id="msays-panel" style="background:#fff;border:2px solid '+color+';border-radius:16px;padding:16px;margin-bottom:14px">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:800;color:'+color+';margin-bottom:4px">'+(u.fin?'\u{1F3C1} Finished!':'\u{23F1} Time!')+' '+plan.right+' right in '+u.used+' s</div>';
+  h+='<div class="msays-sum" style="font-size:13px;color:#1c1917;margin-bottom:10px">'+(rpm!=null?'<b>'+rpm+' a minute</b>'+sprintRateVsBest(rpm,sprintBestRpm(log,u.deck,"momsays",u.savedTs)):'')+' \u{00B7} '+plan.miss+' miss'+(plan.miss===1?'':'es')+' \u{00B7} '+plan.pass+' pass'+(plan.pass===1?'':'es')+'</div>';
+  const say=u.ids.filter(id=>u.res[id]&&u.res[id].r!=="c");
+  if(u.phase==="done"&&say.length){
+    h+='<div class="msays-say" style="background:#fffbeb;border:1.5px solid #fcd34d;border-radius:12px;padding:10px 12px;margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#92400e;margin-bottom:6px">\u{1F5E3} Say these once</div>';
+    say.forEach(id=>{ const it=items.find(x=>x&&x.id===id)||{prompt:id}; h+='<div style="display:flex;gap:10px;padding:4px 0;font-size:14px"><span style="flex:1;font-weight:700">'+_msaysEsc(it.prompt)+'</span><span style="font-family:\'DM Mono\',monospace;color:#15803d;font-weight:700">'+_msaysEsc(msaysAnswer(kid,it))+'</span><span style="font-size:11px;color:#78716c;width:36px;text-align:right">'+(u.res[id].r==="p"?"pass":"miss")+'</span></div>'; });
+    h+='</div>';
+  }
+  if(u.phase==="done"){
+    const notes=[];
+    notes.push(plan.rev.length+' due card'+(plan.rev.length===1?'':'s')+' right \u{2192} counted as '+(plan.rev.length===1?'its':'their')+' review');
+    if(plan.logOnly.length) notes.push(plan.logOnly.length+' right but not due \u{2192} logged only');
+    if(plan.drop.length) notes.push('back to learning (missed 2 sprints in a row): '+plan.drop.map(id=>_msaysEsc(nm(id))).join(', '));
+    if(plan.ww.length) notes.push('to Word Workout (passed 3 sprints in a row): '+plan.ww.map(id=>_msaysEsc(nm(id))).join(', '));
+    h+='<div class="msays-notes" style="font-size:12px;color:#57534e;line-height:1.6;margin-bottom:12px">'+notes.map(n=>'\u{2022} '+n).join('<br>')+'</div>';
+    h+='<div style="display:flex;gap:10px"><button onclick="msaysDiscard()" style="flex:1;padding:12px;border-radius:12px;border:none;background:#f3f4f6;color:#374151;font-size:14px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Throw away</button><button onclick="msaysSave()" style="flex:2;padding:12px;border-radius:12px;border:none;background:'+color+';color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F4BE} Save results</button></div>';
+  } else {
+    const s=u.saved||{};
+    h+='<div style="font-size:13px;font-weight:700;color:#15803d;margin-bottom:10px">\u{2713} Saved \u{00B7} '+(s.rev||0)+' review'+(s.rev===1?'':'s')+' counted'+((s.drop||[]).length?' \u{00B7} '+s.drop.length+' back to learning':'')+((s.ww||[]).length?' \u{00B7} '+s.ww.length+' to Word Workout':'')+'</div>';
+    h+='<button onclick="msaysNew()" style="width:100%;padding:12px;border-radius:12px;border:none;background:'+color+';color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{25B6} Another sprint</button>';
+  }
+  return h+'</div>';
+}
+function buildSprintMomSaysHtml(color){
+  if(!(typeof momHere==="function"&&momHere())) return '<div style="background:#faf8f5;border:1.5px dashed #e2ddd6;border-radius:14px;padding:24px 18px;text-align:center;font-size:13px;color:#78716c">\u{1F5E3} Mom-says sprints run from Mom\u{2019}s screen.</div>';
+  if(msaysUI&&msaysUI.kid===masteryKid&&msaysUI.phase==="run") return msaysRunHtml(color);
+  if(msaysUI&&msaysUI.kid===masteryKid) return msaysDoneHtml(color);
+  const kid=masteryKid, items=msaysItems(kid), pool=msaysPool(kid), pn=mastGetPrintNum(kid), catE=(typeof MAST_CAT_EMOJI_MAP!=="undefined"&&MAST_CAT_EMOJI_MAP[kid])||{};
+  const scope=sprintActiveScope(), decks=[...new Set(items.map(i=>i&&i.subject).filter(Boolean))].sort();
+  let h='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:16px;font-weight:700;margin-bottom:4px">\u{1F5E3}\u{FE0F} Mom says</div>';
+  h+='<div style="font-size:12px;color:#78716c;line-height:1.5;margin-bottom:12px">He stands where he can\u{2019}t see the screen. You see each card with its answer; say it, then tap \u{2713} right \u{00B7} \u{2717} no (he gets one more try) \u{00B7} Pass. Only cards past the sprint gate.</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+  const pill=(on,click,l)=>'<button onclick="'+click+'" style="padding:6px 11px;border-radius:20px;border:1.5px solid '+(on?color:"#e2ddd6")+';background:'+(on?color:"#fff")+';color:'+(on?"#fff":"#78716c")+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+l+'</button>';
+  h+=pill(!scope&&sprintDeck==="__all__","sprintSetDeck('__all__')","All decks");
+  sprintDrillScopes(kid).forEach(sc=>{ h+=pill(!!scope&&scope.join("|")===sc.scope.join("|"),"sprintSetDeckScope('"+sc.scope.join("|").replace(/'/g,"\\'")+"','"+sc.label.replace(/'/g,"\\'")+"')","\u{1F517} "+_msaysEsc(sc.label)); });
+  decks.forEach(d=>{ h+=pill(!scope&&sprintDeck===d,"sprintSetDeck('"+d.replace(/'/g,"\\'")+"')",_msaysEsc(((catE[d]||"")+" "+d).trim())); });
+  h+='</div></div>';
+  const nDue=pool.filter(it=>mastIsDue(it,pn)).length;
+  h+='<div style="background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:14px;margin-bottom:14px"><span style="font-family:\'Fraunces\',serif;font-size:28px;font-weight:800;color:'+color+'">'+pool.length+'</span> <span style="font-size:13px;color:#78716c;font-weight:600">card'+(pool.length===1?'':'s')+' ready \u{00B7} '+nDue+' due today</span></div>';
+  if(!pool.length) return h+'<div style="background:#faf8f5;border:1.5px dashed #e2ddd6;border-radius:14px;padding:24px 18px;text-align:center;font-size:13px;color:#78716c">No cards past the sprint gate here yet.</div>';
+  if(sprintMinShort(pool.length)){
+    const scoped=items.filter(i=>i&&i.status!=="introduction"&&(scope?scope.includes(i.subject):(sprintDeck==="__all__"||i.subject===sprintDeck)));
+    h+='<div class="sp-min" style="background:#fffbeb;border:1.5px solid #fcd34d;border-radius:14px;padding:16px;margin:0 0 16px;text-align:center"><div style="font-size:14px;font-weight:700;color:#92400e;line-height:1.5">\u{1F3C1} '+sprintMinLine(pool.length,sprintMinClimbDays(kid,scoped,mastDrillSettings(),(masteryData||{}).history))+'</div>';
+    h+='<button class="sp-min-anyway" onclick="msaysAnyway()" style="margin-top:10px;background:none;border:none;padding:2px 4px;color:#78716c;font-size:11px;text-decoration:underline;cursor:pointer;font-family:\'DM Sans\',sans-serif">Sprint anyway</button></div>';
+    return h;
+  }
+  h+='<button onclick="msaysStart()" style="width:100%;padding:14px;border-radius:12px;border:none;background:'+color+';color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-bottom:16px">\u{25B6} Start '+sprintCurrentSeconds()+' s \u{00B7} '+pool.length+' cards</button>';
+  return h;
+}
+// MOMSAYS_END
+
 function buildSprintHtml(){
   const color=MAST_KID_COL[masteryKid]||"#5b3a8c";
   const isActive=SPRINT_KID_ACTIVE.includes(masteryKid);
@@ -70279,6 +70554,7 @@ function buildSprintHtml(){
   h+=buildSprintSourceToggle(color);
   h+=retrPlanCardHtml(color);   // P1 Sprint Plan card — shows for every source (gates are per-track)
   if(sprintSource==="drill") return h+buildSprintFromDrillHtml(color);
+  if(sprintSource==="momsays") return h+buildSprintMomSaysHtml(color);   // 🗣 MOMSAYS: Mom only (answers on screen)
   if(sprintSource==="unit") return h+buildSprintUnitHtml(color);
   if(sprintSource==="editor") return h+buildSprintEditorHtml(color);
   if(sprintSource==="book") return h+buildSprintBookHtml(color);   // 🔢 works for every kid — before the phonogram gate

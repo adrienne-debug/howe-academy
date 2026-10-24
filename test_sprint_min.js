@@ -139,7 +139,9 @@ console.log("── only the drill source changes ──");
   const uses = src.split(/sprintMin|SPRINT_MIN_DRILL|sprintAnyway/).length - 1;
   const inBlock = blk.split(/sprintMin|SPRINT_MIN_DRILL|sprintAnyway/).length - 1;
   const hooks = (fn("sprintGenerateFromPool") + fn("buildSprintFromDrillHtml")).split(/sprintMin|SPRINT_MIN_DRILL|sprintAnyway/).length - 1;
-  ok("every use is in the block or the two drill hooks", uses === inBlock + hooks, { uses, inBlock, hooks });
+  // 🗣 MOMSAYS (her yes 2026-10-24): the Mom-says sprint uses the same 20 minimum + Sprint anyway, inside its own block.
+  const msays = block("MOMSAYS").split(/sprintMin|SPRINT_MIN_DRILL|sprintAnyway/).length - 1;
+  ok("every use is in the block, the two drill hooks or the Mom-says sprint", uses === inBlock + hooks + msays, { uses, inBlock, hooks, msays });
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");
