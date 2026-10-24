@@ -55119,14 +55119,18 @@ function mastSprintBestTrend(entries){
   const sorted=entries.filter(e=>e&&(e.best!=null||e.a!=null||e.b!=null)).slice()
     .sort((x,y)=>String(x.date||x.ts||"").localeCompare(String(y.date||y.ts||"")));
   let run=0;
+  const _rb={};   // SPRINTRATE: running best per minute, per deck + source (never mixed across decks)
   const series=sorted.map(e=>{
     const best=(e.best!=null)?e.best:Math.max(e.a||0,e.b||0);
     const isPB=best>run; if(isPB) run=best;
+    const rpm=(typeof sprintEntryRpm==="function")?sprintEntryRpm(e):null, _rk=(e.src||"")+"|"+(e.deck||"");
+    const rpmPB=rpm!=null&&(_rb[_rk]==null||rpm>_rb[_rk]); if(rpmPB) _rb[_rk]=rpm;
     const gain=(e.gain!=null)?e.gain:((e.a!=null&&e.b!=null)?e.b-e.a:null);
     const gainPct=(e.gainPct!=null)?e.gainPct:((e.a&&e.b)?Math.round((e.b-e.a)/e.a*100):null);
     return {date:e.date||null,a:e.a??null,b:e.b??null,best,runningBest:run,isPB,deck:e.deck||null,
       gain,gainPct,pctA:e.pctA??null,pctB:e.pctB??null,total:e.total??null,snum:e.snum??null,src:e.src||null,
-      diff:e.diff||null,gs:e.gs||null,nw:e.nw||null,ps:e.ps||null};
+      diff:e.diff||null,gs:e.gs||null,nw:e.nw||null,ps:e.ps||null,
+      rpm,rpmPB,secsA:e.secsA??null,secsB:e.secsB??null,clk:e.clk??null,finA:!!e.finA,finB:!!e.finB,errA:e.errA??null,errB:e.errB??null};
   });
   return {series,count:series.length,currentBest:run,lastIsPB:series.length?series[series.length-1].isPB:false};
 }
@@ -63224,6 +63228,7 @@ function _renderMasteryInner(el){
       h+='<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700">\u{1F3C3} Sprint Personal Best'+(mastSprintDeckFilter!=="__all__"?' <span style="font-size:11px;color:#5b3a8c">\u{00B7} '+esc(mastSprintDeckFilter)+'</span>':'')+'</div>';
       h+='<div style="font-family:\'DM Mono\',monospace;font-size:20px;font-weight:800;color:#5b3a8c">'+_st.currentBest+' <span style="font-size:10px;color:#78716c;font-weight:600">words/60s</span></div>';
       h+='</div>';
+      if(typeof sprintScoresBestRpmHtml==="function") h+=sprintScoresBestRpmHtml(_st.series,mastSprintDeckFilter!=="__all__"||_dOrder.length<=1);   // SPRINTRATE
       // Tested-thing pills — tap a phonogram/deck for its own graph, PB, and history; All = combined.
       if(_dOrder.length>1){
         const _pill=(val,lbl,n)=>{
@@ -63296,6 +63301,7 @@ function _renderMasteryInner(el){
           const pp=[]; if(s.pctA!=null)pp.push('A '+s.pctA+'%'); if(s.pctB!=null)pp.push('B '+s.pctB+'%');
           det+=' <span style="color:#78716c">· '+pp.join(' · ')+' of sheet</span>';
         }
+        if(typeof sprintScoresRateHtml==="function") det+=sprintScoresRateHtml(s);   // SPRINTRATE: seconds + right per minute
         const gsL={small:'3×6',medium:'4×7',large:'5×8'};
         const chips=[];
         if(s.snum!=null) chips.push('#'+String(s.snum).padStart(3,'0'));
@@ -68792,12 +68798,7 @@ function sprintLogResult(){
   const b=parseInt(document.getElementById("sp-score-b")?.value)||0;
   if(!a&&!b){ alert("Enter a Sheet A and/or B score first."); return; }
   const best=Math.max(a,b);
-  const _uRound=sprintSource==="unit"?_sprintUnitRound():null;  // U5: log label carries round + unit
-  const deck=sprintSource==="drill"
-    ? (sprintDeck==="__all__"?"All decks":sprintDeck)
-    : sprintSource==="unit" ? (_uRound?_uRound.logLabel:"unit")
-    : sprintSource==="editor" ? laLogLabel()
-    : (sprintSelectedPhono?sprintSelectedPhono.pg:(document.getElementById("sp-custom-phono")?.value?.trim()||"phonogram"));
+  const deck=sprintCurrentDeckLabel();   // SPRINTRATE: lifted out unchanged so the live result line looks up the same deck
   const date=sprintSource!=="phonogram"?sprintDate:(document.getElementById("sp-date")?.value||sprintDate);
   const la=sprintLive&&sprintLive.A, lb=sprintLive&&sprintLive.B;  // % finished from the live timer, if used
   const pctA=(la&&typeof la.pct==='number')?la.pct:null, pctB=(lb&&typeof lb.pct==='number')?lb.pct:null;
@@ -68819,15 +68820,16 @@ function sprintLogResult(){
     ts:Date.now(),src:sprintSource};
   if(errA!=null){ entry.errA=errA; entry.accA=accA; }
   if(errB!=null){ entry.errB=errB; entry.accB=accB; }
+  Object.assign(entry,sprintRateFields(a,b,la,lb,sprintCurrentSeconds()));   // SPRINTRATE: seconds + right per minute
   const kid=masteryKid;
   if(!masteryData.sprintLog) masteryData.sprintLog={};
   if(!Array.isArray(masteryData.sprintLog[kid])) masteryData.sprintLog[kid]=Object.values(masteryData.sprintLog[kid]||{});
   masteryData.sprintLog[kid].push(entry);
-  if(db) db.ref("mastery/sprintLog/"+kid).push(entry);
+  if(db&&!_dryRun()) db.ref("mastery/sprintLog/"+kid).push(entry);   // SPRINTRATE: ?dryrun=1 stays inert
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   const t=mastSprintBestTrend(masteryData.sprintLog[kid]);
   const el=document.getElementById("sp-gain");
-  if(el){ el.textContent=t.lastIsPB?("\u{1F3C6} New personal best — "+best+" words/60s!"):("Logged \u{2713}  Personal best: "+t.currentBest+" words/60s"); el.style.color="#16a34a"; }
+  if(el){ el.textContent=(t.lastIsPB?("\u{1F3C6} New personal best — "+best+" words/60s!"):("Logged \u{2713}  Personal best: "+t.currentBest+" words/60s"))+sprintRateLogNote(entry,masteryData.sprintLog[kid]); el.style.color="#16a34a"; }
   const btn=document.getElementById("sp-log-btn"); if(btn){ btn.textContent="\u{2713} Logged"; btn.disabled=true; }
 }
 
@@ -68984,7 +68986,7 @@ function sprintBuildSheet(parsed,sheet,{sprintNum,date,prevBest,cols,rows,ps,kid
     <span style="color:#9333ea">● Nonsense*</span>
   </div>`;
   h+=`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:${bgLight};border:1.5px solid ${bdLight};border-radius:10px;padding:9px 12px;margin-bottom:11px">
-    <button id="sp-timer-btn-${sheet}" data-col="${col}" onclick="sprintLiveToggle('${sheet}',${realCount})" style="padding:8px 14px;border-radius:9px;border:none;background:${col};color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">▶ Start ${sprintCurrentSeconds()}s</button>
+    <button id="sp-timer-btn-${sheet}" data-col="${col}"${sprintSheetHasBonus(parsed,ps)?' data-bonus="1"':''} onclick="sprintLiveToggle('${sheet}',${realCount})" style="padding:8px 14px;border-radius:9px;border:none;background:${col};color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">▶ Start ${sprintCurrentSeconds()}s</button>
     <div id="sp-timer-disp-${sheet}" style="font-family:'DM Mono',monospace;font-size:24px;font-weight:700;color:${col};min-width:62px;text-align:center">1:00</div>
     <div style="font-size:11px;color:#78716c;line-height:1.35">Read <span id="sp-timer-count-${sheet}" style="font-weight:700;color:${col}">0</span>/${realCount}<br>tap each word she reads</div>
   </div>`;
@@ -70373,12 +70375,12 @@ function buildSprintHtml(){
 // and from-drill-items). Verbatim extraction of the original inline block — same IDs, no change.
 function sprintScoreRowHtml(unitLbl){
   unitLbl=unitLbl||"words / 60s";  // the editor source passes "items / 60s"
-  // Accuracy gate: when the kid's gate_metric is "accuracy", add an optional misses input
-  // per sheet so the log can store % correct. Hidden by default (completion gate) to keep
-  // the form uncluttered. Resolved per kid; safe fallback if retrieval isn't loaded.
+  // Accuracy gate: an optional misses input per sheet so the log can store % correct. It used to show only
+  // when the kid's gate_metric is "accuracy"; SPRINTRATE shows it for every kid (every result records its
+  // misses, and a sheet finished early fills it in). showErr still labels the accuracy gate.
   let showErr=false;
   try{ showErr=(typeof retrSettings==="function")&&retrSettings(masteryKid,null).gate_metric==="accuracy"; }catch(e){}
-  const errCell=(sheet,col)=>showErr?`<input type="number" id="sp-err-${sheet}" min="0" placeholder="0" oninput="sprintUpdateGain()" autocomplete="off" title="misses on Sheet ${sheet.toUpperCase()}" style="width:44px;font-family:'DM Mono',monospace;font-size:13px;font-weight:700;color:#b91c1c;border:1.5px solid #fecaca;border-radius:7px;background:#fff;text-align:center;outline:none;padding:3px 0;margin-top:5px"/><div style="font-size:9px;color:#b91c1c;margin-top:1px">misses</div>`:"";
+  const errCell=(sheet,col)=>`<input type="number" id="sp-err-${sheet}" min="0" placeholder="0" oninput="sprintUpdateGain()" autocomplete="off" title="misses on Sheet ${sheet.toUpperCase()}" style="width:44px;font-family:'DM Mono',monospace;font-size:13px;font-weight:700;color:#b91c1c;border:1.5px solid #fecaca;border-radius:7px;background:#fff;text-align:center;outline:none;padding:3px 0;margin-top:5px"/><div style="font-size:9px;color:#b91c1c;margin-top:1px">misses</div>`;
   return `<div id="sp-score-row" style="display:none;background:#fff;border:1px solid #e2ddd6;border-radius:14px;padding:13px 15px;margin-bottom:14px">
     <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#78716c;margin-bottom:10px">📊 Session Score Tracker${showErr?' · <span style="color:#b91c1c">accuracy gate</span>':''}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
@@ -70432,9 +70434,10 @@ function sprintLiveStart(sheet,total){
   const prev=sprintLive[sheet]; if(prev&&prev.timerId) clearInterval(prev.timerId);
   document.querySelectorAll('.sp-live-cell-'+sheet).forEach(c=>{ c.style.background=''; c.style.color=c.dataset.wc; c.style.fontWeight=c.dataset.fw; });
   const secs=sprintCurrentSeconds();
-  const st={running:true,remaining:secs,total:total,count:0,tapped:{},timerId:null,pct:null};
-  sprintLive[sheet]=st;
   const btn=document.getElementById('sp-timer-btn-'+sheet);
+  const st={running:true,remaining:secs,total:total,count:0,tapped:{},timerId:null,pct:null,
+    secs:secs,t0:Date.now(),used:null,fin:false,miss:null,lastPos:sprintLiveLastPos(sheet),auto:!(btn&&btn.dataset&&btn.dataset.bonus==="1")};   // SPRINTRATE
+  sprintLive[sheet]=st;
   if(btn){ btn.textContent='■ Stop'; btn.style.background='#dc2626'; }
   const res=document.getElementById('sp-timer-res-'+sheet); if(res) res.style.display='none';
   const cd=document.getElementById('sp-timer-count-'+sheet); if(cd) cd.textContent='0';
@@ -70446,24 +70449,163 @@ function sprintLiveToggle(sheet,total){
   if(st&&st.running) sprintLiveEnd(sheet); else sprintLiveStart(sheet,total);
 }
 function sprintLiveTap(sheet,pos){
-  const st=sprintLive[sheet]; if(!st||!st.running) return;
+  const st=sprintLive[sheet]; if(!st||!(st.running||st.fin)) return;   // SPRINTRATE: a sheet finished early still takes corrections
   const cell=document.getElementById('sp-cell-'+sheet+'-'+pos); if(!cell) return;
   if(st.tapped[pos]){ delete st.tapped[pos]; st.count--; cell.style.background=''; cell.style.color=cell.dataset.wc; cell.style.fontWeight=cell.dataset.fw; }
   else { st.tapped[pos]=true; st.count++; cell.style.background='#dcfce7'; cell.style.color='#15803d'; cell.style.fontWeight='700'; }
   const cd=document.getElementById('sp-timer-count-'+sheet); if(cd) cd.textContent=st.count;
+  if(st.running&&sprintLiveFinishes(st,pos)) sprintLiveEnd(sheet,true);   // SPRINTRATE: the last item → the clock stops
+  else if(st.fin) sprintLiveShowResult(sheet);
 }
-function sprintLiveEnd(sheet){
+function sprintLiveEnd(sheet,finished){
   const st=sprintLive[sheet]; if(!st) return;
   if(st.timerId) clearInterval(st.timerId);
-  st.running=false; st.remaining=Math.max(0,st.remaining);
-  st.pct=st.total>0?Math.round(st.count/st.total*100):0;
-  const disp=document.getElementById('sp-timer-disp-'+sheet); if(disp) disp.textContent='Time!';
+  if(st.running) st.used=sprintLiveElapsed(st,Date.now());   // SPRINTRATE: the seconds he really took
+  st.running=false; st.remaining=Math.max(0,st.remaining); st.fin=!!finished;
+  const disp=document.getElementById('sp-timer-disp-'+sheet); if(disp) disp.textContent=st.fin?'Done!':'Time!';
   const btn=document.getElementById('sp-timer-btn-'+sheet); if(btn){ btn.textContent='↻ Redo'; btn.style.background=btn.dataset.col||''; }
-  const res=document.getElementById('sp-timer-res-'+sheet);
-  if(res){ res.style.display='block'; res.innerHTML='✓ '+st.count+' read · '+st.pct+'% of the sheet'; }
-  const inp=document.getElementById('sp-score-'+sheet.toLowerCase());
-  if(inp){ inp.value=st.count; if(typeof sprintUpdateGain==='function') sprintUpdateGain(); }
+  sprintLiveShowResult(sheet);
 }
+// SPRINTRATE_START — ⏱ finish early + right per minute (PLAN_learning_system_2026-10-24 §4 rules 2–3; her yes 2026-10-24,
+// "lets go forward with 3"). Live case: a sheet holds each card once, so a fast kid finished early, the clock ran out the
+// minute and the score was "100% of the sheet" — speed never showed. Now, on every tap-along sprint (Phonogram, From drill
+// items, Unit, Rules): when Mom taps the LAST item on the sheet (or every item is tapped) the clock stops and the seconds
+// are kept — "20 in 32 s". The items he went past without a tap are his misses and fill the misses box (now shown for
+// every kid); a mis-tap can still be fixed on a finished sheet. A phonogram sheet with a Bonus Zone keeps running into the
+// bonus (that zone is for the kid who finishes the grid). ■ Stop keeps the seconds used too.
+// Every logged result also records: clk (the clock length), secsA/secsB (the live clock's real seconds, when it was used),
+// finA/finB (finished early), rpmA/rpmB = right ÷ (seconds ÷ 60) and rpm (the better sheet). A typed score with no live
+// clock is per the clock length (clk). Results show against HIS OWN best per minute for the same deck + source — his log
+// only, never a sibling's. Old log entries are read as they are (no migration): per minute only where an entry has
+// seconds. Book Sprints (written, Met / Not) aren't tap-along and are unchanged. No new paths: the same sprintLog push.
+function sprintRate(right,secs){
+  right=Number(right); secs=Number(secs);
+  if(!(secs>0)||!(right>=0)) return null;
+  return Math.round(right*600/secs)/10;   // one decimal: 20 in 32 s → 37.5
+}
+// A sheet with a Bonus Zone (phrases / sentences after the grid) keeps its clock running past the grid.
+function sprintSheetHasBonus(parsed,ps){
+  if(!parsed||!ps||ps==="none") return false;
+  const ph=(ps==="both"||ps==="phrases")&&parsed.phrases&&parsed.phrases.length;
+  const se=(ps==="both"||ps==="sentences")&&parsed.sentences&&parsed.sentences.length;
+  return !!(ph||se);
+}
+// The last tappable item on a live sheet, in reading order — its tap finishes the sheet.
+function sprintLiveLastPos(sheet){
+  let last=-1;
+  try{ document.querySelectorAll('.sp-live-cell-'+sheet).forEach(c=>{ const p=parseInt(String(c.id||"").split('-').pop(),10); if(!isNaN(p)&&p>last) last=p; }); }catch(e){}
+  return last;
+}
+function sprintLiveFinishes(st,pos){
+  if(!st||!st.auto||!st.tapped[pos]) return false;
+  return pos===st.lastPos||(st.total>0&&st.count>=st.total);
+}
+// Whole seconds he took: the full clock when it ran out, else start → now (at least 1, never past the clock).
+function sprintLiveElapsed(st,now){
+  if(!st) return null;
+  if(st.remaining<=0) return st.secs;
+  return Math.min(st.secs,Math.max(1,Math.round((now-st.t0)/1000)));
+}
+// The deck a result logs under (lifted out of sprintLogResult unchanged).
+function sprintCurrentDeckLabel(){
+  const _uRound=sprintSource==="unit"?_sprintUnitRound():null;  // U5: log label carries round + unit
+  return sprintSource==="drill"
+    ? (sprintDeck==="__all__"?"All decks":sprintDeck)
+    : sprintSource==="unit" ? (_uRound?_uRound.logLabel:"unit")
+    : sprintSource==="editor" ? laLogLabel()
+    : (sprintSelectedPhono?sprintSelectedPhono.pg:(document.getElementById("sp-custom-phono")?.value?.trim()||"phonogram"));
+}
+// One logged sheet ("A"/"B") read back: right, seconds (live, else the clock length), per minute, misses.
+function sprintEntrySheet(e,sh){
+  if(!e) return null;
+  const right=e[sh.toLowerCase()]; if(right==null) return null;
+  const live=e["secs"+sh], secs=(typeof live==="number"&&live>0)?live:((typeof e.clk==="number"&&e.clk>0)?e.clk:null);
+  return {right:right,secs:secs,live:typeof live==="number"&&live>0,rpm:secs?sprintRate(right,secs):null,
+    miss:(typeof e["err"+sh]==="number")?e["err"+sh]:null,fin:!!e["fin"+sh]};
+}
+function sprintEntryRpm(e){
+  if(!e) return null;
+  if(typeof e.rpm==="number") return e.rpm;
+  let best=null;
+  ["A","B"].forEach(sh=>{ const x=sprintEntrySheet(e,sh); if(x&&x.rpm!=null&&(best==null||x.rpm>best)) best=x.rpm; });
+  return best;
+}
+// His own best per minute for one deck + source (excludeTs leaves out the entry just logged).
+function sprintBestRpm(log,deck,src,excludeTs){
+  if(!log) return null; if(!Array.isArray(log)) log=Object.values(log);
+  let best=null;
+  log.forEach(e=>{
+    if(!e||(e.deck||"")!==(deck||"")||(e.src||"")!==(src||"")) return;
+    if(excludeTs!=null&&e.ts===excludeTs) return;
+    const r=sprintEntryRpm(e); if(r!=null&&(best==null||r>best)) best=r;
+  });
+  return best;
+}
+// The fields a result adds to its sprintLog entry (la / lb = the live state of sheet A / B, if the clock was used).
+function sprintRateFields(a,b,la,lb,clk){
+  const out={}; if(clk>0) out.clk=clk;
+  [["A",a,la],["B",b,lb]].forEach(([sh,n,st])=>{
+    if(!n) return;
+    const live=!!(st&&typeof st.used==="number"&&st.used>0);
+    if(live) out["secs"+sh]=st.used;
+    if(live&&st.fin) out["fin"+sh]=true;
+    const r=sprintRate(n,live?st.used:out.clk); if(r!=null) out["rpm"+sh]=r;
+  });
+  const rs=[out.rpmA,out.rpmB].filter(x=>typeof x==="number");
+  if(rs.length) out.rpm=Math.max.apply(null,rs);
+  return out;
+}
+function sprintRateVsBest(rpm,best){
+  if(rpm==null) return "";
+  if(best==null) return " \u{00B7} first one timed for this set";
+  if(rpm>best) return " \u{00B7} \u{1F3C6} new best a minute (was "+best+")";
+  return " \u{00B7} own best "+best+" a minute";
+}
+// The line under a live sheet when it ends.
+function sprintLiveResultTxt(st,best){
+  const rpm=sprintRate(st.count,st.used);
+  let t=st.fin?("\u{1F3C1} Finished! "+st.count+" of "+st.total+" in "+st.used+" s"):("\u{2713} "+st.count+" read"+(st.used!=null?" in "+st.used+" s":"")+" \u{00B7} "+st.pct+"% of the sheet");
+  if(st.fin&&st.miss) t+=" \u{00B7} "+st.miss+" miss"+(st.miss===1?"":"es");
+  if(rpm!=null) t+=" \u{00B7} "+rpm+" a minute"+sprintRateVsBest(rpm,best);
+  return t;
+}
+function sprintLiveShowResult(sheet){
+  const st=sprintLive[sheet]; if(!st) return;
+  st.pct=st.total>0?Math.round(st.count/st.total*100):0;
+  st.miss=st.fin?Math.max(0,(st.total||0)-st.count):null;
+  let best=null;
+  try{ best=sprintBestRpm(((masteryData||{}).sprintLog||{})[masteryKid],sprintCurrentDeckLabel(),sprintSource); }catch(e){}
+  const res=document.getElementById('sp-timer-res-'+sheet);
+  if(res){ res.style.display='block'; res.innerHTML=sprintLiveResultTxt(st,best); }
+  const inp=document.getElementById('sp-score-'+sheet.toLowerCase());
+  if(inp) inp.value=st.count;
+  if(st.fin){ const er=document.getElementById('sp-err-'+sheet.toLowerCase()); if(er) er.value=st.miss; }
+  if(inp&&typeof sprintUpdateGain==='function') sprintUpdateGain();
+}
+// After Log result: this result's per minute against his own best for the same deck + source.
+function sprintRateLogNote(entry,log){
+  const rpm=entry?sprintEntryRpm(entry):null; if(rpm==null) return "";
+  return " \u{00B7} "+rpm+" a minute"+sprintRateVsBest(rpm,sprintBestRpm(log,entry.deck,entry.src,entry.ts));
+}
+// Scores ▸ Sprint Personal Best: one result's seconds + per minute (nothing for an old entry with no seconds).
+function sprintScoresRateHtml(s){
+  const parts=[];
+  [["A",s.a,s.secsA,s.finA],["B",s.b,s.secsB,s.finB]].forEach(([sh,n,secs,fin])=>{
+    if(n==null) return;
+    const r=sprintRate(n,secs||s.clk); if(r==null) return;
+    parts.push(sh+" "+(secs?n+" in "+secs+" s"+(fin?" \u{1F3C1}":"")+" = ":"")+r+"/min");
+  });
+  if(!parts.length) return "";
+  return ' <span style="color:#0f766e;font-weight:700">\u{00B7} '+parts.join(" \u{00B7} ")+(s.rpmPB?" \u{26A1} best a minute":"")+'</span>';
+}
+// The card's headline per-minute best — only when one deck is showing (per minute is never compared across decks).
+function sprintScoresBestRpmHtml(series,oneDeck){
+  if(!oneDeck) return "";
+  let best=null; (series||[]).forEach(x=>{ if(x&&x.rpm!=null&&(best==null||x.rpm>best)) best=x.rpm; });
+  if(best==null) return "";
+  return '<div class="sp-rate-best" style="font-size:11px;color:#0f766e;font-weight:700;margin:-4px 0 10px">\u{26A1} Best a minute: '+best+' right</div>';
+}
+// SPRINTRATE_END
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PHASE 4 — PLAN NEXT WEEK WIZARD
