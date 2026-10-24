@@ -53400,30 +53400,91 @@ function mastMatchLogResult(){
 let whichState=null;   // {deck,mix,turns:[{pid,back,tiles:[pid,pid,pid],wrong:{pid:1},done,first}],i,grow,lock,phase,first,of,isPB,prevBest,logged}
 const WHICH_MIX="Mix the decks";
 function _whichItems(kid){ let items=masteryData[kid||masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items); return items; }
-// The deck's picture cards: active or introduction, not a 🇬🇧→🇩🇪 production twin, a picture to show,
-// one card per name (two cards with one name would draw two identical tiles).
-function whichPool(items,deck){
-  const seen={};
+// WHICH_CARDS — what each deck plays as (her report 2026-10-23, first device check: Ellis's Roots said "geo" and
+// the tiles showed "geo" — "basically like, can you read? Not do you actually understand it"; Math said "6x9" and
+// showed "6x9" instead of the answer — "a major issue"). _smTileVis treats any front of 3 letters or fewer as its
+// own picture (meant for Julian's letters and numbers), so short TEXT cards slipped in and the tile repeated the
+// spoken front. Now one mode per deck, decided from the cards themselves (deck names differ per family):
+//   "symbol"  — Letters / Lowercase / Numbers / Sight Words (WHICH_SYMBOL_DECKS, by deck name or card type):
+//               finding the written form IS the skill — hear it, tap the glyph. As built.
+//   "picture" — 3+ cards with a real picture (_smTileVis(it,true): photo, deck visual, emoji, animal, color,
+//               shape) — hear the name, tap the picture. As built.
+//   "answer"  — any other deck with 3+ different short backs (math facts, roots, German, capitals): the FRONT is
+//               shown big and said (not said for a language the English voice can't speak — German), the three
+//               tiles are BACKS: the card's own + two different backs from its deck. 6×7 → 42 / 56 / 72;
+//               geo → earth / star / water; gut → well / I / you. Every card with a short different back plays.
+//   left out — spelling (cat mode "spell", or "spell" in the deck name / card type — her rule: the app never
+//               shows a spelling the child must produce), phonograms ("phonogram" deck/type, or a back in /…/
+//               sound marks — the voice can't say the sound), rule/procedure cards (mastKnowledgeType
+//               procedure_fluency), and any card with no picture and no different back (Julian's Counting:
+//               the word "one" to a pre-reader).
+// A back must fit a tile (WHICH_BACK_MAX letters) and a front one line (WHICH_FRONT_MAX): a definition paragraph
+// is a drill card, not a pick-3.
+const WHICH_SYMBOL_DECKS=["letters","lowercase","uppercase","numbers","sight words","sight_word","sight_words"];
+const WHICH_SILENT=/\b(german|deutsch|spanish|french|italian)\b/i;   // no voice for it — show the word, don't say it
+const WHICH_BACK_MAX=24, WHICH_FRONT_MAX=40;
+function _whichNorm(s){ return _matchPlain(s).toLowerCase().replace(/\s+/g," ").trim(); }
+// The card's back as a tile shows it, or "" when it has none worth a tile (same as the front, too long, a sound).
+function _whichBack(i){
+  const f=_matchPlain(i&&i.prompt), b=_matchPlain(i&&i.answer);
+  if(!b||!f||_whichNorm(b)===_whichNorm(f)) return "";
+  if(b.length>WHICH_BACK_MAX||f.length>WHICH_FRONT_MAX||b.charAt(0)==="/") return "";
+  return b;
+}
+function _whichIsSymbol(i){ return WHICH_SYMBOL_DECKS.indexOf(String(i.subject||"").toLowerCase())>=0||WHICH_SYMBOL_DECKS.indexOf(String(i.type||"").toLowerCase())>=0; }
+function _whichLeftOut(i,kid){
+  const d=String(i.subject||""), t=String(i.type||"");
+  if(/spell/i.test(d)||/spell/i.test(t)||/phonogram/i.test(d)||/phonogram/i.test(t)) return true;
+  try{ if(typeof mastGetCatMode==="function"&&mastGetCatMode(kid,d)==="spell") return true; }catch(e){}
+  return false;
+}
+function whichSilent(it){ return !!(it&&(WHICH_SILENT.test(String(it.subject||""))||WHICH_SILENT.test(String(it.type||"")))); }
+// Each deck's mode: {deck: "symbol"|"picture"|"answer"} — only decks that can make a fair pick-3 (3+ different
+// names; for answers, 3+ different backs).
+function whichDeckModes(items,kid){
+  kid=kid||masteryKid;
+  const by={};
+  (items||[]).forEach(i=>{
+    if(!i||(i.status!=="active"&&i.status!=="introduction")||i.dir==="prod") return;
+    if(!String(i.prompt||"").trim()||_whichLeftOut(i,kid)) return;
+    const d=i.subject||"Other", g=by[d]||(by[d]={sym:{},pic:{},ans:{},backs:{}});
+    const k=_whichNorm(i.prompt);
+    if(_whichIsSymbol(i)){ if(_smTileVis(i)) g.sym[k]=1; return; }
+    if(_smTileVis(i,true)){ g.pic[k]=1; return; }
+    try{ if(typeof mastKnowledgeType==="function"&&mastKnowledgeType(i)==="procedure_fluency") return; }catch(e){}
+    const bk=_whichBack(i); if(bk){ g.ans[k]=1; g.backs[_whichNorm(bk)]=1; }
+  });
+  const out={}, n=o=>Object.keys(o).length;
+  Object.keys(by).forEach(d=>{ const g=by[d];
+    if(n(g.sym)>=3) out[d]="symbol";
+    else if(n(g.pic)>=3) out[d]="picture";
+    else if(n(g.ans)>=3&&n(g.backs)>=3) out[d]="answer";
+  });
+  return out;
+}
+// The cards in play: active or introduction, not a 🇬🇧→🇩🇪 production twin, one card per name (two cards with
+// one name would draw two identical tiles), and only the cards that fit their deck's mode.
+function whichPool(items,deck,kid){
+  const modes=whichDeckModes(items,kid), seen={};
   return (items||[]).filter(i=>{
     if(!i||(i.status!=="active"&&i.status!=="introduction")||i.dir==="prod") return false;
-    if(deck!==WHICH_MIX&&i.subject!==deck) return false;
-    const k=String(i.prompt||"").trim().toLowerCase();
-    if(!k||seen[(i.subject||"")+"|"+k]||!_smTileVis(i)) return false;
-    seen[(i.subject||"")+"|"+k]=1; return true;
+    const d=i.subject||"Other", m=modes[d];
+    if(!m||(deck!==WHICH_MIX&&i.subject!==deck)) return false;
+    const k=_whichNorm(i.prompt);
+    if(!k||seen[d+"|"+k]) return false;
+    const fits=m==="symbol"?!!_smTileVis(i):m==="picture"?!!_smTileVis(i,true):!_smTileVis(i,true)&&!!_whichBack(i);
+    if(!fits) return false;
+    seen[d+"|"+k]=1; return true;
   });
 }
-// Decks that can make a fair pick-3: at least 3 different picture cards.
-function whichDecks(items){
-  const by={};
-  whichPool(items,WHICH_MIX).forEach(i=>{ const d=i.subject||"Other"; by[d]=(by[d]||0)+1; });
-  return Object.keys(by).filter(d=>by[d]>=3).sort();
-}
+function whichDecks(items,kid){ return Object.keys(whichDeckModes(items,kid)).sort(); }
 function whichRoundSize(n){ return n>=8?8:6; }
 function _whichShuffle(a,rnd){ rnd=rnd||Math.random; for(let i=a.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
-// One turn's three tiles: the right card + two different cards from ITS deck with two different names,
-// shuffled. Returns card ids, or null when the deck can't make a fair pick-3.
-function whichTiles(it,pool,rnd){
-  const name=x=>String(x.prompt||"").trim().toLowerCase();
+// One turn's three tiles: the right card + two different cards from ITS deck with two different names
+// (answer mode: two different BACKS, neither the right one), shuffled. Returns card ids, or null when the
+// deck can't make a fair pick-3.
+function whichTiles(it,pool,rnd,mode){
+  const name=mode==="answer"?(x=>_whichNorm(_whichBack(x))):(x=>String(x.prompt||"").trim().toLowerCase());
   const seen={}; seen[name(it)]=1;
   const cands=_whichShuffle((pool||[]).filter(x=>x&&x.id!==it.id&&x.subject===it.subject),rnd).filter(x=>!seen[name(x)]&&(seen[name(x)]=1));
   if(cands.length<2) return null;
@@ -53432,14 +53493,14 @@ function whichTiles(it,pool,rnd){
 function _whichSay(st){
   const t=st&&st.turns[st.i]; if(!t) return;
   const it=_whichItems().find(x=>x&&x.id===t.pid);
-  if(it&&it.prompt) try{ mastSpeak(_matchPlain(it.prompt)); }catch(e){}
+  if(it&&it.prompt&&!(t.mode==="answer"&&whichSilent(it))) try{ mastSpeak(_matchPlain(it.prompt)); }catch(e){}
 }
 function whichStart(deck){
   try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding/bonk (iPad)
   const items=_whichItems();
   const mix=deck===WHICH_MIX;
-  const eligible=whichDecks(items);
-  const pool=whichPool(items,WHICH_MIX).filter(i=>eligible.indexOf(i.subject||"Other")>=0&&(mix||i.subject===deck));
+  const modes=whichDeckModes(items);
+  const pool=whichPool(items,WHICH_MIX).filter(i=>mix||i.subject===deck);
   if(!pool.length){ whichState=null; _mastRe(); return; }
   const n=whichRoundSize(pool.length);
   // Every card once before any repeats; a small deck refills (never the same card twice in a row).
@@ -53450,12 +53511,15 @@ function whichStart(deck){
     if(pool.length<2) break;
   }
   const turns=[];
-  picks.forEach(it=>{ const tiles=whichTiles(it,pool); if(tiles) turns.push({pid:it.id,back:false,tiles:tiles,wrong:{},done:false,first:false}); });
+  picks.forEach(it=>{ const mode=modes[it.subject||"Other"], tiles=whichTiles(it,pool,null,mode); if(tiles) turns.push({pid:it.id,mode:mode,back:false,tiles:tiles,wrong:{},done:false,first:false}); });
   whichState={deck:deck,mix:mix,turns:turns,i:0,grow:null,lock:false,phase:turns.length?"play":"done",first:0,of:turns.length,isPB:false,prevBest:null,logged:false,returned:{}};
   _mastRe();
   _whichSay(whichState);   // the first name, inside the tap
 }
 function whichSayAgain(){ _whichSay(whichState); }
+// 🗂 Change deck (her report 2026-10-23: "I have to reload it every time to try a new one") — back to the deck
+// chips mid-round. The round is dropped as it stands: no best, no Scores, nothing written.
+function whichChangeDeck(){ whichState=null; _mastRe(); }
 function whichTap(ti){
   const st=whichState; if(!st||st.phase!=="play"||st.lock) return;
   const t=st.turns[st.i]; if(!t) return;
@@ -53473,8 +53537,8 @@ function whichTap(ti){
   if(!t.first&&!t.back&&!st.returned[t.pid]){
     st.returned[t.pid]=1;
     const it=_whichItems().find(x=>x&&x.id===t.pid);
-    const tiles=it?whichTiles(it,whichPool(_whichItems(),WHICH_MIX)):null;
-    if(tiles) st.turns.push({pid:t.pid,back:true,tiles:tiles,wrong:{},done:false,first:false});
+    const tiles=it?whichTiles(it,whichPool(_whichItems(),WHICH_MIX),null,t.mode):null;
+    if(tiles) st.turns.push({pid:t.pid,mode:t.mode,back:true,tiles:tiles,wrong:{},done:false,first:false});
   }
   try{ matchDing(); }catch(e){}
   st.grow=ti; st.lock=true;
@@ -53522,11 +53586,12 @@ function buildWhichHtml(color){
   const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
   let h='<style>.which-tile{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:20px;border:3px solid #e2ddd6;background:#fff;cursor:pointer;overflow:hidden;transition:transform .25s,opacity .2s;-webkit-tap-highlight-color:transparent}'+
     '.which-tile .which-vis{transform:scale(1.15);pointer-events:none}@media(min-width:560px){.which-tile .which-vis{transform:scale(1.7)}}'+
+    '.which-tile .which-ans{padding:6px;text-align:center;font-weight:800;color:#292524;font-family:\'Fraunces\',serif;line-height:1.1;overflow-wrap:anywhere;pointer-events:none}'+
     '.which-tile.which-wrong{opacity:.28;filter:grayscale(1);cursor:default}.which-tile.which-grow{transform:scale(1.12);border-color:#16a34a;background:#f0fdf4;box-shadow:0 0 0 5px #bbf7d0}</style>';
   h+='<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
-  const items=_whichItems(), decks=whichDecks(items);
+  const items=_whichItems(), modes=whichDeckModes(items), decks=Object.keys(modes).sort();
   if(!decks.length){
-    h+='<div class="mast-none">No decks ready for Which one? yet \u{2014} it needs 3 or more cards with a picture.</div></div>';
+    h+='<div class="mast-none">No decks ready for Which one? yet \u{2014} it needs 3 or more cards with a picture (or a short answer on the back).</div></div>';
     return h;
   }
   const st=whichState;
@@ -53538,7 +53603,7 @@ function buildWhichHtml(color){
     h+='</div>';
   }
   if(!st){
-    h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u{1F442} Pick a deck. Listen, then tap the picture you hear!</div></div>';
+    h+='<div style="font-size:15px;font-weight:700;color:#57534e">'+(decks.some(d=>modes[d]==="answer")?'\u{1F440} Pick a deck. Look, then tap the right answer!':'\u{1F442} Pick a deck. Listen, then tap the picture you hear!')+'</div></div>';
     return h;
   }
   const s=masteryData[masteryKid+"_settings"]||{};
@@ -53550,13 +53615,27 @@ function buildWhichHtml(color){
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
     st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
     h+='</div>';
-    h+='<span style="font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+'</span></div>';
-    h+='<div style="display:flex;justify-content:center;margin:10px 0 6px"><button onclick="whichSayAgain()" aria-label="Hear it again" style="width:110px;height:110px;border-radius:50%;border:4px solid '+color+';background:#fff;color:'+color+';font-size:54px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button></div>';
-    h+='<div style="text-align:center;font-size:17px;font-weight:800;color:#57534e;margin-bottom:12px">'+(t&&Object.keys(t.wrong).length?'Almost \u{2014} listen again!':'Tap the one you hear!')+'</div>';
+    h+='<span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
+      '<button onclick="whichChangeDeck()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{1F5C2} Change deck</button></span></div>';
+    const tIt=t?items.find(x=>x&&x.id===t.pid):null, ans=!!(t&&t.mode==="answer"), mute=ans&&whichSilent(tIt);
+    const wrongNow=!!(t&&Object.keys(t.wrong).length);
+    if(ans){
+      // Answer mode: the front is the question — written big (and said, unless muted); the tiles are backs.
+      const fr=_matchPlain(tIt&&tIt.prompt);
+      h+='<div style="display:flex;align-items:center;justify-content:center;gap:14px;margin:12px 0 8px;flex-wrap:wrap">';
+      h+='<div style="font-family:\'Fraunces\',serif;font-size:'+(fr.length<=8?'52px':fr.length<=18?'38px':'28px')+';font-weight:800;color:#292524;text-align:center;line-height:1.1">'+esc(fr)+'</div>';
+      if(!mute) h+='<button onclick="whichSayAgain()" aria-label="Hear it again" style="width:64px;height:64px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:30px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button>';
+      h+='</div>';
+      h+='<div style="text-align:center;font-size:17px;font-weight:800;color:#57534e;margin-bottom:12px">'+(wrongNow?'Almost \u{2014} try again!':'Tap the answer!')+'</div>';
+    } else {
+      h+='<div style="display:flex;justify-content:center;margin:10px 0 6px"><button onclick="whichSayAgain()" aria-label="Hear it again" style="width:110px;height:110px;border-radius:50%;border:4px solid '+color+';background:#fff;color:'+color+';font-size:54px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button></div>';
+      h+='<div style="text-align:center;font-size:17px;font-weight:800;color:#57534e;margin-bottom:12px">'+(wrongNow?'Almost \u{2014} listen again!':'Tap the one you hear!')+'</div>';
+    }
     h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">';
     (t?t.tiles:[]).forEach((pid,ti)=>{
       const it=items.find(x=>x&&x.id===pid);
       const cls='which-tile'+(t.wrong[pid]?' which-wrong':'')+(st.grow===ti?' which-grow':'');
+      if(ans){ const bk=_whichBack(it); h+='<div class="'+cls+'" role="button" aria-label="Answer '+(ti+1)+'" onclick="whichTap('+ti+')"><span class="which-ans" style="font-size:'+(bk.length<=3?'clamp(30px,9vw,60px)':bk.length<=7?'clamp(22px,6vw,40px)':bk.length<=13?'clamp(16px,4.2vw,28px)':'clamp(13px,3.4vw,21px)')+'">'+esc(bk)+'</span></div>'; return; }
       h+='<div class="'+cls+'" role="button" aria-label="Picture '+(ti+1)+'" onclick="whichTap('+ti+')"><span class="which-vis">'+(_smTileVis(it)||'')+'</span></div>';
     });
     h+='</div></div>';
@@ -53564,11 +53643,13 @@ function buildWhichHtml(color){
   }
   // Finish: the pictures he found, first-tap count, Play again / Mix the decks.
   const found=[], seenF={};
-  st.turns.forEach(x=>{ if(!x.back&&!seenF[x.pid]){ seenF[x.pid]=1; found.push(x.pid); } });
+  st.turns.forEach(x=>{ if(!x.back&&!seenF[x.pid]){ seenF[x.pid]=1; found.push(x); } });
   h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
   h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} You found them all!</div>';
   h+='<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin:12px 0">';
-  found.forEach(pid=>{ const it=items.find(x=>x&&x.id===pid); h+='<span style="width:72px;height:72px;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;border-radius:14px;background:#fff;border:2px solid #e2ddd6"><span style="transform:scale(.8)">'+(_smTileVis(it)||'')+'</span></span>'; });
+  found.forEach(x=>{ const it=items.find(y=>y&&y.id===x.pid);
+    if(x.mode==="answer"){ h+='<span style="padding:6px 10px;border-radius:12px;background:#fff;border:2px solid #e2ddd6;font-size:14px;font-weight:700;color:#292524">'+esc(_matchPlain(it&&it.prompt))+' \u{2192} '+esc(_whichBack(it))+'</span>'; return; }
+    h+='<span style="width:72px;height:72px;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;border-radius:14px;background:#fff;border:2px solid #e2ddd6"><span style="transform:scale(.8)">'+(_smTileVis(it)||'')+'</span></span>'; });
   h+='</div>';
   h+='<div style="font-size:17px;font-weight:800;color:#57534e">\u{1F446} '+st.first+' on the first tap'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
   h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">';
