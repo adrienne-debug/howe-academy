@@ -23,6 +23,7 @@ function world(o) {
     gwShowToast: m => log.toasts.push(m), renderAll: () => log.renders++, rtFmtHour: h => h + ":00",
     db: { ref: p => ({ set: v => log.writes.push(["set", p, v]), remove: () => log.writes.push(["remove", p]) }) },
     Date: class { getHours() { return o.hour == null ? 9 : o.hour; } },
+    isPreK: k => k === "julian",   // PREKFLAG (2026-10-24): the app reads the family's school-age flag; this harness is Howe-shaped
   };
   const keys = Object.keys(env);
   const api = new Function(...keys, "let techGrace=" + JSON.stringify(o.grace || {}) + ", techOff=" + JSON.stringify(o.off || {}) + ", day='thursday';\n" + FNS +
