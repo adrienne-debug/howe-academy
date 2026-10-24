@@ -58883,6 +58883,7 @@ function mstCardHtml(session,card){
     s+='<div class="mast-flip-hint">\u{1F4A1} did you spell it right?</div></div>';
     return s+'</div></div></div>';
   }
+  if(typeof mstCopyOn==="function"&&mstCopyOn(session,card)) return mstCopyHtml(session,card,def,_lrn);   // 👀 PATCCC (ahead of MST_TYPEANS: on a Type-the-answer session it copies the answer)
   if(typeof mstTypeAnsOn==="function"&&mstTypeAnsOn(session,card,def)) return mstTypeAnsHtml(session,card,def,_lrn);   // ⌨️ MST_TYPEANS (guarded for engine-only harnesses)
   const _chip=m=>'<div style="display:inline-block;margin-top:2px;padding:3px 10px;border-radius:999px;background:#ede9fe;color:#6d28d9;font-size:11px;font-weight:800">'+(m==="say"?"\u{1F5E3} Say it in German \u2014 out loud":"\u2328\uFE0F Type it in German")+'</div>';
   if(mode==="type"){
@@ -58995,6 +58996,130 @@ function mstCheckTypeAns(){
   _mastRe();
 }
 // MST_TYPEANS_END
+// PATCCC_START — 👀 "Copy it": cover-copy-compare as a learning-pattern step (her research plan 2026-10-23,
+// PLAN_learning_patterns: the top-ranked new step for math facts, spelling, sight words, phonograms, capitals and
+// German — Skinner; Joseph et al. 2012 meta-analysis). LOOK: the prompt and its answer show together (🔊 hear it,
+// "Hide it"; it hides by itself after 4 s). COVER: the answer hides and a box appears. COPY: he types the answer
+// side — the card's NAME from its definition (as the ⌨️ "type" step does, checked by mstTypedOk, so the umlaut
+// rules are the same), or the ANSWER from the front when the session's Type-the-answer switch is on (checked by
+// mstTypeAnsOk, so math normalising is the same). COMPARE: what he typed beside the right answer, the differing
+// letters marked. Right the first time → ✓ and Next grades good. Wrong → he retypes it correctly while looking (the
+// fix) before Next, and the card grades again, so it comes back later in the sitting. A card with no answer is
+// "rec" (mstCardMode). Picture, rule and spell cards keep their own faces (and their ✓/✗ buttons).
+// No new fields: grades go through mstTap → mstAnswer and the usual Save. The step's screen state lives here, per
+// SHOWING of a card (its key + the MST_NAV history length, which every grade and every ← Back changes), so a card
+// that comes back after an again starts at Look again.
+MST_PATTERN_MODES.push("copy");
+const MST_COPY_HIDE_MS=4000;
+let mstCopy=null;   // {show, stage:"look"|"copy"|"compare"|"fix", typed, ok, fix, fixed, fixMiss, timer}
+function mstCopyShowId(card){
+  let n=0; try{ n=(typeof mstHist!=="undefined"&&mstHist)?mstHist.length:0; }catch(e){}
+  return (card&&card.key||"")+"|"+n;
+}
+function mstCopyCur(card){
+  const id=mstCopyShowId(card);
+  if(!mstCopy||mstCopy.show!==id) mstCopy={show:id,stage:"look",typed:"",ok:null,fix:"",fixed:false,fixMiss:false,timer:false};
+  return mstCopy;
+}
+function mstCopyOn(session,card){
+  if(!card||mstCardMode(card)!=="copy") return false;
+  if(mstIsRuleCard(card)||mstIsSpellCard(card)) return false;
+  if(typeof mstCardPic==="function"&&mstCardPic(card)) return false;
+  return true;
+}
+// Which side he copies: Type-the-answer on → the fact on the front, its answer to copy; else the definition on
+// the front, the name (German) to copy — the same two directions as MST_TYPEANS and the ⌨️ "type" step.
+function mstCopySides(session,card,def){
+  const name=card.name||"", d=(def!=null)?def:mstCardDef(card);
+  if(typeof mstTypeAnsOn==="function"&&mstTypeAnsOn(session,card,d)) return {math:true,prompt:name,answer:d};
+  return {math:false,prompt:d,answer:name};
+}
+function mstCopyOk(sides,typed){ return sides.math?mstTypeAnsOk(typed,sides.answer):mstTypedOk(typed,sides.answer); }
+// Letter-by-letter compare: the longest common run of letters (case aside) is "same"; every other letter, on
+// either side, is marked.
+function mstCopyDiff(a,b){
+  const A=Array.from(String(a||"")).slice(0,200), B=Array.from(String(b||"")).slice(0,200), n=A.length, m=B.length;
+  const eq=(x,y)=>x.toLowerCase()===y.toLowerCase();
+  const L=[]; for(let i=0;i<=n;i++) L.push(new Array(m+1).fill(0));
+  for(let i=n-1;i>=0;i--) for(let j=m-1;j>=0;j--) L[i][j]=eq(A[i],B[j])?L[i+1][j+1]+1:Math.max(L[i+1][j],L[i][j+1]);
+  const ka=new Array(n).fill(false), kb=new Array(m).fill(false);
+  let i=0, j=0;
+  while(i<n&&j<m){ if(eq(A[i],B[j])){ ka[i]=kb[j]=true; i++; j++; } else if(L[i+1][j]>=L[i][j+1]) i++; else j++; }
+  return {a:A,b:B,ka:ka,kb:kb};
+}
+function mstCopyMarked(chars,keep){
+  return chars.map((ch,i)=>keep[i]?mstEsc(ch):'<span class="mst-copy-miss" style="background:#fee2e2;color:#dc2626;border-bottom:3px solid #dc2626;border-radius:3px;padding:0 1px">'+(ch===" "?"&nbsp;":mstEsc(ch))+'</span>').join("");
+}
+function mstCopyHtml(session,card,def,lrn){
+  const st=mstCopyCur(card), s=mstCopySides(session,card,def), name=card.name||"";
+  const pCls=s.math?"mast-slide-name":"mast-flip-def", aCls=s.math?"mast-flip-def":"mast-slide-name";
+  const big=(on,label,bg)=>'<button onclick="'+on+'" style="margin-top:12px;min-height:48px;padding:0 32px;border-radius:14px;border:none;background:'+bg+';color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+label+'</button>';
+  const box=(id,val,on)=>'<input id="'+id+'" type="text" value="'+mstEsc(val)+'" oninput="if(mstCopy)mstCopy.'+(id==="mst-copy-fix"?"fix":"typed")+'=this.value" onkeydown="if(event.key===\'Enter\'){event.preventDefault();'+on+';}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="type it" style="margin-top:12px;width:100%;max-width:320px;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:2px solid #c4b5fd;font-size:20px;text-align:center;font-family:\'DM Sans\',sans-serif">';
+  const step=txt=>'<div style="margin-top:8px;font-size:13px;font-weight:800;color:#6d28d9">'+txt+'</div>';
+  let t='<div class="mast-slide"><div class="mast-flip-wrap"><div class="mast-flip-inner"><div class="mast-flip-front" data-copy-stage="'+st.stage+'">';
+  t+='<div class="mast-slide-cat">'+mstEsc(card.deck||session.name||"")+(lrn||"")+'</div>';
+  t+='<div style="display:inline-block;margin-top:2px;padding:3px 10px;border-radius:999px;background:#ede9fe;color:#6d28d9;font-size:11px;font-weight:800">\u{1F440} Copy it</div>';
+  t+='<div class="'+pCls+'">'+mstEsc(s.prompt)+'</div>';
+  if(st.stage==="look"){
+    t+=step("\u{1F440} Look at it");
+    t+='<div id="mst-copy-model" class="'+aCls+'" style="color:#16a34a">'+mstEsc(s.answer)+'</div>'+mstAudioBtn(name,session);
+    t+='<div>'+big("mstCopyHide()","Hide it","#7c3aed")+'</div>';
+    if(!st.timer){ st.timer=true; const id=st.show; try{ setTimeout(function(){ mstCopyHide(id); },MST_COPY_HIDE_MS); }catch(e){} }
+  } else if(st.stage==="copy"){
+    t+=step("\u{1F648} It’s covered — now type it");
+    t+=box("mst-copy-in",st.typed,"mstCopyCheck()")+'<div>'+big("mstCopyCheck()","Check","#7c3aed")+'</div>';
+  } else {
+    const df=mstCopyDiff(st.typed,s.answer);
+    t+='<div style="margin-top:12px;font-size:20px;font-weight:800;color:'+(st.ok?"#16a34a":"#dc2626")+'">'+(st.ok?"✓":"✗ Not quite")+'</div>';
+    t+='<div style="margin-top:8px;display:flex;gap:14px;justify-content:center;flex-wrap:wrap;font-size:20px;font-weight:800">';
+    t+='<div><div style="font-size:11px;color:var(--muted);font-weight:700">You typed</div><div class="mst-copy-typed">'+(st.ok?mstEsc(st.typed):mstCopyMarked(df.a,df.ka))+'</div></div>';
+    t+='<div><div style="font-size:11px;color:var(--muted);font-weight:700">The answer</div><div class="mst-copy-right" style="color:#16a34a">'+(st.ok?mstEsc(s.answer):mstCopyMarked(df.b,df.kb))+'</div></div></div>';
+    if(st.stage==="compare"){
+      t+=big("mstTap(\'good\')","Next →","#16a34a");
+    } else if(!st.fixed){
+      t+=step("✏️ Fix it — type it right while you look");
+      if(st.fixMiss) t+='<div style="margin-top:4px;font-size:13px;color:#dc2626;font-weight:700">Not yet — look at each letter and try again.</div>';
+      t+=box("mst-copy-fix",st.fix,"mstCopyFixCheck()")+'<div>'+big("mstCopyFixCheck()","Check","#7c3aed")+'</div>';
+    } else {
+      t+=step("✓ Fixed — you’ll see it again soon");
+      t+=big("mstTap(\'again\')","Next →","#dc2626");
+    }
+  }
+  return t+'</div></div></div></div>';
+}
+function mstCopyCtx(){
+  if(!mstState) return null;
+  let cur=null; try{ cur=mstCurrent(mstState); }catch(e){}
+  let ses=null; try{ ses=(mstSessions(masteryKid)||[]).find(x=>x.sid===mstSid)||null; }catch(e){}
+  if(!cur||!ses||!mstCopyOn(ses,cur)) return null;
+  return {cur:cur,ses:ses,st:mstCopyCur(cur)};
+}
+function mstCopyFocus(id){ try{ setTimeout(function(){ const el=document.getElementById(id); if(el&&el.focus) el.focus(); },0); }catch(e){} }
+// Hide it (or the 4 s timer — it names the showing it was set for, and only acts while that card's model is on screen).
+function mstCopyHide(show){
+  const c=mstCopyCtx(); if(!c||c.st.stage!=="look") return;
+  if(show){ if(c.st.show!==show) return; try{ if(!document.getElementById("mst-copy-model")) return; }catch(e){ return; } }
+  c.st.stage="copy"; _mastRe(); mstCopyFocus("mst-copy-in");
+}
+function mstCopyCheck(){
+  const c=mstCopyCtx(); if(!c||c.st.stage!=="copy") return;
+  const el=document.getElementById("mst-copy-in"); if(el) c.st.typed=el.value;
+  if(!String(c.st.typed||"").trim()) return;
+  c.st.ok=mstCopyOk(mstCopySides(c.ses,c.cur),c.st.typed);
+  c.st.stage=c.st.ok?"compare":"fix";
+  _mastRe();
+  if(!c.st.ok) mstCopyFocus("mst-copy-fix");
+}
+function mstCopyFixCheck(){
+  const c=mstCopyCtx(); if(!c||c.st.stage!=="fix"||c.st.fixed) return;
+  const el=document.getElementById("mst-copy-fix"); if(el) c.st.fix=el.value;
+  if(!String(c.st.fix||"").trim()) return;
+  if(mstCopyOk(mstCopySides(c.ses,c.cur),c.st.fix)){ c.st.fixed=true; c.st.fixMiss=false; }
+  else { c.st.fixMiss=true; c.st.fix=""; if(el) el.value=""; }
+  _mastRe();
+  if(!c.st.fixed) mstCopyFocus("mst-copy-fix");
+}
+// PATCCC_END
 function renderMastStudy(opts){
   const kid=masteryKid;
   if(mstKid!==kid){ mstKid=kid; mstSid=null; mstState=null; mstFlipped=false; mstDone=null; mstStartTs=null; mstTyped=""; mstChecked=null; mstNavReset(); }  // a sitting never leaks across kids (MST_NAV: nor its Back/Forward)
@@ -59036,6 +59161,7 @@ function renderMastStudy(opts){
     if(card){
       mstLockArm();   // MST_NAV: taps in the first 350 ms after this draw are swallowed
       h+=mstCardHtml(session,card);
+      if(typeof mstCopyOn==="function"&&mstCopyOn(session,card)){ /* 👀 PATCCC: Check / Next live inside the card */ } else
       if(mstCardMode(card)==="type"||(typeof mstTypeAnsOn==="function"&&mstTypeAnsOn(session,card))){   // ⌨️ MST_TYPEANS
         // Check / Next live inside the card — no self-grading on a typed answer.
       } else if(mstFlipped){
@@ -60269,6 +60395,7 @@ function _mhqRenderSessForm(kid) {
     h += _mhqPill("Off", !f.pattern, f.pattern ? "mhqPatToggle()" : "") + _mhqPill("On", !!f.pattern, f.pattern ? "" : "mhqPatToggle()");
     if (f.pattern) {
       const _pl = { rec: "\u{1F1E9}\u{1F1EA} See it", say: "\u{1F5E3} Say it", type: "\u2328\uFE0F Type it" };
+      _pl.copy = "\u{1F440} Copy it";   // 👀 PATCCC
       f.pattern.forEach(function (m, i) { h += '<button onclick="mhqPatCycle(' + i + ')" style="min-height:40px;padding:6px 10px;border-radius:10px;border:1.5px solid #c4b5fd;background:#f5f3ff;color:#6d28d9;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">' + (i + 1) + ' \u00B7 ' + _pl[m] + '</button>'; });
       h += '<button onclick="mhqPatLen(-1)" style="width:36px;height:36px;border-radius:8px;border:1.5px solid var(--border);background:var(--card);font-weight:700;cursor:pointer">&minus;</button><button onclick="mhqPatLen(1)" style="width:36px;height:36px;border-radius:8px;border:1.5px solid var(--border);background:var(--card);font-weight:700;cursor:pointer">+</button>';
     }
