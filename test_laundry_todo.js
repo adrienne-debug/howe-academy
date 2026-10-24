@@ -31,24 +31,24 @@ const BASE={caps:caps([2,1,2,1,3,0,0]),asOf:MON,homeFrom:MON};
 const cells=c=>c.llWeekGridHTML(c.llToday(),false,true).split('border-radius:8px;padding:4px 1px').slice(1);
 
 console.log("1. ＋ To-do");
-{ const c=mk({line:BASE}); c.llTdOpenToggle(); const h=c.llWeekCardHTML();
-  ok("on 📅 The laundry schedule: ＋ To-do opens what / when (Today · Tomorrow · a date) / after which load / 👤", /llTdOpenToggle\(\)/.test(h)&&/id="lltd-text"/.test(h)&&/value="tomorrow">Tomorrow/.test(h)&&/id="lltd-after"/.test(h)&&/<option value="lincoln">Lincoln's clothes/.test(h)&&/id="lltd-who"/.test(h));
-  Object.assign(c.els,{"lltd-text":{value:"Put the pillows up"},"lltd-emoji":{value:"🛏️"},"lltd-when":{value:"tomorrow"},"lltd-after":{value:""},"lltd-who":{value:"both"}}); c.llTdAdd();
+{ const c=mk({line:BASE}); c.llTdOpenToggle(); const h=c.llTdListHTML();
+  ok("LLTODO_LIST (2026-10-23): ＋ To-do is in the 🧺 card's 📝 list and opens what / when (Today · Tomorrow · a date) / 👤 — no 'after' picker, none on 📅 The laundry schedule", /llTdOpenToggle\(\)/.test(h)&&/id="lltd-text"/.test(h)&&/value="tomorrow">Tomorrow/.test(h)&&!/id="lltd-after"/.test(h)&&/id="lltd-who"/.test(h)&&!/llTdOpenToggle|lltd-text/.test(c.llWeekCardHTML()));
+  Object.assign(c.els,{"lltd-text":{value:"Put the pillows up"},"lltd-emoji":{value:"🛏️"},"lltd-when":{value:"tomorrow"},"lltd-who":{value:"both"}}); c.llTdAdd();
   const w=c.writes[0][2], k=Object.keys(w).find(x=>/^todo\//.test(x));
   ok("written: todo/t_… {Put the pillows up, Tue, Mom or Dad}", k&&w[k].text==="Put the pillows up"&&w[k].day===TUE&&w[k].who==="both", w);
   ok("not a load: Tuesday's laundry is unchanged (Ellis)", c.llProject(MON,2,false)[1].loads.join()==="ellis");
-  ok("on the grid Tuesday, at the end, ☐", /☐ 🛏️<br>Put the pillows up/.test(cells(c)[1]));
+  ok("LLTODO_LIST: not on the grid; on the 📝 list now, '· for Tue'", !/Put the pillows up/.test(cells(c).join(""))&&/Put the pillows up<span[^>]*> · for Tue 10\/20/.test(c.llTdListHTML()));
   c.writes.length=0; c.els["lltd-text"].value=" "; c.llTdOpenToggle(); c.llTdAdd(); ok("no text: nothing written", c.writes.length===0);
 }
 console.log("2. Where in the lineup");
 { const c=mk({line:Object.assign({},BASE,{todo:{t1:{text:"Fold the mismatched socks",emoji:"🧦",day:MON,after:"lincoln",who:"lincoln",at:1}}})});
-  const m=cells(c)[0]; ok("after Lincoln's load: the socks sit right under Lincoln, before the sheets/nothing else", m.indexOf("Fold the mismatched socks")>m.indexOf(">Lincoln<")&&m.indexOf(">Lincoln<")>0, m);
+  const m=cells(c)[0]; ok("LLTODO_LIST: an old 'after Lincoln' to-do keeps its data but isn't placed in the grid — it's on the 📝 list", c.get("laundryLine.todo.t1.after")==="lincoln"&&m.indexOf(">Lincoln<")>0&&m.indexOf("Fold the mismatched socks")<0&&/Fold the mismatched socks/.test(c.llTdListHTML()), m);
 }
 console.log("3. Ticking it, and carrying it");
 { const c=mk({line:Object.assign({},BASE,{todo:{t1:{text:"Put the pillows up",emoji:"🛏️",day:MON,who:"both",at:1}}})});
   ok("Today's line on Mom's My day lists it with a box; Dad's too (Mom or Dad)", /📝 Laundry to-do/.test(c.llStripHTML(""))&&/llTdToggle\('t1'\)/.test(c.llStripHTML(""))&&/llTdToggle\('t1'\)/.test(c.llStripHTML("dad")));
   c.llTdToggle("t1"); ok("tick: todo/t1/done = today", JSON.stringify(c.writes[0][2])==='{"todo/t1/done":"2026-10-19"}');
-  ok("ticked: still shows today, struck through", /☑ 🛏️/.test(cells(c)[0])&&/line-through/.test(cells(c)[0]));
+  ok("ticked: still shows today on the 📝 list, struck through", /Put the pillows up/.test(c.llTdListHTML())&&/line-through/.test(c.llTdListHTML()));
   c.writes.length=0; c.llTdToggle("t1"); ok("untick: done = null", c.writes[0][2]["todo/t1/done"]===null);
   const late=mk({day:WED,line:Object.assign({},BASE,{todo:{t1:{text:"Put the pillows up",emoji:"🛏️",day:MON,who:"both",at:1}}})});
   ok("not ticked Monday → Wednesday it's still there, 'from Mon'", late.llTodosOn(WED,WED).join()==="t1"&&/from Mon/.test(late.llTdTodayHTML("mom")));
