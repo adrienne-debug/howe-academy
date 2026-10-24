@@ -56149,6 +56149,98 @@ function mastRebalanceNow(){
   if(typeof gwShowToast==="function") gwShowToast(r.sent?("Evened out "+r.changed+" review card"+(r.changed!==1?"s":"")+" for "+cap(kid)+" ✓"):(r.changed?"Dry run — "+r.changed+" cards would move, nothing saved":"Nothing to even out"));   // EVENOUT_HONEST
   _mastRe();
 }
+// NEWBUDGET_START — 🎯 New-card budget (her yes 2026-10-23, Lincoln: 195 reviews due after two weeks of adding ~15 new cards
+// a day with almost no reviews; she can't pause subjects, German stays at 5, Science and Social Studies follow his books, and
+// "couldn't Daily Study get how much is available after considering the other categories").
+// One daily total per kid (<kid>_settings/new_budget, 0/absent = off). Study sessions opt in with a role
+// (<kid>_sessions/<sid>/budgetRole), and take their share in this order:
+//   "fixed" — exactly its New/day, every day (German 5).
+//   "pace"  — keeps pace with the book: words its book has released that aren't started yet ÷ NB_PACE_DAYS school days,
+//             rounded up; at least 1 while anything is waiting, at most its New/day (Science, Social Studies).
+//   "rest"  — whatever the budget has left after the others, at least 1, at most its New/day (Daily Study).
+// The total senses his load (reviews due today across every session and Mom's drill): over NB_LOAD_MID → NB_MID_CUT fewer;
+// over NB_LOAD_HIGH → "pace" and "rest" drop to 1 (fixed stays). Planned shares of the others are subtracted, not what's
+// been done, so a skipped German day never hands Daily Study extra. A sitting's card limit grows by the day's share so
+// the new cards fit. Budget off, or no session with a role → every session works exactly as before.
+const NB_LOAD_MID=60, NB_LOAD_HIGH=90, NB_MID_CUT=2, NB_PACE_DAYS=15, NB_ROLES=["fixed","pace","rest"];
+function nbBudget(kid){ const s=masteryData[kid+"_settings"]||{}; const n=Math.floor(Number(s.new_budget)||0); return n>0?n:0; }
+function _nbItems(kid){ let it=masteryData[kid]||[]; if(!Array.isArray(it)) it=Object.values(it); return it.filter(Boolean); }
+// Reviews due today: every card on the ladder that is due, wherever it is studied.
+function nbLoad(kid,pn){
+  return _nbItems(kid).filter(i=>i.status==="active"&&!mastIsParked(i)&&!(typeof mastIsNeverDrill==="function"&&mastIsNeverDrill(i))&&mastIsDue(i,pn)).length;
+}
+// Words the book has released (the chapter gate) that the kid hasn't started, across a session's decks.
+function nbWaiting(kid,session){
+  const items=_nbItems(kid); let n=0;
+  (session.decks||[]).forEach(d=>{
+    const have=new Set(items.filter(i=>i.subject===d).map(i=>i.prompt));
+    const names=(typeof mastBankEligible==="function")?mastBankEligible(kid,d):[];
+    names.forEach(nm=>{ if(!have.has(nm)) n++; });
+  });
+  return n;
+}
+function nbPlan(kid,pn){
+  const total=nbBudget(kid); if(!total) return null;
+  const sess=(mstSessions(kid)||[]).filter(s=>NB_ROLES.indexOf(s.budgetRole)>=0&&(s.kind==="deck"||s.kind==="all"));
+  if(!sess.length) return null;
+  const load=nbLoad(kid,pn);
+  const level=load>NB_LOAD_HIGH?"heavy":(load>NB_LOAD_MID?"busy":"ok");
+  const room=level==="busy"?Math.max(0,total-NB_MID_CUT):total;
+  const by={}; let used=0;
+  sess.filter(s=>s.budgetRole==="fixed").forEach(s=>{ const n=Math.max(0,Math.floor(s.newPerDay||0)); by[s.sid]={n,role:"fixed"}; used+=n; });
+  sess.filter(s=>s.budgetRole==="pace").forEach(s=>{
+    const w=nbWaiting(kid,s), max=Math.max(1,Math.floor(s.newPerDay||0));
+    let n=w>0?Math.min(max,Math.max(1,Math.ceil(w/NB_PACE_DAYS))):0;
+    if(level==="heavy") n=Math.min(n,1);
+    by[s.sid]={n,role:"pace",waiting:w,max}; used+=n;
+  });
+  const rest=sess.filter(s=>s.budgetRole==="rest");
+  if(rest.length){
+    const left=Math.max(0,room-used), each=Math.floor(left/rest.length); let extra=left-each*rest.length;
+    rest.forEach(s=>{
+      const max=Math.max(1,Math.floor(s.newPerDay||0));
+      let n=each+(extra>0?1:0); if(extra>0) extra--;
+      n=level==="heavy"?1:Math.max(1,Math.min(max,n));
+      by[s.sid]={n,role:"rest",max}; used+=n;
+    });
+  }
+  return {total,room,load,level,by,used};
+}
+// The share one session gets today, or null when the budget doesn't apply to it.
+function nbSessionToday(kid,session,pn){
+  if(!session||NB_ROLES.indexOf(session.budgetRole)<0) return null;
+  let p=null; try{ p=nbPlan(kid,pn); }catch(e){ p=null; }
+  return (p&&p.by[session.sid])?p.by[session.sid]:null;
+}
+function nbSetBudget(kid,n){
+  if(typeof momHere==="function"&&!momHere()) return;
+  n=Math.max(0,Math.min(60,Math.floor(Number(n)||0)));
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  s.new_budget=n||null;
+  if(typeof db!=="undefined"&&db) db.ref("mastery/"+kid+"_settings/new_budget").set(n||null);   // this key only
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  if(typeof renderAll==="function") renderAll();
+}
+const NB_ROLE_LBL={fixed:"Fixed",pace:"Keeps pace with the book",rest:"Takes what's left"};
+function nbPlanLineHtml(kid,pn){
+  const p=nbPlan(kid,pn); if(!p) return "";
+  const names={}; (mstSessions(kid)||[]).forEach(s=>{ names[s.sid]=((s.emoji||"")+" "+(s.name||s.sid)).trim(); });
+  const lvl=p.level==="heavy"?(p.load+" reviews due — heavy day, flexible sessions take 1"):p.level==="busy"?(p.load+" reviews due — busy day, budget "+p.room):(p.load+" reviews due");
+  const parts=Object.keys(p.by).map(sid=>esc(names[sid]||sid)+" "+p.by[sid].n+(p.by[sid].role==="pace"?" ("+p.by[sid].waiting+" waiting)":""));
+  return '<div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">Today: '+esc(lvl)+' · '+parts.join(" · ")+' · <b>'+p.used+' new</b></div>';
+}
+function nbBudgetCardHtml(kid,pn){
+  const n=nbBudget(kid);
+  const b='width:40px;height:40px;border-radius:8px;border:1.5px solid var(--border);background:var(--card);font-size:16px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  let h='<div style="border:1.5px solid #c4b5fd;border-radius:12px;padding:12px;background:#faf5ff;margin-bottom:10px">';
+  h+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-weight:800;font-size:14px;flex:1;min-width:160px">\u{1F3AF} New-card budget</span>';
+  h+='<button onclick="nbSetBudget(\''+kid+'\','+Math.max(0,n-1)+')" style="'+b+'">&minus;</button><span style="min-width:44px;text-align:center;font-weight:800;font-size:14px">'+(n?n+' a day':'Off')+'</span><button onclick="nbSetBudget(\''+kid+'\','+(n+1)+')" style="'+b+'">+</button></div>';
+  h+='<div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5">New cards a day across the sessions you put in the budget (Edit a session \u2192 In the budget). Fixed sessions take their New/day, book-paced ones follow the chapters, and \u201cTakes what\u2019s left\u201d gets the rest. Over '+NB_LOAD_MID+' reviews due: '+NB_MID_CUT+' fewer \u00b7 over '+NB_LOAD_HIGH+': flexible sessions take 1.</div>';
+  if(n) h+=nbPlanLineHtml(kid,pn)||'<div style="font-size:11px;color:#b45309;margin-top:6px">No session is in the budget yet \u2014 every session uses its own New/day.</div>';
+  h+='</div>';
+  return h;
+}
+// NEWBUDGET_END
 // ── MST_ENGINE_START ──
 // Mastery "study sessions" — pure functions, no DOM, no writes.
 // Relies on globals already defined elsewhere in index.html:
@@ -56232,6 +56324,7 @@ function mstSessions(kid) {
       pattern: mstPatternClean(rec.pattern),
       bothWays: !!rec.bothWays,
       typeAnswer: !!rec.typeAnswer,   // ⌨️ MST_TYPEANS
+      budgetRole: (rec.budgetRole === "fixed" || rec.budgetRole === "pace" || rec.budgetRole === "rest") ? rec.budgetRole : null,   // 🎯 NEWBUDGET
       unit: rec.unit, stage: rec.stage, stageTo: rec.stageTo, perDay: rec.perDay, quick: rec.quick, untested: rec.untested,   // 🩺 CHECKUP (+stageTo: CKSPAN)
       howto: (typeof mstHowtoClean === "function") ? mstHowtoClean(rec.howto) : ""   // 📋 MST_HOWTO
     });
@@ -56420,6 +56513,11 @@ function mstPile(kid, sid, pn, todayLog) {
   }
 
   const bank = mastFullBank(kid);
+  // 🎯 NEWBUDGET: a session in the kid's budget takes today's share instead of its New/day, and its card limit grows by
+  // that share so the new cards fit beside the ones still being learned. No budget / no role → exactly as before.
+  const _nb = (typeof nbSessionToday === "function") ? nbSessionToday(kid, session, pn) : null;
+  const _npd = _nb ? _nb.n : session.newPerDay;
+  const _maxCards = (_nb && session.maxCards > 0) ? session.maxCards + _nb.n : session.maxCards;
   const existingByDeck = {};
   items.forEach(item => {
     const d = item.subject;
@@ -56454,16 +56552,16 @@ function mstPile(kid, sid, pn, todayLog) {
   }
   // How many of ONE deck's cards may be in flight: the sitting shared out over the decks
   // that are open (12 cards across 3 decks = 4 each). Off when either dial is off.
-  const perDeck = (session.maxCards > 0 && session.focusDecks > 0)
-    ? Math.max(1, Math.ceil(session.maxCards / session.focusDecks)) : Infinity;
+  const perDeck = (_maxCards > 0 && session.focusDecks > 0)
+    ? Math.max(1, Math.ceil(_maxCards / session.focusDecks)) : Infinity;
   // Seats left today: a second sitting on the same day doesn't hand out a fresh 12.
   const doneToday = log.filter(e => e && (e.id != null || e.name != null)).length;
-  const seats = session.maxCards > 0 ? Math.max(0, session.maxCards - doneToday) : Infinity;
+  const seats = _maxCards > 0 ? Math.max(0, _maxCards - doneToday) : Infinity;
 
   // Cards already being learned get the seats first — the backlog he started comes before
   // anything new. Closest to graduating first inside a deck (they finish and free their
   // seat), decks taking turns so no one deck eats the whole sitting.
-  if (session.maxCards > 0 || perDeck !== Infinity) {
+  if (_maxCards > 0 || perDeck !== Infinity) {
     const room = seats;
     const byDeck = {}, order = [];
     learning.forEach(item => {
@@ -56491,7 +56589,7 @@ function mstPile(kid, sid, pn, todayLog) {
 
   // New cards take the seats left over, and only into a deck with room under perDeck —
   // a deck full of half-learned cards pulls nothing until those cards finish.
-  const newPerDay = Math.min(Math.max(0, session.newPerDay - shownNewCount),
+  const newPerDay = Math.min(Math.max(0, _npd - shownNewCount),
     Math.max(0, seats - learning.length));
   const newNames = [];
   if (newPerDay > 0) {
@@ -59553,7 +59651,8 @@ function mhqSessionRows(kid, pn) {
     return {
       sid: s.sid, name: s.name, emoji: s.emoji, kind: s.kind, decks: s.decks || [],
       who: s.who, newPerDay: s.newPerDay, passes: s.passes, mixInAt: s.mixInAt, handOffAt: s.handOffAt,
-      audio: s.audio, order: s.order, linked: linked, cards: cards, skipDecks: s.skipDecks || []
+      audio: s.audio, order: s.order, linked: linked, cards: cards, skipDecks: s.skipDecks || [],
+      maxCards: s.maxCards, focusDecks: s.focusDecks, budgetRole: s.budgetRole || null   // 🎯 NEWBUDGET
     };
   });
 }
@@ -59748,6 +59847,7 @@ function mhqSessSave() {
   }
   { const _ht = (typeof mstHowtoClean === "function") ? mstHowtoClean(mhqSessForm.howto) : ""; if (_ht) rec.howto = _ht; }   // 📋 MST_HOWTO
   if (mhqSessForm.typeAnswer) rec.typeAnswer = true;   // ⌨️ MST_TYPEANS — every kind; absent = off
+  if ((rec.kind === "deck" || rec.kind === "all") && (mhqSessForm.budgetRole === "fixed" || mhqSessForm.budgetRole === "pace" || mhqSessForm.budgetRole === "rest")) rec.budgetRole = mhqSessForm.budgetRole;   // 🎯 NEWBUDGET
   if (!masteryData[kid + "_sessions"]) masteryData[kid + "_sessions"] = {};
   masteryData[kid + "_sessions"][sid] = rec;
   if (typeof db !== "undefined" && db) db.ref("mastery/" + kid + "_sessions/" + sid).set(rec);
@@ -59830,6 +59930,15 @@ function _mhqRenderSessForm(kid) {
     if (f.kind === "mix") h += '<div><div style="' + lbl + '">Mix finish line</div>' + _mhqStepper(f.mixFinish != null ? f.mixFinish : 20, "mixFinish", 0) + '<div style="font-size:10.5px;color:var(--muted)">done at this many; Keep going for the rest. 0 = all</div></div>';   // MIX_FINISH
     h += '<div><div style="' + lbl + '">Decks at once</div>' + _mhqStepper(f.focusDecks || 0, "focusDecks", 0) + '</div>';
     h += '</div>';
+    if (f.kind === "deck" || f.kind === "all") {   // 🎯 NEWBUDGET: which share of the kid's daily new-card budget this session takes
+      h += '<div style="' + lbl + '">In the new-card budget</div><div style="display:flex;gap:6px;flex-wrap:wrap">';
+      [["", "Not in it"], ["fixed", "Fixed"], ["pace", "Keeps pace with the book"], ["rest", "Takes what\u2019s left"]].forEach(function (o) { h += _mhqPill(o[1], (f.budgetRole || "") === o[0], "mhqSessSet('budgetRole','" + o[0] + "')"); });
+      h += '</div><div style="font-size:11px;color:var(--muted);margin-top:4px">' + ({
+        fixed: "Takes exactly its New/day every day.",
+        pace: "Follows the book: the words its chapters have opened, spread over " + NB_PACE_DAYS + " school days. New/day is the most it takes.",
+        rest: "Gets what the budget has left after the other sessions. New/day is the most it takes."
+      }[f.budgetRole] || "Uses its own New/day. Set the kid\u2019s budget above the sessions list.") + '</div>';
+    }
     h += '<div style="font-size:11px;color:var(--muted);margin-top:-2px">' +
       ((f.maxCards > 0 && f.focusDecks > 0)
         ? ('About ' + Math.max(1, Math.ceil(f.maxCards / f.focusDecks)) + ' cards from each open deck. Cards that don\u2019t fit come the next day; reviews always ride.')
@@ -59887,6 +59996,7 @@ function _mhqRenderSessions(kid) {
   const rows = mhqSessionRows(kid, mastGetPrintNum(kid));
   const btn = 'min-height:40px;padding:8px 14px;border-radius:10px;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif';
   let h = '<div style="display:flex;flex-direction:column;gap:10px">';
+  try { h += nbBudgetCardHtml(kid, mastGetPrintNum(kid)); } catch (e) {}   // 🎯 NEWBUDGET
   if (!rows.length) h += '<div style="padding:16px 8px;text-align:center;color:var(--muted)">No study sessions yet.</div>';
   rows.forEach(function (r) {
     h += '<div style="border:1.5px solid var(--border);border-radius:12px;padding:12px;background:var(--card)">';
@@ -59913,6 +60023,10 @@ function _mhqRenderSessions(kid) {
     }
     if (r.kind === "deck" || r.kind === "all") {
       h += '<div style="font-size:11px;color:var(--muted);margin-top:8px">' + r.newPerDay + ' new/day · ' + r.passes + ' passes' + (r.maxCards > 0 ? ' · ' + r.maxCards + ' cards a sitting' : '') + (r.focusDecks > 0 ? ' · ' + r.focusDecks + ' decks at once' : '') + ' · mix in at ' + mhqEsc(mhqTierLbl(r.mixInAt)) + ' · hand off at ' + mhqEsc(mhqTierLbl(r.handOffAt)) + '</div>';
+    }
+    if (r.budgetRole) {   // 🎯 NEWBUDGET: this session's role and today's share
+      let _sh = null; try { const _s = mstSessions(kid).find(function (x) { return x.sid === r.sid; }); _sh = nbSessionToday(kid, _s, mastGetPrintNum(kid)); } catch (e) {}
+      h += '<div style="font-size:11px;color:#6d28d9;margin-top:4px;font-weight:700">\u{1F3AF} ' + mhqEsc(NB_ROLE_LBL[r.budgetRole]) + (_sh ? ' \u00b7 ' + _sh.n + ' new today' + (_sh.role === "pace" ? ' (' + _sh.waiting + ' waiting)' : '') : ' \u00b7 budget off, uses its New/day') + '</div>';
     }
     h += '<div style="font-size:11px;color:var(--muted);margin-top:4px">' + r.cards.learning + ' learning · ' + r.cards.active + ' active · ' + r.cards.bank + ' bank</div>';
     h += r.linked.length
