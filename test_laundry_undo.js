@@ -140,7 +140,7 @@ console.log("8. ↩︎ for ↶ in every UI string (her: \"the undo button looks 
       if(ch==="/"&&n==="/") break; if(ch==="/"&&n==="*"){ const e=line.indexOf("*/",i+2); if(e<0) break; i=e+1; continue; }
       if(ch==="'"||ch==='"'||ch==="`") q=ch; else if(ch==="↶"){ bad.push(ix+1); break; } } });
   ok("no ↶ left in a string in index.html", bad.length===0, bad);
-  ok("the labels keep their words: ↩︎ Undo, ↩︎ undo, ↩︎ undone, ↩︎ Mom undid, ↩︎ Today's ledger", ["↩︎ Undo","↩︎ undo","↩︎ undone","↩︎ Mom undid","<span>↩︎</span> Today’s ledger"].every(t=>src.indexOf(t)>=0));
+  ok("the labels keep their words: ↩︎ undo, ↩︎ Mom undid (the ledger's ↩︎ Undo / ↩︎ undone / ↩︎ Today's ledger left with it, UNDOLISTS 2026-10-24)", ["↩︎ undo","↩︎ Mom undid"].every(t=>src.indexOf(t)>=0));
   ok("↩ is always the text style (U+FE0E after it) in what this change wrote", (LU.match(/↩(?!︎)/g)||[]).length===0); }
 
 console.log("9. Wiring");

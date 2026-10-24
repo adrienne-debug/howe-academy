@@ -1913,12 +1913,12 @@ function toggleMorningStep(kid,i){
     let _bid=null;
     if(_paid>0){
       if(now){ _bid=bankDirect(kid,_paid,(_st&&_st.emoji?_st.emoji+" ":"")+(_st?_st.label:("Step "+(i+1))),(typeof choreVerifyOn==="function"&&choreVerifyOn(kid))); }
-      else if(cur&&cur.bid){ if(!(typeof cuUnpay==="function"&&cuUnpay(kid,cur.bid,_st?_st.label:("Step "+(i+1))))) bankDirectRemove(kid,cur.bid); }   // ↶ CHOREUNDO: Mom's undo banks the reversal
+      else if(cur&&cur.bid){ if(!(typeof cuUnpay==="function"&&cuUnpay(kid,cur.bid,_st?_st.label:("Step "+(i+1))))) bankDirectRemove(kid,cur.bid); }   // ↶ CHOREUNDO / UNDOLISTS: Mom's or Dad's uncheck banks the reversal
       else { bankDirect(kid,-_paid,"↩ unchecked: "+(_st?_st.label:("Step "+(i+1)))); }
     }
     slState[sk]={done:now,ts:now?nowTs():"",pts:now?_paid:null,bid:now?(_bid||null):null};
     if(now&&typeof _spBy==="function"&&_spBy()) slState[sk].by=_spBy();   // 🔎 SPOTCHECK: Mom's / Dad's tick isn't the kid's own
-    rlogAppend(kid,"morning",_st?_st.label:("Step "+(i+1)),now?"on":"off",_paid,(!now&&typeof _cuMom!=="undefined"&&_cuMom)?{undo:"mom"}:null);
+    rlogAppend(kid,"morning",_st?_st.label:("Step "+(i+1)),now?"on":"off",_paid,(!now&&typeof cuUndoTag==="function")?cuUndoTag():null);   // ↩︎ UNDOLISTS: Mom / Dad undid it
     try{ if(_st&&_st.line&&typeof laundryKidHook==="function") laundryKidHook(kid,_st,sk,now); }catch(e){} }   // 🧺 LINE_CHORES: only the line's own Morning row
   // Derive the Morning slot from the steps so every existing consumer (grid, alert, gate) stays correct.
   const allDone=morningComplete(kid,day), _prevSlot=slState[wk+"_"+day+"_"+kid+"_morning"];
@@ -2365,12 +2365,12 @@ function toggleRtStep(slot,kid,i){
     let _bid=null;
     if(_p>0){
       if(now){ _bid=bankDirect(kid,_p,(_st&&_st.emoji?_st.emoji+" ":"")+(_st?_st.label:("Step "+(i+1))),(typeof choreVerifyOn==="function"&&choreVerifyOn(kid))); }
-      else if(cur&&cur.bid){ if(!(typeof cuUnpay==="function"&&cuUnpay(kid,cur.bid,_st?_st.label:("Step "+(i+1))))) bankDirectRemove(kid,cur.bid); }   // ↶ CHOREUNDO: Mom's undo banks the reversal
+      else if(cur&&cur.bid){ if(!(typeof cuUnpay==="function"&&cuUnpay(kid,cur.bid,_st?_st.label:("Step "+(i+1))))) bankDirectRemove(kid,cur.bid); }   // ↶ CHOREUNDO / UNDOLISTS: Mom's or Dad's uncheck banks the reversal
       else { bankDirect(kid,-_p,"↩ unchecked: "+(_st?_st.label:("Step "+(i+1)))); }
     }
     slState[sk]={done:now,ts:now?nowTs():"",pts:now?_paid:null,bid:now?(_bid||null):null};
     if(now&&typeof _spBy==="function"&&_spBy()) slState[sk].by=_spBy();   // 🔎 SPOTCHECK: Mom's / Dad's tick isn't the kid's own
-    rlogAppend(kid,slot,_st?_st.label:("Step "+(i+1)),now?"on":"off",_p,(!now&&typeof _cuMom!=="undefined"&&_cuMom)?{undo:"mom"}:null);   // ↶ CHOREUNDO: the line says Mom undid it
+    rlogAppend(kid,slot,_st?_st.label:("Step "+(i+1)),now?"on":"off",_p,(!now&&typeof cuUndoTag==="function")?cuUndoTag():null);   // ↩︎ UNDOLISTS: the line says Mom / Dad undid it
     try{ if(typeof laundryKidHook==="function") laundryKidHook(kid,_st,sk,now); }catch(e){}   // 🧺 KIDLAUNDRY
   }
   const allDone=rtComplete(slot,kid,day), _prevSlot=slState[wk+"_"+day+"_"+kid+"_"+slot];
@@ -15777,30 +15777,40 @@ function qlEditorHTML(){ const q=qlDraft; if(!q) return ""; const inp='padding:5
 //       points are wages, banked on the check): bank/<kid>/adjustments/<new> {amount:−paid, note:"↶ Mom undid: <chore>"} sits
 //       beside the original +paid, and the routineLog "off" line carries undo:"mom". A held (chore-verify) payment never reached
 //       the kid, so it is removed as before. ✓ Done is the other way: the normal check-off, wages banked again.
-//   (2) ↶ Today's ledger (a card on Mom's Day right under 🧒 Kids today; never on Dad's Day): every kid's list steps for today, done and open, each
-//       flippable both ways; every laundry load with ↶ back a stage and its forward button; loads put away today on THIS device
-//       with ↶ back to the fold pile (✓ Put away deletes laundry/<id>, so only the device that tapped it remembers the load —
-//       localStorage ha_laundry_away, today only; no new Firebase path).
+//   (2) ↶ Today's ledger — REMOVED by UNDOLISTS 2026-10-24 (below). Loads put away today are still remembered on THIS device
+//       (✓ Put away deletes laundry/<id> — localStorage ha_laundry_away, today only) for LAUNDRYUNDO's "Put away today" list.
+// UNDOLISTS (her words 2026-10-24: "do we need the ledger i feel like its now redundant" → "cant i just go into the individual
+//   lists now and uncheck as well?" → "yes and if dad does on his a dad undid"): the reversal is no longer the ledger's alone —
+//   ANY uncheck of a paid chore by Mom (momHere(), anywhere: Kids today pop-ups, the kid's list opened in Mom mode) banks
+//   "↩︎ Mom undid: <chore>" + routineLog undo:"mom"; by Dad (his link _kioskD(), or Dad unlocked dadAwardOk()) "↩︎ Dad undid"
+//   + undo:"dad". A kid unchecking on their own device keeps the silent removal (a mis-tap costs nothing). A held payment is
+//   still just removed. The ledger card left Mom's Day: laundry undo lives in LAUNDRYUNDO, chores undo on the lists.
 // ↶ back a stage: washer ← dryer ← fold pile ← put away (wet: wash-today bin ← prewash ← washer). The load goes back in that
 // machine shown as finished now (it is sitting there done), and today's Mom blocks for BOTH stages are removed, so the "block out
 // time?" question comes back instead of a stale ✓ row or an orphan block (AUDIT_laundry_2026-10-15 hole 10: not made worse).
 // Writes, all targeted, laundry ones dry-run inert (_lbWrite): laundry/<id> update {stage,ts} · laundry/<id> set (put-away
 // restore) · momBlocks/<iso>/<load>_<stage> remove. A chore undo / ✓ Done rides the existing check-off writes (<wk>/sl as every
 // check-off writes it, bank/<kid>/adjustments/<id>, routineLog/<kid>/<wk>/<day>/<key>, laundry/lk_* via KIDLAUNDRY).
-let _cuMom=false, cuLedgerOpen=false;
+// UNDOLISTS: who is unchecking — "mom", "dad", or null (the kid on their own device).
+function cuWho(){
+  try{ if(typeof momHere==="function"&&momHere()) return "mom";
+    if((typeof _kioskD==="function"&&_kioskD())||(typeof dadAwardOk==="function"&&dadAwardOk())) return "dad"; }catch(e){}
+  return null;
+}
+function cuUndoTag(){ const w=cuWho(); return w?{undo:w}:null; }
 // Called from the check-off's uncheck branch: true = the reversal is banked here (the caller then leaves the +paid entry alone).
 function cuUnpay(kid,bid,label){
-  if(!_cuMom) return false;
+  const w=cuWho(); if(!w) return false;   // the kid's own uncheck: removed, as before
   const a=(typeof bank!=="undefined"&&bank[kid]&&bank[kid].adjustments&&bank[kid].adjustments[bid])||null;
   if(!a||a.held||!(a.amount>0)) return false;   // held = never paid → the old removal is the reversal
-  bankDirect(kid,-a.amount,"↩︎ Mom undid: "+(label||"chore"));
+  bankDirect(kid,-a.amount,"↩︎ "+(w==="dad"?"Dad":"Mom")+" undid: "+(label||"chore"));
   return true;
 }
 function _cuDone(slot,kid,d,i){ return slot==="morning"?!!(typeof mStepDoneOn==="function"&&mStepDoneOn(kid,d,i)):!!rtDoneOn(slot,kid,d,i); }
 function _cuMomOk(){ return (typeof momHere==="function"&&momHere())||(typeof dadAwardOk==="function"&&dadAwardOk()); }   // LISTS_TAP: Mom, or an unlocked Dad
 function choreUndo(slot,kid,d,i){
   if(!_cuMomOk()||!_cuDone(slot,kid,d,i)) return false;
-  _cuMom=true; try{ mdKidTick(slot,kid,d,i); } finally { _cuMom=false; }
+  mdKidTick(slot,kid,d,i);   // UNDOLISTS: Mom / Dad is read off the device (cuWho), so this is the list's own uncheck
   return !_cuDone(slot,kid,d,i);
 }
 function choreRedo(slot,kid,d,i){
@@ -15858,56 +15868,6 @@ function laundryUnputaway(id){
   try{ HA_LS.setItem('ha_laundry',JSON.stringify(laundryData)); }catch(e){}
   if(_lbWrite()) db.ref('laundry/'+id).set(rec);
   _cuRe(); return rec;
-}
-// ── the ledger ──
-function cuLedgerToggle(){ cuLedgerOpen=!cuLedgerOpen; _cuRe(); }
-// → [{slot,i,label,emoji,pts,done,ts,undone}] — every list step due today (or checked today), waved ones left out (WAVE owns those).
-function cuLedgerRows(kid,d){
-  const out=[], wk=activeWk(), L=((((typeof routineLog!=="undefined"&&routineLog)||{})[kid]||{})[wk]||{})[d]||{};
-  SL_SLOTS.forEach(function(slot){
-    const steps=(slot==="morning"&&typeof morningStepsFor==="function")?morningStepsFor(kid):(rtStepsFor(slot,kid,false,d)||[]);
-    steps.forEach(function(st,i){ if(!st) return; if(typeof rtWaved==="function"&&rtWaved(slot,kid,d,i)) return;
-      const due=(slot==="morning")?(stepWindowOk(st,d)&&cadDueOn(st.cad||"daily",d)):rtDueOrLate(slot,kid,d,i,st), done=_cuDone(slot,kid,d,i); if(!due&&!done) return;
-      const s=slState[wk+"_"+d+"_"+kid+"_"+(slot==="morning"?"m":RT_ABBR[slot])+"step"+i]||{};
-      const undone=Object.keys(L).filter(function(k){ const r=L[k]; return r&&r.undo==="mom"&&r.slot===slot&&r.label===(st.label||""); }).length;
-      out.push({slot:slot,i:i,label:st.label||"",emoji:st.emoji||"",pts:(done&&s.pts!=null)?s.pts:(st.pts||0),done:done,ts:done?String(s.ts||"").replace(/\s+[A-Z][a-z]{2}\s+\d+$/,""):"",undone:undone}); });
-  });
-  return out;
-}
-function mdCardChoreLedger(){
-  if(!_cuMomOk()||typeof _todayDay!=="string") return "";
-  const d=_todayDay, _pd=day; let kids=[];
-  try{ day=d; kids=ROSTER.map(function(k){ return {kid:k,rows:cuLedgerRows(k,d)}; }).filter(function(x){ return x.rows.length; }); } finally { day=_pd; }
-  const lids=Object.keys(laundryData||{}).sort(function(a,b){ return (laundryData[a].ts||0)-(laundryData[b].ts||0); }), away=laundryAwayList();
-  if(!kids.length&&!lids.length&&!away.length) return "";
-  let nDone=0, nOpen=0; kids.forEach(function(x){ x.rows.forEach(function(r){ if(r.done) nDone++; else nOpen++; }); });
-  let h='<div style="margin:10px 12px;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
-  h+='<div onclick="cuLedgerToggle()" style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#92400e;color:#fff;font-weight:800;font-size:13px;cursor:pointer"><span>↩︎</span> Today’s ledger · ✓ '+nDone+' · ☐ '+nOpen+(lids.length||away.length?' · 🧺 '+(lids.length+away.length):'')+'<span style="margin-left:auto;font-size:12px;opacity:.8">'+(cuLedgerOpen?'▲':'▼')+'</span></div>';
-  if(!cuLedgerOpen) return h+'</div>';
-  h+='<div style="padding:6px 14px 10px">';
-  kids.forEach(function(x){
-    h+='<div style="font-size:11px;font-weight:800;color:'+((typeof PACE_KCOL!=="undefined"&&PACE_KCOL[x.kid])||"#111827")+';margin:8px 0 2px">'+esc((typeof KID_NAME!=="undefined"&&KID_NAME[x.kid])||cap(x.kid))+'</div>';
-    let slot=null;
-    x.rows.forEach(function(r){
-      if(r.slot!==slot){ slot=r.slot; h+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:4px 0 1px">'+esc((typeof SL_SLBL!=="undefined"&&SL_SLBL[slot])||slot)+'</div>'; }
-      const q="'"+r.slot+"','"+x.kid+"','"+d+"',"+r.i;
-      h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f3f4f6;font-size:12px;font-weight:600">'
-        +'<span>'+(r.done?'✅':'☐')+'</span><span style="flex:1;min-width:0">'+(r.emoji?r.emoji+' ':'')+esc(r.label)+(r.pts>0?' <span style="color:#b45309;font-weight:800">'+r.pts+'⭐</span>':'')
-        +(r.ts?' <span style="font-size:10.5px;color:var(--muted)">'+esc(r.ts)+'</span>':'')+(r.undone?' <span style="font-size:10.5px;color:#b45309;font-weight:800">↩︎ undone'+(r.undone>1?' ×'+r.undone:'')+'</span>':'')+'</span>'
-        +(r.done?_cuBtn("choreUndo("+q+")","↩︎ Undo","#b45309","Not really done — back to not done, stars back off"):_cuBtn("choreRedo("+q+")","✓ Done","#16a34a","It was done — check it off, stars banked"))+'</div>';
-    });
-  });
-  if(lids.length||away.length){
-    h+='<div style="font-size:11px;font-weight:800;color:#1d4ed8;margin:10px 0 2px">🧺 Laundry</div>';
-    lids.forEach(function(id){ const l=laundryData[id], p=laundryBackStage(l);
-      h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f3f4f6;font-size:12px;font-weight:600;flex-wrap:wrap"><span style="flex:1;min-width:0">'+esc(l.label||'Load')+' <span style="font-size:10.5px;color:#1d4ed8;font-weight:800">'+esc(_cuStageName(l.stage))+'</span></span>'
-        +(p?_cuBtn("laundryBack('"+_lbQ(id)+"')","↩︎ "+esc(_cuStageName(p)),"#64748b","Move it back a stage"):'')+_cuBtn("laundryAdvance('"+_lbQ(id)+"')",laundryAdvanceLabel(l.stage,l),"#2563eb","")+'</div>'; });
-    away.forEach(function(a){
-      h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f3f4f6;font-size:12px;font-weight:600;color:#64748b"><span style="flex:1;min-width:0">✓ Put away '+esc(laundrySince(a.at))+': '+esc(a.load.label||'Load')+'</span>'
-        +_cuBtn("laundryUnputaway('"+_lbQ(a.id)+"')","↩︎ "+esc(_cuStageName("fold")),"#64748b","Not put away — back to folded")+'</div>'; });
-  }
-  h+='<div style="font-size:10.5px;color:var(--muted);margin-top:8px">↩︎ Undo takes the stars back off (the Star Bank shows “↩︎ Mom undid”); ✓ Done banks them. A load moved back shows as finished in that machine, and its schedule question comes back.</div>';
-  return h+'</div></div>';
 }
 // CHOREUNDO_END
 // LAUNDRYUNDO_START — ↩︎ Laundry undo (her report 2026-10-23, ~11:30 PM: "I accidentally clicked … the put it away button and it fell off the
@@ -17345,7 +17305,6 @@ function mdCardKidsToday(today,isSchoolDay,bank,dadCtl){   // bank=true: Mom's D
     h+='</div>';
   });
   h+='</div></div>';
-  if(bank&&dadCtl===undefined&&typeof mdCardChoreLedger==="function"){ try{ h+=mdCardChoreLedger(); }catch(e){} }   // ↶ CHOREUNDO: today's ledger under Kids today (Mom's Day only)
   if(bank&&dadCtl===undefined&&typeof mdCardSpotCheck==="function"){ try{ h+=mdCardSpotCheck(); }catch(e){} }   // 🔎 SPOTCHECK: Mom's Day only
 
   return h;
@@ -62020,7 +61979,7 @@ const WHATS_NEW=[{id:"2026-10-23",title:"New in the app",date:"Oct 22–23",sect
   ["🧺 Laundry — the fold pile is on your schedule now",["When a load reaches the fold pile it shows on your Mom-mode schedule right away: <b>🧺 … is in the fold pile. Block out time to put it away?</b> — How long · Now · After … · Not now, same as the washer and dryer. Your pick is a real block your Mom cards step over, with <b>✓ Put away</b> on it.","The dryer block's button now reads <b>Folded ✓</b> — tap it when the folding is <i>done</i>, not when you start.","Mom's Day reminds you about a prewash, a fold pile that's sat a while (<b>✎ Times</b> ▸ fold pile hours, 3 by default) and a wet load still in the wash-today bin the next morning — that last one shows on Dad's Day too."]],
   ["✎ Edit a load · ↩︎ back a stage",["Each load on the Laundry card has a <b>✎</b>: change its name, which machine it's in, when it started, whose it is, and wet or not. Moving it back a stage clears the old block so the \"block out time?\" question comes back fresh.","<b>↩︎</b> on a load moves it back one stage. On the schedule, a load a kid checked off that was never really a load has <b>✕ not a load</b>.","Loads Dad started show on your schedule as information only — no question, none of your time held."]],
   ["🧒 Kids can move a load now — one thing to set",["On a Chore Plan row or an Up for Grabs row, the 🧺 picker now offers <b>move to the dryer</b>, <b>move to the fold pile</b> and <b>put away</b>. A kid checking that step moves the newest load waiting at the stage before and ends that stage's block for you.","<b>Please do this once:</b> open Up for Grabs, find <b>Fold and put away a load of laundry</b>, and pick <b>put away</b> in its 🧺 picker. The app doesn't guess it from the words.","When a kid checks a step that starts a load, it asks once: <b>In the washer now?</b> Yes, or Earlier… with a time — so the done-time is right even if they check their morning list all at once."]],
-  ["↩︎ Undo a check-off · Today's ledger",["In Mom mode, a checked chore in Kids today has <b>↩︎ undo</b>: it goes back to not done and the stars come off as a visible <b>↩︎ Mom undid</b> entry in the Star Bank — nothing is deleted silently.","<b>↩︎ Today's ledger</b> (a card under Kids today) lists every kid's chores for today, done and not, each flippable either way, plus every laundry load with its back-a-stage button."]],
+  ["↩︎ Undo a check-off",["In Mom mode, uncheck a checked chore on any list: it goes back to not done and the stars come off as a visible <b>↩︎ Mom undid</b> entry in the Star Bank — nothing is deleted silently. On Dad's page it says <b>↩︎ Dad undid</b>.","Laundry loads move back a stage from the Laundry page (↩︎ undo bar and <b>Put away today</b>)."]],   // UNDOLISTS 2026-10-24: the ledger card is gone
   ["🔎 Spot check",["At the end of the school day (<b>🎲 Draw now</b> any time) the app picks <b>2 things per kid</b> at random from what they checked off themselves, and shows them on a <b>🔎 Spot check</b> card under Kids today. Tap <b>✓ Really done</b> or <b>✗ Not done</b>.","<b>✗ Not done</b> flips it back and takes that item's stars back off. Each ✗ adds one check a day for that kid (up to 5) and keeps that kind of item in the picks; each clean day takes one away (down to 2). <b>📜</b> opens the kid's record.","<b>⚙ on the card:</b> choose what it picks from — Chores, Laundry, School cards (all on to start; all off pauses it). You can also switch on <b>✗ Not done also takes off [100] ⭐</b> and set the amount — it stays off unless you turn it on.","It's on your 🏡 My day list under Afternoon too: <b>🔎 Spot check — tap to draw</b>, then <b>N to check</b>; it ticks itself once you've checked them all.","The kids see nothing — no hint a check is coming, and it never shows on the shared kitchen tablet. Your own ticks are never picked (from tonight on; ticks you made earlier today could show up once)."]],
   ["🔴 The red number on Mom's Day",["Tap the <b>red number</b> on the Mom's Day tab to see what it's counting: <b>Waiting for you</b> lists each thing in plain words — 🔔 someone's waiting · ⏳ cards to check · 🔴 things to close out · ⏰ reminders. Tap a line to jump to it.","Opening the list doesn't clear anything; visiting Mom's Day clears the number, same as before."]],
   ["📚 Taylor's study cards from Kids' Corner",["Tapping <b>📂 Open Taylor's study cards →</b> in her Kids' Corner now opens her 📚 Study right there, under a <b>← Kids' Corner · Taylor</b> bar in her color, no app menus. Study only — check-ups are still yours in Mom mode."]],
