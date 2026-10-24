@@ -41,7 +41,7 @@ console.log("── the banner ──");
   ok("date line: Saturday, October 24 · Week 28", /class="md-date"[^>]*>Saturday, October 24 · Week 28<\/div>/.test(h), h);
   ok("the summary is one centered line under the banner", /<\/div><\/div><div class="md-sum" style="text-align:center;[^"]*white-space:nowrap[^"]*">Every chore in one place<\/div>$/.test(h));
   const hb = w.mwBanner("");
-  ok("Home Base (no summary): the date line and no summary line", /Saturday, October 24 · Week 28/.test(hb) && hb.indexOf("md-sum") < 0);
+  ok("no summary passed: the date line, and the summary line still drawn blank (MDSMOOTH 2026-10-24 — it holds the height)", /Saturday, October 24 · Week 28/.test(hb) && /class="md-sum"[^>]*>&nbsp;<\/div>$/.test(hb));
   const wb = world({ brk: { name: "Thanksgiving Break" } });
   ok("a break adds · <name> — no school", /Week 28 · Thanksgiving Break — no school<\/div>/.test(wb.mwBanner("x")));
   ok("no week number → just the date", /class="md-date"[^>]*>Saturday, October 24<\/div>/.test(world({ wn: null }).mwBanner("x")));
@@ -56,7 +56,7 @@ console.log("\n── every Mom's Day section draws it ──");
     const f = slice(fn), b = f.indexOf("mwBanner("), n = f.indexOf("mpSubnav('" + SECTIONS[fn] + "')");
     ok(fn + ": banner first, then the " + SECTIONS[fn] + " menu row", b > 0 && n > b);
   });
-  ok("Home Base passes no summary", /h\+=mwBanner\(''\);/.test(slice("renderMomsDay")));
+  ok("Home Base's summary: Today at a glance (MDSMOOTH 2026-10-24)", /h\+=mwBanner\('Today at a glance'\);/.test(slice("renderMomsDay")));
   ok("Home Base no longer builds its own banner", slice("renderMomsDay").indexOf("linear-gradient(135deg,#2B7A78,#3AAFA9)") < 0);
   ok("the banner markup lives in one place", src.split("🏡 Mom's Day</div>").length - 1 === 1 && src.split("🏡 Mom\\'s Day</div>").length - 1 === 0);
   // every summary is one short line (fits a phone)
