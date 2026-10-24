@@ -54373,6 +54373,37 @@ let mastSaveAsking=false;
 function mastSaveAsk(){ mastSaveAsking=true; _mastRe(); }
 function mastSaveGoBack(){ mastSaveAsking=false; mastSlideIdx=mastNextUnmarkedIdx(); mastFlipped=false; _mastRe(); }
 function mastSaveAnyway(){ mastSaveAsking=false; mastSaveResults(); }
+// GATESTART_START — a book-gated deck with no learning cards starts itself (audit 2026-10-23, fix
+// approved by her the same day). Auto-pull only fires when a learning card in THAT deck graduates, so a
+// gated deck enrolled before its book opened anything (Ellis's First Language Lessons 4, enrolled 9/19,
+// book at Lesson 4 with 5 words released, 0 started) never pulled a card. On a drill save, each deck that
+// is gated on its book (cat_gate), not held, has no learning or parked card, has released words not yet
+// cards, and is not run by a study session (they mint their own) gets its first cards up to its learning
+// cap — exactly as unit enroll would have. Ungated decks are never touched (Lucy's Logic of English goes
+// in as taught; Ellis's built-in Spelling stays unstarted on purpose). Cards go onto `minted`, so they
+// ride the same targeted save as everything else in this drill.
+function mastGateStart(kid,items,minted,_jset){
+  const st=masteryData[kid+"_settings"]||{};
+  const gates=st.cat_gate||{}, holds=st.cat_hold||{};
+  const owned=new Set();
+  try{ (typeof mstSessions==="function"?mstSessions(kid):[]).forEach(s=>{
+    if(s.kind==="mix"||s.kind==="checkup") return;   // own no decks (mstOwns)
+    (s.decks||[]).forEach(d=>owned.add(d)); }); }catch(e){ return; }   // can't tell who owns what → leave it
+  Object.keys(gates).forEach(deck=>{
+    const g=gates[deck]; if(!g||!g.subject) return;
+    if(holds[deck]) return;
+    if(owned.has(deck)) return;
+    if(items.some(i=>i&&i.subject===deck&&(i.status==="introduction"||i.status==="parked"))) return;
+    const have=new Set(items.filter(i=>i&&i.subject===deck).map(i=>i.prompt));
+    const fresh=mastBankEligible(kid,deck).filter(n=>!have.has(n));
+    const cap=mastIntroMaxFor(deck,_jset);
+    for(let n=0;n<fresh.length&&n<cap;n++){
+      const it=mastMintFromBank(deck,fresh[n],items);
+      items.push(it); minted.push(it);
+    }
+  });
+}
+// GATESTART_END
 function mastSaveResults(){
   mastSaveAsking=false;
   const pn=mastGetPrintNum();
@@ -54395,6 +54426,7 @@ function mastSaveResults(){
   const _prevShown=new Set(((_prevToday&&_prevToday.items)||[]).filter(x=>x&&x.result==="shown").map(x=>x.id));
   const _applied=mastApplyScores(items,due,mastLogScores,pn,_jset,{prevShown:_prevShown,autoPull:true,chain:true});
   const touched=_applied.touched, minted=_applied.minted;
+  if(_jset.auto_pull){ try{ mastGateStart(masteryKid,items,minted,_jset); }catch(e){} }   // GATESTART
   try{ if(typeof wwAfterDrill==="function") wwAfterDrill(masteryKid,items,due,mastLogScores,touched); }catch(e){}   // 🏋️ WORDWORKOUT
   let changes=_applied.changes;
 
