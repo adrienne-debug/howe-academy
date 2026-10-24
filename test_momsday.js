@@ -88,7 +88,7 @@ let CYCLE = { key:"follicular", day:5 };
 global.mwCycleInfo = () => CYCLE;
 global.mwTodayIso = () => TODAY;
 global.mpSubnav = v => '<div id="subnav" data-active="'+v+'"></div>';
-global.mwBanner = sub => '<div id="banner">'+sub+'</div>';
+(0, eval)(src.slice(src.indexOf("// MDBANNER_START"), src.indexOf("// MDBANNER_END")));   // MDBANNER: the real shared banner (Home Base draws it too, 2026-10-24)
 let prepCalls = 0, weighCalls = 0;
 global.renderMPPrep = () => { prepCalls++; };
 global.renderMPWeigh = () => { weighCalls++; };

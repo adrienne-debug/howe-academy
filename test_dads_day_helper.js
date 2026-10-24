@@ -183,7 +183,10 @@ const unnudge = s => String(s).replace(/  \/\/ Load sitting in the washer[\s\S]*
   .replace(/\n[^\n]*\/\/ STICKYSTACK[^\n]*/g, "")   // STICKYSTACK (2026-10-22): the Today section markers — whole new lines, each tagged — normalized away on both sides
   .replace(/\n[^\n]*\/\/ ⏱ MINMINUTES[^\n]*/g, "")   // ⏱ MINMINUTES (2026-10-23): one 🔴 Now line (timed-card alerts), tagged — normalized away so the guard still asks "nothing ELSE changed"
   .replace(/\n[^\n]*\/\/ KITFLAG[^\n]*/g, "")   // 🍳 KITFLAG (2026-10-23): one 🔴 Now line (a meal the kids rate low → ✓ Got it · Swap…), tagged — normalized away on both sides
-  .replace(/\n[^\n]*\/\/ LESSONRES: 🧺[^\n]*/g, "");   // 🧺 LESSONRES (2026-10-23): one 🔴 Now line (Sunday-list items due within two days → ✓ Got it), tagged — normalized away on both sides
+  .replace(/\n[^\n]*\/\/ LESSONRES: 🧺[^\n]*/g, "")
+  .replace(/\n  const dt=gwParseDate\(iso\);\n  const dateLine=[^\n]*/, "").replace(/\n  const wn=\(typeof currWeekNum[^\n]*/, "")
+  .replace(/  h\+='<div style="background:linear-gradient\(135deg,#2B7A78,#3AAFA9\)[\s\S]*?\+'<\/div><\/div>';\n/, "  /*banner*/\n").replace(/  h\+=mwBanner\(''\);[^\n]*\n/, "  /*banner*/\n");   // 🏡 MDBANNER (2026-10-24): Home Base's own banner became the shared mwBanner('') — that swap (and its date vars) normalized away on both sides
+// 🧺 LESSONRES (2026-10-23): one 🔴 Now line (Sunday-list items due within two days → ✓ Got it), tagged — normalized away on both sides
 if (old) ok("Mom's lane is byte-identical: momAgendaHtml · momSchedPrep · momSchedHouse · renderMomsDay (momSchedLaundry has its own test — LAUNDRY_WHEN changes it on purpose)", ["momAgendaHtml", "momSchedPrep", "momSchedHouse", "renderMomsDay", "mpSchTasks", "mpSchAgendaHTML"].every(n => unnudge(sliceFrom(src, n)) === unnudge(sliceFrom(old, n))));
 
 console.log("D — a card Mom sent him");
