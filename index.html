@@ -53005,7 +53005,7 @@ function _matchLures(it,pool,chipOf,n){
   return cands.slice(0,n);
 }
 function _matchItem(pid){
-  let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  let items=masteryData[(matchState&&matchState.kid)||masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);   // GAMEKID: the round's own kid
   return items.find(x=>x&&x.id===pid)||null;
 }
 // The gate for one card: {pid,kind,ask,speak,chips?,picked,openedAt,clearup?,qhtml?}. A deck whose
@@ -53014,7 +53014,7 @@ function _matchGateBuild(st,t,it){
   const a=_matchAsk(st,t,it);
   const g={pid:it.id,kind:st.then,ask:st.then==="pick"?a.pick:a.say,speak:a.speak,picked:null,openedAt:Date.now()};
   if(g.kind==="pick"){
-    let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+    let items=masteryData[st.kid||masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);   // GAMEKID
     const pool=items.filter(i=>i&&i.subject===st.deck&&(i.status==="active"||i.status==="introduction")&&_matchEligible(i));
     const lures=_matchLures(it,pool,a.chipOf,2);
     if(!lures.length){ g.kind="say"; g.ask=a.say; }
@@ -53046,13 +53046,13 @@ function mastMatchPick(ci){
     // Clear-up round: a second miss just shows the answer; nothing is scored twice.
     if(c.ok) matchDing(); else matchBonk();
     _mastRe();
-    setTimeout(()=>{ if(matchState===st) _matchClearNext(st); },c.ok?500:1400);
+    setTimeout(()=>{ if(matchState===st&&st.gate===g) _matchClearNext(st); },c.ok?500:1400);   // GAMEKID: never acts on a parked / settled gate
     return;
   }
   if(c.ok){ st.res[g.pid]="c"; matchDing(); }
   else { st.res[g.pid]="m"; st.missed.push(g.pid); matchBonk(); }
   _mastRe();
-  setTimeout(()=>_matchGateClose(st),c.ok?450:1400);
+  setTimeout(()=>{ if(st.gate===g) _matchGateClose(st); },c.ok?450:1400);   // GAMEKID: never acts on a parked / settled gate
 }
 // The gate is untimed: its seconds come off the clock like a pause, so Pick it measures the hunt,
 // not the thinking.
@@ -53180,7 +53180,7 @@ function mastMatchStart(deck){
   // ⏱ startTs stays null until the FIRST tap — studying the board is free; the clock
   // starts when the kid commits.
   // MATCH_THEN: the then-step is a Memory-flip thing (Face-up shows every answer already).
-  matchState={deck:deck,style:matchStyle,pairMode:matchPairMode,tiles:tiles,sel:-1,lock:false,startTs:null,endTs:null,pausedAt:null,pausedTotal:0,
+  matchState={kid:masteryKid,deck:deck,style:matchStyle,pairMode:matchPairMode,tiles:tiles,sel:-1,lock:false,startTs:null,endTs:null,pausedAt:null,pausedTotal:0,
     then:(matchStyle==="memory"?mastMatchThen():"none"),asked:{},res:{},missed:[],gate:null,phase:"play",cq:[]};
   if(window._matchTick) clearInterval(window._matchTick);
   window._matchTick=setInterval(()=>{
@@ -53210,7 +53210,7 @@ function mastMatchPause(){
 // names the thing, it doesn't explain it.
 function _matchSpeakTile(t){
   if(!t||!mastDrillSettings().match_speak) return;
-  let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  let items=masteryData[(matchState&&matchState.kid)||masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);   // GAMEKID
   const it=items.find(x=>x&&x.id===t.pid);
   if(it&&it.prompt) mastSpeak(String(it.prompt));
 }
@@ -53255,7 +53255,7 @@ function mastMatchTap(ix){
 function mastMatchFinish(){
   const st=matchState;
   const sec=Math.round(_matchElapsed(st)/100)/10;
-  const kid=masteryKid;
+  const kid=st.kid||masteryKid;   // GAMEKID: the round's own kid, never whoever is picked now
   const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
   if(!s.match_best) s.match_best={};
   // Separate bests per game shape — a memory time and a face-up time aren't comparable.
@@ -53375,10 +53375,11 @@ function mastMatchLogResult(){
   const st=matchState; if(!st||!st.endTs||st.logged) return;
   const entry={date:new Date().toISOString().slice(0,10),deck:st.deck,style:st.style,pair:st.pairMode,sec:st.sec,isPB:!!st.isPB,ts:Date.now(),
     then:st.then||"none",first:st.firstTry||0,of:st.ofN||0,missed:(st.missed||[]).slice()};   // MATCH_THEN: what was asked, what was missed
+  const kid=st.kid||masteryKid;   // GAMEKID: the round's own kid
   if(!masteryData.matchLog) masteryData.matchLog={};
-  if(!Array.isArray(masteryData.matchLog[masteryKid])) masteryData.matchLog[masteryKid]=Object.values(masteryData.matchLog[masteryKid]||{});
-  masteryData.matchLog[masteryKid].push(entry);
-  if(db) db.ref("mastery/matchLog/"+masteryKid).push(entry);   // append-only push — never a whole-node set
+  if(!Array.isArray(masteryData.matchLog[kid])) masteryData.matchLog[kid]=Object.values(masteryData.matchLog[kid]||{});
+  masteryData.matchLog[kid].push(entry);
+  if(db) db.ref("mastery/matchLog/"+kid).push(entry);   // append-only push — never a whole-node set
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   st.logged=true;
   _mastRe();
@@ -53400,30 +53401,91 @@ function mastMatchLogResult(){
 let whichState=null;   // {deck,mix,turns:[{pid,back,tiles:[pid,pid,pid],wrong:{pid:1},done,first}],i,grow,lock,phase,first,of,isPB,prevBest,logged}
 const WHICH_MIX="Mix the decks";
 function _whichItems(kid){ let items=masteryData[kid||masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items); return items; }
-// The deck's picture cards: active or introduction, not a 🇬🇧→🇩🇪 production twin, a picture to show,
-// one card per name (two cards with one name would draw two identical tiles).
-function whichPool(items,deck){
-  const seen={};
+// WHICH_CARDS — what each deck plays as (her report 2026-10-23, first device check: Ellis's Roots said "geo" and
+// the tiles showed "geo" — "basically like, can you read? Not do you actually understand it"; Math said "6x9" and
+// showed "6x9" instead of the answer — "a major issue"). _smTileVis treats any front of 3 letters or fewer as its
+// own picture (meant for Julian's letters and numbers), so short TEXT cards slipped in and the tile repeated the
+// spoken front. Now one mode per deck, decided from the cards themselves (deck names differ per family):
+//   "symbol"  — Letters / Lowercase / Numbers / Sight Words (WHICH_SYMBOL_DECKS, by deck name or card type):
+//               finding the written form IS the skill — hear it, tap the glyph. As built.
+//   "picture" — 3+ cards with a real picture (_smTileVis(it,true): photo, deck visual, emoji, animal, color,
+//               shape) — hear the name, tap the picture. As built.
+//   "answer"  — any other deck with 3+ different short backs (math facts, roots, German, capitals): the FRONT is
+//               shown big and said (not said for a language the English voice can't speak — German), the three
+//               tiles are BACKS: the card's own + two different backs from its deck. 6×7 → 42 / 56 / 72;
+//               geo → earth / star / water; gut → well / I / you. Every card with a short different back plays.
+//   left out — spelling (cat mode "spell", or "spell" in the deck name / card type — her rule: the app never
+//               shows a spelling the child must produce), phonograms ("phonogram" deck/type, or a back in /…/
+//               sound marks — the voice can't say the sound), rule/procedure cards (mastKnowledgeType
+//               procedure_fluency), and any card with no picture and no different back (Julian's Counting:
+//               the word "one" to a pre-reader).
+// A back must fit a tile (WHICH_BACK_MAX letters) and a front one line (WHICH_FRONT_MAX): a definition paragraph
+// is a drill card, not a pick-3.
+const WHICH_SYMBOL_DECKS=["letters","lowercase","uppercase","numbers","sight words","sight_word","sight_words"];
+const WHICH_SILENT=/\b(german|deutsch|spanish|french|italian)\b/i;   // no voice for it — show the word, don't say it
+const WHICH_BACK_MAX=24, WHICH_FRONT_MAX=40;
+function _whichNorm(s){ return _matchPlain(s).toLowerCase().replace(/\s+/g," ").trim(); }
+// The card's back as a tile shows it, or "" when it has none worth a tile (same as the front, too long, a sound).
+function _whichBack(i){
+  const f=_matchPlain(i&&i.prompt), b=_matchPlain(i&&i.answer);
+  if(!b||!f||_whichNorm(b)===_whichNorm(f)) return "";
+  if(b.length>WHICH_BACK_MAX||f.length>WHICH_FRONT_MAX||b.charAt(0)==="/") return "";
+  return b;
+}
+function _whichIsSymbol(i){ return WHICH_SYMBOL_DECKS.indexOf(String(i.subject||"").toLowerCase())>=0||WHICH_SYMBOL_DECKS.indexOf(String(i.type||"").toLowerCase())>=0; }
+function _whichLeftOut(i,kid){
+  const d=String(i.subject||""), t=String(i.type||"");
+  if(/spell/i.test(d)||/spell/i.test(t)||/phonogram/i.test(d)||/phonogram/i.test(t)) return true;
+  try{ if(typeof mastGetCatMode==="function"&&mastGetCatMode(kid,d)==="spell") return true; }catch(e){}
+  return false;
+}
+function whichSilent(it){ return !!(it&&(WHICH_SILENT.test(String(it.subject||""))||WHICH_SILENT.test(String(it.type||"")))); }
+// Each deck's mode: {deck: "symbol"|"picture"|"answer"} — only decks that can make a fair pick-3 (3+ different
+// names; for answers, 3+ different backs).
+function whichDeckModes(items,kid){
+  kid=kid||masteryKid;
+  const by={};
+  (items||[]).forEach(i=>{
+    if(!i||(i.status!=="active"&&i.status!=="introduction")||i.dir==="prod") return;
+    if(!String(i.prompt||"").trim()||_whichLeftOut(i,kid)) return;
+    const d=i.subject||"Other", g=by[d]||(by[d]={sym:{},pic:{},ans:{},backs:{}});
+    const k=_whichNorm(i.prompt);
+    if(_whichIsSymbol(i)){ if(_smTileVis(i)) g.sym[k]=1; return; }
+    if(_smTileVis(i,true)){ g.pic[k]=1; return; }
+    try{ if(typeof mastKnowledgeType==="function"&&mastKnowledgeType(i)==="procedure_fluency") return; }catch(e){}
+    const bk=_whichBack(i); if(bk){ g.ans[k]=1; g.backs[_whichNorm(bk)]=1; }
+  });
+  const out={}, n=o=>Object.keys(o).length;
+  Object.keys(by).forEach(d=>{ const g=by[d];
+    if(n(g.sym)>=3) out[d]="symbol";
+    else if(n(g.pic)>=3) out[d]="picture";
+    else if(n(g.ans)>=3&&n(g.backs)>=3) out[d]="answer";
+  });
+  return out;
+}
+// The cards in play: active or introduction, not a 🇬🇧→🇩🇪 production twin, one card per name (two cards with
+// one name would draw two identical tiles), and only the cards that fit their deck's mode.
+function whichPool(items,deck,kid){
+  const modes=whichDeckModes(items,kid), seen={};
   return (items||[]).filter(i=>{
     if(!i||(i.status!=="active"&&i.status!=="introduction")||i.dir==="prod") return false;
-    if(deck!==WHICH_MIX&&i.subject!==deck) return false;
-    const k=String(i.prompt||"").trim().toLowerCase();
-    if(!k||seen[(i.subject||"")+"|"+k]||!_smTileVis(i)) return false;
-    seen[(i.subject||"")+"|"+k]=1; return true;
+    const d=i.subject||"Other", m=modes[d];
+    if(!m||(deck!==WHICH_MIX&&i.subject!==deck)) return false;
+    const k=_whichNorm(i.prompt);
+    if(!k||seen[d+"|"+k]) return false;
+    const fits=m==="symbol"?!!_smTileVis(i):m==="picture"?!!_smTileVis(i,true):!_smTileVis(i,true)&&!!_whichBack(i);
+    if(!fits) return false;
+    seen[d+"|"+k]=1; return true;
   });
 }
-// Decks that can make a fair pick-3: at least 3 different picture cards.
-function whichDecks(items){
-  const by={};
-  whichPool(items,WHICH_MIX).forEach(i=>{ const d=i.subject||"Other"; by[d]=(by[d]||0)+1; });
-  return Object.keys(by).filter(d=>by[d]>=3).sort();
-}
+function whichDecks(items,kid){ return Object.keys(whichDeckModes(items,kid)).sort(); }
 function whichRoundSize(n){ return n>=8?8:6; }
 function _whichShuffle(a,rnd){ rnd=rnd||Math.random; for(let i=a.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
-// One turn's three tiles: the right card + two different cards from ITS deck with two different names,
-// shuffled. Returns card ids, or null when the deck can't make a fair pick-3.
-function whichTiles(it,pool,rnd){
-  const name=x=>String(x.prompt||"").trim().toLowerCase();
+// One turn's three tiles: the right card + two different cards from ITS deck with two different names
+// (answer mode: two different BACKS, neither the right one), shuffled. Returns card ids, or null when the
+// deck can't make a fair pick-3.
+function whichTiles(it,pool,rnd,mode){
+  const name=mode==="answer"?(x=>_whichNorm(_whichBack(x))):(x=>String(x.prompt||"").trim().toLowerCase());
   const seen={}; seen[name(it)]=1;
   const cands=_whichShuffle((pool||[]).filter(x=>x&&x.id!==it.id&&x.subject===it.subject),rnd).filter(x=>!seen[name(x)]&&(seen[name(x)]=1));
   if(cands.length<2) return null;
@@ -53431,15 +53493,15 @@ function whichTiles(it,pool,rnd){
 }
 function _whichSay(st){
   const t=st&&st.turns[st.i]; if(!t) return;
-  const it=_whichItems().find(x=>x&&x.id===t.pid);
-  if(it&&it.prompt) try{ mastSpeak(_matchPlain(it.prompt)); }catch(e){}
+  const it=_whichItems(st.kid).find(x=>x&&x.id===t.pid);   // GAMEKID
+  if(it&&it.prompt&&!(t.mode==="answer"&&whichSilent(it))) try{ mastSpeak(_matchPlain(it.prompt)); }catch(e){}
 }
 function whichStart(deck){
   try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding/bonk (iPad)
   const items=_whichItems();
   const mix=deck===WHICH_MIX;
-  const eligible=whichDecks(items);
-  const pool=whichPool(items,WHICH_MIX).filter(i=>eligible.indexOf(i.subject||"Other")>=0&&(mix||i.subject===deck));
+  const modes=whichDeckModes(items);
+  const pool=whichPool(items,WHICH_MIX).filter(i=>mix||i.subject===deck);
   if(!pool.length){ whichState=null; _mastRe(); return; }
   const n=whichRoundSize(pool.length);
   // Every card once before any repeats; a small deck refills (never the same card twice in a row).
@@ -53450,12 +53512,15 @@ function whichStart(deck){
     if(pool.length<2) break;
   }
   const turns=[];
-  picks.forEach(it=>{ const tiles=whichTiles(it,pool); if(tiles) turns.push({pid:it.id,back:false,tiles:tiles,wrong:{},done:false,first:false}); });
-  whichState={deck:deck,mix:mix,turns:turns,i:0,grow:null,lock:false,phase:turns.length?"play":"done",first:0,of:turns.length,isPB:false,prevBest:null,logged:false,returned:{}};
+  picks.forEach(it=>{ const mode=modes[it.subject||"Other"], tiles=whichTiles(it,pool,null,mode); if(tiles) turns.push({pid:it.id,mode:mode,back:false,tiles:tiles,wrong:{},done:false,first:false}); });
+  whichState={kid:masteryKid,deck:deck,mix:mix,turns:turns,i:0,grow:null,lock:false,phase:turns.length?"play":"done",first:0,of:turns.length,isPB:false,prevBest:null,logged:false,returned:{}};
   _mastRe();
   _whichSay(whichState);   // the first name, inside the tap
 }
 function whichSayAgain(){ _whichSay(whichState); }
+// 🗂 Change deck (her report 2026-10-23: "I have to reload it every time to try a new one") — back to the deck
+// chips mid-round. The round is dropped as it stands: no best, no Scores, nothing written.
+function whichChangeDeck(){ whichState=null; _mastRe(); }
 function whichTap(ti){
   const st=whichState; if(!st||st.phase!=="play"||st.lock) return;
   const t=st.turns[st.i]; if(!t) return;
@@ -53472,14 +53537,14 @@ function whichTap(ti){
   // A card that took more than one tap comes back once, at the end of the round.
   if(!t.first&&!t.back&&!st.returned[t.pid]){
     st.returned[t.pid]=1;
-    const it=_whichItems().find(x=>x&&x.id===t.pid);
-    const tiles=it?whichTiles(it,whichPool(_whichItems(),WHICH_MIX)):null;
-    if(tiles) st.turns.push({pid:t.pid,back:true,tiles:tiles,wrong:{},done:false,first:false});
+    const it=_whichItems(st.kid).find(x=>x&&x.id===t.pid);   // GAMEKID
+    const tiles=it?whichTiles(it,whichPool(_whichItems(st.kid),WHICH_MIX),null,t.mode):null;
+    if(tiles) st.turns.push({pid:t.pid,mode:t.mode,back:true,tiles:tiles,wrong:{},done:false,first:false});
   }
   try{ matchDing(); }catch(e){}
   st.grow=ti; st.lock=true;
   _mastRe();
-  setTimeout(()=>{ if(whichState===st) whichNext(st); },900);
+  const _gkAt=st.i; setTimeout(()=>{ if(whichState===st&&st.lock&&st.i===_gkAt) whichNext(st); },900);   // GAMEKID: never advances a parked / settled turn
 }
 function whichNext(st){
   st=st||whichState; if(!st||st!==whichState) return;
@@ -53492,7 +53557,7 @@ function whichNext(st){
 function whichBestKey(deck){ return deck+" \u{00B7} which"; }
 function whichFinish(st){
   st.phase="done";
-  const kid=masteryKid;
+  const kid=st.kid||masteryKid;   // GAMEKID
   const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
   if(!s.match_best) s.match_best={};
   const key=whichBestKey(st.deck), prev=s.match_best[key];
@@ -53510,10 +53575,11 @@ function whichFinish(st){
 function whichLogResult(){
   const st=whichState; if(!st||st.phase!=="done"||st.logged) return;
   const entry={date:new Date().toISOString().slice(0,10),deck:st.deck,game:"which",first:st.first,of:st.of,ts:Date.now()};
+  const kid=st.kid||masteryKid;   // GAMEKID: the round's own kid
   if(!masteryData.matchLog) masteryData.matchLog={};
-  if(!Array.isArray(masteryData.matchLog[masteryKid])) masteryData.matchLog[masteryKid]=Object.values(masteryData.matchLog[masteryKid]||{});
-  masteryData.matchLog[masteryKid].push(entry);
-  if(db&&!_dryRun()) db.ref("mastery/matchLog/"+masteryKid).push(entry);   // append-only push — never a whole-node set
+  if(!Array.isArray(masteryData.matchLog[kid])) masteryData.matchLog[kid]=Object.values(masteryData.matchLog[kid]||{});
+  masteryData.matchLog[kid].push(entry);
+  if(db&&!_dryRun()) db.ref("mastery/matchLog/"+kid).push(entry);   // append-only push — never a whole-node set
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   st.logged=true;
   _mastRe();
@@ -53522,11 +53588,12 @@ function buildWhichHtml(color){
   const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
   let h='<style>.which-tile{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:20px;border:3px solid #e2ddd6;background:#fff;cursor:pointer;overflow:hidden;transition:transform .25s,opacity .2s;-webkit-tap-highlight-color:transparent}'+
     '.which-tile .which-vis{transform:scale(1.15);pointer-events:none}@media(min-width:560px){.which-tile .which-vis{transform:scale(1.7)}}'+
+    '.which-tile .which-ans{padding:6px;text-align:center;font-weight:800;color:#292524;font-family:\'Fraunces\',serif;line-height:1.1;overflow-wrap:anywhere;pointer-events:none}'+
     '.which-tile.which-wrong{opacity:.28;filter:grayscale(1);cursor:default}.which-tile.which-grow{transform:scale(1.12);border-color:#16a34a;background:#f0fdf4;box-shadow:0 0 0 5px #bbf7d0}</style>';
   h+='<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
-  const items=_whichItems(), decks=whichDecks(items);
+  const items=_whichItems(), modes=whichDeckModes(items), decks=Object.keys(modes).sort();
   if(!decks.length){
-    h+='<div class="mast-none">No decks ready for Which one? yet \u{2014} it needs 3 or more cards with a picture.</div></div>';
+    h+='<div class="mast-none">No decks ready for Which one? yet \u{2014} it needs 3 or more cards with a picture (or a short answer on the back).</div></div>';
     return h;
   }
   const st=whichState;
@@ -53538,7 +53605,7 @@ function buildWhichHtml(color){
     h+='</div>';
   }
   if(!st){
-    h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u{1F442} Pick a deck. Listen, then tap the picture you hear!</div></div>';
+    h+='<div style="font-size:15px;font-weight:700;color:#57534e">'+(decks.some(d=>modes[d]==="answer")?'\u{1F440} Pick a deck. Look, then tap the right answer!':'\u{1F442} Pick a deck. Listen, then tap the picture you hear!')+'</div></div>';
     return h;
   }
   const s=masteryData[masteryKid+"_settings"]||{};
@@ -53550,13 +53617,27 @@ function buildWhichHtml(color){
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
     st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
     h+='</div>';
-    h+='<span style="font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+'</span></div>';
-    h+='<div style="display:flex;justify-content:center;margin:10px 0 6px"><button onclick="whichSayAgain()" aria-label="Hear it again" style="width:110px;height:110px;border-radius:50%;border:4px solid '+color+';background:#fff;color:'+color+';font-size:54px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button></div>';
-    h+='<div style="text-align:center;font-size:17px;font-weight:800;color:#57534e;margin-bottom:12px">'+(t&&Object.keys(t.wrong).length?'Almost \u{2014} listen again!':'Tap the one you hear!')+'</div>';
+    h+='<span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
+      '<button onclick="whichChangeDeck()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{1F5C2} Change deck</button></span></div>';
+    const tIt=t?items.find(x=>x&&x.id===t.pid):null, ans=!!(t&&t.mode==="answer"), mute=ans&&whichSilent(tIt);
+    const wrongNow=!!(t&&Object.keys(t.wrong).length);
+    if(ans){
+      // Answer mode: the front is the question — written big (and said, unless muted); the tiles are backs.
+      const fr=_matchPlain(tIt&&tIt.prompt);
+      h+='<div style="display:flex;align-items:center;justify-content:center;gap:14px;margin:12px 0 8px;flex-wrap:wrap">';
+      h+='<div style="font-family:\'Fraunces\',serif;font-size:'+(fr.length<=8?'52px':fr.length<=18?'38px':'28px')+';font-weight:800;color:#292524;text-align:center;line-height:1.1">'+esc(fr)+'</div>';
+      if(!mute) h+='<button onclick="whichSayAgain()" aria-label="Hear it again" style="width:64px;height:64px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:30px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button>';
+      h+='</div>';
+      h+='<div style="text-align:center;font-size:17px;font-weight:800;color:#57534e;margin-bottom:12px">'+(wrongNow?'Almost \u{2014} try again!':'Tap the answer!')+'</div>';
+    } else {
+      h+='<div style="display:flex;justify-content:center;margin:10px 0 6px"><button onclick="whichSayAgain()" aria-label="Hear it again" style="width:110px;height:110px;border-radius:50%;border:4px solid '+color+';background:#fff;color:'+color+';font-size:54px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button></div>';
+      h+='<div style="text-align:center;font-size:17px;font-weight:800;color:#57534e;margin-bottom:12px">'+(wrongNow?'Almost \u{2014} listen again!':'Tap the one you hear!')+'</div>';
+    }
     h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">';
     (t?t.tiles:[]).forEach((pid,ti)=>{
       const it=items.find(x=>x&&x.id===pid);
       const cls='which-tile'+(t.wrong[pid]?' which-wrong':'')+(st.grow===ti?' which-grow':'');
+      if(ans){ const bk=_whichBack(it); h+='<div class="'+cls+'" role="button" aria-label="Answer '+(ti+1)+'" onclick="whichTap('+ti+')"><span class="which-ans" style="font-size:'+(bk.length<=3?'clamp(30px,9vw,60px)':bk.length<=7?'clamp(22px,6vw,40px)':bk.length<=13?'clamp(16px,4.2vw,28px)':'clamp(13px,3.4vw,21px)')+'">'+esc(bk)+'</span></div>'; return; }
       h+='<div class="'+cls+'" role="button" aria-label="Picture '+(ti+1)+'" onclick="whichTap('+ti+')"><span class="which-vis">'+(_smTileVis(it)||'')+'</span></div>';
     });
     h+='</div></div>';
@@ -53564,11 +53645,13 @@ function buildWhichHtml(color){
   }
   // Finish: the pictures he found, first-tap count, Play again / Mix the decks.
   const found=[], seenF={};
-  st.turns.forEach(x=>{ if(!x.back&&!seenF[x.pid]){ seenF[x.pid]=1; found.push(x.pid); } });
+  st.turns.forEach(x=>{ if(!x.back&&!seenF[x.pid]){ seenF[x.pid]=1; found.push(x); } });
   h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
   h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} You found them all!</div>';
   h+='<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin:12px 0">';
-  found.forEach(pid=>{ const it=items.find(x=>x&&x.id===pid); h+='<span style="width:72px;height:72px;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;border-radius:14px;background:#fff;border:2px solid #e2ddd6"><span style="transform:scale(.8)">'+(_smTileVis(it)||'')+'</span></span>'; });
+  found.forEach(x=>{ const it=items.find(y=>y&&y.id===x.pid);
+    if(x.mode==="answer"){ h+='<span style="padding:6px 10px;border-radius:12px;background:#fff;border:2px solid #e2ddd6;font-size:14px;font-weight:700;color:#292524">'+esc(_matchPlain(it&&it.prompt))+' \u{2192} '+esc(_whichBack(it))+'</span>'; return; }
+    h+='<span style="width:72px;height:72px;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;border-radius:14px;background:#fff;border:2px solid #e2ddd6"><span style="transform:scale(.8)">'+(_smTileVis(it)||'')+'</span></span>'; });
   h+='</div>';
   h+='<div style="font-size:17px;font-weight:800;color:#57534e">\u{1F446} '+st.first+' on the first tap'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
   h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">';
@@ -53580,6 +53663,72 @@ function buildWhichHtml(color){
   return h;
 }
 // WHICHONE_END
+
+// GAMEKID_START — each kid keeps their own game round (her words 2026-10-23: "Match, Memory, Which one? and the
+// Sprint deck keep their round per kid, pause when I switch away, resume when I switch back, and save to the right
+// kid"). Live incident 2026-10-23: switching Ellis → Lucy left Ellis's Match tiles on Lucy's screen, Which one? showed
+// empty tiles (Ellis's card ids), and a round finished after the switch would have saved to Lucy (match_best /
+// matchLog read masteryKid at finish). Now the live game globals always belong to ONE kid (_gkKid). When the picked
+// kid changes, that kid's Match/Memory round (+ its Style / Pairs), Which one? round and Sprint ▸ drill deck choice are
+// parked; a running Match clock pauses exactly like ⏸ (time away is not play time); speech stops. The new kid's parked
+// round comes back (Match still paused until a tap), else their normal deck picker. A tap that was mid-step when the
+// switch happened (a picked chip, a right tile growing) settles on return — the old timers check their own gate/turn,
+// so they can never act on a parked or settled round. Each round also carries its own kid (st.kid) and every
+// finish / Save / item lookup uses it. In memory on this device only: a reload starts fresh. No new writes.
+let _gkKid=null;      // whose rounds the live globals (matchState, whichState, sprintDeck…) hold right now
+const _gkPark={};     // kid → {match,style,pair,which,sprintDeck,sprintDeckScope}
+function gameKidSwitch(to){
+  if(!to) return;
+  const from=_gkKid===null?masteryKid:_gkKid; _gkKid=to;   // first sight: the globals are the current kid's (callers run before masteryKid changes)
+  if(from===to) return;
+  const m=matchState;
+  if(m&&m.startTs&&!m.endTs&&!m.pausedAt&&!m.gate) m.pausedAt=Date.now();   // ⏸ (an open gate is untimed already)
+  if(window._matchTick){ clearInterval(window._matchTick); window._matchTick=null; }
+  try{ if(window.speechSynthesis) speechSynthesis.cancel(); }catch(e){}
+  _gkPark[from]={match:m,style:matchStyle,pair:matchPairMode,which:whichState,sprintDeck:sprintDeck,sprintDeckScope:sprintDeckScope};
+  const p=_gkPark[to]||null;
+  matchState=(p&&p.match)||null;
+  if(p){ matchStyle=p.style; matchPairMode=p.pair; }
+  whichState=(p&&p.which)||null;
+  const sd=_gkSprintFor(to,p);
+  sprintDeck=sd.deck; sprintDeckScope=sd.scope;
+  _gkResume();
+}
+// The kid's own Sprint ▸ drill deck, or All decks when there's none or it's no longer one of their decks.
+function _gkSprintFor(kid,p){
+  const all={deck:"__all__",scope:null};
+  if(!p) return all;
+  let items=masteryData[kid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  const has={}; items.forEach(i=>{ if(i&&i.subject) has[i.subject]=1; });
+  const sc=p.sprintDeckScope;
+  if(Array.isArray(sc)&&sc.length) return sc.some(s=>has[s])?{deck:p.sprintDeck,scope:sc.slice()}:all;
+  return (p.sprintDeck==="__all__"||has[p.sprintDeck])?{deck:p.sprintDeck,scope:null}:all;
+}
+// Settle anything that was mid-step at the switch (no render here — the caller renders).
+function _gkResume(){
+  const m=matchState;
+  if(m){
+    const g=m.gate;
+    if(g&&g.picked!=null){
+      if(g.clearup) m.gate=Object.assign({},g,{picked:null});   // clear-up isn't scored: that card gets one more look
+      else { if(m.startTs&&!m.endTs&&g.openedAt) m.pausedTotal+=Date.now()-g.openedAt; m.gate=null; }   // _matchGateClose, no render
+    }
+    if(m.startTs&&!m.endTs){   // the clock display ticks again (it holds still while paused)
+      if(window._matchTick) clearInterval(window._matchTick);
+      window._matchTick=setInterval(()=>{
+        if(!matchState||matchState.endTs||mastView!=="match"){ clearInterval(window._matchTick); window._matchTick=null; return; }
+        const el=document.getElementById("match-clock");
+        if(el) el.textContent=(_matchElapsed(matchState)/1000).toFixed(1)+"s";
+      },100);
+    }
+  }
+  const w=whichState;
+  if(w&&w.phase==="play"){
+    if(w.lock){ w.grow=null; w.lock=false; w.i++; if(w.i>=w.turns.length) whichFinish(w); }   // whichNext, no render
+    if(w.phase==="play"&&mastView==="which") _whichSay(w);   // back to the round: hear the card again
+  }
+}
+// GAMEKID_END
 
 function buildMatchHtml(color){
   let h='<div style="padding:4px 14px 20px">';
@@ -54105,7 +54254,7 @@ function mastShuffleDeck(list){
   return out;
 }
 
-function mastSetKid(k,noRender){ _mastResumed=""; masteryKid=k; mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastSessionKey=""; mastSlideIdx=0; mastScoreItemId=null; mastAdminLocal=null; const cats=Object.keys(MAST_BANK_MAP[k]||{}); mastAddCat=cats[0]||""; if(noRender) return; const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastSetKid(k,noRender){ _mastResumed=""; gameKidSwitch(k); masteryKid=k; mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastSessionKey=""; mastSlideIdx=0; mastScoreItemId=null; mastAdminLocal=null; const cats=Object.keys(MAST_BANK_MAP[k]||{}); mastAddCat=cats[0]||""; if(noRender) return; const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastSetView(v){ mastView=v; mastScoreItemId=null; mastManualScore=false; _mastRe(); }
 function mastOpenManualScore(){ mastManualScore=true; mastManualDate=new Date().toISOString().slice(0,10); mastManualC=0; mastManualM=0; mastManualT=0; mastManualS=0; _mastRe(); }
 function mastCloseManualScore(){ mastManualScore=false; _mastRe(); }
@@ -62476,6 +62625,69 @@ function mastHmHealth(sitems){
   return {tc,introCount,onLadder,health,barCol,healthLbl};
 }
 // HM_LEARNING_END
+// GAMESTAB_START — 🎮 Games section in Mastery (her words 2026-10-23: "the games like match and which one and
+// whatever else applies per kid needs to be in a new section called games … And then there can be a whole nother
+// menu underneath that menu that sticks and doesn't move when you scroll"; AUDIT_games_kid_switch_2026-10-23.md §3).
+// One 🎮 Games tab replaces the 🎯 Match and 👆 Which one? tabs. Under it, a row of game buttons that lives inside
+// Mastery's sticky header (so it stays put on scroll) and lists ONLY the games this kid has a playable deck for.
+// Each game keeps its own mastView underneath ("match" / "which"), so the game code and any mastSetView('match')
+// caller work unchanged; "games" is the bare section (no game picked / none ready). A new game = one GAMES_LIST
+// entry. Last game per kid is kept in memory on this device only. No Firebase writes.
+function _gamesItems(k){ let it=(masteryData||{})[k]||[]; if(!Array.isArray(it)) it=Object.values(it); return it; }
+// Pair modes ("two" word↔meaning, "same" identical cards) that give this kid at least one Match deck.
+function _gamesMatchPairs(k){
+  const kk=masteryKid, keep=matchPairMode, out=[];
+  try{ masteryKid=k; ["two","same"].forEach(p=>{ matchPairMode=p; if(mastMatchDecks().length) out.push(p); }); }
+  finally{ masteryKid=kk; matchPairMode=keep; }
+  return out;
+}
+const GAMES_LIST=[
+  {key:"match",  emoji:"\u{1F3AF}", label:"Match",       view:"match", style:"match",  available:k=>_gamesMatchPairs(k).length>0, render:c=>buildMatchHtml(c)},
+  {key:"memory", emoji:"\u{1F9E0}", label:"Memory flip", view:"match", style:"memory", available:k=>_gamesMatchPairs(k).length>0, render:c=>buildMatchHtml(c)},
+  {key:"which",  emoji:"\u{1F446}", label:"Which one?",  view:"which",                 available:k=>whichDecks(_gamesItems(k)).length>0, render:c=>buildWhichHtml(c)},
+];
+const gamesLast={};   // kid → key of the last game played on this device
+function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k); }catch(e){ return false; } }); }
+// The game on screen: a GAMES_LIST key, "" for the bare Games section, null when Mastery isn't in Games.
+function gamesCurrentKey(){
+  if(mastView==="which") return "which";
+  if(mastView==="match") return matchStyle==="memory"?"memory":"match";
+  return mastView==="games"?"":null;
+}
+function gamesActive(){ return gamesCurrentKey()!==null; }
+// 🎮 tab: this kid's last game if it's still playable, else the first one they have, else the empty section.
+function gamesOpen(){
+  const av=gamesFor(masteryKid), g=av.find(x=>x.key===gamesLast[masteryKid])||av[0];
+  if(g) return gamesPick(g.key);
+  mastSetView("games");
+}
+function gamesPick(key){
+  const g=GAMES_LIST.find(x=>x.key===key); if(!g) return;
+  gamesLast[masteryKid]=key; mastView=g.view; mastScoreItemId=null; mastManualScore=false;
+  if(g.style){
+    // Land on a pair mode that has decks (Match hides its toggles when the current mode has none).
+    const pairs=_gamesMatchPairs(masteryKid), pairMove=pairs.length>0&&pairs.indexOf(matchPairMode)<0;
+    if(pairMove) matchPairMode=pairs[0];
+    if(pairMove||g.style!==matchStyle) return mastMatchSetStyle(g.style);   // resets the board + re-renders
+  }
+  _mastRe();
+}
+function gamesSubHtml(color){
+  const cur=gamesCurrentKey(); if(cur===null) return "";
+  if(cur) gamesLast[masteryKid]=cur;   // also catches the in-Match style toggle and old mastSetView('match') callers
+  const av=gamesFor(masteryKid); if(!av.length) return "";
+  let h='<div class="games-sub" role="tablist" aria-label="Games" style="display:flex;gap:6px;overflow-x:auto;padding-top:8px">';
+  av.forEach(g=>{ const on=g.key===cur;
+    h+='<button class="kid-btn'+(on?' active':'')+'" role="tab" aria-selected="'+on+'" onclick="gamesPick(\''+g.key+'\')" style="flex-shrink:0;'+(on?'background:'+color+';color:#fff;border-color:transparent':'')+'">'+g.emoji+' '+g.label+'</button>'; });
+  return h+'</div>';
+}
+function gamesBodyHtml(color){
+  const g=GAMES_LIST.find(x=>x.key===gamesCurrentKey());
+  if(g) return g.render(color);
+  if(gamesFor(masteryKid).length) return '<div class="mast-none">Pick a game above.</div>';
+  return '<div class="mast-none">No games ready yet \u{2014} games need a deck with pictures or meanings.</div>';
+}
+// GAMESTAB_END
 function renderMastery(el){
   try{ _renderMasteryInner(el); mastLockSlideHeight(el); }catch(e){ console.error("Mastery render error:",e); el.innerHTML='<div style="padding:40px;text-align:center;color:#dc2626"><b>Mastery tab error</b><br><span style="font-size:11px;color:#666">'+e.message+'</span></div>'; }
 }
@@ -62483,6 +62695,7 @@ function _renderMasteryInner(el){
   if(!_haMastReady){ el.innerHTML='<div style="padding:40px;text-align:center;color:var(--muted)">Loading Mastery cards…</div>'; return; }   // NO_MIRROR
   const kids=[...ROSTER];
   if(!kids.includes(masteryKid)) masteryKid=kids[0];
+  gameKidSwitch(masteryKid);   // GAMEKID: any other path that changed the kid (schedule links, Units, Kids' Corner)
 
   let items=masteryData[masteryKid]||[];
   if(!Array.isArray(items)) items=Object.values(items);
@@ -62511,12 +62724,12 @@ function _renderMasteryInner(el){
   h+='<button class="mast-view-tab'+(mastView==="drill"?" active":"")+'" onclick="mastSetView(\'drill\')">Drills</button>';
   h+='<button class="mast-view-tab'+(mastView==="study"?" active":"")+'" onclick="mastSetView(\'study\')">\u{1F4DA} Study</button>';
   h+='<button class="mast-view-tab'+(mastView==="sprint"?" active":"")+'" onclick="mastSetView(\'sprint\')">Sprint</button>';
-  h+='<button class="mast-view-tab'+(mastView==="match"?" active":"")+'" onclick="mastSetView(\'match\')">\u{1F3AF} Match</button>';
-  h+='<button class="mast-view-tab'+(mastView==="which"?" active":"")+'" onclick="mastSetView(\'which\')">\u{1F446} Which one?</button>';   // WHICHONE
+  h+='<button class="mast-view-tab'+(gamesActive()?" active":"")+'" onclick="gamesOpen()">\u{1F3AE} Games</button>';   // GAMESTAB (was 🎯 Match + 👆 Which one?)
   h+='<button class="mast-view-tab'+(mastView==="scores"?" active":"")+'" onclick="mastSetView(\'scores\')">Scores</button>';
   h+='<button class="mast-view-tab'+(mastView==="heatmap"?" active":"")+'" onclick="mastSetView(\'heatmap\')">Heat Map</button>';
   h+='<button class="mast-view-tab'+(mastView==="admin"?" active":"")+'" onclick="mastSetView(\'admin\')">Admin</button>';
   h+='</div>';
+  h+=gamesSubHtml(color);   // GAMESTAB: game sub-menu, inside the sticky header so it stays put on scroll
   h+='</div>';
 
   // ── ADMIN VIEW (Julian only) ──
@@ -62559,14 +62772,8 @@ function _renderMasteryInner(el){
     return;
   }
 
-  if(mastView==="match"){
-    h+=buildMatchHtml(color);
-    h+='</div>';
-    el.innerHTML=h;
-    return;
-  }
-  if(mastView==="which"){   // WHICHONE
-    h+=buildWhichHtml(color);
+  if(gamesActive()){   // GAMESTAB: 🎯 Match · 🧠 Memory flip · 👆 Which one? (mastView "match" / "which" / "games")
+    h+=gamesBodyHtml(color);
     h+='</div>';
     el.innerHTML=h;
     return;
@@ -67930,6 +68137,7 @@ function retrSchedGo(kid,view,sid){
 // top of today's queue (a due re-check, else the focus stage), falling back to the primary
 // track's focus. So one tap from the schedule opens the exact sheet, not a blank picker.
 function retrOpenSprint(kid){
+  gameKidSwitch(kid);   // GAMEKID: park the last kid's games BEFORE this kid's plan sets the Sprint deck
   masteryKid=kid; mastView="sprint";
   mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastSessionKey=""; mastSlideIdx=0; mastScoreItemId=null; mastAdminLocal=null;
   try{
