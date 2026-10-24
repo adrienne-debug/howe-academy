@@ -26,7 +26,7 @@ function env(E){
     ${TG}
     ${FL}
     if(E.prog) famProgress=E.prog;
-    return {famLessonMap,famLessonFor,famCheckPre,famBeforeUncheck,famRowHTML,famSittings,famDoneN,famProgBump,famTrackSaveSeq,famTrackSaveWeek,famGridHTML,famDefs,rd:()=>rulesData,checked,histState,weekData};
+    return {famLessonsEditorHTML,famLessonMap,famLessonFor,famCheckPre,famBeforeUncheck,famRowHTML,famSittings,famDoneN,famProgBump,famTrackSaveSeq,famTrackSaveWeek,famGridHTML,famDefs,rd:()=>rulesData,checked,histState,weekData};
   `)(toMin,fromMin,E);
 }
 const SD={defaultStart:"9:00 AM",defaultEnd:"4:00 PM",lunchStart:"12:00 PM",lunchEnd:"1:00 PM"};
@@ -90,6 +90,14 @@ console.log("4. the editor's list + weeks");
   const E2=env(base({dom:{"famtr-ft-0-book":"BiblioPlan","famtr-ft-0-sw":"7","famtr-ft-0-start":"2026-10-05","famtr-ft-0-total":"34","famtr-ft-0-dMon":"Day 1","famtr-ft-0-dTue":"Day 2","famtr-ft-0-dWed":"Day 3","famtr-ft-0-dThu":"Map work","famtr-ft-0-dFri":"Presidents","famtr-ft-0-topics":"7: France versus Germany; Lady Liberty\nWeek 8 - The Transcontinental Railroad"}}));
   E2.famTrackSaveWeek("ft",0); const w=E2.rd().familyBlocks.ft.items[0].track;
   ok("weeks saved: start Wk 7 on 10/5, 34 weeks, 5 day roles, topics parsed ('7:' and 'Week 8 -')", w.startWeek===7&&w.total===34&&w.days.Thu==="Map work"&&w.topics["7"]==="France versus Germany; Lady Liberty"&&w.topics["8"]==="The Transcontinental Railroad", w);
+}
+console.log("4b. topics that come back from Firebase as a list (slot 0 empty)");
+{ const arrTopics=[null,"The British Empire; the Underground Railroad"]; arrTopics[7]="France versus Germany; Lady Liberty";
+  const B=JSON.parse(JSON.stringify(FT)); B.items[0].track.topics=arrTopics;
+  const E=env(base({rulesData:{schoolDay:SD,familyBlocks:{ft:B}}}));
+  const html=E.famLessonsEditorHTML?E.famLessonsEditorHTML("ft",E.famDefs().ft,E.famDefs().ft.items[0],0,true):"";
+  ok("cards still read the week topic from the list", /Wk 7 · Day 1 — France versus Germany/.test(E.famLessonMap(E.famDefs().ft,"ft",E.famDefs().ft.items[0]).byDate["2026-10-05"]));
+  ok("the 📚 editor shows no '0: null' (or any empty) line", html&&!/0: null/.test(html)&&!/\b(2|3|4|5|6): undefined/.test(html)&&/7: France versus Germany/.test(html)&&/1: The British Empire/.test(html), (html.match(/<textarea id="famtr-ft-0-topics"[^>]*>([^<]*)/)||[])[1]);
 }
 console.log("5. wiring (source)");
 { const fd=src.slice(src.indexOf("function finalizeDone("),src.indexOf("function finalizeDone(")+9000);
