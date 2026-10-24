@@ -111,7 +111,7 @@ console.log("8. The grid + the chips");
   ok("Today: ✓ Ellis, Lucy + Julian with 🫧 Start", /✓<\/span> Ellis/.test(cells[1])&&/llStart\('lucy'\)/.test(cells[1])&&/llStart\('julian'\)/.test(cells[1])&&!/llStart\('ellis'\)/.test(cells[1]));
   ok("a kid's device: no Start buttons", !/llStart\(/.test(c.llWeekGridHTML(TUE,false,false)));
   const e=c.llWeekGridHTML(TUE,true,true).split('border-radius:8px;padding:4px 1px').slice(1);
-  ok("after 8 PM: Lucy, Julian shown → moved, Wednesday starts with them", /→ Lucy/.test(e[1])&&/→ Julian/.test(e[1])&&/>Lucy</.test(e[2])&&!/llStart\(/.test(e[1]));
+  ok("after 8 PM: Lucy, Julian shown → moved, Wednesday starts with them — each still has 🫧 Start (LL_LATESTART, her 2026-10-23: \"Start would be fine\")", /→ Lucy/.test(e[1])&&/→ Julian/.test(e[1])&&/>Lucy</.test(e[2])&&/llStart\('lucy'\)/.test(e[1])&&/llStart\('julian'\)/.test(e[1]));
   const s=c.llStripHTML("dad"); ok("chips under Start a load: Lucy + Julian, Dad's taps are his", /llStart\('lucy','dad'\)/.test(s)&&/llStart\('julian','dad'\)/.test(s)&&!/llStart\('ellis'/.test(s));
   ok("no chips until the line is set up", mk({day:TUE}).llStripHTML("")==="");
 }
