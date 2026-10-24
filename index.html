@@ -62544,6 +62544,69 @@ function mastHmHealth(sitems){
   return {tc,introCount,onLadder,health,barCol,healthLbl};
 }
 // HM_LEARNING_END
+// GAMESTAB_START — 🎮 Games section in Mastery (her words 2026-10-23: "the games like match and which one and
+// whatever else applies per kid needs to be in a new section called games … And then there can be a whole nother
+// menu underneath that menu that sticks and doesn't move when you scroll"; AUDIT_games_kid_switch_2026-10-23.md §3).
+// One 🎮 Games tab replaces the 🎯 Match and 👆 Which one? tabs. Under it, a row of game buttons that lives inside
+// Mastery's sticky header (so it stays put on scroll) and lists ONLY the games this kid has a playable deck for.
+// Each game keeps its own mastView underneath ("match" / "which"), so the game code and any mastSetView('match')
+// caller work unchanged; "games" is the bare section (no game picked / none ready). A new game = one GAMES_LIST
+// entry. Last game per kid is kept in memory on this device only. No Firebase writes.
+function _gamesItems(k){ let it=(masteryData||{})[k]||[]; if(!Array.isArray(it)) it=Object.values(it); return it; }
+// Pair modes ("two" word↔meaning, "same" identical cards) that give this kid at least one Match deck.
+function _gamesMatchPairs(k){
+  const kk=masteryKid, keep=matchPairMode, out=[];
+  try{ masteryKid=k; ["two","same"].forEach(p=>{ matchPairMode=p; if(mastMatchDecks().length) out.push(p); }); }
+  finally{ masteryKid=kk; matchPairMode=keep; }
+  return out;
+}
+const GAMES_LIST=[
+  {key:"match",  emoji:"\u{1F3AF}", label:"Match",       view:"match", style:"match",  available:k=>_gamesMatchPairs(k).length>0, render:c=>buildMatchHtml(c)},
+  {key:"memory", emoji:"\u{1F9E0}", label:"Memory flip", view:"match", style:"memory", available:k=>_gamesMatchPairs(k).length>0, render:c=>buildMatchHtml(c)},
+  {key:"which",  emoji:"\u{1F446}", label:"Which one?",  view:"which",                 available:k=>whichDecks(_gamesItems(k)).length>0, render:c=>buildWhichHtml(c)},
+];
+const gamesLast={};   // kid → key of the last game played on this device
+function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k); }catch(e){ return false; } }); }
+// The game on screen: a GAMES_LIST key, "" for the bare Games section, null when Mastery isn't in Games.
+function gamesCurrentKey(){
+  if(mastView==="which") return "which";
+  if(mastView==="match") return matchStyle==="memory"?"memory":"match";
+  return mastView==="games"?"":null;
+}
+function gamesActive(){ return gamesCurrentKey()!==null; }
+// 🎮 tab: this kid's last game if it's still playable, else the first one they have, else the empty section.
+function gamesOpen(){
+  const av=gamesFor(masteryKid), g=av.find(x=>x.key===gamesLast[masteryKid])||av[0];
+  if(g) return gamesPick(g.key);
+  mastSetView("games");
+}
+function gamesPick(key){
+  const g=GAMES_LIST.find(x=>x.key===key); if(!g) return;
+  gamesLast[masteryKid]=key; mastView=g.view; mastScoreItemId=null; mastManualScore=false;
+  if(g.style){
+    // Land on a pair mode that has decks (Match hides its toggles when the current mode has none).
+    const pairs=_gamesMatchPairs(masteryKid), pairMove=pairs.length>0&&pairs.indexOf(matchPairMode)<0;
+    if(pairMove) matchPairMode=pairs[0];
+    if(pairMove||g.style!==matchStyle) return mastMatchSetStyle(g.style);   // resets the board + re-renders
+  }
+  _mastRe();
+}
+function gamesSubHtml(color){
+  const cur=gamesCurrentKey(); if(cur===null) return "";
+  if(cur) gamesLast[masteryKid]=cur;   // also catches the in-Match style toggle and old mastSetView('match') callers
+  const av=gamesFor(masteryKid); if(!av.length) return "";
+  let h='<div class="games-sub" role="tablist" aria-label="Games" style="display:flex;gap:6px;overflow-x:auto;padding-top:8px">';
+  av.forEach(g=>{ const on=g.key===cur;
+    h+='<button class="kid-btn'+(on?' active':'')+'" role="tab" aria-selected="'+on+'" onclick="gamesPick(\''+g.key+'\')" style="flex-shrink:0;'+(on?'background:'+color+';color:#fff;border-color:transparent':'')+'">'+g.emoji+' '+g.label+'</button>'; });
+  return h+'</div>';
+}
+function gamesBodyHtml(color){
+  const g=GAMES_LIST.find(x=>x.key===gamesCurrentKey());
+  if(g) return g.render(color);
+  if(gamesFor(masteryKid).length) return '<div class="mast-none">Pick a game above.</div>';
+  return '<div class="mast-none">No games ready yet \u{2014} games need a deck with pictures or meanings.</div>';
+}
+// GAMESTAB_END
 function renderMastery(el){
   try{ _renderMasteryInner(el); mastLockSlideHeight(el); }catch(e){ console.error("Mastery render error:",e); el.innerHTML='<div style="padding:40px;text-align:center;color:#dc2626"><b>Mastery tab error</b><br><span style="font-size:11px;color:#666">'+e.message+'</span></div>'; }
 }
@@ -62580,12 +62643,12 @@ function _renderMasteryInner(el){
   h+='<button class="mast-view-tab'+(mastView==="drill"?" active":"")+'" onclick="mastSetView(\'drill\')">Drills</button>';
   h+='<button class="mast-view-tab'+(mastView==="study"?" active":"")+'" onclick="mastSetView(\'study\')">\u{1F4DA} Study</button>';
   h+='<button class="mast-view-tab'+(mastView==="sprint"?" active":"")+'" onclick="mastSetView(\'sprint\')">Sprint</button>';
-  h+='<button class="mast-view-tab'+(mastView==="match"?" active":"")+'" onclick="mastSetView(\'match\')">\u{1F3AF} Match</button>';
-  h+='<button class="mast-view-tab'+(mastView==="which"?" active":"")+'" onclick="mastSetView(\'which\')">\u{1F446} Which one?</button>';   // WHICHONE
+  h+='<button class="mast-view-tab'+(gamesActive()?" active":"")+'" onclick="gamesOpen()">\u{1F3AE} Games</button>';   // GAMESTAB (was 🎯 Match + 👆 Which one?)
   h+='<button class="mast-view-tab'+(mastView==="scores"?" active":"")+'" onclick="mastSetView(\'scores\')">Scores</button>';
   h+='<button class="mast-view-tab'+(mastView==="heatmap"?" active":"")+'" onclick="mastSetView(\'heatmap\')">Heat Map</button>';
   h+='<button class="mast-view-tab'+(mastView==="admin"?" active":"")+'" onclick="mastSetView(\'admin\')">Admin</button>';
   h+='</div>';
+  h+=gamesSubHtml(color);   // GAMESTAB: game sub-menu, inside the sticky header so it stays put on scroll
   h+='</div>';
 
   // ── ADMIN VIEW (Julian only) ──
@@ -62628,14 +62691,8 @@ function _renderMasteryInner(el){
     return;
   }
 
-  if(mastView==="match"){
-    h+=buildMatchHtml(color);
-    h+='</div>';
-    el.innerHTML=h;
-    return;
-  }
-  if(mastView==="which"){   // WHICHONE
-    h+=buildWhichHtml(color);
+  if(gamesActive()){   // GAMESTAB: 🎯 Match · 🧠 Memory flip · 👆 Which one? (mastView "match" / "which" / "games")
+    h+=gamesBodyHtml(color);
     h+='</div>';
     el.innerHTML=h;
     return;
