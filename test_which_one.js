@@ -198,8 +198,8 @@ console.log("dry run + no ladder");
 
 console.log("hooks");
 {
-  ok("view tab next to Match",/mastSetView\(\\'match\\'\)">\\u\{1F3AF\} Match<\/button>';\n\s*h\+='<button class="mast-view-tab'\+\(mastView==="which"/.test(src));
-  ok("renderMastery dispatches the which view",/if\(mastView==="which"\)\{[^\n]*\n\s*h\+=buildWhichHtml\(color\);/.test(src));
+  ok("Which one? is a game in the 🎮 Games list (GAMESTAB)",/key:"which",[^\n]*view:"which"[^\n]*render:c=>buildWhichHtml\(c\)/.test(src));
+  ok("renderMastery dispatches games through gamesBodyHtml",/if\(gamesActive\(\)\)\{[^\n]*\n\s*h\+=gamesBodyHtml\(color\);/.test(src));
 }
 
 console.log("\n"+pass+" passed, "+fail+" failed");
