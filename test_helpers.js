@@ -37,7 +37,7 @@ function makeEnv(opts){
     confirm:()=>opts.confirmAns!==false,
     Date
   };
-  ctx.renderAll=()=>{ ctx.renders++; };
+  ctx.renderAll=()=>{ ctx.renders++; }; ctx.renderAllSoon=ctx.renderAll;
   vm.createContext(ctx);
   vm.runInContext(pageLines+"\n"+block+"\nthis.__get=()=>({helpersData,helpersOpen,PAGE_DEFAULT});",ctx);
   return ctx;

@@ -2442,7 +2442,7 @@ function _loadPrevSl(){
   // (Lucy's list showed 5 chores, 4 of them phantom late, then corrected itself seconds later.)
   if(!db) return;
   _prevSlWk=pw;
-  try{ db.ref(pw+"/sl").once("value",function(s){ const v=s.val(); if(v){ prevSlState=v; sv(pw+"_sl",v); renderAll(); } }); }catch(e){}
+  try{ db.ref(pw+"/sl").once("value",function(s){ const v=s.val(); if(v){ prevSlState=v; sv(pw+"_sl",v); renderAllSoon(); } }); }catch(e){}
 }
 function rtDoneOnWk(wk,slot,kid,d,i){
   const map=(wk===activeWk())?slState:prevSlState;
@@ -2679,12 +2679,12 @@ const PAGE_LABEL={notebook:"Notebook",mastery:"Mastery",units:"Units",play:"Scho
 const PAGE_DEFAULT=(function(){ const howe=!(window.HA_FAMILY&&window.HA_FAMILY.familyId&&window.HA_FAMILY.familyId!=="howe"); const d={}; PAGE_KEYS.forEach(k=>{ d[k]=k!=="helpers"&&(howe||k==="moms-plan"||k==="kids"); }); return d; })();   // 🙋 helpers starts off everywhere
 let PAGES=(function(){ try{ const v=JSON.parse(HA_LS.getItem("ha_pages")||"null"); if(v&&typeof v==="object") return Object.assign({},PAGE_DEFAULT,v); }catch(e){} return Object.assign({},PAGE_DEFAULT); })();
 function pageOn(k){ return PAGE_KEYS.includes(k)?PAGES[k]!==false:true; }
-function pagesApply(v){
+function pagesApply(v,soon){
   PAGES=Object.assign({},PAGE_DEFAULT,(v&&typeof v==="object")?v:{});
   try{ HA_LS.setItem("ha_pages",JSON.stringify(PAGES)); }catch(e){}
   const kiosk=(typeof _kiosk==="function"&&_kiosk())||(typeof _kioskR==="function"&&_kioskR())||(typeof _kioskD==="function"&&_kioskD())||(typeof _kioskK==="function"&&_kioskK());
   if(typeof adminSubTab!=="undefined"&&((!pageOn("purchases")&&adminSubTab==="purchases")||(!pageOn("mastery")&&adminSubTab==="mastery"))) adminSubTab="hq";
-  if(!kiosk&&!pageOn(tab)) showTab("schedule"); else renderAll();
+  if(!kiosk&&!pageOn(tab)) showTab("schedule"); else if(soon) renderAllSoon(); else renderAll();   // RENDERSOON: the listener combines; pagesToggle (a tap) paints now
 }
 function pagesToggle(k){
   if(!momHere()||!PAGE_KEYS.includes(k)) return;
@@ -3528,7 +3528,7 @@ function attachWeekListeners(wk){
 
   // Meta first — runCascade inside so cascade always runs after dates are loaded
   const r7=db.ref(wk+"/meta");
-  r7.on("value",s=>{ if(isUploading||!s.val()) return; applyWeekMeta(s.val()); sv(wk+"_meta",s.val()); schedCascade(); renderAll(); });
+  r7.on("value",s=>{ if(isUploading||!s.val()) return; applyWeekMeta(s.val()); sv(wk+"_meta",s.val()); schedCascade(); renderAllSoon(); });
   fbWeekRefs.push(r7);
 
   const r1=db.ref(wk+"/checked");
@@ -3541,7 +3541,7 @@ function attachWeekListeners(wk){
     checked=v; sv(wk+"_checked",checked);
     fbCheckedLoaded=true;
     schedCascade();
-    renderAll();
+    renderAllSoon();
     try{ ckReplayPending(); }catch(e){}   // 🔁 anything this device was refused earlier lands now
     try{ if(typeof stHeal==="function") stHeal(); }catch(e){}   // 📝 STHEAL: the checked list is in (or changed) — idempotent, Mom's device only
     try{ obReplay(); }catch(e){}         // 📮 chores/claims/points from an earlier offline page load (no-op once done)
@@ -3553,15 +3553,15 @@ function attachWeekListeners(wk){
     if(isUploading) return;
     claimed=s.val()||{};
     sv(wk+"_claimed",claimed);
-    renderAll();
+    renderAllSoon();
   });
   fbWeekRefs.push(r16);
   // ✅ CLOSEOUT: Mom's send-back marker (the kid's "↩ Do this again") + her private "let's discuss" notes
   const r16b=db.ref(wk+"/sentBack");
-  r16b.on("value",s=>{ coSentBack=s.val()||{}; sv(wk+"_sentBack",coSentBack); renderAll(); });
+  r16b.on("value",s=>{ coSentBack=s.val()||{}; sv(wk+"_sentBack",coSentBack); renderAllSoon(); });
   fbWeekRefs.push(r16b);
   const r16c=db.ref(wk+"/discuss");
-  r16c.on("value",s=>{ coDiscuss=s.val()||{}; sv(wk+"_discuss",coDiscuss); renderAll(); });
+  r16c.on("value",s=>{ coDiscuss=s.val()||{}; sv(wk+"_discuss",coDiscuss); renderAllSoon(); });
   fbWeekRefs.push(r16c);
 
   const r18=db.ref(wk+"/momMoves");
@@ -3569,7 +3569,7 @@ function attachWeekListeners(wk){
     if(isUploading) return;
     momMoves=s.val()||{};
     sv(wk+"_momMoves",momMoves);
-    schedCascade(); renderAll();
+    schedCascade(); renderAllSoon();
   });
   fbWeekRefs.push(r18);
 
@@ -3579,7 +3579,7 @@ function attachWeekListeners(wk){
     const v=s.val()||{};
     const merged={...v};
     Object.keys(slState).forEach(k=>{ if(!merged[k]) merged[k]=slState[k]; });
-    slState=merged; sv(wk+"_sl",slState); renderAll();
+    slState=merged; sv(wk+"_sl",slState); renderAllSoon();
   });
   fbWeekRefs.push(r2);
 
@@ -3617,7 +3617,7 @@ function attachWeekListeners(wk){
     const fingerprint = ts => ts.map(t=>t.id+"|"+t.day+"|"+t.time).sort().join(",");
     const inFP=fingerprint(incoming);
     const curFP=fingerprint(weekData.tasks);
-    if(inFP!==curFP){ dbg("tasks updated count="+incoming.length); weekData.tasks=incoming; sv(wk+"_tasks",incoming); renderAll(); }
+    if(inFP!==curFP){ dbg("tasks updated count="+incoming.length); weekData.tasks=incoming; sv(wk+"_tasks",incoming); renderAllSoon(); }
     // Schedule cascade on first load OR when another device changed the task set
     if(firstLoad || inFP!==curFP) schedCascade();
     if(firstLoad || inFP!==curFP){ try{ rvHeal(); }catch(e){} }   // 📅 a booked review whose card a rebuild dropped comes back
@@ -3633,7 +3633,7 @@ function attachWeekListeners(wk){
   r8.on("value",s=>{
     blockouts=s.val()||{};
     runDisplacement();
-    if(tab==="schedule") renderAll();
+    if(tab==="schedule") renderAllSoon();
   });
   fbWeekRefs.push(r8);
 
@@ -3642,7 +3642,7 @@ function attachWeekListeners(wk){
   const r8b=db.ref(wk+"/dayStart");
   r8b.on("value",s=>{
     dayStarts=s.val()||{};
-    if(typeof renderAll==="function") renderAll();
+    if(typeof renderAllSoon==="function") renderAllSoon();
   });
   fbWeekRefs.push(r8b);
   // 🌙 one ISO stamp per day once the 8 PM sweep has run (any device) — stops repeats.
@@ -3655,7 +3655,7 @@ function attachWeekListeners(wk){
   const r8c=db.ref(wk+"/momHold");
   r8c.on("value",s=>{
     momHold=s.val()||{};
-    if(typeof renderAll==="function") renderAll();
+    if(typeof renderAllSoon==="function") renderAllSoon();
   });
   fbWeekRefs.push(r8c);
 
@@ -3676,14 +3676,14 @@ function attachWeekListeners(wk){
   fbWeekRefs.push(r14);
 
   const r13=db.ref(wk+"/pending_spins");
-  r13.on("value",s=>{ pendingSpins=s.val()||{}; sv(wk+"_pending_spins",pendingSpins); renderAll(); });
+  r13.on("value",s=>{ pendingSpins=s.val()||{}; sv(wk+"_pending_spins",pendingSpins); renderAllSoon(); });
   fbWeekRefs.push(r13);
 
   // Keep per-task spin results in sync across devices — without this listener each
   // device kept its own stale copy, so the Spin & Points Manager showed "Spun" (no
   // amount) for spins another device recorded. Writes below are targeted per-task.
   const r17=db.ref(wk+"/spin_results");
-  r17.on("value",s=>{ sv(wk+"_spin_results",s.val()||{}); if(tab==="schedule") renderAll(); });
+  r17.on("value",s=>{ sv(wk+"_spin_results",s.val()||{}); if(tab==="schedule") renderAllSoon(); });
   fbWeekRefs.push(r17);
 
   const r12=db.ref(wk+"/cursors");
@@ -3702,7 +3702,7 @@ function attachWeekListeners(wk){
       return;
     }
     runDisplacement();
-    if(tab==="schedule") renderAll();
+    if(tab==="schedule") renderAllSoon();
   });
   fbWeekRefs.push(r15);
 }
@@ -4096,7 +4096,7 @@ function initFb() {
         checked=ld(WK+"_checked")||{}; slState=ld(WK+"_sl")||{}; claimed=ld(WK+"_claimed")||{}; coSentBack=ld(WK+"_sentBack")||{}; coDiscuss=ld(WK+"_discuss")||{}; try{ if(typeof mmLoadLocal==="function") mmLoadLocal(WK); }catch(e){}   // ⏱ MINMINUTES
         momMoves=ld(WK+"_momMoves")||{};
         attachWeekListeners(WK);
-        renderAll();
+        renderAllSoon();
       }
     });
 
@@ -4108,7 +4108,7 @@ function initFb() {
       if(!calendarData.events) calendarData.events={};   // T4 family events
       try{HA_LS.setItem("ha_calendar",JSON.stringify(calendarData));}catch(e){}
       if(currData) buildCurrPaceCum();
-      if(tab==="moms-plan"&&mpSubView==="cal"){const el=document.getElementById("content");if(el)renderAll();}   // ONECAL: the calendar page redraws on live changes (was the Admin page)
+      if(tab==="moms-plan"&&mpSubView==="cal"){const el=document.getElementById("content");if(el)renderAllSoon();}   // ONECAL: the calendar page redraws on live changes (was the Admin page)
       try{ if(typeof reLoaded==="function") reLoaded("calendar"); }catch(e){}   // 🧠 REVIEWENGINE: school days need the calendar
     });
     db.ref("session_done").on("value",s=>{ sessionDone=s.val()||{}; });
@@ -4116,15 +4116,15 @@ function initFb() {
     db.ref("pointClaims").on("value",s=>{ pointClaims=s.val()||{}; pointClaimsLoaded=true; });
     db.ref("bank").on("value",s=>{ bank=s.val()||{}; });
     db.ref("readingLog").on("value",s=>{ readingLog=s.val()||{}; });
-    db.ref("esa").on("value",s=>{ esaData=s.val()||{}; try{ if(adminSubTab==="purchases") renderAll(); }catch(e){} });
-    db.ref("plans").on("value",s=>{ roadmapData=s.val()||{}; try{ if(tab==="moms-plan"||adminSubTab==="curriculum") renderAll(); }catch(e){} });
+    db.ref("esa").on("value",s=>{ esaData=s.val()||{}; try{ if(adminSubTab==="purchases") renderAllSoon(); }catch(e){} });
+    db.ref("plans").on("value",s=>{ roadmapData=s.val()||{}; try{ if(tab==="moms-plan"||adminSubTab==="curriculum") renderAllSoon(); }catch(e){} });
     db.ref("digest").on("value",s=>{ digestData=s.val()||{}; });
     db.ref("scheduleOverrides").on("value",s=>{
       scheduleOverrides=s.val()||{};
       _soBase=_soSnap(scheduleOverrides);   // Stage 4: what this device last SAW — saves diff against it
       try{HA_LS.setItem("ha_sched_overrides",JSON.stringify(scheduleOverrides));}catch(e){}
       if(currData) buildCurrPaceCum();
-      if(tab==="schedule"||tab==="pace"){const el=document.getElementById("content");if(el)renderAll();}
+      if(tab==="schedule"||tab==="pace"){const el=document.getElementById("content");if(el)renderAllSoon();}
     });
     db.ref("shape_sigs").on("value",s=>{
       committedShapeSigs=s.val()||{};
@@ -4153,10 +4153,10 @@ function initFb() {
       try{HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings));}catch(e){}
       if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);}
     });
-    db.ref("together").on("value",s=>{ together=s.val()||{}; if(tab==="kids"||tab==="moms-plan") renderAll(); });   // 🤝 Together — both devices follow the same session
-    db.ref("mathSprints").on("value",s=>{ mathSprints=s.val()||{}; if(tab==="mastery"||tab==="schedule") renderAll(); });   // 🔢 Book Sprints
+    db.ref("together").on("value",s=>{ together=s.val()||{}; if(tab==="kids"||tab==="moms-plan") renderAllSoon(); });   // 🤝 Together — both devices follow the same session
+    db.ref("mathSprints").on("value",s=>{ mathSprints=s.val()||{}; if(tab==="mastery"||tab==="schedule") renderAllSoon(); });   // 🔢 Book Sprints
     db.ref("library/scans").on("value",s=>{ lbScansMS=s.val()||{}; if(tab==="mastery"&&typeof _mastRe==="function") _mastRe(); });   // 🔢 sprint titles (editable in the panel)
-    db.ref("reviews").on("value",s=>{ reviews=s.val()||{}; try{ rvHeal(); }catch(e){} if(tab==="schedule"&&typeof renderAll==="function") renderAll(); });   // 📅 Review with Mom
+    db.ref("reviews").on("value",s=>{ reviews=s.val()||{}; try{ rvHeal(); }catch(e){} if(tab==="schedule"&&typeof renderAllSoon==="function") renderAllSoon(); });   // 📅 Review with Mom
     db.ref("brainBreaks").on("value",s=>{
       brainBreaks=s.val()||{};
       try{HA_LS.setItem("ha_brainbreaks",JSON.stringify(brainBreaks));}catch(e){}
@@ -4165,7 +4165,7 @@ function initFb() {
     });
     db.ref("config/momLoop").on("value",s=>{
       momLoop=s.val()||{};
-      if(typeof renderAll==="function") renderAll();
+      if(typeof renderAllSoon==="function") renderAllSoon();
     });
     db.ref("brainBreakSettings").on("value",s=>{
       bbSettings=s.val()||{};
@@ -4194,7 +4194,7 @@ function initFb() {
     db.ref("settings/sitterName").on("value",s=>{
       if(s.val()){ SITTER_NAME=s.val(); sv("ha_sitter_name",SITTER_NAME); }
     });
-    db.ref("settings/pages").on("value",s=>{ pagesApply(s.val()); });   // 🧩 per-family top-tab switches
+    db.ref("settings/pages").on("value",s=>{ pagesApply(s.val(),true); });   // 🧩 per-family top-tab switches
     db.ref("settings/pin").on("value",s=>{
       if(s.val()){ APP_PIN=s.val(); HA_LS.setItem("ha_app_pin",s.val()); }
     });
@@ -4291,7 +4291,7 @@ function initFb() {
       try{ if(typeof llHealLog==="function") llHealLog(); }catch(e){}   // 🔗 LL_LINK: a line load the log lost gets its record back
       try{ if(typeof luPaint==="function") luPaint(); }catch(e){}   // ↩︎ LAUNDRYUNDO: the undo bar goes if its load moved on another device
       if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
-      else if(tab==="schedule"&&kid==="mom") renderAll();   // MOMSCHED_LAUNDRY
+      else if(tab==="schedule"&&kid==="mom") renderAllSoon();   // MOMSCHED_LAUNDRY
     });
     db.ref("laundryLine").on("value",s=>{ if(typeof laundryLineOnValue==="function") laundryLineOnValue(s.val()); if(tab==="moms-plan"&&mpSubView==="house"){ const el=document.getElementById("content"); if(el) renderMomsPlan(el); } });   // 🧺 LAUNDRYLINE
     db.ref("laundryAway").on("value",s=>{ if(typeof luAwayOnValue==="function") luAwayOnValue(s.val()); if(tab==="moms-plan"){ const el=document.getElementById("content"); if(el) renderMomsPlan(el); } });   // ↩︎ LAUNDRYUNDO: 🧺 Put away today, every device
@@ -4335,7 +4335,7 @@ function initFb() {
       Object.keys(v).forEach(k=>{ kitPrepDone[k]=v[k]; });
       try{HA_LS.setItem('ha_kit_prepdone',JSON.stringify(kitPrepDone));}catch(e){}
       if(tab==="moms-plan"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}
-      else if(tab==="schedule"&&kid==="mom") renderAll();   // 🍳 MEALPREP_BLOCK: done on another device ends the block here
+      else if(tab==="schedule"&&kid==="mom") renderAllSoon();   // 🍳 MEALPREP_BLOCK: done on another device ends the block here
     });
     db.ref("kitchen/staples").on("value",s=>{
       const v=s.val()||{};
@@ -4379,7 +4379,7 @@ function initFb() {
         const ae=document.activeElement; if(ae&&/^(gr-|md-todo)/.test(ae.id||"")&&ae.value) return;   // don't wipe what someone is typing
         const el=document.getElementById("content");if(el)renderMomsPlan(el);
       } else if(document.getElementById("gr-kid-box")){   // a kid's day is open → their ask box shows Mom's answer
-        const ae=document.activeElement; if(!(ae&&/^gr-/.test(ae.id||"")&&ae.value)&&typeof renderAll==="function") renderAll();
+        const ae=document.activeElement; if(!(ae&&/^gr-/.test(ae.id||"")&&ae.value)&&typeof renderAllSoon==="function") renderAllSoon();
       }
     });
     db.ref("pace").on("value",s=>{
@@ -4398,17 +4398,17 @@ function initFb() {
       // repaints the Grid's done cells here — unless a cell is mid-edit on this screen.
       try{
         if(typeof schedShowAdmin!=="undefined"&&schedShowAdmin&&typeof adminSubTab!=="undefined"&&adminSubTab==="curriculum"&&typeof currInnerTab!=="undefined"&&currInnerTab==="grid"){
-          const ae=document.activeElement; if(!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))&&typeof renderAll==="function") renderAll();
+          const ae=document.activeElement; if(!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))&&typeof renderAllSoon==="function") renderAllSoon();
         }
       }catch(e){}
     });
     db.ref("curriculum").once("value",s=>{
       fbCurrLoaded=true; // even an empty answer counts — the cascade may now trust subjNoCarry
-      if(s.val()){currData=s.val();buildCurrPaceCum();dbg("curriculum loaded: "+Object.keys(currData.subjects||{}).join(","));runDisplacement();if(tab==="schedule")renderAll();setTimeout(autoGenerateWeekIfNeeded,3000);}
+      if(s.val()){currData=s.val();buildCurrPaceCum();dbg("curriculum loaded: "+Object.keys(currData.subjects||{}).join(","));runDisplacement();if(tab==="schedule")renderAllSoon();setTimeout(autoGenerateWeekIfNeeded,3000);}
       // A brand-new family has no curriculum node at all. Leaving currData null left the Subjects tab
       // stuck on "No curriculum uploaded" with no "+ Add Subject" card — no first door (Dewalt, 2026-10-01).
       // An empty skeleton renders the normal Subjects tab; the Add sheet writes only its own subject path.
-      else if(!currData||!currData.subjects){ currData=Object.assign(currData||{},{subjects:{},lessons:{},weekDays:{}}); dbg("curriculum empty — blank skeleton so the Subjects tab can add the first subject"); renderAll(); }   // (the done-marks listener may already have made a {done:{}} stub — keep it)
+      else if(!currData||!currData.subjects){ currData=Object.assign(currData||{},{subjects:{},lessons:{},weekDays:{}}); dbg("curriculum empty — blank skeleton so the Subjects tab can add the first subject"); renderAllSoon(); }   // (the done-marks listener may already have made a {done:{}} stub — keep it)
       schedCascade(); // curriculum may be the LAST loader to answer — re-arm the debounced sweep
     });
     db.ref("config/helpers").on("value",s=>{ helpersOnValue(s.val()); });
@@ -4417,7 +4417,7 @@ function initFb() {
     db.ref("settings/quickLoads").on("value",s=>{ if(typeof quickLoadsOnValue==="function") quickLoadsOnValue(s.val()); if(tab==="moms-plan"){ const el=document.getElementById("content"); if(el) renderMomsPlan(el); } });   // ⚡ QUICKLOADS
     db.ref("settings/myDayOrder").on("value",s=>{ if(typeof myDayOrderOnValue==="function") myDayOrderOnValue(s.val()); if(tab==="moms-plan"){ const el=document.getElementById("content"); if(el) renderMomsPlan(el); } });   // 🏡 MYDAY_WIDGETS: each person's column order
     ["mom","dad"].forEach(w=>db.ref("settings/"+w+"DayOrder").on("value",s=>{ if(typeof ssOrderOnValue==="function"&&ssOrderOnValue(w,s.val())&&tab==="moms-plan"){ const el=document.getElementById("content"); if(el) renderMomsPlan(el); } }));   // STICKYSTACK: each person's Today section order
-    db.ref("settings/mealWords").on("value",s=>{ if(typeof kitMealWordsOnValue==="function"&&kitMealWordsOnValue(s.val())&&typeof renderAll==="function") renderAll(); });   // 🍽 KITDINNEREDIT: the family's word for the evening meal
+    db.ref("settings/mealWords").on("value",s=>{ if(typeof kitMealWordsOnValue==="function"&&kitMealWordsOnValue(s.val())&&typeof renderAllSoon==="function") renderAllSoon(); });   // 🍽 KITDINNEREDIT: the family's word for the evening meal
     db.ref("settings/laundryBlockMins").on("value",s=>{ if(typeof laundryBlockMinsOnValue==="function") laundryBlockMinsOnValue(s.val()); });   // 🧺 MOMSCHED_LAUNDRY
     momBlocksListen();   // 🧺 MOMSCHED_LAUNDRY: everyone's Mom cards lay around her block · MOMBLOCKS_DAYROLL: follows the day (dayRollCheck re-binds it after midnight)
     db.ref("settings/momTips").on("value",s=>{ if(typeof momTipsOnValue==="function") momTipsOnValue(s.val()); });   // 👋 Mom how-to banners she has closed
@@ -4427,11 +4427,11 @@ function initFb() {
     try{ db.ref("helperGive").orderByKey().limitToLast(3).on("value",s=>{ helperGiveOnValue(s.val()); }); }catch(e){}   // 🙋 HELPERGIVE: cards Mom handed a helper today
     try{ db.ref("helpRequests").orderByKey().limitToLast(60).on("value",s=>{ hrOnValue(s.val()); }); }catch(e){}   // 🙋 NEEDMOM: kids asking for Mom
     db.ref("worksheets").on("value",s=>{ wsOnValue(s.val()); });   // 📋 worksheets from Adrienne
-    db.ref("messages").on("value",s=>{ msgOnValue(s.val()); });     // ✉ Mom's messages to Adrienne (text only — photos load on demand)
+    db.ref("messages").on("value",s=>{ msgOnValue(s.val(),true); });     // ✉ Mom's messages to Adrienne (text only — photos load on demand)
     db.ref("config/rules").on("value",s=>{
       rulesData=s.val()||null; rulesLoaded=true;
       runDisplacement();
-      if(tab==="schedule"){renderAll();}
+      if(tab==="schedule"){renderAllSoon();}
     });
     db.ref("mastery").on("value",s=>{
       const v=s.val()||{};
@@ -4441,7 +4441,7 @@ function initFb() {
       _haMastReady=true;   // MASTGATE: real data is in — Mastery writes allowed from here on
       // NO_MIRROR: there is no local copy any more, so the first arrival repaints whatever is
       // showing (Mastery HQ, Editor-in-Chief cards, drill strips), not just the Mastery tab.
-      if(_mastFirst){ try{ renderAll(); }catch(e){} try{ if(typeof stHeal==="function") stHeal(); }catch(e){} }   // 📝 STHEAL: the records are in — the week's test cards can be checked now (live 2026-10-14: the cards arrived first, the heal waited, nothing re-ran it)
+      if(_mastFirst){ try{ renderAllSoon(); }catch(e){} try{ if(typeof stHeal==="function") stHeal(); }catch(e){} }   // 📝 STHEAL: the records are in — the week's test cards can be checked now (live 2026-10-14: the cards arrived first, the heal waited, nothing re-ran it)
       else if(tab==="mastery"){const el=document.getElementById("content");if(el)renderMastery(el);}
       try{ if(typeof reLoaded==="function") reLoaded("mastery"); }catch(e){}   // 🧠 REVIEWENGINE: the morning leveling
     });
@@ -4452,23 +4452,23 @@ function initFb() {
     db.ref("config/routines").on("value",s=>{ hhLive.routines=s.val()||{}; if(!hhTakeoverOn()) routineCfg2=hhLive.routines; });                          // 🏡 HOUSEHOLD_TAKEOVER
     db.ref("config/routineTimes").on("value",s=>{ routineTimes=Object.assign({eveningHour:18}, s.val()||{}); });
     rlWindowAttach(activeWk());   // RLWIN: this week + last week live; older weeks load when first needed
-    db.ref("waved").on("value",s=>{ wavedOnValue(s.val()||{}); if(tab==="moms-plan"||tab==="kids"||tab==="schedule") renderAll(); });   // WAVE
-    db.ref("spotChecks").on("value",s=>{ spotOnValue(s.val()||{}); if(tab==="moms-plan"&&momHere()) renderAll(); });   // 🔎 SPOTCHECK
-    db.ref("settings/spotCheck").on("value",s=>{ if(typeof spotSetOnValue==="function") spotSetOnValue(s.val()); if(tab==="moms-plan"&&momHere()) renderAll(); });   // 🔎 SPOTCHECK ⚙
+    db.ref("waved").on("value",s=>{ wavedOnValue(s.val()||{}); if(tab==="moms-plan"||tab==="kids"||tab==="schedule") renderAllSoon(); });   // WAVE
+    db.ref("spotChecks").on("value",s=>{ spotOnValue(s.val()||{}); if(tab==="moms-plan"&&momHere()) renderAllSoon(); });   // 🔎 SPOTCHECK
+    db.ref("settings/spotCheck").on("value",s=>{ if(typeof spotSetOnValue==="function") spotSetOnValue(s.val()); if(tab==="moms-plan"&&momHere()) renderAllSoon(); });   // 🔎 SPOTCHECK ⚙
     db.ref("config/routineRules").on("value",s=>{ routineRules=Object.assign({loseTechEnabled:false,loseTechHour:10}, s.val()||{}); });
-    db.ref("config/rewards").on("value",s=>{ rewardCatalog=s.val()||[]; if(typeof renderAll==="function") renderAll(); });
-    db.ref("config/storeCfg").on("value",s=>{ storeCfg=Object.assign({threshold:100,open:true,mode:"always",hour:16,closedFor:{}}, s.val()||{}); if(typeof renderAll==="function") renderAll(); });
-    db.ref("config/grabs").on("value",s=>{ grabs=s.val()||[]; if(typeof renderAll==="function") renderAll(); });
-    db.ref("config/zones").on("value",s=>{ zones=s.val()||[]; if(typeof renderAll==="function") renderAll(); });
-    db.ref("config/zonePlan").on("value",s=>{ zonePlan=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
-    db.ref("config/rotationPeriod").on("value",s=>{ rotationPeriod=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
-    db.ref("config/routineBonus").on("value",s=>{ routineBonus=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
-    db.ref("config/choreVerify").on("value",s=>{ choreVerify=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
-    db.ref("config/zoneBonus").on("value",s=>{ zoneBonus=Object.assign({enabled:true,mode:"flat",amount:5}, s.val()||{}); if(typeof renderAll==="function") renderAll(); });
-    db.ref("pointRequests").on("value",s=>{ pointRequests=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
-    db.ref("grabClaims").on("value",s=>{ grabClaims=s.val()||{}; if(typeof renderAll==="function") renderAll(); });
+    db.ref("config/rewards").on("value",s=>{ rewardCatalog=s.val()||[]; if(typeof renderAllSoon==="function") renderAllSoon(); });
+    db.ref("config/storeCfg").on("value",s=>{ storeCfg=Object.assign({threshold:100,open:true,mode:"always",hour:16,closedFor:{}}, s.val()||{}); if(typeof renderAllSoon==="function") renderAllSoon(); });
+    db.ref("config/grabs").on("value",s=>{ grabs=s.val()||[]; if(typeof renderAllSoon==="function") renderAllSoon(); });
+    db.ref("config/zones").on("value",s=>{ zones=s.val()||[]; if(typeof renderAllSoon==="function") renderAllSoon(); });
+    db.ref("config/zonePlan").on("value",s=>{ zonePlan=s.val()||{}; if(typeof renderAllSoon==="function") renderAllSoon(); });
+    db.ref("config/rotationPeriod").on("value",s=>{ rotationPeriod=s.val()||{}; if(typeof renderAllSoon==="function") renderAllSoon(); });
+    db.ref("config/routineBonus").on("value",s=>{ routineBonus=s.val()||{}; if(typeof renderAllSoon==="function") renderAllSoon(); });
+    db.ref("config/choreVerify").on("value",s=>{ choreVerify=s.val()||{}; if(typeof renderAllSoon==="function") renderAllSoon(); });
+    db.ref("config/zoneBonus").on("value",s=>{ zoneBonus=Object.assign({enabled:true,mode:"flat",amount:5}, s.val()||{}); if(typeof renderAllSoon==="function") renderAllSoon(); });
+    db.ref("pointRequests").on("value",s=>{ pointRequests=s.val()||{}; if(typeof renderAllSoon==="function") renderAllSoon(); });
+    db.ref("grabClaims").on("value",s=>{ grabClaims=s.val()||{}; if(typeof renderAllSoon==="function") renderAllSoon(); });
     db.ref("techGrace").on("value",s=>{ techGrace=s.val()||{}; });
-    db.ref("techOff").on("value",s=>{ techOff=s.val()||{}; if(typeof renderAll==="function") renderAll(); });   // 📱 TECHSWITCH
+    db.ref("techOff").on("value",s=>{ techOff=s.val()||{}; if(typeof renderAllSoon==="function") renderAllSoon(); });   // 📱 TECHSWITCH
     db.ref("unitStudies").on("value",s=>{ unitStudies=s.val()||{}; const _uFirst=!_haUnitsReady; _haUnitsReady=true; if(tab==="units"){const el=document.getElementById("content");if(el)renderUnits(el);} else if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);}
       if(_uFirst){ try{ if(typeof stHeal==="function") stHeal(); }catch(e){} } });   // 📝 STHEAL waits for the units (live 2026-10-14 10:29 PM: it ran before they arrived, every test card looked stale, Andrew's was removed)
     db.ref("att_overrides").on("value",s=>{
@@ -4886,7 +4886,27 @@ function _preserveUI(fn){
   if(sameView) window.scrollTo(sx,sy);
   _uiLastSig=sig;
 }
+// RENDERSOON_START — 🖼 data-triggered redraws combined, taps still instant (her yes 2026-10-24: "build the redraw-combining
+// step (data-triggered redraws combined, my taps still instant)"). The boot diary (CDBOOTS) showed the LG StanbyME spending
+// 15–18 s of every start-up in 30–44 full renderAll redraws and her iPad ~45 — one per Firebase feed, as each first snapshot
+// arrived. A listener that repaints only because data ARRIVED now calls renderAllSoon(): the first call sets ONE renderAll
+// RENDER_SOON_MS later and every call before it fires rides along. A direct renderAll() — every tap, showTab, a modal, the
+// code gate, all still synchronous — drops the waiting one, since it paints the newest data anyway. A timer, not
+// requestAnimationFrame — a frame (16 ms) is too short to catch a trickle of feeds, and a hidden page never runs one. Measured
+// 2026-10-24 on a local headless copy with stubbed feeds (151 snapshots, nothing written): boot redraws 42 (today) → 32 by frame,
+// 16 at 50 ms, 13 at 80 ms, 9 at 150 ms; modelled as the LG (slow CPU, 300 ms per redraw, feeds over ~13 s) 42 → 15 by frame,
+// 13 at 80 ms, 11 at 150 ms — redraw time 12.6 s → 3.8 s. 80 ms is past the knee and still too short to see.
+// The CDBOOTS counters sit inside renderAll, so they count real redraws only. Display only — no data, no writes.
+const RENDER_SOON_MS=80;
+var _rsT=null;   // var: a renderAll that runs before this line (top-level boot code) must not trip on an uninitialised let
+function renderAllSoon(){
+  if(_rsT) return;
+  try{ _rsT=setTimeout(function(){ _rsT=null; renderAll(); },RENDER_SOON_MS); }catch(e){ _rsT=null; renderAll(); }
+}
+function renderAllSoonDrop(){ if(_rsT){ try{ clearTimeout(_rsT); }catch(e){} _rsT=null; } }
+// RENDERSOON_END
 function renderAll(){
+  try{ if(typeof renderAllSoonDrop==="function") renderAllSoonDrop(); }catch(e){}   // RENDERSOON: this paint covers any data redraw still waiting
   const _cdR0=(typeof cdRenderStart==="function")?cdRenderStart():-1;   // ⏱ CDBOOTS: counted, never in the way
   try{
   _preserveUI(_renderAllInner);
@@ -7152,7 +7172,7 @@ function wsSubmit(id){
 function wsOnValue(v){
   wsData=v||{};
   const key=wsOpenList().map(([id])=>id).join(",")+"|"+wsSentList().length+"|"+wsNoteList().map(([id])=>id).join(",");
-  if(key!==wsOpenKey){ wsOpenKey=key; try{ renderAll(); }catch(e){} }
+  if(key!==wsOpenKey){ wsOpenKey=key; try{ renderAllSoon(); }catch(e){} }
 }
 // ✉ SEND TO ADRIENNE (her ask 10/3): a family Mom writes a note and/or attaches up to 6 photos for app fixes.
 // messages/<id> = {text, photoCount, createdAt, status:"new"|"done", doneAt} — small, so every device can listen.
@@ -7354,10 +7374,10 @@ function msgBig(id,i){
   document.body.appendChild(ov);
 }
 // Repaint only when the count, a ✓ Fixed, a reply or a ✓ Got it changes — never on the photo payloads (they aren't here).
-function msgOnValue(v){
+function msgOnValue(v,soon){
   msgData=v||{};
   const key=msgList().map(([id,m])=>id+(m.status==="done"?"d":"")+":"+msgReplies(m).length+(msgUnread(m)?"r":"")).join(",");
-  if(key!==msgKey){ msgKey=key; try{ renderAll(); }catch(e){} }
+  if(key!==msgKey){ msgKey=key; try{ if(soon) renderAllSoon(); else renderAll(); }catch(e){} }   // RENDERSOON: the listener combines; a tap (✓ Got it, a reply) paints now
 }
 // ── WORKSHEETS_END ──
 // ── NEEDMOM_START ── 🙋 "I need Mom" — a kid asks for help from their own schedule (ask 2026-10-07) ──────────
@@ -7614,7 +7634,7 @@ function hrOnValue(v){
   if(key!==hrKey){
     hrKey=key;
     const ae=(typeof document!=="undefined")&&document.activeElement;
-    if(!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))&&typeof renderAll==="function"){ try{ renderAll(); }catch(e){} }
+    if(!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))&&typeof renderAllSoon==="function"){ try{ renderAllSoon(); }catch(e){} }
   }
   hrPopMaybe();
 }
@@ -7630,7 +7650,7 @@ const HELPER_ICONS=["👵","👴","👨","👩","🧑","🙋"];
 function helpersOnValue(v){
   helpersData=(v&&typeof v==="object")?v:{};
   const ae=(typeof document!=="undefined")&&document.activeElement;
-  if(!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))&&typeof renderAll==="function") renderAll();
+  if(!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))&&typeof renderAllSoon==="function") renderAllSoon();
 }
 function _hlpQ(s){ return String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
 function _hlpIdOk(id){ return typeof id==="string"&&/^[A-Za-z0-9_-]+$/.test(id); }
@@ -7764,7 +7784,7 @@ function _hlpKey(id){ return String(id).replace(/[.$#\[\]\/%]/g,c=>"%"+c.charCod
 function helperDaysOnValue(v){
   helperDaysData=(v&&typeof v==="object")?v:{};
   const ae=(typeof document!=="undefined")&&document.activeElement;
-  if(!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))&&typeof renderAll==="function") renderAll();
+  if(!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))&&typeof renderAllSoon==="function") renderAllSoon();
   if(helpersPopId) helpersPopRender();
 }
 function helperSessionsToday(){ return (helperDaysData&&helperDaysData[_hlpTodayISO()])||{}; }
@@ -8055,7 +8075,7 @@ let helperGiveData={}, helperGivePopId=null;
 function helperGiveOnValue(v){
   helperGiveData=(v&&typeof v==="object")?v:{};
   const ae=(typeof document!=="undefined")&&document.activeElement;
-  if(!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))&&typeof renderAll==="function") renderAll();
+  if(!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))&&typeof renderAllSoon==="function") renderAllSoon();
   if(helperGivePopId) helperGivePopRender();
 }
 function helperGiveToday(){ return (helperGiveData&&helperGiveData[_hlpTodayISO()])||{}; }
@@ -8691,7 +8711,7 @@ function peekLoad(){
     const o=s.val()||{}, tasks=Object.keys(o).map(k=>o[k]).filter(Boolean);
     db.ref("week"+wn+"/meta").once("value",function(ms){
       peekData={wn,tasks,dates:((ms.val()||{}).dates)||{}};
-      if(schedShowPeek) renderAll();
+      if(schedShowPeek) renderAllSoon();
     });
   });
 }
@@ -11237,8 +11257,8 @@ function mmSpentChip(id){
 function mmLoadLocal(wk){ started=ld(wk+"_started")||{}; minAlerts=ld(wk+"_minAlerts")||{}; }
 function mmAttachWeek(wk){
   if(typeof db==="undefined"||!db) return;
-  const a=db.ref(wk+"/started"); a.on("value",function(s){ if(typeof isUploading!=="undefined"&&isUploading) return; started=s.val()||{}; sv(wk+"_started",started); renderAll(); }); fbWeekRefs.push(a);
-  const b=db.ref(wk+"/minAlerts"); b.on("value",function(s){ if(typeof isUploading!=="undefined"&&isUploading) return; minAlerts=s.val()||{}; sv(wk+"_minAlerts",minAlerts); renderAll(); }); fbWeekRefs.push(b);
+  const a=db.ref(wk+"/started"); a.on("value",function(s){ if(typeof isUploading!=="undefined"&&isUploading) return; started=s.val()||{}; sv(wk+"_started",started); renderAllSoon(); }); fbWeekRefs.push(a);
+  const b=db.ref(wk+"/minAlerts"); b.on("value",function(s){ if(typeof isUploading!=="undefined"&&isUploading) return; minAlerts=s.val()||{}; sv(wk+"_minAlerts",minAlerts); renderAllSoon(); }); fbWeekRefs.push(b);
 }
 // ── Edit Subject sheet: "Minimum time before it can be checked" + "Show the countdown to the kid" (ceSaveField, per field) ──
 function mmEditorSet(field,val){
@@ -15212,7 +15232,7 @@ function momBlocksListen(){
     momBlocks={}; try{ HA_LS.removeItem('ha_momblocks'); }catch(e){}   // yesterday's blocks are not today's
   }
   _mbIso=iso;
-  _mbCb=function(s){ if(_mbIso!==iso) return; if(typeof momBlocksOnValue==="function") momBlocksOnValue(s.val()); if(typeof tab!=="undefined"&&tab==="schedule"&&typeof renderAll==="function") renderAll(); };   // a late event from a day already left is ignored
+  _mbCb=function(s){ if(_mbIso!==iso) return; if(typeof momBlocksOnValue==="function") momBlocksOnValue(s.val()); if(typeof tab!=="undefined"&&tab==="schedule"&&typeof renderAllSoon==="function") renderAllSoon(); };   // a late event from a day already left is ignored
   db.ref("momBlocks/"+mwTodayIso()).on("value",_mbCb);
   return true;
 }
@@ -34230,7 +34250,7 @@ function famBoMissedWords(tr){ const m=(typeof famMissedMode==="function")?famMi
 //   on the card, the Grid cell and "Next:". Mom's one check records both (famLabel) and which day it made up (famMadeUp);
 //   in-order subjects move the shared place by 2 that day. Records are read from this week and the archive — no new data.
 let famProgress={};
-function famProgOnValue(v){ famProgress=v||{}; _famLmMemo={}; if(typeof renderAll==="function") renderAll(); }
+function famProgOnValue(v){ famProgress=v||{}; _famLmMemo={}; if(typeof renderAllSoon==="function") renderAllSoon(); }
 function famDoneN(id,key){ return Math.max(0,parseInt((((famProgress||{})[id]||{})[key]||{}).done,10)||0); }
 function famProgSet(id,key,n){
   n=Math.max(0,n|0); if(!famProgress[id]) famProgress[id]={}; famProgress[id][key]={done:n}; _famLmMemo={};
@@ -35525,7 +35545,7 @@ function lrWrite(kid,sk,key,part,value){
 // Live copy on every device (kids' cards read it too): one listener on curriculum/resources, a read.
 function lrListen(){
   if(typeof db==="undefined"||!db) return;
-  try{ db.ref("curriculum/resources").on("value",s=>{ if(typeof currData!=="undefined"&&currData){ currData.resources=s.val()||{}; if(typeof renderAll==="function"&&(tab==="schedule"||tab==="supplies"||tab==="curriculum"||tab==="moms-plan")) renderAll(); } }); }catch(e){}
+  try{ db.ref("curriculum/resources").on("value",s=>{ if(typeof currData!=="undefined"&&currData){ currData.resources=s.val()||{}; if(typeof renderAllSoon==="function"&&(tab==="schedule"||tab==="supplies"||tab==="curriculum"||tab==="moms-plan")) renderAllSoon(); } }); }catch(e){}
   lrStaplesListen();
 }
 // ── the card: links menu + the kids' line ──
@@ -47232,7 +47252,7 @@ function rbLog(kind,kid,n,label){
 }
 function rbLogListen(){
   if(_rbLogOn||typeof db==="undefined"||!db) return; _rbLogOn=true;
-  try{ db.ref("rebuildLog").orderByChild("ts").limitToLast(200).on("value",function(snap){ rbLogCache=Object.values(snap.val()||{}); if(dmOpen) renderAll(); }); }catch(e){ _rbLogOn=false; }
+  try{ db.ref("rebuildLog").orderByChild("ts").limitToLast(200).on("value",function(snap){ rbLogCache=Object.values(snap.val()||{}); if(dmOpen) renderAllSoon(); }); }catch(e){ _rbLogOn=false; }
 }
 let dmOpen=false, dmAll=false, dmSkipped=[];
 function dmToggle(){ dmOpen=!dmOpen; renderAll(); }

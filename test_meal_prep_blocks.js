@@ -49,7 +49,7 @@ function mk(o){
   T.lay=()=>{ const laid=T.run("mlQueueLay("+JSON.stringify(o.tasks)+")"); T.laid=laid; T.at=id=>laid.find(t=>t.id===id).time; return laid; };
   T.agenda=()=>{ T.lay(); ctx.__d=T.laid.filter(t=>t.mom==="required"||t.mom==="maybe"); return T.run("momAgendaHtml(__d)"); };
   T.now=m=>{ ctx._mlNowOverride=m; };
-  ctx.renderAll=()=>{ renders.push("all"); };
+  ctx.renderAll=()=>{ renders.push("all"); }; ctx.renderAllSoon=ctx.renderAll;
   T.dbOn=()=>{ ctx.db={ref:p=>({set:v=>writes.push(["set",p,v]),update:v=>writes.push(["update",p,v]),remove:()=>writes.push(["remove",p])})}; };
   return T;
 }
@@ -155,6 +155,6 @@ console.log("── wiring ──");
 ok("Home Base 🔴 NOW renders kitDuePrepHTML", /function renderMomsDay\(el\)\{[\s\S]*?const _dp=kitDuePrepHTML\(\);\s*nowN\+=_dp\.n; h\+=_dp\.html;/.test(src));
 ok("the agenda gets the prep rows with the laundry rows", /momSchedLaundry\(day,dayTasks\):\[\]\)\.concat\(\(typeof momSchedPrep==="function"\)\?momSchedPrep\(day\):\[\]\)/.test(src));
 ok("the Mom chain steps over the prep blocks", /kitPrepBlocksOpen\(\)\.forEach\(function\(b\)\{ _blkIv\.push\(\[b\.startMin,b\.startMin\+b\.mins\]\);/.test(src));
-ok("a step done on another device repaints the Mom-mode schedule", /db\.ref\("kitchen\/prepDone"\)\.on\("value"[\s\S]{0,400}else if\(tab==="schedule"&&kid==="mom"\) renderAll\(\);   \/\/ 🍳 MEALPREP_BLOCK/.test(src));
+ok("a step done on another device repaints the Mom-mode schedule", /db\.ref\("kitchen\/prepDone"\)\.on\("value"[\s\S]{0,400}else if\(tab==="schedule"&&kid==="mom"\) renderAllSoon\(\);   \/\/ 🍳 MEALPREP_BLOCK/.test(src));
 ok("⏰ / Not now ride the momBlocks listener (repaints the schedule)", /db\.ref\("momBlocks\/"\+mwTodayIso\(\)\)\.on\("value"/.test(src));
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

@@ -179,7 +179,7 @@ ok("the card sits under Kids today on Mom's Day only (bank row, no Dad control)"
 ok("not on Dad's Day, Mom's Day header, kids' pages or the skylight", ["renderMomsDay","renderDadsDay","renderSkylight","mrIndividualHTML"].every(n=>{ try{ return !/mdCardSpotCheck|spotData|spPool/.test(slice(n)); }catch(e){ return true; } }));
 ok("kid side: spot-check names appear nowhere outside the block, the listener and the Kids today line", (()=>{ const rest=src.replace(SP,""); const hits=(rest.match(/spotData|mdCardSpotCheck|spResolve|spEnsureDraw|spotOnValue/g)||[]); return hits.length===3; })(), (src.replace(SP,"").match(/spotData|mdCardSpotCheck|spResolve|spEnsureDraw|spotOnValue/g)||[]));
 ok("both step check-offs stamp by when Mom / Dad ticks", (src.match(/if\(now&&typeof _spBy==="function"&&_spBy\(\)\) slState\[sk\]\.by=_spBy\(\);/g)||[]).length===2&&/_spBy/.test(slice("toggleRtStep"))&&/_spBy/.test(slice("toggleMorningStep")));
-ok("listener on spotChecks, re-render only on Mom's Day in Mom mode", /db\.ref\("spotChecks"\)\.on\("value",s=>\{ spotOnValue\(s\.val\(\)\|\|\{\}\); if\(tab==="moms-plan"&&momHere\(\)\) renderAll\(\); \}\);/.test(src));
+ok("listener on spotChecks, re-render only on Mom's Day in Mom mode", /db\.ref\("spotChecks"\)\.on\("value",s=>\{ spotOnValue\(s\.val\(\)\|\|\{\}\); if\(tab==="moms-plan"&&momHere\(\)\) renderAllSoon\(\); \}\);/.test(src));
 ok("writes are targeted: no set() on spotChecks or spotChecks/<kid> as a whole", !/ref\("spotChecks"\)\.set|ref\("spotChecks\/"\+kid\)\.set/.test(SP));
 ok("no 🔀", src.indexOf("🔀")<0);
 console.log("(8) ⚙ What the draw picks from — settings/spotCheck/types");

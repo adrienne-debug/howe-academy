@@ -56,7 +56,7 @@ function boot(o){
     HA_LS:{getItem:k=>(k in ls)?ls[k]:null, setItem:(k,v)=>{ ls[k]=v; }, removeItem:k=>{ delete ls[k]; }},
     db, LAUNDRY_STAGES:["washer","dryer","fold"], laundryData:{a:{label:"Towels",stage:"washer",ts:0}},
     KID_NAME:{lucy:"Lucy",ellis:"Ellis",lincoln:"Lincoln"}, taskCard:t=>"", _agLunchRow:()=>null, famIsMomCard:()=>false,
-    renderAll:()=>{ renders.push("all"); }, setInterval:()=>1,
+    renderAll:()=>{ renders.push("all"); }, renderAllSoon:()=>{ renders.push("all"); }, setInterval:()=>1,
     document:{hidden:false, addEventListener:()=>{}, getElementById:()=>null},
     _mlNowOverride:H(10), _mlLunchOverride:false};
   vm.createContext(ctx);

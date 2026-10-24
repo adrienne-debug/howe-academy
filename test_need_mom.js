@@ -28,7 +28,7 @@ function mkEnv(st) {
   const ctx = {
     document, db: { ref }, _dryRun: () => !!st.dry, kitPinGate: (f, why) => pinAsks.push([f, why]),
     momHere: () => st.mom, momHereCards: () => st.mom && st.tab !== "kids",
-    renderAll: () => renders.push(1), gwShowToast: m => toasts.push(m),
+    renderAll: () => renders.push(1), renderAllSoon: () => renders.push(1), gwShowToast: m => toasts.push(m),
     ROSTER: ["taylor", "caleb"], KID_NAME: { taylor: "Taylor", caleb: "Caleb" }, KID_COLOR: { taylor: "#e11d48", caleb: "#2563eb" },
     checked: { c_done: true },
     _kcTodayCards: k => k === "taylor" ? [{ id: "c_math", title: "Math <5B>", who: "taylor" }, { id: "c_done", title: "Spelling", who: "taylor" }] : [],
