@@ -12360,7 +12360,10 @@ function hhJobs(){ return (householdData&&householdData.jobs)||{}; }
 const HH_AREAS={health:["🧼","Health"],animals:["🐾","Animals"],pickup:["🧹","Pickup"],cleaning:["🧽","Cleaning"]};
 const HH_FLOORS={down:"Down",up:"Up",ask:"Ask",both:"Both"};
 const HH_VERDICTS={keep:["✅","Keep","#15803d"],change:["✏️","Change","#b45309"],retire:["🚫","Retire","#64748b"]};
-const HH_WHO=["lincoln","ellis","lucy","julian","mom","dad","grab"];
+// HHROSTER (audit 2026-10-24, her "go"): the household "who" list is THIS family's kids in roster order, then Mom, Dad, Up for
+// Grabs — it was Howe's four by name, so Settings ▸ 🧽 Cleaning Day listed Lincoln/Ellis/Lucy/Julian in every family's app and a
+// family's own kids' household jobs would never show. For Howe the list comes out identical.
+const HH_WHO=((typeof ROSTER!=="undefined"&&Array.isArray(ROSTER)&&ROSTER.length)?ROSTER.slice():["lincoln","ellis","lucy","julian"]).concat(["mom","dad","grab"]);
 function hhWhoName(w){ return w==="mom"?"Mom":w==="dad"?"Dad":w==="grab"?"Up for Grabs":((typeof KID_NAME!=="undefined"&&KID_NAME[w])||cap(w)); }
 function hhSlug(l){ return String(l||"").toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,96)||"x"; }
 // Ids are "<source>_<slug of the label>"; two rows with the same label on the same list get _2, _3 … so nothing is lost.
@@ -12637,7 +12640,9 @@ function renderHousehold(el){
 const HH_BUDGET={lincoln:[30,60],ellis:[25,50],lucy:[15,30],julian:[8,15],mom:[20,20],dad:[15,120]};   // [school day, Sat/Sun] minutes
 const HH_MIN_DEFAULT={health:2,animals:3,pickup:5,cleaning:10};
 const HH_ROOMS=[["living","Living room","down"],["entry","Entry + hallway","down"],["bathdown","Downstairs bathroom","down"],["kitchen","Kitchen + dining","down"],["school","School room","down"],
-  ["boys","Boys' room","up"],["lj","Lucy + Julian's room","up"],["playroom","Playroom","up"],["ours","Mom and Dad's room + bathroom","up"],["bathup","Top-of-stairs bathroom","up"],["stairs","Stairs + upstairs hallway","up"],["any","Not a room","-"]];
+  ["boys","Boys' room","up"],["lj","Lucy + Julian's room","up"],["playroom","Playroom","up"],["ours","Mom and Dad's room + bathroom","up"],["bathup","Top-of-stairs bathroom","up"],["stairs","Stairs + upstairs hallway","up"],["any","Not a room","-"]]
+  .map(function(r){ if(typeof HA_IS_HOWE==="undefined"||HA_IS_HOWE) return r;   // HHROSTER: Howe's own house names stay Howe's; another family sees plain room names (same ids, so nothing saved moves)
+    const L={boys:"Kids' room",lj:"Second kids' room",ours:"Parents' room + bathroom",bathup:"Upstairs bathroom",school:"School room"}; return L[r[0]]?[r[0],L[r[0]],r[2]]:r; });
 const HH_LAYERS=[["main","One main chore a day"],["weekly","Weekly jobs"],["monthly","Every few weeks"],["laundry","Laundry"],["project","Projects"],["grab","Up for Grabs"],["daily","Daily"]];
 let hhGridSel="";                // Week: "who|iso" of the open cell
 let hhOpenArea="", hhOpenRoom=""; // Area / Room: which card is expanded
@@ -12955,7 +12960,7 @@ function hhLevelReadyNowHTML(){
 // id so their ✎ edits still find it). Under Take over the lists re-derive on the spot. The row keeps its place at the END of
 // the new person's list, so nobody else's check-off index moves; leaving a list shifts the steps after it, as ✕ always has.
 let hhAddOpen=false, hhGive="";                                                    // the add form is showing · "<id>" of the open Give to… row
-let hhAdd={emoji:"",label:"",pts:"",who:"lincoln",slot:"chores",cad:"daily",room:"any",level:0,area:"",can:{},kind:"chore"};   // kind: chore | once | project (HH_PROJECTS)   // can = who else may do it (HH_SETTINGS_METER)   // the form's picks; level 0 = the person's current level; area "" = guess from the words
+let hhAdd={emoji:"",label:"",pts:"",who:((typeof FIRST_KID!=="undefined"&&FIRST_KID)||(typeof ROSTER!=="undefined"&&Array.isArray(ROSTER)&&ROSTER[0])||"mom"),slot:"chores",cad:"daily",room:"any",level:0,area:"",can:{},kind:"chore"};   // kind: chore | once | project (HH_PROJECTS)   // can = who else may do it (HH_SETTINGS_METER)   // the form's picks; level 0 = the person's current level; area "" = guess from the words
 // HH_ADD_FORM (her 2026-10-11: "emoji picking isnt there tho … the things that decide if it needs to wait for the gate"): a row
 // of house emoji to tap, and an Area picker — the area is what decides the gate (Pickup / Cleaning wait for the level,
 // Health / Animals always go out), so she picks it instead of trusting the guess from the words.
@@ -13437,7 +13442,7 @@ function hhProjectsHTML(){
   const ids=Object.keys(jobs).filter(function(id){ return hhIsProject(jobs[id]); });   // HH_ONCEPILE: once-jobs have their own tab
   let h='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Projects are the bigger things with a room and a target; a once-job is due until it is checked one time. '+(mom?'Add either with + Add a chore and the Kind row.':'')+'</div>';
   if(!ids.length) return h+'<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:10px 12px;font-size:12px;color:var(--muted)">No projects or once-jobs yet.</div>';
-  const order=["mom","dad","lincoln","ellis","lucy","julian","grab"];
+  const order=["mom","dad"].concat(HH_WHO.filter(w=>w!=="mom"&&w!=="dad"&&w!=="grab"),["grab"]);   // HHROSTER: the family's own kids
   const sorted=ids.sort(function(a,b){ const A=jobs[a],B=jobs[b]; return (A.status==="retired")-(B.status==="retired")||(order.indexOf(A.who)-order.indexOf(B.who))||((A.target||"9999")<(B.target||"9999")?-1:1); });
   sorted.forEach(function(id){ const j=jobs[id], proj=hhIsProject(j), S=hhProjStatus(j), W=hhProjWork(j), steps=hhProjSteps(j), nd=steps.filter(function(x){ return x.done; }).length, next=steps.find(function(x){ return !x.done; }), open=hhProjOpen===id, done=j.status==="retired";
     const col=S.k==="done"?'#94a3b8':S.k==="going"?'#2B7A78':'#b45309';
