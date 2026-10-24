@@ -59652,7 +59652,8 @@ function mhqSessionRows(kid, pn) {
       sid: s.sid, name: s.name, emoji: s.emoji, kind: s.kind, decks: s.decks || [],
       who: s.who, newPerDay: s.newPerDay, passes: s.passes, mixInAt: s.mixInAt, handOffAt: s.handOffAt,
       audio: s.audio, order: s.order, linked: linked, cards: cards, skipDecks: s.skipDecks || [],
-      maxCards: s.maxCards, focusDecks: s.focusDecks, budgetRole: s.budgetRole || null   // 🎯 NEWBUDGET
+      maxCards: s.maxCards, focusDecks: s.focusDecks, budgetRole: s.budgetRole || null,   // 🎯 NEWBUDGET
+      mixFinish: s.kind === "mix" ? s.mixFinish : undefined   // MIXFINISH_EDIT
     };
   });
 }
@@ -59828,7 +59829,6 @@ function mhqSessSave() {
     rec.handOffAt = mhqSessForm.handOffAt;
     rec.order = mhqSessForm.order || "bank";
     rec.maxCards = mhqSessForm.maxCards || 0;
-    if (mhqSessForm.kind === "mix") rec.mixFinish = Number(mhqSessForm.mixFinish != null ? mhqSessForm.mixFinish : 20) || 0;   // MIX_FINISH
     rec.focusDecks = mhqSessForm.focusDecks || 0;
     const _pat = mstPatternClean(mhqSessForm.pattern); if (_pat) rec.pattern = _pat;
     if (mhqSessForm.bothWays) rec.bothWays = true;
@@ -59841,10 +59841,10 @@ function mhqSessSave() {
     rec.handOffAt = mhqSessForm.handOffAt;
     rec.order = mhqSessForm.order || "bank";
     rec.maxCards = mhqSessForm.maxCards || 0;
-    if (mhqSessForm.kind === "mix") rec.mixFinish = Number(mhqSessForm.mixFinish != null ? mhqSessForm.mixFinish : 20) || 0;   // MIX_FINISH
     rec.focusDecks = mhqSessForm.focusDecks || 0;
     const _pat = mstPatternClean(mhqSessForm.pattern); if (_pat) rec.pattern = _pat;
   }
+  if (mhqSessForm.kind === "mix") rec.mixFinish = Number(mhqSessForm.mixFinish != null ? mhqSessForm.mixFinish : 20) || 0;   // MIXFINISH_EDIT (Mix finish line)
   { const _ht = (typeof mstHowtoClean === "function") ? mstHowtoClean(mhqSessForm.howto) : ""; if (_ht) rec.howto = _ht; }   // 📋 MST_HOWTO
   if (mhqSessForm.typeAnswer) rec.typeAnswer = true;   // ⌨️ MST_TYPEANS — every kind; absent = off
   if ((rec.kind === "deck" || rec.kind === "all") && (mhqSessForm.budgetRole === "fixed" || mhqSessForm.budgetRole === "pace" || mhqSessForm.budgetRole === "rest")) rec.budgetRole = mhqSessForm.budgetRole;   // 🎯 NEWBUDGET
@@ -59868,6 +59868,21 @@ function mhqSessDelete(sid) {
 }
 
 // ==== C. Render — string-built HTML, matches MHQ conventions ====
+
+// MIXFINISH_EDIT_START — the Mix finish line is set in the session editor (her yes 2026-10-23: Lincoln has 88 reviews waiting
+// and she wants his finish line at 60). MIX_FINISH (10/21) put its stepper inside `if (!isMix)` and its save line inside the
+// deck/Daily Study branches, both behind `kind === "mix"`, so neither ever ran and every family's Mix sat at the default 20.
+// Mix sessions only — deck and Daily Study records never get mixFinish. 0 = all. mstPile and how the Mix picks cards are untouched.
+function mhqMixFinishVal(f) { return Number(f && f.mixFinish != null ? f.mixFinish : MST_SESSION_DEFAULTS.mixFinish) || 0; }
+function _mhqMixFinishFormHtml(f, lbl) {
+  return '<div style="' + lbl + '">Finish line</div>' + _mhqStepper(mhqMixFinishVal(f), "mixFinish", 0) +
+    '<div style="font-size:11px;color:var(--muted);margin-top:4px">done at this many; Keep going for the rest. 0 = all</div>';
+}
+function _mhqMixFinishListHtml(r) {
+  const n = mhqMixFinishVal(r);
+  return '<div style="font-size:11px;color:var(--muted);margin-top:8px">Finish line ' + n + (n === 0 ? ' (all)' : '') + '</div>';
+}
+// MIXFINISH_EDIT_END
 
 function _mhqStepper(val, field, min) {
   min = min == null ? 0 : min;
@@ -59922,12 +59937,12 @@ function _mhqRenderSessForm(kid) {
   h += '<div style="' + lbl + '">Who studies</div><div style="display:flex;gap:6px">';
   [["solo", "Solo"], ["mom", "With Mom"]].forEach(function (w) { h += _mhqPill(w[1], f.who === w[0], "mhqSessSet('who','" + w[0] + "')"); });
   h += '</div>';
+  if (isMix) h += _mhqMixFinishFormHtml(f, lbl);   // MIXFINISH_EDIT
   if (!isMix) {
     h += '<div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:8px">';
     h += '<div><div style="' + lbl + '">New/day</div>' + _mhqStepper(f.newPerDay, "newPerDay", 0) + '</div>';
     h += '<div><div style="' + lbl + '">Passes</div>' + _mhqStepper(f.passes, "passes", 1) + '</div>';
     h += '<div><div style="' + lbl + '">Cards a sitting</div>' + _mhqStepper(f.maxCards || 0, "maxCards", 0) + '</div>';
-    if (f.kind === "mix") h += '<div><div style="' + lbl + '">Mix finish line</div>' + _mhqStepper(f.mixFinish != null ? f.mixFinish : 20, "mixFinish", 0) + '<div style="font-size:10.5px;color:var(--muted)">done at this many; Keep going for the rest. 0 = all</div></div>';   // MIX_FINISH
     h += '<div><div style="' + lbl + '">Decks at once</div>' + _mhqStepper(f.focusDecks || 0, "focusDecks", 0) + '</div>';
     h += '</div>';
     if (f.kind === "deck" || f.kind === "all") {   // 🎯 NEWBUDGET: which share of the kid's daily new-card budget this session takes
@@ -60024,6 +60039,7 @@ function _mhqRenderSessions(kid) {
     if (r.kind === "deck" || r.kind === "all") {
       h += '<div style="font-size:11px;color:var(--muted);margin-top:8px">' + r.newPerDay + ' new/day · ' + r.passes + ' passes' + (r.maxCards > 0 ? ' · ' + r.maxCards + ' cards a sitting' : '') + (r.focusDecks > 0 ? ' · ' + r.focusDecks + ' decks at once' : '') + ' · mix in at ' + mhqEsc(mhqTierLbl(r.mixInAt)) + ' · hand off at ' + mhqEsc(mhqTierLbl(r.handOffAt)) + '</div>';
     }
+    if (r.kind === "mix") h += _mhqMixFinishListHtml(r);   // MIXFINISH_EDIT
     if (r.budgetRole) {   // 🎯 NEWBUDGET: this session's role and today's share
       let _sh = null; try { const _s = mstSessions(kid).find(function (x) { return x.sid === r.sid; }); _sh = nbSessionToday(kid, _s, mastGetPrintNum(kid)); } catch (e) {}
       h += '<div style="font-size:11px;color:#6d28d9;margin-top:4px;font-weight:700">\u{1F3AF} ' + mhqEsc(NB_ROLE_LBL[r.budgetRole]) + (_sh ? ' \u00b7 ' + _sh.n + ' new today' + (_sh.role === "pace" ? ' (' + _sh.waiting + ' waiting)' : '') : ' \u00b7 budget off, uses its New/day') + '</div>';
