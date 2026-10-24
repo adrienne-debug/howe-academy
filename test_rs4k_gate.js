@@ -55,7 +55,7 @@ function world(o) {
     let masteryData=${JSON.stringify({ lincoln: o.items || [], lincoln_custom_items: bank, lincoln_settings: settings })};
     let currData=${JSON.stringify({ subjects: { lincoln: { [SK]: subj } }, done: { lincoln: { [SK]: doneRecs } } })};
     let unitStudies={};
-    const MAST_BANK_MAP={}, MAST_TIER_INT={every_other_day:2,weekly:7}, MAST_ANIMAL_EMOJI={};
+    const MAST_BANK_MAP={}, MAST_TIER_INT={every_other_day:2,weekly:5}, MAST_ANIMAL_EMOJI={};
     function mastStampNextDue(){} function mastIsParked(){ return false; } function mastGetDef(){ return ""; }
     function mastGetVisual(){ return null; } function mastPutCards(){} function mastDrillSettings(){ return masteryData.lincoln_settings; }
     const HA_LS={setItem(){},getItem(){return null;}}; function cap(s){return s;} function renderUnits(){} function momHere(){ return true; }
@@ -155,7 +155,7 @@ function sessionWorld(o) {
   const settings = { ladder: ["every_other_day", "weekly", "bi_weekly", "monthly", "graduated"], cat_gate: { [DECK]: { subject: SK } } };
   const stubs = `let masteryKid="lincoln"; const MAST_BANK_MAP={};
     const MAST_TIER_ORDER=["daily","every_other_day","every_third_day","weekly","bi_weekly","monthly","learned","graduated"];
-    const MAST_TIER_INT={daily:1,every_other_day:2,every_third_day:3,weekly:7,bi_weekly:14,monthly:28,learned:60,graduated:null};
+    const MAST_TIER_INT={daily:1,every_other_day:2,every_third_day:3,weekly:5,bi_weekly:10,monthly:20,learned:60,graduated:null};
     let masteryData=${JSON.stringify({ lincoln: items, lincoln_custom_items: bank, lincoln_settings: settings, lincoln_sessions: o.sessions })};
     let currData=${JSON.stringify({ subjects: { lincoln: { [SK]: { lessonSeq: seq, lessonIds: ids, doneImportedAt: "2026-09-13" } } }, done: { lincoln: { [SK]: doneRecs } } })};
     function mastDrillSettings(){ return masteryData.lincoln_settings; }

@@ -25,7 +25,7 @@ function harness(items, defs) {
   const timers = [];
   const ctx = { console, Math, Object, Array, String, Number, JSON, Set, Date, parseFloat, isNaN,
     masteryKid: "lincoln", masteryData: { lincoln: items },
-    MAST_TIER_ORDER: ["daily", "every_other_day", "weekly", "bi_weekly", "monthly", "graduated"], MAST_TIER_INT: { daily: 1, every_other_day: 2, weekly: 7, bi_weekly: 14, monthly: 28, graduated: null },
+    MAST_TIER_ORDER: ["daily", "every_other_day", "weekly", "bi_weekly", "monthly", "graduated"], MAST_TIER_INT: { daily: 1, every_other_day: 2, weekly: 5, bi_weekly: 10, monthly: 20, graduated: null },
     mastDrillSettings: () => ({ ladder: [] }), mastIsDue: () => false, mastIsParked: () => false, mastIsNeverDrill: () => false, mastFullBank: () => ({}),
     mastGetDef: (k, n) => defs[n] || "", mastCustomDef: () => "", mastGetDefAudio: () => null, mastGetCatMode: () => "", mastCatFace: () => "",
     mastGetVisual: () => null, MAST_ANIMAL_EMOJI: {}, MAST_COLOR_MAP: {}, mastColorBorder: () => "#000", mastShapeVis: () => "",

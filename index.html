@@ -2731,6 +2731,7 @@ function dayRollCheck(){
   if(wasOnToday) day=now;
   try{ if(typeof momBlocksListen==="function") momBlocksListen(); }catch(e){}   // MOMBLOCKS_DAYROLL: Mom's blocks are per day — listen to the new day's path
   if(typeof renderAll==="function") renderAll();
+  try{ if(typeof reMorningAll==="function") reMorningAll(); }catch(e){}   // 🧠 REVIEWENGINE: a device left open past midnight levels the new school day
   return true;
 }
 // A school-room kiosk is never hidden and never blurred, so the interval is the one that
@@ -4067,6 +4068,7 @@ function initFb() {
       try{HA_LS.setItem("ha_calendar",JSON.stringify(calendarData));}catch(e){}
       if(currData) buildCurrPaceCum();
       if(tab==="moms-plan"&&mpSubView==="cal"){const el=document.getElementById("content");if(el)renderAll();}   // ONECAL: the calendar page redraws on live changes (was the Admin page)
+      try{ if(typeof reLoaded==="function") reLoaded("calendar"); }catch(e){}   // 🧠 REVIEWENGINE: school days need the calendar
     });
     db.ref("session_done").on("value",s=>{ sessionDone=s.val()||{}; });
     db.ref("trophies").on("value",s=>{ trophies=s.val()||{}; });
@@ -4341,6 +4343,7 @@ function initFb() {
       const v=s.val()||{}; paceData={subjects:v.subjects||{}, plans:v.plans||{}};
       try{HA_LS.setItem("ha_pace",JSON.stringify(paceData));}catch(e){}
       if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
+      try{ if(typeof reLoaded==="function") reLoaded("pace"); }catch(e){}   // 🧠 REVIEWENGINE: school days need the pace plans
     });
     // Lesson-identity done records (Stage 1.3) live under curriculum/done but must stay
     // LIVE — the curriculum node itself is loaded once per device and kiosks sit open for
@@ -4397,6 +4400,7 @@ function initFb() {
       // showing (Mastery HQ, Editor-in-Chief cards, drill strips), not just the Mastery tab.
       if(_mastFirst){ try{ renderAll(); }catch(e){} try{ if(typeof stHeal==="function") stHeal(); }catch(e){} }   // 📝 STHEAL: the records are in — the week's test cards can be checked now (live 2026-10-14: the cards arrived first, the heal waited, nothing re-ran it)
       else if(tab==="mastery"){const el=document.getElementById("content");if(el)renderMastery(el);}
+      try{ if(typeof reLoaded==="function") reLoaded("mastery"); }catch(e){}   // 🧠 REVIEWENGINE: the morning leveling
     });
     db.ref("config/anthropic_key").once("value",s=>{ if(s.val()) mastAIKey=s.val(); });
     db.ref("config/slot_config").on("value",s=>{ slotConfig=s.val()||{}; });
@@ -52462,7 +52466,10 @@ function renderPace(el){
 const MAST_TIER_ORDER=["daily","every_other_day","every_third_day","weekly","bi_weekly","monthly","learned","graduated"];
 const MAST_TIER_LBL={daily:"Daily",every_other_day:"Every Other Day",every_third_day:"Every 3rd Day",weekly:"Weekly",bi_weekly:"Bi-Weekly",monthly:"Monthly",learned:"Learned",graduated:"Graduated"};
 const MAST_TIER_COL={daily:"#dc2626",every_other_day:"#ea580c",every_third_day:"#d97706",weekly:"#ca8a04",bi_weekly:"#65a30d",monthly:"#0d9488",learned:"#2563eb",graduated:"#7c3aed"};
-const MAST_TIER_INT={daily:1,every_other_day:2,every_third_day:3,weekly:7,bi_weekly:14,monthly:28,learned:60,graduated:null};
+// Rung intervals in the kid's SCHOOL days (mastSchoolDayNum). REVIEWENGINE (her words 2026-10-24: "make weekly 5 school days
+// (bi-weekly 10, monthly 20)") — weekly is a real school week; it was 7/14/28 (≈ 1½ calendar weeks / 5½ weeks for monthly).
+// learned (60) is an optional rung after monthly that no kid's ladder uses — left as it was.
+const MAST_TIER_INT={daily:1,every_other_day:2,every_third_day:3,weekly:5,bi_weekly:10,monthly:20,learned:60,graduated:null};
 const MAST_ANIMAL_EMOJI={Lion:"\u{1F981}",Giraffe:"\u{1F992}","T-Rex":"\u{1F996}",Brachiosaurus:"\u{1F995}",Dog:"\u{1F436}",Cat:"\u{1F431}",Elephant:"\u{1F418}",Bear:"\u{1F43B}",Penguin:"\u{1F427}",Rabbit:"\u{1F430}",Fox:"\u{1F98A}",Owl:"\u{1F989}",Horse:"\u{1F434}",Turtle:"\u{1F422}",Whale:"\u{1F433}",Tiger:"\u{1F42F}",Zebra:"\u{1F993}",Shark:"\u{1F988}",Deer:"\u{1F98C}"};
 const MAST_COLOR_MAP={Red:"#ef4444",Blue:"#3b82f6",Green:"#22c55e",Yellow:"#eab308",Orange:"#f97316",Purple:"#7c3aed",Pink:"#ec4899",Brown:"#92400e",Black:"#1f2937",White:"#ffffff",Gray:"#9ca3af"};
 // White was #e5e7eb — a light GRAY — behind the same hairline border every other swatch gets,
@@ -54140,8 +54147,8 @@ function mastStampNextDue(item,items,tier,pn){
   if(!iv||iv<=1){ delete item.next_due; return; }   // daily / graduated: nothing to book
   const base=pn+iv;                                  // never earlier than one full interval
   // Late-slide cap: while hunting for the emptiest day, a card may land past its nominal
-  // interval by at most half the interval, never more than 7 drills (EOD +1, weekly +3,
-  // bi-weekly/monthly +7). Enough slack to break up bunches without drifting wildly late.
+  // interval by at most half the interval, never more than 7 drills (EOD +1, weekly +2,
+  // bi-weekly +5, monthly +7 with the 5/10/20 rungs). Enough slack to break up bunches without drifting wildly late.
   const cap=Math.min(Math.floor(iv/2),7);
   const counts={};
   (items||[]).forEach(i=>{
@@ -56832,13 +56839,12 @@ function mastAddItems(){ if(!momHere()&&!mastAdminPinOk) return;
 
 // EVENOUT2_START — ⚖️ Even out review dates, her design 2026-10-23 (Ellis: 66 reviews in one drill; the old Even out put every
 // card on the least-loaded day from today and ignored when each was earned — on Lucy, with no pile-up, 52 of 67 cards pulled early,
-// monthly ~12 days). Now: the kid's scheduled review cards (active, rung interval > 1, not parked, not never-drill — learning and
-// graduated untouched) are grouped by deck AND rung; each group is ordered by LAST TESTED, oldest first, and dealt evenly over the
-// rung's interval from the start day — floor(n/interval) a day, the remainder one extra a day, its first day rotating across groups so
-// day one doesn't collect every group's extras. Her words: "if today is day 5 … fill day 6, 7, 1, 2, 3, 4, 5". Start = tomorrow if
-// the kid has reviewed anything today, else today. Writes only next_due for cards that move (one multi-path update) + evened_at.
+// monthly ~12 days). Since 2026-10-24 (REVIEWENGINE, her design: "it still needs to meet that threshold … that's where the even out
+// comes after it hits that point") the button deals with the review engine's own rules — rePlan: per deck AND rung, a card is never
+// placed before it has rested its rung's full time, each day takes an even share (+25%), oldest tested first. So it can never pull a
+// card early; the app also does the same thing by itself every school morning. Start = tomorrow if the kid has already reviewed on
+// today's school day, else today. Writes only next_due for cards that move (one multi-path update) + evened_at.
 // A study sitting saved earlier today with no grades yet rebuilds after Even out (evo2SittingStale, hooked in mstRestoreSitting).
-function evo2TodayKey(){ return new Date().toISOString().slice(0,10).replace(/-/g,""); }   // same key as history/studyLog days
 // Newest school day each card was tested: drill history (c/m/~) and study logs (c/m).
 function evo2LastTested(kid){
   const last={}, see=(id,pn)=>{ if(id!=null&&typeof pn==="number"&&!(last[id]>=pn)) last[id]=pn; };
@@ -56848,54 +56854,13 @@ function evo2LastTested(kid){
   Object.keys(L).forEach(sid=>{ const S=L[sid]||{}; Object.keys(S).forEach(d=>{ const e=S[d]; if(!e) return; (e.items||[]).forEach(x=>{ if(x&&(x.result==="c"||x.result==="m")) see(x.id,e.printNum); }); }); });
   return last;
 }
-function evo2ReviewedToday(kid){
-  const tk=evo2TodayKey();
-  if(masteryData.history&&masteryData.history[kid]&&masteryData.history[kid][tk]) return true;
-  const L=(masteryData.studyLog&&masteryData.studyLog[kid])||{};
-  return Object.keys(L).some(sid=>!!(L[sid]&&L[sid][tk]));
-}
-// Pure plan: [{it, day}] for every scheduled review card, plus the start day.
-function evo2Plan(kid,items,pn){
-  const start=evo2ReviewedToday(kid)?pn+1:pn;
-  const sched=items.filter(it=> it && it.tier && (MAST_TIER_INT[it.tier]||0)>1 && (it.status==="active"||!it.status) && !mastIsParked(it) && !(typeof mastIsNeverDrill==="function"&&mastIsNeverDrill(it)));
-  const last=evo2LastTested(kid), groups={};
-  sched.forEach(it=>{ const k=(it.subject||"")+"\u0001"+it.tier; (groups[k]=groups[k]||[]).push(it); });
-  const lt=it=>{ const iv=MAST_TIER_INT[it.tier]; return last[it.id]!=null?last[it.id]:(typeof it.next_due==="number"?it.next_due-iv:0); };
-  const keys=Object.keys(groups).sort((a,b)=>{ const ia=MAST_TIER_INT[a.split("\u0001")[1]], ib=MAST_TIER_INT[b.split("\u0001")[1]]; return ia-ib||(a<b?-1:a>b?1:0); });
-  const out=[]; let rot=0;
-  keys.forEach(k=>{
-    const g=groups[k], iv=MAST_TIER_INT[g[0].tier], n=g.length, q=Math.floor(n/iv), r=n%iv;
-    g.sort((a,b)=>(lt(a)-lt(b))||(String(a.id)<String(b.id)?-1:String(a.id)>String(b.id)?1:0));
-    const cnt=[]; for(let d=0;d<iv;d++) cnt.push(q);
-    for(let x=0;x<r;x++) cnt[(rot+x)%iv]++;
-    rot+=r;
-    let i=0; for(let d=0;d<iv;d++) for(let c=0;c<cnt[d];c++) out.push({it:g[i++],day:start+d});
-  });
-  return {start:start,plan:out,cards:sched.length};
-}
 function mastRebalanceKid(kid){
   const pn=mastGetPrintNum(kid);
-  let items=masteryData[kid]; if(items&&!Array.isArray(items)) items=Object.values(items);
-  if(!items||!items.length) return {changed:0,cards:0};
-  const idxOf=new Map(); items.forEach((it,i)=>{ if(it) idxOf.set(it,i); });
-  const P=evo2Plan(kid,items,pn), changes={}; let changed=0;
-  P.plan.forEach(x=>{ if(x.it.next_due!==x.day){ x.it.next_due=x.day; changes[idxOf.get(x.it)+"/next_due"]=x.day; changed++; } });
-  // EVENOUT_HONEST (her report 2026-10-21: Even out took Lincoln 117 → 68, Start still said "of 177", a reload showed 177): the toast
-  // said ✓ whether or not the write was sent — in ?dryrun=1 (her Mac reopens that way) nothing is saved and the reload shows the truth.
-  const sent=!!(db&&changed&&!(typeof _dryRun==="function"&&_dryRun()));
-  if(sent){
-    db.ref("mastery/"+kid).update(changes);
-    const ts=Date.now(), sk=kid+"_settings";
-    if(!masteryData[sk]) masteryData[sk]={};
-    masteryData[sk].evened_at=ts;
-    db.ref("mastery/"+sk+"/evened_at").set(ts);   // this key only — tells saved study sittings to rebuild
-  }
-  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
-  return {changed:changed,cards:P.cards,sent:sent,start:P.start};
+  return reApply(kid,pn,reReviewedOn(kid,pn)?pn+1:pn);
 }
 function mastRebalanceNow(){
   const kid=masteryKid;
-  if(!confirm("Even out "+cap(kid)+"’s review dates?\n\nEach deck’s cards on each rung are spread evenly over that rung’s days, the ones tested longest ago first. Starts tomorrow if "+cap(kid)+" has already reviewed today, otherwise today.")) return;
+  if(!confirm("Even out "+cap(kid)+"’s review dates?\n\nEach deck’s cards on each rung get an even share a day (plus a little so a backlog drains), the ones tested longest ago first — and no card comes before it has rested its full time. The app also does this by itself every school morning. Starts tomorrow if "+cap(kid)+" has already reviewed today, otherwise today.")) return;
   const r=mastRebalanceKid(kid);
   if(typeof gwShowToast==="function") gwShowToast(r.sent?("Evened out "+r.changed+" review card"+(r.changed!==1?"s":"")+" ✓ · study sittings not started yet will rebuild"):(r.changed?"Dry run — "+r.changed+" cards would move, nothing saved":"Nothing to even out"));   // EVENOUT_HONEST
   _mastRe();
@@ -56910,6 +56875,102 @@ function evo2SittingStale(kid,obj){
   return !Object.keys(cards).some(k=>{ const c=cards[k]; return c&&(c.first!=null||(c.goods||0)>0); });
 }
 // EVENOUT2_END
+// REVIEWENGINE_START — 🧠 The review engine, her design 2026-10-24 (PLAN_review_engine_2026-10-24.md): "Even out should be the
+// engine that runs the whole drill/mastery section by itself — no button", but a card must still rest its full time first ("if it's
+// supposed to be 7 days … it still needs to meet that threshold … it may end up being in there a little longer than planned. But
+// that's where the even out comes after it hits that point"). A day is the kid's school day (mastSchoolDayNum); the rungs are
+// weekly 5, bi-weekly 10, monthly 20 (MAST_TIER_INT — her words 2026-10-24: "make weekly 5 school days (bi-weekly 10, monthly 20)").
+// Every school morning, once per kid, for each deck AND rung of the kid's scheduled review cards (the evo2 filter: active, rung
+// interval > 1, not parked, not never-drill — learning, daily and graduated cards are never touched):
+//   • rest gate — a card is never placed before last tested (evo2LastTested: drill + study logs; else next_due − interval; else 0)
+//     + its rung's days;
+//   • even share q = ceil(1.25 × the group's cards ÷ interval) — a rung's daily share plus a quarter so a backlog drains;
+//   • from today forward each day takes up to q RESTED cards, oldest tested first (ties by id); the rest roll to the next day and
+//     are first in line there. No forcing at the end of a grace period — the simulation showed forcing re-makes the piles after
+//     skipped days (Ellis's biggest drill 92 vs 68).
+// Once a day across devices: the first device to open the app on a school day wins a transaction on <kid>_settings/leveled_on =
+// the family's LOCAL date (calToday — not the UTC day key, which turns over at 8 PM here); every other device sees that date and
+// skips. It waits for Firebase's mastery, calendar and pace data (the school-day count needs all three) and runs again from
+// dayRollCheck for a device left open past midnight. Weekends, holidays, breaks and the kid's days off (the school-day number didn't
+// move) never level and never stamp leveled_on. Start = tomorrow if the kid already reviewed on today's school day, else today.
+// Writes: next_due only for the cards that move (ONE multi-path update on mastery/<kid>), leveled_on, and evened_at when anything
+// moved. evened_at is the existing "review dates changed" stamp, so a study sitting saved earlier today with no grades rebuilds
+// through evo2SittingStale unchanged, and a sitting with any grade keeps its cards (her rule 5). ?dryrun=1 never runs it.
+const RE_SHARE_PLUS=1.25;
+function reScheduled(items){
+  return (items||[]).filter(it=> it && it.tier && (MAST_TIER_INT[it.tier]||0)>1 && (it.status==="active"||!it.status) && !mastIsParked(it) && !(typeof mastIsNeverDrill==="function"&&mastIsNeverDrill(it)));
+}
+// Has the kid reviewed on school day pn? A drill or study log stamped with that day's number (not the UTC date key).
+function reReviewedOn(kid,pn){
+  const H=(masteryData.history&&masteryData.history[kid])||{};
+  if(Object.keys(H).some(d=>H[d]&&H[d].printNum===pn)) return true;
+  const L=(masteryData.studyLog&&masteryData.studyLog[kid])||{};
+  return Object.keys(L).some(sid=>{ const S=L[sid]||{}; return Object.keys(S).some(d=>S[d]&&S[d].printNum===pn); });
+}
+// Pure plan: [{it, day}] for every scheduled review card, from `start`.
+function rePlan(kid,items,pn,start){
+  const sched=reScheduled(items), last=evo2LastTested(kid), lt=new Map(), groups={};
+  sched.forEach(it=>{ const iv=MAST_TIER_INT[it.tier]; lt.set(it,last[it.id]!=null?last[it.id]:(typeof it.next_due==="number"?it.next_due-iv:0));
+    const k=(it.subject||"")+"\u0001"+it.tier; (groups[k]=groups[k]||[]).push(it); });
+  const out=[], shares=[];
+  Object.keys(groups).sort().forEach(k=>{
+    const g=groups[k], iv=MAST_TIER_INT[g[0].tier], n=g.length, q=Math.ceil(RE_SHARE_PLUS*n/iv);
+    g.sort((a,b)=>(lt.get(a)-lt.get(b))||(String(a.id)<String(b.id)?-1:String(a.id)>String(b.id)?1:0));
+    let i=0, t=start;
+    while(i<n){
+      let took=0;
+      while(i<n&&took<q&&lt.get(g[i])+iv<=t){ out.push({it:g[i],day:t}); i++; took++; }
+      t=(i<n&&took<q)?Math.max(t+1,lt.get(g[i])+iv):t+1;   // the next card hasn't rested yet → go straight to the day it has
+    }
+    shares.push({deck:g[0].subject||"",tier:g[0].tier,cards:n,interval:iv,share:q});
+  });
+  return {start:start,plan:out,cards:sched.length,shares:shares};
+}
+// Plan and save one kid. Keys come from the live node (an array, or an object if Firebase ever returns one).
+function reApply(kid,pn,start){
+  const node=masteryData[kid];
+  if(!node) return {changed:0,cards:0,sent:false,start:start};
+  const keyOf=new Map(), items=[];
+  Object.keys(node).forEach(k=>{ const it=node[k]; if(it){ keyOf.set(it,k); items.push(it); } });
+  const P=rePlan(kid,items,pn,start), changes={}; let changed=0;
+  P.plan.forEach(x=>{ if(x.it.next_due!==x.day){ x.it.next_due=x.day; changes[keyOf.get(x.it)+"/next_due"]=x.day; changed++; } });
+  // EVENOUT_HONEST (her report 2026-10-21): nothing is claimed as saved in ?dryrun=1.
+  const sent=!!(db&&changed&&!(typeof _dryRun==="function"&&_dryRun()));
+  if(sent){
+    db.ref("mastery/"+kid).update(changes);
+    const ts=Date.now(), sk=kid+"_settings";
+    if(!masteryData[sk]) masteryData[sk]={};
+    masteryData[sk].evened_at=ts;
+    db.ref("mastery/"+sk+"/evened_at").set(ts);   // this key only — tells saved study sittings to rebuild
+  }
+  return {changed:changed,cards:P.cards,sent:sent,start:P.start,shares:P.shares};
+}
+// ── The morning run ──
+var _reLoaded={mastery:false,calendar:false,pace:false}, _reBusy={};
+function reLoaded(what){ _reLoaded[what]=true; reMorningAll(); }   // called by the Firebase listeners in initFb
+function reDayBefore(ds){ const d=new Date(ds+"T12:00:00"); d.setDate(d.getDate()-1); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function reMorningAll(){
+  if(!(_reLoaded.mastery&&_reLoaded.calendar&&_reLoaded.pace)) return;
+  if(typeof db==="undefined"||!db||(typeof _dryRun==="function"&&_dryRun())) return;
+  if(typeof _haMastReady!=="undefined"&&!_haMastReady) return;
+  const today=calToday();
+  ((typeof ROSTER!=="undefined"&&ROSTER)||[]).forEach(kid=>{ try{ reMorningKid(kid,today); }catch(e){ console.warn("review engine",kid,e); } });
+}
+function reMorningKid(kid,today){
+  const sk=kid+"_settings";
+  if((masteryData[sk]||{}).leveled_on===today||_reBusy[kid]===today||!masteryData[kid]) return false;
+  if(!(mastSchoolDayNum(kid,today)>mastSchoolDayNum(kid,reDayBefore(today)))) return false;   // not a school day for this kid
+  _reBusy[kid]=today;
+  db.ref("mastery/"+sk+"/leveled_on").transaction(cur=>cur===today?undefined:today).then(r=>{
+    if(!r||!r.committed) return;   // another device leveled today
+    if(!masteryData[sk]) masteryData[sk]={};
+    masteryData[sk].leveled_on=today;
+    const pn=mastGetPrintNum(kid), res=reApply(kid,pn,reReviewedOn(kid,pn)?pn+1:pn);
+    console.log("[HA] review engine: "+kid+" leveled "+today+" (school day "+pn+") — "+res.changed+" of "+res.cards+" review cards moved");
+  }).catch(()=>{ if(_reBusy[kid]===today) _reBusy[kid]=null; });
+  return true;
+}
+// REVIEWENGINE_END
 // NEWBUDGET_START — 🎯 New-card budget (her yes 2026-10-23, Lincoln: 195 reviews due after two weeks of adding ~15 new cards
 // a day with almost no reviews; she can't pause subjects, German stays at 5, Science and Social Studies follow his books, and
 // "couldn't Daily Study get how much is available after considering the other categories").
@@ -56919,16 +56980,21 @@ function evo2SittingStale(kid,obj){
 //   "pace"  — keeps pace with the book: words its book has released that aren't started yet ÷ NB_PACE_DAYS school days,
 //             rounded up; at least 1 while anything is waiting, at most its New/day (Science, Social Studies).
 //   "rest"  — whatever the budget has left after the others, at least 1, at most its New/day (Daily Study).
-// The total senses his load (reviews due today across every session and Mom's drill): over NB_LOAD_MID → NB_MID_CUT fewer;
-// over NB_LOAD_HIGH → "pace" and "rest" drop to 1 (fixed stays). Planned shares of the others are subtracted, not what's
+// The total senses his load: over NB_LOAD_MID → NB_MID_CUT fewer; over NB_LOAD_HIGH → "pace" and "rest" drop to 1 (fixed stays).
+// The load was "reviews due today"; with the review engine (REVIEWENGINE 2026-10-24) leveling every morning, today's due always
+// looks even, so it now reads the WHOLE ladder: the sum over every card on it of 1 ÷ its rung's school days (= Σ deck+rung cards ÷
+// interval) — how many reviews a day the ladder asks for on average. That is what "due today" reads on a level day, the same unit,
+// so 60 and 90 keep their meaning (Lincoln 2026-10-24: 149 every-other-day + 107 weekly + 26 bi-weekly + 35 monthly ≈ 100 → heavy). Planned shares of the others are subtracted, not what's
 // been done, so a skipped German day never hands Daily Study extra. A sitting's card limit grows by the day's share so
 // the new cards fit. Budget off, or no session with a role → every session works exactly as before.
 const NB_LOAD_MID=60, NB_LOAD_HIGH=90, NB_MID_CUT=2, NB_PACE_DAYS=15, NB_ROLES=["fixed","pace","rest"];
 function nbBudget(kid){ const s=masteryData[kid+"_settings"]||{}; const n=Math.floor(Number(s.new_budget)||0); return n>0?n:0; }
 function _nbItems(kid){ let it=masteryData[kid]||[]; if(!Array.isArray(it)) it=Object.values(it); return it.filter(Boolean); }
-// Reviews due today: every card on the ladder that is due, wherever it is studied.
+// Whole review load: reviews a day the ladder asks for — every card on it, wherever it is studied, 1 ÷ its rung's days.
 function nbLoad(kid,pn){
-  return _nbItems(kid).filter(i=>i.status==="active"&&!mastIsParked(i)&&!(typeof mastIsNeverDrill==="function"&&mastIsNeverDrill(i))&&mastIsDue(i,pn)).length;
+  let n=0;
+  _nbItems(kid).forEach(i=>{ if(i.status!=="active"||mastIsParked(i)||(typeof mastIsNeverDrill==="function"&&mastIsNeverDrill(i))) return; const iv=MAST_TIER_INT[i.tier||"daily"]; if(iv) n+=1/iv; });
+  return Math.round(n);
 }
 // Words the book has released (the chapter gate) that the kid hasn't started, across a session's decks.
 function nbWaiting(kid,session){
@@ -56986,7 +57052,7 @@ const NB_ROLE_LBL={fixed:"Fixed",pace:"Keeps pace with the book",rest:"Takes wha
 function nbPlanLineHtml(kid,pn){
   const p=nbPlan(kid,pn); if(!p) return "";
   const names={}; (mstSessions(kid)||[]).forEach(s=>{ names[s.sid]=((s.emoji||"")+" "+(s.name||s.sid)).trim(); });
-  const lvl=p.level==="heavy"?(p.load+" reviews due — heavy day, flexible sessions take 1"):p.level==="busy"?(p.load+" reviews due — busy day, budget "+p.room):(p.load+" reviews due");
+  const lvl=p.level==="heavy"?(p.load+" reviews a day on the ladder — heavy, flexible sessions take 1"):p.level==="busy"?(p.load+" reviews a day on the ladder — busy, budget "+p.room):(p.load+" reviews a day on the ladder");
   const parts=Object.keys(p.by).map(sid=>esc(names[sid]||sid)+" "+p.by[sid].n+(p.by[sid].role==="pace"?" ("+p.by[sid].waiting+" waiting)":""));
   return '<div style="font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5">Today: '+esc(lvl)+' · '+parts.join(" · ")+' · <b>'+p.used+' new</b></div>';
 }
@@ -56996,7 +57062,7 @@ function nbBudgetCardHtml(kid,pn){
   let h='<div style="border:1.5px solid #c4b5fd;border-radius:12px;padding:12px;background:#faf5ff;margin-bottom:10px">';
   h+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-weight:800;font-size:14px;flex:1;min-width:160px">\u{1F3AF} New-card budget</span>';
   h+='<button onclick="nbSetBudget(\''+kid+'\','+Math.max(0,n-1)+')" style="'+b+'">&minus;</button><span style="min-width:44px;text-align:center;font-weight:800;font-size:14px">'+(n?n+' a day':'Off')+'</span><button onclick="nbSetBudget(\''+kid+'\','+(n+1)+')" style="'+b+'">+</button></div>';
-  h+='<div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5">New cards a day across the sessions you put in the budget (Edit a session \u2192 In the budget). Fixed sessions take their New/day, book-paced ones follow the chapters, and \u201cTakes what\u2019s left\u201d gets the rest. Over '+NB_LOAD_MID+' reviews due: '+NB_MID_CUT+' fewer \u00b7 over '+NB_LOAD_HIGH+': flexible sessions take 1.</div>';
+  h+='<div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5">New cards a day across the sessions you put in the budget (Edit a session \u2192 In the budget). Fixed sessions take their New/day, book-paced ones follow the chapters, and \u201cTakes what\u2019s left\u201d gets the rest. Over '+NB_LOAD_MID+' reviews a day on the ladder: '+NB_MID_CUT+' fewer \u00b7 over '+NB_LOAD_HIGH+': flexible sessions take 1.</div>';
   if(n) h+=nbPlanLineHtml(kid,pn)||'<div style="font-size:11px;color:#b45309;margin-top:6px">No session is in the budget yet \u2014 every session uses its own New/day.</div>';
   h+='</div>';
   return h;
@@ -62035,9 +62101,9 @@ function mastAdminRulesHtml(){
     h+='</div>';
   })();
 
-  // Even out review dates — one-time re-spread so quiz counts stay steady (no troughs/floods)
+  // Even out review dates — the review engine's morning leveling on demand (REVIEWENGINE 2026-10-24)
   h+='<div class="mast-admin-row" style="align-items:center">';
-  h+='<div><div class="mast-admin-label">\u{2696}\u{FE0F} Even out review dates</div><div class="mast-admin-desc">Re-spreads '+cap(masteryKid)+'’s booked review cards evenly across the coming days, so quiz counts stay steady — no empty days or huge piles. One-time; cards keep their normal intervals.</div></div>';
+  h+='<div><div class="mast-admin-label">\u{2696}\u{FE0F} Even out review dates</div><div class="mast-admin-desc">The app does this by itself every school morning. Tap to do it now for '+cap(masteryKid)+': each deck’s cards on each rung get an even share a day, the ones tested longest ago first — never before a card has rested its full time.</div></div>';
   h+='<button onclick="mastRebalanceNow()" style="padding:6px 14px;border-radius:12px;border:1.5px solid #7c3aed;background:#f5f3ff;color:#6d28d9;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">Even out</button>';
   h+='</div>';
 
@@ -62146,7 +62212,7 @@ function mastAdminRulesHtml(){
 
   const allTiers=["every_other_day","every_third_day","weekly","bi_weekly","monthly","learned","graduated"];
   const ladder=s.ladder||["every_other_day","weekly","bi_weekly","monthly","graduated"];
-  const tierInt={every_other_day:"2 days",every_third_day:"3 days",weekly:"7 days",bi_weekly:"14 days",monthly:"28 days",learned:"60 days",graduated:"Done"};
+  const tierInt={every_other_day:"2 school days",every_third_day:"3 school days",weekly:"5 school days",bi_weekly:"10 school days",monthly:"20 school days",learned:"60 school days",graduated:"Done"};   // REVIEWENGINE 2026-10-24: weekly = a school week
 
   // Show current ladder order
   h+='<div style="margin-bottom:8px">';
