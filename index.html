@@ -56571,7 +56571,11 @@ function mstSittingInit(pile, session, opts) {
   (pile.learning || []).forEach(item => {
     const key = "l:" + item.id;
     cards[key] = { key, kind: "learning", id: item.id, deck: item.subject, name: item.prompt, goods: 0, first: null, done: false };
-    if (_pat) cards[key].mode = mstPatternMode(_pat, item.tally_dots || 0, _need(item.subject));
+    if (_pat) {
+      const _d = item.tally_dots || 0, _nd = _need(item.subject);
+      cards[key].mode = mstPatternMode(_pat, _d, _nd);
+      if (mstPatternRepeatDay(_pat, _d, _nd)) cards[key].passes = 1;   // PATSIDE: same side as yesterday → 1 right is enough
+    }
     queue.push(key);
     counts.learning++;
   });
@@ -56616,7 +56620,7 @@ function mstAnswer(state, key, ans) {
     state.queue.splice(idx, 1);
     if (ans === "good") {
       card.goods++;
-      if (card.goods >= state.passes) {
+      if (card.goods >= (card.passes != null ? card.passes : state.passes)) {   // PATSIDE: a repeat-side day asks for 1
         card.done = true;
       } else {
         state.queue.push(key);
@@ -56680,6 +56684,18 @@ function mstPatternClean(p) {
   const out = p.filter(m => MST_PATTERN_MODES.indexOf(m) !== -1);
   return out.length ? out : null;
 }
+// PATSIDE_START — 3 right on the day a card's side changes, 1 on the day that repeats it (her design 2026-10-23, Lincoln's
+// German: see it · see it · say it · say it · type it, 3 right every day = 15+ answers per word). Successive-relearning
+// research (Rawson & Dunlosky 2011): a NEW kind of recall is learned to the full criterion, a repeat of the same kind
+// only needs 1 right. So a learning card needs the session's "right answers" on any day whose pattern slot differs from
+// the day before (day 1 counts as new), and 1 on a day that repeats the previous slot: German 3·1·3·1·3 = 11.
+// Only sessions with a learning pattern are affected; reviews always needed 1.
+function mstPatternRepeatDay(pattern, dots, need) {
+  const d = dots | 0;
+  if (d <= 0 || !mstPatternClean(pattern)) return false;
+  return mstPatternMode(pattern, d, need) === mstPatternMode(pattern, d - 1, need);
+}
+// PATSIDE_END
 function mstPatternMode(pattern, dots, need) {
   const p = mstPatternClean(pattern);
   if (!p) return "rec";
