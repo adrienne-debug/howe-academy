@@ -20,7 +20,7 @@ function mk(o){ o=o||{}; const writes=[], toasts=[];
     db:{ref:p=>({update:v=>writes.push(["update",p,v]),set:v=>writes.push(["set",p,v])})}, _dryRun:()=>!!o.dry, HA_LS:{setItem:()=>{},getItem:()=>null}, gwShowToast:t=>toasts.push(t), confirm:()=>true, _mastRe:()=>{}, cap:s=>s[0].toUpperCase()+s.slice(1), mastItemIsQuiz:()=>false,
     writes, toasts};
   vm.createContext(ctx);
-  vm.runInContext(cut("const MST_SESSION_DEFAULTS =","\n};")+"\n};\n"+cut("const MST_PATTERN_MODES",";\n")+";\n"+cut("const MST_HOWTO_MAX",";\n")+";\n"+["mstPatternClean","mstHowtoClean","mstTierIdx","mstSessions","mstMixOwns","mstOwns","mstPile","mastIsDue","_mstMulberry32","_mstHashStr","_mstShuffle","mastRebalanceKid","mastRebalanceNow"].map(fn).join("\n"),ctx);
+  vm.runInContext(cut("const MST_SESSION_DEFAULTS =","\n};")+"\n};\n"+cut("const MST_PATTERN_MODES",";\n")+";\n"+cut("const MST_HOWTO_MAX",";\n")+";\n"+["mstPatternClean","mstHowtoClean","mstTierIdx","mstSessions","mstMixOwns","mstOwns","mstPile","mastIsDue","_mstMulberry32","_mstHashStr","_mstShuffle","evo2TodayKey","evo2LastTested","evo2ReviewedToday","evo2Plan","mastRebalanceKid","mastRebalanceNow"].map(fn).join("\n"),ctx);
   ctx.get=e=>vm.runInContext(e,ctx); return ctx; }
 
 console.log("1. The Mix finish line");
@@ -46,8 +46,8 @@ console.log("3. The screen");
 }
 console.log("4. Even out tells the truth (her 117 → 68 → 177)");
 { const c=mk(); c.get("masteryData.lincoln.forEach((x,i)=>{ if(x.tier==='weekly') x.next_due="+PN+"; })");   // everything bunched on today
-  const r=c.get("mastRebalanceKid('lincoln')"); ok("live: cards re-spread, ONE next_due-only update sent, sent:true", r.changed>0&&r.sent===true&&c.writes.length===1&&c.writes[0][1]==="mastery/lincoln"&&Object.keys(c.writes[0][2]).every(k=>/\/next_due$/.test(k)), [r,c.writes.length]);
-  c.get("masteryData.lincoln.forEach((x,i)=>{ if(x.tier==='weekly') x.next_due="+PN+"; })"); c.get("mastRebalanceNow()"); ok("toast: Evened out N ✓", /Evened out \d+ review cards? for Lincoln ✓/.test(c.toasts[c.toasts.length-1]), c.toasts);
+  const r=c.get("mastRebalanceKid('lincoln')"); ok("live: cards re-spread, ONE next_due-only update sent (+ EVENOUT2's evened_at), sent:true", r.changed>0&&r.sent===true&&c.writes.length===2&&c.writes[0][1]==="mastery/lincoln"&&Object.keys(c.writes[0][2]).every(k=>/\/next_due$/.test(k))&&c.writes[1][1]==="mastery/lincoln_settings/evened_at", [r,c.writes.length]);
+  c.get("masteryData.lincoln.forEach((x,i)=>{ if(x.tier==='weekly') x.next_due="+PN+"; })"); c.get("mastRebalanceNow()"); ok("toast: Evened out N ✓", /Evened out \d+ review cards? ✓/.test(c.toasts[c.toasts.length-1]), c.toasts);
   const d=mk({dry:true}); d.get("masteryData.lincoln.forEach((x,i)=>{ if(x.tier==='weekly') x.next_due="+PN+"; })"); const rd=d.get("mastRebalanceKid('lincoln')");
   ok("?dryrun=1: nothing sent, sent:false", rd.sent===false&&d.writes.length===0);
   d.get("masteryData.lincoln.forEach((x,i)=>{ if(x.tier==='weekly') x.next_due="+PN+"; })"); d.get("mastRebalanceNow()"); ok("…and the toast says so instead of ✓", /Dry run — \d+ cards would move, nothing saved/.test(d.toasts[d.toasts.length-1]), d.toasts);
