@@ -53005,7 +53005,7 @@ function _matchLures(it,pool,chipOf,n){
   return cands.slice(0,n);
 }
 function _matchItem(pid){
-  let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  let items=masteryData[(matchState&&matchState.kid)||masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);   // GAMEKID: the round's own kid
   return items.find(x=>x&&x.id===pid)||null;
 }
 // The gate for one card: {pid,kind,ask,speak,chips?,picked,openedAt,clearup?,qhtml?}. A deck whose
@@ -53014,7 +53014,7 @@ function _matchGateBuild(st,t,it){
   const a=_matchAsk(st,t,it);
   const g={pid:it.id,kind:st.then,ask:st.then==="pick"?a.pick:a.say,speak:a.speak,picked:null,openedAt:Date.now()};
   if(g.kind==="pick"){
-    let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+    let items=masteryData[st.kid||masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);   // GAMEKID
     const pool=items.filter(i=>i&&i.subject===st.deck&&(i.status==="active"||i.status==="introduction")&&_matchEligible(i));
     const lures=_matchLures(it,pool,a.chipOf,2);
     if(!lures.length){ g.kind="say"; g.ask=a.say; }
@@ -53046,13 +53046,13 @@ function mastMatchPick(ci){
     // Clear-up round: a second miss just shows the answer; nothing is scored twice.
     if(c.ok) matchDing(); else matchBonk();
     _mastRe();
-    setTimeout(()=>{ if(matchState===st) _matchClearNext(st); },c.ok?500:1400);
+    setTimeout(()=>{ if(matchState===st&&st.gate===g) _matchClearNext(st); },c.ok?500:1400);   // GAMEKID: never acts on a parked / settled gate
     return;
   }
   if(c.ok){ st.res[g.pid]="c"; matchDing(); }
   else { st.res[g.pid]="m"; st.missed.push(g.pid); matchBonk(); }
   _mastRe();
-  setTimeout(()=>_matchGateClose(st),c.ok?450:1400);
+  setTimeout(()=>{ if(st.gate===g) _matchGateClose(st); },c.ok?450:1400);   // GAMEKID: never acts on a parked / settled gate
 }
 // The gate is untimed: its seconds come off the clock like a pause, so Pick it measures the hunt,
 // not the thinking.
@@ -53180,7 +53180,7 @@ function mastMatchStart(deck){
   // ⏱ startTs stays null until the FIRST tap — studying the board is free; the clock
   // starts when the kid commits.
   // MATCH_THEN: the then-step is a Memory-flip thing (Face-up shows every answer already).
-  matchState={deck:deck,style:matchStyle,pairMode:matchPairMode,tiles:tiles,sel:-1,lock:false,startTs:null,endTs:null,pausedAt:null,pausedTotal:0,
+  matchState={kid:masteryKid,deck:deck,style:matchStyle,pairMode:matchPairMode,tiles:tiles,sel:-1,lock:false,startTs:null,endTs:null,pausedAt:null,pausedTotal:0,
     then:(matchStyle==="memory"?mastMatchThen():"none"),asked:{},res:{},missed:[],gate:null,phase:"play",cq:[]};
   if(window._matchTick) clearInterval(window._matchTick);
   window._matchTick=setInterval(()=>{
@@ -53210,7 +53210,7 @@ function mastMatchPause(){
 // names the thing, it doesn't explain it.
 function _matchSpeakTile(t){
   if(!t||!mastDrillSettings().match_speak) return;
-  let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  let items=masteryData[(matchState&&matchState.kid)||masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);   // GAMEKID
   const it=items.find(x=>x&&x.id===t.pid);
   if(it&&it.prompt) mastSpeak(String(it.prompt));
 }
@@ -53255,7 +53255,7 @@ function mastMatchTap(ix){
 function mastMatchFinish(){
   const st=matchState;
   const sec=Math.round(_matchElapsed(st)/100)/10;
-  const kid=masteryKid;
+  const kid=st.kid||masteryKid;   // GAMEKID: the round's own kid, never whoever is picked now
   const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
   if(!s.match_best) s.match_best={};
   // Separate bests per game shape — a memory time and a face-up time aren't comparable.
@@ -53375,10 +53375,11 @@ function mastMatchLogResult(){
   const st=matchState; if(!st||!st.endTs||st.logged) return;
   const entry={date:new Date().toISOString().slice(0,10),deck:st.deck,style:st.style,pair:st.pairMode,sec:st.sec,isPB:!!st.isPB,ts:Date.now(),
     then:st.then||"none",first:st.firstTry||0,of:st.ofN||0,missed:(st.missed||[]).slice()};   // MATCH_THEN: what was asked, what was missed
+  const kid=st.kid||masteryKid;   // GAMEKID: the round's own kid
   if(!masteryData.matchLog) masteryData.matchLog={};
-  if(!Array.isArray(masteryData.matchLog[masteryKid])) masteryData.matchLog[masteryKid]=Object.values(masteryData.matchLog[masteryKid]||{});
-  masteryData.matchLog[masteryKid].push(entry);
-  if(db) db.ref("mastery/matchLog/"+masteryKid).push(entry);   // append-only push — never a whole-node set
+  if(!Array.isArray(masteryData.matchLog[kid])) masteryData.matchLog[kid]=Object.values(masteryData.matchLog[kid]||{});
+  masteryData.matchLog[kid].push(entry);
+  if(db) db.ref("mastery/matchLog/"+kid).push(entry);   // append-only push — never a whole-node set
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   st.logged=true;
   _mastRe();
@@ -53431,7 +53432,7 @@ function whichTiles(it,pool,rnd){
 }
 function _whichSay(st){
   const t=st&&st.turns[st.i]; if(!t) return;
-  const it=_whichItems().find(x=>x&&x.id===t.pid);
+  const it=_whichItems(st.kid).find(x=>x&&x.id===t.pid);   // GAMEKID
   if(it&&it.prompt) try{ mastSpeak(_matchPlain(it.prompt)); }catch(e){}
 }
 function whichStart(deck){
@@ -53451,7 +53452,7 @@ function whichStart(deck){
   }
   const turns=[];
   picks.forEach(it=>{ const tiles=whichTiles(it,pool); if(tiles) turns.push({pid:it.id,back:false,tiles:tiles,wrong:{},done:false,first:false}); });
-  whichState={deck:deck,mix:mix,turns:turns,i:0,grow:null,lock:false,phase:turns.length?"play":"done",first:0,of:turns.length,isPB:false,prevBest:null,logged:false,returned:{}};
+  whichState={kid:masteryKid,deck:deck,mix:mix,turns:turns,i:0,grow:null,lock:false,phase:turns.length?"play":"done",first:0,of:turns.length,isPB:false,prevBest:null,logged:false,returned:{}};
   _mastRe();
   _whichSay(whichState);   // the first name, inside the tap
 }
@@ -53472,14 +53473,14 @@ function whichTap(ti){
   // A card that took more than one tap comes back once, at the end of the round.
   if(!t.first&&!t.back&&!st.returned[t.pid]){
     st.returned[t.pid]=1;
-    const it=_whichItems().find(x=>x&&x.id===t.pid);
-    const tiles=it?whichTiles(it,whichPool(_whichItems(),WHICH_MIX)):null;
+    const it=_whichItems(st.kid).find(x=>x&&x.id===t.pid);   // GAMEKID
+    const tiles=it?whichTiles(it,whichPool(_whichItems(st.kid),WHICH_MIX)):null;
     if(tiles) st.turns.push({pid:t.pid,back:true,tiles:tiles,wrong:{},done:false,first:false});
   }
   try{ matchDing(); }catch(e){}
   st.grow=ti; st.lock=true;
   _mastRe();
-  setTimeout(()=>{ if(whichState===st) whichNext(st); },900);
+  const _gkAt=st.i; setTimeout(()=>{ if(whichState===st&&st.lock&&st.i===_gkAt) whichNext(st); },900);   // GAMEKID: never advances a parked / settled turn
 }
 function whichNext(st){
   st=st||whichState; if(!st||st!==whichState) return;
@@ -53492,7 +53493,7 @@ function whichNext(st){
 function whichBestKey(deck){ return deck+" \u{00B7} which"; }
 function whichFinish(st){
   st.phase="done";
-  const kid=masteryKid;
+  const kid=st.kid||masteryKid;   // GAMEKID
   const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
   if(!s.match_best) s.match_best={};
   const key=whichBestKey(st.deck), prev=s.match_best[key];
@@ -53510,10 +53511,11 @@ function whichFinish(st){
 function whichLogResult(){
   const st=whichState; if(!st||st.phase!=="done"||st.logged) return;
   const entry={date:new Date().toISOString().slice(0,10),deck:st.deck,game:"which",first:st.first,of:st.of,ts:Date.now()};
+  const kid=st.kid||masteryKid;   // GAMEKID: the round's own kid
   if(!masteryData.matchLog) masteryData.matchLog={};
-  if(!Array.isArray(masteryData.matchLog[masteryKid])) masteryData.matchLog[masteryKid]=Object.values(masteryData.matchLog[masteryKid]||{});
-  masteryData.matchLog[masteryKid].push(entry);
-  if(db&&!_dryRun()) db.ref("mastery/matchLog/"+masteryKid).push(entry);   // append-only push — never a whole-node set
+  if(!Array.isArray(masteryData.matchLog[kid])) masteryData.matchLog[kid]=Object.values(masteryData.matchLog[kid]||{});
+  masteryData.matchLog[kid].push(entry);
+  if(db&&!_dryRun()) db.ref("mastery/matchLog/"+kid).push(entry);   // append-only push — never a whole-node set
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   st.logged=true;
   _mastRe();
@@ -53580,6 +53582,72 @@ function buildWhichHtml(color){
   return h;
 }
 // WHICHONE_END
+
+// GAMEKID_START — each kid keeps their own game round (her words 2026-10-23: "Match, Memory, Which one? and the
+// Sprint deck keep their round per kid, pause when I switch away, resume when I switch back, and save to the right
+// kid"). Live incident 2026-10-23: switching Ellis → Lucy left Ellis's Match tiles on Lucy's screen, Which one? showed
+// empty tiles (Ellis's card ids), and a round finished after the switch would have saved to Lucy (match_best /
+// matchLog read masteryKid at finish). Now the live game globals always belong to ONE kid (_gkKid). When the picked
+// kid changes, that kid's Match/Memory round (+ its Style / Pairs), Which one? round and Sprint ▸ drill deck choice are
+// parked; a running Match clock pauses exactly like ⏸ (time away is not play time); speech stops. The new kid's parked
+// round comes back (Match still paused until a tap), else their normal deck picker. A tap that was mid-step when the
+// switch happened (a picked chip, a right tile growing) settles on return — the old timers check their own gate/turn,
+// so they can never act on a parked or settled round. Each round also carries its own kid (st.kid) and every
+// finish / Save / item lookup uses it. In memory on this device only: a reload starts fresh. No new writes.
+let _gkKid=null;      // whose rounds the live globals (matchState, whichState, sprintDeck…) hold right now
+const _gkPark={};     // kid → {match,style,pair,which,sprintDeck,sprintDeckScope}
+function gameKidSwitch(to){
+  if(!to) return;
+  const from=_gkKid===null?masteryKid:_gkKid; _gkKid=to;   // first sight: the globals are the current kid's (callers run before masteryKid changes)
+  if(from===to) return;
+  const m=matchState;
+  if(m&&m.startTs&&!m.endTs&&!m.pausedAt&&!m.gate) m.pausedAt=Date.now();   // ⏸ (an open gate is untimed already)
+  if(window._matchTick){ clearInterval(window._matchTick); window._matchTick=null; }
+  try{ if(window.speechSynthesis) speechSynthesis.cancel(); }catch(e){}
+  _gkPark[from]={match:m,style:matchStyle,pair:matchPairMode,which:whichState,sprintDeck:sprintDeck,sprintDeckScope:sprintDeckScope};
+  const p=_gkPark[to]||null;
+  matchState=(p&&p.match)||null;
+  if(p){ matchStyle=p.style; matchPairMode=p.pair; }
+  whichState=(p&&p.which)||null;
+  const sd=_gkSprintFor(to,p);
+  sprintDeck=sd.deck; sprintDeckScope=sd.scope;
+  _gkResume();
+}
+// The kid's own Sprint ▸ drill deck, or All decks when there's none or it's no longer one of their decks.
+function _gkSprintFor(kid,p){
+  const all={deck:"__all__",scope:null};
+  if(!p) return all;
+  let items=masteryData[kid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  const has={}; items.forEach(i=>{ if(i&&i.subject) has[i.subject]=1; });
+  const sc=p.sprintDeckScope;
+  if(Array.isArray(sc)&&sc.length) return sc.some(s=>has[s])?{deck:p.sprintDeck,scope:sc.slice()}:all;
+  return (p.sprintDeck==="__all__"||has[p.sprintDeck])?{deck:p.sprintDeck,scope:null}:all;
+}
+// Settle anything that was mid-step at the switch (no render here — the caller renders).
+function _gkResume(){
+  const m=matchState;
+  if(m){
+    const g=m.gate;
+    if(g&&g.picked!=null){
+      if(g.clearup) m.gate=Object.assign({},g,{picked:null});   // clear-up isn't scored: that card gets one more look
+      else { if(m.startTs&&!m.endTs&&g.openedAt) m.pausedTotal+=Date.now()-g.openedAt; m.gate=null; }   // _matchGateClose, no render
+    }
+    if(m.startTs&&!m.endTs){   // the clock display ticks again (it holds still while paused)
+      if(window._matchTick) clearInterval(window._matchTick);
+      window._matchTick=setInterval(()=>{
+        if(!matchState||matchState.endTs||mastView!=="match"){ clearInterval(window._matchTick); window._matchTick=null; return; }
+        const el=document.getElementById("match-clock");
+        if(el) el.textContent=(_matchElapsed(matchState)/1000).toFixed(1)+"s";
+      },100);
+    }
+  }
+  const w=whichState;
+  if(w&&w.phase==="play"){
+    if(w.lock){ w.grow=null; w.lock=false; w.i++; if(w.i>=w.turns.length) whichFinish(w); }   // whichNext, no render
+    if(w.phase==="play"&&mastView==="which") _whichSay(w);   // back to the round: hear the card again
+  }
+}
+// GAMEKID_END
 
 function buildMatchHtml(color){
   let h='<div style="padding:4px 14px 20px">';
@@ -54105,7 +54173,7 @@ function mastShuffleDeck(list){
   return out;
 }
 
-function mastSetKid(k,noRender){ _mastResumed=""; masteryKid=k; mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastSessionKey=""; mastSlideIdx=0; mastScoreItemId=null; mastAdminLocal=null; const cats=Object.keys(MAST_BANK_MAP[k]||{}); mastAddCat=cats[0]||""; if(noRender) return; const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastSetKid(k,noRender){ _mastResumed=""; gameKidSwitch(k); masteryKid=k; mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastSessionKey=""; mastSlideIdx=0; mastScoreItemId=null; mastAdminLocal=null; const cats=Object.keys(MAST_BANK_MAP[k]||{}); mastAddCat=cats[0]||""; if(noRender) return; const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastSetView(v){ mastView=v; mastScoreItemId=null; mastManualScore=false; _mastRe(); }
 function mastOpenManualScore(){ mastManualScore=true; mastManualDate=new Date().toISOString().slice(0,10); mastManualC=0; mastManualM=0; mastManualT=0; mastManualS=0; _mastRe(); }
 function mastCloseManualScore(){ mastManualScore=false; _mastRe(); }
@@ -62483,6 +62551,7 @@ function _renderMasteryInner(el){
   if(!_haMastReady){ el.innerHTML='<div style="padding:40px;text-align:center;color:var(--muted)">Loading Mastery cards…</div>'; return; }   // NO_MIRROR
   const kids=[...ROSTER];
   if(!kids.includes(masteryKid)) masteryKid=kids[0];
+  gameKidSwitch(masteryKid);   // GAMEKID: any other path that changed the kid (schedule links, Units, Kids' Corner)
 
   let items=masteryData[masteryKid]||[];
   if(!Array.isArray(items)) items=Object.values(items);
@@ -67930,6 +67999,7 @@ function retrSchedGo(kid,view,sid){
 // top of today's queue (a due re-check, else the focus stage), falling back to the primary
 // track's focus. So one tap from the schedule opens the exact sheet, not a blank picker.
 function retrOpenSprint(kid){
+  gameKidSwitch(kid);   // GAMEKID: park the last kid's games BEFORE this kid's plan sets the Sprint deck
   masteryKid=kid; mastView="sprint";
   mastLogMode=false; mastLogScores={}; mastLogDeck=null; mastSessionKey=""; mastSlideIdx=0; mastScoreItemId=null; mastAdminLocal=null;
   try{
