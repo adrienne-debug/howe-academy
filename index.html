@@ -17255,6 +17255,7 @@ function mdCardKidsToday(today,isSchoolDay,bank,dadCtl){   // bank=true: Mom's D
   h+='<div style="padding:4px 14px 8px">';
   // 🧒 KIDBAR: phone — name + notes on the first line, every fraction + light on the line under it.
   if(bank) h+='<style>@media (max-width:600px){.kt-sp{display:none}.kt-pills{flex:1 1 100%}}</style>';
+  const _ktSig=(typeof ktPaceSig==="function")?ktPaceSig():null;   // KIDSTODAYCACHE: one fingerprint for the whole card
   SL_KIDS.forEach(kid=>{
     const col=SL_KCOL[kid]||"#666";
     let mT=0,mD=0,mDone=false,af={due:0,done:0},ch={due:0,done:0},ev={due:0,done:0},pts=0;   // KIDROWS2: no school-card count (the 📅 pill is gone)
@@ -17283,7 +17284,7 @@ function mdCardKidsToday(today,isSchoolDay,bank,dadCtl){   // bank=true: Mom's D
     }catch(e){}
     let chip='';
     try{
-      const ps=paceKidStatus(kid);
+      const ps=(typeof paceKidStatusCached==="function")?paceKidStatusCached(kid,_ktSig):paceKidStatus(kid);   // KIDSTODAYCACHE: same answer, counted again only when the data changes
       if(ps.subjects){
         if(ps.behindN>0) chip='<span style="font-size:10px;font-weight:800;padding:1px 8px;border-radius:10px;background:#ef444418;color:#ef4444">'+ps.behindN+' behind'+(ps.behindSubs.length?': '+esc(ps.behindSubs.slice(0,2).join(", ")):'')+'</span>';
         else if(ps.aheadN>0) chip='<span style="font-size:10px;font-weight:800;padding:1px 8px;border-radius:10px;background:#16a34a18;color:#16a34a">On track · '+ps.aheadN+' ahead</span>';
@@ -52104,6 +52105,38 @@ function paceKidStatus(k){
   });
   return {subjects:keys.length,aheadN,onN,behindN,behindSubs};
 }
+// KIDSTODAYCACHE_START — Home Base speed, part 2 (her report 2026-10-24: "the app is extremely slow this morning … clicking back
+// to the home base tab from other tabs takes more time than all the others"; her yes 2026-10-24: "lets do 4 now"). After LRCACHE
+// the biggest piece of a Home Base redraw was the 🧒 Kids today card: paceKidStatus re-counted every finished lesson of every
+// subject of every kid through the whole archive (≈136,000 chainDone calls, ~190 ms of a ~210 ms redraw on the Mac) on EVERY
+// draw. The pace answer per kid is now kept with a fingerprint of everything it reads — today, the active week (LRCACHE's
+// lrLaySig: curriculum data incl. check-offs/plans, this week's cards, the calendar + co-ops) plus pace settings, the expected-pace
+// table, this week's checks and history, schedule overrides, WK and the whole archive — and the kid's current plan week and
+// school week; it is counted again the moment any of it changes (a check-off included), and at most every 5 minutes regardless.
+// Same function, same answer, same display: only how often it runs changed. Pure: nothing is written. `var`, not let/const —
+// an early boot paint can reach the card before this line runs.
+var KT_CACHE_MAX_MS=5*60*1000;
+var _ktPaceCache={};
+function ktPaceSig(){
+  try{
+    const base=(typeof lrLaySig==="function")?lrLaySig():null; if(!base) return null;
+    const parts=[(typeof paceData!=="undefined")?paceData:null,(typeof currPaceCum!=="undefined")?currPaceCum:null,(typeof checked!=="undefined")?checked:null,
+      (typeof histState!=="undefined")?histState:null,(typeof scheduleOverrides!=="undefined")?scheduleOverrides:null,(typeof WK!=="undefined")?WK:null];
+    return [base,_lrHash(JSON.stringify(parts)),_lrHash(JSON.stringify((typeof archive!=="undefined")?archive:null))].join("|");
+  }catch(e){ return null; }   // can't fingerprint → never reuse
+}
+function paceKidStatusCached(k,sig){
+  if(sig===undefined) sig=ktPaceSig();
+  let key=null;
+  try{ const plan=paceKidPlan(k); if(sig) key=sig+"|"+currWeekNum()+"|"+(plan?planWeekNum(plan.start||"2026-04-20"):1); }catch(e){ key=null; }
+  const hit=_ktPaceCache[k], now=Date.now();
+  const copy=o=>({...o,behindSubs:(o.behindSubs||[]).slice()});
+  if(key&&hit&&hit.key===key&&(now-hit.at)<KT_CACHE_MAX_MS) return copy(hit.out);
+  const out=paceKidStatus(k);
+  if(key) _ktPaceCache[k]={key:key,at:now,out:copy(out)};
+  return out;
+}
+// KIDSTODAYCACHE_END
 // This week's task completion for one kid (same countable rule as the weekly
 // bar). The "core week" floor is the reassurance bar — distinct from ideal
 // curriculum pace — so a kid behind the stretch still reads as success once
