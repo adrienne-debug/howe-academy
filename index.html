@@ -4853,6 +4853,7 @@ function renderAll(){
   // Same for an open 🏪/🙌 pop-up: buying, grabbing and approving all end in renderAll,
   // so the overlay has to rebuild or it shows the balance from before the tap.
   try{ if(popView&&popKid&&document.getElementById("kid-pop")) _popPaint(); }catch(e){}
+  try{ if(typeof frPanelPaint==="function") frPanelPaint(); }catch(e){}   // 📎 FAMRES: a family item's resources panel
   try{ hbAlertsSoon(); }catch(e){}   // 🔴 HBALERT: the Mom's Day tab's red number + the person-waiting ding
   } finally { try{ if(typeof cdRenderEnd==="function") cdRenderEnd(_cdR0); }catch(e){} }   // ⏱ CDBOOTS
 }
@@ -10990,7 +10991,7 @@ function bbMomCardHtml(k){
 //   (spentFrom). The overrun line keys off the Start tap only — a fallback clock never fires it. Nothing new is written.
 const MM_FALLBACK_CAP=15;   // minutes — the most a fallback clock (last check-off / day start) can credit
 const MM_FROM_NOTE={check:"no Start tap — counted from the last check-off",day:"no Start tap — counted from the day start"};
-const MM_FROM_KID={check:"since your last check-off",day:"since your day started"};
+const MM_FROM_KID={check:"since your last check-off",day:"since your day started",time:"since family time's start"};   // time: FAMRES
 let mmSpentSrc={};   // {cardId: "start"|"check"|"day"} — which clock mmOnDone just used, read by the history hook (mmSpentFrom)
 const MM_PRACTICE_RE=/(practice|piano|instrument|\bread(ing)?\b)/i;
 let started={}, minAlerts={};   // {cardId: ms} · {key: record} — the active week's, mirrored in HA_LS like checked/claimed
@@ -11004,7 +11005,8 @@ function mmTargetOf(s,key){
   const m=parseInt(s.minutes,10); return (isNaN(m)||m<=0)?0:m;
 }
 function mmShowOf(s){ return !s||s.minShow!==false; }
-function mmTarget(t){ return (!t||t.famBlock||String(t.id||"").endsWith("_c"))?0:mmTargetOf(mmSubjOf(t),t.subjectKey); }
+function mmTarget(t){ if(t&&t.famBlock) return (typeof frTarget==="function")?frTarget(t):0;   // FAMRES: a family item's own minimum (absent = off)
+  return (!t||String(t.id||"").endsWith("_c"))?0:mmTargetOf(mmSubjOf(t),t.subjectKey); }
 function mmRules(){
   const r=(((typeof rulesData!=="undefined"&&rulesData)||{}).minMinutes)||{};
   const g=parseInt(r.grace,10);
@@ -11038,6 +11040,7 @@ function mmDayStartMs(kid,nowMs){
 // check-off today, else their day start, each credited at most MM_FALLBACK_CAP minutes back from nowMs. null = no clock.
 function mmClock(id,nowMs){
   nowMs=nowMs||Date.now();
+  { const _ft=mmTaskOf(id); if(_ft&&_ft.famBlock&&typeof frClock==="function") return frClock(_ft,nowMs); }   // FAMRES: the family group's clock
   const s=mmStartMs(id); if(s!=null) return {ms:s,from:"start"};
   const t=mmTaskOf(id); if(!t||!t.who) return null;
   const cap=nowMs-MM_FALLBACK_CAP*60000;
@@ -11068,6 +11071,7 @@ function mmMomTap(){ return (typeof momHereCards==="function"&&momHereCards())||
 function mmTapGate(t){
   if(!t||!t.id) return false;
   if((typeof checked!=="undefined"&&checked&&checked[t.id])||(typeof claimed!=="undefined"&&claimed&&claimed[t.id])) return false;
+  if(t.famBlock) return (typeof frTapGate==="function")?frTapGate(t):false;   // FAMRES: Mom's check of a family card follows the rule
   if(mmMomTap()) return false;
   const target=mmTarget(t); if(!target) return false;
   const togo=mmToGo(t); if(!togo) return false;
@@ -11089,7 +11093,7 @@ function mmOnDone(id,doneTs){
   mmSpentSrc[id]=c?c.from:"";
   const target=mmTarget(t);
   const today=!(typeof effectiveDay==="function"&&typeof _todayDay==="string")||effectiveDay(t)===_todayDay;
-  if(target&&today&&!mmMomTap()&&mmRules().early==="tell"&&el<Math.max(0,target-mmRules().grace))   // only the rule that asked to be told
+  if(target&&today&&!t.famBlock&&!mmMomTap()&&mmRules().early==="tell"&&el<Math.max(0,target-mmRules().grace))   // only the rule that asked to be told
     mmAlertSend("early",t,mmKidName(t.who)+" finished "+mmSubjName(t)+" at "+Math.floor(el)+" of "+target+" minutes"+(!c?" (no Start tap)":(MM_FROM_NOTE[c.from]?" ("+MM_FROM_NOTE[c.from]+")":"")));
   return spent;
 }
@@ -11151,8 +11155,8 @@ function mmTick(nowMs){
       const target=mmTarget(t); if(!target) return;
       const c=mmClock(t.id,nowMs); if(!c) return;
       const el=Math.max(0,(nowMs-c.ms)/60000);
-      if(el<target+1&&(c.from==="start"||el<MM_FALLBACK_CAP)) sig+="|"+t.id+"@"+Math.floor(nowMs/60000);   // a capped fallback clock stops moving
-      if(r.over&&c.from==="start"&&el>=target*2) mmAlertSend("over",t,mmKidName(t.who)+"’s "+mmSubjName(t)+" has been open "+Math.floor(el)+" minutes ("+target+" planned)");   // ▶ Start only — a fallback clock never overruns
+      if(el<target+1&&(c.from==="start"||c.from==="time"||el<MM_FALLBACK_CAP)) sig+="|"+t.id+"@"+Math.floor(nowMs/60000);   // a capped fallback clock stops moving
+      if(r.over&&c.from==="start"&&!t.famBlock&&el>=target*2) mmAlertSend("over",t,mmKidName(t.who)+"’s "+mmSubjName(t)+" has been open "+Math.floor(el)+" minutes ("+target+" planned)");   // ▶ Start only — a fallback clock never overruns
     });
   }catch(e){}
   return sig;
@@ -11164,6 +11168,7 @@ function mmTick(nowMs){
 function mmCardRow(t,done,claimedHere,readOnly){
   if(!t||!t.id||done||claimedHere||readOnly) return "";
   const target=mmTarget(t); if(!target) return "";
+  if(t.famBlock&&!(typeof frLeadsHere==="function"&&frLeadsHere(t))) return "";   // FAMRES: a family card's countdown is Mom's
   if(typeof effectiveDay==="function"&&typeof _todayDay==="string"&&effectiveDay(t)!==_todayDay) return "";
   const c=mmClock(t.id);
   const startBtn=(c&&c.from==="start")?"":'<div style="margin-top:5px"><span onclick="event.stopPropagation();mmStart(\''+esc(t.id)+'\')" title="Start the clock — this card can be checked after '+target+' min" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:800;color:#fff;cursor:pointer;background:#0f766e;border-radius:9px;padding:4px 11px">▶ Start <span style="font-weight:600;opacity:.85">'+target+' min</span></span></div>';
@@ -33496,6 +33501,7 @@ function famBlockEditorHTML(id,b,collapsible){
       (ed?'<input type="number" min="0" max="500" step="5" value="'+(ipts||'')+'" placeholder="none" onchange="famItemSet(\''+J(id)+'\','+i+',\'pts\',this.value)" style="width:62px;padding:3px 6px;border:1.5px solid var(--border);border-radius:7px;font-size:12px">':'<b style="font-size:12px">'+(ipts||'none')+'</b>')+
       (ipts?'<span style="font-size:10px;color:var(--muted);margin:0 2px 0 6px">decided by</span>'+_famChip(!ieach,'\u{1F469} Mom',ed?"famItemSet('"+J(id)+"',"+i+",'rate','mom')":"",true)+(iks.length>1?_famChip(ieach,'Each other',ed?"famItemSet('"+J(id)+"',"+i+",'rate','each')":"",true):''):'')+'</div>';
     try{ if(typeof famDrillEditorHTML==="function") h+=famDrillEditorHTML(id,it,i,ed,it.from?Object.keys(it.from):iks); }catch(e){}   // 🧠
+    try{ if(typeof frItemEditorHTML==="function") h+=frItemEditorHTML(id,it,i,ed); }catch(e){}   // 📎 ⏱ FAMRES
     h+='<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding-top:5px"><span style="font-size:10px;color:var(--muted);margin-right:2px">'+(idays.length?'Only on':'Every family-time day · or only on')+'</span>'+
       FAM_DAYS.filter(function(d){ return !days.length||days.indexOf(d)>=0; }).map(function(d){ return _famChip(idays.indexOf(d)>=0,d,ed?"famItemDay('"+J(id)+"',"+i+",'"+d+"')":"",true); }).join('')+'</div>';
     h+='</div>';
@@ -34902,6 +34908,185 @@ function stCalRowsHTML(iso,L,who,kidMode){
   return out;
 }
 // SETTIME_TODAY_END
+// FAMRES_START ── 📎 ⏱ RESOURCES + A MINIMUM TIME ON FAMILY TIME ITEMS (#15, her design notes 2026-10-22) ──────────
+// "Family Time items get the same resources panel once the Family Time pull requests have merged. Their supplies join the
+// Sunday list under a Family heading." · "A Family Time item can carry the same minimum once the Family Time pull requests
+// have merged. Mom checks those, so the countdown is hers, not the kids'."
+// Resources: the LESSONRES record, unchanged, with "_family" in the kid slot —
+//   curriculum/resources/_family/<sk>/<lessonKey|_subject>/<part>,  sk = fam_<blockId>_<itemKey> (the item's own stable key,
+//   so a re-order or a rename keeps its resources). An item with 📚 lessons also has per-lesson records: lessonKey = "wk<n>"
+//   for a week-by-week track (one per book week), "l_<slug of the lesson title>" for an in-order track (one per lesson, all
+//   its sittings). lrFor / lrWrite / lrPanelHTML do all the work — Mom-only, one targeted part per write, ?dryrun=1 inert.
+//   Edited from the item's row in the Family Time editor (📎 Resources · 📎 This lesson); the panel draws in its own layer
+//   (#fr-panel-ov) above the editor sheet.
+//   The family card: its links (one button, or "Links (n) ▾" for several) and the kids' "🎒 bring:" line; notes never show.
+//   The Sunday list: a "🏡 Family" group — every family item that runs this week and next (the Family Grid's own dates and
+//   who-is-there), supplies / books / orders, the same ticks (<week>/supplies/lr__family_…) and lead-time dates.
+// Timer: items[i].minMin = minutes before Mom can check it (absent / 0 = off — the default, never written as a default),
+//   saved as ONE leaf: config/rules/familyBlocks/<id>/items/<i>/minMin through famWrite. mmTarget returns it for the family
+//   card. The countdown shows only where Mom (or the helper who leads it) sees the card; her ▶ Start on any copy is the
+//   group's clock, and without one the clock is the card's laid time today ("since family time's start"). Her check follows
+//   the family rule for early checks: "Not yet" waits with the minutes to go; "Let it through" lands — and never sends a
+//   line, since she is the one checking (no overrun line either). A kid's tap still says "Mom checks this off".
+// Nothing in the scheduler, generator, lay or Family Time placement changes; an item with nothing set looks exactly as before.
+const FR_KID="_family";
+function frKeySafe(s){ return String(s==null?"":s).replace(/[.#$\/\[\]\s]+/g,"_"); }
+function frSk(blockId,itemKey){ return "fam_"+frKeySafe(blockId)+"_"+frKeySafe(itemKey); }
+function frIsFamCard(t){ return !!(t&&t.famBlock); }
+function frSkFor(t){ return (frIsFamCard(t)&&t.famItem!=null)?frSk(t.famBlock,t.famItem):""; }
+function frJ(s){ return String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+// sk → {id, b, it} (the panel title, the Sunday list's subject line)
+function frFind(sk){
+  const defs=famDefs(); let out=null;
+  Object.keys(defs).some(function(id){ return famList((defs[id]||{}).items).some(function(it){ if(it&&it.key!=null&&frSk(id,it.key)===sk){ out={id:id,b:defs[id],it:it}; return true; } return false; }); });
+  return out;
+}
+function frSubjName(sk){ const f=frFind(sk); return f?String(f.it.name||f.b.name||"Family time"):String(sk||""); }
+// The lesson record keys a lesson label points at ("A + B" make-up days point at both).
+function frLessonKeys(it,label){
+  const tr=(typeof famTrack==="function")?famTrack(it):null; const out=[]; if(!tr||!label) return out;
+  const add=function(k){ if(k&&out.indexOf(k)<0) out.push(k); };
+  if(tr.mode==="week") String(label).replace(/\bWk (\d+)/g,function(m,n){ add("wk"+n); return m; });
+  else String(label).split(" + ").forEach(function(p){ p=p.replace(/\s*\(missed [^)]*\)\s*$/,"").replace(/ \u00B7 day \d+ of \d+$/,"").trim(); if(p&&p!=="\u2713 all done") add("l_"+lrSlug(p)); });
+  return out;
+}
+// The record for a set of lesson keys: one key = lrFor as is; none = the item default; two = each part's lists together.
+function frRecFor(sk,keys){
+  if(!keys||!keys.length) return lrFor(FR_KID,sk,"__none__");
+  if(keys.length===1) return lrFor(FR_KID,sk,keys[0]);
+  const R=keys.map(function(k){ return lrFor(FR_KID,sk,k); }), out={_from:{}};
+  LR_PARTS.forEach(function(p){
+    if(p==="notes"){ out.notes=R.map(function(r){ return r.notes; }).filter(Boolean).filter(function(v,i,a){ return a.indexOf(v)===i; }).join("\n"); out._from.notes=out.notes?"lesson":"none"; return; }
+    const seen={}; out[p]=[]; R.forEach(function(r){ (r[p]||[]).forEach(function(x){ const k=JSON.stringify(x); if(!seen[k]){ seen[k]=1; out[p].push(x); } }); });
+    out._from[p]=out[p].length?"lesson":"none";
+  });
+  return out;
+}
+function frCardRec(t){
+  const sk=frSkFor(t); if(!sk) return null;
+  const it=(typeof famItemOf==="function")?famItemOf(t):null;
+  let lbl=""; try{ lbl=(typeof famLessonFor==="function")?famLessonFor(t):""; }catch(e){ lbl=""; }
+  return frRecFor(sk,frLessonKeys(it,lbl));
+}
+// lrCardParts' hook for a family card → {menu, kids}. A family card has no LESSONLINK button, so any link is drawn here.
+function frCardParts(t,readOnly,done){
+  const out={menu:"",kids:""}; if(!frIsFamCard(t)||done) return out;
+  const r=frCardRec(t); if(!r) return out;
+  if(!readOnly){
+    const links=lrLinksFor(t,null,"",r);
+    if(links.length>1) out.menu=lrLinkMenuHTML(links,t.id);
+    else if(links.length===1) out.menu='<div style="margin-top:5px">'+lrLinkA(links[0])+'</div>';
+  }
+  out.kids=lrKidLineHTML(r);
+  return out;
+}
+// ── the Sunday list's 🏡 Family group (lrBuildList's hook) → {kid:"_family", kinds:[…]} or null ──
+function frBuildFamily(w0,w1,today){
+  const defs=famDefs(), byId={}, order=[];
+  const dates=((typeof famGridDates==="function")?famGridDates():[]).map(function(r){ return r.date; });
+  const add=function(kind,sk,L,w,name,detail,byISO,url){
+    name=lrStr(name,120); if(!name) return; const id=lrItemId(FR_KID,sk,kind,name);
+    let it=byId[id]; if(!it){ it=byId[id]={id:id,kid:FR_KID,sk:sk,kind:kind,name:name,detail:detail||"",url:url||"",byISO:byISO||"",weeks:[],lessons:[]}; order.push(id); }
+    if(it.weeks.indexOf(w)<0) it.weeks.push(w);
+    if(byISO&&(!it.byISO||byISO<it.byISO)) it.byISO=byISO;
+    if(!it.url&&url) it.url=url; if(!it.detail&&detail) it.detail=detail;
+    if(!it.lessons.some(function(x){ return x.text===L.text; })) it.lessons.push({sk:sk,text:L.text,date:L.date,w:w});
+  };
+  Object.keys(defs).forEach(function(id){
+    const b=defs[id]; if(!b||b.off) return;
+    famList(b.items).forEach(function(it){
+      if(!it||it.key==null) return; const sk=frSk(id,it.key);
+      let map=null; try{ if(typeof famTrack==="function"&&famTrack(it)&&typeof famLessonMap==="function") map=famLessonMap(b,id,it); }catch(e){ map=null; }
+      [[w0,0],[w1,1]].forEach(function(pair){
+        dates.forEach(function(d){
+          if(d<pair[0].from||d>pair[0].to) return;
+          const c=famCellState(b,it,d); if(!c||!c.runs||!c.kids||!c.kids.length) return;
+          const lbl=map?String((map.byDate||{})[d]||""):"";
+          const r=frRecFor(sk,frLessonKeys(it,lbl)), L={text:lbl||String(it.name||"Family time"),date:d};
+          r.supplies.forEach(function(s){ add("supplies",sk,L,pair[1],s.name,s.qty||"",null,null); });
+          r.books.forEach(function(x){ add("books",sk,L,pair[1],x.title,x.by?"by "+x.by:"",x.checkoutBy||null,null); });
+          r.orders.forEach(function(o){ add("orders",sk,L,pair[1],o.name,"",o.orderBy||null,o.url||null); });
+        });
+      });
+    });
+  });
+  if(!order.length) return null;
+  const kinds=["supplies","books","orders"].map(function(kind){ return {kind:kind,label:LR_KIND_LABEL[kind],items:order.map(function(id){ return byId[id]; }).filter(function(it){ return it.kind===kind; })}; }).filter(function(k){ return k.items.length; });
+  kinds.forEach(function(k){ k.items.forEach(function(it){ it.by=lrByLabel(it.byISO,today); }); });
+  return {kid:FR_KID,kinds:kinds};
+}
+// ── the item's row in the Family Time editor: 📎 Resources + ⏱ minimum ──
+function frMinOf(it){ if(!it||it.minMin==null||it.minMin==="") return 0; const n=parseInt(it.minMin,10); return (isNaN(n)||n<=0)?0:n; }
+function frCount(r){ return ["links","supplies","books","orders"].reduce(function(a,p){ return a+((r&&r[p])||[]).length; },0)+(r&&r.notes?1:0); }
+function frNowLesson(id,it){
+  try{ if(!famTrack(it)) return null; const m=famLessonMap(famDefs()[id],id,it); const lbl=String((m&&m.now)||""); const k=frLessonKeys(it,lbl)[0]; return k?{key:k,text:lbl}:null; }catch(e){ return null; }
+}
+function frItemEditorHTML(id,it,i,ed){
+  if(!it||it.key==null) return "";
+  const sk=frSk(id,it.key), n=frCount(lrFor(FR_KID,sk,LR_SUBJECT)), mm=frMinOf(it), now=frNowLesson(id,it);
+  const btn='padding:3px 9px;border-radius:9px;border:1.5px solid #a5f3fc;background:#ecfeff;color:#0e7490;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  let h='<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding-top:5px"><span style="font-size:10px;color:var(--muted);margin-right:2px">\u{1F4CE} Resources</span>';
+  if(ed){
+    h+='<button onclick="frOpenPanel(\''+frJ(id)+'\',\''+frJ(it.key)+'\',false)" title="Links, supplies, books, orders and notes for '+lrEsc(it.name||"this subject")+'" style="'+btn+'">'+(n?n+' set \u2014 edit':'Add links, supplies\u2026')+'</button>';
+    if(now) h+='<button onclick="frOpenPanel(\''+frJ(id)+'\',\''+frJ(it.key)+'\',true)" title="Just this lesson \u2014 '+lrEsc(now.text)+'" style="'+btn+'">This lesson: '+lrEsc(now.text.length>34?now.text.slice(0,33)+"\u2026":now.text)+'</button>';
+  } else h+='<b style="font-size:12px">'+(n?n+' set':'none')+'</b>';
+  h+='</div>';
+  h+='<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding-top:5px"><span style="font-size:10px;color:var(--muted);margin-right:2px">\u23F1 Minimum before Mom checks it</span>'+
+    (ed?'<input type="number" min="0" max="240" step="5" value="'+(mm||'')+'" placeholder="off" onchange="frSetMin(\''+frJ(id)+'\',\''+frJ(it.key)+'\',this.value)" style="width:62px;padding:3px 6px;border:1.5px solid var(--border);border-radius:7px;font-size:12px"><span style="font-size:10px;color:var(--muted)">min \u2014 blank = off</span>':'<b style="font-size:12px">'+(mm?mm+' min':'off')+'</b>')+'</div>';
+  return h;
+}
+function frOpenPanel(id,key,lesson){
+  if(!lrMom()) return; const b=famDefs()[id]; if(!b) return;
+  const it=famList(b.items).find(function(x){ return x&&x.key===key; }); if(!it) return;
+  const now=lesson?frNowLesson(id,it):null;
+  lrPanel={kid:FR_KID,sk:frSk(id,key),key:now?now.key:LR_SUBJECT,text:now?now.text:"",edit:null}; lrCapState=null;
+  if(typeof renderAll==="function") renderAll();
+  frPanelPaint();
+}
+// renderAll's hook: the family resources panel in its own layer (the Grid sheet's own lrPanelHTML(gvKid) never matches "_family").
+let _frPanelLast="";
+function frPanelPaint(){
+  if(typeof document==="undefined"||!document||!document.getElementById) return;
+  const html=(lrPanel&&lrPanel.kid===FR_KID&&lrMom())?lrPanelHTML(FR_KID):"";
+  let o=document.getElementById("fr-panel-ov");
+  if(!html){ if(o&&o.remove) o.remove(); _frPanelLast=""; return; }
+  if(!o){ o=document.createElement("div"); o.id="fr-panel-ov"; o.style.cssText="position:fixed;left:0;top:0;width:0;height:0;z-index:8600"; document.body.appendChild(o); _frPanelLast=""; }
+  if(html===_frPanelLast) return;   // a sync tick with nothing new never wipes what she is typing
+  _frPanelLast=html; o.innerHTML=html;
+}
+// ONE leaf: config/rules/familyBlocks/<id>/items/<i>/minMin — <i> is the item's own index in the stored list.
+function frSetMin(id,key,val){
+  if(!lrMom()) return false; const b=famDefs()[id]; if(!b||!b.items) return false;
+  const raw=b.items, ks=Array.isArray(raw)?raw.map(function(x,k){ return k; }):Object.keys(raw);
+  const k=ks.find(function(k){ return raw[k]&&raw[k].key===key; }); if(k==null) return false;
+  const n=parseInt(val,10);
+  return famWrite(id+"/items/"+k+"/minMin",(isNaN(n)||n<=0)?null:Math.min(240,n));
+}
+// ── the timer (MINMINUTES' hooks) ──
+function frTarget(t){ return frMinOf((typeof famItemOf==="function")?famItemOf(t):null); }
+function frLeadsHere(t){ return (typeof momHereCards==="function"&&momHereCards())||!!(typeof dadTapCtx!=="undefined"&&dadTapCtx)||!!(typeof famPresLeads==="function"&&famPresLeads(t)); }
+// The group's clock: the earliest ▶ Start on any copy, else the card's laid time today once it has come.
+function frClock(t,nowMs){
+  nowMs=nowMs||Date.now();
+  const g=(typeof famGroup==="function")?famGroup(t):[t]; let s=null;
+  g.forEach(function(x){ const v=mmStartMs(x.id); if(v!=null&&(s==null||v<s)) s=v; });
+  if(s!=null) return {ms:s,from:"start"};
+  const m=(typeof toMin==="function")?toMin(t.time):NaN; if(m==null||isNaN(m)) return null;
+  const d=new Date(nowMs); d.setHours(Math.floor(m/60),m%60,0,0);
+  return d.getTime()<=nowMs?{ms:d.getTime(),from:"time"}:null;
+}
+// mmTapGate's hook for a family card. A kid's tap goes on to "Mom checks this off for everyone"; Mom's early check follows
+// the family rule — "Not yet" stops it here, "Let it through" lets it land with no line (she is the one checking).
+function frTapGate(t){
+  if(!frLeadsHere(t)) return false;
+  const target=mmTarget(t); if(!target) return false;
+  if(typeof effectiveDay==="function"&&typeof _todayDay==="string"&&effectiveDay(t)!==_todayDay) return false;   // a late check of another day never waits
+  const togo=mmToGo(t); if(!togo) return false;
+  if(mmRules().early==="tell") return false;
+  if(typeof gwShowToast==="function") gwShowToast("\u23F1 Not yet \u2014 "+togo+" min to go");
+  return true;
+}
+// FAMRES_END
 
 
 // ── WHEN THE DOOR IS OPEN ──
@@ -35102,13 +35287,14 @@ const LR_DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 function lrISO(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
 function lrToday(){ return (typeof cbTodayISO==="function")?cbTodayISO():lrISO(new Date()); }
 function lrEsc(s){ return (typeof esc==="function")?esc(s):String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
-function lrCap(s){ return (typeof cap==="function")?cap(s):String(s||""); }
+function lrCap(s){ if(s==="_family") return "\u{1F3E1} Family"; return (typeof cap==="function")?cap(s):String(s||""); }   // FAMRES: the family record's name
 function lrMom(){ return (typeof momHere==="function")?momHere():false; }
 function lrDry(){ return (typeof _dryRun==="function")?_dryRun():false; }
 function lrSafeUrl(u){ if(typeof llSafeUrl==="function") return llSafeUrl(u); const s=String(u||"").trim(); return /^https:\/\//i.test(s)?s:""; }
 function lrHost(u){ try{ return new URL(u).hostname.replace(/^www\./,""); }catch(e){ return "link"; } }
 function lrFilled(v){ return (typeof gvFilled==="function")?gvFilled(v):!!(v&&v!=="—"&&String(v).trim()); }
-function lrSubjName(kid,sk){ const s=((((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[kid]||{})[sk])||{}; return String(s.display||s.name||sk||""); }
+function lrSubjName(kid,sk){ if(kid==="_family"&&typeof frSubjName==="function") return frSubjName(sk);   // FAMRES: a family item's name
+  const s=((((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[kid]||{})[sk])||{}; return String(s.display||s.name||sk||""); }
 function lrSubjects(kid){ return (((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[kid])||{}; }
 // ── the record ──
 function lrRoot(){ return ((typeof currData!=="undefined"&&currData&&currData.resources)||{}); }
@@ -35189,6 +35375,7 @@ function lrKidLineHTML(rec){
 // taskCard's hook → {menu, kids}. menu is non-empty only when it REPLACES the LESSONLINK button (2+ links, or the
 // only link is from the record); the caller blanks its own button then. Done cards carry nothing.
 function lrCardParts(t,subj,llUrl,readOnly,done){
+  if(typeof frIsFamCard==="function"&&frIsFamCard(t)) return frCardParts(t,readOnly,done);   // FAMRES: a family card's links + 🎒 bring:
   const out={menu:"",kids:""};
   if(!t||!t.who||!t.subjectKey||done) return out;
   const r=lrForTask(t);
@@ -35281,6 +35468,7 @@ function lrBuildList(opts){
     kinds.forEach(k=>k.items.forEach(it=>{ it.by=lrByLabel(it.byISO,today); all.push(it); }));
     kids.push({kid:kid,kinds:kinds});
   });
+  try{ const _fr=(typeof frBuildFamily==="function")?frBuildFamily(w0,w1,today):null; if(_fr){ _fr.kinds.forEach(k=>k.items.forEach(it=>all.push(it))); kids.push(_fr); } }catch(e){}   // FAMRES: the 🏡 Family group
   const staples=lrStaplesNeeded(opts.staples);
   return {w0:w0,w1:w1,today:today,kids:kids,items:all,staples:staples,n:all.length+staples.length};
 }
