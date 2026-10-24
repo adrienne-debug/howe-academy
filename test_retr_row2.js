@@ -114,7 +114,8 @@ console.log("generator:");
   ok("slots don't overlap each other", !ov(js[0], js[1]), js.map(s => s.time));
   const closing = tasks.find(t => t.id === "a2");
   ok("closing notebook still last", js.every(s => toMin(closing.time) >= toMin(s.time) + s.dur), closing.time);
-  ok("both slots are Mom-required spin tasks", js.every(s => s.mom === "required" && s.subjectKey === "retrieval"));
+  // PRACTICE_SOLO (her F4 yes 2026-10-24): the drill stays Mom-required; 🎯 Match & Play is the kid's own
+  ok("drill is Mom-required, match is not", js.every(s => s.subjectKey === "retrieval" && s.mom === (s.retrieval === "match" ? "none" : "required")), js.map(s => s.retrieval + ":" + s.mom));
   const lucySlots = slots(tasks, "lucy");
   ok("lucy still gets exactly one", lucySlots.length === 1);
   ok("julian's slots avoid lucy's Mom cards", js.every(s => !ov(s, tasks.find(t => t.id === "b1"))));

@@ -71440,7 +71440,7 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   const items=[];  // ordered placeable proto-tasks fed to the shared packer
 
   const ellisHasIpad=["nzk_e","eggspress_e"].some(k=>(kidAssignments.ellis||{})[k]);
-  function getMeta(kid,key){ return gwGetSubjects(kid)[key]||null; }
+  function getMeta(kid,key){ const s=gwGetSubjects(kid)[key]||null; return (typeof practiceSoloSubj==="function")?practiceSoloSubj(kid,s):s; }   // PRACTICE_SOLO: study cards follow the session
 
   // Turn a (kid,key) into an ordered item, applying the day-skip rules (car-school / no-fri / mon-thu).
   function pushItem(kid,key,excelVal){
@@ -72829,6 +72829,22 @@ function generateWeek(config){
 // stable across regenerations, exactly like every other task.
 const RETR_SLOT_TITLE={drill:"\u{1F0CF} Daily Drill",sprint:"\u{1F3C3} Sprint",match:"\u{1F3AF} Match & Play",recheck:"\u{1F4C5} Sprint Re-checks"};
 const RETR_SLOT_DETAIL={drill:"Run today's Mastery drill",sprint:"Run today's focus sprint in Mastery",match:"Play a Match round in Mastery",recheck:"Run the sprint re-checks due today"};
+// PRACTICE_SOLO_START — which practice cards need Mom (her F4 yes 2026-10-24, PLAN_learning_system §6): 🎯 Match & Play
+// is the kids' own (Match, Memory flip, Which one? — the 🎮 Games tab), so its card is mom "none" and never takes a seat
+// in Mom's loop. 🃏 Daily Drill, 🏃 Sprint and 📅 Sprint Re-checks stay "required" — Mom runs them. Every slot used to be
+// "required" (live wk27/wk28: 5 Match & Play cards a week in Mom's lane, Julian's 3 of them). A subject linked to a study
+// session (subject.study) follows that session's Solo / With Mom setting: solo → "none", mom → "required"; a session
+// that no longer exists leaves the subject's own setting. Read at generate time — cards already in a week keep theirs.
+const PRACTICE_SOLO_KINDS={match:true};
+function retrSlotMom(kind){ return PRACTICE_SOLO_KINDS[kind]?"none":"required"; }
+function practiceSoloSubj(kid,s){
+  if(!s||!s.study) return s;
+  const all=((typeof masteryData!=="undefined"&&masteryData)||{})[kid+"_sessions"]||{};
+  const rec=all[s.study]; if(!rec) return s;
+  const m=(rec.who==="mom")?"required":"none";   // who absent = Solo (MST_SESSION_DEFAULTS)
+  return ((s.mom||"none")===m)?s:Object.assign({},s,{mom:m});
+}
+// PRACTICE_SOLO_END
 // LID_STAMP_START — Stage 1.2: attach lesson ids to generated cards.
 // served = {kid:{sk:[{text,lid}]}} from gwReadWeekAutoAdvance, in serve order. For each
 // (kid,sk) walk that kid's cards in day order (Mon→Sat, then time) and give each card
@@ -73389,10 +73405,10 @@ function gwInjectRetrieval(allTasks,sortedDates,WDAY_MAP,skipSet,dates,dayOfYear
         id:idPrefix+"retr_"+kind+"_"+kid,
         who:kid,day:dn,time:null,dur:((typeof retrSlotMinutes==="function")?retrSlotMinutes(kid,kind):15),
         title:RETR_SLOT_TITLE[kind],detail:RETR_SLOT_DETAIL[kind],
-        mom:"required",cascade:true,device:"paper",subjectKey:"retrieval",retrieval:kind
+        mom:(typeof retrSlotMom==="function")?retrSlotMom(kind):"required",cascade:true,device:"paper",subjectKey:"retrieval",retrieval:kind   // PRACTICE_SOLO: 🎯 Match & Play is the kid's own
       };
       // 2026-08-17: the slot takes the FIRST free window at/after the kid's own last card that
-      // is not lunch and not on any kid's Mom-required card (Mom lane — a slot is Mom-required),
+      // is not lunch and not on any kid's Mom-required card (Mom lane — a Mom-required slot; 🎯 Match & Play is not, PRACTICE_SOLO),
       // then the kid's Closing Notebook is re-timed to stay last. The old "after the kid's last
       // card" ignored all three (wk17/18 audit: 15 "closing not last", 2 lunch overlaps, 16 Mom
       // clashes — all retrieval slots) and is now only the never-drop fallback.
@@ -73414,7 +73430,7 @@ function gwInjectRetrieval(allTasks,sortedDates,WDAY_MAP,skipSet,dates,dayOfYear
             const t1=t0+dur;
             if(R.lunchStart!=null&&ov(t0,t1,R.lunchStart,R.lunchEnd)) continue;
             if(kidCards.some(x=>ov(t0,t1,toMin(x.time),toMin(x.time)+(x.dur||20)))) continue;
-            if(momCards.some(x=>{ const _ms=(typeof mlMomSpan==="function")?mlMomSpan(x,toMin(x.time),x.dur||20):[toMin(x.time),toMin(x.time)+(x.dur||20)]; return ov(t0,t1,_ms[0],_ms[1]); })) continue;   // 👩 MOMPART3: their Mom part only
+            if(slot.mom==="required"&&momCards.some(x=>{ const _ms=(typeof mlMomSpan==="function")?mlMomSpan(x,toMin(x.time),x.dur||20):[toMin(x.time),toMin(x.time)+(x.dur||20)]; return ov(t0,t1,_ms[0],_ms[1]); })) continue;   // 👩 MOMPART3: their Mom part only
             slot.time=fromMin(t0); placed=true; break;
           }
           if(placed){
