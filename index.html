@@ -14195,7 +14195,7 @@ function llDadCardHTML(by,bare){ if(!laundryLine||!Object.keys(laundryLine).leng
   h+=(r.loads.length||r.jumps.length)?r.jumps.map(function(j){ return '<div style="font-size:12px;padding:3px 0;color:#1d4ed8">💦 '+esc(String(j.label))+' <span style="color:#6b6560">· jump-in</span></div>'; }).join('')+r.loads.map(function(id){ const w=llWho(id,t), st=llLoadStage(id,t), wtd=r.waited.indexOf(id)>=0, mv=r.moved.indexOf(id)>=0;
       return '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px'+(wtd||mv?';opacity:.55':'')+'"><span>'+esc(A[id].emoji||'🧺')+'</span><span style="flex:1;font-weight:700">'+esc(llLabelFull(id))+' <span style="font-weight:400;color:#6b6560">· '+(wtd?'⏸ waits a day':mv?'→ tomorrow':st?'👤 '+esc(llName(((laundryLine.log[t]||{})[id]||{}).by||w.who)):w.need?'❓ who?':'👤 '+esc(llName(w.who)))+(st?' · '+st:'')+'</span></span>'
         +((!st&&!wtd)?'<button onclick="llMarkDone(\''+id+'\',\''+by+'\')" style="padding:3px 8px;border-radius:8px;border:1.5px solid #16a34a;background:#f0fdf4;color:#15803d;font-size:11px;font-weight:700;cursor:pointer;margin-right:4px">✓ Done</button>':'')   // ✓ DONE
-        +((!st&&!wtd&&!mv)?'<button onclick="llStart(\''+id+'\',\''+by+'\')" style="padding:3px 9px;border-radius:8px;border:1.5px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:700;cursor:pointer">🫧 Start</button>':'')+'</div>'; }).join('')
+        +((!st&&!wtd&&(!mv||llLateStartOK(r,id)))?'<button onclick="llStart(\''+id+'\',\''+by+'\')" style="padding:3px 9px;border-radius:8px;border:1.5px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:700;cursor:pointer">🫧 Start</button>':'')+'</div>'; }).join('')   // 🫧 LL_LATESTART: after 8 PM too
     :'<div style="font-size:12px;color:#6b6560">No laundry today.</div>';
   return h+(bare?'':'<div style="margin-top:8px">'+llWeekGridHTML(t,llNowMin()>=LL_SWEEP_MIN,true,by)+'</div>')+'</div>'; }   // LL_MYDAY: no week grid inside My day (her 2026-10-21: "i do not like the this week laundry thing in my day") — it stays on the Laundry tab
 // LL_MYDAY_START — 🧺 her ask 2026-10-21: "on the bottom of Dad's Day and Mom's … the laundry where it shows what's currently active and not
@@ -14526,6 +14526,15 @@ function llCardHTML(noGrid){
 let llWeek=0;   // 0 = this week; ‹ › step it (0–8)
 function llWeekNav(d){ llWeek=Math.max(0,Math.min(8,llWeek+d)); llRerender(); }
 function llShort(x){ return String((x&&x.label)||"Load").replace(/'s clothes$/i,"").replace(/ clothes$/i,""); }
+// LL_LATESTART_START — 🫧 Start on a load that slid at 8 PM (her report 2026-10-23, 11:16 PM: Mom & Dad's clothes and Towels went in
+// without a tap, and after 8 PM the schedule only offered ✓ Done — "There isn't a start. Start would be fine."). From 8 PM today's
+// unstarted loads show → tomorrow; 🫧 Start on one is the very same llStart as before 8 PM: the laundry/<id> load (so the machines card
+// keeps reminding her and → Dryer / Folded ✓ move it on, no waiting on the timers), logged under TODAY — and the re-lay takes what
+// started off the line, so it leaves tomorrow. Only today's loads, only where 🫧 Start already shows (Mom; Dad on his link). ✓ Done,
+// the 8 PM fold and the caps are as they were.
+function llLateStartOK(r,id){ return !!r&&r.iso===llToday()&&r.moved.indexOf(id)>=0&&r.started.indexOf(id)<0&&r.waited.indexOf(id)<0; }
+function llLateStartBtn(id,by){ return '<button onclick="llStart(\''+id+'\''+(by?',\''+by+'\'':'')+')" title="It went in — start it now" style="margin-top:2px;padding:1px 3px;border-radius:6px;border:1px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-size:9px;font-weight:700;cursor:pointer;white-space:nowrap;max-width:100%">🫧Start</button>'; }
+// LL_LATESTART_END
 function llWeekGridHTML(today,closeToday,mom,by){
   const it=llAll(), mon=llAddDays(today,-llDow(today)+7*llWeek), sun=llAddDays(mon,6), byIso={};
   llProject(today,7*(llWeek+1)-llDow(today),closeToday).forEach(function(r){ byIso[r.iso]=r; });   // the re-lay starts today; earlier days show what really went in
@@ -14545,7 +14554,7 @@ function llWeekGridHTML(today,closeToday,mom,by){
     else if(r&&r.loads.length) h+=r.loads.map(function(id){ const done=r.started.indexOf(id)>=0, mv=r.moved.indexOf(id)>=0;
         const wv=llWho(id,iso), wtd=r.waited.indexOf(id)>=0, sub=wtd?'<div style="font-size:9px;color:#6b6560">⏸ waits</div>':wv.need?'<div style="font-size:9px;color:#b45309;font-weight:800">❓ who?</div>':wv.covered?'<div style="font-size:9px;color:#1d4ed8">👤 '+esc(llName(wv.who))+'</div>':'';   // 👤 step 5
         if(wtd) return load(id,"moved",sub)+tdAfter(id);
-        if(mv&&isT&&mom) return load(id,"moved",sub+'<button onclick="llMarkDone(\''+id+'\''+(by?',\''+by+'\'':'')+')" title="It was done — mark it done today" style="margin-top:2px;padding:1px 3px;border-radius:6px;border:1px solid #16a34a;background:#f0fdf4;color:#15803d;font-size:9px;font-weight:700;cursor:pointer;white-space:nowrap;max-width:100%">✓Done</button>')+tdAfter(id);   // ✓ DONE after 8 PM
+        if(mv&&isT&&mom) return load(id,"moved",sub+(llLateStartOK(r,id)?llLateStartBtn(id,by):'')+'<button onclick="llMarkDone(\''+id+'\''+(by?',\''+by+'\'':'')+')" title="It was done — mark it done today" style="margin-top:2px;padding:1px 3px;border-radius:6px;border:1px solid #16a34a;background:#f0fdf4;color:#15803d;font-size:9px;font-weight:700;cursor:pointer;white-space:nowrap;max-width:100%">✓Done</button>')+tdAfter(id);   // ✓ DONE after 8 PM · 🫧 LL_LATESTART
         const _dn=(isT&&!done&&mom)?'<button onclick="llMarkDone(\''+id+'\''+(by?',\''+by+'\'':'')+')" title="Washed and put away without being tracked — mark it done today" style="margin-top:2px;padding:1px 3px;border-radius:6px;border:1px solid #16a34a;background:#f0fdf4;color:#15803d;font-size:9px;font-weight:700;cursor:pointer;white-space:nowrap;max-width:100%">✓Done</button>':'';   // ✓ DONE
         const _un=(isT&&done&&mom&&llIsDoneOnly(id,iso))?'<button onclick="llUndone(\''+id+'\')" title="Not done after all" style="margin-top:2px;padding:1px 4px;border-radius:6px;border:1px solid #cbd5e1;background:#fff;color:#64748b;font-size:9px;font-weight:700;cursor:pointer">↶</button>':'';
         return load(id,done?"done":mv?"moved":(r.bumped.indexOf(id)>=0?"bump":""),sub+((isT&&!done&&!mv&&mom)?'<button onclick="llStart(\''+id+'\''+(by?',\''+by+'\'':'')+')" style="margin-top:2px;padding:1px 3px;border-radius:6px;border:1px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-size:9px;font-weight:700;cursor:pointer;white-space:nowrap;max-width:100%">🫧Start</button>':'')+_dn+_un)+tdAfter(id); }).join('');
