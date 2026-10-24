@@ -145,7 +145,7 @@ console.log("── 5 · wiring ──");
 ok("mstSessions copies the field (it would vanish otherwise)", /typeAnswer: !!rec\.typeAnswer,/.test(src));
 ok("mhqSessSave writes it for every kind, after the kind blocks", (() => { const s = slice("mhqSessSave"); const i = s.indexOf("if (mhqSessForm.typeAnswer) rec.typeAnswer = true;"); return i > 0 && i > s.indexOf('if (mhqSessForm.kind === "all")') && i < s.indexOf("masteryData[kid"); })());
 ok("the form has an Off/On pill labelled Type the answer", /Type the answer<\/div>/.test(src) && /_mhqPill\("Off", !f\.typeAnswer, "mhqSessSet\(\\'typeAnswer\\',false\)"\) \+ _mhqPill\("On", !!f\.typeAnswer, "mhqSessSet\(\\'typeAnswer\\',true\)"\)/.test(src));
-ok("renderMastStudy hides Again/Good for a typed-answer card", /if\(mstCardMode\(card\)==="type"\|\|\(typeof mstTypeAnsOn==="function"&&mstTypeAnsOn\(session,card\)\)\)\{/.test(src));
+ok("renderMastStudy hides Again/Good for a typed-answer card", /if\(mstCardMode\(card\)==="type"\|\|\(typeof mstTypeAnsOn==="function"&&mstTypeAnsOn\(session,card\)\)(\|\|[^{\n]*)?\)\{/.test(src));   // other faces (🎯 PATPICK) may add their own ||
 { const s = slice("mstCardHtml"); const i = s.indexOf('typeof mstTypeAnsOn==="function"&&mstTypeAnsOn(session,card,def)');
   ok("mstCardHtml picks the typed-answer face after picture, rule and spell cards, before the type/say modes", i > s.indexOf("mstIsSpellCard(card)") && i > s.indexOf("mstPicCardHtml") && i < s.indexOf('mode==="type"')); }
 ok("the input only sets mstTyped on input (no repaint per keystroke)", /id="mst-typeans-in"[^>]*oninput="mstTyped=this\.value"/.test(src));

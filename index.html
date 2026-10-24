@@ -58885,6 +58885,7 @@ function mstCardHtml(session,card){
   }
   if(typeof mstTypeAnsOn==="function"&&mstTypeAnsOn(session,card,def)) return mstTypeAnsHtml(session,card,def,_lrn);   // ⌨️ MST_TYPEANS (guarded for engine-only harnesses)
   const _chip=m=>'<div style="display:inline-block;margin-top:2px;padding:3px 10px;border-radius:999px;background:#ede9fe;color:#6d28d9;font-size:11px;font-weight:800">'+(m==="say"?"\u{1F5E3} Say it in German \u2014 out loud":"\u2328\uFE0F Type it in German")+'</div>';
+  if(typeof mstPickOn==="function"&&mstPickOn(session,card)) return mstPickHtml(session,card,_lrn);   // 🎯 PATPICK
   if(mode==="type"){
     let t='<div class="mast-slide"><div class="mast-flip-wrap"><div class="mast-flip-inner"><div class="mast-flip-front">';
     t+='<div class="mast-slide-cat">'+mstEsc(card.deck||session.name||"")+_lrn+'</div>'+_chip("type");
@@ -58995,6 +58996,108 @@ function mstCheckTypeAns(){
   _mastRe();
 }
 // MST_TYPEANS_END
+// PATPICK_START — 🎯 "Pick it": a learning-pattern step (her research plan 2026-10-23, PLAN_learning_patterns_2026-10-23.md:
+// picking from 3 is a good first-day step, and the wrong choices must be believable). The card's front as the "rec" face
+// shows it, plus three chips: the right answer and two lures from the SAME deck, chosen by the Memory game's _matchLures
+// (MATCH_THEN) — number answers take the nearest values (7×8 → 54 · 63), text answers random distinct ones. A card with a
+// picture (_smTileVis: emoji / colour / shape) picks its picture instead, like Memory's "Pick its picture".
+// Tap a chip: right → green, then mstTap('good'); wrong → red, the right chip lights green, a beat, then mstTap('again'),
+// so the card comes back later in the sitting. One pick per showing. Chips are shuffled per sitting and stay put on a
+// re-render; a card shuffles again only after it's graded. No lures (fewer than 2 other distinct answers in the deck) →
+// the card flips as "rec". Picture-image, rule, spell and typed-answer cards keep their own faces (drawn before this).
+// Nothing new is written: the grade goes through the sitting and mstSave as before.
+MST_PATTERN_MODES.push("pick");
+const MST_PICK_BEAT_OK=600, MST_PICK_BEAT_MISS=1400;
+let mstPickCache={state:null,map:{}};   // chips per card key for THIS sitting (reset when mstState changes)
+let mstPickSel=null;                    // {state,key,ci}: the chip tapped on this showing
+function _mstPickItems(){ let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items); return items.filter(Boolean); }
+// A card or bank item as a lure entry. New cards (no id yet) get their sitting key as id so _matchLures can tell them apart.
+function _mstPickEntry(card,items){
+  const it=(items||_mstPickItems()).find(i=>card.id?i.id===card.id:(i.prompt===card.name&&i.subject===card.deck))||null;
+  return {id:card.id||("n:"+(card.deck||"")+"|"+(card.name||"")),card:{id:card.id,name:card.name,deck:card.deck},item:it};
+}
+function _mstPickVis(e){ return (e&&e.item&&typeof _smTileVis==="function")?_smTileVis(e.item,true):null; }
+// The deck's other cards: every bank item of the deck (not 🇬🇧→🇩🇪 twins) + this sitting's new cards of the deck.
+function _mstPickPool(card){
+  const items=_mstPickItems(), seen={}, pool=[];
+  const add=e=>{ if(!seen[e.id]){ seen[e.id]=1; pool.push(e); } };
+  items.forEach(i=>{ if(i.subject===card.deck&&i.dir!=="prod") add(_mstPickEntry({id:i.id,name:i.prompt,deck:i.subject},items)); });
+  const sc=(mstState&&mstState.cards)||{};
+  Object.keys(sc).forEach(k=>{ const c=sc[k]; if(c&&c.deck===card.deck&&c.mode!=="type") add(_mstPickEntry(c,items)); });
+  return pool;
+}
+// A chip on the asked side: the picture (with its name for screen readers — the lure de-dupe reads plain text),
+// or the answer as text. null = this entry can't be a chip of that kind.
+function _mstPickChipOf(pic){
+  return e=>{
+    if(pic){ const v=_mstPickVis(e); return v?v+'<span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">'+mstEsc(e.card.name||"")+'</span>':null; }
+    const d=String(mstCardDef(e.card)||"").trim();
+    return d?'<span style="pointer-events:none;word-break:break-word">'+mstEsc(d)+'</span>':null;
+  };
+}
+function mstPickChips(card){
+  if(!card) return null;
+  if(mstPickCache.state!==mstState) mstPickCache={state:mstState,map:{}};
+  const k=card.key||card.name||"";
+  if(mstPickCache.map[k]!==undefined) return mstPickCache.map[k];
+  let chips=null;
+  try{
+    const me=_mstPickEntry(card), pic=!!_mstPickVis(me), chipOf=_mstPickChipOf(pic), mine=chipOf(me);
+    const lures=mine?_matchLures(me,_mstPickPool(card),chipOf,2):[];
+    if(lures.length>=2){
+      chips=[{ok:true,html:mine}].concat(lures.map(l=>({ok:false,html:l.h})));
+      for(let i=chips.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=chips[i]; chips[i]=chips[j]; chips[j]=t; }
+      chips.pic=pic;
+    }
+  }catch(e){ chips=null; }
+  mstPickCache.map[k]=chips;
+  return chips;
+}
+// The pick face is drawn for this card — mstCardHtml and renderMastStudy both ask, so the face and the
+// (hidden) ✗ / ✓ buttons always agree.
+function mstPickOn(session,card){
+  if(!card||mstCardMode(card)!=="pick") return false;
+  if(mstIsRuleCard(card)||mstIsSpellCard(card)) return false;
+  if(typeof mstCardPic==="function"&&mstCardPic(card)) return false;
+  if(typeof mstTypeAnsOn==="function"&&mstTypeAnsOn(session,card)) return false;
+  return !!mstPickChips(card);
+}
+function mstPickHtml(session,card,lrn){
+  const chips=mstPickChips(card)||[], name=card.name||"";
+  const sel=(mstPickSel&&mstPickSel.state===mstState&&mstPickSel.key===card.key)?mstPickSel.ci:null;
+  let h='<div class="mast-slide"><div class="mast-flip-wrap"><div class="mast-flip-inner"><div class="mast-flip-front">';
+  h+='<div class="mast-slide-cat">'+mstEsc(card.deck||session.name||"")+(lrn||"")+'</div>';
+  h+='<div style="display:inline-block;margin-top:2px;padding:3px 10px;border-radius:999px;background:#ede9fe;color:#6d28d9;font-size:11px;font-weight:800">\u{1F3AF} '+(chips.pic?"Pick its picture":"Pick what it means")+'</div>';
+  h+='<div class="mast-slide-name">'+mstEsc(name)+'</div>'+mstAudioBtn(name,session);
+  h+='<div class="mst-pick-chips" style="display:flex;flex-direction:'+(chips.pic?"row":"column")+';gap:10px;margin-top:14px;width:100%;max-width:360px;justify-content:center">';
+  chips.forEach((c,i)=>{
+    let bd="#c4b5fd", bg="#fff", op="1";
+    if(sel!=null){ if(c.ok){ bd="#16a34a"; bg="#dcfce7"; } else if(i===sel){ bd="#dc2626"; bg="#fee2e2"; } else op=".45"; }
+    h+='<button class="mst-pick-chip" data-ok="'+(c.ok?1:0)+'" onclick="event.stopPropagation();mstPickTap('+i+')"'+(sel!=null?' disabled':'')+' style="position:relative;'+(chips.pic?"flex:1;min-height:110px":"min-height:52px")+';padding:10px 14px;border-radius:14px;border:2.5px solid '+bd+';background:'+bg+';opacity:'+op+';color:#3b0764;font-size:17px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:\'DM Sans\',sans-serif">'+c.html+'</button>';
+  });
+  h+='</div>';
+  if(sel!=null){ const right=!!(chips[sel]&&chips[sel].ok); h+='<div style="margin-top:12px;font-size:20px;font-weight:800;color:'+(right?"#16a34a":"#dc2626")+'">'+(right?"✓ Right!":"✗ Not quite — it comes back later")+'</div>'; }
+  return h+'</div></div></div></div>';
+}
+function mstPickTap(ci){
+  if(!mstState||mstLocked()) return;   // MST_NAV: the tap lock covers chips too
+  let cur=null; try{ cur=mstCurrent(mstState); }catch(e){}
+  if(!cur) return;
+  if(mstPickSel&&mstPickSel.state===mstState&&mstPickSel.key===cur.key) return;   // one pick per showing
+  const chips=mstPickChips(cur), c=chips&&chips[ci]; if(!c) return;
+  const st=mstState, key=cur.key;
+  mstPickSel={state:st,key:key,ci:ci};
+  _mastRe();
+  setTimeout(function(){
+    if(mstState!==st||!mstPickSel||mstPickSel.state!==st||mstPickSel.key!==key) return;   // ← Back / Quit during the beat
+    let now=null; try{ now=mstCurrent(st); }catch(e){}
+    if(!now||now.key!==key) return;
+    mstPickSel=null; delete mstPickCache.map[key];   // the next showing gets a fresh shuffle
+    mstLockTs=0;   // the beat already gave the tap lock its time
+    mstTap(c.ok?"good":"again");
+  },c.ok?MST_PICK_BEAT_OK:MST_PICK_BEAT_MISS);
+}
+// PATPICK_END
 function renderMastStudy(opts){
   const kid=masteryKid;
   if(mstKid!==kid){ mstKid=kid; mstSid=null; mstState=null; mstFlipped=false; mstDone=null; mstStartTs=null; mstTyped=""; mstChecked=null; mstNavReset(); }  // a sitting never leaks across kids (MST_NAV: nor its Back/Forward)
@@ -59036,7 +59139,7 @@ function renderMastStudy(opts){
     if(card){
       mstLockArm();   // MST_NAV: taps in the first 350 ms after this draw are swallowed
       h+=mstCardHtml(session,card);
-      if(mstCardMode(card)==="type"||(typeof mstTypeAnsOn==="function"&&mstTypeAnsOn(session,card))){   // ⌨️ MST_TYPEANS
+      if(mstCardMode(card)==="type"||(typeof mstTypeAnsOn==="function"&&mstTypeAnsOn(session,card))||(typeof mstPickOn==="function"&&mstPickOn(session,card))){   // ⌨️ MST_TYPEANS · 🎯 PATPICK
         // Check / Next live inside the card — no self-grading on a typed answer.
       } else if(mstFlipped){
         h+='<div style="display:flex;gap:12px;margin-top:16px">';
@@ -60268,7 +60371,7 @@ function _mhqRenderSessForm(kid) {
     h += '<div style="' + lbl + '">Learning pattern</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
     h += _mhqPill("Off", !f.pattern, f.pattern ? "mhqPatToggle()" : "") + _mhqPill("On", !!f.pattern, f.pattern ? "" : "mhqPatToggle()");
     if (f.pattern) {
-      const _pl = { rec: "\u{1F1E9}\u{1F1EA} See it", say: "\u{1F5E3} Say it", type: "\u2328\uFE0F Type it" };
+      const _pl = { rec: "\u{1F1E9}\u{1F1EA} See it", say: "\u{1F5E3} Say it", type: "\u2328\uFE0F Type it", pick: "\u{1F3AF} Pick it" };
       f.pattern.forEach(function (m, i) { h += '<button onclick="mhqPatCycle(' + i + ')" style="min-height:40px;padding:6px 10px;border-radius:10px;border:1.5px solid #c4b5fd;background:#f5f3ff;color:#6d28d9;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">' + (i + 1) + ' \u00B7 ' + _pl[m] + '</button>'; });
       h += '<button onclick="mhqPatLen(-1)" style="width:36px;height:36px;border-radius:8px;border:1.5px solid var(--border);background:var(--card);font-weight:700;cursor:pointer">&minus;</button><button onclick="mhqPatLen(1)" style="width:36px;height:36px;border-radius:8px;border:1.5px solid var(--border);background:var(--card);font-weight:700;cursor:pointer">+</button>';
     }
