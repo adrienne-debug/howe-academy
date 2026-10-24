@@ -12,7 +12,7 @@ function slice(name) {
 }
 let pass = 0, fail = 0;
 const ok = (n, c, x) => { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  " + JSON.stringify(x) : "")); } };
-const FNS = ["msvEnter", "msvExit", "msvBarHTML", "showTab", "renderKidFilter", "renderSchedSubtabs", "mpSchSet", "mpSchModeGet", "mpGoto"].map(slice).join("\n");
+const FNS = ["msvEnter", "msvExit", "msvBarHTML", "showTab", "renderKidFilter", "renderSchedSubtabs", "mpSchSet", "mpSchModeGet", "mpGoto", "mdSmoothCalNow"].map(slice).join("\n");   // 🏡 MDSMOOTH (2026-10-24): mpGoto asks mdSmoothCalNow whether ▸ Schedule opens the Schedule view straight away
 function world(o) {
   o = o || {};
   const log = { renders: 0, mp: 0, scroll: 0 };
