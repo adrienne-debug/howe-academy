@@ -172,6 +172,47 @@ ok("a root taught again later stays one card: therm (Beginning L1 = Level 3 L4 �
 ok("More roots a level also teaches stay in More roots (open now): chron, phil, path, arch, bio", ["chron", "phil", "path", "arch", "bio"].every(n => byName.get(n).stage === 6));
 ok("Level 1 starts at Lesson 2 (Lesson 1's struct is a Beginning root)", Math.min(...st(2).map(c => c.lesson)) === 102 && first.get("struct") === 20);
 
+console.log("\n── the stock enroll can't run on Word Roots (her OK 10/24: \"the real attach comes in step 3\") ──");
+function world() {
+  const G = { masteryData: { ellis: [{ id: "ell_micro", subject: "Greek & Latin Roots", prompt: "micro", status: "active" }], ellis_settings: { definitions: { micro: "small" } } },
+    currData: { subjects: { ellis: { spelling: { display: "Spelling" } } } }, writes: [], unitStudies: {}, content: { innerHTML: "" } };
+  const db = { ref(p) { return { update(v) { G.writes.push(["update", p, v]); }, set(v) { G.writes.push(["set", p, v]); }, transaction() { return Promise.resolve({ committed: false }); } }; } };
+  const w = new Function("G", "db", `
+    const masteryData=G.masteryData, currData=G.currData; let unitStudies=G.unitStudies;
+    function momHere(){ return true; } function _dryRun(){ return false; } function cap(s){ return s[0].toUpperCase()+s.slice(1); }
+    function renderUnits(){} const HA_LS={ setItem(){} }; const document={ getElementById:()=>G.content };
+    function mastDefKeyOk(n){ return !/[.$#\\[\\]\\/]/.test(n); } function mastGateChapter(){ return null; }
+    ${block}
+    return { STARTER_UNITS, WR_ENROLL_NOTE, _ustApply, _unitStageRowsHtml, unitStageFormOpen, unitStageFormSet, unitStageEnroll, unitStageMoveUp,
+      setForm(f){ unitStageForm=f; }, get form(){ return unitStageForm; } };`)(G, db);
+  ["word_roots", "all_about_spelling"].forEach(id => { G.unitStudies[id] = w.STARTER_UNITS[id](); });
+  w.G = G; return w;
+}
+{ const w = world(), before = JSON.stringify(w.G.masteryData), wr = w.G.unitStudies.word_roots, roster = ["lincoln", "ellis", "lucy", "julian"];
+  const rows = w._unitStageRowsHtml(wr, roster);
+  ok("Word Roots page: no + kid buttons, the plain note instead", rows.indexOf("unitStageFormOpen(") < 0 && rows.indexOf("hooks up to each kid") > 0 && (rows.match(/not hooked up yet/g) || []).length === 4);
+  ok("…every other staged unit keeps its + kid buttons (AAS)", (w._unitStageRowsHtml(w.G.unitStudies.all_about_spelling, roster).match(/unitStageFormOpen\('all_about_spelling'/g) || []).length === 4);
+  w.unitStageFormOpen("word_roots", "ellis");
+  ok("+ Ellis can't open the start form", w.form === null);
+  w.setForm({ unitId: "word_roots", kid: "ellis", stage: 1, knows: "Lesson 3", subject: "word_roots", map: "", how: "knows" });
+  w.unitStageEnroll();
+  ok("stock enroll (forced form): writes nothing, enrolls nobody", w.G.writes.length === 0 && !wr.enrolled && !wr.kidStage);
+  ok("_ustApply refuses the unit and leaves the kid's data in memory untouched", w._ustApply(wr, "ellis", 1, "", "word_roots", "") === null && JSON.stringify(w.G.masteryData) === before);
+  wr.kidStage = { ellis: { stage: 1, knows: "", subject: "", map: "" } }; wr.enrolled = { ellis: true };
+  w.unitStageMoveUp("word_roots", "ellis");
+  ok("➡ move-up can't run the stock enroll either", w.G.writes.length === 0 && wr.kidStage.ellis.stage === 1);
+  delete wr.kidStage; delete wr.enrolled; w.setForm(null);
+  // another unit still enrolls exactly as before
+  w.unitStageFormOpen("all_about_spelling", "ellis"); w.unitStageEnroll();
+  const aas = w.G.unitStudies.all_about_spelling;
+  ok("AAS still enrolls through the same buttons (kidStage written, cards seeded)", aas.enrolled && aas.enrolled.ellis === true && w.G.writes.some(x => x[1] === "unitStudies/all_about_spelling/kidStage/ellis") && w.G.writes.some(x => x[1] === "mastery/ellis")); }
+{ // the two stock paths outside the sliced block: the plain enroll and the check-up start
+  const fnSrc = n => { const i = src.indexOf("function " + n + "("); let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}") { d--; if (!d) return src.slice(i, k + 1); } } };
+  const trap = new Proxy({}, { get() { throw new Error("touched the kid's data"); } });
+  const run = (n, pre) => { let err = null; try { new Function("masteryData", "unitStudies", "_wrEnrollLocked", pre + fnSrc(n) + "; return " + n)(trap, { word_roots: { id: "word_roots", stages: [], decks: [] } }, u => !!(u && u.id === "word_roots"))("word_roots", "ellis"); } catch (e) { err = e; } return err; };
+  ok("plain enroll (unitEnroll) returns before touching anything", run("unitEnroll", "function momHere(){return true;} function _unitStagedEnrollPending(){return false;}\n") === null);
+  ok("check-up start (unitStageCheckup) returns before touching anything", run("unitStageCheckup", "function momHere(){return true;} const unitStageForm={unitId:'word_roots',kid:'ellis',stage:1};\n") === null); }
+
 console.log("\n── 📚 starter list + Add ──");
 ok("Mom sees Word Roots with its Add button", /starterUnitAdd\('word_roots'\)/.test(api._starterUnitsHtml()) && /Word Roots/.test(api._starterUnitsHtml()));
 ok("…with its card count and stages", api._starterUnitsHtml().indexOf("369 cards") > 0 && /6\. More roots/.test(api._starterUnitsHtml()));

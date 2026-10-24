@@ -41881,6 +41881,12 @@ function _wrDecks(){
   WR_DATA.m.forEach(r=>add(r[1],r[2],6,0,r[0],r[3],r[4]));
   return [{ key:WR_DECK, mode:"flip", introCap:2, groupBy:"family", cards }];
 }
+// Her rule 2026-10-24: "add the small block to step 1 so the + Ellis / + Lincoln buttons on the Word Roots unit can't run
+// the stock enroll. The real attach comes in step 3." The stock enroll would write every card's back into the shared
+// definitions map and reset the deck's mode — the boys already have cards in this deck. So for THIS unit only: no
+// + kid buttons, and every stock enroll path (staged form, check-up start, move-up, plain enroll, _ustApply) returns.
+const WR_ENROLL_NOTE="Word Roots hooks up to each kid\u2019s cards through its own step (coming soon).";
+function _wrEnrollLocked(u){ return !!(u&&(u.id==="word_roots"||u.starter==="word_roots")); }
 // WORDROOTS_END
 const STARTER_UNITS={
   math_fluency_path:()=>({ id:"math_fluency_path", starter:"math_fluency_path", starterVer:1,
@@ -41983,6 +41989,7 @@ function _ustBookCh(mapId,c){ const m=UNIT_BOOK_MAPS[mapId]; if(!m||m.stage!==c.
 function _ustSlug(name){ return String(name).replace(/\+/g,"p").replace(/-/g,"m").replace(/×/g,"x").replace(/÷/g,"d").replace(/[^a-z0-9]/gi,"_"); }
 // Seed ONE stage into a kid's mastery data (in memory). Returns what to write: new item / bank indices.
 function _ustApply(u,kid,stageN,knows,subject,mapId){
+  if(typeof _wrEnrollLocked==="function"&&_wrEnrollLocked(u)) return null;   // 🏛 WORDROOTS: attaches through its own step
   const sd=_ustStageDef(u,stageN)||{}; const cards=_ustCards(u,stageN); if(!cards.length) return null;
   let items=masteryData[kid]; if(!Array.isArray(items)) items=masteryData[kid]=(items?Object.values(items):[]);
   let bank=masteryData[kid+"_custom_items"]; if(!Array.isArray(bank)) bank=masteryData[kid+"_custom_items"]=(bank?Object.values(bank):[]);
@@ -42061,6 +42068,7 @@ function _ustDone(unitId,kid,rec){
 }
 let unitStageForm=null;   // {unitId,kid,stage,knows,subject,map} — the open "+ Kid" form
 function unitStageFormOpen(unitId,kid){ if(!momHere()) return; const u=unitStudies[unitId]; if(!u) return;
+  if(typeof _wrEnrollLocked==="function"&&_wrEnrollLocked(u)) return;   // 🏛 WORDROOTS
   const s=_ustStagesWithCards(u)[0]; unitStageForm={unitId,kid,stage:s?s.n:null,knows:"",subject:"",map:"",how:"knows",perDay:10,untested:"spot"};
   const el=document.getElementById("content"); if(el) renderUnits(el); }
 function unitStageFormSet(field,val){ if(!unitStageForm) return;
@@ -42070,6 +42078,7 @@ function unitStageFormClose(){ unitStageForm=null; const el=document.getElementB
 function unitStageEnroll(){
   if(!momHere()||!unitStageForm) return; const f=unitStageForm; const u=unitStudies[f.unitId];
   if(!u||(u.enrolled||{})[f.kid]||!_ustCards(u,f.stage).length) return;
+  if(typeof _wrEnrollLocked==="function"&&_wrEnrollLocked(u)) return;   // 🏛 WORDROOTS
   const w=_ustApply(u,f.kid,f.stage,f.knows,f.subject,f.map); if(!w) return;
   const rec={stage:f.stage,knows:f.knows||"",subject:f.subject||"",map:(w.gate?f.map:"")||"",ts:Date.now()};
   _ustWrite(f.unitId,f.kid,w,rec); _ustDone(f.unitId,f.kid,rec);
@@ -42087,6 +42096,7 @@ function unitStageStatus(u,kid){
 }
 function unitStageMoveUp(unitId,kid){
   if(!momHere()) return; const u=unitStudies[unitId]; if(!u) return; const st=unitStageStatus(u,kid); if(!st||!st.next) return;
+  if(typeof _wrEnrollLocked==="function"&&_wrEnrollLocked(u)) return;   // 🏛 WORDROOTS
   // UNITS_CALM (10/4): an early tap asks first — the white button looked tappable and started letter sounds early
   if(!st.ready&&typeof confirm==="function"){ const _cur=(_ustStageDef(u,st.stage)||{}).label||("Stage "+st.stage);
     if(!confirm(cap(kid)+" isn\u2019t ready yet ("+(st.on||0)+" of "+(st.need||st.total)+" on the ladder). Start "+st.next.label+" anyway? "+_cur+" keeps going too.")) return; }
@@ -42100,6 +42110,8 @@ function _unitStageRowsHtml(u,roster){
   const btn=(bg,fg,bd)=>'padding:6px 12px;border-radius:9px;border:1.5px solid '+bd+';background:'+bg+';color:'+fg+';font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif';
   const subjName=(kid,sk)=>{ const s=(((currData||{}).subjects||{})[kid]||{})[sk]; return (s&&s.display)||sk; };
   let h='';
+  const _wrLock=typeof _wrEnrollLocked==="function"&&_wrEnrollLocked(u);   // 🏛 WORDROOTS: no stock enroll
+  if(_wrLock) h+='<div style="font-size:11.5px;color:var(--muted);font-weight:700;line-height:1.45;padding-bottom:6px">'+esc(WR_ENROLL_NOTE)+'</div>';
   roster.forEach(k=>{
     h+='<div style="padding:8px 0;border-top:1px solid #f3f1ee">';
     const ks=((u.kidStage||{})[k])||null;
@@ -42141,6 +42153,8 @@ function _unitStageRowsHtml(u,roster){
       h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin:7px 0">'+(ki>=0?'Through the '+esc(f.knows)+' go straight to review. ':'')+(nxt?'Starts learning the '+esc(nxt)+'.':'Everything in this stage is review.')+'</div>';
       h+='<div style="display:flex;gap:6px"><button onclick="unitStageEnroll()" style="'+btn("#2d6a4f","#fff","#2d6a4f")+'">Start '+esc(cap(k))+'</button><button onclick="unitStageFormClose()" style="'+btn("#fff","var(--muted)","var(--border)")+'">Cancel</button></div>';
       }
+    } else if(_wrLock){
+      h+='<div style="display:flex;align-items:center;gap:8px"><span style="font-size:12.5px;font-weight:800;color:#9ca3af;min-width:64px">'+esc(cap(k))+'</span><span style="font-size:11px;color:var(--muted)">not hooked up yet</span></div>';
     } else {
       h+='<div style="display:flex;align-items:center;gap:8px"><span style="font-size:12.5px;font-weight:800;color:#9ca3af;min-width:64px">'+esc(cap(k))+'</span><button onclick="unitStageFormOpen(\''+esc(u.id)+'\',\''+esc(k)+'\')" style="'+btn("#fff","#1f2937","var(--border)")+'">+ '+esc(cap(k))+'</button></div>';
     }
@@ -42356,6 +42370,7 @@ function renderUnitDetail(u){
 function unitEnroll(unitId,kid){
   if(!momHere()) return; // U7: enrolling seeds drill decks — Mom-only
   const u=unitStudies[unitId]; if(!u||(u.enrolled||{})[kid]) return;
+  if(typeof _wrEnrollLocked==="function"&&_wrEnrollLocked(u)) return;   // 🏛 WORDROOTS
   if(typeof _unitStagedEnrollPending==="function"&&_unitStagedEnrollPending(u)) return;  // staged units enroll per kid (STARTER_UNITS)
   let items=masteryData[kid]; if(!Array.isArray(items)) items=masteryData[kid]=(items?Object.values(items):[]);
   let bank=masteryData[kid+"_custom_items"]; if(!Array.isArray(bank)) bank=masteryData[kid+"_custom_items"]=[];
@@ -58313,6 +58328,7 @@ function unitStageCheckup(){
   if(!(typeof momHere==="function"&&momHere())||!unitStageForm) return;
   const f=unitStageForm, u=unitStudies[f.unitId], kid=f.kid;
   if(!u||(u.enrolled||{})[kid]) return;
+  if(typeof _wrEnrollLocked==="function"&&_wrEnrollLocked(u)) return;   // 🏛 WORDROOTS
   const cards=_ustCards(u,f.stage); if(!cards.length) return;
   const sd=_ustStageDef(u,f.stage)||{};
   const sid="checkup_"+ckSlug(f.unitId)+"_"+f.stage;
