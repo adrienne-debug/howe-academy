@@ -60,7 +60,7 @@ console.log("3. 8 PM — today folds");
 }
 console.log("4. Started out of turn / a break / one pile is one load");
 { const c=mk({line:{caps:{"0":1,"1":1,"2":1,"3":1,"4":1,"5":1,"6":0},asOf:MON,log:logOf({[MON]:["julian"]})}});
-  ok("cap 1, Julian started Monday instead: he fills Monday, Lincoln slides to Tue, Julian skipped this round", L(c,MON,6).join("|")==="julian|lincoln|ellis|lucy|momdad|towels", L(c,MON,6));
+  ok("cap 1, Julian washed early on Monday: he rides over the cap, Lincoln keeps Monday, Julian skipped this round (⏩ LL_EARLY, her rule 2026-10-25)", L(c,MON,6).join("|")==="julian,lincoln|ellis|lucy|momdad|towels|lincoln", L(c,MON,6));
   const b=mk({line:{caps:caps3,asOf:MON},cal:{holidays:{h:{name:"Fall break",start:TUE,end:TUE,pause:"all"}},vacations:{}}});
   ok("a paused day takes nothing and the order waits", L(b,MON,3).join("|")==="lincoln,ellis,lucy||julian,momdad,towels", L(b,MON,3));
   const two=mk({line:{items:{a:{label:"A",order:0},b:{label:"B",order:1}},caps:{"0":4},asOf:MON}});
