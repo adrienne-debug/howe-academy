@@ -53161,6 +53161,7 @@ const MAST_INTRO_HINTS={Letters:"say each letter out loud",Numbers:"count out lo
 function mastGetDef(kid,prompt){
   const s=masteryData[kid+"_settings"]||{};
   if(s.definitions&&s.definitions[prompt]) return s.definitions[prompt];
+  if(s.definitions&&typeof mastDefKey==="function"&&!mastDefKeyOk(prompt)){ const _dk=s.definitions[mastDefKey(prompt)]; if(_dk) return _dk; }   // ✎ DEFEDIT: "flex/flect" etc.
   // Math facts are matched on the RAW prompt — the keys carry ×, ÷, − and superscripts,
   // so lowercasing them (as the vocab map needs) would be meaningless here.
   if(MAST_MATH_ANS[prompt]) return MAST_MATH_ANS[prompt];
@@ -55692,17 +55693,40 @@ function mastAdminTierStreak(tier,delta){
 // Firebase keys can't contain . # $ [ ] / — prompts with those (rule-card sentences)
 // can't live in the definitions map; their back belongs in item.answer instead.
 function mastDefKeyOk(p){ return !/[.#$\[\]\/]/.test(p); }
+// DEFEDIT_START — her ask 2026-10-24: "let the 📖 Flip Definitions box also list the waiting roots (and the / names) so I
+// can fix meanings while I look through the book." Firebase can't use . # $ [ ] / in a key, so a meaning for a prompt like
+// "flex/flect" is saved under a coded key ("flex%2Fflect"); mastGetDef reads it right after the plain key, so every place
+// that shows a back picks it up. Plain prompts keep their plain key, byte-for-byte as before.
+function mastDefKey(p){ p=String(p); return mastDefKeyOk(p)?p:p.replace(/[.#$\[\]\/%]/g,c=>"%"+c.charCodeAt(0).toString(16).toUpperCase().padStart(2,"0")); }
+// A waiting (not yet started) name: save its meaning for this kid, and if its saved bank entry carries its own copy of the
+// meaning, update that copy too so the two never disagree (a pulled card reads the entry's copy first).
+function mastSaveWaitingDef(cat,name,def){
+  mastSaveDef(name,def);
+  const kid=masteryKid, raw=masteryData[kid+"_custom_items"]; if(!raw) return;
+  const k=Object.keys(raw).find(i=>{ const e=raw[i]; return e&&e.cat===cat&&e.name===name; });
+  if(k==null||raw[k].def==null) return;
+  const v=String(def||"").trim(); if(v) raw[k].def=v; else delete raw[k].def;
+  if(db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("mastery/"+kid+"_custom_items/"+k+"/def").set(v||null);   // this one field only
+}
+function _mastWaitingLesson(cat,name){
+  const raw=masteryData[masteryKid+"_custom_items"]; if(!raw) return "";
+  const e=Object.values(raw).find(x=>x&&x.cat===cat&&x.name===name); if(!e) return "";
+  if(e.ch==null) return (typeof WR_DECK!=="undefined"&&cat===WR_DECK)?"now":"";
+  const ch=Number(e.ch); if(typeof WR_DECK!=="undefined"&&cat===WR_DECK&&typeof _wrLessonName==="function") return _wrLessonName(ch);
+  return "Ch "+ch;
+}
+// DEFEDIT_END
 function mastSaveDef(prompt,def){
   const kid=masteryKid;
   const s=masteryData[kid+"_settings"]||{};
   if(!s.definitions) s.definitions={};
-  if(!mastDefKeyOk(prompt)){ alert("This prompt can't be a definition key (it contains . # $ [ ] or /) — edit the card's answer instead."); return; }
-  if(def.trim()) s.definitions[prompt]=def.trim();
-  else delete s.definitions[prompt];
+  const key=mastDefKey(prompt);   // ✎ DEFEDIT: "flex/flect" saves under its coded key instead of being refused
+  if(def.trim()) s.definitions[key]=def.trim();
+  else delete s.definitions[key];
   masteryData[kid+"_settings"]=s;
   // Touch ONLY this key — writing the whole map from local state let a stale tab wipe
   // every definition added elsewhere (same wipe class as the old mastAdminSave bug).
-  if(db) db.ref("mastery/"+kid+"_settings/definitions").update({[prompt]:def.trim()||null});
+  if(db) db.ref("mastery/"+kid+"_settings/definitions").update({[key]:def.trim()||null});
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 }
 function mastAdminCatMode(cat,mode){
@@ -63176,7 +63200,8 @@ function mastAdminBankCatHtml(cat,allNames,status,opts){
       let _fItems=masteryData[masteryKid]||[];
       if(!Array.isArray(_fItems)) _fItems=Object.values(_fItems);
       const _fCatItems=_fItems.filter(i=>i.subject===cat);
-      if(_fCatItems.length){
+      const _fWait=(st.available||[]).slice();   // ✎ DEFEDIT: names not started yet, in his order
+      if(_fCatItems.length||_fWait.length){
         h+='<div style="margin:6px 0 12px;padding:8px 10px;background:#faf5ff;border:1.5px solid #e9d5ff;border-radius:10px">';
         h+='<div style="font-size:10px;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">\u{1F4D6} Flip Definitions</div>';
         _fCatItems.forEach(fi=>{
@@ -63186,6 +63211,18 @@ function mastAdminBankCatHtml(cat,allNames,status,opts){
           h+='<input type="text" value="'+(_fd||"").replace(/"/g,"&quot;")+'" placeholder="definition\u{2026}" style="flex:1;padding:4px 8px;border-radius:6px;border:1px solid #e9d5ff;font-size:11px;font-family:\'DM Sans\',sans-serif;min-width:0;background:#fff" onchange="mastSaveDef(\''+fi.prompt.replace(/'/g,"\\'")+'\',this.value)">';
           h+='</div>';
         });
+        if(_fWait.length){   // ✎ DEFEDIT: the waiting names, folded, each with its lesson and a meaning box
+          h+='<details style="margin-top:6px"><summary style="cursor:pointer;font-size:11px;font-weight:700;color:#7c3aed">Waiting to start ('+_fWait.length+')</summary>';
+          _fWait.forEach(nm=>{
+            const _wd=mastGetDef(masteryKid,nm)||mastCustomDef(masteryKid,cat,nm), _wl=_mastWaitingLesson(cat,nm);
+            h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f0e6ff">';
+            h+='<span style="font-weight:700;font-size:12px;min-width:60px;flex-shrink:0;color:#6b7280">'+esc(nm)+'</span>';
+            if(_wl) h+='<span style="font-size:10px;color:#9ca3af;flex-shrink:0;min-width:58px">'+esc(_wl)+'</span>';
+            h+='<input type="text" value="'+esc(_wd||"")+'" placeholder="definition\u{2026}" style="flex:1;padding:4px 8px;border-radius:6px;border:1px solid #e9d5ff;font-size:11px;font-family:\'DM Sans\',sans-serif;min-width:0;background:#fff" onchange="mastSaveWaitingDef(\''+cat.replace(/'/g,"\\'")+'\',\''+nm.replace(/\\/g,"\\\\").replace(/'/g,"\\'")+'\',this.value)">';
+            h+='</div>';
+          });
+          h+='</details>';
+        }
         h+='</div>';
       }
     }
