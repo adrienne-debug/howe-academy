@@ -41890,9 +41890,151 @@ function _wrDecks(){
 // the stock enroll. The real attach comes in step 3." The stock enroll would write every card's back into the shared
 // definitions map and reset the deck's mode — the boys already have cards in this deck. So for THIS unit only: no
 // + kid buttons, and every stock enroll path (staged form, check-up start, move-up, plain enroll, _ustApply) returns.
-const WR_ENROLL_NOTE="Word Roots hooks up to each kid\u2019s cards through its own step (coming soon).";
+const WR_ENROLL_NOTE="Word Roots hooks up to each kid\u2019s cards through its own step, not the usual + button.";
 function _wrEnrollLocked(u){ return !!(u&&(u.id==="word_roots"||u.starter==="word_roots")); }
 // WORDROOTS_END
+// WRATTACH_START — 🏛 Word Roots step 3: hook up Ellis (her ask 2026-10-24: "Yes, start Word Roots step 3 (attach
+// Ellis) on a branch. Show me the plan in the dry run before anything writes."). Design §4 + §7. Attach = put the kid in
+// the unit WITHOUT the stock enroll: his cards in "Greek & Latin Roots" are never written (same card, same progress).
+//   · wrPlanAttach(kid) is pure: it reads his data and returns every write, in plain words too. Nothing is changed.
+//   · Mom taps "Hook up Ellis" → the plan shows → only "Yes" writes (one multi-path update of targeted paths), and
+//     never in ?dryrun=1. The plan is rebuilt at "Yes" and must match what she saw, or nothing is written.
+//   · Gate: cat_gate = {subject: his Word Roots subject}. Refuses when the subject is missing or not stamped (an
+//     unstamped subject fails the gate OPEN — every root would start at once).
+//   · ch on every book root he has (Beginning lesson; il-/a- Level 1; poly- Level 3); More roots get none (her answer:
+//     they open now). New Beginning roots are appended {cat,name,ch} — no def (a bank def makes a recite card).
+//   · Bank order = book order (her answer): his 13 cards first, then one More root after every 3 book roots (her
+//     answer), then the Level roots, then the roots kept for Our words. His next new card stays meter.
+//   · Waiting saved roots lose their def copy (§4.6) only where his definitions map holds the same words, so no
+//     back changes. `active` is removed (her answer). ir-, omni- and the number prefixes are kept untouched for Our
+//     words later. Never written: mastery/ellis (cards), cat_modes, notebookSettings, any other kid.
+const WR_ATTACH_KIDS=["ellis"];   // Lincoln hooks up in step 4 (his Word Roots subject comes first)
+const WR_OUR_WORDS=["ir-","omni-","-quadra","penta-","hexa-","hepta-","oct-","novem-","deca-"];
+const WR_DROP=["active"];
+// Names with "/" can't be a definitions key, so their back lives in the built-in meanings list (like flex/flect).
+function _wrSlashDefs(have){ const out={}; WR_DATA.b.concat(WR_DATA.l.map(r=>[r[1],r[2],r[3]]),WR_DATA.m).forEach(r=>{ const n=String(r[1]), k=n.toLowerCase();
+  if(/[.#$\[\]\/]/.test(n)&&!(have&&have[k])&&!out[k]) out[k]=String(r[2]); }); return out; }
+function _wrSubject(kid){
+  const subs=(((typeof currData!=="undefined"&&currData||{}).subjects||{})[kid])||{};
+  if(subs.word_roots) return {sk:"word_roots"};
+  const hit=Object.keys(subs).filter(k=>/word\s*_?roots/i.test(k+" "+((subs[k]||{}).display||"")));
+  return hit.length===1?{sk:hit[0]}:{sk:null,many:hit.length>1};
+}
+function wrPlanAttach(kid,ts){
+  const P={kid,ok:false,why:"",writes:[],ts:ts||Date.now()};
+  const us=(typeof unitStudies!=="undefined"&&unitStudies)||{}, u=us.word_roots;
+  if(WR_ATTACH_KIDS.indexOf(kid)<0){ P.why=cap(kid)+" hooks up in a later step."; return P; }
+  if(!u||!Array.isArray(u.decks)){ P.why="Add the Word Roots unit first (Units → Starter units → Add to our family)."; return P; }
+  if((u.enrolled||{})[kid]||(u.kidStage||{})[kid]){ P.why=cap(kid)+" is already hooked up."; return P; }
+  const sj=_wrSubject(kid); if(!sj.sk){ P.why=sj.many?cap(kid)+" has more than one Word Roots subject — nothing was changed.":cap(kid)+" has no Word Roots subject in his curriculum."; return P; }
+  const sk=P.subject=sj.sk;
+  if(typeof lidStamped!=="function"||!lidStamped(kid,sk)){ P.why="His Word Roots subject isn’t stamped yet — tap “Import completions” in the Curriculum grid first. (Unstamped, every root would start at once.)"; return P; }
+  const upto=P.gate=(typeof mastGateChapter==="function")?mastGateChapter(kid,sk):null;
+  if(upto==null){ P.why="Can’t read which Word Roots lesson he’s on — nothing was changed."; return P; }
+  const deck=u.decks.find(d=>d&&d.key===WR_DECK); if(!deck){ P.why="The unit has no “"+WR_DECK+"” deck."; return P; }
+  const cards=(deck.cards||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0)), card={}; cards.forEach(c=>{ card[c.name]=c; });
+  const chOf=c=>(c&&c.stage!==6&&c.lesson!=null)?c.lesson:null;   // More roots (stage 6): no gate
+  let items=masteryData[kid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  const live=items.filter(i=>i&&i.subject===WR_DECK).map(i=>i.prompt), isLive=new Set(live);
+  const cust=masteryData[kid+"_custom_items"]||[], idxs=Object.keys(cust).filter(k=>/^\d+$/.test(k)).map(Number);
+  const saved=idxs.filter(i=>cust[i]&&cust[i].cat===WR_DECK).map(i=>({i,e:cust[i]}));
+  const st=masteryData[kid+"_settings"]||{}, defs=st.definitions||{};
+  const builtIn=(((typeof MAST_BANK_MAP!=="undefined")&&MAST_BANK_MAP[kid])||{})[WR_DECK]||[];
+  const W=(path,value,what)=>P.writes.push({path,value,what});
+  const base="mastery/"+kid+"_custom_items/";
+  const S=P.sum={liveKept:live.length,chSaved:[],defRemoved:[],defKept:[],dropped:[],ourWords:[],other:[],added:[],builtInCh:[],defsNew:[],slashBacks:[],lincolnMore:[]};
+  const have=new Set();
+  W("unitStudies/word_roots/enrolled/"+kid,true,"puts him in the unit");
+  W("unitStudies/word_roots/kidStage/"+kid,{stage:1,subject:sk,knows:"",map:"",ts:P.ts,via:"wr_attach"},"his start: Beginning, gated by his Word Roots lessons");
+  W("mastery/"+kid+"_settings/cat_gate/"+WR_DECK,{subject:sk},"new roots open by his Word Roots lesson");
+  saved.forEach(({i,e})=>{ const n=e.name; have.add(n);
+    if(WR_DROP.indexOf(n)>=0){ if(!isLive.has(n)){ W(base+i,null,"removes “"+n+"” (it never became a card)"); S.dropped.push(n); } else S.other.push(n); return; }
+    const c=card[n];
+    if(!c){ (WR_OUR_WORDS.indexOf(n)>=0?S.ourWords:S.other).push(n); return; }
+    const ch=chOf(c);
+    if(ch!=null&&Number(e.ch)!==ch){ W(base+i+"/ch",ch,n+" opens at "+_wrLessonName(ch)); S.chSaved.push(n); }
+    if(e.def!=null&&!isLive.has(n)){
+      if(String(defs[n]||"")===String(e.def)){ W(base+i+"/def",null,n+": drop the extra copy of its meaning (his back still says “"+e.def+"”)"); S.defRemoved.push(n); }
+      else S.defKept.push(n); }
+  });
+  let next=idxs.length?Math.max(...idxs)+1:0;
+  cards.filter(c=>c.stage===1).forEach(c=>{ const n=c.name; if(have.has(n)||isLive.has(n)) return; have.add(n);
+    const bi=builtIn.indexOf(n)>=0;
+    W(base+(next++),{cat:WR_DECK,name:n,ch:c.lesson},(bi?"his built-in ":"new: ")+n+" — opens at "+_wrLessonName(c.lesson));
+    (bi?S.builtInCh:S.added).push(n);
+    if(!bi){ if(typeof mastDefKeyOk==="function"&&!mastDefKeyOk(n)) S.slashBacks.push(n);
+      else if(!defs[n]){ W("mastery/"+kid+"_settings/definitions/"+n,String(c.def),"back for "+n+": “"+c.def+"”"); S.defsNew.push(n); } }
+  });
+  builtIn.forEach(n=>have.add(n));
+  cards.filter(c=>c.stage===6&&!have.has(c.name)&&!isLive.has(c.name)).forEach(c=>S.lincolnMore.push(c.name));   // not added: her call
+  // Bank order: cards first (as she sorted them), then 3 book roots : 1 More root, then Level roots, then Our words.
+  const prev=((masteryData[kid+"_bank_order"]||{})[WR_DECK])||[], inBank=n=>have.has(n);
+  const cardsFirst=prev.filter(n=>isLive.has(n)).concat(live.filter(n=>prev.indexOf(n)<0));
+  const wait=n=>inBank(n)&&!isLive.has(n);
+  const B=cards.filter(c=>c.stage===1&&wait(c.name)).map(c=>c.name), M=cards.filter(c=>c.stage===6&&wait(c.name)).map(c=>c.name);
+  const L=cards.filter(c=>c.stage>=2&&c.stage<=5&&wait(c.name)).map(c=>c.name);
+  const mix=[]; let bi=0,mi=0; while(bi<B.length||mi<M.length){ for(let k=0;k<3&&bi<B.length;k++) mix.push(B[bi++]); if(mi<M.length) mix.push(M[mi++]); }
+  const rest=prev.concat(builtIn,saved.map(x=>x.e.name)).filter((n,ix,a)=>a.indexOf(n)===ix&&inBank(n)&&!isLive.has(n)&&!card[n]&&WR_DROP.indexOf(n)<0);
+  const order=P.order=cardsFirst.concat(mix,L,rest);
+  W("mastery/"+kid+"_bank_order/"+WR_DECK,order,"his list order: book order, one More root after every 3 book roots");
+  // What would start next (the auto-pull reads the bank in this order, gate applied)
+  const chPlan={}; saved.forEach(({e})=>{ const c=card[e.name]; const ch=chOf(c); if(ch!=null) chPlan[e.name]=ch; });
+  cards.filter(c=>c.stage===1).forEach(c=>{ if(chPlan[c.name]==null&&!isLive.has(c.name)) chPlan[c.name]=c.lesson; });
+  const open=n=>!(n in chPlan)||chPlan[n]<=upto;
+  const waiting=order.filter(n=>!isLive.has(n));
+  P.openNow=waiting.filter(open); P.held=waiting.filter(n=>!open(n)); P.next10=P.openNow.slice(0,10);
+  P.ok=true; return P;
+}
+function _wrLessonName(ch){ return ch>=100?"Level "+Math.floor(ch/100)+" Lesson "+(ch%100):"Lesson "+ch; }
+let wrAttachView=null;   // {kid, plan, msg}
+function wrAttachOpen(kid){ if(!momHere()) return; wrAttachView={kid,plan:wrPlanAttach(kid),msg:""}; const el=document.getElementById("content"); if(el) renderUnits(el); }
+function wrAttachClose(){ wrAttachView=null; const el=document.getElementById("content"); if(el) renderUnits(el); }
+function wrApplyAttach(plan){
+  if(!momHere()||!plan||!plan.ok) return false;
+  const again=wrPlanAttach(plan.kid,plan.ts);
+  if(JSON.stringify(again.writes)!==JSON.stringify(plan.writes)){ if(wrAttachView) wrAttachView={kid:plan.kid,plan:again,msg:"His data changed since the plan was made — here’s the new plan. Nothing was written."}; const el=document.getElementById("content"); if(el) renderUnits(el); return false; }
+  if(!db||_dryRun()){ if(wrAttachView) wrAttachView.msg="Dry run — nothing was written."; const el=document.getElementById("content"); if(el) renderUnits(el); return false; }
+  const up={}; plan.writes.forEach(w=>{ up[w.path]=w.value; });
+  db.ref().update(up).then(()=>{
+    plan.writes.forEach(w=>_wrSetLocal(w.path,w.value));
+    wrAttachView=null; const el=document.getElementById("content"); if(el) renderUnits(el);
+  }).catch(()=>{ if(wrAttachView) wrAttachView.msg="That didn’t save — nothing changed. Try again when you’re online."; const el=document.getElementById("content"); if(el) renderUnits(el); });
+  return true;
+}
+function _wrSetLocal(path,value){
+  const parts=path.split("/"); let root;
+  if(parts[0]==="unitStudies"){ root=unitStudies; parts.shift(); } else if(parts[0]==="mastery"){ root=masteryData; parts.shift(); } else return;
+  let o=root; for(let i=0;i<parts.length-1;i++){ if(o[parts[i]]==null||typeof o[parts[i]]!=="object") o[parts[i]]={}; o=o[parts[i]]; }
+  const k=parts[parts.length-1]; if(value===null){ if(Array.isArray(o)) o[k]=null; else delete o[k]; } else o[k]=value;
+}
+function wrAttachHtml(u,kid,esc,btn){
+  const V=wrAttachView;
+  if(!V||V.kid!==kid) return '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:12.5px;font-weight:800;color:#9ca3af;min-width:64px">'+esc(cap(kid))+'</span><button onclick="wrAttachOpen(\''+esc(kid)+'\')" style="'+btn("#fff","#1f2937","var(--border)")+'">\u{1F517} Hook up '+esc(cap(kid))+'</button></div>';
+  const P=V.plan, S=P.sum||{}, li=t=>'<li style="margin:3px 0">'+t+'</li>', list=a=>a.map(esc).join(", ");
+  let h='<div style="font-size:12.5px;font-weight:800;color:#1f2937;margin-bottom:6px">Hook up '+esc(cap(kid))+' to Word Roots</div>';
+  if(V.msg) h+='<div style="font-size:11.5px;font-weight:700;color:#b45309;margin-bottom:6px">'+esc(V.msg)+'</div>';
+  if(!P.ok) return h+'<div style="font-size:11.5px;color:#374151;line-height:1.5">'+esc(P.why)+'</div><div style="margin-top:8px"><button onclick="wrAttachClose()" style="'+btn("#fff","var(--muted)","var(--border)")+'">Close</button></div>';
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Here’s everything it does. Nothing is written until you tap Yes.</div><ul style="font-size:11.5px;color:#374151;line-height:1.45;padding-left:18px;margin:0">';
+  h+=li('His <b>'+S.liveKept+' root cards stay exactly as they are</b> — same progress, nothing redone.');
+  h+=li('New roots open by his Word Roots lesson. He’s on <b>Lesson '+P.gate+'</b>, so Lessons 1–'+P.gate+' can start now; later lessons open as he reaches them.');
+  h+=li('<b>'+P.openNow.length+'</b> roots can start now ('+P.held.length+' wait for a later lesson). Next up: '+list(P.next10)+'.');
+  h+=li('More roots open now, mixed in: one after every 3 book roots.');
+  if(S.added.length) h+=li('Adds <b>'+S.added.length+'</b> book roots he doesn’t have yet: '+list(S.added)+'.');
+  if(S.builtInCh.length||S.chSaved.length) h+=li('Gives a lesson to '+(S.chSaved.length+S.builtInCh.length)+' roots he already has (il- and a- wait for Level 1, poly- for Level 3).');
+  if(S.defRemoved.length) h+=li('<b>'+S.defRemoved.length+' waiting roots lose their extra meaning copy</b>, so they start as normal flip cards. The meaning on his card doesn’t change.');
+  if(S.dropped.length) h+=li('Removes '+list(S.dropped)+' (it never became a card).');
+  if(S.ourWords.length) h+=li('Keeps '+list(S.ourWords)+' as his waiting roots, for Our words later.');
+  h+=li('Not touched: his cards, the deck’s card style, his notebook, and every other kid.');
+  h+='</ul><details style="margin-top:6px"><summary style="font-size:11px;font-weight:700;color:var(--muted);cursor:pointer">'+P.writes.length+' saved changes</summary><div style="font-size:10.5px;color:#374151;line-height:1.45;margin-top:4px;max-height:220px;overflow:auto">'+P.writes.map(w=>esc(w.what)).join('<br>')+'</div></details>';
+  h+='<div style="display:flex;gap:6px;margin-top:9px"><button onclick="wrApplyAttach(wrAttachView&&wrAttachView.plan)" style="'+btn("#2d6a4f","#fff","#2d6a4f")+'">✓ Yes, hook up '+esc(cap(kid))+'</button><button onclick="wrAttachClose()" style="'+btn("#fff","var(--muted)","var(--border)")+'">Cancel</button></div>';
+  if(typeof _dryRun==="function"&&_dryRun()) h+='<div style="font-size:10.5px;color:#b45309;margin-top:5px">Dry run — Yes writes nothing.</div>';
+  return h;
+}
+function wrHookedHtml(u,kid,ks,esc){
+  const P=(typeof mastGateChapter==="function"&&ks.subject)?mastGateChapter(kid,ks.subject):null;
+  return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:12.5px;font-weight:800;color:#1f2937;min-width:64px">'+esc(cap(kid))+'</span><span style="font-size:11.5px;color:#15803d;font-weight:700">✓ Hooked up</span><span style="font-size:10.5px;color:var(--muted);font-weight:700">roots open by his Word Roots lesson'+(P!=null?' (now Lesson '+P+')':'')+'</span></div>';
+}
+// WRATTACH_END
 const STARTER_UNITS={
   math_fluency_path:()=>({ id:"math_fluency_path", starter:"math_fluency_path", starterVer:1,
     title:"Math Fluency Path", emoji:"\u{1F9EE}", nbInsert:false,   // facts drill, no notebook pages
@@ -42120,7 +42262,8 @@ function _unitStageRowsHtml(u,roster){
   roster.forEach(k=>{
     h+='<div style="padding:8px 0;border-top:1px solid #f3f1ee">';
     const ks=((u.kidStage||{})[k])||null;
-    if(ks){ const st=unitStageStatus(u,k)||{}; const sd=_ustStageDef(u,ks.stage)||{};
+    if(ks&&_wrLock){ h+=wrHookedHtml(u,k,ks,esc); }   // 🏛 WRATTACH: no stock stage tools on this unit
+    else if(ks){ const st=unitStageStatus(u,k)||{}; const sd=_ustStageDef(u,ks.stage)||{};
       h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:12.5px;font-weight:800;color:#1f2937;min-width:64px">'+esc(cap(k))+'</span>';
       h+='<span style="font-size:11.5px;color:#374151;font-weight:700">Stage '+ks.stage+' · '+esc(sd.label||"")+'</span>';
       h+=st.ready?'<span style="font-size:10.5px;font-weight:800;color:#15803d;background:#f0fdf4;border-radius:8px;padding:2px 8px">✓ ready to move up</span>'
@@ -42158,6 +42301,8 @@ function _unitStageRowsHtml(u,roster){
       h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin:7px 0">'+(ki>=0?'Through the '+esc(f.knows)+' go straight to review. ':'')+(nxt?'Starts learning the '+esc(nxt)+'.':'Everything in this stage is review.')+'</div>';
       h+='<div style="display:flex;gap:6px"><button onclick="unitStageEnroll()" style="'+btn("#2d6a4f","#fff","#2d6a4f")+'">Start '+esc(cap(k))+'</button><button onclick="unitStageFormClose()" style="'+btn("#fff","var(--muted)","var(--border)")+'">Cancel</button></div>';
       }
+    } else if(_wrLock&&typeof WR_ATTACH_KIDS!=="undefined"&&WR_ATTACH_KIDS.indexOf(k)>=0){
+      h+=wrAttachHtml(u,k,esc,btn);   // 🏛 WRATTACH: Hook up Ellis → the plan → Yes
     } else if(_wrLock){
       h+='<div style="display:flex;align-items:center;gap:8px"><span style="font-size:12.5px;font-weight:800;color:#9ca3af;min-width:64px">'+esc(cap(k))+'</span><span style="font-size:11px;color:var(--muted)">not hooked up yet</span></div>';
     } else {
@@ -52936,6 +53081,7 @@ chron:"time",morph:"form or shape",bene:"good",mal:"bad",omni:"all",poly:"many",
 "united kingdom":"London",france:"Paris",germany:"Berlin",spain:"Madrid",italy:"Rome",japan:"Tokyo",china:"Beijing",india:"New Delhi",brazil:"Brasília",australia:"Canberra",egypt:"Cairo","south africa":"Pretoria (executive), Cape Town (legislative)",mexico:"Mexico City",canada:"Ottawa",russia:"Moscow","south korea":"Seoul",argentina:"Buenos Aires",nigeria:"Abuja","saudi arabia":"Riyadh",turkey:"Ankara",greece:"Athens",norway:"Oslo",thailand:"Bangkok",kenya:"Nairobi",colombia:"Bogotá",peru:"Lima",indonesia:"Jakarta",pakistan:"Islamabad",vietnam:"Hanoi","new zealand":"Wellington",
 "cell membrane":"the thin outer layer that controls what enters and leaves the cell",nucleus:"the control center of a cell that holds DNA",mitochondria:"the powerhouse of the cell — converts food into energy",cytoplasm:"the jelly-like substance filling the cell between the membrane and nucleus",chloroplast:"the part of a plant cell that captures sunlight for photosynthesis","cell wall":"the rigid outer layer of plant cells that provides structure and support",tissue:"a group of similar cells working together to perform a function",organ:"a structure made of tissues that performs a specific job in the body","organ system":"a group of organs working together — like the digestive or circulatory system","cellular respiration":"the process cells use to break down food and release energy","plate tectonics":"the theory that Earth's surface is made of moving plates","continental drift":"the idea that continents slowly move across Earth's surface over time","convergent boundary":"where two tectonic plates push toward each other","divergent boundary":"where two tectonic plates pull apart from each other","transform boundary":"where two tectonic plates slide past each other","kinetic energy":"the energy an object has because it is moving","potential energy":"stored energy an object has because of its position or condition","thermal energy":"heat energy from the movement of particles in matter",conduction:"heat transfer through direct contact between materials",convection:"heat transfer through the movement of liquids or gases",radiation:"heat transfer through electromagnetic waves, like sunlight",atom:"the smallest unit of an element that keeps its properties",element:"a pure substance made of only one type of atom",compound:"a substance made of two or more elements chemically bonded",mixture:"two or more substances combined but not chemically bonded","chemical change":"a change that creates a new substance — burning, rusting, cooking","physical change":"a change in form or appearance without creating a new substance",density:"how much mass is packed into a given volume","mass vs weight":"mass is the amount of matter (stays the same); weight is the pull of gravity (changes by location)",
 jamestown:"1607 — first permanent English settlement in North America","plymouth colony":"1620 — Pilgrims established a colony in Massachusetts seeking religious freedom","boston tea party":"1773 — colonists dumped British tea into the harbor to protest taxation without representation","declaration of independence":"1776 — declared the 13 colonies free from British rule, written primarily by Thomas Jefferson","constitutional convention":"1787 — delegates met in Philadelphia to write the U.S. Constitution","bill of rights":"1791 — the first 10 amendments to the Constitution protecting individual freedoms","louisiana purchase":"1803 — the U.S. bought a vast territory from France, doubling the nation's size","war of 1812":"1812–1815 — conflict between the U.S. and Britain over trade restrictions and impressment of sailors","trail of tears":"1830s — the forced relocation of Native American nations from southeastern states to Oklahoma","gold rush":"1849 — discovery of gold in California drew hundreds of thousands of settlers west","civil war":"1861–1865 — war between the Union (North) and Confederacy (South) over slavery and states' rights","emancipation proclamation":"1863 — Lincoln's order declaring enslaved people in Confederate states to be free",reconstruction:"1865–1877 — the period after the Civil War focused on rebuilding the South and integrating freed people","13th amendment":"1865 — abolished slavery throughout the United States","14th amendment":"1868 — granted citizenship and equal protection under the law to all persons born in the U.S.","15th amendment":"1870 — prohibited denying the right to vote based on race","industrial revolution":"late 1800s — a period of rapid growth in factories, railroads, and manufacturing","ellis island":"1892–1954 — the gateway for over 12 million immigrants entering the U.S.","spanish-american war":"1898 — a brief war that resulted in the U.S. gaining territories including Puerto Rico and the Philippines","19th amendment":"1920 — granted women the right to vote"};
+if(typeof _wrSlashDefs==="function") Object.assign(MAST_VOCAB_DEFS,_wrSlashDefs(MAST_VOCAB_DEFS));   // 🏛 WRATTACH: backs for root names with "/" (they can't be definitions keys)
 // Answers for the Math Facts banks. These are drilled as QUIZ cards, and a learning card
 // only flips to its answer when one exists (_learnFlip below) — with no answer anywhere the
 // card simply never flipped, which is what Lincoln hit: the bank words carry no answer, the
