@@ -14033,13 +14033,24 @@ function llQueue(carry,next){
     if(i<0&&(o.indexOf(id)<0||Q.home)) return;   // an extra isn't in the rotation — nothing to pull forward
     for(let g=0;i<0&&g<n;g++){ if(!Q.extend()) break; i=Q.q.indexOf(id); } if(i>=0) Q.q.splice(i,1); };   // a load started ahead of its turn leaves the line where it stood
   Q.draw=function(ex){ for(let g=0;g<=n;g++){ for(let i=0;i<Q.q.length;i++){ if(ex.indexOf(Q.q[i])<0) return Q.q.splice(i,1)[0]; } if(!Q.extend()) return null; } return null; };
+  Q.clone=function(){ const C=llQueue([],""); C.q=Q.q.slice(); C.ptr=Q.ptr; C.lastX=Object.assign({},Q.lastX); C.credit=Object.assign({},Q.credit); C.onceDone=Object.assign({},Q.onceDone); return C; };   // ⏩ LL_EARLY: a copy to lay a day without its washes
   Q.state=function(){ const cr={}; Object.keys(Q.credit).forEach(function(k){ if(Q.credit[k]&&o.indexOf(k)>=0) cr[k]=true; }); return {carry:Q.q.slice(),next:n?o[Q.ptr%n]:"",credit:cr}; };
   return Q;
 }
 // One day of the lay: the loads started that day first (they leave the line wherever they stood), then the line fills the day to its
 // cap. "Keep today" (plan/<iso>) is that day's loads instead. closed: what was laid but not started goes back to the front, in order.
-function llLayDay(Q,iso,closed){
-  const dow=llDow(iso), b=llBreakOn(iso), br=(b&&!b.run)?b:null, c=br?0:llCap(dow), st=llLog(iso), bu=llBumps(iso), jp=llJumps(iso), o=(_llLx=Q.lastX,llLineOrder(iso)), fz=laundryLine&&laundryLine.plan&&laundryLine.plan[iso], loads=[], LGd=llDayLog(iso);   // 🛏 the walking last-washed for blanket checks
+// LL_EARLY_START — ⏩ a load washed ahead of its day goes OVER that day's cap (her ask 2026-10-25: "kind of like the school calendar, if
+// I end up doing a load earlier than it's on the list, I would love for it to pull it to the day that I'm on, even if it passes the cap
+// limit. And then that way everything else can lay as well"; her yes the same evening). The day is first laid WITHOUT its washes (plain,
+// on a copy of the line): a load that went in and is on that plain list counts toward the cap as before; one that isn't (its home day is
+// later, or it was further back in the line) rides over the cap, so nothing planned for that day slides, and its later spot opens up for
+// the rest of the line. ⏫ Bumps and 💦 wet loads still take a slot (her picks 2026-10-16) — they are planned, not done early.
+function llEarlyOn(Q,iso,closed){ const st=llLog(iso); if(!st.length||typeof Q.clone!=="function") return {}; const pre=llLayDay(Q.clone(),iso,closed,true).loads, E={};
+  st.forEach(function(id){ if(pre.indexOf(id)<0) E[id]=true; }); return E; }
+// LL_EARLY_END
+function llLayDay(Q,iso,closed,plain){
+  const ear=plain?{}:llEarlyOn(Q,iso,closed);   // ⏩ LL_EARLY (before _llLx is set below — the plain lay walks its own copy)
+  const dow=llDow(iso), b=llBreakOn(iso), br=(b&&!b.run)?b:null, c=br?0:llCap(dow), st=plain?[]:llLog(iso), bu=llBumps(iso), jp=llJumps(iso), o=(_llLx=Q.lastX,llLineOrder(iso)), fz=laundryLine&&laundryLine.plan&&laundryLine.plan[iso], loads=[], LGd=llDayLog(iso);   // 🛏 the walking last-washed for blanket checks
   if(Q.home) o.forEach(function(id){ if(llHome(id)!==dow||Q.q.indexOf(id)>=0) return;   // 📅 its home day: joins behind what's waiting…
     if(Q.credit[id]){ const c=Q.credit[id]; delete Q.credit[id];   // …unless an early wash already covered this one
       const wd=(typeof c==="string"&&/^w:/.test(c))?c.slice(2):"";   // 💦 an accident wash covers it only within 3 days (her pick 2026-10-19)
@@ -14052,7 +14063,7 @@ function llLayDay(Q,iso,closed){
   if(!Q.home) llExtraIds().forEach(function(id){ if(llExtras()[id].rideWith) return; const l=Q.lastX[id], d=llDue(llExtras()[id],l||undefined); if(Q.q.indexOf(id)<0&&loads.indexOf(id)<0&&d&&d<=iso) Q.q.push(id); });   // 🗓 plain rotation: come due → behind what's waiting
   st.forEach(function(id){ if(llOnce()[id]) Q.onceDone[id]=true; });
   if(!Q.home) llOnceIds().forEach(function(id){ if(Q.onceDone[id]||Q.q.indexOf(id)>=0||loads.indexOf(id)>=0) return; if(String(llOnce()[id].from||"")<=iso) Q.q.push(id); });   // ☑️ plain rotation: it waits its turn in line
-  const wt=function(id){ return llCoverOf(id,iso)==="wait"&&st.indexOf(id)<0; }, cnt=function(){ return loads.filter(function(id){ return !wt(id); }).length; };
+  const wt=function(id){ return llCoverOf(id,iso)==="wait"&&st.indexOf(id)<0; }, cnt=function(){ return loads.filter(function(id){ return !wt(id)&&!ear[id]; }).length; };   // ⏩ LL_EARLY: an early wash rides over the cap
   if(!fz) while(cnt()+jp.length<c){ const id=Q.draw(loads); if(!id) break; loads.push(id); }   // 💦 each jump-in holds a slot · ⏸ a load that waits a day doesn't
   if(!fz&&Q.home){   // ☑️ 🗓 home days: one-time loads and due every-few-weeks items take OPEN room only — never a home-day load's slot
     // (her picks 2026-10-17 / 10-18: "next open slot"; "Open room only"), oldest date first
@@ -14065,7 +14076,7 @@ function llLayDay(Q,iso,closed){
   if(!closed){ const w=loads.filter(wt); if(w.length) Q.q=w.concat(Q.q.filter(function(id){ return w.indexOf(id)<0; })); }   // ⏸ waits a day: at the front tomorrow
   if(closed&&left.length){ const back=left.filter(function(id){ return !(Q.home&&(llOnce()[id]||llExtras()[id])); }); Q.q=back.concat(Q.q.filter(function(id){ return back.indexOf(id)<0; })); }   // ☑️ an unwashed one-time load just looks for room again
   const lbl={}, sh={}; loads.forEach(function(id){ lbl[id]=llLabelFull(id,iso); sh[id]=llShortFull(id,iso); });   // 🛏 names fixed as the day is laid (blankets / riders as of THAT day)
-  return {iso:iso,dow:dow,brk:br?br.name:"",tag:(b&&b.run)?b.name:"",cap:c,loads:loads,started:st,bumped:bu,jumps:jp,waited:loads.filter(wt),moved:closed?left:[],lbl:lbl,sh:sh};
+  return {iso:iso,dow:dow,brk:br?br.name:"",tag:(b&&b.run)?b.name:"",cap:c,loads:loads,started:st,early:Object.keys(ear).filter(function(id){ return loads.indexOf(id)>=0; }),bumped:bu,jumps:jp,waited:loads.filter(wt),moved:closed?left:[],lbl:lbl,sh:sh};
 }
 // ⏫ the loads bumped onto a date (first-bumped first) · 💦 the jump-ins reported that date [{id,label}]
 function llBumps(iso){ const B=(laundryLine&&laundryLine.bump&&laundryLine.bump[iso])||{}, o=llOrder(); return Object.keys(B).filter(function(id){ return o.indexOf(id)>=0&&B[id]; }).sort(function(a,b){ return (B[a]||0)-(B[b]||0); }); }
@@ -14646,7 +14657,7 @@ function llCardHTML(noGrid){
   const it=llItems(), o=llOrder(), nx=llFront(), mom=(typeof momHere==="function")?momHere():false, today=llToday(), r0=llProjectNow(1)[0], tl=r0.loads, ts=r0.started, tb=r0.bumped;
   const btn=function(on,t,dis){ return '<button onclick="'+on+'"'+(dis?' disabled':'')+' style="padding:2px 8px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;font-size:11px;font-weight:700;cursor:pointer;'+(dis?'opacity:.35':'')+'">'+t+'</button>'; };
   let h='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);margin-bottom:10px;overflow:hidden"><div style="padding:9px 12px 2px;font-size:13px;font-weight:800;display:flex;align-items:center;gap:6px"><span style="flex:1">🧺 The laundry line</span>'+((mom||(typeof _kioskD==="function"&&_kioskD()))?llMomSickBtn():'')+'</div>'
-    +'<div style="padding:0 12px 6px;font-size:11px;color:var(--muted)">'+(llMode()==="home"?'Each load has a home day. On a caught-up week it goes on its day; anything missed waits at the front, in order, and fills the caps first.':'The loads keep their order and go round again. Each day fills to its cap.')+' A load counts once it\'s in the washer; one not started by 8 PM stays at the front and everything behind it slides a day.</div>';
+    +'<div style="padding:0 12px 6px;font-size:11px;color:var(--muted)">'+(llMode()==="home"?'Each load has a home day. On a caught-up week it goes on its day; anything missed waits at the front, in order, and fills the caps first.':'The loads keep their order and go round again. Each day fills to its cap.')+' A load counts once it\'s in the washer; one not started by 8 PM stays at the front and everything behind it slides a day. A load washed ahead of its day goes over that day\'s cap, so nothing else moves.</div>';
   if(mom){ const md=llMode(), mb=function(m,t){ return '<button onclick="llModeSet(\''+m+'\')" style="padding:3px 9px;border-radius:8px;border:1.5px solid '+(md===m?'#2563eb':'#cbd5e1')+';background:'+(md===m?'#2563eb':'#fff')+';color:'+(md===m?'#fff':'#475569')+';font-size:11px;font-weight:700;cursor:pointer">'+t+'</button>'; };
     h+='<div style="display:flex;gap:5px;padding:0 12px 8px">'+mb("home","📅 Home days")+mb("rotate","🔁 Plain rotation")+'</div>'; }   // 📅 HOME DAYS: her switch
   { const ask=llCoverAskHTML(); if(ask&&(mom||(typeof _kioskD==="function"&&_kioskD()))) h+='<div style="padding:0 12px 8px">'+ask+'</div>'; }   // 👤 who's doing it
