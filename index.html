@@ -14062,16 +14062,18 @@ function llLayDay(Q,iso,closed,plain){
   st.forEach(function(id){ const _x=llExtras()[id]; if(_x&&_x.rideWith) return; if(llWith(id,iso)) return; if(loads.indexOf(id)<0){ Q.take(id); loads.push(id); if(LGd[id]&&LGd[id].early&&Q.credit[id]===true) Q.credit[id]="w:"+iso; } });   // 💦 an accident wash: a dated credit   // 🛏 a blanket went in with its sheets; 🔗 a rider still riding went in with its host — a rider that went in with it on a SPLIT day counts as its own load, in (her 10/19: the queen's sheets went in with the king's before the split existed)
   bu.forEach(function(id){ if(loads.indexOf(id)<0){ Q.take(id); loads.push(id); } });   // ⏫ bumped onto this day: ahead of the line
   st.forEach(function(id){ if(id in Q.lastX&&!(Q.lastX[id]>iso)) Q.lastX[id]=iso; });   // 🗓 an extra that went in is washed that day
-  if(!Q.home) llExtraIds().forEach(function(id){ if(llExtras()[id].rideWith) return; const l=Q.lastX[id], d=llDue(llExtras()[id],l||undefined); if(Q.q.indexOf(id)<0&&loads.indexOf(id)<0&&d&&d<=iso) Q.q.push(id); });   // 🗓 plain rotation: come due → behind what's waiting
   st.forEach(function(id){ if(llOnce()[id]) Q.onceDone[id]=true; });
-  if(!Q.home) llOnceIds().forEach(function(id){ if(Q.onceDone[id]||Q.q.indexOf(id)>=0||loads.indexOf(id)>=0) return; if(String(llOnce()[id].from||"")<=iso) Q.q.push(id); });   // ☑️ plain rotation: it waits its turn in line
+  const _joinX=function(){ llExtraIds().forEach(function(id){ if(llExtras()[id].rideWith) return; const l=Q.lastX[id], d=llDue(llExtras()[id],l||undefined); if(Q.q.indexOf(id)<0&&loads.indexOf(id)<0&&d&&d<=iso) Q.q.push(id); }); };   // 🗓 plain rotation: come due → behind what's waiting
+  const _joinO=function(){ llOnceIds().forEach(function(id){ if(Q.onceDone[id]||Q.q.indexOf(id)>=0||loads.indexOf(id)>=0) return; if(String(llOnce()[id].from||"")<=iso) Q.q.push(id); }); };   // ☑️ plain rotation: it waits its turn in line
+  if(!Q.home) llOpenOrder().forEach(function(k){ if(k==="once") _joinO(); else _joinX(); });   // ☑️🗓 LL_OPENSPACE: the chosen kind joins first
   const wt=function(id){ return llCoverOf(id,iso)==="wait"&&st.indexOf(id)<0; }, cnt=function(){ return loads.filter(function(id){ return !wt(id)&&!ear[id]; }).length; };   // ⏩ LL_EARLY: an early wash rides over the cap
   if(!fz) while(cnt()+jp.length<c){ const id=Q.draw(loads); if(!id) break; loads.push(id); }   // 💦 each jump-in holds a slot · ⏸ a load that waits a day doesn't
   if(!fz&&Q.home){   // ☑️ 🗓 home days: one-time loads and due every-few-weeks items take OPEN room only — never a home-day load's slot
     // (her picks 2026-10-17 / 10-18: "next open slot"; "Open room only"), oldest date first
     const F=[]; llOnceIds().forEach(function(id){ const f=String(llOnce()[id].from||""); if(!Q.onceDone[id]&&loads.indexOf(id)<0&&f<=iso) F.push([f,id]); });
     llExtraIds().forEach(function(id){ if(llExtras()[id].rideWith) return; const d=llDue(llExtras()[id],Q.lastX[id]||undefined); if(d&&d<=iso&&loads.indexOf(id)<0) F.push([d,id]); });   // 🛏 a blanket rides its sheets, never a slot of its own
-    F.sort(function(a,b){ return a[0]<b[0]?-1:a[0]>b[0]?1:0; }).forEach(function(f){ if(cnt()+jp.length>=c) return; Q.take(f[1]); loads.push(f[1]); }); }
+    const _ok=llOpenOrder(), _rk=function(id){ return _ok.indexOf(llOnce()[id]?"once":"extras"); };   // ☑️🗓 LL_OPENSPACE: which kind first, then oldest
+    F.sort(function(a,b){ return (_rk(a[1])-_rk(b[1]))||(a[0]<b[0]?-1:a[0]>b[0]?1:0); }).forEach(function(f){ if(cnt()+jp.length>=c) return; Q.take(f[1]); loads.push(f[1]); }); }
   const left=loads.filter(function(id){ return st.indexOf(id)<0; });
   if(!closed) left.forEach(function(id){ if(id in Q.lastX&&!wt(id)) Q.lastX[id]=iso; if(llOnce()[id]&&!wt(id)) Q.onceDone[id]=true;
     if(!wt(id)) [id].concat(llRiders(id,iso)).forEach(function(h){ llBlanketsDueOn(h,iso).forEach(function(b){ Q.lastX[b]=iso; }); }); });   // 🛏 the lay assumes its blanket goes in with it   // the lay assumes a laid extra / one-time load gets washed that day
@@ -14385,6 +14387,21 @@ function llHomeNext(id){ llChange(function(){ if(llOrder().indexOf(id)<0) return
 function llModeSet(m){ llChange(function(){ if(m!=="home"&&m!=="rotate"||m===llMode()) return false; const u={mode:m}; llEnsureItems(u); laundryLine.mode=m;
   if(laundryLine.carry){ delete laundryLine.carry; u.carry=null; } if(laundryLine.credit){ delete laundryLine.credit; u.credit=null; } laundryLine.asOf=llToday(); u.asOf=laundryLine.asOf;
   if(m==="home"){ laundryLine.homeFrom=llToday(); u.homeFrom=laundryLine.homeFrom; } llStore(); llWrite(u); }); }   // the line starts fresh from today in the new mode
+// LL_OPENSPACE_START — "Open space goes to" (her ask 2026-10-25: "i think one time has prescedence over every few weeks but would like a
+// control like the kids cycle on schedule where i can switch the order"; her name for it: "open space goes to"; her "then go").
+// When a day has room left after the line's own loads (and any load already late), ☑️ one-time loads and 🗓 every-few-weeks items
+// that have come due fill it — this sets which kind goes first; inside each kind the oldest date goes first. Default: one-time first.
+// laundryLine/openFirst = "once" | "extras" — one targeted write, Mom only, through llChange (asks Re-lay today / Keep today).
+const LL_OPEN_KINDS={once:["☑️","One-time loads"],extras:["🗓","Every few weeks"]};
+function llOpenOrder(){ return (laundryLine&&laundryLine.openFirst==="extras")?["extras","once"]:["once","extras"]; }
+function llOpenMove(kind,dir){ llChange(function(){ const o=llOpenOrder(), i=o.indexOf(kind), j=i+dir; if(i<0||j<0||j>=o.length) return false;
+  o.splice(j,0,o.splice(i,1)[0]); const u={openFirst:o[0]}; llEnsureItems(u); laundryLine.openFirst=o[0]; llStore(); llWrite(u); }); }
+function llOpenHTML(mom){ const o=llOpenOrder(), btn=function(on,t,dis){ return '<button onclick="'+on+'"'+(dis?' disabled':'')+' style="padding:2px 8px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;font-size:11px;font-weight:700;cursor:pointer;'+(dis?'opacity:.35':'')+'">'+t+'</button>'; };
+  return '<div style="padding:8px 12px;border-top:1px solid #eef2f0"><div style="font-size:11.5px;font-weight:800;margin-bottom:2px">Open space goes to</div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-bottom:4px">Room left on a day, after the line\'s own loads, goes to these in this order — oldest first inside each.</div>'
+    +o.map(function(k,n){ const K=LL_OPEN_KINDS[k]; return '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12.5px"><span style="width:16px;color:#6b6560;font-size:11px">'+(n+1)+'</span><span>'+K[0]+'</span><span style="flex:1;font-weight:700">'+K[1]+'</span>'
+      +(mom?btn("llOpenMove('"+k+"',-1)","↑",n===0)+btn("llOpenMove('"+k+"',1)","↓",n===o.length-1):'')+'</div>'; }).join('')+'</div>'; }
+// LL_OPENSPACE_END
 // ＋ / ✎ / ✕ everywhere on the line (step 2, her ask 2026-10-17: "add buttons to add to like the lineup and add to the one-time list
 // um, and add anything, anywhere there's not add buttons so that way I can customize"). Mom only; every write one path.
 let llAddOpen="", llEdId="";   // llAddOpen: "load" | "once" | ""; llEdId: the load / extra with its ✎ open
@@ -14673,6 +14690,7 @@ function llCardHTML(noGrid){
   h+='<div style="padding:8px 12px;border-top:1px solid #eef2f0"><div style="font-size:11.5px;font-weight:800;margin-bottom:5px">Loads a day (cap)</div><div style="display:flex;gap:5px;flex-wrap:wrap">'
     +LL_DL.map(function(d,x){ const c=llCap(x); return '<div style="text-align:center;border:1px solid #eef2f0;border-radius:9px;padding:4px 5px;min-width:44px;background:'+(c?'#f0fdf4':'#f8fafc')+'"><div style="font-size:10.5px;color:#6b6560">'+d+'</div><div style="font-size:14px;font-weight:800">'+c+'</div>'
       +(mom?'<div style="display:flex;gap:3px;justify-content:center">'+btn("llCapStep("+x+",-1)","−",c===0)+btn("llCapStep("+x+",1)","+",c===LL_CAP_MAX)+'</div>':'')+'</div>'; }).join('')+'</div></div>';
+  h+=llOpenHTML(mom);   // ☑️🗓 LL_OPENSPACE: open space goes to
   h+=llExtrasHTML(mom,today);   // 🗓 every few weeks
   h+=llOnceHTML(mom,today);   // ☑️ one-time loads
   // the re-lay question (a change just moved today's loads)
