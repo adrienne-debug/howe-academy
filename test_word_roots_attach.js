@@ -128,7 +128,7 @@ function rest() {
   ok("refuses: unit not added yet (her live data today)", (p => !p.ok && /Add the Word Roots unit first/.test(p.why) && !p.writes.length)(world({ noUnit: true }).wrPlanAttach("ellis")));
   ok("refuses: no Word Roots subject", (p => !p.ok && /no Word Roots subject/.test(p.why) && !p.writes.length)(world({ noSubject: true }).wrPlanAttach("ellis")));
   ok("refuses: subject not stamped (Import completions)", (p => !p.ok && /stamped/.test(p.why) && !p.writes.length)(world({ unstamped: true }).wrPlanAttach("ellis")));
-  ok("Lincoln is still blocked", (p => !p.ok && !p.writes.length)(world().wrPlanAttach("lincoln")));
+  ok("Lincoln with no Word Roots subject: refuses, writes nothing", (p => !p.ok && /no Word Roots subject/.test(p.why) && !p.writes.length)(world().wrPlanAttach("lincoln")));
 
   console.log("\n── 'checked off' rule (wrGateDone) ──");
   const gd = (seq, doneIdx, extra) => { const d = world(); const ids = seq.map((_, i) => "G" + i);
@@ -146,7 +146,7 @@ function rest() {
   console.log("\n── the Word Roots page ──");
   { const d = world(), esc = s => String(s), roster = ["lincoln", "ellis", "lucy", "julian"], u = d.G.unitStudies.word_roots;
     const h = d._unitStageRowsHtml(u, roster);
-    ok("Ellis gets 🔗 Hook up Ellis; Lincoln, Lucy, Julian stay 'not hooked up yet'", /wrAttachOpen\('ellis'\)/.test(h) && !/wrAttachOpen\('lincoln'\)/.test(h) && (h.match(/not hooked up yet/g) || []).length === 3);
+    ok("Ellis and Lincoln get 🔗 Hook up (step 4); Lucy, Julian stay 'not hooked up yet'", /wrAttachOpen\('ellis'\)/.test(h) && /wrAttachOpen\('lincoln'\)/.test(h) && (h.match(/not hooked up yet/g) || []).length === 2);
     ok("still no stock + kid button on this unit", h.indexOf("unitStageFormOpen(") < 0);
     d.wrAttachOpen("ellis"); const h2 = d._unitStageRowsHtml(u, roster);
     ok("tap → the plan in plain words, with Yes / Cancel and nothing written yet", /Nothing is written until you tap Yes/.test(h2) && /13 root cards stay exactly as they are/.test(h2) && /Lesson 21/.test(h2) && /wrApplyAttach/.test(h2) && /meter/.test(h2) && d.G.writes.length === 0);

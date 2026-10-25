@@ -190,7 +190,7 @@ function world() {
 }
 { const w = world(), before = JSON.stringify(w.G.masteryData), wr = w.G.unitStudies.word_roots, roster = ["lincoln", "ellis", "lucy", "julian"];
   const rows = w._unitStageRowsHtml(wr, roster);
-  ok("Word Roots page: no stock + kid buttons, the plain note instead (Ellis: Hook up)", rows.indexOf("unitStageFormOpen(") < 0 && rows.indexOf("hooks up to each kid") > 0 && (rows.match(/not hooked up yet/g) || []).length === 3 && /wrAttachOpen\('ellis'\)/.test(rows));   // step 3: Ellis has his own Hook up button
+  ok("Word Roots page: no stock + kid buttons, the plain note instead (Ellis: Hook up)", rows.indexOf("unitStageFormOpen(") < 0 && rows.indexOf("hooks up to each kid") > 0 && (rows.match(/not hooked up yet/g) || []).length === 2 && /wrAttachOpen\('ellis'\)/.test(rows) && /wrAttachOpen\('lincoln'\)/.test(rows));   // steps 3–4: Ellis and Lincoln have their own Hook up button
   ok("…every other staged unit keeps its + kid buttons (AAS)", (w._unitStageRowsHtml(w.G.unitStudies.all_about_spelling, roster).match(/unitStageFormOpen\('all_about_spelling'/g) || []).length === 4);
   w.unitStageFormOpen("word_roots", "ellis");
   ok("+ Ellis can't open the start form", w.form === null);

@@ -41909,7 +41909,17 @@ function _wrEnrollLocked(u){ return !!(u&&(u.id==="word_roots"||u.starter==="wor
 //   · Waiting saved roots lose their def copy (§4.6) only where his definitions map holds the same words, so no
 //     back changes. `active` is removed (her answer). ir-, omni- and the number prefixes are kept untouched for Our
 //     words later. Never written: mastery/ellis (cards), cat_modes, notebookSettings, any other kid.
-const WR_ATTACH_KIDS=["ellis"];   // Lincoln hooks up in step 4 (his Word Roots subject comes first)
+const WR_ATTACH_KIDS=["ellis","lincoln"];   // step 4 (her decisions 10/24): Lincoln works the Beginning book from Lesson 1
+// Lincoln's built-in roots line spells prefixes without the dash ("uni", "log/logy"), so the unit's "uni-" would show next
+// to it. Once he's hooked up, that built-in line stops counting for him (mastFullBank) and his roots are the unit's
+// spellings, appended as bank entries — design §4.3. Until then nothing changes for him. Ellis's names already match.
+const WR_RETIRE_BUILTIN=["lincoln"];
+function wrBuiltInRetired(kid,deck){ if(deck!==WR_DECK||WR_RETIRE_BUILTIN.indexOf(kid)<0) return false;
+  const u=((typeof unitStudies!=="undefined"&&unitStudies)||{}).word_roots; return !!(u&&(u.enrolled||{})[kid]); }
+// Same root, different spelling (design §4.3): lowercase, no "-", split on "/" and ",", plus the card's aka.
+function _wrKeys(s){ return String(s).toLowerCase().split(/[\/,]/).map(x=>x.replace(/-/g,"").trim()).filter(Boolean); }
+function _wrMatch(name,cards){ const ks=new Set(_wrKeys(name)); const hit=cards.filter(c=>[c.name].concat(c.aka||[]).some(a=>_wrKeys(a).some(k=>ks.has(k))));
+  return hit.length===1?hit[0]:null; }
 const WR_OUR_WORDS=["ir-","omni-","-quadra","penta-","hexa-","hepta-","oct-","novem-","deca-"];
 const WR_DROP=["active"];
 // Names with "/" can't be a definitions key, so their back lives in the built-in meanings list (like flex/flect).
@@ -41942,9 +41952,13 @@ function wrPlanAttach(kid,ts){
   const saved=idxs.filter(i=>cust[i]&&cust[i].cat===WR_DECK).map(i=>({i,e:cust[i]}));
   const st=masteryData[kid+"_settings"]||{}, defs=st.definitions||{};
   const builtIn=(((typeof MAST_BANK_MAP!=="undefined")&&MAST_BANK_MAP[kid])||{})[WR_DECK]||[];
+  const retire=WR_RETIRE_BUILTIN.indexOf(kid)>=0, bmap={};   // Lincoln: his built-in spelling → the unit card
+  if(retire) builtIn.forEach(n=>{ const c=_wrMatch(n,cards); if(c) bmap[n]=c.name; });
+  const isBuiltIn=n=>retire?Object.keys(bmap).some(b=>bmap[b]===n):builtIn.indexOf(n)>=0;
+  const vocab=n=>(typeof MAST_VOCAB_DEFS!=="undefined"&&MAST_VOCAB_DEFS[String(n).toLowerCase()])||"";
   const W=(path,value,what)=>P.writes.push({path,value,what});
   const base="mastery/"+kid+"_custom_items/";
-  const S=P.sum={liveKept:live.length,chSaved:[],defRemoved:[],defKept:[],dropped:[],ourWords:[],other:[],added:[],builtInCh:[],defsNew:[],slashBacks:[],lincolnMore:[]};
+  const S=P.sum={liveKept:live.length,chSaved:[],defRemoved:[],defKept:[],dropped:[],ourWords:[],other:[],added:[],builtInCh:[],defsNew:[],slashBacks:[],lincolnMore:[],respelled:[],more:[],level:[]};
   const have=new Set();
   W("unitStudies/word_roots/enrolled/"+kid,true,"puts him in the unit");
   W("unitStudies/word_roots/kidStage/"+kid,{stage:1,subject:sk,knows:"",map:"",ts:P.ts,via:"wr_attach"},"his start: Beginning, gated by his Word Roots lessons");
@@ -41960,14 +41974,24 @@ function wrPlanAttach(kid,ts){
       else S.defKept.push(n); }
   });
   let next=idxs.length?Math.max(...idxs)+1:0;
+  const backFor=(n,c)=>{ if(typeof mastDefKeyOk==="function"&&!mastDefKeyOk(n)) S.slashBacks.push(n);
+    else if(!defs[n]&&!(retire&&vocab(n))){ W("mastery/"+kid+"_settings/definitions/"+n,String(c.def),"back for "+n+": “"+c.def+"”"); S.defsNew.push(n); } };
+  const was=n=>Object.keys(bmap).find(b=>bmap[b]===n);
   cards.filter(c=>c.stage===1).forEach(c=>{ const n=c.name; if(have.has(n)||isLive.has(n)) return; have.add(n);
-    const bi=builtIn.indexOf(n)>=0;
-    W(base+(next++),{cat:WR_DECK,name:n,ch:c.lesson},(bi?"his built-in ":"new: ")+n+" — opens at "+_wrLessonName(c.lesson));
-    (bi?S.builtInCh:S.added).push(n);
-    if(!bi){ if(typeof mastDefKeyOk==="function"&&!mastDefKeyOk(n)) S.slashBacks.push(n);
-      else if(!defs[n]){ W("mastery/"+kid+"_settings/definitions/"+n,String(c.def),"back for "+n+": “"+c.def+"”"); S.defsNew.push(n); } }
+    const bi=isBuiltIn(n);
+    W(base+(next++),{cat:WR_DECK,name:n,ch:c.lesson},(bi?"his built-in "+(retire&&was(n)!==n?was(n)+" → ":""):"new: ")+n+" — opens at "+_wrLessonName(c.lesson));
+    (bi?S.builtInCh:S.added).push(n); if(bi&&retire&&was(n)!==n) S.respelled.push(was(n)+" → "+n);
+    if(!bi||retire) backFor(n,c);
   });
-  builtIn.forEach(n=>have.add(n));
+  if(retire){   // Lincoln: his other built-in roots become unit entries too (Level roots keep their gate; More roots none)
+    builtIn.forEach(b=>{ const n=bmap[b];
+      if(!n){ if(!have.has(b)){ have.add(b); W(base+(next++),{cat:WR_DECK,name:b},"keeps “"+b+"” as a waiting root (for Our words later)"); S.ourWords.push(b); } return; }
+      if(have.has(n)||isLive.has(n)) return; const c=card[n]; if(c.stage===1) return; have.add(n);
+      const ch=chOf(c), be={cat:WR_DECK,name:n}; if(ch!=null) be.ch=ch;
+      W(base+(next++),be,"his built-in "+(b!==n?b+" → ":"")+n+(ch!=null?" — opens at "+_wrLessonName(ch):" — open now (More roots)"));
+      (ch!=null?S.level:S.more).push(n); if(b!==n) S.respelled.push(b+" → "+n);
+      backFor(n,c); });
+  } else builtIn.forEach(n=>have.add(n));
   cards.filter(c=>c.stage===6&&!have.has(c.name)&&!isLive.has(c.name)).forEach(c=>S.lincolnMore.push(c.name));   // not added: her call
   // Bank order: cards first (as she sorted them), then 3 book roots : 1 More root, then Level roots, then Our words.
   const prev=((masteryData[kid+"_bank_order"]||{})[WR_DECK])||[], inBank=n=>have.has(n);
@@ -41976,12 +42000,13 @@ function wrPlanAttach(kid,ts){
   const B=cards.filter(c=>c.stage===1&&wait(c.name)).map(c=>c.name), M=cards.filter(c=>c.stage===6&&wait(c.name)).map(c=>c.name);
   const L=cards.filter(c=>c.stage>=2&&c.stage<=5&&wait(c.name)).map(c=>c.name);
   const mix=[]; let bi=0,mi=0; while(bi<B.length||mi<M.length){ for(let k=0;k<3&&bi<B.length;k++) mix.push(B[bi++]); if(mi<M.length) mix.push(M[mi++]); }
-  const rest=prev.concat(builtIn,saved.map(x=>x.e.name)).filter((n,ix,a)=>a.indexOf(n)===ix&&inBank(n)&&!isLive.has(n)&&!card[n]&&WR_DROP.indexOf(n)<0);
+  const rest=prev.concat(retire?builtIn.filter(b=>!bmap[b]):builtIn,saved.map(x=>x.e.name)).filter((n,ix,a)=>a.indexOf(n)===ix&&inBank(n)&&!isLive.has(n)&&!card[n]&&WR_DROP.indexOf(n)<0);
   const order=P.order=cardsFirst.concat(mix,L,rest);
   W("mastery/"+kid+"_bank_order/"+WR_DECK,order,"his list order: book order, one More root after every 3 book roots");
   // What would start next (the auto-pull reads the bank in this order, gate applied)
   const chPlan={}; saved.forEach(({e})=>{ const c=card[e.name]; const ch=chOf(c); if(ch!=null) chPlan[e.name]=ch; });
   cards.filter(c=>c.stage===1).forEach(c=>{ if(chPlan[c.name]==null&&!isLive.has(c.name)) chPlan[c.name]=c.lesson; });
+  if(retire) S.level.forEach(n=>{ chPlan[n]=chOf(card[n]); });
   const open=n=>!(n in chPlan)||chPlan[n]<=upto;
   const waiting=order.filter(n=>!isLive.has(n));
   P.openNow=waiting.filter(open); P.held=waiting.filter(n=>!open(n)); P.next10=P.openNow.slice(0,10);
@@ -42035,11 +42060,15 @@ function wrAttachHtml(u,kid,esc,btn){
   if(!P.ok) return h+'<div style="font-size:11.5px;color:#374151;line-height:1.5">'+esc(P.why)+'</div><div style="margin-top:8px"><button onclick="wrAttachClose()" style="'+btn("#fff","var(--muted)","var(--border)")+'">Close</button></div>';
   h+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Here’s everything it does. Nothing is written until you tap Yes.</div><ul style="font-size:11.5px;color:#374151;line-height:1.45;padding-left:18px;margin:0">';
   h+=li('His <b>'+S.liveKept+' root cards stay exactly as they are</b> — same progress, nothing redone.');
-  h+=li('New roots open once he <b>checks off</b> their Word Roots lesson (every line of it, like L21 and L21b). He’s checked off through <b>Lesson '+P.gate+'</b>'+(P.onLesson!=null&&P.onLesson>P.gate?' (he’s on Lesson '+P.onLesson+')':'')+', so Lessons 1–'+P.gate+' can start now; each later lesson opens when it’s checked off.');
+  h+=li(P.gate<1?'New roots open once he <b>checks off</b> their Word Roots lesson (every line of it, like L1 and L1b). He hasn’t checked off a Word Roots lesson yet, so <b>no book roots can start yet</b> — Lesson 1’s open when L1 and L1b are checked off, then each lesson as it’s checked off.'
+    :'New roots open once he <b>checks off</b> their Word Roots lesson (every line of it, like L21 and L21b). He’s checked off through <b>Lesson '+P.gate+'</b>'+(P.onLesson!=null&&P.onLesson>P.gate?' (he’s on Lesson '+P.onLesson+')':'')+', so Lessons 1–'+P.gate+' can start now; each later lesson opens when it’s checked off.');
   h+=li('<b>'+P.openNow.length+'</b> roots can start now ('+P.held.length+' wait for a later lesson). Next up: '+list(P.next10)+'.');
   h+=li('More roots open now, mixed in: one after every 3 book roots.');
   if(S.added.length) h+=li('Adds <b>'+S.added.length+'</b> book roots he doesn’t have yet: '+list(S.added)+'.');
-  if(S.builtInCh.length||S.chSaved.length) h+=li('Gives a lesson to '+(S.chSaved.length+S.builtInCh.length)+' roots he already has (il- and a- wait for Level 1, poly- for Level 3).');
+  { const lvl=S.chSaved.concat(S.builtInCh,S.level).filter(n=>/^(il-|a-|poly-)$/.test(n)), lvTxt=lvl.length?' ('+lvl.map(n=>esc(n)+(n==="poly-"?' waits for Level 3':' waits for Level 1')).join(', ')+')':'';
+    if(S.builtInCh.length||S.chSaved.length||S.level.length) h+=li('Gives a lesson to '+(S.chSaved.length+S.builtInCh.length+S.level.length)+' roots he already has'+lvTxt+'.'); }
+  if(S.respelled&&S.respelled.length) h+=li('His built-in roots are now <b>spelled the unit’s way</b> ('+list(S.respelled.slice(0,6))+(S.respelled.length>6?' …':'')+'), so no root shows up twice. His old list stops counting for him once he’s hooked up.');
+  if(S.more&&S.more.length) h+=li('His '+S.more.length+' waiting More roots open now, mixed in 1 per 3 book roots.');
   if(S.defRemoved.length) h+=li('<b>'+S.defRemoved.length+' waiting roots lose their extra meaning copy</b>, so they start as normal flip cards. The meaning on his card doesn’t change.');
   if(S.dropped.length) h+=li('Removes '+list(S.dropped)+' (it never became a card).');
   if(S.ourWords.length) h+=li('Keeps '+list(S.ourWords)+' as his waiting roots, for Our words later.');
@@ -55859,7 +55888,7 @@ function mastFullBank(kidArg){
   const kid=kidArg||masteryKid||"julian";
   const base={};
   const src=MAST_BANK_MAP[kid]||{};
-  Object.entries(src).forEach(([k,v])=>{ base[k]=[...v]; });
+  Object.entries(src).forEach(([k,v])=>{ if(typeof wrBuiltInRetired==="function"&&wrBuiltInRetired(kid,k)){ base[k]=[]; return; } base[k]=[...v]; });   // 🏛 WRATTACH: Lincoln's old roots spellings retire once he's hooked up
   let custom=masteryData[kid+"_custom_items"]||[];
   if(!Array.isArray(custom)) custom=Object.values(custom);  // Firebase returns sparse arrays as objects
   custom.forEach(ci=>{
