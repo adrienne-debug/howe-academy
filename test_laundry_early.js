@@ -76,4 +76,14 @@ console.log("7. 🌙 a past day folds the same way");
 console.log("8. The lay writes nothing");
 { const c=mk({line:line({log:went(MON,["towels"])})}); c.llProject(MON,7); ok("no writes", !c.writes.length, c.writes); }
 
+console.log("9. The spot an early wash opens: no line load moves ahead of its own day — it's room for one-time and every-few-weeks loads (her rule 2026-10-25)");
+{ const cur={x_cur:{label:"Curtains",emoji:"🪟",every:2,unit:"w",last:"2026-10-07",order:0}};   // due Wed 10/21, no room Wed or Thu
+  const a=mk({line:line({extras:cur})}); ok("before: Friday is Towels, the curtains find no room all week", W(a,MON,5)==="lincoln | ellis | lucy+julian | momdad | towels", W(a,MON,5));
+  const b=mk({line:line({extras:cur,log:went(MON,["towels"])})}); ok("Towels washed early Monday: Friday's open spot goes to the curtains", W(b,MON,5)==="towels+lincoln | ellis | lucy+julian | momdad | x_cur", W(b,MON,5));
+  const n=mk({line:line({log:went(MON,["towels"])})}).llProject(MON,12);
+  ok("with nothing else due, Friday stays open — next week's Lincoln doesn't move up into it", !n[4].loads.length&&n[7].loads.join()==="lincoln", n.map(r=>r.loads)); }
+console.log("10. A load that is already LATE still catches up first (it's behind its day, not ahead of it)");
+{ const c=mk({line:line({carry:["ellis"],extras:{x_cur:{label:"Curtains",emoji:"🪟",every:2,unit:"w",last:"2026-10-01",order:0}},log:went(MON,["towels"])})});
+  ok("Monday: Towels + Ellis (missed last week) — the curtains wait for open room", c.llProject(MON,1)[0].loads.join("+")==="towels+ellis", c.llProject(MON,1)[0].loads); }
+
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
