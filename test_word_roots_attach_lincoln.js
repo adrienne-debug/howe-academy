@@ -102,6 +102,8 @@ function suite(label, F) {
     ok("after: the old spellings are gone (no 'uni', 'log/logy', 'poly')", ["uni", "bi", "log/logy", "poly", "syn/sym", "neo"].every(n => bank.indexOf(n) < 0));
     { const seen = {}, dup = []; bank.forEach(n => keysOf(n).concat(...((card[n] || {}).aka || []).map(keysOf)).forEach(k => { if (seen[k] && seen[k] !== n && k !== "nom") dup.push([k, seen[k], n]); seen[k] = n; }));
       ok("no root is offered twice in his bank", !dup.length, dup.slice(0, 5)); }
+    { const defs = w.G.masteryData.lincoln_settings.definitions || {}, noBack = bank.filter(n => card[n] && !(defs[n] || w.MAST_VOCAB_DEFS[n.toLowerCase()]));
+      ok("every unit root in his bank has a back (his definitions or the built-in meanings)", !noBack.length, noBack); }
     ok("his other built-in decks are untouched (Vocabulary)", w.mastFullBank("lincoln").Vocabulary.join() === "brave");
     const elig = () => w.mastBankEligible("lincoln", D).filter(n => live.indexOf(n) < 0);
     if (!anyDone) {
