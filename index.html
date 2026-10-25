@@ -16395,7 +16395,7 @@ function _momApprovalsHTML(){
       prPending(k).forEach(r=>{
         n++;
         rows+=row("#b45309","#fffbeb",
-          who(k)+' asks for <b>'+(r.amount||0)+' ⭐</b> — '+esc(r.reason||"Extra job"),
+          who(k)+' asks for <b>'+(r.amount||0)+' ⭐</b> — '+esc(prWhy(r)),
           ok("prApprove('"+k+"','"+esc(r.id)+"')","✓ Approve")+no("prDecline('"+k+"','"+esc(r.id)+"')","✗"));
       });
     });
@@ -17480,7 +17480,7 @@ function hbAlertItems(){
   // 🔴 close-out — the yes/no rows in 🔴 Now, study flags, spelling tests to grade
   kids.forEach(k=>{
     try{ rlBooks(k).forEach(b=>{ if(b&&b.finishClaim&&b.status!=="done") add("close","book_"+k+"_"+b.id,nm(k)+" finished "+(b.title||"a book")); }); }catch(e){}
-    try{ prPending(k).forEach(r=>add("close","stars_"+k+"_"+r.id,nm(k)+" asks for "+(r.amount||0)+" ⭐ — "+(r.reason||"Extra job"))); }catch(e){}
+    try{ prPending(k).forEach(r=>add("close","stars_"+k+"_"+r.id,nm(k)+" asks for "+(r.amount||0)+" ⭐ — "+(typeof prWhy==="function"?prWhy(r):(r.reason||"(no reason given)")))); }catch(e){}
     try{ _rwWds(k).forEach(w=>{ if(w&&(w.status==="pending"||w.status==="owed")) add("close","store_"+k+"_"+w.id+"_"+w.status,
       w.status==="owed"?"Owed to "+nm(k)+": "+(w.note||"a Star Store prize"):nm(k)+" wants "+(w.note||"a Star Store prize")); }); }catch(e){}
   });
@@ -27695,6 +27695,12 @@ function _storeEditorHTML(){
 // For the jobs that aren't on any list: "can I mulch the beds for 50?" — agreed out loud in the
 // yard, approved later from wherever Mom happens to be. The amount and the reason ride along, so a
 // week later there's still a record of what was actually agreed.
+// PRNOREASON_START — her ask 2026-10-24: "can we make it send even without reason" (Ellis asked for 100 with the
+// reason blank; the form refused with "Say what you did" and nothing reached Mom). The amount is still required; the
+// reason is optional, and an ask without one shows as "(no reason given)" everywhere Mom or the kid sees it.
+const PR_NO_REASON="(no reason given)";
+function prWhy(r){ const w=String((r&&r.reason)||"").trim(); return w||PR_NO_REASON; }
+// PRNOREASON_END
 function prList(kid){
   const all=(pointRequests||{})[kid]||{};
   return Object.keys(all).map(id=>Object.assign({id:id},all[id])).filter(Boolean)
@@ -27708,13 +27714,12 @@ function prSubmit(kid){
   const amt=Math.abs(parseInt((document.getElementById("pr-amt")||{}).value,10)||0);
   const why=(((document.getElementById("pr-why")||{}).value)||"").trim();
   if(!amt){ if(typeof gwShowToast==="function") gwShowToast("How many stars did you agree on?"); return; }
-  if(!why){ if(typeof gwShowToast==="function") gwShowToast("Say what you did"); return; }
   const rec={amount:amt,reason:why,ts:nowTs(),iso:new Date().toISOString(),status:"pending"};
   let key="pr_"+Date.now();
   if(db){ const r=db.ref("pointRequests/"+kid).push(); key=r.key; r.set(rec); }
   if(!pointRequests[kid]) pointRequests[kid]={};
   pointRequests[kid][key]=rec;
-  if(typeof rlogAppend==="function") rlogAppend(kid,"request",why+" ("+amt+" ⭐ asked)","ask",amt);
+  if(typeof rlogAppend==="function") rlogAppend(kid,"request",prWhy({reason:why})+" ("+amt+" ⭐ asked)","ask",amt);
   prFormOpen=false; renderAll();
   if(typeof gwShowToast==="function") gwShowToast("Sent to Mom 🙋");
 }
@@ -27726,13 +27731,13 @@ function prApprove(kid,id){
   if(!momHere()) return;
   const r=((pointRequests[kid]||{})[id]); if(!r||r.status!=="pending") return;
   // Pay it the same way the Give button does, so it shows in the statement with what they did.
-  const rec={amount:Math.abs(r.amount||0),note:"🙋 "+(r.reason||"Extra job"),ts:nowTs(),iso:new Date().toISOString()};
+  const rec={amount:Math.abs(r.amount||0),note:"🙋 "+prWhy(r),ts:nowTs(),iso:new Date().toISOString()};
   let key="adj_"+Date.now();
   if(db){ const ref=db.ref("bank/"+kid+"/adjustments").push(); key=ref.key; ref.set(rec); }
   if(!bank[kid]) bank[kid]={}; if(!bank[kid].adjustments) bank[kid].adjustments={};
   bank[kid].adjustments[key]=rec;
   _prSet(kid,id,{status:"approved",decidedTs:nowTs()});
-  if(typeof rlogAppend==="function") rlogAppend(kid,"request","Mom approved: "+(r.reason||"")+" (+"+rec.amount+" ⭐)","ok",rec.amount);
+  if(typeof rlogAppend==="function") rlogAppend(kid,"request","Mom approved: "+prWhy(r)+" (+"+rec.amount+" ⭐)","ok",rec.amount);
   renderAll();
   if(typeof gwShowToast==="function") gwShowToast("+"+rec.amount+" ⭐ to "+cap(kid));
 }
@@ -27740,7 +27745,7 @@ function prDecline(kid,id){
   if(!momHere()) return;
   const r=((pointRequests[kid]||{})[id]); if(!r||r.status!=="pending") return;
   _prSet(kid,id,{status:"declined",decidedTs:nowTs()});
-  if(typeof rlogAppend==="function") rlogAppend(kid,"request","Mom declined: "+(r.reason||""),"no",r.amount||0);
+  if(typeof rlogAppend==="function") rlogAppend(kid,"request","Mom declined: "+prWhy(r),"no",r.amount||0);
   renderAll();
   if(typeof gwShowToast==="function") gwShowToast("Declined");
 }
@@ -27751,7 +27756,7 @@ function _prSectionHTML(kid,momView){
     if(pend.length){
       h+='<div class="store-q ask"><div class="sq-hd">🙋 '+esc(cap(kid))+' is asking for stars</div>';
       pend.forEach(function(r){
-        h+='<div class="sq-row"><span class="sq-lab">'+esc(r.reason||"Extra job")+' <b>'+(r.amount||0)+' ⭐</b>'+
+        h+='<div class="sq-row"><span class="sq-lab">'+esc(prWhy(r))+' <b>'+(r.amount||0)+' ⭐</b>'+
            (r.ts?' <span style="font-size:10px;color:var(--muted)">'+esc(r.ts)+'</span>':'')+'</span>'+
            '<span class="sq-btns"><button class="sq-ok" onclick="prApprove(\''+kid+'\',\''+esc(r.id)+'\')">✓ Approve</button>'+
            '<button class="sq-no" onclick="prDecline(\''+kid+'\',\''+esc(r.id)+'\')">✗ No</button></span></div>';
@@ -27764,7 +27769,7 @@ function _prSectionHTML(kid,momView){
   const mineP=prPending(kid);
   if(mineP.length){
     h+='<div class="store-mine">';
-    mineP.forEach(function(r){ h+='<div class="sm-row">⏳ '+esc(r.reason||"Extra job")+' <span>'+(r.amount||0)+' ⭐ — waiting for Mom</span></div>'; });
+    mineP.forEach(function(r){ h+='<div class="sm-row">⏳ '+esc(prWhy(r))+' <span>'+(r.amount||0)+' ⭐ — waiting for Mom</span></div>'; });
     h+='</div>';
   }
   if(prFormOpen){
