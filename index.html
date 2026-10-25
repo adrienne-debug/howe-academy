@@ -41899,7 +41899,8 @@ function _wrEnrollLocked(u){ return !!(u&&(u.id==="word_roots"||u.starter==="wor
 //   · wrPlanAttach(kid) is pure: it reads his data and returns every write, in plain words too. Nothing is changed.
 //   · Mom taps "Hook up Ellis" → the plan shows → only "Yes" writes (one multi-path update of targeted paths), and
 //     never in ?dryrun=1. The plan is rebuilt at "Yes" and must match what she saw, or nothing is written.
-//   · Gate: cat_gate = {subject: his Word Roots subject}. Refuses when the subject is missing or not stamped (an
+//   · Gate: cat_gate = {subject: his Word Roots subject, after:"done"} — her answer: a lesson's roots open after he
+//     checks it off (wrGateDone), not while he's on it. Refuses when the subject is missing or not stamped (an
 //     unstamped subject fails the gate OPEN — every root would start at once).
 //   · ch on every book root he has (Beginning lesson; il-/a- Level 1; poly- Level 3); More roots get none (her answer:
 //     they open now). New Beginning roots are appended {cat,name,ch} — no def (a bank def makes a recite card).
@@ -41929,8 +41930,9 @@ function wrPlanAttach(kid,ts){
   const sj=_wrSubject(kid); if(!sj.sk){ P.why=sj.many?cap(kid)+" has more than one Word Roots subject — nothing was changed.":cap(kid)+" has no Word Roots subject in his curriculum."; return P; }
   const sk=P.subject=sj.sk;
   if(typeof lidStamped!=="function"||!lidStamped(kid,sk)){ P.why="His Word Roots subject isn’t stamped yet — tap “Import completions” in the Curriculum grid first. (Unstamped, every root would start at once.)"; return P; }
-  const upto=P.gate=(typeof mastGateChapter==="function")?mastGateChapter(kid,sk):null;
-  if(upto==null){ P.why="Can’t read which Word Roots lesson he’s on — nothing was changed."; return P; }
+  const upto=P.gate=wrGateDone(kid,sk);   // her answer: a lesson's roots open after he checks it off
+  P.onLesson=(typeof mastGateChapter==="function")?mastGateChapter(kid,sk):null;
+  if(upto==null){ P.why="Can’t read which Word Roots lessons he’s checked off — nothing was changed."; return P; }
   const deck=u.decks.find(d=>d&&d.key===WR_DECK); if(!deck){ P.why="The unit has no “"+WR_DECK+"” deck."; return P; }
   const cards=(deck.cards||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0)), card={}; cards.forEach(c=>{ card[c.name]=c; });
   const chOf=c=>(c&&c.stage!==6&&c.lesson!=null)?c.lesson:null;   // More roots (stage 6): no gate
@@ -41946,7 +41948,7 @@ function wrPlanAttach(kid,ts){
   const have=new Set();
   W("unitStudies/word_roots/enrolled/"+kid,true,"puts him in the unit");
   W("unitStudies/word_roots/kidStage/"+kid,{stage:1,subject:sk,knows:"",map:"",ts:P.ts,via:"wr_attach"},"his start: Beginning, gated by his Word Roots lessons");
-  W("mastery/"+kid+"_settings/cat_gate/"+WR_DECK,{subject:sk},"new roots open by his Word Roots lesson");
+  W("mastery/"+kid+"_settings/cat_gate/"+WR_DECK,{subject:sk,after:"done"},"new roots open once he checks off their Word Roots lesson");
   saved.forEach(({i,e})=>{ const n=e.name; have.add(n);
     if(WR_DROP.indexOf(n)>=0){ if(!isLive.has(n)){ W(base+i,null,"removes “"+n+"” (it never became a card)"); S.dropped.push(n); } else S.other.push(n); return; }
     const c=card[n];
@@ -41985,6 +41987,23 @@ function wrPlanAttach(kid,ts){
   P.openNow=waiting.filter(open); P.held=waiting.filter(n=>!open(n)); P.next10=P.openNow.slice(0,10);
   P.ok=true; return P;
 }
+// Her answer 2026-10-24: a lesson's roots open "after he checks it off" — THIS deck only (cat_gate.after="done"; every
+// other gated deck keeps "the lesson he's on", mastGateChapter). A lesson is checked off when EVERY line numbered with
+// it is done ("L21" AND "L21b"); lessons with no line (L1–L4, done before the app) count as done. Returns the highest
+// lesson that can open: one below the first lesson not checked off ("L1-3" = Level 1 Lesson 3 → 103, so Levels work
+// too). null when the subject isn't stamped or has no numbered lines — the gate then fails open, as it always has.
+function wrGateDone(kid,sk){
+  try{
+    if(typeof lidStamped!=="function"||!lidStamped(kid,sk)) return null;
+    const s=(((currData||{}).subjects||{})[kid]||{})[sk]; const seq=(s&&s.lessonSeq)||[]; if(!seq.length) return null;
+    const done=lidDoneIdx(kid,sk)||new Set(), all={};
+    seq.forEach((t,i)=>{ const x=String(t||"").trim(); let m=/^L(\d+)-(\d+)/.exec(x), n=null;
+      if(m) n=+m[1]*100+(+m[2]); else if((m=/^L(\d+)/.exec(x))) n=+m[1];
+      if(n==null) return; if(!(n in all)) all[n]=true; if(!done.has(i)) all[n]=false; });
+    const nums=Object.keys(all).map(Number).sort((a,b)=>a-b); if(!nums.length) return null;
+    const open=nums.find(n=>!all[n]); return open==null?nums[nums.length-1]:open-1;
+  }catch(e){ return null; }
+}
 function _wrLessonName(ch){ return ch>=100?"Level "+Math.floor(ch/100)+" Lesson "+(ch%100):"Lesson "+ch; }
 let wrAttachView=null;   // {kid, plan, msg}
 function wrAttachOpen(kid){ if(!momHere()) return; wrAttachView={kid,plan:wrPlanAttach(kid),msg:""}; const el=document.getElementById("content"); if(el) renderUnits(el); }
@@ -42016,7 +42035,7 @@ function wrAttachHtml(u,kid,esc,btn){
   if(!P.ok) return h+'<div style="font-size:11.5px;color:#374151;line-height:1.5">'+esc(P.why)+'</div><div style="margin-top:8px"><button onclick="wrAttachClose()" style="'+btn("#fff","var(--muted)","var(--border)")+'">Close</button></div>';
   h+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Here’s everything it does. Nothing is written until you tap Yes.</div><ul style="font-size:11.5px;color:#374151;line-height:1.45;padding-left:18px;margin:0">';
   h+=li('His <b>'+S.liveKept+' root cards stay exactly as they are</b> — same progress, nothing redone.');
-  h+=li('New roots open by his Word Roots lesson. He’s on <b>Lesson '+P.gate+'</b>, so Lessons 1–'+P.gate+' can start now; later lessons open as he reaches them.');
+  h+=li('New roots open once he <b>checks off</b> their Word Roots lesson (every line of it, like L21 and L21b). He’s checked off through <b>Lesson '+P.gate+'</b>'+(P.onLesson!=null&&P.onLesson>P.gate?' (he’s on Lesson '+P.onLesson+')':'')+', so Lessons 1–'+P.gate+' can start now; each later lesson opens when it’s checked off.');
   h+=li('<b>'+P.openNow.length+'</b> roots can start now ('+P.held.length+' wait for a later lesson). Next up: '+list(P.next10)+'.');
   h+=li('More roots open now, mixed in: one after every 3 book roots.');
   if(S.added.length) h+=li('Adds <b>'+S.added.length+'</b> book roots he doesn’t have yet: '+list(S.added)+'.');
@@ -42031,8 +42050,8 @@ function wrAttachHtml(u,kid,esc,btn){
   return h;
 }
 function wrHookedHtml(u,kid,ks,esc){
-  const P=(typeof mastGateChapter==="function"&&ks.subject)?mastGateChapter(kid,ks.subject):null;
-  return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:12.5px;font-weight:800;color:#1f2937;min-width:64px">'+esc(cap(kid))+'</span><span style="font-size:11.5px;color:#15803d;font-weight:700">✓ Hooked up</span><span style="font-size:10.5px;color:var(--muted);font-weight:700">roots open by his Word Roots lesson'+(P!=null?' (now Lesson '+P+')':'')+'</span></div>';
+  const P=ks.subject?wrGateDone(kid,ks.subject):null;
+  return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:12.5px;font-weight:800;color:#1f2937;min-width:64px">'+esc(cap(kid))+'</span><span style="font-size:11.5px;color:#15803d;font-weight:700">✓ Hooked up</span><span style="font-size:10.5px;color:var(--muted);font-weight:700">roots open as he checks off each Word Roots lesson'+(P!=null?' (through Lesson '+P+')':'')+'</span></div>';
 }
 // WRATTACH_END
 const STARTER_UNITS={
@@ -54549,7 +54568,7 @@ function mastBankEligible(kid,cat){
   if((((masteryData[kid+"_settings"]||{}).cat_hold)||{})[cat]) return [];   // 📘 AAS words: only a test result / check-up / problem word puts them on the ladder
   const g=((masteryData[kid+"_settings"]||{}).cat_gate||{})[cat];
   if(!g||!g.subject) return all;
-  const upto=mastGateChapter(kid,g.subject);
+  const upto=(g.after==="done"&&typeof wrGateDone==="function")?wrGateDone(kid,g.subject):mastGateChapter(kid,g.subject);   // 🏛 WRATTACH: Word Roots opens a lesson once it's checked off
   if(upto==null) return all;
   let cust=masteryData[kid+"_custom_items"]||[]; if(!Array.isArray(cust)) cust=Object.values(cust);
   const chOf={};

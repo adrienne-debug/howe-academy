@@ -38,7 +38,7 @@ function world(o) {
     ${GATE}
     ${block}
     if(typeof _wrSlashDefs==="function") Object.assign(MAST_VOCAB_DEFS,_wrSlashDefs(MAST_VOCAB_DEFS));
-    return { STARTER_UNITS, wrPlanAttach, wrApplyAttach, wrAttachOpen, wrAttachHtml, _unitStageRowsHtml, mastBankEligible, mastFullBank, mastGateChapter, MAST_VOCAB_DEFS,
+    return { STARTER_UNITS, wrGateDone, wrPlanAttach, wrApplyAttach, wrAttachOpen, wrAttachHtml, _unitStageRowsHtml, mastBankEligible, mastFullBank, mastGateChapter, MAST_VOCAB_DEFS,
       unitStageFormOpen, unitStageEnroll, get view(){ return wrAttachView; } };`)(G, db, ELLIS_CODE);
   if (!o.noUnit) G.unitStudies.word_roots = w.STARTER_UNITS.word_roots();
   w.G = G; return w;
@@ -47,7 +47,7 @@ function world(o) {
 console.log("── the plan on his 10/24 data ──");
 const w = world(), P = w.wrPlanAttach("ellis", 1761300000000);
 ok("plan is ready for Ellis, gated on his own subject word_roots", P.ok && P.subject === "word_roots", P.why);
-ok("he is on Lesson 21 (first not-done line L21b walks back to L21)", P.gate === 21 && FX.subject.lessonSeq[Object.keys(FX.done).length] === "L21b");
+ok("he is ON Lesson 21 (next line L21b), but has checked off only through Lesson 20 — her rule: roots open after the lesson is checked off", P.onLesson === 21 && P.gate === 20 && FX.subject.lessonSeq[Object.keys(FX.done).length] === "L21b");
 ok("next new card is meter", P.next10[0] === "meter", P.next10);
 console.log("     next 10: " + P.next10.join(", "));
 const card = {}; w.G.unitStudies.word_roots.decks[0].cards.forEach(c => { card[c.name] = c; });
@@ -56,8 +56,8 @@ ok("his list order starts with his 13 cards, as she sorted them", JSON.stringify
 const live = Object.values(FX.cards).map(c => c.prompt);
 ok("every name in the order is in his bank once", new Set(P.order).size === P.order.length);
 const lessonOf = n => card[n] && card[n].stage !== 6 ? card[n].lesson : null;
-ok("only roots from lessons ≤ 21 (or More roots / Our words, no gate) can start now", P.openNow.every(n => lessonOf(n) == null || lessonOf(n) <= 21), P.openNow.filter(n => lessonOf(n) > 21));
-ok("Lessons 22–24 and the Level roots wait", P.held.length && P.held.every(n => lessonOf(n) > 21) && ["vert/vers", "cline", "stat", "il-", "a-", "poly-", "capt"].every(n => P.held.indexOf(n) >= 0), P.held);
+ok("only roots from lessons ≤ 20 (or More roots / Our words, no gate) can start now", P.openNow.every(n => lessonOf(n) == null || lessonOf(n) <= 20), P.openNow.filter(n => lessonOf(n) > 20));
+ok("Lesson 21 (half done), 22–24 and the Level roots wait", P.held.length && P.held.every(n => lessonOf(n) > 20) && ["viv/vive", "-acious", "-fy", "vert/vers", "cline", "stat", "il-", "a-", "poly-", "capt"].every(n => P.held.indexOf(n) >= 0), P.held);
 ok("his 13 More roots are all open now", ["bio", "auto", "macro", "photo", "vis/vid", "mit/miss", "ject", "duct", "spect", "form", "cred", "aqua", "terra"].every(n => P.openNow.indexOf(n) >= 0));
 ok("ir-, omni- and the number prefixes are kept as waiting roots, untouched", JSON.stringify(P.sum.ourWords) === JSON.stringify(["ir-", "-quadra", "penta-", "hexa-", "hepta-", "oct-", "novem-", "deca-", "omni-"]) && !P.writes.some(x => /custom_items\/\d+/.test(x.path) && ["ir-", "omni-", "-quadra", "penta-", "hexa-", "hepta-", "oct-", "novem-", "deca-"].indexOf(FX.custom[x.path.split("/")[2]] && FX.custom[x.path.split("/")[2]].name) >= 0));
 ok("active is removed (one targeted remove)", P.sum.dropped.join() === "active" && P.writes.filter(x => x.value === null && /custom_items\/\d+$/.test(x.path)).length === 1);
@@ -68,7 +68,7 @@ const paths = P.writes.map(x => x.path);
 ok("every write is a targeted path (no whole-node set)", paths.every(p => /^unitStudies\/word_roots\/(enrolled|kidStage)\/ellis$/.test(p) || /^mastery\/ellis_settings\/cat_gate\/Greek & Latin Roots$/.test(p) || /^mastery\/ellis_custom_items\/\d+(\/(ch|def))?$/.test(p) || /^mastery\/ellis_settings\/definitions\/[^\/]+$/.test(p) || p === "mastery/ellis_bank_order/Greek & Latin Roots"), paths.filter(p => !/word_roots|cat_gate|custom_items|definitions|bank_order/.test(p)));
 ok("never mastery/ellis (cards), cat_modes, cat_intro_max, notebookSettings, curriculum or another kid", !paths.some(p => /^mastery\/ellis\//.test(p) || /cat_modes|cat_intro_max|cat_caps|notebookSettings|curriculum|lincoln|lucy|julian/.test(p)));
 ok("no two writes overlap (one path inside another)", paths.every(a => !paths.some(b => b !== a && b.startsWith(a + "/"))));
-ok("cat_gate = {subject: word_roots}", P.writes.find(x => /cat_gate/.test(x.path)).value.subject === "word_roots");
+ok("cat_gate = {subject: word_roots, after: done}", JSON.stringify(P.writes.find(x => /cat_gate/.test(x.path)).value) === JSON.stringify({ subject: "word_roots", after: "done" }));
 ok("kidStage = Beginning, his subject, no check-up", (v => v.stage === 1 && v.subject === "word_roots" && !v.checkup && v.knows === "")(P.writes.find(x => /kidStage/.test(x.path)).value));
 const appends = P.writes.filter(x => /custom_items\/\d+$/.test(x.path) && x.value);
 ok("appended entries are {cat,name,ch} — never a def (a def makes a recite card)", appends.length && appends.every(x => Object.keys(x.value).sort().join() === "cat,ch,name" && x.value.cat === D));
@@ -99,7 +99,18 @@ console.log("\n── after Yes (live) ──");
     ok("he's in the unit locally (enrolled + kidStage)", w.G.unitStudies.word_roots.enrolled.ellis === true && w.G.unitStudies.word_roots.kidStage.ellis.subject === "word_roots");
     const elig = w.mastBankEligible("ellis", D).filter(n => live.indexOf(n) < 0);
     ok("the REAL gate agrees: next new card meter, then the plan's order", elig[0] === "meter" && JSON.stringify(elig.slice(0, 10)) === JSON.stringify(P.next10), elig.slice(0, 10));
-    ok("the REAL gate holds Lessons 22–24 and the Level roots", ["vert/vers", "cline", "stat", "il-", "a-", "poly-"].every(n => elig.indexOf(n) < 0) && elig.indexOf("bio") >= 0);
+    ok("the REAL gate holds Lessons 21–24 and the Level roots", ["viv/vive", "-fy", "vert/vers", "cline", "stat", "il-", "a-", "poly-"].every(n => elig.indexOf(n) < 0) && elig.indexOf("bio") >= 0 && elig.indexOf("struct") >= 0);
+    // her rule both ways: checking off L21b opens Lesson 21's roots; another gated deck keeps "the lesson he's on"
+    const lid21b = FX.subject.lessonIds[FX.subject.lessonSeq.indexOf("L21b")];
+    w.G.masteryData.ellis_settings.cat_gate.Vocabulary = { subject: "word_roots" };
+    w.G.masteryData.ellis_custom_items.push({ cat: "Vocabulary", name: "w20", ch: 20 }, { cat: "Vocabulary", name: "w21", ch: 21 }, { cat: "Vocabulary", name: "w22", ch: 22 });
+    const voc = () => w.mastBankEligible("ellis", "Vocabulary").filter(n => /^w2/.test(n)).join();
+    ok("another gated deck is unchanged: opens the lesson he's ON (21) while he's on it", voc() === "w20,w21");
+    w.G.currData.done.ellis.word_roots = Object.assign({}, FX.done, { [lid21b]: { day: "2026-10-26" } });
+    const elig2 = w.mastBankEligible("ellis", D);
+    ok("once L21b is checked off, Lesson 21's roots open (viv/vive, -acious, -fy); Lesson 22's still wait", ["viv/vive", "-acious", "-fy"].every(n => elig2.indexOf(n) >= 0) && elig2.indexOf("vert/vers") < 0);
+    ok("…and the other deck still follows 'the lesson he's on' (now 22)", voc() === "w20,w21,w22");
+    w.G.currData.done.ellis.word_roots = FX.done;
     ok("every root that can start has a back (definitions or built-in)", elig.every(n => (w.G.masteryData.ellis_settings.definitions || {})[n] || w.MAST_VOCAB_DEFS[n.toLowerCase()] || w.G.masteryData.ellis_custom_items.find(e => e && e.cat === D && e.name === n && e.def)), elig.filter(n => !((w.G.masteryData.ellis_settings.definitions || {})[n] || w.MAST_VOCAB_DEFS[n.toLowerCase()])));
     ok("active is gone from his bank; ir- is still there", !w.mastFullBank("ellis")[D].includes("active") && w.mastFullBank("ellis")[D].includes("ir-"));
     ok("second tap refuses: already hooked up", !w.wrPlanAttach("ellis").ok && /already/.test(w.wrPlanAttach("ellis").why));
@@ -118,6 +129,19 @@ function rest() {
   ok("refuses: no Word Roots subject", (p => !p.ok && /no Word Roots subject/.test(p.why) && !p.writes.length)(world({ noSubject: true }).wrPlanAttach("ellis")));
   ok("refuses: subject not stamped (Import completions)", (p => !p.ok && /stamped/.test(p.why) && !p.writes.length)(world({ unstamped: true }).wrPlanAttach("ellis")));
   ok("Lincoln is still blocked", (p => !p.ok && !p.writes.length)(world().wrPlanAttach("lincoln")));
+
+  console.log("\n── 'checked off' rule (wrGateDone) ──");
+  const gd = (seq, doneIdx, extra) => { const d = world(); const ids = seq.map((_, i) => "G" + i);
+    d.G.currData.subjects.ellis.g = Object.assign({ lessonSeq: seq, lessonIds: ids, doneImportedAt: "2026-10-24" }, extra || {});
+    d.G.currData.done.ellis.g = Object.fromEntries(doneIdx.map(i => [ids[i], { day: "2026-10-24" }])); return d.wrGateDone("ellis", "g"); };
+  ok("nothing checked off yet (a new kid at L1): nothing opens — gate 0", gd(["L1", "L1b", "L2", "L2b"], []) === 0);
+  ok("L1 done but L1b not: Lesson 1 still waits", gd(["L1", "L1b", "L2", "L2b"], [0]) === 0);
+  ok("L1 + L1b done: Lesson 1 opens", gd(["L1", "L1b", "L2", "L2b"], [0, 1]) === 1);
+  ok("whole book incl. reviews done: 24", gd(["L23", "L23b", "L24", "L24b", "Review", "Review"], [0, 1, 2, 3, 4, 5]) === 24);
+  ok("L24b done, reviews not: still 24 (reviews aren't lessons)", gd(["L24", "L24b", "Review"], [0, 1]) === 24);
+  ok("Level lines after Beginning: 'L1-1' not done → everything through Beginning opens (100), not Level 1", gd(["L24", "L24b", "Review", "L1-1", "L1-1b"], [0, 1, 2]) === 100);
+  ok("…'L1-1' + 'L1-1b' done → Level 1 Lesson 1 opens (101)", gd(["L24", "L24b", "L1-1", "L1-1b", "L1-2"], [0, 1, 2, 3]) === 101);
+  ok("unstamped subject → null (gate fails open, as always)", gd(["L1"], [0], { doneImportedAt: null }) === null);
 
   console.log("\n── the Word Roots page ──");
   { const d = world(), esc = s => String(s), roster = ["lincoln", "ellis", "lucy", "julian"], u = d.G.unitStudies.word_roots;
