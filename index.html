@@ -42148,6 +42148,104 @@ function wrHookedHtml(u,kid,ks,esc){
   return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:12.5px;font-weight:800;color:#1f2937;min-width:64px">'+esc(cap(kid))+'</span><span style="font-size:11.5px;color:#15803d;font-weight:700">✓ Hooked up</span><span style="font-size:10.5px;color:var(--muted);font-weight:700">roots open as he checks off each Word Roots lesson'+(P!=null?' (through Lesson '+P+')':'')+'</span></div>';
 }
 // WRATTACH_END
+// UNITATTACH_START — 🔗 Hook up a kid to a unit she already has cards for (her ask 2026-10-25: "The order is good.
+// Start step 1: Lucy on the Math Fluency path, stage 6, with the hook-up engine. Snapshot and plan file first, then the
+// branch."). PLAN_units_switchover_order_2026-10-25.md §0 · PLAN_attach_mathpath_lucy_2026-10-25.md. The Word Roots
+// hook-up (WRATTACH) made general. Attach = put the kid in the unit WITHOUT the stock enroll: the stock paths
+// (_ustApply / unitEnroll) mint fresh "placed" cards up to "knows through" and overwrite cat_modes / cat_intro_max /
+// definitions — not safe for a kid whose cards already exist (AUDIT_units_overlap_2026-10-24 §0.3, §4).
+//   · UA_ATTACH says which kid attaches to which unit, at which stage — one row per step of her order. Step 1 = Lucy.
+//   · uaPlanAttach(unitId,kid) is pure: it reads memory and returns every write, in plain words too. Unit cards match
+//     the kid's cards by kid + deck key + EXACT prompt (never by name alone — two units share "Real Science-4-Kids").
+//   · Writes only: enrolled/<kid>, kidStage/<kid>, and appended bank entries {cat,name} for stage words the kid's list
+//     doesn't have (fill:true) — no def (a def makes a recite card), no ch (no book gate in this step). Never a card,
+//     never cat_modes / cat_intro_max / definitions / notebookSettings / another kid.
+//   · Mom taps "Hook up <Kid>" → the plan shows → only "Yes" writes (one multi-path update), never in ?dryrun=1; the
+//     plan is rebuilt at Yes and must match what she saw, or nothing is written.
+//   · While a kid's hook-up waits, the stock "+ Kid" enroll on that unit is closed for THAT kid only (uaLocked); every
+//     other kid, and every other family, keeps the stock button.
+//   · A card in a stage deck that isn't a stage card stops the plan (strayOk:false) — none today for Lucy; a later row
+//     (Lincoln's 14 math extras, her §10) sets strayOk:true so they stay put.
+//   · Refuses a unit whose stage decks hold words in the bank with their backs on the bank (AAS: bankOnly/defsOnBank)
+//     — that unit gets its own step (order step 15).
+const UA_ATTACH={ math_fluency_path:{ lucy:{stage:6,fill:true} } };
+function uaSpec(u,kid){ if(!u) return null; const t=UA_ATTACH[u.id]||UA_ATTACH[u.starter]; return (t&&t[kid])||null; }
+function uaHooked(u,kid){ return !!(u&&((u.enrolled||{})[kid]||(u.kidStage||{})[kid])); }
+function uaLocked(u,kid){ return !!(uaSpec(u,kid)&&!uaHooked(u,kid)); }
+function uaPlanAttach(unitId,kid,ts){
+  const P={unitId,kid,ok:false,why:"",writes:[],ts:ts||Date.now()}, name=cap(kid);
+  const us=(typeof unitStudies!=="undefined"&&unitStudies)||{}, u=us[unitId];
+  const spec=uaSpec(u||{id:unitId},kid);
+  if(!spec){ P.why=name+" hooks up in a later step."; return P; }
+  if(!u||!Array.isArray(u.decks)){ P.why="Add this unit first (Units → Starter units → Add to our family)."; return P; }
+  if(uaHooked(u,kid)){ P.why=name+" is already hooked up."; return P; }
+  const cards=_ustCards(u,spec.stage); if(!cards.length){ P.why="Stage "+spec.stage+" has no cards."; return P; }
+  const dks=[]; cards.forEach(c=>{ if(dks.indexOf(c._dk)<0) dks.push(c._dk); });
+  const deckOf={}; (u.decks||[]).forEach(d=>{ if(d&&d.key) deckOf[d.key]=d; });
+  if(dks.some(k=>deckOf[k]&&(deckOf[k].bankOnly||deckOf[k].defsOnBank))){ P.why="This unit keeps its words in the bank with their backs — it hooks up through its own step."; return P; }
+  let items=masteryData[kid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  const pk=(d,n)=>d+"\u0001"+n;
+  const live={}; items.forEach(i=>{ if(i&&dks.indexOf(i.subject)>=0) live[pk(i.subject,i.prompt)]=i; });
+  const unitKey=new Set(cards.map(c=>pk(c._dk,c.name)));
+  const S=P.sum={stage:spec.stage,label:(_ustStageDef(u,spec.stage)||{}).label||"",decks:dks,total:cards.length,liveKept:0,learning:0,onLadder:0,backDiffers:[],stray:[],added:[],addedByDeck:{},next10Before:[],next10After:[]};
+  Object.keys(live).forEach(k=>{ const i=live[k]; if(!unitKey.has(k)){ S.stray.push(i.subject+" · "+i.prompt); return; }
+    S.liveKept++; if(i.status==="introduction") S.learning++; else if(i.status!=="parked") S.onLadder++; });
+  cards.forEach(c=>{ const i=live[pk(c._dk,c.name)]; if(i&&c.def!=null&&i.answer!=null&&String(i.answer)!==String(c.def)) S.backDiffers.push(c.name+": “"+i.answer+"” on the card · “"+c.def+"” on the path"); });
+  if(S.stray.length&&!spec.strayOk){ P.why=name+" has "+S.stray.length+" card"+(S.stray.length>1?"s":"")+" in "+dks.join(", ")+" that "+(S.stray.length>1?"aren’t":"isn’t")+" a stage-"+spec.stage+" card: "+S.stray.slice(0,6).join(", ")+(S.stray.length>6?" …":"")+". Nothing was changed."; return P; }
+  const W=(path,value,what)=>P.writes.push({path,value,what});
+  W("unitStudies/"+unitId+"/enrolled/"+kid,true,"puts "+name+" in the unit");
+  W("unitStudies/"+unitId+"/kidStage/"+kid,{stage:spec.stage,subject:"",knows:"",map:"",ts:P.ts,via:"attach"},"the marker: Stage "+spec.stage+" · "+S.label);
+  const full=(typeof mastFullBank==="function")?(mastFullBank(kid)||{}):{};
+  const liveNames={}; dks.forEach(d=>{ liveNames[d]=new Set(items.filter(i=>i&&i.subject===d).map(i=>i.prompt)); });
+  const eligible=d=>(typeof mastBankEligible==="function")?(mastBankEligible(kid,d)||[]).slice():(full[d]||[]).slice();
+  const have={}; dks.forEach(d=>{ have[d]=new Set(full[d]||[]); });
+  const cust=masteryData[kid+"_custom_items"]||[], idxs=Object.keys(cust).filter(k=>/^\d+$/.test(k)).map(Number);
+  let next=idxs.length?Math.max(...idxs)+1:0; const base="mastery/"+kid+"_custom_items/", addedIn={}; dks.forEach(d=>{ addedIn[d]=[]; });
+  if(spec.fill) cards.forEach(c=>{ if(have[c._dk].has(c.name)||liveNames[c._dk].has(c.name)) return; have[c._dk].add(c.name);
+    W(base+(next++),{cat:c._dk,name:c.name},"adds "+c.name+" to the "+c._dk+" list");   // never a def, never ch
+    S.added.push(c.name); addedIn[c._dk].push(c.name); S.addedByDeck[c._dk]=(S.addedByDeck[c._dk]||0)+1; });
+  // What would start next: the auto-pull reads the list in order (gate applied) and skips what's a card already.
+  dks.forEach(d=>{ const el=eligible(d), notLive=n=>!liveNames[d].has(n);
+    S.next10Before=S.next10Before.concat(el.filter(notLive).slice(0,10));
+    S.next10After=S.next10After.concat(el.concat(addedIn[d]).filter(notLive).slice(0,10)); });
+  P.ok=true; return P;
+}
+let uaAttachView=null;   // {unitId, kid, plan, msg}
+function uaAttachOpen(unitId,kid){ if(!momHere()) return; uaAttachView={unitId,kid,plan:uaPlanAttach(unitId,kid),msg:""}; const el=document.getElementById("content"); if(el) renderUnits(el); }
+function uaAttachClose(){ uaAttachView=null; const el=document.getElementById("content"); if(el) renderUnits(el); }
+function uaApplyAttach(plan){
+  if(!momHere()||!plan||!plan.ok) return false;
+  const again=uaPlanAttach(plan.unitId,plan.kid,plan.ts);
+  if(JSON.stringify(again.writes)!==JSON.stringify(plan.writes)){ if(uaAttachView) uaAttachView={unitId:plan.unitId,kid:plan.kid,plan:again,msg:cap(plan.kid)+"’s data changed since the plan was made — here’s the new plan. Nothing was written."}; const el=document.getElementById("content"); if(el) renderUnits(el); return false; }
+  if(!db||_dryRun()){ if(uaAttachView) uaAttachView.msg="Dry run — nothing was written."; const el=document.getElementById("content"); if(el) renderUnits(el); return false; }
+  const up={}; plan.writes.forEach(w=>{ up[w.path]=w.value; });
+  db.ref().update(up).then(()=>{
+    plan.writes.forEach(w=>_wrSetLocal(w.path,w.value));
+    uaAttachView=null; const el=document.getElementById("content"); if(el) renderUnits(el);
+  }).catch(()=>{ if(uaAttachView) uaAttachView.msg="That didn’t save — nothing changed. Try again when you’re online."; const el=document.getElementById("content"); if(el) renderUnits(el); });
+  return true;
+}
+function uaAttachHtml(u,kid,esc,btn){
+  const V=uaAttachView, name=cap(kid);
+  if(!V||V.kid!==kid||V.unitId!==u.id) return '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:12.5px;font-weight:800;color:#9ca3af;min-width:64px">'+esc(name)+'</span><button onclick="uaAttachOpen(\''+esc(u.id)+'\',\''+esc(kid)+'\')" style="'+btn("#fff","#1f2937","var(--border)")+'">\u{1F517} Hook up '+esc(name)+'</button></div>';
+  const P=V.plan, S=P.sum||{}, li=t=>'<li style="margin:3px 0">'+t+'</li>', list=a=>a.map(esc).join(", ");
+  let h='<div style="font-size:12.5px;font-weight:800;color:#1f2937;margin-bottom:6px">Hook up '+esc(name)+' to '+esc(u.title||u.id)+'</div>';
+  if(V.msg) h+='<div style="font-size:11.5px;font-weight:700;color:#b45309;margin-bottom:6px">'+esc(V.msg)+'</div>';
+  if(!P.ok) return h+'<div style="font-size:11.5px;color:#374151;line-height:1.5">'+esc(P.why)+'</div><div style="margin-top:8px"><button onclick="uaAttachClose()" style="'+btn("#fff","var(--muted)","var(--border)")+'">Close</button></div>';
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Here’s everything it does. Nothing is written until you tap Yes.</div><ul style="font-size:11.5px;color:#374151;line-height:1.45;padding-left:18px;margin:0">';
+  h+=li(esc(name)+'’s <b>'+S.liveKept+' '+list(S.decks)+' card'+(S.liveKept===1?'':'s')+' stay exactly as they are</b> — same progress, same due days, nothing redone. Not one is written.');
+  h+=li('Marker: <b>Stage '+S.stage+' · '+esc(S.label)+'</b> — '+S.onLadder+' of '+S.total+' on the ladder, '+S.learning+' learning.');
+  h+=li(S.added.length?'Adds <b>'+S.added.length+'</b> stage words to the list, after what’s already there. They start only as room opens, in the path’s order.':'Adds nothing to the list — every stage word is already there.');
+  h+=li(JSON.stringify(S.next10Before)===JSON.stringify(S.next10After)?'The next new cards don’t change: '+list(S.next10After)+'.':'Next new cards: '+list(S.next10After)+' (today: '+list(S.next10Before)+').');
+  if(S.backDiffers.length) h+=li('<b>'+S.backDiffers.length+' answer'+(S.backDiffers.length>1?'s':'')+' differ'+(S.backDiffers.length>1?'':'s')+'</b> from the path’s and stay as they are: '+list(S.backDiffers.slice(0,5))+(S.backDiffers.length>5?' …':'')+'.');
+  if(S.stray.length) h+=li('Not part of this stage, left as they are: '+list(S.stray)+'.');
+  h+=li('Not touched: the cards, the deck’s card style, how many start at a time, the answers, the notebook, every other kid.');
+  h+='</ul><details style="margin-top:6px"><summary style="font-size:11px;font-weight:700;color:var(--muted);cursor:pointer">'+P.writes.length+' saved changes</summary><div style="font-size:10.5px;color:#374151;line-height:1.45;margin-top:4px;max-height:220px;overflow:auto">'+P.writes.map(w=>esc(w.what)).join('<br>')+'</div></details>';
+  h+='<div style="display:flex;gap:6px;margin-top:9px"><button onclick="uaApplyAttach(uaAttachView&&uaAttachView.plan)" style="'+btn("#2d6a4f","#fff","#2d6a4f")+'">✓ Yes, hook up '+esc(name)+'</button><button onclick="uaAttachClose()" style="'+btn("#fff","var(--muted)","var(--border)")+'">Cancel</button></div>';
+  if(typeof _dryRun==="function"&&_dryRun()) h+='<div style="font-size:10.5px;color:#b45309;margin-top:5px">Dry run — Yes writes nothing.</div>';
+  return h;
+}
+// UNITATTACH_END
 const STARTER_UNITS={
   math_fluency_path:()=>({ id:"math_fluency_path", starter:"math_fluency_path", starterVer:1,
     title:"Math Fluency Path", emoji:"\u{1F9EE}", nbInsert:false,   // facts drill, no notebook pages
@@ -42250,6 +42348,7 @@ function _ustSlug(name){ return String(name).replace(/\+/g,"p").replace(/-/g,"m"
 // Seed ONE stage into a kid's mastery data (in memory). Returns what to write: new item / bank indices.
 function _ustApply(u,kid,stageN,knows,subject,mapId){
   if(typeof _wrEnrollLocked==="function"&&_wrEnrollLocked(u)) return null;   // 🏛 WORDROOTS: attaches through its own step
+  if(typeof uaLocked==="function"&&uaLocked(u,kid)) return null;   // 🔗 UNITATTACH: this kid attaches through the hook-up
   const sd=_ustStageDef(u,stageN)||{}; const cards=_ustCards(u,stageN); if(!cards.length) return null;
   let items=masteryData[kid]; if(!Array.isArray(items)) items=masteryData[kid]=(items?Object.values(items):[]);
   let bank=masteryData[kid+"_custom_items"]; if(!Array.isArray(bank)) bank=masteryData[kid+"_custom_items"]=(bank?Object.values(bank):[]);
@@ -42329,6 +42428,7 @@ function _ustDone(unitId,kid,rec){
 let unitStageForm=null;   // {unitId,kid,stage,knows,subject,map} — the open "+ Kid" form
 function unitStageFormOpen(unitId,kid){ if(!momHere()) return; const u=unitStudies[unitId]; if(!u) return;
   if(typeof _wrEnrollLocked==="function"&&_wrEnrollLocked(u)) return;   // 🏛 WORDROOTS
+  if(typeof uaLocked==="function"&&uaLocked(u,kid)) return;   // 🔗 UNITATTACH
   const s=_ustStagesWithCards(u)[0]; unitStageForm={unitId,kid,stage:s?s.n:null,knows:"",subject:"",map:"",how:"knows",perDay:10,untested:"spot"};
   const el=document.getElementById("content"); if(el) renderUnits(el); }
 function unitStageFormSet(field,val){ if(!unitStageForm) return;
@@ -42393,6 +42493,8 @@ function _unitStageRowsHtml(u,roster){
       if(typeof prKidRowHtml==="function") h+=prKidRowHtml(u,k,ks);   // ✏️ PRACTICE: which card carries it
       if(typeof nbsKidRowHtml==="function") h+=nbsKidRowHtml(u,k,ks);   // 📝 NBSPELL: notebook options
       if(typeof ckStartHtml==="function") h+=ckStartHtml(u,k,ks);   // 🩺 CKSTART: start a check-up any time
+    } else if(typeof uaLocked==="function"&&uaLocked(u,k)){
+      h+=uaAttachHtml(u,k,esc,btn);   // 🔗 UNITATTACH: Hook up <Kid> → the plan → Yes
     } else if(unitStageForm&&unitStageForm.unitId===u.id&&unitStageForm.kid===k){
       const f=unitStageForm;
       h+='<div style="font-size:12.5px;font-weight:800;color:#1f2937;margin-bottom:6px">Start '+esc(cap(k))+'</div>';
@@ -58617,6 +58719,7 @@ function unitStageCheckup(){
   const f=unitStageForm, u=unitStudies[f.unitId], kid=f.kid;
   if(!u||(u.enrolled||{})[kid]) return;
   if(typeof _wrEnrollLocked==="function"&&_wrEnrollLocked(u)) return;   // 🏛 WORDROOTS
+  if(typeof uaLocked==="function"&&uaLocked(u,kid)) return;   // 🔗 UNITATTACH
   const cards=_ustCards(u,f.stage); if(!cards.length) return;
   const sd=_ustStageDef(u,f.stage)||{};
   const sid="checkup_"+ckSlug(f.unitId)+"_"+f.stage;
