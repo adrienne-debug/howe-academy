@@ -60,9 +60,9 @@ const tally = (arr, f) => arr.reduce((m, x) => (m[f(x)] = (m[f(x)] || 0) + 1, m)
   ok("row: Taylor shows Stage 7 + ready + ➡ Start Stage 8", /Stage 7/.test(h) && /ready to move up/.test(h) && /Start Stage 8: Fractions, decimals &amp; beyond/.test(h));
   w.unitStageMoveUp("math_fluency_path", "taylor");
   ok("Taylor → Stage 8: ½ ¼ ¾ as decimal start", JSON.stringify(items(w, "taylor").filter(i => i.status === "introduction").map(i => i.prompt + "=" + i.answer)) === JSON.stringify(["½ as decimal=0.5", "¼ as decimal=0.25", "¾ as decimal=0.75"])); }
-{ const w = world({ mastery: { lincoln: [{ id: "lin_1", subject: "Math Facts", prompt: "⅓ as decimal", status: "introduction", tier: "daily" }, { id: "lin_2", subject: "Math Facts", prompt: "⅔ as decimal", status: "introduction", tier: "daily" }] } });
-  enroll(w, "lincoln", 8, "");
-  ok("Lincoln (2 live cards) at Stage 8: keeps ⅓ ⅔, adds just 1 more to fill 3", JSON.stringify(items(w, "lincoln").map(i => i.prompt)) === JSON.stringify(["⅓ as decimal", "⅔ as decimal", "½ as decimal"])); }
+{ const w = world({ mastery: { julian: [{ id: "jul_1", subject: "Math Facts", prompt: "⅓ as decimal", status: "introduction", tier: "daily" }, { id: "jul_2", subject: "Math Facts", prompt: "⅔ as decimal", status: "introduction", tier: "daily" }] } });
+  enroll(w, "julian", 8, "");   // a kid WITHOUT a UA_ATTACH row (units step 3, 2026-10-26, hooks Lincoln up by attach, so the stock enroll is closed for him on this unit)
+  ok("a kid with 2 live cards at Stage 8: keeps ⅓ ⅔, adds just 1 more to fill 3", JSON.stringify(items(w, "julian").map(i => i.prompt)) === JSON.stringify(["⅓ as decimal", "⅔ as decimal", "½ as decimal"])); }
 
 // ── Kenzie ──
 { const w = world(); enroll(w, "makenzie", 7, "× ÷ · 5s");
