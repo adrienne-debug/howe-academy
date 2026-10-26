@@ -62,7 +62,7 @@ const stage6 = w => w._ustCards(w.G.unitStudies[UNIT], 6);
 (async () => {
 console.log("── the block ──");
 ok("UNITATTACH sits inside STARTER_UNITS exactly once", block.split("// UNITATTACH_START").length === 2 && block.split("// UNITATTACH_END").length === 2 && src.split("// UNITATTACH_START").length === 2);
-ok("the table has exactly one row today: Lucy → Math Fluency Path, stage 6, fill", (t => Object.keys(t).join() === UNIT && Object.keys(t[UNIT]).join() === "lucy" && t[UNIT].lucy.stage === 6 && t[UNIT].lucy.fill === true && !t[UNIT].lucy.strayOk)(world().UA_ATTACH));
+ok("the table's Math Fluency Path rows: Lucy stage 6 fill (step 1) and Ellis stage 7 fill (step 2, 2026-10-25); no other unit", (t => Object.keys(t).join() === UNIT && Object.keys(t[UNIT]).sort().join() === "ellis,lucy" && t[UNIT].lucy.stage === 6 && t[UNIT].lucy.fill === true && !t[UNIT].lucy.strayOk && t[UNIT].ellis.stage === 7)(world().UA_ATTACH));
 
 console.log("\n── her data vs the unit ──");
 { const w = world(), s6 = stage6(w), names = s6.map(c => c.name);
@@ -124,19 +124,19 @@ console.log("\n── nothing writes when it shouldn't ──");
 { const w = world(); w.G.unitStudies[UNIT].enrolled = { lucy: true }; ok("already enrolled: refuses", /already hooked up/.test(w.uaPlanAttach(UNIT, "lucy").why)); }
 { const w = world(); w.G.masteryData.lucy[10] = { id: "luc_6x7", subject: D, prompt: "6×7", answer: "42", status: "active", tier: "weekly" };
   const P = w.uaPlanAttach(UNIT, "lucy"); ok("a Math Facts card that isn't a stage-6 fact stops the plan and names it", !P.ok && /6×7/.test(P.why) && /Nothing was changed/.test(P.why), P.why); }
-{ const w = world(); ok("another kid: 'hooks up in a later step'", /later step/.test(w.uaPlanAttach(UNIT, "ellis").why)); }
+{ const w = world(); ok("a kid with no row yet (Julian): 'hooks up in a later step'", /later step/.test(w.uaPlanAttach(UNIT, "julian").why)); }
 { const w = world(); w.UA_ATTACH.all_about_spelling = { lucy: { stage: 1, fill: true } }; w.G.unitStudies.all_about_spelling = w.STARTER_UNITS.all_about_spelling();
   const P = w.uaPlanAttach("all_about_spelling", "lucy"); ok("a bank-held unit (AAS) is refused by the engine — its own step", !P.ok && /its own step/.test(P.why), P.why); delete w.UA_ATTACH.all_about_spelling; }
 
 console.log("\n── the stock enroll is closed for her, open for everyone else ──");
 { const w = world(), u = w.G.unitStudies[UNIT];
-  ok("uaLocked: Lucy yes, Ellis / Julian no", w.uaLocked(u, "lucy") === true && w.uaLocked(u, "ellis") === false && w.uaLocked(u, "julian") === false);
+  ok("uaLocked: Lucy yes (and Ellis, step 2); Julian / Lincoln no", w.uaLocked(u, "lucy") === true && w.uaLocked(u, "ellis") === true && w.uaLocked(u, "julian") === false && w.uaLocked(u, "lincoln") === false);
   ok("_ustApply returns null for Lucy (no placed cards minted, no settings overwritten)", w._ustApply(u, "lucy", 6, "", "", "") === null && JSON.stringify(w.G.masteryData.lucy_settings) === JSON.stringify(FX.settings) && w.G.masteryData.lucy.length === FX.itemsLength);
-  ok("…but still seeds Ellis at stage 7 (stock path untouched for other kids)", (r => r && Object.keys(r.iu).length > 0)(w._ustApply(u, "ellis", 7, "", "", "")));
+  ok("…but still seeds Julian at stage 1 (stock path untouched for kids without a row)", (r => r && Object.keys(r.iu).length > 0)(w._ustApply(u, "julian", 1, "", "", "")));
   w.unitStageFormOpen(UNIT, "lucy"); ok("the stock '+ Lucy' form doesn't open", w.form === null);
   w.unitStageFormOpen(UNIT, "julian"); ok("…the stock '+ Julian' form does", w.form && w.form.kid === "julian");
   const w2 = world(), h = w2._unitStageRowsHtml(w2.G.unitStudies[UNIT], ["julian", "lucy", "ellis", "lincoln"]);   // a fresh world: no form open
-  ok("her row shows 🔗 Hook up Lucy; the others keep + Kid", /Hook up Lucy/.test(h) && !/\+ Lucy/.test(h) && /\+ Julian/.test(h) && /\+ Ellis/.test(h) && /\+ Lincoln/.test(h) && !/Hook up (Julian|Ellis|Lincoln)/.test(h));
+  ok("her row shows 🔗 Hook up Lucy (Ellis's too, step 2); Julian and Lincoln keep + Kid", /Hook up Lucy/.test(h) && !/\+ Lucy/.test(h) && /Hook up Ellis/.test(h) && /\+ Julian/.test(h) && /\+ Lincoln/.test(h) && !/Hook up (Julian|Lincoln)/.test(h));
   w.uaAttachOpen(UNIT, "lucy"); const h2 = w._unitStageRowsHtml(u, ["lucy"]);
   ok("the plan panel: 13 cards stay, Stage 6 marker, 151 added, next cards unchanged, Yes + Cancel", /13 Math Facts cards stay exactly as they are/.test(h2) && /Stage 6 · \+ and − facts/.test(h2) && /Adds <b>151<\/b>/.test(h2) && /next new cards don’t change: 4\+2/.test(h2) && /153 saved changes/.test(h2) && /Yes, hook up Lucy/.test(h2) && /Cancel/.test(h2) && !/Dry run/.test(h2));
   const wd = world({ dry: true }); wd.uaAttachOpen(UNIT, "lucy"); ok("…and says 'Dry run — Yes writes nothing' under ?dryrun=1", /Dry run — Yes writes nothing/.test(wd._unitStageRowsHtml(wd.G.unitStudies[UNIT], ["lucy"])));
