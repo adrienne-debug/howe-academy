@@ -64,7 +64,7 @@ const shapes = FX => Object.values(FX.cards).filter(c => c.subject === D);
 
 (async () => {
 console.log("── the row + the engine addition ──");
-ok("UA_ATTACH.shapes_path has Julian → stage 2, fill, no strayOk; Letters and Math rows untouched", (t => t.shapes_path && Object.keys(t.shapes_path).join() === KID && t.shapes_path.julian.stage === 2 && t.shapes_path.julian.fill === true && !t.shapes_path.julian.strayOk && t.letters_path.julian.stage === 1 && Object.keys(t.math_fluency_path).sort().join() === "ellis,lincoln,lucy")(world().UA_ATTACH));
+ok("UA_ATTACH.shapes_path has Julian → stage 2, fill, no strayOk; Letters row and the four Math rows beside it", (t => t.shapes_path && Object.keys(t.shapes_path).join() === KID && t.shapes_path.julian.stage === 2 && t.shapes_path.julian.fill === true && !t.shapes_path.julian.strayOk && t.letters_path.julian.stage === 1 && Object.keys(t.math_fluency_path).sort().join() === "ellis,julian,lincoln,lucy")(world().UA_ATTACH));
 ok("the engine counts a card from an EARLIER stage of the same deck as kept (S.earlier), never stray", /earlierKey/.test(block) && /if\(earlierKey\.has\(k\)\)\{ S\.earlier\+\+; return; \}/.test(block) && /from earlier stages stay exactly as they are too/.test(block));
 
 console.log("\n── his data vs the unit ──");

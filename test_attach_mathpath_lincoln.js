@@ -61,7 +61,7 @@ const stage8 = w => w._ustCards(w.G.unitStudies[UNIT], 8);
 
 (async () => {
 console.log("── the row ──");
-ok("UA_ATTACH has Lincoln → Math Fluency Path, stage 8, fill, strayOk — beside Lucy's and Ellis's rows; the Letters Path carries Julian's row (step 4)", (t => Object.keys(t).filter(u => u === UNIT).length === 1 && Object.keys(t[UNIT]).sort().join() === "ellis,lincoln,lucy" && t[UNIT].lincoln.stage === 8 && t[UNIT].lincoln.fill === true && t[UNIT].lincoln.strayOk === true && !t[UNIT].lucy.strayOk && !t[UNIT].ellis.strayOk)(world().UA_ATTACH));
+ok("UA_ATTACH has Lincoln → Math Fluency Path, stage 8, fill, strayOk — beside Lucy's, Ellis's and Julian's rows (steps 1, 2, 6)", (t => Object.keys(t).filter(u => u === UNIT).length === 1 && Object.keys(t[UNIT]).sort().join() === "ellis,julian,lincoln,lucy" && t[UNIT].lincoln.stage === 8 && t[UNIT].lincoln.fill === true && t[UNIT].lincoln.strayOk === true && !t[UNIT].lucy.strayOk && !t[UNIT].ellis.strayOk)(world().UA_ATTACH));
 ok("one UNITATTACH block, one UA_ATTACH table (a row, not code)", src.split("// UNITATTACH_START").length === 2 && src.split("const UA_ATTACH=").length === 2);
 
 console.log("\n── his data vs the unit ──");
@@ -125,15 +125,15 @@ console.log("\n── nothing writes when it shouldn't ──");
 { const w = world(); w.uaAttachOpen(UNIT, KID); const seen = w.view.plan; w.G.masteryData.lincoln_custom_items.push({ cat: D, name: "½ as decimal" }); ok("data changed since the plan was shown: nothing written, new plan (191) with a note", w.uaApplyAttach(seen) === false && w.G.writes.length === 0 && /changed/.test(w.view.msg) && w.view.plan.writes.length === 191); }
 { const w = world({ noUnit: true }); ok("unit not in the database: refuses", !w.uaPlanAttach(UNIT, KID).ok && /Add this unit first/.test(w.uaPlanAttach(UNIT, KID).why)); }
 { const w = world(); w.G.unitStudies[UNIT].kidStage = { lincoln: { stage: 8 } }; ok("already hooked (kidStage): refuses", /already hooked up/.test(w.uaPlanAttach(UNIT, KID).why)); }
-{ const w = world(); ok("Julian (no row): 'hooks up in a later step'", /later step/.test(w.uaPlanAttach(UNIT, "julian").why)); }
+{ const w = world(); ok("Caleb (no row): 'hooks up in a later step'", /later step/.test(w.uaPlanAttach(UNIT, "caleb").why)); }
 
 console.log("\n── the stock enroll is closed for him ──");
 { const w = world(), u = w.G.unitStudies[UNIT];
-  ok("uaLocked: Lincoln yes (Lucy, Ellis too); Julian no", w.uaLocked(u, KID) === true && w.uaLocked(u, "lucy") === true && w.uaLocked(u, "ellis") === true && w.uaLocked(u, "julian") === false);
+  ok("uaLocked: Lincoln yes (Lucy, Ellis too); Caleb no", w.uaLocked(u, KID) === true && w.uaLocked(u, "lucy") === true && w.uaLocked(u, "ellis") === true && w.uaLocked(u, "caleb") === false);
   ok("_ustApply returns null for Lincoln (no placed cards, no settings overwritten)", w._ustApply(u, KID, 8, "", "", "") === null && JSON.stringify(w.G.masteryData.lincoln_settings) === JSON.stringify(FX.settings));
   w.unitStageFormOpen(UNIT, KID); ok("the stock '+ Lincoln' form doesn't open", w.form === null);
-  const h = w._unitStageRowsHtml(u, ["julian", "lucy", "ellis", "lincoln"]);
-  ok("his row shows 🔗 Hook up Lincoln; Julian keeps + Julian", /Hook up Lincoln/.test(h) && !/\+ Lincoln/.test(h) && /\+ Julian/.test(h));
+  const h = w._unitStageRowsHtml(u, ["caleb", "lucy", "ellis", "lincoln"]);
+  ok("his row shows 🔗 Hook up Lincoln; Caleb keeps + Caleb", /Hook up Lincoln/.test(h) && !/\+ Lincoln/.test(h) && /\+ Caleb/.test(h));
   w.uaAttachOpen(UNIT, KID); const h2 = w._unitStageRowsHtml(u, [KID]);
   ok("the plan panel: 4 cards stay, Stage 8 marker, 190 added, 2 answers differ and stay, next cards unchanged (⅕ …), 192 saved changes, Yes + Cancel", /4 Math Facts cards stay exactly as they are/.test(h2) && /Stage 8 · Fractions, decimals &amp; beyond/.test(h2) && /Adds <b>190<\/b>/.test(h2) && /2 answers differ/.test(h2) && /next new cards don’t change: ⅕ as decimal/.test(h2) && /192 saved changes/.test(h2) && /Yes, hook up Lincoln/.test(h2), h2.slice(0, 900));
   ok("no 'her'/'she' in the panel (Lincoln)", !/\b(her|she)\b/i.test(h2));

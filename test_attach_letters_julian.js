@@ -62,7 +62,7 @@ const letters = FX => Object.values(FX.cards).filter(c => c.subject === D);
 
 (async () => {
 console.log("── the row ──");
-ok("UA_ATTACH.letters_path has Julian → stage 1, fill, no strayOk; the Math Fluency Path rows are untouched", (t => t.letters_path && Object.keys(t.letters_path).join() === KID && t.letters_path.julian.stage === 1 && t.letters_path.julian.fill === true && !t.letters_path.julian.strayOk && Object.keys(t.math_fluency_path).sort().join() === "ellis,lincoln,lucy")(world().UA_ATTACH));
+ok("UA_ATTACH.letters_path has Julian → stage 1, fill, no strayOk; the Math Fluency Path carries the four kids' rows (steps 1–3, 6)", (t => t.letters_path && Object.keys(t.letters_path).join() === KID && t.letters_path.julian.stage === 1 && t.letters_path.julian.fill === true && !t.letters_path.julian.strayOk && Object.keys(t.math_fluency_path).sort().join() === "ellis,julian,lincoln,lucy")(world().UA_ATTACH));
 
 console.log("\n── his data vs the unit ──");
 { const w = world(), s1 = stage1(w), names = s1.map(c => c.name);
