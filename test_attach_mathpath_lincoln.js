@@ -61,7 +61,7 @@ const stage8 = w => w._ustCards(w.G.unitStudies[UNIT], 8);
 
 (async () => {
 console.log("── the row ──");
-ok("UA_ATTACH has Lincoln → Math Fluency Path, stage 8, fill, strayOk — beside Lucy's and Ellis's rows", (t => Object.keys(t).join() === UNIT && Object.keys(t[UNIT]).sort().join() === "ellis,lincoln,lucy" && t[UNIT].lincoln.stage === 8 && t[UNIT].lincoln.fill === true && t[UNIT].lincoln.strayOk === true && !t[UNIT].lucy.strayOk && !t[UNIT].ellis.strayOk)(world().UA_ATTACH));
+ok("UA_ATTACH has Lincoln → Math Fluency Path, stage 8, fill, strayOk — beside Lucy's and Ellis's rows; the Letters Path carries Julian's row (step 4)", (t => Object.keys(t).filter(u => u === UNIT).length === 1 && Object.keys(t[UNIT]).sort().join() === "ellis,lincoln,lucy" && t[UNIT].lincoln.stage === 8 && t[UNIT].lincoln.fill === true && t[UNIT].lincoln.strayOk === true && !t[UNIT].lucy.strayOk && !t[UNIT].ellis.strayOk)(world().UA_ATTACH));
 ok("one UNITATTACH block, one UA_ATTACH table (a row, not code)", src.split("// UNITATTACH_START").length === 2 && src.split("const UA_ATTACH=").length === 2);
 
 console.log("\n── his data vs the unit ──");

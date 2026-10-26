@@ -62,7 +62,7 @@ const stage6 = w => w._ustCards(w.G.unitStudies[UNIT], 6);
 (async () => {
 console.log("── the block ──");
 ok("UNITATTACH sits inside STARTER_UNITS exactly once", block.split("// UNITATTACH_START").length === 2 && block.split("// UNITATTACH_END").length === 2 && src.split("// UNITATTACH_START").length === 2);
-ok("the table's Math Fluency Path rows: Lucy stage 6 fill (step 1), Ellis stage 7 (step 2), Lincoln stage 8 (step 3, 2026-10-26); no other unit", (t => Object.keys(t).join() === UNIT && Object.keys(t[UNIT]).sort().join() === "ellis,lincoln,lucy" && t[UNIT].lucy.stage === 6 && t[UNIT].lucy.fill === true && !t[UNIT].lucy.strayOk && t[UNIT].ellis.stage === 7 && t[UNIT].lincoln.stage === 8)(world().UA_ATTACH));
+ok("the table's Math Fluency Path rows: Lucy stage 6 fill (step 1), Ellis stage 7 (step 2), Lincoln stage 8 (step 3, 2026-10-26); the Letters Path carries Julian's row (step 4)", (t => Object.keys(t).filter(u => u === UNIT).length === 1 && Object.keys(t[UNIT]).sort().join() === "ellis,lincoln,lucy" && t[UNIT].lucy.stage === 6 && t[UNIT].lucy.fill === true && !t[UNIT].lucy.strayOk && t[UNIT].ellis.stage === 7 && t[UNIT].lincoln.stage === 8)(world().UA_ATTACH));
 
 console.log("\n── her data vs the unit ──");
 { const w = world(), s6 = stage6(w), names = s6.map(c => c.name);

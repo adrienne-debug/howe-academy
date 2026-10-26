@@ -67,7 +67,7 @@ const stage7 = w => w._ustCards(w.G.unitStudies[UNIT], 7);
 
 (async () => {
 console.log("── the row ──");
-ok("UA_ATTACH has Ellis → Math Fluency Path, stage 7, fill, no strayOk — beside Lucy's step-1 row", (t => Object.keys(t).join() === UNIT && Object.keys(t[UNIT]).sort().join() === "ellis,lincoln,lucy" && t[UNIT].ellis.stage === 7 && t[UNIT].ellis.fill === true && !t[UNIT].ellis.strayOk && t[UNIT].lucy.stage === 6)(world().UA_ATTACH));
+ok("UA_ATTACH has Ellis → Math Fluency Path, stage 7, fill, no strayOk — beside Lucy's step-1 row; the Letters Path carries Julian's row (step 4)", (t => Object.keys(t).filter(u => u === UNIT).length === 1 && Object.keys(t[UNIT]).sort().join() === "ellis,lincoln,lucy" && t[UNIT].ellis.stage === 7 && t[UNIT].ellis.fill === true && !t[UNIT].ellis.strayOk && t[UNIT].lucy.stage === 6)(world().UA_ATTACH));
 ok("one UNITATTACH block, one UA_ATTACH table (the step adds a row, not code)", src.split("// UNITATTACH_START").length === 2 && src.split("const UA_ATTACH=").length === 2);
 
 console.log("\n── his data vs the unit ──");
