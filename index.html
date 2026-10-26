@@ -17852,7 +17852,7 @@ function renderMomsDay(el){
   // while editing, because the strip above now carries the day-to-day list.
   if(mcManage){ try{ h+=mcPopHTML(iso,today); }catch(e){} }
   // 📅 curriculum roadmap — overdue + due this week (Stage B)
-  h+=_ss('roadmap','📅 Roadmap');   // STICKYSTACK
+  h+=_ss('roadmap','📅 Heads-up');   // STICKYSTACK (RMX step 3: label only — same section id, her saved order is untouched)
   try{ h+=rmWeekHTML(iso); }catch(e){}
 
 
@@ -26437,6 +26437,7 @@ function rmStripHTML(kid){
   h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-weight:800;font-size:13px">\u{1F4C5} Roadmap · '+cap(kid)+'</span>';
   h+='<span style="font-size:11.5px;color:var(--muted)">'+open.length+' to do'+(over?' · <b style="color:#b5394a">'+over+' overdue</b>':'')+(done.length?' · '+done.length+' done':'')+'</span>';
   h+='<span style="flex:1"></span><button onclick="rmNew(\''+kid+'\')" style="padding:4px 10px;border-radius:99px;border:1.5px solid var(--border);background:#fff;font-weight:800;font-size:11.5px;cursor:pointer;font-family:\'DM Sans\',sans-serif">➕ Add</button></div>';
+  if(typeof rmxStripHTML==="function"){ try{ h+=rmxStripHTML(kid); }catch(e){} }   // RMX: "From the curriculum" — computed from the lesson lists, never stored (her yes 2026-10-25)
   if(rmEdit&&rmEdit.kid===kid&&!rmEdit.id) h+=rmFormHTML(kid);
   if(!open.length&&!(rmEdit&&rmEdit.kid===kid)) h+='<div style="font-size:12px;color:var(--muted);padding:8px 0 2px">Nothing dated yet — add the next book change, pause, or swap with a date and it will remind you here and on My Day.</div>';
   open.forEach(function(r){ h+=(rmEdit&&rmEdit.kid===kid&&rmEdit.id===r.id)?rmFormHTML(kid):rmRowHTML(kid,r,iso,false); });
@@ -26447,17 +26448,32 @@ function rmStripHTML(kid){
   h+='</div>';
   return h;
 }
-// 📆 My Day — overdue + due this week, every kid; ✓ only (edits live in Mom HQ)
+// 📆 Mom's Day — "📅 Curriculum heads-up" (RMX step 3, her yes 2026-10-25; was "Curriculum roadmap · this week"):
+// per kid, the automatic 🔴/🟠 rows from the lesson lists (rmxDerive) ABOVE her typed rows overdue + due this week
+// (✓ only, edits live in Mom HQ), then 🏡 Family once (rmxFamilyItems). Grey hand-offs stay in the Mom HQ strip unless
+// the endOnDay setting (step 4) is on. Nothing to show → "" (kids' devices and an empty day draw nothing). The RMX
+// helpers are looked up by typeof so the ROADMAP block still stands alone (test_roadmap.js).
 function rmWeekHTML(iso){
   const kids=(typeof ROSTER!=="undefined"&&ROSTER)?ROSTER:["lincoln","ellis","lucy","julian"];
-  let rows=[]; kids.forEach(function(kid){ rmList(kid).forEach(function(r){ const st=rmState(r,iso); if(st==="over"||st==="week") rows.push({kid:kid,r:r}); }); });
-  if(!rows.length) return "";
+  const auto=function(kid){ if(typeof rmxDerive!=="function") return []; try{ return rmxDerive(kid).filter(function(it){ return !it.muted&&(it.level!=="grey"||(typeof rmxCfg==="function"&&rmxCfg(kid,it.sk).endOnDay)); }); }catch(e){ return []; } };   // RMX step 4: a muted subject stays in the strip only
+  let rows=[]; kids.forEach(function(kid){
+    auto(kid).forEach(function(it){ rows.push({kid:kid,auto:it}); });
+    rmList(kid).forEach(function(r){ const st=rmState(r,iso); if(st==="over"||st==="week"||(st==="later"&&typeof rmxNoteDue==="function"&&rmxNoteDue(kid,r,iso))) rows.push({kid:kid,r:r}); }); });   // RMX step 4: noteDays shows her dated rows earlier; 0 = this week (unchanged)
+  let fam=[]; if(typeof rmxFamilyItems==="function"){ try{ fam=rmxFamilyItems().filter(function(it){ return !it.muted&&it.level!=="grey"; }); }catch(e){ fam=[]; } }
+  const n=rows.length+fam.length;
+  const gear=(typeof rmxGearHTML==="function")?rmxGearHTML():"";   // RMX step 4: ⚙ for Mom only — "" on kids' devices, Dad's kiosk and every non-Mom view
+  if(!n&&!gear) return "";
   let h='<div id="rm-week-card" style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden;margin-bottom:12px">';
-  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#7c3aed;color:#fff;font-weight:800;font-size:13px"><span>\u{1F4C5}</span> Curriculum roadmap · this week <span style="margin-left:auto;font-weight:600;font-size:11.5px;opacity:.9">'+rows.length+' item'+(rows.length===1?'':'s')+'</span></div>';
+  h+='<div style="display:flex;align-items:center;gap:8px;padding:'+(n?'11px':'8px')+' 14px;background:#7c3aed;color:#fff;font-weight:800;font-size:13px"><span>\u{1F4C5}</span> Curriculum heads-up <span style="margin-left:auto;font-weight:600;font-size:11.5px;opacity:.9">'+(n?n+' item'+(n===1?'':'s'):'all clear')+'</span>'+gear+'</div>';
+  if(gear&&typeof rmxPanelHTML==="function") h+=rmxPanelHTML();   // the ⚙ panel, open on this device only
+  if(!n){ h+='</div>'; return h; }   // Mom with nothing to show: one slim line so the settings stay reachable
   h+='<div style="padding:6px 14px 10px">';
   kids.forEach(function(kid){ const mine=rows.filter(function(x){ return x.kid===kid; }); if(!mine.length) return;
     h+='<div style="font-size:11px;font-weight:800;color:'+((typeof KID_COLOR!=="undefined"&&KID_COLOR[kid])||"#333")+';margin-top:6px">'+cap(kid)+'</div>';
-    mine.forEach(function(x){ h+=rmRowHTML(kid,x.r,iso,true); }); });
+    mine.forEach(function(x){ h+=x.auto?rmxRowHTML(x.auto):rmRowHTML(kid,x.r,iso,true); }); });
+  if(fam.length){
+    h+='<div style="font-size:11px;font-weight:800;color:#0f766e;margin-top:6px">'+((typeof lrCap==="function")?lrCap("_family"):"\u{1F3E1} Family")+'</div>';
+    fam.forEach(function(it){ h+=rmxRowHTML(it); }); }
   h+='</div></div>';
   return h;
 }
@@ -26496,6 +26512,433 @@ function rmOpenBook(id){
   let n=0; const t=setInterval(function(){ n++; const T=window._lbTest; if(window.lbOpen&&T&&T.books&&T.books()){ clearInterval(t); window.lbOpen(id); } else if(n>60) clearInterval(t); },150);
 }
 // ROADMAP_END
+// RMX_START — 📅 Curriculum heads-up, step 1 (her yes 2026-10-25; DESIGN_linked_roadmap_2026-10-24.md §3.1 + §10).
+// The roadmap only REMINDED: Ellis's Reading Eggspress list ran dry on 2026-10-14 and nothing noticed for ten
+// days — the hand-typed row for it had gone overdue on Sep 19 and sat with six others. These rows are COMPUTED
+// from the curriculum on every draw and NEVER STORED: they appear when a lesson list is running out, has run
+// dry, or is about to hand off to the next book in its lane, and vanish the moment she fixes it (appends, queues
+// a next book, pauses). Step 1 shows them only in Mom HQ ▸ Curriculum — the per-kid 📅 Roadmap strip, under
+// "From the curriculum". No writes of any kind. Tapping a row only opens the subject's card in the Builder.
+// Her starting values (2026-10-24): warn 3 weeks ahead; red at 5 lessons left or in the last week; a finished
+// list with nothing after it STAYS red until she adds lessons, lines up the next book, or pauses it.
+// Thresholds are read through rmxCfg(): family ← kid ← subject under config/rules/headsUp (step 4 adds the ⚙
+// panel; no node yet = these defaults). Skipped on purpose: tracking:"daily" (no list), paused (her choice),
+// unstamped (can't count honestly — same rule as cbRemainingContent's), a lane member waiting its turn.
+// Never cbRemainingContent (it writes cbBacklogStash). Never a kid name or a Howe subject key in this block.
+// Step 2 (her yes 2026-10-25): a fixed-date class (fixedTime + fixedDates) ends on its real class dates — never a
+// pace estimate — and says "no class dates left" / "only N class dates" when the dates can't hold the lessons;
+// 🏡 Family-time items with a lesson track (famLessonMap) get the same rows, owner "_family", shown in every
+// member kid's strip and opening the block's sheet. Items without a track are excluded like daily tracking.
+// Step 4 (her yes 2026-10-25): a per-subject `off` now means MUTED, not gone — the row is still computed (muted:true),
+// the strip shows it greyed with 🔕, Mom's Day and the plan-bar chip skip it. The ⚙ panel, the strip's ⋯ and every
+// write live in the RMXS block after this one; this block still writes nothing.
+const RMX_DEFAULTS={on:true,warnWeeks:3,warnLeft:0,redDays:7,redLeft:5,endWeeks:2,endOnDay:false,
+  kinds:{runout:true,empty:true,handoff:true,nolist:true},family:true,noteDays:0,autoDone:true,muted:false};
+const RMX_RANGE={warnWeeks:[1,8],warnLeft:[0,20],redDays:[1,21],redLeft:[0,10],endWeeks:[0,8],noteDays:[0,30]};
+function _rmxNum(v,def,rng){ const n=parseInt(v,10); if(!isFinite(n)) return def; return Math.min(rng[1],Math.max(rng[0],n)); }
+function _rmxBool(v,def){ if(v===true||v===false) return v; if(v==="true") return true; if(v==="false") return false; return def; }
+function _rmxLayer(out,h,subj){   // one settings layer onto `out` — fixed field names only, every value clamped
+  if(!h||typeof h!=="object") return;
+  Object.keys(RMX_RANGE).forEach(function(k){ if(h[k]!==undefined&&h[k]!==null) out[k]=_rmxNum(h[k],out[k],RMX_RANGE[k]); });
+  ["on","endOnDay","family","autoDone"].forEach(function(k){ if(h[k]!==undefined&&h[k]!==null) out[k]=_rmxBool(h[k],out[k]); });
+  if(h.kinds&&typeof h.kinds==="object") Object.keys(out.kinds).forEach(function(k){ if(h.kinds[k]!==undefined&&h.kinds[k]!==null) out.kinds[k]=_rmxBool(h.kinds[k],out.kinds[k]); });
+  if(h.off!==undefined&&h.off!==null&&_rmxBool(h.off,false)){ if(subj) out.muted=true; else out.on=false; }   // per-subject mute: still computed, greyed in the strip, off Mom's Day (step 4)
+}
+function rmxCfg(kid,sk){
+  const out=JSON.parse(JSON.stringify(RMX_DEFAULTS));
+  const h=(((typeof rulesData!=="undefined"&&rulesData)||{}).headsUp)||{};
+  _rmxLayer(out,h);
+  if(kid&&h.kid&&typeof h.kid==="object") _rmxLayer(out,h.kid[kid]);
+  if(kid&&sk&&h.subj&&typeof h.subj==="object"&&h.subj[kid]&&typeof h.subj[kid]==="object") _rmxLayer(out,h.subj[kid][sk],true);
+  return out;
+}
+// ── dates ──
+const RMX_DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+function _rmxToday(){ return (typeof _todayStr==="function")?_todayStr():_cbISO(new Date()); }
+function _rmxAddDays(iso,n){ const d=gwParseDate(iso); d.setDate(d.getDate()+n); return _cbISO(d); }
+function rmxDateTxt(iso){   // "Mon Oct 26" inside a week, "Nov 5" after; the year only when it differs
+  if(!iso) return ""; const d=gwParseDate(iso), t=gwParseDate(_rmxToday());
+  const days=Math.round((d-t)/86400000);
+  const md=d.toLocaleDateString("en-US",{month:"short",day:"numeric"})+(d.getFullYear()!==t.getFullYear()?" "+d.getFullYear():"");
+  return (days>=0&&days<=6)?RMX_DOW[d.getDay()]+" "+md:md;
+}
+// ── reading the curriculum (all read-only) ──
+function _rmxSubs(kid){ return ((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid])||{}; }
+function _rmxName(kid,sk){ const s=_rmxSubs(kid)[sk]; return s?String(s.display||s.name||sk):String(sk); }
+function _rmxListed(s){ return !!(s&&!s.paused&&s.tracking!=="daily"&&Array.isArray(s.lessonSeq)&&s.lessonSeq.length>0); }
+function _rmxUnitSubs(u){ if(typeof lnUnitSubs==="function") return lnUnitSubs(u); if(!u) return []; if(u.subs) return Object.keys(u.subs).map(function(k){ return String(u.subs[k]); }); return u.sk?[String(u.sk)]:[]; }
+function _rmxUnitLabel(kid,u){ return _rmxUnitSubs(u).filter(function(sk){ return !!_rmxSubs(kid)[sk]; }).map(function(sk){ return _rmxName(kid,sk); }).join(" / "); }
+// Lessons left: the lane counter when plan-backed, else list − done-by-id. null = unstamped (don't guess).
+function rmxLeft(kid,sk){
+  const s=_rmxSubs(kid)[sk]; if(!s) return null;
+  if(!(typeof lidStamped==="function"&&lidStamped(kid,sk))) return null;
+  if(typeof planBacked==="function"&&planBacked(kid,sk)&&typeof lnOpenCount==="function") return lnOpenCount(kid,sk);
+  const d=(typeof lidDoneIdx==="function")?lidDoneIdx(kid,sk):null;
+  return Math.max(0,(s.lessonSeq||[]).length-(d?d.size:0));
+}
+function _rmxPace(kid,sk,lane){   // {tpw, days}: the lane's rhythm when in one, else the subject's own pace form
+  let tpw=0, days=[];
+  try{
+    let rh=null;
+    if(lane&&typeof lnRhythm==="function") rh=lnRhythm(kid,lane.id,lane.unitIdx);
+    if(rh){ tpw=parseInt(rh.tpw,10)||0; days=(rh.allowedDays||[]).map(String); }
+    else if(typeof cbDefaultForm==="function"){ const f=cbDefaultForm(kid,sk)||{}; tpw=parseInt(f.tpw,10)||0; days=(f.allowedDays||[]).map(String); }
+  }catch(e){}
+  if(!days.length) days=["Mon","Tue","Wed","Thu","Fri"];
+  if(tpw<=0||tpw>days.length) tpw=days.length;
+  return {tpw:tpw,days:days};
+}
+// Only candidates get a date — the projection is the expensive part (Home Base was slow 2026-10-24).
+function _rmxCandidate(cfg,left,pace){ return left===0||left<=Math.max(cfg.redLeft,cfg.warnLeft,pace.tpw*Math.max(cfg.warnWeeks,cfg.endWeeks))+3; }
+// The Grid's own projection: latest filled day (dealt cards included). null when it has nothing to say.
+function _rmxProjDate(kid,sk){
+  if(typeof gvDerivedColumn!=="function") return null;
+  let col=null; try{ col=gvDerivedColumn(kid,sk); }catch(e){ return null; }
+  if(!col) return null;
+  const filled=(typeof gvFilled==="function")?gvFilled:function(v){ return !!(v&&v!=="—"&&String(v).trim()); };
+  let last=null;
+  Object.keys(col.byDate||{}).forEach(function(iso){ const e=col.byDate[iso]; if(e&&filled(e.text)&&(!last||iso>last)) last=iso; });
+  if(!last&&col.err&&typeof gvDealtDates==="function"){ try{ Object.keys(gvDealtDates(kid,sk)||{}).forEach(function(iso){ if(!last||iso>last) last=iso; }); }catch(e){} }   // everything left is already on a card
+  return last;
+}
+// Estimate when there is no projection: `left` sittings walked over the allowed days, tpw per Mon–Sun week.
+function _rmxEstimate(left,pace){
+  if(!(left>0)) return null;
+  let iso=_rmxToday(), n=0, wk=null, inWk=0, guard=0;
+  while(guard++<800){
+    const d=gwParseDate(iso), mon=_rmxAddDays(iso,-((d.getDay()+6)%7));
+    if(mon!==wk){ wk=mon; inWk=0; }
+    if(pace.days.indexOf(RMX_DOW[d.getDay()])>=0&&inWk<pace.tpw){ inWk++; n++; if(n>=left) return iso; }
+    iso=_rmxAddDays(iso,1);
+  }
+  return null;
+}
+function _rmxUnitEnd(kid,sks,lane){   // {iso, est} — the latest end across the letters of a card
+  let iso=null, est=false;
+  sks.forEach(function(sk){
+    const l=rmxLeft(kid,sk); if(!(l>0)) return;
+    let d=_rmxProjDate(kid,sk);
+    if(!d){ d=_rmxEstimate(l,_rmxPace(kid,sk,lane)); if(d) est=true; }
+    if(d&&(!iso||d>iso)) iso=d;
+  });
+  return {iso:iso,est:est};
+}
+function _rmxLastDone(kid,sks){   // the day the last lesson of these subjects was finished
+  let last=null; const dn=((((typeof currData!=="undefined"&&currData)||{}).done||{})[kid])||{};
+  sks.forEach(function(sk){ const node=dn[sk]||{}; Object.keys(node).forEach(function(lid){ const r=node[lid]; const day=(r&&r.day)?String(r.day):((r&&r.ts)?String(r.ts).slice(0,10):""); if(day&&(!last||day>last)) last=day; }); });
+  return last;
+}
+// A fixed-date class ends on its real dates: the `left`-th upcoming one. {iso, n:upcoming dates, none, short}
+// or null when the subject is not a fixed-date class. Never a pace estimate, never the projection.
+function _rmxFixedEnd(kid,sk,left){
+  const s=_rmxSubs(kid)[sk]; if(!s||typeof fxIsClass!=="function"||typeof fxDateList!=="function"||!fxIsClass(s)) return null;
+  const fd=fxDateList(s); if(!fd) return null;
+  const today=_rmxToday(); const up=fd.map(String).filter(function(d){ return d>=today; }).sort();
+  if(!up.length) return {iso:null,n:0,none:true,short:false};
+  if(up.length<left) return {iso:up[up.length-1],n:up.length,none:false,short:true};
+  return {iso:up[left-1],n:up.length,none:false,short:false};
+}
+// One slot (a lane's up unit, a lane that ran dry, or a subject in no lane) → one item or null.
+// nextLabel = the next unit in the lane that still has lessons (LANE_HANDOFF will swap it in by itself).
+function _rmxSlotItem(kid,skList,lane,nextLabel){
+  const subs=_rmxSubs(kid); const sks=(skList||[]).filter(function(sk){ return !!subs[sk]; }); if(!sks.length) return null;
+  const main=sks[0], cfg=rmxCfg(kid,main); if(!cfg.on) return null;
+  const allLabel=sks.map(function(sk){ return _rmxName(kid,sk); }).join(" / ");
+  if(sks.every(function(sk){ const x=subs[sk]; return !x.paused&&x.tracking!=="daily"&&!(Array.isArray(x.lessonSeq)&&x.lessonSeq.length); })){
+    if(!cfg.kinds.nolist) return null;
+    return {type:"nolist",level:"red",kid:kid,sk:main,label:allLabel,left:0,date:null,est:false,text:allLabel+" has no lessons yet"};
+  }
+  const listed=sks.filter(function(sk){ return _rmxListed(subs[sk]); }); if(!listed.length) return null;   // paused / daily tracking: nothing to say
+  let left=0, counted=false;
+  listed.forEach(function(sk){ const l=rmxLeft(kid,sk); if(l===null) return; counted=true; left+=l; });
+  if(!counted) return null;   // unstamped
+  const today=_rmxToday();
+  if(left===0){
+    if(nextLabel) return null;   // the next unit is up — the lane handles it
+    if(!cfg.kinds.empty) return null;
+    const since=_rmxLastDone(kid,listed);
+    return {type:"empty",level:"red",kid:kid,sk:main,label:allLabel,left:0,date:since,est:false,since:since,
+      text:allLabel+" list is empty — nothing on "+cap(kid)+"'s schedule for it"+(since?" since "+rmxDateTxt(since):"")};
+  }
+  const live=listed.filter(function(sk){ return rmxLeft(kid,sk)>0; });   // a finished letter closes ranks — name only what's still running
+  const label=live.map(function(sk){ return _rmxName(kid,sk); }).join(" / ");
+  const fx=(live.length===1)?_rmxFixedEnd(kid,live[0],left):null;   // a class meets on its dates, not on a pace
+  const end=fx?{iso:fx.iso,est:false}:(_rmxCandidate(cfg,left,_rmxPace(kid,main,lane))?_rmxUnitEnd(kid,live,lane):{iso:null,est:false});
+  const d=end.iso, dtxt=d?(end.est?"~":"")+rmxDateTxt(d):"";
+  if(nextLabel){
+    if(!cfg.kinds.handoff||!(cfg.endWeeks>0)||!d||d>_rmxAddDays(today,cfg.endWeeks*7)) return null;
+    return {type:"handoff",level:"grey",kid:kid,sk:live[0]||main,label:label,left:left,date:d,est:end.est,next:nextLabel,text:label+" ends "+dtxt+" → "+nextLabel+" takes over"};
+  }
+  if(!cfg.kinds.runout) return null;
+  if(fx&&fx.none) return {type:"runout",level:"red",kid:kid,sk:live[0],label:label,left:left,date:null,est:false,fixed:true,text:label+" · "+left+" left · no class dates left"};
+  if(fx&&fx.short) return {type:"runout",level:"red",kid:kid,sk:live[0],label:label,left:left,date:d,est:false,fixed:true,text:label+" runs out · "+left+" left · only "+fx.n+" class date"+(fx.n===1?"":"s")+" ("+rmxDateTxt(d)+")"};
+  let level=null;
+  if(left<=cfg.redLeft||(d&&d<=_rmxAddDays(today,cfg.redDays))) level="red";
+  else if((d&&d<=_rmxAddDays(today,cfg.warnWeeks*7))||(cfg.warnLeft>0&&left<=cfg.warnLeft)) level="amber";
+  if(!level) return null;
+  return {type:"runout",level:level,kid:kid,sk:live[0]||main,label:label,left:left,date:d,est:end.est,fixed:!!fx,text:label+" runs out · "+left+" left"+(dtxt?" · "+dtxt:"")};
+}
+function _rmxDerive(kid){
+  const subs=_rmxSubs(kid), items=[], inLane={};
+  const lanes=(typeof lnLanes==="function")?(lnLanes(kid)||{}):{};
+  Object.keys(lanes).forEach(function(id){
+    const us=(typeof lnUnits==="function")?lnUnits(kid,id):[];
+    us.forEach(function(u){ _rmxUnitSubs(u).forEach(function(sk){ inLane[sk]=true; }); });
+    const up=(typeof lnUp==="function")?lnUp(kid,id):-1;
+    if(up>=0){
+      const later=us.slice(up+1).filter(function(x){ return typeof lnUnitOpen==="function"&&lnUnitOpen(kid,x); });
+      const it=_rmxSlotItem(kid,_rmxUnitSubs(us[up]),{id:id,unitIdx:up},later.length?_rmxUnitLabel(kid,later[0]):null);
+      if(it) items.push(it);
+    } else {
+      for(let i=us.length-1;i>=0;i--){   // every unit closed: the last one not retired — if its list is live and ran dry, say so
+        if(us[i]&&us[i].retired) continue;
+        const it=_rmxSlotItem(kid,_rmxUnitSubs(us[i]),{id:id,unitIdx:i},null); if(it&&it.type==="empty") items.push(it);
+        break;
+      }
+    }
+  });
+  Object.keys(subs).sort().forEach(function(sk){ if(inLane[sk]) return; const it=_rmxSlotItem(kid,[sk],null,null); if(it) items.push(it); });
+  items.forEach(function(it){ if(rmxCfg(kid,it.sk).muted) it.muted=true; });   // step 4: the ⋯ mute writes subj/<kid>/<it.sk>/off — read it back on the same key
+  return _rmxSort(items);
+}
+function _rmxSort(items){
+  const rank={red:0,amber:1,grey:2};
+  return items.sort(function(a,b){ return (rank[a.level]-rank[b.level])||String(a.date||"9999").localeCompare(String(b.date||"9999"))||a.label.localeCompare(b.label); });
+}
+// ── 🏡 Family time: every block's tracked items, owner "_family" ──
+function _rmxFamList(v){ if(typeof famList==="function") return famList(v); if(!v) return []; if(Array.isArray(v)) return v.filter(function(x){ return x!==null&&x!==undefined; }); return Object.keys(v).sort(function(a,b){ return (+a)-(+b); }).map(function(k){ return v[k]; }).filter(function(x){ return x!==null&&x!==undefined; }); }
+function _rmxMonISO(iso){ const d=gwParseDate(iso); return _rmxAddDays(iso,-((d.getDay()+6)%7)); }
+function _rmxFamilyDerive(){
+  const out=[]; if(typeof famDefs!=="function"||typeof famLessonMap!=="function"||typeof famTrack!=="function") return out;
+  const defs=famDefs()||{}, today=_rmxToday();
+  Object.keys(defs).forEach(function(id){
+    const b=defs[id]; if(!b||b.off) return;
+    _rmxFamList(b.items).forEach(function(it){
+      if(!it||!it.key) return; const tr=famTrack(it); if(!tr) return;   // no lesson track = no list (like daily tracking)
+      const cfg=rmxCfg("_family",String(it.key)); if(!cfg.on||!cfg.family) return;
+      let m=null; try{ m=famLessonMap(b,id,it); }catch(e){ return; }
+      if(!m||m.none||m.left===null||m.left===undefined) return;
+      const left=Math.max(0,parseInt(m.left,10)||0), total=parseInt(m.total,10)||0, weekly=(tr.mode==="week");
+      const label="\u{1F3E1} "+String(b.name||id)+" · "+String(it.name||it.key);
+      const kids=(_rmxFamList(it.kids).length?_rmxFamList(it.kids):_rmxFamList(b.kids)).map(String);
+      const days=Object.keys(m.byDate||{}).sort();
+      const base={kid:"_family",sk:String(it.key),fam:String(id),kids:kids,label:label,est:false}; if(cfg.muted) base.muted=true;
+      if(left===0){
+        if(!total||!cfg.kinds.empty) return;
+        let since=null; days.forEach(function(d){ if(d<today&&(!since||d>since)) since=d; });
+        out.push(Object.assign(base,{type:"empty",level:"red",left:0,date:since,since:since,text:label+" list is empty — nothing on the family schedule for it"+(since?" since "+rmxDateTxt(since):"")}));
+        return;
+      }
+      if(!cfg.kinds.runout) return;
+      // a date only when the family calendar already holds every remaining sitting (week); never invent one past it
+      const fut=days.filter(function(d){ return d>=today; });
+      const units=weekly?fut.map(_rmxMonISO).filter(function(w,i,a){ return a.indexOf(w)===i; }).length:fut.length;
+      const d=(units>=left&&m.ends)?String(m.ends):null;
+      let level=null;
+      if(left<=cfg.redLeft||(d&&d<=_rmxAddDays(today,cfg.redDays))) level="red";
+      else if((d&&d<=_rmxAddDays(today,cfg.warnWeeks*7))||(cfg.warnLeft>0&&left<=cfg.warnLeft)) level="amber";
+      if(!level) return;
+      out.push(Object.assign(base,{type:"runout",level:level,left:left,date:d,text:label+" runs out · "+left+(weekly?" week"+(left===1?"":"s"):"")+" left"+(d?" · "+rmxDateTxt(d):"")}));
+    });
+  });
+  return _rmxSort(out);
+}
+function rmxFamilyItems(){
+  const key=_rmxMemoKey();
+  if(_rmxMemo.key!==key||Date.now()-_rmxMemo.at>20000) _rmxMemo={key:key,at:Date.now(),map:{}};
+  if(_rmxMemo.map._family) return _rmxMemo.map._family;
+  let items=[]; try{ items=_rmxFamilyDerive(); }catch(e){ try{ console.error("[HA] rmx family",e); }catch(_){} items=[]; }
+  _rmxMemo.map._family=items; return items;
+}
+// Memoised like gvEndInfo (today + lastEdit + check-offs, 20 s) plus the settings, so a ⚙ change redraws at once.
+let _rmxMemo={key:"",at:0,map:{}};
+function _rmxMemoKey(){
+  const r=(typeof rulesData!=="undefined"&&rulesData)||{};
+  let fp=""; try{ fp=JSON.stringify((typeof famProgress!=="undefined"&&famProgress)||null); }catch(e){}   // 🏡 a family check-off redraws at once
+  return _rmxToday()+"|"+String(((typeof currData!=="undefined"&&currData)||{}).lastEdit||"")+"|"+Object.keys((typeof checked!=="undefined"&&checked)||{}).length+"|"+JSON.stringify(r.headsUp||null)+"|"+fp;
+}
+function rmxDerive(kid){
+  const key=_rmxMemoKey();
+  if(_rmxMemo.key!==key||Date.now()-_rmxMemo.at>20000) _rmxMemo={key:key,at:Date.now(),map:{}};
+  if(_rmxMemo.map[kid]) return _rmxMemo.map[kid];
+  let items=[]; try{ items=_rmxDerive(kid); }catch(e){ try{ console.error("[HA] rmx",e); }catch(_){} items=[]; }
+  _rmxMemo.map[kid]=items; return items;
+}
+// ── the strip group (Mom HQ ▸ Curriculum). Navigation only: the row never pauses, appends or writes. ──
+const RMX_COL={red:"#b5394a",amber:"#d97706",grey:"#64748b"}, RMX_DOT={red:"\u{1F534}",amber:"\u{1F7E0}",grey:"⚪"};
+function rmxOpen(kid,sk,fam){ if(fam){ if(typeof famSheetOpen==="function") famSheetOpen(fam); return; } if(typeof ceOpenEdit==="function") ceOpenEdit(kid,sk); }
+function rmxRowHTML(it,strip){   // strip=true in Mom HQ: a muted row shows greyed with 🔕, and Mom gets the ⋯ menu (RMXS); Mom's Day passes nothing
+  const muted=!!it.muted, c=muted?RMX_COL.grey:(RMX_COL[it.level]||RMX_COL.grey), grey=muted||it.level==="grey";
+  const mom=!!strip&&typeof rmxMom==="function"&&rmxMom();
+  let h='<div onclick="rmxOpen(\''+esc(it.kid)+'\',\''+esc(it.sk)+'\''+(it.fam?',\''+esc(it.fam)+'\'':'')+')" title="Open '+esc(it.label)+(it.fam?'':' in the Builder')+'" style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:12.5px;cursor:pointer'+(muted?';opacity:.6':'')+'">';
+  h+='<span style="flex:none;width:22px;text-align:center;line-height:1.4;font-size:11px">'+(muted?'\u{1F515}':RMX_DOT[it.level])+'</span>';
+  h+='<span style="flex:1;min-width:0;font-weight:'+(grey?'500':'700')+';color:'+c+'">'+esc(it.text)+(muted?' <span style="font-weight:600">\u00b7 muted</span>':'')+'</span>';
+  if(mom&&typeof rmxMenuBtnHTML==="function") h+=rmxMenuBtnHTML(it);
+  h+='</div>';
+  if(mom&&typeof rmxMenuHTML==="function") h+=rmxMenuHTML(it);   // "" unless this row's ⋯ is open
+  return h;
+}
+function rmxStripHTML(kid){
+  const items=rmxDerive(kid).concat(rmxFamilyItems().filter(function(it){ return it.kids.indexOf(kid)>=0; }));   // 🏡 the blocks this kid is in
+  if(!items.length) return "";
+  let h='<div style="margin:6px 0 2px"><div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:4px 0 2px">From the curriculum</div>';
+  items.forEach(function(it){ h+=rmxRowHTML(it,true); });
+  h+='</div>'; return h;
+}
+// RMX_END
+// RMXS_START — 📅 Curriculum heads-up, step 4: ⚙ settings (her yes 2026-10-25; PLAN_linked_roadmap_2026-10-25.md "Step 4 in detail").
+// The FIRST step of the heads-up that writes. A ⚙ in the Mom's Day card header (momHere() only — Dad's kiosk passes the
+// gate without Mom mode and gets no ⚙; kids' devices draw nothing) opens an inline panel: the family defaults, a row per
+// kid ("same as family" until changed, ↺ back), and every per-subject record with ↺. In the Mom HQ strip each automatic
+// row gets ⋯ → Mute / Unmute · Warn earlier (+1 wk) / Warn later (−1 wk). A muted subject is still computed and shown
+// greyed with 🔕 in the strip (so she can see what she silenced); Mom's Day and the plan-bar chip skip it. With nothing to
+// show and Mom here, the card is one slim line "📅 Curriculum heads-up · all clear ⚙" so the settings stay reachable.
+// noteDays (family/kid) shows her own dated rows on Mom's Day `noteDays` days ahead; 0 = the week they're due (today's rule).
+// WRITES — copied from hhCleanRuleSet: one leaf per tap, config/rules/headsUp/<field>, …/kid/<kid>/<field>,
+// …/subj/<kid>/<sk>/<field> (kinds.<k> → kinds/<k>; the 🏡 owner is "_family"), value clamped by RMX_RANGE or coerced to a
+// boolean (junk → no write), momHere() required, inert under ?dryrun=1 (db && !_dryRun()). ↺ = one remove at that path.
+// NEVER config/rules, NEVER config/rules/headsUp itself. rulesData.headsUp is updated locally first (cloned along the
+// path) and renderAll() redraws — the RMX memo key already carries JSON(headsUp), so the rows change at once.
+// autoDone stays out of the panel until step 6 (a switch that does nothing yet would mislead). No kid names in this block.
+const RMX_FIELDS={on:"b",warnWeeks:"n",warnLeft:"n",redDays:"n",redLeft:"n",endWeeks:"n",endOnDay:"b",family:"b",noteDays:"n",autoDone:"b",off:"b","kinds.runout":"b","kinds.empty":"b","kinds.handoff":"b","kinds.nolist":"b"};
+const RMX_KIND_LBL={runout:"Running out",empty:"List empty",handoff:"Next book takes over",nolist:"Subject has no lessons"};
+const RMX_FIELD_LBL={on:"on",warnWeeks:"warn wk",warnLeft:"warn at",redDays:"red days",redLeft:"red at",endWeeks:"ending wk",endOnDay:"ending on Mom’s Day",family:"family",noteDays:"note days",autoDone:"auto-done",off:"muted","kinds.runout":"running out","kinds.empty":"list empty","kinds.handoff":"next book","kinds.nolist":"no lessons"};
+let _rmxPanel=false, _rmxMenu=null;   // this device only — never stored
+function rmxMom(){ return typeof momHere==="function"&&!!momHere(); }
+function _rmxWrite(){ return typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
+// "" | "kid/<kid>" | "subj/<owner>/<sk>" → path segments; anything else → null (no write)
+function _rmxSeg(scope){
+  if(scope===""||scope===null||scope===undefined) return [];
+  const p=String(scope).split("/"), okSeg=function(s){ return !!s&&!/[.#$\[\]\u0000-\u001f]/.test(s); };
+  if(p[0]==="kid"&&p.length===2&&okSeg(p[1])) return p;
+  if(p[0]==="subj"&&p.length===3&&okSeg(p[1])&&okSeg(p[2])) return p;
+  return null;
+}
+function _rmxRaw(scope){   // what IS set at a scope ({} when nothing) — the panel shows "same as family" from this
+  const seg=_rmxSeg(scope)||[]; let node=(((typeof rulesData!=="undefined"&&rulesData)||{}).headsUp)||{};
+  for(let i=0;i<seg.length;i++){ node=(node&&typeof node==="object")?node[seg[i]]:null; if(!node) return {}; }
+  return (node&&typeof node==="object")?node:{};
+}
+function _rmxRawHas(raw,field){ const fp=field.split("."); const v=(fp.length===2)?((raw[fp[0]]&&typeof raw[fp[0]]==="object")?raw[fp[0]][fp[1]]:undefined):raw[field]; return v!==undefined&&v!==null; }
+function _rmxRawVal(raw,field){ const fp=field.split("."); return (fp.length===2)?((raw[fp[0]]&&typeof raw[fp[0]]==="object")?raw[fp[0]][fp[1]]:undefined):raw[field]; }
+// rulesData.headsUp first, cloned along the path. v===undefined deletes the leaf; fp===null deletes the scope node itself.
+function _rmxLocal(seg,fp,v){
+  if(typeof rulesData==="undefined"||!rulesData) rulesData={};
+  rulesData.headsUp=Object.assign({},rulesData.headsUp); let node=rulesData.headsUp;
+  for(let i=0;i<seg.length;i++){ if(fp===null&&i===seg.length-1){ delete node[seg[i]]; return; } node[seg[i]]=Object.assign({},node[seg[i]]); node=node[seg[i]]; }
+  if(fp.length===2){ node[fp[0]]=Object.assign({},node[fp[0]]); if(v===undefined) delete node[fp[0]][fp[1]]; else node[fp[0]][fp[1]]=v; }
+  else { if(v===undefined) delete node[fp[0]]; else node[fp[0]]=v; }
+}
+function rmxRuleSet(scope,field,value){
+  if(!rmxMom()) return null; const seg=_rmxSeg(scope); if(!seg) return null;
+  const t=RMX_FIELDS[field]; if(!t) return null; let v;
+  if(t==="n"){ const n=parseInt(value,10); if(!isFinite(n)) return null; v=Math.min(RMX_RANGE[field][1],Math.max(RMX_RANGE[field][0],n)); }
+  else { v=_rmxBool(value,null); if(v!==true&&v!==false) return null; }
+  const fp=field.split("."); _rmxLocal(seg,fp,v);
+  if(_rmxWrite()) db.ref("config/rules/headsUp/"+seg.concat(fp).join("/")).set(v);   // ONE leaf — never config/rules, never config/rules/headsUp
+  if(typeof renderAll==="function") renderAll(); return v;
+}
+function rmxRuleClear(scope,field){   // ↺: one field back to the layer below, or (field null) a kid's / subject's whole override node
+  if(!rmxMom()) return null; const seg=_rmxSeg(scope); if(!seg) return null;
+  const hasF=(field!==null&&field!==undefined&&field!=="");
+  if(hasF){ if(!RMX_FIELDS[field]) return null; } else if(!seg.length) return null;   // the family node is cleared field by field, never as a whole
+  const fp=hasF?field.split("."):null; _rmxLocal(seg,fp,undefined);
+  if(_rmxWrite()) db.ref("config/rules/headsUp/"+seg.concat(fp||[]).join("/")).remove();
+  if(typeof renderAll==="function") renderAll(); return true;
+}
+// Her own dated rows, `noteDays` ahead of their due day (family/kid). 0 → false: the ROADMAP week rule stands, byte for byte.
+function rmxNoteDue(kid,r,iso){ const nd=rmxCfg(kid).noteDays; return nd>0&&!r.done&&!!r.due&&r.due<=_rmxAddDays(iso,nd); }
+// ── the strip's ⋯ (Mom only): mute / unmute · warn earlier / later — per-subject records, owner "_family" for 🏡 rows ──
+function _rmxSubjScope(kid,sk){ return "subj/"+kid+"/"+sk; }
+function rmxMute(kid,sk,on){ return on?rmxRuleSet(_rmxSubjScope(kid,sk),"off",true):rmxRuleClear(_rmxSubjScope(kid,sk),"off"); }
+function rmxWarnShift(kid,sk,delta){
+  const cur=rmxCfg(kid,sk).warnWeeks, nv=Math.min(RMX_RANGE.warnWeeks[1],Math.max(RMX_RANGE.warnWeeks[0],cur+(parseInt(delta,10)||0)));
+  if(nv===cur) return null;   // already at the edge — nothing to write
+  return rmxRuleSet(_rmxSubjScope(kid,sk),"warnWeeks",nv);
+}
+function rmxMenuToggle(key){ _rmxMenu=(_rmxMenu===key)?null:key; if(typeof renderAll==="function") renderAll(); }
+function rmxMenuBtnHTML(it){
+  const key=String(it.kid)+"/"+String(it.sk);
+  return '<button onclick="event.stopPropagation();rmxMenuToggle(\''+esc(key)+'\')" title="Mute this subject or change its warning" style="flex:none;border:none;background:'+(_rmxMenu===key?'#e2e8f0':'none')+';border-radius:6px;cursor:pointer;font-size:14px;line-height:1;padding:1px 5px;color:#64748b">⋯</button>';
+}
+function rmxMenuHTML(it){
+  if(_rmxMenu!==String(it.kid)+"/"+String(it.sk)) return "";
+  const cfg=rmxCfg(it.kid,it.sk), ww=cfg.warnWeeks, k="'"+esc(it.kid)+"','"+esc(it.sk)+"'";
+  const b=function(label,js,title){ return '<button onclick="'+js+'" title="'+title+'" style="padding:4px 9px;border-radius:99px;border:1.5px solid var(--border);background:#fff;font-weight:700;font-size:11px;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+label+'</button>'; };
+  let h='<div onclick="event.stopPropagation()" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:4px 0 8px 30px;border-bottom:1px solid #f1f5f9">';
+  h+=cfg.muted?b('\u{1F514} Unmute','rmxMute('+k+',false)','Back on Mom’s Day and in the count'):b('\u{1F515} Mute this subject','rmxMute('+k+',true)','Stays here greyed; off Mom’s Day and the count');
+  if(ww<RMX_RANGE.warnWeeks[1]) h+=b('Warn earlier (+1 wk)','rmxWarnShift('+k+',1)','Warn '+(ww+1)+' weeks ahead for this subject');
+  if(ww>RMX_RANGE.warnWeeks[0]) h+=b('Warn later (−1 wk)','rmxWarnShift('+k+',-1)','Warn '+(ww-1)+' week'+(ww-1===1?'':'s')+' ahead for this subject');
+  h+='<span style="font-size:11px;color:var(--muted)">warns '+ww+' wk'+(ww===1?'':'s')+' ahead'+(_rmxRawHas(_rmxRaw(_rmxSubjScope(it.kid,it.sk)),"warnWeeks")?' (this subject)':'')+'</span>';
+  h+='</div>'; return h;
+}
+// ── the ⚙ and the panel (Mom's Day card header) ──
+function rmxPanelToggle(){ _rmxPanel=!_rmxPanel; if(typeof renderAll==="function") renderAll(); }
+function rmxGearHTML(){
+  if(!rmxMom()) return "";
+  return '<button onclick="rmxPanelToggle()" title="Heads-up settings" style="flex:none;margin-left:6px;border:none;background:'+(_rmxPanel?'rgba(255,255,255,.28)':'none')+';color:#fff;font-size:15px;line-height:1;cursor:pointer;padding:2px 6px;border-radius:7px">⚙</button>';
+}
+function _rmxFamName(key){
+  try{ const defs=(typeof famDefs==="function")?(famDefs()||{}):{}; let out=null;
+    Object.keys(defs).forEach(function(id){ const b=defs[id]; if(!b||out) return; _rmxFamList(b.items).forEach(function(it){ if(!out&&it&&String(it.key)===String(key)) out=String(b.name||id)+" · "+String(it.name||it.key); }); });
+    return out||String(key); }catch(e){ return String(key); }
+}
+function _rmxCtl(scope,field,cfg,raw){   // one control: toggle or number, then ↺ when the value is set at this scope
+  const t=RMX_FIELDS[field], set=_rmxRawHas(raw,field), fp=field.split("."), val=(fp.length===2)?cfg[fp[0]][fp[1]]:cfg[field];
+  const js="'"+esc(scope)+"','"+field+"'", below=scope?"the family setting":"the app’s default";
+  let h='';
+  if(t==="b") h+='<div class="rules-toggle'+(val?' on':'')+'" onclick="rmxRuleSet('+js+','+(val?'false':'true')+')" title="'+(set?'':'same as '+below)+'"></div>';
+  else h+='<input type="number" class="rules-num" min="'+RMX_RANGE[field][0]+'" max="'+RMX_RANGE[field][1]+'" value="'+val+'" onchange="rmxRuleSet('+js+',this.value)"'+(set?'':' style="color:#94a3b8" title="same as '+below+'"')+'>';
+  h+=set?'<button onclick="rmxRuleClear('+js+')" title="Back to '+below+'" style="border:none;background:none;cursor:pointer;font-size:13px;padding:0 2px;color:#64748b">↺</button>':'<span style="display:inline-block;width:19px"></span>';
+  return h;
+}
+function _rmxRow(label,ctl,hint){ return '<div class="rules-row"><div class="rules-label">'+label+(hint?' <span style="font-weight:400;color:var(--muted)">'+hint+'</span>':'')+'</div>'+ctl+'</div>'; }
+function _rmxThresholdRows(scope,cfg,raw){
+  const c=function(f){ return _rmxCtl(scope,f,cfg,raw); }; let h='';
+  h+=_rmxRow("Warn when a list runs out within",c("warnWeeks"),"weeks");
+  h+=_rmxRow("…or when only this many lessons are left",c("warnLeft"),"0 = don’t use");
+  h+=_rmxRow("Make it urgent (red) this many days before",c("redDays"));
+  h+=_rmxRow("…or at this many lessons left",c("redLeft"));
+  h+=_rmxRow("Show a book ending with the next one lined up",c("endWeeks"),"weeks ahead · 0 = never");
+  Object.keys(RMX_KIND_LBL).forEach(function(k){ h+=_rmxRow("Show: "+RMX_KIND_LBL[k],c("kinds."+k)); });
+  return h;
+}
+function rmxPanelHTML(){
+  if(!rmxMom()||!_rmxPanel) return "";
+  const kids=(typeof ROSTER!=="undefined"&&ROSTER)?ROSTER:[];
+  let h='<div style="padding:4px 14px 10px;background:#faf5ff;border-bottom:1px solid #e9d5ff;font-size:12px">';
+  const F=rmxCfg(null,null), rawF=_rmxRaw(""), cF=function(f){ return _rmxCtl("",f,F,rawF); };
+  h+='<div class="rules-section-lbl">Family defaults</div>';
+  h+=_rmxRow("Curriculum heads-up",cF("on"),"the automatic rows from the lesson lists — your own dated rows always show");
+  h+=_rmxThresholdRows("",F,rawF);
+  h+=_rmxRow("Show those book endings on Mom’s Day too",cF("endOnDay"));
+  h+=_rmxRow("Include \u{1F3E1} Family time subjects",cF("family"));
+  h+=_rmxRow("Show my own dated reminders this many days before they’re due",cF("noteDays"),"0 = the week they’re due");
+  h+='<div class="rules-section-lbl" style="margin-top:10px">Per kid</div>';
+  kids.forEach(function(kid){
+    const C=rmxCfg(kid), scope="kid/"+kid, raw=_rmxRaw(scope), has=Object.keys(raw).length>0;
+    h+='<details style="margin:2px 0"><summary style="cursor:pointer;font-size:12.5px;font-weight:800;color:'+((typeof KID_COLOR!=="undefined"&&KID_COLOR[kid])||"#333")+'">'+esc(cap(kid))+' <span style="font-weight:600;color:var(--muted)">· '+(has?'own settings':'same as family')+'</span></summary>';
+    if(has) h+='<div style="padding:4px 0 2px"><button onclick="rmxRuleClear(\''+esc(scope)+'\',null)" style="padding:4px 9px;border-radius:99px;border:1.5px solid var(--border);background:#fff;font-weight:700;font-size:11px;cursor:pointer;font-family:\'DM Sans\',sans-serif">↺ Same as family for everything</button></div>';
+    h+=_rmxRow("Heads-up for "+esc(cap(kid)),_rmxCtl(scope,"on",C,raw));
+    h+=_rmxThresholdRows(scope,C,raw);
+    h+='</details>';
+  });
+  h+='<div class="rules-section-lbl" style="margin-top:10px">Per subject</div>';
+  const S=_rmxRaw("").subj, list=[];
+  if(S&&typeof S==="object") Object.keys(S).sort().forEach(function(owner){ const o=S[owner]; if(!o||typeof o!=="object") return; Object.keys(o).sort().forEach(function(sk){ const r=o[sk]; if(r&&typeof r==="object"&&Object.keys(r).length) list.push({owner:owner,sk:sk,raw:r}); }); });
+  if(!list.length) h+='<div style="font-size:11.5px;color:var(--muted);padding:4px 0">None yet — use ⋯ on a row in Mom HQ ▸ Curriculum to mute a subject or change its warning.</div>';
+  list.forEach(function(x){
+    const scope=_rmxSubjScope(x.owner,x.sk), label=(x.owner==="_family")?"\u{1F3E1} "+_rmxFamName(x.sk):cap(x.owner)+" · "+_rmxName(x.owner,x.sk);
+    h+='<div class="rules-row" style="flex-wrap:wrap"><div class="rules-label">'+esc(label)+'</div>';
+    Object.keys(RMX_FIELDS).forEach(function(f){ if(!_rmxRawHas(x.raw,f)) return; const v=_rmxRawVal(x.raw,f);
+      h+='<span style="font-size:10.5px;font-weight:700;color:#475569;border:1px solid #cbd5e1;border-radius:99px;padding:1px 7px;white-space:nowrap">'+(f==="off"?'\u{1F515} muted':RMX_FIELD_LBL[f]+(RMX_FIELDS[f]==="n"?' '+esc(String(v)):(v===true||v==="true"?' on':' off')))
+        +' <a href="#" onclick="rmxRuleClear(\''+esc(scope)+'\',\''+f+'\');return false" title="Remove this one" style="color:#64748b;text-decoration:none">↺</a></span>'; });
+    h+='<button onclick="rmxRuleClear(\''+esc(scope)+'\',null)" title="Remove every setting for this subject" style="padding:3px 8px;border-radius:99px;border:1.5px solid var(--border);background:#fff;font-weight:700;font-size:11px;cursor:pointer;font-family:\'DM Sans\',sans-serif">↺ all</button></div>';
+  });
+  h+='<div style="font-size:11px;color:var(--muted);padding:8px 0 0">Each change saves by itself and the rows update at once — here and in Mom HQ ▸ Curriculum.</div>';
+  h+='</div>'; return h;
+}
+// RMXS_END
 // SCORES_START — 📊 test scores + 📝 plan notes per kid (Stage D, 2026-09-13). Both live under the
 // `plans` node already loaded into roadmapData: plans/<kid>/scores/<YYYY-MM> = {test, form_level, date,
 // grade, tests:{reading:{ss,npr,ge}…}, domains:{conventions_capitalization:{items,pct,nat,diff}…}, lexile…}
@@ -26591,9 +27034,11 @@ function planBarHTML(kid){
   if(!kid) return "";
   const iso=_todayStr(), R=rmList(kid), open=R.filter(function(r){ return !r.done; }), over=open.filter(function(r){ return rmState(r,iso)==="over"; }).length;
   const week=open.filter(function(r){ return rmState(r,iso)==="week"; }).length, S=scList(kid).length, N=ntList(kid).length;
+  // RMX step 3 (her yes 2026-10-25): the kid's red + amber heads-ups from the lesson lists, a chip of their own — never mixed into her "overdue" notes
+  let hu=0; if(typeof rmxDerive==="function"){ try{ hu=rmxDerive(kid).filter(function(it){ return !it.muted&&it.level!=="grey"; }).length; if(typeof rmxFamilyItems==="function") hu+=rmxFamilyItems().filter(function(it){ return !it.muted&&it.level!=="grey"&&it.kids.indexOf(kid)>=0; }).length; }catch(e){ hu=0; } }   // RMX step 4: muted subjects don't count
   let h='<div style="padding:0 4px"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:8px 12px;margin:8px 0 2px;font-size:12.5px">';
   h+='<span style="font-weight:800">\u{1F5C2} '+cap(kid)+"'s plan</span>";
-  h+='<span>\u{1F4C5} '+open.length+' to do'+(over?' · <b style="color:#b5394a">'+over+' overdue</b>':'')+(week?' · <b style="color:#d97706">'+week+' this week</b>':'')+'</span>';
+  h+='<span>\u{1F4C5} '+open.length+' to do'+(over?' · <b style="color:#b5394a">'+over+' overdue</b>':'')+(week?' · <b style="color:#d97706">'+week+' this week</b>':'')+(hu?' · <b style="color:#b5394a">'+hu+' heads-up</b>':'')+'</span>';
   h+='<span style="color:var(--muted)">\u{1F4CA} '+S+' report'+(S===1?'':'s')+'</span><span style="color:var(--muted)">\u{1F4DD} '+N+' note'+(N===1?'':'s')+'</span>';
   h+='<span style="flex:1"></span><button onclick="planOpen[\''+kid+'\']=!planOpen[\''+kid+'\'];renderAll()" style="padding:4px 12px;border-radius:99px;border:1.5px solid var(--border);background:'+(planOpen[kid]?'#111827':'#fff')+';color:'+(planOpen[kid]?'#fff':'#0f172a')+';font-weight:800;font-size:11.5px;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(planOpen[kid]?'Hide':'Show')+'</button></div>';
   if(planOpen[kid]){ try{ h+=rmStripHTML(kid); }catch(e){ console.error("[HA] roadmap",e); } try{ h+=scStripHTML(kid); }catch(e){ console.error("[HA] scores",e); } try{ h+=ntStripHTML(kid); }catch(e){ console.error("[HA] notes",e); } }
@@ -42148,6 +42593,106 @@ function wrHookedHtml(u,kid,ks,esc){
   return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:12.5px;font-weight:800;color:#1f2937;min-width:64px">'+esc(cap(kid))+'</span><span style="font-size:11.5px;color:#15803d;font-weight:700">✓ Hooked up</span><span style="font-size:10.5px;color:var(--muted);font-weight:700">roots open as he checks off each Word Roots lesson'+(P!=null?' (through Lesson '+P+')':'')+'</span></div>';
 }
 // WRATTACH_END
+// UNITATTACH_START — 🔗 Hook up a kid to a unit she already has cards for (her ask 2026-10-25: "The order is good.
+// Start step 1: Lucy on the Math Fluency path, stage 6, with the hook-up engine. Snapshot and plan file first, then the
+// branch."). PLAN_units_switchover_order_2026-10-25.md §0 · PLAN_attach_mathpath_lucy_2026-10-25.md. The Word Roots
+// hook-up (WRATTACH) made general. Attach = put the kid in the unit WITHOUT the stock enroll: the stock paths
+// (_ustApply / unitEnroll) mint fresh "placed" cards up to "knows through" and overwrite cat_modes / cat_intro_max /
+// definitions — not safe for a kid whose cards already exist (AUDIT_units_overlap_2026-10-24 §0.3, §4).
+//   · UA_ATTACH says which kid attaches to which unit, at which stage — one row per step of her order. Step 1 = Lucy.
+//     Step 2 (2026-10-25, PLAN_attach_mathpath_ellis_2026-10-25.md) = Ellis, stage 7 (× and ÷): his 13 cards and all
+//     47 words of his list are stage-7 facts; 266 appended after his own order (ellis_bank_order is kept, not written).
+//   · uaPlanAttach(unitId,kid) is pure: it reads memory and returns every write, in plain words too. Unit cards match
+//     the kid's cards by kid + deck key + EXACT prompt (never by name alone — two units share "Real Science-4-Kids").
+//   · Writes only: enrolled/<kid>, kidStage/<kid>, and appended bank entries {cat,name} for stage words the kid's list
+//     doesn't have (fill:true) — no def (a def makes a recite card), no ch (no book gate in this step). Never a card,
+//     never cat_modes / cat_intro_max / definitions / notebookSettings / another kid.
+//   · Mom taps "Hook up <Kid>" → the plan shows → only "Yes" writes (one multi-path update), never in ?dryrun=1; the
+//     plan is rebuilt at Yes and must match what she saw, or nothing is written.
+//   · While a kid's hook-up waits, the stock "+ Kid" enroll on that unit is closed for THAT kid only (uaLocked); every
+//     other kid, and every other family, keeps the stock button.
+//   · A card in a stage deck that isn't a stage card stops the plan (strayOk:false) — none today for Lucy; a later row
+//     (Lincoln's 14 math extras, her §10) sets strayOk:true so they stay put.
+//   · Refuses a unit whose stage decks hold words in the bank with their backs on the bank (AAS: bankOnly/defsOnBank)
+//     — that unit gets its own step (order step 15).
+const UA_ATTACH={ math_fluency_path:{ lucy:{stage:6,fill:true}, ellis:{stage:7,fill:true} } };
+function uaSpec(u,kid){ if(!u) return null; const t=UA_ATTACH[u.id]||UA_ATTACH[u.starter]; return (t&&t[kid])||null; }
+function uaHooked(u,kid){ return !!(u&&((u.enrolled||{})[kid]||(u.kidStage||{})[kid])); }
+function uaLocked(u,kid){ return !!(uaSpec(u,kid)&&!uaHooked(u,kid)); }
+function uaPlanAttach(unitId,kid,ts){
+  const P={unitId,kid,ok:false,why:"",writes:[],ts:ts||Date.now()}, name=cap(kid);
+  const us=(typeof unitStudies!=="undefined"&&unitStudies)||{}, u=us[unitId];
+  const spec=uaSpec(u||{id:unitId},kid);
+  if(!spec){ P.why=name+" hooks up in a later step."; return P; }
+  if(!u||!Array.isArray(u.decks)){ P.why="Add this unit first (Units → Starter units → Add to our family)."; return P; }
+  if(uaHooked(u,kid)){ P.why=name+" is already hooked up."; return P; }
+  const cards=_ustCards(u,spec.stage); if(!cards.length){ P.why="Stage "+spec.stage+" has no cards."; return P; }
+  const dks=[]; cards.forEach(c=>{ if(dks.indexOf(c._dk)<0) dks.push(c._dk); });
+  const deckOf={}; (u.decks||[]).forEach(d=>{ if(d&&d.key) deckOf[d.key]=d; });
+  if(dks.some(k=>deckOf[k]&&(deckOf[k].bankOnly||deckOf[k].defsOnBank))){ P.why="This unit keeps its words in the bank with their backs — it hooks up through its own step."; return P; }
+  let items=masteryData[kid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  const pk=(d,n)=>d+"\u0001"+n;
+  const live={}; items.forEach(i=>{ if(i&&dks.indexOf(i.subject)>=0) live[pk(i.subject,i.prompt)]=i; });
+  const unitKey=new Set(cards.map(c=>pk(c._dk,c.name)));
+  const S=P.sum={stage:spec.stage,label:(_ustStageDef(u,spec.stage)||{}).label||"",decks:dks,total:cards.length,liveKept:0,learning:0,onLadder:0,backDiffers:[],stray:[],added:[],addedByDeck:{},next10Before:[],next10After:[]};
+  Object.keys(live).forEach(k=>{ const i=live[k]; if(!unitKey.has(k)){ S.stray.push(i.subject+" · "+i.prompt); return; }
+    S.liveKept++; if(i.status==="introduction") S.learning++; else if(i.status!=="parked") S.onLadder++; });
+  cards.forEach(c=>{ const i=live[pk(c._dk,c.name)]; if(i&&c.def!=null&&i.answer!=null&&String(i.answer)!==String(c.def)) S.backDiffers.push(c.name+": “"+i.answer+"” on the card · “"+c.def+"” on the path"); });
+  if(S.stray.length&&!spec.strayOk){ P.why=name+" has "+S.stray.length+" card"+(S.stray.length>1?"s":"")+" in "+dks.join(", ")+" that "+(S.stray.length>1?"aren’t":"isn’t")+" a stage-"+spec.stage+" card: "+S.stray.slice(0,6).join(", ")+(S.stray.length>6?" …":"")+". Nothing was changed."; return P; }
+  const W=(path,value,what)=>P.writes.push({path,value,what});
+  W("unitStudies/"+unitId+"/enrolled/"+kid,true,"puts "+name+" in the unit");
+  W("unitStudies/"+unitId+"/kidStage/"+kid,{stage:spec.stage,subject:"",knows:"",map:"",ts:P.ts,via:"attach"},"the marker: Stage "+spec.stage+" · "+S.label);
+  const full=(typeof mastFullBank==="function")?(mastFullBank(kid)||{}):{};
+  const liveNames={}; dks.forEach(d=>{ liveNames[d]=new Set(items.filter(i=>i&&i.subject===d).map(i=>i.prompt)); });
+  const eligible=d=>(typeof mastBankEligible==="function")?(mastBankEligible(kid,d)||[]).slice():(full[d]||[]).slice();
+  const have={}; dks.forEach(d=>{ have[d]=new Set(full[d]||[]); });
+  const cust=masteryData[kid+"_custom_items"]||[], idxs=Object.keys(cust).filter(k=>/^\d+$/.test(k)).map(Number);
+  let next=idxs.length?Math.max(...idxs)+1:0; const base="mastery/"+kid+"_custom_items/", addedIn={}; dks.forEach(d=>{ addedIn[d]=[]; });
+  if(spec.fill) cards.forEach(c=>{ if(have[c._dk].has(c.name)||liveNames[c._dk].has(c.name)) return; have[c._dk].add(c.name);
+    W(base+(next++),{cat:c._dk,name:c.name},"adds "+c.name+" to the "+c._dk+" list");   // never a def, never ch
+    S.added.push(c.name); addedIn[c._dk].push(c.name); S.addedByDeck[c._dk]=(S.addedByDeck[c._dk]||0)+1; });
+  // What would start next: the auto-pull reads the list in order (gate applied) and skips what's a card already.
+  dks.forEach(d=>{ const el=eligible(d), notLive=n=>!liveNames[d].has(n);
+    S.next10Before=S.next10Before.concat(el.filter(notLive).slice(0,10));
+    S.next10After=S.next10After.concat(el.concat(addedIn[d]).filter(notLive).slice(0,10)); });
+  P.ok=true; return P;
+}
+let uaAttachView=null;   // {unitId, kid, plan, msg}
+function uaAttachOpen(unitId,kid){ if(!momHere()) return; uaAttachView={unitId,kid,plan:uaPlanAttach(unitId,kid),msg:""}; const el=document.getElementById("content"); if(el) renderUnits(el); }
+function uaAttachClose(){ uaAttachView=null; const el=document.getElementById("content"); if(el) renderUnits(el); }
+function uaApplyAttach(plan){
+  if(!momHere()||!plan||!plan.ok) return false;
+  const again=uaPlanAttach(plan.unitId,plan.kid,plan.ts);
+  if(JSON.stringify(again.writes)!==JSON.stringify(plan.writes)){ if(uaAttachView) uaAttachView={unitId:plan.unitId,kid:plan.kid,plan:again,msg:cap(plan.kid)+"’s data changed since the plan was made — here’s the new plan. Nothing was written."}; const el=document.getElementById("content"); if(el) renderUnits(el); return false; }
+  if(!db||_dryRun()){ if(uaAttachView) uaAttachView.msg="Dry run — nothing was written."; const el=document.getElementById("content"); if(el) renderUnits(el); return false; }
+  const up={}; plan.writes.forEach(w=>{ up[w.path]=w.value; });
+  db.ref().update(up).then(()=>{
+    plan.writes.forEach(w=>_wrSetLocal(w.path,w.value));
+    uaAttachView=null; const el=document.getElementById("content"); if(el) renderUnits(el);
+  }).catch(()=>{ if(uaAttachView) uaAttachView.msg="That didn’t save — nothing changed. Try again when you’re online."; const el=document.getElementById("content"); if(el) renderUnits(el); });
+  return true;
+}
+function uaAttachHtml(u,kid,esc,btn){
+  const V=uaAttachView, name=cap(kid);
+  if(!V||V.kid!==kid||V.unitId!==u.id) return '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:12.5px;font-weight:800;color:#9ca3af;min-width:64px">'+esc(name)+'</span><button onclick="uaAttachOpen(\''+esc(u.id)+'\',\''+esc(kid)+'\')" style="'+btn("#fff","#1f2937","var(--border)")+'">\u{1F517} Hook up '+esc(name)+'</button></div>';
+  const P=V.plan, S=P.sum||{}, li=t=>'<li style="margin:3px 0">'+t+'</li>', list=a=>a.map(esc).join(", ");
+  let h='<div style="font-size:12.5px;font-weight:800;color:#1f2937;margin-bottom:6px">Hook up '+esc(name)+' to '+esc(u.title||u.id)+'</div>';
+  if(V.msg) h+='<div style="font-size:11.5px;font-weight:700;color:#b45309;margin-bottom:6px">'+esc(V.msg)+'</div>';
+  if(!P.ok) return h+'<div style="font-size:11.5px;color:#374151;line-height:1.5">'+esc(P.why)+'</div><div style="margin-top:8px"><button onclick="uaAttachClose()" style="'+btn("#fff","var(--muted)","var(--border)")+'">Close</button></div>';
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Here’s everything it does. Nothing is written until you tap Yes.</div><ul style="font-size:11.5px;color:#374151;line-height:1.45;padding-left:18px;margin:0">';
+  h+=li(esc(name)+'’s <b>'+S.liveKept+' '+list(S.decks)+' card'+(S.liveKept===1?'':'s')+' stay exactly as they are</b> — same progress, same due days, nothing redone. Not one is written.');
+  h+=li('Marker: <b>Stage '+S.stage+' · '+esc(S.label)+'</b> — '+S.onLadder+' of '+S.total+' on the ladder, '+S.learning+' learning.');
+  h+=li(S.added.length?'Adds <b>'+S.added.length+'</b> stage words to the list, after what’s already there. They start only as room opens, in the path’s order.':'Adds nothing to the list — every stage word is already there.');
+  h+=li(JSON.stringify(S.next10Before)===JSON.stringify(S.next10After)?'The next new cards don’t change: '+list(S.next10After)+'.':'Next new cards: '+list(S.next10After)+' (today: '+list(S.next10Before)+').');
+  if(S.backDiffers.length) h+=li('<b>'+S.backDiffers.length+' answer'+(S.backDiffers.length>1?'s':'')+' differ'+(S.backDiffers.length>1?'':'s')+'</b> from the path’s and stay as they are: '+list(S.backDiffers.slice(0,5))+(S.backDiffers.length>5?' …':'')+'.');
+  if(S.stray.length) h+=li('Not part of this stage, left as they are: '+list(S.stray)+'.');
+  h+=li('Not touched: the cards, the deck’s card style, how many start at a time, the answers, the notebook, every other kid.');
+  h+='</ul><details style="margin-top:6px"><summary style="font-size:11px;font-weight:700;color:var(--muted);cursor:pointer">'+P.writes.length+' saved changes</summary><div style="font-size:10.5px;color:#374151;line-height:1.45;margin-top:4px;max-height:220px;overflow:auto">'+P.writes.map(w=>esc(w.what)).join('<br>')+'</div></details>';
+  h+='<div style="display:flex;gap:6px;margin-top:9px"><button onclick="uaApplyAttach(uaAttachView&&uaAttachView.plan)" style="'+btn("#2d6a4f","#fff","#2d6a4f")+'">✓ Yes, hook up '+esc(name)+'</button><button onclick="uaAttachClose()" style="'+btn("#fff","var(--muted)","var(--border)")+'">Cancel</button></div>';
+  if(typeof _dryRun==="function"&&_dryRun()) h+='<div style="font-size:10.5px;color:#b45309;margin-top:5px">Dry run — Yes writes nothing.</div>';
+  return h;
+}
+// UNITATTACH_END
 const STARTER_UNITS={
   math_fluency_path:()=>({ id:"math_fluency_path", starter:"math_fluency_path", starterVer:1,
     title:"Math Fluency Path", emoji:"\u{1F9EE}", nbInsert:false,   // facts drill, no notebook pages
@@ -42250,6 +42795,7 @@ function _ustSlug(name){ return String(name).replace(/\+/g,"p").replace(/-/g,"m"
 // Seed ONE stage into a kid's mastery data (in memory). Returns what to write: new item / bank indices.
 function _ustApply(u,kid,stageN,knows,subject,mapId){
   if(typeof _wrEnrollLocked==="function"&&_wrEnrollLocked(u)) return null;   // 🏛 WORDROOTS: attaches through its own step
+  if(typeof uaLocked==="function"&&uaLocked(u,kid)) return null;   // 🔗 UNITATTACH: this kid attaches through the hook-up
   const sd=_ustStageDef(u,stageN)||{}; const cards=_ustCards(u,stageN); if(!cards.length) return null;
   let items=masteryData[kid]; if(!Array.isArray(items)) items=masteryData[kid]=(items?Object.values(items):[]);
   let bank=masteryData[kid+"_custom_items"]; if(!Array.isArray(bank)) bank=masteryData[kid+"_custom_items"]=(bank?Object.values(bank):[]);
@@ -42329,6 +42875,7 @@ function _ustDone(unitId,kid,rec){
 let unitStageForm=null;   // {unitId,kid,stage,knows,subject,map} — the open "+ Kid" form
 function unitStageFormOpen(unitId,kid){ if(!momHere()) return; const u=unitStudies[unitId]; if(!u) return;
   if(typeof _wrEnrollLocked==="function"&&_wrEnrollLocked(u)) return;   // 🏛 WORDROOTS
+  if(typeof uaLocked==="function"&&uaLocked(u,kid)) return;   // 🔗 UNITATTACH
   const s=_ustStagesWithCards(u)[0]; unitStageForm={unitId,kid,stage:s?s.n:null,knows:"",subject:"",map:"",how:"knows",perDay:10,untested:"spot"};
   const el=document.getElementById("content"); if(el) renderUnits(el); }
 function unitStageFormSet(field,val){ if(!unitStageForm) return;
@@ -42393,6 +42940,8 @@ function _unitStageRowsHtml(u,roster){
       if(typeof prKidRowHtml==="function") h+=prKidRowHtml(u,k,ks);   // ✏️ PRACTICE: which card carries it
       if(typeof nbsKidRowHtml==="function") h+=nbsKidRowHtml(u,k,ks);   // 📝 NBSPELL: notebook options
       if(typeof ckStartHtml==="function") h+=ckStartHtml(u,k,ks);   // 🩺 CKSTART: start a check-up any time
+    } else if(typeof uaLocked==="function"&&uaLocked(u,k)){
+      h+=uaAttachHtml(u,k,esc,btn);   // 🔗 UNITATTACH: Hook up <Kid> → the plan → Yes
     } else if(unitStageForm&&unitStageForm.unitId===u.id&&unitStageForm.kid===k){
       const f=unitStageForm;
       h+='<div style="font-size:12.5px;font-weight:800;color:#1f2937;margin-bottom:6px">Start '+esc(cap(k))+'</div>';
@@ -58617,6 +59166,7 @@ function unitStageCheckup(){
   const f=unitStageForm, u=unitStudies[f.unitId], kid=f.kid;
   if(!u||(u.enrolled||{})[kid]) return;
   if(typeof _wrEnrollLocked==="function"&&_wrEnrollLocked(u)) return;   // 🏛 WORDROOTS
+  if(typeof uaLocked==="function"&&uaLocked(u,kid)) return;   // 🔗 UNITATTACH
   const cards=_ustCards(u,f.stage); if(!cards.length) return;
   const sd=_ustStageDef(u,f.stage)||{};
   const sid="checkup_"+ckSlug(f.unitId)+"_"+f.stage;
