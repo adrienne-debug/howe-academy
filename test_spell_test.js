@@ -85,11 +85,12 @@ console.log("\n── giving and grading it ──");
   c.stSave();
   const items = c.masteryData.andrew;
   const tierOf = n => { const it = items.find(i => i.prompt === n); return it && (it.status + "/" + it.tier); };
+  const rec = c.masteryData.andrew_spelltests["L1-18"];
   ok("✓ → monthly by default (STRIGHT), with a next check booked", tierOf("black") === "active/monthly" && items.find(i => i.prompt === "black").next_due === 99);
-  ok("〰 → monthly, with a next check booked", tierOf("desk") === "active/monthly" && items.find(i => i.prompt === "desk").next_due === 99);
+  ok("〰 on a new word → one rung below testRight (bi_weekly), with a next check booked (GRADKEEP, 2026-10-26)", tierOf("desk") === "active/bi_weekly" && items.find(i => i.prompt === "desk").next_due === 99, tierOf("desk"));
+  ok("the record saved each word's before-state (every one a new word: 'bank')", rec && rec.was && Object.keys(rec.was).length === 10 && rec.was[0].st === "bank");
   ok("✗ → learning (daily)", tierOf("snack") === "introduction/daily");
   ok("every word is an AAS Words card with its spelling as the answer", items.length === 10 && items.every(i => i.subject === "AAS Words" && i.answer === i.prompt));
-  const rec = c.masteryData.andrew_spelltests["L1-18"];
   ok("the test record is saved as graded, with each word's result", rec.state === "graded" && rec.res[0] === "c" && rec.res[9] === "m" && rec.words.length === 10);
   ok("writes are targeted (cards by index, the record by key)", w.writes.some(x => x[1] === "mastery/andrew" && x[0] === "update") && w.writes.some(x => x[1] === "mastery/andrew_spelltests/L1-18" && x[0] === "set"));
   ok("the test card now says how it went", /✓ Spelling test, Lesson 18: 7 of 10/.test(c.stCardRow({ id: "andrew_st_L1-18", stTest: true, stKey: "L1-18", stLevel: 1, stLesson: 18, who: "andrew", subjectKey: "spelltest", day: "wednesday", title: "📝 Spelling test: Lesson 18" })));
@@ -173,10 +174,13 @@ console.log("\n── STRIGHT (her ask 10/13): where a ✓ word lands is per kid
   ok("the test books the next look for a non-graduated landing (bi_weekly, next_due set)", b.tier === "bi_weekly" && b.status === "active" && b.next_due === 99, b);
   c.unitStudies.all_about_spelling.kidStage.andrew.testRight = "graduated";
   c.stApplyResults("andrew", ["black"], ["c"], "L1-18");
-  ok("…and clears it for graduated", c.masteryData.andrew.find(i => i.prompt === "black").tier === "graduated" && c.masteryData.andrew.find(i => i.prompt === "black").next_due === undefined);
+  ok("GRADKEEP (2026-10-26): a ✓ on a word already on the ladder (bi_weekly) leaves it there — rung and due day", c.masteryData.andrew.find(i => i.prompt === "black").tier === "bi_weekly" && c.masteryData.andrew.find(i => i.prompt === "black").next_due === 99);
+  c.masteryData.andrew = []; c.masteryData.andrew_custom_items = [];
+  c.stApplyResults("andrew", ["black"], ["c"], "L1-18");
+  ok("…a NEW word's ✓ with testRight graduated → graduated, and clears the next look", c.masteryData.andrew.find(i => i.prompt === "black").tier === "graduated" && c.masteryData.andrew.find(i => i.prompt === "black").next_due === undefined);
   const row = (() => { try { return c.stUnitRowHtml(c.unitStudies.all_about_spelling, "andrew", c.unitStudies.all_about_spelling.kidStage.andrew); } catch (e) { return String(e); } })();
   ok("the unit row has a '✓ goes to' pick saved per kid through nbsSet(…,'testRight',…)", /✓ goes to <select/.test(row) && /nbsSet\('all_about_spelling','andrew','testRight',this\.value\)/.test(row) && /Monthly \(default\)/.test(row) && /Graduated/.test(row), row);
-  ok("the check-up routes an AAS ✓ through the kid's setting (math facts untouched)", /dk2===ST_DECK&&\(o\.res==="c"\|\|o\.res==="k"\)&&typeof stTier==="function"\)\?stTier\("c",kid\):ckResultTier\(o\.res\)/.test(src));
+  ok("the check-up routes an AAS result through GRADKEEP (a new word's ✓ → the kid's setting), STRIGHT as the fallback; math facts untouched", /spellDeck&&typeof gkTier==="function"\)\?gkTier\(kid,gkBefore\(idx0>=0\?items\[idx0\]:null\),o\.res\)/.test(src) && /spellDeck&&\(o\.res==="c"\|\|o\.res==="k"\)&&typeof stTier==="function"\)\?stTier\("c",kid\):ckResultTier\(o\.res\)/.test(src));
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");

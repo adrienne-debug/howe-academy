@@ -59260,16 +59260,23 @@ function ckTap(r,name){
   const iu={}, bu={}, du={}; const ids=new Set(items.map(i=>i&&i.id));
   out.forEach(o=>{
     const c=o.card, dk2=c._dk||"Math Facts";
-    const tt=(typeof ST_DECK!=="undefined"&&dk2===ST_DECK&&(o.res==="c"||o.res==="k")&&typeof stTier==="function")?stTier("c",kid):ckResultTier(o.res);   // STRIGHT: a ✓ spelling word lands where the kid's setting says
+    const spellDeck=(typeof ST_DECK!=="undefined"&&dk2===ST_DECK);
+    const idx0=items.findIndex(i=>i&&i.subject===dk2&&i.prompt===c.name);
+    // GRADKEEP (spelling deck only; math facts untouched): a ✓/known/spot never moves a card down — graduated stays graduated, a
+    // ladder card keeps its rung and due day; only a no-card / held / parked word lands at testRight (STRIGHT) or one rung below.
+    const tt=(spellDeck&&typeof gkTier==="function")?gkTier(kid,gkBefore(idx0>=0?items[idx0]:null),o.res)
+      :((spellDeck&&(o.res==="c"||o.res==="k")&&typeof stTier==="function")?stTier("c",kid):ckResultTier(o.res));   // STRIGHT: a ✓ spelling word lands where the kid's setting says
     let idx=items.findIndex(i=>i&&i.subject===dk2&&i.prompt===c.name);
     if(idx<0){ let b=kid.slice(0,3)+"_"+ckSlug(c.name), id=b, n=2; while(ids.has(id)) id=b+"_"+(n++); ids.add(id);
       const it2={id:id,subject:dk2,type:String(dk2).toLowerCase(),prompt:c.name,review_mode:"flash",drop_count:0,consecutive_correct:0,cycle:1,ckFrom:sid};
       if(c.def!=null) it2.answer=String(c.def);
       items.push(it2); idx=items.length-1; }
-    const item=items[idx]; item.status=tt.status; item.tier=tt.tier;
-    if(tt.status==="introduction"){ item.tally_dots=0; delete item.next_due; delete item.placed; }
-    else { item.tally_dots=Math.max(5,item.tally_dots||0); item.placed=true;
-      if(tt.tier!=="graduated"&&typeof mastStampNextDue==="function") mastStampNextDue(item,items,tt.tier,pn); else delete item.next_due; }   // STRIGHT
+    const item=items[idx];
+    if(tt&&!(item.status===tt.status&&item.tier===tt.tier)){   // GRADKEEP: null / same place → the card (and its due day) stays
+      item.status=tt.status; item.tier=tt.tier;
+      if(tt.status==="introduction"){ item.tally_dots=0; delete item.next_due; delete item.placed; }
+      else { item.tally_dots=Math.max(5,item.tally_dots||0); item.placed=true;
+        if(tt.tier!=="graduated"&&typeof mastStampNextDue==="function") mastStampNextDue(item,items,tt.tier,pn); else delete item.next_due; } }   // STRIGHT
     item.ckLast={r:o.res,d:dk};
     if(o.res==="m"&&o.card===it.card&&typeof wwNote==="function") wwNote(item,"miss");   // 🏋️ a check-up miss counts toward Word Workout
     iu[idx]=item;
@@ -59499,21 +59506,60 @@ function _stWrite(kid,key,rec){
 function _stRec(S,state){ const prev=stRecs(S.kid)[S.key]||{};
   const r={unit:S.unitId||"",level:S.level,lesson:S.lesson,state:state,words:S.words.map(w=>w.name),ts:prev.ts||Date.now()};
   if(S.due) r.due=S.due; return r; }
+// GRADKEEP_START — a ✓ never moves a card down (DESIGN_aas_lesson_spelling_test_2026-10-24.md §3.4; units switch-over step 14,
+// the gate for step 15 — Lincoln's graduated AAS import; her go-ahead 2026-10-26). Until now every test result re-placed the
+// card from scratch: ✓ → the kid's testRight (monthly by default), 〰 → monthly, ✗ → learning — so a ✓ on a GRADUATED word
+// pulled it down to monthly, and a ✓ on a word already climbing the ladder reset its rung and due day. The rule now depends on
+// where the card stood BEFORE the test:
+//   no card / held in the bank / parked (a new lesson word)  ✓ → testRight · 〰 → one rung below testRight (monthly → bi_weekly;
+//                                                             testRight graduated → monthly) · ✗ → learning
+//   graduated (incl. the imports)                          ✓ → stays graduated (stLast stamped) · 〰 → monthly · ✗ → learning + 🔁 came back
+//   on the ladder (every_other_day … monthly)              ✓ / 〰 → UNCHANGED (tier and due day) · ✗ → learning
+//   learning                                               stays learning (the learning pattern moves it); Word Workout notes right/miss
+// Re-grades stay right: the first grade saves each word's before-state on the record (was:{<i>:{st,t}}) and a re-grade from
+// 📝 Tests works from `was`, not from what the first grade did (fixing a ✗ to ✓ puts a ladder word back on its rung instead of
+// leaving it stuck in learning). Check-ups follow the same rule for the spelling deck only (ckTap; math check-ups unchanged).
+// Every write stays exactly as today: cards by index (mastery/<kid> update), the record by key. Nothing new is written.
+function gkBefore(item){   // where a card stands: {st:"bank"|"parked"|"learning"|"graduated"|"ladder", t:tier}
+  if(!item) return {st:"bank"};
+  if(item.status==="parked") return {st:"parked"};
+  if(item.status==="introduction") return {st:"learning",t:item.tier||"daily"};
+  if(item.tier==="graduated") return {st:"graduated",t:"graduated"};
+  return {st:"ladder",t:item.tier||"monthly"};
+}
+function gkBelow(kid,tier){   // one rung below on this kid's ladder; graduated → monthly; the bottom rung stays itself
+  if(tier==="graduated") return "monthly";
+  const lad=(typeof _unitKidLadderCfg==="function")?(_unitKidLadderCfg(kid).ladder||[]):["every_other_day","weekly","bi_weekly","monthly","graduated"];
+  const i=lad.indexOf(tier); if(i<0) return "bi_weekly"; return i>0?lad[i-1]:tier;
+}
+function gkTier(kid,before,r){   // → {status,tier} to set, or null = leave the card exactly where it is
+  const b=before||{st:"bank"}, right=(r==="c"||r==="k"), slow=(r==="s"||r==="spot");
+  if(b.st==="bank"||b.st==="parked"){ const tr=(typeof stRightTier==="function")?stRightTier(kid):"monthly"; if(right) return {status:"active",tier:tr}; if(slow) return {status:"active",tier:gkBelow(kid,tr)}; return {status:"introduction",tier:"daily"}; }
+  if(b.st==="graduated"){ if(right) return {status:"active",tier:"graduated"}; if(slow) return {status:"active",tier:"monthly"}; return {status:"introduction",tier:"daily"}; }
+  if(b.st==="ladder"){ return (right||slow)?{status:"active",tier:b.t||"monthly"}:{status:"introduction",tier:"daily"}; }   // right/slow = back where it was (a re-grade restores the rung)
+  return null;   // learning
+}
+// GRADKEEP_END
 // Results → the kid's AAS Words cards (one word = one card; same shape the unit and the check-up mint).
-function stApplyResults(kid,words,res,key){
+// GRADKEEP: `was` = the record's saved before-states (a re-grade); absent on the first grade, which reads the cards and returns them.
+function stApplyResults(kid,words,res,key,was){
   let items=masteryData[kid]; if(!Array.isArray(items)) items=masteryData[kid]=(items?Object.values(items):[]);
   let bank=masteryData[kid+"_custom_items"]; if(!Array.isArray(bank)) bank=masteryData[kid+"_custom_items"]=(bank?Object.values(bank):[]);
   const pn=mastGetPrintNum(kid);
-  const iu={}, bu={}, ids=new Set(items.map(i=>i&&i.id)), today=new Date().toISOString().slice(0,10);
-  words.forEach((name,i)=>{ const r=res[i]; if(!r) return; const tt=stTier(r,kid);   // STRIGHT: ✓ lands where this kid's setting says
+  const iu={}, bu={}, wasOut={}, ids=new Set(items.map(i=>i&&i.id)), today=new Date().toISOString().slice(0,10);
+  words.forEach((name,i)=>{ const r=res[i]; if(!r) return;
     let idx=items.findIndex(x=>x&&x.subject===ST_DECK&&x.prompt===name);
+    const before=(was&&was[i]&&was[i].st)?was[i]:gkBefore(idx>=0?items[idx]:null); wasOut[i]=before;   // GRADKEEP
+    const tt=gkTier(kid,before,r);   // GRADKEEP (STRIGHT inside: a new word's ✓ lands where this kid's setting says)
     if(idx<0){ let b=kid.slice(0,3)+"_"+String(name).replace(/[^a-z0-9]/gi,"_").toLowerCase(), id=b, k=2; while(ids.has(id)) id=b+"_"+(k++); ids.add(id);
       items.push({id:id,subject:ST_DECK,type:"aas words",prompt:name,answer:name,review_mode:"flash",drop_count:0,consecutive_correct:0,cycle:1}); idx=items.length-1; }
-    if(r==="m"&&items[idx].tier==="graduated"&&typeof cbLog==="function") cbLog(kid,{name:name,deck:ST_DECK,from:"graduated",ts:Date.now(),src:"spelling test"});   // 🔁 PWFLAG: a graduated word missed on a test came back
-    const it=items[idx]; it.status=tt.status; it.tier=tt.tier;
-    if(tt.status==="introduction"){ it.tally_dots=0; delete it.next_due; delete it.placed; }
-    else { it.tally_dots=Math.max(5,it.tally_dots||0); it.placed=true;
-      if(tt.tier!=="graduated"&&typeof mastStampNextDue==="function") mastStampNextDue(it,items,tt.tier,pn); else delete it.next_due; }   // STRIGHT: book the next look for any review tier
+    if(r==="m"&&before.st==="graduated"&&typeof cbLog==="function") cbLog(kid,{name:name,deck:ST_DECK,from:"graduated",ts:Date.now(),src:"spelling test"});   // 🔁 PWFLAG: a graduated word missed on a test came back
+    const it=items[idx];
+    if(tt&&!(it.status===tt.status&&it.tier===tt.tier)){   // GRADKEEP: null / same place → the card (and its due day) stays
+      it.status=tt.status; it.tier=tt.tier;
+      if(tt.status==="introduction"){ it.tally_dots=0; delete it.next_due; delete it.placed; }
+      else { it.tally_dots=Math.max(5,it.tally_dots||0); it.placed=true;
+        if(tt.tier!=="graduated"&&typeof mastStampNextDue==="function") mastStampNextDue(it,items,tt.tier,pn); else delete it.next_due; } }   // STRIGHT: book the next look for any review tier
     it.stLast={r:r,d:today,t:key};
     if(typeof wwNote==="function") wwNote(it,r==="m"?"miss":(r==="c"?"right":null));   // 🏋️ WORDWORKOUT
     iu[idx]=it;
@@ -59523,14 +59569,14 @@ function stApplyResults(kid,words,res,key){
     if(Object.keys(iu).length) db.ref("mastery/"+kid).update(iu);
     if(Object.keys(bu).length) db.ref("mastery/"+kid+"_custom_items").update(bu);
   }
-  return {iu,bu};
+  return {iu,bu,was:wasOut};
 }
 function stSave(){
   if(!stUI||!(typeof momHere==="function"&&momHere())) return; const S=stUI;
   if(Object.keys(S.grades).length<S.words.length) return;
   const res={}; S.words.forEach((w,i)=>{ res[i]=S.grades[i]; });
-  stApplyResults(S.kid,S.words.map(w=>w.name),res,S.key);
-  const rec=_stRec(S,"graded"); rec.res=res; rec.gradedTs=Date.now(); _stWrite(S.kid,S.key,rec);
+  const prev=stRecs(S.kid)[S.key]||{}, out=stApplyResults(S.kid,S.words.map(w=>w.name),res,S.key,prev.was||null);   // GRADKEEP: a re-grade works from the saved before-states
+  const rec=_stRec(S,"graded"); rec.res=res; rec.gradedTs=Date.now(); if(out&&out.was) rec.was=out.was; _stWrite(S.kid,S.key,rec);
   const sc=stScore(rec); if(typeof gwShowToast==="function") gwShowToast("📝 Saved — "+sc.c+" ✓ · "+sc.s+" 〰 · "+sc.m+" ✗");
   stCheckCard(S.kid,S.key);   // 📝 STTESTCARD: graded → the test card is done
   stClose();
@@ -59538,8 +59584,8 @@ function stSave(){
 function stNoTime(){
   if(!stUI||!(typeof momHere==="function"&&momHere())) return; const S=stUI;
   const res={}; S.words.forEach((w,i)=>{ res[i]="m"; });
-  stApplyResults(S.kid,S.words.map(w=>w.name),res,S.key);
-  const rec=_stRec(S,"learning"); rec.res=res; rec.gradedTs=Date.now(); _stWrite(S.kid,S.key,rec);
+  const prev=stRecs(S.kid)[S.key]||{}, out=stApplyResults(S.kid,S.words.map(w=>w.name),res,S.key,prev.was||null);   // GRADKEEP
+  const rec=_stRec(S,"learning"); rec.res=res; rec.gradedTs=Date.now(); if(out&&out.was) rec.was=out.was; _stWrite(S.kid,S.key,rec);
   if(typeof gwShowToast==="function") gwShowToast("📝 All "+S.words.length+" words added to learning — you can still grade it later from the test card");
   stCheckCard(S.kid,S.key);   // 📝 STTESTCARD
   stClose();
