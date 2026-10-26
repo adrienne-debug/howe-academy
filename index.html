@@ -26407,7 +26407,7 @@ function rmRowHTML(kid,r,iso,compact){
   h+='<button onclick="rmDone(\''+kid+'\',\''+esc(r.id)+'\')" title="'+(r.done?"Reopen":"Done")+'" style="flex:none;width:22px;height:22px;border-radius:6px;border:1.5px solid '+c+';background:'+(r.done?c:'#fff')+';color:#fff;font-size:12px;cursor:pointer;line-height:1">'+(r.done?'✓':'')+'</button>';
   h+='<span style="flex:none;min-width:52px;font-weight:800;color:'+c+'">'+(st==="over"?'⚠ ':'')+esc(rmDateTxt(r.due))+'</span>';
   h+='<span style="flex:1;min-width:0;'+(r.done?'text-decoration:line-through':'')+'">'+(RM_KINDS[r.kind]||'\u{1F4CC}')+' '+esc(r.text);
-  if(r.subject) h+=' <span style="font-size:10.5px;font-weight:700;color:#0f766e;border:1px solid #0f766e55;border-radius:99px;padding:0 6px;white-space:nowrap">'+esc(rmSubjName(kid,r.subject))+'</span>';
+  if(r.subject) h+=' <span style="font-size:10.5px;font-weight:700;color:#0f766e;border:1px solid #0f766e55;border-radius:99px;padding:0 6px;white-space:nowrap">'+esc(rmSubjName(kid,r.subject))+'</span>'+((!r.done&&typeof rmxStatusChip==="function")?rmxStatusChip(kid,r.subject):'');   // RMX step 5: "14 left · ~Nov 25" / "paused" / "list empty", open rows only
   if(r.book) h+=' <button onclick="rmOpenBook(\''+esc(r.book)+'\')" style="font-size:10.5px;font-weight:700;color:#7c3aed;border:1px solid #7c3aed55;border-radius:99px;padding:0 6px;background:#fff;cursor:pointer;white-space:nowrap">\u{1F4DA} book</button>';
   h+='</span>';
   if(!compact) h+='<button onclick="rmEditStart(\''+kid+'\',\''+esc(r.id)+'\')" style="flex:none;border:none;background:none;cursor:pointer;font-size:13px;padding:0 2px" title="Edit">✏️</button>';
@@ -26532,6 +26532,9 @@ function rmOpenBook(id){
 // Step 4 (her yes 2026-10-25): a per-subject `off` now means MUTED, not gone — the row is still computed (muted:true),
 // the strip shows it greyed with 🔕, Mom's Day and the plan-bar chip skip it. The ⚙ panel, the strip's ⋯ and every
 // write live in the RMXS block after this one; this block still writes nothing.
+// Step 5 (her yes 2026-10-25): her typed rows that name a subject get a read-only status chip from this same derive —
+// "14 left · ~Nov 25" / "paused Oct 3" / "list empty since Oct 14" — so she can tick a row at a glance. rmxStatus(kid,sk),
+// memoised with the rest; rmRowHTML (ROADMAP) adds it by typeof, open rows only. Still no writes.
 const RMX_DEFAULTS={on:true,warnWeeks:3,warnLeft:0,redDays:7,redLeft:5,endWeeks:2,endOnDay:false,
   kinds:{runout:true,empty:true,handoff:true,nolist:true},family:true,noteDays:0,autoDone:true,muted:false};
 const RMX_RANGE={warnWeeks:[1,8],warnLeft:[0,20],redDays:[1,21],redLeft:[0,10],endWeeks:[0,8],noteDays:[0,30]};
@@ -26763,6 +26766,33 @@ function rmxDerive(kid){
   if(_rmxMemo.map[kid]) return _rmxMemo.map[kid];
   let items=[]; try{ items=_rmxDerive(kid); }catch(e){ try{ console.error("[HA] rmx",e); }catch(_){} items=[]; }
   _rmxMemo.map[kid]=items; return items;
+}
+// ── step 5: one subject's standing, for the chip on her typed rows (same memo; typed rows are few, so no candidate filter) ──
+function _rmxLaneOf(kid,sk){
+  const lanes=(typeof lnLanes==="function")?(lnLanes(kid)||{}):{}; let out=null;
+  Object.keys(lanes).forEach(function(id){ if(out) return; const us=(typeof lnUnits==="function")?(lnUnits(kid,id)||[]):[]; us.forEach(function(u,i){ if(!out&&_rmxUnitSubs(u).indexOf(sk)>=0) out={id:id,unitIdx:i}; }); });
+  return out;
+}
+function _rmxStatus(kid,sk){
+  const s=_rmxSubs(kid)[sk]; if(!s) return null;
+  if(s.paused) return {state:"paused",text:"paused"+(s.pausedSince?" "+rmxDateTxt(String(s.pausedSince).slice(0,10)):""),left:null,date:null,est:false};
+  if(s.tracking==="daily"||!(Array.isArray(s.lessonSeq)&&s.lessonSeq.length)) return null;   // no list: nothing to say
+  const left=rmxLeft(kid,sk); if(left===null) return null;   // unstamped: don't guess
+  if(left===0){ const since=_rmxLastDone(kid,[sk]); return {state:"empty",text:"list empty"+(since?" since "+rmxDateTxt(since):""),left:0,date:since,est:false}; }
+  const fx=_rmxFixedEnd(kid,sk,left), end=fx?{iso:fx.iso,est:false}:_rmxUnitEnd(kid,[sk],_rmxLaneOf(kid,sk));
+  return {state:"left",text:left+" left"+(end.iso?" · "+(end.est?"~":"")+rmxDateTxt(end.iso):""),left:left,date:end.iso,est:end.est};
+}
+function rmxStatus(kid,sk){   // {state:"paused"|"empty"|"left", text, left, date, est} or null
+  const key=_rmxMemoKey();
+  if(_rmxMemo.key!==key||Date.now()-_rmxMemo.at>20000) _rmxMemo={key:key,at:Date.now(),map:{}};
+  const mk="st\u0001"+kid+"\u0001"+sk; if(_rmxMemo.map[mk]!==undefined) return _rmxMemo.map[mk];
+  let out=null; try{ out=_rmxStatus(kid,sk); }catch(e){ out=null; }
+  _rmxMemo.map[mk]=out; return out;
+}
+function rmxStatusChip(kid,sk){
+  const st=rmxStatus(kid,sk); if(!st) return "";
+  const c=st.state==="paused"?"#64748b":(st.state==="empty"||st.left<=rmxCfg(kid,sk).redLeft)?"#b5394a":"#475569";
+  return ' <span style="font-size:10.5px;font-weight:700;color:'+c+';border:1px solid '+c+'55;border-radius:99px;padding:0 6px;white-space:nowrap">'+esc(st.text)+'</span>';
 }
 // ── the strip group (Mom HQ ▸ Curriculum). Navigation only: the row never pauses, appends or writes. ──
 const RMX_COL={red:"#b5394a",amber:"#d97706",grey:"#64748b"}, RMX_DOT={red:"\u{1F534}",amber:"\u{1F7E0}",grey:"⚪"};
