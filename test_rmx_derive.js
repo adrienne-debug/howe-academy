@@ -3,7 +3,8 @@
  * automatic items computed from the lesson lists — runout / empty / handoff / nolist — shown
  * in the Mom HQ ▸ Curriculum strip under "From the curriculum". Never stored, never written.
  *   · rmxCfg: no config/rules/headsUp node → exactly RMX_DEFAULTS (warn 3 weeks, red at 5 left or 7 days);
- *     family ← kid ← subject layering; subject `off` → on:false; out-of-range / junk values clamp or fall back
+ *     family ← kid ← subject layering; subject `off` → muted:true (step 4: still computed, greyed in the strip,
+ *     off Mom's Day and the chip); out-of-range / junk values clamp or fall back
  *   · runout: red by lessons (≤5) or by date (≤7 days); amber by date (≤21 days) or warnLeft; else nothing
  *   · empty: a live list at 0 → red with the last done day; stays red; paused → nothing
  *   · lanes: up unit + later unit with lessons → grey handoff FYI; later unit at 0 / retired → runout;
@@ -116,7 +117,7 @@ console.log("\n# rmxCfg — her starting values, layering, clamping");
   const fam = T("rmxCfg")("other", "y"), kidc = T("rmxCfg")(K, "y"), subc = T("rmxCfg")(K, "x");
   ok("family layer: warnWeeks 4, handoff off, rest default", fam.warnWeeks === 4 && fam.kinds.handoff === false && fam.redLeft === 5 && fam.kinds.nolist === true, fam);
   ok("kid layer over family: redLeft 2, nolist off, warnWeeks still 4", kidc.redLeft === 2 && kidc.kinds.nolist === false && kidc.warnWeeks === 4, kidc);
-  ok("subject layer over kid: off → on:false, warnWeeks 6, redLeft 2 kept", subc.on === false && subc.warnWeeks === 6 && subc.redLeft === 2, subc);
+  ok("subject layer over kid: off → muted:true (on stays true — step 4), warnWeeks 6, redLeft 2 kept", subc.muted === true && subc.on === true && subc.warnWeeks === 6 && subc.redLeft === 2 && fam.muted === false && kidc.muted === false, subc);
   ctx.rulesData = { headsUp: { warnWeeks: 99, redDays: 0, redLeft: "abc", endWeeks: -3, on: "false", autoDone: "junk", kinds: "nope" } };
   const cl = T("rmxCfg")(K, "x");
   ok("clamps: warnWeeks 8, redDays 1, endWeeks 0; junk → default; 'false' string → false; junk bool → default", cl.warnWeeks === 8 && cl.redDays === 1 && cl.redLeft === 5 && cl.endWeeks === 0 && cl.on === false && cl.autoDone === true && cl.kinds.runout === true, cl);
@@ -160,7 +161,7 @@ console.log("\n# runout — red by lessons or by date, amber by date, else nothi
   reset({ s1: sub(10, { display: "Book One" }) }); doneN("s1", 5); ctx.proj.s1 = projTo(plus(3)); ctx.rulesData = { headsUp: { kid: { [K]: { on: false } } } };
   ok("kid on:false → nothing for that kid", derive().length === 0);
   reset({ s1: sub(10, { display: "Book One" }) }); doneN("s1", 5); ctx.proj.s1 = projTo(plus(3)); ctx.rulesData = { headsUp: { subj: { [K]: { s1: { off: true } } } } };
-  ok("subject off → nothing for that subject", derive().length === 0);
+  ok("subject off → the row is still computed, marked muted (step 4: greyed in the strip; Mom's Day and the chip skip it)", derive().length === 1 && derive()[0].muted === true && derive()[0].type === "runout", derive());
 }
 
 console.log("\n# candidates only get the projection; fallbacks");
@@ -371,7 +372,7 @@ console.log("\n# 🏡 Family time — tracked items, member kids' strips");
   reset({}); famSetup([seqItem], M3()); ctx.rulesData = { headsUp: { family: false } };
   ok("family switch off → nothing", fam().length === 0);
   reset({}); famSetup([seqItem], M3()); ctx.rulesData = { headsUp: { subj: { _family: { space: { off: true } } } } };
-  ok("subj/_family/<key>/off → nothing", fam().length === 0);
+  ok("subj/_family/<key>/off → the family row is still computed, marked muted (step 4)", fam().length === 1 && fam()[0].muted === true, fam());
   reset({}); famSetup([seqItem], M3()); ctx.rulesData = { headsUp: { kinds: { runout: false } } };
   ok("kinds.runout off → nothing", fam().length === 0);
   reset({}); famSetup([seqItem], M3()); ctx.rulesData = { headsUp: { kid: { [K]: { on: false } } } };

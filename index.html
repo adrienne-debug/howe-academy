@@ -26455,14 +26455,18 @@ function rmStripHTML(kid){
 // helpers are looked up by typeof so the ROADMAP block still stands alone (test_roadmap.js).
 function rmWeekHTML(iso){
   const kids=(typeof ROSTER!=="undefined"&&ROSTER)?ROSTER:["lincoln","ellis","lucy","julian"];
-  const auto=function(kid){ if(typeof rmxDerive!=="function") return []; try{ return rmxDerive(kid).filter(function(it){ return it.level!=="grey"||(typeof rmxCfg==="function"&&rmxCfg(kid,it.sk).endOnDay); }); }catch(e){ return []; } };
+  const auto=function(kid){ if(typeof rmxDerive!=="function") return []; try{ return rmxDerive(kid).filter(function(it){ return !it.muted&&(it.level!=="grey"||(typeof rmxCfg==="function"&&rmxCfg(kid,it.sk).endOnDay)); }); }catch(e){ return []; } };   // RMX step 4: a muted subject stays in the strip only
   let rows=[]; kids.forEach(function(kid){
     auto(kid).forEach(function(it){ rows.push({kid:kid,auto:it}); });
-    rmList(kid).forEach(function(r){ const st=rmState(r,iso); if(st==="over"||st==="week") rows.push({kid:kid,r:r}); }); });
-  let fam=[]; if(typeof rmxFamilyItems==="function"){ try{ fam=rmxFamilyItems().filter(function(it){ return it.level!=="grey"; }); }catch(e){ fam=[]; } }
-  const n=rows.length+fam.length; if(!n) return "";
+    rmList(kid).forEach(function(r){ const st=rmState(r,iso); if(st==="over"||st==="week"||(st==="later"&&typeof rmxNoteDue==="function"&&rmxNoteDue(kid,r,iso))) rows.push({kid:kid,r:r}); }); });   // RMX step 4: noteDays shows her dated rows earlier; 0 = this week (unchanged)
+  let fam=[]; if(typeof rmxFamilyItems==="function"){ try{ fam=rmxFamilyItems().filter(function(it){ return !it.muted&&it.level!=="grey"; }); }catch(e){ fam=[]; } }
+  const n=rows.length+fam.length;
+  const gear=(typeof rmxGearHTML==="function")?rmxGearHTML():"";   // RMX step 4: ⚙ for Mom only — "" on kids' devices, Dad's kiosk and every non-Mom view
+  if(!n&&!gear) return "";
   let h='<div id="rm-week-card" style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden;margin-bottom:12px">';
-  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#7c3aed;color:#fff;font-weight:800;font-size:13px"><span>\u{1F4C5}</span> Curriculum heads-up <span style="margin-left:auto;font-weight:600;font-size:11.5px;opacity:.9">'+n+' item'+(n===1?'':'s')+'</span></div>';
+  h+='<div style="display:flex;align-items:center;gap:8px;padding:'+(n?'11px':'8px')+' 14px;background:#7c3aed;color:#fff;font-weight:800;font-size:13px"><span>\u{1F4C5}</span> Curriculum heads-up <span style="margin-left:auto;font-weight:600;font-size:11.5px;opacity:.9">'+(n?n+' item'+(n===1?'':'s'):'all clear')+'</span>'+gear+'</div>';
+  if(gear&&typeof rmxPanelHTML==="function") h+=rmxPanelHTML();   // the ⚙ panel, open on this device only
+  if(!n){ h+='</div>'; return h; }   // Mom with nothing to show: one slim line so the settings stay reachable
   h+='<div style="padding:6px 14px 10px">';
   kids.forEach(function(kid){ const mine=rows.filter(function(x){ return x.kid===kid; }); if(!mine.length) return;
     h+='<div style="font-size:11px;font-weight:800;color:'+((typeof KID_COLOR!=="undefined"&&KID_COLOR[kid])||"#333")+';margin-top:6px">'+cap(kid)+'</div>';
@@ -26525,24 +26529,27 @@ function rmOpenBook(id){
 // pace estimate — and says "no class dates left" / "only N class dates" when the dates can't hold the lessons;
 // 🏡 Family-time items with a lesson track (famLessonMap) get the same rows, owner "_family", shown in every
 // member kid's strip and opening the block's sheet. Items without a track are excluded like daily tracking.
+// Step 4 (her yes 2026-10-25): a per-subject `off` now means MUTED, not gone — the row is still computed (muted:true),
+// the strip shows it greyed with 🔕, Mom's Day and the plan-bar chip skip it. The ⚙ panel, the strip's ⋯ and every
+// write live in the RMXS block after this one; this block still writes nothing.
 const RMX_DEFAULTS={on:true,warnWeeks:3,warnLeft:0,redDays:7,redLeft:5,endWeeks:2,endOnDay:false,
-  kinds:{runout:true,empty:true,handoff:true,nolist:true},family:true,noteDays:0,autoDone:true};
+  kinds:{runout:true,empty:true,handoff:true,nolist:true},family:true,noteDays:0,autoDone:true,muted:false};
 const RMX_RANGE={warnWeeks:[1,8],warnLeft:[0,20],redDays:[1,21],redLeft:[0,10],endWeeks:[0,8],noteDays:[0,30]};
 function _rmxNum(v,def,rng){ const n=parseInt(v,10); if(!isFinite(n)) return def; return Math.min(rng[1],Math.max(rng[0],n)); }
 function _rmxBool(v,def){ if(v===true||v===false) return v; if(v==="true") return true; if(v==="false") return false; return def; }
-function _rmxLayer(out,h){   // one settings layer onto `out` — fixed field names only, every value clamped
+function _rmxLayer(out,h,subj){   // one settings layer onto `out` — fixed field names only, every value clamped
   if(!h||typeof h!=="object") return;
   Object.keys(RMX_RANGE).forEach(function(k){ if(h[k]!==undefined&&h[k]!==null) out[k]=_rmxNum(h[k],out[k],RMX_RANGE[k]); });
   ["on","endOnDay","family","autoDone"].forEach(function(k){ if(h[k]!==undefined&&h[k]!==null) out[k]=_rmxBool(h[k],out[k]); });
   if(h.kinds&&typeof h.kinds==="object") Object.keys(out.kinds).forEach(function(k){ if(h.kinds[k]!==undefined&&h.kinds[k]!==null) out.kinds[k]=_rmxBool(h.kinds[k],out.kinds[k]); });
-  if(h.off!==undefined&&h.off!==null&&_rmxBool(h.off,false)) out.on=false;   // per-subject mute
+  if(h.off!==undefined&&h.off!==null&&_rmxBool(h.off,false)){ if(subj) out.muted=true; else out.on=false; }   // per-subject mute: still computed, greyed in the strip, off Mom's Day (step 4)
 }
 function rmxCfg(kid,sk){
   const out=JSON.parse(JSON.stringify(RMX_DEFAULTS));
   const h=(((typeof rulesData!=="undefined"&&rulesData)||{}).headsUp)||{};
   _rmxLayer(out,h);
   if(kid&&h.kid&&typeof h.kid==="object") _rmxLayer(out,h.kid[kid]);
-  if(kid&&sk&&h.subj&&typeof h.subj==="object"&&h.subj[kid]&&typeof h.subj[kid]==="object") _rmxLayer(out,h.subj[kid][sk]);
+  if(kid&&sk&&h.subj&&typeof h.subj==="object"&&h.subj[kid]&&typeof h.subj[kid]==="object") _rmxLayer(out,h.subj[kid][sk],true);
   return out;
 }
 // ── dates ──
@@ -26691,6 +26698,7 @@ function _rmxDerive(kid){
     }
   });
   Object.keys(subs).sort().forEach(function(sk){ if(inLane[sk]) return; const it=_rmxSlotItem(kid,[sk],null,null); if(it) items.push(it); });
+  items.forEach(function(it){ if(rmxCfg(kid,it.sk).muted) it.muted=true; });   // step 4: the ⋯ mute writes subj/<kid>/<it.sk>/off — read it back on the same key
   return _rmxSort(items);
 }
 function _rmxSort(items){
@@ -26714,7 +26722,7 @@ function _rmxFamilyDerive(){
       const label="\u{1F3E1} "+String(b.name||id)+" · "+String(it.name||it.key);
       const kids=(_rmxFamList(it.kids).length?_rmxFamList(it.kids):_rmxFamList(b.kids)).map(String);
       const days=Object.keys(m.byDate||{}).sort();
-      const base={kid:"_family",sk:String(it.key),fam:String(id),kids:kids,label:label,est:false};
+      const base={kid:"_family",sk:String(it.key),fam:String(id),kids:kids,label:label,est:false}; if(cfg.muted) base.muted=true;
       if(left===0){
         if(!total||!cfg.kinds.empty) return;
         let since=null; days.forEach(function(d){ if(d<today&&(!since||d>since)) since=d; });
@@ -26759,21 +26767,178 @@ function rmxDerive(kid){
 // ── the strip group (Mom HQ ▸ Curriculum). Navigation only: the row never pauses, appends or writes. ──
 const RMX_COL={red:"#b5394a",amber:"#d97706",grey:"#64748b"}, RMX_DOT={red:"\u{1F534}",amber:"\u{1F7E0}",grey:"⚪"};
 function rmxOpen(kid,sk,fam){ if(fam){ if(typeof famSheetOpen==="function") famSheetOpen(fam); return; } if(typeof ceOpenEdit==="function") ceOpenEdit(kid,sk); }
-function rmxRowHTML(it){
-  const c=RMX_COL[it.level]||RMX_COL.grey, grey=it.level==="grey";
-  let h='<div onclick="rmxOpen(\''+esc(it.kid)+'\',\''+esc(it.sk)+'\''+(it.fam?',\''+esc(it.fam)+'\'':'')+')" title="Open '+esc(it.label)+(it.fam?'':' in the Builder')+'" style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:12.5px;cursor:pointer">';
-  h+='<span style="flex:none;width:22px;text-align:center;line-height:1.4;font-size:11px">'+RMX_DOT[it.level]+'</span>';
-  h+='<span style="flex:1;min-width:0;font-weight:'+(grey?'500':'700')+';color:'+c+'">'+esc(it.text)+'</span>';
-  h+='</div>'; return h;
+function rmxRowHTML(it,strip){   // strip=true in Mom HQ: a muted row shows greyed with 🔕, and Mom gets the ⋯ menu (RMXS); Mom's Day passes nothing
+  const muted=!!it.muted, c=muted?RMX_COL.grey:(RMX_COL[it.level]||RMX_COL.grey), grey=muted||it.level==="grey";
+  const mom=!!strip&&typeof rmxMom==="function"&&rmxMom();
+  let h='<div onclick="rmxOpen(\''+esc(it.kid)+'\',\''+esc(it.sk)+'\''+(it.fam?',\''+esc(it.fam)+'\'':'')+')" title="Open '+esc(it.label)+(it.fam?'':' in the Builder')+'" style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:12.5px;cursor:pointer'+(muted?';opacity:.6':'')+'">';
+  h+='<span style="flex:none;width:22px;text-align:center;line-height:1.4;font-size:11px">'+(muted?'\u{1F515}':RMX_DOT[it.level])+'</span>';
+  h+='<span style="flex:1;min-width:0;font-weight:'+(grey?'500':'700')+';color:'+c+'">'+esc(it.text)+(muted?' <span style="font-weight:600">\u00b7 muted</span>':'')+'</span>';
+  if(mom&&typeof rmxMenuBtnHTML==="function") h+=rmxMenuBtnHTML(it);
+  h+='</div>';
+  if(mom&&typeof rmxMenuHTML==="function") h+=rmxMenuHTML(it);   // "" unless this row's ⋯ is open
+  return h;
 }
 function rmxStripHTML(kid){
   const items=rmxDerive(kid).concat(rmxFamilyItems().filter(function(it){ return it.kids.indexOf(kid)>=0; }));   // 🏡 the blocks this kid is in
   if(!items.length) return "";
   let h='<div style="margin:6px 0 2px"><div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:4px 0 2px">From the curriculum</div>';
-  items.forEach(function(it){ h+=rmxRowHTML(it); });
+  items.forEach(function(it){ h+=rmxRowHTML(it,true); });
   h+='</div>'; return h;
 }
 // RMX_END
+// RMXS_START — 📅 Curriculum heads-up, step 4: ⚙ settings (her yes 2026-10-25; PLAN_linked_roadmap_2026-10-25.md "Step 4 in detail").
+// The FIRST step of the heads-up that writes. A ⚙ in the Mom's Day card header (momHere() only — Dad's kiosk passes the
+// gate without Mom mode and gets no ⚙; kids' devices draw nothing) opens an inline panel: the family defaults, a row per
+// kid ("same as family" until changed, ↺ back), and every per-subject record with ↺. In the Mom HQ strip each automatic
+// row gets ⋯ → Mute / Unmute · Warn earlier (+1 wk) / Warn later (−1 wk). A muted subject is still computed and shown
+// greyed with 🔕 in the strip (so she can see what she silenced); Mom's Day and the plan-bar chip skip it. With nothing to
+// show and Mom here, the card is one slim line "📅 Curriculum heads-up · all clear ⚙" so the settings stay reachable.
+// noteDays (family/kid) shows her own dated rows on Mom's Day `noteDays` days ahead; 0 = the week they're due (today's rule).
+// WRITES — copied from hhCleanRuleSet: one leaf per tap, config/rules/headsUp/<field>, …/kid/<kid>/<field>,
+// …/subj/<kid>/<sk>/<field> (kinds.<k> → kinds/<k>; the 🏡 owner is "_family"), value clamped by RMX_RANGE or coerced to a
+// boolean (junk → no write), momHere() required, inert under ?dryrun=1 (db && !_dryRun()). ↺ = one remove at that path.
+// NEVER config/rules, NEVER config/rules/headsUp itself. rulesData.headsUp is updated locally first (cloned along the
+// path) and renderAll() redraws — the RMX memo key already carries JSON(headsUp), so the rows change at once.
+// autoDone stays out of the panel until step 6 (a switch that does nothing yet would mislead). No kid names in this block.
+const RMX_FIELDS={on:"b",warnWeeks:"n",warnLeft:"n",redDays:"n",redLeft:"n",endWeeks:"n",endOnDay:"b",family:"b",noteDays:"n",autoDone:"b",off:"b","kinds.runout":"b","kinds.empty":"b","kinds.handoff":"b","kinds.nolist":"b"};
+const RMX_KIND_LBL={runout:"Running out",empty:"List empty",handoff:"Next book takes over",nolist:"Subject has no lessons"};
+const RMX_FIELD_LBL={on:"on",warnWeeks:"warn wk",warnLeft:"warn at",redDays:"red days",redLeft:"red at",endWeeks:"ending wk",endOnDay:"ending on Mom’s Day",family:"family",noteDays:"note days",autoDone:"auto-done",off:"muted","kinds.runout":"running out","kinds.empty":"list empty","kinds.handoff":"next book","kinds.nolist":"no lessons"};
+let _rmxPanel=false, _rmxMenu=null;   // this device only — never stored
+function rmxMom(){ return typeof momHere==="function"&&!!momHere(); }
+function _rmxWrite(){ return typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
+// "" | "kid/<kid>" | "subj/<owner>/<sk>" → path segments; anything else → null (no write)
+function _rmxSeg(scope){
+  if(scope===""||scope===null||scope===undefined) return [];
+  const p=String(scope).split("/"), okSeg=function(s){ return !!s&&!/[.#$\[\]\u0000-\u001f]/.test(s); };
+  if(p[0]==="kid"&&p.length===2&&okSeg(p[1])) return p;
+  if(p[0]==="subj"&&p.length===3&&okSeg(p[1])&&okSeg(p[2])) return p;
+  return null;
+}
+function _rmxRaw(scope){   // what IS set at a scope ({} when nothing) — the panel shows "same as family" from this
+  const seg=_rmxSeg(scope)||[]; let node=(((typeof rulesData!=="undefined"&&rulesData)||{}).headsUp)||{};
+  for(let i=0;i<seg.length;i++){ node=(node&&typeof node==="object")?node[seg[i]]:null; if(!node) return {}; }
+  return (node&&typeof node==="object")?node:{};
+}
+function _rmxRawHas(raw,field){ const fp=field.split("."); const v=(fp.length===2)?((raw[fp[0]]&&typeof raw[fp[0]]==="object")?raw[fp[0]][fp[1]]:undefined):raw[field]; return v!==undefined&&v!==null; }
+function _rmxRawVal(raw,field){ const fp=field.split("."); return (fp.length===2)?((raw[fp[0]]&&typeof raw[fp[0]]==="object")?raw[fp[0]][fp[1]]:undefined):raw[field]; }
+// rulesData.headsUp first, cloned along the path. v===undefined deletes the leaf; fp===null deletes the scope node itself.
+function _rmxLocal(seg,fp,v){
+  if(typeof rulesData==="undefined"||!rulesData) rulesData={};
+  rulesData.headsUp=Object.assign({},rulesData.headsUp); let node=rulesData.headsUp;
+  for(let i=0;i<seg.length;i++){ if(fp===null&&i===seg.length-1){ delete node[seg[i]]; return; } node[seg[i]]=Object.assign({},node[seg[i]]); node=node[seg[i]]; }
+  if(fp.length===2){ node[fp[0]]=Object.assign({},node[fp[0]]); if(v===undefined) delete node[fp[0]][fp[1]]; else node[fp[0]][fp[1]]=v; }
+  else { if(v===undefined) delete node[fp[0]]; else node[fp[0]]=v; }
+}
+function rmxRuleSet(scope,field,value){
+  if(!rmxMom()) return null; const seg=_rmxSeg(scope); if(!seg) return null;
+  const t=RMX_FIELDS[field]; if(!t) return null; let v;
+  if(t==="n"){ const n=parseInt(value,10); if(!isFinite(n)) return null; v=Math.min(RMX_RANGE[field][1],Math.max(RMX_RANGE[field][0],n)); }
+  else { v=_rmxBool(value,null); if(v!==true&&v!==false) return null; }
+  const fp=field.split("."); _rmxLocal(seg,fp,v);
+  if(_rmxWrite()) db.ref("config/rules/headsUp/"+seg.concat(fp).join("/")).set(v);   // ONE leaf — never config/rules, never config/rules/headsUp
+  if(typeof renderAll==="function") renderAll(); return v;
+}
+function rmxRuleClear(scope,field){   // ↺: one field back to the layer below, or (field null) a kid's / subject's whole override node
+  if(!rmxMom()) return null; const seg=_rmxSeg(scope); if(!seg) return null;
+  const hasF=(field!==null&&field!==undefined&&field!=="");
+  if(hasF){ if(!RMX_FIELDS[field]) return null; } else if(!seg.length) return null;   // the family node is cleared field by field, never as a whole
+  const fp=hasF?field.split("."):null; _rmxLocal(seg,fp,undefined);
+  if(_rmxWrite()) db.ref("config/rules/headsUp/"+seg.concat(fp||[]).join("/")).remove();
+  if(typeof renderAll==="function") renderAll(); return true;
+}
+// Her own dated rows, `noteDays` ahead of their due day (family/kid). 0 → false: the ROADMAP week rule stands, byte for byte.
+function rmxNoteDue(kid,r,iso){ const nd=rmxCfg(kid).noteDays; return nd>0&&!r.done&&!!r.due&&r.due<=_rmxAddDays(iso,nd); }
+// ── the strip's ⋯ (Mom only): mute / unmute · warn earlier / later — per-subject records, owner "_family" for 🏡 rows ──
+function _rmxSubjScope(kid,sk){ return "subj/"+kid+"/"+sk; }
+function rmxMute(kid,sk,on){ return on?rmxRuleSet(_rmxSubjScope(kid,sk),"off",true):rmxRuleClear(_rmxSubjScope(kid,sk),"off"); }
+function rmxWarnShift(kid,sk,delta){
+  const cur=rmxCfg(kid,sk).warnWeeks, nv=Math.min(RMX_RANGE.warnWeeks[1],Math.max(RMX_RANGE.warnWeeks[0],cur+(parseInt(delta,10)||0)));
+  if(nv===cur) return null;   // already at the edge — nothing to write
+  return rmxRuleSet(_rmxSubjScope(kid,sk),"warnWeeks",nv);
+}
+function rmxMenuToggle(key){ _rmxMenu=(_rmxMenu===key)?null:key; if(typeof renderAll==="function") renderAll(); }
+function rmxMenuBtnHTML(it){
+  const key=String(it.kid)+"/"+String(it.sk);
+  return '<button onclick="event.stopPropagation();rmxMenuToggle(\''+esc(key)+'\')" title="Mute this subject or change its warning" style="flex:none;border:none;background:'+(_rmxMenu===key?'#e2e8f0':'none')+';border-radius:6px;cursor:pointer;font-size:14px;line-height:1;padding:1px 5px;color:#64748b">⋯</button>';
+}
+function rmxMenuHTML(it){
+  if(_rmxMenu!==String(it.kid)+"/"+String(it.sk)) return "";
+  const cfg=rmxCfg(it.kid,it.sk), ww=cfg.warnWeeks, k="'"+esc(it.kid)+"','"+esc(it.sk)+"'";
+  const b=function(label,js,title){ return '<button onclick="'+js+'" title="'+title+'" style="padding:4px 9px;border-radius:99px;border:1.5px solid var(--border);background:#fff;font-weight:700;font-size:11px;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+label+'</button>'; };
+  let h='<div onclick="event.stopPropagation()" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:4px 0 8px 30px;border-bottom:1px solid #f1f5f9">';
+  h+=cfg.muted?b('\u{1F514} Unmute','rmxMute('+k+',false)','Back on Mom’s Day and in the count'):b('\u{1F515} Mute this subject','rmxMute('+k+',true)','Stays here greyed; off Mom’s Day and the count');
+  if(ww<RMX_RANGE.warnWeeks[1]) h+=b('Warn earlier (+1 wk)','rmxWarnShift('+k+',1)','Warn '+(ww+1)+' weeks ahead for this subject');
+  if(ww>RMX_RANGE.warnWeeks[0]) h+=b('Warn later (−1 wk)','rmxWarnShift('+k+',-1)','Warn '+(ww-1)+' week'+(ww-1===1?'':'s')+' ahead for this subject');
+  h+='<span style="font-size:11px;color:var(--muted)">warns '+ww+' wk'+(ww===1?'':'s')+' ahead'+(_rmxRawHas(_rmxRaw(_rmxSubjScope(it.kid,it.sk)),"warnWeeks")?' (this subject)':'')+'</span>';
+  h+='</div>'; return h;
+}
+// ── the ⚙ and the panel (Mom's Day card header) ──
+function rmxPanelToggle(){ _rmxPanel=!_rmxPanel; if(typeof renderAll==="function") renderAll(); }
+function rmxGearHTML(){
+  if(!rmxMom()) return "";
+  return '<button onclick="rmxPanelToggle()" title="Heads-up settings" style="flex:none;margin-left:6px;border:none;background:'+(_rmxPanel?'rgba(255,255,255,.28)':'none')+';color:#fff;font-size:15px;line-height:1;cursor:pointer;padding:2px 6px;border-radius:7px">⚙</button>';
+}
+function _rmxFamName(key){
+  try{ const defs=(typeof famDefs==="function")?(famDefs()||{}):{}; let out=null;
+    Object.keys(defs).forEach(function(id){ const b=defs[id]; if(!b||out) return; _rmxFamList(b.items).forEach(function(it){ if(!out&&it&&String(it.key)===String(key)) out=String(b.name||id)+" · "+String(it.name||it.key); }); });
+    return out||String(key); }catch(e){ return String(key); }
+}
+function _rmxCtl(scope,field,cfg,raw){   // one control: toggle or number, then ↺ when the value is set at this scope
+  const t=RMX_FIELDS[field], set=_rmxRawHas(raw,field), fp=field.split("."), val=(fp.length===2)?cfg[fp[0]][fp[1]]:cfg[field];
+  const js="'"+esc(scope)+"','"+field+"'", below=scope?"the family setting":"the app’s default";
+  let h='';
+  if(t==="b") h+='<div class="rules-toggle'+(val?' on':'')+'" onclick="rmxRuleSet('+js+','+(val?'false':'true')+')" title="'+(set?'':'same as '+below)+'"></div>';
+  else h+='<input type="number" class="rules-num" min="'+RMX_RANGE[field][0]+'" max="'+RMX_RANGE[field][1]+'" value="'+val+'" onchange="rmxRuleSet('+js+',this.value)"'+(set?'':' style="color:#94a3b8" title="same as '+below+'"')+'>';
+  h+=set?'<button onclick="rmxRuleClear('+js+')" title="Back to '+below+'" style="border:none;background:none;cursor:pointer;font-size:13px;padding:0 2px;color:#64748b">↺</button>':'<span style="display:inline-block;width:19px"></span>';
+  return h;
+}
+function _rmxRow(label,ctl,hint){ return '<div class="rules-row"><div class="rules-label">'+label+(hint?' <span style="font-weight:400;color:var(--muted)">'+hint+'</span>':'')+'</div>'+ctl+'</div>'; }
+function _rmxThresholdRows(scope,cfg,raw){
+  const c=function(f){ return _rmxCtl(scope,f,cfg,raw); }; let h='';
+  h+=_rmxRow("Warn when a list runs out within",c("warnWeeks"),"weeks");
+  h+=_rmxRow("…or when only this many lessons are left",c("warnLeft"),"0 = don’t use");
+  h+=_rmxRow("Make it urgent (red) this many days before",c("redDays"));
+  h+=_rmxRow("…or at this many lessons left",c("redLeft"));
+  h+=_rmxRow("Show a book ending with the next one lined up",c("endWeeks"),"weeks ahead · 0 = never");
+  Object.keys(RMX_KIND_LBL).forEach(function(k){ h+=_rmxRow("Show: "+RMX_KIND_LBL[k],c("kinds."+k)); });
+  return h;
+}
+function rmxPanelHTML(){
+  if(!rmxMom()||!_rmxPanel) return "";
+  const kids=(typeof ROSTER!=="undefined"&&ROSTER)?ROSTER:[];
+  let h='<div style="padding:4px 14px 10px;background:#faf5ff;border-bottom:1px solid #e9d5ff;font-size:12px">';
+  const F=rmxCfg(null,null), rawF=_rmxRaw(""), cF=function(f){ return _rmxCtl("",f,F,rawF); };
+  h+='<div class="rules-section-lbl">Family defaults</div>';
+  h+=_rmxRow("Curriculum heads-up",cF("on"),"the automatic rows from the lesson lists — your own dated rows always show");
+  h+=_rmxThresholdRows("",F,rawF);
+  h+=_rmxRow("Show those book endings on Mom’s Day too",cF("endOnDay"));
+  h+=_rmxRow("Include \u{1F3E1} Family time subjects",cF("family"));
+  h+=_rmxRow("Show my own dated reminders this many days before they’re due",cF("noteDays"),"0 = the week they’re due");
+  h+='<div class="rules-section-lbl" style="margin-top:10px">Per kid</div>';
+  kids.forEach(function(kid){
+    const C=rmxCfg(kid), scope="kid/"+kid, raw=_rmxRaw(scope), has=Object.keys(raw).length>0;
+    h+='<details style="margin:2px 0"><summary style="cursor:pointer;font-size:12.5px;font-weight:800;color:'+((typeof KID_COLOR!=="undefined"&&KID_COLOR[kid])||"#333")+'">'+esc(cap(kid))+' <span style="font-weight:600;color:var(--muted)">· '+(has?'own settings':'same as family')+'</span></summary>';
+    if(has) h+='<div style="padding:4px 0 2px"><button onclick="rmxRuleClear(\''+esc(scope)+'\',null)" style="padding:4px 9px;border-radius:99px;border:1.5px solid var(--border);background:#fff;font-weight:700;font-size:11px;cursor:pointer;font-family:\'DM Sans\',sans-serif">↺ Same as family for everything</button></div>';
+    h+=_rmxRow("Heads-up for "+esc(cap(kid)),_rmxCtl(scope,"on",C,raw));
+    h+=_rmxThresholdRows(scope,C,raw);
+    h+='</details>';
+  });
+  h+='<div class="rules-section-lbl" style="margin-top:10px">Per subject</div>';
+  const S=_rmxRaw("").subj, list=[];
+  if(S&&typeof S==="object") Object.keys(S).sort().forEach(function(owner){ const o=S[owner]; if(!o||typeof o!=="object") return; Object.keys(o).sort().forEach(function(sk){ const r=o[sk]; if(r&&typeof r==="object"&&Object.keys(r).length) list.push({owner:owner,sk:sk,raw:r}); }); });
+  if(!list.length) h+='<div style="font-size:11.5px;color:var(--muted);padding:4px 0">None yet — use ⋯ on a row in Mom HQ ▸ Curriculum to mute a subject or change its warning.</div>';
+  list.forEach(function(x){
+    const scope=_rmxSubjScope(x.owner,x.sk), label=(x.owner==="_family")?"\u{1F3E1} "+_rmxFamName(x.sk):cap(x.owner)+" · "+_rmxName(x.owner,x.sk);
+    h+='<div class="rules-row" style="flex-wrap:wrap"><div class="rules-label">'+esc(label)+'</div>';
+    Object.keys(RMX_FIELDS).forEach(function(f){ if(!_rmxRawHas(x.raw,f)) return; const v=_rmxRawVal(x.raw,f);
+      h+='<span style="font-size:10.5px;font-weight:700;color:#475569;border:1px solid #cbd5e1;border-radius:99px;padding:1px 7px;white-space:nowrap">'+(f==="off"?'\u{1F515} muted':RMX_FIELD_LBL[f]+(RMX_FIELDS[f]==="n"?' '+esc(String(v)):(v===true||v==="true"?' on':' off')))
+        +' <a href="#" onclick="rmxRuleClear(\''+esc(scope)+'\',\''+f+'\');return false" title="Remove this one" style="color:#64748b;text-decoration:none">↺</a></span>'; });
+    h+='<button onclick="rmxRuleClear(\''+esc(scope)+'\',null)" title="Remove every setting for this subject" style="padding:3px 8px;border-radius:99px;border:1.5px solid var(--border);background:#fff;font-weight:700;font-size:11px;cursor:pointer;font-family:\'DM Sans\',sans-serif">↺ all</button></div>';
+  });
+  h+='<div style="font-size:11px;color:var(--muted);padding:8px 0 0">Each change saves by itself and the rows update at once — here and in Mom HQ ▸ Curriculum.</div>';
+  h+='</div>'; return h;
+}
+// RMXS_END
 // SCORES_START — 📊 test scores + 📝 plan notes per kid (Stage D, 2026-09-13). Both live under the
 // `plans` node already loaded into roadmapData: plans/<kid>/scores/<YYYY-MM> = {test, form_level, date,
 // grade, tests:{reading:{ss,npr,ge}…}, domains:{conventions_capitalization:{items,pct,nat,diff}…}, lexile…}
@@ -26870,7 +27035,7 @@ function planBarHTML(kid){
   const iso=_todayStr(), R=rmList(kid), open=R.filter(function(r){ return !r.done; }), over=open.filter(function(r){ return rmState(r,iso)==="over"; }).length;
   const week=open.filter(function(r){ return rmState(r,iso)==="week"; }).length, S=scList(kid).length, N=ntList(kid).length;
   // RMX step 3 (her yes 2026-10-25): the kid's red + amber heads-ups from the lesson lists, a chip of their own — never mixed into her "overdue" notes
-  let hu=0; if(typeof rmxDerive==="function"){ try{ hu=rmxDerive(kid).filter(function(it){ return it.level!=="grey"; }).length; if(typeof rmxFamilyItems==="function") hu+=rmxFamilyItems().filter(function(it){ return it.level!=="grey"&&it.kids.indexOf(kid)>=0; }).length; }catch(e){ hu=0; } }
+  let hu=0; if(typeof rmxDerive==="function"){ try{ hu=rmxDerive(kid).filter(function(it){ return !it.muted&&it.level!=="grey"; }).length; if(typeof rmxFamilyItems==="function") hu+=rmxFamilyItems().filter(function(it){ return !it.muted&&it.level!=="grey"&&it.kids.indexOf(kid)>=0; }).length; }catch(e){ hu=0; } }   // RMX step 4: muted subjects don't count
   let h='<div style="padding:0 4px"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:8px 12px;margin:8px 0 2px;font-size:12.5px">';
   h+='<span style="font-weight:800">\u{1F5C2} '+cap(kid)+"'s plan</span>";
   h+='<span>\u{1F4C5} '+open.length+' to do'+(over?' · <b style="color:#b5394a">'+over+' overdue</b>':'')+(week?' · <b style="color:#d97706">'+week+' this week</b>':'')+(hu?' · <b style="color:#b5394a">'+hu+' heads-up</b>':'')+'</span>';
