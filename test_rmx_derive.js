@@ -13,6 +13,10 @@
  *   · stamped but not plan-backed → counted from done-by-id, "~" estimate; cbRemainingContent never called
  *   · the projection runs only for candidates; {err} falls back to the dealt dates; memo honours the key
  *   · strip HTML: no items → "" (rmStripHTML byte-identical to before); rows open the Builder only
+ *   · step 2 (2026-10-25): a fixed-date class ends on its real class dates — never a pace estimate, never the
+ *     projection; "no class dates left" / "only N class dates" when the dates can't hold the lessons
+ *   · step 2: 🏡 Family-time items with a lesson track → the same rows, owner "_family", in every member kid's
+ *     strip, opening the block's sheet; a date only when the calendar holds every remaining sitting/week
  *   · ZERO Firebase writes anywhere; no kid names / Howe subject keys in the block
  *
  *   run:  node test_rmx_derive.js
@@ -37,7 +41,7 @@ ok("rmStripHTML hooks the group guarded by typeof (test_roadmap's vm has no RMX)
 ok("hook sits between the strip header and the inline form", rblock.indexOf('rmxStripHTML(kid)') > rblock.indexOf("➕ Add") && rblock.indexOf('rmxStripHTML(kid)') < rblock.indexOf("if(rmEdit&&rmEdit.kid===kid&&!rmEdit.id) h+=rmFormHTML(kid)"));
 
 // ── context: the real helpers' shapes, stubbed ──
-const writes = [], opened = []; let projCalls = [];
+const writes = [], opened = []; let projCalls = [], famCalls = [];
 const db = { ref(p) { return { set(v) { writes.push({ op: "set", path: p, val: v }); }, update(v) { writes.push({ op: "update", path: p, val: v }); }, remove() { writes.push({ op: "remove", path: p }); } }; } };
 function gwParseDate(iso) { const m = iso.split("-"); return new Date(+m[0], +m[1] - 1, +m[2]); }
 function _cbISO(d) { const p = n => String(n).padStart(2, "0"); return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()); }
@@ -67,6 +71,15 @@ const ctx = {
   cbRemainingContent() { throw new Error("cbRemainingContent must never be called — it writes cbBacklogStash"); },
   ceQuickPause() { throw new Error("never"); },
   ceOpenEdit(kid, sk) { opened.push(kid + "/" + sk); },
+  // step 2: fixed-date classes + 🏡 Family time, in miniature
+  fxIsClass(s) { return !!(s && s.fixedTime); },
+  fxDateList(s) { return (s && Array.isArray(s.fixedDates) && s.fixedDates.length) ? s.fixedDates : null; },
+  famProgress: {}, famBlocks: {}, famMaps: {},
+  famDefs() { return ctx.famBlocks; },
+  famList(v) { return Array.isArray(v) ? v.filter(Boolean) : (v ? Object.keys(v).map(k => v[k]) : []); },
+  famTrack(it) { return (it && it.track && (it.track.mode === "week" || it.track.mode === "seq")) ? it.track : null; },
+  famLessonMap(b, id, it) { famCalls.push(id + "/" + it.key); return ctx.famMaps[it.key] || { byDate: {}, ends: null, now: "", none: true }; },
+  famSheetOpen(id) { opened.push("fam:" + id); },
 };
 ctx.window = ctx; vm.createContext(ctx);
 vm.runInContext(block, ctx);
@@ -75,7 +88,7 @@ const K = "kidx";
 function sub(n, o) { const seq = [], ids = []; for (let i = 1; i <= n; i++) { seq.push("Lesson " + i); ids.push("L" + String(i).padStart(4, "0")); } return Object.assign({ display: "Sub", lessonSeq: seq, lessonIds: ids, doneImportedAt: "2026-09-01", planId: "p1", timesPerWeek: 2, allowedDays: ["Tue", "Thu"] }, o || {}); }
 function doneN(sk, n, day) { const node = {}; for (let i = 1; i <= n; i++) node["L" + String(i).padStart(4, "0")] = { day: day || "2026-10-01", ts: (day || "2026-10-01") + "T10:00:00Z", src: "manual" }; (ctx.currData.done[K] = ctx.currData.done[K] || {})[sk] = node; }
 let edit = 0;
-function reset(subjects, lanes) { ctx.currData = { subjects: { [K]: subjects || {} }, done: {}, lanes: { [K]: lanes || {} }, lastEdit: ++edit }; ctx.proj = {}; ctx.dealt = {}; projCalls = []; ctx.rulesData = null; }
+function reset(subjects, lanes) { ctx.currData = { subjects: { [K]: subjects || {} }, done: {}, lanes: { [K]: lanes || {} }, lastEdit: ++edit }; ctx.proj = {}; ctx.dealt = {}; projCalls = []; famCalls = []; ctx.rulesData = null; ctx.famBlocks = {}; ctx.famMaps = {}; ctx.famProgress = {}; }
 function derive() { return T("rmxDerive")(K); }
 function plus(n) { const d = gwParseDate(TODAY); d.setDate(d.getDate() + n); return _cbISO(d); }
 function projTo(iso) { const bd = {}; bd[iso] = { text: "Lesson", src: "plan" }; bd[plus(1)] = { text: "Lesson", src: "plan" }; return { byDate: bd, stats: null, warnings: [] }; }
@@ -271,6 +284,104 @@ console.log("\n# strip HTML");
   ok("rmxOpen calls ceOpenEdit(kid, sk)", opened.join() === "kidx/s1", opened);
   reset({ a: sub(10, { display: "Book A" }), b: sub(20, { display: "Book B" }) }, { L1: { units: [{ sk: "a" }, { sk: "b" }] } }); doneN("a", 8); ctx.proj.a = projTo(plus(4));
   ok("a handoff row is grey (⚪) and regular weight", /⚪/.test(T("rmxStripHTML")(K)) && /font-weight:500/.test(T("rmxStripHTML")(K)));
+}
+
+console.log("\n# fixed-date classes — real dates, never a pace estimate");
+{
+  const cls = o => sub(4, Object.assign({ display: "Voice Class", fixedTime: "3:00 PM", allowedDays: ["Fri"], timesPerWeek: 1 }, o || {}));
+  const term = (fd, o) => sub(8, Object.assign({ display: "Term Class", fixedTime: "3:00 PM", fixedDates: fd }, o || {}));
+  reset({ c: cls({ fixedDates: ["2026-10-02", "2026-10-09", "2026-10-16", "2026-10-23"] }) }); doneN("c", 3);
+  let it = derive();
+  ok("1 left, all four dates past → red 'no class dates left', no date, projection never called", it.length === 1 && it[0].level === "red" && it[0].fixed === true && it[0].date === null && it[0].text === "Voice Class · 1 left · no class dates left" && projCalls.length === 0, it);
+  ok("…and no '~' estimate in the text", !/~/.test(it[0].text));
+  reset({ c: cls({ fixedDates: ["2026-10-23", "2026-10-30", "2026-11-06"] }) }); doneN("c", 3);
+  it = derive();
+  ok("1 left, 2 upcoming dates → ends on the first upcoming (Fri Oct 30), red by lessons", it.length === 1 && it[0].date === "2026-10-30" && it[0].text === "Voice Class runs out · 1 left · Fri Oct 30", it);
+  reset({ c: cls({ fixedDates: ["2026-10-30", "2026-11-06"] }) }); doneN("c", 1);
+  it = derive();
+  ok("3 left, only 2 dates → red 'only 2 class dates', dated by the last", it.length === 1 && it[0].level === "red" && it[0].date === "2026-11-06" && it[0].text === "Voice Class runs out · 3 left · only 2 class dates (Nov 6)", it);
+  reset({ c: term([plus(5), plus(12), plus(19), plus(26), plus(33), plus(40), plus(47), plus(54)]) }); doneN("c", 2);
+  ok("6 left, 8 dates → ends on the 6th date (40 days out) → nothing yet; projection never called", derive().length === 0 && projCalls.length === 0, derive());
+  reset({ c: term([plus(5), plus(12), plus(19), plus(26), plus(33), plus(40), plus(47), plus(54)]) }); doneN("c", 5);
+  it = derive();
+  ok("3 left, 8 dates → ends on the 3rd date (19 days), red by lessons", it.length === 1 && it[0].date === plus(19) && it[0].level === "red" && it[0].fixed === true, it);
+  reset({ c: term([plus(5), plus(8), plus(12), plus(15), plus(19), plus(22), plus(47), plus(54)]) }); doneN("c", 2);
+  ok("6 left, 6th date in 22 days → nothing", derive().length === 0, derive());
+  reset({ c: term([plus(5), plus(8), plus(12), plus(15), plus(19), plus(20), plus(47), plus(54)]) }); doneN("c", 2);
+  it = derive();
+  ok("6 left, 6th date in 20 days → amber (within 3 weeks)", it.length === 1 && it[0].level === "amber" && it[0].date === plus(20), it);
+  reset({ c: term([plus(1), plus(3), plus(5), plus(8), plus(10), plus(12), plus(47), plus(54)]) }); doneN("c", 2);
+  ok("6 left, 6th date in 12 days → still amber by date (red needs ≤ 7 days or ≤ 5 left)", derive()[0] && derive()[0].level === "amber");
+  reset({ c: cls({ fixedDates: ["2026-10-02"] }) }); doneN("c", 4, "2026-10-23");
+  it = derive();
+  ok("a class at 0 → the same red 'list is empty' row as a book", it.length === 1 && it[0].type === "empty" && /since Oct 23/.test(it[0].text), it);
+  reset({ c: sub(4, { display: "Weekly Class", fixedTime: "3:00 PM", allowedDays: ["Fri"], timesPerWeek: 1 }) }); doneN("c", 3); ctx.proj.c = projTo(plus(6));
+  it = derive();
+  ok("a fixed-TIME class with no date list is paced like a book (projection asked)", it.length === 1 && it[0].fixed === false && it[0].date === plus(6) && projCalls.join() === "c", it);
+  reset({ a: cls({ fixedDates: [plus(3)] }), b: sub(20, { display: "Book B" }) }, { L1: { units: [{ sk: "a" }, { sk: "b" }] } }); doneN("a", 3);
+  it = derive();
+  ok("a class up in a lane with a next book → grey handoff dated by its class date", it.length === 1 && it[0].type === "handoff" && it[0].date === plus(3), it);
+}
+
+console.log("\n# 🏡 Family time — tracked items, member kids' strips");
+{
+  const fam = T("rmxFamilyItems");
+  function famSetup(items, maps, blockExtra) { ctx.famBlocks = { sci: Object.assign({ name: "Science", kids: [K, "kidy"], items: items }, blockExtra || {}) }; ctx.famMaps = maps; ctx.currData.lastEdit = ++edit; }
+  const seqItem = { key: "space", name: "Space Science", track: { mode: "seq", list: [] } };
+  const bd = n => { const o = {}; for (let i = 1; i <= n; i++) o[plus(i * 2)] = "Sitting " + i; return o; };
+  const M3 = () => ({ space: { byDate: bd(3), ends: plus(6), left: 3, total: 40 } });
+  reset({}); famSetup([seqItem], M3());
+  let it = fam();
+  ok("seq item 3 left, 3 future sittings on the calendar → red runout dated by the last sitting, 🏡 label", it.length === 1 && it[0].type === "runout" && it[0].level === "red" && it[0].kid === "_family" && it[0].fam === "sci" && it[0].date === plus(6) && it[0].text === "🏡 Science · Space Science runs out · 3 left · " + T("rmxDateTxt")(plus(6)), it);
+  ok("…kids = the block's members", it[0].kids.join() === K + ",kidy", it[0].kids);
+  reset({}); famSetup([seqItem], { space: { byDate: bd(2), ends: plus(4), left: 3, total: 40 } });
+  it = fam();
+  ok("future sittings fewer than left → no date (calendar not built that far), count rule only", it.length === 1 && it[0].date === null && it[0].text === "🏡 Science · Space Science runs out · 3 left", it);
+  reset({}); famSetup([seqItem], { space: { byDate: bd(12), ends: plus(24), left: 12, total: 40 } });
+  ok("12 left ending in 24 days → nothing", fam().length === 0, fam());
+  reset({}); famSetup([seqItem], { space: { byDate: bd(8), ends: plus(16), left: 8, total: 40 } });
+  ok("8 left ending in 16 days → amber", fam()[0] && fam()[0].level === "amber", fam());
+  reset({}); famSetup([seqItem], { space: { byDate: { "2026-10-20": "L9", "2026-10-22": "L10" }, ends: "2026-10-22", left: 0, total: 10 } });
+  it = fam();
+  ok("0 left → red empty since the latest past day", it.length === 1 && it[0].type === "empty" && it[0].text === "🏡 Science · Space Science list is empty — nothing on the family schedule for it since Oct 22", it);
+  const wk = { key: "hist", name: "History", track: { mode: "week", total: 36 } };
+  const wbd = {}; [1, 2, 3, 8, 9, 10].forEach(i => { wbd[plus(i)] = "Wk"; });   // two calendar weeks' worth of days
+  reset({}); famSetup([wk], { hist: { byDate: wbd, ends: plus(10), left: 2, total: 36 } });
+  it = fam();
+  ok("week mode: 2 weeks left, both on the calendar → '2 weeks left', dated", it.length === 1 && it[0].text === "🏡 Science · History runs out · 2 weeks left · " + T("rmxDateTxt")(plus(10)), it);
+  reset({}); famSetup([wk], { hist: { byDate: wbd, ends: plus(10), left: 4, total: 36 } });
+  ok("week mode: 4 weeks left but only 2 on the calendar → no date", fam()[0] && fam()[0].date === null, fam());
+  reset({}); famSetup([wk], { hist: { byDate: wbd, ends: plus(10), left: null, total: 0 } });
+  ok("week mode without a total (left null) → nothing", fam().length === 0);
+  reset({}); famSetup([{ key: "ra", name: "Read Aloud" }], { ra: { byDate: {}, ends: null, now: "", none: true } });
+  ok("item without a track → nothing (famLessonMap not even asked)", fam().length === 0 && famCalls.length === 0, famCalls);
+  reset({}); famSetup([seqItem], M3(), { off: true });
+  ok("block off → nothing", fam().length === 0);
+  reset({}); famSetup([seqItem], M3()); ctx.rulesData = { headsUp: { family: false } };
+  ok("family switch off → nothing", fam().length === 0);
+  reset({}); famSetup([seqItem], M3()); ctx.rulesData = { headsUp: { subj: { _family: { space: { off: true } } } } };
+  ok("subj/_family/<key>/off → nothing", fam().length === 0);
+  reset({}); famSetup([seqItem], M3()); ctx.rulesData = { headsUp: { kinds: { runout: false } } };
+  ok("kinds.runout off → nothing", fam().length === 0);
+  reset({}); famSetup([seqItem], M3()); ctx.rulesData = { headsUp: { kid: { [K]: { on: false } } } };
+  ok("a kid's own switch does not touch family rows", fam().length === 1);
+  // strips
+  reset({ big: sub(60, { display: "Long Book" }) }); doneN("big", 10); famSetup([seqItem], M3());
+  const h = T("rmxStripHTML")(K);
+  ok("member kid's strip carries the 🏡 row (own rows empty), opening the block sheet", /From the curriculum/.test(h) && /🏡 Science · Space Science runs out/.test(h) && /onclick="rmxOpen\('_family','space','sci'\)"/.test(h) && !/in the Builder/.test(h), h);
+  ok("a kid not in the block sees nothing", T("rmxStripHTML")("kidz") === "");
+  ok("item kids narrow the block: only kidy", (() => { ctx.famBlocks.sci.items = [Object.assign({}, seqItem, { kids: ["kidy"] })]; ctx.currData.lastEdit = ++edit; return T("rmxStripHTML")(K) === "" && /Space Science/.test(T("rmxStripHTML")("kidy")); })());
+  reset({ s1: sub(10, { display: "Book One" }) }); doneN("s1", 5); ctx.proj.s1 = projTo(plus(30)); famSetup([seqItem], M3());
+  const h2 = T("rmxStripHTML")(K);
+  ok("own rows first, then the 🏡 row; kid rows still open the Builder with two args", h2.indexOf("Book One runs out") < h2.indexOf("🏡 Science") && /onclick="rmxOpen\('kidx','s1'\)"/.test(h2), h2);
+  T("rmxOpen")("_family", "space", "sci");
+  ok("rmxOpen with a block id → famSheetOpen(id), not ceOpenEdit", opened[opened.length - 1] === "fam:sci", opened);
+  reset({}); famSetup([seqItem], M3()); fam(); const n = famCalls.length; fam();
+  ok("memo: same key → famLessonMap not asked again", famCalls.length === n && n === 1, [n, famCalls.length]);
+  ctx.famProgress = { sci: { space: { done: 38 } } }; fam();
+  ok("memo: a family check-off (famProgress) changes the key → recomputed", famCalls.length > n);
+  ctx.famProgress = {};
+  ok("a broken famLessonMap → [] (logged, not raised)", (() => { const keep = ctx.famLessonMap; ctx.famLessonMap = () => { throw new Error("boom"); }; ctx.currData.lastEdit = ++edit; let r; try { r = fam(); } finally { ctx.famLessonMap = keep; } return Array.isArray(r) && r.length === 0; })());
 }
 
 console.log("\n# writes");

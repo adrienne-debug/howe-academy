@@ -26510,6 +26510,10 @@ function rmOpenBook(id){
 // panel; no node yet = these defaults). Skipped on purpose: tracking:"daily" (no list), paused (her choice),
 // unstamped (can't count honestly — same rule as cbRemainingContent's), a lane member waiting its turn.
 // Never cbRemainingContent (it writes cbBacklogStash). Never a kid name or a Howe subject key in this block.
+// Step 2 (her yes 2026-10-25): a fixed-date class (fixedTime + fixedDates) ends on its real class dates — never a
+// pace estimate — and says "no class dates left" / "only N class dates" when the dates can't hold the lessons;
+// 🏡 Family-time items with a lesson track (famLessonMap) get the same rows, owner "_family", shown in every
+// member kid's strip and opening the block's sheet. Items without a track are excluded like daily tracking.
 const RMX_DEFAULTS={on:true,warnWeeks:3,warnLeft:0,redDays:7,redLeft:5,endWeeks:2,endOnDay:false,
   kinds:{runout:true,empty:true,handoff:true,nolist:true},family:true,noteDays:0,autoDone:true};
 const RMX_RANGE={warnWeeks:[1,8],warnLeft:[0,20],redDays:[1,21],redLeft:[0,10],endWeeks:[0,8],noteDays:[0,30]};
@@ -26606,6 +26610,16 @@ function _rmxLastDone(kid,sks){   // the day the last lesson of these subjects w
   sks.forEach(function(sk){ const node=dn[sk]||{}; Object.keys(node).forEach(function(lid){ const r=node[lid]; const day=(r&&r.day)?String(r.day):((r&&r.ts)?String(r.ts).slice(0,10):""); if(day&&(!last||day>last)) last=day; }); });
   return last;
 }
+// A fixed-date class ends on its real dates: the `left`-th upcoming one. {iso, n:upcoming dates, none, short}
+// or null when the subject is not a fixed-date class. Never a pace estimate, never the projection.
+function _rmxFixedEnd(kid,sk,left){
+  const s=_rmxSubs(kid)[sk]; if(!s||typeof fxIsClass!=="function"||typeof fxDateList!=="function"||!fxIsClass(s)) return null;
+  const fd=fxDateList(s); if(!fd) return null;
+  const today=_rmxToday(); const up=fd.map(String).filter(function(d){ return d>=today; }).sort();
+  if(!up.length) return {iso:null,n:0,none:true,short:false};
+  if(up.length<left) return {iso:up[up.length-1],n:up.length,none:false,short:true};
+  return {iso:up[left-1],n:up.length,none:false,short:false};
+}
 // One slot (a lane's up unit, a lane that ran dry, or a subject in no lane) → one item or null.
 // nextLabel = the next unit in the lane that still has lessons (LANE_HANDOFF will swap it in by itself).
 function _rmxSlotItem(kid,skList,lane,nextLabel){
@@ -26630,18 +26644,21 @@ function _rmxSlotItem(kid,skList,lane,nextLabel){
   }
   const live=listed.filter(function(sk){ return rmxLeft(kid,sk)>0; });   // a finished letter closes ranks — name only what's still running
   const label=live.map(function(sk){ return _rmxName(kid,sk); }).join(" / ");
-  const end=_rmxCandidate(cfg,left,_rmxPace(kid,main,lane))?_rmxUnitEnd(kid,live,lane):{iso:null,est:false};
+  const fx=(live.length===1)?_rmxFixedEnd(kid,live[0],left):null;   // a class meets on its dates, not on a pace
+  const end=fx?{iso:fx.iso,est:false}:(_rmxCandidate(cfg,left,_rmxPace(kid,main,lane))?_rmxUnitEnd(kid,live,lane):{iso:null,est:false});
   const d=end.iso, dtxt=d?(end.est?"~":"")+rmxDateTxt(d):"";
   if(nextLabel){
     if(!cfg.kinds.handoff||!(cfg.endWeeks>0)||!d||d>_rmxAddDays(today,cfg.endWeeks*7)) return null;
     return {type:"handoff",level:"grey",kid:kid,sk:live[0]||main,label:label,left:left,date:d,est:end.est,next:nextLabel,text:label+" ends "+dtxt+" → "+nextLabel+" takes over"};
   }
   if(!cfg.kinds.runout) return null;
+  if(fx&&fx.none) return {type:"runout",level:"red",kid:kid,sk:live[0],label:label,left:left,date:null,est:false,fixed:true,text:label+" · "+left+" left · no class dates left"};
+  if(fx&&fx.short) return {type:"runout",level:"red",kid:kid,sk:live[0],label:label,left:left,date:d,est:false,fixed:true,text:label+" runs out · "+left+" left · only "+fx.n+" class date"+(fx.n===1?"":"s")+" ("+rmxDateTxt(d)+")"};
   let level=null;
   if(left<=cfg.redLeft||(d&&d<=_rmxAddDays(today,cfg.redDays))) level="red";
   else if((d&&d<=_rmxAddDays(today,cfg.warnWeeks*7))||(cfg.warnLeft>0&&left<=cfg.warnLeft)) level="amber";
   if(!level) return null;
-  return {type:"runout",level:level,kid:kid,sk:live[0]||main,label:label,left:left,date:d,est:end.est,text:label+" runs out · "+left+" left"+(dtxt?" · "+dtxt:"")};
+  return {type:"runout",level:level,kid:kid,sk:live[0]||main,label:label,left:left,date:d,est:end.est,fixed:!!fx,text:label+" runs out · "+left+" left"+(dtxt?" · "+dtxt:"")};
 }
 function _rmxDerive(kid){
   const subs=_rmxSubs(kid), items=[], inLane={};
@@ -26663,15 +26680,63 @@ function _rmxDerive(kid){
     }
   });
   Object.keys(subs).sort().forEach(function(sk){ if(inLane[sk]) return; const it=_rmxSlotItem(kid,[sk],null,null); if(it) items.push(it); });
+  return _rmxSort(items);
+}
+function _rmxSort(items){
   const rank={red:0,amber:1,grey:2};
-  items.sort(function(a,b){ return (rank[a.level]-rank[b.level])||String(a.date||"9999").localeCompare(String(b.date||"9999"))||a.label.localeCompare(b.label); });
-  return items;
+  return items.sort(function(a,b){ return (rank[a.level]-rank[b.level])||String(a.date||"9999").localeCompare(String(b.date||"9999"))||a.label.localeCompare(b.label); });
+}
+// ── 🏡 Family time: every block's tracked items, owner "_family" ──
+function _rmxFamList(v){ if(typeof famList==="function") return famList(v); if(!v) return []; if(Array.isArray(v)) return v.filter(function(x){ return x!==null&&x!==undefined; }); return Object.keys(v).sort(function(a,b){ return (+a)-(+b); }).map(function(k){ return v[k]; }).filter(function(x){ return x!==null&&x!==undefined; }); }
+function _rmxMonISO(iso){ const d=gwParseDate(iso); return _rmxAddDays(iso,-((d.getDay()+6)%7)); }
+function _rmxFamilyDerive(){
+  const out=[]; if(typeof famDefs!=="function"||typeof famLessonMap!=="function"||typeof famTrack!=="function") return out;
+  const defs=famDefs()||{}, today=_rmxToday();
+  Object.keys(defs).forEach(function(id){
+    const b=defs[id]; if(!b||b.off) return;
+    _rmxFamList(b.items).forEach(function(it){
+      if(!it||!it.key) return; const tr=famTrack(it); if(!tr) return;   // no lesson track = no list (like daily tracking)
+      const cfg=rmxCfg("_family",String(it.key)); if(!cfg.on||!cfg.family) return;
+      let m=null; try{ m=famLessonMap(b,id,it); }catch(e){ return; }
+      if(!m||m.none||m.left===null||m.left===undefined) return;
+      const left=Math.max(0,parseInt(m.left,10)||0), total=parseInt(m.total,10)||0, weekly=(tr.mode==="week");
+      const label="\u{1F3E1} "+String(b.name||id)+" · "+String(it.name||it.key);
+      const kids=(_rmxFamList(it.kids).length?_rmxFamList(it.kids):_rmxFamList(b.kids)).map(String);
+      const days=Object.keys(m.byDate||{}).sort();
+      const base={kid:"_family",sk:String(it.key),fam:String(id),kids:kids,label:label,est:false};
+      if(left===0){
+        if(!total||!cfg.kinds.empty) return;
+        let since=null; days.forEach(function(d){ if(d<today&&(!since||d>since)) since=d; });
+        out.push(Object.assign(base,{type:"empty",level:"red",left:0,date:since,since:since,text:label+" list is empty — nothing on the family schedule for it"+(since?" since "+rmxDateTxt(since):"")}));
+        return;
+      }
+      if(!cfg.kinds.runout) return;
+      // a date only when the family calendar already holds every remaining sitting (week); never invent one past it
+      const fut=days.filter(function(d){ return d>=today; });
+      const units=weekly?fut.map(_rmxMonISO).filter(function(w,i,a){ return a.indexOf(w)===i; }).length:fut.length;
+      const d=(units>=left&&m.ends)?String(m.ends):null;
+      let level=null;
+      if(left<=cfg.redLeft||(d&&d<=_rmxAddDays(today,cfg.redDays))) level="red";
+      else if((d&&d<=_rmxAddDays(today,cfg.warnWeeks*7))||(cfg.warnLeft>0&&left<=cfg.warnLeft)) level="amber";
+      if(!level) return;
+      out.push(Object.assign(base,{type:"runout",level:level,left:left,date:d,text:label+" runs out · "+left+(weekly?" week"+(left===1?"":"s"):"")+" left"+(d?" · "+rmxDateTxt(d):"")}));
+    });
+  });
+  return _rmxSort(out);
+}
+function rmxFamilyItems(){
+  const key=_rmxMemoKey();
+  if(_rmxMemo.key!==key||Date.now()-_rmxMemo.at>20000) _rmxMemo={key:key,at:Date.now(),map:{}};
+  if(_rmxMemo.map._family) return _rmxMemo.map._family;
+  let items=[]; try{ items=_rmxFamilyDerive(); }catch(e){ try{ console.error("[HA] rmx family",e); }catch(_){} items=[]; }
+  _rmxMemo.map._family=items; return items;
 }
 // Memoised like gvEndInfo (today + lastEdit + check-offs, 20 s) plus the settings, so a ⚙ change redraws at once.
 let _rmxMemo={key:"",at:0,map:{}};
 function _rmxMemoKey(){
   const r=(typeof rulesData!=="undefined"&&rulesData)||{};
-  return _rmxToday()+"|"+String(((typeof currData!=="undefined"&&currData)||{}).lastEdit||"")+"|"+Object.keys((typeof checked!=="undefined"&&checked)||{}).length+"|"+JSON.stringify(r.headsUp||null);
+  let fp=""; try{ fp=JSON.stringify((typeof famProgress!=="undefined"&&famProgress)||null); }catch(e){}   // 🏡 a family check-off redraws at once
+  return _rmxToday()+"|"+String(((typeof currData!=="undefined"&&currData)||{}).lastEdit||"")+"|"+Object.keys((typeof checked!=="undefined"&&checked)||{}).length+"|"+JSON.stringify(r.headsUp||null)+"|"+fp;
 }
 function rmxDerive(kid){
   const key=_rmxMemoKey();
@@ -26682,16 +26747,17 @@ function rmxDerive(kid){
 }
 // ── the strip group (Mom HQ ▸ Curriculum). Navigation only: the row never pauses, appends or writes. ──
 const RMX_COL={red:"#b5394a",amber:"#d97706",grey:"#64748b"}, RMX_DOT={red:"\u{1F534}",amber:"\u{1F7E0}",grey:"⚪"};
-function rmxOpen(kid,sk){ if(typeof ceOpenEdit==="function") ceOpenEdit(kid,sk); }
+function rmxOpen(kid,sk,fam){ if(fam){ if(typeof famSheetOpen==="function") famSheetOpen(fam); return; } if(typeof ceOpenEdit==="function") ceOpenEdit(kid,sk); }
 function rmxRowHTML(it){
   const c=RMX_COL[it.level]||RMX_COL.grey, grey=it.level==="grey";
-  let h='<div onclick="rmxOpen(\''+esc(it.kid)+'\',\''+esc(it.sk)+'\')" title="Open '+esc(it.label)+' in the Builder" style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:12.5px;cursor:pointer">';
+  let h='<div onclick="rmxOpen(\''+esc(it.kid)+'\',\''+esc(it.sk)+'\''+(it.fam?',\''+esc(it.fam)+'\'':'')+')" title="Open '+esc(it.label)+(it.fam?'':' in the Builder')+'" style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:12.5px;cursor:pointer">';
   h+='<span style="flex:none;width:22px;text-align:center;line-height:1.4;font-size:11px">'+RMX_DOT[it.level]+'</span>';
   h+='<span style="flex:1;min-width:0;font-weight:'+(grey?'500':'700')+';color:'+c+'">'+esc(it.text)+'</span>';
   h+='</div>'; return h;
 }
 function rmxStripHTML(kid){
-  const items=rmxDerive(kid); if(!items.length) return "";
+  const items=rmxDerive(kid).concat(rmxFamilyItems().filter(function(it){ return it.kids.indexOf(kid)>=0; }));   // 🏡 the blocks this kid is in
+  if(!items.length) return "";
   let h='<div style="margin:6px 0 2px"><div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:4px 0 2px">From the curriculum</div>';
   items.forEach(function(it){ h+=rmxRowHTML(it); });
   h+='</div>'; return h;
