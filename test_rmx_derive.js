@@ -17,6 +17,9 @@
  *     projection; "no class dates left" / "only N class dates" when the dates can't hold the lessons
  *   · step 2: 🏡 Family-time items with a lesson track → the same rows, owner "_family", in every member kid's
  *     strip, opening the block's sheet; a date only when the calendar holds every remaining sitting/week
+ *   · step 3 (2026-10-25): Mom's Day card "📅 Curriculum heads-up" — each kid's 🔴/🟠 rows above her typed rows
+ *     (overdue + this week, ✓ only, unchanged), 🏡 Family once; grey hand-offs only with endOnDay; empty → "";
+ *     the plan bar gets its own "N heads-up" chip (never mixed into her "overdue" count)
  *   · ZERO Firebase writes anywhere; no kid names / Howe subject keys in the block
  *
  *   run:  node test_rmx_derive.js
@@ -80,15 +83,23 @@ const ctx = {
   famTrack(it) { return (it && it.track && (it.track.mode === "week" || it.track.mode === "seq")) ? it.track : null; },
   famLessonMap(b, id, it) { famCalls.push(id + "/" + it.key); return ctx.famMaps[it.key] || { byDate: {}, ends: null, now: "", none: true }; },
   famSheetOpen(id) { opened.push("fam:" + id); },
+  // step 3: what the ROADMAP block and planBarHTML need
+  roadmapData: {}, adminPinUnlocked: false, momPinUnlocked: false, renderAll() {}, gwShowToast() {}, confirm: () => true,
+  setInterval: () => 0, clearInterval() {}, showTab() {}, plSetSub() {}, ROSTER: ["kidx", "kidy"], KID_COLOR: {},
+  lrCap: s => s === "_family" ? "🏡 Family" : s, scList: () => [], ntList: () => [], planOpen: {},
 };
 ctx.window = ctx; vm.createContext(ctx);
 vm.runInContext(block, ctx);
+vm.runInContext(rblock, ctx);   // step 3: the ROADMAP block too — rmWeekHTML / planBarHTML reach the RMX helpers by typeof
+const pbA = src.indexOf("function planBarHTML(kid){"), pbZ = src.indexOf("\n}\n", pbA) + 3;
+ok("planBarHTML found", pbA > 0 && pbZ > pbA);
+vm.runInContext(src.slice(pbA, pbZ), ctx);
 const T = name => vm.runInContext(name, ctx);
 const K = "kidx";
 function sub(n, o) { const seq = [], ids = []; for (let i = 1; i <= n; i++) { seq.push("Lesson " + i); ids.push("L" + String(i).padStart(4, "0")); } return Object.assign({ display: "Sub", lessonSeq: seq, lessonIds: ids, doneImportedAt: "2026-09-01", planId: "p1", timesPerWeek: 2, allowedDays: ["Tue", "Thu"] }, o || {}); }
 function doneN(sk, n, day) { const node = {}; for (let i = 1; i <= n; i++) node["L" + String(i).padStart(4, "0")] = { day: day || "2026-10-01", ts: (day || "2026-10-01") + "T10:00:00Z", src: "manual" }; (ctx.currData.done[K] = ctx.currData.done[K] || {})[sk] = node; }
 let edit = 0;
-function reset(subjects, lanes) { ctx.currData = { subjects: { [K]: subjects || {} }, done: {}, lanes: { [K]: lanes || {} }, lastEdit: ++edit }; ctx.proj = {}; ctx.dealt = {}; projCalls = []; famCalls = []; ctx.rulesData = null; ctx.famBlocks = {}; ctx.famMaps = {}; ctx.famProgress = {}; }
+function reset(subjects, lanes) { ctx.currData = { subjects: { [K]: subjects || {} }, done: {}, lanes: { [K]: lanes || {} }, lastEdit: ++edit }; ctx.proj = {}; ctx.dealt = {}; projCalls = []; famCalls = []; ctx.rulesData = null; ctx.famBlocks = {}; ctx.famMaps = {}; ctx.famProgress = {}; ctx.roadmapData = {}; }
 function derive() { return T("rmxDerive")(K); }
 function plus(n) { const d = gwParseDate(TODAY); d.setDate(d.getDate() + n); return _cbISO(d); }
 function projTo(iso) { const bd = {}; bd[iso] = { text: "Lesson", src: "plan" }; bd[plus(1)] = { text: "Lesson", src: "plan" }; return { byDate: bd, stats: null, warnings: [] }; }
@@ -382,6 +393,63 @@ console.log("\n# 🏡 Family time — tracked items, member kids' strips");
   ok("memo: a family check-off (famProgress) changes the key → recomputed", famCalls.length > n);
   ctx.famProgress = {};
   ok("a broken famLessonMap → [] (logged, not raised)", (() => { const keep = ctx.famLessonMap; ctx.famLessonMap = () => { throw new Error("boom"); }; ctx.currData.lastEdit = ++edit; let r; try { r = fam(); } finally { ctx.famLessonMap = keep; } return Array.isArray(r) && r.length === 0; })());
+}
+
+console.log("\n# Mom's Day card — 📅 Curriculum heads-up");
+{
+  const seqItem = { key: "space", name: "Space Science", track: { mode: "seq", list: [] } };
+  const bd = n => { const o = {}; for (let i = 1; i <= n; i++) o[plus(i * 2)] = "Sitting " + i; return o; };
+  const M3 = () => ({ space: { byDate: bd(3), ends: plus(6), left: 3, total: 40 } });
+  const famSetup = (items, maps) => { ctx.famBlocks = { sci: { name: "Science", kids: [K, "kidy"], items: items } }; ctx.famMaps = maps; ctx.currData.lastEdit = ++edit; };
+  const typed = (kid, rows) => { ctx.roadmapData[kid] = { roadmap: rows }; };
+  function setup() {
+    reset({ s1: sub(10, { display: "Book One" }), a: sub(10, { display: "Book A" }), b: sub(20, { display: "Book B" }) }, { L1: { units: [{ sk: "a" }, { sk: "b" }] } });
+    doneN("s1", 5); ctx.proj.s1 = projTo(plus(30)); doneN("a", 8); ctx.proj.a = projTo(plus(4));
+    famSetup([seqItem], M3());
+    typed(K, { r1: { due: "2026-10-20", text: "Order Cursive", kind: "add", done: null }, r2: { due: "2026-12-01", text: "Later thing", kind: "note", done: null } });
+    typed("kidy", { r3: { due: "2026-10-25", text: "Pause Geography", kind: "pause", done: null } });
+  }
+  setup();
+  let h = T("rmWeekHTML")(TODAY);
+  ok("header 'Curriculum heads-up', 4 items (1 auto + 2 typed + 1 family), old title gone", /Curriculum heads-up/.test(h) && /4 items/.test(h) && !/Curriculum roadmap/.test(h), h.slice(0, 400));
+  ok("the kid's automatic row sits under the kid's heading and above her typed rows", h.indexOf("Kidx</div>") < h.indexOf("Book One runs out") && h.indexOf("Book One runs out") < h.indexOf("Order Cursive"));
+  ok("grey hand-off is NOT on Mom's Day by default", !/takes over/.test(h));
+  ok("typed rows unchanged: ✓ handler, no ✏️, 'later' row absent, this-week row present", /rmDone\('kidx','r1'\)/.test(h) && !/rmEditStart/.test(h) && !/Later thing/.test(h) && /Pause Geography/.test(h));
+  ok("🏡 Family group once, after the kids, with the family row once", (h.match(/🏡 Family<\/div>/g) || []).length === 1 && (h.match(/Space Science runs out/g) || []).length === 1 && h.indexOf("🏡 Family</div>") > h.indexOf("Pause Geography"));
+  ok("automatic rows open the Builder / the block sheet and carry no ✓", /rmxOpen\('kidx','s1'\)/.test(h) && /rmxOpen\('_family','space','sci'\)/.test(h) && (h.match(/rmDone\(/g) || []).length === 2);
+  setup(); ctx.rulesData = { headsUp: { endOnDay: true } };
+  h = T("rmWeekHTML")(TODAY);
+  ok("endOnDay → the grey hand-off joins Mom's Day (5 items)", /Book A ends .* → Book B takes over/.test(h) && /5 items/.test(h), h.slice(0, 300));
+  setup(); ctx.roadmapData = {}; ctx.currData.lastEdit = ++edit;
+  h = T("rmWeekHTML")(TODAY);
+  ok("a kid with only automatic rows still gets a heading; 2 items (auto + family)", /Kidx<\/div>/.test(h) && /Book One runs out/.test(h) && /2 items/.test(h), h.slice(0, 300));
+  reset({});
+  ok("nothing to show → '' (kids' devices draw nothing)", T("rmWeekHTML")(TODAY) === "");
+  reset({}); typed(K, { r1: { due: "2026-10-20", text: "Order Cursive", kind: "add", done: null } });
+  h = T("rmWeekHTML")(TODAY);
+  ok("her typed rows alone still draw (1 item)", /1 item</.test(h) && /Order Cursive/.test(h), h.slice(0, 300));
+  ok("a broken rmxDerive → the card still draws her rows", (() => { const keep = ctx.lnLanes; ctx.lnLanes = () => { throw new Error("boom"); }; ctx.currData.lastEdit = ++edit; const orig = console.error; console.error = () => {}; let r; try { r = T("rmWeekHTML")(TODAY); } finally { console.error = orig; ctx.lnLanes = keep; } return /Order Cursive/.test(r); })());
+  ok("Mom's Day sticky label reads 📅 Heads-up on the same 'roadmap' section id", /_ss\('roadmap','📅 Heads-up'\)/.test(src) && !/_ss\('roadmap','📅 Roadmap'\)/.test(src));
+  ok("the card is still drawn where it was (after the day strip)", src.indexOf("h+=rmWeekHTML(iso);") > src.indexOf("h+=momDayStripHTML(iso,today);"));
+}
+
+console.log("\n# plan bar — its own heads-up chip");
+{
+  const seqItem = { key: "space", name: "Space Science", track: { mode: "seq", list: [] } };
+  const bd = n => { const o = {}; for (let i = 1; i <= n; i++) o[plus(i * 2)] = "Sitting " + i; return o; };
+  reset({ s1: sub(10, { display: "Book One" }) }); doneN("s1", 5); ctx.proj.s1 = projTo(plus(30));
+  let bar = T("planBarHTML")(K);
+  ok("1 red heads-up → '1 heads-up' chip, and no 'overdue' (no typed rows)", /1 heads-up/.test(bar) && !/overdue/.test(bar), bar);
+  ctx.famBlocks = { sci: { name: "Science", kids: [K, "kidy"], items: [seqItem] } }; ctx.famMaps = { space: { byDate: bd(3), ends: plus(6), left: 3, total: 40 } }; ctx.currData.lastEdit = ++edit;
+  ok("a family row for a member kid counts too (2)", /2 heads-up/.test(T("planBarHTML")(K)), T("planBarHTML")(K));
+  ok("a kid outside the block does not count it", !/heads-up/.test(T("planBarHTML")("kidz")));
+  reset({ a: sub(10, { display: "Book A" }), b: sub(20, { display: "Book B" }) }, { L1: { units: [{ sk: "a" }, { sk: "b" }] } }); doneN("a", 8); ctx.proj.a = projTo(plus(4));
+  ok("a grey hand-off alone → no chip", !/heads-up/.test(T("planBarHTML")(K)));
+  reset({ big: sub(60, { display: "Long Book" }) }); doneN("big", 10);
+  ok("nothing → no chip", !/heads-up/.test(T("planBarHTML")(K)));
+  reset({ s1: sub(10, { display: "Book One" }) }); doneN("s1", 5); ctx.proj.s1 = projTo(plus(30)); ctx.roadmapData = { [K]: { roadmap: { r1: { due: "2026-10-20", text: "Order Cursive", kind: "add", done: null } } } };
+  bar = T("planBarHTML")(K);
+  ok("an overdue note and a heads-up show as two separate counts", /1 overdue/.test(bar) && /1 heads-up/.test(bar) && bar.indexOf("1 overdue") < bar.indexOf("1 heads-up"), bar);
 }
 
 console.log("\n# writes");
