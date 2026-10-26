@@ -43181,6 +43181,7 @@ function renderUnitDetail(u){
       h+='</div>';
     }
     h+=_unitPicsBtnHtml(u);   // UNIT_PICS: 🖼 Find pictures (Wikipedia, in this browser)
+    if(typeof laIrrHtml==="function") h+=laIrrHtml(u,esc);   // LAIRR: ＋ Add Irregulars (Language Arts unit only; units step 9, 2026-10-26)
     h+='</div>';
   }
   const enrolledKids=roster.filter(k=>(u.enrolled||{})[k]);
@@ -70922,6 +70923,79 @@ function buildSprintUnitHtml(color){
 // the shared 60s tap-along timer + score log.
 const LA_UNIT_ID="language_arts";
 function laUnitFor(kid){ const u=(unitStudies||{})[LA_UNIT_ID]; return (u&&(u.enrolled||{})[kid])?u:null; }
+// LAIRR_START — ＋ Add Irregulars to the Language Arts unit (units switch-over step 9, her §9 of MAP_units_switchover_2026-10-24;
+// PLAN_la_irregulars_2026-10-26.md; her go-ahead 2026-10-26). The Language Arts unit is a DATABASE record, not a code starter:
+// its Plural Nouns deck holds 6 cards and Verb Tenses 5, while Ellis's saved list already carries 15 irregular-plural and 25
+// irregular-past question cards in those decks (names + answers; read-only snapshot 2026-10-26). This Mom button appends those
+// 40 to the unit record so they are unit cards for every kid on the unit — names spelled EXACTLY as the saved entries (so
+// his cards match by deck + prompt), family:"Irregulars", order after the existing. NO `stages` field: that would flip LA to
+// a staged unit and lock plain enroll (_unitStagedEnrollPending). Create-only per card index: the plan lists every write; Yes
+// rebuilds it and refuses if a deck changed; one root-level update; never in ?dryrun=1; momHere() only. Nothing is written to
+// any kid — Ellis's 40 are already his cards / bank entries under these names; Lincoln's 40 come in step 16 (by check-up).
+// Generic English content, no kid name: another family's language_arts record would get the same button (create-only).
+const LAIRR_CARDS={
+  "Plural Nouns":[["man","men"],["woman","women"],["child","children"],["tooth","teeth"],["foot","feet"],["mouse","mice"],["goose","geese"],["person","people"],["ox","oxen"],["leaf","leaves"],["knife","knives"],["wolf","wolves"],["half","halves"],["sheep","sheep"],["deer","deer"]].map(p=>({name:"What is the plural of <u>"+p[0]+"</u>?",def:p[1]})),
+  "Verb Tenses":[["go","went"],["eat","ate"],["take","took"],["write","wrote"],["become","became"],["see","saw"],["run","ran"],["come","came"],["give","gave"],["sing","sang"],["swim","swam"],["drink","drank"],["bring","brought"],["think","thought"],["buy","bought"],["catch","caught"],["teach","taught"],["fly","flew"],["know","knew"],["grow","grew"],["throw","threw"],["break","broke"],["speak","spoke"],["ride","rode"],["sleep","slept"]].map(p=>({name:"What is the past tense of <u>"+p[0]+"</u>?",def:p[1]}))
+};
+function laIrrPlan(unitId,ts){   // pure: reads memory, returns every write in plain words too
+  const P={unitId:unitId||LA_UNIT_ID,ok:false,why:"",writes:[],ts:ts||Date.now(),sum:{decks:{},already:0}};
+  const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[P.unitId];
+  if(!u||!Array.isArray(u.decks)){ P.why="The Language Arts unit isn’t in the database."; return P; }
+  if(u.stages){ P.why="This unit has stages — the Irregulars are for the plain Language Arts unit."; return P; }
+  Object.keys(LAIRR_CARDS).forEach(key=>{
+    if(P.why) return;
+    const di=u.decks.findIndex(d=>d&&d.key===key); if(di<0){ P.why="The unit has no "+key+" deck."; return; }
+    const raw=u.decks[di].cards||[], arr=Array.isArray(raw)?raw:Object.keys(raw).filter(k=>/^\d+$/.test(k)).map(k=>raw[k]);
+    const idxs=Array.isArray(raw)?raw.map((c,i)=>i):Object.keys(raw).filter(k=>/^\d+$/.test(k)).map(Number);
+    let next=idxs.length?Math.max(...idxs)+1:0, order=arr.reduce((m,c)=>Math.max(m,(c&&c.order)||0),0), n=0;
+    const have=new Set(arr.filter(Boolean).map(c=>c.name));
+    LAIRR_CARDS[key].forEach(c=>{ if(have.has(c.name)){ P.sum.already++; return; } order++;
+      P.writes.push({path:"unitStudies/"+P.unitId+"/decks/"+di+"/cards/"+(next++),value:{name:c.name,def:c.def,family:"Irregulars",order:order},what:"adds “"+_laStrip(c.name)+"” → "+c.def+" to "+key}); n++; });
+    P.sum.decks[key]={di:di,before:arr.filter(Boolean).length,adding:n};
+  });
+  if(P.why){ P.writes=[]; return P; }   // a refusal carries no writes at all
+  if(!P.writes.length){ P.why="Every Irregular is already in the unit."; return P; }
+  P.ok=true; return P;
+}
+let laIrrView=null;   // {plan, msg} while the panel is open
+function laIrrOpen(){ if(!(typeof momHere==="function"&&momHere())) return; laIrrView={plan:laIrrPlan(LA_UNIT_ID),msg:""}; const el=document.getElementById("content"); if(el) renderUnits(el); }
+function laIrrClose(){ laIrrView=null; const el=document.getElementById("content"); if(el) renderUnits(el); }
+function laIrrApply(plan){
+  if(!(typeof momHere==="function"&&momHere())||!plan||!plan.ok) return false;
+  const again=laIrrPlan(plan.unitId,plan.ts);
+  if(JSON.stringify(again.writes)!==JSON.stringify(plan.writes)){ laIrrView={plan:again,msg:"The unit changed since the plan was made — here’s the new plan. Nothing was written."}; const el=document.getElementById("content"); if(el) renderUnits(el); return false; }
+  if(typeof db==="undefined"||!db||(typeof _dryRun==="function"&&_dryRun())){ if(laIrrView) laIrrView.msg="Dry run — nothing was written."; const el=document.getElementById("content"); if(el) renderUnits(el); return false; }
+  const up={}; plan.writes.forEach(w=>{ up[w.path]=w.value; });
+  db.ref().update(up).then(()=>{ plan.writes.forEach(w=>_wrSetLocal(w.path,w.value)); laIrrView=null; const el=document.getElementById("content"); if(el) renderUnits(el); })
+    .catch(()=>{ if(laIrrView) laIrrView.msg="That didn’t save — nothing changed. Try again when you’re online."; const el=document.getElementById("content"); if(el) renderUnits(el); });
+  return true;
+}
+function laIrrHtml(u,esc){   // the Mom panel row on the Language Arts unit only
+  if(!u||u.id!==LA_UNIT_ID||!(typeof momHere==="function"&&momHere())) return "";
+  esc=esc||(v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"));
+  const btn=(bg,fg,bd)=>'padding:7px 14px;border-radius:10px;border:1.5px solid '+bd+';background:'+bg+';color:'+fg+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  const V=laIrrView, P=V?V.plan:laIrrPlan(u.id);
+  let h='<div style="margin-top:12px;padding-top:11px;border-top:1px solid var(--border)">';
+  if(!V){
+    h+='<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap"><span style="flex:1;min-width:150px;font-size:12px;font-weight:700;color:#1f2937">\u{1F465} Irregulars<div style="font-size:10.5px;font-weight:600;color:var(--muted)">Irregular plurals and past tenses as unit cards — the saved question cards, so the kids’ cards match by name.</div></span>';
+    if(P.ok) h+='<button onclick="laIrrOpen()" style="'+btn("#fff","#1f2937","var(--border)")+'">\uFF0B Add Irregulars ('+P.writes.length+')</button>';
+    else h+='<span style="font-size:11px;font-weight:700;color:'+(/already in the unit/.test(P.why)?'#15803d':'#b45309')+'">'+(/already in the unit/.test(P.why)?'\u2713 Irregulars are in':esc(P.why))+'</span>';
+    return h+'</div></div>';
+  }
+  h+='<div style="font-size:12.5px;font-weight:800;color:#1f2937;margin-bottom:6px">Add the Irregulars to '+esc(u.title||u.id)+'</div>';
+  if(V.msg) h+='<div style="font-size:11.5px;font-weight:700;color:#b45309;margin-bottom:6px">'+esc(V.msg)+'</div>';
+  if(!P.ok) return h+'<div style="font-size:11.5px;color:#374151;line-height:1.5">'+esc(P.why)+'</div><div style="margin-top:8px"><button onclick="laIrrClose()" style="'+btn("#fff","var(--muted)","var(--border)")+'">Close</button></div></div>';
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Here’s everything it does. Nothing is written until you tap Yes.</div><ul style="font-size:11.5px;color:#374151;line-height:1.45;padding-left:18px;margin:0">';
+  Object.keys(P.sum.decks).forEach(k=>{ const d=P.sum.decks[k]; h+='<li style="margin:3px 0"><b>'+esc(k)+'</b>: '+d.before+' card'+(d.before===1?'':'s')+' today → adds <b>'+d.adding+'</b> after them, family “Irregulars”.</li>'; });
+  if(P.sum.already) h+='<li style="margin:3px 0">'+P.sum.already+' already in the unit — skipped.</li>';
+  h+='<li style="margin:3px 0">Nothing is written to any kid: a kid whose list already has these names keeps the same cards — they become unit cards by name.</li>';
+  h+='<li style="margin:3px 0">Not touched: the unit’s other decks, its enrolment, its stages (none — plain enroll stays open), nbInsert, every kid’s cards.</li></ul>';
+  h+='<details style="margin-top:6px"><summary style="font-size:11px;font-weight:700;color:var(--muted);cursor:pointer">'+P.writes.length+' saved changes</summary><div style="font-size:10.5px;color:#374151;line-height:1.45;margin-top:4px;max-height:220px;overflow:auto">'+P.writes.map(w=>esc(w.what)).join('<br>')+'</div></details>';
+  h+='<div style="display:flex;gap:6px;margin-top:9px"><button onclick="laIrrApply(laIrrView&&laIrrView.plan)" style="'+btn("#2d6a4f","#fff","#2d6a4f")+'">\u2713 Yes, add them</button><button onclick="laIrrClose()" style="'+btn("#fff","var(--muted)","var(--border)")+'">Cancel</button></div>';
+  if(typeof _dryRun==="function"&&_dryRun()) h+='<div style="font-size:10.5px;color:#b45309;margin-top:5px">Dry run — Yes writes nothing.</div>';
+  return h+'</div>';
+}
+// LAIRR_END
 function _laStrip(html){ return String(html||"").replace(/<[^>]*>/g,"").replace(/\s+/g," ").trim(); }
 const LA_MODES=[
   {v:"fix",l:"\u{270F}\u{FE0F} Fix It",desc:"Every sentence hides mistakes \u{2014} find each one and say the fix out loud."},
