@@ -14,6 +14,10 @@ const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 const nbsrc = fs.readFileSync(path.join(__dirname, "notebooks.js"), "utf8");
 const FXP = path.join(__dirname, "test_fixtures", "attach_julian_2026-10-26.json");
 const D = "Letters", UNIT = "letters_path", KID = "julian", OTHER = "caleb";
+global.window = global.window || {}; eval(nbsrc); const NB = window.HoweNotebooks;
+const NB_CTX = (items, FX) => ({ weekNum: "week29", weekDates: "Oct 26 – Oct 30", weekData: { dates: { monday: "Oct 26", tuesday: "Oct 27", wednesday: "Oct 28", thursday: "Oct 29", friday: "Oct 30" }, tasks: [] }, masteryItems: items, letterCursor: (FX.notebookSettings || {}).letterCursor, numberCursor: (FX.notebookSettings || {}).numberCursor });
+const nbBuild = (items, FX) => { const o = NB.generate("julian", NB_CTX(items, FX)); return { student: o.student, parent: o.parent, letterCursor: JSON.stringify(o.letterCursor), numberCursor: JSON.stringify(o.numberCursor), chips: [...o.student.replace(/<style[\s\S]*?<\/style>/g, "").matchAll(/recap-chip">⭐ ([^<]+)/g)].map(m => m[1]) }; };
+
 let pass = 0, fail = 0;
 const ok = (n, c, x) => { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  " + JSON.stringify(x).slice(0, 600) : "")); } };
 const block = src.slice(src.indexOf("// STARTER_UNITS_START"), src.indexOf("// STARTER_UNITS_END"));
@@ -87,7 +91,9 @@ ok("no write touches mastery/, notebookSettings/, curriculum/ or another kid", !
 
 console.log("\n── after Yes (replayed locally) ──");
 { const w = world(); const before = [w.G.masteryData.julian, w.G.masteryData.julian_custom_items, w.G.masteryData.julian_settings, w.G.notebookSettings].map(x => JSON.stringify(x));
+  const nbBefore = nbBuild(w.G.masteryData.julian, FX);
   w.uaAttachOpen(UNIT, KID); const r = w.uaApplyAttach(w.view.plan); await new Promise(res => setImmediate(res));
+  ok("next week's notebook (week 29), built before and after from his cards + cursors: student and parent pages byte-identical, letter cursor identical", (() => { const a = nbBuild(w.G.masteryData.julian, FX); return nbBefore.student === a.student && nbBefore.parent === a.parent && nbBefore.letterCursor === a.letterCursor && nbBefore.student.length > 1000; })());
   ok("Yes writes once: one root-level update with exactly the 2 paths", r === true && w.G.writes.length === 1 && w.G.writes[0][0] === "update" && Object.keys(w.G.writes[0][2]).sort().join() === ["unitStudies/" + UNIT + "/enrolled/" + KID, "unitStudies/" + UNIT + "/kidStage/" + KID].sort().join(), w.G.writes.map(x => x[0] + ":" + x[1]));
   ok("his 113 cards, 71 saved entries, settings and notebook cursors are byte-identical afterwards", [w.G.masteryData.julian, w.G.masteryData.julian_custom_items, w.G.masteryData.julian_settings, w.G.notebookSettings].map(x => JSON.stringify(x)).join("|") === before.join("|"));
   ok("he is in the unit with his Stage 1 marker", w.G.unitStudies[UNIT].enrolled.julian === true && w.G.unitStudies[UNIT].kidStage.julian.stage === 1);

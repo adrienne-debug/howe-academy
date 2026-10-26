@@ -42740,6 +42740,9 @@ function wrHookedHtml(u,kid,ks,esc){
 //     Step 4 (2026-10-26, PLAN_attach_julian_2026-10-26.md) = Julian, Letters Path stage 1: his 16 Letters cards (A–P) are
 //     the stage's capitals and his list already holds all 26 — ZERO card writes, ZERO bank writes; just enrolled + kidStage.
 //     The notebook's Letter of the Day reads the deck and notebookSettings/letterCursor, neither of which is touched.
+//     Step 5 (2026-10-26, same plan) = Julian, Shapes Path stage 2: 11 of his 15 Shapes cards are stage-2 shapes, the 4
+//     basics are stage-1 → kept as "earlier"; his 8 built-in + 18 saved = all 26 unit shapes → ZERO bank writes; the
+//     Shape of the Day reads the deck's array order, untouched.
 //   · uaPlanAttach(unitId,kid) is pure: it reads memory and returns every write, in plain words too. Unit cards match
 //     the kid's cards by kid + deck key + EXACT prompt (never by name alone — two units share "Real Science-4-Kids").
 //   · Writes only: enrolled/<kid>, kidStage/<kid>, and appended bank entries {cat,name} for stage words the kid's list
@@ -42750,11 +42753,13 @@ function wrHookedHtml(u,kid,ks,esc){
 //   · While a kid's hook-up waits, the stock "+ Kid" enroll on that unit is closed for THAT kid only (uaLocked); every
 //     other kid, and every other family, keeps the stock button.
 //   · A card in a stage deck that isn't a stage card stops the plan (strayOk:false) — none today for Lucy; a later row
-//     (Lincoln's 14 math extras, her §10) sets strayOk:true so they stay put.
+//     (Lincoln's 14 math extras, her §10) sets strayOk:true so they stay put. A card from an EARLIER stage of the same
+//     deck is not stray: it stays as it is and is counted separately (steps 4–6, 2026-10-26: Julian joins Shapes at stage 2
+//     with his four basic shapes live, and the Numbers/Counting decks at stage 2 with 1–10 and one–ten live).
 //   · Refuses a unit whose stage decks hold words in the bank with their backs on the bank (AAS: bankOnly/defsOnBank)
 //     — that unit gets its own step (order step 15).
 const UA_ATTACH={ math_fluency_path:{ lucy:{stage:6,fill:true}, ellis:{stage:7,fill:true}, lincoln:{stage:8,fill:true,strayOk:true} },
-  letters_path:{ julian:{stage:1,fill:true} } };
+  letters_path:{ julian:{stage:1,fill:true} }, shapes_path:{ julian:{stage:2,fill:true} } };
 function uaSpec(u,kid){ if(!u) return null; const t=UA_ATTACH[u.id]||UA_ATTACH[u.starter]; return (t&&t[kid])||null; }
 function uaHooked(u,kid){ return !!(u&&((u.enrolled||{})[kid]||(u.kidStage||{})[kid])); }
 function uaLocked(u,kid){ return !!(uaSpec(u,kid)&&!uaHooked(u,kid)); }
@@ -42773,8 +42778,9 @@ function uaPlanAttach(unitId,kid,ts){
   const pk=(d,n)=>d+"\u0001"+n;
   const live={}; items.forEach(i=>{ if(i&&dks.indexOf(i.subject)>=0) live[pk(i.subject,i.prompt)]=i; });
   const unitKey=new Set(cards.map(c=>pk(c._dk,c.name)));
-  const S=P.sum={stage:spec.stage,label:(_ustStageDef(u,spec.stage)||{}).label||"",decks:dks,total:cards.length,liveKept:0,learning:0,onLadder:0,backDiffers:[],stray:[],added:[],addedByDeck:{},next10Before:[],next10After:[]};
-  Object.keys(live).forEach(k=>{ const i=live[k]; if(!unitKey.has(k)){ S.stray.push(i.subject+" · "+i.prompt); return; }
+  const earlierKey=new Set(); dks.forEach(k=>{ ((deckOf[k]||{}).cards||[]).forEach(c=>{ if(c&&c.stage<spec.stage) earlierKey.add(pk(k,c.name)); }); });   // earlier stages of the same decks: kept, not stray
+  const S=P.sum={stage:spec.stage,label:(_ustStageDef(u,spec.stage)||{}).label||"",decks:dks,total:cards.length,liveKept:0,learning:0,onLadder:0,earlier:0,backDiffers:[],stray:[],added:[],addedByDeck:{},next10Before:[],next10After:[]};
+  Object.keys(live).forEach(k=>{ const i=live[k]; if(!unitKey.has(k)){ if(earlierKey.has(k)){ S.earlier++; return; } S.stray.push(i.subject+" · "+i.prompt); return; }
     S.liveKept++; if(i.status==="introduction") S.learning++; else if(i.status!=="parked") S.onLadder++; });
   cards.forEach(c=>{ const i=live[pk(c._dk,c.name)]; if(i&&c.def!=null&&i.answer!=null&&String(i.answer)!==String(c.def)) S.backDiffers.push(c.name+": “"+i.answer+"” on the card · “"+c.def+"” on the path"); });
   if(S.stray.length&&!spec.strayOk){ P.why=name+" has "+S.stray.length+" card"+(S.stray.length>1?"s":"")+" in "+dks.join(", ")+" that "+(S.stray.length>1?"aren’t":"isn’t")+" a stage-"+spec.stage+" card: "+S.stray.slice(0,6).join(", ")+(S.stray.length>6?" …":"")+". Nothing was changed."; return P; }
@@ -42824,6 +42830,7 @@ function uaAttachHtml(u,kid,esc,btn){
   h+=li(S.added.length?'Adds <b>'+S.added.length+'</b> stage words to the list, after what’s already there. They start only as room opens, in the path’s order.':'Adds nothing to the list — every stage word is already there.');
   h+=li(JSON.stringify(S.next10Before)===JSON.stringify(S.next10After)?'The next new cards don’t change: '+list(S.next10After)+'.':'Next new cards: '+list(S.next10After)+' (today: '+list(S.next10Before)+').');
   if(S.backDiffers.length) h+=li('<b>'+S.backDiffers.length+' answer'+(S.backDiffers.length>1?'s':'')+' differ'+(S.backDiffers.length>1?'':'s')+'</b> from the path’s and stay as they are: '+list(S.backDiffers.slice(0,5))+(S.backDiffers.length>5?' …':'')+'.');
+  if(S.earlier) h+=li(S.earlier+' card'+(S.earlier===1?'':'s')+' from earlier stages stay exactly as they are too.');
   if(S.stray.length) h+=li('Not part of this stage, left as they are: '+list(S.stray)+'.');
   h+=li('Not touched: the cards, the deck’s card style, how many start at a time, the answers, the notebook, every other kid.');
   h+='</ul><details style="margin-top:6px"><summary style="font-size:11px;font-weight:700;color:var(--muted);cursor:pointer">'+P.writes.length+' saved changes</summary><div style="font-size:10.5px;color:#374151;line-height:1.45;margin-top:4px;max-height:220px;overflow:auto">'+P.writes.map(w=>esc(w.what)).join('<br>')+'</div></details>';
