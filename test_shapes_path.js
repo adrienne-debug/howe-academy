@@ -61,10 +61,11 @@ ok("all 4 known → ready, next = More flat shapes", st.ready && st.next && st.n
 w.unitStageMoveUp("shapes_path", "caleb");
 ok("➡ Stage 2: Hexagon + Oval start learning", w.G.masteryData.caleb.filter(i => i.status === "introduction").map(i => i.prompt).join(",") === "Hexagon,Oval");
 
-// ── a kid who already has Shapes cards (Julian-style) gets no duplicates ──
-const jw = world({ julian: ["Circle", "Square", "Triangle", "Rectangle", "Hexagon", "Oval"].map((n, i) => ({ id: "j" + i, subject: "Shapes", prompt: n, status: "active", tier: "weekly" })) });
-jw.unitStageFormOpen("shapes_path", "julian"); jw.unitStageFormSet("stage", "2"); jw.unitStageFormSet("knows", "Hexagon & oval"); jw.unitStageEnroll();
-const jit = jw.G.masteryData.julian;
+// ── a kid who already has Shapes cards (Julian-style) gets no duplicates — sample kid Caleb: Julian himself attaches
+// through 🔗 Hook up (units step 5, 2026-10-26), so the stock enroll is closed for him on this unit ──
+const jw = world({ caleb: ["Circle", "Square", "Triangle", "Rectangle", "Hexagon", "Oval"].map((n, i) => ({ id: "j" + i, subject: "Shapes", prompt: n, status: "active", tier: "weekly" })) });
+jw.unitStageFormOpen("shapes_path", "caleb"); jw.unitStageFormSet("stage", "2"); jw.unitStageFormSet("knows", "Hexagon & oval"); jw.unitStageEnroll();
+const jit = jw.G.masteryData.caleb;
 ok("existing Hexagon/Oval kept, not duplicated; Diamond + Star start", jit.filter(i => i.prompt === "Hexagon").length === 1 && jit.filter(i => i.status === "introduction").map(i => i.prompt).join(",") === "Diamond,Star");
 
 // ── the notebook stays inside his stage ──

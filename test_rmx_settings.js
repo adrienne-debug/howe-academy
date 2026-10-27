@@ -37,7 +37,7 @@ ok("no kid names / Howe subject keys in the RMXS code (comments excepted)", !/li
 ok("every db call in RMXS is a set or remove on config/rules/headsUp/ + a path (never the node itself)", (sblock.match(/db\.ref\(/g) || []).length === 2 && /db\.ref\("config\/rules\/headsUp\/"\+seg\.concat\(fp\)\.join\("\/"\)\)\.set\(v\)/.test(sblock) && /db\.ref\("config\/rules\/headsUp\/"\+seg\.concat\(fp\|\|\[\]\)\.join\("\/"\)\)\.remove\(\)/.test(sblock));
 ok("both writes sit behind _rmxWrite() = db && !_dryRun()", /function _rmxWrite\(\)\{ return typeof db!=="undefined"&&db&&!\(typeof _dryRun==="function"&&_dryRun\(\)\); \}/.test(sblock) && (sblock.match(/if\(_rmxWrite\(\)\) db\.ref/g) || []).length === 2);
 ok("never cbRemainingContent / ceQuickPause / a whole-node set in RMXS", !/cbRemainingContent\(|ceQuickPause|\.set\(rulesData|\.set\(h\)|\.update\(/.test(sblock));
-ok("autoDone is NOT in the panel yet (step 6)", !/_rmxCtl\([^)]*"autoDone"|cF\("autoDone"\)/.test(sblock));
+ok("autoDone is in the panel since step 6 (family + per kid)", /cF\("autoDone"\)/.test(sblock) && /_rmxCtl\(scope,"autoDone",C,raw\)/.test(sblock));
 
 // ── context: the derive test's miniature helpers + Mom / dry-run switches + a write recorder that snapshots local state ──
 const writes = [], opened = []; let projCalls = [];
@@ -168,11 +168,12 @@ console.log("\n# ⚙ and the panel on the Mom's Day card");
   h = T("rmWeekHTML")(TODAY);
   ok("⚙ tapped → the panel draws under the header: Family defaults · Per kid · Per subject", /Family defaults/.test(h) && /Per kid/.test(h) && /Per subject/.test(h) && h.indexOf("Family defaults") > h.indexOf("all clear"));
   ok("family rows: on, warnWeeks, warnLeft, redDays, redLeft, endWeeks, endOnDay, 4 kinds, family, noteDays — each wired to rmxRuleSet('',…)", ["on", "warnWeeks", "warnLeft", "redDays", "redLeft", "endWeeks", "endOnDay", "kinds.runout", "kinds.empty", "kinds.handoff", "kinds.nolist", "family", "noteDays"].every(f => h.indexOf("rmxRuleSet('','" + f + "'") >= 0), h.match(/rmxRuleSet\('',[^)]*\)/g));
-  ok("autoDone has no control (step 6)", !/'autoDone'/.test(h));
+  ok("autoDone has a family control and a per-kid one (step 6)", h.indexOf("rmxRuleSet('','autoDone'") >= 0 && h.indexOf("rmxRuleSet('kid/kidx','autoDone'") >= 0);
   ok("defaults shown: warnWeeks 3, redLeft 5, redDays 7, endWeeks 2, noteDays 0; master toggle on", numVal(h, "", "warnWeeks") === 3 && numVal(h, "", "redLeft") === 5 && numVal(h, "", "redDays") === 7 && numVal(h, "", "endWeeks") === 2 && numVal(h, "", "noteDays") === 0 && /rules-toggle on" onclick="rmxRuleSet\('','on',false\)/.test(h), [numVal(h, "", "warnWeeks"), numVal(h, "", "redLeft")]);
   ok("no ↺ while nothing is set (every value is the app's default)", !/rmxRuleClear\(/.test(h));
   ok("per kid: one <details> per ROSTER kid, 'same as family', wired to kid/<kid>", (h.match(/<details/g) || []).length === 2 && /Kidx <span[^>]*>· same as family/.test(h) && h.indexOf("rmxRuleSet('kid/kidx','warnWeeks'") >= 0 && h.indexOf("rmxRuleSet('kid/kidy','kinds.empty'") >= 0);
   ok("per kid rows have no on/off for endOnDay, family, noteDays (family-level only)", !/rmxRuleSet\('kid\/kidx','(endOnDay|family|noteDays)'/.test(h));
+  ok("family rows: on, warnWeeks, warnLeft, redDays, redLeft, endWeeks, endOnDay, 4 kinds, family, noteDays, autoDone", h.indexOf("rmxRuleSet('','autoDone'") >= 0);
   ok("per subject: 'None yet' with the ⋯ hint", /None yet/.test(h) && /⋯ on a row in Mom HQ/.test(h));
   // set some values → the panel reflects them with ↺
   T("rmxRuleSet")("", "warnWeeks", 4); T("rmxRuleSet")("kid/kidx", "redLeft", 2); T("rmxRuleSet")("subj/kidx/s1", "off", true); T("rmxRuleSet")("subj/_family/space", "warnWeeks", 6);

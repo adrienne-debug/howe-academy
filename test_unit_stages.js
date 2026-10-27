@@ -60,9 +60,9 @@ const tally = (arr, f) => arr.reduce((m, x) => (m[f(x)] = (m[f(x)] || 0) + 1, m)
   ok("row: Taylor shows Stage 7 + ready + ➡ Start Stage 8", /Stage 7/.test(h) && /ready to move up/.test(h) && /Start Stage 8: Fractions, decimals &amp; beyond/.test(h));
   w.unitStageMoveUp("math_fluency_path", "taylor");
   ok("Taylor → Stage 8: ½ ¼ ¾ as decimal start", JSON.stringify(items(w, "taylor").filter(i => i.status === "introduction").map(i => i.prompt + "=" + i.answer)) === JSON.stringify(["½ as decimal=0.5", "¼ as decimal=0.25", "¾ as decimal=0.75"])); }
-{ const w = world({ mastery: { lincoln: [{ id: "lin_1", subject: "Math Facts", prompt: "⅓ as decimal", status: "introduction", tier: "daily" }, { id: "lin_2", subject: "Math Facts", prompt: "⅔ as decimal", status: "introduction", tier: "daily" }] } });
-  enroll(w, "lincoln", 8, "");
-  ok("Lincoln (2 live cards) at Stage 8: keeps ⅓ ⅔, adds just 1 more to fill 3", JSON.stringify(items(w, "lincoln").map(i => i.prompt)) === JSON.stringify(["⅓ as decimal", "⅔ as decimal", "½ as decimal"])); }
+{ const w = world({ mastery: { caleb: [{ id: "jul_1", subject: "Math Facts", prompt: "⅓ as decimal", status: "introduction", tier: "daily" }, { id: "jul_2", subject: "Math Facts", prompt: "⅔ as decimal", status: "introduction", tier: "daily" }] } });
+  enroll(w, "caleb", 8, "");   // a kid WITHOUT a UA_ATTACH row (units step 3, 2026-10-26, hooks Lincoln up by attach, so the stock enroll is closed for him on this unit)
+  ok("a kid with 2 live cards at Stage 8: keeps ⅓ ⅔, adds just 1 more to fill 3", JSON.stringify(items(w, "caleb").map(i => i.prompt)) === JSON.stringify(["⅓ as decimal", "⅔ as decimal", "½ as decimal"])); }
 
 // ── Kenzie ──
 { const w = world(); enroll(w, "makenzie", 7, "× ÷ · 5s");
@@ -138,18 +138,18 @@ function julianMastery() {
   const W = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]; const its = [];
   for (let n = 1; n <= 16; n++) its.push({ id: "jul_" + n, subject: "Numbers", prompt: String(n), status: n <= 13 ? "active" : "introduction", tier: n <= 13 ? "monthly" : "daily" });
   W.forEach((w, i) => its.push({ id: "jul_" + w, subject: "Counting", prompt: w, status: i < 9 ? "active" : "introduction", tier: i < 9 ? "bi_weekly" : "daily" }));
-  return { julian: its, julian_settings: {} };
+  return { caleb: its, caleb_settings: {} };
 }
-{ const w = world({ mastery: julianMastery() }); enroll(w, "julian", 1, "1–5");
-  ok("Julian (live-shaped) at Stage 1: nothing new — his 26 cards stay 26", items(w, "julian").length === 26);
-  const st = w.unitStageStatus(w.u, "julian");
+{ const w = world({ mastery: julianMastery() }); enroll(w, "caleb", 1, "1–5");
+  ok("a Julian-shaped kid (Caleb — Julian attaches through 🔗 Hook up, step 6 2026-10-26) at Stage 1: nothing new — his 26 cards stay 26", items(w, "caleb").length === 26);
+  const st = w.unitStageStatus(w.u, "caleb");
   ok("Julian Stage 1: 19 of 20 on the ladder, learning 6–10 (counting ten)", st.on === 19 && st.learn === 1 && st.fam === "6–10" && !st.ready);
-  items(w, "julian").find(i => i.prompt === "ten").status = "active";
-  ok("…ten learned → ready, next = Stage 2", w.unitStageStatus(w.u, "julian").ready && w.unitStageStatus(w.u, "julian").next.n === 2);
-  w.unitStageMoveUp("math_fluency_path", "julian");
-  const intro = items(w, "julian").filter(i => i.status === "introduction").map(i => i.subject + ":" + i.prompt);
+  items(w, "caleb").find(i => i.prompt === "ten").status = "active";
+  ok("…ten learned → ready, next = Stage 2", w.unitStageStatus(w.u, "caleb").ready && w.unitStageStatus(w.u, "caleb").next.n === 2);
+  w.unitStageMoveUp("math_fluency_path", "caleb");
+  const intro = items(w, "caleb").filter(i => i.status === "introduction").map(i => i.subject + ":" + i.prompt);
   ok("move up: his 14–16 keep learning (no extra numerals), eleven–thirteen start counting", JSON.stringify(intro) === JSON.stringify(["Numbers:14", "Numbers:15", "Numbers:16", "Counting:eleven", "Counting:twelve", "Counting:thirteen"]));
-  ok("move up: no duplicate Numbers cards", items(w, "julian").filter(i => i.subject === "Numbers").length === 16); }
+  ok("move up: no duplicate Numbers cards", items(w, "caleb").filter(i => i.subject === "Numbers").length === 16); }
 { const w = world(); enroll(w, "caleb", 3, "");
   const it = items(w, "caleb");
   ok("Stage 3: Number Sense flip cards with backs", JSON.stringify(it.map(i => i.prompt + "=" + i.answer)) === JSON.stringify(["1 more than 1=2", "1 more than 2=3", "1 more than 3=4"]) && w.G.masteryData.caleb_settings.cat_modes["Number Sense"] === "flip");

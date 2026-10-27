@@ -22891,7 +22891,17 @@ function kitPhotoPick(input){
 }
 // ── ✨ capture doors (phase 2, 2026-10-02): paste text or photos → Claude drafts the fields → Mom reviews → Save.
 //    Nothing is saved by the capture itself. Key = the family key (config/anthropic_key) or a device key.
-let kitCap={mode:null,busy:false,msg:"",photos:[]};
+// KITLINKHOLD_START — 🔗 A link: the pasted address survives a repaint, and the read gives up at 90 s (her report 2026-10-27:
+//   "the fill in from on meals i did a link and its taking forever or isnt working period"). Mom's plan repaints itself on
+//   every kitchen/chore/laundry change from any device; the address lived only in the box, so a repaint emptied it before
+//   "Read the recipe" was tapped. The read had no time limit: a slow page, or an iPhone that locked mid-read, left
+//   "⏳ Reading the page…" stuck until a reload. Now: kitCap.url holds the address (oninput), the box is drawn from it,
+//   and the link read runs under an AbortController — past KIT_CAP_LINK_MS it ends with a plain message and the button
+//   comes back. 📋 Pasted text and 📸 Photos are untouched. No database writes.
+const KIT_CAP_LINK_MS=90000;
+const KIT_CAP_SLOW_MSG="That took more than 90 seconds — the page may be slow or blocking readers. Try again, or copy the recipe off the page and use 📋 Pasted text.";
+// KITLINKHOLD_END
+let kitCap={mode:null,busy:false,msg:"",photos:[],url:""};   // KITLINKHOLD: url = the pasted address, kept across repaints
 function kitCapKey(){ return (typeof mastAIKey!=="undefined"&&mastAIKey)||(typeof haGetKey==="function"?haGetKey():"")||""; }
 function kitCapToggle(mode){ _kitStash(); kitCap.mode=(kitCap.mode===mode)?null:mode; kitCap.msg=""; const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
 function kitCaptureHTML(){
@@ -22905,7 +22915,7 @@ function kitCaptureHTML(){
   if(!key) h+='<div style="font-size:11px;color:#92400e;margin-top:6px">Needs a Claude key — Admin ▸ Settings ▸ ✨ AI key. Typing a recipe in by hand always works.</div>';
   if(kitCap.mode==='paste') h+='<textarea id="kit-cap-text" rows="6" placeholder="Paste the whole recipe — title, ingredients, directions, anything. Claude sorts it into the boxes below for you to check." style="width:100%;box-sizing:border-box;margin-top:8px;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:12.5px;font-family:\'DM Sans\',sans-serif"></textarea>'
     +'<button onclick="kitCapRunText()" '+(kitCap.busy?'disabled':'')+' style="margin-top:6px;padding:8px 14px;border-radius:9px;border:none;background:#16a34a;color:#fff;font-size:12px;font-weight:800;cursor:pointer">'+(kitCap.busy?'⏳ Reading…':'Turn it into a recipe')+'</button>';
-  if(kitCap.mode==='link') h+='<input id="kit-cap-url" type="url" placeholder="https://… the recipe page" style="width:100%;box-sizing:border-box;margin-top:8px;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:12.5px;font-family:\'DM Sans\',sans-serif">'
+  if(kitCap.mode==='link') h+='<input id="kit-cap-url" type="url" value="'+esc(kitCap.url||"")+'" oninput="kitCap.url=this.value" placeholder="https://… the recipe page" style="width:100%;box-sizing:border-box;margin-top:8px;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:12.5px;font-family:\'DM Sans\',sans-serif">'
     +'<button onclick="kitCapRunLink()" '+(kitCap.busy?'disabled':'')+' style="margin-top:6px;padding:8px 14px;border-radius:9px;border:none;background:#16a34a;color:#fff;font-size:12px;font-weight:800;cursor:pointer">'+(kitCap.busy?'⏳ Reading the page…':'Read the recipe')+'</button>'
     +'<div style="font-size:10.5px;color:var(--muted);margin-top:4px">Some sites block readers. If one does, copy the recipe off the page and use 📋 Pasted text.</div>';
   if(kitCap.mode==='photos'&&kitCap.photos.length) h+=kitCapTrayHTML();
@@ -22918,11 +22928,14 @@ const KIT_CAP_PROMPT='Turn this into one recipe record. Use ONLY what is in the 
 async function kitCapAsk(content,tools,opt){
   const key=kitCapKey(); if(!key) throw new Error("No Claude key — Admin ▸ Settings ▸ ✨ AI key.");
   const msgs=[{role:"user",content:content}]; let data=null;
+  const ctl=(opt&&opt.timeoutMs>0&&typeof AbortController==="function")?new AbortController():null;   // KITLINKHOLD: only a caller that asks gets a clock
+  const tm=ctl?setTimeout(()=>ctl.abort(),opt.timeoutMs):null;
+  try{
   for(let turn=0;turn<3;turn++){   // a server tool (web fetch) can pause a long turn — continue it, at most twice
     const body={model:"claude-sonnet-5",max_tokens:(opt&&opt.maxTokens)||3000,messages:msgs}; if(tools) body.tools=tools;
     const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
       headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify(body)});
+      body:JSON.stringify(body),signal:ctl?ctl.signal:undefined});   // KITLINKHOLD
     if(!resp.ok){ const t=await resp.text(); throw new Error("Claude "+resp.status+" — "+t.slice(0,120)); }
     data=await resp.json();
     const fe=(data.content||[]).find(b=>b&&b.type==="web_fetch_tool_result"&&b.content&&b.content.error_code);
@@ -22930,19 +22943,21 @@ async function kitCapAsk(content,tools,opt){
     if(data.stop_reason==="pause_turn"){ msgs.push({role:"assistant",content:data.content}); continue; }
     break;
   }
+  }catch(e){ if(ctl&&ctl.signal.aborted) throw new Error(KIT_CAP_SLOW_MSG); throw e; }   // KITLINKHOLD: the clock ran out → a plain message, not a frozen button
+  finally{ if(tm) clearTimeout(tm); }
   if(data&&data.stop_reason==="refusal") throw new Error("Claude declined that one — try 📋 Pasted text.");
   const txt=((data&&data.content)||[]).filter(x=>x&&x.type==="text").map(x=>x.text||"").join("");
   if(opt&&opt.raw&&opt.withStop) return {text:txt,stop:(data&&data.stop_reason)||null};   // GR_RCPTLONG: the caller can tell a cut-off answer
   return (opt&&opt.raw)?txt:kitCapParse(txt);
 }
 async function kitCapRunLink(){
-  const u=((document.getElementById('kit-cap-url')||{}).value||"").trim();
+  const box=document.getElementById('kit-cap-url'); const u=String((box?box.value:kitCap.url)||"").trim(); kitCap.url=u;   // KITLINKHOLD: the box, or the address held across a repaint
   if(!/^https?:\/\/\S+\.\S+/i.test(u)){ kitCap.msg="Paste the whole address, starting with https://"; const el=document.getElementById('content'); if(el) renderMomsPlan(el); return; }
   _kitStash(); kitCap.busy=true; kitCap.msg=""; const el0=document.getElementById('content'); if(el0) renderMomsPlan(el0);
   try{
     const r=await kitCapAsk([{type:"text",text:"Use web_fetch to read the recipe on this page: "+u+"\n\n"+KIT_CAP_PROMPT}],
-      [{type:"web_fetch_20260209",name:"web_fetch",max_uses:2,max_content_tokens:20000}]);
-    kitCapApply(r); kitEditDraft.url=u; kitCap.mode=null;
+      [{type:"web_fetch_20260209",name:"web_fetch",max_uses:2,max_content_tokens:20000}],{timeoutMs:KIT_CAP_LINK_MS});   // KITLINKHOLD: 90 s, then a message
+    kitCapApply(r); kitEditDraft.url=u; kitCap.mode=null; kitCap.url="";
   }catch(e){ kitCap.msg=String(e&&e.message||e); }
   kitCap.busy=false; const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
@@ -26404,10 +26419,13 @@ const RM_COL={over:"#b5394a",week:"#d97706",later:"#475569",done:"#94a3b8"};
 function rmRowHTML(kid,r,iso,compact){
   const st=rmState(r,iso), c=RM_COL[st];
   let h='<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:12.5px;'+(st==="done"?'opacity:.55':'')+'">';
-  h+='<button onclick="rmDone(\''+kid+'\',\''+esc(r.id)+'\')" title="'+(r.done?"Reopen":"Done")+'" style="flex:none;width:22px;height:22px;border-radius:6px;border:1.5px solid '+c+';background:'+(r.done?c:'#fff')+';color:#fff;font-size:12px;cursor:pointer;line-height:1">'+(r.done?'✓':'')+'</button>';
+  h+='<button onclick="rmDone(\''+kid+'\',\''+esc(r.id)+'\')" title="'+(r.auto!==undefined?"Not yet — keep it open":(r.done?"Reopen":"Done"))+'" style="flex:none;width:22px;height:22px;border-radius:6px;border:1.5px solid '+c+';background:'+(r.done?c:'#fff')+';color:#fff;font-size:12px;cursor:pointer;line-height:1">'+(r.done?'✓':'')+'</button>';
   h+='<span style="flex:none;min-width:52px;font-weight:800;color:'+c+'">'+(st==="over"?'⚠ ':'')+esc(rmDateTxt(r.due))+'</span>';
   h+='<span style="flex:1;min-width:0;'+(r.done?'text-decoration:line-through':'')+'">'+(RM_KINDS[r.kind]||'\u{1F4CC}')+' '+esc(r.text);
-  if(r.subject) h+=' <span style="font-size:10.5px;font-weight:700;color:#0f766e;border:1px solid #0f766e55;border-radius:99px;padding:0 6px;white-space:nowrap">'+esc(rmSubjName(kid,r.subject))+'</span>';
+  if(r.auto!==undefined) h+=' <span style="font-size:10.5px;font-weight:700;color:#16a34a;white-space:nowrap">✓ auto'+(r.auto?' · '+esc(r.auto):'')+'</span>';   // RMX step 6b
+  else if(r.keepOpen&&!r.done) h+=' <span style="font-size:10.5px;font-weight:700;color:#64748b;white-space:nowrap">kept open</span>';
+  if(r.dueTyped&&r.link&&r.link.when!=="date") h+=' <span style="font-size:10.5px;color:#64748b;white-space:nowrap" title="your date: '+esc(rmDateTxt(r.dueTyped))+'">\u{1F517}</span>';   // RMX step 6a: the date came from the curriculum
+  if(r.subject) h+=' <span style="font-size:10.5px;font-weight:700;color:#0f766e;border:1px solid #0f766e55;border-radius:99px;padding:0 6px;white-space:nowrap">'+esc(rmSubjName(kid,r.subject))+'</span>'+((!r.done&&typeof rmxStatusChip==="function")?rmxStatusChip(kid,r.subject):'');   // RMX step 5: "14 left · ~Nov 25" / "paused" / "list empty", open rows only
   if(r.book) h+=' <button onclick="rmOpenBook(\''+esc(r.book)+'\')" style="font-size:10.5px;font-weight:700;color:#7c3aed;border:1px solid #7c3aed55;border-radius:99px;padding:0 6px;background:#fff;cursor:pointer;white-space:nowrap">\u{1F4DA} book</button>';
   h+='</span>';
   if(!compact) h+='<button onclick="rmEditStart(\''+kid+'\',\''+esc(r.id)+'\')" style="flex:none;border:none;background:none;cursor:pointer;font-size:13px;padding:0 2px" title="Edit">✏️</button>';
@@ -26419,10 +26437,20 @@ function rmFormHTML(kid){
   const inp='style="font:inherit;font-size:12.5px;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;background:#fff;font-family:\'DM Sans\',sans-serif"';
   let h='<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px;margin:6px 0;background:#f8fafc;border:1.5px dashed #94a3b8;border-radius:10px">';
   h+='<input type="date" value="'+esc(f.due)+'" oninput="rmSet(\'due\',this.value)" '+inp+'>';
-  h+='<select onchange="rmSet(\'kind\',this.value)" '+inp+'>'+Object.keys(RM_KINDS).map(function(k){ return '<option value="'+k+'"'+(k===f.kind?' selected':'')+'>'+RM_KINDS[k]+' '+k+'</option>'; }).join('')+'</select>';
-  h+='<select onchange="rmSet(\'subject\',this.value)" '+inp+'><option value="">(no subject)</option>'+Object.keys(subs).sort().map(function(sk){ return '<option value="'+esc(sk)+'"'+(sk===f.subject?' selected':'')+'>'+esc(rmSubjName(kid,sk))+'</option>'; }).join('')+'</select>';
+  h+='<select onchange="rmPick(\'kind\',this.value)" '+inp+'>'+Object.keys(RM_KINDS).map(function(k){ return '<option value="'+k+'"'+(k===f.kind?' selected':'')+'>'+RM_KINDS[k]+' '+k+'</option>'; }).join('')+'</select>';
+  h+='<select onchange="rmPick(\'subject\',this.value)" '+inp+'><option value="">(no subject)</option>'+Object.keys(subs).sort().map(function(sk){ return '<option value="'+esc(sk)+'"'+(sk===f.subject?' selected':'')+'>'+esc(rmSubjName(kid,sk))+'</option>'; }).join('')+'</select>';
   h+='<input value="'+esc(f.text)+'" placeholder="What to do — e.g. Printing Power ends → add Cursive Tue/Thu 10" oninput="rmSet(\'text\',this.value)" '+inp.replace('style="','style="flex:1 1 260px;')+'>';
   h+='<input value="'+esc(f.book)+'" placeholder="book id from 📚 Books (optional)" oninput="rmSet(\'book\',this.value)" '+inp.replace('style="','style="flex:1 1 160px;')+'>';
+  // RMX step 6a (her yes 2026-10-25): "Shows up…" — the row's date can follow the curriculum, and a linked row can tick itself
+  const kindLinks=(f.kind==="add"||f.kind==="append"||f.kind==="pause"||f.kind==="swap"), sName=f.subject?rmSubjName(kid,f.subject):"", when=f.when||"date";
+  h+='<select onchange="rmPick(\'when\',this.value)" '+inp+' title="Shows up…"><option value="date"'+(when==="date"?' selected':'')+'>\u{1F4C6} On the date</option>';
+  if(kindLinks) h+='<option value="datelink"'+(when==="datelink"?' selected':'')+'>\u{1F4C6} On the date · ticks itself when done</option>';
+  if(f.subject){ h+='<option value="ends"'+(when==="ends"?' selected':'')+'>\u23F3 When '+esc(sName)+' is running out</option><option value="lesson"'+(when==="lesson"?' selected':'')+'>\u2705 When a lesson of '+esc(sName)+' is done</option>'; }
+  h+='</select>';
+  if(when==="lesson"&&f.subject){ const s=subs[f.subject], ids=(s&&Array.isArray(s.lessonIds)&&Array.isArray(s.lessonSeq)&&s.lessonIds.length===s.lessonSeq.length)?s.lessonIds:null;
+    if(ids) h+='<select onchange="rmSet(\'lid\',this.value)" '+inp+'><option value="">(which lesson?)</option>'+ids.map(function(lid,i){ return '<option value="'+esc(lid)+'"'+(lid===f.lid?' selected':'')+'>'+esc(s.lessonSeq[i])+'</option>'; }).join('')+'</select>';
+    else h+='<span style="font-size:11px;color:var(--muted)">(this list has no lesson ids yet — pick On the date)</span>'; }
+  if(f.kind==="add"||f.kind==="swap") h+='<input value="'+esc(f.match||"")+'" placeholder="new subject\'s name contains… (then it ticks itself)" oninput="rmSet(\'match\',this.value)" '+inp.replace('style="','style="flex:1 1 200px;')+'>';
   h+='<button onclick="rmSave()" style="padding:6px 12px;border-radius:8px;border:none;background:#111827;color:#fff;font-weight:800;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save</button>';
   h+='<button onclick="rmCancel()" style="padding:6px 10px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancel</button>';
   if(rmEdit.id) h+='<button onclick="rmDelete(\''+kid+'\',\''+esc(rmEdit.id)+'\')" style="margin-left:auto;padding:6px 10px;border-radius:8px;border:1.5px solid #fecaca;background:#fff;color:#b5394a;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif">Delete</button>';
@@ -26431,7 +26459,7 @@ function rmFormHTML(kid){
 }
 // Mom HQ ▸ Curriculum — the per-kid strip (open items by date, finished folded, inline add/edit)
 function rmStripHTML(kid){
-  const iso=_todayStr(), L=rmList(kid), open=L.filter(function(r){ return !r.done; }), done=L.filter(function(r){ return r.done; });
+  const iso=_todayStr(), L=rmList(kid).map(function(r){ return rmEff(kid,r); }), open=L.filter(function(r){ return !r.done; }), done=L.filter(function(r){ return r.done; });   // RMX step 6: linked rows by their effective date / auto-done
   const over=open.filter(function(r){ return rmState(r,iso)==="over"; }).length;
   let h='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:10px 12px;margin:10px 0">';
   h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-weight:800;font-size:13px">\u{1F4C5} Roadmap · '+cap(kid)+'</span>';
@@ -26455,10 +26483,10 @@ function rmStripHTML(kid){
 // helpers are looked up by typeof so the ROADMAP block still stands alone (test_roadmap.js).
 function rmWeekHTML(iso){
   const kids=(typeof ROSTER!=="undefined"&&ROSTER)?ROSTER:["lincoln","ellis","lucy","julian"];
-  const auto=function(kid){ if(typeof rmxDerive!=="function") return []; try{ return rmxDerive(kid).filter(function(it){ return !it.muted&&(it.level!=="grey"||(typeof rmxCfg==="function"&&rmxCfg(kid,it.sk).endOnDay)); }); }catch(e){ return []; } };   // RMX step 4: a muted subject stays in the strip only
+  const auto=function(kid){ if(typeof rmxDerive!=="function") return []; try{ return (typeof rmxShown==="function"?rmxShown(kid):rmxDerive(kid)).filter(function(it){ return !it.muted&&(it.level!=="grey"||(typeof rmxCfg==="function"&&rmxCfg(kid,it.sk).endOnDay)); }); }catch(e){ return []; } };   // RMX step 4: a muted subject stays in the strip only · step 6a: her "running out" row replaces the automatic one
   let rows=[]; kids.forEach(function(kid){
     auto(kid).forEach(function(it){ rows.push({kid:kid,auto:it}); });
-    rmList(kid).forEach(function(r){ const st=rmState(r,iso); if(st==="over"||st==="week"||(st==="later"&&typeof rmxNoteDue==="function"&&rmxNoteDue(kid,r,iso))) rows.push({kid:kid,r:r}); }); });   // RMX step 4: noteDays shows her dated rows earlier; 0 = this week (unchanged)
+    rmList(kid).forEach(function(r0){ const r=rmEff(kid,r0); const st=rmState(r,iso); if(st==="over"||st==="week"||(st==="later"&&typeof rmxNoteDue==="function"&&rmxNoteDue(kid,r,iso))||(st==="later"&&typeof rmxLinkHot==="function"&&rmxLinkHot(kid,r0))) rows.push({kid:kid,r:r}); }); });   // RMX step 4: noteDays shows her dated rows earlier · step 6a: a linked row shows when its subject's heads-up would   // RMX step 4: noteDays shows her dated rows earlier; 0 = this week (unchanged)
   let fam=[]; if(typeof rmxFamilyItems==="function"){ try{ fam=rmxFamilyItems().filter(function(it){ return !it.muted&&it.level!=="grey"; }); }catch(e){ fam=[]; } }
   const n=rows.length+fam.length;
   const gear=(typeof rmxGearHTML==="function")?rmxGearHTML():"";   // RMX step 4: ⚙ for Mom only — "" on kids' devices, Dad's kiosk and every non-Mom view
@@ -26477,9 +26505,11 @@ function rmWeekHTML(iso){
   h+='</div></div>';
   return h;
 }
-function rmNew(kid){ if(!rmCanWrite()){ gwShowToast("Enter the Mom code first"); return; } rmEdit={kid:kid,id:null,form:{due:_todayStr(),text:"",kind:"add",subject:"",book:""}}; renderAll(); }
-function rmEditStart(kid,id){ if(!rmCanWrite()){ gwShowToast("Enter the Mom code first"); return; } const r=((roadmapData[kid]||{}).roadmap||{})[id]; if(!r) return; rmEdit={kid:kid,id:id,form:{due:r.due||"",text:r.text||"",kind:r.kind||"note",subject:r.subject||"",book:r.book||""}}; renderAll(); }
+function rmNew(kid){ if(!rmCanWrite()){ gwShowToast("Enter the Mom code first"); return; } rmEdit={kid:kid,id:null,form:{due:_todayStr(),text:"",kind:"add",subject:"",book:"",when:"date",lid:"",match:""}}; renderAll(); }
+function rmEditStart(kid,id){ if(!rmCanWrite()){ gwShowToast("Enter the Mom code first"); return; } const r=((roadmapData[kid]||{}).roadmap||{})[id]; if(!r) return; const L=r.link||null;   // RMX step 6a: the link rides into the form
+  rmEdit={kid:kid,id:id,form:{due:r.due||"",text:r.text||"",kind:r.kind||"note",subject:r.subject||(L&&L.sk)||"",book:r.book||"",when:L?(L.when==="date"?"datelink":(L.when||"date")):"date",lid:(L&&L.lid)||"",match:(L&&L.match)||""}}; renderAll(); }
 function rmSet(k,v){ if(rmEdit) rmEdit.form[k]=v; }
+function rmPick(k,v){ rmSet(k,v); if(rmEdit&&typeof renderAll==="function") renderAll(); }   // RMX step 6a: kind / subject / "Shows up…" selects redraw the form (its choices depend on them); text inputs never repaint
 function rmCancel(){ rmEdit=null; renderAll(); }
 function rmSave(){
   if(!rmEdit) return; if(!rmCanWrite()){ gwShowToast("Enter the Mom code first"); return; }
@@ -26491,6 +26521,8 @@ function rmSave(){
   const rec={due:due,text:text,kind:RM_KINDS[f.kind]?f.kind:"note",done:prev.done||null,at:prev.at||_todayStr()};
   if(String(f.subject||"").trim()) rec.subject=String(f.subject).trim();
   if(String(f.book||"").trim()) rec.book=String(f.book).trim();
+  if(prev.keepOpen) rec.keepOpen=true;   // RMX step 6b: her "not yet" survives an edit (rmSave is a set of the whole item)
+  if(typeof rmxLinkFromForm==="function"){ const L=rmxLinkFromForm(kid,f,prev); if(L) rec.link=L; }   // RMX step 6a: the link, only when the form made one
   ((roadmapData[kid]=roadmapData[kid]||{}).roadmap=roadmapData[kid].roadmap||{})[id]=rec;
   rmWrite("plans/"+kid+"/roadmap/"+id,rec,"set");
   rmEdit=null; gwShowToast("\u{1F4C5} Saved for "+rmDateTxt(due)); renderAll();
@@ -26498,8 +26530,21 @@ function rmSave(){
 function rmDone(kid,id){
   if(!rmCanWrite()){ gwShowToast("Enter the Mom code first"); return; }
   const r=((roadmapData[kid]||{}).roadmap||{})[id]; if(!r) return;
-  const v=r.done?null:Date.now(); r.done=v;
-  rmWrite("plans/"+kid+"/roadmap/"+id,{done:v},"update"); renderAll();
+  let patch;
+  if(r.done){ r.done=null; patch={done:null}; }
+  else if(r.keepOpen){ r.done=Date.now(); r.keepOpen=null; patch={done:r.done,keepOpen:null}; }   // RMX step 6b: she ticks a row she had kept open
+  else if(r.link&&typeof rmxAuto==="function"&&(function(){ try{ return !!rmxAuto(kid,r).met; }catch(e){ return false; } })()){ r.keepOpen=true; patch={keepOpen:true}; }   // RMX step 6b: unticking an auto-done row = "not yet"
+  else { r.done=Date.now(); patch={done:r.done}; }
+  rmWrite("plans/"+kid+"/roadmap/"+id,patch,"update"); renderAll();
+}
+// RMX step 6 (her yes 2026-10-25): the row as it SHOWS — a linked row's date follows the curriculum (rmxEffDue; her typed
+// due stays stored as the fallback) and an auto-done row draws as done with "✓ auto · why" (rmxAuto). Never written: the
+// stored record is untouched; rmDone reads the stored record. Without the RMX block (test_roadmap) rows draw as typed.
+function rmEff(kid,r){
+  if(!r||!r.link) return r; let out=r;
+  if(typeof rmxEffDue==="function"){ let d=null; try{ d=rmxEffDue(kid,r); }catch(e){ d=null; } if(d&&d!==r.due) out=Object.assign({},out,{due:d,dueTyped:r.due}); }
+  if(!r.done&&!r.keepOpen&&typeof rmxAuto==="function"){ let A=null; try{ A=rmxAuto(kid,r); }catch(e){ A=null; } if(A&&A.met) out=Object.assign({},out,{done:true,auto:A.why||""}); }
+  return out;
 }
 function rmDelete(kid,id){
   if(!rmCanWrite()) return; if(!confirm("Delete this roadmap item?")) return;
@@ -26532,6 +26577,18 @@ function rmOpenBook(id){
 // Step 4 (her yes 2026-10-25): a per-subject `off` now means MUTED, not gone — the row is still computed (muted:true),
 // the strip shows it greyed with 🔕, Mom's Day and the plan-bar chip skip it. The ⚙ panel, the strip's ⋯ and every
 // write live in the RMXS block after this one; this block still writes nothing.
+// Step 5 (her yes 2026-10-25): her typed rows that name a subject get a read-only status chip from this same derive —
+// "14 left · ~Nov 25" / "paused Oct 3" / "list empty since Oct 14" — so she can tick a row at a glance. rmxStatus(kid,sk),
+// memoised with the rest; rmRowHTML (ROADMAP) adds it by typeof, open rows only. Still no writes.
+// Step 6a/6b (her yes 2026-10-25, design §3.2): her typed rows can LINK to the curriculum — plans/<kid>/roadmap/<id>.link =
+// {sk, when:"date"|"ends"|"lesson", lid?, n?, match?} written only inside her own Save (rmSave's set; rmxLinkFromForm builds
+// it). The link decides the row's effective date (rmxEffDue: run-out day / lesson done day or projected day; her typed due
+// is the fallback) — a "running out" row REPLACES that subject's automatic row (one row per subject, her words win) and
+// shows on Mom's Day when the heads-up would (rmxLinkHot). rmxAuto(kid,r) → {met, why}: append (list grew past n, and no
+// longer running out), pause (paused / gone), add (a subject whose name contains `match` exists), swap (old paused /
+// finished / gone AND a match exists or its lane has a later unit with open lessons); edit and note never. Computed on
+// draw, never written; honours the autoDone setting; her untick writes keepOpen (ROADMAP rmDone). Rows typed before this
+// (no link) behave exactly as before — they never tick themselves.
 const RMX_DEFAULTS={on:true,warnWeeks:3,warnLeft:0,redDays:7,redLeft:5,endWeeks:2,endOnDay:false,
   kinds:{runout:true,empty:true,handoff:true,nolist:true},family:true,noteDays:0,autoDone:true,muted:false};
 const RMX_RANGE={warnWeeks:[1,8],warnLeft:[0,20],redDays:[1,21],redLeft:[0,10],endWeeks:[0,8],noteDays:[0,30]};
@@ -26764,6 +26821,93 @@ function rmxDerive(kid){
   let items=[]; try{ items=_rmxDerive(kid); }catch(e){ try{ console.error("[HA] rmx",e); }catch(_){} items=[]; }
   _rmxMemo.map[kid]=items; return items;
 }
+// ── step 5: one subject's standing, for the chip on her typed rows (same memo; typed rows are few, so no candidate filter) ──
+function _rmxLaneOf(kid,sk){
+  const lanes=(typeof lnLanes==="function")?(lnLanes(kid)||{}):{}; let out=null;
+  Object.keys(lanes).forEach(function(id){ if(out) return; const us=(typeof lnUnits==="function")?(lnUnits(kid,id)||[]):[]; us.forEach(function(u,i){ if(!out&&_rmxUnitSubs(u).indexOf(sk)>=0) out={id:id,unitIdx:i}; }); });
+  return out;
+}
+function _rmxStatus(kid,sk){
+  const s=_rmxSubs(kid)[sk]; if(!s) return null;
+  if(s.paused) return {state:"paused",text:"paused"+(s.pausedSince?" "+rmxDateTxt(String(s.pausedSince).slice(0,10)):""),left:null,date:null,est:false};
+  if(s.tracking==="daily"||!(Array.isArray(s.lessonSeq)&&s.lessonSeq.length)) return null;   // no list: nothing to say
+  const left=rmxLeft(kid,sk); if(left===null) return null;   // unstamped: don't guess
+  if(left===0){ const since=_rmxLastDone(kid,[sk]); return {state:"empty",text:"list empty"+(since?" since "+rmxDateTxt(since):""),left:0,date:since,est:false}; }
+  const fx=_rmxFixedEnd(kid,sk,left), end=fx?{iso:fx.iso,est:false}:_rmxUnitEnd(kid,[sk],_rmxLaneOf(kid,sk));
+  return {state:"left",text:left+" left"+(end.iso?" · "+(end.est?"~":"")+rmxDateTxt(end.iso):""),left:left,date:end.iso,est:end.est};
+}
+function rmxStatus(kid,sk){   // {state:"paused"|"empty"|"left", text, left, date, est} or null
+  const key=_rmxMemoKey();
+  if(_rmxMemo.key!==key||Date.now()-_rmxMemo.at>20000) _rmxMemo={key:key,at:Date.now(),map:{}};
+  const mk="st\u0001"+kid+"\u0001"+sk; if(_rmxMemo.map[mk]!==undefined) return _rmxMemo.map[mk];
+  let out=null; try{ out=_rmxStatus(kid,sk); }catch(e){ out=null; }
+  _rmxMemo.map[mk]=out; return out;
+}
+function rmxStatusChip(kid,sk){
+  const st=rmxStatus(kid,sk); if(!st) return "";
+  const c=st.state==="paused"?"#64748b":(st.state==="empty"||st.left<=rmxCfg(kid,sk).redLeft)?"#b5394a":"#475569";
+  return ' <span style="font-size:10.5px;font-weight:700;color:'+c+';border:1px solid '+c+'55;border-radius:99px;padding:0 6px;white-space:nowrap">'+esc(st.text)+'</span>';
+}
+// ── step 6a: links — the form → link, the effective date, one row per subject ──
+function _rmxNextLid(s){ if(!s) return null; const n=parseInt(s.nextLid,10); return isFinite(n)?n:(s.lessonSeq||[]).length; }
+function rmxLinkFromForm(kid,f,prev){   // {sk?, when, lid?, n?, match?} or null = no link (the record stays exactly as today)
+  const when=(f.when==="ends"||f.when==="lesson")?f.when:(f.when==="datelink"?"date":null), match=String(f.match||"").trim(), sk=String(f.subject||"").trim();
+  if(!when&&!match) return null;
+  if(!sk) return match?{when:"date",match:match}:null;   // "running out" / "a lesson is done" need a subject
+  const L={sk:sk,when:when||"date"}, pl=prev&&prev.link;
+  L.n=(pl&&pl.sk===sk&&pl.n!==undefined&&pl.n!==null)?pl.n:_rmxNextLid(_rmxSubs(kid)[sk]);   // the append rule's snapshot, taken when she links
+  if(L.when==="lesson"){ const lid=String(f.lid||"").trim(); if(lid) L.lid=lid; else L.when="date"; }
+  if(match) L.match=match;
+  return L;
+}
+function _rmxEffDue(kid,r){
+  const L=r.link; if(!L||!L.sk) return r.due;
+  if(L.when==="ends"){ const st=rmxStatus(kid,L.sk); return (st&&(st.state==="left"||st.state==="empty")&&st.date)?st.date:r.due; }
+  if(L.when==="lesson"&&L.lid){
+    const rec=(((((typeof currData!=="undefined"&&currData)||{}).done||{})[kid]||{})[L.sk]||{})[L.lid];
+    if(rec){ const day=rec.day?String(rec.day):(rec.ts?String(rec.ts).slice(0,10):""); if(day) return day; }
+    let col=null; try{ col=(typeof gvDerivedColumn==="function")?gvDerivedColumn(kid,L.sk):null; }catch(e){ col=null; }
+    if(col&&col.byDate){ const days=Object.keys(col.byDate).filter(function(d){ return col.byDate[d]&&col.byDate[d].lid===L.lid; }).sort(); if(days.length) return days[0]; }
+  }
+  return r.due;
+}
+function rmxEffDue(kid,r){   // the day a linked row shows (memoised with the rest); her typed due when the curriculum has no answer
+  if(!r||!r.link) return r?r.due:null;
+  const key=_rmxMemoKey(); if(_rmxMemo.key!==key||Date.now()-_rmxMemo.at>20000) _rmxMemo={key:key,at:Date.now(),map:{}};
+  const mk="eff\u0001"+kid+"\u0001"+JSON.stringify(r.link)+"\u0001"+String(r.due); if(_rmxMemo.map[mk]!==undefined) return _rmxMemo.map[mk];
+  let out=r.due; try{ out=_rmxEffDue(kid,r)||r.due; }catch(e){ out=r.due; }
+  _rmxMemo.map[mk]=out; return out;
+}
+function _rmxOpenLinked(kid){ if(typeof rmList!=="function") return []; let L=[]; try{ L=rmList(kid); }catch(e){ L=[]; } return L.filter(function(r){ return !r.done&&r.link&&r.link.sk&&!(!r.keepOpen&&rmxAuto(kid,r).met); }); }
+function rmxLinkedEnds(kid){ const out={}; _rmxOpenLinked(kid).forEach(function(r){ if(r.link.when==="ends") out[r.link.sk]=true; }); return out; }
+function rmxShown(kid){ const rep=rmxLinkedEnds(kid); return rmxDerive(kid).filter(function(it){ return !rep[it.sk]; }); }   // her "running out" row stands in for the automatic one
+function rmxLinkHot(kid,r){ if(!r||r.done||!r.link||r.link.when!=="ends"||!r.link.sk) return false; return rmxDerive(kid).some(function(it){ return it.sk===r.link.sk&&!it.muted&&it.level!=="grey"; }); }
+// ── step 6b: auto-done — {met, why}; computed, never written ──
+function rmxAuto(kid,r){
+  const out={met:false,why:""}, L=r&&r.link; if(!L) return out;
+  if(!rmxCfg(kid).autoDone) return out;
+  const subs=_rmxSubs(kid), s=L.sk?subs[L.sk]:null, name=L.sk?_rmxName(kid,L.sk):"";
+  const since=function(){ return (s&&s.pausedSince)?" "+rmxDateTxt(String(s.pausedSince).slice(0,10)):""; };
+  const match=function(){ const m=String(L.match||"").toLowerCase(); if(!m) return null; let hit=null; Object.keys(subs).sort().forEach(function(k){ if(hit||k===L.sk) return; const x=subs[k]; if(x&&String(x.display||x.name||k).toLowerCase().indexOf(m)>=0) hit=k; }); return hit; };
+  const finished=function(){ if(!s) return false; if(typeof subjectFinished==="function"){ try{ return !!subjectFinished(kid,L.sk); }catch(e){} } return rmxLeft(kid,L.sk)===0; };
+  if(r.kind==="append"){
+    if(!s||L.n===undefined||L.n===null) return out;
+    if(!(_rmxNextLid(s)>L.n)) return out;
+    if(rmxDerive(kid).some(function(it){ return it.sk===L.sk&&(it.type==="runout"||it.type==="empty"); })) return out;   // grew, but still running out
+    const seq=s.lessonSeq||[]; out.met=true; out.why="list grew"+(seq.length?" — now runs to "+String(seq[seq.length-1]):""); return out;
+  }
+  if(r.kind==="pause"){ if(!L.sk) return out; if(!s){ out.met=true; out.why=name+" is gone from the Builder"; } else if(s.paused){ out.met=true; out.why="paused"+since(); } return out; }
+  if(r.kind==="add"){ const k=match(); if(k){ out.met=true; out.why=_rmxName(kid,k)+" is in the Builder"; } return out; }
+  if(r.kind==="swap"){
+    if(!L.sk) return out;
+    const oldWhy=!s?name+" is gone":(s.paused?name+" paused"+since():(finished()?name+" finished":null)); if(!oldWhy) return out;
+    const k=match(); if(k){ out.met=true; out.why=oldWhy+" · "+_rmxName(kid,k)+" is in the Builder"; return out; }
+    const lane=_rmxLaneOf(kid,L.sk);
+    if(lane&&typeof lnUnits==="function"&&typeof lnUnitOpen==="function"){ const later=(lnUnits(kid,lane.id)||[]).slice(lane.unitIdx+1).filter(function(u){ return lnUnitOpen(kid,u); }); if(later.length){ out.met=true; out.why=oldWhy+" · "+_rmxUnitLabel(kid,later[0])+" follows in its lane"; } }
+    return out;
+  }
+  return out;   // edit / note: the app can't see a decision
+}
 // ── the strip group (Mom HQ ▸ Curriculum). Navigation only: the row never pauses, appends or writes. ──
 const RMX_COL={red:"#b5394a",amber:"#d97706",grey:"#64748b"}, RMX_DOT={red:"\u{1F534}",amber:"\u{1F7E0}",grey:"⚪"};
 function rmxOpen(kid,sk,fam){ if(fam){ if(typeof famSheetOpen==="function") famSheetOpen(fam); return; } if(typeof ceOpenEdit==="function") ceOpenEdit(kid,sk); }
@@ -26779,7 +26923,7 @@ function rmxRowHTML(it,strip){   // strip=true in Mom HQ: a muted row shows grey
   return h;
 }
 function rmxStripHTML(kid){
-  const items=rmxDerive(kid).concat(rmxFamilyItems().filter(function(it){ return it.kids.indexOf(kid)>=0; }));   // 🏡 the blocks this kid is in
+  const items=rmxShown(kid).concat(rmxFamilyItems().filter(function(it){ return it.kids.indexOf(kid)>=0; }));   // 🏡 the blocks this kid is in · step 6a: minus subjects her own "running out" rows cover
   if(!items.length) return "";
   let h='<div style="margin:6px 0 2px"><div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:4px 0 2px">From the curriculum</div>';
   items.forEach(function(it){ h+=rmxRowHTML(it,true); });
@@ -26799,7 +26943,7 @@ function rmxStripHTML(kid){
 // boolean (junk → no write), momHere() required, inert under ?dryrun=1 (db && !_dryRun()). ↺ = one remove at that path.
 // NEVER config/rules, NEVER config/rules/headsUp itself. rulesData.headsUp is updated locally first (cloned along the
 // path) and renderAll() redraws — the RMX memo key already carries JSON(headsUp), so the rows change at once.
-// autoDone stays out of the panel until step 6 (a switch that does nothing yet would mislead). No kid names in this block.
+// autoDone joined the panel with step 6 (family + per kid): "Tick a linked row by itself…". No kid names in this block.
 const RMX_FIELDS={on:"b",warnWeeks:"n",warnLeft:"n",redDays:"n",redLeft:"n",endWeeks:"n",endOnDay:"b",family:"b",noteDays:"n",autoDone:"b",off:"b","kinds.runout":"b","kinds.empty":"b","kinds.handoff":"b","kinds.nolist":"b"};
 const RMX_KIND_LBL={runout:"Running out",empty:"List empty",handoff:"Next book takes over",nolist:"Subject has no lessons"};
 const RMX_FIELD_LBL={on:"on",warnWeeks:"warn wk",warnLeft:"warn at",redDays:"red days",redLeft:"red at",endWeeks:"ending wk",endOnDay:"ending on Mom’s Day",family:"family",noteDays:"note days",autoDone:"auto-done",off:"muted","kinds.runout":"running out","kinds.empty":"list empty","kinds.handoff":"next book","kinds.nolist":"no lessons"};
@@ -26914,6 +27058,7 @@ function rmxPanelHTML(){
   h+=_rmxRow("Show those book endings on Mom’s Day too",cF("endOnDay"));
   h+=_rmxRow("Include \u{1F3E1} Family time subjects",cF("family"));
   h+=_rmxRow("Show my own dated reminders this many days before they’re due",cF("noteDays"),"0 = the week they’re due");
+  h+=_rmxRow("Tick a linked row by itself when the curriculum shows it\u2019s done",cF("autoDone"),"you can always untick it");
   h+='<div class="rules-section-lbl" style="margin-top:10px">Per kid</div>';
   kids.forEach(function(kid){
     const C=rmxCfg(kid), scope="kid/"+kid, raw=_rmxRaw(scope), has=Object.keys(raw).length>0;
@@ -26921,6 +27066,7 @@ function rmxPanelHTML(){
     if(has) h+='<div style="padding:4px 0 2px"><button onclick="rmxRuleClear(\''+esc(scope)+'\',null)" style="padding:4px 9px;border-radius:99px;border:1.5px solid var(--border);background:#fff;font-weight:700;font-size:11px;cursor:pointer;font-family:\'DM Sans\',sans-serif">↺ Same as family for everything</button></div>';
     h+=_rmxRow("Heads-up for "+esc(cap(kid)),_rmxCtl(scope,"on",C,raw));
     h+=_rmxThresholdRows(scope,C,raw);
+    h+=_rmxRow("Linked rows tick themselves",_rmxCtl(scope,"autoDone",C,raw));
     h+='</details>';
   });
   h+='<div class="rules-section-lbl" style="margin-top:10px">Per subject</div>';
@@ -27032,10 +27178,10 @@ function ntDelete(){ if(!ntEdit||!ntEdit.id||!rmCanWrite()) return; if(!confirm(
 let planOpen={};
 function planBarHTML(kid){
   if(!kid) return "";
-  const iso=_todayStr(), R=rmList(kid), open=R.filter(function(r){ return !r.done; }), over=open.filter(function(r){ return rmState(r,iso)==="over"; }).length;
+  const iso=_todayStr(), R=rmList(kid).map(function(r){ return rmEff(kid,r); }), open=R.filter(function(r){ return !r.done; }), over=open.filter(function(r){ return rmState(r,iso)==="over"; }).length;   // RMX step 6: by effective date, auto-done counted as done
   const week=open.filter(function(r){ return rmState(r,iso)==="week"; }).length, S=scList(kid).length, N=ntList(kid).length;
   // RMX step 3 (her yes 2026-10-25): the kid's red + amber heads-ups from the lesson lists, a chip of their own — never mixed into her "overdue" notes
-  let hu=0; if(typeof rmxDerive==="function"){ try{ hu=rmxDerive(kid).filter(function(it){ return !it.muted&&it.level!=="grey"; }).length; if(typeof rmxFamilyItems==="function") hu+=rmxFamilyItems().filter(function(it){ return !it.muted&&it.level!=="grey"&&it.kids.indexOf(kid)>=0; }).length; }catch(e){ hu=0; } }   // RMX step 4: muted subjects don't count
+  let hu=0; if(typeof rmxDerive==="function"){ try{ hu=(typeof rmxShown==="function"?rmxShown(kid):rmxDerive(kid)).filter(function(it){ return !it.muted&&it.level!=="grey"; }).length; if(typeof rmxFamilyItems==="function") hu+=rmxFamilyItems().filter(function(it){ return !it.muted&&it.level!=="grey"&&it.kids.indexOf(kid)>=0; }).length; }catch(e){ hu=0; } }   // RMX step 4: muted subjects don't count
   let h='<div style="padding:0 4px"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:8px 12px;margin:8px 0 2px;font-size:12.5px">';
   h+='<span style="font-weight:800">\u{1F5C2} '+cap(kid)+"'s plan</span>";
   h+='<span>\u{1F4C5} '+open.length+' to do'+(over?' · <b style="color:#b5394a">'+over+' overdue</b>':'')+(week?' · <b style="color:#d97706">'+week+' this week</b>':'')+(hu?' · <b style="color:#b5394a">'+hu+' heads-up</b>':'')+'</span>';
@@ -42602,6 +42748,19 @@ function wrHookedHtml(u,kid,ks,esc){
 //   · UA_ATTACH says which kid attaches to which unit, at which stage — one row per step of her order. Step 1 = Lucy.
 //     Step 2 (2026-10-25, PLAN_attach_mathpath_ellis_2026-10-25.md) = Ellis, stage 7 (× and ÷): his 13 cards and all
 //     47 words of his list are stage-7 facts; 266 appended after his own order (ellis_bank_order is kept, not written).
+//     Step 3 (2026-10-26, PLAN_attach_mathpath_lincoln_2026-10-26.md) = Lincoln, stage 8 (fractions, decimals & beyond):
+//     his 4 cards are stage-8 cards; 21 of his 35 built-in words are; the 14 extras (percent-of, order of operations) are
+//     his own, not unit words — strayOk:true keeps them where they are if one becomes a card before her Yes (her §10);
+//     two backs differ ("0.333… (3 repeating)") and keep his wording. 190 appended.
+//     Step 4 (2026-10-26, PLAN_attach_julian_2026-10-26.md) = Julian, Letters Path stage 1: his 16 Letters cards (A–P) are
+//     the stage's capitals and his list already holds all 26 — ZERO card writes, ZERO bank writes; just enrolled + kidStage.
+//     The notebook's Letter of the Day reads the deck and notebookSettings/letterCursor, neither of which is touched.
+//     Step 5 (2026-10-26, same plan) = Julian, Shapes Path stage 2: 11 of his 15 Shapes cards are stage-2 shapes, the 4
+//     basics are stage-1 → kept as "earlier"; his 8 built-in + 18 saved = all 26 unit shapes → ZERO bank writes; the
+//     Shape of the Day reads the deck's array order, untouched.
+//     Step 6 (2026-10-26, same plan) = Julian, Math Fluency Path stage 2 (Numbers 11–20): 7 of his Numbers cards are
+//     stage-2, his Numbers 1–10 and Counting one–ten are stage-1 → kept as "earlier". fill:false (her call assumed: enroll
+//     only — the order doc's "18 Counting bank entries — only if you say so"); flipping it appends the 10 teen Counting words.
 //   · uaPlanAttach(unitId,kid) is pure: it reads memory and returns every write, in plain words too. Unit cards match
 //     the kid's cards by kid + deck key + EXACT prompt (never by name alone — two units share "Real Science-4-Kids").
 //   · Writes only: enrolled/<kid>, kidStage/<kid>, and appended bank entries {cat,name} for stage words the kid's list
@@ -42612,10 +42771,13 @@ function wrHookedHtml(u,kid,ks,esc){
 //   · While a kid's hook-up waits, the stock "+ Kid" enroll on that unit is closed for THAT kid only (uaLocked); every
 //     other kid, and every other family, keeps the stock button.
 //   · A card in a stage deck that isn't a stage card stops the plan (strayOk:false) — none today for Lucy; a later row
-//     (Lincoln's 14 math extras, her §10) sets strayOk:true so they stay put.
+//     (Lincoln's 14 math extras, her §10) sets strayOk:true so they stay put. A card from an EARLIER stage of the same
+//     deck is not stray: it stays as it is and is counted separately (steps 4–6, 2026-10-26: Julian joins Shapes at stage 2
+//     with his four basic shapes live, and the Numbers/Counting decks at stage 2 with 1–10 and one–ten live).
 //   · Refuses a unit whose stage decks hold words in the bank with their backs on the bank (AAS: bankOnly/defsOnBank)
 //     — that unit gets its own step (order step 15).
-const UA_ATTACH={ math_fluency_path:{ lucy:{stage:6,fill:true}, ellis:{stage:7,fill:true} } };
+const UA_ATTACH={ math_fluency_path:{ lucy:{stage:6,fill:true}, ellis:{stage:7,fill:true}, lincoln:{stage:8,fill:true,strayOk:true}, julian:{stage:2,fill:false} },
+  letters_path:{ julian:{stage:1,fill:true} }, shapes_path:{ julian:{stage:2,fill:true} } };
 function uaSpec(u,kid){ if(!u) return null; const t=UA_ATTACH[u.id]||UA_ATTACH[u.starter]; return (t&&t[kid])||null; }
 function uaHooked(u,kid){ return !!(u&&((u.enrolled||{})[kid]||(u.kidStage||{})[kid])); }
 function uaLocked(u,kid){ return !!(uaSpec(u,kid)&&!uaHooked(u,kid)); }
@@ -42634,8 +42796,9 @@ function uaPlanAttach(unitId,kid,ts){
   const pk=(d,n)=>d+"\u0001"+n;
   const live={}; items.forEach(i=>{ if(i&&dks.indexOf(i.subject)>=0) live[pk(i.subject,i.prompt)]=i; });
   const unitKey=new Set(cards.map(c=>pk(c._dk,c.name)));
-  const S=P.sum={stage:spec.stage,label:(_ustStageDef(u,spec.stage)||{}).label||"",decks:dks,total:cards.length,liveKept:0,learning:0,onLadder:0,backDiffers:[],stray:[],added:[],addedByDeck:{},next10Before:[],next10After:[]};
-  Object.keys(live).forEach(k=>{ const i=live[k]; if(!unitKey.has(k)){ S.stray.push(i.subject+" · "+i.prompt); return; }
+  const earlierKey=new Set(); dks.forEach(k=>{ ((deckOf[k]||{}).cards||[]).forEach(c=>{ if(c&&c.stage<spec.stage) earlierKey.add(pk(k,c.name)); }); });   // earlier stages of the same decks: kept, not stray
+  const S=P.sum={stage:spec.stage,label:(_ustStageDef(u,spec.stage)||{}).label||"",decks:dks,total:cards.length,liveKept:0,learning:0,onLadder:0,earlier:0,backDiffers:[],stray:[],added:[],addedByDeck:{},next10Before:[],next10After:[]};
+  Object.keys(live).forEach(k=>{ const i=live[k]; if(!unitKey.has(k)){ if(earlierKey.has(k)){ S.earlier++; return; } S.stray.push(i.subject+" · "+i.prompt); return; }
     S.liveKept++; if(i.status==="introduction") S.learning++; else if(i.status!=="parked") S.onLadder++; });
   cards.forEach(c=>{ const i=live[pk(c._dk,c.name)]; if(i&&c.def!=null&&i.answer!=null&&String(i.answer)!==String(c.def)) S.backDiffers.push(c.name+": “"+i.answer+"” on the card · “"+c.def+"” on the path"); });
   if(S.stray.length&&!spec.strayOk){ P.why=name+" has "+S.stray.length+" card"+(S.stray.length>1?"s":"")+" in "+dks.join(", ")+" that "+(S.stray.length>1?"aren’t":"isn’t")+" a stage-"+spec.stage+" card: "+S.stray.slice(0,6).join(", ")+(S.stray.length>6?" …":"")+". Nothing was changed."; return P; }
@@ -42685,6 +42848,7 @@ function uaAttachHtml(u,kid,esc,btn){
   h+=li(S.added.length?'Adds <b>'+S.added.length+'</b> stage words to the list, after what’s already there. They start only as room opens, in the path’s order.':'Adds nothing to the list — every stage word is already there.');
   h+=li(JSON.stringify(S.next10Before)===JSON.stringify(S.next10After)?'The next new cards don’t change: '+list(S.next10After)+'.':'Next new cards: '+list(S.next10After)+' (today: '+list(S.next10Before)+').');
   if(S.backDiffers.length) h+=li('<b>'+S.backDiffers.length+' answer'+(S.backDiffers.length>1?'s':'')+' differ'+(S.backDiffers.length>1?'':'s')+'</b> from the path’s and stay as they are: '+list(S.backDiffers.slice(0,5))+(S.backDiffers.length>5?' …':'')+'.');
+  if(S.earlier) h+=li(S.earlier+' card'+(S.earlier===1?'':'s')+' from earlier stages stay exactly as they are too.');
   if(S.stray.length) h+=li('Not part of this stage, left as they are: '+list(S.stray)+'.');
   h+=li('Not touched: the cards, the deck’s card style, how many start at a time, the answers, the notebook, every other kid.');
   h+='</ul><details style="margin-top:6px"><summary style="font-size:11px;font-weight:700;color:var(--muted);cursor:pointer">'+P.writes.length+' saved changes</summary><div style="font-size:10.5px;color:#374151;line-height:1.45;margin-top:4px;max-height:220px;overflow:auto">'+P.writes.map(w=>esc(w.what)).join('<br>')+'</div></details>';
@@ -43032,6 +43196,7 @@ function renderUnitDetail(u){
       h+='</div>';
     }
     h+=_unitPicsBtnHtml(u);   // UNIT_PICS: 🖼 Find pictures (Wikipedia, in this browser)
+    if(typeof laIrrHtml==="function") h+=laIrrHtml(u,esc);   // LAIRR: ＋ Add Irregulars (Language Arts unit only; units step 9, 2026-10-26)
     h+='</div>';
   }
   const enrolledKids=roster.filter(k=>(u.enrolled||{})[k]);
@@ -59110,16 +59275,23 @@ function ckTap(r,name){
   const iu={}, bu={}, du={}; const ids=new Set(items.map(i=>i&&i.id));
   out.forEach(o=>{
     const c=o.card, dk2=c._dk||"Math Facts";
-    const tt=(typeof ST_DECK!=="undefined"&&dk2===ST_DECK&&(o.res==="c"||o.res==="k")&&typeof stTier==="function")?stTier("c",kid):ckResultTier(o.res);   // STRIGHT: a ✓ spelling word lands where the kid's setting says
+    const spellDeck=(typeof ST_DECK!=="undefined"&&dk2===ST_DECK);
+    const idx0=items.findIndex(i=>i&&i.subject===dk2&&i.prompt===c.name);
+    // GRADKEEP (spelling deck only; math facts untouched): a ✓/known/spot never moves a card down — graduated stays graduated, a
+    // ladder card keeps its rung and due day; only a no-card / held / parked word lands at testRight (STRIGHT) or one rung below.
+    const tt=(spellDeck&&typeof gkTier==="function")?gkTier(kid,gkBefore(idx0>=0?items[idx0]:null),o.res)
+      :((spellDeck&&(o.res==="c"||o.res==="k")&&typeof stTier==="function")?stTier("c",kid):ckResultTier(o.res));   // STRIGHT: a ✓ spelling word lands where the kid's setting says
     let idx=items.findIndex(i=>i&&i.subject===dk2&&i.prompt===c.name);
     if(idx<0){ let b=kid.slice(0,3)+"_"+ckSlug(c.name), id=b, n=2; while(ids.has(id)) id=b+"_"+(n++); ids.add(id);
       const it2={id:id,subject:dk2,type:String(dk2).toLowerCase(),prompt:c.name,review_mode:"flash",drop_count:0,consecutive_correct:0,cycle:1,ckFrom:sid};
       if(c.def!=null) it2.answer=String(c.def);
       items.push(it2); idx=items.length-1; }
-    const item=items[idx]; item.status=tt.status; item.tier=tt.tier;
-    if(tt.status==="introduction"){ item.tally_dots=0; delete item.next_due; delete item.placed; }
-    else { item.tally_dots=Math.max(5,item.tally_dots||0); item.placed=true;
-      if(tt.tier!=="graduated"&&typeof mastStampNextDue==="function") mastStampNextDue(item,items,tt.tier,pn); else delete item.next_due; }   // STRIGHT
+    const item=items[idx];
+    if(tt&&!(item.status===tt.status&&item.tier===tt.tier)){   // GRADKEEP: null / same place → the card (and its due day) stays
+      item.status=tt.status; item.tier=tt.tier;
+      if(tt.status==="introduction"){ item.tally_dots=0; delete item.next_due; delete item.placed; }
+      else { item.tally_dots=Math.max(5,item.tally_dots||0); item.placed=true;
+        if(tt.tier!=="graduated"&&typeof mastStampNextDue==="function") mastStampNextDue(item,items,tt.tier,pn); else delete item.next_due; } }   // STRIGHT
     item.ckLast={r:o.res,d:dk};
     if(o.res==="m"&&o.card===it.card&&typeof wwNote==="function") wwNote(item,"miss");   // 🏋️ a check-up miss counts toward Word Workout
     iu[idx]=item;
@@ -59349,21 +59521,60 @@ function _stWrite(kid,key,rec){
 function _stRec(S,state){ const prev=stRecs(S.kid)[S.key]||{};
   const r={unit:S.unitId||"",level:S.level,lesson:S.lesson,state:state,words:S.words.map(w=>w.name),ts:prev.ts||Date.now()};
   if(S.due) r.due=S.due; return r; }
+// GRADKEEP_START — a ✓ never moves a card down (DESIGN_aas_lesson_spelling_test_2026-10-24.md §3.4; units switch-over step 14,
+// the gate for step 15 — Lincoln's graduated AAS import; her go-ahead 2026-10-26). Until now every test result re-placed the
+// card from scratch: ✓ → the kid's testRight (monthly by default), 〰 → monthly, ✗ → learning — so a ✓ on a GRADUATED word
+// pulled it down to monthly, and a ✓ on a word already climbing the ladder reset its rung and due day. The rule now depends on
+// where the card stood BEFORE the test:
+//   no card / held in the bank / parked (a new lesson word)  ✓ → testRight · 〰 → one rung below testRight (monthly → bi_weekly;
+//                                                             testRight graduated → monthly) · ✗ → learning
+//   graduated (incl. the imports)                          ✓ → stays graduated (stLast stamped) · 〰 → monthly · ✗ → learning + 🔁 came back
+//   on the ladder (every_other_day … monthly)              ✓ / 〰 → UNCHANGED (tier and due day) · ✗ → learning
+//   learning                                               stays learning (the learning pattern moves it); Word Workout notes right/miss
+// Re-grades stay right: the first grade saves each word's before-state on the record (was:{<i>:{st,t}}) and a re-grade from
+// 📝 Tests works from `was`, not from what the first grade did (fixing a ✗ to ✓ puts a ladder word back on its rung instead of
+// leaving it stuck in learning). Check-ups follow the same rule for the spelling deck only (ckTap; math check-ups unchanged).
+// Every write stays exactly as today: cards by index (mastery/<kid> update), the record by key. Nothing new is written.
+function gkBefore(item){   // where a card stands: {st:"bank"|"parked"|"learning"|"graduated"|"ladder", t:tier}
+  if(!item) return {st:"bank"};
+  if(item.status==="parked") return {st:"parked"};
+  if(item.status==="introduction") return {st:"learning",t:item.tier||"daily"};
+  if(item.tier==="graduated") return {st:"graduated",t:"graduated"};
+  return {st:"ladder",t:item.tier||"monthly"};
+}
+function gkBelow(kid,tier){   // one rung below on this kid's ladder; graduated → monthly; the bottom rung stays itself
+  if(tier==="graduated") return "monthly";
+  const lad=(typeof _unitKidLadderCfg==="function")?(_unitKidLadderCfg(kid).ladder||[]):["every_other_day","weekly","bi_weekly","monthly","graduated"];
+  const i=lad.indexOf(tier); if(i<0) return "bi_weekly"; return i>0?lad[i-1]:tier;
+}
+function gkTier(kid,before,r){   // → {status,tier} to set, or null = leave the card exactly where it is
+  const b=before||{st:"bank"}, right=(r==="c"||r==="k"), slow=(r==="s"||r==="spot");
+  if(b.st==="bank"||b.st==="parked"){ const tr=(typeof stRightTier==="function")?stRightTier(kid):"monthly"; if(right) return {status:"active",tier:tr}; if(slow) return {status:"active",tier:gkBelow(kid,tr)}; return {status:"introduction",tier:"daily"}; }
+  if(b.st==="graduated"){ if(right) return {status:"active",tier:"graduated"}; if(slow) return {status:"active",tier:"monthly"}; return {status:"introduction",tier:"daily"}; }
+  if(b.st==="ladder"){ return (right||slow)?{status:"active",tier:b.t||"monthly"}:{status:"introduction",tier:"daily"}; }   // right/slow = back where it was (a re-grade restores the rung)
+  return null;   // learning
+}
+// GRADKEEP_END
 // Results → the kid's AAS Words cards (one word = one card; same shape the unit and the check-up mint).
-function stApplyResults(kid,words,res,key){
+// GRADKEEP: `was` = the record's saved before-states (a re-grade); absent on the first grade, which reads the cards and returns them.
+function stApplyResults(kid,words,res,key,was){
   let items=masteryData[kid]; if(!Array.isArray(items)) items=masteryData[kid]=(items?Object.values(items):[]);
   let bank=masteryData[kid+"_custom_items"]; if(!Array.isArray(bank)) bank=masteryData[kid+"_custom_items"]=(bank?Object.values(bank):[]);
   const pn=mastGetPrintNum(kid);
-  const iu={}, bu={}, ids=new Set(items.map(i=>i&&i.id)), today=new Date().toISOString().slice(0,10);
-  words.forEach((name,i)=>{ const r=res[i]; if(!r) return; const tt=stTier(r,kid);   // STRIGHT: ✓ lands where this kid's setting says
+  const iu={}, bu={}, wasOut={}, ids=new Set(items.map(i=>i&&i.id)), today=new Date().toISOString().slice(0,10);
+  words.forEach((name,i)=>{ const r=res[i]; if(!r) return;
     let idx=items.findIndex(x=>x&&x.subject===ST_DECK&&x.prompt===name);
+    const before=(was&&was[i]&&was[i].st)?was[i]:gkBefore(idx>=0?items[idx]:null); wasOut[i]=before;   // GRADKEEP
+    const tt=gkTier(kid,before,r);   // GRADKEEP (STRIGHT inside: a new word's ✓ lands where this kid's setting says)
     if(idx<0){ let b=kid.slice(0,3)+"_"+String(name).replace(/[^a-z0-9]/gi,"_").toLowerCase(), id=b, k=2; while(ids.has(id)) id=b+"_"+(k++); ids.add(id);
       items.push({id:id,subject:ST_DECK,type:"aas words",prompt:name,answer:name,review_mode:"flash",drop_count:0,consecutive_correct:0,cycle:1}); idx=items.length-1; }
-    if(r==="m"&&items[idx].tier==="graduated"&&typeof cbLog==="function") cbLog(kid,{name:name,deck:ST_DECK,from:"graduated",ts:Date.now(),src:"spelling test"});   // 🔁 PWFLAG: a graduated word missed on a test came back
-    const it=items[idx]; it.status=tt.status; it.tier=tt.tier;
-    if(tt.status==="introduction"){ it.tally_dots=0; delete it.next_due; delete it.placed; }
-    else { it.tally_dots=Math.max(5,it.tally_dots||0); it.placed=true;
-      if(tt.tier!=="graduated"&&typeof mastStampNextDue==="function") mastStampNextDue(it,items,tt.tier,pn); else delete it.next_due; }   // STRIGHT: book the next look for any review tier
+    if(r==="m"&&before.st==="graduated"&&typeof cbLog==="function") cbLog(kid,{name:name,deck:ST_DECK,from:"graduated",ts:Date.now(),src:"spelling test"});   // 🔁 PWFLAG: a graduated word missed on a test came back
+    const it=items[idx];
+    if(tt&&!(it.status===tt.status&&it.tier===tt.tier)){   // GRADKEEP: null / same place → the card (and its due day) stays
+      it.status=tt.status; it.tier=tt.tier;
+      if(tt.status==="introduction"){ it.tally_dots=0; delete it.next_due; delete it.placed; }
+      else { it.tally_dots=Math.max(5,it.tally_dots||0); it.placed=true;
+        if(tt.tier!=="graduated"&&typeof mastStampNextDue==="function") mastStampNextDue(it,items,tt.tier,pn); else delete it.next_due; } }   // STRIGHT: book the next look for any review tier
     it.stLast={r:r,d:today,t:key};
     if(typeof wwNote==="function") wwNote(it,r==="m"?"miss":(r==="c"?"right":null));   // 🏋️ WORDWORKOUT
     iu[idx]=it;
@@ -59373,14 +59584,14 @@ function stApplyResults(kid,words,res,key){
     if(Object.keys(iu).length) db.ref("mastery/"+kid).update(iu);
     if(Object.keys(bu).length) db.ref("mastery/"+kid+"_custom_items").update(bu);
   }
-  return {iu,bu};
+  return {iu,bu,was:wasOut};
 }
 function stSave(){
   if(!stUI||!(typeof momHere==="function"&&momHere())) return; const S=stUI;
   if(Object.keys(S.grades).length<S.words.length) return;
   const res={}; S.words.forEach((w,i)=>{ res[i]=S.grades[i]; });
-  stApplyResults(S.kid,S.words.map(w=>w.name),res,S.key);
-  const rec=_stRec(S,"graded"); rec.res=res; rec.gradedTs=Date.now(); _stWrite(S.kid,S.key,rec);
+  const prev=stRecs(S.kid)[S.key]||{}, out=stApplyResults(S.kid,S.words.map(w=>w.name),res,S.key,prev.was||null);   // GRADKEEP: a re-grade works from the saved before-states
+  const rec=_stRec(S,"graded"); rec.res=res; rec.gradedTs=Date.now(); if(out&&out.was) rec.was=out.was; _stWrite(S.kid,S.key,rec);
   const sc=stScore(rec); if(typeof gwShowToast==="function") gwShowToast("📝 Saved — "+sc.c+" ✓ · "+sc.s+" 〰 · "+sc.m+" ✗");
   stCheckCard(S.kid,S.key);   // 📝 STTESTCARD: graded → the test card is done
   stClose();
@@ -59388,8 +59599,8 @@ function stSave(){
 function stNoTime(){
   if(!stUI||!(typeof momHere==="function"&&momHere())) return; const S=stUI;
   const res={}; S.words.forEach((w,i)=>{ res[i]="m"; });
-  stApplyResults(S.kid,S.words.map(w=>w.name),res,S.key);
-  const rec=_stRec(S,"learning"); rec.res=res; rec.gradedTs=Date.now(); _stWrite(S.kid,S.key,rec);
+  const prev=stRecs(S.kid)[S.key]||{}, out=stApplyResults(S.kid,S.words.map(w=>w.name),res,S.key,prev.was||null);   // GRADKEEP
+  const rec=_stRec(S,"learning"); rec.res=res; rec.gradedTs=Date.now(); if(out&&out.was) rec.was=out.was; _stWrite(S.kid,S.key,rec);
   if(typeof gwShowToast==="function") gwShowToast("📝 All "+S.words.length+" words added to learning — you can still grade it later from the test card");
   stCheckCard(S.kid,S.key);   // 📝 STTESTCARD
   stClose();
@@ -70773,6 +70984,79 @@ function buildSprintUnitHtml(color){
 // the shared 60s tap-along timer + score log.
 const LA_UNIT_ID="language_arts";
 function laUnitFor(kid){ const u=(unitStudies||{})[LA_UNIT_ID]; return (u&&(u.enrolled||{})[kid])?u:null; }
+// LAIRR_START — ＋ Add Irregulars to the Language Arts unit (units switch-over step 9, her §9 of MAP_units_switchover_2026-10-24;
+// PLAN_la_irregulars_2026-10-26.md; her go-ahead 2026-10-26). The Language Arts unit is a DATABASE record, not a code starter:
+// its Plural Nouns deck holds 6 cards and Verb Tenses 5, while Ellis's saved list already carries 15 irregular-plural and 25
+// irregular-past question cards in those decks (names + answers; read-only snapshot 2026-10-26). This Mom button appends those
+// 40 to the unit record so they are unit cards for every kid on the unit — names spelled EXACTLY as the saved entries (so
+// his cards match by deck + prompt), family:"Irregulars", order after the existing. NO `stages` field: that would flip LA to
+// a staged unit and lock plain enroll (_unitStagedEnrollPending). Create-only per card index: the plan lists every write; Yes
+// rebuilds it and refuses if a deck changed; one root-level update; never in ?dryrun=1; momHere() only. Nothing is written to
+// any kid — Ellis's 40 are already his cards / bank entries under these names; Lincoln's 40 come in step 16 (by check-up).
+// Generic English content, no kid name: another family's language_arts record would get the same button (create-only).
+const LAIRR_CARDS={
+  "Plural Nouns":[["man","men"],["woman","women"],["child","children"],["tooth","teeth"],["foot","feet"],["mouse","mice"],["goose","geese"],["person","people"],["ox","oxen"],["leaf","leaves"],["knife","knives"],["wolf","wolves"],["half","halves"],["sheep","sheep"],["deer","deer"]].map(p=>({name:"What is the plural of <u>"+p[0]+"</u>?",def:p[1]})),
+  "Verb Tenses":[["go","went"],["eat","ate"],["take","took"],["write","wrote"],["become","became"],["see","saw"],["run","ran"],["come","came"],["give","gave"],["sing","sang"],["swim","swam"],["drink","drank"],["bring","brought"],["think","thought"],["buy","bought"],["catch","caught"],["teach","taught"],["fly","flew"],["know","knew"],["grow","grew"],["throw","threw"],["break","broke"],["speak","spoke"],["ride","rode"],["sleep","slept"]].map(p=>({name:"What is the past tense of <u>"+p[0]+"</u>?",def:p[1]}))
+};
+function laIrrPlan(unitId,ts){   // pure: reads memory, returns every write in plain words too
+  const P={unitId:unitId||LA_UNIT_ID,ok:false,why:"",writes:[],ts:ts||Date.now(),sum:{decks:{},already:0}};
+  const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[P.unitId];
+  if(!u||!Array.isArray(u.decks)){ P.why="The Language Arts unit isn’t in the database."; return P; }
+  if(u.stages){ P.why="This unit has stages — the Irregulars are for the plain Language Arts unit."; return P; }
+  Object.keys(LAIRR_CARDS).forEach(key=>{
+    if(P.why) return;
+    const di=u.decks.findIndex(d=>d&&d.key===key); if(di<0){ P.why="The unit has no "+key+" deck."; return; }
+    const raw=u.decks[di].cards||[], arr=Array.isArray(raw)?raw:Object.keys(raw).filter(k=>/^\d+$/.test(k)).map(k=>raw[k]);
+    const idxs=Array.isArray(raw)?raw.map((c,i)=>i):Object.keys(raw).filter(k=>/^\d+$/.test(k)).map(Number);
+    let next=idxs.length?Math.max(...idxs)+1:0, order=arr.reduce((m,c)=>Math.max(m,(c&&c.order)||0),0), n=0;
+    const have=new Set(arr.filter(Boolean).map(c=>c.name));
+    LAIRR_CARDS[key].forEach(c=>{ if(have.has(c.name)){ P.sum.already++; return; } order++;
+      P.writes.push({path:"unitStudies/"+P.unitId+"/decks/"+di+"/cards/"+(next++),value:{name:c.name,def:c.def,family:"Irregulars",order:order},what:"adds “"+_laStrip(c.name)+"” → "+c.def+" to "+key}); n++; });
+    P.sum.decks[key]={di:di,before:arr.filter(Boolean).length,adding:n};
+  });
+  if(P.why){ P.writes=[]; return P; }   // a refusal carries no writes at all
+  if(!P.writes.length){ P.why="Every Irregular is already in the unit."; return P; }
+  P.ok=true; return P;
+}
+let laIrrView=null;   // {plan, msg} while the panel is open
+function laIrrOpen(){ if(!(typeof momHere==="function"&&momHere())) return; laIrrView={plan:laIrrPlan(LA_UNIT_ID),msg:""}; const el=document.getElementById("content"); if(el) renderUnits(el); }
+function laIrrClose(){ laIrrView=null; const el=document.getElementById("content"); if(el) renderUnits(el); }
+function laIrrApply(plan){
+  if(!(typeof momHere==="function"&&momHere())||!plan||!plan.ok) return false;
+  const again=laIrrPlan(plan.unitId,plan.ts);
+  if(JSON.stringify(again.writes)!==JSON.stringify(plan.writes)){ laIrrView={plan:again,msg:"The unit changed since the plan was made — here’s the new plan. Nothing was written."}; const el=document.getElementById("content"); if(el) renderUnits(el); return false; }
+  if(typeof db==="undefined"||!db||(typeof _dryRun==="function"&&_dryRun())){ if(laIrrView) laIrrView.msg="Dry run — nothing was written."; const el=document.getElementById("content"); if(el) renderUnits(el); return false; }
+  const up={}; plan.writes.forEach(w=>{ up[w.path]=w.value; });
+  db.ref().update(up).then(()=>{ plan.writes.forEach(w=>_wrSetLocal(w.path,w.value)); laIrrView=null; const el=document.getElementById("content"); if(el) renderUnits(el); })
+    .catch(()=>{ if(laIrrView) laIrrView.msg="That didn’t save — nothing changed. Try again when you’re online."; const el=document.getElementById("content"); if(el) renderUnits(el); });
+  return true;
+}
+function laIrrHtml(u,esc){   // the Mom panel row on the Language Arts unit only
+  if(!u||u.id!==LA_UNIT_ID||!(typeof momHere==="function"&&momHere())) return "";
+  esc=esc||(v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"));
+  const btn=(bg,fg,bd)=>'padding:7px 14px;border-radius:10px;border:1.5px solid '+bd+';background:'+bg+';color:'+fg+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  const V=laIrrView, P=V?V.plan:laIrrPlan(u.id);
+  let h='<div style="margin-top:12px;padding-top:11px;border-top:1px solid var(--border)">';
+  if(!V){
+    h+='<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap"><span style="flex:1;min-width:150px;font-size:12px;font-weight:700;color:#1f2937">\u{1F465} Irregulars<div style="font-size:10.5px;font-weight:600;color:var(--muted)">Irregular plurals and past tenses as unit cards — the saved question cards, so the kids’ cards match by name.</div></span>';
+    if(P.ok) h+='<button onclick="laIrrOpen()" style="'+btn("#fff","#1f2937","var(--border)")+'">\uFF0B Add Irregulars ('+P.writes.length+')</button>';
+    else h+='<span style="font-size:11px;font-weight:700;color:'+(/already in the unit/.test(P.why)?'#15803d':'#b45309')+'">'+(/already in the unit/.test(P.why)?'\u2713 Irregulars are in':esc(P.why))+'</span>';
+    return h+'</div></div>';
+  }
+  h+='<div style="font-size:12.5px;font-weight:800;color:#1f2937;margin-bottom:6px">Add the Irregulars to '+esc(u.title||u.id)+'</div>';
+  if(V.msg) h+='<div style="font-size:11.5px;font-weight:700;color:#b45309;margin-bottom:6px">'+esc(V.msg)+'</div>';
+  if(!P.ok) return h+'<div style="font-size:11.5px;color:#374151;line-height:1.5">'+esc(P.why)+'</div><div style="margin-top:8px"><button onclick="laIrrClose()" style="'+btn("#fff","var(--muted)","var(--border)")+'">Close</button></div></div>';
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Here’s everything it does. Nothing is written until you tap Yes.</div><ul style="font-size:11.5px;color:#374151;line-height:1.45;padding-left:18px;margin:0">';
+  Object.keys(P.sum.decks).forEach(k=>{ const d=P.sum.decks[k]; h+='<li style="margin:3px 0"><b>'+esc(k)+'</b>: '+d.before+' card'+(d.before===1?'':'s')+' today → adds <b>'+d.adding+'</b> after them, family “Irregulars”.</li>'; });
+  if(P.sum.already) h+='<li style="margin:3px 0">'+P.sum.already+' already in the unit — skipped.</li>';
+  h+='<li style="margin:3px 0">Nothing is written to any kid: a kid whose list already has these names keeps the same cards — they become unit cards by name.</li>';
+  h+='<li style="margin:3px 0">Not touched: the unit’s other decks, its enrolment, its stages (none — plain enroll stays open), nbInsert, every kid’s cards.</li></ul>';
+  h+='<details style="margin-top:6px"><summary style="font-size:11px;font-weight:700;color:var(--muted);cursor:pointer">'+P.writes.length+' saved changes</summary><div style="font-size:10.5px;color:#374151;line-height:1.45;margin-top:4px;max-height:220px;overflow:auto">'+P.writes.map(w=>esc(w.what)).join('<br>')+'</div></details>';
+  h+='<div style="display:flex;gap:6px;margin-top:9px"><button onclick="laIrrApply(laIrrView&&laIrrView.plan)" style="'+btn("#2d6a4f","#fff","#2d6a4f")+'">\u2713 Yes, add them</button><button onclick="laIrrClose()" style="'+btn("#fff","var(--muted)","var(--border)")+'">Cancel</button></div>';
+  if(typeof _dryRun==="function"&&_dryRun()) h+='<div style="font-size:10.5px;color:#b45309;margin-top:5px">Dry run — Yes writes nothing.</div>';
+  return h+'</div>';
+}
+// LAIRR_END
 function _laStrip(html){ return String(html||"").replace(/<[^>]*>/g,"").replace(/\s+/g," ").trim(); }
 const LA_MODES=[
   {v:"fix",l:"\u{270F}\u{FE0F} Fix It",desc:"Every sentence hides mistakes \u{2014} find each one and say the fix out loud."},

@@ -21,6 +21,8 @@
  *   · step 3 (2026-10-25): Mom's Day card "📅 Curriculum heads-up" — each kid's 🔴/🟠 rows above her typed rows
  *     (overdue + this week, ✓ only, unchanged), 🏡 Family once; grey hand-offs only with endOnDay; empty → "";
  *     the plan bar gets its own "N heads-up" chip (never mixed into her "overdue" count)
+ *   · step 5 (2026-10-25): her typed rows that name a subject carry a status chip — "N left · date", "paused …",
+ *     "list empty since …"; none for no-list / unstamped / unknown subjects or done rows; memoised; still no writes
  *   · ZERO Firebase writes anywhere; no kid names / Howe subject keys in the block
  *
  *   run:  node test_rmx_derive.js
@@ -451,6 +453,30 @@ console.log("\n# plan bar — its own heads-up chip");
   reset({ s1: sub(10, { display: "Book One" }) }); doneN("s1", 5); ctx.proj.s1 = projTo(plus(30)); ctx.roadmapData = { [K]: { roadmap: { r1: { due: "2026-10-20", text: "Order Cursive", kind: "add", done: null } } } };
   bar = T("planBarHTML")(K);
   ok("an overdue note and a heads-up show as two separate counts", /1 overdue/.test(bar) && /1 heads-up/.test(bar) && bar.indexOf("1 overdue") < bar.indexOf("1 heads-up"), bar);
+}
+
+console.log("\n# step 5 — status chips on her typed rows");
+{
+  const row = (sk, extra) => T("rmRowHTML")(K, Object.assign({ id: "r9", due: "2026-11-02", text: "Append the next book", kind: "append", subject: sk, done: null }, extra || {}), TODAY, true);
+  reset({ s1: sub(10, { display: "Book One" }), far: sub(30, { display: "Long Book" }), p: sub(10, { display: "Paused Book", paused: true, pausedSince: "2026-10-03T14:00:00.000Z" }), e: sub(6, { display: "Empty Book" }), d: { display: "Daily", tracking: "daily" }, un: { display: "Unstamped", lessonSeq: ["a", "b"] } });
+  doneN("s1", 5); ctx.proj.s1 = projTo(plus(3)); doneN("far", 16); doneN("e", 6, "2026-10-14");
+  let st = T("rmxStatus")(K, "s1");
+  ok("5 left with a projection → '5 left · Tue Oct 27' (date from the Grid)", st && st.state === "left" && st.left === 5 && st.text === "5 left · Tue Oct 27" && st.est === false, st);
+  st = T("rmxStatus")(K, "far");
+  ok("14 left, no projection → '14 left · ~Dec 10' (estimate walked Tue/Thu from Sat Oct 24)", st && st.left === 14 && st.text === "14 left · ~Dec 10" && st.est === true, st);
+  st = T("rmxStatus")(K, "p");
+  ok("paused → 'paused Oct 3' (pausedSince)", st && st.state === "paused" && st.text === "paused Oct 3", st);
+  st = T("rmxStatus")(K, "e");
+  ok("0 left → 'list empty since Oct 14'", st && st.state === "empty" && st.left === 0 && st.text === "list empty since Oct 14", st);
+  ok("daily tracking / unstamped / unknown subject → null (nothing to say)", T("rmxStatus")(K, "d") === null && T("rmxStatus")(K, "un") === null && T("rmxStatus")(K, "nope") === null);
+  let h = row("s1");
+  ok("the typed row carries the subject chip AND the status chip, red at ≤ 5 left", /Book One<\/span>/.test(h) && /5 left · Tue Oct 27/.test(h) && h.indexOf("Book One</span>") < h.indexOf("5 left") && /color:#b5394a;border:1px solid #b5394a55[^>]*>5 left/.test(h), h);
+  ok("14 left → grey chip; paused → muted grey", /color:#475569[^>]*>14 left · ~Dec 10/.test(row("far")) && /color:#64748b[^>]*>paused Oct 3/.test(row("p")));
+  ok("no subject → no chip; done row → no chip; unknown subject → name only", !/left|paused|empty/.test(row("")) && !/5 left/.test(row("s1", { done: 1 })) && /nope<\/span>/.test(row("nope")) && !/left/.test(row("nope")));
+  ok("the chip is in the Mom HQ strip and on Mom's Day", (ctx.roadmapData = { [K]: { roadmap: { r9: { due: "2026-11-02", text: "Append the next book", kind: "append", subject: "far", done: null } } } }, /14 left · ~Dec 10/.test(T("rmStripHTML")(K))) && (ctx.roadmapData[K].roadmap.r9.due = TODAY, /14 left · ~Dec 10/.test(T("rmWeekHTML")(TODAY))));
+  ok("memoised: the same object comes back until the key changes", T("rmxStatus")(K, "s1") === T("rmxStatus")(K, "s1") && (ctx.currData.lastEdit = ++edit, T("rmxStatus")(K, "s1") !== st));
+  ok("a fixed-date class ends on its class dates", (() => { reset({ c: sub(2, { display: "Voice", fixedTime: "10:00", fixedDates: [plus(5), plus(12)] }) }); doneN("c", 0); const x = T("rmxStatus")(K, "c"); return x && x.text === "2 left · Nov 5" && x.est === false; })(), T("rmxStatus")(K, "c"));
+  ok("a lane member is paced by its lane (lnRhythm Tue/Thu) — same estimate as a plain subject here", (() => { reset({ a: sub(10, { display: "Book A" }) }, { L1: { units: [{ sk: "a" }] } }); doneN("a", 2); return T("_rmxLaneOf")(K, "a").id === "L1" && T("rmxStatus")(K, "a").left === 8; })());
 }
 
 console.log("\n# writes");

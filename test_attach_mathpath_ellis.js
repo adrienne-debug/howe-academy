@@ -67,7 +67,7 @@ const stage7 = w => w._ustCards(w.G.unitStudies[UNIT], 7);
 
 (async () => {
 console.log("── the row ──");
-ok("UA_ATTACH has Ellis → Math Fluency Path, stage 7, fill, no strayOk — beside Lucy's step-1 row", (t => Object.keys(t).join() === UNIT && Object.keys(t[UNIT]).sort().join() === "ellis,lucy" && t[UNIT].ellis.stage === 7 && t[UNIT].ellis.fill === true && !t[UNIT].ellis.strayOk && t[UNIT].lucy.stage === 6)(world().UA_ATTACH));
+ok("UA_ATTACH has Ellis → Math Fluency Path, stage 7, fill, no strayOk — beside Lucy's, Lincoln's and Julian's rows (steps 1, 3, 6)", (t => Object.keys(t).filter(u => u === UNIT).length === 1 && Object.keys(t[UNIT]).sort().join() === "ellis,julian,lincoln,lucy" && t[UNIT].ellis.stage === 7 && t[UNIT].ellis.fill === true && !t[UNIT].ellis.strayOk && t[UNIT].lucy.stage === 6)(world().UA_ATTACH));
 ok("one UNITATTACH block, one UA_ATTACH table (the step adds a row, not code)", src.split("// UNITATTACH_START").length === 2 && src.split("const UA_ATTACH=").length === 2);
 
 console.log("\n── his data vs the unit ──");
@@ -140,17 +140,17 @@ console.log("\n── nothing writes when it shouldn't ──");
   const P = w.uaPlanAttach(UNIT, KID); ok("a Math Facts card that isn't a stage-7 fact stops the plan and names it", !P.ok && /½ of 10/.test(P.why) && /Nothing was changed/.test(P.why), P.why); }
 { const w = world(); w.G.masteryData.ellis[5].answer = "forty-two";   // his 6×7 card with a different back
   const P = w.uaPlanAttach(UNIT, KID); ok("a back that differs is reported and kept — never written", P.ok && P.sum.backDiffers.length === 1 && /6×7/.test(P.sum.backDiffers[0]) && !P.writes.some(x => /^mastery\/ellis\//.test(x.path)), P.sum.backDiffers); }
-{ const w = world(); ok("Julian / Lincoln: 'hook up in a later step'", /later step/.test(w.uaPlanAttach(UNIT, "julian").why) && /later step/.test(w.uaPlanAttach(UNIT, "lincoln").why)); }
+{ const w = world(); ok("Caleb (no row yet): 'hooks up in a later step'", /later step/.test(w.uaPlanAttach(UNIT, "caleb").why)); }
 
 console.log("\n── the stock enroll is closed for him, open for the kids without a row ──");
 { const w = world(), u = w.G.unitStudies[UNIT];
-  ok("uaLocked: Ellis yes (Lucy too, step 1); Julian / Lincoln no", w.uaLocked(u, KID) === true && w.uaLocked(u, "lucy") === true && w.uaLocked(u, "julian") === false && w.uaLocked(u, "lincoln") === false);
+  ok("uaLocked: Ellis yes (Lucy and Lincoln too, steps 1, 3); Caleb no", w.uaLocked(u, KID) === true && w.uaLocked(u, "lucy") === true && w.uaLocked(u, "lincoln") === true && w.uaLocked(u, "caleb") === false);
   ok("_ustApply returns null for Ellis (no placed cards minted, no settings overwritten)", w._ustApply(u, KID, 7, "", "", "") === null && JSON.stringify(w.G.masteryData.ellis_settings) === JSON.stringify(FX.settings) && w.G.masteryData.ellis.length === FX.itemsLength);
-  ok("…but still seeds Lincoln at stage 8 (stock path untouched for a kid without a row)", (r => r && Object.keys(r.iu).length > 0)(w._ustApply(u, "lincoln", 8, "", "", "")));
+  ok("…but still seeds Caleb at stage 1 (stock path untouched for a kid without a row)", (r => r && Object.keys(r.iu).length > 0)(w._ustApply(u, "caleb", 1, "", "", "")));
   w.unitStageFormOpen(UNIT, KID); ok("the stock '+ Ellis' form doesn't open", w.form === null);
-  w.unitStageFormOpen(UNIT, "lincoln"); ok("…the stock '+ Lincoln' form does", w.form && w.form.kid === "lincoln");
-  const w2 = world(), h = w2._unitStageRowsHtml(w2.G.unitStudies[UNIT], ["julian", "lucy", "ellis", "lincoln"]);
-  ok("his row shows 🔗 Hook up Ellis (Lucy's too); Julian and Lincoln keep + Kid", /Hook up Ellis/.test(h) && !/\+ Ellis/.test(h) && /Hook up Lucy/.test(h) && /\+ Julian/.test(h) && /\+ Lincoln/.test(h) && !/Hook up (Julian|Lincoln)/.test(h));
+  w.unitStageFormOpen(UNIT, "caleb"); ok("…the stock '+ Caleb' form does", w.form && w.form.kid === "caleb");
+  const w2 = world(), h = w2._unitStageRowsHtml(w2.G.unitStudies[UNIT], ["caleb", "lucy", "ellis", "lincoln"]);
+  ok("his row shows 🔗 Hook up Ellis (Lucy's and Lincoln's too); Caleb keeps + Kid", /Hook up Ellis/.test(h) && !/\+ Ellis/.test(h) && /Hook up Lucy/.test(h) && /Hook up Lincoln/.test(h) && /\+ Caleb/.test(h) && !/Hook up Caleb/.test(h));
   w.uaAttachOpen(UNIT, KID); const h2 = w._unitStageRowsHtml(u, [KID]);
   ok("the plan panel: 13 cards stay, Stage 7 marker, 266 added, next cards unchanged (12×8 …), 268 saved changes, Yes + Cancel", /13 Math Facts cards stay exactly as they are/.test(h2) && /Stage 7 · × and ÷ facts/.test(h2) && /Adds <b>266<\/b>/.test(h2) && /next new cards don’t change: 12×8/.test(h2) && /268 saved changes/.test(h2) && /Yes, hook up Ellis/.test(h2) && /Cancel/.test(h2) && !/Dry run/.test(h2));
   const wd = world({ dry: true }); wd.uaAttachOpen(UNIT, KID); ok("…and says 'Dry run — Yes writes nothing' under ?dryrun=1", /Dry run — Yes writes nothing/.test(wd._unitStageRowsHtml(wd.G.unitStudies[UNIT], [KID])));
