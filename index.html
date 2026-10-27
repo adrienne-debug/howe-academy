@@ -54003,8 +54003,229 @@ const MAST_MATH_ANS={
 const MAST_DEFAULT_CAT_MODES={julian:{Letters:"flash",Numbers:"flash",Colors:"flash",Shapes:"flash",Animals:"flash",Counting:"flash",Dinosaurs:"flash"},lucy:{"Sight Words":"flash","Math Facts":"quiz","Spelling":"quiz","Science":"flip","Vocabulary":"flip"},ellis:{"Math Facts":"quiz","State Capitals":"flip","Science":"flip","Vocabulary":"flip","Spelling":"quiz","Grammar":"flip","Greek & Latin Roots":"flip","Measurements":"flip"},lincoln:{"Math Facts":"quiz","Vocabulary":"flip","AAS Words":"quiz","SpellingYouSee":"quiz","Grammar":"flip","Greek & Latin Roots":"flip","World Geography":"flip","Science":"flip","U.S. History":"flip"}};
 function mastGetCatMode(kid,cat){ const s=masteryData[kid+"_settings"]||{}; if(s.cat_modes&&s.cat_modes[cat]) return s.cat_modes[cat]; return (MAST_DEFAULT_CAT_MODES[kid]||{})[cat]||"flash"; }
 const MAST_INTRO_HINTS={Letters:"say each letter out loud",Numbers:"count out loud",Counting:"count the dinosaurs out loud",Dinosaurs:"say the dinosaur name",Colors:"say the color name",Shapes:"say the shape name",Animals:"say the animal name","Sight Words":"read the word out loud","Math Facts":"say the answer out loud",Spelling:"spell it out loud, letter by letter",Science:"say what you see",Vocabulary:"say the word out loud","State Capitals":"say the capital city",Grammar:"read the definition out loud","Greek & Latin Roots":"say the meaning out loud",Measurements:"say the conversion out loud","World Geography":"say the capital city","U.S. History":"say when and what happened"};
-function mastGetDef(kid,prompt){
+// OURWORDS_START — 📝 Our words, PR 1 of 6: the home and the resolver, no screens (DESIGN_our_words_2026-10-24.md §4, §5.4, §6,
+//   §10, §16 item 1; her go 2026-10-27 — step 0 of BRIEF_units_build_2026-10-27.md). Her words 2026-10-24: "a mom's own edited
+//   added words … it needs a place, it needs a home"; "we definitely do not want duplicates. We can link it up to things that
+//   are in a unit or in a book."
+//   · THE HOME: mastery/<kid>_ourwords/<owId> = {v:1, kind:"add"|"wording"|"link", unit, deck, name, back?, at?, card?, cardId?,
+//     linkDeck?, src, from?, note?, order, ts, edited?, off?} — a flat map, one record per word, keys are ids (user text is
+//     never a key). It rides the one `mastery` listener (4441: masteryData={...v}); no new listener, nothing else changes shape.
+//     The shared unit record (unitStudies/*) is never written by anything here — a family's words stay in that family's data.
+//   · AN OUR-WORDS CARD IS AN ORDINARY CARD in the unit's deck (same `subject`) — drills, sessions, the Mix, check-ups, Problem
+//     words, the notebook and the review engine work with no change. What makes it "ours" is the record pointing at it by
+//     deck + name. Cards are appended at items.length (pwApply pattern), never stamped, never re-sorted (the notebook contract).
+//   · THE RESOLVER: mastGetDef(kid,prompt,deck) gains an optional third argument. With the deck: a live wording/add record's
+//     back wins, then deck_defs (PR 5 writes it; absent = skip), then today's chain unchanged. Every flip-side site that has the
+//     card passes it.subject; recite sites read owRuleBack(kid,it) = the family wording || it.answer. Without a deck, or with no
+//     records, every answer is byte-for-byte today's.
+//   · NO DUPLICATES: owFind(kid,unit,deck,word) looks a word up in this order — a live card HERE › an add record WAITING for its
+//     spot › the UNIT's own card list › the kid's BANK › a card ELSEWHERE (another deck) › nowhere = NEW — and carries alsoIn[]
+//     for the information line. owPlanAdd is pure (no writes, no db); owApplyAdd re-checks every row at apply time (another
+//     device may have added it) and writes only §10's paths: record set · card append by index · bank entry by transaction.
+//     A bank entry never carries `def` (it would turn a flip card into a recite card, §2.4). Mom-only; dry-run inert.
+//   · Not in this PR: owAtOpen + the mastBankEligible hook and the mint hook (PR 2), every screen (PR 3), the notebook line
+//     (PR 4), family wording + deck_defs writers (PR 5), Lincoln's migration (PR 6). §17's four questions are still hers.
+const OW_KINDS={add:1,wording:1,link:1};
+const OW_CARD_FIELDS=["review_mode","knowledge_type","type","generationRule","generated","problemCount","imageUrl","emoji","example","sentence"];
+const OW_NONE={};
+function owKey(s){ return String(s==null?"":s).replace(/[.$#\[\]\/%]/g,c=>"%"+c.charCodeAt(0).toString(16)); }   // the reversible encoder _hlpKey uses (deck_defs keys, PR 5)
+// §6.1 the same-word test: markup off, pwKey's one-dot leader back to ".", straight quotes, NFC (not NFKC — "2³" must stay
+// "2³", "⅓" must stay "⅓"), spacing-insensitive ("ice cream" = "icecream", "3 + 4 × 2" = "3+4×2"), case-insensitive.
+function owNorm(s){
+  return String(s==null?"":s).replace(/<[^>]*>/g,"").replace(/․/g,".").replace(/[‘’]/g,"'").replace(/[“”]/g,'"').normalize("NFC").replace(/\s+/g,"").toLowerCase();
+}
+function owSame(a,b){
+  const x=String(a==null?"":a).trim(), y=String(b==null?"":b).trim();
+  if([...x].length===1||[...y].length===1) return x===y;   // single letters keep case: a Letters deck's "A" ≠ "a"
+  return owNorm(x)===owNorm(y);
+}
+function owItems(kid){ let it=((typeof masteryData!=="undefined"&&masteryData)||{})[kid]||[]; if(!Array.isArray(it)) it=Object.values(it); return it; }
+function owRecs(kid){ const m=((typeof masteryData!=="undefined"&&masteryData)||{})[kid+"_ourwords"]; return (m&&typeof m==="object")?m:OW_NONE; }
+// §5.4 the in-memory index: deck + "\u0001" + name → {add, wording, link} (live records only), rebuilt when the kid's
+// _ourwords map changes identity (the listener replaces it on every event) — no per-card scans.
+let _owIdx={};
+function owIndex(kid){
+  const recs=owRecs(kid), c=_owIdx[kid]; if(c&&c.src===recs) return c.map;
+  const map=new Map();
+  Object.keys(recs).forEach(id=>{ const r=recs[id]; if(!r||r.off||!OW_KINDS[r.kind]||r.deck==null||r.name==null) return;
+    const k=String(r.deck)+"\u0001"+String(r.name); const cur=map.get(k)||{}; if(!cur[r.kind]) cur[r.kind]=Object.assign({owId:id},r); map.set(k,cur); });
+  _owIdx[kid]={src:recs,map:map}; return map;
+}
+function owRec(kid,deck,name,kind){ const e=owIndex(kid).get(String(deck)+"\u0001"+String(name)); if(!e) return null; return kind?(e[kind]||null):(e.wording||e.add||e.link||null); }
+// §5.4 layer 1 — the family's own back for (kid, deck, exact prompt): a wording record, else an add record that carries a back.
+function owBack(kid,deck,name){
+  if(deck==null||deck===""||name==null) return "";
+  const e=owIndex(kid).get(String(deck)+"\u0001"+String(name)); if(!e) return "";
+  if(e.wording&&e.wording.back) return String(e.wording.back);
+  if(e.add&&e.add.back) return String(e.add.back);
+  return "";
+}
+// The rule (recite) card's back: the family wording for (it.subject, it.prompt), else the card's own answer. Callers keep
+// their own "a real back ≠ the prompt" test.
+function owRuleBack(kid,it){ if(!it) return ""; const w=owBack(kid,it.subject,it.prompt); if(w) return w; return it.answer!=null?String(it.answer):""; }
+// §5.3 which card belongs to a record — a link by id; otherwise this deck's card with that exact prompt (twins excluded).
+function owCardFor(kid,rec){
+  if(!rec) return null; const items=owItems(kid);
+  if(rec.kind==="link") return items.find(i=>i&&i.id===rec.cardId)||null;
+  return items.find(i=>i&&i.subject===rec.deck&&i.prompt===rec.name&&i.dir!=="prod"&&!i.twinOf)||null;
+}
+function owInBank(kid,deck,name){ let b=((typeof masteryData!=="undefined"&&masteryData)||{})[kid+"_custom_items"]||[]; if(!Array.isArray(b)) b=Object.values(b); return b.some(e=>e&&e.cat===deck&&e.name===name); }
+function owCardState(kid,it,rec){
+  if(!it) return (rec&&rec.kind==="add"&&owInBank(kid,rec.deck,rec.name))?"waiting":"not started";
+  if(typeof mastIsParked==="function"&&mastIsParked(it)) return "parked";
+  if(it.status==="introduction") return "learning";
+  if(it.tier==="graduated") return "graduated";
+  return (typeof mhqTierLbl==="function")?(mhqTierLbl(it.tier||"")||"ladder"):(it.tier||"ladder");
+}
+// §5.1 the list a screen draws: this kid's records (not off unless asked), by deck and/or unit, each with its card and state, in order.
+function owList(kid,opt){
+  opt=opt||{}; const recs=owRecs(kid), out=[];
+  Object.keys(recs).forEach(id=>{ const r=recs[id]; if(!r||!OW_KINDS[r.kind]) return;
+    if(r.off&&!opt.includeOff) return;
+    if(opt.deck!=null&&r.deck!==opt.deck) return;
+    if(opt.unit!==undefined&&(r.unit||null)!==(opt.unit||null)) return;
+    const card=owCardFor(kid,r); out.push(Object.assign({owId:id},r,{card:card,state:owCardState(kid,card,r)})); });
+  out.sort((a,b)=>((a.order||0)-(b.order||0))||((a.ts||0)-(b.ts||0)));
+  return out;
+}
+function owNextOrder(kid,deck){ let n=0; const recs=owRecs(kid); Object.keys(recs).forEach(id=>{ const r=recs[id]; if(r&&r.deck===deck&&(r.order||0)>n) n=r.order; }); return n+1; }
+function owNewId(){ return "ow"+Date.now().toString(36)+Math.random().toString(36).slice(2,8); }   // a client-made id (time-sorted, key-safe); the planner stays pure
+function _owDecks(u){ return u?(Array.isArray(u.decks)?u.decks:Object.values(u.decks||{})):[]; }
+function _owCards(d){ return d?(Array.isArray(d.cards)?d.cards:Object.values(d.cards||{})):[]; }
+// §6.2 the look-up. Returns the FIRST hit {kind:"here"|"waiting"|"unit"|"bank"|"elsewhere"|"new", …} plus alsoIn[] = every
+// other hit ({where, deck, unit?, state, id?}) so Mom sees, e.g., "also a German card" for "er". Another enrolled unit's card
+// list is information only (row 6): it never wins, so the word becomes its own card here unless Mom says otherwise.
+function owFind(kid,unit,deck,word){
+  const w=String(word==null?"":word).trim(); if(!w) return {kind:"new",deck:deck,name:w,alsoIn:[]};
+  const items=owItems(kid), isTwin=i=>i.dir==="prod"||!!i.twinOf;
+  const live=items.map((it,idx)=>({it:it,idx:idx})).filter(x=>x.it&&x.it.prompt!=null&&!isTwin(x.it)&&owSame(x.it.prompt,w));
+  const stateOf=it=>owCardState(kid,it,null);
+  const hits=[];
+  live.filter(x=>x.it.subject===deck).forEach(x=>hits.push({kind:"here",idx:x.idx,id:x.it.id,deck:deck,name:x.it.prompt,state:stateOf(x.it),tier:x.it.tier||"",status:x.it.status||""}));
+  let waitRec=null; const recs=owRecs(kid);
+  Object.keys(recs).forEach(id=>{ const r=recs[id]; if(!waitRec&&r&&!r.off&&r.kind==="add"&&r.deck===deck&&owSame(r.name,w)&&!owCardFor(kid,r)) waitRec=Object.assign({owId:id},r); });
+  if(waitRec) hits.push({kind:"waiting",deck:deck,name:waitRec.name,rec:waitRec,at:waitRec.at||null,state:"waiting"});
+  const us=(typeof unitStudies!=="undefined"&&unitStudies)||{};
+  const uc=unit?(_owCards(_owDecks(us[unit]).find(d=>d&&d.key===deck)).find(c=>c&&c.name!=null&&owSame(c.name,w))||null):null;
+  if(uc) hits.push({kind:"unit",unit:unit,deck:deck,name:uc.name,lesson:(uc.lesson!=null?uc.lesson:(uc.ch!=null?uc.ch:null)),level:(uc.stage!=null?uc.stage:null),state:"not started"});
+  const bank=(typeof mastFullBank==="function")?((mastFullBank(kid)||{})[deck]||[]):[]; const bankName=bank.find(n=>owSame(n,w));
+  if(bankName!=null) hits.push({kind:"bank",deck:deck,name:bankName,state:"waiting in the bank"});
+  live.filter(x=>x.it.subject!==deck).forEach(x=>hits.push({kind:"elsewhere",idx:x.idx,id:x.it.id,deck:x.it.subject,name:x.it.prompt,state:stateOf(x.it),tier:x.it.tier||""}));
+  ((typeof haKidUnits==="function")?haKidUnits(kid):[]).forEach(u=>{ if(!u||u.id===unit) return; _owDecks(u).forEach(d=>{ if(!d||!d.key) return;
+    if(_owCards(d).some(c=>c&&c.name!=null&&owSame(c.name,w))) hits.push({kind:"info",unit:u.id,deck:d.key,name:w,state:"not started"}); }); });
+  const info=h=>{ const o={where:(h.kind==="here"||h.kind==="elsewhere")?"card":(h.kind==="info"?"unit":h.kind),deck:h.deck,state:h.state}; if(h.unit) o.unit=h.unit; if(h.id) o.id=h.id; return o; };
+  const first=hits.find(h=>h.kind!=="info");
+  if(!first) return {kind:"new",deck:deck,name:w,alsoIn:hits.map(info)};
+  return Object.assign({},first,{alsoIn:hits.filter(h=>h!==first).map(info)});
+}
+// A new card for this deck. spec = the Our-words row (back + card fields: a back never makes it recite by itself — §2.4);
+// no spec = a unit/bank word, minted exactly as mastMintFromBank mints (a rule deck's bank def → recite). start = "ladder"
+// (the default — ADD_START_ALL, her rule 2026-10-13) | "learn" (introduction, parked past the intro cap, as pwApply).
+function owMintItem(kid,deck,name,items,spec,start){
+  const slug=String(name).toLowerCase().replace(/[^a-z0-9]/g,"_").substring(0,20);
+  const item={id:mastUniqueId(items,kid.substring(0,3)+"_"+slug),subject:deck,type:deck.toLowerCase(),prompt:name,tier:"daily",review_mode:"flash",status:"introduction",drop_count:0,consecutive_correct:0,cycle:1,tally_dots:0};
+  if(spec){
+    if(spec.back) item.answer=String(spec.back);
+    const c=spec.card||{}; OW_CARD_FIELDS.forEach(f=>{ if(c[f]!=null) item[f]=c[f]; });
+  } else {
+    const _def=(typeof mastCustomDef==="function")?mastCustomDef(kid,deck,name):"";
+    if(_def){ item.answer=_def; item.review_mode="recite"; }
+    else { const _kdef=mastGetDef(kid,name,deck); if(_kdef) item.answer=_kdef; }
+    if(typeof MAST_ANIMAL_EMOJI!=="undefined"&&(deck==="Animals"||deck==="Dinosaurs")&&MAST_ANIMAL_EMOJI[name]) item.emoji=MAST_ANIMAL_EMOJI[name];
+    const vis=(typeof mastGetVisual==="function")?mastGetVisual(deck,name):null;
+    if(vis){ if(typeof vis==="string") item.emoji=vis; else if(vis.imageUrl) item.imageUrl=vis.imageUrl; }
+  }
+  owStartItem(item,start,deck,items,kid);
+  return item;
+}
+function owStartItem(item,start,deck,items,kid){
+  const s=(typeof mastDrillSettings==="function")?mastDrillSettings():{ladder:["every_other_day"]};
+  if(start==="learn"){
+    const cap=(typeof mastIntroMaxFor==="function")?mastIntroMaxFor(deck,s):3, n=items.filter(i=>i&&i.subject===deck&&i.status==="introduction").length;
+    if(n>=cap){ item.status="parked"; item.tier="daily"; item.tally_dots=0; }
+    return;
+  }
+  item.status="active"; item.tier=(s.ladder||[])[0]||"every_other_day"; item.tally_dots=Math.max(5,item.tally_dots||0); item.placed=true; item.consecutive_correct=0;
+  if(typeof mastStampNextDue==="function") mastStampNextDue(item,items,item.tier,(typeof mastGetPrintNum==="function")?mastGetPrintNum(kid):undefined);
+}
+// §8.4 the pure planner. rows = [{name, back?, at?, card?, note?, start?:"ladder"|"learn"|"wait", choice?, owId?, from?}].
+// choice: "bring" (a card here comes back — where: learn/weekly/monthly), "start" (a waiting word starts now), "own" (its own
+// card here instead of a link to the card elsewhere). Returns {rows:[{name, find, action, rec?, item?, bankEntry?, idx?}], ok, msg}.
+// Nothing is written and db is never touched; owApplyAdd does the writing.
+function owPlanAdd(kid,o){
+  o=o||{}; const unit=o.unit||null, deck=String(o.deck||""), src=o.src||"quick";
+  const out={kid:kid,unit:unit,deck:deck,src:src,rows:[],ok:true,msg:""};
+  if(!kid||!deck){ out.ok=false; out.msg="Pick a kid and a deck first."; return out; }
+  const items=owItems(kid).slice(); let order=owNextOrder(kid,deck); const seen=[];
+  const mkRec=(raw,kind,extra)=>{ const r={owId:(raw&&raw.owId)||owNewId(),v:1,kind:kind,unit:unit,deck:deck,name:String(raw.name).trim(),src:src,order:order++,ts:Date.now()};
+    if(kind==="add"){ if(raw.back!=null&&String(raw.back).trim()) r.back=String(raw.back).trim(); r.at=raw.at||null; if(raw.card&&Object.keys(raw.card).length) r.card=Object.assign({},raw.card); }
+    if(raw.note) r.note=String(raw.note); if(raw.from) r.from=raw.from; return Object.assign(r,extra||{}); };
+  (Array.isArray(o.rows)?o.rows:[]).forEach(raw=>{
+    const name=String((raw&&raw.name)||"").trim(); if(!name) return;
+    if(seen.some(s=>owSame(s,name))) return; seen.push(name);   // the same word twice in one list = once
+    const find=owFind(kid,unit,deck,name), start=raw.start||"ladder";
+    const row={name:name,find:find,action:"leave",choice:raw.choice||null};
+    const mint=(nm,spec)=>{ const it=owMintItem(kid,deck,nm,items,spec,start==="wait"?"ladder":start); items.push(it); return it; };
+    if(find.kind==="here"){ if(raw.choice==="bring"){ row.action="bring"; row.idx=find.idx; row.id=find.id; row.where=raw.where||"learn"; } }
+    else if(find.kind==="waiting"){ if(raw.choice==="start"){ row.action="start"; row.rec=find.rec; row.item=mint(find.rec.name,find.rec); } }
+    else if(find.kind==="unit"||find.kind==="bank"){ row.action="mint"; row.item=mint(find.name,null); }   // the book's exact spelling; the unit's card, not ours — no record
+    else if(find.kind==="elsewhere"){
+      if(raw.choice==="own"){ row.action="own"; row.rec=mkRec(raw,"add"); if(start==="wait"){ row.action="wait"; row.bankEntry=_owBankEntry(deck,name,row.rec); } else row.item=mint(name,row.rec); }
+      else { row.action="link"; row.rec=mkRec(raw,"link",{cardId:find.id,linkDeck:find.deck}); }
+    }
+    else { row.rec=mkRec(raw,"add"); if(start==="wait"){ row.action="wait"; row.bankEntry=_owBankEntry(deck,name,row.rec); } else { row.action="add"; row.item=mint(name,row.rec); } }
+    out.rows.push(row);
+  });
+  return out;
+}
+function _owBankEntry(deck,name,rec){ const be={cat:deck,name:name,ow:rec.owId}; const at=rec.at||{}; if(at.ch!=null) be.ch=at.ch; else if(at.lesson!=null) be.ch=at.lesson; return be; }   // never `def` (§2.4)
+// §8.4 / §10 the one writer. Re-checks every row (another device may have added the word since the plan), updates masteryData
+// first so the screen redraws at once, then writes ONLY: mastery/<kid>_ourwords/<owId> set · mastery/<kid> update by index
+// (append, or the brought-back card) · mastery/<kid>_custom_items transaction append. Mom-only; dry run writes nothing.
+function owApplyAdd(plan){
+  const res={written:{records:0,items:0,bank:0,cards:0},skipped:[],paths:[]};
+  if(!plan||!plan.kid||!plan.deck) return res;
+  if(!((typeof momHere==="function"&&momHere())||(typeof mastAdminPinOk!=="undefined"&&mastAdminPinOk))){ res.skipped.push({why:"Mom only"}); return res; }
+  const kid=plan.kid, deck=plan.deck, unit=plan.unit||null;
+  let items=masteryData[kid]; if(!Array.isArray(items)) items=masteryData[kid]=(items?Object.values(items):[]);
+  let bank=masteryData[kid+"_custom_items"]; if(!Array.isArray(bank)) bank=masteryData[kid+"_custom_items"]=(bank?Object.values(bank):[]);
+  let recs=(masteryData[kid+"_ourwords"]&&typeof masteryData[kid+"_ourwords"]==="object")?masteryData[kid+"_ourwords"]:null;   // the local home, made only when a record is written
+  const live=!!(typeof db!=="undefined"&&db)&&!(typeof _dryRun==="function"&&_dryRun());
+  const iu={}, newRecs={}, bankAdds=[], pn=(typeof mastGetPrintNum==="function")?mastGetPrintNum(kid):undefined;
+  const putRec=rec=>{ if(!recs) recs=masteryData[kid+"_ourwords"]={}; const r=Object.assign({},rec); const id=r.owId; delete r.owId; recs[id]=r; newRecs[id]=r; res.written.records++; res.paths.push("mastery/"+kid+"_ourwords/"+id);
+    if(live) db.ref("mastery/"+kid+"_ourwords/"+id).set(r); };
+  const putItem=item=>{ const ids=new Set(items.map(i=>i&&i.id)); if(ids.has(item.id)) item.id=mastUniqueId(items,item.id); const idx=items.length; items.push(item); iu[idx]=item; res.written.items++; return idx; };
+  (plan.rows||[]).forEach(row=>{
+    if(!row||row.action==="leave"||row.action==="skip") return;
+    const f=owFind(kid,unit,deck,row.name);   // re-check at apply time
+    const hereNow=f.kind==="here";
+    if(row.action==="bring"){ if(!hereNow){ res.skipped.push({name:row.name,why:"the card is gone"}); return; } const it=items[f.idx]; if(!it) return;
+      if(typeof pwPlace==="function") pwPlace(it,row.where||"learn",items,pn); else { it.status="introduction"; it.tier="daily"; it.tally_dots=0; }
+      it.cameBack={ts:Date.now(),from:f.tier||f.status||""}; iu[f.idx]=it; res.written.cards++; return; }
+    if(hereNow){ res.skipped.push({name:row.name,why:"already a card here ("+f.state+")"}); return; }   // never a second card
+    if(row.action==="link"){ if(f.kind!=="elsewhere"){ res.skipped.push({name:row.name,why:"nothing to link to now"}); return; } putRec(Object.assign({},row.rec,{cardId:f.id,linkDeck:f.deck})); return; }
+    if(row.action==="mint"){ if(f.kind!=="unit"&&f.kind!=="bank"){ res.skipped.push({name:row.name,why:"not in the book or bank now"}); return; } putItem(row.item); return; }
+    if(row.action==="wait"){ if(f.kind==="waiting"){ res.skipped.push({name:row.name,why:"already waiting"}); return; } if(row.rec&&!(recs&&recs[row.rec.owId])) putRec(row.rec);
+      if(row.bankEntry&&!owInBank(kid,deck,row.bankEntry.name)){ bank.push(row.bankEntry); bankAdds.push(row.bankEntry); res.written.bank++; } return; }
+    // add · own · start — a record (unless it is the waiting one starting) and its card
+    if(row.rec&&row.action!=="start"&&!(recs&&recs[row.rec.owId])) putRec(row.rec);
+    if(row.item) putItem(row.item);
+  });
+  const ps=Object.keys(iu);
+  if(ps.length){ res.paths.push("mastery/"+kid+" ["+ps.join(",")+"]"); if(live) db.ref("mastery/"+kid).update(iu); }
+  if(bankAdds.length){ res.paths.push("mastery/"+kid+"_custom_items (transaction)"); if(live) db.ref("mastery/"+kid+"_custom_items").transaction(cur=>{
+    const arr=cur==null?[]:(Array.isArray(cur)?cur:Object.values(cur)); bankAdds.forEach(be=>{ if(!arr.some(e=>e&&e.cat===be.cat&&e.name===be.name)) arr.push(be); }); return arr; }); }
+  _owIdx[kid]=null;   // the local map changed in place; the index rebuilds on the next read
+  try{ if(typeof _mastRe==="function") _mastRe(); }catch(e){}
+  return res;
+}
+// OURWORDS_END
+function mastGetDef(kid,prompt,deck){
   const s=masteryData[kid+"_settings"]||{};
+  if(deck!=null&&deck!==""){   // OURWORDS: with the card's deck, the family's own back wins (§5.4) — a live wording/add record, then deck_defs (PR 5; absent = skip)
+    const _ow=(typeof owBack==="function")?owBack(kid,deck,prompt):""; if(_ow) return _ow;
+    const _dd=(s.deck_defs&&typeof owKey==="function")?s.deck_defs[owKey(deck)]:null; if(_dd&&_dd[owKey(prompt)]) return _dd[owKey(prompt)];
+  }
   if(s.definitions&&s.definitions[prompt]) return s.definitions[prompt];
   if(s.definitions&&typeof mastDefKey==="function"&&!mastDefKeyOk(prompt)){ const _dk=s.definitions[mastDefKey(prompt)]; if(_dk) return _dk; }   // ✎ DEFEDIT: "flex/flect" etc.
   // Math facts are matched on the RAW prompt — the keys carry ×, ÷, − and superscripts,
@@ -54235,7 +54456,7 @@ function mastSpellSay(id){
 function mastSpellPeekToggle(id){ mastSpellPeek=mastSpellPeek===id?null:id; _mastRe(); }
 // What a card's definition side says aloud (mirrored by scripts/gen_tts.js for the baked files).
 function mastItemSpeakText(it,prompt){
-  return mastGetDef(masteryKid,prompt)||(it&&it.answer&&it.answer!==it.prompt?it.answer:"")||(it&&it.definition)||"";
+  return mastGetDef(masteryKid,prompt,it&&it.subject)||(it&&it.answer&&it.answer!==it.prompt?it.answer:"")||(it&&it.definition)||"";   // OURWORDS: the card's deck
 }
 function mastSpeakItem(prompt){
   let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
@@ -54574,7 +54795,7 @@ function _matchGateHtml(st,color){
 function _matchPairHtml(it){
   const vis=_smTileVis(it,true);   // noGlyph: pair tile must not be the word itself
   if(vis) return vis;
-  const def=mastGetDef(masteryKid,it.prompt)||((it.answer&&it.answer!==it.prompt)?it.answer:"")||it.definition||"";
+  const def=mastGetDef(masteryKid,it.prompt,it.subject)||((it.answer&&it.answer!==it.prompt)?it.answer:"")||it.definition||"";   // OURWORDS
   // Rendered RAW like everywhere else in the app — prompts/defs carry markup (<u> for the
   // rule-deck target word, .mast-hl spans); escaping showed literal "<u>" on the tiles.
   if(def) return '<span style="font-size:11.5px;font-weight:600;line-height:1.35;pointer-events:none;word-break:break-word">'+String(def).slice(0,120)+'</span>';
@@ -54878,7 +55099,7 @@ const WHICH_BACK_MAX=24, WHICH_FRONT_MAX=40;
 function _whichNorm(s){ return _matchPlain(s).toLowerCase().replace(/\s+/g," ").trim(); }
 // The card's back as a tile shows it, or "" when it has none worth a tile (same as the front, too long, a sound).
 function _whichBack(i){
-  const f=_matchPlain(i&&i.prompt), b=_matchPlain(i&&i.answer);
+  const f=_matchPlain(i&&i.prompt), b=_matchPlain(i&&((typeof owRuleBack==="function")?owRuleBack(masteryKid,i):i.answer));   // OURWORDS
   if(!b||!f||_whichNorm(b)===_whichNorm(f)) return "";
   if(b.length>WHICH_BACK_MAX||f.length>WHICH_FRONT_MAX||b.charAt(0)==="/") return "";
   return b;
@@ -55851,7 +56072,7 @@ function mastApplyScores(items,due,scores,pn,_jset,opts){
               const newItem={id:mastUniqueId(items,_pfx+"_"+slug),subject:cat,type:cat.toLowerCase(),prompt:next,tier:"daily",review_mode:"flash",status:"introduction",drop_count:0,consecutive_correct:0,cycle:1,tally_dots:0};
               const _ndef=mastCustomDef(masteryKid,cat,next);
               if(_ndef){ newItem.answer=_ndef; newItem.review_mode="recite"; }  // rule deck: flips to the rule
-              else { const _nkdef=mastGetDef(masteryKid,next); if(_nkdef) newItem.answer=_nkdef; }  // flip deck: carry the back on the card too
+              else { const _nkdef=mastGetDef(masteryKid,next,cat); if(_nkdef) newItem.answer=_nkdef; }  // flip deck: carry the back on the card too
               if((cat==="Animals"||cat==="Dinosaurs")&&MAST_ANIMAL_EMOJI[next]) newItem.emoji=MAST_ANIMAL_EMOJI[next];
               const _apVis=mastGetVisual(cat,next);
               if(_apVis){ if(typeof _apVis==="string") newItem.emoji=_apVis; else if(_apVis.imageUrl) newItem.imageUrl=_apVis.imageUrl; }
@@ -56640,7 +56861,7 @@ function mastMintFromBank(cat,name,items){
   const item={id:mastUniqueId(_ex,kid.substring(0,3)+"_"+slug),subject:cat,type:cat.toLowerCase(),prompt:name,tier:"daily",review_mode:"flash",status:"introduction",drop_count:0,consecutive_correct:0,cycle:1,tally_dots:0};
   const _def=mastCustomDef(kid,cat,name);
   if(_def){ item.answer=_def; item.review_mode="recite"; }
-  else { const _kdef=mastGetDef(kid,name); if(_kdef) item.answer=_kdef; }
+  else { const _kdef=mastGetDef(kid,name,cat); if(_kdef) item.answer=_kdef; }   // OURWORDS: the deck
   if((cat==="Animals"||cat==="Dinosaurs")&&MAST_ANIMAL_EMOJI[name]) item.emoji=MAST_ANIMAL_EMOJI[name];
   const vis=mastGetVisual(cat,name);
   if(vis){ if(typeof vis==="string") item.emoji=vis; else if(vis.imageUrl) item.imageUrl=vis.imageUrl; }
@@ -56697,7 +56918,7 @@ function mastPullItem(cat,name){
   const item={id:mastUniqueId(items,prefix+"_"+slug),subject:cat,type:cat.toLowerCase(),prompt:name,tier:"daily",review_mode:"flash",status:"introduction",drop_count:0,consecutive_correct:0,cycle:1,tally_dots:0};
   const _def=mastCustomDef(kid,cat,name);
   if(_def){ item.answer=_def; item.review_mode="recite"; }  // rule deck: flips to the rule
-  else { const _kdef=mastGetDef(kid,name); if(_kdef) item.answer=_kdef; }  // flip deck: carry the back on the card too, so a lost definitions map can't blank it
+  else { const _kdef=mastGetDef(kid,name,cat); if(_kdef) item.answer=_kdef; }  // flip deck: carry the back on the card too, so a lost definitions map can't blank it
   if((cat==="Animals"||cat==="Dinosaurs")&&MAST_ANIMAL_EMOJI[name]) item.emoji=MAST_ANIMAL_EMOJI[name];
   const vis=mastGetVisual(cat,name);
   if(vis){
@@ -57966,7 +58187,8 @@ function mastItemVis(it){
 function mastExpandHtml(it){
   const open=mastExpandedId===it.id;
   let inner="";
-  if(it.answer&&it.answer!==it.prompt) inner+='<div>'+it.answer+'</div>';
+  const _xa=(typeof owRuleBack==="function")?owRuleBack(masteryKid,it):it.answer;   // OURWORDS
+  if(_xa&&_xa!==it.prompt) inner+='<div>'+_xa+'</div>';
   if(it.definition) inner+='<div>'+it.definition+'</div>';
   if(it.imageUrl) inner+='<img src="'+it.imageUrl+'" class="mast-expand-img">';
 
@@ -60874,7 +61096,7 @@ function mstStorageKey(kid,sid){ return "ha_mst_"+kid+"_"+sid; }
 function mstLogGet(kid,sid){ const dk=mstTodayKey(); return (masteryData.studyLog&&masteryData.studyLog[kid]&&masteryData.studyLog[kid][sid]&&masteryData.studyLog[kid][sid][dk])||null; }
 function mstItemAnswer(id){
   try{ let items=masteryData[masteryKid]; if(!Array.isArray(items)) items=Object.values(items||{});
-    const it=items.find(i=>i&&i.id===id); return (it&&it.answer&&it.answer!==it.prompt)?it.answer:""; }catch(e){ return ""; }
+    const it=items.find(i=>i&&i.id===id); const _a=(typeof owRuleBack==="function")?owRuleBack(masteryKid,it):(it&&it.answer); return (it&&_a&&_a!==it.prompt)?_a:""; }catch(e){ return ""; }   // OURWORDS: the family wording of a rule
 }
 
 // ── Persistence (resumable sitting, same-day only) ──────────────────────────
@@ -60903,7 +61125,7 @@ function mstClearPersist(sid){ sid=sid||mstSid; if(!sid) return; try{ HA_LS.remo
 function mstCardDef(card){
   if(!card) return "";
   const name=card.name||"";
-  return ((!card.id&&card.deck&&typeof mastCustomDef==="function")?mastCustomDef(masteryKid,card.deck,name):"")||mastGetDef(masteryKid,name)||mstItemAnswer(card.id);
+  return ((!card.id&&card.deck&&typeof mastCustomDef==="function")?mastCustomDef(masteryKid,card.deck,name):"")||mastGetDef(masteryKid,name,card.deck)||mstItemAnswer(card.id);   // OURWORDS: the deck
 }
 function mstCardMode(card){
   const m=(card&&card.mode)||"rec"; if(m==="rec") return m;
@@ -62120,11 +62342,12 @@ function mhqDeckCards(kid,deck){
   const bankNames=mhqBank(kid)[deck]||[];
   const settings=masteryData[kid+"_settings"]||{};
   const defs=settings.definitions||{};
+  const _owb=n=>(typeof owBack==="function")?owBack(kid,deck,n):"";   // OURWORDS: the family's own back first; the deck page otherwise reads exactly what it read
   const byPrompt={}, twinOf={};
   items.forEach(function(i){ if(!i||i.prompt==null) return; if(i.dir==="prod") twinOf[i.prompt]=i; else byPrompt[i.prompt]=i; });
 
   function cardFor(name,item){
-    if(!item) return {name:name,state:"not started",tier:null,dots:0,drops:0,hasAudio:!!(settings.def_audio&&settings.def_audio[name]),back:defs[name]||""};
+    if(!item) return {name:name,state:"not started",tier:null,dots:0,drops:0,hasAudio:!!(settings.def_audio&&settings.def_audio[name]),back:_owb(name)||defs[name]||""};
     let state;
     if(mastIsParked(item)) state="parked";
     else if(item.status==="introduction") state="learning";
@@ -62132,7 +62355,7 @@ function mhqDeckCards(kid,deck){
     else state="ladder";
     const isIntro=item.status==="introduction";
     const dots=isIntro?(item.tally_dots||0):(item.consecutive_correct||0);
-    const back=defs[name]||((item.answer!=null&&item.answer!==item.prompt)?item.answer:"")||"";
+    const back=_owb(name)||defs[name]||((item.answer!=null&&item.answer!==item.prompt)?item.answer:"")||"";
     const tw=twinOf[name];
     return {
       name:name, state:state, tier:item.tier||null, dots:dots, drops:item.drop_count||0,
@@ -64112,7 +64335,7 @@ function mastAdminBankCatHtml(cat,allNames,status,opts){
         h+='<div style="margin:6px 0 12px;padding:8px 10px;background:#faf5ff;border:1.5px solid #e9d5ff;border-radius:10px">';
         h+='<div style="font-size:10px;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">\u{1F4D6} Flip Definitions</div>';
         _fCatItems.forEach(fi=>{
-          const _fd=mastGetDef(masteryKid,fi.prompt);
+          const _fd=mastGetDef(masteryKid,fi.prompt,fi.subject);   // OURWORDS
           h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f0e6ff">';
           h+='<span style="font-weight:700;font-size:12px;min-width:60px;flex-shrink:0;color:#7c3aed">'+fi.prompt+'</span>';
           h+='<input type="text" value="'+(_fd||"").replace(/"/g,"&quot;")+'" placeholder="definition\u{2026}" style="flex:1;padding:4px 8px;border-radius:6px;border:1px solid #e9d5ff;font-size:11px;font-family:\'DM Sans\',sans-serif;min-width:0;background:#fff" onchange="mastSaveDef(\''+fi.prompt.replace(/'/g,"\\'")+'\',this.value)">';
@@ -64121,7 +64344,7 @@ function mastAdminBankCatHtml(cat,allNames,status,opts){
         if(_fWait.length){   // ✎ DEFEDIT: the waiting names, folded, each with its lesson and a meaning box
           h+='<details style="margin-top:6px"><summary style="cursor:pointer;font-size:11px;font-weight:700;color:#7c3aed">Waiting to start ('+_fWait.length+')</summary>';
           _fWait.forEach(nm=>{
-            const _wd=mastGetDef(masteryKid,nm)||mastCustomDef(masteryKid,cat,nm), _wl=_mastWaitingLesson(cat,nm);
+            const _wd=mastGetDef(masteryKid,nm,cat)||mastCustomDef(masteryKid,cat,nm), _wl=_mastWaitingLesson(cat,nm);   // OURWORDS
             h+='<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f0e6ff">';
             h+='<span style="font-weight:700;font-size:12px;min-width:60px;flex-shrink:0;color:#6b7280">'+esc(nm)+'</span>';
             if(_wl) h+='<span style="font-size:10px;color:#9ca3af;flex-shrink:0;min-width:58px">'+esc(_wl)+'</span>';
@@ -65105,18 +65328,19 @@ function _renderMasteryInner(el){
     // Definitions-map first; fall back to the card's own answer (when it's a real answer,
     // not the answer==prompt placeholder the old pull paths minted) so a card whose map
     // entry was lost still has a back to flip to.
-    const _vocabDef=mastGetDef(masteryKid,it.prompt)||((it.answer&&it.answer!==it.prompt)?it.answer:"");
+    const _vocabDef=mastGetDef(masteryKid,it.prompt,it.subject)||((it.answer&&it.answer!==it.prompt)?it.answer:"");   // OURWORDS: the deck
     const _catMode=mastGetCatMode(masteryKid,cat);
     // Spelling rules (recite cards whose `answer` holds the rule text, e.g. "The Floss
     // Rule" -> "Double f, l, and s ...") flip to reveal the rule even when the category
     // default is flash. Their back shows the answer rather than a vocab definition.
-    const _isRule=it.review_mode==="recite"&&it.answer&&it.answer!==it.prompt;
+    const _ruleBack=(typeof owRuleBack==="function")?owRuleBack(masteryKid,it):(it.answer||"");   // OURWORDS: a rule's family wording, else its answer
+    const _isRule=it.review_mode==="recite"&&_ruleBack&&_ruleBack!==it.prompt;
     // Capitalization/Punctuation/Grammar flip decks reveal a RULE (not a vocab definition):
     // say "the rule", skip the curly quotes, and ask "why" on the front (the example sentence
     // has the relevant word/mark highlighted) so the kid recites the rule that applies.
     const _ruleStyle=_isRule||cat==="Capitalization"||cat==="Punctuation"||cat==="Articles"||cat==="Grammar";
     const _ruleQ=cat==="Capitalization"?"Why is this capitalized?":cat==="Punctuation"?"Why is this punctuation used?":cat==="Articles"?"Why this article?":"";
-    const _backText=_isRule?it.answer:_vocabDef;
+    const _backText=_isRule?_ruleBack:_vocabDef;
     const _js=mastDrillSettings();
     // Dot fills are deferred to Save now — show the pending dot as soon as it's marked
     // so the kid still sees the dot fill when they tap Shown Today.
@@ -71746,7 +71970,7 @@ function msaysAnswer(kid,it){
   if(!it) return "";
   if(msaysIsSpell(it)) return String(typeof wwWord==="function"?wwWord(it):(it.answer||it.prompt||"")).split("").join(" ");
   const p=String(it.prompt||"");
-  const d=(typeof mastGetDef==="function"&&p)?mastGetDef(kid,p):"";
+  const d=(typeof mastGetDef==="function"&&p)?mastGetDef(kid,p,it.subject):"";   // OURWORDS: the deck
   return d||((it.answer!=null&&String(it.answer)!==p)?String(it.answer):"");
 }
 // Does this result count toward "back to learning"? Spelling pass = neutral (null); a non-spelling pass = a miss.
