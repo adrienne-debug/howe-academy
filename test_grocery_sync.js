@@ -23,7 +23,7 @@ const BLOCK=cut("// GROSYNC_START","// GROSYNC_END");
 
 console.log("── the block and its hooks ──");
 { const ka=src.indexOf("// GROSYNC_START"), kb=src.indexOf("// GROSYNC_END");
-  ok("GROSYNC block present once, right after GROCERY_LIST_END", ka>0&&kb>ka&&src.indexOf("// GROSYNC_START",ka+5)<0&&src.slice(src.indexOf("// GROCERY_LIST_END"),ka).trim()==="// GROCERY_LIST_END");
+  ok("GROSYNC block present once, right after GROCERY_LIST_END", ka>0&&kb>ka&&src.indexOf("// GROSYNC_START",ka+5)<0&&src.slice(src.indexOf("// GROCERY_LIST_END"),ka).replace(/\/\/ ([A-Z0-9_]+)_START[\s\S]*?\/\/ \1_END\n/g,"").trim()==="// GROCERY_LIST_END");
   const watch=/if\(typeof grSyncWatch==="function"\) grSyncWatch\(\);/;
   ["kitAssign","kitSideSave","kitSlotsSet","kitSlotText","kitMarkSkipped","kitMoveForward","kitOutToggle","kitRotDaySet","kitRotRun"].forEach(f=>{ const s=fn(f); ok("plan-change hook in "+f+" — one line, guarded", (s.match(/grSyncWatch/g)||[]).length===2&&watch.test(s)); });
   ok("kitRotAutoStart and kitRotRunWrite are NOT hooked (the queued→running hand-off changes nothing for the shopper)", !/grSync/.test(fn("kitRotAutoStart"))&&!/grSync/.test(fn("kitRotRunWrite")));
@@ -63,6 +63,7 @@ function world(o){
   run(line("const KIT_FRAC_GLYPH=")+fn("esc")+fn("kitSlug")+fn("kitQtyParse")+fn("kitIsoPlus"));
   run("var kitMeals="+J(o.meals||MEALS)+"; var kitPlan="+J(o.plan||{})+"; var kitRotations="+J(o.rots||{})+"; var kitPickIso=null, kitRotOpen=null, kitRotSaveOpen=false, kitWkImportOpen=false, kitEditId=null, kitView=null;");
   run(cut("// KITSIDES_START","// KITSIDES_END"));
+  run(cut("// SHOPNAME_START","// SHOPNAME_END"));   // SHOPNAME: the list's name constant
   run(cut("// GROCERY_LIST_START","// GROCERY_LIST_END")); ctx.grPriceLineHTML=()=>""; ctx.grStepperHTML=()=>""; ctx.grPaidBoxHTML=()=>""; ctx.grRepaint=()=>{ W.renders++; };
   run([line("const KIT_ROT_DEFAULT="),line("const KIT_SLOTS="),line("const KIT_TAGS="),line("const KIT_ROT_DAYS="),line("const KIT_MOVE_NAMES="),
        fn("kitPlanFor"),fn("kitSidesTxt"),fn("kitPlanSlot"),fn("kitSlotText"),fn("_calDinnerOf"),fn("_calSlotRows"),fn("kitEatGate"),fn("_kitRefresh"),fn("kitAssign"),fn("kitMarkSkipped"),
