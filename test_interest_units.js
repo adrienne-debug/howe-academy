@@ -120,7 +120,7 @@ ok("hidden once the family has them", (() => { const t = load({ unitStudies: { c
 
 console.log("# the other starters are untouched");
 ok("math / letters / shapes / AAS still build", ["math_fluency_path", "letters_path", "shapes_path", "all_about_spelling"].every(id => api.STARTER_UNITS[id]().decks.length));
-ok("registry order: the four paths, the two interest units, then Word Roots", Object.keys(api.STARTER_UNITS).join() === "math_fluency_path,letters_path,shapes_path,all_about_spelling,construction_machines,cats_house_and_wild,word_roots");
+ok("registry order: the four paths, the two interest units, Word Roots, then NC Envirothon (ENVUNIT 2026-10-27)", Object.keys(api.STARTER_UNITS).join() === "math_fluency_path,letters_path,shapes_path,all_about_spelling,construction_machines,cats_house_and_wild,word_roots,nc_envirothon");
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

@@ -4472,7 +4472,7 @@ function initFb() {
     db.ref("grabClaims").on("value",s=>{ grabClaims=s.val()||{}; if(typeof renderAllSoon==="function") renderAllSoon(); });
     db.ref("techGrace").on("value",s=>{ techGrace=s.val()||{}; });
     db.ref("techOff").on("value",s=>{ techOff=s.val()||{}; if(typeof renderAllSoon==="function") renderAllSoon(); });   // 📱 TECHSWITCH
-    db.ref("unitStudies").on("value",s=>{ unitStudies=s.val()||{}; const _uFirst=!_haUnitsReady; _haUnitsReady=true; if(tab==="units"){const el=document.getElementById("content");if(el)renderUnits(el);} else if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);}
+    db.ref("unitStudies").on("value",s=>{ unitStudies=s.val()||{}; const _uFirst=!_haUnitsReady; _haUnitsReady=true; if(typeof envHydrateAll==="function") envHydrateAll(); /* 🌿 ENVUNIT: cards from envirothon.js */ if(tab==="units"){const el=document.getElementById("content");if(el)renderUnits(el);} else if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);}
       if(_uFirst){ try{ if(typeof stHeal==="function") stHeal(); }catch(e){} } });   // 📝 STHEAL waits for the units (live 2026-10-14 10:29 PM: it ran before they arrived, every test card looked stale, Andrew's was removed)
     db.ref("att_overrides").on("value",s=>{
       if(s.val()) attOverrides=s.val();
@@ -42963,6 +42963,112 @@ const STARTER_UNITS={
     stages:WR_STAGES.map(s=>Object.assign({},s)),
     decks:_wrDecks() })
 };
+// ENVUNIT_START — 🌿 NC ENVIROTHON (her ask 2026-10-27: "a complete NC Envirothon unit for Lincoln that studies like any
+// other unit; separated into categories the teacher can send out like chapters; no made-up content"). PR 1 of 8 (ENVUNIT):
+// the unit record, every deck held, and Lincoln's own 🌿 study session. Release (the teacher's send-out), pre/post tests,
+// the Envirothon site and the mirror are later PRs. Design: DESIGN_envirothon_console_2026-10-27.md §6, PLAN_envirothon §2.
+//   · The CARDS live in envirothon.js (4,371 cards, 1.4 MB, built from envirothon/nc_envirothon_unit.json), loaded on demand
+//     like notebooks.js — only when this family has added the unit. The record in the database stays THIN (~2 KB: title,
+//     stages, deck names and modes, cardsInCode:true); envHydrateAll puts the code's cards on it in memory. Copying the
+//     cards into unitStudies/nc_envirothon the usual way would write 1.2 MB and every device would download it on boot.
+//   · Stages = the club's teaching order (0 General concepts → 1 Forestry → 2 Soils/Land Use → 3 Aquatic Ecology →
+//     4 Wildlife → 5 Current Environmental Issues). Decks "<Station> · Terms | Facts | ID" + "Current Issue · 2027":
+//     Terms and ID are flip cards, Facts and the Current Issue are flash. Grouped by Key Concept (card.group).
+//   · Every deck is bankOnly AND held (cat_hold) at enroll — the whole unit, not just the stage's decks — so NO card is
+//     minted until a station is released (PR 3). The enroll writes the stage's bank entries + backs (the definitions map;
+//     a front with . or / saves under its coded key, mastDefKey, which mastGetDef already reads), cat_modes / cat_intro_max
+//     for all 15 decks, cat_hold for all 15, and the 🌿 session. No defsOnBank: a bank def mints a recite card, which the
+//     pick / ideas / type steps skip.
+//   · Lincoln's session (her answer 8.10 + "auto-graded steps"): one kind:"deck" session over the unit's decks, pattern
+//     pick → key ideas → type, modest New/day and sitting size. Written once at enroll (create-only: her later edits stand).
+//     Daily Study is not touched — a named deck session simply owns these decks.
+//   · Nothing here writes outside enroll; every write is a targeted path; dry run writes nothing.
+const ENV_UNIT_ID="nc_envirothon";
+const ENV_STAGES=[[0,"General concepts"],[1,"Forestry"],[2,"Soils/Land Use"],[3,"Aquatic Ecology"],[4,"Wildlife"],[5,"Current Environmental Issues"]];
+// [key, mode, stage, station, kind, cards] — the card counts match envirothon/COUNTS.md (test_env_unit.js checks them against envirothon.js)
+const ENV_DECKS=[
+  ["General Concepts · Terms","flip",0,"general","terms",28],["General Concepts · Facts","flash",0,"general","facts",62],
+  ["Forestry · Terms","flip",1,"forestry","terms",258],["Forestry · Facts","flash",1,"forestry","facts",468],["Forestry · ID","flip",1,"forestry","id",165],
+  ["Soils and Land Use · Terms","flip",2,"soils","terms",288],["Soils and Land Use · Facts","flash",2,"soils","facts",465],["Soils and Land Use · ID","flip",2,"soils","id",97],
+  ["Aquatic Ecology · Terms","flip",3,"aquatics","terms",270],["Aquatic Ecology · Facts","flash",3,"aquatics","facts",485],["Aquatic Ecology · ID","flip",3,"aquatics","id",321],
+  ["Wildlife · Terms","flip",4,"wildlife","terms",230],["Wildlife · Facts","flash",4,"wildlife","facts",350],["Wildlife · ID","flip",4,"wildlife","id",574],
+  ["Current Issue · 2027","flash",5,"cei","cei",310]];
+const ENV_CARD_COUNT=ENV_DECKS.reduce((s,d)=>s+d[5],0);
+function envUnitRecord(){
+  return { id:ENV_UNIT_ID, starter:ENV_UNIT_ID, starterVer:1, title:"NC Envirothon", emoji:"\u{1F33F}", nbInsert:false,
+    cardsInCode:true, cardCount:ENV_CARD_COUNT,   // the cards are in envirothon.js, not in this record
+    desc:"The five NC Envirothon stations — Forestry, Soils and Land Use, Aquatic Ecology, Wildlife, Current Environmental Issues — plus the general science concepts, every card straight from the official 2026–27 study documents. Decks open station by station as the teacher sends them out.",
+    stages:ENV_STAGES.map(s=>({n:s[0],label:s[1],weeklyFrom:0})),
+    decks:ENV_DECKS.map(d=>({ key:d[0], mode:d[1], introCap:3, groupBy:"group", flipFace:"name", bankOnly:true, stage:d[2], station:d[3], kind:d[4], n:d[5] })) };
+}
+STARTER_UNITS[ENV_UNIT_ID]=envUnitRecord;
+function envCardsInCode(u){ return !!(u&&u.cardsInCode&&(u.starter===ENV_UNIT_ID||u.id===ENV_UNIT_ID)); }
+// envirothon.js, loaded ONCE on first need as a classic <script> (the notebooks.js pattern: cache-bust only on GitHub Pages).
+let _envLoadP=null;
+function envLoad(){
+  if(typeof window==="undefined"||typeof document==="undefined") return Promise.reject(new Error("no window"));
+  if(window.HoweEnvirothon) return Promise.resolve(window.HoweEnvirothon);
+  if(_envLoadP) return _envLoadP;
+  _envLoadP=new Promise((resolve,reject)=>{
+    const s=document.createElement("script");
+    s.src=/github\.io$/.test(location.hostname)?("envirothon.js?v="+Date.now()):"envirothon.js";
+    s.onload=()=>{ window.HoweEnvirothon?resolve(window.HoweEnvirothon):reject(new Error("envirothon.js loaded but HoweEnvirothon missing")); };
+    s.onerror=()=>{ _envLoadP=null; reject(new Error("could not load envirothon.js")); };
+    document.head.appendChild(s);
+  });
+  return _envLoadP;
+}
+// Put the code's cards on this family's thin record — in memory only; the database record stays thin. A deck's cards
+// come from envirothon.js by deck key. If the database holds a card edit (unitStudies/<id>/decks/<di>/cards/<ci>/…, Mom's
+// card editor), its fields ride on the code card at that index when the names agree; anything else there is ignored.
+function envHydrate(u,lib){
+  lib=lib||((typeof window!=="undefined")&&window.HoweEnvirothon)||null;
+  if(!envCardsInCode(u)||!lib||!lib.unit) return false;
+  const by={}; (lib.unit.decks||[]).forEach(d=>{ if(d&&d.key) by[d.key]=d.cards||[]; });
+  (u.decks||[]).forEach(d=>{ if(!d||!d.key||!by[d.key]) return;
+    const edits=(d.cards&&typeof d.cards==="object")?d.cards:null;
+    d.cards=by[d.key].map((c,i)=>{ const o=edits?edits[i]:null; return (o&&typeof o==="object"&&(!o.name||o.name===c.name))?Object.assign({},c,o):c; }); });
+  return true;
+}
+// Called when unitStudies arrives (and after 📚 Add): hydrate every code-held unit, loading envirothon.js first if needed.
+function envHydrateAll(){
+  const us=(typeof unitStudies!=="undefined"&&unitStudies)||{};
+  const need=Object.keys(us).filter(k=>envCardsInCode(us[k]));
+  if(!need.length) return false;
+  const lib=((typeof window!=="undefined")&&window.HoweEnvirothon)||null;
+  if(lib){ need.forEach(k=>envHydrate(us[k],lib)); return true; }
+  envLoad().then(l=>{ need.forEach(k=>{ if(unitStudies[k]) envHydrate(unitStudies[k],l); });
+    if(typeof tab!=="undefined"&&tab==="units"){ const el=document.getElementById("content"); if(el&&typeof renderUnits==="function") renderUnits(el); } }).catch(()=>{});
+  return false;
+}
+// At enroll (and every ➡ move-up), for this unit only: hold EVERY deck, set every deck's mode and learning cap, and save
+// the backs of the stage's . / fronts under their coded key (the stock loop skips them; mastGetDef reads the coded key).
+function envEnrollHold(u,st,cards,hold,modes,intro,defs){
+  if(!u||u.starter!==ENV_UNIT_ID) return false;
+  st.cat_hold=st.cat_hold||{}; st.cat_modes=st.cat_modes||{}; st.cat_intro_max=st.cat_intro_max||{}; st.definitions=st.definitions||{};
+  (u.decks||[]).forEach(d=>{ if(!d||!d.key) return;
+    st.cat_hold[d.key]=true; hold[d.key]=true;
+    st.cat_modes[d.key]=modes[d.key]=d.mode||"flash"; st.cat_intro_max[d.key]=intro[d.key]=d.introCap||3; });
+  if(typeof mastDefKeyOk==="function"&&typeof mastDefKey==="function") (cards||[]).forEach(c=>{
+    if(!c||c.def==null||mastDefKeyOk(c.name)) return;
+    const k=mastDefKey(c.name); st.definitions[k]=String(c.def); defs[k]=String(c.def); });
+  return true;
+}
+// Lincoln's 🌿 session: auto-graded steps only (pick with lures → key ideas → type), modest load. handOffAt matches his
+// other deck sessions' default (bi_weekly). Create-only: if a session "envirothon" already exists, nothing is written.
+const ENV_SESSION_SID="envirothon";
+const ENV_SESSION={ name:"Envirothon", emoji:"\u{1F33F}", kind:"deck", who:"solo", newPerDay:5, passes:2, mixInAt:"weekly", handOffAt:"bi_weekly",
+  order:"bank", maxCards:12, focusDecks:2, pattern:["pick","ideas","type"] };
+function envSessionRecord(u){ const r=Object.assign({},ENV_SESSION,{decks:(u&&u.decks||[]).map(d=>d.key).filter(Boolean)}); r.pattern=ENV_SESSION.pattern.slice(); return r; }
+function envEnrollSession(u,kid){
+  if(!u||u.starter!==ENV_UNIT_ID||!kid) return null;
+  let S=masteryData[kid+"_sessions"]; if(!S||Array.isArray(S)) S=masteryData[kid+"_sessions"]=Object.assign({},S||{});
+  if(S[ENV_SESSION_SID]) return null;
+  const rec=envSessionRecord(u); S[ENV_SESSION_SID]=rec;
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("mastery/"+kid+"_sessions/"+ENV_SESSION_SID).set(rec);
+  return rec;
+}
+// ENVUNIT_END
 // Staged units enroll per kid (start stage, what they already know, book link — UNIT_STAGES below);
 // the plain enroll (which would start EVERY kid at card 1) stays closed for them.
 function _unitStagedEnrollPending(u){ return !!(u&&u.stages); }
@@ -42974,7 +43080,7 @@ function _starterUnitsHtml(){
   let h='<div style="font-size:13px;font-weight:800;color:#1f2937;margin:22px 0 4px">📚 Starter units</div>';
   h+='<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:10px">Ready-made units. Add one to your family and it shows up above — each kid keeps their own progress.</div>';
   ids.forEach(id=>{ const u=STARTER_UNITS[id]();
-    const n=(u.decks||[]).reduce((s,d)=>s+((d.cards||[]).length),0);
+    const n=u.cardCount||(u.decks||[]).reduce((s,d)=>s+((d.cards||[]).length),0);   // 🌿 ENVUNIT: a code-held unit says its count
     h+='<div style="background:#faf8f5;border:1.5px dashed var(--border);border-radius:14px;padding:14px 16px;margin-bottom:12px">';
     h+='<div style="display:flex;align-items:center;gap:8px"><span style="font-size:22px">'+(u.emoji||"📘")+'</span><span style="font-size:16px;font-weight:800;color:#1f2937">'+esc(u.title)+'</span></div>';
     h+='<div style="font-size:12px;color:var(--muted);line-height:1.45;margin:5px 0 8px">'+esc(u.desc||"")+'</div>';
@@ -42988,7 +43094,7 @@ function starterUnitAdd(id){
   if(!momHere()) return;
   const mk=STARTER_UNITS[id]; if(!mk||(unitStudies||{})[id]) return;
   const u=mk(); u.addedTs=Date.now();
-  const done=()=>{ unitStudies[id]=u; const el=document.getElementById("content"); if(el) renderUnits(el); };
+  const done=()=>{ unitStudies[id]=u; if(typeof envHydrateAll==="function") envHydrateAll(); const el=document.getElementById("content"); if(el) renderUnits(el); };   // 🌿 ENVUNIT
   if(db&&!_dryRun()){
     // Only ever creates the node — if this family already has it (another device), leave theirs alone.
     db.ref("unitStudies/"+id).transaction(cur=>cur?undefined:u).then(r=>{ if(r&&r.committed) done(); }).catch(()=>{});
@@ -43078,6 +43184,7 @@ function _ustApply(u,kid,stageN,knows,subject,mapId){
       haveItem.add(pk(dk,c.name)); started[dk]++;
     }
   });
+  if(typeof envEnrollHold==="function") envEnrollHold(u,st,cards,hold,modes,intro,defs);   // 🌿 ENVUNIT: every deck held + its mode, coded keys for . / backs
   const iu={}; for(let i=startItems;i<items.length;i++) iu[i]=items[i];
   const bu={}; for(let i=startBank;i<bank.length;i++) bu[i]=bank[i];
   return {iu,bu,defs,gate,gates,hold,modes,intro,howto};
@@ -43118,7 +43225,8 @@ function unitStageEnroll(){
   if(typeof _wrEnrollLocked==="function"&&_wrEnrollLocked(u)) return;   // 🏛 WORDROOTS
   const w=_ustApply(u,f.kid,f.stage,f.knows,f.subject,f.map); if(!w) return;
   const rec={stage:f.stage,knows:f.knows||"",subject:f.subject||"",map:(w.gate?f.map:"")||"",ts:Date.now()};
-  _ustWrite(f.unitId,f.kid,w,rec); _ustDone(f.unitId,f.kid,rec);
+  _ustWrite(f.unitId,f.kid,w,rec); if(typeof envEnrollSession==="function") envEnrollSession(u,f.kid);   // 🌿 ENVUNIT: his own session, once
+  _ustDone(f.unitId,f.kid,rec);
 }
 // Where a kid stands in their current stage: total / on the ladder / learning, and the family they're on.
 function unitStageStatus(u,kid){
