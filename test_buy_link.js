@@ -14,7 +14,7 @@ console.log("── the block and its hooks ──");
   ok("grAdd passes extra.ref through", (src.match(/if\(extra&&extra\.ref&&typeof extra\.ref==="object"\) p\.ref=extra\.ref;   \/\/ BUYLINK/g)||[]).length===1);
   ok("the checkout finisher calls blOnBought once per bought item (guarded)", (src.match(/if\(typeof blOnBought==="function"\) blOnBought\(id,it\);/g)||[]).length===1&&fn("grDoneRun").indexOf("blOnBought(id,it)")>0);
   ok("lrItemRowHTML draws the chip (guarded)", (src.match(/\(typeof blRowChipHTML==="function"\?blRowChipHTML\(it\):""\)/g)||[]).length===1&&fn("lrItemRowHTML").indexOf("blRowChipHTML")>0);
-  ok("lrStapleChip draws the staple button (guarded)", (src.match(/\(typeof blStapleBtnHTML==="function"\?blStapleBtnHTML\(s\):""\)/g)||[]).length===1&&fn("lrStapleChip").indexOf("blStapleBtnHTML")>0);
+  ok("lrStapleChip draws the staple button (guarded)", (src.match(/\(typeof blStapleBtnHTML==="function"\?blStapleBtnHTML\(s\):""\)/g)||[]).length>=1&&fn("lrStapleChip").indexOf("blStapleBtnHTML")>0);
   ok("lrSundayHTML runs the rule on draw (guarded, try/catch)", (src.match(/try\{ if\(typeof blAutoSend==="function"\) blAutoSend\(L\); \}catch\(e\)\{\}/g)||[]).length===1);
   ok("every write in the block goes through blDb() (db && !_dryRun()) — never a bare db.ref", !/[^l]db\.ref\(/.test(BL.replace(/blDb\(\)/g,""))&&/function blDb\(\)\{ return \(typeof db!=="undefined"&&db&&!blDry\(\)\)\?db:null; \}/.test(BL));
   ok("the block never writes the rule, Purchases or ESA", !/config\/rules/.test(BL.replace(/\/\/[^\n]*/g,""))&&!/\bESA\b|purchase|esaData|esa\//i.test(BL.replace(/\/\/[^\n]*/g,"")));

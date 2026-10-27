@@ -18323,6 +18323,7 @@ function kitStapleCycle(id){
 function kitStapleAdd(){
   const inp=document.getElementById('kit-staple-new'); const name=((inp&&inp.value)||"").trim();
   if(!name) return;
+  if(typeof stpAskAdd==="function"){ if(inp) inp.value=""; stpAskAdd(name,"kitchen"); return; }   // STAPLES1: a new staple asks its tag (🍳 Kitchen first here)
   const id="s"+Date.now().toString(36);
   kitStaples[id]={name:name,state:"have",ts:Date.now()};
   try{HA_LS.setItem('ha_kit_staples',JSON.stringify(kitStaples));}catch(e){}
@@ -20838,6 +20839,7 @@ function blOnBought(id,it){
 }
 // a bought staple → ✅ have on its OWN path: supplies/staples (school) or kitchen/staples (kitchen), whichever holds it
 function blStapleHave(stId){
+  if(typeof stpSetState==="function"){ const t=stpSetState(stId,"have"); if(t) return t; }   // STAPLES1: one writer finds the item on either path
   const D=blDb();
   if(typeof lrStaples!=="undefined"&&lrStaples&&lrStaples[stId]){ const s=lrStaples[stId]; if(s.state!=="have"){ s.state="have"; try{ if(typeof sv==="function") sv("ha_lr_staples",lrStaples); }catch(e){} if(D) D.ref("supplies/staples/"+stId).set({name:s.name,state:"have"}); } return "school"; }
   if(typeof kitStaples!=="undefined"&&kitStaples&&kitStaples[stId]){ const s=kitStaples[stId]; if(s.state!=="have"){ s.state="have"; s.ts=Date.now(); try{ HA_LS.setItem('ha_kit_staples',JSON.stringify(kitStaples)); }catch(e){} if(D) D.ref("kitchen/staples/"+stId).set(s); } return "kitchen"; }
@@ -20902,6 +20904,93 @@ function blAutoSend(L){
   return n;
 }
 // BUYLINK_END
+// STAPLES1_START — 🧺 one staples list with a 🏫 school / 🍳 kitchen tag (her answer 11, 2026-10-26, the yes to changing the live
+// Kitchen). Until now the Kitchen's staples (kitchen/staples/<id> = {name,state,ts}) and the Sunday list's staples
+// (supplies/staples/<id> = {name,state}) were two lists that never saw each other.
+// · ONE reader, staplesAll(): both paths as one list, each item tagged "kitchen" or "school" by where it LIVES. The Kitchen's
+//   🧺 Staples card and the Sunday list's 🧷 Staples each draw their own tag as today and the other tag FOLDED under it
+//   ("🏫 School staples (3) ▸" on the Kitchen, "🍳 Kitchen staples (12) ▸" on the Sunday list) — the same chips, tap to cycle.
+// · Writes stay on each item's OWN path — nothing is moved or migrated: a school staple tapped from the Kitchen writes
+//   supplies/staples/<id>, a kitchen staple tapped from the Sunday list writes kitchen/staples/<id>, each in its own shape and id
+//   scheme ("s…" + ts for the Kitchen, "st…" for school). ✅ have → 🟡 low → ❌ out works the same from either screen.
+// · A NEW staple asks its tag (🍳 Kitchen / 🏫 School, the screen's own tag first) before it is written — kitStapleAdd and
+//   lrStapleAdd hand the name here and the chosen tag's own writer makes the record.
+// · The checkout finisher's staple → ✅ have (BUYLINK's blStapleHave) finds the item on either path through stpSetState.
+// · A family with only one of the two lists (DeWalt, Burris) renders byte-identical: the folded section is "" when the other
+//   tag has no items, and the chips, inputs and buttons are the ones that were there.
+// Mom-only writes as before (the Kitchen's own gates, lrMom() on the Sunday list), db && !_dryRun(); no scheduler change.
+const STP_TAG={kitchen:["🍳","Kitchen"],school:["🏫","School"]};
+function stpMom(){ return (typeof momHere==="function")?momHere():false; }
+function stpDb(){ return (typeof db!=="undefined"&&db&&!((typeof _dryRun==="function")&&_dryRun()))?db:null; }
+function stpEsc(s){ return (typeof esc==="function")?esc(s):String(s==null?"":s); }
+function stpKit(){ return (typeof kitStaples!=="undefined"&&kitStaples)||null; }
+function stpSch(){ return (typeof lrStaples!=="undefined"&&lrStaples)||null; }
+// the one list: [{id,name,state,tag,ts?}] A–Z — tag by the path the item lives on
+function staplesAll(tag){
+  const out=[]; const K=stpKit()||{}, S=stpSch()||{};
+  Object.keys(K).forEach(id=>{ const s=K[id]; if(s&&s.name) out.push({id:id,name:s.name,state:s.state||"have",ts:s.ts,tag:"kitchen"}); });
+  Object.keys(S).forEach(id=>{ const s=S[id]; if(s&&s.name) out.push({id:id,name:s.name,state:s.state||"have",tag:"school"}); });
+  const L=tag?out.filter(s=>s.tag===tag):out;
+  return L.sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+}
+function stpTagOf(id){ const K=stpKit(), S=stpSch(); if(K&&K[id]) return "kitchen"; if(S&&S[id]) return "school"; return ""; }
+function stpPath(id){ const t=stpTagOf(id); return t==="kitchen"?"kitchen/staples/"+id:(t==="school"?"supplies/staples/"+id:""); }
+function stpSaveLocal(tag){ try{ if(tag==="kitchen") HA_LS.setItem('ha_kit_staples',JSON.stringify(stpKit())); else if(typeof sv==="function") sv("ha_lr_staples",stpSch()); }catch(e){} }
+// one state write, on the item's own path, in that path's own shape → the tag, "" when the id lives nowhere
+function stpSetState(id,state){
+  const tag=stpTagOf(id); if(!tag) return "";
+  const D=stpDb();
+  if(tag==="kitchen"){ const s=stpKit()[id]; if(s.state!==state){ s.state=state; s.ts=Date.now(); stpSaveLocal(tag); if(D) D.ref("kitchen/staples/"+id).set(s); } }
+  else { const s=stpSch()[id]; if(s.state!==state){ s.state=state; stpSaveLocal(tag); if(D) D.ref("supplies/staples/"+id).set({name:s.name,state:s.state}); } }
+  return tag;
+}
+function stpRepaint(){ try{ if(typeof tab!=="undefined"&&tab==="supplies"&&typeof renderSupplies==="function") renderSupplies(); else if(typeof tab!=="undefined"&&tab==="moms-plan"&&typeof renderMomsPlan==="function"){ const el=document.getElementById("content"); if(el) renderMomsPlan(el); } }catch(e){} }
+// tap: ✅ have → 🟡 low → ❌ out → ✅ have, from either screen (Mom only — the Kitchen's own chips keep their own tap)
+const STP_STATES=["have","low","out"];
+function stpCycle(id){   // a school staple keeps the Sunday list's own gate (lrMom); the Kitchen's chips never had one
+  const cur=staplesAll().find(s=>s.id===id); if(!cur||(cur.tag==="school"&&!stpMom())) return;
+  stpSetState(id,STP_STATES[(STP_STATES.indexOf(cur.state)+1)%STP_STATES.length]); stpRepaint(); }
+function stpDel(id){ const tag=stpTagOf(id); if(!tag||(tag==="school"&&!stpMom())) return; const nm=(tag==="kitchen"?stpKit():stpSch())[id].name; if(!confirm('Take "'+(nm||"this")+'" off the staples list?')) return;
+  const D=stpDb(); if(tag==="kitchen"){ delete stpKit()[id]; if(D) D.ref("kitchen/staples/"+id).remove(); } else { delete stpSch()[id]; if(D) D.ref("supplies/staples/"+id).remove(); } stpSaveLocal(tag); stpRepaint(); }
+// a new staple, written by its tag's own writer, in that path's own shape and id scheme
+function stpAdd(name,tag){
+  name=String(name||"").trim().slice(0,80); if(!name) return "";
+  const D=stpDb();
+  if(tag==="kitchen"){ const K=stpKit(); if(!K) return ""; const id="s"+Date.now().toString(36); K[id]={name:name,state:"have",ts:Date.now()}; stpSaveLocal(tag); if(D) D.ref("kitchen/staples/"+id).set(K[id]); return id; }
+  const S=stpSch(); if(!S||!stpMom()) return "";   // school staples are Mom's to add (lrStapleAdd's own gate)
+  const id="st"+Date.now().toString(36); S[id]={name:name,state:"have"}; stpSaveLocal("school"); if(D) D.ref("supplies/staples/"+id).set(S[id]); return id;
+}
+// the question a new staple gets: 🍳 Kitchen or 🏫 School? (the screen's own tag first). No pop-up helper → the screen's own tag.
+let _stpAsk=null;
+function stpAskAdd(name,own){
+  name=String(name||"").trim(); if(!name) return "";
+  if(typeof grPop!=="function"){ const id=stpAdd(name,own); stpRepaint(); return id; }
+  _stpAsk={name:name,own:own};
+  const order=own==="school"?["school","kitchen"]:["kitchen","school"];
+  const B='width:100%;padding:11px;border-radius:11px;font-size:13.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;margin-top:7px;';
+  grPop('<div style="font-size:30px;text-align:center">🧺</div><div style="font-size:14px;text-align:center;line-height:1.45;margin:4px 0 10px"><b>'+stpEsc(name)+'</b> — which staples?</div>'
+    +order.map((t,i)=>'<button onclick="stpAskGo(\''+t+'\')" style="'+B+(i?'border:1.5px solid #2B7A78;background:#fff;color:#2B7A78':'border:none;background:#2B7A78;color:#fff')+'">'+STP_TAG[t][0]+' '+STP_TAG[t][1]+(t==="kitchen"?' — milk, eggs, bread':' — pencils, glue sticks, paper')+'</button>').join("")
+    +'<button onclick="_stpAsk=null;grPopClose()" style="'+B+'border:none;background:#f1f5f9;color:#334155">Cancel</button>');
+  return "ask";
+}
+function stpAskGo(tag){ const A=_stpAsk; _stpAsk=null; if(typeof grPopClose==="function") grPopClose(); if(!A) return; stpAdd(A.name,tag==="school"?"school":"kitchen"); stpRepaint(); }
+// the chips of ONE tag, drawn by this block (tap → stpCycle, ✕ in manage mode → stpDel)
+const STP_META={have:["✅","#f0fdf4","#166534","#bbf7d0"],low:["🟡","#fefce8","#a16207","#fde68a"],out:["❌","#fef2f2","#b91c1c","#fecaca"]};
+function stpChipHTML(s,manage){
+  const m=STP_META[s.state]||STP_META.have;
+  return '<span onclick="stpCycle(\''+stpEsc(s.id)+'\')" title="'+STP_TAG[s.tag][0]+' '+STP_TAG[s.tag][1]+' staple — tap: have → low → out" style="cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:4px 10px;border-radius:12px;border:1.5px solid '+m[3]+';background:'+m[1]+';color:'+m[2]+'">'+m[0]+' '+stpEsc(s.name)
+    +(manage?'<span onclick="event.stopPropagation();stpDel(\''+stpEsc(s.id)+'\')" style="color:#9ca3af;font-weight:800;padding:0 2px">✕</span>':'')
+    +(typeof blStapleBtnHTML==="function"?blStapleBtnHTML(s):"")+'</span>';
+}
+// the OTHER tag's items, folded under a screen that shows its own tag open — "" when there are none (a one-list family sees no change)
+function stpOtherHTML(own,manage){
+  const other=own==="school"?"kitchen":"school"; const L=staplesAll(other); if(!L.length) return "";
+  const need=L.filter(s=>s.state!=="have").length;
+  return '<details style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;font-weight:800;color:#2B7A78;list-style:none">'+STP_TAG[other][0]+' '+STP_TAG[other][1]+' staples ('+L.length+(need?' · '+need+' low or out':'')+') ▸</summary>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">'+L.map(s=>stpChipHTML(s,!!manage)).join("")+'</div>'
+    +'<div style="font-size:10.5px;color:var(--muted);margin-top:5px">One staples list, two tags — these live on the '+(other==="kitchen"?'🍳 Meals page':'🧺 Sunday list')+' and tapping here changes them there too.</div></details>';
+}
+// STAPLES1_END
 // GROSYNC_START — the grocery list follows meal changes (Adrienne's decisions 2026-10-23, final; Sara Dewalt shops from it daily too).
 //   Until now 🛒 Shop for the week put a meal's ingredients on the list and nothing ever took them off again: a dinner swapped
 //   or marked "didn't happen" left its 2 lb of beef on the list, and a meal added after shopping had to be shopped by hand.
@@ -23668,6 +23757,7 @@ function renderKitchen(el){
   h+='<div style="padding:10px 14px 12px">';
   if(stIds.length) h+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">'+stIds.map(id=>kitStapleChip(id,kitStapleManage)).join('')+'</div>';
   else h+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Add the things you never want to run out of — milk, eggs, GF bread. Tap one as you notice it: ✅ have → 🟡 low → ❌ out.</div>';
+  h+=(typeof stpOtherHTML==="function")?stpOtherHTML("kitchen",kitStapleManage):"";   // STAPLES1: the 🏫 school staples, folded ("" when there are none)
   h+='<div style="display:flex;gap:8px">'
     +'<input type="text" id="kit-staple-new" placeholder="Add a staple (milk…)" onkeydown="if(event.key===\'Enter\')kitStapleAdd()" style="flex:1;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
     +'<button onclick="kitStapleAdd()" style="padding:9px 16px;border-radius:9px;border:none;background:#2B7A78;color:#fff;font-size:13px;font-weight:700;cursor:pointer">＋ Add</button></div>'
@@ -36659,6 +36749,7 @@ function lrStapleCycle(id){
 }
 function lrStapleAdd(name){
   if(!lrMom()) return; const inp=document.getElementById("lr-staple-new"); name=lrStr(name!=null?name:(inp&&inp.value),80); if(!name) return;
+  if(typeof stpAskAdd==="function"){ if(inp) inp.value=""; stpAskAdd(name,"school"); return; }   // STAPLES1: a new staple asks its tag (🏫 School first here)
   const id="st"+Date.now().toString(36); lrStaples[id]={name:name,state:"have"};
   try{ sv("ha_lr_staples",lrStaples); }catch(e){}
   if(typeof db!=="undefined"&&db&&!lrDry()) db.ref("supplies/staples/"+id).set(lrStaples[id]);
@@ -36720,6 +36811,7 @@ function lrSundayHTML(list,ticks0,ticks1){
   const rest=allSt.filter(s=>s.state==="have");
   if(rest.length) h+='<div style="font-size:10.5px;color:var(--muted);margin-bottom:4px">All stocked:</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+rest.map(s=>lrStapleChip(s,mom&&lrStapleManage)).join("")+'</div>';
   if(!allSt.length) h+='<div style="font-size:12px;color:var(--muted)">No staples yet'+(mom?' — add the things every lesson leans on (pencils, glue sticks, printer paper, dry-erase markers, notebook paper).':'.')+'</div>';
+  h+=(typeof stpOtherHTML==="function")?stpOtherHTML("school",mom&&lrStapleManage):"";   // STAPLES1: the 🍳 kitchen staples, folded ("" when there are none)
   if(mom) h+='<div style="display:flex;gap:6px;margin-top:10px;align-items:center"><input id="lr-staple-new" placeholder="Add a staple…" onkeydown="if(event.key===\'Enter\') lrStapleAdd()" style="flex:1;padding:7px 10px;border:1.5px solid var(--border);border-radius:9px;font-size:12.5px;font-family:\'DM Sans\',sans-serif"><button onclick="lrStapleAdd()" style="padding:7px 12px;border-radius:9px;border:none;background:var(--header);color:#fff;font-size:12px;font-weight:800;cursor:pointer">Add</button><button onclick="lrStapleManage=!lrStapleManage;renderSupplies()" style="padding:7px 10px;border-radius:9px;border:1px solid var(--border);background:#fff;font-size:12px;font-weight:700;cursor:pointer">'+(lrStapleManage?'Done':'Edit')+'</button></div>';
   h+='</div></div><div style="height:16px"></div>';
   return h;
