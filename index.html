@@ -22950,14 +22950,74 @@ async function kitCapAsk(content,tools,opt){
   if(opt&&opt.raw&&opt.withStop) return {text:txt,stop:(data&&data.stop_reason)||null};   // GR_RCPTLONG: the caller can tell a cut-off answer
   return (opt&&opt.raw)?txt:kitCapParse(txt);
 }
+// KITLINKDIRECT_START — 🔗 A link reads the site's own recipe card first (her report 2026-10-27, after KITLINKHOLD: the read
+//   still ran out at 90 s on healthykitchen.com — a 433 KB page whose robots.txt tells Claude's crawlers to stay out).
+//   Nearly every recipe blog is WordPress, and WordPress answers the browser directly (CORS open) at
+//   <site>/wp-json/wp/v2/posts?slug=<the page's last path piece>; a WP Recipe Maker card then comes back fully structured at
+//   /wp-json/wp/v2/wprm_recipe/<id> — name, servings, ingredients (amount · unit · name · note, grouped), steps. That is the
+//   recipe record itself: no Claude call, no key needed, well under a second. A WordPress post with some other recipe card
+//   gives its text to Claude the way 📋 Pasted text does (no page fetch, seconds). Anything else (not WordPress, wp-json off,
+//   a page not a post) falls through to Claude's reader exactly as before, with its 90 s clock. Nothing saves itself;
+//   Mom reviews every box and taps Save. No database writes.
+const KIT_WP_MS=15000;   // each wp-json call gets 15 s, then we move on
+function kitWpOrigin(u){ try{ const o=new URL(String(u||"")); return /^https?:$/.test(o.protocol)?o.origin:""; }catch(e){ return ""; } }
+function kitWpSlug(u){ try{ const p=new URL(String(u||"")).pathname.split("/").filter(Boolean); return p.length?decodeURIComponent(p[p.length-1]):""; }catch(e){ return ""; } }
+function kitHtmlText(h){   // tags → spaces / line breaks, the common entities decoded, whitespace folded
+  return String(h||"").replace(/<(script|style)[\s\S]*?<\/\1>/gi," ").replace(/<br\s*\/?>|<\/(p|div|li|h\d|tr|blockquote)>/gi,"\n").replace(/<[^>]+>/g," ")
+    .replace(/&nbsp;|&#160;/g," ").replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&#0?39;|&#8217;|&rsquo;|&#8216;|&lsquo;/g,"'")
+    .replace(/&#8220;|&#8221;|&ldquo;|&rdquo;/g,'"').replace(/&#8211;|&ndash;/g,"–").replace(/&#8212;|&mdash;/g,"—").replace(/&#8230;|&hellip;/g,"…").replace(/&deg;/g,"°").replace(/&frac12;/g,"½").replace(/&frac14;/g,"¼").replace(/&frac34;/g,"¾")
+    .replace(/&#(\d+);/g,(m,n)=>{ try{ return String.fromCodePoint(+n); }catch(e){ return m; } })
+    .replace(/[ \t ]+/g," ").replace(/\s*\n\s*/g,"\n").trim();
+}
+function kitWprmRecord(r){   // a WP Recipe Maker recipe → the capture record (the shape kitCapParse returns; kitCapApply takes it)
+  if(!r||typeof r!=="object"||!r.name) return null;
+  const T=x=>kitHtmlText(x).replace(/\n+/g," ").trim();
+  const ing=[]; (Array.isArray(r.ingredients_flat)?r.ingredients_flat:[]).forEach(i=>{
+    if(!i) return;
+    if(i.type==="group"){ if(T(i.name)) ing.push(T(i.name)+":"); return; }
+    const line=[T(i.amount),T(i.unit),T(i.name)].filter(Boolean).join(" ").replace(/\s+/g," ").trim(); if(!line) return;
+    ing.push(T(i.notes)?line+" ("+T(i.notes)+")":line);
+  });
+  const steps=[]; (Array.isArray(r.instructions_flat)?r.instructions_flat:[]).forEach(st=>{
+    if(!st) return;
+    if(st.type==="group"){ if(T(st.name)) steps.push(T(st.name)+":"); return; }
+    const t=T(st.text); if(t) steps.push(t);
+  });
+  if(!ing.length&&!steps.length) return null;
+  const sv=T(r.servings), su=T(r.servings_unit);
+  const yld=sv?(sv+" "+(su||(/^\d+$/.test(sv)?"serving"+(sv==="1"?"":"s"):""))).trim():"";
+  return {name:T(r.name).slice(0,80),ingredients:ing,steps:steps,yield:yld.slice(0,60),tags:[],prep:[]};
+}
+async function kitFetchJson(url,ms){   // GET → parsed JSON, or null for anything that isn't a quick JSON 200 (no throw, ever)
+  const ctl=(typeof AbortController==="function")?new AbortController():null; const tm=ctl?setTimeout(()=>ctl.abort(),ms):null;
+  try{
+    const r=await fetch(url,{signal:ctl?ctl.signal:undefined}); if(!r||!r.ok) return null;
+    const ct=(r.headers&&typeof r.headers.get==="function"&&r.headers.get("content-type"))||""; if(ct&&!/json/i.test(ct)) return null;
+    return await r.json();
+  }catch(e){ return null; } finally{ if(tm) clearTimeout(tm); }
+}
+async function kitLinkDirect(u){   // → {rec,how:"card"} | {text,how:"post"} | null (null = hand the link to Claude's reader)
+  const o=kitWpOrigin(u), slug=kitWpSlug(u); if(!o||!slug) return null;
+  const posts=await kitFetchJson(o+"/wp-json/wp/v2/posts?slug="+encodeURIComponent(slug)+"&_fields=id,title,content",KIT_WP_MS);
+  const p=Array.isArray(posts)&&posts[0]; if(!p||!p.content||typeof p.content.rendered!=="string") return null;
+  const html=p.content.rendered, m=/wprm-recipe-container-(\d+)/.exec(html)||/data-recipe-id="(\d+)"/.exec(html);
+  if(m){ const j=await kitFetchJson(o+"/wp-json/wp/v2/wprm_recipe/"+m[1],KIT_WP_MS); const rec=kitWprmRecord(j&&j.recipe); if(rec) return {rec:rec,how:"card"}; }
+  const title=kitHtmlText((p.title&&p.title.rendered)||""), text=kitHtmlText(html);
+  if(text.length<200) return null;   // a stub post → let Claude read the page
+  return {text:(title?title+"\n\n":"")+text.slice(0,12000),how:"post"};
+}
+// KITLINKDIRECT_END
 async function kitCapRunLink(){
   const box=document.getElementById('kit-cap-url'); const u=String((box?box.value:kitCap.url)||"").trim(); kitCap.url=u;   // KITLINKHOLD: the box, or the address held across a repaint
   if(!/^https?:\/\/\S+\.\S+/i.test(u)){ kitCap.msg="Paste the whole address, starting with https://"; const el=document.getElementById('content'); if(el) renderMomsPlan(el); return; }
   _kitStash(); kitCap.busy=true; kitCap.msg=""; const el0=document.getElementById('content'); if(el0) renderMomsPlan(el0);
   try{
-    const r=await kitCapAsk([{type:"text",text:"Use web_fetch to read the recipe on this page: "+u+"\n\n"+KIT_CAP_PROMPT}],
-      [{type:"web_fetch_20260209",name:"web_fetch",max_uses:2,max_content_tokens:20000}],{timeoutMs:KIT_CAP_LINK_MS});   // KITLINKHOLD: 90 s, then a message
-    kitCapApply(r); kitEditDraft.url=u; kitCap.mode=null; kitCap.url="";
+    const d=await kitLinkDirect(u);   // KITLINKDIRECT: the site's own recipe card first (WordPress, CORS open) — no Claude, no key, under a second
+    if(d&&d.rec){ kitCapApply(d.rec); kitCap.msg="\u2713 Filled in from the site\u2019s recipe card \u2014 check every box, then Save. Nothing is saved until you do."; }
+    else if(d&&d.text){ kitCapApply(await kitCapAsk([{type:"text",text:KIT_CAP_PROMPT+"\n\nMATERIAL:\n"+d.text}],null,{timeoutMs:KIT_CAP_LINK_MS})); }   // KITLINKDIRECT: a WordPress post with another card → its text, like 📋 Pasted text
+    else kitCapApply(await kitCapAsk([{type:"text",text:"Use web_fetch to read the recipe on this page: "+u+"\n\n"+KIT_CAP_PROMPT}],
+      [{type:"web_fetch_20260209",name:"web_fetch",max_uses:2,max_content_tokens:20000}],{timeoutMs:KIT_CAP_LINK_MS}));   // KITLINKHOLD: 90 s, then a message
+    kitEditDraft.url=u; kitCap.mode=null; kitCap.url="";
   }catch(e){ kitCap.msg=String(e&&e.message||e); }
   kitCap.busy=false; const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
