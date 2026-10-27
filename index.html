@@ -11065,6 +11065,11 @@ function bbMomCardHtml(k){
 //   says which clock it is reading ("since your last check-off" / "since your day started") and keeps ▶ Start, which
 //   switches to the real clock from that moment. Mom's early-check line and the history entry carry the same note
 //   (spentFrom). The overrun line keys off the Start tap only — a fallback clock never fires it. Nothing new is written.
+//   MMCAPLONG (her report 2026-10-27, both families: "ellis said he couldn't check off and the timer kept going"; her yes): the
+//   flat 15-minute cap never let a 20-minute subject (Eggspress, Reading Eggs, Lincoln's reading) reach ready without ▶ Start —
+//   target − grace = 18 > 15, so the countdown stuck at "3 min left" and the check never opened. The fallback now credits up to
+//   the card's OWN minimum when that is longer than 15 (mmFallbackCap): a 20-minute card can read ready from the last check-off
+//   or the day start; a 15-minute card is exactly as before; a long lunch still never hands a kid more than the card's time.
 const MM_FALLBACK_CAP=15;   // minutes — the most a fallback clock (last check-off / day start) can credit
 const MM_FROM_NOTE={check:"no Start tap — counted from the last check-off",day:"no Start tap — counted from the day start"};
 const MM_FROM_KID={check:"since your last check-off",day:"since your day started",time:"since family time's start"};   // time: FAMRES
@@ -11083,6 +11088,7 @@ function mmTargetOf(s,key){
 function mmShowOf(s){ return !s||s.minShow!==false; }
 function mmTarget(t){ if(t&&t.famBlock) return (typeof frTarget==="function")?frTarget(t):0;   // FAMRES: a family item's own minimum (absent = off)
   return (!t||String(t.id||"").endsWith("_c"))?0:mmTargetOf(mmSubjOf(t),t.subjectKey); }
+function mmFallbackCap(t){ return Math.max(MM_FALLBACK_CAP,mmTarget(t)||0); }   // MMCAPLONG: minutes a fallback clock may credit — 15, or the card's own minimum when longer
 function mmRules(){
   const r=(((typeof rulesData!=="undefined"&&rulesData)||{}).minMinutes)||{};
   const g=parseInt(r.grace,10);
@@ -11119,7 +11125,7 @@ function mmClock(id,nowMs){
   { const _ft=mmTaskOf(id); if(_ft&&_ft.famBlock&&typeof frClock==="function") return frClock(_ft,nowMs); }   // FAMRES: the family group's clock
   const s=mmStartMs(id); if(s!=null) return {ms:s,from:"start"};
   const t=mmTaskOf(id); if(!t||!t.who) return null;
-  const cap=nowMs-MM_FALLBACK_CAP*60000;
+  const cap=nowMs-mmFallbackCap(t)*60000;   // MMCAPLONG
   const c=mmLastCheckMs(t.who,nowMs,id); if(c!=null) return {ms:Math.max(c,cap),from:"check"};
   const d=mmDayStartMs(t.who,nowMs); if(d!=null) return {ms:Math.max(d,cap),from:"day"};
   return null;
@@ -11231,7 +11237,7 @@ function mmTick(nowMs){
       const target=mmTarget(t); if(!target) return;
       const c=mmClock(t.id,nowMs); if(!c) return;
       const el=Math.max(0,(nowMs-c.ms)/60000);
-      if(el<target+1&&(c.from==="start"||c.from==="time"||el<MM_FALLBACK_CAP)) sig+="|"+t.id+"@"+Math.floor(nowMs/60000);   // a capped fallback clock stops moving
+      if(el<target+1&&(c.from==="start"||c.from==="time"||el<mmFallbackCap(t))) sig+="|"+t.id+"@"+Math.floor(nowMs/60000);   // a capped fallback clock stops moving
       if(r.over&&c.from==="start"&&!t.famBlock&&el>=target*2) mmAlertSend("over",t,mmKidName(t.who)+"’s "+mmSubjName(t)+" has been open "+Math.floor(el)+" minutes ("+target+" planned)");   // ▶ Start only — a fallback clock never overruns
     });
   }catch(e){}
