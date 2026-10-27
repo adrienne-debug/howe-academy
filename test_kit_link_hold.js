@@ -17,7 +17,7 @@ ok("kitCap carries url", /let kitCap=\{mode:null,busy:false,msg:"",photos:\[\],u
 const capHtml=fn("kitCaptureHTML"), ask=fn("kitCapAsk"), run=fn("kitCapRunLink"), text=fn("kitCapRunText");
 ok("no database writes in the touched functions", !/db\.ref|firebase\./.test(capHtml+ask+run));
 ok("the link box is drawn from kitCap.url and writes back on input", /id="kit-cap-url" type="url" value="'\+esc\(kitCap\.url\|\|""\)\+'" oninput="kitCap\.url=this\.value"/.test(capHtml));
-ok("only the link read asks for the clock", /\{timeoutMs:KIT_CAP_LINK_MS\}\)/.test(run)&&!/timeoutMs/.test(text)&&(src.match(/timeoutMs:KIT_CAP_LINK_MS/g)||[]).length===1);
+ok("only the link read asks for the clock (its two Claude asks: a WordPress post's text, Claude's reader); paste has none", /\{timeoutMs:KIT_CAP_LINK_MS\}\)/.test(run)&&!/timeoutMs/.test(text)&&(src.match(/timeoutMs:KIT_CAP_LINK_MS/g)||[]).length===2&&(run.match(/timeoutMs:KIT_CAP_LINK_MS/g)||[]).length===2);
 
 console.log("\n# the box survives a repaint");
 {
@@ -36,6 +36,7 @@ console.log("\n# Read the recipe: box or held address, 90 s clock, cleared on su
   const ctx={kitCap:{mode:"link",busy:false,msg:"",photos:[],url:""},kitEditDraft:{},KIT_CAP_PROMPT:"P",KIT_CAP_LINK_MS:90000,
     document:{getElementById:id=>(id==='kit-cap-url'?ctx._box:id==='content'?{}:null)},_box:null,
     _kitStash:()=>{ stashed++; }, renderMomsPlan:()=>{ renders++; },
+    kitLinkDirect:async()=>null,   // KITLINKDIRECT: not a WordPress page → Claude's reader (the path under test here)
     kitCapAsk:async(content,tools,opt)=>{ asked={content,tools,opt}; return ctx._reply(); }, kitCapApply:r=>{ calls.push(r); }};
   const mk=new Function(...Object.keys(ctx), run+"; return kitCapRunLink;");
   const go=()=>mk(...Object.keys(ctx).map(k=>ctx[k]))();
