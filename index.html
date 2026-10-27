@@ -35892,10 +35892,11 @@ function frLessonKeys(it,label){
   return out;
 }
 // The record for a set of lesson keys: one key = lrFor as is; none = the item default; two = each part's lists together.
-function frRecFor(sk,keys){
-  if(!keys||!keys.length) return lrFor(FR_KID,sk,"__none__");
-  if(keys.length===1) return lrFor(FR_KID,sk,keys[0]);
-  const R=keys.map(function(k){ return lrFor(FR_KID,sk,k); }), out={_from:{}};
+function frRecFor(sk,keys,utd){
+  const o=utd?{utDays:[utd]}:undefined;   // UNITTRACK: the unit day this card's date lands on, when the caller knows it
+  if(!keys||!keys.length) return lrFor(FR_KID,sk,"__none__",o);
+  if(keys.length===1) return lrFor(FR_KID,sk,keys[0],o);
+  const R=keys.map(function(k){ return lrFor(FR_KID,sk,k,o); }), out={_from:{}};
   LR_PARTS.forEach(function(p){
     if(p==="notes"){ out.notes=R.map(function(r){ return r.notes; }).filter(Boolean).filter(function(v,i,a){ return a.indexOf(v)===i; }).join("\n"); out._from.notes=out.notes?"lesson":"none"; return; }
     const seen={}; out[p]=[]; R.forEach(function(r){ (r[p]||[]).forEach(function(x){ const k=JSON.stringify(x); if(!seen[k]){ seen[k]=1; out[p].push(x); } }); });
@@ -35907,7 +35908,7 @@ function frCardRec(t){
   const sk=frSkFor(t); if(!sk) return null;
   const it=(typeof famItemOf==="function")?famItemOf(t):null;
   let lbl=""; try{ lbl=(typeof famLessonFor==="function")?famLessonFor(t):""; }catch(e){ lbl=""; }
-  return frRecFor(sk,frLessonKeys(it,lbl));
+  return frRecFor(sk,frLessonKeys(it,lbl),(typeof utDayForTask==="function")?utDayForTask(t):null);   // UNITTRACK
 }
 // lrCardParts' hook for a family card → {menu, kids}. A family card has no LESSONLINK button, so any link is drawn here.
 function frCardParts(t,readOnly,done){
@@ -35943,7 +35944,7 @@ function frBuildFamily(w0,w1,today){
           if(d<pair[0].from||d>pair[0].to) return;
           const c=famCellState(b,it,d); if(!c||!c.runs||!c.kids||!c.kids.length) return;
           const lbl=map?String((map.byDate||{})[d]||""):"";
-          const r=frRecFor(sk,frLessonKeys(it,lbl)), L={text:lbl||String(it.name||"Family time"),date:d};
+          const r=frRecFor(sk,frLessonKeys(it,lbl),(typeof utDayForFam==="function")?utDayForFam(id,it,d,lbl):null), L={text:lbl||String(it.name||"Family time"),date:d};   // UNITTRACK
           r.supplies.forEach(function(s){ add("supplies",sk,L,pair[1],s.name,s.qty||"",null,null); });
           r.books.forEach(function(x){ add("books",sk,L,pair[1],x.title,x.by?"by "+x.by:"",x.checkoutBy||null,null); });
           r.orders.forEach(function(o){ add("orders",sk,L,pair[1],o.name,"",o.orderBy||null,o.url||null); });
@@ -36259,10 +36260,15 @@ function lrClean(part,v){
 function lrSaid(part,v){ return part==="notes"?!!lrStr(v):lrClean(part,v).length>0; }
 // The record a lesson lives by: each part is the lesson's own when it says something, else the subject default.
 // _from[part] = "lesson" | "subject" | "none" tells the panel which it is showing.
-function lrFor(kid,sk,key){
+function lrFor(kid,sk,key,opt){
   const own=lrRaw(kid,sk,key), def=lrRaw(kid,sk,LR_SUBJECT); const out={_from:{}};
+  // UNITTRACK: the unit day(s) this lesson points at — a part the lesson's own record leaves empty is the day's before the
+  // subject default (_from "unit"). opt.utDays pins the day(s) when the caller knows them (a family card with a date).
+  const _ud=(opt&&opt.utDays)?opt.utDays:((key!==LR_SUBJECT&&typeof utDaysForKey==="function")?utDaysForKey(kid,sk,key):[]);
+  const _ur=(_ud&&_ud.length&&typeof utResOf==="function")?utResOf(_ud):null;
   LR_PARTS.forEach(p=>{
     if(key!==LR_SUBJECT&&lrSaid(p,own[p])){ out[p]=lrClean(p,own[p]); out._from[p]="lesson"; }
+    else if(_ur&&(p==="notes"?_ur.notes:_ur[p].length)){ out[p]=_ur[p]; out._from[p]="unit"; }   // UNITTRACK
     else if(lrSaid(p,def[p])){ out[p]=lrClean(p,def[p]); out._from[p]=key===LR_SUBJECT?"lesson":"subject"; }
     else { out[p]=p==="notes"?"":[]; out._from[p]="none"; }
   });
@@ -36919,6 +36925,324 @@ function lrpBuilderHTML(kid,sk){
   return h;
 }
 // LRPLANNER_END
+// UNITTRACK_START — 📅 a unit may carry a track of days ("One shape: lessons, units and The Gathering" §2 the resolver, §5 the
+//   record; BRIEF_units_build_2026-10-27.md T1; her go 2026-10-27 after her 14 answers of Oct 26). Her ask 2026-10-24: units
+//   that reach the schedule themselves; Sara's "a box for drill cards, a box for books, a box for video clips, a box for fun
+//   activities/field trips". Nothing here lays anything — Put on the schedule (T2) does; this PR gives a unit its days.
+//   · THE RECORD (content, travels with the unit): unitStudies/<id>/track = {mode:"seq"|"week", perWeek, roles:{Mon:…},
+//     rungLog:"kid"|"none", days:[{id, n, wk, role, t, res, cards, rungs, words, read, place, craft, note, nb, off}]} and
+//     unitStudies/<id>/opening. Every part of a day is optional; res parts are cleaned with lrClean (LESSONRES's own shapes);
+//     rungs and words.parts are keyed little · early · middle · upper only — a day has rungs only where Mom wrote a question
+//     (her answer 3); track.rungLog = "kid" (graded and logged per kid) | "none" (absent = none: not tracked, "so it doesn't
+//     feel like school", her answer 4) is read here and used by DAYCARD. No kid's name ever lives in a unit.
+//   · THE POINTERS a laid card follows (read here, written by T2): a family item's in-order line carries u:{id,d}; a week-by-
+//     week item carries track.unit={id,fromWeek} (wk = book week − fromWeek + 1, role = that weekday's role); a kid's subject
+//     record carries unit={id} (lesson i → the day with n = i+1). utDayForTask(t) → the day, or null when nothing points.
+//   · THE RESOLVER'S ONE NEW LAYER: lrFor(kid,sk,key) reads lesson's own → UNIT DAY → subject default; _from[part]="unit".
+//     The family's own additions still live in curriculum/resources and lrWrite is untouched — the unit day is the shared
+//     layer a family's edits never write. A craft's supplies join the day's supplies tagged craft:true. The Sunday list's
+//     items keep today's lrItemId, so ticks and lead-time dates work unchanged. With no track anywhere, lrFor, lrBuildList
+//     and the family cards are byte-for-byte today's (tested against HEAD's own blocks).
+//   · THE 📅 DAYS SECTION on a unit's page, above the decks: one row per day (title · links · books · supplies · cards · craft)
+//     read from the track; Mom-only editing through utWrite(id, dayId, part, value) = ONE targeted set of
+//     unitStudies/<id>/track/days/<i>/<part> (dry-run inert). Days are appended only (utDayAdd), never re-ordered or deleted
+//     — a day may be marked off. A card a day names gets ch = that day's n on the unit card (one targeted set per card) so the
+//     gate T2 adds can read it. A unit with no track reads "Give this unit days and it can go on the schedule." No Put on the
+//     schedule yet. unitPlanNudges skips a unit that has a track — its days are its schedule.
+//   · Nothing in the scheduler, generator, lay, Grid, notebook or mastery changes. No shuffle emoji, no kid's name.
+const UT_LEVELS=["little","early","middle","upper"];
+const UT_LEVEL_LABEL={little:"Little (Pre-K–K)",early:"Early (1–2)",middle:"Middle (3–5)",upper:"Upper (6+)"};
+const UT_READ_MODES=["listen","mom","recite"];
+const UT_EDIT_PARTS=["t","res","cards","rungs","words","read","note","off"];   // what utWrite may set on a day (place, craft, nb: later PRs)
+const UT_TRACK_FIELDS=["mode","perWeek","rungLog","roles"];
+const UT_EMPTY_LINE="Give this unit days and it can go on the schedule.";
+function utMom(){ return (typeof momHere==="function")?momHere():false; }
+function utDry(){ return (typeof _dryRun==="function")?_dryRun():false; }
+function utUnits(){ return (typeof unitStudies!=="undefined"&&unitStudies)||{}; }
+function utEsc(s){ return (typeof lrEsc==="function")?lrEsc(s):String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function utJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+function utStr(v,n){ return String(v==null?"":v).trim().slice(0,n||120); }
+function utInt(v){ const n=parseInt(v,10); return (isFinite(n)&&n>0)?n:null; }
+function utArr(v){ if(Array.isArray(v)) return v.filter(x=>x!=null); if(v&&typeof v==="object") return Object.keys(v).sort((a,b)=>(/^\d+$/.test(a)&&/^\d+$/.test(b))?(a-b):String(a).localeCompare(String(b))).map(k=>v[k]).filter(x=>x!=null); return []; }
+function utUrl(u){ if(typeof lrSafeUrl==="function") return lrSafeUrl(u); const s=String(u||"").trim(); return /^https:\/\//i.test(s)?s:""; }
+function utLevels(o){ const out={}; if(!o||typeof o!=="object") return out; UT_LEVELS.forEach(l=>{ const s=utStr(o[l],600); if(s) out[l]=s; }); return out; }
+// A day's res, in LESSONRES's own shapes (lrClean), plus a link's kind ("video" | "site") which the day card uses.
+function utRes(r){
+  const out={}; if(!r||typeof r!=="object") return out;
+  const parts=(typeof LR_PARTS!=="undefined")?LR_PARTS:["links","supplies","books","orders","notes"];
+  parts.forEach(p=>{ if(r[p]==null) return; const v=(typeof lrClean==="function")?lrClean(p,r[p]):null; if(v==null) return;
+    if(p==="notes"){ if(v) out.notes=v; return; }
+    if(!v.length) return;
+    if(p==="links"){ const src=utArr(r.links); v.forEach(l=>{ const o=src.find(x=>x&&utUrl(x.url)===l.url); const k=o&&utStr(o.kind,10); if(k==="video"||k==="site") l.kind=k; }); }
+    out[p]=v; });
+  return out;
+}
+// One day, cleaned to its shape — unknown parts dropped, empty parts left out. null when it is not a day at all.
+function utClean(day){
+  if(!day||typeof day!=="object") return null;
+  const d={}; const id=utStr(day.id,40); if(id) d.id=id;
+  const n=utInt(day.n); if(n) d.n=n; const wk=utInt(day.wk); if(wk) d.wk=wk;
+  const role=utStr(day.role,60); if(role) d.role=role;
+  const t=utStr(day.t,200); if(t) d.t=t;
+  const res=utRes(day.res); if(Object.keys(res).length) d.res=res;
+  const cards=utArr(day.cards).map(c=>{ if(!c||typeof c!=="object") return null; const deck=utStr(c.deck,80); const names=utArr(c.names).map(x=>utStr(x,120)).filter(Boolean); return (deck&&names.length)?{deck:deck,names:names}:null; }).filter(Boolean); if(cards.length) d.cards=cards;
+  const rungs=utLevels(day.rungs); if(Object.keys(rungs).length) d.rungs=rungs;
+  if(day.words&&typeof day.words==="object"){ const w={}; ["title","by"].forEach(k=>{ const s=utStr(day.words[k],120); if(s) w[k]=s; }); const tx=utStr(day.words.text,6000); if(tx) w.text=tx; const parts=utLevels(day.words.parts); if(Object.keys(parts).length) w.parts=parts; if(Object.keys(w).length) d.words=w; }
+  if(day.read&&typeof day.read==="object"){ const r={}; const m=utStr(day.read.mode,10); if(UT_READ_MODES.indexOf(m)>=0) r.mode=m; const what=utStr(day.read.what,200); if(what) r.what=what; const u=utUrl(day.read.url); if(u) r.url=u; if(Object.keys(r).length) d.read=r; }
+  if(day.place&&typeof day.place==="object"){ const p={}; ["name","country","caption","license"].forEach(k=>{ const s=utStr(day.place[k],k==="caption"?600:120); if(s) p[k]=s; }); ["lon","lat"].forEach(k=>{ const v=Number(day.place[k]); if(day.place[k]!=null&&isFinite(v)) p[k]=v; }); const img=utUrl(day.place.img); if(img) p.img=img; const st=utArr(day.place.stages).filter(x=>x&&typeof x==="object"); if(st.length) p.stages=st; if(Object.keys(p).length) d.place=p; }
+  if(day.craft&&typeof day.craft==="object"){ const c={}; const ct=utStr(day.craft.title,120); if(ct) c.title=ct;
+    const steps=utArr(day.craft.steps).map(s=>{ if(!s) return null; if(typeof s==="string"){ const tx=utStr(s,600); return tx?{text:tx}:null; } const o={}; const tx=utStr(s.text,600); if(tx) o.text=tx; const im=utUrl(s.img); if(im) o.img=im; return Object.keys(o).length?o:null; }).filter(Boolean); if(steps.length) c.steps=steps;
+    const sup=(typeof lrClean==="function")?lrClean("supplies",day.craft.supplies):[]; if(sup.length) c.supplies=sup; if(Object.keys(c).length) d.craft=c; }
+  const note=utStr(day.note,2000); if(note) d.note=note;
+  if(day.nb&&typeof day.nb==="object"){ const a=utStr(day.nb.activity,80); if(a) d.nb={activity:a}; }
+  if(day.off===true) d.off=true;
+  return d;
+}
+// ── readers ──
+function utTrack(u){ const t=u&&u.track; return (t&&typeof t==="object")?t:null; }
+function utOpening(u){ const o=u&&u.opening; return (o&&typeof o==="object")?o:null; }
+function utRungLog(u){ const t=utTrack(u); return (t&&t.rungLog==="kid")?"kid":"none"; }
+function utMode(u){ const t=utTrack(u); return (t&&t.mode==="week")?"week":"seq"; }
+function utPerWeek(u){ const t=utTrack(u); const n=t?utInt(t.perWeek):null; return (n&&n<=7)?n:4; }
+let _utDaysMemo=(typeof WeakMap==="function")?new WeakMap():null;
+// The days, cleaned, in stored order — never re-sorted (a day's id never changes). Memoised on the track object the
+// listener hands over; utWrite / utDayAdd mutate in place and drop the memo.
+function utDays(u){
+  const t=utTrack(u); if(!t) return [];
+  if(_utDaysMemo&&_utDaysMemo.has(t)) return _utDaysMemo.get(t);
+  const out=utArr(t.days).map(utClean).filter(d=>d&&(d.id||d.n));
+  if(_utDaysMemo) _utDaysMemo.set(t,out);
+  return out;
+}
+function utDaysOn(u){ return utDays(u).filter(d=>!d.off); }
+function utDay(u,id){ if(id==null) return null; return utDays(u).find(d=>d.id===String(id))||null; }
+function utDayN(u,n){ n=utInt(n); if(!n) return null; return utDays(u).find(d=>d.n===n)||null; }
+function utRef(uid,day){ return day?Object.assign({uid:uid},day):null; }
+function utHasDays(u){ return utDays(u).length>0; }
+// ── the pointers ──
+// The in-order track line a card's label names (the first part of a make-up label, the sitting count stripped).
+function utLineFor(it,label){
+  const tr=(typeof famTrack==="function")?famTrack(it):null; if(!tr||tr.mode!=="seq") return null;
+  const p=String(label||"").split(" + ")[0].replace(/\s*\(missed [^)]*\)\s*$/,"").replace(/ \u00B7 day \d+ of \d+$/,"").trim();
+  if(!p||p==="\u2713 all done") return null;
+  return ((typeof famList==="function")?famList(tr.list):[]).find(l=>l&&String(l.t||"").trim()===p)||null;
+}
+function utWeekOf(un,label){ const m=/\bWk (\d+)/.exec(String(label||"")); if(!m) return null; const wk=parseInt(m[1],10)-(utInt(un&&un.fromWeek)||1)+1; return wk>=1?wk:null; }
+// A family item's day on one date: in order → the line's u; week by week → the unit day whose wk and role match the date.
+function utDayForFam(id,it,ds,label){
+  const tr=(typeof famTrack==="function")?famTrack(it):null; if(!tr) return null; const us=utUnits();
+  if(tr.mode==="seq"){ const l=utLineFor(it,label); const u=l&&l.u; if(!u||!u.id||!us[u.id]) return null; return utRef(u.id,utDay(us[u.id],u.d)); }
+  const un=tr.unit; if(!un||!un.id||!us[un.id]) return null;
+  const wk=utWeekOf(un,label); if(!wk) return null;
+  const role=(ds&&typeof FAM_ABBR!=="undefined"&&typeof gwParseDate==="function")?String(((tr.days||{})[FAM_ABBR[gwParseDate(ds).getDay()]])||""):"";
+  const d=utDays(us[un.id]).find(x=>!x.off&&x.wk===wk&&String(x.role||"")===role);
+  return utRef(un.id,d||null);
+}
+// The index of a kid's lesson in its subject list: by its lesson id (lidsFor), else by the card's own text.
+function utLessonIndex(kid,sk,key,t){
+  const s=((((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[kid])||{})[sk]; if(!s) return -1;
+  const ids=(typeof lidsFor==="function")?lidsFor(kid,sk):null;
+  if(ids&&key){ const i=ids.indexOf(String(key)); if(i>=0) return i; }
+  const seq=Array.isArray(s.lessonSeq)?s.lessonSeq:[];
+  const ref=(t&&typeof taskLessonRef==="function")?String(taskLessonRef(t)||""):""; if(ref){ const i=seq.findIndex(x=>String(x)===ref); if(i>=0) return i; }
+  if(key&&typeof lrKeyForText==="function"){ const i=seq.findIndex(x=>lrKeyForText(kid,sk,String(x))===String(key)); if(i>=0) return i; }
+  return -1;
+}
+// The unit day a laid card points at — {uid, …day} — or null when nothing points.
+function utDayForTask(t){
+  if(!t) return null; const us=utUnits();
+  if(t.famBlock){
+    const b=(typeof famDefs==="function")?famDefs()[t.famBlock]:null; const it=(b&&typeof famList==="function")?famList(b.items).find(x=>x&&x.key===t.famItem):null; if(!it) return null;
+    let lbl=""; try{ lbl=(typeof famLessonFor==="function")?famLessonFor(t):""; }catch(e){ lbl=""; }
+    const ds=(t.day&&typeof routineDateISO==="function")?routineDateISO(t.day):"";
+    return utDayForFam(t.famBlock,it,ds,lbl);
+  }
+  if(t.who&&t.subjectKey){
+    const s=((((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[t.who])||{})[t.subjectKey]; const un=s&&s.unit; if(!un||!un.id||!us[un.id]) return null;
+    const i=utLessonIndex(t.who,t.subjectKey,(typeof llLessonKey==="function")?llLessonKey(t):"",t); if(i<0) return null;
+    return utRef(un.id,utDayN(us[un.id],i+1));
+  }
+  return null;
+}
+// lrFor's key → the unit day(s): a kid's lesson key, a family in-order key "l_<slug>", a family week key "wk<n>" (every
+// day of that week — the family record is per week there; a card with a date gets its one day through frRecFor).
+function utDaysForKey(kid,sk,key){
+  if(!kid||!sk||!key||key===((typeof LR_SUBJECT!=="undefined")?LR_SUBJECT:"_subject")||key==="__none__") return []; const us=utUnits();
+  if(kid===((typeof FR_KID!=="undefined")?FR_KID:"_family")){
+    const f=(typeof frFind==="function")?frFind(sk):null; const tr=(f&&typeof famTrack==="function")?famTrack(f.it):null; if(!tr) return [];
+    if(tr.mode==="seq"){ const m=/^l_(.+)$/.exec(String(key)); if(!m) return []; const l=famList(tr.list).find(x=>x&&x.t&&typeof lrSlug==="function"&&lrSlug(x.t)===m[1]); const u=l&&l.u; if(!u||!u.id||!us[u.id]) return []; const d=utDay(us[u.id],u.d); return d?[utRef(u.id,d)]:[]; }
+    const un=tr.unit, m=/^wk(\d+)$/.exec(String(key)); if(!un||!un.id||!us[un.id]||!m) return [];
+    const wk=utWeekOf(un,"Wk "+m[1]); if(!wk) return []; return utDays(us[un.id]).filter(d=>!d.off&&d.wk===wk).map(d=>utRef(un.id,d));
+  }
+  const s=((((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[kid])||{})[sk]; const un=s&&s.unit; if(!un||!un.id||!us[un.id]) return [];
+  const i=utLessonIndex(kid,sk,key,null); if(i<0) return []; const d=utDayN(us[un.id],i+1); return d?[utRef(un.id,d)]:[];
+}
+// The res of one or more unit days as one record: each part's lists together (no repeats); a craft's supplies join the
+// supplies tagged craft:true. Shapes are LESSONRES's own, so the Sunday list and the card read them as any lesson's.
+function utResOf(days){
+  const out={links:[],supplies:[],books:[],orders:[],notes:""}, seen={};
+  const push=(p,x)=>{ const k=p+"\u0001"+JSON.stringify(x); if(seen[k]) return; seen[k]=1; out[p].push(x); };
+  (days||[]).forEach(d=>{ if(!d) return; const r=d.res||{};
+    ["links","supplies","books","orders"].forEach(p=>(r[p]||[]).forEach(x=>push(p,x)));
+    if(r.notes&&out.notes.indexOf(r.notes)<0) out.notes=out.notes?out.notes+"\n"+r.notes:r.notes;
+    ((d.craft&&d.craft.supplies)||[]).forEach(s=>push("supplies",Object.assign({},s,{craft:true}))); });
+  return out;
+}
+// ── the writes (Mom-only, one targeted set each, dry-run inert) ──
+function utDayKey(u,dayId){ const t=utTrack(u); const raw=t&&t.days; if(!raw) return null; const keys=Array.isArray(raw)?raw.map((x,i)=>String(i)):Object.keys(raw); const k=keys.find(k=>raw[k]&&String(raw[k].id)===String(dayId)); return k==null?null:k; }
+function utTouched(u){ const t=utTrack(u); if(t&&_utDaysMemo) _utDaysMemo.delete(t); }
+function utLive(){ return !!(typeof db!=="undefined"&&db)&&!utDry(); }
+// ONE part of one day: unitStudies/<id>/track/days/<i>/<part>. The value is cleaned to its shape; empty clears (set null).
+function utWrite(id,dayId,part,value){
+  if(!utMom()||!id||dayId==null||UT_EDIT_PARTS.indexOf(part)<0) return false;
+  const u=utUnits()[id]; const t=utTrack(u); if(!t) return false;
+  const k=utDayKey(u,dayId); if(k==null) return false;
+  const probe={id:"x"}; probe[part]=value; const c=utClean(probe); const v=(c&&c[part]!=null)?c[part]:null;
+  if(v===null) delete t.days[k][part]; else t.days[k][part]=v;
+  utTouched(u);
+  if(utLive()) db.ref("unitStudies/"+id+"/track/days/"+k+"/"+part).set(v);
+  if(part==="cards") utStampCh(id,t.days[k]);
+  if(typeof renderAll==="function") renderAll();
+  return true;
+}
+// A card a day names carries ch = the number that opens it — the day's n in order, its wk week by week (the field RS4K
+// cards already carry; "One shape" example B: ch = 1 for week 1's cards): one targeted set per card that differs.
+function utChOf(u,day){ return (utMode(u)==="week")?utInt(day&&day.wk):utInt(day&&day.n); }
+function utStampCh(id,day){
+  const u=utUnits()[id]; const n=utChOf(u,day); if(!utMom()||!u||!n) return 0; let w=0;
+  const decks=u.decks, dks=Array.isArray(decks)?decks.map((x,i)=>String(i)):Object.keys(decks||{});
+  utArr(day.cards).forEach(c=>{ if(!c||!c.deck) return; const dk=dks.find(k=>decks[k]&&decks[k].key===c.deck); if(dk==null) return;
+    const cards=decks[dk].cards, cks=Array.isArray(cards)?cards.map((x,i)=>String(i)):Object.keys(cards||{});
+    utArr(c.names).forEach(nm=>{ const ck=cks.find(k=>cards[k]&&String(cards[k].name)===String(nm)); if(ck==null||cards[ck].ch===n) return;
+      cards[ck].ch=n; w++; if(utLive()) db.ref("unitStudies/"+id+"/decks/"+dk+"/cards/"+ck+"/ch").set(n); }); });
+  return w;
+}
+// Append one day. A unit with no track gets one (mode seq, 4 a week) in the same set; days are never re-ordered or removed.
+function utDayAdd(id,title){
+  if(!utMom()||!id) return null; const u=utUnits()[id]; if(!u) return null;
+  const t=utTrack(u); const raw=t&&t.days; const days=utDays(u);
+  let maxN=0; days.forEach(d=>{ if(d.n>maxN) maxN=d.n; }); const n=maxN+1;
+  let did="d"+n; const ids=new Set(days.map(d=>d.id)); let s=2; while(ids.has(did)) did="d"+n+"_"+(s++);
+  const day={id:did,n:n}; const tt=utStr(title,200); if(tt) day.t=tt;
+  if(!t){ u.track={mode:"seq",perWeek:4,days:[day]}; if(utLive()) db.ref("unitStudies/"+id+"/track").set(u.track); }
+  else { let k; if(Array.isArray(raw)){ k=String(raw.length); raw.push(day); } else { const ks=Object.keys(raw||{}).map(x=>parseInt(x,10)).filter(x=>isFinite(x)); k=String(ks.length?Math.max.apply(null,ks)+1:0); if(!t.days) t.days={}; t.days[k]=day; }
+    if(utLive()) db.ref("unitStudies/"+id+"/track/days/"+k).set(day); }
+  utTouched(u);
+  if(typeof renderAll==="function") renderAll();
+  return day;
+}
+// One field of the track itself: mode (seq | week), perWeek (1–7), rungLog (kid | none → cleared), roles ({Mon:…}).
+function utTrackSet(id,field,value){
+  if(!utMom()||!id||UT_TRACK_FIELDS.indexOf(field)<0) return false; const u=utUnits()[id]; const t=utTrack(u); if(!t) return false;
+  let v=null;
+  if(field==="mode") v=(value==="week")?"week":"seq";
+  else if(field==="perWeek"){ const n=utInt(value); v=(n&&n<=7)?n:null; }
+  else if(field==="rungLog") v=(value==="kid")?"kid":null;
+  else if(field==="roles"){ const o={}; if(value&&typeof value==="object") ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].forEach(d=>{ const s=utStr(value[d],60); if(s) o[d]=s; }); v=Object.keys(o).length?o:null; }
+  if(v===null) delete t[field]; else t[field]=v;
+  utTouched(u);
+  if(utLive()) db.ref("unitStudies/"+id+"/track/"+field).set(v);
+  if(typeof renderAll==="function") renderAll();
+  return true;
+}
+// ── the 📅 Days section (renderUnitDetail's hook) ──
+let utEdit=null;   // {uid, dayId} while a day's editor is open
+function utEditOpen(uid,dayId){ if(!utMom()) return; utEdit=(utEdit&&utEdit.uid===uid&&utEdit.dayId===dayId)?null:{uid:uid,dayId:dayId}; if(typeof renderAll==="function") renderAll(); }
+function utCellList(d,part){ const r=d.res||{}; const L=r[part]||[]; if(part==="links") return L.map(x=>x.label||((typeof lrHost==="function")?lrHost(x.url):"link")); if(part==="supplies") return L.map(x=>(x.qty?x.qty+" ":"")+x.name).concat(((d.craft&&d.craft.supplies)||[]).map(x=>"\u2702\uFE0F "+(x.qty?x.qty+" ":"")+x.name)); if(part==="books") return L.map(x=>x.title); return []; }
+function utDayLabel(d){ return (d.n?"Day "+d.n:(d.wk?"Wk "+d.wk+(d.role?" \u00B7 "+d.role:""):""))+(d.t?(d.n||d.wk?" \u2014 ":"")+d.t:""); }
+function utRowHTML(u,d,isMom){
+  const cell=(cap,items)=>'<div class="ut-cell" style="flex:1 1 100px;min-width:0;overflow-wrap:anywhere"><div class="ut-cap" style="font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--muted)">'+cap+'</div>'+(items.length?utEsc(items.join(", ")):'<span style="color:#cbd5e1">\u2014</span>')+'</div>';
+  const on=utEdit&&utEdit.uid===u.id&&utEdit.dayId===d.id;
+  let h='<div class="ut-row" data-ut-day="'+utEsc(d.id)+'" '+(isMom?'onclick="utEditOpen(\''+utJ(u.id)+'\',\''+utJ(d.id)+'\')" ':'')+'style="display:flex;flex-wrap:wrap;gap:4px 8px;padding:7px 8px;border-top:1px solid #eef0f3;font-size:12px;line-height:1.35;'+(isMom?'cursor:pointer;':'')+'background:'+(on?'#fff7ed':'#fff')+';opacity:'+(d.off?'.5':'1')+'">';
+  h+='<div style="flex:1 1 150px;min-width:0;font-weight:700;overflow-wrap:anywhere">'+utEsc(utDayLabel(d)||"(untitled day)")+(d.off?' <span style="font-size:10px;color:#9ca3af">off</span>':'')+(d.rungs?' <span title="has rungs" style="font-size:10px">\u{1FA9C}</span>':'')+(d.words?' <span title="words on the screen" style="font-size:10px">\u{1F4DC}</span>':'')+'</div>';
+  h+=cell("\u{1F517} Links",utCellList(d,"links"))+cell("\u{1F4DA} Books",utCellList(d,"books"))+cell("\u{1F392} Supplies",utCellList(d,"supplies"));
+  h+=cell("\u{1F0CF} Cards",utArr(d.cards).map(c=>c.deck+": "+c.names.length))+cell("\u2702\uFE0F Craft",d.craft&&d.craft.title?[d.craft.title]:[]);
+  h+='</div>';
+  if(on&&isMom) h+=utEditorHTML(u,d);
+  return h;
+}
+// Lines → lists. links: "url | label" · supplies: "qty name" or "name" · books: "title | by" · orders: "name | url" · cards: "Deck: a, b".
+function utParseLines(part,text){
+  const lines=String(text||"").split(/\n+/).map(s=>s.trim()).filter(Boolean);
+  if(part==="cards"){ const out=[]; lines.forEach(l=>{ const i=l.indexOf(":"); if(i<1) return; const deck=l.slice(0,i).trim(), names=l.slice(i+1).split(/[,;]+/).map(s=>s.trim()).filter(Boolean); if(deck&&names.length) out.push({deck:deck,names:names}); }); return out; }
+  return lines.map(l=>{ const bits=l.split("|").map(s=>s.trim());
+    if(part==="links"){ const o={url:bits[0]}; if(bits[1]) o.label=bits[1]; return o; }
+    if(part==="books"){ const o={title:bits[0]}; if(bits[1]) o.by=bits[1]; return o; }
+    if(part==="orders"){ const o={name:bits[0]}; if(bits[1]) o.url=bits[1]; return o; }
+    const m=/^(\d+[a-z]*)\s+(.+)$/i.exec(bits[0]); const o=m?{qty:m[1],name:m[2]}:{name:bits[0]}; if(bits[1]==="mom") o.kids=false; return o; });
+}
+function utLinesOf(part,d){
+  const r=d.res||{}; const L=r[part]||[];
+  if(part==="cards") return utArr(d.cards).map(c=>c.deck+": "+c.names.join(", ")).join("\n");
+  if(part==="links") return L.map(x=>x.url+(x.label?" | "+x.label:"")).join("\n");
+  if(part==="books") return L.map(x=>x.title+(x.by?" | "+x.by:"")).join("\n");
+  if(part==="orders") return L.map(x=>x.name+(x.url?" | "+x.url:"")).join("\n");
+  return L.map(x=>(x.qty?x.qty+" ":"")+x.name+(x.kids===false?" | mom":"")).join("\n");
+}
+function utEditorHTML(u,d){
+  const a='\''+utJ(u.id)+'\',\''+utJ(d.id)+'\'';
+  const inp='width:100%;box-sizing:border-box;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif;background:#fff';
+  const lab=t=>'<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);margin:8px 0 3px">'+t+'</div>';
+  const ta=(id,val,ph,rows)=>'<textarea id="'+id+'" rows="'+(rows||2)+'" placeholder="'+utEsc(ph)+'" style="'+inp+';resize:vertical">'+utEsc(val)+'</textarea>';
+  let h='<div class="ut-editor" onclick="event.stopPropagation()" style="padding:8px 10px 12px;background:#fff7ed;border-top:1px dashed #fdba74;font-size:12px">';
+  h+=lab("Title")+'<input id="ut-e-t" type="text" value="'+utEsc(d.t||"")+'" placeholder="What this day is about" style="'+inp+'">';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap">'+['links','books','supplies','orders'].map(p=>'<div style="flex:1 1 180px;min-width:0">'+lab({links:"\u{1F517} Links \u2014 url | label",books:"\u{1F4DA} Books \u2014 title | by",supplies:"\u{1F392} Supplies \u2014 qty name (| mom = not on the kids\u2019 line)",orders:"\u{1F6D2} To order \u2014 name | url"}[p])+ta("ut-e-"+p,utLinesOf(p,d),"one per line",2)+'</div>').join("")+'</div>';
+  h+=lab("\u{1F0CF} Cards this day opens \u2014 Deck: name, name")+ta("ut-e-cards",utLinesOf("cards",d),(u.decks&&u.decks[0]&&u.decks[0].key?u.decks[0].key:"Deck")+": card, card",2);
+  h+=lab("\u{1FA9C} Rungs \u2014 one question per level, only where you want one")+'<div style="display:flex;gap:6px;flex-wrap:wrap">'+UT_LEVELS.map(l=>'<input id="ut-e-rung-'+l+'" type="text" value="'+utEsc((d.rungs||{})[l]||"")+'" placeholder="'+UT_LEVEL_LABEL[l]+'" style="'+inp+';flex:1 1 140px;width:auto">').join("")+'</div>';
+  h+=lab("\u{1F4DC} Words on the screen")+'<div style="display:flex;gap:6px;flex-wrap:wrap"><input id="ut-e-wtitle" type="text" value="'+utEsc((d.words||{}).title||"")+'" placeholder="Title" style="'+inp+';flex:1 1 140px;width:auto"><input id="ut-e-wby" type="text" value="'+utEsc((d.words||{}).by||"")+'" placeholder="By" style="'+inp+';flex:1 1 140px;width:auto"></div>'+ta("ut-e-wtext",(d.words||{}).text||"","The full text, as it shows on the screen",3);
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+UT_LEVELS.map(l=>'<input id="ut-e-wpart-'+l+'" type="text" value="'+utEsc(((d.words||{}).parts||{})[l]||"")+'" placeholder="'+UT_LEVEL_LABEL[l]+' learns\u2026" style="'+inp+';flex:1 1 140px;width:auto">').join("")+'</div>';
+  h+=lab("\u{1F3A7} Read strand")+'<div style="display:flex;gap:6px;flex-wrap:wrap"><select id="ut-e-rmode" style="'+inp+';flex:0 0 130px;width:auto"><option value="">(none)</option>'+UT_READ_MODES.map(m=>'<option value="'+m+'"'+((d.read||{}).mode===m?' selected':'')+'>'+({listen:"\u{1F3A7} Listen",mom:"\u{1F4D6} Mom reads",recite:"\u{1F5E3} Recite"}[m])+'</option>').join("")+'</select><input id="ut-e-rwhat" type="text" value="'+utEsc((d.read||{}).what||"")+'" placeholder="What (chapter, poem\u2026)" style="'+inp+';flex:1 1 160px;width:auto"><input id="ut-e-rurl" type="url" value="'+utEsc((d.read||{}).url||"")+'" placeholder="https:// link (optional)" style="'+inp+';flex:1 1 160px;width:auto"></div>';
+  h+=lab("\u{1F4DD} Note under the card")+ta("ut-e-note",d.note||"","The honest note \u2014 what to say, what to skip",2);
+  h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px"><button onclick="utEditSave('+a+')" style="padding:7px 16px;border-radius:10px;border:none;background:#c2410c;color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save this day</button>';
+  h+='<button onclick="utWrite('+a+',\'off\','+(d.off?'false':'true')+')" style="padding:7px 12px;border-radius:10px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(d.off?'\u21A9 Put this day back':'\u2298 Mark this day off')+'</button>';
+  h+='<span style="flex:1"></span><span style="font-size:10.5px;color:var(--muted)">Each box saves as its own part. Days are never deleted or re-ordered.</span></div></div>';
+  return h;
+}
+function utVal(id){ const el=(typeof document!=="undefined"&&document.getElementById)?document.getElementById(id):null; return el?String(el.value||""):""; }
+// Save gathers the editor's boxes and writes each CHANGED part through utWrite (one targeted set per part).
+function utEditSave(uid,dayId){
+  if(!utMom()) return 0; const u=utUnits()[uid]; const d=utDay(u,dayId); if(!d) return 0; let n=0;
+  const same=(a,b)=>JSON.stringify(a===undefined?null:a)===JSON.stringify(b===undefined?null:b);
+  const put=(part,val)=>{ const probe={id:"x"}; probe[part]=val; const c=utClean(probe); const v=(c&&c[part]!=null)?c[part]:null; if(same(v,d[part]===undefined?null:d[part])) return; if(utWrite(uid,dayId,part,val)) n++; };
+  put("t",utVal("ut-e-t"));
+  put("res",{links:utParseLines("links",utVal("ut-e-links")),books:utParseLines("books",utVal("ut-e-books")),supplies:utParseLines("supplies",utVal("ut-e-supplies")),orders:utParseLines("orders",utVal("ut-e-orders")),notes:(d.res||{}).notes||""});
+  put("cards",utParseLines("cards",utVal("ut-e-cards")));
+  const rungs={}; UT_LEVELS.forEach(l=>{ rungs[l]=utVal("ut-e-rung-"+l); }); put("rungs",rungs);
+  const parts={}; UT_LEVELS.forEach(l=>{ parts[l]=utVal("ut-e-wpart-"+l); }); put("words",{title:utVal("ut-e-wtitle"),by:utVal("ut-e-wby"),text:utVal("ut-e-wtext"),parts:parts});
+  put("read",{mode:utVal("ut-e-rmode"),what:utVal("ut-e-rwhat"),url:utVal("ut-e-rurl")});
+  put("note",utVal("ut-e-note"));
+  utEdit=null; if(typeof renderAll==="function") renderAll();
+  return n;
+}
+function utDayAddFromBox(uid){ const t=utVal("ut-new-title"); utDayAdd(uid,t); }
+function utDaysSectionHTML(u,isMom){
+  if(!u) return "";
+  const days=utDays(u), t=utTrack(u);
+  const pill=(on,txt,fn)=>'<button onclick="'+fn+'" style="padding:4px 10px;border-radius:999px;border:1.5px solid '+(on?'#c2410c':'var(--border)')+';background:'+(on?'#c2410c':'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+txt+'</button>';
+  let h='<div data-ut-days="1" style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px">';
+  h+='<style>.ut-hd{display:none}@media(min-width:700px){.ut-hd{display:flex}.ut-row .ut-cap{display:none}}</style>';
+  h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div style="flex:1;min-width:160px"><div style="font-size:13px;font-weight:800;color:#1f2937">\u{1F4C5} Days'+(days.length?' <span style="font-size:11px;color:var(--muted);font-weight:600">\u00B7 '+days.filter(d=>!d.off).length+(utMode(u)==="week"?' \u00B7 week by week':' \u00B7 in order')+' \u00B7 '+utPerWeek(u)+' a week</span>':'')+'</div>';
+  if(!days.length) h+='<div style="font-size:12px;color:var(--muted);margin-top:3px">'+UT_EMPTY_LINE+'</div>';
+  if(isMom&&days.length&&typeof psButtonHTML==="function") h+=psButtonHTML(u);   // PUTSCHED (T2): 🗓 Put on the schedule
+  h+='</div></div>';
+  if(isMom&&t){
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px;font-size:11px;color:var(--muted)">';
+    h+='<span>Lays:</span>'+pill(utMode(u)==="seq","In order","utTrackSet(\''+utJ(u.id)+'\',\'mode\',\'seq\')")+pill(utMode(u)==="week","Week by week","utTrackSet(\''+utJ(u.id)+'\',\'mode\',\'week\')");
+    h+='<span style="margin-left:6px">Days a week:</span><input type="number" min="1" max="7" value="'+utPerWeek(u)+'" onchange="utTrackSet(\''+utJ(u.id)+'\',\'perWeek\',this.value)" style="width:48px;padding:3px 6px;border:1.5px solid var(--border);border-radius:7px;font-size:12px">';
+    h+='<span style="margin-left:6px">Rungs:</span>'+pill(utRungLog(u)==="none","Not tracked","utTrackSet(\''+utJ(u.id)+'\',\'rungLog\',\'none\')")+pill(utRungLog(u)==="kid","Graded per kid","utTrackSet(\''+utJ(u.id)+'\',\'rungLog\',\'kid\')");
+    h+='</div>';
+  }
+  if(days.length){
+    h+='<div style="border:1px solid #eef0f3;border-radius:10px;margin-top:10px;overflow:hidden">';
+    h+='<div class="ut-hd" style="gap:4px 8px;padding:5px 8px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);background:#f8fafc"><div style="flex:1 1 150px;min-width:0">Day</div>'+["\u{1F517} Links","\u{1F4DA} Books","\u{1F392} Supplies","\u{1F0CF} Cards","\u2702\uFE0F Craft"].map(c=>'<div style="flex:1 1 100px;min-width:0">'+c+'</div>').join("")+'</div>';
+    days.forEach(d=>{ h+=utRowHTML(u,d,isMom); });
+    h+='</div>';
+  }
+  if(isMom) h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:10px"><input id="ut-new-title" type="text" placeholder="'+(days.length?'Day '+(days.length+1)+' \u2014 what it is about':'Day 1 \u2014 what it is about')+'" style="flex:1 1 200px;padding:6px 9px;border:1.5px solid var(--border);border-radius:9px;font-size:12px;font-family:\'DM Sans\',sans-serif" onkeydown="if(event.key===\'Enter\'){event.preventDefault();utDayAddFromBox(\''+utJ(u.id)+'\');}"><button onclick="utDayAddFromBox(\''+utJ(u.id)+'\')" style="padding:7px 14px;border-radius:10px;border:1.5px dashed #c2410c;background:#fff7ed;color:#c2410c;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Add a day</button></div>';
+  h+='</div>';
+  return h;
+}
+// UNITTRACK_END
 function fxOpenClassScreen(kid,sk,taskId){
   const s=((gwGetSubjects(kid)||{})[sk])||null;
   if(!s) return;
@@ -43369,6 +43693,7 @@ function renderUnitDetail(u){
     if(isMom) h+='<button onclick="unitPlanEditOpen(\''+esc(u.id)+'\',-1)" style="margin-top:9px;padding:7px 14px;border-radius:10px;border:1.5px dashed #2d6a4f;background:#f2faf5;color:#2d6a4f;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Add step</button>';
     h+='</div>';
   }
+  if(typeof utDaysSectionHTML==="function") h+=utDaysSectionHTML(u,isMom);   // UNITTRACK: 📅 Days, above the decks
   (u.decks||[]).forEach(d=>{
     h+='<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px">';
     h+='<div style="font-size:13px;font-weight:800;color:#1f2937">'+esc(d.key)+' <span style="font-size:11px;color:var(--muted);font-weight:600">· '+((d.cards||[]).length)+' cards · '+(d.mode||"flip")+' · '+(d.introCap||5)+' at a time</span></div>';
@@ -43621,6 +43946,7 @@ function _unitWhenLabel(when){
 function unitPlanNudges(u,kid){
   const out=[]; if(!u||!(u.enrolled||{})[kid]) return out;
   if(u.starter) return out;   // NO_SPRINT_NUDGES (her ask 10/4): starter paths never prompt sprints — play only, nothing due
+  if(typeof utTrack==="function"&&utTrack(u)) return out;   // UNITTRACK: a unit with days reaches the schedule itself — no nudges
   const dis=(u.planDismiss||{})[kid]||{};
   const doneLog=(u.activityLog||{})[kid]||{};
   const queued=_nbActKeys(u,kid);
