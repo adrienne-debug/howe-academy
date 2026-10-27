@@ -18819,6 +18819,7 @@ function grCreate(p,src,stores){
   const id=grNewId("g");
   const it={name:p.name,sec:grSecFor(p.name),src:[src],by:src.k==="kid"?("kid:"+src.who):src.k,ts:Date.now()};
   if(p.qty>0) it.qty=p.qty; if(p.unit) it.unit=p.unit; if(p.note) it.note=p.note;
+  if(p.ref&&typeof p.ref==="object") it.ref=p.ref;   // BUYLINK: {lr,wk} / {st} — the Sunday-list item or staple this row is for
   const mm=grMem(p.name); if(mm){ if(!it.note&&mm.note) it.note=mm.note; if(mm.photo) it.photo=mm.photo; }   // 🧠 remembered brand note + photo
   // the store: picked now (the chip she's on) → else where it usually comes from. A first pick becomes its home.
   const home=grHomeFor(p.name);
@@ -18845,6 +18846,7 @@ function grAdd(text,by,extra){
   }
   const src=(extra&&extra.src)||{k:by};
   const stores=(extra&&extra.stores)||null;
+  if(extra&&extra.ref&&typeof extra.ref==="object") p.ref=extra.ref;   // BUYLINK
   if(dup){ grAskDup(dup,p,src,stores); return "ask"; }
   const near=grNearDup(p.name); if(near){ grAskNear(near,p,src,stores); return "ask"; }   /* GR_NEARDUP: "Rice" vs "White rice" → ask */
   const nid=grCreate(p,src,stores); const ns=(grData.items[nid]||{}).stores||[];
@@ -19073,6 +19075,7 @@ function grDoneRun(sid,total,opts){
     if(H("i:"+id)) bought(it.name,(it.unit&&!/^(bag|box|can|jar|bottle|pk|pack|carton|tub|loaf|bunch|head|ct|count|dozen|doz)/.test(it.unit))?1:it.qty,it.sec,opts.freeze&&opts.freeze["i:"+id]);
     if(it.paid){ const ps=grPaidStore({stores:it.stores})||grEstStore({name:it.name,stores:it.stores},"all"); if(ps){ const _q=grQtyN(it), _per=(_q!==1&&(it.paidPer==="unit"||it.paidPer==="all"))?grUnitWord(it.unit):null; grPriceAdd(it.name,ps,_per&&it.paidPer==="all"?Math.round(it.paid/_q*100)/100:it.paid,_per?{src:"typed",per:_per}:{src:"typed"}); } }   // GR_ESTSTORE   // 💲 the price she typed in the store
     if(H("i:"+id)) grMemBought(it.name,it.sec); grClearedPush(id,it,"done");
+    if(typeof blOnBought==="function") blOnBought(id,it);   // BUYLINK: a Sunday-list item ticks for its week; a staple goes back to ✅ have
     delete grData.items[id];
     if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/items/'+id).remove();
   });
@@ -20751,6 +20754,154 @@ function grPutAlertHTML(){
 // Stores were already separate on the list (grStores, ＋ Add a store, ⚙️ Stores) — nothing changes there. No database writes.
 const SHOP_LIST_NAME="Shopping List";
 // SHOPNAME_END
+// BUYLINK_START — 🧺→🛒 the Sunday list and the Shopping List are linked (her ask 2026-10-24: "it can all link if things need to be
+// bought to the lists"; her answer 10, 2026-10-26: everything that needs buying goes to ONE list, each item under its store, stores
+// such as Hobby Lobby added and kept separate there; "One shape" §5 Buy lists).
+// · On each Sunday-list row (Mom only) "→ 🛒" opens the family's store chips (＋ Add a store as on the list) and makes ONE Shopping
+//   List item through grCreate with ref = {lr:<lrItemId>, wk:<week key>} — grFindDup runs first: an exact match already on the list
+//   is LINKED (its ref set, one targeted update) instead of a second row. The row then shows "🛒 on the Hobby Lobby list", which
+//   opens the Shopping List at that store. A low/out staple on the Sunday list gets the same "→ 🛒" (ref = {st:<staple id>}).
+// · Reverse — the checkout finisher (grDoneRun): a bought item with ref.lr writes <wk>/supplies/<lr> = true, the Sunday list's own
+//   tick path, one targeted set; a bought staple (ref.st) goes back to ✅ have on its OWN path — supplies/staples/<id> or
+//   kitchen/staples/<id>, whichever holds it (STAPLES1 reads both as one list).
+// · Sends by itself (her "it sends to the grocery list all"): the family rule config/rules/buy = {auto:true, store:{supplies:<sid>,
+//   craft:<sid>, books:<sid>, orders:<sid>}}. With auto on, every Sunday item not yet linked (and not just bought or cleared) goes
+//   to the list on draw, under its kind's store (no store for its kind → 📥 To sort). Absent = taps only, the default: DeWalt and
+//   Burris see no change until their Mom sets it. This block never writes the rule.
+// · Purchases & ESA are NOT linked (her answer 10): books and kits go to the Shopping List like everything else; an ESA purchase is
+//   still recorded by hand in Purchases.
+// Every write is targeted and Mom-only, through db only when db && !_dryRun(); kids never see the chips (blMom()). The hooks outside
+// this block are one guarded line each: grCreate (p.ref → it.ref), grAdd (extra.ref), grDoneRun (blOnBought), lrItemRowHTML
+// (blRowChipHTML), lrStapleChip (blStapleBtnHTML), lrSundayHTML (blAutoSend). Nothing in the scheduler or the lay changes.
+function blMom(){ return (typeof momHere==="function")?momHere():false; }
+function blDry(){ return (typeof _dryRun==="function")?_dryRun():false; }
+function blDb(){ return (typeof db!=="undefined"&&db&&!blDry())?db:null; }
+function blEsc(s){ return (typeof lrEsc==="function")?lrEsc(s):((typeof esc==="function")?esc(s):String(s==null?"":s)); }
+function blItems(){ return (typeof grData!=="undefined"&&grData&&grData.items)||{}; }
+function blListName(sid){ const n=(typeof SHOP_LIST_NAME==="string")?SHOP_LIST_NAME:"Shopping List"; const s=(sid&&typeof grStoreName==="function")?grStoreName(sid):""; return s?s+" list":n; }
+// the list item linked to a Sunday item (kind "lr") or a staple (kind "st") — still on the list
+function blFind(key,kind){ kind=kind||"lr"; const I=blItems(); const id=Object.keys(I).find(i=>I[i]&&I[i].ref&&I[i].ref[kind]===key); return id?{id:id,it:I[id]}:null; }
+// …or just bought / taken off by hand: it sits in 🧾 cleared for two weeks, so the rule never sends it again
+function blCleared(key,kind){ kind=kind||"lr"; const C=(typeof grData!=="undefined"&&grData&&grData.cleared)||{}; return Object.keys(C).some(i=>C[i]&&C[i].ref&&C[i].ref[kind]===key); }
+function blRule(){ const r=(typeof rulesData!=="undefined"&&rulesData&&rulesData.buy)||null; return (r&&typeof r==="object")?r:null; }
+function blRuleStore(it){ const r=blRule(); if(!r||!r.store||!it) return ""; const k=it.craft?"craft":(it.kind||"supplies"); const sid=r.store[k]; return (sid&&typeof grStores==="function"&&grStores()[sid])?String(sid):""; }
+// the week a bought item ticks: the item's first week not yet ticked (this week before next)
+function blWeekFor(it){ const ws=(it&&it.weeks&&it.weeks.length?it.weeks:[0]).slice().sort(); let w=ws.find(x=>!(typeof lrTicked==="function"&&lrTicked(it.id,x))); if(w===undefined) w=ws[0]; return {w:w,wk:(typeof lrWk==="function")?lrWk(w):""}; }
+function blQty(it){ const d=String((it&&it.detail)||"").trim(); const m=/^(\d+)$/.exec(d); return {qty:m?parseInt(m[1],10):0,note:m?"":d}; }   // "2" → ×2 · "by E. B. White" / "1 per kid" → the note
+function blSrc(it){ return {k:"lr",lbl:"🧺 Sunday list"+(it&&it.kid?" · "+((typeof lrCap==="function")?lrCap(it.kid):String(it.kid)):"")}; }
+// an exact match already on the list → link it (ref; and the picked store when it had none) — one targeted update, never a second row
+function blLink(id,ref,sid,name,quiet){
+  const I=blItems(), cur=I[id]; if(!cur) return null;
+  const up={ref:ref}; cur.ref=ref;
+  if(sid&&!(cur.stores||[]).length){ cur.stores=[sid]; up.stores=[sid]; if(cur.sort){ delete cur.sort; up.sort=null; } if(cur.any){ delete cur.any; up.any=null; } }
+  try{ if(typeof grSave==="function") grSave(); }catch(e){}
+  const D=blDb(); if(D) D.ref("kitchen/grocery/items/"+id).update(up);
+  if(!quiet&&typeof mwToast==="function") mwToast("🛒 "+name+" was already on the "+blListName((cur.stores||[])[0])+" — linked");
+  return {id:id,linked:true};
+}
+// ONE Shopping List item for a Sunday item → {id, linked} (null = not Mom / nothing to send)
+function blSend(it,sid,quiet){
+  if(!blMom()||!it||!it.id||!it.name||typeof grCreate!=="function") return null;
+  const had=blFind(it.id); if(had){ if(!quiet&&typeof mwToast==="function") mwToast("🛒 "+it.name+" is already on the "+blListName((had.it.stores||[])[0])); return {id:had.id,linked:true,already:true}; }
+  const W=blWeekFor(it), ref={lr:it.id,wk:W.wk||""};
+  const dup=(typeof grFindDup==="function")?grFindDup(it.name):null;
+  if(dup&&dup.kind==="item") return blLink(dup.id,ref,sid,it.name,quiet);
+  const q=blQty(it), p={name:it.name,ref:ref}; if(q.qty>1) p.qty=q.qty; if(q.note) p.note=q.note;
+  const id=grCreate(p,blSrc(it),sid?[sid]:null);
+  if(!quiet){ if(typeof mwToast==="function") mwToast("🛒 "+it.name+" → "+blListName(sid)); if(typeof grRepaint==="function") grRepaint(); }
+  return {id:id,linked:false};
+}
+// a low/out staple from the Sunday list → the same one item (ref.st); a kitchen staple already rides the list live, so it only says so
+function blSendStaple(s,sid,quiet){
+  if(!blMom()||!s||!s.id||!s.name||typeof grCreate!=="function") return null;
+  const had=blFind(s.id,"st"); if(had){ if(!quiet&&typeof mwToast==="function") mwToast("🛒 "+s.name+" is already on the "+blListName((had.it.stores||[])[0])); return {id:had.id,linked:true,already:true}; }
+  const ref={st:s.id}, dup=(typeof grFindDup==="function")?grFindDup(s.name):null;
+  if(dup&&dup.kind==="item") return blLink(dup.id,ref,sid,s.name,quiet);
+  if(dup&&dup.kind==="virt"){ if(!quiet&&typeof mwToast==="function") mwToast("🛒 "+s.name+" is already on the "+blListName()+" (🧺 staple)"); return {id:"",linked:true,already:true,virt:true}; }
+  const id=grCreate({name:s.name,ref:ref},{k:"lr",lbl:"🧷 staple"},sid?[sid]:null);
+  if(!quiet){ if(typeof mwToast==="function") mwToast("🛒 "+s.name+" → "+blListName(sid)); if(typeof grRepaint==="function") grRepaint(); }
+  return {id:id,linked:false};
+}
+// ── the reverse: the checkout finisher calls this for every bought item that leaves the list ──
+function blOnBought(id,it){
+  const r=it&&it.ref; if(!r||typeof r!=="object") return "";
+  const D=blDb(); let did="";
+  if(r.lr&&r.wk){
+    const cur=(typeof activeWk==="function")?activeWk():"";
+    try{ if(r.wk===cur&&typeof supplies!=="undefined"&&supplies){ supplies[r.lr]=true; if(typeof sv==="function") sv(r.wk+"_supplies",supplies); }
+         else if(typeof lrWk==="function"&&r.wk===lrWk(1)&&typeof lrTicksNext!=="undefined"&&lrTicksNext){ lrTicksNext[r.lr]=true; if(typeof sv==="function") sv(r.wk+"_supplies",lrTicksNext); } }catch(e){}
+    if(D) D.ref(r.wk+"/supplies/"+r.lr).set(true);   // the Sunday list's own tick, for the week the item was sent for
+    did="tick";
+  }
+  if(r.st){ const t=blStapleHave(r.st); did=did?did+"+"+t:t; }
+  return did;
+}
+// a bought staple → ✅ have on its OWN path: supplies/staples (school) or kitchen/staples (kitchen), whichever holds it
+function blStapleHave(stId){
+  const D=blDb();
+  if(typeof lrStaples!=="undefined"&&lrStaples&&lrStaples[stId]){ const s=lrStaples[stId]; if(s.state!=="have"){ s.state="have"; try{ if(typeof sv==="function") sv("ha_lr_staples",lrStaples); }catch(e){} if(D) D.ref("supplies/staples/"+stId).set({name:s.name,state:"have"}); } return "school"; }
+  if(typeof kitStaples!=="undefined"&&kitStaples&&kitStaples[stId]){ const s=kitStaples[stId]; if(s.state!=="have"){ s.state="have"; s.ts=Date.now(); try{ HA_LS.setItem('ha_kit_staples',JSON.stringify(kitStaples)); }catch(e){} if(D) D.ref("kitchen/staples/"+stId).set(s); } return "kitchen"; }
+  return "";
+}
+// ── the chips on the Sunday list (Mom only; kids see nothing) ──
+const BL_CHIP='cursor:pointer;display:inline-flex;align-items:center;gap:3px;margin-left:6px;font-size:10.5px;font-weight:800;padding:1px 8px;border-radius:10px;white-space:nowrap;vertical-align:middle;font-family:\'DM Sans\',sans-serif;';
+function blGo(sid){ try{ grFromDad=false; }catch(e){} if(typeof grSetStore==="function") grSetStore(sid||"all"); if(typeof mpGoto==="function") mpGoto("grocery"); }
+function blRowChipHTML(it){
+  if(!blMom()||!it||!it.id) return "";
+  const had=blFind(it.id);
+  if(!had&&(it.weeks||[]).length&&it.weeks.every(w=>typeof lrTicked==="function"&&lrTicked(it.id,w))) return "";   // got it (ticked for every week it is on) → nothing to buy
+  if(had){ const sid=((had.it.stores||[])[0])||""; return '<span onclick="blGo(\''+blEsc(sid)+'\')" role="button" title="Open the '+blEsc(blListName(sid))+'" style="'+BL_CHIP+'border:1.5px solid #3A7D44;background:#f0fdf4;color:#166534">🛒 on the '+blEsc(blListName(sid))+(had.it.done?' · in the cart':'')+'</span>'; }
+  return '<button onclick="blPickOpen(\''+blEsc(it.id)+'\')" title="Put it on the '+blEsc(blListName())+'" style="'+BL_CHIP+'border:1.5px solid #cbd5e1;background:#fff;color:#3A7D44">→ 🛒</button>';
+}
+function blStapleBtnHTML(s){
+  if(!blMom()||!s||!s.id||s.state==="have") return "";
+  const had=blFind(s.id,"st");
+  if(had) return '<span onclick="event.stopPropagation();blGo(\''+blEsc(((had.it.stores||[])[0])||"")+'\')" title="On the '+blEsc(blListName())+'" style="color:#166534;font-weight:800;padding:0 2px">🛒</span>';
+  return '<span onclick="event.stopPropagation();blPickOpen(\'\',\''+blEsc(s.id)+'\')" title="Put it on the '+blEsc(blListName())+'" style="color:#3A7D44;font-weight:800;padding:0 2px">→🛒</span>';
+}
+// the store question: the family's stores, Any store, ＋ Add a store — then the one item
+let _blPick=null;
+function blItemById(lrId){ try{ const L=(typeof lrBuildList==="function")?lrBuildList():null; return L?((L.items||[]).find(x=>x.id===lrId)||null):null; }catch(e){ return null; } }
+function blStapleById(id){ const S=(typeof staplesAll==="function")?staplesAll():((typeof lrStaplesAll==="function")?lrStaplesAll():[]); return S.find(s=>s.id===id)||null; }
+function blPickOpen(lrId,stId){
+  if(!blMom()) return;
+  const it=lrId?blItemById(lrId):null, st=(!it&&stId)?blStapleById(stId):null; if(!it&&!st) return;
+  _blPick={it:it,st:st};
+  if(typeof grPop!=="function"){ blPickGo(""); return; }
+  const ids=(typeof grActiveStores==="function")?grActiveStores():[];
+  const B='padding:7px 12px;border-radius:18px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;background:#fff;';
+  let h='<div style="font-size:30px;text-align:center">🛒</div><div style="font-size:14px;text-align:center;line-height:1.45;margin:4px 0 10px"><b>'+blEsc((it||st).name)+'</b> → which store?</div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center">'
+    +ids.map(sid=>'<button onclick="blPickGo(\''+blEsc(sid)+'\')" style="'+B+'border:2px solid '+((typeof grStoreColor==="function")?grStoreColor(sid):'#64748b')+';color:#1f2937">'+blEsc(grStoreName(sid))+'</button>').join("")
+    +'<button onclick="blPickGo(\'\')" style="'+B+'border:2px solid #cbd5e1;color:#64748b">Any store</button></div>'
+    +'<div style="display:flex;gap:6px;margin-top:10px"><input id="bl-store-new" type="text" placeholder="＋ Add a store (Hobby Lobby…)" onkeydown="if(event.key===\'Enter\')blPickAdd()" style="flex:1;min-width:0;padding:9px 11px;border:1.5px solid #cbd5e1;border-radius:10px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
+    +'<button onclick="blPickAdd()" style="padding:0 14px;border-radius:10px;border:none;background:#3A7D44;color:#fff;font-size:13px;font-weight:800;cursor:pointer">Add</button></div>'
+    +'<button onclick="grPopClose()" style="width:100%;margin-top:10px;padding:10px;border-radius:11px;border:none;background:#f1f5f9;color:#334155;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancel</button>';
+  grPop(h);
+}
+function blPickGo(sid){
+  const P=_blPick; _blPick=null; if(typeof grPopClose==="function") grPopClose(); if(!P) return;
+  if(P.it) blSend(P.it,sid||""); else if(P.st) blSendStaple(P.st,sid||"");
+  if(typeof renderSupplies==="function") renderSupplies();
+}
+// ＋ Add a store from the chips — the list's own store record (kitchen/grocery/stores/<sid>), same shape as grPickSave's own-store path
+function blStoreAdd(name){
+  name=String(name||"").trim(); if(!name||typeof grStorePut!=="function"||typeof grStores!=="function") return "";
+  const S=grStores(); const have=Object.keys(S).find(id=>S[id]&&String(S[id].name||"").toLowerCase()===name.toLowerCase()); if(have) return have;
+  const sid="c"+Date.now().toString(36); grStorePut(sid,{name:name,color:"#475569",ts:Date.now()}); return sid;
+}
+function blPickAdd(){ const inp=(typeof document!=="undefined")?document.getElementById("bl-store-new"):null; const v=((inp&&inp.value)||"").trim(); if(!v) return; blPickGo(blStoreAdd(v)); }
+// ── sends by itself: the rule, on the Sunday list's draw (Mom's device only) ──
+function blAutoSend(L){
+  const r=blRule(); if(!r||!r.auto||!blMom()||!L||!L.items||!L.items.length) return 0; let n=0;
+  L.items.forEach(it=>{
+    if(blFind(it.id)||blCleared(it.id)) return;
+    if((it.weeks||[]).length&&(it.weeks||[]).every(w=>typeof lrTicked==="function"&&lrTicked(it.id,w))) return;   // already got
+    if(blSend(it,blRuleStore(it),true)) n++;
+  });
+  return n;
+}
+// BUYLINK_END
 // GROSYNC_START — the grocery list follows meal changes (Adrienne's decisions 2026-10-23, final; Sara Dewalt shops from it daily too).
 //   Until now 🛒 Shop for the week put a meal's ingredients on the list and nothing ever took them off again: a dinner swapped
 //   or marked "didn't happen" left its 2 lb of beef on the list, and a meal added after shopping had to be shopped by hand.
@@ -36525,7 +36676,8 @@ function lrStaplesNeeded(st){ return lrStaplesAll(st).filter(s=>s.state==="low"|
 function lrStapleChip(s,manage){
   const m=LR_STATE_META[s.state]||LR_STATE_META.have;
   return '<span onclick="lrStapleCycle(\''+lrEsc(s.id)+'\')" title="Tap: have → low → out" style="cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:4px 10px;border-radius:12px;border:1.5px solid '+m[3]+';background:'+m[1]+';color:'+m[2]+'">'+m[0]+' '+lrEsc(s.name)
-    +(manage?'<span onclick="event.stopPropagation();lrStapleDel(\''+lrEsc(s.id)+'\')" style="color:#9ca3af;font-weight:800;padding:0 2px">✕</span>':'')+'</span>';
+    +(manage?'<span onclick="event.stopPropagation();lrStapleDel(\''+lrEsc(s.id)+'\')" style="color:#9ca3af;font-weight:800;padding:0 2px">✕</span>':'')
+    +(typeof blStapleBtnHTML==="function"?blStapleBtnHTML(s):"")+'</span>';   // BUYLINK: a low/out staple → 🛒 (Mom only)
 }
 // ── the Sunday list tab (the Supplies tab's slot) ──
 const LR_EMPTY_LINE="Add supplies to a lesson, snap a photo of a materials list, or set your staples — they show up here.";
@@ -36540,12 +36692,14 @@ function lrItemRowHTML(it,ticks0,ticks1){
   h+='<div style="display:flex;gap:8px">'+[0,1].filter(w=>it.weeks.indexOf(w)>=0).map(w=>lrTickBox(it,w,ticks0,ticks1)).join("")+'</div>';
   h+='<div style="flex:1"><div class="sup-name">'+lrEsc(it.name)+(it.detail?' <span style="font-weight:400;color:var(--muted)">'+lrEsc(it.detail)+'</span>':'')
     +(it.by?' <span style="font-size:11px;font-weight:800;color:'+(/^was/.test(it.by)?'#b91c1c':'#0e7490')+'">'+lrEsc(it.by)+'</span>':'')
-    +(it.url?' <a href="'+lrEsc(it.url)+'" target="_blank" rel="noopener noreferrer" style="font-size:11px;font-weight:700;color:#1d4ed8">open →</a>':'')+'</div>';
+    +(it.url?' <a href="'+lrEsc(it.url)+'" target="_blank" rel="noopener noreferrer" style="font-size:11px;font-weight:700;color:#1d4ed8">open →</a>':'')
+    +(typeof blRowChipHTML==="function"?blRowChipHTML(it):"")+'</div>';   // BUYLINK: → 🛒 / "on the … list" (Mom only)
   h+='<div class="sup-detail">'+lrEsc(lrSubjName(it.kid,it.sk))+' — '+it.lessons.map(l=>lrEsc(l.text)+' <span style="font-size:10px">('+LR_DOW[new Date(l.date+"T12:00:00").getDay()]+' '+lrMD(l.date)+')</span>').join(" · ")+'</div></div></div>';
   return h;
 }
 function lrSundayHTML(list,ticks0,ticks1){
   const L=list||lrBuildList(); const mom=lrMom();
+  try{ if(typeof blAutoSend==="function") blAutoSend(L); }catch(e){}   // BUYLINK: config/rules/buy.auto — each new item → the Shopping List, under its kind's store
   let h='<div style="padding:12px 12px 0"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
   h+='<div style="flex:1;min-width:160px"><div style="font-size:15px;font-weight:800">🧺 Sunday list</div><div style="font-size:11.5px;color:var(--muted)">What this week and next need — '+lrMD(L.w0.from)+' – '+lrMD(L.w1.to)+', from the lessons on the Grid.</div></div>';
   if(mom) h+=lrCapButtonsHTML("list");
