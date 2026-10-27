@@ -58933,7 +58933,7 @@ function mstSittingInit(pile, session, opts) {
   (pile.reviews || []).forEach(item => {
     const key = "r:" + item.id;
     cards[key] = { key, kind: "review", id: item.id, deck: item.subject, name: item.prompt, goods: 0, first: null, done: false };
-    if (item.dir === "prod") cards[key].mode = "type";   // ↔ a 🇬🇧→🇩🇪 twin is always typed in his own sitting
+    if (item.dir === "prod" && !!(session && session.bothWays)) cards[key].mode = "type";   // ↔ a 🇬🇧→🇩🇪 twin is typed in his own sitting — MSTTWINMODE: only while the session still has Both directions on (off → a plain flip card)
     queue.push(key);
     counts.review++;
   });
@@ -60981,6 +60981,21 @@ function mstPicCardHtml(session,card,pic,def,lrn){
   return c+'</div></div></div>';
 }
 // ── MST_PICS_END ──
+// MSTTWINMODE_START — ↔ Both directions twins (her report 2026-10-27: Lincoln's Social Studies sitting "didn't give him check off
+//   buttons … he couldn't answer"; her yes). The session had Both directions on — a switch built for German vocab — so six
+//   twins were minted and every twin ran typed in a sitting, showing the definition, a chip that said "Type it in German" and a
+//   text box that wanted the exact term. Two changes, nothing else: (1) mstSittingInit types a twin only while its session
+//   still has Both directions on — switch it Off in Mom HQ and the existing twins run as plain flip cards (✓ / ✗), no card
+//   removed; (2) the ⌨️ / 🗣 chip names the deck's own language (mstLangOf: German, Spanish, French, …) and says "Type the
+//   word" / "Say it — out loud" for a deck with none. German sittings read exactly as before. No database writes.
+const MST_LANG_RE=/\b(German|Deutsch|Spanish|French|Italian|Latin|Greek|Hebrew|Japanese|Chinese|Mandarin|Russian|Portuguese|Dutch|Korean|Arabic)\b/i;
+function mstLangOf(name){ const m=MST_LANG_RE.exec(String(name||"")); if(!m) return ""; const w=m[1].toLowerCase(); return w==="deutsch"?"German":w.charAt(0).toUpperCase()+w.slice(1); }
+function mstDirChip(m,deckName){
+  const lang=mstLangOf(deckName);
+  const txt=m==="say"?(lang?"\u{1F5E3} Say it in "+lang+" \u2014 out loud":"\u{1F5E3} Say it \u2014 out loud"):(lang?"\u2328\uFE0F Type it in "+lang:"\u2328\uFE0F Type the word");
+  return '<div style="display:inline-block;margin-top:2px;padding:3px 10px;border-radius:999px;background:#ede9fe;color:#6d28d9;font-size:11px;font-weight:800">'+txt+'</div>';
+}
+// MSTTWINMODE_END
 function mstCardHtml(session,card){
   const name=card.name||"";
   // DRILLSWEEP 4: a NEW card (straight from the bank, no id yet) carries its rule/answer in the bank entry's
@@ -61021,7 +61036,7 @@ function mstCardHtml(session,card){
   }
   if(typeof mstCopyOn==="function"&&mstCopyOn(session,card)) return mstCopyHtml(session,card,def,_lrn);   // 👀 PATCCC (ahead of MST_TYPEANS: on a Type-the-answer session it copies the answer)
   if(typeof mstTypeAnsOn==="function"&&mstTypeAnsOn(session,card,def)) return mstTypeAnsHtml(session,card,def,_lrn);   // ⌨️ MST_TYPEANS (guarded for engine-only harnesses)
-  const _chip=m=>'<div style="display:inline-block;margin-top:2px;padding:3px 10px;border-radius:999px;background:#ede9fe;color:#6d28d9;font-size:11px;font-weight:800">'+(m==="say"?"\u{1F5E3} Say it in German \u2014 out loud":"\u2328\uFE0F Type it in German")+'</div>';
+  const _chip=m=>(typeof mstDirChip==="function")?mstDirChip(m,card.deck||session.name||""):"";   // MSTTWINMODE: the deck's own language, or none (guarded for engine-only harnesses)
   if(typeof mstPickOn==="function"&&mstPickOn(session,card)) return mstPickHtml(session,card,_lrn);   // 🎯 PATPICK
   if(mode==="type"){
     let t='<div class="mast-slide"><div class="mast-flip-wrap"><div class="mast-flip-inner"><div class="mast-flip-front">';
