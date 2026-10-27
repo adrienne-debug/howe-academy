@@ -63,7 +63,7 @@ console.log("── the block never writes ──");
   ok("no db.ref, no .set( / .update( / .transaction(, no famWrite / lrWrite / utWrite / psApply in the block", !/db\.ref\(|\.set\(|\.update\(|\.transaction\(|famWrite\(|lrWrite\(|utWrite\(|psApply\(|unitEnroll\(\s*[a-z]/.test(UTS.replace(/\/\/.*$/gm, "").replace(/onclick=\\?"[^"]*"/g, "")));
   ok("the only writers named are today's buttons (unitEnroll, unitToggleNbInsert, unitStageMoveUp, unitStageFormOpen) and the other steps' openers (ubOpen, psOpen) inside onclick strings", /unitToggleNbInsert\(/.test(UTS) && /unitEnroll\(/.test(UTS) && /unitStageMoveUp\(/.test(UTS) && /psOpen\(/.test(UTS) && /ubOpen\(\)/.test(UTS));
   ok("no kid's name in the block; no shuffle emoji in index.html", !/lincoln|ellis|lucy|julian/i.test(UTS.replace(/\/\/.*$/gm, "")) && src.indexOf("🔀") < 0);
-  ok("renderUnits draws through the block (guarded) after the open-unit check", /if\(unitOpenId && unitStudies\[unitOpenId\]\)\{ con\.innerHTML=renderUnitDetail\(unitStudies\[unitOpenId\]\); return; \}\n  if\(typeof utsPageHTML==="function"\)\{ con\.innerHTML=utsPageHTML\(\); return; \}/.test(src));
+  ok("renderUnits draws through the block (guarded) after the open-unit check (the Builder's own hook may sit between)", /if\(unitOpenId && unitStudies\[unitOpenId\]\)\{ con\.innerHTML=renderUnitDetail\(unitStudies\[unitOpenId\]\); return; \}\n(  if\(typeof ubOpenHTML==="function"\)[^\n]*\n)?  if\(typeof utsPageHTML==="function"\)\{ con\.innerHTML=utsPageHTML\(\); return; \}/.test(src));
 }
 console.log("\n── 📚 All units (DeWalt-shaped) ──");
 {

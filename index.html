@@ -37346,6 +37346,7 @@ function psApply(){
   const days=PS_DAYS.filter(d=>f.days.indexOf(d)>=0); if(!days.length) return re("Pick at least one day of the week.");
   if(!utDaysOn(u).length) return re("This unit has no days yet.");
   if(psPointers(u.id).length) return re("already");
+  if(typeof ubUnchecked==="function"&&ubUnchecked(u).length) return re("Some cards are still unchecked — tick, fix or drop each one first (UNITBUILD).");   // UNITBUILD
   const mode=f.mode==="week"?"week":"seq";
   if(mode==="week"&&!Object.keys(psRoles(u)).length) return re("Week by week needs a role for each weekday (Mon: The object, Tue: Nature \u2026) on this unit\u2019s Days.");
   const minutes=Math.max(5,Math.min(240,parseInt(f.minutes,10)||30)), start=/^\d{4}-\d{2}-\d{2}$/.test(String(f.start||""))?f.start:psToday();
@@ -37682,6 +37683,280 @@ function utsFamilyHTML(isMom){
   return h;
 }
 // UNITSTAB_END
+// UNITBUILD_START — ✚ Build a unit, Sara's shape ("One shape" §3 example A, §5; BRIEF_units_build_2026-10-27.md B1; her answer 2
+//   2026-10-26: "the first screen = Mom writes Day 1, Day 2 herself; the four-box spread is the other choice on the same screen").
+//   Sara's words: "a box for drill cards, a box for books, a box for video clips, a box for fun activities/field trips for in
+//   their notebooks."
+//   · NAME IT: title, emoji, one line, ages, kind (topic / skill path / book companion — a book companion is family-only, never
+//     published), and the first name that signs the cards she checks.
+//   · DAY BY DAY (the first screen): Day 1, Day 2 … each with a title and its own four boxes — 🃏 Cards (front | back), 📚 Books
+//     (title | by | link), ▶ Videos (link | label), 🎨 Activities and field trips (title | points | a line). Type or paste lines, or
+//     📸 snap a photo of her notes page → Claude drafts the lines (the Kitchen's kitCapAsk, the family key, several photos per box);
+//     every drafted card is UNCHECKED until she ticks it. "Fill four boxes and spread them over days" is the other choice on the
+//     same screen: the four boxes for the whole unit, how many days and days a week, and the app spreads them — a book or video on
+//     most days, activities on their own days (the last one last), cards two or three a day in order — then shows the days, each
+//     with a title she can edit and a Day ▾ to move any line to another day.
+//   · CHECK: the cards one at a time — ✓ Keep, ✏ Fix, ✕ Drop (her Q6); checked = {by:<first name>, at}. 🖼 a picture per card from
+//     the Wikipedia finder (UNIT_PICS's own lookup), she approves each (her Q7); the credit it returns is saved with the picture.
+//   · SAVE: ONE transaction creating unitStudies/<id> (as starterUnitAdd — only ever creates the node). The record is the unit
+//     shape that exists (decks with cards, activities, visuals, nbInsert true) plus track (UNITTRACK's shape, utClean'd: links,
+//     books, cards, nb per day) and kind, ages, familyOnly, sources[], author {family, first}, version 1. A card a day names
+//     carries ch = that day's n. Before Save nothing is written; after it the unit opens as any unit — enroll kids, 🗓 Put on the
+//     schedule. A unit cannot be put on the schedule or enrolled while a card is still unchecked (ubUnchecked; one guarded line
+//     in psApply and unitEnroll). Mom-only, dry-run inert (the record is kept in memory, nothing written), phone width, no kid's
+//     name in code. Rungs, words, craft and place are not here — the Days table edits them (UNITTRACK) and later steps add them.
+let ubForm=null;   // the open Builder: {step, title, emoji, desc, ages, kind, first, mode, days:[…], boxes:{…}, nDays, perWeek, msg, busy, sources}
+const UB_KINDS=[["topic","Topic"],["skill","Skill path"],["book","Book companion"]];
+const UB_BOXES=[["cards","\u{1F0CF} Cards","front | back \u2014 one per line"],["books","\u{1F4DA} Books","title | by | link"],["videos","\u25B6 Videos","link | label"],["acts","\u{1F3A8} Activities & field trips","title | points | a line about it"]];
+const UB_PROMPTS={
+  cards:'This is a photo (or the text) of a homeschool mom\u2019s notes for drill cards: facts, vocabulary, names, dates. List every card as a short front and its back. Use ONLY what is there \u2014 never invent. Return ONLY strict JSON: {"items":[{"front":"","back":""}]}.',
+  books:'This is a photo (or the text) of a list of books for a homeschool unit. List each book. Use ONLY what is there. Return ONLY strict JSON: {"items":[{"title":"","by":""}]}.',
+  videos:'This is a photo (or the text) of a list of videos or links for a homeschool unit. List each one. Use ONLY what is there. Return ONLY strict JSON: {"items":[{"url":"","label":""}]}.',
+  acts:'This is a photo (or the text) of a homeschool mom\u2019s notes for activities, crafts and field trips for a unit. List each one with a short title and a line about it. Use ONLY what is there. Return ONLY strict JSON: {"items":[{"title":"","desc":""}]}.'};
+function ubMom(){ return (typeof momHere==="function")?momHere():false; }
+function ubDry(){ return (typeof _dryRun==="function")?_dryRun():false; }
+function ubLive(){ return !!(typeof db!=="undefined"&&db)&&!ubDry(); }
+function ubEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function ubJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+function ubStr(v,n){ return String(v==null?"":v).trim().slice(0,n||120); }
+function ubUrl(u){ return (typeof lrSafeUrl==="function")?lrSafeUrl(u):(/^https:\/\//i.test(String(u||"").trim())?String(u).trim():""); }
+function ubSlug(s){ return String(s||"").toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,40)||"unit"; }
+function ubFamily(){ try{ const f=(typeof window!=="undefined"&&window.HA_FAMILY)||{}; const n=String(f.familyName||"").replace(/\s+Academy$/i,"").trim(); return n||((typeof cap==="function")?cap(String(f.familyId||"howe")):String(f.familyId||"howe")); }catch(e){ return ""; } }
+function ubFirst(){ try{ return (typeof HA_LS!=="undefined"&&HA_LS.getItem("ha_ub_first"))||"Mom"; }catch(e){ return "Mom"; } }
+function ubRe(){ if(typeof renderAll==="function") renderAll(); }
+let _ubSeq=0; function ubId(){ return "b"+(++_ubSeq).toString(36)+Date.now().toString(36).slice(-3); }
+function ubNewDay(n){ return {n:n,t:"",cards:[],books:[],videos:[],acts:[]}; }
+// ── open / close / fields ──
+function ubOpen(){
+  if(!ubMom()) return;
+  ubForm={step:"name",title:"",emoji:"\u{1F4D8}",desc:"",ages:"",kind:"topic",first:ubFirst(),mode:"days",days:[ubNewDay(1)],boxes:{cards:[],books:[],videos:[],acts:[]},nDays:8,perWeek:4,msg:"",busy:false,sources:[],pic:null};
+  if(typeof unitOpenId!=="undefined") unitOpenId=null;
+  ubRe();
+}
+function ubClose(){ ubForm=null; ubRe(); }
+function ubSet(field,val){
+  if(!ubForm) return; const f=ubForm;
+  if(field==="title") f.title=ubStr(val,80); else if(field==="emoji") f.emoji=ubStr(val,4)||"\u{1F4D8}"; else if(field==="desc") f.desc=ubStr(val,240); else if(field==="ages") f.ages=ubStr(val,20);
+  else if(field==="kind") f.kind=UB_KINDS.some(k=>k[0]===val)?val:"topic"; else if(field==="first"){ f.first=ubStr(val,30)||"Mom"; try{ HA_LS.setItem("ha_ub_first",f.first); }catch(e){} }
+  else if(field==="mode") f.mode=val==="boxes"?"boxes":"days"; else if(field==="nDays") f.nDays=Math.max(1,Math.min(60,parseInt(val,10)||8)); else if(field==="perWeek") f.perWeek=Math.max(1,Math.min(5,parseInt(val,10)||4));
+  else if(field==="step") f.step=val;
+  f.msg="";
+}
+function ubGo(step){ if(!ubForm) return; const f=ubForm;
+  if(step!=="name"&&!f.title){ f.msg="Give the unit a name first."; f.step="name"; ubRe(); return; }
+  if(step==="days"&&f.mode==="boxes"){ ubSpreadNow(); }
+  if(step==="check"&&!ubAllCards().length){ f.msg="Add at least one card before checking."; ubRe(); return; }
+  f.step=step; f.msg=""; ubRe();
+}
+function ubDayTitle(di,val){ if(!ubForm||!ubForm.days[di]) return; ubForm.days[di].t=ubStr(val,200); }
+function ubDayAdd(){ if(!ubForm) return; ubForm.days.push(ubNewDay(ubForm.days.length+1)); ubRe(); }
+// ── the four boxes: lines → items (typed or pasted), drafts from a photo ──
+function ubParse(kind,text){
+  const out=[]; String(text||"").split(/\n+/).map(s=>s.trim()).filter(Boolean).forEach(l=>{ const b=l.split("|").map(s=>s.trim());
+    if(kind==="cards"){ if(b[0]) out.push({id:ubId(),front:ubStr(b[0],120),back:ubStr(b[1]||"",400)}); }
+    else if(kind==="books"){ if(b[0]) out.push({id:ubId(),title:ubStr(b[0],120),by:ubStr(b[1]||"",80),url:ubUrl(b[2]||"")}); }
+    else if(kind==="videos"){ const u=ubUrl(b[0]); if(u) out.push({id:ubId(),url:u,label:ubStr(b[1]||"",60)}); }
+    else if(kind==="acts"){ if(b[0]){ const p=parseInt(b[1],10); out.push({id:ubId(),title:ubStr(b[0],120),points:(isFinite(p)&&p>0)?p:5,desc:ubStr(b[2]||"",240)}); } } });
+  return out;
+}
+function ubDi(di){ if(di===null||di===undefined||di==="null"||di==="") return null; const n=parseInt(di,10); return isFinite(n)?n:null; }   // the HTML hands the day index over as text
+function ubList(di,kind){ const f=ubForm; if(!f) return null; di=ubDi(di); if(di==null||di<0){ return (f.mode==="boxes"&&!f.spread)?f.boxes[kind]:(di==null&&f.mode==="boxes"?f.boxes[kind]:null); } return f.days[di]?f.days[di][kind]:null; }
+function ubAddLines(di,kind){
+  if(!ubForm) return 0; const el=(typeof document!=="undefined"&&document.getElementById)?document.getElementById("ub-in-"+kind+"-"+(di==null?"all":di)):null; const text=el?el.value:"";
+  const items=ubParse(kind,text); const L=ubList(di,kind); if(!L) return 0; items.forEach(x=>L.push(x)); if(items.length) ubForm.sources.push({kind:"typed",box:kind,n:items.length,ts:Date.now()});
+  if(el) el.value=""; ubRe(); return items.length;
+}
+function ubRemove(di,kind,id){ const L=ubList(di,kind); if(!L) return; const i=L.findIndex(x=>x.id===id); if(i>=0) L.splice(i,1); ubRe(); }
+function ubEdit(di,kind,id,field,val){ const L=ubList(di,kind); const x=L&&L.find(x=>x.id===id); if(!x) return; if(field==="points"){ const p=parseInt(val,10); x.points=(isFinite(p)&&p>0)?p:5; } else if(field==="url") x.url=ubUrl(val); else x[field]=ubStr(val,field==="back"?400:field==="desc"?240:120); }
+function ubParseAI(kind,txt){
+  const s=String(txt||""); const a=s.indexOf("{"), z=s.lastIndexOf("}"); if(a<0||z<=a) throw new Error("Couldn\u2019t read a list out of that.");
+  const j=JSON.parse(s.slice(a,z+1)); const L=Array.isArray(j.items)?j.items:(Array.isArray(j)?j:[]);
+  return L.map(x=>{ if(!x) return null; if(typeof x==="string") x={front:x,title:x,label:x};
+    if(kind==="cards"){ const fr=ubStr(x.front||x.name||x.item,120); return fr?{id:ubId(),front:fr,back:ubStr(x.back||x.def||"",400),draft:true}:null; }
+    if(kind==="books"){ const t=ubStr(x.title||x.item,120); return t?{id:ubId(),title:t,by:ubStr(x.by||x.author||"",80),url:ubUrl(x.url),draft:true}:null; }
+    if(kind==="videos"){ const u=ubUrl(x.url||x.link); return u?{id:ubId(),url:u,label:ubStr(x.label||x.title||"",60),draft:true}:null; }
+    const t=ubStr(x.title||x.item,120); return t?{id:ubId(),title:t,points:5,desc:ubStr(x.desc||x.note||"",240),draft:true}:null; }).filter(Boolean);
+}
+async function ubPhoto(di,kind,input){
+  const files=[...((input&&input.files)||[])]; if(input) input.value=""; if(!files.length||!ubForm) return;
+  const key=(typeof kitCapKey==="function")?kitCapKey():""; if(!key){ ubForm.msg="Needs a Claude key \u2014 Admin \u25B8 Settings \u25B8 \u2728 AI key. Typing the lines always works."; ubRe(); return; }
+  if(typeof _cbShrinkImage!=="function"||typeof kitCapAsk!=="function"){ ubForm.msg="The photo reader isn\u2019t in this build."; ubRe(); return; }
+  const f=ubForm; f.busy=true; f.msg=""; ubRe();
+  try{
+    const imgs=await Promise.all(files.slice(0,6).map(_cbShrinkImage));
+    const content=[]; imgs.forEach((b64,i)=>{ content.push({type:"text",text:"Photo "+(i+1)+":"}); content.push({type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}}); });
+    content.push({type:"text",text:UB_PROMPTS[kind]});
+    const txt=await kitCapAsk(content,null,{raw:true,maxTokens:2500});
+    const items=ubParseAI(kind,txt); const L=ubList(di,kind); if(L&&ubForm===f){ items.forEach(x=>L.push(x)); f.sources.push({kind:"photo",box:kind,n:items.length,photos:imgs.length,ts:Date.now()}); f.msg=items.length?("\u2713 "+items.length+" drafted from the photo"+(imgs.length>1?"s":"")+(kind==="cards"?" \u2014 each one waits for your tick":"")):"Couldn\u2019t find anything in that photo."; }
+  }catch(e){ if(ubForm===f) f.msg=String(e&&e.message||e); }
+  if(ubForm===f) f.busy=false; ubRe();
+}
+// ── the spread (pure): books/videos on most days, activities on their own days (the last one last), cards 2–3 a day in order ──
+function ubSpreadPlan(boxes,nDays,perWeek){
+  const N=Math.max(1,parseInt(nDays,10)||1); const acts=boxes.acts||[], books=boxes.books||[], videos=boxes.videos||[], cards=boxes.cards||[];
+  const day=new Array(N).fill(0).map((_,i)=>({n:i+1,t:"",cards:[],books:[],videos:[],acts:[]}));
+  const actDays=new Set();
+  if(acts.length){ const gap=Math.max(1,Math.floor(N/acts.length)); acts.forEach((a,k)=>{ let d=N-(acts.length-1-k)*gap; if(d<1) d=((k)%N)+1; day[d-1].acts.push(a); actDays.add(d); }); }
+  const media=[]; const m=Math.max(books.length,videos.length); for(let i=0;i<m;i++){ if(books[i]) media.push(["books",books[i]]); if(videos[i]) media.push(["videos",videos[i]]); }
+  const free=day.filter(d=>!actDays.has(d.n)); const slots=free.length?free:day;
+  media.forEach((x,i)=>{ const d=(i<slots.length)?slots[i]:day[i%N]; d[x[0]].push(x[1]); });
+  const base=Math.floor(cards.length/N), extra=cards.length%N; let ci=0;
+  day.forEach((d,i)=>{ const take=base+(i<extra?1:0); for(let k=0;k<take&&ci<cards.length;k++) d.cards.push(cards[ci++]); });
+  day.forEach(d=>{ d.t=ubAutoTitle(d); });
+  return day;
+}
+function ubAutoTitle(d){ if(d.acts.length) return d.acts[0].title; if(d.books.length) return d.books[0].title; if(d.videos.length) return d.videos[0].label||"Video"; if(d.cards.length) return d.cards.slice(0,3).map(c=>c.front).join(", "); return ""; }
+function ubSpreadNow(){ const f=ubForm; if(!f) return; f.days=ubSpreadPlan(f.boxes,f.nDays,f.perWeek); f.spread=true; }
+// Move one line to another day (the spread's "drag a line to another day", by a Day ▾ on a phone).
+function ubMove(kind,id,fromDi,toDi){ const f=ubForm; if(!f||!f.days[fromDi]||!f.days[toDi]||fromDi===toDi) return; const L=f.days[fromDi][kind]; const i=L.findIndex(x=>x.id===id); if(i<0) return; const x=L.splice(i,1)[0]; f.days[toDi][kind].push(x); if(!f.days[fromDi].tEdited) f.days[fromDi].t=ubAutoTitle(f.days[fromDi]); if(!f.days[toDi].tEdited) f.days[toDi].t=ubAutoTitle(f.days[toDi]); ubRe(); }
+function ubDayTitleEdit(di,val){ if(!ubForm||!ubForm.days[di]) return; ubForm.days[di].t=ubStr(val,200); ubForm.days[di].tEdited=true; }
+// ── check: every card, one at a time; a picture per card ──
+function ubAllCards(){ const f=ubForm; if(!f) return []; const out=[]; f.days.forEach((d,di)=>d.cards.forEach(c=>out.push({di:di,c:c}))); if(f.mode==="boxes"&&!f.spread) f.boxes.cards.forEach(c=>out.push({di:-1,c:c})); return out; }
+function ubUncheckedCount(){ return ubAllCards().filter(x=>!x.c.checked).length; }
+function ubKeep(id){ const f=ubForm; if(!f) return; const x=ubAllCards().find(x=>x.c.id===id); if(!x) return; x.c.checked={by:f.first||"Mom",at:Date.now()}; x.c.fix=false; ubRe(); }   // a drafted card keeps its flag — the record remembers it came from a photo
+function ubFix(id){ const x=ubAllCards().find(x=>x.c.id===id); if(!x) return; x.c.fix=!x.c.fix; ubRe(); }
+function ubDrop(id){ const f=ubForm; if(!f) return; f.days.forEach(d=>{ const i=d.cards.findIndex(c=>c.id===id); if(i>=0) d.cards.splice(i,1); }); const i=f.boxes.cards.findIndex(c=>c.id===id); if(i>=0) f.boxes.cards.splice(i,1); ubRe(); }
+async function ubPicFind(id){
+  const f=ubForm; const x=ubAllCards().find(x=>x.c.id===id); if(!f||!x) return;
+  if(typeof _unitPicsLookup!=="function"||typeof fetch!=="function"){ f.msg="The picture finder isn\u2019t in this build."; ubRe(); return; }
+  f.pic={id:id,busy:true,hit:null}; ubRe();
+  try{ const hit=await _unitPicsLookup(fetch,x.c.front,x.c.front); if(ubForm===f&&f.pic&&f.pic.id===id){ f.pic.busy=false; f.pic.hit=hit||null; if(!hit) f.msg="No picture found for \u201c"+x.c.front+"\u201d."; } }
+  catch(e){ if(ubForm===f&&f.pic){ f.pic.busy=false; f.pic.hit=null; } }
+  ubRe();
+}
+function ubPicUse(id,yes){ const f=ubForm; const x=ubAllCards().find(x=>x.c.id===id); if(!f||!x||!f.pic||f.pic.id!==id) return; if(yes&&f.pic.hit){ x.c.pic={imageUrl:f.pic.hit.url,credit:f.pic.hit.credit}; } f.pic=null; ubRe(); }
+function ubPicClear(id){ const x=ubAllCards().find(x=>x.c.id===id); if(x) delete x.c.pic; ubRe(); }
+// ── the record (pure) ──
+function ubUnitId(title){ const us=(typeof unitStudies!=="undefined"&&unitStudies)||{}; let id=ubSlug(title), k=2; const base=id; while(us[id]) id=base+"_"+(k++); return id; }
+function ubRecord(f){
+  const id=ubUnitId(f.title), deck=ubStr(f.title,80)||"Cards", ts=Date.now();
+  const u={id:id,title:ubStr(f.title,80),emoji:f.emoji||"\u{1F4D8}",desc:ubStr(f.desc,240),kind:f.kind||"topic",version:1,nbInsert:true,addedTs:ts,
+    author:{family:ubFamily(),first:f.first||"Mom"},sources:(f.sources||[]).slice()};
+  if(f.ages) u.ages=f.ages; if(f.kind==="book") u.familyOnly=true;
+  const cards=[], visuals={}, acts=[], days=[]; let order=0;
+  const actKeys={};
+  f.days.forEach((d,di)=>{
+    const n=di+1; const names=[];
+    d.cards.forEach(c=>{ if(!c.checked) return; const card={name:c.front,order:++order,ch:n,checked:{by:c.checked.by,at:c.checked.at}}; if(c.back) card.def=c.back; if(c.draft) card.drafted=true; cards.push(card); names.push(c.front); if(c.pic&&c.pic.imageUrl) visuals[deck+"_"+c.front]={imageUrl:c.pic.imageUrl,credit:c.pic.credit||""}; });
+    const res={links:[],books:[]};
+    d.videos.forEach(v=>{ res.links.push({url:v.url,label:v.label||"Video",kind:"video"}); });
+    d.books.forEach(b=>{ const o={title:b.title}; if(b.by) o.by=b.by; res.books.push(o); if(b.url) res.links.push({url:b.url,label:b.title,kind:"site"}); });
+    let nb=null;
+    d.acts.forEach(a=>{ let key=ubSlug(a.title)||"activity"; let k=2; const base=key; while(actKeys[key]) key=base+"_"+(k++); actKeys[key]=1; const act={key:key,title:a.title,emoji:"\u{1F3A8}",kind:"sheet",points:a.points||5,day:n}; if(a.desc) act.desc=a.desc; acts.push(act); if(!nb) nb={activity:key}; });
+    const day={id:"d"+n,n:n,t:d.t||ubAutoTitle(d)||("Day "+n),res:res}; if(names.length) day.cards=[{deck:deck,names:names}]; if(nb) day.nb=nb;
+    days.push((typeof utClean==="function")?utClean(day):day);
+  });
+  u.decks=[{key:deck,mode:"flip",introCap:3,cards:cards}];
+  if(acts.length) u.activities=acts;
+  if(Object.keys(visuals).length) u.visuals=visuals;
+  u.track={mode:"seq",perWeek:Math.max(1,Math.min(5,parseInt(f.perWeek,10)||4)),days:days};
+  return u;
+}
+// Cards still unchecked on a unit record (Builder cards carry checked; a card flagged unchecked:true is never a starter's).
+function ubUnchecked(u){ const out=[]; (Array.isArray(u&&u.decks)?u.decks:Object.values((u&&u.decks)||{})).forEach(d=>{ (Array.isArray(d&&d.cards)?d.cards:Object.values((d&&d.cards)||{})).forEach(c=>{ if(c&&c.unchecked===true) out.push(c.name); }); }); return out; }
+// Save: ONE transaction creating unitStudies/<id>; nothing before; the unit opens afterwards.
+function ubSave(){
+  const f=ubForm; if(!ubMom()||!f) return null;
+  if(!f.title){ f.msg="Give the unit a name first."; f.step="name"; ubRe(); return null; }
+  const left=ubUncheckedCount(); if(left){ f.msg=left+" card"+(left===1?" is":"s are")+" still unchecked \u2014 tick, fix or drop each one first."; f.step="check"; ubRe(); return null; }
+  if(!ubAllCards().length&&!f.days.some(d=>d.books.length||d.videos.length||d.acts.length)){ f.msg="The unit is empty."; ubRe(); return null; }
+  const u=ubRecord(f); const us=(typeof unitStudies!=="undefined"&&unitStudies)||{};
+  const done=()=>{ us[u.id]=u; ubForm=null; if(typeof openUnit==="function") openUnit(u.id); else ubRe(); try{ if(typeof gwShowToast==="function") gwShowToast("\u2713 "+u.title+" is built"+(ubDry()?" (dry run: nothing written)":"")+" \u2014 enroll kids, then \u{1F5D3} Put on the schedule"); }catch(e){} };
+  if(ubLive()){ db.ref("unitStudies/"+u.id).transaction(cur=>cur?undefined:u).then(r=>{ if(r&&r.committed) done(); else { if(ubForm===f) f.msg="A unit with that name was just made on another device \u2014 rename and save again."; ubRe(); } }).catch(e=>{ if(ubForm===f) f.msg=String(e&&e.message||e); ubRe(); }); }
+  else done();
+  return u;
+}
+// ── the screens (renderUnits' hook while the Builder is open) ──
+function ubOpenHTML(){ return (ubForm&&ubMom())?ubPageHTML():""; }
+const UB_INP='width:100%;box-sizing:border-box;padding:7px 9px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif;background:#fff';
+function ubBtn(on,txt,fn,solid){ return '<button onclick="'+fn+'" style="padding:7px 13px;border-radius:10px;border:1.5px solid '+(on||solid?'#2d6a4f':'var(--border)')+';background:'+(solid?'#2d6a4f':(on?'#f2faf5':'#fff'))+';color:'+(solid?'#fff':(on?'#2d6a4f':'var(--text)'))+';font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+txt+'</button>'; }
+function ubLab(t){ return '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin:10px 0 4px">'+t+'</div>'; }
+function ubStepsHTML(f){
+  const steps=[["name","1 Name it"],["fill",f.mode==="boxes"?"2 Four boxes":"2 Day by day"]].concat(f.mode==="boxes"?[["days","3 Days"]]:[]).concat([["check",(f.mode==="boxes"?"4":"3")+" Check"]]);
+  return '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 12px">'+steps.map(s=>ubBtn(f.step===s[0],s[1],"ubGo('"+s[0]+"')")).join("")+'</div>';
+}
+function ubBoxHTML(di,kind){
+  const f=ubForm, L=ubList(di,kind)||[], meta=UB_BOXES.find(b=>b[0]===kind), tag=(di==null?"all":di), a="'"+(di==null?"null":di)+"','"+kind+"'";
+  let h='<div data-ub-box="'+kind+'" style="border:1px solid #eef0f3;border-radius:10px;padding:8px 10px;margin-top:8px;background:#fff">';
+  h+='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:12px;font-weight:800;color:#1f2937;flex:1">'+meta[1]+' <span style="font-weight:600;color:var(--muted)">\u00B7 '+L.length+'</span></span>';
+  h+='<label style="padding:4px 10px;border-radius:999px;border:1.5px solid #a7f3d0;background:#f0fdf4;color:#15803d;font-size:11px;font-weight:700;cursor:pointer"><input type="file" accept="image/*" multiple onchange="ubPhoto('+(di==null?"null":di)+',\''+kind+'\',this)" style="display:none">\u{1F4F8} Snap a photo</label></div>';
+  L.forEach(x=>{ const id="'"+ubJ(x.id)+"'";
+    h+='<div data-ub-item="'+ubEsc(x.id)+'" style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding:5px 0;border-top:1px solid #f3f4f6;font-size:12px">';
+    if(kind==="cards") h+='<input value="'+ubEsc(x.front)+'" placeholder="front" oninput="ubEdit('+a+','+id+',\'front\',this.value)" style="'+UB_INP+';flex:1 1 120px;width:auto"><input value="'+ubEsc(x.back)+'" placeholder="back" oninput="ubEdit('+a+','+id+',\'back\',this.value)" style="'+UB_INP+';flex:2 1 160px;width:auto">';
+    else if(kind==="books") h+='<input value="'+ubEsc(x.title)+'" placeholder="title" oninput="ubEdit('+a+','+id+',\'title\',this.value)" style="'+UB_INP+';flex:2 1 140px;width:auto"><input value="'+ubEsc(x.by)+'" placeholder="by" oninput="ubEdit('+a+','+id+',\'by\',this.value)" style="'+UB_INP+';flex:1 1 100px;width:auto"><input value="'+ubEsc(x.url)+'" placeholder="https:// link (optional)" oninput="ubEdit('+a+','+id+',\'url\',this.value)" style="'+UB_INP+';flex:2 1 140px;width:auto">';
+    else if(kind==="videos") h+='<input value="'+ubEsc(x.url)+'" placeholder="https:// link" oninput="ubEdit('+a+','+id+',\'url\',this.value)" style="'+UB_INP+';flex:2 1 160px;width:auto"><input value="'+ubEsc(x.label)+'" placeholder="label" oninput="ubEdit('+a+','+id+',\'label\',this.value)" style="'+UB_INP+';flex:1 1 100px;width:auto">';
+    else h+='<input value="'+ubEsc(x.title)+'" placeholder="title" oninput="ubEdit('+a+','+id+',\'title\',this.value)" style="'+UB_INP+';flex:2 1 140px;width:auto"><input type="number" min="1" max="100" value="'+ubEsc(x.points)+'" title="points" oninput="ubEdit('+a+','+id+',\'points\',this.value)" style="'+UB_INP+';flex:0 0 58px;width:auto"><input value="'+ubEsc(x.desc)+'" placeholder="a line about it" oninput="ubEdit('+a+','+id+',\'desc\',this.value)" style="'+UB_INP+';flex:2 1 140px;width:auto">';
+    if(x.draft) h+='<span title="drafted from a photo" style="font-size:9.5px;font-weight:800;color:#b45309;background:#fffbeb;border-radius:6px;padding:1px 6px">drafted</span>';
+    h+='<button onclick="ubRemove('+a+','+id+')" title="Remove" style="border:none;background:none;color:#9ca3af;font-size:14px;cursor:pointer;padding:0 4px">\u2715</button></div>'; });
+  h+='<div style="display:flex;gap:6px;align-items:flex-end;margin-top:6px"><textarea id="ub-in-'+kind+'-'+tag+'" rows="2" placeholder="'+ubEsc(meta[2])+'" style="'+UB_INP+';flex:1;resize:vertical"></textarea>'+ubBtn(false,"\uFF0B Add","ubAddLines("+(di==null?"null":di)+",'"+kind+"')")+'</div>';
+  return h+'</div>';
+}
+function ubNameHTML(f){
+  let h=ubLab("Title")+'<input value="'+ubEsc(f.title)+'" placeholder="Thanksgiving" oninput="ubSet(\'title\',this.value)" style="'+UB_INP+'">';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap"><div style="flex:0 0 70px">'+ubLab("Emoji")+'<input value="'+ubEsc(f.emoji)+'" oninput="ubSet(\'emoji\',this.value)" style="'+UB_INP+';text-align:center;font-size:20px"></div><div style="flex:1 1 140px">'+ubLab("Ages")+'<input value="'+ubEsc(f.ages)+'" placeholder="5\u201312" oninput="ubSet(\'ages\',this.value)" style="'+UB_INP+'"></div><div style="flex:1 1 140px">'+ubLab("Your first name (signs the cards you check)")+'<input value="'+ubEsc(f.first)+'" oninput="ubSet(\'first\',this.value)" style="'+UB_INP+'"></div></div>';
+  h+=ubLab("One line")+'<input value="'+ubEsc(f.desc)+'" placeholder="What this unit is about, in a sentence" oninput="ubSet(\'desc\',this.value)" style="'+UB_INP+'">';
+  h+=ubLab("Kind")+'<div style="display:flex;gap:6px;flex-wrap:wrap">'+UB_KINDS.map(k=>ubBtn(f.kind===k[0],k[1],"ubSet('kind','"+k[0]+"');ubRe()")).join("")+'</div>';
+  if(f.kind==="book") h+='<div style="font-size:11px;color:var(--muted);margin-top:4px">A book companion stays in your family \u2014 it is never published to a catalog.</div>';
+  h+=ubLab("How do you want to write it?")+'<div style="display:flex;gap:6px;flex-wrap:wrap">'+ubBtn(f.mode==="days","\u{1F4C5} Day by day \u2014 Day 1, Day 2 \u2026 each with its own boxes","ubSet('mode','days');ubRe()")+ubBtn(f.mode==="boxes","\u{1F4E6} Fill four boxes and spread them over days","ubSet('mode','boxes');ubRe()")+'</div>';
+  h+='<div style="display:flex;gap:8px;margin-top:14px">'+ubBtn(false,"Next \u203A","ubGo('fill')",true)+'</div>';
+  return h;
+}
+function ubFillHTML(f){
+  let h='';
+  if(f.mode==="days"){
+    h+='<div style="font-size:11.5px;color:var(--muted)">Each day gets a title and its own four boxes. Type a line per item, paste a list, or snap a photo of your notes and Claude drafts the lines.</div>';
+    f.days.forEach((d,di)=>{ h+='<div data-ub-day="'+(di+1)+'" style="border:1.5px solid var(--border);border-radius:12px;padding:10px 12px;margin-top:10px;background:#faf8f5">';
+      h+='<div style="display:flex;gap:8px;align-items:center"><span style="font-size:13px;font-weight:800;color:#1f2937;white-space:nowrap">Day '+(di+1)+'</span><input value="'+ubEsc(d.t)+'" placeholder="What this day is about" oninput="ubDayTitle('+di+',this.value)" style="'+UB_INP+';flex:1;width:auto"></div>';
+      UB_BOXES.forEach(b=>{ h+=ubBoxHTML(di,b[0]); }); h+='</div>'; });
+    h+='<div style="margin-top:10px">'+ubBtn(false,"\uFF0B Add a day","ubDayAdd()")+'</div>';
+  } else {
+    h+='<div style="font-size:11.5px;color:var(--muted)">Fill the four boxes for the whole unit, then the app spreads them over the days: a book or video on most days, activities on their own days, cards two or three a day in order.</div>';
+    UB_BOXES.forEach(b=>{ h+=ubBoxHTML(null,b[0]); });
+    h+='<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px"><div>'+ubLab("How many days")+'<input type="number" min="1" max="60" value="'+f.nDays+'" onchange="ubSet(\'nDays\',this.value)" style="'+UB_INP+';width:80px"></div><div>'+ubLab("Days a week")+'<input type="number" min="1" max="5" value="'+f.perWeek+'" onchange="ubSet(\'perWeek\',this.value)" style="'+UB_INP+';width:80px"></div></div>';
+  }
+  if(f.busy) h+='<div style="font-size:12px;font-weight:700;color:#15803d;margin-top:8px">\u23F3 Reading the photo\u2026</div>';
+  h+='<div style="display:flex;gap:8px;margin-top:14px">'+ubBtn(false,"\u2039 Back","ubGo('name')")+(f.mode==="boxes"?ubBtn(false,"Spread over the days \u203A","ubGo('days')",true):ubBtn(false,"Check the cards \u203A","ubGo('check')",true))+'</div>';
+  return h;
+}
+function ubDaysHTML(f){
+  let h='<div style="font-size:11.5px;color:var(--muted)">Here is the spread. Change a day\u2019s title, or move any line to another day with its Day \u25BE. A card a day names opens with that day.</div>';
+  const sel=(kind,id,di)=>'<select onchange="ubMove(\''+kind+'\',\''+ubJ(id)+'\','+di+',parseInt(this.value,10))" style="padding:3px 6px;border-radius:7px;border:1.5px solid var(--border);font-size:11px">'+f.days.map((x,k)=>'<option value="'+k+'"'+(k===di?' selected':'')+'>Day '+(k+1)+'</option>').join("")+'</select>';
+  f.days.forEach((d,di)=>{ h+='<div data-ub-day="'+(di+1)+'" style="border:1px solid #eef0f3;border-radius:10px;padding:8px 10px;margin-top:8px;background:#fff">';
+    h+='<div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;font-weight:800;color:#1f2937;white-space:nowrap">Day '+(di+1)+'</span><input value="'+ubEsc(d.t)+'" oninput="ubDayTitleEdit('+di+',this.value)" style="'+UB_INP+';flex:1;width:auto;padding:5px 8px;font-size:12px"></div>';
+    const row=(icon,txt,kind,id)=>'<div style="display:flex;gap:6px;align-items:center;font-size:12px;padding:3px 0"><span>'+icon+'</span><span style="flex:1;overflow-wrap:anywhere">'+ubEsc(txt)+'</span>'+sel(kind,id,di)+'</div>';
+    d.books.forEach(b=>{ h+=row("\u{1F4DA}",b.title,"books",b.id); }); d.videos.forEach(v=>{ h+=row("\u25B6",v.label||v.url,"videos",v.id); }); d.acts.forEach(a=>{ h+=row("\u{1F3A8}",a.title,"acts",a.id); }); d.cards.forEach(c=>{ h+=row("\u{1F0CF}",c.front,"cards",c.id); });
+    if(!d.books.length&&!d.videos.length&&!d.acts.length&&!d.cards.length) h+='<div style="font-size:11px;color:#cbd5e1">nothing yet</div>';
+    h+='</div>'; });
+  h+='<div style="display:flex;gap:8px;margin-top:14px">'+ubBtn(false,"\u2039 Back to the boxes","ubGo('fill')")+ubBtn(false,"Spread again","ubSpreadNow();ubRe()")+ubBtn(false,"Check the cards \u203A","ubGo('check')",true)+'</div>';
+  return h;
+}
+function ubCheckHTML(f){
+  const all=ubAllCards(), left=all.filter(x=>!x.c.checked).length;
+  let h='<div style="font-size:11.5px;color:var(--muted)">One card at a time: \u2713 Keep it, \u270F Fix it, or \u2715 Drop it. A drafted card waits for your tick. \u{1F5BC} finds a picture on Wikipedia for you to approve.</div>';
+  h+='<div style="font-size:12px;font-weight:800;color:'+(left?'#b45309':'#15803d')+';margin-top:6px">'+(left?left+" to check":"\u2713 Every card is checked")+' \u00B7 '+all.length+' card'+(all.length===1?'':'s')+'</div>';
+  all.forEach(x=>{ const c=x.c, id="'"+ubJ(c.id)+"'";
+    h+='<div data-ub-check="'+ubEsc(c.id)+'" style="border:1.5px solid '+(c.checked?'#86efac':'#fde68a')+';border-radius:12px;padding:9px 11px;margin-top:8px;background:'+(c.checked?'#f0fdf4':'#fffbeb')+'">';
+    h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
+    if(c.pic&&c.pic.imageUrl) h+='<img src="'+ubEsc(c.pic.imageUrl)+'" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:8px;border:1.5px solid #86efac">';
+    h+='<div style="flex:1;min-width:140px"><div style="font-size:14px;font-weight:800;color:#1f2937">'+ubEsc(c.front)+((c.draft&&!c.checked)?' <span style="font-size:9.5px;font-weight:800;color:#b45309">drafted</span>':'')+'</div><div style="font-size:12px;color:#374151">'+ubEsc(c.back||"(no back)")+'</div>'+(x.di>=0?'<div style="font-size:10px;color:var(--muted)">Day '+(x.di+1)+'</div>':'')+(c.checked?'<div style="font-size:10px;color:#15803d;font-weight:700">\u2713 checked by '+ubEsc(c.checked.by)+'</div>':'')+'</div>';
+    h+='<div style="display:flex;gap:5px;flex-wrap:wrap">'+(c.checked?'':ubBtn(false,"\u2713 Keep","ubKeep("+id+")",true))+ubBtn(!!c.fix,"\u270F Fix","ubFix("+id+")")+ubBtn(false,"\u2715 Drop","ubDrop("+id+")")+(c.pic?ubBtn(false,"\u{1F5BC} \u2715","ubPicClear("+id+")"):ubBtn(false,"\u{1F5BC} Picture","ubPicFind("+id+")"))+'</div></div>';
+    if(c.fix) h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><input value="'+ubEsc(c.front)+'" oninput="ubEdit(\''+(x.di<0?"null":x.di)+'\',\'cards\','+id+',\'front\',this.value)" style="'+UB_INP+';flex:1 1 120px;width:auto"><input value="'+ubEsc(c.back)+'" placeholder="back" oninput="ubEdit(\''+(x.di<0?"null":x.di)+'\',\'cards\','+id+',\'back\',this.value)" style="'+UB_INP+';flex:2 1 160px;width:auto">'+ubBtn(false,"\u2713 Keep it like this","ubKeep("+id+")",true)+'</div>';
+    if(f.pic&&f.pic.id===c.id){ h+='<div style="margin-top:8px;font-size:12px">'+(f.pic.busy?'\u23F3 Looking on Wikipedia\u2026':(f.pic.hit?'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><img src="'+ubEsc(f.pic.hit.url)+'" alt="" style="width:72px;height:72px;object-fit:cover;border-radius:10px;border:1.5px solid var(--border)"><div style="flex:1;min-width:120px;font-size:10.5px;color:var(--muted)">'+ubEsc(f.pic.hit.credit)+'</div>'+ubBtn(false,"\u2713 Use it","ubPicUse("+id+",true)",true)+ubBtn(false,"Skip","ubPicUse("+id+",false)")+'</div>':'No picture found. '+ubBtn(false,"OK","ubPicUse("+id+",false)")))+'</div>'; }
+    h+='</div>'; });
+  h+='<div style="display:flex;gap:8px;margin-top:14px;align-items:center;flex-wrap:wrap">'+ubBtn(false,"\u2039 Back",f.mode==="boxes"?"ubGo('days')":"ubGo('fill')")+'<button onclick="ubSave()" '+(left?'disabled ':'')+'style="padding:9px 18px;border-radius:10px;border:none;background:'+(left?'#9ca3af':'#2d6a4f')+';color:#fff;font-size:13px;font-weight:800;cursor:'+(left?'default':'pointer')+';font-family:\'DM Sans\',sans-serif">\u{1F4BE} Save the unit</button>'+(ubDry()?'<span style="font-size:10px;color:var(--muted)">dry run \u2014 nothing is written</span>':'')+'</div>';
+  return h;
+}
+function ubPageHTML(){
+  const f=ubForm; if(!f) return "";
+  let h='<div data-ub="1" style="max-width:560px;margin:0 auto;padding:20px 18px;font-family:\'DM Sans\',sans-serif">';
+  h+='<div style="display:flex;align-items:center;gap:10px;justify-content:space-between"><button onclick="ubClose()" style="border:none;background:none;color:var(--muted);font-size:13px;font-weight:700;cursor:pointer;padding:0">\u2190 All units</button>'+((typeof _unitMomLockHtml==="function")?_unitMomLockHtml():"")+'</div>';
+  h+='<div style="display:flex;align-items:center;gap:8px;margin-top:6px"><span style="font-size:26px">'+ubEsc(f.emoji||"\u{1F4D8}")+'</span><span style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:700">'+(f.title?ubEsc(f.title):"\u271A Build a unit")+'</span></div>';
+  h+=ubStepsHTML(f);
+  if(f.msg) h+='<div style="font-size:12px;color:'+(/^\u2713/.test(f.msg)?'#15803d':'#b45309')+';background:'+(/^\u2713/.test(f.msg)?'#f0fdf4':'#fffbeb')+';border-radius:9px;padding:7px 10px;margin-bottom:8px">'+ubEsc(f.msg)+'</div>';
+  if(f.step==="name") h+=ubNameHTML(f); else if(f.step==="fill") h+=ubFillHTML(f); else if(f.step==="days") h+=ubDaysHTML(f); else h+=ubCheckHTML(f);
+  return h+'</div>';
+}
+// UNITBUILD_END
 function fxOpenClassScreen(kid,sk,taskId){
   const s=((gwGetSubjects(kid)||{})[sk])||null;
   if(!s) return;
@@ -43975,6 +44250,7 @@ function renderUnits(el){
   const con=el||document.getElementById("content"); if(!con) return;
   const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
   if(unitOpenId && unitStudies[unitOpenId]){ con.innerHTML=renderUnitDetail(unitStudies[unitOpenId]); return; }
+  if(typeof ubOpenHTML==="function"){ const _ub=ubOpenHTML(); if(_ub){ con.innerHTML=_ub; return; } }   // UNITBUILD: ✚ Build a unit while the Builder is open
   if(typeof utsPageHTML==="function"){ con.innerHTML=utsPageHTML(); return; }   // UNITSTAB: 📚 All units · 🧒 one tab per kid · 🏡 Family
   const units=Object.keys(unitStudies||{}).map(k=>unitStudies[k]).filter(u=>u&&u.id);
   let h='<div style="max-width:560px;margin:0 auto;padding:20px 18px;font-family:\'DM Sans\',sans-serif">';
@@ -44180,6 +44456,7 @@ function unitEnroll(unitId,kid){
   const u=unitStudies[unitId]; if(!u||(u.enrolled||{})[kid]) return;
   if(typeof _unitStagedEnrollPending==="function"&&_unitStagedEnrollPending(u)) return;  // staged units enroll per kid (STARTER_UNITS)
   if(typeof _wrEnrollLocked==="function"&&_wrEnrollLocked(u)) return;   // 🏛 WORDROOTS
+  if(typeof ubUnchecked==="function"&&ubUnchecked(u).length){ alert("Some cards in this unit are still unchecked — tick, fix or drop each one first."); return; }   // UNITBUILD
   let items=masteryData[kid]; if(!Array.isArray(items)) items=masteryData[kid]=(items?Object.values(items):[]);
   let bank=masteryData[kid+"_custom_items"]; if(!Array.isArray(bank)) bank=masteryData[kid+"_custom_items"]=[];
   const settings=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
