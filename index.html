@@ -37243,6 +37243,222 @@ function utDaysSectionHTML(u,isMom){
   return h;
 }
 // UNITTRACK_END
+// PUTSCHED_START — 🗓 Put on the schedule, and the gate that opens a day's cards ("One shape" §3 both worked examples, §5 the
+//   link + the gate; BRIEF_units_build_2026-10-27.md T2; her answers 2026-10-26: 1 "a new unit goes to the whole family as a
+//   Family Time subject — Mom unticks kids to make it one kid's", 5 "the start is Mom's option: a set time, or scheduler picks",
+//   14 "Sara puts her Thanksgiving unit on her schedule herself"). Nothing new is laid: the track lands through the two doors the
+//   app already lays days through.
+//   · THE SHEET (Mom-only, on a unit with days): Who does this? (every kid pre-picked) · How often (the weekdays) · In order /
+//     Week by week · Minutes · Starts (right after lunch / a set time / scheduler picks, as famWhoAt) · the first day. It refuses
+//     when a family item or a kid's subject already points at this unit, and offers Open it.
+//   · 2+ KIDS → the write famWhoSave makes: the item {key, name:u.title, minutes, track} joins the block whose kids are exactly
+//     the picks, else a new block named after the unit (at = the start picked) — ONE famWrite of <id>/items or of the block.
+//     In order: track.list = one line per day {t:"Day n — "+day.t, n:1, u:{id,d}}. Week by week: {mode:"week", book, startDate,
+//     startWeek:1, total, days:roles, topics, unit:{id, fromWeek:1}} — it needs the unit's roles.
+//   · 1 KID → the record the Add Subject save writes (display, device, minutes, days, allowedDays, rules, total, priority,
+//     lessonSeq = "Day n — t" per day, lessonIds born with _lidAlign, timesPerWeek) plus .unit={id}, ONE set of
+//     curriculum/subjects/<kid>/<sk> (+ curriculum/lastEdit as ceAddSave). Nothing else on a subject record changes shape.
+//   · THE GATE: cat_gate/<deck> = {fam:<blockId>, item:<key>} for a family unit, {subject:<sk>} for one kid — one targeted set
+//     per deck per kid (the path _ustWrite uses), written BEFORE the existing unitEnroll runs for a kid who is not enrolled, so
+//     enroll starts only the cards whose day is open (one guarded line in unitEnroll). mastBankEligible reads a {fam,item} gate
+//     from the place the card reads: in order → the day of the last line famDoneN has finished (a ×2 line needs both sittings);
+//     week by week → the book week the calendar is on (famLessonMap's label) − fromWeek + 1; bank entries with ch ≤ that may
+//     start. Any doubt (block or item gone, no track, no label) → the full bank, as RS4K fails open. mastGateChapter reads
+//     "Day n — …" titles. GATESTART starts a {fam,item}-gated deck on the next drill save as it does a book-gated one. Mom's ▶
+//     Start (mastPullItem) stays ungated. Word Roots' after:"done" gate is untouched. A staged unit (u.stages) is not enrolled
+//     here — Mom enrolls each kid at their stage as today.
+//   · Family cards for a unit day draw as today; the card's lesson label is the track line's t. Nothing in the generator, lay,
+//     Mom loop, re-lay or Family Time placement changes. Dry run: the sheet works, the screen changes, nothing is written and the
+//     enroll step (unitEnroll writes directly) is skipped. No kid's name in the block.
+const PS_DAYS=["Mon","Tue","Wed","Thu","Fri"];
+let psForm=null;   // {uid, kids, days, mode, minutes, at, time, start, msg} while the sheet is open
+function psMom(){ return (typeof momHere==="function")?momHere():false; }
+function psLive(){ return !!(typeof db!=="undefined"&&db)&&!((typeof _dryRun==="function")&&_dryRun()); }
+function psDry(){ return (typeof _dryRun==="function")?_dryRun():false; }
+function psRoster(){ return (typeof ROSTER!=="undefined"&&Array.isArray(ROSTER))?ROSTER.slice():[]; }
+function psEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function psJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+function psCap(s){ return (typeof cap==="function")?cap(s):String(s||""); }
+function psToday(){ return (typeof cbTodayISO==="function")?cbTodayISO():new Date().toISOString().slice(0,10); }
+function psSubjects(){ return (typeof currData!=="undefined"&&currData&&currData.subjects)||{}; }
+// Everything that already points at this unit: a family item (a line's u, or track.unit) or a kid's subject (.unit).
+function psPointers(uid){
+  const out=[]; const defs=(typeof famDefs==="function")?famDefs():{};
+  Object.keys(defs).forEach(id=>{ const b=defs[id]; if(!b) return; famList(b.items).forEach(it=>{ if(!it) return; const tr=(typeof famTrack==="function")?famTrack(it):null; if(!tr) return;
+    const hit=(tr.unit&&tr.unit.id===uid)||(tr.mode==="seq"&&famList(tr.list).some(l=>l&&l.u&&l.u.id===uid));
+    if(hit) out.push({kind:"fam",id:id,key:it.key,name:String(it.name||""),block:String(b.name||"Family time"),off:!!b.off}); }); });
+  const subs=psSubjects();
+  Object.keys(subs).forEach(kid=>{ Object.keys(subs[kid]||{}).forEach(sk=>{ const s=subs[kid][sk]; if(s&&s.unit&&s.unit.id===uid) out.push({kind:"kid",kid:kid,sk:sk,name:String(s.display||sk)}); }); });
+  return out;
+}
+function psKeyFor(u){ return String(u.title||u.id).toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"")||String(u.id); }
+// ── the pieces the sheet writes (pure) ──
+function psDayTitle(d,i){ return "Day "+(d.n||(i+1))+(d.t?" \u2014 "+d.t:""); }
+function psSeqList(u){ return utDaysOn(u).map((d,i)=>({t:psDayTitle(d,i),n:1,u:{id:u.id,d:d.id}})); }
+function psRoles(u){ const t=utTrack(u)||{}; const out={}; PS_DAYS.concat(["Sat","Sun"]).forEach(dn=>{ const r=utStr((t.roles||{})[dn],60); if(r) out[dn]=r; }); return out; }
+function psWeekTrack(u,startISO){
+  const t=utTrack(u)||{}; const days=utDaysOn(u); let total=0; days.forEach(d=>{ if(d.wk>total) total=d.wk; });
+  const topics={}; for(let w=1;w<=total;w++){ const tp=utStr((t.weeks||{})[w],120); if(tp) topics[w]=tp; }
+  const tr={mode:"week",book:String(u.title||u.id),startDate:startISO,startWeek:1,total:total,days:psRoles(u),unit:{id:u.id,fromWeek:1}};
+  if(Object.keys(topics).length) tr.topics=topics;
+  return tr;
+}
+function psSubjectRec(u,days,minutes,at,time){
+  const seq=utDaysOn(u).map((d,i)=>psDayTitle(d,i));
+  const subj={display:String(u.title||u.id),device:"paper",mom:"none",minutes:minutes,days:days.join(" "),allowedDays:days.slice(),rules:"sequential",total:seq.length,priority:"normal",carryoverCap:2,lessonSeq:seq,timesPerWeek:days.length,unit:{id:u.id}};
+  if(at==="time"&&time) subj.fixedTime=time;   // a set time = a fixed-time class, as the Add sheet's clock does
+  if(typeof _lidAlign==="function"){ const r=_lidAlign(null,null,seq,1,null,true); subj.lessonIds=r.ids; subj.nextLid=r.nextLid; }   // born with ids, as ceAddSave
+  return subj;
+}
+// ── the sheet ──
+function psOpen(uid){
+  if(!psMom()) return; const u=utUnits()[uid]; if(!u||!utDaysOn(u).length) return;
+  if(psForm&&psForm.uid===uid) psForm=null;
+  else psForm={uid:uid,kids:psRoster(),days:PS_DAYS.slice(0,Math.min(5,utPerWeek(u))),mode:utMode(u),minutes:30,at:"lunch",time:"1:00 PM",start:psToday(),msg:""};
+  if(typeof renderAll==="function") renderAll();
+}
+function psClose(){ psForm=null; if(typeof renderAll==="function") renderAll(); }
+function psSet(field,val){
+  if(!psForm) return; const f=psForm;
+  if(field==="kid"){ const has=f.kids.indexOf(val)>=0; f.kids=psRoster().filter(k=>has?(k!==val&&f.kids.indexOf(k)>=0):(k===val||f.kids.indexOf(k)>=0)); }
+  else if(field==="day"){ const has=f.days.indexOf(val)>=0; f.days=PS_DAYS.filter(d=>has?(d!==val&&f.days.indexOf(d)>=0):(d===val||f.days.indexOf(d)>=0)); }
+  else if(field==="mode") f.mode=val==="week"?"week":"seq";
+  else if(field==="minutes") f.minutes=Math.max(5,Math.min(240,parseInt(val,10)||30));
+  else if(field==="at") f.at=(val==="auto"||val==="time")?val:"lunch";
+  else if(field==="time"){ const t=(typeof to12h==="function")?to12h(val):val; if(t) f.time=t; }
+  else if(field==="start"){ if(/^\d{4}-\d{2}-\d{2}$/.test(String(val||""))) f.start=val; }
+  f.msg="";
+  if(typeof renderAll==="function") renderAll();
+}
+// The gate for every deck of the unit, then the existing enroll for a kid who is not enrolled yet (not in dry run: unitEnroll writes directly).
+function psGateAndEnroll(u,kid,gate){
+  const st=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={}); st.cat_gate=st.cat_gate||{}; let n=0;
+  utArr(u.decks).forEach(d=>{ if(!d||!d.key) return; st.cat_gate[d.key]=Object.assign({},gate); n++; if(psLive()) db.ref("mastery/"+kid+"_settings/cat_gate/"+d.key).set(st.cat_gate[d.key]); });
+  const staged=(typeof _unitStagedEnrollPending==="function")&&_unitStagedEnrollPending(u);
+  if(!(u.enrolled||{})[kid]&&!staged&&!psDry()&&typeof unitEnroll==="function") unitEnroll(u.id,kid);
+  return n;
+}
+// Put it on. Returns what was written ({fam:{id,key}} | {kid:{kid,sk}} with kids, days, mode) or null when refused.
+function psApply(){
+  if(!psMom()||!psForm) return null; const f=psForm; const u=utUnits()[f.uid]; if(!u) return null;
+  const re=m=>{ f.msg=m; if(typeof renderAll==="function") renderAll(); return null; };
+  const kids=psRoster().filter(k=>f.kids.indexOf(k)>=0); if(!kids.length) return re("Pick at least one kid.");
+  const days=PS_DAYS.filter(d=>f.days.indexOf(d)>=0); if(!days.length) return re("Pick at least one day of the week.");
+  if(!utDaysOn(u).length) return re("This unit has no days yet.");
+  if(psPointers(u.id).length) return re("already");
+  const mode=f.mode==="week"?"week":"seq";
+  if(mode==="week"&&!Object.keys(psRoles(u)).length) return re("Week by week needs a role for each weekday (Mon: The object, Tue: Nature \u2026) on this unit\u2019s Days.");
+  const minutes=Math.max(5,Math.min(240,parseInt(f.minutes,10)||30)), start=/^\d{4}-\d{2}-\d{2}$/.test(String(f.start||""))?f.start:psToday();
+  const at=f.at==="auto"?"auto":(f.at==="time"?String(f.time||"1:00 PM"):"lunch");
+  const res={kids:kids,days:days,mode:mode,dry:psDry()};
+  if(kids.length>=2){
+    const it={key:"i"+Date.now().toString(36),name:String(u.title||u.id),minutes:minutes};
+    it.track=(mode==="seq")?{mode:"seq",list:psSeqList(u)}:psWeekTrack(u,start);
+    if(typeof famBoTrackDefault==="function") famBoTrackDefault(it.track);
+    let id=(typeof famWhoBlockFor==="function")?famWhoBlockFor(kids):null;
+    if(id){ const b=famDefs()[id]; const bd=famList(b.days); if(bd.slice().sort().join()!==days.slice().sort().join()) it.days=days.slice();   // its own days when they differ from the block's
+      const its=famItems(id); its.push(it); if(!famWrite(id+"/items",its)) return re("Mom mode to put it on the schedule."); res.joined=true; }
+    else { id="fb"+Date.now().toString(36); try{ rulesOpen["fam_"+id]=true; }catch(e){}
+      if(!famWrite(id,{name:String(u.title||u.id),kids:kids,days:days,at:at,items:[it]})) return re("Mom mode to put it on the schedule."); }
+    res.fam={id:id,key:it.key};
+    kids.forEach(k=>psGateAndEnroll(u,k,{fam:id,item:it.key}));
+  } else {
+    const kid=kids[0], subs=psSubjects(); if(!subs[kid]) subs[kid]={}; const key=psKeyFor(u);
+    if(subs[kid][key]) return re(psCap(kid)+" already has a subject with the key \u201c"+key+"\u201d.");
+    const subj=psSubjectRec(u,days,minutes,f.at,f.time);
+    subs[kid][key]=subj;
+    if(psLive()){ db.ref("curriculum/subjects/"+kid+"/"+key).set(subj); currData.lastEdit=new Date().toISOString(); db.ref("curriculum/lastEdit").set(currData.lastEdit); }
+    res.kid={kid:kid,sk:key};
+    psGateAndEnroll(u,kid,{subject:key});
+  }
+  psForm=null;
+  try{ if(typeof gwShowToast==="function") gwShowToast("\u{1F5D3} "+String(u.title||u.id)+" is on the schedule"+(res.fam?" for "+kids.map(psCap).join(" & "):" \u2014 "+psCap(kids[0])+"\u2019s own subject")+(res.dry?" (dry run: nothing written)":"")); }catch(e){}
+  if(typeof renderAll==="function") renderAll();
+  return res;
+}
+function psOpenPointer(kind,a,b){
+  if(kind==="fam"){ if(typeof famHomeGo==="function") famHomeGo(a); return; }
+  try{ if(typeof setAdminSub==="function") setAdminSub("curriculum"); }catch(e){}
+  try{ if(typeof ceOpenEdit==="function") ceOpenEdit(a,b); }catch(e){}
+}
+function psPointerChipHTML(p){
+  const txt=p.kind==="fam"?("\u{1F3E1} On the schedule: "+p.block+" \u00B7 "+p.name+(p.off?" (off)":"")):("\u{1F4DA} On the schedule: "+psCap(p.kid)+"\u2019s "+p.name);
+  const open=p.kind==="fam"?"psOpenPointer('fam','"+psJ(p.id)+"')":"psOpenPointer('kid','"+psJ(p.kid)+"','"+psJ(p.sk)+"')";
+  return '<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:#f0fdf4;border:1.5px solid #86efac;color:#15803d;font-size:11px;font-weight:700">'+psEsc(txt)+' <button onclick="'+open+'" style="border:none;background:none;color:#15803d;font-weight:800;cursor:pointer;font-size:11px;padding:0;text-decoration:underline">Open it</button></span>';
+}
+// utDaysSectionHTML's hook (Mom, a unit with days): the button, or the "on the schedule" chip(s); the sheet while it is open.
+function psButtonHTML(u){
+  if(!psMom()||!u||!utDaysOn(u).length) return "";
+  const ptrs=psPointers(u.id);
+  let h='<div data-ps="1" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">';
+  if(ptrs.length) h+=ptrs.map(psPointerChipHTML).join("");
+  else h+='<button onclick="psOpen(\''+psJ(u.id)+'\')" style="padding:7px 14px;border-radius:10px;border:none;background:'+(psForm&&psForm.uid===u.id?'#7c3aed':'#5b21b6')+';color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F5D3} Put on the schedule'+(psForm&&psForm.uid===u.id?' \u00D7':'')+'</button>';
+  h+='</div>';
+  if(psForm&&psForm.uid===u.id&&!ptrs.length) h+=psSheetHTML(u);
+  return h;
+}
+function psSheetHTML(u){
+  const f=psForm; if(!f) return ""; const a='\''+psJ(u.id)+'\'';
+  const chip=(on,txt,fn)=>'<div class="ce-chip'+(on?' sel':'')+'" onclick="'+fn+'">'+txt+'</div>';
+  const lab=t=>'<div class="ce-sheet-lbl" style="margin-top:10px">'+t+'</div>';
+  const inp='padding:6px 9px;border:1.5px solid var(--border);border-radius:9px;font-size:12px;font-family:\'DM Sans\',sans-serif;background:#fff';
+  const kids=psRoster().filter(k=>f.kids.indexOf(k)>=0), days=PS_DAYS.filter(d=>f.days.indexOf(d)>=0), nDays=utDaysOn(u).length;
+  let h='<div data-ps-sheet="1" onclick="event.stopPropagation()" style="margin-top:8px;padding:10px 12px 12px;background:#faf5ff;border:1.5px solid #c4b5fd;border-radius:12px;font-size:12px">';
+  h+=lab("Who does this?")+'<div class="ce-chips">'+psRoster().map(k=>chip(f.kids.indexOf(k)>=0,psEsc(psCap(k)),"psSet('kid','"+psJ(k)+"')")).join("")+'</div>';
+  h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Everyone is picked: a new unit is a Family Time subject they do together. Untick kids to make it one kid\u2019s own.</div>';
+  h+=lab("How often")+'<div class="ce-chips">'+PS_DAYS.map(d=>chip(f.days.indexOf(d)>=0,d,"psSet('day','"+d+"')")).join("")+'</div>';
+  h+=lab("In order or week by week?")+'<div class="ce-chips">'+chip(f.mode!=="week","In order \u2014 "+nDays+" days, one per sitting","psSet('mode','seq')")+chip(f.mode==="week","Week by week \u2014 by the calendar, each weekday its role","psSet('mode','week')")+'</div>';
+  if(f.mode==="week"&&!Object.keys(psRoles(u)).length) h+='<div style="font-size:10.5px;color:#b45309;margin-top:4px">This unit\u2019s days have no weekday roles yet (Mon: The object, Tue: Nature \u2026) \u2014 in order works now.</div>';
+  h+='<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:4px"><div>'+lab("Minutes")+'<input type="number" min="5" max="240" step="5" value="'+f.minutes+'" onchange="psSet(\'minutes\',this.value)" style="'+inp+';width:72px"></div><div>'+lab("First day")+'<input type="date" value="'+psEsc(f.start)+'" onchange="psSet(\'start\',this.value)" style="'+inp+'"></div></div>';
+  if(kids.length>=2){
+    const id=(typeof famWhoBlockFor==="function")?famWhoBlockFor(kids):null, b=id?famDefs()[id]:null;
+    h+=lab("Starts");
+    if(b) h+='<div style="font-size:11px;color:#5b21b6;font-weight:700">\u{1F3E1} Joins \u201c'+psEsc(b.name||"Family time")+'\u201d \u2014 the family time '+psEsc(kids.map(psCap).join(" & "))+' already share. It starts when that block starts.</div>';
+    else { h+='<div class="ce-chips">'+[["lunch","Right after lunch"],["time","At a set time"],["auto","Scheduler picks"]].map(p=>chip(f.at===p[0],p[1],"psSet('at','"+p[0]+"')")).join("")+'</div>';
+      if(f.at==="time") h+='<div style="display:flex;gap:8px;align-items:center;margin-top:6px"><span style="font-size:10px;font-weight:700;color:var(--muted)">Starts at</span><input type="time" value="'+psEsc((typeof ampmTo24==="function")?ampmTo24(f.time):f.time)+'" onchange="psSet(\'time\',this.value)" style="'+inp+'"></div><div style="font-size:10px;color:var(--muted);margin-top:3px">A set time is a fixed-time class: the lanes pack around it and the Morning Notebook follows it.</div>';
+      else if(f.at==="auto") h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">The earliest morning time when everyone in it is free.</div>';
+      h+='<div style="font-size:11px;color:#5b21b6;font-weight:700;margin-top:6px">\u{1F3E1} Makes a new family time for '+psEsc(kids.map(psCap).join(" & "))+', named after this unit. Mom leads it.</div>'; }
+  } else if(kids.length===1){
+    h+=lab("Starts")+'<div class="ce-chips">'+[["lunch","Its own slot in the day"],["time","At a set time"]].map(p=>chip(f.at===p[0]||(p[0]==="lunch"&&f.at==="auto"),p[1],"psSet('at','"+p[0]+"')")).join("")+'</div>';
+    if(f.at==="time") h+='<div style="display:flex;gap:8px;align-items:center;margin-top:6px"><span style="font-size:10px;font-weight:700;color:var(--muted)">Starts at</span><input type="time" value="'+psEsc((typeof ampmTo24==="function")?ampmTo24(f.time):f.time)+'" onchange="psSet(\'time\',this.value)" style="'+inp+'"></div>';
+    h+='<div style="font-size:11px;color:#5b21b6;font-weight:700;margin-top:6px">\u{1F4DA} '+psEsc(psCap(kids[0]))+'\u2019s own subject \u2014 '+nDays+' lessons, one per day, '+days.length+' a week.</div>';
+  }
+  if(f.msg&&f.msg!=="already") h+='<div style="font-size:11.5px;color:#b45309;background:#fffbeb;border-radius:9px;padding:7px 10px;margin-top:8px">'+psEsc(f.msg)+'</div>';
+  h+='<div style="display:flex;gap:8px;align-items:center;margin-top:10px"><button onclick="psApply()" style="padding:8px 16px;border-radius:10px;border:none;background:#5b21b6;color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F5D3} Put it on</button><button onclick="psClose()" style="padding:8px 12px;border-radius:10px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancel</button>';
+  if(psDry()) h+='<span style="font-size:10px;color:var(--muted)">dry run \u2014 nothing is written</span>';
+  h+='</div></div>';
+  return h;
+}
+// ── the gate's readers (mastBankEligible, unitEnroll and GATESTART call these) ──
+// The place a family unit's track is at, as a day number: in order → the opening number of the last line famDoneN has finished
+// (a ×2 line needs both sittings); week by week → the book week the calendar is on − fromWeek + 1. null = cannot tell → open.
+function psFamUpto(id,key){
+  try{
+    const b=famDefs()[id]; if(!b) return null; const it=famList(b.items).find(x=>x&&x.key===key); const tr=(typeof famTrack==="function")?famTrack(it):null; if(!tr) return null;
+    const us=utUnits();
+    if(tr.mode==="seq"){
+      const done=(typeof famDoneN==="function")?famDoneN(id,key):0; const lines=famList(tr.list); let acc=0, last=0;
+      for(let i=0;i<lines.length;i++){ const l=lines[i]; if(!l) continue; const n=Math.max(1,Math.min(10,parseInt(l.n,10)||1)); if(acc+n>done) break; acc+=n;
+        const u=l.u&&us[l.u.id]; const d=u?utDay(u,l.u.d):null; last=(d&&utChOf(u,d))||(last+1); }
+      return last;
+    }
+    const un=tr.unit; if(!un||!un.id) return null;
+    const m=(typeof famLessonMap==="function")?famLessonMap(b,id,it):null; if(!m) return null;
+    const today=psToday(); let lbl=""; const bd=m.byDate||{};
+    Object.keys(bd).sort().forEach(d=>{ if(d<=today&&bd[d]) lbl=bd[d]; });   // the latest run day up to today
+    if(!lbl) lbl=m.now||"";
+    const wm=/\bWk (\d+)/.exec(String(lbl)); if(!wm) return null;
+    return parseInt(wm[1],10)-(parseInt(un.fromWeek,10)||1)+1;
+  }catch(e){ return null; }
+}
+// What a deck's gate lets open right now (null = no gate or cannot tell → everything): a unit-day gate or a book gate.
+function psGateUpto(kid,deck){
+  const g=(((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).cat_gate||{})[deck]; if(!g) return null;
+  if(g.fam) return psFamUpto(g.fam,g.item);
+  if(g.subject&&typeof mastGateChapter==="function") return mastGateChapter(kid,g.subject);
+  return null;
+}
+// PUTSCHED_END
 function fxOpenClassScreen(kid,sk,taskId){
   const s=((gwGetSubjects(kid)||{})[sk])||null;
   if(!s) return;
@@ -43749,7 +43965,7 @@ function unitEnroll(unitId,kid){
     settings.cat_modes[d.key]=d.mode||"flip";
     if(d.introCap) settings.cat_intro_max[d.key]=d.introCap;
     if(d.gate&&d.gate.subject){ settings.cat_gate=settings.cat_gate||{}; settings.cat_gate[d.key]={subject:d.gate.subject}; }
-    const _gUpto=(d.gate&&d.gate.subject&&typeof mastGateChapter==="function")?mastGateChapter(kid,d.gate.subject):null;  // RS4K gate
+    const _gUpto=(d.gate&&d.gate.subject&&typeof mastGateChapter==="function")?mastGateChapter(kid,d.gate.subject):((typeof psGateUpto==="function")?psGateUpto(kid,d.key):null);  // RS4K gate · 🗓 PUTSCHED: a unit-day gate set before enroll
     const haveBank=new Set(bank.filter(c=>c&&c.cat===d.key).map(c=>c.name));
     const haveItem=new Set(items.filter(i=>i&&i.subject===d.key).map(i=>i.prompt));
     let started=items.filter(i=>i&&i.subject===d.key&&i.status==="introduction").length;
@@ -55977,7 +56193,7 @@ function mastGateChapter(kid,sk){
     let i=seq.findIndex((t,n)=>!done.has(n));
     if(i<0) i=seq.length-1;                                   // whole book done
     // "· Ch N" (RS4K, FLL) — or a plain "Lesson N: …" name (Discover! 6A), whose lesson number is the unlock number.
-    for(let j=i;j>=0;j--){ const t=String(seq[j]||""); const m=/\u00b7\s*Ch\s*(\d+)\b/.exec(t)||/^Lesson\s+(\d+)\b/.exec(t); if(m) return parseInt(m[1],10);
+    for(let j=i;j>=0;j--){ const t=String(seq[j]||""); const m=/\u00b7\s*Ch\s*(\d+)\b/.exec(t)||/^Lesson\s+(\d+)\b/.exec(t)||/^Day\s+(\d+)\b/.exec(t); if(m) return parseInt(m[1],10);   // 🗓 PUTSCHED: "Day n — …" (a unit laid as one kid's subject)
       // 📘 AAS lesson names: "L2-7" (level-lesson → 207) · "L19 NG · day 1 of 5" / "L1 Mastering…" (→ 19 / 1)
       const ml=/^L(\d+)-(\d+)\b/.exec(t); if(ml) return parseInt(ml[1],10)*100+parseInt(ml[2],10);
       const m1=/^L(\d+)\b/.exec(t); if(m1) return parseInt(m1[1],10); }
@@ -55989,8 +56205,9 @@ function mastBankEligible(kid,cat){
   const all=mastFullBank(kid)[cat]||[];
   if((((masteryData[kid+"_settings"]||{}).cat_hold)||{})[cat]) return [];   // 📘 AAS words: only a test result / check-up / problem word puts them on the ladder
   const g=((masteryData[kid+"_settings"]||{}).cat_gate||{})[cat];
-  if(!g||!g.subject) return all;
-  const upto=(g.after==="done"&&typeof wrGateDone==="function")?wrGateDone(kid,g.subject):mastGateChapter(kid,g.subject);   // 🏛 WRATTACH: Word Roots opens a lesson once it's checked off
+  if(!g||(!g.subject&&!g.fam)) return all;
+  const upto=g.fam?((typeof psFamUpto==="function")?psFamUpto(g.fam,g.item):null)   // 🗓 PUTSCHED: a unit-day gate reads the family track's place (null = open)
+    :((g.after==="done"&&typeof wrGateDone==="function")?wrGateDone(kid,g.subject):mastGateChapter(kid,g.subject));   // 🏛 WRATTACH: Word Roots opens a lesson once it's checked off
   if(upto==null) return all;
   let cust=masteryData[kid+"_custom_items"]||[]; if(!Array.isArray(cust)) cust=Object.values(cust);
   const chOf={};
@@ -56537,7 +56754,7 @@ function mastGateStart(kid,items,minted,_jset){
     if(s.kind==="mix"||s.kind==="checkup") return;   // own no decks (mstOwns)
     (s.decks||[]).forEach(d=>owned.add(d)); }); }catch(e){ return; }   // can't tell who owns what → leave it
   Object.keys(gates).forEach(deck=>{
-    const g=gates[deck]; if(!g||!g.subject) return;
+    const g=gates[deck]; if(!g||(!g.subject&&!g.fam)) return;   // 🗓 PUTSCHED: a unit-day gate starts its released cards too
     if(holds[deck]) return;
     if(owned.has(deck)) return;
     if(items.some(i=>i&&i.subject===deck&&(i.status==="introduction"||i.status==="parked"))) return;
