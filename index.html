@@ -37459,6 +37459,229 @@ function psGateUpto(kid,deck){
   return null;
 }
 // PUTSCHED_END
+// UNITSTAB_START — 📚 All units · 🧒 one tab per kid · 🏡 Family ("One shape" §4 the Units page; BRIEF_units_build_2026-10-27.md
+//   T3; her go 2026-10-27). A VIEW over data that already exists plus the unit tracks: the only writes are the buttons that write
+//   today (enroll, the notebook switch, a stage move-up, the staged + Kid form) and the two buttons other steps add (✚ Build,
+//   🗓 Put on the schedule) when they are present. Nothing here writes on its own; the block has no db call.
+//   · 📚 ALL UNITS (the library): one row per unit, grouped Ours · Starter · Book companions; emoji and title, decks and card
+//     counts, who is enrolled, WHERE IT IS ON THE SCHEDULE ("🏡 Family Time · Day 5 of 8 · next Mon", "📚 <Kid>'s subject · Day 3
+//     of 8", "not on the schedule", "no days yet"), the notebook switch, a source line. Tapping a row opens the unit as today.
+//     Top right (Mom): ✚ Build a unit when B1 exists; the starter units as today.
+//   · 🧒 ONE TAB PER KID: Today (the unit day on today's schedule for this kid, its check state, Open the card — the board
+//     when DAYCARD exists, else the unit) · Their units (rung counts from the kid's own cards in the unit's decks: learning ·
+//     every few days · weekly · bi-weekly · monthly · kept; a staged unit's stage and "ready to move up"; 📝 Our words with
+//     the count — it opens Mastery HQ on that kid and deck; the notebook insert on/off and the weekday it prints, read only;
+//     claims waiting for Mom) · Extra cards (the kid's Our words across units, read only) · Not enrolled yet (+ Kid as today).
+//   · 🏡 FAMILY: Today's card for every block that runs today · ⚙ Edit on the Grid · ✚ Put a unit on the schedule (Mom); one
+//     card per block with its items' track state ("Wk 7 · Map work", "Day 5 of 8", "daily") and, when an item points at a
+//     unit, the unit's emoji and a link; under the blocks, the shared units' progress across the kids, by rung.
+//   · Kids see titles, pictures and their own progress; every editor, enroll, Build and Put on the schedule sits behind
+//     momHere(), as the Units tab does today. Phone width, no horizontal scroll. The roster only — no kid's name in the block.
+let utsTab="all";   // "all" | <kid> | "fam"
+const UTS_RUNGS=[["learning","learning","#c2410c"],["few","every few days","#b45309"],["weekly","weekly","#15803d"],["biweekly","bi-weekly","#0e7490"],["monthly","monthly","#5b21b6"],["kept","kept","#374151"]];
+function utsMom(){ return (typeof momHere==="function")?momHere():false; }
+function utsEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function utsJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+function utsCap(s){ return (typeof cap==="function")?cap(s):String(s||""); }
+function utsRoster(){ return (typeof ROSTER!=="undefined"&&Array.isArray(ROSTER))?ROSTER.slice():[]; }
+function utsColor(kid){ return ((typeof KID_COLOR!=="undefined"&&KID_COLOR)||{})[kid]||"#64748b"; }
+function utsUnits(){ const us=(typeof unitStudies!=="undefined"&&unitStudies)||{}; return Object.keys(us).map(k=>us[k]).filter(u=>u&&u.id); }
+function utsToday(){ return (typeof cbTodayISO==="function")?cbTodayISO():new Date().toISOString().slice(0,10); }
+function utsDecks(u){ return (Array.isArray(u&&u.decks)?u.decks:Object.values((u&&u.decks)||{})).filter(d=>d&&d.key); }
+function utsCards(d){ return Array.isArray(d&&d.cards)?d.cards.filter(Boolean):Object.values((d&&d.cards)||{}).filter(Boolean); }
+function utsSet(tab){ utsTab=tab; if(typeof unitOpenId!=="undefined") unitOpenId=null; const el=(typeof document!=="undefined")?document.getElementById("content"):null; if(el&&typeof renderUnits==="function") renderUnits(el); }
+function utsDow(iso){ try{ return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date(iso+"T12:00:00").getDay()]; }catch(e){ return ""; } }
+// Ours · Starter · Book companions (a unit that follows a book: cardLessons, a deck gated on a subject, or kind "book").
+function utsGroup(u){ if(u.starter) return "starter"; if(u.cardLessons||u.kind==="book"||utsDecks(u).some(d=>d.gate&&d.gate.subject)) return "book"; return "ours"; }
+// ── where a unit is on the schedule ──
+function utsPointers(uid){ return (typeof psPointers==="function")?psPointers(uid):[]; }
+function utsFamState(p){
+  try{
+    const b=famDefs()[p.id]; const it=b?famList(b.items).find(x=>x&&x.key===p.key):null; if(!b||!it) return "";
+    const m=(typeof famLessonMap==="function")?famLessonMap(b,p.id,it):null; const today=utsToday();
+    let where=""; if(m){ const now=String(m.now||""); where=now?now.split(" \u2014 ")[0].split(" + ")[0]:(m.total?"\u2713 all done":""); }
+    if(m&&m.total&&/^Day \d+/.test(where)) where=where.replace(/^(Day \d+).*$/,"$1 of "+m.total);
+    const nd=m?Object.keys(m.byDate||{}).sort().find(d=>d>=today&&m.byDate[d]):null;
+    return "\u{1F3E1} "+String(b.name||"Family time")+(where?" \u00B7 "+where:"")+(nd?" \u00B7 "+(nd===today?"today":"next "+utsDow(nd)):"");
+  }catch(e){ return "\u{1F3E1} "+String(p.block||"Family time"); }
+}
+function utsKidState(p){
+  try{
+    const s=((((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[p.kid])||{})[p.sk]; if(!s) return "";
+    const seq=Array.isArray(s.lessonSeq)?s.lessonSeq:[]; const done=(typeof lidDoneIdx==="function")?(lidDoneIdx(p.kid,p.sk)||new Set()):new Set();
+    let i=seq.findIndex((t,n)=>!done.has(n)); const on=i<0?"\u2713 all done":("Day "+(i+1)+" of "+seq.length);
+    return "\u{1F4DA} "+utsCap(p.kid)+"\u2019s subject \u00B7 "+on;
+  }catch(e){ return "\u{1F4DA} "+utsCap(p.kid)+"\u2019s subject"; }
+}
+function utsSchedState(u){
+  const ps=utsPointers(u.id);
+  if(ps.length) return ps.map(p=>p.kind==="fam"?utsFamState(p):utsKidState(p)).filter(Boolean).join(" \u00B7 ");
+  const hasDays=(typeof utDaysOn==="function")&&utDaysOn(u).length>0;
+  return hasDays?"not on the schedule":((typeof utTrack==="function")?"no days yet":"");
+}
+// ── a kid's rungs in a unit, from their own cards in the unit's decks ──
+function utsRungs(kid,u){
+  const out={learning:0,few:0,weekly:0,biweekly:0,monthly:0,kept:0,parked:0,total:0};
+  let items=((typeof masteryData!=="undefined"&&masteryData)||{})[kid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  const keys=new Set(utsDecks(u).map(d=>d.key));
+  items.forEach(i=>{ if(!i||!keys.has(i.subject)||i.dir==="prod"||i.twinOf) return; out.total++;
+    if(i.status==="parked"){ out.parked++; return; }
+    if(i.status==="introduction"){ out.learning++; return; }
+    const t=String(i.tier||"");
+    if(t==="graduated"||t==="learned") out.kept++; else if(t==="monthly") out.monthly++; else if(t==="bi_weekly") out.biweekly++; else if(t==="weekly") out.weekly++; else out.few++; });
+  return out;
+}
+function utsRungChips(r){
+  const parts=UTS_RUNGS.filter(x=>r[x[0]]).map(x=>'<span style="display:inline-block;padding:2px 8px;border-radius:8px;background:#f3f4f6;font-size:10.5px;font-weight:700;color:'+x[2]+'">'+r[x[0]]+' '+x[1]+'</span>');
+  if(r.parked) parts.push('<span style="display:inline-block;padding:2px 8px;border-radius:8px;background:#f3f4f6;font-size:10.5px;font-weight:700;color:#9ca3af">'+r.parked+' waiting</span>');
+  return parts.length?'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:5px">'+parts.join("")+'</div>':'<div style="font-size:10.5px;color:var(--muted);margin-top:4px">no cards yet</div>';
+}
+function utsOwCount(kid,u){ try{ return (typeof owList==="function")?owList(kid,{unit:u.id}).length:0; }catch(e){ return 0; } }
+function utsClaimsWaiting(kid,u){ let n=0; const cl=((u.activityClaims||{})[kid])||{}, log=((u.activityLog||{})[kid])||{}; Object.keys(cl).forEach(k=>{ if(!log[k]) n++; }); return n; }
+function utsNbDays(kid,u){ const d=(typeof nbUnitDays==="function")?nbUnitDays(kid,u.id):{}; return Object.keys(d||{}).filter(k=>d[k]); }
+// ── today's unit day on a kid's schedule ──
+function utsTodayTasks(kid){
+  try{ const tasks=(typeof getActiveTasks==="function")?getActiveTasks():(((typeof weekData!=="undefined"&&weekData)||{}).tasks||[]); const td=(typeof _todayDay!=="undefined")?_todayDay:"";
+    return tasks.filter(t=>t&&t.who===kid&&((typeof effectiveDay==="function")?effectiveDay(t):t.day)===td&&!/_c$/.test(String(t.id||""))); }catch(e){ return []; }
+}
+function utsTodayDays(kid){
+  const out=[]; if(typeof utDayForTask!=="function") return out;
+  utsTodayTasks(kid).forEach(t=>{ const d=utDayForTask(t); if(!d) return; const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[d.uid]; if(!u) return;
+    const ck=(typeof checked!=="undefined"&&checked&&checked[t.id])?"done":((typeof claimed!=="undefined"&&claimed&&claimed[t.id])?"claimed":"open");
+    out.push({t:t,day:d,u:u,state:ck}); });
+  return out;
+}
+function utsOpenCardJs(uid,taskId){ return (typeof dcOpen==="function")?"dcOpen('"+utsJ(uid)+"','"+utsJ(taskId||"")+"')":"openUnit('"+utsJ(uid)+"')"; }
+// ── the page ──
+function utsStripHTML(){
+  const chip=(id,txt,color)=>{ const on=utsTab===id; return '<button onclick="utsSet(\''+utsJ(id)+'\')" style="padding:6px 12px;border-radius:999px;border:1.5px solid '+(on?(color||'#1f2937'):'var(--border)')+';background:'+(on?(color||'#1f2937'):'#fff')+';color:'+(on?'#fff':'var(--text)')+';font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">'+txt+'</button>'; };
+  let h='<div data-uts-strip="1" style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 14px">'+chip("all","\u{1F4DA} All units");
+  utsRoster().forEach(k=>{ h+=chip(k,'<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+(utsTab===k?'#fff':utsColor(k))+';margin-right:5px;vertical-align:1px"></span>'+utsEsc(utsCap(k)),utsColor(k)); });
+  h+=chip("fam","\u{1F3E1} Family")+'</div>';
+  return h;
+}
+function utsPageHTML(){
+  const isMom=utsMom(), roster=utsRoster();
+  if(utsTab!=="all"&&utsTab!=="fam"&&roster.indexOf(utsTab)<0) utsTab="all";
+  let h='<div style="max-width:560px;margin:0 auto;padding:20px 18px;font-family:\'DM Sans\',sans-serif">';
+  h+='<div style="display:flex;align-items:center;gap:10px;justify-content:space-between"><div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:var(--text)">\u{1F393} Unit Studies</div>'+((typeof _unitMomLockHtml==="function")?_unitMomLockHtml():"")+'</div>';
+  h+=utsStripHTML();
+  if(utsTab==="all") h+=utsLibraryHTML(isMom);
+  else if(utsTab==="fam") h+=utsFamilyHTML(isMom);
+  else h+=utsKidHTML(utsTab,isMom);
+  return h+'</div>';
+}
+// ── 📚 All units ──
+function utsRowHTML(u,isMom){
+  const enrolled=utsRoster().filter(k=>(u.enrolled||{})[k]);
+  const nbOn=(u.nbInsert!==false);
+  let h='<div data-uts-row="'+utsEsc(u.id)+'" onclick="openUnit(\''+utsJ(u.id)+'\')" style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:12px 14px;margin-bottom:10px;cursor:pointer">';
+  h+='<div style="display:flex;align-items:center;gap:8px"><span style="font-size:22px">'+(u.emoji||"\u{1F4D8}")+'</span><span style="flex:1;min-width:0;font-size:15px;font-weight:800;color:#1f2937;overflow-wrap:anywhere">'+utsEsc(u.title||u.id)+'</span>';
+  if(isMom) h+='<button onclick="event.stopPropagation();unitToggleNbInsert(\''+utsJ(u.id)+'\')" title="In the kids\u2019 printed notebooks" style="flex-shrink:0;padding:4px 9px;border-radius:9px;border:1.5px solid '+(nbOn?'#86efac':'var(--border)')+';background:'+(nbOn?'#f0fdf4':'#fff')+';color:'+(nbOn?'#15803d':'#b45309')+';font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F4D3} '+(nbOn?'on':'off')+'</button>';
+  else if(!nbOn) h+='<span style="font-size:10px;color:#b45309;font-weight:700">\u{1F4D3} off</span>';
+  h+='</div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;font-size:10px;color:var(--muted);margin-top:7px">'+utsDecks(u).map(d=>'<span style="background:#f3f4f6;border-radius:8px;padding:2px 8px;font-weight:700">'+utsEsc(d.key)+' \u00B7 '+utsCards(d).length+'</span>').join("")+'</div>';
+  const st=utsSchedState(u);
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:7px;font-size:11px">'+(enrolled.length?'<span style="color:#15803d;font-weight:700">\u2713 '+utsEsc(enrolled.map(utsCap).join(", "))+'</span>':'<span style="color:var(--muted)">nobody enrolled</span>')+(st?'<span data-uts-sched="1" style="color:'+(/not on|no days/.test(st)?'var(--muted)':'#5b21b6')+';font-weight:700">'+utsEsc(st)+'</span>':'')+'</div>';
+  const src=[]; if(u.starter) src.push("starter"); if(u.author&&(u.author.family||u.author.first)) src.push("by "+String(u.author.first||u.author.family)); if(u.book) src.push(String(u.book)); if(u.version) src.push("v"+u.version);
+  if(src.length) h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">'+utsEsc(src.join(" \u00B7 "))+'</div>';
+  return h+'</div>';
+}
+function utsLibraryHTML(isMom){
+  const units=utsUnits(); let h='';
+  if(isMom&&typeof ubOpen==="function") h+='<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="ubOpen()" style="padding:7px 14px;border-radius:10px;border:none;background:#2d6a4f;color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u271A Build a unit</button></div>';   // UNITBUILD (B1)
+  if(!units.length) h+='<div style="padding:28px;text-align:center;color:var(--muted)">No unit studies yet.</div>';
+  [["ours","Ours"],["starter","Starter"],["book","Book companions"]].forEach(g=>{ const L=units.filter(u=>utsGroup(u)===g[0]); if(!L.length) return;
+    h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:14px 0 6px">'+g[1]+' \u00B7 '+L.length+'</div>';
+    L.forEach(u=>{ h+=utsRowHTML(u,isMom); }); });
+  if(typeof _starterUnitsHtml==="function") h+=_starterUnitsHtml();
+  return h;
+}
+// ── 🧒 one kid ──
+function utsKidHTML(kid,isMom){
+  const units=utsUnits(), mine=units.filter(u=>(u.enrolled||{})[kid]), others=units.filter(u=>!(u.enrolled||{})[kid]);
+  const card=(inner,extra)=>'<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px'+(extra||"")+'">'+inner+'</div>';
+  const head=t=>'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:14px 0 6px">'+t+'</div>';
+  let h='<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:'+utsColor(kid)+'"></span><span style="font-size:16px;font-weight:800;color:#1f2937">'+utsEsc(utsCap(kid))+'</span></div>';
+  // Today
+  const td=utsTodayDays(kid);
+  h+=head("\u{1F4C5} Today");
+  if(!td.length) h+=card('<div style="font-size:12px;color:var(--muted)">No unit day on today\u2019s schedule.</div>');
+  td.forEach(x=>{ const d=x.day, lbl=(d.n?"Day "+d.n:(d.wk?"Wk "+d.wk+(d.role?" \u00B7 "+d.role:""):""))+(d.t?(d.n||d.wk?": ":"")+d.t:"");
+    const stTxt=x.state==="done"?'<span style="color:#15803d;font-weight:800">\u2713 checked</span>':x.state==="claimed"?'<span style="color:#b45309;font-weight:800">\u270B waiting for Mom</span>':'<span style="color:var(--muted);font-weight:700">not yet</span>';
+    h+=card('<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:20px">'+(x.u.emoji||"\u{1F4D8}")+'</span><div style="flex:1;min-width:140px"><div style="font-size:13px;font-weight:800;color:#1f2937">'+utsEsc(x.u.title||x.u.id)+'</div><div style="font-size:12px;color:#374151">'+utsEsc(lbl)+'</div><div style="font-size:11px;margin-top:2px">'+stTxt+'</div></div><button onclick="'+utsOpenCardJs(x.u.id,x.t.id)+'" style="padding:6px 12px;border-radius:9px;border:1.5px solid #c4b5fd;background:#faf5ff;color:#5b21b6;font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F4FA} Open the card</button></div>'); });
+  // Their units
+  h+=head("\u{1F393} Their units \u00B7 "+mine.length);
+  if(!mine.length) h+=card('<div style="font-size:12px;color:var(--muted)">Not in any unit yet.</div>');
+  mine.forEach(u=>{
+    let inner='<div style="display:flex;align-items:center;gap:8px"><span style="font-size:20px">'+(u.emoji||"\u{1F4D8}")+'</span><span onclick="openUnit(\''+utsJ(u.id)+'\')" style="flex:1;min-width:0;font-size:14px;font-weight:800;color:#1f2937;cursor:pointer;overflow-wrap:anywhere">'+utsEsc(u.title||u.id)+'</span></div>';
+    const ss=(typeof unitStageStatus==="function")?unitStageStatus(u,kid):null;
+    if(ss){ inner+='<div style="font-size:11px;color:#374151;margin-top:5px">Stage '+ss.stage+' \u00B7 '+ss.on+' of '+ss.total+' on the ladder'+(ss.learn?' \u00B7 '+ss.learn+' learning':'')+(ss.ready?' \u00B7 <b style="color:#15803d">\u2713 ready to move up</b>':'')+'</div>';
+      if(isMom&&ss.ready&&ss.next&&typeof unitStageMoveUp==="function") inner+='<button onclick="unitStageMoveUp(\''+utsJ(u.id)+'\',\''+utsJ(kid)+'\')" style="margin-top:6px;padding:5px 11px;border-radius:9px;border:1.5px solid #86efac;background:#f0fdf4;color:#15803d;font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u27A1 Start stage '+ss.next.n+'</button>'; }
+    inner+=utsRungChips(utsRungs(kid,u));
+    const bits=[]; const ow=utsOwCount(kid,u); const nbDays=utsNbDays(kid,u); const cw=utsClaimsWaiting(kid,u);
+    if(ow&&typeof owList==="function"){ const dk=utsDecks(u)[0]; const go=(typeof mhqSetKid==="function"&&typeof mhqOpenDeck==="function"&&dk)?'onclick="mhqSetKid(\''+utsJ(kid)+'\');mhqOpenDeck(\''+utsJ(dk.key)+'\');if(typeof showTab===\'function\')showTab(\'mastery\')" ':''; bits.push('<span '+go+'style="padding:3px 9px;border-radius:9px;background:#ede9fe;color:#5b21b6;font-size:10.5px;font-weight:800;'+(go?'cursor:pointer':'')+'">\u{1F4DD} Our words '+ow+'</span>'); }
+    bits.push('<span style="padding:3px 9px;border-radius:9px;background:'+(u.nbInsert!==false?'#f0fdf4':'#f3f4f6')+';color:'+(u.nbInsert!==false?'#15803d':'#9ca3af')+';font-size:10.5px;font-weight:700">\u{1F4D3} notebook '+(u.nbInsert!==false?'on':'off')+(nbDays.length?' \u00B7 '+utsEsc(nbDays.join(", ")):'')+'</span>');
+    if(cw) bits.push('<span style="padding:3px 9px;border-radius:9px;background:#fffbeb;color:#b45309;font-size:10.5px;font-weight:800">\u270B '+cw+' waiting for Mom</span>');
+    inner+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:7px">'+bits.join("")+'</div>';
+    h+=card(inner); });
+  // Extra cards (Our words, read only)
+  if(typeof owList==="function"){
+    let recs=[]; try{ recs=owList(kid,{}); }catch(e){ recs=[]; }
+    h+=head("\u{1F4DD} Extra cards \u00B7 "+recs.length);
+    if(!recs.length) h+=card('<div style="font-size:12px;color:var(--muted)">No extra cards yet \u2014 the words Mom adds herself show here.</div>');
+    else { const byDeck={}; recs.forEach(r=>{ (byDeck[r.deck]=byDeck[r.deck]||[]).push(r); });
+      let inner=''; Object.keys(byDeck).forEach(dk=>{ inner+='<div style="font-size:11px;font-weight:800;color:#5b21b6;margin-top:6px">'+utsEsc(dk)+'</div><div style="font-size:12px;color:#374151;line-height:1.6">'+byDeck[dk].map(r=>utsEsc(r.name)+(r.kind==="link"?' \u21AA':'')+' <span style="color:var(--muted);font-size:10.5px">'+utsEsc(r.state||"")+'</span>').join(" \u00B7 ")+'</div>'; });
+      h+=card(inner); } }
+  // Not enrolled yet
+  h+=head("Not enrolled yet \u00B7 "+others.length);
+  if(!others.length) h+=card('<div style="font-size:12px;color:var(--muted)">In every unit this family has.</div>');
+  others.forEach(u=>{ const staged=(typeof _unitStagedEnrollPending==="function")&&_unitStagedEnrollPending(u);
+    let inner='<div style="display:flex;align-items:center;gap:8px"><span style="font-size:20px">'+(u.emoji||"\u{1F4D8}")+'</span><span onclick="openUnit(\''+utsJ(u.id)+'\')" style="flex:1;min-width:0;font-size:13px;font-weight:800;color:#1f2937;cursor:pointer;overflow-wrap:anywhere">'+utsEsc(u.title||u.id)+'</span>';
+    if(isMom) inner+='<button onclick="'+(staged?'openUnit(\''+utsJ(u.id)+'\');unitStageFormOpen(\''+utsJ(u.id)+'\',\''+utsJ(kid)+'\')':'unitEnroll(\''+utsJ(u.id)+'\',\''+utsJ(kid)+'\')')+'" style="flex-shrink:0;padding:6px 12px;border-radius:9px;border:1.5px solid var(--border);background:#fff;color:#1f2937;font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ '+utsEsc(utsCap(kid))+'</button>';
+    inner+='</div>'; h+=card(inner); });
+  return h;
+}
+// ── 🏡 Family ──
+function utsItemState(b,id,it){
+  const tr=(typeof famTrack==="function")?famTrack(it):null; if(!tr) return "daily";
+  try{ const m=famLessonMap(b,id,it); const now=String(m.now||""); if(now) return now.split(" \u2014 ")[0]; return m.total?"\u2713 all done":"\u2014"; }catch(e){ return ""; }
+}
+function utsItemUnit(it){
+  const tr=(typeof famTrack==="function")?famTrack(it):null; if(!tr) return null; const us=(typeof unitStudies!=="undefined"&&unitStudies)||{};
+  if(tr.unit&&tr.unit.id&&us[tr.unit.id]) return us[tr.unit.id];
+  if(tr.mode==="seq"){ const l=famList(tr.list).find(x=>x&&x.u&&x.u.id&&us[x.u.id]); if(l) return us[l.u.id]; }
+  return null;
+}
+function utsFamilyHTML(isMom){
+  const defs=(typeof famDefs==="function")?famDefs():{}; const ids=Object.keys(defs).filter(id=>defs[id]); const today=utsToday();
+  const card=(inner,extra)=>'<div style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px'+(extra||"")+'">'+inner+'</div>';
+  let h='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">';
+  ids.forEach(id=>{ const b=defs[id]; if(b.off) return; const runs=famList(b.items).some(it=>{ try{ const c=famCellState(b,it,today); return c&&c.runs&&c.kids&&c.kids.length; }catch(e){ return false; } }); if(!runs) return;
+    const u=famList(b.items).map(utsItemUnit).find(Boolean);
+    h+='<button onclick="'+((typeof dcOpen==="function")?"dcOpen('"+utsJ(id)+"')":(u?"openUnit('"+utsJ(u.id)+"')":"famHomeGo('"+utsJ(id)+"')"))+'" style="padding:7px 12px;border-radius:10px;border:1.5px solid #c4b5fd;background:#faf5ff;color:#5b21b6;font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F4FA} Today\u2019s card \u00B7 '+utsEsc(b.name||"Family time")+'</button>'; });
+  if(isMom){ h+='<button onclick="famHomeGo()" style="padding:7px 12px;border-radius:10px;border:1.5px solid var(--border);background:#fff;color:#1f2937;font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u2699 Edit on the Grid</button>';
+    const ready=utsUnits().filter(u=>(typeof utDaysOn==="function")&&utDaysOn(u).length&&!utsPointers(u.id).length);
+    if(ready.length&&typeof psOpen==="function") h+='<div style="display:inline-flex;gap:4px;flex-wrap:wrap;align-items:center;font-size:11px;color:var(--muted)">\u271A Put a unit on the schedule: '+ready.map(u=>'<button onclick="openUnit(\''+utsJ(u.id)+'\');psOpen(\''+utsJ(u.id)+'\')" style="padding:4px 9px;border-radius:9px;border:1.5px solid #c4b5fd;background:#fff;color:#5b21b6;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(u.emoji||"")+' '+utsEsc(u.title||u.id)+'</button>').join("")+'</div>'; }
+  h+='</div>';
+  if(!ids.length) return h+card('<div style="font-size:12px;color:var(--muted)">No family time yet.'+(isMom?' <button onclick="famHomeGo()" style="margin-left:6px;padding:5px 12px;border-radius:9px;border:none;background:#7c3aed;color:#fff;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\uFF0B Add family time</button>':' Mom sets it up on the Grid.')+'</div>');
+  ids.slice().sort((a,b)=>(defs[a].off?1:0)-(defs[b].off?1:0)).forEach(id=>{ const b=defs[id]; const kids=famList(b.kids);
+    let inner='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:14px;font-weight:800;color:#1f2937">\u{1F3E1} '+utsEsc(b.name||"Family time")+(b.off?' <span style="font-size:10px;color:#9ca3af">off</span>':'')+'</span><span style="font-size:10.5px;color:var(--muted)">'+utsEsc(kids.map(utsCap).join(", "))+' \u00B7 '+utsEsc(famList(b.days).join(" "))+' \u00B7 '+utsEsc(b.at==="auto"?"scheduler picks":(b.at&&b.at!=="lunch"?b.at:"after lunch"))+'</span></div>';
+    const items=famList(b.items);
+    if(!items.length) inner+='<div style="font-size:11.5px;color:var(--muted);margin-top:6px">No subjects yet.</div>';
+    items.forEach(it=>{ if(!it) return; const u=utsItemUnit(it); const st=utsItemState(b,id,it);
+      inner+='<div data-uts-item="'+utsEsc(it.key)+'" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px solid #f3f1ee;font-size:12px"><span style="font-weight:700;color:#1f2937">'+(u?(u.emoji||"\u{1F4D8}")+' ':'')+utsEsc(it.name||"")+'</span><span style="color:#5b21b6;font-weight:700">'+utsEsc(st)+'</span>'+(u?'<span onclick="openUnit(\''+utsJ(u.id)+'\')" style="margin-left:auto;font-size:11px;color:#5b21b6;font-weight:800;cursor:pointer;text-decoration:underline">'+utsEsc(u.title||u.id)+' \u2192</span>':'')+'</div>'; });
+    h+=card(inner); });
+  // the shared units' progress across the kids
+  const shared=utsUnits().filter(u=>utsPointers(u.id).some(p=>p.kind==="fam")||utsRoster().filter(k=>(u.enrolled||{})[k]).length>=2);
+  if(shared.length){
+    h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:14px 0 6px">Shared units \u00B7 by kid</div>';
+    shared.forEach(u=>{ let inner='<div onclick="openUnit(\''+utsJ(u.id)+'\')" style="font-size:13px;font-weight:800;color:#1f2937;cursor:pointer">'+(u.emoji||"\u{1F4D8}")+' '+utsEsc(u.title||u.id)+'</div>';
+      utsRoster().filter(k=>(u.enrolled||{})[k]).forEach(k=>{ inner+='<div style="display:flex;align-items:center;gap:8px;margin-top:5px"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:'+utsColor(k)+'"></span><span style="font-size:11.5px;font-weight:700;color:#374151;min-width:60px">'+utsEsc(utsCap(k))+'</span><div style="flex:1">'+utsRungChips(utsRungs(k,u)).replace('margin-top:5px','margin-top:0')+'</div></div>'; });
+      h+=card(inner); }); }
+  return h;
+}
+// UNITSTAB_END
 function fxOpenClassScreen(kid,sk,taskId){
   const s=((gwGetSubjects(kid)||{})[sk])||null;
   if(!s) return;
@@ -43752,6 +43975,7 @@ function renderUnits(el){
   const con=el||document.getElementById("content"); if(!con) return;
   const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
   if(unitOpenId && unitStudies[unitOpenId]){ con.innerHTML=renderUnitDetail(unitStudies[unitOpenId]); return; }
+  if(typeof utsPageHTML==="function"){ con.innerHTML=utsPageHTML(); return; }   // UNITSTAB: 📚 All units · 🧒 one tab per kid · 🏡 Family
   const units=Object.keys(unitStudies||{}).map(k=>unitStudies[k]).filter(u=>u&&u.id);
   let h='<div style="max-width:560px;margin:0 auto;padding:20px 18px;font-family:\'DM Sans\',sans-serif">';
   h+='<div style="display:flex;align-items:center;gap:10px;justify-content:space-between"><div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:var(--text)">🎓 Unit Studies</div>'+_unitMomLockHtml()+'</div>';
