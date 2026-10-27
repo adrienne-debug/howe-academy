@@ -22891,7 +22891,17 @@ function kitPhotoPick(input){
 }
 // ── ✨ capture doors (phase 2, 2026-10-02): paste text or photos → Claude drafts the fields → Mom reviews → Save.
 //    Nothing is saved by the capture itself. Key = the family key (config/anthropic_key) or a device key.
-let kitCap={mode:null,busy:false,msg:"",photos:[]};
+// KITLINKHOLD_START — 🔗 A link: the pasted address survives a repaint, and the read gives up at 90 s (her report 2026-10-27:
+//   "the fill in from on meals i did a link and its taking forever or isnt working period"). Mom's plan repaints itself on
+//   every kitchen/chore/laundry change from any device; the address lived only in the box, so a repaint emptied it before
+//   "Read the recipe" was tapped. The read had no time limit: a slow page, or an iPhone that locked mid-read, left
+//   "⏳ Reading the page…" stuck until a reload. Now: kitCap.url holds the address (oninput), the box is drawn from it,
+//   and the link read runs under an AbortController — past KIT_CAP_LINK_MS it ends with a plain message and the button
+//   comes back. 📋 Pasted text and 📸 Photos are untouched. No database writes.
+const KIT_CAP_LINK_MS=90000;
+const KIT_CAP_SLOW_MSG="That took more than 90 seconds — the page may be slow or blocking readers. Try again, or copy the recipe off the page and use 📋 Pasted text.";
+// KITLINKHOLD_END
+let kitCap={mode:null,busy:false,msg:"",photos:[],url:""};   // KITLINKHOLD: url = the pasted address, kept across repaints
 function kitCapKey(){ return (typeof mastAIKey!=="undefined"&&mastAIKey)||(typeof haGetKey==="function"?haGetKey():"")||""; }
 function kitCapToggle(mode){ _kitStash(); kitCap.mode=(kitCap.mode===mode)?null:mode; kitCap.msg=""; const el=document.getElementById('content'); if(el) renderMomsPlan(el); }
 function kitCaptureHTML(){
@@ -22905,7 +22915,7 @@ function kitCaptureHTML(){
   if(!key) h+='<div style="font-size:11px;color:#92400e;margin-top:6px">Needs a Claude key — Admin ▸ Settings ▸ ✨ AI key. Typing a recipe in by hand always works.</div>';
   if(kitCap.mode==='paste') h+='<textarea id="kit-cap-text" rows="6" placeholder="Paste the whole recipe — title, ingredients, directions, anything. Claude sorts it into the boxes below for you to check." style="width:100%;box-sizing:border-box;margin-top:8px;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:12.5px;font-family:\'DM Sans\',sans-serif"></textarea>'
     +'<button onclick="kitCapRunText()" '+(kitCap.busy?'disabled':'')+' style="margin-top:6px;padding:8px 14px;border-radius:9px;border:none;background:#16a34a;color:#fff;font-size:12px;font-weight:800;cursor:pointer">'+(kitCap.busy?'⏳ Reading…':'Turn it into a recipe')+'</button>';
-  if(kitCap.mode==='link') h+='<input id="kit-cap-url" type="url" placeholder="https://… the recipe page" style="width:100%;box-sizing:border-box;margin-top:8px;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:12.5px;font-family:\'DM Sans\',sans-serif">'
+  if(kitCap.mode==='link') h+='<input id="kit-cap-url" type="url" value="'+esc(kitCap.url||"")+'" oninput="kitCap.url=this.value" placeholder="https://… the recipe page" style="width:100%;box-sizing:border-box;margin-top:8px;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:12.5px;font-family:\'DM Sans\',sans-serif">'
     +'<button onclick="kitCapRunLink()" '+(kitCap.busy?'disabled':'')+' style="margin-top:6px;padding:8px 14px;border-radius:9px;border:none;background:#16a34a;color:#fff;font-size:12px;font-weight:800;cursor:pointer">'+(kitCap.busy?'⏳ Reading the page…':'Read the recipe')+'</button>'
     +'<div style="font-size:10.5px;color:var(--muted);margin-top:4px">Some sites block readers. If one does, copy the recipe off the page and use 📋 Pasted text.</div>';
   if(kitCap.mode==='photos'&&kitCap.photos.length) h+=kitCapTrayHTML();
@@ -22918,11 +22928,14 @@ const KIT_CAP_PROMPT='Turn this into one recipe record. Use ONLY what is in the 
 async function kitCapAsk(content,tools,opt){
   const key=kitCapKey(); if(!key) throw new Error("No Claude key — Admin ▸ Settings ▸ ✨ AI key.");
   const msgs=[{role:"user",content:content}]; let data=null;
+  const ctl=(opt&&opt.timeoutMs>0&&typeof AbortController==="function")?new AbortController():null;   // KITLINKHOLD: only a caller that asks gets a clock
+  const tm=ctl?setTimeout(()=>ctl.abort(),opt.timeoutMs):null;
+  try{
   for(let turn=0;turn<3;turn++){   // a server tool (web fetch) can pause a long turn — continue it, at most twice
     const body={model:"claude-sonnet-5",max_tokens:(opt&&opt.maxTokens)||3000,messages:msgs}; if(tools) body.tools=tools;
     const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
       headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify(body)});
+      body:JSON.stringify(body),signal:ctl?ctl.signal:undefined});   // KITLINKHOLD
     if(!resp.ok){ const t=await resp.text(); throw new Error("Claude "+resp.status+" — "+t.slice(0,120)); }
     data=await resp.json();
     const fe=(data.content||[]).find(b=>b&&b.type==="web_fetch_tool_result"&&b.content&&b.content.error_code);
@@ -22930,19 +22943,21 @@ async function kitCapAsk(content,tools,opt){
     if(data.stop_reason==="pause_turn"){ msgs.push({role:"assistant",content:data.content}); continue; }
     break;
   }
+  }catch(e){ if(ctl&&ctl.signal.aborted) throw new Error(KIT_CAP_SLOW_MSG); throw e; }   // KITLINKHOLD: the clock ran out → a plain message, not a frozen button
+  finally{ if(tm) clearTimeout(tm); }
   if(data&&data.stop_reason==="refusal") throw new Error("Claude declined that one — try 📋 Pasted text.");
   const txt=((data&&data.content)||[]).filter(x=>x&&x.type==="text").map(x=>x.text||"").join("");
   if(opt&&opt.raw&&opt.withStop) return {text:txt,stop:(data&&data.stop_reason)||null};   // GR_RCPTLONG: the caller can tell a cut-off answer
   return (opt&&opt.raw)?txt:kitCapParse(txt);
 }
 async function kitCapRunLink(){
-  const u=((document.getElementById('kit-cap-url')||{}).value||"").trim();
+  const box=document.getElementById('kit-cap-url'); const u=String((box?box.value:kitCap.url)||"").trim(); kitCap.url=u;   // KITLINKHOLD: the box, or the address held across a repaint
   if(!/^https?:\/\/\S+\.\S+/i.test(u)){ kitCap.msg="Paste the whole address, starting with https://"; const el=document.getElementById('content'); if(el) renderMomsPlan(el); return; }
   _kitStash(); kitCap.busy=true; kitCap.msg=""; const el0=document.getElementById('content'); if(el0) renderMomsPlan(el0);
   try{
     const r=await kitCapAsk([{type:"text",text:"Use web_fetch to read the recipe on this page: "+u+"\n\n"+KIT_CAP_PROMPT}],
-      [{type:"web_fetch_20260209",name:"web_fetch",max_uses:2,max_content_tokens:20000}]);
-    kitCapApply(r); kitEditDraft.url=u; kitCap.mode=null;
+      [{type:"web_fetch_20260209",name:"web_fetch",max_uses:2,max_content_tokens:20000}],{timeoutMs:KIT_CAP_LINK_MS});   // KITLINKHOLD: 90 s, then a message
+    kitCapApply(r); kitEditDraft.url=u; kitCap.mode=null; kitCap.url="";
   }catch(e){ kitCap.msg=String(e&&e.message||e); }
   kitCap.busy=false; const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
