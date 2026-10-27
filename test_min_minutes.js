@@ -301,8 +301,9 @@ console.log("\n── 12. a forgotten Start counts from the last check-off (or t
   const w3 = world({ tasks: tasks() });
   w3.run("checked.m1=" + JSON.stringify(AGO(60)));
   ok("60-min gap: Piano (15 min) is ready", w3.run("mmCountdownText(weekData.tasks[0])") === "ready ✓" && w3.run("mmTapGate(weekData.tasks[0])") === false);
-  ok("60-min gap: Reading (20 min) shows 5 min left…", w3.run("mmCountdownText(weekData.tasks[1])") === "5 min left", w3.run("mmCountdownText(weekData.tasks[1])"));
-  ok("…and 'Not yet — 3 min to go' with grace 2", w3.run("mmTapGate(weekData.tasks[1])") === true && w3.toasts[w3.toasts.length - 1] === "⏱ Not yet — 3 min to go", w3.toasts);
+  // MMCAPLONG (her yes 2026-10-27): a 20-minute card is credited up to its own 20 — it used to stick at "5 min left" forever
+  ok("60-min gap: Reading (20 min) is ready too (credited its own 20, not the flat 15)", w3.run("mmCountdownText(weekData.tasks[1])") === "ready ✓" && (w3.run("mmElapsed('r1')") | 0) === 20, w3.run("mmCountdownText(weekData.tasks[1])"));
+  ok("…and its check goes through under Not yet", w3.run("mmTapGate(weekData.tasks[1])") === false, w3.toasts);
   // first card of the day uses the day start
   const w4 = world({ tasks: tasks() });
   w4.ctx.dayStarts = { friday: { lincoln: "9:50 AM" } };
