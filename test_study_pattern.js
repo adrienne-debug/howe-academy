@@ -127,9 +127,12 @@ M.setMasteryData({ lincoln_sessions: { german: { name: "German", decks: ["German
 const S2 = M.mstSessions("lincoln");
 ok(S2.find(s => s.sid === "german").bothWays === true && S2.find(s => s.sid === "plain").bothWays === false, "mstSessions carries bothWays (default false)");
 const pileT = { reviews: [{ id: "lin_hund_p", subject: "German", prompt: "der Hund", tier: "every_other_day", dir: "prod" }, { id: "lin_hund", subject: "German", prompt: "der Hund", tier: "every_other_day" }], learning: [], newNames: [] };
-const stT = M.mstSittingInit(pileT, S2.find(s => s.sid === "plain"), {});
-ok(stT.cards["r:lin_hund_p"].mode === "type", "🇬🇧→🇩🇪 twin review is typed, even with no pattern");
+// MSTTWINMODE (her yes 2026-10-27): a twin is typed only while ITS session has Both directions on — it used to be typed in any session
+const stT = M.mstSittingInit(pileT, S2.find(s => s.sid === "german"), {});
+ok(stT.cards["r:lin_hund_p"].mode === "type", "🇬🇧→🇩🇪 twin review is typed in its Both-directions session, even with no pattern");
 ok(stT.cards["r:lin_hund"].mode === undefined, "its recognition card is not");
+const stOff = M.mstSittingInit(pileT, S2.find(s => s.sid === "plain"), {});
+ok(stOff.cards["r:lin_hund_p"].mode === undefined, "the same twin in a session with Both directions off is a plain flip card (MSTTWINMODE)");
 
 console.log(pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
