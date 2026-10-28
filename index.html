@@ -44894,6 +44894,7 @@ function envHydrate(u,lib){
   (u.decks||[]).forEach(d=>{ if(!d||!d.key||!by[d.key]) return;
     const edits=(d.cards&&typeof d.cards==="object")?d.cards:null;
     d.cards=by[d.key].map((c,i)=>{ const o=edits?edits[i]:null; return (o&&typeof o==="object"&&(!o.name||o.name===c.name))?Object.assign({},c,o):c; }); });
+  if(typeof envPicsOn==="function") envPicsOn(u);   // ⚡ ENVIDFLASH: the ID decks' pictures, in memory, from envirothon/pics/index.json
   return true;
 }
 // Called when unitStudies arrives (and after 📚 Add): hydrate every code-held unit, loading envirothon.js first if needed.
@@ -46738,6 +46739,286 @@ function unitPicsSave(){
   if(typeof document!=="undefined"){ const el=document.getElementById("content"); if(el&&typeof renderUnits==="function") renderUnits(el); }
 }
 // UNIT_PICS_END
+// ENVIDFLASH_START — ⚡ ID Flash + the ID decks' pictures (step 6 of PLAN_envirothon_2026-10-27.md; the sprint verdict,
+// DESIGN_envirothon_sprint_verdict_2026-10-27.md: "no general sprint … one narrow speed-criterion component is worth building:
+// ID Flash for the three Identification decks, where mastered means named correctly within about 10 seconds, three times in
+// a row, on different pictures"). Howe-free: the kid id comes from the caller; nothing here assumes which family runs it.
+//   · THE PICTURES live in the repo (envirothon/pics/<deck>/<item>/<n>.jpg — 361 free-to-reuse photos at 600 px, 15 MB, built
+//     by envirothon/build_pics.py; envirothon/pics/index.json = card name → [{url, credit, shot}]). The index is fetched ONCE
+//     on demand (envPicsLoad, the envirothon.js pattern) and NEVER written to the database: envPicsOn puts each pictured
+//     card's first picture on the unit record IN MEMORY as the shared visual {imageUrl, credit} — the exact shape UNIT_PICS
+//     saves — so the study card, the Mom drill, the Units tab and the games pick it up through mastGetVisual with no new
+//     render path. A picture Mom saved herself wins. In study the picture is the front (the deck's flipFace is "name"), and
+//     envPicCycle hands mstCardPic a DIFFERENT picture of the item on every show.
+//   · ID FLASH: a kid-facing door on the unit's study start (and a 🎮 Games entry) for the "· ID" decks only, once a deck is
+//     released (its cat_hold cleared). The cards of those decks are "<item> · attribute" (20 Beaver cards share the Beaver
+//     pictures), so ID Flash — "what is this?" — runs per ITEM (species / tool), which is how the design counts it too
+//     ("fluent 31 of 40 species"). A sitting: up to 12 items, each a picture with a 10 s bar; the kid picks (3 lures from the
+//     same deck, _matchLures) or types the name (mstTypedOk, the study's own checker, over the item's accepted names — the
+//     item plus every way its cards name it); ✓/✗ and the name after; the time per show is recorded. FLUENT = the last three
+//     CORRECT shows were on three DIFFERENT pictures, each under 10 s. A fluent item leaves ID Flash; the cards' own ladder
+//     (new → learning → mastered) and spaced review are untouched.
+//   · Writes, at the end of a sitting only: mastery/<kid>_idflash/<deckKey>/<itemKey> = {shows:[{pic,ok,secs,at}×last 5],
+//     fluent, at} (itemKey = mastDefKey(item); ONE multi-path update on mastery/<kid>_idflash, every path targeted) and the
+//     day's entry under mastery/studyLog/<kid>/idflash/<yyyymmdd> in the shape _mstSaveInner writes (items {id,name,deck,
+//     result} merged into the day), so Scores, the streak and the weekly report count it. Dry run: runs and scores on the
+//     screen, writes nothing, says so. Nothing speaks; no confetti. A kid without the unit sees every screen byte-identical.
+const ENVFLASH_SECS=10, ENVFLASH_SITTING=12, ENVFLASH_KEEP=5, ENVFLASH_NEED=3, ENVFLASH_SID="idflash";
+const ENVPICS_URL="envirothon/pics/index.json";
+let _envPicsIdx=null, _envPicsP=null, _envPicsFail=false;
+function envPicsIndex(){ return _envPicsIdx; }
+// The index, fetched once (cache-bust only on GitHub Pages, like envirothon.js). On arrival every hydrated unit gets its pictures.
+function envPicsLoad(fetchFn){
+  if(_envPicsIdx) return Promise.resolve(_envPicsIdx);
+  if(_envPicsP) return _envPicsP;
+  const f=fetchFn||((typeof fetch==="function")?(u=>fetch(u)):null);
+  if(!f) return Promise.reject(new Error("no fetch"));
+  const url=(typeof location!=="undefined"&&/github\.io$/.test(location.hostname))?(ENVPICS_URL+"?v="+Date.now()):ENVPICS_URL;
+  _envPicsP=Promise.resolve().then(()=>f(url)).then(r=>{ if(!r||!r.ok) throw new Error("pics index "+(r&&r.status)); return r.json(); })
+    .then(j=>{ if(!j||typeof j!=="object"||Array.isArray(j)) throw new Error("pics index shape"); _envPicsIdx=j; envPicsApplyAll(); return j; })
+    .catch(e=>{ _envPicsP=null; _envPicsFail=true; throw e; });
+  return _envPicsP;
+}
+// The pictures of one card: [{url, credit, shot}] or null. Only the "· ID" decks of a code-held unit this family has.
+function envPicsDeckOn(deck){ const us=(typeof unitStudies!=="undefined"&&unitStudies)||{}; for(const k in us){ const u=us[k]; if(u&&typeof envCardsInCode==="function"&&envCardsInCode(u)&&(u.decks||[]).some(d=>d&&d.key===deck)) return true; } return false; }
+function envPicsFor(deck,name){ const idx=_envPicsIdx; if(!idx||!/\u00b7 ID$/.test(String(deck||""))||!envPicsDeckOn(deck)) return null; const a=idx[name]; return (Array.isArray(a)&&a.length&&a[0]&&a[0].url)?a:null; }
+// In memory only: each pictured card's first picture becomes the unit's shared visual {imageUrl, credit} unless Mom saved one.
+function envPicsApply(u){
+  if(!u||!_envPicsIdx||!(typeof envCardsInCode==="function"&&envCardsInCode(u))) return 0;
+  let n=0;
+  (u.decks||[]).forEach(d=>{ if(!d||!d.key) return; (d.cards||[]).forEach(c=>{ if(!c||!c.name) return;
+    const pics=envPicsFor(d.key,c.name); if(!pics) return;
+    const key=d.key+"_"+c.name; if(!u.visuals) u.visuals={};
+    const v=u.visuals[key]; if(v&&typeof v==="object"&&v.imageUrl) return;   // a picture Mom chose stays
+    u.visuals[key]={imageUrl:String(pics[0].url),credit:String(pics[0].credit||"")}; n++; }); });
+  return n;
+}
+// When the index arrives: the screens that draw a card's picture are the Units tab and the Mastery / Kids' Corner study — redraw those only.
+function envPicsApplyAll(){
+  const us=(typeof unitStudies!=="undefined"&&unitStudies)||{}; let n=0; Object.keys(us).forEach(k=>{ n+=envPicsApply(us[k]); });
+  if(n&&typeof tab!=="undefined"&&typeof document!=="undefined"){
+    if(tab==="units"){ const el=document.getElementById("content"); if(el&&typeof renderUnits==="function") renderUnits(el); }
+    else if((tab==="mastery"||tab==="kids")&&typeof _mastRe==="function") _mastRe(); }
+  return n;
+}
+// Called by envHydrate for every code-held unit (each time unitStudies arrives): apply the index, or fetch it the first time.
+function envPicsOn(u){
+  if(!u||!(typeof envCardsInCode==="function"&&envCardsInCode(u))) return false;
+  if(_envPicsIdx) return envPicsApply(u)>=0;
+  if(!_envPicsFail) envPicsLoad().catch(()=>{});
+  return false;
+}
+// Study: a different picture of the item each show. Keyed by the item's picture set, so consecutive cards of one item
+// (Beaver · tracks, Beaver · diet …) move through the set too. Re-draws of the same show (a flip) keep the same picture.
+let _envPicShow={state:null,map:{},last:{}};
+function envPicCycle(card){
+  if(!card||typeof mstState==="undefined"||!mstState) return "";
+  const pics=envPicsFor(card.deck,card.name); if(!pics||pics.length<2) return "";
+  if(_envPicShow.state!==mstState) _envPicShow={state:mstState,map:{},last:_envPicShow.last||{}};
+  const setKey=String(pics[0].url), showKey=card.deck+"_"+card.name+"|"+(card.key||"")+"|"+((typeof mstHist!=="undefined"&&mstHist)?mstHist.length:0);
+  if(_envPicShow.map[showKey]==null){ const prev=_envPicShow.last[setKey]; const i=(prev==null)?0:(prev+1)%pics.length; _envPicShow.map[showKey]=i; _envPicShow.last[setKey]=i; }
+  return String(pics[_envPicShow.map[showKey]].url);
+}
+// ── ID Flash ──
+function envFlashItemOf(c){ return String((c&&(c.item||String(c.name||"").split(" \u00b7 ")[0]))||"").trim(); }
+function envFlashHold(kid){ return ((((typeof masteryData!=="undefined"&&masteryData)||{})[kid+"_settings"]||{}).cat_hold)||{}; }
+// The released, pictured ID decks of the code-held units this kid is enrolled in: [{unit, key, items:[{item, key, names, pics}]}].
+function envFlashDecks(kid){
+  const out=[]; if(!kid||!_envPicsIdx||typeof masteryData==="undefined") return out;
+  const us=(typeof unitStudies!=="undefined"&&unitStudies)||{}, hold=envFlashHold(kid);
+  Object.keys(us).forEach(uid=>{ const u=us[uid];
+    if(!u||!(typeof envCardsInCode==="function"&&envCardsInCode(u))||!(u.enrolled&&u.enrolled[kid])) return;
+    (u.decks||[]).forEach(d=>{ if(!d||!d.key||d.kind!=="id"||hold[d.key]) return;
+      const by={}, items=[];
+      (d.cards||[]).forEach(c=>{ if(!c||!c.name) return; const item=envFlashItemOf(c); if(!item) return;
+        let e=by[item]; if(!e){ e=by[item]={item:item,key:(typeof mastDefKey==="function")?mastDefKey(item):item,names:[item],pics:null}; items.push(e); }
+        const pre=String(c.name).split(" \u00b7 ")[0].trim(); if(pre&&e.names.indexOf(pre)<0) e.names.push(pre);
+        if(!e.pics){ const p=envPicsFor(d.key,c.name); if(p) e.pics=p; } });
+      const pictured=items.filter(e=>e.pics);
+      if(pictured.length) out.push({unit:u,key:d.key,items:pictured}); }); });
+  return out;
+}
+function envFlashState(kid,deck,itemKey){ const s=(((typeof masteryData!=="undefined"&&masteryData)||{})[kid+"_idflash"]||{})[deck]; const e=s&&s[itemKey]; return (e&&typeof e==="object")?e:null; }
+function envFlashShows(st){ let a=st&&st.shows; if(!a) return []; if(!Array.isArray(a)) a=Object.values(a); return a.filter(x=>x&&typeof x==="object"); }
+// THE RULE: the last three CORRECT shows, on three DIFFERENT pictures, each under 10 s.
+function envFlashFluent(shows){
+  const ok=(shows||[]).filter(s=>s&&s.ok===true).slice(-ENVFLASH_NEED);
+  if(ok.length<ENVFLASH_NEED) return false;
+  if(!ok.every(s=>typeof s.secs==="number"&&s.secs<ENVFLASH_SECS)) return false;
+  return new Set(ok.map(s=>String(s.pic))).size===ENVFLASH_NEED;
+}
+function envFlashNext(prev,show){ const shows=envFlashShows(prev).concat([show]).slice(-ENVFLASH_KEEP); return {shows:shows,fluent:envFlashFluent(shows),at:show.at}; }
+function envFlashCount(kid,d){ let f=0; (d.items||[]).forEach(e=>{ const st=envFlashState(kid,d.key,e.key); if(st&&st.fluent) f++; }); return {fluent:f,total:(d.items||[]).length}; }
+function envFlashLine(kid,d){ const c=envFlashCount(kid,d); return "\u26A1 "+c.fluent+" of "+c.total+" fluent"; }
+// A sitting's items: never a fluent one; the ones already started first (oldest show first), then unseen ones shuffled.
+function envFlashPool(kid,decks,n,rnd){
+  rnd=rnd||Math.random; const seen=[], fresh=[];
+  (decks||[]).forEach(d=>{ (d.items||[]).forEach(e=>{ const st=envFlashState(kid,d.key,e.key); if(st&&st.fluent) return;
+    const c={deck:d.key,item:e.item,key:e.key,names:e.names,pics:e.pics,st:st,at:(st&&st.at)||0};
+    (st&&envFlashShows(st).length?seen:fresh).push(c); }); });
+  seen.sort((a,b)=>(a.at-b.at)||(a.item<b.item?-1:a.item>b.item?1:0));
+  for(let i=fresh.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); const t=fresh[i]; fresh[i]=fresh[j]; fresh[j]=t; }
+  return seen.concat(fresh).slice(0,n||ENVFLASH_SITTING);
+}
+// The picture for this show: one the item has NOT been shown on lately (three different ones is the goal), else the least recent.
+function envFlashPicFor(c,rnd){
+  rnd=rnd||Math.random; const recent=envFlashShows(c.st).map(s=>String(s.pic));
+  const unseen=c.pics.filter(p=>recent.indexOf(String(p.url))<0);
+  if(unseen.length) return unseen[Math.floor(rnd()*unseen.length)];
+  let best=c.pics[0], bi=Infinity; c.pics.forEach(p=>{ const i=recent.lastIndexOf(String(p.url)); if(i<bi){ bi=i; best=p; } });
+  return best;
+}
+// Pick mode: the item + 3 other items of the same deck (the study's own lure picker when it's there), shuffled.
+function envFlashLures(c,decks,rnd){
+  rnd=rnd||Math.random; const d=(decks||[]).find(x=>x.key===c.deck);
+  const pool=((d&&d.items)||[]).filter(e=>e.item!==c.item).map(e=>({id:e.item,name:e.item}));
+  let l=[]; try{ if(typeof _matchLures==="function") l=_matchLures({id:c.item,name:c.item},pool,e=>e.name,3).map(x=>x.it.name); }catch(e){ l=[]; }
+  if(l.length<3){ const rest=pool.map(p=>p.name).filter(n=>l.indexOf(n)<0); while(l.length<3&&rest.length) l.push(rest.splice(Math.floor(rnd()*rest.length),1)[0]); }
+  const chips=l.map(n=>({ok:false,name:n})).concat([{ok:true,name:c.item}]);
+  for(let i=chips.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); const t=chips[i]; chips[i]=chips[j]; chips[j]=t; }
+  return chips;
+}
+function envFlashNameOk(typed,names){
+  const t=String(typed==null?"":typed); if(!t.trim()) return false;
+  if(typeof mstTypedOk==="function") return (names||[]).some(n=>mstTypedOk(t,n));
+  const norm=s=>String(s==null?"":s).toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+  return (names||[]).some(n=>norm(n)===norm(t));
+}
+let envFlash=null;        // the sitting on this device: {kid, deckKeys, mode, cards:[{deck,item,key,names,pics,pic,lures,st}], i, startedAt, drawnAt, shownAt, ans, picked, results:[{deck,item,key,pic,ok,secs,at}], done, timer, dry}
+const envFlashMode={};    // kid → "pick" | "type", this device only
+function envFlashSetMode(kid,m){ envFlashMode[kid]=(m==="type")?"type":"pick"; if(typeof _mastRe==="function") _mastRe(); }
+function envFlashOpen(kid,deckKey){
+  const decks=envFlashDecks(kid).filter(d=>!deckKey||deckKey==="all"||d.key===deckKey); if(!decks.length) return null;
+  const cards=envFlashPool(kid,decks); if(!cards.length) return null;
+  cards.forEach(c=>{ c.pic=envFlashPicFor(c); c.lures=envFlashLures(c,decks); });
+  envFlash={kid:kid,deckKeys:decks.map(d=>d.key),mode:envFlashMode[kid]||"pick",cards:cards,i:0,startedAt:Date.now(),drawnAt:null,shownAt:null,ans:null,picked:null,results:[],done:null,timer:null,
+    dry:!!((typeof _dryRun==="function")&&_dryRun())};
+  if(typeof _mastRe==="function") _mastRe();
+  return envFlash;
+}
+function envFlashImgReady(){ if(!envFlash||envFlash.ans||envFlash.shownAt) return; envFlash.shownAt=Date.now(); envFlashTimerStart(); }
+function envFlashTimerStart(){ envFlashTimerStop(); if(!envFlash||typeof setInterval!=="function") return; envFlash.timer=setInterval(envFlashTick,100); envFlashTick(); }
+function envFlashTimerStop(){ if(envFlash&&envFlash.timer){ clearInterval(envFlash.timer); envFlash.timer=null; } }
+function envFlashTick(){
+  if(!envFlash||typeof document==="undefined") return;
+  const bar=document.getElementById("envflash-bar"), txt=document.getElementById("envflash-secs"); if(!bar) return;
+  const el=envFlash.shownAt?(Date.now()-envFlash.shownAt)/1000:0, left=Math.max(0,ENVFLASH_SECS-el);
+  bar.style.width=(100*left/ENVFLASH_SECS)+"%"; bar.style.background=left>0?"#16a34a":"#dc2626";
+  if(txt) txt.textContent=left>0?(Math.ceil(left)+" s"):("over "+ENVFLASH_SECS+" s");
+  if(left<=0) envFlashTimerStop();
+}
+function envFlashSecs(){ const t0=envFlash.shownAt||envFlash.drawnAt||Date.now(); return Math.round((Date.now()-t0)/100)/10; }
+function envFlashAnswer(ok,typed){
+  if(!envFlash||envFlash.ans||envFlash.done) return; const c=envFlash.cards[envFlash.i]; if(!c) return;
+  envFlashTimerStop(); const secs=envFlashSecs();
+  envFlash.ans={ok:!!ok,secs:secs,typed:typed==null?null:String(typed)};
+  envFlash.results.push({deck:c.deck,item:c.item,key:c.key,pic:String(c.pic.url),ok:!!ok,secs:secs,at:Date.now()});
+  if(typeof _mastRe==="function") _mastRe();
+}
+function envFlashPickTap(i){ if(!envFlash||envFlash.ans) return; const c=envFlash.cards[envFlash.i], ch=c&&c.lures&&c.lures[i]; if(!ch) return; envFlash.picked=i; envFlashAnswer(!!ch.ok,ch.name); }
+function envFlashCheckTyped(){
+  if(!envFlash||envFlash.ans) return; const inp=(typeof document!=="undefined")?document.getElementById("envflash-in"):null; const v=inp?inp.value:"";
+  if(!String(v).trim()) return; const c=envFlash.cards[envFlash.i]; if(!c) return; envFlashAnswer(envFlashNameOk(v,c.names),v);
+}
+function envFlashNextCard(){
+  if(!envFlash||!envFlash.ans) return;
+  envFlash.ans=null; envFlash.picked=null; envFlash.drawnAt=null; envFlash.shownAt=null; envFlash.i++;
+  if(envFlash.i>=envFlash.cards.length){ envFlashFinish(); return; }
+  if(typeof _mastRe==="function") _mastRe();
+}
+// Stop early keeps what was answered (it's real practice); nothing answered → nothing to keep.
+function envFlashQuit(){ if(envFlash&&!envFlash.done&&envFlash.results.length){ envFlashFinish(); return; } envFlashTimerStop(); envFlash=null; if(typeof _mastRe==="function") _mastRe(); }
+// The end of a sitting: the fluency states (one multi-path update), the day's study-log entry (merged), the summary.
+function envFlashFinish(){
+  if(!envFlash||envFlash.done) return null; envFlashTimerStop();
+  const f=envFlash, kid=f.kid, res=f.results, dry=f.dry, md=masteryData;
+  const live=!!((typeof db!=="undefined")&&db&&!dry&&res.length);
+  const upd={}, newly=[]; let states=md[kid+"_idflash"]; if(!states||typeof states!=="object") states=md[kid+"_idflash"]={};
+  res.forEach(r=>{ const prev=envFlashState(kid,r.deck,r.key); const next=envFlashNext(prev,{pic:r.pic,ok:r.ok,secs:r.secs,at:r.at});
+    if(!states[r.deck]||typeof states[r.deck]!=="object") states[r.deck]={}; states[r.deck][r.key]=next; upd[r.deck+"/"+r.key]=next;
+    if(next.fluent&&!(prev&&prev.fluent)&&newly.indexOf(r.item)<0) newly.push(r.item); });
+  const secs=Math.max(1,Math.round((Date.now()-f.startedAt)/1000));
+  const todayKey=(typeof mstTodayKey==="function")?mstTodayKey():new Date().toISOString().slice(0,10).replace(/-/g,"");
+  let pn=null; try{ if(typeof mastGetPrintNum==="function") pn=mastGetPrintNum(kid); }catch(e){ pn=null; }
+  const logItems=res.map(r=>({id:ENVFLASH_SID+":"+r.key,name:r.item,deck:r.deck,result:r.ok?"c":"m"}));
+  const correct=res.filter(r=>r.ok).length, miss=res.length-correct, total=res.length;
+  const prev=(((md.studyLog||{})[kid]||{})[ENVFLASH_SID]||{})[todayKey]||null;
+  let entry={date:todayKey,printNum:pn,total:total,correct:correct,miss:miss,shown:0,secs:secs,items:logItems,sits:[{secs:secs,total:total}]};
+  if(prev){ const pi=Array.isArray(prev.items)?prev.items:Object.values(prev.items||{});
+    entry={date:todayKey,printNum:pn,total:(prev.total||0)+total,correct:(prev.correct||0)+correct,miss:(prev.miss||0)+miss,shown:(prev.shown||0),secs:secs,
+      items:pi.concat(logItems),sits:(Array.isArray(prev.sits)?prev.sits:[{secs:prev.secs==null?null:prev.secs,total:prev.total||0}]).concat([{secs:secs,total:total}])}; }
+  if(total){
+    if(!md.studyLog) md.studyLog={}; if(!md.studyLog[kid]) md.studyLog[kid]={}; if(!md.studyLog[kid][ENVFLASH_SID]) md.studyLog[kid][ENVFLASH_SID]={};
+    md.studyLog[kid][ENVFLASH_SID][todayKey]=entry;
+  }
+  if(live){ db.ref("mastery/"+kid+"_idflash").update(upd); db.ref("mastery/studyLog/"+kid+"/"+ENVFLASH_SID+"/"+todayKey).set(entry); }
+  f.done={total:total,correct:correct,miss:miss,secs:secs,newly:newly,dry:dry,saved:live,upd:upd,entry:total?entry:null};
+  if(typeof _mastRe==="function") _mastRe();
+  return f.done;
+}
+// ── screens ──
+function _envFlashEsc(s){ return (typeof mstEsc==="function")?mstEsc(s):String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function _envFlashJs(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+const _ENVFLASH_BTN="min-height:48px;padding:0 22px;border-radius:14px;border:none;background:#16a34a;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif";
+// The door: the released ID decks (of this session when one is given), each with its "⚡ n of m fluent" line and Go.
+function envFlashDoorHtml(kid,session){
+  if(!kid) return "";
+  let decks=envFlashDecks(kid); if(session){ const sd=session.decks||[]; decks=decks.filter(d=>sd.indexOf(d.key)>=0); }
+  if(!decks.length) return "";
+  const esc=_envFlashEsc, js=_envFlashJs, mode=envFlashMode[kid]||"pick";
+  let h='<div style="background:#f0fdf4;border:2px solid #86efac;border-radius:20px;padding:16px 18px;margin-bottom:16px;font-family:\'DM Sans\',sans-serif">';
+  h+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><div style="flex:1;min-width:140px;font-size:18px;font-weight:800;color:#166534">\u26A1 ID Flash</div><div style="display:flex;gap:6px">';
+  ["pick","type"].forEach(m=>{ const on=mode===m; h+='<button onclick="envFlashSetMode(\''+js(kid)+'\',\''+m+'\')" style="padding:6px 12px;border-radius:999px;border:2px solid '+(on?'#166534':'#bbf7d0')+';background:'+(on?'#166534':'#fff')+';color:'+(on?'#fff':'#166534')+';font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(m==="pick"?'\u{1F446} Pick':'\u2328\uFE0F Type')+'</button>'; });
+  h+='</div></div>';
+  h+='<div style="font-size:12px;color:var(--muted);font-weight:600;margin:4px 0 8px;line-height:1.4">A picture, '+ENVFLASH_SECS+' seconds, name it. Three quick rights on three different pictures and it\u2019s fluent.</div>';
+  let open=0;
+  decks.forEach(d=>{ const c=envFlashCount(kid,d), left=c.total-c.fluent; if(left) open++;
+    h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #dcfce7"><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:800;color:#1f2937">'+esc(d.key)+'</div><div style="font-size:12px;font-weight:700;color:#15803d">'+esc(envFlashLine(kid,d))+'</div></div>'
+      +(left?'<button onclick="envFlashOpen(\''+js(kid)+'\',\''+js(d.key)+'\')" style="'+_ENVFLASH_BTN+';min-height:44px;padding:0 18px;font-size:14px">Go</button>':'<span style="font-size:12px;font-weight:800;color:#15803d">All fluent \u2713</span>')+'</div>'; });
+  if(decks.length>1&&open>1) h+='<div style="text-align:center;margin-top:10px"><button onclick="envFlashOpen(\''+js(kid)+'\',\'all\')" style="min-height:44px;padding:0 22px;border-radius:14px;border:2px solid #16a34a;background:#fff;color:#166534;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Mix the decks</button></div>';
+  return h+'</div>';
+}
+// The sitting on the screen (or its summary). Timing starts when the picture has loaded (onload; 1.5 s fallback).
+function envFlashSittingHtml(){
+  const f=envFlash; if(!f) return "";
+  const esc=_envFlashEsc;
+  if(f.done){ const d=f.done;
+    let h='<div style="background:#f0fdf4;border:2px solid #86efac;border-radius:20px;padding:24px;text-align:center;font-family:\'DM Sans\',sans-serif">';
+    h+='<div style="font-size:32px;margin-bottom:8px">\u26A1</div><div style="font-size:17px;font-weight:800;color:#166534;margin-bottom:6px">ID Flash done</div>';
+    h+='<div style="font-size:14px;color:var(--muted);font-weight:600">'+d.total+' picture'+(d.total===1?'':'s')+' \u00b7 '+d.correct+' right \u00b7 '+d.miss+' missed \u00b7 '+d.secs+' s</div>';
+    if(d.newly.length) h+='<div style="margin-top:8px;font-size:14px;font-weight:800;color:#15803d">Now fluent: '+esc(d.newly.join(", "))+'</div>';
+    if(d.dry) h+='<div style="margin-top:8px;font-size:12px;font-weight:800;color:#b45309">Dry run \u2014 scored here only, nothing saved.</div>';
+    h+='<div style="margin-top:14px"><button onclick="envFlashQuit()" style="'+_ENVFLASH_BTN+'">Done</button></div>';
+    return h+'</div>'; }
+  const c=f.cards[f.i]; if(!c) return "";
+  if(!f.drawnAt) f.drawnAt=Date.now();
+  let h='<div style="font-family:\'DM Sans\',sans-serif">';
+  h+='<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--muted);font-weight:700;margin-bottom:8px"><span>\u26A1 ID Flash \u00b7 '+(f.i+1)+' of '+f.cards.length+'</span><span>'+esc(c.deck)+'</span></div>';
+  h+='<div style="height:10px;border-radius:5px;background:#e5e7eb;overflow:hidden"><div id="envflash-bar" style="height:100%;width:'+(f.ans?'0':'100')+'%;background:#16a34a"></div></div>';
+  h+='<div id="envflash-secs" style="text-align:right;font-size:12px;font-weight:800;color:var(--muted);margin:4px 0 8px">'+(f.ans?(f.ans.secs+' s'):(ENVFLASH_SECS+' s'))+'</div>';
+  h+='<div style="background:#fff;border:2px solid #e5e7eb;border-radius:18px;padding:12px;text-align:center"><img src="'+esc(c.pic.url)+'" alt="" onload="envFlashImgReady()" style="max-width:100%;max-height:52vh;border-radius:12px;object-fit:contain"></div>';
+  if(f.ans){
+    h+='<div style="margin-top:12px;text-align:center;font-size:22px;font-weight:800;color:'+(f.ans.ok?'#16a34a':'#dc2626')+'">'+(f.ans.ok?'\u2713':'\u2717')+' '+esc(c.item)+'</div>';
+    if(!f.ans.ok&&f.ans.typed) h+='<div style="text-align:center;font-size:13px;color:var(--muted);font-weight:600">you said: '+esc(f.ans.typed)+'</div>';
+    if(c.pic.credit) h+='<div style="text-align:center;font-size:10.5px;color:var(--muted);margin-top:4px">'+esc(c.pic.credit)+'</div>';
+    h+='<div style="text-align:center;margin-top:12px"><button onclick="envFlashNextCard()" style="'+_ENVFLASH_BTN+';min-height:52px;padding:0 34px;font-size:16px">'+(f.i+1<f.cards.length?'Next \u25B6':'Finish')+'</button></div>';
+  } else if(f.mode==="type"){
+    h+='<div style="display:flex;gap:8px;margin-top:12px"><input id="envflash-in" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="What is this?" onkeydown="if(event.key===\'Enter\'){event.preventDefault();envFlashCheckTyped();}" style="flex:1;min-width:0;min-height:48px;padding:0 14px;border:2px solid #d1d5db;border-radius:12px;font-size:16px;font-family:\'DM Sans\',sans-serif">'
+      +'<button onclick="envFlashCheckTyped()" style="'+_ENVFLASH_BTN+';padding:0 18px">Check</button></div>';
+  } else {
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">'+(c.lures||[]).map((ch,i)=>'<button onclick="envFlashPickTap('+i+')" style="min-height:52px;padding:8px 10px;border-radius:14px;border:2px solid #d1d5db;background:#fff;color:#1f2937;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+esc(ch.name)+'</button>').join("")+'</div>';
+  }
+  h+='<div style="text-align:center;margin-top:16px"><a href="javascript:void(0)" onclick="envFlashQuit()" style="font-size:13px;color:var(--muted);text-decoration:underline;cursor:pointer">'+(f.results.length?'Stop here (keeps what you did)':'Quit for now')+'</a></div>';
+  if(typeof setTimeout==="function"&&typeof document!=="undefined") setTimeout(()=>{ if(envFlash!==f||f.ans||f.done||f.cards[f.i]!==c) return;
+    if(!f.shownAt) envFlashImgReady(); else if(!f.timer) envFlashTimerStart();
+    const inp=document.getElementById("envflash-in"); if(inp&&document.activeElement!==inp) inp.focus(); },f.shownAt?0:1500);
+  return h+'</div>';
+}
+function envFlashRunningHtml(kid){ return (envFlash&&kid&&envFlash.kid===kid)?envFlashSittingHtml():""; }
+// 🎮 Games entry (GAMES_LIST): available once a released ID deck has pictures; the same door and sitting as on the study start.
+function envFlashAvail(kid){ try{ return envFlashDecks(kid).length>0; }catch(e){ return false; } }
+function envFlashGameHtml(){ const kid=(typeof masteryKid!=="undefined")?masteryKid:null; if(!kid) return ""; const r=envFlashRunningHtml(kid); return '<div style="padding:12px 0">'+(r||envFlashDoorHtml(kid,null))+'</div>'; }
+// ENVIDFLASH_END
 
 function renderNotebook(el){
   const con=el||document.getElementById("content"); if(!con)return;
@@ -63751,6 +64032,7 @@ function mstFlipBtn(session,rec){
 function mstCardPic(card){
   if(!card) return "";
   try{
+    { const _ep=(typeof envPicCycle==="function")?envPicCycle(card):""; if(_ep) return _ep; }   // ⚡ ENVIDFLASH: a different picture of the item each show
     let items=masteryData[masteryKid]; if(!Array.isArray(items)) items=Object.values(items||{});
     const it=items.find(i=>i&&(card.id?i.id===card.id:(i.prompt===card.name&&i.subject===card.deck)));
     if(it&&it.imageUrl) return String(it.imageUrl);
@@ -64189,6 +64471,7 @@ function renderMastStudy(opts){
     h+='</div>';
   }
   if(session.kind==="checkup"&&typeof ckRenderHtml==="function") return h+ckRenderHtml(kid,session);   // 🩺 CHECKUP
+  if(typeof envFlashRunningHtml==="function"){ const _ef=envFlashRunningHtml(kid); if(_ef) return h+_ef; }   // ⚡ ENVIDFLASH: a running ID Flash sitting
   const pn=mastGetPrintNum(kid);
   const todayLog=mstLogGet(kid,session.sid);
   let pile={reviews:[],learning:[],newNames:[]};
@@ -64204,6 +64487,7 @@ function renderMastStudy(opts){
   if(typeof mstHowtoHtml==="function") h+=mstHowtoHtml(kid,session);   // 📋 MST_HOWTO
   if(typeof mstControlsHtml==="function") h+=mstControlsHtml(session);   // 📋 MST_HOWTO_CTL: the buttons as they are now (✓/✗, Back, typed answers)
   if(typeof envtStartHtml==="function") h+=envtStartHtml(kid,session);   // 📝 ENVTEST: the open check-in / final tops the 🌿 start
+  if(typeof envFlashDoorHtml==="function") h+=envFlashDoorHtml(kid,session);   // ⚡ ENVIDFLASH: the door, released ID decks of this session only
   const running=mstState&&mstSid===session.sid;
   if(running){
     let prog={done:0,total:0,remaining:0,againCount:0};
@@ -67189,12 +67473,14 @@ const GAMES_LIST=[
   {key:"match",  emoji:"\u{1F3AF}", label:"Match",       view:"match", style:"match",  available:k=>_gamesMatchPairs(k).length>0, render:c=>buildMatchHtml(c)},
   {key:"memory", emoji:"\u{1F9E0}", label:"Memory flip", view:"match", style:"memory", available:k=>_gamesMatchPairs(k).length>0, render:c=>buildMatchHtml(c)},
   {key:"which",  emoji:"\u{1F446}", label:"Which one?",  view:"which",                 available:k=>whichDecks(_gamesItems(k)).length>0, render:c=>buildWhichHtml(c)},
+  {key:"idflash",emoji:"\u26A1",     label:"ID Flash",    view:"idflash",               available:k=>typeof envFlashAvail==="function"&&envFlashAvail(k), render:c=>envFlashGameHtml(c)},   // ⚡ ENVIDFLASH
 ];
 const gamesLast={};   // kid → key of the last game played on this device
 function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k); }catch(e){ return false; } }); }
 // The game on screen: a GAMES_LIST key, "" for the bare Games section, null when Mastery isn't in Games.
 function gamesCurrentKey(){
   if(mastView==="which") return "which";
+  if(mastView==="idflash") return "idflash";   // ⚡ ENVIDFLASH
   if(mastView==="match") return matchStyle==="memory"?"memory":"match";
   return mastView==="games"?"":null;
 }
