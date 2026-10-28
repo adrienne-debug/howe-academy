@@ -37198,6 +37198,7 @@ function utEditorHTML(u,d){
   h+=lab("\u{1F4DC} Words on the screen")+'<div style="display:flex;gap:6px;flex-wrap:wrap"><input id="ut-e-wtitle" type="text" value="'+utEsc((d.words||{}).title||"")+'" placeholder="Title" style="'+inp+';flex:1 1 140px;width:auto"><input id="ut-e-wby" type="text" value="'+utEsc((d.words||{}).by||"")+'" placeholder="By" style="'+inp+';flex:1 1 140px;width:auto"></div>'+ta("ut-e-wtext",(d.words||{}).text||"","The full text, as it shows on the screen",3);
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+UT_LEVELS.map(l=>'<input id="ut-e-wpart-'+l+'" type="text" value="'+utEsc(((d.words||{}).parts||{})[l]||"")+'" placeholder="'+UT_LEVEL_LABEL[l]+' learns\u2026" style="'+inp+';flex:1 1 140px;width:auto">').join("")+'</div>';
   h+=lab("\u{1F3A7} Read strand")+'<div style="display:flex;gap:6px;flex-wrap:wrap"><select id="ut-e-rmode" style="'+inp+';flex:0 0 130px;width:auto"><option value="">(none)</option>'+UT_READ_MODES.map(m=>'<option value="'+m+'"'+((d.read||{}).mode===m?' selected':'')+'>'+({listen:"\u{1F3A7} Listen",mom:"\u{1F4D6} Mom reads",recite:"\u{1F5E3} Recite"}[m])+'</option>').join("")+'</select><input id="ut-e-rwhat" type="text" value="'+utEsc((d.read||{}).what||"")+'" placeholder="What (chapter, poem\u2026)" style="'+inp+';flex:1 1 160px;width:auto"><input id="ut-e-rurl" type="url" value="'+utEsc((d.read||{}).url||"")+'" placeholder="https:// link (optional)" style="'+inp+';flex:1 1 160px;width:auto"></div>';
+  h+=((typeof uaUploadHTML==="function")?uaUploadHTML(u,d):"");   // UNITAUDIO (A1): ⬆ Upload recording, under the read strand
   h+=lab("\u{1F4DD} Note under the card")+ta("ut-e-note",d.note||"","The honest note \u2014 what to say, what to skip",2);
   h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px"><button onclick="utEditSave('+a+')" style="padding:7px 16px;border-radius:10px;border:none;background:#c2410c;color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save this day</button>';
   h+='<button onclick="utWrite('+a+',\'off\','+(d.off?'false':'true')+')" style="padding:7px 12px;border-radius:10px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(d.off?'\u21A9 Put this day back':'\u2298 Mark this day off')+'</button>';
@@ -37249,6 +37250,75 @@ function utDaysSectionHTML(u,isMom){
   return h;
 }
 // UNITTRACK_END
+// UNITAUDIO_START — 🎧 upload a recording for a unit day's Listen (BRIEF_units_build_2026-10-27.md A1; her answer 9, 2026-10-26: "upload
+//   kinda like the celebration songs but its own and in its spot"). Her SOTW and Curiosity Chronicles chapters live on her Mac; the
+//   board needs a URL. The pattern is FAMCELEB's celebSongUpload — the type check, a size limit, a Storage ref, the status line — with
+//   its OWN path and nothing shared: unitAudio/<unitId>/<dayId>/<safeName>; the celebration songs' songs/ path and list are untouched.
+//   · On a unit day's editor in the 📅 Days table (Mom only), next to the read strand: ⬆ Upload recording — MP3 or M4A, up to
+//     UA_MAX_MB (a chapter: 60 MB; the Storage rules must allow unitAudio/ at that size — needs her eyes on the first real upload).
+//     On success ONE targeted set through utWrite: the day's read = {mode:"listen", what, url} (what = the day's read.what, else the
+//     file's name). ✕ asks, deletes the file from Storage and clears read.url (the mode and what stay) — one set through utWrite.
+//   · The day card's 🎧 Listen plays read.url (DAYCARD); a day with a link instead of an upload keeps the link.
+//   · Dry run: no upload, no write — the status line says so. No kid's name in code.
+const UA_MAX_MB=60;
+const UA_TYPES=/^audio\/(mpeg|mp3|mp4|x-m4a|m4a|aac)$/i;
+let uaStatus={};   // {<unitId>|<dayId>: "Uploading… 42%"} — the status line under the button
+function uaMom(){ return (typeof momHere==="function")?momHere():false; }
+function uaDry(){ return (typeof _dryRun==="function")?_dryRun():false; }
+function uaEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function uaJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+function uaKey(uid,dayId){ return String(uid)+"|"+String(dayId); }
+function uaSafeName(name){ return Date.now()+"_"+String(name||"recording").replace(/[^a-zA-Z0-9._-]/g,"_").slice(0,80); }
+function uaPath(uid,dayId,name){ return "unitAudio/"+String(uid).replace(/[^a-zA-Z0-9_-]/g,"_")+"/"+String(dayId).replace(/[^a-zA-Z0-9_-]/g,"_")+"/"+uaSafeName(name); }
+function uaOk(file){
+  if(!file) return "Pick a file first.";
+  const ext=/\.(mp3|m4a|aac|mp4)$/i.test(String(file.name||""));
+  if(!(UA_TYPES.test(String(file.type||""))||(!file.type&&ext))) return "Please pick an MP3 or M4A recording.";
+  if(file.size>UA_MAX_MB*1024*1024) return "That file is too large (max "+UA_MAX_MB+" MB) \u2014 a chapter at a time.";
+  return "";
+}
+function uaSet(uid,dayId,msg){ uaStatus[uaKey(uid,dayId)]=msg||""; const el=(typeof document!=="undefined"&&document.getElementById)?document.getElementById("ua-status-"+String(uid).replace(/[^a-zA-Z0-9_-]/g,"_")+"-"+String(dayId).replace(/[^a-zA-Z0-9_-]/g,"_")):null; if(el) el.textContent=msg||""; }
+function uaIsUpload(url){ return /firebasestorage/i.test(String(url||""))&&/unitAudio%2F|unitAudio\//i.test(String(url||"")); }
+// The write: ONE targeted set of the day's read part through utWrite — {mode:"listen", what, url}.
+function uaWriteRead(uid,dayId,url,fileName){
+  const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[uid]; const d=(typeof utDay==="function")?utDay(u,dayId):null; if(!d) return false;
+  const what=(d.read&&d.read.what)||String(fileName||"").replace(/\.[^.]+$/,"").replace(/^\d+[-_ ]+/,"").replace(/_/g," ").trim()||"Recording";
+  return utWrite(uid,dayId,"read",{mode:"listen",what:what,url:url});
+}
+function uaUpload(uid,dayId,input){
+  if(!uaMom()) return false; const file=input&&input.files&&input.files[0]; const why=uaOk(file);
+  if(why){ uaSet(uid,dayId,why); if(input) input.value=""; return false; }
+  if(uaDry()){ uaSet(uid,dayId,"Dry run \u2014 nothing uploaded, nothing written."); if(input) input.value=""; return false; }
+  if(typeof firebase==="undefined"||!firebase.storage){ uaSet(uid,dayId,"Storage isn\u2019t ready on this device."); if(input) input.value=""; return false; }
+  uaSet(uid,dayId,"Uploading "+file.name+"\u2026");
+  const path=uaPath(uid,dayId,file.name); const ref=firebase.storage().ref(path); const task=ref.put(file);
+  task.on("state_changed",
+    snap=>{ const pct=snap.totalBytes?Math.round((snap.bytesTransferred/snap.totalBytes)*100):0; uaSet(uid,dayId,"Uploading\u2026 "+pct+"%"); },
+    err=>{ uaSet(uid,dayId,"Upload failed: "+(err&&err.message||err)); if(input) input.value=""; },
+    ()=>{ task.snapshot.ref.getDownloadURL().then(url=>{ uaWriteRead(uid,dayId,url,file.name); uaSet(uid,dayId,""); if(input) input.value=""; if(typeof renderAll==="function") renderAll(); }).catch(e=>{ uaSet(uid,dayId,"Couldn\u2019t read the link back: "+(e&&e.message||e)); }); });
+  return path;
+}
+// ✕ — asks, deletes the file (only an upload of ours), clears read.url; the mode and what stay.
+function uaRemove(uid,dayId){
+  if(!uaMom()) return false; const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[uid]; const d=(typeof utDay==="function")?utDay(u,dayId):null; if(!d||!d.read||!d.read.url) return false;
+  if(typeof confirm==="function"&&!confirm("Take the recording off this day? The file is deleted too.")) return false;
+  const url=d.read.url;
+  if(!uaDry()&&uaIsUpload(url)){ try{ firebase.storage().refFromURL(url).delete().catch(()=>{}); }catch(e){} }
+  const read={}; if(d.read.mode) read.mode=d.read.mode; if(d.read.what) read.what=d.read.what;
+  return utWrite(uid,dayId,"read",read);
+}
+// utEditorHTML's hook (UNITTRACK), under the read strand: the button, the status line, the current recording and its ✕.
+function uaUploadHTML(u,d){
+  if(!uaMom()||!u||!d) return ""; const a="'"+uaJ(u.id)+"','"+uaJ(d.id)+"'"; const id=String(u.id).replace(/[^a-zA-Z0-9_-]/g,"_")+"-"+String(d.id).replace(/[^a-zA-Z0-9_-]/g,"_");
+  const cur=(d.read&&d.read.url)||"", mine=uaIsUpload(cur);
+  let h='<div data-ua="1" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">';
+  h+='<label style="padding:5px 11px;border-radius:999px;border:1.5px solid #c4b5fd;background:#faf5ff;color:#5b21b6;font-size:11px;font-weight:700;cursor:pointer"><input type="file" accept="audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,.mp3,.m4a" onchange="uaUpload('+a+',this)" style="display:none">\u2B06 Upload recording</label>';
+  if(cur) h+='<span style="font-size:11px;color:var(--muted)">'+(mine?'\u{1F3A7} recording on this day':'\u{1F517} a link: '+uaEsc(cur.length>40?cur.slice(0,39)+"\u2026":cur))+'</span><button onclick="uaRemove('+a+')" title="Take the recording off this day" style="border:none;background:none;color:#9ca3af;font-size:14px;cursor:pointer;padding:0 4px">\u2715</button>';
+  h+='<span id="ua-status-'+id+'" style="font-size:11px;color:#5b21b6;font-weight:700">'+uaEsc(uaStatus[uaKey(u.id,d.id)]||"")+'</span>';
+  h+='<span style="font-size:10px;color:var(--muted)">MP3 or M4A, up to '+UA_MAX_MB+' MB \u2014 its own place in Storage, not the celebration songs.</span></div>';
+  return h;
+}
+// UNITAUDIO_END
 // PUTSCHED_START — 🗓 Put on the schedule, and the gate that opens a day's cards ("One shape" §3 both worked examples, §5 the
 //   link + the gate; BRIEF_units_build_2026-10-27.md T2; her answers 2026-10-26: 1 "a new unit goes to the whole family as a
 //   Family Time subject — Mom unticks kids to make it one kid's", 5 "the start is Mom's option: a set time, or scheduler picks",
