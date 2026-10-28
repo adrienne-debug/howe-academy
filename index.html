@@ -45370,11 +45370,13 @@ function envtWaitsForCheckin(kid,deckKey){
   return !envtRec(kid,station).pre; }
 // 2. the station's core cards learned = handed off by the 🌿 session (tier at/after ITS handOffAt): {learned,total}
 function envtHandOffAt(kid){ const S=masteryData[kid+"_sessions"], s=S&&S[ENV_SESSION_SID]; return (s&&s.handOffAt)||ENV_SESSION.handOffAt; }
-function envtCoreCount(kid,station){ const st=envtStation(station), L=((typeof window!=="undefined")&&window.HoweEnvirothon&&window.HoweEnvirothon.unit)||null;
-  const out={learned:0,total:0}; if(!st||!L) return out;
+// the cards: this family's (hydrated) unit record, else envirothon.js's — the site's demo carries only a sample deck on its record
+function envtCoreCount(kid,station){ const st=envtStation(station), L=((typeof window!=="undefined")&&window.HoweEnvirothon&&window.HoweEnvirothon.unit)||null, U=envtUnit();
+  const out={learned:0,total:0}; if(!st) return out;
+  const cardsOf=k=>{ const r=U&&(U.decks||[]).find(d=>d&&d.key===k); if(r&&Array.isArray(r.cards)&&r.cards.length) return r.cards; const l=L&&(L.decks||[]).find(d=>d&&d.key===k); return (l&&l.cards)||[]; };
   let items=masteryData[kid]||[]; if(!Array.isArray(items)) items=Object.values(items); const at=envtHandOffAt(kid), keys=new Set(st.decks.map(d=>d.key)), ok={};
   items.forEach(i=>{ if(i&&keys.has(i.subject)&&!i.twinOf&&i.dir!=="prod"&&i.status!=="introduction"&&i.status!=="parked"&&mastTierAtLeast(i.tier,at)) (ok[i.subject]=ok[i.subject]||new Set()).add(i.prompt); });
-  (L.decks||[]).forEach(d=>{ if(!d||!keys.has(d.key)) return; (d.cards||[]).forEach(c=>{ if(!c||c.core!==true) return; out.total++; if(ok[d.key]&&ok[d.key].has(c.name)) out.learned++; }); });
+  keys.forEach(k=>{ cardsOf(k).forEach(c=>{ if(!c||c.core!==true) return; out.total++; if(ok[k]&&ok[k].has(c.name)) out.learned++; }); });
   return out; }
 function envtCoreLearned(kid,station){ const c=envtCoreCount(kid,station); return c.total>0&&c.learned>=c.total; }
 // {pre:{open,rec}, post:{open,why,best,last,attempts}, graduated, line}
@@ -45434,7 +45436,7 @@ function envtStartHtml(kid,session){ if(!kid||!session||session.sid!==ENV_SESSIO
   const us=(typeof unitStudies!=="undefined"&&unitStudies)||{}; const u=Object.keys(us).map(k=>us[k]).find(x=>envtIsUnit(x)); if(!u||!envtEnrolled(u,kid)) return "";
   let h=""; envtStations().forEach(s=>{ const st=envtStatus(u,kid,s.id); if(!st) return; if(st.pre.open) h+=envtStartCardHtml(kid,st,"pre"); else if(st.post.open) h+=envtStartCardHtml(kid,st,"post"); });
   return h?'<div style="margin-bottom:14px">'+h+'</div>':""; }
-function envtLive(){ return typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
+function envtLive(){ return !!(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())&&!(typeof envsDemo==="function"&&envsDemo())); }   // the site's demo: in memory only
 function envtToday(){ return (typeof _todayStr==="function")?_todayStr():new Date().toISOString().slice(0,10); }
 function envtMomOpen(kid,station){ if(!(typeof momHere==="function"&&momHere())||!kid||!envtStation(station)) return;
   envtPostOpenSave(kid,station,{date:envtToday(),ts:Date.now(),by:"mom"});
@@ -45517,7 +45519,7 @@ function envtHtml(){ const S=envtState; if(!S) return ""; const st=envtStation(S
     h+='<div style="background:#fff;border:2px solid '+(d.pass&&S.which!=="pre"?'#86efac':'#fed7aa')+';border-radius:20px;padding:28px 20px;margin-top:40px;text-align:center">';
     h+='<div style="font-size:34px;font-weight:800;color:#1f2937">'+d.right+' of '+d.n+'</div><div style="font-size:17px;font-weight:800;color:#14532d;margin-top:6px">'+msg+'</div>';
     h+='<div style="font-size:12px;color:var(--muted);margin-top:10px">'+envtClock(envtSecs())+(S.which==="post"?' \u00B7 pass is '+envtPassAt(d.n)+' of '+d.n:'')+'</div>';
-    if(!d.saved) h+='<div style="margin-top:10px;font-size:12px;font-weight:800;color:#b45309">Dry run \u2014 nothing saved.</div>';
+    if(!d.saved) h+='<div style="margin-top:10px;font-size:12px;font-weight:800;color:#b45309">'+((typeof envsDemo==="function"&&envsDemo())?'Demo':'Dry run')+' \u2014 nothing saved.</div>';
     h+='<button onclick="envtClose()" style="'+ENVT_BTN+';margin-top:18px;padding:0 32px">Done</button></div>';
     return h+'</div>'; }
   const it=S.form.items[S.i], n=S.form.items.length, a=S.answers[S.i], multi=envtMulti(it);
@@ -47042,7 +47044,7 @@ function envsDemoData(now){
     const weak={}; if(prof.weak) weak[prof.weak[0]]=prof.weak[1].map((n,i)=>({n,m:3-i,d:1,t:"daily"}));
     return {sid:fid+"_"+kid,meta:{familyId:fid,kid,name,at:now-prof.idle*86400000},class:"ms-science-2026",app,logins:{parent:"uid_p_"+kid,kid:app==="howe"?null:"uid_k_"+kid},summary:{unitVer:1,at:now-prof.idle*86400000,byDeck,byConcept:{},streak:{days:prof.idle<=1?prof.streak:0,last:D(prof.idle)},weak,days,tests}}; };
   const S=[
-    mk("Maya R.","ramirez","maya","micro",{idle:0,streak:6,studyDays:7,every:1,perDay:18,acc:.9,st:{general:{m:.95,l:.05,c:60,x:5},forestry:{m:1,l:0,c:210,x:22},soils:{m:.35,l:.3,c:70,x:20}},tests:{forestry:{pre:[9,15],post:[14,15],grad:true},soils:{pre:[8,15]}},weak:["Soils and Land Use · Terms",["Soil horizon","Loam","Percolation"]]}),
+    mk("Maya R.","ramirez","maya","micro",{idle:0,streak:6,studyDays:7,every:1,perDay:18,acc:.9,st:{general:{m:.95,l:.05,c:60,x:5},forestry:{m:1,l:0,c:210,x:22},soils:{m:.35,l:.3,c:70,x:20},aquatics:{m:0,l:0,c:0,x:0}},tests:{forestry:{pre:[9,15],post:[14,15],grad:true},soils:{pre:[8,15]}},weak:["Soils and Land Use · Terms",["Soil horizon","Loam","Percolation"]]}),
     mk("Jonah T.","tran","jonah","micro",{idle:9,streak:0,studyDays:4,every:1,perDay:12,acc:.7,st:{general:{m:.6,l:.3,c:30,x:12},forestry:{m:.3,l:.4,c:60,x:28}},tests:{forestry:{pre:[7,15]}},weak:["Forestry · Terms",["Cambium","Dichotomous key","Crown class"]]}),
     mk("Priya S.","shah","priya","micro",{idle:1,streak:2,studyDays:2,every:1,perDay:10,acc:.8,st:{general:{m:.2,l:.4,c:12,x:3},forestry:{m:.05,l:.3,c:14,x:4}},tests:{forestry:{pre:[6,15]}}}),
     mk("Caleb W.","walker","caleb","micro",{idle:0,streak:4,studyDays:8,every:1,perDay:16,acc:.85,st:{general:{m:.9,l:.1,c:50,x:6},forestry:{m:.7,l:.2,c:150,x:30},soils:{m:.8,l:.2,c:140,x:18},aquatics:{m:.1,l:.3,c:20,x:6}},tests:{forestry:{pre:[10,15],post:[12,15]},soils:{pre:[9,15],post:[14,15],grad:true}}}),
@@ -47053,13 +47055,16 @@ function envsDemoData(now){
   const students={}; S.forEach(s=>{ students[s.sid]=s; });
   const teams={ramirez_maya:"Oaks",tran_jonah:"Pines",shah_priya:"Maples",walker_caleb:"Oaks",bennett_nora:"Pines",kim_theo:"Maples",morales_avery:"Pines","howe-demo_eli":"Oaks"};
   const cls={name:"MS Science 2026-27",teacher:"uid_teacher_demo",year:ENVS_SEASON,area:8,division:"ms",students:Object.fromEntries(Object.keys(students).map(k=>[k,true])),teams};
-  const release={all:{forestry:{openedAt:now-40*86400000,by:"uid_teacher_demo"},soils:{openedAt:now-12*86400000,by:"uid_teacher_demo"},general:{openedAt:now-44*86400000,by:"uid_teacher_demo"}},students:{walker_caleb:{"Aquatic Ecology · Terms":{openedAt:now-3*86400000,by:"uid_teacher_demo"}}}};
+  const release={all:{forestry:{openedAt:now-40*86400000,by:"uid_teacher_demo"},soils:{openedAt:now-12*86400000,by:"uid_teacher_demo"},general:{openedAt:now-44*86400000,by:"uid_teacher_demo"}},students:{walker_caleb:{"Aquatic Ecology · Terms":{openedAt:now-3*86400000,by:"uid_teacher_demo"}},ramirez_maya:{aquatics:{openedAt:now-86400000,by:"uid_teacher_demo"}}}};   // 📝 Maya: Aquatics sent out yesterday, check-in not taken yet (her cards wait)
   const scores={ramirez_maya:{forestry:{test:22,testMax:25,testDate:dash(D(30)),presentation:5,presMax:5,by:"uid_teacher_demo",ts:now}},walker_caleb:{forestry:{test:19,testMax:25,testDate:dash(D(30)),by:"uid_teacher_demo",ts:now},soils:{test:23,testMax:25,testDate:dash(D(2)),by:"uid_teacher_demo",ts:now}},morales_avery:{forestry:{test:24,testMax:25,testDate:dash(D(30)),presentation:4,presMax:5,by:"uid_teacher_demo",ts:now}}};
   const cards={"Forestry · Terms":{c1:{name:"Mast year",def:"A year when trees produce an unusually large crop of seeds or nuts.",concept:"Forest Ecology",by:"uid_teacher_demo",ts:now-20*86400000},c2:{name:"Snag",def:"A standing dead tree, important as wildlife habitat.",concept:"Forest Ecology",by:"uid_teacher_demo",ts:now-20*86400000},c3:{name:"Duff",def:"The partly decomposed layer of leaves and needles on the forest floor.",concept:"Forest Ecology",by:"uid_teacher_demo",ts:now-19*86400000,retired:true}}};
   const boards=envsBoardsCompute(students,teams,now);
   return {cid:"ms-science-2026",cls,students,release,scores,cards,who:"both",teams,boards,lockRaw:{locked:false,at:now-60*86400000,by:"uid_admin_demo"},teachers:{uid_teacher_demo:{name:"Ms. Brittany",classes:{"ms-science-2026":true}}},admins:{uid_admin_demo:true}};
 }
-// the kid the demo studies as: Maya R. — a small in-memory Envirothon deck so the REAL study screen, games and scores run on it
+// the kid the demo studies as: Maya R. — a small in-memory Envirothon deck so the REAL study screen, games and scores run on it.
+// 📝 The check-in rules (2026-10-28) on her: Forestry graduated; Soils check-in taken, the final still closed ("Final opens when every
+// core card is learned · 2 of 4"); Aquatics sent out with the check-in NOT taken — its cards wait ("Take the check-in first — then the
+// cards open"). The real check-in questions come from the demo file's inline HoweEnvirothon.tests (make_demo.js).
 function envsDemoStart(){
   const data=envsDemoData(); _envs.demoData=data;
   const role=_envs.demoRole==="signin"?"kid":_envs.demoRole; _envs.role=role; _envs.view=(role==="teacher"||role==="admin")?"grid":role==="parent"?"home":"study";
@@ -47073,19 +47078,22 @@ function envsDemoStart(){
   try{ masteryKid="maya"; }catch(e){}
 }
 function envsDemoSeedKid(data){
-  const kid="maya", DK="Forestry · Terms", DF="Forestry · Facts", DI="Forestry · ID", now=Date.now();
-  const cards=(k,rows)=>rows.map((r,i)=>({name:r[0],def:r[1],group:r[2],stage:1,order:i+1,_dk:k}));
+  const kid="maya", DK="Forestry · Terms", DF="Forestry · Facts", DI="Forestry · ID", DS="Soils and Land Use · Terms", DA="Aquatic Ecology · Terms", now=Date.now();
+  const cards=(k,rows)=>rows.map((r,i)=>({name:r[0],def:r[1],group:r[2],stage:1,order:i+1,core:r[3]!==false,_dk:k}));
   const terms=cards(DK,[["Cambium","The thin layer of living cells between the bark and the wood that produces new growth.","Tree Biology"],["Crown","The upper part of a tree: its branches and leaves.","Tree Biology"],["Silviculture","The practice of growing and tending forests to meet set goals.","Forest Management"],["Snag","A standing dead tree.","Forest Ecology"],["Dichotomous key","A tool that identifies a tree by a series of paired choices.","Measurement and Identification"],["DBH","Diameter at breast height: a tree's trunk diameter measured 4.5 feet above the ground.","Measurement and Identification"],["Xylem","The wood tissue that carries water up from the roots.","Tree Biology"],["Succession","The gradual change in a forest's species over time.","Forest Ecology"]]);
   const facts=cards(DF,[["How high above the ground is DBH measured?","4.5 feet","Measurement and Identification"],["Which layer of a tree carries sugars down from the leaves?","Phloem","Tree Biology"],["Which NC pine has needles in bundles of three, 6–9 inches long?","Loblolly pine","Measurement and Identification"],["A forest's canopy is formed by which trees?","The dominant and codominant trees","Forest Ecology"]]);
   const ids=cards(DI,[["Loblolly pine · needles","Needles in bundles of three, 6–9 inches.","Pines"],["Sweetgum · leaf","Star-shaped leaf with five points.","Hardwoods"],["White oak · leaf","Rounded lobes, no bristle tips.","Oaks"]]);
-  const decks=(typeof ENV_DECKS!=="undefined"?ENV_DECKS:[]).map(d=>({key:d[0],mode:d[1],introCap:3,groupBy:"group",flipFace:"name",bankOnly:true,stage:d[2],station:d[3],kind:d[4],n:d[5],cards:d[0]===DK?terms:d[0]===DF?facts:d[0]===DI?ids:[]}));
+  const soils=cards(DS,[["Soil horizon","A layer of soil, roughly parallel to the surface, that differs from the layers above and below it.","Soil Formation"],["Loam","A soil with a balanced mix of sand, silt and clay.","Soil Properties"],["Parent material","The rock or sediment a soil forms from.","Soil Formation"],["Percolation","Water moving down through the soil.","Soil and Water"],["Humus","Dark, well-decayed organic matter in soil.","Soil Properties",false]]);
+  const aqua=cards(DA,[["Watershed","The land area that drains into one stream, river or lake.","Watersheds"],["Riffle","A shallow, fast stretch of a stream where water runs over rocks.","Streams"],["Eutrophication","Too many nutrients in water, feeding algae that use up its oxygen.","Water Quality"]]);
+  const decks=(typeof ENV_DECKS!=="undefined"?ENV_DECKS:[]).map(d=>({key:d[0],mode:d[1],introCap:3,groupBy:"group",flipFace:"name",bankOnly:true,stage:d[2],station:d[3],kind:d[4],n:d[5],cards:d[0]===DK?terms:d[0]===DF?facts:d[0]===DI?ids:d[0]===DS?soils:d[0]===DA?aqua:[]}));
   const stages=(typeof ENV_STAGES!=="undefined"?ENV_STAGES:[]).map(s=>({n:s[0],label:s[1],weeklyFrom:0}));
   unitStudies[(typeof ENV_UNIT_ID!=="undefined")?ENV_UNIT_ID:"nc_envirothon"]={id:"nc_envirothon",starter:"nc_envirothon",starterVer:1,title:"NC Envirothon",emoji:"\u{1F33F}",cardsInCode:false,enrolled:{[kid]:true},kidStage:{[kid]:{stage:1,ts:now}},stages,decks};
   const it=(id,subj,c,tier,status,extra)=>Object.assign({id,subject:subj,type:"envirothon",prompt:c.name,answer:c.def,status,tier,tally_dots:0,consecutive_correct:1,drop_count:0,cycle:1,next_due:0,review_mode:"flip"},extra||{});
-  masteryData[kid]=[it("m_cambium",DK,terms[0],"weekly","active"),it("m_crown",DK,terms[1],"monthly","active"),it("m_silvi",DK,terms[2],"daily","introduction"),it("m_snag",DK,terms[3],"bi_weekly","active"),it("m_dbh_f",DF,facts[0],"weekly","active"),it("m_phloem",DF,facts[1],"daily","active"),it("m_lob",DI,ids[0],"weekly","active")];
-  const hold={}; decks.forEach(d=>{ if(d.station!=="forestry"&&d.station!=="general") hold[d.key]=true; });
+  masteryData[kid]=[it("m_cambium",DK,terms[0],"weekly","active"),it("m_crown",DK,terms[1],"monthly","active"),it("m_silvi",DK,terms[2],"daily","introduction"),it("m_snag",DK,terms[3],"bi_weekly","active"),it("m_dbh_f",DF,facts[0],"weekly","active"),it("m_phloem",DF,facts[1],"daily","active"),it("m_lob",DI,ids[0],"weekly","active"),
+    it("m_horizon",DS,soils[0],"bi_weekly","active"),it("m_loam",DS,soils[1],"monthly","active"),it("m_parent",DS,soils[2],"weekly","active"),it("m_humus",DS,soils[4],"daily","introduction")];   // Soils: 2 of 4 core learned (Percolation not started)
+  const hold={}; decks.forEach(d=>{ if(["forestry","general","soils","aquatics"].indexOf(d.station)<0) hold[d.key]=true; });
   masteryData[kid+"_settings"]={cat_hold:hold,cat_modes:Object.fromEntries(decks.map(d=>[d.key,d.mode])),cat_intro_max:Object.fromEntries(decks.map(d=>[d.key,3])),definitions:{}};
-  masteryData[kid+"_custom_items"]=terms.concat(facts,ids).map(c=>({cat:c._dk,name:c.name,def:c.def}));
+  masteryData[kid+"_custom_items"]=terms.concat(facts,ids,soils,aqua).map(c=>({cat:c._dk,name:c.name,def:c.def}));
   masteryData[kid+"_sessions"]={envirothon:(typeof envSessionRecord==="function")?envSessionRecord(unitStudies.nc_envirothon):{name:"Envirothon",emoji:"\u{1F33F}",kind:"deck",decks:decks.map(d=>d.key),who:"solo",newPerDay:5,passes:2,order:"bank",pattern:["pick","ideas","type"]}};
   const dk=n=>envsDayKey(now-n*86400000);
   masteryData.studyLog={[kid]:{envirothon:{[dk(1)]:{date:dk(1),total:12,correct:10,miss:2,secs:220,items:[{id:"m_cambium",name:"Cambium",deck:DK,result:"c"},{id:"m_crown",name:"Crown",deck:DK,result:"c"},{id:"m_snag",name:"Snag",deck:DK,result:"m"},{id:"m_dbh_f",name:facts[0].name,deck:DF,result:"c"}]},[dk(2)]:{date:dk(2),total:10,correct:7,miss:3,secs:200,items:[{id:"m_cambium",name:"Cambium",deck:DK,result:"m"},{id:"m_lob",name:ids[0].name,deck:DI,result:"c"}]},[dk(3)]:{date:dk(3),total:8,correct:8,miss:0,secs:150,items:[{id:"m_crown",name:"Crown",deck:DK,result:"c"}]}}}};
@@ -47162,8 +47170,10 @@ function envcToday(now){ const d=new Date(now); return d.getFullYear()+"-"+Strin
 function envcFinalUpdate(cid,station,targets,by,now){ const o={}, rec={date:envcToday(now),ts:now,by};
   if(!cid||!station) return o; if(!targets||!targets.length) o["release/"+cid+"/final/all/"+station]=rec; else targets.forEach(sid=>{ o["release/"+cid+"/final/students/"+sid+"/"+station]=rec; });
   return o; }
-function envcFinalMem(o){ _envc.release=_envc.release||{}; const F=_envc.release.final=_envc.release.final||{};
-  Object.keys(o).forEach(p=>{ const a=p.split("/"); if(a[3]==="all"){ F.all=F.all||{}; F.all[a[4]]=o[p]; } else { F.students=F.students||{}; F.students[a[4]]=F.students[a[4]]||{}; F.students[a[4]][a[5]]=o[p]; } }); }
+function envcFinalMem(o){ _envc.release=_envc.release||{}; const F=_envc.release.final=_envc.release.final||{}, mine={};
+  Object.keys(o).forEach(p=>{ const a=p.split("/"); if(a[3]==="all"){ F.all=F.all||{}; F.all[a[4]]=o[p]; mine[a[4]]=o[p]; } else { F.students=F.students||{}; F.students[a[4]]=F.students[a[4]]||{}; F.students[a[4]][a[5]]=o[p]; if(a[4]===_envs.sid) mine[a[5]]=o[p]; } });
+  // demo only: the open reaches the demo's own kid at once (live, her family's app reads it back — ENVTEST envtFinalAttach)
+  if(envsDemo()&&_envs.kid&&Object.keys(mine).length&&typeof envtFinalApply==="function") envtFinalApply(_envs.kid,mine); }
 function envcFinalFor(sid,station){ if(!envcOn()||!sid||!envsStation(station)||station==="general") return; const o=envcFinalUpdate(_envc.cid,station,[sid],_envs.uid,Date.now()), path=Object.keys(o)[0];
   envcWrite(path,o[path]).then(()=>{ if(envsDemo()) envcFinalMem(o); envcRe(); }).catch(()=>{}); }
 function envcFinalOut(){ if(!envcOn()) return; const sd=_envc.send, st=envsStation(sd.station); if(!st||st.id==="general") return; const targets=sd.to==="pick"?Object.keys(sd.picked).filter(k=>sd.picked[k]):null; if(sd.to==="pick"&&!targets.length){ envsToast("Pick at least one student."); return; }
