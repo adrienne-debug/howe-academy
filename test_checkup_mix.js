@@ -24,8 +24,8 @@ const famChanges=m1.filter((x,i)=>i>0&&x.fam!==m1[i-1].fam).length;
 ok("families interleave: most neighbours are from different families ("+famChanges+" changes in "+m1.length+")", famChanges>m1.length*0.6);
 ok("ckMix on an empty queue is an empty queue; the plan's own array is not reordered", ctx.ckMix([], "t","s","d").length===0&&names(plan.queue).join()===names(ctx.ckPlan(cards,session,{f:{},day:{}}).queue).join());
 console.log("── wiring ──");
-ok("the check-up screen mixes right after its plan", /const st=ckState\(kid,session\.sid\), p=ckPlan\(cards,session,st\), dk=ckDayKey\(\);\n  p\.queue=ckMix\(p\.queue,kid,session\.sid,dk\);/.test(src));
-ok("a grade takes the front card of the SAME mixed order", /const p=ckPlan\(cards,s,st\); if\(!p\.queue\.length\)\{ ckStop\(\); return; \}\n  p\.queue=ckMix\(p\.queue,kid,sid,dk\);/.test(src));
+ok("the check-up screen mixes right after its plan", /const st=ckState\(kid,session\.sid\), p=ckPlan\(cards,session,st\), dk=ckDayKey\(\);\n  p\.queue=ckMix\(p\.queue,kid,session\.sid,dk,ckIsSpelling\(session\)\);/.test(src));
+ok("a grade takes the front card of the SAME mixed order", /const p=ckPlan\(cards,s,st\); if\(!p\.queue\.length\)\{ ckStop\(\); return; \}\n  p\.queue=ckMix\(p\.queue,kid,sid,dk,ckIsSpelling\(s\)\);/.test(src));   // CKORDER: a spelling check-up mixes inside each lesson
 ok("ckMix writes nothing (no db, no HA_LS)", !/db\.|HA_LS/.test(fnIn(src,"ckMix")+fnIn(src,"ckSeed")));
 ok("no 🔀 anywhere in index.html", src.indexOf("🔀")<0);
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
