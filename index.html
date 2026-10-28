@@ -4444,6 +4444,7 @@ function initFb() {
       const _mastFirst=!_haMastReady;
       try{ if(_mastFirst&&typeof cdMark==="function") cdMark("mastMs"); }catch(eM){}   // ⏱ CDBOOTS
       _haMastReady=true;   // MASTGATE: real data is in — Mastery writes allowed from here on
+      if(_mastFirst&&typeof envMirrorOn==="function") envMirrorOn("boot");   // 🌿 ENVMIRROR: boot catch-up (the named app opens here, after the default one; inert without the config block)
       // NO_MIRROR: there is no local copy any more, so the first arrival repaints whatever is
       // showing (Mastery HQ, Editor-in-Chief cards, drill strips), not just the Mastery tab.
       if(_mastFirst){ try{ renderAllSoon(); }catch(e){} try{ if(typeof stHeal==="function") stHeal(); }catch(e){} }   // 📝 STHEAL: the records are in — the week's test cards can be checked now (live 2026-10-14: the cards arrived first, the heal waited, nothing re-ran it)
@@ -6492,6 +6493,7 @@ function renderSettings(el,ah){
   pinHtml+=renderFamilyRulesWrap();   // 🏠 all family-wide rules, one home (2026-10-02)
   pinHtml+=renderAIKeyCard();   // ✨ the family's Claude key (recipes from a paste or a photo, book scans, stories)
   pinHtml+=renderTtsVoiceCard();   // 🔊 this device's spelling voice (2026-10-07)
+  if(typeof envMirrorCardHtml==="function") pinHtml+=envMirrorCardHtml();   // 🌿 ENVMIRROR: the Envirothon sign-in card (Mom only; empty without the config block)
   pinHtml+='<div class="rules-wrap">';
   pinHtml+='<div class="rules-hdr">Change PIN</div>';
   pinHtml+='<div class="rules-sub">This PIN is used for Mom mode, Admin, Blockouts, Points, and all locked areas.</div>';
@@ -45277,6 +45279,7 @@ function unitStageEnroll(){
   const w=_ustApply(u,f.kid,f.stage,f.knows,f.subject,f.map); if(!w) return;
   const rec={stage:f.stage,knows:f.knows||"",subject:f.subject||"",map:(w.gate?f.map:"")||"",ts:Date.now()};
   _ustWrite(f.unitId,f.kid,w,rec); if(typeof envEnrollSession==="function") envEnrollSession(u,f.kid);   // 🌿 ENVUNIT: his own session, once
+  if(typeof envMirrorOn==="function") envMirrorOn("enroll");   // 🌿 ENVMIRROR: enrolled → the first summary
   _ustDone(f.unitId,f.kid,rec);
 }
 // Where a kid stands in their current stage: total / on the ladder / learning, and the family they're on.
@@ -45870,6 +45873,292 @@ function _unitNudgePanelHtml(kid){
     '</div></div>';
 }
 // NUDGE_ROLLUP_END
+// ENVMIRROR_START — 🌿 ENVIROTHON MIRROR, step 5 of PLAN_envirothon_2026-10-27.md (design DESIGN_envirothon_console_2026-10-27.md
+// ✅ DECISIONS + §1.2 + §3 + §4; her decision 2026-10-27: "ONE Envirothon site, ONE Firebase project … ENVMIRROR copies Lincoln's
+// summary from the Howe project into this one, and he never needs a login here"; her 8.9: streak / accuracy = study sittings only).
+//   · Config: window.HA_FAMILY.envirothon = { firebase:{…the Envirothon project's web config…}, familyId?, kids?, classId? }.
+//     ABSENT → every function here returns at once: no named app, no listener, no Settings card, nothing on boot — every
+//     other family's boot is byte-identical. PRESENT → a NAMED app, firebase.initializeApp(cfg.firebase,"envirothon"), with
+//     its own auth and database. It is opened only from the boot hook (the first `mastery` arrival, after initFb has made the
+//     default app and `db`), so the default-app guard `if(!(firebase.apps&&firebase.apps.length))` is never fooled. Nothing
+//     here ever touches `db` except the release read-back's one targeted removal.
+//   · Sign-in: a Mom-only card in Settings ("🌿 Envirothon"). Email + password go straight to the named app's auth and are
+//     never stored; the auth SDK keeps the session on the device (localStorage, like the family login). Kids' devices never
+//     see a password prompt — Mom signs each of his study devices in once.
+//   · envSummary(kid, ctx) is PURE — from masteryData (the kid's items, _settings.cat_hold, _custom_items, studyLog, history,
+//     _tests) and the unit record (hydrated cards), restricted to the Envirothon unit's decks (the record's deck keys, never a
+//     list here). The §1.2 record: byDeck {total,new,waiting,learning,active,mastered,held,correct,miss,acc,c14,m14,acc14,last},
+//     byConcept (the same counters, keyed <station>|<Key Concept>), streak {days,last}, weak (≤5 fronts per deck: {n,m,d,t}),
+//     days (the last 30 study days {n,c,m,secs}), plus unitVer, at, and tests (pre/post/graduated per station, read
+//     defensively from mastery/<kid>_tests). Accuracy, streak and days count STUDY SITTINGS only (studyLog); Mom's drills
+//     (history) count only toward a card's miss total in the weak list. No card back, no other deck, no roster, no schedule.
+//   · Publish = ONE update on the named app at students/<sid> = { summary, meta:{familyId,kid,name,at} }, sid = <familyId>_<kid>,
+//     the kid's display name from the roster (cap). Debounced: at most once per 60 s; a hash of the summary sits in HA_LS so an
+//     unchanged summary is never re-sent and boot sends only what changed since the last publish. Only when signed in, never in
+//     dry run, never while the season is locked.
+//   · Release read-back (§4): one listener each on release/<classId>/all and release/<classId>/students/<sid>. A key there is a
+//     deck key or a station id; each matching deck whose hold is still set gets ONE targeted removal of
+//     mastery/<kid>_settings/cat_hold/<deck> in the family database (db && !_dryRun()). Never sets a hold; idempotent; a notice
+//     "🌿 <deck> released by your teacher" (toast + the card). classId = cfg.classId, else students/<sid>/class read once.
+//   · release/locked = true on the Envirothon project: publishing stops (summaries stay), the card says "season closed".
+//     Nothing in Howe is ever locked by it.
+const ENVM_APP="envirothon", ENVM_MIN_MS=60000, ENVM_DAYS=30, ENVM_WEAK=5, ENVM_RECENT=14, ENVM_BOOT_TRIES=40;
+const _envm={app:null,auth:null,edb:null,user:null,locked:false,classOf:{},subs:{},timer:null,lastAt:0,lastPub:0,tries:0,busy:false,err:"",notices:[]};
+function envmCfg(){ try{ const c=(typeof window!=="undefined"&&window.HA_FAMILY&&window.HA_FAMILY.envirothon)||null; return (c&&c.firebase&&typeof c.firebase==="object"&&c.firebase.databaseURL)?c:null; }catch(e){ return null; } }
+function envmFamilyId(){ const c=envmCfg(); if(c&&c.familyId) return String(c.familyId); try{ return String((window.HA_FAMILY&&window.HA_FAMILY.familyId)||"howe"); }catch(e){ return "howe"; } }
+function envmSid(kid){ return envmFamilyId()+"_"+kid; }
+// The Envirothon unit on this family: the starter id first, else any unit whose cards live in code.
+function envmUnit(){
+  const us=(typeof unitStudies!=="undefined"&&unitStudies)||{};
+  if(typeof ENV_UNIT_ID!=="undefined"&&us[ENV_UNIT_ID]) return us[ENV_UNIT_ID];
+  for(const k in us){ if(us[k]&&typeof envCardsInCode==="function"&&envCardsInCode(us[k])) return us[k]; }
+  return null;
+}
+// The kids mirrored: the config's list (if given) filtered to the unit's enrolled kids, else every enrolled kid.
+function envmKids(){
+  if(!envmCfg()) return [];
+  const u=envmUnit(), en=(u&&u.enrolled)||{}, c=envmCfg();
+  const all=Object.keys(en).filter(k=>en[k]);
+  return (Array.isArray(c.kids)&&c.kids.length)?c.kids.filter(k=>en[k]):all;
+}
+function envmDayKey(ms){ return new Date(ms).toISOString().slice(0,10).replace(/-/g,""); }   // the studyLog's key format (mstTodayKey)
+function envmKeyMs(k){ k=String(k||""); return Date.UTC(+k.slice(0,4),+k.slice(4,6)-1,+k.slice(6,8)); }
+function envmDaysBetween(a,b){ return Math.round((envmKeyMs(b)-envmKeyMs(a))/86400000); }
+function envmShift(k,n){ return envmDayKey(envmKeyMs(k)+n*86400000); }
+function envmMastered(it){
+  const mTier=(typeof MAST_MASTERY_TIER_DEFAULT!=="undefined")?MAST_MASTERY_TIER_DEFAULT:"monthly";
+  if(typeof mastTierAtLeast==="function") return mastTierAtLeast(it.tier,mTier);
+  const o=["daily","every_other_day","every_third_day","weekly","bi_weekly","monthly","learned","graduated"]; return o.indexOf(it.tier||"daily")>=o.indexOf(mTier);
+}
+function envmTierIx(t){ const o=(typeof MAST_TIER_ORDER!=="undefined"&&MAST_TIER_ORDER)||["daily","every_other_day","every_third_day","weekly","bi_weekly","monthly","learned","graduated"]; const i=o.indexOf(t||"daily"); return i<0?0:i; }
+function envmCtr(){ return {total:0,new:0,waiting:0,learning:0,active:0,mastered:0,held:false,correct:0,miss:0,acc:null,c14:0,m14:0,acc14:null,last:null}; }
+function envmBucket(c,it){ if(it.status==="parked") c.waiting++; else if(it.status==="introduction") c.learning++; else if(envmMastered(it)) c.mastered++; else c.active++; }
+function envmAcc(c){ c.acc=(c.correct+c.miss)?Math.round(c.correct/(c.correct+c.miss)*100):null; c.acc14=(c.c14+c.m14)?Math.round(c.c14/(c.c14+c.m14)*100):null; }
+// PURE. ctx = {M: masteryData, u: the unit record, now: ms} — every input is passed or read from memory; nothing is fetched.
+function envSummary(kid,ctx){
+  ctx=ctx||{};
+  const M=ctx.M||((typeof masteryData!=="undefined"&&masteryData)||{});
+  const u=ctx.u||envmUnit();
+  const now=(ctx.now!=null)?ctx.now:Date.now(), today=envmDayKey(now);
+  const decks=((u&&u.decks)||[]).filter(d=>d&&d.key);
+  const isDeck={}; decks.forEach(d=>{ isDeck[d.key]=true; });
+  let items=M[kid]; if(!Array.isArray(items)) items=Object.values(items||{});
+  items=items.filter(i=>i&&isDeck[i.subject]);
+  const st=M[kid+"_settings"]||{}, hold=st.cat_hold||{};
+  let bank=M[kid+"_custom_items"]; if(!Array.isArray(bank)) bank=Object.values(bank||{});
+  const bankN={}; bank.forEach(b=>{ if(b&&b.cat&&isDeck[b.cat]) bankN[b.cat]=(bankN[b.cat]||0)+1; });
+  const byDeck={}, byConcept={}, conceptOf={}, byId={};
+  items.forEach(i=>{ if(i.id) byId[i.id]=i; });
+  decks.forEach(d=>{
+    const c=byDeck[d.key]=envmCtr(); c.held=!!hold[d.key];
+    const its=items.filter(i=>i.subject===d.key), byName={}; its.forEach(i=>{ byName[i.prompt]=i; });
+    const cards=Array.isArray(d.cards)?d.cards.filter(Boolean):null;
+    c.total=cards?cards.length:Math.max(d.n||0,bankN[d.key]||0,its.length);
+    its.forEach(i=>envmBucket(c,i));
+    c.new=Math.max(0,c.total-its.length);
+    if(!cards) return;
+    cards.forEach(card=>{
+      const ck=(d.station||"")+"|"+(card.family||card.group||"General");
+      conceptOf[d.key+"|"+card.name]=ck;
+      const cc=byConcept[ck]||(byConcept[ck]=Object.assign(envmCtr(),{held:true}));
+      cc.total++; cc.held=cc.held&&!!hold[d.key];
+      const it=byName[card.name]; if(it) envmBucket(cc,it); else cc.new++;
+    });
+  });
+  // Study sittings: accuracy per deck / concept, the study days, the misses per card.
+  const sl=(M.studyLog||{})[kid]||{}, dayAgg={}, missBy={};
+  Object.keys(sl).forEach(sid=>{ const byDay=sl[sid]||{}; Object.keys(byDay).forEach(dk=>{
+    const e=byDay[dk]; if(!e||!/^\d{8}$/.test(dk)) return;
+    let its=e.items; if(!Array.isArray(its)) its=its?Object.values(its):[];
+    const recent=envmDaysBetween(dk,today)<ENVM_RECENT; let n=0,cc=0,mm=0;
+    its.forEach(x=>{
+      if(!x||!isDeck[x.deck]) return; n++;
+      const tgt=[byDeck[x.deck]]; const ck=conceptOf[x.deck+"|"+x.name]; if(ck&&byConcept[ck]) tgt.push(byConcept[ck]);
+      tgt.forEach(c=>{ if(x.result==="c"){ c.correct++; if(recent) c.c14++; } else if(x.result==="m"){ c.miss++; if(recent) c.m14++; } if(!c.last||dk>c.last) c.last=dk; });
+      if(x.result==="c") cc++; else if(x.result==="m"){ mm++; missBy[x.deck+"|"+x.name]=(missBy[x.deck+"|"+x.name]||0)+1; }
+    });
+    if(!n) return;
+    let secs=0; if(Array.isArray(e.sits)) e.sits.forEach(s=>{ secs+=(s&&s.secs)||0; }); else secs=e.secs||0;
+    if(its.length&&n<its.length) secs=Math.round(secs*n/its.length);   // a mixed sitting (Daily Study) gives this unit its share
+    const da=dayAgg[dk]||(dayAgg[dk]={n:0,c:0,m:0,secs:0}); da.n+=n; da.c+=cc; da.m+=mm; da.secs+=secs;
+  }); });
+  Object.keys(byDeck).forEach(k=>envmAcc(byDeck[k])); Object.keys(byConcept).forEach(k=>envmAcc(byConcept[k]));
+  // Mom's drills: a miss there counts toward the card's miss total (the weak list) — not toward accuracy or the streak (her 8.9).
+  const hist=(M.history||{})[kid]||{};
+  Object.keys(hist).forEach(dk=>{ const e=hist[dk]; let its=e&&e.items; if(!Array.isArray(its)) its=its?Object.values(its):[];
+    its.forEach(x=>{ if(!x||x.result!=="m") return; const it=byId[x.id]; if(!it) return; missBy[it.subject+"|"+it.prompt]=(missBy[it.subject+"|"+it.prompt]||0)+1; }); });
+  // Streak: consecutive study days ending today or yesterday.
+  const dayKeys=Object.keys(dayAgg).sort();
+  const streak={days:0,last:dayKeys.length?dayKeys[dayKeys.length-1]:null};
+  if(streak.last&&envmDaysBetween(streak.last,today)<=1){ const set=new Set(dayKeys); let k=streak.last; while(set.has(k)){ streak.days++; k=envmShift(k,-1); } }
+  const days={}; dayKeys.slice(-ENVM_DAYS).forEach(k=>{ days[k]=dayAgg[k]; });
+  // Weakest cards: m×2 + drop_count, lower tier first; the front only; ≤5 per deck; decks with nothing weak are left out.
+  const weak={};
+  decks.forEach(d=>{
+    const rows=items.filter(i=>i.subject===d.key).map(i=>({n:i.prompt,m:missBy[d.key+"|"+i.prompt]||0,d:i.drop_count||0,t:i.tier||"daily"})).filter(r=>r.m+r.d>0);
+    rows.sort((a,b)=>(b.m*2+b.d)-(a.m*2+a.d)||envmTierIx(a.t)-envmTierIx(b.t)||String(a.n).localeCompare(String(b.n)));
+    if(rows.length) weak[d.key]=rows.slice(0,ENVM_WEAK);
+  });
+  const out={unitVer:(u&&(u.starterVer||u.ver))||1,at:now,byDeck,byConcept,streak,weak,days};
+  // Pre / post tests (ENVTEST writes mastery/<kid>_tests/<station> = {pre:{right,n,date,…}, post:{best:{right,n,date},…}, graduated}) — read defensively.
+  const T=M[kid+"_tests"]; if(T&&typeof T==="object"){ const tests={};
+    Object.keys(T).forEach(stn=>{ const r=T[stn]; if(!r||typeof r!=="object") return; const o={};
+      if(r.pre&&typeof r.pre==="object") o.pre={right:+r.pre.right||0,n:+r.pre.n||0,date:r.pre.date||null};
+      const best=r.post&&r.post.best; if(best&&typeof best==="object") o.post={best:{right:+best.right||0,n:+best.n||0,date:best.date||null}};
+      if(r.graduated) o.graduated=(typeof r.graduated==="object")?{date:r.graduated.date||null,right:+r.graduated.right||0,n:+r.graduated.n||0}:true;
+      if(Object.keys(o).length) tests[stn]=o; });
+    if(Object.keys(tests).length) out.tests=tests; }
+  return out;
+}
+function envmHash(s){ const o=Object.assign({},s); delete o.at; const str=JSON.stringify(o); let h=5381; for(let i=0;i<str.length;i++) h=((h*33)^str.charCodeAt(i))>>>0; return h.toString(36)+":"+str.length; }
+// The named app — only once the default app and `db` exist (initFb), never before (the default-app guard reads firebase.apps.length).
+function envmReady(){
+  const cfg=envmCfg(); if(!cfg) return false;
+  if(_envm.app) return true;
+  if(typeof db==="undefined"||!db||typeof firebase==="undefined"||!firebase.apps||!firebase.apps.length) return false;
+  try{
+    const have=(firebase.apps||[]).filter(a=>a&&a.name===ENVM_APP)[0];
+    _envm.app=have||firebase.initializeApp(cfg.firebase,ENVM_APP);
+    _envm.edb=_envm.app.database();
+    _envm.auth=(typeof _envm.app.auth==="function")?_envm.app.auth():null;
+    if(_envm.auth&&typeof _envm.auth.onAuthStateChanged==="function") _envm.auth.onAuthStateChanged(u=>{ _envm.user=u||null; _envm.busy=false; envmAuthChanged(); });
+    return true;
+  }catch(e){ _envm.err=String((e&&e.message)||e); _envm.app=null; return false; }
+}
+// The hook (one guarded line at each site): "study" | "drill" | "enroll" | "boot" (the first mastery arrival = the catch-up:
+// whatever changed since the hash in HA_LS goes out). Returns false whenever the block is inert.
+function envMirrorOn(why){
+  try{
+    if(!envmCfg()||!envmReady()) return false;
+    envmSchedule(why); return true;
+  }catch(e){ _envm.err=String((e&&e.message)||e); return false; }
+}
+// Not publishable yet: the units listener has not delivered, or the Envirothon unit's cards are still loading (envirothon.js).
+function envmWaiting(){
+  if(typeof _haUnitsReady!=="undefined"&&!_haUnitsReady) return true;
+  const u=envmUnit(); if(!u) return false;
+  return !!(typeof envCardsInCode==="function"&&envCardsInCode(u))&&!(u.decks||[]).every(d=>!d||Array.isArray(d.cards));
+}
+// Anything to send? The summary's hash against the one HA_LS remembers for each mirrored kid (a sitting in another deck changes nothing).
+function envmDirty(){
+  let d=false;
+  envmKids().forEach(kid=>{ if(d) return; try{ const prev=JSON.parse((typeof HA_LS!=="undefined"?HA_LS.getItem("ha_envm_"+envmSid(kid)):null)||"null"); if(!prev||prev.h!==envmHash(envSummary(kid))) d=true; }catch(e){ d=true; } });
+  return d;
+}
+// Debounce: a change publishes now if the last publish is 60 s old, else once when the 60 s are up (one timer, however many saves).
+function envmSchedule(why){
+  _envm.why=why;
+  if(_envm.timer||!envmDirty()) return;
+  const wait=Math.max(0,_envm.lastAt+ENVM_MIN_MS-Date.now());
+  if(!wait){ envmPublishAll(); return; }
+  _envm.timer=setTimeout(()=>{ _envm.timer=null; try{ envmPublishAll(); }catch(e){} },wait);
+}
+// ONE update per kid whose summary changed; the hash in HA_LS says what was last sent from any device this browser is.
+function envmPublishAll(){
+  if(!envmReady()||!_envm.user||_envm.locked) return 0;
+  if(typeof _dryRun==="function"&&_dryRun()) return 0;
+  if(envmWaiting()){ if(!_envm.timer&&(++_envm.tries)<=ENVM_BOOT_TRIES) _envm.timer=setTimeout(()=>{ _envm.timer=null; try{ envmPublishAll(); }catch(e){} },3000); return 0; }   // boot: the units / cards are still coming — look again in 3 s
+  _envm.tries=0;
+  let n=0; envmKids().forEach(kid=>{ try{ if(envmPublishKid(kid)) n++; }catch(e){ _envm.err=String((e&&e.message)||e); } });
+  if(n){ _envm.lastAt=Date.now(); _envm.lastPub=_envm.lastAt; }
+  envmCardRefresh();
+  return n;
+}
+function envmPublishKid(kid,force){
+  const s=envSummary(kid), h=envmHash(s), sid=envmSid(kid), key="ha_envm_"+sid;
+  let prev=null; try{ prev=JSON.parse((typeof HA_LS!=="undefined"?HA_LS.getItem(key):null)||"null"); }catch(e){}
+  if(!force&&prev&&prev.h===h) return false;
+  const meta={familyId:envmFamilyId(),kid:kid,name:(typeof cap==="function")?cap(kid):String(kid),at:s.at};
+  const p=_envm.edb.ref("students/"+sid).update({summary:s,meta:meta});
+  try{ if(typeof HA_LS!=="undefined") HA_LS.setItem(key,JSON.stringify({h:h,at:s.at})); }catch(e){}
+  if(p&&typeof p.catch==="function") p.catch(err=>{ _envm.err=String((err&&err.message)||err); try{ if(typeof HA_LS!=="undefined") HA_LS.removeItem(key); }catch(e){} envmCardRefresh(); });   // refused / offline: forget the hash so the next save resends
+  return true;
+}
+// Signed in → the lock listener, the class id, the release listeners, then a publish. Signed out → listeners off.
+function envmAuthChanged(){
+  if(!_envm.edb) return;
+  if(!_envm.user){ envmDetach(); envmCardRefresh(); return; }
+  if(!_envm.subs.locked){ const r=_envm.edb.ref("release/locked"); const fn=s=>{ const v=s&&typeof s.val==="function"?s.val():null; const was=_envm.locked; _envm.locked=(v===true)||!!(v&&typeof v==="object"&&v.locked===true); if(was&&!_envm.locked) envmSchedule("unlock"); envmCardRefresh(); }; r.on("value",fn); _envm.subs.locked={r,fn}; }
+  envmKids().forEach(kid=>{
+    const cfg=envmCfg(); if(cfg.classId) _envm.classOf[kid]=String(cfg.classId);
+    if(_envm.classOf[kid]) envmRelAttach(kid);
+    else _envm.edb.ref("students/"+envmSid(kid)+"/class").once("value",s=>{ const v=s&&typeof s.val==="function"?s.val():null; if(v){ _envm.classOf[kid]=String(v); envmRelAttach(kid); } envmCardRefresh(); });
+  });
+  envmSchedule("signin"); envmCardRefresh();
+}
+function envmDetach(){ Object.keys(_envm.subs).forEach(k=>{ const s=_envm.subs[k]; try{ s.r.off("value",s.fn); }catch(e){} }); _envm.subs={}; if(_envm.timer){ try{ clearTimeout(_envm.timer); }catch(e){} _envm.timer=null; } }
+function envmRelAttach(kid){
+  const cid=_envm.classOf[kid]; if(!cid||!_envm.edb) return;
+  [["all","release/"+cid+"/all"],["me","release/"+cid+"/students/"+envmSid(kid)]].forEach(pr=>{
+    const sk=kid+"|"+pr[0]; if(_envm.subs[sk]) return;
+    const r=_envm.edb.ref(pr[1]), fn=s=>{ try{ envmRelease(kid,s&&typeof s.val==="function"?s.val():null); }catch(e){ _envm.err=String((e&&e.message)||e); } };
+    r.on("value",fn); _envm.subs[sk]={r,fn};
+  });
+}
+// A release record {<deckKey>|<station>: truthy}: clear each matching deck's hold once — the family database's one targeted removal.
+function envmRelease(kid,rel){
+  if(!envmCfg()||!rel||typeof rel!=="object") return 0;
+  const u=envmUnit(); if(!u) return 0;
+  const M=(typeof masteryData!=="undefined"&&masteryData)||{}, st=M[kid+"_settings"], hold=(st&&st.cat_hold)||null; if(!hold) return 0;
+  const open=[];
+  Object.keys(rel).forEach(k=>{ if(!rel[k]) return; (u.decks||[]).forEach(d=>{ if(d&&d.key&&(d.key===k||d.station===k)&&hold[d.key]&&open.indexOf(d.key)<0) open.push(d.key); }); });
+  open.forEach(dk=>{
+    delete hold[dk];
+    if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("mastery/"+kid+"_settings/cat_hold/"+dk).remove();
+    envmNotice("\u{1F33F} "+dk+" released by your teacher");
+  });
+  if(open.length){ envmSchedule("release"); if(typeof renderAllSoon==="function") renderAllSoon(); }
+  return open.length;
+}
+function envmNotice(msg){ _envm.notices.unshift({at:Date.now(),msg:msg}); if(_envm.notices.length>10) _envm.notices.length=10; try{ console.log("[HA] ENVMIRROR",msg); }catch(e){} try{ if(typeof gwShowToast==="function") gwShowToast(msg); }catch(e){} }
+// ── Settings ▸ 🌿 Envirothon (Mom only) ──
+function envmEsc(v){ return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"); }
+function envmWhen(ms){ try{ return new Date(ms).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}); }catch(e){ return String(ms); } }
+function envmStateLine(){
+  if(!envmCfg()) return "not set up";
+  if(_envm.locked) return "season closed — the teacher's project is locked; nothing is sent until it reopens";
+  if(_envm.busy) return "signing in…";
+  if(!_envm.user) return "not signed in on this device";
+  return "signed in as "+String(_envm.user.email||_envm.user.uid||"")+(_envm.lastPub?" · last mirrored "+envmWhen(_envm.lastPub):" · nothing mirrored yet");
+}
+function envMirrorCardHtml(){
+  if(!envmCfg()||typeof momHere!=="function"||!momHere()) return "";
+  return '<div class="rules-wrap"><div class="rules-hdr">\u{1F33F} Envirothon</div>'+
+    '<div class="rules-sub">Sends a summary of the Envirothon study (counts, accuracy, streak, weakest terms — never the cards) to the teacher\'s Envirothon project, and opens a station here when she sends it out. Sign in once on each device the study happens on.</div>'+
+    '<div class="rules-card open"><div class="rules-card-body" id="envm-body">'+envmBodyHtml()+'</div></div></div>';
+}
+function envmBodyHtml(){
+  const kids=envmKids();
+  let h='<div class="rules-row"><div class="rules-label">Status</div><div style="font-size:12.5px;font-weight:700;color:'+(_envm.locked?'#b45309':(_envm.user?'#15803d':'#6b7280'))+'">'+envmEsc(envmStateLine())+'</div></div>';
+  h+='<div class="rules-row"><div class="rules-label">Mirrored</div><div style="font-size:12px">'+(kids.length?kids.map(k=>envmEsc((typeof cap==="function")?cap(k):k)+' <span style="color:var(--muted)">('+envmEsc(envmSid(k))+')</span>').join(", "):'<span style="color:var(--muted)">nobody enrolled in the Envirothon unit yet</span>')+'</div></div>';
+  if(!_envm.user){
+    h+='<form onsubmit="envmSignIn(event)" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 0">'+
+      '<input id="envm-e" type="email" autocomplete="username" placeholder="email" required style="flex:1;min-width:140px;padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif">'+
+      '<input id="envm-p" type="password" autocomplete="current-password" placeholder="password" required style="flex:1;min-width:120px;padding:7px 9px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif">'+
+      '<button type="submit" style="padding:7px 14px;border-radius:9px;border:none;background:#15803d;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F33F} Envirothon: sign in</button></form>';
+  } else {
+    h+='<div style="display:flex;gap:8px;padding:6px 0"><button onclick="envmSendNow()" style="padding:6px 12px;border-radius:9px;border:1.5px solid var(--border);background:#fff;color:#1f2937;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Send now</button>'+
+      '<button onclick="envmSignOut()" style="padding:6px 12px;border-radius:9px;border:1.5px solid #fecaca;background:#fff;color:#b91c1c;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Sign out</button></div>';
+  }
+  if(_envm.err) h+='<div style="font-size:11px;color:#b5394a;padding:2px 0">'+envmEsc(_envm.err)+'</div>';
+  if(_envm.notices.length) h+='<div style="font-size:11px;color:var(--muted);padding:4px 0 0;line-height:1.5">'+_envm.notices.slice(0,3).map(n=>envmEsc(n.msg)+' <span style="opacity:.7">'+envmEsc(envmWhen(n.at))+'</span>').join("<br>")+'</div>';
+  h+='<div style="font-size:11px;color:var(--muted);padding:6px 0 0;line-height:1.45">\u{1F512} The password goes to the Envirothon project only and is not kept anywhere in this app.</div>';
+  return h;
+}
+function envmCardRefresh(){ try{ if(typeof document==="undefined") return; const el=document.getElementById("envm-body"); if(el) el.innerHTML=envmBodyHtml(); }catch(e){} }
+function envmSignIn(ev){
+  if(ev&&ev.preventDefault) ev.preventDefault();
+  if(typeof momHere!=="function"||!momHere()||!envmReady()||!_envm.auth) return false;
+  const e=((document.getElementById("envm-e")||{}).value||"").trim(), p=(document.getElementById("envm-p")||{}).value||"";
+  if(!e||!p) return false;
+  _envm.busy=true; _envm.err=""; envmCardRefresh();
+  try{ _envm.auth.signInWithEmailAndPassword(e,p).then(()=>{ _envm.busy=false; envmCardRefresh(); }).catch(err=>{ _envm.busy=false; _envm.err=String((err&&err.message)||err); envmCardRefresh(); }); }
+  catch(err){ _envm.busy=false; _envm.err=String((err&&err.message)||err); envmCardRefresh(); }
+  return true;
+}
+function envmSignOut(){ if(typeof momHere!=="function"||!momHere()||!_envm.auth) return; try{ _envm.auth.signOut(); }catch(e){} }
+function envmSendNow(){ if(typeof momHere!=="function"||!momHere()||!envmReady()||!_envm.user||_envm.locked) return 0; if(typeof _dryRun==="function"&&_dryRun()) return 0; let n=0; envmKids().forEach(kid=>{ try{ if(envmPublishKid(kid,true)) n++; }catch(e){ _envm.err=String((e&&e.message)||e); } }); if(n){ _envm.lastAt=Date.now(); _envm.lastPub=_envm.lastAt; } envmCardRefresh(); return n; }
+// ENVMIRROR_END
 function unitAllNudges(kid){ let out=[]; haKidUnits(kid).forEach(u=>{ out=out.concat(unitPlanNudges(u,kid)); }); return out; }
 function unitDismissNudge(unitId,kid,key){
   if(!momHere()) return; // skipping a planned step is Mom's call
@@ -58616,6 +58905,7 @@ function mastSaveResults(){
   if(!masteryData.history) masteryData.history={};
   if(!masteryData.history[masteryKid]) masteryData.history[masteryKid]={};
   masteryData.history[masteryKid][today.replace(/-/g,"")]=histEntry;
+  if(typeof envMirrorOn==="function") envMirrorOn("drill");   // 🌿 ENVMIRROR: a drill saved → the Envirothon summary (debounced; inert without the config block)
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   try{ checkDrillsGraduation(masteryKid,_preDrillsDone); }catch(e){}
 
@@ -64287,6 +64577,7 @@ function _mstSaveInner(){
   if(!masteryData.studyLog[kid]) masteryData.studyLog[kid]={};
   if(!masteryData.studyLog[kid][sid]) masteryData.studyLog[kid][sid]={};
   masteryData.studyLog[kid][sid][todayKey]=entry;
+  if(typeof envMirrorOn==="function") envMirrorOn("study");   // 🌿 ENVMIRROR: a sitting saved → the Envirothon summary (debounced; inert without the config block)
   try{ HA_LS.setItem("ha_mastery",JSON.stringify(masteryData)); }catch(e){}
 
   mstDone={correct:correct,miss:miss,shown:shown,total:total,secs:secs};
