@@ -3720,6 +3720,7 @@ function attachWeekListeners(wk){
 let _haAuthOk=false, _haAuthUser=null, _haAuthProbe=null, _haAuthStarted=false;
 function haAuthGate(){
   if(window.HA_NO_FAMILY) return;   // FAMCFG_GUARD
+  if(typeof envSiteDemoBoot==="function"&&envSiteDemoBoot()) return;   // 🌿 ENVSITE: the demo never touches Firebase (false for every family that is not the Envirothon site)
   if(_haAuthStarted) return;   // one gate per page load, however many times boot asks
   _haAuthStarted=true;
   // Keep the sign-in in localStorage, on EVERY device. The auth SDK writes the session to
@@ -3750,7 +3751,7 @@ function haAuthGate(){
     if(!(firebase.apps&&firebase.apps.length)) firebase.initializeApp(FB_CFG);
     if(!firebase.auth){ _haAuthOk=true; initFb(); renderAll(); return; }   // auth SDK missing → behave as before
     let done=false;
-    const go=function(u){ if(done) return; done=true; _haAuthUser=u||null; _haAuthOk=true; haAuthHide(); initFb(); renderAll(); haAuthWatch(); };
+    const go=function(u){ if(done) return; done=true; _haAuthUser=u||null; _haAuthOk=true; if(typeof envSiteGate==="function"&&envSiteGate(u,function(){ haAuthHide(); initFb(); renderAll(); haAuthWatch(); })) return; haAuthHide(); initFb(); renderAll(); haAuthWatch(); };   // 🌿 ENVSITE: on the Envirothon site the login's role picks the part; false everywhere else
     const unsub=firebase.auth().onAuthStateChanged(function(u){
       if(done){ return; }
       try{ unsub(); }catch(e){}
@@ -3769,6 +3770,7 @@ function haAuthProbe(){
   return _haAuthProbe;
 }
 function haAuthShow(msg){
+  if(typeof envSiteAuthShow==="function"&&envSiteAuthShow(msg)) return;   // 🌿 ENVSITE: the Envirothon site's card (student code, © line); false for every other family
   let o=document.getElementById("ha-auth");
   if(!o){
     o=document.createElement("div"); o.id="ha-auth";
@@ -3992,7 +3994,7 @@ function initFb() {
       }
     }catch(eLP){}
     if(!(firebase.apps&&firebase.apps.length)) firebase.initializeApp(FB_CFG);   // haAuthGate may already have
-    db = firebase.database();
+    db = (typeof envSiteDb==="function"&&envSiteDb())||firebase.database();   // 🌿 ENVSITE: a kid or parent on the Envirothon site studies in the family's own instance; null for every other family
 
     // DRY-RUN: neutralize every Firebase write (reads stay live) so the modified app
     // can be smoke-tested against real data without ever mutating the kids' schedule.
@@ -4706,6 +4708,7 @@ function renderSkylight(){
 
 // ── TAB ROUTING ───────────────────────────────────────────────────
 function showTab(t,keepMsv){
+  if(typeof envSiteTabGate==="function"&&envSiteTabGate(t)) return;   // 🌿 ENVSITE: the Envirothon site has one page — every tap lands on it; false for every other family
   if(!keepMsv&&typeof msvExit==="function") msvExit();   // 👩 MSV: tapping any tab leaves Mom's Day ▸ Schedule
   // 🔒 MOMGATE (her rule 2026-10-08): leaving Mom's Day turns Mom mode off; coming back asks for the code. Moving between
   // Mom's Day's own tabs (incl. ▸ 🗓 Schedule, which is keepMsv) never counts as leaving. Dad's side never trips this.
@@ -4956,6 +4959,7 @@ function _renderAllInner(){
     // stack above the HQ pill on the rare day both are showing
     mdb.style.bottom=(_mdShow&&hqb&&hqb.style.display==="block")?"64px":"16px"; }
   const c=document.getElementById("content");
+  if(typeof envSiteRender==="function"&&envSiteRender(c)) return;   // 🌿 ENVSITE: the Envirothon site's one page; false for every other family
   if(tab==="schedule") renderSchedule(c);
   else if(tab==="moms-plan") renderMomsPlan(c);
   else if(tab==="kids") renderKidsCorner(c);
@@ -46514,6 +46518,821 @@ function envmSignIn(ev){
 function envmSignOut(){ if(typeof momHere!=="function"||!momHere()||!_envm.auth) return; try{ _envm.auth.signOut(); }catch(e){} }
 function envmSendNow(){ if(typeof momHere!=="function"||!momHere()||!envmReady()||!_envm.user||_envm.locked) return 0; if(typeof _dryRun==="function"&&_dryRun()) return 0; let n=0; envmKids().forEach(kid=>{ try{ if(envmPublishKid(kid,true)) n++; }catch(e){ _envm.err=String((e&&e.message)||e); } }); if(n){ _envm.lastAt=Date.now(); _envm.lastPub=_envm.lastAt; } envmCardRefresh(); return n; }
 // ENVMIRROR_END
+// ENVSITE_START — 🌿 THE ENVIROTHON SITE: one page, one Firebase project, routed by login role (step 4 of PLAN_envirothon_2026-10-27.md;
+// DESIGN_envirothon_console_2026-10-27.md ✅ DECISIONS, DESIGN_envirothon_micro_academy_2026-10-27.md ✅ DECISIONS + §2–§4,
+// DESIGN_envirothon_code_protection_2026-10-27.md §3). Her words 2026-10-27/28: "I'm good with it all being on one page as long as
+// I can somehow protect my product" · "can i see the page before i set up the blaze".
+//   · THE ONE SWITCH — envEdition(): "envirothon" when the host's family-config.js says `edition:"envirothon"` (the Envirothon site's
+//     own config; known before the first paint), or when the page runs as a DEMO (`?demo=1`, or `demo:true` in that config — no Firebase
+//     at all), else "". The family instance's `settings/edition:"envirothon"` (the seed) is read once after connect and can only ADD the
+//     lock (never remove it). Howe, DeWalt and Burris have neither, so every function in this block and in ENVCONSOLE returns at once:
+//     no listener, no write, no element, no CSS — their boot is byte-identical (test_env_site.js).
+//   · THE ROUTER — after the family sign-in, logins/<uid> = {role: kid|parent|teacher|admin, familyId, kid, cid} decides which part of
+//     the page opens (admins/<uid>:true also counts as admin). kid → the study screen (the 🌿 session, check-ins, ID Flash, 🏋️ games,
+//     Scores, the Star Store closed with its one line, ⭐ stars per finished sitting, the tips card); parent → read-only "How <kid> is
+//     doing" (the SAME numbers the console shows — envSummary, the mirror's own function), the team board and the effort board as the kid
+//     sees them, the who-drills note, the tips card; teacher / admin → the console (ENVCONSOLE). A kid or parent studies in the
+//     FAMILY's own database instance (https://<projectId>-<familyId>.firebaseio.com, envsFamilyDbUrl): the one guarded line in initFb
+//     points `db` there, so every one of the app's db.ref calls lands in that family's instance exactly as in Howe. The shared default
+//     instance holds only the roster, logins, releases, scores, teacher cards and boards (envirothon/SITE_RULES.json).
+//   · SIGN-IN CARD (every login): email + password (the app's own form), "Student code from your card" (the kid's short code →
+//     a synthetic login k-<code>@<projectId>.kid with a password DERIVED from the code, envsKidPw; the code is never stored anywhere;
+//     the password lives only in Auth), and the © + license line. LOCKED SEASON (release/locked, Adrienne only; AUTO after 2027-04-24 —
+//     envsLockState) → the "season closed" card and nothing else loads; data is kept; an admin's {locked:false, at:<after that date>}
+//     reopens it for the next season.
+//   · WRITES from this block (live, never in demo or dry run): bank/<kid>/adjustments (ENVS_STARS stars per finished sitting, bankDirect);
+//     the first signed-in boot's auto-enroll of the family's kid into the unit, every deck held (her 8.4: "a kid can start at school before
+//     the parent ever opens the app"), through the app's own _ustApply/_ustWrite; settings/pin and settings/family/<i>/color from the ⚙️
+//     panel (the app's own paths). Everything else here is a read or a screen.
+//   · DEMO (`?demo=1`, `&role=kid|parent|teacher|admin`): a sample class in this block (invented names, no real student), a role switch
+//     pinned at the top, every screen clickable, every write a no-op that shows "demo: would write <path>". Works from a double-clicked file.
+const ENVS_TAB="envsite", ENVS_STARS=3, ENVS_AUTOLOCK="20270424", ENVS_SEASON="2026-27", ENVS_ROLES=["kid","parent","teacher","admin"];
+const ENVS_OFF_TABS=["schedule","notebook","play","moms-plan","babysitter","supplies","history","pace","activities","grid","generate","chorePlan","kitchen","workbooks","eic","purchases","helpers","mastery","units","kids"];   // every door the micro doc lists as off, plus the app's own tabs: the site has ONE page
+const ENVS_FULL_APP=["🗓 A daily schedule laid out for each kid, re-laid from now when the day slips","📓 Weekly notebooks and workbooks generated for each kid","🧹 Chores, laundry and routines with stars that buy things Mom sets up","🍽 Meals, the shopping list and the kitchen","👩 Mom's Day and Dad's Day","📚 Every unit you add, your own cards, Problem words, the Curriculum Builder"];
+const ENVS_TIPS=[  // PLACEHOLDER — Adrienne's six lines + contact line (her 8.7: the card ships with placeholders until she writes them)
+  "PLACEHOLDER tip 1 — two views: the student's screen is his; a parent's login sees how he is doing.",
+  "PLACEHOLDER tip 2 — the kid's code card works on a school device or a phone; add the page to the home screen.",
+  "PLACEHOLDER tip 3 — a little most days beats a lot once: the cards come back on their own schedule.",
+  "PLACEHOLDER tip 4 — the teacher sends out each station as the class reaches it; a station starts with a short check-in.",
+  "PLACEHOLDER tip 5 — ⭐ stars arrive after each finished sitting; what they are for is coming.",
+  "PLACEHOLDER tip 6 — questions about the app go to the line below, questions about the class go to the teacher."];
+const ENVS_CONTACT="PLACEHOLDER contact line — e.g. Adrienne · adrienne@example.com";
+const _envs={demo:null,demoRole:"",role:"",uid:"",email:"",familyId:"",kid:"",sid:"",cid:"",dbUrl:"",lockRaw:undefined,lock:null,view:"study",sub:{},dbEdition:"",writes:[],toastT:null,css:false,mirrorArmed:false,autoEnroll:"",err:"",boards:null,who:"",cls:null,gateDone:false,stars:0,bankDemo:0};
+function envsQuery(){ try{ return (typeof location!=="undefined"&&location.search)||""; }catch(e){ return ""; } }
+function envsFam(){ try{ return (typeof window!=="undefined"&&window.HA_FAMILY)||null; }catch(e){ return null; } }
+function envsDemo(){
+  if(_envs.demo===null){ const f=envsFam(); _envs.demo=/[?&]demo=1/.test(envsQuery())||!!(f&&f.demo===true);
+    if(_envs.demo){ const m=/[?&]role=(kid|parent|teacher|admin|signin)/.exec(envsQuery()); _envs.demoRole=m?m[1]:"signin"; } }
+  return _envs.demo;
+}
+// THE switch. "" for every family that is not the Envirothon site.
+function envEdition(){ try{ if(envsDemo()) return "envirothon"; const f=envsFam(); if(f&&f.edition==="envirothon") return "envirothon"; if(_envs.dbEdition==="envirothon") return "envirothon"; }catch(e){} return ""; }
+function envSiteOn(){ return envEdition()==="envirothon"; }
+function envsEsc(v){ return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function envsJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+function envsDayKey(ms){ return new Date(ms).toISOString().slice(0,10).replace(/-/g,""); }
+function envsTodayKey(now){ return envsDayKey(now!=null?now:Date.now()); }
+function envsKeyMs(k){ k=String(k||""); return Date.UTC(+k.slice(0,4),+k.slice(4,6)-1,+k.slice(6,8)); }
+function envsDaysAgo(k,now){ if(!k) return null; return Math.round((envsKeyMs(envsTodayKey(now))-envsKeyMs(k))/86400000); }
+function envsCfg(){ const f=envsFam(); return (f&&f.envirothon&&typeof f.envirothon==="object")?f.envirothon:{}; }
+function envsProjectId(){ try{ return String((typeof FB_CFG!=="undefined"&&FB_CFG&&FB_CFG.projectId)||envsCfg().projectId||"envirothon"); }catch(e){ return "envirothon"; } }
+function envsClassName(){ if(_envs.cls&&_envs.cls.name) return _envs.cls.name; const f=envsFam(); return (f&&(f.licensee||f.className))||envsCfg().className||"the Envirothon class"; }
+function envsLicenseLine(){ return "\u00A9 2026 Howe Academy \u00B7 licensed to "+envsClassName()+" for the "+ENVS_SEASON+" season \u00B7 not for redistribution"; }
+// ── the master lock (release/locked on the shared instance). true | {locked, at, by} | nothing. Auto after 2027-04-24 (State) unless an
+//    admin reopened it AFTER that date; her early lock is `locked:true` any day. Pure: (raw, todayKey) → {locked, why}.
+function envsLockState(raw,todayKey){
+  todayKey=todayKey||envsTodayKey();
+  if(raw===true) return {locked:true,why:"switch"};
+  if(raw&&typeof raw==="object"){
+    if(raw.locked===true) return {locked:true,why:"switch"};
+    if(raw.locked===false&&raw.at&&envsDayKey(+raw.at)>ENVS_AUTOLOCK) return {locked:false,why:"reopened"};
+  }
+  if(todayKey>ENVS_AUTOLOCK) return {locked:true,why:"auto"};
+  return {locked:false,why:""};
+}
+function envsAutoLockLabel(){ return "Apr 24, 2027"; }
+// ── stations and decks (ENV_DECKS / ENV_STAGES from ENVUNIT; kept in every build)
+const ENVS_SHORT={general:"General",forestry:"Forestry",soils:"Soils",aquatics:"Aquatics",wildlife:"Wildlife",cei:"CEI"};
+function envsStations(){
+  const D=(typeof ENV_DECKS!=="undefined"&&ENV_DECKS)||[], S=(typeof ENV_STAGES!=="undefined"&&ENV_STAGES)||[]; const out=[], seen={};
+  D.forEach(d=>{ const id=d[3]; if(seen[id]) return; seen[id]=1; const st=S.find(x=>x[0]===d[2]);
+    out.push({id,label:(st&&st[1])||id,short:ENVS_SHORT[id]||id,decks:D.filter(x=>x[3]===id).map(x=>({key:x[0],kind:x[4],n:x[5],mode:x[1]}))}); });
+  return out;
+}
+function envsStation(id){ return envsStations().find(s=>s.id===id)||null; }
+function envsStationOfDeck(key){ const s=envsStations().find(x=>x.decks.some(d=>d.key===key)); return s?s.id:null; }
+function envsDeckShort(key){ const m=/\u00b7 (.+)$/.exec(String(key||"")); return m?m[1]:String(key||""); }
+// ── one station's numbers from a summary (the mirror's envSummary record): the SAME function feeds the console grid, the student page and
+//    the parent's page, so every screen agrees. pct = mastered / total over RELEASED decks (a held deck is not counted); null = not sent out.
+function envsStationStat(summary,st){
+  const out={id:st.id,total:0,mastered:0,learning:0,new:0,released:0,decks:st.decks.length,c14:0,m14:0,acc14:null,last:null,pre:null,post:null,grad:null,pct:null};
+  const bd=(summary&&summary.byDeck)||{};
+  st.decks.forEach(d=>{ const c=bd[d.key]; if(!c||c.held) return; out.released++; out.total+=c.total||0; out.mastered+=c.mastered||0; out.learning+=(c.learning||0)+(c.active||0); out.new+=(c.new||0)+(c.waiting||0);
+    out.c14+=c.c14||0; out.m14+=c.m14||0; if(c.last&&(!out.last||c.last>out.last)) out.last=c.last; });
+  if(out.released&&out.total) out.pct=Math.round(out.mastered/out.total*100); else if(out.released) out.pct=0;
+  out.acc14=(out.c14+out.m14)?Math.round(out.c14/(out.c14+out.m14)*100):null;
+  const t=(summary&&summary.tests&&summary.tests[st.id])||null;
+  if(t){ out.pre=t.pre||null; out.post=(t.post&&t.post.best)||null; out.grad=t.graduated||null; }
+  return out;
+}
+function envsPct(t){ return (t&&t.n)?Math.round((t.right||0)/t.n*100):null; }
+// gain over the own pre-test, STAD-style improvement points: Σ stations max(0, post% − pre%); a station with no post yet gives 0.
+function envsGain(summary){ let g=0; const T=(summary&&summary.tests)||{}; Object.keys(T).forEach(s=>{ const t=T[s]; const a=envsPct(t&&t.pre), b=envsPct(t&&t.post&&t.post.best); if(a!=null&&b!=null) g+=Math.max(0,b-a); }); return g; }
+// effort = cards reviewed in the last 7 days + 3 × the study streak (study sittings only, her 8.9) — never accuracy, never a score
+function envsEffort(summary,now){ const d=(summary&&summary.days)||{}; let r=0; Object.keys(d).forEach(k=>{ const ago=envsDaysAgo(k,now); if(ago!=null&&ago>=0&&ago<7) r+=(d[k]&&d[k].n)||0; }); const st=(summary&&summary.streak&&summary.streak.days)||0; return {reviews:r,streak:st,score:r+3*st}; }
+// ── THE BOARDS (pure): students {sid:{meta,summary}} + teams {sid:"Team name"} → the public boards. No individual score anywhere:
+//    team board = Σ members' gains; readiness bars per team per station = mean of members' station %; station-expert badge per team =
+//    the member highest on that station (> 0); effort board = every student's effort (reviews + streak), ranked.
+function envsBoardsCompute(students,teams,now){
+  const stns=envsStations(), per={}; teams=teams||{};
+  Object.keys(students||{}).forEach(sid=>{ const row=students[sid]||{}, s=row.summary||null; const name=(row.meta&&row.meta.name)||sid;
+    const st={}; stns.forEach(x=>{ st[x.id]=envsStationStat(s,x).pct; });
+    per[sid]={name,gain:envsGain(s),eff:envsEffort(s,now),st,team:String(teams[sid]||"").trim()}; });
+  const T={};
+  Object.keys(per).forEach(sid=>{ const t=per[sid].team||"No team yet"; const r=T[t]||(T[t]={name:t,members:[],gain:0,ready:{},badges:{}}); r.members.push(sid); r.gain+=per[sid].gain; });
+  Object.keys(T).forEach(t=>{ const r=T[t]; r.members.sort((a,b)=>per[a].name.localeCompare(per[b].name)); r.memberNames=r.members.map(sid=>per[sid].name);
+    stns.forEach(x=>{ const vals=r.members.map(sid=>per[sid].st[x.id]).filter(v=>v!=null); r.ready[x.id]=vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length):null;
+      let best=null; r.members.forEach(sid=>{ const v=per[sid].st[x.id]; if(v!=null&&v>0&&(best===null||v>per[best].st[x.id])) best=sid; });
+      if(best) r.badges[x.id]={sid:best,name:per[best].name,pct:per[best].st[x.id]}; }); });
+  const teamList=Object.keys(T).map(k=>T[k]).sort((a,b)=>b.gain-a.gain||a.name.localeCompare(b.name));
+  const effort=Object.keys(per).map(sid=>({sid,name:per[sid].name,score:per[sid].eff.score,reviews:per[sid].eff.reviews,streak:per[sid].eff.streak})).sort((a,b)=>b.score-a.score||a.name.localeCompare(b.name));
+  return {at:(now!=null?now:Date.now()),teams:teamList,effort,stations:stns.map(s=>({id:s.id,short:s.short}))};
+}
+// the public boards as HTML; mySid → the effort board shows "you and the two nearest" only (kid / parent); null → the whole list (teacher)
+function envsBoardsHtml(B,mySid){
+  if(!B||!B.teams) return '<div class="envs-card" style="color:var(--muted)">No boards yet \u2014 the teacher opens Boards once and they appear here.</div>';
+  const stns=B.stations||[]; let h='';
+  h+='<div class="envs-card"><div class="envs-h2">\u{1F3C6} Team board \u00B7 gains over each member\u2019s own check-in</div>';
+  h+='<div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">A team\u2019s points are the sum of how much each member improved from their station check-in to their final \u2014 so every student adds points.</div>';
+  (B.teams||[]).forEach((t,i)=>{ h+='<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid #f1efe9"><div style="font-size:18px;width:26px;text-align:center">'+(i===0?'\u{1F947}':i===1?'\u{1F948}':i===2?'\u{1F949}':'\u00B7')+'</div><div style="flex:1"><div style="font-weight:800">'+envsEsc(t.name)+'</div><div style="font-size:11px;color:var(--muted)">'+envsEsc((t.memberNames||[]).join(" \u00B7 "))+'</div></div><div style="font-size:20px;font-weight:900;color:#14532d">'+t.gain+'<span style="font-size:11px;font-weight:700;color:var(--muted)"> pts</span></div></div>'; });
+  h+='</div>';
+  h+='<div class="envs-card"><div class="envs-h2">\u{1F4CA} Station readiness \u00B7 per team</div>';
+  (B.teams||[]).forEach(t=>{ h+='<div style="padding:6px 0;border-top:1px solid #f1efe9"><div style="font-weight:800;font-size:13px;margin-bottom:4px">'+envsEsc(t.name)+'</div>';
+    stns.forEach(s=>{ const v=t.ready&&t.ready[s.id]; h+='<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;padding:1px 0"><div style="width:62px;color:var(--muted);font-weight:700">'+envsEsc(s.short)+'</div><div style="flex:1;height:8px;background:#eef2ee;border-radius:4px;overflow:hidden"><div style="width:'+(v==null?0:v)+'%;height:100%;background:'+(v==null?'#eef2ee':v>=80?'#15803d':v>=40?'#65a30d':'#f59e0b')+'"></div></div><div style="width:44px;text-align:right;font-weight:700">'+(v==null?'\u2013':v+'%')+'</div></div>'; });
+    h+='</div>'; });
+  h+='</div>';
+  h+='<div class="envs-card"><div class="envs-h2">\u{1F396} Station experts \u00B7 per team</div>';
+  (B.teams||[]).forEach(t=>{ const b=t.badges||{}; const parts=stns.filter(s=>b[s.id]).map(s=>'<span class="envs-chip">'+envsEsc(s.short)+': <b>'+envsEsc(b[s.id].name)+'</b></span>');
+    h+='<div style="padding:6px 0;border-top:1px solid #f1efe9"><div style="font-weight:800;font-size:13px">'+envsEsc(t.name)+'</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">'+(parts.length?parts.join(""):'<span style="font-size:11.5px;color:var(--muted)">no station studied yet</span>')+'</div></div>'; });
+  h+='</div>';
+  let rows=B.effort||[];
+  if(mySid){ const i=rows.findIndex(r=>r.sid===mySid); if(i>=0) rows=rows.slice(Math.max(0,i-1),i+2); else rows=[]; }
+  h+='<div class="envs-card"><div class="envs-h2">\u{1F4AA} Effort this week'+(mySid?' \u00B7 you and the two nearest':'')+'</div><div style="font-size:11.5px;color:var(--muted);margin-bottom:6px">Cards reviewed in the last 7 days and the study streak \u2014 effort, not scores.</div>';
+  if(!rows.length) h+='<div style="font-size:12px;color:var(--muted)">Nothing to show yet.</div>';
+  rows.forEach(r=>{ const me=r.sid===mySid; h+='<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid #f1efe9;'+(me?'background:#f0fdf4;margin:0 -8px;padding-left:8px;padding-right:8px;border-radius:8px':'')+'"><div style="flex:1;font-weight:'+(me?'900':'700')+'">'+envsEsc(me?(r.name+' (you)'):r.name)+'</div><div style="font-size:11.5px;color:var(--muted)">'+r.reviews+' cards \u00B7 '+r.streak+'-day streak</div><div style="font-weight:900;color:#14532d;width:34px;text-align:right">'+r.score+'</div></div>'; });
+  h+='</div>';
+  return h;
+}
+// ── kid codes: a short code on a printable card → a synthetic email + a DERIVED password. Deterministic, never stored (the card is the only copy;
+//    the teacher's "New code" makes a new login). Alphabet without 0/O/1/I; 7 chars incl. the dash.
+const ENVS_CODE_ALPHA="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+function envsMakeCode(rnd){ rnd=rnd||Math.random; let s=""; for(let i=0;i<6;i++){ s+=ENVS_CODE_ALPHA[Math.floor(rnd()*ENVS_CODE_ALPHA.length)%ENVS_CODE_ALPHA.length]; if(i===2) s+="-"; } return s; }
+function envsCodeNorm(c){ return String(c||"").toUpperCase().replace(/[^A-Z2-9]/g,"").replace(/^(.{3})(.+)$/,"$1-$2"); }
+function envsCodeOk(c){ return /^[A-Z2-9]{3}-[A-Z2-9]{3}$/.test(envsCodeNorm(c)); }
+function envsKidEmail(code,projectId){ return "k-"+envsCodeNorm(code).toLowerCase().replace("-","")+"@"+(projectId||envsProjectId())+".kid"; }
+function envsKidPw(code,projectId){ return "K"+envsCodeNorm(code)+"#"+(projectId||envsProjectId()); }
+// the family's own database instance in the project: <projectId>-<familyId>, or the pattern the host config gives ({fid} is replaced)
+function envsFamilyDbUrl(fid){ const p=envsCfg().familyDbPattern; if(p) return String(p).replace("{fid}",fid); return "https://"+envsProjectId()+"-"+fid+".firebaseio.com"; }
+// ── the one-line hooks' targets ──
+// initFb: `db = envSiteDb() || firebase.database()` — a kid or parent studies in the family instance; everyone else (and every other family) keeps the default.
+function envSiteDb(){ if(!envSiteOn()||envsDemo()||!_envs.dbUrl) return null; try{ return firebase.app().database(_envs.dbUrl); }catch(e){ _envs.err=String((e&&e.message)||e); return null; } }
+// haAuthGate, first line: the demo never touches Firebase (works from a double-clicked file: no network, no scripts needed).
+function envSiteDemoBoot(){
+  if(!envSiteOn()||!envsDemo()) return false;
+  if(!_envs.gateDone){ _envs.gateDone=true; try{ _haAuthStarted=true; }catch(e){} envsDemoStart(); }
+  return true;
+}
+// haAuthGate's go(u): the signed-in user → logins/<uid> → role → the part. Returns false for every other family (boot continues as before).
+function envSiteGate(user,cont){
+  if(!envSiteOn()) return false;
+  if(envsDemo()){ envSiteDemoBoot(); return true; }
+  if(!user) return false;   // not signed in: the gate shows the card (ours, through envSiteAuthShow)
+  if(_envs.gateDone) return true; _envs.gateDone=true;
+  _envs.uid=user.uid||""; _envs.email=user.email||"";
+  let sdb; try{ sdb=firebase.database(); }catch(e){ envsCard("error",{msg:String((e&&e.message)||e)}); return true; }
+  const val=s=>(s&&typeof s.val==="function")?s.val():null;
+  sdb.ref("release/locked").once("value").then(s=>{ _envs.lockRaw=val(s); return sdb.ref("logins/"+_envs.uid).once("value"); })
+    .then(s=>{ const L=val(s); if(L&&L.role) return L; return sdb.ref("admins/"+_envs.uid).once("value").then(a=>val(a)===true?{role:"admin"}:null); })
+    .then(L=>{ if(!L){ envsCard("notset"); return; } envsApplyLogin(L); _envs.lock=envsLockState(_envs.lockRaw);
+      if(_envs.lock.locked&&_envs.role!=="admin"){ envsCard("closed"); return; } envsEnter(cont); })
+    .catch(e=>{ _envs.err=String((e&&e.message)||e); envsCard("error",{msg:_envs.err}); });
+  return true;
+}
+function envsApplyLogin(L){
+  L=L||{}; _envs.role=ENVS_ROLES.indexOf(L.role)>=0?L.role:"parent";
+  _envs.familyId=String(L.familyId||"").replace(/[^a-z0-9_-]/gi,""); _envs.kid=String(L.kid||"").replace(/[^a-z0-9_-]/gi,""); _envs.cid=String(L.cid||L.classId||"");
+  _envs.sid=(_envs.familyId&&_envs.kid)?_envs.familyId+"_"+_envs.kid:"";
+  _envs.dbUrl=(_envs.role==="kid"||_envs.role==="parent")&&_envs.familyId?(L.dbUrl||envsFamilyDbUrl(_envs.familyId)):"";
+}
+// into the part: the body classes, the one page, the mirror pointed at this project, then the app's own boot (kid / parent) or the console
+function envsEnter(cont){
+  envsCss(); try{ tab=ENVS_TAB; }catch(e){}
+  try{ document.body.classList.add("env-site","env-role-"+_envs.role); }catch(e){}
+  if(_envs.role==="kid"||_envs.role==="parent"){
+    try{ const f=envsFam(); if(f&&!envsDemo()){ f.envirothon=Object.assign({},f.envirothon||{},{firebase:Object.assign({},FB_CFG),familyId:_envs.familyId,kids:[_envs.kid]}); if(_envs.cid) f.envirothon.classId=_envs.cid; } }catch(e){}   // 🌿 ENVMIRROR publishes students/<sid>/summary to THIS project under this login
+    try{ if(typeof _envm!=="undefined"&&!envsDemo()){ _envm.app=firebase.app(); _envm.edb=firebase.database(); _envm.auth=firebase.auth(); _envm.user=firebase.auth().currentUser||null; } }catch(e){}
+    try{ masteryKid=_envs.kid; }catch(e){}
+    _envs.view="study";
+    if(typeof cont==="function") cont(); else { try{ haAuthHide(); initFb(); renderAll(); haAuthWatch(); }catch(e){} }
+    envsReadEdition(); envsReadShared();
+    return;
+  }
+  _envs.view="grid";
+  try{ haAuthHide(); }catch(e){}
+  try{ if(typeof envConsoleStart==="function") envConsoleStart(); }catch(e){ _envs.err=String((e&&e.message)||e); }
+  try{ renderAll(); }catch(e){}
+  try{ haAuthWatch(); }catch(e){}
+}
+// after connect, the family instance's own edition record (can only add the lock) — one read
+function envsReadEdition(){ try{ if(envsDemo()||typeof db==="undefined"||!db) return; db.ref("settings/edition").once("value",s=>{ const v=s&&typeof s.val==="function"?s.val():null; if(v==="envirothon") _envs.dbEdition=v; }); }catch(e){} }
+// the shared instance's few reads a kid / parent needs: the class (name, teams), the boards, who drills — live listeners, repaint on arrival
+function envsReadShared(){
+  if(envsDemo()) return; let sdb; try{ sdb=firebase.database(); }catch(e){ return; }
+  const val=s=>(s&&typeof s.val==="function")?s.val():null, re=()=>{ try{ if(typeof renderAllSoon==="function") renderAllSoon(); }catch(e){} };
+  const go=cid=>{ if(!cid) return; _envs.cid=cid; sdb.ref("classes/"+cid).on("value",s=>{ _envs.cls=val(s); re(); }); sdb.ref("boards/"+cid).on("value",s=>{ _envs.boards=val(s); re(); }); sdb.ref("settings/whoDrills/"+cid).on("value",s=>{ _envs.who=val(s)||""; re(); }); };
+  if(_envs.cid) go(_envs.cid); else if(_envs.sid) sdb.ref("students/"+_envs.sid+"/class").once("value",s=>go(val(s)));
+  sdb.ref("release/locked").on("value",s=>{ _envs.lockRaw=val(s); _envs.lock=envsLockState(_envs.lockRaw); if(_envs.lock.locked&&_envs.role!=="admin") envsCard("closed"); });
+}
+// showTab: the site has one page — every tap lands back on it (every door the micro doc lists as off is simply not reachable)
+function envSiteTabGate(t){ if(!envSiteOn()||!_envs.role) return false; try{ tab=ENVS_TAB; }catch(e){} try{ renderAll(); }catch(e){} return true; }
+function envsCss(){
+  if(_envs.css||typeof document==="undefined") return; _envs.css=true;
+  try{ const s=document.createElement("style"); s.id="envs-css"; s.textContent=
+    'body.env-site #app-header,body.env-site #nav-tabs,body.env-site #sched-subtabs,body.env-site #day-tabs,body.env-site #kid-filter,body.env-site #week-strip,body.env-site #hq-back,body.env-site #md-back{display:none !important}'+
+    'body.env-site #content{max-width:900px;margin:0 auto}.envs-wrap{font-family:\'DM Sans\',sans-serif;padding:0 12px 90px}'+
+    '.envs-top{position:sticky;top:0;z-index:98;margin:0 -12px 10px;padding:10px 14px;color:#fff;display:flex;align-items:center;gap:10px;box-shadow:0 2px 8px rgba(0,0,0,.12)}'+
+    '.envs-top .t{flex:1;font-weight:900;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.envs-top button{min-height:40px;padding:0 12px;border-radius:12px;border:none;background:rgba(255,255,255,.18);color:#fff;font-weight:800;cursor:pointer;font-family:inherit;font-size:13px}'+
+    '.envs-chips{display:flex;gap:6px;overflow-x:auto;padding:2px 0 10px}.envs-chips button{flex-shrink:0;min-height:40px;padding:0 14px;border-radius:999px;border:2px solid #d1d5db;background:#fff;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;color:#374151}.envs-chips button.on{background:#14532d;border-color:#14532d;color:#fff}'+
+    '.envs-card{background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:12px 14px;margin-bottom:12px}.envs-h2{font-weight:900;font-size:14px;margin-bottom:6px;color:#111827}.envs-chip{display:inline-block;padding:3px 9px;border-radius:999px;background:#f0fdf4;border:1px solid #bbf7d0;font-size:11.5px;color:#14532d}'+
+    '.envs-btn{min-height:44px;padding:0 16px;border-radius:12px;border:none;background:#14532d;color:#fff;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit}.envs-btn.sec{background:#fff;color:#1f2937;border:1.5px solid var(--border)}.envs-btn.red{background:#fff;color:#b91c1c;border:1.5px solid #fecaca}.envs-btn:disabled{opacity:.5;cursor:default}'+
+    '.envs-in{min-height:40px;padding:6px 10px;border:1.5px solid var(--border);border-radius:10px;font:inherit;font-size:14px;width:100%;box-sizing:border-box}.envs-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.envs-muted{color:var(--muted);font-size:11.5px}'+
+    '.envs-demo{position:sticky;top:0;z-index:99;background:#fde68a;color:#1f2937;padding:8px 12px;margin:0 -12px 8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12.5px;font-weight:700}.envs-demo button{min-height:34px;padding:0 10px;border-radius:999px;border:1.5px solid #b45309;background:#fff;font-weight:800;cursor:pointer;font-family:inherit;font-size:12px;color:#92400e}.envs-demo button.on{background:#b45309;color:#fff}'+
+    '.envs-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:100001;background:#111827;color:#fff;padding:10px 14px;border-radius:12px;font:600 12.5px \'DM Sans\',sans-serif;max-width:92vw;box-shadow:0 8px 24px rgba(0,0,0,.25)}'+
+    '.envs-grid{width:100%;border-collapse:collapse;font-size:12px}.envs-grid th,.envs-grid td{padding:6px 6px;border-bottom:1px solid #f1efe9;text-align:left;white-space:nowrap}.envs-grid th{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}.envs-grid td.c{text-align:center}'+
+    'body.env-site .kc-study-bar{display:none}';
+    document.head.appendChild(s); }catch(e){}
+}
+// ── the cards that replace the app: season closed · login not set up · an error. Nothing else loads.
+function envsCard(kind,x){
+  x=x||{}; if(typeof document==="undefined") return;
+  try{ haAuthHide(); }catch(e){} envsCss();
+  let o=document.getElementById("envs-card"); if(!o){ o=document.createElement("div"); o.id="envs-card"; o.style.cssText="position:fixed;inset:0;z-index:100000;background:#f0fdf4;display:flex;align-items:center;justify-content:center;padding:20px;font-family:'DM Sans',system-ui,sans-serif"; document.body.appendChild(o); }
+  let inner;
+  if(kind==="closed") inner='<div style="font-size:40px">\u{1F512}</div><div style="font-weight:900;font-size:20px;margin:8px 0 4px">Season closed</div><div style="font-size:13px;color:#4b5563;line-height:1.5">The '+envsEsc(ENVS_SEASON)+' Envirothon season is closed'+(_envs.lock&&_envs.lock.why==="auto"?' (it closes by itself after '+envsAutoLockLabel()+')':'')+'. Everything is kept; nothing is deleted. Ask Adrienne if it should reopen.</div>';
+  else if(kind==="notset") inner='<div style="font-size:40px">\u{1F331}</div><div style="font-weight:900;font-size:20px;margin:8px 0 4px">This login isn\u2019t set up yet</div><div style="font-size:13px;color:#4b5563;line-height:1.5">'+envsEsc(_envs.email||"This account")+' has no student, parent or teacher record here. Ask your teacher to add you from her roster.</div>';
+  else inner='<div style="font-size:40px">\u26A0\uFE0F</div><div style="font-weight:900;font-size:20px;margin:8px 0 4px">Couldn\u2019t open</div><div style="font-size:13px;color:#4b5563;line-height:1.5">'+envsEsc(x.msg||_envs.err||"Try again in a minute.")+'</div>';
+  o.innerHTML='<div style="background:#fff;border-radius:18px;padding:24px 22px;max-width:380px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.2)">'+inner+
+    '<div style="margin-top:14px;display:flex;gap:8px;justify-content:center"><button onclick="envsSignOut()" class="envs-btn sec">Sign out</button><button onclick="location.reload()" class="envs-btn">\u21BB Try again</button></div>'+
+    '<div style="margin-top:14px;font-size:10.5px;color:#6b7280;line-height:1.4">'+envsEsc(envsLicenseLine())+'</div></div>';
+}
+// ── the sign-in card (haAuthShow's first line): the app's own email + password form, the student-code field, the © line
+function envSiteAuthShow(msg){
+  if(!envSiteOn()||envsDemo()||typeof document==="undefined") return false;
+  envsCss(); let o=document.getElementById("ha-auth");
+  if(!o){ o=document.createElement("div"); o.id="ha-auth"; o.style.cssText="position:fixed;inset:0;z-index:100000;background:#0f2e1f;display:flex;align-items:center;justify-content:center;padding:20px;font-family:'DM Sans',system-ui,sans-serif;overflow:auto"; o.innerHTML=envsAuthHtml(); document.body.appendChild(o);
+    setTimeout(function(){ const i=document.getElementById("ha-auth-e"); if(i) i.focus(); },50); }
+  const m=document.getElementById("ha-auth-m"); if(m) m.textContent=msg||"";
+  return true;
+}
+function envsAuthHtml(){
+  return '<div style="background:#fff;border-radius:18px;padding:22px 20px;width:100%;max-width:360px;box-shadow:0 20px 60px rgba(0,0,0,.35)">'+
+    '<div style="font-size:36px;text-align:center">\u{1F33F}</div><div style="font-weight:900;font-size:18px;text-align:center;margin:4px 0 2px">Envirothon \u00B7 Howe Academy</div>'+
+    '<div style="font-size:12px;color:#64748b;text-align:center;margin-bottom:14px">'+envsEsc(envsClassName())+'</div>'+
+    '<form onsubmit="return envsAuthSubmit(event)"><div style="font-size:11px;font-weight:800;color:#374151;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Parents and teachers</div>'+
+    '<input id="ha-auth-e" class="envs-in" type="email" autocomplete="username" placeholder="email" required style="margin-bottom:8px">'+
+    '<input id="ha-auth-p" class="envs-in" type="password" autocomplete="current-password" placeholder="password" required style="margin-bottom:8px">'+
+    '<button id="ha-auth-b" type="submit" class="envs-btn" style="width:100%">Sign in</button>'+
+    '<div style="text-align:center;margin-top:8px"><a href="javascript:void(0)" onclick="envsForgot()" style="font-size:12px;color:#14532d">Forgot the password? Email me a reset link</a></div></form>'+
+    '<div style="display:flex;align-items:center;gap:10px;margin:16px 0 12px;color:#9ca3af;font-size:11px"><div style="flex:1;height:1px;background:#e5e7eb"></div>or<div style="flex:1;height:1px;background:#e5e7eb"></div></div>'+
+    '<form onsubmit="return envsKidSubmit(event)"><div style="font-size:11px;font-weight:800;color:#374151;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Students</div>'+
+    '<div style="display:flex;gap:8px"><input id="ha-auth-k" class="envs-in" type="text" autocomplete="off" autocapitalize="characters" placeholder="Student code from your card" maxlength="8" style="flex:1;letter-spacing:.08em;font-weight:800;text-transform:uppercase"><button id="ha-auth-kb" type="submit" class="envs-btn">Go</button></div></form>'+
+    '<div id="ha-auth-m" style="min-height:16px;font-size:12px;color:#b5394a;text-align:center;margin-top:10px"></div>'+
+    '<div style="margin-top:12px;font-size:10.5px;color:#6b7280;text-align:center;line-height:1.4">'+envsEsc(envsLicenseLine())+'</div></div>';
+}
+function envsAuthErr(err){ const code=String(err&&err.code||""); return /wrong-password|invalid-credential|user-not-found|invalid-login/.test(code)?"That email or password isn\u2019t right.":/too-many/.test(code)?"Too many tries \u2014 wait a minute.":/network/.test(code)?"No connection \u2014 try again.":(err&&err.message)||"Couldn\u2019t sign in."; }
+function envsAuthSubmit(ev){
+  if(ev&&ev.preventDefault) ev.preventDefault(); if(!envSiteOn()) return false;
+  const e=((document.getElementById("ha-auth-e")||{}).value||"").trim(), p=(document.getElementById("ha-auth-p")||{}).value||"";
+  const b=document.getElementById("ha-auth-b"); if(b){ b.disabled=true; b.textContent="Signing in\u2026"; } envSiteAuthShow("");
+  firebase.auth().signInWithEmailAndPassword(e,p).then(function(){ try{ sessionStorage.setItem("ha_reload_why","envsite-signin"); }catch(x){} location.reload(); })
+    .catch(function(err){ if(b){ b.disabled=false; b.textContent="Sign in"; } envSiteAuthShow(envsAuthErr(err)); });
+  return false;
+}
+function envsKidSubmit(ev){
+  if(ev&&ev.preventDefault) ev.preventDefault(); if(!envSiteOn()) return false;
+  const raw=(document.getElementById("ha-auth-k")||{}).value||"", code=envsCodeNorm(raw);
+  if(!envsCodeOk(code)){ envSiteAuthShow("A code looks like ABC-123 \u2014 check your card."); return false; }
+  const b=document.getElementById("ha-auth-kb"); if(b){ b.disabled=true; b.textContent="\u2026"; } envSiteAuthShow("");
+  firebase.auth().signInWithEmailAndPassword(envsKidEmail(code),envsKidPw(code)).then(function(){ try{ sessionStorage.setItem("ha_reload_why","envsite-kid"); }catch(x){} location.reload(); })
+    .catch(function(err){ if(b){ b.disabled=false; b.textContent="Go"; } envSiteAuthShow(/wrong-password|invalid-credential|user-not-found|invalid-login/.test(String(err&&err.code||""))?"That code isn\u2019t one of ours \u2014 check your card or ask your teacher.":envsAuthErr(err)); });
+  return false;
+}
+function envsForgot(){ if(!envSiteOn()) return; const e=((document.getElementById("ha-auth-e")||{}).value||"").trim(); if(!e){ envSiteAuthShow("Type your email first, then tap the link."); return; }
+  try{ firebase.auth().sendPasswordResetEmail(e).then(function(){ envSiteAuthShow("Sent \u2014 check your email for the reset link."); }).catch(function(err){ envSiteAuthShow(envsAuthErr(err)); }); }catch(err){ envSiteAuthShow(envsAuthErr(err)); } }
+function envsSignOut(){ if(envsDemo()){ envsToast("demo: would sign out"); return; } try{ haSignOut(); }catch(e){ try{ location.reload(); }catch(x){} } }
+// ── writes: demo → a toast and a record, never a write; dry run → nothing; live → the shared instance (the console's writes come through here too)
+function envsWrite(path,val,op){
+  op=op||"set"; const rec={op,path,val:(val===undefined?null:val)};
+  if(envsDemo()){ _envs.writes.push(rec); envsToast("demo: would "+op+" "+path); return Promise.resolve(rec); }
+  if(typeof _dryRun==="function"&&_dryRun()){ return Promise.resolve(rec); }
+  try{ const r=firebase.database().ref(path); return op==="update"?r.update(val):op==="remove"?r.remove():r.set(val); }catch(e){ return Promise.reject(e); }
+}
+function envsToast(msg){
+  if(typeof document==="undefined") return;
+  try{ let t=document.getElementById("envs-toast"); if(!t){ t=document.createElement("div"); t.id="envs-toast"; t.className="envs-toast"; document.body.appendChild(t); } t.textContent=msg; t.style.display="block";
+    if(_envs.toastT) clearTimeout(_envs.toastT); _envs.toastT=setTimeout(()=>{ try{ t.style.display="none"; }catch(e){} },2600); }catch(e){}
+}
+function envsRe(){ try{ renderAll(); }catch(e){} }
+function envsView(v){ _envs.view=v; if(v==="games"){ try{ if(typeof gamesActive==="function"&&!gamesActive()){ if(typeof gamesOpen==="function") gamesOpen(); return; } }catch(e){} } envsRe(); try{ window.scrollTo(0,0); }catch(e){} }
+// ── the page (the one line in _renderAllInner): false for every other family; true = #content is ours
+function envSiteRender(c){
+  if(!envSiteOn()) return false; if(typeof tab!=="undefined"&&tab!==ENVS_TAB) return false; if(!_envs.role&&!envsDemo()) return false;
+  if(!c) return true;
+  let body="";
+  try{
+    if(envsDemo()&&_envs.demoRole==="signin") body=envsDemoSigninHtml();
+    else if(_envs.role==="kid") body=envsKidHtml();
+    else if(_envs.role==="parent") body=envsParentHtml();
+    else body=(typeof envConsoleHtml==="function")?envConsoleHtml():'<div class="envs-card">The console is not in this build.</div>';
+  }catch(e){ body='<div class="envs-card" style="color:#b91c1c">Couldn\u2019t draw this screen: '+envsEsc((e&&e.message)||e)+'</div>'; try{ console.error("[HA] ENVSITE",e); }catch(x){} }
+  c.innerHTML='<div class="envs-wrap">'+envsDemoBarHtml()+body+'</div>';
+  if(!envsDemo()){ envsAutoEnroll(); envsArmMirror(); }
+  return true;
+}
+// ── KID ──
+function envsKidColor(kid){ try{ return (typeof KID_COLOR!=="undefined"&&KID_COLOR[kid])||"#14532d"; }catch(e){ return "#14532d"; } }
+function envsKidName(kid){ try{ return (typeof KID_NAME!=="undefined"&&KID_NAME[kid])||(typeof cap==="function"?cap(kid):kid); }catch(e){ return kid; } }
+function envsStarsOf(kid){ if(envsDemo()) return _envs.bankDemo; try{ return (typeof bankBalance==="function")?bankBalance(kid):0; }catch(e){ return 0; } }
+function envsKidHtml(){
+  const kid=_envs.kid, col=envsKidColor(kid), name=envsKidName(kid), v=_envs.view||"study";
+  let h='<div class="envs-top" style="background:'+col+'"><div class="t">\u{1F33F} '+envsEsc(name)+' \u00B7 Envirothon</div><div style="font-weight:900">\u2B50 '+envsStarsOf(kid)+'</div><button onclick="envsView(\'settings\')" aria-label="Settings">\u2699\uFE0F</button></div>';
+  const chips=[["study","\u{1F4DA} Study"],["games","\u{1F3AE} Games"],["scores","\u{1F4CA} Scores"],["boards","\u{1F3C6} Team"],["store","\u{1F6CD} Star Store"],["tips","\u{1F4A1} Tips"]];
+  h+='<div class="envs-chips">'+chips.map(x=>'<button class="'+((v===x[0]||(x[0]==="games"&&v==="games"))?'on':'')+'" onclick="envsView(\''+x[0]+'\')">'+x[1]+'</button>').join("")+'</div>';
+  if(v==="games") h+=envsGamesHtml(kid,col);
+  else if(v==="scores") h+=envsScoresHtml(kid);
+  else if(v==="boards") h+=envsBoardsHtml(_envs.boards,_envs.sid);
+  else if(v==="store") h+=envsStoreHtml(kid);
+  else if(v==="tips") h+=envsTipsHtml("kid");
+  else if(v==="settings") h+=envsSettingsHtml();
+  else h+=envsStudyHtml(kid);
+  return h;
+}
+function envsStudyHtml(kid){
+  try{ masteryKid=kid; }catch(e){}
+  let body=""; try{ body=(typeof renderMastStudy==="function")?renderMastStudy({noCheckup:true}):""; }catch(e){ body='<div class="envs-card" style="color:var(--muted)">Couldn\u2019t load the study cards \u2014 try again ('+envsEsc((e&&e.message)||e)+')</div>'; }
+  if(!body||/No study sessions yet/.test(body)) body='<div class="envs-card" style="text-align:center;padding:30px 14px"><div style="font-size:36px">\u{1F331}</div><div style="font-weight:900;font-size:16px;margin-top:6px">Your cards are on their way</div><div class="envs-muted" style="margin-top:4px">'+(_envs.autoEnroll==="working"?'Setting up your Envirothon deck now\u2026':'Your teacher sends out each station as the class reaches it. Check back after class.')+'</div></div>';
+  return '<div style="padding-top:4px">'+body+'</div>';
+}
+function envsGamesHtml(kid,col){
+  try{ masteryKid=kid; }catch(e){}
+  try{ if(typeof gamesActive==="function"&&!gamesActive()) mastView="games"; const sub=(typeof gamesSubHtml==="function")?gamesSubHtml(col):"", body=(typeof gamesBodyHtml==="function")?gamesBodyHtml(col):"";
+    return '<div class="envs-card">'+(sub||'<div class="envs-muted">\u{1F3CB}\uFE0F Word workout \u2014 Match, Memory flip and Which one? open on your Envirothon decks once a few cards are on your ladder.</div>')+'</div><div>'+body+'</div>'; }
+  catch(e){ return '<div class="envs-card" style="color:var(--muted)">Games open once a few cards are on your ladder.</div>'; }
+}
+function envsSummary(kid){ try{ return (typeof envSummary==="function")?envSummary(kid):null; }catch(e){ return null; } }
+function envsWhen(k){ const a=envsDaysAgo(k); if(a==null) return "never"; if(a<=0) return "today"; if(a===1) return "yesterday"; return a+" days ago"; }
+// station rows: mastered bar · in progress · check-in / final / 🎓 · accuracy (14 d) · last studied — the parent page and the console's student page draw these
+function envsStationRowsHtml(summary,opts){
+  opts=opts||{}; let h='';
+  envsStations().forEach(st=>{ const s=envsStationStat(summary,st);
+    h+='<div style="padding:8px 0;border-top:1px solid #f1efe9"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div style="font-weight:800;flex:1;min-width:120px">'+envsEsc(st.label)+(s.grad?' \u{1F393}':'')+'</div>';
+    if(!s.released) h+='<span class="envs-muted">\u{1F512} not sent out yet</span>';
+    else h+='<span class="envs-muted">'+s.mastered+' mastered \u00B7 '+s.learning+' in progress \u00B7 '+s.new+' to come'+(s.acc14!=null?' \u00B7 '+s.acc14+'% right (14 d)':'')+' \u00B7 last '+envsWhen(s.last)+'</span>';
+    h+='</div>';
+    if(s.released) h+='<div style="height:10px;background:#eef2ee;border-radius:5px;overflow:hidden;margin-top:5px"><div style="width:'+(s.pct||0)+'%;height:100%;background:'+(s.pct>=80?'#15803d':'#65a30d')+'"></div></div>';
+    const bits=[]; if(s.pre) bits.push('check-in '+s.pre.right+'/'+s.pre.n); if(s.post) bits.push('final '+s.post.right+'/'+s.post.n); if(s.grad) bits.push('\u{1F393} graduated'+(s.grad.date?' '+s.grad.date:''));
+    if(bits.length) h+='<div style="font-size:11.5px;color:#0d9488;font-weight:700;margin-top:4px">\u{1F4DD} '+envsEsc(bits.join(" \u00B7 "))+'</div>';
+    if(opts.weak&&summary&&summary.weak){ const w=[]; st.decks.forEach(d=>{ (summary.weak[d.key]||[]).forEach(r=>w.push(r)); }); w.sort((a,b)=>(b.m*2+b.d)-(a.m*2+a.d));
+      if(w.length) h+='<div class="envs-muted" style="margin-top:3px">needs work: '+envsEsc(w.slice(0,4).map(r=>r.n+(r.m?' \u00D7'+r.m:'')).join(" \u00B7 "))+'</div>'; }
+    h+='</div>'; });
+  return h;
+}
+function envsStreakHtml(summary){
+  const st=(summary&&summary.streak)||{days:0,last:null}, d=(summary&&summary.days)||{}; let dots='';
+  for(let i=13;i>=0;i--){ const k=envsDayKey(Date.now()-i*86400000); const on=!!d[k]; dots+='<div title="'+k+'" style="width:14px;height:14px;border-radius:4px;background:'+(on?'#15803d':'#e5e7eb')+'"></div>'; }
+  return '<div class="envs-card"><div class="envs-row"><div style="flex:1"><div class="envs-h2" style="margin:0">\u{1F525} '+st.days+'-day streak</div><div class="envs-muted">last study '+envsWhen(st.last)+' \u00B7 the last 14 days</div></div><div style="display:flex;gap:3px">'+dots+'</div></div></div>';
+}
+function envsScoresHtml(kid){
+  const s=envsSummary(kid); let h=envsStreakHtml(s);
+  h+='<div class="envs-card"><div class="envs-h2">\u{1F4CA} My stations</div>'+envsStationRowsHtml(s,{weak:true})+'</div>';
+  const days=Object.keys((s&&s.days)||{}).sort().reverse().slice(0,10);
+  h+='<div class="envs-card"><div class="envs-h2">Study sittings</div>'+(days.length?days.map(k=>{ const e=s.days[k]; const pct=(e.c+e.m)?Math.round(e.c/(e.c+e.m)*100):null; return '<div style="display:flex;gap:8px;padding:5px 0;border-top:1px solid #f1efe9;font-size:12.5px"><div style="flex:1;font-weight:700">'+k.slice(0,4)+'-'+k.slice(4,6)+'-'+k.slice(6,8)+'</div><div>'+e.n+' cards</div><div style="width:60px;text-align:right;font-weight:800;color:'+(pct==null?'var(--muted)':pct>=80?'#15803d':'#b45309')+'">'+(pct==null?'\u2013':pct+'%')+'</div></div>'; }).join(""):'<div class="envs-muted">No sittings yet.</div>')+'</div>';
+  return h;
+}
+function envsStoreHtml(kid){ return '<div class="envs-card" style="text-align:center;padding:28px 14px"><div style="font-size:36px">\u{1F6CD}</div><div style="font-weight:900;font-size:16px;margin-top:6px">Star Store \u00B7 closed here</div><div class="envs-muted" style="margin-top:6px">You have \u2B50 '+envsStarsOf(kid)+'. In the full Howe Academy, stars buy things Mom sets up \u2014 here they add up for now.</div></div>'; }
+function envsTipsHtml(role){
+  let h='<div class="envs-card" style="border-color:#bbf7d0;background:#f0fdf4"><div class="envs-h2">\u{1F4A1} From Adrienne</div><ol style="margin:0;padding-left:18px;font-size:13px;line-height:1.55">'+ENVS_TIPS.map(t=>'<li>'+envsEsc(t)+'</li>').join("")+'</ol><div style="font-size:12px;margin-top:8px;font-weight:700">'+envsEsc(ENVS_CONTACT)+'</div></div>';
+  if(role==="parent") h+='<div class="envs-card" style="opacity:.75"><div class="envs-h2" style="color:#6b7280">What a full Howe Academy adds</div><ul style="margin:0;padding-left:18px;font-size:12.5px;line-height:1.55;color:#6b7280">'+ENVS_FULL_APP.map(t=>'<li>'+envsEsc(t)+'</li>').join("")+'</ul><div class="envs-muted" style="margin-top:6px">Ask Adrienne.</div></div>';
+  return h;
+}
+function envsSettingsHtml(){
+  const kid=_envs.kid, col=envsKidColor(kid);
+  let h='<div class="envs-card"><div class="envs-h2">\u{1F3A8} Colour</div><div class="envs-row"><input id="envs-color" type="color" value="'+envsEsc(col)+'" style="width:52px;height:40px;border:none;background:none"><button class="envs-btn sec" onclick="envsSetColor()">Save colour</button></div></div>';
+  if(_envs.role==="parent") h+='<div class="envs-card"><div class="envs-h2">\u{1F510} Parent PIN</div><div class="envs-muted" style="margin-bottom:6px">The PIN opens the parent view on a shared device.</div><div class="envs-row"><input id="envs-pin" class="envs-in" type="text" inputmode="numeric" maxlength="4" placeholder="4 digits" style="width:110px;text-align:center;letter-spacing:6px"><button class="envs-btn sec" onclick="envsSetPin()">Save PIN</button></div></div>';
+  h+='<div class="envs-card"><div class="envs-row"><div style="flex:1"><div class="envs-h2" style="margin:0">Signed in</div><div class="envs-muted">'+envsEsc(_envs.email||(_envs.role==="kid"?"student code":""))+'</div></div><button class="envs-btn red" onclick="envsSignOut()">Sign out</button></div></div>';
+  h+='<div class="envs-muted" style="text-align:center;padding:8px">'+envsEsc(envsLicenseLine())+'</div>';
+  return h;
+}
+function envsSetPin(){ const v=((document.getElementById("envs-pin")||{}).value||"").trim(); if(!/^\d{4}$/.test(v)){ envsToast("A PIN is exactly 4 digits."); return; } if(envsDemo()){ envsToast("demo: would set settings/pin"); return; } try{ APP_PIN=v; HA_LS.setItem("ha_app_pin",v); if(db&&!_dryRun()) db.ref("settings/pin").set(v); envsToast("PIN saved"); }catch(e){ envsToast("Couldn\u2019t save: "+((e&&e.message)||e)); } }
+function envsSetColor(){ const v=(document.getElementById("envs-color")||{}).value||""; if(!/^#[0-9a-f]{6}$/i.test(v)) return; if(envsDemo()){ envsToast("demo: would set settings/family/<i>/color"); return; }
+  try{ const i=(typeof ROSTER_DEF!=="undefined"?ROSTER_DEF:[]).findIndex(k=>k&&k.id===_envs.kid); if(i<0||!db||_dryRun()){ envsToast("Couldn\u2019t save the colour here."); return; } db.ref("settings/family/"+i+"/color").set(v); try{ KID_COLOR[_envs.kid]=v; }catch(e){} envsToast("Colour saved"); envsRe(); }catch(e){ envsToast("Couldn\u2019t save: "+((e&&e.message)||e)); } }
+// ⭐ stars per finished sitting (the one line in _mstSaveInner; her 8.5 "stars for a finished study sitting: yes, small fixed count")
+function envSiteSittingDone(kid,done){
+  if(!envSiteOn()||!(_envs.role==="kid"||_envs.role==="parent")||!kid||kid!==_envs.kid) return false;
+  if(!done||!(done.total>0)) return false;
+  if(envsDemo()){ _envs.bankDemo+=ENVS_STARS; envsToast("\u2B50 +"+ENVS_STARS+" for a finished sitting (demo: would write bank/"+kid+"/adjustments)"); return true; }
+  if(typeof _dryRun==="function"&&_dryRun()) return false;
+  try{ if(typeof bankDirect==="function"){ bankDirect(kid,ENVS_STARS,"\u{1F33F} Envirothon study sitting"); envsToast("\u2B50 +"+ENVS_STARS+" stars"); return true; } }catch(e){}
+  return false;
+}
+// the first signed-in boot (kid or parent) enrolls the family's kid in the unit, every deck held — through the app's own enroll (every stage, so
+// every station's cards sit in the bank ready for the teacher's send-out). Idempotent: unitStudies/<id>/enrolled/<kid> ends it.
+function envsAutoEnroll(){
+  if(!envSiteOn()||envsDemo()||_envs.autoEnroll==="done"||_envs.autoEnroll==="working") return false;
+  if(!(_envs.role==="kid"||_envs.role==="parent")||!_envs.kid) return false;
+  if(typeof _haUnitsReady==="undefined"||!_haUnitsReady||typeof _haMastReady==="undefined"||!_haMastReady) return false;
+  if(typeof db==="undefined"||!db||(typeof _dryRun==="function"&&_dryRun())) return false;
+  if(typeof ENV_UNIT_ID==="undefined"||typeof STARTER_UNITS==="undefined"||typeof _ustApply!=="function"||typeof _ustWrite!=="function") return false;
+  const kid=_envs.kid; let u=(typeof unitStudies!=="undefined"&&unitStudies)?unitStudies[ENV_UNIT_ID]:null;
+  if(u&&u.enrolled&&u.enrolled[kid]){ _envs.autoEnroll="done"; return false; }
+  _envs.autoEnroll="working";
+  const enroll=()=>{
+    u=unitStudies[ENV_UNIT_ID]; if(!u){ _envs.autoEnroll=""; return; }
+    if(!(u.decks||[]).every(d=>!d||Array.isArray(d.cards))){ setTimeout(()=>{ _envs.autoEnroll=""; envsAutoEnroll(); },2500); return; }   // envirothon.js still loading
+    try{
+      (u.stages||[]).map(s=>s&&s.n).filter(n=>n!=null).forEach(n=>{ const w=_ustApply(u,kid,n,"","",""); if(w) _ustWrite(ENV_UNIT_ID,kid,w,{stage:n,knows:"",subject:"",map:"",ts:Date.now()}); });
+      if(!u.enrolled) u.enrolled={}; u.enrolled[kid]=true; if(!u.kidStage) u.kidStage={}; if(!u.kidStage[kid]) u.kidStage[kid]={stage:0,ts:Date.now()};
+      if(typeof envEnrollSession==="function") envEnrollSession(u,kid);
+      if(typeof envMirrorOn==="function") envMirrorOn("enroll");
+      _envs.autoEnroll="done"; envsToast("\u{1F33F} Your Envirothon deck is ready"); envsRe();
+    }catch(e){ _envs.autoEnroll="failed"; _envs.err=String((e&&e.message)||e); try{ console.error("[HA] ENVSITE auto-enroll",e); }catch(x){} }
+  };
+  if(u){ enroll(); return true; }
+  const mk=STARTER_UNITS[ENV_UNIT_ID]; if(!mk){ _envs.autoEnroll="failed"; return false; }
+  const rec=mk(); rec.addedTs=Date.now();
+  db.ref("unitStudies/"+ENV_UNIT_ID).transaction(cur=>cur?undefined:rec).then(r=>{ if(!unitStudies[ENV_UNIT_ID]) unitStudies[ENV_UNIT_ID]=(r&&r.snapshot&&typeof r.snapshot.val==="function"&&r.snapshot.val())||rec; if(typeof envHydrateAll==="function") envHydrateAll(); setTimeout(enroll,1500); }).catch(e=>{ _envs.autoEnroll="failed"; _envs.err=String((e&&e.message)||e); });
+  return true;
+}
+// the mirror's listeners (release/<cid>/all, students/<sid>) attach once the unit is here — ENVMIRROR's own function, with this login's session
+function envsArmMirror(){ if(_envs.mirrorArmed||envsDemo()||!(_envs.role==="kid"||_envs.role==="parent")) return; if(typeof _haUnitsReady==="undefined"||!_haUnitsReady) return; if(typeof envmAuthChanged!=="function"||typeof _envm==="undefined"||!_envm.edb) return; _envs.mirrorArmed=true; try{ if(!_envm.user) _envm.user=firebase.auth().currentUser||null; envmAuthChanged(); }catch(e){} }
+// ── PARENT ──
+function envsWhoNote(){ const w=_envs.who||""; return w==="teacher"?"The teacher runs the drills in class \u2014 your part is the check-in on this page.":w==="parent"?"Your drills are on: open the parent view with your PIN to drill the cards together.":w==="both"?"Your drills are on, and the teacher drills in class too.":"Who drills (you, the teacher or both) is set by the teacher."; }
+function envsParentHtml(){
+  const kid=_envs.kid, name=envsKidName(kid), col=envsKidColor(kid), v=_envs.view==="study"?"home":(_envs.view||"home"), s=envsSummary(kid);
+  let h='<div class="envs-top" style="background:'+col+'"><div class="t">\u{1F33F} '+envsEsc(name)+'\u2019s Envirothon</div><button onclick="envsView(\'settings\')" aria-label="Settings">\u2699\uFE0F</button></div>';
+  const chips=[["home","\u{1F4C8} How "+name+" is doing"],["boards","\u{1F3C6} Team"],["tips","\u{1F4A1} Tips"]];
+  h+='<div class="envs-chips">'+chips.map(x=>'<button class="'+(v===x[0]?'on':'')+'" onclick="envsView(\''+x[0]+'\')">'+envsEsc(x[1])+'</button>').join("")+'</div>';
+  if(v==="boards") h+=envsBoardsHtml(_envs.boards,_envs.sid);
+  else if(v==="tips") h+=envsTipsHtml("parent");
+  else if(v==="settings") h+=envsSettingsHtml();
+  else { h+=envsStreakHtml(s); h+='<div class="envs-card"><div class="envs-h2">\u{1F4CA} Stations \u00B7 the same numbers the teacher sees</div>'+envsStationRowsHtml(s,{weak:true})+'</div>';
+    h+='<div class="envs-card"><div class="envs-h2">\u{1F469}\u200D\u{1F3EB} Who drills</div><div style="font-size:13px">'+envsEsc(envsWhoNote())+'</div></div>';
+    h+='<div class="envs-card" style="opacity:.8"><div class="envs-muted">Read-only: '+envsEsc(name)+' studies on the student login; this page shows how it is going. Class: '+envsEsc(envsClassName())+'.</div></div>'; }
+  return h;
+}
+// ── DEMO ──
+function envsDemoBarHtml(){
+  if(!envsDemo()) return "";
+  const r=_envs.demoRole; const btn=(k,l)=>'<button class="'+(r===k?'on':'')+'" onclick="envsDemoGo(\''+k+'\')">'+l+'</button>';
+  return '<div class="envs-demo"><span>\u{1F9EA} Demo \u00B7 sample data, nothing is saved \u00B7 viewing as:</span>'+btn("signin","Sign-in")+btn("kid","Kid")+btn("parent","Parent")+btn("teacher","Teacher")+btn("admin","Adrienne")+'</div>';
+}
+function envsDemoGo(role){ if(!envsDemo()) return; _envs.demoRole=role; _envs.role=role==="signin"?"kid":role; _envs.view=(role==="teacher"||role==="admin")?"grid":role==="parent"?"home":"study"; try{ if(typeof envcDemoRole==="function") envcDemoRole(role); }catch(e){} envsRe(); try{ window.scrollTo(0,0); }catch(e){} }
+function envsDemoSigninHtml(){ return '<div style="background:#0f2e1f;border-radius:18px;padding:18px;display:flex;justify-content:center">'+envsAuthHtml().replace('onsubmit="return envsAuthSubmit(event)"','onsubmit="return envsDemoFake(event)"').replace('onsubmit="return envsKidSubmit(event)"','onsubmit="return envsDemoFake(event)"').replace('onclick="envsForgot()"','onclick="envsToast(\'demo: would send a password-reset email\')"')+'</div><div class="envs-muted" style="text-align:center;padding:10px">This is the first screen every family sees. In the demo, pick a role above instead of signing in.</div>'; }
+function envsDemoFake(ev){ if(ev&&ev.preventDefault) ev.preventDefault(); envsToast("demo: would sign in \u2014 pick a role at the top instead"); return false; }
+// the sample class: one class, eight invented students (no real names), varied progress, three teams. Dates are relative to today.
+function envsDemoData(now){
+  now=now!=null?now:Date.now(); const D=n=>envsDayKey(now-n*86400000), dash=k=>k.slice(0,4)+"-"+k.slice(4,6)+"-"+k.slice(6,8);
+  const stns=envsStations(); const deckRow=(total,mastered,learning,held,c,m,last)=>({total,new:Math.max(0,total-mastered-learning),waiting:0,learning:Math.round(learning/2),active:learning-Math.round(learning/2),mastered,held,correct:c,miss:m,acc:(c+m)?Math.round(c/(c+m)*100):null,c14:Math.round(c/3),m14:Math.round(m/3),acc14:(c+m)?Math.round(c/(c+m)*100):null,last});
+  const mk=(name,fid,kid,app,prof)=>{ const byDeck={}; stns.forEach(st=>st.decks.forEach(d=>{ const p=prof.st[st.id]; byDeck[d.key]=p?deckRow(d.n,Math.round(d.n*p.m),Math.round(d.n*p.l),false,p.c,p.x,D(prof.idle)):deckRow(d.n,0,0,true,0,0,null); }));
+    const days={}; for(let i=prof.idle;i<prof.idle+prof.studyDays*2;i+=prof.every) days[D(i)]={n:prof.perDay,c:Math.round(prof.perDay*prof.acc),m:prof.perDay-Math.round(prof.perDay*prof.acc),secs:prof.perDay*18};
+    const tests={}; Object.keys(prof.tests||{}).forEach(s=>{ const t=prof.tests[s]; const o={}; if(t.pre) o.pre={right:t.pre[0],n:t.pre[1],date:dash(D(prof.idle+20))}; if(t.post) o.post={best:{right:t.post[0],n:t.post[1],date:dash(D(prof.idle+1))}}; if(t.grad) o.graduated={date:dash(D(prof.idle+1)),right:t.post[0],n:t.post[1]}; tests[s]=o; });
+    const weak={}; if(prof.weak) weak[prof.weak[0]]=prof.weak[1].map((n,i)=>({n,m:3-i,d:1,t:"daily"}));
+    return {sid:fid+"_"+kid,meta:{familyId:fid,kid,name,at:now-prof.idle*86400000},class:"ms-science-2026",app,logins:{parent:"uid_p_"+kid,kid:app==="howe"?null:"uid_k_"+kid},summary:{unitVer:1,at:now-prof.idle*86400000,byDeck,byConcept:{},streak:{days:prof.idle<=1?prof.streak:0,last:D(prof.idle)},weak,days,tests}}; };
+  const S=[
+    mk("Maya R.","ramirez","maya","micro",{idle:0,streak:6,studyDays:7,every:1,perDay:18,acc:.9,st:{general:{m:.95,l:.05,c:60,x:5},forestry:{m:1,l:0,c:210,x:22},soils:{m:.35,l:.3,c:70,x:20}},tests:{forestry:{pre:[9,15],post:[14,15],grad:true},soils:{pre:[8,15]}},weak:["Soils and Land Use · Terms",["Soil horizon","Loam","Percolation"]]}),
+    mk("Jonah T.","tran","jonah","micro",{idle:9,streak:0,studyDays:4,every:1,perDay:12,acc:.7,st:{general:{m:.6,l:.3,c:30,x:12},forestry:{m:.3,l:.4,c:60,x:28}},tests:{forestry:{pre:[7,15]}},weak:["Forestry · Terms",["Cambium","Dichotomous key","Crown class"]]}),
+    mk("Priya S.","shah","priya","micro",{idle:1,streak:2,studyDays:2,every:1,perDay:10,acc:.8,st:{general:{m:.2,l:.4,c:12,x:3},forestry:{m:.05,l:.3,c:14,x:4}},tests:{forestry:{pre:[6,15]}}}),
+    mk("Caleb W.","walker","caleb","micro",{idle:0,streak:4,studyDays:8,every:1,perDay:16,acc:.85,st:{general:{m:.9,l:.1,c:50,x:6},forestry:{m:.7,l:.2,c:150,x:30},soils:{m:.8,l:.2,c:140,x:18},aquatics:{m:.1,l:.3,c:20,x:6}},tests:{forestry:{pre:[10,15],post:[12,15]},soils:{pre:[9,15],post:[14,15],grad:true}}}),
+    mk("Nora B.","bennett","nora","micro",{idle:2,streak:0,studyDays:6,every:2,perDay:14,acc:.75,st:{general:{m:.8,l:.2,c:40,x:10},forestry:{m:.55,l:.3,c:120,x:40},soils:{m:.2,l:.3,c:40,x:15}},tests:{forestry:{pre:[8,15],post:[11,15]},soils:{pre:[7,15]}},weak:["Forestry · ID",["Loblolly pine","Shortleaf pine","Sweetgum"]]}),
+    mk("Theo K.","kim","theo","micro",{idle:3,streak:0,studyDays:3,every:1,perDay:8,acc:.65,st:{general:{m:.3,l:.3,c:16,x:9},forestry:{m:.15,l:.35,c:30,x:16}},tests:{}}),
+    mk("Avery M.","morales","avery","micro",{idle:0,streak:11,studyDays:11,every:1,perDay:20,acc:.88,st:{general:{m:1,l:0,c:62,x:6},forestry:{m:.85,l:.1,c:220,x:30},soils:{m:.5,l:.3,c:90,x:14}},tests:{forestry:{pre:[11,15],post:[13,15]},soils:{pre:[10,15]}}}),
+    mk("Eli P.","howe-demo","eli","howe",{idle:1,streak:3,studyDays:9,every:1,perDay:15,acc:.82,st:{general:{m:.9,l:.1,c:48,x:8},forestry:{m:.6,l:.3,c:130,x:28},soils:{m:.3,l:.4,c:50,x:12}},tests:{forestry:{pre:[9,15],post:[12,15]},soils:{pre:[8,15]}}})];
+  const students={}; S.forEach(s=>{ students[s.sid]=s; });
+  const teams={ramirez_maya:"Oaks",tran_jonah:"Pines",shah_priya:"Maples",walker_caleb:"Oaks",bennett_nora:"Pines",kim_theo:"Maples",morales_avery:"Pines","howe-demo_eli":"Oaks"};
+  const cls={name:"MS Science 2026-27",teacher:"uid_teacher_demo",year:ENVS_SEASON,area:8,division:"ms",students:Object.fromEntries(Object.keys(students).map(k=>[k,true])),teams};
+  const release={all:{forestry:{openedAt:now-40*86400000,by:"uid_teacher_demo"},soils:{openedAt:now-12*86400000,by:"uid_teacher_demo"},general:{openedAt:now-44*86400000,by:"uid_teacher_demo"}},students:{walker_caleb:{"Aquatic Ecology · Terms":{openedAt:now-3*86400000,by:"uid_teacher_demo"}}}};
+  const scores={ramirez_maya:{forestry:{test:22,testMax:25,testDate:dash(D(30)),presentation:5,presMax:5,by:"uid_teacher_demo",ts:now}},walker_caleb:{forestry:{test:19,testMax:25,testDate:dash(D(30)),by:"uid_teacher_demo",ts:now},soils:{test:23,testMax:25,testDate:dash(D(2)),by:"uid_teacher_demo",ts:now}},morales_avery:{forestry:{test:24,testMax:25,testDate:dash(D(30)),presentation:4,presMax:5,by:"uid_teacher_demo",ts:now}}};
+  const cards={"Forestry · Terms":{c1:{name:"Mast year",def:"A year when trees produce an unusually large crop of seeds or nuts.",concept:"Forest Ecology",by:"uid_teacher_demo",ts:now-20*86400000},c2:{name:"Snag",def:"A standing dead tree, important as wildlife habitat.",concept:"Forest Ecology",by:"uid_teacher_demo",ts:now-20*86400000},c3:{name:"Duff",def:"The partly decomposed layer of leaves and needles on the forest floor.",concept:"Forest Ecology",by:"uid_teacher_demo",ts:now-19*86400000,retired:true}}};
+  const boards=envsBoardsCompute(students,teams,now);
+  return {cid:"ms-science-2026",cls,students,release,scores,cards,who:"both",teams,boards,lockRaw:{locked:false,at:now-60*86400000,by:"uid_admin_demo"},teachers:{uid_teacher_demo:{name:"Ms. Brittany",classes:{"ms-science-2026":true}}},admins:{uid_admin_demo:true}};
+}
+// the kid the demo studies as: Maya R. — a small in-memory Envirothon deck so the REAL study screen, games and scores run on it
+function envsDemoStart(){
+  const data=envsDemoData(); _envs.demoData=data;
+  const role=_envs.demoRole==="signin"?"kid":_envs.demoRole; _envs.role=role; _envs.view=(role==="teacher"||role==="admin")?"grid":role==="parent"?"home":"study";
+  _envs.familyId="ramirez"; _envs.kid="maya"; _envs.sid="ramirez_maya"; _envs.cid=data.cid; _envs.cls=data.cls; _envs.boards=data.boards; _envs.who=data.who; _envs.email="parent@example.com"; _envs.lockRaw=data.lockRaw; _envs.lock=envsLockState(data.lockRaw); _envs.bankDemo=27;
+  envsCss(); try{ tab=ENVS_TAB; document.body.classList.add("env-site","env-demo"); }catch(e){}
+  try{ KID_NAME.maya="Maya"; KID_COLOR.maya="#2d6a4f"; }catch(e){}
+  try{ _haMastReady=true; _haUnitsReady=true; }catch(e){}
+  try{ envsDemoSeedKid(data); }catch(e){ try{ console.error("[HA] ENVSITE demo seed",e); }catch(x){} }
+  try{ if(typeof envcDemoStart==="function") envcDemoStart(data); }catch(e){}
+  try{ haAuthHide(); }catch(e){}
+  try{ masteryKid="maya"; }catch(e){}
+}
+function envsDemoSeedKid(data){
+  const kid="maya", DK="Forestry · Terms", DF="Forestry · Facts", DI="Forestry · ID", now=Date.now();
+  const cards=(k,rows)=>rows.map((r,i)=>({name:r[0],def:r[1],group:r[2],stage:1,order:i+1,_dk:k}));
+  const terms=cards(DK,[["Cambium","The thin layer of living cells between the bark and the wood that produces new growth.","Tree Biology"],["Crown","The upper part of a tree: its branches and leaves.","Tree Biology"],["Silviculture","The practice of growing and tending forests to meet set goals.","Forest Management"],["Snag","A standing dead tree.","Forest Ecology"],["Dichotomous key","A tool that identifies a tree by a series of paired choices.","Measurement and Identification"],["DBH","Diameter at breast height: a tree's trunk diameter measured 4.5 feet above the ground.","Measurement and Identification"],["Xylem","The wood tissue that carries water up from the roots.","Tree Biology"],["Succession","The gradual change in a forest's species over time.","Forest Ecology"]]);
+  const facts=cards(DF,[["How high above the ground is DBH measured?","4.5 feet","Measurement and Identification"],["Which layer of a tree carries sugars down from the leaves?","Phloem","Tree Biology"],["Which NC pine has needles in bundles of three, 6–9 inches long?","Loblolly pine","Measurement and Identification"],["A forest's canopy is formed by which trees?","The dominant and codominant trees","Forest Ecology"]]);
+  const ids=cards(DI,[["Loblolly pine · needles","Needles in bundles of three, 6–9 inches.","Pines"],["Sweetgum · leaf","Star-shaped leaf with five points.","Hardwoods"],["White oak · leaf","Rounded lobes, no bristle tips.","Oaks"]]);
+  const decks=(typeof ENV_DECKS!=="undefined"?ENV_DECKS:[]).map(d=>({key:d[0],mode:d[1],introCap:3,groupBy:"group",flipFace:"name",bankOnly:true,stage:d[2],station:d[3],kind:d[4],n:d[5],cards:d[0]===DK?terms:d[0]===DF?facts:d[0]===DI?ids:[]}));
+  const stages=(typeof ENV_STAGES!=="undefined"?ENV_STAGES:[]).map(s=>({n:s[0],label:s[1],weeklyFrom:0}));
+  unitStudies[(typeof ENV_UNIT_ID!=="undefined")?ENV_UNIT_ID:"nc_envirothon"]={id:"nc_envirothon",starter:"nc_envirothon",starterVer:1,title:"NC Envirothon",emoji:"\u{1F33F}",cardsInCode:false,enrolled:{[kid]:true},kidStage:{[kid]:{stage:1,ts:now}},stages,decks};
+  const it=(id,subj,c,tier,status,extra)=>Object.assign({id,subject:subj,type:"envirothon",prompt:c.name,answer:c.def,status,tier,tally_dots:0,consecutive_correct:1,drop_count:0,cycle:1,next_due:0,review_mode:"flip"},extra||{});
+  masteryData[kid]=[it("m_cambium",DK,terms[0],"weekly","active"),it("m_crown",DK,terms[1],"monthly","active"),it("m_silvi",DK,terms[2],"daily","introduction"),it("m_snag",DK,terms[3],"bi_weekly","active"),it("m_dbh_f",DF,facts[0],"weekly","active"),it("m_phloem",DF,facts[1],"daily","active"),it("m_lob",DI,ids[0],"weekly","active")];
+  const hold={}; decks.forEach(d=>{ if(d.station!=="forestry"&&d.station!=="general") hold[d.key]=true; });
+  masteryData[kid+"_settings"]={cat_hold:hold,cat_modes:Object.fromEntries(decks.map(d=>[d.key,d.mode])),cat_intro_max:Object.fromEntries(decks.map(d=>[d.key,3])),definitions:{}};
+  masteryData[kid+"_custom_items"]=terms.concat(facts,ids).map(c=>({cat:c._dk,name:c.name,def:c.def}));
+  masteryData[kid+"_sessions"]={envirothon:(typeof envSessionRecord==="function")?envSessionRecord(unitStudies.nc_envirothon):{name:"Envirothon",emoji:"\u{1F33F}",kind:"deck",decks:decks.map(d=>d.key),who:"solo",newPerDay:5,passes:2,order:"bank",pattern:["pick","ideas","type"]}};
+  const dk=n=>envsDayKey(now-n*86400000);
+  masteryData.studyLog={[kid]:{envirothon:{[dk(1)]:{date:dk(1),total:12,correct:10,miss:2,secs:220,items:[{id:"m_cambium",name:"Cambium",deck:DK,result:"c"},{id:"m_crown",name:"Crown",deck:DK,result:"c"},{id:"m_snag",name:"Snag",deck:DK,result:"m"},{id:"m_dbh_f",name:facts[0].name,deck:DF,result:"c"}]},[dk(2)]:{date:dk(2),total:10,correct:7,miss:3,secs:200,items:[{id:"m_cambium",name:"Cambium",deck:DK,result:"m"},{id:"m_lob",name:ids[0].name,deck:DI,result:"c"}]},[dk(3)]:{date:dk(3),total:8,correct:8,miss:0,secs:150,items:[{id:"m_crown",name:"Crown",deck:DK,result:"c"}]}}}};
+  masteryData[kid+"_tests"]={forestry:{pre:{form:"2026",date:"2026-09-15",n:15,right:9,secs:900,ts:now-40*86400000},post:{t1:{right:14,n:15,ts:now-86400000},best:{right:14,n:15,date:"2026-10-27"}},graduated:{date:"2026-10-27",right:14,n:15}},soils:{pre:{form:"2026",date:"2026-10-13",n:15,right:8,secs:800,ts:now-14*86400000}}};
+  try{ bank[kid]={adjustments:{d1:{amount:27,note:"\u{1F33F} Envirothon study sittings",ts:now}}}; }catch(e){}
+}
+// ENVSITE_END
+// ENVCONSOLE_START — 👩‍🏫 THE TEACHER'S PART of the Envirothon site (and Adrienne's admin part): DESIGN_envirothon_console_2026-10-27.md §5 as
+// re-cut by its ✅ DECISIONS (her 8.3 the teacher creates both logins · 8.4 roster = first name + last initial · 8.5 station by default, each
+// deck openable · 8.6 she edits and retires her own cards, Adrienne anything · 8.8 ranking only, no saved teams · the boards · who drills ·
+// the master lock). Mobile-first: she may use a phone in class. INERT unless ENVSITE's envEdition() says "envirothon" and the login's role is
+// teacher or admin — every function here returns at once otherwise.
+//   · Reads (the shared instance): teachers/<uid> · classes/<cid> · ONE students/<sid> listener per student (rules are evaluated at the path
+//     listened to) · release/<cid> · scores/<cid> · teacherCards/<cid> · settings/whoDrills/<cid> · release/locked; admin: classes, teachers.
+//   · Writes, every one targeted, through envsWrite (demo → "would write" toast, dry run → nothing):
+//       + Student: the parent user is CREATED on a SECONDARY named Firebase app ("envcreate") so the teacher's own session is never signed out,
+//         then a password-reset email is sent (nobody types a password); the kid user = k-<code>@<projectId>.kid with the password derived
+//         from the code (ENVSITE's envsKidPw; the code is printed once, never stored); then ONE multi-path update:
+//         logins/<uidP>, logins/<uidK>, students/<sid>/{meta,class,app,logins}, classes/<cid>/students/<sid>. Nothing else (test_env_site.js).
+//       send out: release/<cid>/all/<deckKey> (or students/<sid>/<deckKey>) = {openedAt, by}, one multi-path update per Send; Undo removes a key.
+//       scores/<cid>/<sid>/<station> · teacherCards/<cid>/<deckKey>/<id> (own: add / edit / retire) · classes/<cid>/teams/<sid> (a name she types)
+//       · boards/<cid> (the public boards, recomputed when she opens Boards) · settings/whoDrills/<cid> · admin only: release/locked, teachers/<uid>.
+const ENVC_APP="envcreate";
+const _envc={sdb:null,cid:"",classes:{},cls:null,students:{},release:null,scores:{},cards:{},who:"",teachers:{},subs:{},view:"grid",sel:null,send:{station:"",decks:null,to:"class",picked:{}},edit:null,err:"",busy:"",newLogin:null,boardsHash:"",lockRaw:undefined,demo:null};
+function envcOn(){ return typeof envSiteOn==="function"&&envSiteOn()&&(_envs.role==="teacher"||_envs.role==="admin"); }
+function envcAdmin(){ return envcOn()&&_envs.role==="admin"; }
+function envcEsc(v){ return envsEsc(v); } function envcJ(s){ return envsJ(s); }
+function envcVal(s){ return (s&&typeof s.val==="function")?s.val():null; }
+function envcRe(){ try{ renderAll(); }catch(e){} }   // a tap paints now; a listener arrival combines (envcSub)
+function envcSub(key,path,fn){ if(_envc.subs[key]||!_envc.sdb) return; const r=_envc.sdb.ref(path), f=s=>{ try{ fn(envcVal(s)); }catch(e){ _envc.err=String((e&&e.message)||e); } try{ if(typeof renderAllSoon==="function") renderAllSoon(); else renderAll(); }catch(e){} }; r.on("value",f); _envc.subs[key]={r,f}; }
+function envcUnsub(key){ const s=_envc.subs[key]; if(!s) return; try{ s.r.off("value",s.f); }catch(e){} delete _envc.subs[key]; }
+// ── live start: the teacher's class (or every class for Adrienne), then the listeners
+function envConsoleStart(){
+  if(!envcOn()||envsDemo()) return false;
+  try{ _envc.sdb=firebase.database(); }catch(e){ _envc.err=String((e&&e.message)||e); return false; }
+  envcSub("locked","release/locked",v=>{ _envc.lockRaw=v; _envs.lockRaw=v; _envs.lock=envsLockState(v); });
+  if(envcAdmin()){ envcSub("classes","classes",v=>{ _envc.classes=v||{}; if(!_envc.cid){ const k=Object.keys(_envc.classes)[0]; if(k) envcPickClass(k); } }); envcSub("teachers","teachers",v=>{ _envc.teachers=v||{}; }); }
+  else { _envc.sdb.ref("teachers/"+_envs.uid).once("value",s=>{ const t=envcVal(s)||{}; const ks=Object.keys(t.classes||{}); _envc.classes={}; ks.forEach(k=>{ _envc.classes[k]={name:k}; }); if(ks.length) envcPickClass(_envs.cid&&ks.indexOf(_envs.cid)>=0?_envs.cid:ks[0]); else { _envc.err="No class is set up for this teacher yet — ask Adrienne."; envcRe(); } }); }
+  return true;
+}
+function envcPickClass(cid){
+  if(!cid) return; if(_envc.cid&&_envc.cid!==cid){ Object.keys(_envc.subs).forEach(k=>{ if(k!=="locked"&&k!=="classes"&&k!=="teachers") envcUnsub(k); }); _envc.students={}; _envc.cls=null; _envc.release=null; _envc.scores={}; _envc.cards={}; _envc.sel=null; }
+  _envc.cid=cid; _envs.cid=cid; if(envsDemo()) { envcRe(); return; }
+  envcSub("cls","classes/"+cid,v=>{ _envc.cls=v; _envs.cls=v; envcSyncStudents(); });
+  envcSub("rel","release/"+cid,v=>{ _envc.release=v||{}; });
+  envcSub("sc","scores/"+cid,v=>{ _envc.scores=v||{}; });
+  envcSub("tc","teacherCards/"+cid,v=>{ _envc.cards=v||{}; });
+  envcSub("who","settings/whoDrills/"+cid,v=>{ _envc.who=v||""; _envs.who=_envc.who; });
+}
+// one listener per student in the class; a student removed from the class loses hers
+function envcSyncStudents(){
+  const want=Object.keys((_envc.cls&&_envc.cls.students)||{});
+  want.forEach(sid=>envcSub("st:"+sid,"students/"+sid,v=>{ _envc.students[sid]=v||{}; }));
+  Object.keys(_envc.subs).filter(k=>k.indexOf("st:")===0).forEach(k=>{ const sid=k.slice(3); if(want.indexOf(sid)<0){ envcUnsub(k); delete _envc.students[sid]; } });
+}
+function envcDemoStart(data){ _envc.demo=data; _envc.cid=data.cid; _envc.classes={[data.cid]:data.cls}; _envc.cls=data.cls; _envc.students=data.students; _envc.release=data.release; _envc.scores=data.scores; _envc.cards=data.cards; _envc.who=data.who; _envc.teachers=data.teachers; _envc.lockRaw=data.lockRaw; _envc.view="grid"; _envs.uid=_envs.role==="admin"?"uid_admin_demo":"uid_teacher_demo"; }
+function envcDemoRole(role){ if(_envc.demo){ _envs.uid=role==="admin"?"uid_admin_demo":"uid_teacher_demo"; _envs.email=role==="admin"?"adrienne@example.com":"teacher@example.com"; } }
+function envcWrite(path,val,op){ if(!envcOn()) return Promise.reject(new Error("not the console")); return envsWrite(path,val,op).then(r=>{ if(!envsDemo()) envsToast("Saved"); return r; }).catch(e=>{ _envc.err=String((e&&e.message)||e); envsToast("Couldn’t save: "+_envc.err); envcRe(); throw e; }); }
+function envcMulti(obj,label){ if(!envcOn()) return Promise.reject(new Error("not the console")); if(envsDemo()){ _envs.writes.push({op:"update",path:"/",val:obj}); envsToast("demo: would write "+Object.keys(obj).join(", ")); return Promise.resolve(obj); } if(typeof _dryRun==="function"&&_dryRun()) return Promise.resolve(obj); return _envc.sdb.ref().update(obj).then(()=>{ envsToast(label||"Saved"); return obj; }).catch(e=>{ _envc.err=String((e&&e.message)||e); envsToast("Couldn’t save: "+_envc.err); envcRe(); throw e; }); }
+function envcStudents(){ const ids=Object.keys((_envc.cls&&_envc.cls.students)||{}); return ids.map(sid=>Object.assign({sid},_envc.students[sid]||{})).sort((a,b)=>String((a.meta&&a.meta.name)||a.sid).localeCompare(String((b.meta&&b.meta.name)||b.sid))); }
+function envcName(s){ return (s&&s.meta&&s.meta.name)||(s&&s.sid)||"?"; }
+function envcApp(s){ return (s&&s.app)||((s&&s.meta&&s.meta.familyId==="howe")?"howe":"micro"); }
+function envcView(v,sel){ _envc.view=v; _envc.sel=sel||null; _envc.edit=null; envcRe(); try{ window.scrollTo(0,0); }catch(e){} }
+function envcReleasedKeys(sid){ const R=_envc.release||{}, out={}; Object.keys(R.all||{}).forEach(k=>{ if(R.all[k]) out[k]=1; }); Object.keys((R.students&&R.students[sid])||{}).forEach(k=>{ if(R.students[sid][k]) out[k]=1; }); return out; }
+function envcStationOpen(sid,st){ const k=envcReleasedKeys(sid); if(k[st.id]) return "all"; const n=st.decks.filter(d=>k[d.key]).length; return n===st.decks.length?"all":n?"some":""; }
+// ── the page
+function envConsoleHtml(){
+  if(!envcOn()) return "";
+  const v=_envc.view, cls=_envc.cls, admin=envcAdmin();
+  let h='<div class="envs-top" style="background:#14532d"><div class="t">\u{1F33F} '+envcEsc((cls&&cls.name)||"Envirothon")+(admin?' · Adrienne':'')+'</div><div class="envs-muted" style="color:#d1fae5">'+envcStudents().length+' students</div><button onclick="envcView(\'settings\')" aria-label="Settings">⚙️</button></div>';
+  const chips=[["grid","\u{1F4CB} Class"],["roster","\u{1F465} Roster"],["send","\u{1F4E4} Send out"],["strong","\u{1F4AA} Who is strong where"],["cards","\u{1F0CF} Teacher cards"],["boards","\u{1F3C6} Boards"],["who","\u{1F469}‍\u{1F3EB} Who drills"]]; if(admin) chips.push(["admin","\u{1F511} Admin"]);
+  h+='<div class="envs-chips">'+chips.map(x=>'<button class="'+((v===x[0]||(v==="student"&&x[0]==="grid"))?'on':'')+'" onclick="envcView(\''+x[0]+'\')">'+x[1]+'</button>').join("")+'</div>';
+  if(_envc.err) h+='<div class="envs-card" style="border-color:#fecaca;color:#b91c1c;font-size:12.5px">'+envcEsc(_envc.err)+' <a href="javascript:void(0)" onclick="_envc.err=\'\';envcRe()" style="color:#b91c1c">dismiss</a></div>';
+  if(_envs.lock&&_envs.lock.locked) h+='<div class="envs-card" style="border-color:#fcd34d;background:#fffbeb;font-size:12.5px">\u{1F512} The season is closed for teachers and families; you see this because you are the admin.</div>';
+  if(!cls&&!envsDemo()) return h+'<div class="envs-card envs-muted">Loading the class…</div>';
+  if(v==="student"&&_envc.sel) h+=envcStudentHtml(_envc.sel);
+  else if(v==="roster") h+=envcRosterHtml();
+  else if(v==="send") h+=envcSendHtml();
+  else if(v==="strong") h+=envcStrongHtml();
+  else if(v==="cards") h+=envcCardsHtml();
+  else if(v==="boards") h+=envcBoardsHtml();
+  else if(v==="who") h+=envcWhoHtml();
+  else if(v==="admin"&&admin) h+=envcAdminHtml();
+  else if(v==="settings") h+=envsSettingsHtml();
+  else h+=envcGridHtml();
+  return h;
+}
+// §5.1 the class grid: students × stations; cell = % mastered of the station's released decks · accuracy (14 d); – = not sent out; ⚠ = no study in 7 days
+function envcGridHtml(){
+  const stns=envsStations(), S=envcStudents();
+  let h='<div class="envs-card" style="padding:8px 6px;overflow-x:auto"><table class="envs-grid"><thead><tr><th>Student</th>'+stns.map(s=>'<th class="c">'+envcEsc(s.short)+'</th>').join("")+'<th class="c">streak</th><th>last</th></tr>';
+  h+='<tr><th></th>'+stns.map(s=>{ const o=envcStationOpen("",s); return '<th class="c" style="font-weight:600">'+(o==="all"?'● open':o==="some"?'◐ part':'○')+'</th>'; }).join("")+'<th></th><th></th></tr></thead><tbody>';
+  if(!S.length) h+='<tr><td colspan="'+(stns.length+3)+'" class="envs-muted">No students yet — add them on the Roster.</td></tr>';
+  S.forEach(s=>{ const sm=s.summary||null, ago=envsDaysAgo(sm&&sm.streak&&sm.streak.last);
+    h+='<tr><td><a href="javascript:void(0)" onclick="envcView(\'student\',\''+envcJ(s.sid)+'\')" style="font-weight:800;color:#14532d">'+envcEsc(envcName(s))+'</a>'+(envcApp(s)==="howe"?' <span class="envs-chip" style="font-size:10px">Howe app</span>':'')+(ago!=null&&ago>7?' <span title="no study in '+ago+' days">⚠</span>':'')+'</td>';
+    stns.forEach(st=>{ const x=envsStationStat(sm,st); const open=envcStationOpen(s.sid,st); let cell;
+      if(!x.released&&!open) cell='<span class="envs-muted">–</span>'; else if(!x.released) cell='<span class="envs-muted" title="sent out, nothing studied yet">0%</span>'; else cell='<b>'+x.pct+'%</b>'+(x.acc14!=null?' <span class="envs-muted">·'+x.acc14+'%</span>':'');
+      if(x.grad) cell+=' \u{1F393}'; else if(x.post) cell+=' <span class="envs-muted" title="final">\u{1F4DD}</span>';
+      h+='<td class="c">'+cell+'</td>'; });
+    h+='<td class="c">'+((sm&&sm.streak&&sm.streak.days)||0)+' d</td><td>'+envcEsc(envsWhen(sm&&sm.streak&&sm.streak.last))+'</td></tr>'; });
+  h+='</tbody></table></div><div class="envs-muted" style="padding:0 4px">cell = % mastered of the station’s released decks · % right in the last 14 days · \u{1F4DD} final taken · \u{1F393} graduated · – not sent out · ⚠ no study in 7 days. Tap a name for the student page.</div>';
+  return h;
+}
+// §5.2 the student page: concept rows + weakest + pre/post + the teacher's scores + open a station for this student
+function envcStudentHtml(sid){
+  const s=Object.assign({sid},_envc.students[sid]||{}), sm=s.summary||null, stns=envsStations(), cid=_envc.cid;
+  let h='<div class="envs-card"><div class="envs-row"><button class="envs-btn sec" onclick="envcView(\'grid\')">← class</button><div style="flex:1"><div class="envs-h2" style="margin:0">'+envcEsc(envcName(s))+(envcApp(s)==="howe"?' · Howe Academy app':'')+'</div><div class="envs-muted">'+(sm?'content v'+(sm.unitVer||1)+' · streak '+((sm.streak&&sm.streak.days)||0)+' d · '+Object.keys(sm.days||{}).filter(k=>envsDaysAgo(k)<30).length+' study days this month · last mirrored '+envcEsc(envsWhen(sm.at?envsDayKey(sm.at):null)):'no study mirrored yet')+'</div></div></div></div>';
+  h+='<div class="envs-card"><div class="envs-h2">Stations</div>'+envsStationRowsHtml(sm,{weak:true})+'</div>';
+  const held=stns.filter(st=>envcStationOpen(sid,st)!=="all");
+  if(held.length) h+='<div class="envs-card"><div class="envs-h2">Open a station for '+envcEsc(envcName(s))+' only</div><div class="envs-row">'+held.map(st=>'<button class="envs-btn sec" onclick="envcOpenFor(\''+envcJ(sid)+'\',\''+st.id+'\')">\u{1F513} '+envcEsc(st.short)+'</button>').join("")+'</div><div class="envs-muted" style="margin-top:4px">Writes release/'+envcEsc(cid)+'/students/'+envcEsc(sid)+'/&lt;station&gt;. The whole class opens from Send out.</div></div>';
+  const SC=(_envc.scores&&_envc.scores[sid])||{};
+  h+='<div class="envs-card"><div class="envs-h2">Your in-class scores</div><div class="envs-muted" style="margin-bottom:6px">Next to the app’s numbers: the station test and presentation you graded.</div>';
+  stns.filter(st=>st.id!=="general").forEach(st=>{ const r=SC[st.id]||{}; const ed=_envc.edit&&_envc.edit.kind==="score"&&_envc.edit.sid===sid&&_envc.edit.st===st.id;
+    h+='<div style="padding:6px 0;border-top:1px solid #f1efe9"><div class="envs-row"><div style="font-weight:800;width:90px">'+envcEsc(st.short)+'</div>';
+    if(ed) h+='<input id="envc-sc-t" class="envs-in" style="width:64px" inputmode="numeric" placeholder="test" value="'+envcEsc(r.test!=null?r.test:"")+'"><span>/</span><input id="envc-sc-tm" class="envs-in" style="width:56px" inputmode="numeric" placeholder="of" value="'+envcEsc(r.testMax!=null?r.testMax:25)+'"><input id="envc-sc-d" class="envs-in" style="width:140px" type="date" value="'+envcEsc(r.testDate||"")+'"><input id="envc-sc-p" class="envs-in" style="width:64px" inputmode="numeric" placeholder="pres." value="'+envcEsc(r.presentation!=null?r.presentation:"")+'"><span>/</span><input id="envc-sc-pm" class="envs-in" style="width:56px" inputmode="numeric" value="'+envcEsc(r.presMax!=null?r.presMax:5)+'"><input id="envc-sc-n" class="envs-in" style="flex:1;min-width:120px" placeholder="note" value="'+envcEsc(r.note||"")+'"><button class="envs-btn" onclick="envcScoreSave(\''+envcJ(sid)+'\',\''+st.id+'\')">Save</button><button class="envs-btn sec" onclick="_envc.edit=null;envcRe()">Cancel</button>';
+    else h+='<div style="flex:1;font-size:12.5px">'+(r.test!=null?'test '+r.test+'/'+(r.testMax||25)+(r.testDate?' ('+envcEsc(r.testDate)+')':''):'<span class="envs-muted">no test yet</span>')+(r.presentation!=null?' · presentation '+r.presentation+'/'+(r.presMax||5):'')+(r.note?' · '+envcEsc(r.note):'')+'</div><button class="envs-btn sec" onclick="_envc.edit={kind:\'score\',sid:\''+envcJ(sid)+'\',st:\''+st.id+'\'};envcRe()">edit</button>';
+    h+='</div></div>'; });
+  h+='</div>';
+  return h;
+}
+function envcOpenFor(sid,station){ if(!envcOn()) return; const rec={openedAt:Date.now(),by:_envs.uid}; envcWrite("release/"+_envc.cid+"/students/"+sid+"/"+station,rec).then(()=>{ if(envsDemo()){ _envc.release=_envc.release||{}; _envc.release.students=_envc.release.students||{}; _envc.release.students[sid]=Object.assign({},_envc.release.students[sid]||{},{[station]:rec}); envcRe(); } }).catch(()=>{}); }
+function envcScoreSave(sid,station){ if(!envcOn()) return; const g=id=>((document.getElementById(id)||{}).value||"").trim(), num=v=>v===""?null:(isNaN(+v)?null:+v);
+  const rec={test:num(g("envc-sc-t")),testMax:num(g("envc-sc-tm"))||25,testDate:g("envc-sc-d")||null,presentation:num(g("envc-sc-p")),presMax:num(g("envc-sc-pm"))||5,note:g("envc-sc-n")||null,by:_envs.uid,ts:Date.now()};
+  Object.keys(rec).forEach(k=>{ if(rec[k]===null) delete rec[k]; });
+  envcWrite("scores/"+_envc.cid+"/"+sid+"/"+station,rec).then(()=>{ if(envsDemo()){ _envc.scores[sid]=Object.assign({},_envc.scores[sid]||{},{[station]:rec}); } _envc.edit=null; envcRe(); }).catch(()=>{}); }
+// §5.6 roster + the two logins per family
+function envcRosterHtml(){
+  const S=envcStudents(); let h='<div class="envs-card" style="padding:8px 6px;overflow-x:auto"><table class="envs-grid"><thead><tr><th>Student</th><th>app</th><th>parent login</th><th>student login</th><th>progress</th><th>team</th><th></th></tr></thead><tbody>';
+  if(!S.length) h+='<tr><td colspan="7" class="envs-muted">Nobody yet.</td></tr>';
+  S.forEach(s=>{ const L=s.logins||{}, howe=envcApp(s)==="howe"; const miss=[]; if(!howe&&!L.parent) miss.push("parent login"); if(!howe&&!L.kid) miss.push("student code"); if(!s.summary) miss.push("nothing mirrored yet");
+    h+='<tr><td><a href="javascript:void(0)" onclick="envcView(\'student\',\''+envcJ(s.sid)+'\')" style="font-weight:800;color:#14532d">'+envcEsc(envcName(s))+'</a><div class="envs-muted">'+envcEsc(s.sid)+'</div></td><td>'+(howe?'<span class="envs-chip">Howe app</span>':'micro')+'</td><td>'+(howe?'<span class="envs-muted">family’s own</span>':L.parent?'✓':'<span style="color:#b45309">✗ missing</span>')+'</td><td>'+(howe?'<span class="envs-muted">family’s own</span>':L.kid?'✓ <button class="envs-btn sec" style="min-height:30px;padding:0 8px;font-size:11px" onclick="envcNewCode(\''+envcJ(s.sid)+'\')">new code</button>':'<span style="color:#b45309">✗ missing</span>')+'</td><td>'+(s.summary?'✓ '+envcEsc(envsWhen(envsDayKey(s.summary.at||0))):'<span class="envs-muted">–</span>')+'</td><td>'+envcEsc((_envc.cls&&_envc.cls.teams&&_envc.cls.teams[s.sid])||"")+'</td><td>'+(miss.length?'<span class="envs-muted">'+envcEsc(miss.join(", "))+'</span>':'')+'</td></tr>'; });
+  h+='</tbody></table></div>';
+  if(_envc.newLogin) h+=envcCodeCardHtml(_envc.newLogin);
+  h+='<div class="envs-card"><div class="envs-h2">+ Student</div><div class="envs-muted" style="margin-bottom:8px">First name and last initial only (the roster never shows an email). The parent gets an email to set their own password; the student gets a code on a card.</div>'+
+    '<div class="envs-row"><input id="envc-first" class="envs-in" style="flex:2;min-width:120px" placeholder="First name" autocapitalize="words"><input id="envc-last" class="envs-in" style="width:70px" placeholder="L." maxlength="2"><input id="envc-email" class="envs-in" style="flex:3;min-width:180px" type="email" placeholder="Parent’s email" autocomplete="off"><button class="envs-btn" onclick="envcAddStudent()" '+(_envc.busy?'disabled':'')+'>'+(_envc.busy?envcEsc(_envc.busy):'Add')+'</button></div></div>';
+  h+='<div class="envs-card"><div class="envs-h2">+ A student who already has Howe Academy at home</div><div class="envs-muted" style="margin-bottom:8px">Adrienne gives you the student id (it looks like <b>family_kid</b>); the family’s own app mirrors the study here, no login needed.</div><div class="envs-row"><input id="envc-howe-sid" class="envs-in" style="flex:1;min-width:160px" placeholder="student id from Adrienne"><input id="envc-howe-name" class="envs-in" style="flex:1;min-width:120px" placeholder="First name L."><button class="envs-btn sec" onclick="envcAddHowe()">Add</button></div></div>';
+  return h;
+}
+function envcSlug(s){ return String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"").slice(0,16); }
+// PURE: the record set "+ Student" writes, and nothing else
+function envcAddStudentPaths(f){
+  const cid=f.cid, fid=f.familyId, kid=f.kid, sid=fid+"_"+kid, now=f.now||Date.now(), o={};
+  o["logins/"+f.uidParent]={role:"parent",familyId:fid,kid,cid,name:f.name};
+  o["logins/"+f.uidKid]={role:"kid",familyId:fid,kid,cid,name:f.name};
+  o["students/"+sid+"/meta"]={familyId:fid,kid,name:f.name,at:now};
+  o["students/"+sid+"/class"]=cid; o["students/"+sid+"/app"]="micro";
+  o["students/"+sid+"/logins"]={parent:f.uidParent,kid:f.uidKid,parentAt:now,kidAt:now};
+  o["classes/"+cid+"/students/"+sid]=true;
+  return o;
+}
+function envcSecondary(){ const have=(firebase.apps||[]).filter(a=>a&&a.name===ENVC_APP)[0]; return have||firebase.initializeApp(FB_CFG,ENVC_APP); }
+function envcRandomPw(){ let s=""; const A="abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"; for(let i=0;i<24;i++) s+=A[Math.floor(Math.random()*A.length)]; return s; }
+function envcAddStudent(){
+  if(!envcOn()||_envc.busy) return; const g=id=>((document.getElementById(id)||{}).value||"").trim();
+  const first=g("envc-first"), last=g("envc-last").replace(/[^A-Za-z]/g,"").slice(0,1).toUpperCase(), email=g("envc-email").toLowerCase();
+  if(!first||!last){ envsToast("First name and last initial, please."); return; } if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ envsToast("That email doesn’t look right."); return; }
+  const name=first.charAt(0).toUpperCase()+first.slice(1)+" "+last+".", kid=envcSlug(first), code=envsMakeCode();
+  let fid=envcSlug(first)+"-"+last.toLowerCase(); const taken=Object.keys(_envc.students).some(s=>s.indexOf(fid+"_")===0); if(taken) fid+=String(Date.now()).slice(-3);
+  const base={cid:_envc.cid,familyId:fid,kid,name,now:Date.now()};
+  if(envsDemo()){ const o=envcAddStudentPaths(Object.assign({uidParent:"uid_p_new",uidKid:"uid_k_new"},base)); envcMulti(o).then(()=>{ _envc.newLogin={name,code,email,sid:fid+"_"+kid,demo:true}; const sid=fid+"_"+kid; _envc.students[sid]={meta:o["students/"+sid+"/meta"],class:_envc.cid,app:"micro",logins:o["students/"+sid+"/logins"]}; _envc.cls.students[sid]=true; envcRe(); }); return; }
+  _envc.busy="Creating…"; envcRe();
+  let sec, uidP, uidK;
+  Promise.resolve().then(()=>{ sec=envcSecondary(); return sec.auth().createUserWithEmailAndPassword(email,envcRandomPw()); })
+    .then(c=>{ uidP=c.user.uid; return sec.auth().sendPasswordResetEmail(email); }).then(()=>sec.auth().signOut())
+    .then(()=>sec.auth().createUserWithEmailAndPassword(envsKidEmail(code),envsKidPw(code))).then(c=>{ uidK=c.user.uid; return sec.auth().signOut(); })
+    .then(()=>envcMulti(envcAddStudentPaths(Object.assign({uidParent:uidP,uidKid:uidK},base)),"Added "+name))
+    .then(()=>{ _envc.newLogin={name,code,email,sid:fid+"_"+kid}; _envc.busy=""; envcRe(); })
+    .catch(e=>{ _envc.busy=""; _envc.err=(e&&e.code==="auth/email-already-in-use")?"That parent email already has a login here — ask Adrienne to attach it.":String((e&&e.message)||e); try{ if(sec) sec.auth().signOut(); }catch(x){} envcRe(); });
+}
+// a new student code = a new kid user + a new logins row; the old login simply stops being the one on the card
+function envcNewCode(sid){
+  if(!envcOn()) return; const s=_envc.students[sid]; if(!s||!s.meta) return; const code=envsMakeCode(), rec={role:"kid",familyId:s.meta.familyId,kid:s.meta.kid,cid:_envc.cid,name:s.meta.name};
+  if(envsDemo()){ envcMulti({["logins/uid_k_new"]:rec,["students/"+sid+"/logins/kid"]:"uid_k_new",["students/"+sid+"/logins/kidAt"]:Date.now()}).then(()=>{ _envc.newLogin={name:s.meta.name,code,sid,demo:true}; envcRe(); }); return; }
+  _envc.busy="New code…"; envcRe(); let sec,uidK;
+  Promise.resolve().then(()=>{ sec=envcSecondary(); return sec.auth().createUserWithEmailAndPassword(envsKidEmail(code),envsKidPw(code)); }).then(c=>{ uidK=c.user.uid; return sec.auth().signOut(); })
+    .then(()=>envcMulti({["logins/"+uidK]:rec,["students/"+sid+"/logins/kid"]:uidK,["students/"+sid+"/logins/kidAt"]:Date.now()},"New code made"))
+    .then(()=>{ _envc.newLogin={name:s.meta.name,code,sid}; _envc.busy=""; envcRe(); }).catch(e=>{ _envc.busy=""; _envc.err=String((e&&e.message)||e); envcRe(); });
+}
+function envcAddHowe(){ if(!envcOn()) return; const g=id=>((document.getElementById(id)||{}).value||"").trim(); const sid=g("envc-howe-sid").toLowerCase(), name=g("envc-howe-name"); if(!/^[a-z0-9-]+_[a-z0-9-]+$/.test(sid)){ envsToast("A student id looks like family_kid."); return; }
+  const o={["classes/"+_envc.cid+"/students/"+sid]:true,["students/"+sid+"/class"]:_envc.cid,["students/"+sid+"/app"]:"howe"}; if(name) o["students/"+sid+"/meta/name"]=name;
+  envcMulti(o,"Added").then(()=>{ if(envsDemo()){ _envc.students[sid]={meta:{name:name||sid,familyId:sid.split("_")[0],kid:sid.split("_")[1]},class:_envc.cid,app:"howe"}; _envc.cls.students[sid]=true; envcRe(); } }).catch(()=>{}); }
+function envcCodeCardHtml(L){
+  return '<div class="envs-card" style="border-color:#86efac;background:#f0fdf4"><div class="envs-row"><div style="flex:1"><div class="envs-h2" style="margin:0">\u{1F39F} '+envcEsc(L.name)+'’s card</div><div class="envs-muted">'+(L.email?'A password-reset email went to '+envcEsc(L.email)+'. ':'')+'Print or copy the code now — it is not kept anywhere.'+(L.demo?' (demo)':'')+'</div></div><button class="envs-btn sec" onclick="envcPrintCard()">\u{1F5A8} Print card</button><button class="envs-btn sec" onclick="_envc.newLogin=null;envcRe()">Done</button></div>'+
+    '<div id="envc-code-card" style="margin-top:10px;background:#fff;border:2px dashed #14532d;border-radius:14px;padding:14px;text-align:center"><div style="font-size:12px;color:#14532d;font-weight:800">\u{1F33F} Envirothon · Howe Academy</div><div style="font-size:16px;font-weight:900;margin:4px 0">'+envcEsc(L.name)+'</div><div style="font-size:11px;color:#6b7280">Open the page, tap <b>Students</b>, type your code:</div><div style="font-size:30px;font-weight:900;letter-spacing:.12em;margin:6px 0;font-family:monospace">'+envcEsc(L.code)+'</div><div style="font-size:10.5px;color:#6b7280">'+envcEsc(typeof location!=="undefined"?String(location.origin+location.pathname).replace(/index\.html$/,""):"")+'</div></div></div>';
+}
+function envcPrintCard(){ try{ const el=document.getElementById("envc-code-card"); if(!el) return; const w=window.open("","_blank","width=420,height=320"); if(!w) return; w.document.write('<html><head><title>Student card</title></head><body style="font-family:DM Sans,system-ui,sans-serif;padding:20px">'+el.outerHTML+'<script>setTimeout(function(){window.print();},200);<\/script></body></html>'); w.document.close(); }catch(e){} }
+// §5.3 send out: a station by default, each deck on its own, whole class or picked students, undo
+function envcSendHtml(){
+  const stns=envsStations(), S=envcStudents(), sd=_envc.send; const st=stns.find(x=>x.id===sd.station)||null;
+  let h='<div class="envs-card"><div class="envs-h2">Send out a station</div><div class="envs-chips" style="padding-bottom:4px">'+stns.map(x=>'<button class="'+(sd.station===x.id?'on':'')+'" onclick="envcSendPick(\''+x.id+'\')">'+envcEsc(x.short)+'</button>').join("")+'</div>';
+  if(st){ const decks=sd.decks||{}; h+='<div class="envs-muted" style="margin:6px 0 4px">decks:</div><div class="envs-row">'+st.decks.map(d=>'<label style="display:flex;gap:6px;align-items:center;font-size:13px;min-height:40px"><input type="checkbox" '+(decks[d.key]!==false?'checked':'')+' onchange="envcSendDeck(\''+envcJ(d.key)+'\',this.checked)"> '+envcEsc(envsDeckShort(d.key))+' <span class="envs-muted">('+d.n+')</span></label>').join("")+'</div>';
+    h+='<div class="envs-muted" style="margin:8px 0 4px">to:</div><div class="envs-row"><label style="font-size:13px;min-height:40px;display:flex;align-items:center;gap:6px"><input type="radio" name="envc-to" '+(sd.to==="class"?'checked':'')+' onchange="_envc.send.to=\'class\';envcRe()"> whole class</label><label style="font-size:13px;min-height:40px;display:flex;align-items:center;gap:6px"><input type="radio" name="envc-to" '+(sd.to==="pick"?'checked':'')+' onchange="_envc.send.to=\'pick\';envcRe()"> pick students</label></div>';
+    if(sd.to==="pick") h+='<div class="envs-row">'+S.map(s=>'<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;min-height:36px"><input type="checkbox" '+(sd.picked[s.sid]?'checked':'')+' onchange="_envc.send.picked[\''+envcJ(s.sid)+'\']=this.checked"> '+envcEsc(envcName(s))+'</label>').join("")+'</div>';
+    h+='<div style="margin-top:10px"><button class="envs-btn" onclick="envcSendOut()">\u{1F4E4} Send out now</button></div>'; }
+  else h+='<div class="envs-muted">Pick a station.</div>';
+  h+='</div>';
+  const R=_envc.release||{}; const rows=[];
+  Object.keys(R.all||{}).forEach(k=>{ if(R.all[k]) rows.push({k,who:"whole class",path:"release/"+_envc.cid+"/all/"+k,at:R.all[k].openedAt}); });
+  Object.keys(R.students||{}).forEach(sid=>Object.keys(R.students[sid]||{}).forEach(k=>{ if(R.students[sid][k]) rows.push({k,who:envcName(Object.assign({sid},_envc.students[sid]||{})),path:"release/"+_envc.cid+"/students/"+sid+"/"+k,at:R.students[sid][k].openedAt}); }));
+  rows.sort((a,b)=>(b.at||0)-(a.at||0));
+  h+='<div class="envs-card"><div class="envs-h2">Sent</div>'+(rows.length?rows.map(r=>{ const st=envsStation(r.k); return '<div class="envs-row" style="padding:5px 0;border-top:1px solid #f1efe9;font-size:12.5px"><div style="flex:1"><b>'+envcEsc(st?st.label+" (whole station)":r.k)+'</b> · '+envcEsc(r.who)+'<div class="envs-muted">'+(r.at?new Date(r.at).toLocaleDateString():'')+'</div></div><button class="envs-btn sec" style="min-height:34px" onclick="envcUndo(\''+envcJ(r.path)+'\')">Undo</button></div>'; }).join(""):'<div class="envs-muted">Nothing sent out yet.</div>')+'<div class="envs-muted" style="margin-top:6px">Undo stops future opens only — cards a student already has stay (append-only on the kid’s side).</div></div>';
+  return h;
+}
+function envcSendPick(id){ _envc.send.station=id; _envc.send.decks={}; envcRe(); }
+function envcSendDeck(key,on){ _envc.send.decks=_envc.send.decks||{}; _envc.send.decks[key]=!!on; }
+// PURE: the multi-path update one Send writes (deck keys under all/ or students/<sid>/)
+function envcSendOutUpdate(cid,st,deckOn,targets,by,now){
+  const o={}, rec={openedAt:now,by}; const decks=st.decks.filter(d=>!deckOn||deckOn[d.key]!==false);
+  if(!decks.length) return o;
+  const allDecks=decks.length===st.decks.length;
+  const put=prefix=>{ if(allDecks) o[prefix+"/"+st.id]=rec; else decks.forEach(d=>{ o[prefix+"/"+d.key]=rec; }); };
+  if(!targets||!targets.length) put("release/"+cid+"/all"); else targets.forEach(sid=>put("release/"+cid+"/students/"+sid));
+  return o;
+}
+function envcSendOut(){ if(!envcOn()) return; const sd=_envc.send, st=envsStation(sd.station); if(!st) return; const targets=sd.to==="pick"?Object.keys(sd.picked).filter(k=>sd.picked[k]):null; if(sd.to==="pick"&&!targets.length){ envsToast("Pick at least one student."); return; }
+  const o=envcSendOutUpdate(_envc.cid,st,sd.decks,targets,_envs.uid,Date.now()); if(!Object.keys(o).length){ envsToast("Tick at least one deck."); return; }
+  envcMulti(o,"Sent out "+st.label).then(()=>{ if(envsDemo()){ _envc.release=_envc.release||{all:{},students:{}}; Object.keys(o).forEach(p=>{ const parts=p.split("/"); if(parts[2]==="all"){ _envc.release.all=_envc.release.all||{}; _envc.release.all[parts.slice(3).join("/")]=o[p]; } else { _envc.release.students=_envc.release.students||{}; _envc.release.students[parts[3]]=_envc.release.students[parts[3]]||{}; _envc.release.students[parts[3]][parts.slice(4).join("/")]=o[p]; } }); } _envc.send={station:"",decks:null,to:"class",picked:{}}; envcRe(); }).catch(()=>{}); }
+function envcUndo(path){ if(!envcOn()) return; envcWrite(path,null,"remove").then(()=>{ if(envsDemo()){ const parts=path.split("/"); if(parts[2]==="all") delete _envc.release.all[parts.slice(3).join("/")]; else if(_envc.release.students&&_envc.release.students[parts[3]]) delete _envc.release.students[parts[3]][parts.slice(4).join("/")]; envcRe(); } }).catch(()=>{}); }
+// §5.4 who is strong where — ranking only (her 8.8): app mastery · app accuracy (14 d) · in-class test · presentation, each 0–100, mean of what exists
+function envcStrongRank(S,st){
+  return S.map(s=>{ const x=envsStationStat(s.summary||null,st), sc=((_envc.scores||{})[s.sid]||{})[st.id]||{}; const parts=[]; if(x.pct!=null) parts.push(x.pct); if(x.acc14!=null) parts.push(x.acc14); const t=(sc.test!=null&&sc.testMax)?Math.round(sc.test/sc.testMax*100):null; if(t!=null) parts.push(t); const p=(sc.presentation!=null&&sc.presMax)?Math.round(sc.presentation/sc.presMax*100):null; if(p!=null) parts.push(p);
+    return {sid:s.sid,name:envcName(s),mastery:x.pct,acc:x.acc14,test:t,pres:p,score:parts.length?Math.round(parts.reduce((a,b)=>a+b,0)/parts.length):null}; }).filter(r=>r.score!=null).sort((a,b)=>b.score-a.score||a.name.localeCompare(b.name));
+}
+function envcStrongHtml(){
+  const S=envcStudents(); let h='<div class="envs-card"><div class="envs-h2">Who is strong where</div><div class="envs-muted">Per station, ranked by the plain mean of what exists: app mastery · app accuracy (14 d) · your test · your presentation. Tests are answered as a team — put the strongest student on each station. (Teams are not saved here; name them on Boards.)</div></div>';
+  envsStations().filter(st=>st.id!=="general").forEach(st=>{ const rows=envcStrongRank(S,st);
+    h+='<div class="envs-card"><div class="envs-h2">'+envcEsc(st.label)+'</div>'+(rows.length?'<table class="envs-grid"><thead><tr><th>#</th><th>student</th><th class="c">mastery</th><th class="c">acc 14 d</th><th class="c">test</th><th class="c">pres.</th><th class="c">score</th></tr></thead><tbody>'+rows.slice(0,5).map((r,i)=>'<tr><td>'+(i+1)+'</td><td style="font-weight:800">'+envcEsc(r.name)+'</td><td class="c">'+(r.mastery!=null?r.mastery+'%':'–')+'</td><td class="c">'+(r.acc!=null?r.acc+'%':'–')+'</td><td class="c">'+(r.test!=null?r.test+'%':'–')+'</td><td class="c">'+(r.pres!=null?r.pres+'%':'–')+'</td><td class="c"><b>'+r.score+'</b></td></tr>').join("")+'</tbody></table>':'<div class="envs-muted">nothing yet</div>')+'</div>'; });
+  return h;
+}
+// §5.5 teacher cards: add · edit own · retire own (admin: retire any). A card is {name, def, concept, by, ts, retired?}
+function envcCardsHtml(){
+  const stns=envsStations(), ed=_envc.edit&&_envc.edit.kind==="card"?_envc.edit:null, nc=_envc.edit&&_envc.edit.kind==="newcard"?_envc.edit:{deck:stns[1]?stns[1].decks[0].key:""};
+  const deckOpts=stns.map(st=>st.decks.filter(d=>d.kind==="terms"||d.kind==="facts").map(d=>'<option value="'+envcEsc(d.key)+'" '+(nc.deck===d.key?'selected':'')+'>'+envcEsc(d.key)+'</option>').join("")).join("");
+  let h='<div class="envs-card"><div class="envs-h2">+ Teacher card</div><div class="envs-muted" style="margin-bottom:6px">A term and its definition, into one of the unit’s decks. It reaches every student in the class through their app; a student who already has the deck gets it in the next sitting.</div>'+
+    '<select id="envc-nc-deck" class="envs-in" style="margin-bottom:6px" onchange="_envc.edit={kind:\'newcard\',deck:this.value}">'+deckOpts+'</select>'+
+    '<input id="envc-nc-concept" class="envs-in" style="margin-bottom:6px" placeholder="Key Concept (e.g. Forest Ecology)"><input id="envc-nc-name" class="envs-in" style="margin-bottom:6px" placeholder="Term" maxlength="120"><textarea id="envc-nc-def" class="envs-in" rows="2" placeholder="Definition" maxlength="400" style="margin-bottom:6px"></textarea><button class="envs-btn" onclick="envcCardAdd()">Add card</button></div>';
+  const C=_envc.cards||{}; const rows=[]; Object.keys(C).forEach(dk=>Object.keys(C[dk]||{}).forEach(id=>rows.push(Object.assign({dk,id},C[dk][id])))); rows.sort((a,b)=>(b.ts||0)-(a.ts||0));
+  h+='<div class="envs-card"><div class="envs-h2">Cards in this class ('+rows.length+')</div>';
+  if(!rows.length) h+='<div class="envs-muted">None yet.</div>';
+  rows.forEach(r=>{ const mine=r.by===_envs.uid, can=mine||envcAdmin(); const editing=ed&&ed.dk===r.dk&&ed.id===r.id;
+    h+='<div style="padding:7px 0;border-top:1px solid #f1efe9;'+(r.retired?'opacity:.55':'')+'">';
+    if(editing) h+='<input id="envc-ec-name" class="envs-in" style="margin-bottom:4px" value="'+envcEsc(r.name)+'" maxlength="120"><textarea id="envc-ec-def" class="envs-in" rows="2" maxlength="400">'+envcEsc(r.def)+'</textarea><div class="envs-row" style="margin-top:4px"><button class="envs-btn" onclick="envcCardSave(\''+envcJ(r.dk)+'\',\''+envcJ(r.id)+'\')">Save</button><button class="envs-btn sec" onclick="_envc.edit=null;envcRe()">Cancel</button></div>';
+    else h+='<div class="envs-row"><div style="flex:1;font-size:13px"><b>'+envcEsc(r.name)+'</b> — '+envcEsc(r.def)+'<div class="envs-muted">'+envcEsc(r.dk)+(r.concept?' · '+envcEsc(r.concept):'')+' · '+(r.ts?new Date(r.ts).toLocaleDateString():'')+(mine?' · yours':'')+(r.retired?' · <b>retired</b>':'')+(r.edited?' · edited':'')+'</div></div>'+(can&&!r.retired?'<button class="envs-btn sec" style="min-height:34px" onclick="_envc.edit={kind:\'card\',dk:\''+envcJ(r.dk)+'\',id:\''+envcJ(r.id)+'\'};envcRe()">✏️</button><button class="envs-btn red" style="min-height:34px" onclick="envcCardRetire(\''+envcJ(r.dk)+'\',\''+envcJ(r.id)+'\')">retire</button>':'')+'</div>';
+    h+='</div>'; });
+  h+='</div>';
+  return h;
+}
+function envcCardAdd(){ if(!envcOn()) return; const g=id=>((document.getElementById(id)||{}).value||"").trim(); const dk=g("envc-nc-deck"), name=g("envc-nc-name"), def=g("envc-nc-def"), concept=g("envc-nc-concept");
+  if(!dk||!name||!def){ envsToast("Deck, term and definition, please."); return; } if(/[.#$\[\]\/]/.test(name)){ envsToast("A term can’t contain . # $ [ ] or /"); return; }
+  const dup=Object.values((_envc.cards||{})[dk]||{}).some(c=>c&&!c.retired&&String(c.name).toLowerCase()===name.toLowerCase()); if(dup){ envsToast("That term is already in this deck."); return; }
+  const id="tc"+Date.now().toString(36)+Math.floor(Math.random()*1e6).toString(36), rec={name,def,by:_envs.uid,ts:Date.now()}; if(concept) rec.concept=concept;
+  envcWrite("teacherCards/"+_envc.cid+"/"+dk+"/"+id,rec).then(()=>{ if(envsDemo()){ _envc.cards[dk]=_envc.cards[dk]||{}; _envc.cards[dk][id]=rec; } _envc.edit=null; envcRe(); }).catch(()=>{}); }
+function envcCardSave(dk,id){ if(!envcOn()) return; const g=x=>((document.getElementById(x)||{}).value||"").trim(); const name=g("envc-ec-name"), def=g("envc-ec-def"); if(!name||!def) return; const cur=((_envc.cards||{})[dk]||{})[id]; if(!cur||(cur.by!==_envs.uid&&!envcAdmin())) return;
+  const upd={name,def,edited:Date.now()}; envcWrite("teacherCards/"+_envc.cid+"/"+dk+"/"+id,upd,"update").then(()=>{ if(envsDemo()) Object.assign(_envc.cards[dk][id],upd); _envc.edit=null; envcRe(); }).catch(()=>{}); }
+function envcCardRetire(dk,id){ if(!envcOn()) return; const cur=((_envc.cards||{})[dk]||{})[id]; if(!cur||(cur.by!==_envs.uid&&!envcAdmin())) return; envcWrite("teacherCards/"+_envc.cid+"/"+dk+"/"+id+"/retired",true).then(()=>{ if(envsDemo()) _envc.cards[dk][id].retired=true; envcRe(); }).catch(()=>{}); }
+// boards: team names (a text box per student → classes/<cid>/teams/<sid>), then the public boards, published to boards/<cid> for kids and parents
+function envcBoards(){ const students={}; envcStudents().forEach(s=>{ students[s.sid]={meta:s.meta,summary:s.summary}; }); return envsBoardsCompute(students,(_envc.cls&&_envc.cls.teams)||{}); }
+function envcBoardsHtml(){
+  const S=envcStudents(), teams=(_envc.cls&&_envc.cls.teams)||{};
+  let h='<div class="envs-card"><div class="envs-h2">Teams</div><div class="envs-muted" style="margin-bottom:6px">Type a team name next to each student (a student may be on more than one team later; one here). The boards below are what students and parents see — no individual score anywhere.</div>';
+  S.forEach(s=>{ h+='<div class="envs-row" style="padding:3px 0"><div style="flex:1;font-weight:700;font-size:13px">'+envcEsc(envcName(s))+'</div><input class="envs-in" style="width:150px" placeholder="team" value="'+envcEsc(teams[s.sid]||"")+'" onchange="envcTeamSet(\''+envcJ(s.sid)+'\',this.value)"></div>'; });
+  h+='</div>';
+  const B=envcBoards(); envcBoardsPublish(B);
+  h+='<div class="envs-row" style="margin-bottom:8px"><div class="envs-muted" style="flex:1">Published for the class as boards/'+envcEsc(_envc.cid)+' whenever you open this page.</div><button class="envs-btn sec" onclick="envcBoardsPublish(null,true)">↻ Publish now</button></div>';
+  h+=envsBoardsHtml(B,null);
+  h+='<div class="envs-card"><div class="envs-h2">Full ranking (teachers only)</div><table class="envs-grid"><thead><tr><th>#</th><th>student</th><th class="c">gain</th><th class="c">effort</th></tr></thead><tbody>'+S.map(s=>({name:envcName(s),gain:envsGain(s.summary),eff:envsEffort(s.summary).score})).sort((a,b)=>b.gain-a.gain||b.eff-a.eff).map((r,i)=>'<tr><td>'+(i+1)+'</td><td style="font-weight:800">'+envcEsc(r.name)+'</td><td class="c">'+r.gain+'</td><td class="c">'+r.eff+'</td></tr>').join("")+'</tbody></table></div>';
+  return h;
+}
+function envcTeamSet(sid,name){ if(!envcOn()) return; name=String(name||"").trim().slice(0,30); envcWrite("classes/"+_envc.cid+"/teams/"+sid,name||null,name?"set":"remove").then(()=>{ if(envsDemo()){ _envc.cls.teams=_envc.cls.teams||{}; if(name) _envc.cls.teams[sid]=name; else delete _envc.cls.teams[sid]; } _envc.boardsHash=""; envcRe(); }).catch(()=>{}); }
+function envcBoardsPublish(B,force){ if(!envcOn()) return; B=B||envcBoards(); const h=JSON.stringify(Object.assign({},B,{at:0})); if(!force&&h===_envc.boardsHash) return; _envc.boardsHash=h; if(envsDemo()){ _envs.boards=B; if(force) envsToast("demo: would write boards/"+_envc.cid); return; } envsWrite("boards/"+_envc.cid,B).then(()=>{ if(force) envsToast("Boards published"); }).catch(()=>{}); }
+// who drills — per class: parent / teacher / both (teacher drills themselves come in a later step; this is the switch)
+function envcWhoHtml(){ const w=_envc.who||"parent"; const b=(k,l,d)=>'<button class="envs-btn '+(w===k?'':'sec')+'" onclick="envcWhoSet(\''+k+'\')">'+l+'</button><div class="envs-muted" style="margin:2px 0 8px">'+d+'</div>';
+  return '<div class="envs-card"><div class="envs-h2">Who drills the cards</div><div class="envs-muted" style="margin-bottom:8px">Per class. Parents drill at home under their own login (the app’s drill). Teacher drills from this console — 3–5 cards per student in front of you — come in a later step; the switch is here now so families see the right note.</div>'+b("parent","\u{1F468}‍\u{1F469}‍\u{1F467} Parents","Each family drills at home.")+b("teacher","\u{1F469}‍\u{1F3EB} Teacher","You drill in class; parents only watch the progress page.")+b("both","\u{1F91D} Both","Parents at home, you in class.")+'<div class="envs-muted">Saved at settings/whoDrills/'+envcEsc(_envc.cid)+' · now: <b>'+envcEsc(w)+'</b></div></div>'; }
+function envcWhoSet(v){ if(!envcOn()||["parent","teacher","both"].indexOf(v)<0) return; envcWrite("settings/whoDrills/"+_envc.cid,v).then(()=>{ _envc.who=v; _envs.who=v; envcRe(); }).catch(()=>{}); }
+// ── Adrienne: the master lock, every class, teachers, the families view (§5.7)
+function envcAdminHtml(){
+  if(!envcAdmin()) return ""; const lk=envsLockState(_envc.lockRaw);
+  let h='<div class="envs-card" style="border-color:#fcd34d"><div class="envs-h2">\u{1F512} Master lock</div><div style="font-size:13px;margin-bottom:6px">Now: <b>'+(lk.locked?'CLOSED':'open')+'</b>'+(lk.why==="auto"?' (closed by itself after '+envsAutoLockLabel()+')':lk.why==="reopened"?' (reopened for the next season)':'')+'. The season closes by itself after <b>'+envsAutoLockLabel()+'</b> (State). Closed = teacher and every family land on the “season closed” card; everything is kept.</div><div class="envs-row">'+(lk.locked?'<button class="envs-btn" onclick="envcLock(false)">Reopen the season</button>':'<button class="envs-btn red" onclick="envcLock(true)">Close the season now</button>')+'</div><div class="envs-muted" style="margin-top:4px">release/locked = '+envcEsc(JSON.stringify(_envc.lockRaw===undefined?null:_envc.lockRaw))+'</div></div>';
+  const cls=Object.keys(_envc.classes||{});
+  h+='<div class="envs-card"><div class="envs-h2">Classes</div><div class="envs-chips" style="padding-bottom:0">'+cls.map(c=>'<button class="'+(_envc.cid===c?'on':'')+'" onclick="envcPickClass(\''+envcJ(c)+'\')">'+envcEsc((_envc.classes[c]&&_envc.classes[c].name)||c)+'</button>').join("")+'</div><div class="envs-row" style="margin-top:8px"><input id="envc-cls-id" class="envs-in" style="width:170px" placeholder="class id (ms-science-2026)"><input id="envc-cls-name" class="envs-in" style="flex:1;min-width:140px" placeholder="Class name"><input id="envc-cls-teacher" class="envs-in" style="flex:1;min-width:160px" placeholder="teacher uid"><button class="envs-btn sec" onclick="envcClassAdd()">+ Class</button></div></div>';
+  h+='<div class="envs-card"><div class="envs-h2">Teachers</div>'+Object.keys(_envc.teachers||{}).map(u=>'<div style="font-size:12.5px;padding:3px 0">'+envcEsc((_envc.teachers[u]&&_envc.teachers[u].name)||"?")+' <span class="envs-muted">'+envcEsc(u)+' · '+envcEsc(Object.keys((_envc.teachers[u]&&_envc.teachers[u].classes)||{}).join(", "))+'</span></div>').join("")+'<div class="envs-row" style="margin-top:8px"><input id="envc-t-uid" class="envs-in" style="flex:1;min-width:160px" placeholder="uid (from Authentication, after you created the user)"><input id="envc-t-name" class="envs-in" style="width:140px" placeholder="Name"><button class="envs-btn sec" onclick="envcTeacherAdd()">+ Teacher</button></div><div class="envs-muted" style="margin-top:4px">Writes teachers/&lt;uid&gt; = {name, classes:{'+envcEsc(_envc.cid)+':true}} and classes/'+envcEsc(_envc.cid)+'/teacher.</div></div>';
+  const S=envcStudents();
+  h+='<div class="envs-card" style="padding:8px 6px;overflow-x:auto"><div class="envs-h2" style="padding:0 6px">Families · '+envcEsc(_envc.cid)+'</div><table class="envs-grid"><thead><tr><th>student</th><th>family id</th><th>app</th><th>parent uid</th><th>student uid</th><th>last mirror</th><th>instance</th></tr></thead><tbody>'+
+    S.map(s=>{ const L=s.logins||{}; const fid=(s.meta&&s.meta.familyId)||s.sid.split("_")[0]; return '<tr><td style="font-weight:800">'+envcEsc(envcName(s))+'</td><td>'+envcEsc(fid)+'</td><td>'+envcEsc(envcApp(s))+'</td><td style="font-family:monospace;font-size:10.5px">'+envcEsc(L.parent||"–")+'</td><td style="font-family:monospace;font-size:10.5px">'+envcEsc(L.kid||"–")+'</td><td>'+envcEsc(s.summary?envsWhen(envsDayKey(s.summary.at||0)):"never")+'</td><td>'+(envcApp(s)==="howe"?'<span class="envs-muted">their own project</span>':'<button class="envs-btn sec" style="min-height:30px;font-size:11px" onclick="envcSeedShow(\''+envcJ(s.sid)+'\')">seed JSON</button>')+'</td></tr>'; }).join("")+'</tbody></table>';
+  if(_envc.seedFor){ const s=Object.assign({sid:_envc.seedFor},_envc.students[_envc.seedFor]||{}); h+='<div style="padding:8px 6px"><div class="envs-muted">Realtime Database → create instance <b>'+envcEsc(envsProjectId()+"-"+((s.meta&&s.meta.familyId)||""))+'</b>, paste envirothon/SITE_RULES.json §family, then Import JSON:</div><textarea class="envs-in" rows="8" readonly style="font-family:monospace;font-size:11px">'+envcEsc(JSON.stringify(envcSeedJson(s),null,1))+'</textarea></div>'; }
+  h+='</div>';
+  return h;
+}
+// PURE: the family instance's seed (what Adrienne imports once per family): the two logins allowed, the one-kid roster, the pages, the edition
+function envcSeedJson(s){ const L=s.logins||{}, m=s.meta||{}, fid=m.familyId||String(s.sid||"").split("_")[0], kid=m.kid||String(s.sid||"").split("_")[1]||"kid", first=String(m.name||kid).split(" ")[0];
+  const allowed={}; if(L.parent) allowed[L.parent]=true; if(L.kid) allowed[L.kid]=true;
+  return {allowed,settings:{edition:"envirothon",family:[{id:kid,name:first,color:"#2d6a4f",badge:"#dcfce7",schoolAge:true}],pages:{notebook:false,mastery:true,units:true,play:false,"moms-plan":false,kids:true,purchases:false,workbooks:false,eic:false,helpers:false},pin:String(1000+Math.floor(Math.random()*9000)),envirothon:{classId:s.class||_envc.cid||"",sid:fid+"_"+kid,kid,unit:"nc_envirothon"}}}; }
+function envcSeedShow(sid){ _envc.seedFor=_envc.seedFor===sid?null:sid; envcRe(); }
+function envcLock(on){ if(!envcAdmin()) return; const rec={locked:!!on,at:Date.now(),by:_envs.uid}; envcWrite("release/locked",rec).then(()=>{ _envc.lockRaw=rec; _envs.lockRaw=rec; _envs.lock=envsLockState(rec); envcRe(); }).catch(()=>{}); }
+function envcClassAdd(){ if(!envcAdmin()) return; const g=id=>((document.getElementById(id)||{}).value||"").trim(); const cid=g("envc-cls-id").toLowerCase().replace(/[^a-z0-9-]/g,""), name=g("envc-cls-name"), t=g("envc-cls-teacher"); if(!cid||!name){ envsToast("Class id and name, please."); return; }
+  const rec={name,year:ENVS_SEASON,area:8,division:"ms",students:{}}; if(t) rec.teacher=t; const o={["classes/"+cid]:rec}; if(t) o["teachers/"+t+"/classes/"+cid]=true;
+  envcMulti(o,"Class made").then(()=>{ if(envsDemo()){ _envc.classes[cid]=rec; } envcPickClass(cid); }).catch(()=>{}); }
+function envcTeacherAdd(){ if(!envcAdmin()) return; const g=id=>((document.getElementById(id)||{}).value||"").trim(); const uid=g("envc-t-uid"), name=g("envc-t-name"); if(!uid||!name||!_envc.cid){ envsToast("The uid, a name and a class, please."); return; }
+  envcMulti({["teachers/"+uid+"/name"]:name,["teachers/"+uid+"/classes/"+_envc.cid]:true,["classes/"+_envc.cid+"/teacher"]:uid},"Teacher added").then(()=>{ if(envsDemo()){ _envc.teachers[uid]={name,classes:{[_envc.cid]:true}}; _envc.cls.teacher=uid; envcRe(); } }).catch(()=>{}); }
+// ENVCONSOLE_END
 function unitAllNudges(kid){ let out=[]; haKidUnits(kid).forEach(u=>{ out=out.concat(unitPlanNudges(u,kid)); }); return out; }
 function unitDismissNudge(unitId,kid,key){
   if(!momHere()) return; // skipping a planned step is Mom's call
@@ -65239,6 +66058,7 @@ function _mstSaveInner(){
 
   mstDone={correct:correct,miss:miss,shown:shown,total:total,secs:secs};
   mstState=null; mstFlipped=false; mstStartTs=null; mstNavReset();   // MST_NAV: nothing to go back to once it's saved
+  if(typeof envSiteSittingDone==="function") envSiteSittingDone(kid,mstDone);   // 🌿 ENVSITE: ⭐ stars per finished sitting on the Envirothon site only; false for every other family
   mstClearPersist(sid);
   _mastRe();
 }
