@@ -104,6 +104,19 @@ Adding a block: put its name in `strip` with its door and why, run the build, re
 "Dangling references" sections of `BUILD_REPORT.md`, then do the boot check below. `node test_env_build.js` (repo
 root) fails if a listed name is not exactly one START/END pair.
 
+## ENVSITE (2026-10-28): the site's own blocks and the demo file
+
+`ENVSITE` and `ENVCONSOLE` (right after `ENVMIRROR` in `index.html`) are the Envirothon site itself — the role router, the
+sign-in card with the © line, the master lock, the kid / parent / teacher / admin parts, and the demo. Like every `ENV*` block
+they are **not** in `strip` (an unlisted block is kept), so the build carries them; `test_env_site.js` asserts no `ENV*` name is
+ever stripped. The site is turned on by the HOST's `family-config.js` (`edition:"envirothon"`), never by the build: the same
+`dist/index.html` boots as a plain (stripped) Howe Academy for any family file without that key — see `envirothon/SITE_SETUP.md`.
+
+`make_demo.js` writes `envirothon/DEMO_site.html`: the readable `index.html` with an inline config (`edition:"envirothon"`,
+`demo:true`), the cache-bust redirect removed and the Firebase tags pointed one folder up, so Adrienne can double-click one
+file and see every part on sample data with no project and no network. Regenerate it after any change to `index.html`
+(`node envirothon/build/make_demo.js`); it is committed, unlike `dist/`.
+
 ## Verify a build (never on the live site, never without dry-run)
 
 The rules in `reference_howe_safe_app_testing`: never `preview_start` this app, never open it without `?dryrun=1`,
