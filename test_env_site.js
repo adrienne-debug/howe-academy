@@ -17,6 +17,7 @@ const REPO=__dirname;
 const src=fs.readFileSync(path.join(REPO,"index.html"),"utf8");
 function slice(a,b){ const i=src.indexOf(a), j=src.indexOf(b,i); if(i<0||j<0) throw new Error("slice missing "+a); return src.slice(i,j+b.length); }
 const SITE=slice("// ENVSITE_START","// ENVSITE_END"), CON=slice("// ENVCONSOLE_START","// ENVCONSOLE_END"), MIR=slice("// ENVMIRROR_START","// ENVMIRROR_END");
+const CLS=slice("// ENVCLASSSET_START","// ENVCLASSSET_END");   // ⚙️ the class settings (2026-10-28): the console's panel + the kid's overlay
 // o.envt: the station check-ins too (ENVTEST, + the forms on window.HoweEnvirothon = o.lib) — the demo's check-in rules (2026-10-28) —
 // and the 🔊 read-aloud switch right after it (ENVREADALOUD; mastSpeak records into G.said)
 const ENVT=slice("// ENVTEST_START","// ENVREADALOUD_END");
@@ -59,10 +60,12 @@ function world(o){
     ${MIR}
     ${SITE}
     ${CON}
+    ${CLS}
     STARTER_UNITS[ENV_UNIT_ID]=envUnitRecordStub; function envUnitRecordStub(){ return {id:ENV_UNIT_ID,starter:ENV_UNIT_ID,starterVer:1,cardsInCode:true,stages:ENV_STAGES.map(s=>({n:s[0]})),decks:ENV_DECKS.map(d=>({key:d[0],stage:d[2],station:d[3],n:d[5],cards:[]}))}; }
     return { get tab(){ return tab; }, set tab(v){ tab=v; }, get db(){ return db; }, get mastView(){ return mastView; }, set mastView(v){ mastView=v; }, get masteryKid(){ return masteryKid; }, unitStudies, masteryData, HA_LS, _envs, _envc, _envm, STARTER_UNITS,
       envEdition, envSiteOn, envsDemo, envsLockState, envsStations, envsStationStat, envsGain, envsEffort, envsBoardsCompute, envsBoardsHtml, envsMakeCode, envsCodeNorm, envsCodeOk, envsKidEmail, envsKidPw, envsFamilyDbUrl, envSiteDb, envSiteDemoBoot, envSiteGate, envsApplyLogin, envSiteAuthShow, envsAuthHtml, envsAuthSubmit, envsKidSubmit, envSiteTabGate, envSiteRender, envsView, envsDemoGo, envsDemoData, envsDemoStart, envSiteSittingDone, envsAutoEnroll, envsWrite, envsLicenseLine, envsCard, envsKidHtml, envsParentHtml, envsStationRowsHtml, envsScoresHtml, envsTipsHtml, envsSettingsHtml, envsReadShared, envsStreakHtml, ENVS_OFF_TABS, ENVS_TIPS, ENVS_CONTACT, ENVS_FULL_APP, ENVS_STARS, ENVS_AUTOLOCK,
-      initFb, envConsoleStart, envConsoleHtml, envcView, envcGridHtml, envcStudentHtml, envcRosterHtml, envcSendHtml, envcStrongHtml, envcStrongRank, envcCardsHtml, envcBoardsHtml, envcWhoHtml, envcAdminHtml, envcAddStudentPaths, envcSendOutUpdate, envcFinalUpdate, envcFinalFor, envcFinalOut, envcFinalRec, envcAddStudent, envcSendOut, envcSendPick, envcSendDeck, envcOpenFor, envcUndo, envcCardAdd, envcCardRetire, envcCardSave, envcTeamSet, envcWhoSet, envcLock, envcSeedJson, envcPickClass, envcStudents, envcNewCode, envcBoardsPublish, envcScoreSave, envcDemoStart, envcTeacherAdd, envcClassAdd, envcSeedShow, showTab, renderAll, firebase,
+      initFb, envConsoleStart, envConsoleHtml, envcView, envcGridHtml, envcStudentHtml, envcRosterHtml, envcSendHtml, envcStrongHtml, envcStrongRank, envcCardsHtml, envcBoardsHtml, envcWhoHtml, envcAdminHtml, envcAddStudentPaths, envcSendOutUpdate, envcFinalUpdate, envcFinalFor, envcFinalOut, envcFinalRec, envcAddStudent, envcSendOut, envcSendPick, envcSendDeck, envcOpenFor, envcUndo, envcCardAdd, envcCardRetire, envcCardSave, envcTeamSet, envcWhoSet, envcLock, envcSeedJson, envcPickClass, envcStudents, envcNewCode, envcBoardsPublish, envcScoreSave, envcDemoStart, envcTeacherAdd, envcClassAdd, envcSeedShow, showTab, renderAll, firebase, ENV_SESSION, ENV_SESSION_SID,
+      _envcs, ENVCS_FIELDS, ENVCS_SECTS, envClassOverlay, envClsMerge, envClsCheck, envClsSave, envClsInput, envClsReset, envClsPat, envClsLock, envClsPanelHtml, envClsStudentHtml, envClsStartHtml, envClsKidLoad, envClsLayers, envClsEff, envClsClassVal, envClsLocked, envClsDef, envClsTierOrderOk, envClsConsoleStart,
       envt:${o.envt?"{ envtOpen, envtStatus, envtStartHtml, envtPick, envtNext, envtClose, envtCoreLine, envtWaitsForCheckin, envtFinalApply, envRaSet, envRaMode, envRaStartHtml, envRaReadQ, get state(){ return envtState; } }":"null"} };`)(G,firebase,document,tierFn);
   api.G=G; api.el=(id,v)=>{ G.els[id]=el(id); if(v!==undefined) G.els[id].value=v; return G.els[id]; };
   api.flush=async()=>{ for(let i=0;i<60;i++) await Promise.resolve(); };
@@ -71,7 +74,7 @@ function world(o){
 }
 
 
-module.exports={world,src,SITE,CON,MIR,UNIT,REPO};
+module.exports={world,src,SITE,CON,MIR,UNIT,CLS,REPO};
 if(require.main===module){
 let pass=0, fail=0;
 const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  "+JSON.stringify(x).slice(0,400):"")); } };

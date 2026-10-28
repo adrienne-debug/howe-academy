@@ -77,6 +77,13 @@ or picked students). It writes `release/<cid>/final/all/<station>` or `release/<
 `{date, ts, by}` (covered by the `release/<cid>` rules; `final` validates the shape); each family's app copies it to its own
 `mastery/<kid>_tests/<station>/postOpen` — the teacher still never touches a family instance. There is no Undo for a final.
 
+**⚙️ Class settings** (2026-10-28): the teacher's (and your) "⚙️ Class settings" chip sets how the class studies — New cards a
+day, Cards a sitting, How cards are learned, Passes, Decks at once, and under Advanced the mix-in / hand-off levels and the drill
+ladder and limits — saved at `classes/<cid>/settings/{study,drill}`; a student page's "⚙️ Settings for this student" overrides one
+student at `students/<sid>/settings/{study,drill}`. As admin you see a 🔒 Lock on each setting (`settings/locks/<name>`): the teacher
+then sees it greyed, "set by Adrienne". A kid's app reads the class's and its own settings once when it opens and uses them in
+memory; nothing is written into the family instance. Lincoln's Howe app keeps your own settings.
+
 **Master lock**: Admin → "Close the season now" writes `release/locked = {locked:true, at, by}`; every family and the teacher
 then land on the "season closed" card; nothing is deleted. It also closes **by itself after 2027-04-24** (State). To reopen
 for the next season, "Reopen the season" after that date writes `{locked:false, at:<then>}`, which the page honours.

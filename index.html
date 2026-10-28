@@ -45369,7 +45369,8 @@ function envtWaitsForCheckin(kid,deckKey){
   if(envtLib()&&!envtForm(station,"pre")) return false;
   return !envtRec(kid,station).pre; }
 // 2. the station's core cards learned = handed off by the 🌿 session (tier at/after ITS handOffAt): {learned,total}
-function envtHandOffAt(kid){ const S=masteryData[kid+"_sessions"], s=S&&S[ENV_SESSION_SID]; return (s&&s.handOffAt)||ENV_SESSION.handOffAt; }
+function envtHandOffAt(kid){ const S=masteryData[kid+"_sessions"]; let s=S&&S[ENV_SESSION_SID]; if(s&&typeof envClassOverlay==="function") s=envClassOverlay("study",kid,s);   // ⚙️ ENVCLASSSET: the class's hand-off
+  return (s&&s.handOffAt)||ENV_SESSION.handOffAt; }
 // the cards: this family's (hydrated) unit record, else envirothon.js's — the site's demo carries only a sample deck on its record
 function envtCoreCount(kid,station){ const st=envtStation(station), L=((typeof window!=="undefined")&&window.HoweEnvirothon&&window.HoweEnvirothon.unit)||null, U=envtUnit();
   const out={learned:0,total:0}; if(!st) return out;
@@ -46852,7 +46853,7 @@ function envsReadEdition(){ try{ if(envsDemo()||typeof db==="undefined"||!db) re
 function envsReadShared(){
   if(envsDemo()) return; let sdb; try{ sdb=firebase.database(); }catch(e){ return; }
   const val=s=>(s&&typeof s.val==="function")?s.val():null, re=()=>{ try{ if(typeof renderAllSoon==="function") renderAllSoon(); }catch(e){} };
-  const go=cid=>{ if(!cid) return; _envs.cid=cid; sdb.ref("classes/"+cid).on("value",s=>{ _envs.cls=val(s); re(); }); sdb.ref("boards/"+cid).on("value",s=>{ _envs.boards=val(s); re(); }); sdb.ref("settings/whoDrills/"+cid).on("value",s=>{ _envs.who=val(s)||""; re(); }); };
+  const go=cid=>{ if(!cid) return; _envs.cid=cid; sdb.ref("classes/"+cid).on("value",s=>{ _envs.cls=val(s); re(); }); sdb.ref("boards/"+cid).on("value",s=>{ _envs.boards=val(s); re(); }); sdb.ref("settings/whoDrills/"+cid).on("value",s=>{ _envs.who=val(s)||""; re(); }); if(typeof envClsKidLoad==="function") envClsKidLoad(sdb,cid); };   // ⚙️ ENVCLASSSET: the class's settings + this student's, once
   if(_envs.cid) go(_envs.cid); else if(_envs.sid) sdb.ref("students/"+_envs.sid+"/class").once("value",s=>go(val(s)));
   sdb.ref("release/locked").on("value",s=>{ _envs.lockRaw=val(s); _envs.lock=envsLockState(_envs.lockRaw); if(_envs.lock.locked&&_envs.role!=="admin") envsCard("closed"); });
 }
@@ -47203,12 +47204,13 @@ function envConsoleStart(){
   if(!envcOn()||envsDemo()) return false;
   try{ _envc.sdb=firebase.database(); }catch(e){ _envc.err=String((e&&e.message)||e); return false; }
   envcSub("locked","release/locked",v=>{ _envc.lockRaw=v; _envs.lockRaw=v; _envs.lock=envsLockState(v); });
+  if(typeof envClsConsoleStart==="function") envClsConsoleStart();   // ⚙️ ENVCLASSSET: Adrienne's locks (settings/locks)
   if(envcAdmin()){ envcSub("classes","classes",v=>{ _envc.classes=v||{}; if(!_envc.cid){ const k=Object.keys(_envc.classes)[0]; if(k) envcPickClass(k); } }); envcSub("teachers","teachers",v=>{ _envc.teachers=v||{}; }); }
   else { _envc.sdb.ref("teachers/"+_envs.uid).once("value",s=>{ const t=envcVal(s)||{}; const ks=Object.keys(t.classes||{}); _envc.classes={}; ks.forEach(k=>{ _envc.classes[k]={name:k}; }); if(ks.length) envcPickClass(_envs.cid&&ks.indexOf(_envs.cid)>=0?_envs.cid:ks[0]); else { _envc.err="No class is set up for this teacher yet — ask Adrienne."; envcRe(); } }); }
   return true;
 }
 function envcPickClass(cid){
-  if(!cid) return; if(_envc.cid&&_envc.cid!==cid){ Object.keys(_envc.subs).forEach(k=>{ if(k!=="locked"&&k!=="classes"&&k!=="teachers") envcUnsub(k); }); _envc.students={}; _envc.cls=null; _envc.release=null; _envc.scores={}; _envc.cards={}; _envc.sel=null; }
+  if(!cid) return; if(_envc.cid&&_envc.cid!==cid){ Object.keys(_envc.subs).forEach(k=>{ if(k!=="locked"&&k!=="locks"&&k!=="classes"&&k!=="teachers") envcUnsub(k); }); _envc.students={}; _envc.cls=null; _envc.release=null; _envc.scores={}; _envc.cards={}; _envc.sel=null; }
   _envc.cid=cid; _envs.cid=cid; if(envsDemo()) { envcRe(); return; }
   envcSub("cls","classes/"+cid,v=>{ _envc.cls=v; _envs.cls=v; envcSyncStudents(); });
   envcSub("rel","release/"+cid,v=>{ _envc.release=v||{}; });
@@ -47222,7 +47224,7 @@ function envcSyncStudents(){
   want.forEach(sid=>envcSub("st:"+sid,"students/"+sid,v=>{ _envc.students[sid]=v||{}; }));
   Object.keys(_envc.subs).filter(k=>k.indexOf("st:")===0).forEach(k=>{ const sid=k.slice(3); if(want.indexOf(sid)<0){ envcUnsub(k); delete _envc.students[sid]; } });
 }
-function envcDemoStart(data){ _envc.demo=data; _envc.cid=data.cid; _envc.classes={[data.cid]:data.cls}; _envc.cls=data.cls; _envc.students=data.students; _envc.release=data.release; _envc.scores=data.scores; _envc.cards=data.cards; _envc.who=data.who; _envc.teachers=data.teachers; _envc.lockRaw=data.lockRaw; _envc.view="grid"; _envs.uid=_envs.role==="admin"?"uid_admin_demo":"uid_teacher_demo"; }
+function envcDemoStart(data){ _envc.demo=data; _envc.cid=data.cid; _envc.classes={[data.cid]:data.cls}; _envc.cls=data.cls; _envc.students=data.students; _envc.release=data.release; _envc.scores=data.scores; _envc.cards=data.cards; _envc.who=data.who; _envc.teachers=data.teachers; _envc.lockRaw=data.lockRaw; _envc.view="grid"; _envs.uid=_envs.role==="admin"?"uid_admin_demo":"uid_teacher_demo"; if(typeof envClsDemoStart==="function") envClsDemoStart(data); }
 function envcDemoRole(role){ if(_envc.demo){ _envs.uid=role==="admin"?"uid_admin_demo":"uid_teacher_demo"; _envs.email=role==="admin"?"adrienne@example.com":"teacher@example.com"; } }
 function envcWrite(path,val,op){ if(!envcOn()) return Promise.reject(new Error("not the console")); return envsWrite(path,val,op).then(r=>{ if(!envsDemo()) envsToast("Saved"); return r; }).catch(e=>{ _envc.err=String((e&&e.message)||e); envsToast("Couldn’t save: "+_envc.err); envcRe(); throw e; }); }
 function envcMulti(obj,label){ if(!envcOn()) return Promise.reject(new Error("not the console")); if(envsDemo()){ _envs.writes.push({op:"update",path:"/",val:obj}); envsToast("demo: would write "+Object.keys(obj).join(", ")); return Promise.resolve(obj); } if(typeof _dryRun==="function"&&_dryRun()) return Promise.resolve(obj); return _envc.sdb.ref().update(obj).then(()=>{ envsToast(label||"Saved"); return obj; }).catch(e=>{ _envc.err=String((e&&e.message)||e); envsToast("Couldn’t save: "+_envc.err); envcRe(); throw e; }); }
@@ -47254,7 +47256,7 @@ function envConsoleHtml(){
   if(!envcOn()) return "";
   const v=_envc.view, cls=_envc.cls, admin=envcAdmin();
   let h='<div class="envs-top" style="background:#14532d"><div class="t">\u{1F33F} '+envcEsc((cls&&cls.name)||"Envirothon")+(admin?' · Adrienne':'')+'</div><div class="envs-muted" style="color:#d1fae5">'+envcStudents().length+' students</div><button onclick="envcView(\'settings\')" aria-label="Settings">⚙️</button></div>';
-  const chips=[["grid","\u{1F4CB} Class"],["roster","\u{1F465} Roster"],["send","\u{1F4E4} Send out"],["strong","\u{1F4AA} Who is strong where"],["cards","\u{1F0CF} Teacher cards"],["boards","\u{1F3C6} Boards"],["who","\u{1F469}‍\u{1F3EB} Who drills"]]; if(admin) chips.push(["admin","\u{1F511} Admin"]);
+  const chips=[["grid","\u{1F4CB} Class"],["roster","\u{1F465} Roster"],["send","\u{1F4E4} Send out"],["strong","\u{1F4AA} Who is strong where"],["cards","\u{1F0CF} Teacher cards"],["boards","\u{1F3C6} Boards"],["who","\u{1F469}‍\u{1F3EB} Who drills"],["classset","\u2699\uFE0F Class settings"]]; if(admin) chips.push(["admin","\u{1F511} Admin"]);
   h+='<div class="envs-chips">'+chips.map(x=>'<button class="'+((v===x[0]||(v==="student"&&x[0]==="grid"))?'on':'')+'" onclick="envcView(\''+x[0]+'\')">'+x[1]+'</button>').join("")+'</div>';
   if(_envc.err) h+='<div class="envs-card" style="border-color:#fecaca;color:#b91c1c;font-size:12.5px">'+envcEsc(_envc.err)+' <a href="javascript:void(0)" onclick="_envc.err=\'\';envcRe()" style="color:#b91c1c">dismiss</a></div>';
   if(_envs.lock&&_envs.lock.locked) h+='<div class="envs-card" style="border-color:#fcd34d;background:#fffbeb;font-size:12.5px">\u{1F512} The season is closed for teachers and families; you see this because you are the admin.</div>';
@@ -47266,6 +47268,7 @@ function envConsoleHtml(){
   else if(v==="cards") h+=envcCardsHtml();
   else if(v==="boards") h+=envcBoardsHtml();
   else if(v==="who") h+=envcWhoHtml();
+  else if(v==="classset"&&typeof envClsPanelHtml==="function") h+=envClsPanelHtml();   // ⚙️ ENVCLASSSET
   else if(v==="admin"&&admin) h+=envcAdminHtml();
   else if(v==="settings") h+=envsSettingsHtml();
   else h+=envcGridHtml();
@@ -47297,6 +47300,7 @@ function envcStudentHtml(sid){
     if(t.graduated) return '<span class="envs-chip">'+envcEsc(st.short)+' \u{1F393}</span>'; if(f) return '<span class="envs-chip">'+envcEsc(st.short)+' \u00B7 final open'+(f.date?' '+envcEsc(f.date):'')+'</span>';
     return '<button class="envs-btn sec" onclick="envcFinalFor(\''+envcJ(sid)+'\',\''+st.id+'\')">\u{1F4DD} Open the final \u00B7 '+envcEsc(st.short)+'</button>'; }).join("")+'</div><div class="envs-muted" style="margin-top:4px">It opens on its own once every core card is learned; this opens it now. Writes release/'+envcEsc(cid)+'/final/students/'+envcEsc(sid)+'/&lt;station&gt;. The whole class opens from Send out.</div></div>';
   if(held.length) h+='<div class="envs-card"><div class="envs-h2">Open a station for '+envcEsc(envcName(s))+' only</div><div class="envs-row">'+held.map(st=>'<button class="envs-btn sec" onclick="envcOpenFor(\''+envcJ(sid)+'\',\''+st.id+'\')">\u{1F513} '+envcEsc(st.short)+'</button>').join("")+'</div><div class="envs-muted" style="margin-top:4px">Writes release/'+envcEsc(cid)+'/students/'+envcEsc(sid)+'/&lt;station&gt;. The whole class opens from Send out.</div></div>';
+  if(typeof envClsStudentHtml==="function") h+=envClsStudentHtml(sid);   // ⚙️ ENVCLASSSET: this student's own settings
   const SC=(_envc.scores&&_envc.scores[sid])||{};
   h+='<div class="envs-card"><div class="envs-h2">Your in-class scores</div><div class="envs-muted" style="margin-bottom:6px">Next to the app’s numbers: the station test and presentation you graded.</div>';
   stns.filter(st=>st.id!=="general").forEach(st=>{ const r=SC[st.id]||{}; const ed=_envc.edit&&_envc.edit.kind==="score"&&_envc.edit.sid===sid&&_envc.edit.st===st.id;
@@ -47488,6 +47492,246 @@ function envcClassAdd(){ if(!envcAdmin()) return; const g=id=>((document.getElem
 function envcTeacherAdd(){ if(!envcAdmin()) return; const g=id=>((document.getElementById(id)||{}).value||"").trim(); const uid=g("envc-t-uid"), name=g("envc-t-name"); if(!uid||!name||!_envc.cid){ envsToast("The uid, a name and a class, please."); return; }
   envcMulti({["teachers/"+uid+"/name"]:name,["teachers/"+uid+"/classes/"+_envc.cid]:true,["classes/"+_envc.cid+"/teacher"]:uid},"Teacher added").then(()=>{ if(envsDemo()){ _envc.teachers[uid]={name,classes:{[_envc.cid]:true}}; _envc.cls.teacher=uid; envcRe(); } }).catch(()=>{}); }
 // ENVCONSOLE_END
+// ENVCLASSSET_START — ⚙️ CLASS SETTINGS on the Envirothon site: the teacher sets how her class studies (her words 2026-10-28: "the teacher
+// should be able to have the controls to edit how many can be each day how they will be learned how many times in which level all of
+// these type settings that are in drills" · "are we going to have those settings for her to tweak and change and set up?" · "can i see
+// that in the demo"). Howe's own session editor (mhqSessValidate) and drill rules (Mastery ▸ Drill Rules) are the model for what each
+// setting means and its allowed range. INERT unless ENVSITE's envEdition() says "envirothon": every function returns at once otherwise.
+//   · THE PANEL (ENVCONSOLE's "⚙️ Class settings" chip, teacher + admin): up front — New cards a day · Cards a sitting · How cards are
+//     learned (the pattern: Pick it / Key ideas / Type it / Flip, ticked + ordered) · Passes · Decks introducing at once; the "Advanced"
+//     fold — when a card mixes into review / hands off to the drill (tier pickers), the drill ladder (right in a row to move up, per
+//     level, what a miss does), the drill's limits (new per deck, learning cap, overdue cap) and each deck's mode + new-at-once. Each row:
+//     the plain meaning in one line, Howe's range, the value now. "Reset to default" per section.
+//     Cards a sitting (maxCards) is up front although the ask didn't name it: the 🌿 session caps a day's learning + new cards at it
+//     (12), so New cards a day = 20 could never give 20 without it.
+//   · PER STUDENT: the student page's "⚙️ Settings for this student" — the same rows, each showing "class: 20" until it is overridden;
+//     clearing an override falls back to the class.
+//   · ADRIENNE'S LOCKS: settings/locks/<name> = true (admin only). A locked setting shows to the teacher greyed, "🔒 set by Adrienne",
+//     and her save is refused (here and in the rules); only the admin changes it, for the class and for any student.
+//   · DATA (the shared instance; every save ONE targeted update through envsWrite — demo: "would write" toast, dry run: nothing):
+//       classes/<cid>/settings/{study:{…}, drill:{…}}   only the values she set (a cleared value = the default)
+//       students/<sid>/settings/{study:{…}, drill:{…}}  overrides only. NOT classes/<cid>/students/<sid>/settings: that node is the
+//         roster flag `true` — the first override would turn it into an object and clearing the last one would delete the student
+//         from the class. students/<sid> is the student's own row (the console already listens to it; the family's login reads it).
+//       settings/locks/<name> = true | null
+//   · HOW IT REACHES A KID: on a kid's or parent's boot (ENVSITE envsReadShared → envClsKidLoad) ONE once each of
+//     classes/<cid>/settings and students/<sid>/settings; envClassOverlay() lays defaults ← class ← student over the 🌿 session record
+//     (mstSessions, envtHandOffAt) and over the drill settings (mastDrillSettings, mastGetCatMode) IN MEMORY — a new object, never a
+//     write into the kid's own records. Every other family, every other kid and every other session gets back the very object it passed.
+//     A Howe kid in a class (the mirror) keeps Mom's settings: the overlay runs only under the site's edition.
+//   · DEMO: the sample class starts at the defaults (5 a day …); one sample student (Jonah T.) has an override; a change applies at once,
+//     so the Kid view's 🌿 start reads the class plan ("up to 20 new cards today") and the next sitting uses the new steps.
+const ENVCS_LADDER=["every_other_day","weekly","bi_weekly","monthly","graduated"];
+const ENVCS_TIER_LBL={daily:"Daily",every_other_day:"Every other day",every_third_day:"Every 3rd day",weekly:"Weekly",bi_weekly:"Every 2 weeks",monthly:"Monthly",learned:"Learned",graduated:"Graduated"};
+const ENVCS_STEPS=[["pick","\u{1F3AF} Pick it","choose the right answer from a few"],["ideas","\u{1F9E9} Key ideas","say it in your own words, check the key ideas"],["type","⌨️ Type it","type the answer"],["rec","\u{1F504} Flip","see the card, turn it over, say if you knew it"]];
+const ENVCS_MODES=[["flash","⚡ Flash"],["flip","\u{1F504} Flip"],["quiz","\u{1F4DD} Quiz"]];
+const ENVCS_SECTS=[["front","How the class studies","study"],["moves","When cards move on","study"],["ladder","The drill ladder","drill"],["limits","The drill’s limits","drill"],["decks","Each deck","drill"]];
+const ENVCS_FIELDS=[
+  {name:"newPerDay",part:"study",sect:"front",kind:"int",min:0,max:50,def:5,label:"New cards a day",means:"Cards a student meets for the first time each study day."},
+  {name:"maxCards",part:"study",sect:"front",kind:"int",min:0,max:60,def:12,zero:"no limit",label:"Cards a sitting",means:"Most cards in a day’s sitting, new + still learning (0 = no limit). Reviews always come too. Keep it at or above New cards a day."},
+  {name:"pattern",part:"study",sect:"front",kind:"pattern",def:["pick","ideas","type"],label:"How cards are learned",means:"The steps a new card goes through, one per learning day, in this order."},
+  {name:"passes",part:"study",sect:"front",kind:"int",min:1,max:5,def:2,label:"Passes per sitting",means:"How many times each learning card comes round in one sitting."},
+  {name:"focusDecks",part:"study",sect:"front",kind:"int",min:0,max:20,def:2,zero:"every open deck",label:"Decks introducing at once",means:"How many decks hand out new cards at the same time (0 = every open deck)."},
+  {name:"mixInAt",part:"study",sect:"moves",kind:"tier",def:"weekly",label:"Mixes into review at",means:"The level where a card stops coming in the \u{1F33F} sitting and moves to review."},
+  {name:"handOffAt",part:"study",sect:"moves",kind:"tier",def:"bi_weekly",label:"Hands off to the drill at",means:"The level where a card goes to the drill — and counts as learned for the final."},
+  {name:"ladder_streak",part:"drill",sect:"ladder",kind:"int",min:1,max:10,def:3,label:"Right in a row to move up",means:"Right answers in a row a card needs to climb one level."},
+  {name:"tier_streaks",part:"drill",sect:"ladder",kind:"tiermap",min:1,max:10,def:{},label:"Right in a row, per level",means:"A different number for one level (blank = the number above)."},
+  {name:"miss_drop",part:"drill",sect:"ladder",kind:"choice",opts:[["reset","⇣ Back to the first level"],["one","↓ Down one level"]],def:"reset",label:"What a miss does",means:"Where a card goes after a wrong answer."},
+  {name:"max_intro_per_cat",part:"drill",sect:"limits",kind:"int",min:1,max:10,def:3,label:"New per deck in a drill",means:"How many cards of one deck may be new at once in the drill."},
+  {name:"max_learn_per_drill",part:"drill",sect:"limits",kind:"int",min:0,max:40,def:0,zero:"no limit",label:"Learning cards per drill",means:"Most learning cards in one drill, every deck together (0 = no limit). Reviews are never cut."},
+  {name:"max_overdue_per_drill",part:"drill",sect:"limits",kind:"int",min:0,max:60,def:0,zero:"all of them",label:"Overdue reviews per drill",means:"After missed days, how many overdue reviews come in one drill, oldest first (0 = all of them)."},
+  {name:"cat_modes",part:"drill",sect:"decks",kind:"deckmode",def:{},label:"How each deck shows in the drill",means:"Flash (say it), Flip (turn the card over) or Quiz (write it)."},
+  {name:"cat_intro_max",part:"drill",sect:"decks",kind:"deckint",min:1,max:10,def:{},label:"New at once, per deck",means:"A different number for one deck (blank = New per deck in a drill)."}];
+const _envcs={locks:{},kcls:null,kstu:null,loaded:false,asked:"",adv:false,stuOpen:"",stuAdv:false};
+function envClsOn(){ return typeof envSiteOn==="function"&&envSiteOn(); }
+function envClsField(name){ return ENVCS_FIELDS.find(f=>f.name===name)||null; }
+function envClsDecks(){ return ((typeof ENV_DECKS!=="undefined"&&ENV_DECKS)||[]).map(d=>({key:d[0],mode:d[1],station:d[3]})); }
+function envClsTiers(){ return ENVCS_LADDER.slice(); }
+function envClsTierLbl(t){ return ENVCS_TIER_LBL[t]||String(t||""); }
+// the default a setting falls back to: the 🌿 session record's own value (ENVUNIT's ENV_SESSION), the drill's stock default, each deck's own mode
+function envClsDef(f){ if(!f) return null;
+  if(f.part==="study"&&typeof ENV_SESSION!=="undefined"&&ENV_SESSION&&ENV_SESSION[f.name]!=null) return Array.isArray(ENV_SESSION[f.name])?ENV_SESSION[f.name].slice():ENV_SESSION[f.name];
+  if(f.kind==="deckmode"){ const o={}; envClsDecks().forEach(d=>{ o[d.key]=d.mode; }); return o; }
+  return (f.def&&typeof f.def==="object")?(Array.isArray(f.def)?f.def.slice():Object.assign({},f.def)):f.def; }
+// PURE: is this value allowed? → {ok, v, error}. Howe's ranges; a map setting checks one key (a deck of the unit, a level that can climb).
+function envClsCheck(name,v,key){
+  const f=envClsField(name); if(!f) return {ok:false,error:"Unknown setting"};
+  const intOk=x=>{ const n=(typeof x==="number")?x:(String(x==null?"":x).trim()===""?NaN:Number(x)); return (Number.isInteger(n)&&n>=f.min&&n<=f.max)?n:null; };
+  const rng=f.label+" must be a whole number "+f.min+"–"+f.max;
+  if(f.kind==="int"){ const n=intOk(v); return n==null?{ok:false,error:rng}:{ok:true,v:n}; }
+  if(f.kind==="tiermap"){ if(envClsTiers().slice(0,-1).indexOf(key)<0) return {ok:false,error:"Unknown level"}; const n=intOk(v); return n==null?{ok:false,error:rng}:{ok:true,v:n}; }
+  if(f.kind==="deckint"){ if(!envClsDecks().some(d=>d.key===key)) return {ok:false,error:"Unknown deck"}; const n=intOk(v); return n==null?{ok:false,error:rng}:{ok:true,v:n}; }
+  if(f.kind==="deckmode"){ if(!envClsDecks().some(d=>d.key===key)) return {ok:false,error:"Unknown deck"}; return ENVCS_MODES.some(m=>m[0]===v)?{ok:true,v}:{ok:false,error:"A deck shows as Flash, Flip or Quiz"}; }
+  if(f.kind==="tier") return envClsTiers().indexOf(v)>=0?{ok:true,v}:{ok:false,error:"Pick a level"};
+  if(f.kind==="choice") return f.opts.some(o=>o[0]===v)?{ok:true,v}:{ok:false,error:"Pick one"};
+  if(f.kind==="pattern"){ const arr=Array.isArray(v)?v:(v&&typeof v==="object")?Object.keys(v).sort((a,b)=>a-b).map(k=>v[k]):null; if(!arr) return {ok:false,error:"Tick at least one step"};
+    const out=[]; arr.forEach(s=>{ if(ENVCS_STEPS.some(x=>x[0]===s)&&out.indexOf(s)<0) out.push(s); }); return out.length?{ok:true,v:out}:{ok:false,error:"Tick at least one step"}; }
+  return {ok:false,error:"Unknown setting"};
+}
+// PURE: hand-off must sit above mix-in (Howe's own rule, "Hand-off must be above mix-in")
+function envClsTierOrderOk(mix,hand){ const L=envClsTiers(); return L.indexOf(hand)>L.indexOf(mix); }
+// PURE: rec (the kid's own 🌿 session record or drill settings) with each layer laid over it (class, then the student) → a NEW object, or
+// rec itself when nothing applies. Invalid values are skipped; a mix-in / hand-off pair out of order falls back to rec's own.
+function envClsMerge(part,rec,layers){
+  const out=Object.assign({},rec||{}); let changed=false, introFromLayer=false; const fs=ENVCS_FIELDS.filter(f=>f.part===part);
+  (layers||[]).forEach(L=>{ const src=(L&&L[part])||{};
+    fs.forEach(f=>{ const v=src[f.name]; if(v==null) return;
+      if(f.kind==="tiermap"||f.kind==="deckint"||f.kind==="deckmode"){ if(typeof v!=="object") return; const m=Object.assign({},out[f.name]||{}); let any=false;
+        Object.keys(v).forEach(k=>{ const c=envClsCheck(f.name,v[k],k); if(c.ok){ m[k]=c.v; any=true; } }); if(any){ out[f.name]=m; changed=true; } return; }
+      const c=envClsCheck(f.name,v); if(!c.ok) return; out[f.name]=c.v; changed=true; if(f.name==="max_intro_per_cat") introFromLayer=true; }); });
+  if(!changed) return rec;
+  // "New per deck in a drill" set by the class: the enroll gave every Envirothon deck its own cat_intro_max (3), which would hide it —
+  // those per-deck numbers step aside (memory only) unless a layer set one for that deck.
+  if(part==="drill"&&introFromLayer&&out.cat_intro_max){ const m=Object.assign({},out.cat_intro_max), mine={}; (layers||[]).forEach(L=>{ Object.keys(((L&&L.drill)||{}).cat_intro_max||{}).forEach(k=>{ mine[k]=1; }); });
+    envClsDecks().forEach(d=>{ if(!mine[d.key]) delete m[d.key]; }); out.cat_intro_max=m; }
+  if(part==="study"&&!envClsTierOrderOk(out.mixInAt||"weekly",out.handOffAt||"bi_weekly")){ out.mixInAt=rec.mixInAt; out.handOffAt=rec.handOffAt; if(out.mixInAt===undefined) delete out.mixInAt; if(out.handOffAt===undefined) delete out.handOffAt; }
+  if(Array.isArray(out.pattern)) out.pattern=out.pattern.slice();
+  return out;
+}
+// ── the kid's side ──
+// ENVSITE envsReadShared → once the class is known: ONE once each (the class's settings, this student's overrides); repaint on arrival
+function envClsKidLoad(sdb,cid){
+  if(!envClsOn()||envsDemo()||!sdb||!cid||!_envs.sid||_envcs.asked===cid) return false; _envcs.asked=cid;
+  const val=s=>(s&&typeof s.val==="function")?s.val():null; let n=0;
+  const done=()=>{ if(++n<2) return; _envcs.loaded=true; try{ if(typeof renderAllSoon==="function") renderAllSoon(); }catch(e){} };
+  sdb.ref("classes/"+cid+"/settings").once("value",s=>{ _envcs.kcls=val(s)||{}; done(); },()=>{ _envcs.kcls={}; done(); });
+  sdb.ref("students/"+_envs.sid+"/settings").once("value",s=>{ _envcs.kstu=val(s)||{}; done(); },()=>{ _envcs.kstu={}; done(); });
+  return true;
+}
+// [class, student] — the demo reads the console's own in-memory class (so a change applies at once), live reads what the boot loaded
+function envClsLayers(){
+  if(envsDemo()){ const c=(_envc.cls&&_envc.cls.settings)||{}, s=(((_envc.students||{})[_envs.sid])||{}).settings||{}; return [c,s]; }
+  return _envcs.loaded?[_envcs.kcls||{},_envcs.kstu||{}]:null;
+}
+// THE overlay (one guarded line each in mstSessions, envtHandOffAt, mastDrillSettings, mastGetCatMode): rec back untouched unless this is
+// the site's own kid (kid / parent login, or the demo's kid) and the class or the student has a value.
+function envClassOverlay(part,kid,rec){
+  try{
+    if(!envClsOn()||!rec||!kid||kid!==_envs.kid) return rec;
+    if(!envsDemo()&&!(_envs.role==="kid"||_envs.role==="parent")) return rec;
+    const L=envClsLayers(); if(!L) return rec;
+    return envClsMerge(part,rec,L);
+  }catch(e){ return rec; }
+}
+// the 🌿 start's one line (renderMastStudy, right above the session header): what the class set, read off the session as the sitting will use it
+function envClsStartHtml(kid,session){
+  if(!envClsOn()||!session||typeof ENV_SESSION_SID==="undefined"||session.sid!==ENV_SESSION_SID||kid!==_envs.kid) return "";
+  const steps=(Array.isArray(session.pattern)?session.pattern:[]).map(s=>{ const x=ENVCS_STEPS.find(y=>y[0]===s); return x?x[1]:s; }).join(" → ");
+  return '<div style="margin:0 0 10px;padding:8px 12px;background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:12px;font-size:13px;color:#14532d;font-weight:700;font-family:\'DM Sans\',sans-serif">⚙️ Your class plan: up to '+(session.newPerDay|0)+' new card'+((session.newPerDay|0)===1?'':'s')+' today'+(steps?' · '+envsEsc(steps):'')+'</div>';
+}
+// ── the console's side ──
+function envClsConsoleStart(){ if(!envcOn()||envsDemo()) return false; envcSub("locks","settings/locks",v=>{ _envcs.locks=v||{}; }); return true; }
+function envClsDemoStart(data){ _envcs.locks={}; _envcs.adv=false; _envcs.stuOpen=""; const j=data&&data.students&&data.students.tran_jonah; if(j) j.settings={study:{newPerDay:3}}; }   // one sample override: "class: 5" shows on the others
+function envClsLocked(name){ return !!(_envcs.locks&&_envcs.locks[name]===true); }
+function envClsCanEdit(name){ return envcOn()&&(envcAdmin()||!envClsLocked(name)); }
+function envClsPart(scope,part){ const S=scope==="class"?((_envc.cls&&_envc.cls.settings)||{}):((((_envc.students||{})[scope])||{}).settings||{}); return S[part]||{}; }
+function envClsClassVal(name){ const f=envClsField(name); const v=envClsPart("class",f.part)[name]; if(v==null) return envClsDef(f); if(f.kind==="deckmode"||f.kind==="deckint"||f.kind==="tiermap") return Object.assign({},envClsDef(f)||{},v); if(f.kind==="pattern"){ const c=envClsCheck(name,v); return c.ok?c.v:envClsDef(f); } return v; }
+function envClsEff(scope,name){ const f=envClsField(name), cv=envClsClassVal(name); if(scope==="class") return cv; const o=envClsPart(scope,f.part)[name]; if(o==null) return cv;
+  if(typeof cv==="object"&&!Array.isArray(cv)) return Object.assign({},cv,o); if(f.kind==="pattern"){ const c=envClsCheck(name,o); return c.ok?c.v:cv; } return o; }
+function envClsBase(scope,part){ return scope==="class"?"classes/"+_envc.cid+"/settings/"+part:"students/"+scope+"/settings/"+part; }
+// apply a saved update to the console's memory (demo: this IS the state; live: the listener confirms it a moment later)
+function envClsMem(scope,part,upd){
+  let host; if(scope==="class"){ if(!_envc.cls) _envc.cls={}; host=_envc.cls; } else { if(!_envc.students[scope]) _envc.students[scope]={}; host=_envc.students[scope]; }
+  host.settings=host.settings||{}; const t=host.settings[part]=host.settings[part]||{};
+  Object.keys(upd).forEach(p=>{ const a=p.split("/"); if(a.length===1){ if(upd[p]==null) delete t[a[0]]; else t[a[0]]=upd[p]; return; }
+    const m=t[a[0]]=t[a[0]]||{}; if(upd[p]==null) delete m[a[1]]; else m[a[1]]=upd[p]; if(!Object.keys(m).length) delete t[a[0]]; });
+}
+// THE save: one targeted update at classes/<cid>/settings/<part> or students/<sid>/settings/<part>. v null = clear (class → the default,
+// a student → the class). Refused: not the console, a locked setting for the teacher, a value outside the range, mix-in at/above hand-off.
+function envClsSave(scope,name,v,key){
+  const f=envClsField(name); if(!envcOn()||!f||!_envc.cid) return false;
+  if(!envClsCanEdit(name)){ envsToast("\u{1F512} "+f.label+" is set by Adrienne"); return false; }
+  if(scope!=="class"&&!(_envc.students||{})[scope]) return false;
+  let val=null;
+  if(v!=null){ const c=envClsCheck(name,v,key); if(!c.ok){ envsToast(c.error); envcRe(); return false; } val=c.v; }
+  if(f.kind==="tier"&&val!=null){ const mix=name==="mixInAt"?val:envClsEff(scope,"mixInAt"), hand=name==="handOffAt"?val:envClsEff(scope,"handOffAt"); if(!envClsTierOrderOk(mix,hand)){ envsToast("Hand-off must be above mix-in"); return false; } }
+  const p=(key!=null&&key!=="")?name+"/"+key:name, upd={[p]:val};
+  envcWrite(envClsBase(scope,f.part),upd,"update").then(()=>{ envClsMem(scope,f.part,upd); envcRe(); }).catch(()=>{});
+  return true;
+}
+function envClsInput(scope,name,raw,key){ const s=String(raw==null?"":raw).trim(); return envClsSave(scope,name,s===""?null:s,key); }
+// "Reset to default" (class) / "Use the class's" (a student): one update clearing every set value of the section the teacher may change
+function envClsReset(scope,sect){
+  const S=ENVCS_SECTS.find(x=>x[0]===sect); if(!envcOn()||!S||!_envc.cid) return false; const part=S[2], cur=envClsPart(scope,part), upd={};
+  ENVCS_FIELDS.filter(f=>f.sect===sect&&envClsCanEdit(f.name)&&cur[f.name]!=null).forEach(f=>{ upd[f.name]=null; });
+  if(!Object.keys(upd).length){ envsToast(scope==="class"?"Already at the defaults":"Nothing changed for this student here"); return false; }
+  envcWrite(envClsBase(scope,part),upd,"update").then(()=>{ envClsMem(scope,part,upd); envcRe(); }).catch(()=>{});
+  return true;
+}
+// how cards are learned: tick a step on / off, move it up / down — the whole order is saved as one value
+function envClsPat(scope,step,op){
+  const cur=(envClsEff(scope,"pattern")||[]).slice(), i=cur.indexOf(step);
+  if(op==="on"&&i<0) cur.push(step); else if(op==="off"&&i>=0){ if(cur.length===1){ envsToast("Keep at least one step"); return false; } cur.splice(i,1); }
+  else if(op==="up"&&i>0){ cur.splice(i,1); cur.splice(i-1,0,step); } else if(op==="down"&&i>=0&&i<cur.length-1){ cur.splice(i,1); cur.splice(i+1,0,step); } else return false;
+  return envClsSave(scope,"pattern",cur);
+}
+// Adrienne's 🔒: settings/locks/<name> = true | null, one update, admin only
+function envClsLock(name,on){ if(!envcAdmin()||!envClsField(name)) return false; const upd={[name]:on?true:null};
+  envcWrite("settings/locks",upd,"update").then(()=>{ _envcs.locks=Object.assign({},_envcs.locks||{}); if(on) _envcs.locks[name]=true; else delete _envcs.locks[name]; envcRe(); }).catch(()=>{}); return true; }
+function envClsFmt(f,v){
+  if(v==null) return "–";
+  if(f.kind==="int") return (v===0&&f.zero)?"0 ("+f.zero+")":String(v);
+  if(f.kind==="tier") return envClsTierLbl(v);
+  if(f.kind==="choice"){ const o=f.opts.find(x=>x[0]===v); return o?o[1]:String(v); }
+  if(f.kind==="pattern") return (Array.isArray(v)?v:[]).map(s=>{ const x=ENVCS_STEPS.find(y=>y[0]===s); return x?x[1]:s; }).join(" → ");
+  return Object.keys(v||{}).length+" set";
+}
+// one setting's row: meaning, control, value now (class: "now · default"; a student: "class: X" until overridden, then "✕ use the class's")
+function envClsRowHtml(f,scope){
+  const J=envcJ, sc=J(scope), locked=envClsLocked(f.name), can=envClsCanEdit(f.name), dis=can?'':' disabled', admin=envcAdmin();
+  const own=envClsPart(scope,f.part)[f.name], eff=envClsEff(scope,f.name), cls=envClsClassVal(f.name), isMap=f.kind==="tiermap"||f.kind==="deckint"||f.kind==="deckmode";
+  let h='<div style="padding:10px 0;border-top:1px solid #f1efe9;'+(can?'':'opacity:.55')+'"><div class="envs-row" style="align-items:flex-start"><div style="flex:1;min-width:170px"><div style="font-weight:800;font-size:13.5px">'+envcEsc(f.label)+(locked?' \u{1F512}':'')+'</div><div class="envs-muted">'+envcEsc(f.means)+(f.kind==="int"?' ('+f.min+'–'+f.max+')':'')+'</div></div>';
+  if(admin&&scope==="class") h+='<button class="envs-btn sec" style="min-height:34px;padding:0 10px;font-size:12px" onclick="envClsLock(\''+f.name+'\','+(locked?'false':'true')+')">'+(locked?'\u{1F513} Unlock':'\u{1F512} Lock')+'</button>';
+  h+='</div><div style="margin-top:6px">';
+  const chip=(on,label,click)=>'<button class="envs-btn '+(on?'':'sec')+'" style="min-height:36px;padding:0 11px;font-size:12px;margin:0 6px 6px 0"'+dis+' onclick="'+click+'">'+label+'</button>';
+  if(f.kind==="int") h+='<input class="envs-in" type="number" inputmode="numeric" min="'+f.min+'" max="'+f.max+'" style="width:96px" value="'+envcEsc(scope==="class"?eff:(own!=null?own:""))+'"'+(scope!=="class"?' placeholder="'+envcEsc(cls)+'"':'')+dis+' onchange="envClsInput(\''+sc+'\',\''+f.name+'\',this.value)">';
+  else if(f.kind==="tier") h+=envClsTiers().map(t=>chip(eff===t,envcEsc(envClsTierLbl(t)),"envClsSave('"+sc+"','"+f.name+"','"+t+"')")).join("");
+  else if(f.kind==="choice") h+=f.opts.map(o=>chip(eff===o[0],envcEsc(o[1]),"envClsSave('"+sc+"','"+f.name+"','"+o[0]+"')")).join("");
+  else if(f.kind==="pattern"){ const on=eff||[], rows=on.concat(ENVCS_STEPS.map(x=>x[0]).filter(s=>on.indexOf(s)<0));
+    h+=rows.map(s=>{ const x=ENVCS_STEPS.find(y=>y[0]===s), i=on.indexOf(s), t=i>=0;
+      return '<div class="envs-row" style="padding:3px 0"><label style="display:flex;gap:8px;align-items:center;flex:1;min-width:170px;min-height:40px;font-size:13px"><input type="checkbox" '+(t?'checked':'')+dis+' onchange="envClsPat(\''+sc+'\',\''+s+'\',this.checked?\'on\':\'off\')"> <b>'+(t?(i+1)+'. ':'')+envcEsc(x[1])+'</b> <span class="envs-muted">'+envcEsc(x[2])+'</span></label>'+
+        (t?'<button class="envs-btn sec" style="min-height:34px;padding:0 10px"'+(can&&i>0?'':' disabled')+' onclick="envClsPat(\''+sc+'\',\''+s+'\',\'up\')" aria-label="earlier">↑</button><button class="envs-btn sec" style="min-height:34px;padding:0 10px"'+(can&&i<on.length-1?'':' disabled')+' onclick="envClsPat(\''+sc+'\',\''+s+'\',\'down\')" aria-label="later">↓</button>':'')+'</div>'; }).join(""); }
+  else if(f.kind==="tiermap"){ const base=envClsEff(scope,"ladder_streak"), m=eff||{}, mine=own||{};
+    h+=envClsTiers().slice(0,-1).map(t=>'<div class="envs-row" style="padding:2px 0"><div style="flex:1;font-size:12.5px">'+envcEsc(envClsTierLbl(t))+'</div><input class="envs-in" type="number" inputmode="numeric" min="1" max="10" style="width:80px" value="'+envcEsc(scope==="class"?(m[t]!=null?m[t]:""):(mine[t]!=null?mine[t]:""))+'" placeholder="'+envcEsc(scope==="class"?base:(((cls||{})[t]!=null)?cls[t]:base))+'"'+dis+' onchange="envClsInput(\''+sc+'\',\'tier_streaks\',this.value,\''+t+'\')"></div>').join(""); }
+  else if(f.kind==="deckmode"||f.kind==="deckint"){ const m=eff||{}, mine=own||{}, dflt=envClsDef(f)||{}, base=envClsEff(scope,"max_intro_per_cat");
+    envsStations().forEach(st=>{ h+='<div style="font-size:11px;font-weight:800;color:#6b7280;margin:6px 0 2px">'+envcEsc(st.label)+'</div>';
+      st.decks.forEach(d=>{ const k=J(d.key);
+        h+='<div class="envs-row" style="padding:2px 0"><div style="flex:1;font-size:12.5px;min-width:120px">'+envcEsc(envsDeckShort(d.key))+'</div>';
+        if(f.kind==="deckmode") h+='<select class="envs-in" style="width:120px"'+dis+' onchange="envClsSave(\''+sc+'\',\'cat_modes\',this.value,\''+k+'\')">'+ENVCS_MODES.map(o=>'<option value="'+o[0]+'" '+((m[d.key]||dflt[d.key])===o[0]?'selected':'')+'>'+envcEsc(o[1])+'</option>').join("")+'</select>';
+        else h+='<input class="envs-in" type="number" inputmode="numeric" min="1" max="10" style="width:80px" value="'+envcEsc(scope==="class"?(m[d.key]!=null?m[d.key]:""):(mine[d.key]!=null?mine[d.key]:""))+'" placeholder="'+envcEsc(scope!=="class"&&(cls||{})[d.key]!=null?cls[d.key]:base)+'"'+dis+' onchange="envClsInput(\''+sc+'\',\'cat_intro_max\',this.value,\''+k+'\')">';
+        h+='</div>'; }); }); }
+  h+='</div><div class="envs-muted" style="margin-top:2px">';
+  if(scope==="class") h+=isMap?(own&&Object.keys(own).length?Object.keys(own).length+' changed for the class':'all at the default'):'now: <b>'+envcEsc(envClsFmt(f,eff))+'</b>'+(own==null?' (default)':'');
+  else if(own==null||(isMap&&!Object.keys(own).length)) h+=isMap?'all as the class':'class: <b>'+envcEsc(envClsFmt(f,cls))+'</b>';
+  else h+=(isMap?Object.keys(own).length+' changed for this student':'this student: <b>'+envcEsc(envClsFmt(f,eff))+'</b> · class: '+envcEsc(envClsFmt(f,cls)))+(can?' · <a href="javascript:void(0)" onclick="envClsSave(\''+sc+'\',\''+f.name+'\',null)" style="color:#b91c1c">✕ use the class’s</a>':'');
+  if(locked&&!admin) h+=' · \u{1F512} set by Adrienne'; else if(locked) h+=' · \u{1F512} locked for the teacher';
+  return h+'</div></div>';
+}
+function envClsSectHtml(scope,sect){
+  const S=ENVCS_SECTS.find(x=>x[0]===sect); const fs=ENVCS_FIELDS.filter(f=>f.sect===sect);
+  return '<div class="envs-card"><div class="envs-row"><div class="envs-h2" style="flex:1;margin:0">'+envcEsc(S[1])+'</div><button class="envs-btn sec" style="min-height:34px;padding:0 10px;font-size:12px" onclick="envClsReset(\''+envcJ(scope)+'\',\''+sect+'\')">'+(scope==="class"?'Reset to default':'Use the class’s')+'</button></div>'+fs.map(f=>envClsRowHtml(f,scope)).join("")+'</div>';
+}
+function envClsBodyHtml(scope,adv,advClick){
+  let h=envClsSectHtml(scope,"front");
+  h+='<button class="envs-btn sec" style="width:100%;margin-bottom:12px" onclick="'+advClick+'">'+(adv?'▴ Hide advanced':'▾ Advanced · when cards move on, the drill ladder, limits, each deck')+'</button>';
+  if(adv) ["moves","ladder","limits","decks"].forEach(s=>{ h+=envClsSectHtml(scope,s); });
+  return h;
+}
+// the ⚙️ Class settings screen (ENVCONSOLE's chip): the class's values, Adrienne's locks
+function envClsPanelHtml(){
+  if(!envcOn()) return ""; const cls=_envc.cls||{}, nLock=Object.keys(_envcs.locks||{}).filter(k=>_envcs.locks[k]===true).length;
+  let h='<div class="envs-card"><div class="envs-h2">⚙️ Class settings · '+envcEsc(cls.name||_envc.cid)+'</div><div class="envs-muted">For every student in the class. A student page can change one student. Changes reach a student the next time their app opens. Saved at classes/'+envcEsc(_envc.cid)+'/settings.'+(envcAdmin()?' \u{1F512} Lock keeps a setting yours: the teacher sees it greyed, “set by Adrienne”.':(nLock?' \u{1F512} = set by Adrienne.':''))+'</div></div>';
+  return h+envClsBodyHtml("class",_envcs.adv,"_envcs.adv=!_envcs.adv;envcRe()");
+}
+// the student page's "⚙️ Settings for this student" (folded until tapped)
+function envClsStudentHtml(sid){
+  if(!envcOn()||!sid) return ""; const s=(_envc.students||{})[sid]||{}, st=s.settings||{}; let n=0; ["study","drill"].forEach(p=>{ Object.keys(st[p]||{}).forEach(()=>n++); });
+  const open=_envcs.stuOpen===sid, name=envcName(Object.assign({sid},s));
+  let h='<div class="envs-card"><div class="envs-row"><div style="flex:1"><div class="envs-h2" style="margin:0">⚙️ Settings for this student</div><div class="envs-muted">'+(n?n+' changed for '+envcEsc(name)+'; the rest as the class':'All as the class')+' · students/'+envcEsc(sid)+'/settings</div></div><button class="envs-btn sec" onclick="_envcs.stuOpen=(_envcs.stuOpen===\''+envcJ(sid)+'\')?\'\':\''+envcJ(sid)+'\';envcRe()">'+(open?'▴ Close':'▾ Open')+'</button></div></div>';
+  if(open) h+=envClsBodyHtml(sid,_envcs.stuAdv,"_envcs.stuAdv=!_envcs.stuAdv;envcRe()");
+  return h;
+}
+// ENVCLASSSET_END
 function unitAllNudges(kid){ let out=[]; haKidUnits(kid).forEach(u=>{ out=out.concat(unitPlanNudges(u,kid)); }); return out; }
 function unitDismissNudge(unitId,kid,key){
   if(!momHere()) return; // skipping a planned step is Mom's call
@@ -58006,7 +58250,7 @@ const MAST_LUCY_BANK={
 const MAST_FLASH_KIDS=new Set(["julian","lucy","ellis"]);
 function mastDrillSettings(){
   const kid=masteryKid||"julian";
-  const s=masteryData[kid+"_settings"]||{};
+  const s=(typeof envClassOverlay==="function")?envClassOverlay("drill",kid,masteryData[kid+"_settings"]||{}):(masteryData[kid+"_settings"]||{});   // ⚙️ ENVCLASSSET: the class's drill settings, in memory (site edition only)
   const defaultLadder=["every_other_day","weekly","bi_weekly","monthly","graduated"];
   return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,max_learn_per_drill:s.max_learn_per_drill??0,max_overdue_per_drill:s.max_overdue_per_drill??0,auto_pull:s.auto_pull!==false,ladder:s.ladder||defaultLadder,cat_caps:s.cat_caps||{},cat_intro_dots:s.cat_intro_dots||{},cat_intro_max:s.cat_intro_max||{},miss_drop:s.miss_drop||"reset",close_behavior:s.close_behavior||"stay",drop_threshold:s.drop_threshold??0,tier_streaks:s.tier_streaks||{},gate_tier:s.gate_tier||"weekly",sprint_default:s.sprint_default===true,cat_sprint:s.cat_sprint||{},dynamic_decks:s.dynamic_decks===true,dynamic_cap:s.dynamic_cap??24,show_me:s.show_me!==false,match_speak:s.match_speak===true};
 }
@@ -58068,7 +58312,8 @@ const MAST_MATH_ANS={
   "6-1":"5","5-1":"4","5-2":"3","4-1":"3","3-1":"2","2-1":"1"
 };
 const MAST_DEFAULT_CAT_MODES={julian:{Letters:"flash",Numbers:"flash",Colors:"flash",Shapes:"flash",Animals:"flash",Counting:"flash",Dinosaurs:"flash"},lucy:{"Sight Words":"flash","Math Facts":"quiz","Spelling":"quiz","Science":"flip","Vocabulary":"flip"},ellis:{"Math Facts":"quiz","State Capitals":"flip","Science":"flip","Vocabulary":"flip","Spelling":"quiz","Grammar":"flip","Greek & Latin Roots":"flip","Measurements":"flip"},lincoln:{"Math Facts":"quiz","Vocabulary":"flip","AAS Words":"quiz","SpellingYouSee":"quiz","Grammar":"flip","Greek & Latin Roots":"flip","World Geography":"flip","Science":"flip","U.S. History":"flip"}};
-function mastGetCatMode(kid,cat){ const s=masteryData[kid+"_settings"]||{}; if(s.cat_modes&&s.cat_modes[cat]) return s.cat_modes[cat]; return (MAST_DEFAULT_CAT_MODES[kid]||{})[cat]||"flash"; }
+function mastGetCatMode(kid,cat){ const s=(typeof envClassOverlay==="function")?envClassOverlay("drill",kid,masteryData[kid+"_settings"]||{}):(masteryData[kid+"_settings"]||{});   // ⚙️ ENVCLASSSET: the class's deck modes
+  if(s.cat_modes&&s.cat_modes[cat]) return s.cat_modes[cat]; return (MAST_DEFAULT_CAT_MODES[kid]||{})[cat]||"flash"; }
 const MAST_INTRO_HINTS={Letters:"say each letter out loud",Numbers:"count out loud",Counting:"count the dinosaurs out loud",Dinosaurs:"say the dinosaur name",Colors:"say the color name",Shapes:"say the shape name",Animals:"say the animal name","Sight Words":"read the word out loud","Math Facts":"say the answer out loud",Spelling:"spell it out loud, letter by letter",Science:"say what you see",Vocabulary:"say the word out loud","State Capitals":"say the capital city",Grammar:"read the definition out loud","Greek & Latin Roots":"say the meaning out loud",Measurements:"say the conversion out loud","World Geography":"say the capital city","U.S. History":"say when and what happened"};
 // OURWORDS_START — 📝 Our words, PR 1 of 6: the home and the resolver, no screens (DESIGN_our_words_2026-10-24.md §4, §5.4, §6,
 //   §10, §16 item 1; her go 2026-10-27 — step 0 of BRIEF_units_build_2026-10-27.md). Her words 2026-10-24: "a mom's own edited
@@ -62988,6 +63233,7 @@ function mstSessions(kid) {
   const out = [];
   entries.forEach(([sid, rec]) => {
     if (!rec) return;
+    if (typeof envClassOverlay === "function" && sid === ENV_SESSION_SID) rec = envClassOverlay("study", kid, rec);   // ⚙️ ENVCLASSSET: the class's settings, in memory (site edition only)
     out.push({
       sid,
       name: rec.name,
@@ -65831,6 +66077,7 @@ function renderMastStudy(opts){
   const todayLog=mstLogGet(kid,session.sid);
   let pile={reviews:[],learning:[],newNames:[]};
   try{ pile=mstPile(kid,session.sid,pn,todayLog)||pile; }catch(e){}
+  if(typeof envClsStartHtml==="function") h+=envClsStartHtml(kid,session);   // ⚙️ ENVCLASSSET: the class plan above the 🌿 start (site edition only)
   h+='<div style="background:#fff7ed;border:2px solid #fed7aa;border-radius:20px;padding:20px;margin-bottom:16px;font-family:\'DM Sans\',sans-serif">';
   h+='<div style="font-size:22px;font-weight:800;color:#c2410c;margin-bottom:6px">'+mstEsc(session.emoji||"")+' '+mstEsc(session.name||"")+'</div>';
   h+='<div style="font-size:14px;color:var(--muted);font-weight:600">'+((session.kind==="mix")

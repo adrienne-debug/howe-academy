@@ -1,5 +1,5 @@
 {
-  "_about": "Realtime Database rules for the ONE Envirothon project (ENVSITE, 2026-10-28). The DEFAULT instance holds the roster, logins, releases, scores, teacher cards and boards; each family's study lives in its OWN instance (<projectId>-<familyId>, rules in `family` below). Merge of envirothon/MIRROR_SETUP.md §2 (what the Howe mirror writes: students/<sid>/summary + meta, release read-back, release/locked) and DESIGN_envirothon_console_2026-10-27.md §2.2 as re-cut by its DECISIONS block (logins/<uid> instead of the claim; the teacher creates logins; she edits/retires her own cards; boards; who drills). 2026-10-28: release/<cid>/final/{all/<station>, students/<sid>/<station>} = {date, ts, by} — the teacher's \"Open the final\" (write = the release/<cid> rule; final validates the shape and that by is the writer). Paste `rules` into the default instance, `family` into every family instance.",
+  "_about": "Realtime Database rules for the ONE Envirothon project (ENVSITE, 2026-10-28). The DEFAULT instance holds the roster, logins, releases, scores, teacher cards and boards; each family's study lives in its OWN instance (<projectId>-<familyId>, rules in `family` below). Merge of envirothon/MIRROR_SETUP.md §2 (what the Howe mirror writes: students/<sid>/summary + meta, release read-back, release/locked) and DESIGN_envirothon_console_2026-10-27.md §2.2 as re-cut by its DECISIONS block (logins/<uid> instead of the claim; the teacher creates logins; she edits/retires her own cards; boards; who drills). 2026-10-28: release/<cid>/final/{all/<station>, students/<sid>/<station>} = {date, ts, by} — the teacher's \"Open the final\" (write = the release/<cid> rule; final validates the shape and that by is the writer). 2026-10-28 ⚙️ CLASS SETTINGS (ENVCLASSSET): classes/<cid>/settings/{study,drill}/<name> (the class's values; written under the classes/$cid rule — a value for a setting Adrienne locked fails .validate) · students/<sid>/settings/{study,drill}/<name> (one student's overrides; the class's teacher or admin, and the teacher never for a locked name — set or clear) · settings/locks/<name> = true (admin only; any login reads it). Paste `rules` into the default instance, `family` into every family instance.",
   "rules": {
     ".read": false,
     ".write": false,
@@ -18,7 +18,10 @@
     "classes": { "$cid": {
       ".read": "auth != null && (data.child('teacher').val() == auth.uid || root.child('admins/'+auth.uid).val() == true || root.child('logins/'+auth.uid+'/cid').val() == $cid)",
       ".write": "auth != null && (data.child('teacher').val() == auth.uid || root.child('admins/'+auth.uid).val() == true)",
-      "teacher": { ".write": "root.child('admins/'+auth.uid).val() == true" } } },
+      "teacher": { ".write": "root.child('admins/'+auth.uid).val() == true" },
+      "settings": { "$part": {
+        ".validate": "$part == 'study' || $part == 'drill'",
+        "$name": { ".validate": "root.child('admins/'+auth.uid).val() == true || root.child('settings/locks/'+$name).val() != true" } } } } },
 
     "students": { "$sid": {
       ".read": "auth != null && ($sid.beginsWith(root.child('logins/'+auth.uid+'/familyId').val() + '_') || root.child('admins/'+auth.uid).val() == true || root.child('classes/'+data.child('class').val()+'/teacher').val() == auth.uid || (!data.exists() && root.child('classes/'+root.child('logins/'+auth.uid+'/cid').val()+'/teacher').val() == auth.uid))",
@@ -28,7 +31,10 @@
         ".validate": "newData.hasChildren(['familyId','kid','name','at']) && newData.child('familyId').isString() && newData.child('kid').isString() && newData.child('name').isString() && newData.child('name').val().length <= 40" },
       "class":  { ".write": "auth != null && (root.child('admins/'+auth.uid).val() == true || root.child('classes/'+newData.val()+'/teacher').val() == auth.uid)" },
       "app":    { ".write": "auth != null && (root.child('admins/'+auth.uid).val() == true || root.child('classes/'+root.child('students/'+$sid+'/class').val()+'/teacher').val() == auth.uid || root.child('classes/'+newData.parent().child('class').val()+'/teacher').val() == auth.uid)" },
-      "logins": { ".write": "auth != null && (root.child('admins/'+auth.uid).val() == true || root.child('classes/'+root.child('students/'+$sid+'/class').val()+'/teacher').val() == auth.uid || root.child('classes/'+newData.parent().child('class').val()+'/teacher').val() == auth.uid)" } } },
+      "logins": { ".write": "auth != null && (root.child('admins/'+auth.uid).val() == true || root.child('classes/'+root.child('students/'+$sid+'/class').val()+'/teacher').val() == auth.uid || root.child('classes/'+newData.parent().child('class').val()+'/teacher').val() == auth.uid)" },
+      "settings": { "$part": {
+        ".validate": "$part == 'study' || $part == 'drill'",
+        "$name": { ".write": "auth != null && (root.child('admins/'+auth.uid).val() == true || (root.child('classes/'+root.child('students/'+$sid+'/class').val()+'/teacher').val() == auth.uid && root.child('settings/locks/'+$name).val() != true))" } } } } },
 
     "release": {
       "locked": { ".read": "auth != null", ".write": "root.child('admins/'+auth.uid).val() == true" },
@@ -58,6 +64,7 @@
 
     "settings": {
       "edition": { ".read": "auth != null", ".write": "root.child('admins/'+auth.uid).val() == true" },
+      "locks": { ".read": "auth != null", ".write": "root.child('admins/'+auth.uid).val() == true", "$name": { ".validate": "newData.isBoolean()" } },
       "whoDrills": { "$cid": {
         ".read":  "auth != null && (root.child('classes/'+$cid+'/teacher').val() == auth.uid || root.child('admins/'+auth.uid).val() == true || root.child('logins/'+auth.uid+'/cid').val() == $cid)",
         ".write": "auth != null && (root.child('classes/'+$cid+'/teacher').val() == auth.uid || root.child('admins/'+auth.uid).val() == true)",
