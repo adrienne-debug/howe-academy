@@ -28,7 +28,7 @@ const block = src.slice(a, b);
 const once = s => src.split(s).length === 2;
 ok("hook: envHydrate calls envPicsOn (guarded, one line)", once('if(typeof envPicsOn==="function") envPicsOn(u);'));
 ok("hook: mstCardPic asks envPicCycle first (guarded, one line)", once('const _ep=(typeof envPicCycle==="function")?envPicCycle(card):""; if(_ep) return _ep;'));
-ok("hook: renderMastStudy — a running sitting takes the body; the door right under the how-to and controls", once('const _ef=envFlashRunningHtml(kid); if(_ef) return h+_ef;') && once('h+=mstControlsHtml(session);   // 📋 MST_HOWTO_CTL: the buttons as they are now (✓/✗, Back, typed answers)\n  if(typeof envFlashDoorHtml==="function") h+=envFlashDoorHtml(kid,session);'));
+ok("hook: renderMastStudy — a running sitting takes the body; the door right under the how-to and controls", once('const _ef=envFlashRunningHtml(kid); if(_ef) return h+_ef;') && /h\+=mstControlsHtml\(session\);[^\n]*\n(?:  if\(typeof envtStartHtml[^\n]*\n)?  if\(typeof envFlashDoorHtml==="function"\) h\+=envFlashDoorHtml\(kid,session\);/.test(src) && once('h+=envFlashDoorHtml(kid,session);'));
 ok("the block never calls renderAllSoon (test_render_soon's rule) — it redraws the Units tab or the study screen directly", !/renderAllSoon/.test(block));
 ok("hook: 🎮 Games entry + gamesCurrentKey line", once('key:"idflash",emoji:"\\u26A1",     label:"ID Flash",    view:"idflash"') && once('if(mastView==="idflash") return "idflash";'));
 ok("no Howe kid name in the block", !/\b(lincoln|ellis|lucy|julian)\b/i.test(block));
