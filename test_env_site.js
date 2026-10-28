@@ -17,8 +17,9 @@ const REPO=__dirname;
 const src=fs.readFileSync(path.join(REPO,"index.html"),"utf8");
 function slice(a,b){ const i=src.indexOf(a), j=src.indexOf(b,i); if(i<0||j<0) throw new Error("slice missing "+a); return src.slice(i,j+b.length); }
 const SITE=slice("// ENVSITE_START","// ENVSITE_END"), CON=slice("// ENVCONSOLE_START","// ENVCONSOLE_END"), MIR=slice("// ENVMIRROR_START","// ENVMIRROR_END");
-// o.envt: the station check-ins too (ENVTEST, + the forms on window.HoweEnvirothon = o.lib) — the demo's check-in rules (2026-10-28)
-const ENVT=slice("// ENVTEST_START","// ENVTEST_END");
+// o.envt: the station check-ins too (ENVTEST, + the forms on window.HoweEnvirothon = o.lib) — the demo's check-in rules (2026-10-28) —
+// and the 🔊 read-aloud switch right after it (ENVREADALOUD; mastSpeak records into G.said)
+const ENVT=slice("// ENVTEST_START","// ENVREADALOUD_END");
 const UNIT=slice('const ENV_UNIT_ID="nc_envirothon";','const ENV_CARD_COUNT=ENV_DECKS.reduce((s,d)=>s+d[5],0);')+"\n"+slice("const ENV_SESSION_SID=","function envSessionRecord(u){")+'const r=Object.assign({},ENV_SESSION,{decks:(u&&u.decks||[]).map(d=>d.key).filter(Boolean)}); r.pattern=ENV_SESSION.pattern.slice(); return r; }\n';
 const tierFn=src.slice(src.indexOf("function mastTierAtLeast(tier,gateTier){"), src.indexOf("}", src.indexOf("return a>=b;", src.indexOf("function mastTierAtLeast(tier,gateTier){")))+1);
 function el(id){ return {id,value:"",innerHTML:"",textContent:"",style:{},disabled:false,classList:{add(){},remove(){},toggle(){}},focus(){},outerHTML:"",parentNode:null,appendChild(){},querySelectorAll(){ return []; },contains(){ return false; }}; }
@@ -54,7 +55,7 @@ function world(o){
     function _ustApply(u,kid,n){ G.ust=G.ust||[]; G.ust.push(["apply",kid,n]); return {iu:{},bu:{},modes:{},intro:{},defs:{},hold:{}}; } function _ustWrite(id,kid,w,rec){ G.ust.push(["write",kid,rec.stage]); } function envHydrateAll(){ G.hydrated=true; }
     function envEnrollSession(u,kid){ G.sessionMade=kid; }
     ${UNIT}
-    ${o.envt?"const setInterval=()=>1, clearInterval=()=>{};\n"+ENVT:""}
+    ${o.envt?"const setInterval=()=>1, clearInterval=()=>{}; function mastSpeak(t){ G.said=(G.said||[]).concat([String(t)]); }\n"+ENVT:""}
     ${MIR}
     ${SITE}
     ${CON}
@@ -62,7 +63,7 @@ function world(o){
     return { get tab(){ return tab; }, set tab(v){ tab=v; }, get db(){ return db; }, get mastView(){ return mastView; }, set mastView(v){ mastView=v; }, get masteryKid(){ return masteryKid; }, unitStudies, masteryData, HA_LS, _envs, _envc, _envm, STARTER_UNITS,
       envEdition, envSiteOn, envsDemo, envsLockState, envsStations, envsStationStat, envsGain, envsEffort, envsBoardsCompute, envsBoardsHtml, envsMakeCode, envsCodeNorm, envsCodeOk, envsKidEmail, envsKidPw, envsFamilyDbUrl, envSiteDb, envSiteDemoBoot, envSiteGate, envsApplyLogin, envSiteAuthShow, envsAuthHtml, envsAuthSubmit, envsKidSubmit, envSiteTabGate, envSiteRender, envsView, envsDemoGo, envsDemoData, envsDemoStart, envSiteSittingDone, envsAutoEnroll, envsWrite, envsLicenseLine, envsCard, envsKidHtml, envsParentHtml, envsStationRowsHtml, envsScoresHtml, envsTipsHtml, envsSettingsHtml, envsReadShared, envsStreakHtml, ENVS_OFF_TABS, ENVS_TIPS, ENVS_CONTACT, ENVS_FULL_APP, ENVS_STARS, ENVS_AUTOLOCK,
       initFb, envConsoleStart, envConsoleHtml, envcView, envcGridHtml, envcStudentHtml, envcRosterHtml, envcSendHtml, envcStrongHtml, envcStrongRank, envcCardsHtml, envcBoardsHtml, envcWhoHtml, envcAdminHtml, envcAddStudentPaths, envcSendOutUpdate, envcFinalUpdate, envcFinalFor, envcFinalOut, envcFinalRec, envcAddStudent, envcSendOut, envcSendPick, envcSendDeck, envcOpenFor, envcUndo, envcCardAdd, envcCardRetire, envcCardSave, envcTeamSet, envcWhoSet, envcLock, envcSeedJson, envcPickClass, envcStudents, envcNewCode, envcBoardsPublish, envcScoreSave, envcDemoStart, envcTeacherAdd, envcClassAdd, envcSeedShow, showTab, renderAll, firebase,
-      envt:${o.envt?"{ envtOpen, envtStatus, envtStartHtml, envtPick, envtNext, envtClose, envtCoreLine, envtWaitsForCheckin, envtFinalApply, get state(){ return envtState; } }":"null"} };`)(G,firebase,document,tierFn);
+      envt:${o.envt?"{ envtOpen, envtStatus, envtStartHtml, envtPick, envtNext, envtClose, envtCoreLine, envtWaitsForCheckin, envtFinalApply, envRaSet, envRaMode, envRaStartHtml, envRaReadQ, get state(){ return envtState; } }":"null"} };`)(G,firebase,document,tierFn);
   api.G=G; api.el=(id,v)=>{ G.els[id]=el(id); if(v!==undefined) G.els[id].value=v; return G.els[id]; };
   api.flush=async()=>{ for(let i=0;i<60;i++) await Promise.resolve(); };
   api.tick=()=>{ const t=(G.timers||[]).shift(); if(t) t.fn(); return !!t; };
@@ -288,6 +289,21 @@ console.log("\n── 📝 the demo shows the check-in rules (2026-10-28): the r
   E.envtClose();
   d.envsDemoGo("teacher"); d.envcView("send"); d.envcSendPick("cei"); d.envcFinalOut(); await d.flush();
   ok("Send out ▸ CEI ▸ Open the final (whole class): demo 'would write' final/all/cei, and Maya's CEI final opens too; still nothing written", d._envs.writes.some(x=>x.op==="update"&&x.val&&x.val["release/ms-science-2026/final/all/cei"])&&d.masteryData.maya_tests.cei&&d.masteryData.maya_tests.cei.postOpen&&d.G.writes.length===0); }
+
+console.log("\n── 🔊 the read-aloud switch in the demo: the 🌿 start, the check-in screen, the kid's ⚙️ — memory only ──");
+{ const LIB=require(path.join(REPO,"envirothon.js"));
+  const d=world({fam:FAM,search:"?demo=1&role=kid",envt:true,lib:{demo:true,tests:LIB.tests}}); d.envSiteDemoBoot(); d.renderAll(); const E=d.envt, K="maya";
+  const ov=()=>{ const a=d.G.created.filter(e=>e.id==="envtest-ov"); return a.length?a[a.length-1].innerHTML:""; };
+  ok("demo Maya starts Off; the 🌿 start draws the switch", E.envRaMode(K)==="off"&&/envra-toggle/.test(E.envRaStartHtml(K,{sid:"envirothon"}))&&/envRaSet\('maya','off'\)[^>]*aria-pressed="true"/.test(E.envRaStartHtml(K,{sid:"envirothon"})));
+  d.envsView("settings"); ok("the kid's ⚙️ has the switch", /envra-toggle/.test(d.G.content)&&/envRaSet\('maya','auto'\)/.test(d.G.content));
+  const r0=d.G.renders; E.envRaSet(K,"auto");
+  ok("tapping Auto in the demo: in memory, the page redraws with Auto pressed, NOTHING written (no db, no envsWrite)", E.envRaMode(K)==="auto"&&d.masteryData.maya_settings.envReadAloud==="auto"&&d.G.renders>r0&&/envRaSet\('maya','auto'\)[^>]*aria-pressed="true"/.test(d.G.content)&&d.G.writes.length===0);
+  d.envsDemoGo("parent"); d.envsView("settings"); ok("the parent's ⚙️ has no switch", !/envra-toggle/.test(d.G.content));
+  d.envsDemoGo("kid"); d.G.said=[];
+  ok("Auto: the Aquatics check-in opens with the switch + 🔊 Read it, and question 1 and its choices are read", E.envtOpen(K,"aquatics","pre")===true&&/envra-toggle/.test(ov())&&/envRaReadQ\(\)/.test(ov())&&d.G.said.length===1&&d.G.said[0].indexOf(LIB.tests.aquatics.pre.items[0].q)===0&&/ A\. /.test(d.G.said[0]));
+  E.envRaSet(K,"off"); E.envtPick(0); E.envtNext();
+  ok("switched Off on the check-in screen (memory): question 2 shows silently, the test kept its place; 🔊 Read it still reads", E.envRaMode(K)==="off"&&E.state&&E.state.i===1&&d.G.said.length===1&&(E.envRaReadQ(),d.G.said.length===2)&&d.G.writes.length===0);
+  E.envtClose(); ok("nothing written anywhere in the demo", d.G.writes.length===0); }
 };
 run().then(()=>{ console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0); }).catch(e=>{ console.error(e); process.exit(1); });
 
