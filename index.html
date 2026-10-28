@@ -4716,6 +4716,7 @@ function showTab(t,keepMsv){
   if(_kioskK()&&t!=="kids") return;      // 🧒 Kids' Corner link is locked to the Corner
   tab=t;
   if(typeof kcStudyKid!=="undefined") kcStudyKid=null;   // 🧒📚 KC_MASTERY: a tab tap always lands on the page itself
+  try{ if(typeof luLgLeave==="function") luLgLeave(); }catch(e){}   // 📒 LAUNDRY_LEDGER: leaving the page folds the ledger
   if(typeof dcState!=="undefined") dcState=null;   // 📺 DAYCARD: a tab tap closes the board
   mastAddMode=false; mastLogMode=false; mastLogScores={};
   document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",(momSchedView&&t==="schedule")?b.dataset.tab==="moms-plan":(b.dataset.tab===t||(t==="supplies"&&b.dataset.tab==="schedule"))));
@@ -11756,6 +11757,7 @@ function renderDadsDay(el){
 }
 
 function renderMomsPlan(el){
+  try{ if(typeof luLgPage==="function") luLgPage(); }catch(e){}   // 📒 LAUNDRY_LEDGER: another page — the ledger folds
   const _mcPop=document.getElementById('mc-pop'), _mcTop=_mcPop?_mcPop.scrollTop:0;   // ✎ Edit pop-up keeps its place
   try{ renderMomsPlanView(el); } finally {
     const _mcNew=document.getElementById('mc-pop'); if(_mcNew&&_mcTop) _mcNew.scrollTop=_mcTop;
@@ -14356,7 +14358,7 @@ function llDadCardHTML(by,bare){ if(!laundryLine||!Object.keys(laundryLine).leng
 function llMyDayLaundryHTML(who){ let h=""; who=who==="dad"?"dad":"mom";
   try{ if(typeof mdCardLaundry==="function") h+=mdCardLaundry(true,true); }catch(e){}
   try{ if(typeof laundryLine!=="undefined"&&laundryLine&&Object.keys(laundryLine).length) h+=llDadCardHTML(who,true); }catch(e){}
-  try{ if(typeof luAwayRowsHTML==="function") h+=luAwayRowsHTML(true); }catch(e){}   // ↩︎ LAUNDRYUNDO: 🧺 Put away today
+  try{ if(typeof luLgHTML==="function") h+=luLgHTML(true); }catch(e){}   // 📒 LAUNDRY_LEDGER: under the laundry card (put-aways listed there)
   return h; }
 // LL_MYDAY_END
 // 🧒 the kid's derived "🧺 Your laundry" card (their Day page, after the 🏡 House card). Only the loads this kid runs that day.
@@ -14769,10 +14771,10 @@ function hhLaundryHTML(){
   if(typeof mdCardLaundry==="function"){ let mc=""; try{ mc=mdCardLaundry(true); }catch(e){}
     h+='<div style="margin-bottom:10px">'+(mc||'<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:11px 14px;font-size:12.5px;color:var(--muted)"><b style="color:#1f2937">🧺 Laundry</b> — nothing in the machines. Start a load from 🏡 My day.</div>')+'</div>'; }
   else h+='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:9px 12px;margin-bottom:10px"><div style="font-size:12px;font-weight:800">🧺 In the machines now</div>'+(inM.length?inM.map(function(k){ const l=L[k]; return '<div style="font-size:12px;padding:3px 0">'+((typeof lcMeta==="function"&&lcMeta(l))?lcMeta(l)[0]+' ':l.stage==="dryer"?'🌀 ':l.stage==="fold"?'🧺 ':'🫧 ')+esc(l.label||"Load")+' <span style="color:var(--muted)">· '+((typeof lcMeta==="function"&&lcMeta(l))?esc(lcMeta(l)[1]):l.stage==="prewash"?"washer (prewash)":l.stage)+(l.ts?' · since '+esc((typeof laundrySince==="function")?laundrySince(l.ts):""):'')+'</span></div>'; }).join(''):'<div style="font-size:12px;color:var(--muted);padding:3px 0">Nothing running. Start a load from Home Base.</div>')+'</div>';
+  try{ if(typeof luLgHTML==="function") h+=luLgHTML(); }catch(e){}   // 📒 LAUNDRY_LEDGER: under the laundry to-do list, collapsed
   try{ if(typeof llWeekCardHTML==="function"&&typeof laundryLine!=="undefined") h+=llWeekCardHTML(); }catch(e){}   // 📅 the schedule
   try{ h+=llCardHTML(true); }catch(e){}   // 🧺 LAUNDRYLINE: order, caps, every few weeks, one-time
   try{ if(typeof qlCardHTML==="function") h+=qlCardHTML(); }catch(e){}   // ⚡ QUICKLOADS: her quick buttons, edited here
-  try{ if(typeof luAwayRowsHTML==="function") h+=luAwayRowsHTML(); }catch(e){}   // ↩︎ LAUNDRYUNDO: 🧺 Put away today, at the bottom
   return h;
 }
 // HH_LAUNDRY_END
@@ -15342,6 +15344,55 @@ function llKidOutRowHTML(o){ const A=llAll(), em=(o.line&&A[o.line]&&A[o.line].e
 function llLabelTag(id){ return llMemo("T|"+id,function(){ const I=llItems(), x=I[id]; if(!x||!x.label) return ""; const lb=String(x.label).trim(), tw=llOrder().filter(function(k){ return I[k]&&String(I[k].label||"").trim()===lb; }); if(tw.length<2) return "";
   if(llMode()==="home") return " · "+LL_DL[llHome(id)]; const n=tw.indexOf(id)+1; return " · "+n+(n===1?"st":n===2?"nd":n===3?"rd":"th"); }); }   // ⚡ LL_MEMO: once per render, reset by any line edit
 // LAUNDRY_SYNC_END
+// LAUNDRY_LEDGER_START — 📒 the laundry ledger (her words 2026-10-28, from Sara's day: "The laundry undo on the bottom that shows up and
+// doesn't go away she is not liking. I am not liking. Instead we need to go with a ledger. I would put that underneath the laundry to-do
+// list, in the household laundry section, and it be collapsed unless clicked and then naturally go back collapsed if moved away from that
+// page. And that means it could also show up on the My Day part."). Why the bar never went: luPaint drew #lu-wrap fixed on document.body
+// and emptied it only when luLast was null or luValid failed — true only when the load moved again (this device replaced it, another
+// device changed it) or ↩︎ Undo was tapped; no timer, no ✕, no clear on a tab or page change, and #content re-renders never touched it.
+// A put-away load stays put away, so the last tap of the day sat at the bottom until a reload.
+// Now: no bar. luPaint hands every step to luLgNote, which keeps the bar's own records (luLast: did/before/after, or done) on luSteps,
+// this device, memory only, newest first. The ledger fold — "📒 Laundry ledger", collapsed, one tap opens, folds again whenever the page or
+// tab changes (luLgPage in renderMomsPlan, luLgLeave in showTab; luLgOpen / luLgAt in memory only) — sits under the laundry to-do list
+// on Household ▸ Laundry and under the laundry card on Mom's / Dad's 🏡 My day. Its rows, newest first: this device's steps (↩︎ Undo =
+// luUndo on that record, the bar's own path, while luValid still holds), every put-away on any device (luAwayList → ↩︎ Undo = luUnputaway,
+// the old "Put away today" list, which lives here now), every load still out (laundry/<id>: started / the stage it is on; ↩︎ Undo =
+// llUnstart for a line load still on its first step, else laundryBack's own back-a-stage, Mom or Dad), and today's ✓ Done-only line
+// entries (↩︎ Undo = llUndone). Nothing new is written anywhere; every undo is the write path it already was; dry run inert the same way.
+let luSteps=[], luLgOpen=false, luLgAt="";
+const LU_LG_MAX=15;
+function luLgKey(){ return (typeof tab!=="undefined"?String(tab):"")+"|"+(typeof mpSubView!=="undefined"?String(mpSubView):"")+"|"+(typeof hhView!=="undefined"?String(hhView):""); }
+function luLgNote(){ const r=(typeof luLast!=="undefined")?luLast:null;
+  if(r&&luSteps.indexOf(r)<0){ if(!r.by) r.by=(typeof luWho==="function")?luWho():""; luSteps.unshift(r); if(luSteps.length>LU_LG_MAX) luSteps.length=LU_LG_MAX; }
+  try{ const w=(typeof document!=="undefined")?document.getElementById("lu-wrap"):null; if(w) w.innerHTML=""; }catch(e){} }   // nothing ever stays at the bottom
+function luLgToggle(){ luLgOpen=!luLgOpen; luLgAt=luLgKey(); if(typeof _cuRe==="function") _cuRe(); }
+function luLgPage(){ if(luLgOpen&&luLgAt!==luLgKey()) luLgOpen=false; }
+function luLgLeave(){ luLgOpen=false; }
+function luLgUndo(k){ const s=luSteps[k]; if(!s) return false; luLast=s; const ok=luUndo(); const i=luSteps.indexOf(s); if(ok&&i>=0) luSteps.splice(i,1); return ok; }
+function luLgWhen(ms){ if(!ms) return ""; const d=new Date(ms), h=d.getHours(), m=d.getMinutes(), hm=((h%12)||12)+":"+(m<10?"0":"")+m+(h<12?" AM":" PM"), iso=_hhIsoLocal(ms);
+  return iso===llToday()?hm:((typeof LL_DL!=="undefined"&&typeof llDow==="function")?LL_DL[llDow(iso)]+" ":"")+hm; }
+function luLgFirst(l){ return (typeof lcHas==="function"&&lcHas(l))?lcStep(l)===0:(l.stage==="washer"&&!l.wet); }   // still on its first step (a start, not a move)
+// → [{at, words, by, undo, title}] newest first
+function luLgRows(){ const LD=(typeof laundryData!=="undefined"&&laundryData)||{}, t=llToday(), rows=[], cov={}, par=luParentOk();
+  luSteps.forEach(function(s,k){ const v=luValid(s); if(v){ (s.did||[]).forEach(function(x){ cov[x.id]=1; }); if(s.done) cov["done:"+s.done]=1; }
+    rows.push({at:s.at||0,words:s.words||"",by:s.by||"",undo:v?"luLgUndo("+k+")":"",title:"Undo this step"}); });
+  luAwayList().forEach(function(a){ if(cov[a.id]) return; rows.push({at:a.at||0,words:"🧺 "+(a.load.label||"Load")+" — put away",by:a.by||"",undo:par?"luUnputaway('"+_lbQ(a.id)+"')":"",title:"Not put away — back to folded"}); });
+  Object.keys(LD).forEach(function(id){ const l=LD[id]; if(!l||!l.stage||cov[id]) return; const first=luLgFirst(l), lg=l.line&&l.lineDay&&typeof laundryLine!=="undefined"&&laundryLine&&laundryLine.log&&laundryLine.log[l.lineDay]&&laundryLine.log[l.lineDay][l.line];
+    let undo="", title=""; if(first&&lg&&lg.load===id&&par&&typeof llUnstart==="function"){ undo="llUnstart('"+_lbQ(id)+"');_cuRe()"; title="Not started — back in line"; }
+    else if(!first&&typeof laundryBackStage==="function"&&laundryBackStage(l)&&typeof _cuMomOk==="function"&&_cuMomOk()){ undo="laundryBack('"+_lbQ(id)+"')"; title="Back to "+((typeof _cuStageName==="function")?_cuStageName(laundryBackStage(l)):laundryBackStage(l)); }
+    rows.push({at:l.ts||0,words:_luWords([{id:id,before:first?null:l,after:l}]),by:first?(l.by||"mom"):"",undo:undo,title:title}); });
+  const g=(typeof laundryLine!=="undefined"&&laundryLine&&laundryLine.log&&laundryLine.log[t])||{};
+  Object.keys(g).forEach(function(it){ const e=g[it]; if(!e||!e.done||e.load||e.with||cov["done:"+it]) return;
+    rows.push({at:e.at||0,words:"✓ "+((typeof llLabelFull==="function"&&llLabelFull(it))||"Laundry")+" — done today",by:e.by||"",undo:par?"llUndone('"+_lbQ(it)+"')":"",title:"Not done after all"}); });
+  return rows.sort(function(a,b){ return b.at-a.at; }).slice(0,LU_LG_MAX); }
+function luLgRowHTML(r){ return '<div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f3f4f6;font-size:12px;font-weight:600;flex-wrap:wrap"><span style="flex:1;min-width:0">'+esc(r.words)
+  +' <span style="font-size:10.5px;color:var(--muted);font-weight:500">'+(r.by?'· '+esc(luByName(r.by))+' ':'')+(r.at?'· '+esc(luLgWhen(r.at)):'')+'</span></span>'+(r.undo?_cuBtn(r.undo,"↩︎ Undo","#64748b",r.title||"Undo"):'')+'</div>'; }
+function luLgHTML(bare){ const open=luLgOpen&&luLgAt===luLgKey(); let R=[]; if(open){ try{ R=luLgRows(); }catch(e){ R=[]; } }
+  let h=(bare?'<div data-lulg="1" style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">':'<div data-lulg="1" style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:8px 12px;margin-bottom:10px">')
+    +'<button onclick="luLgToggle()" title="'+(open?'Fold the ledger':'Open the ledger')+'" style="display:flex;align-items:center;gap:6px;width:100%;border:none;background:none;padding:2px 0;cursor:pointer;font-family:inherit;text-align:left"><span style="font-size:11.5px;font-weight:800;flex:1;color:#1f2937">📒 Laundry ledger</span><span style="font-size:11px;color:var(--muted)">'+(open?'▾':'▸')+'</span></button>';
+  if(open) h+=R.length?R.map(luLgRowHTML).join(''):'<div style="font-size:11.5px;color:var(--muted);padding:4px 0">Nothing yet today.</div>';
+  return h+'</div>'; }
+// LAUNDRY_LEDGER_END
 function laundrySince(ts){
   try{ return new Date(ts).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}); }catch(e){ return ""; }
 }
@@ -16100,6 +16151,7 @@ function luBarHTML(r){ return '<div style="position:fixed;left:50%;transform:tra
   +'<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.words)+'</span>'
   +'<button onclick="luUndo()" style="flex-shrink:0;padding:6px 12px;border-radius:8px;border:none;background:#fff;color:#334155;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">↩︎ Undo</button></div>'; }
 function luPaint(){ if(luLast&&!luValid(luLast)) luLast=null;
+  if(typeof luLgNote==="function"){ luLgNote(); return; }   // 📒 LAUNDRY_LEDGER: no bar at the bottom — the step goes on the ledger
   if(typeof document==="undefined"||!document.body) return; let w=document.getElementById("lu-wrap"); if(!w){ w=document.createElement("div"); w.id="lu-wrap"; document.body.appendChild(w); }
   w.innerHTML=luLast?luBarHTML(luLast):""; }
 // ── (2) put away today, on every device ──

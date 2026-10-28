@@ -7,13 +7,15 @@
  * a kid's own row tick makes no bar; a stale bar undoes nothing; a kid undoes their own tap; (3) Put away today: from Firebase on ANY device,
  * ↩︎ Undo — back to folded, last night's until 8 AM, Mom/Dad only; (4) a load from an earlier lineDay comes back (Ellis's Bed);
  * (5) dry run writes nothing; (6) no "↶" left in a UI string; (7) wiring.                                    run: node test_laundry_undo.js
+ * 2026-10-28 LAUNDRY_LEDGER: the bar is gone — every step lands on the 📒 Laundry ledger (luSteps, this device) with the same undo (luLgUndo →
+ * luUndo); the checks below read the ledger's newest step where they read the bar. The Put away today rows live inside the ledger fold.
  */
 const fs=require("fs"), path=require("path"), vm=require("vm");
 const src=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
 let pass=0, fail=0; const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  ("+JSON.stringify(x).slice(0,500)+")":"")); } };
 const fn=name=>{ const i=src.indexOf("function "+name+"("); if(i<0) throw new Error("missing "+name); let d=0; for(let k=src.indexOf("{",i);k<src.length;k++){ if(src[k]==="{") d++; else if(src[k]==="}"&&--d===0) return src.slice(i,k+1); } throw new Error("unbalanced "+name); };
 const cut=(a,b)=>{ const i=src.indexOf(a), j=src.indexOf(b,i); if(i<0||j<0) throw new Error("missing "+a); return src.slice(i,j); };
-const LL=cut("// LAUNDRYLINE_START","// LAUNDRYLINE_END"), CU=cut("// CHOREUNDO_START","// CHOREUNDO_END"), LU=cut("// LAUNDRYUNDO_START","// LAUNDRYUNDO_END"), LCONST=cut("const LAUNDRY_STAGES=","const LAUNDRY_STALE_MIN");
+const LL=cut("// LAUNDRYLINE_START","// LAUNDRYLINE_END"), CU=cut("// CHOREUNDO_START","// CHOREUNDO_END"), LU=cut("// LAUNDRYUNDO_START","// LAUNDRYUNDO_END"), LG=cut("// LAUNDRY_LEDGER_START","// LAUNDRY_LEDGER_END"), LCONST=cut("const LAUNDRY_STAGES=","const LAUNDRY_STALE_MIN");
 const NAMES=["laundryAdvance","laundryAdvanceLabel","laundrySince","laundryT","momBlockKey","momBlocksOnValue","_lbWrite","_lbQ","laundryBlockDone"];
 const iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 const TODAY=iso(new Date()), MON="2026-10-19", WED="2026-10-21";
@@ -30,11 +32,11 @@ function mk(o){
     _hhIsoLocal:ms=>iso(new Date(ms)), mwTodayIso:()=>TODAY, _lbNowMin:()=>14*60, esc:s=>String(s==null?"":s), hhRender:()=>{}, mwToast:t=>toasts.push(t), kitPinGate:()=>{}, confirm:()=>true,
     document:{body:{appendChild:e=>{ els[e.id]=e; }},createElement:()=>({id:"",innerHTML:""}),getElementById:id=>els[id]||null},
     writes, toasts, ls, els};
-  vm.createContext(ctx); vm.runInContext(LCONST+"\n"+NAMES.map(fn).join("\n")+"\n"+LL+"\n"+CU+"\n"+LU,ctx);
+  vm.createContext(ctx); vm.runInContext(LCONST+"\n"+NAMES.map(fn).join("\n")+"\n"+LL+"\n"+CU+"\n"+LU+"\n"+LG,ctx);
   vm.runInContext("llToday=function(){ return '"+WED+"'; }; llNowMin=function(){ return 900; }; laundryLine={caps:{'0':2,'1':2,'2':2,'3':2,'4':2,'5':2,'6':0},asOf:'"+WED+"',next:'lucy'};"
     +"slState={}; activeWk=function(){ return 'week28'; }; nowTs=function(){ return '3:40 PM'; }; slBefore=function(){ return {}; }; slSaveChanged=function(){}; morningComplete=function(){ return false; }; rtComplete=function(){ return false; };"
     +"var _base=rtStepsFor; rtStepsFor=function(sl,kid,raw,dn){ const b=_base(sl,kid,raw); return raw?b:llRtSteps(sl,kid,b,dn||'wednesday'); };",ctx);
-  ctx.get=e=>vm.runInContext(e,ctx); ctx.bar=()=>(els["lu-wrap"]||{}).innerHTML||""; return ctx;
+  ctx.get=e=>vm.runInContext(e,ctx); ctx.bar=()=>(els["lu-wrap"]||{}).innerHTML||""; ctx.top=()=>vm.runInContext("(luSteps[0]||{}).words||''",ctx); ctx.fold=()=>vm.runInContext("luLgOpen=true; luLgAt=luLgKey(); luLgHTML()",ctx); return ctx;
 }
 const awayW=(c,id)=>c.writes.filter(w=>w[1]==="laundryAway"&&w[2]&&Object.keys(w[2]).some(k=>k.endsWith("/"+id)));
 
@@ -43,61 +45,62 @@ console.log("1. ✓ Put away by mistake → the bar → ↩︎ Undo brings the l
   ok("no bar before any tap", c.bar()===""&&c.get("luLast")===null);
   c.get("laundryAdvance('l1')");
   ok("put away: laundry/l1 removed", !c.laundryData.l1&&c.writes.some(w=>w[0]==="rm"&&w[1]==="laundry/l1"));
-  ok("the bar: '🧺 Towels — put away' with ↩︎ Undo (text-style ↩︎, no ↶)", /🧺 Towels — put away/.test(c.bar())&&/onclick="luUndo\(\)"/.test(c.bar())&&c.bar().indexOf("↩︎ Undo")>=0&&c.bar().indexOf("↶")<0, c.bar());
-  ok("the bar sits fixed at the bottom of the screen", /position:fixed/.test(c.bar())&&/bottom:calc\(14px/.test(c.bar()));
+  ok("no bar (LAUNDRY_LEDGER 2026-10-28): nothing at the bottom, no #lu-wrap at all; the step is on the ledger as '🧺 Towels — put away'", c.bar()===""&&!c.els["lu-wrap"]&&c.top()==="🧺 Towels — put away", c.top());
+  ok("the ledger row offers ↩︎ Undo through luLgUndo (text-style ↩︎, no ↶)", /luLgUndo\(0\)/.test(c.fold())&&c.fold().indexOf("↩︎ Undo")>=0&&c.fold().indexOf("↶")<0, c.fold());
   const aw=awayW(c,"l1")[0];
   ok("every device's record: one targeted laundryAway update <today>/l1 = {load as it was, at, by:mom}", !!aw&&aw[0]==="update"&&aw[2][TODAY+"/l1"].load.stage==="fold"&&aw[2][TODAY+"/l1"].load.ts===1111&&aw[2][TODAY+"/l1"].by==="mom"&&aw[2][TODAY+"/l1"].at>0, aw);
-  c.writes.length=0; ok("↩︎ Undo → true", c.get("luUndo()")===true);
+  c.writes.length=0; ok("↩︎ Undo → true", c.get("luLgUndo(0)")===true);
   ok("the load is back exactly as it was (stage fold, its own clock)", JSON.stringify(c.laundryData.l1)===JSON.stringify(L0), c.laundryData.l1);
   ok("written back: laundry/l1 set to the old record; its laundryAway record nulled", c.writes.some(w=>w[0]==="set"&&w[1]==="laundry/l1"&&w[2].ts===1111)&&c.writes.some(w=>w[1]==="laundryAway"&&w[2][TODAY+"/l1"]===null), c.writes);
-  ok("the bar is gone; a second ↩︎ Undo does nothing", c.bar()===""&&c.get("luUndo()")===false);
+  ok("the step left the ledger; a second ↩︎ Undo does nothing", c.bar()===""&&c.get("luSteps.length")===0&&c.get("luUndo()")===false);
   ok("only targeted writes (no whole-node set of laundry / laundryAway)", c.writes.every(w=>w[1]!=="laundry"&&!(w[0]==="set"&&w[1]==="laundryAway")));
   ok("the toast says it is back", /Undone — 🧺 Towels is back/.test(c.toasts[c.toasts.length-1]), c.toasts); }
 
 console.log("2. The next laundry tap replaces the bar; ↩︎ Undo reverses only that one step (stage, step, clock back; blocks dropped)");
 { const c=mk({laundry:{l1:{label:"Towels",stage:"washer",ts:1000},l2:{label:"Sheets",stage:"washer",ts:2000}},
     blocks:{l2_washer:{iso:TODAY,start:600,dur:5},l2_dryer:{iso:TODAY,start:700,dur:5}}});
-  c.get("laundryAdvance('l1')"); ok("the washer asks where it is going first — nothing moves, no bar", c.bar()===""&&c.laundryData.l1.stage==="washer"); c.get("laundryAdvance('l1','dryer')"); ok("Towels → dryer: the bar says so", /🌀 Towels — in the dryer/.test(c.bar()), c.bar());
-  c.get("laundryAdvance('l2','dryer')"); ok("Sheets → dryer: the bar is Sheets' now (Towels' undo is gone)", /🌀 Sheets — in the dryer/.test(c.bar())&&!/Towels/.test(c.bar()), c.bar());
-  c.writes.length=0; c.get("luUndo()");
+  c.get("laundryAdvance('l1')"); ok("the washer asks where it is going first — nothing moves, no step", c.bar()===""&&c.get("luSteps.length")===0&&c.laundryData.l1.stage==="washer"); c.get("laundryAdvance('l1','dryer')"); ok("Towels → dryer: the ledger says so", /🌀 Towels — in the dryer/.test(c.top()), c.top());
+  c.get("laundryAdvance('l2','dryer')"); ok("Sheets → dryer: the ledger's newest is Sheets'; Towels' step stays under it, still undoable (LAUNDRY_LEDGER)", /🌀 Sheets — in the dryer/.test(c.top())&&/Towels/.test(c.get("luSteps[1].words"))&&c.get("luValid(luSteps[1])")===true, c.get("luSteps.map(s=>s.words)"));
+  c.writes.length=0; c.get("luLgUndo(0)");
   ok("Sheets back in the washer with its own clock; Towels stays in the dryer", c.laundryData.l2.stage==="washer"&&c.laundryData.l2.ts===2000&&c.laundryData.l1.stage==="dryer");
   ok("today's blocks for both stages dropped (the question comes back), targeted removes", !c.momBlocks.l2_washer&&!c.momBlocks.l2_dryer&&c.writes.some(w=>w[0]==="rm"&&w[1]==="momBlocks/"+TODAY+"/l2_washer")&&c.writes.some(w=>w[0]==="rm"&&w[1]==="momBlocks/"+TODAY+"/l2_dryer"), c.writes);
   ok("one set of laundry/l2 back to washer; nothing written for Towels", c.writes.some(w=>w[0]==="set"&&w[1]==="laundry/l2"&&w[2].stage==="washer")&&!c.writes.some(w=>w[1]==="laundry/l1"));
-  ok("no bar after the undo", c.bar()===""); }
+  ok("no bar after the undo; Sheets' step is off the ledger, Towels' remains", c.bar()===""&&c.get("luSteps.length")===1&&/Towels/.test(c.top())); }
 { const c=mk({laundry:{l1:{label:"Towels",stage:"dryer",ts:1000}}});
-  c.get("laundryAdvance('l1','basket')"); ok("→ basket: the bar", /Towels — in the basket/.test(c.bar()), c.bar());
-  c.get("luUndo()"); ok("↩︎ Undo → back in the dryer, its clock as it was", c.laundryData.l1.stage==="dryer"&&c.laundryData.l1.ts===1000); }
+  c.get("laundryAdvance('l1','basket')"); ok("→ basket: on the ledger", /Towels — in the basket/.test(c.top()), c.top());
+  c.get("luLgUndo(0)"); ok("↩︎ Undo → back in the dryer, its clock as it was", c.laundryData.l1.stage==="dryer"&&c.laundryData.l1.ts===1000); }
 
 console.log("3. 🫧 Start → ↩︎ Undo puts it back in line; ✓ Done → ↩︎ Undo takes it back");
 { const c=mk(); c.get("llStart('lucy','mom')"); const lid=Object.keys(c.laundryData)[0];
-  ok("started: in the washer, logged; the bar says started", !!lid&&c.get("laundryLine.log['"+WED+"'].lucy.load")===lid&&/🫧 Lucy's clothes — started/.test(c.bar()), c.bar());
-  c.writes.length=0; c.get("luUndo()");
+  ok("started: in the washer, logged; the bar says started", !!lid&&c.get("laundryLine.log['"+WED+"'].lucy.load")===lid&&/🫧 Lucy's clothes — started/.test(c.top()), c.top());
+  c.writes.length=0; c.get("luLgUndo(0)");
   ok("↩︎ Undo: the load is gone (laundry/<id> removed) and the log entry is off (back in line)", !c.laundryData[lid]&&c.writes.some(w=>w[0]==="rm"&&w[1]==="laundry/"+lid)&&!c.get("laundryLine.log['"+WED+"'].lucy"), c.writes); }
 { const c=mk(); c.get("llMarkDone('lucy','mom')");
-  ok("✓ Done: recorded; the bar says done today", c.get("llIsDoneOnly('lucy','"+WED+"')")===true&&/✓ Lucy's clothes — done today/.test(c.bar()), c.bar());
-  c.writes.length=0; c.get("luUndo()");
+  ok("✓ Done: recorded; the bar says done today", c.get("llIsDoneOnly('lucy','"+WED+"')")===true&&/✓ Lucy's clothes — done today/.test(c.top()), c.top());
+  c.writes.length=0; c.get("luLgUndo(0)");
   ok("↩︎ Undo → llUndone: the record comes off (log/<day>/lucy null)", c.get("llIsDoneOnly('lucy','"+WED+"')")===false&&c.writes.some(w=>w[1]==="laundryLine"&&w[2]["log/"+WED+"/lucy"]===null)); }
 
 console.log("4. A kid's own row tick makes no bar (un-ticking is its undo) but lands on the list; a stale bar undoes nothing; a kid undoes their own tap");
-{ const c=mk({kid:"lucy"}); c.get("llStart('lucy','lucy')"); const lid=Object.keys(c.laundryData)[0]; c.get("luLast=null; luPaint()");
+{ const c=mk({kid:"lucy"}); c.get("llStart('lucy','lucy')"); const lid=Object.keys(c.laundryData)[0]; c.get("luLast=null; luPaint(); luSteps.length=0");
   const st=[].concat(c.get("rtStepsFor('afternoon','lucy',false,'wednesday')"),c.get("rtStepsFor('chores','lucy',false,'wednesday')")).find(s=>s.laundry==="lineFold");
   c.get("llKidRowHook('lucy',"+JSON.stringify(st)+",true)");
-  ok("Lucy ticks Fold: put away, no bar", !c.laundryData[lid]&&c.bar()===""&&c.get("luLast")===null&&c.get("_luQ")===0);
+  ok("Lucy ticks Fold: put away, no bar, no ledger step of its own", !c.laundryData[lid]&&c.bar()===""&&c.get("luLast")===null&&c.get("luSteps.length")===0&&c.get("_luQ")===0);
   ok("… but it is on every device's list, by Lucy", (awayW(c,lid)[0]||[])[2]&&awayW(c,lid)[0][2][TODAY+"/"+lid].by==="lucy"); }
 { const c=mk({laundry:{l1:{label:"Towels",stage:"fold",ts:5}}}); c.get("laundryAdvance('l1')");
   c.get("laundryData.l1={label:'Towels',stage:'fold',ts:9}; luPaint()");   // another device brought it back meanwhile
-  ok("the load came back elsewhere → the bar goes by itself", c.bar()===""); c.writes.length=0;
-  ok("and an undo then writes nothing", c.get("luUndo()")===false&&c.writes.length===0); }
+  ok("the load came back elsewhere → its step stays listed, without ↩︎ Undo", c.bar()===""&&c.get("luSteps.length")===1&&!/luLgUndo/.test(c.fold())); c.writes.length=0;
+  ok("and an undo then writes nothing", c.get("luLgUndo(0)")===false&&c.writes.length===0); }
 { const c=mk({kid:"lincoln",laundry:{l1:{label:"Lincoln's clothes",stage:"washer",ts:7,by:"lincoln"}}});
-  c.get("laundryAdvance('l1','dryer')"); ok("a kid's device: his tap → the bar", /Lincoln's clothes — in the dryer/.test(c.bar()));
-  c.get("luUndo()"); ok("he undoes his own tap without Mom mode", c.laundryData.l1.stage==="washer"&&c.laundryData.l1.ts===7); }
+  c.get("laundryAdvance('l1','dryer')"); ok("a kid's device: his tap → on the ledger, with ↩︎ Undo", /Lincoln's clothes — in the dryer/.test(c.top())&&/luLgUndo\(0\)/.test(c.fold()));
+  c.get("luLgUndo(0)"); ok("he undoes his own tap without Mom mode", c.laundryData.l1.stage==="washer"&&c.laundryData.l1.ts===7); }
 
 console.log("5. 🧺 Put away today — from Firebase, on ANY device: ↩︎ Undo — back to folded");
 { const rec={load:{label:"Ellis's clothes",stage:"fold",ts:3,by:"ellis"},at:Date.now()-60000,by:"ellis"};
   const B=mk(); B.get("luAwayOnValue("+JSON.stringify({[TODAY]:{la:rec}})+")");   // device B never tapped it
   const h=B.get("luAwayRowsHTML()");
   ok("device B lists it: 🧺 Put away today · Ellis's clothes · by Ellis · ↩︎ Undo — back to folded", /🧺 Put away today/.test(h)&&/Ellis's clothes/.test(h)&&/· Ellis/.test(h)&&/luUnputaway\('la'\)/.test(h)&&h.indexOf("↩︎ Undo — back to folded")>=0, h);
-  ok("the Household view and My day call it", /luAwayRowsHTML\(\)/.test(fn("hhLaundryHTML"))&&/luAwayRowsHTML\(true\)/.test(fn("llMyDayLaundryHTML")));
+  ok("the Household view and My day draw the 📒 ledger fold instead (LAUNDRY_LEDGER); the Put away today rows live inside it", /luLgHTML\(\)/.test(fn("hhLaundryHTML"))&&!/luAwayRowsHTML/.test(fn("hhLaundryHTML"))&&/luLgHTML\(true\)/.test(fn("llMyDayLaundryHTML"))&&!/luAwayRowsHTML/.test(fn("llMyDayLaundryHTML")));
+  ok("… as a put-away row with the same ↩︎ Undo — back to folded", /luUnputaway\('la'\)/.test(B.fold())&&/Ellis's clothes — put away/.test(B.fold()), B.fold());
   B.writes.length=0; const r=B.get("luUnputaway('la')");
   ok("↩︎ Undo: back in the fold pile with a fresh clock", !!r&&B.laundryData.la.stage==="fold"&&B.laundryData.la.ts>rec.at&&B.laundryData.la.by==="ellis");
   ok("writes: laundry/la set + laundryAway <today>/la null", B.writes.some(w=>w[0]==="set"&&w[1]==="laundry/la")&&B.writes.some(w=>w[1]==="laundryAway"&&w[2][TODAY+"/la"]===null), B.writes);
@@ -128,8 +131,8 @@ console.log("6. A load started on an earlier day comes back (Ellis's Bed: starte
 
 console.log("7. Dry run writes nothing (the bar and the list still work on the device)");
 { const c=mk({dry:true,laundry:{l1:{label:"Towels",stage:"fold",ts:1}}}); c.get("laundryAdvance('l1')");
-  ok("put away: bar shows, nothing written", /put away/.test(c.bar())&&c.writes.length===0);
-  c.get("luUndo()"); ok("undo: back locally, nothing written", c.laundryData.l1&&c.laundryData.l1.stage==="fold"&&c.writes.length===0);
+  ok("put away: on the ledger, nothing written", /put away/.test(c.top())&&c.writes.length===0);
+  c.get("luLgUndo(0)"); ok("undo: back locally, nothing written", c.laundryData.l1&&c.laundryData.l1.stage==="fold"&&c.writes.length===0);
   c.get("laundryAdvance('l1')"); c.get("luUnputaway('l1')"); ok("list restore: nothing written", c.laundryData.l1&&c.writes.length===0); }
 
 console.log("8. ↩︎ for ↶ in every UI string (her: \"the undo button looks like a shower head\")");
