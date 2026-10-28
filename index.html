@@ -5555,6 +5555,7 @@ function showPaceToast(taskId, doneMinOverride, opts){
 
   // Per-kid timing gate: when enabled, only early/within-window completions earn a spin.
   const gate=spinGateFor(t.who);
+  if(typeof sotOffOn==="function"&&sotOffOn(t.who,taskDay)) gate.enabled=false;   // SPINSOFFTODAY: Mom switched on-time spins off for this date → any finished task spins
   const inWindow=diff<=gate.window;
   let cls, msg, canSpin=false, spinType=null;
   if(_once){ cls="on-track"; msg="✅ Done! This card already had its spin."; }   // 🎰 SPINONCE (her rule 2026-10-22): one spin per card, ever
@@ -8957,6 +8958,7 @@ function renderSchedule(el){
   // 👩 the Mom loop — who has her right now. Mom-gated, today only, reports nothing on
   // another day's view where "ready" and "paused" have no meaning.
   if(day===_todayDay){ try{ h+=helpersStripHTML(); }catch(e){} }   // 🙋 "Grandma here?"
+  if(day===_todayDay){ try{ if(typeof sotStripHTML==="function") h+=sotStripHTML(); }catch(e){} }   // SPINSOFFTODAY: 🎰 on-time spins off for today (Mom only)
   if(day===_todayDay){ try{ h+=helperGiveBtnsHTML(); }catch(e){} }   // 🙋 HELPERGIVE: "Give Grandma more today" (Mom mode only)
   try{ h+=helperViewHeadHTML(day); }catch(e){}   // 🙋 "Grandma's list"
   if(day===_todayDay){ try{ if(typeof momTipsScheduleHTML==="function") h+=momTipsScheduleHTML(!!mlStripHTML()); }catch(e){} }   // MOMNEWS: 👋 Mom banners above the strip
@@ -36334,6 +36336,70 @@ function frTapGate(t){
   return true;
 }
 // FAMRES_END
+// SPINSOFFTODAY_START — 🎰 on-time spins OFF for one day (her ask 2026-10-28: "a button on the schedule that for that day can
+// turn the on-time spins off. So if the day got started late because of Mom or because of some other unexplained circumstance,
+// I would like to be able to switch it. And it only counts for that day and it goes back to whatever the setting is after
+// that. It shouldn't show up if it's already off in settings, but if it's on, then there needs to be a switch. I think it
+// needs to be an all and a per kid.")
+// The setting it bends: config/spin_gate/<kid> = {enabled, window} — "On-time spins only" in Settings ▸ Slot Machine.
+// enabled ON = a finished task earns a 🎰 spin only when done early or within the window (showPaceToast:
+// !gate.enabled || diff<=gate.window); OFF = every finished task spins. "Off for today" = OFF for ONE date: a late check-off
+// on that date still spins; tomorrow reads the setting again. The day-finish bonus spin was never gated and is untouched.
+// The leaf, in SETTIME_TODAY's shape, next to the setting it bends:
+//   config/spin_gate/<kid>/offByDate/<YYYY-MM-DD> = true
+// The gate reads it for the TASK's date only (sotOffOn(kid, dayName) → that weekday's date in the plan week); any other date
+// reads the normal setting. The config/spin_gate listener already carries the whole node, so the switch shows on every device.
+// Written only when Mom flips it (db && !_dryRun() — ?dryrun=1 flips on screen and writes nothing); back to on-time removes
+// the leaf (null) in the same targeted update; "All" = ONE multi-path update, one leaf per shown kid, never a whole-node set.
+// Shown to Mom only (momHereCards), on TODAY's day view, and only for kids whose setting is ON — a kid already OFF in Settings
+// has no switch; no kid ON → nothing at all. A kid's own view shows just that kid's switch. Settings is untouched
+// (spinGateFor / spinGateToggle / spinGateSetWindow / spinGateSave as before; spinGateSave's set of the node Mom edits there
+// carries offByDate along because spinGate holds the live node).
+function sotIsoOk(iso){ return /^\d{4}-\d{2}-\d{2}$/.test(String(iso||"")); }
+function sotIsoOf(dayName){   // the date a weekday name means in the current week (today → today's own date)
+  try{ if(typeof _todayDay==="string"&&dayName===_todayDay&&typeof _todayStr==="function") return _todayStr(); }catch(e){}
+  try{ if(typeof routineDateISO==="function"){ const r=routineDateISO(dayName); if(r) return r; } }catch(e){}
+  try{ if(typeof calDateForWeekDay==="function") return calDateForWeekDay(dayName)||null; }catch(e){}
+  return null;
+}
+function sotKidsOn(){ return ROSTER.filter(function(k){ return spinGateFor(k).enabled; }); }   // the setting is ON → a switch
+function sotOffAt(kid,iso){ const g=(typeof spinGate!=="undefined"&&spinGate)?spinGate[kid]:null; const o=g&&g.offByDate; return !!(o&&typeof o==="object"&&!Array.isArray(o)&&sotIsoOk(iso)&&o[iso]===true); }
+function sotOffOn(kid,dayName){ const iso=sotIsoOf(dayName); return !!iso&&sotOffAt(kid,iso); }   // read by the gate for the task's date
+function sotShownKids(){ const on=sotKidsOn(); const k=(typeof kid==="string")?kid:"all"; return (k!=="all"&&k!=="mom")?on.filter(function(x){ return x===k; }):on; }
+function sotStripHTML(){
+  if(typeof momHereCards!=="function"||!momHereCards()) return "";
+  if(typeof day!=="string"||typeof _todayDay!=="string"||day!==_todayDay) return "";
+  const kids=sotShownKids(); if(!kids.length) return "";
+  const iso=sotIsoOf(day); if(!sotIsoOk(iso)) return "";
+  const allOff=kids.every(function(k){ return sotOffAt(k,iso); });
+  const chip=function(label,off,click){ return '<button class="sot-chip" onclick="'+click+'" style="border:none;border-radius:14px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap;background:'+(off?'#f59e0b':'#16a34a')+';color:#fff">'+label+'</button>'; };
+  let h='<div class="sot-strip" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 10px;padding:8px 10px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px">';
+  h+='<span style="font-size:12px;font-weight:800;color:#92400e;white-space:nowrap">🎰 On-time spins today</span>';
+  if(kids.length>1) h+=chip(allOff?'All · back to on-time':'All · off today',allOff,'sotToggleAll(\''+iso+'\')');
+  kids.forEach(function(k){ const off=sotOffAt(k,iso); h+=chip(cap(k)+' · '+(off?'off today':'on-time'),off,'sotToggle(\''+k+'\',\''+iso+'\')'); });
+  h+='<span style="font-size:10px;color:var(--muted);flex-basis:100%">Off today = any finished task spins; tomorrow goes back to the setting.</span>';
+  return h+'</div>';
+}
+// ONE targeted update: config/spin_gate/<kid>/offByDate/<iso> = true (off today) or null (back to on-time), per kid asked for.
+function sotSet(kids,iso,off){
+  if(typeof momHere!=="function"||!momHere()||!sotIsoOk(iso)) return false;
+  const ks=(kids||[]).filter(function(k){ return ROSTER.indexOf(k)>=0&&spinGateFor(k).enabled; }); if(!ks.length) return false;
+  const upd={};
+  ks.forEach(function(k){
+    if(!spinGate[k]){ if(typeof spinGateEnsure==="function") spinGateEnsure(k); else spinGate[k]={}; }
+    const o=(spinGate[k].offByDate&&typeof spinGate[k].offByDate==="object")?spinGate[k].offByDate:{};
+    if(off) o[iso]=true; else delete o[iso];
+    spinGate[k].offByDate=o;
+    upd["config/spin_gate/"+k+"/offByDate/"+iso]=off?true:null;
+  });
+  if(db&&!_dryRun()){ try{ db.ref().update(upd); }catch(e){ if(typeof dbg==="function") dbg("spins off today write: "+e); } }
+  try{ if(typeof gwShowToast==="function") gwShowToast(off?("🎰 "+ks.map(cap).join(" & ")+" — any finished task spins today"):("🎰 "+ks.map(cap).join(" & ")+" — back to on-time spins")); }catch(e){}
+  if(typeof renderAll==="function") renderAll();
+  return true;
+}
+function sotToggle(k,iso){ return sotSet([k],iso,!sotOffAt(k,iso)); }
+function sotToggleAll(iso){ const kids=sotShownKids(); if(!kids.length) return false; const allOff=kids.every(function(k){ return sotOffAt(k,iso); }); return sotSet(kids,iso,!allOff); }
+// SPINSOFFTODAY_END
 
 
 // ── WHEN THE DOOR IS OPEN ──
