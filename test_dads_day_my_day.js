@@ -113,6 +113,7 @@ else {
     ok("🧒 kid rows (Mom's Day, school day=" + sd + "): same bytes", a === b && /mpBankAsk\('ava',1\)/.test(b));
     ok("🧒 plain Kids today (no bank): same bytes", world(old, MOM).api.mdCardKidsToday("monday", sd) === world(src, MOM).api.mdCardKidsToday("monday", sd));
   });
+  const unshop = s => String(s).replace(/"Add to the grocery list…"/g, '"Add to the "+SHOP_LIST_NAME+"…"').replace(/Open the grocery list · /g, "Open the '+SHOP_LIST_NAME+' · ");   // SHOPNAME: the widget's two labels read the list's name
   const unroute = s => String(s).replace(/_mcDb\('mom',id,null,momChoresData\[id\]\);\s*\/\/ 🏡 HOUSEHOLD_TAKEOVER/g, "if(typeof db!=='undefined'&&db) db.ref('momChores/'+id).set(momChoresData[id]);")
     .replace(/\n\s*try\{ const _lr=hhLevelReadyNowHTML\(\); nowN\+=_lr\.n; h\+=_lr\.html; \}catch\(e\)\{\}[^\n]*/g, "")
     .replace(/\n\s*try\{ h\+=hhCleanHomeHTML\(iso,today\); \}catch\(e\)\{\}[^\n]*/g, "")   // 🧽 CLEANINGDAY (2026-10-11): one Home Base line, normalized away
@@ -126,7 +127,7 @@ else {
   // 🧺 LESSONRES (2026-10-23): one 🔴 Now line (Sunday-list items due within two days), tagged — normalized away on both sides   // 🍳 KITFLAG (2026-10-23): one 🔴 Now line (a meal the kids rate low), tagged — normalized away on both sides   // ⏱ MINMINUTES (2026-10-23): one 🔴 Now line (timed-card alerts), tagged — normalized away on both sides   // STICKYSTACK (2026-10-22): the section markers are whole new lines, each tagged — normalized away so the guard still asks "nothing ELSE changed"
   ok("renderMomsDay source untouched", unstick(unnudge(unroute(sliceFrom(old, "renderMomsDay")))) === unstick(unnudge(unroute(sliceFrom(src, "renderMomsDay")))));
   // 🏡 HOUSEHOLD_TAKEOVER (PR 3, 2026-10-09) routes Mom's list writes through _mcDb; that one line is normalized away here so the guard keeps asking "nothing ELSE changed".
-  ok("Mom's starter seeds / editor untouched", ["mcSeedSlot", "mcToggle", "mcPopHTML", "grMdShopHTML"].every(n => unroute(sliceFrom(old, n)) === unroute(sliceFrom(src, n))));
+  ok("Mom's starter seeds / editor untouched", ["mcSeedSlot", "mcToggle", "mcPopHTML", "grMdShopHTML"].every(n => unshop(unroute(sliceFrom(old, n))) === unshop(unroute(sliceFrom(src, n)))));
   // 📅 CAD_CHIPS (her ask 2026-10-18): mcAdd and the ✎ card's add row changed on purpose — and only this:
   ok("mcAdd reads the day chips beside the box she typed in (mc-cad-q on My day, mc-cad on the ✎ card)", /getElementById\(inp&&inp\.id==="mc-new"\?'mc-cad-q':'mc-cad'\)/.test(sliceFrom(src, "mcAdd")));
   ok("the ✎ card's add row: day chips in place of the one-day dropdown", /cadChipsHTML\("mc-cad","daily",\[\["2w","2 wks"\]\]\)/.test(sliceFrom(src, "momChoresCardHTML"))&&!/<select id="mc-cad"/.test(sliceFrom(src, "momChoresCardHTML")));

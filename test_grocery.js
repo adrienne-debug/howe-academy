@@ -5,13 +5,14 @@ const fn=name=>{ const a=src.indexOf("function "+name+"("); if(a<0) throw new Er
 const a=src.indexOf("// GROCERY_LIST_START"), b=src.indexOf("// GROCERY_LIST_END");
 ok("grocery block present once", a>0&&b>a&&src.indexOf("// GROCERY_LIST_START",a+5)<0);
 const block=src.slice(a,b);
+const shopBlock=src.slice(src.indexOf("// SHOPNAME_START"),src.indexOf("// SHOPNAME_END"));   // SHOPNAME: the list's name constant the labels read
 const sidesBlock=src.slice(src.indexOf("// KITSIDES_START"),src.indexOf("// KITSIDES_END"));   // grWeekSources reads a day's sides through it (2026-10-22)
 const mk=()=>{
   const env={writes:[],toasts:[],staples:{s1:{name:"Almond milk",state:"out"},s2:{name:"Olive oil",state:"have"}},usuals:{u1:{name:"Bananas",cat:"breakfast",qty:2}},pantry:[],buy:{},mom:false,dad:false,confirm:true,pinAsked:0};
   const ref=p=>({set:v=>env.writes.push(["set",p,v]),update:v=>env.writes.push(["update",p,v]),remove:()=>env.writes.push(["remove",p])});
   env.ls={};
   const glyph=src.match(/const KIT_FRAC_GLYPH=\{[^}]+\};/)[0];
-  const body=glyph+fn("kitSlug")+fn("kitQtyParse")+fn("kitIsoPlus")+sidesBlock+block+`
+  const body=glyph+fn("kitSlug")+fn("kitQtyParse")+fn("kitIsoPlus")+sidesBlock+shopBlock+block+`
     ;return {grParse,grKey,grSecFor,grQtyTxt,grMergeQty,grAdd,grFindDup,grToggle,grVToggle,grDone,grApprove,grDecline,grDupMore,grDupAnyway,grGroups,grText,grAddFrom,grKidAllow,grKidBoxHTML,grReqCount,grPickToggle,grPickSave,grActiveStores,grSetStore,grCurStore,grStoreField,grStoreRemove,grSecOrder,grAisleMove,grCfgDad,grToGetCount,grCartCount,grHomeFor,grDadCardHTML,grIngParse,grIngRows,grFromRecipe,grFromWeek,grImpAdd,grFromPantry,grFromTodo,get imp(){return _grImp;},grMem,grMemUpdate,grShelf,grShelfAdd,grSuggestNames,grClearedIds,grPutBack,grRemove,grSave,grEdit,grEditSave,grMoney,grPriceAdd,grUsual,grLowest,grSaleInfo,grBest,grTripEst,grTripHeadHTML,grPriceLineHTML,grSpent,grWeekStart,grRcptLoad,grRcptSave,grDoneRun,get rc(){return _grRc;},set rc(v){_grRc=v;},grSortIds,grSortTo,grSortBoxHTML,grStoreFromText,grPlLoad,grPlAdd,grRowHTML,get pl(){return _grPl;},set pl(v){_grPl=v;},grStep,grQtyType,grQtySave,grStepperHTML,set fromDad(v){grFromDad=v;},grPaidSet,grPaidBoxHTML,grCartTotal,grStoreTotalBarHTML,set big(v){grBig=v;},grPanFind,grEatRows,kitMarkEaten,grEatApply,grEatUndo,grRanOutHTML,grSortV,grSortCount,get eat(){return _grEat;},grPanOldIds,grPanCheckOpen,grPanToss,grPanKeep,grPanMove,grPanTossAdd,grPanKeepAll,grWeekNeeds,grCheckoutOpen,grCheckoutGo,grBudgets,grBudgetDefault,grBudgetAdd,grBudgetField,grSpentBudget,grSpentOther,get co(){return _grCo;},grPlaceOf,grPlaceGuess,grPutIds,grPutSet,grPutDate,grPutDone,grUseSoonIds,grUseFroze,grUseOk,grPutAlertHTML,grUseSoonHTML,grNeedBought,grNeedList,grNeedSkipTap,grPantryAlertsHTML,
       get data(){return grData;}, set data(v){grData=v;}, get pend(){return _grPend;}};`;
   const F=new Function("env","db","HA_LS","mwToast","kitOrderList","kitStaples","kitBuyLog","panAdd","_todayStr","momHere","dadAwardOk","kitPinGate","confirm","ROSTER_DEF","esc","tab","document","prompt","navigator","kitPantry","panStatus","kitMeals","kitPlan","gwParseDate","momdayData","momdayToggleTodo","kitCapKey","kitEatGate","kitMealsLSSave","_kitRefresh","kitRateChips","panZoneMeta",body);
@@ -193,7 +194,7 @@ ok("same-thing key: plurals + case", L.grKey("Eggs")===L.grKey("egg")&&L.grKey("
 }
 { const L=mk(); withPop(L); L.env.meals.m1={name:"Tacos",ing:"1 lb beef"}; L.env.pinOk=false; L.grFromRecipe("m1"); L.grImpAdd();
   ok("adding from a recipe needs Mom's PIN when not unlocked", !Object.keys(L.data.items).length&&L.env.pinAsked===1); }
-ok("recipe card has the 🛒 Add ingredients button", /grFromRecipe\(/.test(src)&&/🛒 Add ingredients to the grocery list/.test(src));
+ok("recipe card has the 🛒 Add ingredients button", /grFromRecipe\(/.test(src)&&/🛒 Add ingredients to the '\+SHOP_LIST_NAME\+'<\/button>/.test(src));
 ok("Meals week header + list page have Shop-for-the-week", (src.match(/onclick="grFromWeek\(\)"/g)||[]).length===2);
 ok("pantry chips + Mom's Day to-dos have 🛒 buttons", /grFromPantry\(/.test(src)&&/grFromTodo\(/.test(src));
 // ── 🧠 step 4: a list that learns ──
@@ -526,7 +527,7 @@ ok("Checkout no longer has the ❄️ tick (Put away chooses the spot)", !/❄�
 ok("panStatus: a package date beats the guess; fruit/veg keep the short clock in the fridge or on the counter", /it\.useBy&&/.test(src)&&/life=6;   \/\/ fresh fruit\/veg/.test(src));
 // ── wiring ──
 ok("Mom's Day Shopping spot opens the list (not Meals)", /shop:grMdShopHTML \}/.test(src)&&/\+P\.shop\(\)/.test(src)&&!/Open the shopping list →/.test(src));
-ok("🛒 List tab in the Mom's Day tabs", /btn\('grocery','🛒 Grocery List'\)/.test(src)&&/if\(mpSubView==='grocery'\)\{ return renderGrocery\(el\); \}/.test(src));
+ok("🛒 List tab in the Mom's Day tabs", /btn\('grocery','🛒 '\+SHOP_LIST_NAME\)/.test(src)&&/if\(mpSubView==='grocery'\)\{ return renderGrocery\(el\); \}/.test(src));
 ok("Dad's Day has the grocery add (👨 DADMYDAY: inside his 🏡 My day)", /shop:grDadShopHTML \}/.test(src)&&/momDayStripHTML\(iso,dn,"dad"\)/.test(src));
 ok("kid's day page carries the ask box", /h\+=grKidBoxHTML\(k\)/.test(src));
 ok("live listener on kitchen/grocery", /db\.ref\("kitchen\/grocery"\)\.on\("value"/.test(src));
