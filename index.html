@@ -384,6 +384,8 @@ body.kioskr #kiosk-view .store-card,body.kioskr #kiosk-view .bank-card{margin:0 
 body.kioskd #app-header,body.kioskd #nav-tabs,body.kioskd #sched-subtabs,body.kioskd #day-tabs,body.kioskd #kid-filter,body.kioskd #mom-pin-bar,body.kioskd #week-strip,body.kioskd #skylight-panel,body.kioskd #admin-btn,body.kioskd #scroll-top,body.kioskd #hq-back,body.kioskd #md-back,body.kioskd #kiosk-kids,body.kioskd #kiosk-mom{display:none!important}
 /* ── 🧒📚 KC_MASTERY — a kid's study cards inside Kids' Corner: no app menus, only the ← Kids' Corner bar ── */
 body.kc-study #app-header,body.kc-study #nav-tabs,body.kc-study #sched-subtabs,body.kc-study #day-tabs,body.kc-study #kid-filter,body.kc-study #mom-pin-bar,body.kc-study #week-strip,body.kc-study #skylight-panel,body.kc-study #admin-btn,body.kc-study #hq-back,body.kc-study #md-back,body.kc-study #msv-bar{display:none!important}
+body.dc-board #app-header,body.dc-board #nav-tabs,body.dc-board #sched-subtabs,body.dc-board #day-tabs,body.dc-board #kid-filter,body.dc-board #mom-pin-bar,body.dc-board #week-strip,body.dc-board #skylight-panel,body.dc-board #admin-btn,body.dc-board #hq-back,body.dc-board #md-back,body.dc-board #msv-bar{display:none!important}   /* DAYCARD: the big screen */
+body.dc-board{background:#0f172a}
 /* 🔢 Build fingerprint. pointer-events:none so it can never eat a tap on a wall tablet. */
 #build-fp{display:none;position:fixed;right:6px;bottom:5px;font-size:9px;letter-spacing:.1em;font-family:ui-monospace,Menlo,monospace;color:var(--muted);opacity:.5;z-index:200;pointer-events:none}
 .bfp{font-size:9px;letter-spacing:.1em;font-family:ui-monospace,Menlo,monospace;opacity:.6;margin-left:3px}
@@ -4713,6 +4715,7 @@ function showTab(t,keepMsv){
   if(_kioskK()&&t!=="kids") return;      // 🧒 Kids' Corner link is locked to the Corner
   tab=t;
   if(typeof kcStudyKid!=="undefined") kcStudyKid=null;   // 🧒📚 KC_MASTERY: a tab tap always lands on the page itself
+  if(typeof dcState!=="undefined") dcState=null;   // 📺 DAYCARD: a tab tap closes the board
   mastAddMode=false; mastLogMode=false; mastLogScores={};
   document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",(momSchedView&&t==="schedule")?b.dataset.tab==="moms-plan":(b.dataset.tab===t||(t==="supplies"&&b.dataset.tab==="schedule"))));
   if(t!=="schedule"){ schedShowAdmin=false; schedShowHistory=false; schedShowPace=false; schedShowBoard=false; schedShowPeek=false; }
@@ -4935,6 +4938,8 @@ function _renderAllInner(){
   const stb=document.getElementById("sitter-tab-btn"); if(stb){ if(SITTER_NAME){stb.textContent=SITTER_NAME;stb.style.display="";} else {stb.style.display="none";} }
   PAGE_KEYS.forEach(k=>{ const b=document.querySelector('.nav-tab[data-tab="'+k+'"]'); if(b) b.style.display=pageOn(k)?"":"none"; });   // 🧩 pages that are off leave the tab bar
   try{ document.body.classList.toggle("kc-study",typeof kcStudyOn==="function"&&kcStudyOn()); }catch(e){}   // 🧒📚 KC_MASTERY: no app menus over a kid's study
+  try{ document.body.classList.toggle("dc-board",typeof dcOn==="function"&&dcOn()); }catch(e){}   // 📺 DAYCARD: the big screen hides the chrome
+  if(typeof dcOn==="function"&&dcOn()){ const _dc=document.getElementById("content"); if(_dc) _dc.innerHTML=dcPageHTML(); return; }   // 📺 DAYCARD: today's card takes the page while it is open
   renderSchedSubtabs(); renderDayTabs(); renderKidFilter(); renderSkylight(); renderWeekStrip(); renderKioskKids(); renderKioskTabs(); renderKioskView(); renderKioskPerson();
   navBarsApply();   // NAVBARS: the Schedule's rows show on the Schedule (and Supplies / History / Wins), nowhere else — every paint, every route in
   if(typeof ResizeObserver!=="function") requestAnimationFrame(navStackSync);   // NAVSTACK fallback: a browser without ResizeObserver re-measures after the paint
@@ -17790,6 +17795,7 @@ function renderMomsDay(el){
   try{ const _ro=grRanOutHTML(); if(_ro){ nowN++; h+=_ro; } }catch(e){}   // 🛒 ran out after a meal → on the list
   try{ const _kf=kitFlagNowHTML(); nowN+=_kf.n; h+=_kf.html; }catch(e){}   // KITFLAG: ⚠ a meal the kids rate low → ✓ Got it · Swap…
   try{ const _lr=lrNowHTML(); nowN+=_lr.n; h+=_lr.html; }catch(e){}   // LESSONRES: 🧺 check out / order by — due within two days → ✓ Got it
+  try{ if(typeof dcNowHTML==="function"){ const _dc=dcNowHTML(); nowN+=_dc.n; h+=_dc.html; } }catch(e){}   // 📺 DAYCARD: Today's card for a family block running today
   try{ const _pa=grPantryAlertsHTML(); nowN+=_pa.n; h+=_pa.html; }catch(e){}
   try{ const _pu=grPutAlertHTML(); nowN+=_pu.n; h+=_pu.html; const _us=grUseSoonHTML(); nowN+=_us.n; h+=_us.html; }catch(e){}   // 🧺 to put away · 📅 use or freeze by   // 🥫 may be old · 🍽 this week's meals need
   if(morningWaiting.length){
@@ -34261,7 +34267,7 @@ function famRowHTML(t,done,viewKid){
   }
   else txt=(mx>0?'⭐ Up to '+mx+' ⭐ · ':'')+'\u{1F469} Mom checks this off for everyone';
   return (_ls?'<div style="margin-top:3px;font-size:12px;font-weight:800;color:#3b0764">\u{1F4DA} '+esc(_ls)+'</div>':'')+'<div style="margin-top:4px;font-size:11px;font-weight:700;color:#6d28d9">'+txt+'</div>'+
-    ((!done&&typeof famDrillBtnHTML==="function")?famDrillBtnHTML(t,me):'')+((!done&&typeof famPresRowHTML==="function")?famPresRowHTML(t,done):'');   // 🏡 FAMPRESENCE: waiting on Mom · sitter hours
+    ((!done&&typeof famDrillBtnHTML==="function")?famDrillBtnHTML(t,me):'')+((typeof dcCardBtnHTML==="function")?dcCardBtnHTML(t,done):'')+((!done&&typeof famPresRowHTML==="function")?famPresRowHTML(t,done):'');   // 🏡 FAMPRESENCE: waiting on Mom · sitter hours · 📺 DAYCARD: Open today's card
 }
 // FAM_DRILLS_START — 🧠 a family-time item can open each kid's own drills (her ask 2026-10-04: "linked to their
 // shared time … with a button to point them to the right drills"). DeWalt's Fact Review block: Andrew + Kenzie
@@ -37460,6 +37466,201 @@ function psGateUpto(kid,deck){
   return null;
 }
 // PUTSCHED_END
+// DAYCARD_START — 📺 today's day card on one screen, for the whole family ("One shape" §3 Screen in both examples, §5 the board;
+//   BRIEF_units_build_2026-10-27.md B2; her answers 2026-10-26: 3 "rungs only on a day where Mom adds a question", 4 "logging is
+//   Mom's option per unit: graded + logged per kid, or not tracked", 8 "the big screen AND an Open today's card button on each
+//   kid's family card", 13 "the board = the LG StanbyME for her; Sara may use an iPad → both"). The look is the approved
+//   Gathering frame: big type, one leader, one screen, the close "You anchored the day".
+//   · THE VIEW: dcOpen(blockId?, taskId?) opens it on any tab (the app's chrome hides — body.dc-board, as a kid's study does);
+//     🏡 Today's card on Kids' Corner's picker, 📺 Today's card on Mom's Day 🔴 Now and on the Family tab (UNITSTAB), and an
+//     "Open today's card" button on each kid's family card all open the same view. For each family block running today (one at
+//     a time, a strip to switch) the item's card for today; when it points at a unit day (utDayForTask) the day is drawn: title,
+//     the feature (the place's or a card's picture, with its caption), the book (its title, its cover when a picture exists),
+//     ▶ the video / link menu (lrLinksFor over the card's record), the activity it queues, the cards it opens (names, with
+//     pictures from the unit's visuals), the rungs by level — only where Mom wrote a question — with each present kid's name
+//     mapped from the roster's grade (little · early · middle · upper), the words on the screen (📜 Show the words, the parts by
+//     level), the read strand (🎧 Listen plays the day's recording, else its link · 📖 Mom reads · 🗣 Recite), the note. A day
+//     with none of those shows title + links only. A family item with no unit day draws as the Schedule does: title, lesson
+//     label, links from FAMRES.
+//   · THE CLOSE: Mom's one ✓ = the family card's existing check path — tapTask on the first open copy: the "Done — everyone"
+//     dialog with FAMATTEND's not-here chips, or the ⭐ rate screen when the item pays — so finalizeDone fans out to every copy
+//     as today and FAMCELEB's celebration fires from there when the block has one. Then "You anchored the day. Now off you go →"
+//     back to the kids' own day. A kid's tap never checks (as today: "Mom checks this off").
+//   · RUNG LOGGING: when the unit's track.rungLog is "kid", Mom taps ✓ or ✗ per kid on each rung and ONE targeted set writes
+//     unitLog/<unitId>/<dayId>/<kid> = {rung, ok, at} (a new family path). "none" (the default) shows no marks, writes nothing.
+//   · LIGHT: nothing at boot (functions only; the view draws when opened), no data URIs — pictures by URL — big type at TV
+//     widths and on a phone, the colour-emoji font stack (.memoji) for emoji. The TV has no speech voices, so nothing here
+//     speaks. Nothing in the scheduler, generator, lay or Family Time placement changes. No kid's name in code. Dry-run inert.
+var dcState=null;   // {bid, key, taskId, words:{}, from} while the board is open (var: _renderAllInner reads it from earlier in the file)
+let dcLog={};       // {uid|dayId|kid: {rung, ok}} — Mom's rung marks this sitting (the write is one set each)
+const DC_LEVELS=["little","early","middle","upper"];
+const DC_LEVEL_LABEL={little:"Little",early:"Early",middle:"Middle",upper:"Upper"};
+function dcEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function dcJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+function dcCap(s){ return (typeof cap==="function")?cap(s):String(s||""); }
+function dcName(k){ return ((typeof KID_NAME!=="undefined"&&KID_NAME)||{})[k]||dcCap(k); }
+function dcMom(){ return (typeof momHereCards==="function")?momHereCards():((typeof momHere==="function")?momHere():false); }
+function dcLive(){ return !!(typeof db!=="undefined"&&db)&&!((typeof _dryRun==="function")&&_dryRun()); }
+function dcOn(){ return !!dcState; }
+function dcRe(){ if(typeof renderAll==="function") renderAll(); }
+// A kid's level from the roster's grade: Pre-K/K → little · 1–2 → early · 3–5 → middle · 6+ → upper (no grade: Pre-K → little, else middle).
+function dcLevel(kid){
+  const L=(typeof ROSTER_DEF!=="undefined"&&Array.isArray(ROSTER_DEF))?ROSTER_DEF:[]; const k=L.find(x=>x&&x.id===kid)||{};
+  const g=String(k.grade||"").trim().toUpperCase();
+  if(g==="PREK"||g==="PRE-K"||g==="K") return "little";
+  const n=parseInt(g,10);
+  if(isFinite(n)) return n<=2?"early":(n<=5?"middle":"upper");
+  return k.schoolAge===false?"little":"middle";
+}
+function dcKidsAt(level,kids){ return (kids||[]).filter(k=>dcLevel(k)===level); }
+// ── today's family cards, grouped by block + item: [{bid, key, b, it, copies:[t], present:[kid], done, label, day, u}] ──
+function dcTodayGroups(){
+  const td=(typeof _todayDay!=="undefined")?_todayDay:""; let tasks=[];
+  try{ tasks=(typeof getActiveTasks==="function")?getActiveTasks():(((typeof weekData!=="undefined"&&weekData)||{}).tasks||[]); }catch(e){ tasks=[]; }
+  const defs=(typeof famDefs==="function")?famDefs():{}; const groups={}, order=[];
+  tasks.forEach(t=>{ if(!t||!t.famBlock||t.famItem==null) return; if(((typeof effectiveDay==="function")?effectiveDay(t):t.day)!==td) return; if(typeof famBoState==="function"&&famBoState(t)) return;
+    const gk=t.famBlock+"\u0001"+t.famItem; if(!groups[gk]){ const b=defs[t.famBlock]; const it=b?famList(b.items).find(x=>x&&x.key===t.famItem):null; groups[gk]={bid:t.famBlock,key:t.famItem,b:b||null,it:it||null,copies:[],time:(typeof toMin==="function")?toMin(t.time):0}; order.push(gk); }
+    groups[gk].copies.push(t); });
+  return order.map(gk=>groups[gk]).filter(g=>g.b&&g.it).sort((a,b)=>(a.time||0)-(b.time||0)).map(g=>{
+    const ck=(typeof checked!=="undefined"&&checked)||{};
+    g.present=g.copies.filter(t=>!(typeof famIsAbsent==="function"&&famIsAbsent(t))).map(t=>t.who);
+    g.done=g.copies.length>0&&g.copies.every(t=>ck[t.id]||(typeof famIsAbsent==="function"&&famIsAbsent(t)));
+    g.first=g.copies.find(t=>!ck[t.id]&&!(typeof famIsAbsent==="function"&&famIsAbsent(t)))||g.copies[0];
+    try{ g.label=(typeof famLessonFor==="function")?famLessonFor(g.first):""; }catch(e){ g.label=""; }
+    g.day=(typeof utDayForTask==="function")?utDayForTask(g.first):null;
+    g.u=g.day?(((typeof unitStudies!=="undefined"&&unitStudies)||{})[g.day.uid]||null):null;
+    return g; });
+}
+function dcOpen(bid,taskId){
+  const groups=dcTodayGroups(); if(!groups.length){ try{ if(typeof gwShowToast==="function") gwShowToast("\u{1F3E1} No family time on today\u2019s schedule."); }catch(e){} return false; }
+  let g=null; if(taskId) g=groups.find(x=>x.copies.some(t=>t.id===taskId))||null; if(!g&&bid) g=groups.find(x=>x.bid===bid&&!x.done)||groups.find(x=>x.bid===bid)||null; if(!g) g=groups.find(x=>!x.done)||groups[0];
+  dcState={bid:g.bid,key:g.key,taskId:taskId||null,words:{},from:(typeof tab!=="undefined")?tab:null}; dcLog={};
+  dcRe(); try{ window.scrollTo(0,0); }catch(e){} return true;
+}
+function dcClose(){ dcState=null; dcRe(); try{ window.scrollTo(0,0); }catch(e){} }
+function dcPick(bid,key){ if(!dcState) return; dcState.bid=bid; dcState.key=key; dcState.taskId=null; dcRe(); }
+function dcWordsToggle(){ if(!dcState) return; dcState.showWords=!dcState.showWords; dcRe(); }
+// Mom's one ✓ — the family card's existing check path on the first open copy (dialog / ⭐ screen → finalizeDone fans out).
+function dcCheck(){
+  if(!dcState||!dcMom()) return false; const g=dcTodayGroups().find(x=>x.bid===dcState.bid&&x.key===dcState.key); if(!g||g.done||!g.first) return false;
+  if(typeof tapTask==="function"){ tapTask(g.first.id); return true; } return false;
+}
+// Rung logging (her answer 4): ONE targeted set per tap — unitLog/<unitId>/<dayId>/<kid> = {rung, ok, at}; only when the unit says "kid".
+function dcRungMark(uid,dayId,kid,level,ok){
+  if(!dcMom()||!uid||!dayId||!kid||DC_LEVELS.indexOf(level)<0) return false;
+  const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[uid]; if(!u||(typeof utRungLog==="function"?utRungLog(u):"none")!=="kid") return false;
+  const rec={rung:level,ok:!!ok,at:Date.now()}; dcLog[uid+"|"+dayId+"|"+kid]=rec;
+  if(dcLive()) db.ref("unitLog/"+uid+"/"+dayId+"/"+kid).set(rec);
+  dcRe(); return true;
+}
+function dcMarkOf(uid,dayId,kid){ return dcLog[uid+"|"+dayId+"|"+kid]||null; }
+// ── pieces ──
+function dcVisual(u,deck,name){ try{ const v=((u&&u.visuals)||{})[deck+"_"+name]; if(v&&typeof v==="object"&&v.imageUrl&&!/^data:/i.test(v.imageUrl)) return {img:v.imageUrl,credit:v.credit||""}; if(typeof v==="string") return {emoji:v}; }catch(e){} return null; }
+function dcFeature(g){
+  const d=g.day, u=g.u; if(!d) return null;
+  if(d.place&&d.place.img&&!/^data:/i.test(d.place.img)) return {img:d.place.img,caption:d.place.caption||d.place.name||"",credit:d.place.license||""};
+  const c=(d.cards&&d.cards[0]); if(c&&c.names&&c.names.length){ for(const nm of c.names){ const v=dcVisual(u,c.deck,nm); if(v&&v.img) return {img:v.img,caption:nm,credit:v.credit||""}; } }
+  return null;
+}
+function dcLinks(g){ try{ const rec=(typeof frCardRec==="function")?frCardRec(g.first):null; return (typeof lrLinksFor==="function")?lrLinksFor(g.first,null,"",rec||undefined):[]; }catch(e){ return []; } }
+function dcLinkBtn(l){ const vid=/youtu|vimeo|video/i.test(String(l.url+" "+(l.label||""))); return '<a href="'+dcEsc(l.url)+'" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:8px;padding:12px 18px;border-radius:14px;background:'+(vid?'#7c3aed':'#1d4ed8')+';color:#fff;font-size:18px;font-weight:800;text-decoration:none;font-family:\'DM Sans\',sans-serif">'+(vid?'\u25B6':'\u{1F517}')+' '+dcEsc(l.label||"Open")+'</a>'; }
+function dcActivity(g){ const d=g.day; if(!d||!d.nb||!d.nb.activity||!g.u) return null; const acts=(typeof _unitActs==="function")?_unitActs(g.u):[]; return acts.find(a=>a&&a.key===d.nb.activity)||null; }
+function dcSection(title,inner,extra){ return '<section style="margin-top:22px'+(extra||"")+'"><div style="font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:#a5b4fc">'+title+'</div><div style="margin-top:8px">'+inner+'</div></section>'; }
+function dcRungsHTML(g){
+  const d=g.day; if(!d||!d.rungs) return ""; const lv=DC_LEVELS.filter(l=>d.rungs[l]); if(!lv.length) return "";
+  const log=(typeof utRungLog==="function")?utRungLog(g.u):"none"; const mom=dcMom();
+  let h='';
+  lv.forEach(l=>{ const kids=dcKidsAt(l,g.present);
+    h+='<div style="padding:12px 0;border-top:1px solid rgba(255,255,255,.12)"><div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap"><span style="font-size:13px;font-weight:800;color:#a5b4fc;text-transform:uppercase;letter-spacing:.6px">'+DC_LEVEL_LABEL[l]+'</span><span style="font-size:16px;font-weight:700;color:#fde68a">'+(kids.length?dcEsc(kids.map(dcName).join(" \u00B7 ")):'<span style="color:#64748b">no one at this level today</span>')+'</span></div>';
+    h+='<div style="font-size:24px;font-weight:700;line-height:1.3;margin-top:4px;color:#fff">'+dcEsc(d.rungs[l])+'</div>';
+    if(log==="kid"&&mom&&kids.length){ h+='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">'; kids.forEach(k=>{ const m=dcMarkOf(g.day.uid,d.id,k); const a="'"+dcJ(g.day.uid)+"','"+dcJ(d.id)+"','"+dcJ(k)+"','"+l+"'";
+      h+='<span style="display:inline-flex;align-items:center;gap:6px;font-size:14px;font-weight:800;color:#e2e8f0">'+dcEsc(dcName(k))+' <button onclick="dcRungMark('+a+',true)" style="padding:6px 12px;border-radius:10px;border:2px solid '+(m&&m.ok?'#4ade80':'rgba(255,255,255,.25)')+';background:'+(m&&m.ok?'#166534':'transparent')+';color:#fff;font-size:16px;cursor:pointer">\u2713</button><button onclick="dcRungMark('+a+',false)" style="padding:6px 12px;border-radius:10px;border:2px solid '+(m&&m.ok===false?'#f87171':'rgba(255,255,255,.25)')+';background:'+(m&&m.ok===false?'#7f1d1d':'transparent')+';color:#fff;font-size:16px;cursor:pointer">\u2717</button></span>'; }); h+='</div>'; }
+    h+='</div>'; });
+  return dcSection("\u{1FA9C} Rungs",h);
+}
+function dcWordsHTML(g){
+  const w=g.day&&g.day.words; if(!w||(!w.text&&!w.parts)) return "";
+  let h='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="font-size:22px;font-weight:800;color:#fff">'+dcEsc(w.title||"The words")+(w.by?' <span style="font-size:15px;font-weight:600;color:#cbd5e1">\u2014 '+dcEsc(w.by)+'</span>':'')+'</span><button onclick="dcWordsToggle()" style="padding:8px 14px;border-radius:12px;border:2px solid rgba(255,255,255,.3);background:transparent;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F4DC} '+(dcState&&dcState.showWords?'Hide':'Show')+' the words</button></div>';
+  if(dcState&&dcState.showWords&&w.text) h+='<div data-dc-words="1" style="white-space:pre-wrap;font-family:\'Fraunces\',serif;font-size:26px;line-height:1.5;color:#fff;margin-top:12px">'+dcEsc(w.text)+'</div>';
+  if(w.parts){ h+='<div style="margin-top:10px">'; DC_LEVELS.forEach(l=>{ if(!w.parts[l]) return; const kids=dcKidsAt(l,g.present); h+='<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:5px 0"><span style="font-size:13px;font-weight:800;color:#a5b4fc;text-transform:uppercase;letter-spacing:.6px;min-width:64px">'+DC_LEVEL_LABEL[l]+'</span><span style="font-size:18px;color:#fde68a;font-weight:700">'+dcEsc(w.parts[l])+'</span>'+(kids.length?'<span style="font-size:13px;color:#cbd5e1">'+dcEsc(kids.map(dcName).join(" \u00B7 "))+'</span>':'')+'</div>'; }); h+='</div>'; }
+  return dcSection("\u{1F4DC} Words on the screen",h);
+}
+function dcReadHTML(g){
+  const r=g.day&&g.day.read; if(!r||!r.mode) return "";
+  let h='';
+  if(r.mode==="listen"){ const url=r.url||""; const audio=/\.(mp3|m4a|aac|wav|ogg)(\?|$)/i.test(url)||/firebasestorage/i.test(url);
+    h+='<div style="font-size:20px;font-weight:800;color:#fff">\u{1F3A7} Listen'+(r.what?' \u2014 '+dcEsc(r.what):'')+'</div>';
+    if(url&&audio) h+='<audio controls preload="none" src="'+dcEsc(url)+'" style="width:100%;max-width:560px;margin-top:8px"></audio>';
+    else if(url) h+='<div style="margin-top:8px">'+dcLinkBtn({url:url,label:r.what||"Listen"})+'</div>';
+    else h+='<div style="font-size:14px;color:#94a3b8;margin-top:6px">No recording on this day yet \u2014 Mom can upload one on the unit\u2019s Days table.</div>'; }
+  else if(r.mode==="mom") h+='<div style="font-size:20px;font-weight:800;color:#fff">\u{1F4D6} Mom reads'+(r.what?' \u2014 '+dcEsc(r.what):'')+'</div>'+(r.url?'<div style="margin-top:8px">'+dcLinkBtn({url:r.url,label:r.what||"Open"})+'</div>':'');
+  else h+='<div style="font-size:20px;font-weight:800;color:#fff">\u{1F5E3} Recite'+(r.what?' \u2014 '+dcEsc(r.what):'')+'</div>';
+  return dcSection("\u{1F4D6} Read",h);
+}
+function dcCardsHTML(g){
+  const d=g.day; if(!d||!d.cards||!d.cards.length) return ""; let h='<div style="display:flex;gap:12px;flex-wrap:wrap">';
+  d.cards.forEach(c=>{ (c.names||[]).forEach(nm=>{ const v=dcVisual(g.u,c.deck,nm);
+    h+='<div style="display:flex;flex-direction:column;align-items:center;gap:6px;width:120px">'+(v&&v.img?'<img src="'+dcEsc(v.img)+'" alt="" style="width:120px;height:120px;object-fit:cover;border-radius:16px;border:2px solid rgba(255,255,255,.2)">':'<div class="memoji" style="width:120px;height:120px;border-radius:16px;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:56px">'+((v&&v.emoji)||(g.u&&g.u.emoji)||"\u{1F0CF}")+'</div>')+'<div style="font-size:16px;font-weight:800;color:#fff;text-align:center;line-height:1.2">'+dcEsc(nm)+'</div></div>'; }); });
+  return dcSection("\u{1F0CF} Cards this day opens",h+'</div>');
+}
+function dcDayHTML(g){
+  const d=g.day, u=g.u; let h='';
+  const f=dcFeature(g);
+  if(f) h+='<figure style="margin:18px 0 0"><img src="'+dcEsc(f.img)+'" alt="" style="width:100%;max-height:52vh;object-fit:cover;border-radius:20px;display:block">'+(f.caption?'<figcaption style="font-size:17px;color:#cbd5e1;margin-top:8px">'+dcEsc(f.caption)+(f.credit?' <span style="font-size:12px;color:#64748b">\u00B7 '+dcEsc(f.credit)+'</span>':'')+'</figcaption>':'')+'</figure>';
+  const books=(d.res&&d.res.books)||[]; if(books.length) h+=dcSection("\u{1F4DA} The book",books.map(b=>'<div style="font-size:24px;font-weight:800;color:#fff">'+dcEsc(b.title)+(b.by?' <span style="font-size:16px;font-weight:600;color:#cbd5e1">by '+dcEsc(b.by)+'</span>':'')+'</div>').join(""));
+  const links=dcLinks(g); if(links.length) h+=dcSection("\u25B6 Watch \u00B7 open",'<div style="display:flex;gap:10px;flex-wrap:wrap">'+links.map(dcLinkBtn).join("")+'</div>');
+  const act=dcActivity(g); if(act) h+=dcSection("\u{1F3A8} Today\u2019s activity",'<div style="font-size:24px;font-weight:800;color:#fff">'+dcEsc((act.emoji||"\u{1F3A8}")+" "+act.title)+(act.points?' <span style="font-size:15px;color:#fde68a">\u00B7 '+act.points+' \u2B50</span>':'')+'</div>'+(act.desc?'<div style="font-size:17px;color:#e2e8f0;margin-top:4px">'+dcEsc(act.desc)+'</div>':''));
+  h+=dcCardsHTML(g); h+=dcRungsHTML(g); h+=dcWordsHTML(g); h+=dcReadHTML(g);
+  if(d.note) h+=dcSection("\u{1F4DD} Note",'<div style="font-size:17px;line-height:1.5;color:#e2e8f0;background:rgba(255,255,255,.06);border-radius:14px;padding:12px 16px">'+dcEsc(d.note)+'</div>');
+  return h;
+}
+function dcPlainHTML(g){
+  const links=dcLinks(g); let h='';
+  if(g.label) h+='<div style="font-size:26px;font-weight:700;color:#fde68a;margin-top:16px">\u{1F4DA} '+dcEsc(g.label)+'</div>';
+  if(links.length) h+=dcSection("\u25B6 Watch \u00B7 open",'<div style="display:flex;gap:10px;flex-wrap:wrap">'+links.map(dcLinkBtn).join("")+'</div>');
+  if(!g.label&&!links.length) h+='<div style="font-size:18px;color:#94a3b8;margin-top:16px">Just the time together \u2014 nothing else on this card.</div>';
+  return h;
+}
+function dcCloseBarHTML(g){
+  const mom=dcMom()||(typeof famPresLeads==="function"&&g.first&&famPresLeads(g.first));
+  let h='<div data-dc-close="1" style="position:sticky;bottom:0;margin-top:28px;padding:16px 0 20px;background:linear-gradient(180deg,rgba(15,23,42,0),#0f172a 40%)">';
+  if(g.done) h+='<div style="font-family:\'Fraunces\',serif;font-size:30px;font-weight:700;color:#fff">You anchored the day.</div><button onclick="dcClose()" style="margin-top:12px;padding:14px 26px;border-radius:16px;border:none;background:#4ade80;color:#052e16;font-size:20px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Now off you go \u2192</button>';
+  else if(mom) h+='<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><button onclick="dcCheck()" style="padding:16px 28px;border-radius:16px;border:none;background:#16a34a;color:#fff;font-size:22px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u2713 Done \u2014 everyone</button><span style="font-size:14px;color:#94a3b8">'+dcEsc((g.present||[]).map(dcName).join(", "))+'</span></div>';
+  else h+='<div style="font-size:18px;font-weight:700;color:#cbd5e1">\u{1F469} Mom checks this off for everyone</div>';
+  return h+'</div>';
+}
+function dcPageHTML(){
+  const groups=dcTodayGroups(); const S=dcState||{};
+  let g=groups.find(x=>x.bid===S.bid&&x.key===S.key)||groups[0]||null;
+  let h='<div data-dc-board="1" class="dc-board" style="min-height:100vh;background:#0f172a;color:#fff;font-family:\'DM Sans\',sans-serif;padding:18px clamp(16px,4vw,64px) 24px;box-sizing:border-box">';
+  h+='<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><button onclick="dcClose()" style="border:none;background:rgba(255,255,255,.1);color:#fff;font-size:15px;font-weight:800;cursor:pointer;padding:8px 14px;border-radius:12px;font-family:\'DM Sans\',sans-serif">\u2190 Back</button>';
+  if(groups.length>1) h+='<div style="display:flex;gap:8px;flex-wrap:wrap">'+groups.map(x=>'<button onclick="dcPick(\''+dcJ(x.bid)+'\',\''+dcJ(x.key)+'\')" style="padding:8px 14px;border-radius:999px;border:2px solid '+((g&&x===g)?'#a5b4fc':'rgba(255,255,255,.2)')+';background:'+((g&&x===g)?'#312e81':'transparent')+';color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(x.done?'\u2713 ':'')+dcEsc(x.it.name||"Family time")+'</button>').join("")+'</div>';
+  h+='<span style="margin-left:auto;font-size:15px;color:#94a3b8">'+dcEsc((typeof _todayStr==="function")?_todayStr():"")+'</span></div>';
+  if(!g){ h+='<div style="font-family:\'Fraunces\',serif;font-size:32px;margin-top:40px">No family time on today\u2019s schedule.</div></div>'; return h; }
+  const d=g.day;
+  h+='<div style="margin-top:22px;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:#a5b4fc">'+dcEsc(g.b.name||"Family time")+' \u00B7 '+dcEsc(g.it.name||"")+(d?' \u00B7 '+dcEsc(d.n?"Day "+d.n:(d.wk?"Wk "+d.wk+(d.role?" \u00B7 "+d.role:""):"")):'')+'</div>';
+  h+='<h1 style="font-family:\'Fraunces\',serif;font-size:clamp(30px,5vw,54px);line-height:1.1;margin:8px 0 0;color:#fff">'+(g.u?'<span class="memoji">'+dcEsc(g.u.emoji||"")+'</span> ':'')+dcEsc(d?(d.t||g.label||g.it.name):(g.it.name||"Family time"))+'</h1>';
+  h+=d?dcDayHTML(g):dcPlainHTML(g);
+  h+=dcCloseBarHTML(g);
+  return h+'</div>';
+}
+// ── the doors ──
+function dcRunsToday(){ try{ return dcTodayGroups().length>0; }catch(e){ return false; } }
+// each kid's family card (famRowHTML's hook): "Open today's card" — today's card, not yet done
+function dcCardBtnHTML(t,done){
+  if(done||!t||!t.famBlock) return ""; try{ if(((typeof effectiveDay==="function")?effectiveDay(t):t.day)!==_todayDay) return ""; }catch(e){ return ""; }
+  return '<button onclick="event.stopPropagation();dcOpen(\''+dcJ(t.famBlock)+'\',\''+dcJ(t.id)+'\')" style="margin-top:6px;margin-left:6px;padding:6px 12px;border-radius:10px;border:1.5px solid #c4b5fd;background:#faf5ff;color:#5b21b6;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F4FA} Open today\u2019s card</button>';
+}
+// Kids' Corner's picker: a 🏡 tile when a family block runs today
+function dcTileHTML(){ if(!dcRunsToday()) return ""; return '<button class="kc-tile" style="background:#ede9fe;border-color:#7c3aed;color:#5b21b6" onclick="dcOpen()"><span class="kc-tile-emoji memoji">\u{1F3E1}</span><span class="kc-tile-name">Today\u2019s card</span></button>'; }
+// Mom's Day 🔴 Now: one row per block running today that is not done yet → {n, html}
+function dcNowHTML(){
+  let groups=[]; try{ groups=dcTodayGroups(); }catch(e){ groups=[]; } const seen={}; const rows=[];
+  groups.forEach(g=>{ if(g.done||seen[g.bid]) return; seen[g.bid]=1; rows.push(g); });
+  if(!rows.length) return {n:0,html:""};
+  return {n:rows.length,html:rows.map(g=>'<div style="display:flex;align-items:center;gap:6px;padding:7px 10px;background:#faf5ff;border-left:3px solid #7c3aed;border-radius:8px;margin-bottom:6px;flex-wrap:wrap"><span style="flex:1;min-width:180px;font-size:13px">\u{1F3E1} <b>'+dcEsc(g.b.name||"Family time")+'</b>'+(g.day?' <span style="color:#5b21b6;font-weight:700">'+dcEsc(g.day.t||"")+'</span>':'')+'</span><button onclick="dcOpen(\''+dcJ(g.bid)+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#7c3aed;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{1F4FA} Today\u2019s card</button></div>').join("")};
+}
+// DAYCARD_END
 // UNITSTAB_START — 📚 All units · 🧒 one tab per kid · 🏡 Family ("One shape" §4 the Units page; BRIEF_units_build_2026-10-27.md
 //   T3; her go 2026-10-27). A VIEW over data that already exists plus the unit tracks: the only writes are the buttons that write
 //   today (enroll, the notebook switch, a stage move-up, the staged + Kid form) and the two buttons other steps add (✚ Build,
@@ -38992,6 +39193,7 @@ function renderKidsCorner(el){
       h+='<button class="kc-tile" style="background:'+_kcTint(KID_COLOR[k],0.82)+';border-color:'+(KID_COLOR[k]||"#94a3b8")+';color:'+(KID_COLOR[k]||"#0f172a")+'" onclick="kcPick(\''+k+'\')">'
         +'<span class="kc-tile-emoji">'+kcEmoji(k)+'</span><span class="kc-tile-name">'+esc(KID_NAME[k]||cap(k))+'</span></button>';
     });
+    if(typeof dcTileHTML==="function") h+=dcTileHTML();   // 📺 DAYCARD: 🏡 Today's card when a family block runs today
     h+='</div>';
   } else {
     const k=kcKid, col=KID_COLOR[k]||"#2B7A78", name=KID_NAME[k]||cap(k);
