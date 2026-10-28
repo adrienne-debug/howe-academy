@@ -35932,9 +35932,10 @@ function frCardParts(t,readOnly,done){
 function frBuildFamily(w0,w1,today){
   const defs=famDefs(), byId={}, order=[];
   const dates=((typeof famGridDates==="function")?famGridDates():[]).map(function(r){ return r.date; });
-  const add=function(kind,sk,L,w,name,detail,byISO,url){
+  const add=function(kind,sk,L,w,name,detail,byISO,url,craft){
     name=lrStr(name,120); if(!name) return; const id=lrItemId(FR_KID,sk,kind,name);
     let it=byId[id]; if(!it){ it=byId[id]={id:id,kid:FR_KID,sk:sk,kind:kind,name:name,detail:detail||"",url:url||"",byISO:byISO||"",weeks:[],lessons:[]}; order.push(id); }
+    if(craft) it.craft=true;   // CRAFT (B3)
     if(it.weeks.indexOf(w)<0) it.weeks.push(w);
     if(byISO&&(!it.byISO||byISO<it.byISO)) it.byISO=byISO;
     if(!it.url&&url) it.url=url; if(!it.detail&&detail) it.detail=detail;
@@ -35951,7 +35952,7 @@ function frBuildFamily(w0,w1,today){
           const c=famCellState(b,it,d); if(!c||!c.runs||!c.kids||!c.kids.length) return;
           const lbl=map?String((map.byDate||{})[d]||""):"";
           const r=frRecFor(sk,frLessonKeys(it,lbl),(typeof utDayForFam==="function")?utDayForFam(id,it,d,lbl):null), L={text:lbl||String(it.name||"Family time"),date:d};   // UNITTRACK
-          r.supplies.forEach(function(s){ add("supplies",sk,L,pair[1],s.name,s.qty||"",null,null); });
+          r.supplies.forEach(function(s){ add("supplies",sk,L,pair[1],s.name,s.qty||"",null,null,s.craft); });   // CRAFT (B3)
           r.books.forEach(function(x){ add("books",sk,L,pair[1],x.title,x.by?"by "+x.by:"",x.checkoutBy||null,null); });
           r.orders.forEach(function(o){ add("orders",sk,L,pair[1],o.name,"",o.orderBy||null,o.url||null); });
         });
@@ -36432,9 +36433,10 @@ function lrBuildList(opts){
   const _laySig=(typeof lrLaySig==="function")?lrLaySig():null;   // LRCACHE: one fingerprint per build
   roster.forEach(kid=>{
     const byId={}, order=[];
-    const add=(kind,L,w,name,detail,byISO,url)=>{
+    const add=(kind,L,w,name,detail,byISO,url,craft)=>{
       name=lrStr(name,120); if(!name) return; const id=lrItemId(kid,L.sk,kind,name);
       let it=byId[id]; if(!it){ it=byId[id]={id:id,kid:kid,sk:L.sk,kind:kind,name:name,detail:detail||"",url:url||"",byISO:byISO||"",weeks:[],lessons:[]}; order.push(id); }
+      if(craft) it.craft=true;   // CRAFT (B3): "✂️ for the craft"
       if(it.weeks.indexOf(w)<0) it.weeks.push(w);
       if(byISO&&(!it.byISO||byISO<it.byISO)) it.byISO=byISO;
       if(!it.url&&url) it.url=url; if(!it.detail&&detail) it.detail=detail;
@@ -36443,7 +36445,7 @@ function lrBuildList(opts){
     [[lrLaidLessonsCached(kid,w0.from,w0.to,_laySig),0],[lrLaidLessonsCached(kid,w1.from,w1.to,_laySig),1]].forEach(pair=>{   // LRCACHE
       pair[0].forEach(L=>{
         const r=lrFor(kid,L.sk,L.key);
-        r.supplies.forEach(s=>add("supplies",L,pair[1],s.name,s.qty||"",null,null));
+        r.supplies.forEach(s=>add("supplies",L,pair[1],s.name,s.qty||"",null,null,s.craft));   // CRAFT (B3)
         r.books.forEach(b=>add("books",L,pair[1],b.title,b.by?"by "+b.by:"",b.checkoutBy||null,null));
         r.orders.forEach(o=>add("orders",L,pair[1],o.name,"",o.orderBy||null,o.url||null));
       });
@@ -36543,7 +36545,7 @@ function lrItemRowHTML(it,ticks0,ticks1){
   const allOn=it.weeks.every(w=>lrTicked(it.id,w,ticks0,ticks1));
   let h='<div class="sup-item'+(allOn?' done':'')+'" style="cursor:default">';
   h+='<div style="display:flex;gap:8px">'+[0,1].filter(w=>it.weeks.indexOf(w)>=0).map(w=>lrTickBox(it,w,ticks0,ticks1)).join("")+'</div>';
-  h+='<div style="flex:1"><div class="sup-name">'+lrEsc(it.name)+(it.detail?' <span style="font-weight:400;color:var(--muted)">'+lrEsc(it.detail)+'</span>':'')
+  h+='<div style="flex:1"><div class="sup-name">'+lrEsc(it.name)+((typeof crRowTagHTML==="function")?crRowTagHTML(it):'')+(it.detail?' <span style="font-weight:400;color:var(--muted)">'+lrEsc(it.detail)+'</span>':'')
     +(it.by?' <span style="font-size:11px;font-weight:800;color:'+(/^was/.test(it.by)?'#b91c1c':'#0e7490')+'">'+lrEsc(it.by)+'</span>':'')
     +(it.url?' <a href="'+lrEsc(it.url)+'" target="_blank" rel="noopener noreferrer" style="font-size:11px;font-weight:700;color:#1d4ed8">open →</a>':'')+'</div>';
   h+='<div class="sup-detail">'+lrEsc(lrSubjName(it.kid,it.sk))+' — '+it.lessons.map(l=>lrEsc(l.text)+' <span style="font-size:10px">('+LR_DOW[new Date(l.date+"T12:00:00").getDay()]+' '+lrMD(l.date)+')</span>').join(" · ")+'</div></div></div>';
@@ -36959,7 +36961,7 @@ function lrpBuilderHTML(kid,sk){
 const UT_LEVELS=["little","early","middle","upper"];
 const UT_LEVEL_LABEL={little:"Little (Pre-K–K)",early:"Early (1–2)",middle:"Middle (3–5)",upper:"Upper (6+)"};
 const UT_READ_MODES=["listen","mom","recite"];
-const UT_EDIT_PARTS=["t","res","cards","rungs","words","read","note","off"];   // what utWrite may set on a day (place, craft, nb: later PRs)
+const UT_EDIT_PARTS=["t","res","cards","rungs","words","read","craft","note","off"];   // CRAFT (B3): craft is edited on the day too   // what utWrite may set on a day (place, craft, nb: later PRs)
 const UT_TRACK_FIELDS=["mode","perWeek","rungLog","roles"];
 const UT_EMPTY_LINE="Give this unit days and it can go on the schedule.";
 function utMom(){ return (typeof momHere==="function")?momHere():false; }
@@ -37023,7 +37025,9 @@ function utDays(u){
 function utDaysOn(u){ return utDays(u).filter(d=>!d.off); }
 function utDay(u,id){ if(id==null) return null; return utDays(u).find(d=>d.id===String(id))||null; }
 function utDayN(u,n){ n=utInt(n); if(!n) return null; return utDays(u).find(d=>d.n===n)||null; }
-function utRef(uid,day){ return day?Object.assign({uid:uid},day):null; }
+function utRef(uid,day){ if(!day) return null; const r=Object.assign({uid:uid},day);
+  if(typeof crOfTrack==="function"){ try{ const u=utUnits()[uid]; const c=crOfTrack(u); const first=utDaysOn(u)[0]; if(c&&first&&first.id===day.id) r._unitCraft=c; }catch(e){} }   // CRAFT (B3): the unit's one project lists with its first day
+  return r; }
 function utHasDays(u){ return utDays(u).length>0; }
 // ── the pointers ──
 // The in-order track line a card's label names (the first part of a make-up label, the sitting count stripped).
@@ -37091,7 +37095,7 @@ function utResOf(days){
   (days||[]).forEach(d=>{ if(!d) return; const r=d.res||{};
     ["links","supplies","books","orders"].forEach(p=>(r[p]||[]).forEach(x=>push(p,x)));
     if(r.notes&&out.notes.indexOf(r.notes)<0) out.notes=out.notes?out.notes+"\n"+r.notes:r.notes;
-    ((d.craft&&d.craft.supplies)||[]).forEach(s=>push("supplies",Object.assign({},s,{craft:true}))); });
+    ((d.craft&&d.craft.supplies)||[]).concat((d._unitCraft&&d._unitCraft.supplies)||[]).forEach(s=>push("supplies",Object.assign({},s,{craft:true}))); });   // CRAFT (B3): the unit-level craft too
   return out;
 }
 // ── the writes (Mom-only, one targeted set each, dry-run inert) ──
@@ -37198,6 +37202,7 @@ function utEditorHTML(u,d){
   h+=lab("\u{1F4DC} Words on the screen")+'<div style="display:flex;gap:6px;flex-wrap:wrap"><input id="ut-e-wtitle" type="text" value="'+utEsc((d.words||{}).title||"")+'" placeholder="Title" style="'+inp+';flex:1 1 140px;width:auto"><input id="ut-e-wby" type="text" value="'+utEsc((d.words||{}).by||"")+'" placeholder="By" style="'+inp+';flex:1 1 140px;width:auto"></div>'+ta("ut-e-wtext",(d.words||{}).text||"","The full text, as it shows on the screen",3);
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+UT_LEVELS.map(l=>'<input id="ut-e-wpart-'+l+'" type="text" value="'+utEsc(((d.words||{}).parts||{})[l]||"")+'" placeholder="'+UT_LEVEL_LABEL[l]+' learns\u2026" style="'+inp+';flex:1 1 140px;width:auto">').join("")+'</div>';
   h+=lab("\u{1F3A7} Read strand")+'<div style="display:flex;gap:6px;flex-wrap:wrap"><select id="ut-e-rmode" style="'+inp+';flex:0 0 130px;width:auto"><option value="">(none)</option>'+UT_READ_MODES.map(m=>'<option value="'+m+'"'+((d.read||{}).mode===m?' selected':'')+'>'+({listen:"\u{1F3A7} Listen",mom:"\u{1F4D6} Mom reads",recite:"\u{1F5E3} Recite"}[m])+'</option>').join("")+'</select><input id="ut-e-rwhat" type="text" value="'+utEsc((d.read||{}).what||"")+'" placeholder="What (chapter, poem\u2026)" style="'+inp+';flex:1 1 160px;width:auto"><input id="ut-e-rurl" type="url" value="'+utEsc((d.read||{}).url||"")+'" placeholder="https:// link (optional)" style="'+inp+';flex:1 1 160px;width:auto"></div>';
+  h+=((typeof crDayEditorHTML==="function")?crDayEditorHTML(u,d):"");   // CRAFT (B3): ✂️ the craft on this day
   h+=((typeof uaUploadHTML==="function")?uaUploadHTML(u,d):"");   // UNITAUDIO (A1): ⬆ Upload recording, under the read strand
   h+=lab("\u{1F4DD} Note under the card")+ta("ut-e-note",d.note||"","The honest note \u2014 what to say, what to skip",2);
   h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px"><button onclick="utEditSave('+a+')" style="padding:7px 16px;border-radius:10px;border:none;background:#c2410c;color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save this day</button>';
@@ -37239,6 +37244,7 @@ function utDaysSectionHTML(u,isMom){
     h+='<span style="margin-left:6px">Rungs:</span>'+pill(utRungLog(u)==="none","Not tracked","utTrackSet(\''+utJ(u.id)+'\',\'rungLog\',\'none\')")+pill(utRungLog(u)==="kid","Graded per kid","utTrackSet(\''+utJ(u.id)+'\',\'rungLog\',\'kid\')");
     h+='</div>';
   }
+  if(typeof crUnitSectionHTML==="function") h+=crUnitSectionHTML(u,isMom);   // CRAFT (B3): the unit's one project
   if(days.length){
     h+='<div style="border:1px solid #eef0f3;border-radius:10px;margin-top:10px;overflow:hidden">';
     h+='<div class="ut-hd" style="gap:4px 8px;padding:5px 8px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);background:#f8fafc"><div style="flex:1 1 150px;min-width:0">Day</div>'+["\u{1F517} Links","\u{1F4DA} Books","\u{1F392} Supplies","\u{1F0CF} Cards","\u2702\uFE0F Craft"].map(c=>'<div style="flex:1 1 100px;min-width:0">'+c+'</div>').join("")+'</div>';
@@ -37680,7 +37686,7 @@ function dcDayHTML(g){
   const books=(d.res&&d.res.books)||[]; if(books.length) h+=dcSection("\u{1F4DA} The book",books.map(b=>'<div style="font-size:24px;font-weight:800;color:#fff">'+dcEsc(b.title)+(b.by?' <span style="font-size:16px;font-weight:600;color:#cbd5e1">by '+dcEsc(b.by)+'</span>':'')+'</div>').join(""));
   const links=dcLinks(g); if(links.length) h+=dcSection("\u25B6 Watch \u00B7 open",'<div style="display:flex;gap:10px;flex-wrap:wrap">'+links.map(dcLinkBtn).join("")+'</div>');
   const act=dcActivity(g); if(act) h+=dcSection("\u{1F3A8} Today\u2019s activity",'<div style="font-size:24px;font-weight:800;color:#fff">'+dcEsc((act.emoji||"\u{1F3A8}")+" "+act.title)+(act.points?' <span style="font-size:15px;color:#fde68a">\u00B7 '+act.points+' \u2B50</span>':'')+'</div>'+(act.desc?'<div style="font-size:17px;color:#e2e8f0;margin-top:4px">'+dcEsc(act.desc)+'</div>':''));
-  h+=dcCardsHTML(g); h+=dcRungsHTML(g); h+=dcWordsHTML(g); h+=dcReadHTML(g);
+  h+=dcCardsHTML(g); if(typeof crCardHTML==="function") h+=crCardHTML(g); h+=dcRungsHTML(g); h+=dcWordsHTML(g); h+=dcReadHTML(g);   // CRAFT (B3): the steps, big
   if(d.note) h+=dcSection("\u{1F4DD} Note",'<div style="font-size:17px;line-height:1.5;color:#e2e8f0;background:rgba(255,255,255,.06);border-radius:14px;padding:12px 16px">'+dcEsc(d.note)+'</div>');
   return h;
 }
@@ -37731,6 +37737,112 @@ function dcNowHTML(){
   return {n:rows.length,html:rows.map(g=>'<div style="display:flex;align-items:center;gap:6px;padding:7px 10px;background:#faf5ff;border-left:3px solid #7c3aed;border-radius:8px;margin-bottom:6px;flex-wrap:wrap"><span style="flex:1;min-width:180px;font-size:13px">\u{1F3E1} <b>'+dcEsc(g.b.name||"Family time")+'</b>'+(g.day?' <span style="color:#5b21b6;font-weight:700">'+dcEsc(g.day.t||"")+'</span>':'')+'</span><button onclick="dcOpen(\''+dcJ(g.bid)+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#7c3aed;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{1F4FA} Today\u2019s card</button></div>').join("")};
 }
 // DAYCARD_END
+// CRAFT_START — ✂️ a craft on a unit day ("One shape" §5 craft:{title, steps:[{text,img}], supplies:[{name,qty}]}; BRIEF_units_build_2026-10-27.md
+//   B3; her ask 2026-10-24: "a craft section for instructions and supplies"). Read with UNITTRACK (utWrite, the Days table), UNITBUILD
+//   (the Builder's day boxes), DAYCARD, LESSONRES (the Sunday list) and the pictures path to Storage (picStore).
+//   · THE DAYS TABLE: a day's editor gets ✂️ Craft — title, steps one per line (📷 a photo per step, shrunk and stored by URL through
+//     picStore, never a data URI in the record), supplies one per line (qty name) — saved as ONE part through utWrite(id, dayId,
+//     "craft", …) (dry-run inert). A unit with one project can carry the craft on the unit as a whole: unitStudies/<id>/track/craft,
+//     edited on the Days section, ONE set of that path (crTrackWrite).
+//   · THE BUILDER (UNITBUILD): each day gets a fifth box, ✂️ Craft (title · steps · supplies), written into the record's day as
+//     craft — the same shape; the Builder's one transaction carries it.
+//   · THE SUNDAY LIST: a craft's supplies join the day's supplies through UNITTRACK's layer (utResOf tags them craft:true) the week
+//     the day is laid, with the kids flag on; lrBuildList and frBuildFamily carry the tag to the row, which reads "✂️ for the craft".
+//     A unit-level craft's supplies list with the unit's FIRST laid day (utDaysForKey / utDayForFam hand the track's craft to day 1).
+//   · THE DAY CARD (DAYCARD): the steps as a numbered list with their photos, big type; the supplies under them.
+//   · Mom-only edits, one targeted write per part, dry-run inert. No kid's name in code.
+let crPic={};   // {<uid>|<dayId>|<stepIndex>: "Saving photo…"} while a step's photo uploads
+function crMom(){ return (typeof momHere==="function")?momHere():false; }
+function crEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function crJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+function crStr(v,n){ return String(v==null?"":v).trim().slice(0,n||120); }
+function crLive(){ return !!(typeof db!=="undefined"&&db)&&!((typeof _dryRun==="function")&&_dryRun()); }
+function crRe(){ if(typeof renderAll==="function") renderAll(); }
+// the unit-level craft (unitStudies/<id>/track/craft), cleaned the day's way
+function crOfTrack(u){ const t=(typeof utTrack==="function")?utTrack(u):null; if(!t||!t.craft) return null; const c=(typeof utClean==="function")?utClean({id:"x",craft:t.craft}):null; return (c&&c.craft)?c.craft:null; }
+// lines → steps / supplies (the editor's boxes)
+function crParseSteps(text){ return String(text||"").split(/\n+/).map(s=>s.trim()).filter(Boolean).map(s=>({text:crStr(s,600)})); }
+function crParseSupplies(text){ return String(text||"").split(/\n+/).map(s=>s.trim()).filter(Boolean).map(l=>{ const m=/^(\d+[a-z]*)\s+(.+)$/i.exec(l); return m?{qty:m[1],name:crStr(m[2],80)}:{name:crStr(l,80)}; }); }
+function crLinesSteps(c){ return ((c&&c.steps)||[]).map(s=>s.text||"").join("\n"); }
+function crLinesSupplies(c){ return ((c&&c.supplies)||[]).map(s=>(s.qty?s.qty+" ":"")+s.name).join("\n"); }
+// the craft the editor's boxes describe, keeping each step's photo by position
+function crFromBoxes(prefix,cur){
+  const g=id=>{ const el=(typeof document!=="undefined"&&document.getElementById)?document.getElementById(id):null; return el?String(el.value||""):""; };
+  const title=crStr(g(prefix+"-title"),120), steps=crParseSteps(g(prefix+"-steps")), supplies=crParseSupplies(g(prefix+"-supplies"));
+  ((cur&&cur.steps)||[]).forEach((s,i)=>{ if(s&&s.img&&steps[i]) steps[i].img=s.img; });
+  const out={}; if(title) out.title=title; if(steps.length) out.steps=steps; if(supplies.length) out.supplies=supplies;
+  return Object.keys(out).length?out:null;
+}
+// ── the writes: ONE part each ──
+function crDaySave(uid,dayId){
+  if(!crMom()) return false; const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[uid]; const d=(typeof utDay==="function")?utDay(u,dayId):null; if(!d) return false;
+  return utWrite(uid,dayId,"craft",crFromBoxes("cr-"+crKey(uid,dayId),d.craft||null));
+}
+function crTrackWrite(uid,value){
+  if(!crMom()||!uid) return false; const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[uid]; const t=(typeof utTrack==="function")?utTrack(u):null; if(!t) return false;
+  const c=value?((typeof utClean==="function")?utClean({id:"x",craft:value}):{craft:value}).craft||null:null;
+  if(c) t.craft=c; else delete t.craft; if(typeof utTouched==="function") utTouched(u);
+  if(crLive()) db.ref("unitStudies/"+uid+"/track/craft").set(c);
+  crRe(); return true;
+}
+function crTrackSave(uid){ const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[uid]; return crTrackWrite(uid,crFromBoxes("cr-"+crKey(uid,"unit"),crOfTrack(u))); }
+function crKey(uid,dayId){ return String(uid).replace(/[^a-zA-Z0-9_-]/g,"_")+"-"+String(dayId).replace(/[^a-zA-Z0-9_-]/g,"_"); }
+// a step's photo: shrunk, stored by URL (picStore), then the craft part written once with the url on that step
+async function crStepPhoto(uid,dayId,i,input){
+  const file=input&&input.files&&input.files[0]; if(input) input.value=""; if(!crMom()||!file) return false;
+  if(typeof mastCompressImg!=="function"||typeof picStore!=="function"){ crPic[crKey(uid,dayId)+"|"+i]="The photo tool isn\u2019t ready."; crRe(); return false; }
+  const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[uid]; const unitLevel=dayId==="unit"; const cur=unitLevel?crOfTrack(u):(((typeof utDay==="function")?utDay(u,dayId):null)||{}).craft; if(!cur||!cur.steps||!cur.steps[i]) return false;
+  crPic[crKey(uid,dayId)+"|"+i]="Saving photo\u2026"; crRe();
+  try{
+    const dataUrl=await mastCompressImg(file,900,0.82); const url=await picStore(dataUrl,["units",uid,"craft",dayId,String(i)]);
+    if(!/^https?:\/\//i.test(String(url||""))) throw new Error("no link came back");
+    const next=JSON.parse(JSON.stringify(cur)); next.steps[i].img=url;
+    if(unitLevel) crTrackWrite(uid,next); else utWrite(uid,dayId,"craft",next);
+    delete crPic[crKey(uid,dayId)+"|"+i];
+  }catch(e){ crPic[crKey(uid,dayId)+"|"+i]="Photo failed: "+(e&&e.message||e); }
+  crRe(); return true;
+}
+function crStepPhotoClear(uid,dayId,i){
+  if(!crMom()) return false; const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[uid]; const unitLevel=dayId==="unit"; const cur=unitLevel?crOfTrack(u):(((typeof utDay==="function")?utDay(u,dayId):null)||{}).craft; if(!cur||!cur.steps||!cur.steps[i]) return false;
+  const next=JSON.parse(JSON.stringify(cur)); delete next.steps[i].img;
+  return unitLevel?crTrackWrite(uid,next):utWrite(uid,dayId,"craft",next);
+}
+// ── the editor (UNITTRACK's day editor hook, and the Days section for the unit-level craft) ──
+function crEditorHTML(uid,dayId,c,label){
+  const k=crKey(uid,dayId), a="'"+crJ(uid)+"','"+crJ(dayId)+"'", inp='width:100%;box-sizing:border-box;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif;background:#fff';
+  let h='<div data-cr-editor="'+crEsc(k)+'" style="margin-top:8px;padding:8px 10px;border:1px dashed #f9a8d4;border-radius:10px;background:#fff">';
+  h+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:#be185d;margin-bottom:4px">\u2702\uFE0F '+(label||"Craft")+'</div>';
+  h+='<input id="cr-'+k+'-title" type="text" value="'+crEsc((c&&c.title)||"")+'" placeholder="What they make" style="'+inp+'">';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><div style="flex:2 1 220px;min-width:0"><div style="font-size:10px;font-weight:800;color:var(--muted)">Steps \u2014 one per line</div><textarea id="cr-'+k+'-steps" rows="3" placeholder="Trace your hand on the paper\nCut it out\nColor the feathers" style="'+inp+';resize:vertical">'+crEsc(crLinesSteps(c))+'</textarea></div>';
+  h+='<div style="flex:1 1 160px;min-width:0"><div style="font-size:10px;font-weight:800;color:var(--muted)">Supplies \u2014 qty name</div><textarea id="cr-'+k+'-supplies" rows="3" placeholder="2 construction paper\nglue\nscissors" style="'+inp+';resize:vertical">'+crEsc(crLinesSupplies(c))+'</textarea></div></div>';
+  const steps=(c&&c.steps)||[];
+  if(steps.length){ h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;font-size:11px">'; steps.forEach((s,i)=>{ const st=crPic[k+"|"+i];
+    h+='<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border-radius:8px;background:#fdf2f8;color:#9d174d;font-weight:700">'+(i+1)+'. '+(s.img?'<img src="'+crEsc(s.img)+'" alt="" style="width:28px;height:28px;object-fit:cover;border-radius:6px">':'')+(st?'<span style="color:var(--muted)">'+crEsc(st)+'</span>':'')
+      +(s.img?'<button onclick="crStepPhotoClear('+a+','+i+')" title="Take the photo off" style="border:none;background:none;color:#9ca3af;cursor:pointer;padding:0 2px">\u2715</button>':'<label style="cursor:pointer;color:#be185d">\u{1F4F7}<input type="file" accept="image/*" onchange="crStepPhoto('+a+','+i+',this)" style="display:none"></label>')+'</span>'; }); h+='</div>'; }
+  h+='<div style="display:flex;gap:8px;align-items:center;margin-top:8px"><button onclick="'+(dayId==="unit"?'crTrackSave(\''+crJ(uid)+'\')':'crDaySave('+a+')')+'" style="padding:6px 14px;border-radius:10px;border:none;background:#be185d;color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save the craft</button><span style="font-size:10.5px;color:var(--muted)">Its supplies join the Sunday list the week the day is laid, as \u2702\uFE0F for the craft. A photo per step after the first save.</span></div></div>';
+  return h;
+}
+function crDayEditorHTML(u,d){ if(!crMom()||!u||!d) return ""; return crEditorHTML(u.id,d.id,d.craft||null,"Craft on this day"); }
+// the Days section (UNITTRACK's hook): the unit's one project, for a unit that has one
+let crUnitOpen={};
+function crUnitToggle(uid){ crUnitOpen[uid]=!crUnitOpen[uid]; crRe(); }
+function crUnitSectionHTML(u,isMom){
+  if(!isMom||!u||!(typeof utTrack==="function"&&utTrack(u))) return ""; const c=crOfTrack(u);
+  let h='<div data-cr-unit="1" style="margin-top:10px"><button onclick="crUnitToggle(\''+crJ(u.id)+'\')" style="padding:5px 11px;border-radius:999px;border:1.5px solid #f9a8d4;background:'+(crUnitOpen[u.id]?'#be185d;color:#fff':'#fdf2f8;color:#be185d')+';font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u2702\uFE0F '+(c?crEsc(c.title||"The unit\u2019s craft"):'A craft for the whole unit')+(crUnitOpen[u.id]?' \u00D7':'')+'</button>';
+  if(crUnitOpen[u.id]) h+=crEditorHTML(u.id,"unit",c,"The unit\u2019s one project \u2014 its supplies list with the first day");
+  return h+'</div>';
+}
+// ── the Sunday list row: "✂️ for the craft" (lrItemRowHTML's hook) ──
+function crRowTagHTML(it){ return (it&&it.craft)?' <span data-cr-tag="1" style="font-size:10.5px;font-weight:800;color:#be185d;background:#fdf2f8;border-radius:6px;padding:1px 6px">\u2702\uFE0F for the craft</span>':""; }
+// ── the day card (DAYCARD's hook): the steps as a numbered list with their photos, the supplies under them ──
+function crCardHTML(g){
+  const c=(g&&g.day&&g.day.craft)||(g&&g.u?crOfTrack(g.u):null); if(!c||(!(c.steps||[]).length&&!c.title)) return "";
+  let h='<div style="font-size:26px;font-weight:800;color:#fff">'+crEsc(c.title||"The craft")+'</div>';
+  if((c.steps||[]).length){ h+='<ol style="margin:10px 0 0;padding-left:28px;font-size:22px;line-height:1.45;color:#fff">'; c.steps.forEach(s=>{ h+='<li style="margin:6px 0">'+crEsc(s.text||"")+(s.img?'<div><img src="'+crEsc(s.img)+'" alt="" style="max-width:min(100%,420px);max-height:40vh;border-radius:14px;margin-top:6px;display:block"></div>':'')+'</li>'; }); h+='</ol>'; }
+  if((c.supplies||[]).length) h+='<div style="margin-top:10px;font-size:17px;color:#fde68a;font-weight:700">\u{1F392} '+crEsc(c.supplies.map(s=>(s.qty?s.qty+" ":"")+s.name).join(" \u00B7 "))+'</div>';
+  return (typeof dcSection==="function")?dcSection("\u2702\uFE0F Craft",h):'<section>'+h+'</section>';
+}
+// CRAFT_END
 // UNITSTAB_START — 📚 All units · 🧒 one tab per kid · 🏡 Family ("One shape" §4 the Units page; BRIEF_units_build_2026-10-27.md
 //   T3; her go 2026-10-27). A VIEW over data that already exists plus the unit tracks: the only writes are the buttons that write
 //   today (enroll, the notebook switch, a stage move-up, the staged + Kid form) and the two buttons other steps add (✚ Build,
@@ -37979,6 +38091,7 @@ function utsFamilyHTML(isMom){
 let ubForm=null;   // the open Builder: {step, title, emoji, desc, ages, kind, first, mode, days:[…], boxes:{…}, nDays, perWeek, msg, busy, sources}
 const UB_KINDS=[["topic","Topic"],["skill","Skill path"],["book","Book companion"]];
 const UB_BOXES=[["cards","\u{1F0CF} Cards","front | back \u2014 one per line"],["books","\u{1F4DA} Books","title | by | link"],["videos","\u25B6 Videos","link | label"],["acts","\u{1F3A8} Activities & field trips","title | points | a line about it"]];
+const UB_CRAFT_BOX=["craft","\u2702\uFE0F Craft","title \u00B7 steps \u00B7 supplies"];   // CRAFT (B3): the fifth box on a day
 const UB_PROMPTS={
   cards:'This is a photo (or the text) of a homeschool mom\u2019s notes for drill cards: facts, vocabulary, names, dates. List every card as a short front and its back. Use ONLY what is there \u2014 never invent. Return ONLY strict JSON: {"items":[{"front":"","back":""}]}.',
   books:'This is a photo (or the text) of a list of books for a homeschool unit. List each book. Use ONLY what is there. Return ONLY strict JSON: {"items":[{"title":"","by":""}]}.',
@@ -37996,7 +38109,12 @@ function ubFamily(){ try{ const f=(typeof window!=="undefined"&&window.HA_FAMILY
 function ubFirst(){ try{ return (typeof HA_LS!=="undefined"&&HA_LS.getItem("ha_ub_first"))||"Mom"; }catch(e){ return "Mom"; } }
 function ubRe(){ if(typeof renderAll==="function") renderAll(); }
 let _ubSeq=0; function ubId(){ return "b"+(++_ubSeq).toString(36)+Date.now().toString(36).slice(-3); }
-function ubNewDay(n){ return {n:n,t:"",cards:[],books:[],videos:[],acts:[]}; }
+function ubNewDay(n){ return {n:n,t:"",cards:[],books:[],videos:[],acts:[],craft:null}; }
+// CRAFT (B3): the day's craft box — title, steps (one per line), supplies (qty name) — lands on the record's day as craft
+function ubCraftSet(di,field,val){ const f=ubForm; if(!f||!f.days[di]) return; const c=f.days[di].craft||(f.days[di].craft={}); c[field]=String(val||""); }
+function ubCraftOf(d){ const c=d&&d.craft; if(!c) return null; const title=ubStr(c.title,120), steps=String(c.steps||"").split(/\n+/).map(s=>s.trim()).filter(Boolean).map(s=>({text:ubStr(s,600)})), supplies=String(c.supplies||"").split(/\n+/).map(s=>s.trim()).filter(Boolean).map(l=>{ const m=/^(\d+[a-z]*)\s+(.+)$/i.exec(l); return m?{qty:m[1],name:ubStr(m[2],80)}:{name:ubStr(l,80)}; }); const o={}; if(title) o.title=title; if(steps.length) o.steps=steps; if(supplies.length) o.supplies=supplies; return Object.keys(o).length?o:null; }
+function ubCraftBoxHTML(di){ const f=ubForm, d=f&&f.days[di]; if(!d) return ""; const c=d.craft||{}; const inp='width:100%;box-sizing:border-box;padding:7px 9px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif;background:#fff';
+  return '<div data-ub-box="craft" style="border:1px solid #f9a8d4;border-radius:10px;padding:8px 10px;margin-top:8px;background:#fff"><div style="font-size:12px;font-weight:800;color:#be185d">'+UB_CRAFT_BOX[1]+' <span style="font-weight:600;color:var(--muted)">\u00B7 optional</span></div>'+'<input value="'+ubEsc(c.title||"")+'" placeholder="What they make" oninput="ubCraftSet('+di+',\'title\',this.value)" style="'+inp+';margin-top:6px">'+'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><textarea rows="2" placeholder="Steps \u2014 one per line" oninput="ubCraftSet('+di+',\'steps\',this.value)" style="'+inp+';flex:2 1 200px;width:auto;resize:vertical">'+ubEsc(c.steps||"")+'</textarea><textarea rows="2" placeholder="Supplies \u2014 qty name, one per line" oninput="ubCraftSet('+di+',\'supplies\',this.value)" style="'+inp+';flex:1 1 150px;width:auto;resize:vertical">'+ubEsc(c.supplies||"")+'</textarea></div></div>'; }
 // ── open / close / fields ──
 function ubOpen(){
   if(!ubMom()) return;
@@ -38115,6 +38233,7 @@ function ubRecord(f){
     let nb=null;
     d.acts.forEach(a=>{ let key=ubSlug(a.title)||"activity"; let k=2; const base=key; while(actKeys[key]) key=base+"_"+(k++); actKeys[key]=1; const act={key:key,title:a.title,emoji:"\u{1F3A8}",kind:"sheet",points:a.points||5,day:n}; if(a.desc) act.desc=a.desc; acts.push(act); if(!nb) nb={activity:key}; });
     const day={id:"d"+n,n:n,t:d.t||ubAutoTitle(d)||("Day "+n),res:res}; if(names.length) day.cards=[{deck:deck,names:names}]; if(nb) day.nb=nb;
+    const craft=ubCraftOf(d); if(craft) day.craft=craft;   // CRAFT (B3)
     days.push((typeof utClean==="function")?utClean(day):day);
   });
   u.decks=[{key:deck,mode:"flip",introCap:3,cards:cards}];
@@ -38178,7 +38297,7 @@ function ubFillHTML(f){
     h+='<div style="font-size:11.5px;color:var(--muted)">Each day gets a title and its own four boxes. Type a line per item, paste a list, or snap a photo of your notes and Claude drafts the lines.</div>';
     f.days.forEach((d,di)=>{ h+='<div data-ub-day="'+(di+1)+'" style="border:1.5px solid var(--border);border-radius:12px;padding:10px 12px;margin-top:10px;background:#faf8f5">';
       h+='<div style="display:flex;gap:8px;align-items:center"><span style="font-size:13px;font-weight:800;color:#1f2937;white-space:nowrap">Day '+(di+1)+'</span><input value="'+ubEsc(d.t)+'" placeholder="What this day is about" oninput="ubDayTitle('+di+',this.value)" style="'+UB_INP+';flex:1;width:auto"></div>';
-      UB_BOXES.forEach(b=>{ h+=ubBoxHTML(di,b[0]); }); h+='</div>'; });
+      UB_BOXES.forEach(b=>{ h+=ubBoxHTML(di,b[0]); }); h+=ubCraftBoxHTML(di); h+='</div>'; });   // CRAFT (B3): the fifth box
     h+='<div style="margin-top:10px">'+ubBtn(false,"\uFF0B Add a day","ubDayAdd()")+'</div>';
   } else {
     h+='<div style="font-size:11.5px;color:var(--muted)">Fill the four boxes for the whole unit, then the app spreads them over the days: a book or video on most days, activities on their own days, cards two or three a day in order.</div>';
