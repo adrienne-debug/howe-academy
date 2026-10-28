@@ -45318,7 +45318,7 @@ function envEnrollSession(u,kid){
 //     ← Back inside the test, Quit keeps nothing. "Select all that apply" items are right only when exactly the keyed set is picked.
 //   · Shown: the kid's Units tab card and the unit's page — per station "Pre 13/20 · Post 17/20 🎓 Graduated" and the open test
 //     as a card ("📝 Soils/Land Use check-in · 20 questions"); the same card tops the kid's 🌿 session start; the Family tab's
-//     shared-units row gets the one line. Nothing speaks, no confetti.
+//     shared-units row gets the one line. No confetti; speech only through the kid's 🔊 switch (ENVREADALOUD, 2026-10-28).
 //   · Dry run: the test runs and scores, nothing is written, the result says so. No kid's name here — the kid comes from the
 //     caller (the Units tab, the study screen), so the Envirothon edition runs this block for a whole class unchanged.
 //   · CHECK-IN RULES (her decisions 2026-10-28, "yes just environthon and do the pretest postest changes"):
@@ -45501,13 +45501,15 @@ function envtFinish(){ const S=envtState; if(!S||S.done) return;
   if(envtTick){ clearInterval(envtTick); envtTick=null; }
   envtRe(); }
 function envtClose(){ envtState=null; if(envtTick){ clearInterval(envtTick); envtTick=null; }
+  if(typeof envRaTestClosed==="function") envRaTestClosed();   // 🔊 ENVREADALOUD: Quit / Done stops the speech
   try{ const el=document.getElementById("envtest-ov"); if(el&&el.parentNode) el.parentNode.removeChild(el); }catch(e){}
   envtAfter(); }
 function envtAfter(){ try{ if(typeof renderAll==="function") renderAll(); else { const c=document.getElementById("content"); if(c&&typeof renderUnits==="function"&&typeof tab!=="undefined"&&tab==="units") renderUnits(c); } }catch(e){} }
 function envtRe(){ if(typeof document==="undefined") return; let el=document.getElementById("envtest-ov");
   if(!envtState){ if(el&&el.parentNode) el.parentNode.removeChild(el); return; }
   if(!el){ el=document.createElement("div"); el.id="envtest-ov"; el.style.cssText="position:fixed;inset:0;z-index:450;background:#faf8f5;overflow-y:auto;-webkit-overflow-scrolling:touch"; document.body.appendChild(el); }
-  el.innerHTML=envtHtml(); try{ el.scrollTop=0; }catch(e){} }
+  el.innerHTML=envtHtml(); try{ el.scrollTop=0; }catch(e){}
+  if(typeof envRaTestShown==="function") envRaTestShown(); }   // 🔊 ENVREADALOUD: a new question → read it (Auto)
 function envtHtml(){ const S=envtState; if(!S) return ""; const st=envtStation(S.station)||{label:S.station}; const kind=S.which==="pre"?"check-in":"final";
   let h='<div style="max-width:560px;margin:0 auto;padding:16px 16px 60px;font-family:\'DM Sans\',sans-serif">';
   h+='<div style="display:flex;align-items:center;gap:10px;justify-content:space-between"><div style="font-size:16px;font-weight:800;color:#14532d">\u{1F4DD} '+envtEsc(st.label)+' '+kind+'</div>';
@@ -45523,6 +45525,7 @@ function envtHtml(){ const S=envtState; if(!S) return ""; const st=envtStation(S
     h+='<button onclick="envtClose()" style="'+ENVT_BTN+';margin-top:18px;padding:0 32px">Done</button></div>';
     return h+'</div>'; }
   const it=S.form.items[S.i], n=S.form.items.length, a=S.answers[S.i], multi=envtMulti(it);
+  if(typeof envRaTestBarHtml==="function") h+=envRaTestBarHtml(S.kid);   // 🔊 ENVREADALOUD: the switch + 🔊 Read it
   h+='<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--muted);font-weight:700;margin:8px 0 4px"><span>'+(S.i+1)+' of '+n+'</span><span id="envt-timer">'+envtClock(envtSecs())+'</span></div>';
   h+='<div style="height:6px;border-radius:3px;background:#e5e0d8;overflow:hidden"><div style="height:100%;width:'+Math.round(S.i/n*100)+'%;background:#2d6a4f"></div></div>';
   h+='<div style="font-size:17px;font-weight:700;color:#1f2937;line-height:1.45;margin:18px 0 12px">'+envtEsc(it.q)+'</div>';
@@ -45534,6 +45537,72 @@ function envtHtml(){ const S=envtState; if(!S) return ""; const st=envtStation(S
   h+='<button onclick="envtNext()" '+(a==null?'disabled':'')+' style="flex:1;'+ENVT_BTN+(a==null?';opacity:.45;cursor:default':'')+'">'+(S.i+1>=n?"Finish":"Next \u2192")+'</button></div>';
   return h+'</div>'; }
 // ENVTEST_END
+// ENVREADALOUD_START — 🔊 READ ALOUD, Envirothon only (her decision 2026-10-28, after "nothing reads aloud on its own for Envirothon
+// cards and the check-ins have no 🔊": a kid-controlled read-aloud switch for Envirothon ONLY, not the other Howe study sessions).
+//   · The switch: "🔊 Read aloud: Auto · Off" on the 🌿 Envirothon study start, in the check-in / final screen, and in the kid's ⚙️ on
+//     the Envirothon site. Saved per kid at ONE targeted path, mastery/<kid>_settings/envReadAloud = "auto" | "off" (absent = "off").
+//     Dry run and the site's demo: in memory only (the demo says "would write").
+//   · Auto: the 🌿 card's FRONT is read through mastSpeak when the card appears — the prompt the kid sees, never the answer: the name on
+//     a flip / pick / key-ideas card, the definition on a type card, nothing on a picture card that asks "what is this?". In a check-in or
+//     final, each question and then its lettered choices ("A. … B. …") are read when the question appears (Next and Back included, not
+//     on a pick). ⚡ ID Flash says the item's name after the answer. Off: nothing speaks on its own — and the 🌿 type card's
+//     name-after-Check goes quiet too. Both: the 🔊 buttons read on a tap (the cards' own, and a new one on the check-in screen).
+//   · Speech stops on Next / Back / Quit (envRaHush). Mom's session-level audio "off" still silences the 🌿 session entirely.
+//   · Only the 🌿 session (ENV_SESSION_SID), the Envirothon check-ins and ID Flash consult this. Every other study session, the
+//     session-level audio setting and all other speech run exactly as before — each hook is one guarded line, tagged 🔊 ENVREADALOUD,
+//     that returns at once for anything else.
+function envRaMode(kid){ const st=(kid&&typeof masteryData!=="undefined"&&masteryData)?masteryData[kid+"_settings"]:null; return (st&&st.envReadAloud==="auto")?"auto":"off"; }
+function envRaDemo(){ return typeof envsDemo==="function"&&!!envsDemo(); }
+function envRaSet(kid,mode){ if(!kid) return false; mode=(mode==="auto")?"auto":"off";
+  let st=masteryData[kid+"_settings"]; if(!st||typeof st!=="object") st=masteryData[kid+"_settings"]={}; st.envReadAloud=mode;
+  if(envRaDemo()){ if(typeof envsToast==="function") envsToast("demo: would set mastery/"+kid+"_settings/envReadAloud"); }
+  else if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("mastery/"+kid+"_settings/envReadAloud").set(mode);
+  envRaHush();
+  try{ if(typeof envtState!=="undefined"&&envtState) envtRe(); else if(typeof renderAll==="function") renderAll(); }catch(e){}
+  return true; }
+function envRaToggleHtml(kid){ if(!kid) return ""; const m=envRaMode(kid);
+  const b=(v,l)=>'<button onclick="event.stopPropagation();envRaSet(\''+envtJ(kid)+'\',\''+v+'\')" aria-pressed="'+(m===v)+'" style="min-height:36px;padding:0 14px;border-radius:999px;border:2px solid '+(m===v?'#2d6a4f':'#d6d3cc')+';background:'+(m===v?'#2d6a4f':'#fff')+';color:'+(m===v?'#fff':'#374151')+';font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+l+'</button>';
+  return '<div class="envra-toggle" style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px;font-weight:800;color:#14532d">\u{1F50A} Read aloud: '+b("auto","Auto")+b("off","Off")+'</div>'; }
+function envRaIsEnv(session){ return !!(session&&session.sid===ENV_SESSION_SID); }
+// the 🌿 study start: the switch, under the session's header line
+function envRaStartHtml(kid,session){ if(!kid||!envRaIsEnv(session)) return ""; return '<div style="margin-top:10px">'+envRaToggleHtml(kid)+'</div>'; }
+function envRaSay(text){ text=String(text==null?"":text).trim(); if(!text||typeof mastSpeak!=="function") return false; try{ mastSpeak(text); }catch(e){ return false; } return true; }
+function envRaHush(){ try{ if(typeof _ttsSeq!=="undefined") _ttsSeq++; }catch(e){}
+  try{ if(typeof window!=="undefined"&&window.speechSynthesis) window.speechSynthesis.cancel(); }catch(e){}
+  try{ if(typeof window!=="undefined"&&window._ttsAudio&&window._ttsAudio.pause) window._ttsAudio.pause(); }catch(e){} }
+// what the card's front shows: the name (flip / pick / key ideas), the definition (type / say), nothing on a "what is this?" picture
+function envRaFront(session,card){ if(!card) return "";
+  const pic=(typeof mstCardPic==="function")?mstCardPic(card):"";
+  if(pic) return (typeof mastCatFace==="function"&&mastCatFace(card.deck)==="name")?"":String(card.name||"");
+  if(typeof mstTypeAnsOn==="function"&&mstTypeAnsOn(session,card)) return String(card.name||"");
+  const m=(typeof mstCardMode==="function")?mstCardMode(card):(card.mode||"rec");
+  if(m==="type"||m==="say") return String((typeof mstCardDef==="function"?mstCardDef(card):"")||"");
+  return String(card.name||""); }
+// mstAutoPlayCurrent's first line: true = the 🌿 session, handled here (hush, then the front in Auto); false = any other session, untouched
+function envRaAutoPlay(session){ if(!envRaIsEnv(session)) return false; envRaHush();
+  if(session.audio==="off"||typeof mstState==="undefined"||!mstState||envRaMode(masteryKid)!=="auto") return true;
+  try{ const card=mstCurrent(mstState); if(card) envRaSay(envRaFront(session,card)); }catch(e){}
+  return true; }
+// the 🌿 type card's name-after-Check: quiet unless Auto (other sessions: false → as before)
+function envRaQuiet(session){ return envRaIsEnv(session)&&envRaMode(masteryKid)!=="auto"; }
+// Back / Quit in the 🌿 session: stop the speech (other sessions: nothing)
+function envRaNav(){ if(typeof mstSid!=="undefined"&&mstSid===ENV_SESSION_SID) envRaHush(); }
+// ── the check-in / final ──
+function envRaQText(it){ if(!it) return ""; return String(it.q||"")+" "+(it.choices||[]).map((c,i)=>"ABCDE"[i]+". "+c+".").join(" "); }
+function envRaReadQ(){ const S=(typeof envtState!=="undefined")?envtState:null; if(!S||S.done) return false; return envRaSay(envRaQText(S.form.items[S.i])); }
+let _envRaQ={st:null,i:-1};
+// envtRe's hook: a NEW question on screen (first, Next, Back) → read it in Auto; a pick redraws the same one → nothing; done → hush
+function envRaTestShown(){ const S=(typeof envtState!=="undefined")?envtState:null;
+  if(!S||S.done){ if(_envRaQ.st){ _envRaQ={st:null,i:-1}; envRaHush(); } return false; }
+  if(_envRaQ.st===S&&_envRaQ.i===S.i) return false;
+  _envRaQ={st:S,i:S.i}; envRaHush();
+  return envRaMode(S.kid)==="auto"?envRaReadQ():false; }
+function envRaTestClosed(){ _envRaQ={st:null,i:-1}; envRaHush(); }
+function envRaTestBarHtml(kid){ return '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 2px">'+envRaToggleHtml(kid)
+  +'<button onclick="envRaReadQ()" aria-label="Read the question" style="min-height:36px;padding:0 14px;border-radius:999px;border:1.5px solid #86efac;background:#f0fdf4;color:#14532d;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F50A} Read it</button></div>'; }
+// ⚡ ID Flash: the item's name after the answer, in Auto
+function envRaFlashSaid(kid,item){ if(!kid||envRaMode(kid)!=="auto") return false; return envRaSay(item); }
+// ENVREADALOUD_END
 // Staged units enroll per kid (start stage, what they already know, book link — UNIT_STAGES below);
 // the plain enroll (which would start EVERY kid at card 1) stays closed for them.
 function _unitStagedEnrollPending(u){ return !!(u&&u.stages); }
@@ -46963,6 +47032,7 @@ function envsTipsHtml(role){
 function envsSettingsHtml(){
   const kid=_envs.kid, col=envsKidColor(kid);
   let h='<div class="envs-card"><div class="envs-h2">\u{1F3A8} Colour</div><div class="envs-row"><input id="envs-color" type="color" value="'+envsEsc(col)+'" style="width:52px;height:40px;border:none;background:none"><button class="envs-btn sec" onclick="envsSetColor()">Save colour</button></div></div>';
+  if(_envs.role==="kid"&&typeof envRaToggleHtml==="function") h+='<div class="envs-card">'+envRaToggleHtml(kid)+'<div class="envs-muted" style="margin-top:6px">Auto reads each card and each check-in question out loud. Off: only when you tap \u{1F50A}.</div></div>';   // 🔊 ENVREADALOUD
   if(_envs.role==="parent") h+='<div class="envs-card"><div class="envs-h2">\u{1F510} Parent PIN</div><div class="envs-muted" style="margin-bottom:6px">The PIN opens the parent view on a shared device.</div><div class="envs-row"><input id="envs-pin" class="envs-in" type="text" inputmode="numeric" maxlength="4" placeholder="4 digits" style="width:110px;text-align:center;letter-spacing:6px"><button class="envs-btn sec" onclick="envsSetPin()">Save PIN</button></div></div>';
   h+='<div class="envs-card"><div class="envs-row"><div style="flex:1"><div class="envs-h2" style="margin:0">Signed in</div><div class="envs-muted">'+envsEsc(_envs.email||(_envs.role==="kid"?"student code":""))+'</div></div><button class="envs-btn red" onclick="envsSignOut()">Sign out</button></div></div>';
   h+='<div class="envs-muted" style="text-align:center;padding:8px">'+envsEsc(envsLicenseLine())+'</div>';
@@ -48020,7 +48090,7 @@ function unitPicsSave(){
 //     fluent, at} (itemKey = mastDefKey(item); ONE multi-path update on mastery/<kid>_idflash, every path targeted) and the
 //     day's entry under mastery/studyLog/<kid>/idflash/<yyyymmdd> in the shape _mstSaveInner writes (items {id,name,deck,
 //     result} merged into the day), so Scores, the streak and the weekly report count it. Dry run: runs and scores on the
-//     screen, writes nothing, says so. Nothing speaks; no confetti. A kid without the unit sees every screen byte-identical.
+//     screen, writes nothing, says so. No confetti; the name after an answer only with the kid's 🔊 Auto (ENVREADALOUD). A kid without the unit sees every screen byte-identical.
 const ENVFLASH_SECS=10, ENVFLASH_SITTING=12, ENVFLASH_KEEP=5, ENVFLASH_NEED=3, ENVFLASH_SID="idflash";
 const ENVPICS_URL="envirothon/pics/index.json";
 let _envPicsIdx=null, _envPicsP=null, _envPicsFail=false;
@@ -48173,6 +48243,7 @@ function envFlashAnswer(ok,typed){
   envFlash.ans={ok:!!ok,secs:secs,typed:typed==null?null:String(typed)};
   envFlash.results.push({deck:c.deck,item:c.item,key:c.key,pic:String(c.pic.url),ok:!!ok,secs:secs,at:Date.now()});
   if(typeof _mastRe==="function") _mastRe();
+  if(typeof envRaFlashSaid==="function") envRaFlashSaid(envFlash.kid,c.item);   // 🔊 ENVREADALOUD: the name after the answer (Auto)
 }
 function envFlashPickTap(i){ if(!envFlash||envFlash.ans) return; const c=envFlash.cards[envFlash.i], ch=c&&c.lures&&c.lures[i]; if(!ch) return; envFlash.picked=i; envFlashAnswer(!!ch.ok,ch.name); }
 function envFlashCheckTyped(){
@@ -48181,6 +48252,7 @@ function envFlashCheckTyped(){
 }
 function envFlashNextCard(){
   if(!envFlash||!envFlash.ans) return;
+  if(typeof envRaHush==="function") envRaHush();   // 🔊 ENVREADALOUD: Next stops the name
   envFlash.ans=null; envFlash.picked=null; envFlash.drawnAt=null; envFlash.shownAt=null; envFlash.i++;
   if(envFlash.i>=envFlash.cards.length){ envFlashFinish(); return; }
   if(typeof _mastRe==="function") _mastRe();
@@ -65282,6 +65354,7 @@ function mstIsRuleCard(card){
 }
 function mstIsSpellCard(card){ return !!(card&&card.deck&&mastGetCatMode(masteryKid,card.deck)==="spell"); }
 function mstAutoPlayCurrent(session){
+  if(typeof envRaAutoPlay==="function"&&envRaAutoPlay(session)) return;   // 🔊 ENVREADALOUD: the 🌿 session follows the kid's switch
   if(!session||session.audio==="off"||!mstState) return;
   try{ const card=mstCurrent(mstState);
     if(mstIsSpellCard(card)){ if(card.name) mastSpeak(card.name,{spell:true}); return; }
@@ -65765,6 +65838,7 @@ function renderMastStudy(opts){
     : ((pile.newNames||[]).length+' new · '+(pile.reviews||[]).length+' due · '+(pile.learning||[]).length+' learning'))+'</div>';
   if(typeof mstSentBackPending==="function"&&mstSentBackPending(kid,session.sid)) h+='<div style="margin-top:10px;padding:10px 12px;background:#fffbeb;border:2px solid #f59e0b;border-radius:12px;font-size:14px;font-weight:800;color:#b45309">\u21A9\uFE0F Mom sent this back. Do it again \u2014 slowly. Read every card before you flip it.</div>';   // ↩ MSTALERT
   if(todayLog) h+='<div style="margin-top:8px;font-size:13px;color:#16a34a;font-weight:700">Done today: '+(todayLog.total||0)+' cards'+(todayLog.miss?', '+todayLog.miss+' again':'')+'</div>';
+  if(typeof envRaStartHtml==="function") h+=envRaStartHtml(kid,session);   // 🔊 ENVREADALOUD: the kid's switch, the 🌿 session only
   h+='</div>';
   if(typeof mstHowtoHtml==="function") h+=mstHowtoHtml(kid,session);   // 📋 MST_HOWTO
   if(typeof mstControlsHtml==="function") h+=mstControlsHtml(session);   // 📋 MST_HOWTO_CTL: the buttons as they are now (✓/✗, Back, typed answers)
@@ -65861,7 +65935,7 @@ function mstCheckTyped(){
   _mastRe();
   // Now that he's answered, let him hear it.
   try{ const ses=(mstSessions(masteryKid)||[]).find(s=>s.sid===mstSid);
-    if(ses&&ses.audio!=="off"){ if(mastGetDefAudio(masteryKid,cur.name)) mastPlayDefAudio(cur.name); else mastSpeak(cur.name); } }catch(e){}
+    if(ses&&ses.audio!=="off"&&!(typeof envRaQuiet==="function"&&envRaQuiet(ses))){ if(mastGetDefAudio(masteryKid,cur.name)) mastPlayDefAudio(cur.name); else mastSpeak(cur.name); } }catch(e){}   // 🔊 ENVREADALOUD: quiet in the 🌿 session unless Auto
 }
 function mstTap(ans){
   if(mstLocked()) return;   // MST_NAV: a second tap inside 350 ms of the draw is swallowed
@@ -65878,7 +65952,8 @@ function mstTap(ans){
   let sessions=[]; try{ sessions=mstSessions(masteryKid)||[]; }catch(e){}
   mstAutoPlayCurrent((sessions||[]).find(s=>s.sid===mstSid));
 }
-function mstQuit(){ if(mstState) mstPersist(); mstState=null; mstFlipped=false; mstTyped=""; mstChecked=null; mstNavReset(); _mastRe(); }   // MST_NAV: stacks ride the saved sitting
+function mstQuit(){ if(typeof envRaNav==="function") envRaNav();   // 🔊 ENVREADALOUD
+  if(mstState) mstPersist(); mstState=null; mstFlipped=false; mstTyped=""; mstChecked=null; mstNavReset(); _mastRe(); }   // MST_NAV: stacks ride the saved sitting
 function mstDiscard(){
   if(!confirm("Discard this study sitting? Progress won't be saved.")) return;
   mstClearPersist(mstSid); mstState=null; mstFlipped=false; mstStartTs=null; mstNavReset();   // MST_NAV
@@ -65900,6 +65975,7 @@ function mstNavReset(){ mstHist=[]; mstRedo=[]; }
 function mstLockArm(){ mstLockTs=mstNow(); }
 function mstLocked(){ return (mstNow()-mstLockTs)<MST_TAP_LOCK_MS; }
 function mstBack(){
+  if(typeof envRaNav==="function") envRaNav();   // 🔊 ENVREADALOUD: Back stops the 🌿 session's speech
   if(!mstState||!mstHist.length) return;
   mstRedo.push(mstSerialize(mstState));
   mstState=mstRestore(mstHist.pop());

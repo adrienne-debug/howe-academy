@@ -32,7 +32,7 @@ ok("hook: renderMastStudy — a running sitting takes the body; the door right u
 ok("the block never calls renderAllSoon (test_render_soon's rule) — it redraws the Units tab or the study screen directly", !/renderAllSoon/.test(block));
 ok("hook: 🎮 Games entry + gamesCurrentKey line", once('key:"idflash",emoji:"\\u26A1",     label:"ID Flash",    view:"idflash"') && once('if(mastView==="idflash") return "idflash";'));
 ok("no Howe kid name in the block", !/\b(lincoln|ellis|lucy|julian)\b/i.test(block));
-ok("nothing speaks, no confetti, no 🔀", !/mastSpeak\(|speechSynthesis|[cC]onfetti\(|\u{1F500}/u.test(block));
+ok("no speech code, no confetti, no 🔀 in the block — the name after an answer goes through ENVREADALOUD's switch", !/mastSpeak\(|speechSynthesis|[cC]onfetti\(|\u{1F500}/u.test(block));
 
 console.log("\n── the pictures (envirothon/pics) ──");
 const ID_DECKS = ["Forestry · ID", "Wildlife · ID", "Aquatic Ecology · ID"];
