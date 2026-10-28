@@ -161,7 +161,7 @@ function runDay(o) {
   const balanced = {}; balanced[DS] = JSON.parse(JSON.stringify(o.grid || gridFor(subjects, o.kids)));
   E.injectDaily(balanced);
   const start = o.schoolStart != null ? o.schoolStart : toMin(SD.defaultStart);
-  const dayConfig = { schoolStart: start, momAvailable: start, isCarSchool: false, isSitter: false, sitterStart: 0, sitterEnd: 0, withSitter: [], theater: false, dayName: o.dayName || DAY, dateStr: DS };
+  const dayConfig = { schoolStart: start, momAvailable: start, isCarSchool: false, isSitter: false, sitterStart: 0, sitterEnd: 0, withSitter: [], dayName: o.dayName || DAY, dateStr: DS };
   return E.gwBuildDayTasks(balanced[DS] || {}, dayConfig, "2026d278_", 1);
 }
 const T = (t) => toMin(t.time), END = (t) => toMin(t.time) + t.dur;
