@@ -13971,9 +13971,9 @@ function llWith(id,iso){ const I=llItems(), x=I[id], h=x&&x.with; if(!(h&&h!==id
 function llRiders(id,iso){ return llOrder().filter(function(r){ return llWith(r,iso)===id; }); }
 function llLineOrder(iso){ return llOrder().filter(function(id){ return !llWith(id,iso); }); }
 function llLabelFull(id,iso){ const A=llAll(), d=iso||llToday(), bl=llBlanketsDueOn(id,d).concat([].concat.apply([],llRiders(id,d).map(function(r){ return llBlanketsDueOn(r,d); })));
-  return [id].concat(llRiders(id,d)).map(function(r){ return (A[r]&&A[r].label)||r; }).concat(bl.map(function(b){ return A[b].label; })).join(" + "); }
+  return [id].concat(llRiders(id,d)).map(function(r){ return ((A[r]&&A[r].label)||r)+((typeof llLabelTag==="function")?llLabelTag(r):""); }).concat(bl.map(function(b){ return A[b].label; })).join(" + "); }   // LAUNDRY_SYNC: "· Wed" / "· Sat" on a twin
 function llShortFull(id,iso){ const A=llAll(), d=iso||llToday(), bl=llBlanketsDueOn(id,d).concat([].concat.apply([],llRiders(id,d).map(function(r){ return llBlanketsDueOn(r,d); })));
-  return [id].concat(llRiders(id,d)).map(function(r){ return llShort(A[r]); }).concat(bl.map(function(b){ return llShort(A[b]); })).join(" + "); }
+  return [id].concat(llRiders(id,d)).map(function(r){ return llShort(A[r])+((typeof llLabelTag==="function")?llLabelTag(r):""); }).concat(bl.map(function(b){ return llShort(A[b]); })).join(" + "); }   // LAUNDRY_SYNC
 // 🗓 every N days | weeks | months (her ask 2026-10-18: "more detailed on the how many weeks months days").
 const LL_UNIT_MAX={d:365,w:52,m:24}, LL_UNIT_DEF={d:14,w:8,m:6};
 function llEvery(x){ const u=(x&&(x.unit==="d"||x.unit==="m"))?x.unit:"w", n=parseInt(x&&x.every,10); return {n:(n>0&&n<=LL_UNIT_MAX[u])?n:LL_UNIT_DEF[u],unit:u}; }
@@ -14274,7 +14274,7 @@ function llStart(item,by){ const it=llAll()[item]; if(!it) return; const t=llTod
   try{ llSyncKidRows(); }catch(e){}   // 🧺 the kid's row ticks itself
   try{ [item].concat(riders).some(function(h){ if(llBedAskItems(h).length){ llBedAskOpen(h); return true; } return false; }); }catch(e){}   // 🛏 BED_ASK
   try{ if(_lu) luNote(_lu); }catch(e){}   // ↩︎ LAUNDRYUNDO: the undo bar
-  if(typeof mwToast==="function") mwToast('🫧 '+laundryData[lid].label+' — in the washer'); llRerender(); }
+  if(typeof mwToast==="function") mwToast('🫧 '+laundryData[lid].label+((riders.length||_bl||typeof llLabelTag!=="function")?"":llLabelTag(item))+' — in the washer'); llRerender(); }   // LAUNDRY_SYNC: "· Wed" / "· Sat" on a twin
 // ✕ on a line load still in the washer (a mistake) takes its log entry back, so the line puts it back where it was.
 function llUnlog(lid,l){ if(l&&l.wet&&l.jumpDay&&(l.stage==="bin"||l.stage==="prewash")){ const j=laundryLine.jump&&laundryLine.jump[l.jumpDay]; if(j&&j[lid]){ delete j[lid]; llStore(); const u={}; u["jump/"+l.jumpDay+"/"+lid]=null; llWrite(u); } return; }   // 💦 a jump-in ✕'d before it was washed gives its slot back
   if(!l||!l.line||!l.lineDay) return; if((typeof lcHas==="function"&&lcHas(l))?lcStep(l)!==0:l.stage!=="washer") return;   /* 🌀 a cycle load: still on its first step */ const e=laundryLine.log&&laundryLine.log[l.lineDay]&&laundryLine.log[l.lineDay][l.line];
@@ -14328,7 +14328,7 @@ function llExtrasHTML(mom,today){
   return h+'</div>';
 }
 // 👨 Dad's Day: the line, his way — today's loads (who, where they are, 🫧 Start as his), the question, 🤒, the week grid. No settings.
-function llLoadStage(id,iso){ const e=llDayLog(iso)[id]; if(!e) return ""; const sp=(typeof laundrySplitLineStage==="function")?laundrySplitLineStage(e.load):""; if(sp) return sp;   /* LAUNDRY_SPLIT: a wet basket, a hung load, both halves */ const l=(typeof laundryData!=="undefined"&&laundryData&&e.load)?laundryData[e.load]:null;
+function llLoadStage(id,iso){ const e=llDayLog(iso)[id]; if(!e){ const o=(typeof llOutFor==="function")?llOutFor(id,iso):null; return o?llOutStage(o):""; }   /* LAUNDRY_SYNC: an earlier day's load still out — its stage, never 🫧 Start */ const sp=(typeof laundrySplitLineStage==="function")?laundrySplitLineStage(e.load):""; if(sp) return sp;   /* LAUNDRY_SPLIT: a wet basket, a hung load, both halves */ const l=(typeof laundryData!=="undefined"&&laundryData&&e.load)?laundryData[e.load]:null;
   const cm=(l&&typeof lcMeta==="function")?lcMeta(l):null; if(cm) return cm[0]+" "+cm[1];   // LAUNDRY_CYCLE
   return !l?"✓ put away":l.stage==="dryer"?"🌀 in the dryer":l.stage==="basket"?"🧺 in the basket":l.stage==="fold"?"🧺 folded — put away":"🫧 in the washer"; }   // FOLD_WORDS · BASKET
 // 🧺 LL_MYDAY (her ask 2026-10-21: "move that up to be merged into the bottom of my day … for both Mom and for Dad"): by = "dad" (default, Dad's
@@ -14341,6 +14341,7 @@ function llDadCardHTML(by,bare){ if(!laundryLine||!Object.keys(laundryLine).leng
         +((!st&&!wtd)?'<button onclick="llMarkDone(\''+id+'\',\''+by+'\')" style="padding:3px 8px;border-radius:8px;border:1.5px solid #16a34a;background:#f0fdf4;color:#15803d;font-size:11px;font-weight:700;cursor:pointer;margin-right:4px">✓ Done</button>':'')   // ✓ DONE
         +((!st&&!wtd&&(!mv||llLateStartOK(r,id)))?'<button onclick="llStart(\''+id+'\',\''+by+'\')" style="padding:3px 9px;border-radius:8px;border:1.5px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:700;cursor:pointer">🫧 Start</button>':'')+'</div>'; }).join('')   // 🫧 LL_LATESTART: after 8 PM too
     :'<div style="font-size:12px;color:#6b6560">No laundry today.</div>';
+  if(typeof llStillOutHTML==="function") h+=llStillOutHTML(t);   // LAUNDRY_SYNC: every load still out from an earlier day — the same loads 🔴 NOW nudges
   return h+(bare?'':'<div style="margin-top:8px">'+llWeekGridHTML(t,llNowMin()>=LL_SWEEP_MIN,true,by)+'</div>')+'</div>'; }   // LL_MYDAY: no week grid inside My day (her 2026-10-21: "i do not like the this week laundry thing in my day") — it stays on the Laundry tab
 // LL_MYDAY_START — 🧺 her ask 2026-10-21: "on the bottom of Dad's Day and Mom's … the laundry where it shows what's currently active and not
 // active. Can we move that up to be merged into the bottom of my day? … for both Mom and for Dad. That way we can really clearly see what is
@@ -14360,12 +14361,14 @@ function llKidCardHTML(kid,dayName){ if(!laundryLine||!Object.keys(laundryLine).
   const n=Math.round((new Date(iso+"T12:00")-new Date(t+"T12:00"))/864e5); if(n>13) return "";
   const r=llProject(t,n+1,llNowMin()>=LL_SWEEP_MIN)[n], A=llAll(), mine=r.loads.filter(function(id){ return llWho(id,iso).who===kid&&r.waited.indexOf(id)<0&&r.moved.indexOf(id)<0; });
   const tdk=llTodosOn(iso,t).filter(function(id){ return llTodos()[id].who===kid; });   // 📝 her to-dos for this kid
-  if(!mine.length&&!tdk.length) return ""; const isT=iso===t, allIn=mine.every(function(id){ return r.started.indexOf(id)>=0; })&&tdk.every(function(id){ return !!llTodos()[id].done; });
+  const outs=(iso===t&&typeof llKidOutLoads==="function")?llKidOutLoads(kid,iso):[];   // LAUNDRY_SYNC: their loads at fold / basket from any day
+  if(!mine.length&&!tdk.length&&!outs.length) return ""; const isT=iso===t, allIn=!outs.length&&mine.every(function(id){ return r.started.indexOf(id)>=0; })&&tdk.every(function(id){ return !!llTodos()[id].done; });
   let h='<div class="time-row"><div class="time-pill">🧺</div><div class="slot-tasks"><div class="task-card" style="border-left:3px solid #2563eb;background:'+(allIn?'#f8fafc':'#eff6ff')+(allIn?';opacity:.75':'')+'"><div class="card-inner"><div class="card-body">'
     +'<div class="card-header"><span class="kid-badge badge-'+kid+'" style="font-size:10px">'+cap(kid)+'</span><div class="task-title">'+(allIn?'✓ ':'')+'🧺 Your laundry'+(isT?'':' · '+esc(LL_DL[llDow(iso)]))+'</div></div>';
   mine.forEach(function(id){ const st=isT?llLoadStage(id,iso):"";
     h+='<div style="display:flex;align-items:center;gap:6px;margin-top:5px;font-size:12.5px"><span>'+esc(A[id].emoji||'🧺')+'</span><span style="flex:1;font-weight:700">'+esc(llLabelFull(id))+(st?' <span style="font-weight:600;color:#15803d">· '+st+'</span>':'')+'</span>'
       +((isT&&!st)?'<button onclick="event.stopPropagation();llStart(\''+id+'\',\''+kid+'\')" style="padding:5px 10px;border-radius:9px;border:none;background:#2563eb;color:#fff;font-size:12px;font-weight:800;cursor:pointer">🫧 It\'s in the washer</button>':'')+'</div>'; });
+  outs.forEach(function(o){ h+=llKidOutRowHTML(o); });   // LAUNDRY_SYNC
   tdk.forEach(function(id){ h+=llTdRow(id,t,isT,false); });
   return h+'</div></div></div></div></div>'; }
 // 🌀 A cycle per line load (custom wash cycles part 3, her plan 2026-10-17): a load with a cycle runs its own steps when it's started
@@ -14658,7 +14661,7 @@ function llPutAway(lid){ const LD=(typeof laundryData!=="undefined"&&laundryData
 // later reverses nothing), and un-ticked again only if it was that automatic tick. A kid's own tick is never touched. The list's done flag
 // follows. One targeted slSaveChanged, dry-run inert like every check-off; today only.
 function llKidRowLineDone(st){ const t=llToday(), e=llDayLog(t)[st.line], LD=(typeof laundryData!=="undefined"&&laundryData)||{};
-  if(st.laundry===true) return !!e; if(st.laundry==="lineFold") return !!e&&!(e.load&&(LD[e.load]||(typeof laundrySplitHung==="function"&&laundrySplitHung(e.load)))); return false; }   // LAUNDRY_SPLIT: done only when the hung half is away too
+  if(st.laundry===true) return !!e; if(st.laundry==="lineFold"){ const o=(typeof llOutFor==="function")?llOutFor(st.line,t):null; return !!e&&!o&&!(e.load&&(LD[e.load]||(typeof laundrySplitHung==="function"&&laundrySplitHung(e.load)))); } return false; }   // LAUNDRY_SPLIT: done only when the hung half is away too · LAUNDRY_SYNC: and no earlier day's load of it is still out
 function llSyncKidRows(){ if(typeof slState==="undefined"||typeof activeWk!=="function"||typeof _todayDay!=="string"||typeof rtStepsFor!=="function") return 0;
   const wk=activeWk(), dn=_todayDay, before=(typeof slBefore==="function")?slBefore():null, ts=(typeof nowTs==="function")?nowTs():""; let n=0;
   llPeople().slice(2).forEach(function(kid){ if(!llDrivesKid(kid)) return;
@@ -14675,7 +14678,7 @@ function llKidRowHook(kid,st,now){ if(typeof _luQ!=="undefined") _luQ++; try{   
   if(typeof _todayDay==="string"&&typeof day!=="undefined"&&day!==_todayDay) return;
   const t=llToday(), id=st.line; if(!llKnown(id)) return; const e=llDayLog(t)[id], LD=(typeof laundryData!=="undefined"&&laundryData)||{};
   if(st.laundry===true){ if(now){ if(!e) llStart(id,kid); } else if(e&&e.load&&LD[e.load]) llUnstart(e.load); return; }
-  if(st.laundry==="lineFold"&&now){ const lid=(e&&e.load&&LD[e.load])?e.load:Object.keys(LD).find(function(k){ return LD[k]&&LD[k].line===id&&LD[k].lineDay===t; }); if(lid) llPutAway(lid); }
+  if(st.laundry==="lineFold"&&now){ const _o=(typeof llOutFor==="function")?llOutFor(id):null, lid=(e&&e.load&&LD[e.load])?e.load:_o?_o.id:Object.keys(LD).find(function(k){ return LD[k]&&LD[k].line===id&&LD[k].lineDay===t; }); if(lid) llPutAway(lid); }   // LAUNDRY_SYNC: the item's newest out load, today first, any day
   else if(st.laundry==="lineFold"&&!now) llUnputawayLine(id);
   } finally { if(typeof _luQ!=="undefined") _luQ--; } }   /* FOLD_BACK: un-✓ brings the load back to the machine it was in */
 // ▶ up next = the front of the live line: the first load laid from now on that hasn't gone in (a load moved at 8 PM is the front).
@@ -15271,7 +15274,7 @@ function laundryNudgeList(now,only){
   return out;
 }
 function laundryNudgeRowHTML(x){
-  const l=x.l, lbl='<b>'+esc(l.label||"Load")+'</b>', since=laundrySince(l.ts);
+  const l=x.l, lbl='<b>'+esc((l.label||"Load")+((l.line&&typeof llLabelTag==="function")?llLabelTag(l.line):""))+'</b>', since=laundrySince(l.ts);   // LAUNDRY_SYNC: "· Wed" / "· Sat" on a twin
   const txt=((typeof laundrySplitNudgeTxt==="function")?laundrySplitNudgeTxt(x):"")||(x.kind==="bin"?'💦 <b>'+esc(String(l.label||"Load").replace(/^💦\s*/,""))+'</b> is still in the wash-today bin — start the prewash?'
     :x.kind==="dryer"?'🌀 '+lbl+' has been in the dryer since '+since+' — time to fold it'
     :x.kind==="fold"?'🧺 '+lbl+' has been folded since '+since+' — put it away'
@@ -15290,6 +15293,51 @@ function laundryBinNowHTML(now){
     +'<div style="font-size:11px;font-weight:800;color:#2563eb;letter-spacing:.04em;margin-bottom:6px">🔴 LAUNDRY NOW</div>'+L.map(laundryNudgeRowHTML).join('')+'</div>';
 }
 // LAUNDRY_NUDGE_END
+// LAUNDRY_SYNC_START — 🧺 one view of what's out (her report 2026-10-27: "the things in now need you for laundry are not synced up to the
+// loads in the laundry list" · "anytime it goes to fold that should be on their list if set to them"). Two stores, no shared view: 🔴 NOW
+// (laundryNudgeList) nudged every laundry/<id> load still out from ANY day, while the line's Today list drew only today's lay and read a
+// row's stage from today's log alone (llLoadStage → llDayLog(today)), and a kid's card / Fold row found a load only where lineDay === today.
+// Live 10/27: Julian's clothes in the dryer since Sat 10/24, Lincoln's Bed and King + queen sheets in baskets since 10/23 — NOW said fold
+// them, the Today list said "King sheets · 🫧 Start", and Julian's load never reached Julian's row on any day. Now:
+//   · llOutLoads() — every load out, any day, with its line item (or none), stage, day, doer (llWho(line, lineDay).who; else its by).
+//   · The Today list (llDadCardHTML) gains "Still out": every out load from an earlier day, the same words, laundryAdvance's own button
+//     (no new write path). A line row whose item has an earlier day's load still out shows that stage ("· 🧺 in the basket since Fri") —
+//     🫧 Start / ✓ Done only when none exists. llLoadStage(id, iso) falls back to the item's newest out load with lineDay ≤ iso.
+//   · A kid's card (llKidCardHTML) lists every out load that is theirs once it reaches fold / basket, until put away — ✓ Put away is
+//     llPutAway, the Fold row's own path. The Fold row (llKidRowHook / llKidRowLineDone) finds the item's newest out load, today first, any day.
+//   · Two line items with one label (her two "Mom & Dad's clothes" — two loads a week, on purpose) read "· Wed" / "· Sat" (rotate mode:
+//     "· 1st" / "· 2nd") wherever one is named — llLabelTag(id), by item id only, through llLabelFull / llShortFull, the NOW row, llStart's
+//     toast. A lone label is byte-identical; no same-name refusal, ever.
+// Nothing new is written; a family with nothing out renders as before; dry run inert as the functions it reuses.
+function llOutDay(l){ return (l&&l.lineDay)||((l&&l.ts)?_hhIsoLocal(l.ts):""); }
+function llOutLoads(){ const LD=(typeof laundryData!=="undefined"&&laundryData)||{}, out=[];
+  Object.keys(LD).forEach(function(k){ const l=LD[k]; if(!l||!l.stage) return; const line=l.line||"", day=llOutDay(l);
+    out.push({id:k,l:l,line:line,day:day,at:l.ts?_hhIsoLocal(l.ts):day,stage:l.stage,ts:l.ts||0,who:line?llWho(line,day||llToday()).who:(l.by||"")}); });   // day = the day it went in (lineDay); at = the day it reached this stage
+  return out.sort(function(a,b){ return (a.day<b.day?-1:a.day>b.day?1:0)||(a.ts-b.ts); }); }
+// The item's newest out load: one from iso (today) first, else the newest by ts among those from iso or earlier.
+function llOutFor(id,iso){ const d=iso||llToday(), O=llOutLoads().filter(function(o){ return o.line===id&&(!o.day||o.day<=d); }); if(!O.length) return null;
+  const td=O.filter(function(o){ return o.day===d; }); return (td.length?td:O).sort(function(a,b){ return b.ts-a.ts; })[0]; }
+function llOutWords(o){ const l=o.l, sp=(typeof laundrySplitLineStage==="function")?laundrySplitLineStage(o.id):""; if(sp) return sp;
+  const cm=(typeof lcMeta==="function")?lcMeta(l):null; if(cm) return cm[0]+" "+cm[1];
+  return l.stage==="dryer"?"🌀 in the dryer":l.stage==="basket"?"🧺 in the basket":l.stage==="fold"?"🧺 folded — put away":l.stage==="bin"?"💦 in the wash-today bin":l.stage==="prewash"?"💦 in the prewash":"🫧 in the washer"; }
+function llSinceDay(iso){ if(!iso) return ""; const t=llToday(); if(iso===t) return "today"; const n=Math.round((new Date(t+"T12:00")-new Date(iso+"T12:00"))/864e5); if(n===1) return "yesterday"; if(n>1&&n<7) return LL_DL[llDow(iso)]; const p=iso.split("-"); return (+p[1])+"/"+(+p[2]); }
+function llOutStage(o){ return llOutWords(o)+" since "+llSinceDay(o.at||o.day); }   // since it reached this stage — the clock 🔴 NOW reads
+function llOutLabel(o){ const lb=String((o.l&&o.l.label)||"Load"), tg=o.line?llLabelTag(o.line):""; return lb+((tg&&lb.slice(-tg.length)!==tg)?tg:""); }
+function llOutAdvBtn(o){ const l=o.l, txt=(l.stage==="dryer"&&typeof LAUNDRY_FOLDED_BTN!=="undefined"&&(typeof lcHas!=="function"||!lcHas(l)||lcNextIsFold(l)))?LAUNDRY_FOLDED_BTN:(typeof laundryAdvanceLabel==="function")?laundryAdvanceLabel(l.stage,l):"→ Next";   // the 🔴 NOW row's own button
+  return '<button onclick="laundryAdvance(\''+o.id+'\')" style="padding:3px 9px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+txt+'</button>'; }
+// Still out — under Today on the line's list: every load from an earlier day, in the order it went in.
+function llStillOutHTML(t){ t=t||llToday(); const O=llOutLoads().filter(function(o){ return o.day&&o.day<t; }); if(!O.length) return ""; const A=llAll();
+  return '<div style="display:flex;align-items:center;gap:6px;margin:8px 0 3px"><span style="font-size:11.5px;font-weight:800;flex:1">Still out</span></div>'+O.map(function(o){ const em=(o.line&&A[o.line]&&A[o.line].emoji)||'🧺';
+    return '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px"><span>'+esc(em)+'</span><span style="flex:1;font-weight:700">'+esc(llOutLabel(o))+' <span style="font-weight:400;color:#6b6560">· 👤 '+esc(llName(o.who||"mom"))+' · '+llOutStage(o)+'</span></span>'+llOutAdvBtn(o)+'</div>'; }).join(''); }
+// A kid's own: their loads (doer = the kid) at fold / basket from any day — not today's line load, which their card and Fold row already carry.
+function llKidOutLoads(kid,iso){ const t=iso||llToday(); return llOutLoads().filter(function(o){ return o.who===kid&&(o.stage==="fold"||o.stage==="basket")&&!(o.line&&o.day===t); }); }
+function llKidOutRowHTML(o){ const A=llAll(), em=(o.line&&A[o.line]&&A[o.line].emoji)||'🧺';
+  return '<div style="display:flex;align-items:center;gap:6px;margin-top:5px;font-size:12.5px"><span>'+esc(em)+'</span><span style="flex:1;font-weight:700">'+esc(llOutLabel(o))+' <span style="font-weight:600;color:#15803d">· '+llOutStage(o)+'</span></span>'
+    +'<button onclick="event.stopPropagation();llPutAway(\''+o.id+'\')" style="padding:5px 10px;border-radius:9px;border:none;background:#16a34a;color:#fff;font-size:12px;font-weight:800;cursor:pointer">✓ Put away</button></div>'; }
+// Same-name line items (by id, never by label): " · Wed" in home-days mode, " · 1st" / " · 2nd" by line order in plain rotation; "" alone.
+function llLabelTag(id){ return llMemo("T|"+id,function(){ const I=llItems(), x=I[id]; if(!x||!x.label) return ""; const lb=String(x.label).trim(), tw=llOrder().filter(function(k){ return I[k]&&String(I[k].label||"").trim()===lb; }); if(tw.length<2) return "";
+  if(llMode()==="home") return " · "+LL_DL[llHome(id)]; const n=tw.indexOf(id)+1; return " · "+n+(n===1?"st":n===2?"nd":n===3?"rd":"th"); }); }   // ⚡ LL_MEMO: once per render, reset by any line edit
+// LAUNDRY_SYNC_END
 function laundrySince(ts){
   try{ return new Date(ts).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}); }catch(e){ return ""; }
 }
