@@ -17,11 +17,15 @@ const REPO=__dirname;
 const src=fs.readFileSync(path.join(REPO,"index.html"),"utf8");
 function slice(a,b){ const i=src.indexOf(a), j=src.indexOf(b,i); if(i<0||j<0) throw new Error("slice missing "+a); return src.slice(i,j+b.length); }
 const SITE=slice("// ENVSITE_START","// ENVSITE_END"), CON=slice("// ENVCONSOLE_START","// ENVCONSOLE_END"), MIR=slice("// ENVMIRROR_START","// ENVMIRROR_END");
+const CLS=slice("// ENVCLASSSET_START","// ENVCLASSSET_END");   // ⚙️ the class settings (2026-10-28): the console's panel + the kid's overlay
+// o.envt: the station check-ins too (ENVTEST, + the forms on window.HoweEnvirothon = o.lib) — the demo's check-in rules (2026-10-28) —
+// and the 🔊 read-aloud switch right after it (ENVREADALOUD; mastSpeak records into G.said)
+const ENVT=slice("// ENVTEST_START","// ENVREADALOUD_END");
 const UNIT=slice('const ENV_UNIT_ID="nc_envirothon";','const ENV_CARD_COUNT=ENV_DECKS.reduce((s,d)=>s+d[5],0);')+"\n"+slice("const ENV_SESSION_SID=","function envSessionRecord(u){")+'const r=Object.assign({},ENV_SESSION,{decks:(u&&u.decks||[]).map(d=>d.key).filter(Boolean)}); r.pattern=ENV_SESSION.pattern.slice(); return r; }\n';
 const tierFn=src.slice(src.indexOf("function mastTierAtLeast(tier,gateTier){"), src.indexOf("}", src.indexOf("return a>=b;", src.indexOf("function mastTierAtLeast(tier,gateTier){")))+1);
 function el(id){ return {id,value:"",innerHTML:"",textContent:"",style:{},disabled:false,classList:{add(){},remove(){},toggle(){}},focus(){},outerHTML:"",parentNode:null,appendChild(){},querySelectorAll(){ return []; },contains(){ return false; }}; }
 function world(o){
-  o=o||{}; const G={search:o.search||"",fam:o.fam===undefined?{familyId:"howe",roster:[]}:o.fam,els:{},created:[],body:{classList:{list:[],add(...a){ a.forEach(x=>{ if(this.list.indexOf(x)<0) this.list.push(x); }); },remove(){},toggle(){},contains(x){ return this.list.indexOf(x)>=0; }},appendChild(e){ G.created.push(e); }},
+  o=o||{}; const G={lib:o.lib||null,search:o.search||"",fam:o.fam===undefined?{familyId:"howe",roster:[]}:o.fam,els:{},created:[],body:{classList:{list:[],add(...a){ a.forEach(x=>{ if(this.list.indexOf(x)<0) this.list.push(x); }); },remove(){},toggle(){},contains(x){ return this.list.indexOf(x)>=0; }},appendChild(e){ G.created.push(e); }},
     renders:0,content:"",writes:[],reads:[],listeners:[],auth:o.auth||null,remote:o.remote||{},signins:[],resets:[],created_users:[],reloads:0,toasts:[],bank:{},dry:!!o.dry,tab:"schedule",now:o.now||Date.UTC(2026,9,28,15,0,0),apps:[],mastReady:!!o.mastReady,unitsReady:!!o.unitsReady,masteryData:o.masteryData,unitStudies:o.unitStudies,roster:o.roster};
   const ref=(p)=>({ once(ev,fn){ G.reads.push(p); const v=(p in G.remote)?G.remote[p]:null; const snap={val:()=>v}; if(fn) fn(snap); return Promise.resolve(snap); }, on(ev,fn){ G.listeners.push({p,fn}); if(p in G.remote){ try{ fn({val:()=>G.remote[p]}); }catch(e){ G.onErr=String(e); } } }, off(ev,fn){ G.listeners=G.listeners.filter(l=>!(l.p===p&&l.fn===fn)); },
     set(v){ G.writes.push(["set",p,v]); return Promise.resolve(); }, update(v){ G.writes.push(["update",p,v]); return Promise.resolve(); }, remove(){ G.writes.push(["remove",p]); return Promise.resolve(); }, transaction(fn){ G.writes.push(["transaction",p,fn(null)]); return Promise.resolve({committed:true,snapshot:{val:()=>fn(null)}}); } });
@@ -31,7 +35,7 @@ function world(o){
   const document={ getElementById:(id)=>{ if(id==="content") return G.contentEl; return G.els[id]||null; }, createElement:(t)=>{ const e=el(""); e.tag=t; return e; }, body:G.body, head:{appendChild(e){ G.created.push(e); }}, activeElement:null, addEventListener(){} , documentElement:{} };
   G.contentEl=el("content"); Object.defineProperty(G.contentEl,"innerHTML",{set(v){ G.content=v; G.renders++; },get(){ return G.content; }});
   const api=new Function("G","firebase","document","tierFn",`
-    const window={ HA_FAMILY:G.fam, scrollTo(){}, open(){ return null; } }; const location={ search:G.search, hostname:"", origin:"file://", pathname:"/x/index.html", reload(){ G.reloads++; } };
+    const window={ HA_FAMILY:G.fam, HoweEnvirothon:G.lib||undefined, scrollTo(){}, open(){ return null; } }; const location={ search:G.search, hostname:"", origin:"file://", pathname:"/x/index.html", reload(){ G.reloads++; } };
     const sessionStorage={ setItem(){}, getItem(){ return null; } }; const console={ log(){}, error(){}, warn(){} };
     const setTimeout=(fn,ms)=>{ G.timers=G.timers||[]; G.timers.push({fn,ms}); return G.timers.length; }, clearTimeout=()=>{};
     const Date=Object.assign(function(...a){ return a.length?new globalThis.Date(...a):new globalThis.Date(G.now); },{ now(){ return G.now; }, UTC: globalThis.Date.UTC.bind(globalThis.Date) });
@@ -52,13 +56,17 @@ function world(o){
     function _ustApply(u,kid,n){ G.ust=G.ust||[]; G.ust.push(["apply",kid,n]); return {iu:{},bu:{},modes:{},intro:{},defs:{},hold:{}}; } function _ustWrite(id,kid,w,rec){ G.ust.push(["write",kid,rec.stage]); } function envHydrateAll(){ G.hydrated=true; }
     function envEnrollSession(u,kid){ G.sessionMade=kid; }
     ${UNIT}
+    ${o.envt?"const setInterval=()=>1, clearInterval=()=>{}; function mastSpeak(t){ G.said=(G.said||[]).concat([String(t)]); }\n"+ENVT:""}
     ${MIR}
     ${SITE}
     ${CON}
+    ${CLS}
     STARTER_UNITS[ENV_UNIT_ID]=envUnitRecordStub; function envUnitRecordStub(){ return {id:ENV_UNIT_ID,starter:ENV_UNIT_ID,starterVer:1,cardsInCode:true,stages:ENV_STAGES.map(s=>({n:s[0]})),decks:ENV_DECKS.map(d=>({key:d[0],stage:d[2],station:d[3],n:d[5],cards:[]}))}; }
     return { get tab(){ return tab; }, set tab(v){ tab=v; }, get db(){ return db; }, get mastView(){ return mastView; }, set mastView(v){ mastView=v; }, get masteryKid(){ return masteryKid; }, unitStudies, masteryData, HA_LS, _envs, _envc, _envm, STARTER_UNITS,
       envEdition, envSiteOn, envsDemo, envsLockState, envsStations, envsStationStat, envsGain, envsEffort, envsBoardsCompute, envsBoardsHtml, envsMakeCode, envsCodeNorm, envsCodeOk, envsKidEmail, envsKidPw, envsFamilyDbUrl, envSiteDb, envSiteDemoBoot, envSiteGate, envsApplyLogin, envSiteAuthShow, envsAuthHtml, envsAuthSubmit, envsKidSubmit, envSiteTabGate, envSiteRender, envsView, envsDemoGo, envsDemoData, envsDemoStart, envSiteSittingDone, envsAutoEnroll, envsWrite, envsLicenseLine, envsCard, envsKidHtml, envsParentHtml, envsStationRowsHtml, envsScoresHtml, envsTipsHtml, envsSettingsHtml, envsReadShared, envsStreakHtml, ENVS_OFF_TABS, ENVS_TIPS, ENVS_CONTACT, ENVS_FULL_APP, ENVS_STARS, ENVS_AUTOLOCK,
-      initFb, envConsoleStart, envConsoleHtml, envcView, envcGridHtml, envcStudentHtml, envcRosterHtml, envcSendHtml, envcStrongHtml, envcStrongRank, envcCardsHtml, envcBoardsHtml, envcWhoHtml, envcAdminHtml, envcAddStudentPaths, envcSendOutUpdate, envcAddStudent, envcSendOut, envcSendPick, envcSendDeck, envcOpenFor, envcUndo, envcCardAdd, envcCardRetire, envcCardSave, envcTeamSet, envcWhoSet, envcLock, envcSeedJson, envcPickClass, envcStudents, envcNewCode, envcBoardsPublish, envcScoreSave, envcDemoStart, envcTeacherAdd, envcClassAdd, envcSeedShow, showTab, renderAll, firebase };`)(G,firebase,document,tierFn);
+      initFb, envConsoleStart, envConsoleHtml, envcView, envcGridHtml, envcStudentHtml, envcRosterHtml, envcSendHtml, envcStrongHtml, envcStrongRank, envcCardsHtml, envcBoardsHtml, envcWhoHtml, envcAdminHtml, envcAddStudentPaths, envcSendOutUpdate, envcFinalUpdate, envcFinalFor, envcFinalOut, envcFinalRec, envcAddStudent, envcSendOut, envcSendPick, envcSendDeck, envcOpenFor, envcUndo, envcCardAdd, envcCardRetire, envcCardSave, envcTeamSet, envcWhoSet, envcLock, envcSeedJson, envcPickClass, envcStudents, envcNewCode, envcBoardsPublish, envcScoreSave, envcDemoStart, envcTeacherAdd, envcClassAdd, envcSeedShow, showTab, renderAll, firebase, ENV_SESSION, ENV_SESSION_SID,
+      _envcs, ENVCS_FIELDS, ENVCS_SECTS, envClassOverlay, envClsMerge, envClsCheck, envClsSave, envClsInput, envClsReset, envClsPat, envClsLock, envClsPanelHtml, envClsStudentHtml, envClsStartHtml, envClsKidLoad, envClsLayers, envClsEff, envClsClassVal, envClsLocked, envClsDef, envClsTierOrderOk, envClsConsoleStart,
+      envt:${o.envt?"{ envtOpen, envtStatus, envtStartHtml, envtPick, envtNext, envtClose, envtCoreLine, envtWaitsForCheckin, envtFinalApply, envRaSet, envRaMode, envRaStartHtml, envRaReadQ, get state(){ return envtState; } }":"null"} };`)(G,firebase,document,tierFn);
   api.G=G; api.el=(id,v)=>{ G.els[id]=el(id); if(v!==undefined) G.els[id].value=v; return G.els[id]; };
   api.flush=async()=>{ for(let i=0;i<60;i++) await Promise.resolve(); };
   api.tick=()=>{ const t=(G.timers||[]).shift(); if(t) t.fn(); return !!t; };
@@ -66,7 +74,7 @@ function world(o){
 }
 
 
-module.exports={world,src,SITE,CON,MIR,UNIT,REPO};
+module.exports={world,src,SITE,CON,MIR,UNIT,CLS,REPO};
 if(require.main===module){
 let pass=0, fail=0;
 const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  "+JSON.stringify(x).slice(0,400):"")); } };
@@ -254,6 +262,51 @@ console.log("\n── the rules file, the setup note, the build ──");
   ok("the demo copy generator exists (envirothon/build/make_demo.js) and DEMO_site.html is committed beside it", fs.existsSync(path.join(REPO,"envirothon","build","make_demo.js"))&&fs.existsSync(path.join(REPO,"envirothon","DEMO_site.html")));
   if(fs.existsSync(path.join(REPO,"envirothon","DEMO_site.html"))){ const demo=fs.readFileSync(path.join(REPO,"envirothon","DEMO_site.html"),"utf8");
     ok("DEMO_site.html: inline config with edition + demo, no family-config.js tag, no cache-bust redirect, the blocks inside, no Howe kid in its roster", /edition:"envirothon"/.test(demo)&&/demo:true/.test(demo)&&!/<script src="family-config.js">/.test(demo)&&!/location\.hostname==='localhost'\|\|location\.hostname==='127\.0\.0\.1'\)return;var s=document\.documentElement\.outerHTML/.test(demo)&&/cache-bust redirect removed/.test(demo)&&demo.indexOf("// ENVSITE_START")>0&&demo.indexOf("// ENVCONSOLE_START")>0&&!/id:"(lincoln|ellis|lucy|julian)"/.test(demo.slice(0,demo.indexOf("// ENVSITE_START")).slice(demo.indexOf("window.HA_FAMILY"),demo.indexOf("window.HA_FAMILY")+800))); } }
+
+console.log("\n── 📝 the demo shows the check-in rules (2026-10-28): the real forms inline, Maya's three stations, the teacher's Open the final ──");
+{ const LIB=require(path.join(REPO,"envirothon.js")), DEMO=path.join(REPO,"envirothon","DEMO_site.html"); const m0=fs.existsSync(DEMO)?fs.statSync(DEMO).mtimeMs:0;
+  const {buildDemo}=require(path.join(REPO,"envirothon","build","make_demo.js"));
+  const html=buildDemo(src,"test",LIB.tests), i=html.indexOf("window.HoweEnvirothon={"), app=html.indexOf("// ENVSITE_START"), end=html.indexOf("</script>",i), scr=html.slice(html.lastIndexOf("<script>",i)+8,end);
+  ok("make_demo inlines HoweEnvirothon.tests as ONE small <script> before the app's script — no cards, no envirothon.js tag, under 120 KB more", i>0&&i<app&&(html.match(/window\.HoweEnvirothon=\{/g)||[]).length===1&&!/"cards":|"unit":/.test(scr)&&!/<script src="envirothon\.js/.test(html)&&html.length-src.length<120000, html.length-src.length);
+  const sb={}; new Function("window",scr)(sb);
+  ok("…it evaluates to exactly envirothon.js's forms (and nothing else)", JSON.stringify(sb.HoweEnvirothon.tests)===JSON.stringify(LIB.tests)&&sb.HoweEnvirothon.demo===true&&!sb.HoweEnvirothon.unit);
+  ok("building it in a test writes no file (DEMO_site.html untouched; only `node make_demo.js` writes)", (fs.existsSync(DEMO)?fs.statSync(DEMO).mtimeMs:0)===m0);
+  const d=world({fam:FAM,search:"?demo=1&role=kid",envt:true,lib:{demo:true,tests:LIB.tests}}); d.envSiteDemoBoot(); d.renderAll(); const E=d.envt, u=d.unitStudies.nc_envirothon, K="maya", start=()=>E.envtStartHtml(K,{sid:"envirothon"});
+  ok("Maya: Forestry graduated, as before", !!E.envtStatus(u,K,"forestry").graduated);
+  ok("Maya: Aquatics sent out, check-in not taken → its cards wait; the 🌿 start shows the check-in with 'Take the check-in first — then the cards open.'", E.envtWaitsForCheckin(K,"Aquatic Ecology · Terms")&&E.envtStatus(u,K,"aquatics").pre.open&&/Aquatic Ecology check-in/.test(start())&&/Take the check-in first — then the cards open\./.test(start())&&!E.envtWaitsForCheckin(K,"General Concepts · Terms")&&!E.envtWaitsForCheckin(K,"Soils and Land Use · Terms"));
+  ok("Maya: Soils check-in taken, final closed — 'Final opens when every core card is learned · 2 of 4'", !E.envtStatus(u,K,"soils").post.open&&E.envtCoreLine(K,"soils")==="Final opens when every core card is learned · 2 of 4");
+  d.envsView("scores"); ok("…on her Scores", /Final opens when every core card is learned · 2 of 4/.test(d.G.content));
+  d.envsDemoGo("parent"); ok("…and on the parent's page", /Final opens when every core card is learned · 2 of 4/.test(d.G.content));
+  d.envsDemoGo("kid");
+  ok("the demo can TAKE the Aquatics check-in with the real 14 questions", E.envtOpen(K,"aquatics","pre")===true&&E.state.form.items.length===LIB.tests.aquatics.pre.items.length);
+  E.state.form.items.forEach(it=>{ (Array.isArray(it.ans)?it.ans:[it.ans]).forEach(x=>E.envtPick(x)); E.envtNext(); });
+  const ov=()=>{ const a=d.G.created.filter(e=>e.id==="envtest-ov"); return a.length?a[a.length-1].innerHTML:""; };
+  ok("…scored, 'Demo — nothing saved', nothing written; then the Aquatics cards flow", E.state.done&&E.state.done.saved===false&&/Demo — nothing saved/.test(ov())&&d.G.writes.length===0&&!E.envtWaitsForCheckin(K,"Aquatic Ecology · Terms")&&!!d.masteryData.maya_tests.aquatics.pre);
+  E.envtClose();
+  d.envsDemoGo("teacher"); d.envcView("student","ramirez_maya");
+  ok("teacher: Maya's student page offers 📝 Open the final · Soils (her final is closed)", /envcFinalFor\('ramirez_maya','soils'\)/.test(d.G.content));
+  const n0=d._envs.writes.length; d.envcFinalFor("ramirez_maya","soils"); await d.flush();
+  ok("…demo: 'would write' release/<cid>/final/students/ramirez_maya/soils, nothing written, and it takes effect for Maya at once (postOpen by the teacher)", d._envs.writes.length===n0+1&&d._envs.writes[n0].path==="release/ms-science-2026/final/students/ramirez_maya/soils"&&d.G.writes.length===0&&d.masteryData.maya_tests.soils.postOpen&&d.masteryData.maya_tests.soils.postOpen.by==="uid_teacher_demo");
+  d.envsDemoGo("kid");
+  ok("back as Maya: the Soils final is open on her 🌿 start and she can take it (the real Soils post-test)", E.envtStatus(u,K,"soils").post.open&&/Soils\/Land Use final/.test(start())&&E.envtOpen(K,"soils","post")===true&&E.state.form.items.length===LIB.tests.soils.post.items.length);
+  E.envtClose();
+  d.envsDemoGo("teacher"); d.envcView("send"); d.envcSendPick("cei"); d.envcFinalOut(); await d.flush();
+  ok("Send out ▸ CEI ▸ Open the final (whole class): demo 'would write' final/all/cei, and Maya's CEI final opens too; still nothing written", d._envs.writes.some(x=>x.op==="update"&&x.val&&x.val["release/ms-science-2026/final/all/cei"])&&d.masteryData.maya_tests.cei&&d.masteryData.maya_tests.cei.postOpen&&d.G.writes.length===0); }
+
+console.log("\n── 🔊 the read-aloud switch in the demo: the 🌿 start, the check-in screen, the kid's ⚙️ — memory only ──");
+{ const LIB=require(path.join(REPO,"envirothon.js"));
+  const d=world({fam:FAM,search:"?demo=1&role=kid",envt:true,lib:{demo:true,tests:LIB.tests}}); d.envSiteDemoBoot(); d.renderAll(); const E=d.envt, K="maya";
+  const ov=()=>{ const a=d.G.created.filter(e=>e.id==="envtest-ov"); return a.length?a[a.length-1].innerHTML:""; };
+  ok("demo Maya starts Off; the 🌿 start draws the switch", E.envRaMode(K)==="off"&&/envra-toggle/.test(E.envRaStartHtml(K,{sid:"envirothon"}))&&/envRaSet\('maya','off'\)[^>]*aria-pressed="true"/.test(E.envRaStartHtml(K,{sid:"envirothon"})));
+  d.envsView("settings"); ok("the kid's ⚙️ has the switch", /envra-toggle/.test(d.G.content)&&/envRaSet\('maya','auto'\)/.test(d.G.content));
+  const r0=d.G.renders; E.envRaSet(K,"auto");
+  ok("tapping Auto in the demo: in memory, the page redraws with Auto pressed, NOTHING written (no db, no envsWrite)", E.envRaMode(K)==="auto"&&d.masteryData.maya_settings.envReadAloud==="auto"&&d.G.renders>r0&&/envRaSet\('maya','auto'\)[^>]*aria-pressed="true"/.test(d.G.content)&&d.G.writes.length===0);
+  d.envsDemoGo("parent"); d.envsView("settings"); ok("the parent's ⚙️ has no switch", !/envra-toggle/.test(d.G.content));
+  d.envsDemoGo("kid"); d.G.said=[];
+  ok("Auto: the Aquatics check-in opens with the switch + 🔊 Read it, and question 1 and its choices are read", E.envtOpen(K,"aquatics","pre")===true&&/envra-toggle/.test(ov())&&/envRaReadQ\(\)/.test(ov())&&d.G.said.length===1&&d.G.said[0].indexOf(LIB.tests.aquatics.pre.items[0].q)===0&&/ A\. /.test(d.G.said[0]));
+  E.envRaSet(K,"off"); E.envtPick(0); E.envtNext();
+  ok("switched Off on the check-in screen (memory): question 2 shows silently, the test kept its place; 🔊 Read it still reads", E.envRaMode(K)==="off"&&E.state&&E.state.i===1&&d.G.said.length===1&&(E.envRaReadQ(),d.G.said.length===2)&&d.G.writes.length===0);
+  E.envtClose(); ok("nothing written anywhere in the demo", d.G.writes.length===0); }
 };
 run().then(()=>{ console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0); }).catch(e=>{ console.error(e); process.exit(1); });
 

@@ -69,12 +69,20 @@ function world(o) {
     function setInterval(){ return 1; } function clearInterval(){} function _todayStr(){ return "2027-01-20"; }
     function mastDefKeyOk(p){ return !/[.#$\\[\\]\\/]/.test(p); }
     function mastDefKey(p){ p=String(p); return mastDefKeyOk(p)?p:p.replace(/[.#$\\[\\]\\/%]/g,c=>"%"+c.charCodeAt(0).toString(16).toUpperCase().padStart(2,"0")); }
-    function mastGateChapter(){ return null; } function mastFullBank(){ return {}; }
+    function mastGateChapter(){ return null; } function mastFullBank(){ return G.bank||{}; }
+    let masteryKid="kid1", matchPairMode="two"; function _smTileVis(){ return ""; } function _matchPairHtml(i){ return i&&i.back?"x":""; }
+    function _whichLeftOut(){ return false; } function _whichNorm(s){ return String(s||"").toLowerCase(); } function _whichIsSymbol(){ return false; } function _whichBack(i){ return i.back||""; }
+    function renderAllSoon(){ G.soon=(G.soon||0)+1; }
     ${helpers}
     ${block}
+    ${fn("mastBankEligible")}
+    ${cut("// ENVDRILLFIRST_START", "// ENVDRILLFIRST_END")}
+    ${fn("_matchEligible")}
+    ${fn("whichDeckModes")}
     return { STARTER_UNITS, ENV_DECKS, ENV_STAGES, envUnitRecord, envHydrateAll, unitStageFormOpen, unitStageEnroll, unitStageMoveUp,
-      envtStations, envtStation, envtForm, envtPassAt, envtRec, envtStatus, envtReleased, envtAllMastered, envtDeckMastered, envtLineHtml, envtKidCardsHtml, envtDetailHtml, envtStartHtml,
+      envtStations, envtStation, envtForm, envtPassAt, envtRec, envtStatus, envtReleased, envtCoreCount, envtCoreLearned, envtCoreLine, envtWaitsForCheckin, envtFinalApply, envtFinalAttach, envtLineHtml, envtKidCardsHtml, envtDetailHtml, envtStartHtml,
       envtMomOpen, envtOpen, envtPick, envtBack, envtNext, envtQuit, envtFinish, envtClose, envtScore, envtHtml, mastDeckMastery,
+      mastBankEligible, envDrillSplit, _matchEligible, whichDeckModes, setKid(k){ masteryKid=k; },
       get state(){ return envtState; }, get us(){ return unitStudies; }, ov(){ return _els["envtest-ov"]?_els["envtest-ov"].innerHTML:null; } };`
   ).call(null, G, db, LIB, globalThis.Date);
   api.G = G; return api;
@@ -153,7 +161,7 @@ console.log("\n── the post-test: locked on the cards, Mom opens early, 24 h 
   ok("post closed: not every deck mastered; opening it is refused", !w.envtStatus(u, K, "forestry").post.open && w.envtOpen(K, "forestry", "post") === false);
   ok("a kid's device can't open it early", (w.G.mom = false, w.envtMomOpen(K, "forestry"), w.G.writes.length === 0 && !w.envtStatus(u, K, "forestry").post.open));
   w.G.mom = true; w.envtMomOpen(K, "forestry");
-  ok("Mom: one write set mastery/kid1_tests/forestry/postOpen = {date, ts}; the post opens", w.G.writes.length === 1 && w.G.writes[0][0] === "set" && w.G.writes[0][1] === "mastery/kid1_tests/forestry/postOpen" && w.G.writes[0][2].date === "2027-01-20" && w.envtStatus(u, K, "forestry").post.open);
+  ok("Mom: one write set mastery/kid1_tests/forestry/postOpen = {date, ts, by:'mom'}; the post opens", w.G.writes.length === 1 && w.G.writes[0][0] === "set" && w.G.writes[0][1] === "mastery/kid1_tests/forestry/postOpen" && w.G.writes[0][2].date === "2027-01-20" && w.G.writes[0][2].by === "mom" && w.envtStatus(u, K, "forestry").post.open);
   ok("the card: '📝 Forestry final · 14 questions' with Start; it tops the 🌿 start too", /Forestry final/.test(w.envtKidCardsHtml(u, K, false)) && /14 questions/.test(w.envtKidCardsHtml(u, K, false)) && /envtOpen\('kid1','forestry','post'\)/.test(w.envtStartHtml(K, { sid: "envirothon" })));
   w.G.writes.length = 0; w.G.now = 1800000100000; const d1 = take(w, K, "forestry", "post", 10);
   ok("10 of 14 → not passed (pass is 12): 'not yet', 'try again tomorrow'", d1 && d1.right === 10 && !d1.pass && !d1.grad && /10 of 14/.test(w.ov()) && /not yet/.test(w.ov()) && /pass is 12 of 14/.test(w.ov()));
@@ -174,16 +182,68 @@ console.log("\n── the post-test: locked on the cards, Mom opens early, 24 h 
   ok("a weaker later attempt would not replace best", (() => { w.G.masteryData.kid1_tests.forestry.graduated = null; delete w.G.masteryData.kid1_tests.forestry.graduated; w.G.now += 30 * 3600 * 1000; w.G.writes.length = 0; take(w, K, "forestry", "post", 11); const u3 = w.G.writes[0][2]; w.envtClose(); return !("post/best" in u3) && Object.keys(u3).length === 1; })());
   ok("every write path stays under mastery/kid1_tests/forestry", w.G.writes.every(x => /^mastery\/kid1_tests\/forestry(\/pre|\/postOpen)?$/.test(x[1]))); }
 
-console.log("\n── the post-test unlocks itself when every deck of the station is mastered (mastDeckMastery) ──");
+console.log("\n── 📝 2026-10-28 rule 2: the final opens itself when every CORE card of the station is learned (handed off by the 🌿 session) ──");
 { const w = enrolled(K); const u = U(w); const soils = w.envtStation("soils");
-  const items = []; soils.decks.forEach(d => { const cards = LIB.unit.decks.find(x => x.key === d.key).cards; cards.forEach((c, i) => items.push({ id: d.key + i, subject: d.key, prompt: c.name, status: "active", tier: "monthly" })); });
-  w.G.masteryData.kid1 = items;
-  ok("850 Soils cards at monthly → every Soils deck mastered → post open without Mom; Forestry still locked", items.length === 850 && w.envtAllMastered(K, "soils") && w.envtStatus(u, K, "soils").post.open && !w.envtAllMastered(K, "forestry") && !w.envtStatus(u, K, "forestry").post.open);
-  items[5].tier = "bi_weekly"; ok("one card at bi-weekly → not mastered → locked", !w.envtAllMastered(K, "soils") && w.envtStatus(u, K, "soils").post.why === "cards");
-  items[5].tier = "graduated"; items[6].status = "introduction"; ok("one card still learning → locked", !w.envtAllMastered(K, "soils"));
-  items[6].status = "active"; items.pop(); ok("one card never minted (still in the bank) → locked", !w.envtAllMastered(K, "soils"));
-  ok("a twin / production card does not count toward the deck", (() => { items.push({ id: "tw", subject: items[0].subject, prompt: items[0].prompt, dir: "prod", twinOf: items[0].id, status: "active", tier: "monthly" }); return !w.envtAllMastered(K, "soils"); })());
-  ok("uses the real mastDeckMastery rule (monthly+ = mastered)", w.mastDeckMastery([{ status: "active", tier: "monthly" }, { status: "active", tier: "weekly" }]).mastered === 1); }
+  const core = [], rest = []; soils.decks.forEach(d => { LIB.unit.decks.find(x => x.key === d.key).cards.forEach((c, i) => (c.core ? core : rest).push({ id: d.key + i, subject: d.key, prompt: c.name, status: "active", tier: "bi_weekly" })); });
+  ok("Soils: 279 core of 850 cards; Forestry 488, Aquatics 425, Wildlife 443, CEI 15 (the counts the line shows)", core.length === 279 && core.length + rest.length === 850 && ["forestry", "aquatics", "wildlife", "cei"].map(s => w.envtCoreCount(K, s).total).join() === "488,425,443,15");
+  const items = core.slice(); w.G.masteryData.kid1 = items;
+  ok("every core card at bi-weekly (the session's handOffAt), no non-core card on the ladder at all → learned → the final opens without Mom", w.envtCoreLearned(K, "soils") && JSON.stringify(w.envtCoreCount(K, "soils")) === '{"learned":279,"total":279}' && w.envtStatus(u, K, "soils").post.open && !w.envtStatus(u, K, "forestry").post.open);
+  ok("the card then says 'every core card learned'", (delete w.G.masteryData.kid1_settings.cat_hold["Soils and Land Use · Terms"], w.G.masteryData.kid1_tests = { soils: { pre: { right: 9, n: 15 } } }, /Soils\/Land Use final/.test(w.envtKidCardsHtml(u, K, false)) && /every core card learned/.test(w.envtKidCardsHtml(u, K, false))));
+  rest.forEach(x => { x.tier = "daily"; x.status = "introduction"; items.push(x); }); ok("non-core cards still learning do not block", w.envtStatus(u, K, "soils").post.open);
+  items[5].tier = "weekly"; ok("one core card at weekly (still the session's) → locked; the line: 'Final opens when every core card is learned · 278 of 279'", !w.envtCoreLearned(K, "soils") && w.envtStatus(u, K, "soils").post.why === "cards" && w.envtCoreLine(K, "soils") === "Final opens when every core card is learned · 278 of 279" && /Final opens when every core card is learned · 278 of 279/.test(w.envtKidCardsHtml(u, K, false)));
+  items[5].tier = "monthly"; items[6].status = "introduction"; ok("past it (monthly) counts; one core card still learning → locked", w.envtCoreCount(K, "soils").learned === 278 && !w.envtCoreLearned(K, "soils"));
+  items[6].status = "parked"; ok("a parked core card → locked", !w.envtCoreLearned(K, "soils"));
+  items[6].status = "active"; const gone = items.splice(7, 1)[0]; ok("a core card never introduced (still in the bank) → locked", w.envtCoreCount(K, "soils").learned === 278 && !w.envtCoreLearned(K, "soils"));
+  ok("a twin / production card does not stand in for it", (items.push({ id: "tw", subject: gone.subject, prompt: gone.prompt, dir: "prod", twinOf: items[0].id, status: "active", tier: "monthly" }), !w.envtCoreLearned(K, "soils")));
+  items.push(gone); ok("back on the ladder → open again", w.envtCoreLearned(K, "soils"));
+  w.G.masteryData.kid1_sessions = { envirothon: { handOffAt: "monthly" } }; ok("the session's OWN handOffAt is used: set to monthly, bi-weekly cards are not learned yet", !w.envtCoreLearned(K, "soils") && w.envtCoreCount(K, "soils").learned < 279);
+  delete w.G.masteryData.kid1_sessions;
+  ok("Forestry released, check-in taken, nothing learned: 'Final opens when every core card is learned · 0 of 488'", (delete w.G.masteryData.kid1_settings.cat_hold["Forestry · Facts"], w.G.masteryData.kid1_tests.forestry = { pre: { right: 9, n: 15 } }, w.envtCoreLine(K, "forestry") === "Final opens when every core card is learned · 0 of 488"));
+  ok("a station not sent out shows no line; a graduated one none; an open one none", w.envtCoreLine(K, "wildlife") === "" && (w.G.masteryData.kid1_tests.forestry.graduated = { right: 12, n: 14 }, w.envtCoreLine(K, "forestry") === "") && w.envtCoreLine(K, "soils") === "");
+  delete w.G.masteryData.kid1_tests.forestry.graduated; w.G.masteryData.kid1_tests.forestry.postOpen = { date: "2027-01-20", ts: 1, by: "mom" };
+  ok("postOpen still opens it with 0 of 488 learned", w.envtStatus(u, K, "forestry").post.open && /opened for you/.test(w.envtKidCardsHtml(u, K, false)));
+  ok("no 'every deck mastered' rule left in the block", !/envtAllMastered|envtDeckMastered|mastDeckMastery\(/.test(TBLK)); }
+
+console.log("\n── 📝 2026-10-28 rule 1: a released station's cards wait for its check-in ──");
+{ const w = enrolled(K); const u = U(w); const H0 = JSON.stringify(w.G.masteryData.kid1_settings.cat_hold);
+  ok("everything held: the station's decks would wait (no pre record); the hold still decides", w.envtWaitsForCheckin(K, "Forestry · Terms") && w.mastBankEligible(K, "Forestry · Terms").length === 0);
+  ["Forestry · Terms", "Forestry · Facts", "Forestry · ID", "General Concepts · Terms"].forEach(k => delete w.G.masteryData.kid1_settings.cat_hold[k]);
+  const H1 = JSON.stringify(w.G.masteryData.kid1_settings.cat_hold);
+  w.G.bank = { "Forestry · Terms": ["Forest", "Stand"], "Forestry · ID": ["White oak · leaf"], "General Concepts · Terms": ["Ecosystem"], "Spelling": ["cat"] };
+  ok("released, check-in not taken: Forestry waits (Soils, still held, would too); General concepts (no check-in form) never waits; another unit's deck / another kid never", w.envtWaitsForCheckin(K, "Forestry · Terms") && w.envtWaitsForCheckin(K, "Forestry · ID") && !w.envtWaitsForCheckin(K, "General Concepts · Terms") && !w.envtWaitsForCheckin(K, "Spelling") && !w.envtWaitsForCheckin("kid9", "Forestry · Terms") && w.envtWaitsForCheckin(K, "Soils and Land Use · Terms"));
+  ok("the study start shows the check-in with 'Take the check-in first — then the cards open.'", /envtOpen\('kid1','forestry','pre'\)/.test(w.envtStartHtml(K, { sid: "envirothon" })) && /Take the check-in first — then the cards open\./.test(w.envtStartHtml(K, { sid: "envirothon" })));
+  ok("🌿 session / every automatic start: mastBankEligible gives nothing for Forestry; General and other subjects as before", w.mastBankEligible(K, "Forestry · Terms").length === 0 && w.mastBankEligible(K, "Forestry · ID").length === 0 && w.mastBankEligible(K, "General Concepts · Terms").join() === "Ecosystem" && w.mastBankEligible(K, "Spelling").join() === "cat");
+  const fi = (id, subject, status) => ({ id, subject, prompt: id, back: "b" + id, status: status || "active", tier: "weekly" });
+  const due = () => [fi("s1", "Spelling"), fi("f1", "Forestry · Terms"), fi("g1", "General Concepts · Terms"), fi("f2", "Forestry · Facts", "introduction"), fi("s2", "Spelling")];
+  let d = due(), env = w.envDrillSplit(K, d);
+  ok("Mom drill (ENVDRILLFIRST): the Forestry cards ride nowhere; General rides first; the rest untouched", env.map(i => i.id).join() === "g1" && d.map(i => i.id).join() === "s1,s2");
+  const its = ["a", "b", "c", "d"].map(x => fi("F" + x, "Forestry · Terms")).concat(["a", "b", "c", "d"].map(x => fi("S" + x, "Spelling")));
+  w.setKid(K); ok("🏋️ Match / Memory flip: a waiting card is not eligible; another subject is", !w._matchEligible(its[0]) && w._matchEligible(its[4]));
+  ok("🏋️ Which one?: the waiting deck has no mode (no deck, no pool); Spelling keeps its own", JSON.stringify(w.whichDeckModes(its, K)) === '{"Spelling":"answer"}');
+  ok("ID Flash skips it too (envFlashDecks, test_env_idflash.js); the hook lines are in index.html", /\(u\.decks\|\|\[\]\)\.forEach\(d=>\{ if\(!d\|\|!d\.key\|\|d\.kind!=="id"\|\|hold\[d\.key\]\) return;\n      if\(typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin\(kid,d\.key\)\) return;/.test(src));
+  w.G.writes.length = 0; take(w, K, "forestry", "pre", 8); w.envtClose();
+  ok("the check-in taken (pre record) → the cards flow exactly as before: bank, drill, games", !w.envtWaitsForCheckin(K, "Forestry · Terms") && w.mastBankEligible(K, "Forestry · Terms").join() === "Forest,Stand" && (d = due(), w.envDrillSplit(K, d).map(i => i.id).join() === "f1,g1,f2") && w._matchEligible(its[0]) && JSON.stringify(w.whichDeckModes(its, K)) === '{"Forestry · Terms":"answer","Spelling":"answer"}');
+  ok("nothing writes cat_hold: the only write was the pre record; the hold map is what the release left", w.G.writes.length === 1 && w.G.writes[0][1] === "mastery/kid1_tests/forestry/pre" && JSON.stringify(w.G.masteryData.kid1_settings.cat_hold) === H1 && H1 !== H0);
+  ok("…and the block has no cat_hold write anywhere (only reads)", !/db\.ref\([^)]*cat_hold|cat_hold\[[^\]]*\]\s*=[^=]|delete [^;]*cat_hold/.test(TBLK));
+  ok("the session's new cards come through mastBankEligible (the 🌿 session start mints through the same gate)", /const names = \(typeof mastBankEligible === "function"\) \? mastBankEligible\(kid, deck\) : \(bank\[deck\] \|\| \[\]\);/.test(src));
+  ok("envirothon.js not loaded: a station without its pre record waits (can't tell it apart); with the pre it flows", (() => { const w2 = world({ lib: null, unitStudies: { nc_envirothon: { id: "nc_envirothon", starter: "nc_envirothon", enrolled: { kid1: true } } } }); const a = w2.envtWaitsForCheckin(K, "General Concepts · Terms") && w2.envtWaitsForCheckin(K, "Forestry · Terms"); w2.G.masteryData.kid1_tests = { forestry: { pre: { right: 1, n: 15 } } }; return a && !w2.envtWaitsForCheckin(K, "Forestry · Terms"); })()); }
+
+console.log("\n── 📝 2026-10-28 rule 3: the teacher's 'Open the final', read back in the family's app ──");
+{ const w = enrolled(K); const u = U(w); delete w.G.masteryData.kid1_settings.cat_hold["Forestry · Terms"]; take(w, K, "forestry", "pre", 10); w.envtClose(); w.G.writes.length = 0;
+  const rec = { date: "2027-01-19", ts: 1799990000000, by: "uid_teacher" };
+  ok("a record for forestry → ONE set mastery/kid1_tests/forestry/postOpen = {date, ts, by} (the record Mom's open saves); the final opens", w.envtFinalApply(K, { forestry: rec }) === 1 && w.G.writes.length === 1 && w.G.writes[0][0] === "set" && w.G.writes[0][1] === "mastery/kid1_tests/forestry/postOpen" && JSON.stringify(w.G.writes[0][2]) === JSON.stringify(rec) && w.envtStatus(u, K, "forestry").post.open);
+  ok("the same record again (a listener fires twice) → nothing", w.envtFinalApply(K, { forestry: rec }) === 0 && w.G.writes.length === 1);
+  w.G.masteryData.kid1_tests.soils = { graduated: { right: 15, n: 17 } };
+  ok("graduated station, General concepts, an unknown key, a junk value → nothing", w.envtFinalApply(K, { soils: rec, general: rec, "x/y": rec, wildlife: true }) === 0 && w.G.writes.length === 1);
+  ok("null / not an object → 0", w.envtFinalApply(K, null) === 0 && w.envtFinalApply(K, "x") === 0);
+  const L = []; const edb = { ref(p) { return { on(e, fn) { L.push({ p, fn }); }, off() {} }; } }, subs = {};
+  ok("envtFinalAttach: two listeners — release/<cid>/final/all and …/final/students/<sid> — kept in the mirror's subs", w.envtFinalAttach(K, "ms1", edb, subs, "howe_kid1") === 2 && L.map(x => x.p).join("|") === "release/ms1/final/all|release/ms1/final/students/howe_kid1" && Object.keys(subs).sort().join() === "kid1|fall,kid1|fme");
+  ok("attached twice → no second pair", w.envtFinalAttach(K, "ms1", edb, subs, "howe_kid1") === 0 && L.length === 2);
+  L[1].fn({ val: () => ({ aquatics: rec }) }); ok("a snapshot arriving on the student's path saves aquatics and asks for ONE combined redraw (a listener: renderAllSoon)", w.G.masteryData.kid1_tests.aquatics.postOpen.by === "uid_teacher" && w.G.writes.length === 2 && w.G.writes[1][1] === "mastery/kid1_tests/aquatics/postOpen" && w.G.soon === 1);
+  L[0].fn({ val: () => ({ aquatics: rec }) }); ok("nothing new → no write, no redraw", w.G.writes.length === 2 && w.G.soon === 1);
+  ok("the mirror's release attach carries the one hook line", /if\(typeof envtFinalAttach==="function"\) envtFinalAttach\(kid,cid,_envm\.edb,_envm\.subs,envmSid\(kid\)\);/.test(src));
+  const d = enrolled(K, { dry: true, db: { ref() { throw new Error("db touched in dry run"); } } });
+  ok("dry run: in memory only", d.envtFinalApply(K, { wildlife: rec }) === 1 && d.G.masteryData.kid1_tests.wildlife.postOpen.ts === rec.ts); }
 
 console.log("\n── dry run: runs and scores, writes nothing, says so ──");
 { const w = enrolled(K, { dry: true, db: { ref() { throw new Error("db touched in dry run"); } } }); const u = U(w); delete w.G.masteryData.kid1_settings.cat_hold["Forestry · Facts"];
@@ -229,9 +289,10 @@ ok("utsKidHTML: the kid's card after the rung chips", /inner\+=utsRungChips\(uts
 ok("renderUnitDetail: the per-kid block after enrolledKids", /const enrolledKids=roster\.filter\(k=>\(u\.enrolled\|\|\{\}\)\[k\]\);\n  if\(typeof envtDetailHtml==="function"\) h\+=envtDetailHtml\(u,enrolledKids,isMom\);/.test(src));
 ok("utsFamilyHTML: the scores line beside the rung chips", /utsRungChips\(utsRungs\(k,u\)\)\.replace\('margin-top:5px','margin-top:0'\)\+\(\(typeof envtLineHtml==="function"\)\?envtLineHtml\(u,k\):""\)/.test(src));
 ok("renderMastStudy: the open test sits under the header, the how-to and the buttons line, before Start", /h\+=mstControlsHtml\(session\);[^\n]*\n  if\(typeof envtStartHtml==="function"\) h\+=envtStartHtml\(kid,session\);[^\n]*\n(?:  if\(typeof envFlashDoorHtml[^\n]*\n)?  const running=mstState&&mstSid===session\.sid;/.test(src));
-ok("exactly these hooks: 4 guarded lines + the two markers", (src.match(/\/\/ 📝 ENVTEST|\/\/ ENVTEST_(?:START|END)/g) || []).length === 6);
-ok("every write in the block is a targeted set or a multi-path update under mastery/<kid>_tests/<station>; dry run guarded (envtLive)", (TBLK.match(/db\.ref\(/g) || []).length === 3 && /db\.ref\("mastery\/"\+kid\+"_tests\/"\+station\+"\/postOpen"\)\.set\(rec\)/.test(TBLK) && /db\.ref\(base\+"\/pre"\)\.set\(rec\)/.test(TBLK) && /db\.ref\(base\)\.update\(up\)/.test(TBLK) && (TBLK.match(/if\(envtLive\(\)\) db\.ref/g) || []).length === 3);
-ok("nothing speaks, no confetti in the block (code lines)", !/mastSpeak|speechSynthesis|confetti|haConfetti|new Audio|\.play\(/.test(TBLK.split("\n").filter(l => !/^\s*\/\//.test(l)).join("\n")));
+ok("exactly these hooks: 4 guarded lines + 7 for the 2026-10-28 rules (bank, drill, ID Flash, Match, Which one?, the mirror's final listeners, the site's line) + the two markers", (src.match(/\/\/ 📝 ENVTEST|\/\/ ENVTEST_(?:START|END)/g) || []).length === 13);
+ok("2026-10-28 hooks: mastBankEligible right after the cat_hold line; envDrillSplit's hold test; _matchEligible; whichDeckModes", /\)\[cat\]\) return \[\];[^\n]*\n  if\(typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin\(kid,cat\)\) return \[\];/.test(src) && /else if\(!hold\[i\.subject\]&&!\(typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin\(kid,i\.subject\)\)\) env\.push\(i\);/.test(src) && /function _matchEligible\(it\)\{ if\(it&&it\.dir==="prod"\) return false;\n  if\(it&&typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin\(masteryKid,it\.subject\)\) return false;/.test(src) && /_whichLeftOut\(i,kid\)\) return;\n    if\(typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin\(kid,i\.subject\)\) return;/.test(src));
+ok("every write in the block is a targeted set or a multi-path update under mastery/<kid>_tests/<station>; dry run guarded (envtLive)", (TBLK.match(/db\.ref\(/g) || []).length === 4 && (TBLK.match(/edb\.ref\(/g) || []).length === 1 && /db\.ref\("mastery\/"\+kid\+"_tests\/"\+station\+"\/postOpen"\)\.set\(rec\)/.test(TBLK) && /db\.ref\(base\+"\/pre"\)\.set\(rec\)/.test(TBLK) && /db\.ref\(base\)\.update\(up\)/.test(TBLK) && (TBLK.match(/if\(envtLive\(\)\) db\.ref/g) || []).length === 3);
+ok("no speech code and no confetti in the block (code lines) — read-aloud lives in ENVREADALOUD (test_env_read_aloud.js)", !/mastSpeak|speechSynthesis|confetti|haConfetti|new Audio|\.play\(/.test(TBLK.split("\n").filter(l => !/^\s*\/\//.test(l)).join("\n")));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
