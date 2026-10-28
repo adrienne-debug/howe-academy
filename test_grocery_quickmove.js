@@ -16,6 +16,7 @@ function mk(o){
     document:{getElementById:id=>id==="gr-pop"?pop:null,createElement:()=>pop,body:{appendChild:()=>{}}}};
   vm.createContext(ctx);
   vm.runInContext(fn("kitSlug"),ctx);
+  vm.runInContext(src.slice(src.indexOf("// SHOPNAME_START"),src.indexOf("// SHOPNAME_END")),ctx);   // SHOPNAME: the list's name constant
   vm.runInContext(src.slice(a,b),ctx);
   ctx.grRepaint=()=>{}; ctx.grPriceLineHTML=()=>""; ctx.grStepperHTML=()=>""; ctx.grPaidBoxHTML=()=>"";
   vm.runInContext("grData.stores="+JSON.stringify(o.noStores?{}:{foodlion:{name:"Food Lion",color:"#d6001c"},aldi:{name:"Aldi",color:"#00205b"}})+";"

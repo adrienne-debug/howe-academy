@@ -37,7 +37,7 @@ function world(o) {
     calls,
   };
   const keys = Object.keys(env);
-  const body = BANNER + "\n" + BLOCK + "\n" + slice("mpSubnav") + "\n" + slice("msvBarHTML")
+  const body = BANNER + "\n" + BLOCK + "\n" + src.slice(src.indexOf("// SHOPNAME_START"), src.indexOf("// SHOPNAME_END")) + "\n" + slice("mpSubnav") + "\n" + slice("msvBarHTML")   // SHOPNAME: the SHOPNAME slice ahead of mpSubnav — the chip reads the list's name constant
     + "\nreturn {mwBanner,mpSubnav,msvBarHTML,mdSmoothHold,mdSmoothCalNow};";
   return new Function(...keys, body)(...keys.map(k => env[k]));
 }

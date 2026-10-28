@@ -77,7 +77,7 @@ function world(o){
   ctx.kitRotSynced={plan:true,rots:true};
   vm.createContext(ctx);
   const CODE=[ line("const KIT_RATES="), line("const KIT_RATE_META="), line("const KIT_ROT_TYPES="), line("const KIT_ROT_DAYS="), line("const KIT_MOVE_NAMES="),
-    line("let kitRotB="), line("let kitRotPick="), "const KIT_ROT_DEFAULT={};",
+    line("let kitRotB="), line("let kitRotPick="), "const KIT_ROT_DEFAULT={};", line("const SHOP_LIST_NAME="),
     fn("esc"), fn("kitIsoPlus"), fn("kitRate"), fn("kitPlanFor"), fn("kitSidesTxt"), fn("kitPlanSlot"), fn("kitPrepMins"), fn("kitPrepSteps"),
     fn("grWeekSources"), fn("grWeekNeeds"), fn("_kitMvGet"), fn("_kitMvFixed"), fn("kitMoveChain"), fn("_calDinnerOf"), fn("_calSlotRows"),
     fn("kitEatGate"), fn("_kitRefresh"), fn("kitRotAll"), fn("kitRotIsoOk"), fn("kitRotStatus"), fn("kitRotTypes"), fn("kitRotTypeMeta"), fn("kitRotNorm"),

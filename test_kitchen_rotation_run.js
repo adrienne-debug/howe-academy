@@ -46,6 +46,7 @@ function world(o){
   run(src.match(/const KIT_FRAC_GLYPH=\{[^}]+\};/)[0]+fn("kitSlug")+fn("kitQtyParse")+fn("kitIsoPlus"));
   run("var kitMeals="+J(o.meals||MEALS)+"; var kitPlan="+J(o.plan||{})+"; var kitRotations="+J(o.rots||{})+"; var kitPickIso=null, kitRotOpen=null, kitRotSaveOpen=false, kitWkImportOpen=false, kitEditId=null, kitView=null;");
   run(cut("// KITSIDES_START","// KITSIDES_END"));
+  run(cut("// SHOPNAME_START","// SHOPNAME_END"));   // SHOPNAME: the list's name constant
   run(cut("// GROCERY_LIST_START","// GROCERY_LIST_END")); ctx.grPriceLineHTML=()=>""; ctx.grStepperHTML=()=>""; ctx.grPaidBoxHTML=()=>""; ctx.grRepaint=()=>{};
   run([line("const KIT_ROT_DEFAULT="),line("const KIT_SLOTS="),line("const KIT_TAGS="),line("const KIT_ROT_DAYS="),
        fn("kitPlanFor"),fn("kitSidesTxt"),fn("kitPlanSlot"),fn("_calDinnerOf"),fn("kitEatGate"),fn("_kitRefresh"),fn("kitAssign"),
