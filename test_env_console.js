@@ -23,7 +23,7 @@ console.log("\n── the sample class ──");
 console.log("\n── §5.1 the class grid ──");
 { const w=demo("teacher"); const h=w.envcGridHtml(); const row=name=>{ const i=h.indexOf(">"+name+"<"); return h.slice(i,h.indexOf("</tr>",i)); };
   ok("header: the six stations + streak + last; General/Forestry/Soils marked ● open, Aquatics/Wildlife/CEI ○", /General.*Forestry.*Soils.*Aquatics.*Wildlife.*CEI.*streak.*last/.test(h)&&(h.match(/● open/g)||[]).length===3&&(h.match(/○</g)||[]).length===3);
-  const maya=row("Maya R."); ok("Maya R.: forestry 100% with accuracy, 🎓 on forestry, a 6-day streak, last today; aquatics '–' (not sent out)", /<b>100%<\/b>/.test(maya)&&/\u{1F393}/u.test(maya)&&/>6 d</.test(maya)&&/>today</.test(maya)&&(maya.match(/–/g)||[]).length===3, maya.replace(/<[^>]+>/g,"|").slice(0,300));
+  const maya=row("Maya R."); ok("Maya R.: forestry 100% with accuracy, 🎓 on forestry, a 6-day streak, last today; aquatics sent out to her alone, nothing studied (0%, her check-in not taken yet); wildlife and CEI '–'", /<b>100%<\/b>/.test(maya)&&/\u{1F393}/u.test(maya)&&/>6 d</.test(maya)&&/>today</.test(maya)&&/<b>0%<\/b>/.test(maya)&&(maya.match(/–/g)||[]).length===2, maya.replace(/<[^>]+>/g,"|").slice(0,300));
   const jonah=row("Jonah T."); ok("Jonah T.: ⚠ (no study in 9 days), streak 0, last 9 days ago; soils sent out but nothing studied → 0%", /⚠/.test(jonah)&&/>0 d</.test(jonah)&&/9 days ago/.test(jonah)&&/title="sent out, nothing studied yet">0%/.test(jonah));
   const caleb=row("Caleb W."); ok("Caleb W.: aquatics opened for him alone shows a cell, not '–'; soils 🎓", !/–[^<]*<\/td><td class="c">[^<]*<\/td><td class="c">[^<]*<\/td><td class="c">\d+ d/.test(caleb)&&/\u{1F393}/u.test(caleb)&&(caleb.match(/–/g)||[]).length===2);
   ok("a name is a link to the student page", /onclick="envcView\('student','ramirez_maya'\)"/.test(h));
@@ -33,15 +33,36 @@ console.log("\n── §5.2 the student page ──");
 { const w=demo("teacher"); w.envcView("student","ramirez_maya"); const h=w.G.content;
   ok("header: name, content version, streak, study days this month, last mirrored", /Maya R\./.test(h)&&/content v1/.test(h)&&/streak 6 d/.test(h)&&/study days this month/.test(h)&&/last mirrored today/.test(h));
   ok("station rows: forestry check-in 9/15 · final 14/15 · 🎓 graduated; soils check-in 8/15; a 'needs work' line on soils; aquatics 🔒 not sent out", /check-in 9\/15 · final 14\/15 · \u{1F393} graduated/u.test(h)&&/check-in 8\/15/.test(h)&&/needs work: Soil horizon/.test(h)&&/\u{1F512} not sent out yet/u.test(h));
-  ok("'Open a station for Maya R. only' lists exactly the stations not yet open for her (aquatics, wildlife, CEI)", /Open a station for Maya R\. only/.test(h)&&/envcOpenFor\('ramirez_maya','aquatics'\)/.test(h)&&/envcOpenFor\('ramirez_maya','cei'\)/.test(h)&&!/envcOpenFor\('ramirez_maya','forestry'\)/.test(h));
+  ok("'Open a station for Maya R. only' lists exactly the stations not yet open for her (wildlife, CEI — aquatics went out to her yesterday)", /Open a station for Maya R\. only/.test(h)&&/envcOpenFor\('ramirez_maya','wildlife'\)/.test(h)&&!/envcOpenFor\('ramirez_maya','aquatics'\)/.test(h)&&/envcOpenFor\('ramirez_maya','cei'\)/.test(h)&&!/envcOpenFor\('ramirez_maya','forestry'\)/.test(h));
   ok("the teacher's scores: forestry test 22/25 (date) · presentation 5/5; other stations 'no test yet'; an edit button each", /test 22\/25 \(/.test(h)&&/presentation 5\/5/.test(h)&&/no test yet/.test(h)&&(h.match(/>edit</g)||[]).length===5);
-  w.envcOpenFor("ramirez_maya","aquatics"); await w.flush();
-  ok("'Open for Maya' writes (demo: would write) release/<cid>/students/ramirez_maya/aquatics and the button disappears", w._envs.writes.some(x=>x.path==="release/ms-science-2026/students/ramirez_maya/aquatics")&&w.G.writes.length===0&&!/envcOpenFor\('ramirez_maya','aquatics'\)/.test(w.G.content));
+  w.envcOpenFor("ramirez_maya","wildlife"); await w.flush();
+  ok("'Open for Maya' writes (demo: would write) release/<cid>/students/ramirez_maya/wildlife and the button disappears", w._envs.writes.some(x=>x.path==="release/ms-science-2026/students/ramirez_maya/wildlife")&&w.G.writes.length===0&&!/envcOpenFor\('ramirez_maya','wildlife'\)/.test(w.G.content));
   w._envc.edit={kind:"score",sid:"tran_jonah",st:"forestry"}; w.envcView("student","tran_jonah"); w._envc.edit={kind:"score",sid:"tran_jonah",st:"forestry"}; w.renderAll();
   ok("the score editor shows test / of / date / presentation / note fields", /id="envc-sc-t"/.test(w.G.content)&&/id="envc-sc-d"/.test(w.G.content)&&/id="envc-sc-n"/.test(w.G.content));
   w.el("envc-sc-t","18"); w.el("envc-sc-tm","25"); w.el("envc-sc-d","2026-10-20"); w.el("envc-sc-p",""); w.el("envc-sc-pm","5"); w.el("envc-sc-n","absent for Q3"); w.envcScoreSave("tran_jonah","forestry"); await w.flush();
   const sc=w._envs.writes.find(x=>x.path==="scores/ms-science-2026/tran_jonah/forestry");
   ok("Save writes scores/<cid>/<sid>/forestry = {test 18, testMax 25, testDate, note, by, ts} — no presentation key when blank", sc&&sc.val.test===18&&sc.val.testMax===25&&sc.val.testDate==="2026-10-20"&&sc.val.note==="absent for Q3"&&!("presentation" in sc.val)&&sc.val.by==="uid_teacher_demo"); }
+
+console.log("\n── 📝 Open the final (2026-10-28): the student page (one student) and Send out (class or picked) ──");
+{ const w=demo("teacher"); w.envcView("student","ramirez_maya"); let h=w.G.content;
+  ok("student page: a '📝 The final for Maya R.' card — one button per station with a final (no General); 🎓 instead of a button on her graduated forestry", /The final for Maya R\./.test(h)&&/envcFinalFor\('ramirez_maya','soils'\)/.test(h)&&/envcFinalFor\('ramirez_maya','cei'\)/.test(h)&&!/envcFinalFor\('ramirez_maya','forestry'\)/.test(h)&&!/envcFinalFor\('ramirez_maya','general'\)/.test(h)&&(h.match(/envcFinalFor\(/g)||[]).length===4);
+  const n0=w._envs.writes.length; w.envcFinalFor("ramirez_maya","soils"); await w.flush();
+  const fw=w._envs.writes.slice(n0);
+  ok("Open the final · Soils: ONE set release/<cid>/final/students/ramirez_maya/soils = {date, ts, by} — demo: would write, nothing written", fw.length===1&&fw[0].op==="set"&&fw[0].path==="release/ms-science-2026/final/students/ramirez_maya/soils"&&JSON.stringify(Object.keys(fw[0].val).sort())==='["by","date","ts"]'&&fw[0].val.by==="uid_teacher_demo"&&/^\d{4}-\d\d-\d\d$/.test(fw[0].val.date)&&typeof fw[0].val.ts==="number"&&w.G.writes.length===0);
+  ok("…and the button turns into 'Soils · final open <date>'", !/envcFinalFor\('ramirez_maya','soils'\)/.test(w.G.content)&&/final open \d{4}-/.test(w.G.content));
+  w.envcFinalFor("ramirez_maya","general"); await w.flush(); ok("General concepts has no final: nothing written", w._envs.writes.length===n0+1);
+  w.envcView("send"); w.envcSendPick("general"); ok("Send out: no 'Open the final' for General", !/envcFinalOut\(\)/.test(w.G.content));
+  w.envcSendPick("wildlife"); w._envc.send.to="pick"; w._envc.send.picked={ramirez_maya:true,tran_jonah:true}; w.renderAll(); h=w.G.content;
+  ok("Send out ▸ Wildlife: '📝 Open the final · Wildlife' under Send out now, to the same students", /envcFinalOut\(\)/.test(h)&&/Open the final · Wildlife/.test(h));
+  const n1=w._envs.writes.length; w.envcFinalOut(); await w.flush(); const pw=w._envs.writes.slice(n1);
+  ok("picked students: ONE multi-path update, exactly release/<cid>/final/students/<sid>/wildlife for each, nothing under release/<cid>/all", pw.length===1&&pw[0].op==="update"&&JSON.stringify(Object.keys(pw[0].val).sort())===JSON.stringify(["release/ms-science-2026/final/students/ramirez_maya/wildlife","release/ms-science-2026/final/students/tran_jonah/wildlife"])&&w.G.writes.length===0);
+  w._envc.send={station:"",decks:null,to:"class",picked:{}}; w.envcSendPick("aquatics"); const n2=w._envs.writes.length; w.envcFinalOut(); await w.flush(); const cw=w._envs.writes.slice(n2);
+  ok("whole class: ONE key release/<cid>/final/all/aquatics = {date, ts, by}; the screen then says it is open for the whole class", cw.length===1&&JSON.stringify(Object.keys(cw[0].val))===JSON.stringify(["release/ms-science-2026/final/all/aquatics"])&&cw[0].val["release/ms-science-2026/final/all/aquatics"].by==="uid_teacher_demo"&&(w.envcSendPick("aquatics"),/final is open for the whole class/.test(w.G.content))&&!/envcFinalOut\(\)/.test(w.G.content));
+  ok("…every student page then shows aquatics 'final open'", (w.envcView("student","tran_jonah"),/Aquatics · final open/.test(w.G.content))&&!/envcFinalFor\('tran_jonah','aquatics'\)/.test(w.G.content));
+  w._envc.send.to="pick"; w._envc.send.picked={}; w.envcSendPick("cei"); w._envc.send.to="pick"; const n3=w._envs.writes.length; w.envcFinalOut(); await w.flush(); ok("picked with nobody ticked → nothing written", w._envs.writes.length===n3);
+  ok("PURE envcFinalUpdate: class → final/all/<station>; picked → one key per student; no station → nothing", (()=>{ const a=w.envcFinalUpdate("c1","soils",null,"u1",1800000000000), b=w.envcFinalUpdate("c1","soils",["x_y"],"u1",1800000000000); return JSON.stringify(Object.keys(a))==='["release/c1/final/all/soils"]'&&a["release/c1/final/all/soils"].ts===1800000000000&&a["release/c1/final/all/soils"].by==="u1"&&JSON.stringify(Object.keys(b))==='["release/c1/final/students/x_y/soils"]'&&Object.keys(w.envcFinalUpdate("c1","",null,"u1",1)).length===0; })());
+  const a=demo("admin"); a.envcView("student","ramirez_maya"); ok("the admin gets the same buttons", /envcFinalFor\('ramirez_maya','soils'\)/.test(a.G.content));
+  const k=demo("kid"); const nk=k._envs.writes.length; k.envcFinalFor("ramirez_maya","soils"); k.envcFinalOut(); ok("a kid on the site can't open a final (no console)", k._envs.writes.length===nk); }
 
 console.log("\n── §5.4 who is strong where ──");
 { const w=demo("teacher"); const st=w.envsStations().find(s=>s.id==="forestry"); const r=w.envcStrongRank(w.envcStudents(),st);
@@ -111,9 +132,11 @@ console.log("\n── live (a fake project): one students/<sid> listener per stu
   w._envs.role="teacher"; w._envs.uid="t1"; w.tab="envsite"; w.envConsoleStart(); await w.flush();
   ok("listeners: students/a_b and students/c_d (one each), never students/", w.G.listeners.filter(l=>l.p==="students/a_b").length===1&&w.G.listeners.filter(l=>l.p==="students/c_d").length===1&&!w.G.listeners.some(l=>l.p==="students"));
   w.renderAll(); ok("the grid draws from the live rows (A B. present)", /A B\./.test(w.G.content));
+  w.envcFinalFor("a_b","forestry"); await w.flush(); ok("live: Open the final sets release/ms1/final/students/a_b/forestry on the shared instance = {date, ts, by:t1}", w.G.writes.some(x=>x[0]==="set"&&x[1]==="release/ms1/final/students/a_b/forestry"&&x[2].by==="t1"&&typeof x[2].ts==="number"));
   w.envcWhoSet("both"); await w.flush(); ok("a write lands on the shared instance's path", w.G.writes.some(x=>x[0]==="set"&&x[1]==="settings/whoDrills/ms1"&&x[2]==="both"));
   w.envcView("boards"); await w.flush(); ok("opening Boards sets boards/ms1 once", w.G.writes.filter(x=>x[1]==="boards/ms1").length===1&&w.G.writes.find(x=>x[1]==="boards/ms1")[2].teams.length>=1);
   const d=world({fam:FAM,auth:{uid:"t1"},dry:true,remote:{"teachers/t1":{classes:{ms1:true}},"classes/ms1":{name:"C",teacher:"t1",students:{}}}}); d._envs.role="teacher"; d._envs.uid="t1"; d.envConsoleStart(); await d.flush(); d.envcWhoSet("both"); await d.flush();
-  ok("?dryrun=1: the console reads but writes nothing", d.G.listeners.length>0&&d.G.writes.length===0); }
+  d.envcFinalFor("x_y","soils"); await d.flush();
+  ok("?dryrun=1: the console reads but writes nothing (Open the final included)", d.G.listeners.length>0&&d.G.writes.length===0); }
 };
 run().then(()=>{ console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0); }).catch(e=>{ console.error(e); process.exit(1); });
