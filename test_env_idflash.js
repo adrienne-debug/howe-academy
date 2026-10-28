@@ -108,6 +108,8 @@ function family(opts) {
   const u = W.envUnitRecord(); u.enrolled = { kidA: true }; W.us.nc_envirothon = u;
   const hold = {}; u.decks.forEach(d => { hold[d.key] = true; }); (opts.release || []).forEach(k => { delete hold[k]; });
   W.G.masteryData.kidA_settings = Object.assign({ cat_hold: hold }, (W.G.masteryData.kidA_settings || {}));
+  // 📝 ENVTEST (2026-10-28): a released station's cards wait for its check-in — the kid has taken every check-in unless opts.noPre
+  if (!opts.noPre) W.G.masteryData.kidA_tests = Object.assign({ forestry: { pre: { right: 9, n: 15 } }, soils: { pre: { right: 9, n: 15 } }, aquatics: { pre: { right: 9, n: 14 } }, wildlife: { pre: { right: 9, n: 15 } }, cei: { pre: { right: 9, n: 20 } } }, W.G.masteryData.kidA_tests || {});
   return W;
 }
 
@@ -166,6 +168,8 @@ console.log("\n── the pictures on the cards (envPicsOn / envPicsApply / envP
   await W2.envPicsLoad(fakeFetch); W2.envHydrate(W2.us.nc_envirothon, LIB);
   const decks = W2.envFlashDecks("kidA");
   ok("envFlashDecks: the released, pictured ID decks only (Forestry 24 items, Wildlife 35), not the held Aquatic deck, never a Terms/Facts deck", decks.map(d => d.key + ":" + d.items.length).join("|") === "Forestry · ID:24|Wildlife · ID:35");
+  const Wwait = family({ release: ["Forestry · ID", "Wildlife · ID"] }); delete Wwait.G.masteryData.kidA_tests.wildlife; await Wwait.envPicsLoad(fakeFetch); Wwait.envHydrate(Wwait.us.nc_envirothon, LIB);
+  ok("📝 ENVTEST: a released station whose check-in isn't taken is not an ID Flash deck (Wildlife waits; Forestry, taken, stays)", Wwait.envFlashDecks("kidA").map(d => d.key).join("|") === "Forestry · ID");
   ok("Soils ID (released) has no pictures → not an ID Flash deck", (() => { delete W2.G.masteryData.kidA_settings.cat_hold["Soils and Land Use · ID"]; return W2.envFlashDecks("kidA").length === 2; })());
   ok("an item carries every way its cards name it (Sweetgum + Sweet gum) and its key is mastDefKey-safe", (() => { const e = decks[0].items.find(i => i.item === "Sweetgum"); return e && e.names.indexOf("Sweet gum") >= 0 && e.key === "Sweetgum" && decks.every(d => d.items.every(i => !/[.#$\[\]\/]/.test(i.key))); })());
   ok("a kid not enrolled / without the unit has no decks", W2.envFlashDecks("kidB").length === 0 && W2.envFlashAvail("kidB") === false && W2.envFlashAvail("kidA") === true);

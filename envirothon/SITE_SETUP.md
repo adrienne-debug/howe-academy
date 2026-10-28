@@ -71,6 +71,12 @@ in the host config overrides the pattern if the console names instances differen
 | teacher | Class grid · Roster · Send out · Who is strong where · Teacher cards · Boards · Who drills | the default instance |
 | you (admin) | everything the teacher sees for every class + Master lock · Classes · Teachers · Families | the default instance |
 
+**Open the final** (2026-10-28): a station's final opens by itself once the kid has learned every core card; the teacher (or you)
+can open it sooner — the student page's "📝 Open the final · <station>" (one student) or Send out's "📝 Open the final" (whole class
+or picked students). It writes `release/<cid>/final/all/<station>` or `release/<cid>/final/students/<sid>/<station>` =
+`{date, ts, by}` (covered by the `release/<cid>` rules; `final` validates the shape); each family's app copies it to its own
+`mastery/<kid>_tests/<station>/postOpen` — the teacher still never touches a family instance. There is no Undo for a final.
+
 **Master lock**: Admin → "Close the season now" writes `release/locked = {locked:true, at, by}`; every family and the teacher
 then land on the "season closed" card; nothing is deleted. It also closes **by itself after 2027-04-24** (State). To reopen
 for the next season, "Reopen the season" after that date writes `{locked:false, at:<then>}`, which the page honours.

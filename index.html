@@ -45308,9 +45308,9 @@ function envEnrollSession(u,kid){
 //     "Soils/Land Use"); its decks are the ENV_DECKS rows with that station, its label the stage's label.
 //   · Pre-test OPEN: the kid is enrolled in the unit, any deck of the station is released (cat_hold cleared — PR 3's send-out),
 //     and no pre record yet. Taken once: mastery/<kid>_tests/<station>/pre = {form,date,n,right,secs,answers,ts}. No retake.
-//   · Post-test OPEN: every deck of the station mastered (mastDeckMastery — the heat map's "% mastered (n/total at monthly+)"
-//     rule — over the kid's cards in that deck, equal to the deck's card count) OR Mom opened it early (momHere(), the Units
-//     page's Mom gate → mastery/<kid>_tests/<station>/postOpen = {date,ts}). Each sitting: one multi-path update on
+//   · Post-test OPEN: every CORE card of the station learned (rule 2 below, 2026-10-28; it was "every card at monthly") OR Mom
+//     opened it early (momHere(), the Units page's Mom gate) OR the teacher did (rule 3) → mastery/<kid>_tests/<station>/postOpen
+//     = {date,ts,by}. Each sitting: one multi-path update on
 //     mastery/<kid>_tests/<station>: post/t<ts> = the attempt, post/best when it beats the best, graduated = {date,right,n} the
 //     first time right ≥ 80 % (16 of 20; a shorter form rounds up). A retake waits 24 h; a graduated station shows 🎓 and closes.
 //   · The test: one question at a time, big touch targets, choices in the form's order with A–E letters (a 5-choice item says
@@ -45321,6 +45321,23 @@ function envEnrollSession(u,kid){
 //     shared-units row gets the one line. Nothing speaks, no confetti.
 //   · Dry run: the test runs and scores, nothing is written, the result says so. No kid's name here — the kid comes from the
 //     caller (the Units tab, the study screen), so the Envirothon edition runs this block for a whole class unchanged.
+//   · CHECK-IN RULES (her decisions 2026-10-28, "yes just environthon and do the pretest postest changes"):
+//     1. CARDS WAIT FOR THE CHECK-IN. A released station whose pre-test is not taken studies nothing: envtWaitsForCheckin(kid,deck)
+//        is true, and the places that already skip a held deck skip it too — the bank (mastBankEligible: the 🌿 session and every
+//        automatic start mint nothing), the Mom drill (envDrillSplit), ⚡ ID Flash (envFlashDecks) and the 🏋️ games (Match / Memory
+//        flip: _matchEligible; Which one?: whichDeckModes). One guarded line each, tagged 📝 ENVTEST. cat_hold is never written here —
+//        the teacher's release stays the only thing that clears it. The pre record makes the predicate false: the cards flow as
+//        before. A station with no pre-test form never waits (General concepts). envirothon.js not loaded yet → a station without
+//        its pre record waits (it can't be told apart), for the second or two until the forms arrive.
+//     2. THE FINAL OPENS WHEN EVERY CORE CARD IS LEARNED: every core:true card of every deck of the station is on the kid's ladder
+//        at or past the 🌿 session's own handOffAt (bi-weekly — the card has left the session for Mom's drill; envtCoreCount). A
+//        card never introduced, still learning, or parked counts as not learned; non-core cards never block. The line says how
+//        far: "Final opens when every core card is learned · 212 of 488" (the Units tab card, the site's Scores and parent page).
+//        Graduated at 80 % and the 24 h retake are unchanged.
+//     3. THE TEACHER OPENS THE FINAL: the console (ENVCONSOLE) writes {date,ts,by} to release/<cid>/final/all/<station> or
+//        release/<cid>/final/students/<sid>/<station> in the shared project — the teacher never touches a family's database. The
+//        family's app reads it back beside the station releases (envtFinalAttach, from ENVMIRROR's release listeners) and saves
+//        the same record Mom's early open saves, mastery/<kid>_tests/<station>/postOpen = {date,ts,by}, once (envtFinalApply).
 const ENVT_PASS_NUM=4, ENVT_PASS_DEN=5;   // 80 %
 const ENVT_RETAKE_MS=24*60*60*1000;
 function envtEsc(v){ return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -45343,11 +45360,23 @@ function envtAttempts(rec){ const p=(rec&&rec.post)||{}; return Object.keys(p).f
 function envtReleased(kid,station){ const st=envtStation(station); if(!st) return false; const hold=(masteryData[kid+"_settings"]||{}).cat_hold;
   if(!hold||typeof hold!=="object"){ let items=masteryData[kid]||[]; if(!Array.isArray(items)) items=Object.values(items); return st.decks.some(d=>items.some(i=>i&&i.subject===d.key)); }
   return st.decks.some(d=>!hold[d.key]); }
-// a deck is mastered when every one of its cards is on this kid's ladder at the mastery tier (the heat map's rule, mastDeckMastery)
-function envtDeckMastered(kid,deck){ let items=masteryData[kid]||[]; if(!Array.isArray(items)) items=Object.values(items);
-  const mine=items.filter(i=>i&&i.subject===deck.key&&!i.twinOf&&i.dir!=="prod");
-  const m=(typeof mastDeckMastery==="function")?mastDeckMastery(mine):{mastered:0}; return deck.n>0&&m.mastered>=deck.n; }
-function envtAllMastered(kid,station){ const st=envtStation(station); return !!st&&st.decks.length>0&&st.decks.every(d=>envtDeckMastered(kid,d)); }
+function envtUnit(){ const us=(typeof unitStudies!=="undefined"&&unitStudies)||{}; return us[ENV_UNIT_ID]||Object.keys(us).map(k=>us[k]).find(x=>envtIsUnit(x))||null; }
+const ENVT_DECK_STATION=Object.fromEntries(ENV_DECKS.map(d=>[d[0],d[3]]));
+// 1. a released station's cards wait for its check-in: enrolled, the station has a pre-test form, and no pre record yet
+function envtWaitsForCheckin(kid,deckKey){
+  const station=ENVT_DECK_STATION[deckKey]; if(!station||!kid) return false;
+  if(!envtEnrolled(envtUnit(),kid)) return false;
+  if(envtLib()&&!envtForm(station,"pre")) return false;
+  return !envtRec(kid,station).pre; }
+// 2. the station's core cards learned = handed off by the 🌿 session (tier at/after ITS handOffAt): {learned,total}
+function envtHandOffAt(kid){ const S=masteryData[kid+"_sessions"], s=S&&S[ENV_SESSION_SID]; return (s&&s.handOffAt)||ENV_SESSION.handOffAt; }
+function envtCoreCount(kid,station){ const st=envtStation(station), L=((typeof window!=="undefined")&&window.HoweEnvirothon&&window.HoweEnvirothon.unit)||null;
+  const out={learned:0,total:0}; if(!st||!L) return out;
+  let items=masteryData[kid]||[]; if(!Array.isArray(items)) items=Object.values(items); const at=envtHandOffAt(kid), keys=new Set(st.decks.map(d=>d.key)), ok={};
+  items.forEach(i=>{ if(i&&keys.has(i.subject)&&!i.twinOf&&i.dir!=="prod"&&i.status!=="introduction"&&i.status!=="parked"&&mastTierAtLeast(i.tier,at)) (ok[i.subject]=ok[i.subject]||new Set()).add(i.prompt); });
+  (L.decks||[]).forEach(d=>{ if(!d||!keys.has(d.key)) return; (d.cards||[]).forEach(c=>{ if(!c||c.core!==true) return; out.total++; if(ok[d.key]&&ok[d.key].has(c.name)) out.learned++; }); });
+  return out; }
+function envtCoreLearned(kid,station){ const c=envtCoreCount(kid,station); return c.total>0&&c.learned>=c.total; }
 // {pre:{open,rec}, post:{open,why,best,last,attempts}, graduated, line}
 function envtStatus(u,kid,station){
   const st=envtStation(station); if(!st||!envtEnrolled(u,kid)) return null;
@@ -45356,7 +45385,8 @@ function envtStatus(u,kid,station){
   out.pre.open=!!(pre&&!rec.pre&&envtReleased(kid,station));
   if(post&&!out.graduated){
     const last=out.post.attempts.length?out.post.attempts[out.post.attempts.length-1]:null;
-    if(!(rec.postOpen||envtAllMastered(kid,station))) out.post.why="cards";
+    const core=out.post.core=envtCoreCount(kid,station);
+    if(!(rec.postOpen||(core.total>0&&core.learned>=core.total))) out.post.why="cards";
     else if(last&&last.ts&&Date.now()-last.ts<ENVT_RETAKE_MS) out.post.why="wait";
     else out.post.open=true;
   }
@@ -45366,6 +45396,11 @@ function envtStatus(u,kid,station){
   out.line=parts.join(" \u00B7 ");
   return out;
 }
+// "Final opens when every core card is learned · 212 of 488" while the final waits on the cards of a released station; "" otherwise
+function envtCoreLine(kid,station,st){ if(!st){ const u=envtUnit(); st=u?envtStatus(u,kid,station):null; }
+  if(!st||st.graduated||st.post.open||st.post.why!=="cards"||!st.post.core||!st.post.core.total||!envtForm(station,"post")) return "";
+  if(!st.rec.pre&&!envtReleased(kid,station)) return "";
+  return "Final opens when every core card is learned \u00B7 "+st.post.core.learned+" of "+st.post.core.total; }
 // one line for a kid across the stations ("Forestry: Pre 13/20 · Post 17/20 🎓") — the Family tab's shared-units row
 function envtLineHtml(u,kid){ if(!envtEnrolled(u,kid)) return "";
   const bits=envtStations().map(s=>{ const st=envtStatus(u,kid,s.id); return (st&&st.line)?'<span style="white-space:nowrap">'+envtEsc(s.label)+': '+envtEsc(st.line)+'</span>':""; }).filter(Boolean);
@@ -45374,7 +45409,7 @@ const ENVT_BTN='min-height:48px;padding:0 16px;border-radius:12px;border:none;ba
 function envtStartCardHtml(kid,st,which){ const f=envtForm(st.station.id,which); if(!f) return "";
   const kind=which==="pre"?"check-in":"final";
   return '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#f0fdf4;border:2px solid #86efac;border-radius:14px;padding:10px 12px;margin-top:8px">'
-    +'<div style="flex:1;min-width:160px"><div style="font-size:14px;font-weight:800;color:#14532d">\u{1F4DD} '+envtEsc(st.station.label)+' '+kind+'</div><div style="font-size:11.5px;color:#166534;font-weight:600">'+f.items.length+' questions \u00B7 '+(which==="pre"?"before the cards \u2014 just do your best":"every card mastered \u2014 show what you know")+'</div></div>'
+    +'<div style="flex:1;min-width:160px"><div style="font-size:14px;font-weight:800;color:#14532d">\u{1F4DD} '+envtEsc(st.station.label)+' '+kind+'</div><div style="font-size:11.5px;color:#166534;font-weight:600">'+f.items.length+' questions \u00B7 '+(which==="pre"?"before the cards \u2014 just do your best":((st.post.core&&st.post.core.total&&st.post.core.learned>=st.post.core.total)?"every core card learned \u2014 show what you know":"opened for you \u2014 show what you know"))+'</div>'+(which==="pre"?'<div style="font-size:12px;color:#14532d;font-weight:800;margin-top:2px">Take the check-in first \u2014 then the cards open.</div>':'')+'</div>'
     +'<button onclick="envtOpen(\''+envtJ(kid)+'\',\''+envtJ(st.station.id)+'\',\''+which+'\')" style="'+ENVT_BTN+'">Start</button></div>'; }
 // the per-station block under the unit for one kid: scores line, 🎓, the open test as a card, Mom's early open
 function envtKidCardsHtml(u,kid,isMom){ if(!envtEnrolled(u,kid)) return ""; const S=envtStations(); if(!S.length) return "";
@@ -45383,6 +45418,7 @@ function envtKidCardsHtml(u,kid,isMom){ if(!envtEnrolled(u,kid)) return ""; cons
     h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11.5px;padding:3px 0"><span style="font-weight:800;color:#1f2937">'+envtEsc(s.emoji)+' '+envtEsc(s.label)+(st.graduated?' \u{1F393}':'')+'</span>';
     h+=st.line?'<span style="color:#0d9488;font-weight:700">'+envtEsc(st.line)+'</span>':'<span style="color:var(--muted)">'+(st.pre.open?'check-in ready':(st.rec.pre?'':'not sent out yet'))+'</span>';
     if(!st.post.open&&!st.graduated&&st.post.why==="wait") h+='<span style="color:#b45309;font-weight:700">final again tomorrow</span>';
+    const cl=envtCoreLine(kid,s.id,st); if(cl) h+='<span style="color:var(--muted);font-weight:600">'+envtEsc(cl)+'</span>';
     if(isMom&&!st.post.open&&!st.graduated&&st.post.why==="cards"&&envtForm(s.id,"post")) h+='<button onclick="envtMomOpen(\''+envtJ(kid)+'\',\''+envtJ(s.id)+'\')" style="margin-left:auto;padding:4px 10px;border-radius:9px;border:1.5px solid var(--border);background:#fff;color:#1f2937;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F513} Open the final early</button>';
     h+='</div>';
     if(st.pre.open) h+=envtStartCardHtml(kid,st,"pre");
@@ -45401,10 +45437,25 @@ function envtStartHtml(kid,session){ if(!kid||!session||session.sid!==ENV_SESSIO
 function envtLive(){ return typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
 function envtToday(){ return (typeof _todayStr==="function")?_todayStr():new Date().toISOString().slice(0,10); }
 function envtMomOpen(kid,station){ if(!(typeof momHere==="function"&&momHere())||!kid||!envtStation(station)) return;
-  const rec={date:envtToday(),ts:Date.now()};
-  let T=masteryData[kid+"_tests"]; if(!T||typeof T!=="object") T=masteryData[kid+"_tests"]={}; T[station]=Object.assign({},T[station]||{},{postOpen:rec});
-  if(envtLive()) db.ref("mastery/"+kid+"_tests/"+station+"/postOpen").set(rec);
+  envtPostOpenSave(kid,station,{date:envtToday(),ts:Date.now(),by:"mom"});
   envtAfter(); }
+// the one postOpen write (Mom's early open, the teacher's open read back): mastery/<kid>_tests/<station>/postOpen = {date,ts,by}
+function envtPostOpenSave(kid,station,rec){
+  let T=masteryData[kid+"_tests"]; if(!T||typeof T!=="object") T=masteryData[kid+"_tests"]={}; T[station]=Object.assign({},T[station]||{},{postOpen:rec});
+  if(envtLive()) db.ref("mastery/"+kid+"_tests/"+station+"/postOpen").set(rec); }
+// 3. the teacher's "Open the final", read back in the family's app: release/<cid>/final/all and …/final/students/<sid> (two listeners
+//    beside ENVMIRROR's release listeners, kept in its subs so its sign-out detaches them). Each {<station>:{date,ts,by}} saves
+//    postOpen once for a station that has a final, isn't graduated and isn't open yet. Never removes one (an Undo there closes nothing).
+function envtFinalAttach(kid,cid,edb,subs,sid){ if(!kid||!cid||!edb||!subs||!sid) return 0; let n=0;
+  [["fall","release/"+cid+"/final/all"],["fme","release/"+cid+"/final/students/"+sid]].forEach(pr=>{ const sk=kid+"|"+pr[0]; if(subs[sk]) return;
+    const r=edb.ref(pr[1]), fn=s=>{ try{ if(envtFinalApply(kid,s&&typeof s.val==="function"?s.val():null)&&typeof renderAllSoon==="function") renderAllSoon(); }catch(e){} }; r.on("value",fn); subs[sk]={r,fn}; n++; });
+  return n; }
+function envtFinalApply(kid,map){ if(!kid||!map||typeof map!=="object") return 0; let n=0;
+  Object.keys(map).forEach(station=>{ const r=map[station]; if(!r||typeof r!=="object"||!ENV_DECKS.some(d=>d[3]===station)) return;
+    if(envtLib()&&!envtForm(station,"post")) return;
+    const cur=envtRec(kid,station); if(cur.postOpen||cur.graduated) return;
+    envtPostOpenSave(kid,station,{date:String(r.date||envtToday()),ts:+r.ts||Date.now(),by:String(r.by||"teacher")}); n++; });
+  return n; }
 // ── the test itself (a full-screen layer; the state lives here only until Finish or Quit) ──
 let envtState=null, envtTick=null;
 function envtOpen(kid,station,which){
@@ -46453,6 +46504,7 @@ function envmRelAttach(kid){
     const r=_envm.edb.ref(pr[1]), fn=s=>{ try{ envmRelease(kid,s&&typeof s.val==="function"?s.val():null); }catch(e){ _envm.err=String((e&&e.message)||e); } };
     r.on("value",fn); _envm.subs[sk]={r,fn};
   });
+  if(typeof envtFinalAttach==="function") envtFinalAttach(kid,cid,_envm.edb,_envm.subs,envmSid(kid));   // 📝 ENVTEST: the teacher's "Open the final" (release/<cid>/final/…)
 }
 // A release record {<deckKey>|<station>: truthy}: clear each matching deck's hold once — the family database's one targeted removal.
 function envmRelease(kid,rel){
@@ -46882,6 +46934,7 @@ function envsStationRowsHtml(summary,opts){
     if(s.released) h+='<div style="height:10px;background:#eef2ee;border-radius:5px;overflow:hidden;margin-top:5px"><div style="width:'+(s.pct||0)+'%;height:100%;background:'+(s.pct>=80?'#15803d':'#65a30d')+'"></div></div>';
     const bits=[]; if(s.pre) bits.push('check-in '+s.pre.right+'/'+s.pre.n); if(s.post) bits.push('final '+s.post.right+'/'+s.post.n); if(s.grad) bits.push('\u{1F393} graduated'+(s.grad.date?' '+s.grad.date:''));
     if(bits.length) h+='<div style="font-size:11.5px;color:#0d9488;font-weight:700;margin-top:4px">\u{1F4DD} '+envsEsc(bits.join(" \u00B7 "))+'</div>';
+    if(opts.kid&&typeof envtCoreLine==="function"){ const cl=envtCoreLine(opts.kid,st.id); if(cl) h+='<div class="envs-muted" style="margin-top:3px">\u{1F4DD} '+envsEsc(cl)+'</div>'; }   // 📝 ENVTEST: how far to the final (kid and parent; the console has no cards)
     if(opts.weak&&summary&&summary.weak){ const w=[]; st.decks.forEach(d=>{ (summary.weak[d.key]||[]).forEach(r=>w.push(r)); }); w.sort((a,b)=>(b.m*2+b.d)-(a.m*2+a.d));
       if(w.length) h+='<div class="envs-muted" style="margin-top:3px">needs work: '+envsEsc(w.slice(0,4).map(r=>r.n+(r.m?' \u00D7'+r.m:'')).join(" \u00B7 "))+'</div>'; }
     h+='</div>'; });
@@ -46894,7 +46947,7 @@ function envsStreakHtml(summary){
 }
 function envsScoresHtml(kid){
   const s=envsSummary(kid); let h=envsStreakHtml(s);
-  h+='<div class="envs-card"><div class="envs-h2">\u{1F4CA} My stations</div>'+envsStationRowsHtml(s,{weak:true})+'</div>';
+  h+='<div class="envs-card"><div class="envs-h2">\u{1F4CA} My stations</div>'+envsStationRowsHtml(s,{weak:true,kid})+'</div>';
   const days=Object.keys((s&&s.days)||{}).sort().reverse().slice(0,10);
   h+='<div class="envs-card"><div class="envs-h2">Study sittings</div>'+(days.length?days.map(k=>{ const e=s.days[k]; const pct=(e.c+e.m)?Math.round(e.c/(e.c+e.m)*100):null; return '<div style="display:flex;gap:8px;padding:5px 0;border-top:1px solid #f1efe9;font-size:12.5px"><div style="flex:1;font-weight:700">'+k.slice(0,4)+'-'+k.slice(4,6)+'-'+k.slice(6,8)+'</div><div>'+e.n+' cards</div><div style="width:60px;text-align:right;font-weight:800;color:'+(pct==null?'var(--muted)':pct>=80?'#15803d':'#b45309')+'">'+(pct==null?'\u2013':pct+'%')+'</div></div>'; }).join(""):'<div class="envs-muted">No sittings yet.</div>')+'</div>';
   return h;
@@ -46965,7 +47018,7 @@ function envsParentHtml(){
   if(v==="boards") h+=envsBoardsHtml(_envs.boards,_envs.sid);
   else if(v==="tips") h+=envsTipsHtml("parent");
   else if(v==="settings") h+=envsSettingsHtml();
-  else { h+=envsStreakHtml(s); h+='<div class="envs-card"><div class="envs-h2">\u{1F4CA} Stations \u00B7 the same numbers the teacher sees</div>'+envsStationRowsHtml(s,{weak:true})+'</div>';
+  else { h+=envsStreakHtml(s); h+='<div class="envs-card"><div class="envs-h2">\u{1F4CA} Stations \u00B7 the same numbers the teacher sees</div>'+envsStationRowsHtml(s,{weak:true,kid})+'</div>';
     h+='<div class="envs-card"><div class="envs-h2">\u{1F469}\u200D\u{1F3EB} Who drills</div><div style="font-size:13px">'+envsEsc(envsWhoNote())+'</div></div>';
     h+='<div class="envs-card" style="opacity:.8"><div class="envs-muted">Read-only: '+envsEsc(name)+' studies on the student login; this page shows how it is going. Class: '+envsEsc(envsClassName())+'.</div></div>'; }
   return h;
@@ -47053,6 +47106,9 @@ function envsDemoSeedKid(data){
 //         from the code (ENVSITE's envsKidPw; the code is printed once, never stored); then ONE multi-path update:
 //         logins/<uidP>, logins/<uidK>, students/<sid>/{meta,class,app,logins}, classes/<cid>/students/<sid>. Nothing else (test_env_site.js).
 //       send out: release/<cid>/all/<deckKey> (or students/<sid>/<deckKey>) = {openedAt, by}, one multi-path update per Send; Undo removes a key.
+//       📝 open the final (her ask 2026-10-28): release/<cid>/final/all/<station> (or final/students/<sid>/<station>) = {date, ts, by} — the
+//         same record Mom's early open saves; the family's app copies it to mastery/<kid>_tests/<station>/postOpen (ENVTEST envtFinalApply).
+//         One set from the student page, one multi-path update from Send out. No Undo: once a kid's app has it, the final stays open.
 //       scores/<cid>/<sid>/<station> · teacherCards/<cid>/<deckKey>/<id> (own: add / edit / retire) · classes/<cid>/teams/<sid> (a name she types)
 //       · boards/<cid> (the public boards, recomputed when she opens Boards) · settings/whoDrills/<cid> · admin only: release/locked, teachers/<uid>.
 const ENVC_APP="envcreate";
@@ -47098,6 +47154,21 @@ function envcApp(s){ return (s&&s.app)||((s&&s.meta&&s.meta.familyId==="howe")?"
 function envcView(v,sel){ _envc.view=v; _envc.sel=sel||null; _envc.edit=null; envcRe(); try{ window.scrollTo(0,0); }catch(e){} }
 function envcReleasedKeys(sid){ const R=_envc.release||{}, out={}; Object.keys(R.all||{}).forEach(k=>{ if(R.all[k]) out[k]=1; }); Object.keys((R.students&&R.students[sid])||{}).forEach(k=>{ if(R.students[sid][k]) out[k]=1; }); return out; }
 function envcStationOpen(sid,st){ const k=envcReleasedKeys(sid); if(k[st.id]) return "all"; const n=st.decks.filter(d=>k[d.key]).length; return n===st.decks.length?"all":n?"some":""; }
+// 📝 the final: the record that opened it for this student (whole class first), or null; the stations that have one (not General)
+function envcFinalRec(sid,station){ const F=((_envc.release||{}).final)||{}; return ((F.all||{})[station])||((((F.students||{})[sid])||{})[station])||null; }
+function envcFinalStations(){ return envsStations().filter(st=>st.id!=="general"); }
+function envcToday(now){ const d=new Date(now); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+// PURE: the multi-path update "Open the final" writes — whole class → final/all/<station>; picked students → final/students/<sid>/<station>
+function envcFinalUpdate(cid,station,targets,by,now){ const o={}, rec={date:envcToday(now),ts:now,by};
+  if(!cid||!station) return o; if(!targets||!targets.length) o["release/"+cid+"/final/all/"+station]=rec; else targets.forEach(sid=>{ o["release/"+cid+"/final/students/"+sid+"/"+station]=rec; });
+  return o; }
+function envcFinalMem(o){ _envc.release=_envc.release||{}; const F=_envc.release.final=_envc.release.final||{};
+  Object.keys(o).forEach(p=>{ const a=p.split("/"); if(a[3]==="all"){ F.all=F.all||{}; F.all[a[4]]=o[p]; } else { F.students=F.students||{}; F.students[a[4]]=F.students[a[4]]||{}; F.students[a[4]][a[5]]=o[p]; } }); }
+function envcFinalFor(sid,station){ if(!envcOn()||!sid||!envsStation(station)||station==="general") return; const o=envcFinalUpdate(_envc.cid,station,[sid],_envs.uid,Date.now()), path=Object.keys(o)[0];
+  envcWrite(path,o[path]).then(()=>{ if(envsDemo()) envcFinalMem(o); envcRe(); }).catch(()=>{}); }
+function envcFinalOut(){ if(!envcOn()) return; const sd=_envc.send, st=envsStation(sd.station); if(!st||st.id==="general") return; const targets=sd.to==="pick"?Object.keys(sd.picked).filter(k=>sd.picked[k]):null; if(sd.to==="pick"&&!targets.length){ envsToast("Pick at least one student."); return; }
+  const o=envcFinalUpdate(_envc.cid,st.id,targets,_envs.uid,Date.now());
+  envcMulti(o,"Final opened \u00B7 "+st.label).then(()=>{ if(envsDemo()) envcFinalMem(o); envcRe(); }).catch(()=>{}); }
 // ── the page
 function envConsoleHtml(){
   if(!envcOn()) return "";
@@ -47142,6 +47213,9 @@ function envcStudentHtml(sid){
   let h='<div class="envs-card"><div class="envs-row"><button class="envs-btn sec" onclick="envcView(\'grid\')">← class</button><div style="flex:1"><div class="envs-h2" style="margin:0">'+envcEsc(envcName(s))+(envcApp(s)==="howe"?' · Howe Academy app':'')+'</div><div class="envs-muted">'+(sm?'content v'+(sm.unitVer||1)+' · streak '+((sm.streak&&sm.streak.days)||0)+' d · '+Object.keys(sm.days||{}).filter(k=>envsDaysAgo(k)<30).length+' study days this month · last mirrored '+envcEsc(envsWhen(sm.at?envsDayKey(sm.at):null)):'no study mirrored yet')+'</div></div></div></div>';
   h+='<div class="envs-card"><div class="envs-h2">Stations</div>'+envsStationRowsHtml(sm,{weak:true})+'</div>';
   const held=stns.filter(st=>envcStationOpen(sid,st)!=="all");
+  h+='<div class="envs-card"><div class="envs-h2">\u{1F4DD} The final for '+envcEsc(envcName(s))+'</div><div class="envs-row">'+envcFinalStations().map(st=>{ const t=(sm&&sm.tests&&sm.tests[st.id])||{}, f=envcFinalRec(sid,st.id);
+    if(t.graduated) return '<span class="envs-chip">'+envcEsc(st.short)+' \u{1F393}</span>'; if(f) return '<span class="envs-chip">'+envcEsc(st.short)+' \u00B7 final open'+(f.date?' '+envcEsc(f.date):'')+'</span>';
+    return '<button class="envs-btn sec" onclick="envcFinalFor(\''+envcJ(sid)+'\',\''+st.id+'\')">\u{1F4DD} Open the final \u00B7 '+envcEsc(st.short)+'</button>'; }).join("")+'</div><div class="envs-muted" style="margin-top:4px">It opens on its own once every core card is learned; this opens it now. Writes release/'+envcEsc(cid)+'/final/students/'+envcEsc(sid)+'/&lt;station&gt;. The whole class opens from Send out.</div></div>';
   if(held.length) h+='<div class="envs-card"><div class="envs-h2">Open a station for '+envcEsc(envcName(s))+' only</div><div class="envs-row">'+held.map(st=>'<button class="envs-btn sec" onclick="envcOpenFor(\''+envcJ(sid)+'\',\''+st.id+'\')">\u{1F513} '+envcEsc(st.short)+'</button>').join("")+'</div><div class="envs-muted" style="margin-top:4px">Writes release/'+envcEsc(cid)+'/students/'+envcEsc(sid)+'/&lt;station&gt;. The whole class opens from Send out.</div></div>';
   const SC=(_envc.scores&&_envc.scores[sid])||{};
   h+='<div class="envs-card"><div class="envs-h2">Your in-class scores</div><div class="envs-muted" style="margin-bottom:6px">Next to the app’s numbers: the station test and presentation you graded.</div>';
@@ -47226,7 +47300,8 @@ function envcSendHtml(){
   if(st){ const decks=sd.decks||{}; h+='<div class="envs-muted" style="margin:6px 0 4px">decks:</div><div class="envs-row">'+st.decks.map(d=>'<label style="display:flex;gap:6px;align-items:center;font-size:13px;min-height:40px"><input type="checkbox" '+(decks[d.key]!==false?'checked':'')+' onchange="envcSendDeck(\''+envcJ(d.key)+'\',this.checked)"> '+envcEsc(envsDeckShort(d.key))+' <span class="envs-muted">('+d.n+')</span></label>').join("")+'</div>';
     h+='<div class="envs-muted" style="margin:8px 0 4px">to:</div><div class="envs-row"><label style="font-size:13px;min-height:40px;display:flex;align-items:center;gap:6px"><input type="radio" name="envc-to" '+(sd.to==="class"?'checked':'')+' onchange="_envc.send.to=\'class\';envcRe()"> whole class</label><label style="font-size:13px;min-height:40px;display:flex;align-items:center;gap:6px"><input type="radio" name="envc-to" '+(sd.to==="pick"?'checked':'')+' onchange="_envc.send.to=\'pick\';envcRe()"> pick students</label></div>';
     if(sd.to==="pick") h+='<div class="envs-row">'+S.map(s=>'<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;min-height:36px"><input type="checkbox" '+(sd.picked[s.sid]?'checked':'')+' onchange="_envc.send.picked[\''+envcJ(s.sid)+'\']=this.checked"> '+envcEsc(envcName(s))+'</label>').join("")+'</div>';
-    h+='<div style="margin-top:10px"><button class="envs-btn" onclick="envcSendOut()">\u{1F4E4} Send out now</button></div>'; }
+    h+='<div style="margin-top:10px"><button class="envs-btn" onclick="envcSendOut()">\u{1F4E4} Send out now</button></div>';
+    if(st.id!=="general"){ const fa=envcFinalRec("",st.id); h+='<div style="margin-top:10px;padding-top:8px;border-top:1px solid #f1efe9">'+(fa?'<div class="envs-muted">\u{1F4DD} The '+envcEsc(st.short)+' final is open for the whole class'+(fa.date?' since '+envcEsc(fa.date):'')+'.</div>':'<button class="envs-btn sec" onclick="envcFinalOut()">\u{1F4DD} Open the final \u00B7 '+envcEsc(st.short)+'</button><div class="envs-muted" style="margin-top:4px">To the same students as above. It opens on its own once a student has learned every core card; this opens it now.</div>')+'</div>'; } }
   else h+='<div class="envs-muted">Pick a station.</div>';
   h+='</div>';
   const R=_envc.release||{}; const rows=[];
@@ -48002,6 +48077,7 @@ function envFlashDecks(kid){
   Object.keys(us).forEach(uid=>{ const u=us[uid];
     if(!u||!(typeof envCardsInCode==="function"&&envCardsInCode(u))||!(u.enrolled&&u.enrolled[kid])) return;
     (u.decks||[]).forEach(d=>{ if(!d||!d.key||d.kind!=="id"||hold[d.key]) return;
+      if(typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin(kid,d.key)) return;   // 📝 ENVTEST: the station waits for its check-in
       const by={}, items=[];
       (d.cards||[]).forEach(c=>{ if(!c||!c.name) return; const item=envFlashItemOf(c); if(!item) return;
         let e=by[item]; if(!e){ e=by[item]={item:item,key:(typeof mastDefKey==="function")?mastDefKey(item):item,names:[item],pics:null}; items.push(e); }
@@ -58768,7 +58844,9 @@ function mastDirTag(id){
   try{ let its=masteryData[masteryKid]||[]; if(!Array.isArray(its)) its=Object.values(its);
     const it=its.find(i=>i&&i.id===id); return ((typeof mastProblemTag==="function")?mastProblemTag(it):"")+(it&&it.dir==="prod"?' <span style="font-size:10px;color:#6d28d9;font-weight:800">\u{1F1EC}\u{1F1E7}\u2192\u{1F1E9}\u{1F1EA}</span>':""); }catch(e){ return ""; }   // 🚩 PWFLAG: problem / came-back badge (Mom's view)
 }
-function _matchEligible(it){ if(it&&it.dir==="prod") return false; return matchPairMode==="same"?!!_smTileVis(it):!!_matchPairHtml(it); }
+function _matchEligible(it){ if(it&&it.dir==="prod") return false;
+  if(it&&typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin(masteryKid,it.subject)) return false;   // 📝 ENVTEST: a station waiting for its check-in
+  return matchPairMode==="same"?!!_smTileVis(it):!!_matchPairHtml(it); }
 function mastMatchDecks(){
   let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
   const by={};
@@ -59080,6 +59158,7 @@ function whichDeckModes(items,kid){
   (items||[]).forEach(i=>{
     if(!i||(i.status!=="active"&&i.status!=="introduction")||i.dir==="prod") return;
     if(!String(i.prompt||"").trim()||_whichLeftOut(i,kid)) return;
+    if(typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin(kid,i.subject)) return;   // 📝 ENVTEST: a station waiting for its check-in
     const d=i.subject||"Other", g=by[d]||(by[d]={sym:{},pic:{},ans:{},backs:{}});
     const k=_whichNorm(i.prompt);
     if(_whichIsSymbol(i)){ if(_smTileVis(i)) g.sym[k]=1; return; }
@@ -59623,6 +59702,7 @@ function mastBankEligible(kid,cat){
   let all=mastFullBank(kid)[cat]||[];
   if(typeof owGateNames==="function") all=owGateNames(kid,cat,all);   // 📝 OURWORDS PR 2: an Our-words add waits for its spot (§5.2); no records = the same list
   if((((masteryData[kid+"_settings"]||{}).cat_hold)||{})[cat]) return [];   // 📘 AAS words: only a test result / check-up / problem word puts them on the ladder
+  if(typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin(kid,cat)) return [];   // 📝 ENVTEST: a released Envirothon station's cards wait for its check-in
   const g=((masteryData[kid+"_settings"]||{}).cat_gate||{})[cat];
   if(!g||(!g.subject&&!g.fam)) return all;
   const upto=g.fam?((typeof psFamUpto==="function")?psFamUpto(g.fam,g.item):null)   // 🗓 PUTSCHED: a unit-day gate reads the family track's place (null = open)
@@ -59876,7 +59956,7 @@ function envDrillSplit(kid,due){
   const decks=envDrillDecks(kid); if(!decks||!Array.isArray(due)) return null;
   const hold=(((typeof masteryData!=="undefined"&&masteryData)||{})[kid+"_settings"]||{}).cat_hold||{};
   const env=[], rest=[];
-  due.forEach(i=>{ if(!(i&&decks.has(i.subject))) rest.push(i); else if(!hold[i.subject]) env.push(i); });
+  due.forEach(i=>{ if(!(i&&decks.has(i.subject))) rest.push(i); else if(!hold[i.subject]&&!(typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin(kid,i.subject))) env.push(i); });   // 📝 ENVTEST: …nor a station waiting for its check-in
   if(rest.length===due.length) return null;
   due.length=0; rest.forEach(i=>due.push(i));
   return env;
