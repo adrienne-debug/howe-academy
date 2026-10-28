@@ -37346,7 +37346,8 @@ function utDayForFam(id,it,ds,label){
   const un=tr.unit; if(!un||!un.id||!us[un.id]) return null;
   const wk=utWeekOf(un,label); if(!wk) return null;
   const role=(ds&&typeof FAM_ABBR!=="undefined"&&typeof gwParseDate==="function")?String(((tr.days||{})[FAM_ABBR[gwParseDate(ds).getDay()]])||""):"";
-  const d=utDays(us[un.id]).find(x=>!x.off&&x.wk===wk&&String(x.role||"")===role);
+  const _u=us[un.id], _wk=x=>(typeof opDayWk==="function")?opDayWk(_u,x):x.wk, _role=x=>(typeof opDayRole==="function")?opDayRole(_u,x):String(x.role||"");   // OPENING (G1): a day written in order lays week by week
+  const d=utDays(_u).find(x=>!x.off&&_wk(x)===wk&&_role(x)===role);
   return utRef(un.id,d||null);
 }
 // The index of a kid's lesson in its subject list: by its lesson id (lidsFor), else by the card's own text.
@@ -37383,7 +37384,8 @@ function utDaysForKey(kid,sk,key){
     const f=(typeof frFind==="function")?frFind(sk):null; const tr=(f&&typeof famTrack==="function")?famTrack(f.it):null; if(!tr) return [];
     if(tr.mode==="seq"){ const m=/^l_(.+)$/.exec(String(key)); if(!m) return []; const l=famList(tr.list).find(x=>x&&x.t&&typeof lrSlug==="function"&&lrSlug(x.t)===m[1]); const u=l&&l.u; if(!u||!u.id||!us[u.id]) return []; const d=utDay(us[u.id],u.d); return d?[utRef(u.id,d)]:[]; }
     const un=tr.unit, m=/^wk(\d+)$/.exec(String(key)); if(!un||!un.id||!us[un.id]||!m) return [];
-    const wk=utWeekOf(un,"Wk "+m[1]); if(!wk) return []; return utDays(us[un.id]).filter(d=>!d.off&&d.wk===wk).map(d=>utRef(un.id,d));
+    const wk=utWeekOf(un,"Wk "+m[1]); if(!wk) return []; const _u=us[un.id], _wk=d=>(typeof opDayWk==="function")?opDayWk(_u,d):d.wk;   // OPENING (G1)
+    return utDays(_u).filter(d=>!d.off&&_wk(d)===wk).map(d=>utRef(un.id,d));
   }
   const s=((((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[kid])||{})[sk]; const un=s&&s.unit; if(!un||!un.id||!us[un.id]) return [];
   const i=utLessonIndex(kid,sk,key,null); if(i<0) return []; const d=utDayN(us[un.id],i+1); return d?[utRef(un.id,d)]:[];
@@ -37546,10 +37548,11 @@ function utDaysSectionHTML(u,isMom){
     h+='</div>';
   }
   if(typeof crUnitSectionHTML==="function") h+=crUnitSectionHTML(u,isMom);   // CRAFT (B3): the unit's one project
+  if(typeof opEditorHTML==="function") h+=opEditorHTML(u,isMom);   // OPENING (G1): the fixed opening
   if(days.length){
     h+='<div style="border:1px solid #eef0f3;border-radius:10px;margin-top:10px;overflow:hidden">';
     h+='<div class="ut-hd" style="gap:4px 8px;padding:5px 8px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);background:#f8fafc"><div style="flex:1 1 150px;min-width:0">Day</div>'+["\u{1F517} Links","\u{1F4DA} Books","\u{1F392} Supplies","\u{1F0CF} Cards","\u2702\uFE0F Craft"].map(c=>'<div style="flex:1 1 100px;min-width:0">'+c+'</div>').join("")+'</div>';
-    days.forEach(d=>{ h+=utRowHTML(u,d,isMom); });
+    let _prev=null; days.forEach(d=>{ if(typeof opWeekHeaderHTML==="function") h+=opWeekHeaderHTML(u,d,_prev); h+=utRowHTML(u,d,isMom); _prev=d; });   // OPENING (G1): week headers, week by week
     h+='</div>';
   }
   if(isMom) h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:10px"><input id="ut-new-title" type="text" placeholder="'+(days.length?'Day '+(days.length+1)+' \u2014 what it is about':'Day 1 \u2014 what it is about')+'" style="flex:1 1 200px;padding:6px 9px;border:1.5px solid var(--border);border-radius:9px;font-size:12px;font-family:\'DM Sans\',sans-serif" onkeydown="if(event.key===\'Enter\'){event.preventDefault();utDayAddFromBox(\''+utJ(u.id)+'\');}"><button onclick="utDayAddFromBox(\''+utJ(u.id)+'\')" style="padding:7px 14px;border-radius:10px;border:1.5px dashed #c2410c;background:#fff7ed;color:#c2410c;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Add a day</button></div>';
@@ -37680,7 +37683,7 @@ function psDayTitle(d,i){ return "Day "+(d.n||(i+1))+(d.t?" \u2014 "+d.t:""); }
 function psSeqList(u){ return utDaysOn(u).map((d,i)=>({t:psDayTitle(d,i),n:1,u:{id:u.id,d:d.id}})); }
 function psRoles(u){ const t=utTrack(u)||{}; const out={}; PS_DAYS.concat(["Sat","Sun"]).forEach(dn=>{ const r=utStr((t.roles||{})[dn],60); if(r) out[dn]=r; }); return out; }
 function psWeekTrack(u,startISO){
-  const t=utTrack(u)||{}; const days=utDaysOn(u); let total=0; days.forEach(d=>{ if(d.wk>total) total=d.wk; });
+  const t=utTrack(u)||{}; const days=utDaysOn(u); let total=0; days.forEach(d=>{ const w=(typeof opDayWk==="function")?opDayWk(u,d):d.wk; if(w>total) total=w; });   // OPENING (G1): a day's week from its n when it carries none
   const topics={}; for(let w=1;w<=total;w++){ const tp=utStr((t.weeks||{})[w],120); if(tp) topics[w]=tp; }
   const tr={mode:"week",book:String(u.title||u.id),startDate:startISO,startWeek:1,total:total,days:psRoles(u),unit:{id:u.id,fromWeek:1}};
   if(Object.keys(topics).length) tr.topics=topics;
@@ -38017,6 +38020,7 @@ function dcPageHTML(){
   const d=g.day;
   h+='<div style="margin-top:22px;font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:#a5b4fc">'+dcEsc(g.b.name||"Family time")+' \u00B7 '+dcEsc(g.it.name||"")+(d?' \u00B7 '+dcEsc(d.n?"Day "+d.n:(d.wk?"Wk "+d.wk+(d.role?" \u00B7 "+d.role:""):"")):'')+'</div>';
   h+='<h1 style="font-family:\'Fraunces\',serif;font-size:clamp(30px,5vw,54px);line-height:1.1;margin:8px 0 0;color:#fff">'+(g.u?'<span class="memoji">'+dcEsc(g.u.emoji||"")+'</span> ':'')+dcEsc(d?(d.t||g.label||g.it.name):(g.it.name||"Family time"))+'</h1>';
+  if(typeof opBoardHTML==="function") h+=opBoardHTML(g);   // OPENING (G1): the fixed opening before the day
   h+=d?dcDayHTML(g):dcPlainHTML(g);
   h+=dcCloseBarHTML(g);
   return h+'</div>';
@@ -38038,6 +38042,135 @@ function dcNowHTML(){
   return {n:rows.length,html:rows.map(g=>'<div style="display:flex;align-items:center;gap:6px;padding:7px 10px;background:#faf5ff;border-left:3px solid #7c3aed;border-radius:8px;margin-bottom:6px;flex-wrap:wrap"><span style="flex:1;min-width:180px;font-size:13px">\u{1F3E1} <b>'+dcEsc(g.b.name||"Family time")+'</b>'+(g.day?' <span style="color:#5b21b6;font-weight:700">'+dcEsc(g.day.t||"")+'</span>':'')+'</span><button onclick="dcOpen(\''+dcJ(g.bid)+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#7c3aed;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{1F4FA} Today\u2019s card</button></div>').join("")};
 }
 // DAYCARD_END
+// OPENING_START — 🌅 The Gathering as a unit with two extras: a fixed daily opening and a weekly rhythm ("One shape" §3 example B, §5
+//   opening + roles; BRIEF_units_build_2026-10-27.md G1; her answers 2026-10-26: 5 "the start is Mom's option — a set time or scheduler
+//   picks" (PUTSCHED's Starts, nothing forced), 6 "The Gathering runs week by week", 7 "the Ancients year is 18 fortnight units, each
+//   put on the same Gathering item in turn"). The Gathering memory notes: anchors + one card a day, four rungs, the actual words on
+//   the screen, read/listen cadence, the 7-step flow, "You anchored the day"; the Ancients note: the weather job by level, instruments
+//   not composers.
+//   · THE OPENING: unitStudies/<id>/opening = {steps:[…], weather:{little,early,middle,upper}, poem:{title,by,text,parts,from?,to?} or
+//     poems:[…] (a new poem starts at a week — the monthly swap), sound:{name,url,from?,to?} or sounds:[…]} — edited on the Days
+//     section (Mom only), ONE targeted set per part: unitStudies/<id>/opening/<part>.
+//   · THE DAY CARD (DAYCARD): when the unit has an opening, before the day — the flow strip (1 Gather → 2 Date → 3 Weather → 4 Poem
+//     → 5 Today's card → 6 Read-aloud → ✓), the date, the weather jobs with each present kid's name by level, the poem of this week
+//     with 📜 Show the words and the parts by level, the sound's ▶ while gathering (its link; nothing speaks — the TV has no voices);
+//     then the day as DAYCARD draws it.
+//   · WEEK BY WEEK: a unit whose days are written in order can still be laid week by week when its track has roles — a day's week is
+//     its wk, else ceil(n / perWeek); its role is its role, else the weekday's role in order (opDayWk / opDayRole, read by UNITTRACK's
+//     utDayForFam and utDaysForKey and PUTSCHED's psWeekTrack). The Days table groups days by week with their roles.
+//   · Nothing in the lay changes; a missed day is the track's own missed rule (FAMMAKEUP). No kid's name in code. Dry-run inert.
+const OP_STEPS_DEFAULT=["Gather","Date","Weather","Poem","Today\u2019s card","Read-aloud"];
+const OP_LEVELS=["little","early","middle","upper"];
+const OP_LEVEL_LABEL={little:"Little",early:"Early",middle:"Middle",upper:"Upper"};
+const OP_PARTS=["steps","weather","poem","poems","sound","sounds"];
+const OP_DOW=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+let opOpen={};   // {<uid>: true} while the opening's editor is open on the Days section
+function opMom(){ return (typeof momHere==="function")?momHere():false; }
+function opLive(){ return !!(typeof db!=="undefined"&&db)&&!((typeof _dryRun==="function")&&_dryRun()); }
+function opEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function opJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+function opStr(v,n){ return String(v==null?"":v).trim().slice(0,n||120); }
+function opInt(v){ const n=parseInt(v,10); return (isFinite(n)&&n>0)?n:null; }
+function opUrl(u){ return (typeof lrSafeUrl==="function")?lrSafeUrl(u):(/^https:\/\//i.test(String(u||"").trim())?String(u).trim():""); }
+function opRe(){ if(typeof renderAll==="function") renderAll(); }
+// ── the record, cleaned ──
+function opLevels(o){ const out={}; if(!o||typeof o!=="object") return out; OP_LEVELS.forEach(l=>{ const s=opStr(o[l],600); if(s) out[l]=s; }); return out; }
+function opCleanPoem(p){ if(!p||typeof p!=="object") return null; const o={}; ["title","by"].forEach(k=>{ const s=opStr(p[k],120); if(s) o[k]=s; }); const t=opStr(p.text,6000); if(t) o.text=t; const parts=opLevels(p.parts); if(Object.keys(parts).length) o.parts=parts; const f=opInt(p.from), to=opInt(p.to); if(f) o.from=f; if(to) o.to=to; return Object.keys(o).length?o:null; }
+function opCleanSound(s){ if(!s||typeof s!=="object") return null; const o={}; const n=opStr(s.name,120); if(n) o.name=n; const u=opUrl(s.url); if(u) o.url=u; const f=opInt(s.from), to=opInt(s.to); if(f) o.from=f; if(to) o.to=to; return Object.keys(o).length?o:null; }
+function opArr(v){ if(Array.isArray(v)) return v.filter(Boolean); if(v&&typeof v==="object") return Object.keys(v).sort((a,b)=>(a-b)).map(k=>v[k]).filter(Boolean); return []; }
+function opClean(op){
+  if(!op||typeof op!=="object") return null; const o={};
+  const steps=opArr(op.steps).map(s=>opStr(typeof s==="string"?s:(s&&s.t),60)).filter(Boolean); if(steps.length) o.steps=steps;
+  const w=opLevels(op.weather); if(Object.keys(w).length) o.weather=w;
+  const poems=opArr(op.poems).map(opCleanPoem).filter(Boolean); const poem=opCleanPoem(op.poem); if(poem) poems.unshift(poem); if(poems.length) o.poems=poems;
+  const sounds=opArr(op.sounds).map(opCleanSound).filter(Boolean); const sound=opCleanSound(op.sound); if(sound) sounds.unshift(sound); if(sounds.length) o.sounds=sounds;
+  return Object.keys(o).length?o:null;
+}
+function opOf(u){ const raw=(typeof utOpening==="function")?utOpening(u):(u&&u.opening); return opClean(raw); }
+function opSteps(o){ return (o&&o.steps&&o.steps.length)?o.steps:OP_STEPS_DEFAULT.slice(); }
+// the poem / sound in force on a unit week: the first whose from..to holds the week, else the first with no range (the monthly swap)
+function opForWeek(list,wk){ const L=list||[]; if(!L.length) return null; const n=opInt(wk)||1; return L.find(x=>x.from&&n>=x.from&&(!x.to||n<=x.to))||L.find(x=>!x.from&&!x.to)||L.find(x=>!x.from)||null; }
+// ── week by week for a unit written in order: a day's week and role when the day carries none ──
+function opRoles(u){ const t=(typeof utTrack==="function")?utTrack(u):null; const out=[]; if(!t||!t.roles) return out; OP_DOW.forEach(d=>{ const r=opStr(t.roles[d],60); if(r) out.push({dow:d,role:r}); }); return out; }
+function opDayWk(u,d){ if(!d) return null; if(d.wk) return d.wk; if(!d.n) return null; const pw=(typeof utPerWeek==="function")?utPerWeek(u):4; return Math.ceil(d.n/Math.max(1,Math.min(7,pw))); }
+function opDayRole(u,d){ if(!d) return ""; if(d.role) return d.role; if(!d.n) return ""; const R=opRoles(u); if(!R.length) return ""; const pw=Math.max(1,Math.min(7,(typeof utPerWeek==="function")?utPerWeek(u):4)); const i=(d.n-1)%pw; return (R[i]||R[R.length-1]).role; }
+function opDayLabel(u,d){ const wk=opDayWk(u,d), role=opDayRole(u,d); return (wk?"Wk "+wk:"")+(role?(wk?" \u00B7 ":"")+role:""); }
+// ── the writes: ONE part each ──
+function opWrite(uid,part,value){
+  if(!opMom()||!uid||OP_PARTS.indexOf(part)<0) return false; const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[uid]; if(!u) return false;
+  const probe={}; probe[part]=value; const c=opClean(probe)||{}; let v=null;
+  if(part==="steps") v=c.steps||null; else if(part==="weather") v=c.weather||null;
+  else if(part==="poem"||part==="poems") v=c.poems||null; else v=c.sounds||null;
+  const key=(part==="poem")?"poems":(part==="sound")?"sounds":part;
+  if(!u.opening||typeof u.opening!=="object") u.opening={};
+  if(v===null) delete u.opening[key]; else u.opening[key]=v;
+  if(part==="poem"&&u.opening.poem) delete u.opening.poem; if(part==="sound"&&u.opening.sound) delete u.opening.sound;   // the one-poem / one-sound shapes fold into their lists
+  if(opLive()){ db.ref("unitStudies/"+uid+"/opening/"+key).set(v); if(part==="poem") db.ref("unitStudies/"+uid+"/opening/poem").set(null); if(part==="sound") db.ref("unitStudies/"+uid+"/opening/sound").set(null); }
+  opRe(); return true;
+}
+function opVal(id){ const el=(typeof document!=="undefined"&&document.getElementById)?document.getElementById(id):null; return el?String(el.value||""):""; }
+function opSaveSteps(uid){ return opWrite(uid,"steps",opVal("op-"+opKey(uid)+"-steps").split(/\n+|·|→/).map(s=>s.trim()).filter(Boolean)); }
+function opSaveWeather(uid){ const w={}; OP_LEVELS.forEach(l=>{ w[l]=opVal("op-"+opKey(uid)+"-w-"+l); }); return opWrite(uid,"weather",w); }
+function opSavePoems(uid){ const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[uid]; const cur=(opOf(u)||{}).poems||[]; const k=opKey(uid); const list=cur.map((p,i)=>{ const o={title:opVal("op-"+k+"-p"+i+"-title"),by:opVal("op-"+k+"-p"+i+"-by"),text:opVal("op-"+k+"-p"+i+"-text"),from:opVal("op-"+k+"-p"+i+"-from"),to:opVal("op-"+k+"-p"+i+"-to"),parts:{}}; OP_LEVELS.forEach(l=>{ o.parts[l]=opVal("op-"+k+"-p"+i+"-"+l); }); return o; }).filter(p=>p.title||p.text); const nt=opVal("op-"+k+"-pnew-title"), nx=opVal("op-"+k+"-pnew-text"); if(nt||nx) list.push({title:nt,by:opVal("op-"+k+"-pnew-by"),text:nx,from:opVal("op-"+k+"-pnew-from"),to:opVal("op-"+k+"-pnew-to")}); return opWrite(uid,"poems",list); }
+function opSaveSounds(uid){ const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[uid]; const cur=(opOf(u)||{}).sounds||[]; const k=opKey(uid); const list=cur.map((s,i)=>({name:opVal("op-"+k+"-s"+i+"-name"),url:opVal("op-"+k+"-s"+i+"-url"),from:opVal("op-"+k+"-s"+i+"-from"),to:opVal("op-"+k+"-s"+i+"-to")})).filter(s=>s.name||s.url); const nn=opVal("op-"+k+"-snew-name"), nu=opVal("op-"+k+"-snew-url"); if(nn||nu) list.push({name:nn,url:nu,from:opVal("op-"+k+"-snew-from"),to:opVal("op-"+k+"-snew-to")}); return opWrite(uid,"sounds",list); }
+function opKey(uid){ return String(uid).replace(/[^a-zA-Z0-9_-]/g,"_"); }
+function opToggle(uid){ opOpen[uid]=!opOpen[uid]; opRe(); }
+// ── the editor on the Days section (UNITTRACK's hook) ──
+function opEditorHTML(u,isMom){
+  if(!isMom||!u||!(typeof utTrack==="function"&&utTrack(u))) return ""; const o=opOf(u)||{}; const k=opKey(u.id), a="'"+opJ(u.id)+"'";
+  const inp='width:100%;box-sizing:border-box;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif;background:#fff';
+  const lab=t=>'<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:#0e7490;margin:8px 0 3px">'+t+'</div>';
+  const btn=(fn,txt)=>'<button onclick="'+fn+'" style="margin-top:6px;padding:5px 12px;border-radius:9px;border:none;background:#0e7490;color:#fff;font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+txt+'</button>';
+  let h='<div data-op-editor="1" style="margin-top:10px"><button onclick="opToggle('+a+')" style="padding:5px 11px;border-radius:999px;border:1.5px solid #a5f3fc;background:'+(opOpen[u.id]?'#0e7490;color:#fff':'#ecfeff;color:#0e7490')+';font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F305} The opening'+(o.steps||o.weather||o.poems||o.sounds?' \u00B7 set':'')+(opOpen[u.id]?' \u00D7':'')+'</button>';
+  if(!opOpen[u.id]) return h+'</div>';
+  h+='<div style="margin-top:8px;padding:10px 12px;border:1.5px solid #a5f3fc;border-radius:12px;background:#f0fdfa;font-size:12px">';
+  h+='<div style="font-size:11.5px;color:var(--muted)">The same every morning before the day\u2019s card: gather, the date, the weather job, the poem. Week by week, the days take the roles below.</div>';
+  h+=lab("The flow \u2014 one step per line")+'<textarea id="op-'+k+'-steps" rows="3" style="'+inp+';resize:vertical">'+opEsc(opSteps(o).join("\n"))+'</textarea>'+btn("opSaveSteps("+a+")","Save the flow");
+  h+=lab("\u{1F324} Weather job by level")+'<div style="display:flex;gap:6px;flex-wrap:wrap">'+OP_LEVELS.map(l=>'<input id="op-'+k+'-w-'+l+'" type="text" value="'+opEsc((o.weather||{})[l]||"")+'" placeholder="'+OP_LEVEL_LABEL[l]+' \u2014 e.g. name the sky" style="'+inp+';flex:1 1 150px;width:auto">').join("")+'</div>'+btn("opSaveWeather("+a+")","Save the weather jobs");
+  h+=lab("\u{1F4DC} Poem(s) \u2014 the one in force this week shows; from/to weeks swap them");
+  const poems=(o.poems||[]).concat([null]);
+  poems.forEach((p,i)=>{ const pk=p?("p"+i):"pnew"; const P=p||{};
+    h+='<div style="padding:6px 0;border-top:1px solid #cffafe"><div style="display:flex;gap:6px;flex-wrap:wrap"><input id="op-'+k+'-'+pk+'-title" type="text" value="'+opEsc(P.title||"")+'" placeholder="'+(p?'Title':'\uFF0B A new poem \u2014 title')+'" style="'+inp+';flex:2 1 140px;width:auto"><input id="op-'+k+'-'+pk+'-by" type="text" value="'+opEsc(P.by||"")+'" placeholder="By" style="'+inp+';flex:1 1 100px;width:auto"><input id="op-'+k+'-'+pk+'-from" type="number" min="1" value="'+opEsc(P.from||"")+'" placeholder="from wk" style="'+inp+';flex:0 0 76px;width:auto"><input id="op-'+k+'-'+pk+'-to" type="number" min="1" value="'+opEsc(P.to||"")+'" placeholder="to wk" style="'+inp+';flex:0 0 70px;width:auto"></div>';
+    h+='<textarea id="op-'+k+'-'+pk+'-text" rows="'+(p?3:2)+'" placeholder="The whole poem, as it shows on the screen" style="'+inp+';resize:vertical;margin-top:4px">'+opEsc(P.text||"")+'</textarea>';
+    if(p) h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+OP_LEVELS.map(l=>'<input id="op-'+k+'-'+pk+'-'+l+'" type="text" value="'+opEsc((P.parts||{})[l]||"")+'" placeholder="'+OP_LEVEL_LABEL[l]+' learns\u2026" style="'+inp+';flex:1 1 140px;width:auto">').join("")+'</div>';
+    h+='</div>'; });
+  h+=btn("opSavePoems("+a+")","Save the poems");
+  h+=lab("\u{1F3B5} Sound while gathering \u2014 the era\u2019s instrument, a link");
+  const sounds=(o.sounds||[]).concat([null]);
+  sounds.forEach((s,i)=>{ const sk=s?("s"+i):"snew"; const S=s||{}; h+='<div style="display:flex;gap:6px;flex-wrap:wrap;padding:4px 0"><input id="op-'+k+'-'+sk+'-name" type="text" value="'+opEsc(S.name||"")+'" placeholder="'+(s?'Name':'\uFF0B A new sound \u2014 name')+'" style="'+inp+';flex:2 1 140px;width:auto"><input id="op-'+k+'-'+sk+'-url" type="url" value="'+opEsc(S.url||"")+'" placeholder="https:// link" style="'+inp+';flex:2 1 160px;width:auto"><input id="op-'+k+'-'+sk+'-from" type="number" min="1" value="'+opEsc(S.from||"")+'" placeholder="from wk" style="'+inp+';flex:0 0 76px;width:auto"><input id="op-'+k+'-'+sk+'-to" type="number" min="1" value="'+opEsc(S.to||"")+'" placeholder="to wk" style="'+inp+';flex:0 0 70px;width:auto"></div>'; });
+  h+=btn("opSaveSounds("+a+")","Save the sounds");
+  h+='<div style="font-size:10.5px;color:var(--muted);margin-top:8px">Each Save is one write of unitStudies/\u2026/opening/&lt;part&gt;. The roles for week by week live on the track (Mon: The object, Tue: Nature \u2026) \u2014 PUTSCHED\u2019s week mode writes them onto the Family Time item.</div>';
+  return h+'</div></div>';
+}
+// ── the day card (DAYCARD's hook): the opening before the day ──
+function opBoardHTML(g){
+  if(!g||!g.u) return ""; const o=opOf(g.u); if(!o) return "";
+  const kids=g.present||[]; const wk=(g.day&&(g.day.wk||opDayWk(g.u,g.day)))||1;
+  const lvlKids=l=>kids.filter(k=>(typeof dcLevel==="function"?dcLevel(k):"middle")===l).map(k=>(typeof dcName==="function")?dcName(k):k);
+  const sec=(t,inner)=>(typeof dcSection==="function")?dcSection(t,inner):'<section><div>'+t+'</div><div>'+inner+'</div></section>';
+  let h='<div data-op-board="1">';
+  const steps=opSteps(o);
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px">'+steps.map((s,i)=>'<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;background:rgba(255,255,255,.08);color:#e2e8f0;font-size:15px;font-weight:800"><span style="color:#a5b4fc">'+(i+1)+'</span> '+opEsc(s)+'</span>'+(i<steps.length-1?'<span style="color:#64748b">\u2192</span>':'')).join("")+'<span style="color:#64748b">\u2192</span><span style="padding:6px 12px;border-radius:999px;background:rgba(74,222,128,.15);color:#4ade80;font-size:15px;font-weight:800">\u2713</span></div>';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:clamp(22px,3.5vw,34px);margin-top:14px;color:#fde68a">'+opEsc((typeof _todayStr==="function")?_todayStr():"")+'</div>';
+  if(o.weather){ let w=''; OP_LEVELS.forEach(l=>{ if(!o.weather[l]) return; const names=lvlKids(l); w+='<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:5px 0"><span style="font-size:13px;font-weight:800;color:#a5b4fc;text-transform:uppercase;letter-spacing:.6px;min-width:64px">'+OP_LEVEL_LABEL[l]+'</span><span style="font-size:20px;color:#fff;font-weight:700">'+opEsc(o.weather[l])+'</span>'+(names.length?'<span style="font-size:15px;color:#fde68a;font-weight:700">'+opEsc(names.join(" \u00B7 "))+'</span>':'')+'</div>'; }); h+=sec("\u{1F324} Weather",w); }
+  const poem=opForWeek(o.poems,wk);
+  if(poem){ let p='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="font-size:22px;font-weight:800;color:#fff">'+opEsc(poem.title||"The poem")+(poem.by?' <span style="font-size:15px;font-weight:600;color:#cbd5e1">\u2014 '+opEsc(poem.by)+'</span>':'')+'</span><button onclick="opWordsToggle()" style="padding:8px 14px;border-radius:12px;border:2px solid rgba(255,255,255,.3);background:transparent;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F4DC} '+(opShowWords?'Hide':'Show')+' the words</button></div>';
+    if(opShowWords&&poem.text) p+='<div data-op-words="1" style="white-space:pre-wrap;font-family:\'Fraunces\',serif;font-size:26px;line-height:1.5;color:#fff;margin-top:12px">'+opEsc(poem.text)+'</div>';
+    if(poem.parts){ p+='<div style="margin-top:10px">'; OP_LEVELS.forEach(l=>{ if(!poem.parts[l]) return; const names=lvlKids(l); p+='<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:5px 0"><span style="font-size:13px;font-weight:800;color:#a5b4fc;text-transform:uppercase;letter-spacing:.6px;min-width:64px">'+OP_LEVEL_LABEL[l]+'</span><span style="font-size:18px;color:#fde68a;font-weight:700">'+opEsc(poem.parts[l])+'</span>'+(names.length?'<span style="font-size:13px;color:#cbd5e1">'+opEsc(names.join(" \u00B7 "))+'</span>':'')+'</div>'; }); p+='</div>'; }
+    h+=sec("\u{1F4DC} The poem",p); }
+  const sound=opForWeek(o.sounds,wk);
+  if(sound&&sound.url) h+=sec("\u{1F3B5} While we gather",'<a href="'+opEsc(sound.url)+'" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:8px;padding:12px 18px;border-radius:14px;background:#7c3aed;color:#fff;font-size:18px;font-weight:800;text-decoration:none;font-family:\'DM Sans\',sans-serif">\u25B6 '+opEsc(sound.name||"Play")+'</a>');
+  return h+'</div>';
+}
+let opShowWords=false;
+function opWordsToggle(){ opShowWords=!opShowWords; opRe(); }
+// ── the Days table by week (UNITTRACK's hook): a header line when the week changes ──
+function opWeekHeaderHTML(u,d,prev){
+  if(!u||(typeof utMode!=="function")||utMode(u)!=="week") return ""; const wk=opDayWk(u,d); if(!wk||(prev&&opDayWk(u,prev)===wk)) return "";
+  const t=(typeof utTrack==="function")?utTrack(u):null; const topic=(t&&t.weeks&&t.weeks[wk])||"";
+  return '<div data-op-week="'+wk+'" style="padding:6px 8px;background:#f0fdfa;font-size:11px;font-weight:800;color:#0e7490;border-top:1px solid #cffafe">Week '+wk+(topic?' \u2014 '+opEsc(topic):'')+'</div>';
+}
+// OPENING_END
 // CRAFT_START — ✂️ a craft on a unit day ("One shape" §5 craft:{title, steps:[{text,img}], supplies:[{name,qty}]}; BRIEF_units_build_2026-10-27.md
 //   B3; her ask 2026-10-24: "a craft section for instructions and supplies"). Read with UNITTRACK (utWrite, the Days table), UNITBUILD
 //   (the Builder's day boxes), DAYCARD, LESSONRES (the Sunday list) and the pictures path to Storage (picStore).
