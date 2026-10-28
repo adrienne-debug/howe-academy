@@ -57791,6 +57791,7 @@ function mastDueItems(kid,pn){
   const _owned=(typeof mstOwnedIds==="function")?mstOwnedIds(kid):null;
   const due=items.filter(i=>mastIsDue(i,pn)&&!mastIsNeverDrill(i)&&!mastIsParked(i)&&!(_owned&&_owned.has(i.id)));  // R5: never-drill items never assemble; parked issue-words are held out
   due.sort((a,b)=>MAST_TIER_ORDER.indexOf(a.tier||"daily")-MAST_TIER_ORDER.indexOf(b.tier||"daily"));
+  const _env=(typeof envDrillSplit==="function")?envDrillSplit(kid,due):null, _envJ=l=>(_env&&typeof envDrillJoin==="function")?envDrillJoin(_env,l):l;   // 🌿 ENVDRILLFIRST: his Envirothon cards leave the pool before the guards and go back on the front
   const _mk=masteryKid; masteryKid=kid; const settings=mastDrillSettings(); masteryKid=_mk;
   // Return-day softener (max_overdue_per_drill, 0 = off — Adrienne 2026-10-05): after a run of
   // missed school days every slot that came due meanwhile stacks onto the first drill back
@@ -57848,11 +57849,73 @@ function mastDueItems(kid,pn){
         took=false;
         for(const c of rotated){ if(pick.size>=learnCap) break; const nx=byC[c].shift(); if(nx){ pick.add(nx); took=true; } }
       }
-      return capped.filter(i=>i.status!=="introduction"||pick.has(i));
+      return _envJ(capped.filter(i=>i.status!=="introduction"||pick.has(i)));   // 🌿 ENVDRILLFIRST
     }
   }
-  return capped;
+  return _envJ(capped);   // 🌿 ENVDRILLFIRST
 }
+// ENVDRILLFIRST_START — 🌿 Envirothon cards come FIRST in the Mom drill and sit outside its caps and minimums (her decision
+// 2026-10-27: "I would like him to also be in our drills … He will have a study session, but it will work its way to the
+// drills … it would need to be priority of anything because I don't want him to get behind his teammates because of the
+// guards. So maybe they are not counted in his minimums"; DESIGN_envirothon_console_2026-10-27.md 8.10, PLAN §2).
+//   · Which cards: the decks of this family's Envirothon unit (unitStudies/<ENV_UNIT_ID>.decks — read from the record, never
+//     a literal list), for a kid enrolled in it (u.enrolled[kid]). Anyone else, or no unit: the builder runs exactly as before.
+//   · They leave the builder's pool BEFORE its guards run (envDrillSplit, in mastDueItems right after the due sort), so the
+//     return-day softener (max_overdue_per_drill), the per-deck cap + learning floor and the daily learning cap
+//     (max_learn_per_drill) count only his OTHER subjects — they get their full seats, and a day with only Envirothon due
+//     still pulls the others' learning floor. Then they go back on the FRONT of the drill (envDrillJoin, at both returns):
+//     every one that is due, reviews ahead of learning cards, at most ENV_DRILL_MAX (15) a drill — a ceiling of my own
+//     choosing, flagged for her; the rest come the next drill. Inside the drill they shuffle within their deck like any other.
+//   · A held deck (cat_hold — the teacher hasn't sent it out) never rides, even if a card exists in it.
+//   · The study session's hand-off is untouched: a card the 🌿 session owns (mstOwnedIds) never reaches this builder, so what
+//     arrives here is what the session handed off (at/after handOffAt, bi-weekly by default).
+//   · The screen: a thin "🌿 Envirothon first" strip over the slideshow while an Envirothon card is up, and a divider in the
+//     quiz list between the Envirothon decks and the rest. Nothing else changes; results save exactly as today
+//     (mastery/history, the item's ladder) — this block writes nothing, so dry run is unchanged.
+const ENV_DRILL_MAX=15;
+// The Envirothon deck keys for `kid`'s drill: a Set (held decks included — the split drops them), or null when this family
+// has no Envirothon unit or the kid is not enrolled in it. Null = the builder is byte-for-byte today's.
+function envDrillDecks(kid){
+  try{
+    if(typeof ENV_UNIT_ID==="undefined"||!kid) return null;
+    const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[ENV_UNIT_ID];
+    if(!u||!(u.enrolled||{})[kid]) return null;
+    const s=new Set(); (u.decks||[]).forEach(d=>{ if(d&&d.key) s.add(d.key); });
+    return s.size?s:null;
+  }catch(e){ return null; }
+}
+function envDrillIs(kid,item){ const d=envDrillDecks(kid); return !!(d&&item&&d.has(item.subject)); }
+// Pull the Envirothon cards out of `due` (in place, order kept) before the guards. Returns them (a held deck's cards are
+// dropped — they ride nowhere), or null when nothing applies (then `due` is untouched).
+function envDrillSplit(kid,due){
+  const decks=envDrillDecks(kid); if(!decks||!Array.isArray(due)) return null;
+  const hold=(((typeof masteryData!=="undefined"&&masteryData)||{})[kid+"_settings"]||{}).cat_hold||{};
+  const env=[], rest=[];
+  due.forEach(i=>{ if(!(i&&decks.has(i.subject))) rest.push(i); else if(!hold[i.subject]) env.push(i); });
+  if(rest.length===due.length) return null;
+  due.length=0; rest.forEach(i=>due.push(i));
+  return env;
+}
+// Put them back on the front: reviews first, then learning cards, at most ENV_DRILL_MAX; then the builder's list as it came.
+function envDrillJoin(env,list){
+  if(!env||!env.length) return list;
+  const rev=env.filter(i=>i.status!=="introduction"), learn=env.filter(i=>i.status==="introduction");
+  return rev.concat(learn).slice(0,ENV_DRILL_MAX).concat(list||[]);
+}
+// Slideshow: a thin strip while the card on screen is an Envirothon card ("🌿 Envirothon first · 2 / 5"); "" otherwise.
+function envDrillStripHtml(kid,item,list,base){
+  if(!envDrillIs(kid,item)) return "";
+  let n=0, at=0; (list||[]).slice(0,base==null?undefined:base).forEach((i,ix)=>{ if(envDrillIs(kid,i)){ n++; if(i===item) at=n; } });
+  return '<div style="margin:0 0 8px;padding:4px 12px;border-radius:999px;border:1px solid #86efac;background:#f0fdf4;color:#15803d;font-size:11px;font-weight:700;text-align:center">\u{1F33F} Envirothon first'+(n?' \u{00B7} '+at+' / '+n:'')+'</div>';
+}
+// Quiz list: the divider goes above the FIRST deck that is not Envirothon when an Envirothon deck came before it; "" otherwise.
+function envDrillQuizDivHtml(kid,cat,cats){
+  if(!cats||!cats.length||envDrillIs(kid,{subject:cat})) return "";
+  const ix=cats.indexOf(cat); if(ix<1||!envDrillIs(kid,{subject:cats[0]})) return "";
+  for(let k=1;k<ix;k++){ if(!envDrillIs(kid,{subject:cats[k]})) return ""; }
+  return '<div style="margin:6px 14px 2px;border-top:1px solid #86efac;color:#15803d;font-size:10px;font-weight:700;text-align:center;line-height:0"><span style="background:var(--card,#fff);padding:0 8px">\u{1F33F} Envirothon first \u{00B7} then the rest</span></div>';
+}
+// ENVDRILLFIRST_END
 
 let mastLogMode=false;
 let mastLogScores={};  // {itemId: "c"|"m"|"~"}
@@ -67493,6 +67556,7 @@ function _renderMasteryInner(el){
     mastSlideCardsHtml=slideList.map((it,ix)=>buildSlideCard(it,ix>=_slBase));
     h+='<div style="padding:10px 14px">';
     if(typeof deckInstrStripHtml==="function") h+=deckInstrStripHtml(masteryKid,(slideList[mastSlideIdx]||{}).subject);   // DECKINSTR: strip follows the card on screen (every arrow/score re-renders)
+    if(typeof envDrillStripHtml==="function") h+=envDrillStripHtml(masteryKid,slideList[mastSlideIdx],slideList,_slBase);   // 🌿 ENVDRILLFIRST: thin strip while an Envirothon card is up
     h+=mastSlideCardsHtml[mastSlideIdx];
     if(slideList[mastSlideIdx]&&mastSlideIdx<_slBase) mastShowMeAutoSay(slideList[mastSlideIdx].id+"|"+pn);   // SHOWME_CUE: say the word once as the card comes up
 
@@ -67518,6 +67582,7 @@ function _renderMasteryInner(el){
       quizItems.forEach(it=>{ if(!qCats[it.subject]) qCats[it.subject]=[]; qCats[it.subject].push(it); });
       Object.entries(qCats).forEach(([qcat,qitems])=>{
         const qEmoji=catE3[qcat]||"";
+        if(typeof envDrillQuizDivHtml==="function") h+=envDrillQuizDivHtml(masteryKid,qcat,Object.keys(qCats));   // 🌿 ENVDRILLFIRST: divider between the Envirothon decks and the rest
         h+='<div class="mast-section"><div class="mast-section-lbl">'+qEmoji+' '+qcat+' <span class="cnt">'+qitems.length+'</span></div>';
         if(typeof deckInstrStripHtml==="function") h+=deckInstrStripHtml(masteryKid,qcat);   // DECKINSTR
         qitems.forEach((it,i)=>{
