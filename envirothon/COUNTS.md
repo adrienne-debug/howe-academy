@@ -6,32 +6,32 @@ Built 2026-10-27. Unit file `nc_envirothon_unit.json` (id `nc_envirothon`): 6 st
 
 | Stage | Deck | Mode | Cards | Core | Longest back (words) |
 |---|---|---|---|---|---|
-| 0 | General Concepts · Terms | flip | 28 | 10 | 30 |
-| 0 | General Concepts · Facts | flash | 62 | 0 | 12 |
-| 1 | Forestry · Terms | flip | 258 | 166 | 24 |
-| 1 | Forestry · Facts | flash | 468 | 157 | 21 |
+| 0 | General Concepts · Terms | flip | 28 | 11 | 30 |
+| 0 | General Concepts · Facts | flash | 62 | 3 | 12 |
+| 1 | Forestry · Terms | flip | 258 | 168 | 24 |
+| 1 | Forestry · Facts | flash | 468 | 163 | 21 |
 | 1 | Forestry · ID | flip | 165 | 165 | 17 |
-| 2 | Soils and Land Use · Terms | flip | 288 | 131 | 32 |
-| 2 | Soils and Land Use · Facts | flash | 465 | 114 | 36 |
+| 2 | Soils and Land Use · Terms | flip | 288 | 138 | 32 |
+| 2 | Soils and Land Use · Facts | flash | 465 | 116 | 36 |
 | 2 | Soils and Land Use · ID | flip | 97 | 34 | 14 |
-| 3 | Aquatic Ecology · Terms | flip | 270 | 163 | 31 |
-| 3 | Aquatic Ecology · Facts | flash | 485 | 158 | 21 |
+| 3 | Aquatic Ecology · Terms | flip | 270 | 166 | 31 |
+| 3 | Aquatic Ecology · Facts | flash | 485 | 169 | 21 |
 | 3 | Aquatic Ecology · ID | flip | 321 | 104 | 16 |
-| 4 | Wildlife · Terms | flip | 230 | 193 | 22 |
-| 4 | Wildlife · Facts | flash | 350 | 132 | 23 |
-| 4 | Wildlife · ID | flip | 574 | 118 | 24 |
+| 4 | Wildlife · Terms | flip | 230 | 195 | 22 |
+| 4 | Wildlife · Facts | flash | 350 | 136 | 23 |
+| 4 | Wildlife · ID | flip | 574 | 121 | 24 |
 | 5 | Current Issue · 2027 | flash | 310 | 15 | 22 |
-| | **All decks** | | **4371** | **1660** | |
+| | **All decks** | | **4371** | **1704** | |
 
 ## Per station
 
 | Station | Cards | Core |
 |---|---|---|
-| General concepts | 90 | 10 |
-| Forestry | 891 | 488 |
-| Soils/Land Use | 850 | 279 |
-| Aquatic Ecology | 1076 | 425 |
-| Wildlife | 1154 | 443 |
+| General concepts | 90 | 14 |
+| Forestry | 891 | 496 |
+| Soils/Land Use | 850 | 288 |
+| Aquatic Ecology | 1076 | 439 |
+| Wildlife | 1154 | 452 |
 | Current Environmental Issues | 310 | 15 |
 
 ## Per Key Concept (cards / core)
@@ -112,14 +112,70 @@ every tree card ("identifying features of species in the designated set"); Soils
 profile"). CEI and the Appendix have no objectives sheet, so only their test-backed cards are core — the teacher may want to
 treat the whole CEI Soil Health group as core. Nothing was dropped: `core:false` cards are the rest of the manuals' terms and facts.
 
+**44 cards added to core on 2026-10-28** (Adrienne's yes, "add them to core"). The 2021 and 2022 Area 8 middle-school tests
+(Forestry, Soils, Aquatics, Wildlife: 160 questions, the held-out check — they were never used to set the flag) were matched
+question by question to the cards. 40 questions could be answered only from a `core:false` card; those cards are now core, with
+the siblings the same questions need (Blocky / Platy / Massive structure beside Granular; the biotic index Group 2 and Group 3
+multipliers beside the "Good" range). Core went from 1,660 to 1,704. Per station: General +4, Forestry +8, Soils +9,
+Aquatics +14, Wildlife +9. The flag now lives in `nc_envirothon_unit.json` itself: the untracked `merge.py` would recompute
+core from the coverage maps and drop these 44, so a re-run needs this list re-applied.
+
+| Station | Deck | Card front | Past test question |
+|---|---|---|---|
+| Forestry | Forestry · Terms | Cruising (timber cruise) | 2021 Q4 |
+| Forestry | Forestry · Facts | What is the most damaging insect to southern pines? | 2021 Q6 |
+| Forestry | Forestry · Facts | Name uses of prescribed burns. | 2021 Q11 |
+| Forestry | Forestry · Facts | What does uneven-aged management focus on? | 2021 Q13 |
+| Forestry | Forestry · Facts | About how many species are estimated to live in the Great Smoky Mountains All Taxa Biodiversity Inventory area? | 2021 Q14 |
+| Forestry | Forestry · Terms | Sapwood (xylem) | 2022 Q3 |
+| Forestry | Forestry · Facts | What are the natural threats to forests? | 2022 Q4 |
+| Forestry | Forestry · Facts | What important micro-ecosystem do downed logs of the mature forest form habitat for? | 2022 Q14 |
+| Soils | Soils and Land Use · Terms | Iron concentration | 2021 Q3 |
+| Soils | Soils and Land Use · Terms | Topography (relief) | 2021 Q5 |
+| Soils | Soils and Land Use · Terms | Igneous rocks | 2021 Q8 |
+| Soils | Soils and Land Use · Facts | How many land capability classes are there? | 2021 Q16 |
+| Soils | Soils and Land Use · Terms | Granular structure | 2022 Q2 |
+| Soils | Soils and Land Use · Terms | Iron concentration | 2022 Q3 |
+| Soils | Soils and Land Use · Facts | Most shrink-swell volume change is due to which soil fraction? | 2022 Q5 |
+| Aquatics | Aquatic Ecology · Terms | Limnology | 2021 Q2 |
+| Aquatics | Aquatic Ecology · Facts | Name an example of point source pollution. | 2021 Q4 |
+| Aquatics | Aquatic Ecology · Terms | Biotic index | 2021 Q9 |
+| Aquatics | General Concepts · Facts | When water evaporates, what stays behind? | 2021 Q10 |
+| Aquatics | Aquatic Ecology · Facts | Which fin helps propel a fish forward? | 2021 Q12 |
+| Aquatics | Aquatic Ecology · Facts | What forms the base of a second stream food chain, besides rock algae? | 2021 Q14 |
+| Aquatics | Aquatic Ecology · Terms | Universal solvent | 2022 Q1 |
+| Aquatics | Aquatic Ecology · Facts | What do Agnatha fish lack? | 2022 Q4 |
+| Aquatics | Aquatic Ecology · Facts | For about how long does the yolk sac feed newly hatched fry? | 2022 Q5 |
+| Aquatics | Aquatic Ecology · Facts | Where does the water of NC's westward-flowing river basins finally go? | 2022 Q6 |
+| Aquatics | Aquatic Ecology · Facts | How does sediment harm trout eggs? | 2022 Q11 |
+| Aquatics | Aquatic Ecology · Facts | Forested riparian areas help maintain water and air temperature by providing what? | 2022 Q12 |
+| Aquatics | General Concepts · Facts | Where does sublimation occur more? | 2022 Q13 |
+| Aquatics | Aquatic Ecology · Facts | What biotic index range rates as Good? | 2022 Q20 |
+| Wildlife | Wildlife · Terms | Habitat fragmentation | 2021 Q6 |
+| Wildlife | Wildlife · ID | Wood Duck · nest site | 2021 Q8 |
+| Wildlife | Wildlife · ID | Virginia Opossum · number of teeth | 2021 Q9 |
+| Wildlife | Wildlife · Facts | How does White-nose Syndrome often kill bats? | 2021 Q11 |
+| Wildlife | Wildlife · Facts | Who is called the "Father of Wildlife Conservation"? | 2021 Q12 |
+| Wildlife | General Concepts · Terms | Decomposer | 2021 Q13 |
+| Wildlife | Wildlife · ID | Groundhog · burrow site | 2021 Q14 |
+| Wildlife | General Concepts · Facts | Nitrogen also enters the soil when decomposers break down what two things? | 2022 Q3 |
+| Wildlife | Wildlife · Facts | Which animal is an example of a naturalized species that expanded its range east and south? | 2022 Q5 |
+| Wildlife | Wildlife · Terms | Exotic (non-native) species | 2022 Q8 |
+| Wildlife | Wildlife · Facts | Which two NC animals does hemorrhagic disease affect? | 2022 Q9 |
+| Soils | Soils and Land Use · Terms | Blocky structure | 2022 Q2 (with Granular) |
+| Soils | Soils and Land Use · Terms | Platy structure | 2022 Q2 (with Granular) |
+| Soils | Soils and Land Use · Terms | Massive structure | 2022 Q2 (with Granular) |
+| Aquatics | Aquatic Ecology · Facts | In the biotic index, what number is Group 2 multiplied by? | 2022 Q20 (with Good) |
+| Aquatics | Aquatic Ecology · Facts | In the biotic index, what number is Group 3 multiplied by? | 2022 Q20 (with Good) |
+
 **Decks still above ~150 core cards:**
 
-- **Forestry · Terms**: 166 core — bulk in 2. Forest Ecology (96) and 3. Conservation and Management of Forests (35)
-- **Forestry · Facts**: 157 core — bulk in 2. Forest Ecology (64) and 1. Forests and Society (51)
-- **Forestry · ID**: 165 core — bulk in 4. Forest Measurement and Identification (122) and 2. Forest Ecology (21)
-- **Aquatic Ecology · Terms**: 163 core — bulk in 2. Aquatic Ecology (102) and 4. Aquatic Identification (39)
-- **Aquatic Ecology · Facts**: 158 core — bulk in 2. Aquatic Ecology (81) and 3. Conservation and Management of Aquatic Ecosystems (37)
-- **Wildlife · Terms**: 193 core — bulk in 2. Wildlife Classification, Adaptations, and Identification (92) and 1. Wildlife Ecology (59)
+- **Forestry · Terms**: 168 core — bulk in Forest Ecology (97) and Conservation and Management of Forests (35)
+- **Forestry · Facts**: 163 core — bulk in Forest Ecology (66) and Forests and Society (51)
+- **Forestry · ID**: 165 core — bulk in Forest Measurement and Identification (122) and Forest Ecology (21)
+- **Aquatic Ecology · Terms**: 166 core — bulk in Aquatic Ecology (102) and Aquatic Identification (39)
+- **Aquatic Ecology · Facts**: 169 core — bulk in Aquatic Ecology (83) and Conservation and Management of Aquatic Ecosystems (42)
+- **Wildlife · Terms**: 195 core — bulk in Wildlife Classification, Adaptations, and Identification (92) and Wildlife Ecology (59)
 
 ## Why the set is bigger than the 900–1,300 the plan estimated
 
