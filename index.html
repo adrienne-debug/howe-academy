@@ -10498,6 +10498,7 @@ function taskCard(t, fromDay, readOnly, doneId){
     mb='<span class="mom-badge maybe-badge">May Need Mom</span>';
   }
   if(t.famBlock) mb='<span class="mom-badge req-badge" style="background:#ede9fe;color:#5b21b6;border-color:#c4b5fd">\u{1F3E1} Family time'+(kid==="mom"?' \u2014 '+(typeof famGroup==="function"?famGroup(t).map(function(x){ return cap(x.who); }).join(", "):klbl):'')+'</span>';
+  { const _fdt=(typeof fdtClockHTML==="function")?fdtClockHTML(t,done,claimedHere,readOnly,!!mb):""; if(_fdt) mb+=_fdt; }   // ⏰ FIXEDDAYTIME: Mom's ⏰ Set time at the end of the badge slot (the ✗ and SETTIME's ⏰ keep their own spot)
   const _coSb=!done&&!claimedHere&&!readOnly&&typeof coSentBack!=="undefined"&&!!coSentBack[srcId];   // ✅ CLOSEOUT
   const hasPending=!readOnly&&(done||claimedHere||_coSb)&&!!pendingSpins[t.id];   // ✅ CLOSEOUT: the spin comes the moment it is sent to Mom
   const _he=histState[srcId];
@@ -34272,6 +34273,7 @@ function fxSplitDay(tasks,ds,dayName){
       const fw=famWindowOf(t,dayName);
       if(fw){ t.time=fromMin(fw.s); pinned.push({t:t,w:fw,s:{mom:famCardMomLeads(t)?"required":"none"}}); return; }
     }
+    { const _fw=(typeof fdtWinOf==="function")?fdtWinOf(t,ds):null; if(_fw){ t.time=fromMin(_fw.s); pinned.push({t:t,w:_fw,s:{mom:t.mom||"none"}}); return; } }   // ⏰ FIXEDDAYTIME: a card Mom set a time for holds on its date (the kid, Mom if required, its device)
     const w=s?fxWindow(s,ds,dayName):null;
     if(!w){ rest.push(t); return; }
     t.time=fromMin(w.s);                       // pinned at its own clock time, never packed
@@ -36452,6 +36454,240 @@ function sotSet(kids,iso,off){
 function sotToggle(k,iso){ return sotSet([k],iso,!sotOffAt(k,iso)); }
 function sotToggleAll(iso){ const kids=sotShownKids(); if(!kids.length) return false; const allOff=kids.every(function(k){ return sotOffAt(k,iso); }); return sotSet(kids,iso,!allOff); }
 // SPINSOFFTODAY_END
+// FIXEDDAYTIME_START ── ⏰ SET TIME: TODAY AT <time> · <weekday this week> AT <time> (her ask 2026-10-28: "if there is
+// something in the schedule it would be nice if I could click it and say today I need it at this specific time, or I need to
+// send it to this specific time on this specific day this week … it would just need to work for that particular schedule, that
+// particular week, a fixed time … I think that would be pretty easy if we follow that mechanism [Set time just for today]") ──
+// SETTIME_TODAY already moves a Family Time block / a fixed class to a new start for ONE date, and its writer takes ANY date
+// (sttOpen(kind,a,b,iso) — the Month day sheet opens it for other days); only the card's ⏰ was limited to today. So here:
+//   · a Family Time / class card on ANOTHER day this week gets the same ⏰ → sttOpen for THAT day (its own leaf as before:
+//     atByDate/<iso> · fixedTimeByDate/<iso>). Today's card keeps SETTIME_TODAY's ⏰ exactly as it is.
+//   · a kid's OWN lesson/task card (any day this week, Mom lens) gets the ⏰ → this sheet: a day chip (Today, or a weekday of
+//     this week still ahead) and a start time. The card is then FIXED at that time on that date — held like a class in every
+//     lay (fxSplitDay in each packAround re-pack · dsRetime · the living-day lay mlQueueLay, where a Mom-required one holds Mom
+//     there too · the school-end guard seGuardWeek) — and nothing else about it changes; next week lays as normal.
+// The pin lives ON THE CARD, not on the subject: SETTIME's class leaf sits on curriculum/subjects, which every device reads
+// ONCE at boot (db.ref("curriculum").once) — a pin there would not reach the kid's own iPad until it reloaded, and the kid's
+// device is the one that must hold the card where Mom put it. week<N>/tasks is live on every device.
+//   week<N>/tasks/<id>/fixedAt = {date:"YYYY-MM-DD", at:"10:30 AM", was:"<its time before>"}   (removed by Back to normal)
+//   week<N>/tasks/<id>/time    = "10:30 AM"                                                    (what every device shows)
+//   a chosen day that is not the card's own day: week<N>/tasks/<id>/day = <day> and week<N>/momMoves/<id> =
+//     {mode:"push", toDay, fromDays:[], pulledFrom:<its day>, fromTime:<its time>, setTime:true, ts} — MOVETODAY's own
+//     record shape, so effectiveDay, the sweep and the dialog's "↩ Undo move (back to …)" treat it as Mom's move; fromDays stays
+//     EMPTY (a deliberate re-schedule: no day counts it unfinished). The card leaves its old day and lands at the time on the
+//     new one; the kid's other open cards that day slide around it through the existing school-end re-lay (seGuardWeek, this
+//     kid only), its paths folded into the SAME update — nothing else is re-laid.
+// Collisions as SETTIME_TODAY: a class / lunch / a family block the kid is in at that time → one line each, keep its time (work
+// packs around both) or move it that day too (its own leaf, same update). A past time on today → "did you already do it then?"
+// — Yes writes the pin and checks the card off at that time (finalizeDone, ts = the chosen time, as stCheckAt does); No goes
+// back to the picker. Lessons stay in order: a sequenced lesson is refused a day/time that would put it ahead of an earlier
+// open lesson of its subject this week or behind a later one (mvtPlan's rule and wording). Day-bound cards (the notebooks,
+// subjNoCarry) get a time on their own day only. Every write is ONE multi-path db.ref().update through stWrite (db &&
+// !_dryRun(): with ?dryrun=1 the sheet works, memory only). Mom only (momHereCards / momHere); kids never see the ⏰.
+// Names: fdt* (none existed). Hooks (one line each, typeof-guarded): taskCard (fdtClockHTML at the end of the badge slot) ·
+// fxSplitDay (fdtWinOf) · dsRetime ×2, mlQueueLay movable / lunchOf / Mom's _blkIv, seGuardCtx.isClass (fdtHeld) · undoMomMove
+// (fdtOnUndo: the dialog's ↩ drops the pin too).
+const FDT_DN=["monday","tuesday","wednesday","thursday","friday","saturday"];
+function fdtIsoOf(dn){ try{ if(typeof _pushDateStr==="function"){ const d=_pushDateStr(dn); if(d) return d; } }catch(e){} return stDsOf(dn)||null; }   // this plan week's date for a weekday
+function fdtShort(dn){ const s=String(dn||""); return s.charAt(0).toUpperCase()+s.slice(1,3); }
+function fdtPinned(t,ds){ const f=t&&t.fixedAt; if(!f||typeof f!=="object"||!ds||f.date!==ds) return false; const m=toMin(f.at); return m!=null&&!isNaN(m); }
+function fdtHeld(t){ if(!t||!t.fixedAt) return false; return fdtPinned(t,fdtIsoOf(t.day)); }   // pinned on this plan week's date of its own day
+function fdtWinOf(t,ds){ if(!fdtPinned(t,ds)) return null; const s=toMin(t.fixedAt.at); return {s:s,e:s+(t.dur||20)}; }
+function fdtRec(t){ const m=(t&&typeof momMoves!=="undefined"&&momMoves)?momMoves[t.id]:null; return (m&&m.mode==="push"&&m.setTime)?m:null; }   // this sheet's own move record
+function fdtOrig(t){ const r=fdtRec(t); if(r&&r.pulledFrom) return {day:r.pulledFrom,time:r.fromTime||t.time||null}; return {day:t.day,time:(t.fixedAt&&t.fixedAt.was)||t.time||null}; }   // where it was before Mom set a time
+function fdtTask(id){ return ((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]).find(function(t){ return t&&t.id===id; })||null; }
+function fdtIsNb(t){ return !!t&&(t.subjectKey==="morning_nb"||t.subjectKey==="closing_nb"||/notebook/i.test(t.title||"")); }
+function fdtDayBound(t){ return fdtIsNb(t)||(typeof subjNoCarry==="function"&&!!subjNoCarry(t)); }
+function fdtKidOff(kid,ds){ try{ if(typeof schedOvKidOff==="function"&&schedOvKidOff(kid,ds)) return true; if(typeof smapIsKidOff==="function"&&smapIsKidOff(kid,ds)) return true; }catch(e){} return false; }
+// The days Mom may pick for a card: this plan week's days from today on (today included) that the kid has school (not off, not
+// a holiday; Saturday only when the week runs it). A day-bound card: its own day only.
+function fdtDays(t){
+  const out=[]; if(!t) return out; const today=stTodayIso();
+  const sat=((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]).some(function(x){ return x&&x.day==="saturday"&&!String(x.id||"").endsWith("_c"); });
+  FDT_DN.forEach(function(dn){
+    if(fdtDayBound(t)&&dn!==t.day) return;
+    if(dn==="saturday"&&!sat) return;
+    const iso=fdtIsoOf(dn); if(!iso||iso<today) return;
+    if(fdtKidOff(t.who,iso)) return;
+    out.push({dn:dn,iso:iso,lbl:iso===today?"Today":fdtShort(dn)});
+  });
+  return out;
+}
+// ── the ⏰ on a card (Mom lens, open card) ──
+// "task" → this sheet · "fam" / "fx" → SETTIME_TODAY's sheet for the card's own day (a day that is not today) · "" → nothing
+function fdtKind(t,done,claimedHere,readOnly){
+  if(readOnly||done||claimedHere||!t||typeof momHereCards!=="function"||!momHereCards()) return "";
+  if(typeof dadTapView!=="undefined"&&dadTapView) return "";
+  if(String(t.id||"").endsWith("_c")||t._eowOverflow||t._dayDrop||/lunch/i.test(t.title||"")) return "";
+  const dn=(typeof effectiveDay==="function")?effectiveDay(t):t.day, today=(typeof _todayDay==="string")?_todayDay:"";
+  if(t.famBlock||stClassOf(t)){
+    if(dn===today) return "";   // SETTIME_TODAY's own ⏰ draws there (today only)
+    const iso=fdtIsoOf(dn); if(!iso||iso<stTodayIso()) return "";
+    if(t.famBlock) return famDefs()[t.famBlock]?"fam":"";
+    return "fx";
+  }
+  const mv=(typeof momMoves!=="undefined"&&momMoves)?momMoves[t.id]:null; if(mv&&!fdtRec(t)) return "";   // pushed / dismissed / waived by another button — that button's ↩ first
+  const iso=fdtIsoOf(dn), tIso=stTodayIso();   // a day of this week still ahead (or today) to put it on — a day-bound card: its own day
+  if(fdtDayBound(t)) return (iso&&iso>=tIso)?"task":"";
+  return ((iso&&iso>=tIso)||fdtIsoOf(today)===tIso)?"task":"";
+}
+function fdtClockHTML(t,done,claimedHere,readOnly,hasBadge){
+  const k=fdtKind(t,done,claimedHere,readOnly); if(!k) return "";
+  const dn=(typeof effectiveDay==="function")?effectiveDay(t):t.day;
+  const oc=k==="task"?"fdtOpen('"+stJ(t.id)+"')":k==="fam"?"sttOpen('fam','"+stJ(t.famBlock)+"','','"+stJ(fdtIsoOf(dn))+"')":"sttOpen('fx','"+stJ(t.who)+"','"+stJ(t.subjectKey)+"','"+stJ(fdtIsoOf(dn))+"')";
+  const on=(k==="task"&&!!(fdtHeld(t)||fdtRec(t)));   // a card with a set time shows it
+  return '<span class="fdt-clock" onclick="event.stopPropagation();'+oc+'" title="'+(k==="task"?"Set a time":"Set a time just for this day")+'" style="margin-left:'+(hasBadge?'4px':'auto')+';flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:7px;border:1.5px solid '+(on?'#7c3aed':'#d1d5db')+';background:'+(on?'#ede9fe':'#fff')+';color:'+(on?'#5b21b6':'#6b7280')+';font-size:12px;font-weight:800;cursor:pointer;line-height:1">&#9200;</span>';
+}
+// ── the sheet (a kid's own card) ──
+let fdtState=null;   // {id, kid, iso, dn, time, step:"pick"|"past"|"clash", didIt, clashes:[{key,kind,kid,sk,id,name,s,e,move,time}]}
+function fdtOpen(id){
+  if(!momHere()) return; const t=fdtTask(id); if(!t) return;
+  const days=fdtDays(t); if(!days.length) return;
+  const dn0=(typeof effectiveDay==="function")?effectiveDay(t):t.day;
+  const d=days.find(function(x){ return x.dn===dn0; })||days.find(function(x){ return x.dn===t.day; })||days[0];
+  const m=toMin(t.time);
+  fdtState={id:id,kid:t.who,iso:d.iso,dn:d.dn,time:(m!=null&&!isNaN(m))?fromMin(m):"10:00 AM",step:"pick",didIt:false,clashes:[]};
+  fdtRender();
+}
+function fdtClose(){ fdtState=null; const o=document.getElementById("fdt-ov"); if(o) o.remove(); }
+function fdtPick(dn){ const st=fdtState; if(!st) return; const t=fdtTask(st.id); const d=t?fdtDays(t).find(function(x){ return x.dn===dn; }):null; if(!d) return; st.iso=d.iso; st.dn=d.dn; st.step="pick"; st.didIt=false; st.clashes=[]; fdtRender(); }
+function fdtSetTime(v){ const st=fdtState; if(!st) return; const t=to12h(String(v||"")); if(toMin(t)==null||isNaN(toMin(t))) return; st.time=t; if(st.step==="clash"){ st.step="pick"; st.clashes=[]; fdtRender(); } }   // a new time → the collisions are looked at again
+function fdtClashTime(key,v){ if(!fdtState) return; const c=fdtState.clashes.find(function(x){ return x.key===key; }); if(!c) return; const t=to12h(String(v||"")); if(toMin(t)!=null&&!isNaN(toMin(t))) c.time=t; }
+function fdtClashMove(key,on){ if(!fdtState) return; const c=fdtState.clashes.find(function(x){ return x.key===key; }); if(!c) return; c.move=!!on; fdtRender(); }
+// The new window [m, m+dur] on that date against the kid's fixed classes, lunch (the kid's leaf → all → the rule) and the family
+// blocks the kid is in — stClashes' own lines for a moved class, for this card.
+function fdtClashes(st,m){
+  const t=fdtTask(st.id); if(!t) return [];
+  const kid=t.who, s=m, e=m+(t.dur||20), out=[], seen={};
+  const hit=function(w){ return w&&w.s<e&&w.e>s; };
+  (typeof fxWindowsFor==="function"?fxWindowsFor(kid,st.iso,st.dn):[]).forEach(function(w){
+    const key="fx|"+kid+"|"+w.sk; if(seen[key]||!hit(w)) return; seen[key]=1;
+    out.push({key:key,kind:"fx",kid:kid,sk:w.sk,name:cap(kid)+" — "+String(w.display||w.sk),s:w.s,e:w.e,move:false,time:fromMin(e)});
+  });
+  const lw=stLunchWin(kid,st.iso,st.dn);
+  if(hit(lw)){ seen["lunch"]=1; out.push({key:"lunch",kind:"lunch",kid:"all",name:"everyone — lunch",s:lw.s,e:lw.e,move:false,time:fromMin(e)}); }
+  const defs=famDefs(); Object.keys(defs).forEach(function(id){ const b=defs[id]; if(!b||famList(b.kids).indexOf(kid)<0) return;
+    const L=famLayout(b,st.dn,st.iso); if(!L.length) return; const w={s:L[0].s,e:L[L.length-1].e}; const key="fam|"+id; if(seen[key]||!hit(w)) return; seen[key]=1;
+    out.push({key:key,kind:"fam",id:id,name:FAM_ICON+" "+(b.name||"Family time"),s:w.s,e:w.e,move:false,time:fromMin(e)}); });
+  return out.sort(function(a,b){ return a.s-b.s; });
+}
+// "" when the lesson may go there; else why not (mvtPlan's wording). An earlier open lesson of the subject this week must stay
+// ahead of it (an earlier day, or the same day at an earlier time) and a later one behind it. Unsequenced work: always "".
+function fdtOrderWhy(t,dn,m){
+  try{
+    if(!t||!t.subjectKey||typeof _lessonPos!=="function") return "";
+    const sub=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[t.who]||{})[t.subjectKey]||{};
+    if(!((sub.lessonIds||[]).length||(sub.lessonSeq||[]).length)) return "";
+    const pos=_lessonPos(t); if(pos<0) return "";
+    const di=FDT_DN.indexOf(dn); if(di<0) return "";
+    const open=function(x){ return !(typeof checked!=="undefined"&&checked&&checked[x.id])&&!(typeof claimed!=="undefined"&&claimed&&claimed[x.id])&&!(typeof _dismissed==="function"&&_dismissed(x)); };
+    const ref=function(x){ return (typeof taskLessonRef==="function"&&taskLessonRef(x))||"the other lesson"; };
+    const tasks=((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]);
+    for(const x of tasks){
+      if(!x||x.id===t.id||x.who!==t.who||x.subjectKey!==t.subjectKey||String(x.id||"").endsWith("_c")||x._eowOverflow||!open(x)) continue;
+      const xp=_lessonPos(x); if(xp<0) continue;
+      const xd=(typeof effectiveDay==="function")?effectiveDay(x):x.day, xi=FDT_DN.indexOf(xd); if(xi<0) continue;
+      const xm=toMin(x.time), xOk=(xm!=null&&!isNaN(xm));
+      if(xp<pos&&(xi>di||(xi===di&&xOk&&xm>=m))) return "Move "+ref(x)+" first — lessons stay in order.";
+      if(xp>pos&&(xi<di||(xi===di&&xOk&&xm<=m))) return ref(x)+" is already ahead of it — lessons stay in order.";
+    }
+  }catch(e){}
+  return "";
+}
+// [Move]: the order rule; a past time is a question first; then the collision list; then the one update.
+function fdtMove(){
+  const st=fdtState; if(!st||!momHere()) return; const t=fdtTask(st.id); if(!t){ fdtClose(); return; }
+  const m=toMin(st.time); if(m==null||isNaN(m)) return;
+  const why=fdtOrderWhy(t,st.dn,m); if(why){ if(typeof gwShowToast==="function") gwShowToast(why); return; }
+  if(!st.didIt&&stIsPast(st.iso,m)){ st.step="past"; fdtRender(); return; }
+  if(!st.didIt&&st.step!=="clash"){ const cl=fdtClashes(st,m); if(cl.length){ st.clashes=cl; st.step="clash"; fdtRender(); return; } }
+  fdtCommit(st,m);
+}
+function fdtPastYes(){ if(!fdtState) return; fdtState.didIt=true; fdtState.step="pick"; fdtMove(); }   // the time stands; the card is checked off there
+function fdtPastNo(){ if(!fdtState) return; fdtState.step="pick"; fdtRender(); }
+// The kid's other open cards that day slide around the pinned one — the existing school-end re-lay, this kid only (the pinned
+// card is fixed for it: seGuardCtx.isClass → fdtHeld), its paths folded into the same update. The local copy is saved as
+// momMoveToToday does.
+function fdtRelay(t,upd){
+  let se=null;
+  try{ if(typeof seGuardWeek==="function"&&typeof seGuardCtx==="function"){ se=seGuardWeek(weekData.tasks,seGuardCtx({kids:[t.who],nowMin:(typeof _mlNowMin==="function")?_mlNowMin():stNowMin()})); Object.keys(se.upd||{}).forEach(function(k){ upd[WK+"/tasks/"+k]=se.upd[k]; }); } }catch(e){ dbg("set time re-lay skip: "+e); }
+  sv(WK+"_tasks",weekData.tasks); lastTasksWrite=Date.now();
+  const n=(se&&se.deferred)?se.deferred.length:0, r=(se&&se.rolled)?se.rolled.length:0;   // what the re-lay had to do to make room — said in the toast, never silent
+  return n?" · "+n+" lesson"+(n>1?"s":"")+" rolled to next week to make room":(r?" · "+r+" card"+(r>1?"s":"")+" moved later this week":"");
+}
+// Every path in ONE multi-path update (stWrite), then the ✓ for a time already past, then the day re-lays.
+function fdtCommit(st,m){
+  const t=fdtTask(st.id); if(!t||!momHere()) return;
+  const T=fromMin(m), orig=fdtOrig(t), P=WK+"/tasks/", upd={}, moved=[], rec0=fdtRec(t);
+  t.fixedAt={date:st.iso,at:T,was:orig.time}; upd[P+t.id+"/fixedAt"]=t.fixedAt;
+  t.time=T; upd[P+t.id+"/time"]=T;
+  if(t.day!==st.dn){ t.day=st.dn; upd[P+t.id+"/day"]=st.dn; }
+  if(st.dn!==orig.day){ const rec={mode:"push",toDay:st.dn,fromDays:[],pulledFrom:orig.day,fromTime:orig.time,setTime:true,ts:nowTs()}; momMoves[t.id]=rec; upd[WK+"/momMoves/"+t.id]=rec; sv(WK+"_momMoves",momMoves); }
+  else if(rec0){ delete momMoves[t.id]; upd[WK+"/momMoves/"+t.id]=null; sv(WK+"_momMoves",momMoves); }   // back on its own day: no move record
+  (st.clashes||[]).forEach(function(c){
+    if(!c.move) return; const x=toMin(c.time); if(x==null||isNaN(x)) return;
+    if(c.kind==="fx") upd["curriculum/subjects/"+c.kid+"/"+c.sk+"/fixedTimeByDate/"+st.iso]=fromMin(x);
+    else if(c.kind==="fam") upd["config/rules/familyBlocks/"+c.id+"/atByDate/"+st.iso]=fromMin(x);
+    else if(c.kind==="lunch") upd["config/rules/schoolDay/lunchByDate/"+st.iso+"/all"]={start:fromMin(x),end:fromMin(x+(c.e-c.s))};
+    moved.push(c.name+" → "+fromMin(x));
+  });
+  const room=fdtRelay(t,upd);
+  if(!stWrite(upd)) return;
+  let did=false;
+  if(st.didIt){ try{ did=(finalizeDone(t.id,stTsAt(st.iso,m),null)!==false); }catch(e){ dbg("set time check: "+e); } }
+  fdtClose();
+  if(typeof schedCascade==="function") schedCascade();
+  if(typeof renderAll==="function") renderAll();
+  const when=(st.iso===stTodayIso())?"today":stDateWords(st.iso);
+  let msg="⏰ "+cap(t.who)+" — "+(t.title||"")+" at "+T+" "+when+(st.dn!==orig.day?" (from "+fdtShort(orig.day)+")":"")+(moved.length?" · "+moved.join(" · "):"");
+  if(st.didIt) msg+=did?" · ✓ checked off then":" · not checked off (see the card)";
+  if(typeof gwShowToast==="function") gwShowToast(msg+room);
+}
+// "Back to normal": the pin goes; a card this sheet moved goes back to its own day and time (the move record goes too); a card
+// set on its own day gets its earlier time back. The day then re-lays as any day.
+function fdtClear(){
+  const st=fdtState; if(!st||!momHere()) return; const t=fdtTask(st.id); if(!t){ fdtClose(); return; }
+  const P=WK+"/tasks/", upd={}, rec=fdtRec(t), was=(t.fixedAt&&t.fixedAt.was)||null;
+  delete t.fixedAt; upd[P+t.id+"/fixedAt"]=null;
+  if(rec){ if(rec.pulledFrom&&t.day!==rec.pulledFrom){ t.day=rec.pulledFrom; upd[P+t.id+"/day"]=t.day; } if(rec.fromTime&&t.time!==rec.fromTime){ t.time=rec.fromTime; upd[P+t.id+"/time"]=t.time; } delete momMoves[t.id]; upd[WK+"/momMoves/"+t.id]=null; sv(WK+"_momMoves",momMoves); }
+  else if(was&&was!==t.time){ t.time=was; upd[P+t.id+"/time"]=was; }
+  fdtRelay(t,upd);
+  if(!stWrite(upd)) return;
+  fdtClose(); if(typeof schedCascade==="function") schedCascade(); if(typeof renderAll==="function") renderAll();
+  if(typeof gwShowToast==="function") gwShowToast("⏰ "+cap(t.who)+" — "+(t.title||"")+" back to "+(rec?"its own day":"its usual time"));
+}
+// The dialog's ↩ Undo move (undoMomMove → mvtUndo already put the card back on its day and time): the pin goes with it.
+function fdtOnUndo(id){ const t=fdtTask(id); if(!t||!t.fixedAt) return; delete t.fixedAt; sv(WK+"_tasks",weekData.tasks); if(db&&!_dryRun()){ try{ db.ref(WK+"/tasks/"+id+"/fixedAt").remove(); }catch(e){ dbg("set time undo: "+e); } } }
+function fdtRender(){
+  const st=fdtState; if(!st) return; const t=fdtTask(st.id); if(!t){ fdtClose(); return; }
+  const today=(st.iso===stTodayIso()), when=today?"Today only":stDateWords(st.iso)+" only", m=toMin(st.time), orig=fdtOrig(t), pinned=!!(fdtHeld(t)||fdtRec(t));
+  const btn=function(oc,lbl,bg,fg){ return '<button onclick="'+oc+'" style="padding:9px 13px;border-radius:10px;border:'+(bg?'none':'1.5px solid var(--border)')+';background:'+(bg||'#fff')+';color:'+(fg||'#111')+';font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;font-size:13px">'+lbl+'</button>'; };
+  let h='<div style="background:#fff;border-radius:18px;max-width:460px;width:100%;padding:18px 18px 14px;box-shadow:0 20px 50px rgba(0,0,0,.25);font-family:\'DM Sans\',sans-serif">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:800">⏰ '+esc(cap(t.who)+" — "+(t.title||""))+'</div>';
+  h+='<div style="font-size:12px;color:var(--muted);margin:2px 0 10px"><b>'+esc(when)+'</b> · usually '+esc(fdtShort(orig.day)+(orig.time?" "+orig.time:""))+(pinned?' · set: '+esc(fdtShort(t.day)+" "+(t.time||"")):'')+'</div>';
+  if(st.step==="past"){
+    h+='<div style="font-size:14px;font-weight:700;line-height:1.45;margin:6px 0 12px">'+esc(fromMin(m))+' is already past. Did you already do it then?</div>';
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">'+btn("fdtPastNo()","No, pick a later time")+btn("fdtPastYes()","Yes — we did it at "+esc(fromMin(m)),"#16a34a","#fff")+'</div>';
+  } else {
+    const days=fdtDays(t);
+    h+='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0 10px"><span style="font-size:13px;font-weight:700;margin-right:4px">Day</span>'+days.map(function(d){ return _famChip(d.dn===st.dn,esc(d.lbl),"fdtPick('"+d.dn+"')",true); }).join("")+'</div>';
+    h+='<div style="display:flex;align-items:center;gap:10px;margin:4px 0 10px"><span style="font-size:13px;font-weight:700">Starts at</span><input type="time" id="fdt-time" value="'+esc(ampmTo24(st.time))+'" onchange="fdtSetTime(this.value)" style="padding:7px 9px;border:1.5px solid var(--border);border-radius:9px;font-size:15px;font-family:\'DM Sans\',sans-serif"></div>';
+    if(st.step==="clash"&&st.clashes.length){
+      h+='<div style="font-size:12.5px;font-weight:700;color:#78350f;background:#fef3c7;border-radius:10px;padding:8px 10px;line-height:1.45">At '+esc(fromMin(m))+' this runs into:</div>';
+      st.clashes.forEach(function(c){
+        h+='<div style="padding:8px 0;border-bottom:1px solid #f3f4f6"><div style="font-size:13px;font-weight:800">'+esc(c.name)+' <span style="color:var(--muted);font-weight:600">'+esc(stSpan(c.s,c.e))+'</span></div>';
+        h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:5px">'+_famChip(!c.move,"Keep its time — work packs around both","fdtClashMove('"+stJ(c.key)+"',false)",true)+_famChip(c.move,"Move it "+(today?"today":"this day")+" →","fdtClashMove('"+stJ(c.key)+"',true)",true)
+          +(c.move?'<input type="time" value="'+esc(ampmTo24(c.time))+'" onchange="fdtClashTime(\''+stJ(c.key)+'\',this.value)" style="padding:4px 7px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif">':'')+'</div></div>';
+      });
+    }
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;padding-top:12px">'+btn("fdtClose()","Never mind")+(pinned?btn("fdtClear()","Back to normal"):'')+btn("fdtMove()","Move","#7c3aed","#fff")+'</div>';
+  }
+  h+='</div>';
+  let o=document.getElementById("fdt-ov");
+  if(!o){ o=document.createElement("div"); o.id="fdt-ov"; o.style.cssText="position:fixed;inset:0;z-index:9000;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:16px"; o.onclick=function(e){ if(e.target===o) fdtClose(); }; document.body.appendChild(o); }
+  o.innerHTML=h;
+}
+// FIXEDDAYTIME_END
 
 
 // ── WHEN THE DOOR IS OPEN ──
@@ -54125,6 +54361,7 @@ function undoMomMove(id){
     if(ps) savePaceSubject((weekData.tasks.find(x=>x.id===id)||{}).who,rec.adjusted.subjectKey,{...ps,adjust:((ps.adjust|0)-(rec.adjusted.by|0))});
   }
   if(rec&&rec.pulledFrom&&typeof mvtUndo==="function") mvtUndo(id,rec);   // 📅 MOVETODAY: back to its own day
+  if(rec&&rec.setTime&&typeof fdtOnUndo==="function") fdtOnUndo(id);   // ⏰ FIXEDDAYTIME: the pin goes with the move
   delete momMoves[id]; sv(WK+"_momMoves",momMoves);
   if(db) db.ref(WK+"/momMoves/"+id).remove();
   dbg("undo mom move id="+id);
@@ -69677,7 +69914,7 @@ function _mlQueueLayCore(tasks){
     const isToday=function(t){ return t&&_mlDayOf(t)===_todayDay; };
     const movable=function(t){
       return isToday(t)&&!String(t.id||"").endsWith("_c")&&!t._eowOverflow&&!t._dayDrop   // DAYDROP: in the "didn't fit" box, not on the timeline
-        &&!/lunch/i.test(t.title||"")&&!t.famBlock   // 👨‍👩‍👧 family time is held like lunch
+        &&!/lunch/i.test(t.title||"")&&!t.famBlock&&!(typeof fdtHeld==="function"&&fdtHeld(t))   // 👨‍👩‍👧 family time is held like lunch · ⏰ FIXEDDAYTIME: so is a card Mom set a time for
         &&!_mlFinished(t.id,t);
     };
     const mine={}, momQ={};
@@ -69741,7 +69978,7 @@ function _mlQueueLayCore(tasks){
     const _lw=_mlLunchWin();
     const _famLay={};   // LIVINGDAY_FAM: famAuto card id → laid minute (filled below)
     const lunchOf=function(k){
-      return tasks.filter(function(x){ return isToday(x)&&x.who===k&&(/lunch/i.test(x.title||"")||(x.famBlock&&!_mlFinished(x.id,x))); })   // a checked family card is over at its check (fixedOf has it)
+      return tasks.filter(function(x){ return isToday(x)&&x.who===k&&(/lunch/i.test(x.title||"")||((x.famBlock||(typeof fdtHeld==="function"&&fdtHeld(x)))&&!_mlFinished(x.id,x))); })   // a checked family card is over at its check (fixedOf has it) · ⏰ FIXEDDAYTIME: a set-time card holds like family time
         .map(function(x){ const a=(_famLay[x.id]!==undefined)?_famLay[x.id]:toMin(x.time); return [a,a+(x.dur||30)]; })
         .concat(_lw?[_lw]:[]);
     };
@@ -69855,6 +70092,7 @@ function _mlQueueLayCore(tasks){
       _blkIv.push([st,st+b.mins]); _mlBlkLaid[b.key]=st;
     }); }catch(e){}
     try{ if(typeof kitPrepBlocksOpen==="function") kitPrepBlocksOpen().forEach(function(b){ _blkIv.push([b.startMin,b.startMin+b.mins]); _mlBlkLaid[b.key]=b.startMin; }); }catch(e){}   // 🍳 MEALPREP_BLOCK: at its time
+    try{ if(typeof fdtHeld==="function") tasks.forEach(function(x){ if(x&&isToday(x)&&_mr(x)&&fdtHeld(x)&&!_mlFinished(x.id,x)) _blkIv.push([toMin(x.time),toMin(x.time)+(x.dur||20)]); }); }catch(e){}   // ⏰ FIXEDDAYTIME: a Mom-required card set for a time holds Mom there — her other cards step over it
     const newTimes={}; const momWait={};
     Object.keys(_famLay).forEach(function(id){ newTimes[id]=_famLay[id]; });   // LIVINGDAY_FAM
     seq.forEach(function(e){
@@ -70366,7 +70604,7 @@ function dsRetime(tasks){
           const S=Math.max(S0,_floor||0), _ks=((((typeof currData!=="undefined"&&currData)||{}).subjects)||{})[k]||{};
           let f=null;
           tasks.forEach(function(x){ if(!x||x.day!==d||x.who!==k||!x.time||_ck(x)) return;
-            if(!x.famAuto&&(x.famBlock||(typeof fxIsClass==="function"&&fxIsClass(_ks[x.subjectKey])))) return;
+            if(!x.famAuto&&(x.famBlock||(typeof fxIsClass==="function"&&fxIsClass(_ks[x.subjectKey]))||(typeof fdtHeld==="function"&&fdtHeld(x)))) return;   // ⏰ FIXEDDAYTIME: a set-time card is held like a class
             const m=toMin(x.time); if(f===null||m<f) f=m; });
           if(f!==null) mx=Math.max(mx,S-f);
         });
@@ -70381,7 +70619,7 @@ function dsRetime(tasks){
       const S0=toMin(starts[kid]); if(!S0) return;
       let S=Math.max(S0,_floor||0);
       const _subs=((((typeof currData!=="undefined"&&currData)||{}).subjects)||{})[kid]||{};
-      const _isClass=function(t){ return !!(t&&t.famBlock)||(typeof fxIsClass==="function"&&fxIsClass(_subs[t.subjectKey])); };   // 👨‍👩‍👧 family time too
+      const _isClass=function(t){ return !!(t&&t.famBlock)||(typeof fxIsClass==="function"&&fxIsClass(_subs[t.subjectKey]))||(typeof fdtHeld==="function"&&fdtHeld(t)); };   // 👨‍👩‍👧 family time too · ⏰ FIXEDDAYTIME: a set-time card
       // A scheduled class WINS its time — even over the morning notebook (her rule 2026-09-23). If one
       // of this kid's classes today is running when the day would start, the day starts when it ENDS,
       // so nothing is pulled on top of the class (German 10:00–10:45 → notebook stays 10:45).
@@ -78282,7 +78520,7 @@ function seGuardCtx(extra){
     win:day=>{ const ov=(_sd.overrides||{})[day]||{}; return {start:toMin(ov.start||_sd.defaultStart||"10:00 AM"),end:toMin(ov.end||_sd.defaultEnd||"4:15 PM"),lunchStart:_r.lunchStart,lunchEnd:_r.lunchEnd}; },
     kidOff:(kid,day)=>{ try{ const ds=iso(day); return !!(ds&&typeof smapIsKidOff==="function"&&smapIsKidOff(kid,ds)); }catch(e){ return false; } },
     isClass:t=>{ try{ return !!(t&&t.famBlock)||(typeof mvtHeldToday==="function"&&mvtHeldToday(t))||   // 📅 MOVETODAY: held where Mom put it today
-      (typeof fxIsClass==="function"&&fxIsClass(subj(t))); }catch(e){ return false; } },   // 👨‍👩‍👧 family time too
+      (typeof fxIsClass==="function"&&fxIsClass(subj(t)))||(typeof fdtHeld==="function"&&fdtHeld(t)); }catch(e){ return false; } },   // 👨‍👩‍👧 family time too · ⏰ FIXEDDAYTIME: a set-time card
     isLesson:t=>{ try{ if(t.subjectKey==="morning_nb"||t.subjectKey==="closing_nb"||/notebook/i.test(t.title||"")) return false;
       if(typeof subjNoCarry==="function"&&subjNoCarry(t)) return false; return typeof planBacked==="function"&&!!planBacked(t.who,t.subjectKey); }catch(e){ return false; } },
     ahead:(kid,sk)=>{ try{ return (typeof planPace==="function")?(planPace(kid,sk).score||0):0; }catch(e){ return 0; } },   // vs the CURRENT plan
