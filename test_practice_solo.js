@@ -180,7 +180,7 @@ function layDay(withSolo, sessions) {
   const E = makeGen(withSolo)({ rulesData: { schoolDay: { defaultStart: "10:00 AM", defaultEnd: "4:15 PM", lunchStart: "1:00 PM", lunchEnd: "2:00 PM" } },
     currData: { subjects }, masteryData: sessions });
   const grid = { lincoln: { german_flash_cards: "Daily", daily_mix: "Daily", math: "Lesson 6" }, ellis: { checkup: "Daily", spelling: "Lesson 7" } };
-  const dayConfig = { schoolStart: 600, momAvailable: 600, isCarSchool: false, isSitter: false, sitterStart: 0, sitterEnd: 0, withSitter: [], theater: false, dayName: "monday", dateStr: "2026-10-26" };
+  const dayConfig = { schoolStart: 600, momAvailable: 600, isCarSchool: false, isSitter: false, sitterStart: 0, sitterEnd: 0, withSitter: [], dayName: "monday", dateStr: "2026-10-26" };
   return E.gwBuildDayTasks(grid, dayConfig, "2026d299_", 1).tasks;
 }
 {
