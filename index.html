@@ -55999,8 +55999,13 @@ const MAST_INTRO_HINTS={Letters:"say each letter out loud",Numbers:"count out lo
 //     for the information line. owPlanAdd is pure (no writes, no db); owApplyAdd re-checks every row at apply time (another
 //     device may have added it) and writes only §10's paths: record set · card append by index · bank entry by transaction.
 //     A bank entry never carries `def` (it would turn a flip card into a recite card, §2.4). Mom-only; dry-run inert.
-//   · Not in this PR: owAtOpen + the mastBankEligible hook and the mint hook (PR 2), every screen (PR 3), the notebook line
-//     (PR 4), family wording + deck_defs writers (PR 5), Lincoln's migration (PR 6). §17's four questions are still hers.
+//   · PR 2 (her yes 2026-10-27 evening, §16 item 2, §5.2, §8.5): owAtOpen — when an "add" opens; owGateNames — the ONE hook in
+//     mastBankEligible that covers all six automatic-start callers (§2.3); owMintPatch — the record's back and card fields on a
+//     card the three builders mint. Mom's explicit ▶ Start (mastPullItem) stays ungated, as RS4K_GATE does. Her §17 answers:
+//     Transfer = copy only (PR 3); family wording = ask every time, no pre-tick (PR 5); kids' view = no difference (PR 3);
+//     the migration (PR 6) will write the percent cards with at:{subject, lid, label} and the order-of-operations cards with
+//     at:null — nothing written here.
+//   · Not in this PR: every screen (PR 3), the notebook line (PR 4), family wording + deck_defs writers (PR 5), the migration (PR 6).
 const OW_KINDS={add:1,wording:1,link:1};
 const OW_CARD_FIELDS=["review_mode","knowledge_type","type","generationRule","generated","problemCount","imageUrl","emoji","example","sentence"];
 const OW_NONE={};
@@ -56194,6 +56199,52 @@ function owApplyAdd(plan){
   _owIdx[kid]=null;   // the local map changed in place; the index rebuilds on the next read
   try{ if(typeof _mastRe==="function") _mastRe(); }catch(e){}
   return res;
+}
+// ── PR 2 · Opens at a lesson ──
+// §5.2 when an "add" opens. at = null → open · {subject, lid} → open when the lesson's index ≤ the index of the first not-done
+// lesson (he opens the words the day he STARTS the lesson, as RS4K_GATE); the whole book done → open · {lesson:n} / {ch:n} →
+// mastGateChapter(kid, cat_gate[deck].subject) ≥ n. Every doubt (unstamped subject, lid not in the list, no gate, no chapter)
+// fails OPEN — the RS4K_GATE rule: a surprise never silently starves a deck. deck = the record's deck (for the chapter gate).
+function owAtOpen(kid,at,deck){
+  if(!at||typeof at!=="object") return true;
+  try{
+    if(at.lid!=null&&at.subject){
+      const sk=String(at.subject);
+      if(typeof lidStamped==="function"&&!lidStamped(kid,sk)) return true;
+      const ids=(typeof lidsFor==="function")?lidsFor(kid,sk):null; if(!Array.isArray(ids)) return true;
+      const i=ids.indexOf(String(at.lid)); if(i<0) return true;
+      const done=(typeof lidDoneIdx==="function")?lidDoneIdx(kid,sk):null; if(!done) return true;
+      let first=-1; for(let n=0;n<ids.length;n++){ if(!done.has(n)){ first=n; break; } }
+      if(first<0) return true;   // whole book done
+      return i<=first;
+    }
+    const n=(at.lesson!=null&&at.lesson!=="")?Number(at.lesson):((at.ch!=null&&at.ch!=="")?Number(at.ch):null);
+    if(n==null||!isFinite(n)) return true;
+    const g=((((typeof masteryData!=="undefined"&&masteryData)||{})[kid+"_settings"]||{}).cat_gate||{})[deck]; const sk=g&&g.subject;
+    if(!sk||typeof mastGateChapter!=="function") return true;
+    const cur=mastGateChapter(kid,sk); if(cur==null) return true;
+    return cur>=n;
+  }catch(e){ return true; }
+}
+// §5.2 the one hook — mastBankEligible's names minus the Our-words "add" records for (kid, cat) whose spot is not reached.
+// No records → the very same array back (every caller byte-for-byte today's). A word whose spot is reached starts like any
+// bank word (intro cap, sessions, Mix) — nothing new in the ladder.
+function owGateNames(kid,cat,names){
+  if(!Array.isArray(names)||!names.length) return names;
+  const idx=owIndex(kid); if(!idx.size) return names;
+  const out=names.filter(n=>{ const e=idx.get(String(cat)+"\u0001"+String(n)); const a=e&&e.add; return !(a&&a.at&&!owAtOpen(kid,a.at,cat)); });
+  return out.length===names.length?names:out;
+}
+// §8.5 the mint hook, at the end of the three card builders (mastApplyScores' inline mint, mastMintFromBank, mastPullItem): a
+// live "add" record for (item.subject, item.prompt) puts its card fields on the new card and, when it carries a back, that
+// back — and the card is what the record says (card.review_mode, else flash), even if a bank def had just made it recite.
+// No write of its own — the caller's existing card write carries it.
+function owMintPatch(kid,item){
+  if(!item||item.subject==null||item.prompt==null) return item;
+  const rec=owRec(kid,item.subject,item.prompt,"add"); if(!rec) return item;
+  const c=rec.card||{}; OW_CARD_FIELDS.forEach(f=>{ if(c[f]!=null) item[f]=c[f]; });
+  if(rec.back){ item.answer=String(rec.back); item.review_mode=c.review_mode||"flash"; }
+  return item;
 }
 // OURWORDS_END
 function mastGetDef(kid,prompt,deck){
@@ -57636,7 +57687,8 @@ function mastGateChapter(kid,sk){
 }
 // The bank names a deck may AUTOMATICALLY mint right now, in bank order. Ungated → the full bank.
 function mastBankEligible(kid,cat){
-  const all=mastFullBank(kid)[cat]||[];
+  let all=mastFullBank(kid)[cat]||[];
+  if(typeof owGateNames==="function") all=owGateNames(kid,cat,all);   // 📝 OURWORDS PR 2: an Our-words add waits for its spot (§5.2); no records = the same list
   if((((masteryData[kid+"_settings"]||{}).cat_hold)||{})[cat]) return [];   // 📘 AAS words: only a test result / check-up / problem word puts them on the ladder
   const g=((masteryData[kid+"_settings"]||{}).cat_gate||{})[cat];
   if(!g||(!g.subject&&!g.fam)) return all;
@@ -58053,6 +58105,7 @@ function mastApplyScores(items,due,scores,pn,_jset,opts){
               if((cat==="Animals"||cat==="Dinosaurs")&&MAST_ANIMAL_EMOJI[next]) newItem.emoji=MAST_ANIMAL_EMOJI[next];
               const _apVis=mastGetVisual(cat,next);
               if(_apVis){ if(typeof _apVis==="string") newItem.emoji=_apVis; else if(_apVis.imageUrl) newItem.imageUrl=_apVis.imageUrl; }
+              if(typeof owMintPatch==="function") owMintPatch(masteryKid,newItem);   // 📝 OURWORDS PR 2: the record's back and card fields
               items.push(newItem); minted.push(newItem);
             }
           }
@@ -58842,6 +58895,7 @@ function mastMintFromBank(cat,name,items){
   if((cat==="Animals"||cat==="Dinosaurs")&&MAST_ANIMAL_EMOJI[name]) item.emoji=MAST_ANIMAL_EMOJI[name];
   const vis=mastGetVisual(cat,name);
   if(vis){ if(typeof vis==="string") item.emoji=vis; else if(vis.imageUrl) item.imageUrl=vis.imageUrl; }
+  if(typeof owMintPatch==="function") owMintPatch(kid,item);   // 📝 OURWORDS PR 2: the record's back and card fields
   return item;
 }
 // Start a dormant deck now: pull its first cards into Learning (up to the intro cap);
@@ -58902,6 +58956,7 @@ function mastPullItem(cat,name){
     if(typeof vis==="string") item.emoji=vis;
     else if(vis.imageUrl) item.imageUrl=vis.imageUrl;
   }
+  if(typeof owMintPatch==="function") owMintPatch(kid,item);   // 📝 OURWORDS PR 2: the record's back and card fields (Mom's ▶ Start itself is not gated)
   items.push(item);
   masteryData[kid]=items;
   mastPutCards(kid,items,[item]);
