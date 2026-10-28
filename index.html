@@ -61674,6 +61674,7 @@ function mstSessions(kid) {
       typeAnswer: !!rec.typeAnswer,   // ⌨️ MST_TYPEANS
       budgetRole: (rec.budgetRole === "fixed" || rec.budgetRole === "pace" || rec.budgetRole === "rest") ? rec.budgetRole : null,   // 🎯 NEWBUDGET
       unit: rec.unit, stage: rec.stage, stageTo: rec.stageTo, perDay: rec.perDay, quick: rec.quick, untested: rec.untested,   // 🩺 CHECKUP (+stageTo: CKSPAN)
+      lessonFrom: rec.lessonFrom, lessonTo: rec.lessonTo,   // CKORDER: the lesson range Mom set ("through L4 Lesson 4") was saved but never read back — every level's whole list was asked
       howto: (typeof mstHowtoClean === "function") ? mstHowtoClean(rec.howto) : ""   // 📋 MST_HOWTO
     });
   });
@@ -62266,9 +62267,15 @@ function ckResultTier(res){
 // the day, so a stop and a resume show the same next card. ckPlan itself stays in card order (the families' state, "the 5 hardest
 // first", the pass/full/done rules and its tests are untouched); only what Mom is shown and grades is mixed. Nothing is written.
 function ckSeed(str){ let h=2166136261; for(let i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=Math.imul(h,16777619)>>>0; } return h>>>0; }
-function ckMix(queue,kid,sid,dk){
+function ckMix(queue,kid,sid,dk,inFam){
   const out=(queue||[]).slice(); let x=ckSeed(String(kid)+"|"+String(sid)+"|"+String(dk))||1;
   const rnd=function(){ x^=x<<13; x>>>=0; x^=x>>>17; x^=x<<5; x>>>=0; return x/4294967296; };   // xorshift32: tiny, deterministic
+  if(inFam){   // CKORDER: a SPELLING check-up keeps the plan's lesson order (Book 1 Lesson 1 → …); only the words inside one lesson mix
+    const groups=[], at={};
+    out.forEach(q=>{ const k=String((q&&q.slug)||(q&&q.fam)||""); if(at[k]==null){ at[k]=groups.length; groups.push([]); } groups[at[k]].push(q); });
+    const res=[]; groups.forEach(g=>{ for(let i=g.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); const t=g[i]; g[i]=g[j]; g[j]=t; } g.forEach(q=>res.push(q)); });
+    return res;
+  }
   for(let i=out.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); const t=out[i]; out[i]=out[j]; out[j]=t; }
   return out;
 }
@@ -62282,10 +62289,21 @@ function ckSession(kid,sid){ try{ return (mstSessions(kid)||[]).find(s=>s.sid===
 function ckSpanCards(u,session){
   if(!u||typeof _ustCards!=="function") return [];
   const a=+session.stage||0, b=Math.max(a,+session.stageTo||a);
-  if(b<=a) return _ustCards(u,a);
-  const out=[]; for(let st=a;st<=b;st++) _ustCards(u,st).forEach(c=>out.push(Object.assign({},c,{family:"L"+st+" \u00b7 "+(c.family||"All")})));
+  if(b<=a) return ckLessonOrder(u,_ustCards(u,a));
+  const out=[]; for(let st=a;st<=b;st++) ckLessonOrder(u,_ustCards(u,st)).forEach(c=>out.push(Object.assign({},c,{family:"L"+st+" \u00b7 "+(c.family||"All")})));
   return out;
 }
+// CKORDER_START (her words 2026-10-28: "it should be doing 3 of each lesson in each book. And it should start at book 1, lesson 1,
+// and do the 3. It doesn't matter if those 3 mix up … we need to be progressing through that in the order in which it was created").
+// A level's cards come deck by deck (words, then phonograms, rules, sound spellings), so a lesson with no words (Level 1 Lessons
+// 1–6) sat after Lesson 24. When the unit numbers its families (famSort: the AAS books), the level is put in lesson order first —
+// stable, so cards inside a lesson keep their own order. Units without numbered families (the facts path) are untouched.
+function ckLessonOrder(u,cards){
+  if(!(u&&u.famSort)) return cards;
+  const num=c=>(c&&c.lesson!=null)?+c.lesson:((typeof _ustFamNum==="function"&&_ustFamNum(c))||0);
+  return cards.map((c,i)=>({c,i})).sort((x,y)=>(num(x.c)-num(y.c))||(x.i-y.i)).map(x=>x.c);
+}
+// CKORDER_END
 function ckCards(session){
   const u=(typeof unitStudies!=="undefined"&&unitStudies)?unitStudies[session.unit]:null;
   const all=(u&&typeof _ustCards==="function")?ckSpanCards(u,session):[];   // CKSPAN
@@ -62318,7 +62336,7 @@ function ckRenderHtml(kid,session){
   const cards=ckCards(session);
   if(!cards.length) return '<div style="'+box+'">This check-up’s unit isn’t in your family yet.</div>';
   const st=ckState(kid,session.sid), p=ckPlan(cards,session,st), dk=ckDayKey();
-  p.queue=ckMix(p.queue,kid,session.sid,dk);   // CKMIX: the asked order is mixed for the sitting
+  p.queue=ckMix(p.queue,kid,session.sid,dk,ckIsSpelling(session));   // CKMIX: the asked order is mixed for the sitting (CKORDER: a spelling check-up mixes inside each lesson only)
   const running=ckRun&&ckRun.kid===kid&&ckRun.sid===session.sid;
   const left=Math.min(p.queue.length,ckTodayLeft(session,st,dk,running?ckRun.extra:0));
   let h='<div style="'+box+'"><div style="font-size:22px;font-weight:800;color:#0f766e">\u{1FA7A} '+ckEsc(session.name||"Check-up")+'</div>';
@@ -62405,7 +62423,7 @@ function ckTap(r,name){
   const cards=ckCards(s), dk=ckDayKey();
   const st=JSON.parse(JSON.stringify(ckState(kid,sid)));
   const p=ckPlan(cards,s,st); if(!p.queue.length){ ckStop(); return; }
-  p.queue=ckMix(p.queue,kid,sid,dk);   // CKMIX: the same mixed order the screen showed
+  p.queue=ckMix(p.queue,kid,sid,dk,ckIsSpelling(s));   // CKMIX: the same mixed order the screen showed
   const it=name?p.queue.find(x=>x&&String(x.card.name)===String(name)):p.queue[0]; if(!it) return;   // CKWRITTEN: a named row, else the front card
   const secs=name?null:Math.round((Date.now()-ckRun.ts)/100)/10;   // the written list has no clock
   const prevM=ckFamState(st,s,it.slug).m;
