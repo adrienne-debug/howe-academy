@@ -23,6 +23,7 @@ const CPC=slice("// CPCLASS_START","// CPCLASS_END");   // 🏫 the class record
 const CPU=slice("// CPUNIT_START","// CPUNIT_END");   // 📦 units as data (2026-10-28): HoweUnits, the catalog, a class's units, sections from the units, enroll per unit
 const CORE=slice("// CPCORE_START","// CPCORE_END");   // ⭐ core cards first (2026-10-28): the "Core cards first" row + the two mstPile hooks — in the world only with o.cpcore
 const CCS=slice("// CPCARDSSEE_START","// CPCARDSSEE_END");   // 📚 the cards browser, read-only (2026-10-28): 📚 Cards in the console
+const CCE=slice("// CPCARDSEDIT_START","// CPCARDSEDIT_END");   // ✏️ the class's card layer (2026-10-28): edit / hide / add in 📚 Cards + the kid's in-memory hooks — off with o.noCce
 // o.envt: the station check-ins too (ENVTEST, + the forms on window.HoweEnvirothon = o.lib) — the demo's check-in rules (2026-10-28) —
 // and the 🔊 read-aloud switch right after it (ENVREADALOUD; mastSpeak records into G.said)
 const ENVT=slice("// ENVTEST_START","// ENVREADALOUD_END");
@@ -71,6 +72,7 @@ function world(o){
     ${o.noCpu?"":CPU}
     ${o.cpcore?CORE:""}
     ${o.noCcs?"":CCS}
+    ${o.noCce?"":CCE}
     STARTER_UNITS[ENV_UNIT_ID]=envUnitRecordStub; function envUnitRecordStub(){ return {id:ENV_UNIT_ID,starter:ENV_UNIT_ID,starterVer:1,cardsInCode:true,stages:ENV_STAGES.map(s=>({n:s[0]})),decks:ENV_DECKS.map(d=>({key:d[0],stage:d[2],station:d[3],n:d[5],cards:[]}))}; }
     return { get tab(){ return tab; }, set tab(v){ tab=v; }, get db(){ return db; }, get mastView(){ return mastView; }, set mastView(v){ mastView=v; }, get masteryKid(){ return masteryKid; }, unitStudies, masteryData, HA_LS, _envs, _envc, _envm, STARTER_UNITS,
       envEdition, envSiteOn, envsDemo, envsLockState, envsStations, envsStationStat, envsGain, envsEffort, envsBoardsCompute, envsBoardsHtml, envsMakeCode, envsCodeNorm, envsCodeOk, envsKidEmail, envsKidPw, envsFamilyDbUrl, envSiteDb, envSiteDemoBoot, envSiteGate, envsApplyLogin, envSiteAuthShow, envsAuthHtml, envsAuthSubmit, envsKidSubmit, envSiteTabGate, envSiteRender, envsView, envsDemoGo, envsDemoData, envsDemoStart, envSiteSittingDone, envsAutoEnroll, envsWrite, envsLicenseLine, envsCard, envsKidHtml, envsParentHtml, envsStationRowsHtml, envsScoresHtml, envsTipsHtml, envsSettingsHtml, envsReadShared, envsStreakHtml, ENVS_OFF_TABS, ENVS_TIPS, ENVS_CONTACT, ENVS_FULL_APP, ENVS_STARS, ENVS_AUTOLOCK,
@@ -82,7 +84,8 @@ function world(o){
       cpu:${o.noCpu?"null":"{ CPU_UNITS, CPU_DEFAULT, _cpu, cpuOn, cpuReg, cpuUnit, cpuQid, cpuLoad, cpuIndex, cpuIds, cpuDecks, cpuSections, cpuSum, cpuWatch, cpuAdminWatch, cpuAttached, cpuStations, cpuLabel, cpuFeature, cpuUnitRecord, cpuGeneric, cpuHydrate, cpuHydrateAll, cpuEnrollSession, cpuAutoEnroll, cpuUnitsHtml, cpuPublish, cpuPubState, cpuSetupHtml, cpuUnitsAfter, cpuAttach, cpuNewUnitsHtml, cpuNewUnits, cpuDemoStart, get win(){ return window; } }"},
       core:${o.cpcore?"{ CPCORE_FIELD, _cpcore, cpCoreOn, cpCoreSetting, cpCoreSet, cpCoreLeft, cpCoreNames, cpCoreFresh, cpCoreDemoSeed }":"null"},
       ccs:${o.noCcs?"null":"{ CPCS_PAGE, CPCS_SPAGE, _cpcs, cpcsOn, cpcsChips, cpcsFoldAll, cpcsUnitIds, cpcsLib, cpcsLoad, cpcsKind, cpcsIndex, cpcsPass, cpcsCounts, cpcsTap, cpcsSearch, cpcsHtml, cpcsListHtml, cpcsChipsHtml, cpcsWord }"},
-      envt:${o.envt?"{ envtOpen, envtStatus, envtStartHtml, envtPick, envtNext, envtClose, envtCoreLine, envtWaitsForCheckin, envtFinalApply, envRaSet, envRaMode, envRaStartHtml, envRaReadQ, get state(){ return envtState; } }":"null"} };`)(G,firebase,document,tierFn);
+      cce:${o.noCce?"null":"{ CPCE_UNDO_MAX, _cpce, cpceOn, cpceStart, cpceLayer, cpceChips, cpceKey, cpceRec, cpceSt, cpceBack, cpceIndex, cpcePass, cpceCounts, cpceCntHtml, cpceRowCls, cpceChipsHtml, cpceUndoHtml, cpceBackHtml, cpceActsHtml, cpceFolder, cpceFolderHtml, cpceCard, cpceEditOpen, cpceEditCancel, cpceAsk, cpceAddOpen, cpceNext, cpceEditSave, cpceUseUnit, cpceHide, cpceShow, cpceBulkUpdate, cpceBulk, cpceFrontWhy, cpceAddDeck, cpceAddSave, cpceCommit, cpceUndo, cpceKidOn, cpceKidLoad, cpceKidLayer, cpceNameAt, cpceKidIdx, cpceHidItem, cpceItems, cpceBank, cpceDef, cpceHydrate, cpceFlash, cpceCoreFix }"},
+      envt:${o.envt?"{ envtOpen, envtStatus, envtStartHtml, envtPick, envtNext, envtClose, envtCoreLine, envtCoreCount, envtWaitsForCheckin, envtFinalApply, envRaSet, envRaMode, envRaStartHtml, envRaReadQ, get state(){ return envtState; } }":"null"} };`)(G,firebase,document,tierFn);
   api.G=G; api.el=(id,v)=>{ G.els[id]=el(id); if(v!==undefined) G.els[id].value=v; return G.els[id]; };
   api.flush=async()=>{ for(let i=0;i<60;i++) await Promise.resolve(); };
   api.tick=()=>{ const t=(G.timers||[]).shift(); if(t) t.fn(); return !!t; };
@@ -90,7 +93,7 @@ function world(o){
 }
 
 
-module.exports={world,src,SITE,CON,MIR,UNIT,CLS,CPS,CPC,CPU,CORE,CCS,REPO};
+module.exports={world,src,SITE,CON,MIR,UNIT,CLS,CPS,CPC,CPU,CORE,CCS,CCE,REPO};
 if(require.main===module){
 let pass=0, fail=0;
 const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  "+JSON.stringify(x).slice(0,400):"")); } };
@@ -281,7 +284,7 @@ console.log("\n── the first signed-in boot enrolls the kid, every stage, thr
 console.log("\n── the rules file, the setup note, the build ──");
 { const R=JSON.parse(fs.readFileSync(path.join(REPO,"envirothon","SITE_RULES.json"),"utf8")); const nodes=Object.keys(R.rules).filter(k=>k[0]!==".");
   ok("envirothon/SITE_RULES.json parses; the root is locked (.read/.write false)", R.rules[".read"]===false&&R.rules[".write"]===false);
-  ok("it names every node of the site: admins teachers logins classes units students release scores teacherCards boards settings (📦 units: the catalog, 2026-10-28)", ["admins","teachers","logins","classes","units","students","release","scores","teacherCards","boards","settings"].every(n=>nodes.includes(n))&&nodes.length===11, nodes);
+  ok("it names every node of the site: admins teachers logins classes units students release scores teacherCards classCards boards settings (📦 units: the catalog · 📚 classCards: the class's card layer, 2026-10-28)", ["admins","teachers","logins","classes","units","students","release","scores","teacherCards","classCards","boards","settings"].every(n=>nodes.includes(n))&&nodes.length===12, nodes);
   ok("students/<sid>/summary + meta keep the mirror's rules (family login by familyId prefix); release/locked admin-only; logins creatable by the class's teacher for kid/parent only", /beginsWith\(root.child\('logins\/'\+auth.uid\+'\/familyId'\)/.test(R.rules.students.$sid.summary[".write"])&&R.rules.release.locked[".write"]==="root.child('admins/'+auth.uid).val() == true"&&/role'\).val\(\) == 'kid'/.test(R.rules.logins.$uid[".write"]));
   ok("a teacher may edit only her own card (by == auth.uid); whoDrills validates parent|teacher|both", /data.child\('by'\).val\(\) == auth.uid/.test(R.rules.teacherCards.$cid.$deck.$card[".write"])&&/'parent'.*'teacher'.*'both'/.test(R.rules.settings.whoDrills.$cid[".validate"]));
   ok("the family instance rules: allowed/<uid> only, allowed itself not writable", /allowed/.test(R.family.rules[".read"])&&R.family.rules.allowed[".write"]===false);

@@ -5,7 +5,7 @@
  * it back"). The look is the agreed mockup, ~/Desktop/Envirothon/MOCKUP_teacher_browser.html.
  *   · where the block sits and how it is hooked (2 typeof-guarded lines; the console's chips array literal is not edited);
  *   · Howe / DeWalt / Burris inert (also in test_env_site.js); the kid's and parent's pages never show it;
- *   · 📚 Cards for the teacher and Adrienne, before 🃏 Teacher cards (which stays until PR 10);
+ *   · 📚 Cards for the teacher and Adrienne, where 🃏 Teacher cards was (PR 10 moved its editor in and took the old chip out);
  *   · FOLDING: everything folded at first; one open at each level; opening the next folds the last; moving on (another chip) folds it all;
  *   · COUNTS on every header, counted HERE FROM THE DATA (envirothon.js + unit.json's deck → section map), never typed in;
  *   · PAGING: 20 rows a folder, "Show 20 more · N left", back to 20 after folding; search 30 at a time;
@@ -60,8 +60,8 @@ console.log("\n── 📚 Cards in the console ──");
 { const w=demo("teacher"), a=demo("admin");
   const chipRow=h=>(h.match(/<div class="envs-chips">([\s\S]*?)<\/div>/)||["",""])[1];
   const t=chipRow(w.G.content), ad=chipRow(a.G.content);
-  ok("teacher: 📚 Cards sits right before 🃏 Teacher cards (which stays until PR 10)", /envcView\('cpcards'\)">📚 Cards<\/button><button[^>]*envcView\('cards'\)">🃏 Teacher cards/.test(t), t.slice(0,400));
-  ok("Adrienne: the same chip", /📚 Cards<\/button><button[^>]*>🃏 Teacher cards/.test(ad));
+  ok("teacher: 📚 Cards sits where 🃏 Teacher cards was — the old chip is gone, its editor moved into 📚 Cards (PR 10, CPCARDSEDIT)", /envcView\('cpcards'\)">📚 Cards<\/button><button[^>]*envcView\('boards'\)/.test(t)&&!/envcView\('cards'\)/.test(t), t.slice(0,400));
+  ok("Adrienne: the same chip", /📚 Cards<\/button><button[^>]*envcView\('boards'\)/.test(ad)&&!/🃏 Teacher cards/.test(ad));
   ok("the chip is added once, however often the console paints", (w.renderAll(),w.renderAll(),(w.G.content.match(/envcView\('cpcards'\)/g)||[]).length===1));
   const h=open(w);
   ok("tapping it opens the browser: the search box, the chips, the list", /id="cpcs-q"/.test(h)&&/id="cpcs-chips"/.test(h)&&/id="cpcs-list"/.test(h)&&/placeholder="Search fronts, backs, sources…"/.test(h));
