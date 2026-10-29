@@ -36,6 +36,10 @@
 // unit's, its type one of the engine's, its label set, its tests ids of that section's forms, its replaces "<deck>#o<order>" of a real
 // card; a `gear` skill (type id, data.kind "gear") has 4+ items, each with a unique name, a use, a source, and look-alikes that are items
 // of the same skill. A note (not an error) lists the gear items the repo's photo set (envirothon/pics/index.json) has no photo for.
+// 🪲 CPITEMBIOTIC (2026-10-29, the biotic-index worksheet; RESEARCH §4.3): a `tally` worksheet (type sheet, data.kind "tally" with a flat
+// items list) has 2+ groups with unique keys, a label and a number weight; 4+ items, each a unique name, one of the groups, a source,
+// look-alikes that are items of the same skill; ratings with a label and a unique number min; pick / chartPick [lo, hi] whole numbers.
+// COUNTS.json counts its items; a note lists the items with no photo in the repo set (they show a 📷 placeholder in the app).
 // Nothing here touches a database. The catalog entry (index.json) is what 📦 Units ▸ Publish writes to units/<id>/index (§4.3), and the
 // same object is CPU_UNITS[<id>] in index.html: a plain run REWRITES that one line (`const CPU_UNITS={…};` in the CPUNIT block), so a data
 // change (a trim, a core add) is the data files + one compile run, never a hand edit of index.html (2026-10-28, after Trim 1 met PR 3).
@@ -118,7 +122,7 @@ function makeCounts(u,decks,tests,skills){
 }
 // 🧰 CPITEMGEAR: a skill as the catalog carries it (the unit.json record, its keys in a fixed order) — PURE
 function skillEntry(k){ const o={}; ["key","section","type","label","core","steps","tests","replaces","data"].forEach(f=>{ if(k[f]!==undefined) o[f]=k[f]; }); return o; }
-function skillItems(k){ return (k&&k.data&&k.data.kind==="gear"&&Array.isArray(k.data.items))?k.data.items:null; }
+function skillItems(k){ return (k&&k.data&&(k.data.kind==="gear"||k.data.kind==="tally")&&Array.isArray(k.data.items))?k.data.items:null; }   // 🪲 CPITEMBIOTIC: + a tally sheet's kinds
 // rule 8 — the unit's skills: [errors]
 function checkSkills(skills,secKeys,decks,tests){
   const err=[], E=m=>err.push(m); if(skills==null) return err; if(!Array.isArray(skills)){ E("skills must be a list"); return err; }
@@ -145,14 +149,36 @@ function checkSkills(skills,secKeys,decks,tests){
         if(!x.src) E(ia+" has no source");
         if(x.item!=null&&(typeof x.item!=="string"||!x.item.trim())) E(ia+": item (its photo key) must be a name"); });
       const U={}; I.forEach(x=>{ if(x&&x.use){ if(U[x.use]) E(at+": two items share the use “"+x.use+"”"); U[x.use]=1; } });
-      I.forEach(x=>{ if(x&&x.like!=null){ if(!Array.isArray(x.like)) E(at+" item “"+x.name+"”: like must be a list"); else x.like.forEach(n=>{ if(!names[String(n).toLowerCase()]||String(n).toLowerCase()===String(x.name).toLowerCase()) E(at+" item “"+x.name+"”: look-alike “"+n+"” is not another item of this skill"); }); } }); } });
+      I.forEach(x=>{ if(x&&x.like!=null){ if(!Array.isArray(x.like)) E(at+" item “"+x.name+"”: like must be a list"); else x.like.forEach(n=>{ if(!names[String(n).toLowerCase()]||String(n).toLowerCase()===String(x.name).toLowerCase()) E(at+" item “"+x.name+"”: look-alike “"+n+"” is not another item of this skill"); }); } }); }
+    if(k.data&&k.data.kind==="tally"&&Array.isArray(k.data.items)) checkTally(k,at).forEach(E); });   // 🪲 CPITEMBIOTIC
+  return err;
+}
+// 🪲 CPITEMBIOTIC: a tally worksheet (type sheet, flat items) — [errors]
+function checkTally(k,at){
+  const err=[], E=m=>err.push(m), D=k.data, G=Array.isArray(D.groups)?D.groups:[], I=D.items, gk={}, names={};
+  if(k.type!=="sheet") E(at+": a tally worksheet is type sheet");
+  if(G.length<2) E(at+": a tally worksheet needs 2 or more groups");
+  G.forEach((g,j)=>{ const ga=at+" group "+(j+1); if(!g||!fbSafe(String(g.key||""))){ E(ga+" needs a key safe as a Firebase key"); return; } if(gk[g.key]) E(ga+": key “"+g.key+"” twice"); gk[g.key]=1;
+    if(typeof g.label!=="string"||!g.label.trim()) E(ga+" has no label"); if(typeof g.weight!=="number"||!isFinite(g.weight)) E(ga+": weight must be a number"); });
+  if(I.length<4) E(at+": a tally worksheet needs 4 or more items (the picture question offers 4 names)");
+  I.forEach((x,j)=>{ const ia=at+" item "+(j+1)+(x&&x.name?" (“"+x.name+"”)":"");
+    if(!x||typeof x.name!=="string"||!x.name.trim()){ E(ia+" has no name"); return; }
+    if(names[x.name.toLowerCase()]) E(ia+": name twice"); names[x.name.toLowerCase()]=1;
+    if(!gk[x.group]) E(ia+": group “"+x.group+"” is not one of the skill's groups"); if(!x.src) E(ia+" has no source"); });
+  I.forEach(x=>{ if(x&&x.like!=null){ if(!Array.isArray(x.like)) E(at+" item “"+x.name+"”: like must be a list"); else x.like.forEach(n=>{ if(!names[String(n).toLowerCase()]||String(n).toLowerCase()===String(x.name).toLowerCase()) E(at+" item “"+x.name+"”: look-alike “"+n+"” is not another item of this skill"); }); } });
+  const R=D.ratings, mins={}; if(R!=null){ if(!Array.isArray(R)||!R.length) E(at+": ratings must be a list"); else R.forEach((r,j)=>{ if(!r||r.label==null||String(r.label).trim()===""||typeof r.min!=="number") E(at+" rating "+(j+1)+" needs a label and a number min"); else if(mins[r.min]) E(at+": two ratings start at "+r.min); else mins[r.min]=1; }); }
+  ["pick","chartPick"].forEach(f=>{ const v=D[f]; if(v!=null&&!(Array.isArray(v)&&v.length===2&&v.every(n=>Number.isInteger(n)&&n>=1)&&v[0]<=v[1])) E(at+": "+f+" must be [lo, hi], whole numbers, lo ≤ hi"); });
+  if(D.forms!=null&&(!Array.isArray(D.forms)||!D.forms.length||D.forms.some(f=>f!=="list"&&f!=="chart"))) E(at+": forms must be a list of “list” / “chart”");
   return err;
 }
 // 🧰 CPITEMGEAR: the gear items with no photo in the repo set (envirothon/pics/index.json, card name → photos; the item is the name before " · ")
-function gearPhotoGaps(root,skills){
+function gearPhotoGaps(root,skills,kind){
+  kind=kind||(k=>k&&k.data&&k.data.kind==="gear");
   const p=path.join(root,"envirothon","pics","index.json"), have={}; if(fs.existsSync(p)){ try{ Object.keys(readJson(p)).forEach(n=>{ have[String(n).split(" · ")[0].trim().toLowerCase()]=1; }); }catch(e){} }
-  const out=[]; (skills||[]).forEach(k=>(skillItems(k)||[]).forEach(x=>{ const item=String(x.item||x.name).trim(); if(!have[item.toLowerCase()]) out.push({skill:k.key,name:x.name,item}); })); return out;
+  const out=[]; (skills||[]).forEach(k=>{ if(!kind(k)) return; (skillItems(k)||[]).forEach(x=>{ const item=String(x.item||x.name).trim(); if(!have[item.toLowerCase()]) out.push({skill:k.key,name:x.name,item}); }); }); return out;
 }
+// 🪲 CPITEMBIOTIC: the same list for a tally worksheet's kinds
+function tallyPhotoGaps(root,skills){ return gearPhotoGaps(root,skills,k=>k&&k.data&&k.data.kind==="tally"); }
 function check(root,id,{u,decks,tests,skills},old,others){
   const err=[], warn=[], E=m=>err.push(m);
   if(!/^[a-z][a-z0-9_]{0,39}$/.test(String(u.id||""))) E("unit id “"+u.id+"” must be [a-z][a-z0-9_]*, up to 40");
@@ -191,6 +217,7 @@ function check(root,id,{u,decks,tests,skills},old,others){
         if(!it.q||!n) E(at+": no question or no choices"); else if(!a.length||a.some(x=>!Number.isInteger(x)||x<0||x>=n)) E(at+": the answer isn't one of its "+n+" choices"); }); }); });
   checkSkills(skills,secKeys,decks,tests).forEach(E);   // 🧰 CPITEMGEAR: rule 8
   const gaps=gearPhotoGaps(root,skills); if(gaps.length) warn.push(gaps.length+" gear item"+(gaps.length===1?" has":"s have")+" no photo in the repo set yet: "+gaps.map(g=>g.name).join(", "));
+  const tg=tallyPhotoGaps(root,skills); if(tg.length) warn.push(tg.length+" worksheet kind"+(tg.length===1?" has":"s have")+" no photo in the repo set yet (the app shows 📷): "+tg.map(g=>g.name).join(", "));   // 🪲 CPITEMBIOTIC
   return {err,warn};
 }
 // the compiled file for a unit without build.file
@@ -255,7 +282,7 @@ function compile(id,opts){
     const cat=catalogIn(root); if(cat){ const h=catalogWith(cat,id,index); if(h!==cat.html) fs.writeFileSync(cat.p,h); r.page=h!==cat.html; } }
   return {ok,err:r.err,warn:r.warn,counts,index,js,links,releaseKeys:rkeys,unit:L.u,page:!!r.page};
 }
-module.exports={compile,checkSkills,skillEntry,skillItems,gearPhotoGaps,SKILL_TYPES,sectionConcepts,releaseKeys,catalogIn,catalogWith,CAT_RE,check,loadUnit,makeIndex,makeCounts,makeJs,questionLinks,linkNorm,linkHas,fbSafe,ranges,unranges,unitIds,LABEL_KEYS,FEATURE_KEYS,REPO};
+module.exports={compile,checkSkills,checkTally,skillEntry,skillItems,gearPhotoGaps,tallyPhotoGaps,SKILL_TYPES,sectionConcepts,releaseKeys,catalogIn,catalogWith,CAT_RE,check,loadUnit,makeIndex,makeCounts,makeJs,questionLinks,linkNorm,linkHas,fbSafe,ranges,unranges,unitIds,LABEL_KEYS,FEATURE_KEYS,REPO};
 if(require.main===module){
   const a=process.argv.slice(2), chk=a.includes("--check"), all=a.includes("--all"), ids=all?unitIds(REPO):a.filter(x=>!x.startsWith("--"));
   if(!ids.length){ console.error("usage: node units/build/compile_unit.js <unitId>|--all [--check]"); process.exit(2); }
