@@ -64,7 +64,7 @@ const LADDER=["every_other_day","weekly","bi_weekly","monthly","graduated"], at=
 const run=async()=>{
 console.log("── where it sits, how it is hooked ──");
 { const a=src.indexOf("// CPREVIEW_START"), b=src.indexOf("// CPREVIEW_END"), e=src.indexOf("// ENVIDFLASH_END");
-  ok("CPREVIEW once, right after ENVIDFLASH_END (after ENVCLASSSET's settings list is declared)", a>0&&b>a&&src.indexOf("// CPREVIEW_START",a+1)<0&&src.slice(e,a).trim()==="// ENVIDFLASH_END"&&src.indexOf("const ENVCS_FIELDS=[")<a);
+  ok("CPREVIEW once, right after ENVIDFLASH_END (🌲 CPITEMID's block may sit between; after ENVCLASSSET's settings list is declared)", a>0&&b>a&&src.indexOf("// CPREVIEW_START",a+1)<0&&src.slice(e,a).replace(/\/\/ CPITEMID_START[\s\S]*?\/\/ CPITEMID_END\n/,"").trim()==="// ENVIDFLASH_END"&&src.indexOf("const ENVCS_FIELDS=[")<a);
   ok("the header names the design sections, PR 6, her Q5 words and the date", /§7\(a\)/.test(REV)&&/§13 row 6/.test(REV)&&/PR 6/.test(REV)&&/the default would be that it stays in the student's own\s*\/\/ session/.test(REV)&&/2026-10-28/.test(REV));
   ok("the block only declares (its one load step is a const: the guarded update of the settings list)", REV.split("\n").every(l=>!l.trim()||/^(\/\/|function |const | |})/.test(l))&&/^const CPR_FIELDS_SET=cpReviewFields\(\);$/m.test(REV));
   ok("no Howe kid name as a code literal, no database call in the block", !/["'`](lincoln|ellis|lucy|julian)["'`]/i.test(REV)&&!/\.ref\(|envsWrite|envcWrite|\bdb\b/.test(REV.replace(/^\/\/.*$/mg,"")));

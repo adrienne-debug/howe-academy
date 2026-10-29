@@ -194,7 +194,7 @@ console.log("\n── the teacher: the photo note, the classmates' counts, the m
 console.log("\n── a live kid: the unit's skills from the catalog entry ──");
 { const w=W({w:{fam:FAM,remote:{["classSkills/"+CID]:{}}}}), S=w.S; w.initFb();
   Object.assign(w._envs,{role:"kid",kid:K,sid:"ramirez_maya",cid:CID,cls:{units:{nc_envirothon:true}}}); w.masteryData[K]=[]; w.masteryData[K+"_settings"]={cat_hold:{"Soils and Land Use · Terms":true}};
-  ok("no demo list: the skills are CPU_UNITS' (the compiled unit) — Forestry tools and Sampling gear", S.cpSkillList().map(s=>s.fb).join()==="forestry:tools,aquatics:gear"&&S.cpSkillsFor(K).length===2);
+  ok("no demo list: the skills are CPU_UNITS' (the compiled unit) — Forestry tools and Sampling gear", S.cpSkillList().filter(s=>s.data&&s.data.kind==="gear").map(s=>s.fb).join()==="forestry:tools,aquatics:gear"&&S.cpSkillsFor(K).filter(s=>s.data&&s.data.kind==="gear").length===2);
   ok("the door shows them on her study page", /Forestry tools by picture/.test(S.cpSkillStudyWrap(K,"BODY"))&&/Sampling gear by picture/.test(S.cpSkillStudyWrap(K,"BODY")));
   ok("no picture in the pool yet (the repo set has no gear) → every live problem asks what it is for, with the placeholder", (()=>{ S.cpSkillOpen(K,FBA,11); const r=S._cpsk.run, okk=!r.prob.photo&&r.prob.steps.length===1&&/Photo needed/.test(w.G.content||S.cpSkillStudyWrap(K,"")); S._cpsk.run=null; return okk; })());
   ok("cpGearDemoSeed does nothing off the demo", w.I.cpGearDemoSeed({cid:CID,students:{}})===false); }
