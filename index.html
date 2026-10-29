@@ -48679,8 +48679,10 @@ function cppToday(){ return (typeof envcToday==="function")?envcToday(Date.now()
 // the sections with each deck's core count (the unit's catalog numbers; a unit marking no core counts every card core, §15)
 function cppSections(){
   const S=(typeof envsStations==="function"&&envsStations())||[];
-  return S.map(st=>{ const x=(st.unit&&typeof cpuIndex==="function")?cpuIndex(st.unit):null, X=(x&&x.decks)||{};
+  const out=S.map(st=>{ const x=(st.unit&&typeof cpuIndex==="function")?cpuIndex(st.unit):null, X=(x&&x.decks)||{};
     return {id:st.id,label:st.label,short:st.short||st.label,unit:st.unit||"",decks:(st.decks||[]).map(d=>{ const r=X[d.key]; return {key:d.key,section:st.id,n:d.n||0,core:(r&&r.core!=null)?r.core:(d.n||0)}; })}; });
+  if(typeof cpSuggestDecks==="function") cpSuggestDecks(out);   // 💡 CPSUGGEST: the cards her class hid leave each deck's count and core count (§8.6 `hidden`)
+  return out;
 }
 // a setting's value: the field's default ← the class ← (a student) — ENVCLASSSET's own numbers
 function cppSetting(name,L){ const f=(typeof envClsField==="function")?envClsField(name):null; let v=f&&typeof envClsDef==="function"?envClsDef(f):null;
@@ -49226,6 +49228,325 @@ function cpCalSendNext(mode){
   if(mode==="date"&&n.date>cpcalToday()){ cpsdSet("when","date"); cpsdSet("on",n.date); } else cpsdSet("when","now");
   return true; }
 // CPCAL_END
+// CPSUGGEST_START — 💡 SUGGESTIONS ON 📅 PACE, THE LIVE MATCHER FOR HER OWN QUESTIONS, THE LINKED CARDS ON EACH ITEM-ANALYSIS ROW
+// (DESIGN_class_platform_2026-10-28.md §8.4, §6.3, §6.4, §8.3, §8.6, §9, §13 row 16, §14; PR 16 of the class platform; her yes to building the
+// design 2026-10-28). Her words 2026-10-28: "a pace target that gives her all the data and can manipulate things where she can see where
+// kids need to be and also kind of help her know what she needs, questions to take out, etc." INERT unless the Envirothon site's console
+// is on (envcOn): Howe, DeWalt and Burris never reach a line of it, and Lincoln's app never opens the console.
+//   · 💡 SUGGESTIONS, under 📅 Pace's student table (CPPACE's cpSuggestHtml hook): at most 8, the most useful first, each from data the
+//     console already has. EVERY ONE IS ONLY A SUGGESTION. **Do it** opens the same control, filled in, and she confirms there; **Not now**
+//     saves classes/<cid>/dismissed/<id> = {by, ts, t} so it doesn't come back (↩ Bring back, under "Set aside", takes it off again).
+//     Nothing ever changes by itself.
+//       nocore  "Q7 (Forestry check-in): 0 of 7 right, and no core card covers it": 3+ answers, 40% or fewer right, and no core card is
+//               linked. The linked cards always show, because the match is automatic. Do it → 📝 Tests opened at that question.
+//       notest  "384 Wildlife ID cards are not core and on no test": one section's cards of one kind, not core, not hidden, and linked to
+//               no question on any of the class's forms. Do it → what hiding them buys, from the planner, BEFORE she confirms (the core
+//               finish, the minutes a day, the day the last new card comes), then 🙈 Hide them = ONE multi-path update of classCards (PR 10).
+//       miss    "Wildlife and Aquatics can't make 95% by State at 5 a day": the what-if plan misses the target in a section. Do it → the
+//               plan's own fix on the bar as a what-if (Try N a day; Core only when Core first is off). Only Save this plan saves it.
+//       student "Jonah T. needs 26 new cards a day (~75 min) and gets 5": a student short (or ⚠ on minutes) in the table. Do it → that
+//               student's own New cards a day, as a what-if, with their row open.
+//       weak    "“Cambium” is missed by 3 of 8": a core card in many students' weak lists. Do it → the card open in 📚 Cards (check the back).
+//       easy    "Q3 (Forestry check-in) is right for almost everyone: 7 of 7": 3+ answers, 90% or more right, and the same question is on a
+//               separate final. Do it → 📝 Tests at the final's question (she takes it out there, or leaves it).
+//     🔒 CPLOCKS: a suggestion whose control is locked for the teacher (cpLockRO tests / cards / plan, or Adrienne's New cards a day lock)
+//     shows "🔒 set by <name>" in place of Do it.
+//   · THE LIVE MATCHER (§8.4: "For a question the teacher adds, the console runs the same matcher live and lets her tick the right cards").
+//     cpSuggestMatch is compile_unit.js's questionLinks rule for one question: a term's front or an ID card's item, as whole words (4+
+//     characters), in the question or the keyed answer; a fact whose back holds the keyed answer (or the answer holds the back); a card of
+//     the question's own section, or of a section with no tests. Her added questions and her edited wording get their links live
+//     (cpctModel's one hook), so the 📝 Tests counts and filter, "No core card covers it", the item analysis and 💡 all read them.
+//     🔗 Check the links (her question, opened): the matched cards ticked, a search of the section's fronts to tick more, Save → the item's
+//     `cards` on the class's test layer, in the same ONE update of classTests/<cid>/<section>/<form> as every 📝 Tests change (the item's
+//     ts is kept, so the results' versions don't move). "Use the automatic match" takes her ticks off. A wrong link only changes a suggestion.
+//   · THE ITEM ANALYSIS (📝 Tests ▸ 📊 Class results, an opened row: CPRESULTS's cpSuggestRowHtml hook): the cards that teach the question,
+//     ⭐ on core, or "No core card covers it" / "No card covers it", and that the match is automatic.
+//   · THE PLAN COUNTS THE CLASS'S HIDDEN CARDS (§8.6's `hidden`): one guarded line in cppSections takes the cards her class hid out of each
+//     deck's count and core count, so after 🙈 Hide them 📅 Pace shows what the panel worked out.
+//   · DATA: classes/<cid>/dismissed/<id> = {by, ts, t} (new: the class's teacher and Adrienne) · classTests/<cid>/<sec>/<form>/items/<id>/cards
+//     = [card ids] (a new leaf, the same writers as the layer) · classCards/<cid>/<deck>/<card> = {hide, name, by, ts} (PR 10's). Every write
+//     goes through envcWrite / cpctCommit / cpceCommit → envsWrite (the demo: "would write"; a dry run: nothing).
+const CPSG_MAX=8, CPSG_LOW=40, CPSG_HIGH=90, CPSG_MIN=3, CPSG_NOTEST_MIN=10, CPSG_TICK_MAX=40, CPSG_FIND=8, CPSG_ID_MAX=100;
+const CPSG_ORDER=["nocore","notest","miss","student","weak","easy"], CPSG_CAP={nocore:3,notest:2,miss:1,student:2,weak:2,easy:2};
+const CPSG_ICON={nocore:"\u{1F4DD}",easy:"\u{1F4DD}",notest:"\u{1F648}",miss:"\u{1F4C5}",student:"\u{1F464}",weak:"\u{1F9E0}"};
+const CPSG_KIND={term:"term",fact:"fact",id:"ID"};
+const _cpsg={open:"",aside:false,tk:null,cm:null,mm:{},hid:null,hidM:null,hidL:null,css:false};
+const _cpsgPrep=(typeof WeakMap==="function")?new WeakMap():null;
+function cpsgOn(){ return typeof envcOn==="function"&&envcOn(); }
+function cpsgEsc(v){ return envsEsc(v); }
+function cpsgJ(v){ return envsJ(v); }
+function cpsgCls(){ return (typeof cppCls==="function"&&cppCls())||((typeof _envc!=="undefined"&&_envc.cls)||null); }
+function cpsgCid(){ return (typeof _envc!=="undefined"&&_envc.cid)||""; }
+function cpsgMe(){ return (typeof _envs!=="undefined"&&_envs.uid)||""; }
+function cpsgArr(v){ if(Array.isArray(v)) return v.slice(); if(v&&typeof v==="object") return Object.keys(v).filter(k=>/^\d+$/.test(k)).sort((a,b)=>a-b).map(k=>v[k]); return []; }
+function cpsgN(n){ return Number(n||0).toLocaleString("en-US"); }
+function cpsgCut(s,n){ s=String(s==null?"":s); return s.length>n?s.slice(0,n-1)+"…":s; }
+function cpsgFW(w){ return (typeof cpctFormWord==="function")?cpctFormWord(w):String(w); }
+// ── PURE: the matcher (compile_unit.js's linkNorm / linkHas / questionLinks, for one question) ──
+function cpsgNorm(x){ return String(x==null?"":x).toLowerCase().replace(/[^a-z0-9 ]+/g," ").replace(/\s+/g," ").trim(); }
+function cpsgPrep(x){ let P=_cpsgPrep&&_cpsgPrep.get(x); if(P) return P; const d=cpsgNorm(x.def); P={n:cpsgNorm(x.kind==="id"?x.item:x.name),d,pd:" "+d+" "}; if(_cpsgPrep) _cpsgPrep.set(x,P); return P; }
+// q = {q, choices, ans} · sec = the question's section · cards = [{id, sec, kind, name, def, item}] · tested = {<section>: true} for the
+// sections that have tests → the linked card ids, in the cards' order
+function cpSuggestMatch(q,sec,cards,tested){
+  const ch=cpsgArr(q&&q.choices), A=(typeof (q&&q.ans)==="number"?[q.ans]:cpsgArr(q&&q.ans)).filter(i=>Number.isInteger(i)&&i>=0&&i<ch.length);
+  const key=A.map(i=>ch[i]).join(" "), hay=" "+cpsgNorm(String((q&&q.q)||"")+" "+key)+" ", nk=cpsgNorm(key), pk=" "+nk+" ", T=tested||{}, out=[];
+  (cards||[]).forEach(x=>{ if(!x||!x.id||(x.sec!==sec&&T[x.sec])) return; const P=cpsgPrep(x);
+    if(x.kind==="id"||x.kind==="term"){ if(P.n.length>=4&&hay.indexOf(" "+P.n+" ")>=0) out.push(x.id); return; }
+    if(nk.length>=4&&(P.pd.indexOf(pk)>=0||(P.d.length>=4&&pk.indexOf(" "+P.d+" ")>=0))) out.push(x.id); });
+  return out;
+}
+// the class's cards (📚 Cards' own index) and the sections that have tests, once per index
+function cpsgCards(){
+  const M=(typeof cpcsIndex==="function")?cpcsIndex():null; if(!M||!M.ready) return null; if(_cpsg.cm&&_cpsg.cm.M===M) return _cpsg.cm;
+  const T={}; ((typeof cpcsUnitIds==="function")?cpcsUnitIds():[]).forEach(id=>{ const l=(typeof cpcsLib==="function")?cpcsLib(id):null; Object.keys((l&&l.tests)||{}).forEach(k=>{ T[k]=true; }); });
+  _cpsg.cm={M,C:M.C,T}; _cpsg.mm={}; return _cpsg.cm;
+}
+function cpsgAuto(sec,it,X){ const k=sec+"\u0000"+it.q+"\u0000"+JSON.stringify(it.choices)+"\u0000"+JSON.stringify(it.ans); let v=_cpsg.mm[k]; if(!v){ v=cpSuggestMatch(it,sec,X.C,X.T); _cpsg.mm[k]=v; } return v.slice(); }
+// cpctModel's hook: her added questions and her edited wording take their links live — or her own ticks (the layer's `cards`)
+function cpSuggestLinks(sec,items,lay){
+  try{
+    if(!cpsgOn()||!Array.isArray(items)) return items; const X=cpsgCards(); if(!X) return items; const I=(lay&&lay.items&&typeof lay.items==="object")?lay.items:{};
+    items.forEach(it=>{ if(!it||!(it.added||it.edited)) return; const r=I[it.id], mine=(r&&r.cards!=null)?cpsgArr(r.cards).map(String):null;
+      it.autoCards=cpsgAuto(sec,it,X); it.ticked=!!mine; it.cards=mine||it.autoCards.slice(); it.live=true; });
+  }catch(e){} return items;
+}
+// ── the cards that cover a question, in 📝 Tests' own words (cpctCover: one per front, core first, a card the class hid left out) ──
+function cpsgCover(cards){ return (typeof cpctCover==="function")?cpctCover({cards:Array.isArray(cards)?cards:[]}):{cards:[],core:false}; }
+function cpsgCoverHtml(cv,lead){
+  const L=(typeof CPCT_LINKS!=="undefined")?CPCT_LINKS:3, more=cv.cards.length-L;
+  const chips=cv.cards.slice(0,L).map(c=>'<span class="cpct-lk'+(c.core?' core':'')+'">'+(c.core?'⭐ ':'')+cpsgEsc(cpsgCut(c.name,48))+'</span>').join("")+(more>0?' <span>+'+more+' more</span>':'');
+  return cv.cards.length?(cv.core?cpsgEsc(lead||"Cards that cover it: "):'<span class="cpct-warn">No core card covers it.</span> Linked cards: ')+chips:'<span class="cpct-warn">No card covers it.</span>';
+}
+// 📊 CPRESULTS's hook: an opened item-analysis row shows the cards linked to the question
+function cpSuggestRowHtml(r,f){
+  try{ if(!cpsgOn()||!r) return ""; const it=(f&&Array.isArray(f.items))?f.items.find(x=>x.id===r.id):null;
+    return '<div class="cpcs-meta">'+cpsgCoverHtml(cpsgCover(r.cards),"Cards that teach it: ")+'<br><span style="color:#9ca3af">'+(it&&it.live?(it.ticked?'Links you ticked. ':'Matched live from '+(r.added?'your question':'your wording')+'. '):'')+'The match is automatic — check before acting.</span></div>'; }catch(e){ return ""; }
+}
+// ── 🔗 Check the links: on her own question (or her wording), opened in 📝 Tests (cpctDetailHtml's hook) ──
+function cpSuggestTickHtml(F,it){
+  try{
+    if(!cpsgOn()||!F||!it||!it.live||it.hidden||F.same) return ""; cpsgCss(); const key=F.key+"|"+it.id;
+    if(_cpsg.tk&&typeof _cpct!=="undefined"&&_cpct.or!==_cpsg.tk.key) _cpsg.tk=null;   // she opened another question: the ticks fold back
+    let h=it.added?'<div class="cpcs-meta">'+cpsgCoverHtml(cpsgCover(it.cards))+'</div>':'';
+    h+='<div class="cpcs-meta" style="color:#6b7280">\u{1F517} '+(it.ticked?'Links you ticked.':'Matched live from '+(it.added?'your question':'your wording')+'.')+' The match is automatic — check before acting.</div>';
+    if(typeof cpLockRO==="function"&&cpLockRO("tests")) return h;
+    if(!(_cpsg.tk&&_cpsg.tk.key===key)) return h+'<div class="cpce-acts"><button class="cpce-btn" onclick="cpsgTkOpen(\''+cpsgJ(key)+'\')">\u{1F517} Check the links</button></div>';
+    return h+cpsgTkHtml(F,it);
+  }catch(e){ return ""; }
+}
+function cpsgTkRow(c,on){ return '<label class="cpsg-tr"><input type="checkbox"'+(on?' checked':'')+' onchange="cpsgTk(\''+cpsgJ(c.id)+'\',this.checked)"><span>'+(c.core?'⭐ ':'')+cpsgEsc(cpsgCut(c.name,70))+'<span class="cpsg-sub">'+cpsgEsc(cpsgCut(c.def,90))+'</span></span></label>'; }
+function cpsgTkHtml(F,it){
+  const T=_cpsg.tk, X=cpsgCards(), by=(X&&X.M.byId)||{}, ids=[], add=id=>{ if(by[id]&&ids.indexOf(id)<0) ids.push(id); };
+  (it.cards||[]).forEach(add); (it.autoCards||[]).forEach(add); Object.keys(T.on).forEach(add); T.shown=ids.slice();
+  let h='<div class="cpsg-tk" id="cpsg-tk"><div class="cpce-lbl">Tick the cards that teach it</div>';
+  h+=ids.length?ids.map(id=>cpsgTkRow(by[id],!!T.on[id])).join(""):'<div class="cpcs-meta">The match found no card. Find one below.</div>';
+  h+='<input class="cpce-in" id="cpsg-tk-q" placeholder="Find a card in this '+cpsgEsc(String((typeof cpctWord==="function")?cpctWord("section"):"section").toLowerCase())+'…" value="'+cpsgEsc(T.q)+'" autocomplete="off" oninput="cpsgTkFind(this.value)" style="margin-top:6px"><div id="cpsg-tk-res">'+cpsgTkResHtml(F)+'</div>';
+  return h+'<div class="cpce-acts"><button class="cpce-btn pri" onclick="cpsgTkSave()">Save the links</button>'+(it.ticked?'<button class="cpce-btn" onclick="cpsgTkAuto()">Use the automatic match</button>':'')+'<button class="cpce-btn" onclick="cpsgTkClose()">Cancel</button></div></div>';
+}
+// the search: the section's fronts (and the general cards'), not hidden, not already listed
+function cpsgTkResHtml(F){
+  const T=_cpsg.tk, X=cpsgCards(), q=cpsgNorm(T&&T.q); if(!T||!X||q.length<2) return "";
+  const hid=c=>typeof cpceSt==="function"&&cpceSt(c).hid, L=X.C.filter(c=>(c.sec===F.sk||!X.T[c.sec])&&T.shown.indexOf(c.id)<0&&!hid(c)&&cpsgNorm(c.name).indexOf(q)>=0).slice(0,CPSG_FIND);
+  return L.length?L.map(c=>cpsgTkRow(c,!!T.on[c.id])).join(""):'<div class="cpcs-meta">No card front has “'+cpsgEsc(T.q)+'”.</div>';
+}
+function cpsgTkOpen(key){
+  if(!cpsgOn()||typeof cpctFind!=="function") return false; const X=cpctFind(cpctModel(),key); if(!X||!X.it.live) return false; const on={};
+  (X.it.cards||[]).forEach(id=>{ on[id]=true; }); _cpsg.tk={key,on,q:"",shown:[]}; if(typeof cpctRe==="function") cpctRe(); return true;
+}
+function cpsgTk(id,on){ const T=_cpsg.tk; if(!T) return; if(on) T.on[id]=true; else T.on[id]=false; }
+function cpsgTkFind(v){ const T=_cpsg.tk; if(!T) return; T.q=String(v==null?"":v); const X=cpctFind(cpctModel(),T.key); try{ const el=document.getElementById("cpsg-tk-res"); if(el&&X) el.innerHTML=cpsgTkResHtml(X.F); }catch(e){} }
+function cpsgTkClose(){ _cpsg.tk=null; if(typeof cpctRe==="function") cpctRe(); }
+// Save the links: her ticks on the item (or none, when they are the automatic match) — the item's own record, by her, its ts kept
+function cpsgTkSave(auto){
+  const T=_cpsg.tk; if(!T||!cpsgOn()||typeof cpctFind!=="function"||typeof cpctCommit!=="function") return false; const X=cpctFind(cpctModel(),T.key); if(!X||!X.it.live) return false;
+  const cur=(typeof cpctItemRec==="function")?cpctItemRec(X.F,X.it.id):null; if(!cur) return false;
+  const sel=auto?[]:Object.keys(T.on).filter(id=>T.on[id]).slice(0,CPSG_TICK_MAX), same=auto||JSON.stringify(sel.slice().sort())===JSON.stringify((X.it.autoCards||[]).slice().sort());
+  const rec=Object.assign({},cur); delete rec.cards; if(!same) rec.cards=sel; rec.by=cpsgMe(); if(!(+rec.ts>0)) rec.ts=Date.now();
+  _cpsg.tk=null; cpctCommit(X.F,{["items/"+X.it.id]:rec},same?"\u{1F517} The automatic match":"\u{1F517} Links saved for this question"); if(typeof cpctRe==="function") cpctRe(); return true;
+}
+function cpsgTkAuto(){ return cpsgTkSave(true); }
+// ── the plan counts the class's hidden cards (cppSections' hook): per deck {n, core} her class hid ──
+function cpsgHidden(){
+  if(!cpsgOn()||typeof cpceLayer!=="function") return null; const X=cpsgCards(); if(!X) return null; const L=cpceLayer();
+  if(_cpsg.hid&&_cpsg.hidM===X.M&&_cpsg.hidL===L) return _cpsg.hid; const H={};
+  Object.keys(L||{}).forEach(dk=>{ const D=L[dk]; if(!D||typeof D!=="object") return; Object.keys(D).forEach(ck=>{ const r=D[ck], c=X.M.byId[dk+"#"+ck]; if(!r||r.hide!==true||r.add===true||!c||c.added) return;
+    const h=H[dk]=H[dk]||{n:0,core:0}; h.n++; if(c.core) h.core++; }); });
+  _cpsg.hid=H; _cpsg.hidM=X.M; _cpsg.hidL=L; return H;
+}
+function cpSuggestDecks(S){
+  try{ if(!Array.isArray(S)) return S; const H=cpsgHidden(); if(!H) return S;
+    S.forEach(st=>(st.decks||[]).forEach(d=>{ const h=H[d.key]; if(!h) return; d.n=Math.max(0,(d.n||0)-h.n); d.core=Math.max(0,(d.core||0)-h.core); })); }catch(e){} return S;
+}
+// ── PURE: a suggestion's id, safe as a Firebase key (kind~part~part; anything unsafe is replaced, and a hash keeps it unique) ──
+function cpsgHash(s){ s=String(s); let h=5381; for(let i=0;i<s.length;i++) h=((h*33)^s.charCodeAt(i))>>>0; return h.toString(36); }
+function cpsgId(kind,parts){ const raw=[kind].concat(parts||[]).map(String).join("~"), safe=raw.replace(/[^A-Za-z0-9_~-]/g,"_"); return (safe===raw&&raw.length<=80)?raw:safe.slice(0,70)+"~"+cpsgHash(raw); }
+function cpsgDismissed(){ const c=cpsgCls(), d=c&&c.dismissed; return (d&&typeof d==="object")?d:{}; }
+// ── the suggestions, each kind from data the console already has ──
+// PURE: "A", "A and B", "A, B and C", "A, B, C and 2 more"
+function cpsgAnd(a,more){ a=(a||[]).slice(); if(more>0) a.push(more+' more'); return a.length<2?(a[0]||''):a.slice(0,-1).join(', ')+' and '+a[a.length-1]; }
+function cpsgQLabel(f,r){ return (r.added?'Your question “'+cpsgCut(r.q,40)+'”':'Q'+r.n)+' ('+(f.sec.short||f.sec.label)+' '+cpsgFW(f.w).toLowerCase()+')'; }
+function cpsgLock(part){
+  const who=(typeof cpLockName==="function")?cpLockName():"Adrienne";
+  if(part==="npd") return (typeof envClsCanEdit==="function"&&!envClsCanEdit("newPerDay"))?"Adrienne":"";
+  return (typeof cpLockRO==="function"&&cpLockRO(part))?who:"";
+}
+function cpsgQs(){
+  const X=(typeof cprAll==="function")?cprAll():null, out=[]; if(!X||!X.ready) return out;
+  X.forms.forEach(f=>f.A.rows.forEach(r=>{ if(r.took<CPSG_MIN||r.pct==null) return;
+    if(r.pct<=CPSG_LOW){ const cv=cpsgCover(r.cards); if(!cv.core) out.push({kind:"nocore",id:cpsgId("nocore",[f.key,r.id]),score:r.pct*1000-r.took,f,r,cv,
+      t:cpsgQLabel(f,r)+': '+r.right+' of '+r.took+' right, and no core card covers it',lock:cpsgLock("tests"),go:"cpsgGoTest('"+cpsgJ(f.key)+"','"+cpsgJ(r.id)+"')",hint:'opens it in \u{1F4DD} Tests'}); }
+    if(r.pct>=CPSG_HIGH&&f.w==="pre"&&!f.shared&&typeof cprTwin==="function"){ const o=X.forms.find(x=>x.sk===f.sk&&x.w==="post"&&!x.same), it=f.items.find(x=>x.id===r.id), tw=o?cprTwin(f,it,o):null;
+      if(tw) out.push({kind:"easy",id:cpsgId("easy",[f.key,r.id]),score:-r.pct*1000-r.took,f,r,o,tw,
+        t:cpsgQLabel(f,r)+' is right for almost everyone: '+r.right+' of '+r.took,lock:cpsgLock("tests"),go:"cpsgGoTest('"+cpsgJ(o.key)+"','"+cpsgJ(tw.id)+"')",hint:'opens the '+cpsgFW("post").toLowerCase()+'’s Q'+(tw.n||"")+' in \u{1F4DD} Tests'}); }
+  }));
+  return out;
+}
+function cpsgNoTest(){
+  const X=cpsgCards(), Mt=(typeof cpctModel==="function")?cpctModel():null; if(!X||!Mt||!Mt.ready||!Mt.secs.length) return [];
+  const on={}; Mt.secs.forEach(s=>s.forms.forEach(F=>F.items.forEach(it=>{ if(!it.hidden) (it.cards||[]).forEach(id=>{ on[id]=1; }); })));
+  const G={}, lab={}; X.M.secs.forEach(s=>{ lab[s.id]=s.short||s.label; });
+  X.C.forEach(c=>{ if(c.core||on[c.id]||(typeof cpceSt==="function"&&cpceSt(c).hid)) return; const k=c.sec+"|"+c.kind; (G[k]=G[k]||{sec:c.sec,kind:c.kind,cards:[]}).cards.push(c); });
+  return Object.keys(G).map(k=>G[k]).filter(g=>g.cards.length>=CPSG_NOTEST_MIN).sort((a,b)=>b.cards.length-a.cards.length).map(g=>({kind:"notest",id:cpsgId("notest",[g.sec,g.kind]),score:-g.cards.length,g,
+    t:cpsgN(g.cards.length)+' '+(lab[g.sec]||g.sec)+' '+(CPSG_KIND[g.kind]||g.kind)+' cards are not core and on no test',lock:cpsgLock("cards"),go:"cpsgOpen('"+cpsgJ(cpsgId("notest",[g.sec,g.kind]))+"')",hint:'shows what hiding them buys first'}));
+}
+function cpsgMiss(ctx){
+  const plan=ctx.plan, inp=ctx.inp, d=ctx.d; if(!plan||!inp.goal||!plan.sections) return [];
+  const lab={}, P=plan.sections; ((typeof cppSections==="function")?cppSections():[]).forEach(s=>{ lab[s.id]=s.short||s.label; });
+  const miss=Object.keys(P).filter(k=>P[k].total>0&&P[k].atGoal<inp.target*P[k].total).sort((a,b)=>(P[a].atGoal/P[a].total)-(P[b].atGoal/P[b].total)||P[b].total-P[a].total);
+  if(!miss.length) return []; const names=miss.slice(0,3).map(k=>lab[k]||k), more=miss.length-names.length, need=(typeof cppLater==="function")?cppLater(Object.assign({},inp)):undefined;
+  const t=cpsgAnd(names,more)+' can’t make '+d.pct+'% by '+inp.goalName+' at '+d.npd+' a day';
+  const s={kind:"miss",id:cpsgId("miss",[inp.goalName,miss.join("_")]),score:0,miss,P,lab,need,t};
+  if(!inp.coreFirst&&miss.some(k=>!d.coreOnly[k])){ s.lock=cpsgLock("plan"); s.go="cpsgCoreOnly('"+cpsgJ(miss.join(","))+"')"; s.hint='tries Core only for '+(miss.length===1?'it':'them')+' (a what-if)'; }
+  else if(need&&need.n!=null&&need.n>d.npd){ s.lock=cpsgLock("npd"); s.go="cpsgNpd("+need.n+")"; s.hint='tries '+need.n+' a day on the plan (a what-if)'; }
+  return [s];
+}
+function cpsgStudents(ctx){
+  if(!ctx.plan||typeof envcStudents!=="function"||typeof cppRow!=="function") return []; const mins=ctx.plan.minutesPerDay||0, warnAt=(typeof CPP_WARN!=="undefined")?CPP_WARN:1.25, out=[];
+  envcStudents().forEach(s=>{ const r=cppRow(s,ctx.d,ctx.plan), n=r.need; if(!n||n.n===undefined||n.err) return; const m=n.plan?n.plan.minutesPerDay:0, short=n.n==null||n.n>r.npd, warn=mins>0&&m>mins*warnAt; if(!short&&!warn) return;
+    const first=String(r.name).split(" ")[0], o={kind:"student",id:cpsgId("student",[s.sid]),score:n.n==null?-999:-(n.n-r.npd),r,n,m,
+      t:r.name+' needs '+(n.n==null?'more than '+((typeof CPP_NPD_MAX!=="undefined")?CPP_NPD_MAX:50):n.n)+' new cards a day'+(m?' (~'+m+' min)':'')+' and gets '+r.npd};
+    if(short&&n.n!=null){ o.lock=cpsgLock("npd"); o.go="cpsgGive('"+cpsgJ(s.sid)+"',"+n.n+")"; o.hint='gives '+first+' '+n.n+' a day (a what-if)'; }
+    out.push(o); });
+  return out;
+}
+function cpsgWeak(){
+  const X=cpsgCards(); if(!X||typeof envcStudents!=="function") return []; const ST=envcStudents().filter(s=>s&&s.summary), need=Math.max(2,Math.ceil(ST.length/4)), byKey={}, hits={};
+  X.C.forEach(c=>{ if(c.core&&!(typeof cpceSt==="function"&&cpceSt(c).hid)) byKey[c.deck+"\u0000"+c.name]=c; });
+  ST.forEach(s=>{ const W=s.summary.weak||{}; Object.keys(W).forEach(dk=>cpsgArr(W[dk]).forEach(w=>{ const c=w&&byKey[dk+"\u0000"+w.n]; if(!c) return; (hits[c.id]=hits[c.id]||{c,who:{}}).who[s.sid]=1; })); });
+  return Object.keys(hits).map(k=>hits[k]).map(o=>Object.assign(o,{n:Object.keys(o.who).length})).filter(o=>o.n>=need).map(o=>({kind:"weak",id:cpsgId("weak",[o.c.deck,o.c.name]),score:-o.n,c:o.c,n:o.n,of:ST.length,
+    t:'“'+cpsgCut(o.c.name,50)+'” is missed by '+o.n+' of '+ST.length,lock:cpsgLock("cards"),go:"cpsgOpenCard("+o.c.i+")",hint:'opens the card in \u{1F4DA} Cards (check the back, or drill it in class)'}));
+}
+// every suggestion, kind by kind (the order above), the best of each kind first
+function cpsgList(ctx){
+  const all=[].concat(cpsgQs(),cpsgNoTest(),cpsgMiss(ctx),cpsgStudents(ctx),cpsgWeak());
+  return all.sort((a,b)=>(CPSG_ORDER.indexOf(a.kind)-CPSG_ORDER.indexOf(b.kind))||(a.score-b.score));
+}
+// the ones she sees: not set aside, at most CPSG_CAP of a kind and CPSG_MAX in all
+function cpsgShown(ctx){ const D=cpsgDismissed(), left=Object.assign({},CPSG_CAP), out=[]; cpsgList(ctx).forEach(s=>{ if(D[s.id]||out.length>=CPSG_MAX||!(left[s.kind]>0)) return; left[s.kind]--; out.push(s); }); return out; }
+// ── what hiding a group buys (the planner, before and after) ──
+function cpsgDays(inp,n){ if(!(inp.newPerDay>0)||!inp.start) return null; const k=Math.ceil(n/inp.newPerDay); if(k<1) return inp.start; const D=(typeof cppDays==="function")?cppDays(inp.calendar,inp.start,cppAdd(inp.start,3650)):[]; return D.length>=k?D[k-1]:null; }
+function cpsgBuys(ctx,cards){
+  const inp=ctx.inp, less={}; (cards||[]).forEach(c=>{ less[c.deck]=(less[c.deck]||0)+1; });
+  const after=Object.assign({},inp,{decks:inp.decks.map(d=>less[d.key]?Object.assign({},d,{n:Math.max(d.core||0,(d.n||0)-less[d.key])}):d)});
+  const run=o=>(typeof cppRun==="function")?cppRun(o):cpPacePlan(o), a=ctx.plan||run(inp), b=run(after), n0=inp.decks.reduce((s,d)=>s+(d.n||0),0), n1=after.decks.reduce((s,d)=>s+(d.n||0),0);
+  return {a,b,n0,n1,last0:cpsgDays(inp,n0),last1:cpsgDays(after,n1),npd:inp.newPerDay};
+}
+function cpsgBuysHtml(ctx,s){
+  const B=cpsgBuys(ctx,s.g.cards), d=ctx.d, inp=ctx.inp, L=x=>x?cpsgEsc(cppLbl(x)+", "+x.slice(0,4)):"over 1,000 study days away", F=x=>x?cpsgEsc(cppLbl(x)+", "+x.slice(0,4)):"not in sight";
+  const arrow=(x,y,u)=>'<b>'+x+'</b> → <b>'+y+'</b>'+(u||'')+(x===y?' <span style="color:#6b7280">(the same)</span>':'');
+  let h='<div class="cpsg-buy"><div style="font-weight:800;margin-bottom:2px">\u{1F648} Hiding these '+cpsgN(s.g.cards.length)+' for your class:</div>';
+  h+='<div>'+d.pct+'% of the core cards learned: '+arrow(F(B.a.finishDate),F(B.b.finishDate))+'</div>';
+  if(inp.goal) h+='<div>Core cards learned by '+cpsgEsc(inp.goalName)+': '+arrow(B.a.pctAtGoal+'%',B.b.pctAtGoal+'%')+'</div>';
+  h+='<div>About '+arrow(B.a.minutesPerDay,B.b.minutesPerDay,' min a day')+'</div>';
+  h+='<div>The last new card comes: '+arrow(L(B.last0),L(B.last1),' <span style="color:#6b7280">(at '+B.npd+' a day)</span>')+'</div>';
+  h+='<div>Cards to study: '+arrow(cpsgN(B.n0),cpsgN(B.n1))+'</div>';
+  if(B.a.finishDate===B.b.finishDate&&inp.coreFirst) h+='<div style="color:#6b7280;margin-top:2px">With Core first on, cards that aren’t core only ever come after the core ones, so the core date stays; the whole set finishes sooner.</div>';
+  h+='<div style="color:#6b7280;margin-top:2px">Students stop getting them. They stay in \u{1F4DA} Cards under \u{1F648}, where ↩ Show again brings any back.</div>';
+  return h+'<div class="cpsg-acts"><button class="envs-btn" onclick="cpsgHide(\''+cpsgJ(s.id)+'\')">\u{1F648} Hide the '+cpsgN(s.g.cards.length)+' for my class</button><button class="envs-btn sec" onclick="cpsgOpen(\'\')">Cancel</button></div></div>';
+}
+// ── the taps ──
+function cpsgOpen(id){ if(!cpsgOn()) return; _cpsg.open=_cpsg.open===id?"":String(id||""); if(typeof envcRe==="function") envcRe(); }
+function cpsgGoTest(fkey,id){ if(!cpsgOn()||typeof cprGo!=="function"||typeof _envc==="undefined") return false; _cpsg.open=""; _envc.view="cptests"; _envc.sel=null; _envc.edit=null; cprGo(fkey,id); return true; }
+function cpsgOpenCard(i){
+  if(!cpsgOn()||typeof _cpcs==="undefined"||typeof cpcsIndex!=="function") return false; const M=cpcsIndex(), c=M&&M.C[i]; if(!c) return false;
+  _cpsg.open=""; _envc.view="cpcards"; _envc.sel=null; _envc.edit=null; const S=_cpcs, page=(typeof CPCS_PAGE!=="undefined")?CPCS_PAGE:20;
+  S.q=""; S.kind="all"; Object.keys(S.f||{}).forEach(k=>{ S.f[k]=false; }); S.os=c.sec; S.more={};
+  if(c.kind==="id"){ S.og=c.sec+"|id"; S.osp=c.g?c.g.key:null; } else { S.og=c.g?c.g.key:null; S.osp=null; } S.or=c.i;
+  const fk=c.kind==="id"?S.osp:S.og, at=c.g?c.g.cards.indexOf(c):-1; if(fk&&at>=page) S.more[fk]=at+1;
+  if(typeof envcRe==="function") envcRe(); if(typeof cpcsScroll==="function") cpcsScroll("cpcs-r-"+c.i); return true;
+}
+function cpsgGive(sid,n){ if(!cpsgOn()||typeof cppStu!=="function") return false; _cpsg.open=""; if(typeof _cpp!=="undefined") _cpp.open=sid; cppStu(sid,n); return true; }
+function cpsgNpd(n){ if(!cpsgOn()||typeof cppSet!=="function") return false; _cpsg.open=""; cppSet("npd",n); return true; }
+function cpsgCoreOnly(keys){ if(!cpsgOn()||typeof cppDraft!=="function") return false; if(cpsgLock("plan")){ envsToast("\u{1F512} The plan is set by "+cpsgLock("plan")); return false; } const d=cppDraft(); String(keys||"").split(",").filter(Boolean).forEach(k=>{ d.coreOnly[k]=true; }); _cpsg.open=""; if(typeof envcRe==="function") envcRe(); return true; }
+// 🙈 Hide them: the group worked out again (so a card hidden since isn't written twice), ONE multi-path update of classCards (PR 10's commit)
+function cpsgHide(id){
+  if(!cpsgOn()||typeof cpceCommit!=="function"||typeof cpceBulkUpdate!=="function") return false; if(cpsgLock("cards")) return false;
+  const s=cpsgNoTest().find(x=>x.id===id); if(!s) return false; const o=cpceBulkUpdate(s.g.cards,"hide",cpceRec,cpsgMe(),Date.now()), n=Object.keys(o).length; _cpsg.open="";
+  if(n) cpceCommit(o,"\u{1F648} "+cpsgN(n)+" hidden for your class"); if(typeof envcRe==="function") envcRe(); return n>0;
+}
+// Not now: classes/<cid>/dismissed/<id> = {by, ts, t} — the one record; ↩ Bring back removes it
+function cpsgNotNow(id){
+  if(!cpsgOn()) return false; const cid=cpsgCid(); if(!cid||!new RegExp("^[A-Za-z0-9_~-]{1,"+CPSG_ID_MAX+"}$").test(String(id||""))) return false;
+  const s=cpsgList(cpsgCtx()).find(x=>x.id===id), rec={by:cpsgMe(),ts:Date.now(),t:cpsgCut(s?(s.kind==="student"?"A student’s New cards a day":s.t):id,160)};   // classes/<cid> is read by the class's families: no student's name or pace in it
+  envcWrite("classes/"+cid+"/dismissed/"+id,rec,"set").then(()=>{ const c=_envc.cls||(_envc.cls={}); c.dismissed=Object.assign({},c.dismissed||{},{[id]:rec}); if(_cpsg.open===id) _cpsg.open=""; envcRe(); }).catch(()=>{});
+  return true;
+}
+function cpsgBack(id){
+  if(!cpsgOn()) return false; const cid=cpsgCid(); if(!cid||!cpsgDismissed()[id]) return false;
+  envcWrite("classes/"+cid+"/dismissed/"+id,null,"remove").then(()=>{ const c=_envc.cls||(_envc.cls={}), D=Object.assign({},c.dismissed||{}); delete D[id]; c.dismissed=D; envcRe(); }).catch(()=>{});
+  return true;
+}
+function cpsgAside(){ _cpsg.aside=!_cpsg.aside; if(typeof envcRe==="function") envcRe(); }
+// 📅 Pace's own what-if, for a tap that comes from the page (Not now names the suggestion it sets aside)
+function cpsgCtx(){ const d=cppDraft(), inp=cppInputs(d); return {d,inp,plan:inp.goal?cppRun(inp):null}; }
+// ── the page: 💡 Suggestions under 📅 Pace's student table ──
+function cpsgCss(){
+  if(_cpsg.css||typeof document==="undefined"||!document.createElement) return; _cpsg.css=true;
+  try{ const s=document.createElement("style"); s.id="cpsg-css"; s.textContent=
+    '.cpsg-it{border-top:1px solid #f1efe9;padding:10px 2px}.cpsg-t{font-weight:800;font-size:13.5px;line-height:1.35;overflow-wrap:anywhere}.cpsg-w{font-size:12.5px;color:#4b5563;margin-top:3px;line-height:1.5;overflow-wrap:anywhere}'+
+    '.cpsg-acts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}.cpsg-acts .envs-btn{min-height:40px;padding:0 14px;font-size:13px;margin:0}.cpsg-hint{font-size:12px;color:#6b7280}'+
+    '.cpsg-buy{margin-top:8px;padding:9px 11px;border-radius:12px;background:#eff6ff;border:1.5px solid #bfdbfe;color:#1e3a8a;font-size:12.5px;line-height:1.6;overflow-wrap:anywhere}.cpsg-lock{font-size:12.5px;font-weight:700;color:#92400e}'+
+    '.cpsg-tk{margin-top:6px;padding:8px 10px;border-radius:10px;background:#f0fdf4;border:1px solid #bbf7d0}.cpsg-tr{display:flex;gap:8px;align-items:flex-start;padding:5px 2px;font-size:13px;font-weight:700;overflow-wrap:anywhere}'+
+    '.cpsg-tr input{width:22px;height:22px;flex-shrink:0;margin:0}.cpsg-sub{display:block;font-weight:500;color:#6b7280;font-size:12px}.cpsg-q{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:#374151}';
+    document.head.appendChild(s); }catch(e){}
+}
+// the console's other layers, read while 📅 Pace is open (the cards file, the class's cards and tests; the demo's sample answers)
+function cpsgLoad(){ try{ if(typeof cpcsLoad==="function") cpcsLoad(); if(typeof cpceStart==="function") cpceStart(); if(typeof cpctStart==="function") cpctStart(); if(typeof cprDemoSeed==="function") cprDemoSeed(); if(typeof cpctCss==="function") cpctCss(); }catch(e){} }
+function cpsgWhyHtml(s,ctx){
+  if(s.kind==="nocore") return '<div class="cpsg-q">'+cpsgEsc(s.r.q)+'</div>'+cpsgCoverHtml(s.cv)+'<br><span style="color:#9ca3af">The match is automatic — check before acting.</span> Take the question out in \u{1F4DD} Tests, or add a card that teaches it in \u{1F4DA} Cards.';
+  if(s.kind==="easy") return '<div class="cpsg-q">'+cpsgEsc(s.r.q)+'</div>The same question is Q'+cpsgEsc(s.tw.n||"")+' on the '+cpsgEsc(cpsgFW("post").toLowerCase())+'. Leave it, or take it out of the '+cpsgEsc(cpsgFW("post").toLowerCase())+'.';
+  if(s.kind==="notest") return 'No question on your class’s tests links to them. Hide them for your class so the study fits; Do it shows what that buys before anything changes.';
+  if(s.kind==="miss") return s.miss.slice(0,4).map(k=>cpsgEsc(s.lab[k]||k)+' '+cpsgN(s.P[k].atGoal)+' of '+cpsgN(s.P[k].total)+' core').join(" · ")+' by '+cpsgEsc(ctx.inp.goalName)+'. Raise New cards a day'+(ctx.inp.coreFirst?'':', turn on Core only')+', or lower the target.'+(s.go?'':(s.need===undefined?' <span class="envs-muted">Working out what it needs…</span>':' Even '+((typeof CPP_NPD_MAX!=="undefined")?CPP_NPD_MAX:50)+' a day doesn’t make it from the class’s start: try another calendar or a lower target.'));
+  if(s.kind==="student") return (s.go?'Give them their own New cards a day, or leave it.':'More than the planner tries: try Core only, or leave it.')+' Their row in the table shows each section.';
+  if(s.kind==="weak") return 'A core card among the weakest cards of '+s.n+' of your '+s.of+' students. Drill it in class (\u{1F9E0}), or check its back (✎).';
+  return "";
+}
+function cpsgItemHtml(s,ctx){
+  const open=_cpsg.open===s.id&&s.kind==="notest";
+  let h='<div class="cpsg-it" id="cpsg-'+cpsgEsc(s.id)+'"><div class="cpsg-t">'+(CPSG_ICON[s.kind]||"\u{1F4A1}")+' '+cpsgEsc(s.t)+'</div><div class="cpsg-w">'+cpsgWhyHtml(s,ctx)+'</div>';
+  if(open&&!s.lock) h+=cpsgBuysHtml(ctx,s);
+  h+='<div class="cpsg-acts">';
+  if(s.lock) h+='<span class="cpsg-lock">\u{1F512} Set by '+cpsgEsc(s.lock)+'</span>';
+  else if(s.go&&!open) h+='<button class="envs-btn" onclick="'+s.go+'">Do it</button>';
+  h+='<button class="envs-btn sec" onclick="cpsgNotNow(\''+cpsgJ(s.id)+'\')">Not now</button>'+(s.go&&!s.lock&&!open?'<span class="cpsg-hint">'+cpsgEsc(s.hint||"")+'</span>':'');
+  return h+'</div></div>';
+}
+function cpSuggestHtml(ctx){
+  try{
+    if(!cpsgOn()||!ctx||!ctx.d||!ctx.inp) return ""; cpsgCss(); cpsgLoad();
+    const shown=cpsgShown(ctx), D=cpsgDismissed(), aside=Object.keys(D).filter(k=>D[k]).sort((a,b)=>(+D[b].ts||0)-(+D[a].ts||0)), X=cpsgCards(), now={};
+    if(_cpsg.aside) cpsgList(ctx).forEach(s=>{ now[s.id]=s.t; });   // a set-aside one reads as it stands today (a student's name never leaves this screen)
+    let h='<div class="envs-card cpsg" id="cpsg"><div class="envs-h2" style="margin-bottom:2px">\u{1F4A1} Suggestions</div><div class="envs-muted">What you might change, the most useful first. Each one is only a suggestion: <b>Do it</b> opens the change, filled in, for you to confirm; <b>Not now</b> sets it aside. Nothing changes by itself.</div>';
+    h+=shown.map(s=>cpsgItemHtml(s,ctx)).join("");
+    if(!shown.length) h+='<div class="envs-muted" style="padding:8px 2px">'+(X?'Nothing to suggest right now.':'Loading the cards and questions…')+'</div>';
+    else if(!X) h+='<div class="envs-muted" style="padding:6px 2px">Loading the cards and questions for more…</div>';
+    if(aside.length){ h+='<div class="cpsg-it"><a href="javascript:void(0)" onclick="cpsgAside()" style="font-weight:800;font-size:13px;color:#14532d">'+(_cpsg.aside?'▼':'▶')+' Set aside · '+aside.length+'</a>';
+      if(_cpsg.aside) h+=aside.map(k=>'<div class="envs-row" style="align-items:center;margin-top:6px"><div class="cpsg-w" style="flex:1;min-width:160px;margin:0">'+cpsgEsc(now[k]||D[k].t||k)+'</div><button class="envs-btn sec" style="min-height:36px;padding:0 11px;font-size:12.5px;margin:0" onclick="cpsgBack(\''+cpsgJ(k)+'\')">↩ Bring back</button></div>').join("");
+      h+='</div>'; }
+    return h+'</div>';
+  }catch(e){ return ""; }
+}
+// CPSUGGEST_END
 // CPCARDSSEE_START — 📚 THE CARDS BROWSER, read-only (DESIGN_class_platform_2026-10-28.md §6.0, §6.1, §8.4, §13 row 9, §15; PR 9 of the class
 // platform). Her words 2026-10-28: "super easy for her to quickly go through and see all the questions and the answers, or the front or the
 // back … not look like a huge amount, so things need to collapse … naturally collapsed unless she opens them, and then if she moves on,
@@ -52136,6 +52457,7 @@ function cpctModel(){
   ((typeof envsStations==="function"?envsStations():[])||[]).forEach(st=>{ const uid=st.unit||ids[0], T=(libs[uid]&&libs[uid].tests)||null, sec=T&&T[st.id]; if(!sec||typeof sec!=="object") return;
     const same=cpctSame(sec), forms=[];
     ["pre","post"].forEach(w=>{ const base=sec[w]; if(!base||!Array.isArray(base.items)) return; const f=cpForm(base,cpctLayerFor(L[st.id],w,same)||{},w,{all:true});
+      if(typeof cpSuggestLinks==="function") cpSuggestLinks(st.id,f.items,cpctLayerFor(L[st.id],w,same));   // 💡 CPSUGGEST: her added questions and edited wording get their card links live (§8.4)
       forms.push({w,key:st.id+"|"+w,sk:st.id,base,items:f.items,same:same&&w==="post",shared:same&&w==="pre",left:Array.isArray(base.left)?base.left:[]}); });
     if(forms.length) secs.push({id:st.id,label:st.label||st.id,short:st.short||st.label||st.id,emoji:st.emoji||sec.emoji||"",forms}); });
   return {secs,ready:ids.length>0&&ids.every(id=>libs[id])};
@@ -52273,6 +52595,7 @@ function cpctDetailHtml(F,it){
   if(!it.added){ const cv=cpctCover(it), more=cv.cards.length-CPCT_LINKS;
     h+='<div class="cpcs-meta">'+(cv.cards.length?(cv.core?'Cards that cover it: ':'<span class="cpct-warn">No core card covers it.</span> Linked cards: ')+cv.cards.slice(0,CPCT_LINKS).map(c=>'<span class="cpct-lk'+(c.core?' core':'')+'">'+(c.core?'⭐ ':'')+cpctEsc(c.name.length>48?c.name.slice(0,46)+'…':c.name)+'</span>').join("")+(more>0?' <span>+'+more+' more</span>':''):'<span class="cpct-warn">No card covers it.</span>')+
       '<br><span style="color:#9ca3af">The match is automatic — check before acting.</span></div>'; }
+  if(typeof cpSuggestTickHtml==="function") h+=cpSuggestTickHtml(F,it);   // 💡 CPSUGGEST: her question's links, matched live, and 🔗 Check the links
   const all=F.items, i=all.findIndex(x=>x.id===it.id);
   h+='<div class="cpce-acts">'+(it.hidden?'':'<button class="cpce-btn" onclick="cpctEditOpen(\''+J+'\')">✏️ Edit</button>')+
     (it.hidden?'<button class="cpce-btn pri" onclick="cpctShow(\''+J+'\')">↩ Put back</button>':'<button class="cpce-btn red" onclick="cpctHide(\''+J+'\')">\u{1F648} Remove for my class</button>')+
