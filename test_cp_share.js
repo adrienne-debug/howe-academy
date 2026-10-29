@@ -101,7 +101,7 @@ console.log("── how it is hooked ──");
     /names = cpPaceCoreOnly\(kid, session, deck, names\);[^\n]*\n      if \(typeof cpShareNames === "function"\) names = cpShareNames\(kid, session, deck, names, \{ newNames, [^\n]*\n      for \(let ni = 0;/.test(pile));
   ok("CPCORE's two lines are untouched (each still right after the line it follows)", /let fresh = focusDecks\.filter\(d => !\(learnByDeck\[d\] > 0\)\);\n    if \(typeof cpCoreFresh === "function"\)/.test(pile)&&/let names = \(typeof mastBankEligible === "function"\) \? mastBankEligible\(kid, deck\) : \(bank\[deck\] \|\| \[\]\);\n      if \(typeof cpCoreNames === "function"\)/.test(pile));
   ok("the Pace control comes through hooks (cpPacePlan's first line + its day loop, the plan bar), no CPPACE function rewritten", /function cpPacePlan\(o\)\{\n  if\(typeof cpShareOpt==="function"\) o=cpShareOpt\(o\);/.test(src)&&/if\(o\.share&&typeof cpShareFill==="function"\) room=cpShareFill\(/.test(PACE)&&/if\(typeof cpShareBarHtml==="function"\) h\+=cpShareBarHtml\(\{d,inp,plan\}\);/.test(PACE));
-  ok("the hooks PR 20 / PR 21 can use are left: cpSecState (built by PR 20, CPSECTIONS), cpShareRuleFor (unbuilt)", /typeof cpSecState==="function"/.test(SHARE)&&/typeof cpShareRuleFor==="function"/.test(SHARE)&&src.indexOf("function cpShareRuleFor(")<0); }
+  ok("the hooks PR 20 / PR 21 use are left: cpSecState (built by PR 20, CPSECTIONS), cpShareRuleFor (built by PR 21, CPSPECIALIST)", /typeof cpSecState==="function"/.test(SHARE)&&/typeof cpShareRuleFor==="function"/.test(SHARE)&&src.indexOf("function cpShareRuleFor(")>0); }
 
 console.log("\n── the split (pure) ──");
 { const E=engine(true,{},{},US).S, sp=E.cpShareSplit;
