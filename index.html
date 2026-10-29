@@ -45946,6 +45946,7 @@ function renderUnitDetail(u){
   }
   const enrolledKids=roster.filter(k=>(u.enrolled||{})[k]);
   if(typeof envtDetailHtml==="function") h+=envtDetailHtml(u,enrolledKids,isMom);   // 📝 ENVTEST: station check-ins per enrolled kid
+  if(typeof cplntUnitHtml==="function") h+=cplntUnitHtml(u,enrolledKids,isMom);   // 👩‍🏫 CPLINCOLNL3: his teacher drills, under his check-ins (Mom only)
   // UNITS_CALM (10/4): on a starter path, Up next + Sprints fold into one closed "Speed rounds (optional)" row
   const _calm=!!(u.starter&&enrolledKids.length);
   if(_calm) h+='<details style="background:#fff;border:1.5px solid var(--border);border-radius:12px;padding:10px 14px;margin-bottom:14px"><summary style="cursor:pointer;font-size:12.5px;font-weight:800;color:#1f2937">\u{1F3C3} Speed rounds (optional) <span style="font-weight:600;color:var(--muted);font-size:11px">\u00B7 just for fun if they want to play \u2014 nothing here is due</span></summary><div style="margin-top:10px">';
@@ -46502,6 +46503,7 @@ function envSummary(kid,ctx){
   const hist=(M.history||{})[kid]||{};
   Object.keys(hist).forEach(dk=>{ const e=hist[dk]; let its=e&&e.items; if(!Array.isArray(its)) its=its?Object.values(its):[];
     its.forEach(x=>{ if(!x||x.result!=="m") return; const it=byId[x.id]; if(!it) return; missBy[it.subject+"|"+it.prompt]=(missBy[it.subject+"|"+it.prompt]||0)+1; }); });
+  if(typeof cplntMissBy==="function") cplntMissBy(kid,M,missBy,isDeck);   // 👩‍🏫 CPLINCOLNL3: a ✗ from his teacher's drill counts toward the card's miss total too (his mirror only)
   // Streak: consecutive study days ending today or yesterday.
   const dayKeys=Object.keys(dayAgg).sort();
   const streak={days:0,last:dayKeys.length?dayKeys[dayKeys.length-1]:null};
@@ -46591,6 +46593,7 @@ function envmPublishKid(kid,force){
   const meta={familyId:envmFamilyId(),kid:kid,name:(typeof cap==="function")?cap(kid):String(kid),at:s.at};
   const p=_envm.edb.ref("students/"+sid).update({summary:s,meta:meta});
   if(typeof cpWeekPub==="function") cpWeekPub(kid,sid,_envm.edb);   // 📊 CPWEEK: the last finished weeks' snapshots, students/<sid>/weeks/<YYYY-Www> (counts only; sent when they change)
+  if(typeof cplntPickPub==="function") cplntPickPub(kid,sid,_envm.edb,s);   // 👩‍🏫 CPLINCOLNL3: his drillPick (up to 5 fronts due today) for the teacher's 🧠 Drill, sent when it changed
   try{ if(typeof HA_LS!=="undefined") HA_LS.setItem(key,JSON.stringify({h:h,at:s.at})); }catch(e){}
   if(p&&typeof p.catch==="function") p.catch(err=>{ _envm.err=String((err&&err.message)||err); try{ if(typeof HA_LS!=="undefined") HA_LS.removeItem(key); }catch(e){} envmCardRefresh(); });   // refused / offline: forget the hash so the next save resends
   return true;
@@ -46618,6 +46621,7 @@ function envmRelAttach(kid){
   if(typeof envtFinalAttach==="function") envtFinalAttach(kid,cid,_envm.edb,_envm.subs,envmSid(kid));   // 📝 ENVTEST: the teacher's "Open the final" (release/<cid>/final/…)
   if(typeof cpsdAttach==="function") cpsdAttach(kid,cid,_envm.edb,_envm.subs,envmSid(kid));   // 📤 CPSEND: the scheduled send-outs (release/<cid>/scheduled), the class site only
   if(typeof cplnLoad==="function") cplnLoad(kid,cid,_envm.edb,envmSid(kid));   // 🌿 CPLINCOLN: his class settings, plan and override, read once (memory only)
+  if(typeof cplntAttach==="function") cplntAttach(kid,cid,_envm.edb,_envm.subs,envmSid(kid));   // 👩‍🏫 CPLINCOLNL3: the teacher's drills for him (drills/<cid>/<sid>), graded into Howe once each
 }
 // A release record {<deckKey>|<station>: truthy}: clear each matching deck's hold once — the family database's one targeted removal.
 function envmRelease(kid,rel){
@@ -46847,6 +46851,211 @@ function cplnEditorMark(kid,sid,h){
   }catch(e){ return h; }
 }
 // CPLINCOLN_END
+// CPLINCOLNL3_START — 👩‍🏫 THE TEACHER'S DRILL GRADES FOR LINCOLN COME INTO HOWE, AND MOM SEES THEM: L3 of DESIGN_class_platform_2026-10-28.md
+// §12.2 / §13 row L3. Her words 2026-10-28: "I would definitely love for the teacher grade drills for Lincoln to be sent to me so I can keep an
+// eye on where he's at." Her yes to L3 the same day.
+// INERT unless this family mirrors the kid to the class (ENVMIRROR: HA_FAMILY.envirothon set, the kid enrolled, the mirror signed in on this
+// device) AND his class is known. Never on the class site itself (CPDRILLTEACHER applies a site kid's drills there). Howe without the config
+// block, DeWalt, Burris and every other kid: nothing is read, written or drawn.
+//   · HIS PICK: his mirror publishes students/<sid>/drillPick on the class project: up to 5 {deck, name} of his Envirothon cards due today,
+//     the most-missed first (the summary's weak list: misses ×2 + drops), then the most overdue. Fronts only, as in the weak list. Sent with
+//     each summary publish and each time the drills listener fires, only when it changed (HA_LS remembers the last one sent). Never in dry
+//     run, never while the season is locked. The teacher's 🧠 Drill shows these cards.
+//   · GRADES IN: one listener on drills/<cid>/<sid> (on the mirror's named app, beside its release listeners; off when the mirror signs out).
+//     Each drill not yet in mastery/<kid>_teacherDrills, oldest first:
+//       - REFUSED if any of its cards names a deck that isn't one of his Envirothon decks (or it has no cards). Nothing is graded or written;
+//         a notice says so once per page load, and Mom's list shows it.
+//       - otherwise CLAIMED first: a transaction on mastery/<kid>_teacherDrills/<key> = {at, teacher, items:[{deck,name,r}], right, n,
+//         graded}, so two of the family's devices can't both apply it. Then GRADED through the app's own drill grading (mastApplyScores, the
+//         ladder update her drill makes, on his drill settings) and written as the same targeted ladder fields her drill writes
+//         (mastery/<kid>/<ix>/tier …). A card he doesn't have as an active card yet is skipped (graded counts the ones that moved).
+//       - NOTHING goes in mastery/history: it doesn't count as Mom's drill, her drill day, her Scores, or the day's drill streak.
+//       - Offline: the listener hands over every drill the next time Howe opens and the mirror signs in; the claim keeps each to once.
+//       - ?dryrun=1: graded in memory only (nothing written anywhere), so she can watch it work; the reload puts everything back.
+//   · HIS SUMMARY: a card the teacher marked ✗ counts toward its miss total in the weak list, like her own drills (8.9). Nothing else in it.
+//   · THE NOTICE: ENVMIRROR's toast "🌿 Ms. Brittany drilled Lincoln: 4 of 5 · missed 'cambium'", kept in the notices on Settings ▸ 🌿 Envirothon.
+//   · WHERE SHE SEES IT: Units ▸ NC Envirothon, right under his station check-ins (Mom only): "👩‍🏫 Lincoln's teacher drills", a month line
+//     ("October: 6 drills · 27 cards · 81% right"), then newest first: date, teacher, "4 of 5 right", the missed fronts in red. Tap a row
+//     for every card. Her Q23 (also on Mom's Day or his card?) is still open.
+const CPLNT_MAX=5, CPLNT_TRIES=40, CPLNT_RETRY_MS=3000, CPLNT_ROWS=12;
+const _cplnt={drills:{},busy:{},refused:{},told:{},tries:0,timer:null};
+// a mirrored kid of this family, not the class site (his summary's miss count uses this)
+function cplntMirrored(kid){
+  try{
+    if(!kid||(typeof envSiteOn==="function"&&envSiteOn())) return false;
+    if(typeof envmCfg!=="function"||!envmCfg()) return false;
+    return typeof envmKids==="function"&&envmKids().indexOf(kid)>=0;
+  }catch(e){ return false; }
+}
+// is L3 on for this kid? (mirrored, the mirror signed in on this device, his class known)
+function cplntOn(kid){
+  try{ return cplntMirrored(kid)&&typeof _envm!=="undefined"&&!!_envm.user&&!!_envm.edb&&!!(_envm.classOf||{})[kid]; }catch(e){ return false; }
+}
+function cplntLive(){ return typeof db!=="undefined"&&!!db&&!(typeof _dryRun==="function"&&_dryRun()); }
+function cplntVals(x){ return Array.isArray(x)?x.filter(Boolean):(x&&typeof x==="object")?Object.values(x).filter(Boolean):[]; }
+function cplntItems(kid){ let a=masteryData[kid]; if(!a) return []; if(!Array.isArray(a)) a=masteryData[kid]=Object.values(a); return a; }
+function cplntDone(kid){ const d=(typeof masteryData!=="undefined"&&masteryData)?masteryData[kid+"_teacherDrills"]:null; return (d&&typeof d==="object")?d:{}; }
+// ── his pick: due today, most-missed first (the class site's rule, Q13)
+function cplntPick(kid,summary){
+  const D=(typeof envDrillDecks==="function")?envDrillDecks(kid):null; if(!D||typeof mastIsDue!=="function") return [];
+  const pn=mastGetPrintNum(kid), hold=((masteryData[kid+"_settings"]||{}).cat_hold)||{}, sm=summary||envSummary(kid)||{}, W={};
+  Object.keys(sm.weak||{}).forEach(dk=>cplntVals(sm.weak[dk]).forEach(r=>{ W[dk+"|"+r.n]=(+r.m||0)*2+(+r.d||0); }));
+  const sc=i=>{ const k=i.subject+"|"+i.prompt; return (k in W)?W[k]:(i.drop_count||0); };
+  const due=cplntItems(kid).filter(i=>i&&i.status==="active"&&i.prompt&&D.has(i.subject)&&!hold[i.subject]&&String(i.prompt).length<=200&&String(i.subject).length<=120
+    &&!(typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin(kid,i.subject))&&mastIsDue(i,pn));
+  due.sort((a,b)=>(sc(b)-sc(a))||((a.next_due??pn)-(b.next_due??pn))||(MAST_TIER_ORDER.indexOf(a.tier||"daily")-MAST_TIER_ORDER.indexOf(b.tier||"daily"))||String(a.prompt).localeCompare(String(b.prompt)));
+  return due.slice(0,CPLNT_MAX).map(i=>({deck:String(i.subject),name:String(i.prompt)}));
+}
+// ENVMIRROR's envmPublishKid (and the drills listener): students/<sid>/drillPick, only when it changed
+function cplntPickPub(kid,sid,edb,summary){
+  try{
+    if(!cplntOn(kid)||!sid||!edb||_envm.locked||!cplntLive()) return false;
+    const pick=cplntPick(kid,summary), j=JSON.stringify(pick), key="ha_cplnt_pick_"+sid;
+    let prev=null; try{ prev=HA_LS.getItem(key); }catch(e){}
+    if(prev===j) return false;
+    try{ HA_LS.setItem(key,j); }catch(e){}
+    const r=edb.ref("students/"+sid+"/drillPick"), p=pick.length?r.set(pick):r.remove();
+    if(p&&typeof p.catch==="function") p.catch(()=>{ try{ HA_LS.removeItem(key); }catch(e){} });   // refused / offline: send again next time
+    return true;
+  }catch(e){ return false; }
+}
+// ENVMIRROR's envmRelAttach: the live listener on drills/<cid>/<sid> (kept in _envm.subs, so signing out turns it off)
+function cplntAttach(kid,cid,edb,subs,sid){
+  try{
+    if(!cplntOn(kid)||!cid||!edb||!subs||!sid) return false;
+    const sk=kid+"|tdrill"; if(subs[sk]) return false;
+    const r=edb.ref("drills/"+cid+"/"+sid), fn=s=>{ try{ const v=(s&&typeof s.val==="function")?s.val():null; _cplnt.drills[kid]=(v&&typeof v==="object")?v:{}; cplntCatchUp(kid); }catch(e){} };
+    r.on("value",fn,()=>{});   // refused (rules) or unreachable: nothing happens
+    subs[sk]={r,fn};
+    return true;
+  }catch(e){ return false; }
+}
+// one drill record checked: only his Envirothon decks; only ✓ / ✗; at most 5 cards. ok:false = refused
+function cplntCheck(rec,D){
+  if(!rec||typeof rec!=="object") return {ok:false,why:"it is empty"};
+  const raw=cplntVals(rec.items);
+  if(!raw.length||raw.length>CPLNT_MAX) return {ok:false,why:raw.length?"it has more than "+CPLNT_MAX+" cards":"it has no cards"};
+  const items=[];
+  for(const x of raw){
+    if(!x||typeof x!=="object"||typeof x.deck!=="string"||typeof x.name!=="string") return {ok:false,why:"a card in it is not readable"};
+    if(!D.has(x.deck)) return {ok:false,why:"it names a deck that isn't Envirothon ("+x.deck.slice(0,40)+")"};
+    if(x.r!=="c"&&x.r!=="m") return {ok:false,why:"a card in it has no ✓ or ✗"};
+    items.push({deck:x.deck,name:x.name.slice(0,200),r:x.r});
+  }
+  return {ok:true,items,at:(typeof rec.at==="number"&&isFinite(rec.at))?rec.at:Date.now(),teacher:String(rec.name||"").slice(0,60)};
+}
+// the cards a drill grades: each {deck, name} → his active card with that front (a card he doesn't have active yet is skipped)
+function cplntPlan(kid,items){
+  const all=cplntItems(kid), ids=[], scores={};
+  items.forEach(x=>{ const it=all.find(i=>i&&i.status==="active"&&i.subject===x.deck&&i.prompt===x.name); if(!it||scores[it.id]) return; ids.push(it.id); scores[it.id]=x.r; });
+  return {ids,scores};
+}
+// grade through the app's own drill grading (mastApplyScores, his drill settings) and write the very fields her drill writes. No history.
+function cplntGrade(kid,plan){
+  if(!plan.ids.length||typeof mastApplyScores!=="function") return 0;
+  const items=cplntItems(kid), pn=mastGetPrintNum(kid), _mk=masteryKid; masteryKid=kid; let r;
+  try{ r=mastApplyScores(items,plan.ids.map(id=>({id})),plan.scores,pn,mastDrillSettings(),{prevShown:new Set(),autoPull:false,chain:false}); }
+  finally{ masteryKid=_mk; }
+  const upd={}; (r.touched||[]).forEach(it=>{ const ix=items.indexOf(it); if(ix<0) return;
+    upd[ix+"/tier"]=it.tier; upd[ix+"/consecutive_correct"]=it.consecutive_correct||0; upd[ix+"/cycle"]=it.cycle||1; upd[ix+"/drop_count"]=it.drop_count||0;
+    upd[ix+"/status"]=it.status||"active"; upd[ix+"/tally_dots"]=it.tally_dots??0; upd[ix+"/next_due"]=it.next_due??null;
+    upd[ix+"/dynamic"]=it.dynamic?true:null; upd[ix+"/dynSource"]=it.dynamic?(it.dynSource||null):null; upd[ix+"/dynFromTier"]=it.dynamic?(it.dynFromTier||null):null; upd[ix+"/dynAddedAt"]=it.dynamic?(it.dynAddedAt||null):null;
+    if(it.ww) upd[ix+"/ww"]=it.ww; });
+  if(Object.keys(upd).length&&cplntLive()) db.ref("mastery/"+kid).update(upd);
+  return (r.touched||[]).length;
+}
+function cplntName(kid){ return (typeof cap==="function")?cap(kid):String(kid); }
+// "🌿 Ms. Brittany drilled Lincoln: 4 of 5 · missed 'cambium'"
+function cplntLine(kid,m){
+  const miss=m.items.filter(x=>x.r==="m").map(x=>x.name);
+  return "\u{1F33F} "+(m.teacher||"His teacher")+" drilled "+cplntName(kid)+": "+m.right+" of "+m.n+(miss.length?" · missed "+miss.slice(0,3).map(s=>"'"+s+"'").join(", ")+(miss.length>3?" +"+(miss.length-3)+" more":""):"");
+}
+function cplntTell(msg){ if(typeof envmNotice==="function") envmNotice(msg); }
+function cplntMark(kid,id,m){ masteryData[kid+"_teacherDrills"]=Object.assign({},cplntDone(kid),{[id]:m}); }
+function cplntAfter(kid){
+  if(typeof envMirrorOn==="function") envMirrorOn("drill");   // the summary's weak list counts the ✗ cards
+  cplntPickPub(kid,envmSid(kid),_envm.edb);
+  if(typeof renderAllSoon==="function") renderAllSoon();
+}
+function cplntApplyOne(kid,id,rec,D){
+  const v=cplntCheck(rec,D);
+  if(!v.ok){ _cplnt.refused[id]={at:(rec&&typeof rec.at==="number")?rec.at:Date.now(),teacher:String((rec&&rec.name)||"").slice(0,60),why:v.why,kid};
+    if(!_cplnt.told[id]){ _cplnt.told[id]=true; cplntTell("\u{1F33F} A teacher drill for "+cplntName(kid)+" was not applied: "+v.why); }
+    return false; }
+  const plan=cplntPlan(kid,v.items), right=v.items.filter(x=>x.r==="c").length;
+  const m={at:v.at,teacher:v.teacher,items:v.items,right,n:v.items.length,graded:plan.ids.length};
+  if(!cplntLive()){   // ?dryrun=1: memory only — nothing is written, the reload puts it back
+    cplntMark(kid,id,m); cplntGrade(kid,plan); cplntTell(cplntLine(kid,m)+" (dry run: nothing saved)");
+    if(typeof renderAllSoon==="function") renderAllSoon();
+    return true; }
+  _cplnt.busy[id]=true;
+  let claim; try{ const r=db.ref("mastery/"+kid+"_teacherDrills/"+id);
+    claim=(typeof r.transaction==="function")?Promise.resolve(r.transaction(cur=>cur?undefined:m)).then(x=>!!(x&&x.committed)):Promise.reject(new Error("no transaction")); }
+  catch(e){ claim=Promise.reject(e); }
+  claim.then(won=>{ if(!won) return; cplntMark(kid,id,m); cplntGrade(kid,plan); cplntTell(cplntLine(kid,m)); cplntAfter(kid); })
+    .catch(()=>{}).then(()=>{ delete _cplnt.busy[id]; });   // not claimed (offline, refused, another device won): the next listener call tries again
+  return true;
+}
+// every drill not yet applied, oldest first; waits for his records and the units to arrive
+function cplntCatchUp(kid){
+  if(!cplntOn(kid)) return 0;
+  const notYet=(typeof _haMastReady!=="undefined"&&!_haMastReady)||(typeof _haUnitsReady!=="undefined"&&!_haUnitsReady);
+  const D=notYet?null:((typeof envDrillDecks==="function")?envDrillDecks(kid):null);
+  if(!D){ if(!_cplnt.timer&&(++_cplnt.tries)<=CPLNT_TRIES&&typeof setTimeout==="function") _cplnt.timer=setTimeout(()=>{ _cplnt.timer=null; cplntCatchUp(kid); },CPLNT_RETRY_MS); return 0; }
+  _cplnt.tries=0;
+  const all=_cplnt.drills[kid]||{}, done=cplntDone(kid);
+  const ids=Object.keys(all).filter(id=>/^[A-Za-z0-9_-]{1,64}$/.test(id)&&!done[id]&&!_cplnt.busy[id]&&!_cplnt.refused[id])
+    .sort((a,b)=>(((all[a]||{}).at||0)-((all[b]||{}).at||0))||(a<b?-1:a>b?1:0));
+  let n=0; ids.forEach(id=>{ if(cplntApplyOne(kid,id,all[id],D)) n++; });
+  cplntPickPub(kid,envmSid(kid),_envm.edb);
+  return n;
+}
+// envSummary's hook (after Mom's drills): a ✗ from the teacher counts toward the card's miss total in the weak list (8.9). His mirror only.
+function cplntMissBy(kid,M,missBy,isDeck){
+  if(!missBy||!isDeck||!cplntMirrored(kid)) return 0;
+  const T=(M||{})[kid+"_teacherDrills"]; if(!T||typeof T!=="object") return 0;
+  let n=0; Object.keys(T).forEach(id=>cplntVals(T[id]&&T[id].items).forEach(x=>{ if(!x||x.r!=="m"||!isDeck[x.deck]) return; missBy[x.deck+"|"+x.name]=(missBy[x.deck+"|"+x.name]||0)+1; n++; }));
+  return n;
+}
+// ── Units ▸ NC Envirothon (Mom only): 👩‍🏫 his teacher drills
+function cplntRecs(kid){
+  const T=cplntDone(kid);
+  return Object.keys(T).map(id=>{ const r=T[id]; if(!r||typeof r!=="object") return null; const items=cplntVals(r.items).filter(x=>x&&typeof x.name==="string");
+    if(!items.length) return null; return {id,at:+r.at||0,teacher:String(r.teacher||""),items,right:items.filter(x=>x.r==="c").length,n:items.length,graded:(r.graded!=null)?+r.graded:items.length}; })
+    .filter(Boolean).sort((a,b)=>(b.at-a.at)||(a.id<b.id?1:-1));
+}
+function cplntMonth(ms){ try{ return new Date(ms).toLocaleDateString([],{month:"long"}); }catch(e){ return ""; } }
+function cplntMonthKey(ms){ const d=new Date(ms); return d.getFullYear()*100+d.getMonth(); }
+function cplntDay(ms){ try{ return new Date(ms).toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"}); }catch(e){ return String(ms); } }
+function cplntKidHtml(kid){
+  const E=v=>(typeof envmEsc==="function")?envmEsc(v):String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  const recs=cplntRecs(kid), bad=Object.keys(_cplnt.refused).map(id=>_cplnt.refused[id]).filter(x=>x&&x.kid===kid);
+  if(!recs.length&&!bad.length&&!cplntOn(kid)) return "";
+  const nm=E(cplntName(kid));
+  let h='<div data-cplnt="list" style="background:#fff;border:1.5px solid #ddd6fe;border-radius:12px;padding:12px 14px;margin-bottom:14px"><div style="font-size:12px;font-weight:800;color:#1f2937">\u{1F469}‍\u{1F3EB} '+nm+'’s teacher drills</div>';
+  if(recs.length){
+    const nowK=cplntMonthKey(Date.now()), mk=recs.some(r=>cplntMonthKey(r.at)===nowK)?nowK:cplntMonthKey(recs[0].at), inM=recs.filter(r=>cplntMonthKey(r.at)===mk);
+    const cards=inM.reduce((s,r)=>s+r.n,0), right=inM.reduce((s,r)=>s+r.right,0);
+    h+='<div data-cplnt="month" style="font-size:11.5px;color:#5b21b6;font-weight:700;margin:3px 0 6px">'+E(cplntMonth(inM[0].at))+': '+inM.length+' drill'+(inM.length===1?'':'s')+' · '+cards+' card'+(cards===1?'':'s')+' · '+(cards?Math.round(right/cards*100):0)+'% right</div>';
+  } else h+='<div style="font-size:11.5px;color:var(--muted);margin-top:3px">None yet. When his teacher drills him in class, the grades land here and move his cards, the same as your drill.</div>';
+  bad.forEach(b=>{ h+='<div data-cplnt="refused" style="font-size:11.5px;color:#b45309;font-weight:700;padding:3px 0">⚠ '+E(cplntDay(b.at))+(b.teacher?' · '+E(b.teacher):'')+': not applied, '+E(b.why)+'</div>'; });
+  recs.slice(0,CPLNT_ROWS).forEach(r=>{
+    const miss=r.items.filter(x=>x.r==="m");
+    h+='<details data-cplnt="row" style="border-top:1px solid #f3f1ee;padding:5px 0"><summary style="cursor:pointer;font-size:12px;line-height:1.45;list-style:none"><b>'+E(cplntDay(r.at))+'</b>'+(r.teacher?' · '+E(r.teacher):'')+' · <span style="font-weight:800;color:'+(miss.length?'#1f2937':'#15803d')+'">'+r.right+' of '+r.n+' right</span>'+(miss.length?' · <span style="color:#b91c1c;font-weight:700">'+miss.map(x=>E(x.name)).join(', ')+'</span>':'')+'</summary>';
+    h+='<div style="padding:4px 0 2px 10px">'+r.items.map(x=>'<div style="font-size:12px;padding:2px 0"><span style="font-weight:900;color:'+(x.r==="c"?'#15803d':'#b91c1c')+'">'+(x.r==="c"?'✓':'✗')+'</span> '+E(x.name)+' <span style="color:var(--muted)">· '+E(x.deck)+'</span></div>').join('')
+      +(r.graded<r.n?'<div style="font-size:11px;color:var(--muted);padding-top:2px">'+(r.n-r.graded)+' of these '+(r.n-r.graded===1?'wasn’t':'weren’t')+' an active card of his yet, so '+(r.n-r.graded===1?'it':'they')+' didn’t move.</div>':'')+'</div></details>'; });
+  if(recs.length>CPLNT_ROWS) h+='<div style="font-size:11px;color:var(--muted);padding-top:4px">+ '+(recs.length-CPLNT_ROWS)+' older</div>';
+  return h+'</div>';
+}
+// renderUnitDetail's hook (right after the station check-ins): the Envirothon unit, Mom only, each mirrored kid
+function cplntUnitHtml(u,kids,isMom){
+  try{
+    if(!isMom||!u||typeof envmUnit!=="function"||envmUnit()!==u) return "";
+    let h=""; (kids||[]).forEach(k=>{ if(cplntMirrored(k)) h+=cplntKidHtml(k); });
+    return h;
+  }catch(e){ return ""; }
+}
+// CPLINCOLNL3_END
 // ENVSITE_START — 🌿 THE ENVIROTHON SITE: one page, one Firebase project, routed by login role (step 4 of PLAN_envirothon_2026-10-27.md;
 // DESIGN_envirothon_console_2026-10-27.md ✅ DECISIONS, DESIGN_envirothon_micro_academy_2026-10-27.md ✅ DECISIONS + §2–§4,
 // DESIGN_envirothon_code_protection_2026-10-27.md §3). Her words 2026-10-27/28: "I'm good with it all being on one page as long as
