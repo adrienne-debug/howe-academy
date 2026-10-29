@@ -6,101 +6,101 @@ Built 2026-10-27. Unit file `nc_envirothon_unit.json` (id `nc_envirothon`): 6 st
 
 | Stage | Deck | Mode | Cards | Core | Longest back (words) |
 |---|---|---|---|---|---|
-| 0 | General Concepts · Terms | flip | 28 | 11 | 30 |
+| 0 | General Concepts · Terms | flip | 28 | 6 | 30 |
 | 0 | General Concepts · Facts | flash | 62 | 3 | 12 |
-| 1 | Forestry · Terms | flip | 258 | 168 | 24 |
-| 1 | Forestry · Facts | flash | 468 | 163 | 21 |
-| 1 | Forestry · ID | flip | 165 | 165 | 17 |
-| 2 | Soils and Land Use · Terms | flip | 288 | 138 | 32 |
-| 2 | Soils and Land Use · Facts | flash | 465 | 116 | 36 |
+| 1 | Forestry · Terms | flip | 258 | 168 | 47 |
+| 1 | Forestry · Facts | flash | 468 | 158 | 21 |
+| 1 | Forestry · ID | flip | 165 | 120 | 17 |
+| 2 | Soils and Land Use · Terms | flip | 288 | 133 | 38 |
+| 2 | Soils and Land Use · Facts | flash | 465 | 115 | 36 |
 | 2 | Soils and Land Use · ID | flip | 97 | 34 | 14 |
-| 3 | Aquatic Ecology · Terms | flip | 270 | 166 | 31 |
-| 3 | Aquatic Ecology · Facts | flash | 485 | 169 | 21 |
-| 3 | Aquatic Ecology · ID | flip | 321 | 104 | 16 |
-| 4 | Wildlife · Terms | flip | 230 | 195 | 22 |
-| 4 | Wildlife · Facts | flash | 350 | 136 | 23 |
-| 4 | Wildlife · ID | flip | 574 | 121 | 24 |
-| 5 | Current Issue · 2027 | flash | 310 | 15 | 22 |
-| | **All decks** | | **4371** | **1704** | |
+| 3 | Aquatic Ecology · Terms | flip | 270 | 147 | 37 |
+| 3 | Aquatic Ecology · Facts | flash | 485 | 158 | 21 |
+| 3 | Aquatic Ecology · ID | flip | 321 | 75 | 16 |
+| 4 | Wildlife · Terms | flip | 230 | 160 | 22 |
+| 4 | Wildlife · Facts | flash | 350 | 115 | 23 |
+| 4 | Wildlife · ID | flip | 574 | 94 | 24 |
+| 5 | Current Issue · 2027 | flash | 310 | 7 | 22 |
+| | **All decks** | | **4371** | **1493** | |
 
 ## Per station
 
 | Station | Cards | Core |
 |---|---|---|
-| General concepts | 90 | 14 |
-| Forestry | 891 | 496 |
-| Soils/Land Use | 850 | 288 |
-| Aquatic Ecology | 1076 | 439 |
-| Wildlife | 1154 | 452 |
-| Current Environmental Issues | 310 | 15 |
+| General concepts | 90 | 9 |
+| Forestry | 891 | 446 |
+| Soils/Land Use | 850 | 282 |
+| Aquatic Ecology | 1076 | 380 |
+| Wildlife | 1154 | 369 |
+| Current Environmental Issues | 310 | 7 |
 
 ## Per Key Concept (cards / core)
 
 | Deck | Key Concept | Cards | Core |
 |---|---|---|---|
-| General Concepts · Terms | 1. The Biosphere | 5 | 1 |
-| General Concepts · Terms | 2. The Water Cycle | 11 | 5 |
-| General Concepts · Terms | 3. Photosynthesis and Respiration | 2 | 2 |
-| General Concepts · Terms | 4. Oxygen-Carbon Dioxide Cycle | 2 | 0 |
+| General Concepts · Terms | 1. The Biosphere | 5 | 0 |
+| General Concepts · Terms | 2. The Water Cycle | 11 | 3 |
+| General Concepts · Terms | 3. Photosynthesis and Respiration | 2 | 0 |
+| General Concepts · Terms | 4. Oxygen-Carbon Dioxide Cycle | 2 | 1 |
 | General Concepts · Terms | 5. The Carbon Cycle | 1 | 1 |
 | General Concepts · Terms | 6. The Nitrogen Cycle | 4 | 1 |
 | General Concepts · Terms | 7. Energy in Ecosystems | 2 | 0 |
 | General Concepts · Terms | 8. Taxonomy | 1 | 0 |
 | General Concepts · Facts | 1. The Biosphere | 6 | 0 |
-| General Concepts · Facts | 2. The Water Cycle | 15 | 0 |
+| General Concepts · Facts | 2. The Water Cycle | 15 | 2 |
 | General Concepts · Facts | 3. Photosynthesis and Respiration | 3 | 0 |
 | General Concepts · Facts | 4. Oxygen-Carbon Dioxide Cycle | 4 | 0 |
 | General Concepts · Facts | 5. The Carbon Cycle | 4 | 0 |
-| General Concepts · Facts | 6. The Nitrogen Cycle | 9 | 0 |
+| General Concepts · Facts | 6. The Nitrogen Cycle | 9 | 1 |
 | General Concepts · Facts | 7. Energy in Ecosystems | 7 | 0 |
 | General Concepts · Facts | 8. Taxonomy | 14 | 0 |
 | Forestry · Terms | 1. Forests and Society | 37 | 22 |
-| Forestry · Terms | 2. Forest Ecology | 125 | 96 |
+| Forestry · Terms | 2. Forest Ecology | 125 | 97 |
 | Forestry · Terms | 3. Conservation and Management of Forests | 70 | 35 |
-| Forestry · Terms | 4. Forest Measurement and Identification | 26 | 13 |
-| Forestry · Facts | 1. Forests and Society | 133 | 51 |
-| Forestry · Facts | 2. Forest Ecology | 165 | 64 |
-| Forestry · Facts | 3. Conservation and Management of Forests | 131 | 29 |
-| Forestry · Facts | 4. Forest Measurement and Identification | 39 | 13 |
+| Forestry · Terms | 4. Forest Measurement and Identification | 26 | 14 |
+| Forestry · Facts | 1. Forests and Society | 133 | 50 |
+| Forestry · Facts | 2. Forest Ecology | 165 | 66 |
+| Forestry · Facts | 3. Conservation and Management of Forests | 131 | 30 |
+| Forestry · Facts | 4. Forest Measurement and Identification | 39 | 12 |
 | Forestry · ID | 1. Forests and Society | 2 | 2 |
 | Forestry · ID | 2. Forest Ecology | 21 | 21 |
 | Forestry · ID | 3. Conservation and Management of Forests | 20 | 20 |
-| Forestry · ID | 4. Forest Measurement and Identification | 122 | 122 |
-| Soils and Land Use · Terms | 1. Soil Genesis | 75 | 39 |
-| Soils and Land Use · Terms | 2. Soil Ecology | 28 | 20 |
-| Soils and Land Use · Terms | 3. Soil Properties | 105 | 29 |
+| Forestry · ID | 4. Forest Measurement and Identification | 122 | 77 |
+| Soils and Land Use · Terms | 1. Soil Genesis | 75 | 40 |
+| Soils and Land Use · Terms | 2. Soil Ecology | 28 | 18 |
+| Soils and Land Use · Terms | 3. Soil Properties | 105 | 34 |
 | Soils and Land Use · Terms | 4. Soil Classification | 37 | 14 |
-| Soils and Land Use · Terms | 5. Conservation and Management of Soil | 43 | 29 |
+| Soils and Land Use · Terms | 5. Conservation and Management of Soil | 43 | 27 |
 | Soils and Land Use · Facts | 1. Soil Genesis | 129 | 36 |
 | Soils and Land Use · Facts | 2. Soil Ecology | 38 | 14 |
-| Soils and Land Use · Facts | 3. Soil Properties | 129 | 31 |
-| Soils and Land Use · Facts | 4. Soil Classification | 71 | 3 |
-| Soils and Land Use · Facts | 5. Conservation and Management of Soil | 98 | 30 |
+| Soils and Land Use · Facts | 3. Soil Properties | 129 | 32 |
+| Soils and Land Use · Facts | 4. Soil Classification | 71 | 4 |
+| Soils and Land Use · Facts | 5. Conservation and Management of Soil | 98 | 29 |
 | Soils and Land Use · ID | 3. Soil Properties | 34 | 34 |
 | Soils and Land Use · ID | 4. Soil Classification | 63 | 0 |
 | Aquatic Ecology · Terms | 1. Aquatics and Society | 19 | 10 |
-| Aquatic Ecology · Terms | 2. Aquatic Ecology | 168 | 102 |
-| Aquatic Ecology · Terms | 3. Conservation and Management of Aquatic Ecosystems | 30 | 12 |
-| Aquatic Ecology · Terms | 4. Aquatic Identification | 53 | 39 |
+| Aquatic Ecology · Terms | 2. Aquatic Ecology | 168 | 88 |
+| Aquatic Ecology · Terms | 3. Conservation and Management of Aquatic Ecosystems | 30 | 11 |
+| Aquatic Ecology · Terms | 4. Aquatic Identification | 53 | 38 |
 | Aquatic Ecology · Facts | 1. Aquatics and Society | 40 | 16 |
-| Aquatic Ecology · Facts | 2. Aquatic Ecology | 265 | 81 |
-| Aquatic Ecology · Facts | 3. Conservation and Management of Aquatic Ecosystems | 79 | 37 |
-| Aquatic Ecology · Facts | 4. Aquatic Identification | 101 | 24 |
-| Aquatic Ecology · ID | 4. Aquatic Identification | 321 | 104 |
-| Wildlife · Terms | 1. Wildlife Ecology | 68 | 59 |
-| Wildlife · Terms | 2. Wildlife Classification, Adaptations, and Identification | 100 | 92 |
-| Wildlife · Terms | 3. Conservation and Management of Wildlife | 43 | 36 |
-| Wildlife · Terms | 4. Wildlife and Society | 19 | 6 |
+| Aquatic Ecology · Facts | 2. Aquatic Ecology | 265 | 78 |
+| Aquatic Ecology · Facts | 3. Conservation and Management of Aquatic Ecosystems | 79 | 41 |
+| Aquatic Ecology · Facts | 4. Aquatic Identification | 101 | 23 |
+| Aquatic Ecology · ID | 4. Aquatic Identification | 321 | 75 |
+| Wildlife · Terms | 1. Wildlife Ecology | 68 | 36 |
+| Wildlife · Terms | 2. Wildlife Classification, Adaptations, and Identification | 100 | 83 |
+| Wildlife · Terms | 3. Conservation and Management of Wildlife | 43 | 34 |
+| Wildlife · Terms | 4. Wildlife and Society | 19 | 7 |
 | Wildlife · Facts | 1. Wildlife Ecology | 49 | 45 |
-| Wildlife · Facts | 2. Wildlife Classification, Adaptations, and Identification | 169 | 46 |
-| Wildlife · Facts | 3. Conservation and Management of Wildlife | 98 | 28 |
-| Wildlife · Facts | 4. Wildlife and Society | 34 | 13 |
-| Wildlife · ID | 2. Wildlife Classification, Adaptations, and Identification | 574 | 118 |
-| Current Issue · 2027 | 1. Soil Health (NCF Topic) | 170 | 7 |
+| Wildlife · Facts | 2. Wildlife Classification, Adaptations, and Identification | 169 | 25 |
+| Wildlife · Facts | 3. Conservation and Management of Wildlife | 98 | 30 |
+| Wildlife · Facts | 4. Wildlife and Society | 34 | 15 |
+| Wildlife · ID | 2. Wildlife Classification, Adaptations, and Identification | 574 | 94 |
+| Current Issue · 2027 | 1. Soil Health (NCF Topic) | 170 | 1 |
 | Current Issue · 2027 | 2. Evaluating Information Sources | 17 | 6 |
 | Current Issue · 2027 | 3. Air Quality | 21 | 0 |
 | Current Issue · 2027 | 4. Forest Management / Fire | 15 | 0 |
-| Current Issue · 2027 | 5. Wildlife Management | 87 | 2 |
+| Current Issue · 2027 | 5. Wildlife Management | 87 | 0 |
 
 ## The core flag
 
@@ -168,14 +168,274 @@ core from the coverage maps and drop these 44, so a re-run needs this list re-ap
 | Aquatics | Aquatic Ecology · Facts | In the biotic index, what number is Group 2 multiplied by? | 2022 Q20 (with Good) |
 | Aquatics | Aquatic Ecology · Facts | In the biotic index, what number is Group 3 multiplied by? | 2022 Q20 (with Good) |
 
+**Trim 1 (2026-10-28): 211 cards set to `core:false`** (Adrienne: "also do the trim"). Rules A–C of `RESEARCH_envirothon_skills_2026-10-28.md` §8. The skill-replace step is not applied, because no skill is built yet. Nothing is deleted or hidden: a `core:false` card stays in its deck and still studies as a non-core card. No front changed. The only backs that changed are the 12 merged backs listed below. Core went from 1,704 to 1,493. Per station: General concepts 14 → 9, Forestry 496 → 446, Soils/Land Use 288 → 282, Aquatic Ecology 439 → 380, Wildlife 452 → 369, Current Environmental Issues 15 → 7.
+
+- **Rule A — one card per front (72).** The front is core in two or more decks. The station deck's card stays core (the first in unit order that is not General Concepts), and the other copies go to `core:false`. Where the stations mean truly different things (12 fronts), the kept card's back now carries each station's back, word for word, as "In <station>: …" (below).
+- **Rule B — catch-all facts no past test touches (38).** A Facts card is set to `core:false` when all of these hold: it sits only on objective lines in COVERAGE_objectives.md that carry more than 20 core cards; no question in the 2021, 2022 or 2026 Area 8 forms matched it; and its page is not within a page of any page the 2026 keys cite. 7 cards that fit the rule were kept core on review (listed below). Terms cards are never taken by this rule.
+- **Rule C — ID attributes beyond what tests ask (101).** These are the macroinvertebrate taxonomic group (29), the class of a mammal or bird (27; amphibian and reptile class cards stay core), each tree's seed plant group (24; the Gymnosperms / Angiosperms term cards stay core), and tree height, diameter and size (21). Three years of Area forms never asked these except as the name on a picture question.
+- **Kept on purpose:** every card a planned skill relies on (the biotic index, texture, survey and measurement cards, the pine needle cards and Mallard wing color), wildlife food and habitat, tree uses, fish family and native status.
+
+| Station | Rule A | Rule B | Rule C | Core before → after |
+|---|---|---|---|---|
+| General concepts | 5 | 0 | 0 | 14 → 9 |
+| Forestry | 0 | 5 | 45 | 496 → 446 |
+| Soils/Land Use | 5 | 1 | 0 | 288 → 282 |
+| Aquatic Ecology | 19 | 11 | 29 | 439 → 380 |
+| Wildlife | 35 | 21 | 27 | 452 → 369 |
+| Current Environmental Issues | 8 | 0 | 0 | 15 → 7 |
+| **All** | **72** | **38** | **101** | **1,704 → 1,493** |
+
+Merged backs (old → new):
+
+| Deck | Front | Old back | New back |
+|---|---|---|---|
+| Forestry · Terms | Baseflow | Water that flows laterally (below the soil surface) as groundwater into streams and lakes, recharging them. | In Forestry: Water that flows laterally (below the soil surface) as groundwater into streams and lakes, recharging them. · In Aquatics: The relatively flat parts of a hydrograph between major rainfall events; water stored in the soil slowly seeping into stream channels. |
+| Forestry · Terms | Organic matter | Something that is or was once living. | In Forestry: Something that is or was once living. · In Current Issues: Organic material that has been decomposed into humus until it is resistant to further decomposition; it is stable in the soil. |
+| Forestry · Terms | Resource partitioning | When similar species use limited resources in an area without one species driving the others into extinction. | In Forestry: When similar species use limited resources in an area without one species driving the others into extinction. · In Wildlife: When a species specializes to a particular layer of habitat or time of day for hunting. |
+| Forestry · Terms | Limiting factors | Things that limit the growth of living organisms within an ecosystem. | In Forestry: Things that limit the growth of living organisms within an ecosystem. · In Aquatics: Factors that affect the carrying capacity in ecosystems. · In Wildlife: Factors that restrict a population's growth, such as the quality and quantity of food, water, or shelter, predation, or disease. |
+| Forestry · Terms | Succession | Biotic change in a forest over time. | In Forestry: Biotic change in a forest over time. · In Aquatics: The process of a pond filling in with sediment and becoming a series of other ecosystems. |
+| Forestry · Terms | Best management practices (BMPs) | Practices used in forest management to minimize or eliminate erosion and harm to water bodies. | In Forestry: Practices used in forest management to minimize or eliminate erosion and harm to water bodies. · In Soils: Activities that farmers and suburban and urban landowners can use to help conserve soil and water resources. |
+| Soils and Land Use · Terms | Peat | An organic deposit that contains identifiable portions of organic matter. | In Soils: An organic deposit that contains identifiable portions of organic matter. · In Aquatics: Partly decayed moss that accumulates in bogs. |
+| Soils and Land Use · Terms | Food chain | The chief interaction between species: eating and being eaten. | In Soils: The chief interaction between species: eating and being eaten. · In Wildlife: The flow of energy from one organism to the next. |
+| Soils and Land Use · Terms | Water table | A zone in the soil that is saturated with water for significant periods during the year. | In Soils: A zone in the soil that is saturated with water for significant periods during the year. · In Aquatics: The surface of the zone of saturation; the boundary with the unsaturated, dryer zone above it. |
+| Soils and Land Use · Terms | Hydric soils | Wet soils defined as a group for laws preserving wetlands and for assessing potential wildlife habitat. | In Soils: Wet soils defined as a group for laws preserving wetlands and for assessing potential wildlife habitat. · In Aquatics: Soils saturated with water long enough that, at some point in time, little oxygen has been present. |
+| Aquatic Ecology · Terms | Density | Mass divided by volume. | In Aquatics: Mass divided by volume. · In Wildlife: The number of individuals per unit area. |
+| Aquatic Ecology · Terms | Habitat | Food, water, shelter, and space, as well as the arrangement of these four elements. | In Aquatics: Food, water, shelter, and space, as well as the arrangement of these four elements. · In Wildlife: The local environment in which an organism lives, which must provide what it needs to survive and reproduce. |
+
+Kept core on review (Rule B fit, but a past test touched the topic):
+
+| Deck | Front | Why kept |
+|---|---|---|
+| Wildlife · Facts | What is the only marsupial in North America? | opossum facts asked (2021 Wildlife Q9); a picture-ID species |
+| Aquatic Ecology · Facts | Which fish fins are paired? | 2021 Aquatics Q12 (fin diagram) |
+| Aquatic Ecology · Facts | Which two keystone species does the Aquatics Manual name: one that creates ponds and one that digs out depressions? | 2021 Aquatics Q15 (beaver as keystone species) |
+| Forestry · Facts | How long is a log in forestry? | needed for Biltmore-stick height (logs × 16) |
+| Forestry · Facts | What is the most accurate way to determine tree age? | tree age; 2026 Forestry Q19 (increment borer) |
+| Forestry · Facts | Who was hired to manage the forest on the Biltmore Estate? | 2021 Forestry Q5 (forestry began at Biltmore) |
+| Aquatic Ecology · Facts | Name four soil conservation practices that control sediment pollution. | 2021/2022 Soils Q14 and 2026 Soils BMPs (sediment control) |
+
+Every card changed:
+
+| Rule | Deck | # | Front | Reason |
+|---|---|---|---|---|
+| A | General Concepts · Terms | 0 | Biosphere | same front, core in Soils (kept) |
+| A | Wildlife · Terms | 10 | Biosphere | same front, core in Soils (kept) |
+| A | General Concepts · Terms | 7 | Transpiration | same front, core in Forestry (kept) |
+| A | General Concepts · Terms | 11 | Infiltration | same front, core in Soils (kept) |
+| A | General Concepts · Terms | 16 | Photosynthesis | same front, core in Forestry (kept) |
+| A | Soils and Land Use · Terms | 55 | Photosynthesis | same front, core in Forestry (kept) |
+| A | General Concepts · Terms | 17 | Respiration | same front, core in Forestry (kept) |
+| A | Aquatic Ecology · Terms | 181 | Baseflow | same front, core in Forestry (kept) |
+| A | Current Issue · 2027 | 31 | Organic matter | same front, core in Forestry (kept) |
+| A | Aquatic Ecology · Terms | 262 | Detritus | same front, core in Forestry (kept) |
+| A | Wildlife · Terms | 28 | Detritus | same front, core in Forestry (kept) |
+| A | Wildlife · Terms | 3 | Ecology | same front, core in Forestry (kept) |
+| A | Wildlife · Terms | 9 | Ecosystem | same front, core in Forestry (kept) |
+| A | Wildlife · Terms | 1 | Biotic factors | same front, core in Forestry (kept) |
+| A | Wildlife · Terms | 2 | Abiotic factors | same front, core in Forestry (kept) |
+| A | Wildlife · Terms | 19 | Producers | same front, core in Forestry (kept) |
+| A | Soils and Land Use · Terms | 97 | Consumers | same front, core in Forestry (kept) |
+| A | Aquatic Ecology · Terms | 42 | Consumers | same front, core in Forestry (kept) |
+| A | Wildlife · Terms | 20 | Consumers | same front, core in Forestry (kept) |
+| A | Wildlife · Terms | 22 | Herbivores | same front, core in Forestry (kept) |
+| A | Wildlife · Terms | 25 | Carnivores | same front, core in Forestry (kept) |
+| A | Soils and Land Use · Terms | 98 | Decomposers | same front, core in Forestry (kept) |
+| A | Aquatic Ecology · Terms | 43 | Decomposers | same front, core in Forestry (kept) |
+| A | Wildlife · Terms | 29 | Decomposers | same front, core in Forestry (kept) |
+| A | Aquatic Ecology · Terms | 47 | Symbiosis | same front, core in Forestry (kept) |
+| A | Wildlife · Terms | 33 | Symbiosis | same front, core in Forestry (kept) |
+| A | Wildlife · Terms | 36 | Parasitism | same front, core in Forestry (kept) |
+| A | Wildlife · Terms | 34 | Mutualism | same front, core in Forestry (kept) |
+| A | Wildlife · Terms | 35 | Commensalism | same front, core in Forestry (kept) |
+| A | Wildlife · Terms | 42 | Resource partitioning | same front, core in Forestry (kept) |
+| A | Current Issue · 2027 | 92 | Topsoil | same front, core in Forestry (kept) |
+| A | Current Issue · 2027 | 108 | Soil texture | same front, core in Forestry (kept) |
+| A | Aquatic Ecology · Terms | 52 | Limiting factors | same front, core in Forestry (kept) |
+| A | Wildlife · Terms | 54 | Limiting factors | same front, core in Forestry (kept) |
+| A | Aquatic Ecology · Terms | 121 | Succession | same front, core in Forestry (kept) |
+| A | Aquatic Ecology · Terms | 127 | Snags | same front, core in Forestry (kept) |
+| A | Wildlife · Terms | 159 | Nocturnal | same front, core in Forestry (kept) |
+| A | Aquatic Ecology · Terms | 90 | Cypress knees | same front, core in Forestry (kept) |
+| A | Soils and Land Use · Terms | 276 | Integrated pest management (IPM) | same front, core in Forestry (kept) |
+| A | Aquatic Ecology · Terms | 209 | Integrated pest management (IPM) | same front, core in Forestry (kept) |
+| A | Wildlife · Terms | 91 | Integrated Pest Management (IPM) | same front, core in Forestry (kept) |
+| A | Soils and Land Use · Terms | 262 | Best Management Practices (BMPs) | same front, core in Forestry (kept) |
+| A | Aquatic Ecology · Terms | 101 | Peat | same front, core in Soils (kept) |
+| A | Aquatic Ecology · Terms | 171 | Oxbow lake | same front, core in Soils (kept) |
+| A | Aquatic Ecology · Terms | 200 | Non-point source pollution | same front, core in Soils (kept) |
+| A | Current Issue · 2027 | 32 | Humus | same front, core in Soils (kept) |
+| A | Aquatic Ecology · Terms | 77 | Anaerobic | same front, core in Soils (kept) |
+| A | Aquatic Ecology · Terms | 1 | Biotic | same front, core in Soils (kept) |
+| A | Aquatic Ecology · Terms | 2 | Abiotic | same front, core in Soils (kept) |
+| A | Wildlife · Terms | 15 | Food chain | same front, core in Soils (kept) |
+| A | Wildlife · Terms | 16 | Food web | same front, core in Soils (kept) |
+| A | Current Issue · 2027 | 102 | Soil structure | same front, core in Soils (kept) |
+| A | Current Issue · 2027 | 61 | Permeability | same front, core in Soils (kept) |
+| A | Aquatic Ecology · Terms | 35 | Water table | same front, core in Soils (kept) |
+| A | Aquatic Ecology · Terms | 75 | Hydric soils | same front, core in Soils (kept) |
+| A | Aquatic Ecology · Terms | 79 | Hydrophytic vegetation | same front, core in Soils (kept) |
+| A | Wildlife · Terms | 201 | Density | same front, core in Aquatics (kept) |
+| A | Wildlife · Terms | 11 | Habitat | same front, core in Aquatics (kept) |
+| A | Wildlife · Terms | 43 | Niche | same front, core in Aquatics (kept) |
+| A | Wildlife · Terms | 41 | Competition | same front, core in Aquatics (kept) |
+| A | Wildlife · Terms | 181 | Biomagnification | same front, core in Aquatics (kept) |
+| A | Current Issue · 2027 | 245 | Biomagnification | same front, core in Aquatics (kept) |
+| A | Wildlife · Terms | 180 | Bioaccumulation | same front, core in Aquatics (kept) |
+| A | Current Issue · 2027 | 244 | Bioaccumulation | same front, core in Aquatics (kept) |
+| A | Wildlife · Terms | 4 | Phytoplankton | same front, core in Aquatics (kept) |
+| A | Wildlife · Terms | 96 | Macroinvertebrates | same front, core in Aquatics (kept) |
+| A | Wildlife · Terms | 99 | Amphibians | same front, core in Aquatics (kept) |
+| A | Wildlife · Terms | 98 | Fish | same front, core in Aquatics (kept) |
+| A | Wildlife · Terms | 70 | Barbels | same front, core in Aquatics (kept) |
+| A | Wildlife · Terms | 147 | Countershading | same front, core in Aquatics (kept) |
+| A | Wildlife · Terms | 153 | Warning coloration | same front, core in Aquatics (kept) |
+| A | Wildlife · Terms | 68 | Anadromous | same front, core in Aquatics (kept) |
+| B | Forestry · Facts | 403 | What is the recommended first step for managing forest land? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Aquatic Ecology · Facts | 110 | What is the manual's example of parasitism? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Wildlife · Facts | 99 | In which kind of system is IPM particularly useful? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Wildlife · Facts | 105 | Which three insect pollinators are widely recognized? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Wildlife · Facts | 163 | Brood parasitism appears among which three animal groups? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Wildlife · Facts | 102 | In IPM, when should chemical insecticides be used? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Aquatic Ecology · Facts | 436 | How many spawning methods do fish have? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Wildlife · Facts | 111 | What is the larval stage of frogs and toads called? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Forestry · Facts | 430 | How many chains equal one mile? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Wildlife · Facts | 126 | What is extremely important in the timing of reptile reproduction? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Aquatic Ecology · Facts | 393 | What six features do all chordates have for all or part of their life? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Aquatic Ecology · Facts | 109 | What is the manual's example of commensalism? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Aquatic Ecology · Facts | 417 | What are the four main types of fish scales? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Wildlife · Facts | 98 | Which three insect pests does the Wildlife Manual give as examples? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Wildlife · Facts | 162 | Which bird is a common brood parasite? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Wildlife · Facts | 101 | Which predators are used as biological controls of insect pests? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Wildlife · Facts | 107 | Insects serve as prey for which four groups of animals? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Wildlife · Facts | 104 | What are the most important food crop pollinators? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Forestry · Facts | 420 | How wide should firebreaks be? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Wildlife · Facts | 168 | What are the only two monotreme species living today? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Wildlife · Facts | 113 | What type of fertilization do amphibians generally use? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Aquatic Ecology · Facts | 447 | What are the three developmental stages of fish? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Wildlife · Facts | 125 | What adaptation allowed reptiles to live their entire lives on land? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Aquatic Ecology · Facts | 392 | Fish are classified in which phylum and subphylum? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Aquatic Ecology · Facts | 105 | What are the three kinds of biotic relationships in an ecosystem? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Aquatic Ecology · Facts | 111 | Name one example of mutualism from the manual. | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Wildlife · Facts | 152 | The beaks and feet of birds are designed to fit what? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Aquatic Ecology · Facts | 108 | What three examples of exotic species does the manual give? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Forestry · Facts | 99 | When is the carbon stored in wood released as carbon dioxide? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Forestry · Facts | 404 | What four steps should a landowner take to manage for a timber harvest? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Wildlife · Facts | 103 | Which mechanical (physical) controls are used in IPM? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Wildlife · Facts | 161 | Are the majority of bird species monogamous? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Wildlife · Facts | 167 | Mammals are classified into which three groups? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Soils and Land Use · Facts | 436 | How much can strip-cropping reduce erosion on three to eight percent slopes? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Wildlife · Facts | 106 | What often harms pollinating insects and other helpful species? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Wildlife · Facts | 170 | Why is live birth an advantage for mammal mothers? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Wildlife · Facts | 124 | What type of fertilization do all reptiles use? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| B | Aquatic Ecology · Facts | 321 | What is the main source of impairment of North Carolina's water bodies? | a Facts card only on catch-all objective lines (20+ core cards), no 2021/2022/2026 question, page not cited by a 2026 key |
+| C | Forestry · ID | 102 | Red maple · height | tree size, never asked |
+| C | Forestry · ID | 68 | American elm · height | tree size, never asked |
+| C | Wildlife · ID | 204 | Eastern Chipmunk · class | class of a mammal or bird, never asked |
+| C | Wildlife · ID | 30 | Barred Owl · class | class of a mammal or bird, never asked |
+| C | Forestry · ID | 77 | Bitternut hickory · height | tree size, never asked |
+| C | Forestry · ID | 150 | White oak · height | tree size, never asked |
+| C | Aquatic Ecology · ID | 114 | Caddisfly larva · taxonomic group | macro taxonomic group, never asked |
+| C | Aquatic Ecology · ID | 178 | Fishfly larva · taxonomic group | macro taxonomic group, never asked |
+| C | Forestry · ID | 159 | Yellow poplar · diameter | tree size, never asked |
+| C | Aquatic Ecology · ID | 187 | Gilled snail · taxonomic group | macro taxonomic group, never asked |
+| C | Aquatic Ecology · ID | 306 | Water scorpion · taxonomic group | macro taxonomic group, never asked |
+| C | Aquatic Ecology · ID | 260 | Midge fly larva · taxonomic group | macro taxonomic group, never asked |
+| C | Wildlife · ID | 14 | Bald Eagle · class | class of a mammal or bird, never asked |
+| C | Forestry · ID | 61 | Eastern white pine · height | tree size, never asked |
+| C | Forestry · ID | 125 | Red Oak · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Forestry · ID | 143 | American sycamore · height | tree size, never asked |
+| C | Wildlife · ID | 44 | Beaver · class | class of a mammal or bird, never asked |
+| C | Aquatic Ecology · ID | 134 | Crane fly larva · taxonomic group | macro taxonomic group, never asked |
+| C | Forestry · ID | 54 | Dogwood · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Wildlife · ID | 80 | Bobcat · class | class of a mammal or bird, never asked |
+| C | Forestry · ID | 136 | Sourwood · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Aquatic Ecology · ID | 45 | Black fly larva · taxonomic group | macro taxonomic group, never asked |
+| C | Forestry · ID | 47 | Black cherry · diameter | tree size, never asked |
+| C | Wildlife · ID | 64 | Black Bear · class | class of a mammal or bird, never asked |
+| C | Forestry · ID | 111 | Mulberry · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Forestry · ID | 120 | Northern red oak · height | tree size, never asked |
+| C | Forestry · ID | 74 | Elm · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Aquatic Ecology · ID | 175 | Fingernail clam · taxonomic group | macro taxonomic group, never asked |
+| C | Aquatic Ecology · ID | 239 | Leech · taxonomic group | macro taxonomic group, never asked |
+| C | Aquatic Ecology · ID | 184 | Freshwater mussel · taxonomic group | macro taxonomic group, never asked |
+| C | Aquatic Ecology · ID | 303 | Water penny larva · taxonomic group | macro taxonomic group, never asked |
+| C | Aquatic Ecology · ID | 312 | Whirligig beetle · taxonomic group | macro taxonomic group, never asked |
+| C | Wildlife · ID | 359 | Muskrat · class | class of a mammal or bird, never asked |
+| C | Forestry · ID | 113 | Persimmon · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Wildlife · ID | 249 | Eastern Wild Turkey · class | class of a mammal or bird, never asked |
+| C | Forestry · ID | 67 | Eastern White Pine · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Aquatic Ecology · ID | 159 | Crayfish · taxonomic group | macro taxonomic group, never asked |
+| C | Wildlife · ID | 450 | Southern Flying Squirrel · class | class of a mammal or bird, never asked |
+| C | Aquatic Ecology · ID | 296 | Stonefly nymph · taxonomic group | macro taxonomic group, never asked |
+| C | Wildlife · ID | 169 | Coyote · class | class of a mammal or bird, never asked |
+| C | Forestry · ID | 60 | Eastern Red Cedar · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Forestry · ID | 69 | American elm · diameter | tree size, never asked |
+| C | Forestry · ID | 142 | Sweetgum · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Aquatic Ecology · ID | 280 | Pouch snail · taxonomic group | macro taxonomic group, never asked |
+| C | Aquatic Ecology · ID | 289 | Scud · taxonomic group | macro taxonomic group, never asked |
+| C | Wildlife · ID | 116 | Carolina Northern Flying Squirrel · class | class of a mammal or bird, never asked |
+| C | Forestry · ID | 44 | American Holly · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Forestry · ID | 53 | Blackgum · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Forestry · ID | 126 | Sassafras · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Forestry · ID | 135 | Shortleaf Pine · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Wildlife · ID | 326 | Mink · class | class of a mammal or bird, never asked |
+| C | Aquatic Ecology · ID | 172 | Drone fly larva (rat-tailed maggot) · taxonomic group | macro taxonomic group, never asked |
+| C | Aquatic Ecology · ID | 181 | Flatworm · taxonomic group | macro taxonomic group, never asked |
+| C | Aquatic Ecology · ID | 300 | Water beetle larva · taxonomic group | macro taxonomic group, never asked |
+| C | Aquatic Ecology · ID | 309 | Water strider · taxonomic group | macro taxonomic group, never asked |
+| C | Forestry · ID | 101 | Longleaf Pine · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Forestry · ID | 46 | Black cherry · height | tree size, never asked |
+| C | Forestry · ID | 110 | Maple · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Forestry · ID | 55 | Eastern red cedar · height | tree size, never asked |
+| C | Wildlife · ID | 374 | Raccoon · class | class of a mammal or bird, never asked |
+| C | Forestry · ID | 128 | Shortleaf pine · height | tree size, never asked |
+| C | Wildlife · ID | 502 | Striped Skunk · class | class of a mammal or bird, never asked |
+| C | Aquatic Ecology · ID | 165 | Dobsonfly larva (hellgrammite) · taxonomic group | macro taxonomic group, never asked |
+| C | Aquatic Ecology · ID | 293 | Sowbug · taxonomic group | macro taxonomic group, never asked |
+| C | Forestry · ID | 85 | Loblolly pine · height | tree size, never asked |
+| C | Forestry · ID | 149 | Sycamore · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Forestry · ID | 94 | Longleaf pine · height | tree size, never asked |
+| C | Wildlife · ID | 404 | Red Fox · class | class of a mammal or bird, never asked |
+| C | Forestry · ID | 158 | Yellow poplar · height | tree size, never asked |
+| C | Forestry · ID | 103 | Red maple · diameter | tree size, never asked |
+| C | Forestry · ID | 112 | Pecan · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Wildlife · ID | 559 | Wood Duck · class | class of a mammal or bird, never asked |
+| C | Aquatic Ecology · ID | 286 | Roundworm · taxonomic group | macro taxonomic group, never asked |
+| C | Forestry · ID | 151 | White oak · diameter | tree size, never asked |
+| C | Wildlife · ID | 342 | Mourning Dove · class | class of a mammal or bird, never asked |
+| C | Wildlife · ID | 296 | Mallard Duck · class | class of a mammal or bird, never asked |
+| C | Forestry · ID | 114 | Southern red oak · height | tree size, never asked |
+| C | Aquatic Ecology · ID | 169 | Dragonfly nymph · taxonomic group | macro taxonomic group, never asked |
+| C | Forestry · ID | 144 | American sycamore · diameter | tree size, never asked |
+| C | Wildlife · ID | 280 | Groundhog · class | class of a mammal or bird, never asked |
+| C | Forestry · ID | 43 | American Beech · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Forestry · ID | 52 | Black Cherry · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Aquatic Ecology · ID | 190 | Horse fly larva · taxonomic group | macro taxonomic group, never asked |
+| C | Aquatic Ecology · ID | 263 | Oligochaete worm · taxonomic group | macro taxonomic group, never asked |
+| C | Wildlife · ID | 435 | River Otter · class | class of a mammal or bird, never asked |
+| C | Aquatic Ecology · ID | 162 | Damselfly nymph · taxonomic group | macro taxonomic group, never asked |
+| C | Wildlife · ID | 264 | Gray Fox · class | class of a mammal or bird, never asked |
+| C | Forestry · ID | 137 | Sweetgum · size | tree size, never asked |
+| C | Wildlife · ID | 99 | Canada Goose · class | class of a mammal or bird, never asked |
+| C | Wildlife · ID | 520 | Virginia Opossum · class | class of a mammal or bird, never asked |
+| C | Forestry · ID | 45 | Ash · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Forestry · ID | 164 | Yellow Poplar · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Wildlife · ID | 236 | Eastern Gray Squirrel · class | class of a mammal or bird, never asked |
+| C | Wildlife · ID | 419 | Red-Tailed Hawk · class | class of a mammal or bird, never asked |
+| C | Wildlife · ID | 538 | White-Tailed Deer · class | class of a mammal or bird, never asked |
+| C | Aquatic Ecology · ID | 256 | Mayfly nymph · taxonomic group | macro taxonomic group, never asked |
+| C | Aquatic Ecology · ID | 283 | Riffle beetle · taxonomic group | macro taxonomic group, never asked |
+| C | Forestry · ID | 84 | Hickory · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Wildlife · ID | 220 | Eastern Cottontail · class | class of a mammal or bird, never asked |
+| C | Forestry · ID | 93 | Loblolly Pine · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+| C | Forestry · ID | 157 | White Oak · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+
 **Decks still above ~150 core cards:**
 
 - **Forestry · Terms**: 168 core — bulk in Forest Ecology (97) and Conservation and Management of Forests (35)
-- **Forestry · Facts**: 163 core — bulk in Forest Ecology (66) and Forests and Society (51)
-- **Forestry · ID**: 165 core — bulk in Forest Measurement and Identification (122) and Forest Ecology (21)
-- **Aquatic Ecology · Terms**: 166 core — bulk in Aquatic Ecology (102) and Aquatic Identification (39)
-- **Aquatic Ecology · Facts**: 169 core — bulk in Aquatic Ecology (83) and Conservation and Management of Aquatic Ecosystems (42)
-- **Wildlife · Terms**: 195 core — bulk in Wildlife Classification, Adaptations, and Identification (92) and Wildlife Ecology (59)
+- **Forestry · Facts**: 158 core — bulk in Forest Ecology (66) and Forests and Society (50)
+- **Aquatic Ecology · Facts**: 158 core — bulk in Aquatic Ecology (78) and Conservation and Management of Aquatic Ecosystems (41)
+- **Wildlife · Terms**: 160 core — bulk in Wildlife Classification, Adaptations, and Identification (83) and Wildlife Ecology (36)
 
 ## Why the set is bigger than the 900–1,300 the plan estimated
 
