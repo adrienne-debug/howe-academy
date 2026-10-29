@@ -55,8 +55,8 @@ console.log("── where it sits, how it is hooked ──");
   ok("nothing hot-linked: no http(s) URL in the block's code; pictures only through cpPhotos", !/https?:\/\//.test(code)&&/cpPhotos\(it,tags\)/.test(code));
   ok("no Howe kid name as a code literal; no 'Station' in its strings; no 🔀 in index.html", !/["'`](lincoln|ellis|lucy|julian)["'`]/i.test(code)&&!/["'][^"'\n]*\bStations?\b/.test(code)&&src.indexOf("\u{1F500}")<0);
   const out=src.slice(0,a)+src.slice(b), hooks=out.split("\n").filter(l=>/🪲 CPITEMBIOTIC/.test(l)&&!/^\s*\/\//.test(l));
-  ok("one hook line outside the block, tagged 🪲 CPITEMBIOTIC and guarded: envsDemoStart, after the gear seed and masteryKid", hooks.length===1&&
-    /  try\{ if\(typeof cpGearDemoSeed==="function"\) cpGearDemoSeed\(data\); \}catch\(e\)\{\}[^\n]*\n  try\{ masteryKid="maya"; \}catch\(e\)\{\}\n  try\{ if\(typeof cpBioticDemoSeed==="function"\) cpBioticDemoSeed\(data\); \}catch\(e\)\{\}   \/\/ 🪲 CPITEMBIOTIC/.test(src), hooks.map(l=>l.trim().slice(0,80)));
+  ok("one hook line outside the block, tagged 🪲 CPITEMBIOTIC and guarded: envsDemoStart, after the gear seed and masteryKid (other skill seeds may sit between: wave-8 merge 2026-10-29)", hooks.length===1&&
+    /  try\{ if\(typeof cpGearDemoSeed==="function"\) cpGearDemoSeed\(data\); \}catch\(e\)\{\}[^\n]*\n(?:  try\{ if\(typeof cp\w+DemoSeed[^\n]*\n){0,3}  try\{ masteryKid="maya"; \}catch\(e\)\{\}\n  try\{ if\(typeof cpBioticDemoSeed==="function"\) cpBioticDemoSeed\(data\); \}catch\(e\)\{\}   \/\/ 🪲 CPITEMBIOTIC/.test(src), hooks.map(l=>l.trim().slice(0,80)));
   ok("CPSKILL keeps its own sample and minimal maker (its tests use them); this block keeps that maker for any other sheet", /const CPSK_DEMO_SKILL=/.test(SKL)&&/cpSkillTypeAdd\("sheet",CPSK_SHEET\)/.test(SKL)&&/CPIB_PREV_SHEET=\(typeof CPSK_TYPES!=="undefined"&&CPSK_TYPES\.sheet\)/.test(BLK)); }
 
 console.log("\n── the data: the unit's skill against the unit's own cards ──");

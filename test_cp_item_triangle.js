@@ -76,8 +76,8 @@ console.log("── where it sits, how it is hooked ──");
   ok("no image file and nothing hot-linked: no <img, no http(s) URL but the SVG namespace", !/<img/.test(code)&&!/https?:\/\//.test(code.replace(/http:\/\/www\.w3\.org\/2000\/svg/g,"")));
   ok("no Howe kid name as a code literal; no 'Station' in its strings; no 🔀 in index.html", !/["'`](lincoln|ellis|lucy|julian)["'`]/i.test(code)&&!/["'][^"'\n]*\bStations?\b/.test(code)&&src.indexOf("\u{1F500}")<0);
   const out=src.slice(0,a)+src.slice(b), hooks=out.split("\n").filter(l=>/📐 CPITEMTRIANGLE/.test(l)&&!/^\s*\/\//.test(l));
-  ok("ONE hook line outside the block, tagged 📐 CPITEMTRIANGLE and guarded: envsDemoStart, its last line (after the skill seeds)", hooks.length===1&&
-    /  try\{ masteryKid="maya"; \}catch\(e\)\{\}\n  try\{ if\(typeof cpTriangleDemoSeed==="function"\) cpTriangleDemoSeed\(data\); \}catch\(e\)\{\}   \/\/ 📐 CPITEMTRIANGLE[^\n]*\n\}\nfunction envsDemoSeedKid/.test(src)&&src.indexOf("cpSkillDemoSeed(data)")<src.indexOf("cpTriangleDemoSeed(data)"), hooks.map(l=>l.trim().slice(0,80)));
+  ok("ONE hook line outside the block, tagged 📐 CPITEMTRIANGLE and guarded: envsDemoStart, its last line (after the skill seeds; other skill seeds may sit between: wave-8 merge 2026-10-29)", hooks.length===1&&
+    /  try\{ masteryKid="maya"; \}catch\(e\)\{\}\n(?:  try\{ if\(typeof cp\w+DemoSeed[^\n]*\n){0,3}  try\{ if\(typeof cpTriangleDemoSeed==="function"\) cpTriangleDemoSeed\(data\); \}catch\(e\)\{\}   \/\/ 📐 CPITEMTRIANGLE[^\n]*\n\}\nfunction envsDemoSeedKid/.test(src)&&src.indexOf("cpSkillDemoSeed(data)")<src.indexOf("cpTriangleDemoSeed(data)"), hooks.map(l=>l.trim().slice(0,80)));
   ok("CPSKILL and CPITEMGEAR are untouched by it (no 📐 line inside them)", !/📐/.test(SKL)&&!/📐/.test(GEAR)); }
 
 console.log("\n── the data: the USDA triangle, in the unit ──");
