@@ -10,7 +10,7 @@ Built 2026-10-27. Unit file `nc_envirothon_unit.json` (id `nc_envirothon`): 6 st
 | 0 | General Concepts · Facts | flash | 62 | 3 | 12 |
 | 1 | Forestry · Terms | flip | 258 | 168 | 47 |
 | 1 | Forestry · Facts | flash | 468 | 158 | 21 |
-| 1 | Forestry · ID | flip | 165 | 120 | 17 |
+| 1 | Forestry · ID | flip | 165 | 125 | 17 |
 | 2 | Soils and Land Use · Terms | flip | 288 | 133 | 38 |
 | 2 | Soils and Land Use · Facts | flash | 465 | 115 | 36 |
 | 2 | Soils and Land Use · ID | flip | 97 | 34 | 14 |
@@ -19,19 +19,19 @@ Built 2026-10-27. Unit file `nc_envirothon_unit.json` (id `nc_envirothon`): 6 st
 | 3 | Aquatic Ecology · ID | flip | 321 | 75 | 16 |
 | 4 | Wildlife · Terms | flip | 230 | 160 | 22 |
 | 4 | Wildlife · Facts | flash | 350 | 115 | 23 |
-| 4 | Wildlife · ID | flip | 574 | 94 | 24 |
+| 4 | Wildlife · ID | flip | 574 | 121 | 24 |
 | 5 | Current Issue · 2027 | flash | 310 | 7 | 22 |
-| | **All decks** | | **4371** | **1493** | |
+| | **All decks** | | **4371** | **1525** | |
 
 ## Per station
 
 | Station | Cards | Core |
 |---|---|---|
 | General concepts | 90 | 9 |
-| Forestry | 891 | 446 |
+| Forestry | 891 | 451 |
 | Soils/Land Use | 850 | 282 |
 | Aquatic Ecology | 1076 | 380 |
-| Wildlife | 1154 | 369 |
+| Wildlife | 1154 | 396 |
 | Current Environmental Issues | 310 | 7 |
 
 ## Per Key Concept (cards / core)
@@ -429,6 +429,51 @@ Every card changed:
 | C | Wildlife · ID | 220 | Eastern Cottontail · class | class of a mammal or bird, never asked |
 | C | Forestry · ID | 93 | Loblolly Pine · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
 | C | Forestry · ID | 157 | White Oak · seed plant group | follows from conifer vs broadleaf; the Gymnosperms/Angiosperms terms stay core |
+
+
+## Put back in core after Trim 1 (2026-10-28)
+
+Adrienne's yes, the same evening ("Yes, restore them"). Trim 1's Rule C made two kinds of picture card non-core by mistake:
+
+- **5 trees were left with no core card at all.** Each had one card, its seed plant group: American Beech, Blackgum, Maple,
+  Red Oak, Sourwood. Beech and sourwood were 2022 Area 8 picture questions.
+- **The 27 Wildlife "· class" cards.** The class syllabus lists "Classification to class" as one of the four things to know
+  for every animal profile (Description · Habitats/Habits · Classification · Food).
+
+32 cards back to `core:true`; nothing else changed. Core 1,493 → 1525 (Forestry 446 → 451, Wildlife 369 → 396).
+
+- American Beech · seed plant group
+- Blackgum · seed plant group
+- Maple · seed plant group
+- Red Oak · seed plant group
+- Sourwood · seed plant group
+- Bald Eagle · class
+- Barred Owl · class
+- Beaver · class
+- Black Bear · class
+- Bobcat · class
+- Canada Goose · class
+- Carolina Northern Flying Squirrel · class
+- Coyote · class
+- Eastern Chipmunk · class
+- Eastern Cottontail · class
+- Eastern Gray Squirrel · class
+- Eastern Wild Turkey · class
+- Gray Fox · class
+- Groundhog · class
+- Mallard Duck · class
+- Mink · class
+- Mourning Dove · class
+- Muskrat · class
+- Raccoon · class
+- Red Fox · class
+- Red-Tailed Hawk · class
+- River Otter · class
+- Southern Flying Squirrel · class
+- Striped Skunk · class
+- Virginia Opossum · class
+- White-Tailed Deer · class
+- Wood Duck · class
 
 **Decks still above ~150 core cards:**
 
