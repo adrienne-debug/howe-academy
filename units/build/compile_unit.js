@@ -45,6 +45,11 @@
 // number), a shape (3+ corners inside the triangle) and a label spot; EVERY point of the triangle (each half percent) falls in exactly
 // one class's rule, the shapes tile the triangle (their areas add to the whole), and each shape's middle is its own class. COUNTS'
 // `items` for it is its number of classes.
+// 🌲 CPITEMID (2026-10-29; RESEARCH_envirothon_skills_2026-10-28.md §4.4, §4.6, §4.7): an ID-by-part skill (type id, data.kind "parts") has
+// 1+ parts {tag (a photo tag of the pool), label, tags?} and 4+ items {name, like:[look-alikes, items of the same skill], parts?:[the
+// part tags it can show, default all], tell?:{<part>: clue}, src?:{<part>:["<deck>#o<order>", …]}} — every clue names the real cards it
+// was taken from. Its note lists the item parts the repo
+// set has no photo for (a round skips those until one is added to the pool).
 // Nothing here touches a database. The catalog entry (index.json) is what 📦 Units ▸ Publish writes to units/<id>/index (§4.3), and the
 // same object is CPU_UNITS[<id>] in index.html: a plain run REWRITES that one line (`const CPU_UNITS={…};` in the CPUNIT block), so a data
 // change (a trim, a core add) is the data files + one compile run, never a hand edit of index.html (2026-10-28, after Trim 1 met PR 3).
@@ -54,6 +59,7 @@ const REPO=path.resolve(__dirname,"..","..");
 const LABEL_KEYS=["section","sections","pre","post","item","concept"];
 const FEATURE_KEYS=["teams","boards","specialists","idFlash","mockRun"];
 const SKILL_TYPES=["chart","table","sheet","label","id","scale","mock","rubric"], SKILL_KEY=/^[a-z0-9][a-z0-9_.-]{0,59}$/;   // 🧰 CPITEMGEAR: the engine's CPSK_TYPE_NAMES / CPSK_KEY_RE
+const PHOTO_TAGS=["leaf","bark","twig","fruit","flower","cone","needle","track","skull","pelt","live","specimen","gear","drawing","diagram"];   // 🌲 CPITEMID: CPPHOTOS' CPPH_TAGS
 const FB_BAD=/[.#$\[\]\/\u0000-\u001f\u007f]/;
 function fbSafe(k){ return typeof k==="string"&&k.length>0&&Buffer.byteLength(k,"utf8")<=768&&!FB_BAD.test(k); }
 function readJson(p){ return JSON.parse(fs.readFileSync(p,"utf8")); }
@@ -122,7 +128,7 @@ function makeCounts(u,decks,tests,skills){
     c.decks[d.key]={section:d.section,n,core,maxOrder:o.length?Math.max(...o):0,orders:ranges(o)}; c.cards+=n; c.core+=core;
     const s=c.sections[d.section]; if(s){ s.cards+=n; s.core+=core; s.decks++; } });
   if(tests) Object.keys(tests.sections).forEach(k=>{ const t=tests.sections[k], r={}; ["pre","post"].forEach(f=>{ if(t[f]) r[f]=t[f].items.length; }); c.tests[k]=r; });
-  if(skills&&skills.length){ c.skills={}; skills.forEach(k=>{ const it=skillItems(k)||skillClasses(k); c.skills[k.key]={section:k.section,type:k.type,core:k.core===true,items:it?it.length:0}; }); }   // 🧰 CPITEMGEAR · 📐 CPITEMTRIANGLE (a chart's items = its classes)
+  if(skills&&skills.length){ c.skills={}; skills.forEach(k=>{ const it=skillItems(k)||skillClasses(k)||partItems(k); c.skills[k.key]={section:k.section,type:k.type,core:k.core===true,items:it?it.length:0}; }); }   // 🧰 CPITEMGEAR · 📐 CPITEMTRIANGLE (a chart's items = its classes) · 🌲 CPITEMID (an ID skill's items)
   return c;
 }
 // 🧰 CPITEMGEAR: a skill as the catalog carries it (the unit.json record, its keys in a fixed order) — PURE
@@ -136,6 +142,41 @@ function ternRuleOk(rule,axes){ return Array.isArray(rule)&&rule.length>0&&rule.
 function ternIn(rule,pt,axes){ return rule.some(alt=>alt.every(c=>TERN_OPS[c[1]](ternTerms(c[0],axes).reduce((a,t)=>a+t[0]*pt[t[1]],0),c[2]))); }
 // the classes whose rule a point is in (exactly one, for a good chart); pt = {<axis>: percent}
 function ternClassesAt(classes,axes,pt){ return classes.filter(c=>ternIn(c.rule,pt,axes)); }
+function partItems(k){ return (k&&k.data&&k.data.kind==="parts"&&Array.isArray(k.data.items))?k.data.items:null; }   // 🌲 CPITEMID
+// 🌲 CPITEMID: an ID-by-part skill's own checks (inside rule 8) — [errors]; cards = {"<deck>#o<order>":1}
+function checkParts(k,at,cards){
+  const err=[], E=m=>err.push(m), P=k.data.parts, I=partItems(k)||[], names={}, tags={};
+  if(k.type!=="id") E(at+": an ID-by-part skill is type id");
+  if(!Array.isArray(P)||!P.length) E(at+": data.parts must list 1 or more parts");
+  else P.forEach((p,j)=>{ const pa=at+" part "+(j+1);
+    if(!p||PHOTO_TAGS.indexOf(p.tag)<0){ E(pa+": tag must be a photo tag ("+PHOTO_TAGS.join(", ")+")"); return; }
+    if(tags[p.tag]) E(pa+": “"+p.tag+"” twice"); tags[p.tag]=1;
+    if(typeof p.label!=="string"||!p.label.trim()) E(pa+" (“"+p.tag+"”) has no label");
+    if(p.tags!=null&&(!Array.isArray(p.tags)||!p.tags.length||p.tags.some(t=>PHOTO_TAGS.indexOf(t)<0))) E(pa+" (“"+p.tag+"”): tags must be photo tags"); });
+  if(I.length<4) E(at+": an ID-by-part skill needs 4 or more items (each try offers 4 names)");
+  I.forEach((x,j)=>{ const ia=at+" item "+(j+1)+(x&&x.name?" (“"+x.name+"”)":"");
+    if(!x||typeof x.name!=="string"||!x.name.trim()){ E(ia+" has no name"); return; }
+    if(names[x.name.toLowerCase()]) E(ia+": name twice"); names[x.name.toLowerCase()]=1;
+    if(x.parts!=null&&(!Array.isArray(x.parts)||!x.parts.length||x.parts.some(t=>!tags[t]))) E(ia+": parts must be parts of this skill");
+    if(x.tell!=null){ if(typeof x.tell!=="object"||Array.isArray(x.tell)) E(ia+": tell must be {part: clue}");
+      else Object.keys(x.tell).forEach(t=>{ if(!tags[t]||(Array.isArray(x.parts)&&x.parts.indexOf(t)<0)) E(ia+": a clue for “"+t+"”, which is no part of this skill or item"); if(typeof x.tell[t]!=="string"||!x.tell[t].trim()) E(ia+": the “"+t+"” clue is empty");
+        const S=x.src&&x.src[t]; if(!Array.isArray(S)||!S.length) E(ia+": the “"+t+"” clue names no card (src)"); else S.forEach(r=>{ if(!cards[r]) E(ia+": the “"+t+"” clue's card “"+r+"” is no card"); }); }); } });
+  I.forEach(x=>{ if(x&&x.like!=null){ if(!Array.isArray(x.like)) E(at+" item “"+x.name+"”: like must be a list"); else x.like.forEach(n=>{ if(!names[String(n).toLowerCase()]||String(n).toLowerCase()===String(x.name).toLowerCase()) E(at+" item “"+x.name+"”: look-alike “"+n+"” is not another item of this skill"); }); } });
+  return err;
+}
+// 🌲 CPITEMID: the repo set's photo tags for a shot (CPPHOTOS' cpphShotTags, the same words)
+function shotTags(shot){ const s=String(shot||"").toLowerCase(), t=[]; const on=(re,tag)=>{ if(re.test(s)&&t.indexOf(tag)<0) t.push(tag); };
+  on(/lea(f|ves)|foliage|fall color/,"leaf"); on(/bark/,"bark"); on(/twig|bud/,"twig"); on(/fruit|acorn|berr|nut|seed|pod/,"fruit"); on(/flower/,"flower"); on(/cone/,"cone"); on(/needle/,"needle");
+  on(/track/,"track"); on(/skull/,"skull"); on(/pelt/,"pelt"); on(/specimen|antler/,"specimen"); on(/drawing/,"drawing"); on(/diagram/,"diagram"); on(/gear|tool/,"gear");
+  if(!t.length) t.push("live"); return t; }
+// 🌲 CPITEMID: each ID-by-part skill's item parts with no photo in the repo set — [{skill, part, label, items:[names]}]
+function partPhotoGaps(root,skills){
+  const p=path.join(root,"envirothon","pics","index.json"), have={}; if(fs.existsSync(p)){ try{ const J=readJson(p); Object.keys(J).forEach(n=>{ const it=String(n).split(" · ")[0].trim().toLowerCase(), H=have[it]=have[it]||{};
+    (Array.isArray(J[n])?J[n]:[]).forEach(ph=>shotTags(ph&&ph.shot).forEach(t=>{ H[t]=1; })); }); }catch(e){} }
+  const out=[]; (skills||[]).forEach(k=>{ const I=partItems(k); if(!I) return; (k.data.parts||[]).forEach(pt=>{ const want=pt.tags||[pt.tag];
+    const miss=I.filter(x=>!(Array.isArray(x.parts)&&x.parts.indexOf(pt.tag)<0)&&!want.some(t=>(have[String(x.name).trim().toLowerCase()]||{})[t])).map(x=>x.name); if(miss.length) out.push({skill:k.key,part:pt.tag,label:pt.label,items:miss}); }); });
+  return out;
+}
 // rule 8 — the unit's skills: [errors]
 function checkSkills(skills,secKeys,decks,tests){
   const err=[], E=m=>err.push(m); if(skills==null) return err; if(!Array.isArray(skills)){ E("skills must be a list"); return err; }
@@ -164,7 +205,8 @@ function checkSkills(skills,secKeys,decks,tests){
       const U={}; I.forEach(x=>{ if(x&&x.use){ if(U[x.use]) E(at+": two items share the use “"+x.use+"”"); U[x.use]=1; } });
       I.forEach(x=>{ if(x&&x.like!=null){ if(!Array.isArray(x.like)) E(at+" item “"+x.name+"”: like must be a list"); else x.like.forEach(n=>{ if(!names[String(n).toLowerCase()]||String(n).toLowerCase()===String(x.name).toLowerCase()) E(at+" item “"+x.name+"”: look-alike “"+n+"” is not another item of this skill"); }); } }); }
     if(k.data&&k.data.kind==="tally"&&Array.isArray(k.data.items)) checkTally(k,at).forEach(E);   // 🪲 CPITEMBIOTIC
-    if(k.data&&k.data.kind==="ternary") checkTernary(k,at).forEach(E); });   // 📐 CPITEMTRIANGLE
+    if(k.data&&k.data.kind==="ternary") checkTernary(k,at).forEach(E);   // 📐 CPITEMTRIANGLE
+    if(k.data&&k.data.kind==="parts") checkParts(k,at,cards).forEach(E); });   // 🌲 CPITEMID
   return err;
 }
 // 🪲 CPITEMBIOTIC: a tally worksheet (type sheet, flat items) — [errors]
@@ -262,6 +304,7 @@ function check(root,id,{u,decks,tests,skills},old,others){
   checkSkills(skills,secKeys,decks,tests).forEach(E);   // 🧰 CPITEMGEAR: rule 8
   const gaps=gearPhotoGaps(root,skills); if(gaps.length) warn.push(gaps.length+" gear item"+(gaps.length===1?" has":"s have")+" no photo in the repo set yet: "+gaps.map(g=>g.name).join(", "));
   const tg=tallyPhotoGaps(root,skills); if(tg.length) warn.push(tg.length+" worksheet kind"+(tg.length===1?" has":"s have")+" no photo in the repo set yet (the app shows 📷): "+tg.map(g=>g.name).join(", "));   // 🪲 CPITEMBIOTIC
+  partPhotoGaps(root,skills).forEach(g=>warn.push(g.skill+" · "+g.label+": "+g.items.length+" item"+(g.items.length===1?" has":"s have")+" no photo in the repo set yet: "+g.items.join(", ")));   // 🌲 CPITEMID
   return {err,warn};
 }
 // the compiled file for a unit without build.file
@@ -326,7 +369,7 @@ function compile(id,opts){
     const cat=catalogIn(root); if(cat){ const h=catalogWith(cat,id,index); if(h!==cat.html) fs.writeFileSync(cat.p,h); r.page=h!==cat.html; } }
   return {ok,err:r.err,warn:r.warn,counts,index,js,links,releaseKeys:rkeys,unit:L.u,page:!!r.page};
 }
-module.exports={compile,checkSkills,checkTally,skillEntry,skillItems,gearPhotoGaps,tallyPhotoGaps,SKILL_TYPES,sectionConcepts,releaseKeys,catalogIn,catalogWith,CAT_RE,check,loadUnit,makeIndex,makeCounts,makeJs,questionLinks,linkNorm,linkHas,fbSafe,ranges,unranges,unitIds,LABEL_KEYS,FEATURE_KEYS,REPO,skillClasses,checkTernary,ternRuleOk,ternClassesAt,ternTerms,ternArea};
+module.exports={compile,checkSkills,checkTally,skillEntry,skillItems,gearPhotoGaps,tallyPhotoGaps,SKILL_TYPES,sectionConcepts,releaseKeys,catalogIn,catalogWith,CAT_RE,check,loadUnit,makeIndex,makeCounts,makeJs,questionLinks,linkNorm,linkHas,fbSafe,ranges,unranges,unitIds,LABEL_KEYS,FEATURE_KEYS,REPO,skillClasses,checkTernary,ternRuleOk,ternClassesAt,ternTerms,ternArea,partItems,checkParts,partPhotoGaps,shotTags,PHOTO_TAGS};
 if(require.main===module){
   const a=process.argv.slice(2), chk=a.includes("--check"), all=a.includes("--all"), ids=all?unitIds(REPO):a.filter(x=>!x.startsWith("--"));
   if(!ids.length){ console.error("usage: node units/build/compile_unit.js <unitId>|--all [--check]"); process.exit(2); }
