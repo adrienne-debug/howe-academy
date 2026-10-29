@@ -185,7 +185,7 @@ console.log("\n── the post-test: locked on the cards, Mom opens early, 24 h 
 console.log("\n── 📝 2026-10-28 rule 2: the final opens itself when every CORE card of the station is learned (handed off by the 🌿 session) ──");
 { const w = enrolled(K); const u = U(w); const soils = w.envtStation("soils");
   const core = [], rest = []; soils.decks.forEach(d => { LIB.unit.decks.find(x => x.key === d.key).cards.forEach((c, i) => (c.core ? core : rest).push({ id: d.key + i, subject: d.key, prompt: c.name, status: "active", tier: "bi_weekly" })); });
-  ok("Soils: 282 core of 850 cards; Forestry 446, Aquatics 380, Wildlife 369, CEI 7 (the counts the line shows)", core.length === 282 && core.length + rest.length === 850 && ["forestry", "aquatics", "wildlife", "cei"].map(s => w.envtCoreCount(K, s).total).join() === "446,380,369,7");
+  ok("Soils: 282 core of 850 cards; Forestry 451, Aquatics 380, Wildlife 396, CEI 7 (the counts the line shows)", core.length === 282 && core.length + rest.length === 850 && ["forestry", "aquatics", "wildlife", "cei"].map(s => w.envtCoreCount(K, s).total).join() === "451,380,396,7");
   const items = core.slice(); w.G.masteryData.kid1 = items;
   ok("every core card at bi-weekly (the session's handOffAt), no non-core card on the ladder at all → learned → the final opens without Mom", w.envtCoreLearned(K, "soils") && JSON.stringify(w.envtCoreCount(K, "soils")) === '{"learned":282,"total":282}' && w.envtStatus(u, K, "soils").post.open && !w.envtStatus(u, K, "forestry").post.open);
   ok("the card then says 'every core card learned'", (delete w.G.masteryData.kid1_settings.cat_hold["Soils and Land Use · Terms"], w.G.masteryData.kid1_tests = { soils: { pre: { right: 9, n: 15 } } }, /Soils\/Land Use final/.test(w.envtKidCardsHtml(u, K, false)) && /every core card learned/.test(w.envtKidCardsHtml(u, K, false))));
@@ -198,10 +198,10 @@ console.log("\n── 📝 2026-10-28 rule 2: the final opens itself when every 
   items.push(gone); ok("back on the ladder → open again", w.envtCoreLearned(K, "soils"));
   w.G.masteryData.kid1_sessions = { envirothon: { handOffAt: "monthly" } }; ok("the session's OWN handOffAt is used: set to monthly, bi-weekly cards are not learned yet", !w.envtCoreLearned(K, "soils") && w.envtCoreCount(K, "soils").learned < 282);
   delete w.G.masteryData.kid1_sessions;
-  ok("Forestry released, check-in taken, nothing learned: 'Final opens when every core card is learned · 0 of 446'", (delete w.G.masteryData.kid1_settings.cat_hold["Forestry · Facts"], w.G.masteryData.kid1_tests.forestry = { pre: { right: 9, n: 15 } }, w.envtCoreLine(K, "forestry") === "Final opens when every core card is learned · 0 of 446"));
+  ok("Forestry released, check-in taken, nothing learned: 'Final opens when every core card is learned · 0 of 451'", (delete w.G.masteryData.kid1_settings.cat_hold["Forestry · Facts"], w.G.masteryData.kid1_tests.forestry = { pre: { right: 9, n: 15 } }, w.envtCoreLine(K, "forestry") === "Final opens when every core card is learned · 0 of 451"));
   ok("a station not sent out shows no line; a graduated one none; an open one none", w.envtCoreLine(K, "wildlife") === "" && (w.G.masteryData.kid1_tests.forestry.graduated = { right: 12, n: 14 }, w.envtCoreLine(K, "forestry") === "") && w.envtCoreLine(K, "soils") === "");
   delete w.G.masteryData.kid1_tests.forestry.graduated; w.G.masteryData.kid1_tests.forestry.postOpen = { date: "2027-01-20", ts: 1, by: "mom" };
-  ok("postOpen still opens it with 0 of 446 learned", w.envtStatus(u, K, "forestry").post.open && /opened for you/.test(w.envtKidCardsHtml(u, K, false)));
+  ok("postOpen still opens it with 0 of 451 learned", w.envtStatus(u, K, "forestry").post.open && /opened for you/.test(w.envtKidCardsHtml(u, K, false)));
   ok("no 'every deck mastered' rule left in the block", !/envtAllMastered|envtDeckMastered|mastDeckMastery\(/.test(TBLK)); }
 
 console.log("\n── 📝 2026-10-28 rule 1: a released station's cards wait for its check-in ──");
