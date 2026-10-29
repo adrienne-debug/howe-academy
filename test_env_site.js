@@ -19,7 +19,8 @@ function slice(a,b){ const i=src.indexOf(a), j=src.indexOf(b,i); if(i<0||j<0) th
 const SITE=slice("// ENVSITE_START","// ENVSITE_END"), CON=slice("// ENVCONSOLE_START","// ENVCONSOLE_END"), MIR=slice("// ENVMIRROR_START","// ENVMIRROR_END");
 const CLS=slice("// ENVCLASSSET_START","// ENVCLASSSET_END");   // ⚙️ the class settings (2026-10-28): the console's panel + the kid's overlay
 const CPC=slice("// CPCLASS_START","// CPCLASS_END");   // 🏫 the class record and its look (2026-10-28): the bars, 🏫 Class setup, + Class, the lock date
-const CPU=slice("// CPUNIT_START","// CPUNIT_END");   // 📦 units as data (2026-10-28): HoweUnits, the catalog, a class's units, sections from the units, enroll per unit
+const CPU=slice("// CPUNIT_START","// CPUNIT_END");
+const CPS=slice("// CPCARDSSEE_START","// CPCARDSSEE_END");   // 📚 the cards browser, read-only (2026-10-28): 📚 Cards in the console   // 📦 units as data (2026-10-28): HoweUnits, the catalog, a class's units, sections from the units, enroll per unit
 // o.envt: the station check-ins too (ENVTEST, + the forms on window.HoweEnvirothon = o.lib) — the demo's check-in rules (2026-10-28) —
 // and the 🔊 read-aloud switch right after it (ENVREADALOUD; mastSpeak records into G.said)
 const ENVT=slice("// ENVTEST_START","// ENVREADALOUD_END");
@@ -65,6 +66,7 @@ function world(o){
     ${CLS}
     ${CPC}
     ${o.noCpu?"":CPU}
+    ${o.noCps?"":CPS}
     STARTER_UNITS[ENV_UNIT_ID]=envUnitRecordStub; function envUnitRecordStub(){ return {id:ENV_UNIT_ID,starter:ENV_UNIT_ID,starterVer:1,cardsInCode:true,stages:ENV_STAGES.map(s=>({n:s[0]})),decks:ENV_DECKS.map(d=>({key:d[0],stage:d[2],station:d[3],n:d[5],cards:[]}))}; }
     return { get tab(){ return tab; }, set tab(v){ tab=v; }, get db(){ return db; }, get mastView(){ return mastView; }, set mastView(v){ mastView=v; }, get masteryKid(){ return masteryKid; }, unitStudies, masteryData, HA_LS, _envs, _envc, _envm, STARTER_UNITS,
       envEdition, envSiteOn, envsDemo, envsLockState, envsStations, envsStationStat, envsGain, envsEffort, envsBoardsCompute, envsBoardsHtml, envsMakeCode, envsCodeNorm, envsCodeOk, envsKidEmail, envsKidPw, envsFamilyDbUrl, envSiteDb, envSiteDemoBoot, envSiteGate, envsApplyLogin, envSiteAuthShow, envsAuthHtml, envsAuthSubmit, envsKidSubmit, envSiteTabGate, envSiteRender, envsView, envsDemoGo, envsDemoData, envsDemoStart, envSiteSittingDone, envsAutoEnroll, envsWrite, envsLicenseLine, envsCard, envsKidHtml, envsParentHtml, envsStationRowsHtml, envsScoresHtml, envsTipsHtml, envsSettingsHtml, envsReadShared, envsStreakHtml, ENVS_OFF_TABS, ENVS_TIPS, ENVS_CONTACT, ENVS_FULL_APP, ENVS_STARS, ENVS_AUTOLOCK,
@@ -73,6 +75,7 @@ function world(o){
       cp:{ CP_HUES, CP_EMOJI, CP_DEF, CP_LABELS_UNIT, CP_LABELS_PLAIN, CP_FEATURES, CP_CAL_DAYS, _cp, cpHex, cpLum, cpContrast, cpTextOn, cpAccentOn, cpTitleOk, cpEmojiOk, cpDateOk, cpDateLabel, cpBrand, cpLabel, cpFeature, cpSeason, cpLockKey, cpLockLabel, cpTopHtml, cpBarHtml, cpClassIn, cpDraftOf, cpDraft, cpCheck, cpCan, cpSet, cpEmojiType, cpGoal, cpGoalAdd, cpGoalDel, cpOffAdd, cpOffDel, cpFeat, cpWord, cpCancel, cpSave, cpPrevHtml, cpSetupHtml, cpNewClass, cpAdminClassHtml, cpClassAdd, cpDemoStart, cpCls },
       envsAutoLockLabel,
       cpu:${o.noCpu?"null":"{ CPU_UNITS, CPU_DEFAULT, _cpu, cpuOn, cpuReg, cpuUnit, cpuQid, cpuLoad, cpuIndex, cpuIds, cpuDecks, cpuSections, cpuSum, cpuWatch, cpuAdminWatch, cpuAttached, cpuStations, cpuLabel, cpuFeature, cpuUnitRecord, cpuGeneric, cpuHydrate, cpuHydrateAll, cpuEnrollSession, cpuAutoEnroll, cpuUnitsHtml, cpuPublish, cpuPubState, cpuSetupHtml, cpuUnitsAfter, cpuAttach, cpuNewUnitsHtml, cpuNewUnits, cpuDemoStart, get win(){ return window; } }"},
+      cps:${o.noCps?"null":"{ CPCS_PAGE, CPCS_SPAGE, _cpcs, cpcsOn, cpcsChips, cpcsFoldAll, cpcsUnitIds, cpcsLib, cpcsLoad, cpcsKind, cpcsIndex, cpcsPass, cpcsCounts, cpcsTap, cpcsSearch, cpcsHtml, cpcsListHtml, cpcsChipsHtml, cpcsWord }"},
       envt:${o.envt?"{ envtOpen, envtStatus, envtStartHtml, envtPick, envtNext, envtClose, envtCoreLine, envtWaitsForCheckin, envtFinalApply, envRaSet, envRaMode, envRaStartHtml, envRaReadQ, get state(){ return envtState; } }":"null"} };`)(G,firebase,document,tierFn);
   api.G=G; api.el=(id,v)=>{ G.els[id]=el(id); if(v!==undefined) G.els[id].value=v; return G.els[id]; };
   api.flush=async()=>{ for(let i=0;i<60;i++) await Promise.resolve(); };
@@ -81,7 +84,7 @@ function world(o){
 }
 
 
-module.exports={world,src,SITE,CON,MIR,UNIT,CLS,CPC,CPU,REPO};
+module.exports={world,src,SITE,CON,MIR,UNIT,CLS,CPC,CPU,CPS,REPO};
 if(require.main===module){
 let pass=0, fail=0;
 const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  "+JSON.stringify(x).slice(0,400):"")); } };
@@ -105,6 +108,9 @@ console.log("\n── no edition, no demo → inert; the boot is byte-identical 
   ok("🏫 CPCLASS's hook targets say no too (no bar, no class, no lock key, no screen, no + Class) and the lock / label / © line read as before", w.cp.cpTopHtml("kid","K")===""&&w.cp.cpClassIn()===false&&w.cp.cpLockKey()===""&&w.cp.cpSeason()==="2026-27"&&w.cp.cpSetupHtml()===""&&w.cp.cpAdminClassHtml()===""&&w.cp.cpClassAdd()===false&&w.envsLockState(null,"20270425").why==="auto"&&w.envsAutoLockLabel()==="Apr 24, 2027"&&/for the 2026-27 season/.test(w.envsLicenseLine()));
   { const u=w.cpu; ok("📦 CPUNIT's hook targets say no too (no sections, no enroll, no hydrate, no registry, no screens, no words) and envsStations reads ENV_DECKS exactly as before", u.cpuOn()===false&&u.cpuStations()===null&&u.cpuAutoEnroll()===false&&u.cpuHydrateAll()===false&&u.cpuReg()===null&&u.win.HoweUnits===undefined&&u.cpuUnitsHtml()===""&&u.cpuSetupHtml()===""&&u.cpuNewUnitsHtml()===""&&u.cpuLabel("section")===""&&u.cpuFeature("teams")===null&&u.cpuAttached().length===0&&u.cpuWatch("x_unit")===false&&u.cpuPublish("nc_envirothon")===false&&u.cpuAttach("nc_envirothon",false)===false&&w.envsStations().length===6&&w.envsStations().every(s=>!("unit" in s))&&w.envsAutoEnroll()===false);
     ok("…and nothing created, no listener, no read, no write after calling them", w.G.created.length===0&&w.G.listeners.length===0&&w.G.reads.length===0&&w.G.writes.length===0); }
+  { const c=w.cps, chips=[["grid","x"],["cards","y"]], before=JSON.stringify(chips); c.cpcsTap("st","forestry"); c.cpcsSearch("tree");
+    ok("📚 CPCARDSSEE's hook targets say no too: the chip list comes back the very same array, untouched; no page, no index, no units, no load, taps do nothing", c.cpcsOn()===false&&c.cpcsChips(chips)===chips&&JSON.stringify(chips)===before&&c.cpcsHtml()===""&&c.cpcsIndex()===null&&c.cpcsUnitIds().length===0&&c.cpcsLoad()===false&&c._cpcs.os===null&&c._cpcs.q===""&&(w.G.timers||[]).length===0);
+    ok("…and nothing created, no listener, no read, no write, no paint after calling them", w.G.created.length===0&&w.G.listeners.length===0&&w.G.reads.length===0&&w.G.writes.length===0&&w.G.renders===0); }
   w.showTab("units"); ok("showTab works as before (tab = units, the schedule paint ran)", w.tab==="units"&&w.G.schedulePaints===1);
   const d=world({fam:{familyId:"dewalt",roster:[]}}); ok("a second family (no edition) is inert too", d.envEdition()===""&&d.envSiteRender(d.G.contentEl)===false&&d.G.created.length===0);
   const h=world({fam:{familyId:"howe",roster:[]},search:"?dryrun=1"}); ok("?dryrun=1 alone is not the demo", h.envsDemo()===false&&h.envEdition()==="");
@@ -277,7 +283,10 @@ console.log("\n── 📝 the demo shows the check-in rules (2026-10-28): the r
 { const LIB=require(path.join(REPO,"envirothon.js")), DEMO=path.join(REPO,"envirothon","DEMO_site.html"); const m0=fs.existsSync(DEMO)?fs.statSync(DEMO).mtimeMs:0;
   const {buildDemo}=require(path.join(REPO,"envirothon","build","make_demo.js"));
   const html=buildDemo(src,"test",LIB.tests), i=html.indexOf("window.HoweEnvirothon={"), app=html.indexOf("// ENVSITE_START"), end=html.indexOf("</script>",i), scr=html.slice(html.lastIndexOf("<script>",i)+8,end);
-  ok("make_demo inlines HoweEnvirothon.tests as ONE small <script> before the app's script — no cards, no envirothon.js tag, under 120 KB more", i>0&&i<app&&(html.match(/window\.HoweEnvirothon=\{/g)||[]).length===1&&!/"cards":|"unit":/.test(scr)&&!/<script src="envirothon\.js/.test(html)&&html.length-src.length<120000, html.length-src.length);
+  ok("make_demo inlines HoweEnvirothon.tests as ONE small <script> before the app's script — no cards (each question's `cards` is only its §8.4 link list, 📚 CPCARDSSEE), no envirothon.js tag, under 120 KB more", i>0&&i<app&&(html.match(/window\.HoweEnvirothon=\{/g)||[]).length===1&&!/"def":|"unit":/.test(scr)&&!/<script src="envirothon\.js/.test(html)&&html.length-src.length<120000, html.length-src.length);
+  { const {demoBrowse}=require(path.join(REPO,"envirothon","build","make_demo.js")), b=demoBrowse(), h2=buildDemo(src,"test",LIB.tests,b), j=h2.indexOf("window.HoweUnitsDemo"), s2=h2.slice(h2.lastIndexOf("<script>",j)+8,h2.indexOf("</script>",j)), sb2={}; new Function("window",s2)(sb2);
+    const U=sb2.HoweUnitsDemo&&sb2.HoweUnitsDemo.nc_envirothon, n=d=>d.reduce((s,x)=>s+x.cards.length,0), pick=c=>JSON.stringify([c.order,c.name,c.def,c.group,c.concept,c.src,!!c.core,c.item||"",c.info||"",c.kind]);
+    ok("📚 CPCARDSSEE: with the browse copy, make_demo adds ONE more <script> before the app's (window.HoweUnitsDemo) that unpacks to every card of envirothon.js, field for field — and HoweEnvirothon still holds the questions only", j>0&&j<h2.indexOf("// ENVSITE_START")&&(h2.match(/window\.HoweUnitsDemo=window\.HoweUnitsDemo/g)||[]).length===1&&!!U&&n(U.unit.decks)===n(LIB.unit.decks)&&U.unit.decks.every((d,di)=>d.key===LIB.unit.decks[di].key&&d.cards.every((c,ci)=>pick(c)===pick(LIB.unit.decks[di].cards[ci])))&&h2.indexOf("HoweUnitsDemo")>h2.indexOf("window.HoweEnvirothon={"), [j,n(U?U.unit.decks:[])]); }
   const sb={}; new Function("window",scr)(sb);
   ok("…it evaluates to exactly envirothon.js's forms (and nothing else)", JSON.stringify(sb.HoweEnvirothon.tests)===JSON.stringify(LIB.tests)&&sb.HoweEnvirothon.demo===true&&!sb.HoweEnvirothon.unit);
   ok("building it in a test writes no file (DEMO_site.html untouched; only `node make_demo.js` writes)", (fs.existsSync(DEMO)?fs.statSync(DEMO).mtimeMs:0)===m0);
