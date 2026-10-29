@@ -64,18 +64,18 @@ console.log("\n── the kid's workout ──");
   const w = world([it]), c = w.ctx;
   ok("the drill page shows '🏋️ Word Workout (1)'", /Word Workout \(1\)/.test(c.wwBtnHtml("k")));
   ok("no button when there's nothing in the workout", world([W("x")]).ctx.wwBtnHtml("k") === "");
-  c.wwOpen("k");
+  c.wwOpen("k"); c.wwUI.step = "test"; c.wwRender();   // WWV2: past the 👀 copy step (test_word_workout_v2.js) to the hidden-word step
   ok("hear-and-type first: the word is NOT on the screen", !/together/.test(w.els["ww-panel"].innerHTML));
   w.els["ww-in"] = { value: "togather" }; c.wwCheck(); w.els["ww-in"] = { value: "togehter" }; c.wwCheck();
   ok("two wrong tries → 'try it again tomorrow' — the answer is never shown", /Try it again tomorrow/.test(w.els["ww-panel"].innerHTML) && !/>together</.test(w.els["ww-panel"].innerHTML) && !/: together/.test(w.els["ww-panel"].innerHTML));
   c.wwUI.done = {}; c.wwUI.tries = 0; w.els["ww-in"] = { value: "Together" }; c.wwCheck();
   ok("typed right (any capitals) → a right day, saved to the card", it.ww.r.length === 1 && w.writes.some(x => x[1] === "mastery/k/0/ww"));
-  c.wwNext();
+  c.wwNext(); c.wwUI.step = "test"; c.wwRender();
   ok("next round switches to fill-the-gaps: vowels blank, the kid types the whole word", c.wwUI.mode === "gaps" && /t_g_th_r/.test(w.els["ww-panel"].innerHTML));
 }
 console.log("\n── wiring ──");
 ok("drill save feeds the workout before its targeted write", /wwAfterDrill\(masteryKid,items,due,mastLogScores,touched\)/.test(src) && /upd\[ix\+"\/ww"\]=it\.ww;/.test(src));
-ok("spelling test and problem words feed it", /wwNote\(it,r==="m"\?"miss"/.test(src) && /wwNote\(it,"miss"\);   \/\/ 🏋️ WORDWORKOUT: Mom flagging/.test(src));
+ok("spelling test and problem words feed it", /wwNote\(it,r==="m"\?"miss"/.test(src) && /wwNote\(it,"miss",undefined,true\);   \/\/ 🏋️ WORDWORKOUT: Mom flagging/.test(src));
 ok("the notebook's Practice Words includes workout words", /\(i\.ww&&i\.ww\.on\)/.test(src));
 ok("the drill page shows the kid's workout button", /h\+=wwBtnHtml\(masteryKid\)/.test(src));
 console.log("\n" + pass + " passed, " + fail + " failed");

@@ -234,7 +234,7 @@ console.log("\n── every door the micro doc lists as off is unreachable under
   ok("the CSS hides the app's header and nav bars for the edition only (body.env-site)", w.G.created.some(e=>e.id==="envs-css"&&/body\.env-site #app-header/.test(e.textContent)&&/body\.env-site #nav-tabs/.test(e.textContent)));
   ok("the kid's Star Store is closed with the one-line note; the stars count shows", (()=>{ w.envsView("store"); return /Star Store · closed here/.test(w.G.content)&&/stars buy things Mom sets up/.test(w.G.content)&&/⭐ 27/.test(w.G.content); })());
   ok("the kid's Games view uses the app's own games sub-menu and body (🏋️ on the Envirothon decks)", (()=>{ w.envsView("games"); return /fake-games-sub/.test(w.G.content)&&/fake-games-body/.test(w.G.content); })());
-  ok("the kid's ⚙️ has color + sign out but no PIN (the parent has the PIN) and no family editing", (()=>{ w.envsView("settings"); const h=w.G.content; return /Color/.test(h)&&/Sign out/.test(h)&&!/PIN/.test(h)&&!/Add kid|Remove/.test(h); })()); }
+  ok("the kid's ⚙️ has sign out but no Color card (CPGEAR 2026-10-28: the color is the class's), no PIN (the parent has the PIN) and no family editing", (()=>{ w.envsView("settings"); const h=w.G.content; return !/Color|envsSetColor|type="color"/.test(h)&&/Sign out/.test(h)&&!/PIN/.test(h)&&!/Add kid|Remove/.test(h); })()); }
 
 console.log("\n── stars per finished sitting ──");
 { const w=world({fam:FAM}); w._envs.role="kid"; w._envs.kid="maya";
