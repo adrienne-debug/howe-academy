@@ -47577,11 +47577,13 @@ function envClsTiers(){ return ENVCS_LADDER.slice(); }
 function envClsTierLbl(t){ return ENVCS_TIER_LBL[t]||String(t||""); }
 // the default a setting falls back to: the 🌿 session record's own value (ENVUNIT's ENV_SESSION), the drill's stock default, each deck's own mode
 function envClsDef(f){ if(!f) return null;
+  { const d=(typeof cpSeatsDef==="function")?cpSeatsDef(f):undefined; if(d!==undefined) return d; }   // 🪑 CPSEATS: Cards a sitting defaults to Auto
   if(f.part==="study"&&typeof ENV_SESSION!=="undefined"&&ENV_SESSION&&ENV_SESSION[f.name]!=null) return Array.isArray(ENV_SESSION[f.name])?ENV_SESSION[f.name].slice():ENV_SESSION[f.name];
   if(f.kind==="deckmode"){ const o={}; envClsDecks().forEach(d=>{ o[d.key]=d.mode; }); return o; }
   return (f.def&&typeof f.def==="object")?(Array.isArray(f.def)?f.def.slice():Object.assign({},f.def)):f.def; }
 // PURE: is this value allowed? → {ok, v, error}. Howe's ranges; a map setting checks one key (a deck of the unit, a level that can climb).
 function envClsCheck(name,v,key){
+  if(typeof cpSeatsCheck==="function"){ const c=cpSeatsCheck(name,v); if(c) return c; }   // 🪑 CPSEATS: Cards a sitting is Auto or 0–200
   const f=envClsField(name); if(!f) return {ok:false,error:"Unknown setting"};
   const intOk=x=>{ const n=(typeof x==="number")?x:(String(x==null?"":x).trim()===""?NaN:Number(x)); return (Number.isInteger(n)&&n>=f.min&&n<=f.max)?n:null; };
   const rng=f.label+" must be a whole number "+f.min+"–"+f.max;
@@ -47637,6 +47639,7 @@ function envClassOverlay(part,kid,rec){
     if(!envClsOn()||!rec||!kid||kid!==_envs.kid) return rec;
     if(!envsDemo()&&!(_envs.role==="kid"||_envs.role==="parent")) return rec;
     const L=envClsLayers(); if(!L) return rec;
+    if(part==="study"&&typeof cpSeatsStudy==="function") return cpSeatsStudy(kid,envClsMerge(part,rec,L),L);   // 🪑 CPSEATS: Auto seats = New cards a day × Days a card is learned, in memory
     return envClsMerge(part,rec,L);
   }catch(e){ return rec; }
 }
@@ -47696,6 +47699,7 @@ function envClsPat(scope,step,op){
 function envClsLock(name,on){ if(!envcAdmin()||!envClsField(name)) return false; const upd={[name]:on?true:null};
   envcWrite("settings/locks",upd,"update").then(()=>{ _envcs.locks=Object.assign({},_envcs.locks||{}); if(on) _envcs.locks[name]=true; else delete _envcs.locks[name]; envcRe(); }).catch(()=>{}); return true; }
 function envClsFmt(f,v){
+  if(typeof cpSeatsFmt==="function"){ const t=cpSeatsFmt(f,v); if(t!=null) return t; }   // 🪑 CPSEATS: "Auto"
   if(v==null) return "–";
   if(f.kind==="int") return (v===0&&f.zero)?"0 ("+f.zero+")":String(v);
   if(f.kind==="tier") return envClsTierLbl(v);
@@ -47727,11 +47731,13 @@ function envClsRowHtml(f,scope){
         if(f.kind==="deckmode") h+='<select class="envs-in" style="width:120px"'+dis+' onchange="envClsSave(\''+sc+'\',\'cat_modes\',this.value,\''+k+'\')">'+ENVCS_MODES.map(o=>'<option value="'+o[0]+'" '+((m[d.key]||dflt[d.key])===o[0]?'selected':'')+'>'+envcEsc(o[1])+'</option>').join("")+'</select>';
         else h+='<input class="envs-in" type="number" inputmode="numeric" min="1" max="10" style="width:80px" value="'+envcEsc(scope==="class"?(m[d.key]!=null?m[d.key]:""):(mine[d.key]!=null?mine[d.key]:""))+'" placeholder="'+envcEsc(scope!=="class"&&(cls||{})[d.key]!=null?cls[d.key]:base)+'"'+dis+' onchange="envClsInput(\''+sc+'\',\'cat_intro_max\',this.value,\''+k+'\')">';
         h+='</div>'; }); }); }
+  if(f.kind==="seats"&&typeof cpSeatsCtlHtml==="function") h+=cpSeatsCtlHtml(f,scope,eff,own,cls,dis);   // 🪑 CPSEATS: Auto + a number
   h+='</div><div class="envs-muted" style="margin-top:2px">';
   if(scope==="class") h+=isMap?(own&&Object.keys(own).length?Object.keys(own).length+' changed for the class':'all at the default'):'now: <b>'+envcEsc(envClsFmt(f,eff))+'</b>'+(own==null?' (default)':'');
   else if(own==null||(isMap&&!Object.keys(own).length)) h+=isMap?'all as the class':'class: <b>'+envcEsc(envClsFmt(f,cls))+'</b>';
   else h+=(isMap?Object.keys(own).length+' changed for this student':'this student: <b>'+envcEsc(envClsFmt(f,eff))+'</b> · class: '+envcEsc(envClsFmt(f,cls)))+(can?' · <a href="javascript:void(0)" onclick="envClsSave(\''+sc+'\',\''+f.name+'\',null)" style="color:#b91c1c">✕ use the class’s</a>':'');
   if(locked&&!admin) h+=' · \u{1F512} set by Adrienne'; else if(locked) h+=' · \u{1F512} locked for the teacher';
+  if(f.kind==="seats"&&typeof cpSeatsPaceHtml==="function") h+=cpSeatsPaceHtml(f,scope);   // 🪑 CPSEATS: the real-pace line
   return h+'</div></div>';
 }
 function envClsSectHtml(scope,sect){
@@ -48264,6 +48270,91 @@ function cpuNewUnits(){ const o={}; cpuIds().forEach(id=>{ const e=(typeof docum
 // the demo: the sample class has NC Envirothon attached, and the catalog has it published
 function cpuDemoStart(data){ if(!data||!data.cls) return; data.cls.units={nc_envirothon:true}; _cpu.cat={nc_envirothon:{index:CPU_UNITS.nc_envirothon}}; }
 // CPUNIT_END
+// CPSEATS_START — 🪑 CARDS A SITTING = AUTO, so New cards a day is the pace a student really gets (DESIGN_class_platform_2026-10-28.md
+// §7(c), §8, §12, §13 row 5: PR 5 of the class platform; her go for this wave 2026-10-28; design question 8 answered its way: Auto). The pace
+// simulation (2026-10-28) showed "Cards a sitting" (maxCards 12) quietly holds a site student to about 2.4 new cards a day whatever New cards
+// a day says: mstPile seats learning + new cards together, and a card keeps its seat for every day it is learned (the drill's intro_dots, 5),
+// so 12 seats ÷ 5 days ≈ 2.4. Her ask: 20 new cards a day has to be possible. INERT unless ENVSITE's envEdition() says "envirothon": every
+// hook below sits inside ENVCLASSSET, which is itself inert otherwise.
+//   · AUTO, the site's new default: Cards a sitting = New cards a day × Days a card is learned (5 a day × 5 = 25; 21 × 5 = 105; 0 a day → 0,
+//     no limit). mstPile shares the seats over the open decks (ceil(seats ÷ Decks introducing at once) each), so Auto is the decks' focus
+//     spread too: with every learning card seated, the open decks together always have room for New cards a day.
+//   · "Days a card is learned" (the drill's intro_dots, 1–10, default 5) joins the Advanced fold, first row of the drill ladder. The class's
+//     value reaches the kid through ENVCLASSSET's drill overlay (mastDrillSettings), so a card graduates after that many days AND Auto grows.
+//   · The top value goes 60 → 200; 0 still means no limit; "auto" is a value too (a student can go back to Auto over a class number).
+//   · THE REAL-PACE LINE under Cards a sitting (the class, and each student page): from the numbers on the screen, real pace = seats ÷ days
+//     a card is learned. Amber when it is below New cards a day ("At 12 cards a sitting, about 2 new cards a day really fit …"); Auto clears it.
+//   · HOW IT HOOKS — no edit to the ENVCS_FIELDS literal (CPCORE adds a row too): cpSeatsFields() runs once at load, guarded, and changes the
+//     maxCards row object in place (kind "seats", max 200, default Auto, its meaning) and splices the intro_dots row in front of ladder_streak.
+//     One-line typeof hooks in ENVCLASSSET: envClsDef, envClsCheck, envClsFmt, envClsRowHtml (the Auto + number control, the pace line) and
+//     envClassOverlay (the study part: Auto → a number of seats, in memory, never written).
+//   · Lincoln in Howe: untouched (no edition → envClassOverlay hands back his own record before the hook; L1 is later). Howe / DeWalt / Burris
+//     boot byte-identical: nothing is drawn, read or written; the one load step only edits two rows of the site's settings list in memory.
+const CPS_SEATS_MAX=200;
+const CPS_DAYS_ROW={name:"intro_dots",part:"drill",sect:"ladder",kind:"int",min:1,max:10,def:5,label:"Days a card is learned",means:"Learning days a new card gets in the \u{1F33F} sitting before it climbs the drill ladder. Auto cards a sitting grows with it."};
+// the guarded update of ENVCLASSSET's settings list (by name, never by position): Cards a sitting gets Auto and 200; Days a card is learned joins
+function cpSeatsFields(){
+  if(typeof ENVCS_FIELDS==="undefined"||!Array.isArray(ENVCS_FIELDS)) return false;
+  const m=ENVCS_FIELDS.find(f=>f&&f.name==="maxCards");
+  if(m){ m.kind="seats"; m.min=0; m.max=CPS_SEATS_MAX; m.def="auto"; m.means="Most cards in a day’s sitting, new + still learning. Auto = New cards a day × Days a card is learned, so every new card fits; a number caps it (Auto, or 0–"+CPS_SEATS_MAX+"; 0 = no limit). Reviews always come too."; }
+  if(!ENVCS_FIELDS.some(f=>f&&f.name===CPS_DAYS_ROW.name)){ const i=ENVCS_FIELDS.findIndex(f=>f&&f.name==="ladder_streak"); ENVCS_FIELDS.splice(i<0?ENVCS_FIELDS.length:i,0,Object.assign({},CPS_DAYS_ROW)); }
+  return true;
+}
+const CPS_FIELDS_SET=cpSeatsFields();
+// PURE: Auto's seats
+function cpSeatsAuto(npd,days){ return Math.max(0,Math.floor(Number(npd)||0))*Math.max(1,Math.floor(Number(days)||5)); }
+// PURE: the real pace from the numbers on the screen → {npd, days, seats, auto, real, about, capped}. set: "auto" | null (= Auto) | a number
+function cpSeatsPace(npd,set,days){
+  npd=Math.max(0,Math.floor(Number(npd)||0)); days=Math.max(1,Math.floor(Number(days)||5));
+  const auto=(set==null||set==="auto"), seats=auto?cpSeatsAuto(npd,days):Math.max(0,Math.floor(Number(set)||0));
+  const real=seats>0?Math.min(npd,seats/days):npd;
+  return {npd,days,seats,auto,real,about:Math.floor(real+1e-9),capped:real<npd};
+}
+// ── ENVCLASSSET's hooks ──
+function cpSeatsDef(f){ return (f&&f.name==="maxCards"&&f.kind==="seats")?"auto":undefined; }
+function cpSeatsCheck(name,v){
+  const f=(name==="maxCards"&&typeof envClsField==="function")?envClsField(name):null; if(!f||f.kind!=="seats") return null;
+  const s=String(v==null?"":v).trim().toLowerCase(); if(s==="auto") return {ok:true,v:"auto"};
+  const n=(typeof v==="number")?v:(s===""?NaN:Number(s));
+  return (Number.isInteger(n)&&n>=f.min&&n<=f.max)?{ok:true,v:n}:{ok:false,error:f.label+" is Auto or a whole number "+f.min+"–"+f.max};
+}
+function cpSeatsFmt(f,v){ if(!f||f.kind!=="seats"||v==null) return null; return v==="auto"?"Auto":(v===0?"0 (no limit)":String(v)); }
+// the kid's side (envClassOverlay, study part): Auto — by default, or set "auto" — becomes New cards a day × Days a card is learned, in memory
+function cpSeatsDays(kid,L){
+  try{ const own=(typeof masteryData!=="undefined"&&masteryData&&masteryData[kid+"_settings"])||{}; const d=envClsMerge("drill",own,L), v=d&&d.intro_dots;
+    return (Number.isInteger(v)&&v>=1)?v:5; }catch(e){ return 5; }
+}
+function cpSeatsStudy(kid,o,L){
+  try{
+    if(!o||!Array.isArray(L)) return o;
+    let set="auto"; L.forEach(x=>{ const v=x&&x.study&&x.study.maxCards; if(v==null) return; const c=envClsCheck("maxCards",v); if(c.ok) set=c.v; });
+    if(set!=="auto") return o;   // a number (0 = no limit): envClsMerge already laid it on
+    const n=cpSeatsAuto(o.newPerDay!=null?o.newPerDay:5,cpSeatsDays(kid,L));
+    return o.maxCards===n?o:Object.assign({},o,{maxCards:n});   // a new object, never the kid's own record
+  }catch(e){ return o; }
+}
+// the console's side: this scope's numbers (the class, or one student with the class under it)
+function cpSeatsNums(scope){ return cpSeatsPace(envClsEff(scope,"newPerDay"),envClsEff(scope,"maxCards"),envClsEff(scope,"intro_dots")); }
+// the control: [Auto (25)] + a number box (blank while Auto). The class's Auto = clear (the default); a student's = clear when the class is on Auto, else "auto"
+function cpSeatsCtlHtml(f,scope,eff,own,cls,dis){
+  if(!f||f.kind!=="seats") return ""; const sc=envcJ(scope), isAuto=(eff==null||eff==="auto"), p=cpSeatsNums(scope), a=cpSeatsAuto(p.npd,p.days);
+  const click=(scope==="class"||cls==="auto")?"envClsSave('"+sc+"','maxCards',null)":"envClsSave('"+sc+"','maxCards','auto')";
+  const val=scope==="class"?(isAuto?"":eff):((own!=null&&own!=="auto")?own:"");
+  return '<button class="envs-btn '+(isAuto?'':'sec')+'" style="min-height:36px;padding:0 11px;font-size:12px;margin:0 6px 6px 0"'+dis+' onclick="'+click+'">Auto ('+(a>0?a:'no limit')+')</button>'+
+    '<input class="envs-in" type="number" inputmode="numeric" min="'+f.min+'" max="'+f.max+'" style="width:96px" value="'+envcEsc(val)+'" placeholder="'+envcEsc(scope==="class"?(isAuto?'a number':''):('class: '+envClsFmt(f,cls)))+'"'+dis+' onchange="envClsInput(\''+sc+'\',\'maxCards\',this.value)">';
+}
+// THE real-pace line under Cards a sitting: amber when the seats cap the pace below New cards a day, a quiet line otherwise
+function cpSeatsPaceHtml(f,scope){
+  if(!f||f.kind!=="seats"||typeof envcOn!=="function"||!envcOn()) return "";
+  const p=cpSeatsNums(scope); if(!p.npd) return "";
+  const cards=n=>n+' new card'+(n===1?'':'s'), quiet=t=>'<div data-cps="ok" style="margin-top:4px;color:#166534;font-weight:700">✓ '+t+'</div>';
+  if(p.auto) return quiet('Auto: '+p.npd+' new a day × '+p.days+' days a card is learned = '+p.seats+' cards a sitting, so all '+cards(p.npd)+' a day fit.');
+  if(!p.seats) return quiet('No limit: all '+cards(p.npd)+' a day fit.');
+  if(!p.capped) return quiet('At '+p.seats+' cards a sitting, all '+cards(p.npd)+' a day fit.');
+  const a=cpSeatsAuto(p.npd,p.days), r=Math.round(p.real*10)/10;
+  return '<div data-cps="amber" style="margin-top:6px;padding:8px 10px;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:10px;color:#92400e;font-weight:700;line-height:1.45">⚠ At '+p.seats+' cards a sitting, '+(p.about>=1?'about '+cards(p.about):'less than 1 new card')+' a day really fit (New cards a day is '+p.npd+'). A new card keeps its seat for the '+p.days+' days it is learned, so '+p.seats+' ÷ '+p.days+' ≈ '+r+'. Auto ('+a+') fits all '+p.npd+'.</div>';
+}
+// CPSEATS_END
 function unitAllNudges(kid){ let out=[]; haKidUnits(kid).forEach(u=>{ out=out.concat(unitPlanNudges(u,kid)); }); return out; }
 function unitDismissNudge(unitId,kid,key){
   if(!momHere()) return; // skipping a planned step is Mom's call
