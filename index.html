@@ -47196,6 +47196,7 @@ function envsDemoSeedKid(data){
   masteryData.studyLog={[kid]:{envirothon:{[dk(1)]:{date:dk(1),total:12,correct:10,miss:2,secs:220,items:[{id:"m_cambium",name:"Cambium",deck:DK,result:"c"},{id:"m_crown",name:"Crown",deck:DK,result:"c"},{id:"m_snag",name:"Snag",deck:DK,result:"m"},{id:"m_dbh_f",name:facts[0].name,deck:DF,result:"c"}]},[dk(2)]:{date:dk(2),total:10,correct:7,miss:3,secs:200,items:[{id:"m_cambium",name:"Cambium",deck:DK,result:"m"},{id:"m_lob",name:ids[0].name,deck:DI,result:"c"}]},[dk(3)]:{date:dk(3),total:8,correct:8,miss:0,secs:150,items:[{id:"m_crown",name:"Crown",deck:DK,result:"c"}]}}}};
   masteryData[kid+"_tests"]={forestry:{pre:{form:"2026",date:"2026-09-15",n:15,right:9,secs:900,ts:now-40*86400000},post:{t1:{right:14,n:15,ts:now-86400000},best:{right:14,n:15,date:"2026-10-27"}},graduated:{date:"2026-10-27",right:14,n:15}},soils:{pre:{form:"2026",date:"2026-10-13",n:15,right:8,secs:800,ts:now-14*86400000}}};
   try{ bank[kid]={adjustments:{d1:{amount:27,note:"\u{1F33F} Envirothon study sittings",ts:now}}}; }catch(e){}
+  if(typeof cpCoreDemoSeed==="function") cpCoreDemoSeed(kid,DK);   // ⭐ CPCORE: two non-core cards ahead of the sample deck's core ones
 }
 // ENVSITE_END
 // ENVCONSOLE_START — 👩‍🏫 THE TEACHER'S PART of the Envirothon site (and Adrienne's admin part): DESIGN_envirothon_console_2026-10-27.md §5 as
@@ -63705,6 +63706,105 @@ function nbBudgetCardHtml(kid,pn){
   return h;
 }
 // NEWBUDGET_END
+// CPCORE_START — ⭐ CORE CARDS FIRST: a class's study session hands out each deck's core cards before the rest (DESIGN_class_platform_2026-10-28.md
+// §7(d), §13 row 4, §12, §15; PR 4 of the class platform; the build, her words 2026-10-28: "lets get these built", and "go" for this wave).
+// Why: the pace study (2026-10-28) found the 🌿 sitting hands out new cards in deck (bank) order with the core cards spread through it (Forestry's
+// last core cards sit at 248 of 258 and 462 of 468), so a student would go through nearly every card of the unit to finish its core ones.
+// INERT unless ENVSITE's envEdition() says "envirothon" — or a session record itself says order:"core", the engine's new option beside "bank"
+// and "shuffle", which no Howe session carries (Howe's session editor still offers bank / shuffle only). Howe, DeWalt and Burris boot
+// byte-identically; Lincoln's 🌿 Envirothon in Howe keeps order:"bank" exactly as today (his core-first is PR L1, §12.1). test_env_site.js,
+// test_cp_core.js.
+//   · THE SETTING — "Core cards first" in ⚙️ Class settings ▸ How the class studies (ENVCLASSSET), a per-student override like every other
+//     row, Adrienne's 🔒 like every other row. Saved as classes/<cid>/settings/study/coreFirst = "on" | "off" (students/<sid>/settings/
+//     study/coreFirst for one student) through ENVCLASSSET's own save — no new path, no new rule (settings/$part/$name already takes any name).
+//     The row is ADDED from this block (a guarded splice into ENVCS_FIELDS, right after "Decks introducing at once", only if no row of that
+//     name is there yet) so the settings list literal itself is never edited.
+//   · Q7, answered the way the design picks: ON by default for the class site (no value saved = on), and the non-core cards are NOT held
+//     until the final opens — they come right after the core ones.
+//   · WHAT IT DOES (two typeof-guarded lines in mstPile, each handing back the very array it was given whenever this is off):
+//       1. each deck's eligible names in a stable order: its core cards first, then the rest. A deck's non-core cards start once no OTHER
+//          deck of the session still has an eligible core card not yet started (a held station or one waiting for its check-in has none),
+//          so "after the core" holds across the session too, not only inside one deck;
+//       2. with focusDecks, a deck that still has core cards to hand out opens before one that doesn't. Decks already being learned keep
+//          their seats (the engine's own rule: finish what was started), so no card stops part-way through learning.
+//     Learning cards and reviews are untouched; nothing is written — the order is worked out in memory each time the pile is built.
+//   · "Core" is optional (§15): a unit that marks no card core counts every card core, so nothing moves. A deck whose cards aren't loaded
+//     (no unit record, no unit file) is left in bank order.
+//   · DEMO: the sample Forestry · Terms deck gets two of the unit's real non-core cards ahead of its core ones in bank order, so Kid ▸ 🌿
+//     shows the core cards first; set "In deck order" in ⚙️ Class settings and the two come first again.
+const CPCORE_FIELD={name:"coreFirst",part:"study",sect:"front",kind:"choice",opts:[["on","⭐ Core cards first"],["off","In deck order"]],def:"on",label:"Core cards first",means:"New cards come from the core cards first. The other cards come right after them; none are held back."};
+const CPCORE_DEMO=[["Forbs","Low growing, soft stemmed plants.","Forests and Society"],["Foliage","Limbs and leaves.","Forests and Society"]];   // two real non-core Forestry · Terms cards (nc_envirothon_unit.json)
+const _cpcore={sets:(typeof WeakMap==="function")?new WeakMap():null};
+// the ⚙️ Class settings row: added once, after "Decks introducing at once" (the end of the list when that row isn't there)
+if(typeof ENVCS_FIELDS!=="undefined"&&Array.isArray(ENVCS_FIELDS)&&!ENVCS_FIELDS.some(f=>f&&f.name===CPCORE_FIELD.name)){ const i=ENVCS_FIELDS.findIndex(f=>f&&f.name==="focusDecks"); ENVCS_FIELDS.splice(i<0?ENVCS_FIELDS.length:i+1,0,CPCORE_FIELD); }
+function cpCoreSite(){ return typeof envSiteOn==="function"&&envSiteOn(); }
+// the value the kid's sitting uses: the default ← the class ← this student (the same layers ENVCLASSSET lays over the 🌿 session)
+function cpCoreSetting(){ let v=CPCORE_FIELD.def; const L=(typeof envClsLayers==="function"&&envClsLayers())||[];
+  L.forEach(x=>{ const s=x&&x.study&&x.study[CPCORE_FIELD.name]; if(s==="on"||s==="off") v=s; }); return v; }
+// is this session core-first? its own record says order:"core", or it is the site's own kid (kid / parent login, or the demo's kid) and the
+// class setting is on. Anyone else (Lincoln in Howe, "bank") → false.
+function cpCoreOn(kid,session){
+  if(!session||session.kind==="mix"||session.kind==="checkup") return false;
+  if(session.order==="core") return true;
+  if(!cpCoreSite()||typeof _envs==="undefined"||!kid||kid!==_envs.kid) return false;
+  if(!(typeof envsDemo==="function"&&envsDemo())&&!(_envs.role==="kid"||_envs.role==="parent")) return false;
+  return cpCoreSetting()==="on";
+}
+// where a deck's cards are: the family's unit records first (the demo's sample deck, a hydrated unit), then the unit files (HoweUnits,
+// HoweEnvirothon) — the same order envtCoreCount reads them in
+function cpCoreDeck(deck){
+  const us=(typeof unitStudies!=="undefined"&&unitStudies)||{}, W=(typeof window!=="undefined")?window:{}, R=W.HoweUnits||{}, srcs=[];
+  Object.keys(us).forEach(k=>{ if(us[k]) srcs.push(us[k]); }); Object.keys(R).forEach(k=>{ if(R[k]&&R[k].unit) srcs.push(R[k].unit); }); if(W.HoweEnvirothon&&W.HoweEnvirothon.unit) srcs.push(W.HoweEnvirothon.unit);
+  for(let i=0;i<srcs.length;i++){ const D=srcs[i].decks, d=Array.isArray(D)&&D.find(x=>x&&x.key===deck); if(d&&Array.isArray(d.cards)&&d.cards.length) return {u:srcs[i],cards:d.cards}; }
+  return null;
+}
+// ONE deck's core names (null = its cards aren't here). A unit that marks no card core: every card counts core (§15)
+function cpCoreSet(deck){
+  const f=cpCoreDeck(deck); if(!f) return null;
+  const c=_cpcore.sets&&_cpcore.sets.get(f.cards); if(c&&c.n===f.cards.length) return c.s;
+  const any=(f.u.decks||[]).some(d=>d&&Array.isArray(d.cards)&&d.cards.some(x=>x&&x.core===true)), s=new Set();
+  f.cards.forEach(x=>{ if(x&&x.name!=null&&(!any||x.core===true)) s.add(x.name); });
+  if(_cpcore.sets) _cpcore.sets.set(f.cards,{n:f.cards.length,s}); return s;
+}
+function cpCoreElig(kid,deck){ if(typeof mastBankEligible==="function") return mastBankEligible(kid,deck)||[]; return ((typeof mastFullBank==="function"&&mastFullBank(kid))||{})[deck]||[]; }
+// does this deck still have a core card to hand out (eligible now, not yet started)?
+function cpCoreLeft(kid,deck,existingByDeck){
+  const s=cpCoreSet(deck); if(!s||!s.size) return false; const have=(existingByDeck&&existingByDeck[deck])||null;
+  return cpCoreElig(kid,deck).some(n=>s.has(n)&&!(have&&have.has(n)));
+}
+// HOOK 1 (mstPile, the new-card loop): this deck's eligible names, core first; the rest only once no other deck of the session has core left
+function cpCoreNames(kid,session,deck,names,existingByDeck){
+  try{
+    if(!Array.isArray(names)||!names.length||!cpCoreOn(kid,session)) return names;
+    const s=cpCoreSet(deck); if(!s) return names;
+    const core=names.filter(n=>s.has(n)), rest=names.filter(n=>!s.has(n)); if(!core.length||!rest.length) return names;
+    const held=(session.decks||[]).some(d=>d!==deck&&cpCoreLeft(kid,d,existingByDeck));
+    const out=held?core:core.concat(rest);
+    return (out.length===names.length&&out.every((n,i)=>n===names[i]))?names:out;
+  }catch(e){ return names; }
+}
+// HOOK 2 (mstPile, focusDecks): of the decks not yet being learned, the ones with core left open first (stable inside each group)
+function cpCoreFresh(kid,session,fresh,existingByDeck){
+  try{
+    if(!Array.isArray(fresh)||fresh.length<2||!cpCoreOn(kid,session)) return fresh;
+    const left={}; fresh.forEach(d=>{ left[d]=cpCoreLeft(kid,d,existingByDeck); });
+    const out=fresh.filter(d=>left[d]).concat(fresh.filter(d=>!left[d]));
+    return out.every((d,i)=>d===fresh[i])?fresh:out;
+  }catch(e){ return fresh; }
+}
+// DEMO (envsDemoSeedKid's last line): two non-core cards go into the sample deck right ahead of its first core card not yet started
+function cpCoreDemoSeed(kid,deck){
+  if(!cpCoreSite()||!(typeof envsDemo==="function"&&envsDemo())||!kid||!deck) return false;
+  const us=(typeof unitStudies!=="undefined"&&unitStudies)||{}, u=us[(typeof ENV_UNIT_ID!=="undefined")?ENV_UNIT_ID:"nc_envirothon"], d=u&&Array.isArray(u.decks)&&u.decks.find(x=>x&&x.key===deck);
+  if(!d||!Array.isArray(d.cards)||d.cards.some(c=>c&&c.name===CPCORE_DEMO[0][0])) return false;
+  let items=masteryData[kid]||[]; if(!Array.isArray(items)) items=Object.values(items); const have=new Set(items.filter(i=>i&&i.subject===deck).map(i=>i.prompt));
+  const at=d.cards.findIndex(c=>c&&c.core===true&&!have.has(c.name)); if(at<0) return false;
+  const next=d.cards[at].name, add=CPCORE_DEMO.map(r=>({name:r[0],def:r[1],group:r[2],stage:1,core:false,_dk:deck}));
+  d.cards.splice(at,0,...add); d.cards.forEach((c,i)=>{ if(c) c.order=i+1; });
+  const cust=masteryData[kid+"_custom_items"]; if(Array.isArray(cust)){ const ci=cust.findIndex(c=>c&&c.cat===deck&&c.name===next); cust.splice(ci<0?cust.length:ci,0,...add.map(c=>({cat:deck,name:c.name,def:c.def}))); }
+  return true;
+}
+// CPCORE_END
 // ── MST_ENGINE_START ──
 // Mastery "study sessions" — pure functions, no DOM, no writes.
 // Relies on globals already defined elsewhere in index.html:
@@ -64011,7 +64111,8 @@ function mstPile(kid, sid, pn, todayLog) {
   if (session.focusDecks > 0) {
     const started = focusDecks.filter(d => (learnByDeck[d] || 0) > 0)
       .sort((a, b) => _mstCmp(learnByDeck[b], learnByDeck[a]) || _mstCmp(a, b));
-    const fresh = focusDecks.filter(d => !(learnByDeck[d] > 0));
+    let fresh = focusDecks.filter(d => !(learnByDeck[d] > 0));
+    if (typeof cpCoreFresh === "function") fresh = cpCoreFresh(kid, session, fresh, existingByDeck);   // ⭐ CPCORE: decks with core cards left open first (the class site; the same list back otherwise)
     focusDecks = started.concat(fresh).slice(0, session.focusDecks);
     const inFocus = new Set(focusDecks);
     learning = learning.filter(item => inFocus.has(item.subject));
@@ -64067,7 +64168,8 @@ function mstPile(kid, sid, pn, todayLog) {
       if (room <= 0) continue;
       // RS4K gate: a session introduces only words from chapters he has reached. Falls back to the
       // whole deck when the gate helper is absent (engine-only test harnesses), same as ungated.
-      const names = (typeof mastBankEligible === "function") ? mastBankEligible(kid, deck) : (bank[deck] || []);
+      let names = (typeof mastBankEligible === "function") ? mastBankEligible(kid, deck) : (bank[deck] || []);
+      if (typeof cpCoreNames === "function") names = cpCoreNames(kid, session, deck, names, existingByDeck);   // ⭐ CPCORE: a deck's core cards first (the class site; the same list back otherwise)
       for (let ni = 0; ni < names.length; ni++) {
         const name = names[ni];
         if (newNames.length >= newPerDay) break outer;
