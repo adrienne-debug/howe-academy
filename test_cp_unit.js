@@ -4,13 +4,14 @@
  * brought in" · "we can use this setup while we're planning it to make sure that we can pull in any unit and turn it into any kind of class").
  *   · where the block sits, how it is hooked (every hook typeof-guarded); Howe / DeWalt / Burris inert, and a Howe kid's (Lincoln's)
  *     ENVUNIT hydrate gives exactly what it gave before;
- *   · units/nc_envirothon: the compiler's every rule passes, COUNTS.json and index.json are current, 6 sections · 15 decks · 4,371 cards ·
- *     1,704 core, the same decks / modes / kinds / stations as ENV_DECKS, and CPU_UNITS in index.html is the same catalog entry;
+ *   · units/nc_envirothon: the compiler's every rule passes, COUNTS.json, index.json and index.html's CPU_UNITS are current; 6 sections ·
+ *     15 decks, and the card and core counts EXPECTED HERE ARE COUNTED FROM THE DATA (envirothon/nc_envirothon_unit.json), never typed in, so a
+ *     trim or a core add only needs `node units/build/compile_unit.js nc_envirothon` (2026-10-28, after Trim 1 met PR 3);
  *   · the compiler's rules on small fixture units (each rule fails when broken), and a new unit's compiled units/<id>.js registers HoweUnits;
  *   · HoweUnits ⇄ HoweEnvirothon (the alias), question ids;
  *   · sections drawn from the class's units: NC Envirothon = today's six stations exactly; plan order; detach; a second unit; the catalog;
  *   · the unit's words and features under the class's; enroll once per attached unit (NC Envirothon as today, another unit by its catalog);
- *   · 📦 Units (Adrienne): NC Envirothon, 6 Stations, 4,371 cards, 1,704 core, Published, Publish; 🏫 Class setup lists it attached; attach /
+ *   · 📦 Units (Adrienne): NC Envirothon, 6 Stations, its cards and core, Published, Publish; 🏫 Class setup lists it attached; attach /
  *     detach / + Class write one targeted update each; the kid's, the parent's and the teacher's screens are byte-for-byte what they were.
  * Uses the world from test_env_site.js (the real ENVSITE + ENVCONSOLE + ENVCLASSSET + CPCLASS + CPUNIT blocks).     run: node test_cp_unit.js
  */
@@ -24,6 +25,13 @@ const CID="ms-science-2026";
 function demo(role,o){ const w=world(Object.assign({fam:FAM,search:"?demo=1&role="+(role||"teacher")},o||{})); w.envSiteDemoBoot(); w.renderAll(); return w; }
 function view(w,v){ w.envcView(v); return w.G.content; }
 const INDEX=JSON.parse(fs.readFileSync(path.join(REPO,"units","nc_envirothon","index.json"),"utf8"));
+// what the data says, counted here (never a typed number): the source cards + unit.json's deck → section map
+const EXP=(()=>{ const U=JSON.parse(fs.readFileSync(path.join(REPO,"units","nc_envirothon","unit.json"),"utf8")), SRC=JSON.parse(fs.readFileSync(path.join(REPO,"envirothon","nc_envirothon_unit.json"),"utf8"));
+  const sec={}, e={cards:0,core:0,sec}; U.sections.forEach(x=>{ sec[x.key]={cards:0,core:0,decks:0,label:x.label,emoji:x.emoji}; });
+  SRC.decks.forEach(d=>{ const k=(U.decks.find(x=>x.key===d.key)||{}).section, n=d.cards.length, c=d.cards.filter(x=>x.core).length; e.cards+=n; e.core+=c; if(sec[k]){ sec[k].cards+=n; sec[k].core+=c; sec[k].decks++; } });
+  return e; })();
+const N=n=>Number(n).toLocaleString("en-US"), RX=t=>new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"));
+const SUM="6 Stations · 15 decks · "+N(EXP.cards)+" cards · "+N(EXP.core)+" core", SUM_SETUP="6 Stations · "+N(EXP.cards)+" cards · "+N(EXP.core)+" core";
 // a small second unit, as the catalog would carry it
 const FIX={id:"word_roots",ver:1,title:"Word Roots",short:"Word Roots",emoji:"\u{1F524}",sections:[{key:"roots_sep",label:"September",short:"Sep",emoji:"",order:0},{key:"roots_oct",label:"October",short:"Oct",emoji:"",order:1}],
   decks:{"Roots · September":{section:"roots_sep",kind:"terms",mode:"flip",n:12,core:0,order:0},"Roots · October":{section:"roots_oct",kind:"terms",mode:"flip",n:12,core:0,order:1}},cards:24,core:0,labels:{section:"Month",sections:"Months"},features:{},file:"units/word_roots.js"};
@@ -64,15 +72,15 @@ console.log("\n── Howe, DeWalt, Burris: inert ──");
     unitStudies.nc_envirothon=envUnitRecord(); const before=JSON.stringify(unitStudies);
     const r=envHydrateAll(); return { r, before, after:unitStudies, cards:unitStudies.nc_envirothon.decks.reduce((s,d)=>s+(d.cards||[]).length,0), cpu:${withCpu?"{ s:cpuStations(), e:cpuAutoEnroll(), h:cpuHydrateAll(), g:cpuGeneric(unitStudies.nc_envirothon), reg:cpuReg(), units:window.HoweUnits }":"null"} };`)(LIB,{familyId:"howe",roster:[]});
   const A=howe(false), B=howe(true);
-  ok("Howe kid: envHydrateAll hydrates Lincoln's 4,371 cards the same with CPUNIT in the page (same return, same record, same cards)", A.r===true&&B.r===true&&A.cards===4371&&B.cards===4371&&JSON.stringify(A.after)===JSON.stringify(B.after));
+  ok("Howe kid: envHydrateAll hydrates Lincoln's "+N(EXP.cards)+" cards the same with CPUNIT in the page (same return, same record, same cards)", A.r===true&&B.r===true&&A.cards===EXP.cards&&B.cards===EXP.cards&&JSON.stringify(A.after)===JSON.stringify(B.after));
   ok("Howe kid: each new hook hands back nothing (null / false), and no HoweUnits is made", B.cpu.s===null&&B.cpu.e===false&&B.cpu.h===false&&B.cpu.reg===null&&B.cpu.units===undefined&&B.cpu.g===false); }
 
 console.log("\n── units/nc_envirothon: the data, the counts, the catalog entry ──");
 { const r=C.compile("nc_envirothon",{check:true});
-  ok("compile_unit.js --check: every rule passes and COUNTS.json / index.json are current", r.ok, r.err);
-  ok("6 sections · 15 decks · 4,371 cards · 1,704 core", Object.keys(r.counts.sections).length===6&&Object.keys(r.counts.decks).length===15&&r.counts.cards===4371&&r.counts.core===1704);
+  ok("compile_unit.js --check: every rule passes and COUNTS.json / index.json / index.html's CPU_UNITS are current", r.ok, r.err);
+  ok("6 sections · 15 decks · "+N(EXP.cards)+" cards · "+N(EXP.core)+" core — the compiler's counts are the data's", Object.keys(r.counts.sections).length===6&&Object.keys(r.counts.decks).length===15&&r.counts.cards===EXP.cards&&r.counts.core===EXP.core&&INDEX.cards===EXP.cards&&INDEX.core===EXP.core);
   const S=r.counts.sections;
-  ok("per section (cards / core) = envirothon/COUNTS.md: General 90/14 · Forestry 891/496 · Soils 850/288 · Aquatics 1,076/439 · Wildlife 1,154/452 · CEI 310/15", [["general",90,14],["forestry",891,496],["soils",850,288],["aquatics",1076,439],["wildlife",1154,452],["cei",310,15]].every(x=>S[x[0]].cards===x[1]&&S[x[0]].core===x[2]), S);
+  ok("per section (cards / core) = the data: "+Object.keys(EXP.sec).map(k=>k+" "+EXP.sec[k].cards+"/"+EXP.sec[k].core).join(" · "), Object.keys(EXP.sec).every(k=>S[k].cards===EXP.sec[k].cards&&S[k].core===EXP.sec[k].core&&S[k].decks===EXP.sec[k].decks), S);
   ok("the 110 fronts with . or / are allowed only through rules.codedFronts (a note, not an error)", r.warn.some(w=>/^110 fronts/.test(w)));
   ok("tests: 5 sections with a check-in and a final (forestry 15/14 · soils 15/17 · aquatics 14/13 · wildlife 15/14 · cei 20/20)", JSON.stringify(r.counts.tests)===JSON.stringify({forestry:{pre:15,post:14},soils:{pre:15,post:17},aquatics:{pre:14,post:13},wildlife:{pre:15,post:14},cei:{pre:20,post:20}}), r.counts.tests);
   const w=world({fam:FAM}), ED=src.slice(src.indexOf("const ENV_DECKS=["),src.indexOf("const ENV_CARD_COUNT="));
@@ -128,6 +136,13 @@ console.log("\n── the compiler's rules, on fixture units ──");
   ok("tests are optional per unit (no tests.json is fine)", (()=>{ const R=tmpRoot(); put(R,"units/fix_unit/unit.json",fixUnit()); return C.compile("fix_unit",{root:R}).ok; })());
   ok("a unit built elsewhere (build.file) must be current: a stale file is refused", (()=>{ const R=tmpRoot(); put(R,"units/fix_unit/unit.json",fixUnit({build:{file:"fix.js",by:"x"}}));
     put(R,"fix.js","module.exports={unit:{decks:[{key:'Fix · Ch 1',cards:[{name:'alpha',core:true}]},{key:'Fix · Ch 2',cards:[{name:'gamma',core:true}]}]}};"); const x=C.compile("fix_unit",{root:R}); return !x.ok&&x.err.some(e=>/fix\.js is stale for “Fix · Ch 1”/.test(e)); })());
+  ok("index.html's CPU_UNITS is a compile output: a plain run rewrites the unit's entry (others kept, ids sorted), --check flags it stale", (()=>{ const R=tmpRoot(); put(R,"units/fix_unit/unit.json",fixUnit());
+    put(R,"index.html",'<script>\n// CPUNIT_START\nconst CPU_UNITS={"zz_other":{"id":"zz_other"}};   // = units/<id>/index.json — WRITTEN by units/build/compile_unit.js\nconst CPU_DEFAULT=[];\n</script>\n');
+    const a=C.compile("fix_unit",{root:R,write:true}), h=fs.readFileSync(path.join(R,"index.html"),"utf8"), cat=C.catalogIn(R);
+    const b=C.compile("fix_unit",{root:R,check:true}); const u=fixUnit(); u.decks[0].cards[1].core=true; put(R,"units/fix_unit/unit.json",u);
+    const c=C.compile("fix_unit",{root:R,check:true}), d=C.compile("fix_unit",{root:R,write:true}), e=C.compile("fix_unit",{root:R,check:true});
+    return a.ok&&a.page&&Object.keys(cat.cur).join()==="fix_unit,zz_other"&&cat.cur.fix_unit.core===2&&/\nconst CPU_DEFAULT=\[\];/.test(h)&&/WRITTEN by units\/build\/compile_unit\.js\n/.test(h)&&b.ok&&!b.page
+      &&!c.ok&&c.err.some(x=>/index\.html's CPU_UNITS\.fix_unit is not current/.test(x))&&d.ok&&C.catalogIn(R).cur.fix_unit.core===3&&e.ok; })());
   ok("ranges / unranges round-trip (the shipped orders in COUNTS.json)", C.ranges([3,1,2,5,7,6])==="1-3,5-7"&&JSON.stringify(C.unranges("1-3,5-7"))==="[1,2,3,5,6,7]"); }
 
 console.log("\n── HoweUnits and the HoweEnvirothon alias ──");
@@ -191,8 +206,8 @@ console.log("\n── 🔑 Adrienne ▸ 📦 Units ──");
 { const w=demo("admin"); const h=w.G.content;
   ok("Adrienne's console has the 📦 Units chip, before 🔑 Admin; the teacher's has none", /📦 Units<\/button><button[^>]*>🔑 Admin/.test(h)&&!/📦 Units/.test(demo("teacher").G.content));
   const v=view(w,"units");
-  ok("📦 Units: NC Envirothon · v1 · 6 Stations · 15 decks · 4,371 cards · 1,704 core", /NC Envirothon/.test(v)&&/v1/.test(v)&&/6 Stations · 15 decks · 4,371 cards · 1,704 core/.test(v));
-  ok("…one row per station with its decks, cards and core (🌲 Forestry 3 · 891 · 496; 🌊 Aquatic Ecology 3 · 1,076 · 439)", /🌲 Forestry<\/td><td class="c">3<\/td><td class="c">891<\/td><td class="c">496<\/td>/.test(v)&&/🌊 Aquatic Ecology<\/td><td class="c">3<\/td><td class="c">1,076<\/td><td class="c">439<\/td>/.test(v)&&(v.match(/<tr><td>/g)||[]).length===6);
+  ok("📦 Units: NC Envirothon · v1 · "+SUM, /NC Envirothon/.test(v)&&/v1/.test(v)&&RX(SUM).test(v));
+  ok("…one row per station with its emoji, label, decks, cards and core, as the data counts them", Object.keys(EXP.sec).every(k=>{ const x=EXP.sec[k]; return v.indexOf("<tr><td>"+x.emoji+" "+x.label.replace(/&/g,"&amp;")+'</td><td class="c">'+x.decks+'</td><td class="c">'+N(x.cards)+'</td><td class="c">'+N(x.core)+"</td></tr>")>=0; })&&(v.match(/<tr><td>/g)||[]).length===6);
   ok("…✓ Published v1 (the demo's catalog), the classes using it, the Publish button, how a new unit comes in", /✓ Published v1/.test(v)&&/Attached to: <b>MS Science 2026-27<\/b>/.test(v)&&/cpuPublish\('nc_envirothon'\)/.test(v)&&/compile_unit\.js/.test(v));
   const n=w._envs.writes.length; w.cpu.cpuPublish("nc_envirothon"); await w.flush(); const pw=w._envs.writes[w._envs.writes.length-1];
   ok("Publish (demo): one 'would set' of units/nc_envirothon/index = the catalog entry; nothing else", w._envs.writes.length===n+1&&pw.op==="set"&&pw.path==="units/nc_envirothon/index"&&JSON.stringify(pw.val)===JSON.stringify(INDEX)&&w.G.writes.length===0);
@@ -207,7 +222,7 @@ console.log("\n── 🔑 Adrienne ▸ 📦 Units ──");
 
 console.log("\n── 🏫 Class setup ▸ 📦 Units; attach, detach, + Class ──");
 { const t=demo("teacher"), v=view(t,"setup");
-  ok("Teacher ▸ 🏫 Class setup lists NC Envirothon attached: 6 Stations · 4,371 cards · 1,704 core, “Units are attached by Adrienne”, no button", /📦 Units/.test(v)&&/NC Envirothon/.test(v)&&/6 Stations · 4,371 cards · 1,704 core/.test(v)&&/✓ Attached/.test(v)&&/Units are attached by Adrienne/.test(v)&&!/cpuAttach\(/.test(v)&&/Its stations come from these units/.test(v));
+  ok("Teacher ▸ 🏫 Class setup lists NC Envirothon attached: "+SUM_SETUP+", “Units are attached by Adrienne”, no button", /📦 Units/.test(v)&&/NC Envirothon/.test(v)&&RX(SUM_SETUP).test(v)&&/✓ Attached/.test(v)&&/Units are attached by Adrienne/.test(v)&&!/cpuAttach\(/.test(v)&&/Its stations come from these units/.test(v));
   ok("the teacher can't attach or detach", t.cpu.cpuAttach("nc_envirothon",false)===false&&t._envs.writes.length===0);
   const a=demo("admin"); a.cpu._cpu.cat.word_roots={index:FIX}; const va=view(a,"setup");
   ok("Adrienne: Detach on NC Envirothon, “+ Attach” on a catalog unit not attached, the nothing-is-deleted line", /cpuAttach\('nc_envirothon',false\)">Detach/.test(va)&&/cpuAttach\('word_roots',true\)">\+ Attach/.test(va)&&/Nothing is deleted/.test(va));

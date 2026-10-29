@@ -22,9 +22,10 @@
 //   5. order is append-only against the last COUNTS.json: no shipped order is dropped or renumbered, new cards take orders above the old
 //      top (a card's class-layer key is its order, §6.2). A shipped deck can't disappear.
 //   6. tests: every section key is the unit's; question ids are unique in their form; every answer points at a choice.
-//   7. --check: COUNTS.json and index.json are exactly what this run makes.
+//   7. --check: COUNTS.json, index.json and the unit's entry in index.html's CPU_UNITS are exactly what this run makes.
 // Nothing here touches a database. The catalog entry (index.json) is what 📦 Units ▸ Publish writes to units/<id>/index (§4.3), and the
-// same object is CPU_UNITS[<id>] in index.html (test_cp_unit.js checks the two agree).
+// same object is CPU_UNITS[<id>] in index.html: a plain run REWRITES that one line (`const CPU_UNITS={…};` in the CPUNIT block), so a data
+// change (a trim, a core add) is the data files + one compile run, never a hand edit of index.html (2026-10-28, after Trim 1 met PR 3).
 "use strict";
 const fs=require("fs"), path=require("path");
 const REPO=path.resolve(__dirname,"..","..");
@@ -130,6 +131,10 @@ function checkBuilt(root,u,decks,tests){
   return err;
 }
 function stable(v){ return JSON.stringify(v,null,1)+"\n"; }
+// index.html's catalog line: {html, cur} where cur = the parsed CPU_UNITS, or null when the page has no such line (a fixture root)
+const CAT_RE=/^const CPU_UNITS=(\{.*\});(   \/\/ [^\n]*)$/m;
+function catalogIn(root){ const p=path.join(root,"index.html"); if(!fs.existsSync(p)) return null; const html=fs.readFileSync(p,"utf8"), m=CAT_RE.exec(html); if(!m) return null; return {p,html,cur:JSON.parse(m[1])}; }
+function catalogWith(cat,id,idx){ const o={}; Object.keys(Object.assign({},cat.cur,{[id]:idx})).sort().forEach(k=>{ o[k]=k===id?idx:cat.cur[k]; }); return cat.html.replace(CAT_RE,(a,j,c)=>"const CPU_UNITS="+JSON.stringify(o)+";"+c); }
 // PURE-ish: everything for one unit; writes only when opts.write
 function compile(id,opts){
   opts=opts||{}; const root=opts.root||REPO, dir=path.join(root,"units",id);
@@ -144,12 +149,14 @@ function compile(id,opts){
   if(opts.check&&!r.err.length){
     if(!old||stable(old)!==stable(counts)) r.err.push("units/"+id+"/COUNTS.json is not current — run node units/build/compile_unit.js "+id);
     if(!fs.existsSync(ip)||stable(readJson(ip))!==stable(index)) r.err.push("units/"+id+"/index.json is not current — run node units/build/compile_unit.js "+id);
-    if(js!=null&&(!fs.existsSync(jp)||fs.readFileSync(jp,"utf8")!==js)) r.err.push("units/"+id+".js is not current — run node units/build/compile_unit.js "+id); }
+    if(js!=null&&(!fs.existsSync(jp)||fs.readFileSync(jp,"utf8")!==js)) r.err.push("units/"+id+".js is not current — run node units/build/compile_unit.js "+id);
+    const cat=catalogIn(root); if(cat&&JSON.stringify(cat.cur[id])!==JSON.stringify(index)) r.err.push("index.html's CPU_UNITS."+id+" is not current — run node units/build/compile_unit.js "+id); }
   const ok=!r.err.length;
-  if(ok&&opts.write){ fs.writeFileSync(cp,stable(counts)); fs.writeFileSync(ip,stable(index)); if(js!=null) fs.writeFileSync(jp,js); }
-  return {ok,err:r.err,warn:r.warn,counts,index,js,unit:L.u};
+  if(ok&&opts.write){ fs.writeFileSync(cp,stable(counts)); fs.writeFileSync(ip,stable(index)); if(js!=null) fs.writeFileSync(jp,js);
+    const cat=catalogIn(root); if(cat){ const h=catalogWith(cat,id,index); if(h!==cat.html) fs.writeFileSync(cat.p,h); r.page=h!==cat.html; } }
+  return {ok,err:r.err,warn:r.warn,counts,index,js,unit:L.u,page:!!r.page};
 }
-module.exports={compile,check,loadUnit,makeIndex,makeCounts,makeJs,fbSafe,ranges,unranges,unitIds,LABEL_KEYS,FEATURE_KEYS,REPO};
+module.exports={compile,catalogIn,catalogWith,CAT_RE,check,loadUnit,makeIndex,makeCounts,makeJs,fbSafe,ranges,unranges,unitIds,LABEL_KEYS,FEATURE_KEYS,REPO};
 if(require.main===module){
   const a=process.argv.slice(2), chk=a.includes("--check"), all=a.includes("--all"), ids=all?unitIds(REPO):a.filter(x=>!x.startsWith("--"));
   if(!ids.length){ console.error("usage: node units/build/compile_unit.js <unitId>|--all [--check]"); process.exit(2); }
@@ -157,6 +164,6 @@ if(require.main===module){
   ids.forEach(id=>{ const r=compile(id,{check:chk,write:!chk});
     r.warn.forEach(w=>console.log("  note  "+id+": "+w));
     if(!r.ok){ bad++; r.err.forEach(e=>console.log("  ERROR "+id+": "+e)); return; }
-    const c=r.counts; console.log((chk?"ok    ":"wrote ")+id+": "+Object.keys(c.sections).length+" sections, "+Object.keys(c.decks).length+" decks, "+c.cards.toLocaleString("en-US")+" cards, "+c.core.toLocaleString("en-US")+" core"+(chk?"":" → units/"+id+"/COUNTS.json, index.json"+(r.js!=null?", units/"+id+".js":""))); });
+    const c=r.counts; console.log((chk?"ok    ":"wrote ")+id+": "+Object.keys(c.sections).length+" sections, "+Object.keys(c.decks).length+" decks, "+c.cards.toLocaleString("en-US")+" cards, "+c.core.toLocaleString("en-US")+" core"+(chk?"":" → units/"+id+"/COUNTS.json, index.json"+(r.js!=null?", units/"+id+".js":"")+(r.page?", index.html CPU_UNITS":""))); });
   process.exit(bad?1:0);
 }
