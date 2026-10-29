@@ -9000,6 +9000,7 @@ function renderSchedule(el){
   const _noDayWork=(kid!=="all"&&kid!=="mom")&&!tasks.length&&!offToday.length&&!carriedOver.length;
   if(!_noDayWork||bbActive(kid)||(bbMomDraft&&bbMomDraft.kid===kid)) h+=bbBlock(kid); // 🧠 Brain break — button, or the active break card (pauses this kid's view only)
   if(kid!=="all"&&kid!=="mom") h+=retrSchedStripHtml(kid,day); // P4: retrieval strip (derived, no writes)
+  if(kid!=="all"&&kid!=="mom"&&typeof wwDayChipHtml==="function") h+=wwDayChipHtml(kid,day); // 🏋️ WWV2: Word Workout · N words (derived, no card)
 
   // ── SCHEDULE LOCK CHECK ──────────────────────────────────────────
   const _lookAhead = !_noDayWork && gateLookAhead(kid, day);
@@ -64301,7 +64302,7 @@ function gkTier(kid,before,r){   // → {status,tier} to set, or null = leave th
 // GRADKEEP_END
 // Results → the kid's AAS Words cards (one word = one card; same shape the unit and the check-up mint).
 // GRADKEEP: `was` = the record's saved before-states (a re-grade); absent on the first grade, which reads the cards and returns them.
-function stApplyResults(kid,words,res,key,was){
+function stApplyResults(kid,words,res,key,was,noTime){   // noTime: stNoTime's all-"m" (not a ✗) — WWV2 keeps those on the 2-day rule
   let items=masteryData[kid]; if(!Array.isArray(items)) items=masteryData[kid]=(items?Object.values(items):[]);
   let bank=masteryData[kid+"_custom_items"]; if(!Array.isArray(bank)) bank=masteryData[kid+"_custom_items"]=(bank?Object.values(bank):[]);
   const pn=mastGetPrintNum(kid);
@@ -64320,7 +64321,7 @@ function stApplyResults(kid,words,res,key,was){
       else { it.tally_dots=Math.max(5,it.tally_dots||0); it.placed=true;
         if(tt.tier!=="graduated"&&typeof mastStampNextDue==="function") mastStampNextDue(it,items,tt.tier,pn); else delete it.next_due; } }   // STRIGHT: book the next look for any review tier
     it.stLast={r:r,d:today,t:key};
-    if(typeof wwNote==="function") wwNote(it,r==="m"?"miss":(r==="c"?"right":null));   // 🏋️ WORDWORKOUT
+    if(typeof wwNote==="function") wwNote(it,r==="m"?"miss":(r==="c"?"right":null),undefined,r==="m"&&!noTime);   // 🏋️ WORDWORKOUT (WWV2: a graded ✗ is in right away)
     iu[idx]=it;
     if(!bank.some(x=>x&&x.cat===ST_DECK&&x.name===name)){ bank.push({cat:ST_DECK,name:name}); bu[bank.length-1]=bank[bank.length-1]; }
   });
@@ -64343,7 +64344,7 @@ function stSave(){
 function stNoTime(){
   if(!stUI||!(typeof momHere==="function"&&momHere())) return; const S=stUI;
   const res={}; S.words.forEach((w,i)=>{ res[i]="m"; });
-  const prev=stRecs(S.kid)[S.key]||{}, out=stApplyResults(S.kid,S.words.map(w=>w.name),res,S.key,prev.was||null);   // GRADKEEP
+  const prev=stRecs(S.kid)[S.key]||{}, out=stApplyResults(S.kid,S.words.map(w=>w.name),res,S.key,prev.was||null,true);   // GRADKEEP   // WWV2: no time ≠ ✗
   const rec=_stRec(S,"learning"); rec.res=res; rec.gradedTs=Date.now(); if(out&&out.was) rec.was=out.was; _stWrite(S.kid,S.key,rec);
   if(typeof gwShowToast==="function") gwShowToast("📝 All "+S.words.length+" words added to learning — you can still grade it later from the test card");
   stCheckCard(S.kid,S.key);   // 📝 STTESTCARD
@@ -64823,7 +64824,7 @@ function pwApply(){
     if(r.where==="learn"&&it.status!=="introduction"&&learnCount(deck)>=capFor(deck)){ it.status="parked"; it.tier="daily"; it.tally_dots=0; delete it.placed; delete it.next_due; sum.parked++; }
     else pwPlace(it,r.where,items,pn);
     it.problem={ts:now,d:today,src:pwUI.photo?"photo":"typed"}; if(r.wrote) it.problem.wrote=r.wrote;
-    if(typeof wwNote==="function") wwNote(it,"miss");   // 🏋️ WORDWORKOUT: Mom flagging it counts as a miss
+    if(typeof wwNote==="function") wwNote(it,"miss",undefined,true);   // 🏋️ WORDWORKOUT: Mom flagging it counts as a miss — and WWV2 puts it in the workout right away
     iu[idx]=it;
   });
   if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){
@@ -65149,18 +65150,26 @@ function nbsTestsBtnHtml(){
 // minutes a day on just those words, no Mom needed (🔊 hear it and type it · fill in the missing letters; the notebook's
 // Practice Words box prints them too). Right on three different days — drill or workout — and it leaves the workout.
 // State rides on the card: item.ww = {m:<miss days>, d:<last miss day>, on:true|false, since, r:[right days], out}.
+// WWV2 (her yes 2026-10-29: problem words need extra practice the kid can SEE, like the old "write it three times"):
+//   · IN RIGHT AWAY — a word Mom flags 🚩 or grades ✗ on a spelling test turns its workout on at once (wwNote's `now`).
+//     Drill, study and check-up misses keep the 2-day rule; a test closed with "no time" is not a ✗ and keeps it too.
+//   · 👀 SEE IT, COPY IT — each word starts with look → cover → write → compare (wrong letters marked, PATCCC's
+//     mstCopyDiff) → retype it right while looking, then the hidden-word step (hear it / fill the gaps) as before.
+//     Copying the shown word is practice only: a right DAY still comes from the hidden-word step.
+//   · THE KID CAN FIND IT — "🏋️ Word Workout · N words" on the kid's own Day page (wwDayChipHtml), today only. Derived
+//     from item.ww, never a card in week*/tasks, so lays, packs and sweeps don't see it. The Drills button stays.
 const WW_DECKS=["AAS Words","Spelling","SpellingYouSee"];
 function wwToday(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
 function wwIsSpell(it){ return !!(it&&WW_DECKS.indexOf(it.subject)>=0); }
-// One event on one card. kind "miss" | "right". Returns true when the card's ww changed.
-function wwNote(it,kind,day){
+// One event on one card. kind "miss" | "right". now=true (🚩 / test ✗) → a miss turns the workout on at once. Returns true when the card's ww changed.
+function wwNote(it,kind,day,now){
   if(!wwIsSpell(it)||!kind) return false;
   day=day||wwToday(); const ww=Object.assign({m:0,r:[]},it.ww||{}); ww.r=Array.isArray(ww.r)?ww.r.slice():[];
   const before=JSON.stringify(it.ww||null);
   if(kind==="miss"){
     if(ww.d!==day){ ww.m=(ww.m||0)+1; ww.d=day; }
     if(ww.on) ww.r=[];                                         // a miss during the workout starts the three days over
-    else if(ww.m>=2){ ww.on=true; ww.since=day; ww.r=[]; delete ww.out; }
+    else if(ww.m>=2||now){ ww.on=true; ww.since=day; ww.r=[]; delete ww.out; }
   } else if(kind==="right"&&ww.on){
     if(ww.r.indexOf(day)<0) ww.r.push(day);
     if(ww.r.length>=3){ ww.on=false; ww.out=day; ww.m=0; ww.r=[]; }
@@ -65182,15 +65191,71 @@ function _wwWriteCard(kid,it){
   try{ HA_LS.setItem("ha_mastery",JSON.stringify(masteryData)); }catch(e){}
 }
 // ── the kid's Workout (no Mom needed) ──
-let wwUI=null;   // {kid,i,mode:"hear"|"gaps",tries,msg,done:{}}
-function wwOpen(kid){ const L=wwList(kid); if(!L.length) return; wwUI={kid,i:0,mode:"hear",tries:0,msg:"",done:{}}; wwRender(); }
+let wwUI=null;   // {kid,i,mode:"hear"|"gaps",step:"look"|"cover"|"compare"|"fix"|"test",show,typed,fix,ok,fixed,fixMiss,timer,tries,msg,done:{}}
+function wwHideMs(){ return (typeof MST_COPY_HIDE_MS==="number")?MST_COPY_HIDE_MS:4000; }   // WWV2: the same 4 s as 👀 Copy it (read at call time — PATCCC loads after this block)
+function wwStepReset(){ if(!wwUI) return; wwUI.step="look"; wwUI.show=(wwUI.show||0)+1; wwUI.typed=""; wwUI.fix=""; wwUI.ok=null; wwUI.fixed=false; wwUI.fixMiss=false; wwUI.timer=false; }
+function wwOpen(kid){ const L=wwList(kid); if(!L.length) return; wwUI={kid,i:0,mode:"hear",tries:0,msg:"",done:{}}; wwStepReset(); wwRender(); }
 function wwClose(){ wwUI=null; const ov=document.getElementById("ww-panel"); if(ov) ov.remove(); try{ if(typeof _mastRe==="function") _mastRe(); }catch(e){} }
 function wwWord(it){ return String(it.answer||it.prompt||"").replace(/․/g,"."); }
 function wwSay(){ try{ if(!wwUI) return; const it=wwList(wwUI.kid)[wwUI.i]; if(!it) return; mastSpeak(wwWord(it),{spell:true}); }catch(e){} }   // 🔊 TTS: the one shared speak path
 // "together" → "t_g_th_r": vowels become blanks (y stays) — the kid writes the WHOLE word, never just the gaps.
 function wwGaps(w){ return String(w).replace(/[aeiou]/gi,"_"); }
+// ── WWV2 👀 see it, copy it (look → cover → write → compare → fix) — no grade, no write ──
+function wwSame(a,b){ return String(a||"").trim().toLowerCase()===String(b||"").trim().toLowerCase(); }
+// What he wrote beside the word, the differing letters marked — PATCCC's letter-by-letter compare.
+function wwMarked(typed,word){
+  const e=(typeof stEsc==="function")?stEsc:(s=>String(s));
+  if(typeof mstCopyDiff!=="function"||typeof mstCopyMarked!=="function") return {a:e(typed),b:e(word)};
+  const df=mstCopyDiff(typed,word); return {a:mstCopyMarked(df.a,df.ka),b:mstCopyMarked(df.b,df.kb)};
+}
+// Hide it (or the 4 s timer — it names the showing it was set for).
+function wwCopyHide(show){
+  if(!wwUI||wwUI.step!=="look") return; if(show!=null&&show!==wwUI.show) return;
+  wwUI.step="cover"; wwRender();
+}
+function wwCopyCheck(){
+  if(!wwUI||wwUI.step!=="cover") return; const it=wwList(wwUI.kid)[wwUI.i]; if(!it) return;
+  const el=document.getElementById("ww-copy-in"); if(el) wwUI.typed=String(el.value||"");
+  if(!wwUI.typed.trim()) return;
+  wwUI.ok=wwSame(wwUI.typed,wwWord(it)); wwUI.step=wwUI.ok?"compare":"fix"; wwRender();
+}
+function wwCopyFix(){
+  if(!wwUI||wwUI.step!=="fix"||wwUI.fixed) return; const it=wwList(wwUI.kid)[wwUI.i]; if(!it) return;
+  const el=document.getElementById("ww-copy-fix"); if(el) wwUI.fix=String(el.value||"");
+  if(!wwUI.fix.trim()) return;
+  if(wwSame(wwUI.fix,wwWord(it))){ wwUI.fixed=true; wwUI.fixMiss=false; } else { wwUI.fixMiss=true; wwUI.fix=""; }
+  wwRender();
+}
+// Copied → on to the hidden-word step for this word (hear it / fill the gaps), the one that counts a right day.
+function wwCopyDone(){ if(!wwUI||(wwUI.step!=="compare"&&!(wwUI.step==="fix"&&wwUI.fixed))) return; wwUI.step="test"; wwUI.tries=0; wwUI.msg=""; wwRender(); }
+function wwCopyHtml(it,b,e){
+  const w=wwWord(it), big='font-size:32px;font-weight:800;letter-spacing:3px;color:#15803d;margin:6px 0';
+  const step=t=>'<div style="font-size:13px;font-weight:800;color:#7c2d12;margin-top:4px">'+t+'</div>';
+  const box=(id,val,on)=>'<input id="'+id+'" value="'+e(val)+'" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" placeholder="write it" onkeydown="if(event.key===\'Enter\')'+on+'" style="width:100%;box-sizing:border-box;margin-top:10px;padding:12px 14px;font-size:22px;font-weight:700;border:2px solid #fed7aa;border-radius:12px;text-align:center">';
+  const go=(on,label,bg)=>'<div style="display:flex;justify-content:center;margin-top:12px"><button onclick="'+on+'" style="'+b(bg,"#fff",bg)+'">'+label+'</button></div>';
+  let h='<div data-ww-step="'+wwUI.step+'" style="text-align:center;margin-bottom:6px"><div style="display:inline-block;padding:3px 10px;border-radius:999px;background:#ffedd5;color:#7c2d12;font-size:11px;font-weight:800">👀 See it, copy it</div>';
+  if(wwUI.step==="look"){
+    h+=step("👀 Look at it")+'<div id="ww-copy-model" style="'+big+'">'+e(w)+'</div><div><span onclick="wwSay()" style="cursor:pointer;font-size:18px">🔊</span></div>'+go("wwCopyHide()","Hide it","#7c2d12");
+    if(!wwUI.timer){ wwUI.timer=true; const sh=wwUI.show; try{ setTimeout(function(){ wwCopyHide(sh); },wwHideMs()); }catch(x){} }
+  } else if(wwUI.step==="cover"){
+    h+=step("🙈 It’s covered — now write it")+box("ww-copy-in",wwUI.typed,"wwCopyCheck()")+go("wwCopyCheck()","Check","#15803d");
+  } else {
+    const m=wwUI.ok?{a:e(wwUI.typed),b:e(w)}:wwMarked(wwUI.typed,w);
+    h+='<div style="font-size:20px;font-weight:800;margin-top:8px;color:'+(wwUI.ok?'#15803d':'#dc2626')+'">'+(wwUI.ok?'✓ You copied it!':'✗ Not quite')+'</div>';
+    h+='<div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;font-size:22px;font-weight:800;margin-top:6px"><div><div style="font-size:11px;color:#64748b">You wrote</div><div class="ww-copy-typed">'+m.a+'</div></div><div><div style="font-size:11px;color:#64748b">The word</div><div class="ww-copy-right" style="color:#15803d">'+m.b+'</div></div></div>';
+    if(wwUI.step==="fix"&&!wwUI.fixed){
+      h+=step("✏️ Fix it — write it right while you look");
+      if(wwUI.fixMiss) h+='<div style="font-size:13px;color:#dc2626;font-weight:700;margin-top:4px">Not yet — look at each letter and try again.</div>';
+      h+=box("ww-copy-fix",wwUI.fix,"wwCopyFix()")+go("wwCopyFix()","Check","#15803d");
+    } else {
+      if(wwUI.fixed) h+=step("✓ Fixed!");
+      h+=go("wwCopyDone()","Now from memory →","#7c2d12");
+    }
+  }
+  return h+'</div>';
+}
 function wwCheck(){
-  if(!wwUI) return; const L=wwList(wwUI.kid), it=L[wwUI.i]; if(!it) return;
+  if(!wwUI||(wwUI.step&&wwUI.step!=="test")) return; const L=wwList(wwUI.kid), it=L[wwUI.i]; if(!it) return;
   const inp=document.getElementById("ww-in"); const typed=String(inp?inp.value:"").trim();
   if(!typed) return;
   if(typed.toLowerCase()===wwWord(it).toLowerCase()){
@@ -65200,7 +65265,7 @@ function wwCheck(){
   } else { wwUI.tries++; wwUI.msg=wwUI.tries>=2?"Not quite — this one stays in your workout. Try it again tomorrow!":"Not quite — listen again and try once more."; if(wwUI.tries>=2) wwUI.done[it.id]=true; }   // never shows the answer (her rule: the app never supplies what the kid must produce)
   wwRender();
 }
-function wwNext(){ if(!wwUI) return; const L=wwList(wwUI.kid); if(!L.length){ wwClose(); return; } wwUI.i=(wwUI.i+1)%L.length; wwUI.tries=0; wwUI.msg=""; wwUI.mode=(wwUI.mode==="hear")?"gaps":"hear"; wwRender(); }
+function wwNext(){ if(!wwUI) return; const L=wwList(wwUI.kid); if(!L.length){ wwClose(); return; } wwUI.i=(wwUI.i+1)%L.length; wwUI.tries=0; wwUI.msg=""; wwUI.mode=(wwUI.mode==="hear")?"gaps":"hear"; wwStepReset(); wwRender(); }
 function wwRender(){
   if(!wwUI){ wwClose(); return; }
   const L=wwList(wwUI.kid); if(!L.length){ wwClose(); if(typeof gwShowToast==="function") gwShowToast("🏋️ Workout done — every word is strong!"); return; }
@@ -65208,10 +65273,14 @@ function wwRender(){
   let ov=document.getElementById("ww-panel");
   if(!ov){ ov=document.createElement("div"); ov.id="ww-panel"; ov.style.cssText="position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 12px"; document.body.appendChild(ov); }
   const b=(bg,fg,bd)=>'padding:10px 16px;border-radius:12px;border:1.5px solid '+bd+';background:'+bg+';color:'+fg+';font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif';
-  const done=!!wwUI.done[it.id];
+  const done=!!wwUI.done[it.id], copying=!!(wwUI.step&&wwUI.step!=="test");
   let h='<div style="background:#fff;border-radius:18px;max-width:480px;width:100%;padding:18px 20px;box-shadow:0 10px 40px rgba(0,0,0,.25)">';
   h+='<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-family:\'Fraunces\',serif;font-size:21px;font-weight:800;color:#7c2d12">🏋️ Word Workout</div><button onclick="wwClose()" style="'+b("#fff","#475569","#cbd5e1")+';padding:5px 11px;font-size:13px">✕</button></div>';
   h+='<div style="font-size:12.5px;color:#64748b;margin:3px 0 14px">Word '+(wwUI.i+1)+' of '+L.length+' · each word needs 3 right days</div>';
+  if(copying){ h+=wwCopyHtml(it,b,e); h+='<div style="display:flex;margin-top:14px"><div style="flex:1"></div><button onclick="wwNext()" style="'+b("#fff","#0f172a","#0f172a")+'">Next word ›</button></div></div>'; ov.innerHTML=h;
+    const fid=wwUI.step==="cover"?"ww-copy-in":(wwUI.step==="fix"&&!wwUI.fixed?"ww-copy-fix":null);
+    if(fid) setTimeout(()=>{ const i=document.getElementById(fid); if(i&&i.focus) i.focus(); },30);
+    return; }
   if(wwUI.mode==="hear") h+='<div style="text-align:center;margin-bottom:12px"><button onclick="wwSay()" style="'+b("#7c2d12","#fff","#7c2d12")+';font-size:18px">🔊 Hear the word</button><div style="font-size:13px;color:#475569;margin-top:8px">Listen, then type it.</div></div>';
   else h+='<div style="text-align:center;margin-bottom:12px"><div style="font-size:30px;font-weight:800;letter-spacing:4px;color:#0f172a">'+e(wwGaps(wwWord(it)))+'</div><div style="font-size:13px;color:#475569;margin-top:6px">Fill in the missing letters — type the whole word. <span onclick="wwSay()" style="cursor:pointer">🔊</span></div></div>';
   h+='<input id="ww-in" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" '+(done?'disabled ':'')+'onkeydown="if(event.key===\'Enter\')wwCheck()" style="width:100%;box-sizing:border-box;padding:12px 14px;font-size:22px;font-weight:700;border:2px solid #fed7aa;border-radius:12px;text-align:center">';
@@ -65222,7 +65291,18 @@ function wwRender(){
 }
 function wwBtnHtml(kid){
   const n=wwList(kid).length; if(!n) return "";
-  return '<button onclick="wwOpen(\''+kid+'\')" title="Words missed twice — a few minutes a day until they\'re right on 3 days" style="height:32px;padding:0 11px;border-radius:16px;border:1.5px solid #fed7aa;background:#fff7ed;color:#7c2d12;font-size:13px;font-weight:800;cursor:pointer;flex-shrink:0;white-space:nowrap">🏋️ Word Workout ('+n+')</button>';
+  return '<button onclick="wwOpen(\''+kid+'\')" title="Problem words — a few minutes a day until they\'re right on 3 days" style="height:32px;padding:0 11px;border-radius:16px;border:1.5px solid #fed7aa;background:#fff7ed;color:#7c2d12;font-size:13px;font-weight:800;cursor:pointer;flex-shrink:0;white-space:nowrap">🏋️ Word Workout ('+n+')</button>';
+}
+// WWV2: the kid's own Day page, today only — a small item under the 🧠 brain work strip (derived from item.ww, no card,
+// no write; off-own-day → nothing, as the strip). Tapping it opens the same Workout.
+function wwDayChipHtml(kid,day){
+  try{
+    if(!kid||kid==="all"||kid==="mom") return "";
+    if(typeof _todayDay!=="undefined"&&day!==_todayDay) return "";
+    if(typeof kidOffOwnDay==="function"&&kidOffOwnDay(kid,day)) return "";
+    const n=wwList(kid).length; if(!n) return "";
+    return '<div class="ww-day-chip" style="margin:0 0 10px"><button onclick="wwOpen(\''+kid+'\')" style="display:inline-flex;align-items:center;gap:5px;padding:6px 13px;border-radius:999px;border:1.5px solid #fed7aa;background:#fff7ed;color:#7c2d12;font-size:12.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🏋️ Word Workout · '+n+' word'+(n===1?'':'s')+'</button></div>';
+  }catch(e){ return ""; }
 }
 // WORDWORKOUT_END
 // STUDYCOUNTS_START — 📚 Study sessions count everywhere (F3 of PLAN_learning_system, her yes 2026-10-24). A study
