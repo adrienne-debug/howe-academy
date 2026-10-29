@@ -41,7 +41,8 @@ for(const role of ["teacher","admin"]){ const t=gear(role), h=t.G.content;
   ok(role+": Signed in + Sign out + the © line; no PIN, no read-aloud switch", /envsSignOut\(\)/.test(h)&&h.indexOf(t.envsLicenseLine())>=0&&!/PIN/.test(h)&&!/envra-toggle/.test(h)); }
 
 console.log("\n── the bars keep today's color; nothing is written ──");
-{ const bar=w=>(w.G.content.match(/class="envs-top" style="background:(#[0-9a-f]{6})"/i)||[])[1];
+{ // any bar markup that paints a background: today's, and CPCLASS's (extra classes, a text color after the background)
+  const bar=w=>(w.G.content.match(/class="envs-top[^"]*" style="[^"]*background:\s*(#[0-9a-f]{3,8}|rgba?\([^)]*\))/i)||[])[1];
   const k=demo("kid"), p=demo("parent");
   ok("the kid's and parent's top bars still paint a color ("+bar(k)+", "+bar(p)+")", !!bar(k)&&!!bar(p));
   for(const role of ["kid","parent","teacher","admin"]){ const w=gear(role);
