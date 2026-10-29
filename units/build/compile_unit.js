@@ -74,11 +74,24 @@ function questionLinks(decks,tests){
       (out[k]=out[k]||{})[String(it.id)]=L; }); }));
   return out;
 }
+// 📤 CPSEND (PR 31, §6.8): a section's Key Concepts, from its cards' `concept` numbers — {id:"k<n>", label}, in the unit's order (the
+// order is n itself, so it isn't stored twice: the catalog entry stays under PR 3's 4 KB). The id never uses
+// the name (. # $ [ ] / in a name can't break a release key; renaming a Key Concept never changes it). The label is the first card's
+// group. A section whose cards carry no concept number has none, and gets 📤 on the section and its decks only.
+function sectionConcepts(decks,sec){
+  const by={}; (decks||[]).forEach(d=>{ if(d.section!==sec) return; (d.cards||[]).forEach(c=>{ const n=c&&Number(c.concept);
+    if(!c||c.concept==null||c.concept===""||!Number.isInteger(n)||n<1) return; if(!by[n]) by[n]={id:"k"+n,label:String(c.group||c.family||("Key Concept "+n))}; }); });
+  return Object.keys(by).map(Number).sort((a,b)=>a-b).map(n=>by[n]);
+}
+// 📤 CPSEND: every key a send-out of this unit may use — section keys, deck keys and <section>~k<n> (units/<id>/RELEASE_KEYS.json; the
+// release rules in envirothon/SITE_RULES.json allow exactly the union of every unit's list, test_cp_send.js)
+function releaseKeys(idx){ const out=[]; (idx.sections||[]).forEach(s=>{ out.push(s.key); (s.concepts||[]).forEach(k=>out.push(s.key+"~"+k.id)); }); Object.keys(idx.decks||{}).forEach(k=>out.push(k)); return out; }
 // the catalog entry (§4.3): small, no cards — the console draws the grid, the ticks and the counts from it
 function makeIndex(u,decks){
   const d={}; decks.forEach((x,i)=>{ const c=x.cards||[]; d[x.key]={section:x.section,kind:x.kind||"",mode:x.mode||"flash",n:c.length,core:c.filter(y=>y&&y.core).length,order:i}; });
   const idx={id:u.id,ver:u.ver||1,title:u.title,short:u.short||u.title,emoji:u.emoji||"",
-    sections:(u.sections||[]).map((s,i)=>{ const o={key:s.key,label:s.label||s.key,short:s.short||s.label||s.key,emoji:s.emoji||"",order:s.order!=null?s.order:i}; return o; }),
+    sections:(u.sections||[]).map((s,i)=>{ const o={key:s.key,label:s.label||s.key,short:s.short||s.label||s.key,emoji:s.emoji||"",order:s.order!=null?s.order:i};
+      const k=sectionConcepts(decks,s.key); if(k.length) o.concepts=k; return o; }),   // 📤 CPSEND: the section's Key Concepts (§6.8)
     decks:d,cards:decks.reduce((s,x)=>s+(x.cards||[]).length,0),core:decks.reduce((s,x)=>s+(x.cards||[]).filter(y=>y&&y.core).length,0),
     labels:Object.assign({},u.labels||{}),features:Object.assign({},u.features||{}),file:(u.build&&u.build.file)||("units/"+u.id+".js")};
   if(u.build&&u.build.global) idx.global=u.build.global;
@@ -175,6 +188,7 @@ function compile(id,opts){
   const others=unitIds(root).filter(x=>x!==id).map(x=>{ try{ const o=readJson(path.join(root,"units",x,"unit.json")); return {id:x,sections:(o.sections||[]).map(s=>s.key),decks:(o.decks||[]).map(d=>d.key)}; }catch(e){ return {id:x,sections:[],decks:[]}; } });
   const r=check(root,id,L,old,others);
   const counts=makeCounts(L.u,L.decks,L.tests), index=makeIndex(L.u,L.decks), links=L.tests?questionLinks(L.decks,L.tests):null, lp=path.join(dir,"LINKS.json");
+  const rkeys=releaseKeys(index), rp=path.join(dir,"RELEASE_KEYS.json");   // 📤 CPSEND
   if(!r.err.length&&L.u.build&&L.u.build.file) r.err.push(...checkBuilt(root,L.u,L.decks,L.tests));
   const js=(L.u.build&&L.u.build.file)?null:makeJs(L.u,index,L.decks,L.tests,links), jp=path.join(root,"units",id+".js");
   if(opts.check&&!r.err.length){
@@ -182,15 +196,16 @@ function compile(id,opts){
     if(!fs.existsSync(ip)||stable(readJson(ip))!==stable(index)) r.err.push("units/"+id+"/index.json is not current — run node units/build/compile_unit.js "+id);
     if(js!=null&&(!fs.existsSync(jp)||fs.readFileSync(jp,"utf8")!==js)) r.err.push("units/"+id+".js is not current — run node units/build/compile_unit.js "+id);
     if(links&&(!fs.existsSync(lp)||stable(readJson(lp))!==stable(links))) r.err.push("units/"+id+"/LINKS.json is not current — run node units/build/compile_unit.js "+id);   // 📚 CPCARDSSEE
+    if(!fs.existsSync(rp)||stable(readJson(rp))!==stable(rkeys)) r.err.push("units/"+id+"/RELEASE_KEYS.json is not current — run node units/build/compile_unit.js "+id);   // 📤 CPSEND
     if(links&&L.u.build&&L.u.build.file){ const e=builtLinksErr(root,L.u,links); if(e) r.err.push(e); }
     const cat=catalogIn(root); if(cat&&JSON.stringify(cat.cur[id])!==JSON.stringify(index)) r.err.push("index.html's CPU_UNITS."+id+" is not current — run node units/build/compile_unit.js "+id); }
   const ok=!r.err.length;
-  if(ok&&opts.write){ fs.writeFileSync(cp,stable(counts)); fs.writeFileSync(ip,stable(index)); if(js!=null) fs.writeFileSync(jp,js);
+  if(ok&&opts.write){ fs.writeFileSync(cp,stable(counts)); fs.writeFileSync(ip,stable(index)); fs.writeFileSync(rp,stable(rkeys)); if(js!=null) fs.writeFileSync(jp,js);
     if(links){ fs.writeFileSync(lp,stable(links)); if(L.u.build&&L.u.build.file){ const e=builtLinksErr(root,L.u,links); if(e) r.warn.push(e); } }   // 📚 CPCARDSSEE
     const cat=catalogIn(root); if(cat){ const h=catalogWith(cat,id,index); if(h!==cat.html) fs.writeFileSync(cat.p,h); r.page=h!==cat.html; } }
-  return {ok,err:r.err,warn:r.warn,counts,index,js,links,unit:L.u,page:!!r.page};
+  return {ok,err:r.err,warn:r.warn,counts,index,js,links,releaseKeys:rkeys,unit:L.u,page:!!r.page};
 }
-module.exports={compile,catalogIn,catalogWith,CAT_RE,check,loadUnit,makeIndex,makeCounts,makeJs,questionLinks,linkNorm,linkHas,fbSafe,ranges,unranges,unitIds,LABEL_KEYS,FEATURE_KEYS,REPO};
+module.exports={compile,sectionConcepts,releaseKeys,catalogIn,catalogWith,CAT_RE,check,loadUnit,makeIndex,makeCounts,makeJs,questionLinks,linkNorm,linkHas,fbSafe,ranges,unranges,unitIds,LABEL_KEYS,FEATURE_KEYS,REPO};
 if(require.main===module){
   const a=process.argv.slice(2), chk=a.includes("--check"), all=a.includes("--all"), ids=all?unitIds(REPO):a.filter(x=>!x.startsWith("--"));
   if(!ids.length){ console.error("usage: node units/build/compile_unit.js <unitId>|--all [--check]"); process.exit(2); }

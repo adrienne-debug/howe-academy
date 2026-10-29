@@ -35,7 +35,8 @@ LINKS = os.path.join(os.path.dirname(HERE), "units", "nc_envirothon", "LINKS.jso
 OUT = os.path.join(os.path.dirname(HERE), "envirothon.js")
 
 def load_tests():
-    """The compiled shape: station → {label, emoji, pre, post}; a form keeps form/source/n/items (+ note), not the drop list."""
+    """The compiled shape: station → {label, emoji, pre, post}; a form keeps form/source/n/items (+ note) and, as `left`, the drop list
+    ({n, q, why}: 📝 CPTESTS shows it read-only to the teacher)."""
     if not os.path.exists(TESTS_SRC):
         return None
     with open(TESTS_SRC, encoding="utf-8") as f:
@@ -55,6 +56,8 @@ def load_tests():
                 for it in r["items"]:
                     it["cards"] = links.get(sid, {}).get(w + "-" + str(it["n"]), [])
             if fm.get("note"): r["note"] = fm["note"]
+            if fm.get("dropped"):   # 📝 CPTESTS: the questions left out of the form (a picture, a handout), read-only in the teacher's 📝 Tests
+                r["left"] = [{"n": d["n"], "q": d["q"], "why": d["why"]} for d in fm["dropped"]]
             rec[w] = r
         out[sid] = rec
     return doc, out

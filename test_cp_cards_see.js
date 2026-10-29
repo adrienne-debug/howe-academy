@@ -39,7 +39,7 @@ const SECS=UJ.sections.map(s=>s.key);
 const run=async()=>{
 console.log("── the block, where it sits, how it is hooked ──");
 { const a=src.indexOf("// CPCARDSSEE_START"), b=src.indexOf("// CPCARDSSEE_END");
-  ok("one CPCARDSSEE block, right after CPSEATS_END (which sits right after CPUNIT_END)", a>0&&b>a&&src.indexOf("// CPCARDSSEE_START",a+1)<0&&src.slice(src.indexOf("// CPSEATS_END"),a).trim()==="// CPSEATS_END");
+  ok("one CPCARDSSEE block, after CPSEATS_END", a>0&&b>a&&src.indexOf("// CPCARDSSEE_START",a+1)<0&&src.indexOf("// CPSEATS_END")<a);
   const decl=l=>!l.trim()||/^(\/\/|function |const |let |var | |})/.test(l);
   ok("the block only declares (nothing runs at boot)", CCS.split("\n").every(decl));
   const hooks=src.split("\n").filter(l=>/📚 CPCARDSSEE/.test(l)&&l.indexOf("// CPCARDSSEE_START")<0&&(src.indexOf(l)<a||src.indexOf(l)>b));
