@@ -46,7 +46,7 @@ function fixTests(){ return {ver:1,sections:{ch1:{pre:{form:"2026",source:"x",it
 const run=async()=>{
 console.log("── where it sits, how it is hooked ──");
 { const a=src.indexOf("// CPUNIT_START"), b=src.indexOf("// CPUNIT_END"), c=src.indexOf("// CPCLASS_END");
-  ok("CPUNIT right after CPCLASS_END, once", a>0&&b>a&&src.indexOf("// CPUNIT_START",a+1)<0&&src.slice(c,a).trim()==="// CPCLASS_END");
+  ok("CPUNIT after CPCLASS_END, once", a>0&&b>a&&c>0&&a>c&&src.indexOf("// CPUNIT_START",a+1)<0);   // 🔒 CPLOCKS sits between them (its brief)
   ok("the block only declares (nothing runs at boot)", CPU.split("\n").every(l=>!l.trim()||/^(\/\/|function |const |let | |})/.test(l)));
   ok("her words and the date are in the block header", /2026-10-28/.test(CPU)&&/unit and test is data pulled so other/.test(CPU)&&/any kind of class/.test(CPU));
   ok("no Howe kid name as a code literal; no 🔀", !/["'`](lincoln|ellis|lucy|julian)["'`]/i.test(CPU)&&src.indexOf("\u{1F500}")<0);

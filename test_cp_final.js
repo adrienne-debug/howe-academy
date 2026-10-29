@@ -160,7 +160,7 @@ const howeWorld=fin=>{
 
 console.log("\n── the rules file, the setup note, the demo ──");
 { const R=JSON.parse(fs.readFileSync(path.join(REPO,"envirothon","SITE_RULES.json"),"utf8")).rules.classes.$cid, P=R.plan;
-  ok("classes/<cid>/plan: the class's teacher writes it (no brand lock); the whole class stays Adrienne's", /classes\/'\+\$cid\+'\/teacher'\)\.val\(\) == auth\.uid/.test(P[".write"])&&!/locks/.test(P[".write"])&&/admins/.test(R[".write"]));
+  ok("classes/<cid>/plan: the class's teacher writes it (no brand lock); the whole class stays Adrienne's", /classes\/'\+\$cid\+'\/teacher'\)\.val\(\) == auth\.uid/.test(P[".write"])&&!/locks\/brand/.test(P[".write"])&&/admins/.test(R[".write"]));   // 🔒 CPLOCKS adds locks/plan (test_cp_locks.js)
   ok("shapes: the key, finalAt 1–100, pass 1–100, retakeHours 0–720, checkin true/false, learnedAt one of the ladder's five, order a number", /\$key\.matches/.test(P.$key[".validate"])&&/>= 1 && newData\.val\(\) <= 100/.test(P.$key.finalAt[".validate"])&&/>= 1 && newData\.val\(\) <= 100/.test(P.$key.pass[".validate"])&&/>= 0 && newData\.val\(\) <= 720/.test(P.$key.retakeHours[".validate"])&&/isBoolean/.test(P.$key.checkin[".validate"])&&["every_other_day","weekly","bi_weekly","monthly","graduated"].every(t=>P.$key.learnedAt[".validate"].indexOf("'"+t+"'")>0)&&/isNumber/.test(P.$key.order[".validate"]));
   const setup=fs.readFileSync(path.join(REPO,"envirothon","SITE_SETUP.md"),"utf8");
   ok("SITE_SETUP.md explains the section plan and the 85 %", /section plan/.test(setup)&&/85 %/.test(setup)&&/classes\/<cid>\/plan/.test(setup));

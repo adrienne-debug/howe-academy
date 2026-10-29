@@ -84,6 +84,13 @@ student at `students/<sid>/settings/{study,drill}`. As admin you see a 🔒 Lock
 then sees it greyed, "set by Adrienne". A kid's app reads the class's and its own settings once when it opens and uses them in
 memory; nothing is written into the family instance. Lincoln's Howe app keeps your own settings.
 
+**🧭 Where new cards come from** (2026-10-29): in ⚙️ Class settings (and on the 📅 Pace bar, every choice's effect side by side) the
+teacher picks how New cards a day are shared once more than one section is open — Deck by deck (as now; nothing saved) · Newest +
+catch-up (default 30 %, 0–50) · Newest only · A little of everything · Teacher's mix (a % per section). Saved at
+`classes/<cid>/settings/study/{newFrom, catchUp, mix/<section>}`; your 🔒 `settings/locks/newFrom` greys it for the teacher, and the
+rules check each value's shape. The kid's app works the split out in memory each sitting; nothing goes into the family instance, and
+Lincoln's Howe app is untouched.
+
 **🏫 Class setup** (2026-10-28): the teacher's (and your) "🏫 Class setup" chip sets the class's **look** — the title under
 "Howe Academy" on every bar, its emoji and the bar color (42 swatches or any color; the words turn black or white by themselves so
 they stay readable) — with a live preview of the student's and the parent's bar; kids and parents see it and can't change it. The
@@ -92,6 +99,13 @@ the class's own words and optional features. Each card's Save is one update at `
 those fields (title, emoji and color are refused while `classes/<cid>/locks/brand` is true). The class's **name** and **when it
 closes** (`lockAt`) are yours: set them in the same screen as admin, or in Admin ▸ + Class (which also takes the title, season, start,
 a goal date and the closing date).
+
+**🔒 Your locks, per class** (2026-10-29): as admin, 🏫 Class setup opens with **🔒 Locks for the teacher**, one switch for each of
+`classes/<cid>/locks/{brand, units, cards, tests, plan}` (📚 Cards, 📝 Tests, 📅 Pace and 📦 Units each carry their own switch too).
+Each tap is one update of `classes/<cid>/locks`, with `locks/byName` = your display name, so the teacher reads "🔒 Set by <your
+name>". She still sees everything; a locked part is greyed or its edit buttons don't show, and the rules refuse her write: the look
+(title, emoji, color), `classCards/<cid>` (cards), `classTests/<cid>` (tests) and `classes/<cid>/plan` (plan). Units were already
+yours only. Your own changes always go through.
 
 **📦 Units** (2026-10-28): a class studies the **units attached to it**, and their sections become the class's sections (for NC
 Envirothon, the six stations exactly as before). Your console's **📦 Units** chip lists every unit with its sections, cards and core
