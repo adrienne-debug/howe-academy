@@ -117,6 +117,13 @@ form keep their score; each new attempt saves `ans` (the answers by question id)
 and parent's app reads `classTests/<cid>` once at boot. "Left out of the form" (needs a picture or a handout) is read-only. CEI's final is
 the check-in's form, so it is edited under the check-in. The rules let the class's teacher (and you) write it and check the shapes.
 Lincoln's check-ins in Howe stay the unit's until L2.
+**🧩 Skills** (2026-10-29, class platform PR 25): a unit can list skills next to its decks (a worksheet, a chart, a table …). The
+student practices each in three stages (a worked example, then finishing the last steps, then alone); learned = 4 of the last 5
+solo tries right, on 2 days. A sitting saves once, in the family's own instance (`mastery/<kid>_skills/…` + the day's study log).
+**🏫 Class setup ▸ 🧩 Skills** hides a skill or makes it optional for the class (`classSkills/<cid>/<skill>`, the class's teacher or
+an admin; the class's logins read it) and sets "the final waits for the core skills too" (`classes/<cid>/plan/<section>/skillsForFinal`,
+off unless ticked). Publish the rules file again so the `classSkills` node is live.
+
 
 **Master lock**: Admin → "Close the season now" writes `release/locked = {locked:true, at, by}`; every family and the teacher
 then land on the "season closed" card; nothing is deleted. It also closes **by itself after 2027-04-24** (State), or after the class's own closing date (`classes/<cid>/lockAt`) when you set one. To reopen
