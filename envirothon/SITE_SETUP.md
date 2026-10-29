@@ -102,6 +102,13 @@ Detaching hides the unit's sections; it deletes nothing. A family's first boot e
 attached later is enrolled at the next paint). New units come through the repo: `units/<id>/unit.json` + `tests.json`, then
 `node units/build/compile_unit.js <id>` (it checks every rule and writes the counts), a PR, your merge, then Publish.
 
+**📋 The section plan** (2026-10-28, class platform PR 7): **🏫 Class setup ▸ Station plan** (the class's own word for a section)
+sets, per section, when its final opens by itself (**85 % of the core cards learned** unless changed; "every card" never fired,
+because a miss sends a card back down), the pass mark (80 %), the wait before trying again (24 h), when a card counts as learned
+(every 2 weeks), and whether the section starts with its check-in. Save writes only the changed fields, one update at
+`classes/<cid>/plan/<section>/<field>`; the rules let the class's teacher write `plan` and check each field's shape. The teacher's
+"Open the final" still opens it early. Lincoln's own final in Howe keeps "every core card" until L1.
+
 **Master lock**: Admin → "Close the season now" writes `release/locked = {locked:true, at, by}`; every family and the teacher
 then land on the "season closed" card; nothing is deleted. It also closes **by itself after 2027-04-24** (State), or after the class's own closing date (`classes/<cid>/lockAt`) when you set one. To reopen
 for the next season, "Reopen the season" after that date writes `{locked:false, at:<then>}`, which the page honours.
