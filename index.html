@@ -46617,6 +46617,7 @@ function envmRelAttach(kid){
   });
   if(typeof envtFinalAttach==="function") envtFinalAttach(kid,cid,_envm.edb,_envm.subs,envmSid(kid));   // 📝 ENVTEST: the teacher's "Open the final" (release/<cid>/final/…)
   if(typeof cpsdAttach==="function") cpsdAttach(kid,cid,_envm.edb,_envm.subs,envmSid(kid));   // 📤 CPSEND: the scheduled send-outs (release/<cid>/scheduled), the class site only
+  if(typeof cplnLoad==="function") cplnLoad(kid,cid,_envm.edb,envmSid(kid));   // 🌿 CPLINCOLN: his class settings, plan and override, read once (memory only)
 }
 // A release record {<deckKey>|<station>: truthy}: clear each matching deck's hold once — the family database's one targeted removal.
 function envmRelease(kid,rel){
@@ -46683,6 +46684,169 @@ function envmSignIn(ev){
 function envmSignOut(){ if(typeof momHere!=="function"||!momHere()||!_envm.auth) return; try{ _envm.auth.signOut(); }catch(e){} }
 function envmSendNow(){ if(typeof momHere!=="function"||!momHere()||!envmReady()||!_envm.user||_envm.locked) return 0; if(typeof _dryRun==="function"&&_dryRun()) return 0; let n=0; envmKids().forEach(kid=>{ try{ if(envmPublishKid(kid,true)) n++; }catch(e){ _envm.err=String((e&&e.message)||e); } }); if(n){ _envm.lastAt=Date.now(); _envm.lastPub=_envm.lastAt; } envmCardRefresh(); return n; }
 // ENVMIRROR_END
+// CPLINCOLN_START — 🌿 LINCOLN FOLLOWS THE CLASS: L1 of DESIGN_class_platform_2026-10-28.md §12.1 / §13 row L1. Her words 2026-10-28:
+// "I want Lincoln's cards limit to follow what the class limit is. And I don't want his Envirothon to affect his overall cards, but to be
+// incorporated as needed. And they have to keep being in there, but it can still be in the study session." Her two picks 2026-10-29: his
+// Envirothon weekly cards "Move to 🌿 sitting" (out of his Daily Mix), and the new-card budget "Leave Envirothon out".
+// INERT unless this family mirrors the kid to the class (ENVMIRROR: HA_FAMILY.envirothon set, the kid enrolled, signed in on this device)
+// AND all three of his class reads arrived. Never on the class site itself (it has its own layer). Howe without the config block, DeWalt,
+// Burris and every other kid get back the very object each hook was given.
+//   · THE READS (once per class, after the mirror's sign-in, from envmRelAttach): classes/<cid>/settings, classes/<cid>/plan and
+//     students/<sid>/settings, on the mirror's named app. Kept in memory only (_cpln). Nothing is written anywhere, in Howe or in the
+//     class project. A refused or failed read leaves him on today's behaviour. So does signing the mirror out.
+//   · HIS 🌿 SESSION (envClassOverlay → cplnOverlay, study part): defaults ← class ← his own override for New cards a day, Cards a sitting
+//     (Auto = New cards a day × Days a card is learned), How cards are learned, Passes, Decks introducing at once, Core cards first
+//     (order "core", CPCORE's own engine option) and Reviews a sitting. Then mstSessions → cpReviewSession → cplnSession: reviewIn "sitting" + reviewCap, so
+//     every Envirothon card below graduated is reviewed in his own sitting (CPREVIEW's mstOwns / mstPile lines), oldest due first, then
+//     Keep going. His record's own numbers are never touched. They come back the moment the class layer is gone.
+//   · HIS 15 DECKS (envClassOverlay → cplnOverlay, drill part): only the per-deck fields of the Envirothon decks: cat_modes (How each deck
+//     shows), cat_intro_max (New at once per deck, else the class's New per deck in a drill) and cat_intro_dots (Days a card is learned).
+//     Right in a row, What a miss does, the ladder, Learning cards / Overdue reviews per drill and every other deck stay Mom's (§12.1, Q22).
+//   · MOM'S DRILL: ENVDRILLFIRST's ENV_DRILL_MAX (15) becomes the class's Reviews a sitting (0 = no ceiling), for what still reaches it
+//     (graduated cards, and any card she pulls by hand). Her other subjects' drill is untouched (envDrillSplit takes Envirothon out first).
+//   · HIS DAILY MIX (her pick 1): mstMixOwns skips his 🌿 session, so his weekly Envirothon cards leave the Mix for the 🌿 sitting.
+//   · HIS NEW-CARD BUDGET (her pick 2): nbLoad leaves his 15 Envirothon decks out of the review load. Nothing else in NEWBUDGET changes.
+//   · HIS CHECK-INS AND FINALS: the class's section plan (CPFINAL reads his plan record: final at, pass, retake wait, check-in) and learnedAt
+//     (CPREVIEW's cpReviewLearnedAt). The class-student test (cpReviewOn) is NOT widened: it also switches on the parent / teacher drills
+//     and the drill watch, which L1 doesn't bring.
+//   · MASTERY HQ ▸ SESSIONS: his 🌿 editor shows "⚙️ set by the class: …" on each field the class sets, and opens on HIS record's values,
+//     so a Save there keeps her own numbers and never copies the class's. Drill Rules opens on his own settings the same way.
+//   · Not in L1: where new cards come from (CPSHARE), Core only (CPPACE), the class's card and test edits (L2, Q21), teacher drills (L3).
+const CPLN_STUDY=["newPerDay","maxCards","pattern","passes","focusDecks","coreFirst","reviewCap"];
+const CPLN_LBL={newPerDay:"New/day",passes:"Passes",maxCards:"Cards a sitting",focusDecks:"Decks at once",pattern:"Learning pattern",mixInAt:"Mix in at",handOffAt:"Hand off at",order:"Order"};
+const _cpln={kids:{},pause:0};
+// is L1 on for this kid? (a mirrored kid, signed in, his three class reads in, not paused, not the class site)
+function cplnOn(kid){
+  try{
+    if(_cpln.pause>0||!kid) return false;
+    const r=_cpln.kids[kid]; if(!r||!r.ok) return false;
+    if(typeof envSiteOn==="function"&&envSiteOn()) return false;
+    if(typeof envmCfg!=="function"||!envmCfg()||typeof _envm==="undefined"||!_envm.user) return false;
+    return typeof envmKids==="function"&&envmKids().indexOf(kid)>=0;
+  }catch(e){ return false; }
+}
+// run fn with L1 off: what his own records say (the editors open on these, so a Save keeps her numbers)
+function cplnRaw(fn){ _cpln.pause++; try{ return fn(); } finally{ _cpln.pause--; } }
+// ENVMIRROR's envmRelAttach (the class is known): the three reads, once per class. All three must arrive; a failure keeps today's behaviour.
+function cplnLoad(kid,cid,edb,sid){
+  try{
+    if(!kid||!cid||!edb||!sid||(typeof envSiteOn==="function"&&envSiteOn())) return false;
+    const cur=_cpln.kids[kid]; if(cur&&cur.cid===cid) return false;
+    const rec={cid:cid,sid:sid,cls:null,plan:null,stu:null,ok:false,n:0,bad:false}; _cpln.kids[kid]=rec;
+    const val=s=>(s&&typeof s.val==="function")?s.val():null;
+    const done=(k,v,bad)=>{ if(_cpln.kids[kid]!==rec) return; if(bad) rec.bad=true; else rec[k]=(v&&typeof v==="object")?v:{}; if(++rec.n<3) return;
+      rec.ok=!rec.bad; if(rec.ok){ rec.at=Date.now(); try{ if(typeof renderAllSoon==="function") renderAllSoon(); }catch(e){} } };
+    [["cls","classes/"+cid+"/settings"],["plan","classes/"+cid+"/plan"],["stu","students/"+sid+"/settings"]].forEach(p=>{
+      try{ edb.ref(p[1]).once("value",s=>done(p[0],val(s)),()=>done(p[0],null,true)); }catch(e){ done(p[0],null,true); } });
+    return true;
+  }catch(e){ return false; }
+}
+// [class, his override] as read
+function cplnLayers(kid){ const r=_cpln.kids[kid]||{}; return [r.cls||{},r.stu||{}]; }
+// the study layers L1 brings: the site's defaults first, then the class, then his override, for CPLN_STUDY only
+function cplnStudyLayers(kid){
+  const def={}; CPLN_STUDY.forEach(n=>{ const f=(typeof envClsField==="function")?envClsField(n):null; if(!f) return; const d=envClsDef(f); if(d!=null) def[n]=d; });
+  const pick=x=>{ const s=(x&&x.study)||{}, o={}; CPLN_STUDY.forEach(n=>{ if(s[n]!=null) o[n]=s[n]; }); return {study:o}; };
+  return [{study:def}].concat(cplnLayers(kid).map(pick));
+}
+// one drill value through the layers (class, then his override); a bad value is skipped. dflt when no layer sets it.
+function cplnDrillVal(kid,name,dflt){ let v=dflt; cplnLayers(kid).forEach(x=>{ const y=x&&x.drill&&x.drill[name]; if(y==null) return; const c=envClsCheck(name,y); if(c.ok) v=c.v; }); return v; }
+function cplnDrillMap(kid,name,deck){ let v; cplnLayers(kid).forEach(x=>{ const m=x&&x.drill&&x.drill[name]; if(!m||typeof m!=="object"||m[deck]==null) return; const c=envClsCheck(name,m[deck],deck); if(c.ok) v=c.v; }); return v; }
+// Days a card is learned (the class's intro_dots, default CPSEATS' 5)
+function cplnDays(kid){ const f=(typeof envClsField==="function")?envClsField("intro_dots"):null; return cplnDrillVal(kid,"intro_dots",(f&&f.def)||5); }
+// the Envirothon deck keys for this kid (ENVDRILLFIRST's: the unit's decks, enrolled kid)
+function cplnDecks(kid){ const s=(typeof envDrillDecks==="function")?envDrillDecks(kid):null; return s?Array.from(s):[]; }
+// his 🌿 session record with the class's study numbers, in memory (a new object)
+function cplnStudy(kid,rec){
+  const L=cplnStudyLayers(kid);
+  let o=envClsMerge("study",rec,L); if(o===rec) o=Object.assign({},rec);
+  if(o.maxCards==="auto") o.maxCards=(typeof cpSeatsAuto==="function")?cpSeatsAuto(o.newPerDay!=null?o.newPerDay:5,cplnDays(kid)):rec.maxCards;
+  if(typeof o.maxCards!=="number") o.maxCards=rec.maxCards;
+  o.order=(o.coreFirst==="off")?"bank":"core";
+  return o;
+}
+// his drill settings with the class's per-deck fields on his 15 Envirothon decks only; rec itself when nothing differs
+function cplnDrill(kid,rec){
+  const decks=cplnDecks(kid); if(!decks.length) return rec;
+  const modeDef=(typeof envClsDef==="function"&&typeof envClsField==="function")?(envClsDef(envClsField("cat_modes"))||{}):{};
+  const fMax=envClsField("max_intro_per_cat"), days=cplnDays(kid);
+  const modes=Object.assign({},rec.cat_modes||{}), imax=Object.assign({},rec.cat_intro_max||{}), dots=Object.assign({},rec.cat_intro_dots||{});
+  let changed=false;
+  decks.forEach(d=>{
+    let im=(fMax&&fMax.def)||3; cplnLayers(kid).forEach(x=>{ const dr=(x&&x.drill)||{};   // a layer's per-deck number beats its New per deck in a drill; a later layer beats an earlier one
+      const pd=dr.cat_intro_max&&typeof dr.cat_intro_max==="object"?dr.cat_intro_max[d]:null, all=dr.max_intro_per_cat;
+      if(pd!=null){ const c=envClsCheck("cat_intro_max",pd,d); if(c.ok){ im=c.v; return; } }
+      if(all!=null){ const c=envClsCheck("max_intro_per_cat",all); if(c.ok) im=c.v; } });
+    const md=cplnDrillMap(kid,"cat_modes",d)||modeDef[d];
+    if(md!=null&&modes[d]!==md){ modes[d]=md; changed=true; }
+    if(imax[d]!==im){ imax[d]=im; changed=true; }
+    if(dots[d]!==days){ dots[d]=days; changed=true; }
+  });
+  return changed?Object.assign({},rec,{cat_modes:modes,cat_intro_max:imax,cat_intro_dots:dots}):rec;
+}
+// envClassOverlay's first line: undefined = not his (the site's own layer runs as before)
+function cplnOverlay(part,kid,rec){
+  try{
+    if(!rec||!cplnOn(kid)) return undefined;
+    if(part==="study") return cplnStudy(kid,rec);
+    if(part==="drill") return cplnDrill(kid,rec);
+    return undefined;
+  }catch(e){ return undefined; }
+}
+// cpReviewSession's hook (mstSessions, after the session object is built): his 🌿 session reviews in the sitting, with the class's Reviews a sitting
+function cplnSession(kid,sid,rec,s){
+  if(!s||typeof ENV_SESSION_SID==="undefined"||sid!==ENV_SESSION_SID||!cplnOn(kid)) return false;
+  const c=envClsCheck("reviewCap",rec&&rec.reviewCap);
+  s.reviewIn="sitting"; s.reviewCap=c.ok?c.v:0; s.cplnClass=true;
+  return true;
+}
+// mstMixOwns' hook: his Daily Mix leaves his 🌿 session's cards alone (they're reviewed in the sitting)
+function cplnMixSkip(s){ return !!(s&&s.cplnClass===true&&s.reviewIn==="sitting"); }
+// nbLoad's hook: his review load without the 15 Envirothon decks (the same array back when L1 is off)
+function cplnLoadItems(kid,items){
+  if(!cplnOn(kid)||!Array.isArray(items)) return items;
+  const d=new Set(cplnDecks(kid)); if(!d.size) return items;
+  return items.filter(i=>!(i&&d.has(i.subject)));
+}
+// ENVDRILLFIRST's ceiling for him: the class's Reviews a sitting (0 = no ceiling); def otherwise
+function cplnDrillMax(kid,def){
+  if(!cplnOn(kid)) return def;
+  let v=0; cplnStudyLayers(kid).forEach(x=>{ const y=x.study.reviewCap; if(y==null) return; const c=envClsCheck("reviewCap",y); if(c.ok) v=c.v; });
+  return v>0?v:Infinity;
+}
+// his class's plan record for one section, for his check-ins and finals (CPFINAL reads it); undefined = not his: CPFINAL's own test runs
+function cplnPlanRec(kid,station){
+  if(!station||!cplnOn(kid)) return undefined;
+  const P=(_cpln.kids[kid]||{}).plan||{}; return P[station]||null;
+}
+// learned for the final, per section (null = not his)
+function cplnLearnedAt(kid,station){
+  if(!station||!cplnOn(kid)) return null;
+  const P=(_cpln.kids[kid]||{}).plan||{}, v=P[station]&&P[station].learnedAt;
+  return (v&&typeof envClsTiers==="function"&&envClsTiers().indexOf(v)>=0)?v:((typeof CPR_LEARNED_DEF!=="undefined")?CPR_LEARNED_DEF:"bi_weekly");
+}
+// mhqSessOpen's hook: his 🌿 editor opens on his own record's values, never the class's
+function cplnEditorForm(kid,sid,form){
+  if(!form||typeof ENV_SESSION_SID==="undefined"||sid!==ENV_SESSION_SID||!cplnOn(kid)) return form;
+  const raw=cplnRaw(()=>mstSessions(kid).find(s=>s.sid===sid)); if(!raw) return form;
+  return Object.assign({},raw,{decks:(raw.decks||[]).slice(),skipDecks:(raw.skipDecks||[]).slice(),pattern:raw.pattern?raw.pattern.slice():null,bothWays:!!raw.bothWays});
+}
+// _mhqRenderSessForm's hook: "⚙️ set by the class: …" on each field the class sets, and one line on top
+function cplnEditorMark(kid,sid,h){
+  try{
+    if(typeof h!=="string"||typeof ENV_SESSION_SID==="undefined"||sid!==ENV_SESSION_SID||!cplnOn(kid)) return h;
+    const s=mstSessions(kid).find(x=>x.sid===sid); if(!s) return h;
+    const E=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    const tag=t=>' <span data-cpln="class" style="font-weight:800;color:#15803d">⚙️ set by the class: '+E(t)+'</span>';
+    const steps=(s.pattern||[]).map(p=>{ const x=(typeof ENVCS_STEPS!=="undefined")?ENVCS_STEPS.find(y=>y[0]===p):null; return x?x[1]:p; }).join(" → ");
+    const rv="every review in the \u{1F33F} sitting"+(s.reviewCap>0?" ("+s.reviewCap+" a sitting)":"");
+    const val={newPerDay:s.newPerDay,passes:s.passes,maxCards:s.maxCards>0?s.maxCards:"no limit",focusDecks:s.focusDecks>0?s.focusDecks:"every open deck",pattern:steps||"off",mixInAt:rv,handOffAt:rv,order:s.order==="core"?"core cards first":"in deck order"};
+    Object.keys(CPLN_LBL).forEach(k=>{ const a='>'+CPLN_LBL[k]+'</div>', i=h.indexOf(a); if(i<0) return; h=h.slice(0,i)+'>'+CPLN_LBL[k]+tag(val[k])+'</div>'+h.slice(i+a.length); });
+    const top='<div data-cpln="note" style="margin:0 0 6px;padding:8px 10px;border-radius:8px;background:#f0fdf4;border:1.5px solid #bbf7d0;color:#14532d;font-size:12px;font-weight:700">⚙️ While he is in his Envirothon class, the fields marked ⚙️ follow the class. The numbers you set here are kept, and they come back if he leaves the class.</div>';
+    const j=h.indexOf(">"); return j<0?h:h.slice(0,j+1)+top+h.slice(j+1);
+  }catch(e){ return h; }
+}
+// CPLINCOLN_END
 // ENVSITE_START — 🌿 THE ENVIROTHON SITE: one page, one Firebase project, routed by login role (step 4 of PLAN_envirothon_2026-10-27.md;
 // DESIGN_envirothon_console_2026-10-27.md ✅ DECISIONS, DESIGN_envirothon_micro_academy_2026-10-27.md ✅ DECISIONS + §2–§4,
 // DESIGN_envirothon_code_protection_2026-10-27.md §3). Her words 2026-10-27/28: "I'm good with it all being on one page as long as
@@ -47714,6 +47878,7 @@ function envClsLayers(){
 // the site's own kid (kid / parent login, or the demo's kid) and the class or the student has a value.
 function envClassOverlay(part,kid,rec){
   try{
+    { const _l=(typeof cplnOverlay==="function")?cplnOverlay(part,kid,rec):undefined; if(_l!==undefined) return _l; }   // 🌿 CPLINCOLN: Lincoln's 🌿 session + his 15 decks follow his class (a mirrored kid; undefined for anyone else)
     if(!envClsOn()||!rec||!kid||kid!==_envs.kid) return rec;
     if(!envsDemo()&&!(_envs.role==="kid"||_envs.role==="parent")) return rec;
     const L=envClsLayers(); if(!L) return rec;
@@ -53043,6 +53208,7 @@ function cpReviewCapOf(rec){
 // mstSessions' hook: the site kid's deck sessions review in the sitting, with the class's cap. s = the session object just built (never the
 // kid's own record); everyone else: nothing is added.
 function cpReviewSession(kid,sid,rec,s){
+  if(typeof cplnSession==="function"&&cplnSession(kid,sid,rec,s)) return s;   // 🌿 CPLINCOLN: his 🌿 session reviews in the sitting under the class's Reviews a sitting (true only for him)
   if(!s||s.kind==="mix"||s.kind==="checkup"||!cpReviewOn(kid)) return s;
   s.reviewIn=(typeof cpdrMode==="function"&&cpdrMode(kid))||"sitting";   // 🧠 CPDRILLPARENT: "parent" while the parent has taken the reviews over (the switch on the parent page)
   s.reviewCap=cpReviewCapOf(rec);
@@ -53061,6 +53227,7 @@ function cpReviewCapPile(session,pile){
 }
 // learned for the final, per section: the plan's learnedAt, else bi_weekly — the site's kid only (null = PR A's rule, the session's handOffAt)
 function cpReviewLearnedAt(kid,station){
+  { const _l=(typeof cplnLearnedAt==="function")?cplnLearnedAt(kid,station):null; if(_l) return _l; }   // 🌿 CPLINCOLN: his class's section plan
   if(!cpReviewOn(kid)) return null;
   const p=(_envs.cls&&_envs.cls.plan&&station&&_envs.cls.plan[station])||null, v=p&&p.learnedAt;
   return (v&&typeof envClsTiers==="function"&&envClsTiers().indexOf(v)>=0)?v:CPR_LEARNED_DEF;
@@ -53118,6 +53285,7 @@ function cpFinalPlanOf(rec){
 }
 // the plan for the site's kid (the class record the kid's app already holds); null = not the site's kid → PR A's rule
 function cpFinalPlan(kid,station){
+  { const _l=(typeof cplnPlanRec==="function")?cplnPlanRec(kid,station):undefined; if(_l!==undefined) return cpFinalPlanOf(_l); }   // 🌿 CPLINCOLN: his class's section plan
   if(typeof cpReviewOn!=="function"||!cpReviewOn(kid)||!station) return null;
   const P=(_envs.cls&&_envs.cls.plan)||null; return cpFinalPlanOf(P&&P[station]);
 }
@@ -66674,7 +66842,7 @@ function mastDueItems(kid,pn){
   const _owned=(typeof mstOwnedIds==="function")?mstOwnedIds(kid):null;
   const due=items.filter(i=>mastIsDue(i,pn)&&!mastIsNeverDrill(i)&&!mastIsParked(i)&&!(_owned&&_owned.has(i.id)));  // R5: never-drill items never assemble; parked issue-words are held out
   due.sort((a,b)=>MAST_TIER_ORDER.indexOf(a.tier||"daily")-MAST_TIER_ORDER.indexOf(b.tier||"daily"));
-  const _env=(typeof envDrillSplit==="function")?envDrillSplit(kid,due):null, _envJ=l=>(_env&&typeof envDrillJoin==="function")?envDrillJoin(_env,l):l;   // 🌿 ENVDRILLFIRST: his Envirothon cards leave the pool before the guards and go back on the front
+  const _env=(typeof envDrillSplit==="function")?envDrillSplit(kid,due):null, _envJ=l=>(_env&&typeof envDrillJoin==="function")?envDrillJoin(_env,l,(typeof cplnDrillMax==="function")?cplnDrillMax(kid,ENV_DRILL_MAX):undefined):l;   // 🌿 ENVDRILLFIRST: his Envirothon cards leave the pool before the guards and go back on the front   // 🌿 CPLINCOLN: Lincoln's ceiling is his class's Reviews a sitting (0 = no ceiling)
   const _mk=masteryKid; masteryKid=kid; const settings=mastDrillSettings(); masteryKid=_mk;
   // Return-day softener (max_overdue_per_drill, 0 = off — Adrienne 2026-10-05): after a run of
   // missed school days every slot that came due meanwhile stacks onto the first drill back
@@ -66782,10 +66950,10 @@ function envDrillSplit(kid,due){
   return env;
 }
 // Put them back on the front: reviews first, then learning cards, at most ENV_DRILL_MAX; then the builder's list as it came.
-function envDrillJoin(env,list){
+function envDrillJoin(env,list,max){
   if(!env||!env.length) return list;
   const rev=env.filter(i=>i.status!=="introduction"), learn=env.filter(i=>i.status==="introduction");
-  return rev.concat(learn).slice(0,ENV_DRILL_MAX).concat(list||[]);
+  return rev.concat(learn).slice(0,max==null?ENV_DRILL_MAX:max).concat(list||[]);   // max: the caller's ceiling when a class sets one (else ENV_DRILL_MAX)
 }
 // Slideshow: a thin strip while the card on screen is an Envirothon card ("🌿 Envirothon first · 2 / 5"); "" otherwise.
 function envDrillStripHtml(kid,item,list,base){
@@ -67584,7 +67752,7 @@ function mastAdminInit(){
   // editing the real cache: a pill tap took effect immediately without ever being saved, then
   // the mastery listener (1814) or a reload silently reverted it. Unsaved has to MEAN unsaved,
   // or "Unsaved changes" reads as decoration next to a switch that already works.
-  mastAdminLocal=JSON.parse(JSON.stringify(mastDrillSettings()));
+  mastAdminLocal=JSON.parse(JSON.stringify((typeof cplnRaw==="function")?cplnRaw(mastDrillSettings):mastDrillSettings()));   // 🌿 CPLINCOLN: Drill Rules opens on his own settings, never the class's per-deck values
   mastAdminDirty=false;
   mastOverrideExtraCats=[];
   const cats=Object.keys(MAST_BANK_MAP[masteryKid]||{});
@@ -69588,7 +69756,7 @@ function _nbItems(kid){ let it=masteryData[kid]||[]; if(!Array.isArray(it)) it=O
 // Whole review load: reviews a day the ladder asks for — every card on it, wherever it is studied, 1 ÷ its rung's days.
 function nbLoad(kid,pn){
   let n=0;
-  _nbItems(kid).forEach(i=>{ if(i.status!=="active"||mastIsParked(i)||(typeof mastIsNeverDrill==="function"&&mastIsNeverDrill(i))) return; const iv=MAST_TIER_INT[i.tier||"daily"]; if(iv) n+=1/iv; });
+  ((typeof cplnLoadItems==="function")?cplnLoadItems(kid,_nbItems(kid)):_nbItems(kid)).forEach(i=>{ if(i.status!=="active"||mastIsParked(i)||(typeof mastIsNeverDrill==="function"&&mastIsNeverDrill(i))) return; const iv=MAST_TIER_INT[i.tier||"daily"]; if(iv) n+=1/iv; });   // 🌿 CPLINCOLN: his 15 Envirothon decks leave the load (her pick 2026-10-29)
   return Math.round(n);
 }
 // Words the book has released (the chapter gate) that the kid hasn't started, across a session's decks.
@@ -70678,6 +70846,7 @@ function mstMixOwns(sessions, item, ladder) {
     // Every session that owns decks feeds the mix — hand-picked ones AND the Daily Study
     // catch-all. (Only the mix itself is skipped; it owns no decks of its own.)
     if (s.kind === "mix" || s.kind === "checkup") continue;
+    if (typeof cplnMixSkip === "function" && cplnMixSkip(s)) continue;   // 🌿 CPLINCOLN: his Envirothon cards are reviewed in the 🌿 sitting, not the Daily Mix (her pick 2026-10-29)
     if (!s.decks || s.decks.indexOf(item.subject) === -1) continue;
     const mixInIdx = mstTierIdx(s.mixInAt, ladder);
     const handOffIdx = mstTierIdx(s.handOffAt, ladder);
@@ -74710,6 +74879,7 @@ function mhqSessOpen(sid) {
   } else {
     const existing = mstSessions(mhqKid).find(function (s) { return s.sid === sid; });
     mhqSessForm = existing ? Object.assign({}, existing, { decks: (existing.decks || []).slice(), skipDecks: (existing.skipDecks || []).slice(), pattern: existing.pattern ? existing.pattern.slice() : null, bothWays: !!existing.bothWays }) : null;
+    if (typeof cplnEditorForm === "function") mhqSessForm = cplnEditorForm(mhqKid, sid, mhqSessForm);   // 🌿 CPLINCOLN: his 🌿 editor opens on his own record, so a Save never copies the class's numbers
   }
   renderAll();
 }
@@ -74933,6 +75103,7 @@ function _mhqRenderSessForm(kid) {
   h += '<button onclick="mhqSessSave()" style="' + btn + 'border:none;background:var(--header);color:#fff">Save</button>';
   h += '<button onclick="mhqSessClose()" style="' + btn + 'border:1.5px solid var(--border);background:var(--card);color:var(--text)">Cancel</button>';
   h += '</div></div>';
+  if (typeof cplnEditorMark === "function") h = cplnEditorMark(kid, mhqSessEdit, h);   // 🌿 CPLINCOLN: "⚙️ set by the class" on each field his class sets
   return h;
 }
 
