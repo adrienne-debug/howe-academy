@@ -46523,6 +46523,7 @@ function envSummary(kid,ctx){
     if(Object.keys(tests).length) out.tests=tests; }
   if(typeof cpPaceSumCore==="function") cpPaceSumCore(kid,out,ctx);   // 📅 CPPACE: the site kid's core cards per section (the site only; Lincoln's mirror in Howe is untouched)
   if(typeof cpSkillSummary==="function"){ const sk=cpSkillSummary(kid,M,now); if(sk) out.skills=sk; }   // 🧩 CPSKILL: summary.skills on the class site only (null for Howe and Lincoln)
+  if(typeof cpWatchSum==="function"){ const rv=cpWatchSum(kid,M,now); if(rv) out.review=rv; }   // 🧠 CPWATCH: summary.review, the parent drill watch (the class site only; null for Howe and Lincoln)
   return out;
 }
 function envmHash(s){ const o=Object.assign({},s); delete o.at; const str=JSON.stringify(o); let h=5381; for(let i=0;i<str.length;i++) h=((h*33)^str.charCodeAt(i))>>>0; return h.toString(36)+":"+str.length; }
@@ -47024,6 +47025,7 @@ function envsStudyHtml(kid){
   let body=""; try{ body=(typeof renderMastStudy==="function")?renderMastStudy({noCheckup:true}):""; }catch(e){ body='<div class="envs-card" style="color:var(--muted)">Couldn\u2019t load the study cards \u2014 try again ('+envsEsc((e&&e.message)||e)+')</div>'; }
   if(!body||/No study sessions yet/.test(body)) body='<div class="envs-card" style="text-align:center;padding:30px 14px"><div style="font-size:36px">\u{1F331}</div><div style="font-weight:900;font-size:16px;margin-top:6px">Your cards are on their way</div><div class="envs-muted" style="margin-top:4px">'+(_envs.autoEnroll==="working"?'Setting up your Envirothon deck now\u2026':'Your teacher sends out each station as the class reaches it. Check back after class.')+'</div></div>';
   if(typeof cpsdKidNote==="function") body=cpsdKidNote(kid)+body;   // 📤 CPSEND: 📅 what is coming, and when
+  if(typeof cpWatchHtml==="function") body=cpWatchHtml("kid",kid)+body;   // 🧠 CPWATCH: the review cards waiting for the drill with Mom or Dad
   body=(typeof cpSkillStudyWrap==="function")?cpSkillStudyWrap(kid,body):body;   // 🧩 CPSKILL: a running skill sitting takes the page; else the 🧩 Skills door under the study start
   return '<div style="padding-top:4px">'+body+'</div>';
 }
@@ -47196,6 +47198,7 @@ function envsDemoStart(){
   try{ envsDemoSeedKid(data); }catch(e){ try{ console.error("[HA] ENVSITE demo seed",e); }catch(x){} }
   try{ if(typeof cpFinalDemoSeed==="function") cpFinalDemoSeed(); }catch(e){}   // 📝 CPFINAL: Maya's Soils at 3 of 4 core cards learned
   try{ if(typeof envcDemoStart==="function") envcDemoStart(data); }catch(e){}
+  try{ if(typeof cpWatchDemoSeed==="function") cpWatchDemoSeed(data); }catch(e){}   // 🧠 CPWATCH: Jonah's parent hasn't drilled for 4 study days
   try{ haAuthHide(); }catch(e){}
   try{ if(typeof cpSkillDemoSeed==="function") cpSkillDemoSeed(data); }catch(e){}   // 🧩 CPSKILL: the sample skill (biotic index) + the classmates' skill counts
   try{ masteryKid="maya"; }catch(e){}
@@ -47347,7 +47350,7 @@ function envcGridHtml(){
   h+='<tr><th></th>'+stns.map(s=>{ const o=envcStationOpen("",s); return '<th class="c" style="font-weight:600">'+(o==="all"?'● open':o==="some"?'◐ part':'○')+'</th>'; }).join("")+'<th></th><th></th></tr></thead><tbody>';
   if(!S.length) h+='<tr><td colspan="'+(stns.length+3)+'" class="envs-muted">No students yet — add them on the Roster.</td></tr>';
   S.forEach(s=>{ const sm=s.summary||null, ago=envsDaysAgo(sm&&sm.streak&&sm.streak.last);
-    h+='<tr><td><a href="javascript:void(0)" onclick="envcView(\'student\',\''+envcJ(s.sid)+'\')" style="font-weight:800;color:#14532d">'+envcEsc(envcName(s))+'</a>'+(envcApp(s)==="howe"?' <span class="envs-chip" style="font-size:10px">Howe app</span>':'')+(ago!=null&&ago>7?' <span title="no study in '+ago+' days">⚠</span>':'')+((typeof cpPaceGridChip==="function")?cpPaceGridChip(s):'')+'</td>';   // 📅 CPPACE: on pace under the name
+    h+='<tr><td><a href="javascript:void(0)" onclick="envcView(\'student\',\''+envcJ(s.sid)+'\')" style="font-weight:800;color:#14532d">'+envcEsc(envcName(s))+'</a>'+(envcApp(s)==="howe"?' <span class="envs-chip" style="font-size:10px">Howe app</span>':'')+(ago!=null&&ago>7?' <span title="no study in '+ago+' days">⚠</span>':'')+((typeof cpPaceGridChip==="function")?cpPaceGridChip(s):'')+((typeof cpWatchGridChip==="function")?cpWatchGridChip(s):'')+'</td>';   // 📅 CPPACE: on pace under the name · 🧠 CPWATCH: ⚠ when the parent's drill isn't run
     stns.forEach(st=>{ const x=envsStationStat(sm,st); const open=envcStationOpen(s.sid,st); let cell;
       if(!x.released&&!open) cell='<span class="envs-muted">–</span>'; else if(!x.released) cell='<span class="envs-muted" title="sent out, nothing studied yet">0%</span>'; else cell='<b>'+x.pct+'%</b>'+(x.acc14!=null?' <span class="envs-muted">·'+x.acc14+'%</span>':'');
       if(x.grad) cell+=' \u{1F393}'; else if(x.post) cell+=' <span class="envs-muted" title="final">\u{1F4DD}</span>';
@@ -47360,6 +47363,7 @@ function envcGridHtml(){
 function envcStudentHtml(sid){
   const s=Object.assign({sid},_envc.students[sid]||{}), sm=s.summary||null, stns=envsStations(), cid=_envc.cid;
   let h='<div class="envs-card"><div class="envs-row"><button class="envs-btn sec" onclick="envcView(\'grid\')">← class</button><div style="flex:1"><div class="envs-h2" style="margin:0">'+envcEsc(envcName(s))+(envcApp(s)==="howe"?' · Howe Academy app':'')+'</div><div class="envs-muted">'+(sm?'content v'+(sm.unitVer||1)+' · streak '+((sm.streak&&sm.streak.days)||0)+' d · '+Object.keys(sm.days||{}).filter(k=>envsDaysAgo(k)<30).length+' study days this month · last mirrored '+envcEsc(envsWhen(sm.at?envsDayKey(sm.at):null)):'no study mirrored yet')+'</div></div></div></div>';
+  if(typeof cpWatchStudentHtml==="function") h+=cpWatchStudentHtml(sid);   // 🧠 CPWATCH: ⚠ the parent's drill not run, with Leave it
   h+='<div class="envs-card"><div class="envs-h2">Stations</div>'+envsStationRowsHtml(sm,{weak:true})+'</div>';
   if(typeof cpdtStudentHtml==="function") h+=cpdtStudentHtml(sid);   // 🧠 CPDRILLTEACHER: 🧠 Drill this student now
   const held=stns.filter(st=>envcStationOpen(sid,st)!=="all");
@@ -47793,6 +47797,7 @@ function envClsBodyHtml(scope,adv,advClick){
   let h=envClsSectHtml(scope,"front");
   h+='<button class="envs-btn sec" style="width:100%;margin-bottom:12px" onclick="'+advClick+'">'+(adv?'▴ Hide advanced':'▾ Advanced · when cards move on, the drill ladder, limits, each deck')+'</button>';
   if(adv) ["moves","ladder","limits","decks"].forEach(s=>{ h+=envClsSectHtml(scope,s); });
+  if(typeof cpWatchSectHtml==="function") h+=cpWatchSectHtml(scope);   // 🧠 CPWATCH: ⚙️ Parent drills (the class's numbers)
   return h;
 }
 // the ⚙️ Class settings screen (ENVCONSOLE's chip): the class's values, Adrienne's locks
@@ -51878,6 +51883,190 @@ function cpdrWhoNote(who){
   return name+"’s "+cpdrLevel(kid)+" review cards come to you: 🧠 Drill with "+name+" at the top of this page, every study day. Everything below that stays in "+name+"’s \u{1F33F} sitting."+((who==="teacher"||who==="both")?" The teacher drills in class too.":"");
 }
 // CPDRILLPARENT_END
+// CPWATCH_START — 🧠 THE DAILY-DRILL WATCH: when a parent took a student's review cards over and the drill isn't getting done, the parent
+// and the student are reminded and the teacher is warned (DESIGN_class_platform_2026-10-28.md §7(a) 4–5, §9, §13 row 17, §14 Q24–Q26;
+// PR 17 of the class platform, the second half of PR 13). Her words 2026-10-28: "the mom, if she knows her kid and wants to hand it off to a
+// parent drill … then she would need to run it daily. But there needs to be a reminder that if she's pulling things in and it's not getting
+// done, and a message or a warning sent to the teacher." INERT unless CPDRILLPARENT's cpdrOn says this is the site's own kid (a kid or parent
+// login, or the demo's kid) — and on the console, unless a student's summary carries a parent-drill record. Lincoln in Howe: no edition,
+// nothing here runs, his summary is published exactly as before.
+//   · summary.review (PURE cpWatchCalc, worked out in the kid's or parent's own app each time the summary is built; one guarded line in
+//     envSummary): {mode:"parent", lastDrill, waiting, overdue, missed, flag, since, asOf}. waiting = the cards due in the parent's drill now
+//     (cpdrDue: the app's own drill builder). overdue = those due on an earlier school day (next_due < today's school day). lastDrill = the
+//     newest mastery/history/<kid>/<date> that counts as run: it graded every card it was given, or the drill's limit (ENV_DRILL_MAX).
+//     missed = the study days (the class calendar, or the family's own once PR 22 adds cpCalOf) strictly after max(lastDrill, the day the
+//     parent took over) and before today — never more than the oldest waiting card has been waiting, and 0 when nothing waits. Today is
+//     never missed yet. since = that start day. asOf = the day it was worked out, so the console adds the study days that passed since
+//     (an app nobody opened still counts its days). No counter is stored anywhere.
+//   · THE REMINDERS (the numbers in ⚙️ Class settings ▸ Parent drills: remindAfterDays 2, warnAfterDays 3, warnAfterCards 30; Adrienne's
+//     🔒 per setting locks them as for every other class setting; PR 15's class locks will cover them too):
+//       cards waiting, no drill today → the parent's 🧠 card: "8 review cards waiting for your drill with Maya"; the student's 🌿 page:
+//         "8 review cards are waiting for your drill with Mom or Dad".
+//       missed ≥ remindAfterDays → both turn amber: "Maya’s review drill hasn’t run since Tue · 23 cards waiting. Maya’s teacher sees this
+//         after 3 study days." Once the teacher's warning is up, the parent's line says the teacher has been told.
+//       missed ≥ warnAfterDays, or overdue ≥ warnAfterCards (0 = days only) → THE TEACHER: ⚠ 🧠 on that student's row of 📋 Class and a card
+//         on the student page, "⚠ Parent drill not run for 4 study days · 37 waiting · since Thu Oct 22", with Leave it. A flag in the
+//         console, not an email (Q25 is a separate server step). A teacher's (or Adrienne's) move back to the sitting clears it at once.
+//   · LEAVE IT: students/<sid>/reviewQuiet = {until:"YYYYMMDD", by} (the class's teacher or admin; SITE_RULES.json), one set through
+//     envcWrite → envsWrite ("would write" in the demo; dry run: nothing): the ⚠ stays down through the next 3 study days. ↩ Undo removes it.
+//   · Q24 IS NOT ANSWERED: nothing here turns the switch off by itself. The hook point is cpWatchFallBack(kid, review), called with the
+//     worked-out numbers each time the summary is built (typeof-guarded; nothing defines it). If she says yes, that PR adds
+//     fallBackAfterDays to the Parent drills settings and defines cpWatchFallBack.
+//   · DEMO: Jonah T.'s parent took the reviews over and hasn't drilled for 4 study days (37 waiting) → Teacher ▸ 📋 Class: ⚠ 🧠 on Jonah ▸
+//     his page. Maya (the demo's own kid): Parent ▸ switch on ▸ "🧪 Demo: next study day, no drill" moves the demo's clock one study day
+//     (2 taps: amber; 3: the teacher is told and Maya's row gets the ⚠ too) · Kid ▸ 🌿: the "waiting" line. A drill saved resets the clock.
+const CPW_FIELDS=[
+  {name:"remindAfterDays",part:"study",sect:"pdrill",kind:"int",min:1,max:14,def:2,label:"Remind the parent after",means:"Study days in a row without the parent’s review drill before the parent’s page and the student’s turn amber."},
+  {name:"warnAfterDays",part:"study",sect:"pdrill",kind:"int",min:1,max:30,def:3,label:"Tell the teacher after",means:"Study days in a row without the drill before ⚠ shows on the class grid and the student page."},
+  {name:"warnAfterCards",part:"study",sect:"pdrill",kind:"int",min:0,max:500,def:30,zero:"days only",label:"…or once this many cards are overdue",means:"Review cards overdue for the parent’s drill that bring the ⚠ whatever the days (0 = days only)."}];
+const CPW_QUIET_DAYS=3, CPW_DRILL_MAX=15;
+const _cpw={ahead:0};
+// ⚙️ Class settings ▸ Parent drills: the section and its three rows, added to ENVCLASSSET's lists from here (by name, once)
+function cpwFields(){
+  if(typeof ENVCS_FIELDS==="undefined"||!Array.isArray(ENVCS_FIELDS)||typeof ENVCS_SECTS==="undefined"||!Array.isArray(ENVCS_SECTS)) return false;
+  if(!ENVCS_SECTS.some(x=>x&&x[0]==="pdrill")) ENVCS_SECTS.push(["pdrill","Parent drills","study"]);
+  CPW_FIELDS.forEach(f=>{ if(!ENVCS_FIELDS.some(x=>x&&x.name===f.name)) ENVCS_FIELDS.push(f); });
+  return true;
+}
+const CPW_FIELDS_SET=cpwFields();
+function cpwOn(kid){ return typeof cpdrOn==="function"&&typeof cpdrMode==="function"&&cpdrOn(kid); }
+// ── PURE: days (YYYYMMDD keys, UTC like the drill's history keys) on a calendar {days, off}
+function cpwKeyOk(k){ return /^\d{8}$/.test(String(k==null?"":k)); }
+function cpwNext(k,n){ return envsDayKey(envsKeyMs(k)+(n==null?1:n)*86400000); }
+function cpwStudyDay(cal,k){ const d=k.slice(0,4)+"-"+k.slice(4,6)+"-"+k.slice(6,8);
+  if(typeof cppStudy==="function") return cppStudy(cal,d);   // the pace planner's calendar rule (cppStudy)
+  const w=new Date(envsKeyMs(k)).getUTCDay(); return w>0&&w<6&&!(cal&&cal.off&&cal.off[d]); }
+// the study days d with a < d < b
+function cpwBetween(cal,a,b){ if(!cpwKeyOk(a)||!cpwKeyOk(b)) return 0; let n=0, d=cpwNext(a), g=0; while(d<b&&g++<800){ if(cpwStudyDay(cal,d)) n++; d=cpwNext(d); } return n; }
+// the n-th study day after a (n < 0: before a)
+function cpwStep(cal,a,n){ let d=a, k=0, g=0; const s=n<0?-1:1; while(k<Math.abs(n)&&g++<800){ d=cpwNext(d,s); if(cpwStudyDay(cal,d)) k++; } return d; }
+// a drill day counts as run when it graded every card it was given, or the drill's limit
+function cpwRan(rec){ if(!rec||typeof rec!=="object") return false; const sc=+rec.scored||0, t=+rec.total||0; return sc>0&&(sc>=t||sc>=CPW_DRILL_MAX); }
+// PURE. o = {hist:{<YYYYMMDD>:record}, takenAt (ms the parent took over), today, cal, due:[{next_due}], pn, remind, warn, cards}
+function cpWatchCalc(o){
+  o=o||{}; const today=o.today, due=Array.isArray(o.due)?o.due:[], pn=+o.pn||0;
+  let last=""; Object.keys(o.hist||{}).forEach(k=>{ if(cpwKeyOk(k)&&k<=today&&k>last&&cpwRan(o.hist[k])) last=k; });
+  const took=o.takenAt?envsDayKey(o.takenAt):"", start=(last>took?last:took)||today;
+  const waiting=due.length, overdue=due.filter(i=>i&&i.next_due!=null&&+i.next_due<pn).length;
+  const cap=(waiting&&due.every(i=>i&&i.next_due!=null))?Math.max(0,...due.map(i=>pn-(+i.next_due))):Infinity;
+  const missed=waiting?Math.min(cap,cpwBetween(o.cal,start,today)):0;
+  const remind=o.remind!=null?o.remind:2, warn=o.warn!=null?o.warn:3, cards=o.cards!=null?o.cards:30;
+  const flag=!waiting?null:(missed>=warn||(cards>0&&overdue>=cards))?"warn":missed>=remind?"remind":null;
+  return {mode:"parent",lastDrill:last||null,waiting,overdue,missed,flag,since:start,asOf:today};
+}
+// ── the settings: the console reads its own class (and the student's); a kid's or parent's app reads what its boot loaded
+function cpwNum(name,sid){
+  const f=CPW_FIELDS.find(x=>x.name===name); let v=null;
+  try{ if(typeof envcOn==="function"&&envcOn()&&typeof envClsEff==="function"&&typeof envClsField==="function"&&envClsField(name)) v=envClsEff(sid||"class",name);
+    else { const L=(typeof envClsLayers==="function"&&envClsLayers())||[]; L.forEach(l=>{ const x=((l&&l.study)||{})[name]; if(x!=null) v=x; }); } }catch(e){}
+  const n=+v; return (v!=null&&Number.isInteger(n)&&n>=f.min&&n<=f.max)?n:f.def;
+}
+// the study calendar of one student: the family's own (PR 22, cpCalOf) else the class's (the pace planner's cppCal: school days + the standard days off)
+function cpwCal(sid){
+  try{ if(typeof cpCalOf==="function"){ const c=cpCalOf(sid); if(c&&typeof c==="object") return c; } }catch(e){}
+  const cls=(typeof envcOn==="function"&&envcOn()&&_envc.cls)||_envs.cls||null;
+  if(typeof cppCal==="function") return cppCal(cls);
+  return {days:"school",off:Object.assign({},(cls&&cls.calendar&&cls.calendar.off)||{})};
+}
+// today; the demo's "next study day" button moves it on, one study day a tap
+function cpwToday(sid){ const t=envsTodayKey(); return (envsDemo()&&_cpw.ahead>0)?cpwStep(cpwCal(sid),t,_cpw.ahead+1):t; }
+// the site kid's own numbers, worked out from memory (null unless the parent has the reviews)
+function cpwState(kid){
+  if(!cpwOn(kid)||cpdrMode(kid)!=="parent") return null;
+  const sid=_envs.sid, rec=cpdrRecOf(sid)||{}, pn=mastGetPrintNum(kid), due=cpdrDue(kid,pn);
+  const hist=((typeof masteryData!=="undefined"&&masteryData.history)||{})[kid]||{};
+  return cpWatchCalc({hist,takenAt:rec.at,today:cpwToday(sid),cal:cpwCal(sid),due:due.map(i=>({next_due:i.next_due})),pn,remind:cpwNum("remindAfterDays",sid),warn:cpwNum("warnAfterDays",sid),cards:cpwNum("warnAfterCards",sid)});
+}
+// envSummary's hook: summary.review for the site kid's own summary (memory only; Lincoln and every Howe kid get null)
+function cpWatchSum(kid,M,now){
+  try{
+    if(!cpwOn(kid)||(M&&typeof masteryData!=="undefined"&&M!==masteryData)) return null;
+    const st=cpwState(kid); if(!st) return null;
+    if(typeof cpWatchFallBack==="function"){ try{ cpWatchFallBack(kid,st); }catch(e){} }   // Q24 (not answered): the automatic fall-back's hook point — nothing defines it
+    return st;
+  }catch(e){ return null; }
+}
+// CPDRILLPARENT's save hook: the drill ran today (the demo's clock comes back to today)
+function cpWatchDrilled(kid,hist){ if(!cpwOn(kid)) return false; _cpw.ahead=0; return true; }
+function cpwAhead(){ if(!envsDemo()) return false; _cpw.ahead++; envsRe(); return true; }
+function cpwDay(k){ if(!cpwKeyOk(k)) return ""; const d=new Date(envsKeyMs(k)); return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getUTCDay()]+" "+["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getUTCMonth()]+" "+d.getUTCDate(); }
+function cpwShort(k,today){ if(!cpwKeyOk(k)) return ""; const a=Math.round((envsKeyMs(today)-envsKeyMs(k))/86400000); return (a>=0&&a<7)?cpwDay(k).split(" ")[0]:cpwDay(k).slice(4); }
+function cpwN(n,one,many){ return n+" "+(n===1?one:(many||one+"s")); }
+// ── the parent's 🧠 card (CPDRILLPARENT's hook, at its bottom) and the student's 🌿 page (one line in envsStudyHtml)
+function cpWatchHtml(who,kid){
+  try{
+    const st=cpwState(kid); if(!st) return "";
+    const name=envsEsc(envsKidName(kid)), sid=_envs.sid, today=st.asOf, warnD=cpwNum("warnAfterDays",sid);
+    const demo=(who==="parent"&&envsDemo())?'<div style="margin-top:8px"><button class="envs-btn sec" style="min-height:34px;font-size:12px" onclick="cpwAhead()">\u{1F9EA} Demo: next study day, no drill'+(_cpw.ahead?' ('+_cpw.ahead+' on)':'')+'</button></div>':'';
+    if(!st.waiting||st.lastDrill===today) return demo;
+    const n=cpwN(st.waiting,"review card"), when=st.lastDrill?'hasn’t run since '+cpwShort(st.since,today):'hasn’t run yet (taken over '+cpwShort(st.since,today)+')';
+    const amber='margin-top:10px;padding:10px 12px;border-radius:12px;background:#fffbeb;border:1.5px solid #f59e0b;color:#78350f;font-size:13px;font-weight:700;line-height:1.4';
+    const plain='margin-top:8px;font-size:13px;font-weight:700;color:#6d28d9';
+    if(who==="kid"){
+      if(!st.flag) return '<div class="envs-card" style="'+plain+';margin-top:0">\u{1F9E0} '+n+(st.waiting===1?' is':' are')+' waiting for your drill with Mom or Dad.</div>';
+      return '<div class="envs-card" style="'+amber+';margin-top:0">\u{1F9E0} Your review drill '+when+' · '+n+(st.waiting===1?' is':' are')+' waiting for your drill with Mom or Dad.</div>';
+    }
+    if(!st.flag) return '<div style="'+plain+'">\u{1F9E0} '+n+' waiting for your drill with '+name+'.</div>'+demo;
+    return '<div style="'+amber+'">'+name+'’s review drill '+when+' · '+cpwN(st.waiting,"card")+' waiting. '+(st.flag==="warn"?name+'’s teacher has been told.':name+'’s teacher sees this after '+cpwN(warnD,"study day")+'.')+'</div>'+demo;
+  }catch(e){ return ""; }
+}
+// ── the console: a student's watch, from the summary their app published (+ the study days since it was worked out)
+function cpwSumOf(s){
+  const sm=s&&s.summary; let r=sm&&sm.review;
+  if(envsDemo()&&s&&s.sid===_envs.sid&&_envs.kid){ const live=cpwState(_envs.kid); if(live) r=live; }   // the demo's own kid: live, so the Kid/Parent taps show here
+  return (r&&typeof r==="object"&&r.mode==="parent")?r:null;
+}
+function cpwTeacher(s){
+  try{
+    const r=cpwSumOf(s); if(!r) return null;
+    if(s.review&&typeof s.review==="object"&&s.review.mode!=="parent") return null;   // moved back to the sitting since: nothing to watch
+    const sid=s.sid, cal=cpwCal(sid), today=cpwToday(sid), waiting=+r.waiting||0, overdue=+r.overdue||0;
+    const asOf=cpwKeyOk(r.asOf)?r.asOf:(sm=>sm&&sm.at?envsDayKey(sm.at):today)(s.summary);
+    let missed=+r.missed||0; if(waiting&&asOf<today) missed+=cpwBetween(cal,cpwNext(asOf,-1),today);   // the study days from asOf (incl.) to today
+    const wd=cpwNum("warnAfterDays",sid), wc=cpwNum("warnAfterCards",sid), warn=waiting>0&&(missed>=wd||(wc>0&&overdue>=wc));
+    const q=s.reviewQuiet, quiet=!!(q&&cpwKeyOk(q.until)&&today<=q.until);
+    return {missed,waiting,overdue,since:cpwKeyOk(r.since)?r.since:null,warn,quiet,until:quiet?q.until:null,show:warn&&!quiet};
+  }catch(e){ return null; }
+}
+function cpwLine(t){ return 'Parent drill not run for '+cpwN(t.missed,"study day")+' · '+t.waiting+' waiting'+(t.since?' · since '+cpwDay(t.since):''); }
+// envcGridHtml's hook: ⚠ 🧠 under the name
+function cpWatchGridChip(s){ const t=cpwTeacher(s); if(!t||!t.show) return ""; return ' <span class="envs-chip" title="'+envsEsc(cpwLine(t))+'" style="font-size:10px;background:#fef3c7;color:#92400e;border-color:#fcd34d">⚠ \u{1F9E0} drill</span>'; }
+// envcStudentHtml's hook: the card, with Leave it
+function cpWatchStudentHtml(sid){
+  if(typeof envcOn!=="function"||!envcOn()||!sid) return "";
+  const s=Object.assign({sid},(_envc.students||{})[sid]||{}), t=cpwTeacher(s); if(!t||!t.warn) return "";
+  const name=envsEsc(envcName(s)).split(" ")[0], btn=(l,on)=>'<button class="envs-btn sec" style="min-height:40px" onclick="'+on+'">'+l+'</button>';
+  if(t.quiet) return '<div class="envs-card" style="font-size:13px"><div class="envs-row"><div style="flex:1"><b>\u{1F9E0} Left for now</b> until '+envsEsc(cpwDay(t.until))+' · <span class="envs-muted">'+envsEsc(cpwLine(t))+'</span></div>'+btn("↩ Undo","cpwUnquiet('"+envcJ(sid)+"')")+'</div></div>';
+  let h='<div class="envs-card" style="border-color:#f59e0b;background:#fffbeb"><div style="font-weight:900;font-size:14.5px;color:#78350f">⚠ '+envsEsc(cpwLine(t))+'</div>';
+  h+='<div class="envs-muted" style="margin:4px 0 8px">'+name+'’s parent took the review cards over (\u{1F9E0} on the parent page) and has to drill them every study day. '+(t.overdue?t.overdue+' of them are overdue. ':'')+'The parent was reminded after '+cpwN(cpwNum("remindAfterDays",sid),"study day")+'. The numbers are in ⚙️ Class settings ▸ Parent drills.</div><div class="envs-row">';
+  if(typeof cpdrMoveBackHtml==="function"){ try{ h+=cpdrMoveBackHtml(sid)||""; }catch(e){} }   // "Move reviews back to the sitting" (row 13's button, not built yet)
+  h+=btn("Leave it","cpwQuiet('"+envcJ(sid)+"')")+'</div><div class="envs-muted" style="margin-top:4px">Leave it hides this for '+cpwN(CPW_QUIET_DAYS,"study day")+'. Writes students/'+envsEsc(sid)+'/reviewQuiet.</div>';
+  return h+'</div>';
+}
+function cpwQuietMem(sid,v){ if(!_envc.students[sid]) _envc.students[sid]={}; if(v) _envc.students[sid].reviewQuiet=v; else delete _envc.students[sid].reviewQuiet; }
+// Leave it: students/<sid>/reviewQuiet = {until, by}, one set (the class's teacher or admin)
+function cpwQuiet(sid){
+  if(typeof envcOn!=="function"||!envcOn()||!sid||!(_envc.students||{})[sid]) return false;
+  const rec={until:cpwStep(cpwCal(sid),cpwToday(sid),CPW_QUIET_DAYS),by:_envs.uid||""};
+  envcWrite("students/"+sid+"/reviewQuiet",rec,"set").then(()=>{ cpwQuietMem(sid,rec); envcRe(); }).catch(()=>{});
+  return true;
+}
+function cpwUnquiet(sid){
+  if(typeof envcOn!=="function"||!envcOn()||!sid||!(_envc.students||{})[sid]) return false;
+  envcWrite("students/"+sid+"/reviewQuiet",null,"remove").then(()=>{ cpwQuietMem(sid,null); envcRe(); }).catch(()=>{});
+  return true;
+}
+// envClsBodyHtml's hook: the Parent drills card, for the class (not on a student's own settings)
+function cpWatchSectHtml(scope){ if(scope!=="class"||!CPW_FIELDS_SET||typeof envClsSectHtml!=="function") return ""; return envClsSectHtml("class","pdrill"); }
+// envsDemoStart's hook: Jonah's parent took over 8 study days ago and last drilled 5 study days ago (4 missed between) · 37 waiting
+function cpWatchDemoSeed(data){
+  const j=data&&data.students&&data.students.tran_jonah; if(!envsDemo()||!j||!j.summary) return false;
+  const today=envsTodayKey(), cal=cpwCal(j.sid), last=cpwStep(cal,today,-5);
+  j.review={mode:"parent",by:"uid_p_jonah",role:"parent",at:envsKeyMs(cpwStep(cal,today,-8))+15*3600000};
+  j.summary.review={mode:"parent",lastDrill:last,waiting:37,overdue:37,missed:cpwBetween(cal,last,today),flag:"warn",since:last,asOf:today};
+  return true;
+}
+// CPWATCH_END
 // CPDRILLTEACHER_START — 🧠 THE TEACHER DRILLS 3–5 OF EACH STUDENT'S CARDS IN CLASS, and the student's own app books them forward
 // (DESIGN_class_platform_2026-10-28.md §7(b), §9, §12, §13 row 14, §14 Q13/Q14; PR 14 of the class platform). Which cards: the design's
 // pick for Q13 (2026-10-28), "due today, most-missed first". For Lincoln, her yes to Q14 (2026-10-28): "I would definitely love for the
