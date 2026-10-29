@@ -106,6 +106,7 @@ ok("pagesApply: the settings/pages listener combines, pagesToggle (a tap) paints
 // every renderAllSoon() call sits in the block, a listener callback, or one of the listener helpers above
 const ALLOWED_FN=["cpuWatch",   // 📦 CPUNIT (2026-10-28): a unit's catalog entry arriving (units/<id>/index listener)
   "cpceKidLoad",   // 📚 CPCARDSEDIT (2026-10-28): the class's card layer arriving (classCards/<cid>, read once at a kid's boot)
+  "cpphKidRepaint",   // 🖼 CPPHOTOS (2026-10-29): the class's and the unit's photo layers arriving (read once at a kid's boot)
   "attachWeekListeners","initFb","_loadPrevSl","mmAttachWeek","momBlocksListen","peekLoad","lrListen","rbLogListen","wsOnValue","hrOnValue","helpersOnValue","helperDaysOnValue","helperGiveOnValue","famProgOnValue","msgOnValue","pagesApply","envmRelease","envtFinalAttach","envsReadShared","envcSub","envClsKidLoad"];   // 🌿 ENVMIRROR / ENVSITE: listener-attach helpers whose arrivals combine; the teacher's release listener (data arrived)
 const stray=[]; { let cur=null; html.split("\n").forEach((l,i)=>{ const m=l.match(/^(?:async\s+)?function\s+([\w$]+)/); if(m) cur=m[1];
   if(/renderAllSoon\(\)/.test(l)&&!/^function renderAllSoon|^\/\//.test(l)&&!/^\/\/ /.test(l.trim())&&!ALLOWED_FN.includes(cur)) stray.push((i+1)+" in "+cur); }); }

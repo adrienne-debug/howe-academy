@@ -33,7 +33,7 @@ const T0=Date.UTC(2026,9,28,15,0,0);
 const run=async()=>{
 console.log("── where it sits, how it is hooked ──");
 { const a=src.indexOf("// CPSKILL_START"), b=src.indexOf("// CPSKILL_END"), e=src.indexOf("// CPCARDSEDIT_END");
-  ok("CPSKILL once, right after CPCARDSEDIT_END", a>0&&b>a&&src.indexOf("// CPSKILL_START",a+1)<0&&src.slice(e,a).trim()==="// CPCARDSEDIT_END");
+  ok("CPSKILL once, after CPCARDSEDIT_END", a>0&&b>a&&e>0&&a>e&&src.indexOf("// CPSKILL_START",a+1)<0);   // position-tolerant: CPPHOTOS (PR 29) sits between them
   ok("the header names §4.1b, §13 row 25, PR 25, the research, the three stages, the learned rule, one write, and the date", /§4\.1b/.test(SKL)&&/§13 row 25/.test(SKL)&&/PR 25/.test(SKL)&&/RESEARCH_envirothon_skills_2026-10-28\.md/.test(SKL)&&/THE THREE STAGES/.test(SKL)&&/THE LEARNED RULE/.test(SKL)&&/ONE WRITE PER SITTING/.test(SKL)&&/2026-10-28/.test(SKL));
   ok("the block only declares, plus its one registration (the sample `sheet` maker)", SKL.split("\n").every(l=>!l.trim()||/^(\/\/|function |const | |})/.test(l)||l==='cpSkillTypeAdd("sheet",CPSK_SHEET);'));
   const code=SKL.replace(/^\/\/.*$/mg,"").replace(/   \/\/ .*$/mg,"");

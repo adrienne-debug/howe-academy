@@ -13,6 +13,9 @@
 // carries a browse-only copy of every card (window.HoweUnitsDemo.nc_envirothon — front, back, Key Concept, kind, order, source, core, item,
 // info; packed into rows and unpacked on load). Only the browser reads it (cpcsLib, demo only): HoweEnvirothon keeps the questions alone,
 // so the demo kid's cards are still the sample deck.
+// 🖼 CPPHOTOS 2026-10-29 (class platform PR 29): a file:// page can't fetch envirothon/pics/index.json, so the page also carries the repo's
+// photo set by ITEM (window.HowePicsDemo.items — item → [[url, credit, shot]], the cards' `item` over envirothon/pics/index.json) and the
+// places to find the files: beside the repo copy ("../") and, for a copy moved elsewhere, the checkout make_demo ran in. Only CPPHOTOS reads it.
 "use strict";
 const fs=require("fs"), path=require("path"), cp=require("child_process");
 const REPO=path.resolve(__dirname,"..",".."), SRC=path.join(REPO,"index.html"), OUT=path.join(REPO,"envirothon","DEMO_site.html");
@@ -24,9 +27,15 @@ function demoBrowse(){ const lib=require(path.join(REPO,"envirothon.js")); if(!l
   return {id:lib.unit.id||"nc_envirothon",groups:G,decks:lib.unit.decks.map(d=>({key:d.key,kind:d.kind||"",cards:(d.cards||[]).map(c=>[c.order,c.name,c.def,g(c.group||"",c.concept==null?"":c.concept),c.src||"",c.core?1:0,c.item||"",c.info||"",c.kind==="term"?"t":c.kind==="id"?"i":"f"])}))}; }
 function browseScript(b){ if(!b) return ""; return "<script>\n// DEMO (make_demo.js): a browse-only copy of every card, for the teacher's 📚 Cards (CPCARDSSEE). Nothing else reads it.\n(function(){ var B="+JSON.stringify(b).replace(/</g,"\\u003c").replace(/\u2028/g,"\\u2028").replace(/\u2029/g,"\\u2029")+", K={t:\"term\",f:\"fact\",i:\"id\"};\n"+
   "  window.HoweUnitsDemo=window.HoweUnitsDemo||{}; window.HoweUnitsDemo[B.id]={unit:{id:B.id,decks:B.decks.map(function(d){ return {key:d.key,kind:d.kind,cards:d.cards.map(function(r){ var c={order:r[0],name:r[1],def:r[2],group:B.groups[r[3]][0],concept:B.groups[r[3]][1],src:r[4],core:!!r[5],kind:K[r[8]]}; if(r[6]) c.item=r[6]; if(r[7]) c.info=r[7]; return c; })}; })}};\n})();\n</script>"; }
+// 🖼 CPPHOTOS: {bases, items:{<item>:[[url, credit, shot]]}} — one entry per picture per item
+function demoPics(){ const idx=JSON.parse(fs.readFileSync(path.join(REPO,"envirothon","pics","index.json"),"utf8")), lib=require(path.join(REPO,"envirothon.js")), items={}, seen={};
+  const add=(item,list)=>{ if(!item||!Array.isArray(list)) return; const A=items[item]=items[item]||[], S=seen[item]=seen[item]||{}; list.forEach(p=>{ if(p&&p.url&&!S[p.url]){ S[p.url]=1; A.push([p.url,p.credit||"",p.shot||""]); } }); };
+  ((lib&&lib.unit&&lib.unit.decks)||[]).forEach(d=>(d.cards||[]).forEach(c=>{ if(c&&idx[c.name]) add(c.item||String(c.name).split(" \u00b7 ")[0],idx[c.name]); }));
+  return {bases:["../","file://"+encodeURI(REPO)+"/"],items}; }
+function picsScript(p){ if(!p) return ""; return "<script>\n// DEMO (make_demo.js): the repo's photo set by item, for 🖼 CPPHOTOS (a file:// page can't fetch envirothon/pics/index.json).\nwindow.HowePicsDemo="+JSON.stringify(p).replace(/</g,"\\u003c").replace(/\u2028/g,"\\u2028").replace(/\u2029/g,"\\u2029")+";\n</script>"; }
 function testsScript(tests){ return "<script>\n// DEMO (make_demo.js): the station check-ins' questions only (HoweEnvirothon.tests from envirothon.js) — no cards.\nwindow.HoweEnvirothon={ demo:true, tests:"+JSON.stringify(tests).replace(/</g,"\\u003c")+" };\n</script>"; }
 // PURE: index.html → the demo page (tests passed in so the node tests build it without writing DEMO_site.html)
-function buildDemo(html,commit,tests,browse){
+function buildDemo(html,commit,tests,browse,pics){
 const must=(re,label)=>{ if(!re.test(html)) throw new Error("make_demo: anchor missing — "+label); };
 must(/<script src="family-config\.js"><\/script>/,"family-config tag"); must(/<script>\n\/\/ Auto cache bust[\s\S]*?\(function\(\)\{if\(location\.hostname==='localhost'[^\n]*\n<\/script>/,"cache-bust script"); must(/<script src="vendor-firebase-app-v8\.js"><\/script>/,"vendor firebase tags");
 const cfg=`<script>
@@ -35,17 +44,17 @@ window.HA_FAMILY={ familyId:"envirothon-demo", familyName:"Envirothon Demo", edi
   firebase:{ apiKey:"demo", authDomain:"demo.firebaseapp.com", databaseURL:"https://howe-envirothon-default-rtdb.firebaseio.com", projectId:"howe-envirothon", appId:"demo" },
   roster:[{id:"student", name:"Student", color:"#2d6a4f", badge:"#dcfce7", schoolAge:true}] };
 </script>`;
-html=html.replace(/<script src="family-config\.js"><\/script>/,()=>cfg+"\n"+testsScript(tests||{})+(browse?"\n"+browseScript(browse):""));   // 📚 CPCARDSSEE: + every card, browse-only
+html=html.replace(/<script src="family-config\.js"><\/script>/,()=>cfg+"\n"+testsScript(tests||{})+(browse?"\n"+browseScript(browse):"")+(pics?"\n"+picsScript(pics):""));   // 📚 CPCARDSSEE: + every card, browse-only · 🖼 CPPHOTOS: + the photo set
 html=html.replace(/<script>\n\/\/ Auto cache bust[\s\S]*?\(function\(\)\{if\(location\.hostname==='localhost'[^\n]*\n<\/script>/,"<script>/* cache-bust redirect removed for the demo file (make_demo.js) */</script>");
 html=html.replace(/<script src="(vendor-firebase-[a-z]+-v8\.js)"><\/script>/g,'<script src="../$1"></script>');
 html=html.replace(/<title>Howe Academy<\/title>/,"<title>Envirothon · Howe Academy (demo)</title>");
 html="<!-- DEMO of the Envirothon site · generated by envirothon/build/make_demo.js from index.html @ "+commit+" · sample data, nothing is saved · © 2026 Howe Academy -->\n"+html;
 return html;
 }
-module.exports={buildDemo,demoTests,testsScript,demoBrowse,browseScript};
+module.exports={buildDemo,demoTests,testsScript,demoBrowse,browseScript,demoPics,picsScript};
 if(require.main===module){
   let commit="?"; try{ commit=cp.execSync("git rev-parse --short HEAD",{cwd:REPO,stdio:["ignore","pipe","ignore"]}).toString().trim(); }catch(e){}
-  const html=buildDemo(fs.readFileSync(SRC,"utf8"),commit,demoTests(),demoBrowse());
+  const html=buildDemo(fs.readFileSync(SRC,"utf8"),commit,demoTests(),demoBrowse(),demoPics());
   fs.writeFileSync(OUT,html);
   console.log("wrote "+path.relative(REPO,OUT)+" ("+html.length.toLocaleString()+" bytes, from "+commit+")");
 }
