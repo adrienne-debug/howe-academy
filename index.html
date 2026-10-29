@@ -46877,6 +46877,7 @@ function envsReadShared(){
   const val=s=>(s&&typeof s.val==="function")?s.val():null, re=()=>{ try{ if(typeof renderAllSoon==="function") renderAllSoon(); }catch(e){} };
   const go=cid=>{ if(!cid) return; _envs.cid=cid; sdb.ref("classes/"+cid).on("value",s=>{ _envs.cls=val(s); if(typeof cpClassIn==="function") cpClassIn(); re(); }); sdb.ref("boards/"+cid).on("value",s=>{ _envs.boards=val(s); re(); }); sdb.ref("settings/whoDrills/"+cid).on("value",s=>{ _envs.who=val(s)||""; re(); }); if(typeof envClsKidLoad==="function") envClsKidLoad(sdb,cid); };   // ⚙️ ENVCLASSSET: the class's settings + this student's, once · 🏫 CPCLASS: the class's lock date
   if(_envs.cid) go(_envs.cid); else if(_envs.sid) sdb.ref("students/"+_envs.sid+"/class").once("value",s=>go(val(s)));
+  if(typeof cpdrListen==="function") cpdrListen(sdb,re);   // 🧠 CPDRILLPARENT: the parent's review switch (students/<sid>/review), live
   sdb.ref("release/locked").on("value",s=>{ _envs.lockRaw=val(s); _envs.lock=envsLockState(_envs.lockRaw); if(_envs.lock.locked&&_envs.role!=="admin") envsCard("closed"); });
 }
 // showTab: the site has one page — every tap lands back on it (every door the micro doc lists as off is simply not reachable)
@@ -47116,10 +47117,11 @@ function envsParentHtml(){
   let h=(typeof cpTopHtml==="function")?cpTopHtml("parent",name):'<div class="envs-top" style="background:'+col+'"><div class="t"><div class="envs-brand">Howe <span>Academy</span></div>\u{1F33F} '+envsEsc(name)+'\u2019s Envirothon</div><button onclick="envsView(\'settings\')" aria-label="Settings">\u2699\uFE0F</button></div>';   // 🏫 CPCLASS: the class's emoji, title and color
   const chips=[["home","\u{1F4C8} How "+name+" is doing"],["boards","\u{1F3C6} Team"],["tips","\u{1F4A1} Tips"]];
   h+='<div class="envs-chips">'+chips.map(x=>'<button class="'+(v===x[0]?'on':'')+'" onclick="envsView(\''+x[0]+'\')">'+envsEsc(x[1])+'</button>').join("")+'</div>';
-  if(v==="boards") h+=envsBoardsHtml(_envs.boards,_envs.sid);
+  if(v==="pdrill"&&typeof cpdrDrillHtml==="function") h+=cpdrDrillHtml(kid);   // 🧠 CPDRILLPARENT: the parent's drill (🧠 Drill with Maya)
+  else if(v==="boards") h+=envsBoardsHtml(_envs.boards,_envs.sid);
   else if(v==="tips") h+=envsTipsHtml("parent");
   else if(v==="settings") h+=envsSettingsHtml();
-  else { h+=envsStreakHtml(s); h+='<div class="envs-card"><div class="envs-h2">\u{1F4CA} Stations \u00B7 the same numbers the teacher sees</div>'+envsStationRowsHtml(s,{weak:true,kid})+'</div>';
+  else { if(typeof cpdrCardHtml==="function") h+=cpdrCardHtml(kid); h+=envsStreakHtml(s); h+='<div class="envs-card"><div class="envs-h2">\u{1F4CA} Stations \u00B7 the same numbers the teacher sees</div>'+envsStationRowsHtml(s,{weak:true,kid})+'</div>';   // 🧠 CPDRILLPARENT: the review switch + 🧠 Drill, first on the page
     h+='<div class="envs-card"><div class="envs-h2">\u{1F469}\u200D\u{1F3EB} Who drills</div><div style="font-size:13px">'+envsEsc(envsWhoNote())+'</div></div>';
     h+='<div class="envs-card" style="opacity:.8"><div class="envs-muted">Read-only: '+envsEsc(name)+' studies on the student login; this page shows how it is going. Class: '+envsEsc(envsClassName())+'.</div></div>'; }
   return h;
@@ -49504,7 +49506,7 @@ function cpReviewCapOf(rec){
 // kid's own record); everyone else: nothing is added.
 function cpReviewSession(kid,sid,rec,s){
   if(!s||s.kind==="mix"||s.kind==="checkup"||!cpReviewOn(kid)) return s;
-  s.reviewIn="sitting";
+  s.reviewIn=(typeof cpdrMode==="function"&&cpdrMode(kid))||"sitting";   // 🧠 CPDRILLPARENT: "parent" while the parent has taken the reviews over (the switch on the parent page)
   s.reviewCap=cpReviewCapOf(rec);
   return s;
 }
@@ -49536,10 +49538,204 @@ function cpReviewMoreHtml(session,pile,where){
 // the parent page's "Who drills" note: the reviews are in the student's own sitting (no pronoun: the name only)
 function cpReviewWhoNote(who){
   if(typeof envSiteOn!=="function"||!envSiteOn()||typeof _envs==="undefined"||_envs.role==="teacher"||_envs.role==="admin") return "";
+  if(typeof cpdrWhoNote==="function"){ const t=cpdrWhoNote(who); if(t) return t; }   // 🧠 CPDRILLPARENT: the reviews are the parent's to drill
   const name=(typeof envsKidName==="function"&&_envs.kid)?envsKidName(_envs.kid):"Your student";
   return name+" reviews in the \u{1F33F} sitting on the student login: every card comes back on the day it’s due, at every level, so there’s no drill for you to run."+((who==="teacher"||who==="both")?" The teacher drills in class too.":"");
 }
 // CPREVIEW_END
+// CPDRILLPARENT_START — 🧠 THE PARENT CAN TAKE OVER A STUDENT'S REVIEW CARDS, per kid, on the class site (DESIGN_class_platform_2026-10-28.md
+// §7(a) 2–3, §2, §9, §13 row 13, §14 Q5; PR 13 of the class platform). Her words 2026-10-28: "For the parent, I think they can get the
+// option to pick per kid, and the default would be that it stays in the student's own session. But the mom, if she knows her kid and
+// wants to hand it off to a parent drill so the parent could get it, then the drill would show up on her site, and then she would need to
+// run it daily." INERT unless CPREVIEW's cpReviewOn says this is the site's own kid (a kid or parent login, or the demo's kid).
+//   · THE SWITCH, one per kid, on the parent page: "🧠 I'll drill the review cards with Maya" → students/<sid>/review =
+//     {mode:"parent"|"sitting", by, role:"parent", at} on the shared instance (envsWrite; "would write" in the demo). Off by default: no
+//     record = CPREVIEW's "sitting". Turning it on asks once ("You'll need to drill … every study day"). A teacher's or Adrienne's
+//     "sitting" holds: the switch reads "Set by the teacher" (their Move-back button is its own PR). The kid's and the parent's app keep a
+//     live listener on the record (one hook in envsReadShared), so a change takes effect at the next sitting without a reload.
+//   · reviewIn:"parent": cpReviewSession hands the session this mode in place of "sitting"; mstOwns' guarded line gets its second case:
+//     the 🌿 sitting owns every active card BELOW the session's handOffAt (default every 2 weeks: new, learning, every other day, weekly).
+//     The hand-off level and up (every 2 weeks, monthly) leave the sitting for the parent's drill. Nothing is moved or rewritten: each
+//     card keeps its level and due date, so turning the switch off hands them straight back to the sitting.
+//   · 🧠 DRILL WITH MAYA, on the parent page: the app's own drill builder (mastDueItems: the class's drill limits, ENVDRILLFIRST's cap),
+//     limited to the decks of the parent-mode session (the unit's), reviews only, so it carries the real reviews that are due, not extras.
+//     The parent sees each front, can show the back, and taps ✓ / ✗. Save grades through mastApplyScores like Mom's drill and writes
+//     what mastSaveResults writes: the graded cards' ladder fields (ONE targeted update of mastery/<kid>) and mastery/history/<kid>/<date>
+//     (merged into an earlier drill the same day), in the FAMILY's instance: the parent login is that family. Demo: through envsWrite
+//     ("would write"); ?dryrun=1: nothing; live: db (the family instance; envsWrite writes the shared one, which holds no cards).
+//   · THE PARENT PIN guards the switch and the drill on a shared device once the family has set one (⚙️ Parent PIN), one unlock per
+//     page load. No PIN set → no gate, and a line saying where to set one. The demo asks for the app's PIN and shows it.
+//   · PR 17 (CPWATCH: the reminders and the teacher's warning) hooks in through cpWatchHtml / cpWatchDrilled (typeof-guarded) and
+//     reads cpdrInfo(kid). Lincoln in Howe: no edition → cpReviewOn is false, every hook hands back what it was given, no switch shows.
+const CPDR_MEANS_HANDOFF="Where a card goes to the parent’s drill when a parent takes a student’s reviews over (\u{1F9E0} on the parent page); otherwise every review stays in the \u{1F33F} sitting. A card counts as learned for the final at its section’s level (Every 2 weeks unless the section plan says otherwise).";
+const _cpdr={revs:{},armed:"",unlocked:false,asking:false,drill:null,done:null};
+// the guarded update of ENVCLASSSET's settings list (by name): "Hands off to the drill at" says what it moves now
+function cpdrFields(){
+  if(typeof ENVCS_FIELDS==="undefined"||!Array.isArray(ENVCS_FIELDS)) return false;
+  const f=ENVCS_FIELDS.find(x=>x&&x.name==="handOffAt"); if(f) f.means=CPDR_MEANS_HANDOFF;
+  return !!f;
+}
+const CPDR_FIELDS_SET=cpdrFields();
+function cpdrOn(kid){ return typeof cpReviewOn==="function"&&cpReviewOn(kid); }
+function cpdrRecOf(sid){ const r=(_cpdr.revs||{})[sid==null?_envs.sid:sid]; return (r&&typeof r==="object")?r:null; }
+// a teacher's or Adrienne's "back to the sitting" holds against the parent until they clear it
+function cpdrHeld(r){ r=r===undefined?cpdrRecOf():r; return !!(r&&r.mode==="sitting"&&(r.role==="teacher"||r.role==="admin")); }
+// the kid's review lane: "parent" while the switch is on, else null (CPREVIEW's "sitting" stands)
+function cpdrMode(kid){ if(!cpdrOn(kid)) return null; const r=cpdrRecOf(); return (r&&r.mode==="parent")?"parent":null; }
+// mstOwns' second case (only for a reviewIn "parent" session): the 🌿 sitting keeps every active card below the hand-off level
+function cpdrOwns(session,item,tier,ladder){
+  if(!(session&&session.reviewIn==="parent"&&item&&item.status==="active")) return false;
+  const t=tier||item.tier||"daily", h=session.handOffAt||"bi_weekly";
+  if(typeof mstTierIdx==="function"&&Array.isArray(ladder)&&ladder.length) return mstTierIdx(t,ladder)<mstTierIdx(h,ladder);
+  return MAST_TIER_ORDER.indexOf(t)<MAST_TIER_ORDER.indexOf(h);
+}
+// envsReadShared's hook: a live listener on students/<sid>/review for the kid's and the parent's login (re = that function's combined redraw)
+function cpdrListen(sdb,re){
+  if(envsDemo()||!sdb||!_envs.sid||!cpdrOn(_envs.kid)||_cpdr.armed===_envs.sid) return false;   // cpReviewOn: the site, a kid or parent login
+  const sid=_envs.sid; _cpdr.armed=sid;
+  try{ sdb.ref("students/"+sid+"/review").on("value",s=>{ const v=(s&&typeof s.val==="function")?s.val():null; _cpdr.revs=Object.assign({},_cpdr.revs,{[sid]:v||null}); if(typeof re==="function") re(); }); }
+  catch(e){ _cpdr.armed=""; return false; }
+  return true;
+}
+// ── the PIN: only once the family has set one (the demo always asks, and says the PIN)
+function cpdrPinSet(){ if(envsDemo()) return true; try{ return typeof HA_LS!=="undefined"&&!!HA_LS.getItem("ha_app_pin"); }catch(e){ return false; } }
+function cpdrLocked(){ return _envs.role==="parent"&&!_cpdr.unlocked&&cpdrPinSet(); }
+function cpdrPinOk(v){ v=String(v==null?"":v).trim(); if(!v) return false; if(typeof pinOk==="function") return !!pinOk(v); return typeof APP_PIN!=="undefined"&&v===String(APP_PIN); }
+function cpdrUnlock(){
+  const el=(typeof document!=="undefined")?document.getElementById("cpdr-pin"):null;
+  if(!cpdrPinOk(el&&el.value)){ envsToast("That PIN isn’t right."); return false; }
+  _cpdr.unlocked=true; envsRe(); return true;
+}
+// ── the switch (the parent login of this family; never while a teacher's hold stands or the PIN is locked)
+function cpdrCanSwitch(){ return _envs.role==="parent"&&!!_envs.sid&&cpdrOn(_envs.kid)&&!cpdrHeld(); }
+function cpdrAsk(){ if(!cpdrCanSwitch()||cpdrLocked()) return false; _cpdr.asking=true; envsRe(); return true; }   // turning it on asks once
+function cpdrCancel(){ _cpdr.asking=false; envsRe(); }
+function cpdrSet(on){
+  if(!cpdrCanSwitch()||cpdrLocked()) return Promise.resolve(false);
+  const sid=_envs.sid, prev=cpdrRecOf(sid), rec={mode:on?"parent":"sitting",by:envsDemo()?"uid_p_"+_envs.kid:(_envs.uid||""),role:"parent",at:Date.now()};   // the demo's parent login is uid_p_<kid>
+  _cpdr.asking=false; if(!on){ _cpdr.drill=null; _cpdr.done=null; }
+  _cpdr.revs=Object.assign({},_cpdr.revs,{[sid]:rec});   // at once on this device; the listener confirms it
+  const p=envsWrite("students/"+sid+"/review",rec,"set");
+  envsRe();
+  return Promise.resolve(p).then(()=>true,e=>{ _cpdr.revs=Object.assign({},_cpdr.revs,{[sid]:prev}); envsToast("Couldn’t save: "+((e&&e.message)||e)); envsRe(); return false; });
+}
+// ── what the parent's drill carries: the app's drill builder, the parent-mode session's decks, reviews only
+function cpdrDecks(kid){ const s=new Set(); try{ (mstSessions(kid)||[]).forEach(x=>{ if(x&&x.reviewIn==="parent") (x.decks||[]).forEach(d=>s.add(d)); }); }catch(e){} return s; }
+function cpdrHandOff(kid){ try{ const x=(mstSessions(kid)||[]).find(y=>y&&y.reviewIn==="parent"); return (x&&x.handOffAt)||"bi_weekly"; }catch(e){ return "bi_weekly"; } }
+function cpdrLevel(kid){ const h=cpdrHandOff(kid), L=(typeof ENVCS_TIER_LBL!=="undefined"&&ENVCS_TIER_LBL)||{}; return String(L[h]||"Every 2 weeks").toLowerCase()+" and up"; }
+function cpdrDue(kid,pn){
+  if(cpdrMode(kid)!=="parent"||typeof mastDueItems!=="function") return [];
+  const D=cpdrDecks(kid); if(!D.size) return [];
+  if(pn==null) pn=mastGetPrintNum(kid);
+  let due=[]; try{ due=mastDueItems(kid,pn)||[]; }catch(e){ return []; }
+  return due.filter(i=>i&&i.status==="active"&&D.has(i.subject));
+}
+// for PR 17 (CPWATCH): the lane and what's waiting
+function cpdrInfo(kid){ const mode=cpdrMode(kid)||"sitting"; return {mode,held:cpdrHeld(),due:mode==="parent"?cpdrDue(kid).length:0}; }
+function cpdrItems(kid){ let a=masteryData[kid]; if(!a) return []; if(!Array.isArray(a)) a=masteryData[kid]=Object.values(a); return a; }
+function cpdrBack(kid,it){ if(!it) return ""; return (typeof mastCustomDef==="function"&&mastCustomDef(kid,it.subject,it.prompt))||(typeof mastGetDef==="function"&&mastGetDef(kid,it.prompt,it.subject))||it.answer||""; }
+// ── the drill
+function cpdrStart(){
+  const kid=_envs.kid; if(_envs.role!=="parent"||cpdrLocked()||cpdrMode(kid)!=="parent") return false;
+  const pn=mastGetPrintNum(kid), due=cpdrDue(kid,pn);
+  _cpdr.drill={kid,pn,ids:due.map(i=>i.id),i:0,flip:false,scores:{},t0:Date.now()}; _cpdr.done=null;
+  envsView("pdrill"); return true;
+}
+function cpdrFlip(){ const d=_cpdr.drill; if(!d) return; d.flip=!d.flip; envsRe(); }
+function cpdrGrade(r){ const d=_cpdr.drill; if(!d||d.i>=d.ids.length) return; d.scores[d.ids[d.i]]=r==="m"?"m":"c"; d.i++; d.flip=false; envsRe(); }
+function cpdrPrev(){ const d=_cpdr.drill; if(!d||d.i<=0) return; d.i--; d.flip=false; envsRe(); }
+function cpdrLeave(){ _cpdr.drill=null; envsView("home"); }
+// PURE apart from masteryData: grade `ids` through mastApplyScores; hand back the targeted update and today's history record
+function cpdrApply(kid,ids,scores,pn,t0){
+  const items=cpdrItems(kid), graded=(ids||[]).filter(id=>scores[id]==="c"||scores[id]==="m");
+  if(!graded.length) return null;
+  const old={}; graded.forEach(id=>{ const it=items.find(i=>i&&i.id===id); if(it) old[id]={prompt:it.prompt,tier:it.tier||"daily"}; });
+  const _mk=masteryKid; masteryKid=kid; let r;
+  try{ r=mastApplyScores(items,graded.map(id=>({id})),scores,pn,mastDrillSettings(),{prevShown:new Set(),autoPull:false,chain:false}); }
+  finally{ masteryKid=_mk; }
+  const upd={}; (r.touched||[]).forEach(it=>{ const ix=items.indexOf(it); if(ix<0) return;   // the very fields mastSaveResults writes
+    upd[ix+"/tier"]=it.tier; upd[ix+"/consecutive_correct"]=it.consecutive_correct||0; upd[ix+"/cycle"]=it.cycle||1; upd[ix+"/drop_count"]=it.drop_count||0;
+    upd[ix+"/status"]=it.status||"active"; upd[ix+"/tally_dots"]=it.tally_dots??0; upd[ix+"/next_due"]=it.next_due??null;
+    upd[ix+"/dynamic"]=it.dynamic?true:null; upd[ix+"/dynSource"]=it.dynamic?(it.dynSource||null):null; upd[ix+"/dynFromTier"]=it.dynamic?(it.dynFromTier||null):null; upd[ix+"/dynAddedAt"]=it.dynamic?(it.dynAddedAt||null):null;
+    if(it.ww) upd[ix+"/ww"]=it.ww; });
+  const today=new Date().toISOString().slice(0,10), key=today.replace(/-/g,"");
+  let correct=0, miss=0; const rows=graded.filter(id=>old[id]).map(id=>{ if(scores[id]==="c") correct++; else miss++; return {id,prompt:old[id].prompt,result:scores[id],oldTier:old[id].tier}; });
+  const secs=t0?Math.max(1,Math.round((Date.now()-t0)/1000)):null, prev=((masteryData.history||{})[kid]||{})[key]||null;
+  let hist={date:today,printNum:pn,total:ids.length,scored:correct+miss,correct,miss,close:0,shown:0,pct:(correct+miss)?Math.round(correct/(correct+miss)*100):0,secs,sessTimes:secs!=null?[secs]:null,items:rows};
+  if(prev){ const pc=(prev.correct||0)+correct, pm=(prev.miss||0)+miss, pt=prev.close||0, ps=pc+pm+pt, times=(prev.sessTimes||(prev.secs!=null?[prev.secs]:[])).concat(secs!=null?[secs]:[]);
+    hist={date:today,printNum:pn,total:(prev.total||0)+ids.length,scored:ps,correct:pc,miss:pm,close:pt,shown:prev.shown||0,pct:ps?Math.round(pc/ps*100):0,secs:secs!=null?secs:(prev.secs??null),sessTimes:times.length?times:null,items:(prev.items||[]).concat(rows)}; }
+  return {upd,hist,key,today,correct,miss,n:correct+miss};
+}
+function cpdrLive(){ return typeof db!=="undefined"&&!!db&&!envsDemo()&&!(typeof _dryRun==="function"&&_dryRun()); }
+// the family's own paths: demo → envsWrite's "would write"; dry run → nothing; live → db (the family instance)
+function cpdrWrite(path,val,op){
+  if(envsDemo()) return envsWrite(path,val,op);
+  if(!cpdrLive()) return Promise.resolve(null);
+  try{ const r=db.ref(path); return op==="update"?r.update(val):r.set(val); }catch(e){ return Promise.reject(e); }
+}
+function cpdrSave(){
+  const d=_cpdr.drill; if(!d||_envs.role!=="parent"||cpdrLocked()) return false;
+  const a=cpdrApply(d.kid,d.ids,d.scores,d.pn,d.t0); if(!a){ envsToast("Grade a card first."); return false; }
+  cpdrWrite("mastery/"+d.kid,a.upd,"update"); cpdrWrite("mastery/history/"+d.kid+"/"+a.key,a.hist,"set");
+  let pl=masteryData.printLog||[]; if(!Array.isArray(pl)) pl=Object.values(pl);
+  if(!pl.some(e=>e&&e.date===a.today)){ pl.push({date:a.today,num:d.pn}); masteryData.printLog=pl; if(cpdrLive()&&typeof mastPrintLogAppend==="function") mastPrintLogAppend(a.today,d.pn); }
+  if(!masteryData.history) masteryData.history={}; if(!masteryData.history[d.kid]) masteryData.history[d.kid]={};
+  masteryData.history[d.kid][a.key]=a.hist;
+  if(typeof envMirrorOn==="function") envMirrorOn("drill");   // the class's summary, as Mom's drill does
+  try{ if(!envsDemo()) HA_LS.setItem("ha_mastery",JSON.stringify(masteryData)); }catch(e){}
+  if(typeof cpWatchDrilled==="function"){ try{ cpWatchDrilled(d.kid,a.hist); }catch(e){} }   // PR 17 (CPWATCH)
+  _cpdr.done={n:a.n,correct:a.correct,miss:a.miss}; _cpdr.drill=null;
+  if(envsDemo()) envsToast("demo: would write "+a.n+" card"+(a.n===1?"":"s")+" + today’s drill to mastery/"+d.kid);
+  envsView("home"); return true;
+}
+// ── the parent page: the 🧠 card at the top of "How Maya is doing"
+function cpdrBtn(label,on,extra,off){ return '<button class="envs-btn'+(extra||"")+'"'+(off?' disabled':'')+' onclick="'+on+'">'+label+'</button>'; }
+function cpdrCardHtml(kid){
+  if(_envs.role!=="parent"||!cpdrOn(kid)) return "";
+  const name=envsEsc(envsKidName(kid)), r=cpdrRecOf(), on=cpdrMode(kid)==="parent", held=cpdrHeld(r), locked=cpdrLocked();
+  let h='<div class="envs-card" style="border-color:'+(on?'#a78bfa':'var(--border)')+'"><div class="envs-h2">\u{1F9E0} Review cards</div>';
+  if(held){ h+='<div style="font-size:13px">\u{1F512} <b>Set by the teacher:</b> '+name+' reviews every card in the \u{1F33F} sitting.'+(r.note?' <i>'+envsEsc(r.note)+'</i>':'')+'</div>'; return h+'</div>'; }
+  const sw='<button role="switch" aria-checked="'+on+'" '+(locked?'disabled ':'')+'onclick="'+(on?'cpdrSet(false)':'cpdrAsk()')+'" style="display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:6px 12px;border-radius:12px;border:1.5px solid '+(on?'#7c3aed':'var(--border)')+';background:'+(on?'#f5f3ff':'#fff')+';cursor:'+(locked?'default':'pointer')+';font:inherit;font-size:13.5px;font-weight:800;color:#1f2937;text-align:left;opacity:'+(locked?'.6':'1')+'"><span style="flex:1">\u{1F9E0} I’ll drill the review cards with '+name+'</span><span style="flex-shrink:0;width:42px;height:24px;border-radius:999px;background:'+(on?'#7c3aed':'#d1d5db')+';position:relative"><span style="position:absolute;top:3px;'+(on?'right':'left')+':3px;width:18px;height:18px;border-radius:50%;background:#fff"></span></span></button>';
+  if(_cpdr.asking&&!on&&!locked){
+    h+='<div style="font-size:13.5px;font-weight:700;margin-bottom:10px">You’ll need to drill '+name+'’s review cards every study day. '+name+'’s teacher sees when it’s not getting done.</div>';
+    return h+'<div class="envs-row">'+cpdrBtn("OK","cpdrSet(true)")+cpdrBtn("Not now","cpdrCancel()"," sec")+'</div></div>';
+  }
+  h+=sw;
+  if(on){
+    const n=cpdrDue(kid).length;
+    h+='<div class="envs-muted" style="margin:8px 0">'+name+'’s '+envsEsc(cpdrLevel(kid))+' cards come to you. Everything below that stays in '+name+'’s \u{1F33F} sitting.</div>';
+    h+=n?cpdrBtn('\u{1F9E0} Drill with '+name+' · '+n+' due','cpdrStart()',"",locked):'<div style="font-size:13px;font-weight:700;color:#15803d">✓ Nothing due today. The cards come back on their days.</div>';
+  } else h+='<div class="envs-muted" style="margin-top:8px">Off: '+name+' reviews every card in the \u{1F33F} sitting. Turn it on to drill the '+envsEsc(cpdrLevel(kid))+' cards with '+name+' yourself, every study day.</div>';
+  if(_cpdr.done) h+='<div style="margin-top:8px;font-size:12.5px;font-weight:700;color:#15803d">✓ Saved: '+_cpdr.done.n+' card'+(_cpdr.done.n===1?'':'s')+' · '+_cpdr.done.correct+' ✓ · '+_cpdr.done.miss+' ✗</div>';
+  if(locked) h+='<div class="envs-row" style="margin-top:10px"><input id="cpdr-pin" class="envs-in" type="password" inputmode="numeric" maxlength="4" placeholder="Parent PIN" aria-label="Parent PIN" style="width:130px;text-align:center;letter-spacing:6px">'+cpdrBtn("\u{1F513} Unlock","cpdrUnlock()"," sec")+'</div><div class="envs-muted" style="margin-top:4px">The parent PIN keeps the switch and the drill for grown-ups.'+(envsDemo()?' Demo PIN: '+envsEsc(typeof APP_PIN!=="undefined"?APP_PIN:""):'')+'</div>';
+  else if(!cpdrPinSet()) h+='<div class="envs-muted" style="margin-top:6px">On a shared device, set a parent PIN in ⚙️ so only a grown-up can change this.</div>';
+  if(typeof cpWatchHtml==="function"){ try{ h+=cpWatchHtml("parent",kid,cpdrInfo(kid))||""; }catch(e){} }   // PR 17 (CPWATCH): the reminder
+  return h+'</div>';
+}
+// the parent page's drill view (envsView "pdrill")
+function cpdrDrillHtml(kid){
+  const d=_cpdr.drill, name=envsEsc(envsKidName(kid));
+  const top='<div class="envs-row" style="margin-bottom:8px"><div class="envs-h2" style="margin:0;flex:1">\u{1F9E0} Drill with '+name+'</div>'+cpdrBtn("✕ Leave","cpdrLeave()"," sec")+'</div>';
+  if(!d||d.kid!==kid||cpdrMode(kid)!=="parent"||cpdrLocked()) return '<div class="envs-card">'+top+'<div class="envs-muted">Start the drill from '+name+'’s page.</div></div>';
+  if(!d.ids.length) return '<div class="envs-card">'+top+'<div style="font-size:14px;font-weight:700;color:#15803d">✓ Nothing due today. '+name+'’s review cards come back on their days.</div></div>';
+  const items=cpdrItems(kid), sc=Object.keys(d.scores).filter(id=>d.ids.indexOf(id)>=0), c=sc.filter(id=>d.scores[id]==="c").length;
+  if(d.i>=d.ids.length) return '<div class="envs-card">'+top+'<div style="font-size:15px;font-weight:900;margin:6px 0">All '+d.ids.length+' graded · '+c+' ✓ · '+(sc.length-c)+' ✗</div><div class="envs-muted" style="margin-bottom:10px">Save moves each card up or back on '+name+'’s ladder, the same as the app’s own drill.</div><div class="envs-row">'+cpdrBtn("Save the drill","cpdrSave()")+cpdrBtn("← Back","cpdrPrev()"," sec")+'</div></div>';
+  const it=items.find(x=>x&&x.id===d.ids[d.i])||{}, back=cpdrBack(kid,it), was=d.scores[d.ids[d.i]];
+  const big='min-height:56px;flex:1;font-size:16px';
+  let h='<div class="envs-card">'+top+'<div class="envs-muted">'+(d.i+1)+' of '+d.ids.length+' · '+envsEsc(it.subject||"")+(was?' · was '+(was==="c"?"✓":"✗"):'')+'</div>';
+  h+='<div style="font-size:20px;font-weight:900;text-align:center;padding:18px 6px;line-height:1.3;overflow-wrap:anywhere">'+envsEsc(it.prompt||"")+'</div>';
+  h+=d.flip?'<div style="background:#f5f3ff;border:1.5px solid #ddd6fe;border-radius:12px;padding:12px;font-size:14.5px;line-height:1.4;margin-bottom:10px;overflow-wrap:anywhere">'+envsEsc(back||"(no back on this card)")+'</div>':'<div style="text-align:center;margin-bottom:10px">'+cpdrBtn("Show the answer","cpdrFlip()"," sec")+'</div>';
+  h+='<div class="envs-row" style="flex-wrap:nowrap">'+'<button class="envs-btn red" style="'+big+'" onclick="cpdrGrade(\'m\')">✗ Missed</button><button class="envs-btn" style="'+big+'" onclick="cpdrGrade(\'c\')">✓ Right</button></div>';
+  h+='<div class="envs-muted" style="margin-top:8px">Read the front to '+name+'. '+name+' answers, then check the back.'+(d.i>0?' <button onclick="cpdrPrev()" style="border:none;background:none;color:#6d28d9;font:inherit;font-weight:800;cursor:pointer;padding:4px">← Back</button>':'')+'</div>';
+  return h+'</div>';
+}
+// CPREVIEW's parent note, when the parent has the reviews (otherwise CPREVIEW's own note)
+function cpdrWhoNote(who){
+  const kid=_envs.kid; if(_envs.role==="teacher"||_envs.role==="admin"||cpdrMode(kid)!=="parent") return "";
+  const name=envsKidName(kid);
+  return name+"’s "+cpdrLevel(kid)+" review cards come to you: 🧠 Drill with "+name+" at the top of this page, every study day. Everything below that stays in "+name+"’s \u{1F33F} sitting."+((who==="teacher"||who==="both")?" The teacher drills in class too.":"");
+}
+// CPDRILLPARENT_END
 
 function renderNotebook(el){
   const con=el||document.getElementById("content"); if(!con)return;
@@ -64349,7 +64545,7 @@ function mstOwns(session, item, ladder) {
   if (mastIsNeverDrill(item)) return false;
   if (item.status === "introduction") return true;
   const tier = item.tier || "daily";
-  if (typeof cpReviewOwns === "function" && session.reviewIn === "sitting") return cpReviewOwns(session, item, tier);   // 🔁 CPREVIEW: a reviewIn "sitting" session owns every active card below graduated (only the class site sets it)
+  if (typeof cpReviewOwns === "function" && session.reviewIn === "sitting") return cpReviewOwns(session, item, tier); if (typeof cpdrOwns === "function" && session.reviewIn === "parent") return cpdrOwns(session, item, tier, ladder);   // 🔁 CPREVIEW: a reviewIn "sitting" session owns every active card below graduated (only the class site sets it) · 🧠 CPDRILLPARENT: a reviewIn "parent" session owns every active card below its handOffAt — the rest is the parent's drill
   return mstTierIdx(tier, ladder) < mstTierIdx(session.mixInAt, ladder);
 }
 
