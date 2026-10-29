@@ -68,6 +68,7 @@ function world(o){
     ${CON}
     ${CLS}
     ${CPS}
+    ${o.rev||""}
     ${CPC}
     ${o.noCpu?"":CPU}
     ${o.cpcore?CORE:""}
