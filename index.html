@@ -65907,10 +65907,16 @@ function wwCheck(){
     wwNote(it,"right",wwToday()); _wwWriteCard(wwUI.kid,it); wwUI.done[it.id]=true;
     wwUI.msg="✓ Yes! "+(it.ww&&it.ww.on?("Right on "+it.ww.r.length+" of 3 days"):"That word is strong now — it leaves your workout!");
     wwUI.tries=0;
-  } else { wwUI.tries++; wwUI.msg=wwUI.tries>=2?"Not quite — this one stays in your workout. Try it again tomorrow!":"Not quite — listen again and try once more."; if(wwUI.tries>=2) wwUI.done[it.id]=true; }   // never shows the answer (her rule: the app never supplies what the kid must produce)
+  } else { wwUI.tries++; wwUI.msg=wwUI.tries>=2?"Not quite — this one stays in your workout. Try it again tomorrow!":"Not quite — listen again and try once more."; if(wwUI.tries>=2) wwUI.done[it.id]="miss"; }   // never shows the answer (her rule: the app never supplies what the kid must produce)
   wwRender();
 }
-function wwNext(){ if(!wwUI) return; const L=wwList(wwUI.kid); if(!L.length){ wwClose(); return; } wwUI.i=(wwUI.i+1)%L.length; wwUI.tries=0; wwUI.msg=""; wwUI.mode=(wwUI.mode==="hear")?"gaps":"hear"; wwStepReset(); wwRender(); }
+function wwNext(){ if(!wwUI) return; const L=wwList(wwUI.kid); if(!L.length){ wwClose(); return; } let j=(wwUI.i+1)%L.length; for(let k=1;k<L.length&&wwUI.done[L[j].id];k++) j=(wwUI.i+1+k)%L.length; wwUI.i=j; wwUI.tries=0; wwUI.msg=""; wwUI.mode=(wwUI.mode==="hear")?"gaps":"hear"; wwStepReset(); if(L[wwUI.i]&&wwUI.done[L[wwUI.i].id]) wwUI.step="test"; wwRender(); }   // WWONE: Next goes to the next word not done today; if all are, a done word skips the copy steps
+// WWONE (her ask 2026-10-28: "if i click next word before check my answer is lost … check and next need to be one button"
+// · the locked fill-in box gave no reason): ONE button per screen. While the kid is answering it is Check; once the word is
+// done for today (right, or missed twice) the box goes away, a "done for today" line shows, and the button becomes
+// Next word › — or All done ✓ when every word is done. The copy steps lost their separate Next word too.
+function wwLeft(){ if(!wwUI) return 0; return wwList(wwUI.kid).filter(x=>!wwUI.done[x.id]).length; }
+function wwFinish(){ wwClose(); if(typeof gwShowToast==="function") gwShowToast("🏋️ All done for today — come back tomorrow!"); }
 function wwRender(){
   if(!wwUI){ wwClose(); return; }
   const L=wwList(wwUI.kid); if(!L.length){ wwClose(); if(typeof gwShowToast==="function") gwShowToast("🏋️ Workout done — every word is strong!"); return; }
@@ -65922,15 +65928,20 @@ function wwRender(){
   let h='<div style="background:#fff;border-radius:18px;max-width:480px;width:100%;padding:18px 20px;box-shadow:0 10px 40px rgba(0,0,0,.25)">';
   h+='<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-family:\'Fraunces\',serif;font-size:21px;font-weight:800;color:#7c2d12">🏋️ Word Workout</div><button onclick="wwClose()" style="'+b("#fff","#475569","#cbd5e1")+';padding:5px 11px;font-size:13px">✕</button></div>';
   h+='<div style="font-size:12.5px;color:#64748b;margin:3px 0 14px">Word '+(wwUI.i+1)+' of '+L.length+' · each word needs 3 right days</div>';
-  if(copying){ h+=wwCopyHtml(it,b,e); h+='<div style="display:flex;margin-top:14px"><div style="flex:1"></div><button onclick="wwNext()" style="'+b("#fff","#0f172a","#0f172a")+'">Next word ›</button></div></div>'; ov.innerHTML=h;
+  if(copying){ h+=wwCopyHtml(it,b,e)+'</div>'; ov.innerHTML=h;   // WWONE: the step's own button is the only one
     const fid=wwUI.step==="cover"?"ww-copy-in":(wwUI.step==="fix"&&!wwUI.fixed?"ww-copy-fix":null);
     if(fid) setTimeout(()=>{ const i=document.getElementById(fid); if(i&&i.focus) i.focus(); },30);
     return; }
   if(wwUI.mode==="hear") h+='<div style="text-align:center;margin-bottom:12px"><button onclick="wwSay()" style="'+b("#7c2d12","#fff","#7c2d12")+';font-size:18px">🔊 Hear the word</button><div style="font-size:13px;color:#475569;margin-top:8px">Listen, then type it.</div></div>';
   else h+='<div style="text-align:center;margin-bottom:12px"><div style="font-size:30px;font-weight:800;letter-spacing:4px;color:#0f172a">'+e(wwGaps(wwWord(it)))+'</div><div style="font-size:13px;color:#475569;margin-top:6px">Fill in the missing letters — type the whole word. <span onclick="wwSay()" style="cursor:pointer">🔊</span></div></div>';
-  h+='<input id="ww-in" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" '+(done?'disabled ':'')+'onkeydown="if(event.key===\'Enter\')wwCheck()" style="width:100%;box-sizing:border-box;padding:12px 14px;font-size:22px;font-weight:700;border:2px solid #fed7aa;border-radius:12px;text-align:center">';
-  if(wwUI.msg) h+='<div style="font-size:14px;font-weight:700;margin-top:10px;color:'+(/^✓/.test(wwUI.msg)?'#15803d':'#b45309')+'">'+e(wwUI.msg)+'</div>';
-  h+='<div style="display:flex;gap:10px;margin-top:14px">'+(done?'':'<button onclick="wwCheck()" style="'+b("#15803d","#fff","#15803d")+'">Check</button>')+'<div style="flex:1"></div><button onclick="wwNext()" style="'+b("#fff","#0f172a","#0f172a")+'">Next word ›</button></div>';
+  if(!done) h+='<input id="ww-in" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" onkeydown="if(event.key===\'Enter\')wwCheck()" style="width:100%;box-sizing:border-box;padding:12px 14px;font-size:22px;font-weight:700;border:2px solid #fed7aa;border-radius:12px;text-align:center">';
+  if(wwUI.msg) h+='<div style="font-size:14px;font-weight:700;margin-top:10px;text-align:center;color:'+(/^✓/.test(wwUI.msg)?'#15803d':'#b45309')+'">'+e(wwUI.msg)+'</div>';   // WWONE: centred, like the one button
+  if(done&&!(wwUI.msg&&wwUI.done[it.id]==="miss")) h+=wwUI.done[it.id]==="miss"   // WWONE: why the box is gone (a missed word's own message already says it)
+    ?'<div class="ww-done-today" style="font-size:15px;font-weight:800;margin-top:10px;color:#b45309;text-align:center">Done for today — try it again tomorrow!</div>'
+    :'<div class="ww-done-today" style="font-size:15px;font-weight:800;margin-top:10px;color:#15803d;text-align:center">✓ Done for today — come back tomorrow!</div>';
+  const left=wwLeft();
+  h+='<div style="display:flex;justify-content:center;margin-top:14px">'+(!done?'<button onclick="wwCheck()" style="'+b("#15803d","#fff","#15803d")+'">Check</button>'
+    :(left?'<button onclick="wwNext()" style="'+b("#0f172a","#fff","#0f172a")+'">Next word ›</button>':'<button onclick="wwFinish()" style="'+b("#15803d","#fff","#15803d")+'">All done ✓</button>'))+'</div>';   // WWONE: one button
   h+='</div>'; ov.innerHTML=h;
   setTimeout(()=>{ const i=document.getElementById("ww-in"); if(i&&!done) i.focus(); },30);
 }
