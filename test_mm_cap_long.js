@@ -20,7 +20,7 @@ const ok = (n, c, x) => c ? (pass++, console.log("  ok  - " + n)) : (fail++, con
 
 console.log("\n── the change itself ──");
 ok("MMCAPLONG sits inside MINMINUTES: mmFallbackCap = max(15, the card's own minimum)", /function mmFallbackCap\(t\)\{ return Math\.max\(MM_FALLBACK_CAP,mmTarget\(t\)\|\|0\); \}/.test(BLOCK) && /MMCAPLONG \(her report 2026-10-27/.test(BLOCK));
-ok("MM_FALLBACK_CAP is still 15; mmClock and mmTick read the per-card cap, nothing else reads the flat one", /const MM_FALLBACK_CAP=15;/.test(BLOCK) && /const cap=nowMs-mmFallbackCap\(t\)\*60000;/.test(BLOCK) && /el<mmFallbackCap\(t\)\)\) sig\+=/.test(BLOCK) && (BLOCK.match(/MM_FALLBACK_CAP\b/g) || []).length === 4);
+ok("MM_FALLBACK_CAP is still 15; mmClock reads the per-card cap, nothing else reads the flat one (TIMEDSTART took the fallback out of mmTick's re-render)", /const MM_FALLBACK_CAP=15;/.test(BLOCK) && /const cap=nowMs-mmFallbackCap\(t\)\*60000;/.test(BLOCK) && (BLOCK.match(/MM_FALLBACK_CAP\b/g) || []).length === 4);
 ok("the practice-words list is as it was (her words: keep it)", /const MM_PRACTICE_RE=\/\(practice\|piano\|instrument\|\\bread\(ing\)\?\\b\)\/i;/.test(BLOCK));
 { let before = null; try { before = require("child_process").execSync("git show HEAD:index.html", { cwd: __dirname, maxBuffer: 1 << 28 }).toString("utf8"); } catch (e) {}
   const refsIn = t => { const x = t.indexOf("// MINMINUTES_START"), y = t.indexOf("// MINMINUTES_END"); return (t.slice(x, y).match(/db\.ref\(/g) || []).length; };
@@ -67,11 +67,11 @@ console.log("\n── Ellis, no ▶ Start, Reading Detective checked 40 minutes 
 {
   const w = world({ tasks: tasks() });
   w.run("checked.rd=" + JSON.stringify(AGO(40)));
-  ok("Eggspress (20 min) is credited its own 20 → 'ready ✓' (it used to stick at 3 min left)", w.run("mmCountdownText(weekData.tasks[0])") === "ready ✓" && (w.run("mmElapsed('egg')") | 0) === 20, [w.run("mmCountdownText(weekData.tasks[0])"), w.run("mmElapsed('egg')")]);
+  ok("Eggspress (20 min) is credited its own 20 → can be checked (it used to stick at 3 min left)", w.run("mmToGo(weekData.tasks[0])") === 0 && (w.run("mmElapsed('egg')") | 0) === 20, [w.run("mmToGo(weekData.tasks[0])"), w.run("mmElapsed('egg')")]);
   ok("the clock is the fallback (last check-off), capped at 20 back", JSON.stringify(w.run("mmClock('egg')")) === JSON.stringify({ ms: BASE - 20 * 60000, from: "check" }), w.run("mmClock('egg')"));
   ok("his tap goes through under Not yet — no toast", w.run("mmTapGate(weekData.tasks[0])") === false && w.toasts.length === 0, w.toasts);
-  ok("Independent Reading (15 min) is exactly as before: credited 15, ready", (w.run("mmElapsed('ir')") | 0) === 15 && w.run("mmCountdownText(weekData.tasks[1])") === "ready ✓");
-  ok("a 45-minute practice is credited up to 40 (the real gap), 5 min left, check waits", (w.run("mmElapsed('pl')") | 0) === 40 && w.run("mmCountdownText(weekData.tasks[3])") === "5 min left" && w.run("mmTapGate(weekData.tasks[3])") === true && w.toasts[0] === "⏱ Not yet — 3 min to go");
+  ok("Independent Reading (15 min) is exactly as before: credited 15, can be checked", (w.run("mmElapsed('ir')") | 0) === 15 && w.run("mmToGo(weekData.tasks[1])") === 0);
+  ok("a 45-minute practice is credited up to 40 (the real gap), check waits", (w.run("mmElapsed('pl')") | 0) === 40 && w.run("mmTapGate(weekData.tasks[3])") === true && w.toasts[0] === "⏱ Not yet — 3 min to go");
   ok("lesson work (Math) is untimed as before", w.run("mmTarget(weekData.tasks[4])") === 0 && w.run("mmCountdownText(weekData.tasks[4])") === "");
   ok("nothing was written", w.writes.length === 0);
 }
@@ -80,10 +80,10 @@ console.log("\n── the gap is shorter than the card: the real gap counts, the
 {
   const w = world({ tasks: tasks() });
   w.run("checked.rd=" + JSON.stringify(AGO(10)));
-  ok("10 min since the last check-off: Eggspress shows '10 min left', tap says 'Not yet — 8 min to go' (grace 2)", w.run("mmCountdownText(weekData.tasks[0])") === "10 min left" && w.run("mmTapGate(weekData.tasks[0])") === true && w.toasts[0] === "⏱ Not yet — 8 min to go", [w.run("mmCountdownText(weekData.tasks[0])"), w.toasts]);
+  ok("10 min since the last check-off: Eggspress shows no countdown (TIMEDSTART), tap says 'Not yet — 8 min to go' (grace 2)", w.run("mmCountdownText(weekData.tasks[0])") === "" && w.run("mmTapGate(weekData.tasks[0])") === true && w.toasts[0] === "⏱ Not yet — 8 min to go", [w.run("mmCountdownText(weekData.tasks[0])"), w.toasts]);
   w.setNow(BASE + 8 * 60000);
-  ok("8 minutes later (18 since): 'ready ✓' and the tap goes through — the clock was never stuck", w.run("mmCountdownText(weekData.tasks[0])") === "ready ✓" && w.run("mmTapGate(weekData.tasks[0])") === false);
-  ok("mmTick keeps re-rendering while a fallback clock is still moving (18 < 20 cap)", /\|egg@/.test(w.run("mmTick()")));
+  ok("8 minutes later (18 since): the tap goes through — the clock was never stuck", w.run("mmToGo(weekData.tasks[0])") === 0 && w.run("mmTapGate(weekData.tasks[0])") === false);
+  ok("mmTick does not re-render for a fallback clock — it is never on screen (TIMEDSTART)", !/\|egg@/.test(w.run("mmTick()")));
   w.setNow(BASE + 20 * 60000);
   ok("…and goes quiet once it has credited the full 20 (a capped fallback clock stops moving)", !/\|egg@/.test(w.run("mmTick()")));
 }
@@ -91,7 +91,7 @@ console.log("\n── the gap is shorter than the card: the real gap counts, the
 console.log("\n── first card of the day: the day start, capped at the card's own minimum ──");
 {
   const w = world({ tasks: tasks() });   // day start 9:05 AM, now 2:30 PM, nothing checked
-  ok("Eggspress from the day start: credited 20 → ready; the card says 'since your day started'", w.run("mmCountdownText(weekData.tasks[0])") === "ready ✓" && w.run("mmClock('egg').from") === "day" && /since your day started/.test(w.run("mmCardRow(weekData.tasks[0],false,false,false)")));
+  ok("Eggspress from the day start: credited 20 → can be checked; the card shows only ▶ Start (TIMEDSTART)", w.run("mmToGo(weekData.tasks[0])") === 0 && w.run("mmClock('egg').from") === "day" && !/since your|min left|ready/.test(w.run("mmCardRow(weekData.tasks[0],false,false,false)")) && /mmStart\('egg'\)/.test(w.run("mmCardRow(weekData.tasks[0],false,false,false)")));
   ok("the 15-minute card from the day start: credited 15, as before", (w.run("mmElapsed('ir')") | 0) === 15);
 }
 

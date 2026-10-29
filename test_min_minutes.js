@@ -283,16 +283,16 @@ console.log("\n── 12. a forgotten Start counts from the last check-off (or t
   // no Start, last check-off 20 min ago, minimum 15 → ready
   const w = world({ tasks: tasks() });
   w.run("checked.m1=" + JSON.stringify(AGO(20)));
-  ok("no Start, Math checked 20 min ago: Piano reads 'ready ✓' (credited 15, the cap)", w.run("mmCountdownText(weekData.tasks[0])") === "ready ✓" && (w.run("mmElapsed('p1')") | 0) === 15, w.run("mmCountdownText(weekData.tasks[0])"));
+  ok("no Start, Math checked 20 min ago: Piano is credited 15 (the cap), no countdown shown (TIMEDSTART)", w.run("mmToGo(weekData.tasks[0])") === 0 && (w.run("mmElapsed('p1')") | 0) === 15 && w.run("mmCountdownText(weekData.tasks[0])") === "", w.run("mmCountdownText(weekData.tasks[0])"));
   ok("…and the check goes through under Not yet", w.run("mmTapGate(weekData.tasks[0])") === false && w.toasts.length === 0);
   ok("the clock says where it counts from", JSON.stringify(w.run("mmClock('p1')")) === JSON.stringify({ ms: BASE - 15 * 60000, from: "check" }), w.run("mmClock('p1')"));
   // no Start, last check-off 9 min ago → Not yet — 4 min to go
   const w2 = world({ tasks: tasks() });
   w2.run("checked.m1=" + JSON.stringify(AGO(9)));
-  ok("no Start, Math checked 9 min ago: Piano reads '6 min left'", w2.run("mmCountdownText(weekData.tasks[0])") === "6 min left", w2.run("mmCountdownText(weekData.tasks[0])"));
+  ok("no Start, Math checked 9 min ago: Piano is 4 min to go, no countdown shown (TIMEDSTART)", w2.run("mmToGo(weekData.tasks[0])") === 4 && w2.run("mmCountdownText(weekData.tasks[0])") === "", w2.run("mmCountdownText(weekData.tasks[0])"));
   ok("the tap stops with 'Not yet — 4 min to go' (grace 2) and no 'tap Start first'", w2.run("mmTapGate(weekData.tasks[0])") === true && w2.toasts[0] === "⏱ Not yet — 4 min to go", w2.toasts[0]);
   const row = w2.run("mmCardRow(weekData.tasks[0],false,false,false)");
-  ok("the card shows the countdown, 'since your last check-off' under it, and still ▶ Start", /⏱ 6 min left/.test(row) && /since your last check-off/.test(row) && /mmStart\('p1'\)/.test(row) && row.indexOf("6 min left") < row.indexOf("since your last") && row.indexOf("since your last") < row.indexOf("mmStart"), row);
+  ok("the card shows only ▶ Start — no countdown, no 'since your last check-off' (TIMEDSTART)", !/min left/.test(row) && !/since your/.test(row) && /mmStart\('p1'\)/.test(row), row);
   ok("a kid's 'send to Mom' counts as their check-off too", (w2.run("delete checked.m1; claimed.m1=" + JSON.stringify(AGO(9)) + "; mmElapsed('p1')") | 0) === 9);
   ok("another kid's check-off is not this kid's", w2.run("delete claimed.m1; checked.e1=" + JSON.stringify(AGO(9)) + "; mmElapsed('p1')") === null);
   ok("a check-off from another day is not today's", w2.run("checked.m1='10:00 AM Oct 22'; mmElapsed('p1')") === null);
@@ -300,17 +300,17 @@ console.log("\n── 12. a forgotten Start counts from the last check-off (or t
   // a 60-minute lunch gap credits 15
   const w3 = world({ tasks: tasks() });
   w3.run("checked.m1=" + JSON.stringify(AGO(60)));
-  ok("60-min gap: Piano (15 min) is ready", w3.run("mmCountdownText(weekData.tasks[0])") === "ready ✓" && w3.run("mmTapGate(weekData.tasks[0])") === false);
+  ok("60-min gap: Piano (15 min) can be checked", w3.run("mmToGo(weekData.tasks[0])") === 0 && w3.run("mmTapGate(weekData.tasks[0])") === false);
   // MMCAPLONG (her yes 2026-10-27): a 20-minute card is credited up to its own 20 — it used to stick at "5 min left" forever
-  ok("60-min gap: Reading (20 min) is ready too (credited its own 20, not the flat 15)", w3.run("mmCountdownText(weekData.tasks[1])") === "ready ✓" && (w3.run("mmElapsed('r1')") | 0) === 20, w3.run("mmCountdownText(weekData.tasks[1])"));
+  ok("60-min gap: Reading (20 min) can be checked too (credited its own 20, not the flat 15)", w3.run("mmToGo(weekData.tasks[1])") === 0 && (w3.run("mmElapsed('r1')") | 0) === 20, w3.run("mmElapsed('r1')"));
   ok("…and its check goes through under Not yet", w3.run("mmTapGate(weekData.tasks[1])") === false, w3.toasts);
   // first card of the day uses the day start
   const w4 = world({ tasks: tasks() });
   w4.ctx.dayStarts = { friday: { lincoln: "9:50 AM" } };
-  ok("nothing checked yet: the day start (9:50) counts → 10 min elapsed, '5 min left'", (w4.run("mmElapsed('p1')") | 0) === 10 && w4.run("mmCountdownText(weekData.tasks[0])") === "5 min left", w4.run("mmElapsed('p1')"));
+  ok("nothing checked yet: the day start (9:50) counts → 10 min elapsed, 3 to go", (w4.run("mmElapsed('p1')") | 0) === 10 && w4.run("mmToGo(weekData.tasks[0])") === 3, w4.run("mmElapsed('p1')"));
   const row4 = w4.run("mmCardRow(weekData.tasks[0],false,false,false)");
-  ok("the card says 'since your day started' and keeps ▶ Start", /since your day started/.test(row4) && /mmStart\('p1'\)/.test(row4), row4);
-  ok("a day start 40 min back is capped at 15 → ready", w4.run("dayStarts.friday.lincoln='9:20 AM'; mmCountdownText(weekData.tasks[0])") === "ready ✓");
+  ok("the card shows only ▶ Start — no 'since your day started' (TIMEDSTART)", !/since your/.test(row4) && !/min left/.test(row4) && /mmStart\('p1'\)/.test(row4), row4);
+  ok("a day start 40 min back is capped at 15 → can be checked", w4.run("dayStarts.friday.lincoln='9:20 AM'; mmToGo(weekData.tasks[0])") === 0 && (w4.run("mmElapsed('p1')") | 0) === 15);
   ok("another kid's day start is not this kid's", w4.run("dayStarts.friday={ellis:'9:20 AM'}; mmElapsed('p1')") === null);
   ok("a check-off beats the day start", (w4.run("dayStarts.friday.lincoln='9:20 AM'; checked.m1=" + JSON.stringify(AGO(3)) + "; mmElapsed('p1')") | 0) === 3 && w4.run("mmClock('p1').from") === "check");
   // an explicit Start wins over a later check-off
@@ -334,7 +334,7 @@ console.log("\n── 12. a forgotten Start counts from the last check-off (or t
   const w7b = world({ tasks: tasks() });
   w7b.run("checked.m1=" + JSON.stringify(AGO(4)));
   const s1 = w7b.run("mmTick()"); w7b.setNow(BASE + 60000); const s2 = w7b.run("mmTick()");
-  ok("while a fallback countdown is moving the tick signature changes each minute", s1 && s2 && s1 !== s2, [s1, s2]);
+  ok("a fallback clock is never on screen, so it never forces a re-render (TIMEDSTART)", s1 === "" && s2 === "", [s1, s2]);
   // Mom's early-check line and the history entry carry the note
   const w8 = world({ tasks: tasks(), rules: { minMinutes: { early: "tell" } } });
   w8.run("checked.m1=" + JSON.stringify(AGO(9)) + "; checked.p1=" + JSON.stringify(AGO(0)));   // finalizeDone has already stamped p1 when mmOnDone runs
@@ -354,7 +354,7 @@ console.log("\n── 12. a forgotten Start counts from the last check-off (or t
   const w9 = world({ tasks: tasks(), rules: { minMinutes: { early: "tell" } } });
   w9.ctx.dayStarts = { friday: { lincoln: "9:55 AM" } }; w9.run("checked.p1=" + JSON.stringify(AGO(0)));
   const spent9 = w9.run("mmOnDone('p1','10:00 AM Oct 23')");
-  ok("first card of the day: 5 min from the day start, the line says '(no Start tap — counted from the day start)'", spent9 === 5 && w9.writes[0].val.text === "Lincoln finished Piano at 5 of 15 minutes (no Start tap — counted from the day start)" && w9.run("mmSpentFrom('p1')") === "day", w9.writes);
+  ok("first card of the day: 5 min from the day start, the line says '(no Start tap — counted from the day start)'", spent9 === 5 && w9.writes.length === 1 && w9.writes[0].val.text === "Lincoln finished Piano at 5 of 15 minutes (no Start tap — counted from the day start)" && w9.run("mmSpentFrom('p1')") === "day", w9.writes);
   // a started card is untouched by all this
   const w10 = world({ tasks: tasks(), rules: { minMinutes: { early: "tell" } } });
   w10.startAgo("p1", 9); w10.run("checked.m1=" + JSON.stringify(AGO(2)));

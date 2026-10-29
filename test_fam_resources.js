@@ -89,7 +89,7 @@ console.log("0. placement + hooks");
     ["mmClock → frClock", /if\(_ft&&_ft\.famBlock&&typeof frClock==="function"\) return frClock\(_ft,nowMs\);/],
     ["mmTapGate → frTapGate", /if\(t\.famBlock\) return \(typeof frTapGate==="function"\)\?frTapGate\(t\):false;/],
     ["mmCardRow: Mom's view only", /if\(t\.famBlock&&!\(typeof frLeadsHere==="function"&&frLeadsHere\(t\)\)\) return "";/],
-    ["mmOnDone: no early line for a family card", /if\(target&&today&&!t\.famBlock&&!mmMomTap\(\)/],
+    ["mmOnDone: no early line for a family card", /const early=!!\(target&&today&&!t\.famBlock&&!mmMomTap\(\)/],
     ["mmTick: no overrun line for a family card", /c\.from==="start"&&!t\.famBlock&&el>=target\*2/],
     ["famBlockEditorHTML → frItemEditorHTML", /try\{ if\(typeof frItemEditorHTML==="function"\) h\+=frItemEditorHTML\(id,it,i,ed\); \}catch\(e\)\{\}/],
     ["renderAll → frPanelPaint", /try\{ if\(typeof frPanelPaint==="function"\) frPanelPaint\(\); \}catch\(e\)\{\}/],
