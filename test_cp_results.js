@@ -35,7 +35,8 @@ console.log("── the block, where it sits, how it is hooked ──");
   const head=CPR.slice(0,1200);
   ok("her Q18 words, the date, §6.4, §13 row 12, Q18 and PR 12 in the header", /most missed questions and also include him/.test(head)&&/2026-10-28/.test(head)&&/§6\.4/.test(head)&&/§13 row 12/.test(head)&&/Q18/.test(head)&&/PR 12/.test(head));
   ok("the block only declares (nothing runs at boot)", CPR.split("\n").every(l=>!l.trim()||/^(\/\/|function |const | |})/.test(l)));
-  const out=src.slice(0,a)+src.slice(b), hooks=out.split("\n").filter(l=>/\bcpr[A-Z]\w*\(/.test(l));
+  const m1=src.indexOf("// CPMISSED_START"), m2=src.indexOf("// CPMISSED_END");   // ⚠️ PR 18 CPMISSED reads this block's functions from inside its own block
+  const out=(src.slice(0,a)+src.slice(b)).replace(m1>=0&&m2>m1?src.slice(m1,m2):"\u0000",""), hooks=out.split("\n").filter(l=>/\bcpr[A-Z]\w*\(/.test(l));
   const want=[["cprSumAns","function envSummary(kid,ctx){"],["cprStudentHtml","function envcStudentHtml(sid){"],["cprTestsHtml","function cpctHtml(){"],["cprRowMark","function cpctRowHtml(F,it,crumb){"]];
   ok("four hook lines outside the block, each typeof-guarded and tagged 📊 CPRESULTS", hooks.length===want.length&&hooks.every(l=>/typeof cpr\w+==="function"/.test(l)&&/📊 CPRESULTS/.test(l)), hooks.map(l=>l.trim().slice(0,80)));
   ok("…each inside the function it belongs to (the summary, the student page, 📝 Tests, a question row)", want.every(([fn,host])=>{ const i=src.indexOf(host), j=src.indexOf("\n}",i); return i>0&&src.slice(i,j).indexOf("typeof "+fn+"===\"function\"")>0; }));

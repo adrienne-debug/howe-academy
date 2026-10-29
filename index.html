@@ -46401,7 +46401,7 @@ function _unitNudgePanelHtml(kid){
 //   · envSummary(kid, ctx) is PURE — from masteryData (the kid's items, _settings.cat_hold, _custom_items, studyLog, history,
 //     _tests) and the unit record (hydrated cards), restricted to the Envirothon unit's decks (the record's deck keys, never a
 //     list here). The §1.2 record: byDeck {total,new,waiting,learning,active,mastered,held,correct,miss,acc,c14,m14,acc14,last},
-//     byConcept (the same counters, keyed <station>|<Key Concept>), streak {days,last}, weak (≤5 fronts per deck: {n,m,d,t}),
+//     byConcept (the same counters, keyed <station>|<Key Concept>), streak {days,last}, weak (≤10 fronts per deck: {n,m,d,t}),
 //     days (the last 30 study days {n,c,m,secs}), plus unitVer, at, and tests (pre/post/graduated per station, read
 //     defensively from mastery/<kid>_tests). Accuracy, streak and days count STUDY SITTINGS only (studyLog); Mom's drills
 //     (history) count only toward a card's miss total in the weak list. No card back, no other deck, no roster, no schedule.
@@ -46415,7 +46415,7 @@ function _unitNudgePanelHtml(kid){
 //     "🌿 <deck> released by your teacher" (toast + the card). classId = cfg.classId, else students/<sid>/class read once.
 //   · release/locked = true on the Envirothon project: publishing stops (summaries stay), the card says "season closed".
 //     Nothing in Howe is ever locked by it.
-const ENVM_APP="envirothon", ENVM_MIN_MS=60000, ENVM_DAYS=30, ENVM_WEAK=5, ENVM_RECENT=14, ENVM_BOOT_TRIES=40;
+const ENVM_APP="envirothon", ENVM_MIN_MS=60000, ENVM_DAYS=30, ENVM_WEAK=10, ENVM_RECENT=14, ENVM_BOOT_TRIES=40;
 const _envm={app:null,auth:null,edb:null,user:null,locked:false,classOf:{},subs:{},timer:null,lastAt:0,lastPub:0,tries:0,busy:false,err:"",notices:[]};
 function envmCfg(){ try{ const c=(typeof window!=="undefined"&&window.HA_FAMILY&&window.HA_FAMILY.envirothon)||null; return (c&&c.firebase&&typeof c.firebase==="object"&&c.firebase.databaseURL)?c:null; }catch(e){ return null; } }
 function envmFamilyId(){ const c=envmCfg(); if(c&&c.familyId) return String(c.familyId); try{ return String((window.HA_FAMILY&&window.HA_FAMILY.familyId)||"howe"); }catch(e){ return "howe"; } }
@@ -46505,7 +46505,7 @@ function envSummary(kid,ctx){
   const streak={days:0,last:dayKeys.length?dayKeys[dayKeys.length-1]:null};
   if(streak.last&&envmDaysBetween(streak.last,today)<=1){ const set=new Set(dayKeys); let k=streak.last; while(set.has(k)){ streak.days++; k=envmShift(k,-1); } }
   const days={}; dayKeys.slice(-ENVM_DAYS).forEach(k=>{ days[k]=dayAgg[k]; });
-  // Weakest cards: m×2 + drop_count, lower tier first; the front only; ≤5 per deck; decks with nothing weak are left out.
+  // Weakest cards: m×2 + drop_count, lower tier first; the front only; ≤10 per deck (⚠️ CPMISSED, PR 18: was 5, so the class view has enough to rank); decks with nothing weak are left out.
   const weak={};
   decks.forEach(d=>{
     const rows=items.filter(i=>i.subject===d.key).map(i=>({n:i.prompt,m:missBy[d.key+"|"+i.prompt]||0,d:i.drop_count||0,t:i.tier||"daily"})).filter(r=>r.m+r.d>0);
@@ -47324,6 +47324,7 @@ function envConsoleHtml(){
   if(typeof cpcsChips==="function") cpcsChips(chips);   // 📚 CPCARDSSEE: 📚 Cards before 🃏 Teacher cards
   if(typeof cpceChips==="function") cpceChips(chips);   // 📚 CPCARDSEDIT: 🃏 Teacher cards moved into 📚 Cards (the old chip comes out)
   if(typeof cpctChips==="function") cpctChips(chips);   // 📝 CPTESTS: 📝 Tests right after 📚 Cards
+  if(typeof cpmChips==="function") cpmChips(chips);   // ⚠️ CPMISSED: ⚠️ Most missed right after 📝 Tests
   h+='<div class="envs-chips">'+chips.map(x=>'<button class="'+((v===x[0]||(v==="student"&&x[0]==="grid"))?'on':'')+'" onclick="envcView(\''+x[0]+'\')">'+x[1]+'</button>').join("")+'</div>';
   if(_envc.err) h+='<div class="envs-card" style="border-color:#fecaca;color:#b91c1c;font-size:12.5px">'+envcEsc(_envc.err)+' <a href="javascript:void(0)" onclick="_envc.err=\'\';envcRe()" style="color:#b91c1c">dismiss</a></div>';
   if(_envs.lock&&_envs.lock.locked) h+='<div class="envs-card" style="border-color:#fcd34d;background:#fffbeb;font-size:12.5px">\u{1F512} The season is closed for teachers and families; you see this because you are the admin.</div>';
@@ -47337,6 +47338,7 @@ function envConsoleHtml(){
   else if(v==="strong") h+=envcStrongHtml();
   else if(v==="cpcards"&&typeof cpcsHtml==="function") h+=cpcsHtml();   // 📚 CPCARDSSEE
   else if(v==="cptests"&&typeof cpctHtml==="function") h+=cpctHtml();   // 📝 CPTESTS
+  else if(v==="cpmissed"&&typeof cpmHtml==="function") h+=cpmHtml();   // ⚠️ CPMISSED: the most missed questions and cards, the struggle, the review list
   else if(v==="cards") h+=envcCardsHtml();
   else if(v==="boards") h+=envcBoardsHtml();
   else if(v==="who") h+=envcWhoHtml();
@@ -52673,6 +52675,299 @@ function cprSecHtml(x){
   return h+'</div></div></div>';
 }
 // CPRESULTS_END
+// CPMISSED_START — ⚠ MOST MISSED: planning class review from what the class misses, Lincoln included (DESIGN_class_platform_2026-10-28.md
+// §6.4.1, §6.4, §8.2, §8.4, §9, §13 row 18, §14 Q12 / Q18, §15; PR 18 of the class platform; her yes to building the design, 2026-10-28).
+// Her words 2026-10-28: "it definitely needs to tell her what is the most missed questions and also include him, and that way she can come
+// up with review things for class, and it will help her to say what they are struggling with." The look is the agreed mockup's ⚠ Missed tab
+// (~/Desktop/Envirothon/MOCKUP_teacher_browser.html). It REPLACES the combined demo's "⚠ Most missed · preview" tab. INERT unless
+// ENVCONSOLE's envcOn() (the class site, a teacher or admin login) and CPRESULTS is there: Howe, DeWalt and Burris never reach a line of it.
+//   · THE CHIP: ⚠ Most missed, right after 📝 Tests (cpmChips splices into the console's chips; the array literal is never edited). Its view
+//     is "cpmissed". Along the top: section chips (All + each section with answers or weak cards) and the pre / post / both switch, words
+//     from the unit's labels (cpLabel). Everything is folded, ONE fold open at a time and one row open in it; leaving the tab folds it back.
+//   · 📝 MOST-MISSED QUESTIONS: CPRESULTS' cprMostMissed (cpItemAnalysis over every student's summary, students on the Howe Academy app too:
+//     his Envirothon answers only, her yes Q18) — the share who missed, then the count. A row: "7 of 8 missed · most-picked wrong A (5)".
+//     Opened: every choice with how many picked it (a bar, ✓ on the right one), who missed it and what they picked, THE CARDS THAT TEACH
+//     IT (the question's card links, §8.4; a tap opens the card's back right there; "No card covers it" when none does), the skill line
+//     (PR 25), and ＋ Add to review list.
+//   · 🃏 MOST-MISSED CARDS (study sittings + drills): the summaries' weak lists (fronts with misses m and drops d) added up across the
+//     class — misses×2 + drops, then how many students have it. The mirror's weak list grows from ≤ 5 to ≤ 10 per deck here (ENVM_WEAK in
+//     ENVMIRROR; Lincoln's mirror sends 10 fronts a deck instead of 5: fronts only, no backs, nothing else). Opened: the back, the source,
+//     the test questions it's on, whose weak list it is in, ＋ Add to review list.
+//   · 🧭 WHAT THEY'RE STRUGGLING WITH, by Key Concept (or by item, for an item deck): the missed questions (through their linked cards) plus
+//     the weak cards, each row tied to the pace (§8.2): "Behind on cards — 41% of its core learned" when under CPM_BEHIND (60%) of it is
+//     learned across the students who have the section (check 📅 Pace before reteaching), else "Learned the cards (74%) — still missing it"
+//     (the one to review in class). Learned = the summary's byConcept mastered ÷ total for that Key Concept (the mirror's own counters,
+//     monthly and up); a summary without it falls back to the section's core counts (CPPACE's summary.core, else its deck estimate),
+//     marked ≈. ＋ Add its questions to the review list. PR 25's 🧩 Skills fold (cpSkillFoldHtml) follows when the class has skills.
+//   · 📋 THE REVIEW LIST: classes/<cid>/review/<listId> = { name, items:["q:<section>|<form>|<questionId>" | "c:<cardId>"], at, by }, so
+//     she can open it again on the class day. Every change is ONE set of that list's record through envcWrite → envsWrite (demo: "would
+//     write"; dry run: nothing); her lists come back with the class record the console already listens to. 🖥 Show on screen: one item at a
+//     time in big type, Show the answer, ← → (the keys too), for a projector or a TV. 🖨 Print: a plain sheet, each question with its
+//     choices and the answer, or each card's front and back. Students' names never go into a list.
+//   · The parent never sees any of it (Q12): this is the console's only.
+//   · DEMO: the sample class's answers are CPRESULTS' (cprDemoSeed); the study misses (weak cards) and the learned share per Key Concept are
+//     invented here in memory, from each student's own misses and deck counts (cpmDemoSeed) — the summaries are not changed.
+const CPM_BEHIND=60, CPM_LIST_MAX=40, CPM_CARDS=5, CPM_PAGE={q:10,w:10,g:8};
+const _cpm={sec:"all",form:"both",fold:null,row:null,card:null,more:{},lid:null,fresh:false,show:null,css:false,key:false,demo:null,demoFor:null,raw:null,rawFor:null};
+function cpmOn(){ return typeof envcOn==="function"&&envcOn()&&typeof cprAll==="function"&&typeof cpcsIndex==="function"; }
+function cpmEsc(v){ return envsEsc(v); }
+function cpmJ(v){ return envcJ(v); }
+function cpmW(k){ return (typeof cpcsWord==="function")?cpcsWord(k):k; }
+function cpmFW(w){ return (typeof cprFW==="function")?cprFW(w):String(w); }
+function cpmL(j){ return "ABCDEFGHIJ"[j]||"?"; }
+function cpmVals(v){ return Array.isArray(v)?v.filter(Boolean):(v&&typeof v==="object")?Object.keys(v).sort((a,b)=>a-b).map(k=>v[k]).filter(Boolean):[]; }
+function cpmHash(s){ return (typeof cprHash==="function")?cprHash(s):String(s).split("").reduce((h,c)=>((h*33)^c.charCodeAt(0))>>>0,5381); }
+// the console's chips: ⚠ Most missed right after 📝 Tests (the array is the console's; this only splices into it)
+function cpmChips(chips){
+  if(!cpmOn()||!Array.isArray(chips)) return chips;
+  if(typeof _envc!=="undefined"&&_envc.view!=="cpmissed") cpmFoldAll();   // she moved on: ⚠ Most missed opens folded next time
+  if(chips.some(x=>x&&x[0]==="cpmissed")) return chips;
+  let i=chips.findIndex(x=>x&&x[0]==="cptests"); if(i<0) i=chips.findIndex(x=>x&&x[0]==="cpcards"); if(i<0) i=chips.findIndex(x=>x&&x[0]==="grid");
+  chips.splice(i+1,0,["cpmissed","⚠️ Most missed"]); return chips;
+}
+function cpmFoldAll(){ _cpm.fold=_cpm.row=_cpm.card=null; _cpm.more={}; }
+// ── PURE: the class's weak lists added up. summaries [{sid, name, summary}] (+ extra {sid:{deck:[rows]}}, the demo's) → one row per
+// card front [{deck, n, m, d, who:[{sid,name}], score}], misses×2 + drops first, then how many students have it, then the front
+function cpWeakRank(summaries,extra){
+  const A={};
+  (Array.isArray(summaries)?summaries:[]).forEach(s=>{ if(!s) return; const W=(s.summary&&s.summary.weak)||{}, X=(extra&&extra[s.sid])||{}, seen={};
+    Object.keys(W).concat(Object.keys(X)).forEach(dk=>{ cpmVals(W[dk]).concat(cpmVals(X[dk])).forEach(r=>{ if(!r||r.n==null||r.n==="") return; const k=dk+"|"+r.n; if(seen[k]) return; seen[k]=1;
+      const a=A[k]||(A[k]={deck:dk,n:String(r.n),m:0,d:0,who:[]}); a.m+=(+r.m||0); a.d+=(+r.d||0); a.who.push({sid:s.sid,name:s.name||s.sid}); }); }); });
+  return Object.keys(A).map(k=>Object.assign(A[k],{score:A[k].m*2+A[k].d})).filter(a=>a.score>0||a.who.length)
+    .sort((a,b)=>b.score-a.score||b.who.length-a.who.length||a.n.localeCompare(b.n));
+}
+// ── PURE: what they're struggling with. qs [{key, missed, took, cards:[cardId]}], ws [{c, who}] (c = the card from the browser's index),
+// byId (cardId → card {sec, kind, item, g:{key,label}}), learn(group) → {pct, est, n} → one row per Key Concept (or item) with its
+// questions, its weak cards and the kind of struggle: behind = under CPM_BEHIND learned. Most missed first (missed answers + weak students).
+function cpStruggle(qs,ws,byId,learn){
+  const G={}, at=c=>{ const k=c.g.key; return G[k]||(G[k]={key:k,sec:c.sec,label:c.g.label,id:c.kind==="id",c0:c,q:[],w:[],score:0}); };
+  (qs||[]).forEach(q=>{ const done={}; (q.cards||[]).forEach(id=>{ const c=byId&&byId[id]; if(!c||!c.g) return; const g=at(c); if(done[g.key]) return; done[g.key]=1; g.q.push(q); g.score+=(+q.missed||0); }); });
+  (ws||[]).forEach(w=>{ const c=w&&w.c; if(!c||!c.g) return; const g=at(c); g.w.push(w); g.score+=(w.who||[]).length; });
+  return Object.keys(G).map(k=>{ const g=G[k], L=(typeof learn==="function"&&learn(g))||{pct:0,est:true,n:0}; return Object.assign(g,{pct:L.pct,est:!!L.est,n:L.n||0,behind:L.pct<CPM_BEHIND}); })
+    .sort((a,b)=>b.score-a.score||String(a.label).localeCompare(String(b.label)));
+}
+// ── the console's side: the questions (filtered by the chips), the cards, the groups
+function cpmStudents(){ return (typeof cprSummaries==="function")?cprSummaries():[]; }
+function cpmQs(){ const L=(typeof cprMostMissed==="function")?cprMostMissed():[]; return L.filter(x=>x.missed>0&&(_cpm.sec==="all"||x.sk===_cpm.sec)&&(_cpm.form==="both"||x.w===_cpm.form)); }
+function cpmNameMap(M){ const o={}; ((M&&M.C)||[]).forEach(c=>{ const k=c.deck+"|"+c.name; if(!o[k]) o[k]=c; }); return o; }
+function cpmWs(M){ const by=cpmNameMap(M), secOf=d=>(typeof envsStationOfDeck==="function")?envsStationOfDeck(d):null;
+  return cpWeakRank(cpmStudents(),_cpm.demo&&_cpm.demo.weak).map(w=>Object.assign(w,{c:by[w.deck+"|"+w.n]||null,sec:(by[w.deck+"|"+w.n]||{}).sec||secOf(w.deck)})).filter(w=>_cpm.sec==="all"||w.sec===_cpm.sec); }
+// a card's Key Concept as the mirror keys it (byConcept "<section>|<family || group || General>", ENVMIRROR envSummary)
+function cpmRaw(c){
+  const M=cpcsIndex(); if(_cpm.rawFor!==M){ _cpm.rawFor=M; _cpm.raw={}; const ids=(typeof cpcsUnitIds==="function")?cpcsUnitIds():[];
+    ids.forEach(id=>{ const l=(typeof cpcsLib==="function")?cpcsLib(id):null; ((l&&l.unit&&l.unit.decks)||[]).forEach(d=>(d.cards||[]).forEach((x,i)=>{ if(x) _cpm.raw[d.key+"#o"+(Number.isInteger(x.order)?x.order:i+1)]=x.family||x.group||"General"; })); }); }
+  return (c&&_cpm.raw[c.id])||(c&&c.g&&c.g.label)||"General";
+}
+function cpmCoreTotal(sec){ const M=cpcsIndex(), s=M&&M.secs.find(x=>x.id===sec); if(!s) return 0; const n=s.cards.filter(c=>c.core).length; return n||s.cards.length; }
+// the share of a Key Concept learned across the students who have its section: each student's byConcept mastered ÷ total, else ≈ the
+// section's core share (summary.core, else CPPACE's deck estimate)
+function cpmLearn(g){
+  const st=(typeof envsStation==="function")?envsStation(g.sec):null; if(!st) return {pct:0,est:true,n:0}; const ck=g.sec+"|"+cpmRaw(g.c0); let sum=0, n=0, est=false;
+  cpmStudents().forEach(s=>{ const sm=s.summary; if(!sm||(typeof cppReleased==="function"&&!cppReleased(sm,st))) return; let v=null;
+    const bc=sm.byConcept&&sm.byConcept[ck], dk=_cpm.demo&&_cpm.demo.kc[s.sid];
+    if(bc&&+bc.total>0) v=(+bc.mastered||0)/(+bc.total);
+    else if(dk&&dk[ck]!=null) v=dk[ck];
+    else { est=true; const c=sm.core&&sm.core[g.sec]; if(c&&+c.total>0) v=(+c.learned||0)/(+c.total); else if(typeof cppIs==="function"){ const T=cpmCoreTotal(g.sec); v=T?Math.min(1,cppIs(sm,st).learned/T):0; } else v=0; }
+    sum+=v; n++; });
+  return {pct:n?Math.round(sum/n*100):0,est,n};
+}
+function cpmData(){
+  const M=cpcsIndex(), qs=cpmQs(), ws=cpmWs(M);
+  const Q=qs.map(x=>({key:x.key+"|"+x.row.id,missed:x.missed,took:x.row.took,cards:x.row.cards,x}));
+  return {M,qs,ws,gs:cpStruggle(Q,ws.filter(w=>w.c),M.byId,cpmLearn),n:cpmStudents().length};
+}
+// ── the demo: study misses and the learned share per Key Concept, invented from each sample student's own misses and deck counts (memory)
+function cpmDemoSeed(){
+  if(typeof envsDemo!=="function"||!envsDemo()||typeof _envc==="undefined"||!_envc.demo||_cpm.demoFor===_envc.demo) return false;
+  const M=cpcsIndex(), X=cprAll(); if(!M||!M.ready||!X||!X.ready) return false;
+  _cpm.demoFor=_envc.demo; const weak={}, kc={};
+  cpmStudents().forEach(s=>{ const sm=s.summary||{}, W=weak[s.sid]={}, K=kc[s.sid]={};
+    const add=(c,salt)=>{ const have=cpmVals(sm.weak&&sm.weak[c.deck]), L=W[c.deck]=W[c.deck]||[]; if(have.length+L.length>=10||have.some(r=>r.n===c.name)||L.some(r=>r.n===c.name)) return;
+      const h=cpmHash(s.sid+"|"+c.id+"|"+salt); L.push({n:c.name,m:1+h%5,d:(h>>>4)%3,t:"daily"}); };
+    M.secs.forEach(sec=>{ const st=envsStation(sec.id); if(!st||(typeof cppReleased==="function"&&!cppReleased(sm,st))) return;
+      let mm=0, tt=0; st.decks.forEach(d=>{ const r=sm.byDeck&&sm.byDeck[d.key]; if(r&&!r.held){ mm+=+r.mastered||0; tt+=+r.total||0; } }); const base=tt?mm/tt:0;
+      sec.cards.forEach(c=>{ const ck=sec.id+"|"+cpmRaw(c); if(K[ck]!=null) return;
+        K[ck]=Math.max(0,Math.min(1,base+((cpmHash(ck)%100)/100-0.5)*0.9+((cpmHash(s.sid+ck)%100)/100-0.5)*0.2)); });
+      X.forms.filter(f=>f.sk===sec.id).forEach(f=>f.A.rows.forEach(r=>{ if(r.wrong.some(x=>x.sid===s.sid)) (r.cards||[]).slice(0,2).forEach(id=>{ const c=M.byId[id]; if(c) add(c,"q"); }); }));
+      const core=sec.cards.filter(c=>c.core); for(let i=0;i<2&&core.length;i++) add(core[cpmHash(s.sid+sec.id+i)%core.length],"c"); }); });
+  _cpm.demo={weak,kc}; return true;
+}
+// ── the taps
+function cpmTap(level,id){
+  if(!cpmOn()) return; const S=_cpm;
+  if(level==="sec"){ S.sec=id||"all"; S.row=S.card=null; S.more={}; }
+  else if(level==="form"){ S.form=(id==="pre"||id==="post")?id:"both"; S.row=S.card=null; S.more={}; }
+  else if(level==="fold"){ S.fold=S.fold===id?null:id; S.row=S.card=null; }
+  else if(level==="row"){ S.row=S.row===id?null:id; S.card=null; }
+  else if(level==="card"){ S.card=S.card===id?null:id; }
+  else if(level==="more"){ S.more[id]=(S.more[id]||CPM_PAGE[id]||10)+(CPM_PAGE[id]||10); }
+  else return;
+  if(typeof envcRe==="function") envcRe();
+}
+// ── 📋 the review list: classes/<cid>/review/<listId>
+function cpmLists(){ const R=(typeof _envc!=="undefined"&&_envc.cls&&_envc.cls.review)||{}; return Object.keys(R).filter(k=>R[k]&&typeof R[k]==="object").map(k=>({id:k,name:String(R[k].name||""),items:cpmVals(R[k].items).map(String),at:+R[k].at||0,by:R[k].by||""})).sort((a,b)=>b.at-a.at||a.id.localeCompare(b.id)); }
+function cpmCur(){ if(_cpm.fresh) return null; const L=cpmLists(); return L.find(x=>x.id===_cpm.lid)||L[0]||null; }
+function cpmItems(){ const c=cpmCur(); return c?c.items:[]; }
+function cpmIn(k){ return cpmItems().indexOf(k)>=0; }
+function cpmKeyOk(k){ return typeof k==="string"&&k.length<=200&&/^(q|c):\S/.test(k); }
+function cpmToday(){ return (typeof envcToday==="function")?envcToday(Date.now()):new Date(Date.now()).toISOString().slice(0,10); }
+// PURE: the record one list saves — her name (≤ 60), the items (unique, ≤ CPM_LIST_MAX, keys only), at, by
+function cpmRec(name,items,by,now){ const it=[]; (items||[]).forEach(k=>{ if(cpmKeyOk(k)&&it.indexOf(k)<0&&it.length<CPM_LIST_MAX) it.push(k); });
+  return {name:String(name==null?"":name).trim().slice(0,60)||"Class review",items:it,at:now,by:String(by||"")}; }
+function cpmSave(items,name){
+  if(!cpmOn()) return Promise.resolve(null); const cid=_envc.cid; if(!cid) return Promise.resolve(null);
+  const cur=cpmCur(), R=(_envc.cls&&_envc.cls.review)||{}; let id=cur?cur.id:"r"+Date.now().toString(36); for(let n=1;!cur&&R[id]&&n<99;n++) id="r"+Date.now().toString(36)+n.toString(36);   // a new list never reuses an id
+  const rec=cpmRec(name!=null?name:(cur?cur.name:"Class review "+(typeof cppLbl==="function"?cppLbl(cpmToday()):cpmToday())),items,(typeof _envs!=="undefined"&&_envs.uid)||"",Date.now());
+  return envcWrite("classes/"+cid+"/review/"+id,rec).then(()=>{ const C=_envc.cls=_envc.cls||{}; C.review=Object.assign({},C.review||{},{[id]:rec}); _cpm.lid=id; _cpm.fresh=false; envcRe(); return rec; }).catch(()=>null);
+}
+function cpmToggle(k){ if(!cpmOn()||!cpmKeyOk(k)) return; const L=cpmItems().slice(), i=L.indexOf(k);
+  if(i>=0) L.splice(i,1); else { if(L.length>=CPM_LIST_MAX){ envsToast("The list holds "+CPM_LIST_MAX+" items. Start a new list for more."); return; } L.push(k); }
+  cpmSave(L).then(r=>{ if(r&&!envsDemo()) envsToast(i>=0?"Taken off the review list":"Added to the review list ("+r.items.length+")"); }); }
+function cpmAddMany(keys){ if(!cpmOn()) return; const L=cpmItems().slice(); let n=0; (keys||[]).forEach(k=>{ if(cpmKeyOk(k)&&L.indexOf(k)<0&&L.length<CPM_LIST_MAX){ L.push(k); n++; } });
+  if(!n){ envsToast("Already in the review list"); return; } cpmSave(L).then(r=>{ if(r&&!envsDemo()) envsToast("Added "+n+" question"+(n===1?"":"s")+" to the review list"); }); }
+function cpmGroupAdd(gk){ const D=cpmData(), g=D.gs.find(x=>x.key===gk); if(g) cpmAddMany(g.q.map(q=>"q:"+q.key)); }
+function cpmRename(v){ const c=cpmCur(); if(!c) return; const n=String(v==null?"":v).trim().slice(0,60); if(!n||n===c.name) return; cpmSave(c.items,n); }
+function cpmPickList(id){ if(!cpmOn()) return; _cpm.lid=id; _cpm.fresh=false; _cpm.show=null; envcRe(); }
+function cpmNewList(){ if(!cpmOn()) return; _cpm.fresh=true; envcRe(); envsToast("A new list starts with the next ＋"); }
+// an item → what the screen and the sheet show: {tag, front, choices?, back}, or null when the question or card is gone
+function cpmItem(k){
+  if(!cpmKeyOk(k)) return null;
+  if(k[0]==="q"){ const X=cprAll(), r=X&&X.by[k.slice(2)]; if(!r) return null; const p=k.slice(2).split("|"), st=envsStation(p[0]), K=r.multi?cprArr(r.ans):[r.ans];
+    return {tag:((st&&(st.short||st.label))||p[0])+" "+cpmFW(p[1]).toLowerCase()+" · "+(r.added?"＋":"Q"+r.n),front:String(r.q||""),choices:r.choices.map(String),back:K.map(j=>cpmL(j)+". "+(r.choices[j]==null?"":r.choices[j])).join("  ·  ")}; }
+  const M=cpcsIndex(), c=M&&M.byId[k.slice(2)]; if(!c) return null; const s=M.secs.find(x=>x.id===c.sec);
+  return {tag:((s&&s.label)||c.sec)+" › "+(c.kind==="id"&&c.item?c.item:c.g.label),front:c.name,back:(typeof cpceBack==="function")?cpceBack(c):c.def};
+}
+// 🖥 Show on screen: one item at a time, big type, Show the answer, ← →
+function cpmShow(on){ if(!cpmOn()) return; if(!on){ _cpm.show=null; cpmShowPaint(); return; } const L=cpmItems().filter(k=>cpmItem(k)); if(!L.length){ envsToast("The review list is empty."); return; } _cpm.show={i:0,ans:false}; cpmShowPaint(); }
+function cpmShowNav(d){ const S=_cpm.show, n=cpmItems().filter(k=>cpmItem(k)).length; if(!S||!n) return; S.i=((S.i+(+d||0))%n+n)%n; S.ans=false; cpmShowPaint(); }
+function cpmShowAns(){ if(!_cpm.show) return; _cpm.show.ans=!_cpm.show.ans; cpmShowPaint(); }
+function cpmShowHtml(){
+  const S=_cpm.show; if(!S) return ""; const L=cpmItems().map(k=>cpmItem(k)).filter(Boolean); if(!L.length) return ""; const t=L[Math.min(S.i,L.length-1)];
+  return '<div class="cpm-sh-n">'+(S.i+1)+' of '+L.length+' · '+cpmEsc(t.tag)+'</div><div class="cpm-sh-q">'+cpmEsc(t.front)+(t.choices?'<div class="cpm-sh-c">'+t.choices.map((c,j)=>cpmL(j)+'. '+cpmEsc(c)).join('<br>')+'</div>':'')+(S.ans?'<div class="cpm-sh-a">'+cpmEsc(t.back)+'</div>':'')+'</div>'
+    +'<div class="cpm-sh-ctl"><button onclick="cpmShowNav(-1)" aria-label="Back">←</button><button class="ans" onclick="cpmShowAns()">'+(S.ans?'Hide the answer':'Show the answer')+'</button><button onclick="cpmShowNav(1)" aria-label="Next">→</button><button class="x" onclick="cpmShow(false)">✕ Close</button></div>';
+}
+function cpmShowPaint(){
+  if(typeof document==="undefined"||!document.getElementById) return;
+  try{ let o=document.getElementById("cpm-show");
+    if(!_cpm.show){ if(o&&o.parentNode) o.parentNode.removeChild(o); return; }
+    cpmCss(); if(!o){ o=document.createElement("div"); o.id="cpm-show"; o.className="cpm-show"; o.setAttribute("role","dialog"); o.setAttribute("aria-label","Review on screen"); document.body.appendChild(o); }
+    o.innerHTML=cpmShowHtml();
+    if(!_cpm.key&&document.addEventListener){ _cpm.key=true; document.addEventListener("keydown",e=>{ if(!_cpm.show) return; if(e.key==="ArrowRight") cpmShowNav(1); else if(e.key==="ArrowLeft") cpmShowNav(-1); else if(e.key==="Escape") cpmShow(false); else if(e.key===" "||e.key==="Enter"){ if(e.preventDefault) e.preventDefault(); cpmShowAns(); } }); }
+  }catch(e){}
+}
+// 🖨 Print: a plain sheet
+function cpmPrintHtml(){
+  const c=cpmCur(); if(!c) return ""; const L=c.items.map(k=>cpmItem(k)).filter(Boolean), cls=(typeof _envc!=="undefined"&&_envc.cls)||{}, b=(typeof cpBrand==="function")?cpBrand(cls):{title:cls.name||"",emoji:""};
+  return '<!doctype html><html><head><meta charset="utf-8"><title>'+cpmEsc(c.name)+'</title><style>body{font:15px/1.45 Georgia,serif;margin:28px;color:#111}h1{font-size:20px;margin:0 0 4px}li{margin:0 0 16px;break-inside:avoid}.a{color:#166534;font-weight:bold}.t{color:#666;font-size:12px}</style></head><body>'
+    +'<h1>'+cpmEsc((b.emoji?b.emoji+" ":"")+(b.title||""))+' · '+cpmEsc(c.name)+'</h1><div class="t">'+L.length+' item'+(L.length===1?'':'s')+'</div><ol>'
+    +L.map(t=>'<li><div class="t">'+cpmEsc(t.tag)+'</div>'+cpmEsc(t.front)+(t.choices?'<br>'+t.choices.map((x,j)=>cpmL(j)+'. '+cpmEsc(x)).join('<br>'):'')+'<br><span class="a">'+cpmEsc(t.back)+'</span></li>').join("")+'</ol></body></html>';
+}
+function cpmPrint(){ if(!cpmOn()) return; const h=cpmPrintHtml(); if(!h){ envsToast("The review list is empty."); return; }
+  let w=null; try{ w=window.open("","_blank"); }catch(e){} if(!w){ envsToast("The browser blocked the print window."); return; }
+  try{ w.document.write(h); w.document.close(); setTimeout(()=>{ try{ w.focus(); w.print(); }catch(e){} },300); }catch(e){} }
+// ── the page
+function cpmCss(){
+  if(_cpm.css||typeof document==="undefined"||!document.createElement) return; _cpm.css=true;
+  try{ const s=document.createElement("style"); s.id="cpm-css"; s.textContent=
+    '.cpm-banner{background:#fffbeb;border:1.5px solid #fcd34d;border-radius:12px;padding:9px 12px;font-size:12.5px;margin:4px 0 8px;overflow-wrap:anywhere}'+
+    '.cpm .cpcs-cnt .m{color:#b91c1c}.cpm .cpcs-cnt .e{color:#15803d}.cpm-q{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.cpcs-row.open .cpm-q{display:block}'+
+    '.cpm-why{display:inline-block;font-size:11.5px;font-weight:800;border-radius:8px;padding:3px 8px;margin-top:5px}.cpm-why.behind{background:#fef3c7;color:#92400e}.cpm-why.still{background:#fee2e2;color:#991b1b}'+
+    '.cpm-lk{display:inline-block;font:inherit;font-size:12.5px;border:1px solid #d1fae5;background:#fff;border-radius:8px;padding:4px 8px;margin:4px 4px 0 0;cursor:pointer;min-height:32px;text-align:left;color:inherit;overflow-wrap:anywhere;max-width:100%}.cpm-lk.core{border-color:#86efac;font-weight:700}.cpm-lk.on{background:#dcfce7}'+
+    '.cpm-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.cpm-btn{min-height:40px;padding:0 14px;border-radius:10px;border:1.5px solid #d1d5db;background:#fff;font:inherit;font-size:13.5px;font-weight:800;cursor:pointer;color:#374151}.cpm-btn.pri{background:#14532d;border-color:#14532d;color:#fff}'+
+    '.cpm-x{flex-shrink:0;min-width:40px;min-height:40px;border:1.5px solid #e5e7eb;border-radius:10px;background:#fff;cursor:pointer;font:inherit;color:#6b7280}.cpm-name{width:100%;min-height:42px;border:1.5px solid var(--border,#e5e0d8);border-radius:10px;padding:0 10px;font:inherit;font-size:16px;box-sizing:border-box}'+
+    '.cpm-show{position:fixed;inset:0;z-index:9999;background:#0f172a;color:#f8fafc;display:flex;flex-direction:column;justify-content:center;padding:4vh 6vw;box-sizing:border-box;overflow:auto}.cpm-sh-n{font-size:14px;color:#94a3b8;font-weight:700}'+
+    '.cpm-sh-q{font-size:clamp(22px,4.4vw,48px);font-weight:800;line-height:1.25;margin:16px 0;overflow-wrap:anywhere}.cpm-sh-c{font-size:clamp(16px,3vw,28px);font-weight:600;margin-top:14px;color:#cbd5e1}.cpm-sh-a{margin-top:18px;color:#86efac;font-size:clamp(18px,3.2vw,32px)}'+
+    '.cpm-sh-ctl{display:flex;gap:10px;flex-wrap:wrap}.cpm-sh-ctl button{min-height:52px;min-width:60px;padding:0 18px;border-radius:12px;border:none;font:inherit;font-size:18px;font-weight:800;cursor:pointer;background:#e2e8f0;color:#0f172a}.cpm-sh-ctl .ans{background:#86efac}.cpm-sh-ctl .x{background:#334155;color:#fff}';
+    document.head.appendChild(s); }catch(e){}
+}
+function cpmFold(id,title,cnt,body){ const open=_cpm.fold===id;
+  return '<div class="cpcs-fold'+(open?' open':'')+'" id="cpm-f-'+id+'"><button class="cpcs-fh" onclick="cpmTap(\'fold\',\''+id+'\')" aria-expanded="'+(open?'true':'false')+'"><span class="cpcs-tw">▶</span><span class="cpcs-tt"><div class="cpcs-t1">'+title+'</div><div class="cpcs-cnt">'+cnt+'</div></span></button>'+(open?'<div class="cpcs-fb">'+body()+'</div>':'')+'</div>'; }
+function cpmPaged(key,list,fn){ const n=_cpm.more[key]||CPM_PAGE[key]||10; return list.slice(0,n).map(fn).join("")+(list.length>n?'<button class="cpcs-more" onclick="cpmTap(\'more\',\''+key+'\')">Show '+Math.min(CPM_PAGE[key]||10,list.length-n)+' more · '+(list.length-n)+' left</button>':''); }
+function cpmRvBtn(k){ return cpmIn(k)?'<button class="cpm-btn" onclick="cpmToggle(\''+cpmJ(k)+'\')">✓ In the review list</button>':'<button class="cpm-btn pri" onclick="cpmToggle(\''+cpmJ(k)+'\')">＋ Add to review list</button>'; }
+function cpmSecOf(id){ const st=(typeof envsStation==="function")?envsStation(id):null; return st||{id,label:id,short:id}; }
+function cpmQName(x){ const st=cpmSecOf(x.sk); return (st.short||st.label)+" "+cpmFW(x.w).toLowerCase()+" · "+(x.row.added?"＋":"Q"+x.row.n); }
+function cpmCardChip(c,M){ const open=_cpm.card===c.id;
+  return '<button class="cpm-lk'+(c.core?' core':'')+(open?' on':'')+'" onclick="cpmTap(\'card\',\''+cpmJ(c.id)+'\')" aria-expanded="'+(open?'true':'false')+'">'+(c.core?'⭐ ':'')+cpmEsc(c.name.length>60?c.name.slice(0,58)+'…':c.name)+'</button>'
+    +(open?'<div class="cpcs-back" style="margin:6px 0">'+cpmEsc((typeof cpceBack==="function")?cpceBack(c):c.def)+'<div class="cpcs-meta" style="margin-top:4px">'+cpmEsc(c.deck)+(c.src?' · '+cpmEsc(c.src):'')+'</div></div>':''); }
+function cpmQRow(x,M){
+  const r=x.row, k="q:"+x.key+"|"+r.id, open=_cpm.row===k, inr=cpmIn(k);
+  let h='<div class="cpcs-row'+(open?' open':'')+'"><button class="cpcs-rb" onclick="cpmTap(\'row\',\''+cpmJ(k)+'\')" aria-expanded="'+(open?'true':'false')+'"><span class="cpcs-tag Q">'+(r.added?'＋':'Q'+cpmEsc(r.n))+'</span><span class="cpcs-rt"><div class="cpcs-crumb">'+cpmEsc(cpmQName(x))+'</div><span class="cpm-q">'+cpmEsc(r.q)+'</span>'
+    +'<div class="cpcs-cnt" style="margin-top:4px"><span class="m"><b style="color:#b91c1c">'+x.missed+' of '+r.took+'</b> missed</span>'+(r.top?'<span>most-picked wrong '+cpmL(r.top.i)+' ('+r.top.n+')</span>':'')+(inr?'<span class="e">✓ in review</span>':'')+'</div></span></button>';
+  if(!open) return h+'</div>';
+  const K=r.multi?cprArr(r.ans):[r.ans], max=Math.max(1,...r.picks);
+  h+='<div class="cpcs-det">'+r.choices.map((c,j)=>{ const ok=K.indexOf(j)>=0, n=r.picks[j]||0; return '<div class="cpct-ch'+(ok?' ok':'')+'"><span class="cpct-L">'+cpmL(j)+'</span><span style="flex:1;min-width:0">'+cpmEsc(c)+(ok?' ✓':'')+'<div class="cpr-bar"><i style="width:'+Math.round(n/max*100)+'%"></i></div></span><span class="cpr-n" aria-label="'+n+' picked it">'+n+'</span></div>'; }).join("");
+  if(r.none) h+='<div class="cpcs-meta">No answer: '+r.none+'</div>';
+  h+='<div class="cpr-who"><b>Who missed it ('+r.wrong.length+'):</b> '+r.wrong.map(w=>'<span>'+cpmEsc(w.name)+' · '+cpmEsc(cprLetter(w.pick))+'</span>').join("")+'</div>';
+  const seen={}, cs=(r.cards||[]).map(id=>M.byId[id]).filter(c=>c&&!seen[c.name]&&(seen[c.name]=1));
+  h+='<div class="cpcs-meta"><b>The cards that teach it</b>'+(cs.length?' (tap one for its back):<br>'+cs.slice(0,CPM_CARDS).map(c=>cpmCardChip(c,M)).join("")+(cs.length>CPM_CARDS?' +'+(cs.length-CPM_CARDS)+' more':''):':<br><span class="cpct-warn">No card covers it</span> — a reason to teach it in class, or to add a card.')+'</div>';
+  if(typeof cpSkillQuestionLine==="function"){ const sl=cpSkillQuestionLine(r.id,(typeof envcStudents==="function")?envcStudents():[]); if(sl) h+='<div class="cpcs-meta">\u{1F9E9} '+cpmEsc(sl)+'</div>'; }   // 🧩 CPSKILL (PR 25): the skill line under the question
+  return h+'<div class="cpm-acts">'+cpmRvBtn(k)+'</div></div></div>';
+}
+function cpmWRow(w,M,N){
+  const c=w.c, k=c?"c:"+c.id:"", rid="w:"+w.deck+"|"+w.n, open=_cpm.row===rid, tag=c?(c.kind==="term"?"T":c.kind==="id"?"I":"F"):"", s=c?M.secs.find(x=>x.id===c.sec):null;
+  const crumb=c?((s&&s.label)||c.sec)+" › "+(c.kind==="id"&&c.item?c.item:c.g.label):w.deck;
+  let h='<div class="cpcs-row'+(open?' open':'')+'"><button class="cpcs-rb" onclick="cpmTap(\'row\',\''+cpmJ(rid)+'\')" aria-expanded="'+(open?'true':'false')+'"><span class="cpcs-star">'+(c&&c.core?'⭐':'')+'</span>'+(tag?'<span class="cpcs-tag '+tag+'">'+tag+'</span>':'')+'<span class="cpcs-rt"><div class="cpcs-crumb">'+cpmEsc(crumb)+'</div>'+cpmEsc(w.n)
+    +'<div class="cpcs-cnt" style="margin-top:4px"><span class="m"><b style="color:#b91c1c">'+w.m+'</b> miss'+(w.m===1?'':'es')+'</span>'+(w.d?'<span>'+w.d+' drop'+(w.d===1?'':'s')+'</span>':'')+'<span>'+w.who.length+' of '+N+' student'+(N===1?'':'s')+'</span>'+(k&&cpmIn(k)?'<span class="e">✓ in review</span>':'')+'</div></span></button>';
+  if(!open) return h+'</div>';
+  h+='<div class="cpcs-det">';
+  if(c){ const qs=(M.Q&&M.Q[c.id])||[]; h+='<div class="cpcs-back">'+cpmEsc((typeof cpceBack==="function")?cpceBack(c):c.def)+'</div><div class="cpcs-meta">Source: '+cpmEsc(c.src||'—')+'<br>'+(qs.length?'On the tests: '+qs.map(q=>'<span class="cpcs-lk">'+cpmEsc(q)+'</span>').join(""):'<span style="color:#9ca3af">On no test question</span>')+'</div>'; }
+  else h+='<div class="cpcs-meta">This front isn’t in the class’s cards any more.</div>';
+  h+='<div class="cpr-who"><b>In the weak lists of:</b> '+w.who.map(x=>'<span>'+cpmEsc(x.name)+'</span>').join("")+'</div>';
+  return h+(c?'<div class="cpm-acts">'+cpmRvBtn(k)+'</div>':'')+'</div></div>';
+}
+function cpmGRow(g,M){
+  const rid="g:"+g.key, open=_cpm.row===rid, s=M.secs.find(x=>x.id===g.sec), core=M.anyCore?' of its core':'', pct=(g.est?'≈':'')+g.pct+'%';
+  const why=g.behind?'Behind on cards — '+pct+core+' learned':'Learned the cards ('+pct+') — still missing it';
+  let h='<div class="cpcs-row'+(open?' open':'')+'"><button class="cpcs-rb" onclick="cpmTap(\'row\',\''+cpmJ(rid)+'\')" aria-expanded="'+(open?'true':'false')+'"><span class="cpcs-rt"><div class="cpcs-crumb">'+cpmEsc((s&&s.label)||g.sec)+'</div><b>'+(g.id?'\u{1F50E} ':'')+cpmEsc(g.label)+'</b>'
+    +'<div class="cpcs-cnt" style="margin-top:3px"><span>'+g.q.length+' missed question'+(g.q.length===1?'':'s')+'</span><span>'+g.w.length+' weak card'+(g.w.length===1?'':'s')+'</span></div><span class="cpm-why '+(g.behind?'behind':'still')+'">'+cpmEsc(why)+'</span></span></button>';
+  if(!open) return h+'</div>';
+  h+='<div class="cpcs-det"><div class="cpcs-meta">'+(g.behind?'Most of the class hasn’t learned these cards yet. The cards will get there at the plan’s pace: check \u{1F4C5} Pace before reteaching.':'The class has learned most of these cards but still misses the questions. This is the one to <b>review in class</b>: a different angle, an example, a hands-on.')+(g.est?' (≈ estimated from the section’s counts.)':'')+'</div>';
+  if(g.q.length) h+='<div class="cpcs-meta"><b>Questions:</b><br>'+g.q.slice(0,6).map(q=>'• '+cpmEsc(cpmQName(q.x))+' — '+q.missed+' of '+q.took+' missed').join("<br>")+(g.q.length>6?'<br>+'+(g.q.length-6)+' more':'')+'</div>';
+  if(g.w.length) h+='<div class="cpcs-meta"><b>Weak cards:</b> '+g.w.slice(0,6).map(w=>cpmEsc(w.n)+' ('+w.who.length+')').join(" · ")+(g.w.length>6?' +'+(g.w.length-6)+' more':'')+'</div>';
+  h+='<div class="cpm-acts">'+(g.q.length?'<button class="cpm-btn pri" onclick="cpmGroupAdd(\''+cpmJ(g.key)+'\')">＋ Add its questions to the review list</button>':'')+(g.behind&&typeof cpPaceHtml==="function"?'<button class="cpm-btn" onclick="envcView(\'pace\')">\u{1F4C5} Pace</button>':'')+'</div>';
+  return h+'</div></div>';
+}
+function cpmListHtml(){
+  const L=cpmLists(), cur=cpmCur(), items=cur?cur.items:[];
+  let h='';
+  if(L.length) h+='<div class="cpcs-chips" style="padding-top:0">'+L.slice(0,8).map(x=>'<button class="cpcs-chip'+(cur&&cur.id===x.id?' on':'')+'" onclick="cpmPickList(\''+cpmJ(x.id)+'\')">'+cpmEsc(x.name)+' · '+x.items.length+'</button>').join("")+'<button class="cpcs-chip'+(cur?'':' on')+'" onclick="cpmNewList()">＋ New list</button></div>';
+  if(!cur) return h+'<div class="cpcs-note">'+(L.length?'A new list: tap ＋ Add to review list on a question or a card, and it starts here.':'Empty. Tap ＋ Add to review list on a question or a card.')+'</div>';
+  h+='<input class="cpm-name" id="cpm-name" value="'+cpmEsc(cur.name)+'" maxlength="60" aria-label="The list’s name" onchange="cpmRename(this.value)">';
+  if(!items.length) h+='<div class="cpcs-note">Empty. Tap ＋ Add to review list on a question or a card.</div>';
+  items.forEach((k,i)=>{ const t=cpmItem(k); h+='<div class="cpcs-row"><div class="cpcs-rb" style="cursor:default;align-items:center"><span class="cpcs-tag '+(k[0]==="c"?'T':'Q')+'">'+(i+1)+'</span><span class="cpcs-rt">'+(t?'<div class="cpcs-crumb">'+cpmEsc(t.tag)+'</div>'+cpmEsc(t.front.length>140?t.front.slice(0,138)+'…':t.front):'<span style="color:#9ca3af">No longer in the class’s '+(k[0]==="c"?'cards':'questions')+'</span>')+'</span><button class="cpm-x" onclick="cpmToggle(\''+cpmJ(k)+'\')" aria-label="Take it off the list">✕</button></div></div>'; });
+  if(items.length) h+='<div class="cpm-acts"><button class="cpm-btn pri" onclick="cpmShow(true)">\u{1F5A5} Show on screen</button><button class="cpm-btn" onclick="cpmPrint()">\u{1F5A8} Print</button></div>';
+  return h+'<div class="cpcs-meta">Saved for your class, so you can open it again on the class day. Students’ names never go into a list.</div>';
+}
+function cpmToolsHtml(D){
+  const X=cprAll(), have={}; (X?X.forms:[]).forEach(f=>{ if(f.A.took) have[f.sk]=1; }); cpmWs(D.M).forEach(w=>{ if(w.sec) have[w.sec]=1; });
+  const secs=(typeof envsStations==="function"?envsStations():[]).filter(s=>have[s.id]||_cpm.sec===s.id);
+  let h='<button class="cpcs-chip'+(_cpm.sec==="all"?' on':'')+'" onclick="cpmTap(\'sec\',\'all\')">All '+cpmEsc(cpmW("sections").toLowerCase())+'</button>'+secs.map(s=>'<button class="cpcs-chip'+(_cpm.sec===s.id?' on':'')+'" onclick="cpmTap(\'sec\',\''+cpmJ(s.id)+'\')">'+cpmEsc(s.short||s.label)+'</button>').join("");
+  if(X&&X.forms.some(f=>f.A.took)) h+='<span class="cpcs-sep">·</span>'+[["both",cpmFW("pre")+" + "+cpmFW("post").toLowerCase()],["pre",cpmFW("pre")],["post",cpmFW("post")]].map(x=>'<button class="cpcs-chip'+(_cpm.form===x[0]?' on':'')+'" onclick="cpmTap(\'form\',\''+x[0]+'\')">'+cpmEsc(x[1])+'</button>').join("");
+  return '<div class="cpcs-tools" id="cpm-tools"><div class="cpcs-chips">'+h+'</div></div>';
+}
+function cpmHtml(){
+  if(!cpmOn()) return ""; if(typeof cpcsCss==="function") cpcsCss(); if(typeof cpctCss==="function") cpctCss(); if(typeof cprCss==="function") cprCss(); cpmCss();
+  if(typeof cprDemoSeed==="function") cprDemoSeed();
+  const X=cprAll(), M=cpcsIndex();
+  if(!X||!X.ready||!M||!M.ready){ if(typeof cpcsLoad==="function") cpcsLoad(); return '<div class="cpcs cpm"><div class="cpcs-note">Loading the questions and cards…</div></div>'; }
+  cpmDemoSeed(); const D=cpmData(), concept=cpmW("concept");
+  let h='<div class="cpcs cpm" id="cpm">'+cpmToolsHtml(D);
+  if(typeof envsDemo==="function"&&envsDemo()) h+='<div class="cpm-banner">\u{1F3B2} <b>Sample answers.</b> The sample class’s answers and study misses are invented to show the look. Students on the Howe Academy app count here too.</div>';
+  h+='<div class="cpcs-note">Plan class review from what the class misses: the questions, the cards, and the '+cpmEsc((typeof cpcsPlural==="function")?cpcsPlural(concept):concept)+' behind them. Tap ＋ to build a review list, then show it on the screen or print it. Every student counts, students on the Howe Academy app too.</div>';
+  h+=cpmFold("q","\u{1F4DD} Most-missed questions",(D.qs.length?'<span><b>'+D.qs.length+'</b> missed by someone</span><span class="m">top: '+D.qs[0].missed+' of '+D.qs[0].row.took+'</span>':'<span>no misses yet</span>'),
+    ()=>D.qs.length?cpmPaged("q",D.qs,x=>cpmQRow(x,D.M)):'<div class="cpcs-note">Nothing missed here yet. The numbers come in as students take the '+cpmEsc(cpmFW("pre").toLowerCase())+'s and '+cpmEsc(cpmFW("post").toLowerCase())+'s.</div>');
+  h+=cpmFold("w","\u{1F0CF} Most-missed cards · study sittings + drills",'<span><b>'+D.ws.length+'</b> card'+(D.ws.length===1?'':'s')+' in students’ weak lists</span>',
+    ()=>D.ws.length?cpmPaged("w",D.ws,w=>cpmWRow(w,D.M,D.n)):'<div class="cpcs-note">No weak cards yet: they come from the students’ study sittings and drills.</div>');
+  h+=cpmFold("g","\u{1F9ED} What they’re struggling with",'<span>by '+cpmEsc(concept)+' · <b>'+D.gs.length+'</b></span>'+(D.gs.some(g=>!g.behind)?'<span class="m">'+D.gs.filter(g=>!g.behind).length+' still missing it</span>':''),
+    ()=>D.gs.length?'<div class="cpcs-note">“Behind on cards”: under '+CPM_BEHIND+'% learned across the students who have it, so the plan will get there. “Still missing it”: the cards are learned, the questions still missed — review those in class.</div>'+cpmPaged("g",D.gs,g=>cpmGRow(g,D.M)):'<div class="cpcs-note">Nothing to group yet.</div>');
+  if(typeof cpSkillFoldHtml==="function") h+=cpSkillFoldHtml((typeof envcStudents==="function")?envcStudents():[],{open:false});   // 🧩 CPSKILL (PR 25): the Skills fold
+  const cur=cpmCur();
+  h+=cpmFold("r","\u{1F4CB} Review list for class",'<span><b>'+(cur?cur.items.length:0)+'</b> item'+((cur?cur.items.length:0)===1?'':'s')+'</span>'+(cur?'<span>'+cpmEsc(cur.name)+'</span>':''),cpmListHtml);
+  if(typeof requestAnimationFrame==="function") requestAnimationFrame(cpmStick);
+  return h+'</div>';
+}
+function cpmStick(){ try{ const t=document.getElementById("cpm-tools"); if(!t) return; let top=0; document.querySelectorAll(".envs-top,.envs-demo").forEach(b=>{ if(getComputedStyle(b).position==="sticky") top=Math.max(top,b.offsetHeight); }); t.style.top=top+"px"; }catch(e){} }
+// CPMISSED_END
 // CPDRILLPARENT_START — 🧠 THE PARENT CAN TAKE OVER A STUDENT'S REVIEW CARDS, per kid, on the class site (DESIGN_class_platform_2026-10-28.md
 // §7(a) 2–3, §2, §9, §13 row 13, §14 Q5; PR 13 of the class platform). Her words 2026-10-28: "For the parent, I think they can get the
 // option to pick per kid, and the default would be that it stays in the student's own session. But the mom, if she knows her kid and
