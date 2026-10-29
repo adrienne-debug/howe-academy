@@ -46893,6 +46893,7 @@ function envsReadShared(){
   if(_envs.cid) go(_envs.cid); else if(_envs.sid) sdb.ref("students/"+_envs.sid+"/class").once("value",s=>go(val(s)));
   if(typeof cpdrListen==="function") cpdrListen(sdb,re);   // 🧠 CPDRILLPARENT: the parent's review switch (students/<sid>/review), live
   if(typeof cpdtListen==="function") cpdtListen(sdb,re);   // 🧠 CPDRILLTEACHER: the teacher's drills (drills/<cid>/<sid>), live; each applied once
+  if(typeof cpCalListen==="function") cpCalListen(sdb,re);   // 📅 CPCAL: the family's own study days (students/<sid>/calendar), live
   sdb.ref("release/locked").on("value",s=>{ _envs.lockRaw=val(s); _envs.lock=envsLockState(_envs.lockRaw); if(_envs.lock.locked&&_envs.role!=="admin") envsCard("closed"); });
 }
 // showTab: the site has one page — every tap lands back on it (every door the micro doc lists as off is simply not reachable)
@@ -47141,6 +47142,7 @@ function envsParentHtml(){
   else if(v==="tips") h+=envsTipsHtml("parent");
   else if(v==="settings") h+=envsSettingsHtml();
   else { if(typeof cpdrCardHtml==="function") h+=cpdrCardHtml(kid); h+=envsStreakHtml(s); h+='<div class="envs-card"><div class="envs-h2">\u{1F4CA} Stations \u00B7 the same numbers the teacher sees</div>'+envsStationRowsHtml(s,{weak:true,kid})+'</div>';   // 🧠 CPDRILLPARENT: the review switch + 🧠 Drill, first on the page
+    if(typeof cpCalParentHtml==="function") h+=cpCalParentHtml(kid);   // 📅 CPCAL: Our study days (the family's own, behind the class's switch) + the goals
     if(typeof cpPaceParentHtml==="function") h+=cpPaceParentHtml(kid);   // 📅 CPPACE: on pace for the goal
     h+='<div class="envs-card"><div class="envs-h2">\u{1F469}\u200D\u{1F3EB} Who drills</div><div style="font-size:13px">'+envsEsc(envsWhoNote())+'</div></div>';
     h+='<div class="envs-card" style="opacity:.8"><div class="envs-muted">Read-only: '+envsEsc(name)+' studies on the student login; this page shows how it is going. Class: '+envsEsc(envsClassName())+'.</div></div>'; }
@@ -47368,6 +47370,7 @@ function envcStudentHtml(sid){
     return '<button class="envs-btn sec" onclick="envcFinalFor(\''+envcJ(sid)+'\',\''+st.id+'\')">\u{1F4DD} Open the final \u00B7 '+envcEsc(st.short)+'</button>'; }).join("")+'</div><div class="envs-muted" style="margin-top:4px">'+envcEsc((typeof cpFinalOpensText==="function"&&cpFinalOpensText(""))||"It opens on its own once every core card is learned")+'; this opens it now. Writes release/'+envcEsc(cid)+'/final/students/'+envcEsc(sid)+'/&lt;station&gt;. The whole class opens from Send out.</div></div>';   // 📝 CPFINAL: the class's share (cpFinalOpensText)
   if(held.length) h+='<div class="envs-card"><div class="envs-h2">Open a station for '+envcEsc(envcName(s))+' only</div><div class="envs-row">'+held.map(st=>'<button class="envs-btn sec" onclick="envcOpenFor(\''+envcJ(sid)+'\',\''+st.id+'\')">\u{1F513} '+envcEsc(st.short)+'</button>').join("")+'</div><div class="envs-muted" style="margin-top:4px">Writes release/'+envcEsc(cid)+'/students/'+envcEsc(sid)+'/&lt;station&gt;. The whole class opens from Send out.</div></div>';
   if(typeof envClsStudentHtml==="function") h+=envClsStudentHtml(sid);   // ⚙️ ENVCLASSSET: this student's own settings
+  if(typeof cpCalStudentHtml==="function") h+=cpCalStudentHtml(sid);   // 📅 CPCAL: this student's study days
   const SC=(_envc.scores&&_envc.scores[sid])||{};
   h+='<div class="envs-card"><div class="envs-h2">Your in-class scores</div><div class="envs-muted" style="margin-bottom:6px">Next to the app’s numbers: the station test and presentation you graded.</div>';
   stns.filter(st=>st.id!=="general").forEach(st=>{ const r=SC[st.id]||{}; const ed=_envc.edit&&_envc.edit.kind==="score"&&_envc.edit.sid===sid&&_envc.edit.st===st.id;
@@ -48459,7 +48462,8 @@ function cppOk(s){ s=String(s==null?"":s); return /^\d{4}-\d{2}-\d{2}$/.test(s)&
 function cppLbl(s){ if(!cppOk(s)) return ""; return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+s.slice(5,7)-1]+" "+(+s.slice(8,10)); }
 function cppOffStd(){ const o={}; CPP_OFF_STD.forEach(r=>{ for(let d=r[0];d<=r[1];d=cppAdd(d,1)) o[d]=true; }); return o; }
 // PURE: is this a study day on this calendar? ({days, off})
-function cppStudy(cal,s){ const w=new Date(cppMs(s)).getUTCDay(), wk=w>0&&w<6, off=!!(cal&&cal.off&&cal.off[s]), m=cal&&cal.days;
+function cppStudy(cal,s){ if(cal&&cal.wd!=null&&typeof cpCalStudy==="function") return cpCalStudy(cal,s);   // 📅 CPCAL: a family's own weekdays (PR 22)
+  const w=new Date(cppMs(s)).getUTCDay(), wk=w>0&&w<6, off=!!(cal&&cal.off&&cal.off[s]), m=cal&&cal.days;
   return m==="weekdays"?wk:m==="noWeekends"?!off:m==="every"?true:(wk&&!off); }
 // PURE: the study days from `from` up to (not including) `to`
 function cppDays(cal,from,to){ const out=[]; if(!cppOk(from)||!cppOk(to)) return out; for(let d=from;d<to&&out.length<1000;d=cppAdd(d,1)) if(cppStudy(cal,d)) out.push(d); return out; }
@@ -48700,8 +48704,9 @@ function cppPlanBarHtml(d,f,inp,plan,need){
   h+='<div class="cpp-l">Goal</div>';
   if(!goals.length) h+='<div class="envs-muted">No goal dates yet. Add the competition or exam in <a href="javascript:void(0)" onclick="envcView(\'setup\')">\u{1F3EB} Class setup</a>.</div>';
   else h+='<div class="envs-row" style="align-items:center">'+goals.map(g=>btn(g.name===d.goal,"cppSet('goal','"+cppJ(g.name)+"')",(g.name===d.goal?'◉ ':'○ ')+cppEsc(g.name)+' '+cppLbl(g.date))).join("")+'<span style="font-size:13px;font-weight:700;margin:0 6px 6px 0">target '+num("pct",d.pct,1,100)+' % of core cards learned</span></div>';
+  if(typeof cpCalGoalsHtml==="function") h+=cpCalGoalsHtml(d);   // 📅 CPCAL: the other goals, with their notes (PR 22)
   h+='<div class="cpp-l">Study days</div><div class="envs-row">'+CPP_CALS.map(c=>btn(d.days===c[0],"cppSet('days','"+c[0]+"')",(d.days===c[0]?'◉ ':'○ ')+cppEsc(c[1]))).join("")+btn(_cpp.offOpen,"_cpp.offOpen=!_cpp.offOpen;envcRe()","✎ Days off ("+Object.keys(d.off).filter(k=>d.off[k]).length+")")+'</div>';
-  h+='<div class="envs-muted">'+cppEsc((CPP_CALS.find(c=>c[0]===d.days)||CPP_CALS[0])[2])+'. Per-family study days come later; this is the class default.</div>';
+  h+='<div class="envs-muted">'+cppEsc((CPP_CALS.find(c=>c[0]===d.days)||CPP_CALS[0])[2])+(typeof cpCalPaceNote==="function"?cpCalPaceNote():'. Per-family study days come later; this is the class default')+'.</div>';   // 📅 CPCAL: a student's own days count instead (PR 22)
   if(_cpp.offOpen) h+=cppOffHtml(d,inp);
   h+='<div class="cpp-l">How fast</div><div class="envs-row" style="align-items:center;font-size:13px;font-weight:700">'+
     '<span style="margin:0 12px 6px 0">New cards a day '+num("npd",d.npd,0,CPP_NPD_MAX,lockN)+(lockN?' <span class="envs-muted">\u{1F512} set by Adrienne</span>':'')+'</span>'+
@@ -48738,7 +48743,7 @@ function cppOffHtml(d,inp){
   for(let i=0;i<12&&m<=to;i++){ const y=+m.slice(0,4), mo=+m.slice(5,7), first=new Date(cppMs(m)).getUTCDay(), n=new Date(Date.UTC(y,mo,0)).getUTCDate();
     h+='<div class="cpp-l" style="margin-top:8px">'+["January","February","March","April","May","June","July","August","September","October","November","December"][mo-1]+' '+y+'</div><div class="cpp-mo">'+["S","M","T","W","T","F","S"].map(x=>'<b>'+x+'</b>').join("")+'<span></span>'.repeat(first);
     for(let k=1;k<=n;k++){ const ds=m.slice(0,8)+String(k).padStart(2,"0"), off=!!d.off[ds], stud=cppStudy({days:d.days,off:d.off},ds), w=new Date(cppMs(ds)).getUTCDay(), wkend=w===0||w===6;
-      const cls=off?'off':((!stud&&!off)||(d.days==="school"&&wkend))?'no':''; h+='<button class="'+cls+(ds===inp.goal?' g':'')+'" aria-label="'+ds+(off?' off':'')+'" onclick="cppOff(\''+ds+'\')">'+k+'</button>'; }
+      const cls=off?'off':((!stud&&!off)||(d.days==="school"&&wkend))?'no':''; h+='<button class="'+cls+(ds===inp.goal?' g':'')+'" aria-label="'+ds+(off?' off':'')+'" onclick="cppOff(\''+ds+'\')">'+k+(typeof cpCalDot==="function"?cpCalDot(ds):'')+'</button>'; }   // 📅 CPCAL: a teal dot on a class meeting (PR 22)
     h+='</div>'; m=cppStr(Date.UTC(y,mo,1)); }
   return h+'<div class="envs-muted" style="margin-top:6px">Red = a day off (tap to put it back). Grey = not a study day on this calendar. Blue ring = the goal.</div></div>';
 }
@@ -48774,6 +48779,7 @@ function cppDetailHtml(r,d){
     const w=[]; st.decks.forEach(dk=>{ ((sm.weak||{})[dk.key]||[]).forEach(x=>w.push(x)); }); if(w.length) h+='<div class="envs-muted">weakest: '+cppEsc(w.sort((a,b)=>(b.m*2+b.d)-(a.m*2+a.d)).slice(0,4).map(x=>x.n).join(" · "))+'</div>';
     h+='</div>'; });
   const n=r.need; h+='<div style="margin-top:6px">Needs from now: '+cppNeedTxt(r,0)+(n&&n.plan&&n.plan.finishDate?' <span class="envs-muted">· at that pace '+d.pct+'% on '+cppLbl(n.plan.finishDate)+'</span>':'')+'</div>';
+  if(typeof cpCalDetailLine==="function") h+=cpCalDetailLine(r.sid);   // 📅 CPCAL: whose study days "Needs from now" counts (PR 22)
   h+='<div class="envs-row" style="margin-top:6px;align-items:center"><span style="font-weight:700">Their own New cards a day</span><input class="envs-in cpp-n" type="number" inputmode="numeric" min="0" max="'+CPP_NPD_MAX+'" value="'+(r.own!=null?r.own:'')+'" placeholder="class: '+d.npd+'"'+(lock?' disabled':'')+' onchange="cppStu(\''+cppJ(r.sid)+'\',this.value)">'+(r.own!=null?'<button class="envs-btn sec cpp-b" style="margin:0"'+(lock?' disabled':'')+' onclick="cppStu(\''+cppJ(r.sid)+'\',\'\')">Use the class’s</button>':'')+(n&&n.n?'<button class="envs-btn sec cpp-b" style="margin:0"'+(lock?' disabled':'')+' onclick="cppStu(\''+cppJ(r.sid)+'\','+n.n+')">Give '+cppEsc(String(r.name).split(" ")[0])+' '+n.n+'</button>':'')+'</div>';
   return h+'<div class="envs-muted">A what-if until Save this plan; saved at students/'+cppEsc(r.sid)+'/settings/study.</div></div>';
 }
@@ -48784,6 +48790,7 @@ function cpPaceHtml(){
   if(typeof cpSkillsPaceHtml==="function") h+=cpSkillsPaceHtml(ctx);   // 🧩 CPSKILL · PR 25: a whole-class skills line, if one is ever added (the per-student line is in the station rows)
   h+=cppStudentsHtml(d,inp,plan);
   if(typeof cpSuggestHtml==="function") h+=cpSuggestHtml(ctx);   // PR 16: 💡 Suggestions
+  if(typeof cpCalPaceHtml==="function") h+=cpCalPaceHtml(ctx);   // 📅 CPCAL: 🗓 class meetings + each family's study days (PR 22)
   return h;
 }
 // ── 📋 Class: "on pace" under each name (the plan as saved) ──
@@ -48840,6 +48847,254 @@ function cpPaceCoreOnly(kid,session,deck,names){
   }catch(e){ return names; }
 }
 // CPPACE_END
+// CPCAL_START — 📅 STUDY DAYS: each family's own calendar, the class meetings on every calendar, "Next class" in Send out, the goal list
+// (DESIGN_class_platform_2026-10-28.md §8.10, §8.6, §9, §13 row 22, §14 Q16/Q33; PR 22 of the class platform; her go 2026-10-28). From the
+// class syllabus (2026-10-28): the class meets every other Tuesday and students study AT HOME on their own family's days, so "school days"
+// means each family's home study days, with the class's calendar as the default. INERT unless the class site (ENVSITE's envSiteOn): Howe,
+// DeWalt and Burris never reach a line that does anything, and Lincoln's own 🌿 Envirothon in Howe is untouched (test_cp_cal.js).
+//   · ONE READER: cpStudyDays(sid) → that student's study days {days, off, wd?, own, by?, role?, at?, label}: the family's own record at
+//     students/<sid>/calendar = {days:"1234" (weekday digits, 0 = Sunday), by, role, at, off?} when there is one, else the class's
+//     (classes/<cid>/calendar through CPPACE's cppCal). cpIsStudyDay(sid, "YYYY-MM-DD") answers one day. 📅 Pace's "Needs from now" (and the
+//     parent's on-pace card) read it through CPPACE's cpCalOf(sid) hook; PR 17 (CPWATCH) reads cpStudyDays with a typeof guard. A family's
+//     weekdays skip the class's days off when the class skips them (School days, Weekends too) and study through them when it doesn't.
+//     One guarded line in cppStudy hands a weekday calendar ({wd}) to cpCalStudy; CPPACE's four calendars are unchanged.
+//   · WHO SETS THEM — Q33 is NOT answered, so both halves are built and the family's half waits behind a class switch that is OFF by
+//     default: the teacher (or Adrienne) on the student's page in the console, always; the parent on "📅 Our study days" on the parent page
+//     only while classes/<cid>/familyDays is true (the switch is on 📅 Pace). Switch off: the parent's card shows the days read-only.
+//     The parent PIN (CPDRILLPARENT's) guards the parent's chips once the family has set one.
+//   · CLASS MEETINGS: classes/<cid>/meetings/<YYYY-MM-DD> = {what, sec?} (sec = the section Send out offers for that class), edited on 📅 Pace
+//     (one targeted update per Save, a path per changed date). Marked on every calendar: a teal dot on ✎ Days off, 🏫 on the two-week strip
+//     of the parent's card and the student's page. Send out opens with "Next class: Tue Nov 10 · Aquatics" and two taps that open CPSEND's
+//     own sheet already filled in (now, or scheduled for that day) — the send itself is still her tap on the sheet, never automatic.
+//   · GOALS: the class's goal list in its order; the FIRST is the pace target unless she picked another (classes/<cid>/goal — CPPACE's draft
+//     already falls back to the first). The others show as a second line with their note ("State Apr 23 · top 7 MS teams at Area qualify")
+//     on 📅 Pace's plan bar and the parent's card.
+//   · WRITES, all through envcWrite / envsWrite (demo: "would write"; ?dryrun=1: nothing): students/<sid>/calendar (set, or remove = back to
+//     the class's), classes/<cid>/meetings/<date> (one update), classes/<cid>/familyDays. The kid's and the parent's app keep one live listener
+//     on students/<sid>/calendar (envsReadShared's hook); the console already listens on students/<sid>. Rules: envirothon/SITE_RULES.json.
+//   · DEMO: the sample class gets the syllabus's meetings (Forestry Sep 15 … review Mar 9) and the switch ON, so Parent ▸ 📅 Our study days:
+//     Mon–Thu ▸ Save ▸ Teacher ▸ 📅 Pace shows Maya's "Needs from now" counted on her family's four days.
+const CPCAL_WD=[1,2,3,4,5,6,0], CPCAL_DN=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"], CPCAL_MO=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const CPCAL_DEMO_MEET={"2026-09-15":{what:"Forestry",sec:"forestry"},"2026-09-29":{what:"Forestry",sec:"forestry"},"2026-10-13":{what:"Soils",sec:"soils"},"2026-10-27":{what:"Soils",sec:"soils"},
+  "2026-11-10":{what:"Aquatics",sec:"aquatics"},"2026-12-01":{what:"Aquatics",sec:"aquatics"},"2027-01-26":{what:"Wildlife",sec:"wildlife"},"2027-02-09":{what:"Wildlife",sec:"wildlife"},"2027-02-23":{what:"Current issue",sec:"cei"},"2027-03-09":{what:"Review"}};   // the class syllabus, 2026-10-28
+const _cpcal={recs:{},armed:"",draft:{},meet:null,add:{on:"",what:"",sec:""},demo:false,css:false};
+function cpcalSite(){ return typeof envSiteOn==="function"&&envSiteOn(); }
+function cpcalCon(){ return cpcalSite()&&typeof envcOn==="function"&&envcOn(); }
+function cpcalDemo(){ return typeof envsDemo==="function"&&envsDemo(); }
+function cpcalEsc(v){ return envsEsc(v); }
+function cpcalJ(v){ return envsJ(v); }
+function cpcalRe(){ try{ renderAll(); }catch(e){} }
+// ── PURE: dates (YYYY-MM-DD at UTC midnight) and weekday sets ("1234" = Mon–Thu; 0 = Sunday) ──
+function cpcalOk(s){ s=String(s==null?"":s); if(!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false; return new Date(Date.UTC(+s.slice(0,4),+s.slice(5,7)-1,+s.slice(8,10))).toISOString().slice(0,10)===s; }
+function cpcalMs(s){ return Date.UTC(+s.slice(0,4),+s.slice(5,7)-1,+s.slice(8,10)); }
+function cpcalWdOf(s){ return new Date(cpcalMs(s)).getUTCDay(); }
+function cpcalAdd(s,n){ return new Date(cpcalMs(s)+n*86400000).toISOString().slice(0,10); }
+function cpcalDays(a,b){ return Math.round((cpcalMs(b)-cpcalMs(a))/86400000); }
+function cpcalShort(s){ return cpcalOk(s)?CPCAL_MO[+s.slice(5,7)-1]+" "+(+s.slice(8,10)):""; }
+function cpcalLbl(s){ return cpcalOk(s)?CPCAL_DN[cpcalWdOf(s)]+" "+cpcalShort(s):""; }
+function cpcalToday(){ return (typeof cppToday==="function")?cppToday():new Date(Date.now()).toISOString().slice(0,10); }
+function cpcalWdNorm(v){ const s=String(v==null?"":v); if(!/^[0-6]{1,7}$/.test(s)) return ""; return [0,1,2,3,4,5,6].filter(d=>s.indexOf(String(d))>=0).join(""); }
+function cpcalWdLabel(wd){ wd=cpcalWdNorm(wd); if(!wd) return ""; if(wd.length===7) return "Every day";
+  const ix=CPCAL_WD.map((d,i)=>wd.indexOf(String(d))>=0?i:-1).filter(i=>i>=0), run=ix[ix.length-1]-ix[0]===ix.length-1;
+  return run&&ix.length>=3?CPCAL_DN[CPCAL_WD[ix[0]]]+"–"+CPCAL_DN[CPCAL_WD[ix[ix.length-1]]]:ix.map(i=>CPCAL_DN[CPCAL_WD[i]]).join(", "); }
+// the class's four calendars as weekdays (School days / Weekdays → Mon–Fri; Weekends too / Every day → all seven), and whether it skips its days off
+function cpcalModeWd(m){ return m==="noWeekends"||m==="every"?"0123456":"12345"; }
+function cpcalSkipsOff(m){ return m!=="weekdays"&&m!=="every"; }
+function cpcalModeLabel(c){ const m=(c&&c.days)||"school", r=(typeof CPP_CALS!=="undefined"&&CPP_CALS.find(x=>x[0]===m))||null; return (r?r[1]:"School days")+" ("+cpcalWdLabel(cpcalModeWd(m))+")"; }
+// PURE: a family's record → {wd, off?, by, role, at}, or null when it isn't one
+function cpCalNorm(r){ if(!r||typeof r!=="object") return null; const wd=cpcalWdNorm(r.days); if(!wd) return null; const o={wd,by:String(r.by||""),role:String(r.role||""),at:+r.at||0};
+  if(r.off&&typeof r.off==="object"){ o.off={}; Object.keys(r.off).forEach(k=>{ if(r.off[k]&&cpcalOk(k)) o.off[k]=true; }); } return o; }
+// PURE: is `s` a study day on this calendar? {wd, off} = a family's weekdays; otherwise CPPACE's four ({days, off})
+function cpCalStudy(cal,s){ if(!cal||!cpcalOk(s)) return false; const off=!!(cal.off&&cal.off[s]);
+  if(cal.wd!=null) return String(cal.wd).indexOf(String(cpcalWdOf(s)))>=0&&!off;
+  if(typeof cppStudy==="function") return cppStudy(cal,s);
+  const w=cpcalWdOf(s); return w>0&&w<6&&!off; }
+// PURE: a family's weekdays on the class's calendar → the calendar the planner counts (their own days off, else the class's when it skips them)
+function cpCalMerge(classCal,rec){ if(!rec||!rec.wd) return null; const c=classCal||{days:"school",off:{}};
+  const off=rec.off?Object.assign({},rec.off):(cpcalSkipsOff(c.days)?Object.assign({},c.off||{}):{}); return {days:"own",wd:rec.wd,off}; }
+// ── where the days come from ──
+function cpcalCls(){ return (typeof cppCls==="function"&&cppCls())||((typeof _envs!=="undefined"&&_envs.cls)||null); }
+// the class's calendar: 📅 Pace's what-if draft while the teacher is trying one (draft=true), else the class as saved
+function cpcalClassCal(draft){ try{ if(draft&&cpcalCon()&&typeof _cpp!=="undefined"&&_cpp.d) return {days:_cpp.d.days,off:Object.assign({},_cpp.d.off||{})}; }catch(e){}
+  const cls=cpcalCls(); if(typeof cppCal==="function") return cppCal(cls); const c=cls&&cls.calendar; return {days:(c&&c.days)||"school",off:Object.assign({},(c&&c.off)||{})}; }
+// a student's own record: the console's students/<sid> (and the demo's shared sample), else the kid's / parent's live listener
+function cpcalRec(sid){ if(!sid) return null; try{ const S=(typeof _envc!=="undefined"&&_envc.students)||null; if(S&&(cpcalCon()||cpcalDemo())&&S[sid]) return cpCalNorm(S[sid].calendar); }catch(e){} return cpCalNorm(_cpcal.recs[sid]); }
+// THE READER (PR 17 reads it too): the student's study days, their own or the class's; null off the class site
+function cpStudyDays(sid){ if(!cpcalSite()) return null; cpcalDemoSeed(); const base=cpcalClassCal(false), rec=cpcalRec(sid);
+  if(!rec) return Object.assign({own:false,label:cpcalModeLabel(base)},base,{off:Object.assign({},base.off||{})});
+  return Object.assign({own:true,by:rec.by,role:rec.role,at:rec.at,label:cpcalWdLabel(rec.wd)},cpCalMerge(base,rec)); }
+function cpIsStudyDay(sid,s){ const c=cpStudyDays(sid); return !!c&&cpCalStudy(c,s); }
+// CPPACE's hook (cppRow, "Needs from now"): the family's own calendar, on the class's what-if days off; null = the class's
+function cpCalOf(sid){ if(!cpcalSite()) return null; cpcalDemoSeed(); const rec=cpcalRec(sid); return rec?cpCalMerge(cpcalClassCal(true),rec):null; }
+// the kid's and the parent's app: one live listener on students/<sid>/calendar (envsReadShared's hook; re = its combined redraw)
+function cpCalListen(sdb,re){
+  if(cpcalDemo()||!sdb||!cpcalSite()||typeof _envs==="undefined"||!_envs.sid||!(_envs.role==="kid"||_envs.role==="parent")||_cpcal.armed===_envs.sid) return false;
+  const sid=_envs.sid; _cpcal.armed=sid;
+  try{ sdb.ref("students/"+sid+"/calendar").on("value",s=>{ const v=(s&&typeof s.val==="function")?s.val():null; _cpcal.recs=Object.assign({},_cpcal.recs,{[sid]:v||null}); if(typeof re==="function") re(); }); }
+  catch(e){ _cpcal.armed=""; return false; }
+  return true;
+}
+// the demo's sample class: the syllabus's meetings and the families' switch on, once
+function cpcalDemoSeed(){ if(_cpcal.demo||!cpcalDemo()||typeof _envc==="undefined"||!_envc.cls) return; _cpcal.demo=true; const c=_envc.cls;
+  if(!c.meetings) c.meetings=JSON.parse(JSON.stringify(CPCAL_DEMO_MEET)); if(c.familyDays==null) c.familyDays=true; }
+// ── the goal list: in its order; the first is the target unless the class picked another ──
+function cpGoalList(cls){ const g=(typeof cppGoals==="function")?cppGoals(cls||{}):[], want=cls&&cls.goal&&cls.goal.name, t=g.some(x=>x.name===want)?want:(g[0]?g[0].name:"");
+  return g.map(x=>({name:String(x.name),date:String(x.date),note:String(x.note||""),target:x.name===t})); }
+function cpcalGoalLine(x){ return cpcalEsc(x.name+" "+cpcalShort(x.date)+(x.note?" · "+x.note:"")); }
+// 📅 Pace's plan bar, under the goal buttons: the other goals with their notes (the target is the one picked above)
+function cpCalGoalsHtml(d){ try{ if(!cpcalCon()) return ""; const o=cpGoalList(cpcalCls()||{}).filter(x=>x.name!==(d&&d.goal)); if(!o.length) return "";
+  return '<div class="envs-muted" style="margin:-2px 0 6px">Also: '+o.map(cpcalGoalLine).join(" · ")+'</div>'; }catch(e){ return ""; } }
+// ── class meetings ──
+// PURE: classes/<cid>/meetings ({<date>:{what, sec}} or a list) → [{date, what, sec}] by date
+function cpCalMeetings(cls){ const m=cls&&cls.meetings, out=[]; if(!m||typeof m!=="object") return out;
+  if(Array.isArray(m)) m.forEach(x=>{ const d=typeof x==="string"?x:(x&&x.date); if(cpcalOk(d)) out.push({date:d,what:String((x&&x.what)||""),sec:String((x&&x.sec)||"")}); });
+  else Object.keys(m).forEach(d=>{ if(cpcalOk(d)&&m[d]) out.push({date:d,what:String((m[d]&&m[d].what)||""),sec:String((m[d]&&m[d].sec)||"")}); });
+  return out.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0); }
+function cpCalNextMeeting(cls,today){ today=today||cpcalToday(); return cpCalMeetings(cls).find(x=>x.date>=today)||null; }
+function cpcalSecs(){ return (typeof envsStations==="function"&&envsStations())||[]; }
+function cpcalSecOf(m){ return (m&&m.sec&&cpcalSecs().find(s=>s.id===m.sec))||null; }
+function cpcalMeetWhat(m){ if(!m) return ""; const s=cpcalSecOf(m); return m.what||(s?s.label:"")||"Class"; }
+// PURE: the targeted update from the saved meetings to the draft (a path per changed date; null removes one)
+function cpCalMeetUpdate(saved,draft){ const upd={}, A={}, B={}; (saved||[]).forEach(m=>{ A[m.date]=m; }); (draft||[]).forEach(m=>{ B[m.date]=m; });
+  const rec=m=>{ const r={what:String(m.what||"").slice(0,60)}; if(m.sec) r.sec=String(m.sec); return r; };
+  Object.keys(B).forEach(d=>{ const a=A[d], b=B[d]; if(!a||a.what!==b.what||(a.sec||"")!==(b.sec||"")) upd["meetings/"+d]=rec(b); });
+  Object.keys(A).forEach(d=>{ if(!B[d]) upd["meetings/"+d]=null; }); return upd; }
+function cpcalMeetDraft(){ if(!_cpcal.meet) _cpcal.meet=cpCalMeetings(cpcalCls()||{}).map(m=>Object.assign({},m)); return _cpcal.meet; }
+function cpcalMeetShown(){ return _cpcal.meet||cpCalMeetings(cpcalCls()||{}); }
+function cpcalLocked(){ const cls=cpcalCls()||{}; return !!(cls.locks&&cls.locks.plan===true&&!(typeof envcAdmin==="function"&&envcAdmin())); }
+function cpCalMeetIn(k,v){ if(!cpcalCon()||!(k in _cpcal.add)) return; _cpcal.add[k]=String(v==null?"":v); if(k==="sec"&&v&&!_cpcal.add.what){ const s=cpcalSecs().find(x=>x.id===v); if(s) _cpcal.add.what=s.label; cpcalRe(); } }
+function cpCalMeetAdd(){
+  if(!cpcalCon()||cpcalLocked()) return false; const A=_cpcal.add, M=cpcalMeetDraft();
+  if(!cpcalOk(A.on)){ envsToast("Pick the meeting’s date first."); return false; }
+  if(M.some(m=>m.date===A.on)){ envsToast("There’s already a meeting on "+cpcalLbl(A.on)+"."); return false; }
+  const sec=cpcalSecs().some(s=>s.id===A.sec)?A.sec:"";
+  M.push({date:A.on,what:String(A.what||"").trim().slice(0,60),sec}); M.sort((a,b)=>a.date<b.date?-1:1); _cpcal.add={on:"",what:"",sec:""}; cpcalRe(); return true; }
+function cpCalMeetDel(date){ if(!cpcalCon()||cpcalLocked()) return; const M=cpcalMeetDraft(), i=M.findIndex(m=>m.date===date); if(i>=0) M.splice(i,1); cpcalRe(); }
+function cpCalMeetUndo(){ _cpcal.meet=null; cpcalRe(); }
+// Save: ONE update at classes/<cid>, a path per changed date
+function cpCalMeetSave(){
+  if(!cpcalCon()||!_envc.cid) return false; if(cpcalLocked()){ envsToast("\u{1F512} The class plan is set by Adrienne"); return false; }
+  const cls=_envc.cls||(_envc.cls={}), upd=cpCalMeetUpdate(cpCalMeetings(cls),cpcalMeetDraft()); if(!Object.keys(upd).length){ envsToast("Nothing changed"); return false; }
+  envcWrite("classes/"+_envc.cid,upd,"update").then(()=>{ const m=Object.assign({},(cls.meetings&&!Array.isArray(cls.meetings))?cls.meetings:{});
+    Object.keys(upd).forEach(p=>{ const d=p.slice(9); if(upd[p]==null) delete m[d]; else m[d]=upd[p]; }); if(Object.keys(m).length) cls.meetings=m; else delete cls.meetings; _cpcal.meet=null; cpcalRe(); }).catch(()=>{});
+  return true; }
+// the families' switch (Q33 open → off unless she turns it on): classes/<cid>/familyDays
+function cpCalFamilySet(on){
+  if(!cpcalCon()||!_envc.cid) return false; if(cpcalLocked()){ envsToast("\u{1F512} The class plan is set by Adrienne"); cpcalRe(); return false; }
+  const cls=_envc.cls||(_envc.cls={}); on=!!on;
+  envcWrite("classes/"+_envc.cid,{familyDays:on},"update").then(()=>{ cls.familyDays=on; cpcalRe(); }).catch(()=>{ cpcalRe(); });
+  return true; }
+// ── a student's own days: the teacher on their page, the parent on theirs (when the switch is on) ──
+function cpcalWho(r){ return r.role==="parent"?"the family":r.role==="admin"?"Adrienne":"the teacher"; }
+function cpcalCanParent(sid){ const cls=cpcalCls()||{}; return cpcalSite()&&typeof _envs!=="undefined"&&_envs.role==="parent"&&!!sid&&sid===_envs.sid&&cls.familyDays===true&&!(typeof cpdrLocked==="function"&&cpdrLocked()); }
+function cpcalCan(sid){ return cpcalCon()?!!(_envc.students||{})[sid]:cpcalCanParent(sid); }
+function cpcalShownWd(sid){ const d=_cpcal.draft[sid]; if(d!=null) return d; const r=cpcalRec(sid); return r?r.wd:cpcalModeWd(cpcalClassCal(false).days); }
+function cpCalTap(sid,d){ if(!cpcalCan(sid)) return false; d=String(d); if(!/^[0-6]$/.test(d)) return false; let wd=cpcalShownWd(sid);
+  wd=wd.indexOf(d)>=0?wd.replace(d,""):wd+d; wd=cpcalWdNorm(wd); if(!wd){ envsToast("Keep at least one study day."); return false; } _cpcal.draft[sid]=wd; cpcalRe(); return true; }
+function cpCalUndo(sid){ delete _cpcal.draft[sid]; cpcalRe(); }
+// the memory after a write: the console's / demo's students/<sid> and the listener's copy
+function cpcalMem(sid,rec){ try{ const S=(typeof _envc!=="undefined"&&_envc.students)||null; if(S&&S[sid]){ if(rec) S[sid].calendar=rec; else delete S[sid].calendar; } }catch(e){}
+  _cpcal.recs=Object.assign({},_cpcal.recs,{[sid]:rec||null}); delete _cpcal.draft[sid]; }
+function cpcalWrite(path,val,op){ return cpcalCon()?envcWrite(path,val,op):envsWrite(path,val,op); }
+function cpCalSave(sid){
+  if(!cpcalCan(sid)) return Promise.resolve(false); const wd=cpcalWdNorm(cpcalShownWd(sid)); if(!wd) return Promise.resolve(false);
+  const role=cpcalCon()?(_envs.role==="admin"?"admin":"teacher"):"parent", by=(cpcalDemo()&&role==="parent")?"uid_p_"+_envs.kid:(_envs.uid||""), old=cpcalRec(sid);   // the demo's parent login is uid_p_<kid>
+  const rec={days:wd,by,role,at:Date.now()}; if(old&&old.off&&Object.keys(old.off).length) rec.off=old.off;
+  return Promise.resolve(cpcalWrite("students/"+sid+"/calendar",rec,"set")).then(()=>{ cpcalMem(sid,rec); cpcalRe(); return true; },e=>{ if(!cpcalCon()) envsToast("Couldn’t save: "+((e&&e.message)||e)); cpcalRe(); return false; }); }
+function cpCalClear(sid){
+  if(!cpcalCan(sid)) return Promise.resolve(false);
+  return Promise.resolve(cpcalWrite("students/"+sid+"/calendar",null,"remove")).then(()=>{ cpcalMem(sid,null); cpcalRe(); return true; },e=>{ if(!cpcalCon()) envsToast("Couldn’t save: "+((e&&e.message)||e)); cpcalRe(); return false; }); }
+// ── the pieces on screen ──
+function cpcalCss(){ if(_cpcal.css||typeof document==="undefined") return; _cpcal.css=true;
+  try{ const s=document.createElement("style"); s.id="cpcal-css"; s.textContent='.cpcal-wd{display:flex;gap:5px;flex-wrap:wrap;margin:8px 0 4px}.cpcal-wd button{min-width:44px;min-height:42px;border-radius:10px;border:1.5px solid #d1d5db;background:#fff;font:inherit;font-weight:800;font-size:13px;color:#374151;cursor:pointer;padding:0 6px}'+
+    '.cpcal-wd button.on{background:#14532d;border-color:#14532d;color:#fff}.cpcal-wd button:disabled{opacity:.6;cursor:default}'+
+    '.cpcal-strip{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;max-width:340px;margin:8px 0 2px}.cpcal-strip b{font-size:10px;color:var(--muted);text-align:center}'+
+    '.cpcal-strip span{position:relative;min-height:32px;border-radius:8px;background:#f3f4f6;color:#9ca3af;font-size:12px;display:flex;align-items:center;justify-content:center}.cpcal-strip span.on{background:#dcfce7;color:#14532d;font-weight:800}'+
+    '.cpcal-strip span.m{box-shadow:inset 0 0 0 2px #0d9488}.cpcal-strip span.t{text-decoration:underline;text-underline-offset:3px}.cpcal-strip i{position:absolute;top:-7px;right:-3px;font-style:normal;font-size:11px}'+
+    '.cpcal-dot{display:block;width:6px;height:6px;border-radius:50%;background:#0d9488;margin:1px auto 0}.cpcal-next{border-color:#5eead4;background:#f0fdfa}'+
+    '.cpcal-m{padding:4px 0;border-top:1px solid #f1efe9;font-size:12.5px;align-items:center}.cpcal-m.past{opacity:.55}.cpcal-x{min-height:36px;padding:0 12px}';
+    document.head.appendChild(s); }catch(e){} }
+// two weeks from this Monday: green = a study day, 🏫 = the class meets
+function cpcalStripHtml(cal,cls){ const t=cpcalToday(), mon=cpcalAdd(t,-((cpcalWdOf(t)+6)%7)), M={}; cpCalMeetings(cls).forEach(m=>{ M[m.date]=m; });
+  let h='<div class="cpcal-strip" aria-label="This week and next">'+CPCAL_WD.map(d=>'<b>'+CPCAL_DN[d].slice(0,2)+'</b>').join("");
+  for(let i=0;i<14;i++){ const s=cpcalAdd(mon,i), st=cpCalStudy(cal,s), m=M[s];
+    h+='<span class="'+(st?'on':'')+(m?' m':'')+(s===t?' t':'')+'" title="'+cpcalEsc(cpcalLbl(s)+(st?' · study day':'')+(m?' · class: '+cpcalMeetWhat(m):''))+'">'+(+s.slice(8,10))+(m?'<i>\u{1F3EB}</i>':'')+'</span>'; }
+  return h+'</div><div class="envs-muted">This week and next · green = a study day · \u{1F3EB} = the class meets</div>'; }
+function cpcalNextLine(cls){ const n=cpCalNextMeeting(cls); if(!n) return ""; const d=cpcalDays(cpcalToday(),n.date);
+  return '<div style="margin-top:6px;font-size:13px">\u{1F3EB} <b>'+(d===0?'Class today':'Next class: '+cpcalEsc(cpcalLbl(n.date)))+'</b> · '+cpcalEsc(cpcalMeetWhat(n))+(d>0?' <span class="envs-muted">(in '+d+' day'+(d===1?'':'s')+')</span>':'')+'</div>'; }
+// the days editor (the teacher's student page and the parent's card share it)
+function cpcalDaysHtml(sid,can,who){
+  const cls=cpcalCls()||{}, base=cpcalClassCal(false), rec=cpcalRec(sid), dr=_cpcal.draft[sid], wd=cpcalShownWd(sid), dis=can?'':' disabled', J=cpcalJ(sid);
+  const cal=dr!=null?cpCalMerge(base,{wd:dr,off:rec&&rec.off}):(rec?cpCalMerge(base,rec):base);
+  let h='<div style="font-size:13.5px"><b>'+cpcalEsc(rec?cpcalWdLabel(rec.wd):cpcalModeLabel(base))+'</b> <span class="envs-muted">· '+cpcalEsc(rec?'set by '+cpcalWho(rec):'the class’s days')+'</span></div>';
+  h+='<div class="cpcal-wd" role="group" aria-label="Study days">'+CPCAL_WD.map(d=>{ const on=wd.indexOf(String(d))>=0; return '<button class="'+(on?'on':'')+'" aria-pressed="'+on+'"'+dis+' onclick="cpCalTap(\''+J+'\','+d+')">'+CPCAL_DN[d]+'</button>'; }).join("")+'</div>';
+  const offN=Object.keys((cal&&cal.off)||{}).filter(k=>cal.off[k]).length;
+  h+='<div class="envs-muted">'+(rec&&rec.off?'Their own '+offN+' days off are skipped.':cpcalSkipsOff(base.days)?'The class’s '+offN+' days off are skipped.':'The class studies through its days off.')+(dr!=null?' <b style="color:#1e3a8a">'+cpcalEsc(cpcalWdLabel(dr))+' — not saved yet.</b>':'')+'</div>';
+  if(can) h+='<div class="envs-row" style="margin-top:8px"><button class="envs-btn" onclick="cpCalSave(\''+J+'\')"'+(dr!=null&&(!rec||dr!==rec.wd)?'':' disabled')+'>Save these days</button>'+(dr!=null?'<button class="envs-btn sec" onclick="cpCalUndo(\''+J+'\')">Undo</button>':'')+(rec?'<button class="envs-btn sec" onclick="cpCalClear(\''+J+'\')">Use the class’s days</button>':'')+'</div>';
+  h+=cpcalStripHtml(cal,cls)+cpcalNextLine(cls);
+  h+='<div class="envs-muted" style="margin-top:4px">'+(who==="teacher"?'Saved at students/'+cpcalEsc(sid)+'/calendar. 📅 Pace’s “Needs from now” counts these days.':'The teacher’s 📅 Pace counts these days when it works out the cards a day needed from now.')+'</div>';
+  return h; }
+// the teacher's student page: 📅 Study days for Maya
+function cpCalStudentHtml(sid){ try{ if(!cpcalCon()||!sid||!(_envc.students||{})[sid]) return ""; cpcalCss(); cpcalDemoSeed(); const s=Object.assign({sid},_envc.students[sid]);
+  return '<div class="envs-card"><div class="envs-h2">\u{1F4C5} Study days for '+cpcalEsc(envcName(s))+'</div>'+cpcalDaysHtml(sid,true,"teacher")+'</div>'; }catch(e){ return ""; } }
+// the parent's page: 📅 Our study days (the chips only while the class's switch is on; read-only otherwise) + the goals
+function cpCalParentHtml(kid){
+  try{ if(!cpcalSite()||!kid||typeof _envs==="undefined"||_envs.role!=="parent"||!_envs.sid) return ""; cpcalCss(); cpcalDemoSeed();
+    const cls=cpcalCls()||{}, fam=cls.familyDays===true, locked=typeof cpdrLocked==="function"&&cpdrLocked(), name=String(envsKidName(kid)).split(" ")[0];
+    let h='<div class="envs-card"><div class="envs-h2">\u{1F4C5} Our study days</div>'+cpcalDaysHtml(_envs.sid,fam&&!locked,"parent");
+    if(!fam) h+='<div class="envs-muted" style="margin-top:4px">'+cpcalEsc(name)+'’s teacher sets the study days.</div>';
+    else if(locked) h+='<div class="envs-muted" style="margin-top:4px">Unlock with the parent PIN on \u{1F9E0} Review cards to change them.</div>';
+    const L=cpGoalList(cls), t=L.find(x=>x.target);
+    if(t) h+='<div style="margin-top:8px;font-size:13px">\u{1F3AF} <b>'+cpcalGoalLine(t)+'</b> <span class="envs-muted">· the pace aims here</span>'+L.filter(x=>x!==t).map(x=>'<div class="envs-muted" style="padding-left:22px">'+cpcalGoalLine(x)+'</div>').join("")+'</div>';
+    return h+'</div>'; }catch(e){ return ""; } }
+// 📅 Pace: the study-day note (the class default; a student's own days count instead) · ✎ Days off: a teal dot on a meeting · the open row's days
+function cpCalPaceNote(){ return ". This is the class default; a student with their own study days (\u{1F5D3} below, or on their page) is counted on those instead"; }
+function cpCalDot(ds){ try{ if(!cpcalCon()) return ""; cpcalCss(); const m=cpcalMeetShown().find(x=>x.date===ds); return m?'<span class="cpcal-dot" title="'+cpcalEsc("class: "+cpcalMeetWhat(m))+'"></span>':""; }catch(e){ return ""; } }
+function cpCalDetailLine(sid){ try{ if(!cpcalCon()) return ""; const c=cpStudyDays(sid); if(!c) return "";
+  return '<div class="envs-muted" style="margin-top:4px">\u{1F4C5} Study days: <b>'+cpcalEsc(c.label)+'</b> ('+cpcalEsc(c.own?'set by '+cpcalWho(c):'the class’s')+') — “Needs from now” counts them. Change them on '+cpcalEsc(String(envcName(Object.assign({sid},(_envc.students||{})[sid]||{}))).split(" ")[0])+'’s page.</div>'; }catch(e){ return ""; } }
+// 📅 Pace: 🗓 the class meetings (edit + Save) and each family's study days (the switch + who has their own)
+function cpCalPaceHtml(ctx){
+  try{ if(!cpcalCon()) return ""; cpcalCss(); cpcalDemoSeed();
+    const cls=cpcalCls()||{}, lock=cpcalLocked(), dis=lock?' disabled':'', S=cpcalSecs(), M=cpcalMeetShown(), upd=cpCalMeetUpdate(cpCalMeetings(cls),M), n=Object.keys(upd).length, today=cpcalToday(), A=_cpcal.add;
+    let h='<div class="envs-card"><div class="envs-h2" style="margin-bottom:2px">\u{1F5D3} Class meetings and family study days</div><div class="envs-muted">The days the class meets. They show on every calendar (a teal dot on ✎ Days off, \u{1F3EB} on each family’s two-week strip), and Send out offers the next one.</div>';
+    h+='<div class="cpp-l">Class meetings ('+M.length+')</div>';
+    if(!M.length) h+='<div class="envs-muted">None yet.</div>';
+    M.forEach(m=>{ const s=cpcalSecOf(m); h+='<div class="envs-row cpcal-m'+(m.date<today?' past':'')+'"><b style="min-width:96px">'+cpcalEsc(cpcalLbl(m.date))+'</b><span style="flex:1;min-width:110px">'+cpcalEsc(cpcalMeetWhat(m))+(s?' <span class="envs-muted">· 📤 '+cpcalEsc(s.label)+'</span>':'')+'</span><button class="envs-btn sec cpcal-x"'+dis+' onclick="cpCalMeetDel(\''+m.date+'\')" aria-label="Remove '+m.date+'">✕</button></div>'; });
+    h+='<div class="envs-row" style="margin-top:8px"><input class="envs-in" type="date" style="width:160px" value="'+cpcalEsc(A.on)+'"'+dis+' onchange="cpCalMeetIn(\'on\',this.value)" aria-label="Meeting date">'+
+      '<input class="envs-in" style="flex:1;min-width:120px" maxlength="60" placeholder="What (Aquatics, review…)" value="'+cpcalEsc(A.what)+'"'+dis+' onchange="cpCalMeetIn(\'what\',this.value)" aria-label="What the class does">'+
+      '<select class="envs-in" style="width:auto;min-width:140px"'+dis+' onchange="cpCalMeetIn(\'sec\',this.value)" aria-label="Section to send out"><option value="">No section</option>'+S.map(s=>'<option value="'+cpcalEsc(s.id)+'"'+(A.sec===s.id?' selected':'')+'>📤 '+cpcalEsc(s.label)+'</option>').join("")+'</select>'+
+      '<button class="envs-btn sec"'+dis+' onclick="cpCalMeetAdd()">+ Meeting</button></div>';
+    h+='<div class="envs-muted">📤 = the section Send out offers to send for that class.'+(lock?' \u{1F512} set by Adrienne.':'')+'</div>';
+    if(n) h+='<div class="cpp-wi">'+n+' change'+(n===1?'':'s')+' to the meetings, not saved yet.</div>';
+    h+='<div class="envs-row" style="margin-top:8px"><button class="envs-btn" onclick="cpCalMeetSave()"'+(n&&!lock?'':' disabled')+'>Save the meetings</button><button class="envs-btn sec" onclick="cpCalMeetUndo()"'+(n?'':' disabled')+'>Undo</button></div>';
+    const fam=cls.familyDays===true, ST=(typeof envcStudents==="function")?envcStudents():[], own=ST.map(s=>({s,r:cpcalRec(s.sid)})).filter(x=>x.r);
+    h+='<div class="cpp-l">Each family’s study days</div>';
+    h+='<label class="envs-row" style="min-height:44px;font-size:13px;font-weight:700"><input type="checkbox" style="width:20px;height:20px"'+(fam?' checked':'')+dis+' onchange="cpCalFamilySet(this.checked)"> Families set their own study days (on the parent page)</label>';
+    h+='<div class="envs-muted">'+(fam?'On: each parent picks their family’s days on “📅 Our study days”. You can still set any student’s days on their page.':'Off: you set a student’s own days on their page (tap a name on 📋 Class); parents see them but can’t change them.')+' A student with no days of their own uses the class’s.</div>';
+    h+='<div style="margin-top:6px;font-size:12.5px">'+(own.length?'Their own days: '+own.map(x=>'<b>'+cpcalEsc(envcName(x.s))+'</b> '+cpcalEsc(cpcalWdLabel(x.r.wd))+' <span class="envs-muted">('+cpcalEsc(cpcalWho(x.r))+')</span>').join(" · "):'<span class="envs-muted">Every student uses the class’s days.</span>')+'</div>';
+    return h+'</div>'; }catch(e){ return ""; } }
+// 📤 Send out: "Next class: Tue Nov 10 · Aquatics" — two taps that open CPSEND's own sheet filled in; the send is still her tap there
+function cpcalSecState(id){ const R=(typeof cpsdRel==="function")?cpsdRel():((typeof _envc!=="undefined"&&_envc.release)||{}), all=!!(R.all&&R.all[id]);
+  const n=Object.keys(R.students||{}).filter(s=>R.students[s]&&R.students[s][id]).length, sc=(typeof cpSendDates==="function")?cpSendDates(_envc.cid).filter(x=>x.key===id&&x.to==="all"):[];
+  return {all,n,sched:sc.length?sc[0].on:""}; }
+function cpCalNextHtml(){
+  try{ if(!cpcalCon()) return ""; cpcalCss(); cpcalDemoSeed(); const n=cpCalNextMeeting(cpcalCls()||{}); if(!n) return "";
+    const d=cpcalDays(cpcalToday(),n.date), sec=cpcalSecOf(n);
+    let h='<div class="envs-card cpcal-next"><div class="envs-h2" style="margin-bottom:2px">\u{1F3EB} '+(d===0?'Class today':'Next class: '+cpcalEsc(cpcalLbl(n.date)))+' · '+cpcalEsc(cpcalMeetWhat(n))+(d>0?' <span class="envs-muted">(in '+d+' day'+(d===1?'':'s')+')</span>':'')+'</div>';
+    if(!sec) return h+'<div class="envs-muted">No section is set to go out for this class (\u{1F5D3} on 📅 Pace).</div></div>';
+    const st=cpcalSecState(sec.id);
+    if(st.all) h+='<div style="font-size:13px;font-weight:700;color:#15803d">✓ '+cpcalEsc(sec.label)+' is out to the whole class.</div>';
+    else if(st.sched) h+='<div style="font-size:13px;font-weight:700;color:#0f766e">📅 '+cpcalEsc(sec.label)+' is scheduled for '+cpcalEsc(cpcalLbl(st.sched))+'.</div>';
+    else h+='<div style="font-size:13px">'+cpcalEsc(sec.label)+(st.n?' is out to '+st.n+' student'+(st.n===1?'':'s')+' so far.':' isn’t out yet.')+' Send it out?</div>'+
+      '<div class="envs-row" style="margin-top:6px"><button class="envs-btn" onclick="cpCalSendNext(\'now\')">📤 Send it out now…</button>'+(d>0?'<button class="envs-btn sec" onclick="cpCalSendNext(\'date\')">📅 Schedule for '+cpcalEsc(cpcalShort(n.date))+'…</button>':'')+'</div>'+
+      '<div class="envs-muted" style="margin-top:4px">Opens the send-out sheet below, filled in. Nothing goes out until you tap it there.</div>';
+    return h+'</div>'; }catch(e){ return ""; } }
+function cpCalSendNext(mode){
+  if(!cpcalCon()||typeof cpsdOpen!=="function"||typeof _cpsd==="undefined") return false; const n=cpCalNextMeeting(cpcalCls()||{}), sec=n&&cpcalSecOf(n); if(!sec) return false;
+  const src="k:"+sec.id; if(!(_cpsd.sheet&&_cpsd.sheet.src===src)) cpsdOpen(src); if(!_cpsd.sheet) return false;
+  if(mode==="date"&&n.date>cpcalToday()){ cpsdSet("when","date"); cpsdSet("on",n.date); } else cpsdSet("when","now");
+  return true; }
+// CPCAL_END
 // CPCARDSSEE_START — 📚 THE CARDS BROWSER, read-only (DESIGN_class_platform_2026-10-28.md §6.0, §6.1, §8.4, §13 row 9, §15; PR 9 of the class
 // platform). Her words 2026-10-28: "super easy for her to quickly go through and see all the questions and the answers, or the front or the
 // back … not look like a huge amount, so things need to collapse … naturally collapsed unless she opens them, and then if she moves on,
@@ -50052,6 +50307,7 @@ function cpsdSendHtml(){
   if(!cpsdOn()) return null; cpsdCss(); cpsdTidy();
   const R=cpsdRel(), tz=cpsdTz(_envc.cid), now=cpsdNow(), sd=_envc.send, concept=cpsdWord("concept");
   let h='<div class="envs-card"><div class="envs-h2">📤 Send out</div><div class="cpsd-m" style="margin-bottom:6px">A whole '+cpsdEsc(cpsdWord("section").toLowerCase())+', one deck or one '+cpsdEsc(concept)+' — to everyone or picked students, now or on a date. Tap a '+cpsdEsc(cpsdWord("section").toLowerCase())+' to open it; tap it again to close it.</div>';
+  if(typeof cpCalNextHtml==="function") h=cpCalNextHtml()+h;   // 📅 CPCAL: "Next class: Tue Nov 10 · Aquatics" (PR 22)
   cpsdSecs().forEach(s=>{ const open=sd.station===s.id, K=cpsdConcepts(s.id), st=cpsdState(s.id,R,tz,now);
     const kOut=K.filter(k=>cpsdState(s.id+"~"+k.id,R,tz,now)).length;
     const line=st||(kOut?"◐ "+kOut+" of "+K.length+" "+cpsdPl(concept)+" out":"—");
