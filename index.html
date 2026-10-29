@@ -47286,6 +47286,7 @@ function envConsoleHtml(){
   const chips=[["grid","\u{1F4CB} Class"],["roster","\u{1F465} Roster"],["send","\u{1F4E4} Send out"],["strong","\u{1F4AA} Who is strong where"],["cards","\u{1F0CF} Teacher cards"],["boards","\u{1F3C6} Boards"],["who","\u{1F469}‍\u{1F3EB} Who drills"],["classset","\u2699\uFE0F Class settings"]]; if(admin) chips.push(["admin","\u{1F511} Admin"]);
   if(typeof cpSetupHtml==="function") chips.splice(chips.findIndex(x=>x[0]==="classset"),0,["setup","\u{1F3EB} Class setup"]);   // 🏫 CPCLASS
   if(admin&&typeof cpuUnitsHtml==="function") chips.splice(chips.findIndex(x=>x[0]==="admin"),0,["units","\u{1F4E6} Units"]);   // 📦 CPUNIT
+  if(typeof cpcsChips==="function") cpcsChips(chips);   // 📚 CPCARDSSEE: 📚 Cards before 🃏 Teacher cards
   h+='<div class="envs-chips">'+chips.map(x=>'<button class="'+((v===x[0]||(v==="student"&&x[0]==="grid"))?'on':'')+'" onclick="envcView(\''+x[0]+'\')">'+x[1]+'</button>').join("")+'</div>';
   if(_envc.err) h+='<div class="envs-card" style="border-color:#fecaca;color:#b91c1c;font-size:12.5px">'+envcEsc(_envc.err)+' <a href="javascript:void(0)" onclick="_envc.err=\'\';envcRe()" style="color:#b91c1c">dismiss</a></div>';
   if(_envs.lock&&_envs.lock.locked) h+='<div class="envs-card" style="border-color:#fcd34d;background:#fffbeb;font-size:12.5px">\u{1F512} The season is closed for teachers and families; you see this because you are the admin.</div>';
@@ -47294,6 +47295,7 @@ function envConsoleHtml(){
   else if(v==="roster") h+=envcRosterHtml();
   else if(v==="send") h+=envcSendHtml();
   else if(v==="strong") h+=envcStrongHtml();
+  else if(v==="cpcards"&&typeof cpcsHtml==="function") h+=cpcsHtml();   // 📚 CPCARDSSEE
   else if(v==="cards") h+=envcCardsHtml();
   else if(v==="boards") h+=envcBoardsHtml();
   else if(v==="who") h+=envcWhoHtml();
@@ -48359,6 +48361,228 @@ function cpSeatsPaceHtml(f,scope){
   return '<div data-cps="amber" style="margin-top:6px;padding:8px 10px;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:10px;color:#92400e;font-weight:700;line-height:1.45">⚠ At '+p.seats+' cards a sitting, '+(p.about>=1?'about '+cards(p.about):'less than 1 new card')+' a day really fit (New cards a day is '+p.npd+'). A new card keeps its seat for the '+p.days+' days it is learned, so '+p.seats+' ÷ '+p.days+' ≈ '+r+'. Auto ('+a+') fits all '+p.npd+'.</div>';
 }
 // CPSEATS_END
+// CPCARDSSEE_START — 📚 THE CARDS BROWSER, read-only (DESIGN_class_platform_2026-10-28.md §6.0, §6.1, §8.4, §13 row 9, §15; PR 9 of the class
+// platform). Her words 2026-10-28: "super easy for her to quickly go through and see all the questions and the answers, or the front or the
+// back … not look like a huge amount, so things need to collapse … naturally collapsed unless she opens them, and then if she moves on,
+// collapse it back" — "a very important feature". The look is the agreed mockup, ~/Desktop/Envirothon/MOCKUP_teacher_browser.html (📚 Cards).
+// INERT unless ENVCONSOLE's envcOn() (the Envirothon site, a teacher or admin login): Howe, DeWalt and Burris never reach a line of it, and
+// Lincoln's Envirothon in Howe is untouched (test_env_site.js, test_cp_cards_see.js).
+//   · THE CHIP — 📚 Cards in the teacher's and Adrienne's console, added by cpcsChips (one guarded line after the console's chip list, so the
+//     chips array literal is never edited) right before 🃏 Teacher cards, which stays until PR 10. Its view is "cpcards" (one dispatch line).
+//   · THE CARDS — every unit attached to the class (CPUNIT's cpuAttached), from its compiled file through HoweUnits (cpuLoad: NC Envirothon =
+//     envirothon.js, loaded on demand the first time 📚 Cards opens). The demo file carries a browse-only copy (window.HoweUnitsDemo, written
+//     by make_demo.js), because its HoweEnvirothon holds the questions only. In memory only: nothing here writes anywhere.
+//   · THREE LEVELS, never more (§6.0): the unit's section (Station) → its Key Concept (terms and facts together, T / F tag on each row) or,
+//     for cards with an `item` (ID), 🔎 ID → the item (species) → the card rows, FRONT ONLY. A row inside an item drops "<item> · ".
+//   · FOLDED, ONE OPEN AT EACH LEVEL: on first open she sees the section lines and nothing else. Opening a section folds the one that was
+//     open; opening a Key Concept or item folds the last; opening a card folds the last card. Moving on folds back what she left, and a
+//     folder's "show more" starts again at 20.
+//   · COUNTS on every header, after the filters: cards (or "78 of 90 cards") · ⭐ core (shown when not 0). A section with nothing matching
+//     drops out. ✎ / 🙈 / ＋ counts come with editing (PR 10).
+//   · 20 ROWS AT A TIME per folder ("Show 20 more · N left"); search shows 30 at a time.
+//   · SEARCH across fronts, backs, info and sources, every section: one flat list, each row with its path above it, the match marked.
+//   · CHIPS: All / Terms / Facts / ID (each only when the unit has that kind) · ⭐ Core only · Not on any test (§8.4's question → card links:
+//     compile_unit.js works them out into units/<id>/LINKS.json and the unit's file carries them on each question as `cards`).
+//   · AN OPENED CARD: the back in a box, the info line, ⭐ Core / Not core · deck · item · Source · "On the tests: Forestry check-in Q3" (or
+//     "On no test question"), and its first photo with its credit when the unit's picture index has one (envirothon/pics, ENVIDFLASH).
+//   · Every word that names the unit's parts comes from its labels (cpLabel: section, concept, item, pre, post), never from code (§15).
+const CPCS_PAGE=20, CPCS_SPAGE=30;
+const _cpcs={os:null,og:null,osp:null,or:null,more:{},kind:"all",f:{},q:"",load:{},err:"",memo:null,memoKey:"",css:false,qt:null};
+function cpcsOn(){ return typeof envcOn==="function"&&envcOn(); }
+function cpcsEsc(v){ return envsEsc(v); }
+function cpcsN(n){ return Number(n||0).toLocaleString("en-US"); }
+function cpcsWord(key){ return (typeof cpLabel==="function"&&cpLabel(key))||((typeof CP_LABELS_PLAIN!=="undefined"&&CP_LABELS_PLAIN[key])||key); }
+function cpcsA(w){ return (/^[aeiou]/i.test(String(w||""))?"an ":"a ")+w; }
+function cpcsPlural(w){ w=String(w||""); return /s$/i.test(w)?w:w+"s"; }
+// the console's chips: 📚 Cards right before 🃏 Teacher cards (the array is the console's; this only splices into it)
+function cpcsChips(chips){
+  if(!cpcsOn()||!Array.isArray(chips)) return chips;
+  if(typeof _envc!=="undefined"&&_envc.view!=="cpcards") cpcsFoldAll();   // she moved on: 📚 Cards opens folded next time
+  if(chips.some(x=>x&&x[0]==="cpcards")) return chips;
+  const i=chips.findIndex(x=>x&&x[0]==="cards"); chips.splice(i<0?1:i,0,["cpcards","\u{1F4DA} Cards"]); return chips;
+}
+function cpcsFoldAll(){ _cpcs.os=_cpcs.og=_cpcs.osp=_cpcs.or=null; _cpcs.more={}; _cpcs.kind="all"; _cpcs.f={}; _cpcs.q=""; }
+// ── the cards: each attached unit's compiled file (the demo: its browse-only copy)
+function cpcsUnitIds(){ if(!cpcsOn()||typeof cpuAttached!=="function") return []; return cpuAttached().filter(id=>typeof cpuIndex!=="function"||cpuIndex(id)); }
+function cpcsLib(id){
+  const l=(typeof cpuUnit==="function")?cpuUnit(id):null; if(l&&l.unit&&Array.isArray(l.unit.decks)) return l;
+  const d=(typeof envsDemo==="function"&&envsDemo()&&typeof window!=="undefined"&&window.HoweUnitsDemo)?window.HoweUnitsDemo[id]:null;
+  if(d&&d.unit) return {unit:d.unit,tests:(l&&l.tests)||d.tests||{}};
+  return null;
+}
+function cpcsLoad(){
+  if(!cpcsOn()) return false; let started=false;
+  cpcsUnitIds().forEach(id=>{ if(cpcsLib(id)||_cpcs.load[id]||typeof cpuLoad!=="function") return; started=true;
+    _cpcs.load[id]=cpuLoad(id).then(()=>{ _cpcs.memo=null; if(!cpcsLib(id)) _cpcs.err="The cards didn’t come with "+id+"."; cpcsRe(); })
+      .catch(e=>{ _cpcs.load[id]=null; _cpcs.err="Couldn’t load the cards: "+String((e&&e.message)||e); cpcsRe(); }); });
+  return started;
+}
+// the card's kind: term · fact · id (its own kind, else an item makes it id, else its deck's kind)
+function cpcsKind(c,deck){ const k=c&&c.kind; if(k==="term"||k==="fact"||k==="id") return k; if(c&&c.item) return "id"; return (deck&&/^term/.test(String(deck.kind||"")))?"term":"fact"; }
+// ONE PASS: every card of the class's sections, each section's Key Concepts and items, and the question → card links turned round
+function cpcsIndex(){
+  if(!cpcsOn()) return null;
+  const ids=cpcsUnitIds(), libs={}; ids.forEach(id=>{ libs[id]=cpcsLib(id); });
+  const sts=(typeof envsStations==="function"?envsStations():[])||[];
+  const key=ids.map(id=>id+(libs[id]?"+":"-")).join(",")+"|"+sts.map(s=>s.id).join(",")+"|"+cpcsWord("pre")+cpcsWord("post");
+  if(_cpcs.memo&&_cpcs.memoKey===key) return _cpcs.memo;
+  const C=[], byId={}, Q={}, secs=[]; let anyTests=false;
+  const unitDecks={}; ids.forEach(id=>{ const l=libs[id]; unitDecks[id]={}; ((l&&l.unit&&l.unit.decks)||[]).forEach(d=>{ if(d&&d.key) unitDecks[id][d.key]=d; }); });
+  sts.forEach(st=>{
+    const uid=st.unit||ids[0], U=unitDecks[uid]||{}, sec={id:st.id,label:st.label||st.id,short:st.short||st.label||st.id,emoji:st.emoji||"",unit:uid,groups:[],items:[],cards:[],ready:!!libs[uid]};
+    const gBy={}, iBy={};
+    (st.decks||[]).forEach((dk,di)=>{ const d=U[dk.key]; if(!d) return;
+      (d.cards||[]).forEach((c,ci)=>{ if(!c||!c.name) return; const kind=cpcsKind(c,dk), order=Number.isInteger(c.order)?c.order:ci+1;
+        const x={i:C.length,id:dk.key+"#o"+order,deck:dk.key,di,o:order,sec:st.id,kind,name:String(c.name),def:String(c.def==null?"":c.def),src:String(c.src||""),info:String(c.info||""),item:String(c.item||""),core:!!c.core};
+        if(kind==="id"){ const k=x.item||String(c.name).split(" · ")[0]; if(!iBy[k]){ iBy[k]={key:st.id+"|id|"+sec.items.length,label:k,cards:[]}; sec.items.push(iBy[k]); } x.g=iBy[k]; iBy[k].cards.push(x); }
+        else { const gl=String(c.group||c.family||"Other"); if(!gBy[gl]){ gBy[gl]={key:st.id+"|g"+sec.groups.length,label:gl,ord:Number.isFinite(+c.concept)&&c.concept!==""&&c.concept!=null?+c.concept:1e6+sec.groups.length,first:sec.groups.length,cards:[]}; sec.groups.push(gBy[gl]); } x.g=gBy[gl]; gBy[gl].cards.push(x); }
+        C.push(x); byId[x.id]=x; sec.cards.push(x); }); });
+    sec.groups.sort((a,b)=>(a.ord-b.ord)||(a.first-b.first));
+    sec.groups.forEach(g=>g.cards.sort((a,b)=>((a.kind===b.kind)?0:(a.kind==="term"?-1:1))||(a.di-b.di)||(a.o-b.o)));
+    secs.push(sec); });
+  // the links (§8.4): each question's cards → each card's questions, "Forestry check-in Q3"
+  const shortOf={}; secs.forEach(s=>{ shortOf[s.id]=s.short; });
+  ids.forEach(id=>{ const T=(libs[id]&&libs[id].tests)||{};
+    Object.keys(T).forEach(sk=>{ if(!shortOf[sk]) return; ["pre","post"].forEach(f=>{ const fm=T[sk]&&T[sk][f]; if(!fm||!Array.isArray(fm.items)) return; anyTests=true;
+      fm.items.forEach(it=>{ const lab=shortOf[sk]+" "+cpcsWord(f).toLowerCase()+" Q"+it.n; (Array.isArray(it.cards)?it.cards:[]).forEach(cid=>{ if(!byId[cid]) return; const a=Q[cid]=Q[cid]||[]; if(a.indexOf(lab)<0) a.push(lab); }); }); }); }); });
+  const kinds={}; C.forEach(c=>{ kinds[c.kind]=1; });
+  _cpcs.memo={C,byId,Q,secs,kinds,anyTests,anyCore:C.some(c=>c.core),ready:ids.length>0&&ids.every(id=>libs[id])}; _cpcs.memoKey=key;
+  return _cpcs.memo;
+}
+// ── filters, counts
+function cpcsNorm(s){ return String(s||"").toLowerCase(); }
+function cpcsSearching(){ return String(_cpcs.q||"").length>=2; }
+function cpcsFiltersOn(){ return _cpcs.kind!=="all"||Object.keys(_cpcs.f).some(k=>_cpcs.f[k]); }
+function cpcsPass(c,M){ const f=_cpcs.f;
+  if(_cpcs.kind!=="all"&&c.kind!==_cpcs.kind) return false;
+  if(f.core&&!c.core) return false;
+  if(f.notest&&((M&&M.Q[c.id])||[]).length) return false;
+  if(cpcsSearching()){ const q=cpcsNorm(_cpcs.q); if(cpcsNorm(c.name).indexOf(q)<0&&cpcsNorm(c.def).indexOf(q)<0&&cpcsNorm(c.info).indexOf(q)<0&&cpcsNorm(c.src).indexOf(q)<0) return false; }
+  return true; }
+function cpcsCounts(list){ let core=0; list.forEach(c=>{ if(c.core) core++; }); return {n:list.length,core}; }
+function cpcsCntHtml(o,total){ return '<div class="cpcs-cnt"><span><b>'+cpcsN(o.n)+'</b>'+(total!=null&&total!==o.n?' of '+cpcsN(total):'')+' card'+((total!=null?total:o.n)===1?'':'s')+'</span>'+(o.core?'<span>⭐ '+cpcsN(o.core)+'</span>':'')+'</div>'; }
+// ── the taps: one open at each level, and moving on folds back what she left
+function cpcsTap(level,id){
+  if(!cpcsOn()) return;
+  const S=_cpcs;
+  if(level==="st"){ S.os=S.os===id?null:id; S.og=S.osp=S.or=null; S.more={}; }
+  else if(level==="grp"){ S.og=S.og===id?null:id; S.osp=S.or=null; S.more={}; }
+  else if(level==="sp"){ S.osp=S.osp===id?null:id; S.or=null; S.more={}; }
+  else if(level==="row"){ S.or=S.or===id?null:id; }
+  else if(level==="more"){ S.more[id]=(S.more[id]||(id==="search"?CPCS_SPAGE:CPCS_PAGE))+(id==="search"?CPCS_SPAGE:CPCS_PAGE); }
+  else if(level==="kind"){ S.kind=id||"all"; S.or=null; S.more={}; }
+  else if(level==="f"){ S.f[id]=!S.f[id]; S.or=null; S.more={}; }
+  else if(level==="clear"){ S.q=""; S.or=null; S.more={}; }
+  else return;
+  cpcsRe(level==="clear");
+  if(level==="row"&&S.or!=null) cpcsScroll("cpcs-r-"+S.or); else if((level==="st"||level==="grp"||level==="sp")&&id!=null) cpcsScroll(cpcsHid(id));
+}
+function cpcsSearch(v){ if(!cpcsOn()) return; clearTimeout(_cpcs.qt); const go=()=>{ _cpcs.q=String(v||"").trim(); _cpcs.or=null; _cpcs.more={}; cpcsRe(); }; if(typeof setTimeout==="function") _cpcs.qt=setTimeout(go,180); else go(); }
+// a tap paints only the chips and the list, so the search box keeps its focus; anything else repaints the page
+function cpcsRe(withSearch){
+  if(typeof document!=="undefined"&&document.getElementById){ const L=document.getElementById("cpcs-list"), ch=document.getElementById("cpcs-chips");
+    if(L&&ch&&!withSearch){ ch.innerHTML=cpcsChipsHtml(); L.innerHTML=cpcsListHtml(); const x=document.getElementById("cpcs-x"); if(x) x.style.display=_cpcs.q?"":"none"; return; } }
+  if(typeof envcRe==="function") envcRe();
+}
+function cpcsScroll(id){
+  if(typeof document==="undefined"||typeof requestAnimationFrame!=="function") return;
+  requestAnimationFrame(()=>{ try{ const el=document.getElementById(id), t=document.getElementById("cpcs-tools"); if(!el) return; const r=el.getBoundingClientRect(), top=t?t.getBoundingClientRect().bottom:0;
+    if(r.top<top+6||r.top>window.innerHeight-90) window.scrollBy({top:r.top-top-10,behavior:"smooth"}); }catch(e){} });
+}
+// ── the page
+function cpcsCss(){
+  if(_cpcs.css||typeof document==="undefined"||!document.createElement) return; _cpcs.css=true;
+  try{ const s=document.createElement("style"); s.id="cpcs-css"; s.textContent=
+    '.cpcs{max-width:760px;margin:0 auto}.cpcs-tools{position:sticky;top:0;z-index:40;background:#fff;border:1.5px solid var(--border,#e5e0d8);border-radius:14px;padding:8px 10px 0;margin-bottom:8px}'+
+    '.cpcs-search{display:flex;gap:6px}.cpcs-search input{flex:1;min-width:0;min-height:44px;border:1.5px solid var(--border,#e5e0d8);border-radius:12px;padding:0 12px;font:inherit;font-size:16px;background:#fff;box-sizing:border-box}'+
+    '.cpcs-search button{min-width:44px;min-height:44px;border:1.5px solid var(--border,#e5e0d8);border-radius:12px;background:#fff;cursor:pointer;font:inherit}'+
+    '.cpcs-chips{display:flex;gap:6px;overflow-x:auto;padding:8px 0;-webkit-overflow-scrolling:touch;scrollbar-width:none}.cpcs-chips::-webkit-scrollbar{display:none}'+
+    '.cpcs-chip{flex-shrink:0;min-height:40px;padding:0 13px;border-radius:999px;border:1.5px solid var(--border,#e5e0d8);background:#fff;font:inherit;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;color:#374151}.cpcs-chip.on{background:#14532d;border-color:#14532d;color:#fff}.cpcs-sep{flex-shrink:0;align-self:center;color:#9ca3af}'+
+    '.cpcs-note{font-size:12.5px;color:var(--muted,#6b7280);margin:8px 2px}'+
+    '.cpcs-fold{background:#fff;border:1.5px solid var(--border,#e5e0d8);border-radius:14px;margin:8px 0;overflow:hidden}.cpcs-fold.l2{border-radius:12px;margin:6px 0;border-color:#ece7df}.cpcs-fold.l3{border-radius:10px;margin:5px 0;border-color:#f1ede6;background:#fdfcfa}'+
+    '.cpcs-fh{display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:8px 12px;border:none;background:none;text-align:left;cursor:pointer;font:inherit;color:inherit}.l2>.cpcs-fh{min-height:48px;padding:6px 12px}.l3>.cpcs-fh{min-height:46px;padding:6px 10px}'+
+    '.cpcs-tw{width:18px;flex-shrink:0;color:#6b7280;font-size:12px;transition:transform .15s}.cpcs-fold.open>.cpcs-fh .cpcs-tw{transform:rotate(90deg)}.cpcs-tt{flex:1;min-width:0}'+
+    '.cpcs-t1{font-weight:800;font-size:15.5px}.l2>.cpcs-fh .cpcs-t1{font-size:14.5px}.l3>.cpcs-fh .cpcs-t1{font-size:14px;font-weight:700}'+
+    '.cpcs-cnt{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px;font-size:11.5px;color:#6b7280;font-weight:650}.cpcs-cnt b{color:#1f2937}'+
+    '.cpcs-fb{padding:0 8px 8px}.l2 .cpcs-fb{padding:0 6px 6px}.cpcs-row{border-top:1px solid #f3f0ea}.cpcs-row:first-child{border-top:none}'+
+    '.cpcs-rb{display:flex;align-items:flex-start;gap:8px;width:100%;min-height:46px;padding:10px 8px;border:none;background:none;text-align:left;cursor:pointer;font:inherit;font-size:14.5px;color:inherit}.cpcs-row.open>.cpcs-rb{background:#f0fdf4}'+
+    '.cpcs-tag{flex-shrink:0;font-size:10.5px;font-weight:800;border-radius:6px;padding:2px 5px;margin-top:2px}.cpcs-tag.T{background:#e0f2fe;color:#075985}.cpcs-tag.F{background:#fef3c7;color:#92400e}.cpcs-tag.I{background:#ede9fe;color:#5b21b6}'+
+    '.cpcs-star{flex-shrink:0;width:16px;margin-top:1px}.cpcs-rt{flex:1;min-width:0;overflow-wrap:anywhere}.cpcs-crumb{font-size:11.5px;color:#6b7280;font-weight:700;margin-bottom:2px}'+
+    '.cpcs-det{padding:4px 10px 12px 34px;background:#f0fdf4;font-size:14.5px}.cpcs-back{background:#fff;border:1.5px solid #bbf7d0;border-radius:10px;padding:10px 12px;font-weight:600;overflow-wrap:anywhere}'+
+    '.cpcs-meta{font-size:12.5px;color:#6b7280;margin-top:8px;line-height:1.5;overflow-wrap:anywhere}.cpcs-meta b{color:#374151}.cpcs-lk{display:inline-block;font-size:12.5px;border:1px solid #d1fae5;background:#fff;border-radius:8px;padding:2px 7px;margin:3px 4px 0 0}'+
+    '.cpcs-pic{display:block;width:100%;max-width:320px;max-height:240px;object-fit:cover;border-radius:10px;margin-top:8px;background:#f3f4f6}'+
+    '.cpcs-more{width:100%;min-height:44px;border:1.5px dashed var(--border,#e5e0d8);border-radius:10px;background:none;color:#14532d;font:inherit;font-weight:800;margin-top:6px;cursor:pointer}'+
+    '.cpcs mark{background:#fef08a;padding:0 1px;border-radius:2px}';
+    document.head.appendChild(s); }catch(e){}
+}
+function cpcsHi(t){ const s=cpcsEsc(t); if(!cpcsSearching()) return s; const q=cpcsEsc(_cpcs.q).replace(/[.*+?^${}()|[\]\\]/g,"\\$&"); try{ return s.replace(new RegExp("("+q+")","ig"),"<mark>$1</mark>"); }catch(e){ return s; } }
+function cpcsChipsHtml(){
+  const M=cpcsIndex()||{kinds:{}}, K=[["all","All"],["term","Terms"],["fact","Facts"],["id","ID"]].filter(k=>k[0]==="all"||M.kinds[k[0]]);
+  let h=''; if(K.length>2) h+=K.map(k=>'<button class="cpcs-chip'+(_cpcs.kind===k[0]?' on':'')+'" onclick="cpcsTap(\'kind\',\''+k[0]+'\')">'+k[1]+'</button>').join("")+'<span class="cpcs-sep">·</span>';
+  if(M.anyCore) h+='<button class="cpcs-chip'+(_cpcs.f.core?' on':'')+'" onclick="cpcsTap(\'f\',\'core\')">⭐ Core only</button>';
+  if(M.anyTests) h+='<button class="cpcs-chip'+(_cpcs.f.notest?' on':'')+'" onclick="cpcsTap(\'f\',\'notest\')">Not on any test</button>';
+  return h;
+}
+function cpcsRowHtml(c,M,opt){ opt=opt||{}; const open=_cpcs.or===c.i, tag=c.kind==="term"?"T":c.kind==="id"?"I":"F";
+  let front=c.name; if(opt.item&&c.item){ if(front.indexOf(c.item+" · ")===0) front=front.slice(c.item.length+3); else if(front.indexOf(" · ")>0) front=front.slice(front.indexOf(" · ")+3); }
+  let h='<div class="cpcs-row'+(open?' open':'')+'" id="cpcs-r-'+c.i+'"><button class="cpcs-rb" onclick="cpcsTap(\'row\','+c.i+')" aria-expanded="'+(open?'true':'false')+'"><span class="cpcs-star">'+(c.core?'⭐':'')+'</span><span class="cpcs-tag '+tag+'">'+tag+'</span><span class="cpcs-rt">';
+  if(opt.crumb) h+='<div class="cpcs-crumb">'+cpcsEsc(opt.crumb)+'</div>';
+  h+=cpcsHi(front)+'</span></button>';
+  if(open) h+=cpcsDetailHtml(c,M);
+  return h+'</div>'; }
+function cpcsPic(c){ const idx=(typeof envPicsIndex==="function")?envPicsIndex():null; if(!idx){ if(c.kind==="id"&&typeof envPicsLoad==="function"&&!_cpcs.picTry){ _cpcs.picTry=true; envPicsLoad().then(()=>cpcsRe()).catch(()=>{}); } return null; }
+  const a=idx[c.name]; return (Array.isArray(a)&&a[0]&&a[0].url)?a[0]:null; }
+function cpcsDetailHtml(c,M){
+  const qs=(M&&M.Q[c.id])||[], p=cpcsPic(c);
+  let h='<div class="cpcs-det"><div class="cpcs-back">'+cpcsHi(c.def)+'</div>';
+  if(c.info) h+='<div class="cpcs-meta">ℹ️ '+cpcsHi(c.info)+'</div>';
+  h+='<div class="cpcs-meta"><b>'+(c.core?'⭐ Core':'Not core')+'</b> · '+cpcsEsc(c.deck)+(c.item?' · '+cpcsEsc(c.item):'')+'<br>Source: '+cpcsHi(c.src||'—')+'<br>'+
+    (qs.length?'On the tests: '+qs.map(x=>'<span class="cpcs-lk">'+cpcsEsc(x)+'</span>').join(""):(M&&M.anyTests?'<span style="color:#9ca3af">On no test question</span>':''))+'</div>';
+  if(p) h+='<img class="cpcs-pic" src="'+cpcsEsc(p.url)+'" alt="'+cpcsEsc(c.item||c.name)+'" loading="lazy"><div class="cpcs-meta">\u{1F5BC} '+cpcsEsc(p.credit||'')+'</div>';
+  return h+'</div>'; }
+function cpcsPaged(key,list,M,opt){ const n=_cpcs.more[key]||CPCS_PAGE; let h=list.slice(0,n).map(c=>cpcsRowHtml(c,M,opt)).join("");
+  if(list.length>n) h+='<button class="cpcs-more" onclick="cpcsTap(\'more\',\''+envcJ(key)+'\')">Show '+Math.min(CPCS_PAGE,list.length-n)+' more · '+cpcsN(list.length-n)+' left</button>';
+  return h; }
+function cpcsHid(k){ return "cpcs-h-"+String(k).replace(/[^a-z0-9_-]/gi,"_"); }
+function cpcsFoldHtml(level,key,open,title,cnt,body){
+  return '<div class="cpcs-fold'+(level>1?' l'+level:'')+(open?' open':'')+'" id="'+cpcsHid(key)+'"><button class="cpcs-fh" onclick="cpcsTap(\''+(level===1?'st':level===2?'grp':'sp')+'\',\''+envcJ(key)+'\')" aria-expanded="'+(open?'true':'false')+'"><span class="cpcs-tw">▶</span>'+title+'<span class="cpcs-tt">'+cnt+'</span></button>'+(open?'<div class="cpcs-fb">'+body+'</div>':'')+'</div>'; }
+function cpcsListHtml(){
+  const M=cpcsIndex(); if(!M) return "";
+  if(!M.ready){ cpcsLoad(); return (_cpcs.err?'<div class="cpcs-note" style="color:#b91c1c">'+cpcsEsc(_cpcs.err)+'</div>':'')+'<div class="cpcs-note">Loading the cards…</div>'; }
+  if(cpcsSearching()) return cpcsSearchHtml(M);
+  const on=cpcsFiltersOn(), sec=cpcsWord("section").toLowerCase(), concept=cpcsWord("concept"), item=cpcsWord("item");
+  let h='<div class="cpcs-note">Tap '+cpcsA(sec)+', then '+cpcsA(concept)+(M.kinds.id?' (or an ID '+cpcsEsc(item)+')':'')+', then a card. Only one thing opens at a time; opening the next folds the last.</div>', any=false;
+  M.secs.forEach(s=>{ const list=s.cards.filter(c=>cpcsPass(c,M)); if(on&&!list.length) return; any=true;
+    const open=_cpcs.os===s.id;
+    let body='';
+    if(open){
+      s.groups.forEach(g=>{ const L=g.cards.filter(c=>cpcsPass(c,M)); if(on&&!L.length) return; const go=_cpcs.og===g.key;
+        body+=cpcsFoldHtml(2,g.key,go,'','<div class="cpcs-t1">'+cpcsEsc(g.label)+'</div>'+cpcsCntHtml(cpcsCounts(L),on?g.cards.length:null),go?cpcsPaged(g.key,L,M):''); });
+      if(s.items.length){ const all=[].concat(...s.items.map(x=>x.cards)), ids=all.filter(c=>cpcsPass(c,M));
+        if(!on||ids.length){ const ik=s.id+"|id", io=_cpcs.og===ik, shown=s.items.filter(x=>!on||x.cards.some(c=>cpcsPass(c,M)));
+          let ib=''; if(io) shown.forEach(x=>{ const L=x.cards.filter(c=>cpcsPass(c,M)), so=_cpcs.osp===x.key;
+            ib+=cpcsFoldHtml(3,x.key,so,'','<div class="cpcs-t1">'+cpcsEsc(x.label)+'</div>'+cpcsCntHtml(cpcsCounts(L),on?x.cards.length:null),so?cpcsPaged(x.key,L,M,{item:true}):''); });
+          body+=cpcsFoldHtml(2,ik,io,'','<div class="cpcs-t1">\u{1F50E} ID · '+cpcsN(shown.length)+' '+cpcsEsc(cpcsPlural(item))+'</div>'+cpcsCntHtml(cpcsCounts(ids),on?all.length:null),ib); } }
+    }
+    h+=cpcsFoldHtml(1,s.id,open,'<span style="font-size:22px">'+cpcsEsc(s.emoji)+'</span>','<div class="cpcs-t1">'+cpcsEsc(s.label)+'</div>'+cpcsCntHtml(cpcsCounts(list),on?s.cards.length:null),body); });
+  if(!any) h+='<div class="cpcs-note">No card matches these filters.</div>';
+  return h; }
+function cpcsSearchHtml(M){
+  const list=M.C.filter(c=>cpcsPass(c,M)), n=_cpcs.more.search||CPCS_SPAGE, secOf={}; M.secs.forEach(s=>{ secOf[s.id]=s; });
+  let h='<div class="cpcs-note"><b>'+cpcsN(list.length)+'</b> card'+(list.length===1?'':'s')+' match “'+cpcsEsc(_cpcs.q)+'” across every '+cpcsEsc(cpcsWord("section").toLowerCase())+'. Clear the search to go back to the folders.</div>';
+  h+='<div class="cpcs-fold open"><div class="cpcs-fb" style="padding-top:6px">'+list.slice(0,n).map(c=>cpcsRowHtml(c,M,{crumb:((secOf[c.sec]&&secOf[c.sec].label)||c.sec)+" › "+(c.kind==="id"?"ID · "+c.g.label:c.g.label)})).join("");
+  if(list.length>n) h+='<button class="cpcs-more" onclick="cpcsTap(\'more\',\'search\')">Show '+Math.min(CPCS_SPAGE,list.length-n)+' more · '+cpcsN(list.length-n)+' left</button>';
+  return h+'</div></div>'; }
+function cpcsHtml(){
+  if(!cpcsOn()) return ""; cpcsCss();
+  let h='<div class="cpcs" id="cpcs"><div class="cpcs-tools" id="cpcs-tools"><div class="cpcs-search"><input id="cpcs-q" type="search" placeholder="Search fronts, backs, sources…" value="'+cpcsEsc(_cpcs.q)+'" autocomplete="off" oninput="cpcsSearch(this.value)" aria-label="Search the cards">'+
+    '<button id="cpcs-x" onclick="cpcsTap(\'clear\')" aria-label="Clear the search"'+(_cpcs.q?'':' style="display:none"')+'>✕</button></div><div class="cpcs-chips" id="cpcs-chips">'+cpcsChipsHtml()+'</div></div>';
+  h+='<div id="cpcs-list">'+cpcsListHtml()+'</div></div>';
+  if(typeof requestAnimationFrame==="function") requestAnimationFrame(cpcsStick);
+  return h; }
+// the search and the chips stay pinned just under the console's own sticky bar(s)
+function cpcsStick(){ try{ const t=document.getElementById("cpcs-tools"); if(!t) return; let top=0; document.querySelectorAll(".envs-top,.envs-demo").forEach(b=>{ if(getComputedStyle(b).position==="sticky") top=Math.max(top,b.offsetHeight); }); t.style.top=top+"px"; }catch(e){} }
+// CPCARDSSEE_END
 function unitAllNudges(kid){ let out=[]; haKidUnits(kid).forEach(u=>{ out=out.concat(unitPlanNudges(u,kid)); }); return out; }
 function unitDismissNudge(unitId,kid,key){
   if(!momHere()) return; // skipping a planned step is Mom's call

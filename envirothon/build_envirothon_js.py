@@ -18,6 +18,11 @@ source, n, items:[{n,q,choices,ans,cite}]}, post:{…} } } — questions never g
 PREVIEW_tests.html (every form, a Show-answers toggle, the kept/dropped table) and TESTS.md (the counts and drop list in
 text) beside the JSON, for Adrienne to read before anything is merged. test_env_tests.js checks the compiled tests
 against the JSON.
+
+📚 CPCARDSSEE (2026-10-28, class platform PR 9, DESIGN §8.4): each question also carries `cards` — the cards that teach it, as
+"<deckKey>#o<order>" — read from units/nc_envirothon/LINKS.json, which `node units/build/compile_unit.js nc_envirothon` works out
+(run that first, then this). The teacher's 📚 Cards browser reads them for "On the tests" and its Not-on-any-test filter; nothing
+in Howe reads them. compile_unit.js --check fails while this file's links differ from LINKS.json.
 """
 import json, os, sys, datetime
 
@@ -26,6 +31,7 @@ SRC = os.path.join(HERE, "nc_envirothon_unit.json")
 TESTS_SRC = os.path.join(HERE, "nc_envirothon_tests.json")
 PREVIEW = os.path.join(HERE, "PREVIEW_tests.html")
 TESTS_MD = os.path.join(HERE, "TESTS.md")
+LINKS = os.path.join(os.path.dirname(HERE), "units", "nc_envirothon", "LINKS.json")   # 📚 CPCARDSSEE
 OUT = os.path.join(os.path.dirname(HERE), "envirothon.js")
 
 def load_tests():
@@ -34,6 +40,10 @@ def load_tests():
         return None
     with open(TESTS_SRC, encoding="utf-8") as f:
         doc = json.load(f)
+    links = {}
+    if os.path.exists(LINKS):
+        with open(LINKS, encoding="utf-8") as f:
+            links = json.load(f)
     out = {}
     for sid, st in doc["stations"].items():
         rec = {"label": st["label"], "emoji": st["emoji"]}
@@ -41,6 +51,9 @@ def load_tests():
             fm = st[w]
             r = {"form": fm["form"], "source": fm["source"], "n": fm["n"],
                  "items": [{"n": it["n"], "q": it["q"], "choices": it["choices"], "ans": it["ans"], "cite": it["cite"]} for it in fm["items"]]}
+            if links:   # 📚 CPCARDSSEE: the question's cards (§8.4), [] when none
+                for it in r["items"]:
+                    it["cards"] = links.get(sid, {}).get(w + "-" + str(it["n"]), [])
             if fm.get("note"): r["note"] = fm["note"]
             rec[w] = r
         out[sid] = rec
