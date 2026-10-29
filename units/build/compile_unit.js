@@ -36,6 +36,20 @@
 // unit's, its type one of the engine's, its label set, its tests ids of that section's forms, its replaces "<deck>#o<order>" of a real
 // card; a `gear` skill (type id, data.kind "gear") has 4+ items, each with a unique name, a use, a source, and look-alikes that are items
 // of the same skill. A note (not an error) lists the gear items the repo's photo set (envirothon/pics/index.json) has no photo for.
+// 🪲 CPITEMBIOTIC (2026-10-29, the biotic-index worksheet; RESEARCH §4.3): a `tally` worksheet (type sheet, data.kind "tally" with a flat
+// items list) has 2+ groups with unique keys, a label and a number weight; 4+ items, each a unique name, one of the groups, a source,
+// look-alikes that are items of the same skill; ratings with a label and a unique number min; pick / chartPick [lo, hi] whole numbers.
+// COUNTS.json counts its items; a note lists the items with no photo in the repo set (they show a 📷 placeholder in the app).
+// 📐 CPITEMTRIANGLE (2026-10-29, the soil texture triangle; RESEARCH_envirothon_skills_2026-10-28.md §4.1): a `ternary` skill (type chart)
+// has 3 axes and 2+ classes, each with a unique key and label, a rule the engine can read ("<axis>" or "silt+1.5clay", op < <= > >=, a
+// number), a shape (3+ corners inside the triangle) and a label spot; EVERY point of the triangle (each half percent) falls in exactly
+// one class's rule, the shapes tile the triangle (their areas add to the whole), and each shape's middle is its own class. COUNTS'
+// `items` for it is its number of classes.
+// 🌲 CPITEMID (2026-10-29; RESEARCH_envirothon_skills_2026-10-28.md §4.4, §4.6, §4.7): an ID-by-part skill (type id, data.kind "parts") has
+// 1+ parts {tag (a photo tag of the pool), label, tags?} and 4+ items {name, like:[look-alikes, items of the same skill], parts?:[the
+// part tags it can show, default all], tell?:{<part>: clue}, src?:{<part>:["<deck>#o<order>", …]}} — every clue names the real cards it
+// was taken from. Its note lists the item parts the repo
+// set has no photo for (a round skips those until one is added to the pool).
 // Nothing here touches a database. The catalog entry (index.json) is what 📦 Units ▸ Publish writes to units/<id>/index (§4.3), and the
 // same object is CPU_UNITS[<id>] in index.html: a plain run REWRITES that one line (`const CPU_UNITS={…};` in the CPUNIT block), so a data
 // change (a trim, a core add) is the data files + one compile run, never a hand edit of index.html (2026-10-28, after Trim 1 met PR 3).
@@ -45,6 +59,7 @@ const REPO=path.resolve(__dirname,"..","..");
 const LABEL_KEYS=["section","sections","pre","post","item","concept"];
 const FEATURE_KEYS=["teams","boards","specialists","idFlash","mockRun"];
 const SKILL_TYPES=["chart","table","sheet","label","id","scale","mock","rubric"], SKILL_KEY=/^[a-z0-9][a-z0-9_.-]{0,59}$/;   // 🧰 CPITEMGEAR: the engine's CPSK_TYPE_NAMES / CPSK_KEY_RE
+const PHOTO_TAGS=["leaf","bark","twig","fruit","flower","cone","needle","track","skull","pelt","live","specimen","gear","drawing","diagram"];   // 🌲 CPITEMID: CPPHOTOS' CPPH_TAGS
 const FB_BAD=/[.#$\[\]\/\u0000-\u001f\u007f]/;
 function fbSafe(k){ return typeof k==="string"&&k.length>0&&Buffer.byteLength(k,"utf8")<=768&&!FB_BAD.test(k); }
 function readJson(p){ return JSON.parse(fs.readFileSync(p,"utf8")); }
@@ -113,12 +128,55 @@ function makeCounts(u,decks,tests,skills){
     c.decks[d.key]={section:d.section,n,core,maxOrder:o.length?Math.max(...o):0,orders:ranges(o)}; c.cards+=n; c.core+=core;
     const s=c.sections[d.section]; if(s){ s.cards+=n; s.core+=core; s.decks++; } });
   if(tests) Object.keys(tests.sections).forEach(k=>{ const t=tests.sections[k], r={}; ["pre","post"].forEach(f=>{ if(t[f]) r[f]=t[f].items.length; }); c.tests[k]=r; });
-  if(skills&&skills.length){ c.skills={}; skills.forEach(k=>{ const it=skillItems(k); c.skills[k.key]={section:k.section,type:k.type,core:k.core===true,items:it?it.length:0}; }); }   // 🧰 CPITEMGEAR
+  if(skills&&skills.length){ c.skills={}; skills.forEach(k=>{ const it=skillItems(k)||skillClasses(k)||partItems(k); c.skills[k.key]={section:k.section,type:k.type,core:k.core===true,items:it?it.length:0}; }); }   // 🧰 CPITEMGEAR · 📐 CPITEMTRIANGLE (a chart's items = its classes) · 🌲 CPITEMID (an ID skill's items)
   return c;
 }
 // 🧰 CPITEMGEAR: a skill as the catalog carries it (the unit.json record, its keys in a fixed order) — PURE
 function skillEntry(k){ const o={}; ["key","section","type","label","core","steps","tests","replaces","data"].forEach(f=>{ if(k[f]!==undefined) o[f]=k[f]; }); return o; }
-function skillItems(k){ return (k&&k.data&&k.data.kind==="gear"&&Array.isArray(k.data.items))?k.data.items:null; }
+function skillItems(k){ return (k&&k.data&&(k.data.kind==="gear"||k.data.kind==="tally")&&Array.isArray(k.data.items))?k.data.items:null; }   // 🪲 CPITEMBIOTIC: + a tally sheet's kinds
+// 📐 CPITEMTRIANGLE: a ternary chart's classes — the same reading as index.html's cptRuleOk / cptClassOf (test_cp_item_triangle.js holds them equal)
+function skillClasses(k){ return (k&&k.data&&k.data.kind==="ternary"&&Array.isArray(k.data.classes))?k.data.classes:null; }
+const TERN_OPS={"<":(a,b)=>a<b,"<=":(a,b)=>a<=b,">":(a,b)=>a>b,">=":(a,b)=>a>=b};
+function ternTerms(expr,axes){ const out=[]; for(const t of String(expr).split("+")){ const m=/^(\d+(?:\.\d+)?)?([a-z_]+)$/.exec(t.trim()); if(!m||axes.indexOf(m[2])<0) return null; out.push([m[1]?+m[1]:1,m[2]]); } return out.length?out:null; }
+function ternRuleOk(rule,axes){ return Array.isArray(rule)&&rule.length>0&&rule.every(alt=>Array.isArray(alt)&&alt.length>0&&alt.every(c=>Array.isArray(c)&&c.length===3&&!!ternTerms(c[0],axes)&&!!TERN_OPS[c[1]]&&typeof c[2]==="number")); }
+function ternIn(rule,pt,axes){ return rule.some(alt=>alt.every(c=>TERN_OPS[c[1]](ternTerms(c[0],axes).reduce((a,t)=>a+t[0]*pt[t[1]],0),c[2]))); }
+// the classes whose rule a point is in (exactly one, for a good chart); pt = {<axis>: percent}
+function ternClassesAt(classes,axes,pt){ return classes.filter(c=>ternIn(c.rule,pt,axes)); }
+function partItems(k){ return (k&&k.data&&k.data.kind==="parts"&&Array.isArray(k.data.items))?k.data.items:null; }   // 🌲 CPITEMID
+// 🌲 CPITEMID: an ID-by-part skill's own checks (inside rule 8) — [errors]; cards = {"<deck>#o<order>":1}
+function checkParts(k,at,cards){
+  const err=[], E=m=>err.push(m), P=k.data.parts, I=partItems(k)||[], names={}, tags={};
+  if(k.type!=="id") E(at+": an ID-by-part skill is type id");
+  if(!Array.isArray(P)||!P.length) E(at+": data.parts must list 1 or more parts");
+  else P.forEach((p,j)=>{ const pa=at+" part "+(j+1);
+    if(!p||PHOTO_TAGS.indexOf(p.tag)<0){ E(pa+": tag must be a photo tag ("+PHOTO_TAGS.join(", ")+")"); return; }
+    if(tags[p.tag]) E(pa+": “"+p.tag+"” twice"); tags[p.tag]=1;
+    if(typeof p.label!=="string"||!p.label.trim()) E(pa+" (“"+p.tag+"”) has no label");
+    if(p.tags!=null&&(!Array.isArray(p.tags)||!p.tags.length||p.tags.some(t=>PHOTO_TAGS.indexOf(t)<0))) E(pa+" (“"+p.tag+"”): tags must be photo tags"); });
+  if(I.length<4) E(at+": an ID-by-part skill needs 4 or more items (each try offers 4 names)");
+  I.forEach((x,j)=>{ const ia=at+" item "+(j+1)+(x&&x.name?" (“"+x.name+"”)":"");
+    if(!x||typeof x.name!=="string"||!x.name.trim()){ E(ia+" has no name"); return; }
+    if(names[x.name.toLowerCase()]) E(ia+": name twice"); names[x.name.toLowerCase()]=1;
+    if(x.parts!=null&&(!Array.isArray(x.parts)||!x.parts.length||x.parts.some(t=>!tags[t]))) E(ia+": parts must be parts of this skill");
+    if(x.tell!=null){ if(typeof x.tell!=="object"||Array.isArray(x.tell)) E(ia+": tell must be {part: clue}");
+      else Object.keys(x.tell).forEach(t=>{ if(!tags[t]||(Array.isArray(x.parts)&&x.parts.indexOf(t)<0)) E(ia+": a clue for “"+t+"”, which is no part of this skill or item"); if(typeof x.tell[t]!=="string"||!x.tell[t].trim()) E(ia+": the “"+t+"” clue is empty");
+        const S=x.src&&x.src[t]; if(!Array.isArray(S)||!S.length) E(ia+": the “"+t+"” clue names no card (src)"); else S.forEach(r=>{ if(!cards[r]) E(ia+": the “"+t+"” clue's card “"+r+"” is no card"); }); }); } });
+  I.forEach(x=>{ if(x&&x.like!=null){ if(!Array.isArray(x.like)) E(at+" item “"+x.name+"”: like must be a list"); else x.like.forEach(n=>{ if(!names[String(n).toLowerCase()]||String(n).toLowerCase()===String(x.name).toLowerCase()) E(at+" item “"+x.name+"”: look-alike “"+n+"” is not another item of this skill"); }); } });
+  return err;
+}
+// 🌲 CPITEMID: the repo set's photo tags for a shot (CPPHOTOS' cpphShotTags, the same words)
+function shotTags(shot){ const s=String(shot||"").toLowerCase(), t=[]; const on=(re,tag)=>{ if(re.test(s)&&t.indexOf(tag)<0) t.push(tag); };
+  on(/lea(f|ves)|foliage|fall color/,"leaf"); on(/bark/,"bark"); on(/twig|bud/,"twig"); on(/fruit|acorn|berr|nut|seed|pod/,"fruit"); on(/flower/,"flower"); on(/cone/,"cone"); on(/needle/,"needle");
+  on(/track/,"track"); on(/skull/,"skull"); on(/pelt/,"pelt"); on(/specimen|antler/,"specimen"); on(/drawing/,"drawing"); on(/diagram/,"diagram"); on(/gear|tool/,"gear");
+  if(!t.length) t.push("live"); return t; }
+// 🌲 CPITEMID: each ID-by-part skill's item parts with no photo in the repo set — [{skill, part, label, items:[names]}]
+function partPhotoGaps(root,skills){
+  const p=path.join(root,"envirothon","pics","index.json"), have={}; if(fs.existsSync(p)){ try{ const J=readJson(p); Object.keys(J).forEach(n=>{ const it=String(n).split(" · ")[0].trim().toLowerCase(), H=have[it]=have[it]||{};
+    (Array.isArray(J[n])?J[n]:[]).forEach(ph=>shotTags(ph&&ph.shot).forEach(t=>{ H[t]=1; })); }); }catch(e){} }
+  const out=[]; (skills||[]).forEach(k=>{ const I=partItems(k); if(!I) return; (k.data.parts||[]).forEach(pt=>{ const want=pt.tags||[pt.tag];
+    const miss=I.filter(x=>!(Array.isArray(x.parts)&&x.parts.indexOf(pt.tag)<0)&&!want.some(t=>(have[String(x.name).trim().toLowerCase()]||{})[t])).map(x=>x.name); if(miss.length) out.push({skill:k.key,part:pt.tag,label:pt.label,items:miss}); }); });
+  return out;
+}
 // rule 8 — the unit's skills: [errors]
 function checkSkills(skills,secKeys,decks,tests){
   const err=[], E=m=>err.push(m); if(skills==null) return err; if(!Array.isArray(skills)){ E("skills must be a list"); return err; }
@@ -145,14 +203,68 @@ function checkSkills(skills,secKeys,decks,tests){
         if(!x.src) E(ia+" has no source");
         if(x.item!=null&&(typeof x.item!=="string"||!x.item.trim())) E(ia+": item (its photo key) must be a name"); });
       const U={}; I.forEach(x=>{ if(x&&x.use){ if(U[x.use]) E(at+": two items share the use “"+x.use+"”"); U[x.use]=1; } });
-      I.forEach(x=>{ if(x&&x.like!=null){ if(!Array.isArray(x.like)) E(at+" item “"+x.name+"”: like must be a list"); else x.like.forEach(n=>{ if(!names[String(n).toLowerCase()]||String(n).toLowerCase()===String(x.name).toLowerCase()) E(at+" item “"+x.name+"”: look-alike “"+n+"” is not another item of this skill"); }); } }); } });
+      I.forEach(x=>{ if(x&&x.like!=null){ if(!Array.isArray(x.like)) E(at+" item “"+x.name+"”: like must be a list"); else x.like.forEach(n=>{ if(!names[String(n).toLowerCase()]||String(n).toLowerCase()===String(x.name).toLowerCase()) E(at+" item “"+x.name+"”: look-alike “"+n+"” is not another item of this skill"); }); } }); }
+    if(k.data&&k.data.kind==="tally"&&Array.isArray(k.data.items)) checkTally(k,at).forEach(E);   // 🪲 CPITEMBIOTIC
+    if(k.data&&k.data.kind==="ternary") checkTernary(k,at).forEach(E);   // 📐 CPITEMTRIANGLE
+    if(k.data&&k.data.kind==="parts") checkParts(k,at,cards).forEach(E); });   // 🌲 CPITEMID
+  return err;
+}
+// 🪲 CPITEMBIOTIC: a tally worksheet (type sheet, flat items) — [errors]
+function checkTally(k,at){
+  const err=[], E=m=>err.push(m), D=k.data, G=Array.isArray(D.groups)?D.groups:[], I=D.items, gk={}, names={};
+  if(k.type!=="sheet") E(at+": a tally worksheet is type sheet");
+  if(G.length<2) E(at+": a tally worksheet needs 2 or more groups");
+  G.forEach((g,j)=>{ const ga=at+" group "+(j+1); if(!g||!fbSafe(String(g.key||""))){ E(ga+" needs a key safe as a Firebase key"); return; } if(gk[g.key]) E(ga+": key “"+g.key+"” twice"); gk[g.key]=1;
+    if(typeof g.label!=="string"||!g.label.trim()) E(ga+" has no label"); if(typeof g.weight!=="number"||!isFinite(g.weight)) E(ga+": weight must be a number"); });
+  if(I.length<4) E(at+": a tally worksheet needs 4 or more items (the picture question offers 4 names)");
+  I.forEach((x,j)=>{ const ia=at+" item "+(j+1)+(x&&x.name?" (“"+x.name+"”)":"");
+    if(!x||typeof x.name!=="string"||!x.name.trim()){ E(ia+" has no name"); return; }
+    if(names[x.name.toLowerCase()]) E(ia+": name twice"); names[x.name.toLowerCase()]=1;
+    if(!gk[x.group]) E(ia+": group “"+x.group+"” is not one of the skill's groups"); if(!x.src) E(ia+" has no source"); });
+  I.forEach(x=>{ if(x&&x.like!=null){ if(!Array.isArray(x.like)) E(at+" item “"+x.name+"”: like must be a list"); else x.like.forEach(n=>{ if(!names[String(n).toLowerCase()]||String(n).toLowerCase()===String(x.name).toLowerCase()) E(at+" item “"+x.name+"”: look-alike “"+n+"” is not another item of this skill"); }); } });
+  const R=D.ratings, mins={}; if(R!=null){ if(!Array.isArray(R)||!R.length) E(at+": ratings must be a list"); else R.forEach((r,j)=>{ if(!r||r.label==null||String(r.label).trim()===""||typeof r.min!=="number") E(at+" rating "+(j+1)+" needs a label and a number min"); else if(mins[r.min]) E(at+": two ratings start at "+r.min); else mins[r.min]=1; }); }
+  ["pick","chartPick"].forEach(f=>{ const v=D[f]; if(v!=null&&!(Array.isArray(v)&&v.length===2&&v.every(n=>Number.isInteger(n)&&n>=1)&&v[0]<=v[1])) E(at+": "+f+" must be [lo, hi], whole numbers, lo ≤ hi"); });
+  if(D.forms!=null&&(!Array.isArray(D.forms)||!D.forms.length||D.forms.some(f=>f!=="list"&&f!=="chart"))) E(at+": forms must be a list of “list” / “chart”");
+  return err;
+}
+// 📐 CPITEMTRIANGLE: a ternary chart (the soil texture triangle): [errors] — PURE
+function ternArea(poly){ let a=0; for(let i=0;i<poly.length;i++){ const p=poly[i], q=poly[(i+1)%poly.length]; a+=p[0]*q[1]-q[0]*p[1]; } return Math.abs(a)/2; }
+function checkTernary(k,at){
+  const err=[], E=m=>err.push(m), D=k.data, AX=Array.isArray(D.axes)?D.axes.map(a=>a&&a.key):[];
+  if(k.type!=="chart") E(at+": a ternary skill is type chart");
+  if(AX.length!==3||new Set(AX).size!==3||!AX.every(x=>typeof x==="string"&&/^[a-z_]+$/.test(x))){ E(at+": a ternary chart needs 3 axes, each with its own key"); return err; }
+  if(D.tol!=null&&!(typeof D.tol==="number"&&D.tol>0&&D.tol<20)) E(at+": tol must be a percent between 0 and 20");
+  const L=Array.isArray(D.classes)?D.classes:[]; if(L.length<2){ E(at+": a ternary chart needs 2 or more classes"); return err; }
+  const keys={}, labels={}; let bad=false;
+  L.forEach((c,j)=>{ const ca=at+" class "+(j+1)+(c&&c.label?" (“"+c.label+"”)":"");
+    if(!c||typeof c.key!=="string"||!/^[a-z0-9_]+$/.test(c.key)){ E(ca+": key must be [a-z0-9_]"); bad=true; return; }
+    if(keys[c.key]) E(ca+": key twice"); keys[c.key]=1;
+    if(typeof c.label!=="string"||!c.label.trim()) E(ca+" has no label"); else { if(labels[c.label.toLowerCase()]) E(ca+": label twice"); labels[c.label.toLowerCase()]=1; }
+    if(!ternRuleOk(c.rule,AX)){ E(ca+": rule must be a list of lists of [\"<axis or a+b·c>\", \"<|<=|>|>=\", number]"); bad=true; }
+    const inT=p=>Array.isArray(p)&&p.length===2&&p.every(v=>typeof v==="number"&&v>=0)&&p[0]+p[1]<=100;
+    if(!Array.isArray(c.poly)||c.poly.length<3||!c.poly.every(inT)){ E(ca+": poly must be 3+ [<"+AX[0]+">, <"+AX[1]+">] corners inside the triangle"); bad=true; }
+    if(!inT(c.at)) E(ca+": at (where its name goes) must be a point inside the triangle"); });
+  if(bad) return err;
+  // every half percent: exactly one class (no gap, no overlap — a boundary belongs to one side only)
+  const gaps=[], twice=[];
+  for(let a=0;a<=200;a++) for(let b=0;a+b<=200;b++){ const pt={[AX[0]]:a/2,[AX[1]]:b/2,[AX[2]]:100-a/2-b/2}, n=ternClassesAt(L,AX,pt);
+    if(!n.length) gaps.push(pt); else if(n.length>1) twice.push([pt,n.map(c=>c.key)]); }
+  const fmt=pt=>AX.map(x=>pt[x]+"% "+x).join(", ");
+  if(gaps.length) E(at+": "+gaps.length+" points are in no class, e.g. "+fmt(gaps[0]));
+  if(twice.length) E(at+": "+twice.length+" points are in two classes, e.g. "+fmt(twice[0][0])+" ("+twice[0][1].join(", ")+")");
+  const area=L.reduce((s,c)=>s+ternArea(c.poly),0); if(Math.abs(area-5000)>1e-6) E(at+": the class shapes cover "+area+" of the triangle's 5000 (they must tile it)");
+  L.forEach(c=>{ const n=c.poly.length, m=c.poly.reduce((s,p)=>[s[0]+p[0]/n,s[1]+p[1]/n],[0,0]), pt={[AX[0]]:m[0],[AX[1]]:m[1],[AX[2]]:100-m[0]-m[1]}, at2=ternClassesAt(L,AX,pt);
+    if(at2.length!==1||at2[0]!==c) E(at+" class “"+c.label+"”: the middle of its shape is not in its rule"); });
   return err;
 }
 // 🧰 CPITEMGEAR: the gear items with no photo in the repo set (envirothon/pics/index.json, card name → photos; the item is the name before " · ")
-function gearPhotoGaps(root,skills){
+function gearPhotoGaps(root,skills,kind){
+  kind=kind||(k=>k&&k.data&&k.data.kind==="gear");
   const p=path.join(root,"envirothon","pics","index.json"), have={}; if(fs.existsSync(p)){ try{ Object.keys(readJson(p)).forEach(n=>{ have[String(n).split(" · ")[0].trim().toLowerCase()]=1; }); }catch(e){} }
-  const out=[]; (skills||[]).forEach(k=>(skillItems(k)||[]).forEach(x=>{ const item=String(x.item||x.name).trim(); if(!have[item.toLowerCase()]) out.push({skill:k.key,name:x.name,item}); })); return out;
+  const out=[]; (skills||[]).forEach(k=>{ if(!kind(k)) return; (skillItems(k)||[]).forEach(x=>{ const item=String(x.item||x.name).trim(); if(!have[item.toLowerCase()]) out.push({skill:k.key,name:x.name,item}); }); }); return out;
 }
+// 🪲 CPITEMBIOTIC: the same list for a tally worksheet's kinds
+function tallyPhotoGaps(root,skills){ return gearPhotoGaps(root,skills,k=>k&&k.data&&k.data.kind==="tally"); }
 function check(root,id,{u,decks,tests,skills},old,others){
   const err=[], warn=[], E=m=>err.push(m);
   if(!/^[a-z][a-z0-9_]{0,39}$/.test(String(u.id||""))) E("unit id “"+u.id+"” must be [a-z][a-z0-9_]*, up to 40");
@@ -191,6 +303,8 @@ function check(root,id,{u,decks,tests,skills},old,others){
         if(!it.q||!n) E(at+": no question or no choices"); else if(!a.length||a.some(x=>!Number.isInteger(x)||x<0||x>=n)) E(at+": the answer isn't one of its "+n+" choices"); }); }); });
   checkSkills(skills,secKeys,decks,tests).forEach(E);   // 🧰 CPITEMGEAR: rule 8
   const gaps=gearPhotoGaps(root,skills); if(gaps.length) warn.push(gaps.length+" gear item"+(gaps.length===1?" has":"s have")+" no photo in the repo set yet: "+gaps.map(g=>g.name).join(", "));
+  const tg=tallyPhotoGaps(root,skills); if(tg.length) warn.push(tg.length+" worksheet kind"+(tg.length===1?" has":"s have")+" no photo in the repo set yet (the app shows 📷): "+tg.map(g=>g.name).join(", "));   // 🪲 CPITEMBIOTIC
+  partPhotoGaps(root,skills).forEach(g=>warn.push(g.skill+" · "+g.label+": "+g.items.length+" item"+(g.items.length===1?" has":"s have")+" no photo in the repo set yet: "+g.items.join(", ")));   // 🌲 CPITEMID
   return {err,warn};
 }
 // the compiled file for a unit without build.file
@@ -255,7 +369,7 @@ function compile(id,opts){
     const cat=catalogIn(root); if(cat){ const h=catalogWith(cat,id,index); if(h!==cat.html) fs.writeFileSync(cat.p,h); r.page=h!==cat.html; } }
   return {ok,err:r.err,warn:r.warn,counts,index,js,links,releaseKeys:rkeys,unit:L.u,page:!!r.page};
 }
-module.exports={compile,checkSkills,skillEntry,skillItems,gearPhotoGaps,SKILL_TYPES,sectionConcepts,releaseKeys,catalogIn,catalogWith,CAT_RE,check,loadUnit,makeIndex,makeCounts,makeJs,questionLinks,linkNorm,linkHas,fbSafe,ranges,unranges,unitIds,LABEL_KEYS,FEATURE_KEYS,REPO};
+module.exports={compile,checkSkills,checkTally,skillEntry,skillItems,gearPhotoGaps,tallyPhotoGaps,SKILL_TYPES,sectionConcepts,releaseKeys,catalogIn,catalogWith,CAT_RE,check,loadUnit,makeIndex,makeCounts,makeJs,questionLinks,linkNorm,linkHas,fbSafe,ranges,unranges,unitIds,LABEL_KEYS,FEATURE_KEYS,REPO,skillClasses,checkTernary,ternRuleOk,ternClassesAt,ternTerms,ternArea,partItems,checkParts,partPhotoGaps,shotTags,PHOTO_TAGS};
 if(require.main===module){
   const a=process.argv.slice(2), chk=a.includes("--check"), all=a.includes("--all"), ids=all?unitIds(REPO):a.filter(x=>!x.startsWith("--"));
   if(!ids.length){ console.error("usage: node units/build/compile_unit.js <unitId>|--all [--check]"); process.exit(2); }

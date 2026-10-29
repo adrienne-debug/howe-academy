@@ -71,7 +71,7 @@ console.log("\n── the data: the research's two lists, in the unit ──");
 console.log("\n── compile_unit.js rule 8, COUNTS.json, the catalog entry ──");
 { const r=C.compile("nc_envirothon",{check:true});
   ok("the unit compiles and is current (--check)", r.ok, r.err);
-  ok("COUNTS.json counts each skill's items from unit.json", JSON.stringify(COUNTS.skills)===JSON.stringify(Object.fromEntries(SK.map(s=>[s.key,{section:s.section,type:s.type,core:s.core===true,items:(s.data.items||[]).length}]))));
+  ok("COUNTS.json counts each skill's items from unit.json", JSON.stringify(COUNTS.skills)===JSON.stringify(Object.fromEntries(SK.map(s=>[s.key,{section:s.section,type:s.type,core:s.core===true,items:(s.data.items||s.data.classes||[]).length}]))));   // 📐 CPITEMTRIANGLE: a chart counts its classes
   ok("index.json (the catalog entry) and CPU_UNITS carry the skills exactly as unit.json has them", JSON.stringify(INDEX.skills)===JSON.stringify(SK.map(C.skillEntry))&&JSON.stringify(r.index.skills)===JSON.stringify(INDEX.skills)&&new RegExp('"skills":\\[\\{"key":"forestry\\.tools"').test(src));
   const gaps=C.gearPhotoGaps(REPO,SK), have=new Set(Object.keys(PICS).map(k=>nm(k.split(" · ")[0]).trim())), want=[].concat(...SK.map(s=>(s.data.items||[]).filter(x=>!have.has(nm(x.item||x.name))).map(x=>x.name)));
   ok("the no-photo list comes from envirothon/pics/index.json, and compile prints it as a note", JSON.stringify(gaps.map(g=>g.name))===JSON.stringify(want)&&(want.length?r.warn.some(w=>w.indexOf(want.length+" gear item")===0&&want.every(n=>w.indexOf(n)>0)):!r.warn.some(w=>/gear item/.test(w))), r.warn);
@@ -194,7 +194,8 @@ console.log("\n── the teacher: the photo note, the classmates' counts, the m
 console.log("\n── a live kid: the unit's skills from the catalog entry ──");
 { const w=W({w:{fam:FAM,remote:{["classSkills/"+CID]:{}}}}), S=w.S; w.initFb();
   Object.assign(w._envs,{role:"kid",kid:K,sid:"ramirez_maya",cid:CID,cls:{units:{nc_envirothon:true}}}); w.masteryData[K]=[]; w.masteryData[K+"_settings"]={cat_hold:{"Soils and Land Use · Terms":true}};
-  ok("no demo list: the skills are CPU_UNITS' (the compiled unit) — Forestry tools and Sampling gear", S.cpSkillList().map(s=>s.fb).join()==="forestry:tools,aquatics:gear"&&S.cpSkillsFor(K).length===2);
+  const gearOnly=L=>L.filter(s=>s.data&&s.data.kind==="gear");   // 📐 CPITEMTRIANGLE: the unit has other skills too (the texture triangle)
+  ok("no demo list: the skills are CPU_UNITS' (the compiled unit) — Forestry tools and Sampling gear", gearOnly(S.cpSkillList()).map(s=>s.fb).join()==="forestry:tools,aquatics:gear"&&gearOnly(S.cpSkillsFor(K)).length===2);
   ok("the door shows them on her study page", /Forestry tools by picture/.test(S.cpSkillStudyWrap(K,"BODY"))&&/Sampling gear by picture/.test(S.cpSkillStudyWrap(K,"BODY")));
   ok("no picture in the pool yet (the repo set has no gear) → every live problem asks what it is for, with the placeholder", (()=>{ S.cpSkillOpen(K,FBA,11); const r=S._cpsk.run, okk=!r.prob.photo&&r.prob.steps.length===1&&/Photo needed/.test(w.G.content||S.cpSkillStudyWrap(K,"")); S._cpsk.run=null; return okk; })());
   ok("cpGearDemoSeed does nothing off the demo", w.I.cpGearDemoSeed({cid:CID,students:{}})===false); }
