@@ -84,6 +84,13 @@ student at `students/<sid>/settings/{study,drill}`. As admin you see a 🔒 Lock
 then sees it greyed, "set by Adrienne". A kid's app reads the class's and its own settings once when it opens and uses them in
 memory; nothing is written into the family instance. Lincoln's Howe app keeps your own settings.
 
+**🧭 Where new cards come from** (2026-10-29): in ⚙️ Class settings (and on the 📅 Pace bar, every choice's effect side by side) the
+teacher picks how New cards a day are shared once more than one section is open — Deck by deck (as now; nothing saved) · Newest +
+catch-up (default 30 %, 0–50) · Newest only · A little of everything · Teacher's mix (a % per section). Saved at
+`classes/<cid>/settings/study/{newFrom, catchUp, mix/<section>}`; your 🔒 `settings/locks/newFrom` greys it for the teacher, and the
+rules check each value's shape. The kid's app works the split out in memory each sitting; nothing goes into the family instance, and
+Lincoln's Howe app is untouched.
+
 **🏫 Class setup** (2026-10-28): the teacher's (and your) "🏫 Class setup" chip sets the class's **look** — the title under
 "Howe Academy" on every bar, its emoji and the bar color (42 swatches or any color; the words turn black or white by themselves so
 they stay readable) — with a live preview of the student's and the parent's bar; kids and parents see it and can't change it. The
