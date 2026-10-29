@@ -47813,6 +47813,7 @@ function envClsPanelHtml(){
   if(!envcOn()) return ""; const cls=_envc.cls||{}, nLock=Object.keys(_envcs.locks||{}).filter(k=>_envcs.locks[k]===true).length;
   let h='<div class="envs-card"><div class="envs-h2">⚙️ Class settings · '+envcEsc(cls.name||_envc.cid)+'</div><div class="envs-muted">For every student in the class. A student page can change one student. Changes reach a student the next time their app opens. Saved at classes/'+envcEsc(_envc.cid)+'/settings.'+(envcAdmin()?' \u{1F512} Lock keeps a setting yours: the teacher sees it greyed, “set by Adrienne”.':(nLock?' \u{1F512} = set by Adrienne.':''))+'</div></div>';
   if(typeof cpPaceSumHtml==="function") h+=cpPaceSumHtml();   // 📅 CPPACE: the plan in one line, a link to 📅 Pace
+  if(typeof cpShareSetHtml==="function") h+=cpShareSetHtml();   // 🧭 CPSHARE: where new cards come from once more than one section is open
   return h+envClsBodyHtml("class",_envcs.adv,"_envcs.adv=!_envcs.adv;envcRe()");
 }
 // the student page's "⚙️ Settings for this student" (folded until tapped)
@@ -48602,6 +48603,7 @@ function cppDays(cal,from,to){ const out=[]; if(!cppOk(from)||!cppOk(to)) return
 // → {finishDate, learnedAtGoal, total, pctAtGoal, reached, curve:{<date>:{<section>:learned now}}, minutesPerDay, peakReviews, lastNew,
 //    sections:{<section>:{total, atGoal, finish}}, days}
 function cpPacePlan(o){
+  if(typeof cpShareOpt==="function") o=cpShareOpt(o);   // 🧭 CPSHARE: a run that names no `share` uses the class's saved rule (o itself back otherwise)
   o=o||{}; const npd=Math.max(0,Math.floor(+o.newPerDay||0)), p=o.rightRate!=null?+o.rightRate:0.9, streak=Math.max(1,Math.floor(+o.streak||3)), intro=Math.max(1,Math.floor(+o.introDays||5));
   const focus=o.focus==null?2:Math.max(0,Math.floor(+o.focus||0)), seats=(+o.seats>0)?+o.seats:Infinity, target=o.target!=null?+o.target:0.95, coreFirst=o.coreFirst!==false;
   const sS=o.secsSitting||CPP_SECS_SIT, sD=o.secsDrill||CPP_SECS_DRILL, start=o.start, goal=o.goal||o.end;
@@ -48623,6 +48625,7 @@ function cpPacePlan(o){
     const today=days[t];
     const rel=D.filter(d=>d.open<=today), learning=live.filter(c=>c.st===0), seated=learning.slice(0,seats);
     let room=Math.min(npd,Math.max(0,seats-seated.length)); const fresh=[];
+    if(o.share&&typeof cpShareFill==="function") room=cpShareFill(o.share,t,rel,room,hand,fresh,focus,coreFirst);   // 🧭 CPSHARE: today's new cards section by section, by the rule
     if(coreFirst){
       let act=rel.filter(d=>d.cq>0||d.ic>0); if(focus>0) act=act.slice(0,focus);
       for(const d of act){ while(room>0&&d.cq>0){ fresh.push(hand(d,true)); room--; } }
@@ -48848,6 +48851,7 @@ function cppPlanBarHtml(d,f,inp,plan,need){
     h+='<div class="envs-row" style="padding:4px 0;border-top:1px solid #f1efe9;align-items:center;font-size:12.5px"><div style="flex:1;min-width:150px"><b>'+cppEsc(st.label)+'</b> <span class="envs-muted">'+tot+' core · '+(sent?'sent '+cppLbl(sent):'opens '+cppLbl(at)+(cppPlanned(cls,st,d)?' (planned)':''))+(sec&&sec.total?' · '+Math.round(sec.atGoal/sec.total*100)+'% by '+cppEsc(inp.goalName):'')+'</span></div>'+
       '<label style="font-weight:700;white-space:nowrap"><input type="checkbox"'+(d.coreOnly[st.id]?' checked':'')+(lockP?' disabled':'')+' onchange="cppCoreOnly(\''+cppJ(st.id)+'\',this.checked)"> Core only</label></div>'; });
   h+='<div class="envs-muted">Core only: the section’s other cards wait until its final opens.'+(lockP?' \u{1F512} set by '+(typeof cpLockName==="function"?cpLockName():'Adrienne')+'.':'')+'</div>';
+  if(typeof cpShareBarHtml==="function") h+=cpShareBarHtml({d,inp,plan});   // 🧭 CPSHARE: the same choice, every option's effect side by side
   if(typeof cpSendEarlyHtml==="function") h+=cpSendEarlyHtml({d,inp,plan});   // PR 28: 📆 send a section out earlier
   // THE RESULT
   if(plan&&inp.goal){ const tot=plan.total, got=plan.reached, fin=plan.finishDate;
@@ -50807,6 +50811,7 @@ function cpsdEditSave(){ const E=_cpsd.edit, r=E&&cpsdRec(E.id); if(!cpsdOn()||!
 // Returns null off the site (ENVMIRROR's own code runs), else how many decks changed.
 function cpsdRelease(kid,rel,u){
   if(!cpsdSite()) return null; if(!rel||typeof rel!=="object") return 0;
+  if(typeof cpShareSeen==="function") cpShareSeen(kid,rel);   // 🧭 CPSHARE: when each section first opened for this kid (memory only), so "the newest section" is known
   u=u||(typeof envmUnit==="function"&&envmUnit())||null; if(!u) return 0;
   const M=(typeof masteryData!=="undefined"&&masteryData)||{}, st=M[kid+"_settings"]; if(!st) return 0;
   const hold=st.cat_hold||{}, open=st.cat_open||{}, upd={}, notes=[]; const setOpen=(dk,o)=>{ if(!st.cat_open) st.cat_open=open; open[dk]=o; };
@@ -67936,6 +67941,305 @@ function cpCoreDemoSeed(kid,deck){
   return true;
 }
 // CPCORE_END
+// CPSHARE_START — 🧭 WHERE NEW CARDS COME FROM once more than one section is open (DESIGN_class_platform_2026-10-28.md §8.7, §8.3, §9.1,
+// §13 row 19, §14 Q30; PR 19 of the class platform; her approval of the design 2026-10-28). Her words 2026-10-28: "if the whole class is
+// moving on to a new subject … picking up equally … or just the new stuff … kids split up … easily turned off … keep reviewing … but no send
+// more in. So there needs to be settings for that" · "I don't want it to get stuck in one session because a kid is holding back so slowly and
+// not be well-rounded … that also depends on what the teacher wants."
+// Why (§8.7 [F]): mstPile hands New cards a day out deck by deck, and with "Decks introducing at once" the decks with the most cards still
+// being learned keep their seats — so a slow student's old section keeps first claim on every new card while the class moves on.
+// INERT unless the class site (ENVSITE's envSiteOn) AND a "Where new cards come from" value is saved for the class (or the student): with
+// none, every hook hands back the very thing it was given, so Howe, DeWalt, Burris and Lincoln's 🌿 Envirothon in Howe are byte-identical
+// (test_cp_share.js replays the real mstPile with and without this block).
+//   · THE SETTING (⚙️ Class settings ▸ 🧭 Where new cards come from; the same choice on the 📅 Pace bar):
+//       Deck by deck (as now)   nothing saved: today's engine. Q30 (the default) is still hers, so a class keeps today's way until she picks.
+//       Newest + catch-up       the section sent out most recently gets most of New cards a day; the older open sections share the
+//                               catch-up (default 30 %, 0–50 %), split by how many core cards each has left; nothing to catch up = all newest
+//       Newest only             all from the newest section; the older ones keep their reviews and their learning cards
+//       A little of everything  split evenly over every open section with cards left
+//       Teacher's mix           her % per section; a section with nothing left today passes its share to the others
+//     Saved at classes/<cid>/settings/study/{newFrom, catchUp, mix/<section>} (§9.1): ONE targeted update through envcWrite → envsWrite
+//     (demo: "would write"; dry run: nothing). Adrienne's 🔒 settings/locks/newFrom greys the card for the teacher, and the rules refuse it.
+//     A student's own values (students/<sid>/settings/study/…) are layered on too, for PR 21's specialists; no screen sets one yet.
+//   · THE QUOTA (cpNewQuota → the pure cpShareSplit): New cards a day becomes a whole number per open section. "Newest" = the section with
+//     cards left whose first send-out to this student is the latest (the release records cpsdRelease applies, kept in memory by cpShareSeen;
+//     ties → later in the unit). Fractions carry from day to day with nothing stored: day d takes slots d×N … (d+1)×N of one fixed
+//     interleave, so a 0.6 share is exactly 3 cards in 5 days. A section that can't use all its share today (nothing eligible, its decks
+//     full) passes the rest to the sections the rule gives a share to.
+//   · TWO typeof-guarded lines in mstPile (each hands back the very array when this is off):
+//       1. focusDecks per section: "Decks introducing at once" counts inside each section, so the new section gets seats of its own while the
+//          old section's started decks keep theirs (their learning cards still come). A deck with nothing to hand out takes no seat.
+//       2. the new-card loop takes at most the section's quota from its decks. Core first (CPCORE), Core only (CPPACE), the check-in wait,
+//          the Key Concept filter and the hand-off are untouched: the quota only counts what they let through.
+//   · 📅 PACE: two guarded lines in cpPacePlan run the same rule day by day (the class's saved rule unless a run names its own `share`); the
+//     Pace bar shows every choice side by side — the finish date, minutes a day, each section's core learned by the goal — as a what-if
+//     until its own Save.
+//   · LEFT FOR PR 20 / PR 21 (typeof-guarded, nothing defines them yet): cpSecState(kid, section) → "review" | "off" takes a section out of
+//     the split (its share goes to the On sections) · cpShareRuleFor(kid, rule) → a specialist's own rule (70 % from their section).
+//   · DEMO: ⚙️ Class settings and 📅 Pace show "🧪 Jonah's next 🌿 start": the REAL mstPile on a sample Jonah (slow in Forestry: 6 Terms and
+//     2 Facts still being learned; Aquatics sent to him 3 days ago), in memory only. Deck by deck: Forestry cards only. Newest + catch-up 30 %:
+//     Aquatics cards again.
+const CPSHARE_RULES=[["","Deck by deck (as now)","New cards come deck by deck, as the app does today. The decks a student is still learning keep their seats, so a slow student stays in the old section."],
+  ["newest","Newest + catch-up","The section sent out most recently gets most of the new cards. The older open sections share the catch-up, the most to the one with the most core cards left. Nobody gets stuck."],
+  ["newestOnly","Newest only","Every new card comes from the newest section. The older sections keep their reviews, but nothing new comes from them."],
+  ["spread","A little of everything","The new cards are split evenly over every open section that still has cards."],
+  ["mix","Teacher's mix","You set a share for each section. A section with nothing left today passes its share to the others."]];
+const CPSHARE_CATCHUP=30, CPSHARE_CATCHUP_MAX=50, CPSHARE_DAY=86400000;
+const CPSHARE_DEMO={kid:"cpshare_jonah",sid:"tran_jonah",name:"Jonah",terms:6,facts:2,sent:{general:44,forestry:40,aquatics:3}};
+const _cpshare={sent:{},q:(typeof WeakMap==="function")?new WeakMap():null,d:null,cid:"",css:false};
+function cpShareSite(){ return typeof envSiteOn==="function"&&envSiteOn(); }
+function cpShareOn(){ return cpShareSite()&&typeof envcOn==="function"&&envcOn(); }
+function cpShareDemo(){ return typeof envsDemo==="function"&&envsDemo(); }
+function cpShareEsc(v){ return (typeof envsEsc==="function")?envsEsc(v):String(v==null?"":v); }
+function cpShareJ(v){ return (typeof envsJ==="function")?envsJ(v):String(v==null?"":v).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }
+// the site's own kid (kid / parent login, or the demo's kid): the only pile this may touch
+function cpShareKidOk(kid){ if(!cpShareSite()||typeof _envs==="undefined"||!kid||kid!==_envs.kid) return false; return cpShareDemo()||_envs.role==="kid"||_envs.role==="parent"; }
+// the unit's sections: deck → section, section → its place in the unit
+function cpShareStations(){ const st=(typeof envsStations==="function"&&envsStations())||[], secOf={}, order={}, label={};
+  st.forEach((s,i)=>{ order[s.id]=i; label[s.id]=s.short||s.label||s.id; (s.decks||[]).forEach(d=>{ secOf[d.key]=s.id; }); }); return {list:st,secOf,order,label}; }
+// PURE: a stored setting → a clean rule {newFrom, catchUp, mix}, or null (nothing saved, or a value the app doesn't know = as now)
+function cpShareClean(v){
+  if(!v||typeof v!=="object"||!v.newFrom||!CPSHARE_RULES.some(r=>r[0]&&r[0]===v.newFrom)) return null;
+  const c=Number(v.catchUp), mix={}, M=(v.mix&&typeof v.mix==="object")?v.mix:{};
+  Object.keys(M).forEach(k=>{ const n=Number(M[k]); if(Number.isInteger(n)&&n>0&&n<=100) mix[k]=n; });
+  return {newFrom:v.newFrom,catchUp:(Number.isInteger(c)&&c>=0&&c<=CPSHARE_CATCHUP_MAX)?c:CPSHARE_CATCHUP,mix};
+}
+// layers ([class, student], ENVCLASSSET's) → the rule: the student's own values over the class's
+function cpShareOf(L){ const o={}; (Array.isArray(L)?L:[]).forEach(x=>{ const s=x&&x.study; if(!s||typeof s!=="object") return;
+  if(s.newFrom!=null) o.newFrom=s.newFrom; if(s.catchUp!=null) o.catchUp=s.catchUp; if(s.mix&&typeof s.mix==="object") o.mix=Object.assign({},o.mix||{},s.mix); }); return cpShareClean(o); }
+// the rule this kid's 🌿 sitting uses (null = as now)
+function cpShareRule(kid,session){
+  if(!session||session.kind==="mix"||session.kind==="checkup"||!cpShareKidOk(kid)) return null;
+  let r=cpShareOf((typeof envClsLayers==="function"&&envClsLayers())||null);
+  if(typeof cpShareRuleFor==="function") r=cpShareClean(cpShareRuleFor(kid,r))||r;   // PR 21: a specialist's own share
+  return r||null;
+}
+// cpsdRelease's line: when each section first opened for this kid (the release records carry openedAt) — memory only
+function cpShareSeen(kid,rel){
+  try{ if(!cpShareSite()||!kid||!rel||typeof rel!=="object") return 0; const S=cpShareStations(), m=_cpshare.sent[kid]=_cpshare.sent[kid]||{}; let n=0;
+    Object.keys(rel).forEach(k=>{ const r=rel[k], ms=(r&&typeof r==="object")?Number(r.openedAt):0; if(!(ms>0)) return;
+      const head=String(k).split("~")[0], sec=S.secOf[k]||(S.order[head]!=null?head:null); if(!sec) return;
+      if(!(m[sec]>0)||ms<m[sec]){ m[sec]=ms; n++; } });
+    return n; }catch(e){ return 0; }
+}
+// ── PURE: THE SPLIT ──
+// E = the sections with cards today, newest first → each one's share of the day (summing to 1)
+function cpShareWeights(rule,E){
+  const n=E.length, w=E.map(()=>0); if(!n) return w;
+  if(rule.newFrom==="newestOnly"||n===1){ w[0]=1; return w; }
+  if(rule.newFrom==="spread") return w.map(()=>1/n);
+  if(rule.newFrom==="mix"){ const p=E.map(s=>Math.max(0,+((rule.mix||{})[s.key])||0)), t=p.reduce((a,x)=>a+x,0); return t>0?p.map(x=>x/t):w.map(()=>1/n); }
+  const c=Math.max(0,Math.min(CPSHARE_CATCHUP_MAX,+rule.catchUp||0))/100, old=E.slice(1), by=old.some(s=>s.left>0)?old.map(s=>Math.max(0,+s.left||0)):old.map(s=>Math.max(0,+s.avail||0)), t=by.reduce((a,x)=>a+x,0);
+  if(!(t>0)||!(c>0)){ w[0]=1; return w; } w[0]=1-c; old.forEach((s,i)=>{ w[i+1]=c*by[i]/t; }); return w;
+}
+// secs = [{key, at (first sent, ms; 0 = not known), order (place in the unit), avail (cards it can hand out today), left (core cards left)}],
+// N = new cards today, day = a day number (the same N each day → a share's fraction carries exactly) → {<section>: n}, summing to at most N
+function cpShareSplit(rule,secs,N,day){
+  const out={}; N=Math.max(0,Math.floor(+N||0)); rule=cpShareClean(rule); if(!rule||!N) return out;
+  const E=(Array.isArray(secs)?secs:[]).filter(s=>s&&s.key&&s.avail>0).slice().sort((a,b)=>((+b.at||0)-(+a.at||0))||((+b.order||0)-(+a.order||0)));
+  if(!E.length) return out;
+  const w=cpShareWeights(rule,E), cum=[]; let acc=0; w.forEach(x=>{ acc+=x; cum.push(acc); }); cum[cum.length-1]=1;
+  // section i owns [cum(i-1), cum(i)) of every slot of one endless line of cards; day d is slots d×N … (d+1)×N
+  const K0=Math.max(0,Math.floor(+day||0))*N, K1=K0+N, cnt=(K,i)=>Math.floor(K*cum[i]+1e-7)-(i?Math.floor(K*cum[i-1]+1e-7):0);
+  const q=E.map((s,i)=>Math.min(Math.floor(s.avail),Math.max(0,cnt(K1,i)-cnt(K0,i)))); let rest=N-q.reduce((a,x)=>a+x,0);
+  while(rest>0){ let gave=false; for(let i=0;i<E.length&&rest>0;i++){ if(w[i]>0&&q[i]<E[i].avail){ q[i]++; rest--; gave=true; } } if(!gave) break; }   // what one can't use goes to the others with a share
+  E.forEach((s,i)=>{ if(q[i]>0) out[s.key]=q[i]; }); return out;
+}
+// ── THE KID'S SITTING ──
+// a deck's names as mstPile's new-card loop sees them (the bank → core first → core only)
+function cpShareNamesOf(kid,session,deck,have){
+  let n=(typeof mastBankEligible==="function")?mastBankEligible(kid,deck):((((typeof mastFullBank==="function")&&mastFullBank(kid))||{})[deck]||[]);
+  if(typeof cpCoreNames==="function") n=cpCoreNames(kid,session,deck,n,have);
+  if(typeof cpPaceCoreOnly==="function") n=cpPaceCoreOnly(kid,session,deck,n);
+  return Array.isArray(n)?n:[];
+}
+function cpShareFreshOf(kid,session,deck,have,logged){ const h=have&&have[deck]; return cpShareNamesOf(kid,session,deck,have).filter(n=>!(h&&h.has(n))&&!(logged&&logged.has(n))); }
+// THE QUOTA: this kid's New cards a day per open section today → {<section>: n} (what is left of it after today's earlier sittings), or null
+// (as now). ctx = mstPile's own numbers {focusDecks, perDeck, learnByDeck, existingByDeck, loggedNames, log, npd}.
+function cpNewQuota(kid,session,today,ctx){
+  const rule=cpShareRule(kid,session); if(!rule) return null; ctx=ctx||{};
+  const S=cpShareStations(), have=ctx.existingByDeck||{}, logged=ctx.loggedNames||null, lb=ctx.learnByDeck||{}, perDeck=(ctx.perDeck!=null)?ctx.perDeck:Infinity, per={};
+  const sec=d=>S.secOf[d]||null, P=k=>per[k]=per[k]||{key:k,order:S.order[k],at:(_cpshare.sent[kid]||{})[k]||0,avail:0,left:0,shown:0};
+  (ctx.focusDecks||session.decks||[]).forEach(d=>{ const k=sec(d); if(!k) return; const room=perDeck===Infinity?Infinity:perDeck-(lb[d]||0); if(room<=0) return;
+    P(k).avail+=Math.min(room,cpShareFreshOf(kid,session,d,have,logged).length); });
+  (ctx.log||[]).forEach(e=>{ if(e&&e.name!=null&&e.result==="shown"){ const k=sec(e.deck); if(k&&per[k]) per[k].shown++; } });
+  Object.keys(per).forEach(k=>{ if(typeof cpSecState==="function"&&/^(review|off)$/.test(String(cpSecState(kid,k)||""))) delete per[k]; });   // PR 20: a Review only / Off section gets none
+  // the catch-up weights: core cards still to start, over every deck of the section in the session
+  (session.decks||[]).forEach(d=>{ const k=sec(d); if(!k||!per[k]||typeof cpCoreSet!=="function") return; const s=cpCoreSet(d); if(!s||!s.size) return; const h=have[d];
+    per[k].left+=((typeof mastBankEligible==="function")?mastBankEligible(kid,d):[]).filter(n=>s.has(n)&&!(h&&h.has(n))).length; });
+  const L=Object.keys(per).map(k=>per[k]); if(L.filter(s=>s.avail+s.shown>0).length<2) return null;   // one section in play: as now
+  const N=Math.max(0,Math.floor(+(ctx.npd!=null?ctx.npd:session.newPerDay)||0));
+  const q=cpShareSplit(rule,L.map(s=>Object.assign({},s,{avail:s.avail+s.shown})),N,today), out={};
+  L.forEach(s=>{ out[s.key]=Math.max(0,(q[s.key]||0)-s.shown); }); return out;
+}
+// mstPile HOOK 1 (focusDecks): "Decks introducing at once" inside each section. Started decks keep their seats; a fresh deck opens only in a
+// section the rule gives new cards to, and only with something to hand out.
+function cpShareFocus(kid,session,focusDecks,started,fresh,existingByDeck,loggedNames){
+  try{
+    if(!Array.isArray(focusDecks)||!session||!(session.focusDecks>0)) return focusDecks;
+    const rule=cpShareRule(kid,session); if(!rule) return focusDecks;
+    const S=cpShareStations(), F=session.focusDecks, all=(started||[]).concat(fresh||[]), st=new Set(started||[]), secs={};
+    all.forEach(d=>{ const k=S.secOf[d]; if(!k) return; const x=secs[k]=secs[k]||{key:k,order:S.order[k],at:(_cpshare.sent[kid]||{})[k]||0,avail:0,left:0,decks:[]}; x.decks.push(d); });
+    const K=Object.keys(secs); if(K.length<2) return focusDecks;
+    const names={}; all.forEach(d=>{ if(S.secOf[d]&&!st.has(d)) names[d]=cpShareFreshOf(kid,session,d,existingByDeck,loggedNames).length; });
+    K.forEach(k=>{ secs[k].avail=secs[k].decks.reduce((a,d)=>a+(st.has(d)?cpShareFreshOf(kid,session,d,existingByDeck,loggedNames).length:names[d]),0); });
+    const E=K.map(k=>secs[k]).filter(s=>s.avail>0).sort((a,b)=>((+b.at||0)-(+a.at||0))||((+b.order||0)-(+a.order||0))), w=cpShareWeights(rule,E), gets={};
+    E.forEach((s,i)=>{ if(w[i]>0) gets[s.key]=true; });
+    const pick=new Set(); K.forEach(k=>{ let n=0; secs[k].decks.forEach(d=>{ if(n>=F) return; if(!st.has(d)&&(!gets[k]||!(names[d]>0))) return; pick.add(d); n++; }); });
+    all.forEach(d=>{ if(!S.secOf[d]&&focusDecks.indexOf(d)>=0) pick.add(d); });   // a deck outside every section keeps the seat it had
+    const out=all.filter(d=>pick.has(d));
+    return (out.length===focusDecks.length&&out.every((d,i)=>d===focusDecks[i]))?focusDecks:out;
+  }catch(e){ return focusDecks; }
+}
+// mstPile HOOK 2 (the new-card loop): at most the deck's section's quota left today. The quota is worked out once per pile (ctx.newNames is
+// that pile's own array, so the WeakMap forgets it with the pile).
+function cpShareNames(kid,session,deck,names,ctx){
+  try{
+    if(!Array.isArray(names)||!ctx||!Array.isArray(ctx.newNames)) return names;
+    let q=_cpshare.q?_cpshare.q.get(ctx.newNames):undefined;
+    if(q===undefined){ q=cpNewQuota(kid,session,ctx.pn,ctx); if(_cpshare.q) _cpshare.q.set(ctx.newNames,q); }
+    if(!q) return names;
+    const S=cpShareStations(), k=S.secOf[deck]; if(!k) return names;   // a deck outside every section: as now
+    const took=ctx.newNames.filter(x=>x&&S.secOf[x.deck]===k).length, room=Math.max(0,(q[k]||0)-took), h=ctx.existingByDeck&&ctx.existingByDeck[deck], out=[];
+    for(let i=0;i<names.length&&out.length<room;i++){ const n=names[i]; if((h&&h.has(n))||(ctx.loggedNames&&ctx.loggedNames.has(n))) continue; out.push(n); }
+    return (out.length===names.length&&out.every((n,i)=>n===names[i]))?names:out;
+  }catch(e){ return names; }
+}
+// ── 📅 PACE: the planner ──
+// the class's saved rule, for the planner (the console's own class; a kid / parent reads ENVCLASSSET's layers)
+function cpShareSaved(){
+  if(!cpShareSite()) return null; let L=null;
+  try{ if(cpShareOn()&&_envc.cls) L=[(_envc.cls.settings)||{}]; else L=(typeof envClsLayers==="function"&&envClsLayers())||((typeof _envs!=="undefined"&&_envs.cls)?[_envs.cls.settings||{}]:null); }catch(e){ L=null; }
+  return cpShareOf(L);
+}
+// cpPacePlan's first line: a run that doesn't name its own `share` uses the class's saved rule (null = as now; o itself back off the site)
+function cpShareOpt(o){ if(!o||typeof o!=="object"||o.share!==undefined) return o; const s=cpShareSaved(); return s?Object.assign({},o,{share:s}):o; }
+// cpPacePlan's day loop: hand out today's new cards section by section (each section's own focus decks, core first as the planner does) →
+// the room left (0: the planner's own fill then adds nothing)
+function cpShareFill(share,t,rel,room,hand,fresh,focus,coreFirst){
+  try{
+    const rule=cpShareClean(share); if(!rule||!(room>0)||!Array.isArray(rel)) return room;
+    const secs={}, L=[]; rel.forEach(d=>{ if(!d||!d.sec) return; let S=secs[d.sec]; if(!S){ S=secs[d.sec]={key:d.sec,order:L.length,at:(typeof cppMs==="function"&&d.open)?cppMs(d.open):0,decks:[],avail:0,left:0}; L.push(S); } S.decks.push(d); });
+    if(L.length<2) return room;
+    const anyCore=rel.some(d=>d.cq>0), cap=a=>focus>0?a.slice(0,focus):a;
+    L.forEach(S=>{ S.left=S.decks.reduce((a,d)=>a+d.cq,0);
+      if(coreFirst){ S.core=cap(S.decks.filter(d=>d.cq>0||d.ic>0)); S.other=anyCore?[]:cap(S.decks.filter(d=>d.oq>0||d.io>0)); S.avail=S.core.reduce((a,d)=>a+d.cq,0)+S.other.reduce((a,d)=>a+d.oq,0); }
+      else { S.act=cap(S.decks.filter(d=>d.cq+d.oq>0||d.ic+d.io>0)); S.avail=S.act.reduce((a,d)=>a+d.cq+d.oq,0); } });
+    const q=cpShareSplit(rule,L,room,t);
+    L.forEach(S=>{ let n=q[S.key]||0; if(!n) return;
+      if(coreFirst){ for(const d of S.core){ while(n>0&&d.cq>0){ fresh.push(hand(d,true)); n--; } } for(const d of S.other){ while(n>0&&d.oq>0){ fresh.push(hand(d,false)); n--; } } }
+      else for(const d of S.act){ while(n>0&&d.cq+d.oq>0){ const m=d.mixed, core=d.oq<=0||(d.cq>0&&(m.c+1)*Math.max(1,m.O)<=(m.o+1)*Math.max(1,m.C)); if(core) m.c++; else m.o++; fresh.push(hand(d,core)); n--; } } });
+    return 0;
+  }catch(e){ return room; }
+}
+// ── the console: ⚙️ Class settings and the 📅 Pace bar ──
+function cpShareCls(){ return (cpShareOn()&&_envc.cls)?_envc.cls:null; }
+function cpShareStudy(){ const c=cpShareCls(); return (c&&c.settings&&c.settings.study)||{}; }
+function cpShareCan(){ return cpShareOn()&&(typeof envClsCanEdit!=="function"||envClsCanEdit("newFrom")); }
+function cpShareLocked(){ return typeof envClsLocked==="function"&&envClsLocked("newFrom"); }
+// THE SAVE: one targeted update at classes/<cid>/settings/study (the rule, the catch-up, a section's mix share; null = cleared)
+function cpShareSave(upd,note){
+  if(!cpShareOn()||!_envc.cid||!upd||!Object.keys(upd).length) return false;
+  if(!cpShareCan()){ envsToast("\u{1F512} Where new cards come from is set by Adrienne"); return false; }
+  envcWrite("classes/"+_envc.cid+"/settings/study",upd,"update").then(()=>{ if(typeof envClsMem==="function") envClsMem("class","study",upd); if(typeof _cpp!=="undefined"&&_cpp) _cpp.memo={}; _cpshare.d=null; if(note&&cpShareDemo()) envsToast(note); envcRe(); }).catch(()=>{});
+  return true;
+}
+function cpShareSet(v){ if(!CPSHARE_RULES.some(r=>r[0]===v)) return false; return cpShareSave({newFrom:v||null}); }
+function cpShareCatch(raw){ const s=String(raw==null?"":raw).trim(), n=Number(s); if(s===""){ return cpShareSave({catchUp:null}); }
+  if(!Number.isInteger(n)||n<0||n>CPSHARE_CATCHUP_MAX){ envsToast("The catch-up share is a whole number 0–"+CPSHARE_CATCHUP_MAX+"."); envcRe(); return false; } return cpShareSave({catchUp:n}); }
+function cpShareMix(sec,raw){ const S=cpShareStations(); if(S.order[sec]==null) return false; const s=String(raw==null?"":raw).trim(), n=Number(s);
+  if(s===""||n===0) return cpShareSave({["mix/"+sec]:null}); if(!Number.isInteger(n)||n<0||n>100){ envsToast("A share is a whole number 0–100."); envcRe(); return false; } return cpShareSave({["mix/"+sec]:n}); }
+// Adrienne's 🔒 for the whole card: settings/locks/newFrom = true | null (admin only)
+function cpShareLock(on){ if(!cpShareOn()||!(typeof envcAdmin==="function"&&envcAdmin())) return false;
+  envcWrite("settings/locks",{newFrom:on?true:null},"update").then(()=>{ if(typeof _envcs!=="undefined"){ _envcs.locks=Object.assign({},_envcs.locks||{}); if(on) _envcs.locks.newFrom=true; else delete _envcs.locks.newFrom; } envcRe(); }).catch(()=>{}); return true; }
+function cpShareName(r){ const x=CPSHARE_RULES.find(y=>y[0]===((r&&r.newFrom)||"")); return x?x[1]+(r&&r.newFrom==="newest"?" "+r.catchUp+"%":""):""; }
+function cpShareCss(){ if(_cpshare.css||typeof document==="undefined"||!document.createElement) return; _cpshare.css=true;
+  try{ const s=document.createElement("style"); s.id="cpshare-css"; s.textContent='.cpsh-b{min-height:44px;padding:0 12px;font-size:13px;margin:0 6px 6px 0}.cpsh-m{font-size:12.5px;color:var(--muted,#6b7280);line-height:1.45;overflow-wrap:anywhere}'+
+    '.cpsh-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:6px 0;font-size:13px;font-weight:700}.cpsh-n{width:84px;min-height:44px;font-size:16px}.cpsh-demo{margin-top:10px;padding:8px 10px;border-radius:10px;background:#fefce8;border:1px dashed #facc15;font-size:13px;line-height:1.5;overflow-wrap:anywhere}'+
+    '.cpsh-t{width:100%;border-collapse:collapse;font-size:12.5px}.cpsh-t td,.cpsh-t th{padding:6px 4px;border-top:1px solid #f1efe9;text-align:center;vertical-align:middle}.cpsh-t td:first-child,.cpsh-t th:first-child{text-align:left;min-width:128px}.cpsh-t td:not(:first-child),.cpsh-t th:not(:first-child){white-space:nowrap}.cpsh-t tr.on td{background:#eff6ff;font-weight:800}.cpsh-t button{min-height:40px;border:none;background:none;font:inherit;text-align:left;cursor:pointer;color:inherit;padding:0}';
+    document.head.appendChild(s); }catch(e){} }
+// the choice buttons + the catch-up / mix inputs (cur = the rule shown; click(v) = what a tap does)
+function cpShareCtlHtml(cur,click,dis){
+  const v=(cur&&cur.newFrom)||"", d=dis?' disabled':'';
+  let h='<div class="envs-row">'+CPSHARE_RULES.map(r=>'<button class="envs-btn cpsh-b '+(r[0]===v?'':'sec')+'"'+d+' onclick="'+click(r[0])+'">'+(r[0]===v?'◉ ':'○ ')+cpShareEsc(r[1])+'</button>').join("")+'</div>';
+  h+='<div class="cpsh-m">'+cpShareEsc((CPSHARE_RULES.find(r=>r[0]===v)||CPSHARE_RULES[0])[2])+'</div>';
+  return h;
+}
+function cpShareInputsHtml(cur,dis){
+  const v=(cur&&cur.newFrom)||"", d=dis?' disabled':'', st=cpShareStudy(); let h="";
+  if(v==="newest") h+='<div class="cpsh-row">Catch-up share <input class="envs-in cpsh-n" type="number" inputmode="numeric" min="0" max="'+CPSHARE_CATCHUP_MAX+'" value="'+(st.catchUp!=null?cpShareEsc(st.catchUp):'')+'" placeholder="'+CPSHARE_CATCHUP+'"'+d+' onchange="cpShareCatch(this.value)"> % <span class="cpsh-m">(0–'+CPSHARE_CATCHUP_MAX+'; blank = '+CPSHARE_CATCHUP+')</span></div>';
+  if(v==="mix"){ const S=cpShareStations(), M=(st.mix&&typeof st.mix==="object")?st.mix:{}, tot=Object.keys(M).reduce((a,k)=>a+(+M[k]||0),0);
+    h+=S.list.map(s=>'<div class="cpsh-row"><span style="flex:1;min-width:120px">'+cpShareEsc(s.label||s.id)+'</span><input class="envs-in cpsh-n" type="number" inputmode="numeric" min="0" max="100" value="'+(M[s.id]!=null?cpShareEsc(M[s.id]):'')+'" placeholder="0"'+d+' onchange="cpShareMix(\''+cpShareJ(s.id)+'\',this.value)"> %</div>').join("");
+    h+='<div class="cpsh-m">Total '+tot+'%. The shares are used as parts of the whole, so they needn’t add to 100. A section with no share gets no new cards.</div>'; }
+  return h;
+}
+// ⚙️ Class settings (envClsPanelHtml's line): the class's choice, saved at once like every other row
+function cpShareSetHtml(){
+  try{
+    if(!cpShareOn()) return ""; cpShareCss(); const cur=cpShareClean(cpShareStudy()), can=cpShareCan(), locked=cpShareLocked(), admin=typeof envcAdmin==="function"&&envcAdmin();
+    let h='<div class="envs-card" style="'+(can?'':'opacity:.6')+'"><div class="envs-row" style="align-items:flex-start"><div style="flex:1;min-width:170px"><div class="envs-h2" style="margin:0">\u{1F9ED} Where new cards come from'+(locked?' \u{1F512}':'')+'</div><div class="cpsh-m">When more than one section is open, how each student’s New cards a day are shared out. Reviews are never cut.</div></div>';
+    if(admin) h+='<button class="envs-btn sec" style="min-height:40px;padding:0 10px;font-size:12px" onclick="cpShareLock('+(locked?'false':'true')+')">'+(locked?'\u{1F513} Unlock':'\u{1F512} Lock')+'</button>';
+    h+='</div><div style="margin-top:8px">'+cpShareCtlHtml(cur,v=>"cpShareSet('"+v+"')",!can)+cpShareInputsHtml(cur,!can)+'</div>';
+    h+='<div class="cpsh-m" style="margin-top:4px">now: <b>'+cpShareEsc(cpShareName(cur)||CPSHARE_RULES[0][1])+'</b>'+(cur?'':' (nothing saved)')+' · saved at classes/'+cpShareEsc(_envc.cid)+'/settings/study'+(locked&&!admin?' · \u{1F512} set by Adrienne':locked?' · \u{1F512} locked for the teacher':'')+' · <a href="javascript:void(0)" onclick="envcView(\'pace\')">see what each choice does in \u{1F4C5} Pace</a></div>';
+    return h+cpShareDemoHtml(cur)+'</div>';
+  }catch(e){ return ""; }
+}
+// 📅 Pace bar (cppPlanBarHtml's line): every choice side by side for the class's plan — a what-if until its own Save
+function cpShareDraft(){ const cid=(typeof _envc!=="undefined"&&_envc.cid)||""; if(!_cpshare.d||_cpshare.cid!==cid){ _cpshare.cid=cid; _cpshare.d={newFrom:(cpShareClean(cpShareStudy())||{}).newFrom||""}; } return _cpshare.d; }
+function cpSharePick(v){ if(!cpShareOn()||!CPSHARE_RULES.some(r=>r[0]===v)) return false; cpShareDraft().newFrom=v; envcRe(); return true; }
+function cpShareKeep(){ const d=cpShareDraft(), cur=(cpShareClean(cpShareStudy())||{}).newFrom||""; if(d.newFrom===cur){ envsToast("Nothing changed"); return false; } return cpShareSave({newFrom:d.newFrom||null}); }
+function cpShareUndo(){ _cpshare.d=null; envcRe(); }
+function cpShareBarHtml(ctx){
+  try{
+    if(!cpShareOn()||!ctx||!ctx.inp||!ctx.inp.goal||typeof cppRun!=="function") return ""; cpShareCss();
+    const inp=ctx.inp, st=cpShareStudy(), saved=cpShareClean(st), d=cpShareDraft(), can=cpShareCan(), S=(typeof cppSections==="function")?cppSections():[], pct=Math.round((inp.target||0.95)*100);
+    const base={catchUp:(saved&&saved.catchUp!=null)?saved.catchUp:CPSHARE_CATCHUP,mix:(saved&&saved.mix)||cpShareClean({newFrom:"mix",mix:st.mix}).mix};
+    let h='<div class="cpp-l">\u{1F9ED} Where new cards come from</div><div style="overflow-x:auto"><table class="cpsh-t"><thead><tr><th>Choice</th><th>'+pct+'% by</th><th>min a day</th>'+S.map(s=>'<th>'+cpShareEsc(s.short||s.label)+'</th>').join("")+'</tr></thead><tbody>';
+    CPSHARE_RULES.forEach(r=>{ const sh=r[0]?{newFrom:r[0],catchUp:base.catchUp,mix:base.mix}:null, p=cppRun(Object.assign({},inp,{share:sh})), on=r[0]===d.newFrom, isSaved=r[0]===((saved&&saved.newFrom)||"");
+      h+='<tr class="'+(on?'on':'')+'"><td><button'+(can?'':' disabled')+' onclick="cpSharePick(\''+r[0]+'\')">'+(on?'◉ ':'○ ')+cpShareEsc(r[1]+(r[0]==="newest"?" "+base.catchUp+"%":""))+(isSaved?' <span class="cpsh-m">('+(saved?'saved':'now')+')</span>':'')+'</button></td><td>'+(p.finishDate?(typeof cppLbl==="function"?cppLbl(p.finishDate):p.finishDate):'<span style="color:#b91c1c">—</span>')+'</td><td>~'+p.minutesPerDay+'</td>'+
+        S.map(s=>{ const x=p.sections&&p.sections[s.id]; return '<td>'+(x&&x.total?Math.round(x.atGoal/x.total*100)+'%':'–')+'</td>'; }).join("")+'</tr>'; });
+    h+='</tbody></table></div><div class="cpsh-m">Each row is the class’s plan with that choice: when '+pct+'% of the core cards are learned (— = not by '+cpShareEsc(inp.goalName||"the goal")+'), the minutes a day, and each section’s core cards learned by '+cpShareEsc(inp.goalName||"the goal")+'. A slow student shows it most: under “Deck by deck” the old section keeps the new cards.'+(d.newFrom==="mix"&&!Object.keys(base.mix).length?' Set the mix in <a href="javascript:void(0)" onclick="envcView(\'classset\')">⚙️ Class settings</a>; until then it is split evenly.':'')+(can?'':' \u{1F512} set by Adrienne.')+'</div>';
+    const changed=d.newFrom!==((saved&&saved.newFrom)||"");
+    if(changed) h+='<div class="cpp-wi">What-if: new cards from “'+cpShareEsc((CPSHARE_RULES.find(r=>r[0]===d.newFrom)||CPSHARE_RULES[0])[1])+'”. Students see nothing until you save it.</div>';
+    h+='<div class="envs-row" style="margin-top:6px"><button class="envs-btn cpsh-b" onclick="cpShareKeep()"'+(changed&&can?'':' disabled')+'>Save where new cards come from</button><button class="envs-btn sec cpsh-b" onclick="cpShareUndo()"'+(changed?'':' disabled')+'>Undo</button></div>';
+    return h+cpShareDemoHtml(changed?cpShareClean(Object.assign({},base,{newFrom:d.newFrom})):saved,changed);
+  }catch(e){ return ""; }
+}
+// ── DEMO: "🧪 Jonah's next 🌿 start" — the REAL mstPile on a sample Jonah, in memory, put back at once ──
+function cpShareDemoPile(rule){
+  if(!cpShareSite()||!cpShareDemo()||typeof _envs==="undefined"||typeof mstPile!=="function"||typeof masteryData==="undefined") return null;
+  const us=(typeof unitStudies!=="undefined"&&unitStudies)?unitStudies[(typeof ENV_UNIT_ID!=="undefined")?ENV_UNIT_ID:"nc_envirothon"]:null, me=_envs.kid, M=masteryData, X=CPSHARE_DEMO, K=X.kid;
+  if(!us||!me||!M[me+"_sessions"]) return null;
+  if(typeof _envc==="undefined"||!_envc.cls) return null;
+  const keys=["","_settings","_custom_items","_sessions","_tests"].map(s=>K+s), keep=keys.map(k=>[k,Object.prototype.hasOwnProperty.call(M,k),M[k]]), sv={kid:_envs.kid,sid:_envs.sid}, mk=masteryKid, sent=_cpshare.sent[K];
+  const C=_envc.cls, Cs=C.settings, hadCs=Object.prototype.hasOwnProperty.call(C,"settings"), St=(_envc.students||{})[X.sid], stuS=St?St.settings:undefined;
+  try{
+    const deck=k=>(((us.decks||[]).find(d=>d&&d.key===k)||{}).cards)||[], now=Date.now(), items=[];
+    const add=(k,n,p)=>deck(k).slice(0,n).forEach((c,i)=>items.push({id:K+"_"+p+i,subject:k,type:"envirothon",prompt:c.name,answer:c.def,status:"introduction",tier:"daily",tally_dots:1+(i%2),consecutive_correct:0,drop_count:1,cycle:1,next_due:0,review_mode:"flip"}));
+    add("Forestry · Terms",X.terms,"t"); add("Forestry · Facts",X.facts,"f");
+    const hold={}; (us.decks||[]).forEach(d=>{ if(d&&d.key&&!X.sent[d.station]) hold[d.key]=true; });
+    const pre={form:"2026",date:"2026-09-15",n:15,right:7,secs:900,ts:now-30*CPSHARE_DAY};
+    M[K]=items; M[K+"_settings"]={cat_hold:hold,cat_modes:Object.assign({},(M[me+"_settings"]||{}).cat_modes||{}),definitions:{}};
+    M[K+"_custom_items"]=(Array.isArray(M[me+"_custom_items"])?M[me+"_custom_items"]:Object.values(M[me+"_custom_items"]||{})).map(c=>Object.assign({},c));
+    M[K+"_sessions"]=JSON.parse(JSON.stringify(M[me+"_sessions"])); M[K+"_tests"]={forestry:{pre},aquatics:{pre:Object.assign({},pre,{ts:now-2*CPSHARE_DAY})}};
+    _cpshare.sent[K]={}; Object.keys(X.sent).forEach(s=>{ _cpshare.sent[K][s]=now-X.sent[s]*CPSHARE_DAY; });
+    // the class's rule for this one look: the one shown (a what-if on 📅 Pace), else what is saved
+    C.settings=Object.assign({},Cs||{}); C.settings.study=Object.assign({},(Cs&&Cs.study)||{}); ["newFrom","catchUp","mix"].forEach(n=>{ delete C.settings.study[n]; }); if(rule) Object.assign(C.settings.study,{newFrom:rule.newFrom,catchUp:rule.catchUp,mix:rule.mix});
+    if(St&&St.settings&&St.settings.study){ St.settings=Object.assign({},St.settings,{study:Object.assign({},St.settings.study)}); ["newFrom","catchUp","mix"].forEach(n=>{ delete St.settings.study[n]; }); }
+    _envs.kid=K; _envs.sid=X.sid; masteryKid=K;
+    const sess=(typeof mstSessions==="function"?mstSessions(K):[]).find(s=>s.sid===((typeof ENV_SESSION_SID!=="undefined")?ENV_SESSION_SID:"envirothon"));
+    let pn=1; try{ pn=(typeof mastGetPrintNum==="function"?mastGetPrintNum(me):1)||1; }catch(e){}
+    const p=sess?mstPile(K,sess.sid,pn,null):null; return p?{newNames:p.newNames.slice(),learning:p.learning.length,npd:sess.newPerDay}:null;
+  }catch(e){ return null; }
+  finally{ keep.forEach(r=>{ if(r[1]) M[r[0]]=r[2]; else delete M[r[0]]; }); _envs.kid=sv.kid; _envs.sid=sv.sid; masteryKid=mk; if(sent===undefined) delete _cpshare.sent[K]; else _cpshare.sent[K]=sent; if(hadCs) C.settings=Cs; else delete C.settings; if(St) St.settings=stuS; }
+}
+function cpShareDemoHtml(rule,whatIf){
+  if(!cpShareDemo()) return ""; const p=cpShareDemoPile(rule); if(!p) return ""; const S=cpShareStations(), by={}, order=[];
+  p.newNames.forEach(n=>{ const k=S.secOf[n.deck]||n.deck; if(!by[k]){ by[k]=[]; order.push(k); } by[k].push(n.name); });
+  const list=order.map(k=>'<b>'+cpShareEsc(S.label[k]||k)+'</b> ×'+by[k].length+' <span class="cpsh-m">('+cpShareEsc(by[k].join(", "))+')</span>').join(" · ");
+  return '<div class="cpsh-demo">\u{1F9EA} <b>'+cpShareEsc(CPSHARE_DEMO.name)+'’s next \u{1F33F} start</b>'+(whatIf?' (this what-if)':'')+': '+(p.newNames.length?p.newNames.length+' new — '+list:'no new cards')+' · '+p.learning+' still being learned.<div class="cpsh-m">The sample Jonah is slow in Forestry: '+CPSHARE_DEMO.terms+' Terms and '+CPSHARE_DEMO.facts+' Facts cards are still being learned, and Aquatics was sent to him '+CPSHARE_DEMO.sent.aquatics+' days ago. Worked out by the real study engine with his '+p.npd+' new cards a day; nothing is saved.</div></div>';
+}
+// CPSHARE_END
 // ── MST_ENGINE_START ──
 // Mastery "study sessions" — pure functions, no DOM, no writes.
 // Relies on globals already defined elsewhere in index.html:
@@ -68248,6 +68552,7 @@ function mstPile(kid, sid, pn, todayLog) {
     let fresh = focusDecks.filter(d => !(learnByDeck[d] > 0));
     if (typeof cpCoreFresh === "function") fresh = cpCoreFresh(kid, session, fresh, existingByDeck);   // ⭐ CPCORE: decks with core cards left open first (the class site; the same list back otherwise)
     focusDecks = started.concat(fresh).slice(0, session.focusDecks);
+    if (typeof cpShareFocus === "function") focusDecks = cpShareFocus(kid, session, focusDecks, started, fresh, existingByDeck, loggedNames);   // 🧭 CPSHARE: Decks introducing at once counts inside each section once a class picks where new cards come from (the same list back otherwise)
     const inFocus = new Set(focusDecks);
     learning = learning.filter(item => inFocus.has(item.subject));
   }
@@ -68305,6 +68610,7 @@ function mstPile(kid, sid, pn, todayLog) {
       let names = (typeof mastBankEligible === "function") ? mastBankEligible(kid, deck) : (bank[deck] || []);
       if (typeof cpCoreNames === "function") names = cpCoreNames(kid, session, deck, names, existingByDeck);   // ⭐ CPCORE: a deck's core cards first (the class site; the same list back otherwise)
       if (typeof cpPaceCoreOnly === "function") names = cpPaceCoreOnly(kid, session, deck, names);   // 📅 CPPACE: Core only — a section's non-core cards wait for its final (the class site; the same list back otherwise)
+      if (typeof cpShareNames === "function") names = cpShareNames(kid, session, deck, names, { newNames, pn, npd: _npd, focusDecks, perDeck, learnByDeck, existingByDeck, loggedNames, log });   // 🧭 CPSHARE: at most the section's share of New cards a day (the class site with a rule saved; the same list back otherwise)
       for (let ni = 0; ni < names.length; ni++) {
         const name = names[ni];
         if (newNames.length >= newPerDay) break outer;

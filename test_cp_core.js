@@ -62,7 +62,7 @@ const KID={on:true,kid:"k",role:"kid"};
 const run=async()=>{
 console.log("── where it sits, how it is hooked ──");
 { const a=src.indexOf("// CPCORE_START"), b=src.indexOf("// CPCORE_END"), m=src.indexOf("// ── MST_ENGINE_START ──");
-  ok("CPCORE once, right before the study engine (after NEWBUDGET_END)", a>0&&b>a&&src.indexOf("// CPCORE_START",a+1)<0&&src.slice(b,m).trim()==="// CPCORE_END"&&src.slice(src.indexOf("// NEWBUDGET_END"),a).trim()==="// NEWBUDGET_END");
+  ok("CPCORE once, before the study engine (after NEWBUDGET_END; CPSHARE may follow it)", a>0&&b>a&&src.indexOf("// CPCORE_START",a+1)<0&&b<m&&src.slice(src.indexOf("// NEWBUDGET_END"),a).trim()==="// NEWBUDGET_END");
   ok("the header names the design sections, the date and the build words", /§7\(d\)/.test(CORE)&&/2026-10-28/.test(CORE)&&/lets get these built/.test(CORE));
   ok("no Howe kid name as a code literal", !/["'`](lincoln|ellis|lucy|julian)["'`]/i.test(CORE));
   ok("the block declares, plus ONE guarded splice of its settings row (no other statement runs at load)", CORE.split("\n").filter(l=>l.trim()&&!/^(\/\/|function |const | |})/.test(l)).length===1&&/^if\(typeof ENVCS_FIELDS!=="undefined"&&Array\.isArray\(ENVCS_FIELDS\)&&!ENVCS_FIELDS\.some/m.test(CORE));
