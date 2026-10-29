@@ -5,7 +5,9 @@
  *   · Howe / DeWalt / Burris and LINCOLN (a Howe kid with Envirothon cards): every hook hands back the very object it was given, even with
  *     a full layer in memory; the real mastGetDef / mastCustomDef / mastBankEligible / envDrillSplit are byte-identical with the block;
  *   · 📚 Cards: no 🃏 Teacher cards chip; ✏️ Edit back / Use the unit's back; 🙈 Hide / ↩ Show again; bulk hide per folder (asked once, ONE
- *     multi-path update); ＋ Add a card here (Terms deck for a Key Concept, the item's deck for an item; bad fronts refused); Undo (the same
+ *     multi-path update); ＋ on every folder header and ＋ Add a card here open the QUICK ADD pre-set to that place (T / F / I, the
+ *     subcategory) — it saves, BLANKS, puts the cursor back, says "✓ Added …" with Undo and stays open; 📋 paste a list (the parser, the
+ *     preview with ticks and the lines it couldn't read, ONE write); ✕ on every row (one tap hides, Undo, ↩); Undo (the same
  *     targeted write in reverse); ✎ / 🙈 / ＋ counts and chips; search finds her back. Counts come from the data, never typed in;
  *   · every write goes through envsWrite: the demo writes nothing; live = exactly the card's path; dry run = nothing;
  *   · the kid (demo, then live boot): the hidden card leaves the bank, the sitting, the drill, the games, ID Flash and the final's core
@@ -86,7 +88,7 @@ console.log("\n── 📚 Cards: the old chip is gone, the editor is here ─�
   const c=card(w,FT,"Crown"), L=libCard(FT,"Crown"); openCard(w,c);
   const d=list(w);
   ok("an opened card: ✏️ Edit back and 🙈 Hide for my class", /cpceEditOpen\(\d+\)">✏️ Edit back/.test(d)&&/cpceHide\(\d+\)">🙈 Hide for my class/.test(d));
-  ok("an open Key Concept: ＋ Add a card here at its end, and its bulk hide on top (counted from the data)", (()=>{ const g=c.g.cards, non=g.filter(x=>!x.core).length; return /cpceAddOpen\('[^']+'\)">＋ Add a card here/.test(d)&&new RegExp("Hide all "+g.length.toLocaleString("en-US")+"<").test(d)&&(non&&non<g.length?new RegExp("Hide the "+non.toLocaleString("en-US")+" non-core").test(d):true); })()); }
+  ok("an open Key Concept: ＋ Add a card here at its end, and its bulk hide on top (counted from the data)", (()=>{ const g=c.g.cards, non=g.filter(x=>!x.core).length; return /cpceQaOpen\('[^']+','end'\)">＋ Add a card here/.test(d)&&new RegExp("Hide all "+g.length.toLocaleString("en-US")+"<").test(d)&&(non&&non<g.length?new RegExp("Hide the "+non.toLocaleString("en-US")+" non-core").test(d):true); })()); }
 
 console.log("\n── 🙈 Hide / ↩ Show again ──");
 { const w=demo("teacher"); open(w); const c=card(w,FT,"Crown"), L=libCard(FT,"Crown");
@@ -152,28 +154,103 @@ console.log("\n── bulk hide per folder: asked once, ONE multi-path update, u
   w.cce.cpceBulk(g.key,"show",true); const sh=last(w);
   ok("↩ Show all N again: one update, every record removed", sh.op==="update"&&Object.keys(sh.val).length===g.cards.length&&Object.values(sh.val).every(v=>v===null)); }
 
-console.log("\n── ＋ Add a card here ──");
-{ const w=demo("teacher"); open(w); const M=w.ccs.cpcsIndex(), sec=M.secs.find(s=>s.id==="forestry"), g=sec.groups[0], st=w.envsStations().find(s=>s.id==="forestry"), terms=st.decks.find(d=>/^term/.test(d.kind)).key;
-  w.ccs.cpcsTap("st","forestry"); w.ccs.cpcsTap("grp",g.key); w.cce.cpceAddOpen(g.key); let d=list(w);
-  ok("the form: front, back, ⭐ Core for my class, Add it / Cancel", /id="cpce-af"/.test(d)&&/id="cpce-ab"/.test(d)&&/id="cpce-ac"/.test(d)&&/⭐ Core for my class/.test(d)&&/cpceAddSave\('[^']+'\)">Add it/.test(d));
-  const tryAdd=(f,b)=>{ w.el("cpce-af",f); w.el("cpce-ab",b); w.cce.cpceAddSave(g.key); };
-  tryAdd("Bad.name","x"); tryAdd("a/b","x"); tryAdd("crown","x"); tryAdd("","x"); tryAdd("Coppice","");
+console.log("\n── ＋ quick add: stays open, blanks, says it's done (her words 2026-10-28) ──");
+{ const w=demo("teacher"); open(w); const M=w.ccs.cpcsIndex(), sec=M.secs.find(s=>s.id==="forestry"), D=w.cce.cpceDecks("forestry"), g=sec.groups.find(x=>x.cards.some(c=>c.deck===D.term));
+  let focused=""; const fe=w.el("cpce-af",""), be=w.el("cpce-ab",""), ce=w.el("cpce-ac"); fe.focus=()=>{ focused="af"; }; be.focus=()=>{ focused="ab"; };
+  w.cce.cpceQaOpen(g.key); let d=list(w);
+  ok("＋ on a Key Concept opens the quick add on top of that folder (it opens the folder), pre-set: T, that Key Concept, the section's Terms deck", w.cce._cpce.qa.kind==="term"&&w.cce._cpce.qa.sub===g.label&&w.ccs._cpcs.os==="forestry"&&w.ccs._cpcs.og===g.key&&/id="cpce-qa"/.test(d)&&d.indexOf('id="cpce-qa"')<d.indexOf('class="cpcs-row')&&new RegExp("Goes into "+D.term.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).test(d)&&focused==="af");
+  ok("…T / F / I for the decks the section has, the Key Concept dropdown listing that deck's others, front, back, ⭐ Core, ＋ Add, 📋 Paste a list", /<b>T<\/b> Terms/.test(d)&&/<b>F<\/b> Facts/.test(d)&&/<b>I<\/b> ID/.test(d)&&/<select id="cpce-qs"/.test(d)&&(d.match(/<option /g)||[]).length===sec.groups.filter(x=>x.cards.some(c=>c.deck===D.term)).length&&new RegExp('<option value="'+g.label+'" selected').test(d)&&/id="cpce-af"/.test(d)&&/id="cpce-ab"/.test(d)&&/⭐ Core for my class/.test(d)&&/cpceQaAdd\(\)">＋ Add/.test(d)&&/Paste a list/.test(d));
+  const add=(f,b)=>{ fe.value=f; be.value=b; return w.cce.cpceQaAdd(); };
+  add("Bad.name","x"); add("a/b","x"); add("crown","x"); add("","x"); add("Coppice","");
   ok("refused, nothing written: a front with . or /, one already in the deck (any case), an empty front, an empty back", W(w).length===0);
-  w.el("cpce-ac").checked=true; tryAdd("Coppice","Cutting a tree to the stump so new shoots grow.");
+  ce.checked=true; focused=""; add("Coppice","Cutting a tree to the stump so new shoots grow.");
   const x=last(w), k=x&&x.path.split("/").pop();
-  ok("Add it: ONE set of classCards/<cid>/<the section's Terms deck>/a… = {name, def, core, add, group, by, ts}", W(w).length===1&&x.op==="set"&&x.path==="classCards/"+CID+"/"+terms+"/"+k&&/^a[0-9a-z]+$/.test(k)&&x.val.name==="Coppice"&&x.val.core===true&&x.val.add===true&&x.val.group===g.label&&x.val.by==="uid_teacher_demo"&&!("item" in x.val), x);
+  ok("＋ Add: ONE set of classCards/<cid>/<Terms deck>/a… = {name, def, core, add, group, by, ts}", W(w).length===1&&x.op==="set"&&x.path==="classCards/"+CID+"/"+D.term+"/"+k&&/^a[0-9a-z]+$/.test(k)&&x.val.name==="Coppice"&&x.val.core===true&&x.val.add===true&&x.val.group===g.label&&x.val.by==="uid_teacher_demo"&&!("item" in x.val), x);
+  const note=()=>(w.G.created.find(e=>e.id==="cpce-note")||{}).innerHTML||"";
+  ok("…the fields BLANK OUT, the cursor goes back to the front, the panel stays open", fe.value===""&&be.value===""&&w.cce._cpce.qa&&w.cce._cpce.qa.f===""&&w.cce._cpce.qa.b===""&&focused==="af"&&/id="cpce-qa"/.test(list(w)));
+  ok("…the note at the bottom: ✓ Added “Coppice” to <deck>, with Undo", note().indexOf("✓ Added “Coppice” to "+D.term)>=0&&/cpceUndo\(\)/.test(note()), note());
+  ok("…⭐ Core stays ticked for the next one", w.cce._cpce.qa.core===true&&/id="cpce-ac" checked/.test(list(w)));
   const N=w.ccs.cpcsIndex(), nc=N.C.find(c=>c.added&&c.name==="Coppice");
-  ok("it joins the folder at its end (index +1), ⭐ core, ＋ on the row and header, the ＋ Added chip", nc&&N.C.length===M.C.length+1&&nc.g.label===g.label&&nc.g.cards[nc.g.cards.length-1]===nc&&nc.core&&/cpce-add/.test(list(w))&&/＋ 1<\/span>/.test(list(w))&&/＋ Added/.test(w.ccs.cpcsChipsHtml()));
-  w.ccs._cpcs.more[nc.g.key]=1e6; w.ccs.cpcsTap("row",nc.i); d=list(w);
-  ok("opened: its back, '＋ Added for your class', ✏️ Edit back and 🙈 Take it back", /Cutting a tree to the stump/.test(d)&&/＋ Added for your class/.test(d)&&/cpceEditOpen/.test(d)&&/Take it back/.test(d));
-  w.cce.cpceHide(nc.i); ok("🙈 Take it back: the record gets retired (set), the card stays in the list, struck", last(w).op==="set"&&last(w).val.retired===true&&last(w).val.add===true&&/cpce-hid/.test(list(w)));
-  w.cce.cpceShow(nc.i); ok("↩ Bring it back: retired comes off", last(w).op==="set"&&!("retired" in last(w).val));
-  w.cce.cpceUndo(); w.cce.cpceUndo(); w.cce.cpceUndo(); ok("Undo the add: its record removed, the folder as it was", last(w).op==="remove"&&w.ccs.cpcsIndex().C.length===M.C.length);
-  // an item (ID): the item's deck, the front after "<item> · "
-  const it=sec.items[0], ideck=it.cards[0].deck; w.ccs.cpcsTap("grp",sec.id+"|id"); w.ccs.cpcsTap("sp",it.key); w.cce.cpceAddOpen(it.key);
-  ok("in an item, the front is typed after “<item> · ”", new RegExp("after “"+it.label).test(list(w)));
-  w.el("cpce-af","nest"); w.el("cpce-ab","A stick platform."); w.el("cpce-ac").checked=false; w.cce.cpceAddSave(it.key); const y=last(w);
-  ok("an item's card goes into the item's deck as “<item> · nest”, with item (no group), not core", y.op==="set"&&y.path.indexOf("classCards/"+CID+"/"+ideck+"/a")===0&&y.val.name===it.label+" · nest"&&y.val.item===it.label&&!("group" in y.val)&&y.val.core===false, y); }
+  ok("…it joins the folder at its end (index +1), ⭐, ＋ on the row and the header", nc&&N.C.length===M.C.length+1&&nc.g===N.secs.find(s=>s.id==="forestry").groups.find(y=>y.label===g.label)&&nc.g.cards[nc.g.cards.length-1]===nc&&nc.core&&/cpce-add/.test((w.ccs._cpcs.more[nc.g.key]=1e6,list(w)))&&/＋ 1<\/span>/.test(list(w)));
+  add("Our class term one","A back she typed."); add("Our class term two","Another back she typed.");
+  ok("…and more and more: each its own set, the panel still open", W(w).length===3&&W(w).every(z=>z.op==="set"&&z.val.add===true)&&/id="cpce-qa"/.test(list(w)));
+  w.cce.cpceUndo(); ok("Undo on the note takes the last one back (its record removed)", last(w).op==="remove"&&!w.ccs.cpcsIndex().C.some(c=>c.name==="Our class term two"));
+  // Enter: in the front → the back; in the back → Add (Shift+Enter is a new line)
+  let pd=0; const ev=(k,sh)=>({key:k,shiftKey:!!sh,preventDefault(){ pd++; }});
+  fe.value="Our class term three"; be.value=""; focused=""; ok("Enter in the front moves to the back, adds nothing", w.cce.cpceQaKey(ev("Enter"),"f")===false&&focused==="ab"&&pd===1&&W(w).length===4);
+  be.value="A third back."; ok("Shift+Enter in the back is a new line (no add)", w.cce.cpceQaKey(ev("Enter",true),"b")===true&&W(w).length===4);
+  w.cce.cpceQaKey(ev("Enter"),"b"); ok("Enter in the back adds it, then blanks", last(w).val&&last(w).val.name==="Our class term three"&&fe.value===""&&be.value==="");
+  ok("a letter key does nothing special", w.cce.cpceQaKey(ev("a"),"f")===true);
+  w.cce.cpceQaKind("fact"); d=list(w);
+  ok("tap F: the section's Facts deck, its Key Concepts, the same subcategory kept when it has facts", w.cce._cpce.qa.kind==="fact"&&new RegExp("Goes into "+D.fact.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).test(d)&&/<b>F<\/b> Facts/.test(d));
+  fe.value="Which tree is NC's state tree?"; be.value="Longleaf pine"; w.cce.cpceQaAdd(); ok("…a fact goes into the Facts deck", last(w).path.indexOf("classCards/"+CID+"/"+D.fact+"/a")===0&&last(w).val.group===w.cce._cpce.qa.sub);
+  w.cce.cpceQaOpen(g.key); ok("＋ again on the same folder closes the panel", w.cce._cpce.qa===null&&!/id="cpce-qa"/.test(list(w))); }
+
+console.log("\n── ＋ on every header: station, ID, item — the place pre-set ──");
+{ const w=demo("teacher"); open(w); const M=w.ccs.cpcsIndex();
+  w.ccs.cpcsTap("st","forestry"); w.ccs.cpcsTap("grp","forestry|id"); const d0=list(w);
+  ok("a ＋ on every folder header drawn: the stations, the open station's Key Concepts and ID folder, its items", (d0.match(/class="cpce-plus/g)||[]).length===M.secs.length+M.secs.find(s=>s.id==="forestry").groups.length+1+M.secs.find(s=>s.id==="forestry").items.length&&/cpceQaOpen\('forestry'\)/.test(d0)&&/cpceQaOpen\('forestry\|id'\)/.test(d0));
+  ok("no ＋ while searching (the list is flat)", (w.ccs._cpcs.q="pine",!/cpce-plus/.test(list(w))));
+  w.ccs._cpcs.q="";
+  const gen=M.secs.find(s=>s.id==="general"), GD=w.cce.cpceDecks("general");
+  w.cce.cpceQaOpen("general"); let d=list(w), Q=w.cce._cpce.qa;
+  ok("＋ on a station (General): opens it; T / F only (no ID deck there); its first Key Concept with terms", Q.sec==="general"&&Q.kind==="term"&&w.ccs._cpcs.os==="general"&&w.ccs._cpcs.og===null&&/<b>T<\/b> Terms/.test(d)&&/<b>F<\/b> Facts/.test(d)&&!/<b>I<\/b> ID/.test(d)&&Q.sub===gen.groups.find(x=>x.cards.some(c=>c.deck===GD.term)).label&&!GD.id);
+  const fo=M.secs.find(s=>s.id==="forestry"), it=fo.items[2];
+  w.cce.cpceQaOpen(it.key); d=list(w); Q=w.cce._cpce.qa;
+  ok("＋ on an item: I picked, that item in the dropdown (all the section's items listed), its folders opened", Q.kind==="id"&&Q.sub===it.label&&w.ccs._cpcs.og==="forestry|id"&&w.ccs._cpcs.osp===it.key&&(d.match(/<option /g)||[]).length===fo.items.length&&new RegExp("after “"+it.label).test(d));
+  const fe=w.el("cpce-af","nest"), be=w.el("cpce-ab","A stick platform."); w.cce.cpceQaAdd(); const y=last(w);
+  ok("…its card goes into the section's ID deck as “<item> · nest”, with item (no group)", y.op==="set"&&y.path.indexOf("classCards/"+CID+"/"+w.cce.cpceDecks("forestry").id+"/a")===0&&y.val.name===it.label+" · nest"&&y.val.item===it.label&&!("group" in y.val), y);
+  w.cce.cpceQaOpen("forestry|id"); Q=w.cce._cpce.qa; ok("＋ on the ID folder: I, the first item", Q.kind==="id"&&Q.sub===fo.items[0].label);
+  w.cce.cpceQaSub(fo.items[5].label); ok("picking another item from the dropdown", w.cce._cpce.qa.sub===fo.items[5].label);
+  const g=fo.groups[0]; w.cce.cpceQaOpen(g.key,"end"); d=list(w);
+  ok("＋ Add a card here at a folder's end opens the same quick add THERE (after the rows)", w.cce._cpce.qa.where==="end"&&d.indexOf('id="cpce-qa"')>d.lastIndexOf('class="cpcs-row'));
+  ok("typing survives a repaint (a tap elsewhere redraws the list)", (w.cce.cpceQaIn("f","Half-typed"),/value="Half-typed"/.test(list(w))));
+  w.envcView("grid"); ok("moving to another chip closes the quick add", w.cce._cpce.qa===null); }
+
+console.log("\n── ✕ on every row: one tap hides it, Undo, ↩ brings it back ──");
+{ const w=demo("teacher"); open(w); const c=card(w,FT,"Crown"), L=libCard(FT,"Crown");
+  w.ccs.cpcsTap("st","forestry"); w.ccs.cpcsTap("grp",c.g.key); w.ccs._cpcs.more[c.g.key]=1e6; let d=list(w);
+  const rows=(d.match(/class="cpcs-row/g)||[]).length;
+  ok("every row has ✕ without opening the card (a 44 px button beside the row, not inside it)", rows>20&&(d.match(/class="cpce-x"/g)||[]).length===rows&&new RegExp('</button><button class="cpce-x" onclick="cpceHide\\('+c.i+'\\)"').test(d)&&!/<button class="cpcs-rb"[^>]*>[^]*?<button class="cpce-x"[^]*?<\/span><\/button>/.test(d.slice(0,d.indexOf('cpce-x'))));
+  ok("…search results have it too", (w.ccs._cpcs.q="Crown",/class="cpce-x"/.test(list(w))));
+  w.ccs._cpcs.q="";
+  w.cce.cpceHide(c.i); d=list(w);
+  ok("✕: ONE set …/o<order> {name, hide, by, ts}; the card did not open", last(w).op==="set"&&last(w).path==="classCards/"+CID+"/"+FT+"/o"+L.order&&last(w).val.hide===true&&w.ccs._cpcs.or===null);
+  ok("…the row greyed with ↩ in place of ✕; the note says so with Undo; the 🙈 Hidden chip lists it", new RegExp('cpce-hid" id="cpcs-r-'+c.i+'"').test(d)&&new RegExp('class="cpce-x back" onclick="cpceShow\\('+c.i+'\\)"[^>]*>↩<').test(d)&&/Hidden for your class/.test((w.G.created.find(e=>e.id==="cpce-note")||{}).innerHTML)&&(w.ccs.cpcsTap("f","hidden"),w.ccs.cpcsIndex().C.filter(x=>w.ccs.cpcsPass(x,w.ccs.cpcsIndex())).map(x=>x.i).join()===String(c.i)));
+  w.ccs.cpcsTap("f","hidden"); w.ccs._cpcs.more[c.g.key]=1e6;
+  w.cce.cpceUndo(); ok("Undo: the record removed, ✕ is back", last(w).op==="remove"&&!w.cce.cpceSt(c).hid&&new RegExp('class="cpce-x" onclick="cpceHide\\('+c.i+'\\)"').test(list(w)));
+  w.cce.cpceHide(c.i); w.cce.cpceShow(c.i); ok("✕ then ↩: hidden, then shown again (remove)", last(w).op==="remove"&&!w.cce.cpceSt(c).hid);
+  const h=world({fam:{familyId:"howe",roster:[]}}); ok("Howe: no ✕, no ＋", h.cce.cpceRowX(c)===""&&h.cce.cpceFoldX(1,"forestry",true)===null); }
+
+console.log("\n── 📋 paste a list: the parser (pure) ──");
+{ const P=world({fam:FAM}).cce.cpcePasteParse;
+  const r=P("Biosphere — All the parts of the Earth where life exists\nCanopy: The upper layer of a forest\nHumus\tDark organic matter in soil\n\n• Riffle – A shallow, fast stretch of a stream\n2. Snag - A standing dead tree\nno separator here\n — no front\nOnly a front:\r\nRatio: 2:1 mix");
+  ok("Term — definition · Term: definition · Term<Tab>definition · bullets and numbers dropped · en dash and spaced hyphen", JSON.stringify(r.rows.map(x=>[x.n,x.front,x.back]))===JSON.stringify([[1,"Biosphere","All the parts of the Earth where life exists"],[2,"Canopy","The upper layer of a forest"],[3,"Humus","Dark organic matter in soil"],[5,"Riffle","A shallow, fast stretch of a stream"],[6,"Snag","A standing dead tree"],[10,"Ratio","2:1 mix"]]), r.rows);
+  ok("…blank lines skipped; the lines it couldn't read listed with their line numbers (no separator, no front, no back)", JSON.stringify(r.bad.map(x=>x.n))==="[7,8,9]"&&r.bad[0].line==="no separator here", r.bad);
+  ok("the first separator wins (a dash before a colon keeps the colon in the back); a hyphen inside a word doesn't split", (()=>{ const a=P("pH — 7: neutral\nMid-story tree: one under the canopy").rows; return a[0].front==="pH"&&a[0].back==="7: neutral"&&a[1].front==="Mid-story tree"&&a[1].back==="one under the canopy"; })());
+  ok("nothing pasted: nothing", JSON.stringify(P(""))==='{"rows":[],"bad":[]}'&&JSON.stringify(P(null))==='{"rows":[],"bad":[]}'); }
+
+console.log("\n── 📋 paste a list: preview, ticks, ONE write ──");
+{ const w=demo("teacher"); open(w); const D=w.cce.cpceDecks("general"), gen=w.ccs.cpcsIndex().secs.find(s=>s.id==="general"), g=gen.groups.find(x=>x.cards.some(c=>c.deck===D.term));
+  const have=gen.cards.find(c=>c.deck===D.term).name;
+  w.cce.cpceQaOpen(g.key); w.cce.cpceQaPaste(true); let d=list(w);
+  ok("📋 Paste a list swaps the fields for one big box with the formats it reads, Preview and One at a time", /id="cpce-pt"/.test(d)&&!/id="cpce-af"/.test(d)&&/Term — definition · Term: definition · or a tab between/.test(d)&&/cpceQaPreview\(\)">Preview/.test(d)&&/One at a time/.test(d));
+  const pt=w.el("cpce-pt","Ecotone — Where two ecosystems meet\nBiome: A large area with its own climate and life\n"+have.toUpperCase()+" — already there\nBad.front — x\nnothing to split\nEcotone: twice in the list"); w.cce.cpceQaPreview(); d=list(w);
+  const P=w.cce._cpce.qa.prev;
+  ok("Preview: a tick per line it read; a front already in the deck, a bad front or a repeat shown unticked with why; the line it couldn't read listed", P.rows.length===5&&P.rows.filter(r=>r.on).length===2&&/already in this deck/.test(P.rows[2].why)&&/can’t contain/.test(P.rows[3].why)&&/already in this deck/.test(P.rows[4].why)&&P.bad.length===1&&/Line 5: “nothing to split”/.test(d)&&/cpceQaAddList\(\)">＋ Add 2 ticked/.test(d)&&(d.match(/type="checkbox" disabled/g)||[]).length===3, P.rows.map(r=>r.why));
+  w.cce.cpceQaTick(1,false); ok("untick one: Add 1 ticked; a refused line can't be ticked", /＋ Add 1 ticked/.test(list(w))&&(w.cce.cpceQaTick(2,true),!w.cce._cpce.qa.prev.rows[2].on));
+  w.cce.cpceQaTick(1,true); ok("nothing written yet", W(w).length===0);
+  w.el("cpce-ac").checked=true; w.cce.cpceQaAddList(); const x=last(w);
+  ok("＋ Add 2 ticked: ONE multi-path update of classCards/<cid>, each {name, def, core, add, group = the picked Key Concept} in the Terms deck", W(w).length===1&&x.op==="update"&&x.path==="classCards/"+CID&&Object.keys(x.val).length===2&&Object.keys(x.val).every(k=>k.indexOf(D.term+"/a")===0)&&Object.values(x.val).map(v=>v.name).join()==="Ecotone,Biome"&&Object.values(x.val).every(v=>v.add===true&&v.core===true&&v.group===g.label&&v.by==="uid_teacher_demo"), x);
+  ok("…the box blanks, the preview goes, the panel stays open; the note: ✓ Added 2 cards to <deck>", pt.value===""&&w.cce._cpce.qa.text===""&&w.cce._cpce.qa.prev===null&&/id="cpce-pt"/.test(list(w))&&((w.G.created.find(e=>e.id==="cpce-note")||{}).innerHTML||"").indexOf("✓ Added 2 cards to "+D.term)>=0);
+  ok("…both join the folder", ["Ecotone","Biome"].every(n=>w.ccs.cpcsIndex().C.some(c=>c.added&&c.name===n&&c.g.label===g.label)));
+  w.cce.cpceUndo(); const u=last(w); ok("Undo: ONE update removing both", u.op==="update"&&Object.keys(u.val).length===2&&Object.values(u.val).every(v=>v===null)&&!w.ccs.cpcsIndex().C.some(c=>c.added));
+  w.el("cpce-pt","Ecotone — Where two ecosystems meet"); w.cce.cpceQaPreview(); w.cce.cpceQaAddList(); ok("a list of one: one set", last(w).op==="set"&&last(w).val.name==="Ecotone");
+  const n=W(w).length; w.el("cpce-pt",""); w.cce.cpceQaPreview(); w.cce.cpceQaAddList(); ok("an empty list: nothing written", W(w).length===n);
+  // ID: the item goes in front of each line
+  const fo=w.ccs.cpcsIndex().secs.find(s=>s.id==="forestry"), it=fo.items[0]; w.cce.cpceQaOpen(it.key); w.cce.cpceQaPaste(true);
+  w.el("cpce-pt","nest — A stick platform\nsong: Two notes"); w.cce.cpceQaPreview(); w.cce.cpceQaAddList(); const y=last(w);
+  ok("pasted into an item: “<item> · front”, item set, into the ID deck, one update", y.op==="update"&&Object.values(y.val).map(v=>v.name).join()===it.label+" · nest,"+it.label+" · song"&&Object.values(y.val).every(v=>v.item===it.label)&&Object.keys(y.val).every(k=>k.indexOf(w.cce.cpceDecks("forestry").id+"/")===0)); }
 
 console.log("\n── live (not the demo): exactly the card's path; dry run writes nothing ──");
 { const live=dry=>{ const w=world({fam:FAM,dry,remote:{"classCards/c1":LAYER()}}); w._envs.role="teacher"; w._envs.uid="t1"; w._envc.sdb=w.firebase.database(); w._envc.cid="c1"; w._envs.cid="c1"; w._envc.view="cpcards"; return w; };
@@ -193,7 +270,7 @@ console.log("\n── the kid (demo): hidden leaves, the new back shows, her car
   ok("before any change: the kid's hooks hand back the very same objects", w.cce.cpceKidOn(K)===true&&w.cce.cpceItems(K,items)===items&&w.cce.cpceBank(K,FT,bank)===bank&&w.cce.cpceDef(K,"Silviculture",FT)===null);
   const core0=w.envt.envtCoreCount(K,"forestry");
   w.envsDemoGo("teacher"); open(w); w.cce.cpceHide(crown.i); w.cce.cpceEditOpen(sil.i); w.el("cpce-def","Growing a forest on purpose."); w.cce.cpceEditSave(sil.i);
-  const g=crown.g; w.cce.cpceAddOpen(g.key); w.el("cpce-af","Coppice"); w.el("cpce-ab","Cutting to the stump."); w.el("cpce-ac").checked=true; w.cce.cpceAddSave(g.key);
+  const g=crown.g; w.cce.cpceQaOpen(g.key); w.el("cpce-af","Coppice"); w.el("cpce-ab","Cutting to the stump."); w.el("cpce-ac").checked=true; w.cce.cpceQaAdd();
   w.envsDemoGo("kid");
   const it2=w.cce.cpceItems(K,items), b2=w.cce.cpceBank(K,FT,bank);
   ok("Kid ▸ 🌿: the hidden card leaves the pile (mstPile's items) and Mom's drill; nothing else goes", items.some(i=>i.prompt==="Crown")&&!it2.some(i=>i.prompt==="Crown")&&it2.length===items.length-items.filter(i=>i.subject===FT&&i.prompt==="Crown").length);
@@ -249,7 +326,7 @@ console.log("\n── the rules: classCards/$cid ──");
   // every record the code writes fits the children the rules allow
   const w=demo("teacher"); open(w); const c=card2(w), allowed=Object.keys(card).filter(k=>k[0]!=="."&&k[0]!=="$");
   w.cce.cpceHide(c.i); w.cce.cpceEditOpen(c.i); w.el("cpce-def","Mine."); w.cce.cpceEditSave(c.i);
-  const g=c.g; w.cce.cpceAddOpen(g.key); w.el("cpce-af","Coppice"); w.el("cpce-ab","Stump."); w.cce.cpceAddSave(g.key);
+  const g=c.g; w.cce.cpceQaOpen(g.key); w.el("cpce-af","Coppice"); w.el("cpce-ab","Stump."); w.cce.cpceQaAdd();
   const recs=W(w).filter(x=>x.op==="set").map(x=>x.val);
   ok("every record the code writes uses only the children the rules allow, with by and ts", recs.length===3&&recs.every(r=>Object.keys(r).every(k=>allowed.indexOf(k)>=0)&&r.by&&typeof r.ts==="number"&&r.name), recs);
   ok("the old teacherCards/$cid rules stay for now (nothing writes there from 📚 Cards)", !!R.teacherCards&&!W(w).some(x=>/teacherCards/.test(x.path))); }
