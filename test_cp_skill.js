@@ -129,7 +129,7 @@ console.log("\n── the sample worksheet (research §4.3), over 300 problems �
 
 console.log("\n── the demo kid: 👀 → ✍️ → 💪 in one sitting ──");
 { const d=demo("kid"), S=d.S, run=()=>S._cpsk.run;
-  ok("the demo puts the sample on the demo's unit only (the catalog entry has no skills)", S._cpsk.demo.nc_envirothon.length===1&&!d.cpu.CPU_UNITS.nc_envirothon.skills);
+  ok("the demo puts the sample on the demo's unit only (the catalog entry never carries it)", S._cpsk.demo.nc_envirothon.length===1&&!(d.cpu.CPU_UNITS.nc_envirothon.skills||[]).some(s=>s.key===S.CPSK_DEMO_SKILL.key));   // 🧰 CPITEMGEAR: the entry now carries the unit's real skills
   ok("Maya's Study page: the 🧩 Skills door under the study start, Biotic index, 'New · starts with a worked example'", /fake-study[\s\S]*🧩 Skills[\s\S]*Biotic index/.test(d.G.content)&&/New · starts with a worked example/.test(d.G.content));
   const list=S.cpSkillsFor(K); ok("her skills: the aquatics one (Aquatics is sent out to her)", list.length===1&&list[0].fb===FB&&list[0].due==="new");
   ok("Go opens a sitting: the page is the sitting (not the study start)", S.cpSkillOpen(K,FB,4242)===true&&!/fake-study/.test(d.G.content)&&/try 1 of 6/.test(d.G.content)&&/👀 Watch it/.test(d.G.content)&&/What you found in the stream/.test(d.G.content));

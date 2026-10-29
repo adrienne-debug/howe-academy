@@ -35,7 +35,7 @@ console.log("── the block, where it sits, how it is hooked ──");
   const head=CPR.slice(0,1200);
   ok("her Q18 words, the date, §6.4, §13 row 12, Q18 and PR 12 in the header", /most missed questions and also include him/.test(head)&&/2026-10-28/.test(head)&&/§6\.4/.test(head)&&/§13 row 12/.test(head)&&/Q18/.test(head)&&/PR 12/.test(head));
   ok("the block only declares (nothing runs at boot)", CPR.split("\n").every(l=>!l.trim()||/^(\/\/|function |const | |})/.test(l)));
-  const out=src.slice(0,a)+src.slice(b), hooks=out.split("\n").filter(l=>/\bcpr[A-Z]\w*\(/.test(l));
+  const out=src.slice(0,a)+src.slice(b), hooks=out.split("\n").filter(l=>/\bcpr[A-Z]\w*\(/.test(l)&&/📊 CPRESULTS/.test(l));   // its own tagged lines (later PRs call its functions too)
   const want=[["cprSumAns","function envSummary(kid,ctx){"],["cprStudentHtml","function envcStudentHtml(sid){"],["cprTestsHtml","function cpctHtml(){"],["cprRowMark","function cpctRowHtml(F,it,crumb){"]];
   ok("four hook lines outside the block, each typeof-guarded and tagged 📊 CPRESULTS", hooks.length===want.length&&hooks.every(l=>/typeof cpr\w+==="function"/.test(l)&&/📊 CPRESULTS/.test(l)), hooks.map(l=>l.trim().slice(0,80)));
   ok("…each inside the function it belongs to (the summary, the student page, 📝 Tests, a question row)", want.every(([fn,host])=>{ const i=src.indexOf(host), j=src.indexOf("\n}",i); return i>0&&src.slice(i,j).indexOf("typeof "+fn+"===\"function\"")>0; }));
@@ -131,7 +131,7 @@ console.log("\n── 📝 Tests ▸ 📊 Class results (demo, the 8 sample stud
   ok("…each row: the question, 'N of M right', the most-picked wrong choice, the share (⚠ when half or more missed it)", /\d+ of \d+ right/.test(h)&&/most-picked wrong: [A-E] “/.test(h)&&/class="cpr-pct low">⚠ \d+%/.test(h));
   const top=rows[0]; R.cprTap("row","forestry|pre|"+top.id); h=w.G.content;
   ok("a row opened: every choice with how many picked it, ✓ on the right one, who missed it with their pick, Go to the question", (h.match(/class="cpr-n"/g)||[]).length===top.choices.length&&/✓<div class="cpr-bar">/.test(h)&&new RegExp("Who missed it \\("+top.wrong.length+"\\)").test(h)&&/cprGo\('forestry\|pre','/.test(h));
-  ok("PR 16's hook point is left on the row (cpSuggestRowHtml, not defined yet) and the row carries its card links", CPR.indexOf('typeof cpSuggestRowHtml==="function"')>0&&Array.isArray(top.cards)&&top.cards.length>0);
+  ok("PR 16's hook point is on the row (cpSuggestRowHtml) and the row carries its card links", CPR.indexOf('typeof cpSuggestRowHtml==="function"')>0&&Array.isArray(top.cards)&&top.cards.length>0);
   R.cprTap("form","forestry|post"); ok("one open at each level: opening the final folds the check-in and its row", R._cpr.of==="forestry|post"&&R._cpr.or===null);
   const mm=R.cprMostMissed();
   ok("PR 18's ranking: every answered question across the forms, the share missed first", mm.length>20&&mm.every((x,i)=>i===0||(mm[i-1].missed/mm[i-1].row.took)>=(x.missed/x.row.took)));
