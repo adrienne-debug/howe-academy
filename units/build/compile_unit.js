@@ -129,6 +129,7 @@ function makeCounts(u,decks,tests,skills){
     const s=c.sections[d.section]; if(s){ s.cards+=n; s.core+=core; s.decks++; } });
   if(tests) Object.keys(tests.sections).forEach(k=>{ const t=tests.sections[k], r={}; ["pre","post"].forEach(f=>{ if(t[f]) r[f]=t[f].items.length; }); c.tests[k]=r; });
   if(skills&&skills.length){ c.skills={}; skills.forEach(k=>{ const it=skillItems(k)||skillClasses(k)||partItems(k); c.skills[k.key]={section:k.section,type:k.type,core:k.core===true,items:it?it.length:0}; }); }   // 🧰 CPITEMGEAR · 📐 CPITEMTRIANGLE (a chart's items = its classes) · 🌲 CPITEMID (an ID skill's items)
+  if(c.skills) skills.forEach(k=>{ const R=scaleReads(k); if(R&&c.skills[k.key]) c.skills[k.key].items=R.length; });   // 📏 CPITEMSCALE: a scale skill's items = its readings
   return c;
 }
 // 🧰 CPITEMGEAR: a skill as the catalog carries it (the unit.json record, its keys in a fixed order) — PURE
@@ -207,6 +208,7 @@ function checkSkills(skills,secKeys,decks,tests){
     if(k.data&&k.data.kind==="tally"&&Array.isArray(k.data.items)) checkTally(k,at).forEach(E);   // 🪲 CPITEMBIOTIC
     if(k.data&&k.data.kind==="ternary") checkTernary(k,at).forEach(E);   // 📐 CPITEMTRIANGLE
     if(k.data&&k.data.kind==="parts") checkParts(k,at,cards).forEach(E); });   // 🌲 CPITEMID
+  skills.forEach((k,i)=>{ if(k&&k.data&&k.data.kind==="biltmore") checkBiltmore(k,"skill "+(i+1)+(k.key?" (“"+k.key+"”)":""),cards).forEach(E); });   // 📏 CPITEMSCALE: a Biltmore stick skill
   return err;
 }
 // 🪲 CPITEMBIOTIC: a tally worksheet (type sheet, flat items) — [errors]
@@ -265,6 +267,38 @@ function gearPhotoGaps(root,skills,kind){
 }
 // 🪲 CPITEMBIOTIC: the same list for a tally worksheet's kinds
 function tallyPhotoGaps(root,skills){ return gearPhotoGaps(root,skills,k=>k&&k.data&&k.data.kind==="tally"); }
+// 📏 CPITEMSCALE (2026-10-29; RESEARCH_envirothon_skills_2026-10-28.md §4.9): a Biltmore stick skill (type scale, data.kind "biltmore")
+// has a reach (inches from the eye), a chain (feet from the tree) and a log (feet), all positive numbers; 1+ reads, each a key the app
+// draws ("diameter", "logs") at most once, a label, min < max (positive), a mark (the stick's spacing) and a tol with 0 < tol <= mark / 2
+// (so exactly one mark counts), whole marks between min and max; each ask {id: a database-safe miss code unique in the skill, label,
+// answer, 3 different wrong answers that aren't it, src: a real card}; every data.refs entry (the cards it was taken from) is a real card. The stick's marks come from
+// the research's formulas (biltS, biltLogMark: the same as the page's cpscDiamMark, cpscLogMark), and they must rise mark by mark.
+const BILT_READS=["diameter","logs"];
+function scaleReads(k){ return (k&&k.type==="scale"&&k.data&&k.data.kind==="biltmore"&&Array.isArray(k.data.reads))?k.data.reads:null; }
+function biltS(d,a){ return Math.sqrt(a*d*d/(a+d)); }
+function biltLogMark(n,a,C,L){ return n*L*a/C; }
+function checkBiltmore(k,at,cards){
+  const err=[], E=m=>err.push(m), D=k.data, R=Array.isArray(D.reads)?D.reads:[], keys={}, ids={}, pos=v=>typeof v==="number"&&isFinite(v)&&v>0;
+  if(k.type!=="scale") E(at+": a Biltmore stick skill is type scale");
+  ["reach","chain","log"].forEach(f=>{ if(!pos(D[f])) E(at+": data."+f+" must be a positive number"); });
+  if(!R.length) E(at+": a Biltmore stick skill needs 1 or more reads");
+  if(D.refs!=null&&!Array.isArray(D.refs)) E(at+": data.refs must be a list"); else (D.refs||[]).forEach(c=>{ if(!cards[c]) E(at+": data.refs “"+c+"” is no card"); });
+  R.forEach((x,j)=>{ const ra=at+" read "+(j+1)+(x&&x.key?" (“"+x.key+"”)":"");
+    if(!x||BILT_READS.indexOf(x.key)<0){ E(ra+": key must be one of "+BILT_READS.join(", ")); return; } if(keys[x.key]) E(ra+": key twice"); keys[x.key]=1;
+    if(typeof x.label!=="string"||!x.label.trim()) E(ra+" has no label");
+    if(!pos(x.min)||!pos(x.max)||x.min>=x.max) E(ra+": min and max must be positive numbers, min < max");
+    if(!pos(x.mark)) E(ra+": mark (the stick's spacing) must be a positive number");
+    else { if(!pos(x.tol)||x.tol>x.mark/2+1e-9) E(ra+": tol must be more than 0 and at most half a mark (so one mark counts)");
+      if(pos(x.min)&&pos(x.max)&&Math.floor(x.max/x.mark+1e-9)<Math.ceil(x.min/x.mark-1e-9)) E(ra+": no whole mark between min and max");
+      if(pos(D.reach)&&pos(x.max)){ let last=0, ok=true; for(let m=x.mark;m<=x.max+x.mark+1e-9;m+=x.mark){ const s=x.key==="logs"?biltLogMark(m,D.reach,D.chain||66,D.log||16):biltS(m,D.reach); if(!(s>last)) ok=false; last=s; } if(!ok) E(ra+": the stick's marks don't rise mark by mark"); } }
+    if(!Array.isArray(x.ask)){ if(x.ask!=null) E(ra+": ask must be a list"); return; }
+    x.ask.forEach((q,n)=>{ const qa=ra+" ask "+(n+1);
+      if(!q||typeof q.id!=="string"||!fbSafe(q.id)||/[.]/.test(q.id)){ E(qa+": id must be a miss code safe as a database key"); return; } if(ids[q.id]) E(qa+": id “"+q.id+"” twice"); ids[q.id]=1;
+      if(typeof q.label!=="string"||!q.label.trim()) E(qa+" has no label"); if(typeof q.answer!=="string"||!q.answer.trim()) E(qa+" has no answer");
+      const w=Array.isArray(q.wrong)?q.wrong:[]; if(w.length!==3||new Set(w.map(String)).size!==3||w.some(v=>typeof v!=="string"||!v.trim()||v===q.answer)) E(qa+": wrong must be 3 different answers that aren't the right one");
+      if(q.src!=null&&!cards[q.src]) E(qa+": src “"+q.src+"” is no card"); }); });
+  return err;
+}
 function check(root,id,{u,decks,tests,skills},old,others){
   const err=[], warn=[], E=m=>err.push(m);
   if(!/^[a-z][a-z0-9_]{0,39}$/.test(String(u.id||""))) E("unit id “"+u.id+"” must be [a-z][a-z0-9_]*, up to 40");
@@ -380,3 +414,4 @@ if(require.main===module){
     const c=r.counts; console.log((chk?"ok    ":"wrote ")+id+": "+Object.keys(c.sections).length+" sections, "+Object.keys(c.decks).length+" decks, "+c.cards.toLocaleString("en-US")+" cards, "+c.core.toLocaleString("en-US")+" core"+(chk?"":" → units/"+id+"/COUNTS.json, index.json"+(r.js!=null?", units/"+id+".js":"")+(r.links?", LINKS.json":"")+(r.page?", index.html CPU_UNITS":""))); });
   process.exit(bad?1:0);
 }
+Object.assign(module.exports,{scaleReads,checkBiltmore,biltS,biltLogMark,BILT_READS});   // 📏 CPITEMSCALE
