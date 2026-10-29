@@ -19,6 +19,7 @@ function slice(a,b){ const i=src.indexOf(a), j=src.indexOf(b,i); if(i<0||j<0) th
 const SITE=slice("// ENVSITE_START","// ENVSITE_END"), CON=slice("// ENVCONSOLE_START","// ENVCONSOLE_END"), MIR=slice("// ENVMIRROR_START","// ENVMIRROR_END");
 const CLS=slice("// ENVCLASSSET_START","// ENVCLASSSET_END");   // ⚙️ the class settings (2026-10-28): the console's panel + the kid's overlay
 const CPC=slice("// CPCLASS_START","// CPCLASS_END");   // 🏫 the class record and its look (2026-10-28): the bars, 🏫 Class setup, + Class, the lock date
+const CPU=slice("// CPUNIT_START","// CPUNIT_END");   // 📦 units as data (2026-10-28): HoweUnits, the catalog, a class's units, sections from the units, enroll per unit
 // o.envt: the station check-ins too (ENVTEST, + the forms on window.HoweEnvirothon = o.lib) — the demo's check-in rules (2026-10-28) —
 // and the 🔊 read-aloud switch right after it (ENVREADALOUD; mastSpeak records into G.said)
 const ENVT=slice("// ENVTEST_START","// ENVREADALOUD_END");
@@ -63,6 +64,7 @@ function world(o){
     ${CON}
     ${CLS}
     ${CPC}
+    ${o.noCpu?"":CPU}
     STARTER_UNITS[ENV_UNIT_ID]=envUnitRecordStub; function envUnitRecordStub(){ return {id:ENV_UNIT_ID,starter:ENV_UNIT_ID,starterVer:1,cardsInCode:true,stages:ENV_STAGES.map(s=>({n:s[0]})),decks:ENV_DECKS.map(d=>({key:d[0],stage:d[2],station:d[3],n:d[5],cards:[]}))}; }
     return { get tab(){ return tab; }, set tab(v){ tab=v; }, get db(){ return db; }, get mastView(){ return mastView; }, set mastView(v){ mastView=v; }, get masteryKid(){ return masteryKid; }, unitStudies, masteryData, HA_LS, _envs, _envc, _envm, STARTER_UNITS,
       envEdition, envSiteOn, envsDemo, envsLockState, envsStations, envsStationStat, envsGain, envsEffort, envsBoardsCompute, envsBoardsHtml, envsMakeCode, envsCodeNorm, envsCodeOk, envsKidEmail, envsKidPw, envsFamilyDbUrl, envSiteDb, envSiteDemoBoot, envSiteGate, envsApplyLogin, envSiteAuthShow, envsAuthHtml, envsAuthSubmit, envsKidSubmit, envSiteTabGate, envSiteRender, envsView, envsDemoGo, envsDemoData, envsDemoStart, envSiteSittingDone, envsAutoEnroll, envsWrite, envsLicenseLine, envsCard, envsKidHtml, envsParentHtml, envsStationRowsHtml, envsScoresHtml, envsTipsHtml, envsSettingsHtml, envsReadShared, envsStreakHtml, ENVS_OFF_TABS, ENVS_TIPS, ENVS_CONTACT, ENVS_FULL_APP, ENVS_STARS, ENVS_AUTOLOCK,
@@ -70,6 +72,7 @@ function world(o){
       _envcs, ENVCS_FIELDS, ENVCS_SECTS, envClassOverlay, envClsMerge, envClsCheck, envClsSave, envClsInput, envClsReset, envClsPat, envClsLock, envClsPanelHtml, envClsStudentHtml, envClsStartHtml, envClsKidLoad, envClsLayers, envClsEff, envClsClassVal, envClsLocked, envClsDef, envClsTierOrderOk, envClsConsoleStart,
       cp:{ CP_HUES, CP_EMOJI, CP_DEF, CP_LABELS_UNIT, CP_LABELS_PLAIN, CP_FEATURES, CP_CAL_DAYS, _cp, cpHex, cpLum, cpContrast, cpTextOn, cpAccentOn, cpTitleOk, cpEmojiOk, cpDateOk, cpDateLabel, cpBrand, cpLabel, cpFeature, cpSeason, cpLockKey, cpLockLabel, cpTopHtml, cpBarHtml, cpClassIn, cpDraftOf, cpDraft, cpCheck, cpCan, cpSet, cpEmojiType, cpGoal, cpGoalAdd, cpGoalDel, cpOffAdd, cpOffDel, cpFeat, cpWord, cpCancel, cpSave, cpPrevHtml, cpSetupHtml, cpNewClass, cpAdminClassHtml, cpClassAdd, cpDemoStart, cpCls },
       envsAutoLockLabel,
+      cpu:${o.noCpu?"null":"{ CPU_UNITS, CPU_DEFAULT, _cpu, cpuOn, cpuReg, cpuUnit, cpuQid, cpuLoad, cpuIndex, cpuIds, cpuDecks, cpuSections, cpuSum, cpuWatch, cpuAdminWatch, cpuAttached, cpuStations, cpuLabel, cpuFeature, cpuUnitRecord, cpuGeneric, cpuHydrate, cpuHydrateAll, cpuEnrollSession, cpuAutoEnroll, cpuUnitsHtml, cpuPublish, cpuPubState, cpuSetupHtml, cpuUnitsAfter, cpuAttach, cpuNewUnitsHtml, cpuNewUnits, cpuDemoStart, get win(){ return window; } }"},
       envt:${o.envt?"{ envtOpen, envtStatus, envtStartHtml, envtPick, envtNext, envtClose, envtCoreLine, envtWaitsForCheckin, envtFinalApply, envRaSet, envRaMode, envRaStartHtml, envRaReadQ, get state(){ return envtState; } }":"null"} };`)(G,firebase,document,tierFn);
   api.G=G; api.el=(id,v)=>{ G.els[id]=el(id); if(v!==undefined) G.els[id].value=v; return G.els[id]; };
   api.flush=async()=>{ for(let i=0;i<60;i++) await Promise.resolve(); };
@@ -78,7 +81,7 @@ function world(o){
 }
 
 
-module.exports={world,src,SITE,CON,MIR,UNIT,CLS,CPC,REPO};
+module.exports={world,src,SITE,CON,MIR,UNIT,CLS,CPC,CPU,REPO};
 if(require.main===module){
 let pass=0, fail=0;
 const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  "+JSON.stringify(x).slice(0,400):"")); } };
@@ -100,6 +103,8 @@ console.log("\n── no edition, no demo → inert; the boot is byte-identical 
   ok("every hook target says no", w.envSiteDemoBoot()===false&&w.envSiteGate({uid:"u"},()=>{})===false&&w.envSiteAuthShow("")===false&&w.envSiteDb()===null&&w.envSiteTabGate("units")===false&&w.envSiteRender(w.G.contentEl)===false&&w.envSiteSittingDone("k",{total:5})===false);
   ok("nothing created, no CSS, no listener, no read, no write, no body class, #content untouched", w.G.created.length===0&&w.G.listeners.length===0&&w.G.reads.length===0&&w.G.writes.length===0&&w.G.body.classList.list.length===0&&w.G.content===""&&w.G.renders===0);
   ok("🏫 CPCLASS's hook targets say no too (no bar, no class, no lock key, no screen, no + Class) and the lock / label / © line read as before", w.cp.cpTopHtml("kid","K")===""&&w.cp.cpClassIn()===false&&w.cp.cpLockKey()===""&&w.cp.cpSeason()==="2026-27"&&w.cp.cpSetupHtml()===""&&w.cp.cpAdminClassHtml()===""&&w.cp.cpClassAdd()===false&&w.envsLockState(null,"20270425").why==="auto"&&w.envsAutoLockLabel()==="Apr 24, 2027"&&/for the 2026-27 season/.test(w.envsLicenseLine()));
+  { const u=w.cpu; ok("📦 CPUNIT's hook targets say no too (no sections, no enroll, no hydrate, no registry, no screens, no words) and envsStations reads ENV_DECKS exactly as before", u.cpuOn()===false&&u.cpuStations()===null&&u.cpuAutoEnroll()===false&&u.cpuHydrateAll()===false&&u.cpuReg()===null&&u.win.HoweUnits===undefined&&u.cpuUnitsHtml()===""&&u.cpuSetupHtml()===""&&u.cpuNewUnitsHtml()===""&&u.cpuLabel("section")===""&&u.cpuFeature("teams")===null&&u.cpuAttached().length===0&&u.cpuWatch("x_unit")===false&&u.cpuPublish("nc_envirothon")===false&&u.cpuAttach("nc_envirothon",false)===false&&w.envsStations().length===6&&w.envsStations().every(s=>!("unit" in s))&&w.envsAutoEnroll()===false);
+    ok("…and nothing created, no listener, no read, no write after calling them", w.G.created.length===0&&w.G.listeners.length===0&&w.G.reads.length===0&&w.G.writes.length===0); }
   w.showTab("units"); ok("showTab works as before (tab = units, the schedule paint ran)", w.tab==="units"&&w.G.schedulePaints===1);
   const d=world({fam:{familyId:"dewalt",roster:[]}}); ok("a second family (no edition) is inert too", d.envEdition()===""&&d.envSiteRender(d.G.contentEl)===false&&d.G.created.length===0);
   const h=world({fam:{familyId:"howe",roster:[]},search:"?dryrun=1"}); ok("?dryrun=1 alone is not the demo", h.envsDemo()===false&&h.envEdition()==="");
@@ -256,7 +261,7 @@ console.log("\n── the first signed-in boot enrolls the kid, every stage, thr
 console.log("\n── the rules file, the setup note, the build ──");
 { const R=JSON.parse(fs.readFileSync(path.join(REPO,"envirothon","SITE_RULES.json"),"utf8")); const nodes=Object.keys(R.rules).filter(k=>k[0]!==".");
   ok("envirothon/SITE_RULES.json parses; the root is locked (.read/.write false)", R.rules[".read"]===false&&R.rules[".write"]===false);
-  ok("it names every node of the site: admins teachers logins classes students release scores teacherCards boards settings", ["admins","teachers","logins","classes","students","release","scores","teacherCards","boards","settings"].every(n=>nodes.includes(n))&&nodes.length===10, nodes);
+  ok("it names every node of the site: admins teachers logins classes units students release scores teacherCards boards settings (📦 units: the catalog, 2026-10-28)", ["admins","teachers","logins","classes","units","students","release","scores","teacherCards","boards","settings"].every(n=>nodes.includes(n))&&nodes.length===11, nodes);
   ok("students/<sid>/summary + meta keep the mirror's rules (family login by familyId prefix); release/locked admin-only; logins creatable by the class's teacher for kid/parent only", /beginsWith\(root.child\('logins\/'\+auth.uid\+'\/familyId'\)/.test(R.rules.students.$sid.summary[".write"])&&R.rules.release.locked[".write"]==="root.child('admins/'+auth.uid).val() == true"&&/role'\).val\(\) == 'kid'/.test(R.rules.logins.$uid[".write"]));
   ok("a teacher may edit only her own card (by == auth.uid); whoDrills validates parent|teacher|both", /data.child\('by'\).val\(\) == auth.uid/.test(R.rules.teacherCards.$cid.$deck.$card[".write"])&&/'parent'.*'teacher'.*'both'/.test(R.rules.settings.whoDrills.$cid[".validate"]));
   ok("the family instance rules: allowed/<uid> only, allowed itself not writable", /allowed/.test(R.family.rules[".read"])&&R.family.rules.allowed[".write"]===false);

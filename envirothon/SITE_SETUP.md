@@ -93,6 +93,15 @@ those fields (title, emoji and color are refused while `classes/<cid>/locks/bran
 closes** (`lockAt`) are yours: set them in the same screen as admin, or in Admin ▸ + Class (which also takes the title, season, start,
 a goal date and the closing date).
 
+**📦 Units** (2026-10-28): a class studies the **units attached to it**, and their sections become the class's sections (for NC
+Envirothon, the six stations exactly as before). Your console's **📦 Units** chip lists every unit with its sections, cards and core
+cards, the classes using it, and **Publish**, which writes the unit's catalog entry to `units/<id>/index` (admin only; every login may
+read it). In **🏫 Class setup ▸ 📦 Units** you attach or detach a unit (`classes/<cid>/units/<id>: true | false`, one update); the
+teacher sees the list but can't change it. **+ Class** ticks the units to attach. A class with no units record studies NC Envirothon.
+Detaching hides the unit's sections; it deletes nothing. A family's first boot enrolls the kid in every attached unit (a unit
+attached later is enrolled at the next paint). New units come through the repo: `units/<id>/unit.json` + `tests.json`, then
+`node units/build/compile_unit.js <id>` (it checks every rule and writes the counts), a PR, your merge, then Publish.
+
 **Master lock**: Admin → "Close the season now" writes `release/locked = {locked:true, at, by}`; every family and the teacher
 then land on the "season closed" card; nothing is deleted. It also closes **by itself after 2027-04-24** (State), or after the class's own closing date (`classes/<cid>/lockAt`) when you set one. To reopen
 for the next season, "Reopen the season" after that date writes `{locked:false, at:<then>}`, which the page honours.

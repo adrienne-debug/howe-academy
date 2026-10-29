@@ -1,0 +1,169 @@
+#!/usr/bin/env node
+// 📦 CPUNIT — compile one unit of the class platform (DESIGN_class_platform_2026-10-28.md §4.1, §4.3, §10, §11; PR 3). Her words
+// 2026-10-28: "a whole new class setup and then unit and test is data pulled so other classes can also use this design when a unit or
+// units are brought in" · "we can use this setup while we're planning it to make sure that we can pull in any unit and turn it into any
+// kind of class".
+//   node units/build/compile_unit.js <unitId>            check every rule, then write units/<id>/COUNTS.json + index.json (+ units/<id>.js)
+//   node units/build/compile_unit.js <unitId> --check    check every rule and that COUNTS.json / index.json are current; writes nothing
+//   node units/build/compile_unit.js --all [--check]     every unit under units/
+// Reads units/<id>/unit.json and units/<id>/tests.json. A unit's cards sit on its decks (decks[].cards) or come `from` one other JSON
+// (NC Envirothon's stay in envirothon/nc_envirothon_unit.json, so the 1.5 MB is never copied twice); its tests sit inline
+// ({sections:{<key>:{pre,post}}}) or come `from` one other JSON (ENVTEST's forms). Every question gets its stable id <form>-<n>.
+// The compiled file: units/<id>.js registering window.HoweUnits[<id>] = {id, ver, index, unit, tests} — or, for a unit with
+// `build.file` (NC Envirothon: envirothon.js, window.HoweEnvirothon), the file its own builder already writes; then this script only
+// checks that file is current (same decks, same card counts, same forms).
+// THE RULES (each one an error that stops the build; test_cp_unit.js runs them):
+//   1. ids and keys: the unit id is [a-z][a-z0-9_]*; every section key and deck key is safe as a Firebase key (no . # $ [ ] / or
+//      control characters). A card front must be too, unless the unit says rules.codedFronts (its backs then save under the app's coded
+//      key, mastDefKey — NC Envirothon has 110 such fronts).
+//   2. deck keys and section keys are unique across EVERY unit in the repo (a deck key is the kid's subject, a section key the test path).
+//   3. every deck names a section of the unit; every section has a deck; labels only use the known words; features are booleans.
+//   4. every card has a front, a back and a source; `order` is a whole number, unique in its deck.
+//   5. order is append-only against the last COUNTS.json: no shipped order is dropped or renumbered, new cards take orders above the old
+//      top (a card's class-layer key is its order, §6.2). A shipped deck can't disappear.
+//   6. tests: every section key is the unit's; question ids are unique in their form; every answer points at a choice.
+//   7. --check: COUNTS.json, index.json and the unit's entry in index.html's CPU_UNITS are exactly what this run makes.
+// Nothing here touches a database. The catalog entry (index.json) is what 📦 Units ▸ Publish writes to units/<id>/index (§4.3), and the
+// same object is CPU_UNITS[<id>] in index.html: a plain run REWRITES that one line (`const CPU_UNITS={…};` in the CPUNIT block), so a data
+// change (a trim, a core add) is the data files + one compile run, never a hand edit of index.html (2026-10-28, after Trim 1 met PR 3).
+"use strict";
+const fs=require("fs"), path=require("path");
+const REPO=path.resolve(__dirname,"..","..");
+const LABEL_KEYS=["section","sections","pre","post","item","concept"];
+const FEATURE_KEYS=["teams","boards","specialists","idFlash","mockRun"];
+const FB_BAD=/[.#$\[\]\/\u0000-\u001f\u007f]/;
+function fbSafe(k){ return typeof k==="string"&&k.length>0&&Buffer.byteLength(k,"utf8")<=768&&!FB_BAD.test(k); }
+function readJson(p){ return JSON.parse(fs.readFileSync(p,"utf8")); }
+// [1,2,3,5,6] → "1-3,5-6" (and back): the shipped orders, kept small in COUNTS.json
+function ranges(nums){ const a=[...new Set(nums)].sort((x,y)=>x-y), out=[]; for(let i=0;i<a.length;){ let j=i; while(j+1<a.length&&a[j+1]===a[j]+1) j++; out.push(a[i]===a[j]?String(a[i]):a[i]+"-"+a[j]); i=j+1; } return out.join(","); }
+function unranges(s){ const out=[]; String(s||"").split(",").filter(Boolean).forEach(r=>{ const m=/^(\d+)(?:-(\d+))?$/.exec(r); if(!m) return; const a=+m[1], b=m[2]?+m[2]:a; for(let i=a;i<=b;i++) out.push(i); }); return out; }
+function unitIds(root){ const d=path.join(root,"units"); if(!fs.existsSync(d)) return []; return fs.readdirSync(d).filter(n=>fs.existsSync(path.join(d,n,"unit.json"))).sort(); }
+// the unit with its cards on its decks
+function loadUnit(root,id){
+  const dir=path.join(root,"units",id), u=readJson(path.join(dir,"unit.json"));
+  let from=null; if(u.cards&&u.cards.from){ const src=readJson(path.join(root,u.cards.from)); from={}; (src.decks||[]).forEach(d=>{ if(d&&d.key) from[d.key]=d.cards||[]; }); }
+  const decks=(u.decks||[]).map(d=>Object.assign({},d,{cards:from?(from[d.key]||null):(d.cards||null)}));
+  let tests=null; const tp=path.join(dir,"tests.json");
+  if(fs.existsSync(tp)){ const t=readJson(tp); tests={ver:t.ver||1,sections:{}};
+    const sections=t.from?(readJson(path.join(root,t.from)).stations||{}):(t.sections||{});
+    Object.keys(sections).forEach(k=>{ const st=sections[k]||{}, rec={}; if(st.label) rec.label=st.label; if(st.emoji) rec.emoji=st.emoji;
+      ["pre","post"].forEach(f=>{ const fm=st[f]; if(!fm) return; const r={form:fm.form||"",source:fm.source||"",items:(fm.items||[]).map(it=>({id:it.id||(f+"-"+it.n),n:it.n,q:it.q,choices:it.choices,ans:it.ans,cite:it.cite||""}))};
+        if(fm.note) r.note=fm.note; rec[f]=r; });
+      tests.sections[k]=rec; }); }
+  return {u,decks,tests,fromCards:!!from};
+}
+// the catalog entry (§4.3): small, no cards — the console draws the grid, the ticks and the counts from it
+function makeIndex(u,decks){
+  const d={}; decks.forEach((x,i)=>{ const c=x.cards||[]; d[x.key]={section:x.section,kind:x.kind||"",mode:x.mode||"flash",n:c.length,core:c.filter(y=>y&&y.core).length,order:i}; });
+  const idx={id:u.id,ver:u.ver||1,title:u.title,short:u.short||u.title,emoji:u.emoji||"",
+    sections:(u.sections||[]).map((s,i)=>{ const o={key:s.key,label:s.label||s.key,short:s.short||s.label||s.key,emoji:s.emoji||"",order:s.order!=null?s.order:i}; return o; }),
+    decks:d,cards:decks.reduce((s,x)=>s+(x.cards||[]).length,0),core:decks.reduce((s,x)=>s+(x.cards||[]).filter(y=>y&&y.core).length,0),
+    labels:Object.assign({},u.labels||{}),features:Object.assign({},u.features||{}),file:(u.build&&u.build.file)||("units/"+u.id+".js")};
+  if(u.build&&u.build.global) idx.global=u.build.global;
+  return idx;
+}
+function makeCounts(u,decks,tests){
+  const c={id:u.id,ver:u.ver||1,cards:0,core:0,sections:{},decks:{},tests:{}};
+  (u.sections||[]).forEach(s=>{ c.sections[s.key]={cards:0,core:0,decks:0}; });
+  decks.forEach(d=>{ const cs=d.cards||[], n=cs.length, core=cs.filter(x=>x&&x.core).length, o=cs.map(x=>x&&x.order).filter(Number.isInteger);
+    c.decks[d.key]={section:d.section,n,core,maxOrder:o.length?Math.max(...o):0,orders:ranges(o)}; c.cards+=n; c.core+=core;
+    const s=c.sections[d.section]; if(s){ s.cards+=n; s.core+=core; s.decks++; } });
+  if(tests) Object.keys(tests.sections).forEach(k=>{ const t=tests.sections[k], r={}; ["pre","post"].forEach(f=>{ if(t[f]) r[f]=t[f].items.length; }); c.tests[k]=r; });
+  return c;
+}
+function check(root,id,{u,decks,tests},old,others){
+  const err=[], warn=[], E=m=>err.push(m);
+  if(!/^[a-z][a-z0-9_]{0,39}$/.test(String(u.id||""))) E("unit id “"+u.id+"” must be [a-z][a-z0-9_]*, up to 40");
+  if(u.id!==id) E("unit.json id “"+u.id+"” is not its folder “"+id+"”");
+  if(!u.title) E("the unit needs a title");
+  const secKeys=(u.sections||[]).map(s=>s&&s.key), deckKeys=decks.map(d=>d.key);
+  if(!secKeys.length) E("the unit has no sections"); if(!deckKeys.length) E("the unit has no decks");
+  secKeys.forEach(k=>{ if(!fbSafe(k)) E("section key “"+k+"” is not safe as a Firebase key"); });
+  deckKeys.forEach(k=>{ if(!fbSafe(k)) E("deck key “"+k+"” is not safe as a Firebase key"); });
+  const dup=a=>a.filter((x,i)=>a.indexOf(x)!==i);
+  dup(secKeys).forEach(k=>E("section key “"+k+"” twice in the unit")); dup(deckKeys).forEach(k=>E("deck key “"+k+"” twice in the unit"));
+  (others||[]).forEach(o=>{ (o.sections||[]).forEach(k=>{ if(secKeys.indexOf(k)>=0) E("section key “"+k+"” is also in unit "+o.id); }); (o.decks||[]).forEach(k=>{ if(deckKeys.indexOf(k)>=0) E("deck key “"+k+"” is also in unit "+o.id); }); });
+  decks.forEach(d=>{ if(secKeys.indexOf(d.section)<0) E("deck “"+d.key+"” names section “"+d.section+"”, which the unit doesn't have"); });
+  secKeys.forEach(k=>{ if(!decks.some(d=>d.section===k)) E("section “"+k+"” has no deck"); });
+  Object.keys(u.labels||{}).forEach(k=>{ const v=u.labels[k]; if(LABEL_KEYS.indexOf(k)<0) E("labels."+k+" is not one of "+LABEL_KEYS.join(", ")); else if(typeof v!=="string"||!v.trim()||v.length>30) E("labels."+k+" must be 1 to 30 characters"); });
+  Object.keys(u.features||{}).forEach(k=>{ if(FEATURE_KEYS.indexOf(k)<0) E("features."+k+" is not one of "+FEATURE_KEYS.join(", ")); else if(typeof u.features[k]!=="boolean") E("features."+k+" must be true or false"); });
+  let coded=0;
+  decks.forEach(d=>{ if(!Array.isArray(d.cards)){ E("deck “"+d.key+"” has no cards"+(u.cards&&u.cards.from?" in "+u.cards.from:"")); return; }
+    const seen={}; d.cards.forEach((c,i)=>{ const at="deck “"+d.key+"” card "+(i+1);
+      if(!c||typeof c.name!=="string"||!c.name.trim()){ E(at+" has no front"); return; }
+      if(c.def==null||String(c.def).trim()==="") E(at+" (“"+c.name+"”) has no back");
+      if(!c.src) E(at+" (“"+c.name+"”) has no source");
+      if(!fbSafe(c.name)){ if(u.rules&&u.rules.codedFronts) coded++; else E(at+" front “"+c.name+"” is not safe as a Firebase key (or set rules.codedFronts)"); }
+      if(!Number.isInteger(c.order)||c.order<1) E(at+" (“"+c.name+"”) needs a whole-number order");
+      else if(seen[c.order]) E("deck “"+d.key+"”: order "+c.order+" twice"); else seen[c.order]=1; }); });
+  if(coded) warn.push(coded+" fronts hold . # $ [ ] / — their backs save under the coded key (rules.codedFronts)");
+  if(old&&old.decks) Object.keys(old.decks).forEach(k=>{ const d=decks.find(x=>x.key===k); if(!d){ E("deck “"+k+"” shipped before and is gone (order is append-only)"); return; }
+    const was=unranges(old.decks[k].orders), now=new Set((d.cards||[]).map(c=>c&&c.order)), top=old.decks[k].maxOrder||0;
+    const lost=was.filter(o=>!now.has(o)); if(lost.length) E("deck “"+k+"”: shipped order"+(lost.length>1?"s ":" ")+lost.slice(0,8).join(", ")+(lost.length>8?"…":"")+" dropped or renumbered (order is append-only)");
+    const wasS=new Set(was), low=[...now].filter(o=>Number.isInteger(o)&&!wasS.has(o)&&o<=top); if(low.length) E("deck “"+k+"”: new order"+(low.length>1?"s ":" ")+low.slice(0,8).join(", ")+" sit below the shipped top "+top+" (new cards go above it)"); });
+  if(tests) Object.keys(tests.sections).forEach(k=>{ if(secKeys.indexOf(k)<0) E("tests: section “"+k+"” isn't the unit's");
+    ["pre","post"].forEach(f=>{ const fm=tests.sections[k][f]; if(!fm) return; const ids={};
+      fm.items.forEach((it,i)=>{ const at="tests "+k+"."+f+" item "+(i+1);
+        if(!fbSafe(String(it.id))) E(at+": id “"+it.id+"” is not safe as a key"); if(ids[it.id]) E(at+": id “"+it.id+"” twice"); ids[it.id]=1;
+        const n=Array.isArray(it.choices)?it.choices.length:0, a=Array.isArray(it.ans)?it.ans:[it.ans];
+        if(!it.q||!n) E(at+": no question or no choices"); else if(!a.length||a.some(x=>!Number.isInteger(x)||x<0||x>=n)) E(at+": the answer isn't one of its "+n+" choices"); }); }); });
+  return {err,warn};
+}
+// the compiled file for a unit without build.file
+function makeJs(u,idx,decks,tests){
+  const unit={id:u.id,ver:u.ver||1,title:u.title,emoji:u.emoji||"",desc:u.desc||"",labels:u.labels||{},sections:u.sections||[],
+    decks:decks.map(d=>({key:d.key,section:d.section,mode:d.mode||"flash",kind:d.kind||"",introCap:d.introCap||3,groupBy:d.groupBy||"group",
+      cards:(d.cards||[]).map(c=>Object.assign({},c,{family:c.family!=null?c.family:c.group}))}))};
+  const lib={id:u.id,ver:u.ver||1,index:idx,unit,tests:tests?tests.sections:{}};
+  return "/* GENERATED by units/build/compile_unit.js from units/"+u.id+"/unit.json — do not hand-edit. Registers window.HoweUnits."+u.id+" (📦 CPUNIT). */\n"+
+    "(function(){ \"use strict\"; var lib="+JSON.stringify(lib)+";\n"+
+    "  if (typeof window !== \"undefined\") { window.HoweUnits = window.HoweUnits || {}; window.HoweUnits["+JSON.stringify(u.id)+"] = lib; }\n"+
+    "  if (typeof module !== \"undefined\" && module.exports) module.exports = lib;\n})();\n";
+}
+// a unit built elsewhere (build.file): its file must be current with the data this script just read
+function checkBuilt(root,u,decks,tests){
+  const err=[], f=path.join(root,u.build.file); if(!fs.existsSync(f)) return ["build.file "+u.build.file+" is missing — run "+(u.build.by||"its builder")];
+  let lib; try{ delete require.cache[require.resolve(f)]; lib=require(f); }catch(e){ return ["build.file "+u.build.file+" doesn't load: "+e.message]; }
+  const by={}; ((lib&&lib.unit&&lib.unit.decks)||[]).forEach(d=>{ by[d.key]=d.cards||[]; });
+  decks.forEach(d=>{ const c=by[d.key]; if(!c) err.push(u.build.file+" has no deck “"+d.key+"”"); else if(c.length!==(d.cards||[]).length||c.filter(x=>x&&x.core).length!==(d.cards||[]).filter(x=>x&&x.core).length) err.push(u.build.file+" is stale for “"+d.key+"” — run "+(u.build.by||"its builder")); });
+  Object.keys(by).forEach(k=>{ if(!decks.some(d=>d.key===k)) err.push(u.build.file+" has deck “"+k+"” that unit.json doesn't list"); });
+  if(tests){ const T=(lib&&lib.tests)||{}; Object.keys(tests.sections).forEach(k=>{ ["pre","post"].forEach(f=>{ const a=tests.sections[k][f], b=T[k]&&T[k][f]; if(a&&(!b||(b.items||[]).length!==a.items.length)) err.push(u.build.file+" is stale for the "+k+" "+f+" form — run "+(u.build.by||"its builder")); }); }); }
+  return err;
+}
+function stable(v){ return JSON.stringify(v,null,1)+"\n"; }
+// index.html's catalog line: {html, cur} where cur = the parsed CPU_UNITS, or null when the page has no such line (a fixture root)
+const CAT_RE=/^const CPU_UNITS=(\{.*\});(   \/\/ [^\n]*)$/m;
+function catalogIn(root){ const p=path.join(root,"index.html"); if(!fs.existsSync(p)) return null; const html=fs.readFileSync(p,"utf8"), m=CAT_RE.exec(html); if(!m) return null; return {p,html,cur:JSON.parse(m[1])}; }
+function catalogWith(cat,id,idx){ const o={}; Object.keys(Object.assign({},cat.cur,{[id]:idx})).sort().forEach(k=>{ o[k]=k===id?idx:cat.cur[k]; }); return cat.html.replace(CAT_RE,(a,j,c)=>"const CPU_UNITS="+JSON.stringify(o)+";"+c); }
+// PURE-ish: everything for one unit; writes only when opts.write
+function compile(id,opts){
+  opts=opts||{}; const root=opts.root||REPO, dir=path.join(root,"units",id);
+  if(!fs.existsSync(path.join(dir,"unit.json"))) return {ok:false,err:["no units/"+id+"/unit.json"],warn:[]};
+  let L; try{ L=loadUnit(root,id); }catch(e){ return {ok:false,err:["couldn't read the unit: "+e.message],warn:[]}; }
+  const cp=path.join(dir,"COUNTS.json"), ip=path.join(dir,"index.json"), old=fs.existsSync(cp)?readJson(cp):null;
+  const others=unitIds(root).filter(x=>x!==id).map(x=>{ try{ const o=readJson(path.join(root,"units",x,"unit.json")); return {id:x,sections:(o.sections||[]).map(s=>s.key),decks:(o.decks||[]).map(d=>d.key)}; }catch(e){ return {id:x,sections:[],decks:[]}; } });
+  const r=check(root,id,L,old,others);
+  const counts=makeCounts(L.u,L.decks,L.tests), index=makeIndex(L.u,L.decks);
+  if(!r.err.length&&L.u.build&&L.u.build.file) r.err.push(...checkBuilt(root,L.u,L.decks,L.tests));
+  const js=(L.u.build&&L.u.build.file)?null:makeJs(L.u,index,L.decks,L.tests), jp=path.join(root,"units",id+".js");
+  if(opts.check&&!r.err.length){
+    if(!old||stable(old)!==stable(counts)) r.err.push("units/"+id+"/COUNTS.json is not current — run node units/build/compile_unit.js "+id);
+    if(!fs.existsSync(ip)||stable(readJson(ip))!==stable(index)) r.err.push("units/"+id+"/index.json is not current — run node units/build/compile_unit.js "+id);
+    if(js!=null&&(!fs.existsSync(jp)||fs.readFileSync(jp,"utf8")!==js)) r.err.push("units/"+id+".js is not current — run node units/build/compile_unit.js "+id);
+    const cat=catalogIn(root); if(cat&&JSON.stringify(cat.cur[id])!==JSON.stringify(index)) r.err.push("index.html's CPU_UNITS."+id+" is not current — run node units/build/compile_unit.js "+id); }
+  const ok=!r.err.length;
+  if(ok&&opts.write){ fs.writeFileSync(cp,stable(counts)); fs.writeFileSync(ip,stable(index)); if(js!=null) fs.writeFileSync(jp,js);
+    const cat=catalogIn(root); if(cat){ const h=catalogWith(cat,id,index); if(h!==cat.html) fs.writeFileSync(cat.p,h); r.page=h!==cat.html; } }
+  return {ok,err:r.err,warn:r.warn,counts,index,js,unit:L.u,page:!!r.page};
+}
+module.exports={compile,catalogIn,catalogWith,CAT_RE,check,loadUnit,makeIndex,makeCounts,makeJs,fbSafe,ranges,unranges,unitIds,LABEL_KEYS,FEATURE_KEYS,REPO};
+if(require.main===module){
+  const a=process.argv.slice(2), chk=a.includes("--check"), all=a.includes("--all"), ids=all?unitIds(REPO):a.filter(x=>!x.startsWith("--"));
+  if(!ids.length){ console.error("usage: node units/build/compile_unit.js <unitId>|--all [--check]"); process.exit(2); }
+  let bad=0;
+  ids.forEach(id=>{ const r=compile(id,{check:chk,write:!chk});
+    r.warn.forEach(w=>console.log("  note  "+id+": "+w));
+    if(!r.ok){ bad++; r.err.forEach(e=>console.log("  ERROR "+id+": "+e)); return; }
+    const c=r.counts; console.log((chk?"ok    ":"wrote ")+id+": "+Object.keys(c.sections).length+" sections, "+Object.keys(c.decks).length+" decks, "+c.cards.toLocaleString("en-US")+" cards, "+c.core.toLocaleString("en-US")+" core"+(chk?"":" → units/"+id+"/COUNTS.json, index.json"+(r.js!=null?", units/"+id+".js":"")+(r.page?", index.html CPU_UNITS":""))); });
+  process.exit(bad?1:0);
+}
