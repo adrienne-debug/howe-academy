@@ -46521,6 +46521,7 @@ function envSummary(kid,ctx){
       if(r.graduated) o.graduated=(typeof r.graduated==="object")?{date:r.graduated.date||null,right:+r.graduated.right||0,n:+r.graduated.n||0}:true;
       if(Object.keys(o).length) tests[stn]=o; });
     if(Object.keys(tests).length) out.tests=tests; }
+  if(typeof cprSumAns==="function") cprSumAns(kid,out,M);   // 📊 CPRESULTS: + each check-in's and the newest final's answers by question id (the site's students; Lincoln's Envirothon forms only, through his mirror)
   if(typeof cpPaceSumCore==="function") cpPaceSumCore(kid,out,ctx);   // 📅 CPPACE: the site kid's core cards per section (the site only; Lincoln's mirror in Howe is untouched)
   if(typeof cpSkillSummary==="function"){ const sk=cpSkillSummary(kid,M,now); if(sk) out.skills=sk; }   // 🧩 CPSKILL: summary.skills on the class site only (null for Howe and Lincoln)
   return out;
@@ -47366,6 +47367,7 @@ function envcStudentHtml(sid){
   h+='<div class="envs-card"><div class="envs-h2">\u{1F4DD} The final for '+envcEsc(envcName(s))+'</div><div class="envs-row">'+envcFinalStations().map(st=>{ const t=(sm&&sm.tests&&sm.tests[st.id])||{}, f=envcFinalRec(sid,st.id);
     if(t.graduated) return '<span class="envs-chip">'+envcEsc(st.short)+' \u{1F393}</span>'; if(f) return '<span class="envs-chip">'+envcEsc(st.short)+' \u00B7 final open'+(f.date?' '+envcEsc(f.date):'')+'</span>';
     return '<button class="envs-btn sec" onclick="envcFinalFor(\''+envcJ(sid)+'\',\''+st.id+'\')">\u{1F4DD} Open the final \u00B7 '+envcEsc(st.short)+'</button>'; }).join("")+'</div><div class="envs-muted" style="margin-top:4px">'+envcEsc((typeof cpFinalOpensText==="function"&&cpFinalOpensText(""))||"It opens on its own once every core card is learned")+'; this opens it now. Writes release/'+envcEsc(cid)+'/final/students/'+envcEsc(sid)+'/&lt;station&gt;. The whole class opens from Send out.</div></div>';   // 📝 CPFINAL: the class's share (cpFinalOpensText)
+  if(typeof cprStudentHtml==="function") h+=cprStudentHtml(sid);   // 📊 CPRESULTS: 📝 Answers, the check-in and the final side by side
   if(held.length) h+='<div class="envs-card"><div class="envs-h2">Open a station for '+envcEsc(envcName(s))+' only</div><div class="envs-row">'+held.map(st=>'<button class="envs-btn sec" onclick="envcOpenFor(\''+envcJ(sid)+'\',\''+st.id+'\')">\u{1F513} '+envcEsc(st.short)+'</button>').join("")+'</div><div class="envs-muted" style="margin-top:4px">Writes release/'+envcEsc(cid)+'/students/'+envcEsc(sid)+'/&lt;station&gt;. The whole class opens from Send out.</div></div>';
   if(typeof envClsStudentHtml==="function") h+=envClsStudentHtml(sid);   // ⚙️ ENVCLASSSET: this student's own settings
   const SC=(_envc.scores&&_envc.scores[sid])||{};
@@ -51557,6 +51559,7 @@ function cpctRowHtml(F,it,crumb){
     (cpctMulti(it)?'<span class="cpct-badge" style="color:#b45309">select all</span>':'')+(it.edited?'<span class="cpct-badge" style="color:#1d4ed8">✎ edited</span>':'')+(it.hidden?'<span class="cpct-badge" style="color:#7c2d12">\u{1F648} removed</span>':'')+'</span></button>'+
     (it.hidden?'<button class="cpce-x back" onclick="cpctShow(\''+J+'\')" aria-label="Put it back on the form" title="Put back">↩</button>':'<button class="cpce-x" onclick="cpctHide(\''+J+'\')" aria-label="Remove it for my class" title="Remove for my class">✕</button>');
   if(open) h+=cpctDetailHtml(F,it);
+  if(typeof cprRowMark==="function") h=cprRowMark(h,F,it);   // 📊 CPRESULTS: "% right" on the question's row
   return h+'</div>';
 }
 function cpctDetailHtml(F,it){
@@ -51679,12 +51682,296 @@ function cpctHtml(){
   let h='<div class="cpcs cpct" id="cpct"><div class="cpcs-tools" id="cpct-tools"><div class="cpcs-search"><input id="cpct-q" type="search" placeholder="Search questions, choices, cites…" value="'+cpctEsc(_cpct.q)+'" autocomplete="off" oninput="cpctSearch(this.value)" aria-label="Search the questions">'+
     '<button id="cpct-x" onclick="cpctTap(\'clear\')" aria-label="Clear the search"'+(_cpct.q?'':' style="display:none"')+'>✕</button><button id="cpct-undo" onclick="cpctUndo()" aria-label="Undo the last change" title="Undo the last change"'+(n?'':' disabled style="opacity:.35"')+'>↩︎</button></div><div class="cpcs-chips" id="cpct-chips">'+cpctChipsHtml()+'</div></div>';
   h+='<div id="cpct-list">'+cpctListHtml()+'</div></div>';
+  if(typeof cprTestsHtml==="function") h=cprTestsHtml(h);   // 📊 CPRESULTS: 📊 Class results above the forms
   if(typeof requestAnimationFrame==="function") requestAnimationFrame(cpctStick);
   return h;
 }
 // the search and the chips stay pinned just under the console's own sticky bar(s)
 function cpctStick(){ try{ const t=document.getElementById("cpct-tools"); if(!t) return; let top=0; document.querySelectorAll(".envs-top,.envs-demo").forEach(b=>{ if(getComputedStyle(b).position==="sticky") top=Math.max(top,b.offsetHeight); }); t.style.top=top+"px"; }catch(e){} }
 // CPTESTS_END
+// CPRESULTS_START — 📊 PER-QUESTION RESULTS AND THE CLASS ITEM ANALYSIS: the teacher sees which questions her class misses, Lincoln included
+// (DESIGN_class_platform_2026-10-28.md §6.4, §6.3, §6.4.1, §9, §12 item 4, §13 row 12, §14 Q11 / Q12 / Q18; PR 12 of the class platform; her
+// yes to building the design, 2026-10-28). Her words 2026-10-28 (Q18, yes to Lincoln's answers): "it definitely needs to tell her what is
+// the most missed questions and also include him, and that way she can come up with review things for class."
+//   · THE MIRROR PUBLISHES THE ANSWERS (envSummary's one hook, cprSumAns). summary.tests.<section>.pre gains { ans, formVer }, and
+//     summary.tests.<section>.post gains last = { right, n, date, ans, formVer } (the newest final attempt). ans = { questionId: pick } (an
+//     index, a sorted list for select-all, -1 for no answer): about 20 small numbers a form. The teacher already reads students/<sid>/summary,
+//     so there is no new path and no new rule (§6.4).
+//       - A student on the class site: the attempt's own `ans` (PR 11), cleaned (ids of the form's shape, picks as numbers, at most 80).
+//       - LINCOLN, through ENVMIRROR in Howe (her yes, 2026-10-28, Q18): his Envirothon check-in and final answers ONLY. His attempts keep
+//         today's positional `answers`, so they are read through the version-1 map (§5.3: position → the unit's question id), and only when
+//         the record's form name and question count are the unit's form. formVer 0: he takes the unit's form (the class's edits reach him
+//         with L2, later; Q21). Only sections of the unit's tests, only that form's question ids, only numbers: nothing from his other
+//         subjects, and NOTHING is written into Howe — the hook adds to the summary object the mirror already sends.
+//       - No site and no mirror config (Howe today, DeWalt, Burris) → the hook returns at once and the summary is byte-identical.
+//   · 📝 TESTS ▸ 📊 CLASS RESULTS (the item analysis, §6.4): a fold above the forms. Inside, one fold per form that has answers (section ·
+//     check-in or final, "N took it", "⚠ N missed a lot"), and in it one row per question, MOST MISSED FIRST: the share right and the
+//     most-picked wrong choice. Opened: every choice with how many picked it (✓ on the right one), who missed it and what they picked, the
+//     same question on the other form ("final 78% (+49)": pre-<n> ↔ post-<n> on a same-form final, else the same wording), and "Go to the
+//     question" (opens it in the forms below, to edit or remove). One open at each level; leaving 📝 Tests folds it back (cpctFoldAll's
+//     fresh filter object is the sign). Every student of the class counts, students on the Howe Academy app too.
+//     The question rows below get a "% right" mark (⚠ when half or more missed it: CPR_LOW).
+//   · STUDENT PAGE ▸ 📝 ANSWERS (§6.4): the check-in and the final side by side, one row per question: ✓ or ✗ and the letter picked (the
+//     right one in brackets). The same question on both forms shares a row, and "missed on the check-in, right on the final" gets a green ↑.
+//     Folded by section, one open. Parents see scores only, never each answer (Q12): nothing here reaches the parent's page.
+//   · VERSIONS (Q11: edits allowed, results kept apart by version). An attempt counts toward a question's numbers when it saw the class's
+//     current wording (its formVer is at or after her change); one taken on the unit's form before she changed it is scored on the unit's
+//     key and shown apart ("N answered an earlier wording"); one on an earlier class wording is counted, not scored.
+//   · FOR LATER PRs (names only; nothing here builds them): PR 16 CPSUGGEST draws the linked cards on each row through cpSuggestRowHtml(row, f)
+//     (each row carries the question's `cards`); PR 18 CPMISSED reads cpItemAnalysis(summaries, form), cprForms(), cprAll() and cprMostMissed()
+//     (every question ranked across the class: the share who missed, then the count). ⚠ Most missed itself is not built here.
+//   · THE DEMO: the eight sample students' check-ins and finals get invented answers that add up to their scores (cprDemoSeed, in memory,
+//     on the first paint of either view). Writes NOTHING anywhere: no envsWrite, no ref, no listener.
+const CPR_LOW=50, CPR_ANS_MAX=80, CPR_PICK_MAX=10, CPR_WHO=24;
+const _cpr={open:false,of:null,or:null,so:null,sid:null,fref:null,css:false,seeded:null,memo:null};
+function cprOn(){ return typeof cpctOn==="function"&&cpctOn(); }
+function cprEsc(v){ return envsEsc(v); }
+function cprFW(w){ return (typeof cpctFormWord==="function")?cpctFormWord(w):String(w); }
+function cprArr(v){ if(Array.isArray(v)) return v.slice(); if(v&&typeof v==="object") return Object.keys(v).filter(k=>/^\d+$/.test(k)).sort((a,b)=>a-b).map(k=>v[k]); return []; }
+function cprQid(which,it){ return (typeof cpctQid==="function")?cpctQid(which,it):((it&&it.id)?String(it.id):which+"-"+(it&&it.n)); }
+// ── PURE: a pick (an index, -1 for none, or a sorted list for select-all) and whether it is right
+function cprPick(v){
+  if(typeof v==="number") return (Number.isInteger(v)&&v>=-1&&v<CPR_PICK_MAX)?v:null;
+  const A=cprArr(v); if(!A.length||A.length>CPR_PICK_MAX||!A.every(x=>Number.isInteger(x)&&x>=0&&x<CPR_PICK_MAX)) return null;
+  return A.sort((a,b)=>a-b).filter((x,i,B)=>i===0||x!==B[i-1]);
+}
+function cprRight(p,key){ if(p==null||key==null) return false; if(typeof key==="number") return p===key; const K=cprArr(key); return Array.isArray(p)&&p.length===K.length&&p.every((x,i)=>x===K[i]); }
+function cprLetter(p){ if(p==null) return ""; if(p===-1) return "–"; return (Array.isArray(p)?p:(typeof p==="number"?[p]:cprArr(p))).map(j=>"ABCDEFGHIJ"[j]||"?").join(""); }
+// an attempt record's answers → {questionId: pick}, or null. Its own `ans` when it has one (the site, PR 11); else today's positional
+// `answers` through the version-1 map, only when the record is that very form (same form name, same number of questions)
+function cprAnsOf(rec,base,which){
+  if(!rec||typeof rec!=="object") return null; const out={}; let n=0;
+  if(rec.ans&&typeof rec.ans==="object"){ Object.keys(rec.ans).forEach(k=>{ if(n>=CPR_ANS_MAX||!/^[A-Za-z0-9_-]{1,40}$/.test(k)) return; const p=cprPick(rec.ans[k]); if(p!=null){ out[k]=p; n++; } }); return n?out:null; }
+  const A=cprArr(rec.answers), its=(base&&Array.isArray(base.items))?base.items:null;
+  if(!A.length||!its||A.length!==its.length||(rec.n!=null&&+rec.n!==its.length)||(rec.form&&base.form&&rec.form!==base.form)) return null;
+  its.forEach((it,i)=>{ if(n>=CPR_ANS_MAX) return; const p=cprPick(A[i]); if(p!=null){ out[cprQid(which,it)]=p; n++; } });
+  return n?out:null;
+}
+// ENVMIRROR envSummary: who gets answers in the summary — the class site's own student, or a kid this family's mirror sends (Lincoln)
+function cprSumOn(kid){
+  try{ if(typeof envSiteOn==="function"&&envSiteOn()) return true;
+    return typeof envmCfg==="function"&&!!envmCfg()&&typeof envmKids==="function"&&envmKids().indexOf(kid)>=0; }catch(e){ return false; }
+}
+// the hook: + each check-in's and the newest final's answers, on the summary object envSummary just built (its `tests` already there)
+function cprSumAns(kid,out,M){
+  if(!out||!out.tests||typeof out.tests!=="object"||!cprSumOn(kid)) return out;
+  const T=(typeof envtLib==="function")?envtLib():null, R=M&&M[kid+"_tests"]; if(!T||!R||typeof R!=="object") return out;
+  Object.keys(out.tests).forEach(stn=>{ const sec=T[stn], r=R[stn], o=out.tests[stn]; if(!sec||typeof sec!=="object"||!r||typeof r!=="object"||!o) return;
+    if(o.pre&&r.pre&&sec.pre){ const a=cprAnsOf(r.pre,sec.pre,"pre"); if(a){ o.pre.ans=a; o.pre.formVer=+r.pre.formVer||0; } }
+    const P=(r.post&&typeof r.post==="object")?r.post:null; if(!P||!sec.post) return;
+    const k=Object.keys(P).filter(x=>/^t\d+$/.test(x)&&P[x]&&typeof P[x]==="object").sort((a,b)=>(+a.slice(1))-(+b.slice(1))).pop(), L=k?P[k]:null; if(!L) return;
+    const a=cprAnsOf(L,sec.post,"post"); if(!a) return;
+    o.post=o.post||{}; o.post.last={right:+L.right||0,n:+L.n||0,date:L.date||null,ans:a,formVer:+L.formVer||0}; });
+  return out;
+}
+// ── PURE: the key an attempt was asked against (Q11). The class's current wording when the attempt saw it (formVer at or after her change);
+// the unit's key when it was taken on the unit's form (formVer 0) before she changed it; unknown (null ans) on an earlier class wording.
+// A question she added is on an attempt's form only from when she added it.
+function cprKey(it,formVer){
+  formVer=+formVer||0; const ts=+(it&&it.ts)||0;
+  if(it.added) return formVer>=ts?{ans:it.ans,cur:true}:null;
+  if(!it.edited||formVer>=ts) return {ans:it.ans,cur:true};
+  return {ans:formVer===0?(it.baseAns===undefined?null:it.baseAns):null,cur:false};
+}
+function cprAttempt(sm,sk,w){ const t=sm&&sm.tests&&sm.tests[sk]; if(!t||typeof t!=="object") return null; const a=(w==="pre")?t.pre:(t.post&&t.post.last); return (a&&typeof a==="object")?a:null; }
+// PURE (§6.4) cpItemAnalysis(summaries, form): the class's summaries [{sid, name, summary}] and one form {sk, w, items:[{id, n, q, choices,
+// ans, cards?, added?, edited?, ts?, baseAns?}]} → one row per question, MOST MISSED FIRST (the share right, then the count missed, then the
+// form's order). A row: took (answered this wording), right, pct, picks (how many picked each choice), none (no answer), wrong [{sid, name,
+// pick}], top (the most-picked wrong choice {i, n}), old {n, known, right} (answers to an earlier wording, kept apart), low (half or more
+// missed it), cards (the question's card links, §8.4). The form: took (students with answers), before (took it before answers were kept),
+// rows, low (how many rows are low).
+function cpItemAnalysis(summaries,form){
+  const its=(form&&Array.isArray(form.items))?form.items:[];
+  const rows=its.map((it,i)=>{ const ch=cprArr(it.choices); return {id:it.id,n:it.n,i,q:it.q,choices:ch,ans:it.ans,multi:typeof it.ans!=="number",cards:Array.isArray(it.cards)?it.cards.slice():[],added:!!it.added,edited:!!it.edited,
+    took:0,right:0,pct:null,picks:ch.map(()=>0),none:0,wrong:[],top:null,old:{n:0,known:0,right:0},low:false}; });
+  let took=0, before=0;
+  (Array.isArray(summaries)?summaries:[]).forEach(s=>{ const a=cprAttempt(s&&s.summary,form&&form.sk,form&&form.w); if(!a) return;
+    const A=(a.ans&&typeof a.ans==="object")?a.ans:null; if(!A){ before++; return; } took++; const fv=+a.formVer||0;
+    its.forEach((it,i)=>{ if(!Object.prototype.hasOwnProperty.call(A,it.id)) return; const p=cprPick(A[it.id]); if(p==null) return; const k=cprKey(it,fv); if(!k) return; const r=rows[i];
+      if(!k.cur){ r.old.n++; if(k.ans!=null){ r.old.known++; if(cprRight(p,k.ans)) r.old.right++; } return; }
+      r.took++; if(p===-1) r.none++; else (Array.isArray(p)?p:[p]).forEach(j=>{ if(j>=0&&j<r.picks.length) r.picks[j]++; });
+      if(cprRight(p,k.ans)) r.right++; else r.wrong.push({sid:s.sid,name:s.name||s.sid,pick:p}); }); });
+  rows.forEach(r=>{ r.pct=r.took?Math.round(r.right/r.took*100):null; r.low=r.pct!=null&&r.pct<=CPR_LOW;
+    const K=r.multi?cprArr(r.ans):[r.ans]; let b=-1, bn=0; r.picks.forEach((c,j)=>{ if(K.indexOf(j)<0&&c>bn){ b=j; bn=c; } }); r.top=b>=0?{i:b,n:bn}:null;
+    r.wrong.sort((x,y)=>String(x.name).localeCompare(String(y.name))); });
+  rows.sort((a,b)=>{ if(a.pct==null||b.pct==null) return ((a.pct==null)-(b.pct==null))||a.i-b.i; return a.pct-b.pct||(b.took-b.right)-(a.took-a.right)||a.i-b.i; });
+  return {sk:form&&form.sk,w:form&&form.w,took,before,rows,low:rows.filter(r=>r.low).length};
+}
+// ── the console's side: the class's forms as the analysis reads them, and the class's summaries
+function cprForms(){
+  const M=(typeof cpctModel==="function")?cpctModel():null; if(!M) return null; const L=(typeof cpctLayer==="function")?cpctLayer():{}, out=[];
+  M.secs.forEach(s=>s.forms.forEach(F=>{ const lay=cpctLayerFor(L[s.id],F.w,!!F.same)||{}, I=lay.items||{};
+    const items=F.items.filter(it=>!it.hidden).map(it=>{ const r=I[it.id], b=it.edited?F.base.items.find(x=>cprQid(F.w,x)===it.id):null;
+      return Object.assign({},it,{ts:(r&&+r.ts)||0,baseAns:b?b.ans:undefined}); });
+    out.push({sec:s,F,sk:s.id,w:F.w,key:F.key,same:!!F.same,shared:!!F.shared,items}); }));
+  return {forms:out,ready:!!M.ready};
+}
+function cprSummaries(){ if(typeof envcStudents!=="function") return []; return envcStudents().filter(s=>s&&s.summary).map(s=>({sid:s.sid,name:(typeof envcName==="function")?envcName(s):s.sid,howe:typeof envcApp==="function"&&envcApp(s)==="howe",summary:s.summary})); }
+// every form analysed, once per change (the class's layer version + each summary's time); `by` finds a row by "<form key>|<question id>"
+function cprAll(){
+  if(!cprOn()) return null; const S=cprSummaries(), v=(typeof _cpct!=="undefined"?_cpct.ver:0)+"|"+S.map(s=>s.sid+":"+((s.summary&&s.summary.at)||0)).join(",");
+  const st=(typeof _envc!=="undefined")?_envc.students:null; if(_cpr.memo&&_cpr.memo.v===v&&_cpr.memo.st===st) return _cpr.memo.out;
+  const X=cprForms(); if(!X) return null; const forms=X.forms.map(f=>Object.assign({},f,{A:cpItemAnalysis(S,f)})), by={};
+  forms.forEach(f=>f.A.rows.forEach(r=>{ by[f.key+"|"+r.id]=r; }));
+  const out={forms,by,ready:X.ready,n:S.length}; if(X.ready) _cpr.memo={v,st,out}; return out;
+}
+// For ⚠ Most missed (PR 18): every question that has answers, across the class's forms — the share who missed, then the count missed
+function cprMostMissed(){
+  const X=cprAll(); if(!X) return []; const out=[];
+  X.forms.forEach(f=>f.A.rows.forEach(r=>{ if(r.took) out.push({sk:f.sk,w:f.w,key:f.key,f,row:r,missed:r.took-r.right}); }));
+  return out.sort((a,b)=>(b.missed/b.row.took)-(a.missed/a.row.took)||b.missed-a.missed||a.row.i-b.row.i);
+}
+// the same question on the section's other form: pre-<n> ↔ post-<n> (and her own ids as they are) on a same-form final, else the same wording
+function cprNorm(s){ return String(s==null?"":s).toLowerCase().replace(/[^a-z0-9]+/g," ").trim(); }
+function cprTwin(f,it,o){
+  if(!o||!it) return null;
+  if(f.same||f.shared){ const id=String(it.id).replace(/^(pre|post)-/,m=>m==="pre-"?"post-":"pre-"), x=o.items.find(y=>y.id===id); if(x) return x; }
+  const q=cprNorm(it.q); return q?(o.items.find(y=>cprNorm(y.q)===q)||null):null;
+}
+function cprOther(X,f){ return X.forms.find(x=>x.sk===f.sk&&x.w!==f.w)||null; }
+// ── the demo: invented answers for the sample class that add up to each student's score (in memory, once per demo)
+function cprHash(s){ s=String(s); let h=5381; for(let i=0;i<s.length;i++) h=((h*33)^s.charCodeAt(i))>>>0; h^=h>>>16; h=Math.imul(h,0x85ebca6b); h^=h>>>13; h=Math.imul(h,0xc2b2ae35); h^=h>>>16; return h>>>0; }   // djb2 + a mixing finish, so neighbouring ids spread
+function cprDemoAns(sid,f,right,n){
+  const its=f.items.filter(it=>!it.added), len=its.length, r=Math.max(0,Math.min(len,Math.round((+right||0)*len/((+n)||len||1)))), ans={};
+  const score=it=>(cprHash(f.key+"|"+it.id)%1000)/1000+0.45*(cprHash(sid+"|"+it.id)%1000)/1000;
+  const order=its.slice().sort((a,b)=>score(a)-score(b)||String(a.id).localeCompare(String(b.id))), good=new Set(order.slice(0,r).map(it=>it.id));
+  its.forEach(it=>{ const ch=cprArr(it.choices), multi=typeof it.ans!=="number", K=multi?cprArr(it.ans):[it.ans], nk=ch.map((c,j)=>j).filter(j=>K.indexOf(j)<0);
+    if(good.has(it.id)||(!nk.length&&!multi)){ ans[it.id]=multi?K.slice():it.ans; return; }
+    if(multi){ const v=((K.length>1&&cprHash(sid+it.id)%2)||!nk.length)?K.slice(0,-1):K.concat([nk[cprHash(it.id+"x")%nk.length]]).sort((a,b)=>a-b); ans[it.id]=v.length?v:-1; return; }
+    const lure=nk[cprHash(it.id+"|lure")%nk.length]; ans[it.id]=(cprHash(sid+"|"+it.id+"|w")%100<65)?lure:nk[cprHash(sid+"|"+it.id)%nk.length]; });
+  return {ans,right:r,n:len};
+}
+function cprDemoSeed(){
+  if(typeof envsDemo!=="function"||!envsDemo()||typeof _envc==="undefined"||!_envc.demo||_cpr.seeded===_envc.demo) return false;
+  const X=cprForms(); if(!X||!X.ready) return false; _cpr.seeded=_envc.demo; _cpr.memo=null; const by={}; X.forms.forEach(f=>{ by[f.sk+"|"+f.w]=f; });
+  Object.keys(_envc.students||{}).forEach(sid=>{ const sm=_envc.students[sid]&&_envc.students[sid].summary, T=sm&&sm.tests; if(!T||typeof T!=="object") return;
+    Object.keys(T).forEach(sk=>{ const t=T[sk]; if(!t||typeof t!=="object") return; const fp=by[sk+"|pre"], fq=by[sk+"|post"], b=t.post&&t.post.best;
+      if(t.pre&&fp&&!t.pre.ans){ t.pre.ans=cprDemoAns(sid,fp,t.pre.right,t.pre.n).ans; t.pre.formVer=0; }
+      if(b&&fq&&!(t.post.last&&t.post.last.ans)){ const g=cprDemoAns(sid,fq,b.right,b.n); t.post.last={right:g.right,n:g.n,date:b.date||null,ans:g.ans,formVer:0}; } }); });
+  return true;
+}
+// ── the taps: one open at each level
+function cprTap(level,id){
+  if(!cprOn()) return; const S=_cpr;
+  if(level==="open"){ S.open=!S.open; S.of=S.or=null; }
+  else if(level==="form"){ S.of=S.of===id?null:id; S.or=null; }
+  else if(level==="row"){ S.or=S.or===id?null:id; }
+  else if(level==="sec"){ S.so=S.so===id?null:id; }
+  else return;
+  if(typeof envcRe==="function") envcRe();
+}
+// "Go to the question": folds the results and opens that question in the forms below (a same-form final's is edited under its check-in)
+function cprGo(fkey,id){
+  if(!cprOn()||typeof _cpct==="undefined") return; const X=cprAll(), f=X&&X.forms.find(x=>x.key===fkey); if(!f) return; let key=f.key, qid=String(id);
+  if(f.same){ const p=X.forms.find(x=>x.sk===f.sk&&x.w==="pre"); if(p){ key=p.key; qid=qid.replace(/^post-/,"pre-"); } }
+  _cpct.os=f.sk; _cpct.og=key; _cpct.or=key+"|"+qid; _cpct.lo=null; _cpct.edit=null; _cpct.q=""; Object.keys(_cpct.f).forEach(k=>{ _cpct.f[k]=false; });
+  _cpr.open=false; _cpr.of=_cpr.or=null; if(typeof envcRe==="function") envcRe(); if(typeof cpctScroll==="function"&&typeof cpctHid==="function") cpctScroll(cpctHid(_cpct.or));
+}
+// ── the page
+function cprCss(){
+  if(_cpr.css||typeof document==="undefined"||!document.createElement) return; _cpr.css=true;
+  try{ const s=document.createElement("style"); s.id="cpr-css"; s.textContent=
+    '.cpr-res{border-color:#bbf7d0}.cpr-pct{flex-shrink:0;font-weight:900;font-size:13px;margin-top:2px;color:#15803d;white-space:nowrap}.cpr-pct.low{color:#b91c1c}'+
+    '.cpr-sub{font-size:12px;color:#6b7280;margin-top:3px;font-weight:650;overflow-wrap:anywhere}.cpr-q{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.cpcs-row.open .cpr-q{display:block}'+
+    '.cpr-bar{height:7px;border-radius:4px;background:#eef2ee;overflow:hidden;margin-top:5px}.cpr-bar>i{display:block;height:100%;background:#9ca3af}.cpct-ch.ok .cpr-bar>i{background:#15803d}.cpr-n{flex-shrink:0;font-weight:800;min-width:22px;text-align:right}'+
+    '.cpr-who{font-size:12.5px;margin-top:8px;line-height:1.6;overflow-wrap:anywhere}.cpr-who span{display:inline-block;background:#fff;border:1px solid #fecaca;border-radius:8px;padding:1px 7px;margin:2px 4px 0 0}'+
+    '.cpr-g{font-size:13px;margin-top:6px}.cpr-g .cpcs-tag.Q{background:#dcfce7;color:#14532d;min-width:26px;text-align:center}.cpr-r{display:grid;grid-template-columns:minmax(0,1fr) 62px 62px;gap:4px;align-items:start;border-top:1px solid #f3f0ea;padding:7px 2px}.cpr-r.up{background:#f0fdf4}'+
+    '.cpr-r.hd{font-size:11px;font-weight:800;color:#6b7280;border-top:none;padding-bottom:3px}.cpr-r.hd div{text-align:center}.cpr-r.hd div:first-child{text-align:left}.cpr-r.sub{display:block;font-size:11.5px;font-weight:800;color:#92400e;padding-top:10px}'+
+    '.cpr-c{text-align:center;font-weight:800;white-space:nowrap}.cpr-c.ok{color:#15803d}.cpr-c.no{color:#b91c1c}.cpr-c.old{color:#9ca3af}.cpr-c small{font-weight:700;color:#6b7280}.cpr-up{color:#15803d;font-weight:900;margin-left:4px}';
+    document.head.appendChild(s); }catch(e){}
+}
+function cprPctHtml(r){ return r.pct==null?'':'<span class="cpr-pct'+(r.low?' low':'')+'">'+(r.low?'⚠ ':'')+r.pct+'%</span>'; }
+function cprTopLine(r){ return r.top?'most-picked wrong: '+"ABCDEFGHIJ"[r.top.i]+' “'+(String(r.choices[r.top.i]||"").length>40?String(r.choices[r.top.i]).slice(0,38)+'…':String(r.choices[r.top.i]||""))+'” ('+r.top.n+')':(r.took&&r.right===r.took?'everyone right':''); }
+// 📝 Tests: the 📊 Class results fold, put in above the forms (cpctHtml's one hook hands its page here)
+function cprTestsHtml(h){
+  if(!cprOn()||typeof h!=="string") return h; const i=h.indexOf('<div id="cpct-list">'); if(i<0) return h;
+  if(typeof _cpct!=="undefined"&&_cpr.fref!==_cpct.f){ if(_cpr.fref){ _cpr.open=false; _cpr.of=_cpr.or=null; } _cpr.fref=_cpct.f; }   // she left 📝 Tests (cpctFoldAll made a new filter object): folded again
+  return h.slice(0,i)+cprResultsHtml()+h.slice(i);
+}
+function cprResultsHtml(){
+  cprCss(); cprDemoSeed(); const X=cprAll(); if(!X||!X.ready) return "";
+  const has=X.forms.filter(f=>f.A.took), before=X.forms.reduce((n,f)=>n+f.A.before,0), low=has.reduce((n,f)=>n+f.A.low,0), open=_cpr.open;
+  const cnt='<div class="cpcs-cnt">'+(has.length?'<span><b>'+has.length+'</b> form'+(has.length===1?'':'s')+' with answers</span>'+(low?'<span style="color:#b91c1c">⚠ '+low+' question'+(low===1?'':'s')+' missed a lot</span>':''):'<span>no answers yet</span>')+'</div>';
+  let h='<div class="cpcs-fold cpr-res'+(open?' open':'')+'" id="cpr-res"><button class="cpcs-fh" onclick="cprTap(\'open\')" aria-expanded="'+(open?'true':'false')+'"><span class="cpcs-tw">▶</span><span style="font-size:22px">\u{1F4CA}</span><span class="cpcs-tt"><div class="cpcs-t1">Class results · most missed first</div>'+cnt+'</span></button>';
+  if(!open) return h+'</div>';
+  h+='<div class="cpcs-fb"><div class="cpcs-note">One row per question, the most missed first. Every student in the class counts, students on the Howe Academy app too. Tap a question for who missed it.'+(before?' '+before+' attempt'+(before===1?' was':'s were')+' taken before answers were kept, so only '+(before===1?'its':'their')+' score shows.':'')+'</div>';
+  if(!has.length) h+='<div class="cpcs-note">The numbers come in as students take the '+cprEsc(cprFW("pre").toLowerCase())+'s and '+cprEsc(cprFW("post").toLowerCase())+'s.</div>';
+  has.forEach(f=>{ h+=cprFormHtml(X,f); });
+  return h+'</div></div>';
+}
+function cprFormHtml(X,f){
+  const go=_cpr.of===f.key, J=envcJ(f.key), A=f.A, o=cprOther(X,f);
+  const cnt='<div class="cpcs-cnt"><span><b>'+A.took+'</b> took it</span>'+(A.low?'<span style="color:#b91c1c">⚠ '+A.low+' missed a lot</span>':'')+(A.before?'<span>'+A.before+' before answers were kept</span>':'')+'</div>';
+  let h='<div class="cpcs-fold l2'+(go?' open':'')+'" id="cpr-f-'+cprEsc(String(f.key).replace(/[^a-z0-9_-]/gi,"_"))+'"><button class="cpcs-fh" onclick="cprTap(\'form\',\''+J+'\')" aria-expanded="'+(go?'true':'false')+'"><span class="cpcs-tw">▶</span><span style="font-size:20px">'+cprEsc(f.sec.emoji||"")+'</span><span class="cpcs-tt"><div class="cpcs-t1">'+cprEsc(f.sec.short||f.sec.label)+' · '+(f.w==="pre"?'\u{1F4DD} ':'\u{1F393} ')+cprEsc(cprFW(f.w))+'</div>'+cnt+'</span></button>';
+  if(!go) return h+'</div>';
+  h+='<div class="cpcs-fb">'+A.rows.filter(r=>r.took||r.old.n).map(r=>cprRowHtml(X,f,o,r)).join("")+'</div>';
+  return h+'</div>';
+}
+function cprRowHtml(X,f,o,r){
+  const key=f.key+"|"+r.id, open=_cpr.or===key, J=envcJ(key), tw=o?cprTwin(f,f.items.find(x=>x.id===r.id),o):null, tr=tw?X.by[o.key+"|"+tw.id]:null;
+  const twin=(tr&&tr.pct!=null&&r.pct!=null)?cprEsc(cprFW(o.w).toLowerCase())+' '+tr.pct+'%'+(f.w==="post"?' → '+r.pct+'% ('+(r.pct-tr.pct>=0?'+':'')+(r.pct-tr.pct)+')':''):'';
+  const sub=[r.took?r.right+' of '+r.took+' right':'',cprTopLine(r),twin].filter(Boolean).join(' · ');
+  let h='<div class="cpcs-row'+(open?' open':'')+'"><button class="cpcs-rb" onclick="cprTap(\'row\',\''+J+'\')" aria-expanded="'+(open?'true':'false')+'"><span class="cpcs-tag Q">'+(r.added?'＋':'Q'+cprEsc(r.n))+'</span><span class="cpcs-rt"><span class="cpr-q">'+cprEsc(r.q)+'</span><div class="cpr-sub">'+cprEsc(sub)+'</div></span>'+cprPctHtml(r)+'</button>';
+  if(open) h+=cprDetailHtml(f,r);
+  return h+'</div>';
+}
+function cprDetailHtml(f,r){
+  const K=r.multi?cprArr(r.ans):[r.ans], max=Math.max(1,...r.picks); let h='<div class="cpcs-det">';
+  r.choices.forEach((c,j)=>{ const ok=K.indexOf(j)>=0, n=r.picks[j]||0;
+    h+='<div class="cpct-ch'+(ok?' ok':'')+'"><span class="cpct-L">'+"ABCDEFGHIJ"[j]+'</span><span style="flex:1;min-width:0">'+cprEsc(c)+(ok?' ✓':'')+'<div class="cpr-bar"><i style="width:'+Math.round(n/max*100)+'%"></i></div></span><span class="cpr-n" aria-label="'+n+' picked it">'+n+'</span></div>'; });
+  if(r.none) h+='<div class="cpcs-meta">No answer: '+r.none+'</div>';
+  if(r.wrong.length) h+='<div class="cpr-who"><b>Who missed it ('+r.wrong.length+'):</b> '+r.wrong.slice(0,CPR_WHO).map(x=>'<span>'+cprEsc(x.name)+' · '+cprEsc(cprLetter(x.pick))+'</span>').join("")+(r.wrong.length>CPR_WHO?' +'+(r.wrong.length-CPR_WHO)+' more':'')+'</div>';
+  else if(r.took) h+='<div class="cpcs-meta">Everyone who took it got it right.</div>';
+  if(r.old.n) h+='<div class="cpce-was">✎ '+r.old.n+' answered an earlier wording'+(r.old.known?' ('+r.old.right+' of '+r.old.known+' right on the unit’s key)':'')+'; kept apart from the numbers above.</div>';
+  if(typeof cpSuggestRowHtml==="function") h+=cpSuggestRowHtml(r,f);   // 💡 PR 16 CPSUGGEST: the linked cards on the row (r.cards)
+  h+='<div class="cpce-acts"><button class="cpce-btn" onclick="cprGo(\''+envcJ(f.key)+'\',\''+envcJ(r.id)+'\')">Go to the question ↓</button></div>';
+  return h+'</div>';
+}
+// 📝 Tests' question rows: "% right" (⚠ when half or more missed it), put in at the end of the row's text (cpctRowHtml's one hook)
+function cprRowMark(h,F,it){
+  if(!cprOn()||typeof h!=="string"||!F||!it||it.hidden) return h; const X=cprAll(), r=X&&X.by[F.key+"|"+it.id]; if(!r||r.pct==null) return h;
+  const i=h.indexOf('</span></button>'); if(i<0) return h;
+  return h.slice(0,i)+'<span class="cpct-badge" style="color:'+(r.low?'#b91c1c':'#15803d')+'" title="'+r.right+' of '+r.took+' right">'+(r.low?'⚠ ':'')+r.pct+'% right</span>'+h.slice(i);
+}
+// the student page's 📝 Answers: the check-in and the final side by side, by section (one open)
+function cprCell(it,att){
+  if(!it) return '<div class="cpr-c old" title="not on this form">—</div>'; if(!att||!att.ans||typeof att.ans!=="object") return '<div class="cpr-c old"></div>';
+  const p=cprPick(att.ans[it.id]), k=cprKey(it,+att.formVer||0); if(p==null||!k) return '<div class="cpr-c old" title="not on the form they took">—</div>';
+  if(k.ans==null) return '<div class="cpr-c old" title="an earlier wording">'+cprEsc(cprLetter(p))+'</div>';
+  const ok=cprRight(p,k.ans);
+  return '<div class="cpr-c '+(ok?'ok':'no')+'"'+(k.cur?'':' title="the unit’s wording"')+'>'+(ok?'✓ ':'✗ ')+cprEsc(cprLetter(p))+(ok?'':' <small>('+cprEsc(cprLetter(k.ans))+')</small>')+(k.cur?'':'*')+'</div>';
+}
+function cprOk(it,att){ if(!it||!att||!att.ans) return null; const p=cprPick(att.ans[it.id]), k=cprKey(it,+att.formVer||0); if(p==null||!k||k.ans==null) return null; return cprRight(p,k.ans); }
+function cprStudentHtml(sid){
+  if(!cprOn()) return ""; cprCss(); if(typeof cpcsCss==="function") cpcsCss(); if(typeof cpctCss==="function") cpctCss(); cprDemoSeed();
+  if(_cpr.sid!==sid){ _cpr.sid=sid; _cpr.so=null; }
+  const s=(typeof _envc!=="undefined"&&_envc.students&&_envc.students[sid])||{}, sm=s.summary||null, X=cprAll();
+  let h='<div class="envs-card"><div class="envs-h2">\u{1F4DD} Answers</div>';
+  if(!X||!X.ready){ if(typeof cpcsLoad==="function") cpcsLoad(); return h+'<div class="envs-muted">Loading the questions…</div></div>'; }
+  const secs=[]; X.forms.forEach(f=>{ if(secs.indexOf(f.sk)<0) secs.push(f.sk); });
+  const rows=secs.map(sk=>{ const p=X.forms.find(f=>f.sk===sk&&f.w==="pre")||null, q=X.forms.find(f=>f.sk===sk&&f.w==="post")||null, ap=p&&cprAttempt(sm,sk,"pre"), aq=q&&cprAttempt(sm,sk,"post");
+    return {sk,p,q,ap:ap&&ap.ans?ap:null,aq:aq&&aq.ans?aq:null,sec:(p||q).sec}; }).filter(x=>x.ap||x.aq);
+  if(!rows.length) return h+'<div class="envs-muted">No answers yet: each question shows here once '+cprEsc(envcName(Object.assign({sid},s)))+' takes a '+cprEsc(cprFW("pre").toLowerCase())+' or a '+cprEsc(cprFW("post").toLowerCase())+'.</div></div>';
+  h+='<div class="envs-muted">✓ right · ✗ missed, with the letter picked (the right one in brackets) · <span class="cpr-up">↑</span> missed on the '+cprEsc(cprFW("pre").toLowerCase())+', right on the '+cprEsc(cprFW("post").toLowerCase())+' · * the unit’s wording, before your class’s edit.</div>';
+  rows.forEach(x=>{ h+=cprSecHtml(x); });
+  return h+'</div>';
+}
+function cprSecHtml(x){
+  const open=_cpr.so===x.sk, used=new Set(), list=[]; let up=0;
+  (x.p?x.p.items:[]).forEach(it=>{ const t=x.q?cprTwin(x.p,it,x.q):null; if(t) used.add(t.id); list.push([it,t]); });
+  const only=(x.q?x.q.items:[]).filter(it=>!used.has(it.id));
+  list.forEach(L=>{ if(cprOk(L[0],x.ap)===false&&cprOk(L[1],x.aq)===true) up++; });
+  const sc=(a,w)=>a?'<span>'+cprEsc(cprFW(w).toLowerCase())+' <b>'+(+a.right||0)+'/'+(+a.n||0)+'</b></span>':'';
+  const cnt='<div class="cpcs-cnt">'+sc(x.ap,"pre")+sc(x.aq,"post")+(up?'<span class="cpr-up">↑ '+up+'</span>':'')+'</div>';
+  let h='<div class="cpcs-fold l2'+(open?' open':'')+'"><button class="cpcs-fh" onclick="cprTap(\'sec\',\''+envcJ(x.sk)+'\')" aria-expanded="'+(open?'true':'false')+'"><span class="cpcs-tw">▶</span><span style="font-size:20px">'+cprEsc(x.sec.emoji||"")+'</span><span class="cpcs-tt"><div class="cpcs-t1">'+cprEsc(x.sec.label)+'</div>'+cnt+'</span></button>';
+  if(!open) return h+'</div>';
+  const row=(tag,it,a,b,cls)=>'<div class="cpr-r'+(cls?' '+cls:'')+'"><div style="display:flex;gap:6px;min-width:0"><span class="cpcs-tag Q">'+cprEsc(tag)+'</span><span class="cpr-q">'+cprEsc(it.q)+'</span></div>'+a+b+'</div>';
+  h+='<div class="cpcs-fb"><div class="cpr-g"><div class="cpr-r hd"><div>Question</div><div>'+cprEsc(cprFW("pre"))+'</div><div>'+cprEsc(cprFW("post"))+'</div></div>';
+  list.forEach(L=>{ const u=cprOk(L[0],x.ap)===false&&cprOk(L[1],x.aq)===true; h+=row(L[0].added?'＋':'Q'+L[0].n,L[0],cprCell(L[0],x.ap),cprCell(L[1],x.aq).replace(/<\/div>$/,u?'<span class="cpr-up" aria-label="learned it">↑</span></div>':'</div>'),u?'up':''); });
+  if(only.length&&x.aq){ h+='<div class="cpr-r sub">Only on the '+cprEsc(cprFW("post").toLowerCase())+'</div>'; only.forEach(it=>{ h+=row(it.added?'＋':'Q'+it.n,it,cprCell(null,null),cprCell(it,x.aq),''); }); }
+  return h+'</div></div></div>';
+}
+// CPRESULTS_END
 // CPDRILLPARENT_START — 🧠 THE PARENT CAN TAKE OVER A STUDENT'S REVIEW CARDS, per kid, on the class site (DESIGN_class_platform_2026-10-28.md
 // §7(a) 2–3, §2, §9, §13 row 13, §14 Q5; PR 13 of the class platform). Her words 2026-10-28: "For the parent, I think they can get the
 // option to pick per kid, and the default would be that it stays in the student's own session. But the mom, if she knows her kid and
