@@ -45396,7 +45396,7 @@ function envtHandOffAt(kid){ const S=masteryData[kid+"_sessions"]; let s=S&&S[EN
 function envtCoreCount(kid,station){ const st=envtStation(station), L=((typeof window!=="undefined")&&window.HoweEnvirothon&&window.HoweEnvirothon.unit)||null, U=envtUnit();
   const out={learned:0,total:0}; if(!st) return out;
   const cardsOf=k=>{ const r=U&&(U.decks||[]).find(d=>d&&d.key===k); if(r&&Array.isArray(r.cards)&&r.cards.length) return r.cards; const l=L&&(L.decks||[]).find(d=>d&&d.key===k); return (l&&l.cards)||[]; };
-  let items=masteryData[kid]||[]; if(!Array.isArray(items)) items=Object.values(items); const at=envtHandOffAt(kid), keys=new Set(st.decks.map(d=>d.key)), ok={};
+  let items=masteryData[kid]||[]; if(!Array.isArray(items)) items=Object.values(items); const at=(typeof cpReviewLearnedAt==="function"&&cpReviewLearnedAt(kid,station))||envtHandOffAt(kid), keys=new Set(st.decks.map(d=>d.key)), ok={};   // 🔁 CPREVIEW: on the class site, learned = the section's learnedAt (default every 2 weeks), not where the review happens
   items.forEach(i=>{ if(i&&keys.has(i.subject)&&!i.twinOf&&i.dir!=="prod"&&i.status!=="introduction"&&i.status!=="parked"&&mastTierAtLeast(i.tier,at)) (ok[i.subject]=ok[i.subject]||new Set()).add(i.prompt); });
   keys.forEach(k=>{ cardsOf(k).forEach(c=>{ if(!c||c.core!==true) return; out.total++; if(ok[k]&&ok[k].has(c.name)) out.learned++; }); });
   return out; }
@@ -47108,7 +47108,9 @@ function envsAutoEnroll(){
 // the mirror's listeners (release/<cid>/all, students/<sid>) attach once the unit is here — ENVMIRROR's own function, with this login's session
 function envsArmMirror(){ if(_envs.mirrorArmed||envsDemo()||!(_envs.role==="kid"||_envs.role==="parent")) return; if(typeof _haUnitsReady==="undefined"||!_haUnitsReady) return; if(typeof envmAuthChanged!=="function"||typeof _envm==="undefined"||!_envm.edb) return; _envs.mirrorArmed=true; try{ if(!_envm.user) _envm.user=firebase.auth().currentUser||null; envmAuthChanged(); }catch(e){} }
 // ── PARENT ──
-function envsWhoNote(){ const w=_envs.who||""; return w==="teacher"?"The teacher runs the drills in class \u2014 your part is the check-in on this page.":w==="parent"?"Your drills are on: open the parent view with your PIN to drill the cards together.":w==="both"?"Your drills are on, and the teacher drills in class too.":"Who drills (you, the teacher or both) is set by the teacher."; }
+function envsWhoNote(){ const w=_envs.who||"";
+  if(typeof cpReviewWhoNote==="function"){ const t=cpReviewWhoNote(w); if(t) return t; }   // 🔁 CPREVIEW: the reviews are in the student's own 🌿 sitting — no PIN drill
+  return w==="teacher"?"The teacher runs the drills in class \u2014 your part is the check-in on this page.":w==="parent"?"Your drills are on: open the parent view with your PIN to drill the cards together.":w==="both"?"Your drills are on, and the teacher drills in class too.":"Who drills (you, the teacher or both) is set by the teacher."; }
 function envsParentHtml(){
   const kid=_envs.kid, name=envsKidName(kid), col=envsKidColor(kid), v=_envs.view==="study"?"home":(_envs.view||"home"), s=envsSummary(kid);
   let h=(typeof cpTopHtml==="function")?cpTopHtml("parent",name):'<div class="envs-top" style="background:'+col+'"><div class="t"><div class="envs-brand">Howe <span>Academy</span></div>\u{1F33F} '+envsEsc(name)+'\u2019s Envirothon</div><button onclick="envsView(\'settings\')" aria-label="Settings">\u2699\uFE0F</button></div>';   // 🏫 CPCLASS: the class's emoji, title and color
@@ -49445,6 +49447,97 @@ function envFlashRunningHtml(kid){ return (envFlash&&kid&&envFlash.kid===kid)?en
 function envFlashAvail(kid){ try{ return envFlashDecks(kid).length>0; }catch(e){ return false; } }
 function envFlashGameHtml(){ const kid=(typeof masteryKid!=="undefined")?masteryKid:null; if(!kid) return ""; const r=envFlashRunningHtml(kid); return '<div style="padding:12px 0">'+(r||envFlashDoorHtml(kid,null))+'</div>'; }
 // ENVIDFLASH_END
+// CPREVIEW_START — 🔁 EVERY REVIEW IN THE STUDENT'S OWN 🌿 SITTING, on the class site (DESIGN_class_platform_2026-10-28.md §7(a), §2, §5.1,
+// §9, §12, §13 row 6; PR 6 of the class platform). Her answer to Q5, 2026-10-28: "the default would be that it stays in the student's own
+// session." The gap it closes: the 🌿 session owned a card only below its mixInAt (weekly); from weekly up the card belonged to Mom's drill,
+// and the site has no Mom's drill (mastery is in ENVS_OFF_TABS). So a site student's weekly cards were never reviewed, nothing reached
+// every 2 weeks (learned for the final), the final could never open by itself, and the parent page promised "open the parent view with
+// your PIN to drill", a drill that doesn't exist. INERT unless ENVSITE's envEdition() says "envirothon", and then only for the site's own kid
+// (a kid or parent login, or the demo's kid): the same test as ENVCLASSSET's overlay.
+//   · reviewIn:"sitting" is every site student's default. mstSessions hands it to the student's deck sessions (one hook, after the session
+//     object is built); mstOwns gets one guarded line: a session with reviewIn "sitting" owns every active card below graduated. Reviews keep
+//     their own spacing (mastIsDue), so the sitting carries the weekly, every-2-weeks and monthly reviews the way it already carried the ones
+//     below weekly, and cards climb all the way. mixInAt / handOffAt are left alone (ENVCLASSSET's "hand-off above mix-in" still holds);
+//     their meaning lines in ⚙️ Class settings now say they don't move cards on the site. A parent taking the reviews over (reviewIn
+//     "parent", per kid) is PR 13; Lincoln's own move (L1) is its own PR.
+//   · learnedAt: the level that counts as learned for the final, per section (classes/<cid>/plan/<key>/learnedAt, read off the class record
+//     the kid's app already listens to; the section-plan editor is PR 7), default bi_weekly (§5.1). envtCoreCount reads it for the site's kid,
+//     so "learned" no longer depends on where the review happens. Everyone else keeps PR A's rule (the session's handOffAt).
+//   · reviewCap: ⚙️ Class settings ▸ "Reviews a sitting" (0–200, default 0 = all of them), a class value and a per-student override like the
+//     other rows. On a busy day the sitting takes the oldest-due reviews first; when it is saved, "Keep going · N left" runs the next batch
+//     through the same save (the Daily Mix's mixFinish pattern). The row is added from this block, by name, right after "Cards a sitting";
+//     the ENVCS_FIELDS literal is untouched.
+//   · A card graded in any drill is booked forward (next_due), so mastIsDue keeps the sitting from asking it again that day.
+//   · THE PARENT PAGE's "Who drills" note: "Maya reviews in the 🌿 sitting on the student login …", in place of the PIN drill.
+//   · Howe, DeWalt, Burris and Lincoln: no edition → every hook hands back what it was given; his 🌿 session keeps handing weekly+ cards to
+//     Mom's drill. Nothing here reads or writes a database.
+const CPR_CAP_ROW={name:"reviewCap",part:"study",sect:"front",kind:"int",min:0,max:200,def:0,zero:"all of them",label:"Reviews a sitting",means:"Most review cards in one sitting, the oldest due first. When those are done the student can Keep going for the rest (0 = all of them)."};
+const CPR_LEARNED_DEF="bi_weekly";
+const CPR_MEANS={mixInAt:"Where a card would leave the \u{1F33F} sitting for a review mix. On the class site every review stays in the \u{1F33F} sitting, so this doesn’t move cards.",
+  handOffAt:"Where a card would go to a parent’s drill. On the class site every review stays in the \u{1F33F} sitting. A card counts as learned for the final at its section’s level (Every 2 weeks unless the section plan says otherwise)."};
+// the guarded update of ENVCLASSSET's settings list (by name, never by position): "Reviews a sitting" after "Cards a sitting"; the two
+// "when cards move on" rows get meaning lines that are true on the site
+function cpReviewFields(){
+  if(typeof ENVCS_FIELDS==="undefined"||!Array.isArray(ENVCS_FIELDS)) return false;
+  if(!ENVCS_FIELDS.some(f=>f&&f.name===CPR_CAP_ROW.name)){ const i=ENVCS_FIELDS.findIndex(f=>f&&f.name==="maxCards"); ENVCS_FIELDS.splice(i<0?ENVCS_FIELDS.length:i+1,0,Object.assign({},CPR_CAP_ROW)); }
+  Object.keys(CPR_MEANS).forEach(n=>{ const f=ENVCS_FIELDS.find(x=>x&&x.name===n); if(f) f.means=CPR_MEANS[n]; });
+  return true;
+}
+const CPR_FIELDS_SET=cpReviewFields();
+// is this the site's own kid? (a kid or parent login, or the demo's kid) — envClassOverlay's test
+function cpReviewOn(kid){
+  try{
+    if(typeof envClsOn!=="function"||!envClsOn()||!kid||typeof _envs==="undefined"||kid!==_envs.kid) return false;
+    return envsDemo()||_envs.role==="kid"||_envs.role==="parent";
+  }catch(e){ return false; }
+}
+// the class's (then the student's) Reviews a sitting, for a session the overlay didn't touch (0 = all of them)
+function cpReviewCapOf(rec){
+  const ok=x=>{ if(x==null) return null; const c=envClsCheck("reviewCap",x); return c.ok?c.v:null; };
+  let v=ok(rec?rec.reviewCap:null);
+  if(v==null&&typeof envClsLayers==="function"){ const L=envClsLayers(); (L||[]).forEach(x=>{ const y=ok(x&&x.study&&x.study.reviewCap); if(y!=null) v=y; }); }   // class, then the student; a bad value is skipped
+  return v==null?0:v;
+}
+// mstSessions' hook: the site kid's deck sessions review in the sitting, with the class's cap. s = the session object just built (never the
+// kid's own record); everyone else: nothing is added.
+function cpReviewSession(kid,sid,rec,s){
+  if(!s||s.kind==="mix"||s.kind==="checkup"||!cpReviewOn(kid)) return s;
+  s.reviewIn="sitting";
+  s.reviewCap=cpReviewCapOf(rec);
+  return s;
+}
+// mstOwns' hook (only for a session with reviewIn "sitting"): every active card below graduated
+function cpReviewOwns(session,item,tier){ return !!(session&&session.reviewIn==="sitting"&&item&&item.status==="active"&&(tier||item.tier||"daily")!=="graduated"); }
+// mstPile's hook (only when the session has a cap): the oldest-due reviewCap reviews, kept in the pile's own order; reviewLeft = every
+// review due now, so the view can offer "Keep going · N left" once the sitting is saved
+function cpReviewCapPile(session,pile){
+  const cap=Math.max(0,Math.floor(Number(session&&session.reviewCap)||0)), all=(pile&&pile.reviews)||[];
+  if(!cap) return pile;
+  const nd=i=>(i&&i.next_due!=null)?i.next_due:-1;
+  const keep=new Set(all.slice().sort((a,b)=>(nd(a)-nd(b))||_mstCmp(a.id,b.id)).slice(0,cap).map(i=>i.id));
+  return Object.assign({},pile,{reviews:all.filter(i=>keep.has(i.id)),reviewLeft:all.length,reviewCap:cap});
+}
+// learned for the final, per section: the plan's learnedAt, else bi_weekly — the site's kid only (null = PR A's rule, the session's handOffAt)
+function cpReviewLearnedAt(kid,station){
+  if(!cpReviewOn(kid)) return null;
+  const p=(_envs.cls&&_envs.cls.plan&&station&&_envs.cls.plan[station])||null, v=p&&p.learnedAt;
+  return (v&&typeof envClsTiers==="function"&&envClsTiers().indexOf(v)>=0)?v:CPR_LEARNED_DEF;
+}
+// the 🌿 start / done screen: "12 of 40 reviews due …" before; "Keep going · 28 left" once a capped sitting is saved
+function cpReviewMoreHtml(session,pile,where){
+  if(!session||!pile||!(pile.reviewCap>0)) return "";
+  const cap=pile.reviewCap, left=pile.reviewLeft|0;
+  if(where==="start") return left>cap?'<div style="font-size:11.5px;color:var(--muted);margin-top:6px;text-align:center">'+cap+' of '+left+' reviews due — done at '+cap+', keep going if you like</div>':"";
+  if(where==="done"&&left>0) return '<div style="margin-top:12px"><button onclick="mstStart()" style="min-height:48px;padding:0 24px;border-radius:14px;border:1.5px solid #7c3aed;background:#fff;color:#6d28d9;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Keep going · '+left+' left</button><div style="font-size:11.5px;color:var(--muted);margin-top:6px">Today’s reviews are done ✓ — these are extra, and every card counts.</div></div>';
+  return "";
+}
+// the parent page's "Who drills" note: the reviews are in the student's own sitting (no pronoun: the name only)
+function cpReviewWhoNote(who){
+  if(typeof envSiteOn!=="function"||!envSiteOn()||typeof _envs==="undefined"||_envs.role==="teacher"||_envs.role==="admin") return "";
+  const name=(typeof envsKidName==="function"&&_envs.kid)?envsKidName(_envs.kid):"Your student";
+  return name+" reviews in the \u{1F33F} sitting on the student login: every card comes back on the day it’s due, at every level, so there’s no drill for you to run."+((who==="teacher"||who==="both")?" The teacher drills in class too.":"");
+}
+// CPREVIEW_END
 
 function renderNotebook(el){
   const con=el||document.getElementById("content"); if(!con)return;
@@ -64209,6 +64302,7 @@ function mstSessions(kid) {
       lessonFrom: rec.lessonFrom, lessonTo: rec.lessonTo,   // CKORDER: the lesson range Mom set ("through L4 Lesson 4") was saved but never read back — every level's whole list was asked
       howto: (typeof mstHowtoClean === "function") ? mstHowtoClean(rec.howto) : ""   // 📋 MST_HOWTO
     });
+    if (typeof cpReviewSession === "function") cpReviewSession(kid, sid, rec, out[out.length - 1]);   // 🔁 CPREVIEW: the class site's kid reviews every level in the sitting (reviewIn "sitting" + Reviews a sitting); nothing added for anyone else
   });
   // Second pass — the 📚 Daily Study catch-all (kind "all") owns every deck that no NAMED deck
   // session claims, minus the decks kept with Mom (skipDecks). Resolved here, once, so the rest of
@@ -64253,6 +64347,7 @@ function mstOwns(session, item, ladder) {
   if (mastIsNeverDrill(item)) return false;
   if (item.status === "introduction") return true;
   const tier = item.tier || "daily";
+  if (typeof cpReviewOwns === "function" && session.reviewIn === "sitting") return cpReviewOwns(session, item, tier);   // 🔁 CPREVIEW: a reviewIn "sitting" session owns every active card below graduated (only the class site sets it)
   return mstTierIdx(tier, ladder) < mstTierIdx(session.mixInAt, ladder);
 }
 
@@ -64497,6 +64592,7 @@ function mstPile(kid, sid, pn, todayLog) {
     }
   }
 
+  if (typeof cpReviewCapPile === "function" && session.reviewCap > 0) return cpReviewCapPile(session, { reviews, learning, newNames });   // 🔁 CPREVIEW: Reviews a sitting — the oldest due first, Keep going for the rest
   return { reviews, learning, newNames };
 }
 
@@ -67168,6 +67264,7 @@ function renderMastStudy(opts){
     h+='<div style="font-size:14px;color:var(--muted);font-weight:600">'+mstDone.total+' cards · '+mstDone.correct+' good · '+mstDone.miss+' again</div>';
     { const _mx=(session.kind==="mix"&&pile&&pile.mixLeft>0)?pile.mixLeft:0;   // MIX_FINISH: the rest of the backlog, if he wants it
       if(_mx) h+='<div style="margin-top:12px"><button onclick="mstStart()" style="min-height:48px;padding:0 24px;border-radius:14px;border:1.5px solid #7c3aed;background:#fff;color:#6d28d9;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Keep going · '+_mx+' left</button><div style="font-size:11.5px;color:var(--muted);margin-top:6px">Today\'s Mix is done \u2713 \u2014 this is extra, and every card counts.</div></div>'; }
+    if(typeof cpReviewMoreHtml==="function") h+=cpReviewMoreHtml(session,pile,"done");   // 🔁 CPREVIEW: Keep going · N left after a capped 🌿 sitting
     h+='</div>';
   } else {
     const donePile=!(pile.newNames||[]).length&&!(pile.reviews||[]).length&&!(pile.learning||[]).length;
@@ -67177,6 +67274,7 @@ function renderMastStudy(opts){
       const resume=mstHasPersisted(session.sid);
       h+='<div style="text-align:center;margin-top:8px"><button onclick="mstStart()" style="min-height:56px;padding:0 40px;border-radius:16px;border:none;background:#7c3aed;color:#fff;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(resume?"Resume":"Start")+'</button>'
         +((session.kind==="mix"&&pile&&pile.mixFinish>0&&pile.mixLeft>pile.mixFinish)?'<div style="font-size:11.5px;color:var(--muted);margin-top:6px">'+pile.mixFinish+' of '+pile.mixLeft+' due \u2014 done at '+pile.mixFinish+', keep going if you like</div>':'')+'</div>';   // MIX_FINISH
+      if(typeof cpReviewMoreHtml==="function") h+=cpReviewMoreHtml(session,pile,"start");   // 🔁 CPREVIEW: "12 of 40 reviews due — done at 12"
     }
   }
   return h;
