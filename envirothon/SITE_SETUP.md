@@ -137,6 +137,12 @@ solo tries right, on 2 days. A sitting saves once, in the family's own instance 
 **🏫 Class setup ▸ 🧩 Skills** hides a skill or makes it optional for the class (`classSkills/<cid>/<skill>`, the class's teacher or
 an admin; the class's logins read it) and sets "the final waits for the core skills too" (`classes/<cid>/plan/<section>/skillsForFinal`,
 off unless ticked). Publish the rules file again so the `classSkills` node is live.
+**⏱️ Team mocks** (2026-10-29, class platform, research §4.12): with **🏫 Class setup ▸ ⏱️ Mock run** ticked, the console's
+**⏱️ Mock** starts a timed run for one team on one device: who is here, the captain (breaks ties), the section, the class's own
+check-in or final form (her 📝 Tests edits included) and the time (25 min). The team hands in one shared sheet; it sees its score
+and which numbers it missed, never the answers. One write per run at `teams/<cid>/<team>/mocks/m<ts>`; the results by team and
+question by question sit under the start card, and 🖨 prints the paper version (form, answer sheet, key). Only the class's teacher
+and you read or write `teams/<cid>`. Publish the rules file again so the `teams` node is live.
 
 
 **Master lock**: Admin → "Close the season now" writes `release/locked = {locked:true, at, by}`; every family and the teacher

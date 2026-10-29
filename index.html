@@ -47210,6 +47210,7 @@ function envsDemoStart(){
   try{ if(typeof cpFinalDemoSeed==="function") cpFinalDemoSeed(); }catch(e){}   // 📝 CPFINAL: Maya's Soils at 3 of 4 core cards learned
   try{ if(typeof envcDemoStart==="function") envcDemoStart(data); }catch(e){}
   try{ if(typeof cpWatchDemoSeed==="function") cpWatchDemoSeed(data); }catch(e){}   // 🧠 CPWATCH: Jonah's parent hasn't drilled for 4 study days
+  try{ if(typeof cpMockDemoSeed==="function") cpMockDemoSeed(data); }catch(e){}   // ⏱️ CPMOCK: the sample class has Mock run on; two teams already ran a mock
   try{ haAuthHide(); }catch(e){}
   try{ if(typeof cpSkillDemoSeed==="function") cpSkillDemoSeed(data); }catch(e){}   // 🧩 CPSKILL: the sample skill (biotic index) + the classmates' skill counts
   try{ if(typeof cpGearDemoSeed==="function") cpGearDemoSeed(data); }catch(e){}   // 🧰 CPITEMGEAR: the unit's gear skills + demo drawings + the classmates' counts
@@ -47332,6 +47333,7 @@ function envConsoleHtml(){
   if(typeof cpSetupHtml==="function") chips.splice(chips.findIndex(x=>x[0]==="classset"),0,["setup","\u{1F3EB} Class setup"]);   // 🏫 CPCLASS
   if(admin&&typeof cpuUnitsHtml==="function") chips.splice(chips.findIndex(x=>x[0]==="admin"),0,["units","\u{1F4E6} Units"]);   // 📦 CPUNIT
   if(typeof cpdtChips==="function") cpdtChips(chips);   // 🧠 CPDRILLTEACHER: 🧠 Drill right after 📋 Class
+  if(typeof cpmkChips==="function") cpmkChips(chips);   // ⏱️ CPMOCK: ⏱️ Mock before 🏆 Boards, while the class has Mock run on
   if(typeof cpcsChips==="function") cpcsChips(chips);   // 📚 CPCARDSSEE: 📚 Cards before 🃏 Teacher cards
   if(typeof cpceChips==="function") cpceChips(chips);   // 📚 CPCARDSEDIT: 🃏 Teacher cards moved into 📚 Cards (the old chip comes out)
   if(typeof cpctChips==="function") cpctChips(chips);   // 📝 CPTESTS: 📝 Tests right after 📚 Cards
@@ -47345,6 +47347,7 @@ function envConsoleHtml(){
   if(v==="student"&&_envc.sel) h+=envcStudentHtml(_envc.sel);
   else if(v==="pace"&&typeof cpPaceHtml==="function") h+=cpPaceHtml();   // 📅 CPPACE: the pace target
   else if(v==="tdrill"&&typeof cpdtHtml==="function") h+=cpdtHtml();   // 🧠 CPDRILLTEACHER: the teacher's drill (pick a student, ✓ / ✗, next student)
+  else if(v==="cpmock"&&typeof cpmkHtml==="function") h+=cpmkHtml();   // ⏱️ CPMOCK: the timed team mock (start it for a team) and the results by team
   else if(v==="roster") h+=envcRosterHtml();
   else if(v==="send") h+=envcSendHtml();
   else if(v==="strong") h+=envcStrongHtml();
@@ -51183,6 +51186,288 @@ function cpBioticDemoSeed(data){
   return n>0;
 }
 // CPITEMBIOTIC_END
+// CPMOCK_START — ⏱️ THE TIMED TEAM MOCK: a team takes a whole section's form together, on one device, against the clock
+// (RESEARCH_envirothon_skills_2026-10-28.md §4.12, ranked #7 in §5, and §6's paper version; DESIGN_class_platform_2026-10-28.md §4.1b, §5,
+// §8.12, §13 rows 25–27, the `mock` type; her yes to building the design 2026-10-28; built 2026-10-29). Why: the event is a TEAM event — each
+// test is 20 questions done by 3–5 kids with one answer sheet, and the NC team tips call group decisions under a time limit a big part of the
+// score ("a captain who breaks ties"; a 100-question practice test at the end of January, teams in February). The cards and the skills train
+// each kid alone; this trains the team. INERT unless the class site's console is on AND the class turned ⏱️ Mock run on (features.mockRun,
+// CPCLASS's switch in 🏫 Class setup, §15: "the console hides a feature's chip when it is off"): Howe, DeWalt, Burris and Lincoln never
+// reach a line of it, and no student's or family's app runs any of it.
+//   · THE TEACHER STARTS IT (⏱️ Mock in the console): a team (the class's own team names, classes/<cid>/teams/<sid>), who is here today (the
+//     team's students, untick the absent), the CAPTAIN (one of them — the tie-breaker, the NC tip), the section, the form (the class's
+//     check-in or final form: the unit's form with HER 📝 Tests edits — her wording, without removed questions, with hers, in her order,
+//     through CPTESTS' cpctModel; no new questions anywhere), and the time (25 minutes, the contest's own allowance, 10–40).
+//   · THE RUN (a full-screen layer on that one device, handed to the team): the countdown (amber under 2 minutes), ONE shared answer sheet
+//     (the numbered strip on top: answered, open, the one showing — tap any number to jump, as on paper), one question at a time with its
+//     A–E choices, "Talk it over. Can't agree? <captain> decides." under it, ← Back / Next →, 📋 Hand in. At 0:00 the sheet is handed in as
+//     it stands. Quit keeps nothing. No right/wrong while it runs.
+//   · HANDED IN: the team's score, the time used, and a ✓ / ✗ per question NUMBER — the right answers stay off the team's screen (a final
+//     form would be spoiled); the key is on the teacher's 🖨 print and in her results view. ONE write: teams/<cid>/<teamKey>/mocks/m<ts> =
+//     {sk, w, form, formVer, team, members:{<sid>:true}, captain, n, right, secs, mins, out?, ans:{<questionId>: pick}, start, at, by} through
+//     envcWrite → envsWrite (demo: "would set", dry run: nothing). teamKey = the team name made Firebase-safe ("Oaks" → oaks). ans uses the
+//     question ids and picks of CPTESTS / CPRESULTS (an index, -1 for none, a sorted list for "select all"); formVer = the layer's ver.
+//   · RESULTS BY TEAM (the same view, under the start card): per form that has runs, one row per team — last, best, runs, time — and
+//     ▸ Question by question (one open at a time): each question, most missed first, the right answer, and every team's pick ✓ / ✗ (the
+//     team's latest run on that form; a run taken before she reworded a question doesn't count on it). 🗑 takes back a run started by mistake.
+//   · 🖨 THE PAPER VERSION (§6 #1, the research's "do it now"): the chosen form as a team handout (questions + choices), the team's answer
+//     sheet (team, captain, members, start / stop, a row of A–E per question) and the key on its own page — for a table, no device.
+//   · FOR TEAM PICKS (§8.12, built in parallel): cpMockScores(cid) → {teams:{<key>:{name, runs, pct, bySection}}, students:{<sid>:{team,
+//     runs, pct}}} or null until the class's runs are here (it asks for them). Read-only, typeof-guarded on their side.
+//   · Rules: teams/<cid> is read by the class's teacher and admin; teams/<cid>/<team>/mocks/<mid> written by them only, its shape checked
+//     (envirothon/SITE_RULES.json). Nothing here reads or writes a family's instance.
+const CPMK_MINS=[10,15,20,25,30,35,40], CPMK_MIN_DEF=25, CPMK_WARN_S=120, CPMK_KEY_MAX=30, CPMK_NAME_MAX=30;
+const _cpmk={M:{},seed:"",pick:{team:"",sk:"",w:"",mins:CPMK_MIN_DEF,away:{},cap:""},run:null,tick:null,open:null,css:false};
+function cpmkOn(){ try{ if(!(typeof cpctOn==="function"&&cpctOn()&&typeof cpctModel==="function")) return false;
+  const cls=(typeof _envc!=="undefined"&&_envc.cls)||null; return typeof cpFeature==="function"?!!cpFeature("mockRun",cls):!!(cls&&cls.features&&cls.features.mockRun===true); }catch(e){ return false; } }
+function cpmkEsc(v){ return envsEsc(v); }
+function cpmkJ(s){ return envsJ(s); }
+function cpmkCid(){ return (typeof _envc!=="undefined"&&_envc.cid)||""; }
+function cpmkWord(k){ return (typeof cpctWord==="function")?cpctWord(k):k; }
+function cpmkClock(s){ s=Math.max(0,Math.round(+s||0)); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
+function cpmkLetter(p){ if(p==null||p===-1) return "–"; return (Array.isArray(p)?p:[p]).map(j=>"ABCDEFGHIJ"[j]||"?").join(""); }
+function cpmkDemo(){ return typeof envsDemo==="function"&&envsDemo(); }
+// ── PURE: the team key, the class's teams, a pick, a score, a record
+// a team name → a Firebase-safe key ("Oaks" → oaks, "Team #2" → team_2); a name with no letter or digit gets a short code of its own
+function cpMockTeamKey(name){ const s=String(name==null?"":name).trim(); if(!s) return "";
+  const k=s.toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,CPMK_KEY_MAX); if(k) return k;
+  let h=0; for(const c of s) h=(h*31+c.codePointAt(0))>>>0; return "t"+h.toString(36); }
+// the class's teams from classes/<cid>/teams/<sid> = "Team name" → [{key, name, sids}] by name; names that make the same key are one team
+function cpMockTeams(teams){ const by={}; Object.keys((teams&&typeof teams==="object")?teams:{}).forEach(sid=>{ const name=String(teams[sid]||"").trim().slice(0,CPMK_NAME_MAX), key=cpMockTeamKey(name); if(!key) return;
+    (by[key]=by[key]||{key,name,sids:[]}).sids.push(sid); });
+  return Object.keys(by).map(k=>by[k]).sort((a,b)=>a.name.localeCompare(b.name)); }
+function cpmkArr(v){ if(Array.isArray(v)) return v.slice(); if(v&&typeof v==="object") return Object.keys(v).filter(k=>/^\d+$/.test(k)).sort((a,b)=>a-b).map(k=>v[k]); return []; }
+function cpmkMulti(it){ return !!it&&typeof it.ans!=="number"; }
+// a pick as saved: an index, -1 for none, or a sorted list of indexes (select all); anything else → null
+function cpmkPickOk(p,n){ n=n||10; if(typeof p==="number") return (Number.isInteger(p)&&p>=-1&&p<n)?p:null;
+  const A=cpmkArr(p); if(!A.length||!A.every(x=>Number.isInteger(x)&&x>=0&&x<n)) return null; return A.sort((a,b)=>a-b).filter((x,i,B)=>i===0||x!==B[i-1]); }
+function cpmkRight(it,p){ if(p==null||!it) return false; if(!cpmkMulti(it)) return p===it.ans; const K=cpmkArr(it.ans); return Array.isArray(p)&&p.length===K.length&&p.every((x,i)=>x===K[i]); }
+// the team's sheet → {right, n, ans:{questionId: pick}}; an empty answer is -1
+function cpMockScore(items,answers){ const ans={}; let right=0; (items||[]).forEach((it,i)=>{ const a=answers?answers[i]:null, p=(a==null||(Array.isArray(a)&&!a.length))?-1:(Array.isArray(a)?a.slice().sort((x,y)=>x-y):a);
+    ans[it.id]=p; if(cpmkRight(it,p)) right++; });
+  return {right,n:(items||[]).length,ans}; }
+// a finished run → the one record written
+function cpMockRec(run,now,by){ const sc=cpMockScore(run.items,run.ans), secs=Math.min(run.mins*60,Math.max(0,Math.round((now-run.start)/1000)));
+  const rec={sk:run.sk,w:run.w,form:String(run.form||"").slice(0,40),formVer:+run.ver||0,team:run.team.name,members:{},captain:run.captain||"",n:sc.n,right:sc.right,secs,mins:run.mins,ans:sc.ans,start:run.start,at:now,by:String(by||"")};
+  (run.members||[]).forEach(s=>{ rec.members[s]=true; }); if(run.out) rec.out=true; return rec; }
+// the rules' shape (envirothon/SITE_RULES.json teams/$cid/$team/mocks/$mid), checked before the write too
+function cpMockRecOk(r){ if(!r||typeof r!=="object") return false;
+  if(!/^[a-z0-9_]{1,40}$/.test(String(r.sk))||(r.w!=="pre"&&r.w!=="post")) return false;
+  if(typeof r.team!=="string"||!r.team.trim()||r.team.length>CPMK_NAME_MAX||typeof r.by!=="string"||!r.by) return false;
+  if(!Number.isInteger(r.n)||r.n<1||r.n>100||!Number.isInteger(r.right)||r.right<0||r.right>r.n) return false;
+  if(!Number.isInteger(r.mins)||r.mins<1||r.mins>120||!(r.secs>=0)||!(r.at>0)||!(r.start>0)) return false;
+  if(!r.ans||typeof r.ans!=="object"||!Object.keys(r.ans).every(k=>/^[A-Za-z0-9_-]{1,40}$/.test(k)&&cpmkPickOk(r.ans[k])!=null)) return false;
+  return !r.members||Object.keys(r.members).every(k=>/^[A-Za-z0-9_-]{1,60}$/.test(k)&&r.members[k]===true); }
+// teams/<cid> as read → [{key, mid, rec}] (well-formed runs only), oldest first
+function cpMockRuns(node){ const out=[]; Object.keys((node&&typeof node==="object")?node:{}).forEach(key=>{ const m=node[key]&&node[key].mocks; if(!m||typeof m!=="object") return;
+    Object.keys(m).forEach(mid=>{ const r=m[mid]; if(r&&typeof r==="object"&&r.sk&&r.w&&+r.n>0) out.push({key,mid,rec:r}); }); });
+  return out.sort((a,b)=>(+a.rec.at||0)-(+b.rec.at||0)); }
+function cpmkPct(r){ return r&&+r.n>0?Math.round((+r.right||0)/(+r.n)*100):null; }
+function cpmkMean(a){ const v=a.filter(x=>x!=null); return v.length?Math.round(v.reduce((s,x)=>s+x,0)/v.length):null; }
+// PURE: the runs → per team {name, runs, pct (the mean of each form's LATEST run), bySection:{<sk>:{runs, last, best}}}, and per student who
+// sat in a run {team, runs, pct (the mean of the latest run per form they sat)}
+function cpMockSum(runs){ const teams={}, students={}, lastT={}, lastS={};
+  (runs||[]).forEach(x=>{ const r=x.rec, p=cpmkPct(r), f=r.sk+"|"+r.w, one={right:+r.right||0,n:+r.n||0,pct:p,at:+r.at||0,w:r.w};
+    const T=teams[x.key]=teams[x.key]||{name:r.team||x.key,runs:0,pct:null,bySection:{}}; T.runs++; T.name=r.team||T.name;
+    const S=T.bySection[r.sk]=T.bySection[r.sk]||{runs:0,last:null,best:null}; S.runs++; S.last=one; if(!S.best||p>S.best.pct) S.best=one;
+    (lastT[x.key]=lastT[x.key]||{})[f]=p;
+    Object.keys(r.members||{}).forEach(sid=>{ const st=students[sid]=students[sid]||{team:x.key,runs:0,pct:null}; st.runs++; st.team=x.key; (lastS[sid]=lastS[sid]||{})[f]=p; }); });
+  Object.keys(teams).forEach(k=>{ teams[k].pct=cpmkMean(Object.values(lastT[k])); });
+  Object.keys(students).forEach(s=>{ students[s].pct=cpmkMean(Object.values(lastS[s])); });
+  return {teams,students}; }
+// PURE: the item analysis per team for one form — each team's LATEST run on it; a question she reworded or added after a run doesn't count
+// on that run. → {teams:[{key,name,right,n,at}], rows:[{id, i, q, choices, ans, multi, took, right, pct, picks:[{key,name,pick,ok}]}]},
+// rows most missed first (share right, then the form's order)
+function cpMockAnalysis(runs,items){ const latest={}; (runs||[]).forEach(x=>{ if(!latest[x.key]||(+x.rec.at||0)>=(+latest[x.key].rec.at||0)) latest[x.key]=x; });
+  const T=Object.keys(latest).map(k=>latest[k]).sort((a,b)=>String(a.rec.team).localeCompare(String(b.rec.team)));
+  const rows=(items||[]).map((it,i)=>{ const row={id:it.id,i,q:it.q,choices:cpmkArr(it.choices),ans:it.ans,multi:cpmkMulti(it),took:0,right:0,pct:null,picks:[]};
+    T.forEach(x=>{ const r=x.rec; if((it.edited||it.added)&&(+it.ts||0)>(+r.formVer||0)) return; const A=r.ans||{}; if(!Object.prototype.hasOwnProperty.call(A,it.id)) return;
+      const p=cpmkPickOk(A[it.id]); if(p==null) return; const ok=cpmkRight(it,p); row.took++; if(ok) row.right++; row.picks.push({key:x.key,name:r.team||x.key,pick:p,ok}); });
+    row.pct=row.took?Math.round(row.right/row.took*100):null; return row; });
+  rows.sort((a,b)=>{ if(a.pct==null||b.pct==null) return ((a.pct==null)-(b.pct==null))||a.i-b.i; return a.pct-b.pct||a.i-b.i; });
+  return {teams:T.map(x=>({key:x.key,name:x.rec.team||x.key,right:+x.rec.right||0,n:+x.rec.n||0,at:+x.rec.at||0})),rows}; }
+// ── the class's runs: live, one listener on teams/<cid> (asked for when ⏱️ Mock or a reader needs them); demo, memory
+function cpmkData(cid){ cid=cid||cpmkCid(); if(!cid) return null;
+  if(cpmkDemo()){ if(!_cpmk.M[cid]) _cpmk.M[cid]={}; if(_cpmk.seed===cid) cpmkSeedRuns(cid); return _cpmk.M[cid]; }
+  if(typeof envcSub==="function") envcSub("cpmk:"+cid,"teams/"+cid,v=>{ _cpmk.M[cid]=(v&&typeof v==="object")?v:{}; });
+  return _cpmk.M[cid]||null; }
+// FOR TEAM PICKS (§8.12): the class's mock scores per team and per student, or null until they are here
+function cpMockScores(cid){ try{ if(!(typeof cpctOn==="function"&&cpctOn())) return null; const D=cpmkData(cid); return D?cpMockSum(cpMockRuns(D)):null; }catch(e){ return null; } }
+// ── the class's forms, as she left them in 📝 Tests (her wording, without removed questions, with hers, in her order)
+function cpmkForms(){ const M=cpctModel(); if(!M) return null; const L=(typeof cpctLayer==="function")?cpctLayer():{}, out=[];
+  (M.secs||[]).forEach(s=>s.forms.forEach(F=>{ if(F.same) return;   // a final that is the check-in's very form is offered once
+    const lay=(typeof cpctLayerFor==="function"?cpctLayerFor(L[s.id],F.w,false):null)||{}, I=lay.items||{};
+    const items=F.items.filter(it=>!it.hidden).map(it=>Object.assign({},it,{ts:(I[it.id]&&+I[it.id].ts)||0}));
+    if(items.length) out.push({key:s.id+"|"+F.w,sk:s.id,w:F.w,label:s.label,short:s.short,emoji:s.emoji,form:String((F.base&&F.base.form)||""),ver:+lay.ver||0,items}); }));
+  return {forms:out,ready:!!M.ready}; }
+function cpmkFormName(f){ return cpmkWord(f.w==="pre"?"pre":"post")+(f.form?" ("+f.form+")":""); }
+function cpmkFormOf(key){ const X=cpmkForms(); return X?X.forms.find(f=>f.key===key)||null:null; }
+function cpmkStudentName(sid){ const s=(typeof _envc!=="undefined"&&_envc.students&&_envc.students[sid])||null; return (s&&s.meta&&s.meta.name)||sid; }
+function cpmkTeams(){ return cpMockTeams((typeof _envc!=="undefined"&&_envc.cls&&_envc.cls.teams)||{}); }
+// ── the console's chip: ⏱️ Mock before 🏆 Boards (the array is the console's; this only splices into it)
+function cpmkChips(chips){ if(!Array.isArray(chips)||!cpmkOn()||chips.some(x=>x&&x[0]==="cpmock")) return chips;
+  const i=chips.findIndex(x=>x&&x[0]==="boards"); chips.splice(i<0?chips.length:i,0,["cpmock","⏱️ Mock"]); return chips; }
+function cpmkCss(){ if(_cpmk.css||typeof document==="undefined"||!document.createElement) return; _cpmk.css=true;
+  try{ const s=document.createElement("style"); s.id="cpmk-css"; s.textContent=
+    '.cpmk-chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}.cpmk-chips button{min-height:40px;padding:0 13px;border-radius:20px;border:1.5px solid #d1d5db;background:#fff;font:inherit;font-size:13px;font-weight:700;cursor:pointer;color:#374151}.cpmk-chips button.on{background:#14532d;border-color:#14532d;color:#fff}.cpmk-chips button.off{text-decoration:line-through;color:#9ca3af}'+
+    '.cpmk-lbl{font-size:12px;font-weight:800;color:#6b7280;text-transform:uppercase;letter-spacing:.03em;margin-top:6px}.cpmk-go{min-height:48px;padding:0 20px;border-radius:12px;border:none;background:#14532d;color:#fff;font:inherit;font-size:15px;font-weight:800;cursor:pointer}.cpmk-go[disabled]{opacity:.4;cursor:default}'+
+    '.cpmk-t{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}.cpmk-t td,.cpmk-t th{padding:6px 4px;border-top:1px solid #f1efe9;text-align:left}.cpmk-t th{font-size:11px;color:#6b7280;border-top:none}.cpmk-q{border-top:1px solid #f1efe9;padding:8px 0;font-size:13px}.cpmk-p{display:inline-block;margin:3px 4px 0 0;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700}.cpmk-p.ok{background:#dcfce7;color:#166534}.cpmk-p.no{background:#fee2e2;color:#991b1b}'+
+    '.cpmk-ov{max-width:600px;margin:0 auto;padding:14px 16px 60px;font-family:\'DM Sans\',sans-serif}.cpmk-clock{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;color:#14532d}.cpmk-clock.warn{color:#b45309}.cpmk-sheet{display:flex;flex-wrap:wrap;gap:5px;margin:10px 0}.cpmk-sheet button{width:38px;height:38px;border-radius:9px;border:1.5px solid #d1d5db;background:#fff;font:inherit;font-size:13px;font-weight:800;cursor:pointer;color:#6b7280}.cpmk-sheet button.has{background:#dcfce7;border-color:#86efac;color:#14532d}.cpmk-sheet button.at{outline:3px solid #14532d;outline-offset:1px}.cpmk-sheet span{width:38px;height:38px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800}.cpmk-sheet span.ok{background:#dcfce7;color:#166534}.cpmk-sheet span.no{background:#fee2e2;color:#991b1b}'+
+    '.cpmk-ch{display:flex;align-items:center;gap:12px;width:100%;text-align:left;min-height:56px;padding:12px 14px;margin:6px 0;border-radius:14px;border:2px solid #e5e0d8;background:#fff;font:inherit;font-size:15px;color:#1f2937;cursor:pointer}.cpmk-ch.on{border-color:#14532d;background:#f0fdf4}.cpmk-ch b{flex:none;width:30px;height:30px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#f3f4f6;font-size:13px}.cpmk-ch.on b{background:#14532d;color:#fff}';
+    document.head.appendChild(s); }catch(e){} }
+// ── the page: the start card, then the results by team
+function cpmkHtml(){ if(!cpmkOn()) return ""; cpmkCss();
+  const X=cpmkForms(), T=cpmkTeams(), P=_cpmk.pick;
+  let h='<div class="envs-card"><div class="envs-h2">⏱️ Timed team mock</div><div class="envs-muted">One team, one device, one answer sheet, on the clock — a whole '+cpmkEsc(String(cpmkWord("section")).toLowerCase())+'’s form, as the class has it in 📝 Tests. The team talks each question over; when it can’t agree, the captain decides.</div>';
+  if(!T.length) return h+'<div style="margin-top:10px;font-weight:700;color:#b45309">No teams yet. Give each student a team name in 🏆 Boards, then come back.</div></div>';
+  if(!X||!X.ready&&!X.forms.length) return h+'<div class="envs-muted" style="margin-top:10px">Loading the forms…</div></div>';
+  if(!X.forms.length) return h+'<div style="margin-top:10px;font-weight:700;color:#b45309">No form has a question yet.</div></div>';
+  const team=T.find(t=>t.key===P.team)||null, form=X.forms.find(f=>f.key===P.sk+"|"+P.w)||null;
+  h+='<div class="cpmk-lbl">Team</div><div class="cpmk-chips">'+T.map(t=>'<button class="'+(team&&t.key===team.key?'on':'')+'" onclick="cpmkSet(\'team\',\''+cpmkJ(t.key)+'\')">'+cpmkEsc(t.name)+' · '+t.sids.length+'</button>').join("")+'</div>';
+  if(team){ const here=team.sids.filter(s=>!P.away[s]);
+    h+='<div class="cpmk-lbl">Here today <span style="text-transform:none;font-weight:600">(tap to mark someone away)</span></div><div class="cpmk-chips">'+team.sids.slice().sort((a,b)=>cpmkStudentName(a).localeCompare(cpmkStudentName(b))).map(s=>'<button class="'+(P.away[s]?'off':'on')+'" onclick="cpmkSet(\'away\',\''+cpmkJ(s)+'\')">'+cpmkEsc(cpmkStudentName(s))+'</button>').join("")+'</div>';
+    h+='<div class="cpmk-lbl">Captain <span style="text-transform:none;font-weight:600">(breaks ties)</span></div><div class="cpmk-chips">'+(here.length?here.map(s=>'<button class="'+(P.cap===s?'on':'')+'" onclick="cpmkSet(\'cap\',\''+cpmkJ(s)+'\')">'+cpmkEsc(cpmkStudentName(s))+'</button>').join(""):'<span class="envs-muted">Nobody is here.</span>')+'</div>'; }
+  const secs=[]; X.forms.forEach(f=>{ if(secs.indexOf(f.sk)<0) secs.push(f.sk); });
+  h+='<div class="cpmk-lbl">'+cpmkEsc(cpmkWord("section"))+'</div><div class="cpmk-chips">'+secs.map(sk=>{ const f=X.forms.find(x=>x.sk===sk); return '<button class="'+(P.sk===sk?'on':'')+'" onclick="cpmkSet(\'sk\',\''+cpmkJ(sk)+'\')">'+cpmkEsc((f.emoji?f.emoji+" ":"")+(f.short||f.label))+'</button>'; }).join("")+'</div>';
+  if(P.sk){ const fs=X.forms.filter(f=>f.sk===P.sk);
+    h+='<div class="cpmk-lbl">Form</div><div class="cpmk-chips">'+fs.map(f=>'<button class="'+(form&&form.key===f.key?'on':'')+'" onclick="cpmkSet(\'w\',\''+f.w+'\')">'+cpmkEsc(cpmkFormName(f))+' · '+f.items.length+' questions</button>').join("")+'</div>'; }
+  h+='<div class="cpmk-lbl">Time</div><div class="cpmk-chips">'+CPMK_MINS.map(m=>'<button class="'+(P.mins===m?'on':'')+'" onclick="cpmkSet(\'mins\','+m+')">'+m+' min</button>').join("")+'</div>';
+  const why=!team?"Pick a team.":!team.sids.some(s=>!P.away[s])?"Somebody has to be here.":(!P.cap||P.away[P.cap]||team.sids.indexOf(P.cap)<0)?"Pick the captain.":!form?"Pick the "+String(cpmkWord("section")).toLowerCase()+" and the form.":"";
+  h+='<div class="envs-row" style="margin-top:8px;gap:10px;flex-wrap:wrap"><button class="cpmk-go" '+(why?'disabled':'')+' onclick="cpmkStart()">▶ Start the mock</button>'+(form?'<button class="envs-btn" onclick="cpmkPrint()">\u{1F5A8} Print the paper version</button>':'')+'</div>';
+  if(why) h+='<div class="envs-muted" style="margin-top:4px">'+cpmkEsc(why)+'</div>';
+  else h+='<div class="envs-muted" style="margin-top:4px">'+cpmkEsc(team.name)+' · '+form.items.length+' questions · '+P.mins+' minutes. Hand the device to the team.</div>';
+  h+='</div>';
+  return h+cpmkResultsHtml(X); }
+// the results by team, per form that has runs
+function cpmkResultsHtml(X){ const D=cpmkData(); if(!D) return '<div class="envs-card envs-muted">Loading the team runs…</div>';
+  const runs=cpMockRuns(D); if(!runs.length) return '<div class="envs-card"><div class="envs-h2">Results by team</div><div class="envs-muted">No team has run a mock yet.</div></div>';
+  let h='<div class="envs-card"><div class="envs-h2">Results by team</div>'; const keys=[];
+  (X.forms||[]).forEach(f=>{ if(runs.some(x=>x.rec.sk+"|"+x.rec.w===f.key)) keys.push(f.key); });
+  runs.forEach(x=>{ const k=x.rec.sk+"|"+x.rec.w; if(keys.indexOf(k)<0) keys.push(k); });
+  keys.forEach(k=>{ const f=X.forms.find(x=>x.key===k)||null, R=runs.filter(x=>x.rec.sk+"|"+x.rec.w===k), S=cpMockSum(R).teams, open=_cpmk.open===k;
+    const name=f?(f.emoji?f.emoji+" ":"")+f.label+" · "+cpmkFormName(f):k.replace("|"," · ");
+    h+='<div style="margin-top:10px;font-weight:800;font-size:14px">'+cpmkEsc(name)+'</div><table class="cpmk-t"><tr><th>Team</th><th>Last</th><th>Best</th><th>Runs</th><th>Time</th></tr>';
+    Object.keys(S).sort((a,b)=>S[a].name.localeCompare(S[b].name)).forEach(t=>{ const s=S[t], b=s.bySection[k.split("|")[0]], last=R.filter(x=>x.key===t).pop();
+      h+='<tr><td style="font-weight:800">'+cpmkEsc(s.name)+'</td><td>'+b.last.right+'/'+b.last.n+' <span class="envs-muted">'+b.last.pct+'%</span></td><td>'+b.best.right+'/'+b.best.n+'</td><td>'+s.runs+'</td><td>'+cpmkClock(last.rec.secs)+(last.rec.out?' ⏰':'')+'</td></tr>'; });
+    h+='</table>';
+    h+='<button class="envs-btn" style="margin-top:6px" onclick="cpmkOpen(\''+cpmkJ(k)+'\')" aria-expanded="'+(open?'true':'false')+'">'+(open?'▾':'▸')+' Question by question</button>';
+    if(open) h+=cpmkItemsHtml(R,f);
+  });
+  return h+'</div>'; }
+function cpmkItemsHtml(R,f){ if(!f) return '<div class="envs-muted" style="margin-top:6px">This form isn’t in the class’s 📝 Tests any more.</div>';
+  const A=cpMockAnalysis(R,f.items); let h='<div style="margin-top:6px">';
+  A.rows.forEach(r=>{ const num=f.items.findIndex(x=>x.id===r.id)+1, key=r.multi?cpmkArr(r.ans):[r.ans];
+    h+='<div class="cpmk-q"><div><b>Q'+num+'</b> '+cpmkEsc(r.q)+'</div><div class="envs-muted" style="margin-top:2px">Right: '+key.map(j=>cpmkLetter(j)+'. '+cpmkEsc(r.choices[j]==null?"":r.choices[j])).join(" · ")+' · '+(r.took?r.right+' of '+r.took+' teams':'no team answered this wording')+'</div>'
+      +'<div>'+r.picks.map(p=>'<span class="cpmk-p '+(p.ok?'ok':'no')+'">'+(p.ok?'✓ ':'✗ ')+cpmkEsc(p.name)+(p.ok?'':' · '+cpmkLetter(p.pick))+'</span>').join("")+'</div></div>'; });
+  h+='<div class="cpmk-lbl" style="margin-top:10px">Runs</div>';
+  R.slice().reverse().forEach(x=>{ const r=x.rec, cap=r.captain?cpmkStudentName(r.captain):"";
+    h+='<div class="envs-row" style="padding:4px 0;font-size:12.5px;gap:8px"><div style="flex:1"><b>'+cpmkEsc(r.team)+'</b> · '+cpmkEsc(cpmkDay(r.at))+' · '+r.right+'/'+r.n+' · '+cpmkClock(r.secs)+' of '+r.mins+' min'+(r.out?' (time ran out)':'')+(cap?' · captain '+cpmkEsc(cap):'')+'</div><button class="envs-btn" onclick="cpmkRemove(\''+cpmkJ(x.key)+'\',\''+cpmkJ(x.mid)+'\')" title="take back a run started by mistake">\u{1F5D1}</button></div>'; });
+  return h+'</div>'; }
+function cpmkDay(ts){ try{ const d=new Date(+ts); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()]+" "+d.getDate(); }catch(e){ return ""; } }
+// ── the start card's taps
+function cpmkSet(what,v){ if(!cpmkOn()) return; const P=_cpmk.pick;
+  if(what==="team"){ if(P.team!==v){ P.team=v; P.cap=""; P.away={}; } }
+  else if(what==="away"){ if(P.away[v]) delete P.away[v]; else { P.away[v]=true; if(P.cap===v) P.cap=""; } }
+  else if(what==="cap") P.cap=v;
+  else if(what==="sk"){ if(P.sk!==v){ P.sk=v; const X=cpmkForms(), fs=X?X.forms.filter(f=>f.sk===v):[]; P.w=fs.length===1?fs[0].w:""; } }
+  else if(what==="w") P.w=v;
+  else if(what==="mins"&&CPMK_MINS.indexOf(+v)>=0) P.mins=+v;
+  if(typeof envcRe==="function") envcRe(); }
+function cpmkOpen(k){ _cpmk.open=_cpmk.open===k?null:k; if(typeof envcRe==="function") envcRe(); }
+function cpmkRemove(key,mid){ if(!cpmkOn()) return; const cid=cpmkCid(), D=cpmkData(cid), r=D&&D[key]&&D[key].mocks&&D[key].mocks[mid]; if(!r) return;
+  if(typeof confirm==="function"&&!confirm("Take back "+r.team+"’s run ("+r.right+"/"+r.n+")? It leaves the results.")) return;
+  envcWrite("teams/"+cid+"/"+key+"/mocks/"+mid,null,"remove").then(()=>{ if(cpmkDemo()){ delete D[key].mocks[mid]; } if(typeof envcRe==="function") envcRe(); }).catch(()=>{}); }
+// ── the run: a full-screen layer; its state lives here only until it is handed in or quit
+function cpmkStart(){ if(!cpmkOn()||_cpmk.run) return false; const P=_cpmk.pick, team=cpmkTeams().find(t=>t.key===P.team), f=cpmkFormOf(P.sk+"|"+P.w);
+  if(!team||!f) return false; const members=team.sids.filter(s=>!P.away[s]); if(!members.length||members.indexOf(P.cap)<0) return false;
+  _cpmk.run={cid:cpmkCid(),team:{key:team.key,name:team.name},members,captain:P.cap,sk:f.sk,w:f.w,label:f.label,emoji:f.emoji,form:f.form,fname:cpmkFormName(f),ver:f.ver,items:f.items,mins:P.mins,start:Date.now(),i:0,ans:f.items.map(()=>null),out:false,done:null};
+  cpmkRe(); if(typeof setInterval==="function"){ if(_cpmk.tick) clearInterval(_cpmk.tick); _cpmk.tick=setInterval(cpmkTimer,1000); }
+  return true; }
+function cpmkLeft(){ const R=_cpmk.run; return R?Math.max(0,R.mins*60-Math.floor((Date.now()-R.start)/1000)):0; }
+function cpmkTimer(){ const R=_cpmk.run; if(!R||R.done){ if(_cpmk.tick){ clearInterval(_cpmk.tick); _cpmk.tick=null; } return; }
+  const left=cpmkLeft(); if(left<=0){ R.out=true; cpmkHandIn(true); return; }
+  try{ const el=document.getElementById("cpmk-clock"); if(el){ el.textContent=cpmkClock(left); el.className="cpmk-clock"+(left<=CPMK_WARN_S?" warn":""); } }catch(e){} }
+function cpmkPick(j){ const R=_cpmk.run; if(!R||R.done) return; const it=R.items[R.i]; if(!it||!Number.isInteger(j)||j<0||j>=cpmkArr(it.choices).length) return;
+  if(cpmkMulti(it)){ const cur=Array.isArray(R.ans[R.i])?R.ans[R.i].slice():[], k=cur.indexOf(j); if(k<0) cur.push(j); else cur.splice(k,1); R.ans[R.i]=cur.length?cur.sort((a,b)=>a-b):null; }
+  else R.ans[R.i]=(R.ans[R.i]===j)?null:j;
+  cpmkRe(); }
+function cpmkGo(i){ const R=_cpmk.run; if(!R||R.done||i<0||i>=R.items.length) return; R.i=i; cpmkRe(); }
+function cpmkHandIn(force){ const R=_cpmk.run; if(!R||R.done) return false;
+  const open=R.ans.filter(a=>a==null).length;
+  if(!force&&typeof confirm==="function"&&!confirm(open?"Hand in the sheet? "+open+" question"+(open===1?" has":"s have")+" no answer.":"Hand in the sheet?")) return false;
+  const now=Date.now(), rec=cpMockRec(R,now,(typeof _envs!=="undefined"&&_envs.uid)||"");
+  if(_cpmk.tick){ clearInterval(_cpmk.tick); _cpmk.tick=null; }
+  R.done={rec,saved:false};
+  if(cpMockRecOk(rec)){ const mid="m"+now, path="teams/"+R.cid+"/"+R.team.key+"/mocks/"+mid;
+    envcWrite(path,rec,"set").then(()=>{ R.done.saved=!cpmkDemo()&&!(typeof _dryRun==="function"&&_dryRun());
+      if(cpmkDemo()){ const D=_cpmk.M[R.cid]=_cpmk.M[R.cid]||{}; D[R.team.key]=D[R.team.key]||{}; D[R.team.key].mocks=D[R.team.key].mocks||{}; D[R.team.key].mocks[mid]=rec; }
+      cpmkRe(); }).catch(()=>{ R.done.err=true; cpmkRe(); }); }
+  else R.done.err=true;
+  cpmkRe(); return true; }
+function cpmkQuit(){ const R=_cpmk.run; if(!R) return; if(!R.done&&typeof confirm==="function"&&!confirm("Stop the mock? Nothing is kept.")) return; cpmkClose(); }
+function cpmkClose(){ const R=_cpmk.run; _cpmk.run=null; if(_cpmk.tick){ clearInterval(_cpmk.tick); _cpmk.tick=null; }
+  try{ const el=document.getElementById("cpmock-ov"); if(el&&el.parentNode) el.parentNode.removeChild(el); }catch(e){}
+  if(R&&R.done&&R.done.rec){ _cpmk.open=R.sk+"|"+R.w; }
+  if(typeof envcRe==="function") envcRe(); }
+function cpmkRe(){ if(typeof document==="undefined") return; let el=null; try{ el=document.getElementById("cpmock-ov"); }catch(e){}
+  if(!_cpmk.run){ if(el&&el.parentNode) el.parentNode.removeChild(el); return; }
+  try{ if(!el){ el=document.createElement("div"); el.id="cpmock-ov"; el.style.cssText="position:fixed;inset:0;z-index:450;background:#faf8f5;overflow-y:auto;-webkit-overflow-scrolling:touch"; document.body.appendChild(el); }
+    el.innerHTML=cpmkRunHtml(); el.scrollTop=0; }catch(e){} }
+function cpmkRunHtml(){ const R=_cpmk.run; if(!R) return ""; cpmkCss(); const capN=cpmkStudentName(R.captain);
+  let h='<div class="cpmk-ov"><div style="display:flex;align-items:center;gap:10px;justify-content:space-between"><div><div style="font-size:16px;font-weight:800;color:#14532d">⏱️ '+cpmkEsc((R.emoji?R.emoji+" ":"")+R.label)+' mock · '+cpmkEsc(R.team.name)+'</div>'
+    +'<div style="font-size:12px;color:var(--muted);font-weight:700">'+cpmkEsc(R.fname)+' · captain '+cpmkEsc(capN)+'</div></div>'
+    +'<button onclick="cpmkQuit()" style="border:none;background:none;color:var(--muted);font-size:13px;font-weight:700;cursor:pointer;padding:6px">'+(R.done?'Close':'Quit')+'</button></div>';
+  if(R.done){ const r=R.done.rec;
+    h+='<div style="background:#fff;border:2px solid #86efac;border-radius:20px;padding:24px 18px;margin-top:24px;text-align:center"><div style="font-size:15px;font-weight:800;color:#14532d">'+cpmkEsc(R.team.name)+'</div>'
+      +'<div style="font-size:36px;font-weight:800;color:#1f2937">'+r.right+' of '+r.n+'</div>'
+      +'<div style="font-size:13px;color:var(--muted);margin-top:4px">'+(r.out?'Time ran out — the sheet was handed in as it stood · ':'')+cpmkClock(r.secs)+' of '+r.mins+' minutes</div>'
+      +'<div class="cpmk-sheet" style="justify-content:center;margin-top:14px">'+R.items.map((it,i)=>{ const ok=cpmkRight(it,r.ans[it.id]); return '<span class="'+(ok?'ok':'no')+'" title="question '+(i+1)+'">'+(i+1)+(ok?'✓':'✗')+'</span>'; }).join("")+'</div>'
+      +'<div style="font-size:12px;color:var(--muted);margin-top:8px">Which numbers the team missed. The right answers stay with the teacher.</div>';
+    if(R.done.err) h+='<div style="margin-top:10px;font-size:12px;font-weight:800;color:#b91c1c">Couldn’t save this run.</div>';
+    else if(!R.done.saved) h+='<div style="margin-top:10px;font-size:12px;font-weight:800;color:#b45309">'+(cpmkDemo()?'Demo':'Dry run')+' — nothing saved.</div>';
+    h+='<button onclick="cpmkClose()" class="cpmk-go" style="margin-top:18px;padding:0 32px">Done</button></div>';
+    return h+'</div>'; }
+  const left=cpmkLeft(), it=R.items[R.i], n=R.items.length, a=R.ans[R.i], multi=cpmkMulti(it), got=R.ans.filter(x=>x!=null).length;
+  h+='<div style="display:flex;align-items:baseline;justify-content:space-between;margin-top:8px"><span id="cpmk-clock" class="cpmk-clock'+(left<=CPMK_WARN_S?' warn':'')+'">'+cpmkClock(left)+'</span><span style="font-size:13px;color:var(--muted);font-weight:700">'+got+' of '+n+' answered</span></div>';
+  h+='<div class="cpmk-sheet" aria-label="answer sheet">'+R.items.map((x,i)=>'<button class="'+(R.ans[i]!=null?'has':'')+(i===R.i?' at':'')+'" onclick="cpmkGo('+i+')" aria-label="question '+(i+1)+'">'+(i+1)+'</button>').join("")+'</div>';
+  h+='<div style="font-size:13px;color:var(--muted);font-weight:700">Question '+(R.i+1)+' of '+n+'</div><div style="font-size:17px;font-weight:700;color:#1f2937;line-height:1.45;margin:8px 0 10px">'+cpmkEsc(it.q)+'</div>';
+  if(multi) h+='<div style="font-size:12px;color:#b45309;font-weight:800;margin-bottom:6px">Pick every answer that fits.</div>';
+  cpmkArr(it.choices).forEach((c,j)=>{ const on=multi?(Array.isArray(a)&&a.indexOf(j)>=0):a===j;
+    h+='<button class="cpmk-ch'+(on?' on':'')+'" onclick="cpmkPick('+j+')"><b>'+cpmkLetter(j)+'</b><span>'+cpmkEsc(c)+'</span></button>'; });
+  h+='<div style="font-size:12.5px;color:#374151;margin-top:8px">\u{1F91D} Talk it over. Can’t agree? <b>'+cpmkEsc(capN)+'</b> decides.</div>';
+  h+='<div style="display:flex;gap:10px;margin-top:14px"><button onclick="cpmkGo('+(R.i-1)+')" '+(R.i===0?'disabled':'')+' style="min-height:48px;padding:0 18px;border-radius:12px;border:1.5px solid var(--border);background:#fff;font:inherit;font-size:14px;font-weight:700;cursor:pointer">← Back</button>'
+    +(R.i+1<n?'<button class="cpmk-go" style="flex:1" onclick="cpmkGo('+(R.i+1)+')">Next →</button>':'<button class="cpmk-go" style="flex:1" onclick="cpmkHandIn()">\u{1F4CB} Hand in the sheet</button>')+'</div>';
+  if(R.i+1<n) h+='<div style="text-align:center;margin-top:12px"><button onclick="cpmkHandIn()" style="border:none;background:none;color:#14532d;font:inherit;font-size:13px;font-weight:800;cursor:pointer;text-decoration:underline">\u{1F4CB} Hand in the sheet now</button></div>';
+  return h+'</div>'; }
+// ── 🖨 the paper version (§6 #1): the form as a team handout, the answer sheet, the key on its own page
+function cpmkPrintHtml(key){ const f=cpmkFormOf(key||(_cpmk.pick.sk+"|"+_cpmk.pick.w)); if(!f) return "";
+  const cls=(typeof _envc!=="undefined"&&_envc.cls)||{}, b=(typeof cpBrand==="function")?cpBrand(cls):{title:cls.name||"",emoji:""}, T=cpmkTeams().find(t=>t.key===_cpmk.pick.team)||null, mins=_cpmk.pick.mins||CPMK_MIN_DEF;
+  const title=(b.emoji?b.emoji+" ":"")+(b.title||"")+" · "+f.label+" · "+cpmkFormName(f);
+  const line=w=>'<span style="display:inline-block;min-width:'+w+'px;border-bottom:1px solid #111">&nbsp;</span>';
+  let h='<!doctype html><html><head><meta charset="utf-8"><title>'+cpmkEsc(f.label+" mock")+'</title><style>body{font:14px/1.45 Georgia,serif;margin:28px;color:#111}h1{font-size:19px;margin:0 0 4px}h2{font-size:17px;margin:0 0 8px}.t{color:#555;font-size:12px}ol{padding-left:22px}li{margin:0 0 12px;break-inside:avoid}.pg{break-before:page;page-break-before:always}.r{display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid #ddd;break-inside:avoid}.r b{width:28px}.o{display:inline-flex;width:24px;height:24px;border:1.5px solid #111;border-radius:50%;align-items:center;justify-content:center;font-size:12px}.k{columns:3;font-size:15px}</style></head><body>';
+  h+='<h1>'+cpmkEsc(title)+'</h1><div class="t">Team practice · '+f.items.length+' questions · '+mins+' minutes · one answer sheet per team. Talk each question over; when the team can’t agree, the captain decides.</div><ol>';
+  f.items.forEach(it=>{ h+='<li>'+cpmkEsc(it.q)+(cpmkMulti(it)?' <i>(pick every answer that fits)</i>':'')+'<br>'+cpmkArr(it.choices).map((c,j)=>cpmkLetter(j)+'. '+cpmkEsc(c)).join('<br>')+'</li>'; });
+  h+='</ol><div class="pg"><h2>Answer sheet · '+cpmkEsc(f.label)+'</h2><div>Team '+(T?'<b>'+cpmkEsc(T.name)+'</b>':line(160))+' &nbsp; Captain '+line(160)+'</div><div style="margin-top:8px">Members '+line(380)+'</div><div style="margin-top:8px">Start '+line(70)+' &nbsp; Stop '+line(70)+' &nbsp; ('+mins+' minutes)</div><div style="margin-top:10px">';
+  f.items.forEach((it,i)=>{ h+='<div class="r"><b>'+(i+1)+'</b>'+cpmkArr(it.choices).map((c,j)=>'<span class="o">'+cpmkLetter(j)+'</span>').join(' ')+(cpmkMulti(it)?' <span class="t">all that fit</span>':'')+'</div>'; });
+  h+='</div><div style="margin-top:12px">Score '+line(50)+' of '+f.items.length+'</div></div>';
+  h+='<div class="pg"><h2>Key · '+cpmkEsc(f.label+" · "+cpmkFormName(f))+' (for the teacher)</h2><div class="k">'+f.items.map((it,i)=>'<div>'+(i+1)+'. <b>'+(cpmkMulti(it)?cpmkArr(it.ans).map(cpmkLetter).join(""):cpmkLetter(it.ans))+'</b></div>').join("")+'</div></div>';
+  return h+'</body></html>'; }
+function cpmkPrint(){ if(!cpmkOn()) return; const h=cpmkPrintHtml(); if(!h){ envsToast("Pick a form first."); return; }
+  let w=null; try{ w=window.open("","_blank"); }catch(e){} if(!w){ envsToast("The browser blocked the print window."); return; }
+  try{ w.document.write(h); w.document.close(); setTimeout(()=>{ try{ w.focus(); w.print(); }catch(e){} },300); }catch(e){} }
+// ── the demo: the sample class turns ⏱️ Mock run on, and two other teams already ran the first section's check-in form (invented runs, to
+// show the results by team); seeded the first time the forms are here
+function cpMockDemoSeed(data){ if(!data||!data.cls||!data.cid) return; data.cls.features=Object.assign({},data.cls.features||{},{mockRun:true}); _cpmk.seed=data.cid; _cpmk.M[data.cid]={}; }
+function cpmkSeedRuns(cid){ const X=cpmkForms(); if(!X||!X.forms.length) return; _cpmk.seed="";
+  const f=X.forms.find(x=>x.w==="pre")||X.forms[0], T=cpmkTeams(), now=Date.now(), D=_cpmk.M[cid]=_cpmk.M[cid]||{};
+  const run=(t,skip,cap,days,secs)=>{ if(!t) return; const ans={}; let right=0;
+    f.items.forEach((it,i)=>{ const miss=skip(i), ch=cpmkArr(it.choices).length, k=cpmkMulti(it)?cpmkArr(it.ans):it.ans; let p;
+      if(!miss){ p=k; right++; } else if(cpmkMulti(it)) p=[k[0]]; else p=(k+1)%ch; ans[it.id]=p; });
+    const at=now-days*86400000, mid="m"+at;
+    (D[t.key]=D[t.key]||{}).mocks=Object.assign((D[t.key]||{}).mocks||{},{[mid]:{sk:f.sk,w:f.w,form:f.form,formVer:f.ver,team:t.name,members:Object.fromEntries(t.sids.map(s=>[s,true])),captain:cap||t.sids[0],n:f.items.length,right,secs,mins:CPMK_MIN_DEF,ans,start:at-secs*1000,at,by:"uid_teacher_demo"}}); };
+  const pick=n=>T.find(t=>t.name===n)||null, others=T.filter(t=>t.name!=="Oaks");
+  run(pick("Pines")||others[0],i=>i%3===1||i%5===0,null,9,1380); run(pick("Pines")||others[0],i=>i%4===2,null,2,1290); run(pick("Maples")||others[1],i=>i%3===0,null,2,1500); }
+// CPMOCK_END
 // CPSEND_START — 📤 SEND OUT BY SECTION, DECK OR KEY CONCEPT: to all or picked students, now or on a date (DESIGN_class_platform_2026-10-28.md
 // §6.8, §5.1, §8.3, §9, §13 row 31; PR 31 of the class platform). Her words 2026-10-28: "sending out like one subcategory at a time. Like
 // maybe the biosphere or the water cycle or photosynthesis and respiration … it could look like the card cycle and you can maybe even do it
