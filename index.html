@@ -4560,7 +4560,7 @@ function getTodayDayName(){
 // device's clock — viewing another day stays purely routine-driven.
 function gateStartMin(d){
   const sd=((rulesData||{}).schoolDay)||{}, ov=((sd.overrides||{})[d])||{};
-  return toMin(ov.start||sd.defaultStart||"10:00 AM");
+  const _v=ov.start||sd.defaultStart||"10:00 AM"; return toMin((typeof dtS==="function")?dtS(d,_v):_v);   // ⏰ DAYTIMES: this date's own start first
 }
 function gateClockHeld(viewDay){
   if(viewDay!==getTodayDayName()) return false;
@@ -8474,7 +8474,8 @@ function _agLunchFmt(m){ let h=Math.floor(m/60), mn=m%60; const ap=h>=12?"pm":"a
 function _agLunchRow(dayName,span){
   try{
     const sd=(((typeof rulesData!=="undefined"&&rulesData)||{}).schoolDay)||{}, ov=(sd.overrides||{})[dayName]||{};
-    const ls=toMin(ov.lunchStart||sd.lunchStart||"1:00 PM"), le=toMin(ov.lunchEnd||sd.lunchEnd||"2:00 PM");
+    let ls=toMin(ov.lunchStart||sd.lunchStart||"1:00 PM"), le=toMin(ov.lunchEnd||sd.lunchEnd||"2:00 PM");
+    { const _w=(typeof dtLunch==="function")?dtLunch(dayName):null; if(_w){ ls=_w.s; le=_w.e; } }   // ⏰ DAYTIMES: this date's own lunch
     if(!(ls>0&&le>ls)) return null;
     const a=_agLunchFmt(ls), b=_agLunchFmt(le), lbl=(a.ap===b.ap)?(a.t+"\u2013"+b.t+b.ap):(a.t+a.ap+"\u2013"+b.t+b.ap);
     const _tp=fromMin(ls).split(" ");
@@ -8952,6 +8953,7 @@ function renderSchedule(el){
     '<div><div class="day-name">'+(DAY_LBL[day]||day)+(momHere()?'<button class="bo-btn" onclick="openBoDialog(\''+day+'\')">+ Blockout</button>':'')+
     (momHere()?'<button class="bo-btn" onclick="schedDayOffToggleOpen()">😷 Kid Off</button>':'')+
     (typeof hhCleanDayBtnHTML==="function"?hhCleanDayBtnHTML(day):'')+   // 🧽 CLEANINGDAY
+    (typeof dtBtnHTML==="function"?dtBtnHTML(day):'')+   // ⏰ DAYTIMES: this day's start / finish / lunch
     (momHere()?'<button class="bo-btn" onclick="schedRegenerateNow()">🔄 Regenerate</button>':'')+
     (function(){ try{ if(!momHere()||typeof coopTimedOn!=="function"||typeof calDateForWeekDay!=="function") return ''; const _ds=calDateForWeekDay(day); const _co=_ds?coopTimedOn(_ds):[]; if(!_co.length) return ''; const _on=coopMomDay(_ds);
       return '<button class="bo-btn" onclick="coopToggleMomDay(\''+_ds+'\')" title="'+esc(_co.map(c=>c.name).join(", "))+' — '+(_on?'Mom is available today: Mom-required lessons land here. Tap to go back to the co-op rule.':'Co-op rule: no Mom-required lessons today. Tap if Mom is available after all.')+'" style="'+(_on?'background:#ecfdf5;color:#065f46;border-color:#6ee7b7':'')+'">'+(_on?'👩 Mom\'s here today ✓':'🏫 Co-op · tap if Mom\'s available')+'</button>'; }catch(e){ return ''; } })()+
@@ -9952,7 +9954,7 @@ function rvPlanDay(kid,minutes,when){
   }
   const nd=rvNextSchoolDay(kid,_todayDay); if(!nd) return null;
   const sd=(((typeof rulesData!=="undefined"&&rulesData)||{}).schoolDay)||{}; const ov=((sd.overrides||{})[nd])||{};
-  return {day:nd,time:ov.start||sd.defaultStart||"10:00 AM"};
+  const _v=ov.start||sd.defaultStart||"10:00 AM"; return {day:nd,time:(typeof dtS==="function")?dtS(nd,_v):_v};   // ⏰ DAYTIMES
 }
 function rvNewId(){ const d=new Date(); return d.getFullYear()+"d"+dayOfYear(d)+"_rev_"+Date.now().toString(36).slice(-5)+Math.floor(Math.random()*1296).toString(36); }
 function rvCard(rec,slot){
@@ -10481,7 +10483,7 @@ function taskCard(t, fromDay, readOnly, doneId){
   const srcId=doneId||t.id;
   const done=!!checked[srcId];
   const claimedHere=!done&&!!claimed[srcId];
-  const future=DAYS.indexOf(t.day)>DAYS.indexOf(day);
+  const future=DAYS.indexOf(t.day)>DAYS.indexOf(day)&&!(typeof sucDay==="function"&&sucDay(t)===day);   // 🔁 SUNDAYCU: a Sunday catch-up card is today's, not a later day's
   // Permanently missed: a day-specific task (reflex, notebook, any noCarry) left unchecked
   // on a past day. Regular work rolls forward (effectiveDay===today), so anything still
   // anchored to a past day can never be done now — show it grayed + "Incomplete", no box.
@@ -11375,7 +11377,7 @@ function tapTask(id){
   if(t.famBlock&&(momHereCards()||(typeof famPresLeads==="function"&&famPresLeads(t)))&&!checked[id]&&typeof famPtsMax==="function"&&famPtsMax(t)>0){ famRateOpen(id); return; }   // 🏡 FAMPRESENCE: the helper too
   const isDone=!!checked[id];
   const isClaimed=!isDone&&!!claimed[id];
-  const future=DAYS.indexOf(t.day)>DAYS.indexOf(day);
+  const future=DAYS.indexOf(t.day)>DAYS.indexOf(day)&&!(typeof sucDay==="function"&&sucDay(t)===day);   // 🔁 SUNDAYCU: a Sunday catch-up card is today's, not a later day's
   pendingId=id; pendingClaimMode=false;
   const btn=document.getElementById("dlg-ok");
   const unBtn=document.getElementById("dlg-uncheck");
@@ -31626,7 +31628,8 @@ function _lidWeekdayISO(weekLabel,day){
   try{
     const wn=parseInt(String(weekLabel||"").replace(/\D/g,""),10); if(!wn) return "";
     const r=(typeof gwWeekDateRange==="function")?gwWeekDateRange(wn):null; if(!r||!r.start) return "";
-    const ix=["monday","tuesday","wednesday","thursday","friday","saturday","sunday"].indexOf(String(day||"").toLowerCase()); if(ix<0) return "";
+    let ix=["monday","tuesday","wednesday","thursday","friday","saturday","sunday"].indexOf(String(day||"").toLowerCase()); if(ix<0) return "";
+    if(ix===6) ix=-1;   // 🔁 SUNDAYCU: a week's Sunday is the day BEFORE its Monday (SUNDAY_FIRST) — a Sunday catch-up check-off dates there
     const d=new Date(r.start+"T12:00:00"); d.setDate(d.getDate()+ix);
     return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
   }catch(e){ return ""; }
@@ -36712,6 +36715,217 @@ function fdtRender(){
   o.innerHTML=h;
 }
 // FIXEDDAYTIME_END
+// DAYTIMES_START ── ⏰ THIS DAY'S SCHOOL TIMES (her ask 2026-10-29: "I need to make daily adjustments, like extending the
+// school day, changing lunchtime, or shortening the school day. Really just a start/finish time per day would be great. I need
+// to be able to do this myself, and probably all the apps will need it." Step 1 of PLAN_day_adjust_2026-10-29.md) ────────────
+// One DATE's own school start / finish / lunch, for the whole family. Settings ▸ School Day Times keeps the weekday rules
+// (every Tuesday); this is one Tuesday. Data, beside SETTIME_TODAY's lunch leaf:
+//   config/rules/schoolDay/byDate/<YYYY-MM-DD>         = {start:"11:00 AM", end:"2:00 PM"}   (only what differs; either may be missing)
+//   config/rules/schoolDay/lunchByDate/<YYYY-MM-DD>/all = {start,end}                       (SETTIME_TODAY's own leaf, read the same way)
+// Order everywhere: the date's own time → the weekday override → the default. The readers each kept their own copy of
+// "override, else default" (about 30 of them) — every one now asks dtS / dtE / dtLunch FIRST and falls back to exactly the
+// value it computed before, so with no byDate leaf anywhere (dtAny false) every lay, sweep and screen is byte-identical.
+// A date in a week not built yet: nothing to move — the generator reads the date's own times when that week is built (her
+// ask 4: future weeks on the calendar). A date in the week on the board: schedCascade re-lays it at once (as ⏰ SETTIME does).
+// Set from: the day banner (⏰ Day times, Mom lens, any day of the week on the board) and the Month calendar's day sheet
+// (School layer, any date). ONE multi-path update through stWrite (Mom only; ?dryrun=1 = this device's memory only).
+// Hooks (one line each, typeof-guarded): gateStartMin · rvPlanDay · _agLunchRow · cascadeIntraWeek (closing cap, today open /
+// over, the heal, the receiving days, the end-of-week stack, the bookends, the gap fill) · _mvtSchoolStartMin · stSyncCtx ·
+// _mlDayEndMin · _mlLunchWin · _mlSchoolMin · dsRetime · runDisplacement (_dayStart/_dayEnd/_dayLS/_dayLE) · auditSchedule ·
+// resortDayTasks · seGuardCtx (→ prExtraCtx) · reprojectSubjectWeek dayCtx · _rpRelayMode · cbBeforeSchoolToday · mstAlertsFor ·
+// gwBuildDayTasks (cutoff) · gwAutoBalance · generateWeek (start + the Saturday overflow) · the day banner · calDaySheetHTML.
+function dtSd(){ return (((typeof rulesData!=="undefined"&&rulesData)||{}).schoolDay)||{}; }
+function dtAny(){ const o=dtSd().byDate; return !!(o&&typeof o==="object"&&!Array.isArray(o)); }
+function dtTm(v){ if(typeof v!=="string"||!v.trim()) return null; const m=toMin(v.trim()); return (m==null||isNaN(m))?null:m; }
+// The date's own leaf, or null. A leaf whose finish is not after its start is ignored whole (never a day that ends before it begins).
+function dtLeaf(iso){
+  const o=dtSd().byDate; const L=(o&&typeof o==="object"&&iso&&o[iso]&&typeof o[iso]==="object")?o[iso]:null; if(!L) return null;
+  const s=dtTm(L.start), e=dtTm(L.end); if(s!=null&&e!=null&&e<=s) return null;
+  return L;
+}
+// The date a weekday name means here: the caller's own iso, else today's real date for today, else that day of the week on the board.
+function dtIso(dn,iso){
+  if(iso&&stIsoOk(iso)) return iso;
+  if(dn&&typeof _todayDay!=="undefined"&&dn===_todayDay) return stTodayIso();
+  if(dn==="sunday"){ const m=stDsOf("monday"); if(!m) return null; const d=new Date(m+"T12:00:00"); d.setDate(d.getDate()-1); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }   // SUNDAY_FIRST: the day before the week's Monday
+  return dn?stDsOf(dn):null;
+}
+function dtSunOk(){ return typeof sucAny==="function"&&sucAny(); }   // 🔁 SUNDAYCU: Sunday has school times once a kid has Sunday catch-up
+// The date's own start / finish as written ("11:00 AM"), else fb — the caller's old value, untouched.
+function dtS(dn,fb,iso){ if(!dtAny()) return fb; const L=dtLeaf(dtIso(dn,iso)); return (L&&dtTm(L.start)!=null)?L.start.trim():fb; }
+function dtE(dn,fb,iso){ if(!dtAny()) return fb; const L=dtLeaf(dtIso(dn,iso)); return (L&&dtTm(L.end)!=null)?L.end.trim():fb; }
+// The same in minutes, for the readers that hold minutes (gwRules-based).
+function dtSM(dn,fbMin,iso){ const v=dtS(dn,null,iso); return v?toMin(v):fbMin; }
+function dtEM(dn,fbMin,iso){ const v=dtE(dn,null,iso); return v?toMin(v):fbMin; }
+// The date's own lunch {s,e} (SETTIME's lunchByDate/<iso>/all), or null = the reader's rule as before.
+function dtLunch(dn,iso){ if(typeof stLunchAny!=="function"||!stLunchAny()) return null; return stLunchFor(null,dtIso(dn,iso)); }
+// ── what the day is: its usual rule (Settings) and what it is on this date ──
+function dtUsual(dn){
+  const sd=dtSd(), ov=(sd.overrides||{})[dn]||{};
+  return {s:toMin(ov.start||sd.defaultStart||"10:00 AM"),e:toMin(ov.end||sd.defaultEnd||"4:15 PM"),
+          ls:toMin(ov.lunchStart||sd.lunchStart||"1:00 PM"),le:toMin(ov.lunchEnd||sd.lunchEnd||"2:00 PM")};
+}
+function dtDay(dn,iso){
+  const u=dtUsual(dn), w=dtLunch(dn,iso);
+  return {s:dtSM(dn,u.s,iso),e:dtEM(dn,u.e,iso),ls:w?w.s:u.ls,le:w?w.e:u.le};
+}
+function dtHasOwn(iso){ return !!dtLeaf(iso)||!!(typeof stLunchFor==="function"&&stLunchFor(null,iso)); }
+function dtWords(d){ return fromMin(d.s)+"–"+fromMin(d.e)+" · lunch "+fromMin(d.ls)+"–"+fromMin(d.le); }
+// ── the sheet ──
+let dtState=null;   // {iso, dn, s, e, ls, le, err}
+function dtOpen(iso){
+  if(!momHere()||!stIsoOk(iso)) return; const dn=stDayNameOf(iso); if(!dn||(dn==="sunday"&&!dtSunOk())) return;   // Sunday: only once a kid has 🔁 Sunday catch-up
+  const d=dtDay(dn,iso); dtState={iso:iso,dn:dn,s:d.s,e:d.e,ls:d.ls,le:d.le,err:""}; dtRender();
+}
+function dtOpenDay(dn){ const iso=dtIso(dn); if(iso) dtOpen(iso); }   // the day banner: that day of the week on the board
+function dtClose(){ dtState=null; const o=document.getElementById("dt-ov"); if(o) o.remove(); }
+function dtSet(f,v){ if(!dtState) return; const m=toMin(to12h(v)); if(m==null||isNaN(m)) return; dtState[f]=m; dtState.err=""; }
+// What the save writes: only what differs from the day's usual rule; nothing different → the leaf goes (null).
+function dtUpd(st){
+  const u=dtUsual(st.dn), leaf={}, upd={};
+  if(st.s!==u.s) leaf.start=fromMin(st.s);
+  if(st.e!==u.e) leaf.end=fromMin(st.e);
+  upd["config/rules/schoolDay/byDate/"+st.iso]=Object.keys(leaf).length?leaf:null;
+  upd["config/rules/schoolDay/lunchByDate/"+st.iso+"/all"]=(st.ls===u.ls&&st.le===u.le)?null:{start:fromMin(st.ls),end:fromMin(st.le)};
+  return upd;
+}
+function dtCheck(st){
+  if(!(st.e>st.s)) return "School has to finish after it starts.";
+  if(!(st.le>st.ls)) return "Lunch has to end after it starts.";
+  return "";
+}
+function dtSave(){
+  const st=dtState; if(!st||!momHere()) return;
+  const err=dtCheck(st); if(err){ st.err=err; dtRender(); return; }
+  if(!stWrite(dtUpd(st))) return;
+  const words=dtWords(st), when=(st.iso===stTodayIso())?"Today":stDateWords(st.iso);
+  dtClose(); if(typeof schedCascade==="function") schedCascade(); if(typeof renderAll==="function") renderAll();
+  if(typeof gwShowToast==="function") gwShowToast("⏰ "+when+": school "+words);
+}
+// "Back to normal": both of the date's leaves go; the day follows Settings again.
+function dtClear(iso){
+  iso=iso||(dtState&&dtState.iso); if(!momHere()||!stIsoOk(iso)) return;
+  const upd={}; upd["config/rules/schoolDay/byDate/"+iso]=null; upd["config/rules/schoolDay/lunchByDate/"+iso+"/all"]=null;
+  if(!stWrite(upd)) return;
+  dtClose(); if(typeof schedCascade==="function") schedCascade(); if(typeof renderAll==="function") renderAll();
+  if(typeof gwShowToast==="function") gwShowToast("⏰ "+((iso===stTodayIso())?"Today":stDateWords(iso))+" back to the usual school times");
+}
+function dtRender(){
+  const st=dtState; if(!st) return;
+  const u=dtUsual(st.dn), own=dtHasOwn(st.iso), when=(st.iso===stTodayIso())?"Today only":stDateWords(st.iso)+" only";
+  const btn=function(oc,lbl,bg,fg){ return '<button onclick="'+oc+'" style="padding:9px 13px;border-radius:10px;border:'+(bg?'none':'1.5px solid var(--border)')+';background:'+(bg||'#fff')+';color:'+(fg||'#111')+';font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;font-size:13px">'+lbl+'</button>'; };
+  const inp=function(f,lbl){ return '<label style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:5px 0"><span style="font-size:13px;font-weight:700">'+lbl+'</span><input type="time" value="'+esc(ampmTo24(fromMin(st[f])))+'" onchange="dtSet(\''+f+'\',this.value)" style="padding:7px 9px;border:1.5px solid var(--border);border-radius:9px;font-size:15px;font-family:\'DM Sans\',sans-serif"></label>'; };
+  let h='<div style="background:#fff;border-radius:18px;max-width:420px;width:100%;padding:18px 18px 14px;box-shadow:0 20px 50px rgba(0,0,0,.25);font-family:\'DM Sans\',sans-serif">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:800">⏰ School times</div>';
+  h+='<div style="font-size:12px;color:var(--muted);margin:2px 0 10px"><b>'+esc(when)+'</b> · usually '+esc(dtWords(u))+'</div>';
+  h+=inp("s","School starts")+inp("e","School finishes")+inp("ls","Lunch starts")+inp("le","Lunch ends");
+  h+='<div style="font-size:11.5px;color:var(--muted);line-height:1.45;margin-top:6px">For the whole family, this day only. The day re-lays around it; Settings ▸ School Day Times stays as it is.</div>';
+  if(st.err) h+='<div style="font-size:12.5px;font-weight:700;color:#991b1b;background:#fef2f2;border-radius:10px;padding:8px 10px;margin-top:8px">'+esc(st.err)+'</div>';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;padding-top:12px">'+btn("dtClose()","Never mind")+(own?btn("dtClear()","Back to normal"):'')+btn("dtSave()","Save","#7c3aed","#fff")+'</div>';
+  h+='</div>';
+  let o=document.getElementById("dt-ov");
+  if(!o){ o=document.createElement("div"); o.id="dt-ov"; o.style.cssText="position:fixed;inset:0;z-index:9000;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:16px"; o.onclick=function(e){ if(e.target===o) dtClose(); }; document.body.appendChild(o); }
+  o.innerHTML=h;
+}
+// ── the doors ──
+// The day banner (Mom lens): "⏰ Day times", or the day's own times when it has some.
+function dtBtnHTML(dn){
+  try{
+    if(!momHere()||!dn||(dn==="sunday"&&!dtSunOk())) return ''; const iso=dtIso(dn); if(!stIsoOk(iso)) return '';
+    const own=dtHasOwn(iso), d=dtDay(dn,iso);
+    return '<button class="bo-btn" onclick="dtOpenDay(\''+dn+'\')" title="Start, finish and lunch for this day only"'+(own?' style="background:#f5f3ff;color:#5b21b6;border-color:#c4b5fd"':'')+'>⏰ '+(own?esc(fromMin(d.s)+"–"+fromMin(d.e)):'Day times')+'</button>';
+  }catch(e){ return ''; }
+}
+// The Month calendar's day sheet (Mom lens, School layer): one row for the school day, with ⏰ and Back to normal.
+function dtCalRowHTML(iso,L,who,kidMode){
+  const out={n:0,html:""};
+  try{
+    if(kidMode||!(typeof onecalMom==="function"&&onecalMom())||!(L&&(L.school||who))||!stIsoOk(iso)) return out;
+    const dn=stDayNameOf(iso); if(!dn||(dn==="sunday"&&!dtSunOk())) return out;
+    const own=dtHasOwn(iso), d=dtDay(dn,iso);
+    out.n=1;
+    out.html='<div class="row"><span class="lbl">School</span><span style="flex:1">\u{1F3EB} <b>School day</b> <span style="color:#6b7280">· '+esc(dtWords(d))+(own?' · this day only (usually '+esc(dtWords(dtUsual(dn)))+')':'')+'</span></span>'
+      +'<button class="act" style="background:#f5f3ff;color:#5b21b6" title="Start, finish and lunch for this day only" onclick="dtOpen(\''+iso+'\')">⏰</button>'
+      +(own?'<button class="act" style="background:#f1f5f9;color:#475569" onclick="dtClear(\''+iso+'\')">Back to normal</button>':'')+'</div>';
+  }catch(e){ dbg("daytimes row: "+e); }
+  return out;
+}
+// DAYTIMES_END
+// SUNDAYCU_START ── 🔁 SUNDAY CATCH-UP (her ask 2026-10-29: "I need to be able to have schoolwork on Sundays if needed, so we can
+// keep doing catch-up on Sundays." Her answer the same day: "Catch-up only" — step 2 of PLAN_day_adjust_2026-10-29.md) ──────────
+// Switch: config/rules/sundayCatchup/<kid> = true (Settings ▸ School Day Times ▸ Sunday catch-up, a chip per kid, Mom only;
+// off = the leaf goes). No kid on → nothing anywhere changes (sucSet is null, effectiveDay runs exactly as before).
+// What a switched-on kid gets: on a Sunday, with the COMING week on the board (its Monday is tomorrow — the Sunday auto-build
+// already ran), last week's catch-up shows on Sunday's tab:
+//   · every card carried over from last week (generateWeek's "(Carried from …)" cards), and
+//   · per subject, as many of that subject's EARLIEST cards as the generator added catch-up sittings for it (catchup:true) —
+//     the earliest, not the flagged ones, so the book order never breaks (the flagged extras sit at the END of the week).
+// Derived in effectiveDay, NOTHING written: a card done on Sunday is checked there (checkedOnDay "sunday") and leaves the
+// week; a card not done is back on its own weekday on Monday, exactly as built. A Mom move (momMoves) always wins.
+// The Mom loop lays them live like any today's card (from the school start; ⏰ DAYTIMES sets one Sunday's own times — its
+// Sunday door opens once a kid has Sunday catch-up). The cascade, the school-end guard, the catch-up pass and the 8 PM sweep
+// skip Sunday as before, so nothing re-lays a Sunday card into the week.
+// Hooks (one line each, typeof-guarded): effectiveDay (after the checked branch) · rulesSchoolDayCardHTML (the chips) ·
+// _lidWeekdayISO (a Sunday check-off dates to the day BEFORE the week's Monday, SUNDAY_FIRST) · DAYTIMES' Sunday doors.
+function sucOnMap(){ const o=(((typeof rulesData!=="undefined"&&rulesData)||{}).sundayCatchup); return (o&&typeof o==="object"&&!Array.isArray(o))?o:null; }
+function sucOn(kid){ const o=sucOnMap(); return !!(o&&kid&&o[kid]===true); }
+function sucAny(){ const o=sucOnMap(); return !!(o&&Object.keys(o).some(function(k){ return o[k]===true; })); }
+// Is the week on the board the one that starts tomorrow?
+function sucComingWeek(todayIso){
+  const mon=(typeof calDateForWeekDay==="function")?calDateForWeekDay("monday"):null; if(!mon||!stIsoOk(todayIso)) return false;
+  const d=new Date(todayIso+"T12:00:00"); d.setDate(d.getDate()+1);
+  return mon===(d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"));
+}
+// PURE: the ids that show on Sunday. on(kid) = the switch; coming = the board holds the coming week.
+function sucPick(tasks,on,coming){
+  const out=new Set(); if(!coming||!Array.isArray(tasks)) return out;
+  const ORD={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
+  const live=tasks.filter(function(t){ return t&&t.id&&on(t.who)&&!String(t.id).endsWith("_c")&&!t._eowOverflow&&!t.famBlock&&ORD[t.day]; });
+  live.forEach(function(t){ if(/\(Carried from /.test(t.detail||"")) out.add(t.id); });
+  const need={};   // kid|sk → catch-up sittings the generator added
+  live.forEach(function(t){ if(t.catchup===true&&t.subjectKey){ const k=t.who+"|"+t.subjectKey; need[k]=(need[k]||0)+1; } });
+  Object.keys(need).forEach(function(k){
+    const p=k.split("|");
+    live.filter(function(t){ return t.who===p[0]&&t.subjectKey===p[1]; })
+      .sort(function(a,b){ return (ORD[a.day]-ORD[b.day])||(toMin(a.time)-toMin(b.time)); })
+      .slice(0,need[k]).forEach(function(t){ out.add(t.id); });
+  });
+  return out;
+}
+let _sucMemo={key:null,tasks:null,set:null};
+function sucSet(){
+  if(typeof _todayDay==="undefined"||_todayDay!=="sunday"||!sucAny()) return null;
+  const tasks=(typeof weekData!=="undefined"&&weekData&&weekData.tasks)||null; if(!Array.isArray(tasks)) return null;
+  const today=stTodayIso(), key=(weekData.week||"")+"|"+tasks.length+"|"+today+"|"+JSON.stringify(sucOnMap());
+  if(_sucMemo.key===key&&_sucMemo.tasks===tasks) return _sucMemo.set;
+  const set=sucPick(tasks,sucOn,sucComingWeek(today));
+  _sucMemo={key:key,tasks:tasks,set:set};
+  return set;
+}
+// effectiveDay's hook: "sunday" for a Sunday catch-up card today, else null (the card's own rules apply).
+function sucDay(t){
+  if(!t||!t.id) return null; const s=sucSet(); if(!s||!s.has(t.id)) return null;
+  if(typeof momMoves!=="undefined"&&momMoves&&momMoves[t.id]) return null;   // Mom moved it: her move wins
+  return "sunday";
+}
+// ── the switch (Settings ▸ School Day Times) ──
+function sucToggle(kid){
+  if(!momHere()||!kid) return; const upd={}; upd["config/rules/sundayCatchup/"+kid]=sucOn(kid)?null:true;
+  if(!stWrite(upd)) return; _sucMemo={key:null,tasks:null,set:null};
+  if(typeof renderAll==="function") renderAll();
+}
+function sucSettingsHTML(){
+  try{
+    const kids=(typeof ROSTER!=="undefined"&&Array.isArray(ROSTER))?ROSTER:[]; if(!kids.length) return '';
+    let h='<div class="rules-section-lbl" style="margin-top:12px">🔁 Sunday catch-up</div>';
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;padding:4px 0">';
+    kids.forEach(function(k){ const on=sucOn(k);
+      h+='<button onclick="sucToggle(\''+stJ(k)+'\')" style="padding:5px 12px;border-radius:14px;border:1.5px solid '+(on?'#0f766e':'var(--border)')+';background:'+(on?'#0f766e':'#fff')+';color:'+(on?'#fff':'var(--text)')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(on?'✓ ':'')+esc(cap(k))+'</button>'; });
+    h+='</div><div style="font-size:11px;color:var(--muted);line-height:1.5">On Sundays, a kid switched on gets last week\'s catch-up (the lessons that fell behind, earliest first) at the school start time. What isn\'t done Sunday stays on its weekday.</div>';
+    return h;
+  }catch(e){ return ''; }
+}
+// SUNDAYCU_END
 
 
 // ── WHEN THE DOOR IS OPEN ──
@@ -39800,6 +40014,7 @@ function calDaySheetHTML(iso,L,dinnerOf,who,opts){
   if(L.dad){ _calDadChoresFor(iso).forEach(function(c){ rows++;
     const m=(typeof MC_SLOTS!=="undefined"&&MC_SLOTS[c.slot])||null;
     h+='<div class="row"><span class="lbl">Dad</span><span style="flex:1;'+(c.done?'opacity:.55;text-decoration:line-through':'')+'">'+(c.done?'\u2713 ':'')+'\u{1F468} '+esc(c.label)+(m?' <span style="color:#6b7280">\u00b7 '+m.ic+' '+esc(m.nm)+'</span>':'')+'</span></div>'; }); }
+  if(typeof dtCalRowHTML==="function"){ const _dt=dtCalRowHTML(iso,L,who,kidMode); rows+=_dt.n; h+=_dt.html; }   // ⏰ DAYTIMES: the school day's own times (Mom lens)
   if(typeof stCalRowsHTML==="function"){ const _st=stCalRowsHTML(iso,L,who,kidMode); rows+=_st.n; h+=_st.html; }   // ⏰ SETTIME_TODAY: Family Time + fixed classes that day, with the ⏰ (Mom lens)
   if(who&&!opts.noWork){
     const _ls=_calLessonsFor(who,iso);
@@ -41101,7 +41316,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
   const _isNote=t=>_isMorn(t)||_isClose(t);
   // 📓 #66 CLOSEBANK (her answers 2026-10-08): a Closing Notebook never runs past its day's school end — when the wrap-up
   // would start too late it takes the last minutes before the end instead (its time is reserved there).
-  const _closeCap=function(dn,start,total){ try{ const _s=((rulesData||{}).schoolDay)||{}; const e=toMin((((_s.overrides||{})[dn])||{}).end||_s.defaultEnd||"4:15 PM"); return (start+total>e)?Math.max(0,e-total):start; }catch(err){ return start; } };
+  const _closeCap=function(dn,start,total){ try{ const _s=((rulesData||{}).schoolDay)||{}; const _v=(((_s.overrides||{})[dn])||{}).end||_s.defaultEnd||"4:15 PM"; const e=toMin((typeof dtE==="function")?dtE(dn,_v):_v); return (start+total>e)?Math.max(0,e-total):start; }catch(err){ return start; } };
   // Collect unchecked tasks from past days (don't move them yet). Notebooks go to a
   // separate list so they keep their bookend treatment instead of clustering.
   const pastTasks=[], pastNotes=[];
@@ -41114,12 +41329,12 @@ function cascadeIntraWeek(sweepTodayElapsed){
   // still returns through the early-finish pull (EFPULL); more work is the kid's Get-ahead choice.
   const _fromToday=new Set();
   const _mpDissolve=[];   // 📘 MASTERPULL: untouched master-pull cards this pass removes (see the pooling loop)
-  const _todayOpen=(function(){ try{ const _s=((rulesData||{}).schoolDay)||{}; return _nowMin<=toMin((((_s.overrides||{})[today])||{}).start||_s.defaultStart||"10:00 AM"); }catch(e){ return true; } })();
+  const _todayOpen=(function(){ try{ const _s=((rulesData||{}).schoolDay)||{}; const _v=(((_s.overrides||{})[today])||{}).start||_s.defaultStart||"10:00 AM"; return _nowMin<=toMin((typeof dtS==="function")?dtS(today,_v):_v); }catch(e){ return true; } })();
   // DAYGOAL_END (see the two DAYGOAL lines in the subject-spread and the receiving-day loop below)
   // 🌙 SWEEPKEEP (her rule 2026-10-08): once today's school day is over (the 8 PM sweep, a Regenerate after school),
   // today's day-bound cards keep the times they were laid at. The re-time-to-now below is for a MID-DAY Regenerate
   // only; at 8:06 PM it dragged every open daily + the Closing Notebook to 8:06–8:51 PM.
-  const _todaySchoolOver=(function(){ try{ const _s=((rulesData||{}).schoolDay)||{}; return _nowMin>=toMin((((_s.overrides||{})[today])||{}).end||_s.defaultEnd||"4:15 PM"); }catch(e){ return false; } })();
+  const _todaySchoolOver=(function(){ try{ const _s=((rulesData||{}).schoolDay)||{}; const _v=(((_s.overrides||{})[today])||{}).end||_s.defaultEnd||"4:15 PM"; return _nowMin>=toMin((typeof dtE==="function")?dtE(today,_v):_v); }catch(e){ return false; } })();
   // 😷 Is this kid marked off TODAY by Mom's own per-kid override? (memoised per sweep)
   const _offTodayMemo={};
   const _kidOffToday=function(who){
@@ -41285,7 +41500,8 @@ function cascadeIntraWeek(sweepTodayElapsed){
         const dn=dayOrder[di];
         if(dn==="saturday") continue; // the overtime valve stacks past end ON PURPOSE
         if(_wkHasDates&&!_cascDate(dn)) continue; // day isn't part of this week
-        const ov=(_rsd.overrides||{})[dn]||{};
+        const ov=Object.assign({},(_rsd.overrides||{})[dn]||{});
+        if(typeof dtS==="function"){ ov.start=dtS(dn,ov.start||_rsd.defaultStart||"10:00 AM"); ov.end=dtE(dn,ov.end||_rsd.defaultEnd||"4:15 PM"); }   // ⏰ DAYTIMES: this date's own times
         // TODAY joins only BEFORE school starts (a pre-school regen scars today the same
         // way) — mid-day the kids are working the plan, so no moving goalposts. Same rule
         // the receiving-day re-pack uses.
@@ -41495,10 +41711,11 @@ function cascadeIntraWeek(sweepTodayElapsed){
     if(dn==="saturday"&&!_satOk) continue; // 🅢 Saturday overflow off — not a receiving day
     if(_wkHasDates&&!_cascDate(dn)) continue; // day isn't part of this week — never a receiving day
     const sdOv=(sd.overrides||{})[dn]||{};
-    const dStart=toMin(sdOv.start||sd.defaultStart||"10:00 AM");
-    const dEnd=toMin(sdOv.end||sd.defaultEnd||"4:15 PM");
-    const lunchS=toMin(sdOv.lunchStart||sd.lunchStart||"1:00 PM");
-    const lunchE=toMin(sdOv.lunchEnd||sd.lunchEnd||"2:00 PM");
+    const _dw=(typeof dtDay==="function")?dtDay(dn):null;   // ⏰ DAYTIMES: this date's own times (else exactly the rule below)
+    const dStart=_dw?_dw.s:toMin(sdOv.start||sd.defaultStart||"10:00 AM");
+    const dEnd=_dw?_dw.e:toMin(sdOv.end||sd.defaultEnd||"4:15 PM");
+    const lunchS=_dw?_dw.ls:toMin(sdOv.lunchStart||sd.lunchStart||"1:00 PM");
+    const lunchE=_dw?_dw.le:toMin(sdOv.lunchEnd||sd.lunchEnd||"2:00 PM");
     const isSitterDay=mag.days&&mag.days.includes(dn);
     const sitterReturn=isSitterDay?toMin(mag["mom_return_"+dn]||mag.mom_return||"2:00 PM"):0;
     const dStr=_cascDate(dn);
@@ -41637,7 +41854,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
         // last working day is earlier than Saturday) keep the legacy force-stack so nothing
         // an un-capped kid needs silently vanishes.
         if(_cut!=null||!_satOk){ t._eowOverflow=true; break; }   // 🅢 Saturday off = the same end-of-week rule: carry, never stack
-        t.day=dn; t.time=fromMin(toMin(ov.end||sd.defaultEnd||"4:15 PM")-20); break;
+        { const _v=ov.end||sd.defaultEnd||"4:15 PM"; t.day=dn; t.time=fromMin(toMin((typeof dtE==="function")?dtE(dn,_v):_v)-20); } break;   // ⏰ DAYTIMES
       }
     });
   }
@@ -41674,7 +41891,7 @@ function cascadeIntraWeek(sweepTodayElapsed){
     const dn=dayOrder[di]; const byKid={};
     if(dn===today&&_todaySchoolOver) continue;   // 🌙 SWEEPKEEP: today's day is over — its bookends stay where they were laid
     const _sdOv=(sd.overrides||{})[dn]||{};
-    const _dStart=toMin(_sdOv.start||sd.defaultStart||"10:00 AM");
+    const _dStart=(typeof dtSM==="function")?dtSM(dn,toMin(_sdOv.start||sd.defaultStart||"10:00 AM")):toMin(_sdOv.start||sd.defaultStart||"10:00 AM");   // ⏰ DAYTIMES
     weekData.tasks.forEach(t=>{ if(t.day===dn&&!t.id.endsWith("_c")&&!checked[t.id]){ (byKid[t.who]=byKid[t.who]||[]).push(t); } });
     Object.keys(byKid).forEach(function(who){
       const mine=byKid[who], closes=mine.filter(_isClose);
@@ -41845,9 +42062,10 @@ function cascadeIntraWeek(sweepTodayElapsed){
     for(let di=todayIdx; di<dayOrder.length; di++){
       const dn=dayOrder[di];
       const sdOv=(sd.overrides||{})[dn]||{};
-      const dStart=toMin(sdOv.start||sd.defaultStart||"10:00 AM");
-      const lunchS=toMin(sdOv.lunchStart||sd.lunchStart||"1:00 PM");
-      const lunchE=toMin(sdOv.lunchEnd||sd.lunchEnd||"2:00 PM");
+      const _dw=(typeof dtDay==="function")?dtDay(dn):null;   // ⏰ DAYTIMES: this date's own times
+      const dStart=_dw?_dw.s:toMin(sdOv.start||sd.defaultStart||"10:00 AM");
+      const lunchS=_dw?_dw.ls:toMin(sdOv.lunchStart||sd.lunchStart||"1:00 PM");
+      const lunchE=_dw?_dw.le:toMin(sdOv.lunchEnd||sd.lunchEnd||"2:00 PM");
       const floor=(dn===today)?Math.max(dStart,_nowMin):dStart;
       // 🏫 timed co-op: a co-op kid's floor is the co-op END, not school start — this float pass
       // undid generation's 2:00 PM push on every cascade (live Tue 2026-09-15 / Thu 2026-09-10).
@@ -58697,7 +58915,7 @@ function cbTodayISO(){ return _cbISO(new Date()); }
 function cbBeforeSchoolToday(){
   try{ const d=new Date(); const dow=d.getDay(); if(dow===0||dow===6) return false;
     const r=(typeof gwRules==="function")?gwRules():null; if(!r||r.schoolStart==null) return false;
-    return d.getHours()*60+d.getMinutes()<r.schoolStart; }catch(e){ return false; }
+    return d.getHours()*60+d.getMinutes()<((typeof dtSM==="function"&&typeof _todayDay!=="undefined")?dtSM(_todayDay,r.schoolStart):r.schoolStart); }catch(e){ return false; }   // ⏰ DAYTIMES
 }
 function cbPlanTodayISO(){ if(!cbBeforeSchoolToday()) return cbTodayISO(); const d=new Date(); d.setDate(d.getDate()-1); return _cbISO(d); }
 
@@ -62202,7 +62420,8 @@ function _rpRelayMode(){
   try{
     const now=new Date(); const nowMin=now.getHours()*60+now.getMinutes();
     const td=(typeof _todayDay==="string")?_todayDay:"";
-    const r=(typeof gwRules==="function")?gwRules():{};
+    const _r0=(typeof gwRules==="function")?gwRules():{};
+    const r=(typeof dtSM==="function"&&td)?Object.assign({},_r0,{schoolStart:dtSM(td,_r0.schoolStart),schoolEnd:dtEM(td,_r0.schoolEnd)}):_r0;   // ⏰ DAYTIMES: today's own times
     const schoolDay=["monday","tuesday","wednesday","thursday","friday"].indexOf(td)>=0&&!!((typeof DAY_DT!=="undefined"&&DAY_DT)||{})[td];
     if(!schoolDay) return "tomorrow";
     if(r.schoolStart!=null&&nowMin<r.schoolStart) return "fresh";      // 🌅 before school: today is laid by its pattern like any day
@@ -62349,7 +62568,8 @@ function reprojectSubjectWeek(kid,sk,why,opts){
       const gwR=gwRules();
       // 🏫 timed co-op: the re-laid subject starts after the kid is home (same push generation applies)
       const _coopKS=day=>{ try{ return (typeof coopApplyStart==="function"&&typeof calDateForWeekDay==="function")?coopApplyStart({},calDateForWeekDay(day,wn),[kid]):{}; }catch(e){ return {}; } };
-      const dayCtx=day=>({start:(day===todayDay)?Math.max(gwR.schoolStart,nowD.getHours()*60+nowD.getMinutes()):gwR.schoolStart,end:gwR.schoolEnd,lunchStart:gwR.lunchStart,lunchEnd:gwR.lunchEnd,allowOvertime:true,overtimeMax:240,kidStart:_coopKS(day)});
+      const _dtS=day=>(typeof dtSM==="function")?dtSM(day,gwR.schoolStart,calDateForWeekDay(day,wn)):gwR.schoolStart, _dtE=day=>(typeof dtEM==="function")?dtEM(day,gwR.schoolEnd,calDateForWeekDay(day,wn)):gwR.schoolEnd;   // ⏰ DAYTIMES
+      const dayCtx=day=>({start:(day===todayDay)?Math.max(_dtS(day),nowD.getHours()*60+nowD.getMinutes()):_dtS(day),end:_dtE(day),lunchStart:gwR.lunchStart,lunchEnd:gwR.lunchEnd,allowOvertime:true,overtimeMax:240,kidStart:_coopKS(day)});
       const _subj=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid]||{})[sk]||{};
       // 🛤 a lane member on a borrowed / shared rhythm is judged by THAT rhythm's days and cap
       let _rpDays=_subj.allowedDays||[], _rpCap=_subj.cap||1;
@@ -64039,7 +64259,7 @@ function mvtHeldToday(t){
 }
 function _mvtSchoolStartMin(){
   try{ const sd=(((typeof rulesData!=="undefined"&&rulesData)||{}).schoolDay)||{}; const ov=((sd.overrides||{})[_todayDay])||{};
-    return toMin(ov.start||sd.defaultStart||"10:00 AM"); }catch(e){ return toMin("10:00 AM"); }
+    const _v=ov.start||sd.defaultStart||"10:00 AM"; return toMin((typeof dtS==="function")?dtS(_todayDay,_v):_v); }catch(e){ return toMin("10:00 AM"); }   // ⏰ DAYTIMES
 }
 // → {ok:true, mode:"move", from, startMin} | {ok:true, mode:"done", from} | {ok:false, why}. Pure read of the week; writes nothing.
 function mvtPlan(id){
@@ -65310,6 +65530,7 @@ function chainDone(origId, checkedObj, tasksArr){
 // day-specific miss. Used to gray out permanently-missed day-bound tasks.
 function _isPastDay(dn){
   if(!dn||dn==="carryover") return false;
+  if(typeof sucDay==="function"&&dn==="sunday"&&dn===_todayDay) return false;   // 🔁 SUNDAYCU: today's Sunday is not past (the Mon–Sat index read Sunday as 0)
   const todayMid=new Date(); todayMid.setHours(0,0,0,0);
   if(DAY_DT[dn]){ const cal=new Date(DAY_DT[dn]+", "+todayMid.getFullYear()); cal.setHours(0,0,0,0); return cal<todayMid; }
   const jsDay=new Date().getDay();
@@ -65332,8 +65553,10 @@ function effectiveDay(t){
   if(checked[t.id]){
     const h=histState[t.id];
     if(h&&h.checkedOnDay) return h.checkedOnDay;
+    { const _sc=(typeof sucDay==="function")?sucDay(t):null; if(_sc) return _sc; }   // 🔁 SUNDAYCU: checked this moment on Sunday (no history yet) → done ON Sunday
     return t.day;
   }
+  { const _sc=(typeof sucDay==="function")?sucDay(t):null; if(_sc) return _sc; }   // 🔁 SUNDAYCU: last week's catch-up shows on Sunday (derived, nothing written)
   const _mv=momMoves[t.id];
   // Dismissed: it never moves again. Pinned to the day Mom dismissed it from, where it reads
   // "Dismissed" — rolling it forward would put it back in tomorrow's work, which is the exact
@@ -73817,7 +74040,8 @@ function stSyncCtx(extra){
   const mv=(typeof momMoves!=="undefined"&&momMoves)||{};
   return Object.assign({
     checked:_stCk(), claimed:(typeof claimed!=="undefined"&&claimed)||{}, toMin:toMin, fromMin:fromMin,
-    win:day=>{ const ov=(_sd.overrides||{})[day]||{}; return {start:toMin(ov.start||_sd.defaultStart||"10:00 AM"),lunchStart:_r.lunchStart,lunchEnd:_r.lunchEnd}; },
+    win:day=>{ const ov=(_sd.overrides||{})[day]||{}; const _v=ov.start||_sd.defaultStart||"10:00 AM"; const _w=(typeof dtLunch==="function")?dtLunch(day):null;   // ⏰ DAYTIMES: this date's own start + lunch
+      return {start:toMin((typeof dtS==="function")?dtS(day,_v):_v),lunchStart:_w?_w.s:_r.lunchStart,lunchEnd:_w?_w.e:_r.lunchEnd}; },
     helperWin:(day,kid)=>{ try{ return (typeof helperPlanWin==="function")?helperPlanWin(day,kid,ST_TEST_KEY):null; }catch(e){ return null; } },
     dayOf:L=>{ const m=mv[L.id]; return (m&&m.mode==="push"&&m.toDay)||L.day; },
     dismissed:L=>{ const m=mv[L.id]; return !!(m&&(m.mode==="skip"||m.mode==="drop")); },
@@ -75824,7 +76048,7 @@ function mstAlertsFor(kid,nowMin){
     const r=(typeof gwRules==="function")?gwRules():{};
     let brk=null; try{ brk=scheduleBreakToday(); }catch(e){}
     const td=mdTodayName();
-    if(!brk&&DAYS.indexOf(td)>=0&&r.schoolEnd!=null&&nowMin>=r.schoolEnd){
+    if(!brk&&DAYS.indexOf(td)>=0&&r.schoolEnd!=null&&nowMin>=((typeof dtEM==="function")?dtEM(td,r.schoolEnd):r.schoolEnd)){   // ⏰ DAYTIMES: today's own finish
       let tasks=getActiveTasks()||[]; if(!Array.isArray(tasks)) tasks=Object.values(tasks);
       const subs=gwGetSubjects(kid)||{}, seen=new Set();
       tasks.forEach(t=>{
@@ -80161,7 +80385,7 @@ function _mlDayEndMin(){
   try{
     if(typeof _mlEndOverride==="number") return _mlEndOverride;
     const sd=(((typeof rulesData!=="undefined"&&rulesData)||{}).schoolDay)||{}; const ov=((sd.overrides||{})[_todayDay])||{};
-    return toMin(ov.end||sd.defaultEnd||"4:15 PM");
+    const _v=ov.end||sd.defaultEnd||"4:15 PM"; return toMin((typeof dtE==="function")?dtE(_todayDay,_v):_v);   // ⏰ DAYTIMES: today's own finish first
   }catch(e){ return toMin("4:15 PM"); }
 }
 // 🍎 The lunch window from Settings (schoolDay.lunchStart–lunchEnd, default 1:00–2:00 PM) as a
@@ -80170,6 +80394,7 @@ function _mlDayEndMin(){
 function _mlLunchWin(){
   try{
     if(typeof _mlLunchOverride!=="undefined"&&_mlLunchOverride!==null){ return _mlLunchOverride||null; }
+    { const _w=(typeof dtLunch==="function")?dtLunch(_todayDay):null; if(_w) return [_w.s,_w.e]; }   // ⏰ DAYTIMES: today's own lunch (a date leaf) first
     const sd=(((typeof rulesData!=="undefined"&&rulesData)||{}).schoolDay)||{};
     const s=toMin(sd.lunchStart||"1:00 PM"), e=toMin(sd.lunchEnd||"2:00 PM");
     return (s>0&&e>s)?[s,e]:null;
@@ -80720,7 +80945,7 @@ function _mlQueueLayCore(tasks){
     // dsRetime uses (her rule 2026-09-23). This lay runs LAST in render (mlQueueLay(dsRetime(…))), so without it a
     // held session before school undid that floor: Ellis's Editor in Chief showed at 9:45 after a 9:40 check.
     const _mlSchoolMin=(function(){ try{ const _sd=((typeof rulesData!=="undefined"&&rulesData)||{}).schoolDay||{};
-      return toMin((((_sd.overrides||{})[_todayDay])||{}).start||_sd.defaultStart||"10:00 AM")||0; }catch(e){ return 0; } })();
+      const _v=(((_sd.overrides||{})[_todayDay])||{}).start||_sd.defaultStart||"10:00 AM"; return toMin((typeof dtS==="function")?dtS(_todayDay,_v):_v)||0; }catch(e){ return 0; } })();   // ⏰ DAYTIMES
     const _mlKidFloor=function(k){ try{ if(typeof coopTimedEndMin==="function"&&typeof routineDateISO==="function"){ const ds=routineDateISO(_todayDay); const ce=ds?(coopTimedEndMin(k,ds)||0):0; return Math.max(nowMin,_mlSchoolMin,ce); } }catch(e){} return Math.max(nowMin,_mlSchoolMin); };
     // The queue: mlNow's answer leads (held card in hand, or a borrower's ONE card), then
     // blocks in ring order. The decision layer stays the single authority on "who now".
@@ -81365,7 +81590,7 @@ function dsRetime(tasks){
     // routine finish starts the day AT school start, never before; change the setting and this follows.
     // And a fixed-time class (fxIsClass — e.g. Outschool German at 10:00) is a set time: it never shifts.
     const _sd=((typeof rulesData!=="undefined"&&rulesData)||{}).schoolDay||{};
-    const _floor=toMin((((_sd.overrides||{})[d])||{}).start||_sd.defaultStart||"10:00 AM");
+    const _floorV=(((_sd.overrides||{})[d])||{}).start||_sd.defaultStart||"10:00 AM"; const _floor=toMin((typeof dtS==="function")?dtS(d,_floorV):_floorV);   // ⏰ DAYTIMES
     // 🏡 Family time the scheduler picked (famAuto) moves with a late start — but all its copies TOGETHER, by the
     // LARGEST delay among the kids in it (the latest starter must be ready), so it never splits; it then holds like a
     // class below and in the Mom loop, and each kid's own cards step around it.
@@ -81540,7 +81765,8 @@ function auditSchedule(tasks,checkedMap){
   tasks.forEach(t=>{ if(!t||!t.day||t.day==="carryover") return; if(String(t.id||"").endsWith("_c")) return; if(_ck[t.id]) return; (byDay[t.day]=byDay[t.day]||[]).push(t); });
   for(const day in byDay){
     const o=sdOv[day]||{};
-    const ls=toMin(o.lunchStart||sd.lunchStart||"1:00 PM"), le=toMin(o.lunchEnd||sd.lunchEnd||"2:00 PM");
+    let ls=toMin(o.lunchStart||sd.lunchStart||"1:00 PM"), le=toMin(o.lunchEnd||sd.lunchEnd||"2:00 PM");
+    { const _w=(typeof dtLunch==="function")?dtLunch(day):null; if(_w){ ls=_w.s; le=_w.e; } }   // ⏰ DAYTIMES: this date's own lunch
     const lbl=DAY_LBL[day]||day;
     const ts=byDay[day].map(t=>({t,s:toMin(t.time),e:toMin(t.time)+(t.dur||20)}));
     const ds=dateOf(day);
@@ -81596,10 +81822,11 @@ function runDisplacement(){
 
   // ── Helpers ──
   function maxFor(who,subj){ return (typeof capForDisplay==="function")?capForDisplay(who,subj,999):999; }   // 6c-2: one cap (s.cap); uncapped = 999
-  function _dayStart(d){var ov=sdOv[d];return toMin((ov&&ov.start)||sd.defaultStart||"10:00 AM");}
-  function _dayEnd(d){var ov=sdOv[d];return toMin((ov&&ov.end)||sd.defaultEnd||"4:15 PM");}
-  function _dayLS(d){var ov=sdOv[d];return toMin((ov&&ov.lunchStart)||sd.lunchStart||"1:00 PM");}
-  function _dayLE(d){var ov=sdOv[d];return toMin((ov&&ov.lunchEnd)||sd.lunchEnd||"2:00 PM");}
+  // ⏰ DAYTIMES: each asks the date's own time first (dtS/dtE/dtLunch), else exactly the rule as before
+  function _dayStart(d){var ov=sdOv[d];var v=(ov&&ov.start)||sd.defaultStart||"10:00 AM";return toMin((typeof dtS==="function")?dtS(d,v):v);}
+  function _dayEnd(d){var ov=sdOv[d];var v=(ov&&ov.end)||sd.defaultEnd||"4:15 PM";return toMin((typeof dtE==="function")?dtE(d,v):v);}
+  function _dayLS(d){var w=(typeof dtLunch==="function")?dtLunch(d):null;if(w)return w.s;var ov=sdOv[d];return toMin((ov&&ov.lunchStart)||sd.lunchStart||"1:00 PM");}
+  function _dayLE(d){var w=(typeof dtLunch==="function")?dtLunch(d):null;if(w)return w.e;var ov=sdOv[d];return toMin((ov&&ov.lunchEnd)||sd.lunchEnd||"2:00 PM");}
   // Never re-time TODAY's work into an elapsed slot: when the day being packed is
   // today, start no earlier than the current clock time. A blockout added at 5pm
   // then pushes leftover work to a later day instead of dropping it at 2pm.
@@ -82269,11 +82496,12 @@ function resortDayTasks(day,startOverride,momOverride){
   const r=rulesData||{};
   const sd=r.schoolDay||{};
   const sdOv=(sd.overrides||{})[day]||{};
-  const schoolStart=startOverride!=null?startOverride:toMin(sdOv.start||sd.defaultStart||"10:00 AM");
+  const _dw=(typeof dtDay==="function")?dtDay(day):null;   // ⏰ DAYTIMES: this date's own times (else exactly the rule below)
+  const schoolStart=startOverride!=null?startOverride:(_dw?_dw.s:toMin(sdOv.start||sd.defaultStart||"10:00 AM"));
   const momAvail=momOverride!=null?momOverride:schoolStart;
-  const schoolEnd=toMin(sdOv.end||sd.defaultEnd||"4:15 PM");
-  const lunchS=toMin(sdOv.lunchStart||sd.lunchStart||"1:00 PM");
-  const lunchE=toMin(sdOv.lunchEnd||sd.lunchEnd||"2:00 PM");
+  const schoolEnd=_dw?_dw.e:toMin(sdOv.end||sd.defaultEnd||"4:15 PM");
+  const lunchS=_dw?_dw.ls:toMin(sdOv.lunchStart||sd.lunchStart||"1:00 PM");
+  const lunchE=_dw?_dw.le:toMin(sdOv.lunchEnd||sd.lunchEnd||"2:00 PM");
   // ALL tasks for this day (checked or not), in current time order — re-sort the whole day.
   const dayTasks=weekData.tasks.filter(t=>t.day===day&&!t.id.endsWith("_c"));
   if(!dayTasks.length) return;
@@ -82868,6 +83096,7 @@ function rulesSchoolDayCardHTML(r,openByDefault){
     });
     h+='</div>';
   }
+  if(typeof sucSettingsHTML==="function") h+=sucSettingsHTML();   // 🔁 SUNDAYCU: a chip per kid
   h+='</div></div>';
 
   // 1b. SCHEDULE BALANCING — how aggressively the generator evens out the days
@@ -87703,6 +87932,7 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
   // (book lessons: next day → Saturday → next week, via the cursor) or is skipped (dailies are day-bound). Was
   // 5 PM unless Theater Week (DeWalt's co-op Thursday ran to 4:50). Saturday keeps its catch-up allowance.
   const cutoff=(dayName!=="saturday")?r.schoolEnd:Math.max(r.schoolEnd,17*60);
+  const _cutD=(typeof dtEM==="function")?dtEM(dayName,cutoff,dayConfig.dateStr):cutoff;   // ⏰ DAYTIMES: the date's own finish wins
 
   // Notebooks and drills are now managed as regular curriculum subjects — no hardcoded injection needed
 
@@ -87835,7 +88065,7 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
 
   // Place everything through the shared packer (no phone lane, to match the prior
   // generator; Mom deferred past the sitter return on babysitter days).
-  const _packCtx={start:schoolStart,end:cutoff,lunchStart:r.lunchStart,lunchEnd:r.lunchEnd,
+  const _packCtx={start:schoolStart,end:_cutD,lunchStart:r.lunchStart,lunchEnd:r.lunchEnd,
     kidStart:kidStart,momStart:(isSitter?sitterEnd:0),busy:fxBusy,momBusy:fxMomBusy,laneBusy:fxLaneBusy,lanes:["computer","screen","ipadLucy","keyboard"],laneCap:gwDeviceCaps(),
     helperFor:(typeof helperPlanWin==="function")?function(it){ const mm=meta[it.id]; return mm?helperPlanWin(dayName,mm.kid,mm.key):null; }:null};   // 🙋 Grandma's regular window
   if(typeof stLunchCtx==="function"){ const _lc=stLunchCtx(_packCtx,dayConfig.dateStr); _packCtx.lunchStart=_lc.lunchStart; _packCtx.lunchEnd=_lc.lunchEnd; }   // ⏰ SETTIME_TODAY: this date's own lunch
@@ -87950,14 +88180,16 @@ function gwAutoBalance(dayData,lateStart,skipDays,todayISO){
       const ranked=[...dayDates].sort((a,b)=>dayTotals[a[0]]-dayTotals[b[0]]);
 
       for(const[dk,dayName] of ranked){
-        const startStr=(lateStart||{})[dayName]||((rulesData&&rulesData.schoolDay&&rulesData.schoolDay.defaultStart)||"10:00 AM");
+        const _ss0=(lateStart||{})[dayName]||((rulesData&&rulesData.schoolDay&&rulesData.schoolDay.defaultStart)||"10:00 AM");
+        const startStr=(typeof dtS==="function")?dtS(dayName,_ss0,dk):_ss0;   // ⏰ DAYTIMES: the date's own start, then as before
+        const DAY_END_D=(typeof dtEM==="function")?dtEM(dayName,DAY_END,dk):DAY_END;
         // 🏫 COOP_BALANCE (2026-10-04): on a timed co-op date this kid's day starts when co-op ends. The balancer
         // counted the whole school day, ranked co-op Thursday the EMPTIEST, and evened Penmanship / Handwriting /
         // Typing / an IEW day onto it — stacked 2–3 deep after co-op — while Tue/Wed lost theirs (DeWalt Week 1).
         // Days without a timed co-op compute exactly as before.
         const _ce=(typeof coopTimedEndMin==="function")?coopTimedEndMin(kid,dk):0;
         const _st=Math.max(toMin(startStr),_ce);
-        const capacity=(_ce>toMin(startStr))?(DAY_END-_st-Math.max(0,Math.min(DAY_END,_rr.lunchEnd)-Math.max(_st,_rr.lunchStart))):(DAY_END-toMin(startStr)-LUNCH);
+        const capacity=(_ce>toMin(startStr))?(DAY_END_D-_st-Math.max(0,Math.min(DAY_END_D,_rr.lunchEnd)-Math.max(_st,_rr.lunchStart))):(DAY_END_D-toMin(startStr)-LUNCH);
         let room=capacity-dayTotals[dk];
         // 🏫 COOP_FAMROOM (her yes 2026-10-04): on a co-op day the hour after co-op also holds this kid's family time
         // (Fact Review 15, scheduler picks). Uncounted, Andrew's Thursday looked 20 min free and took Monday's
@@ -88956,7 +89188,8 @@ function generateWeek(config){
     const rulesSD=(rulesData&&rulesData.schoolDay)||{};
     const rulesDayOv=(rulesSD.overrides||{})[dn]||{};
     const rulesDefaultStart=rulesSD.defaultStart||"10:00 AM";
-    const schoolStartStr=(config.lateStart||{})[dn]||rulesDayOv.start||rulesDefaultStart;
+    const _ssw=(config.lateStart||{})[dn]||rulesDayOv.start||rulesDefaultStart;
+    const schoolStartStr=(typeof dtS==="function")?dtS(dn,_ssw,dk):_ssw;   // ⏰ DAYTIMES: the date's own start wins
     const schoolStartMin=toMin(schoolStartStr);
 
     const isSitter=!!sitterCfg[dn];
@@ -89015,7 +89248,7 @@ function generateWeek(config){
     if(_useSat && WDAY_MAP[_ld.getDay()]!=="saturday"){
       const _sat=new Date(_ld); _sat.setDate(_sat.getDate()+1);
       const _satDk=_sat.getFullYear()+"-"+String(_sat.getMonth()+1).padStart(2,"0")+"-"+String(_sat.getDate()).padStart(2,"0");
-      const _ds=((rulesData&&rulesData.schoolDay&&rulesData.schoolDay.defaultStart)||"10:00 AM");
+      const _ds0=((rulesData&&rulesData.schoolDay&&rulesData.schoolDay.defaultStart)||"10:00 AM"); const _ds=(typeof dtS==="function")?dtS("saturday",_ds0,_satDk):_ds0;   // ⏰ DAYTIMES
       const _satRes=gwBuildDayTasks(gwCarryToAssignments(_carry),
         {schoolStart:toMin(_ds),momAvailable:toMin(_ds),isCarSchool:false,isSitter:false,sitterStart:0,sitterEnd:0,withSitter:[],dayName:"saturday",dateStr:_satDk},
         _sat.getFullYear()+"d"+dayOfYear(_sat)+"_",taskCounter);
@@ -89288,7 +89521,8 @@ function seGuardCtx(extra){
     days:DAYS, todayDay:(typeof _todayDay!=="undefined")?_todayDay:null, nowMin:now.getHours()*60+now.getMinutes(),
     dayISO:iso,   // 🗓 WEEKEND (2026-10-11): lets the catch-up tell a finished week from the coming one
     checked:(typeof checked!=="undefined"&&checked)||{}, claimed:(typeof claimed!=="undefined"&&claimed)||{},
-    win:day=>{ const ov=(_sd.overrides||{})[day]||{}; return {start:toMin(ov.start||_sd.defaultStart||"10:00 AM"),end:toMin(ov.end||_sd.defaultEnd||"4:15 PM"),lunchStart:_r.lunchStart,lunchEnd:_r.lunchEnd}; },
+    win:day=>{ const ov=(_sd.overrides||{})[day]||{}; const _vs=ov.start||_sd.defaultStart||"10:00 AM", _ve=ov.end||_sd.defaultEnd||"4:15 PM"; const _w=(typeof dtLunch==="function")?dtLunch(day):null;   // ⏰ DAYTIMES: this date's own times
+      return {start:toMin((typeof dtS==="function")?dtS(day,_vs):_vs),end:toMin((typeof dtE==="function")?dtE(day,_ve):_ve),lunchStart:_w?_w.s:_r.lunchStart,lunchEnd:_w?_w.e:_r.lunchEnd}; },
     kidOff:(kid,day)=>{ try{ const ds=iso(day); return !!(ds&&typeof smapIsKidOff==="function"&&smapIsKidOff(kid,ds)); }catch(e){ return false; } },
     isClass:t=>{ try{ return !!(t&&t.famBlock)||(typeof mvtHeldToday==="function"&&mvtHeldToday(t))||   // 📅 MOVETODAY: held where Mom put it today
       (typeof fxIsClass==="function"&&fxIsClass(subj(t)))||(typeof fdtHeld==="function"&&fdtHeld(t)); }catch(e){ return false; } },   // 👨‍👩‍👧 family time too · ⏰ FIXEDDAYTIME: a set-time card
