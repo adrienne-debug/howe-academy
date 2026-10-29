@@ -36,6 +36,11 @@
 // unit's, its type one of the engine's, its label set, its tests ids of that section's forms, its replaces "<deck>#o<order>" of a real
 // card; a `gear` skill (type id, data.kind "gear") has 4+ items, each with a unique name, a use, a source, and look-alikes that are items
 // of the same skill. A note (not an error) lists the gear items the repo's photo set (envirothon/pics/index.json) has no photo for.
+// 📐 CPITEMTRIANGLE (2026-10-29, the soil texture triangle; RESEARCH_envirothon_skills_2026-10-28.md §4.1): a `ternary` skill (type chart)
+// has 3 axes and 2+ classes, each with a unique key and label, a rule the engine can read ("<axis>" or "silt+1.5clay", op < <= > >=, a
+// number), a shape (3+ corners inside the triangle) and a label spot; EVERY point of the triangle (each half percent) falls in exactly
+// one class's rule, the shapes tile the triangle (their areas add to the whole), and each shape's middle is its own class. COUNTS'
+// `items` for it is its number of classes.
 // Nothing here touches a database. The catalog entry (index.json) is what 📦 Units ▸ Publish writes to units/<id>/index (§4.3), and the
 // same object is CPU_UNITS[<id>] in index.html: a plain run REWRITES that one line (`const CPU_UNITS={…};` in the CPUNIT block), so a data
 // change (a trim, a core add) is the data files + one compile run, never a hand edit of index.html (2026-10-28, after Trim 1 met PR 3).
@@ -113,12 +118,20 @@ function makeCounts(u,decks,tests,skills){
     c.decks[d.key]={section:d.section,n,core,maxOrder:o.length?Math.max(...o):0,orders:ranges(o)}; c.cards+=n; c.core+=core;
     const s=c.sections[d.section]; if(s){ s.cards+=n; s.core+=core; s.decks++; } });
   if(tests) Object.keys(tests.sections).forEach(k=>{ const t=tests.sections[k], r={}; ["pre","post"].forEach(f=>{ if(t[f]) r[f]=t[f].items.length; }); c.tests[k]=r; });
-  if(skills&&skills.length){ c.skills={}; skills.forEach(k=>{ const it=skillItems(k); c.skills[k.key]={section:k.section,type:k.type,core:k.core===true,items:it?it.length:0}; }); }   // 🧰 CPITEMGEAR
+  if(skills&&skills.length){ c.skills={}; skills.forEach(k=>{ const it=skillItems(k)||skillClasses(k); c.skills[k.key]={section:k.section,type:k.type,core:k.core===true,items:it?it.length:0}; }); }   // 🧰 CPITEMGEAR · 📐 CPITEMTRIANGLE (a chart's items = its classes)
   return c;
 }
 // 🧰 CPITEMGEAR: a skill as the catalog carries it (the unit.json record, its keys in a fixed order) — PURE
 function skillEntry(k){ const o={}; ["key","section","type","label","core","steps","tests","replaces","data"].forEach(f=>{ if(k[f]!==undefined) o[f]=k[f]; }); return o; }
 function skillItems(k){ return (k&&k.data&&k.data.kind==="gear"&&Array.isArray(k.data.items))?k.data.items:null; }
+// 📐 CPITEMTRIANGLE: a ternary chart's classes — the same reading as index.html's cptRuleOk / cptClassOf (test_cp_item_triangle.js holds them equal)
+function skillClasses(k){ return (k&&k.data&&k.data.kind==="ternary"&&Array.isArray(k.data.classes))?k.data.classes:null; }
+const TERN_OPS={"<":(a,b)=>a<b,"<=":(a,b)=>a<=b,">":(a,b)=>a>b,">=":(a,b)=>a>=b};
+function ternTerms(expr,axes){ const out=[]; for(const t of String(expr).split("+")){ const m=/^(\d+(?:\.\d+)?)?([a-z_]+)$/.exec(t.trim()); if(!m||axes.indexOf(m[2])<0) return null; out.push([m[1]?+m[1]:1,m[2]]); } return out.length?out:null; }
+function ternRuleOk(rule,axes){ return Array.isArray(rule)&&rule.length>0&&rule.every(alt=>Array.isArray(alt)&&alt.length>0&&alt.every(c=>Array.isArray(c)&&c.length===3&&!!ternTerms(c[0],axes)&&!!TERN_OPS[c[1]]&&typeof c[2]==="number")); }
+function ternIn(rule,pt,axes){ return rule.some(alt=>alt.every(c=>TERN_OPS[c[1]](ternTerms(c[0],axes).reduce((a,t)=>a+t[0]*pt[t[1]],0),c[2]))); }
+// the classes whose rule a point is in (exactly one, for a good chart); pt = {<axis>: percent}
+function ternClassesAt(classes,axes,pt){ return classes.filter(c=>ternIn(c.rule,pt,axes)); }
 // rule 8 — the unit's skills: [errors]
 function checkSkills(skills,secKeys,decks,tests){
   const err=[], E=m=>err.push(m); if(skills==null) return err; if(!Array.isArray(skills)){ E("skills must be a list"); return err; }
@@ -145,7 +158,38 @@ function checkSkills(skills,secKeys,decks,tests){
         if(!x.src) E(ia+" has no source");
         if(x.item!=null&&(typeof x.item!=="string"||!x.item.trim())) E(ia+": item (its photo key) must be a name"); });
       const U={}; I.forEach(x=>{ if(x&&x.use){ if(U[x.use]) E(at+": two items share the use “"+x.use+"”"); U[x.use]=1; } });
-      I.forEach(x=>{ if(x&&x.like!=null){ if(!Array.isArray(x.like)) E(at+" item “"+x.name+"”: like must be a list"); else x.like.forEach(n=>{ if(!names[String(n).toLowerCase()]||String(n).toLowerCase()===String(x.name).toLowerCase()) E(at+" item “"+x.name+"”: look-alike “"+n+"” is not another item of this skill"); }); } }); } });
+      I.forEach(x=>{ if(x&&x.like!=null){ if(!Array.isArray(x.like)) E(at+" item “"+x.name+"”: like must be a list"); else x.like.forEach(n=>{ if(!names[String(n).toLowerCase()]||String(n).toLowerCase()===String(x.name).toLowerCase()) E(at+" item “"+x.name+"”: look-alike “"+n+"” is not another item of this skill"); }); } }); }
+    if(k.data&&k.data.kind==="ternary") checkTernary(k,at).forEach(E); });   // 📐 CPITEMTRIANGLE
+  return err;
+}
+// 📐 CPITEMTRIANGLE: a ternary chart (the soil texture triangle): [errors] — PURE
+function ternArea(poly){ let a=0; for(let i=0;i<poly.length;i++){ const p=poly[i], q=poly[(i+1)%poly.length]; a+=p[0]*q[1]-q[0]*p[1]; } return Math.abs(a)/2; }
+function checkTernary(k,at){
+  const err=[], E=m=>err.push(m), D=k.data, AX=Array.isArray(D.axes)?D.axes.map(a=>a&&a.key):[];
+  if(k.type!=="chart") E(at+": a ternary skill is type chart");
+  if(AX.length!==3||new Set(AX).size!==3||!AX.every(x=>typeof x==="string"&&/^[a-z_]+$/.test(x))){ E(at+": a ternary chart needs 3 axes, each with its own key"); return err; }
+  if(D.tol!=null&&!(typeof D.tol==="number"&&D.tol>0&&D.tol<20)) E(at+": tol must be a percent between 0 and 20");
+  const L=Array.isArray(D.classes)?D.classes:[]; if(L.length<2){ E(at+": a ternary chart needs 2 or more classes"); return err; }
+  const keys={}, labels={}; let bad=false;
+  L.forEach((c,j)=>{ const ca=at+" class "+(j+1)+(c&&c.label?" (“"+c.label+"”)":"");
+    if(!c||typeof c.key!=="string"||!/^[a-z0-9_]+$/.test(c.key)){ E(ca+": key must be [a-z0-9_]"); bad=true; return; }
+    if(keys[c.key]) E(ca+": key twice"); keys[c.key]=1;
+    if(typeof c.label!=="string"||!c.label.trim()) E(ca+" has no label"); else { if(labels[c.label.toLowerCase()]) E(ca+": label twice"); labels[c.label.toLowerCase()]=1; }
+    if(!ternRuleOk(c.rule,AX)){ E(ca+": rule must be a list of lists of [\"<axis or a+b·c>\", \"<|<=|>|>=\", number]"); bad=true; }
+    const inT=p=>Array.isArray(p)&&p.length===2&&p.every(v=>typeof v==="number"&&v>=0)&&p[0]+p[1]<=100;
+    if(!Array.isArray(c.poly)||c.poly.length<3||!c.poly.every(inT)){ E(ca+": poly must be 3+ [<"+AX[0]+">, <"+AX[1]+">] corners inside the triangle"); bad=true; }
+    if(!inT(c.at)) E(ca+": at (where its name goes) must be a point inside the triangle"); });
+  if(bad) return err;
+  // every half percent: exactly one class (no gap, no overlap — a boundary belongs to one side only)
+  const gaps=[], twice=[];
+  for(let a=0;a<=200;a++) for(let b=0;a+b<=200;b++){ const pt={[AX[0]]:a/2,[AX[1]]:b/2,[AX[2]]:100-a/2-b/2}, n=ternClassesAt(L,AX,pt);
+    if(!n.length) gaps.push(pt); else if(n.length>1) twice.push([pt,n.map(c=>c.key)]); }
+  const fmt=pt=>AX.map(x=>pt[x]+"% "+x).join(", ");
+  if(gaps.length) E(at+": "+gaps.length+" points are in no class, e.g. "+fmt(gaps[0]));
+  if(twice.length) E(at+": "+twice.length+" points are in two classes, e.g. "+fmt(twice[0][0])+" ("+twice[0][1].join(", ")+")");
+  const area=L.reduce((s,c)=>s+ternArea(c.poly),0); if(Math.abs(area-5000)>1e-6) E(at+": the class shapes cover "+area+" of the triangle's 5000 (they must tile it)");
+  L.forEach(c=>{ const n=c.poly.length, m=c.poly.reduce((s,p)=>[s[0]+p[0]/n,s[1]+p[1]/n],[0,0]), pt={[AX[0]]:m[0],[AX[1]]:m[1],[AX[2]]:100-m[0]-m[1]}, at2=ternClassesAt(L,AX,pt);
+    if(at2.length!==1||at2[0]!==c) E(at+" class “"+c.label+"”: the middle of its shape is not in its rule"); });
   return err;
 }
 // 🧰 CPITEMGEAR: the gear items with no photo in the repo set (envirothon/pics/index.json, card name → photos; the item is the name before " · ")
@@ -255,7 +299,7 @@ function compile(id,opts){
     const cat=catalogIn(root); if(cat){ const h=catalogWith(cat,id,index); if(h!==cat.html) fs.writeFileSync(cat.p,h); r.page=h!==cat.html; } }
   return {ok,err:r.err,warn:r.warn,counts,index,js,links,releaseKeys:rkeys,unit:L.u,page:!!r.page};
 }
-module.exports={compile,checkSkills,skillEntry,skillItems,gearPhotoGaps,SKILL_TYPES,sectionConcepts,releaseKeys,catalogIn,catalogWith,CAT_RE,check,loadUnit,makeIndex,makeCounts,makeJs,questionLinks,linkNorm,linkHas,fbSafe,ranges,unranges,unitIds,LABEL_KEYS,FEATURE_KEYS,REPO};
+module.exports={compile,checkSkills,skillEntry,skillItems,gearPhotoGaps,skillClasses,checkTernary,ternRuleOk,ternClassesAt,ternTerms,ternArea,SKILL_TYPES,sectionConcepts,releaseKeys,catalogIn,catalogWith,CAT_RE,check,loadUnit,makeIndex,makeCounts,makeJs,questionLinks,linkNorm,linkHas,fbSafe,ranges,unranges,unitIds,LABEL_KEYS,FEATURE_KEYS,REPO};
 if(require.main===module){
   const a=process.argv.slice(2), chk=a.includes("--check"), all=a.includes("--all"), ids=all?unitIds(REPO):a.filter(x=>!x.startsWith("--"));
   if(!ids.length){ console.error("usage: node units/build/compile_unit.js <unitId>|--all [--check]"); process.exit(2); }
