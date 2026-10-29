@@ -53,7 +53,8 @@ ok("15 decks", DECKS.length === 15, DECKS.map(d => d.key));
 ok("4,371 cards", CARDS.length === 4371, CARDS.length);
 ok("every card has name, def (non-empty strings) and src", CARDS.every(c => typeof c.name === "string" && c.name.trim() && typeof c.def === "string" && c.def.trim() && typeof c.src === "string" && c.src.trim()));
 ok("every card keeps group, concept, station, kind, order, stage and the core flag", CARDS.every(c => "group" in c && "concept" in c && "station" in c && "kind" in c && typeof c.order === "number" && typeof c.stage === "number" && typeof c.core === "boolean"));
-ok("1,525 cards flagged core (COUNTS.md; 44 added 2026-10-28 from the 2021–22 Area 8 tests, 211 set to core:false by Trim 1, 32 put back the same day)", CARDS.filter(c => c.core).length === 1525, CARDS.filter(c => c.core).length);
+const COUNTS_U = JSON.parse(fs.readFileSync(path.join(__dirname, "units", "nc_envirothon", "COUNTS.json"), "utf8"));   // 🪲 CPITEMBIOTIC: the count compile_unit.js wrote, not a typed number
+ok("the core cards = COUNTS.json's " + COUNTS_U.core + " (COUNTS.md; 44 added 2026-10-28 from the 2021–22 Area 8 tests, 211 set to core:false by Trim 1, 32 put back the same day, the Poor card 2026-10-29)", CARDS.filter(c => c.core).length === COUNTS_U.core, CARDS.filter(c => c.core).length);
 ok("family = the Key Concept (group) on every card — the staged engine reads card.family", CARDS.every(c => c.family === c.group));
 ok("no deck key has a character Firebase forbids (. # $ [ ] /)", DECKS.every(d => !/[.#$\[\]\/]/.test(d.key)));
 ok("no card name repeats inside its deck", DECKS.every(d => new Set(d.cards.map(c => c.name)).size === d.cards.length));
