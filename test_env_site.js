@@ -18,6 +18,7 @@ const src=fs.readFileSync(path.join(REPO,"index.html"),"utf8");
 function slice(a,b){ const i=src.indexOf(a), j=src.indexOf(b,i); if(i<0||j<0) throw new Error("slice missing "+a); return src.slice(i,j+b.length); }
 const SITE=slice("// ENVSITE_START","// ENVSITE_END"), CON=slice("// ENVCONSOLE_START","// ENVCONSOLE_END"), MIR=slice("// ENVMIRROR_START","// ENVMIRROR_END");
 const CLS=slice("// ENVCLASSSET_START","// ENVCLASSSET_END");   // ⚙️ the class settings (2026-10-28): the console's panel + the kid's overlay
+const CPC=slice("// CPCLASS_START","// CPCLASS_END");   // 🏫 the class record and its look (2026-10-28): the bars, 🏫 Class setup, + Class, the lock date
 // o.envt: the station check-ins too (ENVTEST, + the forms on window.HoweEnvirothon = o.lib) — the demo's check-in rules (2026-10-28) —
 // and the 🔊 read-aloud switch right after it (ENVREADALOUD; mastSpeak records into G.said)
 const ENVT=slice("// ENVTEST_START","// ENVREADALOUD_END");
@@ -61,11 +62,14 @@ function world(o){
     ${SITE}
     ${CON}
     ${CLS}
+    ${CPC}
     STARTER_UNITS[ENV_UNIT_ID]=envUnitRecordStub; function envUnitRecordStub(){ return {id:ENV_UNIT_ID,starter:ENV_UNIT_ID,starterVer:1,cardsInCode:true,stages:ENV_STAGES.map(s=>({n:s[0]})),decks:ENV_DECKS.map(d=>({key:d[0],stage:d[2],station:d[3],n:d[5],cards:[]}))}; }
     return { get tab(){ return tab; }, set tab(v){ tab=v; }, get db(){ return db; }, get mastView(){ return mastView; }, set mastView(v){ mastView=v; }, get masteryKid(){ return masteryKid; }, unitStudies, masteryData, HA_LS, _envs, _envc, _envm, STARTER_UNITS,
       envEdition, envSiteOn, envsDemo, envsLockState, envsStations, envsStationStat, envsGain, envsEffort, envsBoardsCompute, envsBoardsHtml, envsMakeCode, envsCodeNorm, envsCodeOk, envsKidEmail, envsKidPw, envsFamilyDbUrl, envSiteDb, envSiteDemoBoot, envSiteGate, envsApplyLogin, envSiteAuthShow, envsAuthHtml, envsAuthSubmit, envsKidSubmit, envSiteTabGate, envSiteRender, envsView, envsDemoGo, envsDemoData, envsDemoStart, envSiteSittingDone, envsAutoEnroll, envsWrite, envsLicenseLine, envsCard, envsKidHtml, envsParentHtml, envsStationRowsHtml, envsScoresHtml, envsTipsHtml, envsSettingsHtml, envsReadShared, envsStreakHtml, ENVS_OFF_TABS, ENVS_TIPS, ENVS_CONTACT, ENVS_FULL_APP, ENVS_STARS, ENVS_AUTOLOCK,
       initFb, envConsoleStart, envConsoleHtml, envcView, envcGridHtml, envcStudentHtml, envcRosterHtml, envcSendHtml, envcStrongHtml, envcStrongRank, envcCardsHtml, envcBoardsHtml, envcWhoHtml, envcAdminHtml, envcAddStudentPaths, envcSendOutUpdate, envcFinalUpdate, envcFinalFor, envcFinalOut, envcFinalRec, envcAddStudent, envcSendOut, envcSendPick, envcSendDeck, envcOpenFor, envcUndo, envcCardAdd, envcCardRetire, envcCardSave, envcTeamSet, envcWhoSet, envcLock, envcSeedJson, envcPickClass, envcStudents, envcNewCode, envcBoardsPublish, envcScoreSave, envcDemoStart, envcTeacherAdd, envcClassAdd, envcSeedShow, showTab, renderAll, firebase, ENV_SESSION, ENV_SESSION_SID,
       _envcs, ENVCS_FIELDS, ENVCS_SECTS, envClassOverlay, envClsMerge, envClsCheck, envClsSave, envClsInput, envClsReset, envClsPat, envClsLock, envClsPanelHtml, envClsStudentHtml, envClsStartHtml, envClsKidLoad, envClsLayers, envClsEff, envClsClassVal, envClsLocked, envClsDef, envClsTierOrderOk, envClsConsoleStart,
+      cp:{ CP_HUES, CP_EMOJI, CP_DEF, CP_LABELS_UNIT, CP_LABELS_PLAIN, CP_FEATURES, CP_CAL_DAYS, _cp, cpHex, cpLum, cpContrast, cpTextOn, cpAccentOn, cpTitleOk, cpEmojiOk, cpDateOk, cpDateLabel, cpBrand, cpLabel, cpFeature, cpSeason, cpLockKey, cpLockLabel, cpTopHtml, cpBarHtml, cpClassIn, cpDraftOf, cpDraft, cpCheck, cpCan, cpSet, cpEmojiType, cpGoal, cpGoalAdd, cpGoalDel, cpOffAdd, cpOffDel, cpFeat, cpWord, cpCancel, cpSave, cpPrevHtml, cpSetupHtml, cpNewClass, cpAdminClassHtml, cpClassAdd, cpDemoStart, cpCls },
+      envsAutoLockLabel,
       envt:${o.envt?"{ envtOpen, envtStatus, envtStartHtml, envtPick, envtNext, envtClose, envtCoreLine, envtWaitsForCheckin, envtFinalApply, envRaSet, envRaMode, envRaStartHtml, envRaReadQ, get state(){ return envtState; } }":"null"} };`)(G,firebase,document,tierFn);
   api.G=G; api.el=(id,v)=>{ G.els[id]=el(id); if(v!==undefined) G.els[id].value=v; return G.els[id]; };
   api.flush=async()=>{ for(let i=0;i<60;i++) await Promise.resolve(); };
@@ -74,7 +78,7 @@ function world(o){
 }
 
 
-module.exports={world,src,SITE,CON,MIR,UNIT,CLS,REPO};
+module.exports={world,src,SITE,CON,MIR,UNIT,CLS,CPC,REPO};
 if(require.main===module){
 let pass=0, fail=0;
 const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  "+JSON.stringify(x).slice(0,400):"")); } };
@@ -95,6 +99,7 @@ console.log("\n── no edition, no demo → inert; the boot is byte-identical 
   ok("envEdition() is \"\" and envSiteOn() false for Howe", w.envEdition()===""&&w.envSiteOn()===false);
   ok("every hook target says no", w.envSiteDemoBoot()===false&&w.envSiteGate({uid:"u"},()=>{})===false&&w.envSiteAuthShow("")===false&&w.envSiteDb()===null&&w.envSiteTabGate("units")===false&&w.envSiteRender(w.G.contentEl)===false&&w.envSiteSittingDone("k",{total:5})===false);
   ok("nothing created, no CSS, no listener, no read, no write, no body class, #content untouched", w.G.created.length===0&&w.G.listeners.length===0&&w.G.reads.length===0&&w.G.writes.length===0&&w.G.body.classList.list.length===0&&w.G.content===""&&w.G.renders===0);
+  ok("🏫 CPCLASS's hook targets say no too (no bar, no class, no lock key, no screen, no + Class) and the lock / label / © line read as before", w.cp.cpTopHtml("kid","K")===""&&w.cp.cpClassIn()===false&&w.cp.cpLockKey()===""&&w.cp.cpSeason()==="2026-27"&&w.cp.cpSetupHtml()===""&&w.cp.cpAdminClassHtml()===""&&w.cp.cpClassAdd()===false&&w.envsLockState(null,"20270425").why==="auto"&&w.envsAutoLockLabel()==="Apr 24, 2027"&&/for the 2026-27 season/.test(w.envsLicenseLine()));
   w.showTab("units"); ok("showTab works as before (tab = units, the schedule paint ran)", w.tab==="units"&&w.G.schedulePaints===1);
   const d=world({fam:{familyId:"dewalt",roster:[]}}); ok("a second family (no edition) is inert too", d.envEdition()===""&&d.envSiteRender(d.G.contentEl)===false&&d.G.created.length===0);
   const h=world({fam:{familyId:"howe",roster:[]},search:"?dryrun=1"}); ok("?dryrun=1 alone is not the demo", h.envsDemo()===false&&h.envEdition()==="");
