@@ -15,13 +15,13 @@ Built 2026-10-27. Unit file `nc_envirothon_unit.json` (id `nc_envirothon`): 6 st
 | 2 | Soils and Land Use · Facts | flash | 465 | 115 | 36 |
 | 2 | Soils and Land Use · ID | flip | 97 | 34 | 14 |
 | 3 | Aquatic Ecology · Terms | flip | 270 | 147 | 37 |
-| 3 | Aquatic Ecology · Facts | flash | 485 | 158 | 21 |
+| 3 | Aquatic Ecology · Facts | flash | 485 | 159 | 21 |
 | 3 | Aquatic Ecology · ID | flip | 321 | 75 | 16 |
 | 4 | Wildlife · Terms | flip | 230 | 160 | 22 |
 | 4 | Wildlife · Facts | flash | 350 | 115 | 23 |
 | 4 | Wildlife · ID | flip | 574 | 121 | 24 |
 | 5 | Current Issue · 2027 | flash | 310 | 7 | 22 |
-| | **All decks** | | **4371** | **1525** | |
+| | **All decks** | | **4371** | **1526** | |
 
 ## Per station
 
@@ -30,7 +30,7 @@ Built 2026-10-27. Unit file `nc_envirothon_unit.json` (id `nc_envirothon`): 6 st
 | General concepts | 90 | 9 |
 | Forestry | 891 | 451 |
 | Soils/Land Use | 850 | 282 |
-| Aquatic Ecology | 1076 | 380 |
+| Aquatic Ecology | 1076 | 381 |
 | Wildlife | 1154 | 396 |
 | Current Environmental Issues | 310 | 7 |
 
@@ -84,7 +84,7 @@ Built 2026-10-27. Unit file `nc_envirothon_unit.json` (id `nc_envirothon`): 6 st
 | Aquatic Ecology · Terms | 4. Aquatic Identification | 53 | 38 |
 | Aquatic Ecology · Facts | 1. Aquatics and Society | 40 | 16 |
 | Aquatic Ecology · Facts | 2. Aquatic Ecology | 265 | 78 |
-| Aquatic Ecology · Facts | 3. Conservation and Management of Aquatic Ecosystems | 79 | 41 |
+| Aquatic Ecology · Facts | 3. Conservation and Management of Aquatic Ecosystems | 79 | 42 |
 | Aquatic Ecology · Facts | 4. Aquatic Identification | 101 | 23 |
 | Aquatic Ecology · ID | 4. Aquatic Identification | 321 | 75 |
 | Wildlife · Terms | 1. Wildlife Ecology | 68 | 36 |
@@ -475,11 +475,18 @@ Adrienne's yes, the same evening ("Yes, restore them"). Trim 1's Rule C made two
 - White-Tailed Deer · class
 - Wood Duck · class
 
+## The Poor card made core (2026-10-29)
+
+The research's §6 item 12 ("Make the Poor 0–10 card core"), shipped with the biotic-index worksheet (🪲 CPITEMBIOTIC): **Aquatic
+Ecology · Facts #371 "What biotic index range rates as Poor?" (0-10)** → `core:true`. It was the only one of the eight biotic-index
+fact cards that wasn't core. Core 1,525 → 1,526 (Aquatic Ecology 380 → 381). Nothing else changed. The worksheet lists all eight as
+cards it can replace (`replaces`, research §8.1); taking them out is the trim's step and the teacher's tap.
+
 **Decks still above ~150 core cards:**
 
 - **Forestry · Terms**: 168 core — bulk in Forest Ecology (97) and Conservation and Management of Forests (35)
 - **Forestry · Facts**: 158 core — bulk in Forest Ecology (66) and Forests and Society (50)
-- **Aquatic Ecology · Facts**: 158 core — bulk in Aquatic Ecology (78) and Conservation and Management of Aquatic Ecosystems (41)
+- **Aquatic Ecology · Facts**: 159 core — bulk in Aquatic Ecology (78) and Conservation and Management of Aquatic Ecosystems (42)
 - **Wildlife · Terms**: 160 core — bulk in Wildlife Classification, Adaptations, and Identification (83) and Wildlife Ecology (36)
 
 ## Why the set is bigger than the 900–1,300 the plan estimated
