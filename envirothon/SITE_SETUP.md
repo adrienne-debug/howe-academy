@@ -93,6 +93,13 @@ those fields (title, emoji and color are refused while `classes/<cid>/locks/bran
 closes** (`lockAt`) are yours: set them in the same screen as admin, or in Admin ▸ + Class (which also takes the title, season, start,
 a goal date and the closing date).
 
+**🔒 Your locks, per class** (2026-10-29): as admin, 🏫 Class setup opens with **🔒 Locks for the teacher**, one switch for each of
+`classes/<cid>/locks/{brand, units, cards, tests, plan}` (📚 Cards, 📝 Tests, 📅 Pace and 📦 Units each carry their own switch too).
+Each tap is one update of `classes/<cid>/locks`, with `locks/byName` = your display name, so the teacher reads "🔒 Set by <your
+name>". She still sees everything; a locked part is greyed or its edit buttons don't show, and the rules refuse her write: the look
+(title, emoji, color), `classCards/<cid>` (cards), `classTests/<cid>` (tests) and `classes/<cid>/plan` (plan). Units were already
+yours only. Your own changes always go through.
+
 **📦 Units** (2026-10-28): a class studies the **units attached to it**, and their sections become the class's sections (for NC
 Envirothon, the six stations exactly as before). Your console's **📦 Units** chip lists every unit with its sections, cards and core
 cards, the classes using it, and **Publish**, which writes the unit's catalog entry to `units/<id>/index` (admin only; every login may
