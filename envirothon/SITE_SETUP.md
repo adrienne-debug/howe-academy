@@ -68,7 +68,7 @@ in the host config overrides the pattern if the console names instances differen
 |---|---|---|
 | kid (code) | Study · Games · Scores · Team · Star Store (closed) · Tips · ⚙️ | the family instance + `boards/<cid>` |
 | parent | How <kid> is doing · Team · Tips · ⚙️ (PIN, colour, sign out) | the same |
-| teacher | Class grid · Roster · Send out · Who is strong where · Teacher cards · Boards · Who drills | the default instance |
+| teacher | Class grid · Roster · Send out · Who is strong where · Teacher cards · Boards · Who drills · 🏫 Class setup · ⚙️ Class settings | the default instance |
 | you (admin) | everything the teacher sees for every class + Master lock · Classes · Teachers · Families | the default instance |
 
 **Open the final** (2026-10-28): a station's final opens by itself once the kid has learned every core card; the teacher (or you)
@@ -84,8 +84,17 @@ student at `students/<sid>/settings/{study,drill}`. As admin you see a 🔒 Lock
 then sees it greyed, "set by Adrienne". A kid's app reads the class's and its own settings once when it opens and uses them in
 memory; nothing is written into the family instance. Lincoln's Howe app keeps your own settings.
 
+**🏫 Class setup** (2026-10-28): the teacher's (and your) "🏫 Class setup" chip sets the class's **look** — the title under
+"Howe Academy" on every bar, its emoji and the bar color (42 swatches or any color; the words turn black or white by themselves so
+they stay readable) — with a live preview of the student's and the parent's bar; kids and parents see it and can't change it. The
+same screen holds the season, the first study day, the goal dates (and which one the pace aims at), the study days and days off, and
+the class's own words and optional features. Each card's Save is one update at `classes/<cid>`; the rules let the teacher write only
+those fields (title, emoji and color are refused while `classes/<cid>/locks/brand` is true). The class's **name** and **when it
+closes** (`lockAt`) are yours: set them in the same screen as admin, or in Admin ▸ + Class (which also takes the title, season, start,
+a goal date and the closing date).
+
 **Master lock**: Admin → "Close the season now" writes `release/locked = {locked:true, at, by}`; every family and the teacher
-then land on the "season closed" card; nothing is deleted. It also closes **by itself after 2027-04-24** (State). To reopen
+then land on the "season closed" card; nothing is deleted. It also closes **by itself after 2027-04-24** (State), or after the class's own closing date (`classes/<cid>/lockAt`) when you set one. To reopen
 for the next season, "Reopen the season" after that date writes `{locked:false, at:<then>}`, which the page honours.
 
 ## 6. Still yours to write / decide

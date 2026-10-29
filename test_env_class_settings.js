@@ -125,7 +125,7 @@ console.log("\n── Adrienne's locks ──");
   ok("rules: settings/locks — any login reads, only admin writes, true/null only", lk[".read"]==="auth != null"&&/admins/.test(lk[".write"])&&!/teacher/.test(lk[".write"])&&lk.$name[".validate"]==="newData.isBoolean()");
   ok("rules: a class value for a locked name fails .validate unless admin; only study / drill", /settings\/locks\/'\+\$name/.test(cs.$part.$name[".validate"])&&/admins/.test(cs.$part.$name[".validate"])&&/study.*drill/.test(cs.$part[".validate"]));
   ok("rules: a student override — the class's teacher (never for a locked name, set or clear) or admin", /teacher/.test(ss.$part.$name[".write"])&&/settings\/locks\/'\+\$name\)\.val\(\) != true/.test(ss.$part.$name[".write"])&&/admins/.test(ss.$part.$name[".write"])&&!ss[".write"]);
-  ok("rules: the teacher's write to classes/<cid> (where the class's settings live) is unchanged", /teacher'\)\.val\(\) == auth\.uid/.test(rules.classes.$cid[".write"]));
+  ok("rules: the class's teacher writes classes/<cid>/settings (per child since 🏫 CPCLASS: the whole class is the admin's)", /classes\/'\+\$cid\+'\/teacher'\)\.val\(\) == auth\.uid/.test(rules.classes.$cid.settings[".write"])&&!/teacher/.test(rules.classes.$cid[".write"]));
   ok("SITE_SETUP.md explains the class settings", /Class settings/.test(fs.readFileSync(path.join(REPO,"envirothon/SITE_SETUP.md"),"utf8"))); }
 
 console.log("\n── the kid: the overlay, in memory only ──");
