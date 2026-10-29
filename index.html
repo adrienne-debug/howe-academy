@@ -70568,6 +70568,7 @@ function _renderMasteryInner(el){
   h+='<div class="mast-drill-date">'+dateStr+'</div></div>';
   h+='<div class="mast-drill-pnum">Day #'+pn+'</div></div>';
   if(due.length&&typeof drillTipHtml==="function") h+=drillTipHtml(!!mastLogMode,due.length,masteryKid);   // 💡 DRILL_TIPS
+  if(!mastLogMode&&typeof pdButtonHtml==="function") h+=pdButtonHtml(masteryKid);   // 🖨 PAPERDRILL: the next drill on paper (Mom)
 
   if(!due.length) h+='<div class="mast-none">Nothing due today \u{1F389}</div>';
   else {
@@ -71227,6 +71228,121 @@ function mastPrintDrill(){
   container.innerHTML=pages;
   setTimeout(()=>{ window.print(); setTimeout(()=>{ container.innerHTML=""; },1000); },100);
 }
+
+// PAPERDRILL_START — 🖨 the NEXT drill on paper, for a no-tech day (her ask 2026-10-28/29 for Sara's Grandma Wednesdays:
+// "the night before … Mom prints the next drill"). Mom only (the sheet carries the answers). Two sheets, one numbering:
+//   · the tester's sheet — every card of the next school day's drill, numbered, with its answer beside it (a spelling
+//     word is printed for the tester to read aloud; a fact shows its answer) and ✓ ~ ✗ boxes to mark;
+//   · the picture sheet — the picture cards only, 4 to a page, each with the SAME number, so the tester holds one up
+//     ("number 1 — what is it?") and checks the answer on her sheet. Nothing on it gives the answer away.
+// The printed list is saved — mastery/<kid>_paperDrills/<yyyymmdd> = {date, pn, ids:[…], q:[…], ts, state:"printed"} —
+// so a second print of the same day matches the first, and the paper can be graded later (step 3).
+// The next drill = the cards due on the kid's next school day (mastDueItems on that day's school-day number), grouped
+// by deck and shuffled inside each, like the on-screen drill.
+function _pdIso(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function _pdAs(kid,fn){ const k=masteryKid; masteryKid=kid; try{ return fn(); } finally{ masteryKid=k; } }
+// The kid's next school day after `fromIso` (default today) → {iso, pn}.
+function pdNextDay(kid,fromIso){
+  const from=fromIso||((typeof calToday==="function")?calToday():_pdIso(new Date()));
+  const n0=mastSchoolDayNum(kid,from), d=new Date(from+"T12:00:00");
+  for(let i=1;i<=21;i++){ d.setDate(d.getDate()+1); const iso=_pdIso(d), n=mastSchoolDayNum(kid,iso); if(n>n0) return {iso:iso,pn:n}; }
+  return null;
+}
+function _pdById(kid){ let all=masteryData[kid]||[]; if(!Array.isArray(all)) all=Object.values(all); const m={}; all.forEach(i=>{ if(i&&i.id) m[i.id]=i; }); return m; }
+function pdRecs(kid){ return (masteryData&&masteryData[kid+"_paperDrills"])||{}; }
+// A card with a picture on its front (a photo, an emoji, a unit picture, or a drawn color / shape / count).
+function pdVisual(kid,it,px){
+  if(!it) return "";
+  if(it.imageUrl) return '<img src="'+it.imageUrl+'" style="max-width:'+px+'px;max-height:'+px+'px;object-fit:contain">';
+  if(it.emoji) return '<span style="font-size:'+Math.round(px*0.7)+'px;line-height:1">'+it.emoji+'</span>';
+  const v=_pdAs(kid,()=>(typeof mastGetVisual==="function")?mastGetVisual(it.subject,it.prompt):null);
+  if(v&&typeof v==="string") return '<span style="font-size:'+Math.round(px*0.7)+'px;line-height:1">'+v+'</span>';
+  if(v&&v.imageUrl) return '<img src="'+v.imageUrl+'" style="max-width:'+px+'px;max-height:'+px+'px;object-fit:contain">';
+  if(typeof MAST_ANIMAL_EMOJI!=="undefined"&&MAST_ANIMAL_EMOJI[it.prompt]) return '<span style="font-size:'+Math.round(px*0.7)+'px;line-height:1">'+MAST_ANIMAL_EMOJI[it.prompt]+'</span>';
+  const cat=it.subject||"";
+  if(cat==="Colors"&&typeof MAST_COLOR_MAP!=="undefined"&&MAST_COLOR_MAP[it.prompt]) return '<div style="width:'+px+'px;height:'+px+'px;border-radius:50%;background:'+MAST_COLOR_MAP[it.prompt]+';border:2px solid #475569;-webkit-print-color-adjust:exact;print-color-adjust:exact"></div>';
+  if(cat==="Shapes"&&typeof mastShapeVis==="function") return '<span style="font-size:'+Math.round(px*0.7)+'px;line-height:1">'+mastShapeVis(it.prompt,px)+'</span>';
+  if(cat==="Counting"&&typeof mastCountN==="function"){ const n=mastCountN(it); if(n){
+    if(n>10&&typeof mastCountVisFrames==="function") return mastCountVisFrames(n,px,false);
+    const e=(typeof mastCountEmoji==="function")?mastCountEmoji(kid):"●"; let s=""; for(let i=0;i<n;i++) s+='<span style="font-size:'+Math.round(px/5)+'px">'+e+'</span>';
+    return '<span style="display:inline-flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:'+px+'px">'+s+'</span>'; } }
+  return "";
+}
+// One card on paper → {spell, pic, q (what the tester reads or sees), a (the answer)}.
+function pdLine(kid,it){
+  const p=String(it.prompt==null?"":it.prompt), cat=it.subject||"";
+  const mode=(typeof mastGetCatMode==="function")?mastGetCatMode(kid,cat):"";
+  if(mode==="spell") return {spell:true,pic:false,q:p,a:p};
+  let def=(typeof mastGetDef==="function")?mastGetDef(kid,p,cat):"";
+  if(!def){ const rb=(typeof owRuleBack==="function")?owRuleBack(kid,it):(it.answer||""); if(rb&&rb!==p) def=rb; }
+  if(!def&&it.answer!=null&&String(it.answer)!==p) def=String(it.answer);
+  const pic=!!pdVisual(kid,it,40);
+  if(pic){ const face=_pdAs(kid,()=>(typeof mastCatFace==="function")?mastCatFace(cat):"desc");
+    if(face==="name"||!def) return {spell:false,pic:true,q:"",a:p};
+    return {spell:false,pic:true,named:true,q:p,a:def}; }
+  return {spell:false,pic:false,q:p,a:def||p};
+}
+// The next drill's cards, in order (a saved print for that day wins, so a reprint matches).
+function pdNextList(kid,day){
+  const key=day.iso.replace(/-/g,""), rec=pdRecs(kid)[key], by=_pdById(kid);
+  if(rec&&rec.state==="printed"&&Array.isArray(rec.ids)) return rec.ids.map(id=>by[id]).filter(Boolean);
+  const due=mastDueItems(kid,day.pn);
+  return (typeof mastShuffleDeck==="function")?mastShuffleDeck(due):due;
+}
+function pdEsc(v){ return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function pdSheetsHtml(kid,day,items){
+  const name=((typeof SL_KLBL!=="undefined"&&SL_KLBL[kid])||kid), col=((typeof MAST_KID_COL!=="undefined"&&MAST_KID_COL[kid])||"#c2410c");
+  const dt=new Date(day.iso+"T12:00:00"), dLbl=dt.toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
+  const L=items.map(it=>pdLine(kid,it));
+  const box='<span style="display:inline-block;width:15px;height:15px;border:1.5px solid #64748b;border-radius:3px;margin-right:3px"></span>';
+  let h='<!doctype html><html><head><meta charset="utf-8"><title>'+pdEsc(name)+' — drill for '+pdEsc(dLbl)+'</title><style>'
+    +'body{font-family:system-ui,-apple-system,sans-serif;color:#0f172a;margin:0}.sheet{padding:18px 22px;page-break-after:always}.sheet:last-child{page-break-after:auto}'
+    +'.hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid '+col+';padding-bottom:6px;margin-bottom:8px}.hd b{font-size:20px}.hd span{font-size:12px;color:#475569}'
+    +'table{width:100%;border-collapse:collapse}td{padding:5px 4px;border-bottom:1px solid #e2e8f0;font-size:13px;vertical-align:middle}td.n{width:28px;font-weight:800;color:#475569}td.m{width:72px;white-space:nowrap}td.a{color:#15803d;font-weight:700}'
+    +'.grid{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:4.6in 4.6in;gap:0}.card{border:1.5px dashed #94a3b8;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden}'
+    +'.card .num{position:absolute;top:8px;left:12px;font-size:34px;font-weight:900;color:'+col+'}.card .nm{font-size:22px;font-weight:800;margin-top:10px}'
+    +'@media print{@page{size:portrait;margin:0.4in}}</style></head><body>';
+  h+='<div class="sheet"><div class="hd"><div><b>'+pdEsc(name)+'’s drill</b> · Tester’s sheet</div><span>'+pdEsc(dLbl)+' · '+items.length+' cards · answers — keep this sheet</span></div>';
+  h+='<div style="font-size:11.5px;color:#475569;margin-bottom:6px">Mark each: ✓ got it · ~ close / slow · ✗ missed. 🖼 = hold up that number on the picture sheet. 🔤 = read the word aloud; they spell it.</div><table>';
+  L.forEach((l,i)=>{
+    const q=l.spell?'🔤 Spell: <b>'+pdEsc(l.q)+'</b>':l.pic?('🖼 Picture '+(i+1)+(l.named?' — '+pdEsc(l.q):'')):pdEsc(l.q);
+    h+='<tr><td class="m">'+box+box+box+'</td><td class="n">'+(i+1)+'.</td><td>'+q+'</td><td class="a">'+pdEsc(l.a)+'</td></tr>';
+  });
+  h+='</table></div>';
+  const pics=[]; L.forEach((l,i)=>{ if(l.pic) pics.push({i:i,l:l,it:items[i]}); });
+  for(let p=0;p<pics.length;p+=4){
+    h+='<div class="sheet"><div class="hd"><div><b>'+pdEsc(name)+'’s pictures</b></div><span>'+pdEsc(dLbl)+' · numbers match the tester’s sheet</span></div><div class="grid">';
+    pics.slice(p,p+4).forEach(x=>{ h+='<div class="card"><div class="num">'+(x.i+1)+'</div>'+pdVisual(kid,x.it,260)+(x.l.named?'<div class="nm">'+pdEsc(x.l.q)+'</div>':'')+'</div>'; });
+    h+='</div></div>';
+  }
+  return h+'</body></html>';
+}
+function _pdWrite(kid,key,rec){
+  masteryData[kid+"_paperDrills"]=masteryData[kid+"_paperDrills"]||{}; masteryData[kid+"_paperDrills"][key]=rec;
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("mastery/"+kid+"_paperDrills/"+key).set(rec);
+}
+function pdPrintNext(kid){
+  kid=kid||masteryKid;
+  if(!(typeof momHere==="function"&&momHere())) return;
+  const day=pdNextDay(kid); if(!day){ if(typeof gwShowToast==="function") gwShowToast("No school day ahead to print"); return; }
+  const items=pdNextList(kid,day);
+  if(!items.length){ if(typeof gwShowToast==="function") gwShowToast("Nothing comes due for the next drill"); return; }
+  const key=day.iso.replace(/-/g,""), prev=pdRecs(kid)[key];
+  if(!(prev&&prev.state==="printed")) _pdWrite(kid,key,{date:day.iso,pn:day.pn,ids:items.map(i=>i.id),q:items.map(i=>String(i.prompt==null?"":i.prompt)),ts:Date.now(),state:"printed"});
+  try{ const w=window.open("","_blank"); if(!w){ if(typeof gwShowToast==="function") gwShowToast("Allow pop-ups to print"); return; }
+    w.document.write(pdSheetsHtml(kid,day,items)); w.document.close(); w.onload=()=>w.print(); }catch(e){}
+}
+// The Mom-only line under the drill's header.
+function pdButtonHtml(kid){
+  try{
+    if(!(typeof momHere==="function"&&momHere())) return "";
+    const day=pdNextDay(kid); if(!day) return "";
+    const lbl=new Date(day.iso+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+    const saved=pdRecs(kid)[day.iso.replace(/-/g,"")];
+    return '<div style="margin:6px 14px 0;text-align:right"><button onclick="pdPrintNext(\''+pdEsc(kid)+'\')" title="For a no-tech day: the tester’s sheet with the answers, plus the picture cards to hold up" style="padding:6px 12px;border-radius:999px;border:1.5px solid #cbd5e1;background:#fff;color:#334155;font-size:12px;font-weight:800;cursor:pointer">🖨 Print next drill on paper · '+pdEsc(lbl)+(saved&&saved.state==="printed"?' (printed — reprint)':'')+'</button></div>';
+  }catch(e){ return ""; }
+}
+// PAPERDRILL_END
 
 function mastPrintCards(){
   let allItems=masteryData[masteryKid]||[];
