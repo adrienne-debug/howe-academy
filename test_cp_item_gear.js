@@ -71,7 +71,7 @@ console.log("\n── the data: the research's two lists, in the unit ──");
 console.log("\n── compile_unit.js rule 8, COUNTS.json, the catalog entry ──");
 { const r=C.compile("nc_envirothon",{check:true});
   ok("the unit compiles and is current (--check)", r.ok, r.err);
-  ok("COUNTS.json counts each skill's items from unit.json", JSON.stringify(COUNTS.skills)===JSON.stringify(Object.fromEntries(SK.map(s=>[s.key,{section:s.section,type:s.type,core:s.core===true,items:(s.data.items||s.data.classes||[]).length}]))));   // 📐 CPITEMTRIANGLE: a chart counts its classes
+  ok("COUNTS.json counts each skill's items from unit.json", JSON.stringify(COUNTS.skills)===JSON.stringify(Object.fromEntries(SK.map(s=>[s.key,{section:s.section,type:s.type,core:s.core===true,items:(s.data.items||s.data.classes||s.data.parts||[]).length}]))));   // 📐 CPITEMTRIANGLE: a chart counts its classes · 🏷 CPITEMLABEL: a diagram its parts
   ok("index.json (the catalog entry) and CPU_UNITS carry the skills exactly as unit.json has them", JSON.stringify(INDEX.skills)===JSON.stringify(SK.map(C.skillEntry))&&JSON.stringify(r.index.skills)===JSON.stringify(INDEX.skills)&&new RegExp('"skills":\\[\\{"key":"forestry\\.tools"').test(src));
   const gaps=C.gearPhotoGaps(REPO,SK), have=new Set(Object.keys(PICS).map(k=>nm(k.split(" · ")[0]).trim())), want=[].concat(...SK.map(s=>(s.data.items||[]).filter(x=>!have.has(nm(x.item||x.name))).map(x=>x.name)));
   ok("the no-photo list comes from envirothon/pics/index.json, and compile prints it as a note", JSON.stringify(gaps.map(g=>g.name))===JSON.stringify(want)&&(want.length?r.warn.some(w=>w.indexOf(want.length+" gear item")===0&&want.every(n=>w.indexOf(n)>0)):!r.warn.some(w=>/gear item/.test(w))), r.warn);
