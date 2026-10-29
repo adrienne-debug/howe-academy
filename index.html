@@ -45412,6 +45412,7 @@ function envtStatus(u,kid,station){
   const rec=envtRec(kid,station), pre=envtForm(station,"pre"), post=envtForm(station,"post");
   const out={ station:st, rec, pre:{open:false,rec:rec.pre||null,n:pre?pre.items.length:0}, post:{open:false,why:"",best:(rec.post&&rec.post.best)||null,attempts:envtAttempts(rec),n:post?post.items.length:0}, graduated:rec.graduated||null, line:"" };
   out.pre.open=!!(pre&&!rec.pre&&envtReleased(kid,station)&&(typeof cpFinalCheckin!=="function"||cpFinalCheckin(kid,station)));   // 📝 CPFINAL: none offered when the plan turns it off
+  if(out.pre.open&&typeof cpSecTestOff==="function"&&cpSecTestOff(kid,station)) out.pre.open=false;   // 🎚 CPSECTIONS: an Off section's check-in waits until it is back On
   if(post&&!out.graduated){
     const last=out.post.attempts.length?out.post.attempts[out.post.attempts.length-1]:null;
     const core=out.post.core=envtCoreCount(kid,station);
@@ -45419,6 +45420,7 @@ function envtStatus(u,kid,station){
     else if(last&&last.ts&&Date.now()-last.ts<(typeof cpFinalRetakeMs==="function"?cpFinalRetakeMs(kid,station,ENVT_RETAKE_MS):ENVT_RETAKE_MS)) out.post.why="wait";   // 📝 CPFINAL: the plan's retakeHours
     else out.post.open=true;
     if(out.post.open&&!rec.postOpen&&typeof cpSkillFinalWait==="function"&&cpSkillFinalWait(kid,station)){ out.post.open=false; out.post.why="skills"; }   // 🧩 CPSKILL: the section plan's skillsForFinal — the core skills learned too
+    if(out.post.open&&typeof cpSecTestOff==="function"&&cpSecTestOff(kid,station)){ out.post.open=false; out.post.why="off"; }   // 🎚 CPSECTIONS: …and its final (a taken final keeps its score)
   }
   const parts=[]; if(rec.pre) parts.push("Pre "+rec.pre.right+"/"+rec.pre.n);
   if(out.post.best) parts.push("Post "+out.post.best.right+"/"+out.post.best.n); else if(rec.pre) parts.push("Post \u2014");
@@ -46896,6 +46898,7 @@ function envsReadShared(){
   if(typeof cpdrListen==="function") cpdrListen(sdb,re);   // 🧠 CPDRILLPARENT: the parent's review switch (students/<sid>/review), live
   if(typeof cpdtListen==="function") cpdtListen(sdb,re);   // 🧠 CPDRILLTEACHER: the teacher's drills (drills/<cid>/<sid>), live; each applied once
   if(typeof cpCalListen==="function") cpCalListen(sdb,re);   // 📅 CPCAL: the family's own study days (students/<sid>/calendar), live
+  if(typeof cpSecListen==="function") cpSecListen(sdb,re);   // 🎚 CPSECTIONS: the student's own section states (students/<sid>/sections), live
   sdb.ref("release/locked").on("value",s=>{ _envs.lockRaw=val(s); _envs.lock=envsLockState(_envs.lockRaw); if(_envs.lock.locked&&_envs.role!=="admin") envsCard("closed"); });
 }
 // showTab: the site has one page — every tap lands back on it (every door the micro doc lists as off is simply not reachable)
@@ -47351,7 +47354,7 @@ function envConsoleHtml(){
 // §5.1 the class grid: students × stations; cell = % mastered of the station's released decks · accuracy (14 d); – = not sent out; ⚠ = no study in 7 days
 function envcGridHtml(){
   const stns=envsStations(), S=envcStudents();
-  let h='<div class="envs-card" style="padding:8px 6px;overflow-x:auto"><table class="envs-grid"><thead><tr><th>Student</th>'+stns.map(s=>'<th class="c">'+envcEsc(s.short)+'</th>').join("")+'<th class="c">streak</th><th>last</th></tr>';
+  let h='<div class="envs-card" style="padding:8px 6px;overflow-x:auto"><table class="envs-grid"><thead><tr><th>Student</th>'+stns.map(s=>'<th class="c">'+((typeof cpSecHeadHtml==="function")?cpSecHeadHtml(s):envcEsc(s.short))+'</th>').join("")+'<th class="c">streak</th><th>last</th></tr>';   // 🎚 CPSECTIONS: each section's name opens its On · Review only · Off panel
   h+='<tr><th></th>'+stns.map(s=>{ const o=envcStationOpen("",s); return '<th class="c" style="font-weight:600">'+(o==="all"?'● open':o==="some"?'◐ part':'○')+'</th>'; }).join("")+'<th></th><th></th></tr></thead><tbody>';
   if(!S.length) h+='<tr><td colspan="'+(stns.length+3)+'" class="envs-muted">No students yet — add them on the Roster.</td></tr>';
   S.forEach(s=>{ const sm=s.summary||null, ago=envsDaysAgo(sm&&sm.streak&&sm.streak.last);
@@ -47359,9 +47362,11 @@ function envcGridHtml(){
     stns.forEach(st=>{ const x=envsStationStat(sm,st); const open=envcStationOpen(s.sid,st); let cell;
       if(!x.released&&!open) cell='<span class="envs-muted">–</span>'; else if(!x.released) cell='<span class="envs-muted" title="sent out, nothing studied yet">0%</span>'; else cell='<b>'+x.pct+'%</b>'+(x.acc14!=null?' <span class="envs-muted">·'+x.acc14+'%</span>':'');
       if(x.grad) cell+=' \u{1F393}'; else if(x.post) cell+=' <span class="envs-muted" title="final">\u{1F4DD}</span>';
+      if(typeof cpSecCellTag==="function") cell+=cpSecCellTag(s.sid,st.id);   // 🎚 CPSECTIONS: ↻ review only · ⏸ paused
       h+='<td class="c">'+cell+'</td>'; });
     h+='<td class="c">'+((sm&&sm.streak&&sm.streak.days)||0)+' d</td><td>'+envcEsc(envsWhen(sm&&sm.streak&&sm.streak.last))+'</td></tr>'; });
   h+='</tbody></table></div><div class="envs-muted" style="padding:0 4px">cell = % mastered of the station’s released decks · % right in the last 14 days · \u{1F4DD} final taken · \u{1F393} graduated · – not sent out · ⚠ no study in 7 days. Tap a name for the student page.</div>';
+  if(typeof cpSecGridHtml==="function") h+=cpSecGridHtml();   // 🎚 CPSECTIONS: a tapped section's On · Review only · Off for everyone or picked students
   return h;
 }
 // §5.2 the student page: concept rows + weakest + pre/post + the teacher's scores + open a station for this student
@@ -47370,6 +47375,7 @@ function envcStudentHtml(sid){
   let h='<div class="envs-card"><div class="envs-row"><button class="envs-btn sec" onclick="envcView(\'grid\')">← class</button><div style="flex:1"><div class="envs-h2" style="margin:0">'+envcEsc(envcName(s))+(envcApp(s)==="howe"?' · Howe Academy app':'')+'</div><div class="envs-muted">'+(sm?'content v'+(sm.unitVer||1)+' · streak '+((sm.streak&&sm.streak.days)||0)+' d · '+Object.keys(sm.days||{}).filter(k=>envsDaysAgo(k)<30).length+' study days this month · last mirrored '+envcEsc(envsWhen(sm.at?envsDayKey(sm.at):null)):'no study mirrored yet')+'</div></div></div></div>';
   if(typeof cpWatchStudentHtml==="function") h+=cpWatchStudentHtml(sid);   // 🧠 CPWATCH: ⚠ the parent's drill not run, with Leave it
   h+='<div class="envs-card"><div class="envs-h2">Stations</div>'+envsStationRowsHtml(sm,{weak:true})+'</div>';
+  if(typeof cpSecStudentHtml==="function") h+=cpSecStudentHtml(sid);   // 🎚 CPSECTIONS: On · Review only · Off per section
   if(typeof cpdtStudentHtml==="function") h+=cpdtStudentHtml(sid);   // 🧠 CPDRILLTEACHER: 🧠 Drill this student now
   const held=stns.filter(st=>envcStationOpen(sid,st)!=="all");
   h+='<div class="envs-card"><div class="envs-h2">\u{1F4DD} The final for '+envcEsc(envcName(s))+'</div><div class="envs-row">'+envcFinalStations().map(st=>{ const t=(sm&&sm.tests&&sm.tests[st.id])||{}, f=envcFinalRec(sid,st.id);
@@ -47704,7 +47710,7 @@ function envClassOverlay(part,kid,rec){
 function envClsStartHtml(kid,session){
   if(!envClsOn()||!session||typeof ENV_SESSION_SID==="undefined"||session.sid!==ENV_SESSION_SID||kid!==_envs.kid) return "";
   const steps=(Array.isArray(session.pattern)?session.pattern:[]).map(s=>{ const x=ENVCS_STEPS.find(y=>y[0]===s); return x?x[1]:s; }).join(" → ");
-  return '<div style="margin:0 0 10px;padding:8px 12px;background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:12px;font-size:13px;color:#14532d;font-weight:700;font-family:\'DM Sans\',sans-serif">⚙️ Your class plan: up to '+(session.newPerDay|0)+' new card'+((session.newPerDay|0)===1?'':'s')+' today'+(steps?' · '+envsEsc(steps):'')+'</div>';
+  return '<div style="margin:0 0 10px;padding:8px 12px;background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:12px;font-size:13px;color:#14532d;font-weight:700;font-family:\'DM Sans\',sans-serif">⚙️ Your class plan: up to '+(session.newPerDay|0)+' new card'+((session.newPerDay|0)===1?'':'s')+' today'+(steps?' · '+envsEsc(steps):'')+((typeof cpSecStartNote==="function")?cpSecStartNote(kid):'')+'</div>';   // 🎚 CPSECTIONS: " · Soils: review only"
 }
 // ── the console's side ──
 function envClsConsoleStart(){ if(!envcOn()||envsDemo()) return false; envcSub("locks","settings/locks",v=>{ _envcs.locks=v||{}; }); return true; }
@@ -48604,6 +48610,7 @@ function cppDays(cal,from,to){ const out=[]; if(!cppOk(from)||!cppOk(to)) return
 //    sections:{<section>:{total, atGoal, finish}}, days}
 function cpPacePlan(o){
   if(typeof cpShareOpt==="function") o=cpShareOpt(o);   // 🧭 CPSHARE: a run that names no `share` uses the class's saved rule (o itself back otherwise)
+  if(typeof cpSecPaceOpt==="function") o=cpSecPaceOpt(o);   // 🎚 CPSECTIONS: a class-wide Review only / Off section (and a run's leaveOut) leaves the plan (o itself back otherwise)
   o=o||{}; const npd=Math.max(0,Math.floor(+o.newPerDay||0)), p=o.rightRate!=null?+o.rightRate:0.9, streak=Math.max(1,Math.floor(+o.streak||3)), intro=Math.max(1,Math.floor(+o.introDays||5));
   const focus=o.focus==null?2:Math.max(0,Math.floor(+o.focus||0)), seats=(+o.seats>0)?+o.seats:Infinity, target=o.target!=null?+o.target:0.95, coreFirst=o.coreFirst!==false;
   const sS=o.secsSitting||CPP_SECS_SIT, sD=o.secsDrill||CPP_SECS_DRILL, start=o.start, goal=o.goal||o.end;
@@ -48748,7 +48755,8 @@ function cppAt(plan,sec,date){ const C=plan&&plan.curve||{}; let best=null; Obje
 function cppRow(s,d,plan,opt){
   opt=opt||{}; const cls=cppCls()||{}, S=cppSections(), today=cppToday(), sm=s.summary||null, own=d.stu[s.sid]!==undefined?d.stu[s.sid]:cppStuSaved(s.sid), npd=own!=null?own:d.npd;
   const base=cppInputs(d); let should=0, is=0, est=false; const per={}, from={}, sendOn={};
-  S.forEach(st=>{ const open=opt.parent?(cppReleased(sm,st)?"all":""):((typeof envcStationOpen==="function")?envcStationOpen(s.sid,st):""), x=cppIs(sm,st);
+  S.forEach(st=>{ const _sx=(typeof cpSecPaceCell==="function")?cpSecPaceCell(s.sid,st):null; if(_sx){ per[st.id]=_sx; return; }   // 🎚 CPSECTIONS: review only / paused: left out of should be / is
+    const open=opt.parent?(cppReleased(sm,st)?"all":""):((typeof envcStationOpen==="function")?envcStationOpen(s.sid,st):""), x=cppIs(sm,st);
     if(!open){ per[st.id]=null; const pl=cppPlanned(cls,st,d); sendOn[st.id]=pl&&pl>today?pl:today; return; }
     const mine=opt.parent?"":cppSentOn(st,s.sid), cl=base.sendOn[st.id]; let p=plan;
     if(mine&&mine!==cl&&mine>base.start){ p=cppRun(Object.assign({},base,{sendOn:Object.assign({},base.sendOn,{[st.id]:mine})})); }
@@ -48756,7 +48764,7 @@ function cppRow(s,d,plan,opt){
     per[st.id]={should:sh,is:x.learned,learning:x.learning,total:st.decks.reduce((a,dk)=>a+dk.core,0),est:x.est,mark:cppMark(d.npd>0?(x.learned-sh)/d.npd:null)};
     from[st.id]={learned:x.learned,learning:x.learning}; sendOn[st.id]=today; });
   const cal=(typeof cpCalOf==="function"&&cpCalOf(s.sid))||null;   // PR 22: the family's own study days
-  const nin=Object.assign({},base,{start:today,from,sendOn},cal?{calendar:cal}:{});
+  const nin=Object.assign({},base,{start:today,from,sendOn},cal?{calendar:cal}:{},(typeof cpSecPaceOut==="function")?cpSecPaceOut(s.sid):{});   // 🎚 CPSECTIONS: their Review only / Off sections leave "needs from now"
   const gap=d.npd>0?(is-should)/d.npd:null, need=opt.sync?cppNeedNow(nin):cppLater(nin);
   // the verdict looks forward: on pace = their own New cards a day covers what they need from now (a student ahead on learned cards can
   // still be short on cards started); until "needs" is worked out, the days alone
@@ -48904,7 +48912,7 @@ function cppStudentsHtml(d,inp,plan){
 function cppDetailHtml(r,d){
   const s=Object.assign({sid:r.sid},(_envc.students||{})[r.sid]||{}), sm=s.summary||{}, S=cppSections(), lock=typeof envClsCanEdit==="function"&&!envClsCanEdit("newPerDay");
   let h='<div style="padding:4px 2px;font-size:12.5px;position:sticky;left:4px;max-width:calc(100vw - 60px);white-space:normal"><div style="font-weight:800;margin-bottom:4px">'+cppEsc(r.name)+'</div>';
-  S.forEach(st=>{ const p=r.per[st.id]; h+='<div style="padding:2px 0">'+cppEsc(st.label)+': '+(p?'should be '+p.should+' · is '+(p.est?'≈':'')+p.is+' of '+p.total+' core'+(p.learning?' · '+p.learning+' being learned':'')+' · <b style="color:'+CPP_COL[p.mark.k]+'">'+p.mark.t+'</b>':'<span class="envs-muted">not sent out yet</span>');
+  S.forEach(st=>{ const p=r.per[st.id]; h+='<div style="padding:2px 0">'+cppEsc(st.label)+': '+(p&&p.out&&typeof cpSecPaceDetail==="function"?cpSecPaceDetail(p)/* 🎚 CPSECTIONS: "review only · left out of the goal" */:p?'should be '+p.should+' · is '+(p.est?'≈':'')+p.is+' of '+p.total+' core'+(p.learning?' · '+p.learning+' being learned':'')+' · <b style="color:'+CPP_COL[p.mark.k]+'">'+p.mark.t+'</b>':'<span class="envs-muted">not sent out yet</span>');
     if(typeof cpSkillPaceLine==="function"){ const sl=cpSkillPaceLine(sm,st.id); if(sl) h+='<div class="envs-muted">\u{1F9E9} '+cppEsc(sl)+'</div>'; }   // 🧩 CPSKILL: "skills learned N of M" beside the core cards in 📅 Pace (PR 25 ↔ PR 8, wave-5 merge 2026-10-29)
     const t=sm.tests&&sm.tests[st.id]; if(t){ const b=[]; if(t.pre) b.push("check-in "+t.pre.right+"/"+t.pre.n); if(t.post&&t.post.best) b.push("final "+t.post.best.right+"/"+t.post.best.n); if(t.graduated) b.push("\u{1F393}"); if(b.length) h+=' <span style="color:#0d9488;font-weight:700">\u{1F4DD} '+cppEsc(b.join(" · "))+'</span>'; }
     const w=[]; st.decks.forEach(dk=>{ ((sm.weak||{})[dk.key]||[]).forEach(x=>w.push(x)); }); if(w.length) h+='<div class="envs-muted">weakest: '+cppEsc(w.sort((a,b)=>(b.m*2+b.d)-(a.m*2+a.d)).slice(0,4).map(x=>x.n).join(" · "))+'</div>';
@@ -51598,6 +51606,7 @@ function envFlashDecks(kid){
       if(pictured.length) out.push({unit:u,key:d.key,items:pictured}); }); });
   if(typeof cpsdFlash==="function") cpsdFlash(kid,out);   // 📤 CPSEND: an ID deck opened by Key Concept shows only those items
   if(typeof cpceFlash==="function") cpceFlash(kid,out);   // 📚 CPCARDSEDIT: an item whose cards are all hidden drops out
+  if(typeof cpSecFlash==="function") cpSecFlash(kid,out);   // 🎚 CPSECTIONS: an Off section's ID decks drop out
   return out;
 }
 function envFlashState(kid,deck,itemKey){ const s=(((typeof masteryData!=="undefined"&&masteryData)||{})[kid+"_idflash"]||{})[deck]; const e=s&&s[itemKey]; return (e&&typeof e==="object")?e:null; }
@@ -63840,6 +63849,7 @@ function mastDirTag(id){
 function _matchEligible(it){ if(it&&it.dir==="prod") return false;
   if(it&&typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin(masteryKid,it.subject)) return false;   // 📝 ENVTEST: a station waiting for its check-in
   if(it&&typeof cpceHidItem==="function"&&cpceHidItem(masteryKid,it)) return false;   // 📚 CPCARDSEDIT: a card hidden for the class
+  if(it&&typeof cpSecOffItem==="function"&&cpSecOffItem(masteryKid,it)) return false;   // 🎚 CPSECTIONS: an Off section's card
   return matchPairMode==="same"?!!_smTileVis(it):!!_matchPairHtml(it); }
 function mastMatchDecks(){
   let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
@@ -64154,6 +64164,7 @@ function whichDeckModes(items,kid){
     if(!String(i.prompt||"").trim()||_whichLeftOut(i,kid)) return;
     if(typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin(kid,i.subject)) return;   // 📝 ENVTEST: a station waiting for its check-in
     if(typeof cpceHidItem==="function"&&cpceHidItem(kid,i)) return;   // 📚 CPCARDSEDIT: a card hidden for the class
+    if(typeof cpSecOffItem==="function"&&cpSecOffItem(kid,i)) return;   // 🎚 CPSECTIONS: an Off section's card
     const d=i.subject||"Other", g=by[d]||(by[d]={sym:{},pic:{},ans:{},backs:{}});
     const k=_whichNorm(i.prompt);
     if(_whichIsSymbol(i)){ if(_smTileVis(i)) g.sym[k]=1; return; }
@@ -64701,6 +64712,7 @@ function mastBankEligible(kid,cat){
   if(typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin(kid,cat)) return [];   // 📝 ENVTEST: a released Envirothon station's cards wait for its check-in
   if(typeof cpceBank==="function") all=cpceBank(kid,cat,all);   // 📚 CPCARDSEDIT: a hidden card leaves the bank; her added cards join it
   if(typeof cpOpenFilter==="function") all=cpOpenFilter(kid,cat,all);   // 📤 CPSEND: a deck opened by Key Concept (cat_open) gives only those, newest first
+  if(typeof cpSecBank==="function"&&cpSecBank(kid,cat)) return [];   // 🎚 CPSECTIONS: a Review-only or Off section hands out no new cards
   const g=((masteryData[kid+"_settings"]||{}).cat_gate||{})[cat];
   if(!g||(!g.subject&&!g.fam)) return all;
   const upto=g.fam?((typeof psFamUpto==="function")?psFamUpto(g.fam,g.item):null)   // 🗓 PUTSCHED: a unit-day gate reads the family track's place (null = open)
@@ -64956,6 +64968,7 @@ function envDrillSplit(kid,due){
   const env=[], rest=[];
   due.forEach(i=>{ if(!(i&&decks.has(i.subject))) rest.push(i); else if(!hold[i.subject]&&!(typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin(kid,i.subject))) env.push(i); });   // 📝 ENVTEST: …nor a station waiting for its check-in
   if(typeof cpceItems==="function"){ const _k=cpceItems(kid,env); if(_k!==env){ env.length=0; _k.forEach(i=>env.push(i)); } }   // 📚 CPCARDSEDIT: …nor a card hidden for the class
+  if(typeof cpSecItems==="function"){ const _s=cpSecItems(kid,env); if(_s!==env){ env.length=0; _s.forEach(i=>env.push(i)); } }   // 🎚 CPSECTIONS: …nor an Off section's cards
   if(rest.length===due.length) return null;
   due.length=0; rest.forEach(i=>due.push(i));
   return env;
@@ -68240,6 +68253,232 @@ function cpShareDemoHtml(rule,whatIf){
   return '<div class="cpsh-demo">\u{1F9EA} <b>'+cpShareEsc(CPSHARE_DEMO.name)+'’s next \u{1F33F} start</b>'+(whatIf?' (this what-if)':'')+': '+(p.newNames.length?p.newNames.length+' new — '+list:'no new cards')+' · '+p.learning+' still being learned.<div class="cpsh-m">The sample Jonah is slow in Forestry: '+CPSHARE_DEMO.terms+' Terms and '+CPSHARE_DEMO.facts+' Facts cards are still being learned, and Aquatics was sent to him '+CPSHARE_DEMO.sent.aquatics+' days ago. Worked out by the real study engine with his '+p.npd+' new cards a day; nothing is saved.</div></div>';
 }
 // CPSHARE_END
+// CPSECTIONS_START — 🎚 ON · REVIEW ONLY · OFF, per student per section (DESIGN_class_platform_2026-10-28.md §8.8, §9.1, §13 row 20,
+// §14 Q31; PR 20 of the class platform; her approval of the design 2026-10-28). Her words 2026-10-28: "kids split up … master of each
+// subject … things should be able to be easily turned off as well. It could keep reviewing what they have in their regular ladder, but no
+// send more in. So there needs to be settings for that."
+// INERT unless the class site (ENVSITE's envSiteOn) AND a state is saved for the class or the student: with none, every hook hands back the
+// very thing it was given, so Howe, DeWalt, Burris and Lincoln's 🌿 Envirothon in Howe are byte-identical (test_cp_sections.js replays the
+// real mstPile with and without this block). Lincoln is not the site's kid, so nothing here reaches him (L1 may read cpSecOfStudent later).
+//   · THE THREE STATES (a section = a station of the unit):
+//       On (nothing saved)  new cards by its share (CPSHARE), reviews as usual
+//       Review only         no new cards: the bank gives none of its decks (mastBankEligible, the same guarded place as the check-in wait),
+//                           and CPSHARE's cpNewQuota passes its share to the On sections. Everything already on the ladder keeps its
+//                           spacing and cards still being learned finish. Check-in and final stay as they are. The pace leaves it out.
+//       Off                 paused: no new cards, and its cards skip the sitting, Mom's / the parent's drill and the games (Match, Which
+//                           one, ID Flash) like a hidden card (§6.2). The check-in and final close while it is off; a taken final keeps
+//                           its score. The pace leaves it out. Back On: nothing was rewritten (each card keeps its level and date), so its
+//                           due reviews come back oldest first through Reviews a sitting (CPREVIEW).
+//     All of it is in memory only; nothing in the family's database changes.
+//   · DATA (§9.1): students/<sid>/sections/<section> = "review" | "off" | "on" (absent = the class's) and classes/<cid>/plan/<section>/state =
+//     "review" | "off" (absent = On) for the whole class. A student's own value wins, so "on" is stored only to keep one student On while
+//     the class is Review only or Off. PR 21 (specialists) can sit between the two with cpSecLayer(sid, section) (typeof-guarded, unbuilt).
+//   · WHERE SHE SETS IT: the student page's 🎚 Sections card (a three-way pill per section) and the class grid (tap a section's column
+//     header ▸ For everyone · For picked students). Every tap is ONE update through envcWrite → envsWrite (demo: "would update"; dry run:
+//     nothing): a student → students/<sid>/sections/<section>; picked students → those paths; For everyone → plan/<section>/state plus a null
+//     for each student's own value of that section, in the same update. Adrienne's 🔒 locks/sections (the class's classes/<cid>/locks, or
+//     settings/locks for every class — the switch itself is PR 21's, §8.9) greys the pills for the teacher, and the rules refuse it;
+//     CPLOCKS's plan lock also stops For everyone (it lives under plan/).
+//   · THE KID'S APP: the class record it already listens to brings the class-wide state; one more live listener (students/<sid>/sections,
+//     kid and parent logins) brings the student's own, so a change applies at the next sitting without a reload. The 🌿 start's class line
+//     says "Soils: review only".
+//   · 📅 PACE: cpPacePlan's first lines leave a class-wide Review only / Off section's decks out of the plan; each student's row says
+//     "review only" / "paused" in that section's cell and leaves it out of should be / is / needs from now.
+//   · DEMO: the student page of Maya (the demo's kid) shows "🧪 Maya's next 🌿 start" — the REAL mstPile on her cards with the states as
+//     they are: Soils ▸ Review only takes Percolation out of the new cards while Loam, Soil horizon and Parent material still come as reviews.
+const CPSEC_STATES=[["","On","New cards and reviews, as usual."],["review","Review only","No new cards. Everything already on the ladder keeps its reviews, and cards still being learned finish."],["off","Off","Paused: no new cards, no reviews, no games, and the check-in and final wait. Nothing is lost — turned back On, it picks up where it was."]];
+const CPSEC_WORD={review:"review only",off:"paused"};
+const _cpsec={mine:null,armed:"",grid:"",pick:{},css:false};
+function cpSecSite(){ return typeof envSiteOn==="function"&&envSiteOn(); }
+function cpSecOn(){ return cpSecSite()&&typeof envcOn==="function"&&envcOn(); }
+function cpSecDemo(){ return typeof envsDemo==="function"&&envsDemo(); }
+function cpSecEsc(v){ return (typeof envsEsc==="function")?envsEsc(v):String(v==null?"":v); }
+function cpSecJ(v){ return (typeof envsJ==="function")?envsJ(v):String(v==null?"":v).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }
+function cpSecStations(){ return (typeof envsStations==="function"&&envsStations())||[]; }
+function cpSecLabel(sec){ const s=cpSecStations().find(x=>x.id===sec); return s?(s.short||s.label||s.id):sec; }
+// ── PURE ──
+function cpSecStu(v){ return (v==="review"||v==="off"||v==="on")?v:""; }   // a student's stored value
+function cpSecCls(v){ return (v==="review"||v==="off")?v:""; }              // the class's stored value
+function cpSecClsState(cls,sec){ const p=cls&&cls.plan&&cls.plan[sec]; return (p&&typeof p==="object")?cpSecCls(p.state):""; }
+// the state that applies: the student's own ← (PR 21's layer) ← the class's → "review" | "off" | "" (On)
+function cpSecEff(clsV,stuV,midV){ const s=cpSecStu(stuV)||cpSecStu(midV)||cpSecCls(clsV); return s==="on"?"":s; }
+// what a student's own leaf should hold for state v ("" = On): null when it is what the class already says
+function cpSecStore(clsV,v){ v=cpSecCls(v); return v===cpSecCls(clsV)?null:(v||"on"); }
+// ── THE KID'S SIDE (and the parent's): the site's own kid only ──
+function cpSecKidOn(kid){
+  try{ if(!cpSecSite()||typeof _envs==="undefined"||!kid||kid!==_envs.kid) return false;
+    return cpSecDemo()||_envs.role==="kid"||_envs.role==="parent"; }catch(e){ return false; }
+}
+function cpSecKidCls(){ if(cpSecDemo()&&typeof _envc!=="undefined"&&_envc.cls) return _envc.cls; return (typeof _envs!=="undefined"&&_envs.cls)||null; }
+function cpSecKidMine(){ if(cpSecDemo()) return ((((typeof _envc!=="undefined"&&_envc.students)||{})[_envs.sid])||{}).sections||null; return _cpsec.mine; }
+// THE reader (CPSHARE's cpNewQuota calls it too): this kid's state for a section → "review" | "off" | ""
+function cpSecState(kid,sec){
+  try{ if(!sec||!cpSecKidOn(kid)) return ""; const mine=cpSecKidMine()||{};
+    const mid=(typeof cpSecLayer==="function")?cpSecLayer(_envs.sid,sec):"";   // PR 21: a specialist's other sections
+    return cpSecEff(cpSecClsState(cpSecKidCls(),sec),mine[sec],mid); }catch(e){ return ""; }
+}
+// the sections this kid has turned to Review only / Off → {<section>: state} (empty = nothing to do)
+function cpSecKidMap(kid){ const out={}; if(!cpSecKidOn(kid)) return out; cpSecStations().forEach(s=>{ const v=cpSecState(kid,s.id); if(v) out[s.id]=v; }); return out; }
+function cpSecDeckState(kid,deck){ if(!cpSecKidOn(kid)||typeof envsStationOfDeck!=="function") return ""; const s=envsStationOfDeck(deck); return s?cpSecState(kid,s):""; }
+// mastBankEligible's line: a Review-only or Off section's decks hand out no new cards
+function cpSecBank(kid,cat){ const v=cpSecDeckState(kid,cat); return v==="review"||v==="off"; }
+// the decks of this kid's Off sections (null = none)
+function cpSecOffDecks(kid){ const M=cpSecKidMap(kid), ks=Object.keys(M).filter(k=>M[k]==="off"); if(!ks.length) return null;
+  const d=new Set(); cpSecStations().forEach(s=>{ if(ks.indexOf(s.id)>=0) (s.decks||[]).forEach(x=>d.add(x.key)); }); return d; }
+// mstPile · Mom's drill: an Off section's cards skipped like hidden ones (the very same array when nothing is off)
+function cpSecItems(kid,items){ try{ if(!Array.isArray(items)) return items; const D=cpSecOffDecks(kid); if(!D) return items;
+  const out=items.filter(i=>!(i&&D.has(i.subject))); return out.length===items.length?items:out; }catch(e){ return items; } }
+// the games (Match, Which one): one card
+function cpSecOffItem(kid,it){ try{ if(!it) return false; const D=cpSecOffDecks(kid); return !!(D&&D.has(it.subject)); }catch(e){ return false; } }
+// ⚡ ID Flash: an Off section's decks drop out (in place)
+function cpSecFlash(kid,out){ try{ if(!Array.isArray(out)) return out; const D=cpSecOffDecks(kid); if(!D) return out; for(let j=out.length-1;j>=0;j--){ if(out[j]&&D.has(out[j].key)) out.splice(j,1); } }catch(e){} return out; }
+// envtStatus: an Off section's check-in and final wait until it is back On
+function cpSecTestOff(kid,station){ return cpSecState(kid,station)==="off"; }
+// envsReadShared's hook: a live listener on students/<sid>/sections for the kid's and the parent's login
+function cpSecListen(sdb,re){
+  try{ if(cpSecDemo()||!sdb||!cpSecSite()||typeof _envs==="undefined"||!_envs.sid||!(_envs.role==="kid"||_envs.role==="parent")||_cpsec.armed===_envs.sid) return false;
+    const sid=_envs.sid; _cpsec.armed=sid;
+    sdb.ref("students/"+sid+"/sections").on("value",s=>{ const v=(s&&typeof s.val==="function")?s.val():null; _cpsec.mine=(v&&typeof v==="object")?v:null; if(typeof re==="function") re(); });
+    return true; }catch(e){ _cpsec.armed=""; return false; }
+}
+// envClsStartHtml's line: " · Soils: review only" on the 🌿 start
+function cpSecStartNote(kid){ const M=cpSecKidMap(kid), ks=Object.keys(M); if(!ks.length) return ""; return ks.map(k=>' · '+cpSecEsc(cpSecLabel(k))+': '+CPSEC_WORD[M[k]]).join(""); }
+// ── 📅 PACE ──
+// a student's state, as the console sees it (or the parent page, for its own student)
+function cpSecOfStudent(sid,sec){
+  try{ if(!sid||!sec) return "";
+    if(cpSecOn()){ const st=(_envc.students||{})[sid]||{}, mid=(typeof cpSecLayer==="function")?cpSecLayer(sid,sec):""; return cpSecEff(cpSecClsState(_envc.cls,sec),(st.sections||{})[sec],mid); }
+    if(cpSecSite()&&typeof _envs!=="undefined"&&sid===_envs.sid) return cpSecState(_envs.kid,sec);
+  }catch(e){} return "";
+}
+// the class-wide Review only / Off sections → {<section>: true}
+function cpSecClassOut(){ const cls=cpSecOn()?_envc.cls:cpSecKidCls(), o={}; if(!cls||!cls.plan) return o; Object.keys(cls.plan).forEach(k=>{ if(cpSecClsState(cls,k)) o[k]=true; }); return o; }
+// cpPacePlan's line: the planner leaves out the decks of a class-wide Review only / Off section and of the run's leaveOut (o itself back when none)
+function cpSecPaceOpt(o){
+  try{ if(!cpSecSite()||!o||typeof o!=="object"||!Array.isArray(o.decks)) return o;
+    const out=Object.assign({},cpSecClassOut(),(o.leaveOut&&typeof o.leaveOut==="object")?o.leaveOut:{}); if(!Object.keys(out).some(k=>out[k])) return o;
+    const decks=o.decks.filter(d=>!(d&&out[d.section])); if(decks.length===o.decks.length) return o;
+    const n=Object.assign({},o,{decks}); if(o.from&&typeof o.from==="object"){ n.from=Object.assign({},o.from); Object.keys(out).forEach(k=>{ delete n.from[k]; }); } return n;
+  }catch(e){ return o; }
+}
+// cppRow's line: a student's Review only / Off section → its cell ("review only" / "paused"), left out of should be / is (null = as usual)
+function cpSecPaceCell(sid,st){ const v=st&&cpSecOfStudent(sid,st.id); if(!v) return null;
+  return {out:v,should:0,is:0,learning:0,total:(st.decks||[]).reduce((a,d)=>a+(+d.core||0),0),est:false,mark:{k:"none",t:CPSEC_WORD[v]}}; }
+// cppDetailHtml's line: what the open row says for such a section
+function cpSecPaceDetail(p){ return '<b style="color:#6b7280">'+cpSecEsc(p.mark.t)+'</b> <span class="envs-muted">· left out of the goal</span>'; }
+// cppRow's "needs from now" run: the student's own sections left out ({} = none)
+function cpSecPaceOut(sid){ const o={}; cpSecStations().forEach(s=>{ if(cpSecOfStudent(sid,s.id)) o[s.id]=true; }); return Object.keys(o).length?{leaveOut:o}:{}; }
+// ── THE CONSOLE ──
+function cpSecLocked(){ return (typeof cpLocked==="function"&&cpLocked("sections"))||(typeof envClsLocked==="function"&&envClsLocked("sections")); }
+function cpSecAdmin(){ return typeof envcAdmin==="function"&&envcAdmin(); }
+function cpSecCan(){ return cpSecOn()&&(cpSecAdmin()||!cpSecLocked()); }
+function cpSecCanClass(){ return cpSecCan()&&(cpSecAdmin()||!(typeof cpLocked==="function"&&cpLocked("plan"))); }
+function cpSecWho(){ return (typeof cpLockName==="function")?cpLockName():"Adrienne"; }
+function cpSecOwn(sid,sec){ return cpSecStu((((_envc.students||{})[sid]||{}).sections||{})[sec]); }
+// the console's memory after a save (demo: this IS the state; live: the listeners confirm it a moment later)
+function cpSecMem(upd){
+  Object.keys(upd).forEach(p=>{ const a=p.split("/").filter(Boolean), v=upd[p];
+    if(a[0]==="classes"&&a[2]==="plan"){ const C=_envc.cls||(_envc.cls={}); C.plan=C.plan||{}; const r=C.plan[a[3]]=Object.assign({},C.plan[a[3]]||{}); if(v==null) delete r.state; else r.state=v; if(!Object.keys(r).length) delete C.plan[a[3]]; }
+    else if(a[0]==="students"){ const S=_envc.students[a[1]]=_envc.students[a[1]]||{}; const m=S.sections=Object.assign({},S.sections||{}); if(v==null) delete m[a[3]]; else m[a[3]]=v; if(!Object.keys(m).length) delete S.sections; } });
+  try{ if(typeof _cpp!=="undefined"&&_cpp) _cpp.memo={}; }catch(e){}
+}
+// THE SAVE: one update (paths from the root), through envcWrite → envsWrite
+function cpSecWrite(upd,note){
+  if(!cpSecOn()||!_envc.cid||!upd||!Object.keys(upd).length) return false;
+  envcWrite("/",upd,"update").then(()=>{ cpSecMem(upd); if(cpSecDemo()&&typeof envsToast==="function") envsToast("demo: would update "+Object.keys(upd).join(", ")); else if(note&&typeof envsToast==="function") envsToast(note); envcRe(); }).catch(()=>{});
+  return true;
+}
+function cpSecRefuse(){ if(typeof envsToast==="function") envsToast("\u{1F512} Sections are set by "+cpSecWho()); return false; }
+// one student's pill (v: "" On · "review" · "off")
+function cpSecSet(sid,sec,v){
+  if(!cpSecOn()||!(_envc.students||{})[sid]||!cpSecStations().some(s=>s.id===sec)||!CPSEC_STATES.some(x=>x[0]===v)) return false;
+  if(!cpSecCan()) return cpSecRefuse();
+  const val=cpSecStore(cpSecClsState(_envc.cls,sec),v); if((cpSecOwn(sid,sec)||null)===val){ if(typeof envsToast==="function") envsToast("Nothing changed"); return false; }
+  return cpSecWrite({["students/"+sid+"/sections/"+sec]:val});
+}
+// the grid: picked students → each one's own leaf
+function cpSecPicked(sec,v){
+  if(!cpSecOn()||!cpSecStations().some(s=>s.id===sec)||!CPSEC_STATES.some(x=>x[0]===v)) return false;
+  if(!cpSecCan()) return cpSecRefuse();
+  const ids=Object.keys(_cpsec.pick).filter(k=>_cpsec.pick[k]&&(_envc.students||{})[k]); if(!ids.length){ if(typeof envsToast==="function") envsToast("Pick at least one student."); return false; }
+  const cv=cpSecClsState(_envc.cls,sec), upd={}; ids.forEach(sid=>{ const val=cpSecStore(cv,v); if((cpSecOwn(sid,sec)||null)!==val) upd["students/"+sid+"/sections/"+sec]=val; });
+  if(!Object.keys(upd).length){ if(typeof envsToast==="function") envsToast("Nothing changed"); return false; }
+  return cpSecWrite(upd);
+}
+// the grid: For everyone → the class's state, and every student's own value of that section cleared, in the same update
+function cpSecEveryone(sec,v){
+  if(!cpSecOn()||!cpSecStations().some(s=>s.id===sec)||!CPSEC_STATES.some(x=>x[0]===v)) return false;
+  if(!cpSecCanClass()) return cpSecRefuse();
+  const upd={}; if(cpSecClsState(_envc.cls,sec)!==cpSecCls(v)) upd["classes/"+_envc.cid+"/plan/"+sec+"/state"]=cpSecCls(v)||null;
+  (typeof envcStudents==="function"?envcStudents():[]).forEach(s=>{ if(cpSecOwn(s.sid,sec)) upd["students/"+s.sid+"/sections/"+sec]=null; });
+  if(!Object.keys(upd).length){ if(typeof envsToast==="function") envsToast("Nothing changed"); return false; }
+  return cpSecWrite(upd);
+}
+function cpSecGrid(sec){ if(!cpSecOn()) return false; _cpsec.grid=_cpsec.grid===sec?"":sec; _cpsec.pick={}; envcRe(); return true; }
+function cpSecPick(sid,on){ if(!cpSecOn()) return; if(sid==="*"){ _cpsec.pick={}; if(on) (typeof envcStudents==="function"?envcStudents():[]).forEach(s=>{ _cpsec.pick[s.sid]=true; }); } else if(on) _cpsec.pick[sid]=true; else delete _cpsec.pick[sid]; envcRe(); }
+function cpSecCss(){ if(_cpsec.css||typeof document==="undefined"||!document.createElement) return; _cpsec.css=true;
+  try{ const s=document.createElement("style"); s.id="cpsec-css"; s.textContent='.cpsec-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:8px 0;border-top:1px solid #f1efe9}.cpsec-row:first-of-type{border-top:none}.cpsec-n{flex:1;min-width:130px;font-weight:800;font-size:13.5px;overflow-wrap:anywhere}'+
+    '.cpsec-p{display:inline-flex;border:2px solid #d1d5db;border-radius:999px;overflow:hidden;flex-shrink:0;max-width:100%}.cpsec-p button{min-height:40px;padding:0 12px;border:none;background:#fff;font:inherit;font-size:12.5px;font-weight:800;color:#374151;cursor:pointer}.cpsec-p button+button{border-left:2px solid #d1d5db}'+
+    '.cpsec-p button.on{background:#14532d;color:#fff}.cpsec-p button.on.review{background:#b45309}.cpsec-p button.on.off{background:#4b5563}.cpsec-p button:disabled{cursor:default;opacity:.55}.cpsec-p button.on:disabled{opacity:.8}'+
+    '.cpsec-m{font-size:12px;color:var(--muted,#6b7280);line-height:1.45;overflow-wrap:anywhere}.cpsec-l{font-size:11px;font-weight:800;color:var(--muted,#6b7280);text-transform:uppercase;letter-spacing:.04em;margin:10px 0 4px}'+
+    '.cpsec-h{min-height:36px;border:none;background:none;font:inherit;font-weight:800;color:inherit;cursor:pointer;padding:0 2px;white-space:nowrap}.cpsec-h.on{color:#b45309;text-decoration:underline}.cpsec-tag{font-size:11px;font-weight:800;color:#b45309;white-space:nowrap}.cpsec-tag.off{color:#4b5563}'+
+    '.cpsec-k{display:flex;align-items:center;gap:8px;min-height:40px;padding:2px 0;font-size:13px;font-weight:700}.cpsec-k input{width:20px;height:20px;flex-shrink:0}'+
+    '.cpsec-demo{margin-top:10px;padding:8px 10px;border-radius:10px;background:#fefce8;border:1px dashed #facc15;font-size:13px;line-height:1.5;overflow-wrap:anywhere}';
+    document.head.appendChild(s); }catch(e){} }
+// the three-way pill (cur = "" | "review" | "off"; click(v) = the onclick for a state)
+function cpSecPillHtml(cur,click,dis){
+  return '<span class="cpsec-p" role="group">'+CPSEC_STATES.map(x=>{ const on=x[0]===cur; return '<button class="'+(on?'on '+x[0]:'')+'"'+(dis?' disabled':'')+' aria-pressed="'+(on?'true':'false')+'" onclick="'+click(x[0])+'">'+cpSecEsc(x[1])+'</button>'; }).join("")+'</span>';
+}
+// the class grid's column header: the section's name, a button that opens its bulk panel (a mark when the class turned it)
+function cpSecHeadHtml(st){
+  const name=cpSecEsc((st&&st.short)||(st&&st.id)||""); if(!cpSecOn()||!st) return name; cpSecCss(); const v=cpSecClsState(_envc.cls,st.id);
+  return '<button class="cpsec-h'+(_cpsec.grid===st.id?' on':'')+'" onclick="cpSecGrid(\''+cpSecJ(st.id)+'\')" aria-label="On, Review only or Off for '+name+'">'+name+' ▾</button>'+(v?'<div class="cpsec-tag'+(v==="off"?' off':'')+'">'+CPSEC_WORD[v]+'</div>':'');
+}
+// a student's cell: "↻" review only · "⏸" paused
+function cpSecCellTag(sid,sec){ if(!cpSecOn()) return ""; const v=cpSecOfStudent(sid,sec); if(!v) return ""; return ' <span class="cpsec-tag'+(v==="off"?' off':'')+'" title="'+CPSEC_WORD[v]+'">'+(v==="off"?'⏸':'↻')+'</span>'; }
+// the grid's bulk panel for the section whose header was tapped
+function cpSecGridHtml(){
+  try{
+    if(!cpSecOn()) return ""; const st=cpSecStations().find(s=>s.id===_cpsec.grid); if(!st){ return '<div class="envs-muted" style="padding:0 4px">Tap a section’s name to set it On · Review only · Off for everyone or for picked students (↻ review only · ⏸ paused).</div>'; }
+    cpSecCss(); const S=typeof envcStudents==="function"?envcStudents():[], cv=cpSecClsState(_envc.cls,st.id), can=cpSecCan(), canC=cpSecCanClass(), j=cpSecJ(st.id), name=cpSecEsc(st.label||st.short||st.id);
+    const own=S.filter(s=>cpSecOwn(s.sid,st.id)).length, picked=S.filter(s=>_cpsec.pick[s.sid]).length;
+    let h='<div class="envs-card" id="cpsec-grid"><div class="envs-row" style="align-items:flex-start"><div style="flex:1;min-width:170px"><div class="envs-h2" style="margin:0">\u{1F39A} '+name+'</div><div class="cpsec-m">On: new cards as usual · Review only: no new cards, the reviews keep coming · Off: paused, nothing comes.</div></div><button class="envs-btn sec" style="min-height:40px" onclick="cpSecGrid(\''+j+'\')" aria-label="Close">✕</button></div>';
+    h+='<div class="cpsec-l">For everyone</div>'+cpSecPillHtml(cv,v=>"cpSecEveryone('"+j+"','"+v+"')",!canC);
+    h+='<div class="cpsec-m" style="margin-top:4px">now: <b>'+cpSecEsc((CPSEC_STATES.find(x=>x[0]===cv)||CPSEC_STATES[0])[1])+'</b> for the class'+(own?' · '+own+' student'+(own===1?' has':'s have')+' their own (For everyone clears it)':'')+'</div>';
+    h+='<div class="cpsec-l">For picked students</div><div class="envs-row" style="margin-bottom:4px"><button class="envs-btn sec" style="min-height:40px" onclick="cpSecPick(\'*\',true)">Pick all</button><button class="envs-btn sec" style="min-height:40px" onclick="cpSecPick(\'*\',false)">None</button></div>';
+    S.forEach(s=>{ const v=cpSecOfStudent(s.sid,st.id); h+='<label class="cpsec-k"><input type="checkbox"'+(_cpsec.pick[s.sid]?' checked':'')+' onchange="cpSecPick(\''+cpSecJ(s.sid)+'\',this.checked)"><span style="flex:1">'+cpSecEsc(typeof envcName==="function"?envcName(s):s.sid)+'</span><span class="cpsec-m">'+cpSecEsc((CPSEC_STATES.find(x=>x[0]===v)||CPSEC_STATES[0])[1])+(cpSecOwn(s.sid,st.id)?' (own)':'')+'</span></label>'; });
+    h+='<div style="margin-top:6px">'+cpSecPillHtml(null,v=>"cpSecPicked('"+j+"','"+v+"')",!can||!picked)+'</div>';
+    h+='<div class="cpsec-m" style="margin-top:6px">'+(picked?picked+' picked. ':'')+'Each tap is one update: classes/'+cpSecEsc(_envc.cid)+'/plan/'+cpSecEsc(st.id)+'/state for everyone, students/&lt;student&gt;/sections/'+cpSecEsc(st.id)+' for picked students.'+(!can?' \u{1F512} Set by '+cpSecEsc(cpSecWho())+'.':(!canC?' For everyone is \u{1F512} set by '+cpSecEsc(cpSecWho())+' (the plan is locked).':''))+'</div>';
+    return h+'</div>';
+  }catch(e){ return ""; }
+}
+// the student page's 🎚 Sections card: a three-way pill per section
+function cpSecStudentHtml(sid){
+  try{
+    if(!cpSecOn()||!(_envc.students||{})[sid]) return ""; cpSecCss(); const s=Object.assign({sid},_envc.students[sid]), name=cpSecEsc(typeof envcName==="function"?envcName(s):sid), can=cpSecCan(), J=cpSecJ(sid);
+    let h='<div class="envs-card"><div class="envs-h2" style="margin-bottom:2px">\u{1F39A} Sections for '+name+'</div><div class="cpsec-m">Turn a section to <b>Review only</b> to stop new cards while the reviews keep coming, or <b>Off</b> to pause it. Nothing '+name+' learned is lost.</div>';
+    cpSecStations().forEach(st=>{ const v=cpSecOfStudent(sid,st.id), cv=cpSecClsState(_envc.cls,st.id), own=cpSecOwn(sid,st.id), j=cpSecJ(st.id);
+      h+='<div class="cpsec-row"><div class="cpsec-n">'+cpSecEsc(st.label||st.short||st.id)+(cv?'<div class="cpsec-m">class: '+cpSecEsc((CPSEC_STATES.find(x=>x[0]===cv)||CPSEC_STATES[0])[1])+(own?' · '+name+'’s own':'')+'</div>':'')+'</div>'+cpSecPillHtml(v,x=>"cpSecSet('"+J+"','"+j+"','"+x+"')",!can)+'</div>'; });
+    h+='<div class="cpsec-m" style="margin-top:6px">Saved at students/'+cpSecEsc(sid)+'/sections. The whole class: tap a section’s name on \u{1F4CB} Class.'+(can?'':' \u{1F512} Set by '+cpSecEsc(cpSecWho())+'.')+'</div>';
+    return h+cpSecDemoHtml(sid)+'</div>';
+  }catch(e){ return ""; }
+}
+// ── DEMO: "🧪 Maya's next 🌿 start" — the REAL mstPile on the demo kid's own cards, with the states as they are (nothing saved) ──
+function cpSecDemoPile(){
+  if(!cpSecDemo()||typeof _envs==="undefined"||typeof mstPile!=="function"||typeof mstSessions!=="function") return null;
+  const kid=_envs.kid, mk=(typeof masteryKid!=="undefined")?masteryKid:null; if(!kid) return null;
+  try{ const sess=mstSessions(kid).find(s=>s.sid===((typeof ENV_SESSION_SID!=="undefined")?ENV_SESSION_SID:"envirothon")); if(!sess) return null;
+    let pn=1; try{ pn=(typeof mastGetPrintNum==="function"?mastGetPrintNum(kid):1)||1; }catch(e){}
+    return mstPile(kid,sess.sid,pn,null); }catch(e){ return null; }
+  finally{ try{ if(mk!=null) masteryKid=mk; }catch(e){} }
+}
+function cpSecDemoHtml(sid){
+  if(!cpSecDemo()||typeof _envs==="undefined"||sid!==_envs.sid) return ""; const p=cpSecDemoPile(); if(!p) return "";
+  const sec=d=>(typeof envsStationOfDeck==="function"&&envsStationOfDeck(d))||d, by=(list,f)=>{ const o={}, ord=[]; list.forEach(x=>{ const k=sec(f(x)); if(!o[k]){ o[k]=[]; ord.push(k); } o[k].push(x); }); return ord.map(k=>'<b>'+cpSecEsc(cpSecLabel(k))+'</b> ×'+o[k].length); };
+  const nm=by(p.newNames,n=>n.deck), rv=by(p.reviews,i=>i.subject), lr=by(p.learning,i=>i.subject), first=String((_envs.demoData&&_envs.demoData.students&&_envs.demoData.students[sid]&&_envs.demoData.students[sid].meta&&_envs.demoData.students[sid].meta.name)||"Maya").split(" ")[0];
+  return '<div class="cpsec-demo">\u{1F9EA} <b>'+cpSecEsc(first)+'’s next \u{1F33F} start</b>: new — '+(nm.length?nm.join(" · ")+' <span class="cpsec-m">('+cpSecEsc(p.newNames.map(n=>n.name).join(", "))+')</span>':'none')+'<br>reviews — '+(rv.length?rv.join(" · "):'none')+' · still being learned — '+(lr.length?lr.join(" · "):'none')+'<div class="cpsec-m">Worked out by the real study engine on her cards with the sections as they are now; nothing is saved. Switch to the kid view to study it.</div></div>';
+}
+// CPSECTIONS_END
 // ── MST_ENGINE_START ──
 // Mastery "study sessions" — pure functions, no DOM, no writes.
 // Relies on globals already defined elsewhere in index.html:
@@ -68457,6 +68696,7 @@ function mstPile(kid, sid, pn, todayLog) {
   if (!Array.isArray(items)) items = Object.values(items);
   items = items.filter(Boolean);
   if (typeof cpceItems === "function") items = cpceItems(kid, items);   // 📚 CPCARDSEDIT: a card hidden for the class is skipped
+  if (typeof cpSecItems === "function") items = cpSecItems(kid, items);   // 🎚 CPSECTIONS: an Off section's cards are skipped like hidden ones
 
   const _mk = masteryKid; masteryKid = kid; const settings = mastDrillSettings(); masteryKid = _mk;
   const ladder = settings.ladder;
