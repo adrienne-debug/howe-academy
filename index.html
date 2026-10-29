@@ -47665,6 +47665,7 @@ function envClsMerge(part,rec,layers){
 function envClsKidLoad(sdb,cid){
   if(typeof cpceKidLoad==="function") cpceKidLoad(sdb,cid);   // 📚 CPCARDSEDIT: the class's card layer, once
   if(typeof cpctKidLoad==="function") cpctKidLoad(sdb,cid);   // 📝 CPTESTS: the class's test layer, once (before the settings, whose arrival repaints)
+  if(typeof cpphKidLoad==="function") cpphKidLoad(sdb,cid);   // 🖼 CPPHOTOS: the class's and the unit's photo layers, once
   if(!envClsOn()||envsDemo()||!sdb||!cid||!_envs.sid||_envcs.asked===cid) return false; _envcs.asked=cid;
   const val=s=>(s&&typeof s.val==="function")?s.val():null; let n=0;
   const done=()=>{ if(++n<2) return; _envcs.loaded=true; try{ if(typeof renderAllSoon==="function") renderAllSoon(); }catch(e){} };
@@ -49023,7 +49024,7 @@ function cpcsDetailHtml(c,M){
   if(c.info) h+='<div class="cpcs-meta">ℹ️ '+cpcsHi(c.info)+'</div>';
   h+='<div class="cpcs-meta"><b>'+(c.core?'⭐ Core':'Not core')+'</b> · '+cpcsEsc(c.deck)+(c.item?' · '+cpcsEsc(c.item):'')+'<br>Source: '+cpcsHi(c.src||'—')+'<br>'+
     (qs.length?'On the tests: '+qs.map(x=>'<span class="cpcs-lk">'+cpcsEsc(x)+'</span>').join(""):(M&&M.anyTests?'<span style="color:#9ca3af">On no test question</span>':''))+'</div>';
-  if(p) h+='<img class="cpcs-pic" src="'+cpcsEsc(p.url)+'" alt="'+cpcsEsc(c.item||c.name)+'" loading="lazy"><div class="cpcs-meta">\u{1F5BC} '+cpcsEsc(p.credit||'')+'</div>';
+  if(typeof cpphStripHtml==="function") h+=cpphStripHtml(c); else if(p) h+='<img class="cpcs-pic" src="'+cpcsEsc(p.url)+'" alt="'+cpcsEsc(c.item||c.name)+'" loading="lazy"><div class="cpcs-meta">\u{1F5BC} '+cpcsEsc(p.credit||'')+'</div>';   // 🖼 CPPHOTOS: the item's photo strip, ⭐ main, 🙈 hide, ＋ Add photo
   if(typeof cpceActsHtml==="function") h+=cpceActsHtml(c);   // 📚 CPCARDSEDIT: ✏️ Edit back · 🙈 Hide for my class / ↩ Show again
   return h+'</div>'; }
 function cpcsPaged(key,list,M,opt){ const n=_cpcs.more[key]||CPCS_PAGE; let h=list.slice(0,n).map(c=>cpcsRowHtml(c,M,opt)).join("");
@@ -49455,6 +49456,320 @@ function cpceCoreFix(kid,keys,cardsOf,ok,out){ if(!out||!cpceKidOn(kid)||typeof 
     (I.add[k]||[]).forEach(x=>{ if(!x.core||have.has(x.name)||h[x.name]) return; out.total++; if(learned(x.name)) out.learned++; }); });
   if(out.total<0) out.total=0; if(out.learned<0) out.learned=0; return out; }
 // CPCARDSEDIT_END
+// CPPHOTOS_START — 🖼 PHOTOS: a picture on any card, skill item, gear entry or species, from ONE pool (DESIGN_class_platform_2026-10-28.md
+// §6.7, §9, §13 row 29, §14 Q47–Q50; PR 29 of the class platform). Her question 2026-10-28: "What about the photo cards, and are there
+// options to add photos for when that's needed, or is that going to be part of the skill area?" — the answer is both, from one pool — and
+// her yes to building the design 2026-10-28 ("Yes, add it"). Pictures are needed next by the gear, ID and label skills and the tree-part trim.
+// INERT unless the Envirothon site's edition is on: Howe, DeWalt and Burris never reach a line of it, and Lincoln's ID Flash pictures in Howe
+// stay the repo set exactly as today (test_cp_photos.js). NO uploads here: 📷 camera / file and Firebase Storage are PR 30.
+//   · A PHOTO BELONGS TO AN ITEM: the card's `item` (the species, the gear name), else the front before " · " on an ID card, else the
+//     card's own front. Every card of "Bald Eagle" shares Bald Eagle's photos, as ENVIDFLASH does. The item's database key is
+//     cpphKey(item): lower case, spaces collapsed, . # $ [ ] / % coded.
+//   · THE POOL, in layers (repo ← unit ← class):
+//       repo  envirothon/pics (ENVIDFLASH: index.json, card name → [{url, credit, shot}]; the shot becomes a tag, the credit's last part
+//             the licence). Its id is "r~<deck dir>~<item dir>~<n>". The demo file carries the same set as window.HowePicsDemo.
+//       unit  units/<unitId>/photos/<itemKey>/<photoId> = {url, credit, lic, tags:{<tag>:true}, item, how, by, ts} — Adrienne's, and only a
+//             free licence (own · cc0 · ccby · ccbysa): the code drops anything else, and the rules refuse it.
+//       class classPhotos/<cid>/<itemKey>/<photoId> = the same shape, any licence · _main: <photoId> · _hide/<photoId>: true (any layer's).
+//   · THE 🖼 STRIP on an opened card in 📚 Cards (teacher, Adrienne; one guarded line in cpcsDetailHtml, in place of the single photo): the
+//     item's photos, ⭐ on the main one, a tag on each, "Shows: leaf 2 · bark 1 …"; tap one → its credit, licence, tags and whose it is,
+//     ⭐ Main photo · 🙈 Hide for my class / ↩ Show again.
+//   · ＋ ADD PHOTO, two ways: 🔎 Wikipedia / Commons — the name looked up as UNIT_PICS does (_unitPicsLookup), the thumbnail HOT-LINKED from
+//     upload.wikimedia.org (no storage), licence "Not sure" until she checks the file on Commons (a link opens it); 🗂 the pool — any photo
+//     already in the unit or her class, by item or tag (no upload: the file is already there). The demo's lookup is a canned answer (no
+//     network call). Then credit, licence, what it shows (tags), ⭐ main, and who gets it: My class only · The unit, for every class
+//     (Adrienne only, and only with a free licence: "Class use only" and "Not sure" stay in that class, §6.7 rule 4).
+//   · EVERY CHANGE IS ONE TARGETED WRITE through envsWrite (demo: "would write"; dry run: nothing): the photo's record (with _main in the same
+//     multi-path update when ⭐ is ticked), _main, or _hide/<photoId>. Undo writes back what was there. Hidden is a flag; nothing is deleted.
+//   · THE KID'S APP (the site's kid / parent login): classPhotos/<cid> and units/<unitId>/photos are read ONCE at boot (envClsKidLoad's moment)
+//     and laid over the repo index IN MEMORY (repo ← unit ← class, main first, hidden out) through envPicsFor — so the study card, ID Flash
+//     (a different photo each show) and the games see the same pool. Nothing is written to the family's database.
+//   · THE LOOKUPS for skills, ID Flash and the mock: cpPhotos(item, tag) → the item's photos (a tag or a list narrows it), main first;
+//     cpPhotoForCard(card) → a card's (no track or skull photo unless the card is about tracks or skulls); cpPhotoById(id) → the one photo a
+//     mock names, so its form stays the same; cpPhotoParts(item) and cpPhotoTrimLock(items) → the Trim view's 🔒 (§6.6: each part of a tree
+//     needs 2+ photos before the tree-part rounds can trim cards; it turns "ready" by itself — accepting the trim is still her tap).
+const CPPH_TAGS=["leaf","bark","twig","fruit","flower","cone","needle","track","skull","pelt","live","specimen","gear","drawing","diagram"];
+const CPPH_LIC=[["own","Own photo (I took it)"],["cc0","CC0 / public domain"],["ccby","CC BY"],["ccbysa","CC BY-SA"],["class","Class use only"],["unknown","Not sure"]];
+const CPPH_FREE={own:1,cc0:1,ccby:1,ccbysa:1};
+const CPPH_PARTS=["leaf","bark","twig","fruit"], CPPH_PART_NEED=2, CPPH_PART_ALIAS={leaf:["leaf","needle"],fruit:["fruit","cone"]};
+const CPPH_POOL_SHOW=60, CPPH_CREDIT_MAX=200, CPPH_UNDO_MAX=30;
+const CPPH_WIKI_RE=/^https:\/\/upload\.wikimedia\.org\/[^\s"'<>]{1,400}$/, CPPH_REPO_RE=/^envirothon\/pics\/[a-z0-9_\/-]{1,200}\.jpg$/;
+const _cpph={L:{},U:{},kidC:null,kidU:null,kidAsked:"",open:null,pick:null,add:null,css:false,ver:0,rmemo:null,rmemoSrc:null,rmemoKey:"",undo:[],picTry:false,pqT:null,noteT:null,kitems:null};
+function cpphSite(){ try{ return typeof envSiteOn==="function"&&envSiteOn(); }catch(e){ return false; } }
+function cpphOn(){ return typeof cpcsOn==="function"&&cpcsOn(); }   // the console (teacher / admin) on the site
+function cpphCid(){ return (typeof _envc!=="undefined"&&_envc.cid)||""; }
+function cpphAdmin(){ return typeof _envs!=="undefined"&&_envs.role==="admin"; }
+function cpphBump(){ _cpph.ver++; _cpph.rmemo=null; }
+function cpphUnits(){ return (typeof cpuAttached==="function")?cpuAttached():[]; }
+// ── items, keys, licences, tags (PURE)
+function cpphKey(item){ const s=String(item==null?"":item).trim().replace(/\s+/g," ").toLowerCase(); return s.replace(/[.#$\[\]\/%]/g,c=>"%"+c.charCodeAt(0).toString(16).toUpperCase().padStart(2,"0")).slice(0,120); }
+function cpphItemOf(c){ if(!c) return ""; if(c.item) return String(c.item).trim(); const n=String(c.name||"").trim(); return (c.kind==="id"&&n.indexOf(" · ")>0)?n.split(" · ")[0].trim():n; }
+function cpphLicOf(credit){ const s=String(credit||"").split(" · ").pop().trim(); if(/^(CC0|Public domain)/i.test(s)) return "cc0"; if(/^CC BY-SA/i.test(s)) return "ccbysa"; if(/^CC BY\b/i.test(s)) return "ccby"; return "unknown"; }
+function cpphLicLabel(p){ if(p&&p.from==="repo"){ const s=String(p.credit||"").split(" · ").pop().trim(); if(s) return s; } const l=CPPH_LIC.find(x=>x[0]===(p&&p.lic)); return l?l[1]:"Not sure"; }
+function cpphShotTags(shot){ const s=String(shot||"").toLowerCase(), t=[]; const on=(re,tag)=>{ if(re.test(s)&&t.indexOf(tag)<0) t.push(tag); };
+  on(/lea(f|ves)|foliage|fall color/,"leaf"); on(/bark/,"bark"); on(/twig|bud/,"twig"); on(/fruit|acorn|berr|nut|seed|pod/,"fruit"); on(/flower/,"flower"); on(/cone/,"cone"); on(/needle/,"needle");
+  on(/track/,"track"); on(/skull/,"skull"); on(/pelt/,"pelt"); on(/specimen|antler/,"specimen"); on(/drawing/,"drawing"); on(/diagram/,"diagram"); on(/gear|tool/,"gear");
+  if(!t.length) t.push("live"); return t; }
+function cpphRepoId(url){ const m=/^envirothon\/pics\/([a-z0-9_\/-]+)\.jpg$/.exec(String(url||"")); return m?"r~"+m[1].replace(/\//g,"~"):""; }
+function cpphDemoUrlOk(u){ try{ return envsDemo()&&/^data:image\/svg\+xml/.test(String(u)); }catch(e){ return false; } }
+function cpphUrlOk(u){ return CPPH_WIKI_RE.test(String(u||""))||CPPH_REPO_RE.test(String(u||""))||cpphDemoUrlOk(u); }
+// ── the repo set: envirothon/pics/index.json (ENVIDFLASH) by item; the demo file's copy (window.HowePicsDemo) when that is all there is
+function cpphDemoPics(){ try{ return (envsDemo()&&typeof window!=="undefined"&&window.HowePicsDemo&&window.HowePicsDemo.items)?window.HowePicsDemo:null; }catch(e){ return null; } }
+function cpphIdx(){ return (typeof envPicsIndex==="function")?envPicsIndex():null; }
+function cpphRepoPhoto(p,item){ const url=String((p&&p.url)||""), id=cpphRepoId(url); if(!id) return null; return {id,url,credit:String(p.credit||""),lic:cpphLicOf(p.credit),tags:cpphShotTags(p.shot),shot:String(p.shot||""),item:String(item||""),from:"repo"}; }
+// the cards whose `item` differs from their front ("Sweet gum · …" is Sweetgum): the console's browser, else the family's code-held units
+function cpphCardItems(){ const out=[];
+  try{ const M=(cpphOn()&&typeof _cpcs!=="undefined")?_cpcs.memo:null; if(M&&Array.isArray(M.C)){ M.C.forEach(c=>{ if(c.item) out.push([c.item,c.name]); }); return out; }
+    const us=(typeof unitStudies!=="undefined"&&unitStudies)||{}; Object.keys(us).forEach(k=>{ ((us[k]&&us[k].decks)||[]).forEach(d=>{ if(Array.isArray(d&&d.cards)) d.cards.forEach(c=>{ if(c&&c.item&&c.name) out.push([c.item,c.name]); }); }); }); }catch(e){}
+  return out; }
+function cpphRepoMap(){
+  const D=cpphDemoPics(), idx=D?null:cpphIdx(); if(!D&&!idx) return null;
+  const mk=(D?"demo":"idx")+"|"+_cpph.ver+"|"+((typeof _cpcs!=="undefined"&&_cpcs.memo)?_cpcs.memo.C.length:0);
+  if(_cpph.rmemo&&_cpph.rmemoSrc===(D||idx)&&_cpph.rmemoKey===mk) return _cpph.rmemo;
+  const M={}, seen={};
+  const add=(item,list)=>{ const k=cpphKey(item); if(!k||!Array.isArray(list)) return; const A=M[k]=M[k]||[], S=seen[k]=seen[k]||{};
+    list.forEach(p=>{ const x=cpphRepoPhoto(p,item); if(!x||S[x.url]) return; S[x.url]=1; A.push(x); }); };
+  if(D) Object.keys(D.items).forEach(it=>add(it,(D.items[it]||[]).map(r=>({url:r[0],credit:r[1],shot:r[2]}))));
+  else { Object.keys(idx).forEach(n=>add(String(n).split(" · ")[0],idx[n])); cpphCardItems().forEach(a=>{ if(idx[a[1]]) add(a[0],idx[a[1]]); }); }
+  _cpph.rmemo=M; _cpph.rmemoSrc=D||idx; _cpph.rmemoKey=mk; return M; }
+// ── the unit's and the class's layers: the console's (live listeners while 📚 Cards is open; the demo's memory) or the kid's (read once)
+function cpphKidOn(){ try{ return cpphSite()&&!!_envs.kid&&(envsDemo()||_envs.role==="kid"||_envs.role==="parent"); }catch(e){ return false; } }
+function cpphClassL(){ if(cpphOn()) return _cpph.L[cpphCid()]||{}; if(envsDemo()) return _cpph.L[cpphCid()||_envs.cid]||{}; return _cpph.kidC||{}; }
+function cpphUnitL(){ const src=(cpphOn()||envsDemo())?_cpph.U:(_cpph.kidU||{}), out={};
+  Object.keys(src).forEach(u=>{ const L=src[u]; if(!L||typeof L!=="object") return; Object.keys(L).forEach(k=>{ if(L[k]&&typeof L[k]==="object") out[k]=Object.assign(out[k]||{},L[k]); }); });
+  return out; }
+function cpphLayersAny(){ const C=cpphClassL(), U=cpphUnitL(); return Object.keys(C).length>0||Object.keys(U).length>0; }
+function cpphStart(){
+  if(!cpphOn()) return false; const cid=cpphCid(); if(!cid) return false; const units=cpphUnits();
+  if(envsDemo()){ if(!_cpph.L[cid]) _cpph.L[cid]={}; units.forEach(u=>{ if(!_cpph.U[u]) _cpph.U[u]={}; }); return true; }
+  if(typeof envcSub==="function"){ envcSub("cpph","classPhotos/"+cid,v=>{ _cpph.L[cid]=v||{}; cpphBump(); }); units.forEach(u=>envcSub("cpphU~"+u,"units/"+u+"/photos",v=>{ _cpph.U[u]=v||{}; cpphBump(); })); }
+  return true; }
+function cpphRecPhoto(id,r,from){
+  if(!r||typeof r!=="object"||!cpphUrlOk(r.url)) return null; const T=(r.tags&&typeof r.tags==="object")?r.tags:{};
+  return {id,url:String(r.url),credit:String(r.credit||""),lic:CPPH_LIC.some(l=>l[0]===r.lic)?r.lic:"unknown",tags:Object.keys(T).filter(t=>T[t]===true&&CPPH_TAGS.indexOf(t)>=0),shot:"",item:String(r.item||""),how:String(r.how||""),from,by:String(r.by||""),ts:Number(r.ts)||0}; }
+// THE POOL for one item key: repo ← unit ← class → {list:[photo + {main, hid}], main}. Hidden photos stay in the list, marked (the teacher's strip).
+// o.noRepo: only the unit's and the class's (a card that is not an ID card never had repo photos). o.card: a card name for the index.
+function cpphLayeredK(k,o){ o=o||{};
+  if(!k) return {list:[],main:null};
+  let base=o.noRepo?[]:((cpphRepoMap()||{})[k]||[]).slice();
+  if(!o.noRepo&&!base.length&&o.card){ const idx=cpphIdx(), a=idx&&idx[o.card]; if(Array.isArray(a)) base=a.map(p=>cpphRepoPhoto(p,o.item||"")).filter(Boolean); }
+  const U=cpphUnitL()[k]||{}, C=cpphClassL()[k]||{}, seen={}, list=[], byTs=X=>(a,b)=>((X[a]&&X[a].ts)||0)-((X[b]&&X[b].ts)||0);
+  const push=p=>{ if(p&&!seen[p.id]){ seen[p.id]=1; list.push(Object.assign({},p)); } };
+  base.forEach(push);
+  Object.keys(U).sort(byTs(U)).forEach(id=>{ if(id.charAt(0)==="_") return; const p=cpphRecPhoto(id,U[id],"unit"); if(p&&CPPH_FREE[p.lic]) push(p); });   // a unit photo is a free licence, or it isn't one
+  Object.keys(C).sort(byTs(C)).forEach(id=>{ if(id.charAt(0)==="_") return; push(cpphRecPhoto(id,C[id],"class")); });
+  const H=(C._hide&&typeof C._hide==="object")?C._hide:{}; list.forEach(p=>{ p.hid=H[p.id]===true; });
+  const vis=list.filter(p=>!p.hid), m=(typeof C._main==="string"&&vis.find(p=>p.id===C._main))||vis[0]||null;
+  list.forEach(p=>{ p.main=!!m&&p.id===m.id; });
+  return {list,main:m}; }
+function cpphLayered(item,o){ return cpphLayeredK(cpphKey(item),Object.assign({item},o||{})); }
+function cpphMainFirst(L){ return L.filter(p=>p.main).concat(L.filter(p=>!p.main)); }
+// ── THE LOOKUPS (skills, ID Flash, the mock, the trim)
+function cpPhotos(item,tag,opt){
+  if(!cpphSite()) return []; const want=(tag==null||tag==="")?null:(Array.isArray(tag)?tag:[tag]);
+  let L=cpphLayered(item,{card:opt&&opt.card}).list.filter(p=>!p.hid); if(want) L=L.filter(p=>p.tags.some(t=>want.indexOf(t)>=0));
+  return cpphMainFirst(L); }
+function cpPhotoForCard(card){
+  if(!card) return []; const about=/track|skull/i.test(String(card.name||"")+" "+String(card.def||""));
+  const L=cpPhotos(cpphItemOf(card),null,{card:card.name}), ts=p=>p.tags.some(t=>t==="track"||t==="skull");
+  return about?L.filter(ts).concat(L.filter(p=>!ts(p))):L.filter(p=>!ts(p)); }
+function cpPhotoById(id,item){
+  if(!cpphSite()||!id) return null; const keys=item!=null?[cpphKey(item)]:Object.keys(Object.assign({},cpphRepoMap()||{},cpphUnitL(),cpphClassL()));
+  for(const k of keys){ const p=cpphLayeredK(k).list.find(x=>x.id===id); if(p) return p; } return null; }   // hidden or not: a mock's form stays the same
+function cpPhotoParts(item,parts){ const P=parts||CPPH_PARTS, o={}; P.forEach(t=>{ o[t]=0; });
+  cpPhotos(item).forEach(p=>P.forEach(t=>{ if((CPPH_PART_ALIAS[t]||[t]).some(a=>p.tags.indexOf(a)>=0)) o[t]++; })); return o; }
+function cpPhotoTrimLock(items,parts,need){ need=need||CPPH_PART_NEED; const P=parts||CPPH_PARTS, short=[]; let missing=0;
+  (items||[]).forEach(it=>{ const c=cpPhotoParts(it,P); P.forEach(t=>{ if(c[t]<need){ missing+=need-c[t]; short.push({item:String(it),part:t,have:c[t]}); } }); });
+  return {ready:!short.length&&(items||[]).length>0,missing,short,need,parts:P.slice()}; }
+// ── the kid's side (and the parent's): read once at boot, laid over the repo set in memory
+function cpphKidLoad(sdb,cid){
+  if(!cpphSite()||envsDemo()||!sdb||!cid||_cpph.kidAsked===cid) return false;
+  if(!(_envs.role==="kid"||_envs.role==="parent")) return false; _cpph.kidAsked=cid;
+  const units=cpphUnits(), need=1+units.length, U={}, val=s=>(s&&typeof s.val==="function")?s.val():null; let n=0, C=null;
+  const done=()=>{ if(++n<need) return; _cpph.kidC=(C&&typeof C==="object")?C:{}; _cpph.kidU=U; cpphBump(); cpphKidRepaint(); };
+  sdb.ref("classPhotos/"+cid).once("value",s=>{ C=val(s); done(); },()=>done());
+  units.forEach(u=>sdb.ref("units/"+u+"/photos").once("value",s=>{ const v=val(s); U[u]=(v&&typeof v==="object")?v:{}; done(); },()=>{ U[u]={}; done(); }));
+  return true; }
+// when the layers arrive: the repo pictures ENVIDFLASH put on the unit records (in memory) are laid again, then the screens repaint
+function cpphKidRepaint(){
+  if(!cpphLayersAny()) return false;
+  try{ const us=(typeof unitStudies!=="undefined"&&unitStudies)||{};
+    Object.keys(us).forEach(k=>{ const u=us[k]; if(!u||!u.visuals||!(typeof envCardsInCode==="function"&&envCardsInCode(u))) return;
+      Object.keys(u.visuals).forEach(v=>{ const x=u.visuals[v]; if(x&&typeof x==="object"&&/^envirothon\/pics\//.test(String(x.imageUrl||""))) delete u.visuals[v]; }); }); }catch(e){}
+  try{ if(typeof envHydrateAll==="function") envHydrateAll(); }catch(e){} try{ if(typeof renderAllSoon==="function") renderAllSoon(); }catch(e){}
+  return true; }
+// the item of a card the kid's app holds (its unit record), else the ID front's first part, else the front
+function cpphKidItem(deck,name,isId){
+  try{ const us=(typeof unitStudies!=="undefined"&&unitStudies)||{}; if(!_cpph.kitems&&typeof WeakMap==="function") _cpph.kitems=new WeakMap();
+    for(const k in us){ const d=((us[k]&&us[k].decks)||[]).find(x=>x&&x.key===deck); if(!d||!Array.isArray(d.cards)) continue;
+      let m=_cpph.kitems?_cpph.kitems.get(d.cards):null; if(!m){ m={}; d.cards.forEach(c=>{ if(c&&c.name) m[c.name]=c.item||""; }); if(_cpph.kitems) _cpph.kitems.set(d.cards,m); }
+      if(m[name]) return String(m[name]); } }catch(e){}
+  const n=String(name||""); return (isId&&n.indexOf(" · ")>0)?n.split(" · ")[0].trim():n.trim(); }
+// ⚡ envPicsFor (the study card, ID Flash, the games): the site kid's pictures of a card, layered — undefined = today's answer (the repo set)
+function cpphPicsFor(deck,name,idx){
+  if(!cpphKidOn()||!cpphLayersAny()) return undefined;
+  if(!(typeof envPicsDeckOn==="function"&&envPicsDeckOn(deck))) return undefined;
+  const isId=/· ID$/.test(String(deck||"")); if(isId&&!idx) return undefined;
+  const P=cpphLayered(cpphKidItem(deck,name,isId),{card:isId?name:null,noRepo:!isId});
+  const vis=cpphMainFirst(P.list.filter(p=>!p.hid));
+  if(!isId&&!vis.length) return undefined;
+  return vis.length?vis.map(p=>({url:p.url,credit:p.credit,shot:p.shot||p.tags.join(", ")})):null; }
+// ── the console: 🖼 the strip on an opened card (📚 cpcsDetailHtml)
+function cpphCard(i){ const M=(typeof cpcsIndex==="function")?cpcsIndex():null; return (M&&M.C[i])||null; }
+function cpphUnitOf(c){ const M=(typeof cpcsIndex==="function")?cpcsIndex():null, s=M&&c&&M.secs.find(x=>x.id===c.sec); return (s&&s.unit)||cpphUnits()[0]||"nc_envirothon"; }
+function cpphSrc(url){ const D=cpphDemoPics(); return (D&&Array.isArray(D.bases)&&/^envirothon\/pics\//.test(String(url)))?D.bases[0]+url:String(url); }
+function cpphImg(p,cls,alt){ const D=cpphDemoPics(), fb=D&&Array.isArray(D.bases)&&D.bases.length>1&&/^envirothon\/pics\//.test(p.url);
+  return '<img class="'+cls+'" src="'+cpcsEsc(cpphSrc(p.url))+'" alt="'+cpcsEsc(alt||p.item||"")+'" loading="lazy"'+(fb?' data-u="'+cpcsEsc(p.url)+'" data-n="0" onerror="cpphImgErr(this)"':'')+'>'; }
+// the demo file: a picture that isn't beside the page is looked for at the next place make_demo.js named
+function cpphImgErr(img){ try{ const D=cpphDemoPics(), n=Number(img.getAttribute("data-n")||0)+1; if(D&&D.bases[n]){ img.setAttribute("data-n",String(n)); img.src=D.bases[n]+img.getAttribute("data-u"); } else img.onerror=null; }catch(e){} }
+function cpphWho(p){ return p.from==="repo"?"the unit’s (repo set)":p.from==="unit"?"the unit’s (Adrienne’s)":"your class’s"; }
+function cpphCommons(url){ const m=/^https:\/\/upload\.wikimedia\.org\/wikipedia\/(commons|en)\/(?:thumb\/)?[0-9a-f]\/[0-9a-f]{2}\/([^\/?#]+)/.exec(String(url||"")); if(!m) return "";
+  return (m[1]==="en"?"https://en.wikipedia.org/wiki/File:":"https://commons.wikimedia.org/wiki/File:")+m[2]; }
+function cpphShowsHtml(L){ const o={}; L.forEach(p=>{ if(!p.hid) p.tags.forEach(t=>{ o[t]=(o[t]||0)+1; }); }); const ks=CPPH_TAGS.filter(t=>o[t]); if(!ks.length) return "";
+  return '<div class="cpcs-meta cpph-shows">Shows: '+ks.map(t=>cpcsEsc(t)+' '+o[t]).join(' · ')+'</div>'; }
+function cpphStripHtml(c){
+  if(!cpphOn()||!c) return ""; cpphCss(); cpphStart();
+  if(!cpphIdx()&&!cpphDemoPics()&&!_cpph.picTry&&typeof envPicsLoad==="function"){ _cpph.picTry=true; envPicsLoad().then(()=>{ _cpph.rmemo=null; cpphRe(); }).catch(()=>{}); }
+  const item=cpphItemOf(c), k=cpphKey(item); if(!k) return "";
+  const P=cpphLayeredK(k,{card:c.name,item}), L=P.list, mine=_cpph.open===k, pk=mine&&_cpph.pick?L.find(p=>p.id===_cpph.pick):null, E=cpcsEsc, J=envcJ, shown=L.filter(p=>!p.hid).length;
+  let h='<div class="cpph" id="cpph-strip"><div class="cpcs-meta"><b>\u{1F5BC} Photos of '+E(item)+'</b> · '+(L.length?shown+' shown'+(L.length>shown?' · '+(L.length-shown)+' hidden':''):'none yet')+((c.item||c.kind==="id")?' · shared by every card of this '+E(cpcsWord("item")):'')+'</div>';
+  if(L.length){ h+='<div class="cpph-strip">'+L.map(p=>'<button class="cpph-th'+(p.main?' main':'')+(p.hid?' hid':'')+(pk&&pk.id===p.id?' on':'')+'" onclick="cpphPick('+c.i+',\''+J(p.id)+'\')" aria-label="'+E((p.main?'Main photo, ':'')+(p.tags[0]||'photo'))+'">'+cpphImg(p,"cpph-im",item)+'<span class="cpph-tg">'+(p.main?'⭐ ':'')+(p.hid?'\u{1F648} ':'')+E(p.tags[0]||"")+'</span></button>').join("")+'</div>'+cpphShowsHtml(L);
+    if(pk) h+=cpphPickHtml(c,pk); }
+  h+=(mine&&_cpph.add)?cpphAddHtml(c,item):'<button class="cpph-addb" onclick="cpphAddOpen('+c.i+')">＋ Add photo</button>';
+  return h+'</div>'; }
+function cpphPickHtml(c,p){ const E=cpcsEsc, J=envcJ, cm=p.from!=="repo"&&/^https:/.test(p.url)?cpphCommons(p.url):"";
+  let h='<div class="cpph-pk"><div>'+E(p.credit||"—")+'</div><div>Licence: <b>'+E(cpphLicLabel(p))+'</b> · Tags: '+E(p.tags.join(", ")||"—")+' · '+cpphWho(p)+'</div>';
+  if(cm) h+='<a class="cpph-lk" href="'+E(cm)+'" target="_blank" rel="noopener">Check it on Commons ↗</a>';
+  if(p.from==="class"&&!CPPH_FREE[p.lic]) h+='<div class="cpph-was">Stays in your class: “'+E(cpphLicLabel(p))+'” is never offered to the unit or another class.</div>';
+  h+='<div class="cpce-acts">'+(p.main||p.hid?'':'<button class="cpce-btn" onclick="cpphMain('+c.i+',\''+J(p.id)+'\')">⭐ Main photo</button>')+
+    (p.hid?'<button class="cpce-btn pri" onclick="cpphHide('+c.i+',\''+J(p.id)+'\',false)">↩ Show again</button>':'<button class="cpce-btn red" onclick="cpphHide('+c.i+',\''+J(p.id)+'\',true)">\u{1F648} Hide for my class</button>')+'</div>';
+  return h+'</div>'; }
+function cpphAddHtml(c,item){
+  const A=_cpph.add, d=A.draft, E=cpcsEsc, J=envcJ;
+  let h='<div class="cpph-add" id="cpph-add"><div class="cpph-ah"><span>Add a photo to “'+E(item)+'”</span><button class="cpce-xs" onclick="cpphAddClose()" aria-label="Close">✕</button></div>';
+  h+='<div class="cpcs-chips">'+[["wiki","\u{1F50E} Wikipedia / Commons"],["pool","\u{1F5C2} The unit’s pool"]].map(w=>'<button class="cpcs-chip'+(A.way===w[0]?' on':'')+'" onclick="cpphWay(\''+w[0]+'\')">'+w[1]+'</button>').join("")+'</div>';
+  h+='<div class="cpph-was">\u{1F4F7} Camera or file comes with uploads (next).</div>';
+  if(A.way==="wiki") h+='<div class="cpph-row"><input id="cpph-q" class="cpce-in" value="'+E(A.q||item)+'" oninput="cpphIn(\'q\',this.value)" onkeydown="if(event.key===\'Enter\'){ cpphWiki('+c.i+'); return false; }" aria-label="Name to look up"><button class="cpce-btn" onclick="cpphWiki('+c.i+')">Look up</button></div>'+
+    '<div class="cpph-was">'+E(A.msg||"Looks the name up on Wikipedia. The thumbnail is hot-linked from Wikimedia, so it needs no storage.")+'</div>';
+  if(A.way==="pool"){ const pool=cpphPool(A.pq); A.list=pool.slice(0,CPPH_POOL_SHOW);
+    h+='<input id="cpph-pq" class="cpce-in" type="search" placeholder="Search the pool (e.g. oak, track, skull)" value="'+E(A.pq||"")+'" oninput="cpphPoolQ(this.value)" autocomplete="off" aria-label="Search the pool">'+
+      '<div class="cpph-was">'+pool.length+' photo'+(pool.length===1?'':'s')+(A.pq?' match':' in this unit and your class')+(pool.length>CPPH_POOL_SHOW?' · the first '+CPPH_POOL_SHOW+' shown':'')+'</div>'+
+      '<div class="cpph-grid">'+A.list.map((p,j)=>'<button class="cpph-gp'+(d.url===p.url?' on':'')+'" onclick="cpphPoolPick('+j+')" title="'+E(p.item+' · '+p.tags.join(", "))+'">'+cpphImg(p,"cpph-gi",p.item)+'</button>').join("")+'</div>'; }
+  if(d.url) h+='<div class="cpph-pv">'+cpphImg({url:d.url,item},"cpph-pi",item)+'<div class="cpph-was">'+E(d.size||"")+(d.commons?'<br><a class="cpph-lk" href="'+E(d.commons)+'" target="_blank" rel="noopener">Open the file on Commons ↗</a>':'')+'</div></div>';
+  h+='<label class="cpce-lbl" for="cpph-credit">Credit</label><input id="cpph-credit" class="cpce-in" maxlength="'+CPPH_CREDIT_MAX+'" value="'+E(d.credit||"")+'" placeholder="Who took it · where it came from" oninput="cpphIn(\'credit\',this.value)">';
+  h+='<label class="cpce-lbl" for="cpph-lic">Licence</label><select id="cpph-lic" class="cpce-in" onchange="cpphLic(this.value)">'+CPPH_LIC.map(l=>'<option value="'+l[0]+'"'+(d.lic===l[0]?' selected':'')+'>'+l[1]+'</option>').join("")+'</select>';
+  h+='<div class="cpce-lbl">What it shows</div><div class="cpph-tags">'+CPPH_TAGS.map(t=>'<button class="cpcs-chip'+(d.tags[t]?' on':'')+'" onclick="cpphTag(\''+t+'\')">'+t+'</button>').join("")+'</div>';
+  h+='<label class="cpce-core"><input type="checkbox" id="cpph-main"'+(d.main?' checked':'')+' onchange="cpphIn(\'main\',this.checked)"> ⭐ Make it the main photo</label>';
+  const free=!!CPPH_FREE[d.lic];
+  h+='<div class="cpce-lbl">Who gets it</div><label class="cpce-core"><input type="radio" name="cpph-scope" value="class"'+(d.scope!=="unit"?' checked':'')+' onchange="cpphIn(\'scope\',\'class\')"> My class only</label>';
+  if(cpphAdmin()&&free) h+='<label class="cpce-core"><input type="radio" name="cpph-scope" value="unit"'+(d.scope==="unit"?' checked':'')+' onchange="cpphIn(\'scope\',\'unit\')"> The unit, for every class</label>';
+  else if(!free&&d.lic) h+='<div class="cpph-was">“'+E(cpphLicLabel({lic:d.lic}))+'” photos stay in your class: they are never offered to the unit or to another class.</div>';
+  h+='<div class="cpce-acts"><button class="cpce-btn pri" onclick="cpphSave('+c.i+')">Save</button><button class="cpce-btn" onclick="cpphAddClose()">Cancel</button></div>';
+  return h+'</div>'; }
+// 🗂 the pool: every photo of the unit and this class (another class's never shows), by item or tag, one of each picture
+function cpphPool(q){
+  const R=cpphRepoMap()||{}, U=cpphUnitL(), C=cpphClassL(), keys={}, out=[], seen={}, nq=String(q||"").trim().toLowerCase();
+  [R,U,C].forEach(X=>Object.keys(X).forEach(k=>{ keys[k]=1; }));
+  Object.keys(keys).forEach(k=>{ cpphLayeredK(k).list.forEach(p=>{ if(p.hid||seen[p.url]) return; if(!p.item){ try{ p.item=decodeURIComponent(k); }catch(e){ p.item=k; } }
+    if(nq&&String(p.item).toLowerCase().indexOf(nq)<0&&!p.tags.some(t=>t.indexOf(nq)===0)&&String(p.shot).toLowerCase().indexOf(nq)<0) return; seen[p.url]=1; out.push(p); }); });
+  return out.sort((a,b)=>String(a.item).localeCompare(String(b.item))); }
+// ── the taps
+function cpphRe(){ if(typeof cpcsRe==="function") cpcsRe(); }
+function cpphVal(id){ try{ const e=document.getElementById(id); return e?String(e.value==null?"":e.value):null; }catch(e){ return null; } }
+function cpphFocus(id){ try{ const e=document.getElementById(id); if(e&&e.focus){ e.focus(); const n=String(e.value||"").length; if(e.setSelectionRange) e.setSelectionRange(n,n); } }catch(e){} }
+function cpphPick(i,id){ if(!cpphOn()) return; const c=cpphCard(i); if(!c) return; const k=cpphKey(cpphItemOf(c)); if(_cpph.open!==k){ _cpph.open=k; _cpph.add=null; } _cpph.pick=_cpph.pick===id?null:id; cpphRe(); }
+function cpphAddOpen(i){ if(!cpphOn()) return; const c=cpphCard(i); if(!c) return; _cpph.open=cpphKey(cpphItemOf(c)); _cpph.pick=null;
+  _cpph.add={way:"pool",q:"",msg:"",pq:"",list:[],draft:{url:"",credit:"",lic:"",tags:{},main:false,scope:"class",how:"",size:"",commons:""}}; cpphRe(); if(typeof cpcsScroll==="function") cpcsScroll("cpph-add"); }
+function cpphAddClose(){ _cpph.add=null; cpphRe(); }
+function cpphIn(f,v){ const A=_cpph.add; if(!A) return; if(f==="q") A.q=String(v); else A.draft[f]=v; }
+function cpphWay(w){ const A=_cpph.add; if(!A) return; A.way=w==="wiki"?"wiki":"pool"; cpphRe(); }
+function cpphLic(v){ const A=_cpph.add; if(!A) return; A.draft.lic=CPPH_LIC.some(l=>l[0]===v)?v:""; if(!CPPH_FREE[A.draft.lic]) A.draft.scope="class"; cpphRe(); }
+function cpphTag(t){ const A=_cpph.add; if(!A||CPPH_TAGS.indexOf(t)<0) return; A.draft.tags[t]=!A.draft.tags[t]; cpphRe(); }
+function cpphPoolQ(v){ const A=_cpph.add; if(!A) return; clearTimeout(_cpph.pqT); const go=()=>{ A.pq=String(v||""); cpphRe(); cpphFocus("cpph-pq"); }; if(typeof setTimeout==="function") _cpph.pqT=setTimeout(go,220); else go(); }
+function cpphPoolPick(j){ const A=_cpph.add, p=A&&A.list&&A.list[j]; if(!p) return; const d=A.draft, T={}; p.tags.forEach(t=>{ T[t]=true; });
+  Object.assign(d,{url:p.url,credit:p.credit,lic:p.lic,tags:T,how:"pool",commons:"",size:"From the pool: "+p.item+" (already stored, so nothing new uploads)."}); if(!CPPH_FREE[d.lic]) d.scope="class"; cpphRe(); }
+// 🔎 the Wikipedia lookup: UNIT_PICS's own lookup, the thumbnail hot-linked; the demo answers from a canned picture with no network call
+function cpphDemoSvg(q){ const t=String(q||"").slice(0,24).replace(/[<>&"']/g,"");
+  return "data:image/svg+xml;charset=utf-8,"+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="240"><rect width="320" height="240" fill="#e0f2fe"/><text x="160" y="112" font-family="sans-serif" font-size="22" text-anchor="middle" fill="#075985">'+t+'</text><text x="160" y="146" font-family="sans-serif" font-size="14" text-anchor="middle" fill="#0369a1">Wikipedia thumbnail (demo)</text></svg>'); }
+function cpphWikiIn(r,q){ const A=_cpph.add; if(!A) return false;
+  if(!r||!r.url||!cpphUrlOk(r.url)||CPPH_REPO_RE.test(String(r.url))){ A.msg="No picture on that page. Try another name."; return false; }
+  const d=A.draft; d.url=String(r.url); d.credit=(String(r.credit||("Wikipedia · "+q))+(r.demo?"":" (check the file’s licence on Commons)")).slice(0,CPPH_CREDIT_MAX); d.lic="unknown"; d.scope="class"; d.how="wiki";
+  d.commons=cpphCommons(d.url); d.size=r.demo?"Demo: a canned answer, no network call. The real lookup hot-links the Wikimedia thumbnail.":"Hot-linked Wikimedia thumbnail: no storage used.";
+  A.msg="Found “"+q+"”. Its licence is “Not sure” until you check the file on Commons."; return true; }
+function cpphWiki(i){
+  if(!cpphOn()) return Promise.resolve(null); const c=cpphCard(i), A=_cpph.add; if(!c||!A) return Promise.resolve(null);
+  const v=cpphVal("cpph-q"); if(v!=null) A.q=v; const q=String(A.q||cpphItemOf(c)).trim(); if(!q){ envsToast("Type a name to look up."); return Promise.resolve(null); } A.q=q;
+  if(envsDemo()){ const r={url:cpphDemoSvg(q),credit:"Wikipedia · "+q+" (demo)",demo:true}; cpphWikiIn(r,q); cpphRe(); return Promise.resolve(r); }
+  if(typeof fetch!=="function"||typeof _unitPicsLookup!=="function"){ A.msg="This browser can’t look pictures up."; cpphRe(); return Promise.resolve(null); }
+  A.msg="Looking up “"+q+"” …"; cpphRe();
+  return _unitPicsLookup(u=>fetch(u),q,q).then(r=>{ if(_cpph.add!==A) return null; cpphWikiIn(r,q); cpphRe(); return r||null; },()=>{ if(_cpph.add===A){ A.msg="Couldn’t reach Wikipedia. Try again in a moment."; cpphRe(); } return null; }); }
+// PURE: may this draft be saved for that item? → "" or why not
+function cpphDraftWhy(d,have,unit){ d=d||{};
+  if(!d.url) return "Pick a photo first (🔎 or 🗂)."; if(!cpphUrlOk(d.url)) return "That picture can’t be used: it has to come from Wikimedia or the pool.";
+  if((have||[]).some(p=>p.url===d.url)) return "That photo is already on this item.";
+  if(!String(d.credit||"").trim()) return "Add a credit line (who took it, where it came from).";
+  if(!CPPH_LIC.some(l=>l[0]===d.lic)) return "Pick a licence.";
+  if(!Object.keys(d.tags||{}).some(t=>d.tags[t]&&CPPH_TAGS.indexOf(t)>=0)) return "Tick what it shows (leaf, bark, track …).";
+  if(unit&&!CPPH_FREE[d.lic]) return "Only a free-licence photo can go to the unit.";
+  return ""; }
+function cpphRec(d,item,by,ts){ const tags={}; Object.keys(d.tags||{}).forEach(t=>{ if(d.tags[t]&&CPPH_TAGS.indexOf(t)>=0) tags[t]=true; });
+  return {url:String(d.url),credit:String(d.credit||"").trim().slice(0,CPPH_CREDIT_MAX),lic:d.lic,tags,item:String(item||"").slice(0,80),how:d.how==="wiki"?"wiki":"pool",by,ts}; }
+function cpphNewId(){ return "p"+Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36); }
+function cpphSave(i){
+  if(!cpphOn()) return null; const c=cpphCard(i), A=_cpph.add; if(!c||!A) return null; const d=A.draft;
+  ["credit"].forEach(f=>{ const v=cpphVal("cpph-"+f); if(v!=null) d[f]=v; });
+  const item=cpphItemOf(c), k=cpphKey(item), cid=cpphCid(), unit=d.scope==="unit"&&cpphAdmin()&&!!CPPH_FREE[d.lic];
+  const why=cpphDraftWhy(d,cpphLayeredK(k,{card:c.name,item}).list,unit); if(why){ envsToast(why); return null; }
+  const pid=cpphNewId(), rec=cpphRec(d,item,_envs.uid,Date.now()), ch={};
+  ch[unit?"units/"+cpphUnitOf(c)+"/photos/"+k+"/"+pid:"classPhotos/"+cid+"/"+k+"/"+pid]=rec;
+  if(d.main) ch["classPhotos/"+cid+"/"+k+"/_main"]=pid;
+  cpphCommit(ch,"\u{1F5BC} Photo added for "+(unit?"every class":"your class"));
+  _cpph.add=null; _cpph.open=k; _cpph.pick=pid; cpphRe(); return pid; }
+function cpphMain(i,id){ if(!cpphOn()) return; const c=cpphCard(i); if(!c) return; cpphCommit({["classPhotos/"+cpphCid()+"/"+cpphKey(cpphItemOf(c))+"/_main"]:String(id)},"⭐ Main photo set for your class"); cpphRe(); }
+function cpphHide(i,id,on){ if(!cpphOn()) return; const c=cpphCard(i); if(!c) return; cpphCommit({["classPhotos/"+cpphCid()+"/"+cpphKey(cpphItemOf(c))+"/_hide/"+id]:on?true:null},on?"\u{1F648} Photo hidden for your class":"↩ Photo showing again"); cpphRe(); }
+// in memory (the demo, and the record kept for Undo): classPhotos/<cid>/… → _cpph.L[cid], units/<id>/photos/… → _cpph.U[id]
+function cpphMemAt(p){ const a=String(p).split("/"); if(a[0]==="classPhotos"&&a.length>2) return {root:_cpph.L,id:a[1],rest:a.slice(2)}; if(a[0]==="units"&&a[2]==="photos"&&a.length>3) return {root:_cpph.U,id:a[1],rest:a.slice(3)}; return null; }
+function cpphMemGet(p){ const m=cpphMemAt(p); if(!m) return null; let o=m.root[m.id]; for(const s of m.rest){ if(!o||typeof o!=="object") return null; o=o[s]; } return o==null?null:JSON.parse(JSON.stringify(o)); }
+function cpphMemSet(p,v){ const m=cpphMemAt(p); if(!m) return; let o=m.root[m.id]=m.root[m.id]||{};
+  for(let j=0;j<m.rest.length-1;j++){ const s=m.rest[j]; if(!o[s]||typeof o[s]!=="object"){ if(v==null) return; o[s]={}; } o=o[s]; }
+  const last=m.rest[m.rest.length-1]; if(v==null) delete o[last]; else o[last]=JSON.parse(JSON.stringify(v)); }
+// every change: ONE write (one path: set or remove; more: one multi-path update at their common parent), its Undo kept, the note shown
+function cpphCommit(ch,label,undoing){
+  const keys=Object.keys(ch||{}).filter(p=>!(ch[p]==null&&cpphMemGet(p)==null)); if(!keys.length) return Promise.resolve(null);
+  if(keys.some(p=>!cpphMemAt(p)||p.split("/").some(x=>!x||/[.#$\[\]]/.test(x)))){ envsToast("That photo can’t be saved here."); return Promise.resolve(null); }
+  const prev={}; keys.forEach(p=>{ prev[p]=cpphMemGet(p); });
+  let w; if(keys.length===1){ const p=keys[0]; w=ch[p]==null?envsWrite(p,null,"remove"):envsWrite(p,ch[p],"set"); }
+  else { const segs=keys.map(p=>p.split("/")); let n=0; while(segs.every(s=>s.length>n+1&&s[n]===segs[0][n])) n++;
+    const base=segs[0].slice(0,n).join("/"), up={}; keys.forEach(p=>{ up[n?p.split("/").slice(n).join("/"):p]=ch[p]==null?null:ch[p]; }); w=envsWrite(base||"/",up,"update"); }
+  if(envsDemo()){ keys.forEach(p=>cpphMemSet(p,ch[p])); cpphBump(); }
+  if(!undoing){ _cpph.undo.push({prev,label}); if(_cpph.undo.length>CPPH_UNDO_MAX) _cpph.undo.shift(); }
+  cpphNote(undoing?"↩︎ Undone":label,!undoing);
+  return Promise.resolve(w).then(r=>r,e=>{ envsToast("Couldn’t save: "+String((e&&e.message)||e)); return null; }); }
+function cpphUndo(){ if(!cpphOn()) return; const u=_cpph.undo.pop(); if(!u){ cpphRe(); return; } const back={}, ts=Date.now();
+  Object.keys(u.prev).forEach(p=>{ const r=u.prev[p]; back[p]=(r&&typeof r==="object"&&r.url)?Object.assign({},r,{by:_envs.uid,ts}):r; });   // the rules take only her own uid as `by`
+  cpphCommit(back,"",true); cpphRe(); }
+// the note under the page (the card layer's look): what changed, with Undo, for a few seconds
+function cpphNote(msg,withUndo){ if(typeof document==="undefined"||!document.createElement) return;
+  try{ if(typeof cpceCss==="function") cpceCss(); let n=document.getElementById("cpce-note"); if(!n){ n=document.createElement("div"); n.id="cpce-note"; n.className="cpce-note"; document.body.appendChild(n); }
+    n.innerHTML='<span>'+cpcsEsc(msg)+'</span>'+(withUndo?'<button onclick="cpphUndo()">Undo</button>':''); n.style.display="flex"; n.style.bottom=envsDemo()?"104px":"";
+    if(_cpph.noteT) clearTimeout(_cpph.noteT); _cpph.noteT=setTimeout(()=>{ try{ n.style.display="none"; }catch(e){} },6000); }catch(e){} }
+function cpphCss(){
+  if(_cpph.css||typeof document==="undefined"||!document.createElement) return; _cpph.css=true;
+  try{ const s=document.createElement("style"); s.id="cpph-css"; s.textContent=
+    '.cpph{margin-top:10px}.cpph-strip{display:flex;gap:6px;overflow-x:auto;padding:4px 0 2px;-webkit-overflow-scrolling:touch}'+
+    '.cpph-th{flex-shrink:0;position:relative;padding:0;border:2px solid #e5e7eb;border-radius:10px;background:#fff;cursor:pointer}.cpph-th.main{border-color:#ca8a04}.cpph-th.on{border-color:#111827}.cpph-th.hid{opacity:.4}'+
+    '.cpph-im{display:block;width:76px;height:76px;object-fit:cover;border-radius:8px;background:#f3f4f6}.cpph-tg{position:absolute;left:3px;bottom:3px;font-size:10px;font-weight:800;background:rgba(255,255,255,.92);border-radius:5px;padding:0 4px;color:#1f2937}'+
+    '.cpph-pk{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:8px 10px;margin-top:6px;font-size:12.5px;color:#4b5563;line-height:1.5;overflow-wrap:anywhere}.cpph-pk b{color:#1f2937}'+
+    '.cpph-lk{display:inline-block;margin-top:4px;color:#075985;font-weight:700;font-size:12.5px}.cpph-was{font-size:12.5px;color:#6b7280;margin:4px 0;overflow-wrap:anywhere}'+
+    '.cpph-addb{min-height:44px;border:none;background:none;color:#14532d;font:inherit;font-weight:800;padding:0;margin-top:4px;cursor:pointer}'+
+    '.cpph-add{background:#fff;border:1.5px solid #bbf7d0;border-radius:12px;padding:10px;margin-top:6px}.cpph-ah{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:800;font-size:14px;color:#14532d}'+
+    '.cpph-row{display:flex;gap:6px;align-items:flex-start}.cpph-row .cpce-in{flex:1;min-width:0;margin:0}.cpph-row .cpce-btn{min-height:44px}'+
+    '.cpph-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:5px;max-height:220px;overflow-y:auto;margin:6px 0}.cpph-gp{padding:0;border:2px solid transparent;border-radius:8px;background:none;cursor:pointer}.cpph-gp.on{border-color:#111827}'+
+    '.cpph-gi{display:block;width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;background:#f3f4f6}.cpph-pv{display:flex;gap:10px;align-items:flex-start;margin:8px 0}.cpph-pi{width:110px;height:110px;object-fit:cover;border-radius:10px;background:#f3f4f6;flex-shrink:0}'+
+    '.cpph-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}.cpph .cpcs-chip{min-height:38px}.cpph-add .cpcs-chips{flex-wrap:wrap;overflow:visible}';
+    document.head.appendChild(s); }catch(e){}
+}
+// CPPHOTOS_END
 // CPSKILL_START — 🧩 THE SKILL ENGINE: practice that isn't a card, for any unit (DESIGN_class_platform_2026-10-28.md §4.1b, §9, §12,
 // §13 row 25; RESEARCH_envirothon_skills_2026-10-28.md §2–§3; PR 25 of the class platform; her yes to building the design, 2026-10-28).
 // The research's finding: about 1 Area question in 4 needs a SKILL (read a chart, use a table, fill a worksheet, label a picture, name a
@@ -50837,7 +51152,8 @@ function envPicsLoad(fetchFn){
 }
 // The pictures of one card: [{url, credit, shot}] or null. Only the "· ID" decks of a code-held unit this family has.
 function envPicsDeckOn(deck){ const us=(typeof unitStudies!=="undefined"&&unitStudies)||{}; for(const k in us){ const u=us[k]; if(u&&typeof envCardsInCode==="function"&&envCardsInCode(u)&&(u.decks||[]).some(d=>d&&d.key===deck)) return true; } return false; }
-function envPicsFor(deck,name){ const idx=_envPicsIdx; if(!idx||!/\u00b7 ID$/.test(String(deck||""))||!envPicsDeckOn(deck)) return null; const a=idx[name]; return (Array.isArray(a)&&a.length&&a[0]&&a[0].url)?a:null; }
+function envPicsFor(deck,name){ const idx=_envPicsIdx; if(typeof cpphPicsFor==="function"){ const _c=cpphPicsFor(deck,name,idx); if(_c!==undefined) return _c; }   // 🖼 CPPHOTOS: the site kid's pool, layered (repo ← unit ← class)
+  if(!idx||!/\u00b7 ID$/.test(String(deck||""))||!envPicsDeckOn(deck)) return null; const a=idx[name]; return (Array.isArray(a)&&a.length&&a[0]&&a[0].url)?a:null; }
 // In memory only: each pictured card's first picture becomes the unit's shared visual {imageUrl, credit} unless Mom saved one.
 function envPicsApply(u){
   if(!u||!_envPicsIdx||!(typeof envCardsInCode==="function"&&envCardsInCode(u))) return 0;
