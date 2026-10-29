@@ -21,6 +21,7 @@ const CLS=slice("// ENVCLASSSET_START","// ENVCLASSSET_END");   // ⚙️ the cl
 const CPS=slice("// CPSEATS_START","// CPSEATS_END");   // 🪑 Cards a sitting = Auto (2026-10-28): Days a card is learned, top value 200, the real-pace line
 const CPC=slice("// CPCLASS_START","// CPCLASS_END");   // 🏫 the class record and its look (2026-10-28): the bars, 🏫 Class setup, + Class, the lock date
 const CPU=slice("// CPUNIT_START","// CPUNIT_END");   // 📦 units as data (2026-10-28): HoweUnits, the catalog, a class's units, sections from the units, enroll per unit
+const CORE=slice("// CPCORE_START","// CPCORE_END");   // ⭐ core cards first (2026-10-28): the "Core cards first" row + the two mstPile hooks — in the world only with o.cpcore
 // o.envt: the station check-ins too (ENVTEST, + the forms on window.HoweEnvirothon = o.lib) — the demo's check-in rules (2026-10-28) —
 // and the 🔊 read-aloud switch right after it (ENVREADALOUD; mastSpeak records into G.said)
 const ENVT=slice("// ENVTEST_START","// ENVREADALOUD_END");
@@ -67,6 +68,7 @@ function world(o){
     ${CPS}
     ${CPC}
     ${o.noCpu?"":CPU}
+    ${o.cpcore?CORE:""}
     STARTER_UNITS[ENV_UNIT_ID]=envUnitRecordStub; function envUnitRecordStub(){ return {id:ENV_UNIT_ID,starter:ENV_UNIT_ID,starterVer:1,cardsInCode:true,stages:ENV_STAGES.map(s=>({n:s[0]})),decks:ENV_DECKS.map(d=>({key:d[0],stage:d[2],station:d[3],n:d[5],cards:[]}))}; }
     return { get tab(){ return tab; }, set tab(v){ tab=v; }, get db(){ return db; }, get mastView(){ return mastView; }, set mastView(v){ mastView=v; }, get masteryKid(){ return masteryKid; }, unitStudies, masteryData, HA_LS, _envs, _envc, _envm, STARTER_UNITS,
       envEdition, envSiteOn, envsDemo, envsLockState, envsStations, envsStationStat, envsGain, envsEffort, envsBoardsCompute, envsBoardsHtml, envsMakeCode, envsCodeNorm, envsCodeOk, envsKidEmail, envsKidPw, envsFamilyDbUrl, envSiteDb, envSiteDemoBoot, envSiteGate, envsApplyLogin, envSiteAuthShow, envsAuthHtml, envsAuthSubmit, envsKidSubmit, envSiteTabGate, envSiteRender, envsView, envsDemoGo, envsDemoData, envsDemoStart, envSiteSittingDone, envsAutoEnroll, envsWrite, envsLicenseLine, envsCard, envsKidHtml, envsParentHtml, envsStationRowsHtml, envsScoresHtml, envsTipsHtml, envsSettingsHtml, envsReadShared, envsStreakHtml, ENVS_OFF_TABS, ENVS_TIPS, ENVS_CONTACT, ENVS_FULL_APP, ENVS_STARS, ENVS_AUTOLOCK,
@@ -76,6 +78,7 @@ function world(o){
       envsAutoLockLabel,
       cps:{ CPS_SEATS_MAX, CPS_DAYS_ROW, CPS_FIELDS_SET, cpSeatsFields, cpSeatsAuto, cpSeatsPace, cpSeatsDef, cpSeatsCheck, cpSeatsFmt, cpSeatsDays, cpSeatsStudy, cpSeatsNums, cpSeatsCtlHtml, cpSeatsPaceHtml },
       cpu:${o.noCpu?"null":"{ CPU_UNITS, CPU_DEFAULT, _cpu, cpuOn, cpuReg, cpuUnit, cpuQid, cpuLoad, cpuIndex, cpuIds, cpuDecks, cpuSections, cpuSum, cpuWatch, cpuAdminWatch, cpuAttached, cpuStations, cpuLabel, cpuFeature, cpuUnitRecord, cpuGeneric, cpuHydrate, cpuHydrateAll, cpuEnrollSession, cpuAutoEnroll, cpuUnitsHtml, cpuPublish, cpuPubState, cpuSetupHtml, cpuUnitsAfter, cpuAttach, cpuNewUnitsHtml, cpuNewUnits, cpuDemoStart, get win(){ return window; } }"},
+      core:${o.cpcore?"{ CPCORE_FIELD, _cpcore, cpCoreOn, cpCoreSetting, cpCoreSet, cpCoreLeft, cpCoreNames, cpCoreFresh, cpCoreDemoSeed }":"null"},
       envt:${o.envt?"{ envtOpen, envtStatus, envtStartHtml, envtPick, envtNext, envtClose, envtCoreLine, envtWaitsForCheckin, envtFinalApply, envRaSet, envRaMode, envRaStartHtml, envRaReadQ, get state(){ return envtState; } }":"null"} };`)(G,firebase,document,tierFn);
   api.G=G; api.el=(id,v)=>{ G.els[id]=el(id); if(v!==undefined) G.els[id].value=v; return G.els[id]; };
   api.flush=async()=>{ for(let i=0;i<60;i++) await Promise.resolve(); };
@@ -84,7 +87,7 @@ function world(o){
 }
 
 
-module.exports={world,src,SITE,CON,MIR,UNIT,CLS,CPS,CPC,CPU,REPO};
+module.exports={world,src,SITE,CON,MIR,UNIT,CLS,CPS,CPC,CPU,CORE,REPO};
 if(require.main===module){
 let pass=0, fail=0;
 const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  "+JSON.stringify(x).slice(0,400):"")); } };
@@ -111,6 +114,11 @@ console.log("\n── no edition, no demo → inert; the boot is byte-identical 
   { const rec={name:"Envirothon",decks:["Forestry · Terms"],newPerDay:5,maxCards:12,focusDecks:2}, own={intro_dots:5};
     ok("🪑 CPSEATS's hooks say no too: a Howe kid's 🌿 record and drill settings come back as the very same objects (Lincoln keeps 12 a sitting), no pace line, no control", w.envClassOverlay("study","lincoln",rec)===rec&&rec.maxCards===12&&w.envClassOverlay("drill","lincoln",own)===own&&w.cps.cpSeatsPaceHtml(w.ENVCS_FIELDS.find(f=>f.name==="maxCards"),"class")===""&&w.envClsStartHtml("lincoln",{sid:"envirothon",newPerDay:5})==="");
     ok("…and nothing created, no listener, no read, no write after calling them", w.G.created.length===0&&w.G.listeners.length===0&&w.G.reads.length===0&&w.G.writes.length===0); }
+  { const c=world({fam:{familyId:"howe",roster:[]},cpcore:true}), K=c.core, D="Forestry · Terms", names=["Forest","Cambium","Biome"], fresh=["Soils and Land Use · Terms","Forestry · Terms"];
+    c.unitStudies.nc_envirothon={id:"nc_envirothon",decks:[{key:D,cards:[{name:"Forest",core:false},{name:"Cambium",core:true},{name:"Biome",core:false}]}]}; c.masteryData.lincoln=[];
+    const S={sid:"envirothon",kind:"deck",order:"bank",decks:[D,fresh[0]]}, M=c.masteryData;
+    ok("⭐ CPCORE's hooks hand back the very array they were given for a Howe kid (Lincoln's 🌿 session, order \"bank\"): names, focus decks; no demo seed; the setting is off here", K.cpCoreOn("lincoln",S)===false&&K.cpCoreNames("lincoln",S,D,names,{})===names&&K.cpCoreFresh("lincoln",S,fresh,{})===fresh&&K.cpCoreDemoSeed("lincoln",D)===false&&c.unitStudies.nc_envirothon.decks[0].cards.length===3&&M.lincoln.length===0);
+    ok("…and nothing created, no listener, no read, no write after calling them", c.G.created.length===0&&c.G.listeners.length===0&&c.G.reads.length===0&&c.G.writes.length===0); }
   w.showTab("units"); ok("showTab works as before (tab = units, the schedule paint ran)", w.tab==="units"&&w.G.schedulePaints===1);
   const d=world({fam:{familyId:"dewalt",roster:[]}}); ok("a second family (no edition) is inert too", d.envEdition()===""&&d.envSiteRender(d.G.contentEl)===false&&d.G.created.length===0);
   const h=world({fam:{familyId:"howe",roster:[]},search:"?dryrun=1"}); ok("?dryrun=1 alone is not the demo", h.envsDemo()===false&&h.envEdition()==="");
