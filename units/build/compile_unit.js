@@ -30,6 +30,12 @@
 // matcher, the same 515 links): a TERM links when its front is in the question or the keyed answer (whole words, any case, 4+ letters);
 // an ITEM card (ID) when its item is; a FACT when the keyed answer is in its back or its back in the keyed answer. A card can link to a
 // question of its own section, or of any section with no tests of its own (Envirothon's General concepts). The matcher only proposes.
+// 🧰 CPITEMGEAR (2026-10-29, the first real skill; DESIGN_class_platform_2026-10-28.md §4.1b, §13 row 26): a unit's `skills` (unit.json,
+// beside its decks) are checked here (rule 8) and ride in the catalog entry (index.json / CPU_UNITS, which the 🧩 skill engine reads
+// first) and in COUNTS.json (key → section, type, items, core). 8. every skill key is [a-z0-9][a-z0-9_.-]* and unique, its section is the
+// unit's, its type one of the engine's, its label set, its tests ids of that section's forms, its replaces "<deck>#o<order>" of a real
+// card; a `gear` skill (type id, data.kind "gear") has 4+ items, each with a unique name, a use, a source, and look-alikes that are items
+// of the same skill. A note (not an error) lists the gear items the repo's photo set (envirothon/pics/index.json) has no photo for.
 // Nothing here touches a database. The catalog entry (index.json) is what 📦 Units ▸ Publish writes to units/<id>/index (§4.3), and the
 // same object is CPU_UNITS[<id>] in index.html: a plain run REWRITES that one line (`const CPU_UNITS={…};` in the CPUNIT block), so a data
 // change (a trim, a core add) is the data files + one compile run, never a hand edit of index.html (2026-10-28, after Trim 1 met PR 3).
@@ -38,6 +44,7 @@ const fs=require("fs"), path=require("path");
 const REPO=path.resolve(__dirname,"..","..");
 const LABEL_KEYS=["section","sections","pre","post","item","concept"];
 const FEATURE_KEYS=["teams","boards","specialists","idFlash","mockRun"];
+const SKILL_TYPES=["chart","table","sheet","label","id","scale","mock","rubric"], SKILL_KEY=/^[a-z0-9][a-z0-9_.-]{0,59}$/;   // 🧰 CPITEMGEAR: the engine's CPSK_TYPE_NAMES / CPSK_KEY_RE
 const FB_BAD=/[.#$\[\]\/\u0000-\u001f\u007f]/;
 function fbSafe(k){ return typeof k==="string"&&k.length>0&&Buffer.byteLength(k,"utf8")<=768&&!FB_BAD.test(k); }
 function readJson(p){ return JSON.parse(fs.readFileSync(p,"utf8")); }
@@ -57,7 +64,8 @@ function loadUnit(root,id){
       ["pre","post"].forEach(f=>{ const fm=st[f]; if(!fm) return; const r={form:fm.form||"",source:fm.source||"",items:(fm.items||[]).map(it=>({id:it.id||(f+"-"+it.n),n:it.n,q:it.q,choices:it.choices,ans:it.ans,cite:it.cite||""}))};
         if(fm.note) r.note=fm.note; rec[f]=r; });
       tests.sections[k]=rec; }); }
-  return {u,decks,tests,fromCards:!!from};
+  const skills=Array.isArray(u.skills)?u.skills:null;   // 🧰 CPITEMGEAR
+  return {u,decks,tests,skills,fromCards:!!from};
 }
 // 📚 CPCARDSSEE: the question → card links (§8.4) — PURE
 function linkNorm(x){ return String(x==null?"":x).toLowerCase().replace(/[^a-z0-9 ]+/g," ").replace(/\s+/g," ").trim(); }
@@ -87,7 +95,7 @@ function sectionConcepts(decks,sec){
 // release rules in envirothon/SITE_RULES.json allow exactly the union of every unit's list, test_cp_send.js)
 function releaseKeys(idx){ const out=[]; (idx.sections||[]).forEach(s=>{ out.push(s.key); (s.concepts||[]).forEach(k=>out.push(s.key+"~"+k.id)); }); Object.keys(idx.decks||{}).forEach(k=>out.push(k)); return out; }
 // the catalog entry (§4.3): small, no cards — the console draws the grid, the ticks and the counts from it
-function makeIndex(u,decks){
+function makeIndex(u,decks,skills){
   const d={}; decks.forEach((x,i)=>{ const c=x.cards||[]; d[x.key]={section:x.section,kind:x.kind||"",mode:x.mode||"flash",n:c.length,core:c.filter(y=>y&&y.core).length,order:i}; });
   const idx={id:u.id,ver:u.ver||1,title:u.title,short:u.short||u.title,emoji:u.emoji||"",
     sections:(u.sections||[]).map((s,i)=>{ const o={key:s.key,label:s.label||s.key,short:s.short||s.label||s.key,emoji:s.emoji||"",order:s.order!=null?s.order:i};
@@ -95,18 +103,57 @@ function makeIndex(u,decks){
     decks:d,cards:decks.reduce((s,x)=>s+(x.cards||[]).length,0),core:decks.reduce((s,x)=>s+(x.cards||[]).filter(y=>y&&y.core).length,0),
     labels:Object.assign({},u.labels||{}),features:Object.assign({},u.features||{}),file:(u.build&&u.build.file)||("units/"+u.id+".js")};
   if(u.build&&u.build.global) idx.global=u.build.global;
+  if(skills&&skills.length) idx.skills=skills.map(skillEntry);   // 🧰 CPITEMGEAR: the skill engine reads a unit's skills from its catalog entry first
   return idx;
 }
-function makeCounts(u,decks,tests){
+function makeCounts(u,decks,tests,skills){
   const c={id:u.id,ver:u.ver||1,cards:0,core:0,sections:{},decks:{},tests:{}};
   (u.sections||[]).forEach(s=>{ c.sections[s.key]={cards:0,core:0,decks:0}; });
   decks.forEach(d=>{ const cs=d.cards||[], n=cs.length, core=cs.filter(x=>x&&x.core).length, o=cs.map(x=>x&&x.order).filter(Number.isInteger);
     c.decks[d.key]={section:d.section,n,core,maxOrder:o.length?Math.max(...o):0,orders:ranges(o)}; c.cards+=n; c.core+=core;
     const s=c.sections[d.section]; if(s){ s.cards+=n; s.core+=core; s.decks++; } });
   if(tests) Object.keys(tests.sections).forEach(k=>{ const t=tests.sections[k], r={}; ["pre","post"].forEach(f=>{ if(t[f]) r[f]=t[f].items.length; }); c.tests[k]=r; });
+  if(skills&&skills.length){ c.skills={}; skills.forEach(k=>{ const it=skillItems(k); c.skills[k.key]={section:k.section,type:k.type,core:k.core===true,items:it?it.length:0}; }); }   // 🧰 CPITEMGEAR
   return c;
 }
-function check(root,id,{u,decks,tests},old,others){
+// 🧰 CPITEMGEAR: a skill as the catalog carries it (the unit.json record, its keys in a fixed order) — PURE
+function skillEntry(k){ const o={}; ["key","section","type","label","core","steps","tests","replaces","data"].forEach(f=>{ if(k[f]!==undefined) o[f]=k[f]; }); return o; }
+function skillItems(k){ return (k&&k.data&&k.data.kind==="gear"&&Array.isArray(k.data.items))?k.data.items:null; }
+// rule 8 — the unit's skills: [errors]
+function checkSkills(skills,secKeys,decks,tests){
+  const err=[], E=m=>err.push(m); if(skills==null) return err; if(!Array.isArray(skills)){ E("skills must be a list"); return err; }
+  const keys={}, cards={}; decks.forEach(d=>(d.cards||[]).forEach(c=>{ if(c&&Number.isInteger(c.order)) cards[d.key+"#o"+c.order]=1; }));
+  skills.forEach((k,i)=>{ const at="skill "+(i+1)+(k&&k.key?" (“"+k.key+"”)":"");
+    if(!k||typeof k!=="object"){ E(at+" is not a record"); return; }
+    if(!SKILL_KEY.test(String(k.key||""))) E(at+": key must be [a-z0-9][a-z0-9_.-]*, up to 60"); else if(keys[k.key]) E(at+": key twice"); else keys[k.key]=1;
+    if(secKeys.indexOf(k.section)<0) E(at+": section “"+k.section+"” isn't the unit's");
+    if(SKILL_TYPES.indexOf(k.type)<0) E(at+": type “"+k.type+"” is not one of "+SKILL_TYPES.join(", "));
+    if(typeof k.label!=="string"||!k.label.trim()) E(at+" has no label");
+    if(k.core!=null&&typeof k.core!=="boolean") E(at+": core must be true or false");
+    if(k.steps!=null&&(!Array.isArray(k.steps)||k.steps.some(x=>typeof x!=="string"||!x.trim()))) E(at+": steps must be a list of words");
+    const forms=(tests&&tests.sections&&tests.sections[k.section])||{}, qids={}; ["pre","post"].forEach(f=>{ if(forms[f]) forms[f].items.forEach(it=>{ qids[String(it.id)]=1; }); });
+    if(k.tests!=null){ if(!Array.isArray(k.tests)) E(at+": tests must be a list"); else k.tests.forEach(q=>{ if(!qids[String(q)]) E(at+": test question “"+q+"” is not in the "+k.section+" forms"); }); }
+    if(k.replaces!=null){ if(!Array.isArray(k.replaces)) E(at+": replaces must be a list"); else k.replaces.forEach(r=>{ if(!cards[r]) E(at+": replaces “"+r+"”, which is no card"); }); }
+    if(k.data&&k.data.kind==="gear"){ const I=skillItems(k)||[], names={};
+      if(k.type!=="id") E(at+": a gear skill is type id");
+      if(I.length<4) E(at+": a gear skill needs 4 or more items (each try offers 4 names)");
+      if(k.data.tags!=null&&(!Array.isArray(k.data.tags)||!k.data.tags.every(t=>typeof t==="string"&&t))) E(at+": data.tags must be a list of photo tags");
+      I.forEach((x,j)=>{ const ia=at+" item "+(j+1)+(x&&x.name?" (“"+x.name+"”)":"");
+        if(!x||typeof x.name!=="string"||!x.name.trim()){ E(ia+" has no name"); return; }
+        if(names[x.name.toLowerCase()]) E(ia+": name twice"); names[x.name.toLowerCase()]=1;
+        if(typeof x.use!=="string"||!x.use.trim()) E(ia+" has no use (what it's for)");
+        if(!x.src) E(ia+" has no source");
+        if(x.item!=null&&(typeof x.item!=="string"||!x.item.trim())) E(ia+": item (its photo key) must be a name"); });
+      const U={}; I.forEach(x=>{ if(x&&x.use){ if(U[x.use]) E(at+": two items share the use “"+x.use+"”"); U[x.use]=1; } });
+      I.forEach(x=>{ if(x&&x.like!=null){ if(!Array.isArray(x.like)) E(at+" item “"+x.name+"”: like must be a list"); else x.like.forEach(n=>{ if(!names[String(n).toLowerCase()]||String(n).toLowerCase()===String(x.name).toLowerCase()) E(at+" item “"+x.name+"”: look-alike “"+n+"” is not another item of this skill"); }); } }); } });
+  return err;
+}
+// 🧰 CPITEMGEAR: the gear items with no photo in the repo set (envirothon/pics/index.json, card name → photos; the item is the name before " · ")
+function gearPhotoGaps(root,skills){
+  const p=path.join(root,"envirothon","pics","index.json"), have={}; if(fs.existsSync(p)){ try{ Object.keys(readJson(p)).forEach(n=>{ have[String(n).split(" · ")[0].trim().toLowerCase()]=1; }); }catch(e){} }
+  const out=[]; (skills||[]).forEach(k=>(skillItems(k)||[]).forEach(x=>{ const item=String(x.item||x.name).trim(); if(!have[item.toLowerCase()]) out.push({skill:k.key,name:x.name,item}); })); return out;
+}
+function check(root,id,{u,decks,tests,skills},old,others){
   const err=[], warn=[], E=m=>err.push(m);
   if(!/^[a-z][a-z0-9_]{0,39}$/.test(String(u.id||""))) E("unit id “"+u.id+"” must be [a-z][a-z0-9_]*, up to 40");
   if(u.id!==id) E("unit.json id “"+u.id+"” is not its folder “"+id+"”");
@@ -142,6 +189,8 @@ function check(root,id,{u,decks,tests},old,others){
         if(!fbSafe(String(it.id))) E(at+": id “"+it.id+"” is not safe as a key"); if(ids[it.id]) E(at+": id “"+it.id+"” twice"); ids[it.id]=1;
         const n=Array.isArray(it.choices)?it.choices.length:0, a=Array.isArray(it.ans)?it.ans:[it.ans];
         if(!it.q||!n) E(at+": no question or no choices"); else if(!a.length||a.some(x=>!Number.isInteger(x)||x<0||x>=n)) E(at+": the answer isn't one of its "+n+" choices"); }); }); });
+  checkSkills(skills,secKeys,decks,tests).forEach(E);   // 🧰 CPITEMGEAR: rule 8
+  const gaps=gearPhotoGaps(root,skills); if(gaps.length) warn.push(gaps.length+" gear item"+(gaps.length===1?" has":"s have")+" no photo in the repo set yet: "+gaps.map(g=>g.name).join(", "));
   return {err,warn};
 }
 // the compiled file for a unit without build.file
@@ -149,6 +198,7 @@ function makeJs(u,idx,decks,tests,links){
   const unit={id:u.id,ver:u.ver||1,title:u.title,emoji:u.emoji||"",desc:u.desc||"",labels:u.labels||{},sections:u.sections||[],
     decks:decks.map(d=>({key:d.key,section:d.section,mode:d.mode||"flash",kind:d.kind||"",introCap:d.introCap||3,groupBy:d.groupBy||"group",
       cards:(d.cards||[]).map(c=>Object.assign({},c,{family:c.family!=null?c.family:c.group}))}))};
+  if(Array.isArray(u.skills)&&u.skills.length) unit.skills=u.skills.map(skillEntry);   // 🧰 CPITEMGEAR
   const T=tests?JSON.parse(JSON.stringify(tests.sections)):{};   // 📚 CPCARDSSEE: each question carries its cards (§8.4)
   Object.keys(T).forEach(k=>["pre","post"].forEach(f=>{ if(T[k][f]) T[k][f].items.forEach(it=>{ it.cards=((links||{})[k]||{})[String(it.id)]||[]; }); }));
   const lib={id:u.id,ver:u.ver||1,index:idx,unit,tests:T};
@@ -187,7 +237,7 @@ function compile(id,opts){
   const cp=path.join(dir,"COUNTS.json"), ip=path.join(dir,"index.json"), old=fs.existsSync(cp)?readJson(cp):null;
   const others=unitIds(root).filter(x=>x!==id).map(x=>{ try{ const o=readJson(path.join(root,"units",x,"unit.json")); return {id:x,sections:(o.sections||[]).map(s=>s.key),decks:(o.decks||[]).map(d=>d.key)}; }catch(e){ return {id:x,sections:[],decks:[]}; } });
   const r=check(root,id,L,old,others);
-  const counts=makeCounts(L.u,L.decks,L.tests), index=makeIndex(L.u,L.decks), links=L.tests?questionLinks(L.decks,L.tests):null, lp=path.join(dir,"LINKS.json");
+  const counts=makeCounts(L.u,L.decks,L.tests,L.skills), index=makeIndex(L.u,L.decks,L.skills), links=L.tests?questionLinks(L.decks,L.tests):null, lp=path.join(dir,"LINKS.json");
   const rkeys=releaseKeys(index), rp=path.join(dir,"RELEASE_KEYS.json");   // 📤 CPSEND
   if(!r.err.length&&L.u.build&&L.u.build.file) r.err.push(...checkBuilt(root,L.u,L.decks,L.tests));
   const js=(L.u.build&&L.u.build.file)?null:makeJs(L.u,index,L.decks,L.tests,links), jp=path.join(root,"units",id+".js");
@@ -205,7 +255,7 @@ function compile(id,opts){
     const cat=catalogIn(root); if(cat){ const h=catalogWith(cat,id,index); if(h!==cat.html) fs.writeFileSync(cat.p,h); r.page=h!==cat.html; } }
   return {ok,err:r.err,warn:r.warn,counts,index,js,links,releaseKeys:rkeys,unit:L.u,page:!!r.page};
 }
-module.exports={compile,sectionConcepts,releaseKeys,catalogIn,catalogWith,CAT_RE,check,loadUnit,makeIndex,makeCounts,makeJs,questionLinks,linkNorm,linkHas,fbSafe,ranges,unranges,unitIds,LABEL_KEYS,FEATURE_KEYS,REPO};
+module.exports={compile,checkSkills,skillEntry,skillItems,gearPhotoGaps,SKILL_TYPES,sectionConcepts,releaseKeys,catalogIn,catalogWith,CAT_RE,check,loadUnit,makeIndex,makeCounts,makeJs,questionLinks,linkNorm,linkHas,fbSafe,ranges,unranges,unitIds,LABEL_KEYS,FEATURE_KEYS,REPO};
 if(require.main===module){
   const a=process.argv.slice(2), chk=a.includes("--check"), all=a.includes("--all"), ids=all?unitIds(REPO):a.filter(x=>!x.startsWith("--"));
   if(!ids.length){ console.error("usage: node units/build/compile_unit.js <unitId>|--all [--check]"); process.exit(2); }
