@@ -47337,6 +47337,7 @@ function envConsoleHtml(){
   if(typeof cpctChips==="function") cpctChips(chips);   // 📝 CPTESTS: 📝 Tests right after 📚 Cards
   if(typeof cpmChips==="function") cpmChips(chips);   // ⚠️ CPMISSED: ⚠️ Most missed right after 📝 Tests
   if(typeof cpwkChips==="function") cpwkChips(chips);   // 📊 CPWEEK: 📊 Weekly right after ⚠️ Most missed
+  if(typeof cptpChips==="function") cptpChips(chips);   // 🏅 CPTEAMPICK: 🏅 Team picks right after 📊 Weekly (only with the class's 🏆 Teams feature)
   h+='<div class="envs-chips">'+chips.map(x=>'<button class="'+((v===x[0]||(v==="student"&&x[0]==="grid"))?'on':'')+'" onclick="envcView(\''+x[0]+'\')">'+x[1]+'</button>').join("")+'</div>';
   if(_envc.err) h+='<div class="envs-card" style="border-color:#fecaca;color:#b91c1c;font-size:12.5px">'+envcEsc(_envc.err)+' <a href="javascript:void(0)" onclick="_envc.err=\'\';envcRe()" style="color:#b91c1c">dismiss</a></div>';
   if(_envs.lock&&_envs.lock.locked) h+='<div class="envs-card" style="border-color:#fcd34d;background:#fffbeb;font-size:12.5px">\u{1F512} The season is closed for teachers and families; you see this because you are the admin.</div>';
@@ -47352,6 +47353,7 @@ function envConsoleHtml(){
   else if(v==="cptests"&&typeof cpctHtml==="function") h+=cpctHtml();   // 📝 CPTESTS
   else if(v==="cpmissed"&&typeof cpmHtml==="function") h+=cpmHtml();   // ⚠️ CPMISSED: the most missed questions and cards, the struggle, the review list
   else if(v==="cpweek"&&typeof cpwkHtml==="function") h+=cpwkHtml();   // 📊 CPWEEK: the weekly study summary, a synopsis per student, 🖨 print
+  else if(v==="cpteams"&&typeof cptpHtml==="function") h+=cptpHtml();   // 🏅 CPTEAMPICK: the criteria side by side, weights, 🙋 attendance — a ranking only
   else if(v==="cards") h+=envcCardsHtml();
   else if(v==="boards") h+=envcBoardsHtml();
   else if(v==="who") h+=envcWhoHtml();
@@ -54490,6 +54492,251 @@ function cpWeekParentHtml(kid){
 // ⚙️ Class settings ▸ Weekly summary (the class's number only; ENVCLASSSET's own row, lock and Reset)
 function cpwkSectHtml(scope){ if(scope!=="class"||!cpwkOn()||typeof envClsSectHtml!=="function"||!CPWK_FIELDS_SET) return ""; return envClsSectHtml("class","week"); }
 // CPWEEK_END
+// CPTEAMPICK_START — 🏅 TEAM PICKS: the criteria side by side, so the teacher can rank students when she picks competition teams
+// (DESIGN_class_platform_2026-10-28.md §8.12, §9.1, §13 row 24, §14 Q35 + Q36; PR 24 of the class platform; her yes to building the design,
+// 2026-10-28). The class syllabus (2026-10-28): teams are chosen on attendance, presentation scores, test scores and "completion of study
+// times"; teams form in February. Why: the teacher had those numbers in four places (her paper, the student pages, the check-ins, 📊 Weekly)
+// and no one place to compare them. This is a RANKING ONLY (her 8.8, as 💪 Who is strong where): it never saves, picks or announces a team.
+// INERT unless the class site's console (ENVCONSOLE's envcOn) AND the class's 🏆 Teams feature (CPCLASS's cpFeature("teams"), §15): Howe,
+// DeWalt, Burris, Lincoln, the kid's and the parent's pages never reach it.
+//   · 🏅 TEAM PICKS (a teacher tab, right after 📊 Weekly): one row per student, sortable by any column —
+//       🙋 Attendance        present ÷ meetings taken for them (NEW: scores/<cid>/<sid>/attendance/<YYYY-MM-DD> = true|false, §8.12, Q36)
+//       🎤 Presentations     the teacher's own scores (scores/<cid>/<sid>/<section>.presentation / presMax), all sections together
+//       📝 Tests             her in-class tests (test / testMax) · the app's check-in → final (summary.tests); the share counts her tests
+//                            and the finals (a check-in comes before the studying, so it is shown, never counted)
+//       📊 Study completion  CPWEEK's cpWeekStudy: days studied ÷ the family's planned days over the last 12 finished weeks (§8.11)
+//       💪 Strong in         the section where the student ranks highest in 💪 Who is strong where (envcStrongRank), 🏅 when a specialist;
+//                            the open row carries CPSPECIALIST's 🏅 Make specialist (§8.9)
+//     The combined score is the weighted mean of the criteria the student HAS (as Who is strong where: the mean of what exists), and the
+//     open row always shows its working, "= (100×1 + 90×1 + …) ÷ 4 = 91" (Q35).
+//   · WEIGHTS: Off · ×1 · ×2 · ×3 per criterion; default the four of the syllabus equal and Strong in shown but not counted (Q35 asks "equal
+//     weights for attendance, presentations, tests and study completion"). Saved at classes/<cid>/teamPick = {w:{att,pres,tests,study,
+//     strong}, by, at}, one targeted update.
+//   · 🙋 TAKE ATTENDANCE: the class meetings (CPCAL's classes/<cid>/meetings) up to today, plus today; ✓ Here / ✗ Away per student (a tap on
+//     the lit one clears it), "✓ Everyone else is here". Each tap is one targeted write; Everyone else is ONE multi-path update.
+//   · GOALS: the class's goal list under the title, with each goal's note (the demo's: "top 7 MS teams at Area qualify"), from CPCAL's cpGoalList.
+//   · 🔒 CPLOCKS: a sixth switch, 🏅 the team picks (classes/<cid>/locks/teams), pushed onto CPL_PARTS from here; the console's lock bar sits
+//     over the tab (CPL_VIEW). Locked, the teacher sees the ranking with Attendance and the weights greyed; the rules refuse her writes.
+//   · Every write goes through envcWrite → envsWrite (the demo only says what it would write; ?dryrun=1 writes nothing).
+//   · DEMO: the sample meetings up to the last one get attendance and the sample students without one get a presentation and a test, in
+//     memory, the first time the tab paints; the newest meeting is left untaken, so the demo can take it.
+//     Teacher ▸ 🏅 Team picks ▸ sort by 📊 Study ▸ 🙋 Take attendance ▸ Oct 27.
+const CPTP_CRIT=[
+  {k:"att",icon:"\u{1F64B}",name:"Attendance",short:"Attend."},
+  {k:"pres",icon:"\u{1F3A4}",name:"Presentations",short:"Pres."},
+  {k:"tests",icon:"\u{1F4DD}",name:"Tests",short:"Tests"},
+  {k:"study",icon:"\u{1F4CA}",name:"Study completion",short:"Study"},
+  {k:"strong",icon:"\u{1F4AA}",name:"Strong in",short:"Strong"}];
+const CPTP_W_DEF={att:1,pres:1,tests:1,study:1,strong:0}, CPTP_W_MAX=3, CPTP_WEEKS=12, CPTP_DAYS_BACK=6;
+const CPTP_PART={k:"teams",icon:"\u{1F3C5}",what:"the team picks",means:"take attendance and set the ranking's weights",ro:"Attendance and the weights are greyed; the ranking still shows."};
+const _cptp={sort:"rank",open:"",att:"",wOpen:false,css:false,seeded:null};
+function cptpSite(){ return typeof envSiteOn==="function"&&envSiteOn(); }
+function cptpCon(){ return cptpSite()&&typeof envcOn==="function"&&envcOn(); }
+function cptpDemo(){ return typeof envsDemo==="function"&&envsDemo(); }
+function cptpCls(){ return (typeof _envc!=="undefined"&&_envc.cls)||null; }
+function cptpFeature(){ const c=cptpCls(); if(typeof cpFeature==="function") return !!cpFeature("teams",c); return !(c&&c.features&&c.features.teams===false); }
+function cptpOn(){ return cptpCon()&&cptpFeature(); }
+function cptpAdmin(){ return typeof envcAdmin==="function"&&envcAdmin(); }
+function cptpLocked(){ return typeof cpLocked==="function"&&cpLocked("teams"); }
+function cptpCan(){ return cptpOn()&&(cptpAdmin()||!cptpLocked()); }
+function cptpWho(){ return (typeof cpLockName==="function")?cpLockName():"the admin"; }
+function cptpEsc(v){ return (typeof envcEsc==="function")?envcEsc(v):String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]); }
+function cptpJ(v){ return (typeof envcJ==="function")?envcJ(v):String(v==null?"":v).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }
+function cptpToday(){ return (typeof cpwkToday==="function")?cpwkToday():((typeof envcToday==="function")?envcToday(Date.now()):new Date(Date.now()).toISOString().slice(0,10)); }
+function cptpDateOk(s){ s=String(s==null?"":s); if(!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false; const d=new Date(s+"T12:00:00Z"); return !isNaN(d)&&d.toISOString().slice(0,10)===s; }
+function cptpMo(s){ return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+String(s).slice(5,7)-1]+" "+(+String(s).slice(8,10)); }
+function cptpWord(k){ const v=(typeof cpLabel==="function")?cpLabel(k):""; return String(v||((typeof CP_LABELS_PLAIN!=="undefined"&&CP_LABELS_PLAIN[k])||k)); }
+function cptpSecName(id){ const st=(typeof envsStation==="function")?envsStation(id):null; return st?String(st.short||st.label||id):String(id||""); }
+// CPLOCKS gains Adrienne's 🏅 switch (once) and the lock bar over this tab
+function cptpLockPart(){ try{ if(typeof CPL_PARTS==="undefined"||!Array.isArray(CPL_PARTS)) return 0; let n=0; if(!CPL_PARTS.some(p=>p&&p.k===CPTP_PART.k)){ CPL_PARTS.push(Object.assign({},CPTP_PART)); n++; }
+  if(typeof CPL_VIEW!=="undefined"&&CPL_VIEW&&!CPL_VIEW.cpteams) CPL_VIEW.cpteams=CPTP_PART.k; return n; }catch(e){ return 0; } }
+cptpLockPart();
+// ── PURE: the criteria, each → its numbers and a share 0–100 (null = nothing yet) ──
+// attendance: {date: true|false} → {here, of, pct}
+function cptpAttOf(rec){ const A=(rec&&typeof rec==="object")?rec:{}; let here=0, of=0;
+  Object.keys(A).forEach(d=>{ if(!cptpDateOk(d)) return; if(A[d]===true){ here++; of++; } else if(A[d]===false) of++; });
+  return {here,of,pct:of?Math.round(here/of*100):null}; }
+// the teacher's scores record (scores/<cid>/<sid>) → its section rows (attendance is not a section)
+function cptpScoreRows(sc){ const S=(sc&&typeof sc==="object")?sc:{}; return Object.keys(S).filter(k=>k!=="attendance"&&S[k]&&typeof S[k]==="object").map(k=>Object.assign({sec:k},S[k])); }
+// presentations → {sum, max, n, pct, outOf}: all sections together; outOf = the shared presMax (else 5, the share scaled to it)
+function cptpPresOf(sc){ let sum=0, max=0, n=0; const M={};
+  cptpScoreRows(sc).forEach(r=>{ const p=+r.presentation, m=+(r.presMax||5); if(r.presentation==null||isNaN(p)||!(m>0)) return; sum+=p; max+=m; n++; M[m]=1; });
+  const ms=Object.keys(M); return {sum,max,n,pct:max?Math.round(sum/max*100):null,outOf:ms.length===1?+ms[0]:5}; }
+// tests → {cls:{r,n,k}, pre:{r,n,k}, post:{r,n,k}, pct}: her tests (test / testMax) and the app's check-ins and finals (summary.tests);
+// the share is the mean of her tests' share and the finals' share (a check-in is shown, never counted: it comes before the studying)
+function cptpTestsOf(sc,sm){ const cls={r:0,n:0,k:0}, pre={r:0,n:0,k:0}, post={r:0,n:0,k:0};
+  cptpScoreRows(sc).forEach(r=>{ const t=+r.test, m=+(r.testMax||25); if(r.test==null||isNaN(t)||!(m>0)) return; cls.r+=t; cls.n+=m; cls.k++; });
+  const T=(sm&&sm.tests&&typeof sm.tests==="object")?sm.tests:{};
+  Object.keys(T).forEach(k=>{ const t=T[k]||{}, p=t.pre, b=t.post&&t.post.best; if(p&&+p.n>0){ pre.r+=+p.right||0; pre.n+=+p.n; pre.k++; } if(b&&+b.n>0){ post.r+=+b.right||0; post.n+=+b.n; post.k++; } });
+  const sh=[]; if(cls.n) sh.push(cls.r/cls.n*100); if(post.n) sh.push(post.r/post.n*100);
+  return {cls,pre,post,pct:sh.length?Math.round(sh.reduce((a,b)=>a+b,0)/sh.length):null}; }
+// study completion → {pct, met, weeks} (CPWEEK's), or the empty one without it
+function cptpStudyOf(s){ try{ if(typeof cpWeekStudy==="function") return cpWeekStudy(s,CPTP_WEEKS); }catch(e){} return {pct:null,met:0,weeks:0}; }
+// strong in: every student's best section in 💪 Who is strong where's own ranking → {sid: {sec, rank, score, of}}
+function cptpStrongMap(S,stns,rankFn){ const out={}; if(typeof rankFn!=="function") return out;
+  (stns||[]).filter(st=>st&&st.id!=="general").forEach(st=>{ let rows=[]; try{ rows=rankFn(S,st)||[]; }catch(e){ rows=[]; }
+    rows.forEach((r,i)=>{ const o=out[r.sid], x={sec:st.id,rank:i+1,score:r.score,of:rows.length}; if(!o||x.rank<o.rank||(x.rank===o.rank&&x.score>o.score)) out[r.sid]=x; }); });
+  return out; }
+// the weights in force: classes/<cid>/teamPick/w over the defaults (whole numbers 0–3 only)
+function cptpWeights(cls){ const w=Object.assign({},CPTP_W_DEF), W=cls&&cls.teamPick&&cls.teamPick.w;
+  if(W&&typeof W==="object") CPTP_CRIT.forEach(c=>{ const v=W[c.k]; if(Number.isInteger(v)&&v>=0&&v<=CPTP_W_MAX) w[c.k]=v; });
+  return w; }
+function cptpEqual(w){ return CPTP_CRIT.every(c=>w[c.k]===CPTP_W_DEF[c.k]); }
+// the combined score: the weighted mean of the criteria the student has → {score, parts:[{k, v, w}], sw}; null when none counts
+function cptpScore(v,w){ const parts=CPTP_CRIT.filter(c=>(w[c.k]||0)>0&&v[c.k]!=null).map(c=>({k:c.k,v:v[c.k],w:w[c.k]})), sw=parts.reduce((a,p)=>a+p.w,0);
+  return {score:sw?Math.round(parts.reduce((a,p)=>a+p.v*p.w,0)/sw):null,parts,sw}; }
+// the working, in one line: "(100×1 + 90×1) ÷ 2 = 95"
+function cptpWorking(sc){ if(!sc||sc.score==null) return "nothing to count yet"; return "("+sc.parts.map(p=>p.v+"×"+p.w).join(" + ")+") ÷ "+sc.sw+" = "+sc.score; }
+// one student's row (PURE given its inputs)
+function cptpRow(s,sc,strong,w,name){ const att=cptpAttOf(sc&&sc.attendance), pres=cptpPresOf(sc), tests=cptpTestsOf(sc,s&&s.summary), study=cptpStudyOf(s), st=strong||null;
+  const v={att:att.pct,pres:pres.pct,tests:tests.pct,study:study.pct,strong:st?st.score:null};
+  return {sid:s.sid,name:name||String((s.meta&&s.meta.name)||s.sid),att,pres,tests,study,strong:st,v,sc:cptpScore(v,w)}; }
+// sorted rows, each with its combined place (ties share it). sort ∈ rank · att · pres · tests · study · strong · name
+function cptpRank(rows,sort){ const R=rows.slice(), by=(a,b)=>(a==null)-(b==null)||(b||0)-(a||0);
+  R.sort((a,b)=>by(a.sc.score,b.sc.score)||a.name.localeCompare(b.name)); let last=null, place=0;
+  R.forEach((r,i)=>{ if(r.sc.score==null){ r.place=null; return; } if(r.sc.score!==last){ place=i+1; last=r.sc.score; } r.place=place; });
+  if(sort==="name") R.sort((a,b)=>a.name.localeCompare(b.name));
+  else if(sort&&sort!=="rank"&&CPTP_CRIT.some(c=>c.k===sort)) R.sort((a,b)=>{ const x=a.v[sort], y=b.v[sort]; return (x==null)-(y==null)||(y||0)-(x||0)||by(a.sc.score,b.sc.score)||a.name.localeCompare(b.name); });
+  return R; }
+// the days attendance can be taken: the class meetings up to today (newest first, the last CPTP_DAYS_BACK), plus today
+function cptpDays(cls,today){ const M=(typeof cpCalMeetings==="function")?cpCalMeetings(cls):[], out=M.filter(m=>m.date<=today).slice(-CPTP_DAYS_BACK).reverse().map(m=>({date:m.date,what:m.what||(m.sec?cptpSecName(m.sec):""),meet:true}));
+  if(!out.some(m=>m.date===today)) out.unshift({date:today,what:"",meet:false}); return out; }
+// ── THE CONSOLE ──
+function cptpStudents(){ return (typeof envcStudents==="function")?envcStudents():[]; }
+function cptpRows(){ if(typeof cpwkDemoSeed==="function") cpwkDemoSeed();   // the demo's older weeks land on the students before they are copied
+  const S=cptpStudents(), stns=(typeof envsStations==="function")?envsStations():[], strong=cptpStrongMap(S,stns,(typeof envcStrongRank==="function")?envcStrongRank:null), w=cptpWeights(cptpCls()), SC=(_envc&&_envc.scores)||{};
+  return cptpRank(S.map(s=>cptpRow(s,SC[s.sid]||{},strong[s.sid],w,(typeof envcName==="function")?envcName(s):s.sid)),_cptp.sort); }
+// the console's chip: 🏅 Team picks right after 📊 Weekly (else after 💪 Who is strong where); the array is the console's, this only splices into it
+function cptpChips(chips){
+  if(!cptpOn()||!Array.isArray(chips)||chips.some(x=>x&&x[0]==="cpteams")) return chips;
+  if(typeof _envc!=="undefined"&&_envc.view!=="cpteams") _cptp.open="";
+  let i=chips.findIndex(x=>x&&x[0]==="cpweek"); if(i<0) i=chips.findIndex(x=>x&&x[0]==="strong");
+  chips.splice(i<0?chips.length:i+1,0,["cpteams","\u{1F3C5} Team picks"]); return chips;
+}
+function cptpTap(kind,id){
+  if(kind==="sort"){ if(id==="rank"||id==="name"||CPTP_CRIT.some(c=>c.k===id)) _cptp.sort=id; }
+  else if(kind==="row") _cptp.open=_cptp.open===id?"":String(id||"");
+  else if(kind==="att") _cptp.att=_cptp.att===id?"":(cptpDateOk(id)?id:"");
+  else if(kind==="w") _cptp.wOpen=!_cptp.wOpen;
+  if(typeof envcRe==="function") envcRe();
+}
+function cptpRefuse(){ if(typeof envsToast==="function") envsToast("\u{1F512} The team picks are set by "+cptpWho()); return false; }
+// the console's memory after a save (demo: this IS the state; live: the listeners confirm it a moment later)
+function cptpMem(upd){
+  Object.keys(upd).forEach(p=>{ const a=p.split("/").filter(Boolean), v=upd[p];
+    if(a[0]==="scores"&&a[3]==="attendance"&&a[4]){ const SC=_envc.scores=_envc.scores||{}, r=SC[a[2]]=Object.assign({},SC[a[2]]||{}), A=r.attendance=Object.assign({},r.attendance||{}); if(v==null) delete A[a[4]]; else A[a[4]]=v; }
+    else if(a[0]==="classes"&&a[2]==="teamPick"){ const C=_envc.cls||(_envc.cls={}), T=C.teamPick=Object.assign({},C.teamPick||{}); if(a[3]==="w"&&a[4]){ T.w=Object.assign({},T.w||{}); if(v==null) delete T.w[a[4]]; else T.w[a[4]]=v; } else if(a[3]) T[a[3]]=v; } });
+}
+// THE SAVE: one update (paths from the root), through envcWrite → envsWrite
+function cptpWrite(upd,note){
+  if(!cptpOn()||!_envc.cid||!upd||!Object.keys(upd).length) return false;
+  if(!cptpCan()) return cptpRefuse();
+  envcWrite("/",upd,"update").then(()=>{ cptpMem(upd); if(!cptpDemo()&&note&&typeof envsToast==="function") envsToast(note); if(typeof envcRe==="function") envcRe(); }).catch(()=>{});
+  return true;
+}
+// ✓ Here / ✗ Away for one student on one day (val true | false | null = not taken)
+function cptpAttSet(date,sid,val){
+  if(!cptpOn()||!cptpDateOk(date)||date>cptpToday()||!((_envc.students||{})[sid])||!(val===true||val===false||val===null)) return false;
+  return cptpWrite({["scores/"+_envc.cid+"/"+sid+"/attendance/"+date]:val});
+}
+// ✓ Everyone else is here: every student not yet taken that day → true, ONE update
+function cptpAttRest(date){
+  if(!cptpOn()||!cptpDateOk(date)||date>cptpToday()) return false; const SC=_envc.scores||{}, upd={};
+  cptpStudents().forEach(s=>{ const A=(SC[s.sid]&&SC[s.sid].attendance)||{}; if(A[date]!==true&&A[date]!==false) upd["scores/"+_envc.cid+"/"+s.sid+"/attendance/"+date]=true; });
+  if(!Object.keys(upd).length){ if(typeof envsToast==="function") envsToast("Everyone is taken"); return false; }
+  return cptpWrite(upd,"\u{1F64B} "+Object.keys(upd).length+" marked here");
+}
+// a weight (0–3), or Equal (the defaults); by + at ride in the same update
+function cptpWSet(k,n){ n=Number(n);
+  if(!cptpOn()||!CPTP_CRIT.some(c=>c.k===k)||!Number.isInteger(n)||n<0||n>CPTP_W_MAX) return false;
+  if(cptpWeights(cptpCls())[k]===n){ if(typeof envsToast==="function") envsToast("Nothing changed"); return false; }
+  const b="classes/"+_envc.cid+"/teamPick/"; return cptpWrite({[b+"w/"+k]:n,[b+"by"]:(typeof _envs!=="undefined"&&_envs.uid)||"",[b+"at"]:Date.now()},"Weights saved"); }
+function cptpWEqual(){ if(!cptpOn()) return false; const w=cptpWeights(cptpCls()); if(cptpEqual(w)){ if(typeof envsToast==="function") envsToast("Nothing changed"); return false; }
+  const b="classes/"+_envc.cid+"/teamPick/", upd={}; CPTP_CRIT.forEach(c=>{ if(w[c.k]!==CPTP_W_DEF[c.k]) upd[b+"w/"+c.k]=CPTP_W_DEF[c.k]; }); upd[b+"by"]=(typeof _envs!=="undefined"&&_envs.uid)||""; upd[b+"at"]=Date.now();
+  return cptpWrite(upd,"Weights back to equal"); }
+// ── the demo: attendance at the sample meetings (all but the newest), a presentation and a test for those without — memory, the first paint only
+function cptpHash(s){ s=String(s); let h=5381; for(let i=0;i<s.length;i++) h=((h*33)^s.charCodeAt(i))>>>0; return h; }
+function cptpDemoSeed(){
+  if(!cptpDemo()||typeof _envc==="undefined"||!_envc.demo||_cptp.seeded===_envc.demo) return false;
+  _cptp.seeded=_envc.demo; if(typeof cpcalDemoSeed==="function") cpcalDemoSeed();
+  const today=cptpToday(), past=((typeof cpCalMeetings==="function")?cpCalMeetings(_envc.cls):[]).filter(m=>m.date<=today).map(m=>m.date).slice(0,-1);
+  const SC=_envc.scores=_envc.scores||{}, sec=((typeof envsStations==="function"?envsStations():[]).find(st=>st.id!=="general")||{}).id||"";
+  cptpStudents().forEach(s=>{ const r=SC[s.sid]=Object.assign({},SC[s.sid]||{}), h=cptpHash(s.sid);
+    if(!r.attendance){ const A={}; past.forEach((d,i)=>{ A[d]=((h>>>i)%7)!==0; }); if(past.length) r.attendance=A; }
+    if(sec&&!cptpScoreRows(r).some(x=>x.presentation!=null)){ const x=r[sec]=Object.assign({},r[sec]||{}); x.presentation=2+(h%4); x.presMax=5; if(x.test==null){ x.test=14+(h%11); x.testMax=25; } } });
+  return true;
+}
+// ── the look
+function cptpCss(){
+  if(_cptp.css||typeof document==="undefined"||!document.createElement) return; _cptp.css=true;
+  try{ const s=document.createElement("style"); s.id="cptp-css"; s.textContent=
+    '.cptp-chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 2px}.cptp-chips button{min-height:36px;padding:0 11px;border-radius:18px;border:1.5px solid #d1d5db;background:#fff;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;color:#374151}.cptp-chips button.on{background:#14532d;border-color:#14532d;color:#fff}.cptp-chips button:disabled{opacity:.45;cursor:default}'+
+    '.cptp-row{border-top:1px solid #f1efe9}.cptp-row:first-child{border-top:none}.cptp-rh{display:block;width:100%;text-align:left;background:none;border:none;padding:10px 2px;font:inherit;color:inherit;cursor:pointer;min-height:44px}'+
+    '.cptp-n{display:flex;gap:8px;align-items:baseline;font-weight:800;font-size:14.5px}.cptp-n .pl{min-width:28px;color:#6b7280;font-size:12.5px}.cptp-n .nm{flex:1;min-width:0;overflow-wrap:anywhere}.cptp-n .sc{font-size:16px;color:#14532d}'+
+    '.cptp-s{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12.5px;color:#374151;margin:3px 0 0 36px}.cptp-s span{white-space:nowrap}.cptp-s .by{font-weight:800;color:#14532d}'+
+    '.cptp-open{margin:0 0 10px 36px;font-size:13px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:8px 10px;overflow-wrap:anywhere}.cptp-open table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px}.cptp-open td{padding:3px 2px;border-top:1px solid #dcfce7}.cptp-open td.r{text-align:right;white-space:nowrap}'+
+    '.cptp-att{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:7px 0;border-top:1px solid #f1efe9}.cptp-att:first-of-type{border-top:none}.cptp-att .nm{flex:1;min-width:120px;font-weight:800;font-size:14px}.cptp-att button{min-height:44px;min-width:76px;border-radius:10px;border:1.5px solid #d1d5db;background:#fff;font:inherit;font-size:13px;font-weight:800;cursor:pointer;color:#374151}'+
+    '.cptp-att button.here{background:#15803d;border-color:#15803d;color:#fff}.cptp-att button.away{background:#b91c1c;border-color:#b91c1c;color:#fff}.cptp-att button:disabled{opacity:.45;cursor:default}'+
+    '.cptp-w{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:6px 0;border-top:1px solid #f1efe9;font-size:13.5px;font-weight:700}.cptp-w:first-of-type{border-top:none}.cptp-w span{flex:1;min-width:150px}.cptp-w select{min-height:44px;font-size:15px}';
+    document.head.appendChild(s); }catch(e){}
+}
+function cptpPct(v){ return v==null?'–':v+'%'; }
+function cptpAttTxt(a){ return a.of?a.here+' of '+a.of:'–'; }
+function cptpPresTxt(p){ if(!p.n) return '–'; const x=p.pct*p.outOf/100; return (Math.round(x*10)/10)+' / '+p.outOf+(p.n>1?' ('+p.n+')':''); }
+function cptpTestTxt(t){ const a=[]; if(t.cls.n) a.push(t.cls.r+'/'+t.cls.n); if(t.pre.n||t.post.n) a.push((t.pre.n?t.pre.r+'/'+t.pre.n:'–')+' → '+(t.post.n?t.post.r+'/'+t.post.n:'–')); return a.length?a.join(' · '):'–'; }
+function cptpStudyTxt(s){ return s.pct==null?'–':s.pct+'% ('+s.met+' of '+s.weeks+' wk)'; }
+function cptpStrongTxt(r){ const st=r.strong, sp=(typeof cpSpecOf==="function")?cpSpecOf(r.sid):""; if(!st&&!sp) return '–'; return (st?cptpSecName(st.sec)+' #'+st.rank:'')+(sp?' \u{1F3C5}'+(st&&st.sec===sp?'':' '+cptpSecName(sp)):''); }
+function cptpCell(r,k){ return k==="att"?cptpAttTxt(r.att):k==="pres"?cptpPresTxt(r.pres):k==="tests"?cptpTestTxt(r.tests):k==="study"?cptpStudyTxt(r.study):cptpStrongTxt(r); }
+// the goals line: the class's goal list with each one's note (the first is the target)
+function cptpGoalsHtml(){ try{ const g=(typeof cpGoalList==="function")?cpGoalList(cptpCls()||{}):[]; if(!g.length) return "";
+  return '<div style="font-size:13px;margin-top:4px">\u{1F3AF} '+g.map(x=>'<b>'+cptpEsc(x.name)+'</b> '+cptpEsc(cptpMo(x.date))+(x.note?' · '+cptpEsc(x.note):'')).join(' · ')+'</div>'; }catch(e){ return ""; } }
+// 🙋 Take attendance
+function cptpAttHtml(){
+  const today=cptpToday(), days=cptpDays(cptpCls(),today), can=cptpCan(), dis=can?'':' disabled', d=_cptp.att, SC=(_envc&&_envc.scores)||{};
+  let h='<div class="envs-card"><div class="envs-h2" style="margin-bottom:2px">\u{1F64B} Take attendance'+(cptpLocked()?' \u{1F512}':'')+'</div><div class="envs-muted">Pick a class meeting, then ✓ Here or ✗ Away for each student. Tap a lit one again to clear it.</div><div class="cptp-chips" role="group" aria-label="Meeting">'+
+    days.map(m=>{ const taken=cptpStudents().filter(s=>{ const A=(SC[s.sid]&&SC[s.sid].attendance)||{}; return A[m.date]===true||A[m.date]===false; }).length;
+      return '<button class="'+(d===m.date?'on':'')+'" onclick="cptpTap(\'att\',\''+m.date+'\')" aria-pressed="'+(d===m.date?'true':'false')+'">'+(m.date===today?'Today':cptpEsc(cptpMo(m.date)))+(m.what?' · '+cptpEsc(m.what):'')+(taken?' ✓':'')+'</button>'; }).join("")+'</div>';
+  if(d){ const S=cptpStudents(); let here=0, away=0;
+    h+='<div style="margin-top:6px">'+S.map(s=>{ const v=((SC[s.sid]&&SC[s.sid].attendance)||{})[d], J=cptpJ(s.sid), nm=cptpEsc((typeof envcName==="function")?envcName(s):s.sid); if(v===true) here++; else if(v===false) away++;
+      return '<div class="cptp-att"><div class="nm">'+nm+'</div><button class="'+(v===true?'here':'')+'"'+dis+' aria-pressed="'+(v===true)+'" aria-label="'+nm+' here" onclick="cptpAttSet(\''+d+'\',\''+J+'\','+(v===true?'null':'true')+')">✓ Here</button><button class="'+(v===false?'away':'')+'"'+dis+' aria-pressed="'+(v===false)+'" aria-label="'+nm+' away" onclick="cptpAttSet(\''+d+'\',\''+J+'\','+(v===false?'null':'false')+')">✗ Away</button></div>'; }).join("")+'</div>';
+    h+='<div class="envs-row" style="margin-top:6px"><button class="envs-btn"'+dis+' onclick="cptpAttRest(\''+d+'\')">✓ Everyone else is here</button><div class="envs-muted" style="flex:1;min-width:150px">'+cptpEsc(cptpMo(d))+': '+here+' here · '+away+' away · '+(S.length-here-away)+' not taken</div></div>';
+    h+='<div class="envs-muted" style="margin-top:4px">Saved at scores/'+cptpEsc(_envc.cid)+'/&lt;student&gt;/attendance/'+cptpEsc(d)+'.'+(can?'':' \u{1F512} Set by '+cptpEsc(cptpWho())+'.')+'</div>'; }
+  return h+'</div>';
+}
+// ⚖️ the weights
+function cptpWHtml(w){
+  const can=cptpCan(), dis=can?'':' disabled', eq=cptpEqual(w), lbl=n=>n?'×'+n:'Off (shown, not counted)';
+  let h='<div class="envs-card"><button class="cptp-rh" style="padding:2px 0;min-height:40px" onclick="cptpTap(\'w\')" aria-expanded="'+(_cptp.wOpen?'true':'false')+'"><span class="envs-h2" style="margin:0">'+(_cptp.wOpen?'▾':'▸')+' ⚖️ Weights: '+(eq?'equal':'your own')+(cptpLocked()?' \u{1F512}':'')+'</span><div class="envs-muted">'+CPTP_CRIT.filter(c=>w[c.k]>0).map(c=>c.icon+' '+cptpEsc(c.short)+' ×'+w[c.k]).join(' · ')+'</div></button>';
+  if(_cptp.wOpen){
+    h+=CPTP_CRIT.map(c=>'<div class="cptp-w"><span>'+c.icon+' '+cptpEsc(c.name)+'</span><select class="envs-in"'+dis+' aria-label="'+cptpEsc(c.name)+' weight" onchange="cptpWSet(\''+c.k+'\',this.value)">'+[0,1,2,3].map(n=>'<option value="'+n+'"'+(w[c.k]===n?' selected':'')+'>'+lbl(n)+(n===CPTP_W_DEF[c.k]?' · default':'')+'</option>').join("")+'</select></div>').join("");
+    h+='<div class="envs-row" style="margin-top:6px"><button class="envs-btn sec"'+(can&&!eq?'':' disabled')+' onclick="cptpWEqual()">Equal</button><div class="envs-muted" style="flex:1;min-width:150px">The score is the weighted mean of what each student has. Saved at classes/'+cptpEsc(_envc.cid)+'/teamPick.'+(can?'':' \u{1F512} Set by '+cptpEsc(cptpWho())+'.')+'</div></div>'; }
+  return h+'</div>';
+}
+// one student's open row: each criterion, its share, its weight, and the working
+function cptpOpenHtml(r,w){
+  let h='<div class="cptp-open"><table><tbody>'+CPTP_CRIT.map(c=>'<tr><td>'+c.icon+' '+cptpEsc(c.name)+'</td><td>'+cptpEsc(cptpCell(r,c.k))+'</td><td class="r">'+cptpPct(r.v[c.k])+'</td><td class="r">'+(w[c.k]?'×'+w[c.k]:'off')+'</td></tr>').join("")+'</tbody></table>';
+  h+='<div style="margin-top:6px"><b>Score</b> = '+cptpEsc(cptpWorking(r.sc))+'</div>';
+  if(r.tests.pre.n||r.tests.post.n) h+='<div class="envs-muted">'+cptpEsc(cptpWord("pre"))+' → '+cptpEsc(cptpWord("post"))+' is the app’s; only the '+cptpEsc(cptpWord("post").toLowerCase())+' counts.</div>';
+  if(r.strong&&typeof cpSpecStrongBtn==="function") h+=cpSpecStrongBtn(r.sid,r.strong.sec);   // 🏅 CPSPECIALIST: Make specialist in their best section
+  h+='<div style="margin-top:6px"><a href="javascript:void(0)" onclick="envcView(\'student\',\''+cptpJ(r.sid)+'\')">Open '+cptpEsc(r.name)+'’s page</a></div>';
+  return h+'</div>';
+}
+// ── 🏅 TEAM PICKS: the console's view
+function cptpHtml(){
+  if(!cptpOn()) return ""; cptpCss(); cptpDemoSeed();
+  const w=cptpWeights(cptpCls()), R=cptpRows(), srt=_cptp.sort;
+  let h='<div class="envs-card"><div class="envs-h2" style="margin-bottom:2px">\u{1F3C5} Team picks</div><div class="envs-muted">A ranking to help you pick teams. It never picks, saves or announces a team: you do, and you name them on \u{1F3C6} Boards.</div>'+cptpGoalsHtml();
+  h+='<div class="cptp-chips" role="group" aria-label="Sort by"><span class="envs-muted" style="align-self:center">Sort:</span>'+[["rank","\u{1F3C5} Rank"]].concat(CPTP_CRIT.map(c=>[c.k,c.icon+' '+c.short])).concat([["name","A–Z"]]).map(x=>'<button class="'+(srt===x[0]?'on':'')+'" aria-pressed="'+(srt===x[0])+'" onclick="cptpTap(\'sort\',\''+x[0]+'\')">'+cptpEsc(x[1])+'</button>').join("")+'</div></div>';
+  if(cptpDemo()) h+='<div class="envs-card" style="background:#fffbeb;border-color:#fcd34d;font-size:12.5px">\u{1F3B2} <b>Sample scores.</b> The sample class’s attendance, presentations and older weeks are invented to show the look.</div>';
+  h+=cptpWHtml(w);
+  h+='<div class="envs-card" style="padding:4px 12px">'+(R.length?R.map(r=>{ const open=_cptp.open===r.sid;
+      return '<div class="cptp-row'+(open?' open':'')+'"><button class="cptp-rh" onclick="cptpTap(\'row\',\''+cptpJ(r.sid)+'\')" aria-expanded="'+open+'"><div class="cptp-n"><span class="pl">'+(r.place?'#'+r.place:'–')+'</span><span class="nm">'+(open?'▾ ':'')+cptpEsc(r.name)+'</span><span class="sc">'+(r.sc.score!=null?r.sc.score:'–')+'</span></div>'+
+        '<div class="cptp-s">'+CPTP_CRIT.map(c=>'<span'+(srt===c.k?' class="by"':'')+(w[c.k]?'':' style="opacity:.7"')+'>'+c.icon+' '+cptpEsc(cptpCell(r,c.k))+'</span>').join("")+'</div></button>'+(open?cptpOpenHtml(r,w):'')+'</div>'; }).join(""):'<div class="envs-muted" style="padding:10px 0">No students yet.</div>')+'</div>';
+  h+=cptpAttHtml();
+  h+='<div class="envs-muted" style="padding:0 4px">'+CPTP_CRIT.map(c=>c.icon+' '+cptpEsc(c.name)).join(' · ')+'. Attendance = here ÷ meetings taken; presentations and your tests from each student’s page; '+cptpEsc(cptpWord("pre").toLowerCase())+' → '+cptpEsc(cptpWord("post").toLowerCase())+' from the app; study completion = days studied ÷ planned days over the last '+CPTP_WEEKS+' weeks (\u{1F4CA} Weekly); strong in = the best place in \u{1F4AA} Who is strong where.</div>';
+  return h;
+}
+// CPTEAMPICK_END
 // CPDRILLPARENT_START — 🧠 THE PARENT CAN TAKE OVER A STUDENT'S REVIEW CARDS, per kid, on the class site (DESIGN_class_platform_2026-10-28.md
 // §7(a) 2–3, §2, §9, §13 row 13, §14 Q5; PR 13 of the class platform). Her words 2026-10-28: "For the parent, I think they can get the
 // option to pick per kid, and the default would be that it stays in the student's own session. But the mom, if she knows her kid and
