@@ -10483,7 +10483,7 @@ function taskCard(t, fromDay, readOnly, doneId){
   const srcId=doneId||t.id;
   const done=!!checked[srcId];
   const claimedHere=!done&&!!claimed[srcId];
-  const future=DAYS.indexOf(t.day)>DAYS.indexOf(day);
+  const future=DAYS.indexOf(t.day)>DAYS.indexOf(day)&&!(typeof sucDay==="function"&&sucDay(t)===day);   // 🔁 SUNDAYCU: a Sunday catch-up card is today's, not a later day's
   // Permanently missed: a day-specific task (reflex, notebook, any noCarry) left unchecked
   // on a past day. Regular work rolls forward (effectiveDay===today), so anything still
   // anchored to a past day can never be done now — show it grayed + "Incomplete", no box.
@@ -11377,7 +11377,7 @@ function tapTask(id){
   if(t.famBlock&&(momHereCards()||(typeof famPresLeads==="function"&&famPresLeads(t)))&&!checked[id]&&typeof famPtsMax==="function"&&famPtsMax(t)>0){ famRateOpen(id); return; }   // 🏡 FAMPRESENCE: the helper too
   const isDone=!!checked[id];
   const isClaimed=!isDone&&!!claimed[id];
-  const future=DAYS.indexOf(t.day)>DAYS.indexOf(day);
+  const future=DAYS.indexOf(t.day)>DAYS.indexOf(day)&&!(typeof sucDay==="function"&&sucDay(t)===day);   // 🔁 SUNDAYCU: a Sunday catch-up card is today's, not a later day's
   pendingId=id; pendingClaimMode=false;
   const btn=document.getElementById("dlg-ok");
   const unBtn=document.getElementById("dlg-uncheck");
@@ -31628,7 +31628,8 @@ function _lidWeekdayISO(weekLabel,day){
   try{
     const wn=parseInt(String(weekLabel||"").replace(/\D/g,""),10); if(!wn) return "";
     const r=(typeof gwWeekDateRange==="function")?gwWeekDateRange(wn):null; if(!r||!r.start) return "";
-    const ix=["monday","tuesday","wednesday","thursday","friday","saturday","sunday"].indexOf(String(day||"").toLowerCase()); if(ix<0) return "";
+    let ix=["monday","tuesday","wednesday","thursday","friday","saturday","sunday"].indexOf(String(day||"").toLowerCase()); if(ix<0) return "";
+    if(ix===6) ix=-1;   // 🔁 SUNDAYCU: a week's Sunday is the day BEFORE its Monday (SUNDAY_FIRST) — a Sunday catch-up check-off dates there
     const d=new Date(r.start+"T12:00:00"); d.setDate(d.getDate()+ix);
     return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
   }catch(e){ return ""; }
@@ -36746,8 +36747,10 @@ function dtLeaf(iso){
 function dtIso(dn,iso){
   if(iso&&stIsoOk(iso)) return iso;
   if(dn&&typeof _todayDay!=="undefined"&&dn===_todayDay) return stTodayIso();
+  if(dn==="sunday"){ const m=stDsOf("monday"); if(!m) return null; const d=new Date(m+"T12:00:00"); d.setDate(d.getDate()-1); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }   // SUNDAY_FIRST: the day before the week's Monday
   return dn?stDsOf(dn):null;
 }
+function dtSunOk(){ return typeof sucAny==="function"&&sucAny(); }   // 🔁 SUNDAYCU: Sunday has school times once a kid has Sunday catch-up
 // The date's own start / finish as written ("11:00 AM"), else fb — the caller's old value, untouched.
 function dtS(dn,fb,iso){ if(!dtAny()) return fb; const L=dtLeaf(dtIso(dn,iso)); return (L&&dtTm(L.start)!=null)?L.start.trim():fb; }
 function dtE(dn,fb,iso){ if(!dtAny()) return fb; const L=dtLeaf(dtIso(dn,iso)); return (L&&dtTm(L.end)!=null)?L.end.trim():fb; }
@@ -36771,7 +36774,7 @@ function dtWords(d){ return fromMin(d.s)+"–"+fromMin(d.e)+" · lunch "+fromMin
 // ── the sheet ──
 let dtState=null;   // {iso, dn, s, e, ls, le, err}
 function dtOpen(iso){
-  if(!momHere()||!stIsoOk(iso)) return; const dn=stDayNameOf(iso); if(!dn||dn==="sunday") return;   // Sunday is not a school day (yet — step 2)
+  if(!momHere()||!stIsoOk(iso)) return; const dn=stDayNameOf(iso); if(!dn||(dn==="sunday"&&!dtSunOk())) return;   // Sunday: only once a kid has 🔁 Sunday catch-up
   const d=dtDay(dn,iso); dtState={iso:iso,dn:dn,s:d.s,e:d.e,ls:d.ls,le:d.le,err:""}; dtRender();
 }
 function dtOpenDay(dn){ const iso=dtIso(dn); if(iso) dtOpen(iso); }   // the day banner: that day of the week on the board
@@ -36828,7 +36831,7 @@ function dtRender(){
 // The day banner (Mom lens): "⏰ Day times", or the day's own times when it has some.
 function dtBtnHTML(dn){
   try{
-    if(!momHere()||!dn||dn==="sunday") return ''; const iso=dtIso(dn); if(!stIsoOk(iso)) return '';
+    if(!momHere()||!dn||(dn==="sunday"&&!dtSunOk())) return ''; const iso=dtIso(dn); if(!stIsoOk(iso)) return '';
     const own=dtHasOwn(iso), d=dtDay(dn,iso);
     return '<button class="bo-btn" onclick="dtOpenDay(\''+dn+'\')" title="Start, finish and lunch for this day only"'+(own?' style="background:#f5f3ff;color:#5b21b6;border-color:#c4b5fd"':'')+'>⏰ '+(own?esc(fromMin(d.s)+"–"+fromMin(d.e)):'Day times')+'</button>';
   }catch(e){ return ''; }
@@ -36838,7 +36841,7 @@ function dtCalRowHTML(iso,L,who,kidMode){
   const out={n:0,html:""};
   try{
     if(kidMode||!(typeof onecalMom==="function"&&onecalMom())||!(L&&(L.school||who))||!stIsoOk(iso)) return out;
-    const dn=stDayNameOf(iso); if(!dn||dn==="sunday") return out;
+    const dn=stDayNameOf(iso); if(!dn||(dn==="sunday"&&!dtSunOk())) return out;
     const own=dtHasOwn(iso), d=dtDay(dn,iso);
     out.n=1;
     out.html='<div class="row"><span class="lbl">School</span><span style="flex:1">\u{1F3EB} <b>School day</b> <span style="color:#6b7280">· '+esc(dtWords(d))+(own?' · this day only (usually '+esc(dtWords(dtUsual(dn)))+')':'')+'</span></span>'
@@ -36848,6 +36851,81 @@ function dtCalRowHTML(iso,L,who,kidMode){
   return out;
 }
 // DAYTIMES_END
+// SUNDAYCU_START ── 🔁 SUNDAY CATCH-UP (her ask 2026-10-29: "I need to be able to have schoolwork on Sundays if needed, so we can
+// keep doing catch-up on Sundays." Her answer the same day: "Catch-up only" — step 2 of PLAN_day_adjust_2026-10-29.md) ──────────
+// Switch: config/rules/sundayCatchup/<kid> = true (Settings ▸ School Day Times ▸ Sunday catch-up, a chip per kid, Mom only;
+// off = the leaf goes). No kid on → nothing anywhere changes (sucSet is null, effectiveDay runs exactly as before).
+// What a switched-on kid gets: on a Sunday, with the COMING week on the board (its Monday is tomorrow — the Sunday auto-build
+// already ran), last week's catch-up shows on Sunday's tab:
+//   · every card carried over from last week (generateWeek's "(Carried from …)" cards), and
+//   · per subject, as many of that subject's EARLIEST cards as the generator added catch-up sittings for it (catchup:true) —
+//     the earliest, not the flagged ones, so the book order never breaks (the flagged extras sit at the END of the week).
+// Derived in effectiveDay, NOTHING written: a card done on Sunday is checked there (checkedOnDay "sunday") and leaves the
+// week; a card not done is back on its own weekday on Monday, exactly as built. A Mom move (momMoves) always wins.
+// The Mom loop lays them live like any today's card (from the school start; ⏰ DAYTIMES sets one Sunday's own times — its
+// Sunday door opens once a kid has Sunday catch-up). The cascade, the school-end guard, the catch-up pass and the 8 PM sweep
+// skip Sunday as before, so nothing re-lays a Sunday card into the week.
+// Hooks (one line each, typeof-guarded): effectiveDay (after the checked branch) · rulesSchoolDayCardHTML (the chips) ·
+// _lidWeekdayISO (a Sunday check-off dates to the day BEFORE the week's Monday, SUNDAY_FIRST) · DAYTIMES' Sunday doors.
+function sucOnMap(){ const o=(((typeof rulesData!=="undefined"&&rulesData)||{}).sundayCatchup); return (o&&typeof o==="object"&&!Array.isArray(o))?o:null; }
+function sucOn(kid){ const o=sucOnMap(); return !!(o&&kid&&o[kid]===true); }
+function sucAny(){ const o=sucOnMap(); return !!(o&&Object.keys(o).some(function(k){ return o[k]===true; })); }
+// Is the week on the board the one that starts tomorrow?
+function sucComingWeek(todayIso){
+  const mon=(typeof calDateForWeekDay==="function")?calDateForWeekDay("monday"):null; if(!mon||!stIsoOk(todayIso)) return false;
+  const d=new Date(todayIso+"T12:00:00"); d.setDate(d.getDate()+1);
+  return mon===(d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"));
+}
+// PURE: the ids that show on Sunday. on(kid) = the switch; coming = the board holds the coming week.
+function sucPick(tasks,on,coming){
+  const out=new Set(); if(!coming||!Array.isArray(tasks)) return out;
+  const ORD={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
+  const live=tasks.filter(function(t){ return t&&t.id&&on(t.who)&&!String(t.id).endsWith("_c")&&!t._eowOverflow&&!t.famBlock&&ORD[t.day]; });
+  live.forEach(function(t){ if(/\(Carried from /.test(t.detail||"")) out.add(t.id); });
+  const need={};   // kid|sk → catch-up sittings the generator added
+  live.forEach(function(t){ if(t.catchup===true&&t.subjectKey){ const k=t.who+"|"+t.subjectKey; need[k]=(need[k]||0)+1; } });
+  Object.keys(need).forEach(function(k){
+    const p=k.split("|");
+    live.filter(function(t){ return t.who===p[0]&&t.subjectKey===p[1]; })
+      .sort(function(a,b){ return (ORD[a.day]-ORD[b.day])||(toMin(a.time)-toMin(b.time)); })
+      .slice(0,need[k]).forEach(function(t){ out.add(t.id); });
+  });
+  return out;
+}
+let _sucMemo={key:null,tasks:null,set:null};
+function sucSet(){
+  if(typeof _todayDay==="undefined"||_todayDay!=="sunday"||!sucAny()) return null;
+  const tasks=(typeof weekData!=="undefined"&&weekData&&weekData.tasks)||null; if(!Array.isArray(tasks)) return null;
+  const today=stTodayIso(), key=(weekData.week||"")+"|"+tasks.length+"|"+today+"|"+JSON.stringify(sucOnMap());
+  if(_sucMemo.key===key&&_sucMemo.tasks===tasks) return _sucMemo.set;
+  const set=sucPick(tasks,sucOn,sucComingWeek(today));
+  _sucMemo={key:key,tasks:tasks,set:set};
+  return set;
+}
+// effectiveDay's hook: "sunday" for a Sunday catch-up card today, else null (the card's own rules apply).
+function sucDay(t){
+  if(!t||!t.id) return null; const s=sucSet(); if(!s||!s.has(t.id)) return null;
+  if(typeof momMoves!=="undefined"&&momMoves&&momMoves[t.id]) return null;   // Mom moved it: her move wins
+  return "sunday";
+}
+// ── the switch (Settings ▸ School Day Times) ──
+function sucToggle(kid){
+  if(!momHere()||!kid) return; const upd={}; upd["config/rules/sundayCatchup/"+kid]=sucOn(kid)?null:true;
+  if(!stWrite(upd)) return; _sucMemo={key:null,tasks:null,set:null};
+  if(typeof renderAll==="function") renderAll();
+}
+function sucSettingsHTML(){
+  try{
+    const kids=(typeof ROSTER!=="undefined"&&Array.isArray(ROSTER))?ROSTER:[]; if(!kids.length) return '';
+    let h='<div class="rules-section-lbl" style="margin-top:12px">🔁 Sunday catch-up</div>';
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;padding:4px 0">';
+    kids.forEach(function(k){ const on=sucOn(k);
+      h+='<button onclick="sucToggle(\''+stJ(k)+'\')" style="padding:5px 12px;border-radius:14px;border:1.5px solid '+(on?'#0f766e':'var(--border)')+';background:'+(on?'#0f766e':'#fff')+';color:'+(on?'#fff':'var(--text)')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(on?'✓ ':'')+esc(cap(k))+'</button>'; });
+    h+='</div><div style="font-size:11px;color:var(--muted);line-height:1.5">On Sundays, a kid switched on gets last week\'s catch-up (the lessons that fell behind, earliest first) at the school start time. What isn\'t done Sunday stays on its weekday.</div>';
+    return h;
+  }catch(e){ return ''; }
+}
+// SUNDAYCU_END
 
 
 // ── WHEN THE DOOR IS OPEN ──
@@ -58085,6 +58163,7 @@ function chainDone(origId, checkedObj, tasksArr){
 // day-specific miss. Used to gray out permanently-missed day-bound tasks.
 function _isPastDay(dn){
   if(!dn||dn==="carryover") return false;
+  if(typeof sucDay==="function"&&dn==="sunday"&&dn===_todayDay) return false;   // 🔁 SUNDAYCU: today's Sunday is not past (the Mon–Sat index read Sunday as 0)
   const todayMid=new Date(); todayMid.setHours(0,0,0,0);
   if(DAY_DT[dn]){ const cal=new Date(DAY_DT[dn]+", "+todayMid.getFullYear()); cal.setHours(0,0,0,0); return cal<todayMid; }
   const jsDay=new Date().getDay();
@@ -58107,8 +58186,10 @@ function effectiveDay(t){
   if(checked[t.id]){
     const h=histState[t.id];
     if(h&&h.checkedOnDay) return h.checkedOnDay;
+    { const _sc=(typeof sucDay==="function")?sucDay(t):null; if(_sc) return _sc; }   // 🔁 SUNDAYCU: checked this moment on Sunday (no history yet) → done ON Sunday
     return t.day;
   }
+  { const _sc=(typeof sucDay==="function")?sucDay(t):null; if(_sc) return _sc; }   // 🔁 SUNDAYCU: last week's catch-up shows on Sunday (derived, nothing written)
   const _mv=momMoves[t.id];
   // Dismissed: it never moves again. Pinned to the day Mom dismissed it from, where it reads
   // "Dismissed" — rolling it forward would put it back in tomorrow's work, which is the exact
@@ -74867,6 +74948,7 @@ function rulesSchoolDayCardHTML(r,openByDefault){
     });
     h+='</div>';
   }
+  if(typeof sucSettingsHTML==="function") h+=sucSettingsHTML();   // 🔁 SUNDAYCU: a chip per kid
   h+='</div></div>';
 
   // 1b. SCHEDULE BALANCING — how aggressively the generator evens out the days
