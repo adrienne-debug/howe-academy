@@ -45373,7 +45373,9 @@ function envtStations(){ const T=envtLib(); if(!T) return []; const out=[], seen
     out.push({ id:s, label:(st&&st[1])||T[s].label||s, emoji:T[s].emoji||"", decks:ENV_DECKS.filter(x=>x[3]===s).map(x=>({key:x[0],n:x[5]})) }); });
   return out; }
 function envtStation(id){ return envtStations().find(s=>s.id===id)||null; }
-function envtForm(station,which){ const T=envtLib(); const f=T&&T[station]&&T[station][which]; return (f&&Array.isArray(f.items)&&f.items.length)?f:null; }
+function envtForm(station,which){ const T=envtLib(); let f=T&&T[station]&&T[station][which];
+  if(f&&typeof cpctForm==="function") f=cpctForm(station,which,f);   // 📝 CPTESTS: the class's form for the site's kid (her wording and order, without removed, with hers)
+  return (f&&Array.isArray(f.items)&&f.items.length)?f:null; }
 function envtPassAt(n){ return Math.ceil(n*ENVT_PASS_NUM/ENVT_PASS_DEN); }
 function envtRec(kid,station){ const t=masteryData[kid+"_tests"]; return (t&&t[station]&&typeof t[station]==="object")?t[station]:{}; }
 function envtAttempts(rec){ const p=(rec&&rec.post)||{}; return Object.keys(p).filter(k=>k!=="best"&&p[k]&&typeof p[k]==="object").map(k=>p[k]).sort((a,b)=>(a.ts||0)-(b.ts||0)); }
@@ -45514,6 +45516,7 @@ function envtFinish(){ const S=envtState; if(!S||S.done) return;
   const sc=envtScore(S.form,S.answers), now=Date.now();
   if(typeof cpFinalPassAt==="function") sc.pass=sc.right>=cpFinalPassAt(S.kid,S.station,sc.n,envtPassAt(sc.n));   // 📝 CPFINAL: the plan's pass mark
   const rec={form:S.form.form,date:envtToday(),n:sc.n,right:sc.right,secs:envtSecs(),answers:sc.answers,ts:now};
+  if(typeof cpctAttempt==="function") cpctAttempt(rec,S);   // 📝 CPTESTS: + ans (each answer by question id) and formVer, the site's kid only
   let T=masteryData[S.kid+"_tests"]; if(!T||typeof T!=="object") T=masteryData[S.kid+"_tests"]={}; const R=T[S.station]=Object.assign({},T[S.station]||{});
   const base="mastery/"+S.kid+"_tests/"+S.station; let grad=false;
   if(S.which==="pre"){ R.pre=rec; if(envtLive()) db.ref(base+"/pre").set(rec); }
@@ -47298,6 +47301,7 @@ function envConsoleHtml(){
   if(admin&&typeof cpuUnitsHtml==="function") chips.splice(chips.findIndex(x=>x[0]==="admin"),0,["units","\u{1F4E6} Units"]);   // 📦 CPUNIT
   if(typeof cpcsChips==="function") cpcsChips(chips);   // 📚 CPCARDSSEE: 📚 Cards before 🃏 Teacher cards
   if(typeof cpceChips==="function") cpceChips(chips);   // 📚 CPCARDSEDIT: 🃏 Teacher cards moved into 📚 Cards (the old chip comes out)
+  if(typeof cpctChips==="function") cpctChips(chips);   // 📝 CPTESTS: 📝 Tests right after 📚 Cards
   h+='<div class="envs-chips">'+chips.map(x=>'<button class="'+((v===x[0]||(v==="student"&&x[0]==="grid"))?'on':'')+'" onclick="envcView(\''+x[0]+'\')">'+x[1]+'</button>').join("")+'</div>';
   if(_envc.err) h+='<div class="envs-card" style="border-color:#fecaca;color:#b91c1c;font-size:12.5px">'+envcEsc(_envc.err)+' <a href="javascript:void(0)" onclick="_envc.err=\'\';envcRe()" style="color:#b91c1c">dismiss</a></div>';
   if(_envs.lock&&_envs.lock.locked) h+='<div class="envs-card" style="border-color:#fcd34d;background:#fffbeb;font-size:12.5px">\u{1F512} The season is closed for teachers and families; you see this because you are the admin.</div>';
@@ -47307,6 +47311,7 @@ function envConsoleHtml(){
   else if(v==="send") h+=envcSendHtml();
   else if(v==="strong") h+=envcStrongHtml();
   else if(v==="cpcards"&&typeof cpcsHtml==="function") h+=cpcsHtml();   // 📚 CPCARDSSEE
+  else if(v==="cptests"&&typeof cpctHtml==="function") h+=cpctHtml();   // 📝 CPTESTS
   else if(v==="cards") h+=envcCardsHtml();
   else if(v==="boards") h+=envcBoardsHtml();
   else if(v==="who") h+=envcWhoHtml();
@@ -47640,6 +47645,7 @@ function envClsMerge(part,rec,layers){
 // ENVSITE envsReadShared → once the class is known: ONE once each (the class's settings, this student's overrides); repaint on arrival
 function envClsKidLoad(sdb,cid){
   if(typeof cpceKidLoad==="function") cpceKidLoad(sdb,cid);   // 📚 CPCARDSEDIT: the class's card layer, once
+  if(typeof cpctKidLoad==="function") cpctKidLoad(sdb,cid);   // 📝 CPTESTS: the class's test layer, once (before the settings, whose arrival repaints)
   if(!envClsOn()||envsDemo()||!sdb||!cid||!_envs.sid||_envcs.asked===cid) return false; _envcs.asked=cid;
   const val=s=>(s&&typeof s.val==="function")?s.val():null; let n=0;
   const done=()=>{ if(++n<2) return; _envcs.loaded=true; try{ if(typeof renderAllSoon==="function") renderAllSoon(); }catch(e){} };
@@ -50064,6 +50070,399 @@ function cpFinalDemoSeed(){
   it.tier="bi_weekly"; return true;
 }
 // CPFINAL_END
+// CPTESTS_START — 📝 THE TESTS BROWSER + THE CLASS'S TEST LAYER: the teacher sees every check-in and final question, and edits, removes,
+// reorders and adds questions for HER class only, never the unit (DESIGN_class_platform_2026-10-28.md §5.2, §5.3, §6.3, §8.4, §12, §13 row 11,
+// §14 Q11; PR 11 of the class platform; her yes to building the design, 2026-10-28). Her words 2026-10-28: "super easy for her to quickly go
+// through and see all the questions and the answers … naturally collapsed unless she opens them, and then if she moves on, collapse it back".
+// The look is the agreed mockup's 📝 Tests tab (~/Desktop/Envirothon/MOCKUP_teacher_browser.html), in 📚 Cards' own folds and quick-edit feel.
+// INERT unless the Envirothon site's edition is on: Howe, DeWalt and Burris never reach a line of it, and Lincoln's Envirothon in Howe is
+// untouched — the kid-side hooks run only for the site's own kid or parent login (L2, the class's edits reaching Lincoln, is later; Q21).
+//   · THE CHIP — 📝 Tests right after 📚 Cards in the teacher's and Adrienne's console (cpctChips: one guarded line after the console's chip
+//     list, so the array literal is never edited). Its view is "cptests" (one dispatch line).
+//   · THREE LEVELS, folded, ONE OPEN AT EACH (the 📚 Cards rules): the class's section (only those with a form) → 📝 Check-in / 🎓 Final →
+//     the question rows, QUESTION ONLY, up to 2 lines, with "select all" · "✎ edited" · "🙈 removed" marks. Opening the next folds the last;
+//     moving on folds back what she left. Counts on every header: questions (removed ones not counted), "N with no core card", ✎ / 🙈 / ＋.
+//   · AN OPENED QUESTION: the choices A–E with ✓ on the right one(s), the cite, the form and its number (or "Your question"), and the cards
+//     that cover it (§8.4's links, from compile_unit.js: the first 3, ⭐ on core, "+N more"; a card the class hid doesn't count). None →
+//     "No card covers it" / "No core card covers it", with "the match is automatic — check before acting".
+//   · ✏️ EDIT: the question, up to 5 choices, a tick for the right one (or ones: "Select all that apply" switches the ticks in place). It says
+//     plainly that students who already took the form keep their score, and how many did (Q11, the design's pick: edits allowed, with the
+//     warning; every save bumps the form's `ver`, and each attempt keeps the `formVer` it saw, so PR 12 splits results by version).
+//     Use the original undoes an edit. 🙈 Remove for my class / ↩ Put back (✕ / ↩ on the row too, one tap). ↑ ↓ reorder. ＋ Add a question
+//     (on the form's header and at its end) goes at the end of the form. ↩︎ beside the search and the note's Undo take back the last change.
+//   · LEFT OUT OF THE FORM: the questions the source test had but the app can't ask (a picture, a specimen, a handout), read-only, with why
+//     (the form's `left` list, from envirothon/nc_envirothon_tests.json through build_envirothon_js.py).
+//   · A FINAL THAT IS THE SAME FORM AS THE CHECK-IN (the unit has one test for both: same form name and source — NC Envirothon's CEI) is
+//     edited once, under the check-in: the final reads the check-in's layer, pre-<n> as post-<n> (Q28, the design's pick: "one form").
+//   · SEARCH across questions, choices and cites, every section (one flat list, the path above each row). CHIPS: ✎ Edited · 🙈 Removed ·
+//     ＋ Added (each once the class has one) · No core card covers it. ("⚠ Missed a lot" / "% right" come with the results, PR 12.)
+//   · DATA (the shared instance): classTests/<cid>/<sectionKey>/<pre|post> = { items/<itemId>, order, ver }. itemId = the question's id
+//     (cpuQid: pre-3, post-12) or c-<key> for one she added.
+//       a unit question  { hide:true?, q?, choices?, ans?, by, ts }          — q / choices / ans together = her wording
+//       her own question { q, choices, ans, cite?, add:true, hide:true?, by, ts }
+//       order: [ itemIds ] (only when she moved one; the unit's order, then hers, otherwise) · ver: <ts>, bumped by every save
+//     Every change is ONE multi-path update of classTests/<cid>/<sectionKey>/<form> through envsWrite (demo: "would update", dry run:
+//     nothing) naming the one item (or the order) and ver. Undo writes them back as they were (re-stamped: the rules take her own uid).
+//   · THE KID (and the parent) on the site: classTests/<cid> is read ONCE at boot (envClsKidLoad's moment, before the class settings, whose
+//     arrival repaints) and applied IN MEMORY by the pure cpForm(base, layer): her wording, without removed questions, with hers, in her
+//     order — every kid in the class the same form (envtForm's one hook). A new attempt also keeps `ans` (each answer by question id: an
+//     index, a sorted list for select-all, -1 for none) and `formVer` (the layer's ver; 0 = the unit's form) beside today's `answers`.
+//     The demo reads the console's own memory, so an edit shows at once.
+const CPCT_Q_MAX=600, CPCT_C_MAX=300, CPCT_CHOICES=5, CPCT_CITE_MAX=200, CPCT_UNDO_MAX=30, CPCT_NOTE_MS=6000, CPCT_LINKS=3;
+const _cpct={os:null,og:null,or:null,lo:null,f:{},q:"",qt:null,L:{},kid:null,kidAsked:"",ver:0,fmemo:{},undo:[],edit:null,css:false,noteT:null};
+function cpctOn(){ return typeof cpcsOn==="function"&&cpcsOn(); }
+function cpctCid(){ return (typeof _envc!=="undefined"&&_envc.cid)||""; }
+function cpctBump(){ _cpct.ver++; _cpct.fmemo={}; }
+function cpctWord(k){ return (typeof cpcsWord==="function")?cpcsWord(k):k; }
+function cpctEsc(v){ return envsEsc(v); }
+// ── PURE: the shapes (the rules in envirothon/SITE_RULES.json check the same)
+// a Firebase list may come back as an object {0:…, 1:…}
+function cpctArr(v){ if(Array.isArray(v)) return v.slice(); if(v&&typeof v==="object") return Object.keys(v).filter(k=>/^\d+$/.test(k)).sort((a,b)=>a-b).map(k=>v[k]); return []; }
+function cpctAns(a){ return (typeof a==="number")?a:cpctArr(a); }
+function cpctMulti(it){ return !!it&&typeof it.ans!=="number"; }
+function cpctQid(which,it){ return (typeof cpuQid==="function")?cpuQid(which,it):((it&&it.id)?String(it.id):which+"-"+(it&&it.n)); }
+// a question as saved: a question of 1–600 characters, 2–5 choices of 1–300, ans a valid index or a sorted list of indexes
+function cpctQok(r){
+  if(!r||typeof r.q!=="string"||!r.q.trim()||r.q.length>CPCT_Q_MAX) return false; const c=cpctArr(r.choices);
+  if(c.length<2||c.length>CPCT_CHOICES||c.some(x=>typeof x!=="string"||!x.trim()||x.length>CPCT_C_MAX)) return false;
+  if(typeof r.ans==="number") return Number.isInteger(r.ans)&&r.ans>=0&&r.ans<c.length;
+  const A=cpctArr(r.ans); return A.length>=1&&A.every((x,i)=>Number.isInteger(x)&&x>=0&&x<c.length&&(i===0||x>A[i-1]));
+}
+// is the final the same form as the check-in (the unit has one test for both)?
+function cpctSame(sec){ const a=sec&&sec.pre, b=sec&&sec.post; return !!(a&&b&&a.form&&a.form===b.form&&a.source===b.source); }
+// the layer a form reads: its own — or, for a final that is the same form as the check-in, the check-in's, with pre-<n> read as post-<n>
+function cpctLayerFor(secLayer,which,same){
+  const S=(secLayer&&typeof secLayer==="object")?secLayer:{}; if(!(same&&which==="post")) return S[which]||null;
+  const P=S.pre; if(!P||typeof P!=="object") return null; const map=k=>/^pre-/.test(k)?"post-"+k.slice(4):k, items={};
+  Object.keys(P.items||{}).forEach(k=>{ items[map(k)]=P.items[k]; });
+  return {items,order:cpctArr(P.order).map(map),ver:P.ver};
+}
+// §5.2 cpForm: the unit's form + the class's layer → the form a student takes. Each item carries its id; an edit replaces q / choices / ans
+// (the cite and the card links stay the unit's); removed questions leave (opt.all keeps them, flagged `hidden`); her questions join at the
+// end in the order she added them; her order (when set) comes first, anything it doesn't name keeps its place after. No layer → the very
+// same base form, untouched.
+function cpForm(base,layer,which,opt){
+  opt=opt||{}; if(!base||!Array.isArray(base.items)) return base;
+  const L=(layer&&typeof layer==="object")?layer:null, I=(L&&L.items&&typeof L.items==="object")?L.items:{}, ord=cpctArr(L&&L.order);
+  if(!opt.all&&!Object.keys(I).length&&!ord.length) return base;
+  let out=base.items.map(it=>{ const id=cpctQid(which,it), r=I[id], x=Object.assign({},it,{id});
+    if(r&&typeof r==="object"&&r.add!==true){ if(cpctQok(r)){ x.q=String(r.q); x.choices=cpctArr(r.choices).map(String); x.ans=cpctAns(r.ans); x.edited=true; } if(r.hide===true) x.hidden=true; }
+    return x; });
+  Object.keys(I).filter(k=>I[k]&&I[k].add===true&&cpctQok(I[k])).sort((a,b)=>((+I[a].ts||0)-(+I[b].ts||0))||(a<b?-1:a>b?1:0)).forEach(k=>{ const r=I[k];
+    out.push({id:k,n:null,q:String(r.q),choices:cpctArr(r.choices).map(String),ans:cpctAns(r.ans),cite:String(r.cite||""),cards:[],added:true,hidden:r.hide===true}); });
+  if(ord.length){ const pos={}, at=new Map(out.map((x,i)=>[x,i])); ord.forEach((k,i)=>{ if(pos[k]==null) pos[k]=i; });
+    out.sort((a,b)=>{ const pa=pos[a.id], pb=pos[b.id]; if(pa!=null&&pb!=null) return pa-pb; if(pa!=null) return -1; if(pb!=null) return 1; return at.get(a)-at.get(b); }); }
+  if(!opt.all) out=out.filter(x=>!x.hidden);
+  return Object.assign({},base,{items:out,n:out.length,ver:+(L&&L.ver)||0,cls:true});
+}
+// the edit box's draft → {q, choices, ans} or why it can't be saved. Trailing empty choices are dropped; one empty in between is not.
+function cpctDraftRec(d){
+  if(!d) return "Nothing to save."; const q=String(d.q||"").trim(); if(!q) return "The question can’t be empty."; if(q.length>CPCT_Q_MAX) return "Keep the question to "+CPCT_Q_MAX+" characters.";
+  const c=(d.c||[]).map(x=>String(x==null?"":x).trim()); while(c.length&&!c[c.length-1]) c.pop();
+  if(c.length<2||c.some(x=>!x)) return "Give 2–5 choices, with no empty one in between."; if(c.length>CPCT_CHOICES) return "Keep it to "+CPCT_CHOICES+" choices.";
+  if(c.some(x=>x.length>CPCT_C_MAX)) return "Keep each choice to "+CPCT_C_MAX+" characters.";
+  const t=(d.a||[]).filter(i=>Number.isInteger(i)&&i>=0&&i<c.length).sort((a,b)=>a-b).filter((x,i,A)=>i===0||x!==A[i-1]); if(!t.length) return "Tick the right answer.";
+  return {q,choices:c,ans:d.multi?t:t[0]};
+}
+function cpctSameQ(a,b){ return !!(a&&b)&&String(a.q)===String(b.q)&&JSON.stringify(cpctArr(a.choices))===JSON.stringify(cpctArr(b.choices))&&JSON.stringify(cpctAns(a.ans))===JSON.stringify(cpctAns(b.ans)); }
+// ── the kid's side (and the parent's): the class's layer, read once at boot, applied in memory
+function cpctKidOn(){ try{ if(typeof envSiteOn!=="function"||!envSiteOn()) return false; return envsDemo()||_envs.role==="kid"||_envs.role==="parent"; }catch(e){ return false; } }
+function cpctKidLoad(sdb,cid){
+  if(typeof envSiteOn!=="function"||!envSiteOn()||envsDemo()||!sdb||!cid||_cpct.kidAsked===cid) return false;
+  if(!(_envs.role==="kid"||_envs.role==="parent")) return false; _cpct.kidAsked=cid;
+  const done=v=>{ _cpct.kid=(v&&typeof v==="object")?v:{}; cpctBump(); };
+  sdb.ref("classTests/"+cid).once("value",s=>done((s&&typeof s.val==="function")?s.val():null),()=>done(null));
+  return true;
+}
+function cpctKidLayer(){ if(envsDemo()) return _cpct.L[cpctCid()||_envs.cid]||null; return _cpct.kid; }
+// ENVTEST envtForm: the class's form for the site's kid — the very same form object anywhere else, or when the class changed nothing
+function cpctForm(station,which,f){
+  if(!f||!cpctKidOn()) return f; const L=cpctKidLayer(); if(!L||typeof L!=="object"||!L[station]) return f;
+  const T=(typeof envtLib==="function")?envtLib():null, lay=cpctLayerFor(L[station],which,cpctSame(T&&T[station])); if(!lay) return f;
+  const k=station+"|"+which, m=_cpct.fmemo[k]; if(m&&m.f===f&&m.L===L) return m.out;
+  const out=cpForm(f,lay,which); _cpct.fmemo[k]={f,L,out}; return out;
+}
+// ENVTEST envtFinish: a new attempt keeps each answer by question id and the form's version (§5.3) — the site's kid only
+function cpctAttempt(rec,S){
+  if(!rec||!S||!S.form||!Array.isArray(S.form.items)||!cpctKidOn()) return rec; const ans={};
+  S.form.items.forEach((it,i)=>{ const a=S.answers&&S.answers[i]; ans[cpctQid(S.which,it)]=(a==null)?-1:(Array.isArray(a)?a.slice():a); });
+  rec.ans=ans; rec.formVer=+S.form.ver||0; return rec;
+}
+// ── the console's side: the class's layer (live: one listener while 📝 Tests is open; demo: memory)
+function cpctStart(){
+  if(!cpctOn()) return false; const cid=cpctCid(); if(!cid) return false;
+  if(envsDemo()){ if(!_cpct.L[cid]) _cpct.L[cid]={}; return true; }
+  if(typeof envcSub==="function") envcSub("cct","classTests/"+cid,v=>{ _cpct.L[cid]=v||{}; cpctBump(); });
+  return true;
+}
+function cpctLayer(cid){ return _cpct.L[cid||cpctCid()]||{}; }
+// the console's chips: 📝 Tests right after 📚 Cards (the array is the console's; this only splices into it)
+function cpctChips(chips){
+  if(!cpctOn()||!Array.isArray(chips)) return chips;
+  if(typeof _envc!=="undefined"&&_envc.view==="cptests") cpctStart(); else cpctFoldAll();   // she moved on: 📝 Tests opens folded next time
+  if(chips.some(x=>x&&x[0]==="cptests")) return chips;
+  const i=chips.findIndex(x=>x&&x[0]==="cpcards"); chips.splice(i<0?1:i+1,0,["cptests","\u{1F4DD} Tests"]); return chips;
+}
+function cpctFoldAll(){ _cpct.os=_cpct.og=_cpct.or=_cpct.lo=null; _cpct.f={}; _cpct.q=""; _cpct.edit=null; }
+// the class's sections that have a form, each with its forms as the class sees them (every question, removed ones flagged)
+function cpctModel(){
+  if(!cpctOn()) return null; const ids=(typeof cpcsUnitIds==="function")?cpcsUnitIds():[], libs={}; ids.forEach(id=>{ libs[id]=(typeof cpcsLib==="function")?cpcsLib(id):null; });
+  const L=cpctLayer(), secs=[];
+  ((typeof envsStations==="function"?envsStations():[])||[]).forEach(st=>{ const uid=st.unit||ids[0], T=(libs[uid]&&libs[uid].tests)||null, sec=T&&T[st.id]; if(!sec||typeof sec!=="object") return;
+    const same=cpctSame(sec), forms=[];
+    ["pre","post"].forEach(w=>{ const base=sec[w]; if(!base||!Array.isArray(base.items)) return; const f=cpForm(base,cpctLayerFor(L[st.id],w,same)||{},w,{all:true});
+      forms.push({w,key:st.id+"|"+w,sk:st.id,base,items:f.items,same:same&&w==="post",shared:same&&w==="pre",left:Array.isArray(base.left)?base.left:[]}); });
+    if(forms.length) secs.push({id:st.id,label:st.label||st.id,short:st.short||st.label||st.id,emoji:st.emoji||sec.emoji||"",forms}); });
+  return {secs,ready:ids.length>0&&ids.every(id=>libs[id])};
+}
+function cpctFormOf(M,key){ for(const s of ((M&&M.secs)||[])) for(const F of s.forms) if(F.key===key) return F; return null; }
+// "sec|w|id" → {F, it, i}
+function cpctFind(M,key){ const p=String(key||"").split("|"), F=cpctFormOf(M,p[0]+"|"+p[1]); if(!F) return null; const i=F.items.findIndex(x=>x.id===p.slice(2).join("|")); return i<0?null:{F,it:F.items[i],i}; }
+// the cards that cover a question (§8.4): one per front, core first; a card her class hid doesn't count
+function cpctCover(it){
+  const M=(typeof cpcsIndex==="function")?cpcsIndex():null, by=(M&&M.byId)||{}, seen={}, cards=[];
+  (Array.isArray(it&&it.cards)?it.cards:[]).forEach(id=>{ const c=by[id]; if(!c||seen[c.name]) return; if(typeof cpceSt==="function"&&cpceSt(c).hid) return; seen[c.name]=1; cards.push(c); });
+  cards.sort((a,b)=>(b.core?1:0)-(a.core?1:0)); return {cards,core:cards.some(c=>c.core)};
+}
+// students of the class who already took that form (the summary each one's app publishes: tests.<key>.pre, tests.<key>.post.best);
+// a check-in the final shares counts both
+function cpctTook(F){
+  if(!F||typeof envcStudents!=="function") return 0; let n=0;
+  envcStudents().forEach(s=>{ const t=s&&s.summary&&s.summary.tests&&s.summary.tests[F.sk]; if(!t) return; const pre=!!t.pre, post=!!(t.post&&t.post.best);
+    if(F.w==="pre"?(pre||(F.shared&&post)):post) n++; });
+  return n;
+}
+// ── filters, counts
+function cpctSearching(){ return String(_cpct.q||"").length>=2; }
+function cpctFiltersOn(){ return Object.keys(_cpct.f).some(k=>_cpct.f[k]); }
+function cpctPass(it){ const f=_cpct.f, n=s=>String(s==null?"":s).toLowerCase();
+  if(f.edited&&!it.edited) return false; if(f.hidden&&!it.hidden) return false; if(f.added&&!it.added) return false;
+  if(f.nocore&&(it.added||cpctCover(it).core)) return false;
+  if(cpctSearching()){ const q=n(_cpct.q); if(n(it.q).indexOf(q)<0&&!(it.choices||[]).some(c=>n(c).indexOf(q)>=0)&&n(it.cite).indexOf(q)<0) return false; }
+  return true; }
+function cpctCounts(items){ const o={n:0,hid:0,ed:0,add:0,nocore:0}; (items||[]).forEach(it=>{ if(it.hidden) o.hid++; else o.n++; if(it.edited) o.ed++; if(it.added) o.add++; if(!it.added&&!it.hidden&&!cpctCover(it).core) o.nocore++; }); return o; }
+function cpctMarks(o){ return (o.hid?'<span title="removed for your class">\u{1F648} '+cpcsN(o.hid)+' removed</span>':'')+(o.ed?'<span title="edited for your class">✎ '+cpcsN(o.ed)+'</span>':'')+(o.add?'<span title="added for your class">＋ '+cpcsN(o.add)+'</span>':''); }
+// ── the taps: one open at each level, and moving on folds back what she left
+function cpctTap(level,id){
+  if(!cpctOn()) return; const S=_cpct;
+  if(level==="st"){ S.os=S.os===id?null:id; S.og=S.or=S.lo=null; S.edit=null; }
+  else if(level==="form"){ S.og=S.og===id?null:id; S.or=S.lo=null; S.edit=null; }
+  else if(level==="row"){ S.or=S.or===id?null:id; S.lo=null; S.edit=null; }
+  else if(level==="left"){ S.lo=S.lo===id?null:id; S.or=null; S.edit=null; }
+  else if(level==="f"){ S.f[id]=!S.f[id]; S.or=null; S.edit=null; }
+  else if(level==="clear"){ S.q=""; S.or=null; S.edit=null; }
+  else return;
+  cpctRe(level==="clear");
+  if(id!=null&&(level==="row"?S.or!=null:(level==="st"||level==="form"||level==="left"))) cpctScroll(cpctHid(id));
+}
+function cpctSearch(v){ if(!cpctOn()) return; clearTimeout(_cpct.qt); const go=()=>{ _cpct.q=String(v||"").trim(); _cpct.or=null; _cpct.edit=null; cpctRe(); }; if(typeof setTimeout==="function") _cpct.qt=setTimeout(go,180); else go(); }
+// a tap paints only the chips and the list, so the search box keeps its focus; anything else repaints the page
+function cpctRe(withSearch){
+  if(typeof document!=="undefined"&&document.getElementById){ const L=document.getElementById("cpct-list"), ch=document.getElementById("cpct-chips");
+    if(L&&ch&&!withSearch){ ch.innerHTML=cpctChipsHtml(); L.innerHTML=cpctListHtml(); const x=document.getElementById("cpct-x"); if(x) x.style.display=_cpct.q?"":"none";
+      const u=document.getElementById("cpct-undo"); if(u){ const n=_cpct.undo.length; u.disabled=!n; u.style.opacity=n?"":".35"; } return; } }
+  if(typeof envcRe==="function") envcRe();
+}
+function cpctHid(k){ return "cpct-h-"+String(k).replace(/[^a-z0-9_-]/gi,"_"); }
+function cpctScroll(id){
+  if(typeof document==="undefined"||typeof requestAnimationFrame!=="function") return;
+  requestAnimationFrame(()=>{ try{ const el=document.getElementById(id), t=document.getElementById("cpct-tools"); if(!el) return; const r=el.getBoundingClientRect(), top=t?t.getBoundingClientRect().bottom:0;
+    if(r.top<top+6||r.top>window.innerHeight-90) window.scrollBy({top:r.top-top-10,behavior:"smooth"}); }catch(e){} });
+}
+// ── the page
+function cpctCss(){
+  if(_cpct.css||typeof document==="undefined"||!document.createElement) return; _cpct.css=true;
+  try{ const s=document.createElement("style"); s.id="cpct-css"; s.textContent=
+    '.cpct .cpcs-tag.Q{background:#dcfce7;color:#14532d;min-width:26px;text-align:center}.cpct .cpcs-tag.L{background:#f3f4f6;color:#6b7280}'+
+    '.cpct-row:not(.open) .cpct-qt{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.cpct-badge{display:inline-block;font-size:11px;font-weight:800;margin-left:6px;white-space:nowrap}'+
+    '.cpct-hid>.cpcs-rb .cpct-qt{text-decoration:line-through;color:#9ca3af}.cpct-hid>.cpcs-rb .cpcs-tag{opacity:.45}'+
+    '.cpct-ch{display:flex;align-items:flex-start;gap:8px;padding:7px 10px;border-radius:10px;margin:4px 0;background:#fff;border:1.5px solid #e5e7eb;overflow-wrap:anywhere}.cpct-ch.ok{border-color:#86efac;background:#f0fdf4;font-weight:700}'+
+    '.cpct-L{flex-shrink:0;width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;background:#f3f4f6;color:#6b7280}.cpct-ch.ok .cpct-L{background:#14532d;color:#fff}'+
+    '.cpct-warn{color:#b45309;font-weight:800}.cpct-lk{display:inline-block;font-size:12.5px;border:1px solid #d1fae5;background:#fff;border-radius:8px;padding:2px 7px;margin:3px 4px 0 0}.cpct-lk.core{border-color:#86efac;font-weight:700}'+
+    '.cpct-ed{background:#f0fdf4;padding:4px 2px}.cpct-crow{display:flex;gap:8px;align-items:center;margin:5px 0}.cpct-crow input[type=radio],.cpct-crow input[type=checkbox]{width:22px;height:22px;flex-shrink:0;margin:0}.cpct-crow b{width:16px;flex-shrink:0}.cpct-crow .cpce-in{margin:0;flex:1;min-width:0}'+
+    '.cpct-took{font-size:12.5px;margin-top:8px;padding:8px 10px;border-radius:10px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;font-weight:700}'+
+    '.cpct .cpce-btn[disabled]{opacity:.35;cursor:default}.cpct-same{font-size:13px;color:#6b7280;padding:8px 10px}';
+    document.head.appendChild(s); }catch(e){}
+}
+function cpctHi(t){ const s=cpctEsc(t); if(!cpctSearching()) return s; const q=cpctEsc(_cpct.q).replace(/[.*+?^${}()|[\]\\]/g,"\\$&"); try{ return s.replace(new RegExp("("+q+")","ig"),"<mark>$1</mark>"); }catch(e){ return s; } }
+function cpctFormWord(w){ return String(cpctWord(w==="pre"?"pre":"post")); }
+function cpctChipsHtml(){
+  const M=cpctModel(), f=_cpct.f, all=[]; ((M&&M.secs)||[]).forEach(s=>s.forms.forEach(F=>{ if(!F.same) F.items.forEach(it=>all.push(it)); }));
+  const o=cpctCounts(all), has={edited:o.ed,hidden:o.hid,added:o.add,nocore:all.some(it=>Array.isArray(it.cards))};
+  return [["edited","✎ Edited"],["hidden","\u{1F648} Removed"],["added","＋ Added"],["nocore","No core card covers it"]].filter(k=>has[k[0]]||f[k[0]])
+    .map(k=>'<button class="cpcs-chip'+(f[k[0]]?' on':'')+'" onclick="cpctTap(\'f\',\''+k[0]+'\')">'+k[1]+'</button>').join("");
+}
+function cpctListHtml(){
+  const M=cpctModel(); if(!M) return "";
+  if(!M.ready){ if(typeof cpcsLoad==="function") cpcsLoad(); return '<div class="cpcs-note">Loading the questions…</div>'; }
+  const sec=String(cpctWord("section")).toLowerCase(), pre=cpctFormWord("pre").toLowerCase(), post=cpctFormWord("post").toLowerCase();
+  if(!M.secs.length) return '<div class="cpcs-note">No '+cpctEsc(sec)+' of this class has a '+cpctEsc(pre)+' or a '+cpctEsc(post)+'.</div>';
+  if(cpctSearching()) return cpctSearchHtml(M);
+  const on=cpctFiltersOn(); let h='<div class="cpcs-note">Tap '+cpctEsc((typeof cpcsA==="function")?cpcsA(sec):sec)+', then the '+cpctEsc(pre)+' or the '+cpctEsc(post)+', then a question. Only the question shows until you open it; opening the next folds the last.</div>', any=false;
+  M.secs.forEach(s=>{ const open=_cpct.os===s.id, vis=s.forms.map(F=>F.same?[]:F.items.filter(cpctPass)); if(on&&vis.every(v=>!v.length)) return; any=true;
+    const mine=cpctCounts([].concat(...s.forms.filter(F=>!F.same).map(F=>F.items)));
+    const cnt='<div class="cpcs-cnt">'+s.forms.map(F=>'<span>'+cpctEsc(cpctFormWord(F.w))+' <b>'+cpcsN((F.same?s.forms[0]:F).items.filter(x=>!x.hidden).length)+'</b></span>').join("")+cpctMarks({hid:mine.hid,ed:mine.ed,add:mine.add})+'</div>';
+    let body=''; if(open) s.forms.forEach((F,fi)=>{ body+=cpctFormHtml(s,F,vis[fi],on); });
+    h+='<div class="cpcs-fold'+(open?' open':'')+'" id="'+cpctHid(s.id)+'"><button class="cpcs-fh" onclick="cpctTap(\'st\',\''+envcJ(s.id)+'\')" aria-expanded="'+(open?'true':'false')+'"><span class="cpcs-tw">▶</span><span style="font-size:22px">'+cpctEsc(s.emoji)+'</span><span class="cpcs-tt"><div class="cpcs-t1">'+cpctEsc(s.label)+'</div>'+cnt+'</span></button>'+(open?'<div class="cpcs-fb">'+body+'</div>':'')+'</div>'; });
+  if(!any) h+='<div class="cpcs-note">No question matches these filters.</div>';
+  return h;
+}
+// one form (📝 Check-in / 🎓 Final) inside an open section: its rows, ＋ Add a question, and the questions left out
+function cpctFormHtml(s,F,list,on){
+  const go=_cpct.og===F.key, J=envcJ(F.key), icon=F.w==="pre"?"\u{1F4DD}":"\u{1F393}";
+  if(F.same){ return '<div class="cpcs-fold l2'+(go?' open':'')+'" id="'+cpctHid(F.key)+'"><button class="cpcs-fh" onclick="cpctTap(\'form\',\''+J+'\')" aria-expanded="'+(go?'true':'false')+'"><span class="cpcs-tw">▶</span><span class="cpcs-tt"><div class="cpcs-t1">'+icon+' '+cpctEsc(cpctFormWord(F.w))+' · '+cpctEsc(F.base.form||"")+'</div><div class="cpcs-cnt"><span>The same form as the '+cpctEsc(cpctFormWord("pre").toLowerCase())+'</span></div></span></button>'+
+    (go?'<div class="cpcs-fb"><div class="cpct-same">The unit has one test for both, so this '+cpctEsc(cpctFormWord(F.w).toLowerCase())+' is the '+cpctEsc(cpctFormWord("pre").toLowerCase())+'’s form: edit it there, and your changes show on both.</div></div>':'')+'</div>'; }
+  const o=cpctCounts(F.items);
+  const cnt='<div class="cpcs-cnt"><span><b>'+cpcsN(o.n)+'</b> question'+(o.n===1?'':'s')+'</span>'+(o.nocore?'<span>'+cpcsN(o.nocore)+' with no core card</span>':'')+cpctMarks(o)+'</div>';
+  const addOn=!!(_cpct.edit&&_cpct.edit.add&&_cpct.edit.key===F.key);
+  let h='<div class="cpcs-fold l2'+(go?' open':'')+'" id="'+cpctHid(F.key)+'"><button class="cpcs-fh" onclick="cpctTap(\'form\',\''+J+'\')" aria-expanded="'+(go?'true':'false')+'"><span class="cpcs-tw">▶</span><span class="cpcs-tt"><div class="cpcs-t1">'+icon+' '+cpctEsc(cpctFormWord(F.w))+' · '+cpctEsc(F.base.form||"")+'</div>'+cnt+'</span></button>'+
+    '<button class="cpce-plus'+(addOn?' on':'')+'" onclick="cpctAddOpen(\''+J+'\')" aria-label="Add a question" title="Add a question">＋</button>';
+  if(!go) return h+'</div>';
+  h+='<div class="cpcs-fb">';
+  if(!o.n) h+='<div class="cpct-took">Every question is removed: students get no '+cpctEsc(cpctFormWord(F.w).toLowerCase())+' for this '+cpctEsc(String(cpctWord("section")).toLowerCase())+'.</div>';
+  h+=list.map(it=>cpctRowHtml(F,it)).join("");
+  if(on&&!list.length) h+='<div class="cpcs-note">No question here matches these filters.</div>';
+  h+=addOn?'<div class="cpcs-det" style="padding-left:10px" id="cpct-add">'+cpctEditHtml(F,null)+'</div>':'<button class="cpce-addbtn" onclick="cpctAddOpen(\''+J+'\')">＋ Add a question</button>';
+  if(F.left.length){ const lk=F.key+"|left", lo=_cpct.lo===lk;
+    h+='<div class="cpcs-fold l3'+(lo?' open':'')+'" id="'+cpctHid(lk)+'"><button class="cpcs-fh" onclick="cpctTap(\'left\',\''+envcJ(lk)+'\')" aria-expanded="'+(lo?'true':'false')+'"><span class="cpcs-tw">▶</span><span class="cpcs-tt"><div class="cpcs-t1">Left out of the form · '+cpcsN(F.left.length)+'</div><div class="cpcs-cnt"><span>they need a picture or a handout · read-only</span></div></span></button>'+
+      (lo?'<div class="cpcs-fb">'+F.left.map(d=>'<div class="cpcs-row"><div class="cpcs-rb" style="cursor:default"><span class="cpcs-tag L">Q'+cpctEsc(d&&d.n)+'</span><span class="cpcs-rt">'+cpctEsc((d&&d.q)||"(no text)")+'<div class="cpcs-crumb" style="margin-top:2px">'+cpctEsc((d&&d.why)||"")+'</div></span></div></div>').join("")+'</div>':'')+'</div>'; }
+  return h+'</div></div>';
+}
+function cpctRowHtml(F,it,crumb){
+  const key=F.key+"|"+it.id, open=_cpct.or===key, J=envcJ(key);
+  let h='<div class="cpcs-row cpct-row'+(open?' open':'')+(it.hidden?' cpct-hid':'')+'" id="'+cpctHid(key)+'"><button class="cpcs-rb" onclick="cpctTap(\'row\',\''+J+'\')" aria-expanded="'+(open?'true':'false')+'"><span class="cpcs-tag Q">'+(it.added?'＋':'Q'+cpctEsc(it.n))+'</span><span class="cpcs-rt">'+
+    (crumb?'<div class="cpcs-crumb">'+cpctEsc(crumb)+'</div>':'')+'<span class="cpct-qt">'+cpctHi(it.q)+'</span>'+
+    (cpctMulti(it)?'<span class="cpct-badge" style="color:#b45309">select all</span>':'')+(it.edited?'<span class="cpct-badge" style="color:#1d4ed8">✎ edited</span>':'')+(it.hidden?'<span class="cpct-badge" style="color:#7c2d12">\u{1F648} removed</span>':'')+'</span></button>'+
+    (it.hidden?'<button class="cpce-x back" onclick="cpctShow(\''+J+'\')" aria-label="Put it back on the form" title="Put back">↩</button>':'<button class="cpce-x" onclick="cpctHide(\''+J+'\')" aria-label="Remove it for my class" title="Remove for my class">✕</button>');
+  if(open) h+=cpctDetailHtml(F,it);
+  return h+'</div>';
+}
+function cpctDetailHtml(F,it){
+  const key=F.key+"|"+it.id, J=envcJ(key);
+  if(_cpct.edit&&!_cpct.edit.add&&_cpct.edit.key===key) return '<div class="cpcs-det">'+cpctEditHtml(F,it)+'</div>';
+  const A=typeof it.ans==="number"?[it.ans]:cpctArr(it.ans); let h='<div class="cpcs-det">';
+  (it.choices||[]).forEach((c,j)=>{ const ok=A.indexOf(j)>=0; h+='<div class="cpct-ch'+(ok?' ok':'')+'"><span class="cpct-L">'+"ABCDE"[j]+'</span><span style="flex:1">'+cpctHi(c)+'</span>'+(ok?'<span aria-label="right answer">✓</span>':'')+'</div>'; });
+  if(it.edited){ const b=F.base.items.find(x=>cpctQid(F.w,x)===it.id); if(b) h+='<div class="cpce-was">✎ Your class’s wording. The unit’s: <s>'+cpctEsc(b.q)+'</s></div>'; }
+  h+='<div class="cpcs-meta">'+(it.cite?'Cite: '+cpctHi(it.cite)+'<br>':'')+(it.added?'Your question':cpctEsc(F.base.form||"")+' · question '+cpctEsc(it.n))+'</div>';
+  if(!it.added){ const cv=cpctCover(it), more=cv.cards.length-CPCT_LINKS;
+    h+='<div class="cpcs-meta">'+(cv.cards.length?(cv.core?'Cards that cover it: ':'<span class="cpct-warn">No core card covers it.</span> Linked cards: ')+cv.cards.slice(0,CPCT_LINKS).map(c=>'<span class="cpct-lk'+(c.core?' core':'')+'">'+(c.core?'⭐ ':'')+cpctEsc(c.name.length>48?c.name.slice(0,46)+'…':c.name)+'</span>').join("")+(more>0?' <span>+'+more+' more</span>':''):'<span class="cpct-warn">No card covers it.</span>')+
+      '<br><span style="color:#9ca3af">The match is automatic — check before acting.</span></div>'; }
+  const all=F.items, i=all.findIndex(x=>x.id===it.id);
+  h+='<div class="cpce-acts">'+(it.hidden?'':'<button class="cpce-btn" onclick="cpctEditOpen(\''+J+'\')">✏️ Edit</button>')+
+    (it.hidden?'<button class="cpce-btn pri" onclick="cpctShow(\''+J+'\')">↩ Put back</button>':'<button class="cpce-btn red" onclick="cpctHide(\''+J+'\')">\u{1F648} Remove for my class</button>')+
+    '<button class="cpce-btn" onclick="cpctMove(\''+J+'\',-1)"'+(i<=0?' disabled':'')+' aria-label="Move up">↑</button><button class="cpce-btn" onclick="cpctMove(\''+J+'\',1)"'+(i<0||i>=all.length-1?' disabled':'')+' aria-label="Move down">↓</button></div>';
+  if(it.hidden) h+='<div class="cpce-was">\u{1F648} Removed for your class: students won’t get it. Anyone who already took the form keeps their score.</div>';
+  return h+'</div>';
+}
+// the edit box: the question, up to 5 choices with a tick each, Select all that apply; for her own question, the cite. The draft lives in
+// _cpct.edit.d as she types, so a repaint never loses it.
+function cpctEditHtml(F,it){
+  const E=_cpct.edit; if(!E) return ""; const d=E.d, multi=!!d.multi, E2=cpctEsc, add=!!E.add||!!(it&&it.added);
+  let h='<div class="cpct-ed"><label class="cpce-lbl" for="cpct-eq">'+(E.add?'＋ Your question':'Question')+'</label><textarea id="cpct-eq" class="cpce-ta" maxlength="'+CPCT_Q_MAX+'" oninput="cpctIn(\'q\',this.value)">'+E2(d.q)+'</textarea>';
+  h+='<div class="cpce-lbl" style="margin-top:6px">Choices — tick the right one'+(multi?'s':'')+'</div>';
+  for(let j=0;j<CPCT_CHOICES;j++) h+='<div class="cpct-crow"><input type="'+(multi?'checkbox':'radio')+'" name="cpct-ea" aria-label="'+"ABCDE"[j]+' is right"'+(d.a.indexOf(j)>=0?' checked':'')+' onchange="cpctTick('+j+',this.checked)"><b>'+"ABCDE"[j]+'</b><input class="cpce-in" id="cpct-ec'+j+'" maxlength="'+CPCT_C_MAX+'" placeholder="'+(j<2?'Choice '+"ABCDE"[j]:'(empty = no choice)')+'" value="'+E2(d.c[j]||"")+'" oninput="cpctIn(\'c\',this.value,'+j+')"></div>';
+  h+='<label class="cpce-core"><input type="checkbox" id="cpct-em"'+(multi?' checked':'')+' onchange="cpctMultiSet(this.checked)"> Select all that apply</label>';
+  if(add) h+='<label class="cpce-lbl" for="cpct-ecite">Cite (optional)</label><input id="cpct-ecite" class="cpce-in" maxlength="'+CPCT_CITE_MAX+'" placeholder="pg. 12, the manual" value="'+E2(d.cite||"")+'" oninput="cpctIn(\'cite\',this.value)">';
+  const took=cpctTook(F);
+  h+=E.add?'<div class="cpce-was">It goes at the end of the '+E2(cpctFormWord(F.w).toLowerCase())+'.</div>':'<div class="cpct-took">'+(took?'⚠ '+cpcsN(took)+' student'+(took===1?'':'s')+' took this form before; their scores stay as they were.':'Students who already took this form keep their score.')+' Results are kept apart by version.</div>';
+  h+='<div class="cpce-acts"><button class="cpce-btn pri" onclick="cpctSave()">'+(E.add?'＋ Add':'Save')+'</button><button class="cpce-btn" onclick="cpctEditCancel()">Cancel</button>'+(it&&it.edited&&!it.added?'<button class="cpce-btn" onclick="cpctUseOriginal()">Use the original</button>':'')+'</div></div>';
+  return h;
+}
+// ── the editing taps
+function cpctDraftOf(it){ const A=it?(typeof it.ans==="number"?[it.ans]:cpctArr(it.ans)):[]; const c=it?cpctArr(it.choices).map(String):["","","",""]; while(c.length<CPCT_CHOICES) c.push("");
+  return {q:it?String(it.q):"",c,a:A,multi:!!it&&cpctMulti(it),cite:it&&it.added?String(it.cite||""):""}; }
+function cpctEditOpen(key){ if(!cpctOn()) return; const X=cpctFind(cpctModel(),key); if(!X||X.it.hidden) return; _cpct.edit={key,d:cpctDraftOf(X.it)}; _cpct.or=key; cpctRe(); cpctFocus("cpct-eq"); }
+function cpctAddOpen(key){
+  if(!cpctOn()) return; const M=cpctModel(), F=cpctFormOf(M,key); if(!F||F.same) return;
+  if(_cpct.edit&&_cpct.edit.add&&_cpct.edit.key===key){ _cpct.edit=null; cpctRe(); return; }   // ＋ again closes it
+  _cpct.edit={key,add:true,d:cpctDraftOf(null)}; _cpct.os=F.sk; _cpct.og=key; _cpct.or=_cpct.lo=null; cpctRe(); cpctFocus("cpct-eq"); cpctScroll("cpct-add");
+}
+function cpctEditCancel(){ _cpct.edit=null; cpctRe(); }
+function cpctFocus(id){ try{ const t=document.getElementById(id); if(t&&t.focus) t.focus(); }catch(e){} }
+function cpctIn(f,v,j){ const E=_cpct.edit; if(!E) return; if(f==="c") E.d.c[j]=String(v==null?"":v); else E.d[f]=String(v==null?"":v); }
+function cpctTick(j,on){ const E=_cpct.edit; if(!E) return; const d=E.d; if(d.multi){ const k=d.a.indexOf(j); if(on&&k<0) d.a.push(j); if(!on&&k>=0) d.a.splice(k,1); d.a.sort((a,b)=>a-b); } else d.a=on?[j]:[]; }
+// Select all that apply switches the ticks between one answer and several, in place (one answer keeps the first tick)
+function cpctMultiSet(on){ const E=_cpct.edit; if(!E) return; E.d.multi=!!on; if(!on&&E.d.a.length>1) E.d.a=[E.d.a[0]]; cpctRe(); }
+function cpctMe(){ return (typeof _envs!=="undefined"&&_envs.uid)||""; }
+// a unit question's record once a change is made — or null when nothing of hers is left on it
+function cpctNext(it,cur,ch,by,ts){
+  const r=Object.assign({},cur||{}); delete r.by; delete r.ts;
+  if("hide" in ch){ if(ch.hide) r.hide=true; else delete r.hide; }
+  if("q" in ch){ if(ch.q==null){ delete r.q; delete r.choices; delete r.ans; } else { r.q=ch.q.q; r.choices=ch.q.choices; r.ans=ch.q.ans; } }
+  if(!(it&&it.added)&&!r.hide&&r.q==null) return null;
+  r.by=by; r.ts=ts; return r;
+}
+function cpctSave(){
+  const E=_cpct.edit; if(!E||!cpctOn()) return false; const M=cpctModel();
+  const ce=document.getElementById("cpct-eq"); if(ce&&ce.value!=null) E.d.q=String(ce.value);
+  for(let j=0;j<CPCT_CHOICES;j++){ const e=document.getElementById("cpct-ec"+j); if(e&&e.value!=null) E.d.c[j]=String(e.value); }
+  const r=cpctDraftRec(E.d); if(typeof r==="string"){ envsToast(r); return false; }
+  const now=Date.now(), by=cpctMe();
+  if(E.add){ const F=cpctFormOf(M,E.key); if(!F) return false; const id="c-"+now.toString(36)+Math.floor(Math.random()*1296).toString(36), rec=Object.assign({},r,{add:true,by,ts:now}); const cite=String(E.d.cite||"").trim().slice(0,CPCT_CITE_MAX); if(cite) rec.cite=cite;
+    cpctCommit(F,{["items/"+id]:rec},"＋ Question added to your class’s "+cpctFormWord(F.w).toLowerCase()); _cpct.edit=null; _cpct.or=F.key+"|"+id; cpctRe(); return true; }
+  const X=cpctFind(M,E.key); if(!X) return false; const it=X.it, cur=cpctItemRec(X.F,it.id);
+  let rec;
+  if(it.added){ rec=Object.assign({},cur||{},r); delete rec.cite; const cite=String(E.d.cite||"").trim().slice(0,CPCT_CITE_MAX); if(cite) rec.cite=cite; rec.by=by; rec.ts=now; }
+  else { const b=X.F.base.items.find(x=>cpctQid(X.F.w,x)===it.id); rec=cpctNext(it,cur,{q:cpctSameQ(r,b)?null:r},by,now); }
+  cpctCommit(X.F,{["items/"+it.id]:rec},(!rec||rec.q==null)?"Back to the original question":"✎ Question changed for your class"); _cpct.edit=null; cpctRe(); return true;
+}
+function cpctUseOriginal(){ const E=_cpct.edit; if(!E||!cpctOn()) return; const X=cpctFind(cpctModel(),E.key); if(!X||X.it.added) return; cpctCommit(X.F,{["items/"+X.it.id]:cpctNext(X.it,cpctItemRec(X.F,X.it.id),{q:null},cpctMe(),Date.now())},"Back to the original question"); _cpct.edit=null; cpctRe(); }
+function cpctHide(key){ if(!cpctOn()) return; const X=cpctFind(cpctModel(),key); if(!X) return; cpctCommit(X.F,{["items/"+X.it.id]:cpctNext(X.it,cpctItemRec(X.F,X.it.id),{hide:true},cpctMe(),Date.now())},"\u{1F648} Removed from your class’s form (students who took it keep their score)"); if(_cpct.edit&&_cpct.edit.key===key) _cpct.edit=null; cpctRe(); }
+function cpctShow(key){ if(!cpctOn()) return; const X=cpctFind(cpctModel(),key); if(!X) return; cpctCommit(X.F,{["items/"+X.it.id]:cpctNext(X.it,cpctItemRec(X.F,X.it.id),{hide:false},cpctMe(),Date.now())},"↩ Put back on the form"); cpctRe(); }
+// ↑ ↓: one step in the form's whole list (removed ones keep their place); the order is saved only while it differs from the natural one
+function cpctMove(key,dir){
+  if(!cpctOn()) return; const X=cpctFind(cpctModel(),key); if(!X) return; const ids=X.F.items.map(x=>x.id), j=X.i+(dir<0?-1:1); if(j<0||j>=ids.length) return;
+  ids.splice(X.i,1); ids.splice(j,0,X.it.id);
+  const L=cpctLayer()[X.F.sk], lay=(L&&L[X.F.w])||{}, nat=cpForm(X.F.base,{items:lay.items||{}},X.F.w,{all:true}).items.map(x=>x.id);
+  cpctCommit(X.F,{order:JSON.stringify(nat)===JSON.stringify(ids)?null:ids},dir<0?"↑ Moved up":"↓ Moved down"); cpctRe(); cpctScroll(cpctHid(key));
+}
+function cpctItemRec(F,id){ const L=cpctLayer()[F.sk], f=L&&L[F.w], r=f&&f.items&&f.items[id]; return (r&&typeof r==="object")?r:null; }
+// every change: ONE multi-path update of classTests/<cid>/<section>/<form> (the item or the order, and ver), its Undo kept, the note shown
+function cpctCommit(F,ch,label,undoing){
+  const cid=cpctCid(); if(!cid||!F||!ch||F.same) return Promise.resolve(null);
+  const L=_cpct.L[cid]=_cpct.L[cid]||{}, S=L[F.sk]=L[F.sk]||{}, node=S[F.w]=S[F.w]||{}, cur=p=>{ const a=p.split("/"); const v=a[0]==="order"?node.order:(node.items&&node.items[a[1]]); return (v==null)?null:JSON.parse(JSON.stringify(v)); };
+  Object.keys(ch).forEach(p=>{ if(ch[p]==null&&cur(p)==null) delete ch[p]; });   // removing what isn't there writes nothing
+  const keys=Object.keys(ch); if(!keys.length) return Promise.resolve(null);
+  if(keys.some(p=>!(p==="order"||/^items\/[A-Za-z0-9_-]{1,40}$/.test(p)))||/[.#$\[\]\/]/.test(F.sk)){ envsToast("That question can’t be saved here."); return Promise.resolve(null); }
+  const prev={}; keys.forEach(p=>{ prev[p]=cur(p); });
+  const ver=Math.max(Date.now(),(+node.ver||0)+1), up=Object.assign({},ch,{ver});
+  const w=envsWrite("classTests/"+cid+"/"+F.sk+"/"+F.w,up,"update");
+  if(envsDemo()){ keys.forEach(p=>{ const a=p.split("/"); if(a[0]==="order"){ if(ch[p]==null) delete node.order; else node.order=ch[p].slice(); } else { node.items=node.items||{}; if(ch[p]==null) delete node.items[a[1]]; else node.items[a[1]]=ch[p]; } }); node.ver=ver; }
+  cpctBump();
+  if(!undoing){ _cpct.undo.push({cid,F:{sk:F.sk,w:F.w,key:F.key},prev,label}); if(_cpct.undo.length>CPCT_UNDO_MAX) _cpct.undo.shift(); }
+  cpctNote(undoing?"↩︎ Undone":label,!undoing);
+  return w.then(r=>r,e=>{ envsToast("Couldn’t save: "+String((e&&e.message)||e)); return null; });
+}
+function cpctUndo(){
+  if(!cpctOn()) return; const u=_cpct.undo.pop(); if(!u){ cpctRe(); return; }
+  if(u.cid!==cpctCid()){ _cpct.undo=[]; envsToast("That change was in another class."); cpctRe(); return; }
+  const back={}, ts=Date.now(); Object.keys(u.prev).forEach(p=>{ const r=u.prev[p]; back[p]=(r&&p!=="order")?Object.assign({},r,{by:cpctMe(),ts}):r; });   // the rules take only her own uid as `by`
+  _cpct.edit=null; cpctCommit(u.F,back,"",true); cpctRe();
+}
+// the note under the page: what changed, with Undo, for a few seconds (📚 Cards' note style)
+function cpctNote(msg,withUndo){
+  if(typeof document==="undefined"||!document.createElement) return;
+  try{ if(typeof cpceCss==="function") cpceCss(); let n=document.getElementById("cpct-note"); if(!n){ n=document.createElement("div"); n.id="cpct-note"; n.className="cpce-note"; document.body.appendChild(n); }
+    n.innerHTML='<span>'+cpctEsc(msg)+'</span>'+(withUndo?'<button onclick="cpctUndo()">Undo</button>':''); n.style.display="flex"; n.style.bottom=envsDemo()?"104px":"";
+    if(_cpct.noteT) clearTimeout(_cpct.noteT); _cpct.noteT=setTimeout(()=>{ try{ n.style.display="none"; }catch(e){} },CPCT_NOTE_MS); }catch(e){}
+}
+function cpctSearchHtml(M){
+  const out=[]; M.secs.forEach(s=>s.forms.forEach(F=>{ if(F.same) return; F.items.filter(cpctPass).forEach(it=>out.push([F,it,s.label+" › "+cpctFormWord(F.w)])); }));
+  return '<div class="cpcs-note"><b>'+cpcsN(out.length)+'</b> question'+(out.length===1?'':'s')+' match “'+cpctEsc(_cpct.q)+'” across every '+cpctEsc(String(cpctWord("section")).toLowerCase())+'. Clear the search to go back to the folders.</div>'+
+    '<div class="cpcs-fold open"><div class="cpcs-fb" style="padding-top:6px">'+out.map(x=>cpctRowHtml(x[0],x[1],x[2])).join("")+'</div></div>';
+}
+function cpctHtml(){
+  if(!cpctOn()) return ""; if(typeof cpcsCss==="function") cpcsCss(); if(typeof cpceCss==="function") cpceCss(); cpctCss(); cpctStart();
+  const n=_cpct.undo.length;
+  let h='<div class="cpcs cpct" id="cpct"><div class="cpcs-tools" id="cpct-tools"><div class="cpcs-search"><input id="cpct-q" type="search" placeholder="Search questions, choices, cites…" value="'+cpctEsc(_cpct.q)+'" autocomplete="off" oninput="cpctSearch(this.value)" aria-label="Search the questions">'+
+    '<button id="cpct-x" onclick="cpctTap(\'clear\')" aria-label="Clear the search"'+(_cpct.q?'':' style="display:none"')+'>✕</button><button id="cpct-undo" onclick="cpctUndo()" aria-label="Undo the last change" title="Undo the last change"'+(n?'':' disabled style="opacity:.35"')+'>↩︎</button></div><div class="cpcs-chips" id="cpct-chips">'+cpctChipsHtml()+'</div></div>';
+  h+='<div id="cpct-list">'+cpctListHtml()+'</div></div>';
+  if(typeof requestAnimationFrame==="function") requestAnimationFrame(cpctStick);
+  return h;
+}
+// the search and the chips stay pinned just under the console's own sticky bar(s)
+function cpctStick(){ try{ const t=document.getElementById("cpct-tools"); if(!t) return; let top=0; document.querySelectorAll(".envs-top,.envs-demo").forEach(b=>{ if(getComputedStyle(b).position==="sticky") top=Math.max(top,b.offsetHeight); }); t.style.top=top+"px"; }catch(e){} }
+// CPTESTS_END
 // CPDRILLPARENT_START — 🧠 THE PARENT CAN TAKE OVER A STUDENT'S REVIEW CARDS, per kid, on the class site (DESIGN_class_platform_2026-10-28.md
 // §7(a) 2–3, §2, §9, §13 row 13, §14 Q5; PR 13 of the class platform). Her words 2026-10-28: "For the parent, I think they can get the
 // option to pick per kid, and the default would be that it stays in the student's own session. But the mom, if she knows her kid and
