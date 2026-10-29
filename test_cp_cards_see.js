@@ -13,11 +13,11 @@
  *   · AN OPENED CARD: back, info, ⭐ Core / Not core, deck, item, source, "On the tests: …" / "On no test question";
  *   · THE LINKS: compile_unit.js's matcher on fixtures; LINKS.json current; envirothon.js's questions carry them; the demo's browse copy;
  *   · nothing is written anywhere.
- * Uses the world from test_env_site.js (the real ENVSITE + ENVCONSOLE + ENVCLASSSET + CPCLASS + CPUNIT + CPCARDSSEE blocks).
+ * Uses the world from test_env_site.js (the real ENVSITE + ENVCONSOLE + ENVCLASSSET + CPCLASS + CPUNIT + CPCARDSSEE blocks; CCS = this block).
  *                                                                                                   run: node test_cp_cards_see.js
  */
 const fs=require("fs"), path=require("path"), os=require("os");
-const {world,src,CPS,REPO}=require("./test_env_site.js");
+const {world,src,CCS,REPO}=require("./test_env_site.js");
 const C=require("./units/build/compile_unit.js");
 let pass=0, fail=0;
 const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  "+JSON.stringify(x).slice(0,500):"")); } };
@@ -39,22 +39,22 @@ const SECS=UJ.sections.map(s=>s.key);
 const run=async()=>{
 console.log("── the block, where it sits, how it is hooked ──");
 { const a=src.indexOf("// CPCARDSSEE_START"), b=src.indexOf("// CPCARDSSEE_END");
-  ok("one CPCARDSSEE block, right after CPUNIT_END", a>0&&b>a&&src.indexOf("// CPCARDSSEE_START",a+1)<0&&src.slice(src.indexOf("// CPUNIT_END"),a).trim()==="// CPUNIT_END");
+  ok("one CPCARDSSEE block, right after CPSEATS_END (which sits right after CPUNIT_END)", a>0&&b>a&&src.indexOf("// CPCARDSSEE_START",a+1)<0&&src.slice(src.indexOf("// CPSEATS_END"),a).trim()==="// CPSEATS_END");
   const decl=l=>!l.trim()||/^(\/\/|function |const |let |var | |})/.test(l);
-  ok("the block only declares (nothing runs at boot)", CPS.split("\n").every(decl));
+  ok("the block only declares (nothing runs at boot)", CCS.split("\n").every(decl));
   const hooks=src.split("\n").filter(l=>/📚 CPCARDSSEE/.test(l)&&l.indexOf("// CPCARDSSEE_START")<0&&(src.indexOf(l)<a||src.indexOf(l)>b));
   ok("exactly 2 hook lines outside the block, each typeof-guarded: the chip (after the console's chip list) and the view dispatch", hooks.length===2&&hooks.every(l=>/typeof cpcs\w+==="function"/.test(l))&&hooks.some(l=>/cpcsChips\(chips\)/.test(l))&&hooks.some(l=>/v==="cpcards"&&typeof cpcsHtml==="function"\) h\+=cpcsHtml\(\)/.test(l)), hooks);
   const lit=src.slice(src.indexOf("function envConsoleHtml(){"),src.indexOf("function envConsoleHtml(){")+3000).split("\n").find(l=>/const chips=\[\["grid"/.test(l));
   ok("the console's chips array literal is not edited (no cpcards in it; 🃏 Teacher cards still there)", !!lit&&lit.indexOf("cpcards")<0&&lit.indexOf('["cards","\\u{1F0CF} Teacher cards"]')>0);
-  ok("no write of any kind in the block (no ref(, set(, update(, envsWrite, envcWrite, envcMulti, db.)", !/\bref\(|\.set\(|\.update\(|envsWrite|envcWrite|envcMulti|\bdb\./.test(CPS));
-  ok("no Envirothon word in the browser's strings: section, Key Concept and item words come from cpLabel", !/["'][^"']*\b(Station|station|Key Concept|species|check-in|Check-in)\b[^"']*["']/.test(CPS.split("\n").filter(l=>!/^\s*\/\//.test(l)).join("\n")));
-  ok("no Howe kid name as a code literal; no 🔀", !/["'`](lincoln|ellis|lucy|julian)["'`]/i.test(CPS)&&CPS.indexOf("\u{1F500}")<0); }
+  ok("no write of any kind in the block (no ref(, set(, update(, envsWrite, envcWrite, envcMulti, db.)", !/\bref\(|\.set\(|\.update\(|envsWrite|envcWrite|envcMulti|\bdb\./.test(CCS));
+  ok("no Envirothon word in the browser's strings: section, Key Concept and item words come from cpLabel", !/["'][^"']*\b(Station|station|Key Concept|species|check-in|Check-in)\b[^"']*["']/.test(CCS.split("\n").filter(l=>!/^\s*\/\//.test(l)).join("\n")));
+  ok("no Howe kid name as a code literal; no 🔀", !/["'`](lincoln|ellis|lucy|julian)["'`]/i.test(CCS)&&CCS.indexOf("\u{1F500}")<0); }
 
 console.log("\n── Howe, DeWalt, Burris: inert ──");
-["howe","dewalt","burris"].forEach(f=>{ const w=world({fam:{familyId:f,roster:[]},lib:LIB}), c=w.cps, chips=[["grid","a"],["cards","b"]];
+["howe","dewalt","burris"].forEach(f=>{ const w=world({fam:{familyId:f,roster:[]},lib:LIB}), c=w.ccs, chips=[["grid","a"],["cards","b"]];
   ok(f+": cpcsOn false; the chips come back the very same array, untouched; no page, no index; taps change nothing; nothing created, read or written", c.cpcsOn()===false&&c.cpcsChips(chips)===chips&&chips.length===2&&c.cpcsHtml()===""&&c.cpcsIndex()===null&&(c.cpcsTap("st","forestry"),c._cpcs.os===null)&&w.G.created.length===0&&w.G.reads.length===0&&w.G.writes.length===0&&w.G.listeners.length===0); });
 { const k=demo("kid"), p=demo("parent");
-  ok("the kid's and the parent's pages have no 📚 Cards (cpcsOn is the console's only)", k.cps.cpcsOn()===false&&p.cps.cpcsOn()===false&&!/cpcsTap|cpcs-list/.test(k.G.content)&&!/cpcsTap|cpcs-list/.test(p.G.content)); }
+  ok("the kid's and the parent's pages have no 📚 Cards (cpcsOn is the console's only)", k.ccs.cpcsOn()===false&&p.ccs.cpcsOn()===false&&!/cpcsTap|cpcs-list/.test(k.G.content)&&!/cpcsTap|cpcs-list/.test(p.G.content)); }
 
 console.log("\n── 📚 Cards in the console ──");
 { const w=demo("teacher"), a=demo("admin");
@@ -65,7 +65,7 @@ console.log("\n── 📚 Cards in the console ──");
   ok("the chip is added once, however often the console paints", (w.renderAll(),w.renderAll(),(w.G.content.match(/envcView\('cpcards'\)/g)||[]).length===1));
   const h=open(w);
   ok("tapping it opens the browser: the search box, the chips, the list", /id="cpcs-q"/.test(h)&&/id="cpcs-chips"/.test(h)&&/id="cpcs-list"/.test(h)&&/placeholder="Search fronts, backs, sources…"/.test(h));
-  ok("the cards come from the unit's own file (HoweUnits.nc_envirothon = envirothon.js): every card of every attached section is indexed", w.cps.cpcsLib("nc_envirothon")===LIB&&w.cps.cpcsIndex().C.length===CARDS.length, [w.cps.cpcsIndex().C.length,CARDS.length]);
+  ok("the cards come from the unit's own file (HoweUnits.nc_envirothon = envirothon.js): every card of every attached section is indexed", w.ccs.cpcsLib("nc_envirothon")===LIB&&w.ccs.cpcsIndex().C.length===CARDS.length, [w.ccs.cpcsIndex().C.length,CARDS.length]);
   ok("nothing was written", w.G.writes.length===0&&w.G.envs===undefined); }
 
 console.log("\n── first open: everything folded, counts from the data on every station line ──");
@@ -74,10 +74,10 @@ console.log("\n── first open: everything folded, counts from the data on eve
   SECS.forEach(s=>{ const a=bySec(s), lab=UJ.sections.find(x=>x.key===s).label;
     ok(lab+": “"+N(a.length)+" cards · ⭐ "+N(core(a))+"”", RX('<div class="cpcs-t1">'+lab+'</div><div class="cpcs-cnt"><span><b>'+N(a.length)+'</b> cards</span><span>⭐ '+N(core(a))+'</span></div>').test(L.replace(/&#39;|&amp;/g,m=>m==="&amp;"?"&":"'")||L)); });
   ok("the note uses the unit's words: “Tap a station, then a Key Concept (or an ID species), then a card. …”", /Tap a station, then a Key Concept \(or an ID species\), then a card\. Only one thing opens at a time; opening the next folds the last\./.test(L));
-  const tot=w.cps.cpcsIndex(); ok("the index holds every card and every core card ("+N(CARDS.length)+" / "+N(core(CARDS))+")", tot.C.length===CARDS.length&&tot.C.filter(c=>c.core).length===core(CARDS)); }
+  const tot=w.ccs.cpcsIndex(); ok("the index holds every card and every core card ("+N(CARDS.length)+" / "+N(core(CARDS))+")", tot.C.length===CARDS.length&&tot.C.filter(c=>c.core).length===core(CARDS)); }
 
 console.log("\n── folding: one open at each level; opening the next folds the last; moving on folds back ──");
-{ const w=demo("teacher"); open(w); const c=w.cps, S=c._cpcs, M=c.cpcsIndex(), F=M.secs.find(s=>s.id==="forestry"), W=M.secs.find(s=>s.id==="wildlife");
+{ const w=demo("teacher"); open(w); const c=w.ccs, S=c._cpcs, M=c.cpcsIndex(), F=M.secs.find(s=>s.id==="forestry"), W=M.secs.find(s=>s.id==="wildlife");
   const openCount=(lvl)=>(w.G.content.match(new RegExp('class="cpcs-fold'+(lvl>1?' l'+lvl:'')+' open"','g'))||[]).length;
   c.cpcsTap("st","forestry");
   const kcs=[...new Set(bySec("forestry").filter(x=>x.kind!=="id").map(x=>x.group))], items=[...new Set(bySec("forestry").filter(x=>x.kind==="id").map(x=>x.item))];
@@ -108,7 +108,7 @@ console.log("\n── folding: one open at each level; opening the next folds th
   open(w); ok("…and 📚 Cards opens folded again", !/cpcs-fold[^"]*open/.test((w.G.content.match(/<div id="cpcs-list">[\s\S]*$/)||[""])[0])); }
 
 console.log("\n── an opened card: back, info, core, deck, item, source, the tests ──");
-{ const w=demo("teacher"); open(w); const c=w.cps, M=c.cpcsIndex();
+{ const w=demo("teacher"); open(w); const c=w.ccs, M=c.cpcsIndex();
   const linked=M.C.find(x=>LINKED.has(x.id)&&x.info&&x.kind==="term"), lone=M.C.find(x=>!LINKED.has(x.id)&&x.core&&x.kind==="id");
   c.cpcsTap("st",linked.sec); c.cpcsTap("grp",linked.g.key); c.cpcsTap("row",linked.i);
   const qs=[]; Object.keys(LINKS).forEach(s=>Object.keys(LINKS[s]).forEach(q=>{ if(LINKS[s][q].indexOf(linked.id)>=0){ const sh=UJ.sections.find(x=>x.key===s).short; const lab=sh+" "+(q.split("-")[0]==="pre"?"check-in":"final")+" Q"+q.split("-")[1]; if(qs.indexOf(lab)<0) qs.push(lab); } }));
@@ -119,14 +119,14 @@ console.log("\n── an opened card: back, info, core, deck, item, source, the 
   ok("an ID card on no test (“"+lone.name+"”): ⭐ Core · its deck · its item, and “On no test question”", /<b>⭐ Core<\/b>/.test(det2)&&RX(lone.deck+" · "+lone.item).test(det2)&&/On no test question/.test(det2));
   { // the photo: the block alone with the unit's picture index stubbed (ENVIDFLASH's envPicsIndex)
     const PICS=JSON.parse(fs.readFileSync(path.join(REPO,"envirothon","pics","index.json"),"utf8")), name=Object.keys(PICS).find(k=>CARDS.some(x=>x.name===k)), card=CARDS.find(x=>x.name===name);
-    const f=new Function("PICS",'function envcOn(){ return true; } function envsEsc(v){ return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); } function envPicsIndex(){ return PICS; } function envcJ(s){ return s; }\n'+CPS+'\nreturn {cpcsDetailHtml};');
+    const f=new Function("PICS",'function envcOn(){ return true; } function envsEsc(v){ return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); } function envPicsIndex(){ return PICS; } function envcJ(s){ return s; }\n'+CCS+'\nreturn {cpcsDetailHtml};');
     const d=f(PICS).cpcsDetailHtml({id:card.id,deck:card.deck,kind:"id",name:card.name,def:card.def,src:card.src,info:"",item:card.item,core:card.core},{Q:{},anyTests:true});
     ok("an opened card with a picture shows its first photo and its credit (“"+name+"”)", RX('<img class="cpcs-pic" src="'+PICS[name][0].url+'"').test(d)&&RX(PICS[name][0].credit.replace(/&/g,"&amp;")).test(d));
     const d2=f(PICS).cpcsDetailHtml({id:"x#o1",deck:"x",kind:"term",name:"No such front",def:"b",src:"s",info:"",item:"",core:false},{Q:{},anyTests:true});
     ok("a card without one shows none", !/<img/.test(d2)); } }
 
 console.log("\n── 20 rows at a time, Show 20 more ──");
-{ const w=demo("teacher"); open(w); const c=w.cps, S=c._cpcs, M=c.cpcsIndex();
+{ const w=demo("teacher"); open(w); const c=w.ccs, S=c._cpcs, M=c.cpcsIndex();
   const big=[].concat(...M.secs.map(s=>s.groups)).sort((a,b)=>b.cards.length-a.cards.length)[0], sec=big.key.split("|")[0], n=big.cards.length;
   c.cpcsTap("st",sec); c.cpcsTap("grp",big.key);
   const rows=()=>(w.G.content.match(/class="cpcs-row/g)||[]).length;
@@ -139,7 +139,7 @@ console.log("\n── 20 rows at a time, Show 20 more ──");
   ok("a folder of 20 or fewer has no Show more", rows()===tiny.cards.length&&!/cpcs-more/.test(w.G.content)); }
 
 console.log("\n── search: fronts, backs, info, sources; one flat list with paths, 30 at a time ──");
-{ const w=demo("teacher"); open(w); const c=w.cps, S=c._cpcs;
+{ const w=demo("teacher"); open(w); const c=w.ccs, S=c._cpcs;
   const hit=(q,x)=>[x.name,x.def,x.info,x.src].some(t=>String(t||"").toLowerCase().indexOf(q)>=0);
   c.cpcsSearch("cambium"); ok("typing waits a beat (one timer), then searches", S.q===""&&(w.G.timers||[]).length===1&&(w.tick(),S.q==="cambium"));
   const exp=CARDS.filter(x=>hit("cambium",x));
@@ -154,7 +154,7 @@ console.log("\n── search: fronts, backs, info, sources; one flat list with p
   c.cpcsSearch("cambium"); w.tick(); c.cpcsTap("clear"); ok("✕ clears it: the folders come back", S.q===""&&!/cards match/.test(w.G.content)); }
 
 console.log("\n── the chips: Terms / Facts / ID, ⭐ Core only, Not on any test ──");
-{ const w=demo("teacher"); const h=open(w), c=w.cps, S=c._cpcs;
+{ const w=demo("teacher"); const h=open(w), c=w.ccs, S=c._cpcs;
   ok("the chips row: All · Terms · Facts · ID · ⭐ Core only · Not on any test", /All<\/button><button[^>]*>Terms<\/button><button[^>]*>Facts<\/button><button[^>]*>ID<\/button><span class="cpcs-sep">·<\/span><button[^>]*>⭐ Core only<\/button><button[^>]*>Not on any test<\/button>/.test(h));
   const hdr=(s)=>{ const m=w.G.content.match(RX('id="cpcs-h-'+s+'"')); return !!m; };
   const check=(label,pred)=>{ let good=true; SECS.forEach(s=>{ const all=bySec(s), a=all.filter(pred); if(!a.length){ if(hdr(s)) good=false; return; }
@@ -172,7 +172,7 @@ console.log("\n── the chips: Terms / Facts / ID, ⭐ Core only, Not on any t
   ok("nothing was written", w.G.writes.length===0); }
 
 console.log("\n── a unit without tests, core or items: the chips it can't use stay away ──");
-{ const w=demo("teacher"); open(w); const c=w.cps;
+{ const w=demo("teacher"); open(w); const c=w.ccs;
   const plain={unit:{decks:LIB.unit.decks.map(d=>({key:d.key,kind:d.kind,cards:d.cards.filter(x=>x.kind==="term").map(x=>({name:x.name,def:x.def,group:x.group,order:x.order,src:x.src,kind:"term"}))}))},tests:{}};
   w.cpu.win.HoweUnits.nc_envirothon=plain; w.cpu.win.HoweEnvirothon=plain; c._cpcs.memo=null;
   const ch=c.cpcsChipsHtml();
@@ -183,8 +183,8 @@ console.log("\n── a unit without tests, core or items: the chips it can't us
 console.log("\n── the demo: the whole unit from the page's browse copy (HoweEnvirothon holds the questions only) ──");
 { const {demoBrowse,browseScript}=require(path.join(REPO,"envirothon","build","make_demo.js")), b=demoBrowse(), sb={}; new Function("window",browseScript(b).replace(/^<script>\n?/,"").replace(/<\/script>$/,""))(sb);
   const w=demo("teacher",{lib:{demo:true,tests:LIB.tests}}); w.cpu.win.HoweUnitsDemo=sb.HoweUnitsDemo; open(w);
-  ok("the browser shows every card ("+N(CARDS.length)+") and the questions' links work (Not on any test = "+N(CARDS.filter(x=>!LINKED.has(x.id)).length)+")", w.cps.cpcsIndex().C.length===CARDS.length&&w.cps.cpcsIndex().C.filter(x=>!(w.cps.cpcsIndex().Q[x.id]||[]).length).length===CARDS.filter(x=>!LINKED.has(x.id)).length);
-  ok("the browse copy is read only in the demo: a live console ignores window.HoweUnitsDemo", (()=>{ const L=world({fam:FAM,lib:{tests:LIB.tests}}); L.cpu.win.HoweUnitsDemo=sb.HoweUnitsDemo; return L.cps.cpcsLib("nc_envirothon")===null; })());
+  ok("the browser shows every card ("+N(CARDS.length)+") and the questions' links work (Not on any test = "+N(CARDS.filter(x=>!LINKED.has(x.id)).length)+")", w.ccs.cpcsIndex().C.length===CARDS.length&&w.ccs.cpcsIndex().C.filter(x=>!(w.ccs.cpcsIndex().Q[x.id]||[]).length).length===CARDS.filter(x=>!LINKED.has(x.id)).length);
+  ok("the browse copy is read only in the demo: a live console ignores window.HoweUnitsDemo", (()=>{ const L=world({fam:FAM,lib:{tests:LIB.tests}}); L.cpu.win.HoweUnitsDemo=sb.HoweUnitsDemo; return L.ccs.cpcsLib("nc_envirothon")===null; })());
   ok("…and the kid's cards are still the demo's sample deck (HoweEnvirothon has no unit)", !w.cpu.win.HoweEnvirothon.unit); }
 
 console.log("\n── loading: the first open asks for the unit's file once, and draws when it comes ──");

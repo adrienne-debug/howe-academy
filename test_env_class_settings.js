@@ -40,7 +40,7 @@ console.log("\n── the panel: up front and the Advanced fold ──");
   ok("the console has a '⚙️ Class settings' chip (teacher and admin)", /envcView\('classset'\)/.test(w.G.content)&&/⚙️ Class settings/.test(w.G.content)&&/envcView\('classset'\)/.test(demo("admin").G.content));
   w.envcView("classset"); let h=w.G.content;
   ok("up front: New cards a day · Cards a sitting · How cards are learned · Passes per sitting · Decks introducing at once", ["New cards a day","Cards a sitting","How cards are learned","Passes per sitting","Decks introducing at once"].every(t=>h.indexOf(t)>=0));
-  ok("each shows its meaning, Howe's range and the value now at the defaults (5 a day, 12 a sitting, 2 passes, 2 decks)", /Cards a student meets for the first time each study day\. \(0–50\)/.test(h)&&/now: <b>5<\/b> \(default\)/.test(h)&&/now: <b>12<\/b> \(default\)/.test(h)&&/now: <b>2<\/b> \(default\)/.test(h)&&/\(1–5\)/.test(h)&&/\(0–20\)/.test(h)&&/\(0–60\)/.test(h));
+  ok("each shows its meaning, Howe's range and the value now at the defaults (5 a day, Auto a sitting since 🪑 CPSEATS, 2 passes, 2 decks)", /Cards a student meets for the first time each study day\. \(0–50\)/.test(h)&&/now: <b>5<\/b> \(default\)/.test(h)&&/now: <b>Auto<\/b> \(default\)/.test(h)&&/now: <b>2<\/b> \(default\)/.test(h)&&/\(1–5\)/.test(h)&&/\(0–20\)/.test(h)&&/Auto, or 0–200/.test(h));
   ok("how cards are learned: the four steps, Pick it → Key ideas → Type it ticked in order, Flip not ticked", /1\. 🎯 Pick it/.test(h)&&/2\. 🧩 Key ideas/.test(h)&&/3\. ⌨️ Type it/.test(h)&&/<b>🔄 Flip<\/b>/.test(h)&&(h.match(/type="checkbox" checked/g)||[]).length===3);
   ok("the Advanced fold is closed: none of its rows yet", /▾ Advanced/.test(h)&&!/Mixes into review at|Right in a row to move up|What a miss does/.test(h));
   w._envcs.adv=true; w.renderAll(); h=w.G.content;
@@ -50,7 +50,7 @@ console.log("\n── the panel: up front and the Advanced fold ──");
   ok("a 'Reset to default' per section (5 sections)", (h.match(/>Reset to default</g)||[]).length===5);
   ok("the teacher sees no 🔒 Lock buttons", !/envClsLock\(/.test(h));
   const a=demo("admin"); a.envcView("classset"); a._envcs.adv=true; a.renderAll();
-  ok("Adrienne sees a 🔒 Lock on every one of the 15 settings", (a.G.content.match(/envClsLock\('/g)||[]).length===15); }
+  ok("Adrienne sees a 🔒 Lock on every one of the 16 settings (🪑 CPSEATS adds Days a card is learned)", (a.G.content.match(/envClsLock\('/g)||[]).length===16); }
 
 console.log("\n── every save writes exactly its path (one targeted update) ──");
 { const w=liveConsole("teacher"); const W=()=>w.G.writes;
@@ -83,7 +83,7 @@ console.log("\n── every save writes exactly its path (one targeted update) �
 console.log("\n── ranges (Howe's own) ──");
 { const w=demo("teacher"); const C=(n,v,k)=>w.envClsCheck(n,v,k);
   ok("New cards a day: 0 and 50 ok; 51, −1, 2.5, blank refused with Howe's wording", C("newPerDay",0).ok&&C("newPerDay",50).v===50&&C("newPerDay","20").v===20&&!C("newPerDay",51).ok&&!C("newPerDay",-1).ok&&!C("newPerDay",2.5).ok&&!C("newPerDay","").ok&&C("newPerDay",51).error==="New cards a day must be a whole number 0–50");
-  ok("Passes 1–5 · Cards a sitting 0–60 · Decks at once 0–20", C("passes",1).ok&&C("passes",5).ok&&!C("passes",0).ok&&!C("passes",6).ok&&C("maxCards",0).ok&&!C("maxCards",61).ok&&C("focusDecks",20).ok&&!C("focusDecks",21).ok);
+  ok("Passes 1–5 · Cards a sitting Auto or 0–200 (🪑 CPSEATS) · Decks at once 0–20", C("passes",1).ok&&C("passes",5).ok&&!C("passes",0).ok&&!C("passes",6).ok&&C("maxCards",0).ok&&C("maxCards",200).ok&&!C("maxCards",201).ok&&C("maxCards","auto").ok&&C("focusDecks",20).ok&&!C("focusDecks",21).ok);
   ok("Right in a row 1–10 · per level 1–10 on a level that climbs · new per deck 1–10 · learning 0–40 · overdue 0–60", C("ladder_streak",10).ok&&!C("ladder_streak",0).ok&&!C("ladder_streak",11).ok&&C("tier_streaks",4,"weekly").ok&&!C("tier_streaks",4,"graduated").ok&&!C("tier_streaks",11,"weekly").ok&&C("max_intro_per_cat",1).ok&&!C("max_intro_per_cat",0).ok&&C("max_learn_per_drill",40).ok&&!C("max_learn_per_drill",41).ok&&C("max_overdue_per_drill",60).ok&&!C("max_overdue_per_drill",61).ok);
   ok("deck settings only for the unit's decks; a mode is Flash / Flip / Quiz", C("cat_modes","flip","Forestry · ID").ok&&!C("cat_modes","spell","Forestry · ID").ok&&!C("cat_modes","flip","German").ok&&C("cat_intro_max",4,"Wildlife · Terms").ok&&!C("cat_intro_max",4,"Nope").ok);
   ok("a level must be on the ladder; a miss is reset / one; the steps are the four known, at least one, no repeats", C("mixInAt","weekly").ok&&!C("mixInAt","daily").ok&&C("miss_drop","one").ok&&!C("miss_drop","x").ok&&JSON.stringify(C("pattern",["rec","rec","bogus","type"]).v)==='["rec","type"]'&&!C("pattern",[]).ok&&!C("pattern",["bogus"]).ok&&C("pattern",{0:"type",1:"pick"}).ok);
@@ -99,7 +99,7 @@ console.log("\n── per student: 'class: …' until overridden; clearing falls
   ok("the student page has '⚙️ Settings for this student', folded, saying what changed", /Settings for this student/.test(h)&&/1 changed for Jonah T\./.test(h)&&/▾ Open/.test(h)&&!/envClsInput\('tran_jonah'/.test(h));
   w._envcs.stuOpen="tran_jonah"; w.renderAll(); h=w.G.content;
   ok("open: the sample override shows 'this student: 3 · class: 5' and a '✕ use the class's'", /this student: <b>3<\/b> · class: 5/.test(h)&&/envClsSave\('tran_jonah','newPerDay',null\)/.test(h));
-  ok("…the rest show 'class: …' (Cards a sitting: class 12, Passes: class 2)", /class: <b>12<\/b>/.test(h)&&/class: <b>2<\/b>/.test(h));
+  ok("…the rest show 'class: …' (Cards a sitting: class Auto since 🪑 CPSEATS, Passes: class 2)", /class: <b>Auto<\/b>/.test(h)&&/class: <b>2<\/b>/.test(h));
   w.envcView("student","ramirez_maya"); w._envcs.stuOpen="ramirez_maya"; w.renderAll();
   ok("Maya has none: 'All as the class', every row 'class: …'", /All as the class/.test(w.G.content)&&/class: <b>5<\/b>/.test(w.G.content)&&!/this student:/.test(w.G.content));
   w.envClsInput("class","newPerDay","20"); await w.flush();
@@ -131,7 +131,8 @@ console.log("\n── Adrienne's locks ──");
 console.log("\n── the kid: the overlay, in memory only ──");
 { const w=demo("teacher"); const md=w.masteryData, before=JSON.stringify(md);
   const rec=md.maya_sessions.envirothon, ds=md.maya_settings;
-  ok("before any change: the overlay gives back the very same objects (class at defaults)", w.envClassOverlay("study","maya",rec)===rec&&w.envClassOverlay("drill","maya",ds)===ds);
+  { const S0=w.envClassOverlay("study","maya",rec);
+    ok("before any change: the drill overlay gives back the very same object; the study one differs only in Cards a sitting = Auto (5 a day × 5 days = 25, 🪑 CPSEATS), a new object", w.envClassOverlay("drill","maya",ds)===ds&&S0!==rec&&S0.maxCards===25&&rec.maxCards===12&&Object.keys(rec).every(k=>k==="maxCards"||S0[k]===rec[k])); }
   w.envClsInput("class","newPerDay","20"); w.envClsInput("class","passes","3"); w.envClsInput("class","maxCards","30"); await w.flush();
   w.envClsPat("class","rec","on"); await w.flush(); w.envClsPat("class","pick","off"); await w.flush(); w.envClsPat("class","ideas","off"); await w.flush(); w.envClsPat("class","type","off"); await w.flush();
   w.envClsInput("class","ladder_streak","5"); w.envClsSave("class","miss_drop","one"); w.envClsSave("class","cat_modes","flash","Forestry · Terms"); w.envClsInput("class","max_intro_per_cat","6"); w.envClsInput("class","cat_intro_max","2","Forestry · ID"); await w.flush();
