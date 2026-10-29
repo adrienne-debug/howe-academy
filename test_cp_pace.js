@@ -163,7 +163,7 @@ console.log("── the summary's core counts (the site kid's own app) ──");
   ok("on the site: summary.core.forestry = {learned 3, total 10, learning 2}", JSON.stringify(o.core)===JSON.stringify({forestry:{learned:3,total:10,learning:2}}), o.core);
   const P=w.G.pace, st=P.cppSections().find(s=>s.id==="forestry");
   ok("…and the console reads it exactly (no ≈)", JSON.stringify(P.cppIs({core:o.core},st))===JSON.stringify({learned:3,learning:2,est:false}));
-  ok("envSummary carries the line before its return", /if\(typeof cpPaceSumCore==="function"\) cpPaceSumCore\(kid,out,ctx\);[^\n]*\n  return out;\n\}/.test(src));
+  ok("envSummary carries the line before its return (other blocks' one-line hooks may sit between)", /if\(typeof cpPaceSumCore==="function"\) cpPaceSumCore\(kid,out,ctx\);[^\n]*\n(?:  if\(typeof cp\w+[^\n]*\n){0,3}  return out;\n\}/.test(src));
 }
 
 console.log("── Howe / Lincoln: the hooks say no ──");

@@ -42,11 +42,11 @@ console.log("── where it sits, how it is hooked ──");
   ok("the one read: classSkills/<cid> once on a kid's app (+ the console's own listener through envcSub)", (code.match(/\.once\(/g)||[]).length===1&&/ref\("classSkills\/"\+cid\)\.once/.test(code)&&/envcSub\("cpsk:"\+cid,"classSkills\/"\+cid/.test(code));
   ok("no 'Station' word in the block's strings", !/["'][^"'\n]*\bStations?\b/.test(code));
   ok("no 🔀 in index.html", src.indexOf("\u{1F500}")<0);
-  const out=src.slice(0,a)+src.slice(b), hooks=out.split("\n").filter(l=>/cpSkill\w+/.test(l));
+  const out=src.slice(0,a)+src.slice(b), hooks=out.split("\n").filter(l=>/cpSkill\w+/.test(l)&&!/^\s*\/\//.test(l));
   ok("every line outside the block that names it is tagged 🧩 CPSKILL and typeof-guarded", hooks.length>0&&hooks.every(l=>/🧩 CPSKILL/.test(l))&&hooks.every(l=>(l.match(/cpSkill\w+(?=\()/g)||[]).every(f=>new RegExp("typeof "+f+" ?[!=]== ?\"function\"").test(l))), hooks.map(l=>l.trim().slice(0,90)));
   const H=n=>hooks.some(l=>l.indexOf(n)>=0);
   ok("the hooks: the study page, envSummary, envtStatus, envtCoreLine, the station rows, 🏫 Class setup, the demo seed", ["cpSkillStudyWrap","cpSkillSummary","cpSkillFinalWait","cpSkillFinalLine","cpSkillRowLine","cpSkillSetupHtml","cpSkillDemoSeed"].every(H));
-  ok("envSummary's line sits right before its return (after the tests)", /if\(Object\.keys\(tests\)\.length\) out\.tests=tests; \}\n  if\(typeof cpSkillSummary==="function"\)\{ const sk=cpSkillSummary\(kid,M,now\); if\(sk\) out\.skills=sk; \}[^\n]*\n  return out;/.test(src));
+  ok("envSummary's line sits after the tests and before its return (other blocks' one-line hooks may sit between)", /if\(Object\.keys\(tests\)\.length\) out\.tests=tests; \}\n(?:  if\(typeof cp\w+[^\n]*\n){0,3}  if\(typeof cpSkillSummary==="function"\)\{ const sk=cpSkillSummary\(kid,M,now\); if\(sk\) out\.skills=sk; \}[^\n]*\n(?:  if\(typeof cp\w+[^\n]*\n){0,3}  return out;/.test(src));
   ok("envtStatus: only an open final is held back, and never one the teacher opened (rec.postOpen)", /    else out\.post\.open=true;\n    if\(out\.post\.open&&!rec\.postOpen&&typeof cpSkillFinalWait==="function"&&cpSkillFinalWait\(kid,station\)\)\{ out\.post\.open=false; out\.post\.why="skills"; \}/.test(src));
   ok("🏫 Class setup draws the Skills card after the closing date (CPFINAL's plan card stays where it was)", /cpFinalPlanHtml\(\):""\)\+cpCloseHtml\(d\)\+\(\(typeof cpSkillSetupHtml==="function"\)\?cpSkillSetupHtml\(\):""\);/.test(src)); }
 
