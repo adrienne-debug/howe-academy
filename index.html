@@ -46527,6 +46527,7 @@ function envSummary(kid,ctx){
   if(typeof cpPaceSumCore==="function") cpPaceSumCore(kid,out,ctx);   // 📅 CPPACE: the site kid's core cards per section (the site only; Lincoln's mirror in Howe is untouched)
   if(typeof cpSkillSummary==="function"){ const sk=cpSkillSummary(kid,M,now); if(sk) out.skills=sk; }   // 🧩 CPSKILL: summary.skills on the class site only (null for Howe and Lincoln)
   if(typeof cpWatchSum==="function"){ const rv=cpWatchSum(kid,M,now); if(rv) out.review=rv; }   // 🧠 CPWATCH: summary.review, the parent drill watch (the class site only; null for Howe and Lincoln)
+  if(typeof cpWeekSum==="function") cpWeekSum(kid,out,M,u);   // 📊 CPWEEK: each day's cards split by section, days.<date>.by.<section> = {n,c,m,secs} (counts only; Lincoln's mirror too, §8.11)
   return out;
 }
 function envmHash(s){ const o=Object.assign({},s); delete o.at; const str=JSON.stringify(o); let h=5381; for(let i=0;i<str.length;i++) h=((h*33)^str.charCodeAt(i))>>>0; return h.toString(36)+":"+str.length; }
@@ -46589,6 +46590,7 @@ function envmPublishKid(kid,force){
   if(!force&&prev&&prev.h===h) return false;
   const meta={familyId:envmFamilyId(),kid:kid,name:(typeof cap==="function")?cap(kid):String(kid),at:s.at};
   const p=_envm.edb.ref("students/"+sid).update({summary:s,meta:meta});
+  if(typeof cpWeekPub==="function") cpWeekPub(kid,sid,_envm.edb);   // 📊 CPWEEK: the last finished weeks' snapshots, students/<sid>/weeks/<YYYY-Www> (counts only; sent when they change)
   try{ if(typeof HA_LS!=="undefined") HA_LS.setItem(key,JSON.stringify({h:h,at:s.at})); }catch(e){}
   if(p&&typeof p.catch==="function") p.catch(err=>{ _envm.err=String((err&&err.message)||err); try{ if(typeof HA_LS!=="undefined") HA_LS.removeItem(key); }catch(e){} envmCardRefresh(); });   // refused / offline: forget the hash so the next save resends
   return true;
@@ -47149,6 +47151,7 @@ function envsParentHtml(){
   else if(v==="tips") h+=envsTipsHtml("parent");
   else if(v==="settings") h+=envsSettingsHtml();
   else { if(typeof cpdrCardHtml==="function") h+=cpdrCardHtml(kid); h+=envsStreakHtml(s); h+='<div class="envs-card"><div class="envs-h2">\u{1F4CA} Stations \u00B7 the same numbers the teacher sees</div>'+envsStationRowsHtml(s,{weak:true,kid})+'</div>';   // 🧠 CPDRILLPARENT: the review switch + 🧠 Drill, first on the page
+    if(typeof cpWeekParentHtml==="function") h+=cpWeekParentHtml(kid);   // 📊 CPWEEK: This week, the same synopsis the teacher sees
     if(typeof cpCalParentHtml==="function") h+=cpCalParentHtml(kid);   // 📅 CPCAL: Our study days (the family's own, behind the class's switch) + the goals
     if(typeof cpPaceParentHtml==="function") h+=cpPaceParentHtml(kid);   // 📅 CPPACE: on pace for the goal
     h+='<div class="envs-card"><div class="envs-h2">\u{1F469}\u200D\u{1F3EB} Who drills</div><div style="font-size:13px">'+envsEsc(envsWhoNote())+'</div></div>';
@@ -47329,6 +47332,7 @@ function envConsoleHtml(){
   if(typeof cpceChips==="function") cpceChips(chips);   // 📚 CPCARDSEDIT: 🃏 Teacher cards moved into 📚 Cards (the old chip comes out)
   if(typeof cpctChips==="function") cpctChips(chips);   // 📝 CPTESTS: 📝 Tests right after 📚 Cards
   if(typeof cpmChips==="function") cpmChips(chips);   // ⚠️ CPMISSED: ⚠️ Most missed right after 📝 Tests
+  if(typeof cpwkChips==="function") cpwkChips(chips);   // 📊 CPWEEK: 📊 Weekly right after ⚠️ Most missed
   h+='<div class="envs-chips">'+chips.map(x=>'<button class="'+((v===x[0]||(v==="student"&&x[0]==="grid"))?'on':'')+'" onclick="envcView(\''+x[0]+'\')">'+x[1]+'</button>').join("")+'</div>';
   if(_envc.err) h+='<div class="envs-card" style="border-color:#fecaca;color:#b91c1c;font-size:12.5px">'+envcEsc(_envc.err)+' <a href="javascript:void(0)" onclick="_envc.err=\'\';envcRe()" style="color:#b91c1c">dismiss</a></div>';
   if(_envs.lock&&_envs.lock.locked) h+='<div class="envs-card" style="border-color:#fcd34d;background:#fffbeb;font-size:12.5px">\u{1F512} The season is closed for teachers and families; you see this because you are the admin.</div>';
@@ -47343,6 +47347,7 @@ function envConsoleHtml(){
   else if(v==="cpcards"&&typeof cpcsHtml==="function") h+=cpcsHtml();   // 📚 CPCARDSSEE
   else if(v==="cptests"&&typeof cpctHtml==="function") h+=cpctHtml();   // 📝 CPTESTS
   else if(v==="cpmissed"&&typeof cpmHtml==="function") h+=cpmHtml();   // ⚠️ CPMISSED: the most missed questions and cards, the struggle, the review list
+  else if(v==="cpweek"&&typeof cpwkHtml==="function") h+=cpwkHtml();   // 📊 CPWEEK: the weekly study summary, a synopsis per student, 🖨 print
   else if(v==="cards") h+=envcCardsHtml();
   else if(v==="boards") h+=envcBoardsHtml();
   else if(v==="who") h+=envcWhoHtml();
@@ -47815,6 +47820,7 @@ function envClsBodyHtml(scope,adv,advClick){
   h+='<button class="envs-btn sec" style="width:100%;margin-bottom:12px" onclick="'+advClick+'">'+(adv?'▴ Hide advanced':'▾ Advanced · when cards move on, the drill ladder, limits, each deck')+'</button>';
   if(adv) ["moves","ladder","limits","decks"].forEach(s=>{ h+=envClsSectHtml(scope,s); });
   if(typeof cpWatchSectHtml==="function") h+=cpWatchSectHtml(scope);   // 🧠 CPWATCH: ⚙️ Parent drills (the class's numbers)
+  if(typeof cpwkSectHtml==="function") h+=cpwkSectHtml(scope);   // 📊 CPWEEK: ⚙️ Weekly summary (the completion target)
   return h;
 }
 // the ⚙️ Class settings screen (ENVCONSOLE's chip): the class's values, Adrienne's locks
@@ -53624,6 +53630,322 @@ function cpmHtml(){
 }
 function cpmStick(){ try{ const t=document.getElementById("cpm-tools"); if(!t) return; let top=0; document.querySelectorAll(".envs-top,.envs-demo").forEach(b=>{ if(getComputedStyle(b).position==="sticky") top=Math.max(top,b.offsetHeight); }); t.style.top=top+"px"; }catch(e){} }
 // CPMISSED_END
+// CPWEEK_START — 📊 THE WEEKLY STUDY SUMMARY, for the teacher and the parent (DESIGN_class_platform_2026-10-28.md §8.11, §9, §13 row 23,
+// §14 Q34; PR 23 of the class platform; her yes to building the design, 2026-10-28). The class syllabus (2026-10-28): teams are chosen on
+// attendance, presentations, test scores and "completion of study times — synopsis of studied material once a week." This writes that
+// synopsis. PR 24 (🏅 Team picks) reads its study completion from here (cpWeekStudy). INERT off the class site, except the two counts-only
+// pieces the design gives Lincoln's mirror (below): Howe's engine, DeWalt and Burris never reach anything else.
+//   · DATA (§8.11, §9.1):
+//       summary.days.<YYYYMMDD>.by.<sectionKey> = {n, c, m, secs}: the day's study-sitting cards split by section, worked out exactly like the
+//         day's own totals (ENVMIRROR's envSummary: the unit's decks only, study sittings only, a mixed sitting's time shared by cards).
+//         envSummary's one guarded line (cpWeekSum) adds it — the site's students and Lincoln's mirror alike: counts only, nothing else.
+//       students/<sid>/weeks/<YYYY-Www> = {days, planned, secs, learned, reviewed, missed, bySection:{<sec>:{days, secs, learned, reviewed,
+//         missed}}, pace}: the weekly snapshot, so weeks older than the summary's 30 study days stay. The kid's app works it out from the
+//         whole study log when the mirror publishes (envmPublishKid's guarded line, cpWeekPub): the last 2 finished weeks, each ONE set of
+//         its own path, sent again only when its numbers change (a hash per week in HA_LS; a refused write is forgotten and goes again).
+//         On the class site the write goes through envsWrite; Lincoln's comes through his mirror's own app (the class project, never Howe's
+//         database): his has no `planned` and no `pace` (Howe has no class calendar or plan — the console fills both from his calendar).
+//         `pace` ("ahead" | "on" | "behind") is the site kid's verdict when the week is first sent, then kept. Nothing when dry run or locked.
+//       classes/<cid>/settings/study/weekTarget: the completion target, ⚙️ Class settings ▸ Weekly summary (default 80%; Q34 is open).
+//   · THE NUMBERS: a week is Mon–Sun (Q34). Days = days with any study. Planned = the family's own study days (CPCAL's cpStudyDays), else the
+//     class calendar; in the week still running, only the days up to today. Completion = days studied (no more than planned) ÷ planned.
+//     New = cards shown, not graded (a new card's first showing); reviewed = cards answered (right + missed); missed = missed.
+//   · 📊 WEEKLY (the console's tab, right after ⚠ Most missed): the week chips (This week · Last week · six more; Last week is picked at first), then
+//     one row per student: days of planned ✓/·, minutes, new, reviewed, missed, on pace / behind (📅 Pace's own verdict for this week and
+//     last, the snapshot's after that), check-ins and finals taken that week, and their top 2 struggle areas (⚠ Most missed's own grouping
+//     of that student's missed questions and weak cards; without it, the weak cards by Key Concept). One row open at a time: the synopsis,
+//     plain sentences with no pronouns ("Maya studied 4 of 5 planned days (52 min). Met 31 new cards and reviewed 118, missing 14.
+//     Strongest: Forestry. Working on: Soil Formation, Loam. On pace for Area."), and the same numbers per section. 🖨 Print the class.
+//   · THE PARENT: "📊 This week" on the parent page, the same synopsis for their own child, ◀ ▶ back through 8 weeks (from the family's own
+//     study log, every day of it). The weak-card areas only (the class's question analysis stays the console's, Q12).
+//   · DEMO: the sample students' days gain a section split and a share of new cards, and ten older weeks of snapshots are invented, in memory,
+//     the first time 📊 Weekly or This week paints (cpwkDemoSeed); last week's snapshot is the one her app would have sent (from those days,
+//     with 📅 Pace's verdict). Teacher ▸ 📊 Weekly ▸ Last week ▸ Maya · Parent ▸ 📊 This week (◀ Last week: the same synopsis).
+const CPWK_ROW={name:"weekTarget",part:"study",sect:"week",kind:"int",min:1,max:100,def:80,label:"Study completion target (%)",means:"The share of a family’s planned study days a student studies each week. 📊 Weekly marks who met it."};
+const CPWK_CHIPS=8, CPWK_PUB=2, CPWK_STRONG=10, CPWK_SEED=10, CPWK_PARENT_BACK=7, CPWK_DAY=86400000;
+const CPWK_PACE={ahead:"Ahead of pace",on:"On pace",behind:"Behind pace"}, CPWK_COL={ahead:"#166534",on:"#166534",behind:"#b91c1c"};
+const _cpwk={wk:"",open:"",pback:0,css:false,seeded:null};
+// ⚙️ Class settings ▸ Weekly summary: the section and its one row, added to ENVCLASSSET's lists from here (by name, once)
+function cpwkFields(){
+  if(typeof ENVCS_FIELDS==="undefined"||!Array.isArray(ENVCS_FIELDS)||typeof ENVCS_SECTS==="undefined"||!Array.isArray(ENVCS_SECTS)) return false;
+  if(!ENVCS_SECTS.some(x=>x&&x[0]==="week")) ENVCS_SECTS.push(["week","Weekly summary","study"]);
+  if(!ENVCS_FIELDS.some(x=>x&&x.name===CPWK_ROW.name)) ENVCS_FIELDS.push(Object.assign({},CPWK_ROW));
+  return true;
+}
+const CPWK_FIELDS_SET=cpwkFields();
+function cpwkSite(){ return typeof envSiteOn==="function"&&envSiteOn(); }
+function cpwkOn(){ return cpwkSite()&&typeof envcOn==="function"&&envcOn(); }
+function cpwkDemo(){ return typeof envsDemo==="function"&&envsDemo(); }
+function cpwkEsc(v){ return envsEsc(v); }
+function cpwkJ(v){ return envsJ(v); }
+function cpwkHash(s){ s=String(s); let h=5381; for(let i=0;i<s.length;i++) h=((h*33)^s.charCodeAt(i))>>>0; return h; }
+// ── PURE: dates. "YYYY-MM-DD" (the console's dates) and "YYYYMMDD" (the summary's day keys); weeks are ISO 8601, Monday first
+function cpwkMs(s){ s=String(s==null?"":s).replace(/-/g,""); return Date.UTC(+s.slice(0,4),+s.slice(4,6)-1,+s.slice(6,8)); }
+function cpwkStr(ms){ return new Date(ms).toISOString().slice(0,10); }
+function cpwkKey(s){ return String(s==null?"":s).replace(/-/g,""); }
+function cpwkOk(s){ s=cpwkKey(s); return /^\d{8}$/.test(s)&&cpwkKey(cpwkStr(cpwkMs(s)))===s; }
+function cpWeekId(s){ if(!cpwkOk(s)) return ""; const ms=cpwkMs(s), mon=ms-((new Date(ms).getUTCDay()+6)%7)*CPWK_DAY, y=new Date(mon+3*CPWK_DAY).getUTCFullYear(), j4=Date.UTC(y,0,4), w1=j4-((new Date(j4).getUTCDay()+6)%7)*CPWK_DAY;
+  return y+"-W"+String(1+Math.round((mon-w1)/(7*CPWK_DAY))).padStart(2,"0"); }
+function cpWeekStart(wk){ const m=/^(\d{4})-W(\d{2})$/.exec(String(wk||"")); if(!m) return ""; const j4=Date.UTC(+m[1],0,4), w1=j4-((new Date(j4).getUTCDay()+6)%7)*CPWK_DAY; return cpwkStr(w1+(+m[2]-1)*7*CPWK_DAY); }
+function cpWeekDays(wk){ const s=cpWeekStart(wk); if(!s) return []; const a=[]; for(let i=0;i<7;i++) a.push(cpwkStr(cpwkMs(s)+i*CPWK_DAY)); return a; }
+function cpWeekShift(wk,n){ const s=cpWeekStart(wk); return s?cpWeekId(cpwkStr(cpwkMs(s)+(n|0)*7*CPWK_DAY)):""; }
+function cpwkToday(){ return (typeof cppToday==="function")?cppToday():((typeof envcToday==="function")?envcToday(Date.now()):cpwkStr(Date.now())); }
+function cpwkMo(s){ return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+cpwkKey(s).slice(4,6)-1]+" "+(+cpwkKey(s).slice(6,8)); }
+function cpWeekLabel(wk){ const D=cpWeekDays(wk); if(!D.length) return ""; const a=cpwkMo(D[0]), b=cpwkMo(D[6]); return "Mon "+a+" – Sun "+(a.split(" ")[0]===b.split(" ")[0]?b.split(" ")[1]:b); }
+function cpwkChipName(wk,cur){ if(wk===cur) return "This week"; if(wk===cpWeekShift(cur,-1)) return "Last week"; return cpwkMo(cpWeekStart(wk)); }
+// ── PURE: a kid's study sittings per day, split by section (envSummary's own walk of the study log: the unit's decks, study sittings only)
+function cpWeekDayAgg(kid,M,u){
+  const secOf={}; ((u&&u.decks)||[]).forEach(d=>{ if(d&&d.key) secOf[d.key]=String(d.station||d.section||"general"); });
+  const sl=((M&&M.studyLog)||{})[kid]||{}, out={};
+  Object.keys(sl).forEach(sid=>{ const byDay=sl[sid]||{}; Object.keys(byDay).forEach(dk=>{
+    const e=byDay[dk]; if(!e||!/^\d{8}$/.test(dk)) return;
+    let its=e.items; if(!Array.isArray(its)) its=its?Object.values(its):[];
+    const per={}; let n=0;
+    its.forEach(x=>{ if(!x||!secOf[x.deck]) return; const k=secOf[x.deck], p=per[k]||(per[k]={n:0,c:0,m:0}); p.n++; n++; if(x.result==="c") p.c++; else if(x.result==="m") p.m++; });
+    if(!n) return;
+    let secs=0; if(Array.isArray(e.sits)) e.sits.forEach(s=>{ secs+=(s&&s.secs)||0; }); else secs=e.secs||0;
+    if(its.length&&n<its.length) secs=Math.round(secs*n/its.length);   // a mixed sitting (Daily Study) gives this unit its share, as the mirror does
+    const da=out[dk]||(out[dk]={n:0,c:0,m:0,secs:0,by:{}}), parts=cpwkSplit(secs,Object.keys(per).map(k=>[k,per[k].n]));
+    Object.keys(per).forEach(k=>{ const p=per[k], b=da.by[k]||(da.by[k]={n:0,c:0,m:0,secs:0}); b.n+=p.n; b.c+=p.c; b.m+=p.m; b.secs+=parts[k]||0; da.n+=p.n; da.c+=p.c; da.m+=p.m; });
+    da.secs+=secs; }); });
+  return out;
+}
+// PURE: a whole number shared by weights [[key, w]], largest remainder first, so the parts always add up to it
+function cpwkSplit(total,ws){ total=Math.max(0,Math.round(+total||0)); const W=ws.reduce((a,x)=>a+Math.max(0,+x[1]||0),0), out={}; if(!ws.length) return out; if(!W){ out[ws[0][0]]=total; ws.slice(1).forEach(x=>{ out[x[0]]=0; }); return out; }
+  let left=total; const fr=ws.map((x,i)=>{ const raw=total*Math.max(0,+x[1]||0)/W, f=Math.floor(raw); out[x[0]]=f; left-=f; return [x[0],raw-f,i]; });
+  fr.sort((a,b)=>b[1]-a[1]||a[2]-b[2]); for(let i=0;i<left;i++) out[fr[i%fr.length][0]]++; return out; }
+// envSummary's guarded line: each published day gains its section split (the site's students and Lincoln's mirror; counts only)
+function cpWeekSum(kid,out,M,u){
+  try{ if(!out||!out.days||typeof out.days!=="object") return out; const A=cpWeekDayAgg(kid,M,u);
+    Object.keys(out.days).forEach(k=>{ const a=A[k]; if(a&&out.days[k]&&Object.keys(a.by).length) out.days[k].by=a.by; }); }catch(e){}
+  return out;
+}
+// ── PURE: one week from a day map {YYYYMMDD: {n, c, m, secs, by}} → the snapshot's shape. upTo = the last day counted (the week still running)
+function cpWeekRec(days,wk,planned,upTo){
+  const D=days||{}, r={days:0,planned:(planned==null?null:+planned||0),secs:0,learned:0,reviewed:0,missed:0,bySection:{}};
+  cpWeekDays(wk).forEach(d=>{ if(upTo&&d>upTo) return; const e=D[cpwkKey(d)]; if(!e||!(+e.n>0)) return;
+    const c=+e.c||0, m=+e.m||0; r.days++; r.secs+=+e.secs||0; r.reviewed+=c+m; r.missed+=m; r.learned+=Math.max(0,(+e.n||0)-c-m);
+    const by=(e.by&&typeof e.by==="object")?e.by:{};
+    Object.keys(by).forEach(k=>{ const b=by[k]||{}; if(!(+b.n>0)) return; const bc=+b.c||0, bm=+b.m||0, s=r.bySection[k]||(r.bySection[k]={days:0,secs:0,learned:0,reviewed:0,missed:0});
+      s.days++; s.secs+=+b.secs||0; s.reviewed+=bc+bm; s.missed+=bm; s.learned+=Math.max(0,(+b.n||0)-bc-bm); }); });
+  return r;
+}
+// PURE: completion = days studied (no more than planned) ÷ planned; null when nothing was planned
+function cpWeekDone(rec){ const p=rec&&rec.planned; if(p==null||!(+p>0)) return null; return Math.round(Math.min(+rec.days||0,+p)/(+p)*100); }
+// a snapshot read back (Firebase drops empties; numbers only)
+function cpwkNorm(x){ const n=v=>Math.max(0,Math.round(+v||0)), r={days:n(x.days),planned:x.planned==null?null:n(x.planned),secs:n(x.secs),learned:n(x.learned),reviewed:n(x.reviewed),missed:n(x.missed),bySection:{}};
+  const B=(x.bySection&&typeof x.bySection==="object")?x.bySection:{}; Object.keys(B).forEach(k=>{ const b=B[k]||{}; r.bySection[k]={days:n(b.days),secs:n(b.secs),learned:n(b.learned),reviewed:n(b.reviewed),missed:n(b.missed)}; });
+  if(typeof x.pace==="string"&&CPWK_PACE[x.pace]) r.pace=x.pace; return r; }
+// ── the study days: the family's own (CPCAL), else the class calendar (CPPACE), else Mon–Fri
+function cpwkIsDay(sid,d){
+  try{ if(typeof cpStudyDays==="function"&&typeof cpCalStudy==="function"){ const c=cpStudyDays(sid); if(c) return cpCalStudy(c,d); }
+    if(typeof cppStudy==="function"&&typeof cppCal==="function"&&typeof cppCls==="function") return cppStudy(cppCal(cppCls()),d); }catch(e){}
+  const w=new Date(cpwkMs(d)).getUTCDay(); return w>0&&w<6;
+}
+function cpwkPlanned(sid,wk,upTo){ if(!cpwkSite()) return null; return cpWeekDays(wk).filter(d=>(!upTo||d<=upTo)&&cpwkIsDay(sid,d)).length; }
+function cpwkTarget(sid){
+  try{ if(typeof cppSetting==="function"){ const L=(cpwkDemo()&&typeof cppLayersFor==="function")?cppLayersFor(sid):((typeof cppLayers==="function")?cppLayers(sid):[]); const v=cppSetting(CPWK_ROW.name,L); if(Number.isInteger(v)&&v>0&&v<=100) return v; } }catch(e){}
+  return CPWK_ROW.def;
+}
+// ── one student's week, as the console sees it: the snapshot for a finished week, else the summary's days (null = no record that far back)
+function cpwkFor(s,wk){
+  const today=cpwkToday(), cur=cpWeekId(today), sm=(s&&s.summary)||null, W=(s&&s.weeks)||{}, snap=W[wk], upTo=wk===cur?today:null, pl=cpwkPlanned(s.sid,wk,upTo);
+  if(wk!==cur&&snap&&typeof snap==="object"){ const r=cpwkNorm(snap); if(r.planned==null) r.planned=pl; r.from="week"; return r; }
+  if(!sm) return null;
+  const days=sm.days||{}, keys=Object.keys(days).filter(k=>/^\d{8}$/.test(k)).sort(), full=keys.length<((typeof ENVM_DAYS!=="undefined")?ENVM_DAYS:30)||(keys.length&&keys[0]<=cpwkKey(cpWeekStart(wk)));
+  const r=cpWeekRec(days,wk,pl,upTo); if(!full&&!r.days) return null; r.from="summary"; if(!full) r.partial=true; return r;
+}
+// the kid's and parent's own app: every day of the family's study log
+function cpwkOwn(kid,sid,wk){ const M=(typeof masteryData!=="undefined"&&masteryData)||{}, u=(typeof envmUnit==="function")?envmUnit():null, today=cpwkToday(), cur=cpWeekId(today), upTo=wk===cur?today:null;
+  const r=cpWeekRec(cpWeekDayAgg(kid,M,u),wk,cpwkPlanned(sid,wk,upTo),upTo); r.from="log"; return r; }
+// ── the pace verdict now (📅 Pace's own row, as the grid chip and the parent page show it) → {k, t, goal} | null. sync = "needs from now"
+// worked out at once (the parent's page, a snapshot, the demo's seed); else 📅 Pace's own background queue, which repaints when it is done
+function cpwkPaceNow(s,parent,sync){
+  try{ if(typeof cppRow!=="function"||typeof cppSavedPlan!=="function"||typeof cppDraftOf!=="function") return null; if(typeof cppDemo==="function") cppDemo();
+    const sp=cppSavedPlan(); if(!sp||!sp.plan) return null; const r=cppRow(s,cppDraftOf(cppCls()),sp.plan,Object.assign(parent?{parent:true}:{},sync?{sync:true}:{})), v=r&&r.verdict;
+    return v&&CPWK_PACE[v.k]?{k:v.k,t:v.t,goal:sp.i.goalName||""}:null; }catch(e){ return null; }
+}
+function cpwkGoal(){ try{ const g=(typeof cppGoals==="function"&&typeof cppCls==="function")?cppGoals(cppCls()):[]; return g[0]?String(g[0].name):""; }catch(e){ return ""; } }
+function cpwkPace(s,wk,rec,parent){ if(rec&&rec.pace) return {k:rec.pace,t:"",goal:cpwkGoal()}; const cur=cpWeekId(cpwkToday()); if(wk!==cur&&wk!==cpWeekShift(cur,-1)) return null; return cpwkPaceNow(s,parent,parent); }
+// ── the check-ins and finals taken that week (summary.tests' dates)
+function cpwkTests(sm,wk){ const T=(sm&&sm.tests)||{}, D=cpWeekDays(wk), inW=d=>typeof d==="string"&&d.slice(0,10)>=D[0]&&d.slice(0,10)<=D[6], out=[]; if(!D.length) return out;
+  Object.keys(T).sort().forEach(k=>{ const t=T[k]||{}, p=t.post&&t.post.best; if(t.pre&&inW(t.pre.date)) out.push({sec:k,w:"pre",right:+t.pre.right||0,n:+t.pre.n||0});
+    if(p&&inW(p.date)) out.push({sec:k,w:"post",right:+p.right||0,n:+p.n||0,grad:!!(t.graduated&&inW(typeof t.graduated==="object"?t.graduated.date:""))}); });
+  return out; }
+// ── the strongest section that week: best share right, with at least CPWK_STRONG answered
+function cpwkStrong(rec){ const B=(rec&&rec.bySection)||{}; let best=null;
+  Object.keys(B).forEach(k=>{ const b=B[k]; if(!(b.reviewed>=CPWK_STRONG)) return; const a=(b.reviewed-b.missed)/b.reviewed; if(!best||a>best.a||(a===best.a&&b.reviewed>best.n)) best={k,a,n:b.reviewed}; });
+  return best?best.k:null; }
+// ── their top 2 struggle areas: ⚠ Most missed's grouping of this student's missed questions and weak cards (the console), else the weak
+// cards by the unit's own Key Concepts (the parent's page; and the console while the cards are still loading)
+function cpwkWorking(s){
+  const sm=(s&&s.summary)||{};
+  try{ if(cpwkOn()&&typeof cpStruggle==="function"&&typeof cpWeakRank==="function"&&typeof cpcsIndex==="function"){ const M=cpcsIndex();
+    if(M&&M.ready&&M.byId){ if(typeof cprDemoSeed==="function") cprDemoSeed(); const by={}; (M.C||[]).forEach(c=>{ const k=c.deck+"|"+c.name; if(!by[k]) by[k]=c; }); const xd=(typeof _cpm!=="undefined"&&_cpm.demo&&_cpm.demo.weak&&_cpm.demo.weak[s.sid])?{[s.sid]:_cpm.demo.weak[s.sid]}:null;
+      const ws=cpWeakRank([{sid:s.sid,name:"",summary:sm}],xd).map(w=>({c:by[w.deck+"|"+w.n]||null,who:Array(Math.max(1,w.score)).fill(1)})).filter(w=>w.c);
+      const qs=((typeof cprMostMissed==="function"&&cprMostMissed())||[]).filter(x=>x&&x.row&&(x.row.wrong||[]).some(y=>y&&y.sid===s.sid)).map(x=>({key:x.key+"|"+x.row.id,missed:2,took:1,cards:x.row.cards||[]}));
+      const G=cpStruggle(qs,ws,M.byId,()=>({pct:100,est:false,n:1})); if(G.length) return G.slice(0,2).map(g=>String(g.label)); } } }catch(e){}
+  const u=(typeof envmUnit==="function")?envmUnit():null, lab={}, A={};
+  ((u&&u.decks)||[]).forEach(d=>(d&&d.cards||[]).forEach(c=>{ if(c&&c.name!=null) lab[d.key+"|"+c.name]=c.family||c.group||null; }));
+  const W=sm.weak||{}; Object.keys(W).forEach(dk=>{ const L=Array.isArray(W[dk])?W[dk]:Object.values(W[dk]||{});
+    L.forEach(r=>{ if(!r||r.n==null) return; const st=(typeof envsStationOfDeck==="function")?envsStationOfDeck(dk):null, l=lab[dk+"|"+r.n]||cpwkSecName(st||dk); A[l]=(A[l]||0)+(+r.m||0)*2+(+r.d||0); }); });
+  return Object.keys(A).filter(k=>A[k]>0).sort((a,b)=>A[b]-A[a]||a.localeCompare(b)).slice(0,2);
+}
+function cpwkSecName(id){ const st=(typeof envsStation==="function")?envsStation(id):null; return st?String(st.short||st.label||id):String(id||""); }
+function cpwkWord(k){ const v=(typeof cpLabel==="function")?cpLabel(k):""; return String(v||((typeof CP_LABELS_PLAIN!=="undefined"&&CP_LABELS_PLAIN[k])||k)); }
+function cpwkMin(secs){ return Math.round((+secs||0)/60); }
+// ── PURE: the synopsis, plain sentences from the numbers, no pronouns. o = {name, rec, cur, strong, working[], pace {k, t, goal}, tests[],
+// secName(id), word(k)} — rec null = no record that far back
+function cpWeekSynopsis(o){
+  o=o||{}; const first=String(o.name||"").trim().split(/\s+/)[0]||"This student", r=o.rec, sn=o.secName||(x=>x), wd=o.word||(x=>x), out=[], pl=(n,w)=>n+" "+w+(n===1?"":"s");
+  if(!r) return first+": no study record reaches back to this week.";
+  const p=r.planned, so=o.cur?" so far":"";
+  out.push(first+" studied "+(p==null?pl(r.days,"day")+so:(r.days<=p?r.days+" of "+pl(p,"planned day")+so:pl(r.days,"day")+so+", more than the "+p+" planned"))+(r.days?" ("+cpwkMin(r.secs)+" min)":"")+".");
+  if(r.days) out.push("Met "+pl(r.learned,"new card")+" and reviewed "+r.reviewed+(r.reviewed?", missing "+r.missed:"")+".");
+  if(o.strong) out.push("Strongest: "+sn(o.strong)+".");
+  if(o.working&&o.working.length) out.push("Working on: "+o.working.join(", ")+".");
+  (o.tests||[]).forEach(t=>{ out.push("Took the "+sn(t.sec)+" "+String(wd(t.w)).toLowerCase()+" ("+t.right+" of "+t.n+")"+(t.grad?" and passed it":"")+"."); });
+  if(o.pace&&CPWK_PACE[o.pace.k]) out.push(CPWK_PACE[o.pace.k]+(o.pace.goal?" for "+o.pace.goal:"")+(o.pace.k==="behind"&&o.pace.t?" ("+String(o.pace.t).replace(/^[▼▲●]\s*/,"")+")":"")+".");
+  if(r.partial) out.push("(The summary reaches back only part of this week.)");
+  return out.join(" ");
+}
+// ── one student's whole view of a week (the row, the synopsis, the print)
+function cpwkView(s,wk,opt){
+  opt=opt||{}; const cur=cpWeekId(cpwkToday())===wk, rec=opt.own?cpwkOwn(opt.kid,s.sid,wk):cpwkFor(s,wk), target=cpwkTarget(s.sid), pct=rec?cpWeekDone(rec):null;
+  const v={sid:s.sid,name:opt.name||((typeof envcName==="function")?envcName(s):s.sid),rec,cur,target,pct,met:pct!=null&&pct>=target,strong:cpwkStrong(rec),working:cpwkWorking(s),pace:cpwkPace(s,wk,rec,!!opt.parent),tests:cpwkTests(s.summary,wk)};
+  v.text=cpWeekSynopsis({name:v.name,rec,cur,strong:v.strong,working:v.working,pace:v.pace,tests:v.tests,secName:cpwkSecName,word:cpwkWord});
+  return v;
+}
+// PR 24 (🏅 Team picks): study completion over the finished weeks with a plan → {pct, met, weeks} (days ÷ planned, all weeks together)
+function cpWeekStudy(s,n){
+  if(!s) return {pct:null,met:0,weeks:0}; cpwkDemoSeed(); const cur=cpWeekId(cpwkToday()); let d=0, p=0, met=0, weeks=0;
+  for(let i=1;i<=(n||12);i++){ const wk=cpWeekShift(cur,-i), r=cpwkFor(s,wk); if(!r||!(r.planned>0)) continue; weeks++; d+=Math.min(r.days,r.planned); p+=r.planned; if(cpWeekDone(r)>=cpwkTarget(s.sid)) met++; }
+  return {pct:p?Math.round(d/p*100):null,met,weeks};
+}
+// ── THE SNAPSHOT: the last CPWK_PUB finished weeks, from the whole study log (PURE given the inputs)
+function cpWeekSnap(kid,sid,M,u,today){ const cur=cpWeekId(today||cpwkToday()), A=cpWeekDayAgg(kid,M,u), out={};
+  for(let i=1;i<=CPWK_PUB;i++){ const wk=cpWeekShift(cur,-i), r=cpWeekRec(A,wk,cpwkPlanned(sid,wk,null),null); if(r.planned==null) delete r.planned; out[wk]=r; }
+  return out; }
+// envmPublishKid's guarded line (the mirror has just sent the summary): each changed week, ONE set of students/<sid>/weeks/<wk>
+function cpWeekPub(kid,sid,edb){
+  try{
+    if(!kid||!sid||(typeof _dryRun==="function"&&_dryRun())||cpwkDemo()) return 0;
+    if(typeof _envm!=="undefined"&&_envm.locked) return 0;
+    const u=(typeof envmUnit==="function")?envmUnit():null; if(!u) return 0;
+    const S=cpWeekSnap(kid,sid,(typeof masteryData!=="undefined"&&masteryData)||{},u), key="ha_cpwk_"+sid, last=cpWeekShift(cpWeekId(cpwkToday()),-1);
+    let sent={}; try{ sent=JSON.parse((typeof HA_LS!=="undefined"&&HA_LS.getItem(key))||"{}")||{}; }catch(e){ sent={}; }
+    const keep={}; let n=0;
+    Object.keys(S).sort().forEach(wk=>{ const rec=S[wk], h=String(cpwkHash(JSON.stringify(rec))); keep[wk]=h; if(sent[wk]===h) return;
+      if(wk===last&&cpwkSite()){ const pc=cpwkPaceNow({sid,summary:(typeof envsSummary==="function")?envsSummary(kid):null},true,true); if(pc) rec.pace=pc.k; }
+      const path="students/"+sid+"/weeks/"+wk, forget=()=>{ try{ const x=JSON.parse(HA_LS.getItem(key)||"{}")||{}; delete x[wk]; HA_LS.setItem(key,JSON.stringify(x)); }catch(e){} };
+      let p=null; if(cpwkSite()&&typeof envsWrite==="function") p=envsWrite(path,rec,"set"); else if(edb&&typeof edb.ref==="function") p=edb.ref(path).set(rec); else { delete keep[wk]; return; }
+      n++; if(p&&typeof p.catch==="function") p.catch(forget); });
+    try{ if(typeof HA_LS!=="undefined") HA_LS.setItem(key,JSON.stringify(keep)); }catch(e){}
+    return n;
+  }catch(e){ return 0; }
+}
+// ── the demo: a section split and a share of new cards on the sample days, ten older weeks of snapshots (memory, the first paint only)
+function cpwkDemoSeed(){
+  if(!cpwkDemo()||typeof _envc==="undefined"||!_envc.demo||_cpwk.seeded===_envc.demo) return false;
+  _cpwk.seeded=_envc.demo; const S=_envc.students||{}, stns=(typeof envsStations==="function")?envsStations():[], cur=cpWeekId(cpwkToday());
+  Object.keys(S).forEach(sid=>{ const s=S[sid], sm=s&&s.summary; if(!sm) return; const bd=sm.byDeck||{}, ws=[];
+    stns.forEach(st=>{ let w=0, on=false; (st.decks||[]).forEach(d=>{ const r=bd[d.key]; if(r&&!r.held){ on=true; w+=(+r.correct||0)+(+r.miss||0)+1; } }); if(on) ws.push([st.id,w]); });
+    if(!ws.length) return; const D=sm.days||{}, ks=Object.keys(D);
+    ks.forEach(k=>{ const e=D[k]; if(!e||e.by||!(+e.n>0)) return; const nw=Math.round(e.n*(0.18+(cpwkHash(sid+k)%10)/100)), tot=(+e.c||0)+(+e.m||0), c=tot?Math.round((e.n-nw)*(+e.c||0)/tot):e.n-nw;
+      e.c=c; e.m=e.n-nw-c; const wN=cpwkSplit(e.n,ws), wC=cpwkSplit(e.c,ws), wM=cpwkSplit(e.m,ws), wS=cpwkSplit(e.secs,ws); e.by={};
+      ws.forEach(x=>{ const k2=x[0], n2=wN[k2]||0; if(!n2) return; const c2=Math.min(wC[k2]||0,n2); e.by[k2]={n:n2,c:c2,m:Math.min(wM[k2]||0,n2-c2),secs:wS[k2]||0}; }); });
+    if(s.weeks) return; const per=ks.length?Math.round(ks.reduce((a,k)=>a+(+D[k].n||0),0)/ks.length):10, acc=ks.reduce((a,k)=>a+(+D[k].c||0),0)/Math.max(1,ks.reduce((a,k)=>a+(+D[k].c||0)+(+D[k].m||0),0));
+    const rate=Math.max(0.35,Math.min(1,ks.length/8)), W={};
+    for(let i=2;i<=CPWK_SEED+1;i++){ const wk=cpWeekShift(cur,-i), pl=cpwkPlanned(sid,wk,null)||0, h=cpwkHash(sid+wk), d=Math.max(0,Math.min(pl,Math.round(pl*rate)+(h%3)-1)), n=d*Math.max(4,per+((h>>>3)%5)-2);
+      const learned=Math.round(n*0.22), reviewed=n-learned, missed=Math.round(reviewed*(1-acc)), secs=n*18, sN=cpwkSplit(n,ws), sL=cpwkSplit(learned,ws), sR=cpwkSplit(reviewed,ws), sM=cpwkSplit(missed,ws), sS=cpwkSplit(secs,ws), B={};
+      ws.forEach(x=>{ const k=x[0]; if(sN[k]) B[k]={days:d,secs:sS[k],learned:sL[k],reviewed:sR[k],missed:Math.min(sM[k],sR[k])}; });
+      W[wk]={days:d,planned:pl,secs,learned,reviewed,missed,bySection:B,pace:d>=pl*0.8?"on":"behind"}; }
+    const last=cpWeekShift(cur,-1), lr=cpWeekRec(D,last,cpwkPlanned(sid,last,null),null), pc=cpwkPaceNow(Object.assign({sid},s),false,true); if(pc) lr.pace=pc.k; W[last]=lr;   // last week: what the kid's app would have sent
+    s.weeks=W; });
+  return true;
+}
+// ── the console's chip: 📊 Weekly right after ⚠ Most missed (else after 📅 Pace); the array is the console's, this only splices into it
+function cpwkChips(chips){
+  if(!cpwkOn()||!Array.isArray(chips)||chips.some(x=>x&&x[0]==="cpweek")) return chips;
+  if(typeof _envc!=="undefined"&&_envc.view!=="cpweek") _cpwk.open="";
+  let i=chips.findIndex(x=>x&&x[0]==="cpmissed"); if(i<0) i=chips.findIndex(x=>x&&x[0]==="pace"); if(i<0) i=chips.findIndex(x=>x&&x[0]==="grid");
+  chips.splice(i<0?chips.length:i+1,0,["cpweek","\u{1F4CA} Weekly"]); return chips;
+}
+function cpwkTap(kind,id){
+  if(kind==="wk"){ if(!cpWeekStart(id)) return; _cpwk.wk=id; _cpwk.open=""; }
+  else if(kind==="row") _cpwk.open=_cpwk.open===id?"":String(id||"");
+  else if(kind==="pb") _cpwk.pback=Math.max(0,Math.min(CPWK_PARENT_BACK,_cpwk.pback+(+id||0)));
+  if(typeof envcRe==="function") envcRe(); else if(typeof envsRe==="function") envsRe();
+}
+function cpwkWeekNow(){ const cur=cpWeekId(cpwkToday()); if(!_cpwk.wk||!cpWeekStart(_cpwk.wk)||_cpwk.wk>cur) _cpwk.wk=cpWeekShift(cur,-1); return _cpwk.wk; }
+function cpwkCss(){
+  if(_cpwk.css||typeof document==="undefined"||!document.createElement) return; _cpwk.css=true;
+  try{ const s=document.createElement("style"); s.id="cpwk-css"; s.textContent=
+    '.cpwk-wks{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 4px}.cpwk-wks button{min-height:36px;padding:0 12px;border-radius:18px;border:1.5px solid #d1d5db;background:#fff;font:inherit;font-size:13px;font-weight:700;cursor:pointer;color:#374151}.cpwk-wks button.on{background:#14532d;border-color:#14532d;color:#fff}'+
+    '.cpwk-row{border-top:1px solid #f1efe9}.cpwk-row:first-child{border-top:none}.cpwk-rh{display:block;width:100%;text-align:left;background:none;border:none;padding:10px 2px;font:inherit;color:inherit;cursor:pointer;min-height:44px}'+
+    '.cpwk-n{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-weight:800;font-size:14.5px}.cpwk-n .p{font-size:11.5px;font-weight:800}.cpwk-s{font-size:12.5px;color:#374151;margin-top:2px;overflow-wrap:anywhere}.cpwk-s .ok{color:#15803d;font-weight:800}.cpwk-s .lo{color:#b45309;font-weight:800}'+
+    '.cpwk-w{font-size:12px;color:#6b7280;margin-top:2px;overflow-wrap:anywhere}.cpwk-t{display:inline-block;font-size:11.5px;font-weight:700;background:#eef2ff;color:#3730a3;border-radius:8px;padding:2px 7px;margin:3px 4px 0 0}'+
+    '.cpwk-syn{font-size:14px;line-height:1.5;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:10px 12px;margin:2px 0 8px;overflow-wrap:anywhere}'+
+    '.cpwk-sec{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:10px}.cpwk-sec th,.cpwk-sec td{padding:4px 3px;text-align:right;border-top:1px solid #f1efe9}.cpwk-sec th:first-child,.cpwk-sec td:first-child{text-align:left}.cpwk-sec th{font-size:11px;color:#6b7280;font-weight:700}'+
+    '.cpwk-nav{display:flex;gap:8px;align-items:center;margin:6px 0}.cpwk-nav button{min-width:44px;min-height:40px;border-radius:10px;border:1.5px solid #d1d5db;background:#fff;font:inherit;font-weight:800;cursor:pointer}.cpwk-nav button:disabled{opacity:.35;cursor:default}.cpwk-nav div{flex:1;text-align:center;font-weight:700;font-size:13px}';
+    document.head.appendChild(s); }catch(e){}
+}
+function cpwkSecTable(rec){ const B=(rec&&rec.bySection)||{}, ks=Object.keys(B).filter(k=>B[k]&&(B[k].days||B[k].reviewed||B[k].learned)), order=((typeof envsStations==="function")?envsStations():[]).map(s=>s.id);
+  if(!ks.length) return ""; ks.sort((a,b)=>{ const x=order.indexOf(a), y=order.indexOf(b); return (x<0?99:x)-(y<0?99:y)||a.localeCompare(b); });
+  return '<table class="cpwk-sec"><thead><tr><th>'+cpwkEsc(cpwkWord("section"))+'</th><th>days</th><th>min</th><th>new</th><th>reviewed</th><th>missed</th></tr></thead><tbody>'+
+    ks.map(k=>{ const b=B[k]; return '<tr><td>'+cpwkEsc(cpwkSecName(k))+'</td><td>'+b.days+'</td><td>'+cpwkMin(b.secs)+'</td><td>'+b.learned+'</td><td>'+b.reviewed+'</td><td>'+b.missed+'</td></tr>'; }).join("")+'</tbody></table>'; }
+function cpwkTestChips(v){ return v.tests.map(t=>'<span class="cpwk-t">\u{1F4DD} '+cpwkEsc(cpwkSecName(t.sec)+' '+cpwkWord(t.w).toLowerCase())+' '+t.right+'/'+t.n+(t.grad?' \u{1F393}':'')+'</span>').join(""); }
+function cpwkStatLine(v){ const r=v.rec; if(!r) return '<span class="envs-muted">no record this far back</span>';
+  const pl=r.planned==null?r.days+' d':r.days<=r.planned?r.days+' of '+r.planned+' d':r.days+' d · '+r.planned+' planned', mk=v.pct==null?'':(v.met?' <span class="ok">✓ '+v.pct+'%</span>':' <span class="lo">· '+v.pct+'%</span>');
+  return cpwkEsc(pl)+mk+(r.partial?' ≥':'')+' · '+cpwkMin(r.secs)+' min · '+r.learned+' new · '+r.reviewed+' reviewed · '+r.missed+' missed'; }
+function cpwkPaceTag(p){ if(!p||!CPWK_PACE[p.k]) return ''; return '<span class="p" style="color:'+CPWK_COL[p.k]+'">'+cpwkEsc(p.t||(p.k==="on"?"● on pace":p.k==="ahead"?"▲ ahead":"▼ behind"))+'</span>'; }
+// ── 📊 WEEKLY: the console's view
+function cpwkHtml(){
+  if(!cpwkOn()) return ""; cpwkCss(); cpwkDemoSeed();
+  const cur=cpWeekId(cpwkToday()), wk=cpwkWeekNow(), S=(typeof envcStudents==="function")?envcStudents():[], V=S.map(s=>cpwkView(s,wk)), target=cpwkTarget(""), withPl=V.filter(v=>v.pct!=null);
+  let h='<div class="envs-card"><div class="envs-h2">\u{1F4CA} Weekly study summary</div><div class="cpwk-wks">';
+  const wks=[cur,cpWeekShift(cur,-1)]; for(let i=2;i<CPWK_CHIPS;i++) wks.push(cpWeekShift(cur,-i));
+  h+=wks.map(w=>'<button class="'+(w===wk?'on':'')+'" onclick="cpwkTap(\'wk\',\''+w+'\')">'+cpwkEsc(cpwkChipName(w,cur))+'</button>').join("")+'</div>';
+  h+='<div style="font-weight:800;font-size:14px;margin-top:4px">'+cpwkEsc(cpWeekLabel(wk))+(wk===cur?' · so far':'')+'</div>';
+  h+='<div class="envs-muted" style="margin-top:2px">Completion = days studied ÷ the family’s planned study days · target '+target+'% (⚙️ Class settings) · '+(withPl.length?withPl.filter(v=>v.met).length+' of '+withPl.length+' met it':'no planned days')+'. Tap a student for the synopsis.</div>';
+  h+='<div class="envs-row" style="margin-top:8px"><button class="envs-btn" onclick="cpwkPrint()">\u{1F5A8} Print the class</button></div></div>';
+  if(cpwkDemo()) h+='<div class="envs-card" style="background:#fffbeb;border-color:#fcd34d;font-size:12.5px">\u{1F3B2} <b>Sample weeks.</b> The sample class’s older weeks and section split are invented to show the look.</div>';
+  h+='<div class="envs-card" style="padding:4px 12px">'+(V.length?V.map(v=>{ const open=_cpwk.open===v.sid;
+    return '<div class="cpwk-row'+(open?' open':'')+'"><button class="cpwk-rh" onclick="cpwkTap(\'row\',\''+cpwkJ(v.sid)+'\')" aria-expanded="'+(open?'true':'false')+'"><div class="cpwk-n"><span>'+(open?'▾ ':'▸ ')+cpwkEsc(v.name)+'</span>'+cpwkPaceTag(v.pace)+'</div><div class="cpwk-s">'+cpwkStatLine(v)+'</div>'
+      +(v.working.length?'<div class="cpwk-w">Working on: '+cpwkEsc(v.working.join(" · "))+'</div>':'')+(v.tests.length?'<div>'+cpwkTestChips(v)+'</div>':'')+'</button>'
+      +(open?'<div class="cpwk-syn">'+cpwkEsc(v.text)+'</div>'+cpwkSecTable(v.rec):'')+'</div>'; }).join(""):'<div class="envs-muted" style="padding:10px 0">No students yet.</div>')+'</div>';
+  h+='<div class="envs-muted" style="padding:0 4px">Each student’s app keeps a weekly snapshot at students/&lt;student&gt;/weeks/&lt;week&gt;, so weeks older than the 30 study days in the summary stay. New = cards shown for the first time; reviewed = cards answered.</div>';
+  return h;
+}
+function cpwkPrintHtml(wk){
+  wk=wk||cpwkWeekNow(); const S=(typeof envcStudents==="function")?envcStudents():[], cls=(typeof _envc!=="undefined"&&_envc.cls)||{}, b=(typeof cpBrand==="function")?cpBrand(cls):{title:cls.name||"",emoji:""};
+  return '<!doctype html><html><head><meta charset="utf-8"><title>Weekly study summary</title><style>body{font:14px/1.45 Georgia,serif;margin:28px;color:#111}h1{font-size:20px;margin:0 0 2px}.t{color:#555;font-size:12px}.s{margin:14px 0;break-inside:avoid}.s b{font-size:15px}table{border-collapse:collapse;font-size:12px;margin-top:4px}td,th{padding:2px 8px 2px 0;text-align:left}</style></head><body>'
+    +'<h1>'+cpwkEsc((b.emoji?b.emoji+" ":"")+(b.title||""))+' · Weekly study summary</h1><div class="t">'+cpwkEsc(cpWeekLabel(wk))+' · target '+cpwkTarget("")+'% of planned study days</div>'
+    +S.map(s=>{ const v=cpwkView(s,wk), B=(v.rec&&v.rec.bySection)||{}, ks=Object.keys(B);
+      return '<div class="s"><b>'+cpwkEsc(v.name)+'</b>'+(v.pct!=null?' — '+v.pct+'%'+(v.met?' ✓':''):'')+'<div>'+cpwkEsc(v.text)+'</div>'+(ks.length?'<table><tr><th></th><th>days</th><th>min</th><th>new</th><th>reviewed</th><th>missed</th></tr>'+ks.map(k=>'<tr><td>'+cpwkEsc(cpwkSecName(k))+'</td><td>'+B[k].days+'</td><td>'+cpwkMin(B[k].secs)+'</td><td>'+B[k].learned+'</td><td>'+B[k].reviewed+'</td><td>'+B[k].missed+'</td></tr>').join("")+'</table>':'')+'</div>'; }).join("")
+    +'</body></html>';
+}
+function cpwkPrint(){ if(!cpwkOn()) return; const h=cpwkPrintHtml(); let w=null; try{ w=window.open("","_blank"); }catch(e){} if(!w){ envsToast("The browser blocked the print window."); return; }
+  try{ w.document.write(h); w.document.close(); setTimeout(()=>{ try{ w.focus(); w.print(); }catch(e){} },300); }catch(e){} }
+// ── the parent's page: 📊 This week (their own child), ◀ ▶ back through the last weeks
+function cpWeekParentHtml(kid){
+  try{
+    if(!cpwkSite()||!kid||typeof _envs==="undefined"||!_envs.sid) return ""; cpwkCss();
+    const demo=cpwkDemo()&&typeof _envc!=="undefined"&&_envc.demo; if(demo) cpwkDemoSeed();
+    const row=demo?(_envc.students||{})[_envs.sid]:null, sm=row?row.summary:((typeof envsSummary==="function")?envsSummary(kid):null);
+    const cur=cpWeekId(cpwkToday()), wk=cpWeekShift(cur,-_cpwk.pback), name=(typeof envsKidName==="function")?envsKidName(kid):kid, s={sid:_envs.sid,summary:sm,weeks:row?row.weeks:null,meta:{name}};
+    const v=cpwkView(s,wk,demo?{name,parent:true}:{name,parent:true,own:true,kid});
+    let h='<div class="envs-card"><div class="envs-h2">\u{1F4CA} '+(wk===cur?'This week':_cpwk.pback===1?'Last week':'Week of '+cpwkEsc(cpwkMo(cpWeekStart(wk))))+'</div>';
+    h+='<div class="cpwk-nav"><button onclick="cpwkTap(\'pb\',1)" aria-label="An earlier week"'+(_cpwk.pback>=CPWK_PARENT_BACK?' disabled':'')+'>◀</button><div>'+cpwkEsc(cpWeekLabel(wk))+'</div><button onclick="cpwkTap(\'pb\',-1)" aria-label="A later week"'+(_cpwk.pback<=0?' disabled':'')+'>▶</button></div>';
+    h+='<div class="cpwk-syn">'+cpwkEsc(v.text)+'</div>';
+    if(v.pct!=null) h+='<div style="font-size:13px;margin-bottom:6px">Study completion: <b style="color:'+(v.met?'#15803d':'#b45309')+'">'+v.pct+'%</b> of the planned days'+(wk===cur?' so far':'')+' · the class aims for '+v.target+'%.</div>';
+    h+=cpwkSecTable(v.rec);
+    return h+'<div class="envs-muted">The same summary the teacher sees each week. New = cards shown for the first time; reviewed = cards answered.</div></div>';
+  }catch(e){ return ""; }
+}
+// ⚙️ Class settings ▸ Weekly summary (the class's number only; ENVCLASSSET's own row, lock and Reset)
+function cpwkSectHtml(scope){ if(scope!=="class"||!cpwkOn()||typeof envClsSectHtml!=="function"||!CPWK_FIELDS_SET) return ""; return envClsSectHtml("class","week"); }
+// CPWEEK_END
 // CPDRILLPARENT_START — 🧠 THE PARENT CAN TAKE OVER A STUDENT'S REVIEW CARDS, per kid, on the class site (DESIGN_class_platform_2026-10-28.md
 // §7(a) 2–3, §2, §9, §13 row 13, §14 Q5; PR 13 of the class platform). Her words 2026-10-28: "For the parent, I think they can get the
 // option to pick per kid, and the default would be that it stays in the student's own session. But the mom, if she knows her kid and
