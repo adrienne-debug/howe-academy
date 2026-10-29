@@ -49282,8 +49282,8 @@ function cpCalSendNext(mode){
 //     = [card ids] (a new leaf, the same writers as the layer) · classCards/<cid>/<deck>/<card> = {hide, name, by, ts} (PR 10's). Every write
 //     goes through envcWrite / cpctCommit / cpceCommit → envsWrite (the demo: "would write"; a dry run: nothing).
 const CPSG_MAX=8, CPSG_LOW=40, CPSG_HIGH=90, CPSG_MIN=3, CPSG_NOTEST_MIN=10, CPSG_TICK_MAX=40, CPSG_FIND=8, CPSG_ID_MAX=100;
-const CPSG_ORDER=["nocore","notest","miss","student","weak","easy"], CPSG_CAP={nocore:3,notest:2,miss:1,student:2,weak:2,easy:2};
-const CPSG_ICON={nocore:"\u{1F4DD}",easy:"\u{1F4DD}",notest:"\u{1F648}",miss:"\u{1F4C5}",student:"\u{1F464}",weak:"\u{1F9E0}"};
+const CPSG_ORDER=["nocore","notest","miss","sendEarly","student","weak","easy"], CPSG_CAP={nocore:3,notest:2,miss:1,sendEarly:1,student:2,weak:2,easy:2};   // 📆 sendEarly: PR 28's suggestion (wave-7 merge 2026-10-29)
+const CPSG_ICON={nocore:"\u{1F4DD}",easy:"\u{1F4DD}",notest:"\u{1F648}",miss:"\u{1F4C5}",sendEarly:"\u{1F4C6}",student:"\u{1F464}",weak:"\u{1F9E0}"};
 const CPSG_KIND={term:"term",fact:"fact",id:"ID"};
 const _cpsg={open:"",aside:false,tk:null,cm:null,mm:{},hid:null,hidM:null,hidL:null,css:false};
 const _cpsgPrep=(typeof WeakMap==="function")?new WeakMap():null;
@@ -49452,8 +49452,13 @@ function cpsgWeak(){
     t:'“'+cpsgCut(o.c.name,50)+'” is missed by '+o.n+' of '+ST.length,lock:cpsgLock("cards"),go:"cpsgOpenCard("+o.c.i+")",hint:'opens the card in \u{1F4DA} Cards (check the back, or drill it in class)'}));
 }
 // every suggestion, kind by kind (the order above), the best of each kind first
+// 📆 PR 28 ↔ PR 16 (wave-7 merge 2026-10-29): the date strip's "send a section out earlier" joins this list, so it shows once, here, with
+// Not now kept in classes/<cid>/dismissed. Its own id has ":" (sendEarly:<sec>:<date>), which the dismissed rule refuses, so it goes through cpsgId.
+function cpSuggestOwns(k){ return k==="sendEarly"&&cpsgOn(); }
+function cpsgSendEarly(ctx){ if(typeof cpSendEarlySuggest!=="function") return []; const g=cpSendEarlySuggest(ctx); if(!g) return [];
+  return [{kind:"sendEarly",id:cpsgId("sendEarly",[g.sec,g.to]),score:0,t:g.text,go:g.doIt,lock:cpsgLock("plan"),hint:"moves "+g.label+" on the 📆 date strip (a what-if)",g}]; }
 function cpsgList(ctx){
-  const all=[].concat(cpsgQs(),cpsgNoTest(),cpsgMiss(ctx),cpsgStudents(ctx),cpsgWeak());
+  const all=[].concat(cpsgQs(),cpsgNoTest(),cpsgMiss(ctx),cpsgSendEarly(ctx),cpsgStudents(ctx),cpsgWeak());
   return all.sort((a,b)=>(CPSG_ORDER.indexOf(a.kind)-CPSG_ORDER.indexOf(b.kind))||(a.score-b.score));
 }
 // the ones she sees: not set aside, at most CPSG_CAP of a kind and CPSG_MAX in all
@@ -49532,6 +49537,7 @@ function cpsgWhyHtml(s,ctx){
   if(s.kind==="easy") return '<div class="cpsg-q">'+cpsgEsc(s.r.q)+'</div>The same question is Q'+cpsgEsc(s.tw.n||"")+' on the '+cpsgEsc(cpsgFW("post").toLowerCase())+'. Leave it, or take it out of the '+cpsgEsc(cpsgFW("post").toLowerCase())+'.';
   if(s.kind==="notest") return 'No question on your class’s tests links to them. Hide them for your class so the study fits; Do it shows what that buys before anything changes.';
   if(s.kind==="miss") return s.miss.slice(0,4).map(k=>cpsgEsc(s.lab[k]||k)+' '+cpsgN(s.P[k].atGoal)+' of '+cpsgN(s.P[k].total)+' core').join(" · ")+' by '+cpsgEsc(ctx.inp.goalName)+'. Raise New cards a day'+(ctx.inp.coreFirst?'':', turn on Core only')+', or lower the target.'+(s.go?'':(s.need===undefined?' <span class="envs-muted">Working out what it needs…</span>':' Even '+((typeof CPP_NPD_MAX!=="undefined")?CPP_NPD_MAX:50)+' a day doesn’t make it from the class’s start: try another calendar or a lower target.'));
+  if(s.kind==="sendEarly") return 'The 📆 date strip above shows the new date. Do it moves it there as a what-if: the minutes a day change first, and nothing is sent until you Save and send it out.';
   if(s.kind==="student") return (s.go?'Give them their own New cards a day, or leave it.':'More than the planner tries: try Core only, or leave it.')+' Their row in the table shows each section.';
   if(s.kind==="weak") return 'A core card among the weakest cards of '+s.n+' of your '+s.of+' students. Drill it in class (\u{1F9E0}), or check its back (✎).';
   return "";
