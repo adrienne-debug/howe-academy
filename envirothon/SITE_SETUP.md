@@ -109,6 +109,13 @@ because a miss sends a card back down), the pass mark (80 %), the wait before tr
 `classes/<cid>/plan/<section>/<field>`; the rules let the class's teacher write `plan` and check each field's shape. The teacher's
 "Open the final" still opens it early. Lincoln's own final in Howe keeps "every core card" until L1.
 
+**🧩 Skills** (2026-10-29, class platform PR 25): a unit can list skills next to its decks (a worksheet, a chart, a table …). The
+student practices each in three stages (a worked example, then finishing the last steps, then alone); learned = 4 of the last 5
+solo tries right, on 2 days. A sitting saves once, in the family's own instance (`mastery/<kid>_skills/…` + the day's study log).
+**🏫 Class setup ▸ 🧩 Skills** hides a skill or makes it optional for the class (`classSkills/<cid>/<skill>`, the class's teacher or
+an admin; the class's logins read it) and sets "the final waits for the core skills too" (`classes/<cid>/plan/<section>/skillsForFinal`,
+off unless ticked). Publish the rules file again so the `classSkills` node is live.
+
 **Master lock**: Admin → "Close the season now" writes `release/locked = {locked:true, at, by}`; every family and the teacher
 then land on the "season closed" card; nothing is deleted. It also closes **by itself after 2027-04-24** (State), or after the class's own closing date (`classes/<cid>/lockAt`) when you set one. To reopen
 for the next season, "Reopen the season" after that date writes `{locked:false, at:<then>}`, which the page honours.

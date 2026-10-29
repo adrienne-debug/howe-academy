@@ -45416,6 +45416,7 @@ function envtStatus(u,kid,station){
     if(!(rec.postOpen||(core.total>0&&core.learned>=(typeof cpFinalNeed==="function"?cpFinalNeed(kid,station,core.total):core.total)))) out.post.why="cards";   // 📝 CPFINAL: the class site opens at the plan's finalAt (85 %)
     else if(last&&last.ts&&Date.now()-last.ts<(typeof cpFinalRetakeMs==="function"?cpFinalRetakeMs(kid,station,ENVT_RETAKE_MS):ENVT_RETAKE_MS)) out.post.why="wait";   // 📝 CPFINAL: the plan's retakeHours
     else out.post.open=true;
+    if(out.post.open&&!rec.postOpen&&typeof cpSkillFinalWait==="function"&&cpSkillFinalWait(kid,station)){ out.post.open=false; out.post.why="skills"; }   // 🧩 CPSKILL: the section plan's skillsForFinal — the core skills learned too
   }
   const parts=[]; if(rec.pre) parts.push("Pre "+rec.pre.right+"/"+rec.pre.n);
   if(out.post.best) parts.push("Post "+out.post.best.right+"/"+out.post.best.n); else if(rec.pre) parts.push("Post \u2014");
@@ -45425,6 +45426,7 @@ function envtStatus(u,kid,station){
 }
 // "Final opens when every core card is learned · 212 of 488" while the final waits on the cards of a released station; "" otherwise
 function envtCoreLine(kid,station,st){ if(!st){ const u=envtUnit(); st=u?envtStatus(u,kid,station):null; }
+  if(st&&!st.graduated&&st.post&&st.post.why==="skills"&&typeof cpSkillFinalLine==="function") return cpSkillFinalLine(kid,station);   // 🧩 CPSKILL: "Final opens once the core skills are learned too · 0 of 1"
   if(!st||st.graduated||st.post.open||st.post.why!=="cards"||!st.post.core||!st.post.core.total||!envtForm(station,"post")) return "";
   if(!st.rec.pre&&!envtReleased(kid,station)) return "";
   if(typeof cpFinalLine==="function"){ const fl=cpFinalLine(kid,station,st.post.core); if(fl) return fl; }   // 📝 CPFINAL: "Final opens at 85% · 3 of 4"
@@ -46516,6 +46518,7 @@ function envSummary(kid,ctx){
       if(r.graduated) o.graduated=(typeof r.graduated==="object")?{date:r.graduated.date||null,right:+r.graduated.right||0,n:+r.graduated.n||0}:true;
       if(Object.keys(o).length) tests[stn]=o; });
     if(Object.keys(tests).length) out.tests=tests; }
+  if(typeof cpSkillSummary==="function"){ const sk=cpSkillSummary(kid,M,now); if(sk) out.skills=sk; }   // 🧩 CPSKILL: summary.skills on the class site only (null for Howe and Lincoln)
   return out;
 }
 function envmHash(s){ const o=Object.assign({},s); delete o.at; const str=JSON.stringify(o); let h=5381; for(let i=0;i<str.length;i++) h=((h*33)^str.charCodeAt(i))>>>0; return h.toString(36)+":"+str.length; }
@@ -47013,6 +47016,7 @@ function envsStudyHtml(kid){
   try{ masteryKid=kid; }catch(e){}
   let body=""; try{ body=(typeof renderMastStudy==="function")?renderMastStudy({noCheckup:true}):""; }catch(e){ body='<div class="envs-card" style="color:var(--muted)">Couldn\u2019t load the study cards \u2014 try again ('+envsEsc((e&&e.message)||e)+')</div>'; }
   if(!body||/No study sessions yet/.test(body)) body='<div class="envs-card" style="text-align:center;padding:30px 14px"><div style="font-size:36px">\u{1F331}</div><div style="font-weight:900;font-size:16px;margin-top:6px">Your cards are on their way</div><div class="envs-muted" style="margin-top:4px">'+(_envs.autoEnroll==="working"?'Setting up your Envirothon deck now\u2026':'Your teacher sends out each station as the class reaches it. Check back after class.')+'</div></div>';
+  body=(typeof cpSkillStudyWrap==="function")?cpSkillStudyWrap(kid,body):body;   // 🧩 CPSKILL: a running skill sitting takes the page; else the 🧩 Skills door under the study start
   return '<div style="padding-top:4px">'+body+'</div>';
 }
 function envsGamesHtml(kid,col){
@@ -47035,6 +47039,7 @@ function envsStationRowsHtml(summary,opts){
     const bits=[]; if(s.pre) bits.push('check-in '+s.pre.right+'/'+s.pre.n); if(s.post) bits.push('final '+s.post.right+'/'+s.post.n); if(s.grad) bits.push('\u{1F393} graduated'+(s.grad.date?' '+s.grad.date:''));
     if(bits.length) h+='<div style="font-size:11.5px;color:#0d9488;font-weight:700;margin-top:4px">\u{1F4DD} '+envsEsc(bits.join(" \u00B7 "))+'</div>';
     if(opts.kid&&typeof envtCoreLine==="function"){ const cl=envtCoreLine(opts.kid,st.id); if(cl) h+='<div class="envs-muted" style="margin-top:3px">\u{1F4DD} '+envsEsc(cl)+'</div>'; }   // 📝 ENVTEST: how far to the final (kid and parent; the console has no cards)
+    if(s.released&&typeof cpSkillRowLine==="function"){ const sl=cpSkillRowLine(summary,st.id); if(sl) h+='<div class="envs-muted" style="margin-top:3px">\u{1F9E9} '+envsEsc(sl)+'</div>'; }   // 🧩 CPSKILL: "skills learned 0 of 1" (kid, parent and the console's student page)
     if(opts.weak&&summary&&summary.weak){ const w=[]; st.decks.forEach(d=>{ (summary.weak[d.key]||[]).forEach(r=>w.push(r)); }); w.sort((a,b)=>(b.m*2+b.d)-(a.m*2+a.d));
       if(w.length) h+='<div class="envs-muted" style="margin-top:3px">needs work: '+envsEsc(w.slice(0,4).map(r=>r.n+(r.m?' \u00D7'+r.m:'')).join(" \u00B7 "))+'</div>'; }
     h+='</div>'; });
@@ -47182,6 +47187,7 @@ function envsDemoStart(){
   try{ if(typeof cpFinalDemoSeed==="function") cpFinalDemoSeed(); }catch(e){}   // 📝 CPFINAL: Maya's Soils at 3 of 4 core cards learned
   try{ if(typeof envcDemoStart==="function") envcDemoStart(data); }catch(e){}
   try{ haAuthHide(); }catch(e){}
+  try{ if(typeof cpSkillDemoSeed==="function") cpSkillDemoSeed(data); }catch(e){}   // 🧩 CPSKILL: the sample skill (biotic index) + the classmates' skill counts
   try{ masteryKid="maya"; }catch(e){}
 }
 function envsDemoSeedKid(data){
@@ -48027,7 +48033,7 @@ function cpCloseHtml(d){
 function cpSetupHtml(){
   if(typeof envcOn!=="function"||!envcOn()) return ""; cpCss(); const cls=_envc.cls||{}, d=cpDraft();
   let h='<div class="envs-card">'+cpCardHead("\u{1F3EB} Class setup · "+cpEsc(cls.name||_envc.cid),"Saved at classes/"+cpEsc(_envc.cid)+". Students and parents see the change the next time their page paints.")+'</div>';
-  return h+cpLookHtml(d)+cpSeasonHtml(d)+cpDaysHtml(d)+cpWordsHtml(d)+((typeof cpuSetupHtml==="function")?cpuSetupHtml():"")+((typeof cpFinalPlanHtml==="function")?cpFinalPlanHtml():"")+cpCloseHtml(d);   // 📦 CPUNIT: the class's units · 📝 CPFINAL: the section plan
+  return h+cpLookHtml(d)+cpSeasonHtml(d)+cpDaysHtml(d)+cpWordsHtml(d)+((typeof cpuSetupHtml==="function")?cpuSetupHtml():"")+((typeof cpFinalPlanHtml==="function")?cpFinalPlanHtml():"")+cpCloseHtml(d)+((typeof cpSkillSetupHtml==="function")?cpSkillSetupHtml():"");   // 📦 CPUNIT: the class's units · 📝 CPFINAL: the section plan · 🧩 CPSKILL: the class's skills
 }
 // ── Adrienne's + Class (envcAdminHtml's Classes card; envcClassAdd) ──
 // PURE: the form → {ok, cid, rec, error}. The look starts at today's (the teacher sets her own in 🏫 Class setup).
@@ -48989,6 +48995,397 @@ function cpceCoreFix(kid,keys,cardsOf,ok,out){ if(!out||!cpceKidOn(kid)||typeof 
     (I.add[k]||[]).forEach(x=>{ if(!x.core||have.has(x.name)||h[x.name]) return; out.total++; if(learned(x.name)) out.learned++; }); });
   if(out.total<0) out.total=0; if(out.learned<0) out.learned=0; return out; }
 // CPCARDSEDIT_END
+// CPSKILL_START — 🧩 THE SKILL ENGINE: practice that isn't a card, for any unit (DESIGN_class_platform_2026-10-28.md §4.1b, §9, §12,
+// §13 row 25; RESEARCH_envirothon_skills_2026-10-28.md §2–§3; PR 25 of the class platform; her yes to building the design, 2026-10-28).
+// The research's finding: about 1 Area question in 4 needs a SKILL (read a chart, use a table, fill a worksheet, label a picture, name a
+// picture), not a recall card, and knowing the card's facts still doesn't make the worksheet come out right — the traps are steps. This is
+// the ENGINE only; each item type (chart, table, sheet, label, id, scale, mock) is its own later PR and registers itself with
+// cpSkillTypeAdd from its own block. INERT unless ENVSITE's envEdition() says "envirothon": every function returns at once otherwise, so
+// Howe, DeWalt and Burris boot byte-identically, and Lincoln's mirror publishes exactly the summary it did (cpSkillSummary → null there).
+//   · unit.skills — a unit lists skills next to its decks: {key, section, type, label, core, steps, data, tests, replaces} (§4.1b). They are
+//     read from the unit's catalog entry (CPU_UNITS / units/<id>/index), else from its loaded file (HoweUnits[id].unit.skills). A skill key
+//     may hold a "." (soils.triangle); as a database key every "." becomes ":" (cpskFb). Nothing in the shape is Envirothon-specific.
+//   · THE THREE STAGES (the worked-example research, §2A / §3.3): 👀 Watch it — a worked example, each step lit up in turn · ✍️ Finish it —
+//     the app does the early steps, the student the last ones, and each right round hands over one more step · 💪 On your own. The stage
+//     moves up after two right in a row and back one after two misses in a row. Every try is a NEW problem, made from the skill's data.
+//   · WHICH STEP WAS MISSED: a try saves the first step that went wrong as a miss code (count:individuals, group:g2, math, range …), never
+//     just ✗. That is what makes it teachable (§3.3): the student sees the step, the teacher's Skills fold shows the most-missed step.
+//   · THE LEARNED RULE: 4 of the last 5 solo tries right (a try that opened the help chart isn't solo), the right ones on 2+ days, the last
+//     one right. Then a review try comes back about 7 days later, then every 14; a missed review un-learns it until it's right again.
+//   · ONE WRITE PER SITTING (ID Flash's rule): a sitting is up to CPSK_SITTING tries of one skill, kept in memory; at the end ONE multi-path
+//     update on the family instance's mastery: <kid>_skills/<unitId>/<skillKey> = {stage, fade, up, down, learned, at, next, rev,
+//     tries:[last 8 {ok, miss, step, secs, help, s, at}], miss:{<code>:n}} and studyLog/<kid>/skills/<yyyymmdd> (its own sid, like
+//     "idflash", so the 🌿 session's "Done today" is untouched). Demo: a "would update" toast · ?dryrun=1: nothing.
+//   · summary.skills.<section> = {learned, total, miss:{<skillKey>:{<code>:n}}, stage:{<skillKey>:"new"|"shown"|"faded"|"solo"|"learned"}}
+//     joins what the mirror publishes (envSummary's one guarded line), so the console, the parent page and the pace see it. Counts and
+//     codes only.
+//   · HOOK POINTS for later PRs: cpSkillFoldHtml(students) — the Skills fold of ⚠ Most missed (PR 18): skills ranked by % of the class
+//     learned, each with its most-missed step · cpSkillPaceLine(summary, section) — "skills learned 2 of 4" beside the core cards in
+//     📅 Pace (PR 8) · cpSkillQuestionLine(qid, students) — "4 students haven't learned Biotic index" for the item analysis · CPSK_COST — the
+//     planner's fixed cost per skill. Until those land, the line shows on every station row (Scores, the parent page, the student page) and
+//     the fold sits under 🏫 Class setup ▸ 🧩 Skills.
+//   · classSkills/<cid>/<skillKey> = {hide:true} | {core:bool} (+ by, ts) — the teacher's layer, like classCards: her class only, never the
+//     unit. 🏫 Class setup ▸ 🧩 Skills: Hide / Show again, Make optional / Make core, and per section "the final waits for the core skills
+//     too" = classes/<cid>/plan/<key>/skillsForFinal (default off, [?] Q38). When it is on, the final doesn't open by itself until the
+//     section's core skills are learned as well (envtStatus' one guarded line; the line under the station says which).
+//   · THE SAMPLE (the demo only, CPSK_DEMO_SKILL): the biotic index worksheet of the research §4.3 — a random sample of kinds, some seen more
+//     than once; count KINDS, not animals, in each group; × 3 / 2 / 1; add; pick the rating (Excellent 23+, Good 17–22, Fair 11–16, Poor
+//     0–10). It runs on a minimal `sheet` maker for "tally" worksheets (a count per group × a weight, a total, a rating band) — any
+//     count-and-weigh sheet in any unit has that shape; the full `sheet` type is its own PR. Skills don't wait for a section's check-in.
+const CPSK_SITTING=6, CPSK_KEEP=8, CPSK_SOLO_LAST=5, CPSK_SOLO_NEED=4, CPSK_DAYS_NEED=2, CPSK_UP=2, CPSK_DOWN=2, CPSK_REVIEW_DAYS=[7,14], CPSK_SID="skills";
+const CPSK_STAGES=["shown","faded","solo"];
+const CPSK_STAGE_LBL={shown:"\u{1F440} Watch it",faded:"\u270D\uFE0F Finish it",solo:"\u{1F4AA} On your own"};
+const CPSK_TYPE_NAMES=["chart","table","sheet","label","id","scale","mock","rubric"];
+const CPSK_COST={tryMin:3,tries:8,reviewDays:CPSK_REVIEW_DAYS};   // the pace planner's fixed cost per skill (§4.1b): ~3 min a try, ~8 tries, then a review every 1–2 weeks
+const CPSK_KEY_RE=/^[a-z0-9][a-z0-9_.-]{0,59}$/;
+const CPSK_TYPES={};
+const _cpsk={run:null,kid:null,kidAsked:"",L:{},demo:{}};
+function cpskOn(){ return typeof envSiteOn==="function"&&envSiteOn(); }
+function cpskFb(k){ return String(k==null?"":k).replace(/\./g,":"); }
+function cpskEsc(v){ return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function cpskJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+function cpskDay(ms){ return new Date(ms).toISOString().slice(0,10).replace(/-/g,""); }
+function cpskRe(){ try{ if(typeof envsRe==="function") envsRe(); }catch(e){} }
+function cpskToast(m){ try{ if(typeof envsToast==="function") envsToast(m); }catch(e){} }
+// a seeded random, so a try's problem can be made again in a test (live: the sitting's start time)
+function cpskRng(seed){ let a=(seed>>>0)||1; return function(){ a=(a+0x6D2B79F5)>>>0; let t=a; t=Math.imul(t^(t>>>15),t|1); t^=t+Math.imul(t^(t>>>7),t|61); return ((t^(t>>>14))>>>0)/4294967296; }; }
+// an item type registers here from its own block: def = {make(skill, rnd) → {steps:[{id, label, kind:"num"|"pick", answer, choices?, work?}], …},
+// html?(prob, skill), help?(prob, skill), miss?(step, given, prob) → code, missLabel?(code, skill) → words}
+function cpSkillTypeAdd(type,def){ if(CPSK_TYPE_NAMES.indexOf(type)<0||!def||typeof def.make!=="function") return false; CPSK_TYPES[type]=def; return true; }
+// PURE: one unit skill → {ok, error} (sections = the class's section ids, or null to skip that check)
+function cpSkillCheck(s,sections){
+  if(!s||typeof s!=="object") return {ok:false,error:"not a skill"};
+  if(!CPSK_KEY_RE.test(String(s.key||""))) return {ok:false,error:"key"};
+  if(!s.section||(Array.isArray(sections)&&sections.indexOf(s.section)<0)) return {ok:false,error:"section"};
+  if(CPSK_TYPE_NAMES.indexOf(s.type)<0) return {ok:false,error:"type"};
+  if(!s.label||typeof s.label!=="string") return {ok:false,error:"label"};
+  if(s.steps!=null&&!Array.isArray(s.steps)) return {ok:false,error:"steps"};
+  return {ok:true};
+}
+// ── the class's skills: every attached unit's, the teacher's layer over them
+function cpskUnitSkills(id){
+  const d=_cpsk.demo[id]; if(Array.isArray(d)) return d;
+  const x=(typeof cpuIndex==="function")?cpuIndex(id):null; if(x&&Array.isArray(x.skills)) return x.skills;
+  const l=(typeof cpuUnit==="function")?cpuUnit(id):null; return (l&&l.unit&&Array.isArray(l.unit.skills))?l.unit.skills:[];
+}
+// classSkills/<cid>: the demo and the console keep it per class (the console's listener, the demo's taps); a kid's app reads it once
+function cpskLayer(){
+  if(!cpskOn()) return {};
+  if(envsDemo()) return _cpsk.L[(typeof _envc!=="undefined"&&_envc.cid)||_envs.cid]||{};
+  if(typeof envcOn==="function"&&envcOn()) return _cpsk.L[_envc.cid]||{};
+  return _cpsk.kid||{};
+}
+// [{key, fb, unit, section, type, label, core, steps, data, tests, replaces, hide}] in the class's section order; opts.all keeps hidden ones
+function cpSkillList(cls,layer,opts){
+  if(!cpskOn()) return [];
+  if(cls===undefined||cls===null) cls=(typeof cpCls==="function")?cpCls():_envs.cls; layer=layer||cpskLayer(); opts=opts||{};
+  const ids=(typeof cpuAttached==="function")?cpuAttached(cls):[], ord=((typeof envsStations==="function")?envsStations():[]).map(s=>s.id), out=[], seen={};
+  ids.forEach(id=>{ cpskUnitSkills(id).forEach(s=>{ if(!cpSkillCheck(s,ord.length?ord:null).ok) return; const fb=cpskFb(s.key); if(seen[fb]) return; seen[fb]=1;
+    const L=(layer&&layer[fb])||{}, hide=L.hide===true; if(hide&&!opts.all) return;
+    out.push({key:s.key,fb,unit:id,section:s.section,type:s.type,label:s.label,core:typeof L.core==="boolean"?L.core:s.core===true,unitCore:s.core===true,steps:s.steps||[],data:s.data,tests:s.tests||[],replaces:s.replaces||[],hide}); }); });
+  return out.sort((a,b)=>(ord.indexOf(a.section)-ord.indexOf(b.section))||String(a.label).localeCompare(String(b.label)));
+}
+// ── the practice rules (PURE)
+function cpSkillFresh(){ return {stage:"shown",fade:1,up:0,down:0,learned:false,at:null,next:null,rev:0,tries:[],miss:{}}; }
+function cpskState(st){
+  const s=Object.assign(cpSkillFresh(),(st&&typeof st==="object")?st:{}); let t=s.tries; if(!Array.isArray(t)) t=(t&&typeof t==="object")?Object.values(t):[];
+  s.tries=t.filter(Boolean); s.miss=Object.assign({},(s.miss&&typeof s.miss==="object")?s.miss:{}); if(CPSK_STAGES.indexOf(s.stage)<0) s.stage="shown"; return s;
+}
+// learned = 4 of the last 5 solo tries right (no help), the right ones on 2+ different days, the last one right
+function cpSkillLearnedBy(tries){
+  const solo=(tries||[]).filter(t=>t&&t.s==="solo"&&!t.help), last=solo.slice(-CPSK_SOLO_LAST);
+  if(!last.length||!last[last.length-1].ok) return false;
+  const right=last.filter(t=>t.ok); if(right.length<CPSK_SOLO_NEED) return false;
+  return new Set(right.map(t=>cpskDay(t.at||0))).size>=CPSK_DAYS_NEED;
+}
+// a state + one try → the next state. t = {ok, miss, step, secs, help, s (the stage it was tried at)}; n = the problem's step count
+function cpSkillNext(prev,t,n,now){
+  const s=cpskState(prev), was=!!s.learned, stage=s.stage; t=t||{}; n=Math.max(1,n|0); now=now!=null?now:Date.now();
+  const rec={ok:!!t.ok,s:CPSK_STAGES.indexOf(t.s)>=0?t.s:stage,at:now}; if(!rec.ok&&t.miss) rec.miss=cpskFb(t.miss); if(t.step!=null) rec.step=t.step|0; if(t.secs!=null) rec.secs=Math.max(0,Math.round(+t.secs||0)); if(t.help) rec.help=true;
+  s.tries=s.tries.concat([rec]).slice(-CPSK_KEEP);
+  if(rec.miss) s.miss[rec.miss]=(s.miss[rec.miss]||0)+1;
+  if(rec.ok){ s.up++; s.down=0; if(stage==="faded") s.fade=Math.min(n,(s.fade||1)+1); } else { s.down++; s.up=0; }
+  const i=CPSK_STAGES.indexOf(stage);
+  if(s.up>=CPSK_UP&&i<CPSK_STAGES.length-1){ s.stage=CPSK_STAGES[i+1]; s.up=0; s.down=0; if(s.stage==="faded") s.fade=1; }
+  else if(s.down>=CPSK_DOWN&&i>0){ s.stage=CPSK_STAGES[i-1]; s.up=0; s.down=0; if(s.stage==="faded") s.fade=Math.max(1,n-1); }
+  s.learned=cpSkillLearnedBy(s.tries);
+  if(s.learned){ if(!was){ s.rev=0; s.next=now+CPSK_REVIEW_DAYS[0]*86400000; } else if(rec.s==="solo"){ if(rec.ok) s.rev=(s.rev||0)+1; s.next=now+CPSK_REVIEW_DAYS[Math.min(s.rev,CPSK_REVIEW_DAYS.length-1)]*86400000; } }
+  else { s.rev=0; s.next=null; }
+  s.at=now; return s;
+}
+// "new" (never tried) · "practice" (not learned) · "review" (learned, a review is due) · "done" (learned, nothing due)
+function cpSkillDue(st,now){ if(!st) return "new"; if(!st.learned) return "practice"; return (st.next&&(now!=null?now:Date.now())>=st.next)?"review":"done"; }
+// the steps the student does on a problem of n steps at a state: from this step on (n = none: the worked example)
+function cpSkillFrom(st,n){ const s=cpskState(st); return s.stage==="solo"?0:s.stage==="faded"?Math.max(0,n-Math.min(n,s.fade||1)):n; }
+function cpskStepOk(step,given){ if(!step) return false; const g=String(given==null?"":given).trim(); if(g==="") return false; return step.kind==="pick"?g===String(step.answer):Number(g)===Number(step.answer); }
+// ── the kid's side (the site's own kid only: a kid or parent login, or the demo's kid)
+function cpSkillKidOn(kid){ try{ if(!cpskOn()||!kid||typeof _envs==="undefined"||kid!==_envs.kid) return false; return envsDemo()||_envs.role==="kid"||_envs.role==="parent"; }catch(e){ return false; } }
+function cpskKidStates(kid,M){ M=M||((typeof masteryData!=="undefined"&&masteryData)||{}); const S=M[kid+"_skills"]; return (S&&typeof S==="object")?S:{}; }
+function cpskKidState(kid,sk,M){ const u=cpskKidStates(kid,M)[sk.unit], e=u&&u[sk.fb]; return (e&&typeof e==="object")?e:null; }
+// a section is open to the kid when one of its decks has no hold (envtReleased's rule, for any unit's sections)
+function cpskReleased(kid,section){
+  const st=((typeof envsStations==="function")?envsStations():[]).find(s=>s.id===section); if(!st) return false;
+  const hold=((masteryData[kid+"_settings"]||{}).cat_hold);
+  if(!hold||typeof hold!=="object"){ let items=masteryData[kid]||[]; if(!Array.isArray(items)) items=Object.values(items); return st.decks.some(d=>items.some(i=>i&&i.subject===d.key)); }
+  return st.decks.some(d=>!hold[d.key]);
+}
+function cpSkillsFor(kid){ if(!cpSkillKidOn(kid)) return []; const now=Date.now(); return cpSkillList().filter(s=>cpskReleased(kid,s.section)).map(s=>{ const st=cpskKidState(kid,s); return Object.assign({},s,{st,due:cpSkillDue(st,now)}); }); }
+// the class's layer, read ONCE on a kid's (or parent's) app from the shared instance
+function cpSkillKidLoad(){
+  if(!cpskOn()||envsDemo()||!(_envs.role==="kid"||_envs.role==="parent")||!_envs.cid||_cpsk.kidAsked===_envs.cid) return false;
+  _cpsk.kidAsked=_envs.cid; const cid=_envs.cid;
+  try{ firebase.database().ref("classSkills/"+cid).once("value",s=>{ const v=(s&&typeof s.val==="function")?s.val():null; _cpsk.kid=(v&&typeof v==="object")?v:{}; cpskRe(); },()=>{ _cpsk.kid={}; }); }catch(e){ return false; }
+  return true;
+}
+// ── a sitting: up to CPSK_SITTING tries of one skill, in memory until the end
+function cpSkillOpen(kid,fb,seed){
+  if(!cpSkillKidOn(kid)) return false; const sk=cpSkillList().find(s=>s.fb===fb); if(!sk||!CPSK_TYPES[sk.type]) return false;
+  const dry=!envsDemo()&&typeof _dryRun==="function"&&_dryRun();
+  _cpsk.run={kid,sk,st:cpskState(cpskKidState(kid,sk)),tries:[],startedAt:Date.now(),seed:(seed!=null?seed:Date.now())>>>0,n:0,dry,done:null,moved:null};
+  if(!cpskNewProblem(_cpsk.run)){ _cpsk.run=null; cpskToast("This skill can’t make a problem yet"); return false; }
+  cpskRe(); return true;
+}
+function cpskNewProblem(r){
+  const T=CPSK_TYPES[r.sk.type]; let p=null; try{ p=T.make(r.sk,cpskRng((r.seed+r.n*7919)>>>0)); }catch(e){ p=null; }
+  if(!p||!Array.isArray(p.steps)||!p.steps.length) return false;
+  r.prob=p; r.stage=r.st.stage; r.from=cpSkillFrom(r.st,p.steps.length); r.shown=r.stage==="shown"?1:0; r.ans={}; r.checked=null; r.help=false; r.t0=Date.now(); r.n++;
+  return true;
+}
+function cpSkillInput(i,v){ const r=_cpsk.run; if(!r||r.checked) return; r.ans[i]=String(v==null?"":v); }   // typing is kept without a repaint
+function cpSkillPick(i,v){ const r=_cpsk.run; if(!r||r.checked) return; r.ans[i]=String(v); cpskRe(); }
+function cpSkillHelp(){ const r=_cpsk.run; if(!r||r.checked) return; r.help=true; cpskRe(); }
+// 👀 the worked example: one more step lit; after the last, "Got it" counts it and the next problem comes
+function cpSkillStep(){ const r=_cpsk.run; if(!r||r.done||r.stage!=="shown") return; if(r.shown<r.prob.steps.length){ r.shown++; cpskRe(); return; } cpskRecord(r,true,null,null); cpSkillNextTry(); }
+function cpSkillCheckTry(){
+  const r=_cpsk.run; if(!r||r.done||r.checked||r.stage==="shown") return; const S=r.prob.steps, T=CPSK_TYPES[r.sk.type]||{};
+  for(let i=r.from;i<S.length;i++) if(r.ans[i]==null||String(r.ans[i]).trim()===""){ cpskToast("Fill in every step first"); return; }
+  const wrong={}; let first=null; for(let i=r.from;i<S.length;i++) if(!cpskStepOk(S[i],r.ans[i])){ wrong[i]=true; if(first==null) first=i; }
+  let miss=null; if(first!=null){ try{ miss=T.miss?T.miss(S[first],r.ans[first],r.prob):null; }catch(e){ miss=null; } miss=miss||S[first].id||("step"+first); }
+  cpskRecord(r,first==null,miss,first); r.checked.wrong=wrong; cpskRe();
+}
+function cpskRecord(r,ok,miss,step){
+  const before=r.st.stage; r.st=cpSkillNext(r.st,{ok,miss,step,secs:(Date.now()-r.t0)/1000,help:r.help,s:r.stage},r.prob.steps.length,Date.now());
+  r.tries.push(r.st.tries[r.st.tries.length-1]); r.moved=r.st.stage!==before?r.st.stage:null; r.checked={ok,miss,step,wrong:{}};
+}
+function cpSkillNextTry(){ const r=_cpsk.run; if(!r||r.done||!r.checked) return; if(r.tries.length>=CPSK_SITTING||!cpskNewProblem(r)){ cpSkillFinish(); return; } cpskRe(); }
+function cpSkillQuit(){ const r=_cpsk.run; if(!r) return; if(!r.done&&r.tries.length){ cpSkillFinish(); return; } _cpsk.run=null; cpskRe(); }
+// family instance: ONE multi-path update on mastery (demo → envsWrite's "would update" toast; dry run → nothing). The shared instance's
+// envsWrite isn't where a family's cards live (ENVSITE points `db` at the family's own instance), so a live save goes through db.
+function cpskWrite(upd,dry){
+  if(envsDemo()){ envsWrite("mastery",upd,"update"); return true; }
+  if(dry||(typeof _dryRun==="function"&&_dryRun())||typeof db==="undefined"||!db) return false;
+  try{ const p=db.ref("mastery").update(upd); if(p&&typeof p.catch==="function") p.catch(()=>cpskToast("Couldn’t save the skill — it will count next time you finish one")); return true; }catch(e){ return false; }
+}
+// the end of a sitting: the skill's state + the day's study-log entry (merged), in ONE write; then the summary
+function cpSkillFinish(){
+  const r=_cpsk.run; if(!r||r.done) return null; const kid=r.kid, sk=r.sk, now=Date.now(), md=masteryData;
+  const kidT=r.tries.filter(t=>t.s!=="shown"), shown=r.tries.length-kidT.length, correct=kidT.filter(t=>t.ok).length, secs=Math.max(1,Math.round((now-r.startedAt)/1000));
+  const today=(typeof mstTodayKey==="function")?mstTodayKey():cpskDay(now), was=cpskKidState(kid,sk);
+  let S=md[kid+"_skills"]; if(!S||typeof S!=="object") S=md[kid+"_skills"]={}; if(!S[sk.unit]||typeof S[sk.unit]!=="object") S[sk.unit]={}; S[sk.unit][sk.fb]=r.st;
+  const items=kidT.map(t=>{ const o={id:CPSK_SID+":"+sk.fb+":"+t.at,name:sk.label,deck:"skill:"+sk.fb,skill:sk.fb,result:t.ok?"c":"m"}; if(t.miss) o.miss=t.miss; return o; });
+  const prev=(((md.studyLog||{})[kid]||{})[CPSK_SID]||{})[today]||null;
+  let entry={date:today,total:kidT.length,correct,miss:kidT.length-correct,shown,secs,items,sits:[{secs,total:kidT.length}]};
+  if(prev){ const pi=Array.isArray(prev.items)?prev.items:Object.values(prev.items||{});
+    entry={date:today,total:(prev.total||0)+kidT.length,correct:(prev.correct||0)+correct,miss:(prev.miss||0)+kidT.length-correct,shown:(prev.shown||0)+shown,secs,items:pi.concat(items),sits:(Array.isArray(prev.sits)?prev.sits:[]).concat([{secs,total:kidT.length}])}; }
+  if(!md.studyLog) md.studyLog={}; if(!md.studyLog[kid]) md.studyLog[kid]={}; if(!md.studyLog[kid][CPSK_SID]) md.studyLog[kid][CPSK_SID]={}; md.studyLog[kid][CPSK_SID][today]=entry;
+  const upd={[kid+"_skills/"+sk.unit+"/"+sk.fb]:r.st,["studyLog/"+kid+"/"+CPSK_SID+"/"+today]:entry};
+  const saved=cpskWrite(upd,r.dry);
+  r.done={tries:r.tries.length,kidN:kidT.length,correct,shown,secs,stage:r.st.stage,learned:!!r.st.learned,newly:!!r.st.learned&&!(was&&was.learned),dry:r.dry,saved,upd};
+  if(saved&&!envsDemo()&&typeof envMirrorOn==="function") envMirrorOn("study");   // 🌿 ENVMIRROR: summary.skills changed
+  cpskRe(); return r.done;
+}
+// ── the kid's screens
+const CPSK_BTN="min-height:48px;padding:0 22px;border-radius:14px;border:none;background:#0f766e;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif";
+const CPSK_BTN2="min-height:44px;padding:0 18px;border-radius:14px;border:2px solid #0f766e;background:#fff;color:#0f766e;font-size:14px;font-weight:800;cursor:pointer;font-family:'DM Sans',sans-serif";
+function cpskSoloRight(st){ const solo=(cpskState(st).tries).filter(t=>t.s==="solo"&&!t.help).slice(-CPSK_SOLO_LAST); return solo.filter(t=>t.ok).length; }
+function cpskStatusLine(s){
+  if(s.due==="new") return "New · starts with a worked example";
+  if(s.due==="review") return "\u2713 Learned · a review try is due";
+  if(s.due==="done"){ const d=Math.max(1,Math.ceil(((s.st.next||Date.now())-Date.now())/86400000)); return "\u2713 Learned · next review in "+d+" day"+(d===1?"":"s"); }
+  const st=cpskState(s.st); if(st.stage==="shown") return CPSK_STAGE_LBL.shown+": a worked example, step by step";
+  if(st.stage==="faded") return CPSK_STAGE_LBL.faded+": the first steps are done, you do the last "+(st.fade>1?st.fade+" steps":"step");
+  return CPSK_STAGE_LBL.solo+" · "+cpskSoloRight(st)+" of the last "+CPSK_SOLO_LAST+" right (learned at "+CPSK_SOLO_NEED+", on 2 days)";
+}
+// the door under the 🌿 study start: one row per skill of a section the kid has
+function cpSkillDoorHtml(kid){
+  const L=cpSkillsFor(kid); if(!L.length) return "";
+  let h='<div style="background:#f0fdfa;border:2px solid #99f6e4;border-radius:20px;padding:16px 18px;margin:14px 0;font-family:\'DM Sans\',sans-serif"><div style="font-size:18px;font-weight:800;color:#115e59">\u{1F9E9} Skills</div>';
+  h+='<div style="font-size:12px;color:var(--muted);font-weight:600;margin:4px 0 8px;line-height:1.4">Each try is a new problem. First you watch one worked out, then you finish the last steps, then you do it all on your own.</div>';
+  L.forEach(s=>{ const sec=(envsStations().find(x=>x.id===s.section)||{}), go=s.due==="done"?"Practice":s.due==="review"?"Review":"Go";
+    h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #ccfbf1"><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:800;color:#1f2937">'+cpskEsc((sec.emoji?sec.emoji+" ":"")+s.label)+'</div><div style="font-size:12px;font-weight:700;color:#0f766e">'+cpskEsc(cpskStatusLine(s))+'</div></div>'
+      +'<button onclick="cpSkillOpen(\''+cpskJ(kid)+'\',\''+cpskJ(s.fb)+'\')" style="'+(s.due==="done"?CPSK_BTN2:CPSK_BTN+';min-height:44px;padding:0 18px;font-size:14px')+'">'+go+'</button></div>'; });
+  return h+'</div>';
+}
+function cpskStepRow(r,i){
+  const S=r.prob.steps[i], T=CPSK_TYPES[r.sk.type]||{}, mine=r.stage!=="shown"&&i>=r.from, lit=r.stage==="shown"?i<r.shown:i<r.from, ck=r.checked;
+  let h='<div style="padding:9px 0;border-top:1px solid #e5e7eb"><div style="font-size:13.5px;font-weight:800;color:#1f2937">'+(i+1)+'. '+cpskEsc(S.label)+'</div>';
+  if(lit) return h+'<div style="font-size:16px;font-weight:900;color:#15803d;margin-top:2px">'+cpskEsc(S.answer)+'</div>'+(S.work?'<div style="font-size:12px;color:var(--muted);font-weight:600">'+cpskEsc(S.work)+'</div>':'')+'</div>';
+  if(!mine) return h+'<div style="font-size:13px;color:#9ca3af;font-weight:700;margin-top:2px">\u2026</div></div>';
+  if(ck){ const ok=!ck.wrong[i]; h+='<div style="font-size:15px;font-weight:900;color:'+(ok?'#15803d':'#dc2626')+';margin-top:2px">'+(ok?'\u2713 ':'\u2717 ')+cpskEsc(r.ans[i])+'</div>';
+    if(!ok) h+='<div style="font-size:12.5px;font-weight:700;color:#1f2937">\u2192 '+cpskEsc(S.answer)+(S.work?' <span style="color:var(--muted);font-weight:600">· '+cpskEsc(S.work)+'</span>':'')+'</div>';
+    return h+'</div>'; }
+  if(S.kind==="pick") return h+'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">'+(S.choices||[]).map(c=>{ const on=r.ans[i]===String(c); return '<button onclick="cpSkillPick('+i+',\''+cpskJ(c)+'\')" style="min-height:44px;padding:0 14px;border-radius:12px;border:2px solid '+(on?'#0f766e':'#d1d5db')+';background:'+(on?'#0f766e':'#fff')+';color:'+(on?'#fff':'#1f2937')+';font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cpskEsc(c)+'</button>'; }).join("")+'</div></div>';
+  return h+'<input type="text" inputmode="numeric" autocomplete="off" value="'+cpskEsc(r.ans[i]==null?"":r.ans[i])+'" oninput="cpSkillInput('+i+',this.value)" aria-label="'+cpskEsc(S.label)+'" style="margin-top:6px;width:120px;min-height:44px;padding:0 12px;border:2px solid #d1d5db;border-radius:12px;font-size:16px;font-family:\'DM Sans\',sans-serif"></div>';
+}
+function cpSkillMissLabel(sk,code){ const T=sk&&CPSK_TYPES[sk.type]; let t=null; try{ t=T&&T.missLabel?T.missLabel(String(code),sk):null; }catch(e){ t=null; } return t||String(code); }
+function cpSkillSittingHtml(){
+  const r=_cpsk.run; if(!r) return ""; const sk=r.sk, T=CPSK_TYPES[sk.type]||{};
+  if(r.done){ const d=r.done;
+    let h='<div style="background:#f0fdfa;border:2px solid #99f6e4;border-radius:20px;padding:24px;text-align:center;font-family:\'DM Sans\',sans-serif"><div style="font-size:32px;margin-bottom:8px">\u{1F9E9}</div><div style="font-size:17px;font-weight:800;color:#115e59;margin-bottom:6px">'+cpskEsc(sk.label)+' · done for now</div>';
+    h+='<div style="font-size:14px;color:var(--muted);font-weight:600">'+d.tries+' tr'+(d.tries===1?'y':'ies')+(d.kidN?' · '+d.correct+' of '+d.kidN+' right':'')+(d.shown?' · '+d.shown+' worked example'+(d.shown===1?'':'s'):'')+' · '+d.secs+' s</div>';
+    h+='<div style="margin-top:8px;font-size:14px;font-weight:800;color:#0f766e">'+(d.newly?'\u2713 Learned! A review try comes back in '+CPSK_REVIEW_DAYS[0]+' days.':d.learned?'\u2713 Still learned.':'Next time: '+cpskEsc(CPSK_STAGE_LBL[d.stage]||d.stage))+'</div>';
+    if(d.dry) h+='<div style="margin-top:8px;font-size:12px;font-weight:800;color:#b45309">Dry run \u2014 scored here only, nothing saved.</div>';
+    return h+'<div style="margin-top:14px"><button onclick="cpSkillQuit()" style="'+CPSK_BTN+'">Done</button></div></div>'; }
+  const S=r.prob.steps, n=S.length;
+  let h='<div style="font-family:\'DM Sans\',sans-serif"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--muted);font-weight:700;margin-bottom:8px"><span>\u{1F9E9} '+cpskEsc(sk.label)+' · try '+r.n+' of '+CPSK_SITTING+'</span><span style="background:#ccfbf1;color:#115e59;border-radius:999px;padding:3px 10px;font-weight:800">'+cpskEsc(CPSK_STAGE_LBL[r.stage]||r.stage)+'</span></div>';
+  if(r.moved&&!r.checked) h+='<div style="background:#ecfeff;border:1.5px solid #67e8f9;border-radius:12px;padding:8px 12px;font-size:13px;font-weight:800;color:#155e75;margin-bottom:8px">'+(r.moved==="faded"?'\u2B06\uFE0F Now the first steps are done for you \u2014 you finish the rest.':r.moved==="solo"?'\u2B06\uFE0F Now it’s all yours \u2014 every step.':'\u2B07\uFE0F Let’s watch one worked out again.')+'</div>';
+  h+='<div style="font-size:12.5px;color:#374151;font-weight:600;margin-bottom:8px">'+(r.stage==="shown"?'Watch how it’s done, one step at a time.':r.stage==="faded"?'Steps 1\u2013'+r.from+' are done for you. Do '+(n-r.from===1?'the last step':'the last '+(n-r.from)+' steps')+'.':'Do every step yourself.')+'</div>';
+  h+='<div style="background:#fff;border:2px solid #e5e7eb;border-radius:18px;padding:12px 14px">';
+  if(T.html){ try{ h+=T.html(r.prob,sk)||""; }catch(e){} }
+  if(T.help){ if(r.stage!=="solo"||r.help){ try{ h+=T.help(r.prob,sk)||""; }catch(e){} } else if(!r.checked) h+='<div style="margin:6px 0"><button onclick="cpSkillHelp()" style="'+CPSK_BTN2+';min-height:40px;font-size:13px">\u{1F4CB} Show the chart</button> <span style="font-size:11.5px;color:var(--muted)">(a try with the chart doesn’t count toward learned)</span></div>'; }
+  for(let i=0;i<n;i++) h+=cpskStepRow(r,i);
+  h+='</div>';
+  if(r.stage==="shown") h+='<div style="text-align:center;margin-top:12px"><button onclick="cpSkillStep()" style="'+CPSK_BTN+';min-height:52px;padding:0 30px;font-size:16px">'+(r.shown<n?'Next step \u25B6':'Got it \u2713')+'</button></div>';
+  else if(!r.checked) h+='<div style="text-align:center;margin-top:12px"><button onclick="cpSkillCheckTry()" style="'+CPSK_BTN+';min-height:52px;padding:0 34px;font-size:16px">Check</button></div>';
+  else { const c=r.checked; h+='<div style="margin-top:12px;text-align:center;font-size:17px;font-weight:900;color:'+(c.ok?'#15803d':'#dc2626')+'">'+(c.ok?'\u2713 All right!':'\u2717 Missed at step '+(c.step+1)+': '+cpskEsc(cpSkillMissLabel(sk,c.miss)))+'</div>';
+    if(r.moved) h+='<div style="text-align:center;font-size:13px;font-weight:800;color:#155e75;margin-top:4px">'+(r.moved==="faded"?'Next: you finish the last step.':r.moved==="solo"?'Next: on your own!':'Next: another worked example.')+'</div>';
+    h+='<div style="text-align:center;margin-top:12px"><button onclick="cpSkillNextTry()" style="'+CPSK_BTN+';min-height:52px;padding:0 34px;font-size:16px">'+(r.tries.length<CPSK_SITTING?'Next problem \u25B6':'Finish')+'</button></div>'; }
+  h+='<div style="text-align:center;margin-top:16px"><a href="javascript:void(0)" onclick="cpSkillQuit()" style="font-size:13px;color:var(--muted);text-decoration:underline;cursor:pointer">'+(r.tries.length?'Stop here (keeps what you did)':'Quit for now')+'</a></div>';
+  return h+'</div>';
+}
+// ENVSITE's envsStudyHtml (the one guarded line): a running sitting takes the page; otherwise the door sits under the 🌿 study start
+function cpSkillStudyWrap(kid,body){
+  if(!cpSkillKidOn(kid)) return body; cpSkillKidLoad();
+  if(_cpsk.run&&_cpsk.run.kid===kid) return cpSkillSittingHtml();
+  return body+cpSkillDoorHtml(kid);
+}
+// ── what the mirror publishes (envSummary's one guarded line): counts and codes only; null off the site (Lincoln, Howe: unchanged)
+function cpSkillSummary(kid,M,now){
+  if(!cpskOn()) return null; const L=cpSkillList(); if(!L.length) return null; const out={};
+  L.forEach(s=>{ const o=out[s.section]||(out[s.section]={learned:0,total:0,miss:{},stage:{}}), st=cpskKidState(kid,s,M); o.total++;
+    if(st&&st.learned) o.learned++;
+    o.stage[s.fb]=!st?"new":st.learned?"learned":(CPSK_STAGES.indexOf(st.stage)>=0?st.stage:"shown");
+    const m=st&&st.miss; if(m&&typeof m==="object"&&Object.keys(m).length) o.miss[s.fb]=Object.assign({},m); });
+  return out;
+}
+// "skills learned 2 of 4" — the station rows now, 📅 Pace's line later (PR 8 calls cpSkillPaceLine)
+function cpSkillPaceLine(summary,section){ if(!cpskOn()) return ""; const o=summary&&summary.skills&&summary.skills[section]; if(!o||!o.total) return ""; return "skills learned "+(o.learned|0)+" of "+o.total; }
+function cpSkillRowLine(summary,section){ if(typeof _envs!=="undefined"&&(_envs.role==="kid"||_envs.role==="parent")) cpSkillKidLoad(); return cpSkillPaceLine(summary,section); }
+// ── ⚠ Most missed ▸ 🧩 Skills (PR 18 calls cpSkillFoldHtml): every skill, fewest learned first, with its most-missed step
+function cpSkillFoldRows(students,list){
+  list=list||cpSkillList(); const S=(students||[]).filter(x=>x&&x.summary);
+  return list.map(sk=>{ let learned=0; const miss={}, at={new:0,shown:0,faded:0,solo:0,learned:0};
+    S.forEach(x=>{ const o=x.summary.skills&&x.summary.skills[sk.section], g=o&&o.stage&&o.stage[sk.fb]; at[(g&&at[g]!=null)?g:"new"]++; if(g==="learned") learned++;
+      const m=o&&o.miss&&o.miss[sk.fb]; if(m&&typeof m==="object") Object.keys(m).forEach(c=>{ miss[c]=(miss[c]||0)+(+m[c]||0); }); });
+    const top=Object.keys(miss).sort((a,b)=>miss[b]-miss[a]||a.localeCompare(b))[0]||null;
+    return {sk,learned,n:S.length,pct:S.length?Math.round(learned/S.length*100):0,at,top,topN:top?miss[top]:0,miss}; })
+    .sort((a,b)=>a.pct-b.pct||String(a.sk.label).localeCompare(String(b.sk.label)));
+}
+function cpSkillFoldHtml(students,opts){
+  if(!cpskOn()) return ""; const R=cpSkillFoldRows(students); if(!R.length) return "";
+  let h='<details class="envs-card"'+(opts&&opts.open?' open':'')+'><summary style="cursor:pointer;font-weight:900;font-size:15px">\u{1F9E9} Skills · '+R.length+'</summary><div class="envs-muted" style="margin:4px 0 6px">The skills the fewest students have learned come first, with the step most of them miss.</div>';
+  R.forEach(r=>{ h+='<div style="padding:7px 0;border-top:1px solid #f1efe9"><div class="envs-row"><b style="flex:1;min-width:140px">'+cpskEsc(r.sk.label)+'</b><span class="envs-muted">'+r.learned+' of '+r.n+' learned</span></div>'
+    +'<div class="envs-muted">'+[["shown","watching"],["faded","finishing"],["solo","on their own"],["new","not started"]].filter(x=>r.at[x[0]]).map(x=>r.at[x[0]]+" "+x[1]).join(" · ")+'</div>'
+    +(r.top?'<div style="font-size:12.5px;color:#b45309;font-weight:700;margin-top:2px">Most missed step: '+cpskEsc(cpSkillMissLabel(r.sk,r.top))+' ('+r.topN+')</div>':'')+'</div>'; });
+  return h+'</details>';
+}
+// the item analysis (PR 12/18): a question linked to a skill (skill.tests) → "4 students haven't learned Biotic index"
+function cpSkillQuestionLine(qid,students){
+  if(!cpskOn()||!qid) return ""; const L=cpSkillList().filter(s=>(s.tests||[]).indexOf(qid)>=0); if(!L.length) return "";
+  return L.map(sk=>{ const r=cpSkillFoldRows(students,[sk])[0], not=r.n-r.learned; return not+" student"+(not===1?" hasn’t":"s haven’t")+" learned "+sk.label; }).join(" · ");
+}
+// ── the final waits for the core skills too, when the section plan says so (envtStatus' and envtCoreLine's guarded lines)
+function cpskFinalMissing(kid,section){
+  if(!cpSkillKidOn(kid)||!section) return null; const P=(_envs.cls&&_envs.cls.plan&&_envs.cls.plan[section])||null; if(!P||P.skillsForFinal!==true) return null;
+  return cpSkillList().filter(s=>s.section===section&&s.core&&!((cpskKidState(kid,s)||{}).learned));
+}
+function cpSkillFinalWait(kid,section){ const L=cpskFinalMissing(kid,section); return !!(L&&L.length); }
+function cpSkillFinalLine(kid,section){ const L=cpskFinalMissing(kid,section); if(!L||!L.length) return ""; const all=cpSkillList().filter(s=>s.section===section&&s.core).length;
+  return "Final opens once the core skills are learned too · "+(all-L.length)+" of "+all+" ("+L.map(s=>s.label).join(", ")+")"; }
+// ── 🏫 Class setup ▸ 🧩 Skills (teacher + admin): the class's layer, the final switch per section, and the fold
+function cpskConsoleLoad(){ if(typeof envcOn!=="function"||!envcOn()||envsDemo()||!_envc.cid||typeof envcSub!=="function") return; const cid=_envc.cid; envcSub("cpsk:"+cid,"classSkills/"+cid,v=>{ _cpsk.L[cid]=(v&&typeof v==="object")?v:{}; }); }
+function cpSkillSetupHtml(){
+  if(typeof envcOn!=="function"||!envcOn()||!_envc.cid) return ""; cpskConsoleLoad();
+  const cls=_envc.cls||{}, L=cpSkillList(cls,null,{all:true}); if(!L.length) return "";
+  const post=String((typeof cpLabel==="function")?cpLabel("post",cls):"final").toLowerCase(), P=cls.plan||{};
+  let h='<div class="envs-card">'+((typeof cpCardHead==="function")?cpCardHead("\u{1F9E9} Skills","Practice that isn’t a card: a worked example first, then the student finishes the last steps, then does it alone. Learned = "+CPSK_SOLO_NEED+" of the last "+CPSK_SOLO_LAST+" tries on their own right, on 2 different days. Hide a skill or make it optional for your class only."):'<div class="envs-h2">\u{1F9E9} Skills</div>');
+  envsStations().forEach(sec=>{ const mine=L.filter(s=>s.section===sec.id); if(!mine.length) return;
+    h+='<div style="border-top:1px solid #f1efe9;padding:8px 0"><div style="font-weight:800;font-size:13.5px">'+cpskEsc((sec.emoji?sec.emoji+" ":"")+(sec.label||sec.id))+'</div>';
+    mine.forEach(s=>{ h+='<div class="envs-row" style="padding:5px 0;gap:8px"><div style="flex:1;min-width:150px'+(s.hide?';opacity:.55':'')+'"><b>'+cpskEsc(s.label)+'</b><div class="envs-muted">'+cpskEsc(s.type)+' · '+(s.hide?'hidden':s.core?'core':'optional')+'</div></div>'
+      +(s.hide?'':'<button class="envs-btn sec cp-btn" onclick="cpSkillSetCore(\''+cpskJ(s.fb)+'\','+(!s.core)+')">'+(s.core?'Make optional':'Make core')+'</button>')
+      +'<button class="envs-btn sec cp-btn" onclick="cpSkillSetHide(\''+cpskJ(s.fb)+'\','+(!s.hide)+')">'+(s.hide?'\u21A9 Show again':'\u{1F648} Hide')+'</button></div>'; });
+    const on=!!(P[sec.id]&&P[sec.id].skillsForFinal===true);
+    h+='<label class="envs-row" style="min-height:40px;font-size:13px"><input type="checkbox" '+(on?'checked':'')+' onchange="cpSkillSetFinal(\''+cpskJ(sec.id)+'\',this.checked)"> The '+cpskEsc(post)+' waits for the core skills too</label></div>'; });
+  h+='<div class="envs-muted">Saved at classSkills/'+cpskEsc(_envc.cid)+' and classes/'+cpskEsc(_envc.cid)+'/plan. Students see it the next time their page loads.</div></div>';
+  return h+cpSkillFoldHtml((typeof envcStudents==="function")?envcStudents():[],{open:true});
+}
+// one skill's record in the layer: set when something differs from the unit, removed when nothing does (targeted path, by = the uid)
+function cpskLayerSave(fb,rec){
+  const cid=_envc.cid; delete rec.by; delete rec.ts; const keep=Object.keys(rec).length>0, val=keep?Object.assign(rec,{by:_envs.uid||"",ts:Date.now()}):null;
+  envcWrite("classSkills/"+cid+"/"+fb,val,keep?"set":"remove").then(()=>{ const L=_cpsk.L[cid]||(_cpsk.L[cid]={}); if(keep) L[fb]=val; else delete L[fb]; if(typeof envcRe==="function") envcRe(); }).catch(()=>{});
+  return true;
+}
+function cpskLayerSkill(fb){ if(typeof envcOn!=="function"||!envcOn()||!_envc.cid) return null; return cpSkillList(_envc.cls,null,{all:true}).find(s=>s.fb===fb)||null; }
+function cpSkillSetCore(fb,core){ const sk=cpskLayerSkill(fb); if(!sk) return false; const rec=Object.assign({},(_cpsk.L[_envc.cid]||{})[fb]||{}); if(!!core===sk.unitCore) delete rec.core; else rec.core=!!core; return cpskLayerSave(fb,rec); }
+function cpSkillSetHide(fb,hide){ const sk=cpskLayerSkill(fb); if(!sk) return false; const rec=Object.assign({},(_cpsk.L[_envc.cid]||{})[fb]||{}); if(hide) rec.hide=true; else delete rec.hide; return cpskLayerSave(fb,rec); }
+// plan/<key>/skillsForFinal: ONE targeted update at classes/<cid> (the leaf only, so CPFINAL's fields and CPUNIT's order stay)
+function cpSkillSetFinal(key,on){
+  if(typeof envcOn!=="function"||!envcOn()||!_envc.cid||!key) return false;
+  envcWrite("classes/"+_envc.cid,{["plan/"+key+"/skillsForFinal"]:!!on},"update").then(()=>{ const C=_envc.cls||(_envc.cls={}), P=C.plan||(C.plan={}); (P[key]=P[key]||{}).skillsForFinal=!!on; if(!_envs.cls) _envs.cls=C; envcRe(); }).catch(()=>{});
+  return true;
+}
+// ── the minimal `sheet` maker: a "tally" worksheet — count the kinds in each group, × each group's weight, add, pick the band. The full
+//    `sheet` type (basal area, tree height, cord volume …) is its own PR and replaces this registration from its own block.
+//    data = {kind:"tally", groups:[{key, label, weight, items:[names]}], ratings:[{min, label}], pick:[lo, hi], most, noun, thing, countLbl, totalLbl, ratingLbl}
+function cpskRangeText(R,i){ const hi=i>0?R[i-1].min-1:null; return hi==null?R[i].min+"+":R[i].min+"\u2013"+hi; }
+const CPSK_SHEET={
+  make(sk,rnd){
+    const D=sk&&sk.data; if(!D||D.kind!=="tally"||!Array.isArray(D.groups)) return null; rnd=rnd||Math.random;
+    const G=D.groups.filter(g=>g&&g.key&&Array.isArray(g.items)&&g.items.length); if(!G.length) return null;
+    const R=(Array.isArray(D.ratings)?D.ratings:[]).filter(x=>x&&x.label!=null&&typeof x.min==="number").slice().sort((a,b)=>b.min-a.min), band=t=>R.findIndex(x=>t>=x.min);
+    const all=G.reduce((a,g)=>a+g.items.length,0), lo=Math.max(1,Math.min(all,(D.pick&&D.pick[0])||5)), hi=Math.max(lo,Math.min(all,(D.pick&&D.pick[1])||9)), most=Math.max(1,D.most||4);
+    const shuf=a=>{ for(let i=a.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)), x=a[i]; a[i]=a[j]; a[j]=x; } return a; };
+    // every count per group with lo–hi kinds in all; a band is drawn first, so every rating comes up (a plain draw almost never reaches the top band)
+    const combos=[], walk=(i,acc,sum)=>{ if(sum>hi) return; if(i===G.length){ if(sum>=lo) combos.push(acc); return; } for(let c=0;c<=G[i].items.length;c++) walk(i+1,acc.concat([c]),sum+c); }; walk(0,[],0);
+    const tot=c=>G.reduce((a,g,i)=>a+c[i]*(+g.weight||0),0), want=R.length?Math.floor(rnd()*R.length):-1, fit=combos.filter(c=>want<0||band(tot(c))===want), pick=(fit.length?fit:combos)[Math.floor(rnd()*(fit.length||combos.length))];
+    const rows=shuf([].concat(...G.map((g,i)=>shuf(g.items.map(String)).slice(0,pick[i]).map(name=>({name,g:g.key,n:1+Math.floor(rnd()*most)})))));
+    if(rows.length&&rows.every(r=>r.n===1)) rows[0].n=2;   // at least one kind seen more than once, so counting animals instead of kinds shows
+    const steps=G.map(g=>{ const mine=rows.filter(r=>r.g===g.key); return {id:"count:"+g.key,label:(D.countLbl||"Kinds in")+" "+g.label,kind:"num",answer:mine.length,alt:mine.reduce((a,r)=>a+r.n,0),g:g.key,work:mine.length?mine.map(r=>r.name).join(", "):"none in the sample"}; });
+    const total=G.reduce((a,g,i)=>a+steps[i].answer*(+g.weight||0),0);
+    steps.push({id:"math",label:(D.totalLbl||"Total")+" (each count \u00D7 its group’s number, added)",kind:"num",answer:total,work:G.map((g,i)=>steps[i].answer+" \u00D7 "+(+g.weight||0)).join(" + ")+" = "+total});
+    const ri=band(total);
+    if(ri>=0) steps.push({id:"range",label:D.ratingLbl||"Rating",kind:"pick",choices:R.map(x=>String(x.label)),answer:String(R[ri].label),work:total+" is "+R[ri].label+" ("+cpskRangeText(R,ri)+")"});
+    return {rows,steps,groups:G};
+  },
+  html(p,sk){ const D=(sk&&sk.data)||{};
+    return '<div style="font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">'+cpskEsc(D.sampleLbl||"Your sample")+'</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 4px">'
+      +p.rows.map(r=>'<span style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:10px;padding:5px 9px;font-size:13px;font-weight:700">'+cpskEsc(r.name)+(r.n>1?' <b style="color:#0f766e">\u00D7'+r.n+'</b>':'')+'</span>').join("")+'</div>'
+      +(D.tip?'<div style="font-size:12px;color:#0f766e;font-weight:700;margin-bottom:4px">'+cpskEsc(D.tip)+'</div>':''); },
+  help(p,sk){ return '<details style="margin:4px 0 2px"><summary style="cursor:pointer;font-size:12.5px;font-weight:800;color:#0f766e">\u{1F4CB} The chart</summary><div style="font-size:12px;line-height:1.5;margin-top:4px">'
+      +p.groups.map(g=>'<div><b>'+cpskEsc(g.label)+' \u00D7 '+cpskEsc(g.weight)+':</b> '+cpskEsc(g.items.join(", "))+'</div>').join("")+'</div></details>'; },
+  miss(step,given){ const v=Number(String(given).trim()); if(/^count:/.test(step.id)) return (v===step.alt&&step.alt!==step.answer)?"count:individuals":"group:"+step.g; return step.id; },
+  missLabel(code,sk){ const D=(sk&&sk.data)||{}; if(code==="count:individuals") return "counted "+(D.thing||"each one")+", not "+(D.noun||"kinds"); if(code==="math") return "the multiply-and-add"; if(code==="range") return "picked the wrong rating";
+    const m=/^group:(.+)$/.exec(code); if(m){ const g=(D.groups||[]).find(x=>x&&x.key===m[1]); return "sorted into "+((g&&g.label)||m[1])+" wrong"; } return null; }
+};
+cpSkillTypeAdd("sheet",CPSK_SHEET);
+// ── the demo's sample skill (research §4.3, the taxa and groups of the unit's own "· pollution tolerance group" cards): Kid ▸ 🧩 Skills ▸
+//    Biotic index ▸ Go — 👀 two worked examples → ✍️ finish the last steps → 💪 on your own. Teacher ▸ 🏫 Class setup ▸ 🧩 Skills.
+const CPSK_DEMO_SKILL={key:"aquatics.biotic_index",section:"aquatics",type:"sheet",label:"Biotic index",core:true,
+  steps:["count the kinds in each group","multiply and add","pick the rating"],
+  data:{kind:"tally",noun:"kinds",thing:"animals",countLbl:"Kinds in",totalLbl:"Biotic index value",ratingLbl:"Water quality rating",sampleLbl:"What you found in the stream",tip:"Count KINDS, not animals: three mayflies are one kind.",pick:[5,9],most:4,
+    groups:[{key:"g1",label:"Group 1 (sensitive)",weight:3,items:["Caddisfly larva","Dobsonfly larva","Fishfly larva","Freshwater mussel","Gilled snail","Mayfly nymph","Riffle beetle","Stonefly nymph","Water penny larva"]},
+            {key:"g2",label:"Group 2 (somewhat sensitive)",weight:2,items:["Crane fly larva","Crayfish","Damselfly nymph","Dragonfly nymph","Fingernail clam","Scud","Sowbug","Water beetle larva","Water scorpion","Water strider","Whirligig beetle"]},
+            {key:"g3",label:"Group 3 (tolerant)",weight:1,items:["Black fly larva","Rat-tailed maggot","Flatworm","Horse fly larva","Leech","Midge fly larva","Aquatic worm","Pouch snail","Roundworm"]}],
+    ratings:[{min:23,label:"Excellent"},{min:17,label:"Good"},{min:11,label:"Fair"},{min:0,label:"Poor"}]}};
+// envsDemoStart's guarded line: the sample on the demo's unit, and a few classmates' summary.skills so the teacher's fold has rows
+function cpSkillDemoSeed(data){
+  if(typeof envsDemo!=="function"||!envsDemo()) return false; _cpsk.demo.nc_envirothon=[CPSK_DEMO_SKILL]; if(data&&data.cid) _cpsk.L[data.cid]=_cpsk.L[data.cid]||{};
+  const fb=cpskFb(CPSK_DEMO_SKILL.key), seed={walker_caleb:["learned",{"count:individuals":1}],morales_avery:["solo",{"count:individuals":2,range:1}],bennett_nora:["faded",{"count:individuals":2,"group:g2":1}],tran_jonah:["shown",null]};
+  Object.keys(seed).forEach(sid=>{ const s=data&&data.students&&data.students[sid]; if(!s||!s.summary) return; const v=seed[sid], o={learned:v[0]==="learned"?1:0,total:1,miss:{},stage:{[fb]:v[0]}}; if(v[1]) o.miss[fb]=v[1]; s.summary.skills={aquatics:o}; });
+  Object.keys((data&&data.students)||{}).forEach(sid=>{ const s=data.students[sid]; if(s&&s.summary&&!s.summary.skills) s.summary.skills={aquatics:{learned:0,total:1,miss:{},stage:{[fb]:"new"}}}; });
+  return true;
+}
+// CPSKILL_END
 function unitAllNudges(kid){ let out=[]; haKidUnits(kid).forEach(u=>{ out=out.concat(unitPlanNudges(u,kid)); }); return out; }
 function unitDismissNudge(unitId,kid,key){
   if(!momHere()) return; // skipping a planned step is Mom's call
