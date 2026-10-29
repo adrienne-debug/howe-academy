@@ -8231,6 +8231,7 @@ function renderMomHQ(el,ah){
   h+=wsBannerHTML();   // 📋 worksheets from Adrienne (tap to open — nothing pops up)
   try{ h+=mstAlertsHQHTML(); }catch(e){}   // 🚩 study sessions that need a look
   try{ if(typeof stPendingHTML==="function") h+=stPendingHTML(); }catch(e){}   // 📝 spelling tests waiting to be graded
+  try{ if(typeof pdPendingHTML==="function") h+=pdPendingHTML(); }catch(e){}   // 🖨 PDGRADE: paper drills waiting to be graded
   try{ if(typeof cbNudgeHTML==="function") h+=cbNudgeHTML(); }catch(e){}   // 🔁 graduated words came back
   h+=_hqGroup("🏫","School",[
     // RETIREMENT Stage 2 (2026-08-11): the Subjects & Builder rows are hidden — the
@@ -9524,6 +9525,7 @@ function finalizeDone(id, doneTs, score){
     try{ checkSessionComplete(t.who); }catch(e){}
     try{ rlOnCheckoff(t); }catch(e){}   // 📚 reading-log subjects: page prompt / pending chip
     try{ if(t.stTest&&typeof stOnTestChecked==="function") stOnTestChecked(t); }catch(e){}   // 📝 STTESTCARD: a helper's paper test → Mom's Grade item
+    try{ if(typeof pdOnDrillChecked==="function") pdOnDrillChecked(t); }catch(e){}   // 🖨 PDGRADE: a drill done on paper → Mom's Grade item
     try{ if(typeof mlOnCheck==="function"&&!t.famBlock) mlOnCheck(t); }catch(e){}   // 👩 Mom loop: buffer check starts a hold, Mom-card check releases it
     // ⏩ last open card of today checked → the next lesson follows (after the heal below has settled)
     try{ if(typeof efPullNext==="function"&&effectiveDay(t)===_todayDay) setTimeout(function(){ try{ if(efPullNext(t.who)&&typeof renderAll==="function") renderAll(); }catch(e){} },0); }catch(e){}
@@ -17985,6 +17987,7 @@ function renderMomsDay(el){
   try{ h+=momDayStripHTML(iso,today); }catch(e){}
   try{ h+=wsTaskHTML(); }catch(e){}   // 📋 From Adrienne — tap to answer, ✓ once sent
   try{ if(typeof stPendingHTML==="function") h+=stPendingHTML(); }catch(e){}   // 📝 spelling tests waiting to be graded
+  try{ if(typeof pdPendingHTML==="function") h+=pdPendingHTML(); }catch(e){}   // 🖨 PDGRADE: paper drills waiting to be graded
   try{ if(typeof cbNudgeHTML==="function") h+=cbNudgeHTML(); }catch(e){}   // 🔁 graduated words came back
   // The full chores card becomes the EDITOR (cadence + time of day); it only appears
   // while editing, because the strip above now carries the day-to-day list.
@@ -71113,7 +71116,8 @@ function pdSheetsHtml(kid,day,items){
   h+='<div style="font-size:11.5px;color:#475569;margin-bottom:6px">Mark each: ✓ got it · ~ close / slow · ✗ missed. 🖼 = hold up that number on the picture sheet. 🔤 = read the word aloud; they spell it.</div><table>';
   L.forEach((l,i)=>{
     const q=l.spell?'🔤 Spell: <b>'+pdEsc(l.q)+'</b>':l.pic?('🖼 Picture '+(i+1)+(l.named?' — '+pdEsc(l.q):'')):pdEsc(l.q);
-    h+='<tr><td class="m">'+box+box+box+'</td><td class="n">'+(i+1)+'.</td><td>'+q+'</td><td class="a">'+pdEsc(l.a)+'</td></tr>';
+    const lrn=items[i]&&items[i].status==="introduction"?' <span style="font-size:10.5px;color:#9a3412">· learning — go over it together</span>':'';   // PDGRADE: graded "went over it"
+    h+='<tr><td class="m">'+box+box+box+'</td><td class="n">'+(i+1)+'.</td><td>'+q+lrn+'</td><td class="a">'+pdEsc(l.a)+'</td></tr>';
   });
   h+='</table></div>';
   const pics=[]; L.forEach((l,i)=>{ if(l.pic) pics.push({i:i,l:l,it:items[i]}); });
@@ -71148,6 +71152,144 @@ function pdButtonHtml(kid){
     const saved=pdRecs(kid)[day.iso.replace(/-/g,"")];
     return '<div style="margin:6px 14px 0;text-align:right"><button onclick="pdPrintNext(\''+pdEsc(kid)+'\')" title="For a no-tech day: the tester’s sheet with the answers, plus the picture cards to hold up" style="padding:6px 12px;border-radius:999px;border:1.5px solid #cbd5e1;background:#fff;color:#334155;font-size:12px;font-weight:800;cursor:pointer">🖨 Print next drill on paper · '+pdEsc(lbl)+(saved&&saved.state==="printed"?' (printed — reprint)':'')+'</button></div>';
   }catch(e){ return ""; }
+}
+// PDGRADE (her ask 2026-10-28/29: "when the drill card is checked off on the schedule by Grandma or anyone else and the drill
+// wasn't actually run in the app, the printed questions are saved and go to Mom's list to grade … Mom enters the results,
+// and the drill ladder continues as if it had run in the app. Any family can use this"). A drill card (subjectKey drills…)
+// checked off on a day that has a printed paper drill and NO drill logged in the app → that paper record turns "pending"
+// (one targeted write) and "🖨 Grade <kid>'s paper drill" waits on Mom's list (Mom HQ + Mom's Day). Mom marks each
+// numbered card from the tester's sheet (✓ ~ ✗; a learning card: "went over it") and Save runs the drill's OWN ladder
+// engine (mastApplyScores, same auto-pull, gate start and Word Workout) on that day's school-day number, then writes the
+// day's drill history (paper:true) — exactly what a drill run in the app writes. "Didn't do it" drops the paper with no
+// ladder change. A drill later run in the app that day wins (the paper leaves the list).
+function _pdDayIso(day){
+  try{ const dt=(typeof DAY_DT==="object"&&DAY_DT)?DAY_DT[day]:null; if(!dt) return null;
+    const n=new Date(), d=new Date(dt+", "+n.getFullYear()); if(isNaN(d.getTime())) return null;
+    if(d.getTime()-n.getTime()>183*864e5) d.setFullYear(d.getFullYear()-1); else if(n.getTime()-d.getTime()>183*864e5) d.setFullYear(d.getFullYear()+1);
+    return _pdIso(d); }catch(e){ return null; }
+}
+function _pdLogged(kid,key){ const h=masteryData&&masteryData.history&&masteryData.history[kid]; return !!(h&&h[key]); }
+function pdOnDrillChecked(t){
+  try{
+    const sk=(t&&t.subjectKey)||""; if(!t||!t.who||!(sk==="drills"||/^drills(_|$)/.test(sk))) return;
+    const today=(typeof calToday==="function")?calToday():_pdIso(new Date());
+    const eff=(typeof effectiveDay==="function")?effectiveDay(t):t.day;
+    const cands=[_pdDayIso(eff),_pdDayIso(t.day),today].filter((x,i,a)=>x&&x<=today&&a.indexOf(x)===i);
+    const recs=pdRecs(t.who);
+    for(const iso of cands){ const key=iso.replace(/-/g,""), r=recs[key];
+      if(!r||r.state!=="printed") continue;
+      if(_pdLogged(t.who,key)) return;   // the drill ran in the app — nothing to grade
+      r.state="pending"; r.checked=Date.now();
+      if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("mastery/"+t.who+"_paperDrills/"+key).update({state:"pending",checked:r.checked});
+      return; }
+  }catch(e){}
+}
+function pdPendingList(){
+  const out=[]; const kids=(typeof ROSTER!=="undefined"&&ROSTER)?[...ROSTER]:[];
+  kids.forEach(kid=>{ const R=pdRecs(kid); Object.keys(R).sort().forEach(key=>{ const r=R[key];
+    if(r&&r.state==="pending"&&!_pdLogged(kid,key)) out.push({kid:kid,key:key,date:r.date,n:(r.ids||[]).length}); }); });
+  return out;
+}
+function pdPendingHTML(){
+  try{
+    if(!(typeof momHere==="function"&&momHere())) return "";
+    const L=pdPendingList(); if(!L.length) return "";
+    const nm=k=>pdEsc((typeof SL_KLBL!=="undefined"&&SL_KLBL[k])||k);
+    return '<div id="pd-pending" style="margin:0 0 12px;display:flex;flex-direction:column;gap:6px">'+L.map(p=>'<div onclick="pdOpen(\''+pdEsc(p.kid)+'\',\''+p.key+'\')" style="cursor:pointer;display:flex;align-items:center;gap:10px;background:#f0f9ff;border:1.5px solid #bae6fd;border-radius:12px;padding:10px 13px">'
+      +'<div style="font-size:18px">🖨</div><div style="flex:1"><div style="font-size:13px;font-weight:800;color:#075985">Grade '+nm(p.kid)+'’s paper drill</div><div style="font-size:11.5px;color:#0369a1">'
+      +pdEsc(new Date(p.date+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}))+' · '+p.n+' cards · mark them from the tester’s sheet</div></div><div style="font-size:12px;font-weight:800;color:#075985">Grade ›</div></div>').join('')+'</div>';
+  }catch(e){ return ""; }
+}
+// ── the grading screen ──
+let pdUI=null;   // {kid,key,rec,items,lines,grades}
+function pdOpen(kid,key){
+  if(!(typeof momHere==="function"&&momHere())) return;
+  const rec=pdRecs(kid)[key]; if(!rec||!Array.isArray(rec.ids)) return;
+  const by=_pdById(kid), items=rec.ids.map(id=>by[id]||null);
+  pdUI={kid:kid,key:key,rec:rec,items:items,lines:items.map(it=>it?pdLine(kid,it):null),grades:{}};
+  pdRender();
+}
+function pdClose(){ pdUI=null; const ov=document.getElementById("pd-panel"); if(ov) ov.remove(); try{ renderAll(); }catch(e){} }
+function _pdLearn(it){ return !!(it&&it.status==="introduction"); }
+function pdSet(i,r){ if(!pdUI) return; if(pdUI.grades[i]===r) delete pdUI.grades[i]; else pdUI.grades[i]=r; pdRender(); }
+function pdSetAll(){ if(!pdUI) return; pdUI.items.forEach((it,i)=>{ if(it) pdUI.grades[i]=_pdLearn(it)?"shown":"c"; }); pdRender(); }
+function pdRender(){
+  if(!pdUI){ pdClose(); return; }
+  let ov=document.getElementById("pd-panel");
+  if(!ov){ ov=document.createElement("div"); ov.id="pd-panel"; ov.style.cssText="position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 12px"; document.body.appendChild(ov); }
+  const S=pdUI, b=(bg,fg,bd)=>'padding:9px 14px;border-radius:11px;border:1.5px solid '+bd+';background:'+bg+';color:'+fg+';font-size:13px;font-weight:800;cursor:pointer';
+  const G=[["c","✓","Got it","#15803d","#f0fdf4"],["~","~","Close / slow","#a16207","#fefce8"],["m","✗","Missed","#b91c1c","#fef2f2"]];
+  const nm=pdEsc((typeof SL_KLBL!=="undefined"&&SL_KLBL[S.kid])||S.kid);
+  let h='<div style="background:#fff;border-radius:16px;max-width:560px;width:100%;padding:16px 18px 18px;box-shadow:0 10px 40px rgba(0,0,0,.25)">';
+  h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><div style="flex:1;font-size:19px;font-weight:800;color:#0f172a">🖨 '+nm+'’s paper drill</div><button onclick="pdClose()" style="'+b("#fff","#475569","#cbd5e1")+';padding:6px 11px">✕</button></div>';
+  h+='<div style="font-size:12px;color:#64748b;margin-bottom:10px">'+pdEsc(new Date(S.rec.date+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"}))+' · mark each number from the tester’s sheet</div>';
+  S.items.forEach((it,i)=>{ const l=S.lines[i], g=S.grades[i];
+    const q=!it?'<span style="color:#94a3b8">(card no longer in the deck)</span>':l.spell?'🔤 '+pdEsc(l.q):l.pic?'🖼 '+pdEsc(l.named?l.q:l.a):pdEsc(l.q);
+    h+='<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid #f1f5f9"><span style="width:24px;font-size:11px;color:#94a3b8;font-weight:700">'+(i+1)+'.</span><span style="flex:1;font-size:14px;font-weight:700;color:#0f172a">'+q
+      +(it&&!l.spell&&l.a&&l.a!==l.q&&!(l.pic&&!l.named)?'<span style="display:block;font-size:11.5px;font-weight:600;color:#15803d">'+pdEsc(l.a)+'</span>':'')+'</span>';
+    if(!it){ h+='</div>'; return; }
+    if(_pdLearn(it)) h+='<button onclick="pdSet('+i+',\'shown\')" style="padding:5px 10px;border-radius:9px;border:1.5px solid '+(g==="shown"?'#15803d':'#e2e8f0')+';background:'+(g==="shown"?'#f0fdf4':'#fff')+';color:#15803d;font-size:12px;font-weight:800;cursor:pointer">✓ Went over it</button>';
+    else h+=G.map(x=>'<button title="'+x[2]+'" onclick="pdSet('+i+',\''+x[0]+'\')" style="min-width:40px;padding:5px 8px;border-radius:9px;border:1.5px solid '+(g===x[0]?x[3]:'#e2e8f0')+';background:'+(g===x[0]?x[4]:'#fff')+';color:'+x[3]+';font-size:14px;font-weight:800;cursor:pointer">'+x[1]+'</button>').join('');
+    h+='</div>'; });
+  const n=S.items.filter(Boolean).length, left=n-Object.keys(S.grades).length;
+  h+='<div style="font-size:11px;color:#64748b;margin:8px 0">Saved like a drill done in the app'+(left?' · '+left+' not marked — they stay due for the next drill':'')+'</div>';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button onclick="pdSetAll()" style="'+b("#fff","#15803d","#bbf7d0")+';font-size:12px">All ✓</button>'
+    +'<button onclick="pdSkip()" style="'+b("#fff","#b91c1c","#fecaca")+';font-size:12px">Didn’t do it</button><div style="flex:1"></div>'
+    +'<button onclick="pdSave()" '+(left===n?'disabled ':'')+'style="'+b(left===n?"#e2e8f0":"#15803d",left===n?"#94a3b8":"#fff",left===n?"#e2e8f0":"#15803d")+'">Save results</button></div></div>';
+  ov.innerHTML=h;
+}
+function _pdLive(){ return typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
+function pdSkip(){
+  if(!pdUI) return; const S=pdUI;
+  if(typeof confirm==="function"&&!confirm("Drop this paper drill? Nothing on the ladder changes; the cards stay due.")) return;
+  S.rec.state="skipped"; if(_pdLive()) db.ref("mastery/"+S.kid+"_paperDrills/"+S.key).update({state:"skipped",gradedTs:Date.now()});
+  pdClose();
+}
+// Save = mastSaveResults for that day, on that day's school-day number (the ladder engine and the write are the drill's own).
+function pdSave(){
+  if(!pdUI) return; const S=pdUI, kid=S.kid, rec=S.rec, key=S.key, date=rec.date, pn=rec.pn;
+  const scores={}; S.items.forEach((it,i)=>{ if(it&&S.grades[i]) scores[it.id]=S.grades[i]; });
+  if(!Object.keys(scores).length) return;
+  _pdAs(kid,()=>{
+    let items=masteryData[kid]; if(!items) return; if(!Array.isArray(items)) items=Object.values(items);
+    const due=S.items.filter(Boolean);
+    let _pre=[]; try{ _pre=drillsCompletedCats(kid); }catch(e){}
+    const _jset=mastDrillSettings();
+    const prev=(masteryData.history&&masteryData.history[kid]&&masteryData.history[kid][key])||null;
+    const prevShown=new Set(((prev&&prev.items)||[]).filter(x=>x&&x.result==="shown").map(x=>x.id));
+    const ap=mastApplyScores(items,due,scores,pn,_jset,{prevShown:prevShown,autoPull:true,chain:true});
+    if(_jset.auto_pull){ try{ mastGateStart(kid,items,ap.minted,_jset); }catch(e){} }
+    try{ if(typeof wwAfterDrill==="function") wwAfterDrill(kid,items,due,scores,ap.touched); }catch(e){}
+    const di=[]; let c=0,m=0,cl=0,sh=0;
+    due.forEach(d=>{ const sc=scores[d.id]; if(!sc) return;
+      if(sc==="shown"){ sh++; di.push({id:d.id,prompt:d.prompt,result:"shown",tier:d.tier||"daily"}); }
+      else { di.push({id:d.id,prompt:d.prompt,result:sc,oldTier:d.tier||"daily"}); if(sc==="c")c++; else if(sc==="m")m++; else cl++; } });
+    const sc=c+m+cl;
+    let hist={date:date,printNum:pn,total:due.length,scored:sc,correct:c,miss:m,close:cl,shown:sh,pct:sc?Math.round(c/sc*100):0,secs:null,sessTimes:null,items:di,paper:true};
+    if(prev){ const pc=(prev.correct||0)+c, pm=(prev.miss||0)+m, pt=(prev.close||0)+cl, ps=pc+pm+pt;
+      hist=Object.assign({},prev,{total:(prev.total||0)+due.length,scored:ps,correct:pc,miss:pm,close:pt,shown:(prev.shown||0)+sh,pct:ps?Math.round(pc/ps*100):0,items:(prev.items||[]).concat(di),paper:true}); }
+    rec.state="graded"; rec.res=S.items.map((it,i)=>S.grades[i]||""); rec.gradedTs=Date.now();
+    if(_pdLive()){
+      const upd={};   // the drill's own targeted per-field write (mastSaveResults)
+      ap.touched.forEach(it=>{ const ix=items.indexOf(it); if(ix<0) return;
+        upd[ix+"/tier"]=it.tier; upd[ix+"/consecutive_correct"]=it.consecutive_correct||0; upd[ix+"/cycle"]=it.cycle||1; upd[ix+"/drop_count"]=it.drop_count||0;
+        upd[ix+"/status"]=it.status||"active"; upd[ix+"/tally_dots"]=it.tally_dots??0; upd[ix+"/next_due"]=it.next_due??null;
+        upd[ix+"/dynamic"]=it.dynamic?true:null; upd[ix+"/dynSource"]=it.dynamic?(it.dynSource||null):null; upd[ix+"/dynFromTier"]=it.dynamic?(it.dynFromTier||null):null; upd[ix+"/dynAddedAt"]=it.dynamic?(it.dynAddedAt||null):null;
+        if(it.ww) upd[ix+"/ww"]=it.ww; });
+      ap.minted.forEach(it=>{ const ix=items.indexOf(it); if(ix>=0) upd[ix]=it; });
+      if(Object.keys(upd).length) db.ref("mastery/"+kid).update(upd);
+      if(typeof mastPrintLogAppend==="function") mastPrintLogAppend(date,pn);
+      db.ref("mastery/history/"+kid+"/"+key).set(hist);
+      db.ref("mastery/"+kid+"_paperDrills/"+key).update({state:"graded",res:rec.res,gradedTs:rec.gradedTs});
+    }
+    masteryData[kid]=items;
+    if(!masteryData.history) masteryData.history={}; if(!masteryData.history[kid]) masteryData.history[kid]={};
+    masteryData.history[kid][key]=hist;
+    try{ HA_LS.setItem("ha_mastery",JSON.stringify(masteryData)); }catch(e){}
+    try{ checkDrillsGraduation(kid,_pre); }catch(e){}
+  });
+  if(typeof gwShowToast==="function") gwShowToast("🖨 Paper drill saved");
+  pdClose();
 }
 // PAPERDRILL_END
 

@@ -182,6 +182,7 @@ const unnudge = s => String(s).replace(/  \/\/ Load sitting in the washer[\s\S]*
   .replace(/\n\s*h\+=mdCardLaundry\(true\);   \/\/ 🧺 LAUNDRYADD[^\n]*/g, "").replace(/\n\s*\/\/ 🧺 LL_MYDAY[^\n]*/g, "")   // 🧺 LL_MYDAY (2026-10-21): Mom's Day's running-loads card moved up into My day — that one line, normalized away on both sides
   .replace(/\n[^\n]*\/\/ STICKYSTACK[^\n]*/g, "")   // STICKYSTACK (2026-10-22): the Today section markers — whole new lines, each tagged — normalized away on both sides
   .replace(/\n[^\n]*\/\/ ⏱ MINMINUTES[^\n]*/g, "")   // ⏱ MINMINUTES (2026-10-23): one 🔴 Now line (timed-card alerts), tagged — normalized away so the guard still asks "nothing ELSE changed"
+  .replace(/\n[^\n]*\/\/ 🖨 PDGRADE[^\n]*/g, "")   // 🖨 PDGRADE (2026-10-28): one Mom's-list line (paper drills to grade), tagged — normalized away on both sides
   .replace(/\n[^\n]*\/\/ KITFLAG[^\n]*/g, "")   // 🍳 KITFLAG (2026-10-23): one 🔴 Now line (a meal the kids rate low → ✓ Got it · Swap…), tagged — normalized away on both sides
   .replace(/\n[^\n]*\/\/ LESSONRES: 🧺[^\n]*/g, "")
   .replace(/\n[^\n]*\/\/ 📺 DAYCARD[^\n]*/g, "")   // 📺 DAYCARD (2026-10-27): one 🔴 Now line (Today's card for a family block running today), tagged — normalized away on both sides

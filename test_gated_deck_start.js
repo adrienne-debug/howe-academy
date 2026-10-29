@@ -113,7 +113,8 @@ ok("called once from mastSaveResults", iCall > 0 && sv.indexOf("mastGateStart(",
 ok("…after the engine's auto-pull, before minted cards are written", iApplied > 0 && iCall > iApplied && iWrite > iCall && iUpd > iWrite);
 ok("…under the auto_pull guard", /if\(_jset\.auto_pull\)\{ try\{ mastGateStart\(/.test(sv));
 ok("study sessions' engine path does not call it", extract("function mastApplyScores(").indexOf("mastGateStart") < 0);
-ok("called nowhere else", src.split("mastGateStart(").length === 3);   // definition + one call
+ok("called nowhere else (but a paper drill graded later, which saves exactly like an app drill)", src.split("mastGateStart(").length === 4
+  && /if\(_jset\.auto_pull\)\{ try\{ mastGateStart\(kid,items,ap\.minted,_jset\); \}/.test(extract("function pdSave(")));   // definition + the drill's call + 🖨 PDGRADE (2026-10-28)
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
