@@ -38,7 +38,7 @@ console.log("── where it sits, how it is hooked ──");
   ok("7 hook lines outside the block, each one typeof-guarded", hooks.length===7&&hooks.every(l=>/typeof cpPace\w+\s*===?\s*"function"/.test(l)), hooks.map(l=>l.trim().slice(0,80)));
   const fnOf=l=>{ const i=out.indexOf(l), j=out.lastIndexOf("\nfunction ",i); return out.slice(j+10,out.indexOf("(",j)); };
   ok("…in envSummary, envsParentHtml, envConsoleHtml ×2, envcGridHtml, envClsPanelHtml, mstPile", JSON.stringify(hooks.map(fnOf).sort())===JSON.stringify(["envClsPanelHtml","envConsoleHtml","envConsoleHtml","envSummary","envcGridHtml","envsParentHtml","mstPile"]), hooks.map(fnOf));
-  ok("the hook points for later PRs are left, unbuilt: cpSuggestHtml (16), cpSendEarlyHtml (28), cpSkillsPaceHtml (25) (cpCalOf is PR 22's, built: test_cp_cal.js)", ["cpSuggestHtml","cpSendEarlyHtml","cpSkillsPaceHtml"].every(f=>new RegExp('typeof '+f+'==="function"').test(PACE)&&src.indexOf("function "+f+"(")<0));
+  ok("the hook points for later PRs are left, unbuilt: cpSuggestHtml (16), cpSkillsPaceHtml (25) (cpCalOf is PR 22's, built: test_cp_cal.js; cpSendEarlyHtml is PR 28's, built: test_cp_send_early.js)", ["cpSuggestHtml","cpSkillsPaceHtml"].every(f=>new RegExp('typeof '+f+'==="function"').test(PACE)&&src.indexOf("function "+f+"(")<0));
   ok("no 🔀 and no write but envcWrite (no firebase, no db.ref, no envcMulti)", PACE.indexOf("\u{1F500}")<0&&!/firebase\.|db\.ref|envcMulti|\.set\(|\.update\(/.test(PACE)); }
 
 console.log("── the planner against the 2026-10-28 simulation ──");

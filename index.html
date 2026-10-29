@@ -48695,7 +48695,9 @@ function cppSentOn(st,sid){
   const look=o=>Object.keys(o||{}).forEach(k=>{ const r=o[k]; if(!r||!(keys[k]||k.indexOf(st.id+"~")===0)) return; const ms=+r.openedAt||0; if(ms&&(at==null||ms<at)) at=ms; });
   look(R.all); if(sid) look((R.students||{})[sid]); return at==null?"":cppStr(at-new Date(at).getTimezoneOffset()*60000);
 }
-function cppPlanned(cls,st,d){ const x=d&&d.sendOn&&d.sendOn[st.id]; if(cppOk(x)) return x; const p=cls&&cls.plan&&cls.plan[st.id]; if(p&&cppOk(p.sendOn)) return p.sendOn; return ((CPP_SEND_PLAN[st.unit||"nc_envirothon"]||{})[st.id])||""; }
+function cppPlanned(cls,st,d){ const x=d&&d.sendOn&&d.sendOn[st.id]; if(cppOk(x)) return x;
+  if(typeof cpSendEarlyOn==="function"){ const sc=cpSendEarlyOn(st); if(cppOk(sc)) return sc; }   // 📆 CPSENDEARLY: a whole-class scheduled send-out is the section's arrival (PR 28, §6.8.8)
+  const p=cls&&cls.plan&&cls.plan[st.id]; if(p&&cppOk(p.sendOn)) return p.sendOn; return ((CPP_SEND_PLAN[st.unit||"nc_envirothon"]||{})[st.id])||""; }
 function cppStart(cls){ if(cls&&cppOk(cls.start)) return cls.start; return cppToday(); }
 // ── the what-if draft (nothing is saved until Save) ──
 function cppDraftOf(cls){
@@ -48710,6 +48712,7 @@ function cppSameOff(a,b){ const A=Object.keys(a||{}).filter(k=>a[k]).sort(), B=O
 function cppChanges(d,f){ const out=[]; if(d.goal!==f.goal||d.pct!==f.pct) out.push("goal"); if(d.days!==f.days||!cppSameOff(d.off,f.off)) out.push("study days");
   if(d.npd!==f.npd) out.push("New cards a day"); if(d.streak!==f.streak) out.push("Right in a row");
   const ks={}; Object.keys(d.coreOnly).concat(Object.keys(f.coreOnly)).forEach(k=>{ ks[k]=1; }); if(Object.keys(ks).some(k=>!!d.coreOnly[k]!==!!f.coreOnly[k])) out.push("core only");
+  if(typeof cpSendEarlyChanged==="function"&&cpSendEarlyChanged(d).length) out.push("send-out dates");   // 📆 CPSENDEARLY: a section's send-out date moved (PR 28)
   if(Object.keys(d.stu).some(sid=>d.stu[sid]!==cppStuSaved(sid))) out.push("a student's New cards a day"); return out; }
 function cppStuSaved(sid){ const v=((((((_envc.students||{})[sid])||{}).settings)||{}).study||{}).newPerDay; return Number.isInteger(v)?v:null; }
 // the planner's inputs for the class (d = the draft; null = the class as saved)
@@ -48808,6 +48811,7 @@ function cpPaceSave(){
   Object.keys(ks).forEach(k=>{ if(!!d.coreOnly[k]===!!f.coreOnly[k]) return; if(cls.locks&&cls.locks.plan===true&&!envcAdmin()){ refused.push("Core only"); return; } upd["plan/"+k+"/coreOnly"]=d.coreOnly[k]?true:null; });
   const stu=Object.keys(d.stu).filter(sid=>d.stu[sid]!==cppStuSaved(sid)&&(_envc.students||{})[sid]);
   if(stu.length&&!can("newPerDay")){ refused.push("a student's New cards a day"); stu.length=0; }
+  if(typeof cpSendEarlySave==="function"&&cpSendEarlySave(d,refused)&&!Object.keys(upd).length&&!stu.length){ if(refused.length) envsToast("\u{1F512} Set by Adrienne: "+refused.join(", ")); return true; }   // 📆 CPSENDEARLY: plan/<key>/sendOn + the send-outs she ticked (PR 28)
   if(refused.length) envsToast("\u{1F512} Set by Adrienne: "+refused.join(", "));
   if(!Object.keys(upd).length&&!stu.length){ if(!refused.length) envsToast("Nothing changed"); return false; }
   const jobs=[];
@@ -50918,6 +50922,204 @@ function cpsdCss(){
     document.head.appendChild(s); }catch(e){}
 }
 // CPSEND_END
+// CPSENDEARLY_START — 📆 SEND A SECTION OUT EARLIER (or later), right on the 📅 Pace bar: the send-out date strip, plan/<key>/sendOn, the
+// what-if re-run, the class meetings on the strip, the 💡 suggestion (DESIGN_class_platform_2026-10-28.md §8.3, §6.8.8, §8.10, §8.4, §13
+// row 28, §14 Q45; PR 28 of the class platform; her go on the design 2026-10-28). From the research's key finding (2026-10-28): "the late
+// stations set the pace" — Wildlife opens Jan 4 with about 450 core cards, and sending a section out earlier is a bigger lever than any one
+// trim rule. INERT unless CPPACE's console is on (cppOn: the class site, a teacher or admin): Howe, DeWalt, Burris and Lincoln's own
+// Envirothon in Howe never reach a line that does anything.
+//   · THE STRIP (cpSendEarlyHtml, CPPACE's waiting hook on the plan bar): one column a week, from this week to the goal; 🏫 on the weeks of
+//     the class meetings (CPCAL's cpCalMeetings) and 🏁 on the goal's; one row per section with its send-out — ✓ sent (fixed), 📅 = a
+//     scheduled send-out to the whole class (CPSEND's cpSendDates, solid), ○ = a plan date only (plan/<key>/sendOn, else the simulation's
+//     CPP_SEND_PLAN, hollow), ● = where she just moved it (the old place ◌). Tap a week to move a section there (to that week's class day
+//     when it has one, else the same weekday); ◀ 1 wk / ▶ 1 wk; "🏫 to a class day"; ↺ back. Never before today, never past the goal.
+//   · THE WHAT-IF: a move sets CPPACE's draft _cpp.d.sendOn[<key>], which cppPlanned already reads, so the result line, "Needs from now" and
+//     every student's marks re-run at once. The strip adds the side by side: "Wildlife Dec 1 instead of Jan 4 → needs 23 → 19 new cards a
+//     day (~61 → 52 min) · at 5 a day 41% → 44% of core by Area". Nothing is written until Save this plan.
+//   · SAVE (one guarded line in cppChanges, one in cpPaceSave): ONE targeted update — classes/<cid>/plan/<key>/sendOn = "YYYY-MM-DD" per
+//     moved section, a plan date, never a release. The send-out itself stays her tap (§8.10 "Next class", CPSEND's 📤). Only when she ticks
+//     "Also move the scheduled send-out" (the section has one) or "Also schedule it" (it hasn't) under a moved section does the same update
+//     carry CPSEND's record at release/<cid>/scheduled/<id>: moved = the record rewritten with the new `on` and by = her; new = {key:<section>,
+//     level:"section", to:"all", on, at:"07:00", by, ts}. Her tick, never on its own. Writes go through envcWrite / CPSEND's cpsdWrite →
+//     envsWrite (demo: "would write"; ?dryrun=1: nothing).
+//   · THE PLANNER reads a scheduled send-out as the section's arrival (§6.8.8): one guarded line in cppPlanned — the what-if first, then the
+//     earliest whole-class scheduled record of the section, then plan/<key>/sendOn, then the simulation's date.
+//   · 🔒 classes/<cid>/locks/plan (read through CPLOCKS' cpLockRO, part "plan") greys the strip for a teacher, and Save refuses the dates (the rules too).
+//   · 💡 (§8.3, §8.4): cpSendEarlySuggest(ctx) → the latest section not yet sent, moved about 4 weeks earlier (to a class day within a week
+//     of that, else the first study day from there), when that saves a new card a day or 2 minutes. PR 16 (CPSUGGEST) lists it through that name; until it says it shows the kind
+//     itself (typeof cpSuggestOwns, "sendEarly"), the strip shows it, with Do it (fills the what-if; she still saves) and Not now (this visit).
+//   · DEMO: the sample class plans each section still to go out on its first class day (the syllabus: Aquatics Nov 10, Wildlife Jan 26,
+//     CEI Feb 23), in memory. Teacher ▸ 📅 Pace ▸ Wildlife ◀ 1 wk ×4 ▸ the needs and minutes a day drop before Save.
+//   · Every word that names the unit's parts comes from its labels (CPSEND's cpsdWord), never "Station" in code (§15).
+const CPSE_AT="07:00", CPSE_WD=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"], CPSE_SUG_NEAR=7, CPSE_SUG_FALL=28, CPSE_SUG_N=1, CPSE_SUG_MIN=2;
+const _cpse={css:false,quiet:{},demo:false};
+function cpseOn(){ return typeof cppOn==="function"&&cppOn(); }
+function cpseEsc(v){ return envsEsc(v); }
+function cpseCls(){ return (typeof cppCls==="function"&&cppCls())||{}; }
+function cpseWord(k){ const w=(typeof cpsdWord==="function"&&cpsdWord(k))||k; return String(w).toLowerCase(); }
+function cpseRO(){ if(typeof cpLockRO==="function") return cpLockRO("plan"); const c=cpseCls(); return !!(c.locks&&c.locks.plan===true&&!(typeof envcAdmin==="function"&&envcAdmin())); }
+function cpseWho(){ return (typeof cpLockName==="function"&&cpLockName())||"Adrienne"; }
+// PURE: the Monday of a date's week; "Tue Dec 1"
+function cpseMon(s){ const w=new Date(cppMs(s)).getUTCDay(); return cppAdd(s,-((w+6)%7)); }
+function cpseDay(s){ return cppOk(s)?CPSE_WD[new Date(cppMs(s)).getUTCDay()]+" "+cppLbl(s):""; }
+function cpseWeeks(a,b){ return Math.round((cppMs(b)-cppMs(a))/(7*86400000)); }
+// the dates a section may be planned on: from today (or the class's start, if later) to the goal
+function cpseRange(cls,d){ const g=(typeof cppGoals==="function"?cppGoals(cls):[]), goal=(g.find(x=>x.name===(d&&d.goal))||g[0]||{}).date||"", t=cppToday(), s=cppStart(cls);
+  return {lo:s>t?s:t,hi:goal}; }
+// the section's whole-class scheduled send-outs (CPSEND's records), earliest first
+function cpseSchedOf(sec){ if(typeof cpSendDates!=="function") return []; let L=[]; try{ L=cpSendDates()||[]; }catch(e){ return []; }
+  return L.filter(r=>r&&r.sec===sec&&r.to==="all"&&cppOk(r.on)).sort((a,b)=>a.on<b.on?-1:a.on>b.on?1:String(a.id).localeCompare(String(b.id))); }
+// cppPlanned's line: the date a section is scheduled to reach the whole class, or ""
+function cpSendEarlyOn(st){ try{ if(!cpseOn()||!st) return ""; cpseDemoSeed(); const L=cpseSchedOf(st.id); return L.length?L[0].on:""; }catch(e){ return ""; } }
+// the demo's sample class plans each section still to go out on its first class day (the syllabus's meetings, §8.10: Aquatics Nov 10,
+// Wildlife Jan 26, CEI Feb 23) — once, in memory, like CPPACE's days off and CPCAL's meetings. In the planner a Jan 4 Wildlife doesn't
+// hold the class back yet; its class day does (Area: 18 → 25 new cards a day), which is what ◀ shows.
+function cpseDemoSeed(){ if(_cpse.demo||!(typeof envsDemo==="function"&&envsDemo())||typeof _envc==="undefined"||!_envc.cls) return; _cpse.demo=true;
+  if(typeof cpcalDemoSeed==="function") cpcalDemoSeed(); const c=_envc.cls, t=cppToday(), seen={};
+  (typeof cpCalMeetings==="function"?cpCalMeetings(c):[]).forEach(m=>{ if(!m.sec||seen[m.sec]) return; seen[m.sec]=1; const st=cpseSec(m.sec); if(!st||m.date<=t||cppSentOn(st)) return;
+    c.plan=c.plan||{}; const p=c.plan[m.sec]=c.plan[m.sec]||{}; if(!cppOk(p.sendOn)) p.sendOn=m.date; }); }
+// the section's date as saved (scheduled → plan → the simulation's → the class's start) and as drawn now (the what-if first)
+function cpseSaved(cls,st){ return cppPlanned(cls,st,null)||cpseRange(cls,null).lo; }
+function cpseCur(cls,st,d){ return cppPlanned(cls,st,d)||cpseRange(cls,d).lo; }
+function cpseSec(k){ return (typeof cppSections==="function"?cppSections():[]).find(s=>s.id===k)||null; }
+// ── the levers (each a what-if on CPPACE's draft) ──
+function cpseSetDate(k,date){
+  if(!cpseOn()) return; if(cpseRO()){ envsToast("\u{1F512} The section plan is set by "+cpseWho()); envcRe(); return; }
+  const st=cpseSec(k); if(!st||cppSentOn(st)||!cppOk(date)) return; const d=cppDraft(), cls=cpseCls(), r=cpseRange(cls,d);
+  if(date<r.lo) date=r.lo; if(r.hi&&date>r.hi) date=r.hi;
+  if(date===cpseSaved(cls,st)){ delete d.sendOn[k]; if(d.cpseSched) delete d.cpseSched[k]; } else d.sendOn[k]=date;
+  envcRe(); }
+function cpseMove(k,days){ const st=cpseSec(k); if(!st) return; cpseSetDate(k,cppAdd(cpseCur(cpseCls(),st,cppDraft()),days)); }
+function cpseTo(k,date){ if(cppOk(date)) cpseSetDate(k,date); }
+// a week tapped on the strip: that week's class day, else the same weekday as now
+function cpseWeek(k,mon){ const st=cpseSec(k); if(!st||!cppOk(mon)) return; const cls=cpseCls(), cur=cpseCur(cls,st,cppDraft()), end=cppAdd(mon,6);
+  const m=(typeof cpCalMeetings==="function"?cpCalMeetings(cls):[]).find(x=>x.date>=mon&&x.date<=end);
+  cpseSetDate(k,m?m.date:cppAdd(mon,(new Date(cppMs(cur)).getUTCDay()+6)%7)); }
+function cpseBack(k){ if(!cpseOn()) return; const d=cppDraft(); delete d.sendOn[k]; if(d.cpseSched) delete d.cpseSched[k]; envcRe(); }
+function cpseTick(k,on){ if(!cpseOn()||cpseRO()) return; const d=cppDraft(); d.cpseSched=d.cpseSched||{}; if(on) d.cpseSched[k]=true; else delete d.cpseSched[k]; envcRe(); }
+function cpseDo(k,date){ cpseTo(k,date); }
+function cpseQuiet(id){ _cpse.quiet[id]=true; envcRe(); }
+// ── Save: the sections whose date she moved (cppChanges's line), and the write (cpPaceSave's line) ──
+function cpSendEarlyChanged(d){ try{ if(!cpseOn()||!d||!d.sendOn) return []; const cls=cpseCls();
+  return cppSections().filter(st=>{ const x=d.sendOn[st.id]; return cppOk(x)&&!cppSentOn(st)&&x!==cpseSaved(cls,st); }).map(st=>st.id); }catch(e){ return []; } }
+// is a date's 7:00 AM (the class's time) still ahead? (a send-out can't be scheduled into the past)
+function cpseAhead(on){ try{ if(typeof cpsdAtMs!=="function") return on>cppToday(); const tz=cpsdTz(_envc.cid); return cpsdAtMs(on,CPSE_AT,tz)>cpsdNow(); }catch(e){ return false; } }
+function cpseCanSched(){ return typeof cpsdSchedUpdate==="function"&&typeof cpsdWrite==="function"&&typeof cpSendDates==="function"; }
+// PURE-ish: the scheduled records a ticked section's Save carries — the earliest whole-class one(s) moved, else one new section record
+function cpseSchedUpdate(cid,k,on,uid,now){ const L=cpseSchedOf(k), o={};
+  if(L.length){ const first=L[0].on; L.filter(r=>r.on===first).forEach(r=>{ o["release/"+cid+"/scheduled/"+r.id]={key:r.key,level:r.level,to:"all",on,at:r.at||CPSE_AT,by:uid,ts:now}; }); return o; }
+  return cpsdSchedUpdate(cid,[k],null,on,CPSE_AT,uid,now); }
+function cpSendEarlySave(d,refused){
+  try{
+    const ks=cpSendEarlyChanged(d); if(!ks.length||!_envc.cid) return 0;
+    if(cpseRO()){ if(Array.isArray(refused)) refused.push("send-out dates"); return 0; }
+    const cid=_envc.cid, cls=_envc.cls||(_envc.cls={}), tick=d.cpseSched||{}, uid=(_envs&&_envs.uid)||"", now=Date.now(), plan={}, rel={};
+    ks.forEach(k=>{ plan["plan/"+k+"/sendOn"]=d.sendOn[k]; if(tick[k]&&cpseCanSched()&&cpseAhead(d.sendOn[k])) Object.assign(rel,cpseSchedUpdate(cid,k,d.sendOn[k],uid,now)); });
+    let p;
+    if(Object.keys(rel).length){ const o={}; Object.keys(plan).forEach(x=>{ o["classes/"+cid+"/"+x]=plan[x]; }); Object.assign(o,rel); p=cpsdWrite(o); }   // the plan dates and the send-outs she ticked: ONE update
+    else p=envcWrite("classes/"+cid,plan,"update");
+    p.then(()=>{ cls.plan=cls.plan||{}; ks.forEach(k=>{ const r=cls.plan[k]=cls.plan[k]||{}; r.sendOn=d.sendOn[k]; }); if(_cpp.d===d) _cpp.d=null; envcRe(); }).catch(()=>{});
+    return ks.length;
+  }catch(e){ return 0; }
+}
+// ── the 💡 suggestion: each section still to go out, about 4 weeks earlier (a class day within a week of that, else the first study day
+//    from there); the one that saves the most, when it saves a new card a day or 2 minutes ──
+// → {id, kind:"sendEarly", sec, label, from, to, weeks, need:[before, after], min:[before, after], text, doIt} · null = none · undefined = still working
+function cpseSugTo(cls,d,r,from){
+  const aim=cppAdd(from,-CPSE_SUG_FALL), near=(typeof cpCalMeetings==="function"?cpCalMeetings(cls):[]).filter(m=>m.date>r.lo&&m.date<from&&Math.abs(cppMs(m.date)-cppMs(aim))<=CPSE_SUG_NEAR*86400000)
+    .sort((x,y)=>Math.abs(cppMs(x.date)-cppMs(aim))-Math.abs(cppMs(y.date)-cppMs(aim)))[0];
+  let to=near?near.date:aim; if(!near){ const cal={days:d.days,off:d.off}; for(let i=0;i<21&&!cppStudy(cal,to);i++) to=cppAdd(to,1); }
+  return (to<=r.lo||to>=from)?null:{to,meet:!!near}; }
+function cpSendEarlySuggest(ctx){
+  try{
+    if(!cpseOn()||!ctx||!ctx.d||!ctx.inp||!ctx.inp.goal) return null; const d=ctx.d, cls=cpseCls(), r=cpseRange(cls,d);
+    if(cpSendEarlyChanged(d).length) return null;   // she is already moving dates: the what-if line speaks
+    const base=cppInputs(Object.assign({},d,{sendOn:{}})), a=cppLater(base); let wait=a===undefined, best=null;
+    cppSections().filter(st=>!cppSentOn(st)).forEach(st=>{ const from=cpseSaved(cls,st); if(!(from>r.lo)) return; const c=cpseSugTo(cls,d,r,from); if(!c) return;
+      const b=cppLater(cppInputs(Object.assign({},d,{sendOn:{[st.id]:c.to}}))); if(b===undefined){ wait=true; return; }
+      if(wait||!a||!b||a.err||b.err||b.n==null) return; const ma=a.plan?a.plan.minutesPerDay:0, mb=b.plan?b.plan.minutesPerDay:0, saveN=a.n==null?Infinity:a.n-b.n, saveM=ma-mb;
+      if(!(saveN>=CPSE_SUG_N||saveM>=CPSE_SUG_MIN)) return; if(best&&(saveM<best.saveM||(saveM===best.saveM&&saveN<=best.saveN))) return;
+      best={st,from,to:c.to,meet:c.meet,ma,mb,saveN,saveM,b}; });
+    if(wait) return undefined; if(!best) return null;
+    const st=best.st, wk=cpseWeeks(best.to,best.from), id="sendEarly:"+st.id+":"+best.to;
+    const text="Sending "+st.label+" out "+wk+" week"+(wk===1?"":"s")+" earlier ("+cpseDay(best.to)+(best.meet?", a class day":"")+" instead of "+cppLbl(best.from)+") "+
+      (best.saveM>0?"saves ~"+best.saveM+" min a day":"lowers the pace")+": "+(a.n==null?"more than "+CPP_NPD_MAX:a.n)+" → "+best.b.n+" new cards a day from the class’s start.";
+    return {id,kind:"sendEarly",sec:st.id,label:st.label,from:best.from,to:best.to,weeks:wk,need:[a.n,best.b.n],min:[best.ma,best.mb],text,doIt:"cpseDo('"+cppJ(st.id)+"','"+best.to+"')"};
+  }catch(e){ return null; }
+}
+// ── the view ──
+function cpseCss(){ if(_cpse.css||typeof document==="undefined") return; _cpse.css=true;
+  try{ const s=document.createElement("style"); s.id="cpse-css"; s.textContent='.cpse-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:4px 0 6px;border:1px solid #e5e7eb;border-radius:10px;max-width:100%}'+
+    '.cpse-t{border-collapse:collapse;font-size:11px}.cpse-t th,.cpse-t td{min-width:34px;width:34px;height:30px;text-align:center;border-left:1px solid #f1efe9;padding:0;font-weight:700}'+
+    '.cpse-t th{font-size:10px;color:var(--muted);white-space:nowrap;height:24px}.cpse-t tr+tr td{border-top:1px solid #f1efe9}'+
+    '.cpse-t .n{position:sticky;left:0;z-index:1;background:#fff;text-align:left;min-width:76px;width:76px;max-width:76px;padding:0 6px;font-weight:800;border-left:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:1px 0 0 #e5e7eb}'+
+    '.cpse-t td.m{background:#f0fdfa}.cpse-t td.g{background:#eff6ff}.cpse-t td button{width:100%;height:30px;border:0;background:transparent;font-size:14px;padding:0;cursor:pointer;font-family:inherit;color:#9ca3af}'+
+    '.cpse-t td button:disabled{cursor:default}.cpse-t .k-plan{color:#475569}.cpse-t .k-sched{color:#0f766e}.cpse-t .k-wi{color:#2563eb;font-size:16px}.cpse-t .k-old{color:#cbd5e1}.cpse-t .k-sent{color:#166534}'+
+    '.cpse-row{padding:6px 0;border-top:1px solid #f1efe9;font-size:12.5px}.cpse-row .envs-btn{min-height:34px;padding:0 10px;font-size:12px;margin:4px 6px 0 0}.cpse-row select{min-height:34px;font-size:12px;margin:4px 6px 0 0;width:auto;max-width:100%}'+
+    '.cpse-tick{display:block;margin-top:4px;font-weight:700;color:#0f766e}.cpse-warn{margin-top:3px;color:#92400e;font-size:12px;font-weight:700}'+
+    '.cpse-sug{margin-top:8px;padding:8px 10px;border-radius:10px;background:#fffbeb;border:1.5px solid #fcd34d;color:#78350f;font-size:12.5px;font-weight:700;line-height:1.45}.cpse-sug .envs-btn{min-height:34px;padding:0 10px;font-size:12px;margin:6px 6px 0 0}';
+    document.head.appendChild(s); }catch(e){} }
+// the what-if, side by side: the needs (from the class's start) and the class's own New cards a day, saved dates vs moved ones
+function cpseCompareHtml(d,inp,plan,moved,cls){
+  const base=cppInputs(Object.assign({},d,{sendOn:{}})), p0=cppRun(base), a=cppLater(base), b=cppLater(Object.assign({},inp)), G=cpseEsc(inp.goalName||"the goal"), pct=d.pct||95;
+  const what=moved.map(k=>{ const st=cpseSec(k); return '<b>'+cpseEsc(st?st.label:k)+'</b> '+cppLbl(d.sendOn[k])+' instead of '+cppLbl(cpseSaved(cls,st)); }).join(" · ");
+  const n=x=>x===undefined?'…':(!x||x.err)?'?':x.n==null?'more than '+CPP_NPD_MAX:String(x.n), m=x=>x&&x.plan?'~'+x.plan.minutesPerDay:'…';
+  let h='<div class="cpp-wi">\u{1F4C6} What-if: '+what+'<br>→ needs <b>'+n(a)+' → '+n(b)+'</b> new cards a day from the class’s start ('+m(a)+' → '+m(b)+' min a day)';
+  if(plan) h+=' · at '+d.npd+' a day: '+p0.pctAtGoal+'% → '+plan.pctAtGoal+'% of core by '+G+', ~'+p0.minutesPerDay+' → '+plan.minutesPerDay+' min'+(p0.finishDate||plan.finishDate?', '+pct+'% on '+(p0.finishDate?cppLbl(p0.finishDate):'—')+' → '+(plan.finishDate?cppLbl(plan.finishDate):'—'):'');
+  return h+'. Nothing changes for a student until you save.</div>';
+}
+function cpSendEarlyHtml(ctx){
+  try{
+    if(!cpseOn()||!ctx||!ctx.d||!ctx.inp) return ""; cpseCss();
+    const d=ctx.d, inp=ctx.inp, plan=ctx.plan, cls=cpseCls(), S=cppSections(), ro=cpseRO(), r=cpseRange(cls,d), sec=cpseWord("section"), today=cppToday();
+    let h='<div class="cpp-l">\u{1F4C6} Send-out dates</div>';
+    if(!inp.goal) return h+'<div class="envs-muted">Add a goal date in \u{1F3EB} Class setup to plan the send-out dates.</div>';
+    const meet=(typeof cpCalMeetings==="function"?cpCalMeetings(cls):[]).filter(m=>m.date>=cpseMon(today)&&m.date<=inp.goal), MW={};
+    meet.forEach(m=>{ const w=cpseMon(m.date); (MW[w]=MW[w]||[]).push(m); });
+    const W=[]; for(let w=cpseMon(today);w<=inp.goal&&W.length<60;w=cppAdd(w,7)) W.push(w); const GW=cpseMon(inp.goal);
+    const cellCls=w=>(MW[w]?'m':'')+(w===GW?' g':'');
+    h+='<div class="envs-muted">When each '+cpseEsc(sec)+' goes out. Move one and everything on this page re-runs before you save. \u{1F3EB} = a class meeting · \u{1F4C5} scheduled · ○ planned · ● moved (◌ was) · ✓ sent'+(ro?' · \u{1F512} set by '+cpseEsc(cpseWho()):'')+'</div>';
+    h+='<div class="cpse-wrap"><table class="cpse-t"><thead><tr><th class="n">Week of</th>'+W.map(w=>'<th>'+cppLbl(w)+'</th>').join("")+'</tr></thead><tbody>';
+    h+='<tr><td class="n">\u{1F3EB} Class</td>'+W.map(w=>{ const m=MW[w]; return '<td class="'+cellCls(w)+'"'+(m?' title="'+cpseEsc(m.map(x=>cpseDay(x.date)+" · "+((typeof cpcalMeetWhat==="function"&&cpcalMeetWhat(x))||x.what||"Class")).join("; "))+'"':'')+'>'+(m?'\u{1F3EB}':'')+(w===GW?'\u{1F3C1}':'')+'</td>'; }).join("")+'</tr>';
+    const rows=[];
+    S.forEach(st=>{ const sent=cppSentOn(st), saved=sent?"":cpseSaved(cls,st), cur=sent||cpseCur(cls,st,d), moved=!sent&&cppOk(d.sendOn[st.id])&&d.sendOn[st.id]!==saved, sch=cpseSchedOf(st.id), isSch=!!(sch.length&&sch[0].on===saved);
+      const cw=cpseMon(cur), ow=moved?cpseMon(saved):"";
+      h+='<tr><td class="n" title="'+cpseEsc(st.label)+'">'+cpseEsc(st.short||st.label)+'</td>'+W.map(w=>{ let mk='';
+        if(sent) mk=w===cw?'<span class="k-sent" title="sent '+cppLbl(sent)+'">✓</span>':'';
+        else if(w===cw) mk=moved?'<span class="k-wi">●</span>':isSch?'<span class="k-sched">\u{1F4C5}</span>':'<span class="k-plan">○</span>';
+        else if(w===ow) mk='<span class="k-old">◌</span>';
+        if(sent||ro) return '<td class="'+cellCls(w)+'">'+mk+'</td>';
+        return '<td class="'+cellCls(w)+'"><button aria-label="'+cpseEsc(st.label+": the week of "+cppLbl(w))+'" onclick="cpseWeek(\''+cppJ(st.id)+'\',\''+w+'\')">'+mk+'</button></td>'; }).join("")+'</tr>';
+      rows.push({st,sent,saved,cur,moved,sch,isSch}); });
+    h+='</tbody></table></div>';
+    // one row of levers per section still to go out
+    const opts=meet.filter(m=>m.date>=r.lo);
+    rows.forEach(x=>{ const st=x.st, k=cppJ(st.id);
+      if(x.sent){ h+='<div class="cpse-row"><b>'+cpseEsc(st.label)+'</b> <span class="envs-muted">· sent '+cppLbl(x.sent)+'</span></div>'; return; }
+      const how=x.isSch?'\u{1F4C5} scheduled'+(x.sch[0].at&&x.sch[0].at!==CPSE_AT&&typeof cpsdFmtAt==="function"?' '+cpsdFmtAt(x.sch[0].at):''):(cppPlanned(cls,st,null)?'planned':'opens at the start');
+      h+='<div class="cpse-row"><b>'+cpseEsc(st.label)+'</b> · '+(x.moved?'<b style="color:#2563eb">'+cpseDay(x.cur)+'</b> <span class="envs-muted">instead of '+cppLbl(x.saved)+' ('+how+')</span>':cpseDay(x.cur)+' <span class="envs-muted">('+how+')</span>')+'<div>';
+      const dis=ro?' disabled':'';
+      h+='<button class="envs-btn sec"'+(dis||(x.cur<=r.lo?' disabled':''))+' onclick="cpseMove(\''+k+'\',-7)">◀ 1 wk</button><button class="envs-btn sec"'+(dis||(x.cur>=inp.goal?' disabled':''))+' onclick="cpseMove(\''+k+'\',7)">▶ 1 wk</button>';
+      if(opts.length) h+='<select class="envs-in"'+dis+' aria-label="'+cpseEsc(st.label+": move to a class day")+'" onchange="cpseTo(\''+k+'\',this.value)"><option value="">\u{1F3EB} to a class day…</option>'+opts.map(m=>'<option value="'+m.date+'"'+(m.date===x.cur?' selected':'')+'>'+cpseEsc(cpseDay(m.date)+" · "+((typeof cpcalMeetWhat==="function"&&cpcalMeetWhat(m))||m.what||"Class"))+'</option>').join("")+'</select>';
+      if(x.moved) h+='<button class="envs-btn sec"'+dis+' onclick="cpseBack(\''+k+'\')">↺ '+cppLbl(x.saved)+'</button>';
+      h+='</div>';
+      if(x.moved&&cpseCanSched()){ const on=!!(d.cpseSched&&d.cpseSched[st.id]), ahead=cpseAhead(x.cur);
+        const lbl=x.sch.length?'Also move the scheduled send-out ('+cppLbl(x.sch[0].on)+') to '+cpseDay(x.cur):'Also schedule it: '+st.label+' goes out to every student on '+cpseDay(x.cur)+' at 7:00 AM';
+        h+='<label class="cpse-tick"><input type="checkbox"'+(on&&ahead?' checked':'')+(ro||!ahead?' disabled':'')+' onchange="cpseTick(\''+k+'\',this.checked)"> '+cpseEsc(lbl)+'</label>';
+        if(!ahead) h+='<div class="cpse-warn">That day’s 7:00 AM has passed, so it can only be sent out now (📤 Send out).</div>';
+        else if(x.sch.length&&!on) h+='<div class="cpse-warn">Left unticked, students still get it on '+cpseEsc(cpseDay(x.sch[0].on))+' — the scheduled send-out is what opens it.</div>';
+        else if(!x.sch.length&&!on) h+='<div class="envs-muted">Saving keeps this a plan date; the send-out is still your tap (📤 Send out or “Next class”).</div>'; }
+      h+='</div>'; });
+    const moved=cpSendEarlyChanged(d);
+    if(moved.length) h+=cpseCompareHtml(d,inp,plan,moved,cls);
+    // 💡 — shown here until PR 16's list says it shows this kind itself
+    const own=typeof cpSuggestOwns==="function"&&cpSuggestOwns("sendEarly");
+    if(!own&&!ro){ const sg=cpSendEarlySuggest(ctx);
+      if(sg&&!_cpse.quiet[sg.id]) h+='<div class="cpse-sug">\u{1F4A1} '+cpseEsc(sg.text)+'<div><button class="envs-btn" onclick="'+sg.doIt+'">Do it</button><button class="envs-btn sec" onclick="cpseQuiet(\''+cppJ(sg.id)+'\')">Not now</button></div><div class="envs-muted" style="font-weight:600">Do it moves the date here as a what-if; you still save.</div></div>'; }
+    return h;
+  }catch(e){ return ""; }
+}
+// CPSENDEARLY_END
 function unitAllNudges(kid){ let out=[]; haKidUnits(kid).forEach(u=>{ out=out.concat(unitPlanNudges(u,kid)); }); return out; }
 function unitDismissNudge(unitId,kid,key){
   if(!momHere()) return; // skipping a planned step is Mom's call
