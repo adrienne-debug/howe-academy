@@ -47381,6 +47381,7 @@ function envsDemoStart(){
   try{ if(typeof cpIdDemoSeed==="function") cpIdDemoSeed(data); }catch(e){}   // 🌲 CPITEMID: the unit's ID-by-part skills (trees by part, animal signs, stream bugs) + the classmates' counts
   try{ masteryKid="maya"; }catch(e){}
   try{ if(typeof cpBioticDemoSeed==="function") cpBioticDemoSeed(data); }catch(e){}   // 🪲 CPITEMBIOTIC: the unit's real biotic-index worksheet takes the sample's place
+  try{ if(typeof cpLabelDemoSeed==="function") cpLabelDemoSeed(data); }catch(e){}   // 🏷 CPITEMLABEL: the unit's diagrams to label (soil profile, lake zones, groundwater, fish, tree layers) + the classmates' counts
   try{ if(typeof cpTriangleDemoSeed==="function") cpTriangleDemoSeed(data); }catch(e){}   // 📐 CPITEMTRIANGLE: the unit's texture triangle + the classmates' Soils counts
 }
 function envsDemoSeedKid(data){
@@ -52432,6 +52433,169 @@ function cpTriangleDemoSeed(data){
   return true;
 }
 // CPITEMTRIANGLE_END
+// CPITEMLABEL_START — 🏷 LABEL THE DIAGRAM: the `label` skill item type (DESIGN_class_platform_2026-10-28.md §4.1b, §13 rows 25–27;
+// RESEARCH_envirothon_skills_2026-10-28.md §4.8, ranked #8 in §5 — "good and generic, but drawing takes time"; §4.10 the soil-profile
+// diagram; §8.1 the one card it can replace; her yes to building the design 2026-10-28; built 2026-10-29). The research: the cards know
+// "benthic zone = bottom", but the station asks WHICH LETTER is the benthic zone (2022 Aquatics Q10), points to the water table (2021 Q13)
+// or the caudal fin (2021 Q12), and the manuals teach the soil horizons and the tree's layers as pictures. INERT off the site (cpskOn):
+// Howe, DeWalt, Burris and Lincoln never reach a line of it.
+//   · THE DATA is the unit's: units/<unitId>/unit.json `skills`, type "label", data.kind "diagram" — the drawing's size (vb [w, h]), the
+//     drawing itself as a list of plain shapes (art: [{el, a:{…}, part?, text?}] — rect, circle, ellipse, line, polyline, polygon, path,
+//     text; only the attributes in CPLD_AT, each value from a safe alphabet, so the drawing is data and can never carry a script) and the
+//     parts ({key, label, x, y = its numbered spot, tx, ty = where a leader line points (optional), words, src = the cards they are from}).
+//     A shape with `part` is that part's region: tapping it picks the spot, and it lights up yellow when its spot is the one in hand.
+//     compile_unit.js rule 8 checks every diagram: unique keys and labels, the shapes and attributes allowed, every spot (its badge whole)
+//     inside the drawing, no two spots on top of each other, each spot pointing INTO its own part (the part's shape is the top one
+//     there), and no text in the drawing that names a part.
+//   · THE DRAWINGS are our own (no copied art, no licence question — research §4.8): the soil profile (O, A, E, B, C, R), the lake zones,
+//     groundwater, a trout from the outside, a tree trunk cut across. The NC river-basin map waits for a source outline (research Q7).
+//   · A TRY: a NEW numbering each time — `ask` of the parts (the ones she mixed up first, the rest at random) get the numbered spots 1…n
+//     in a new order, and every name of the diagram is offered (so a part with no spot this time is a wrong choice, and the last spot is
+//     never "the one left"). One step per spot: "Which horizon is spot 3?". Through the engine's stages:
+//     👀 Watch it — the spots are labeled one at a time (each lit, its part yellow, its words under it) · ✍️ Finish it — the first spots are
+//     labeled for her and she names the last one, then the last two … · 💪 On your own: she names every spot. She taps a spot (its badge,
+//     its part of the drawing or its chip in the key) and picks its name below; the next empty spot comes up by itself.
+//   · WHICH STEP WAS MISSED: "mix:<right>:<given>" — the spot of the benthic zone called the littoral zone is a different mix-up than
+//     calling it the limnetic (the research's point), so the Skills fold reads "Most missed step: calling the B horizon the C horizon (3)".
+//   · Phone-first at 430 px: the drawings are 360 wide and a spot's badge is CPLD_R (19) across its middle, so a badge is a 38 px tap
+//     target (36 at least), the names are 44 px buttons.
+//   · NOT BUILT: the other direction ("tap the benthic zone" — the same knowledge, the research's either-way), the NC basins map, a
+//     lake's trophic stage from a photo (that is an ID round).
+//   · 📅 Pace's "skills learned" line counts each diagram from summary.skills like any other skill; CPSK_COST adds its minutes. No new
+//     cards; the soil profile's `replaces` (the research's §8.1: "O horizon · position") waits for ✂️ Trim (PR 27).
+//   · THE DEMO (cpLabelDemoSeed, envsDemoStart's guarded line): the unit's diagrams beside the other skills, and the classmates' counts.
+//     Nothing is written.
+const CPLD_PREV=(typeof CPSK_TYPES!=="undefined"&&CPSK_TYPES.label)||null;   // a `label` maker registered before this block keeps every other data.kind
+const CPLD_R=19;   // a spot's badge radius, in the drawing's units (compile_unit.js LABEL_R is the same)
+const CPLD_EL=["rect","circle","ellipse","line","polyline","polygon","path","text"];
+const CPLD_AT=["x","y","width","height","rx","ry","cx","cy","r","x1","y1","x2","y2","points","d","fill","stroke","stroke-width","stroke-dasharray","stroke-linecap","stroke-linejoin","opacity","fill-opacity","stroke-opacity","font-size","font-weight","text-anchor","transform"];
+const CPLD_VAL=/^[-+#.,%() a-zA-Z0-9]*$/;
+function cpldOn(){ return typeof cpskOn==="function"&&cpskOn(); }
+function cpldDiagram(sk){ const D=sk&&sk.data; return !!(D&&D.kind==="diagram"&&Array.isArray(D.vb)&&D.vb.length===2&&Array.isArray(D.art)&&Array.isArray(D.parts)&&D.parts.length>=2); }
+function cpldAsk(D){ const n=D.parts.length, a=D.ask|0; return a>=2&&a<=n?a:n; }
+function cpldNoun(D){ return String(D.noun||"part"); }
+function cpldShuf(a,rnd){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)), x=a[i]; a[i]=a[j]; a[j]=x; } return a; }
+function cpldRun(sk){ return (typeof _cpsk!=="undefined"&&_cpsk.run&&_cpsk.run.sk&&sk&&_cpsk.run.sk.fb===sk.fb&&_cpsk.run.prob&&_cpsk.run.prob.lbl)?_cpsk.run:null; }
+function cpldPart(D,key){ return D.parts.find(p=>p.key===key)||null; }
+// "Benthic zone" → "benthic zone"; "O horizon" stays (a capital that is a letter name)
+function cpldLow(s){ s=String(s||""); return s.length>1&&/[a-z]/.test(s[1])?s[0].toLowerCase()+s.slice(1):s; }
+// one shape of the drawing → SVG: only the listed elements and attributes, each value from the safe alphabet (the drawing is data)
+function cpldEl(e,over,extra){
+  if(!e||CPLD_EL.indexOf(e.el)<0) return ""; const A=Object.assign({},e.a||{},over||{}); let s="<"+e.el;
+  Object.keys(A).forEach(k=>{ const v=String(A[k]); if(CPLD_AT.indexOf(k)>=0&&CPLD_VAL.test(v)) s+=" "+k+'="'+v+'"'; });
+  s+=extra||""; return e.el==="text"?s+">"+cpskEsc(e.text||"")+"</text>":s+"/>"; }
+// a spot's state on this problem: "lit" (labeled for her: worked or given) · "mine" (hers to name) · "wait" (worked, not yet shown)
+function cpldState(p,r,i){ if(!r||r.done) return "lit"; if(r.stage==="shown") return i<(r.shown|0)?"lit":"wait"; return i<(r.from|0)?"lit":"mine"; }
+// the spot she has in hand: the one she tapped, else the first of hers with no name, else her first (-1: none — a worked example, checked)
+function cpldActive(p,r){
+  if(!r||r.stage==="shown"||r.checked||r.done) return -1; const mine=p.steps.map((s,i)=>i).filter(i=>i>=(r.from|0)); if(!mine.length) return -1;
+  if(mine.indexOf(p.act)>=0) return p.act; const e=mine.find(i=>r.ans[i]==null||r.ans[i]===""); return e!=null?e:mine[0]; }
+// the drawing (inline SVG): the art, the lit part in yellow, leader lines, the numbered badges
+function cpldSvg(D,p,r){
+  const W=+D.vb[0], H=+D.vb[1], act=cpldActive(p,r), ck=r&&r.checked, f=n=>Math.round(n*10)/10, spotOf={};
+  (p.spots||[]).forEach((pt,i)=>{ spotOf[pt.key]=i; });
+  const glow=act>=0?act:(r&&r.stage==="shown"&&(r.shown|0)>0?(r.shown|0)-1:-1), glowKey=glow>=0?p.spots[glow].key:null;
+  let s='<svg viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="'+cpskEsc(D.title||"The drawing")+'" style="display:block;width:100%;max-width:440px;margin:0 auto;touch-action:manipulation;-webkit-user-select:none;user-select:none" font-family="DM Sans,sans-serif">';
+  // the lit part's yellow goes right over its own shapes, so whatever is drawn on top of them later (an inner ring, a root) stays on top
+  D.art.forEach(e=>{ const i=e&&e.part!=null?spotOf[e.part]:undefined, tap=i!=null&&act>=0&&cpldState(p,r,i)==="mine";
+    s+=cpldEl(e,null,tap?' onclick="cpldTap('+i+')" style="cursor:pointer"':'');
+    if(glowKey&&e&&e.part===glowKey&&e.el!=="text"){ const open=String((e.a||{}).fill||"")==="none";
+      s+=cpldEl(e,open?{stroke:"#facc15","stroke-opacity":"0.9","stroke-width":String(Math.max(6,(+(e.a||{})["stroke-width"]||0)+4))}:{fill:"#fde047","fill-opacity":"0.55",stroke:"#ca8a04","stroke-width":"2.5"},' pointer-events="none"'); } });
+  (p.spots||[]).forEach((pt,i)=>{ if(pt.tx==null||pt.ty==null) return; const dx=pt.tx-pt.x, dy=pt.ty-pt.y, d=Math.hypot(dx,dy)||1, on=i===glow;
+    s+='<line x1="'+f(pt.x+dx/d*CPLD_R)+'" y1="'+f(pt.y+dy/d*CPLD_R)+'" x2="'+f(pt.tx)+'" y2="'+f(pt.ty)+'" stroke="'+(on?"#ca8a04":"#111827")+'" stroke-width="'+(on?3:1.8)+'" stroke-linecap="round" pointer-events="none"/>';
+    s+='<circle cx="'+f(pt.tx)+'" cy="'+f(pt.ty)+'" r="'+(on?5:3.5)+'" fill="'+(on?"#ca8a04":"#111827")+'" stroke="#fff" stroke-width="1.5" pointer-events="none"/>'; });
+  (p.spots||[]).forEach((pt,i)=>{ const st=cpldState(p,r,i), a=r&&r.ans?r.ans[i]:null, has=a!=null&&a!=="", bad=!!(ck&&ck.wrong&&ck.wrong[i]);
+    let bg="#fff", fg="#0f172a", ring="#0f172a", w=2.5;
+    if(st==="lit"){ bg="#15803d"; fg="#fff"; ring="#fff"; }
+    else if(st==="wait"){ fg="#94a3b8"; ring="#94a3b8"; }
+    else if(ck){ bg=bad?"#dc2626":"#15803d"; fg="#fff"; ring="#fff"; }
+    else if(i===act){ bg="#fde047"; w=3.5; }
+    else if(has){ bg="#0f766e"; fg="#fff"; ring="#fff"; }
+    const tap=st==="mine"&&!ck;
+    s+='<g'+(tap?' onclick="cpldTap('+i+')" style="cursor:pointer"':'')+' role="button" aria-label="'+cpskEsc("Spot "+(i+1))+'">';
+    s+='<circle cx="'+f(pt.x)+'" cy="'+f(pt.y)+'" r="'+(CPLD_R+4)+'" fill="#fff" fill-opacity="0.01"/>';
+    s+='<circle cx="'+f(pt.x)+'" cy="'+f(pt.y)+'" r="'+CPLD_R+'" fill="'+bg+'" stroke="'+(st==="lit"||ck||(has&&i!==act)?"#0f172a":ring)+'" stroke-width="'+w+'"/>';
+    if(bg!=="#fff"&&bg!=="#fde047") s+='<circle cx="'+f(pt.x)+'" cy="'+f(pt.y)+'" r="'+(CPLD_R-3)+'" fill="none" stroke="'+ring+'" stroke-width="1.5"/>';
+    s+='<text x="'+f(pt.x)+'" y="'+f(pt.y)+'" text-anchor="middle" dominant-baseline="central" font-size="18" font-weight="900" fill="'+fg+'">'+(i+1)+'</text></g>'; });
+  return s+'</svg>'; }
+// the key under the drawing: one chip per spot — the name it has (worked, given, hers), or "?"; a chip of hers picks that spot
+function cpldKey(p,r){
+  const act=cpldActive(p,r), ck=r&&r.checked;
+  return '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin:8px 0 2px">'+p.steps.map((s,i)=>{ const st=cpldState(p,r,i), a=r&&r.ans?r.ans[i]:null, has=a!=null&&a!=="", bad=!!(ck&&ck.wrong&&ck.wrong[i]);
+    const name=st==="lit"?s.answer:st==="wait"?"…":has?a:"?", col=st==="lit"?"#15803d":ck?(bad?"#dc2626":"#15803d"):has?"#0f766e":"#94a3b8";
+    const on=i===act, tap=st==="mine"&&!ck;
+    return '<button'+(tap?' onclick="cpldTap('+i+')"':' disabled')+' style="display:flex;align-items:center;gap:8px;min-height:40px;padding:4px 8px;border-radius:12px;border:2px solid '+(on?"#ca8a04":"#e5e7eb")+';background:'+(on?"#fefce8":"#fff")+';text-align:left;font-family:\'DM Sans\',sans-serif;cursor:'+(tap?"pointer":"default")+';color:inherit;opacity:1">'
+      +'<span style="flex:none;width:26px;height:26px;border-radius:50%;background:'+(st==="lit"?"#15803d":"#0f172a")+';color:#fff;font-size:13px;font-weight:900;display:flex;align-items:center;justify-content:center">'+(i+1)+'</span>'
+      +'<span style="font-size:13.5px;font-weight:800;color:'+col+';line-height:1.2">'+(ck&&st==="mine"?(bad?"✗ ":"✓ "):"")+cpskEsc(name)+'</span></button>'; }).join("")+'</div>'; }
+// a tap on a spot (its badge, its part of the drawing, its chip) → that spot is in hand
+function cpldTap(i){
+  const r=(typeof _cpsk!=="undefined")?_cpsk.run:null; if(!r||!r.prob||!r.prob.lbl||r.checked||r.done||r.stage==="shown") return false; const p=r.prob;
+  i=i|0; if(i<(r.from|0)||i>=p.steps.length) return false; p.act=i; cpskRe(); return true; }
+// a name picked for the spot in hand: it is her answer for that step; the next spot of hers with no name comes up
+function cpldPick(i,name){
+  const r=(typeof _cpsk!=="undefined")?_cpsk.run:null; if(!r||!r.prob||!r.prob.lbl||r.checked||r.done||r.stage==="shown") return false; const p=r.prob;
+  i=i|0; if(i<(r.from|0)||i>=p.steps.length||p.names.indexOf(String(name))<0) return false;
+  const mine=p.steps.map((s,j)=>j).filter(j=>j>=(r.from|0)), empty=j=>j!==i&&(r.ans[j]==null||r.ans[j]==="");
+  const nx=mine.filter(j=>j>i).find(empty), nx2=nx!=null?nx:mine.find(empty); p.act=nx2!=null?nx2:i;
+  if(typeof cpSkillPick==="function") cpSkillPick(i,String(name));   // 🧩 CPSKILL's answer slot: the name is her answer for the spot (kept in memory, repainted)
+  return true; }
+const CPLD_LABEL={
+  make(sk,rnd){
+    if(!cpldDiagram(sk)) return (CPLD_PREV&&CPLD_PREV.make)?CPLD_PREV.make(sk,rnd):null;
+    rnd=rnd||Math.random; const D=sk.data, n=cpldAsk(D), r=(typeof _cpsk!=="undefined"&&_cpsk.run&&_cpsk.run.sk&&_cpsk.run.sk.fb===sk.fb)?_cpsk.run:null;
+    const M=(r&&r.st&&r.st.miss)||{}, mixed={}; Object.keys(M).forEach(c=>{ const m=/^mix:([a-z0-9_]+):/.exec(c); if(m) mixed[m[1]]=(mixed[m[1]]||0)+(+M[c]||0); });
+    const all=cpldShuf(D.parts.slice(),rnd), pick=all.filter(x=>mixed[x.key]).sort((a,b)=>mixed[b.key]-mixed[a.key]).concat(all.filter(x=>!mixed[x.key])).slice(0,n);
+    const spots=cpldShuf(pick,rnd), names=cpldShuf(D.parts.map(x=>String(x.label)),rnd), noun=cpldNoun(D);
+    const steps=spots.map((x,i)=>({id:"spot"+(i+1),part:x.key,kind:"pick",choices:[],label:"Which "+noun+" is spot "+(i+1)+"?",answer:String(x.label),work:String(x.words||"")}));
+    return {lbl:true,data:D,spots,names,steps,act:-1}; },
+  html(p,sk){
+    if(!p||!p.lbl) return (CPLD_PREV&&CPLD_PREV.html)?CPLD_PREV.html(p,sk):"";
+    const D=sk.data, r=cpldRun(sk), act=cpldActive(p,r), ck=!!(r&&r.checked);
+    let h='<div style="font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">\u{1F3F7} '+cpskEsc(D.title||"The drawing")+'</div>';
+    if(act>=0) h+='<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;padding:7px 11px;font-size:13.5px;font-weight:800;color:#1e3a8a;margin-bottom:6px">\u{1F446} Tap a numbered spot, then pick its name below.</div>';
+    h+=cpldSvg(D,p,r)+cpldKey(p,r);
+    if(act>=0){ const cur=r.ans[act];
+      h+='<div style="margin-top:8px;padding:10px 12px;border-radius:14px;background:#fefce8;border:2px solid #fde047"><div style="font-size:14px;font-weight:900;color:#713f12;margin-bottom:6px">Spot '+(act+1)+': '+cpskEsc(D.nameLbl||("Which "+cpldNoun(D)+" is it?"))+'</div><div style="display:flex;flex-wrap:wrap;gap:6px">'
+        +p.names.map(nm=>{ const on=cur===nm; return '<button onclick="cpldPick('+act+',\''+cpskJ(nm)+'\')" style="min-height:44px;padding:0 14px;border-radius:12px;border:2px solid '+(on?'#0f766e':'#d1d5db')+';background:'+(on?'#0f766e':'#fff')+';color:'+(on?'#fff':'#1f2937')+';font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cpskEsc(nm)+'</button>'; }).join("")+'</div></div>'; }
+    else if(r&&r.stage==="shown"&&!ck&&(r.shown|0)>0){ const s=p.steps[(r.shown|0)-1]; h+='<div style="margin-top:8px;padding:8px 12px;border-radius:12px;background:#f0fdf4;border:1.5px solid #bbf7d0;font-size:13.5px;font-weight:700;color:#166534"><b>Spot '+(r.shown|0)+' is the '+cpskEsc(cpldLow(s.answer))+'.</b> '+cpskEsc(s.work)+'</div>'; }
+    return h+'<div style="height:4px"></div>'; },
+  help(p,sk){
+    if(!p||!p.lbl) return (CPLD_PREV&&CPLD_PREV.help)?CPLD_PREV.help(p,sk):"";
+    const D=sk.data;
+    return '<details style="margin:8px 0 2px"><summary style="cursor:pointer;font-size:12.5px;font-weight:800;color:#0f766e">\u{1F4CB} The '+cpskEsc(cpldNoun(D))+'s, in words</summary><div style="font-size:12.5px;line-height:1.55;margin-top:4px">'
+      +D.parts.map(x=>'<div><b>'+cpskEsc(x.label)+':</b> '+cpskEsc(x.words||"")+'</div>').join("")+'</div></details>'; },
+  miss(step,given,prob){
+    if(!prob||!prob.lbl) return (CPLD_PREV&&CPLD_PREV.miss)?CPLD_PREV.miss(step,given,prob):null;
+    if(!step||!step.part) return step&&step.id; const g=prob.data.parts.find(x=>String(x.label)===String(given));
+    return "mix:"+step.part+":"+(g?g.key:"other"); },
+  missLabel(code,sk){
+    if(!cpldDiagram(sk)) return (CPLD_PREV&&CPLD_PREV.missLabel)?CPLD_PREV.missLabel(code,sk):null;
+    const D=sk.data, m=/^mix:([a-z0-9_]+):([a-z0-9_]+)$/.exec(String(code)); if(!m) return null;
+    const a=cpldPart(D,m[1]), b=cpldPart(D,m[2]); if(!a) return null;
+    return b?"calling the "+cpldLow(a.label)+" the "+cpldLow(b.label):"naming the "+cpldLow(a.label); },
+  // 🏫 Class setup ▸ 🧩 Skills (CPSKILL's guarded line): what a try is
+  note(sk){
+    if(!cpldDiagram(sk)) return (CPLD_PREV&&CPLD_PREV.note)?CPLD_PREV.note(sk):"";
+    const D=sk.data, n=D.parts.length, a=cpldAsk(D), noun=cpldNoun(D);
+    return '<div class="envs-muted" style="margin:0 0 6px">\u{1F3F7} '+cpskEsc(D.title||"A drawing")+' · '+n+' '+cpskEsc(noun)+'s · each try numbers '+(a<n?a+' of them':'them all')+' in a new order and offers all '+n+' names</div>'; }
+};
+if(typeof cpSkillTypeAdd==="function") cpSkillTypeAdd("label",CPLD_LABEL);   // 🧩 CPSKILL's extension point: the diagram maker for type "label"
+// ── the demo (envsDemoStart's guarded line): Kid ▸ 🌿 ▸ 🧩 Skills ▸ Label the soil profile ▸ Go; Teacher ▸ 📅 Pace ("skills learned")
+function cpLabelDemoSeed(data){
+  if(!cpldOn()||typeof envsDemo!=="function"||!envsDemo()||typeof _cpsk==="undefined") return false; const added=[];
+  Object.keys(_cpsk.demo).forEach(id=>{ const D=_cpsk.demo[id]; if(!Array.isArray(D)) return; const x=(typeof cpuIndex==="function")?cpuIndex(id):null;
+    ((x&&Array.isArray(x.skills))?x.skills:[]).filter(cpldDiagram).forEach(s=>{ if(!D.some(d=>d&&d.key===s.key)){ D.push(s); added.push(s); } }); });
+  if(!added.length) return false;
+  // the classmates' counts (summary.skills): learned, on their own, finishing, watching, new — each diagram's likely mix-up is two
+  // neighbouring parts (the 2nd called the 3rd, as the data lists them)
+  const seed={walker_caleb:["learned",1],morales_avery:["solo",2],bennett_nora:["faded",3],tran_jonah:["shown",0]};
+  Object.keys((data&&data.students)||{}).forEach(sid=>{ const s=data.students[sid]; if(!s||!s.summary) return; const v=seed[sid]||["new",0], S=s.summary.skills||(s.summary.skills={});
+    added.forEach(k=>{ const fb=cpskFb(k.key), o=S[k.section]||(S[k.section]={learned:0,total:0,miss:{},stage:{}}); if(o.stage&&o.stage[fb]) return;
+      o.total=(o.total|0)+1; if(v[0]==="learned") o.learned=(o.learned|0)+1; (o.stage||(o.stage={}))[fb]=v[0];
+      const P=k.data.parts; if(v[1]&&P.length>2) (o.miss||(o.miss={}))[fb]={["mix:"+P[1].key+":"+P[2].key]:v[1]}; }); });
+  return true;
+}
+// CPITEMLABEL_END
 function unitAllNudges(kid){ let out=[]; haKidUnits(kid).forEach(u=>{ out=out.concat(unitPlanNudges(u,kid)); }); return out; }
 function unitDismissNudge(unitId,kid,key){
   if(!momHere()) return; // skipping a planned step is Mom's call

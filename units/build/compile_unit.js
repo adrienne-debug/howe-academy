@@ -50,6 +50,13 @@
 // part tags it can show, default all], tell?:{<part>: clue}, src?:{<part>:["<deck>#o<order>", …]}} — every clue names the real cards it
 // was taken from. Its note lists the item parts the repo
 // set has no photo for (a round skips those until one is added to the pool).
+// 🏷 CPITEMLABEL (2026-10-29; RESEARCH_envirothon_skills_2026-10-28.md §4.8): a diagram to label (type label, data.kind "diagram") has a
+// size vb [w, h], a drawing (art: plain shapes — only LABEL_EL, only LABEL_AT attributes, each value from a safe alphabet, a text's words
+// never naming a part, a shape's `part` one of the parts) and 3+ parts {key, label, x, y, tx?, ty?, words, src?}: unique keys and labels,
+// each spot's badge (LABEL_R, the page's CPLD_R) whole inside the drawing and no two badges touching, the leader's end inside it too
+// and no leader running through another spot, each
+// part drawn as a shape the check can read (no transform), and the point a spot names (its leader's end, else its badge) INSIDE that
+// part's shape with no other part's shape on top of it there; ask 2…parts; src real cards. COUNTS' `items` for it is its parts.
 // Nothing here touches a database. The catalog entry (index.json) is what 📦 Units ▸ Publish writes to units/<id>/index (§4.3), and the
 // same object is CPU_UNITS[<id>] in index.html: a plain run REWRITES that one line (`const CPU_UNITS={…};` in the CPUNIT block), so a data
 // change (a trim, a core add) is the data files + one compile run, never a hand edit of index.html (2026-10-28, after Trim 1 met PR 3).
@@ -128,7 +135,8 @@ function makeCounts(u,decks,tests,skills){
     c.decks[d.key]={section:d.section,n,core,maxOrder:o.length?Math.max(...o):0,orders:ranges(o)}; c.cards+=n; c.core+=core;
     const s=c.sections[d.section]; if(s){ s.cards+=n; s.core+=core; s.decks++; } });
   if(tests) Object.keys(tests.sections).forEach(k=>{ const t=tests.sections[k], r={}; ["pre","post"].forEach(f=>{ if(t[f]) r[f]=t[f].items.length; }); c.tests[k]=r; });
-  if(skills&&skills.length){ c.skills={}; skills.forEach(k=>{ const it=skillItems(k)||skillClasses(k)||partItems(k); c.skills[k.key]={section:k.section,type:k.type,core:k.core===true,items:it?it.length:0}; }); }   // 🧰 CPITEMGEAR · 📐 CPITEMTRIANGLE (a chart's items = its classes) · 🌲 CPITEMID (an ID skill's items)
+  if(skills&&skills.length){ c.skills={}; skills.forEach(k=>{ const it=skillItems(k)||skillClasses(k)||partItems(k); c.skills[k.key]={section:k.section,type:k.type,core:k.core===true,items:it?it.length:0}; }); }
+  if(c.skills) skills.forEach(k=>{ const P=labelParts(k); if(P&&c.skills[k.key]) c.skills[k.key].items=P.length; });   // 🏷 CPITEMLABEL: a diagram's items = its parts   // 🧰 CPITEMGEAR · 📐 CPITEMTRIANGLE (a chart's items = its classes) · 🌲 CPITEMID (an ID skill's items)
   return c;
 }
 // 🧰 CPITEMGEAR: a skill as the catalog carries it (the unit.json record, its keys in a fixed order) — PURE
@@ -207,6 +215,7 @@ function checkSkills(skills,secKeys,decks,tests){
     if(k.data&&k.data.kind==="tally"&&Array.isArray(k.data.items)) checkTally(k,at).forEach(E);   // 🪲 CPITEMBIOTIC
     if(k.data&&k.data.kind==="ternary") checkTernary(k,at).forEach(E);   // 📐 CPITEMTRIANGLE
     if(k.data&&k.data.kind==="parts") checkParts(k,at,cards).forEach(E); });   // 🌲 CPITEMID
+  skills.forEach((k,i)=>{ if(k&&k.data&&k.data.kind==="diagram") checkDiagram(k,"skill "+(i+1)+(k.key?" (“"+k.key+"”)":""),cards).forEach(E); });   // 🏷 CPITEMLABEL
   return err;
 }
 // 🪲 CPITEMBIOTIC: a tally worksheet (type sheet, flat items) — [errors]
@@ -369,7 +378,66 @@ function compile(id,opts){
     const cat=catalogIn(root); if(cat){ const h=catalogWith(cat,id,index); if(h!==cat.html) fs.writeFileSync(cat.p,h); r.page=h!==cat.html; } }
   return {ok,err:r.err,warn:r.warn,counts,index,js,links,releaseKeys:rkeys,unit:L.u,page:!!r.page};
 }
+// 🏷 CPITEMLABEL: a diagram to label — its parts (null for any other skill), its checks [errors] — PURE
+const LABEL_R=19, LABEL_EL=["rect","circle","ellipse","line","polyline","polygon","path","text"];
+const LABEL_AT=["x","y","width","height","rx","ry","cx","cy","r","x1","y1","x2","y2","points","d","fill","stroke","stroke-width","stroke-dasharray","stroke-linecap","stroke-linejoin","opacity","fill-opacity","stroke-opacity","font-size","font-weight","text-anchor","transform"];
+const LABEL_VAL=/^[-+#.,%() a-zA-Z0-9]*$/, LABEL_TAIL=/\s+(zone|horizon|fin|layer|area|table|line|bark)$/i;
+function labelParts(k){ return (k&&k.data&&k.data.kind==="diagram"&&Array.isArray(k.data.parts))?k.data.parts:null; }
+// does a shape hold the point? (a line or polyline: within half its stroke + 3) — null when the shape can't be read
+function labelHolds(e,x,y){
+  const a=e.a||{}, n=v=>+v; if(a.transform!=null) return null;
+  if(e.el==="rect") return x>=n(a.x)&&x<=n(a.x)+n(a.width)&&y>=n(a.y)&&y<=n(a.y)+n(a.height);
+  if(e.el==="circle") return Math.hypot(x-n(a.cx),y-n(a.cy))<=n(a.r);
+  if(e.el==="ellipse") return Math.pow((x-n(a.cx))/n(a.rx),2)+Math.pow((y-n(a.cy))/n(a.ry),2)<=1;
+  const P=e.el==="line"?[[n(a.x1),n(a.y1)],[n(a.x2),n(a.y2)]]:(e.el==="polygon"||e.el==="polyline")?String(a.points||"").trim().split(/\s+/).map(q=>q.split(",").map(Number)):null;
+  if(!P||P.length<2||P.some(q=>q.length!==2||!q.every(isFinite))) return null;
+  if(e.el==="polygon"){ let c=false; for(let i=0,j=P.length-1;i<P.length;j=i++){ const p=P[i], q=P[j]; if(((p[1]>y)!==(q[1]>y))&&(x<(q[0]-p[0])*(y-p[1])/(q[1]-p[1])+p[0])) c=!c; } return c; }
+  const tol=Math.max(4,(+a["stroke-width"]||0)/2+3);
+  for(let i=0;i<P.length-1;i++){ const p=P[i], q=P[i+1], dx=q[0]-p[0], dy=q[1]-p[1], L=dx*dx+dy*dy||1, t=Math.max(0,Math.min(1,((x-p[0])*dx+(y-p[1])*dy)/L)); if(Math.hypot(x-p[0]-t*dx,y-p[1]-t*dy)<=tol) return true; }
+  return false; }
+function checkDiagram(k,at,cards){
+  const err=[], E=m=>err.push(m), D=k.data, num=v=>typeof v==="number"&&isFinite(v);
+  if(k.type!=="label") E(at+": a diagram to label is type label");
+  const V=D.vb; if(!Array.isArray(V)||V.length!==2||!V.every(v=>num(v)&&v>=100&&v<=2000)){ E(at+": vb must be [width, height], 100 to 2000"); return err; }
+  const [W,H]=V, P=Array.isArray(D.parts)?D.parts:[], A=Array.isArray(D.art)?D.art:[], keys={}, labels={};
+  if(P.length<3){ E(at+": a diagram needs 3 or more parts"); return err; }
+  if(!A.length) E(at+": art (the drawing) must be a list of shapes");
+  if(D.ask!=null&&!(Number.isInteger(D.ask)&&D.ask>=2&&D.ask<=P.length)) E(at+": ask must be a whole number from 2 to its "+P.length+" parts");
+  ["title","noun","nameLbl"].forEach(f=>{ if(D[f]!=null&&(typeof D[f]!=="string"||!D[f].trim())) E(at+": "+f+" must be words"); });
+  P.forEach((p,j)=>{ const pa=at+" part "+(j+1)+(p&&p.label?" (“"+p.label+"”)":"");
+    if(!p||typeof p.key!=="string"||!/^[a-z0-9_]+$/.test(p.key)){ E(pa+": key must be [a-z0-9_]"); return; }
+    if(keys[p.key]) E(pa+": key twice"); keys[p.key]=p;
+    if(typeof p.label!=="string"||!p.label.trim()) E(pa+" has no label"); else { if(labels[p.label.trim().toLowerCase()]) E(pa+": label twice"); labels[p.label.trim().toLowerCase()]=1; }
+    if(typeof p.words!=="string"||!p.words.trim()) E(pa+" has no words (what it is)");
+    if(!num(p.x)||!num(p.y)||p.x-LABEL_R<0||p.y-LABEL_R<0||p.x+LABEL_R>W||p.y+LABEL_R>H) E(pa+": its spot (x, y) must sit with its whole badge inside the drawing");
+    if((p.tx==null)!==(p.ty==null)) E(pa+": a leader needs both tx and ty");
+    else if(p.tx!=null&&!(num(p.tx)&&num(p.ty)&&p.tx>=0&&p.ty>=0&&p.tx<=W&&p.ty<=H)) E(pa+": its leader's end (tx, ty) must be inside the drawing");
+    if(p.src!=null){ if(!Array.isArray(p.src)||!p.src.length) E(pa+": src must be a list of cards"); else p.src.forEach(c=>{ if(!cards[c]) E(pa+": src “"+c+"” is no card"); }); } });
+  // no two badges touching; no badge over another part's point
+  for(let i=0;i<P.length;i++) for(let j=i+1;j<P.length;j++){ const a=P[i], b=P[j]; if(a&&b&&num(a.x)&&num(b.x)&&Math.hypot(a.x-b.x,a.y-b.y)<2*LABEL_R+2) E(at+": the spots of “"+a.label+"” and “"+b.label+"” touch"); }
+  P.forEach(a=>P.forEach(b=>{ if(a===b||!a||!b||a.tx==null) return; if(num(b.x)&&Math.hypot(a.tx-b.x,a.ty-b.y)<LABEL_R) E(at+": the spot of “"+b.label+"” covers the point of “"+a.label+"”"); }));
+  P.forEach(a=>P.forEach(b=>{ if(a===b||!a||!b||a.tx==null||!num(a.x)||!num(b.x)) return; const dx=a.tx-a.x, dy=a.ty-a.y, L=dx*dx+dy*dy||1, t=Math.max(0,Math.min(1,((b.x-a.x)*dx+(b.y-a.y)*dy)/L));
+    if(Math.hypot(b.x-a.x-t*dx,b.y-a.y-t*dy)<LABEL_R+2) E(at+": the leader of “"+a.label+"” runs through the spot of “"+b.label+"”"); }));
+  // the drawing: only the allowed shapes and attributes; text never names a part
+  const names=[]; P.forEach(p=>{ if(!p||typeof p.label!=="string") return; const l=p.label.trim().toLowerCase(), bare=l.replace(/\s*\(.*\)\s*/g," ").trim(), t=bare.replace(LABEL_TAIL,""); [l,bare].concat(t.length>=4&&t!==bare?[t]:[]).forEach(w=>{ if(names.indexOf(w)<0) names.push(w); }); });
+  const esc=w=>w.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+  A.forEach((e,j)=>{ const ea=at+" art "+(j+1);
+    if(!e||LABEL_EL.indexOf(e.el)<0){ E(ea+": el must be one of "+LABEL_EL.join(", ")); return; }
+    if(!e.a||typeof e.a!=="object"||Array.isArray(e.a)){ E(ea+": a (its attributes) must be a record"); return; }
+    Object.keys(e.a).forEach(n=>{ const v=e.a[n]; if(LABEL_AT.indexOf(n)<0) E(ea+": attribute “"+n+"” is not allowed"); else if(!(typeof v==="number"||typeof v==="string")||!LABEL_VAL.test(String(v))) E(ea+": attribute “"+n+"” has a value that isn't allowed"); });
+    if(e.el==="text"){ if(typeof e.text!=="string") E(ea+": a text needs its words"); else { const w=e.text.toLowerCase(), hit=names.find(nm=>new RegExp("(^|[^a-z])"+esc(nm)+"($|[^a-z])").test(w)); if(hit) E(ea+": the drawing's text names a part (“"+hit+"”)"); } }
+    if(e.part!=null){ if(!keys[e.part]) E(ea+": part “"+e.part+"” is not one of the parts"); else if(labelHolds(e,0,0)===null&&e.el!=="path"&&e.el!=="text") E(ea+": a part's shape can't have a transform"); } });
+  // each part drawn as a shape the check can read, and its point inside it, with no other part's shape on top there
+  P.forEach(p=>{ if(!p||!keys[p.key]||!num(p.x)) return; const own=A.filter(e=>e&&e.part===p.key&&labelHolds(e,0,0)!==null);
+    if(!own.length){ E(at+" part “"+p.label+"”: it needs a shape the check can read (rect, circle, ellipse, line, polyline or polygon, no transform)"); return; }
+    const x=p.tx!=null?p.tx:p.x, y=p.tx!=null?p.ty:p.y; let top=null;
+    A.forEach(e=>{ if(e&&e.part!=null&&keys[e.part]&&labelHolds(e,x,y)===true) top=e; });
+    if(!top) E(at+" part “"+p.label+"”: its spot points at none of its shapes");
+    else if(top.part!==p.key) E(at+" part “"+p.label+"”: its spot points at “"+keys[top.part].label+"” (that part is drawn on top there)"); });
+  return err;
+}
 module.exports={compile,checkSkills,checkTally,skillEntry,skillItems,gearPhotoGaps,tallyPhotoGaps,SKILL_TYPES,sectionConcepts,releaseKeys,catalogIn,catalogWith,CAT_RE,check,loadUnit,makeIndex,makeCounts,makeJs,questionLinks,linkNorm,linkHas,fbSafe,ranges,unranges,unitIds,LABEL_KEYS,FEATURE_KEYS,REPO,skillClasses,checkTernary,ternRuleOk,ternClassesAt,ternTerms,ternArea,partItems,checkParts,partPhotoGaps,shotTags,PHOTO_TAGS};
+Object.assign(module.exports,{labelParts,checkDiagram,labelHolds,LABEL_R,LABEL_EL,LABEL_AT});   // 🏷 CPITEMLABEL
 if(require.main===module){
   const a=process.argv.slice(2), chk=a.includes("--check"), all=a.includes("--all"), ids=all?unitIds(REPO):a.filter(x=>!x.startsWith("--"));
   if(!ids.length){ console.error("usage: node units/build/compile_unit.js <unitId>|--all [--check]"); process.exit(2); }
