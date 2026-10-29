@@ -45389,6 +45389,7 @@ function envtWaitsForCheckin(kid,deckKey){
   const station=ENVT_DECK_STATION[deckKey]; if(!station||!kid) return false;
   if(!envtEnrolled(envtUnit(),kid)) return false;
   if(envtLib()&&!envtForm(station,"pre")) return false;
+  if(typeof cpFinalCheckin==="function"&&!cpFinalCheckin(kid,station)) return false;   // 📝 CPFINAL: the section plan's check-in is off
   return !envtRec(kid,station).pre; }
 // 2. the station's core cards learned = handed off by the 🌿 session (tier at/after ITS handOffAt): {learned,total}
 function envtHandOffAt(kid){ const S=masteryData[kid+"_sessions"]; let s=S&&S[ENV_SESSION_SID]; if(s&&typeof envClassOverlay==="function") s=envClassOverlay("study",kid,s);   // ⚙️ ENVCLASSSET: the class's hand-off
@@ -45408,12 +45409,12 @@ function envtStatus(u,kid,station){
   const st=envtStation(station); if(!st||!envtEnrolled(u,kid)) return null;
   const rec=envtRec(kid,station), pre=envtForm(station,"pre"), post=envtForm(station,"post");
   const out={ station:st, rec, pre:{open:false,rec:rec.pre||null,n:pre?pre.items.length:0}, post:{open:false,why:"",best:(rec.post&&rec.post.best)||null,attempts:envtAttempts(rec),n:post?post.items.length:0}, graduated:rec.graduated||null, line:"" };
-  out.pre.open=!!(pre&&!rec.pre&&envtReleased(kid,station));
+  out.pre.open=!!(pre&&!rec.pre&&envtReleased(kid,station)&&(typeof cpFinalCheckin!=="function"||cpFinalCheckin(kid,station)));   // 📝 CPFINAL: none offered when the plan turns it off
   if(post&&!out.graduated){
     const last=out.post.attempts.length?out.post.attempts[out.post.attempts.length-1]:null;
     const core=out.post.core=envtCoreCount(kid,station);
-    if(!(rec.postOpen||(core.total>0&&core.learned>=core.total))) out.post.why="cards";
-    else if(last&&last.ts&&Date.now()-last.ts<ENVT_RETAKE_MS) out.post.why="wait";
+    if(!(rec.postOpen||(core.total>0&&core.learned>=(typeof cpFinalNeed==="function"?cpFinalNeed(kid,station,core.total):core.total)))) out.post.why="cards";   // 📝 CPFINAL: the class site opens at the plan's finalAt (85 %)
+    else if(last&&last.ts&&Date.now()-last.ts<(typeof cpFinalRetakeMs==="function"?cpFinalRetakeMs(kid,station,ENVT_RETAKE_MS):ENVT_RETAKE_MS)) out.post.why="wait";   // 📝 CPFINAL: the plan's retakeHours
     else out.post.open=true;
   }
   const parts=[]; if(rec.pre) parts.push("Pre "+rec.pre.right+"/"+rec.pre.n);
@@ -45426,6 +45427,7 @@ function envtStatus(u,kid,station){
 function envtCoreLine(kid,station,st){ if(!st){ const u=envtUnit(); st=u?envtStatus(u,kid,station):null; }
   if(!st||st.graduated||st.post.open||st.post.why!=="cards"||!st.post.core||!st.post.core.total||!envtForm(station,"post")) return "";
   if(!st.rec.pre&&!envtReleased(kid,station)) return "";
+  if(typeof cpFinalLine==="function"){ const fl=cpFinalLine(kid,station,st.post.core); if(fl) return fl; }   // 📝 CPFINAL: "Final opens at 85% · 3 of 4"
   return "Final opens when every core card is learned \u00B7 "+st.post.core.learned+" of "+st.post.core.total; }
 // one line for a kid across the stations ("Forestry: Pre 13/20 · Post 17/20 🎓") — the Family tab's shared-units row
 function envtLineHtml(u,kid){ if(!envtEnrolled(u,kid)) return "";
@@ -45435,7 +45437,7 @@ const ENVT_BTN='min-height:48px;padding:0 16px;border-radius:12px;border:none;ba
 function envtStartCardHtml(kid,st,which){ const f=envtForm(st.station.id,which); if(!f) return "";
   const kind=which==="pre"?"check-in":"final";
   return '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#f0fdf4;border:2px solid #86efac;border-radius:14px;padding:10px 12px;margin-top:8px">'
-    +'<div style="flex:1;min-width:160px"><div style="font-size:14px;font-weight:800;color:#14532d">\u{1F4DD} '+envtEsc(st.station.label)+' '+kind+'</div><div style="font-size:11.5px;color:#166534;font-weight:600">'+f.items.length+' questions \u00B7 '+(which==="pre"?"before the cards \u2014 just do your best":((st.post.core&&st.post.core.total&&st.post.core.learned>=st.post.core.total)?"every core card learned \u2014 show what you know":"opened for you \u2014 show what you know"))+'</div>'+(which==="pre"?'<div style="font-size:12px;color:#14532d;font-weight:800;margin-top:2px">Take the check-in first \u2014 then the cards open.</div>':'')+'</div>'
+    +'<div style="flex:1;min-width:160px"><div style="font-size:14px;font-weight:800;color:#14532d">\u{1F4DD} '+envtEsc(st.station.label)+' '+kind+'</div><div style="font-size:11.5px;color:#166534;font-weight:600">'+f.items.length+' questions \u00B7 '+(which==="pre"?"before the cards \u2014 just do your best":((typeof cpFinalStartWhy==="function"&&cpFinalStartWhy(kid,st))||((st.post.core&&st.post.core.total&&st.post.core.learned>=st.post.core.total)?"every core card learned \u2014 show what you know":"opened for you \u2014 show what you know")))+'</div>'+(which==="pre"?'<div style="font-size:12px;color:#14532d;font-weight:800;margin-top:2px">Take the check-in first \u2014 then the cards open.</div>':'')+'</div>'   // 📝 CPFINAL: why the final is open (cpFinalStartWhy)
     +'<button onclick="envtOpen(\''+envtJ(kid)+'\',\''+envtJ(st.station.id)+'\',\''+which+'\')" style="'+ENVT_BTN+'">Start</button></div>'; }
 // the per-station block under the unit for one kid: scores line, 🎓, the open test as a card, Mom's early open
 function envtKidCardsHtml(u,kid,isMom){ if(!envtEnrolled(u,kid)) return ""; const S=envtStations(); if(!S.length) return "";
@@ -45510,6 +45512,7 @@ function envtScore(form,answers){ let right=0; const out=[];
   const n=form.items.length; return {right,n,pass:right>=envtPassAt(n),answers:out}; }
 function envtFinish(){ const S=envtState; if(!S||S.done) return;
   const sc=envtScore(S.form,S.answers), now=Date.now();
+  if(typeof cpFinalPassAt==="function") sc.pass=sc.right>=cpFinalPassAt(S.kid,S.station,sc.n,envtPassAt(sc.n));   // 📝 CPFINAL: the plan's pass mark
   const rec={form:S.form.form,date:envtToday(),n:sc.n,right:sc.right,secs:envtSecs(),answers:sc.answers,ts:now};
   let T=masteryData[S.kid+"_tests"]; if(!T||typeof T!=="object") T=masteryData[S.kid+"_tests"]={}; const R=T[S.station]=Object.assign({},T[S.station]||{});
   const base="mastery/"+S.kid+"_tests/"+S.station; let grad=false;
@@ -45544,7 +45547,7 @@ function envtHtml(){ const S=envtState; if(!S) return ""; const st=envtStation(S
     else if(d.grad) msg="\u{1F393} Graduated!"; else if(d.pass) msg="\u{1F393} passed again."; else msg="not yet. The cards keep going \u2014 try again tomorrow.";
     h+='<div style="background:#fff;border:2px solid '+(d.pass&&S.which!=="pre"?'#86efac':'#fed7aa')+';border-radius:20px;padding:28px 20px;margin-top:40px;text-align:center">';
     h+='<div style="font-size:34px;font-weight:800;color:#1f2937">'+d.right+' of '+d.n+'</div><div style="font-size:17px;font-weight:800;color:#14532d;margin-top:6px">'+msg+'</div>';
-    h+='<div style="font-size:12px;color:var(--muted);margin-top:10px">'+envtClock(envtSecs())+(S.which==="post"?' \u00B7 pass is '+envtPassAt(d.n)+' of '+d.n:'')+'</div>';
+    h+='<div style="font-size:12px;color:var(--muted);margin-top:10px">'+envtClock(envtSecs())+(S.which==="post"?' \u00B7 pass is '+(typeof cpFinalPassAt==="function"?cpFinalPassAt(S.kid,S.station,d.n,envtPassAt(d.n)):envtPassAt(d.n))+' of '+d.n:'')+'</div>';   // 📝 CPFINAL: the plan's pass mark
     if(!d.saved) h+='<div style="margin-top:10px;font-size:12px;font-weight:800;color:#b45309">'+((typeof envsDemo==="function"&&envsDemo())?'Demo':'Dry run')+' \u2014 nothing saved.</div>';
     h+='<button onclick="envtClose()" style="'+ENVT_BTN+';margin-top:18px;padding:0 32px">Done</button></div>';
     return h+'</div>'; }
@@ -47176,6 +47179,7 @@ function envsDemoStart(){
   try{ KID_NAME.maya="Maya"; KID_COLOR.maya="#2d6a4f"; }catch(e){}
   try{ _haMastReady=true; _haUnitsReady=true; }catch(e){}
   try{ envsDemoSeedKid(data); }catch(e){ try{ console.error("[HA] ENVSITE demo seed",e); }catch(x){} }
+  try{ if(typeof cpFinalDemoSeed==="function") cpFinalDemoSeed(); }catch(e){}   // 📝 CPFINAL: Maya's Soils at 3 of 4 core cards learned
   try{ if(typeof envcDemoStart==="function") envcDemoStart(data); }catch(e){}
   try{ haAuthHide(); }catch(e){}
   try{ masteryKid="maya"; }catch(e){}
@@ -47338,7 +47342,7 @@ function envcStudentHtml(sid){
   const held=stns.filter(st=>envcStationOpen(sid,st)!=="all");
   h+='<div class="envs-card"><div class="envs-h2">\u{1F4DD} The final for '+envcEsc(envcName(s))+'</div><div class="envs-row">'+envcFinalStations().map(st=>{ const t=(sm&&sm.tests&&sm.tests[st.id])||{}, f=envcFinalRec(sid,st.id);
     if(t.graduated) return '<span class="envs-chip">'+envcEsc(st.short)+' \u{1F393}</span>'; if(f) return '<span class="envs-chip">'+envcEsc(st.short)+' \u00B7 final open'+(f.date?' '+envcEsc(f.date):'')+'</span>';
-    return '<button class="envs-btn sec" onclick="envcFinalFor(\''+envcJ(sid)+'\',\''+st.id+'\')">\u{1F4DD} Open the final \u00B7 '+envcEsc(st.short)+'</button>'; }).join("")+'</div><div class="envs-muted" style="margin-top:4px">It opens on its own once every core card is learned; this opens it now. Writes release/'+envcEsc(cid)+'/final/students/'+envcEsc(sid)+'/&lt;station&gt;. The whole class opens from Send out.</div></div>';
+    return '<button class="envs-btn sec" onclick="envcFinalFor(\''+envcJ(sid)+'\',\''+st.id+'\')">\u{1F4DD} Open the final \u00B7 '+envcEsc(st.short)+'</button>'; }).join("")+'</div><div class="envs-muted" style="margin-top:4px">'+envcEsc((typeof cpFinalOpensText==="function"&&cpFinalOpensText(""))||"It opens on its own once every core card is learned")+'; this opens it now. Writes release/'+envcEsc(cid)+'/final/students/'+envcEsc(sid)+'/&lt;station&gt;. The whole class opens from Send out.</div></div>';   // 📝 CPFINAL: the class's share (cpFinalOpensText)
   if(held.length) h+='<div class="envs-card"><div class="envs-h2">Open a station for '+envcEsc(envcName(s))+' only</div><div class="envs-row">'+held.map(st=>'<button class="envs-btn sec" onclick="envcOpenFor(\''+envcJ(sid)+'\',\''+st.id+'\')">\u{1F513} '+envcEsc(st.short)+'</button>').join("")+'</div><div class="envs-muted" style="margin-top:4px">Writes release/'+envcEsc(cid)+'/students/'+envcEsc(sid)+'/&lt;station&gt;. The whole class opens from Send out.</div></div>';
   if(typeof envClsStudentHtml==="function") h+=envClsStudentHtml(sid);   // ⚙️ ENVCLASSSET: this student's own settings
   const SC=(_envc.scores&&_envc.scores[sid])||{};
@@ -47425,7 +47429,7 @@ function envcSendHtml(){
     h+='<div class="envs-muted" style="margin:8px 0 4px">to:</div><div class="envs-row"><label style="font-size:13px;min-height:40px;display:flex;align-items:center;gap:6px"><input type="radio" name="envc-to" '+(sd.to==="class"?'checked':'')+' onchange="_envc.send.to=\'class\';envcRe()"> whole class</label><label style="font-size:13px;min-height:40px;display:flex;align-items:center;gap:6px"><input type="radio" name="envc-to" '+(sd.to==="pick"?'checked':'')+' onchange="_envc.send.to=\'pick\';envcRe()"> pick students</label></div>';
     if(sd.to==="pick") h+='<div class="envs-row">'+S.map(s=>'<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;min-height:36px"><input type="checkbox" '+(sd.picked[s.sid]?'checked':'')+' onchange="_envc.send.picked[\''+envcJ(s.sid)+'\']=this.checked"> '+envcEsc(envcName(s))+'</label>').join("")+'</div>';
     h+='<div style="margin-top:10px"><button class="envs-btn" onclick="envcSendOut()">\u{1F4E4} Send out now</button></div>';
-    if(st.id!=="general"){ const fa=envcFinalRec("",st.id); h+='<div style="margin-top:10px;padding-top:8px;border-top:1px solid #f1efe9">'+(fa?'<div class="envs-muted">\u{1F4DD} The '+envcEsc(st.short)+' final is open for the whole class'+(fa.date?' since '+envcEsc(fa.date):'')+'.</div>':'<button class="envs-btn sec" onclick="envcFinalOut()">\u{1F4DD} Open the final \u00B7 '+envcEsc(st.short)+'</button><div class="envs-muted" style="margin-top:4px">To the same students as above. It opens on its own once a student has learned every core card; this opens it now.</div>')+'</div>'; } }
+    if(st.id!=="general"){ const fa=envcFinalRec("",st.id); h+='<div style="margin-top:10px;padding-top:8px;border-top:1px solid #f1efe9">'+(fa?'<div class="envs-muted">\u{1F4DD} The '+envcEsc(st.short)+' final is open for the whole class'+(fa.date?' since '+envcEsc(fa.date):'')+'.</div>':'<button class="envs-btn sec" onclick="envcFinalOut()">\u{1F4DD} Open the final \u00B7 '+envcEsc(st.short)+'</button><div class="envs-muted" style="margin-top:4px">To the same students as above. '+envcEsc((typeof cpFinalOpensText==="function"&&cpFinalOpensText(st.id))||"It opens on its own once a student has learned every core card")+'; this opens it now.</div>')+'</div>'; } }   // 📝 CPFINAL: the section's share (cpFinalOpensText)
   else h+='<div class="envs-muted">Pick a station.</div>';
   h+='</div>';
   const R=_envc.release||{}; const rows=[];
@@ -48023,7 +48027,7 @@ function cpCloseHtml(d){
 function cpSetupHtml(){
   if(typeof envcOn!=="function"||!envcOn()) return ""; cpCss(); const cls=_envc.cls||{}, d=cpDraft();
   let h='<div class="envs-card">'+cpCardHead("\u{1F3EB} Class setup · "+cpEsc(cls.name||_envc.cid),"Saved at classes/"+cpEsc(_envc.cid)+". Students and parents see the change the next time their page paints.")+'</div>';
-  return h+cpLookHtml(d)+cpSeasonHtml(d)+cpDaysHtml(d)+cpWordsHtml(d)+((typeof cpuSetupHtml==="function")?cpuSetupHtml():"")+cpCloseHtml(d);   // 📦 CPUNIT: the class's units
+  return h+cpLookHtml(d)+cpSeasonHtml(d)+cpDaysHtml(d)+cpWordsHtml(d)+((typeof cpuSetupHtml==="function")?cpuSetupHtml():"")+((typeof cpFinalPlanHtml==="function")?cpFinalPlanHtml():"")+cpCloseHtml(d);   // 📦 CPUNIT: the class's units · 📝 CPFINAL: the section plan
 }
 // ── Adrienne's + Class (envcAdminHtml's Classes card; envcClassAdd) ──
 // PURE: the form → {ok, cid, rec, error}. The look starts at today's (the teacher sets her own in 🏫 Class setup).
@@ -49940,6 +49944,126 @@ function cpReviewWhoNote(who){
   return name+" reviews in the \u{1F33F} sitting on the student login: every card comes back on the day it’s due, at every level, so there’s no drill for you to run."+((who==="teacher"||who==="both")?" The teacher drills in class too.":"");
 }
 // CPREVIEW_END
+// CPFINAL_START — 📝 THE FINAL OPENS AT A SHARE OF THE CORE CARDS, per section (DESIGN_class_platform_2026-10-28.md §7(f), §5.1, §12,
+// §13 row 7, §14 Q6; PR 7 of the class platform; her yes to building the design, 2026-10-28). The gap it closes: PR A's rule, "the final
+// opens when EVERY core card is learned", never fires on its own. A miss sends a card back to the first rung (miss_drop "reset"), so a
+// station's learned share levels off at about 80–93 % (the pace simulation, 2026-10-28) and the final only ever opened by the teacher's
+// button. INERT unless ENVSITE's envEdition() says "envirothon", and then only for the site's own kid (cpReviewOn: a kid or parent login,
+// or the demo's kid) and the console. Howe, DeWalt, Burris and Lincoln (whose mirror reads no class plan until L1) keep PR A's rule: every
+// core card learned at the session's handOffAt, 80 % to pass, 24 h before a retake, the check-in first.
+//   · THE SECTION PLAN: classes/<cid>/plan/<sectionKey> = {finalAt, pass, retakeHours, checkin, learnedAt} (+ order, CPUNIT's). Every field
+//     is optional; a class without a plan reads the defaults: the final opens at 85 % of the section's core cards learned (the design's pick
+//     for Q6; she can set 80, 90 or anything 1–100), 80 % to pass, 24 h before a retake, the check-in on (PR A's rule: only a section with a
+//     check-in form ever waits for one), learned = every 2 weeks (CPREVIEW reads learnedAt). The open test is learned ≥ ceil(total × finalAt
+//     / 100); envtCoreCount is unchanged.
+//   · THE KID'S LINE (Scores, the parent page, the Units card): "Final opens at 85% · 3 of 4". The start card says "85% of core cards
+//     learned — show what you know" once it opens that way.
+//   · 🏫 CLASS SETUP ▸ the section plan (teacher + admin): one row per section that has a final, called by the class's own word for a section
+//     (cpLabel, never a literal "Station"): Final opens at __ % · Pass __ % · Retake after __ h · Learned at · Check-in on/off. Save is ONE
+//     targeted update at classes/<cid> whose keys are the changed leaves only (plan/<key>/<field>), so CPUNIT's plan/<key>/order and any
+//     later field are never overwritten. The rules (envirothon/SITE_RULES.json) give the teacher classes/<cid>/plan with the shapes checked.
+//   · The teacher's "Open the final" (one student or the whole class) is unchanged; its note now names the class's share.
+//   · Check-in off (her choice per section): the section's cards don't wait for a check-in and none is offered. On (the default) = PR A.
+//   · THE DEMO: Maya's "Parent material" (Soils, core) sits at every 2 weeks, so Soils reads "Final opens at 85% · 3 of 4"; set Soils to
+//     75 % in 🏫 Class setup and her final opens (the demo writes nothing: a "would update" toast).
+//   · Nothing here reads or writes a family's database; the one write is the teacher's Save, through envcWrite (demo: a toast; dry run: none).
+const CPF_DEF={finalAt:85,pass:80,retakeHours:24};
+const CPF_RETAKE_MAX=720;   // 30 days
+const _cpf={cid:"",d:null};
+function cpfInt(v,lo,hi){ const n=(typeof v==="string"&&v.trim()!=="")?Number(v):v; return (typeof n==="number"&&Number.isInteger(n)&&n>=lo&&n<=hi)?n:null; }
+function cpfTiers(){ return (typeof envClsTiers==="function")?envClsTiers():["every_other_day","weekly","bi_weekly","monthly","graduated"]; }
+function cpfLearnedDef(){ return (typeof CPR_LEARNED_DEF!=="undefined")?CPR_LEARNED_DEF:"bi_weekly"; }
+// PURE: one section's plan record → the numbers that apply {finalAt, pass, retakeHours, checkin, learnedAt}; a bad value reads the default
+function cpFinalPlanOf(rec){
+  const p=(rec&&typeof rec==="object")?rec:{}, L=p.learnedAt;
+  const fa=cpfInt(p.finalAt,1,100), ps=cpfInt(p.pass,1,100), rh=cpfInt(p.retakeHours,0,CPF_RETAKE_MAX);
+  return {finalAt:fa==null?CPF_DEF.finalAt:fa,pass:ps==null?CPF_DEF.pass:ps,retakeHours:rh==null?CPF_DEF.retakeHours:rh,checkin:p.checkin!==false,learnedAt:(L&&cpfTiers().indexOf(L)>=0)?L:cpfLearnedDef()};
+}
+// the plan for the site's kid (the class record the kid's app already holds); null = not the site's kid → PR A's rule
+function cpFinalPlan(kid,station){
+  if(typeof cpReviewOn!=="function"||!cpReviewOn(kid)||!station) return null;
+  const P=(_envs.cls&&_envs.cls.plan)||null; return cpFinalPlanOf(P&&P[station]);
+}
+// ── the hooks: each hands back what it was given unless this is the site's kid
+function cpFinalNeed(kid,station,total){ const p=cpFinalPlan(kid,station); return p?Math.ceil(total*p.finalAt/100):total; }
+function cpFinalRetakeMs(kid,station,def){ const p=cpFinalPlan(kid,station); return p?p.retakeHours*3600000:def; }
+function cpFinalPassAt(kid,station,n,def){ const p=cpFinalPlan(kid,station); return p?Math.ceil(n*p.pass/100):def; }
+function cpFinalCheckin(kid,station){ const p=cpFinalPlan(kid,station); return p?p.checkin:true; }
+// "Final opens at 85% · 3 of 4" ("" = not the site's kid: PR A's line stays)
+function cpFinalLine(kid,station,core){ const p=cpFinalPlan(kid,station); if(!p||!core) return ""; return "Final opens at "+p.finalAt+"% · "+core.learned+" of "+core.total; }
+// the open final's card: why it is open ("" = not the site's kid)
+function cpFinalStartWhy(kid,st){
+  const p=st&&st.station&&cpFinalPlan(kid,st.station.id), c=st&&st.post&&st.post.core; if(!p) return "";
+  if(c&&c.total&&c.learned>=c.total) return "every core card learned — show what you know";
+  if(c&&c.total&&c.learned>=Math.ceil(c.total*p.finalAt/100)) return p.finalAt+"% of core cards learned — show what you know";
+  return "opened for you — show what you know";
+}
+// the console's "Open the final" note: the class's share. station "" = the student page (every section's): one number when they agree
+function cpFinalOpensText(station){
+  if(typeof cpOn!=="function"||!cpOn()) return ""; const cls=cpCls(), P=(cls&&cls.plan)||{};
+  const word=String(cpLabel("section",cls)||"section").toLowerCase();
+  if(station) return "It opens on its own once a student has learned "+cpFinalPlanOf(P[station]).finalAt+"% of the "+word+"’s core cards";
+  const S=(typeof envcFinalStations==="function")?envcFinalStations():[], v=S.map(s=>cpFinalPlanOf(P[s.id]).finalAt), one=v.length&&v.every(x=>x===v[0]);
+  return "It opens on its own once "+(one?v[0]+"% of a "+word+"’s core cards are":"the "+word+" plan’s share of core cards is")+" learned (\u{1F3EB} Class setup)";
+}
+// ── 🏫 Class setup ▸ the section plan (teacher + admin) ──
+// the sections with a final, in the class's order (the console's own list: General has none)
+function cpfSections(){ return (typeof envcFinalStations==="function")?envcFinalStations():[]; }
+function cpfHasPre(id){ try{ if(typeof envtLib==="function"&&envtLib()&&typeof envtForm==="function") return !!envtForm(id,"pre"); }catch(e){} return true; }
+// PURE: the class's plan → the draft (strings for the number boxes)
+function cpFinalDraftOf(cls,sections){
+  const P=(cls&&cls.plan)||{}, d={};
+  (sections||[]).forEach(s=>{ const p=cpFinalPlanOf(P[s.id]); d[s.id]={finalAt:String(p.finalAt),pass:String(p.pass),retakeHours:String(p.retakeHours),checkin:p.checkin,learnedAt:p.learnedAt}; });
+  return d;
+}
+// PURE: draft + the class's plan → {ok, upd: {"plan/<key>/<field>": value} for the changed leaves only, error}
+function cpFinalCheck(d,plan,sections){
+  const P=plan||{}, upd={}, bad=e=>({ok:false,error:e});
+  for(const s of (sections||[])){ const x=(d||{})[s.id]; if(!x) continue; const cur=cpFinalPlanOf(P[s.id]), name=s.short||s.label||s.id;
+    const fa=cpfInt(x.finalAt,1,100); if(fa==null) return bad(name+": the final opens at a whole percent, 1 to 100.");
+    const ps=cpfInt(x.pass,1,100); if(ps==null) return bad(name+": the pass mark is a whole percent, 1 to 100.");
+    const rh=cpfInt(x.retakeHours,0,CPF_RETAKE_MAX); if(rh==null) return bad(name+": the wait before a retake is 0 to "+CPF_RETAKE_MAX+" hours.");
+    if(cpfTiers().indexOf(x.learnedAt)<0) return bad(name+": pick when a card counts as learned.");
+    const v={finalAt:fa,pass:ps,retakeHours:rh,checkin:x.checkin!==false,learnedAt:x.learnedAt};
+    Object.keys(v).forEach(k=>{ if(v[k]!==cur[k]) upd["plan/"+s.id+"/"+k]=v[k]; }); }
+  return {ok:true,upd};
+}
+function cpfDraft(){ const cid=(typeof _envc!=="undefined"&&_envc.cid)||""; if(!_cpf.d||_cpf.cid!==cid){ _cpf.cid=cid; _cpf.d=cpFinalDraftOf(cpCls(),cpfSections()); } return _cpf.d; }
+// a box changed: just remember it (a repaint while the box loses focus would swallow the tap on Save)
+function cpFinalSet(id,k,v){ if(typeof envcOn!=="function"||!envcOn()) return; const d=cpfDraft(); if(d[id]) d[id][k]=v; }
+function cpFinalCancel(){ _cpf.d=null; if(typeof envcRe==="function") envcRe(); }
+// THE save: one targeted update at classes/<cid> (the changed leaves only); the console's memory takes it at once (in the demo that object
+// is also the kid's and the parent's class record)
+function cpFinalSave(){
+  if(typeof envcOn!=="function"||!envcOn()||!_envc.cid) return false;
+  const S=cpfSections(), cls=_envc.cls||{}, c=cpFinalCheck(cpfDraft(),cls.plan,S); if(!c.ok){ envsToast(c.error); return false; }
+  const keys=Object.keys(c.upd); if(!keys.length){ envsToast("Nothing changed"); return false; }
+  envcWrite("classes/"+_envc.cid,c.upd,"update").then(()=>{ const C=_envc.cls||(_envc.cls={}); const P=C.plan||(C.plan={});
+    keys.forEach(k=>{ const m=k.split("/"); (P[m[1]]=P[m[1]]||{})[m[2]]=c.upd[k]; }); if(!_envs.cls) _envs.cls=C; _cpf.d=null; envcRe(); }).catch(()=>{});
+  return true;
+}
+function cpFinalPlanHtml(){
+  if(typeof envcOn!=="function"||!envcOn()) return ""; const S=cpfSections(); if(!S.length) return "";
+  const cls=cpCls(), d=cpfDraft(), word=cpLabel("section",cls), post=String(cpLabel("post",cls)).toLowerCase(), pre=String(cpLabel("pre",cls)).toLowerCase(), E=cpEsc, J=envcJ;
+  const box=(id,k,v,max,w)=>'<input class="envs-in" style="width:'+(w||64)+'px" type="number" inputmode="numeric" min="'+(k==="retakeHours"?0:1)+'" max="'+max+'" value="'+E(v)+'" aria-label="'+E(k)+'" onchange="cpFinalSet(\''+J(id)+'\',\''+k+'\',this.value)">';
+  let h='<div class="envs-card">'+cpCardHead("\u{1F4CB} "+E(word)+" plan","When each "+E(word.toLowerCase())+"’s "+E(post)+" opens by itself, the pass mark, the wait before trying again, and whether it starts with a "+E(pre)+". A miss sends a card back down, so most students level off below 100 %: "+CPF_DEF.finalAt+" % lets the "+E(post)+" open on its own. You can still open it early for anyone.");
+  S.forEach(s=>{ const x=d[s.id]; if(!x) return;
+    h+='<div style="border-top:1px solid #f1efe9;padding:8px 0"><div style="font-weight:800;font-size:13.5px;margin-bottom:4px">'+E(s.emoji?s.emoji+" ":"")+E(s.label||s.short||s.id)+'</div><div class="envs-row" style="font-size:13px;gap:8px 14px">'
+      +'<label class="envs-row">'+E(cpLabel("post",cls))+' opens at '+box(s.id,"finalAt",x.finalAt,100)+'% of core cards</label>'
+      +'<label class="envs-row">Pass '+box(s.id,"pass",x.pass,100)+'%</label>'
+      +'<label class="envs-row">Try again after '+box(s.id,"retakeHours",x.retakeHours,CPF_RETAKE_MAX,72)+' h</label>'
+      +'<label class="envs-row">Learned at <select class="envs-in" style="width:auto" onchange="cpFinalSet(\''+J(s.id)+'\',\'learnedAt\',this.value)">'+cpfTiers().map(t=>'<option value="'+E(t)+'"'+(t===x.learnedAt?' selected':'')+'>'+E((typeof envClsTierLbl==="function")?envClsTierLbl(t):t)+'</option>').join("")+'</select></label>'
+      +(cpfHasPre(s.id)?'<label class="envs-row" style="min-height:40px"><input type="checkbox" '+(x.checkin?'checked':'')+' onchange="cpFinalSet(\''+J(s.id)+'\',\'checkin\',this.checked)"> Starts with the '+E(pre)+' (the cards wait for it)</label>':'')
+      +'</div></div>'; });
+  return h+'<div class="envs-row" style="margin-top:10px"><button class="envs-btn cp-btn" onclick="cpFinalSave()">Save</button><button class="envs-btn sec cp-btn" onclick="cpFinalCancel()">Cancel</button></div><div class="envs-muted" style="margin-top:4px">Saved at classes/'+E(_envc.cid)+'/plan. Students see it the next time their page paints.</div></div>';
+}
+// the demo: Maya's "Parent material" (a Soils core card) at every 2 weeks → "Final opens at 85% · 3 of 4"
+function cpFinalDemoSeed(){
+  if(typeof envsDemo!=="function"||!envsDemo()||!_envs.kid) return false;
+  const it=(masteryData[_envs.kid]||[]).find(i=>i&&i.id==="m_parent"); if(!it) return false;
+  it.tier="bi_weekly"; return true;
+}
+// CPFINAL_END
 // CPDRILLPARENT_START — 🧠 THE PARENT CAN TAKE OVER A STUDENT'S REVIEW CARDS, per kid, on the class site (DESIGN_class_platform_2026-10-28.md
 // §7(a) 2–3, §2, §9, §13 row 13, §14 Q5; PR 13 of the class platform). Her words 2026-10-28: "For the parent, I think they can get the
 // option to pick per kid, and the default would be that it stays in the student's own session. But the mom, if she knows her kid and

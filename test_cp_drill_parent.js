@@ -62,7 +62,7 @@ function parentDrill(w,grade){ w.envsDemoGo("parent"); if(!w.P.cpdrStart()) retu
 const run=async()=>{
 console.log("── where it sits, how it is hooked ──");
 { const a=src.indexOf("// CPDRILLPARENT_START"), b=src.indexOf("// CPDRILLPARENT_END"), e=src.indexOf("// CPREVIEW_END");
-  ok("CPDRILLPARENT once, right after CPREVIEW_END", a>0&&b>a&&src.indexOf("// CPDRILLPARENT_START",a+1)<0&&src.slice(e,a).trim()==="// CPREVIEW_END");
+  ok("CPDRILLPARENT exactly once, after CPREVIEW_END (other blocks may land between)", a>0&&b>a&&src.indexOf("// CPDRILLPARENT_START",a+1)<0&&e>0&&e<a);
   ok("the header names the design sections, PR 13, her words and the date", /§7\(a\)/.test(PDR)&&/§13 row 13/.test(PDR)&&/PR 13/.test(PDR)&&/the mom, if she knows her kid and\s*\/\/ wants to hand it off to a parent drill/.test(PDR)&&/2026-10-28/.test(PDR));
   ok("the block only declares (its one load step is a const: the guarded meaning update)", PDR.split("\n").every(l=>!l.trim()||/^(\/\/|function |const | |})/.test(l))&&/^const CPDR_FIELDS_SET=cpdrFields\(\);$/m.test(PDR));
   const code=PDR.replace(/^\/\/.*$/mg,"");
