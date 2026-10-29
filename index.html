@@ -46975,6 +46975,7 @@ function envsSignOut(){ if(envsDemo()){ envsToast("demo: would sign out"); retur
 // ── writes: demo → a toast and a record, never a write; dry run → nothing; live → the shared instance (the console's writes come through here too)
 function envsWrite(path,val,op){
   op=op||"set"; const rec={op,path,val:(val===undefined?null:val)};
+  if(typeof cpLockRefuse==="function"){ const lk=cpLockRefuse(path,val,op); if(lk) return Promise.reject(new Error(lk)); }   // 🔒 CPLOCKS: a teacher's write to a part Adrienne locked stops here (the rules refuse it too)
   if(envsDemo()){ _envs.writes.push(rec); envsToast("demo: would "+op+" "+path); return Promise.resolve(rec); }
   if(typeof _dryRun==="function"&&_dryRun()){ return Promise.resolve(rec); }
   try{ const r=firebase.database().ref(path); return op==="update"?r.update(val):op==="remove"?r.remove():r.set(val); }catch(e){ return Promise.reject(e); }
@@ -47321,6 +47322,7 @@ function envConsoleHtml(){
   if(_envc.err) h+='<div class="envs-card" style="border-color:#fecaca;color:#b91c1c;font-size:12.5px">'+envcEsc(_envc.err)+' <a href="javascript:void(0)" onclick="_envc.err=\'\';envcRe()" style="color:#b91c1c">dismiss</a></div>';
   if(_envs.lock&&_envs.lock.locked) h+='<div class="envs-card" style="border-color:#fcd34d;background:#fffbeb;font-size:12.5px">\u{1F512} The season is closed for teachers and families; you see this because you are the admin.</div>';
   if(!cls&&!envsDemo()) return h+'<div class="envs-card envs-muted">Loading the class…</div>';
+  if(typeof cpLockBarHtml==="function") h+=cpLockBarHtml(v);   // 🔒 CPLOCKS: Adrienne's lock switch, or the teacher's "🔒 Set by …" line, right before Cards, Tests, Pace, Units, Class setup
   if(v==="student"&&_envc.sel) h+=envcStudentHtml(_envc.sel);
   else if(v==="pace"&&typeof cpPaceHtml==="function") h+=cpPaceHtml();   // 📅 CPPACE: the pace target
   else if(v==="tdrill"&&typeof cpdtHtml==="function") h+=cpdtHtml();   // 🧠 CPDRILLTEACHER: the teacher's drill (pick a student, ✓ / ✗, next student)
@@ -47984,7 +47986,7 @@ function cpCancel(part){ cpRedraft(part); envcRe(); }
 // state IS this object, shared with the kid's and parent's bars; live, the classes/<cid> listener confirms it a moment later).
 function cpSave(part){
   if(typeof envcOn!=="function"||!envcOn()||!_envc.cid) return false;
-  if(!cpCan(part)){ envsToast(part==="look"?"\u{1F512} The class's look is set by Adrienne":"\u{1F512} Only Adrienne changes this"); return false; }
+  if(!cpCan(part)){ envsToast(part==="look"?"\u{1F512} The class's look is set by "+(typeof cpLockName==="function"?cpLockName():"Adrienne"):"\u{1F512} Only Adrienne changes this"); return false; }
   const c=cpCheck(part,cpDraft()); if(!c.ok){ envsToast(c.error); return false; }
   const upd=c.upd;
   envcWrite("classes/"+_envc.cid,upd,"update").then(()=>{ const cls=_envc.cls||(_envc.cls={}); Object.keys(upd).forEach(k=>{ if(upd[k]==null) delete cls[k]; else cls[k]=upd[k]; }); if(!_envs.cls) _envs.cls=cls; cpRedraft(part); if(part==="close") cpClassIn(); envcRe(); }).catch(()=>{});
@@ -48003,7 +48005,7 @@ function cpActs(part,can){ const dis=can?'':' disabled'; return '<div class="env
 function cpLookHtml(d){
   const can=cpCan("look"), dis=can?'':' disabled', lk=cpBrandLocked();
   let h='<div class="envs-card">'+cpCardHead("\u{1F3A8} The class’s look","The title, emoji and bar color. Students and parents see them on every bar and can’t change them. Nothing is saved until Save.");
-  if(lk) h+='<div class="envs-chip" style="background:#fffbeb;border-color:#fcd34d;color:#92400e;margin-bottom:6px">\u{1F512} '+(cpAdmin()?'Locked for the teacher':'Set by Adrienne')+'</div>';
+  if(lk) h+='<div class="envs-chip" style="background:#fffbeb;border-color:#fcd34d;color:#92400e;margin-bottom:6px">\u{1F512} '+(cpAdmin()?'Locked for the teacher':'Set by '+(typeof cpLockName==="function"?cpLockName():'Adrienne'))+'</div>';   // 🔒 CPLOCKS: the admin's own name
   h+='<div class="cp-lbl">Preview</div><div id="cp-prev">'+cpPrevHtml(d)+'</div>';
   h+='<div class="cp-lbl">Title</div><input id="cp-title" class="envs-in" maxlength="40" value="'+cpEsc(d.title)+'"'+dis+' oninput="cpSet(\'title\',this.value,\'prev\')" onchange="cpSet(\'title\',this.value)">';
   h+='<div class="cp-lbl">Emoji</div><div class="cp-em">'+CP_EMOJI.map(e=>'<button class="'+(d.emoji===e?'on':'')+'"'+dis+' onclick="cpSet(\'emoji\',\''+e+'\',true)" aria-label="'+e+'">'+e+'</button>').join("")+'</div>';
@@ -48094,6 +48096,123 @@ function cpDemoStart(data){
     lockAt:"2027-04-24",calendar:{days:"school",off:{"2026-11-26":true,"2026-12-24":true,"2026-12-25":true}},features:Object.assign({},CP_FEATURES_UNIT)});
 }
 // CPCLASS_END
+// CPLOCKS_START — 🔒 ADRIENNE'S LOCKS, PER CLASS: the brand, the units, the cards, the tests and the plan (DESIGN_class_platform_2026-10-28.md
+// §2, §3.2, §3.3, §6.1, §6.3, §6.5, §9, §13 row 15, §15; PR 15 of the class platform; her yes to the build 2026-10-28). The design, from her
+// answers 2026-10-28: Adrienne "locks any setting or any area (brand, units, cards, tests, plan) for a class" · "A locked area shows greyed
+// to the teacher with '🔒 set by Adrienne', and the rules refuse her write." · 📚 Cards and 📝 Tests: "the teacher still sees everything …
+// but Edit, Hide, Add and bulk hide don't show." Generic: any class, any unit; the words come from the class's labels. INERT unless the
+// Envirothon site's console is on (envcOn): Howe, DeWalt and Burris never reach a line of it, and Lincoln's app never opens the console.
+//   · DATA (the shared instance, admin only — the rules give the teacher no write on classes/<cid>/locks):
+//       classes/<cid>/locks/{brand, units, cards, tests, plan} = true | absent   (brand = the title + emoji + bar color together)
+//       classes/<cid>/locks/byName = the admin's display name, written with every lock so the teacher reads "🔒 set by <her name>" — never a
+//         name in the code. It comes from teachers/<uid>/name, else the sign-in's display name, else the email's first word; the demo's
+//         sample admin is "Adrienne" (the demo bar's button). Removed with the last lock.
+//     ONE targeted update of classes/<cid>/locks per tap, through envcWrite → envsWrite (demo: a "would update" toast; dry run: nothing).
+//   · ONE READER: cpLocked(part) — every screen asks it (CPCLASS's cpBrandLocked and CPPACE's Core only read the same leaf).
+//   · THE ADMIN: 🏫 Class setup opens with "🔒 Locks for the teacher", a switch per part; 📚 Cards, 📝 Tests, 📅 Pace and 📦 Units each
+//     carry their own one-line switch at the top ("🔒 Lock the cards for the teacher"). She keeps every edit herself.
+//   · THE TEACHER: a locked screen opens with "🔒 Set by <name>" and what is off. 📚 Cards and 📝 Tests stay fully readable, but ✏️ Edit,
+//     🙈 Hide / Remove, ✕, ＋ (and with it 📋 Paste a list), bulk hide, ↑ ↓ and ↩︎ Undo don't show; the plan's boxes (the section plan, the
+//     skills' "final waits") are greyed; the look is greyed by CPCLASS. The bar sits right before the screen, so one CSS rule per part
+//     reaches every repaint of it (the lists repaint in place).
+//   · REFUSED TWICE: envsWrite asks cpLockRefuse first, so a teacher's write to a locked part never leaves her device (the toast says
+//     who set it), and envirothon/SITE_RULES.json refuses it on the server: classCards/<cid> (cards), classTests/<cid> (tests),
+//     classes/<cid>/plan (plan), title / emoji / color (brand); units and locks were already Adrienne's.
+const CPL_PARTS=[
+  {k:"brand",icon:"\u{1F3A8}",what:"the look",means:"the class title, emoji and bar color",ro:"The title, emoji and bar color are greyed."},
+  {k:"units",icon:"\u{1F4E6}",what:"the units",means:"which units the class studies",ro:"The class's units stay as they are."},
+  {k:"cards",icon:"\u{1F4DA}",what:"the cards",means:"edit, hide and add cards for the class",ro:"You see every card; editing, hiding and adding are off."},
+  {k:"tests",icon:"\u{1F4DD}",what:"the tests",means:"edit, remove, add and reorder test questions",ro:"You see every question; editing, removing, adding and reordering are off."},
+  {k:"plan",icon:"\u{1F4CB}",what:"the plan",means:"each section's plan: when the final opens, the pass mark, core only",ro:"The plan's boxes are greyed."}];
+const CPL_VIEW={cpcards:"cards",cptests:"tests",pace:"plan",units:"units"};   // a screen → its part (🏫 Class setup shows them all)
+const CPL_BRAND={title:1,emoji:1,color:1};
+const CPL_DEMO_ADMIN="Adrienne";   // the demo's sample admin (the demo bar's "Adrienne" button) — live, the name comes from her login
+const _cpl={css:false};
+function cplOn(){ return typeof envcOn==="function"&&envcOn(); }
+function cplAdmin(){ return typeof envcAdmin==="function"&&envcAdmin(); }
+function cplCls(){ if(typeof cpCls==="function") return cpCls(); return (typeof _envc!=="undefined"&&_envc.cls)||null; }
+function cplPart(k){ return CPL_PARTS.find(p=>p.k===k)||null; }
+function cplEsc(v){ return (typeof envcEsc==="function")?envcEsc(v):String(v==null?"":v); }
+// THE reader: is this part of the class locked? (cls = the class record; default the console's own)
+function cpLocked(part,cls){ cls=cls===undefined?cplCls():cls; return !!(cls&&cls.locks&&typeof cls.locks==="object"&&cls.locks[part]===true); }
+// read-only for the person looking: locked, and not the admin
+function cpLockRO(part,cls){ return cpLocked(part,cls)&&!cplAdmin(); }
+// who set the locks, as the teacher reads it
+function cpLockName(cls){ cls=cls===undefined?cplCls():cls; const n=cls&&cls.locks&&typeof cls.locks.byName==="string"?cls.locks.byName.trim():""; return n||"the admin"; }
+// the admin's own display name, saved with her locks
+function cpLockMe(){
+  if(typeof envsDemo==="function"&&envsDemo()) return CPL_DEMO_ADMIN;
+  let n=""; try{ const t=((typeof _envc!=="undefined"&&_envc.teachers)||{})[_envs.uid]; if(t&&t.name) n=String(t.name); }catch(e){}
+  if(!n){ try{ const u=firebase.auth().currentUser; if(u&&u.displayName) n=String(u.displayName); }catch(e){} }
+  if(!n){ const m=/^([a-z]+)/i.exec(String((typeof _envs!=="undefined"&&_envs.email)||"")); if(m) n=m[1].charAt(0).toUpperCase()+m[1].slice(1).toLowerCase(); }
+  n=n.trim().slice(0,40); return n||"the admin";
+}
+// PURE: the parts a write touches → {cid, parts:[…]} (null when it touches none). classCards / teacherCards → cards, classTests → tests,
+// classes/<cid>/{title,emoji,color} → brand, …/units → units, …/plan → plan; an update at classes/<cid> is read key by key.
+function cpLockParts(path,val,op){
+  const a=String(path||"").split("/").filter(Boolean); if(!a[1]) return null;
+  if(a[0]==="classCards"||a[0]==="teacherCards") return {cid:a[1],parts:["cards"]};
+  if(a[0]==="classTests") return {cid:a[1],parts:["tests"]};
+  if(a[0]!=="classes") return null;
+  const keys=a.length>2?[a[2]]:((op==="update"&&val&&typeof val==="object")?Object.keys(val).map(k=>String(k).split("/").filter(Boolean)[0]):[]), out=[];
+  keys.forEach(k=>{ const p=CPL_BRAND[k]?"brand":(k==="units"||k==="plan")?k:""; if(p&&out.indexOf(p)<0) out.push(p); });
+  return out.length?{cid:a[1],parts:out}:null;
+}
+// envsWrite's first question: a teacher's write to a part locked on HER class (the one the console holds) → the reason; else "".
+function cpLockRefuse(path,val,op){
+  if(!cplOn()||cplAdmin()) return ""; const X=cpLockParts(path,val,op); if(!X) return "";
+  const cid=(typeof _envc!=="undefined"&&_envc.cid)||""; if(!cid||X.cid!==cid) return "";   // another class: the rules decide
+  const hit=X.parts.filter(p=>cpLocked(p)); if(!hit.length) return "";
+  const why="\u{1F512} Set by "+cpLockName()+": "+hit.map(p=>cplWhat(cplPart(p),cplCls())).join(", ");
+  if(typeof envsToast==="function") envsToast(why); return why;
+}
+// Adrienne's switch: ONE update of classes/<cid>/locks — the part, and byName (her name while any lock stays on)
+function cpLockSet(part,on){
+  if(!cplOn()||!cplAdmin()||!cplPart(part)) return false; const cid=(typeof _envc!=="undefined"&&_envc.cid)||""; if(!cid) return false;
+  const C=_envc.cls||(_envc.cls={}), cur=Object.assign({},C.locks||{}); if(on) cur[part]=true; else delete cur[part];
+  const left=Object.keys(cur).some(k=>k!=="byName"&&cur[k]===true), me=cpLockMe(), upd={[part]:on?true:null,byName:left?me:null};
+  envcWrite("classes/"+cid+"/locks",upd,"update").then(()=>{ const L=Object.assign({},C.locks||{}); if(on) L[part]=true; else delete L[part]; if(left) L.byName=me; else delete L.byName; C.locks=L; if(typeof envcRe==="function") envcRe(); }).catch(()=>{});
+  return true;
+}
+// the words for a part, the class's own ("Station plan")
+function cplWhat(p,cls){ if(p.k==="plan"&&typeof cpLabel==="function") return "the "+String(cpLabel("section",cls)).toLowerCase()+" plan"; return p.what; }
+function cplAre(what){ return /s$/.test(what)?"are":"is"; }
+function cplBtn(k,on){ return '<button class="envs-btn '+(on?'':'sec ')+'cpl-btn" onclick="cpLockSet(\''+k+'\','+(on?'false':'true')+')">'+(on?'\u{1F513} Unlock':'\u{1F512} Lock')+'</button>'; }
+// right before a console screen (envConsoleHtml): the admin's switch, or the teacher's "🔒 set by …" line + the read-only rule
+function cpLockBarHtml(v){
+  if(!cplOn()) return ""; const cls=cplCls()||{}, admin=cplAdmin();
+  if(v==="setup") return cpLockSetupHtml(cls,admin);
+  const k=CPL_VIEW[v], p=k&&cplPart(k); if(!p) return ""; cplCss(); const on=cpLocked(k,cls), what=cplWhat(p,cls);
+  if(admin) return '<div class="envs-card cpl-bar"><div class="envs-row"><div style="flex:1;min-width:180px"><div style="font-weight:800;font-size:13.5px">'+(on?'\u{1F512}':'\u{1F513}')+' '+cplEsc(what.charAt(0).toUpperCase()+what.slice(1))+' '+cplAre(what)+(on?' locked for the teacher':' open to the teacher')+'</div><div class="envs-muted">'+
+    (on?'She sees them read-only, “\u{1F512} set by '+cplEsc(cpLockName(cls))+'”. You can still change them.':'She can '+cplEsc(p.means)+'. Lock it to keep it yours.')+'</div></div>'+cplBtn(k,on)+'</div></div>';
+  if(!on) return "";
+  cplCalm(k);
+  return '<div class="envs-card cpl-bar cpl-ro cpl-ro-'+k+'" role="note"><b>\u{1F512} Set by '+cplEsc(cpLockName(cls))+'</b> · '+cplEsc(what.charAt(0).toUpperCase()+what.slice(1))+' '+cplAre(what)+' locked for your class. '+cplEsc(p.ro)+'</div>';
+}
+// 🏫 Class setup: the admin's five switches; the teacher's list of what is locked (and the plan's read-only rule)
+function cpLockSetupHtml(cls,admin){
+  cplCss(); const L=CPL_PARTS.filter(p=>cpLocked(p.k,cls)), name=cplEsc(cpLockName(cls));
+  if(admin) return '<div class="envs-card cpl-bar"><div class="envs-h2" style="margin-bottom:2px">\u{1F512} Locks for the teacher</div><div class="envs-muted" style="margin-bottom:4px">A locked part shows to the teacher greyed, “\u{1F512} set by '+(L.length?name:cplEsc(cpLockMe()))+'”, and the database refuses her change. You can still change it. This class only.</div>'+
+    CPL_PARTS.map(p=>{ const on=cpLocked(p.k,cls); return '<div class="envs-row" style="border-top:1px solid #f1efe9;padding:7px 0"><div style="flex:1;min-width:170px"><div style="font-weight:800;font-size:13.5px">'+p.icon+' '+cplEsc(cplWhat(p,cls).replace(/^./,c=>c.toUpperCase()))+(on?' \u{1F512}':'')+'</div><div class="envs-muted">'+cplEsc(p.means)+'</div></div>'+cplBtn(p.k,on)+'</div>'; }).join("")+'</div>';
+  if(!L.length) return "";
+  return '<div class="envs-card cpl-bar cpl-ro'+(cpLocked("plan",cls)?' cpl-ro-plan':'')+'" role="note"><b>\u{1F512} Set by '+name+':</b> '+L.map(p=>p.icon+' '+cplEsc(cplWhat(p,cls))).join(" · ")+'. You can see '+(L.length===1?'it':'them')+'; only '+name+' changes '+(L.length===1?'it':'them')+'.</div>';
+}
+// a lock that arrives while she has an edit box open closes it (nothing typed is saved)
+function cplCalm(k){ try{ if(k==="cards"&&typeof _cpce!=="undefined"){ _cpce.edit=_cpce.qa=_cpce.ask=null; } if(k==="tests"&&typeof _cpct!=="undefined") _cpct.edit=null; }catch(e){} }
+// the read-only rule: the bar is the screen's sibling, so these reach every repaint of the list under it
+function cplCssText(){
+  const hide=(k,root,sel)=>sel.map(s=>'.cpl-ro-'+k+'~'+root+' '+s).join(",")+'{display:none!important}';
+  const grey=(k,sel)=>sel.map(s=>'.cpl-ro-'+k+'~.envs-card '+s).join(",")+'{pointer-events:none!important;opacity:.45}';
+  return '.cpl-bar.cpl-ro{border-color:#fcd34d;background:#fffbeb;color:#92400e;font-size:13px}.cpl-btn{min-height:40px;padding:0 12px;font-size:12.5px}'+
+    hide("cards",".cpcs",[".cpce-acts",".cpce-bulk",".cpce-addbtn",".cpce-plus",".cpce-x",".cpce-qa","#cpce-undo"])+
+    hide("tests",".cpct",[".cpce-acts",".cpce-addbtn",".cpce-plus",".cpce-x",".cpct-ed","#cpct-add","#cpct-undo"])+
+    grey("plan",['[onchange^="cpFinal"]','[onclick^="cpFinal"]','[onchange^="cpSkill"]']);   // the section plan's boxes + Save / Cancel, the skills' "final waits" tick
+}
+function cplCss(){
+  if(_cpl.css||typeof document==="undefined"||!document.createElement) return; _cpl.css=true;
+  try{ const s=document.createElement("style"); s.id="cpl-css"; s.textContent=cplCssText(); document.head.appendChild(s); }catch(e){}
+}
+// CPLOCKS_END
 // CPUNIT_START — 📦 UNITS AS DATA: a class studies the units attached to it (DESIGN_class_platform_2026-10-28.md §4, §9, §10, §11, §12,
 // §13 row 3, §15; PR 3 of the class platform). Her words 2026-10-28: "a whole new class setup and then unit and test is data pulled so other
 // classes can also use this design when a unit or units are brought in" · "we can use this setup while we're planning it to make sure that we
@@ -48657,7 +48776,7 @@ function cppSet(k,v){ if(!cppOn()) return; const d=cppDraft();
   else if(k==="goal"){ if(!cppGoals(cppCls()).some(x=>x.name===v)) return; d.goal=v; }
   envcRe(); }
 function cppOff(date){ if(!cppOn()||!cppOk(date)) return; const d=cppDraft(); if(d.off[date]) delete d.off[date]; else d.off[date]=true; envcRe(); }
-function cppCoreOnly(k,on){ if(!cppOn()) return; const cls=cppCls()||{}; if(cls.locks&&cls.locks.plan===true&&!envcAdmin()){ envsToast("\u{1F512} The section plan is set by Adrienne"); envcRe(); return; } const d=cppDraft(); if(on) d.coreOnly[k]=true; else delete d.coreOnly[k]; envcRe(); }
+function cppCoreOnly(k,on){ if(!cppOn()) return; const cls=cppCls()||{}; if(cls.locks&&cls.locks.plan===true&&!envcAdmin()){ envsToast("\u{1F512} The section plan is set by "+(typeof cpLockName==="function"?cpLockName():"Adrienne")); envcRe(); return; } const d=cppDraft(); if(on) d.coreOnly[k]=true; else delete d.coreOnly[k]; envcRe(); }
 function cppStu(sid,v){ if(!cppOn()||!(_envc.students||{})[sid]) return; const d=cppDraft(), s=String(v==null?"":v).trim();
   if(s===""){ d.stu[sid]=null; envcRe(); return; } const n=Math.floor(Number(s)); if(!Number.isFinite(n)||n<0||n>CPP_NPD_MAX){ envsToast("A whole number 0–"+CPP_NPD_MAX+", please."); envcRe(); return; } d.stu[sid]=n; envcRe(); }
 function cppOpen(sid){ _cpp.open=_cpp.open===sid?"":sid; envcRe(); }
@@ -48715,7 +48834,7 @@ function cppPlanBarHtml(d,f,inp,plan,need){
   S.forEach(st=>{ const tot=st.decks.reduce((a,x)=>a+x.core,0), sec=plan&&plan.sections[st.id], sent=cppSentOn(st), at=inp.sendOn[st.id];
     h+='<div class="envs-row" style="padding:4px 0;border-top:1px solid #f1efe9;align-items:center;font-size:12.5px"><div style="flex:1;min-width:150px"><b>'+cppEsc(st.label)+'</b> <span class="envs-muted">'+tot+' core · '+(sent?'sent '+cppLbl(sent):'opens '+cppLbl(at)+(cppPlanned(cls,st,d)?' (planned)':''))+(sec&&sec.total?' · '+Math.round(sec.atGoal/sec.total*100)+'% by '+cppEsc(inp.goalName):'')+'</span></div>'+
       '<label style="font-weight:700;white-space:nowrap"><input type="checkbox"'+(d.coreOnly[st.id]?' checked':'')+(lockP?' disabled':'')+' onchange="cppCoreOnly(\''+cppJ(st.id)+'\',this.checked)"> Core only</label></div>'; });
-  h+='<div class="envs-muted">Core only: the section’s other cards wait until its final opens.'+(lockP?' \u{1F512} set by Adrienne.':'')+'</div>';
+  h+='<div class="envs-muted">Core only: the section’s other cards wait until its final opens.'+(lockP?' \u{1F512} set by '+(typeof cpLockName==="function"?cpLockName():'Adrienne')+'.':'')+'</div>';
   if(typeof cpSendEarlyHtml==="function") h+=cpSendEarlyHtml({d,inp,plan});   // PR 28: 📆 send a section out earlier
   // THE RESULT
   if(plan&&inp.goal){ const tot=plan.total, got=plan.reached, fin=plan.finishDate;
