@@ -46883,6 +46883,7 @@ function envsReadShared(){
   const go=cid=>{ if(!cid) return; _envs.cid=cid; sdb.ref("classes/"+cid).on("value",s=>{ _envs.cls=val(s); if(typeof cpClassIn==="function") cpClassIn(); re(); }); sdb.ref("boards/"+cid).on("value",s=>{ _envs.boards=val(s); re(); }); sdb.ref("settings/whoDrills/"+cid).on("value",s=>{ _envs.who=val(s)||""; re(); }); if(typeof envClsKidLoad==="function") envClsKidLoad(sdb,cid); };   // ⚙️ ENVCLASSSET: the class's settings + this student's, once · 🏫 CPCLASS: the class's lock date
   if(_envs.cid) go(_envs.cid); else if(_envs.sid) sdb.ref("students/"+_envs.sid+"/class").once("value",s=>go(val(s)));
   if(typeof cpdrListen==="function") cpdrListen(sdb,re);   // 🧠 CPDRILLPARENT: the parent's review switch (students/<sid>/review), live
+  if(typeof cpdtListen==="function") cpdtListen(sdb,re);   // 🧠 CPDRILLTEACHER: the teacher's drills (drills/<cid>/<sid>), live; each applied once
   sdb.ref("release/locked").on("value",s=>{ _envs.lockRaw=val(s); _envs.lock=envsLockState(_envs.lockRaw); if(_envs.lock.locked&&_envs.role!=="admin") envsCard("closed"); });
 }
 // showTab: the site has one page — every tap lands back on it (every door the micro doc lists as off is simply not reachable)
@@ -47006,7 +47007,7 @@ function envsKidHtml(){
   else if(v==="store") h+=envsStoreHtml(kid);
   else if(v==="tips") h+=envsTipsHtml("kid");
   else if(v==="settings") h+=envsSettingsHtml();
-  else h+=envsStudyHtml(kid);
+  else { if(typeof cpdtKidHtml==="function") h+=cpdtKidHtml(kid); h+=envsStudyHtml(kid); }   // 🧠 CPDRILLTEACHER: the teacher's drills applied first, then "drilled you in class" above the pile
   return h;
 }
 function envsStudyHtml(kid){
@@ -47077,6 +47078,7 @@ function envsSetPin(){ const v=((document.getElementById("envs-pin")||{}).value|
 function envSiteSittingDone(kid,done){
   if(!envSiteOn()||!(_envs.role==="kid"||_envs.role==="parent")||!kid||kid!==_envs.kid) return false;
   if(!done||!(done.total>0)) return false;
+  if(typeof cpdtPickSend==="function") cpdtPickSend(kid);   // 🧠 CPDRILLTEACHER: a sitting moved cards, so today's drillPick may have changed
   if(envsDemo()){ _envs.bankDemo+=ENVS_STARS; envsToast("\u2B50 +"+ENVS_STARS+" for a finished sitting (demo: would write bank/"+kid+"/adjustments)"); return true; }
   if(typeof _dryRun==="function"&&_dryRun()) return false;
   try{ if(typeof bankDirect==="function"){ bankDirect(kid,ENVS_STARS,"\u{1F33F} Envirothon study sitting"); envsToast("\u2B50 +"+ENVS_STARS+" stars"); return true; } }catch(e){}
@@ -47296,6 +47298,7 @@ function envConsoleHtml(){
   const chips=[["grid","\u{1F4CB} Class"],["roster","\u{1F465} Roster"],["send","\u{1F4E4} Send out"],["strong","\u{1F4AA} Who is strong where"],["cards","\u{1F0CF} Teacher cards"],["boards","\u{1F3C6} Boards"],["who","\u{1F469}‍\u{1F3EB} Who drills"],["classset","\u2699\uFE0F Class settings"]]; if(admin) chips.push(["admin","\u{1F511} Admin"]);
   if(typeof cpSetupHtml==="function") chips.splice(chips.findIndex(x=>x[0]==="classset"),0,["setup","\u{1F3EB} Class setup"]);   // 🏫 CPCLASS
   if(admin&&typeof cpuUnitsHtml==="function") chips.splice(chips.findIndex(x=>x[0]==="admin"),0,["units","\u{1F4E6} Units"]);   // 📦 CPUNIT
+  if(typeof cpdtChips==="function") cpdtChips(chips);   // 🧠 CPDRILLTEACHER: 🧠 Drill right after 📋 Class
   if(typeof cpcsChips==="function") cpcsChips(chips);   // 📚 CPCARDSSEE: 📚 Cards before 🃏 Teacher cards
   if(typeof cpceChips==="function") cpceChips(chips);   // 📚 CPCARDSEDIT: 🃏 Teacher cards moved into 📚 Cards (the old chip comes out)
   h+='<div class="envs-chips">'+chips.map(x=>'<button class="'+((v===x[0]||(v==="student"&&x[0]==="grid"))?'on':'')+'" onclick="envcView(\''+x[0]+'\')">'+x[1]+'</button>').join("")+'</div>';
@@ -47303,6 +47306,7 @@ function envConsoleHtml(){
   if(_envs.lock&&_envs.lock.locked) h+='<div class="envs-card" style="border-color:#fcd34d;background:#fffbeb;font-size:12.5px">\u{1F512} The season is closed for teachers and families; you see this because you are the admin.</div>';
   if(!cls&&!envsDemo()) return h+'<div class="envs-card envs-muted">Loading the class…</div>';
   if(v==="student"&&_envc.sel) h+=envcStudentHtml(_envc.sel);
+  else if(v==="tdrill"&&typeof cpdtHtml==="function") h+=cpdtHtml();   // 🧠 CPDRILLTEACHER: the teacher's drill (pick a student, ✓ / ✗, next student)
   else if(v==="roster") h+=envcRosterHtml();
   else if(v==="send") h+=envcSendHtml();
   else if(v==="strong") h+=envcStrongHtml();
@@ -47339,6 +47343,7 @@ function envcStudentHtml(sid){
   const s=Object.assign({sid},_envc.students[sid]||{}), sm=s.summary||null, stns=envsStations(), cid=_envc.cid;
   let h='<div class="envs-card"><div class="envs-row"><button class="envs-btn sec" onclick="envcView(\'grid\')">← class</button><div style="flex:1"><div class="envs-h2" style="margin:0">'+envcEsc(envcName(s))+(envcApp(s)==="howe"?' · Howe Academy app':'')+'</div><div class="envs-muted">'+(sm?'content v'+(sm.unitVer||1)+' · streak '+((sm.streak&&sm.streak.days)||0)+' d · '+Object.keys(sm.days||{}).filter(k=>envsDaysAgo(k)<30).length+' study days this month · last mirrored '+envcEsc(envsWhen(sm.at?envsDayKey(sm.at):null)):'no study mirrored yet')+'</div></div></div></div>';
   h+='<div class="envs-card"><div class="envs-h2">Stations</div>'+envsStationRowsHtml(sm,{weak:true})+'</div>';
+  if(typeof cpdtStudentHtml==="function") h+=cpdtStudentHtml(sid);   // 🧠 CPDRILLTEACHER: 🧠 Drill this student now
   const held=stns.filter(st=>envcStationOpen(sid,st)!=="all");
   h+='<div class="envs-card"><div class="envs-h2">\u{1F4DD} The final for '+envcEsc(envcName(s))+'</div><div class="envs-row">'+envcFinalStations().map(st=>{ const t=(sm&&sm.tests&&sm.tests[st.id])||{}, f=envcFinalRec(sid,st.id);
     if(t.graduated) return '<span class="envs-chip">'+envcEsc(st.short)+' \u{1F393}</span>'; if(f) return '<span class="envs-chip">'+envcEsc(st.short)+' \u00B7 final open'+(f.date?' '+envcEsc(f.date):'')+'</span>';
@@ -50257,6 +50262,215 @@ function cpdrWhoNote(who){
   return name+"’s "+cpdrLevel(kid)+" review cards come to you: 🧠 Drill with "+name+" at the top of this page, every study day. Everything below that stays in "+name+"’s \u{1F33F} sitting."+((who==="teacher"||who==="both")?" The teacher drills in class too.":"");
 }
 // CPDRILLPARENT_END
+// CPDRILLTEACHER_START — 🧠 THE TEACHER DRILLS 3–5 OF EACH STUDENT'S CARDS IN CLASS, and the student's own app books them forward
+// (DESIGN_class_platform_2026-10-28.md §7(b), §9, §12, §13 row 14, §14 Q13/Q14; PR 14 of the class platform). Which cards: the design's
+// pick for Q13 (2026-10-28), "due today, most-missed first". For Lincoln, her yes to Q14 (2026-10-28): "I would definitely love for the
+// teacher grade drills for Lincoln to be sent to me so I can keep an eye on where he's at." That is PR L3, later; this PR only makes the
+// drill record complete enough for it (who, when, which card, the grade). INERT unless the class site is on: every function returns at once
+// for Howe, DeWalt and Burris (no edition), and nothing is read or written for Lincoln.
+//   · THE PICK, in the student's app (a kid or parent login): cpdtPick(kid) = up to 5 {deck, name} of the unit's cards that are due today
+//     (mastIsDue on the student's own ladder; active; deck not held), the most-missed first (the summary's weak list: misses ×2 + drops),
+//     then the most overdue. Fronts only. Published to students/<sid>/drillPick through envsWrite when the app opens, after each sitting and
+//     after a teacher drill is applied, and only when it changed (HA_LS remembers the last one sent).
+//   · 🧠 DRILL in the console (a chip after 📋 Class, and a button on the student page): pick a student → the picked cards one at a time,
+//     front first; tap to turn the card over (the back from the unit file + the class layer, as 📚 Cards shows it), then ✓ / ✗. Save = ONE
+//     write per student, through envsWrite: drills/<cid>/<sid>/<key> = {at, by, name, items:[{deck, name, r:"c"|"m"}]}. Then "Next student →".
+//     The teacher never touches a family's database.
+//   · APPLYING, in the student's app: a live listener on drills/<cid>/<sid> (one hook in envsReadShared). Each drill not yet in
+//     mastery/<kid>_teacherDrills is claimed there first ({at, n}, in a transaction, so two devices of one family can't both apply it), then
+//     graded through CPDRILLPARENT's cpdrApply, which is mastApplyScores, the app's own drill grading, and written as the same targeted ladder
+//     fields (cpdrWrite: the family instance; the demo "would write"; ?dryrun=1 nothing). No mastery/history record: the day's drill stays the
+//     parent's and Mom's. Offline: the listener hands over every drill the next time the app opens, and the claim keeps each to once.
+//   · The student's 📚 Study page shows the last week's newest drill: "👩‍🏫 Ms. Brittany drilled you in class" and where each card went.
+const CPDT_MAX=5, CPDT_RETRY_MS=1500, CPDT_TRIES=40;
+const _cpdt={drills:{},armed:"",busy:{},tries:0,timer:null,re:null,drill:null,done:{},saved:null,name:"",asked:false};
+function cpdtOn(kid){ return typeof cpReviewOn==="function"&&cpReviewOn(kid); }   // the site's own student (a kid or parent login, or the demo's)
+function cpdtFam(){ return _envs.role==="kid"||_envs.role==="parent"; }
+function cpdtVals(x){ return Array.isArray(x)?x.filter(Boolean):(x&&typeof x==="object")?Object.values(x).filter(Boolean):[]; }
+function cpdtItems(kid){ return typeof cpdrItems==="function"?cpdrItems(kid):[]; }
+function cpdtDecks(){ const s=new Set(); try{ (envsStations()||[]).forEach(st=>(st.decks||[]).forEach(d=>{ if(d&&d.key) s.add(d.key); })); }catch(e){} return s; }
+function cpdtLbl(t){ const L=(typeof ENVCS_TIER_LBL!=="undefined"&&ENVCS_TIER_LBL)||{}; return L[t]||String(t||""); }
+// ── the student's app: today's pick (Q13: due today, most-missed first)
+function cpdtPick(kid,pn,summary){
+  if(!cpdtOn(kid)||typeof mastIsDue!=="function") return [];
+  const D=cpdtDecks(); if(!D.size) return [];
+  if(pn==null) pn=mastGetPrintNum(kid);
+  const hold=((masteryData[kid+"_settings"]||{}).cat_hold)||{}, sm=summary||envsSummary(kid)||{}, W={};
+  Object.keys(sm.weak||{}).forEach(dk=>cpdtVals(sm.weak[dk]).forEach(r=>{ W[dk+"|"+r.n]=(+r.m||0)*2+(+r.d||0); }));
+  const sc=i=>{ const k=i.subject+"|"+i.prompt; return (k in W)?W[k]:(i.drop_count||0); };
+  const due=cpdtItems(kid).filter(i=>i&&i.status==="active"&&i.prompt&&D.has(i.subject)&&!hold[i.subject]&&mastIsDue(i,pn));
+  due.sort((a,b)=>(sc(b)-sc(a))||((a.next_due??pn)-(b.next_due??pn))||(MAST_TIER_ORDER.indexOf(a.tier||"daily")-MAST_TIER_ORDER.indexOf(b.tier||"daily"))||String(a.prompt).localeCompare(String(b.prompt)));
+  return due.slice(0,CPDT_MAX).map(i=>({deck:i.subject,name:String(i.prompt)}));
+}
+// published beside the summary: students/<sid>/drillPick, only when it changed
+function cpdtPickSend(kid){
+  if(envsDemo()||!cpdtFam()||!_envs.sid||!cpdtOn(kid)||(typeof _dryRun==="function"&&_dryRun())) return false;
+  if(typeof _haMastReady!=="undefined"&&!_haMastReady) return false;
+  const pick=cpdtPick(kid), j=JSON.stringify(pick), key="ha_cpdt_pick_"+_envs.sid;
+  let prev=null; try{ prev=HA_LS.getItem(key); }catch(e){}
+  if(prev===j) return false;
+  try{ HA_LS.setItem(key,j); }catch(e){}
+  Promise.resolve(envsWrite("students/"+_envs.sid+"/drillPick",pick.length?pick:null,pick.length?"set":"remove")).catch(()=>{ try{ HA_LS.removeItem(key); }catch(e){} });   // refused / offline: send again next time
+  return true;
+}
+// envsReadShared's hook: the live listener on drills/<cid>/<sid> (re = that function's combined redraw)
+function cpdtListen(sdb,re){
+  if(envsDemo()||!sdb||!_envs.sid||!cpdtFam()||!cpdtOn(_envs.kid)||_cpdt.armed===_envs.sid) return false;
+  const sid=_envs.sid, kid=_envs.kid, val=s=>(s&&typeof s.val==="function")?s.val():null; _cpdt.armed=sid; _cpdt.re=re;
+  const go=cid=>{ if(!cid){ _cpdt.armed=""; return; }
+    try{ sdb.ref("drills/"+cid+"/"+sid).on("value",s=>{ _cpdt.drills=Object.assign({},_cpdt.drills,{[sid]:val(s)||{}}); if(cpdtCatchUp(kid)&&typeof re==="function") re(); }); }catch(e){ _cpdt.armed=""; } };
+  if(_envs.cid) go(_envs.cid);
+  else { try{ sdb.ref("students/"+sid+"/class").once("value",s=>go(val(s))); }catch(e){ _cpdt.armed=""; return false; } }
+  return true;
+}
+function cpdtDoneOf(kid){ const d=masteryData[kid+"_teacherDrills"]; return (d&&typeof d==="object")?d:{}; }
+function cpdtPending(kid,sid){
+  const all=_cpdt.drills[sid]||{}, done=cpdtDoneOf(kid);
+  return Object.keys(all).filter(id=>all[id]&&typeof all[id]==="object"&&!done[id]&&!_cpdt.busy[id]).sort((a,b)=>((all[a].at||0)-(all[b].at||0))||(a<b?-1:a>b?1:0));
+}
+// the cards a drill grades: each {deck, name} → the student's active card with that front (a card she no longer has is skipped)
+function cpdtPlan(kid,rec){
+  const items=cpdtItems(kid), ids=[], scores={};
+  cpdtVals(rec&&rec.items).forEach(x=>{ if(x.r!=="c"&&x.r!=="m") return; const it=items.find(i=>i&&i.status==="active"&&i.subject===x.deck&&i.prompt===x.name); if(!it||scores[it.id]) return; ids.push(it.id); scores[it.id]=x.r; });
+  return {ids,scores};
+}
+function cpdtMark(kid,id,m){ masteryData[kid+"_teacherDrills"]=Object.assign({},cpdtDoneOf(kid),{[id]:m}); }
+// grade NOW through the app's own drill grading (cpdrApply → mastApplyScores) and write the targeted ladder fields
+function cpdtGrade(kid,rec){
+  const p=cpdtPlan(kid,rec), a=p.ids.length?cpdrApply(kid,p.ids,p.scores,mastGetPrintNum(kid),null):null;
+  if(a&&a.upd&&Object.keys(a.upd).length) cpdrWrite("mastery/"+kid,a.upd,"update");
+  return p.ids.length;
+}
+function cpdtApplyOne(kid,sid,id){
+  const rec=(_cpdt.drills[sid]||{})[id]; if(!rec||typeof cpdrApply!=="function"||typeof cpdrWrite!=="function") return false;
+  _cpdt.busy[id]=true;
+  const m={at:Date.now(),n:cpdtPlan(kid,rec).ids.length};
+  if(!cpdrLive()){   // the demo ("would write") and ?dryrun=1 (memory only): no other device to race
+    cpdtMark(kid,id,m); cpdtGrade(kid,rec); cpdrWrite("mastery/"+kid+"_teacherDrills/"+id,m,"set"); delete _cpdt.busy[id];
+    if(envsDemo()) envsToast("\u{1F469}‍\u{1F3EB} "+m.n+" card"+(m.n===1?"":"s")+" from the teacher’s drill booked forward (demo: would write mastery/"+kid+" + mastery/"+kid+"_teacherDrills)");
+    return true;
+  }
+  let claim; try{ const r=db.ref("mastery/"+kid+"_teacherDrills/"+id);
+    claim=(typeof r.transaction==="function")?Promise.resolve(r.transaction(cur=>cur?undefined:m)).then(x=>!!(x&&x.committed)):Promise.resolve(r.set(m)).then(()=>true); }
+  catch(e){ claim=Promise.reject(e); }
+  claim.then(won=>{ if(!won) return; cpdtMark(kid,id,m); cpdtGrade(kid,rec); cpdtPickSend(kid); if(typeof _cpdt.re==="function") _cpdt.re(); })
+    .catch(()=>{}).then(()=>{ delete _cpdt.busy[id]; });   // not claimed (offline, refused): the next listener call or page paint tries again
+  return true;
+}
+// every drill not yet applied, oldest first; waits for the student's records (mastery) to arrive
+function cpdtCatchUp(kid){
+  if(!cpdtFam()||!_envs.sid||!cpdtOn(kid)) return false;
+  if(typeof _haMastReady!=="undefined"&&!_haMastReady){
+    if(!_cpdt.timer&&(++_cpdt.tries)<=CPDT_TRIES&&typeof setTimeout==="function") _cpdt.timer=setTimeout(()=>{ _cpdt.timer=null; if(cpdtCatchUp(kid)&&typeof _cpdt.re==="function") _cpdt.re(); },CPDT_RETRY_MS);
+    return false;
+  }
+  let n=0; cpdtPending(kid,_envs.sid).forEach(id=>{ if(cpdtApplyOne(kid,_envs.sid,id)) n++; });
+  cpdtPickSend(kid);
+  return n>0;
+}
+// the student's 📚 Study page: the newest drill of the last week, and where each card went
+function cpdtKidHtml(kid){
+  if(!cpdtFam()||!cpdtOn(kid)) return "";
+  cpdtCatchUp(kid);
+  const all=_cpdt.drills[_envs.sid]||{}, done=cpdtDoneOf(kid), now=Date.now();
+  const ids=Object.keys(all).filter(id=>done[id]&&all[id]&&now-(all[id].at||0)<7*86400000).sort((a,b)=>(all[b].at||0)-(all[a].at||0));
+  if(!ids.length) return "";
+  const rec=all[ids[0]], rows=cpdtVals(rec.items), items=cpdtItems(kid), pn=mastGetPrintNum(kid), c=rows.filter(x=>x.r==="c").length;
+  let h='<div class="envs-card" style="border-color:#a78bfa"><div class="envs-h2">\u{1F469}‍\u{1F3EB} '+envsEsc(rec.name||"Your teacher")+' drilled you in class · '+envsEsc(envsWhen(envsDayKey(rec.at||now)))+'</div>';
+  h+='<div class="envs-muted" style="margin-bottom:6px">'+c+' ✓ · '+(rows.length-c)+' ✗. Each card moved on your ladder, the same as a drill at home.</div>';
+  rows.forEach(x=>{ const it=items.find(i=>i&&i.subject===x.deck&&i.prompt===x.name), iv=it?MAST_TIER_INT[it.tier||"daily"]:null;
+    const when=!it?"":(it.next_due!=null?(it.next_due-pn<=0?"back today":"back in "+(it.next_due-pn)+" study day"+(it.next_due-pn===1?"":"s")):iv===1?"back next study day":"");
+    h+='<div style="display:flex;gap:8px;align-items:baseline;padding:5px 0;border-top:1px solid #f1efe9;font-size:13.5px"><span style="font-weight:900;color:'+(x.r==="c"?'#15803d':'#b91c1c')+'">'+(x.r==="c"?'✓':'✗')+'</span><span style="flex:1;overflow-wrap:anywhere"><b>'+envsEsc(x.name)+'</b>'+(it?' → '+envsEsc(cpdtLbl(it.tier))+(when?' · '+when:''):'')+'</span></div>'; });
+  return h+'</div>';
+}
+// ── the console: 🧠 Drill
+function cpdtCon(){ return typeof envcOn==="function"&&envcOn(); }
+function cpdtChips(chips){
+  if(!cpdtCon()||!Array.isArray(chips)||chips.some(x=>x&&x[0]==="tdrill")) return chips;
+  const i=chips.findIndex(x=>x&&x[0]==="grid"); chips.splice(i<0?0:i+1,0,["tdrill","\u{1F9E0} Drill"]); return chips;
+}
+// the teacher's name on the record (L3's notice: "Ms. Brittany drilled Lincoln"); live, read once from teachers/<uid>/name
+function cpdtTeacher(){ const t=((_envc.teachers||{})[_envs.uid])||null; return String((t&&t.name)||_cpdt.name||"").slice(0,60); }
+function cpdtConStart(){
+  if(!cpdtCon()) return false;
+  if(typeof cpcsLoad==="function"){ try{ cpcsLoad(); }catch(e){} }   // the backs: each attached unit's file
+  if(!envsDemo()&&!cpdtTeacher()&&_envc.sdb&&_envs.uid&&!_cpdt.asked){ _cpdt.asked=true; try{ _envc.sdb.ref("teachers/"+_envs.uid+"/name").once("value",s=>{ const v=envcVal(s); if(v) _cpdt.name=String(v); }); }catch(e){} }
+  return true;
+}
+// a student's cards: the drillPick their app published. The demo's other students: their weak fronts (Maya's is worked out live)
+function cpdtPickOf(sid){
+  const s=(_envc.students||{})[sid]||{}; let p=cpdtVals(s.drillPick);
+  if(!p.length&&envsDemo()){
+    if(sid===_envs.sid) p=cpdtPick(_envs.kid);
+    else { const W=(s.summary&&s.summary.weak)||{}; Object.keys(W).forEach(dk=>cpdtVals(W[dk]).forEach(r=>{ if(r.n) p.push({deck:dk,name:String(r.n)}); })); }
+  }
+  return p.filter(x=>x&&x.deck&&x.name).slice(0,CPDT_MAX);
+}
+// the back: the unit's card as 📚 Cards has it (her edited back first), else the unit this browser holds
+function cpdtBack(deck,name){
+  const M=(typeof cpcsIndex==="function")?cpcsIndex():null;
+  if(M&&Array.isArray(M.C)){ const c=M.C.find(x=>x&&x.deck===deck&&x.name===name); if(c) return String((typeof cpceBack==="function"?cpceBack(c):c.def)||""); }
+  try{ for(const u of Object.values(unitStudies||{})){ const d=((u&&u.decks)||[]).find(x=>x&&x.key===deck), c=d&&(d.cards||[]).find(x=>x&&x.name===name); if(c) return String(c.def||""); } }catch(e){}
+  return "";
+}
+function cpdtStart(sid){
+  if(!cpdtCon()||!sid) return false; cpdtConStart();
+  _cpdt.drill={sid,cards:cpdtPickOf(sid),i:0,flip:false,r:{}}; _cpdt.saved=null;
+  _envc.view="tdrill"; _envc.sel=null; envcRe(); try{ window.scrollTo(0,0); }catch(e){}
+  return true;
+}
+function cpdtFlip(){ const d=_cpdt.drill; if(!d) return; d.flip=!d.flip; envcRe(); }
+function cpdtGradeCard(r){ const d=_cpdt.drill; if(!d||d.i>=d.cards.length) return; d.r[d.i]=r==="m"?"m":"c"; d.i++; d.flip=false; envcRe(); }
+function cpdtPrev(){ const d=_cpdt.drill; if(!d||d.i<=0) return; d.i--; d.flip=false; envcRe(); }
+function cpdtList(){ _cpdt.drill=null; _cpdt.saved=null; envcRe(); }
+function cpdtKey(){ return "d"+Date.now().toString(36)+Math.floor(Math.random()*1679616).toString(36).padStart(4,"0"); }   // sorts by time, like a push key
+// ONE write per student: drills/<cid>/<sid>/<key> = {at, by, name, items:[{deck, name, r}]} (shared instance, through envsWrite)
+function cpdtSave(){
+  const d=_cpdt.drill; if(!cpdtCon()||!d||!_envc.cid) return Promise.resolve(false);
+  const items=d.cards.map((c,k)=>(d.r[k]==="c"||d.r[k]==="m")?{deck:c.deck,name:c.name,r:d.r[k]}:null).filter(Boolean);
+  if(!items.length){ envsToast("Grade a card first."); return Promise.resolve(false); }
+  const key=cpdtKey(), rec={at:Date.now(),by:_envs.uid||"",items}, nm=cpdtTeacher(); if(nm) rec.name=nm;
+  return envcWrite("drills/"+_envc.cid+"/"+d.sid+"/"+key,rec,"set").then(()=>{
+    const c=items.filter(x=>x.r==="c").length; _cpdt.done[d.sid]={n:items.length,c,m:items.length-c,at:rec.at};
+    if(envsDemo()) _cpdt.drills=Object.assign({},_cpdt.drills,{[d.sid]:Object.assign({},_cpdt.drills[d.sid]||{},{[key]:rec})});   // the demo's shared database: Maya's app picks it up in Kid view
+    _cpdt.drill=null; _cpdt.saved={sid:d.sid,key}; envcRe(); return true; }).catch(()=>false);
+}
+// the next student after this one who has cards and hasn't been drilled yet
+function cpdtNextSid(sid){ const S=envcStudents(), i=S.findIndex(s=>s.sid===sid); for(let k=1;k<=S.length;k++){ const s=S[(i+k)%S.length]; if(s&&s.sid!==sid&&!_cpdt.done[s.sid]&&cpdtPickOf(s.sid).length) return s.sid; } return ""; }
+function cpdtNext(){ const sv=_cpdt.saved||_cpdt.drill, n=cpdtNextSid(sv&&sv.sid); if(n) return cpdtStart(n); envsToast("Everyone with cards today is drilled."); cpdtList(); return false; }
+function cpdtNm(sid){ return envcName(Object.assign({sid},(_envc.students||{})[sid]||{})); }
+function cpdtBtn(label,on,extra){ return '<button class="envs-btn'+(extra||"")+'" onclick="'+on+'">'+label+'</button>'; }
+function cpdtHtml(){
+  if(!cpdtCon()) return "";
+  const d=_cpdt.drill, sv=_cpdt.saved;
+  if(sv){ const dn=_cpdt.done[sv.sid]||{n:0,c:0,m:0}, nm=envcEsc(cpdtNm(sv.sid)), nx=cpdtNextSid(sv.sid);
+    return '<div class="envs-card"><div class="envs-h2">\u{1F9E0} Saved for '+nm+'</div><div style="font-size:15px;font-weight:900;margin:4px 0">'+dn.c+' ✓ · '+dn.m+' ✗</div><div class="envs-muted" style="margin-bottom:10px">'+nm+'’s app moves each card on the ladder the next time it opens, the same as a drill at home.</div><div class="envs-row">'+(nx?cpdtBtn("Next student → "+envcEsc(cpdtNm(nx)),"cpdtNext()"):'')+cpdtBtn("← All students","cpdtList()"," sec")+'</div></div>'; }
+  if(d){ const nm=envcEsc(cpdtNm(d.sid)), top='<div class="envs-row" style="margin-bottom:8px"><div class="envs-h2" style="margin:0;flex:1">\u{1F9E0} '+nm+'</div>'+cpdtBtn("✕ Leave","cpdtList()"," sec")+'</div>';
+    if(!d.cards.length) return '<div class="envs-card">'+top+'<div style="font-size:14px;font-weight:700">Nothing due for '+nm+' today. '+nm+'’s app sends today’s cards each time it opens.</div><div class="envs-row" style="margin-top:10px">'+cpdtBtn("Next student →","cpdtNext()")+'</div></div>';
+    if(d.i>=d.cards.length){ const g=Object.keys(d.r).map(k=>d.r[k]), c=g.filter(x=>x==="c").length;
+      return '<div class="envs-card">'+top+'<div style="font-size:15px;font-weight:900;margin:6px 0">All '+d.cards.length+' graded · '+c+' ✓ · '+(g.length-c)+' ✗</div><div class="envs-row">'+cpdtBtn("Save","cpdtSave()")+cpdtBtn("← Back","cpdtPrev()"," sec")+'</div></div>'; }
+    const card=d.cards[d.i], was=d.r[d.i], back=cpdtBack(card.deck,card.name), big='min-height:56px;flex:1;font-size:16px';
+    let h='<div class="envs-card">'+top+'<div class="envs-muted">'+(d.i+1)+' of '+d.cards.length+' · '+envcEsc(card.deck)+(was?' · was '+(was==="c"?"✓":"✗"):'')+'</div>';
+    h+='<div style="font-size:20px;font-weight:900;text-align:center;padding:18px 6px;line-height:1.3;overflow-wrap:anywhere">'+envcEsc(card.name)+'</div>';
+    h+=d.flip?'<div style="background:#f5f3ff;border:1.5px solid #ddd6fe;border-radius:12px;padding:12px;font-size:14.5px;line-height:1.4;margin-bottom:10px;overflow-wrap:anywhere">'+envcEsc(back||"(the back isn’t loaded on this device)")+'</div>':'<div style="text-align:center;margin-bottom:10px">'+cpdtBtn("Turn it over","cpdtFlip()"," sec")+'</div>';
+    h+='<div class="envs-row" style="flex-wrap:nowrap"><button class="envs-btn red" style="'+big+'" onclick="cpdtGradeCard(\'m\')">✗ Missed</button><button class="envs-btn" style="'+big+'" onclick="cpdtGradeCard(\'c\')">✓ Right</button></div>';
+    const ng=Object.keys(d.r).length, lk='border:none;background:none;color:#6d28d9;font:inherit;font-weight:800;cursor:pointer;padding:8px 4px';   // she can stop after a few: Save keeps the graded ones
+    if(d.i>0||ng) h+='<div style="display:flex;justify-content:space-between;margin-top:8px">'+(d.i>0?'<button onclick="cpdtPrev()" style="'+lk+'">← Back</button>':'<span></span>')+(ng?'<button onclick="cpdtSave()" style="'+lk+'">Save the '+ng+' graded</button>':'')+'</div>';
+    return h+'</div>'; }
+  cpdtConStart();
+  let h='<div class="envs-card"><div class="envs-h2">\u{1F9E0} Drill in class</div><div class="envs-muted">Pick a student. You get up to '+CPDT_MAX+' of their cards that are due today, the most-missed first. Read the front, turn it over, tap ✓ or ✗. Their app moves each card on the ladder.</div></div><div class="envs-card" style="padding:6px">';
+  const S=envcStudents(); if(!S.length) h+='<div class="envs-muted" style="padding:8px">No students yet. Add them on the Roster.</div>';
+  S.forEach(s=>{ const p=cpdtPickOf(s.sid), dn=_cpdt.done[s.sid];
+    h+='<button onclick="cpdtStart(\''+envcJ(s.sid)+'\')" style="display:flex;align-items:center;gap:8px;width:100%;min-height:48px;padding:8px 10px;border:none;border-bottom:1px solid #f1efe9;background:none;font:inherit;text-align:left;cursor:pointer"><span style="flex:1;font-weight:800;color:#14532d">'+envcEsc(envcName(s))+'</span><span style="font-size:12.5px;'+(dn?'color:#15803d;font-weight:700':'color:var(--muted)')+'">'+(dn?'✓ drilled · '+dn.c+' ✓ '+dn.m+' ✗':p.length?p.length+' card'+(p.length===1?'':'s'):'nothing due')+'</span><span aria-hidden="true">›</span></button>'; });
+  return h+'</div>';
+}
+// the student page: 🧠 Drill <name> now
+function cpdtStudentHtml(sid){
+  if(!cpdtCon()||!sid) return "";
+  const p=cpdtPickOf(sid), dn=_cpdt.done[sid], nm=envcEsc(cpdtNm(sid));
+  return '<div class="envs-card"><div class="envs-h2">\u{1F9E0} Drill in class</div>'+(p.length?cpdtBtn('\u{1F9E0} Drill '+nm+' · '+p.length+' card'+(p.length===1?'':'s'),"cpdtStart('"+envcJ(sid)+"')"):'<div class="envs-muted">Nothing due for '+nm+' today.</div>')+(dn?'<div style="margin-top:6px;font-size:12.5px;font-weight:700;color:#15803d">✓ Drilled: '+dn.c+' ✓ · '+dn.m+' ✗</div>':'')+'</div>';
+}
+// CPDRILLTEACHER_END
 
 function renderNotebook(el){
   const con=el||document.getElementById("content"); if(!con)return;
