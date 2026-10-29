@@ -161,7 +161,8 @@ console.log("\n── the summary record (pure) ──");
   const s = w.envSummary(KID, { M: {}, u: w.G.unitStudies.nc_envirothon, now: T0 });
   const tot = Object.values(s.byDeck).reduce((n, c) => n + c.total, 0), ctot = Object.values(s.byConcept).reduce((n, c) => n + c.total, 0);
   console.log("     real unit: " + Object.keys(s.byDeck).length + " decks, " + Object.keys(s.byConcept).length + " concepts, " + tot + " cards, record " + Buffer.byteLength(JSON.stringify(s)) + " B");
-  ok("the real unit (envirothon.js): 15 decks, 4,371 cards in both views, under 40 KB with nothing studied", Object.keys(s.byDeck).length === 15 && tot === 4371 && ctot === 4371 && Buffer.byteLength(JSON.stringify(s)) < 40 * 1024); }
+  const nCards = JSON.parse(fs.readFileSync(path.join(__dirname, "units", "nc_envirothon", "COUNTS.json"), "utf8")).cards;   // the count compile_unit.js wrote, not a typed number
+  ok("the real unit (envirothon.js): 15 decks, " + nCards.toLocaleString("en-US") + " cards in both views, under 40 KB with nothing studied", Object.keys(s.byDeck).length === 15 && tot === nCards && ctot === nCards && Buffer.byteLength(JSON.stringify(s)) < 40 * 1024); }
 
 console.log("\n── the named app, sign-in, publish ──");
 function booted(o) { const w = world(Object.assign({ mastery: mastery(), unitStudies: unit(KID) }, o || {})); w.envMirrorOn("boot"); return w; }

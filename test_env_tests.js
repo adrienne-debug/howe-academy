@@ -16,6 +16,7 @@
 const fs = require("fs"), path = require("path"), vm = require("vm");
 const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 const LIB = require(path.join(__dirname, "envirothon.js"));
+const FOR_CORE = JSON.parse(fs.readFileSync(path.join(__dirname, "units", "nc_envirothon", "COUNTS.json"), "utf8")).sections.forestry.core;   // the Forestry core count compile_unit.js wrote, not a typed number
 const JSON_T = JSON.parse(fs.readFileSync(path.join(__dirname, "envirothon", "nc_envirothon_tests.json"), "utf8"));
 const TESTS_MD = fs.readFileSync(path.join(__dirname, "envirothon", "TESTS.md"), "utf8");
 let pass = 0, fail = 0;
@@ -200,10 +201,10 @@ console.log("\n── 📝 2026-10-28 rule 2: the final opens itself when every 
   items.push(gone); ok("back on the ladder → open again", w.envtCoreLearned(K, "soils"));
   w.G.masteryData.kid1_sessions = { envirothon: { handOffAt: "monthly" } }; ok("the session's OWN handOffAt is used: set to monthly, bi-weekly cards are not learned yet", !w.envtCoreLearned(K, "soils") && w.envtCoreCount(K, "soils").learned < 282);
   delete w.G.masteryData.kid1_sessions;
-  ok("Forestry released, check-in taken, nothing learned: 'Final opens when every core card is learned · 0 of 451'", (delete w.G.masteryData.kid1_settings.cat_hold["Forestry · Facts"], w.G.masteryData.kid1_tests.forestry = { pre: { right: 9, n: 15 } }, w.envtCoreLine(K, "forestry") === "Final opens when every core card is learned · 0 of 451"));
+  ok("Forestry released, check-in taken, nothing learned: 'Final opens when every core card is learned · 0 of " + FOR_CORE + "'", (delete w.G.masteryData.kid1_settings.cat_hold["Forestry · Facts"], w.G.masteryData.kid1_tests.forestry = { pre: { right: 9, n: 15 } }, w.envtCoreLine(K, "forestry") === "Final opens when every core card is learned · 0 of " + FOR_CORE));
   ok("a station not sent out shows no line; a graduated one none; an open one none", w.envtCoreLine(K, "wildlife") === "" && (w.G.masteryData.kid1_tests.forestry.graduated = { right: 12, n: 14 }, w.envtCoreLine(K, "forestry") === "") && w.envtCoreLine(K, "soils") === "");
   delete w.G.masteryData.kid1_tests.forestry.graduated; w.G.masteryData.kid1_tests.forestry.postOpen = { date: "2027-01-20", ts: 1, by: "mom" };
-  ok("postOpen still opens it with 0 of 451 learned", w.envtStatus(u, K, "forestry").post.open && /opened for you/.test(w.envtKidCardsHtml(u, K, false)));
+  ok("postOpen still opens it with 0 of " + FOR_CORE + " learned", w.envtStatus(u, K, "forestry").post.open && /opened for you/.test(w.envtKidCardsHtml(u, K, false)));
   ok("no 'every deck mastered' rule left in the block", !/envtAllMastered|envtDeckMastered|mastDeckMastery\(/.test(TBLK)); }
 
 console.log("\n── 📝 2026-10-28 rule 1: a released station's cards wait for its check-in ──");

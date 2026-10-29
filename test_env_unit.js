@@ -50,10 +50,10 @@ console.log("── envirothon.js (the card file) ──");
 const U = LIB.unit, DECKS = U.decks, CARDS = DECKS.flatMap(d => d.cards.map(c => Object.assign({ _dk: d.key }, c)));
 ok("registers { version 1, unit } with id nc_envirothon", LIB.version === 1 && U.id === "nc_envirothon" && typeof LIB.built === "string");
 ok("15 decks", DECKS.length === 15, DECKS.map(d => d.key));
-ok("4,371 cards", CARDS.length === 4371, CARDS.length);
+const COUNTS_U = JSON.parse(fs.readFileSync(path.join(__dirname, "units", "nc_envirothon", "COUNTS.json"), "utf8"));   // 🪲 CPITEMBIOTIC: the count compile_unit.js wrote, not a typed number
+ok(COUNTS_U.cards.toLocaleString("en-US") + " cards (COUNTS.json, written by compile_unit.js; 2 added 2026-10-29 from the 2021–22 Area 8 tests)", CARDS.length === COUNTS_U.cards, CARDS.length);
 ok("every card has name, def (non-empty strings) and src", CARDS.every(c => typeof c.name === "string" && c.name.trim() && typeof c.def === "string" && c.def.trim() && typeof c.src === "string" && c.src.trim()));
 ok("every card keeps group, concept, station, kind, order, stage and the core flag", CARDS.every(c => "group" in c && "concept" in c && "station" in c && "kind" in c && typeof c.order === "number" && typeof c.stage === "number" && typeof c.core === "boolean"));
-const COUNTS_U = JSON.parse(fs.readFileSync(path.join(__dirname, "units", "nc_envirothon", "COUNTS.json"), "utf8"));   // 🪲 CPITEMBIOTIC: the count compile_unit.js wrote, not a typed number
 ok("the core cards = COUNTS.json's " + COUNTS_U.core + " (COUNTS.md; 44 added 2026-10-28 from the 2021–22 Area 8 tests, 211 set to core:false by Trim 1, 32 put back the same day, the Poor card 2026-10-29)", CARDS.filter(c => c.core).length === COUNTS_U.core, CARDS.filter(c => c.core).length);
 ok("family = the Key Concept (group) on every card — the staged engine reads card.family", CARDS.every(c => c.family === c.group));
 ok("no deck key has a character Firebase forbids (. # $ [ ] /)", DECKS.every(d => !/[.#$\[\]\/]/.test(d.key)));
@@ -69,7 +69,7 @@ console.log("\n── the record (STARTER_UNITS.nc_envirothon) ──");
 const W0 = world(); const R = W0.STARTER_UNITS.nc_envirothon();
 ok("registered as starter nc_envirothon, version 1, last in the registry", R.id === "nc_envirothon" && R.starter === "nc_envirothon" && R.starterVer === 1 && Object.keys(W0.STARTER_UNITS).pop() === "nc_envirothon");
 ok("title NC Envirothon, 🌿, notebook insert off, nobody enrolled", R.title === "NC Envirothon" && R.emoji === "\u{1F33F}" && R.nbInsert === false && !("enrolled" in R) && !("kidStage" in R));
-ok("THIN: cards live in the code (cardsInCode, cardCount 4371), no deck carries cards, record under 4 KB", R.cardsInCode === true && R.cardCount === 4371 && R.decks.every(d => !("cards" in d)) && bytes(R) < 4096, bytes(R));
+ok("THIN: cards live in the code (cardsInCode, cardCount " + COUNTS_U.cards + "), no deck carries cards, record under 4 KB", R.cardsInCode === true && R.cardCount === COUNTS_U.cards && R.decks.every(d => !("cards" in d)) && bytes(R) < 4096, bytes(R));
 ok("6 stages in the club's order: General concepts, Forestry, Soils/Land Use, Aquatic Ecology, Wildlife, Current Environmental Issues",
   R.stages.map(s => s.n + ":" + s.label).join("|") === "0:General concepts|1:Forestry|2:Soils/Land Use|3:Aquatic Ecology|4:Wildlife|5:Current Environmental Issues" && R.stages.every(s => s.weeklyFrom === 0));
 ok("15 decks, same keys and order as envirothon.js", R.decks.map(d => d.key).join("|") === DECKS.map(d => d.key).join("|"));
@@ -82,7 +82,7 @@ ok("no cardLessons, no famSort, no activities (nothing of AAS / the interest uni
 ok("staged unit → the plain enroll stays closed", W0._unitStagedEnrollPending(R));
 ok("fresh object per call", W0.STARTER_UNITS.nc_envirothon() !== R);
 ok("no 🔀 in index.html", src.indexOf("\u{1F500}") < 0);
-ok("Mom sees it in 📚 Starter units with its count and stages", /starterUnitAdd\('nc_envirothon'\)/.test(W0._starterUnitsHtml()) && W0._starterUnitsHtml().indexOf("4371 cards") > 0 && /5\. Current Environmental Issues/.test(W0._starterUnitsHtml()));
+ok("Mom sees it in 📚 Starter units with its count and stages", /starterUnitAdd\('nc_envirothon'\)/.test(W0._starterUnitsHtml()) && W0._starterUnitsHtml().indexOf(COUNTS_U.cards + " cards") > 0 && /5\. Current Environmental Issues/.test(W0._starterUnitsHtml()));
 ok("kids see nothing; hidden once the family has it", world({ mom: false })._starterUnitsHtml() === "" && !/starterUnitAdd\('nc_envirothon'\)/.test(world({ unitStudies: { nc_envirothon: { id: "nc_envirothon" } } })._starterUnitsHtml()));
 
 console.log("\n── 📚 Add: one thin create-only write, then the code's cards in memory ──");
@@ -93,7 +93,7 @@ console.log("\n── 📚 Add: one thin create-only write, then the code's card
   ok("…and nothing else written", w.G.writes.length === 1); }
 { const w = world({ dry: true, db: { ref() { throw new Error("db touched in dry run"); } } }); w.starterUnitAdd("nc_envirothon");
   const u = w.us.nc_envirothon;
-  ok("dry run: added locally, no DB write, hydrated from envirothon.js (4371 cards in memory)", u && u.decks.reduce((s, d) => s + d.cards.length, 0) === 4371 && w.G.rendered === 1); }
+  ok("dry run: added locally, no DB write, hydrated from envirothon.js (" + COUNTS_U.cards + " cards in memory)", u && u.decks.reduce((s, d) => s + d.cards.length, 0) === COUNTS_U.cards && w.G.rendered === 1); }
 { const w = world({ lib: null }); w.G.unitStudies.nc_envirothon = w.envUnitRecord();
   const r = w.envHydrateAll();
   ok("envirothon.js not loaded yet → one script tag asked for, cards wait", r === false && w.G.loads === 1 && !w.us.nc_envirothon.decks[0].cards);
@@ -157,7 +157,7 @@ console.log("\n── ➡ move up to Stage 1 (Forestry): held, coded keys for . 
 { const w = enrollLincoln(); w.G.writes.length = 0; w.unitStageMoveUp("nc_envirothon", "lincoln");
   const M = w.G.masteryData, st = M.lincoln_settings, bank = M.lincoln_custom_items, items = M.lincoln || [];
   const forestry = CARDS.filter(c => c.stage === 1), unsafe = forestry.filter(c => /[.#$\[\]\/]/.test(c.name));
-  ok("still ZERO cards minted; Forestry's 891 join the bank, held", items.length === 0 && bank.length === 90 + 891 && st.cat_hold["Forestry · Terms"] === true);
+  ok("still ZERO cards minted; Forestry's " + COUNTS_U.sections.forestry.cards + " join the bank, held", items.length === 0 && bank.length === 90 + COUNTS_U.sections.forestry.cards && st.cat_hold["Forestry · Terms"] === true);
   ok("Forestry backs saved: plain fronts under their name, . / fronts under their coded key (" + unsafe.length + " of them)", forestry.every(c => st.definitions[/[.#$\[\]\/]/.test(c.name) ? c.name.replace(/[.#$\[\]\/%]/g, ch => "%" + ch.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")) : c.name] === c.def) && unsafe.length > 0);
   ok("no definitions key carries . # $ [ ] /", Object.keys(st.definitions).every(k => !/[.#$\[\]\/]/.test(k)));
   let total = 0; w.G.writes.forEach(x => { total += bytes(x[2]); });
