@@ -2,7 +2,7 @@
  * Node tests — 🧠 CPWATCH, PR 17 of the class platform (DESIGN_class_platform_2026-10-28.md §7(a) 4–5, §9, §13 row 17, §14 Q24–Q26).
  * Her words 2026-10-28: "the mom, if she knows her kid and wants to hand it off to a parent drill … then she would need to run it daily. But
  * there needs to be a reminder that if she's pulling things in and it's not getting done, and a message or a warning sent to the teacher."
- *   · Where the block sits and how it hooks (typeof-guarded one-line hooks; Q24's fall-back is a hook point only, never defined).
+ *   · Where the block sits and how it hooks (typeof-guarded one-line hooks; Q24's fall-back is CPWATCHFALLBACK's, tested in test_cp_watch_fallback.js).
  *   · cpWatchCalc (pure): waiting, overdue, missed study days from mastery/history + the calendar, the flag, since.
  *   · The parent's 🧠 card and the kid's 🌿 page: the "waiting" line, amber after remindAfterDays, "the teacher has been told" after warn.
  *   · The teacher: ⚠ 🧠 on the grid + the student page card after warnAfterDays / warnAfterCards; Leave it (students/<sid>/reviewQuiet).
@@ -48,7 +48,7 @@ console.log("── where it sits, how it is hooked ──");
   const code=WAT.replace(/^\/\/.*$/mg,"");
   ok("no database ref in the block: the one write goes through envcWrite (→ envsWrite)", !/\.ref\(/.test(code)&&/envcWrite\("students\/"\+sid\+"\/reviewQuiet",rec,"set"\)/.test(fn("cpwQuiet"))&&/envcWrite\("students\/"\+sid\+"\/reviewQuiet",null,"remove"\)/.test(fn("cpwUnquiet")));
   ok("no Howe kid name as a code literal", !/["'`](lincoln|ellis|lucy|julian)["'`]/i.test(code));
-  ok("Q24 is NOT built: cpWatchFallBack is called through a typeof guard and defined nowhere; no fallBackAfterDays setting", /typeof cpWatchFallBack==="function"/.test(code)&&src.indexOf("function cpWatchFallBack(")<0&&!/fallBackAfterDays/.test(code)&&/Q24 IS NOT ANSWERED/.test(WAT));
+  ok("Q24 (yes, 2026-10-29): cpWatchFallBack is called through a typeof guard and defined only in CPWATCHFALLBACK (test_cp_watch_fallback.js); no fallBackAfterDays in this block", /typeof cpWatchFallBack==="function"/.test(code)&&WAT.indexOf("function cpWatchFallBack(")<0&&src.indexOf("function cpWatchFallBack(")>src.indexOf("// CPWATCHFALLBACK_START")&&!/fallBackAfterDays/.test(code)&&/Q24 → YES/.test(WAT));
   const out=src.slice(0,a)+src.slice(b), hooks=out.split("\n").filter(l=>/🧠 CPWATCH/.test(l));
   ok("every tagged line outside the block is typeof-guarded", hooks.length>0&&hooks.every(l=>/typeof cpWatch\w+ ?=== ?"function"/.test(l)), hooks.map(l=>l.trim().slice(0,90)));
   ok("envSummary: summary.review from cpWatchSum", /if\(typeof cpWatchSum==="function"\)\{ const rv=cpWatchSum\(kid,M,now\); if\(rv\) out\.review=rv; \}/.test(fn("envSummary")));
