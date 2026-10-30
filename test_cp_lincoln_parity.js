@@ -39,7 +39,10 @@ const ENG=[
   cut("// ENVDRILLFIRST_START","// ENVDRILLFIRST_END"),cut("// REVIEWENGINE_START","// REVIEWENGINE_END"),cut("// NEWBUDGET_START","// NEWBUDGET_END"),cut("// CPCORE_START","// CPCORE_END"),
   cut("// ── MST_ENGINE_START ──","// ── MST_ENGINE_END ──"),
   'MST_PATTERN_MODES.push("pick"); MST_PATTERN_MODES.push("copy"); MST_PATTERN_MODES.push("ideas");',
-  "const MAST_DEFAULT_CAT_MODES={};"].join("\n");
+  "const MAST_DEFAULT_CAT_MODES={};","__X__"].join("\n");
+// step 2's world adds the class's card / trim / test layers (CPCARDSEDIT, CPTRIM, CPTESTS) and ENVTEST's check-ins, sliced as they are
+const ENG2=[cut("// ENVTEST_START","// ENVTEST_END"),cut("// CPCARDSEDIT_START","// CPCARDSEDIT_END"),cut("// CPTRIM_START","// CPTRIM_END"),cut("// CPTESTS_START","// CPTESTS_END"),
+  ...["envHydrate","mastGetDef","mastCustomDef","envmUnit","mastTierAtLeast"].map(fn),"const MAST_MATH_ANS={}, MAST_VOCAB_DEFS={};"].join("\n");
 function world(o){
   o=o||{};
   const reads=[], writes=[], paints={n:0};
@@ -47,17 +50,17 @@ function world(o){
     on(ev,ok,bad){ reads.push("on:"+p); if(o.refuse&&(o.refuse===p||o.refuse==="*")){ if(bad) bad(new Error("permission_denied")); return; } const v=(o.remote||{})[p]; ok({val:()=>v===undefined?null:v}); }, off(){},
     set(v){ writes.push(["set",p,v]); }, update(v){ writes.push(["update",p,v]); }, remove(){ writes.push(["remove",p]); }})};
   const ctx={console:{log(){},error(){},warn(){}},Object,Array,String,Number,Math,JSON,Date,Set,Map,WeakMap,Infinity,NaN,isNaN,parseInt,parseFloat,Promise,
-    window:{HA_FAMILY:o.cfg===false?{familyId:"howe"}:{familyId:"howe",envirothon:{firebase:{databaseURL:"https://howe-envirothon.example"},classId:"c1"}}},
+    window:{HA_FAMILY:o.cfg===false?{familyId:"howe"}:{familyId:"howe",envirothon:{firebase:{databaseURL:"https://howe-envirothon.example"},classId:"c1"}},HoweEnvirothon:o.lib||undefined},
     masteryData:o.M, unitStudies:o.U, masteryKid:"lincoln", db:null, HA_LS:{s:{},getItem(k){ return this.s[k]||null; },setItem(k,v){ this.s[k]=String(v); },removeItem(k){ delete this.s[k]; }},
     _dryRun:()=>false, renderAllSoon:()=>{ paints.n++; }, cap:s=>s[0].toUpperCase()+s.slice(1), gwShowToast(){}, setTimeout:()=>0, clearTimeout(){},
     envSiteOn:()=>!!o.site, envsDemo:()=>false, _envs:{kid:o.site?"lincoln":null,role:o.site?"kid":null,cls:null}, _envc:{}, envcOn:()=>false, envcAdmin:()=>false,
     mastIsNeverDrill:()=>false, mastDynamicShouldAdd:()=>false, mastDynamicShouldPrune:()=>false, mastDynamicEligible:()=>false, mastDynamicMark(){}, mastDynamicClear(){}, mastDynamicCapNotice:false,
     reads, writes, paints, edb};
   vm.createContext(ctx);
-  vm.runInContext(ENG.replace("__BLK__",o.noBlock?"":BLK),ctx);
+  vm.runInContext(ENG.replace("__BLK__",o.noBlock?"":BLK).replace("__X__",o.l2?ENG2:""),ctx);
   ctx.get=e=>vm.runInContext(e,ctx);
   if(o.signedIn!==false) ctx.get("_envm.user={uid:'u1',email:'mom@x'}");
-  if(!o.noLoad) ctx.get("cplnLoad('lincoln','c1',edb,'howe_lincoln')");
+  if(!o.noLoad){ ctx.get("cplnLoad('lincoln','c1',edb,'howe_lincoln')"); if(!o.noBlock) ctx.get("cplnpLoad('lincoln','c1',edb,'howe_lincoln')"); }
   return ctx;
 }
 // a Lincoln-shaped family: German (fixed), Science (pace), Daily Study (rest; Math with Mom), Daily Mix (60), and 🌿 with the 15 real decks.
@@ -137,5 +140,69 @@ console.log("1. The stall: his new Envirothon cards keep coming once a deck runs
   ok("…and for his 🌿 session with L1 off", w2.get("cplnFocus")("lincoln",S2.find(s=>s.sid==="envirothon"),fd,[],fd,{},new Set())===fd);
   const w3=world({M:fixture().M,U:fixture().U,remote:CLASS,refuse:"classes/c1/settings"}), S3=w3.get("mstSessions('lincoln')");
   ok("…and with a refused class read (his mirror failed)", !w3.get("cplnOn('lincoln')")&&w3.get("cplnFocus")("lincoln",S3.find(s=>s.sid==="envirothon"),fd,[],fd,{},new Set())===fd); }
+
+
+console.log("2. L2 (Q21): the class's card and test edits reach him, in memory only");
+const FT="Forestry · Terms", FF="Forestry · Facts";
+function lib(){ const q=(n,t)=>({n,q:t+" "+n+"?",choices:["a","b","c"],ans:0,cards:[]});
+  return {unit:{decks:EDECKS.map(k=>({key:k,cards:Array.from({length:SIZE(k)},(_,j)=>({name:k+" c"+j,def:"e"+j,core:j%2===0}))}))},
+    tests:{forestry:{label:"Forestry",pre:{form:"F-pre",items:[q(1,"pre"),q(2,"pre"),q(3,"pre")]},post:{form:"F-post",items:[q(1,"post"),q(2,"post"),q(3,"post"),q(4,"post")]}},
+      soils:{label:"Soils",pre:{form:"S-pre",items:[q(1,"spre")]},post:{form:"S-post",items:[q(1,"spost")]}}}}; }
+const L2R={ "classCards/c1":{[FT]:{o1:{name:FT+" c0",hide:true,by:"t",ts:1},o2:{name:FT+" c1",def:"the class's back",by:"t",ts:2},o3:{name:FT+" c2",core:false,why:"trim",by:"t",ts:3},
+      "c-k1":{name:"Class card",def:"hers",core:true,add:true,by:"t",ts:4}},German:{o1:{name:"German w0",hide:true,by:"t",ts:1},o2:{name:"German w1",def:"not his class's",by:"t",ts:2}}},
+  "units/nc_envirothon/trim":{[FF]:{o1:{name:FF+" c0",hide:true,why:"a",by:"a",ts:1},o3:{name:FF+" c2",core:false,why:"b",by:"a",ts:2}}},
+  "classTests/c1":{forestry:{pre:{items:{"pre-1":{q:"New wording?",choices:["x","y"],ans:1,by:"t",ts:9},"pre-2":{hide:true,by:"t",ts:9},"c-k9":{q:"Hers?",choices:["m","n"],ans:0,add:true,by:"t",ts:10}},ver:12}}} };
+function l2(o){ o=o||{}; const f=fixture(); if(o.ellis) f.U.nc_envirothon.enrolled.ellis=true; f.U.nc_envirothon.cardsInCode=true;
+  f.M.lincoln.push({id:"lin|"+FT+"|"+FT+" c0",subject:FT,prompt:FT+" c0",answer:"e0",tier:"weekly",status:"active",review_mode:"flash",next_due:390,drop_count:0,consecutive_correct:0,cycle:1,tally_dots:0});
+  f.M.lincoln_settings.definitions={[FT+" c1"]:"e1 (Mom's)"};
+  f.M.lincoln_tests={forestry:{pre:{form:"F-pre",date:"2026-10-20",n:3,right:2,answers:[0,0,1],ts:1}}};   // his Forestry check-in is taken, so its cards are open (ENVTEST)
+  const before=J(f.M);
+  const R=Object.assign({},CLASS,o.remote===undefined?L2R:o.remote);
+  const w=world(Object.assign({M:f.M,U:f.U,remote:R,l2:true,lib:lib()},o.w||{})); w.get("envHydrate(unitStudies.nc_envirothon,window.HoweEnvirothon)"); w.before=before; return w; }
+const bankOf=(w,d)=>w.get("mastBankEligible('lincoln',"+J(d)+")");
+const pileIds=(w,sid)=>{ const p=w.get("mstPile('lincoln','"+sid+"',400,null)"); return {r:p.reviews.map(i=>i.id),l:p.learning.map(i=>i.id),n:p.newNames.map(x=>x.deck+"|"+x.name)}; };
+{ const w=l2();
+  ok("his reads: classCards/<cid>, Adrienne's unit trims and classTests/<cid>, once each, after L1's three", J(w.reads.filter(r=>!/^classes|^students/.test(r)))===J(["classCards/c1","units/nc_envirothon/trim","classTests/c1"]), w.reads);
+  ok("on: the card layer and the unit's tests follow his class", w.get("cplnpCardsOn('lincoln')")&&w.get("cplnpUnitKid('tests')")==="lincoln");
+  const b=bankOf(w,FT);
+  ok("a card the class hid leaves his bank; the class's added card joins it", b.indexOf(FT+" c0")<0&&b.indexOf("Class card")>=0&&b.indexOf(FT+" c3")>=0, b);
+  ok("a card Adrienne hid for the unit leaves his bank too", bankOf(w,FF).indexOf(FF+" c0")<0&&bankOf(w,FF).indexOf(FF+" c1")>=0);
+  ok("an edited back is the back he sees (Envirothon deck)", w.get("mastGetDef('lincoln',"+J(FT+" c1")+","+J(FT)+")")==="the class's back");
+  ok("…and a deckless lookup of the same front never takes the class's back", w.get("mastGetDef('lincoln',"+J(FT+" c1")+",null)")!=="the class's back");
+  ok("the class's added card has its back", w.get("mastGetDef('lincoln','Class card',"+J(FT)+")")==="hers");
+  ok("the hidden card he already had leaves his 🌿 sitting and Mom's drill", !pileIds(w,"envirothon").r.some(id=>/Terms c0$/.test(id))&&!w.get("mastDueItems('lincoln',420)").some(i=>i.prompt===FT+" c0"));
+  const C=w.get("[...cpCoreSet("+J(FT)+")]");
+  ok("a card the class made optional is no longer core; the class's added core card is", C.indexOf(FT+" c2")<0&&C.indexOf(FT+" c0")>=0&&C.indexOf("Class card")>=0, C);
+  ok("…and one Adrienne made optional for the unit (or hid) is no longer core either", w.get("[...cpCoreSet("+J(FF)+")]").indexOf(FF+" c2")<0&&w.get("[...cpCoreSet("+J(FF)+")]").indexOf(FF+" c0")<0);
+  const cc=w.get("envtCoreCount('lincoln','forestry')"), cc0=l2({remote:{}}).get("envtCoreCount('lincoln','forestry')");
+  ok("the final's core total follows: Forestry "+cc0.total+" → "+cc.total+" (−1 hidden −1 optional −1 unit-hidden −1 unit-optional +1 hers)", cc.total===cc0.total-3, [cc0,cc]);
+  const G=["German","Science","AAS Words","Vocabulary"];
+  ok("his other decks are untouched: German keeps the card the class's layer names, and its own back", G.every(d=>J(bankOf(w,d))===J(bankOf(l2({remote:{}}),d)))&&bankOf(w,"German").indexOf("German w0")>=0&&w.get("mastGetDef('lincoln','German w1','German')")!=="not his class's");
+  const u=w.get("unitStudies.nc_envirothon.decks").find(d=>d.key===FT);
+  ok("the unit record in memory gets the core flag only: no class back, no added card", u.cards.every(c=>c.def===c.name.replace(/^.* c/,"e")||false)&&!u.cards.some(c=>c.name==="Class card")&&u.cards.find(c=>c.name===FT+" c2").core===false, u.cards.slice(0,3));
+  ok("nothing written anywhere, and his Howe records are exactly as they were", w.writes.length===0&&J(w.get("masteryData"))===w.before);
+  const pre=w.get("envtForm('forestry','pre')"), post=w.get("envtForm('forestry','post')"), base=lib().tests.forestry;
+  ok("his check-in is the class's form: her wording, without the one she removed, with hers at the end", pre.items.map(i=>i.q).join("|")==="New wording?|pre 3?|Hers?"&&pre.cls===true&&pre.ver===12, pre.items.map(i=>i.q));
+  ok("a form the class didn't touch is the unit's own (the same questions)", J(post.items.map(i=>i.q))===J(base.post.items.map(i=>i.q)));
+  const rec={form:pre.form,answers:[1,0,0]}; w.get("cpctAttempt")(rec,{kid:"lincoln",which:"pre",form:pre,answers:[1,0,0]});
+  ok("his attempt on the class's form keeps each answer by question id and the form's version (Brittany's results line up)", J(rec.ans)===J({"pre-1":1,"pre-3":0,"c-k9":0})&&rec.formVer===12, rec);
+  const r2={form:post.form,answers:[0,0,0,0]}; w.get("cpctAttempt")(r2,{kid:"lincoln",which:"post",form:post,answers:[0,0,0,0]});
+  ok("…and one on the unit's own form stays as today (no ans, no formVer)", r2.ans===undefined&&r2.formVer===undefined);
+  const S=["german","science","ds","daily_mix"], w0=l2({remote:{}});
+  ok("his other subjects' piles and Mom's drill (other subjects) are identical with the class's layers and without, on the same records", S.every(sid=>J(pileIds(w,sid))===J(pileIds(w0,sid)))&&J(w.get("mastDueItems('lincoln',420)").filter(i=>!isEnv(i)).map(i=>i.id))===J(w0.get("mastDueItems('lincoln',420)").filter(i=>!isEnv(i)).map(i=>i.id))); }
+{ const w=l2({w:{refuse:"*"}});
+  ok("every read refused: L1 is off and he keeps the unit as is (bank, backs, core, forms)", !w.get("cplnOn('lincoln')")&&bankOf(w,FT).indexOf(FT+" c0")>=0&&bankOf(w,FT).indexOf("Class card")<0&&w.get("mastGetDef('lincoln',"+J(FT+" c1")+","+J(FT)+")")!=="the class's back"&&w.get("[...cpCoreSet("+J(FT)+")]").indexOf(FT+" c2")>=0&&w.get("envtForm('forestry','pre')").items.length===3); }
+{ const w=l2({w:{refuse:"classCards/c1"}});
+  ok("only the card read refused: his cards stay the unit's (Adrienne's unit trims ride on his class's card layer, so they wait too); his tests still follow the class", bankOf(w,FT).indexOf(FT+" c0")>=0&&bankOf(w,FF).indexOf(FF+" c0")>=0&&w.get("[...cpCoreSet("+J(FT)+")]").indexOf(FT+" c2")>=0&&w.get("envtForm('forestry','pre')").cls===true&&w.writes.length===0); }
+{ const w=l2({w:{refuse:"classTests/c1"}});
+  ok("only the test read refused: his check-ins stay the unit's; his cards still follow the class", w.get("envtForm('forestry','pre')").cls!==true&&w.get("envtForm('forestry','pre')").items.length===3&&bankOf(w,FT).indexOf("Class card")>=0); }
+{ const w=l2({w:{cfg:false}});
+  ok("no mirror (no envirothon config): every hook hands back what it was given", !w.get("cplnpCardsOn('lincoln')")&&w.get("cplnpCardsLayer()")===null&&w.get("cplnpForm('forestry','pre',{items:[]})")===undefined&&w.get("cplnpCoreSet("+J(FT)+")")===null&&w.get("cplnpHydrate(unitStudies.nc_envirothon)")===false&&w.get("cplnpAttempt({}, {kid:'lincoln',form:{cls:true,items:[]}})")===false&&w.get("envmKids().length")===0);   // envmKids empty: the mirror never even calls cplnpLoad
+  ok("…so his bank, backs, core and forms are the unit's", bankOf(w,FT).indexOf(FT+" c0")>=0&&bankOf(w,FT).indexOf("Class card")<0&&w.get("[...cpCoreSet("+J(FT)+")]").indexOf(FT+" c2")>=0&&w.get("envtForm('forestry','pre')").items.length===3); }
+{ const w=l2({w:{site:true}});
+  ok("the class site itself: none of it (its own layers run)", !w.get("cplnpCardsOn('lincoln')")&&w.get("cplnpForm('forestry','pre',{items:[]})")===undefined); }
+{ const w=l2({ellis:true});
+  ok("another kid enrolled in the unit and not mirrored: the shared unit (core flags, test forms) stays the unit's", w.get("cplnpUnitKid('cards')")===null&&w.get("[...cpCoreSet("+J(FT)+")]").indexOf(FT+" c2")>=0&&w.get("envtForm('forestry','pre')").items.length===3);
+  ok("…while Lincoln's own bank and backs still follow his class, and Ellis's bank is his own", bankOf(w,FT).indexOf(FT+" c0")<0&&w.get("mastGetDef('lincoln',"+J(FT+" c1")+","+J(FT)+")")==="the class's back"&&!w.get("cpceKidOn('ellis')")); }
 
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

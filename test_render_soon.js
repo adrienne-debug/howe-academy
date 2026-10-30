@@ -110,6 +110,7 @@ const ALLOWED_FN=["cpuWatch",   // 📦 CPUNIT (2026-10-28): a unit's catalog en
   "cptrKidLoad",   // ✂️ CPTRIM (2026-10-29): Adrienne's unit trims arriving (units/<id>/trim, read once at a kid's boot)
   "cplnLoad",   // 🌿 CPLINCOLN (2026-10-29): Lincoln's class settings, plan and override arriving (read once through his mirror)
   "cplntApplyOne","cplntAfter",   // 👩‍🏫 CPLINCOLNL3 (2026-10-29): a teacher's drill for Lincoln arriving (drills/<cid>/<sid> listener) and graded
+  "cplnpLoad",   // 🌿 CPLINCOLNPARITY (2026-10-29): his class's card, trim and test layers arriving (read once through his mirror)
   "attachWeekListeners","initFb","_loadPrevSl","mmAttachWeek","momBlocksListen","peekLoad","lrListen","rbLogListen","wsOnValue","hrOnValue","helpersOnValue","helperDaysOnValue","helperGiveOnValue","famProgOnValue","msgOnValue","pagesApply","envmRelease","envtFinalAttach","envsReadShared","envcSub","envClsKidLoad"];   // 🌿 ENVMIRROR / ENVSITE: listener-attach helpers whose arrivals combine; the teacher's release listener (data arrived)
 const stray=[]; { let cur=null; html.split("\n").forEach((l,i)=>{ const m=l.match(/^(?:async\s+)?function\s+([\w$]+)/); if(m) cur=m[1];
   if(/renderAllSoon\(\)/.test(l)&&!/^function renderAllSoon|^\/\//.test(l)&&!/^\/\/ /.test(l.trim())&&!ALLOWED_FN.includes(cur)) stray.push((i+1)+" in "+cur); }); }

@@ -45492,6 +45492,7 @@ function envHydrate(u,lib){
     d.cards=by[d.key].map((c,i)=>{ const o=edits?edits[i]:null; return (o&&typeof o==="object"&&(!o.name||o.name===c.name))?Object.assign({},c,o):c; }); });
   if(typeof cpceHydrate==="function") cpceHydrate(u);   // 📚 CPCARDSEDIT: her backs and added cards on the record, in memory
   if(typeof cptrHydrate==="function") cptrHydrate(u);   // ✂️ CPTRIM: a card made optional (her class, Adrienne's unit) stays, no longer core — site kids only
+  if(typeof cplnpHydrate==="function") cplnpHydrate(u);   // 🌿 CPLINCOLNPARITY: the same for Lincoln's class in Howe (the core flag only, in memory)
   if(typeof envPicsOn==="function") envPicsOn(u);   // ⚡ ENVIDFLASH: the ID decks' pictures, in memory, from envirothon/pics/index.json
   return true;
 }
@@ -46841,6 +46842,7 @@ function envmRelAttach(kid){
   if(typeof cpsdAttach==="function") cpsdAttach(kid,cid,_envm.edb,_envm.subs,envmSid(kid));   // 📤 CPSEND: the scheduled send-outs (release/<cid>/scheduled), the class site only
   if(typeof cplnLoad==="function") cplnLoad(kid,cid,_envm.edb,envmSid(kid));   // 🌿 CPLINCOLN: his class settings, plan and override, read once (memory only)
   if(typeof cplntAttach==="function") cplntAttach(kid,cid,_envm.edb,_envm.subs,envmSid(kid));   // 👩‍🏫 CPLINCOLNL3: the teacher's drills for him (drills/<cid>/<sid>), graded into Howe once each
+  if(typeof cplnpLoad==="function") cplnpLoad(kid,cid,_envm.edb,envmSid(kid));   // 🌿 CPLINCOLNPARITY: his class's card, trim and test layers, read once (memory only)
 }
 // A release record {<deckKey>|<station>: truthy}: clear each matching deck's hold once — the family database's one targeted removal.
 function envmRelease(kid,rel){
@@ -47306,6 +47308,108 @@ function cplnFocus(kid,session,focusDecks,started,fresh,existingByDeck,loggedNam
     const out=seat.concat(ride.filter(d=>seat.indexOf(d)<0));
     return (out.length===focusDecks.length&&out.every((d,i)=>d===focusDecks[i]))?focusDecks:out;
   }catch(e){ return focusDecks; }
+}
+//   · 2. L2 (her yes to Q21, 2026-10-29): THE CLASS'S CARD AND TEST EDITS REACH HIM. His mirror reads, once per class, beside L1's three:
+//     classCards/<cid> (CPCARDSEDIT / CPTRIM's class layer), units/nc_envirothon/trim (Adrienne's own unit trims, CPTRIM's unit layer) and
+//     classTests/<cid> (CPTESTS). Memory only: nothing is copied into his Howe records — no back, no added card, no question is ever
+//     written into his unit record or his settings (the unit editor's Save would write a hydrated back, so backs are never hydrated). A
+//     refused or failed read leaves that layer off: he keeps the unit as is. Each layer is limited to his 15 Envirothon decks / stations.
+//       - CARDS (cpceKidOn / cpceKidLayer → his layer): a hidden card leaves his bank, his 🌿 sitting, Mom's drill, the games and ID Flash;
+//         an edited back is the back he sees (mastGetDef / mastCustomDef, only for an Envirothon deck); the class's added cards join his bank.
+//       - TRIMS: a card the class (or Adrienne's unit layer) made optional is no longer core (envHydrate → cplnpHydrate, the core flag only)
+//         for core first, Core only and the final's core total; one Adrienne hid for the unit leaves like a hidden one. A class-added core
+//         card counts as core (cpCoreSet → cplnpCoreSet). These two touch the family's shared unit record in memory, so they apply only
+//         while every kid enrolled in the unit is mirrored to the same class (in Howe: Lincoln alone).
+//       - TESTS (cpctForm → cplnpForm, the same rule): his check-ins and finals are the class's form — her wording, without the questions
+//         she removed, with hers, in her order. When he takes a class form, the attempt also keeps each answer by question id and the
+//         form's version (ans, formVer: CPTESTS' own fields, §5.3), so Brittany's per-question results line up with what he was asked.
+const CPLNP_READS=[["cards",c=>"classCards/"+c],["trim",()=>"units/"+((typeof ENV_UNIT_ID!=="undefined")?ENV_UNIT_ID:"nc_envirothon")+"/trim"],["tests",c=>"classTests/"+c]];
+const _cplnp={k:{},memo:{},raw:0};
+// ENVMIRROR's envmRelAttach (after L1's reads): this block's reads, once per class; each layer stands on its own
+function cplnpLoad(kid,cid,edb,sid){
+  try{
+    if(!kid||!cid||!edb||(typeof envSiteOn==="function"&&envSiteOn())) return false;
+    const cur=_cplnp.k[kid]; if(cur&&cur.cid===cid) return false;
+    const rec={cid,sid}; _cplnp.k[kid]=rec;
+    const done=(k,v,bad)=>{ if(_cplnp.k[kid]!==rec) return; rec[k]=bad?false:((v&&typeof v==="object")?v:{}); _cplnp.memo={};
+      try{ if(typeof cpceBump==="function") cpceBump(); if(typeof cpctBump==="function") cpctBump(); }catch(e){}
+      try{ if(typeof envHydrateAll==="function") envHydrateAll(); }catch(e){} try{ if(typeof renderAllSoon==="function") renderAllSoon(); }catch(e){} };
+    CPLNP_READS.forEach(r=>{ try{ edb.ref(r[1](cid)).once("value",x=>done(r[0],(x&&typeof x.val==="function")?x.val():null),()=>done(r[0],null,true)); }catch(e){ done(r[0],null,true); } });
+    return true;
+  }catch(e){ return false; }
+}
+// one layer of this kid's, as read (null = not his, not in, or refused)
+function cplnpRaw(kid,k){ const r=_cplnp.k[kid], l=(typeof _cpln!=="undefined")&&_cpln.kids[kid]; if(!r||!l||r.cid!==l.cid||!cplnOn(kid)) return null; const v=r[k]; return (v&&typeof v==="object")?v:null; }
+// the layer limited to his Envirothon decks (the same object while nothing changed)
+function cplnpOwn(kid,k){
+  const v=cplnpRaw(kid,k); if(!v) return null; const D=new Set(cplnDecks(kid)), key=kid+"|"+k, m=_cplnp.memo[key];
+  if(m&&m.v===v&&m.d===[...D].join("|")) return m.out;
+  const out={}; Object.keys(v).forEach(dk=>{ if(D.has(dk)) out[dk]=v[dk]; }); _cplnp.memo[key]={v,d:[...D].join("|"),out}; return out;
+}
+// the mirrored kids with this layer in, when they are all in one class (else none: whose layer would it be?)
+function cplnpKids(k){
+  const K=(typeof envmKids==="function")?envmKids():[], on=K.filter(x=>cplnpRaw(x,k)); if(!on.length) return [];
+  const c=_cplnp.k[on[0]].cid; return on.every(x=>_cplnp.k[x].cid===c)?on:[];
+}
+// CPCARDSEDIT's cpceKidOn: his class's card layer is in
+function cplnpCardsOn(kid){ try{ return !!kid&&cplnpKids("cards").indexOf(kid)>=0; }catch(e){ return false; } }
+// CPCARDSEDIT's cpceKidLayer: the class's card layer, his decks only (null = not his: the site's own layer)
+function cplnpCardsLayer(){ try{ const K=cplnpKids("cards"); return K.length?cplnpOwn(K[0],"cards"):null; }catch(e){ return null; } }
+// the kid the family's shared unit record follows: every kid enrolled in the unit mirrored to one class with this layer in (null = none)
+function cplnpUnitKid(k){
+  try{ const u=(typeof envmUnit==="function")?envmUnit():null; if(!u) return null;
+    const E=Object.keys(u.enrolled||{}).filter(x=>u.enrolled[x]), K=cplnpKids(k); if(!E.length||!E.every(x=>K.indexOf(x)>=0)) return null;
+    return E[0]; }catch(e){ return null; }
+}
+// is a unit-trim record kept by his class? (a class record with keep:true for the same card — CPTRIM's own test)
+function cplnpKept(L,dk,k,name){ const D=L&&L[dk]; if(!D) return false; const r=D[k]; if(r&&r.keep===true) return true; return Object.keys(D).some(x=>D[x]&&D[x].keep===true&&D[x].name===name); }
+// CPTRIM's cptrKidIdx: a card Adrienne hid for the unit leaves his bank too (unless his class kept it). true = handled (his layer)
+function cplnpTrimIdx(I){
+  try{ if(!I||!I.L) return false; const K=cplnpKids("cards"); if(!K.length||cplnpOwn(K[0],"cards")!==I.L) return false;
+    const T=cplnpOwn(K[0],"trim")||{};
+    Object.keys(T).forEach(dk=>{ const D=T[dk]; if(!D||typeof D!=="object") return;
+      Object.keys(D).forEach(k=>{ const r=D[k]; if(!r||r.hide!==true||!r.name||cplnpKept(I.L,dk,k,r.name)) return; (I.hide[dk]=I.hide[dk]||{})[r.name]=1; I.any=true; }); });
+    return true; }catch(e){ return false; }
+}
+// envHydrate (after CPTRIM's): a card his class or Adrienne's unit made optional is no longer core — the core flag only, a new card object
+function cplnpHydrate(u){
+  try{
+    if(!u||!Array.isArray(u.decks)) return false; const kid=cplnpUnitKid("cards"); if(!kid) return false;
+    const L=cplnpOwn(kid,"cards")||{}, T=cplnpOwn(kid,"trim")||{}, off={};
+    Object.keys(L).forEach(dk=>{ const D=L[dk]; if(!D||typeof D!=="object") return; Object.keys(D).forEach(k=>{ const r=D[k]; if(r&&r.core===false&&r.add!==true){ const nm=r.name||((typeof cpceNameAt==="function")?cpceNameAt(dk,k):""); if(nm) (off[dk]=off[dk]||{})[nm]=1; } }); });
+    Object.keys(T).forEach(dk=>{ const D=T[dk]; if(!D||typeof D!=="object") return; Object.keys(D).forEach(k=>{ const r=D[k]; if(r&&r.name&&(r.core===false||r.hide===true)&&!cplnpKept(L,dk,k,r.name)) (off[dk]=off[dk]||{})[r.name]=1; }); });
+    let ch=false;
+    u.decks.forEach(d=>{ const o=d&&off[d.key]; if(!o||!Array.isArray(d.cards)||!d.cards.some(c=>c&&c.core===true&&o[c.name])) return; ch=true; d.cards=d.cards.map(c=>(c&&c.core===true&&o[c.name])?Object.assign({},c,{core:false,trimmed:true}):c); });
+    return ch;
+  }catch(e){ return false; }
+}
+// CPCORE's cpCoreSet: a deck's core names with his class's added core cards in (null = as CPCORE has it)
+function cplnpCoreSet(deck){
+  if(_cplnp.raw>0) return null;
+  try{ const kid=cplnpUnitKid("cards"); if(!kid) return null; const I=(typeof cpceKidIdx==="function")?cpceKidIdx():null, A=I&&I.add&&I.add[deck], h=(I&&I.hide[deck])||{};
+    const add=(A||[]).filter(x=>x&&x.core&&!h[x.name]); if(!add.length) return null;
+    _cplnp.raw++; let base; try{ base=cpCoreSet(deck); } finally{ _cplnp.raw--; } if(!base) return null;
+    const key="core|"+deck, m=_cplnp.memo[key]; if(m&&m.base===base&&m.I===I) return m.out;
+    const out=new Set(base); add.forEach(x=>out.add(x.name)); _cplnp.memo[key]={base,I,out}; return out;
+  }catch(e){ return null; }
+}
+// CPTESTS' cpctForm: the class's form when the family's unit follows his class (undefined = not his: CPTESTS' own rule runs)
+function cplnpForm(station,which,f){
+  try{
+    if(!f) return undefined; const kid=cplnpUnitKid("tests"); if(!kid) return undefined;
+    const L=cplnpRaw(kid,"tests"); if(!L[station]||typeof cpForm!=="function") return f;
+    const T=(typeof envtLib==="function")?envtLib():null, lay=cpctLayerFor(L[station],which,cpctSame(T&&T[station])); if(!lay) return f;
+    const key="form|"+station+"|"+which, m=_cplnp.memo[key]; if(m&&m.f===f&&m.L===L) return m.out;
+    const out=cpForm(f,lay,which); _cplnp.memo[key]={f,L,out}; return out;
+  }catch(e){ return undefined; }
+}
+// CPTESTS' cpctAttempt: his attempt on a class form keeps each answer by question id and the form's version (true = done here)
+function cplnpAttempt(rec,S){
+  try{
+    if(!rec||!S||!S.form||S.form.cls!==true||!Array.isArray(S.form.items)||!S.kid||cplnpUnitKid("tests")!==S.kid) return false; const ans={};
+    S.form.items.forEach((it,i)=>{ const a=S.answers&&S.answers[i]; ans[cpctQid(S.which,it)]=(a==null)?-1:(Array.isArray(a)?a.slice():a); });
+    rec.ans=ans; rec.formVer=+S.form.ver||0; return true;
+  }catch(e){ return false; }
 }
 // CPLINCOLNPARITY_END
 // ENVSITE_START — 🌿 THE ENVIROTHON SITE: one page, one Firebase project, routed by login role (step 4 of PLAN_envirothon_2026-10-27.md;
@@ -50775,6 +50879,7 @@ function cpceCss(){
 }
 // ── the kid's side (and the parent's): the class's layer, read once at boot, applied in memory
 function cpceKidOn(kid){
+  if(typeof cplnpCardsOn==="function"&&cplnpCardsOn(kid)) return true;   // 🌿 CPLINCOLNPARITY: Lincoln in Howe, his class's card layer read through his mirror (L2)
   try{ if(typeof envSiteOn!=="function"||!envSiteOn()||!kid||kid!==_envs.kid) return false;
     return envsDemo()||_envs.role==="kid"||_envs.role==="parent"; }catch(e){ return false; }
 }
@@ -50785,7 +50890,8 @@ function cpceKidLoad(sdb,cid){
   sdb.ref("classCards/"+cid).once("value",s=>done((s&&typeof s.val==="function")?s.val():null),()=>done(null));
   return true;
 }
-function cpceKidLayer(){ if(envsDemo()) return _cpce.L[cpceCid()]||null; return _cpce.kid; }
+function cpceKidLayer(){ if(typeof cplnpCardsLayer==="function"){ const _l=cplnpCardsLayer(); if(_l) return _l; }   // 🌿 CPLINCOLNPARITY: his class's card layer (Howe only)
+  if(envsDemo()) return _cpce.L[cpceCid()]||null; return _cpce.kid; }
 // the unit card a record without a front stands for (o<order> in that deck), from the family's unit records
 function cpceNameAt(dk,k){ const m=/^o(\d+)$/.exec(String(k)); if(!m) return ""; const us=(typeof unitStudies!=="undefined"&&unitStudies)||{}, o=Number(m[1]);
   for(const id in us){ const d=((us[id]&&us[id].decks)||[]).find(x=>x&&x.key===dk); const c=d&&Array.isArray(d.cards)&&d.cards.find(x=>x&&x.order===o); if(c) return String(c.name); } return ""; }
@@ -50812,7 +50918,8 @@ function cpceItems(kid,items){ if(!Array.isArray(items)||!cpceKidOn(kid)) return
 function cpceBank(kid,cat,all){ if(!Array.isArray(all)||!cpceKidOn(kid)) return all; const I=cpceKidIdx(); if(!I) return all; const h=I.hide[cat], a=I.add[cat]; if(!h&&!a) return all;
   const out=h?all.filter(n=>!h[n]):all.slice(); (a||[]).forEach(x=>{ if(out.indexOf(x.name)<0&&!(h&&h[x.name])) out.push(x.name); }); return out; }
 // mastGetDef · mastCustomDef: her back, or null (then the usual back)
-function cpceDef(kid,prompt,deck){ if(!cpceKidOn(kid)||prompt==null) return null; const I=cpceKidIdx(); if(!I||!I.any) return null;
+function cpceDef(kid,prompt,deck){ if((deck==null||deck==="")&&typeof cplnpCardsOn==="function"&&cplnpCardsOn(kid)) return null;   // 🌿 CPLINCOLNPARITY: in Howe a class back needs its Envirothon deck, so no other card of his takes it
+  if(!cpceKidOn(kid)||prompt==null) return null; const I=cpceKidIdx(); if(!I||!I.any) return null;
   if(deck!=null&&deck!==""){ const e=I.def[deck]&&I.def[deck][prompt]; return e?e.def:null; }
   for(const dk in I.def){ const e=I.def[dk][prompt]; if(e) return e.def; } return null; }
 // envHydrate: the family's unit record in memory gets her backs and her added cards (rebuilt from the card file each time it runs)
@@ -50876,7 +50983,8 @@ function cpceCoreFix(kid,keys,cardsOf,ok,out){ if(!out||!cpceKidOn(kid)||typeof 
 //   · 🔒 CPLOCKS: a teacher whose cards Adrienne locked (locks/cards, read through cpLockRO) sees the list and the numbers, but no Accept, Skip or Put back.
 //   · THE KID (site kid or parent login only — cpceKidOn): her class's core:false trims and Adrienne's unit trims are read once at boot and
 //     applied IN MEMORY (envHydrate: the card stays, no longer core; a unit hide joins CPCARDSEDIT's hidden list). Never written into a family's
-//     database. LINCOLN: nothing here reaches him. Howe never reads classCards (that is L2, Q21) or units/<id>/trim; Adrienne's unit trims reach
+//     database. LINCOLN: nothing here reaches him (2026-10-29: CPLINCOLNPARITY's L2 now reads his class's classCards and units/<id>/trim through
+//     his mirror and applies them in memory with its own lines). Before that, Howe never read classCards (that is L2, Q21) or units/<id>/trim; Adrienne's unit trims reach
 //     him only the existing way, when a repo PR bakes them into unit.json as core:false (§6.6) — and his records never move.
 const CPTR_LONG=110, CPTR_LEARN=0.8, CPTR_PAGE=20;
 const CPTR_STEPS=[["skill","1. A skill replaces it","Kids have to use this fact to get the skill right, so the skill teaches it."],
@@ -51354,6 +51462,7 @@ function cptrKidUnits(){ return (typeof envsDemo==="function"&&envsDemo())?_cptr
 function cptrKidKept(L,dk,k,name){ const D=L&&L[dk]; if(!D) return false; const r=D[k]; if(r&&r.keep===true) return true; return Object.keys(D).some(x=>D[x]&&D[x].keep===true&&D[x].name===name); }
 // cpceKidIdx: a card Adrienne hid for the unit leaves the kid's bank, sitting, drill, games and ID Flash, like her class's own hides
 function cptrKidIdx(I){
+  if(typeof cplnpTrimIdx==="function"&&cplnpTrimIdx(I)) return I;   // 🌿 CPLINCOLNPARITY: Lincoln's layer in Howe: Adrienne's unit hides as his mirror read them
   try{ if(!I||typeof cpceKidOn!=="function"||!cpceKidOn(_envs.kid)) return I; const U=cptrKidUnits()||{};
     Object.keys(U).forEach(id=>{ const T=U[id]||{}; Object.keys(T).forEach(dk=>{ const D=T[dk]; if(!D||typeof D!=="object") return;
       Object.keys(D).forEach(k=>{ const r=D[k]; if(!r||r.hide!==true||!r.name||cptrKidKept(I.L,dk,k,r.name)) return; (I.hide[dk]=I.hide[dk]||{})[r.name]=1; I.any=true; }); }); });
@@ -55145,6 +55254,7 @@ function cpctKidLoad(sdb,cid){
 function cpctKidLayer(){ if(envsDemo()) return _cpct.L[cpctCid()||_envs.cid]||null; return _cpct.kid; }
 // ENVTEST envtForm: the class's form for the site's kid — the very same form object anywhere else, or when the class changed nothing
 function cpctForm(station,which,f){
+  if(typeof cplnpForm==="function"){ const _g=cplnpForm(station,which,f); if(_g!==undefined) return _g; }   // 🌿 CPLINCOLNPARITY: Lincoln's class's form in Howe (L2)
   if(!f||!cpctKidOn()) return f; const L=cpctKidLayer(); if(!L||typeof L!=="object"||!L[station]) return f;
   const T=(typeof envtLib==="function")?envtLib():null, lay=cpctLayerFor(L[station],which,cpctSame(T&&T[station])); if(!lay) return f;
   const k=station+"|"+which, m=_cpct.fmemo[k]; if(m&&m.f===f&&m.L===L) return m.out;
@@ -55152,6 +55262,7 @@ function cpctForm(station,which,f){
 }
 // ENVTEST envtFinish: a new attempt keeps each answer by question id and the form's version (§5.3) — the site's kid only
 function cpctAttempt(rec,S){
+  if(typeof cplnpAttempt==="function"&&cplnpAttempt(rec,S)) return rec;   // 🌿 CPLINCOLNPARITY: his attempt on his class's form keeps ans + formVer
   if(!rec||!S||!S.form||!Array.isArray(S.form.items)||!cpctKidOn()) return rec; const ans={};
   S.form.items.forEach((it,i)=>{ const a=S.answers&&S.answers[i]; ans[cpctQid(S.which,it)]=(a==null)?-1:(Array.isArray(a)?a.slice():a); });
   rec.ans=ans; rec.formVer=+S.form.ver||0; return rec;
@@ -71804,6 +71915,7 @@ function cpCoreDeck(deck){
 }
 // ONE deck's core names (null = its cards aren't here). A unit that marks no card core: every card counts core (§15)
 function cpCoreSet(deck){
+  if(typeof cplnpCoreSet==="function"){ const _x=cplnpCoreSet(deck); if(_x) return _x; }   // 🌿 CPLINCOLNPARITY: Lincoln's class's added core cards count as core (Howe only)
   const f=cpCoreDeck(deck); if(!f) return null;
   const c=_cpcore.sets&&_cpcore.sets.get(f.cards); if(c&&c.n===f.cards.length) return c.s;
   const any=(f.u.decks||[]).some(d=>d&&Array.isArray(d.cards)&&d.cards.some(x=>x&&x.core===true)), s=new Set();
