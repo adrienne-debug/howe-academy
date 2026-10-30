@@ -48238,6 +48238,7 @@ function envcStudentHtml(sid){
   const s=Object.assign({sid},_envc.students[sid]||{}), sm=s.summary||null, stns=envsStations(), cid=_envc.cid;
   let h='<div class="envs-card"><div class="envs-row"><button class="envs-btn sec" onclick="envcView(\'grid\')">← class</button><div style="flex:1"><div class="envs-h2" style="margin:0">'+envcEsc(envcName(s))+(envcApp(s)==="howe"?' · Howe Academy app':'')+'</div><div class="envs-muted">'+(sm?'content v'+(sm.unitVer||1)+' · streak '+((sm.streak&&sm.streak.days)||0)+' d · '+Object.keys(sm.days||{}).filter(k=>envsDaysAgo(k)<30).length+' study days this month · last mirrored '+envcEsc(envsWhen(sm.at?envsDayKey(sm.at):null)):'no study mirrored yet')+'</div></div></div></div>';
   if(typeof cpWatchStudentHtml==="function") h+=cpWatchStudentHtml(sid);   // 🧠 CPWATCH: ⚠ the parent's drill not run, with Leave it
+  if(typeof cpMoveBackStudentHtml==="function") h+=cpMoveBackStudentHtml(sid);   // ↩ CPMOVEBACK: the teacher moves the reviews back (or lets the parent choose again)
   h+='<div class="envs-card"><div class="envs-h2">Stations</div>'+envsStationRowsHtml(sm,{weak:true})+'</div>';
   if(typeof cpSecStudentHtml==="function") h+=cpSecStudentHtml(sid);   // 🎚 CPSECTIONS: On · Review only · Off per section
   if(typeof cpSpecStudentHtml==="function") h+=cpSpecStudentHtml(sid);   // 🏅 CPSPECIALIST: the 🏅 Specialist card
@@ -57523,7 +57524,7 @@ function cpWatchStudentHtml(sid){
   if(t.quiet) return '<div class="envs-card" style="font-size:13px"><div class="envs-row"><div style="flex:1"><b>\u{1F9E0} Left for now</b> until '+envsEsc(cpwDay(t.until))+' · <span class="envs-muted">'+envsEsc(cpwLine(t))+'</span></div>'+btn("↩ Undo","cpwUnquiet('"+envcJ(sid)+"')")+'</div>'+((typeof cpwfSoonHtml==="function"&&cpwfSoonHtml(sid,t))||'')+'</div>';
   let h='<div class="envs-card" style="border-color:#f59e0b;background:#fffbeb"><div style="font-weight:900;font-size:14.5px;color:#78350f">⚠ '+envsEsc(cpwLine(t))+'</div>';
   h+='<div class="envs-muted" style="margin:4px 0 8px">'+name+'’s parent took the review cards over (\u{1F9E0} on the parent page) and has to drill them every study day. '+(t.overdue?t.overdue+' of them are overdue. ':'')+'The parent was reminded after '+cpwN(cpwNum("remindAfterDays",sid),"study day")+'. The numbers are in ⚙️ Class settings ▸ Parent drills.</div><div class="envs-row">';
-  if(typeof cpdrMoveBackHtml==="function"){ try{ h+=cpdrMoveBackHtml(sid)||""; }catch(e){} }   // "Move reviews back to the sitting" (row 13's button, not built yet)
+  if(typeof cpdrMoveBackHtml==="function"){ try{ h+=cpdrMoveBackHtml(sid)||""; }catch(e){} }   // ↩ CPMOVEBACK: "Move reviews back to the sitting" (row 13's button, built 2026-10-30)
   h+=btn("Leave it","cpwQuiet('"+envcJ(sid)+"')")+'</div><div class="envs-muted" style="margin-top:4px">Leave it hides this for '+cpwN(CPW_QUIET_DAYS,"study day")+'. Writes students/'+envsEsc(sid)+'/reviewQuiet.</div>';
   if(typeof cpwfSoonHtml==="function"){ try{ h+=cpwfSoonHtml(sid,t)||""; }catch(e){} }   // Q24: when the reviews go back by themselves (+ the demo's next-day button)
   return h+'</div>';
@@ -57679,6 +57680,65 @@ function cpwfDemoAhead(sid){
   envsRe(); return true;
 }
 // CPWATCHFALLBACK_END
+// CPMOVEBACK_START — ↩ THE TEACHER'S "MOVE REVIEWS BACK" BUTTON (DESIGN_class_platform_2026-10-28.md §7(a), §13 row 13: "The teacher's and
+// admin's 'Move reviews back to Maya's sitting'"; built 2026-10-30 on Adrienne's yes, "Yes, build it", after PR 17's fall-back found it was
+// never built — only the empty hook cpdrMoveBackHtml). INERT unless ENVCONSOLE's envcOn() (a teacher or admin login on the class site).
+//   · WHERE: inside CPWATCH's ⚠ card (the hook cpdrMoveBackHtml, beside Leave it), and on the student page whenever the parent drills the
+//     review cards without a warning (cpMoveBackStudentHtml, one hook in envcStudentHtml next to CPWATCH's).
+//   · THE WRITE: students/<sid>/review = {mode:"sitting", by, role:"teacher"|"admin", at} through envsWrite ("would write" in the demo;
+//     ?dryrun=1: nothing) — the shape the rules already accept for the class's teacher or an admin. CPDRILLPARENT reads it as a hold: the
+//     parent's switch reads "🔒 Set by the teacher" and the student's 🌿 sitting takes every review back. One confirm before it writes.
+//   · ↩ LET THE PARENT CHOOSE AGAIN: removes the record (the rules let the teacher remove it), so the switch is the parent's again and the
+//     student stays in the sitting until the parent turns it back on. Howe / Lincoln never reach a line of this (no console there).
+const _cpmb={ask:""};
+function cpmbOn(){ return typeof envcOn==="function"&&envcOn(); }
+function cpmbStu(sid){ return (typeof _envc!=="undefined"&&_envc&&_envc.students&&_envc.students[sid])||null; }
+function cpmbRec(sid){ const s=cpmbStu(sid); let r=s&&s.review; if(!(r&&typeof r==="object")&&typeof cpdrRecOf==="function"&&typeof _envs!=="undefined"&&sid===_envs.sid) r=cpdrRecOf(sid);   // the demo's own kid: the live record (as CPWATCHFALLBACK reads it)
+  return (r&&typeof r==="object")?r:null; }
+function cpmbFirst(sid){ const s=cpmbStu(sid); return envsEsc(envcName(Object.assign({sid},s||{}))).split(" ")[0]; }
+function cpmbHeld(r){ return !!(r&&r.mode==="sitting"&&(r.role==="teacher"||r.role==="admin")); }
+function cpmbDate(ms){ try{ const d=new Date(+ms); return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()]+" "+["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()]+" "+d.getDate(); }catch(e){ return ""; } }
+// the button (and, once tapped, the confirm) — shared by both places
+function cpmbButtonHtml(sid){
+  const n=cpmbFirst(sid), J=envcJ(sid);
+  if(_cpmb.ask===sid) return '<div class="envs-card" style="margin:6px 0;background:#f8fafc"><div style="font-size:13.5px;font-weight:700">Move '+n+'’s review cards back to '+n+'’s own \u{1F33F} sitting?</div>'+
+    '<div class="envs-muted" style="margin:4px 0 8px">The parent’s drill turns off and the parent’s switch reads “\u{1F512} Set by the teacher” until you let the parent choose again. No card loses its place.</div>'+
+    '<div class="envs-row"><button class="envs-btn" style="min-height:40px" onclick="cpmbDo(\''+J+'\')">↩ Move them back</button><button class="envs-btn sec" style="min-height:40px" onclick="cpmbCancel()">Cancel</button></div></div>';
+  return '<button class="envs-btn" style="min-height:40px" onclick="cpmbAsk(\''+J+'\')">↩ Move reviews back to '+n+'’s sitting</button>';
+}
+// CPWATCH's hook inside the ⚠ card
+function cpdrMoveBackHtml(sid){ if(!cpmbOn()||!sid) return ""; const r=cpmbRec(sid); if(!r||r.mode!=="parent") return ""; return cpmbButtonHtml(sid); }
+// envcStudentHtml's hook: the parent drills (no warning up) → the button; the teacher moved them back → the hold + Let the parent choose again
+function cpMoveBackStudentHtml(sid){
+  if(!cpmbOn()||!sid) return ""; const r=cpmbRec(sid); if(!r) return ""; const n=cpmbFirst(sid);
+  if(cpmbHeld(r)) return '<div class="envs-card" style="font-size:13px"><div>\u{1F512} <b>'+n+' reviews every card in the \u{1F33F} sitting</b> · moved back by '+(r.role==="admin"?"Adrienne":"you")+(r.at?' on '+envsEsc(cpmbDate(r.at)):'')+'. The parent can’t turn the drill on until you let them.</div>'+
+    '<div class="envs-row" style="margin-top:6px"><button class="envs-btn sec" style="min-height:40px" onclick="cpmbRelease(\''+envcJ(sid)+'\')">↩ Let the parent choose again</button></div></div>';
+  if(r.mode!=="parent") return "";
+  if(typeof cpwTeacher==="function"){ try{ const t=cpwTeacher(Object.assign({sid},cpmbStu(sid)||{},{review:r})); if(t&&t.warn&&!t.quiet) return ""; }catch(e){} }   // the ⚠ card carries the button
+  return '<div class="envs-card" style="font-size:13px"><div style="margin-bottom:6px">\u{1F9E0} '+n+'’s parent drills the review cards (every 2 weeks and up) on the parent page'+(r.at?' since '+envsEsc(cpmbDate(r.at)):'')+'.</div>'+cpmbButtonHtml(sid)+'</div>';
+}
+function cpmbAsk(sid){ if(!cpmbOn()) return; _cpmb.ask=String(sid||""); envcRe(); }
+function cpmbCancel(){ _cpmb.ask=""; envcRe(); }
+// shown at once on this device (the console's copy, and the demo's kid), put back if the write is refused
+function cpmbApply(sid,rec){
+  const C=cpmbStu(sid), prevC=C?C.review:undefined, isMe=typeof _cpdr!=="undefined"&&_cpdr&&sid===_envs.sid, prevR=isMe?(_cpdr.revs||{})[sid]:undefined;
+  if(C){ if(rec) C.review=rec; else delete C.review; }
+  if(isMe){ const R=Object.assign({},_cpdr.revs); if(rec) R[sid]=rec; else delete R[sid]; _cpdr.revs=R; }
+  return ()=>{ if(C){ if(prevC===undefined) delete C.review; else C.review=prevC; } if(isMe){ const R=Object.assign({},_cpdr.revs); if(prevR===undefined) delete R[sid]; else R[sid]=prevR; _cpdr.revs=R; } };
+}
+function cpmbDo(sid){
+  if(!cpmbOn()||!sid) return Promise.resolve(false); _cpmb.ask="";
+  const by=envsDemo()?"uid_demo_teacher":(_envs.uid||""), rec={mode:"sitting",by,role:_envs.role==="admin"?"admin":"teacher",at:Date.now()}, undo=cpmbApply(sid,rec), n=cpmbFirst(sid);
+  envcRe();
+  return Promise.resolve(envsWrite("students/"+sid+"/review",rec,"set")).then(()=>{ if(!envsDemo()) envsToast("↩ "+n+"’s reviews are back in the sitting"); envcRe(); return true; },
+    e=>{ undo(); envsToast("Couldn’t move them back: "+((e&&e.message)||"try again")); envcRe(); return false; });
+}
+function cpmbRelease(sid){
+  if(!cpmbOn()||!sid) return Promise.resolve(false); const undo=cpmbApply(sid,null), n=cpmbFirst(sid); envcRe();
+  return Promise.resolve(envsWrite("students/"+sid+"/review",null,"remove")).then(()=>{ if(!envsDemo()) envsToast("The parent can choose again for "+n); envcRe(); return true; },
+    e=>{ undo(); envsToast("Couldn’t change it: "+((e&&e.message)||"try again")); envcRe(); return false; });
+}
+// CPMOVEBACK_END
 // CPDRILLTEACHER_START — 🧠 THE TEACHER DRILLS 3–5 OF EACH STUDENT'S CARDS IN CLASS, and the student's own app books them forward
 // (DESIGN_class_platform_2026-10-28.md §7(b), §9, §12, §13 row 14, §14 Q13/Q14; PR 14 of the class platform). Which cards: the design's
 // pick for Q13 (2026-10-28), "due today, most-missed first". For Lincoln, her yes to Q14 (2026-10-28): "I would definitely love for the
