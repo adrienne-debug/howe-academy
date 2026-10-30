@@ -56758,9 +56758,9 @@ function cpdrWhoNote(who){
 //         console, not an email (Q25 is a separate server step). A teacher's (or Adrienne's) move back to the sitting clears it at once.
 //   · LEAVE IT: students/<sid>/reviewQuiet = {until:"YYYYMMDD", by} (the class's teacher or admin; SITE_RULES.json), one set through
 //     envcWrite → envsWrite ("would write" in the demo; dry run: nothing): the ⚠ stays down through the next 3 study days. ↩ Undo removes it.
-//   · Q24 IS NOT ANSWERED: nothing here turns the switch off by itself. The hook point is cpWatchFallBack(kid, review), called with the
-//     worked-out numbers each time the summary is built (typeof-guarded; nothing defines it). If she says yes, that PR adds
-//     fallBackAfterDays to the Parent drills settings and defines cpWatchFallBack.
+//   · Q24 → YES (her answer 2026-10-29): the automatic fall-back is CPWATCHFALLBACK, right after this block. It defines the hook point
+//     cpWatchFallBack(kid, review), called with the worked-out numbers each time the summary is built (typeof-guarded), adds
+//     fallBackAfterDays to the Parent drills settings, and fills the guarded note lines here (cpwfNoteHtml, cpwfSoon*, cpwfStudentHtml).
 //   · DEMO: Jonah T.'s parent took the reviews over and hasn't drilled for 4 study days (37 waiting) → Teacher ▸ 📋 Class: ⚠ 🧠 on Jonah ▸
 //     his page. Maya (the demo's own kid): Parent ▸ switch on ▸ "🧪 Demo: next study day, no drill" moves the demo's clock one study day
 //     (2 taps: amber; 3: the teacher is told and Maya's row gets the ⚠ too) · Kid ▸ 🌿: the "waiting" line. A drill saved resets the clock.
@@ -56831,7 +56831,7 @@ function cpWatchSum(kid,M,now){
   try{
     if(!cpwOn(kid)||(M&&typeof masteryData!=="undefined"&&M!==masteryData)) return null;
     const st=cpwState(kid); if(!st) return null;
-    if(typeof cpWatchFallBack==="function"){ try{ cpWatchFallBack(kid,st); }catch(e){} }   // Q24 (not answered): the automatic fall-back's hook point — nothing defines it
+    if(typeof cpWatchFallBack==="function"){ try{ cpWatchFallBack(kid,st); }catch(e){} }   // Q24 (yes, 2026-10-29): the automatic fall-back (CPWATCHFALLBACK)
     return st;
   }catch(e){ return null; }
 }
@@ -56844,7 +56844,7 @@ function cpwN(n,one,many){ return n+" "+(n===1?one:(many||one+"s")); }
 // ── the parent's 🧠 card (CPDRILLPARENT's hook, at its bottom) and the student's 🌿 page (one line in envsStudyHtml)
 function cpWatchHtml(who,kid){
   try{
-    const st=cpwState(kid); if(!st) return "";
+    const st=cpwState(kid); if(!st) return (typeof cpwfNoteHtml==="function"&&cpwfNoteHtml(who,kid))||"";   // the reviews went back by themselves: the parent's note
     const name=envsEsc(envsKidName(kid)), sid=_envs.sid, today=st.asOf, warnD=cpwNum("warnAfterDays",sid);
     const demo=(who==="parent"&&envsDemo())?'<div style="margin-top:8px"><button class="envs-btn sec" style="min-height:34px;font-size:12px" onclick="cpwAhead()">\u{1F9EA} Demo: next study day, no drill'+(_cpw.ahead?' ('+_cpw.ahead+' on)':'')+'</button></div>':'';
     if(!st.waiting||st.lastDrill===today) return demo;
@@ -56856,7 +56856,7 @@ function cpWatchHtml(who,kid){
       return '<div class="envs-card" style="'+amber+';margin-top:0">\u{1F9E0} Your review drill '+when+' · '+n+(st.waiting===1?' is':' are')+' waiting for your drill with Mom or Dad.</div>';
     }
     if(!st.flag) return '<div style="'+plain+'">\u{1F9E0} '+n+' waiting for your drill with '+name+'.</div>'+demo;
-    return '<div style="'+amber+'">'+name+'’s review drill '+when+' · '+cpwN(st.waiting,"card")+' waiting. '+(st.flag==="warn"?name+'’s teacher has been told.':name+'’s teacher sees this after '+cpwN(warnD,"study day")+'.')+'</div>'+demo;
+    return '<div style="'+amber+'">'+name+'’s review drill '+when+' · '+cpwN(st.waiting,"card")+' waiting. '+(st.flag==="warn"?name+'’s teacher has been told.'+((typeof cpwfSoonParent==="function"&&cpwfSoonParent(kid,st))||''):name+'’s teacher sees this after '+cpwN(warnD,"study day")+'.')+'</div>'+demo;
   }catch(e){ return ""; }
 }
 // ── the console: a student's watch, from the summary their app published (+ the study days since it was worked out)
@@ -56883,13 +56883,14 @@ function cpWatchGridChip(s){ const t=cpwTeacher(s); if(!t||!t.show) return ""; r
 // envcStudentHtml's hook: the card, with Leave it
 function cpWatchStudentHtml(sid){
   if(typeof envcOn!=="function"||!envcOn()||!sid) return "";
-  const s=Object.assign({sid},(_envc.students||{})[sid]||{}), t=cpwTeacher(s); if(!t||!t.warn) return "";
+  const s=Object.assign({sid},(_envc.students||{})[sid]||{}), t=cpwTeacher(s); if(!t||!t.warn) return (typeof cpwfStudentHtml==="function"&&cpwfStudentHtml(s))||"";   // the reviews went back by themselves: the note
   const name=envsEsc(envcName(s)).split(" ")[0], btn=(l,on)=>'<button class="envs-btn sec" style="min-height:40px" onclick="'+on+'">'+l+'</button>';
-  if(t.quiet) return '<div class="envs-card" style="font-size:13px"><div class="envs-row"><div style="flex:1"><b>\u{1F9E0} Left for now</b> until '+envsEsc(cpwDay(t.until))+' · <span class="envs-muted">'+envsEsc(cpwLine(t))+'</span></div>'+btn("↩ Undo","cpwUnquiet('"+envcJ(sid)+"')")+'</div></div>';
+  if(t.quiet) return '<div class="envs-card" style="font-size:13px"><div class="envs-row"><div style="flex:1"><b>\u{1F9E0} Left for now</b> until '+envsEsc(cpwDay(t.until))+' · <span class="envs-muted">'+envsEsc(cpwLine(t))+'</span></div>'+btn("↩ Undo","cpwUnquiet('"+envcJ(sid)+"')")+'</div>'+((typeof cpwfSoonHtml==="function"&&cpwfSoonHtml(sid,t))||'')+'</div>';
   let h='<div class="envs-card" style="border-color:#f59e0b;background:#fffbeb"><div style="font-weight:900;font-size:14.5px;color:#78350f">⚠ '+envsEsc(cpwLine(t))+'</div>';
   h+='<div class="envs-muted" style="margin:4px 0 8px">'+name+'’s parent took the review cards over (\u{1F9E0} on the parent page) and has to drill them every study day. '+(t.overdue?t.overdue+' of them are overdue. ':'')+'The parent was reminded after '+cpwN(cpwNum("remindAfterDays",sid),"study day")+'. The numbers are in ⚙️ Class settings ▸ Parent drills.</div><div class="envs-row">';
   if(typeof cpdrMoveBackHtml==="function"){ try{ h+=cpdrMoveBackHtml(sid)||""; }catch(e){} }   // "Move reviews back to the sitting" (row 13's button, not built yet)
   h+=btn("Leave it","cpwQuiet('"+envcJ(sid)+"')")+'</div><div class="envs-muted" style="margin-top:4px">Leave it hides this for '+cpwN(CPW_QUIET_DAYS,"study day")+'. Writes students/'+envsEsc(sid)+'/reviewQuiet.</div>';
+  if(typeof cpwfSoonHtml==="function"){ try{ h+=cpwfSoonHtml(sid,t)||""; }catch(e){} }   // Q24: when the reviews go back by themselves (+ the demo's next-day button)
   return h+'</div>';
 }
 function cpwQuietMem(sid,v){ if(!_envc.students[sid]) _envc.students[sid]={}; if(v) _envc.students[sid].reviewQuiet=v; else delete _envc.students[sid].reviewQuiet; }
@@ -56916,6 +56917,133 @@ function cpWatchDemoSeed(data){
   return true;
 }
 // CPWATCH_END
+// CPWATCHFALLBACK_START — 🧠 THE AUTOMATIC FALL-BACK: when the teacher has been warned that a parent's review drill isn't being run and it
+// STILL isn't run, the student's review cards go back to the student's own 🌿 sitting by themselves (DESIGN_class_platform_2026-10-28.md
+// §7(a) 5, §13 row 17, "Adrienne's answers, 2026-10-29": Q24 → yes). Her answer 2026-10-29: "q24 yes". The design's lean she said yes to:
+// "after 3 more missed study days (6 in all), the switch turns itself off. Maya's sitting picks the reviews back up, so no kid stalls before
+// the final, and the parent and the teacher each get one line saying so." INERT unless CPWATCH's watch is on (the site's own kid, the
+// parent's switch on); Lincoln in Howe: no edition, nothing here runs.
+//   · THE SETTING: fallBackAfterDays in ⚙️ Class settings ▸ Parent drills (default 3; 0 = never), study days AFTER the teacher's warning
+//     (warnAfterDays). Added to CPWATCH's list from here (by name, once), so Adrienne's 🔒 per setting locks it like the other three.
+//   · WHEN (PURE cpwfCalc): the drill has gone unrun for warnAfterDays + fallBackAfterDays study days (CPWATCH's missed, worked out from
+//     mastery/history + the class calendar), with cards still waiting. The count is from the days warning; a warning brought early by
+//     warnAfterCards doesn't shorten it. LEAVE IT pauses it: while students/<sid>/reviewQuiet stands nothing moves, and after it the
+//     fallBackAfterDays count starts again from its last day (so the teacher's Leave it gives the parent the full grace once more).
+//   · WHO MOVES IT: the student's own app (the kid's or the parent's login), at CPWATCH's hook point cpWatchFallBack(kid, review), each
+//     time the summary is worked out. It reads reviewQuiet once, then makes THE move-back write: students/<sid>/review, one set through
+//     envsWrite (the same path and shape as the parent's switch, CPDRILLPARENT's cpdrSet) = {mode:"sitting", by, role:"auto", auto:true,
+//     at, from (the parent record's at), days (study days not run), after (of them, past the warning), on (the study day, YYYYMMDD)}.
+//     row 13's teacher/admin "Move reviews back to Maya's sitting" button (not built yet) is meant to call the same cpwfMoveBack.
+//   · EXACTLY ONCE, ACROSS DEVICES: SITE_RULES.json lets a family login write role "auto" only while the record is still the parent's
+//     (mode "parent") and only with from == that record's at, so a second device (or a stale page) is refused, and a parent who turned
+//     the drill back on since (a new at) is never undone. On this device: once per take-over a day, and never while the record changed.
+//     An "auto" record doesn't hold: the parent can turn the drill back on any time (a new take-over, the count starts again).
+//   · THE NOTES: the parent's 🧠 card: "Reviews moved back to Maya’s sitting because the drill wasn’t run for 6 study days. Turn your drill
+//     back on any time." · the teacher's student page: "🌿 Reviews moved back to Jonah’s sitting by themselves on Mon Nov 2 …". Before it
+//     happens, the parent's amber line and the teacher's ⚠ card say it is coming (the teacher's with the study days left). The design gives
+//     the kid no line for it (the parent and the teacher only).
+//   · DEMO: Teacher ▸ Jonah's page: the ⚠ card has "🧪 Demo: next study day, no drill" → his reviews are back in his sitting, with the
+//     note (the demo's stand-in for Jonah's own app). Maya: Parent ▸ switch on ▸ the next-day button 6 times → the note on her card.
+const CPWF_FIELD={name:"fallBackAfterDays",part:"study",sect:"pdrill",kind:"int",min:0,max:30,def:3,zero:"never",label:"Move the reviews back to the sitting after",means:"Study days after the teacher is told, with the parent’s drill still not run, before the student’s review cards go back to the student’s own \u{1F33F} sitting by themselves (0 = never). Leave it holds this too. The parent can turn the drill back on any time."};
+const _cpwf={tried:{}};
+// ⚙️ Class settings ▸ Parent drills: the fourth row, added to CPWATCH's list and ENVCLASSSET's (by name, once)
+function cpwfFields(){
+  if(typeof CPW_FIELDS==="undefined"||!Array.isArray(CPW_FIELDS)||typeof cpwFields!=="function") return false;
+  if(!CPW_FIELDS.some(x=>x&&x.name===CPWF_FIELD.name)) CPW_FIELDS.push(CPWF_FIELD);
+  return cpwFields();
+}
+const CPWF_FIELDS_SET=cpwfFields();
+// PURE. o = {missed, waiting, warn, fb, quiet ({until} or null), cal, today} → {after: study days unrun past the warning (and past Leave it), left, due}
+function cpwfCalc(o){
+  o=o||{}; const missed=+o.missed||0, warn=+o.warn||0, fb=+o.fb||0, waiting=+o.waiting||0;
+  let after=Math.max(0,missed-warn); const q=o.quiet;
+  if(q&&cpwKeyOk(q.until)&&cpwKeyOk(o.today)) after=(o.today<=q.until)?0:Math.min(after,cpwBetween(o.cal,q.until,o.today));
+  const on=fb>0&&waiting>0&&missed>=warn;
+  return {after,left:on?Math.max(0,fb-after):null,due:on&&after>=fb};
+}
+// an automatic move-back record (the rules' shape)
+function cpwfIsAuto(r){ return !!(r&&typeof r==="object"&&r.mode==="sitting"&&r.role==="auto"&&r.auto===true); }
+// reviewQuiet for one student: the console's copy in the demo, else one read of the shared instance
+function cpwfQuietOf(sid){
+  const mem=(typeof _envc!=="undefined"&&_envc&&_envc.students&&_envc.students[sid])||null;
+  if(envsDemo()) return Promise.resolve((mem&&mem.reviewQuiet)||null);
+  try{ return Promise.resolve(firebase.database().ref("students/"+sid+"/reviewQuiet").once("value")).then(s=>(s&&typeof s.val==="function")?s.val():null); }
+  catch(e){ return Promise.reject(e); }
+}
+// THE move-back write: students/<sid>/review = {mode:"sitting", by, role, at, …}, one set through envsWrite ("would write" in the demo;
+// ?dryrun=1: nothing). Shown at once on this device (the kid's/parent's record, and the console's copy); put back if refused.
+function cpwfMoveBack(sid,x){
+  x=x||{}; if(!sid) return Promise.resolve(false);
+  const by=envsDemo()?(x.by||"uid_demo"):(_envs.uid||""), rec=Object.assign({mode:"sitting",by,role:"auto",auto:true,at:Date.now()},x,{by});   // live: by = the writer (the rules)
+  const C=(typeof _envc!=="undefined"&&_envc&&_envc.students&&_envc.students[sid])||null, prevR=cpdrRecOf(sid), prevC=C?C.review:undefined;
+  if(sid===_envs.sid) _cpdr.revs=Object.assign({},_cpdr.revs,{[sid]:rec});
+  if(C) C.review=rec;
+  if(envsDemo()) _cpw.ahead=0;   // the demo's clock comes back to today (as after a drill), so turning the drill on again starts afresh
+  return Promise.resolve(envsWrite("students/"+sid+"/review",rec,"set")).then(()=>{ envsRe(); return true; },()=>{   // refused: most likely another device moved it first (its listener tells us)
+    if(sid===_envs.sid&&cpdrRecOf(sid)===rec) _cpdr.revs=Object.assign({},_cpdr.revs,{[sid]:prevR});
+    if(C&&C.review===rec) C.review=prevC;
+    envsRe(); return false; });
+}
+// CPWATCH's hook point (cpWatchSum, each time the summary is worked out): the student's own app moves the reviews back when it is time
+function cpWatchFallBack(kid,st){
+  if(!st||st.mode!=="parent"||!cpwOn(kid)||cpdrMode(kid)!=="parent") return false;
+  const sid=_envs.sid, rec=cpdrRecOf(sid), fb=cpwNum("fallBackAfterDays",sid), warn=cpwNum("warnAfterDays",sid);
+  if(!sid||!fb||!rec||rec.mode!=="parent") return false;
+  if(!cpwfCalc({missed:st.missed,waiting:st.waiting,warn,fb}).due) return false;   // not yet, even before Leave it
+  const key=sid+"|"+rec.at+"|"+st.asOf; if(_cpwf.tried[key]) return false; _cpwf.tried[key]=true;
+  cpwfQuietOf(sid).then(q=>{
+    const c=cpwfCalc({missed:st.missed,waiting:st.waiting,warn,fb,quiet:q,cal:cpwCal(sid),today:st.asOf}), cur=cpdrRecOf(sid);
+    if(!c.due||!cur||cur.mode!=="parent"||cur.at!==rec.at) return false;   // Leave it stands, or the record changed meanwhile
+    return cpwfMoveBack(sid,{from:rec.at,days:st.missed,after:c.after,on:st.asOf,by:"uid_"+(_envs.role==="parent"?"p":"k")+"_"+kid});
+  }).catch(()=>{});
+  return true;
+}
+// ── the notes
+// the parent's 🧠 card once the reviews went back (CPWATCH's cpWatchHtml, when there is no watch to show); the kid gets no line (the design)
+function cpwfNoteHtml(who,kid){
+  if(who!=="parent"||!cpwOn(kid)) return "";
+  const r=cpdrRecOf(); if(!cpwfIsAuto(r)) return "";
+  const name=envsEsc(envsKidName(kid));
+  return '<div style="margin-top:10px;padding:10px 12px;border-radius:12px;background:#f0fdf4;border:1.5px solid #86efac;color:#14532d;font-size:13px;font-weight:700;line-height:1.4">\u{1F33F} Reviews moved back to '+name+'’s sitting because the drill wasn’t run for '+cpwN(+r.days||0,"study day")+'. Turn your drill back on any time.</div>';
+}
+// the parent's amber line, once the teacher is told: it says what comes next
+function cpwfSoonParent(kid,st){
+  if(!st||st.flag!=="warn"||!cpwNum("fallBackAfterDays",_envs.sid)) return "";
+  return ' If it still isn’t run, the reviews go back to '+envsEsc(envsKidName(kid))+'’s \u{1F33F} sitting by themselves.';
+}
+// the teacher's ⚠ card (and its Left-for-now form): the study days left before the move back, and the demo's next-day button
+function cpwfSoonHtml(sid,t){
+  if(!t||!sid) return "";
+  const s=Object.assign({sid},(_envc.students||{})[sid]||{}), fb=cpwNum("fallBackAfterDays",sid), name=envsEsc(envcName(s)).split(" ")[0];
+  const c=cpwfCalc({missed:t.missed,waiting:t.waiting,warn:cpwNum("warnAfterDays",sid),fb,quiet:s.reviewQuiet,cal:cpwCal(sid),today:cpwToday(sid)});
+  let h='<div class="envs-muted" style="margin-top:6px">';
+  if(!fb) h+='\u{1F33F} The reviews stay with the parent until someone moves them back (⚙️ Parent drills ▸ Move the reviews back … is 0, never).';
+  else if(t.quiet) h+='\u{1F33F} The automatic move back to '+name+'’s sitting waits too: '+cpwN(fb,"study day")+' without the drill after '+envsEsc(cpwDay(t.until))+'.';
+  else h+='\u{1F33F} If the drill still isn’t run, '+name+'’s reviews go back to '+name+'’s own sitting by themselves '+(c.left===0?'the next time '+name+' studies':'after '+cpwN(c.left==null?fb:c.left,"more study day","more study days"))+'. Leave it holds that too.';
+  h+='</div>';
+  if(envsDemo()) h+='<div style="margin-top:8px"><button class="envs-btn sec" style="min-height:34px;font-size:12px" onclick="cpwfDemoAhead(\''+envcJ(sid)+'\')">\u{1F9EA} Demo: next study day, no drill'+(_cpw.ahead?' ('+_cpw.ahead+' on)':'')+'</button></div>';
+  return h;
+}
+// the teacher's student page after the reviews went back (CPWATCH's cpWatchStudentHtml, when there is no warning to show)
+function cpwfRecOf(s){ if(!s) return null; if(envsDemo()&&s.sid===_envs.sid&&(_cpdr.revs||{})[s.sid]!==undefined) return cpdrRecOf(s.sid); return s.review||null; }
+function cpwfStudentHtml(s){
+  const r=cpwfRecOf(s); if(!cpwfIsAuto(r)) return "";
+  const name=envsEsc(envcName(s)).split(" ")[0], day=cpwKeyOk(r.on)?r.on:envsDayKey(+r.at||Date.now());
+  return '<div class="envs-card" style="border-color:#86efac;background:#f0fdf4;font-size:13px;line-height:1.4"><div style="font-weight:900;color:#14532d">\u{1F33F} Reviews moved back to '+name+'’s sitting by themselves on '+envsEsc(cpwDay(day))+'</div><div class="envs-muted" style="margin-top:4px">The parent’s drill wasn’t run for '+cpwN(+r.days||0,"study day")+(r.after!=null?' ('+(+r.after||0)+' after you were told)':'')+'. '+name+'’s own sitting reviews every card now. The parent can turn the drill back on any time. Wrote students/'+envsEsc(s.sid)+'/review (automatic).</div></div>';
+}
+// ── the demo: one more study day without the drill; the demo's own kid runs the real hook, anyone else stands in for that student's app
+function cpwfDemoAhead(sid){
+  if(!envsDemo()||!sid) return false;
+  _cpw.ahead++;
+  if(sid===_envs.sid&&_envs.kid){ cpWatchFallBack(_envs.kid,cpwState(_envs.kid)); envsRe(); return true; }
+  const s=Object.assign({sid},(_envc.students||{})[sid]||{}), r=s.review, t=cpwTeacher(s);
+  if(r&&r.mode==="parent"&&t){
+    const c=cpwfCalc({missed:t.missed,waiting:t.waiting,warn:cpwNum("warnAfterDays",sid),fb:cpwNum("fallBackAfterDays",sid),quiet:s.reviewQuiet,cal:cpwCal(sid),today:cpwToday(sid)});
+    if(c.due) cpwfMoveBack(sid,{from:r.at,days:t.missed,after:c.after,on:cpwToday(sid),by:"uid_k_"+String(sid).split("_").pop()});
+  }
+  envsRe(); return true;
+}
+// CPWATCHFALLBACK_END
 // CPDRILLTEACHER_START — 🧠 THE TEACHER DRILLS 3–5 OF EACH STUDENT'S CARDS IN CLASS, and the student's own app books them forward
 // (DESIGN_class_platform_2026-10-28.md §7(b), §9, §12, §13 row 14, §14 Q13/Q14; PR 14 of the class platform). Which cards: the design's
 // pick for Q13 (2026-10-28), "due today, most-missed first". For Lincoln, her yes to Q14 (2026-10-28): "I would definitely love for the
