@@ -28,12 +28,14 @@ const REV=o=>BLOCKS+"\n"+(o.pt===false?"G.p=null;":PT+"\nG.p={ "+API+" };")+
   "\nG.o={ "+OTHER+" };";
 const LIB=require(path.join(REPO,"envirothon.js"));
 const PICS=JSON.parse(fs.readFileSync(path.join(REPO,"envirothon","pics","index.json"),"utf8"));
+// the pool before the checked Commons sets came in (2026-10-30): the to-do walk-throughs below need items still missing a picture
+const PICS0=Object.fromEntries(Object.entries(PICS).map(([k,L])=>[k,L.filter(p=>p.check!==true)]).filter(([k,L])=>L.length));
 const UNIT=JSON.parse(fs.readFileSync(path.join(REPO,"units","nc_envirothon","unit.json"),"utf8"));
 const FAM={familyId:"envirothon",edition:"envirothon",className:"MS Science 2026-27",roster:[]};
 const NOW=Date.UTC(2026,9,29,15,0,0), CID="ms-science-2026";
-function W(o){ o=o||{}; const w=world(Object.assign({fam:FAM,envt:true,lib:LIB,rev:REV(o),now:NOW},o.w||{})); w.P=w.G.p; w.O=w.G.o; w.G.pics=o.noPics?null:PICS; return w; }
+function W(o){ o=o||{}; const w=world(Object.assign({fam:FAM,envt:true,lib:LIB,rev:REV(o),now:NOW},o.w||{})); w.P=w.G.p; w.O=w.G.o; w.G.pics=o.noPics?null:(o.pics||PICS0); return w; }
 function demo(role,o){ const w=W(Object.assign({},o,{w:Object.assign({search:"?demo=1&role="+(role||"teacher")},(o&&o.w)||{})})); w.envSiteDemoBoot(); w.renderAll(); w.envcView("cpcards"); w.renderAll(); return w; }
-function live(o){ o=o||{}; const w=W({w:{remote:{"classPhotos/c1":{}},dry:!!o.dry}}); w._envs.role=o.role||"teacher"; w._envs.uid="t1"; w._envc.sdb=w.firebase.database(); w._envc.cid="c1"; w._envs.cid="c1"; w._envc.view="cpcards"; w._envc.cls={dismissed:{}}; return w; }
+function live(o){ o=o||{}; const w=W({pics:o.pics,w:{remote:{"classPhotos/c1":{}},dry:!!o.dry}}); w._envs.role=o.role||"teacher"; w._envs.uid="t1"; w._envc.sdb=w.firebase.database(); w._envc.cid="c1"; w._envs.cid="c1"; w._envc.view="cpcards"; w._envc.cls={dismissed:{}}; return w; }
 const view=w=>{ w.renderAll(); return w.G.content; };
 const text=h=>String(h).replace(/<[^>]+>/g," ").replace(/\s+/g," ");
 const Wr=w=>w._envs.writes, last=w=>Wr(w)[Wr(w).length-1];
@@ -191,6 +193,12 @@ console.log("\n── Adrienne sees the same list ──");
 { const t=demo("teacher"), a=demo("admin"), Xt=t.P.cpptModel(), Xa=a.P.cpptModel();
   ok("admin (demo): the 📷 chip and the same rows and count as the teacher", !!Xa&&Xa.todo===Xt.todo&&JSON.stringify(Xa.slots.map(s=>s.id+s.left))===JSON.stringify(Xt.slots.map(s=>s.id+s.left))&&chipN(a)===Xt.todo);
   const l=live({role:"admin"}); ok("admin (live): on, the same count as a live teacher", l.P.cpptOn()&&l.P.cpptModel().todo===live().P.cpptModel().todo); }
+
+console.log("\n── the real pool: the checked Commons sets (2026-10-30) fill rows ──");
+{ const X=live({pics:PICS}).P.cpptModel(), X0=live().P.cpptModel(), left=t=>X.slots.filter(s=>s.tag===t&&s.left>0).length;
+  console.log("      (live with the sets: "+X.todo+" photos to add, was "+X0.todo+")");
+  ok("no gear row is left: every gear item of both skills has its picture", left("gear")===0&&X0.slots.some(s=>s.tag==="gear"&&s.left>0));
+  ok("fewer twig rows, and fewer photos to add over all", left("twig")<X0.slots.filter(s=>s.tag==="twig"&&s.left>0).length&&X.todo<X0.todo, [X0.todo,X.todo]); }
 
 console.log("\n"+pass+" passed, "+fail+" failed"); if(fail) process.exit(1);
 };

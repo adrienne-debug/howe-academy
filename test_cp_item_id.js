@@ -23,6 +23,8 @@ const FAM={familyId:"envirothon",edition:"envirothon",className:"MS Science 2026
 const HOWE={familyId:"howe",roster:[]};
 const LIB=require(path.join(REPO,"envirothon.js"));
 const PICS=JSON.parse(fs.readFileSync(path.join(REPO,"envirothon","pics","index.json"),"utf8"));
+// the pool as it was before the twig photos came in (2026-10-30): every twig / bud shot left out, so "a part with no photo" stays tested
+const NOTWIG=Object.fromEntries(Object.entries(PICS).map(([k,L])=>[k,L.filter(p=>!/twig|bud/i.test(p.shot))]));
 const UNIT=JSON.parse(fs.readFileSync(path.join(REPO,"units","nc_envirothon","unit.json"),"utf8"));
 const COUNTS=JSON.parse(fs.readFileSync(path.join(REPO,"units","nc_envirothon","COUNTS.json"),"utf8"));
 const INDEX=JSON.parse(fs.readFileSync(path.join(REPO,"units","nc_envirothon","index.json"),"utf8"));
@@ -93,7 +95,7 @@ console.log("\n── compile_unit.js rule 8 (kind parts), COUNTS.json, the cata
   ok("index.json (the catalog entry) and CPU_UNITS carry the skills exactly as unit.json has them", JSON.stringify(INDEX.skills)===JSON.stringify(SK.map(C.skillEntry))&&JSON.stringify(r.index.skills)===JSON.stringify(INDEX.skills)&&PARTS.every(s=>src.indexOf('{"key":"'+s.key+'"')>0));
   const gaps=C.partPhotoGaps(REPO,SK), want=[]; PARTS.forEach(s=>s.data.parts.forEach(p=>{ const m=s.data.items.filter(x=>can(x,p.tag)&&!hasPart(x,p)).map(x=>x.name); if(m.length) want.push({skill:s.key,part:p.tag,label:p.label,items:m}); }));
   ok("the no-photo list (per skill and part) comes from envirothon/pics/index.json, and compile prints it as notes", JSON.stringify(gaps)===JSON.stringify(want)&&want.every(g=>r.warn.some(w=>w.indexOf(g.skill+" · "+g.label+": "+g.items.length+" item")===0)), [gaps.length,want.length]);
-  ok("…every tree still needs a twig photo (the repo set has none), as the research said", gaps.some(g=>g.skill==="forestry.tree_parts"&&g.part==="twig"&&g.items.length===TREES.data.items.length));
+  ok("…the twig photos (2026-10-30) cover some trees, the note names the rest", gaps.some(g=>g.skill==="forestry.tree_parts"&&g.part==="twig"&&g.items.length>0&&g.items.length<TREES.data.items.length));
   const secs=UNIT.sections.map(s=>s.key), decks=[{key:"Forestry · ID",section:"forestry",cards:[{name:"N1 · bark",order:7,item:"N1"}]}], tests={sections:{}};
   const it=()=>[1,2,3,4].map(i=>({name:"N"+i,like:["N"+(i%4+1)]}));
   const g=f=>{ const k={key:"forestry.parts_x",section:"forestry",type:"id",label:"Parts",core:true,data:{kind:"parts",parts:[{tag:"bark",label:"Bark"},{tag:"leaf",label:"Leaf",tags:["leaf","needle"]}],items:it()}}; if(f) f(k); return k; };
@@ -126,7 +128,8 @@ console.log("\n── the maker, over many seeds and every round ──");
         else if(!D.cpSkillList||!live.P.cpPhotos(x.name,tags).some(q=>q.id===p.photo.id)) bad=["the photo is the pool's (cpPhotos by item + tags)",seed];
         else if(nmS.id!=="name"||nmS.kind!=="pick"||nmS.answer!==x.name||nmS.choices.length!==4||new Set(nmS.choices).size!==4||nmS.choices.indexOf(x.name)<0) bad=["4 names, its own among them",seed];
         else if(!like.every(y=>nmS.choices.indexOf(y.name)>=0)) bad=["its look-alikes are the wrong choices",seed,x.name,nmS.choices];
-        else if(DI.cpiiTell(x,p.part.tag)&&!see) bad=["an item with a clue for the part gets the clue step",seed,x.name];
+        else if(DI.cpiiTell(x,p.part.tag)&&items.filter(y=>DI.cpiiTell(y,p.part.tag)).length>1&&!see) bad=["an item with a clue for the part gets the clue step (when another item has one to offer beside it)",seed,x.name];
+        else if(see&&items.filter(y=>DI.cpiiTell(y,p.part.tag)).length<2) bad=["no clue step when its clue is the only one of the part (Sweetgum's twig)",seed,x.name];
         else if(see&&(see.id!=="see"||see.answer!==DI.cpiiTell(x,p.part.tag)||new Set(see.choices).size!==see.choices.length||see.choices.length<2||see.choices.length>4||!see.choices.every(c=>items.some(y=>DI.cpiiTell(y,p.part.tag)===c)))) bad=["the clue step: its clue among other items' clues of the same part",seed];
         else if(see&&!p.set.filter(y=>DI.cpiiTell(y,p.part.tag)).every(y=>see.choices.indexOf(DI.cpiiTell(y,p.part.tag))>=0)) bad=["the clues of the same 4 items come first",seed]; }
       const could=items.filter(x=>(rd===DI.CPII_MIX?U.data.parts:U.data.parts.filter(q=>q.tag===rd)).some(q=>can(x,q.tag)&&hasPart(x,q)));
@@ -141,11 +144,12 @@ console.log("\n── the maker, over many seeds and every round ──");
   ok("a skill of another kind is not this maker's: delegated to the gear's (which has nothing for it either)", M.make({type:"id",data:{kind:"flash"}},S.cpskRng(1))===null&&M.html({},{})===""&&M.note({data:{}})===""&&M.missLabel("name:x",{data:{}})===null);
   const need=DI.cpIdNeedPhoto(sk), cnt=DI.cpIdPhotoCount(sk);
   ok("photos by part and what still needs one come from the pool (each part's count = the items with a repo photo of it)", cnt.every(c=>c.have===TREES.data.items.filter(x=>can(x,c.part.tag)&&hasPart(x,c.part)).length&&c.total===TREES.data.items.filter(x=>can(x,c.part.tag)).length)&&need.length===cnt.filter(c=>c.need.length).length);
-  const x=TREES.data.items.find(y=>need.some(n=>n.part==="twig"&&n.items.indexOf(y.name)>=0)), L=live.P._cpph.L[CID]||(live.P._cpph.L[CID]={}), k=live.P.cpphKey(x.name);
+  live.G.pics=NOTWIG; live.P._cpph.rmemo=null;   // a pool with no twig photo: the round opens on the class's first one
+  const need0=DI.cpIdNeedPhoto(sk), x=TREES.data.items.find(y=>need0.some(n=>n.part==="twig"&&n.items.indexOf(y.name)>=0)), L=live.P._cpph.L[CID]||(live.P._cpph.L[CID]={}), k=live.P.cpphKey(x.name);
   L[k]={ptwig:{url:"data:image/svg+xml;charset=utf-8,%3Csvg%3Etwig%3C%2Fsvg%3E",credit:"A twig",lic:"own",tags:{twig:true},item:x.name,how:"pool",by:"t",ts:1}}; live.P._cpph.ver++; live.P._cpph.rmemo=null;
   DI._cpii.round[FBT]="twig";
   ok("a twig photo added to the class's pool: the twig round opens by itself, with that tree only", DI.cpIdRoundOf(sk)==="twig"&&DI.cpIdPhotoCount(sk).find(c=>c.part.tag==="twig").have===1&&[1,2,3,4,5].every(s=>{ const q=DI.CPII_ID.make(sk,D.cpskRng(s)); return q.item===x&&q.part.tag==="twig"&&q.photo.id==="ptwig"; }));
-  delete L[k]; live.P._cpph.ver++; live.P._cpph.rmemo=null; DI._cpii.round[FBT]=DI.CPII_MIX; }
+  delete L[k]; live.G.pics=PICS; live.P._cpph.ver++; live.P._cpph.rmemo=null; DI._cpii.round[FBT]=DI.CPII_MIX; }
 
 console.log("\n── a sitting's order: no item twice, the missed ones first ──");
 { const d=demo("kid"), S=d.S, I=d.I, items=TREES.data.items;
@@ -164,7 +168,8 @@ console.log("\n── the demo kid: 🌿 ▸ 🧩 Trees by part ▸ Go ▸ Bark 
   ok("the demo list grew by exactly the three ID-by-part skills (beside the gear and the sample); she gets those of her open sections (Wildlife isn't sent to her yet)", S._cpsk.demo.nc_envirothon.filter(s=>s.data&&s.data.kind==="parts").length===PARTS.length&&open.indexOf(FBT)>=0&&open.indexOf(FBB)>=0&&open.every(f=>mine.indexOf(f)>=0)&&S.cpSkillList().filter(s=>[FBT,FBB,FBW].indexOf(s.fb)>=0).length===3, mine);
   ok("the Skills door lists Trees by part before Stream bugs by picture (section order), beside the gear and the sample", /🧩 Skills/.test(d.G.content)&&d.G.content.indexOf("Trees by part")>0&&d.G.content.indexOf("Trees by part")<d.G.content.indexOf("Stream bugs by picture")&&/Forestry tools by picture/.test(d.G.content)&&/Biotic index/.test(d.G.content));
   S.cpSkillOpen(K,FBT,5);
-  ok("Go: 👀 Watch it, with the round chips (Mixed + every part that has a photo, never Twig)", /👀 Watch it/.test(d.G.content)&&/Round:/.test(d.G.content)&&/>Mixed</.test(d.G.content)&&/>Bark</.test(d.G.content)&&/>Leaf</.test(d.G.content)&&!/>Twig</.test(d.G.content));
+  const twigHave=I.cpIdPhotoCount(Object.assign({fb:FBT},TREES)).find(c=>c.part.tag==="twig").have;
+  ok("Go: 👀 Watch it, with the round chips (Mixed + every part that has a photo: Twig too, now that the pool has twig photos)", /👀 Watch it/.test(d.G.content)&&/Round:/.test(d.G.content)&&/>Mixed</.test(d.G.content)&&/>Bark</.test(d.G.content)&&/>Leaf</.test(d.G.content)&&twigHave>0&&/>Twig</.test(d.G.content), twigHave);
   I.cpIdRound(FBT,"bark"); const r1=run();
   ok("tap Bark: the same try is made again as a bark round — 'Look at the bark', a bark photo, the try number unchanged", r1.n===1&&r1.prob.part.tag==="bark"&&r1.prob.photo.tags.indexOf("bark")>=0&&/Look at the bark/.test(d.G.content)&&/try 1 of /.test(d.G.content));
   ok("the picture's alt never names it, and its credit waits… (👀 Watch it shows the answer, so the credit is out there)", /alt="The picture to name"/.test(d.G.content)&&/Picture: /.test(d.G.content));
@@ -198,7 +203,8 @@ console.log("\n── the teacher: photos by part, the classmates' counts, the l
   ok("🏫 Class setup ▸ 🧩 Skills: the three ID-by-part skills, type id, core", ["Trees by part","Stream bugs by picture","Animals and their signs"].every(t=>d.G.content.indexOf(t)>0)&&/id · core/.test(d.G.content));
   const C1=I.cpIdPhotoCount(Object.assign({fb:FBT},TREES)), C2=I.cpIdPhotoCount(Object.assign({fb:FBW},ANIM));
   ok("…under each, photos by part from the pool ('Bark 24 of 24 · Twig 0 of 24 …')", d.G.content.indexOf("🖼 Photos by part: "+C1.map(c=>c.part.label+" "+c.have+" of "+c.total).join(" · "))>0&&d.G.content.indexOf("🖼 Photos by part: "+C2.map(c=>c.part.label+" "+c.have+" of "+c.total).join(" · "))>0);
-  ok("…and what still needs one: 'Twig: all 24', each fruit-less tree by name, the animals missing a track / skull / pelt", d.G.content.indexOf("Needs a photo · <b>Twig</b>: all "+TREES.data.items.length)>0&&C1.find(c=>c.part.tag==="fruit").need.every(n=>d.G.content.indexOf(n)>0)&&C2.filter(c=>c.need.length).every(c=>d.G.content.indexOf("Needs a photo · <b>"+c.part.label+"</b>")>0)&&/A round skips an item part with no photo/.test(d.G.content));
+  const tw=C1.find(c=>c.part.tag==="twig");
+  ok("…and what still needs one: each twig-less and fruit-less tree by name, the animals missing a track / skull / pelt", d.G.content.indexOf("Needs a photo · <b>Twig</b>: "+tw.need.join(", "))>0&&tw.have>0&&C1.find(c=>c.part.tag==="fruit").need.every(n=>d.G.content.indexOf(n)>0)&&C2.filter(c=>c.need.length).every(c=>d.G.content.indexOf("Needs a photo · <b>"+c.part.label+"</b>")>0)&&/A round skips an item part with no photo/.test(d.G.content));
   const studs=d.envcStudents(), withS=studs.filter(x=>x.summary), n=sec=>S.cpSkillList().filter(s=>s.section===sec).length;
   ok("every classmate's summary counts the new skills in each section", withS.length>0&&withS.every(x=>["forestry","aquatics","wildlife"].every(sec=>x.summary.skills[sec].total===n(sec)))&&withS.every(x=>x.summary.skills.forestry.stage[FBT]&&x.summary.skills.wildlife.stage[FBW]&&x.summary.skills.aquatics.stage[FBB]));
   const cal=studs.find(x=>x.sid==="walker_caleb");

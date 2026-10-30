@@ -22,6 +22,8 @@ const FAM={familyId:"envirothon",edition:"envirothon",className:"MS Science 2026
 const HOWE={familyId:"howe",roster:[]};
 const LIB=require(path.join(REPO,"envirothon.js"));
 const PICS=JSON.parse(fs.readFileSync(path.join(REPO,"envirothon","pics","index.json"),"utf8"));
+// the pool as it was before the gear photos came in (2026-10-30): every key named by an item alone (the gear) left out, so the no-photo paths stay tested
+const NOGEAR=Object.fromEntries(Object.entries(PICS).filter(([k])=>k.indexOf(" · ")>0));
 const UNIT=JSON.parse(fs.readFileSync(path.join(REPO,"units","nc_envirothon","unit.json"),"utf8"));
 const COUNTS=JSON.parse(fs.readFileSync(path.join(REPO,"units","nc_envirothon","COUNTS.json"),"utf8"));
 const INDEX=JSON.parse(fs.readFileSync(path.join(REPO,"units","nc_envirothon","index.json"),"utf8"));
@@ -88,7 +90,7 @@ console.log("\n── compile_unit.js rule 8, COUNTS.json, the catalog entry ─
   ok("a unit with no skills compiles as before (no skills key in the entry or COUNTS)", !("skills" in C.makeIndex({id:"x",title:"X",sections:[]},[],null))&&!("skills" in C.makeCounts({id:"x",sections:[]},[],null,null))&&C.checkSkills(undefined,secs,decks,tests).length===0); }
 
 console.log("\n── the maker, over many seeds ──");
-{ const w=W(), S=w.S, I=w.I, M=I.CPIG_ID, sk=Object.assign({fb:FBA},AQ), items=AQ.data.items;
+{ const w=W(), S=w.S, I=w.I, M=I.CPIG_ID, sk=Object.assign({fb:FBA},AQ), items=AQ.data.items; w.G.pics=NOGEAR;
   ok("registered as the engine's `id` type (through cpSkillTypeAdd), with no earlier id maker to keep", S.CPSK_TYPES.id===M&&I.CPIG_PREV_ID===null);
   let bad=null, seenItems={};
   for(let seed=1;seed<=400&&!bad;seed++){ const p=M.make(sk,S.cpskRng(seed)), st=p.steps, x=p.item; seenItems[x.name]=1;
@@ -128,7 +130,8 @@ console.log("\n── a sitting's order: no item twice, the missed ones first �
   ok("the same sitting seed (and no misses) gives the same order", again===names[0], [again,names[0]]); S._cpsk.run=null; }
 
 console.log("\n── the picture: from the pool by item + tag; the placeholder ──");
-{ const d=demo("kid"), S=d.S, I=d.I, P=d.P, sk=Object.assign({fb:FBF},FOR);
+{ const d0=demo("kid"); ok("with the real pool (2026-10-30) no gear item of either skill needs a photo", d0.I.cpGearNeedPhoto(Object.assign({fb:FBF},FOR)).length===0&&d0.I.cpGearNeedPhoto(Object.assign({fb:FBA},AQ)).length===0, d0.I.cpGearNeedPhoto(Object.assign({fb:FBA},AQ)).map(x=>x.name)); }
+{ const d=demo("kid"), S=d.S, I=d.I, P=d.P, sk=Object.assign({fb:FBF},FOR); d.G.pics=NOGEAR; P._cpph.rmemo=null;
   const need=I.cpGearNeedPhoto(sk).map(x=>x.name), drawn=FOR.data.items.filter(x=>I.CPIG_DEMO_SVG[x.name]).map(x=>x.name);
   ok("in the demo, the forestry items with a demo drawing have a picture and every other needs one", drawn.length>0&&need.length===FOR.data.items.length-drawn.length&&drawn.every(n=>need.indexOf(n)<0), need);
   const x=FOR.data.items.find(y=>need.indexOf(y.name)>=0), k=P.cpphKey(x.item||x.name), L=P._cpph.L[CID];
@@ -149,7 +152,7 @@ console.log("\n── the picture: from the pool by item + tag; the placeholder 
 
 console.log("\n── the demo kid: 👀 → ✍️ → 💪 on a gear item ──");
 { // a sitting seed whose 3rd try (the first ✍️) is an item with a picture, so the name is given and the use is hers
-  let seed=0, d=null, S=null; for(let s=1;s<300;s++){ const t=demo("kid"); const order=(()=>{ t.S.cpSkillOpen(K,FBF,s); const r=t.S._cpsk.run, o=r.cpig.order; t.S._cpsk.run=null; return o; })();
+  let seed=0, d=null, S=null; for(let s=1;s<300;s++){ const t=demo("kid"); t.G.pics=NOGEAR; t.P._cpph.rmemo=null; const order=(()=>{ t.S.cpSkillOpen(K,FBF,s); const r=t.S._cpsk.run, o=r.cpig.order; t.S._cpsk.run=null; return o; })();
     if(t.I.CPIG_DEMO_SVG[FOR.data.items[order[2]].name]&&!t.I.CPIG_DEMO_SVG[FOR.data.items[order[4]].name]){ seed=s; d=t; S=t.S; t.renderAll(); break; } }
   const run=()=>S._cpsk.run;
   ok("the Skills door lists the unit's two gear skills beside the sample (Forestry first, the section order)", /🧩 Skills/.test(d.G.content)&&d.G.content.indexOf("Forestry tools by picture")>0&&d.G.content.indexOf("Sampling gear by picture")>d.G.content.indexOf("Forestry tools by picture")&&/Biotic index/.test(d.G.content), seed);
@@ -179,7 +182,7 @@ console.log("\n── the demo kid: 👀 → ✍️ → 💪 on a gear item ─�
   S.cpSkillQuit(); d.envsView("scores"); ok("Scores: '🧩 skills learned 0 of 1' on Forestry and '0 of 2' on Aquatics", /🧩 skills learned 0 of 1/.test(d.G.content)&&/🧩 skills learned 0 of 2/.test(d.G.content)); }
 
 console.log("\n── the teacher: the photo note, the classmates' counts, the most-missed step ──");
-{ const d=demo("teacher"), S=d.S, I=d.I; d.envcView("setup");
+{ const d=demo("teacher"), S=d.S, I=d.I; d.G.pics=NOGEAR; d.P._cpph.rmemo=null; d.envcView("setup");
   const drawn=it=>it.filter(x=>I.CPIG_DEMO_SVG[x.name]), fN=FOR.data.items.length, aN=AQ.data.items.length, fD=drawn(FOR.data.items), aD=drawn(AQ.data.items);
   ok("🏫 Class setup ▸ 🧩 Skills: both gear skills, type id, core", /Forestry tools by picture/.test(d.G.content)&&/Sampling gear by picture/.test(d.G.content)&&/id · core/.test(d.G.content));
   ok("…under each, how many items have a photo and which still need one (from the pool)", d.G.content.indexOf("🖼 "+fD.length+" of "+fN+" items have a photo · needs a photo: ")>0&&d.G.content.indexOf("🖼 "+aD.length+" of "+aN+" items have a photo · needs a photo: ")>0&&FOR.data.items.filter(x=>fD.indexOf(x)<0).every(x=>d.G.content.indexOf(x.name.replace(/&/g,"&amp;"))>0)&&/Until it has one, an item asks only what it is for/.test(d.G.content));
@@ -197,7 +200,10 @@ console.log("\n── a live kid: the unit's skills from the catalog entry ─�
   const gearOnly=L=>L.filter(s=>s.data&&s.data.kind==="gear");   // 📐 CPITEMTRIANGLE: the unit has other skills too (the texture triangle)
   ok("no demo list: the skills are CPU_UNITS' (the compiled unit) — Forestry tools and Sampling gear", gearOnly(S.cpSkillList()).map(s=>s.fb).join()==="forestry:tools,aquatics:gear"&&gearOnly(S.cpSkillsFor(K)).length===2);
   ok("the door shows them on her study page", /Forestry tools by picture/.test(S.cpSkillStudyWrap(K,"BODY"))&&/Sampling gear by picture/.test(S.cpSkillStudyWrap(K,"BODY")));
-  ok("no picture in the pool yet (the repo set has no gear) → every live problem asks what it is for, with the placeholder", (()=>{ S.cpSkillOpen(K,FBA,11); const r=S._cpsk.run, okk=!r.prob.photo&&r.prob.steps.length===1&&/Photo needed/.test(w.G.content||S.cpSkillStudyWrap(K,"")); S._cpsk.run=null; return okk; })());
+  w.G.pics=NOGEAR; w.P._cpph.rmemo=null;
+  ok("no picture in the pool (a pool without the gear photos) → every live problem asks what it is for, with the placeholder", (()=>{ S.cpSkillOpen(K,FBA,11); const r=S._cpsk.run, okk=!r.prob.photo&&r.prob.steps.length===1&&/Photo needed/.test(w.G.content||S.cpSkillStudyWrap(K,"")); S._cpsk.run=null; return okk; })());
+  w.G.pics=PICS; w.P._cpph.rmemo=null;
+  ok("with the real pool (the 2026-10-30 gear photos) the live problem shows a picture: what is it, then what is it for", (()=>{ S.cpSkillOpen(K,FBA,11); const r=S._cpsk.run, okk=!!r.prob.photo&&r.prob.steps.length===2&&/^envirothon\/pics\/aquatic_gear\//.test(r.prob.photo.url); S._cpsk.run=null; return okk; })());
   ok("cpGearDemoSeed does nothing off the demo", w.I.cpGearDemoSeed({cid:CID,students:{}})===false); }
 
 console.log("\n── Howe and Lincoln: nothing on ──");

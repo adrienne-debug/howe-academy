@@ -93,7 +93,8 @@ console.log("\n── the pool: repo ← unit ← class ──");
   const L=P.cpPhotos(ITEM), all=P.cpphLayered(ITEM).list;
   ok("the unit's photo joins after the repo's; a unit photo without a free licence is dropped (the rules refuse it too)", all.some(p=>p.id==="pu1"&&p.from==="unit")&&!all.some(p=>p.id==="pu2"));
   ok("the class's photo joins last; ⭐ its main comes FIRST; 🙈 the hidden repo photo is out of the lookup, still in the strip's list", L[0].id==="pc1"&&L[0].main&&!L.some(p=>p.id===r0)&&all.find(p=>p.id===r0).hid===true&&L.length===REPO_N-1+2);
-  ok("by tag: cpPhotos(item, \"twig\") and a list of tags", P.cpPhotos(ITEM,"twig").map(p=>p.id).join()==="pc1"&&P.cpPhotos(ITEM,["twig","bark"]).length===1+1+R.filter(p=>/bark/.test(p.shot)).length);
+  const rt=R.filter((p,i)=>i>0&&/twig|bud/.test(p.shot)).map(p=>P.cpphRepoId(p.url));   // the repo's own twig photos (the 2026-10-30 set), the hidden first one aside
+  ok("by tag: cpPhotos(item, \"twig\") and a list of tags", P.cpPhotos(ITEM,"twig").map(p=>p.id).join()===["pc1"].concat(rt).join()&&P.cpPhotos(ITEM,["twig","bark"]).length===1+1+R.filter((p,i)=>i>0&&/twig|bud|bark/.test(p.shot)).length);
   ok("a mock's fixed id finds its photo even once hidden (the form stays the same)", P.cpPhotoById(r0).url===R[0].url&&P.cpPhotoById("pc1",ITEM).credit==="Wikipedia · Sassafras twig"&&P.cpPhotoById("nope")===null);
   P._cpph.L[CID][k]._main="r~gone";
   ok("a main that isn't there (or is hidden) falls back to the first one showing", P.cpPhotos(ITEM)[0].id===r1);

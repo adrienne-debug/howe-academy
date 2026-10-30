@@ -4,7 +4,9 @@
  * envirothon.js and the real envirothon/pics/index.json, in a tiny world with a recording db.
  *   · the pictures: the index parses, every card of the three pictured ID decks has ≥3 pictures (the three named short items
  *     have ≥1), every URL is a repo path under envirothon/pics/ whose file exists, is a JPEG ≤ 600 px with no EXIF, credit on
- *     every picture, the whole set under 20 MB, CREDITS.md lists the left-out official-profile extracts.
+ *     every picture, the whole set under 40 MB, CREDITS.md lists the left-out official-profile extracts. The checked Commons
+ *     sets added 2026-10-30 (build_pics.py --extra) carry check:true, may key an item with no card by its name, and picture
+ *     Soils and Land Use · ID too.
  *   · the fluency rule exactly; the sitting pool; the picture choice; pick lures; the typed check through mstTypedOk.
  *   · the end of a sitting writes exactly two targeted paths and nothing else; the study-log entry has a normal show's shape;
  *     dry run writes nothing and says so; the deck line with and without state; a kid without the unit: byte-identical.
@@ -37,18 +39,22 @@ ok("no speech code, no confetti, no 🔀 in the block — the name after an answ
 console.log("\n── the pictures (envirothon/pics) ──");
 const ID_DECKS = ["Forestry · ID", "Wildlife · ID", "Aquatic Ecology · ID"];
 const idCards = LIB.unit.decks.filter(d => ID_DECKS.indexOf(d.key) >= 0).flatMap(d => d.cards.map(c => ({ deck: d.key, name: c.name, item: c.item })));
-const SHORT = { "Horse fly larva": 1, "Eastern Chipmunk": 2, "Rat Snake": 2 };   // the official-profile extracts were left out (CREDITS.md)
+const CHECKED = 216;   // build_pics.py --extra: the staged set (245 less 28 already in, 1 near-copy)
+const SHORT = { "Horse fly larva": 1, "Rat Snake": 2 };   // the official-profile extracts were left out (CREDITS.md)
 ok("index parses: an object keyed by card name, no meta keys", IDX && typeof IDX === "object" && !Array.isArray(IDX) && Object.keys(IDX).every(k => !k.startsWith("_")));
 ok("every card of the three pictured ID decks is in the index (" + idCards.length + " cards)", idCards.every(c => Array.isArray(IDX[c.name])), idCards.filter(c => !IDX[c.name]).map(c => c.name).slice(0, 5));
-ok("every index key is a card of those decks", Object.keys(IDX).every(k => idCards.some(c => c.name === k)));
+const allIdCards = LIB.unit.decks.filter(d => / · ID$/.test(d.key)).flatMap(d => d.cards.map(c => ({ deck: d.key, name: c.name, item: c.item })));
+ok("every index key is an ID card, or an item with no ID card keyed by its own name whose pictures are all checked additions", Object.keys(IDX).every(k => allIdCards.some(c => c.name === k) || (k.indexOf(" · ") < 0 && IDX[k].every(e => e.check === true))), Object.keys(IDX).filter(k => !allIdCards.some(c => c.name === k) && !(k.indexOf(" · ") < 0 && IDX[k].every(e => e.check === true))).slice(0, 5));
 ok("≥3 pictures per card, except the three named short items (≥1)", idCards.every(c => IDX[c.name].length >= (SHORT[c.item] ? 1 : 3)), idCards.filter(c => IDX[c.name].length < (SHORT[c.item] ? 1 : 3)).map(c => c.name).slice(0, 5));
-ok("the short items have exactly the pictures recorded (Horse fly larva 1, Eastern Chipmunk 2, Rat Snake 2)", idCards.filter(c => SHORT[c.item]).every(c => IDX[c.name].length === SHORT[c.item]));
+ok("the short items have exactly the pictures recorded (Horse fly larva 1, Rat Snake 2)", idCards.filter(c => SHORT[c.item]).every(c => IDX[c.name].length === SHORT[c.item]));
 const entries = Object.values(IDX).flat();
-ok("every entry = {url, credit, shot}, strings, credit non-empty", entries.every(e => Object.keys(e).sort().join() === "credit,shot,url" && e.credit.trim() && typeof e.shot === "string" && typeof e.url === "string"));
-ok("every URL is a repo path envirothon/pics/<deck>/<item>/<n>.jpg (no host, no ..)", entries.every(e => /^envirothon\/pics\/(forestry_id|wildlife_id|aquatic_id)\/[a-z0-9_]+\/\d+\.jpg$/.test(e.url)));
+ok("every entry = {url, credit, shot} (+ check:true on a checked addition), strings, credit non-empty", entries.every(e => (Object.keys(e).sort().join() === "credit,shot,url" || (Object.keys(e).sort().join() === "check,credit,shot,url" && e.check === true)) && e.credit.trim() && typeof e.shot === "string" && typeof e.url === "string"));
+ok("every URL is a repo path envirothon/pics/<deck>/<item>/<n>.jpg (no host, no ..)", entries.every(e => /^envirothon\/pics\/(forestry_id|wildlife_id|aquatic_id|soils_id|aquatic_gear|forestry_tools|soils_land|forestry_pests|aquatic_lakes)\/[a-z0-9_]+\/\d+\.jpg$/.test(e.url)));
 const files = [...new Set(entries.map(e => e.url))];
 ok("every URL's file exists", files.every(u => fs.existsSync(path.join(__dirname, u))), files.filter(u => !fs.existsSync(path.join(__dirname, u))).slice(0, 3));
-ok("361 distinct pictures: forestry 101 · wildlife 119 · aquatic 141", files.length === 361 && files.filter(u => u.includes("/forestry_id/")).length === 101 && files.filter(u => u.includes("/wildlife_id/")).length === 119 && files.filter(u => u.includes("/aquatic_id/")).length === 141, files.length);
+const firstSet = files.filter(u => !entries.some(e => e.url === u && e.check === true));
+ok("the 2026-10-27 build is unchanged: 361 distinct pictures, forestry 101 · wildlife 119 · aquatic 141, none marked check", firstSet.length === 361 && firstSet.filter(u => u.includes("/forestry_id/")).length === 101 && firstSet.filter(u => u.includes("/wildlife_id/")).length === 119 && firstSet.filter(u => u.includes("/aquatic_id/")).length === 141, firstSet.length);
+ok("the checked additions (2026-10-30): " + (files.length - 361) + " pictures, each marked check:true on every card it is under", files.length - firstSet.length === CHECKED && entries.filter(e => e.check === true).every(e => entries.filter(x => x.url === e.url).every(x => x.check === true)), files.length - firstSet.length);
 ok("cards of one item share one picture set", idCards.every(c => JSON.stringify(IDX[c.name]) === JSON.stringify(IDX[idCards.find(x => x.item === c.item && x.deck === c.deck).name])));
 function jpegInfo(file) {
   const buf = fs.readFileSync(file); if (buf[0] !== 0xFF || buf[1] !== 0xD8) return null;
@@ -63,7 +69,7 @@ const infos = files.map(u => jpegInfo(path.join(__dirname, u)));
 ok("every file is a JPEG, longest side ≤ 600 px, no EXIF", infos.every(x => x && x.w > 0 && Math.max(x.w, x.h) <= 600 && !x.exif), infos.filter(x => !x || Math.max(x.w, x.h) > 600 || x.exif).length);
 const total = (() => { let s = 0; const walk = d => fs.readdirSync(d).forEach(f => { const p = path.join(d, f); const st = fs.statSync(p); if (st.isDirectory()) walk(p); else s += st.size; }); walk(PICS_DIR); return s; })();
 console.log("     envirothon/pics total: " + (total / 1048576).toFixed(1) + " MB (" + total + " bytes); index.json " + fs.statSync(path.join(PICS_DIR, "index.json")).size + " bytes");
-ok("the whole folder is under 20 MB", total < 20 * 1048576, total);
+ok("the whole folder is under 40 MB", total < 40 * 1048576, total);
 const credits = fs.readFileSync(path.join(PICS_DIR, "CREDITS.md"), "utf8");
 ok("CREDITS.md lists every picture and the left-out official-profile extracts (115)", files.every(u => credits.includes(u.replace("envirothon/pics/", ""))) && /## Left out — not shown to be free to reuse \(115\)/.test(credits));
 ok("build_pics.py is the rerunnable shrink script (reads pics_index.json, writes index.json + CREDITS.md)", (() => { const t = fs.readFileSync(path.join(__dirname, "envirothon", "build_pics.py"), "utf8"); return t.includes("pics_index.json") && t.includes("index.json") && t.includes("CREDITS.md") && t.includes("MAX_SIDE = 600"); })());
@@ -144,7 +150,8 @@ console.log("\n── the pictures on the cards (envPicsOn / envPicsApply / envP
   u.visuals = { "Forestry · ID_Sassafras · parts valued in some areas": { imageUrl: "https://moms.example/sassafras.jpg", credit: "Mom" } };
   W.envHydrate(u, LIB);   // the real hook: hydrate → envPicsOn → envPicsApply
   const vk = Object.keys(u.visuals);
-  ok("after hydrate every pictured ID card has a visual {imageUrl, credit} — the UNIT_PICS shape, first picture", vk.length === idCards.length && vk.every(k => { const v = u.visuals[k]; return Object.keys(v).sort().join() === "credit,imageUrl" && typeof v.imageUrl === "string"; }));
+  const pictured = allIdCards.filter(c => Array.isArray(IDX[c.name]) && IDX[c.name].length);
+  ok("after hydrate every pictured ID card has a visual {imageUrl, credit} — the UNIT_PICS shape, first picture", vk.length === pictured.length && vk.every(k => { const v = u.visuals[k]; return Object.keys(v).sort().join() === "credit,imageUrl" && typeof v.imageUrl === "string"; }));
   ok("the visual key is deck_name, as mastGetVisual reads it", idCards.every(c => u.visuals[c.deck + "_" + c.name]));
   ok("a picture Mom saved herself stays", u.visuals["Forestry · ID_Sassafras · parts valued in some areas"].imageUrl === "https://moms.example/sassafras.jpg");
   ok("the visuals point at repo paths, never image bytes", Object.values(u.visuals).every(v => !/^data:/.test(v.imageUrl)));
@@ -170,7 +177,7 @@ console.log("\n── the pictures on the cards (envPicsOn / envPicsApply / envP
   ok("envFlashDecks: the released, pictured ID decks only (Forestry 24 items, Wildlife 35), not the held Aquatic deck, never a Terms/Facts deck", decks.map(d => d.key + ":" + d.items.length).join("|") === "Forestry · ID:24|Wildlife · ID:35");
   const Wwait = family({ release: ["Forestry · ID", "Wildlife · ID"] }); delete Wwait.G.masteryData.kidA_tests.wildlife; await Wwait.envPicsLoad(fakeFetch); Wwait.envHydrate(Wwait.us.nc_envirothon, LIB);
   ok("📝 ENVTEST: a released station whose check-in isn't taken is not an ID Flash deck (Wildlife waits; Forestry, taken, stays)", Wwait.envFlashDecks("kidA").map(d => d.key).join("|") === "Forestry · ID");
-  ok("Soils ID (released) has no pictures → not an ID Flash deck", (() => { delete W2.G.masteryData.kidA_settings.cat_hold["Soils and Land Use · ID"]; return W2.envFlashDecks("kidA").length === 2; })());
+  ok("Soils ID (released) is an ID Flash deck with its pictured items only (the soil orders and horizons the 2026-10-30 set has)", (() => { delete W2.G.masteryData.kidA_settings.cat_hold["Soils and Land Use · ID"]; const D = W2.envFlashDecks("kidA"), s = D.find(d => d.key === "Soils and Land Use · ID"); const want = new Set(allIdCards.filter(c => c.deck === "Soils and Land Use · ID" && IDX[c.name]).map(c => c.item || c.name.split(" · ")[0])); return D.length === 3 && s && s.items.length === want.size && s.items.every(e => want.has(e.item)); })());
   ok("an item carries every way its cards name it (Sweetgum + Sweet gum) and its key is mastDefKey-safe", (() => { const e = decks[0].items.find(i => i.item === "Sweetgum"); return e && e.names.indexOf("Sweet gum") >= 0 && e.key === "Sweetgum" && decks.every(d => d.items.every(i => !/[.#$\[\]\/]/.test(i.key))); })());
   ok("a kid not enrolled / without the unit has no decks", W2.envFlashDecks("kidB").length === 0 && W2.envFlashAvail("kidB") === false && W2.envFlashAvail("kidA") === true);
   const rnd = () => 0.5;

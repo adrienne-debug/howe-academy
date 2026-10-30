@@ -31,6 +31,7 @@ function browseScript(b){ if(!b) return ""; return "<script>\n// DEMO (make_demo
 function demoPics(){ const idx=JSON.parse(fs.readFileSync(path.join(REPO,"envirothon","pics","index.json"),"utf8")), lib=require(path.join(REPO,"envirothon.js")), items={}, seen={};
   const add=(item,list)=>{ if(!item||!Array.isArray(list)) return; const A=items[item]=items[item]||[], S=seen[item]=seen[item]||{}; list.forEach(p=>{ if(p&&p.url&&!S[p.url]){ S[p.url]=1; A.push([p.url,p.credit||"",p.shot||""]); } }); };
   ((lib&&lib.unit&&lib.unit.decks)||[]).forEach(d=>(d.cards||[]).forEach(c=>{ if(c&&idx[c.name]) add(c.item||String(c.name).split(" \u00b7 ")[0],idx[c.name]); }));
+  Object.keys(idx).forEach(n=>{ if(n.indexOf(" \u00b7 ")<0&&!items[n]) add(n,idx[n]); });   // an item keyed by its own name (a gear item with no card; build_pics.py --extra, 2026-10-30)
   return {bases:["../","file://"+encodeURI(REPO)+"/"],items}; }
 function picsScript(p){ if(!p) return ""; return "<script>\n// DEMO (make_demo.js): the repo's photo set by item, for 🖼 CPPHOTOS (a file:// page can't fetch envirothon/pics/index.json).\nwindow.HowePicsDemo="+JSON.stringify(p).replace(/</g,"\\u003c").replace(/\u2028/g,"\\u2028").replace(/\u2029/g,"\\u2029")+";\n</script>"; }
 function testsScript(tests){ return "<script>\n// DEMO (make_demo.js): the station check-ins' questions only (HoweEnvirothon.tests from envirothon.js) — no cards.\nwindow.HoweEnvirothon={ demo:true, tests:"+JSON.stringify(tests).replace(/</g,"\\u003c")+" };\n</script>"; }
