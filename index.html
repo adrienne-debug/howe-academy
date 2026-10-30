@@ -48317,7 +48317,8 @@ function envClassOverlay(part,kid,rec){
     { const _l=(typeof cplnOverlay==="function")?cplnOverlay(part,kid,rec):undefined; if(_l!==undefined) return _l; }   // 🌿 CPLINCOLN: Lincoln's 🌿 session + his 15 decks follow his class (a mirrored kid; undefined for anyone else)
     if(!envClsOn()||!rec||!kid||kid!==_envs.kid) return rec;
     if(!envsDemo()&&!(_envs.role==="kid"||_envs.role==="parent")) return rec;
-    const L=envClsLayers(); if(!L) return rec;
+    let L=envClsLayers(); if(!L) return rec;
+    if(part==="study"&&typeof cpCalOptLayers==="function") L=cpCalOptLayers(_envs.sid,L);   // 🎯 CPCALOPTIONS: the family's picked New cards a day, between the class's and the teacher's own
     if(part==="study"&&typeof cpSeatsStudy==="function") return cpSeatsStudy(kid,envClsMerge(part,rec,L),L);   // 🪑 CPSEATS: Auto seats = New cards a day × Days a card is learned, in memory
     return envClsMerge(part,rec,L);
   }catch(e){ return rec; }
@@ -49377,7 +49378,7 @@ const CPP_COL={ahead:"#166534",on:"#166534",behind:"#b91c1c",none:"#9ca3af"};
 function cppAt(plan,sec,date){ const C=plan&&plan.curve||{}; let best=null; Object.keys(C).forEach(k=>{ if(k<=date&&(best==null||k>best)) best=k; }); return best?((C[best][sec])||0):0; }
 // THE ROW: per section should / is / mark, totals, the student's own New/day and "needs from now" (async; undefined while it is worked out)
 function cppRow(s,d,plan,opt){
-  opt=opt||{}; const cls=cppCls()||{}, S=cppSections(), today=cppToday(), sm=s.summary||null, own=d.stu[s.sid]!==undefined?d.stu[s.sid]:cppStuSaved(s.sid), npd=own!=null?own:d.npd;
+  opt=opt||{}; const cls=cppCls()||{}, S=cppSections(), today=cppToday(), sm=s.summary||null, own=d.stu[s.sid]!==undefined?d.stu[s.sid]:cppStuSaved(s.sid), npd=own!=null?own:((typeof cpCalOptNpd==="function"&&cpCalOptNpd(s.sid))||d.npd);   // 🎯 CPCALOPTIONS: the family's pick (its New cards a day) when the teacher set none
   const base=cppInputs(d); let should=0, is=0, est=false; const per={}, from={}, sendOn={};
   S.forEach(st=>{ const _sx=(typeof cpSecPaceCell==="function")?cpSecPaceCell(s.sid,st):null; if(_sx){ per[st.id]=_sx; return; }   // 🎚 CPSECTIONS: review only / paused: left out of should be / is
     const open=opt.parent?(cppReleased(sm,st)?"all":""):((typeof envcStationOpen==="function")?envcStationOpen(s.sid,st):""), x=cppIs(sm,st);
@@ -49390,6 +49391,7 @@ function cppRow(s,d,plan,opt){
   const cal=(typeof cpCalOf==="function"&&cpCalOf(s.sid))||null;   // PR 22: the family's own study days
   const nin=Object.assign({},base,{start:today,from,sendOn},cal?{calendar:cal}:{},(typeof cpSecPaceOut==="function")?cpSecPaceOut(s.sid):{});   // 🎚 CPSECTIONS: their Review only / Off sections leave "needs from now"
   if(typeof cpSpecPaceOpt==="function"){ Object.assign(nin,cpSpecPaceOpt(s.sid,nin)); cpSpecPaceMark(s.sid,per); }   // 🏅 CPSPECIALIST: a specialist's share and non-core cards in "needs from now"; 🏅 on their section's cell
+  if(typeof cpCalOptNin==="function"){ const _o=cpCalOptNin(s.sid,nin,opt); if(_o) return _o; }   // 🎯 CPCALOPTIONS: the inputs from today, for the family's options (returned only when asked)
   const gap=d.npd>0?(is-should)/d.npd:null, need=opt.sync?cppNeedNow(nin):cppLater(nin);
   // the verdict looks forward: on pace = their own New cards a day covers what they need from now (a student ahead on learned cards can
   // still be short on cards started); until "needs" is worked out, the days alone
@@ -49528,7 +49530,7 @@ function cppStudentsHtml(d,inp,plan){
   const rows=ST.map(s=>cppRow(s,d,plan));
   rows.forEach(r=>{ const v=r.verdict, star=r.own!=null;
     h+='<tr><td><a href="javascript:void(0)" onclick="cppOpen(\''+cppJ(r.sid)+'\')" style="font-weight:800;color:#14532d">'+cppEsc(r.name)+'</a>'+(star?' <span class="envs-muted" title="their own New cards a day">('+r.npd+'*)</span>':'')+
-      (v?'<div style="font-size:11px;font-weight:800;color:'+CPP_COL[v.k]+'">'+v.t+(v.catch?' · catching up':'')+'</div>':'')+'</td><td class="c">'+r.should+'</td><td class="c">'+(r.est?'≈':'')+r.is+'</td>';
+      (v?'<div style="font-size:11px;font-weight:800;color:'+CPP_COL[v.k]+'">'+v.t+(v.catch?' · catching up':'')+'</div>':'')+((typeof cpCalOptRowHtml==="function")?cpCalOptRowHtml(r):'')+'</td><td class="c">'+r.should+'</td><td class="c">'+(r.est?'≈':'')+r.is+'</td>';   // 🎯 CPCALOPTIONS: the family's days, New cards a day, ✓ / ✗ for the checkpoint
     S.forEach(st=>{ const p=r.per[st.id]; h+='<td class="c" style="color:'+CPP_COL[p?p.mark.k:"none"]+';font-weight:800">'+(p?p.mark.t:'–')+'</td>'; });
     h+='<td>'+cppNeedTxt(r,mins)+'</td></tr>';
     if(_cpp.open===r.sid) h+='<tr><td class="x" colspan="'+(S.length+4)+'">'+cppDetailHtml(r,d)+'</td></tr>'; });
@@ -49552,6 +49554,7 @@ function cpPaceHtml(){
   if(!cppOn()) return ""; cppCss(); cppDemo(); const cls=cppCls()||{}, d=cppDraft(), f=cppDraftOf(cls), inp=cppInputs(d), plan=inp.goal?cppRun(inp):null;
   const need=inp.goal?cppLater(Object.assign({},inp)):null, ctx={d,inp,plan};
   let h=cppPlanBarHtml(d,f,inp,plan,need)+cppCalsHtml(d);
+  if(typeof cpCalOptPaceHtml==="function") h+=cpCalOptPaceHtml(ctx);   // 🎯 CPCALOPTIONS: 🎯 Checkpoints (N core cards learned by a date)
   if(typeof cpSkillsPaceHtml==="function") h+=cpSkillsPaceHtml(ctx);   // 🧩 CPSKILL · PR 25: a whole-class skills line, if one is ever added (the per-student line is in the station rows)
   h+=cppStudentsHtml(d,inp,plan);
   if(typeof cpSuggestHtml==="function") h+=cpSuggestHtml(ctx);   // PR 16: 💡 Suggestions
@@ -49575,7 +49578,7 @@ function cpPaceParentHtml(kid){
     if(!cppSite()||!kid||(typeof _envs==="undefined")) return ""; cppDemo(); const cls=cppCls(); if(!cls||!cppGoals(cls).length) return "";
     const demoRow=(typeof envsDemo==="function"&&envsDemo()&&typeof _envc!=="undefined")?(_envc.students||{})[_envs.sid]:null;
     const sm=demoRow?demoRow.summary:((typeof envsSummary==="function")?envsSummary(kid):null), d=cppDraftOf(cls);
-    const own=cppSetting("newPerDay",cppLayersFor(_envs.sid)); d.stu={}; if(Number.isInteger(own)&&own!==d.npd) d.stu[_envs.sid]=own;
+    const own=cppSetting("newPerDay",(typeof cpCalOptLayers==="function")?cpCalOptLayers(_envs.sid,cppLayersFor(_envs.sid)):cppLayersFor(_envs.sid)); d.stu={}; if(Number.isInteger(own)&&own!==d.npd) d.stu[_envs.sid]=own;   // 🎯 CPCALOPTIONS: the family's pick between the class's number and the teacher's
     const i=cppInputs(d), plan=cppRun(i), r=cppRow({sid:_envs.sid,summary:sm,meta:{name:envsKidName(kid)}},d,plan,{parent:true,sync:true}), v=r.verdict, name=String(envsKidName(kid)).split(" ")[0];
     const npd=Number.isInteger(own)?own:d.npd, n=r.need;
     let h='<div class="envs-card"><div class="envs-h2">\u{1F4C5} On pace for '+cppEsc(i.goalName)+' ('+cppLbl(i.goal)+')?</div>';
@@ -49624,8 +49627,8 @@ function cpPaceCoreOnly(kid,session,deck,names){
 //     parent's on-pace card) read it through CPPACE's cpCalOf(sid) hook; PR 17 (CPWATCH) reads cpStudyDays with a typeof guard. A family's
 //     weekdays skip the class's days off when the class skips them (School days, Weekends too) and study through them when it doesn't.
 //     One guarded line in cppStudy hands a weekday calendar ({wd}) to cpCalStudy; CPPACE's four calendars are unchanged.
-//   · WHO SETS THEM — Q33 is NOT answered, so both halves are built and the family's half waits behind a class switch that is OFF by
-//     default: the teacher (or Adrienne) on the student's page in the console, always; the parent on "📅 Our study days" on the parent page
+//   · WHO SETS THEM — Q33 is NOT answered, so both halves are built and the family's half waits behind a class switch that was OFF by
+//     default (ON since her Q33 answer, 2026-10-29 — CPCALOPTIONS): the teacher (or Adrienne) on the student's page in the console, always; the parent on "📅 Our study days" on the parent page
 //     only while classes/<cid>/familyDays is true (the switch is on 📅 Pace). Switch off: the parent's card shows the days read-only.
 //     The parent PIN (CPDRILLPARENT's) guards the parent's chips once the family has set one.
 //   · CLASS MEETINGS: classes/<cid>/meetings/<YYYY-MM-DD> = {what, sec?} (sec = the section Send out offers for that class), edited on 📅 Pace
@@ -49696,6 +49699,7 @@ function cpCalOf(sid){ if(!cpcalSite()) return null; cpcalDemoSeed(); const rec=
 function cpCalListen(sdb,re){
   if(cpcalDemo()||!sdb||!cpcalSite()||typeof _envs==="undefined"||!_envs.sid||!(_envs.role==="kid"||_envs.role==="parent")||_cpcal.armed===_envs.sid) return false;
   const sid=_envs.sid; _cpcal.armed=sid;
+  if(typeof cpCalOptListen==="function") cpCalOptListen(sdb,re);   // 🎯 CPCALOPTIONS: Adrienne's 🔒 New cards a day (settings/locks/newPerDay), one listener
   try{ sdb.ref("students/"+sid+"/calendar").on("value",s=>{ const v=(s&&typeof s.val==="function")?s.val():null; _cpcal.recs=Object.assign({},_cpcal.recs,{[sid]:v||null}); if(typeof re==="function") re(); }); }
   catch(e){ _cpcal.armed=""; return false; }
   return true;
@@ -49752,7 +49756,7 @@ function cpCalFamilySet(on){
   return true; }
 // ── a student's own days: the teacher on their page, the parent on theirs (when the switch is on) ──
 function cpcalWho(r){ return r.role==="parent"?"the family":r.role==="admin"?"Adrienne":"the teacher"; }
-function cpcalCanParent(sid){ const cls=cpcalCls()||{}; return cpcalSite()&&typeof _envs!=="undefined"&&_envs.role==="parent"&&!!sid&&sid===_envs.sid&&cls.familyDays===true&&!(typeof cpdrLocked==="function"&&cpdrLocked()); }
+function cpcalCanParent(sid){ const cls=cpcalCls()||{}; return cpcalSite()&&typeof _envs!=="undefined"&&_envs.role==="parent"&&!!sid&&sid===_envs.sid&&cls.familyDays!==false&&!(typeof cpdrLocked==="function"&&cpdrLocked()); }   // 🎯 CPCALOPTIONS: the families' switch is ON unless the teacher turns it off (Q33 answered 2026-10-29)
 function cpcalCan(sid){ return cpcalCon()?!!(_envc.students||{})[sid]:cpcalCanParent(sid); }
 function cpcalShownWd(sid){ const d=_cpcal.draft[sid]; if(d!=null) return d; const r=cpcalRec(sid); return r?r.wd:cpcalModeWd(cpcalClassCal(false).days); }
 function cpCalTap(sid,d){ if(!cpcalCan(sid)) return false; d=String(d); if(!/^[0-6]$/.test(d)) return false; let wd=cpcalShownWd(sid);
@@ -49802,12 +49806,12 @@ function cpcalDaysHtml(sid,can,who){
   return h; }
 // the teacher's student page: 📅 Study days for Maya
 function cpCalStudentHtml(sid){ try{ if(!cpcalCon()||!sid||!(_envc.students||{})[sid]) return ""; cpcalCss(); cpcalDemoSeed(); const s=Object.assign({sid},_envc.students[sid]);
-  return '<div class="envs-card"><div class="envs-h2">\u{1F4C5} Study days for '+cpcalEsc(envcName(s))+'</div>'+cpcalDaysHtml(sid,true,"teacher")+'</div>'; }catch(e){ return ""; } }
+  return '<div class="envs-card"><div class="envs-h2">\u{1F4C5} Study days for '+cpcalEsc(envcName(s))+'</div>'+((typeof cpCalOptHtml==="function")?cpCalOptHtml(sid,"teacher"):"")+cpcalDaysHtml(sid,true,"teacher")+'</div>'; }catch(e){ return ""; } }   // 🎯 CPCALOPTIONS: their options, their pick, on track?
 // the parent's page: 📅 Our study days (the chips only while the class's switch is on; read-only otherwise) + the goals
 function cpCalParentHtml(kid){
   try{ if(!cpcalSite()||!kid||typeof _envs==="undefined"||_envs.role!=="parent"||!_envs.sid) return ""; cpcalCss(); cpcalDemoSeed();
-    const cls=cpcalCls()||{}, fam=cls.familyDays===true, locked=typeof cpdrLocked==="function"&&cpdrLocked(), name=String(envsKidName(kid)).split(" ")[0];
-    let h='<div class="envs-card"><div class="envs-h2">\u{1F4C5} Our study days</div>'+cpcalDaysHtml(_envs.sid,fam&&!locked,"parent");
+    const cls=cpcalCls()||{}, fam=cls.familyDays!==false, locked=typeof cpdrLocked==="function"&&cpdrLocked(), name=String(envsKidName(kid)).split(" ")[0];
+    let h='<div class="envs-card"><div class="envs-h2">\u{1F4C5} Our study days</div>'+((typeof cpCalOptHtml==="function")?cpCalOptHtml(_envs.sid,"parent",kid):"")+cpcalDaysHtml(_envs.sid,fam&&!locked,"parent");   // 🎯 CPCALOPTIONS: the options that meet the teacher's checkpoint (on by default: fam = familyDays !== false)
     if(!fam) h+='<div class="envs-muted" style="margin-top:4px">'+cpcalEsc(name)+'’s teacher sets the study days.</div>';
     else if(locked) h+='<div class="envs-muted" style="margin-top:4px">Unlock with the parent PIN on \u{1F9E0} Review cards to change them.</div>';
     const L=cpGoalList(cls), t=L.find(x=>x.target);
@@ -49833,7 +49837,7 @@ function cpCalPaceHtml(ctx){
     h+='<div class="envs-muted">📤 = the section Send out offers to send for that class.'+(lock?' \u{1F512} set by Adrienne.':'')+'</div>';
     if(n) h+='<div class="cpp-wi">'+n+' change'+(n===1?'':'s')+' to the meetings, not saved yet.</div>';
     h+='<div class="envs-row" style="margin-top:8px"><button class="envs-btn" onclick="cpCalMeetSave()"'+(n&&!lock?'':' disabled')+'>Save the meetings</button><button class="envs-btn sec" onclick="cpCalMeetUndo()"'+(n?'':' disabled')+'>Undo</button></div>';
-    const fam=cls.familyDays===true, ST=(typeof envcStudents==="function")?envcStudents():[], own=ST.map(s=>({s,r:cpcalRec(s.sid)})).filter(x=>x.r);
+    const fam=cls.familyDays!==false, ST=(typeof envcStudents==="function")?envcStudents():[], own=ST.map(s=>({s,r:cpcalRec(s.sid)})).filter(x=>x.r);
     h+='<div class="cpp-l">Each family’s study days</div>';
     h+='<label class="envs-row" style="min-height:44px;font-size:13px;font-weight:700"><input type="checkbox" style="width:20px;height:20px"'+(fam?' checked':'')+dis+' onchange="cpCalFamilySet(this.checked)"> Families set their own study days (on the parent page)</label>';
     h+='<div class="envs-muted">'+(fam?'On: each parent picks their family’s days on “📅 Our study days”. You can still set any student’s days on their page.':'Off: you set a student’s own days on their page (tap a name on 📋 Class); parents see them but can’t change them.')+' A student with no days of their own uses the class’s.</div>';
@@ -49861,6 +49865,204 @@ function cpCalSendNext(mode){
   if(mode==="date"&&n.date>cpcalToday()){ cpsdSet("when","date"); cpsdSet("on",n.date); } else cpsdSet("when","now");
   return true; }
 // CPCAL_END
+// CPCALOPTIONS_START — 🎯 STUDY-DAY OPTIONS: the teacher sets checkpoints, each family picks its days from options that meet them (her Q33
+// answer, 2026-10-29: "i think brittany says how many they need to have learned by a certain point and show options of how that would look
+// and let the families decide"; DESIGN_class_platform_2026-10-28.md §8.10, §13 row 22, "Adrienne's answers, 2026-10-29"). INERT unless the
+// class site (ENVSITE's envSiteOn): Howe, DeWalt and Burris never reach a line that does anything, and Lincoln's own 🌿 Envirothon in Howe is
+// untouched (test_cp_cal_options.js).
+//   · CHECKPOINTS (the teacher, on 📅 Pace ▸ 🎯 Checkpoints): classes/<cid>/checkpoints/<YYYY-MM-DD> = {n} (core cards learned by that day) or
+//     {pct} (% of the core cards), one targeted update per Save (a path per changed date), greyed by Adrienne's classes/<cid>/locks/plan. A node
+//     of their own beside the goal list: the goals are the competitions (🏫 Class setup saves that list whole, 📅 Pace offers each as the target).
+//   · THE OPTIONS (cpCalOptions): Mon–Fri · Mon–Thu · Mon/Wed/Fri · Every day, plus the family's own days (saved, or being tapped). Each one is
+//     CPPACE's cpNeedPerDay run from where THAT student is now (CPPACE's cppRow builds the inputs; one guarded line hands them back) on that
+//     family calendar, the class's days off skipped as CPCAL does: the New cards a day that meets the next checkpoint and the pace target
+//     ("Area ✓"), and its minutes. When those days can't make the target at any number (the demo: Wildlife goes out Jan 26), the checkpoint
+//     is the bar and the option says where it leads ("Area ~94%"). An option that can't make the checkpoint (or, with none, the target) even
+//     at 50 a day says what it would reach instead and can't be picked. The searches run in
+//     CPPACE's background queue (cppLater), so the page stays responsive.
+//   · THE PICK: one set at students/<sid>/calendar = {days, by, role, at, npd, off?} — CPCAL's own record (envsWrite; envcWrite for the
+//     teacher), plus npd = that option's New cards a day. The family's npd sits between the class's number and the teacher's own per-student
+//     number (hers still wins): the kid's 🌿 sitting (envClassOverlay's guarded line), 📅 Pace's row and the parent's on-pace card all use it.
+//     Adrienne's 🔒 settings/locks/newPerDay keeps the class's number: no npd is written or used, and each option shows what it reaches at
+//     that number (the same for a student with the teacher's own number). Custom days tapped on CPCAL's chips save without npd, as before.
+//   · ON BY DEFAULT (Q33 answered): CPCAL's parent card is live unless the teacher turns classes/<cid>/familyDays off (three lines in CPCAL).
+//     The teacher still sees, sets or picks any family's days on the student's page; the parent PIN still guards the parent's buttons.
+//   · THE TEACHER SEES: under each name on 📅 Pace, the family's days, their New cards a day and ✓ / ✗ for the next checkpoint; on the
+//     student's page, the same options with their pick marked and whether it still meets the checkpoint.
+//   · DEMO: Teacher ▸ 📅 Pace ▸ 🎯 Checkpoints: 800 by Jan 15 ▸ Save ▸ Parent (Maya) ▸ 📅 Our study days: Mon–Thu ▸ Teacher ▸ 📅 Pace:
+//     "📅 Mon–Thu · N a day (their pick) · ✓ 800 by Jan 15" under Maya, on pace.
+const CPCO_OPTS=[["12345","Mon–Fri"],["1234","Mon–Thu"],["135","Mon/Wed/Fri"],["0123456","Every day"]];
+const CPCO_N_MAX=20000;
+const _cpco={add:{on:"",n:"",unit:"n"},draft:null,lockN:null,armed:false,nin:{},css:false};
+function cpcoSite(){ return typeof cpcalSite==="function"&&cpcalSite(); }
+function cpcoCon(){ return cpcoSite()&&cpcalCon(); }
+function cpcoEsc(v){ return envsEsc(v); }
+function cpcoJ(v){ return envsJ(v); }
+// ── PURE: checkpoints ──
+function cpcoCpRec(r){ if(!r||typeof r!=="object") return null; const n=Math.floor(+r.n), p=Math.floor(+r.pct);
+  if(r.n!=null&&Number.isFinite(n)&&n>=1&&n<=CPCO_N_MAX) return {n}; if(r.pct!=null&&Number.isFinite(p)&&p>=1&&p<=100) return {pct:p}; return null; }
+// classes/<cid>/checkpoints → [{date, n} | {date, pct}] by date
+function cpCalCheckpoints(cls){ const m=cls&&cls.checkpoints, out=[]; if(!m||typeof m!=="object"||Array.isArray(m)) return out;
+  Object.keys(m).forEach(d=>{ const r=cpcalOk(d)?cpcoCpRec(m[d]):null; if(r) out.push(Object.assign({date:d},r)); }); return out.sort((a,b)=>a.date<b.date?-1:1); }
+function cpCalNextCheckpoint(cls,today){ today=today||cpcalToday(); return cpCalCheckpoints(cls).find(x=>x.date>today)||null; }
+// the targeted update from the saved checkpoints to the draft (a path per changed date; null removes one)
+function cpCalCpUpdate(saved,draft){ const upd={}, A={}, B={}; (saved||[]).forEach(c=>{ A[c.date]=c; }); (draft||[]).forEach(c=>{ B[c.date]=c; });
+  const rec=c=>c.n!=null?{n:c.n}:{pct:c.pct};
+  Object.keys(B).forEach(d=>{ const a=A[d], b=B[d]; if(!a||a.n!==b.n||a.pct!==b.pct) upd["checkpoints/"+d]=rec(b); });
+  Object.keys(A).forEach(d=>{ if(!B[d]) upd["checkpoints/"+d]=null; }); return upd; }
+function cpcoNum(n){ return Number(n).toLocaleString("en-US"); }
+function cpcoCpWhat(c){ return c.n!=null?cpcoNum(c.n)+" core cards":c.pct+"% of the core cards"; }
+function cpcoCpShort(c){ return (c.n!=null?cpcoNum(c.n):c.pct+"%")+" by "+cpcalShort(c.date); }
+function cpcoLabel(wd){ const p=CPCO_OPTS.find(x=>x[0]===wd); return p?p[1]:cpcalWdLabel(wd); }
+// ── whose numbers ──
+function cpcoStu(sid){ const S=(typeof _envc!=="undefined"&&_envc.students)||null; return (S&&sid&&S[sid]&&(cpcalCon()||cpcalDemo()))?S[sid]:null; }
+// the family's record as stored (CPCAL's cpCalNorm keeps only the days; npd rides beside them)
+function cpcoRaw(sid){ const row=cpcoStu(sid); if(row) return row.calendar||null; return (_cpcal.recs||{})[sid]||null; }
+// Adrienne's 🔒 New cards a day: the console's locks, or the kid's / parent's one listener
+function cpcoNpdLocked(){ if(typeof envClsLocked==="function"&&envClsLocked("newPerDay")) return true; return _cpco.lockN===true; }
+// the teacher's own number for this student (students/<sid>/settings/study/newPerDay), or null
+function cpcoOwnNpd(sid){ let v=null; const row=cpcoStu(sid);
+  if(row) v=(((row.settings||{}).study)||{}).newPerDay; else { const L=(typeof envClsLayers==="function"&&envClsLayers())||null; v=L&&L[1]&&L[1].study&&L[1].study.newPerDay; }
+  return Number.isInteger(v)?v:null; }
+// THE FAMILY'S New cards a day (their pick's npd); null = none, or Adrienne locked the number
+function cpCalOptNpd(sid){ try{ if(!cpcoSite()||!sid||cpcoNpdLocked()) return null; const r=cpcoRaw(sid); if(!cpCalNorm(r)) return null;
+  const n=r.npd; return Number.isInteger(n)&&n>=1&&n<=CPP_NPD_MAX?n:null; }catch(e){ return null; } }
+// the settings layers with the family's number between the class's and the student's own: [class, {study:{newPerDay}}, student]
+function cpCalOptLayers(sid,L){ if(!Array.isArray(L)||!L.length) return L; const n=cpCalOptNpd(sid); if(n==null) return L; return [L[0],{study:{newPerDay:n}}].concat(L.slice(1)); }
+// the kid's and the parent's app: Adrienne's lock on New cards a day, one listener (CPCAL's listener's hook)
+function cpCalOptListen(sdb,re){
+  if(!cpcoSite()||cpcalDemo()||!sdb||_cpco.armed) return false; _cpco.armed=true;
+  try{ sdb.ref("settings/locks/newPerDay").on("value",s=>{ const v=(s&&typeof s.val==="function")?s.val():null; _cpco.lockN=v===true; if(typeof re==="function") re(); }); }
+  catch(e){ _cpco.armed=false; return false; }
+  return true; }
+// CPPACE's cppRow hands back its inputs from today ("needs from now") — kept for the row's line; returned when this block asked for them
+function cpCalOptNin(sid,nin,opt){ if(!cpcoSite()||!sid||!nin) return null; _cpco.nin[sid]=nin; return (opt&&opt.cpco)?{sid,nin,cpco:true}:null; }
+// the student's inputs from today, on the class's plan as saved (the console's student, else the parent's own child)
+function cpcoNin(sid,kid){
+  try{ if(typeof cppRow!=="function"||typeof cppCls!=="function") return null; if(typeof cppDemo==="function") cppDemo(); cpcalDemoSeed();
+    const cls=cppCls(); if(!cls||!cppGoals(cls).length) return null; const d=cppDraftOf(cls), i=cppInputs(d); if(!i.goal) return null;
+    const row=cpcoStu(sid); let s, parent=false;
+    if(row) s=Object.assign({sid},row);
+    else { parent=true; kid=kid||(typeof _envs!=="undefined"&&_envs.kid)||""; s={sid,summary:(kid&&typeof envsSummary==="function")?envsSummary(kid):null,meta:{}}; }
+    const r=cppRow(s,d,cppRun(i),{parent,cpco:true}); return (r&&r.cpco&&r.nin)||null; }catch(e){ return null; } }
+// the checkpoint's planner inputs: its date is the goal, its count is the target (a share of the core cards the plan counts)
+function cpcoCpIn(fin,cp){ if(!cp||!fin) return null; let t=cp.pct!=null?cp.pct/100:null;
+  if(t==null){ const tot=cppRun(Object.assign({},fin,{days:[]})).total; t=tot?cp.n/tot:2; }
+  return Object.assign({},fin,{goal:cp.date,end:cp.date,target:t}); }
+function cpcoReach(cin,fin,n,bad){ if(bad==="cp"){ const p=cppRun(Object.assign({},cin,{newPerDay:n,toTarget:false})); return {k:"cp",n:p.learnedAtGoal}; }
+  const p=cppRun(Object.assign({},fin,{newPerDay:n,toTarget:false})); return {k:"fin",pct:p.pctAtGoal}; }
+// ── THE OPTIONS: o = {sync (work them out now), only (one weekday set), kid} → {cp, goalName, goal, pct, fixed, rows:[…]} or null ──
+function cpCalOptions(sid,o){
+  o=o||{}; if(!cpcoSite()||!sid) return null; const nin=cpcoNin(sid,o.kid); if(!nin||!nin.goal) return null;
+  const cls=cpcalCls()||{}, cp=cpCalNextCheckpoint(cls), rec=cpcalRec(sid), dr=_cpcal.draft[sid], own=cpcoOwnNpd(sid);
+  const fixed=own!=null?{n:own,why:"teacher"}:cpcoNpdLocked()?{n:nin.newPerDay,why:"lock"}:null, base=cpcalClassCal(false);
+  let want=CPCO_OPTS.map(x=>({wd:x[0],label:x[1],preset:true}));
+  const extra=dr!=null?dr:(rec?rec.wd:null); if(extra&&!CPCO_OPTS.some(x=>x[0]===extra)) want.push({wd:extra,label:cpcalWdLabel(extra),preset:false,draft:dr!=null&&(!rec||dr!==rec.wd)});
+  if(o.only) want=[{wd:o.only,label:cpcoLabel(o.only),preset:CPCO_OPTS.some(x=>x[0]===o.only)}];
+  const run=x=>o.sync?cppNeedNow(x):cppLater(x);
+  const rows=want.map(w=>{
+    const fin=Object.assign({},nin,{calendar:cpCalMerge(base,{wd:w.wd,off:rec&&rec.off})}), cin=cpcoCpIn(fin,cp), nf=run(fin), nc=cin?run(cin):null;
+    const r=Object.assign({},w,{chosen:!!rec&&rec.wd===w.wd&&!w.draft});
+    if(nf===undefined||nc===undefined){ r.wait=true; return r; }
+    if(!nf||nf.err||(cin&&(!nc||nc.err))){ r.err=true; return r; }
+    r.nf=nf.n; r.nc=cin?nc.n:null;
+    const finOut=!!cin&&nf.n==null;   // these days can't make the goal at any number: the checkpoint is the bar, and the option says where it leads
+    if(fixed){ const f=fixed.n, okF=finOut||(nf.n!=null&&f>=nf.n), okC=!cin||(nc.n!=null&&f>=nc.n); r.n=f; r.ok=okF&&okC;
+      const fp=f>0?cppRun(Object.assign({},fin,{newPerDay:f,toTarget:false})):null; r.mins=fp?fp.minutesPerDay:0; if(finOut&&fp) r.finPct=fp.pctAtGoal; if(!r.ok) r.reach=cpcoReach(cin,fin,f,okC?"fin":"cp"); return r; }
+    if((!cin&&nf.n==null)||(cin&&nc.n==null)){ const bad=cin?"cp":"fin", p=(bad==="cp"?nc:nf).plan; r.ok=false; r.n=null;
+      r.reach=bad==="cp"?{k:"cp",n:p?p.learnedAtGoal:0}:{k:"fin",pct:p?p.pctAtGoal:0}; return r; }
+    if(finOut){ r.n=nc.n; r.ok=true; const fp=r.n>0?cppRun(Object.assign({},fin,{newPerDay:r.n,toTarget:false})):null; r.mins=fp?fp.minutesPerDay:0; r.finPct=fp?fp.pctAtGoal:0; return r; }
+    r.n=Math.max(nf.n,cin?nc.n:0); r.ok=true; r.mins=r.n>0?(r.n===nf.n&&nf.plan?nf.plan.minutesPerDay:cppRun(Object.assign({},fin,{newPerDay:r.n,toTarget:false})).minutesPerDay):0; return r; });   // minutes: the whole plan to the goal at that many a day
+  return {sid,nin,cp,goalName:nin.goalName,goal:nin.goal,pct:Math.round((nin.target||0.95)*100),fixed,rows};
+}
+// ── THE PICK: days + that option's New cards a day, through CPCAL's own record ──
+function cpCalOptPick(sid,wd){
+  wd=cpcalWdNorm(wd); if(!cpcoSite()||!wd||!cpcalCan(sid)) return Promise.resolve(false);
+  const O=cpCalOptions(sid,{sync:true,only:wd}), r=O&&O.rows[0];
+  if(!r||r.ok!==true){ envsToast(r&&r.ok===false?"Those days can’t make it — pick another option.":"Still working it out — try again in a moment."); return Promise.resolve(false); }
+  const role=cpcalCon()?(_envs.role==="admin"?"admin":"teacher"):"parent", by=(cpcalDemo()&&role==="parent")?"uid_p_"+_envs.kid:(_envs.uid||""), old=cpcalRec(sid);   // the demo's parent login is uid_p_<kid> (as CPCAL)
+  const rec={days:wd,by,role,at:Date.now()}; if(old&&old.off&&Object.keys(old.off).length) rec.off=old.off; if(!O.fixed&&r.n>0) rec.npd=r.n;
+  return Promise.resolve(cpcalWrite("students/"+sid+"/calendar",rec,"set")).then(()=>{ cpcalMem(sid,rec); cpcalRe(); return true; },e=>{ if(!cpcalCon()) envsToast("Couldn’t save: "+((e&&e.message)||e)); cpcalRe(); return false; }); }
+// ── on screen ──
+function cpcoCss(){ if(_cpco.css||typeof document==="undefined") return; _cpco.css=true;
+  try{ const s=document.createElement("style"); s.id="cpco-css"; s.textContent='.cpco-cp{margin:2px 0 6px;padding:8px 10px;border-radius:10px;background:#fffbeb;border:1.5px solid #fde68a;font-size:13px;line-height:1.45}'+
+    '.cpco-opts{display:flex;flex-direction:column;gap:6px;margin:8px 0 6px}.cpco-o{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;width:100%;min-height:48px;padding:8px 12px;border-radius:12px;border:1.5px solid #d1d5db;background:#fff;font:inherit;font-size:13px;color:#111827;text-align:left;cursor:pointer;box-sizing:border-box}'+
+    '.cpco-o .d{font-weight:900;min-width:92px}.cpco-o .m{flex:1;min-width:140px}.cpco-o .k{font-weight:800;color:#14532d;white-space:nowrap}.cpco-o.on{border-color:#14532d;background:#f0fdf4;box-shadow:inset 0 0 0 1px #14532d}'+
+    '.cpco-o.no{background:#f9fafb;color:#6b7280}.cpco-o.no .k{color:#b91c1c}.cpco-o:disabled{cursor:default}.cpco-o:disabled:not(.on):not(.no){opacity:.75}.cpco-l{font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:10px 0 2px}'+
+    '.cpco-st{margin:4px 0 2px;font-size:12.5px;font-weight:700}.cpco-row{font-size:10.5px;font-weight:700;color:#374151;white-space:normal;max-width:220px}';
+    document.head.appendChild(s); }catch(e){} }
+function cpcoGoalWords(O){ return O.pct+"% of the core cards by "+O.goalName+" "+cpcalShort(O.goal); }
+function cpcoRowHtml(r,O,can,J,who){
+  let m;
+  if(r.wait) m='<span class="envs-muted">working it out…</span>';
+  else if(r.err) m='<span class="envs-muted">couldn’t work this one out</span>';
+  else if(r.ok===false) m=(O.fixed?r.n+' a day · ':'')+'can’t make '+cpcoEsc(r.reach&&r.reach.k==="cp"&&O.cp?cpcoCpShort(O.cp):O.goalName+' '+cpcalShort(O.goal))+(r.reach?' · reaches about '+(r.reach.k==="cp"?cpcoNum(r.reach.n):r.reach.pct+'%')+(O.fixed?'':' even at '+CPP_NPD_MAX+' a day'):'');
+  else if(r.n===0) m='no new cards needed — already there';
+  else m=r.n+' new a day'+(r.mins?' · ~'+r.mins+' min':'');
+  if(r.ok===true&&O.cp) m+=r.finPct!=null?' <span style="color:#92400e">· '+cpcoEsc(O.goalName)+' ~'+r.finPct+'%</span>':' · '+cpcoEsc(O.goalName)+' ✓';
+  const k=r.chosen?'✓ '+(who==="teacher"?'their pick':'your pick'):r.ok===false?'✗':'';
+  const dis=!can||r.wait||r.err||r.ok!==true||(r.chosen&&!O.fixed&&(cpcoRaw(O.sid)||{}).npd===r.n);
+  return '<button class="cpco-o'+(r.chosen?' on':'')+(r.ok===false?' no':'')+'" aria-pressed="'+!!r.chosen+'"'+(dis?' disabled':'')+' onclick="cpCalOptPick(\''+J+'\',\''+r.wd+'\')"><span class="d">'+cpcoEsc(r.label)+(r.draft?' <span class="envs-muted">(tapped below)</span>':'')+'</span><span class="m">'+m+'</span>'+(k?'<span class="k">'+k+'</span>':'')+'</button>';
+}
+// the options card's body (CPCAL's "📅 Our study days" for the parent, "📅 Study days for …" for the teacher), above CPCAL's own chips
+function cpCalOptHtml(sid,who,kid){
+  try{ if(!cpcoSite()||!sid) return ""; cpcoCss(); const O=cpCalOptions(sid,{kid}); if(!O) return "";
+    const can=cpcalCan(sid), J=cpcoJ(sid), name=who==="teacher"?String(envcName(Object.assign({sid},(_envc.students||{})[sid]||{}))).split(" ")[0]:"";
+    let h='<div class="cpco-cp">\u{1F3AF} '+(O.cp?'Next checkpoint: <b>'+cpcoEsc(cpcoCpWhat(O.cp))+' learned by '+cpcoEsc(cpcalLbl(O.cp.date))+'</b> · then ':'Goal: ')+'<b>'+cpcoEsc(cpcoGoalWords(O))+'</b></div>';
+    h+='<div style="font-size:13px">'+(who==="teacher"?'Options for '+cpcoEsc(name)+' that meet '+(O.cp?'the checkpoint':'the goal')+', from where '+cpcoEsc(name)+' is today:':'Pick the days that suit your family. Each option meets '+(O.cp?'the checkpoint':'the goal')+', worked out from where your child is today:')+'</div>';
+    if(O.cp) h+='<div class="envs-muted" style="margin-top:2px">'+cpcoEsc(O.goalName)+' ✓ = those days also make '+O.pct+'% by '+cpcoEsc(O.goalName)+'; ~N% = where that pace leads by then.</div>';
+    if(O.fixed) h+='<div class="envs-muted" style="margin-top:2px">'+(O.fixed.why==="teacher"?'The teacher set '+O.fixed.n+' new cards a day for this student':'New cards a day is set for the class ('+O.fixed.n+') \u{1F512}')+', so each option shows whether '+O.fixed.n+' a day makes it.</div>';
+    h+='<div class="cpco-opts" role="group" aria-label="Study-day options">'+O.rows.map(r=>cpcoRowHtml(r,O,can,J,who)).join("")+'</div>';
+    const rec=cpcalRec(sid), pick=rec&&O.rows.find(r=>r.chosen);
+    if(rec&&pick&&!pick.wait&&!pick.err){ const fam=cpCalOptNpd(sid), eff=O.fixed?O.fixed.n:(fam!=null?fam:O.nin.newPerDay), okC=!O.cp||(pick.nc!=null&&eff>=pick.nc), okF=pick.nf==null?!!O.cp:eff>=pick.nf;
+      h+='<div class="cpco-st" style="color:'+(okC&&okF?'#166534':'#b91c1c')+'">'+(who==="teacher"?'Their days':'Your days')+': '+cpcoEsc(pick.label)+' at '+eff+' new a day — '+(okC&&okF?'✓ on track'+(O.cp?' for '+cpcoEsc(cpcoCpShort(O.cp)):''):'✗ now needs '+((O.cp&&pick.nf==null?(pick.nc||0):Math.max(pick.nc||0,pick.nf||0))||CPP_NPD_MAX+'+')+' a day; pick again to catch up')+'</div>'; }
+    else if(!rec) h+='<div class="envs-muted">'+(who==="teacher"?cpcoEsc(name)+' uses the class’s days until the family picks.':'Until you pick, your child follows the class’s days.')+'</div>';
+    h+='<div class="envs-muted">Minutes are estimates. '+(O.fixed?'':'Picking saves those days and that many new cards a day. ')+(who==="teacher"?'The pick shows under '+cpcoEsc(name)+'’s name on 📅 Pace.':'The teacher sees your pick on 📅 Pace.')+'</div>';
+    return h+'<div class="cpco-l">Or tap '+(who==="teacher"?'their':'your')+' own days</div>'; }catch(e){ return ""; } }
+// 📅 Pace: under a student's name — their days, their New cards a day, ✓ / ✗ for the next checkpoint (on their own calendar)
+function cpCalOptRowHtml(r){
+  try{ if(!cpcoCon()||!r||!r.sid) return ""; cpcoCss(); const nin=_cpco.nin[r.sid], rec=cpcalRec(r.sid), fam=cpCalOptNpd(r.sid), cls=cpcalCls()||{}, cp=cpCalNextCheckpoint(cls);
+    let t='\u{1F4C5} '+cpcoEsc(rec?cpcoLabel(rec.wd):'class days')+' · '+r.npd+' a day'+(fam!=null&&r.own==null?' (their pick)':''), c='#374151';
+    const cin=nin&&cp?cpcoCpIn(nin,cp):null;
+    if(cin){ const nc=cppLater(cin);
+      if(nc===undefined) t+=' · …';
+      else if(nc&&!nc.err){ const ok=nc.n!=null&&r.npd>=nc.n; c=ok?'#166534':'#b91c1c';
+        t+=' · '+(ok?'✓ ':'✗ ')+cpcoEsc(cpcoCpShort(cp))+(ok?'':' (reaches ~'+cpcoNum(cppRun(Object.assign({},cin,{newPerDay:r.npd,toTarget:false})).learnedAtGoal)+')'); } }
+    return '<div class="cpco-row" style="color:'+c+'">'+t+'</div>'; }catch(e){ return ""; } }
+// 📅 Pace: 🎯 Checkpoints — the list, add, ✕, Save (one targeted update), Undo
+function cpcoCpDraft(){ if(!_cpco.draft) _cpco.draft=cpCalCheckpoints(cpcalCls()||{}).map(c=>Object.assign({},c)); return _cpco.draft; }
+function cpcoCpShown(){ return _cpco.draft||cpCalCheckpoints(cpcalCls()||{}); }
+function cpCalCpIn(k,v){ if(!cpcoCon()||!(k in _cpco.add)) return; _cpco.add[k]=String(v==null?"":v); if(k==="unit") cpcalRe(); }
+function cpCalCpAdd(){
+  if(!cpcoCon()||cpcalLocked()) return false; const A=_cpco.add, M=cpcoCpDraft(), v=Math.floor(Number(A.n)), pct=A.unit==="pct";
+  if(!cpcalOk(A.on)){ envsToast("Pick the checkpoint’s date first."); return false; }
+  if(A.on<=cpcalToday()){ envsToast("Pick a date after today."); return false; }
+  if(!Number.isFinite(v)||v<1||v>(pct?100:CPCO_N_MAX)||String(A.n).trim()===""){ envsToast(pct?"A whole number 1–100, please.":"A whole number of core cards, please."); return false; }
+  if(M.some(c=>c.date===A.on)){ envsToast("There’s already a checkpoint on "+cpcalLbl(A.on)+"."); return false; }
+  M.push(pct?{date:A.on,pct:v}:{date:A.on,n:v}); M.sort((a,b)=>a.date<b.date?-1:1); _cpco.add={on:"",n:"",unit:A.unit}; cpcalRe(); return true; }
+function cpCalCpDel(date){ if(!cpcoCon()||cpcalLocked()) return; const M=cpcoCpDraft(), i=M.findIndex(c=>c.date===date); if(i>=0) M.splice(i,1); cpcalRe(); }
+function cpCalCpUndo(){ _cpco.draft=null; cpcalRe(); }
+function cpCalCpSave(){
+  if(!cpcoCon()||!_envc.cid) return false; if(cpcalLocked()){ envsToast("\u{1F512} The class plan is set by "+(typeof cpLockName==="function"?cpLockName():"Adrienne")); return false; }
+  const cls=_envc.cls||(_envc.cls={}), upd=cpCalCpUpdate(cpCalCheckpoints(cls),cpcoCpDraft()); if(!Object.keys(upd).length){ envsToast("Nothing changed"); return false; }
+  envcWrite("classes/"+_envc.cid,upd,"update").then(()=>{ const m=Object.assign({},(cls.checkpoints&&typeof cls.checkpoints==="object"&&!Array.isArray(cls.checkpoints))?cls.checkpoints:{});
+    Object.keys(upd).forEach(p=>{ const d=p.slice(12); if(upd[p]==null) delete m[d]; else m[d]=upd[p]; }); if(Object.keys(m).length) cls.checkpoints=m; else delete cls.checkpoints; _cpco.draft=null; cpcalRe(); }).catch(()=>{});
+  return true; }
+function cpCalOptPaceHtml(ctx){
+  try{ if(!cpcoCon()) return ""; cpcoCss(); const cls=cpcalCls()||{}, lock=cpcalLocked(), dis=lock?' disabled':'', M=cpcoCpShown(), n=Object.keys(cpCalCpUpdate(cpCalCheckpoints(cls),M)).length, today=cpcalToday(), A=_cpco.add, inp=ctx&&ctx.inp;
+    let h='<div class="envs-card"><div class="envs-h2" style="margin-bottom:2px">\u{1F3AF} Checkpoints</div><div class="envs-muted">How many core cards every student should have learned by a date. Each family’s “📅 Our study days” shows study-day options that meet the next checkpoint and the goal'+(inp&&inp.goalName?' ('+cpcoEsc(inp.goalName)+')':'')+', worked out from where their child is, and the family picks.</div>';
+    if(!M.length) h+='<div class="envs-muted" style="margin-top:6px">None yet — the options then only aim at the goal.</div>';
+    M.forEach(c=>{ h+='<div class="envs-row cpcal-m'+(c.date<=today?' past':'')+'"><b style="min-width:96px">'+cpcoEsc(cpcalLbl(c.date))+'</b><span style="flex:1;min-width:110px">'+cpcoEsc(cpcoCpWhat(c))+' learned</span><button class="envs-btn sec cpcal-x"'+dis+' onclick="cpCalCpDel(\''+c.date+'\')" aria-label="Remove '+c.date+'">✕</button></div>'; });
+    h+='<div class="envs-row" style="margin-top:8px"><input class="envs-in" type="date" style="width:160px" value="'+cpcoEsc(A.on)+'"'+dis+' onchange="cpCalCpIn(\'on\',this.value)" aria-label="Checkpoint date">'+
+      '<input class="envs-in" type="number" inputmode="numeric" min="1" style="width:100px" placeholder="'+(A.unit==="pct"?'50':'800')+'" value="'+cpcoEsc(A.n)+'"'+dis+' onchange="cpCalCpIn(\'n\',this.value)" aria-label="How many">'+
+      '<select class="envs-in" style="width:auto;min-width:130px"'+dis+' onchange="cpCalCpIn(\'unit\',this.value)" aria-label="Count or percent"><option value="n"'+(A.unit==="pct"?'':' selected')+'>core cards</option><option value="pct"'+(A.unit==="pct"?' selected':'')+'>% of the core cards</option></select>'+
+      '<button class="envs-btn sec"'+dis+' onclick="cpCalCpAdd()">+ Checkpoint</button></div>';
+    if(lock) h+='<div class="envs-muted">\u{1F512} set by '+cpcoEsc(typeof cpLockName==="function"?cpLockName():"Adrienne")+'.</div>';
+    if(n) h+='<div class="cpp-wi">'+n+' change'+(n===1?'':'s')+' to the checkpoints, not saved yet.</div>';
+    h+='<div class="envs-row" style="margin-top:8px"><button class="envs-btn" onclick="cpCalCpSave()"'+(n&&!lock?'':' disabled')+'>Save the checkpoints</button><button class="envs-btn sec" onclick="cpCalCpUndo()"'+(n?'':' disabled')+'>Undo</button></div>';
+    h+='<div class="envs-muted" style="margin-top:4px">Saved at classes/'+cpcoEsc(_envc.cid||"")+'/checkpoints. Under each name below: the family’s days, their new cards a day, ✓ / ✗ for the next checkpoint.</div>';
+    return h+'</div>'; }catch(e){ return ""; } }
+// CPCALOPTIONS_END
 // CPSUGGEST_START — 💡 SUGGESTIONS ON 📅 PACE, THE LIVE MATCHER FOR HER OWN QUESTIONS, THE LINKED CARDS ON EACH ITEM-ANALYSIS ROW
 // (DESIGN_class_platform_2026-10-28.md §8.4, §6.3, §6.4, §8.3, §8.6, §9, §13 row 16, §14; PR 16 of the class platform; her yes to building the
 // design 2026-10-28). Her words 2026-10-28: "a pace target that gives her all the data and can manipulate things where she can see where

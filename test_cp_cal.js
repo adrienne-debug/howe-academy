@@ -8,7 +8,7 @@
  *   · the planner: Mon–Thu needs more new cards a day than Mon–Fri;
  *   · the demo: Parent ▸ 📅 Our study days ▸ Mon–Thu ▸ Save ▸ Teacher ▸ 📅 Pace: Maya's "Needs from now" changes; the switch (Q33 open:
  *     off = the parent can't change them); the teacher's student page; 🗓 meetings on 📅 Pace (+ the dot on ✎ Days off); "Next class" in
- *     Send out opens CPSEND's sheet filled in and writes nothing;
+ *     Send out opens CPSEND's sheet filled in and writes nothing (the switch is ON by default since Q33's answer, 2026-10-29: CPCALOPTIONS);
  *   · the rules; Howe / Lincoln: no edition → nothing drawn, read or written.
  * Uses the world from test_env_site.js; its `o.rev` line injects CPPACE, CPSEND and this block.                     run: node test_cp_cal.js
  */
@@ -98,7 +98,7 @@ console.log("── the demo: Parent ▸ Our study days: Mon–Thu ▸ Teacher �
   ok("…Maya's open row: 📅 Study days: Mon–Thu (set by the family)", /📅 Study days: <b>Mon–Thu<\/b> \(set by the family\)/.test(h.replace(/\\u\{1F4C5\}/g,"📅")));
   ok("…another student still uses the class's days (cpCalOf null)", C.cpCalOf("tran_jonah")===null&&C.cpStudyDays("tran_jonah").own===false); }
 
-console.log("── the switch: Q33 is open, so the family's half is OFF unless she turns it on ──");
+console.log("── the switch: ON by default since her Q33 answer (2026-10-29, CPCALOPTIONS); the teacher can turn it off ──");
 { const w=demo("teacher"), C=w.C; w.envcView("pace"); settle(w);
   const W0=w._envs.writes.length; C.cpCalFamilySet(false); await w.flush();
   ok("the teacher turns it off: ONE update classes/<cid> {familyDays:false}", w._envs.writes.length===W0+1&&w._envs.writes[W0].op==="update"&&w._envs.writes[W0].path==="classes/"+CID&&JSON.stringify(w._envs.writes[W0].val)==='{"familyDays":false}'&&w._envc.cls.familyDays===false);
@@ -106,7 +106,7 @@ console.log("── the switch: Q33 is open, so the family's half is OFF unless 
   ok("Parent: the days show read-only (chips disabled), \"Maya’s teacher sets the study days.\"", /Maya’s teacher sets the study days\./.test(h)&&/aria-pressed="true" disabled onclick="cpCalTap/.test(h)&&!/cpCalSave\('ramirez_maya'\)/.test(h));
   ok("…a tap or a save does nothing and writes nothing", C.cpCalTap(SID,5)===false&&(await C.cpCalSave(SID))===false&&w._envs.writes.length===W1);
   delete w._envc.cls.familyDays; h=(w.renderAll(),w.G.content);
-  ok("no switch saved at all = off (the default)", /Maya’s teacher sets the study days\./.test(h)&&C.cpCalTap(SID,5)===false);
+  ok("no switch saved at all = ON (the default since Q33's answer, 2026-10-29): the chips are live", !/Maya’s teacher sets the study days\./.test(h)&&/class="on" aria-pressed="true" onclick="cpCalTap\('ramirez_maya'/.test(h)&&C.cpCalTap(SID,5)===true); C.cpCalUndo(SID);
   const T=world({fam:FAM,rev:REV,now:NOW}).G.cal; ok("…and a class that isn't the demo never gets it turned on for it (only the demo seeds familyDays)", /if\(c\.familyDays==null\) c\.familyDays=true/.test(CAL)&&/function cpcalDemoSeed\(\)\{ if\(_cpcal\.demo\|\|!cpcalDemo\(\)/.test(CAL)&&T._cpcal.demo===false); }
 
 console.log("── the parent PIN (CPDRILLPARENT's) guards the chips ──");
@@ -157,7 +157,7 @@ console.log("── the rules ──");
 { const R=JSON.parse(fs.readFileSync(path.join(REPO,"envirothon","SITE_RULES.json"),"utf8")).rules, c=R.classes.$cid, st=R.students.$sid;
   ok("classes/<cid>/meetings: the teacher writes; <date>: {what ≤ 60, sec = a section key}, nothing else", /classes\/'\+\$cid\+'\/teacher'\)\.val\(\) == auth\.uid/.test(c.meetings[".write"])&&/\[0-9\]\{4\}-/.test(c.meetings.$date[".validate"])&&/hasChildren\(\['what'\]\)/.test(c.meetings.$date[".validate"])&&/<= 60/.test(c.meetings.$date.what[".validate"])&&c.meetings.$date.$other[".validate"]===false);
   ok("classes/<cid>/familyDays: the teacher writes a boolean", /teacher/.test(c.familyDays[".write"])&&c.familyDays[".validate"]==="newData.isBoolean()");
-  ok("students/<sid>/calendar: admin, the class's teacher, or that family's PARENT login only while the class's familyDays is true", /admins/.test(st.calendar[".write"])&&/'\/teacher'\)\.val\(\) == auth\.uid/.test(st.calendar[".write"])&&/'\/role'\)\.val\(\) == 'parent' && root\.child\('classes\/'\+root\.child\('students\/'\+\$sid\+'\/class'\)\.val\(\)\+'\/familyDays'\)\.val\(\) == true/.test(st.calendar[".write"]));
+  ok("students/<sid>/calendar: admin, the class's teacher, or that family's PARENT login unless the class's familyDays is false (on by default, Q33)", /admins/.test(st.calendar[".write"])&&/'\/teacher'\)\.val\(\) == auth\.uid/.test(st.calendar[".write"])&&/'\/role'\)\.val\(\) == 'parent' && root\.child\('classes\/'\+root\.child\('students\/'\+\$sid\+'\/class'\)\.val\(\)\+'\/familyDays'\)\.val\(\) != false/.test(st.calendar[".write"]));
   ok("…{days = weekday digits, by = the writer, role matches the login, at}; off/<date> = true; nothing else", /\^\[0-6\]\{1,7\}\$/.test(st.calendar.days[".validate"])&&/newData\.child\('by'\)\.val\(\) == auth\.uid/.test(st.calendar[".validate"])&&/role'\)\.val\(\) == 'parent' && root\.child\('logins/.test(st.calendar[".validate"])&&st.calendar.$other[".validate"]===false&&/newData\.val\(\) == true/.test(st.calendar.off.$date[".validate"])); }
 
 console.log("── Howe / Lincoln: the hooks say no ──");
