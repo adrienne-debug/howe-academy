@@ -96,8 +96,9 @@ console.log("── how it is hooked ──");
   const out=src.slice(0,a)+src.slice(b), hooks=out.split("\n").filter(l=>/🧭 CPSHARE/.test(l));
   ok("every line outside the block tagged 🧭 CPSHARE is one typeof-guarded call", hooks.length>0&&hooks.every(l=>/typeof cp(Share\w+)\s*===?\s*"function"/.test(l)), hooks.map(l=>l.trim().slice(0,70)));
   const pile=cut("function mstPile(kid, sid, pn, todayLog) {","\n}\n");
+  // 🌿 CPLINCOLNPARITY (2026-10-29): Lincoln's own seats line may follow it (his 🌿 sitting only; the same list back otherwise)
   ok("mstPile: the focus line right after the focusDecks slice (before inFocus), the names line right after CPPACE's Core only line",
-    /focusDecks = started\.concat\(fresh\)\.slice\(0, session\.focusDecks\);\n    if \(typeof cpShareFocus === "function"\) focusDecks = cpShareFocus\([^\n]*\n    const inFocus = new Set\(focusDecks\);/.test(pile)&&
+    /focusDecks = started\.concat\(fresh\)\.slice\(0, session\.focusDecks\);\n    if \(typeof cpShareFocus === "function"\) focusDecks = cpShareFocus\([^\n]*\n(?:    if \(typeof cplnFocus === "function"\)[^\n]*\n)?    const inFocus = new Set\(focusDecks\);/.test(pile)&&
     /names = cpPaceCoreOnly\(kid, session, deck, names\);[^\n]*\n      if \(typeof cpShareNames === "function"\) names = cpShareNames\(kid, session, deck, names, \{ newNames, [^\n]*\n      for \(let ni = 0;/.test(pile));
   ok("CPCORE's two lines are untouched (each still right after the line it follows)", /let fresh = focusDecks\.filter\(d => !\(learnByDeck\[d\] > 0\)\);\n    if \(typeof cpCoreFresh === "function"\)/.test(pile)&&/let names = \(typeof mastBankEligible === "function"\) \? mastBankEligible\(kid, deck\) : \(bank\[deck\] \|\| \[\]\);\n      if \(typeof cpCoreNames === "function"\)/.test(pile));
   ok("the Pace control comes through hooks (cpPacePlan's first line + its day loop, the plan bar), no CPPACE function rewritten", /function cpPacePlan\(o\)\{\n  if\(typeof cpShareOpt==="function"\) o=cpShareOpt\(o\);/.test(src)&&/if\(o\.share&&typeof cpShareFill==="function"\) room=cpShareFill\(/.test(PACE)&&/if\(typeof cpShareBarHtml==="function"\) h\+=cpShareBarHtml\(\{d,inp,plan\}\);/.test(PACE));
@@ -186,7 +187,8 @@ console.log("\n── the sent dates: cpsdRelease's records, in memory ──");
   ok("a section, a deck and a Key Concept record each mark their section; the earliest stays", E.cpShareSeen("k",{forestry:{openedAt:500},[AT]:{openedAt:900},"general~k2":{openedAt:300}})===3&&E.cpShareSeen("k",{forestry:{openedAt:800}})===0&&E.cpShareSeen("k",{forestry:{openedAt:100}})===1&&JSON.stringify(E._cpshare.sent.k)===JSON.stringify({forestry:100,aquatics:900,general:300}));
   ok("a record with no openedAt, or an unknown key, is skipped", E.cpShareSeen("k",{soils:true,nowhere:{openedAt:5}})===0);
   const H=engine(true,{on:false},{},US).S; ok("Howe: nothing is kept", H.cpShareSeen("lincoln",{forestry:{openedAt:5}})===0&&!H._cpshare.sent.lincoln);
-  ok("the hook sits in CPSEND's apply step, right after its site check", /function cpsdRelease\(kid,rel,u\)\{\n  if\(!cpsdSite\(\)\) return null; if\(!rel\|\|typeof rel!=="object"\) return 0;\n  if\(typeof cpShareSeen==="function"\) cpShareSeen\(kid,rel\);/.test(src)); }
+  // 🌿 CPLINCOLNPARITY (2026-10-29): the site check also lets Lincoln's mirror through (cplnpSendOn), tagged on that line
+  ok("the hook sits in CPSEND's apply step, right after its site check", /function cpsdRelease\(kid,rel,u\)\{\n  if\(!cpsdSite\(\)(?:&&!\(typeof cplnpSendOn==="function"&&cplnpSendOn\(kid\)\))?\) return null; if\(!rel\|\|typeof rel!=="object"\) return 0;[^\n]*\n  if\(typeof cpShareSeen==="function"\) cpShareSeen\(kid,rel\);/.test(src)); }
 
 console.log("\n── ⚙️ Class settings: the card and its saves ──");
 { const w=liveConsole("teacher"), Wr=()=>w.G.writes, h=w.envClsPanelHtml();

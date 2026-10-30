@@ -101,7 +101,7 @@ const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; c
 const run=async()=>{
 console.log("── the blocks, where they sit, how they are hooked ──");
 { const a=src.indexOf("// ENVSITE_START"), b=src.indexOf("// ENVSITE_END"), c=src.indexOf("// ENVCONSOLE_START"), d=src.indexOf("// ENVCONSOLE_END");
-  ok("ENVSITE right after ENVMIRROR_END, ENVCONSOLE right after ENVSITE_END, each once", a>0&&b>a&&c>b&&d>c&&src.indexOf("// ENVSITE_START",a+1)<0&&src.indexOf("// ENVCONSOLE_START",c+1)<0&&src.slice(src.indexOf("// ENVMIRROR_END"),a).replace(/\/\/ CPLINCOLN_START[\s\S]*?\/\/ CPLINCOLN_END\n/,"").replace(/\/\/ CPLINCOLNL3_START[\s\S]*?\/\/ CPLINCOLNL3_END\n/,"").trim()==="// ENVMIRROR_END"&&src.slice(b,c).trim()==="// ENVSITE_END");
+  ok("ENVSITE right after ENVMIRROR_END, ENVCONSOLE right after ENVSITE_END, each once", a>0&&b>a&&c>b&&d>c&&src.indexOf("// ENVSITE_START",a+1)<0&&src.indexOf("// ENVCONSOLE_START",c+1)<0&&src.slice(src.indexOf("// ENVMIRROR_END"),a).replace(/\/\/ CPLINCOLN_START[\s\S]*?\/\/ CPLINCOLN_END\n/,"").replace(/\/\/ CPLINCOLNL3_START[\s\S]*?\/\/ CPLINCOLNL3_END\n/,"").replace(/\/\/ CPLINCOLNPARITY_START[\s\S]*?\/\/ CPLINCOLNPARITY_END\n/,"").trim()==="// ENVMIRROR_END"&&src.slice(b,c).trim()==="// ENVSITE_END");
   const decl=l=>!l.trim()||/^(\/\/|function |const |let |var | |})/.test(l);
   ok("both blocks only declare (nothing runs at boot)", SITE.split("\n").every(decl)&&CON.split("\n").every(decl));
   ok("no Howe kid name as a code literal in either block", !/["'`](lincoln|ellis|lucy|julian)["'`]/i.test(SITE+CON));
