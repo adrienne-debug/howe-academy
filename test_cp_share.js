@@ -187,7 +187,8 @@ console.log("\n── the sent dates: cpsdRelease's records, in memory ──");
   ok("a section, a deck and a Key Concept record each mark their section; the earliest stays", E.cpShareSeen("k",{forestry:{openedAt:500},[AT]:{openedAt:900},"general~k2":{openedAt:300}})===3&&E.cpShareSeen("k",{forestry:{openedAt:800}})===0&&E.cpShareSeen("k",{forestry:{openedAt:100}})===1&&JSON.stringify(E._cpshare.sent.k)===JSON.stringify({forestry:100,aquatics:900,general:300}));
   ok("a record with no openedAt, or an unknown key, is skipped", E.cpShareSeen("k",{soils:true,nowhere:{openedAt:5}})===0);
   const H=engine(true,{on:false},{},US).S; ok("Howe: nothing is kept", H.cpShareSeen("lincoln",{forestry:{openedAt:5}})===0&&!H._cpshare.sent.lincoln);
-  ok("the hook sits in CPSEND's apply step, right after its site check", /function cpsdRelease\(kid,rel,u\)\{\n  if\(!cpsdSite\(\)\) return null; if\(!rel\|\|typeof rel!=="object"\) return 0;\n  if\(typeof cpShareSeen==="function"\) cpShareSeen\(kid,rel\);/.test(src)); }
+  // 🌿 CPLINCOLNPARITY (2026-10-29): the site check also lets Lincoln's mirror through (cplnpSendOn), tagged on that line
+  ok("the hook sits in CPSEND's apply step, right after its site check", /function cpsdRelease\(kid,rel,u\)\{\n  if\(!cpsdSite\(\)(?:&&!\(typeof cplnpSendOn==="function"&&cplnpSendOn\(kid\)\))?\) return null; if\(!rel\|\|typeof rel!=="object"\) return 0;[^\n]*\n  if\(typeof cpShareSeen==="function"\) cpShareSeen\(kid,rel\);/.test(src)); }
 
 console.log("\n── ⚙️ Class settings: the card and its saves ──");
 { const w=liveConsole("teacher"), Wr=()=>w.G.writes, h=w.envClsPanelHtml();

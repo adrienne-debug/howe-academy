@@ -42,6 +42,8 @@ const ENG=[
   "const MAST_DEFAULT_CAT_MODES={};","__X__"].join("\n");
 // step 2's world adds the class's card / trim / test layers (CPCARDSEDIT, CPTRIM, CPTESTS) and ENVTEST's check-ins, sliced as they are
 const L3=cut("// CPLINCOLNL3_START","// CPLINCOLNL3_END");
+const ENG4=[cut("// CPCLASS_START","// CPCLASS_END"),cut("// CPPACE_START","// CPPACE_END"),cut("// CPSEND_START","// CPSEND_END"),cut("// CPSHARE_START","// CPSHARE_END"),
+  cut("// CPSECTIONS_START","// CPSECTIONS_END"),cut("// CPSPECIALIST_START","// CPSPECIALIST_END"),constAt("ENVS_SHORT"),...["envsStations","envsStationOfDeck"].map(fn)].join("\n");
 const ENG2=[cut("// ENVTEST_START","// ENVTEST_END"),cut("// CPCARDSEDIT_START","// CPCARDSEDIT_END"),cut("// CPTRIM_START","// CPTRIM_END"),cut("// CPTESTS_START","// CPTESTS_END"),
   ...["envHydrate","mastGetDef","mastCustomDef","envmUnit","mastTierAtLeast"].map(fn),"const MAST_MATH_ANS={}, MAST_VOCAB_DEFS={};"].join("\n");
 function world(o){
@@ -52,13 +54,13 @@ function world(o){
     set(v){ writes.push(["set",p,v]); }, update(v){ writes.push(["update",p,v]); }, remove(){ writes.push(["remove",p]); }})};
   const ctx={console:{log(){},error(){},warn(){}},Object,Array,String,Number,Math,JSON,Date,Set,Map,WeakMap,Infinity,NaN,isNaN,parseInt,parseFloat,Promise,
     window:{HA_FAMILY:o.cfg===false?{familyId:"howe"}:{familyId:"howe",envirothon:{firebase:{databaseURL:"https://howe-envirothon.example"},classId:"c1"}},HoweEnvirothon:o.lib||undefined},
-    masteryData:o.M, unitStudies:o.U, masteryKid:"lincoln", db:null, HA_LS:{s:{},getItem(k){ return this.s[k]||null; },setItem(k,v){ this.s[k]=String(v); },removeItem(k){ delete this.s[k]; }},
+    masteryData:o.M, unitStudies:o.U, masteryKid:"lincoln", db:o.db?{ref:p=>({update(v){ writes.push(["db.update",p,v]); }, set(v){ writes.push(["db.set",p,v]); }, remove(){ writes.push(["db.remove",p]); }})}:null, HA_LS:{s:{},getItem(k){ return this.s[k]||null; },setItem(k,v){ this.s[k]=String(v); },removeItem(k){ delete this.s[k]; }},
     _dryRun:()=>false, renderAllSoon:()=>{ paints.n++; }, cap:s=>s[0].toUpperCase()+s.slice(1), gwShowToast(){}, setTimeout:()=>0, clearTimeout(){},
     envSiteOn:()=>!!o.site, envsDemo:()=>false, _envs:{kid:o.site?"lincoln":null,role:o.site?"kid":null,cls:null}, _envc:{}, envcOn:()=>false, envcAdmin:()=>false,
     mastIsNeverDrill:()=>false, mastDynamicShouldAdd:()=>false, mastDynamicShouldPrune:()=>false, mastDynamicEligible:()=>false, mastDynamicMark(){}, mastDynamicClear(){}, mastDynamicCapNotice:false,
     reads, writes, paints, edb};
   vm.createContext(ctx);
-  vm.runInContext(ENG.replace("__BLK__",o.noBlock?"":BLK).replace("__X__",(o.l2?ENG2:"")+(o.l3?"\n"+L3+"\nvar ROSTER=[], momHere=()=>false;":"")),ctx);
+  vm.runInContext(ENG.replace("__BLK__",o.noBlock?"":BLK).replace("__X__",(o.l2?ENG2:"")+(o.l4?"\n"+ENG4:"")+(o.l3?"\n"+L3+"\nvar ROSTER=[], momHere=()=>false;":"")),ctx);
   ctx.get=e=>vm.runInContext(e,ctx);
   if(o.signedIn!==false) ctx.get("_envm.user={uid:'u1',email:'mom@x'}");
   if(!o.noLoad){ ctx.get("cplnLoad('lincoln','c1',edb,'howe_lincoln')"); if(!o.noBlock) ctx.get("cplnpLoad('lincoln','c1',edb,'howe_lincoln')"); }
@@ -68,6 +70,7 @@ function world(o){
 // His Envirothon starts the way the real unit does: General Concepts small and first, the stations bigger; nothing started yet. Half core.
 const EDECKS=src.match(/\nconst ENV_DECKS=\[[\s\S]*?\];/)[0].match(/\["([^"]+)","(flip|flash|quiz)"/g).map(s=>s.match(/\["([^"]+)"/)[1]);
 const SIZE=d=>/General Concepts/.test(d)?6:14;
+const STN=Object.fromEntries(src.match(/\nconst ENV_DECKS=\[[\s\S]*?\];/)[0].match(/\["[^"]+","(?:flip|flash|quiz)",\d+,"[a-z]+"/g).map(x=>{ const m=x.match(/\["([^"]+)","[a-z]+",\d+,"([a-z]+)"/); return [m[1],m[2]]; }));
 const OTHER=["German","Science","AAS Words","Math Facts","Vocabulary"];
 function fixture(kid){
   kid=kid||"lincoln"; const M={}, items=[], bank=[];
@@ -82,7 +85,7 @@ function fixture(kid){
     ds:{name:"Daily Study",kind:"all",skipDecks:["Math Facts"],newPerDay:6,passes:2,mixInAt:"every_other_day",handOffAt:"bi_weekly",maxCards:12,focusDecks:2,budgetRole:"rest"},
     envirothon:{name:"Envirothon",emoji:"🌿",kind:"deck",who:"solo",newPerDay:5,passes:2,mixInAt:"weekly",handOffAt:"bi_weekly",order:"bank",maxCards:12,focusDecks:2,pattern:["pick","ideas","type"],decks:EDECKS.slice()}};
   M.studyLog={}; M.history={};
-  const U={nc_envirothon:{id:"nc_envirothon",starter:"nc_envirothon",enrolled:{[kid]:true},decks:EDECKS.map((k,i)=>({key:k,station:["general","forestry","soils","aquatic","wildlife"][Math.min(4,Math.floor(i/3))],cards:Array.from({length:SIZE(k)},(_,j)=>({name:k+" c"+j,def:"e"+j,core:j%2===0}))}))}};
+  const U={nc_envirothon:{id:"nc_envirothon",starter:"nc_envirothon",enrolled:{[kid]:true},decks:EDECKS.map(k=>({key:k,station:STN[k],cards:Array.from({length:SIZE(k)},(_,j)=>({name:k+" c"+j,def:"e"+j,core:j%2===0,concept:1+(j%3)}))}))}};
   return {M,U};
 }
 const CLASS={ "classes/c1/settings":{study:{newPerDay:8,maxCards:"auto",passes:1,focusDecks:2,pattern:["pick","type"],coreFirst:"on",reviewCap:0},drill:{intro_dots:3}},
@@ -228,5 +231,87 @@ function w3(o){ o=o||{}; const f=fixture(); const at=(d,h)=>new Date(2026,9,d,h,
 { const w=w3({none:true}); ok("no teacher drills at all: no line", w.get("cplnpMomDayHtml")(w.now)===""); }
 { const w=w3({mom:false}); ok("Mom only: nothing when Mom isn't here", w.get("cplnpMomDayHtml")(w.now)===""); }
 { const w=w3({w:{cfg:false}}); ok("no mirror (no envirothon config): no line", w.get("cplnpMomDayHtml")(w.now)===""); }
+
+
+console.log("4. Parity: every class setting that changes what he studies, read from his class into his 🌿 Envirothon");
+const SOT="Soils and Land Use · Terms", WT="Wildlife · Terms", FID="Forestry · ID";
+function w4(o){ o=o||{}; const f=fixture(); f.U.nc_envirothon.cardsInCode=true; f.M.lincoln_tests={forestry:{pre:{form:"F-pre",n:3,right:2,answers:[0,0,1],ts:1}},soils:{pre:{form:"S-pre",n:1,right:1,answers:[0],ts:1}},wildlife:{pre:{form:"W-pre",n:1,right:1,answers:[0],ts:1}}};
+  [SOT,"Soils and Land Use · Facts"].forEach(d=>{ for(let i=0;i<3;i++) f.M.lincoln.push({id:"lin|"+d+"|"+d+" c"+i,subject:d,prompt:d+" c"+i,answer:"e",tier:"weekly",status:"active",review_mode:"flash",next_due:390,drop_count:0,consecutive_correct:0,cycle:1,tally_dots:0}); });
+  if(o.hold) f.M.lincoln_settings.cat_hold=Object.fromEntries(EDECKS.filter(d=>STN[d]!=="general").map(d=>[d,true]));
+  const before=J(f.M), R=Object.assign({},JSON.parse(J(CLASS)),{"classes/c1/tz":"America/New_York"},o.remote||{});
+  if(o.study) Object.assign(R["classes/c1/settings"].study,o.study); if(o.plan) R["classes/c1/plan"]=o.plan;
+  const w=world(Object.assign({M:f.M,U:f.U,remote:R,l2:true,l4:true,lib:lib(),db:true},o.w||{})); w.get("envHydrate(unitStudies.nc_envirothon,window.HoweEnvirothon)"); w.before=before; return w; }
+const elig=(w,d)=>w.get("mastBankEligible('lincoln',"+J(d)+")");
+const envS=w=>w.get("mstSessions('lincoln').find(s=>s.sid==='envirothon')"), gerS=w=>w.get("mstSessions('lincoln').find(s=>s.sid==='german')");
+const otherPiles=w=>J(["german","science","ds","daily_mix"].map(sid=>pileIds(w,sid)).concat([w.get("mastDueItems('lincoln',420)").filter(i=>!isEnv(i)).map(i=>i.id)]));
+// SECTIONS
+{ const w=w4({plan:{forestry:{state:"review"}},remote:{"students/howe_lincoln/sections":{soils:"off"}}});
+  ok("his reads add his section states, his specialist and the class's features, once each", ["students/howe_lincoln/sections","students/howe_lincoln/specialist","classes/c1/features"].every(p=>w.reads.filter(r=>r===p).length===1), w.reads);
+  ok("SECTIONS · the class's Review only: no new cards from Forestry", w.get("cpSecState('lincoln','forestry')")==="review"&&elig(w,FT).length===0&&elig(w,FID).length===0);
+  ok("SECTIONS · his own Off: Soils' cards leave his 🌿 sitting and Mom's drill, and no new ones", w.get("cpSecState('lincoln','soils')")==="off"&&!pileIds(w,"envirothon").r.some(id=>/Soils/.test(id))&&!w.get("mastDueItems('lincoln',420)").some(i=>/Soils/.test(i.subject))&&elig(w,SOT).length===0);
+  { const pre=x=>{ delete x.get("masteryData").lincoln_tests.soils; return x.get("envtStatus(unitStudies.nc_envirothon,'lincoln','soils')").pre.open; };
+    const wOn=w4({plan:{forestry:{state:"review"}},remote:{"students/howe_lincoln/sections":{}}});
+    ok("SECTIONS · Off: Soils' check-in waits until it is back On (open with Soils On, closed with it Off)", pre(wOn)===true&&pre(w)===false&&w.get("cpSecTestOff('lincoln','soils')")===true); }
+  ok("SECTIONS · a section the class left On gives as before", elig(w,WT).length===SIZE(WT));
+  const w0=w4({plan:{forestry:{state:"review"}},remote:{"students/howe_lincoln/sections":{soils:"off"}},w:{noBlock:true}});
+  ok("SECTIONS · his other subjects' piles and Mom's drill (other subjects) are identical with this and without", otherPiles(w)===otherPiles(w0)); }
+{ const w=w4({plan:{forestry:{state:"review"}},remote:{"students/howe_lincoln/sections":{forestry:"on"}}});
+  ok("SECTIONS · his own On beats the class's Review only (the teacher's per-student override)", w.get("cpSecState('lincoln','forestry')")===""&&elig(w,FT).length>0); }
+{ const w=w4({plan:{forestry:{state:"review"}},w:{refuse:"students/howe_lincoln/sections"}});
+  ok("SECTIONS · his section read refused: today's behaviour (Forestry still gives)", w.get("cpSecKidOn('lincoln')")===false&&elig(w,FT).length>0); }
+// SPECIALIST
+{ const R={"students/howe_lincoln/sections":{},"students/howe_lincoln/specialist":"wildlife","classes/c1/features":{specialists:true}};
+  const w=w4({remote:R,study:{specialistShare:70,specialistOthers:"review"}});
+  ok("SPECIALIST · his own section stays On; the others go to review only (the class's \"others\")", w.get("cpSecState('lincoln','wildlife')")===""&&w.get("cpSecState('lincoln','forestry')")==="review"&&elig(w,FT).length===0&&elig(w,WT).length>0);
+  const r=w.get("cpShareRule")("lincoln",envS(w));
+  ok("SPECIALIST · his new cards: a mix with Wildlife at its share", r&&r.newFrom==="mix"&&r.mix.wildlife>0, r);
+  const w2=w4({remote:Object.assign({},R,{"classes/c1/features":{specialists:false}}),study:{specialistOthers:"review"}});
+  ok("SPECIALIST · the class's feature off: no specialist (every section as the class has it)", w2.get("cplnpSpec('lincoln')")===""&&w2.get("cpSecState('lincoln','forestry')")===""); }
+// WHERE NEW CARDS COME FROM
+{ const w=w4({study:{newFrom:"newestOnly"}}); const S=envS(w);
+  ok("CPSHARE · his 🌿 session takes the class's rule (Newest only)", J(w.get("cpShareRule")("lincoln",S))===J({newFrom:"newestOnly",catchUp:30,mix:{}}));
+  ok("CPSHARE · …and none of his other sessions ever does", w.get("cpShareRule")("lincoln",gerS(w))===null&&["science","ds"].every(sid=>w.get("cpShareRule")("lincoln",w.get("mstSessions('lincoln')").find(s=>s.sid===sid))===null));
+  w.get("cpShareSeen('lincoln',{general:{openedAt:1},forestry:{openedAt:5},soils:{openedAt:9}})");
+  const p=w.get("mstPile('lincoln','envirothon',400,null)"), w0=w4({});
+  const p0=w0.get("mstPile('lincoln','envirothon',400,null)");
+  ok("CPSHARE · Newest only: his new cards all come from the section sent out last (Soils)", p.newNames.length>0&&p.newNames.every(x=>STN[x.deck]==="soils"), p.newNames.map(x=>x.deck));
+  ok("CPSHARE · …where deck by deck (nothing saved) starts at the first open deck", p0.newNames.length>0&&STN[p0.newNames[0].deck]==="general", p0.newNames.map(x=>x.deck));
+  ok("CPSHARE · his override beats the class's rule", J(w4({study:{newFrom:"spread"},remote:{"students/howe_lincoln/settings":{study:{newFrom:"newestOnly"}}}}).get("cpShareRule('lincoln',mstSessions('lincoln').find(s=>s.sid==='envirothon'))").newFrom)==='"newestOnly"');
+  ok("CPSHARE · L1 off (no mirror): none", w4({study:{newFrom:"spread"},w:{cfg:false}}).get("cpShareRule('lincoln',mstSessions('lincoln').find(s=>s.sid==='envirothon'))")===null); }
+// CORE ONLY
+{ const w=w4({plan:{forestry:{coreOnly:true}}}); const S=envS(w), names=[FT+" c1",FT+" c2",FT+" c3",FT+" c4"];
+  ok("CORE ONLY · a Core only section hands out only its core cards in his 🌿 sitting", J(w.get("cpPaceCoreOnly")("lincoln",S,FT,names))===J([FT+" c2",FT+" c4"]));
+  ok("CORE ONLY · no other session of his is touched (the very same array)", w.get("(n=>cpPaceCoreOnly('lincoln',mstSessions('lincoln').find(s=>s.sid==='german'),'German',n)===n)")(names));
+  const w2=w4({plan:{forestry:{coreOnly:true}},remote:{"students/howe_lincoln/sections":{},"students/howe_lincoln/specialist":"forestry","classes/c1/features":{specialists:true}}});
+  ok("CORE ONLY · his specialist section hands out its non-core cards too", J(w2.get("cpPaceCoreOnly")("lincoln",envS(w2),FT,names))===J(names));
+  const w3=w4({plan:{forestry:{coreOnly:true}},w:{cfg:false}});
+  ok("CORE ONLY · L1 off: as today (the very same array)", w3.get("(n=>cpPaceCoreOnly('lincoln',mstSessions('lincoln').find(s=>s.sid==='envirothon'),"+J(FT)+",n)===n)")(names)); }
+// SEND-OUTS
+{ const w=w4({hold:true});
+  const n=w.get("envmRelease")("lincoln",{"forestry~k1":{openedAt:100,by:"t",level:"kc"}});
+  const st=w.get("masteryData.lincoln_settings"), up=w.writes.filter(x=>x[0]==="db.update");
+  ok("SEND-OUTS · a Key Concept send-out opens Forestry's decks for that Key Concept only (cat_open), in one targeted update of his settings", n>0&&!st.cat_hold[FT]&&st.cat_open[FT]&&st.cat_open[FT].k1===100&&up.length===1&&up[0][1]==="mastery/lincoln_settings"&&Object.keys(up[0][2]).every(k=>/^cat_(hold|open)\/Forestry · /.test(k)), up);
+  const e=elig(w,FT); ok("SEND-OUTS · …so only Key Concept 1's cards come", e.length>0&&e.every(x=>(+x.split(" c")[1])%3===0), e);
+  ok("SEND-OUTS · the other sections stay held", st.cat_hold[SOT]===true&&elig(w,SOT).length===0); }
+{ const w=w4({hold:true,w:{cfg:false}}); const n=w.get("envmRelease")("lincoln",{"forestry~k1":{openedAt:100}});
+  ok("SEND-OUTS · no mirror (L1 off): a Key Concept key changes nothing, as today", n===0&&w.get("masteryData.lincoln_settings").cat_hold[FT]===true&&w.writes.length===0); }
+{ const w=w4({hold:true,remote:{"release/c1/scheduled":{s1:{key:"soils",to:"all",on:"2026-10-01",at:"08:00",by:"t",ts:1},s2:{key:"wildlife",to:"all",on:"2099-01-01",at:"08:00",by:"t",ts:1}},
+    "release/c1/all":{aquatics:{openedAt:50,by:"t"}}}});
+  w.get("_envm.edb=edb; _envm.classOf={lincoln:'c1'}"); w.get("cplnpReady('lincoln')"); const st=w.get("masteryData.lincoln_settings");
+  ok("SEND-OUTS · his class known: the scheduled listener is on for him", w.reads.indexOf("on:release/c1/scheduled")>=0&&!!w.get("_envm.subs['lincoln|sched']"));
+  ok("SEND-OUTS · a scheduled send-out whose moment has passed lands (Soils); one still ahead waits (Wildlife)", !st.cat_hold[SOT]&&st.cat_hold[WT]===true, st.cat_hold);
+  ok("SEND-OUTS · the send-outs already there are run through it once more (Aquatics)", !st.cat_hold["Aquatic Ecology · Terms"]);
+  ok("SEND-OUTS · where new cards come from knows when each section opened for him", w.get("_cpshare.sent.lincoln.aquatics")===50); }
+{ const w=w4({hold:true,study:{catchUp:40}}); ok("SEND-OUTS · the class's catch-up share is his", w.get("cpsdCatchUp()")===40&&w4({hold:true,study:{catchUp:40},w:{cfg:false}}).get("cpsdCatchUp()")===30); }
+// all of it at once, and the safety nets
+{ const all={plan:{forestry:{state:"review",coreOnly:true},soils:{coreOnly:true}},study:{newFrom:"spread",specialistOthers:"review"},
+    remote:{"students/howe_lincoln/sections":{aquatics:"off"},"students/howe_lincoln/specialist":"wildlife","classes/c1/features":{specialists:true}}};
+  const w=w4(all), w0=w4(Object.assign({},all,{w:{noBlock:true}}));
+  ok("everything on at once: his other subjects' piles and Mom's drill (other subjects) are identical with the block in and out, on the same records", otherPiles(w)===otherPiles(w0));
+  ok("…his Howe records are as they were (the only write is a send-out's, and none came)", J(w.get("masteryData"))===w.before&&w.writes.length===0);
+  const wr=w4(Object.assign({},all,{w:{refuse:"*"}})), wc=w4(Object.assign({},all,{w:{cfg:false}}));
+  ok("every read refused: today's behaviour — the same 🌿 pile, bank and states as with no mirror at all", J(pileIds(wr,"envirothon"))===J(pileIds(wc,"envirothon"))&&J(elig(wr,FT))===J(elig(wc,FT))&&wr.get("cpSecState('lincoln','aquatics')")===""&&wr.get("cpShareRule('lincoln',mstSessions('lincoln').find(s=>s.sid==='envirothon'))")===null);
+  const we=w4(all); const f=fixture("ellis"); we.get("masteryData").ellis=f.M.ellis;
+  ok("another kid of the family is never his: no section state, no rule, no Core only", we.get("cpSecKidOn('ellis')")===false&&we.get("cpShareRule('ellis',mstSessions('lincoln').find(s=>s.sid==='envirothon'))")===null); }
 
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

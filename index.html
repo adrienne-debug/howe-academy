@@ -46961,7 +46961,7 @@ function cplnLoad(kid,cid,edb,sid){
     const rec={cid:cid,sid:sid,cls:null,plan:null,stu:null,ok:false,n:0,bad:false}; _cpln.kids[kid]=rec;
     const val=s=>(s&&typeof s.val==="function")?s.val():null;
     const done=(k,v,bad)=>{ if(_cpln.kids[kid]!==rec) return; if(bad) rec.bad=true; else rec[k]=(v&&typeof v==="object")?v:{}; if(++rec.n<3) return;
-      rec.ok=!rec.bad; if(rec.ok){ rec.at=Date.now(); try{ if(typeof renderAllSoon==="function") renderAllSoon(); }catch(e){} } };
+      rec.ok=!rec.bad; if(rec.ok){ rec.at=Date.now(); try{ if(typeof cplnpReady==="function") cplnpReady(kid); }catch(e){} try{ if(typeof renderAllSoon==="function") renderAllSoon(); }catch(e){} } };   // 🌿 CPLINCOLNPARITY: his send-outs through CPSEND once his class is known
     [["cls","classes/"+cid+"/settings"],["plan","classes/"+cid+"/plan"],["stu","students/"+sid+"/settings"]].forEach(p=>{
       try{ edb.ref(p[1]).once("value",s=>done(p[0],val(s)),()=>done(p[0],null,true)); }catch(e){ done(p[0],null,true); } });
     return true;
@@ -47332,10 +47332,10 @@ function cplnpLoad(kid,cid,edb,sid){
     if(!kid||!cid||!edb||(typeof envSiteOn==="function"&&envSiteOn())) return false;
     const cur=_cplnp.k[kid]; if(cur&&cur.cid===cid) return false;
     const rec={cid,sid}; _cplnp.k[kid]=rec;
-    const done=(k,v,bad)=>{ if(_cplnp.k[kid]!==rec) return; rec[k]=bad?false:((v&&typeof v==="object")?v:{}); _cplnp.memo={};
+    const done=(k,v,bad)=>{ if(_cplnp.k[kid]!==rec) return; rec[k]=bad?false:((v&&typeof v==="object")?v:(typeof v==="string"?v:{})); _cplnp.memo={};
       try{ if(typeof cpceBump==="function") cpceBump(); if(typeof cpctBump==="function") cpctBump(); }catch(e){}
       try{ if(typeof envHydrateAll==="function") envHydrateAll(); }catch(e){} try{ if(typeof renderAllSoon==="function") renderAllSoon(); }catch(e){} };
-    CPLNP_READS.forEach(r=>{ try{ edb.ref(r[1](cid)).once("value",x=>done(r[0],(x&&typeof x.val==="function")?x.val():null),()=>done(r[0],null,true)); }catch(e){ done(r[0],null,true); } });
+    CPLNP_READS.forEach(r=>{ try{ edb.ref(r[1](cid,sid)).once("value",x=>done(r[0],(x&&typeof x.val==="function")?x.val():null),()=>done(r[0],null,true)); }catch(e){ done(r[0],null,true); } });
     return true;
   }catch(e){ return false; }
 }
@@ -47446,6 +47446,85 @@ function cplnpMomDayHtml(now){
         +'<div style="margin-top:8px">'+((typeof cplntKidHtml==="function")?cplntKidHtml(kid):"")+'</div></details>'; });
     return h;
   }catch(e){ return ""; }
+}
+//   · 4. PARITY ("everything she wants him doing"): the class-side settings that change what a site student studies, read from his class
+//     into his existing engine, his 🌿 Envirothon only. His mirror reads three more, once: students/<sid>/sections (his own section
+//     states), students/<sid>/specialist and classes/<cid>/features (is the specialist feature on). A refused read leaves that one off.
+//       - SECTIONS (CPSECTIONS, cpSecKidOn / cpSecState → his): On · Review only · Off — the class's plan state, under his own, with his
+//         specialist's "other sections review only" between. Review only: no new cards from it; Off: its cards skipped in the sitting,
+//         Mom's drill, games and ID Flash, and its check-in and final wait. Needs his sections read.
+//       - SPECIALIST (CPSPECIALIST): his section (when the class has the feature on) gets the class's share of new cards, its non-core
+//         cards too, and the other sections go to review only when the class says so — through the three readers below.
+//       - WHERE NEW CARDS COME FROM (CPSHARE, cpShareRule → his class's newFrom / catchUp / mix, his override over it; a specialist's own
+//         mix): only for his 🌿 session. The section open times come from his send-outs (cpShareSeen takes his releases too).
+//       - CORE ONLY (CPPACE, cpPaceCoreOnly → his plan's coreOnly): a section's non-core cards wait for its final, his 🌿 session only.
+//       - SEND-OUTS (CPSEND, her Q52 answered by her 2026-10-29 rule): his releases go through CPSEND's own apply (cpsdRelease), so a Key
+//         Concept send-out opens only those cards (cat_open, newest first, the class's catch-up) and a scheduled one lands on its moment
+//         (the scheduled listener, server time, the class's time zone). The apply writes what it writes for a site kid: one targeted update
+//         of mastery/<kid>_settings (cat_hold / cat_open), the same node ENVMIRROR's own release already clears. Dry run writes nothing.
+//         When his class reads land (cplnpReady) the current send-outs are run once more through it, so nothing sent before is missed.
+//       - Not built here (a whole new screen in Howe): the skill exercises and "skills before the final", the team mock, the class's photos
+//         on his cards. Plans in PLAN_cp_lincoln_parity_2026-10-29.md.
+CPLNP_READS.push(["sections",(c,sid)=>"students/"+sid+"/sections"],["spec",(c,sid)=>"students/"+sid+"/specialist"],["features",c=>"classes/"+c+"/features"]);
+// a layer of his that arrived (null / {} / a string counts; false = refused; undefined = not yet)
+function cplnpIn(kid,k){ const r=_cplnp.k[kid], l=(typeof _cpln!=="undefined")&&_cpln.kids[kid]; if(!r||!l||r.cid!==l.cid||!cplnOn(kid)) return false; return r[k]!==undefined&&r[k]!==false; }
+// his class as the site's readers want it: {plan, settings, features}
+function cplnpCls(kid){ const l=(typeof _cpln!=="undefined"&&_cpln.kids[kid])||{}; return {plan:l.plan||{},settings:l.cls||{},features:cplnpRaw(kid,"features")||{}}; }
+function cplnpStations(){ return (typeof envsStations==="function"&&envsStations())||[]; }
+// his specialist section ("" = none: not set, the feature off, or a read missing)
+function cplnpSpec(kid){
+  try{ if(!cplnpIn(kid,"spec")||!cplnpIn(kid,"features")) return ""; const v=_cplnp.k[kid].spec; if(typeof v!=="string"||!v) return "";
+    if(typeof cpFeature!=="function"||!cpFeature("specialists",cplnpCls(kid))) return ""; return cplnpStations().some(x=>x.id===v)?v:""; }catch(e){ return ""; }
+}
+// CPSECTIONS' cpSecKidOn: his section states are in
+function cplnpSecOn(kid){ try{ return !!kid&&cplnpIn(kid,"sections"); }catch(e){ return false; } }
+// CPSECTIONS' cpSecState: his state for a section → "review" | "off" | "" (null = not his: CPSECTIONS' own reader runs)
+function cplnpSecState(kid,sec){
+  try{ if(!sec||!cplnpSecOn(kid)||typeof cpSecEff!=="function") return null; const cls=cplnpCls(kid), mine=cplnpRaw(kid,"sections")||{}, sp=cplnpSpec(kid);
+    const mid=(sp&&sec!==sp&&typeof cpSpecOpts==="function"&&cpSpecOpts(cplnLayers(kid)).others==="review"&&!cpSecClsState(cls,sec))?"review":"";
+    return cpSecEff(cpSecClsState(cls,sec),mine[sec],mid); }catch(e){ return null; }
+}
+// CPSHARE's cpShareRule: his rule (undefined = not his: CPSHARE's own rule runs); only his 🌿 session ever gets one
+function cplnpShareRule(kid,session){
+  try{ if(typeof cplnOn!=="function"||!cplnOn(kid)) return undefined; if(!cplnpOn(kid,session)||typeof cpShareOf!=="function") return null;
+    let r=cpShareOf(cplnLayers(kid)); const sp=cplnpSecSpec(kid);
+    if(sp&&typeof cpSpecMix==="function"){ const o=cpSpecOpts(cplnLayers(kid)), st=(typeof cpSecState==="function")?cpSecState:null;
+      const on=cplnpStations().filter(x=>x.id!==sp&&!(st&&st(kid,x.id))&&(typeof cpSpecHasNew!=="function"||cpSpecHasNew(kid,x))).map(x=>x.id);
+      r=cpShareClean(cpSpecMix(sp,on,o.share))||r; }
+    return r||null; }catch(e){ return null; }
+}
+// a specialist counts for the share only with his section states in (CPSPECIALIST reads them to know which sections are On)
+function cplnpSecSpec(kid){ return cplnpSecOn(kid)?cplnpSpec(kid):""; }
+// CPSHARE's cpShareSeen: his send-outs' open times count too
+function cplnpSeenOk(kid){ try{ return typeof cplnOn==="function"&&cplnOn(kid); }catch(e){ return false; } }
+// CPPACE's cpPaceCoreOnly: Core only for his 🌿 session (undefined = not his: CPPACE's own rule runs)
+function cplnpCoreOnly(kid,session,deck,names){
+  try{
+    if(typeof cplnOn!=="function"||!cplnOn(kid)) return undefined; if(!Array.isArray(names)||!names.length||!cplnpOn(kid,session)) return names;
+    const sec=(typeof envsStationOfDeck==="function")?envsStationOfDeck(deck):null, p=sec&&cplnpCls(kid).plan[sec];
+    if(!p||p.coreOnly!==true||typeof cpCoreSet!=="function") return names;
+    if(cplnpSpec(kid)===sec&&typeof cpSpecOpts==="function"&&cpSpecOpts(cplnLayers(kid)).nonCore) return names;   // his specialist section hands out its non-core cards too
+    const set=cpCoreSet(deck); if(!set||!set.size) return names;
+    const t=(typeof envtStatus==="function"&&typeof envtUnit==="function")?envtStatus(envtUnit(),kid,sec):null;   // ENVTEST's own rule for when the final opens
+    if(t&&(t.graduated||(t.post&&t.post.why!=="cards"))) return names;
+    const out=names.filter(n=>set.has(n)); return out.length===names.length?names:out;
+  }catch(e){ return names; }
+}
+// CPSEND's apply and scheduled listener: his send-outs go through CPSEND's own code
+function cplnpSendOn(kid){ try{ return typeof cplnOn==="function"&&cplnOn(kid); }catch(e){ return false; } }
+// CPSEND's cpsdCatchUp: his class's catch-up share (null = not his: the site's)
+function cplnpCatchUp(){
+  try{ const K=((typeof envmKids==="function")?envmKids():[]).filter(k=>cplnOn(k)); if(!K.length) return null; const c=_cpln.kids[K[0]].cid; if(!K.every(k=>_cpln.kids[k].cid===c)) return null;
+    const v=Number((((_cpln.kids[K[0]].cls||{}).study)||{}).catchUp); return (Number.isFinite(v)&&v>=0&&v<=100)?v:null; }catch(e){ return null; }
+}
+// L1's reads all in (cplnLoad): CPSEND's scheduled listener for him, then his current send-outs once more through CPSEND's apply
+function cplnpReady(kid){
+  try{
+    if(!cplnOn(kid)||typeof _envm==="undefined"||!_envm.edb) return false; const cid=_cpln.kids[kid].cid, sid=(typeof envmSid==="function")?envmSid(kid):_cpln.kids[kid].sid;
+    if(typeof cpsdAttach==="function") cpsdAttach(kid,cid,_envm.edb,_envm.subs||{},sid);
+    ["release/"+cid+"/all","release/"+cid+"/students/"+sid].forEach(p=>{ try{ _envm.edb.ref(p).once("value",x=>{ const v=(x&&typeof x.val==="function")?x.val():null; if(v&&typeof envmRelease==="function") envmRelease(kid,v); },()=>{}); }catch(e){} });
+    return true;
+  }catch(e){ return false; }
 }
 // CPLINCOLNPARITY_END
 // ENVSITE_START — 🌿 THE ENVIROTHON SITE: one page, one Firebase project, routed by login role (step 4 of PLAN_envirothon_2026-10-27.md;
@@ -49773,6 +49852,7 @@ function cpPaceSumCore(kid,out,ctx){
 }
 // ── Core only, in the site kid's 🌿 sitting (mstPile's guarded line): a section's non-core cards wait until its final opens ──
 function cpPaceCoreOnly(kid,session,deck,names){
+  if(typeof cplnpCoreOnly==="function"){ const _n=cplnpCoreOnly(kid,session,deck,names); if(_n!==undefined) return _n; }   // 🌿 CPLINCOLNPARITY: Lincoln's 🌿 session in Howe, his class's Core only
   try{
     if(!Array.isArray(names)||!names.length||!cppSite()||typeof _envs==="undefined"||!kid||kid!==_envs.kid) return names;
     if(!(typeof envsDemo==="function"&&envsDemo())&&!(_envs.role==="kid"||_envs.role==="parent")) return names;
@@ -53044,7 +53124,7 @@ function cpsdEditSave(){ const E=_cpsd.edit, r=E&&cpsdRec(E.id); if(!cpsdOn()||!
 // The apply step for a release record {<key>: {openedAt?, …}} — the real listeners, a due scheduled record and the demo all come through it.
 // Returns null off the site (ENVMIRROR's own code runs), else how many decks changed.
 function cpsdRelease(kid,rel,u){
-  if(!cpsdSite()) return null; if(!rel||typeof rel!=="object") return 0;
+  if(!cpsdSite()&&!(typeof cplnpSendOn==="function"&&cplnpSendOn(kid))) return null; if(!rel||typeof rel!=="object") return 0;   // 🌿 CPLINCOLNPARITY: Lincoln's send-outs in Howe come through here too (Q52)
   if(typeof cpShareSeen==="function") cpShareSeen(kid,rel);   // 🧭 CPSHARE: when each section first opened for this kid (memory only), so "the newest section" is known
   u=u||(typeof envmUnit==="function"&&envmUnit())||null; if(!u) return 0;
   const M=(typeof masteryData!=="undefined"&&masteryData)||{}, st=M[kid+"_settings"]; if(!st) return 0;
@@ -53065,7 +53145,7 @@ function cpsdRelease(kid,rel,u){
   return n; }   // the repaint: envmRelease's (a listener's arrival combines), or the tap that called it
 // the third listener (from envmRelAttach): release/<cid>/scheduled, the server's clock offset, the class's zone, and the wake-up re-check
 function cpsdAttach(kid,cid,edb,subs,sid){
-  if(!cpsdSite()||!edb||!cid) return false; const sk=kid+"|sched"; if(subs[sk]) return true;
+  if((!cpsdSite()&&!(typeof cplnpSendOn==="function"&&cplnpSendOn(kid)))||!edb||!cid) return false; const sk=kid+"|sched"; if(subs[sk]) return true;   // 🌿 CPLINCOLNPARITY: his scheduled send-outs (Q52)
   const r=edb.ref("release/"+cid+"/scheduled"), fn=s=>{ try{ _cpsd.sched[kid]={cid,sid,recs:(s&&typeof s.val==="function"&&s.val())||{}}; cpsdCheck(kid); }catch(e){} };
   r.on("value",fn); subs[sk]={r,fn};
   if(!_cpsd.offOn){ _cpsd.offOn=true; try{ const o=edb.ref(".info/serverTimeOffset"), f=s=>{ _cpsd.off=Number(s&&typeof s.val==="function"&&s.val())||0; cpsdCheckAll(); }; o.on("value",f); subs["|sched-off"]={r:o,fn:f}; }catch(e){} }
@@ -53087,7 +53167,8 @@ function cpsdConceptMap(cat){ const d=cpsdUnitDecks().find(x=>x.key===cat); if(!
   const c=_cpsd.map[cat]; if(c&&c.ref===d.cards&&c.len===d.cards.length) return c.m;
   const sec=d.station||cpsdSecOfDeck(cat), K=cpsdConcepts(sec), m={}; d.cards.forEach(x=>{ if(x&&x.name){ const k=cpsdKcOf(x,sec,K); if(k) m[x.name]=k; } });
   _cpsd.map[cat]={ref:d.cards,len:d.cards.length,m}; return m; }
-function cpsdCatchUp(){ const c=(typeof _envs!=="undefined"&&_envs.cls)||null, v=c&&c.settings&&c.settings.study&&Number(c.settings.study.catchUp); return (Number.isFinite(v)&&v>=0&&v<=100)?v:CPSD_CATCHUP; }
+function cpsdCatchUp(){ if(typeof cplnpCatchUp==="function"){ const _c=cplnpCatchUp(); if(_c!=null) return _c; }   // 🌿 CPLINCOLNPARITY: his class's catch-up
+  const c=(typeof _envs!=="undefined"&&_envs.cls)||null, v=c&&c.settings&&c.settings.study&&Number(c.settings.study.catchUp); return (Number.isFinite(v)&&v>=0&&v<=100)?v:CPSD_CATCHUP; }
 function cpOpenFilter(kid,cat,all){
   try{ const M=(typeof masteryData!=="undefined"&&masteryData)||{}, op=((M[kid+"_settings"]||{}).cat_open||{})[cat];
     if(!op||typeof op!=="object"||!Array.isArray(all)) return all;
@@ -72065,6 +72146,7 @@ function cpShareOf(L){ const o={}; (Array.isArray(L)?L:[]).forEach(x=>{ const s=
   if(s.newFrom!=null) o.newFrom=s.newFrom; if(s.catchUp!=null) o.catchUp=s.catchUp; if(s.mix&&typeof s.mix==="object") o.mix=Object.assign({},o.mix||{},s.mix); }); return cpShareClean(o); }
 // the rule this kid's 🌿 sitting uses (null = as now)
 function cpShareRule(kid,session){
+  if(typeof cplnpShareRule==="function"){ const _r=cplnpShareRule(kid,session); if(_r!==undefined) return _r; }   // 🌿 CPLINCOLNPARITY: Lincoln's 🌿 session in Howe follows his class's rule
   if(!session||session.kind==="mix"||session.kind==="checkup"||!cpShareKidOk(kid)) return null;
   let r=cpShareOf((typeof envClsLayers==="function"&&envClsLayers())||null);
   if(typeof cpShareRuleFor==="function") r=cpShareClean(cpShareRuleFor(kid,r))||r;   // PR 21: a specialist's own share
@@ -72072,7 +72154,7 @@ function cpShareRule(kid,session){
 }
 // cpsdRelease's line: when each section first opened for this kid (the release records carry openedAt) — memory only
 function cpShareSeen(kid,rel){
-  try{ if(!cpShareSite()||!kid||!rel||typeof rel!=="object") return 0; const S=cpShareStations(), m=_cpshare.sent[kid]=_cpshare.sent[kid]||{}; let n=0;
+  try{ if(!(cpShareSite()||(typeof cplnpSeenOk==="function"&&cplnpSeenOk(kid)))||!kid||!rel||typeof rel!=="object") return 0; const S=cpShareStations(), m=_cpshare.sent[kid]=_cpshare.sent[kid]||{}; let n=0;
     Object.keys(rel).forEach(k=>{ const r=rel[k], ms=(r&&typeof r==="object")?Number(r.openedAt):0; if(!(ms>0)) return;
       const head=String(k).split("~")[0], sec=S.secOf[k]||(S.order[head]!=null?head:null); if(!sec) return;
       if(!(m[sec]>0)||ms<m[sec]){ m[sec]=ms; n++; } });
@@ -72349,6 +72431,7 @@ function cpSecEff(clsV,stuV,midV){ const s=cpSecStu(stuV)||cpSecStu(midV)||cpSec
 function cpSecStore(clsV,v){ v=cpSecCls(v); return v===cpSecCls(clsV)?null:(v||"on"); }
 // ── THE KID'S SIDE (and the parent's): the site's own kid only ──
 function cpSecKidOn(kid){
+  if(typeof cplnpSecOn==="function"&&cplnpSecOn(kid)) return true;   // 🌿 CPLINCOLNPARITY: Lincoln in Howe, his section states read through his mirror
   try{ if(!cpSecSite()||typeof _envs==="undefined"||!kid||kid!==_envs.kid) return false;
     return cpSecDemo()||_envs.role==="kid"||_envs.role==="parent"; }catch(e){ return false; }
 }
@@ -72356,6 +72439,7 @@ function cpSecKidCls(){ if(cpSecDemo()&&typeof _envc!=="undefined"&&_envc.cls) r
 function cpSecKidMine(){ if(cpSecDemo()) return ((((typeof _envc!=="undefined"&&_envc.students)||{})[_envs.sid])||{}).sections||null; return _cpsec.mine; }
 // THE reader (CPSHARE's cpNewQuota calls it too): this kid's state for a section → "review" | "off" | ""
 function cpSecState(kid,sec){
+  if(typeof cplnpSecState==="function"){ const _v=cplnpSecState(kid,sec); if(_v!=null) return _v; }   // 🌿 CPLINCOLNPARITY: his class's state ← his specialist ← his own
   try{ if(!sec||!cpSecKidOn(kid)) return ""; const mine=cpSecKidMine()||{};
     const mid=(typeof cpSecLayer==="function")?cpSecLayer(_envs.sid,sec):"";   // PR 21: a specialist's other sections
     return cpSecEff(cpSecClsState(cpSecKidCls(),sec),mine[sec],mid); }catch(e){ return ""; }
