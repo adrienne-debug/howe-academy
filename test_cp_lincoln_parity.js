@@ -41,6 +41,7 @@ const ENG=[
   'MST_PATTERN_MODES.push("pick"); MST_PATTERN_MODES.push("copy"); MST_PATTERN_MODES.push("ideas");',
   "const MAST_DEFAULT_CAT_MODES={};","__X__"].join("\n");
 // step 2's world adds the class's card / trim / test layers (CPCARDSEDIT, CPTRIM, CPTESTS) and ENVTEST's check-ins, sliced as they are
+const L3=cut("// CPLINCOLNL3_START","// CPLINCOLNL3_END");
 const ENG2=[cut("// ENVTEST_START","// ENVTEST_END"),cut("// CPCARDSEDIT_START","// CPCARDSEDIT_END"),cut("// CPTRIM_START","// CPTRIM_END"),cut("// CPTESTS_START","// CPTESTS_END"),
   ...["envHydrate","mastGetDef","mastCustomDef","envmUnit","mastTierAtLeast"].map(fn),"const MAST_MATH_ANS={}, MAST_VOCAB_DEFS={};"].join("\n");
 function world(o){
@@ -57,7 +58,7 @@ function world(o){
     mastIsNeverDrill:()=>false, mastDynamicShouldAdd:()=>false, mastDynamicShouldPrune:()=>false, mastDynamicEligible:()=>false, mastDynamicMark(){}, mastDynamicClear(){}, mastDynamicCapNotice:false,
     reads, writes, paints, edb};
   vm.createContext(ctx);
-  vm.runInContext(ENG.replace("__BLK__",o.noBlock?"":BLK).replace("__X__",o.l2?ENG2:""),ctx);
+  vm.runInContext(ENG.replace("__BLK__",o.noBlock?"":BLK).replace("__X__",(o.l2?ENG2:"")+(o.l3?"\n"+L3+"\nvar ROSTER=[], momHere=()=>false;":"")),ctx);
   ctx.get=e=>vm.runInContext(e,ctx);
   if(o.signedIn!==false) ctx.get("_envm.user={uid:'u1',email:'mom@x'}");
   if(!o.noLoad){ ctx.get("cplnLoad('lincoln','c1',edb,'howe_lincoln')"); if(!o.noBlock) ctx.get("cplnpLoad('lincoln','c1',edb,'howe_lincoln')"); }
@@ -204,5 +205,28 @@ const pileIds=(w,sid)=>{ const p=w.get("mstPile('lincoln','"+sid+"',400,null)");
 { const w=l2({ellis:true});
   ok("another kid enrolled in the unit and not mirrored: the shared unit (core flags, test forms) stays the unit's", w.get("cplnpUnitKid('cards')")===null&&w.get("[...cpCoreSet("+J(FT)+")]").indexOf(FT+" c2")>=0&&w.get("envtForm('forestry','pre')").items.length===3);
   ok("…while Lincoln's own bank and backs still follow his class, and Ellis's bank is his own", bankOf(w,FT).indexOf(FT+" c0")<0&&w.get("mastGetDef('lincoln',"+J(FT+" c1")+","+J(FT)+")")==="the class's back"&&!w.get("cpceKidOn('ellis')")); }
+
+
+console.log("3. Q23: Brittany's drills with Lincoln on Mom's Day ▸ 🏡 My day (Mom only)");
+ok("renderMomsDay carries the line once, right after the come-back nudges; Mom HQ doesn't", /h\+=cbNudgeHTML\(\); \}catch\(e\)\{\}[^\n]*\n  try\{ if\(typeof cplnpMomDayHtml==="function"\) h\+=cplnpMomDayHtml\(\); \}catch\(e\)\{\}/.test(fn("renderMomsDay"))&&fn("renderMomsDay").split("cplnpMomDayHtml(").length===2&&fn("renderMomHQ").indexOf("cplnpMomDayHtml")<0);
+function w3(o){ o=o||{}; const f=fixture(); const at=(d,h)=>new Date(2026,9,d,h,0,0).getTime(), it=(n,r)=>({deck:FT,name:n,r});
+  if(!o.none) f.M.lincoln_teacherDrills=o.drills||{a1:{at:at(29,10),teacher:"Ms. Brittany",items:[it("Sourwood","m"),it("Oak","c"),it("Pine","c"),it("Ash","c"),it("Elm","c")],right:4,n:5},
+    a2:{at:at(29,9),teacher:"Ms. Brittany",items:[it("Bark","c"),it("Cambium","c"),it("Xylem","c")],right:3,n:3},
+    b1:{at:at(27,11),teacher:"Ms. <b>Brittany</b>",items:[it("Phloem","m"),it("Leaf","c"),it("Root","m"),it("Bud","c")],right:2,n:4},
+    old:{at:at(23,11),teacher:"Ms. Brittany",items:[it("Seed","c")],right:1,n:1}};
+  const w=world(Object.assign({M:f.M,U:f.U,remote:CLASS,l3:true},o.w||{})); w.get("ROSTER=['lincoln','ellis']; momHere=()=>"+(o.mom!==false));
+  w.now=new Date(2026,9,o.day||29,14,0,0).getTime(); w.before=J(w.get("masteryData")); return w; }
+{ const w=w3(), h=w.get("cplnpMomDayHtml")(w.now);
+  ok("today's drills in one line: \"👩‍🏫 Ms. Brittany drilled Lincoln today: 7 of 8 · missed 'Sourwood'\"", h.indexOf("Ms. Brittany drilled Lincoln today: 7 of 8 · missed &#39;Sourwood&#39;")>=0||h.indexOf("Ms. Brittany drilled Lincoln today: 7 of 8 · missed 'Sourwood'")>=0, h.slice(0,600));
+  ok("the week's tally from Monday on (last week's drill left out): \"This week: 3 drills · 9 of 12 right\"", /data-cplnp="week"[^>]*>This week: 3 drills · 9 of 12 right</.test(h));
+  ok("a tap opens L3's own list right there (no leaving Mom's Day)", /<details data-cplnp="day"/.test(h)&&/data-cplnt="list"/.test(h)&&/data-cplnt="month"/.test(h));
+  ok("the teacher's name is escaped", h.indexOf("<b>Brittany")<0);
+  ok("nothing written, his records as they were", w.writes.length===0&&J(w.get("masteryData"))===w.before); }
+{ const w=w3({day:30}), h=w.get("cplnpMomDayHtml")(w.now);
+  ok("no drill today: the last one this week instead (\"… last drilled Lincoln Thu, Oct 29: 4 of 5 · missed 'Sourwood'\")", /Ms\. Brittany last drilled Lincoln [^:]*29[^:]*: 4 of 5 · missed 'Sourwood'/.test(h)&&/This week: 3 drills · 9 of 12 right/.test(h), h.slice(0,400)); }
+{ const w=w3({day:2+31}); ok("a week with none: no line", w.get("cplnpMomDayHtml")(new Date(2026,10,3,14).getTime())===""); }
+{ const w=w3({none:true}); ok("no teacher drills at all: no line", w.get("cplnpMomDayHtml")(w.now)===""); }
+{ const w=w3({mom:false}); ok("Mom only: nothing when Mom isn't here", w.get("cplnpMomDayHtml")(w.now)===""); }
+{ const w=w3({w:{cfg:false}}); ok("no mirror (no envirothon config): no line", w.get("cplnpMomDayHtml")(w.now)===""); }
 
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

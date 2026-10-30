@@ -17991,6 +17991,7 @@ function renderMomsDay(el){
   try{ if(typeof stPendingHTML==="function") h+=stPendingHTML(); }catch(e){}   // 📝 spelling tests waiting to be graded
   try{ if(typeof pdPendingHTML==="function") h+=pdPendingHTML(); }catch(e){}   // 🖨 PDGRADE: paper drills waiting to be graded
   try{ if(typeof cbNudgeHTML==="function") h+=cbNudgeHTML(); }catch(e){}   // 🔁 graduated words came back
+  try{ if(typeof cplnpMomDayHtml==="function") h+=cplnpMomDayHtml(); }catch(e){}   // 🌿 CPLINCOLNPARITY: 👩‍🏫 his teacher's drills this week (Q23, Mom only; a tap opens L3's list here)
   // The full chores card becomes the EDITOR (cadence + time of day); it only appears
   // while editing, because the strip above now carries the day-to-day list.
   if(mcManage){ try{ h+=mcPopHTML(iso,today); }catch(e){} }
@@ -47097,7 +47098,7 @@ function cplnEditorMark(kid,sid,h){
 //   · THE NOTICE: ENVMIRROR's toast "🌿 Ms. Brittany drilled Lincoln: 4 of 5 · missed 'cambium'", kept in the notices on Settings ▸ 🌿 Envirothon.
 //   · WHERE SHE SEES IT: Units ▸ NC Envirothon, right under his station check-ins (Mom only): "👩‍🏫 Lincoln's teacher drills", a month line
 //     ("October: 6 drills · 27 cards · 81% right"), then newest first: date, teacher, "4 of 5 right", the missed fronts in red. Tap a row
-//     for every card. Her Q23 (also on Mom's Day or his card?) is still open.
+//     for every card. Her Q23 (also on Mom's Day?): yes 2026-10-29, CPLINCOLNPARITY's line on Mom's Day ▸ 🏡 My day.
 const CPLNT_MAX=5, CPLNT_TRIES=40, CPLNT_RETRY_MS=3000, CPLNT_ROWS=12;
 const _cplnt={drills:{},busy:{},refused:{},told:{},tries:0,timer:null};
 // a mirrored kid of this family, not the class site (his summary's miss count uses this)
@@ -47410,6 +47411,41 @@ function cplnpAttempt(rec,S){
     S.form.items.forEach((it,i)=>{ const a=S.answers&&S.answers[i]; ans[cpctQid(S.which,it)]=(a==null)?-1:(Array.isArray(a)?a.slice():a); });
     rec.ans=ans; rec.formVer=+S.form.ver||0; return true;
   }catch(e){ return false; }
+}
+//   · 3. Q23 (her yes 2026-10-29: "q23 yeah id like to know how he does"): Mom's Day ▸ 🏡 My day carries one compact line per mirrored kid
+//     with a teacher drill this week (Monday on): "👩‍🏫 Ms. Brittany drilled Lincoln today: 4 of 5 · missed 'Sourwood'" (no drill today:
+//     "… last drilled Lincoln Tue: …"), then the week's tally "This week: 3 drills · 14 of 17 right". Mom only (momHere). A tap opens L3's
+//     own 👩‍🏫 list right there (the same rows as Units ▸ NC Envirothon), so she never leaves Mom's Day (leaving it turns Mom mode off, and
+//     the Units list is Mom only). Reads only what L3 already keeps (mastery/<kid>_teacherDrills); nothing is written.
+function cplnpWeek0(now){ const d=new Date(now); d.setHours(0,0,0,0); d.setDate(d.getDate()-((d.getDay()+6)%7)); return d.getTime(); }   // this Monday, 0:00
+function cplnpDay0(now){ const d=new Date(now); d.setHours(0,0,0,0); return d.getTime(); }
+// the line's numbers for one kid: {today, last, week} (null = no teacher drill this week)
+function cplnpDrillWeek(kid,now){
+  if(typeof cplntRecs!=="function") return null;
+  now=(now==null)?Date.now():now;
+  const w0=cplnpWeek0(now), d0=cplnpDay0(now), wk=cplntRecs(kid).filter(r=>r.at>=w0&&r.at<d0+86400000); if(!wk.length) return null;
+  const sum=L=>({n:L.length,right:L.reduce((s,r)=>s+r.right,0),cards:L.reduce((s,r)=>s+r.n,0),miss:[].concat(...L.map(r=>r.items.filter(x=>x.r==="m").map(x=>x.name))),teacher:(L[0]||{}).teacher||""});
+  const td=wk.filter(r=>r.at>=d0);
+  return {today:td.length?sum(td):null,last:wk[0],week:sum(wk)};
+}
+function cplnpMissTxt(miss){ return miss.length?" · missed "+miss.slice(0,3).map(s=>"'"+s+"'").join(", ")+(miss.length>3?" +"+(miss.length-3)+" more":""):""; }
+// renderMomsDay's hook (🏡 My day, after the come-back nudges): Mom only, each mirrored kid with a teacher drill this week
+function cplnpMomDayHtml(now){
+  try{
+    if(!(typeof momHere==="function"&&momHere())||typeof cplntMirrored!=="function") return "";
+    const E=v=>(typeof envmEsc==="function")?envmEsc(v):String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+    const roster=(typeof ROSTER!=="undefined")?ROSTER:[];
+    let h=""; roster.forEach(kid=>{ if(!cplntMirrored(kid)) return; const W=cplnpDrillWeek(kid,now); if(!W) return;
+      const nm=(typeof cplntName==="function")?cplntName(kid):kid, T=W.today, L=W.last;
+      const head=T?((T.teacher||"His teacher")+" drilled "+nm+" today: "+T.right+" of "+T.cards+cplnpMissTxt(T.miss))
+        :((L.teacher||"His teacher")+" last drilled "+nm+" "+((typeof cplntDay==="function")?cplntDay(L.at):"")+": "+L.right+" of "+L.n+cplnpMissTxt(L.items.filter(x=>x.r==="m").map(x=>x.name)));
+      const wk="This week: "+W.week.n+" drill"+(W.week.n===1?"":"s")+" · "+W.week.right+" of "+W.week.cards+" right";
+      h+='<details data-cplnp="day" style="margin:0 0 12px;background:#f5f3ff;border:1.5px solid #ddd6fe;border-radius:12px;padding:9px 13px"><summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px">'
+        +'<span style="font-size:18px">\u{1F469}‍\u{1F3EB}</span><span style="flex:1"><span style="display:block;font-size:13px;font-weight:800;color:#3b0764">'+E(head)+'</span>'
+        +'<span data-cplnp="week" style="display:block;font-size:11.5px;color:#5b21b6;font-weight:700">'+E(wk)+'</span></span><span style="font-size:11px;font-weight:800;color:#5b21b6;white-space:nowrap">see all ▾</span></summary>'
+        +'<div style="margin-top:8px">'+((typeof cplntKidHtml==="function")?cplntKidHtml(kid):"")+'</div></details>'; });
+    return h;
+  }catch(e){ return ""; }
 }
 // CPLINCOLNPARITY_END
 // ENVSITE_START — 🌿 THE ENVIROTHON SITE: one page, one Firebase project, routed by login role (step 4 of PLAN_envirothon_2026-10-27.md;
