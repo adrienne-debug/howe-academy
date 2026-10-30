@@ -57,7 +57,8 @@ console.log("── the block, where it sits, how it is hooked ──");
   ok("the block only declares (nothing runs at boot)", TR.split("\n").every(l=>!l.trim()||/^(\/\/|function |const | |})/.test(l)));
   const out=src.slice(0,a)+src.slice(b), hooks=out.split("\n").filter(l=>/✂️ CPTRIM/.test(l));
   ok("8 hook lines outside the block, each tagged ✂️ CPTRIM and typeof-guarded on a cptr function", hooks.length===8&&hooks.every(l=>(l.match(/cptr\w+(?=\()/g)||[]).every(f=>new RegExp('typeof '+f+'==="function"').test(l))), hooks.map(l=>l.trim().slice(0,90)));
-  const names=out.split("\n").filter(l=>/\bcptr[A-Z]\w*\(/.test(l));
+  const _pt=(()=>{ const x=src.indexOf("// CPPHOTOTODO_START"), y=src.indexOf("// CPPHOTOTODO_END"); return x>0&&y>x?src.slice(x,y):""; })();   // 📷 CPPHOTOTODO reads the model, typeof-guarded (test_cp_photo_todo.js checks it)
+  const names=out.replace(_pt,"").split("\n").filter(l=>/\bcptr[A-Z]\w*\(/.test(l));
   ok("…and no other line outside the block names a cptr function", names.length===8, names.map(l=>l.trim().slice(0,80)));
   const inFn=(host,fn)=>{ const i=src.indexOf(host), j=src.indexOf("\n}",i); return i>0&&src.slice(i,j).indexOf('typeof '+fn+'==="function"')>0; };
   ok("…in cpcsIndex, cpcsChipsHtml, cpcsListHtml, cppSections, cpceNext, cpceKidIdx, envHydrate, envClsKidLoad", inFn("function cpcsIndex(){","cptrIndex")&&inFn("function cpcsChipsHtml(){","cptrChipHtml")&&inFn("function cpcsListHtml(){","cptrListHtml")&&inFn("function cppSections(){","cptrDecks")&&inFn("function cpceNext(","cptrKeepRec")&&inFn("function cpceKidIdx(){","cptrKidIdx")&&inFn("function envHydrate(u,lib){","cptrHydrate")&&inFn("function envClsKidLoad(sdb,cid){","cptrKidLoad"));
