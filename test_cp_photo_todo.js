@@ -20,7 +20,7 @@ const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; c
 const cut=(a,b)=>{ const i=src.indexOf(a); if(i<0) throw new Error("missing "+a); const j=src.indexOf(b,i); return src.slice(i,j+b.length); };
 const PT=cut("// CPPHOTOTODO_START","// CPPHOTOTODO_END");
 const BLOCKS=["CPLOCKS","CPPACE","CPCAL","CPSUGGEST","CPTRIM","CPPHOTOS","CPSKILL","CPITEMGEAR","CPITEMBIOTIC","CPITEMTRIANGLE","CPITEMLABEL","CPITEMID","CPITEMSCALE"].map(n=>cut("// "+n+"_START","// "+n+"_END")).join("\n");
-const API="_cppt, cpptOn, cpptModel, cpptCards, cpptChipHtml, cpptListHtml, cpptToggle, cpptTap, cpptOpen, cpptNotNow, cpptCard, cpptCardFor, cpptHash";
+const API="_cppt, cpptOn, cpptModel, cpptChecks, cpptCheckUrls, cpptCheck, cpptChecksHtml, CPPT_CKDIR, cpptCards, cpptChipHtml, cpptListHtml, cpptToggle, cpptTap, cpptOpen, cpptNotNow, cpptCard, cpptCardFor, cpptHash";
 const OTHER="_cpph, _cptr, _cpsk, cpphKey, cpphCard, cpphWay, cpphPoolPick, cpphPoolQ, cpphSave, cpphWiki, cpphUndo, cpphTag, cpPhotos, cpPhotoParts, cpcsIndex, cpcsListHtml, cpcsChipsHtml, cptrModel, cptrToggle, cptrPart, cpSkillList, cpuIndex";
 const REV=o=>BLOCKS+"\n"+(o.pt===false?"G.p=null;":PT+"\nG.p={ "+API+" };")+
   "\nfunction envPicsIndex(){ return G.pics||null; } function envPicsLoad(){ G.picLoads=(G.picLoads||0)+1; return Promise.reject(new Error('no')); }"+
@@ -199,6 +199,43 @@ console.log("\n── the real pool: the checked Commons sets (2026-10-30) fill 
   console.log("      (live with the sets: "+X.todo+" photos to add, was "+X0.todo+")");
   ok("no gear row is left: every gear item of both skills has its picture", left("gear")===0&&X0.slots.some(s=>s.tag==="gear"&&s.left>0));
   ok("fewer twig rows, and fewer photos to add over all", left("twig")<X0.slots.filter(s=>s.tag==="twig"&&s.left>0).length&&X.todo<X0.todo, [X0.todo,X.todo]); }
+
+console.log("\n── ✓ the new photos to check (build_pics.py --extra marks them check:true) ──");
+{ const GW=w=>w.G.writes, gl=w=>GW(w)[GW(w).length-1]||[];   // live: the (fake) Firebase writes [op, path, val]
+  const urls=[...new Set([].concat(...Object.values(PICS).map(L=>L.filter(p=>p.check===true).map(p=>p.url))))];
+  const w=live({pics:PICS}), P=w.P, X=P.cpptModel(), C=X.checks;
+  console.log("      (live: "+C.length+" new photos to check, by folder: "+[...new Set(C.map(c=>c.dir))].map(d=>d+" "+C.filter(c=>c.dir===d).length).join(" · ")+")");
+  ok("one row per photo marked check in index.json (counted from the index, each once)", urls.length>0&&C.length===urls.length&&new Set(C.map(c=>c.url)).size===C.length, [urls.length,C.length]);
+  ok("the pool without the sets has none to check", live().P.cpptModel().checks.length===0);
+  ok("each row: the item, the picture's shot, its credit, a repo photo id, and the folder it sits in", C.every(c=>c.item&&c.shot&&c.credit&&/^r~/.test(c.id)&&P.CPPT_CKDIR[c.dir]));
+  ok("…the photo is under that item in the pool (cpPhotos), so a ✗ hides it where the skills look", C.slice(0,40).every(c=>w.O.cpPhotos(c.item).some(p=>p.id===c.id)));
+  ok("the chip adds “✓ N to check”", new RegExp("✓ "+C.length+" to check").test(w.O.cpcsChipsHtml()));
+  const c0=C.find(c=>c.dir==="wildlife_id")||C[0], g0=P.cpptHash("ckg|"+c0.dir);
+  P._cppt.on=true; P._cppt.og=g0; const H=w.O.cpcsListHtml(); P._cppt.on=false; P._cppt.og=null;
+  ok("the list opens with a fold per folder; open, each row is its picture and “Is this a … · …? ✓ Looks right / ✗ Wrong picture”", /Check: /.test(H)&&H.indexOf('id="cppt-k-'+c0.h+'"')>0&&new RegExp("Is this an? <b>"+c0.item.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"</b> · ").test(H)&&/✓ Looks right/.test(H)&&/✗ Wrong picture/.test(H)&&/class="cppt-im"/.test(H));
+  ok("✓ (teacher): ONE write, classPhotos/c1/<item>/_ok/<photo id> = true", (()=>{ const n0=GW(w).length; return P.cpptCheck(c0.h,true)&&gl(w)[0]==="set"&&gl(w)[1]==="classPhotos/c1/"+c0.k+"/_ok/"+c0.id&&gl(w)[2]===true&&GW(w).length===n0+1; })(), gl(w));
+  w.O._cpph.L.c1={[c0.k]:{_ok:{[c0.id]:true}}}; w.O._cpph.ver++; w.O._cpph.rmemo=null;
+  ok("…once it is in the class's layer the row goes (and only that one)", P.cpptModel().checks.length===C.length-1&&!P.cpptModel().checks.some(c=>c.h===c0.h));
+  const c1=P.cpptModel().checks[0];
+  ok("✗: CPPHOTOS' 🙈 path, classPhotos/c1/<item>/_hide/<photo id> = true", P.cpptCheck(c1.h,false)&&gl(w)[0]==="set"&&gl(w)[1]==="classPhotos/c1/"+c1.k+"/_hide/"+c1.id&&gl(w)[2]===true, gl(w));
+  w.O._cpph.L.c1[c1.k]=Object.assign({},w.O._cpph.L.c1[c1.k],{_hide:{[c1.id]:true}}); w.O._cpph.ver++; w.O._cpph.rmemo=null;
+  ok("…a hidden photo's row goes, and the lookups leave it out", !P.cpptModel().checks.some(c=>c.h===c1.h)&&!w.O.cpPhotos(c1.item).some(p=>p.id===c1.id));
+  const c2=P.cpptModel().checks[0]; w.O._cpph.U.nc_envirothon={[c2.k]:{_ok:{[c2.id]:true}}}; w.O._cpph.ver++; w.O._cpph.rmemo=null;
+  ok("Adrienne's ✓ on the unit counts for every class: the row goes for the teacher too", !P.cpptModel().checks.some(c=>c.h===c2.h));
+  ok("an unknown row writes nothing", (()=>{ const n0=GW(w).length; return P.cpptCheck("nope",true)===false&&GW(w).length===n0; })());
+  const a=live({pics:PICS,role:"admin"}), ca=a.P.cpptModel().checks[0];
+  ok("✓ (admin): the unit's layer, units/nc_envirothon/photos/<item>/_ok/<photo id> = true", a.P.cpptCheck(ca.h,true)&&gl(a)[1]==="units/nc_envirothon/photos/"+ca.k+"/_ok/"+ca.id&&gl(a)[2]===true, gl(a));
+  const d=live({pics:PICS,dry:true}), cd=d.P.cpptModel().checks[0], nd=GW(d).filter(x=>/classPhotos|units\//.test(x[1])).length; d.P.cpptCheck(cd.h,true);
+  ok("dry run: nothing is written", GW(d).filter(x=>/classPhotos|units\//.test(x[1])).length===nd, GW(d).slice(-2)); }
+{ const w=demo("teacher",{pics:PICS}), P=w.P, C=P.cpptModel().checks, c=C[0];
+  P.cpptCheck(c.h,true);
+  ok("demo: ✓ is kept in memory (would write) and the row goes", C.length>0&&!P.cpptModel().checks.some(x=>x.h===c.h)&&w.O._cpph.L[w._envc.cid][c.k]._ok[c.id]===true); }
+{ const M=require(path.join(REPO,"envirothon","build","make_demo.js")), p=M.demoPics(), rows=[].concat(...Object.values(p.items));
+  const marked=new Set([].concat(...Object.values(PICS).map(L=>L.filter(x=>x.check===true).map(x=>x.url))));
+  ok("make_demo: a checked photo carries a 4th field 1 in the demo's copy (the others three fields)", rows.every(r=>marked.has(r[0])?(r.length===4&&r[3]===1):r.length===3)&&rows.some(r=>r[3]===1)); }
+{ const R=JSON.parse(fs.readFileSync(path.join(REPO,"envirothon","SITE_RULES.json"),"utf8")).rules, rx=v=>new RegExp(/matches\(\/(.+?)\/\)/.exec(v)[1]);
+  const Ck=R.classPhotos.$cid.$item._ok, Uk=R.units.$unitId.photos.$item._ok;
+  ok("SITE_RULES: _ok/<repo photo id> = true under the class's and the unit's photos (true only, repo ids only)", !!Ck&&!!Uk&&[Ck,Uk].every(o=>/newData.val\(\) == true/.test(o.$pid[".validate"])&&rx(o.$pid[".validate"]).test("r~wildlife_id~red_fox~9")&&!rx(o.$pid[".validate"]).test("pabcd1234"))); }
 
 console.log("\n"+pass+" passed, "+fail+" failed"); if(fail) process.exit(1);
 };

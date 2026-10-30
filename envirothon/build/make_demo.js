@@ -29,7 +29,7 @@ function browseScript(b){ if(!b) return ""; return "<script>\n// DEMO (make_demo
   "  window.HoweUnitsDemo=window.HoweUnitsDemo||{}; window.HoweUnitsDemo[B.id]={unit:{id:B.id,decks:B.decks.map(function(d){ return {key:d.key,kind:d.kind,cards:d.cards.map(function(r){ var c={order:r[0],name:r[1],def:r[2],group:B.groups[r[3]][0],concept:B.groups[r[3]][1],src:r[4],core:!!r[5],kind:K[r[8]]}; if(r[6]) c.item=r[6]; if(r[7]) c.info=r[7]; return c; })}; })}};\n})();\n</script>"; }
 // 🖼 CPPHOTOS: {bases, items:{<item>:[[url, credit, shot]]}} — one entry per picture per item
 function demoPics(){ const idx=JSON.parse(fs.readFileSync(path.join(REPO,"envirothon","pics","index.json"),"utf8")), lib=require(path.join(REPO,"envirothon.js")), items={}, seen={};
-  const add=(item,list)=>{ if(!item||!Array.isArray(list)) return; const A=items[item]=items[item]||[], S=seen[item]=seen[item]||{}; list.forEach(p=>{ if(p&&p.url&&!S[p.url]){ S[p.url]=1; A.push([p.url,p.credit||"",p.shot||""]); } }); };
+  const add=(item,list)=>{ if(!item||!Array.isArray(list)) return; const A=items[item]=items[item]||[], S=seen[item]=seen[item]||{}; list.forEach(p=>{ if(p&&p.url&&!S[p.url]){ S[p.url]=1; A.push(p.check===true?[p.url,p.credit||"",p.shot||"",1]:[p.url,p.credit||"",p.shot||""]); } }); };   // 4th field 1: a checked addition the teacher confirms (CPPHOTOTODO)
   ((lib&&lib.unit&&lib.unit.decks)||[]).forEach(d=>(d.cards||[]).forEach(c=>{ if(c&&idx[c.name]) add(c.item||String(c.name).split(" \u00b7 ")[0],idx[c.name]); }));
   Object.keys(idx).forEach(n=>{ if(n.indexOf(" \u00b7 ")<0&&!items[n]) add(n,idx[n]); });   // an item keyed by its own name (a gear item with no card; build_pics.py --extra, 2026-10-30)
   return {bases:["../","file://"+encodeURI(REPO)+"/"],items}; }
