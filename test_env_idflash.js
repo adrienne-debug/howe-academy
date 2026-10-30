@@ -39,14 +39,14 @@ ok("no speech code, no confetti, no 🔀 in the block — the name after an answ
 console.log("\n── the pictures (envirothon/pics) ──");
 const ID_DECKS = ["Forestry · ID", "Wildlife · ID", "Aquatic Ecology · ID"];
 const idCards = LIB.unit.decks.filter(d => ID_DECKS.indexOf(d.key) >= 0).flatMap(d => d.cards.map(c => ({ deck: d.key, name: c.name, item: c.item })));
-const CHECKED = 216;   // build_pics.py --extra: the staged set (245 less 28 already in, 1 near-copy)
-const SHORT = { "Horse fly larva": 1, "Rat Snake": 2 };   // the official-profile extracts were left out (CREDITS.md)
+const CHECKED = 216 + 99;   // build_pics.py --extra: the staged set (245 less 28 already in, 1 near-copy) + the gap fill (pics_fill, 99)
+const SHORT = { "Horse fly larva": 1 };   // the official-profile extracts were left out (CREDITS.md)
 ok("index parses: an object keyed by card name, no meta keys", IDX && typeof IDX === "object" && !Array.isArray(IDX) && Object.keys(IDX).every(k => !k.startsWith("_")));
 ok("every card of the three pictured ID decks is in the index (" + idCards.length + " cards)", idCards.every(c => Array.isArray(IDX[c.name])), idCards.filter(c => !IDX[c.name]).map(c => c.name).slice(0, 5));
 const allIdCards = LIB.unit.decks.filter(d => / · ID$/.test(d.key)).flatMap(d => d.cards.map(c => ({ deck: d.key, name: c.name, item: c.item })));
 ok("every index key is an ID card, or an item with no ID card keyed by its own name whose pictures are all checked additions", Object.keys(IDX).every(k => allIdCards.some(c => c.name === k) || (k.indexOf(" · ") < 0 && IDX[k].every(e => e.check === true))), Object.keys(IDX).filter(k => !allIdCards.some(c => c.name === k) && !(k.indexOf(" · ") < 0 && IDX[k].every(e => e.check === true))).slice(0, 5));
 ok("≥3 pictures per card, except the three named short items (≥1)", idCards.every(c => IDX[c.name].length >= (SHORT[c.item] ? 1 : 3)), idCards.filter(c => IDX[c.name].length < (SHORT[c.item] ? 1 : 3)).map(c => c.name).slice(0, 5));
-ok("the short items have exactly the pictures recorded (Horse fly larva 1, Rat Snake 2)", idCards.filter(c => SHORT[c.item]).every(c => IDX[c.name].length === SHORT[c.item]));
+ok("the short item has exactly the pictures recorded (Horse fly larva 1)", idCards.filter(c => SHORT[c.item]).every(c => IDX[c.name].length === SHORT[c.item]));
 const entries = Object.values(IDX).flat();
 ok("every entry = {url, credit, shot} (+ check:true on a checked addition), strings, credit non-empty", entries.every(e => (Object.keys(e).sort().join() === "credit,shot,url" || (Object.keys(e).sort().join() === "check,credit,shot,url" && e.check === true)) && e.credit.trim() && typeof e.shot === "string" && typeof e.url === "string"));
 ok("every URL is a repo path envirothon/pics/<deck>/<item>/<n>.jpg (no host, no ..)", entries.every(e => /^envirothon\/pics\/(forestry_id|wildlife_id|aquatic_id|soils_id|aquatic_gear|forestry_tools|soils_land|forestry_pests|aquatic_lakes)\/[a-z0-9_]+\/\d+\.jpg$/.test(e.url)));

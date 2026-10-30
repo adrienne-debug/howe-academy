@@ -1,8 +1,8 @@
 # ID Flash pictures — credits
 
-Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.json` + `~/Desktop/Envirothon/pics_staging` (checked Commons photos, each marked for the teacher to confirm). 577 pictures, 24.0 MB, longest side 600 px, JPEG quality 70, metadata stripped. Pictures are per item (species / tool) and shared by every card of that item.
+Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.json` + `~/Desktop/Envirothon/pics_staging` (checked Commons photos, each marked for the teacher to confirm) + `~/Desktop/Envirothon/pics_fill` (checked Commons photos, each marked for the teacher to confirm). 676 pictures, 28.4 MB, longest side 600 px, JPEG quality 70, metadata stripped. Pictures are per item (species / tool) and shared by every card of that item.
 
-## Forestry · ID — 206 pictures
+## Forestry · ID — 216 pictures
 
 | picture | item | shot | author | licence | source |
 |---|---|---|---|---|---|
@@ -66,12 +66,16 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | forestry_id/eastern_red_cedar/6.jpg | Eastern Red Cedar | leaf | Alex Abair | CC BY 4.0 | [link](https://commons.wikimedia.org/wiki/File:Juniperus_virginiana_115466263.jpg) |
 | forestry_id/eastern_red_cedar/7.jpg | Eastern Red Cedar | fruit | USDA-NRCS PLANTS Database / Herman, D.E. et al. 1996. North Dakota tree handbook. USDA NRCS ND State Soil Conservation Committee; NDSU Extension and Western Are | Public domain | [link](https://commons.wikimedia.org/wiki/File:Juniperus_virginiana_berries.jpg) |
 | forestry_id/eastern_red_cedar/8.jpg | Eastern Red Cedar | fruit | Sten Porse | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Juniperus-virginiana-close.JPG) |
+| forestry_id/eastern_red_cedar/9.jpg | Eastern Red Cedar | bark | KATHERINE WAGNER-REISS | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Juniperus_virginiana%E2%80%94bark.jpg) |
+| forestry_id/eastern_red_cedar/10.jpg | Eastern Red Cedar | twig | Gmihail at Serbian Wikipedia | CC BY-SA 3.0 rs | [link](https://commons.wikimedia.org/wiki/File:Juniperus_virginiana_twig_and_cones.jpg) |
+| forestry_id/eastern_red_cedar/11.jpg | Eastern Red Cedar | twig | Gmihail at Serbian Wikipedia | CC BY-SA 3.0 rs | [link](https://commons.wikimedia.org/wiki/File:Juniperus_virginiana_twig,_Belgrade.jpg) |
 | forestry_id/eastern_white_pine/1.jpg | Eastern White Pine | leaves | Johndan Johnson-Eilola | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Pinus_strobus_foliage_Adirondacks.jpg) |
 | forestry_id/eastern_white_pine/2.jpg | Eastern White Pine | bark | Photo by and (c)2016 Derek Ramsey (Ram-Man) | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Eastern_White_Pine_Pinus_strobus_Bark_Horizontal.JPG) |
 | forestry_id/eastern_white_pine/3.jpg | Eastern White Pine | cone | Famartin | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:2020-05-12_17_18_30_Immature_female_cones_in_spring_on_an_Eastern_White_Pine_along_White_Barn_Lane_in_the_Franklin_Farm_section_of_Oak_Hill,_Fairfax_County,_Virginia.jpg) |
 | forestry_id/eastern_white_pine/4.jpg | Eastern White Pine | field photo NC | Craig Martin | CC0 1.0 | [link](https://www.inaturalist.org/observations/85114682) |
 | forestry_id/eastern_white_pine/5.jpg | Eastern White Pine | needles | Robert H. Mohlenbrock @ USDA-NRCS PLANTS Database / USDA NRCS. 1995. Northeast wetland flora: Field office guide to plan | Public domain | [link](https://commons.wikimedia.org/wiki/File:Pinus_strobus_needles.jpg) |
 | forestry_id/eastern_white_pine/6.jpg | Eastern White Pine | fruit | Roger Culos | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Pinus_strobus_MHNT.2022.4.2.jpg) |
+| forestry_id/eastern_white_pine/7.jpg | Eastern White Pine | bark | Robert H. Mohlenbrock @ USDA-NRCS PLANTS Database / USDA NRCS. 1995. Northeast wetland flora: Field office guide to plan | Public domain | [link](https://commons.wikimedia.org/wiki/File:Pinus_strobus_bark.jpg) |
 | forestry_id/elm/1.jpg | Elm | bark | Dr Fox, USDA | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Photo_of_the_bark_of_the_American_Elm_cultivar_%27Delaware%27.png) |
 | forestry_id/elm/2.jpg | Elm | field photo NC | Steven Joyner | CC BY 4.0 | [link](https://www.inaturalist.org/observations/150361142) |
 | forestry_id/elm/3.jpg | Elm | leaves | SriMesh | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:ElmLeaves.jpg) |
@@ -115,6 +119,7 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | forestry_id/longleaf_pine/6.jpg | Longleaf Pine | leaf | Photo by David J. Stang | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Pinus_palustris_8zz.jpg) |
 | forestry_id/longleaf_pine/7.jpg | Longleaf Pine | bark | Aaron Liston | CC BY 4.0 | [link](https://commons.wikimedia.org/wiki/File:Pinus_palustris_bark_(01).jpg) |
 | forestry_id/longleaf_pine/8.jpg | Longleaf Pine | fruit | Aaron Liston | CC BY 4.0 | [link](https://commons.wikimedia.org/wiki/File:Pinus_palustris_female_cone_(01).jpg) |
+| forestry_id/longleaf_pine/9.jpg | Longleaf Pine | twig (terminal bud) | USDAgov | Public domain | [link](https://commons.wikimedia.org/wiki/File:NRCS-EQIP-Longleaf_and_Loblolly_Pines_Thrive_with_Prescribed_Burns_at_Poarch_Band's_Forest_(20140405-OC-LSC-1135).jpg) |
 | forestry_id/maple/1.jpg | Maple | leaves | David Whelan | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Acer_rubrum_Leaf,_Reversed_(9989015956).png) |
 | forestry_id/maple/2.jpg | Maple | bark | Cody Hough | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Acer_rubrum(Bark).JPG) |
 | forestry_id/maple/3.jpg | Maple | field photo NC | Austin Pursley | CC0 1.0 | [link](https://www.inaturalist.org/observations/78125189) |
@@ -124,6 +129,7 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | forestry_id/maple/7.jpg | Maple | twig | Syp | Public domain | [link](https://commons.wikimedia.org/wiki/File:Acer_rubrum_buds_01.JPG) |
 | forestry_id/maple/8.jpg | Maple | twig | Syp | Public domain | [link](https://commons.wikimedia.org/wiki/File:Acer_rubrum_buds_02.JPG) |
 | forestry_id/maple/9.jpg | Maple | leaf | Mario Hains | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Acer_rubrum_leaf_-_panoramio.jpg) |
+| forestry_id/maple/10.jpg | Maple | bark | EgorovaSvetlana | CC0 | [link](https://commons.wikimedia.org/wiki/File:Bark_Trunk_Acer_Rubrum_Red_Maple_Tree_Massachusetts.jpg) |
 | forestry_id/mulberry/1.jpg | Mulberry | leaves | Famartin | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:2020-11-13_11_11_49_Red_Mulberry_leaves_turning_yellow_in_autumn_along_Hidden_Meadow_Drive_in_the_Franklin_Farm_section_of_Oak_Hill,_Fairfax_County,_Virginia.jpg) |
 | forestry_id/mulberry/2.jpg | Mulberry | bark | Famartin | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:2021-03-03_16_40_17_Red_Mulberry_bark_along_a_walking_path_in_the_Franklin_Farm_section_of_Oak_Hill,_Fairfax_County,_Virginia.jpg) |
 | forestry_id/mulberry/3.jpg | Mulberry | fruit | Beko | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Black_mulberry_fruit_(Morus_nigra).jpg) |
@@ -160,6 +166,7 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | forestry_id/red_oak/11.jpg | Red Oak | fruit | Jamain | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Quercus_rubra_acorns_J1.jpg) |
 | forestry_id/red_oak/12.jpg | Red Oak | fruit | author not stated on Commons (uploaded by MPF) | Public domain | [link](https://commons.wikimedia.org/wiki/File:Quercus_falcata_acorns.jpg) |
 | forestry_id/red_oak/13.jpg | Red Oak | fruit | USGS Bee Inventory and Monitoring Lab | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Southern_Red_Oak_Acorn,_MD,_Beltsville_2013-09-30-18.38.50_ZS_PMax.jpg) |
+| forestry_id/red_oak/14.jpg | Red Oak | bark | MONGO | Public domain | [link](https://commons.wikimedia.org/wiki/File:Northern_Red_Oak_(Quercus_rubra)_bark_detail.jpg) |
 | forestry_id/sassafras/1.jpg | Sassafras | leaves | Randy Everette | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Sassafras_Leaves_June_Nbg_(261691941).jpeg) |
 | forestry_id/sassafras/2.jpg | Sassafras | bark | Photo by and (c)2006 Derek Ramsey (Ram-Man) | CC BY-SA 2.5 | [link](https://commons.wikimedia.org/wiki/File:Sassafras_albidum_Trunk_Bark_3264px.jpg) |
 | forestry_id/sassafras/3.jpg | Sassafras | fruit | Cody Hough | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Sassafras_albidum_seed.JPG) |
@@ -171,6 +178,7 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | forestry_id/shortleaf_pine/3.jpg | Shortleaf Pine | cone | Aaron Liston | CC BY 4.0 | [link](https://commons.wikimedia.org/wiki/File:Pinus_echinata_female_cone_(01).jpeg) |
 | forestry_id/shortleaf_pine/4.jpg | Shortleaf Pine | field photo NC | Scott Ward | CC BY 4.0 | [link](https://www.inaturalist.org/observations/144795785) |
 | forestry_id/shortleaf_pine/5.jpg | Shortleaf Pine | fruit | John B. from Highland Park, NJ, United States | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Pinus_echinata_old_cones.jpg) |
+| forestry_id/shortleaf_pine/6.jpg | Shortleaf Pine | bark | John B. from Highland Park, NJ, United States | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Pinus_echinata_bark.jpg) |
 | forestry_id/sourwood/1.jpg | Sourwood | leaves | Cossey25 | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Sourwood_Oxydendrum_arboreum_leaves_fall.jpg) |
 | forestry_id/sourwood/2.jpg | Sourwood | bark | Photo (c)2007 Derek Ramsey (Ram-Man) | CC BY-SA 2.5 | [link](https://commons.wikimedia.org/wiki/File:Sourwood_Oxydendrum_arboreum_Trunk_Bark_2000px.jpg) |
 | forestry_id/sourwood/3.jpg | Sourwood | flowers | Jim Conrad | Public domain | [link](https://commons.wikimedia.org/wiki/File:Sourwood_flowers_closeup.jpg) |
@@ -187,6 +195,7 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | forestry_id/sweetgum/7.jpg | Sweetgum | twig | Gmihail at Serbian Wikipedia | CC BY-SA 3.0 rs | [link](https://commons.wikimedia.org/wiki/File:Liquidambar_styraciflua_twigs.jpg) |
 | forestry_id/sweetgum/8.jpg | Sweetgum | leaf | Jules Verne Times Two | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Red_Sweet_gum_(Liquidambar_styraciflua)_leaf_on_the_floor,_Guerra_Junqueiro_Avenue,_Lisbon,_Portugal_julesvernex2-2.jpg) |
 | forestry_id/sweetgum/9.jpg | Sweetgum | twig | DouglasGoldman | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Liquidambar_styraciflua_winter2.jpg) |
+| forestry_id/sweetgum/10.jpg | Sweetgum | fruit | Dominicus Johannes Bergsma | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Amberboom_(Liquidambar_styraciflua)._Detail._31-03-2020_(d.j.b.).jpg_06.jpg) |
 | forestry_id/sycamore/1.jpg | Sycamore | leaves | Abraham | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Platanus_%C3%97_hispanica_leaf_Franciszka%C5%84skie_Housing_Estate_Katowice_Poland.jpg) |
 | forestry_id/sycamore/2.jpg | Sycamore | bark | Ibex73 | CC BY 4.0 | [link](https://commons.wikimedia.org/wiki/File:Plane_tree_bark_2025_(1).jpg) |
 | forestry_id/sycamore/3.jpg | Sycamore | fruit | Ryan Hodnett | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:American_Sycamore_(Platanus_occidentalis)_Fruit_-_London,_Ontario_2015-04-04.jpg) |
@@ -202,6 +211,7 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | forestry_id/white_oak/4.jpg | White Oak | field photo NC | Austin Pursley | CC0 1.0 | [link](https://www.inaturalist.org/observations/42761568) |
 | forestry_id/white_oak/5.jpg | White Oak | leaf | Dcrjsr | CC BY 3.0 | [link](https://commons.wikimedia.org/wiki/File:Quercus_alba_fallen-leaves_acorns.jpg) |
 | forestry_id/white_oak/6.jpg | White Oak | fruit | Steve Hurst @ USDA-NRCS PLANTS Database | Public domain | [link](https://commons.wikimedia.org/wiki/File:Quercus_alba_acorn.jpg) |
+| forestry_id/white_oak/7.jpg | White Oak | bark | Dcrjsr | CC BY 3.0 | [link](https://commons.wikimedia.org/wiki/File:Quercus_alba_white_oak_bark.jpg) |
 | forestry_id/yellow_poplar/1.jpg | Yellow Poplar | bark | EncycloPetey | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Liriodendron_bark_young.jpg) |
 | forestry_id/yellow_poplar/2.jpg | Yellow Poplar | flower | Sdkb | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Tulip_tree_flower_at_Scripps_College.jpg) |
 | forestry_id/yellow_poplar/3.jpg | Yellow Poplar | field photo NC | Michael J. Papay | CC BY 4.0 | [link](https://www.inaturalist.org/observations/240131367) |
@@ -213,27 +223,38 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | forestry_id/yellow_poplar/9.jpg | Yellow Poplar | twig | Hladac | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:(ms)_Liriodendron_tulipifera_1.jpg) |
 | forestry_id/yellow_poplar/10.jpg | Yellow Poplar | leaf | Hladac | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:(ms)_Liriodendron_tulipifera_4.jpg) |
 
-## Wildlife · ID — 149 pictures
+## Wildlife · ID — 195 pictures
 
 | picture | item | shot | author | licence | source |
 |---|---|---|---|---|---|
 | wildlife_id/american_bullfrog/1.jpg | American Bullfrog | live NC | Nell Cant | CC BY 4.0 | [link](https://www.inaturalist.org/observations/97376714) |
 | wildlife_id/american_bullfrog/2.jpg | American Bullfrog | live NC | Michael J. Papay | CC BY 4.0 | [link](https://www.inaturalist.org/observations/230327627) |
 | wildlife_id/american_bullfrog/3.jpg | American Bullfrog | second source | Carl D. Howe | CC BY-SA 2.5 | [link](https://commons.wikimedia.org/wiki/File:North-American-bullfrog1.jpg) |
+| wildlife_id/american_bullfrog/4.jpg | American Bullfrog | live | Rstanton13 | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Stanton_Lithobates_catesbeianus_1.jpg) |
 | wildlife_id/bald_eagle/1.jpg | Bald Eagle | adult NC | Karen Szafrajda | CC BY 4.0 | [link](https://www.inaturalist.org/observations/240202833) |
 | wildlife_id/bald_eagle/2.jpg | Bald Eagle | juvenile | sofi v | CC BY 4.0 | [link](https://www.inaturalist.org/observations/312499327) |
 | wildlife_id/bald_eagle/3.jpg | Bald Eagle | second source | Andy Morffew from Itchen Abbas, Hampshire, UK | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Bald_Eagle_(Haliaeetus_leucocephalus)_Kachemak_Bay,_Alaska.jpg) |
 | wildlife_id/barred_owl/1.jpg | Barred Owl | adult NC | steve b | CC0 1.0 | [link](https://www.inaturalist.org/observations/80029876) |
 | wildlife_id/barred_owl/2.jpg | Barred Owl | in flight | U.S. Fish and Wildlife Service - Midwest Region | Public domain | [link](https://commons.wikimedia.org/wiki/File:Barred_owl_flying_away_(53951208427).jpg) |
 | wildlife_id/barred_owl/3.jpg | Barred Owl | second source | Mdf | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Strix-varia-005.jpg) |
+| wildlife_id/barred_owl/4.jpg | Barred Owl | live | Cephas | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Strix_varia_DM1.jpg) |
+| wildlife_id/barred_owl/5.jpg | Barred Owl | live | Mykola Swarnyk | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Strix_varia_Tommy_Thompson_Toronto2.jpg) |
+| wildlife_id/barred_owl/6.jpg | Barred Owl | mount | Photo by David J. Stang | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Strix_varia_3zz.jpg) |
 | wildlife_id/beaver/1.jpg | Beaver | live NC | Roland Kays | CC0 1.0 | [link](https://www.inaturalist.org/observations/65185660) |
 | wildlife_id/beaver/2.jpg | Beaver | tracks | JRLibby | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:BEAVER_TRACKS.jpg) |
 | wildlife_id/beaver/3.jpg | Beaver | skull | Didier Descouens | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Castor_canadensis_MHNT.OST.3.jpg) |
+| wildlife_id/beaver/4.jpg | Beaver | mount | Photo by David J. Stang | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Castor_canadensis_10zz.jpg) |
+| wildlife_id/beaver/5.jpg | Beaver | pelt | Mickey Bohnacker, Presse-Fotograf, Frankfurt/Main | Public domain | [link](https://commons.wikimedia.org/wiki/File:Castor_fiber_canadensis_(Canadian_beaver)_fur_skin.jpg) |
+| wildlife_id/beaver/6.jpg | Beaver | pelt | Napa | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Fur_trade_museum_beaver_pelt.jpg) |
+| wildlife_id/beaver/7.jpg | Beaver | pelt | Thomas Quine | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Stretched_beaver_pelt_(44678434361).jpg) |
 | wildlife_id/black_bear/1.jpg | Black Bear | live NC | Joshua Liverman | CC BY 4.0 | [link](https://www.inaturalist.org/observations/14078293) |
 | wildlife_id/black_bear/2.jpg | Black Bear | track | Jay Pruett | CC BY 4.0 | [link](https://www.inaturalist.org/observations/109507987) |
 | wildlife_id/black_bear/3.jpg | Black Bear | skull | Acroterion | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Black_bear_skull_1.jpg) |
 | wildlife_id/black_bear/4.jpg | Black Bear | track | vhhammer | CC BY-SA 2.0 | [link](https://commons.wikimedia.org/wiki/File:Black_bear_(Ursus_americanus)_track_at_the_Hidden_Lakes_of_the_Pasayten_Wilderness..jpg) |
 | wildlife_id/black_bear/5.jpg | Black Bear | track | ShenandoahNPS | Public domain | [link](https://commons.wikimedia.org/wiki/File:Black_Bear_Track_in_Mud_(44654784885).jpg) |
+| wildlife_id/black_bear/6.jpg | Black Bear | mount | David J. Stang | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Ursus_americanus_4zz.jpg) |
+| wildlife_id/black_bear/7.jpg | Black Bear | scat | USFWSmidwest | Public domain | [link](https://commons.wikimedia.org/wiki/File:Black_Bear_Scat_(15274318020).jpg) |
+| wildlife_id/black_bear/8.jpg | Black Bear | scat | Jim Peaco | Public domain | [link](https://commons.wikimedia.org/wiki/File:Black_bear_scat.jpg) |
 | wildlife_id/bobcat/1.jpg | Bobcat | live NC | otomops | CC BY 4.0 | [link](https://www.inaturalist.org/observations/51167103) |
 | wildlife_id/bobcat/2.jpg | Bobcat | track | ayden | CC BY 4.0 | [link](https://www.inaturalist.org/observations/274340345) |
 | wildlife_id/bobcat/3.jpg | Bobcat | live NC | JD Flores | CC BY 4.0 | [link](https://www.inaturalist.org/observations/222088302) |
@@ -241,6 +262,9 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | wildlife_id/bobcat/5.jpg | Bobcat | track | Joe Decruyenaere | CC BY-SA 2.0 | [link](https://commons.wikimedia.org/wiki/File:Lynx_rufus_-_bobcat_tracks.jpg) |
 | wildlife_id/bobcat/6.jpg | Bobcat | track | USFWS Mountain-Prairie | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Bobcat_Track_in_Snow_(5330586661).jpg) |
 | wildlife_id/bobcat/7.jpg | Bobcat | skull | James St. John | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Lynx_rufus_(bobcat)_skull_3_(47575839721).jpg) |
+| wildlife_id/bobcat/8.jpg | Bobcat | mount | David J. Stang | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Lynx_rufus_3zz.jpg) |
+| wildlife_id/bobcat/9.jpg | Bobcat | pelt | Mickey Bohnacker, Presse-Fotograf, Frankfurt/Main | Public domain | [link](https://commons.wikimedia.org/wiki/File:Lynx_rufus_(Bobcat)_fur_skin_2.jpg) |
+| wildlife_id/bobcat/10.jpg | Bobcat | pelt | Mickey Bohnacker, Presse-Fotograf, Frankfurt/Main | Public domain | [link](https://commons.wikimedia.org/wiki/File:Lynx_rufus_(Bobcat)_fur_skin.jpg) |
 | wildlife_id/canada_goose/1.jpg | Canada Goose | in flight | Image taken by Alan D. Wilson, and modified by Diliff (cropped and noise reduction applied). | CC BY-SA 2.5 | [link](https://commons.wikimedia.org/wiki/File:Canada_goose_flight_cropped_and_NR.jpg) |
 | wildlife_id/canada_goose/2.jpg | Canada Goose | adult NC | kcthetc1 | CC0 1.0 | [link](https://www.inaturalist.org/observations/67489703) |
 | wildlife_id/canada_goose/3.jpg | Canada Goose | second source | Laurent Bélanger | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Bernache_du_Canada,_%C3%A0_l%27%C3%8Ele_Paton_(2).jpg) |
@@ -262,6 +286,8 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | wildlife_id/coyote/3.jpg | Coyote | skull | TylerMascola | CC0 | [link](https://commons.wikimedia.org/wiki/File:Coyote_Skull_2.png) |
 | wildlife_id/coyote/4.jpg | Coyote | track | Greg Schechter from San Francisco, USA | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Coyote_Track_-_Flickr_-_GregTheBusker.jpg) |
 | wildlife_id/coyote/5.jpg | Coyote | skull | Smallette & Mrgordon | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Canis_latrans_%26_Canis_mesomelas_skulls.JPG) |
+| wildlife_id/coyote/6.jpg | Coyote | pelt | Mickey Bohnacker, Presse-Fotograf, Frankfurt/Main | Public domain | [link](https://commons.wikimedia.org/wiki/File:Canis_latrans_(Kanada)_fur_skin.jpg) |
+| wildlife_id/coyote/7.jpg | Coyote | scat | Drstrong | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Coyote_scat_T.occidentella_larvae.jpg) |
 | wildlife_id/eastern_box_turtle/1.jpg | Eastern Box Turtle | live NC | Joshua Liverman | CC BY 4.0 | [link](https://www.inaturalist.org/observations/35393072) |
 | wildlife_id/eastern_box_turtle/2.jpg | Eastern Box Turtle | live NC | David George | CC BY 4.0 | [link](https://www.inaturalist.org/observations/83835954) |
 | wildlife_id/eastern_box_turtle/3.jpg | Eastern Box Turtle | live NC | Michael J. Papay | CC BY 4.0 | [link](https://www.inaturalist.org/observations/168692036) |
@@ -270,6 +296,7 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | wildlife_id/eastern_chipmunk/2.jpg | Eastern Chipmunk | track | NaturesFan1226 | CC BY 3.0 | [link](https://commons.wikimedia.org/wiki/File:Mr_Chip_-_panoramio.jpg) |
 | wildlife_id/eastern_chipmunk/3.jpg | Eastern Chipmunk | track | Jomegat | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Chipmunk_hindprint.jpg) |
 | wildlife_id/eastern_chipmunk/4.jpg | Eastern Chipmunk | skull | Klaus Rassinger und Gerhard Cammerer, Museum Wiesbaden | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Neotamias_townsendii_04_MWNH_742_cropped.jpg) |
+| wildlife_id/eastern_chipmunk/5.jpg | Eastern Chipmunk | mount | Photo by David J. Stang | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Tamias_striatus_3zz.jpg) |
 | wildlife_id/eastern_cottontail/1.jpg | Eastern Cottontail | live NC | Michael J. Papay | CC BY 4.0 | [link](https://www.inaturalist.org/observations/185508407) |
 | wildlife_id/eastern_cottontail/2.jpg | Eastern Cottontail | live NC | Lexi Amico | CC BY 4.0 | [link](https://www.inaturalist.org/observations/294207268) |
 | wildlife_id/eastern_cottontail/3.jpg | Eastern Cottontail | tracks | USFWS Mountain-Prairie | Public domain | [link](https://commons.wikimedia.org/wiki/File:Mountain_Cottontail_Tracks_in_Snow_on_Seedskadee_NWR_(23429611865).jpg) |
@@ -278,6 +305,7 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | wildlife_id/eastern_gray_squirrel/3.jpg | Eastern Gray Squirrel | track | Mila C. | CC BY 4.0 | [link](https://www.inaturalist.org/observations/104976531) |
 | wildlife_id/eastern_gray_squirrel/4.jpg | Eastern Gray Squirrel | track | Ryan Hodnett | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Eastern_Grey_Squirrel_(Sciurus_carolinensis)_Tracks_-_Kitchener,_Ontario.jpg) |
 | wildlife_id/eastern_gray_squirrel/5.jpg | Eastern Gray Squirrel | skull | Alex Abair | CC BY 4.0 | [link](https://commons.wikimedia.org/wiki/File:Sciurus_carolinensis_skull_334450387.jpg) |
+| wildlife_id/eastern_gray_squirrel/6.jpg | Eastern Gray Squirrel | mount | Photo by David J. Stang | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Sciurus_carolinensis_1zz.jpg) |
 | wildlife_id/eastern_wild_turkey/1.jpg | Eastern Wild Turkey | adult NC | kirk gardner | CC BY 4.0 | [link](https://www.inaturalist.org/observations/153184238) |
 | wildlife_id/eastern_wild_turkey/2.jpg | Eastern Wild Turkey | track | Ken-ichi Ueda | CC BY 4.0 | [link](https://www.inaturalist.org/observations/13169483) |
 | wildlife_id/eastern_wild_turkey/3.jpg | Eastern Wild Turkey | second source | Frank Schulenburg | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Male_wild_turkey_(Meleagris_gallopavo)_strutting.jpg) |
@@ -287,6 +315,8 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | wildlife_id/gray_fox/3.jpg | Gray Fox | track | Michael J. Papay | CC BY 4.0 | [link](https://www.inaturalist.org/observations/66527398) |
 | wildlife_id/gray_fox/4.jpg | Gray Fox | skull | OsteologicalsRock | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Skull_of_an_island_fox_(right)_compared_with_that_of_a_gray_fox_(left).jpg) |
 | wildlife_id/gray_fox/5.jpg | Gray Fox | skull | California Department of Fish and Wildlife from Sacramento, CA, USA | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Island_fox,_top,_v_gray_fox_skulls_(26585048390).jpg) |
+| wildlife_id/gray_fox/6.jpg | Gray Fox | mount | Photo by David J. Stang | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Urocyon_cinereoargenteus_9zz.jpg) |
+| wildlife_id/gray_fox/7.jpg | Gray Fox | pelt | Kuerschner | Public domain | [link](https://commons.wikimedia.org/wiki/File:Gray_Fox_fur-skins.jpg) |
 | wildlife_id/groundhog/1.jpg | Groundhog | live NC | Laura Mae | CC BY 4.0 | [link](https://www.inaturalist.org/photos/26211993) |
 | wildlife_id/groundhog/2.jpg | Groundhog | live NC | Jennifer Aitkens | CC BY 4.0 | [link](https://www.inaturalist.org/photos/131171794) |
 | wildlife_id/groundhog/3.jpg | Groundhog | track | Gary John Peresta | CC0 1.0 | [link](https://www.inaturalist.org/observations/26017926) |
@@ -295,6 +325,7 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | wildlife_id/mallard_duck/2.jpg | Mallard Duck | female NC | David Hebert | CC BY 4.0 | [link](https://www.inaturalist.org/observations/38022781) |
 | wildlife_id/mallard_duck/3.jpg | Mallard Duck | pair | Clément Bardot | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Mallard_duck_pair,_France.jpg) |
 | wildlife_id/mallard_duck/4.jpg | Mallard Duck | in flight | Zalasem1 | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Kaczka_krzy%C5%BC%C3%B3wka_podczas_l%C4%85dowania_na_wodzie.jpg) |
+| wildlife_id/mallard_duck/5.jpg | Mallard Duck | mount | Photo by David J. Stang | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Anas_platyrhynchos_18zz.jpg) |
 | wildlife_id/marbled_salamander/1.jpg | Marbled Salamander | live NC | steve b | CC0 1.0 | [link](https://www.inaturalist.org/observations/72297413) |
 | wildlife_id/marbled_salamander/2.jpg | Marbled Salamander | live NC | Ken Kneidel | CC0 1.0 | [link](https://www.inaturalist.org/observations/10006724) |
 | wildlife_id/marbled_salamander/3.jpg | Marbled Salamander | live NC | Becky Dill | CC0 1.0 | [link](https://www.inaturalist.org/observations/98711384) |
@@ -303,6 +334,7 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | wildlife_id/mink/2.jpg | Mink | track | sudomir | CC BY 4.0 | [link](https://www.inaturalist.org/observations/113052669) |
 | wildlife_id/mink/3.jpg | Mink | skull | Naturalis Biodiversity Center | CC0 | [link](https://commons.wikimedia.org/wiki/File:Naturalis_Biodiversity_Center_-_ZMA.MAM.7458.a_lat_-_Neovison_-_skull.jpeg) |
 | wildlife_id/mink/4.jpg | Mink | skull | Naturalis Biodiversity Center | CC0 | [link](https://commons.wikimedia.org/wiki/File:Naturalis_Biodiversity_Center_-_ZMA.MAM.2792_lat_-_Neovison_-_skull.jpeg) |
+| wildlife_id/mink/5.jpg | Mink | pelt | Kuerschner | Public domain | [link](https://commons.wikimedia.org/wiki/File:Wild_mink_skins.jpg) |
 | wildlife_id/mourning_dove/1.jpg | Mourning Dove | adult NC | Matthew Lumsden | CC BY 4.0 | [link](https://www.inaturalist.org/observations/286288833) |
 | wildlife_id/mourning_dove/2.jpg | Mourning Dove | in flight | Robert Taylor from Stirling, ON, Canada | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Mourning_Dove_in_Flight_9470_(14438313152).jpg) |
 | wildlife_id/mourning_dove/3.jpg | Mourning Dove | second source | Rhododendrites | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Mourning_dove_perched_(61179).jpg) |
@@ -317,8 +349,13 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | wildlife_id/raccoon/4.jpg | Raccoon | track | Alex Abair | CC BY 4.0 | [link](https://commons.wikimedia.org/wiki/File:Procyon_lotor_tracks_with_scale.jpg) |
 | wildlife_id/raccoon/5.jpg | Raccoon | track | Ryan Hodnett | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Common_Raccoon_(Procyon_lotor)_Tracks_-_Kitchener,_Ontario.jpg) |
 | wildlife_id/raccoon/6.jpg | Raccoon | skull | Alex Abair | CC BY 4.0 | [link](https://commons.wikimedia.org/wiki/File:Procyon_lotor_skull_114106544.jpg) |
+| wildlife_id/raccoon/7.jpg | Raccoon | mount | Photo by David J. Stang | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Procyon_lotor_19zz.jpg) |
+| wildlife_id/raccoon/8.jpg | Raccoon | pelt | Mickey Bohnacker, Presse-Fotograf, Frankfurt/Main | Public domain | [link](https://commons.wikimedia.org/wiki/File:Procyon_lotor_(North_American)_fur_skin.jpg) |
+| wildlife_id/raccoon/9.jpg | Raccoon | scat | Jomegat | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Procyon_lotor_scat.jpg) |
 | wildlife_id/rat_snake/1.jpg | Rat Snake | live NC | Oliver Hassell | CC BY 4.0 | [link](https://www.inaturalist.org/observations/365857712) |
 | wildlife_id/rat_snake/2.jpg | Rat Snake | second source | Peter Paplanus | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Pantherophis_spiloides,_Vorderansicht.jpg) |
+| wildlife_id/rat_snake/3.jpg | Rat Snake | live | Judy Gallagher | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Black_Rat_Snake_-_Pantherophis_obsoletus,_Lorton_Workhouse,_Lorton,_Virginia_(42897485540).jpg) |
+| wildlife_id/rat_snake/4.jpg | Rat Snake | live | Ashwin Srinivasan | CC BY 4.0 | [link](https://commons.wikimedia.org/wiki/File:Pantherophis_alleghaniensis_336543571.jpg) |
 | wildlife_id/red_fox/1.jpg | Red Fox | live NC | Karen Szafrajda | CC BY 4.0 | [link](https://www.inaturalist.org/observations/338508436) |
 | wildlife_id/red_fox/2.jpg | Red Fox | skull | Kieran Roy Powell | CC BY 4.0 | [link](https://commons.wikimedia.org/wiki/File:Fox_Cranium_Craig_Rhosyfelin.jpg) |
 | wildlife_id/red_fox/3.jpg | Red Fox | tracks | Famartin | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:2024-12-25_09_08_41_Fresh_red_fox_tracks_in_snow_on_a_White_Christmas_along_Aquetong_Lane_in_the_Mountainview_section_of_Ewing_Township,_Mercer_County,_New_Jersey.jpg) |
@@ -326,6 +363,9 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | wildlife_id/red_fox/5.jpg | Red Fox | track | Juan Lacruz | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Vulpes_vulpes.jpg) |
 | wildlife_id/red_fox/6.jpg | Red Fox | track | K.Khedrup | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Footprint_of_Vulpes_vulpes.jpg) |
 | wildlife_id/red_fox/7.jpg | Red Fox | skull | Roger Culos | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Vulpes_zerda_MHNT.ZOO.2010.11.236.5.jpg) |
+| wildlife_id/red_fox/8.jpg | Red Fox | pelt | Vadeve | Public domain | [link](https://commons.wikimedia.org/wiki/File:Red_fox_pelts_at_Kopenhagen_Fur_(1).jpg) |
+| wildlife_id/red_fox/9.jpg | Red Fox | pelt | Mickey Bohnacker, Presse-Fotograf, Frankfurt/Main | Public domain | [link](https://commons.wikimedia.org/wiki/File:Vulpes_vulpes_fulva_(Canada)_fur_skin.jpg) |
+| wildlife_id/red_fox/10.jpg | Red Fox | scat | gailhampshire from Cradley, Malvern, U.K | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Scat...fox_-_Flickr_-_gailhampshire.jpg) |
 | wildlife_id/red_tailed_hawk/1.jpg | Red-Tailed Hawk | adult NC | Laura Mae | CC BY 4.0 | [link](https://www.inaturalist.org/observations/119302270) |
 | wildlife_id/red_tailed_hawk/2.jpg | Red-Tailed Hawk | in flight | Frank Schulenburg | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Buteo_jamaicensis_in_flight_at_Llano_Seco-1520.jpg) |
 | wildlife_id/red_tailed_hawk/3.jpg | Red-Tailed Hawk | second source | Steve Jurvetson | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Hawk_eating_prey.jpg) |
@@ -334,9 +374,14 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | wildlife_id/river_otter/3.jpg | River Otter | track | ncb1221 | CC BY 4.0 | [link](https://www.inaturalist.org/observations/324188736) |
 | wildlife_id/river_otter/4.jpg | River Otter | skull | Eric Polk | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Lontra_canadensis_skull.jpg) |
 | wildlife_id/river_otter/5.jpg | River Otter | track | Cephas | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Lontra_canadensis_snow_tracks_4.jpg) |
+| wildlife_id/river_otter/6.jpg | River Otter | mount | Photo by David J. Stang | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Lontra_canadensis_6zz.jpg) |
+| wildlife_id/river_otter/7.jpg | River Otter | pelt | Mickey Bohnacker, Presse-Fotograf, Frankfurt/Main | Public domain | [link](https://commons.wikimedia.org/wiki/File:Lutra_(Lontra)_canadensis_fur_skin.jpg) |
+| wildlife_id/river_otter/8.jpg | River Otter | scat | ncwetlands.org | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Mammal_otter_scat_pea_island_NWR_ncwetlands_AM_(46).jpg) |
+| wildlife_id/river_otter/9.jpg | River Otter | scat | Judy Gallagher | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Otter_scat,_234_Mitigation_Wetlands,_Manassas,_Virginia.jpg) |
 | wildlife_id/southern_flying_squirrel/1.jpg | Southern Flying Squirrel | live NC | Timothy Gerla | CC BY 4.0 | [link](https://www.inaturalist.org/observations/344786265) |
 | wildlife_id/southern_flying_squirrel/2.jpg | Southern Flying Squirrel | live NC | Alison Northup | CC BY 4.0 | [link](https://www.inaturalist.org/observations/169519823) |
 | wildlife_id/southern_flying_squirrel/3.jpg | Southern Flying Squirrel | track | Nik Hughes | CC BY 4.0 | [link](https://www.inaturalist.org/observations/22675425) |
+| wildlife_id/southern_flying_squirrel/4.jpg | Southern Flying Squirrel | pelt | Photo by David J. Stang | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Glaucomys_volans_0zz.jpg) |
 | wildlife_id/southern_leopard_frog/1.jpg | Southern Leopard Frog | live NC | John G. Phillips | CC BY 4.0 | [link](https://www.inaturalist.org/observations/17956358) |
 | wildlife_id/southern_leopard_frog/2.jpg | Southern Leopard Frog | live NC | Joshua Liverman | CC BY 4.0 | [link](https://www.inaturalist.org/observations/17127880) |
 | wildlife_id/southern_leopard_frog/3.jpg | Southern Leopard Frog | live NC | Ken Kneidel | CC0 1.0 | [link](https://www.inaturalist.org/observations/80673827) |
@@ -350,10 +395,14 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | wildlife_id/striped_skunk/4.jpg | Striped Skunk | live NC | Jesse Rorabaugh | CC BY 4.0 | [link](https://www.inaturalist.org/photos/2761953) |
 | wildlife_id/striped_skunk/5.jpg | Striped Skunk | track | tonyblake | CC0 | [link](https://commons.wikimedia.org/wiki/File:Striped_skunk_tracks.png) |
 | wildlife_id/striped_skunk/6.jpg | Striped Skunk | skull | Eric Polk | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Mephitis_mephitis_skull_left_side.png) |
+| wildlife_id/striped_skunk/7.jpg | Striped Skunk | pelt | Mickey Bohnacker, Presse-Fotograf, Frankfurt/Main | Public domain | [link](https://commons.wikimedia.org/wiki/File:Mephitis_mephitis_(Striped_skunks)_fur_skins.jpg) |
 | wildlife_id/virginia_opossum/1.jpg | Virginia Opossum | live NC | Michael J. Papay | CC BY 4.0 | [link](https://www.inaturalist.org/observations/107721499) |
 | wildlife_id/virginia_opossum/2.jpg | Virginia Opossum | live NC | Joshua Liverman | CC BY 4.0 | [link](https://www.inaturalist.org/observations/21147963) |
 | wildlife_id/virginia_opossum/3.jpg | Virginia Opossum | skull | Photo by David J. Stang | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Didelphis_virginiana_7zz.jpg) |
 | wildlife_id/virginia_opossum/4.jpg | Virginia Opossum | track | Lensim at English Wikipedia. Use "Michael Lensi" for attribution. | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Opossum_and_vole_tracks_in_mud.JPG) |
+| wildlife_id/virginia_opossum/5.jpg | Virginia Opossum | mount | Photo by David J. Stang | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Didelphis_virginiana_4zz.jpg) |
+| wildlife_id/virginia_opossum/6.jpg | Virginia Opossum | mount | Photo by David J. Stang | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Didelphis_virginiana_5zz.jpg) |
+| wildlife_id/virginia_opossum/7.jpg | Virginia Opossum | pelt | Kürschner | Public domain | [link](https://commons.wikimedia.org/wiki/File:American_opossum_fur_bundle.jpg) |
 | wildlife_id/white_tailed_deer/1.jpg | White-Tailed Deer | live NC | steve b | CC0 1.0 | [link](https://www.inaturalist.org/observations/71070343) |
 | wildlife_id/white_tailed_deer/2.jpg | White-Tailed Deer | live NC | Michael J. Papay | CC BY 4.0 | [link](https://www.inaturalist.org/observations/108888550) |
 | wildlife_id/white_tailed_deer/3.jpg | White-Tailed Deer | track | Thayne Tuason | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Deer_tracks_near_Saddlerock_Wenatchee_Washington.jpg) |
@@ -362,12 +411,19 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | wildlife_id/white_tailed_deer/6.jpg | White-Tailed Deer | track | Captain-tucker | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Odocoileus_virginianus_track_in_snow-IMG_1528.jpg) |
 | wildlife_id/white_tailed_deer/7.jpg | White-Tailed Deer | track | QS Wiki Account | CC0 | [link](https://commons.wikimedia.org/wiki/File:White-tailed_Deer_track_from_the_piedmont_region_of_North_Carolina.jpg) |
 | wildlife_id/white_tailed_deer/8.jpg | White-Tailed Deer | skull | Daderot | CC0 | [link](https://commons.wikimedia.org/wiki/File:Odocoileus_virginianus_antlers_-_Finnish_Museum_of_Natural_History_-_DSC04526.JPG) |
+| wildlife_id/white_tailed_deer/9.jpg | White-Tailed Deer | mount | Photo by David J. Stang | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Odocoileus_virginianus_13zz.jpg) |
+| wildlife_id/white_tailed_deer/10.jpg | White-Tailed Deer | scat | Leslie Anne Perry | CC0 | [link](https://commons.wikimedia.org/wiki/File:Deer_Scat_1.jpg) |
+| wildlife_id/white_tailed_deer/11.jpg | White-Tailed Deer | scat | USFWSmidwest | Public domain | [link](https://commons.wikimedia.org/wiki/File:White-tailed_Deer_Scat_(22820041383).jpg) |
 | wildlife_id/wood_duck/1.jpg | Wood Duck | male NC | Nell Cant | CC BY 4.0 | [link](https://www.inaturalist.org/observations/104973850) |
 | wildlife_id/wood_duck/2.jpg | Wood Duck | female NC | Ken Kneidel | CC0 1.0 | [link](https://www.inaturalist.org/observations/182386316) |
 | wildlife_id/wood_duck/3.jpg | Wood Duck | second source | lwolfartist | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Wood_duck_druid_ridge_cemetery_10.10.20_DSC_6035.jpg) |
 | wildlife_id/wood_duck/4.jpg | Wood Duck | second source | lwolfartist | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Wood_duck_druid_ridge_cemetery_10.10.20_DSC_5487.jpg) |
+| wildlife_id/wood_duck/5.jpg | Wood Duck | live | Photo by David J. Stang | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Aix_sponsa_16zz.jpg) |
+| wildlife_id/wood_duck/6.jpg | Wood Duck | live | Rhododendrites | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Wood_duck_drake_vocalizing_in_Central_Park_(86815).jpg) |
+| wildlife_id/wood_duck/7.jpg | Wood Duck | live | Rhododendrites | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Wood_duck_female_(73468).jpg) |
+| wildlife_id/wood_duck/8.jpg | Wood Duck | mount | Photo by David J. Stang | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Aix_sponsa_22zz.jpg) |
 
-## Aquatic Ecology · ID — 141 pictures
+## Aquatic Ecology · ID — 156 pictures
 
 | picture | item | shot | author | licence | source |
 |---|---|---|---|---|---|
@@ -386,10 +442,14 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | aquatic_id/bluegill/1.jpg | Bluegill | specimen | Fredlyfish4 | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Lepomis_macrochirus_UMFS_2014_2.JPG) |
 | aquatic_id/bluegill/2.jpg | Bluegill | specimen | USFWS Mountain Prairie | Public domain | [link](https://commons.wikimedia.org/wiki/File:Bluegill_(Lepomis_macrochirus)_black_background.jpg) |
 | aquatic_id/bluegill/3.jpg | Bluegill | caught NC | Ken Kneidel | CC0 1.0 | [link](https://www.inaturalist.org/observations/104842867) |
+| aquatic_id/bluegill/4.jpg | Bluegill | live | Bclegg77 | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Bluegill_-_Lepomis_macrochirus_from_Rend_Lake,_IL.jpg) |
+| aquatic_id/bluegill/5.jpg | Bluegill | live | Eric Engbretson, Division of Public Affairs | Public domain | [link](https://commons.wikimedia.org/wiki/File:Lepomis_macrochirus_photo.jpg) |
 | aquatic_id/brook_trout/1.jpg | Brook trout | specimen | Engbretson, Eric | Public domain | [link](https://commons.wikimedia.org/wiki/File:Salvelinus_fontinalis.jpg) |
 | aquatic_id/brook_trout/2.jpg | Brook trout | specimen | Photo by and (C)2007 Derek Ramsey (Ram-Man) | CC BY-SA 2.5 | [link](https://commons.wikimedia.org/wiki/File:Brook_Trout_Salvelinus_fontinalis_2900px.jpg) |
 | aquatic_id/brook_trout/3.jpg | Brook trout | caught NC | Evan M. Raskin | CC BY 4.0 | [link](https://www.inaturalist.org/observations/14090329) |
 | aquatic_id/brook_trout/4.jpg | Brook trout | caught NC | kirk gardner | CC BY 4.0 | [link](https://www.inaturalist.org/observations/23025429) |
+| aquatic_id/brook_trout/5.jpg | Brook trout | live | Jay Fleming (US Nat'l Park Svc) | Public domain | [link](https://commons.wikimedia.org/wiki/File:Brook_trout_in_water.jpg) |
+| aquatic_id/brook_trout/6.jpg | Brook trout | live | Eric Engbretson, U.S. Fish and Wildlife Service | Public domain | [link](https://commons.wikimedia.org/wiki/File:Brook_trout_swims_in_native_stream_underwater_fish_image.jpg) |
 | aquatic_id/caddisfly_larva/1.jpg | Caddisfly larva | drawing or photo | Janek Lass | CC BY 4.0 | [link](https://commons.wikimedia.org/wiki/File:Puruvana.jpg) |
 | aquatic_id/caddisfly_larva/2.jpg | Caddisfly larva | drawing or photo | Matt Reinbold from Bismarck, ND, USA | CC BY-SA 2.0 | [link](https://commons.wikimedia.org/wiki/File:Flickr_-_Furryscaly_-_Trichoptera.jpg) |
 | aquatic_id/caddisfly_larva/3.jpg | Caddisfly larva | immature | Mardon Erbland | CC0 1.0 | [link](https://www.inaturalist.org/observations/135547854) |
@@ -397,6 +457,7 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | aquatic_id/common_duckweed/1.jpg | Common duckweed | live NC | Ashwin Srinivasan | CC BY 4.0 | [link](https://www.inaturalist.org/observations/33665333) |
 | aquatic_id/common_duckweed/2.jpg | Common duckweed | live NC | Austin Pursley | CC0 1.0 | [link](https://www.inaturalist.org/observations/40392346) |
 | aquatic_id/common_duckweed/3.jpg | Common duckweed | second source | Kostka Martin | CC0 | [link](https://commons.wikimedia.org/wiki/File:Lemna_minor_plants.jpg) |
+| aquatic_id/common_duckweed/4.jpg | Common duckweed | live | Kurt Stüber [1] | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Lemna_minor1.jpg) |
 | aquatic_id/crane_fly_larva/1.jpg | Crane fly larva | drawing or photo | This image is created by user B. Schoenmakers at Waarneming.nl, a source of nature observations in the Netherlands. | CC BY 3.0 | [link](https://commons.wikimedia.org/wiki/File:Tipulidae_indet._(Tipulidae)_(Unidentified_Cranefly)_-_(larva),_Elst_(Gld),_the_Netherlands_-_3.jpg) |
 | aquatic_id/crane_fly_larva/2.jpg | Crane fly larva | drawing or photo | This image is created by user B. Schoenmakers at Waarneming.nl, a source of nature observations in the Netherlands. | CC BY 3.0 | [link](https://commons.wikimedia.org/wiki/File:Tipulidae_indet._(Tipulidae)_(Unidentified_Cranefly)_-_(larva),_Elst_(Gld),_the_Netherlands_-_2.jpg) |
 | aquatic_id/crane_fly_larva/3.jpg | Crane fly larva | immature | Matt Bowser | CC BY 4.0 | [link](https://www.inaturalist.org/observations/2853091) |
@@ -443,9 +504,13 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | aquatic_id/hydrilla/2.jpg | Hydrilla | live NC | Becky Dill | CC0 1.0 | [link](https://www.inaturalist.org/observations/320738492) |
 | aquatic_id/hydrilla/3.jpg | Hydrilla | second source | J.M.Garg | CC BY 3.0 | [link](https://commons.wikimedia.org/wiki/File:Hydrilla_verticillata_is_it-_in_Hyderabad_W2_IMG_8305.jpg) |
 | aquatic_id/hydrilla/4.jpg | Hydrilla | second source | Yercaud-elango | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Hydrilla_verticillata-1-bsi-yercaud-salem-India.jpg) |
+| aquatic_id/hydrilla/5.jpg | Hydrilla | live | uploader MPF | Public domain | [link](https://commons.wikimedia.org/wiki/File:Hydrilla_USGS.jpg) |
+| aquatic_id/hydrilla/6.jpg | Hydrilla | live | Darkmax | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Hydrilla_Verticillata_3.jpg) |
 | aquatic_id/largemouth_bass/1.jpg | Largemouth bass | specimen | Totti | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Micropterus_salmoides_Lake_Biwa_Museum1.jpg) |
 | aquatic_id/largemouth_bass/2.jpg | Largemouth bass | specimen | Nervurax Fishing | CC0 | [link](https://commons.wikimedia.org/wiki/File:Micropterus_salmoides_colber_lake_11_08_2018.jpg) |
 | aquatic_id/largemouth_bass/3.jpg | Largemouth bass | caught NC | Tayton Alvis | CC BY 4.0 | [link](https://www.inaturalist.org/observations/121816215) |
+| aquatic_id/largemouth_bass/4.jpg | Largemouth bass | live | USFWS Mountain Prairie | Public domain | [link](https://commons.wikimedia.org/wiki/File:Largemouth_Bass_(Micropterus_salmoides)_June_2023.jpg) |
+| aquatic_id/largemouth_bass/5.jpg | Largemouth bass | live | Cliff | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Largemouth_Bass_(Micropterus_salmoides).jpg) |
 | aquatic_id/leech/1.jpg | Leech | live | Inao Vasquez | CC BY 4.0 | [link](https://www.inaturalist.org/observations/83089878) |
 | aquatic_id/leech/2.jpg | Leech | live | Pablo Silva | CC BY 4.0 | [link](https://www.inaturalist.org/observations/263420947) |
 | aquatic_id/leech/3.jpg | Leech | second source | Smithsonian Environmental Research Center | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Leech_(I1430)_0046_(37992448316).jpg) |
@@ -454,6 +519,7 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | aquatic_id/lizard_s_tail/2.jpg | Lizard's tail | live NC | sblumen | CC BY 4.0 | [link](https://www.inaturalist.org/observations/121037131) |
 | aquatic_id/lizard_s_tail/3.jpg | Lizard's tail | second source | Robert H. Mohlenbrock @ USDA-NRCS PLANTS Database / USDA SCS. 1991. Southern wetland flora: Field office guide to plant | Public domain | [link](https://commons.wikimedia.org/wiki/File:Saururus_cernuus.jpg) |
 | aquatic_id/lizard_s_tail/4.jpg | Lizard's tail | second source | Fritzflohrreynolds | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Saururus_cernuus_-_Lizard_Tail_2.jpg) |
+| aquatic_id/lizard_s_tail/5.jpg | Lizard's tail | live | Krzysztof Ziarnek, Kenraiz | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Saururus_cernuus_kz02.jpg) |
 | aquatic_id/mayfly_nymph/1.jpg | Mayfly nymph | drawing or photo | This image is created by user B. Schoenmakers at Waarneming.nl, a source of nature observations in the Netherlands. | CC BY 3.0 | [link](https://commons.wikimedia.org/wiki/File:Cloeon_dipterum_(Baetidae)_-_(larva_-_nymph),_Emmen,_the_Netherlands.jpg) |
 | aquatic_id/mayfly_nymph/2.jpg | Mayfly nymph | immature | neyasit | CC BY 4.0 | [link](https://www.inaturalist.org/observations/301707481) |
 | aquatic_id/mayfly_nymph/3.jpg | Mayfly nymph | immature | frankcarrots | CC BY 4.0 | [link](https://www.inaturalist.org/observations/228815077) |
@@ -467,6 +533,7 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | aquatic_id/pickerelweed/2.jpg | Pickerelweed | live NC | Mark Connolly | CC0 1.0 | [link](https://www.inaturalist.org/observations/130784971) |
 | aquatic_id/pickerelweed/3.jpg | Pickerelweed | second source | Cephas | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Pontederia_cordata_4_PP.jpg) |
 | aquatic_id/pickerelweed/4.jpg | Pickerelweed | second source | W. Bulach | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:00_3803_Wasserpflanze_-_Herzbl%C3%A4ttriges_Hechtkraut.jpg) |
+| aquatic_id/pickerelweed/5.jpg | Pickerelweed | live | СССР | CC BY-SA 2.5 ca | [link](https://commons.wikimedia.org/wiki/File:Pontederia_cordata_Parry_Sound_District.jpg) |
 | aquatic_id/pouch_snail/1.jpg | Pouch snail | second source | Fountain Posters | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Physidae_Bladder_Snail.jpg) |
 | aquatic_id/pouch_snail/2.jpg | Pouch snail | second source | David Perez | CC BY 3.0 | [link](https://commons.wikimedia.org/wiki/File:Physidae_01_by-dpc.jpg) |
 | aquatic_id/pouch_snail/3.jpg | Pouch snail | live | Kelsey Low | CC BY 4.0 | [link](https://www.inaturalist.org/photos/7108709) |
@@ -493,6 +560,9 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | aquatic_id/water_beetle_larva/2.jpg | Water beetle larva | drawing or photo | This image is created by user Wim Rubers at Waarneming.nl, a source of nature observations in the Netherlands. | CC BY 3.0 | [link](https://commons.wikimedia.org/wiki/File:Cybister_lateralimarginalis_(Dytiscidae)_-_(larva),_Gouderak,_the_Netherlands.jpg) |
 | aquatic_id/water_beetle_larva/3.jpg | Water beetle larva | immature | Christine Young | CC BY 4.0 | [link](https://www.inaturalist.org/observations/64812088) |
 | aquatic_id/water_beetle_larva/4.jpg | Water beetle larva | immature | Irisa Hudson | CC BY 4.0 | [link](https://www.inaturalist.org/observations/196973327) |
+| aquatic_id/water_lily/1.jpg | Water lily | live | Prburley | CC BY 4.0 | [link](https://commons.wikimedia.org/wiki/File:American_White_Waterlily_Nymphaea_Odorata_Moraine_Hills_State_Park_Illinois_2024-0125.jpg) |
+| aquatic_id/water_lily/2.jpg | Water lily | live | Cephas | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Nymphaea_odorata_PP.jpg) |
+| aquatic_id/water_lily/3.jpg | Water lily | live | Gzen92 | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Nymph%C3%A9e_odorante_(Nymphaea_odorata).jpg) |
 | aquatic_id/water_penny_larva/1.jpg | Water penny larva | drawing or photo | TheAlphaWolf | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Water_penny_larva.JPG) |
 | aquatic_id/water_penny_larva/2.jpg | Water penny larva | immature | Wynand Uys | CC BY 4.0 | [link](https://www.inaturalist.org/observations/10889951) |
 | aquatic_id/water_penny_larva/3.jpg | Water penny larva | immature | Mike Palmer | CC0 1.0 | [link](https://www.inaturalist.org/observations/208218614) |
@@ -512,6 +582,7 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | aquatic_id/white_crappie/2.jpg | White crappie | specimen | Fishes of Texas team | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Pomoxis_annularis_453185302.jpg) |
 | aquatic_id/white_crappie/3.jpg | White crappie | caught NC | Rorey | CC BY 4.0 | [link](https://www.inaturalist.org/observations/215849714) |
 | aquatic_id/white_crappie/4.jpg | White crappie | caught NC | redrovertracy | CC BY 4.0 | [link](https://www.inaturalist.org/observations/205563985) |
+| aquatic_id/white_crappie/5.jpg | White crappie | live | uploader Harmil~commonswiki | Public domain | [link](https://commons.wikimedia.org/wiki/File:White_Crappie.jpg) |
 
 ## Soils and Land Use · ID — 36 pictures
 
@@ -608,6 +679,49 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | forestry_tools/wedge_prism/1.jpg | Wedge prism | gear | Drew Stephenson. Original uploader was Dtstep05 at en.wikipedia | Public domain | [link](https://commons.wikimedia.org/wiki/File:WedgePrism(IN_Tree).jpg) |
 | forestry_tools/wedge_prism/2.jpg | Wedge prism | gear | Drew Stephenson. Original uploader was Dtstep05 at en.wikipedia | Public domain | [link](https://commons.wikimedia.org/wiki/File:WedgePrism(Out_Tree).jpg) |
 | forestry_tools/wedge_prism/3.jpg | Wedge prism | gear | Drew Stephenson. Original uploader was Dtstep05 at en.wikipedia | Public domain | [link](https://commons.wikimedia.org/wiki/File:WedgePrism(BorderlineTree).jpg) |
+
+## Land practices and erosion (Soils) — 16 pictures
+
+| picture | item | shot | author | licence | source |
+|---|---|---|---|---|---|
+| soils_land/contour_strip_cropping/1.jpg | Contour strip-cropping | bmp | Photo by Colleen Schneider, USDA Natural Resources Conservation Service. | Public domain | [link](https://commons.wikimedia.org/wiki/File:NRCSIA99361_-_Iowa_(3415)(NRCS_Photo_Gallery).jpg) |
+| soils_land/cover_crops/1.jpg | Cover crops | bmp | Ethanstuckey | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:A_cover_crop_of_Tillage_Radish_in_early_November.jpg) |
+| soils_land/cover_crops/2.jpg | Cover crops | bmp | Cassiville | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Barley_cover_crop_in_field.jpg) |
+| soils_land/grass_waterway/1.jpg | Grass waterway | bmp | C. Rahm, USDA NRCS | Public domain | [link](https://commons.wikimedia.org/wiki/File:Grassed_waterway_missouri.jpg) |
+| soils_land/gully_erosion/1.jpg | Gully erosion | erosion | Alan Murray-Rust | CC BY-SA 2.0 | [link](https://commons.wikimedia.org/wiki/File:Gully_erosion_-_geograph.org.uk_-_1127206.jpg) |
+| soils_land/gully_erosion/2.jpg | Gully erosion | erosion | Канопус Киля | Public domain | [link](https://commons.wikimedia.org/wiki/File:Gully_in_the_Kharkov_region.jpg) |
+| soils_land/no_till/1.jpg | No-till | bmp | United Soybean Board | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:No-Till_Planting_(9621416887).jpg) |
+| soils_land/no_till/2.jpg | No-till | bmp | USDA NRCS South Dakota | Public domain | [link](https://commons.wikimedia.org/wiki/File:No-till_Planting_(8120028117).jpg) |
+| soils_land/rill_erosion/1.jpg | Rill erosion | erosion | Dr Donal Mullan | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Rill_network_from_Tyrone,_Ireland.jpg) |
+| soils_land/riparian_buffer/1.jpg | Riparian buffer | bmp | USDA | Public domain | [link](https://commons.wikimedia.org/wiki/File:Riparian_buffer_augusta_county_va.jpg) |
+| soils_land/riparian_buffer/2.jpg | Riparian buffer | bmp | USDA | Public domain | [link](https://commons.wikimedia.org/wiki/File:Riparian_buffer_on_Bear_Creek_in_Story_County,_Iowa.JPG) |
+| soils_land/sheet_erosion/1.jpg | Sheet erosion | erosion | United States. Natural Resources Conservation Service. Washington | Public domain | [link](https://commons.wikimedia.org/wiki/File:Sheet_erosion,_Pullman,_Washington,_1946_-_DPLA_-_5097f1f5303fb4a21409ea6aa9d8fd7c.jpg) |
+| soils_land/silt_fence/1.jpg | Silt fence | bmp | Shopstone | CC0 | [link](https://commons.wikimedia.org/wiki/File:Fiber_rolls_and_temporary_silt_fence_on_a_slope,_Shasta-Trinity_National_Forest.jpg) |
+| soils_land/silt_fence/2.jpg | Silt fence | bmp | U.S. Environmental Protection Agency (EPA) | Public domain | [link](https://commons.wikimedia.org/wiki/File:Silt_fence_EPA.jpg) |
+| soils_land/streambank_erosion/1.jpg | Streambank erosion | erosion | U. S. Fish and Wildlife Service - Northeast Region | Public domain | [link](https://commons.wikimedia.org/wiki/File:Beaver_Run_Eroded_Streambank_Before_Construction_(8079845927).jpg) |
+| soils_land/streambank_erosion/2.jpg | Streambank erosion | erosion | GeorgeArchive1234 | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Streambankerosion.jpg) |
+
+## Forest pest signs (Forestry) — 9 pictures
+
+| picture | item | shot | author | licence | source |
+|---|---|---|---|---|---|
+| forestry_pests/emerald_ash_borer/1.jpg | Emerald ash borer | pest | Forest Service, USDA | Public domain | [link](https://commons.wikimedia.org/wiki/File:Adult_Emerald_Ash_Borer_on_a_penny.jpg) |
+| forestry_pests/emerald_ash_borer/2.jpg | Emerald ash borer | pest | Daniel Herms, The Ohio State University, Bugwood.org | CC BY 3.0 | [link](https://commons.wikimedia.org/wiki/File:Eabexithole.jpg) |
+| forestry_pests/emerald_ash_borer/3.jpg | Emerald ash borer | pest | ImagePerson | CC BY 4.0 | [link](https://commons.wikimedia.org/wiki/File:Trackways_of_Emerald_Ash_Borer_Agrilus_planipennis_1164.jpg) |
+| forestry_pests/hemlock_woolly_adelgid/1.jpg | Hemlock woolly adelgid | pest | Michael Montgomery, USDA Forest Service | CC BY 3.0 us | [link](https://commons.wikimedia.org/wiki/File:Adelges_tsugae_1276001.jpg) |
+| forestry_pests/hemlock_woolly_adelgid/2.jpg | Hemlock woolly adelgid | pest | Beatriz Moisset | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Adelges_tsugae._TN.jpg) |
+| forestry_pests/southern_pine_beetle/1.jpg | Southern pine beetle | pest | NPS Photo/Courtney Buckley | CC0 | [link](https://commons.wikimedia.org/wiki/File:Pitch-tube-up-close.jpg) |
+| forestry_pests/southern_pine_beetle/2.jpg | Southern pine beetle | pest | Erich G. Vallery | CC BY 3.0 | [link](https://commons.wikimedia.org/wiki/File:Southern_Pine_Beetle_(Dendroctonus_frontalis).jpg) |
+| forestry_pests/spongy_moth/1.jpg | Spongy moth | pest | Ryan Hodnett | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Gypsy_Moth_(Lymantria_dispar)_Caterpillar_-_Kitchener,_Ontario.jpg) |
+| forestry_pests/spongy_moth/2.jpg | Spongy moth | pest | Ryan Hodnett | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Gypsy_Moth_(Lymantria_dispar)_with_Egg_Mass_-_Guelph,_Ontario_2020-07-26_(01).jpg) |
+
+## Lake stages (Aquatics) — 3 pictures
+
+| picture | item | shot | author | licence | source |
+|---|---|---|---|---|---|
+| aquatic_lakes/eutrophic_lake/1.jpg | Eutrophic lake | lake stage | USGS | Public domain | [link](https://commons.wikimedia.org/wiki/File:A_eutrophic_lake,_with_excess_algal_growth.jpg) |
+| aquatic_lakes/eutrophic_lake/2.jpg | Eutrophic lake | lake stage | Smaack | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Eutrophied_lake_-_Maack_-_200908_02.jpg) |
+| aquatic_lakes/oligotrophic_lake/1.jpg | Oligotrophic lake | lake stage | Rohit Sharma | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Krishansar_Lake,_Sonmarg,_Kashmir_valley,_India_01.jpg) |
 
 ## Left out — not shown to be free to reuse (115)
 
@@ -731,7 +845,7 @@ These are the pictures extracted from the official NCWRC species profiles. Their
 | Wildlife · ID | Wood Duck | wildlife_id/wood_duck/00_profile_p1_3.jpg | Official Envirothon resource (NCWRC profile); rights per credit line, educational use |
 | Wildlife · ID | Wood Duck | wildlife_id/wood_duck/00_profile_p2_5.jpg | Official Envirothon resource (NCWRC profile); rights per credit line, educational use |
 
-## Items under three pictures after the cut (27)
+## Items under three pictures after the cut (41)
 
 - Aquatic Ecology · ID · Horse fly larva — 1 picture
 - Soils and Land Use · ID · A horizon — 2 pictures
@@ -751,12 +865,26 @@ These are the pictures extracted from the official NCWRC species profiles. Their
 - Soils and Land Use · ID · Oxisols — 2 pictures
 - Soils and Land Use · ID · R horizon — 2 pictures
 - Soils and Land Use · ID · Vertisols — 2 pictures
-- Wildlife · ID · Rat Snake — 2 pictures
 - Sampling gear (Aquatics) · Dip net — 2 pictures
 - Sampling gear (Aquatics) · Eckman dredge — 1 picture
 - Sampling gear (Aquatics) · Price AA flow meter — 2 pictures
 - Sampling gear (Aquatics) · Surber sampler — 2 pictures
+- Lake stages (Aquatics) · Eutrophic lake — 2 pictures
+- Lake stages (Aquatics) · Oligotrophic lake — 1 picture
+- Forest pest signs (Forestry) · Hemlock woolly adelgid — 2 pictures
+- Forest pest signs (Forestry) · Southern pine beetle — 2 pictures
+- Forest pest signs (Forestry) · Spongy moth — 2 pictures
 - Forestry tools · Abney level — 1 picture
 - Forestry tools · Biltmore stick — 1 picture
 - Forestry tools · Chain — 2 pictures
 - Forestry tools · Clinometer — 2 pictures
+- Land practices and erosion (Soils) · Contour strip-cropping — 1 picture
+- Land practices and erosion (Soils) · Cover crops — 2 pictures
+- Land practices and erosion (Soils) · Grass waterway — 1 picture
+- Land practices and erosion (Soils) · Gully erosion — 2 pictures
+- Land practices and erosion (Soils) · No-till — 2 pictures
+- Land practices and erosion (Soils) · Rill erosion — 1 picture
+- Land practices and erosion (Soils) · Riparian buffer — 2 pictures
+- Land practices and erosion (Soils) · Sheet erosion — 1 picture
+- Land practices and erosion (Soils) · Silt fence — 2 pictures
+- Land practices and erosion (Soils) · Streambank erosion — 2 pictures

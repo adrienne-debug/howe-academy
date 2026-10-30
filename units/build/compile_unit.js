@@ -66,7 +66,7 @@ const REPO=path.resolve(__dirname,"..","..");
 const LABEL_KEYS=["section","sections","pre","post","item","concept"];
 const FEATURE_KEYS=["teams","boards","specialists","idFlash","mockRun"];
 const SKILL_TYPES=["chart","table","sheet","label","id","scale","mock","rubric"], SKILL_KEY=/^[a-z0-9][a-z0-9_.-]{0,59}$/;   // 🧰 CPITEMGEAR: the engine's CPSK_TYPE_NAMES / CPSK_KEY_RE
-const PHOTO_TAGS=["leaf","bark","twig","fruit","flower","cone","needle","track","skull","pelt","live","specimen","gear","drawing","diagram"];   // 🌲 CPITEMID: CPPHOTOS' CPPH_TAGS
+const PHOTO_TAGS=["leaf","bark","twig","fruit","flower","cone","needle","track","skull","pelt","live","specimen","gear","drawing","diagram","scat","mount","bmp","erosion","pest","stage"];   // 🌲 CPITEMID: CPPHOTOS' CPPH_TAGS
 const FB_BAD=/[.#$\[\]\/\u0000-\u001f\u007f]/;
 function fbSafe(k){ return typeof k==="string"&&k.length>0&&Buffer.byteLength(k,"utf8")<=768&&!FB_BAD.test(k); }
 function readJson(p){ return JSON.parse(fs.readFileSync(p,"utf8")); }
@@ -177,6 +177,7 @@ function checkParts(k,at,cards){
 function shotTags(shot){ const s=String(shot||"").toLowerCase(), t=[]; const on=(re,tag)=>{ if(re.test(s)&&t.indexOf(tag)<0) t.push(tag); };
   on(/lea(f|ves)|foliage|fall color/,"leaf"); on(/bark/,"bark"); on(/twig|bud/,"twig"); on(/fruit|acorn|berr|nut|seed|pod/,"fruit"); on(/flower/,"flower"); on(/cone/,"cone"); on(/needle/,"needle");
   on(/track/,"track"); on(/skull/,"skull"); on(/pelt/,"pelt"); on(/specimen|antler/,"specimen"); on(/drawing/,"drawing"); on(/diagram/,"diagram"); on(/gear|tool/,"gear");
+  on(/scat|droppings/,"scat"); on(/\bmount(ed)?\b|taxiderm/,"mount"); on(/\bbmp\b|conservation practice/,"bmp"); on(/erosion/,"erosion"); on(/\bpest\b/,"pest"); on(/trophic|lake stage/,"stage");
   if(!t.length) t.push("live"); return t; }
 // 🌲 CPITEMID: each ID-by-part skill's item parts with no photo in the repo set — [{skill, part, label, items:[names]}]
 function partPhotoGaps(root,skills){
