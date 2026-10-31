@@ -9004,6 +9004,7 @@ function renderSchedule(el){
   if(!_noDayWork||bbActive(kid)||(bbMomDraft&&bbMomDraft.kid===kid)) h+=bbBlock(kid); // 🧠 Brain break — button, or the active break card (pauses this kid's view only)
   if(kid!=="all"&&kid!=="mom") h+=retrSchedStripHtml(kid,day); // P4: retrieval strip (derived, no writes)
   if(kid!=="all"&&kid!=="mom"&&typeof wwDayChipHtml==="function") h+=wwDayChipHtml(kid,day); // 🏋️ WWV2: Word Workout · N words (derived, no card)
+  if(kid!=="all"&&kid!=="mom"&&typeof mpDayChipHtml==="function") h+=mpDayChipHtml(kid,day); // 🎮 MISSPLAY: Practice · N cards (derived, no card)
 
   // ── SCHEDULE LOCK CHECK ──────────────────────────────────────────
   const _lookAhead = !_noDayWork && gateLookAhead(kid, day);
@@ -69107,6 +69108,259 @@ function gameLogRound(st){
 }
 // GAMELOG_END
 
+// MISSPLAY_START — 🎮 the practice list: a card missed in the drill goes to the games until it's learned (slice 2 of
+// DESIGN_missed_card_games_2026-10-31.md; her "Start slice 2", 2026-10-31). Her words: "the things that were missed …
+// let's have fun with the ones we miss … use these games … and kind of have a remedial plan for those to help them really
+// learn it." Her answers 2026-10-31: close (~) cards join too · no limits for now, but build the switches · a play-more
+// miss never counts · on for the DeWalt app's kindergartner.
+//   · THE SWITCH — mastery/<kid>_settings/missPlay = {on, cap, secs, close} (Mom HQ ▸ ⚙ Rules ▸ 🎮 Missed-card games).
+//     Absent / off = today's drill, byte for byte: nothing joins, nothing is held, no button. Switched off later, every
+//     card on the list is simply back in the drill (its practice state waits on the card in case it's switched on again).
+//   · JOINING — when Mom saves a drill (mastSaveResults' hook, beside Word Workout's), a card marked ✗ — or ~ while
+//     "close cards join" is on — joins the list the same day: item.gp = {on:true, since, need:3, days:[], m:0}. Only a card
+//     the games can play joins (Which one?'s own rule: its deck makes a fair pick-3); spelling, phonograms, a pre-reader's
+//     counting words stay in the drill. cap > 0 and the list full → {wait:true}: it stays in the drill until a place opens.
+//   · HELD — a card on the list is held out of Mom's drill (mastDueItems) and the sprint pool. Its ladder spot is untouched.
+//   · PRACTICE — "🎮 Practice · N cards" on the kid's Day page (today, only while a card still needs practice today) opens
+//     a Which one?-style round: the list cards that still need it today, most-missed first, each mixed with known cards
+//     from its own deck (weekly or later). The app says the name; tap the picture; a wrong tap greys out and says it again.
+//   · THE RULE — the first day: right on the FIRST tap 3 times (it comes back later in the round, other cards between,
+//     at most MP_MAX_SHOWS showings a round); later days: once. Each such day is a right day (school days — the kid's
+//     drill clock, so a weekend doesn't add one). A wrong tap starts the right days over. Right on 3 different days →
+//     it leaves the list and is due in Mom's very next drill (next_due = today's school day). There Mom hears him SAY it:
+//     ✓ → gp.ok (learned, the normal ladder), ✗ / ~ → straight back on the list.
+//   · WRITES — the drill's own targeted update carries gp (one guarded line); a practice round writes ONE update on
+//     mastery/<kid> ({ix}/gp, and {ix}/next_due for a card going back to Mom) and pushes its round to
+//     mastery/gameLog/<kid>/<day> (GAMELOG's path, game:"practice"). Closing a round part-way saves what was earned.
+//     Settings: one targeted set per field, Mom only. db && !_dryRun() only. No kid's name in this block.
+//   · NOT HERE (later slices): the drill ending in the games (3), Mom's teaching cues (3b), look-alike choices (4),
+//     "want to play more?" (5).
+const MP_NEED_FIRST=3, MP_NEED_LATER=1, MP_DAYS=3, MP_MAX_SHOWS=6, MP_KNOWN_TIERS=["weekly","bi_weekly","monthly"];
+let mpUI=null;   // the open practice round: {kid,dn,dk,q:[{pid,list}],i,cur,pool,modes,shows,changed,out,log,t0,secs,phase,grow,lock}
+function _mpMD(){ return (typeof masteryData!=="undefined"&&masteryData)||{}; }
+function mpCfg(kid){
+  const s=_mpMD()[kid+"_settings"]||{}, m=(s.missPlay&&typeof s.missPlay==="object")?s.missPlay:{};
+  return {on:m.on===true,cap:Math.max(0,m.cap|0),secs:Math.max(0,m.secs|0),close:m.close!==false};
+}
+function mpOn(kid){ return !!kid&&mpCfg(kid).on; }
+function mpItems(kid){ const v=_mpMD()[kid]; return Array.isArray(v)?v:Object.values(v||{}); }
+// the card's key in mastery/<kid> (an array index; the keys of an object-shaped list when Firebase handed one back)
+function mpKey(kid,it){ const v=_mpMD()[kid]; if(Array.isArray(v)){ const ix=v.indexOf(it); return ix<0?null:String(ix); } if(v&&typeof v==="object"){ const k=Object.keys(v).find(x=>v[x]===it); return k==null?null:k; } return null; }
+// on the list and held out of Mom's drill — only while the switch is on
+function mpHeld(kid,it){ return !!(it&&it.gp&&it.gp.on===true&&mpOn(kid)); }
+function mpDayNum(kid){ try{ if(typeof mastSchoolDayNum==="function") return mastSchoolDayNum(kid); }catch(e){} return Math.floor(Date.now()/86400000); }   // right days = the kid's school days
+function mpDayKey(){ try{ if(typeof gameLogDay==="function") return gameLogDay(); }catch(e){} return new Date().toISOString().slice(0,10).replace(/-/g,""); }
+function _mpPool(kid,items){ try{ return whichPool(items,WHICH_MIX,kid); }catch(e){ return []; } }
+function _mpModes(kid,items){ try{ return whichDeckModes(items,kid); }catch(e){ return {}; } }
+// how often a card was missed or close in its recent drills (who practices first)
+function mpMissCount(kid,id,days){
+  const H=(_mpMD().history||{})[kid]||{}; let n=0;
+  Object.keys(H).sort().slice(-(days||15)).forEach(k=>{ const its=H[k]&&H[k].items; (Array.isArray(its)?its:Object.values(its||{})).forEach(x=>{ if(x&&x.id===id&&(x.result==="m"||x.result==="~")) n++; }); });
+  return n;
+}
+function mpOrder(kid,list){ const c={}; list.forEach(i=>{ c[i.id]=mpMissCount(kid,i.id); }); return list.slice().sort((a,b)=>(c[b.id]-c[a.id])||String((a.gp||{}).since||"").localeCompare(String((b.gp||{}).since||""))); }
+function mpList(kid){ return mpOrder(kid,mpItems(kid).filter(i=>i&&i.gp&&i.gp.on===true)); }
+// today's progress on a list card: {d: school day, need, r: first-tap rights so far}
+function mpToday(it,dn){ const g=(it&&it.gp)||{}; return (g.today&&g.today.d===dn)?Object.assign({},g.today):{d:dn,need:g.need||MP_NEED_FIRST,r:0}; }
+function mpLeftToday(it,dn){ const g=(it&&it.gp)||{}; if(g.on!==true) return 0; if(Array.isArray(g.days)&&g.days.indexOf(dn)>=0) return 0; const t=mpToday(it,dn); return Math.max(0,(t.need|0)-(t.r|0)); }
+function mpTodayList(kid,dn){ dn=dn!=null?dn:mpDayNum(kid); const items=mpItems(kid), ok=new Set(_mpPool(kid,items).map(x=>x.id)); return mpList(kid).filter(i=>ok.has(i.id)&&mpLeftToday(i,dn)>0); }
+// waiting cards take open places (cap 0 = no limit → every waiting card). Returns the cards it changed.
+function mpPromote(kid,items){
+  const c=mpCfg(kid), out=[]; let on=items.filter(i=>i&&i.gp&&i.gp.on===true).length;
+  items.filter(i=>i&&i.gp&&i.gp.wait===true).sort((a,b)=>String(a.gp.since||"").localeCompare(String(b.gp.since||""))).forEach(it=>{
+    if(c.cap&&on>=c.cap) return; it.gp={on:true,since:it.gp.since||mpDayKey(),need:MP_NEED_FIRST,days:[],m:0}; on++; out.push(it); });
+  return out;
+}
+// ── Mom's drill was saved (mastSaveResults' hook). Edits it.gp and adds the card to `touched`, so the save's own
+//    targeted update writes it (like Word Workout's ww). Switch off → nothing at all.
+function mpAfterDrill(kid,items,due,scores,touched){
+  if(!mpOn(kid)||!Array.isArray(items)) return;
+  const c=mpCfg(kid), dk=mpDayKey(); let pool=null;
+  const playable=id=>{ if(!pool) pool=new Set(_mpPool(kid,items).map(x=>x.id)); return pool.has(id); };
+  let on=items.filter(i=>i&&i.gp&&i.gp.on===true).length;
+  const mark=it=>{ if(touched.indexOf(it)<0) touched.push(it); };
+  (due||[]).forEach(d=>{
+    const sc=scores&&scores[d.id]; if(sc!=="m"&&sc!=="~"&&sc!=="c") return;
+    const it=items.find(x=>x&&x.id===d.id); if(!it) return;
+    const g=it.gp||null, missed=sc==="m"||(sc==="~"&&c.close);
+    if(missed){
+      if(g&&(g.on===true||g.wait===true)) return;
+      if(!playable(it.id)) return;   // its deck can't play — it stays in the drill
+      if(c.cap&&on>=c.cap) it.gp={wait:true,since:dk};
+      else { it.gp={on:true,since:dk,need:MP_NEED_FIRST,days:[],m:0}; on++; }
+      mark(it);
+    } else if(sc==="c"&&g&&g.out&&!g.ok){ it.gp=Object.assign({},g,{ok:dk}); mark(it); }   // back from the games and said right: learned
+    else if(sc==="c"&&g&&g.wait===true){ it.gp=null; mark(it); }                          // right while waiting: no longer needs the games
+  });
+  mpPromote(kid,items).forEach(mark);
+}
+// ── the practice round ──
+function _mpShuffle(a,rnd){ rnd=rnd||Math.random; for(let i=a.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+// PURE over its inputs: today's list cards (most-missed first), each followed by a known card from the same decks
+function mpBuildRound(kid,items,dn,rnd){
+  const pool=_mpPool(kid,items), modes=_mpModes(kid,items), inPool=new Set(pool.map(x=>x.id));
+  const list=mpOrder(kid,items.filter(i=>i&&i.gp&&i.gp.on===true&&inPool.has(i.id)&&mpLeftToday(i,dn)>0));
+  const decks=new Set(list.map(i=>i.subject));
+  const known=_mpShuffle(pool.filter(i=>decks.has(i.subject)&&!(i.gp&&i.gp.on===true)&&MP_KNOWN_TIERS.indexOf(i.tier)>=0),rnd).slice(0,Math.max(list.length,2));
+  const q=[];
+  for(let k=0;k<Math.max(list.length,known.length);k++){ if(list[k]) q.push({pid:list[k].id,list:true}); if(known[k]) q.push({pid:known[k].id,list:false}); }
+  return {q,pool,modes,listIds:list.map(i=>i.id)};
+}
+function mpOpen(kid){
+  if(!mpOn(kid)) return false;
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the button tap unlocks the ding / bonk (iPad)
+  const items=mpItems(kid), dn=mpDayNum(kid), R=mpBuildRound(kid,items,dn);
+  mpUI={kid,dn,dk:mpDayKey(),q:R.q,i:0,cur:null,pool:R.pool,modes:R.modes,shows:{},changed:{},out:{},log:[],t0:Date.now(),secs:mpCfg(kid).secs,phase:R.q.length?"play":"done",grow:null,lock:false,saved:false};
+  if(mpUI.phase==="play") mpTurn(mpUI);
+  mpRender(); if(mpUI&&mpUI.phase==="play") mpSay();
+  return true;
+}
+function _mpItem(U,pid){ return mpItems(U.kid).find(x=>x&&x.id===pid)||null; }
+// set up the turn at U.i (skips a card that can't make a fair pick-3 any more)
+function mpTurn(U){
+  while(U.i<U.q.length){
+    const e=U.q[U.i], it=_mpItem(U,e.pid), mode=it?U.modes[it.subject||"Other"]:null;
+    let tiles=null; try{ tiles=(it&&mode)?whichTiles(it,U.pool,null,mode):null; }catch(err){ tiles=null; }
+    if(tiles){ U.cur={pid:e.pid,list:!!e.list,mode,tiles,wrong:{}}; return true; }
+    U.i++;
+  }
+  U.cur=null; return false;
+}
+function mpSay(){ const U=mpUI; if(!U||!U.cur) return; const it=_mpItem(U,U.cur.pid); try{ if(it&&it.prompt&&!(U.cur.mode==="answer"&&typeof whichSilent==="function"&&whichSilent(it))) mastSpeak(_matchPlain(it.prompt)); }catch(e){} }
+// a list card's tap: first-tap right counts toward today; a wrong tap starts its right days over
+function mpNote(U,pid,first){
+  const it=_mpItem(U,pid); if(!it||!it.gp||it.gp.on!==true) return;
+  const g=Object.assign({},it.gp); g.days=Array.isArray(g.days)?g.days.slice():[];
+  const t=mpToday(it,U.dn);
+  if(first) t.r=(t.r|0)+1;
+  else { g.days=[]; g.need=MP_NEED_FIRST; g.m=(g.m|0)+1; t.need=MP_NEED_FIRST; t.r=0; }
+  g.today=t;
+  if(t.r>=t.need&&g.days.indexOf(U.dn)<0){
+    g.days.push(U.dn); g.need=MP_NEED_LATER;
+    if(g.days.length>=MP_DAYS){ g.on=false; g.out=U.dk; delete g.today; it.next_due=U.dn; U.out[pid]=1; }   // learned in the games → Mom's next drill
+  }
+  it.gp=g; U.changed[pid]=1;
+  U.shows[pid]=(U.shows[pid]|0)+1;
+  if(g.on===true&&mpLeftToday(it,U.dn)>0&&U.shows[pid]<MP_MAX_SHOWS) U.q.splice(Math.min(U.q.length,U.i+3),0,{pid,list:true});   // comes back later, other cards between
+}
+function mpTap(ti){
+  const U=mpUI; if(!U||U.phase!=="play"||U.lock||!U.cur) return;
+  const c=U.cur, pid=c.tiles[ti]; if(pid==null||c.wrong[pid]) return;
+  if(pid!==c.pid){ c.wrong[pid]=1; try{ matchBonk(); }catch(e){} mpRender(); mpSay(); return; }
+  const n=Object.keys(c.wrong).length+1, first=n===1;
+  const o={id:String(c.pid),ok:first,n}; if(c.list) o.list=true; U.log.push(o);
+  if(c.list) mpNote(U,c.pid,first);
+  try{ matchDing(); }catch(e){}
+  U.grow=ti; U.lock=true; mpRender();
+  const at=U.i; setTimeout(()=>{ if(mpUI===U&&U.lock&&U.i===at) mpNext(); },900);
+}
+function mpNext(){
+  const U=mpUI; if(!U||U.phase!=="play") return;
+  U.grow=null; U.lock=false; U.i++;
+  const over=U.secs>0&&(Date.now()-U.t0)/1000>=U.secs;   // her time limit (none unless Mom sets one)
+  if(over||!mpTurn(U)){ mpFinish(U); mpRender(); return; }
+  mpRender(); mpSay();
+}
+// the round's ONE save: the cards it changed (+ next_due for a card going back to Mom) and the round's log
+function mpFinish(U){
+  if(!U||U.saved) return null; U.saved=true; U.phase="done";
+  const kid=U.kid, items=mpItems(kid), upd={};
+  const promoted=Object.keys(U.out).length?mpPromote(kid,items):[];
+  const touched=Object.keys(U.changed).map(pid=>_mpItem(U,pid)).filter(Boolean).concat(promoted);
+  touched.forEach(it=>{ const k=mpKey(kid,it); if(k==null) return; upd[k+"/gp"]=it.gp||null; if(U.out[it.id]) upd[k+"/next_due"]=it.next_due; });
+  const now=Date.now(), entry=U.log.length?{game:"practice",deck:"practice",at:now,secs:Math.max(0,Math.round((now-U.t0)/1000)),items:U.log.slice()}:null;
+  if(entry){ try{ const G=_mpMD().gameLog||(_mpMD().gameLog={}), K=G[kid]||(G[kid]={}), D=K[U.dk]||(K[U.dk]={}); D["local_"+now]=entry; }catch(e){} }
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){
+    try{ if(Object.keys(upd).length) db.ref("mastery/"+kid).update(upd); }catch(e){}
+    try{ if(entry) db.ref("mastery/gameLog/"+kid+"/"+U.dk).push(entry); }catch(e){}   // append-only, GAMELOG's path
+  }
+  try{ HA_LS.setItem("ha_mastery",JSON.stringify(_mpMD())); }catch(e){}
+  return {upd,entry};
+}
+function mpClose(){ const U=mpUI; if(U&&U.phase==="play"&&U.log.length) mpFinish(U); mpUI=null; const ov=(typeof document!=="undefined")&&document.getElementById("mp-panel"); if(ov) ov.remove(); try{ if(typeof renderAll==="function") renderAll(); }catch(e){} }
+function mpRender(){
+  if(typeof document==="undefined") return;
+  const U=mpUI; if(!U){ const o=document.getElementById("mp-panel"); if(o) o.remove(); return; }
+  const E=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  const nm=(typeof cap==="function")?cap(U.kid):U.kid, color="#7c3aed";
+  let ov=document.getElementById("mp-panel");
+  if(!ov){ ov=document.createElement("div"); ov.id="mp-panel"; ov.style.cssText="position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:20px 12px"; document.body.appendChild(ov); }
+  let h='<style>#mp-panel .mp-tile{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:20px;border:3px solid #e2ddd6;background:#fff;cursor:pointer;overflow:hidden;transition:transform .25s,opacity .2s;-webkit-tap-highlight-color:transparent}'+
+    '#mp-panel .mp-tile .mp-vis{transform:scale(1.15);pointer-events:none}@media(min-width:560px){#mp-panel .mp-tile .mp-vis{transform:scale(1.6)}}'+
+    '#mp-panel .mp-tile .mp-ans{padding:6px;text-align:center;font-weight:800;color:#292524;font-family:\'Fraunces\',serif;line-height:1.1;overflow-wrap:anywhere;pointer-events:none}'+
+    '#mp-panel .mp-wrong{opacity:.28;filter:grayscale(1);cursor:default}#mp-panel .mp-grow{transform:scale(1.12);border-color:#16a34a;background:#f0fdf4;box-shadow:0 0 0 5px #bbf7d0}</style>';
+  h+='<div style="background:#fff;border-radius:22px;max-width:560px;width:100%;padding:16px 18px 20px;box-shadow:0 10px 40px rgba(0,0,0,.25);font-family:\'DM Sans\',sans-serif">';
+  h+='<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-family:\'Fraunces\',serif;font-size:21px;font-weight:800;color:'+color+'">\u{1F3AE} '+E(nm)+'’s practice</div><button onclick="mpClose()" aria-label="Close" style="padding:6px 12px;border-radius:12px;border:1.5px solid #cbd5e1;background:#fff;color:#475569;font-size:14px;font-weight:800;cursor:pointer">✕</button></div>';
+  if(U.phase==="play"&&U.cur){
+    const c=U.cur, items=mpItems(U.kid), it=_mpItem(U,c.pid), ans=c.mode==="answer", wrongNow=Object.keys(c.wrong).length>0;
+    const left=U.q.length-U.i;
+    h+='<div style="font-size:12.5px;color:#64748b;font-weight:700;margin:2px 0 10px">'+left+' to go</div>';
+    if(ans){
+      const fr=_matchPlain(it&&it.prompt), mute=(typeof whichSilent==="function")&&whichSilent(it);
+      h+='<div style="display:flex;align-items:center;justify-content:center;gap:14px;margin:6px 0 8px;flex-wrap:wrap"><div style="font-family:\'Fraunces\',serif;font-size:'+(fr.length<=8?'48px':fr.length<=18?'36px':'26px')+';font-weight:800;color:#292524;text-align:center;line-height:1.1">'+E(fr)+'</div>'+(mute?'':'<button onclick="mpSay()" aria-label="Hear it again" style="width:60px;height:60px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:28px;cursor:pointer">\u{1F50A}</button>')+'</div>';
+      h+='<div style="text-align:center;font-size:17px;font-weight:800;color:#57534e;margin-bottom:12px">'+(wrongNow?'Almost — try again!':'Tap the answer!')+'</div>';
+    } else {
+      h+='<div style="display:flex;justify-content:center;margin:4px 0 6px"><button onclick="mpSay()" aria-label="Hear it again" style="width:104px;height:104px;border-radius:50%;border:4px solid '+color+';background:#fff;color:'+color+';font-size:50px;cursor:pointer">\u{1F50A}</button></div>';
+      h+='<div style="text-align:center;font-size:17px;font-weight:800;color:#57534e;margin-bottom:12px">'+(wrongNow?'Almost — listen again!':'Tap the one you hear!')+'</div>';
+    }
+    h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">';
+    c.tiles.forEach((pid,ti)=>{ const t=items.find(x=>x&&x.id===pid), cls='mp-tile'+(c.wrong[pid]?' mp-wrong':'')+(U.grow===ti?' mp-grow':'');
+      if(ans){ const bk=(typeof _whichBack==="function")?_whichBack(t):String((t&&t.answer)||""); h+='<div class="'+cls+'" role="button" aria-label="Answer '+(ti+1)+'" onclick="mpTap('+ti+')"><span class="mp-ans" style="font-size:'+(bk.length<=3?'clamp(28px,8vw,54px)':bk.length<=7?'clamp(20px,5.5vw,36px)':'clamp(14px,4vw,24px)')+'">'+E(bk)+'</span></div>'; }
+      else h+='<div class="'+cls+'" role="button" aria-label="Picture '+(ti+1)+'" onclick="mpTap('+ti+')"><span class="mp-vis">'+((typeof _smTileVis==="function"&&_smTileVis(t))||'')+'</span></div>'; });
+    h+='</div>';
+  } else {
+    // the end: each list card and where it stands
+    const ids=[], seen={}; U.log.forEach(x=>{ if(x.list&&!seen[x.id]){ seen[x.id]=1; ids.push(x.id); } });
+    if(!U.log.length) h+='<div style="padding:18px 0;text-align:center;font-size:16px;font-weight:800;color:#15803d">Nothing to practice right now — great job! \u{1F31F}</div>';
+    else {
+      h+='<div style="padding:10px 0 4px;text-align:center;font-size:20px;font-weight:800;color:#15803d">\u{1F389} Great practicing!</div>';
+      ids.forEach(id=>{ const it=_mpItem(U,id), g=(it&&it.gp)||{}, nd=Array.isArray(g.days)?g.days.length:0;
+        const line=U.out[id]?'\u{1F3C6} Ready to show Mom!':(Array.isArray(g.days)&&g.days.indexOf(U.dn)>=0)?'⭐ Got it today · '+nd+' of '+MP_DAYS+' days':'\u{1F4AA} Keep practicing';
+        h+='<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-top:1px solid #f1f5f9"><div style="width:52px;height:52px;flex:none;display:flex;align-items:center;justify-content:center;border:2px solid #e2ddd6;border-radius:12px;overflow:hidden">'+((typeof _smTileVis==="function"&&it&&_smTileVis(it))||E(_matchPlain(it&&it.prompt)))+'</div><div style="font-size:15px;font-weight:800;color:#334155">'+line+'</div></div>'; });
+    }
+    h+='<div style="display:flex;justify-content:center;margin-top:14px"><button onclick="mpClose()" style="min-height:48px;padding:0 26px;border-radius:14px;border:none;background:'+color+';color:#fff;font-size:16px;font-weight:800;cursor:pointer">All done</button></div>';
+  }
+  ov.innerHTML=h+'</div>';
+}
+// ── the kid's Day page: "🎮 Practice · N cards" (today, switch on, something still needs practice today) ──
+function mpDayChipHtml(kid,day){
+  try{
+    if(!kid||kid==="all"||kid==="mom"||!mpOn(kid)) return "";
+    if(typeof _todayDay!=="undefined"&&day!==_todayDay) return "";
+    if(typeof kidOffOwnDay==="function"&&kidOffOwnDay(kid,day)) return "";
+    const n=mpTodayList(kid).length; if(!n) return "";
+    return '<div class="mp-day-chip" style="margin:0 0 10px"><button onclick="mpOpen(\''+kid+'\')" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:999px;border:1.5px solid #ddd6fe;background:#f5f3ff;color:#5b21b6;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F3AE} Practice · '+n+' card'+(n===1?'':'s')+'</button></div>';
+  }catch(e){ return ""; }
+}
+// ── Mom HQ ▸ ⚙ Rules: the switches (saved right away, one field each) ──
+function mpCanEdit(){ return (typeof momHere==="function"&&momHere())||(typeof mastAdminPinOk!=="undefined"&&!!mastAdminPinOk); }
+function mpSet(kid,field,val){
+  if(!kid||["on","cap","secs","close"].indexOf(field)<0||!mpCanEdit()) return false;
+  if(field==="on"||field==="close") val=!!val; else val=Math.max(0,Math.min(field==="secs"?3600:99,val|0));
+  const md=_mpMD(), s=md[kid+"_settings"]||(md[kid+"_settings"]={}), m=(s.missPlay&&typeof s.missPlay==="object")?s.missPlay:(s.missPlay={});
+  m[field]=val;
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){ try{ db.ref("mastery/"+kid+"_settings/missPlay/"+field).set(val); }catch(e){} }
+  try{ HA_LS.setItem("ha_mastery",JSON.stringify(md)); }catch(e){}
+  try{ if(typeof renderAll==="function") renderAll(); }catch(e){}
+  return true;
+}
+function mpSettingsHtml(kid){
+  const c=mpCfg(kid), nm=(typeof cap==="function")?cap(kid):kid, L=mpList(kid), E=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
+  const tg=(field,on)=>'<button class="mast-admin-toggle'+(on?' on':'')+'" onclick="mpSet(\''+kid+'\',\''+field+'\','+(on?'false':'true')+')" style="width:36px;height:20px;flex-shrink:0"></button>';
+  const step=(field,val,unit,by)=>'<div class="mast-admin-stepper"><button onclick="mpSet(\''+kid+'\',\''+field+'\','+Math.max(0,val-by)+')"'+(val<=0?' disabled':'')+'>−</button><span class="val">'+(val?(field==="secs"?Math.round(val/60)+' min':val):'No limit')+'</span><button onclick="mpSet(\''+kid+'\',\''+field+'\','+(val+by)+')">+</button></div>';
+  let h='<div class="mast-admin-section"><div class="mast-admin-hdr">\u{1F3AE} Missed-card games</div><div class="mast-admin-card">';
+  h+='<div class="mast-admin-desc" style="margin-bottom:8px">A card '+E(nm)+' misses in the drill leaves the drill and goes to the games (the \u{1F3AE} Practice button on '+E(nm)+'’s day). Right on the first tap on '+MP_DAYS+' different days, it comes back to the drill for you to hear '+E(nm)+' say it. Saves right away.</div>';
+  h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0">'+tg("on",c.on)+'<div style="flex:1"><div class="mast-admin-label">Missed cards go to the games</div><div class="mast-admin-desc">'+(c.on?'On':'Off — the drill works as it always has')+'</div></div></div>';
+  if(c.on){
+    h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0">'+tg("close",c.close)+'<div style="flex:1"><div class="mast-admin-label">Close (~) cards go too</div><div class="mast-admin-desc">'+(c.close?'Close counts as a miss here':'Only ✗ cards go')+'</div></div></div>';
+    h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0"><div style="flex:1"><div class="mast-admin-label">Cards on the list at once</div><div class="mast-admin-desc">More misses wait in the drill until a place opens</div></div>'+step("cap",c.cap,"",1)+'</div>';
+    h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0"><div style="flex:1"><div class="mast-admin-label">Practice round time</div><div class="mast-admin-desc">The round ends kindly at the time; the rest carry to tomorrow</div></div>'+step("secs",c.secs,"",60)+'</div>';
+    h+='<div class="mast-admin-desc" style="margin-top:6px">'+(L.length?'On the list now ('+L.length+'): '+L.map(i=>E((typeof _matchPlain==="function")?_matchPlain(i.prompt):i.prompt)).join(' · '):'Nothing on the list right now.')+'</div>';
+  }
+  return h+'</div></div>';
+}
+// MISSPLAY_END
+
 // GAMEKID_START — each kid keeps their own game round (her words 2026-10-23: "Match, Memory, Which one? and the
 // Sprint deck keep their round per kid, pause when I switch away, resume when I switch back, and save to the right
 // kid"). Live incident 2026-10-23: switching Ellis → Lucy left Ellis's Match tiles on Lucy's screen, Which one? showed
@@ -69590,7 +69844,7 @@ function mastDueItems(kid,pn){
   // 📚 Study sessions own their decks' cards below the mix-in rung — those are reviewed in the
   // session, never in this drill (mstOwnedIds; empty Set when the kid has no sessions).
   const _owned=(typeof mstOwnedIds==="function")?mstOwnedIds(kid):null;
-  const due=items.filter(i=>mastIsDue(i,pn)&&!mastIsNeverDrill(i)&&!mastIsParked(i)&&!(_owned&&_owned.has(i.id)));  // R5: never-drill items never assemble; parked issue-words are held out
+  const due=items.filter(i=>mastIsDue(i,pn)&&!mastIsNeverDrill(i)&&!mastIsParked(i)&&!(_owned&&_owned.has(i.id))&&!(typeof mpHeld==="function"&&mpHeld(kid,i)));  // R5: never-drill items never assemble; parked issue-words are held out
   due.sort((a,b)=>MAST_TIER_ORDER.indexOf(a.tier||"daily")-MAST_TIER_ORDER.indexOf(b.tier||"daily"));
   const _env=(typeof envDrillSplit==="function")?envDrillSplit(kid,due):null, _envJ=l=>(_env&&typeof envDrillJoin==="function")?envDrillJoin(_env,l,(typeof cplnDrillMax==="function")?cplnDrillMax(kid,ENV_DRILL_MAX):undefined):l;   // 🌿 ENVDRILLFIRST: his Envirothon cards leave the pool before the guards and go back on the front   // 🌿 CPLINCOLN: Lincoln's ceiling is his class's Reviews a sitting (0 = no ceiling)
   const _mk=masteryKid; masteryKid=kid; const settings=mastDrillSettings(); masteryKid=_mk;
@@ -70093,6 +70347,7 @@ function mastSaveResults(){
   const touched=_applied.touched, minted=_applied.minted;
   if(_jset.auto_pull){ try{ mastGateStart(masteryKid,items,minted,_jset); }catch(e){} }   // GATESTART
   try{ if(typeof wwAfterDrill==="function") wwAfterDrill(masteryKid,items,due,mastLogScores,touched); }catch(e){}   // 🏋️ WORDWORKOUT
+  try{ if(typeof mpAfterDrill==="function") mpAfterDrill(masteryKid,items,due,mastLogScores,touched); }catch(e){}   // 🎮 MISSPLAY: misses join the practice list
   let changes=_applied.changes;
 
   const hasShown=Object.values(mastLogScores).some(v=>v==="shown");
@@ -70166,6 +70421,7 @@ function mastSaveResults(){
       upd[ix+"/dynFromTier"]=it.dynamic?(it.dynFromTier||null):null;
       upd[ix+"/dynAddedAt"]=it.dynamic?(it.dynAddedAt||null):null;
       if(it.ww) upd[ix+"/ww"]=it.ww;   // 🏋️ WORDWORKOUT: miss days / right days
+      if(it.gp!==undefined) upd[ix+"/gp"]=it.gp||null;   // 🎮 MISSPLAY: the practice list
     });
     // Freshly auto-pulled cards don't exist in Firebase yet — write them whole.
     minted.forEach(it=>{ const ix=items.indexOf(it); if(ix>=0) upd[ix]=it; });
@@ -70354,6 +70610,7 @@ function mastSprintPool(kid,opts){
   const active=Array.isArray(opts.activeSubjects)?opts.activeSubjects:null;
   return items.filter(it=>{
     if(!it||it.status==="introduction"||it.status==="parked") return false;
+    if(typeof mpHeld==="function"&&mpHeld(kid,it)) return false;   // 🎮 MISSPLAY: on the practice list
     if(it.dir==="prod") return false;   // ↔ 🇬🇧→🇩🇪 twins aren't sprint facts
     if(deck&&it.subject!==deck) return false;
     if(active&&!active.includes(it.subject)) return false;
@@ -78004,6 +78261,7 @@ function _mhqRenderRules(kid){
     if(!mastAdminLocal) mastAdminInit();
     h+='<div style="font-size:12px;color:var(--muted);margin-bottom:10px">These are '+mhqEsc((typeof cap==="function")?cap(kid):kid)+'\u2019s defaults. A deck or a study session can override some of them \u2014 the Control panel shows which.</div>';
     h+=mastAdminRulesHtml();
+    if(typeof mpSettingsHtml==="function") h+=mpSettingsHtml(kid);   // 🎮 MISSPLAY: the practice list's switches
   }catch(e){ h+='<div style="padding:20px;color:var(--muted)">Couldn\u2019t draw the rules.</div>'; }
   masteryKid=_mk;
   return h;
