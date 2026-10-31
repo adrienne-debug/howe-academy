@@ -64,6 +64,8 @@ function solve(c){
   pids.forEach(pid=>{ const ix=[]; st.tiles.forEach((t,i)=>{ if(t.pid===pid&&!t.matched) ix.push(i); }); c.mastMatchTap(ix[0]); c.mastMatchTap(ix[1]); });
 }
 const keysOf=o=>Object.keys(o||{});
+// 🎮 GAMELOG (2026-10-31): a finished Which one? round also pushes mastery/gameLog/<kid>/<day>; the best/Scores checks below look past it
+const noGL=c=>c.L.dbWrites.filter(w=>w[0].indexOf("mastery/gameLog/")!==0);
 const writesUnder=(c,kid)=>c.L.dbWrites.filter(w=>w[0].indexOf("/"+kid)>=0||w[0].indexOf(kid+"_")>=0);
 
 console.log("Match (face-up): Ellis's round is kept, paused, resumed, saved to Ellis");
@@ -219,9 +221,10 @@ console.log("Which one?: per kid, resume settles the pending turn, saves to its 
   // Finish on Ellis's screen state (kid changed without render) → still Lucy's.
   c.masteryKid="ellis";
   while(st.phase==="play"){ const t=st.turns[st.i]; c.whichTap(t.tiles.indexOf(t.pid)); flush(c); }
-  ok("Which one? best under Lucy only",c.L.dbWrites.length===1&&c.L.dbWrites[0][0]==="mastery/lucy_settings/match_best"&&keysOf(c.L.dbWrites[0][2])[0]==="Animals · which",c.L.dbWrites);
+  ok("Which one? best under Lucy only",noGL(c).length===1&&noGL(c)[0][0]==="mastery/lucy_settings/match_best"&&keysOf(noGL(c)[0][2])[0]==="Animals · which",c.L.dbWrites);
+  ok("Which one? round log under Lucy only (GAMELOG)",c.L.dbWrites.filter(w=>w[0].indexOf("mastery/gameLog/")===0).every(w=>w[0].indexOf("mastery/gameLog/lucy/")===0)&&c.L.dbWrites.some(w=>w[0].indexOf("mastery/gameLog/lucy/")===0),c.L.dbWrites.map(w=>w[0]));
   c.whichLogResult();
-  ok("Save to Scores → matchLog/lucy",c.L.dbWrites[1][0]==="mastery/matchLog/lucy"&&c.masteryData.matchLog.lucy[0].game==="which"&&!c.masteryData.matchLog.ellis);
+  ok("Save to Scores → matchLog/lucy",noGL(c)[1][0]==="mastery/matchLog/lucy"&&c.masteryData.matchLog.lucy[0].game==="which"&&!c.masteryData.matchLog.ellis);
   ok("celebration named Lucy",c.L.celebrated.every(x=>x[0]==="lucy"));
 }
 
@@ -235,7 +238,7 @@ console.log("Which one?: a round that ends on the settled turn finishes on retur
   c.mastSetKid("ellis"); flush(c);
   ok("not finished while parked",st.phase==="play"&&c.L.dbWrites.length===0);
   c.mastSetKid("lucy");
-  ok("finished on return, written under Lucy",st.phase==="done"&&c.L.dbWrites.length===1&&c.L.dbWrites[0][0]==="mastery/lucy_settings/match_best",c.L.dbWrites);
+  ok("finished on return, written under Lucy",st.phase==="done"&&noGL(c).length===1&&noGL(c)[0][0]==="mastery/lucy_settings/match_best"&&c.L.dbWrites.filter(w=>w[0].indexOf("mastery/gameLog/")===0).every(w=>w[0].indexOf("mastery/gameLog/lucy/")===0),c.L.dbWrites);
 }
 
 console.log("Sprint ▸ From drill items: the deck choice is per kid");

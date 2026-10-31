@@ -68915,7 +68915,7 @@ function whichStart(deck){
   }
   const turns=[];
   picks.forEach(it=>{ const mode=modes[it.subject||"Other"], tiles=whichTiles(it,pool,null,mode); if(tiles) turns.push({pid:it.id,mode:mode,back:false,tiles:tiles,wrong:{},done:false,first:false}); });
-  whichState={kid:masteryKid,deck:deck,mix:mix,turns:turns,i:0,grow:null,lock:false,phase:turns.length?"play":"done",first:0,of:turns.length,isPB:false,prevBest:null,logged:false,returned:{}};
+  whichState={kid:masteryKid,deck:deck,mix:mix,t0:Date.now(),turns:turns,i:0,grow:null,lock:false,phase:turns.length?"play":"done",first:0,of:turns.length,isPB:false,prevBest:null,logged:false,returned:{}};
   _mastRe();
   _whichSay(whichState);   // the first name, inside the tap
 }
@@ -68960,6 +68960,7 @@ function whichBestKey(deck){ return deck+" \u{00B7} which"; }
 function whichFinish(st){
   st.phase="done";
   const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every card's first-tap result
   const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
   if(!s.match_best) s.match_best={};
   const key=whichBestKey(st.deck), prev=s.match_best[key];
@@ -69065,6 +69066,46 @@ function buildWhichHtml(color){
   return h;
 }
 // WHICHONE_END
+
+// GAMELOG_START — 🎮 games save each card's result (slice 1 of DESIGN_missed_card_games_2026-10-31.md; her "Start slice 1",
+// 2026-10-31). Her plan: a card missed in the drill goes to the games to be learned ("let's have fun with the ones we missed"),
+// so the games must remember how each card went. Which one? already knew it inside a round (each turn's `first`) but kept
+// only the best score; a whole round was forgotten unless someone tapped "Save to Scores".
+// Now every FINISHED Which one? round appends one entry, by itself, no tap:
+//   mastery/gameLog/<kid>/<yyyymmdd>/<push id> = {game:"which", deck, at, secs, items:[{id, ok, n, back?}]}
+//     ok   = right on the first tap · n = taps it took · back = the turn where a missed card came back at the end
+// Inert for the ladder: no tier, no next_due, no drill history, no study log. It lives OUTSIDE studyLog on purpose, so
+// Scores, the weekly report and sprint readiness (scHistoryFor merges every studyLog sid) never count a tap-the-picture
+// as a drill answer. A round dropped mid-way (Change deck, switching kids) writes nothing. Append-only push, never a
+// whole-node set; db && !_dryRun() only; the round's own kid (GAMEKID). Nothing reads it yet — slices 2–3 will.
+function gameLogDay(){ try{ if(typeof mstTodayKey==="function") return mstTodayKey(); }catch(e){} return new Date().toISOString().slice(0,10).replace(/-/g,""); }   // the drill's day key
+// PURE: a finished Which one? round → its log entry (null when there is nothing to save)
+function gameLogEntry(st,now){
+  if(!st||st.phase!=="done"||!Array.isArray(st.turns)) return null;
+  const items=[];
+  st.turns.forEach(t=>{ if(!t||!t.done||t.pid==null) return;
+    const o={id:String(t.pid),ok:!!t.first,n:Object.keys(t.wrong||{}).length+1}; if(t.back) o.back=true; items.push(o); });
+  if(!items.length) return null;
+  now=now!=null?now:Date.now();
+  const e={game:"which",deck:String(st.deck||""),at:now,items:items};
+  if(st.t0) e.secs=Math.max(0,Math.round((now-st.t0)/1000));
+  return e;
+}
+function gameLogRound(st){
+  if(!st||st.gameLogged) return null;
+  const e=gameLogEntry(st); if(!e) return null;
+  st.gameLogged=true;
+  const kid=st.kid||masteryKid, day=gameLogDay();
+  try{
+    const G=masteryData.gameLog||(masteryData.gameLog={}), K=G[kid]||(G[kid]={}), D=K[day]||(K[day]={});
+    D["local_"+e.at]=e;   // this device's copy until the listener brings the pushed one
+  }catch(err){}
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){
+    try{ db.ref("mastery/gameLog/"+kid+"/"+day).push(e); }catch(err){}   // append-only push — never a whole-node set
+  }
+  return e;
+}
+// GAMELOG_END
 
 // GAMEKID_START — each kid keeps their own game round (her words 2026-10-23: "Match, Memory, Which one? and the
 // Sprint deck keep their round per kid, pause when I switch away, resume when I switch back, and save to the right
