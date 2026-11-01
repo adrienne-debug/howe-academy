@@ -156,4 +156,19 @@ ok("… the 📥 Import panel and sweep checkbox stay", rk.includes("panImportTo
 ok("🍽 Eaten log sits right under 🗓 This week's dinners, above 📚 Meal library", rk.indexOf("h+=panEatLogHTML();")>rk.indexOf("This week\\'s ") && rk.indexOf("h+=panEatLogHTML();")<rk.indexOf("📚 Meal library"));
 ok("panToggleManage / panChip still defined (nothing else breaks)", src.includes("function panToggleManage(") && src.includes("function panChip("));
 
+console.log("── C3 · Dad's Day ──");
+ctx.kitPlanFor=d=>{ const p=ctx.kitPlan[d]; if(!p) return null; if(p.mid) return {mid:p.mid,meal:ctx.kitMeals[p.mid]||null}; if(p.txt) return {txt:p.txt}; return null; };
+R(`kitPlan={"2026-11-01":{mid:"m1",eaten:1},"2026-11-03":{mid:"m3"},"2026-11-04":{txt:"Leftovers"},"2026-11-05":{mid:"gone"},"2026-11-06":{mid:"m2",skipped:1}}; panQ=""; panOpenSt={}`);
+const D=R("panDadCardHTML()");
+const wk=[...D.matchAll(/data-dad-dinner="([\d-]+)"/g)].map(m=>m[1]);
+ok("🗓 This week's dinners: 7 rows from tonight", wk.length===7 && wk[0]==="2026-11-01" && wk[6]==="2026-11-07", wk);
+ok("rows: weekday · emoji · name, ✓ eaten / ✗ skipped", /Tonight 11\/1[^]*?🌮 <b>Tacos<\/b>[^]*?✓ eaten/.test(D) && /Tue 11\/3[^]*?<b>Soup night<\/b>/.test(D) && /<b>Leftovers<\/b>/.test(D) && /Fri 11\/6[^]*?✗ skipped/.test(D));
+ok("a removed meal or an empty day stays quiet", /Thu 11\/5[^]*?>—</.test(D) && /Mon 11\/2[^]*?not planned/.test(D));
+ok("read-only: no ✓ We ate it button, no pickers (tonight's card already has it)", D.indexOf("🥫</span> What's in the house")>0 && !/onclick=/.test(D.slice(0,D.indexOf("🥫</span> What's in the house"))));
+ok("🥫 What's in the house card, list read-only, every place closed", D.includes("What's in the house") && D.includes('data-pan-key="d:pantry"') && !D.includes('id="pan-new"') && !/data-pan-sec="[a-z]+"[^>]*? open /.test(D));
+const dd=fn("renderDadsDay");
+ok("Dad's Day draws it right after tonight's dinner card, inside the 🍽 Dinner section (no new jump pill)",
+  dd.indexOf("panDadCardHTML()")>dd.indexOf("mdCardDinner(iso)") && dd.indexOf("panDadCardHTML()")<dd.indexOf("_ss('bills'") && dd.indexOf("panDadCardHTML()")>dd.indexOf("_ss('dinner'"));
+ok("…wrapped in try so a kitchen hiccup never blanks his page", /try\{ h\+='<div style="margin:10px 12px 0">'\+panDadCardHTML\(\)\+'<\/div>'; \}catch\(e\)\{\}/.test(dd));
+
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail?1:0);
