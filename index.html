@@ -21623,6 +21623,157 @@ function panQtyEdit(id){
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
 
+/* PAN_LIST — 🥫 "What's in the house": the pantry as a clean list, one place at a time. Her ask 2026-11-01: "Dad needs to
+   see all the food items to see what he can eat or cook. Change how it looks — it's really messy. Easy to look at,
+   alphabetical in each category. Still connected to recipes that say if we ate it or not … know what's in the freezer
+   without opening the doors." Replaces the chip cloud on the Meals tab's 🥫 card; Dad's Day shows it read-only.
+   Same kitchen/pantry data, no new paths — a tap writes only through the old pantry functions (grPanSet, panDel,
+   panToggleRegular, grFromPantry, grPutDate). 40-odd spice jars fold into their own 🧂 group inside 🥫 Pantry. */
+const PAN_SPICE_RE=/\b(?:salt|pepper|seasonings?|paprika|cumin|turmeric|cinnamon|nutmeg|cloves?|allspice|cardamom|pumpkin pie spice|coriander|fennel|celery seed|dill(?! pickle)|sesame seeds?|ground mustard|oregano|dried basil|bay leaf|bay leaves|thyme|marjoram|saffron|mrs\.? dash|rubs?|creole|cajun|everything bagel|(?:garlic|onion|chili|curry) powder|dried herbs?|ground ginger|spices?)\b|\bbasil \(dried|\bginger \(ground/i;
+let panQ="";          // 🔎 the search box (this device, this visit)
+let panOpenSt={};     // a place she opened or closed stays that way across repaints: {"m:fridge":false,"d:pantry":true} (m = Meals tab, d = Dad's Day)
+let _panFilterTs=0;
+function panIsSpice(name){ return PAN_SPICE_RE.test(String(name||"")); }
+// 🍽 which pantry items a planned meal in the next 7 days uses → {pid:"Tue"} (the first day). Same reading as grWeekNeeds:
+// a meal's `uses` list, else its ingredient lines; dinners already ✓ eaten / ✗ skipped don't count.
+function panMealNames(m){
+  return (Array.isArray(m.uses)&&m.uses.length)?m.uses.map(u=>u&&u.name).filter(Boolean)
+    :String(m.ing||"").split("\n").reduce((a,l)=>a.concat(l.split(/\s\+\s/)),[]).map(l=>grIngParse(l)).filter(x=>x&&x.name).map(x=>x.name);
+}
+function panUsedByMap(){
+  const out={}, from=_todayStr();
+  for(let i=0;i<7;i++){
+    const iso=kitIsoPlus(from,i); let p=(typeof kitPlanRec==='function')?kitPlanRec(iso):kitPlan[iso]; if(typeof kitOutStrip==='function') p=kitOutStrip(iso,p); if(!p) continue;
+    const lbl=i===0?"Today":gwParseDate(iso).toLocaleDateString("en-US",{weekday:"short"});
+    const mids=[]; if(p.mid&&!p.eaten&&!p.skipped) mids.push(p.mid); ["b","l","s"].forEach(sl=>{ const v=p[sl]; if(v&&v.parts&&typeof kitSlotsMids==="function"){ kitSlotsMids(v).forEach(m=>mids.push(m)); return; } if(v&&v.mid) mids.push(v.mid); });
+    mids.forEach(mid=>{ const m=kitMeals[mid]; if(!m) return;
+      panMealNames(m).forEach(n=>{ if(typeof grIsBasic==="function"&&grIsBasic(n)) return; const f=grPanFind(n); if(f&&f.pid&&!out[f.pid]) out[f.pid]=lbl; }); });
+  }
+  return out;
+}
+function panRowHTML(id,ro,used,q){
+  const it=kitPantry[id], nm=String(it.name||""), st=panStatus(it);
+  const dot=st==="gone"?"#dc2626":(st==="aging"?"#eab308":"#22c55e");
+  const hit=!q||nm.toLowerCase().indexOf(q)>=0;
+  return '<div data-pan-name="'+esc(nm.toLowerCase())+'" onclick="panRowSheet(\''+id+'\''+(ro?',1':'')+')" style="display:'+(hit?'flex':'none')+';align-items:center;gap:8px;padding:8px 2px;border-bottom:1px solid #f3ede6;cursor:pointer">'
+    +'<span style="flex:1;min-width:0;font-size:13px;font-weight:700;color:#1f2937">'+esc(nm)
+    +(typeof it.qty==="number"?(it.qty===0?' <span style="font-size:11px;font-weight:800;color:#b91c1c">out</span>':' <span style="font-size:12px;font-weight:600;color:#9a8f84">×'+it.qty+'</span>'):'')+'</span>'
+    +(used&&used[id]?'<span style="flex:none;font-size:10.5px;font-weight:800;color:#c2410c;background:#fff7ed;border:1px solid #fed7aa;border-radius:999px;padding:1px 7px;white-space:nowrap">🍽 '+esc(used[id])+'</span>':'')
+    +(!ro&&panIsRegular(nm)?'<span title="a regular — on the staples check" style="flex:none;font-size:12px">⭐</span>':'')
+    +'<span title="'+(st==="gone"?'may be old — check it':(st==="aging"?'getting older':'fresh'))+'" style="flex:none;width:9px;height:9px;border-radius:50%;background:'+dot+'"></span></div>';
+}
+function panSecOpen(key,dflt){ return (key in panOpenSt)?!!panOpenSt[key]:!!dflt; }
+function panSecToggle(key,open){ if(panQ||Date.now()-_panFilterTs<400) return; panOpenSt[key]=!!open; }   // a search opens places for her — that isn't her choice
+function panSecHTML(key,dflt,label,ids,ro,used,q,inner,nested){
+  const gone=ids.filter(id=>panStatus(kitPantry[id])==="gone").length;
+  const hits=!q||ids.some(id=>String(kitPantry[id].name||"").toLowerCase().indexOf(q)>=0);
+  return '<details data-pan-sec="'+key.slice(2)+'" data-pan-key="'+key+'" data-pan-dflt="'+(dflt?1:0)+'"'+((q?hits:panSecOpen(key,dflt))?' open':'')+' ontoggle="panSecToggle(\''+key+'\',this.open)" style="'+(q&&!hits?'display:none;':'')
+    +(nested?'margin:6px 0 2px;border-top:1px dashed #e6dccf':'border:1.5px solid #ece4da;border-radius:10px;margin-bottom:7px;background:#fffdfa')+'">'
+    +'<summary style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:'+(nested?'8px 2px':'9px 12px')+';font-size:'+(nested?'13':'14')+'px;font-weight:800;color:#3f2a14"><span class="pan-chev" style="font-size:9px;color:#a8998a">▶</span>'+label
+    +'<span style="font-size:11px;font-weight:800;color:#8a5a2c;background:#f5ebe0;border-radius:999px;padding:1px 8px">'+ids.length+'</span>'
+    +(gone?'<span style="font-size:11px;font-weight:800;color:#b91c1c">'+gone+' ⚠️</span>':'')+'</summary>'
+    +'<div style="padding:'+(nested?'0':'0 12px 6px')+'">'+inner+'</div></details>';
+}
+// opt.readonly — Dad's Day: no add row, no checks, every place starts closed, a row offers only 🛒 + Close
+function panListHTML(opt){
+  opt=opt||{}; const ro=!!opt.readonly, pre=ro?"d:":"m:";
+  const P=kitPantry||{}, ids=Object.keys(P).filter(id=>P[id]&&P[id].name);
+  const used=panUsedByMap(), q=String(panQ||"").toLowerCase().trim();
+  const byName=(a,b)=>String(P[a].name||"").localeCompare(String(P[b].name||""));
+  const inp='padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif;';
+  let h='<div id="pan-list"><style>#pan-list summary{list-style:none}#pan-list summary::-webkit-details-marker{display:none}#pan-list .pan-chev{display:inline-block;transition:transform .15s}#pan-list details[open]>summary .pan-chev{transform:rotate(90deg)}</style>';
+  if(ids.length) h+='<input id="pan-q" type="search" value="'+esc(panQ)+'" oninput="panListFilter(this.value,this)" placeholder="🔎 Find food (chicken, rice…)" style="width:100%;box-sizing:border-box;'+inp+'margin-bottom:8px">';
+  if(!ro){
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'
+      +'<input type="text" id="pan-new" placeholder="Add an item (spinach…)" onkeydown="if(event.key===\'Enter\')panAddManual()" style="flex:2;min-width:100px;'+inp+'">'
+      +'<select id="pan-zone" style="'+inp+'padding:9px 6px;max-width:112px">'+GR_PLACES.map(z=>'<option value="'+z[0]+'">'+z[1]+'</option>').join('')+'</select>'
+      +'<button onclick="panAddManual()" style="padding:9px 16px;border-radius:9px;border:none;background:#8a5a2c;color:#fff;font-size:13px;font-weight:700;cursor:pointer">＋ Add</button></div>';
+    const old=grPanOldIds().length, goneN=ids.filter(id=>panStatus(P[id])==="gone").length;
+    if(old||goneN) h+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">'
+      +(old?'<button onclick="grPanCheckOpen()" style="padding:6px 12px;border-radius:9px;border:1.5px solid #fecaca;background:#fef2f2;color:#b91c1c;font-size:11px;font-weight:800;cursor:pointer">⚠️ '+old+' may be old — check</button>':'')
+      +(goneN?'<button onclick="panClearGone()" style="padding:6px 12px;border-radius:9px;border:1.5px solid #e5e7eb;background:#fff;color:#6b7280;font-size:11px;font-weight:700;cursor:pointer">🧹 Clear '+goneN+' probably-gone item'+(goneN===1?'':'s')+'</button>':'')+'</div>';
+  }
+  GR_PLACES.forEach(z=>{   // 🥫 Pantry · 🧊 Fridge · ❄️ Freezer · 🥶 Deep freezer · 🍌 Counter · 🧻 Household (old 🥬 Produce items show under Counter/Fridge)
+    const zi=ids.filter(id=>grPlaceOf(P[id])===z[0]).sort(byName); if(!zi.length) return;
+    const sp=z[0]==="pantry"?zi.filter(id=>panIsSpice(P[id].name)):[];
+    const food=sp.length?zi.filter(id=>sp.indexOf(id)<0):zi;
+    let inner=food.map(id=>panRowHTML(id,ro,used,q)).join('');
+    if(sp.length) inner+=panSecHTML(pre+"spice",false,"🧂 Spices &amp; seasonings",sp,ro,used,q,sp.map(id=>panRowHTML(id,ro,used,q)).join(''),true);
+    h+=panSecHTML(pre+z[0],!ro&&z[0]!=="household",z[1],zi,ro,used,q,inner,false);
+  });
+  if(!ids.length) h+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">'+(ro?'Nothing on the house list yet.':'A loose picture of what\'s in the house — so meal ideas can start from what you actually have. Tap 📥 Import after a grocery run, or add things above.')+'</div>';
+  if(!ro&&ids.length) h+='<div style="font-size:11px;color:var(--muted);margin-top:7px">Tap anything to count it, move it, ⭐ it or put it on the list. 🍽 = a meal this week uses it. The dot: 🟢 fresh · 🟡 getting older · 🔴 may be old (fresh fruit/veg ~6 days, fridge ~2 weeks, freezer ~3 months, deep freezer ~1 year, pantry ~6 months — or the 📅 date you typed). Nothing disappears on its own.</div>';
+  return h+'</div>';
+}
+// 🔎 live filter — DOM only, no repaint (like kitLibFilter): rows by data-pan-name, a place with no match hides, a place with one opens
+function panListFilter(v,inp){
+  panQ=String(v||""); _panFilterTs=Date.now();
+  const q=panQ.toLowerCase().trim(), box=(inp&&inp.closest&&inp.closest('#pan-list'))||document.getElementById('pan-list'); if(!box||!box.querySelectorAll) return;
+  box.querySelectorAll('[data-pan-name]').forEach(r=>{ r.style.display=(!q||String(r.getAttribute('data-pan-name')).indexOf(q)>=0)?'flex':'none'; });
+  Array.prototype.slice.call(box.querySelectorAll('details[data-pan-key]')).reverse().forEach(d=>{   // inner 🧂 first, so Pantry sees it
+    const hit=Array.prototype.some.call(d.querySelectorAll('[data-pan-name]'),r=>r.style.display!=='none');
+    d.style.display=(q&&!hit)?'none':'';
+    d.open=q?hit:panSecOpen(d.getAttribute('data-pan-key'),d.getAttribute('data-pan-dflt')==="1");
+  });
+}
+// a row's sheet — her tools in one place (this replaces ✎ manage mode on the card); Dad's (ro) offers only 🛒 + Close
+function panRowSheet(id,ro){
+  const it=kitPantry[id]; if(!it) return grPopClose();
+  const pl=grPlaceOf(it), plc=(GR_PLACES.find(p=>p[0]===pl)||GR_PLACES[0])[1], st=panStatus(it), used=panUsedByMap()[id];
+  const b='padding:7px 11px;border-radius:9px;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;';
+  let h='<div style="font-weight:800;font-size:16px">'+esc(it.name)+'</div><div style="font-size:12px;color:#64748b;margin:2px 0 12px">'+plc
+    +(typeof it.qty==="number"?' · '+(it.qty===0?'out':'×'+it.qty):'')+(st==="gone"?' · ⚠️ may be old':(st==="aging"?' · getting older':''))+(it.useBy?' · 📅 '+esc(it.useBy):'')+(used?' · 🍽 '+esc(used):'')+'</div>';
+  if(ro) return grPop(h+'<button onclick="panDadAdd(\''+id+'\')" style="'+GR_BTN+'border:none;background:#3A7D44;color:#fff">🛒 Add to the '+SHOP_LIST_NAME+'</button>'
+    +'<button onclick="grPopClose()" style="'+GR_BTN+'border:1.5px solid #e5e7eb;background:#fff;color:#57534e">Close</button>');
+  const n=typeof it.qty==="number"?it.qty:null;
+  h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><span style="flex:1;font-size:12px;font-weight:800;color:#6b6560">How many</span>'
+    +'<button onclick="panQtyStep(\''+id+'\',-1)" style="'+b+'border:1.5px solid #e5e7eb;background:#fff;color:#374151;min-width:42px;font-size:17px">−</button>'
+    +'<span style="min-width:30px;text-align:center;font-size:17px;font-weight:800">'+(n===null?'–':n)+'</span>'
+    +'<button onclick="panQtyStep(\''+id+'\',1)" style="'+b+'border:1.5px solid #e5e7eb;background:#fff;color:#374151;min-width:42px;font-size:17px">+</button></div>'
+    +'<div style="font-size:12px;font-weight:800;color:#6b6560;margin-bottom:5px">Move to…</div><div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px">'
+    +GR_PLACES.map(z=>'<button onclick="panRowMove(\''+id+'\',\''+z[0]+'\')" style="'+b+(z[0]===pl?'border:1.5px solid #8a5a2c;background:#f5ebe0;color:#8a5a2c':'border:1.5px solid #e5e7eb;background:#fff;color:#57534e')+'">'+z[1]+'</button>').join('')+'</div>'
+    +'<label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;color:#6b6560">📅 Use by <input type="date" value="'+esc(it.useBy||'')+'" onchange="panRowDate(\''+id+'\',this.value)" style="flex:1;padding:6px 8px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif"></label>'
+    +'<button onclick="panToggleRegular(\''+id+'\');panRowSheet(\''+id+'\')" style="'+GR_BTN+'margin-top:12px;border:1.5px solid #e8a317;background:#fdf3dc;color:#92400e">'+(panIsRegular(it.name)?'☆ Not a regular any more':'⭐ Make it a regular')+'</button>'
+    +'<button onclick="grPopClose();grFromPantry(\''+id+'\')" style="'+GR_BTN+'border:none;background:#3A7D44;color:#fff">🛒 Add to the '+SHOP_LIST_NAME+'</button>'
+    +'<button onclick="panRowDel(\''+id+'\')" style="'+GR_BTN+'border:1.5px solid #fecaca;background:#fff;color:#b91c1c">✕ Remove</button>'
+    +'<button onclick="grPopClose()" style="'+GR_BTN+'border:1.5px solid #e5e7eb;background:#fff;color:#57534e">Close</button>';
+  grPop(h);
+}
+function panQtyStep(id,d){ const it=kitPantry[id]; if(!it) return; grPanSet(id,{qty:Math.max(0,(typeof it.qty==="number"?it.qty:0)+d)}); grRepaint(); panRowSheet(id); }   // → kitchen/pantry/{id}/qty
+function panRowMove(id,z){
+  const it=kitPantry[id]; if(!it||grPlaceOf(it)===z) return;
+  const patch={zone:z}; if(panStatus(Object.assign({},it,{zone:z}))==="gone") patch.addedIso=_todayStr();   // as grPanMove: a move that would read "old" restamps the date
+  grMemUpdate(it.name,{zone:z}); grPanSet(id,patch);
+  mwToast((PAN_ZONE_EMOJI[z]||"🥫")+" "+it.name+" → "+((GR_PLACES.find(p=>p[0]===z)||[0,z])[1]).replace(/^\S+\s/,"")); grRepaint(); panRowSheet(id);
+}
+function panRowDate(id,v){ grPutDate(id,v); grRepaint(); panRowSheet(id); }
+function panRowDel(id){ const it=kitPantry[id]; if(!it) return; if(!confirm('Remove "'+it.name+'" from the house list?')) return; grPopClose(); panDel(id); }
+function panDadAdd(id){ const it=kitPantry[id]; if(!it) return; grPopClose(); grAdd(it.name,"dad",{src:{k:"dad"}}); }   // as Dad, like his own add box (grAddFrom "dad")
+// 🍽 Eaten log — the last 14 days of dinners: ✓ eaten · ✗ skipped · – not marked (her "keep track of what we eat and don't eat")
+function panEatLogHTML(){
+  const today=_todayStr(); let pills='', ate=0, skip=0;
+  for(let i=13;i>=0;i--){
+    const iso=kitIsoPlus(today,-i), p=kitPlan[iso]||null, d=gwParseDate(iso);
+    const lbl=d.toLocaleDateString("en-US",{weekday:"short"})+' '+(d.getMonth()+1)+'/'+d.getDate();
+    const has=!!(p&&(p.mid||p.txt)), m=has&&p.mid?kitMeals[p.mid]:null, nm=has?(m?m.name:(p.txt||"")):"";
+    const k=!has?"none":(p.eaten?"ate":(p.skipped?"skip":"open"));
+    if(k==="ate") ate++; if(k==="skip") skip++;
+    const c={ate:["#bbf7d0","#f0fdf4"],skip:["#fecaca","#fef2f2"],open:["#e5e7eb","#fff"],none:["#f1ede8","#faf8f5"]}[k];
+    pills+='<span data-eat="'+k+'" onclick="panEatDay(\''+iso+'\')" title="'+esc(nm||'no dinner planned')+'" style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;border:1.5px solid '+c[0]+';background:'+c[1]+';color:'+(k==="none"?'#b8b0a6':'#57534e')+';white-space:nowrap">'+lbl
+      +(has?' '+esc((m&&m.emoji)||'🍽')+' '+(k==="ate"?'<b style="color:#16a34a">✓</b>':(k==="skip"?'<b style="color:#dc2626">✗</b>':'<b style="color:#9ca3af">–</b>')):'')+'</span>';
+  }
+  return '<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);padding:10px 14px 12px">'
+    +'<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:7px"><span style="font-size:13px;font-weight:800;color:#3f2a14">🍽 Eaten log</span><span style="font-size:11px;color:var(--muted)">last 14 days · '+ate+' eaten'+(skip?' · '+skip+' skipped':'')+'</span></div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:5px">'+pills+'</div>'
+    +'<div style="font-size:10.5px;color:var(--muted);margin-top:6px">✓ eaten · ✗ skipped · – not marked · tap a day to open it on the calendar</div></div>';
+}
+function panEatDay(iso){   // the same door ⚠ Swap… uses (kitFlagSwap): the month calendar with that day's sheet open
+  if(typeof mpSchMode!=="undefined"){ mpSchMode="month"; try{ HA_LS.setItem("ha_mp_schmode","month"); }catch(e){} }
+  if(typeof mpSchWho!=="undefined"&&mpSchWho!=="all"&&mpSchWho!=="mom") mpSchWho="all";
+  calPreviewMonth=iso.slice(0,7); calDaySel=iso; mpGoto('cal');
+}
+// PAN_LIST_END
+
 // ── 📥 week import — one paste plans the week, recipes and all ──────
 // Same contract as the pantry importer: Claude transcribes in a session, SHE
 // pastes and taps import on her device — the app does the writing, never a
@@ -23888,6 +24039,8 @@ function renderKitchen(el){
   }
   h+='</div></div>';
 
+  h+=panEatLogHTML();   // PAN_LIST: 🍽 the last 14 days — ✓ eaten · ✗ skipped · – not marked
+
   // ── 📚 Meal library ─────────────────────────────────────────────
   h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
   h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#6B4C93;color:#fff;font-weight:800;font-size:13px"><span>📚</span> Meal library'
@@ -23969,36 +24122,20 @@ function renderKitchen(el){
     +'<button onclick="kitUsualAdd()" style="padding:9px 16px;border-radius:9px;border:none;background:#3A7D44;color:#fff;font-size:13px;font-weight:700;cursor:pointer">＋ Add</button></div>';
   h+='</div></div>';
 
-  // ── 🥫 Pantry snapshot — what's probably in the house right now ──
-  const panIds=Object.keys(kitPantry);   // old ones stay visible with ⚠️ until Mom checks them (her rule 2026-10-03 — frozen beef shouldn't vanish)
-  const panGoneN=panIds.filter(id=>panStatus(kitPantry[id])==="gone").length;
+  // ── 🥫 What's in the house — PAN_LIST (her ask 2026-11-01: "Change how it looks — it's really messy"): a clean list per place, tap a row for its tools ──
+  const panN=Object.keys(kitPantry).filter(id=>kitPantry[id]&&kitPantry[id].name).length;   // old ones stay visible with ⚠️ until Mom checks them (her rule 2026-10-03 — frozen beef shouldn't vanish)
   h+='<div style="background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">';
-  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#8a5a2c;color:#fff;font-weight:800;font-size:13px"><span>🥫</span> Pantry snapshot'
+  h+='<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:#8a5a2c;color:#fff;font-weight:800;font-size:13px"><span>🥫</span> What\'s in the house'
+    +(panN?'<span style="font-size:11px;font-weight:800;background:rgba(255,255,255,0.22);border-radius:999px;padding:1px 8px">'+panN+'</span>':'')
     +'<span style="margin-left:auto;display:flex;gap:6px">'
-    +'<button onclick="panImportToggle()" style="border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">'+(panImportOpen?'✕ Close':'📥 Import')+'</button>'
-    +'<button onclick="panToggleManage()" style="border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">'+(panManage?'Done':'✎')+'</button></span></div>';
+    +'<button onclick="panImportToggle()" style="border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">'+(panImportOpen?'✕ Close':'📥 Import')+'</button></span></div>';
   h+='<div style="padding:10px 14px 12px">';
   if(panImportOpen){
     h+='<textarea id="pan-import" rows="6" placeholder="spinach | produce&#10;chicken thighs | freezer&#10;rice" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif"></textarea>'
       +'<div style="font-size:11px;color:var(--muted);margin:6px 0 8px">One item per line — <b>name | zone | how many</b> (zones: pantry, fridge, freezer, deepfreezer, counter, household; zone and count optional). Snap the receipt or cabinets, hand the pics to Claude, paste what it gives back. Re-importing refreshes dates; receipt counts quietly build your buying trends.</div>'
       +'<label style="display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:#4a4540;margin:0 0 8px;cursor:pointer"><input type="checkbox" id="pan-sweep" style="width:16px;height:16px"> 📸 This was a cabinet/freezer sweep (resets the reminder; sweeps don\'t count as purchases)</label>'
       +'<button onclick="panImportApply()" style="width:100%;padding:11px;border-radius:10px;border:none;background:#8a5a2c;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">📥 Import to pantry</button>';
-  } else {
-    GR_PLACES.forEach(z=>{   // 🥫 Pantry · 🧊 Fridge · ❄️ Freezer · 🍌 Counter (old 🥬 Produce items show under Counter/Fridge)
-      const ids=panIds.filter(id=>grPlaceOf(kitPantry[id])===z[0]).sort((a,b)=>String(kitPantry[a].name||"").localeCompare(String(kitPantry[b].name||"")));
-      if(!ids.length) return;
-      h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:4px 0 5px">'+z[1]+'</div>'
-        +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px">'+ids.map(id=>panChip(id)).join('')+'</div>';
-    });
-    if(!panIds.length) h+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">A loose picture of what\'s in the house — so meal ideas can start from what you actually have. Tap 📥 Import after a grocery run, or add things below.</div>';
-    if(panGoneN) h+='<button onclick="panClearGone()" style="margin-bottom:8px;padding:6px 12px;border-radius:9px;border:1.5px solid #e5e7eb;background:#fff;color:#6b7280;font-size:11px;font-weight:700;cursor:pointer">🧹 Clear '+panGoneN+' probably-gone item'+(panGoneN===1?'':'s')+'</button>';
-    h+='<div style="display:flex;gap:6px;flex-wrap:wrap">'
-      +'<input type="text" id="pan-new" placeholder="Add an item (spinach…)" onkeydown="if(event.key===\'Enter\')panAddManual()" style="flex:2;min-width:130px;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
-      +'<select id="pan-zone" style="padding:9px 8px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
-      +GR_PLACES.map(z=>'<option value="'+z[0]+'">'+z[1]+'</option>').join('')+'</select>'
-      +'<button onclick="panAddManual()" style="padding:9px 16px;border-radius:9px;border:none;background:#8a5a2c;color:#fff;font-size:13px;font-weight:700;cursor:pointer">＋ Add</button></div>'
-      +'<div style="font-size:11px;color:var(--muted);margin-top:7px">Loose by design: fresh fruit/veg ~6 days, fridge ~2 weeks, freezer ~3 months, deep freezer ~1 year, pantry ~6 months — or the 📅 date you typed. Old items get a ⚠️ and Mom\'s Day asks; nothing disappears on its own. ⭐ makes an item a regular on the 🧺 staples check-list.</div>';
-  }
+  } else h+=panListHTML();
   h+='</div></div>';
 
   // ── 🛒 order preview — always visible here while she builds the lists ──

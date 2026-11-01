@@ -467,7 +467,7 @@ ok("Mom's Day 🔴 Now carries the ran-out line", /grRanOutHTML\(\)/.test(src));
   const t=L.grWeekNeeds().findIndex(r=>r.name==="Ground turkey"); L.grNeedSkipTap(t);
   ok("Not needed → hidden for a week (one small path)", !L.grWeekNeeds().some(r=>r.name==="Ground turkey")&&L.env.writes.some(w=>w[1]==="kitchen/grocery/skipneed/groundturkey"));
 }
-ok("Mom's Day 🔴 Now carries the pantry alerts; old pantry items stay visible with ⚠️", /grPantryAlertsHTML\(\)/.test(src)&&/const panIds=Object\.keys\(kitPantry\);/.test(src));
+ok("Mom's Day 🔴 Now carries the pantry alerts; old pantry items stay visible with ⚠️", /grPantryAlertsHTML\(\)/.test(src)&&/const P=kitPantry\|\|\{\}, ids=Object\.keys\(P\)\.filter\(id=>P\[id\]&&P\[id\]\.name\);/.test(src));   // PAN_LIST: every named item, old ones too
 // ── 🧾 Checkout + budgets ──
 { const L=mk(); withPop(L); L.env.mom=true;
   L.grPickToggle("walmart"); L.grPickSave(); L.grSetStore("walmart");
