@@ -128,7 +128,7 @@ global.renderAll = () => { renderAllCalls++; };
 global.schedShowBoard = false; global.schedShowAdmin = true; global.schedShowHistory = false;
 global.schedShowPace = false; global.schedShowPeek = false;
 
-const M = new Function(block + `; return {stpAskGo:(typeof stpAskGo==="function"?stpAskGo:null),mdTodayName,momdayGet,momdayEdit,mdSlotCounts,renderMomsDay,renderMomsPlan,mpInit,mdOpenBoard,mdBack,mwBPCat,mwBPChip,mwSaveBP,mwBPSlotNow,momdayAddTodo,momdayToggleTodo,momdayDelTodo,mwToggleSym,mwAllSyms,mwAddSymType,mwDelSymType,billDueInfo,billState,billMarkPaid,billAdd,billDel,laundryAdd,laundryAdvance,laundryDel,laundryData,renderKitchen,kitIsoPlus,kitWhenMin,kitWhenLabel,kitPlanFor,kitPrepSteps,kitDuePrep,kitMarkPrep,kitAssign,kitPickDay,kitPlanText,kitOpenRecipe,kitCloseRecipe,kitEditMeal,kitAddPrepRow,kitDelPrepRow,kitSaveMeal,kitCancelEdit,kitDelMeal,kitMeals,kitPlan,kitPrepDone,kitStapleCycle,kitStapleAdd,kitStapleDel,kitStapleToggleManage,kitUsualAdd,kitUsualDel,kitSetOrderDay,kitOrderList,kitOrderText,kitCopyOrder,kitStaples,kitUsuals,kitSettings,kitPantry,panStatus,panAdd,panAddManual,panDel,panImportToggle,panImportApply,panClearGone,panToggleRegular,panIsRegular,panToggleManage,kitSweepDue,kitUsualQty,kitSlug,kitBuyLog,kitRate,kitRateChips,kitParseWeek,kitWkIso,kitWkImportToggle,kitImportWeekApply,kitPlanSlot,kitSlotText,panQtyEdit,kitMarkEaten,grEatApply,momChoresData,mcAll,mcAdd,mcDel,mcToggle,mcDoneOn,mcSetCad,mcCadToggleDay,mcDueToday,mcToggleManage,momChoresCardHTML,kitRotations,kitRotAll,kitRotEnsure,kitRotPlanFor,kitRotCapture,kitRotApply,kitRotSave,kitRotDel,kitRotToggle,kitRotSaveToggle,kitRotMondayOf,kitRotationsCardHTML,KIT_ROT_DEFAULT};`)();
+const M = new Function(block + `; return {stpAskGo:(typeof stpAskGo==="function"?stpAskGo:null),mdTodayName,momdayGet,momdayEdit,mdSlotCounts,renderMomsDay,renderMomsPlan,mpInit,mdOpenBoard,mdBack,mwBPCat,mwBPChip,mwSaveBP,mwBPSlotNow,momdayAddTodo,momdayToggleTodo,momdayDelTodo,mwToggleSym,mwAllSyms,mwAddSymType,mwDelSymType,billDueInfo,billState,billMarkPaid,billAdd,billDel,laundryAdd,laundryAdvance,laundryDel,laundryData,renderKitchen,kitIsoPlus,kitWhenMin,kitWhenLabel,kitPlanFor,kitPrepSteps,kitDuePrep,kitMarkPrep,kitAssign,kitPickDay,kitPlanText,kitOpenRecipe,kitCloseRecipe,kitEditMeal,kitAddPrepRow,kitDelPrepRow,kitSaveMeal,kitCancelEdit,kitDelMeal,kitMeals,kitPlan,kitPrepDone,kitStapleCycle,kitStapleAdd,kitStapleDel,kitStapleToggleManage,kitUsualAdd,kitUsualDel,kitSetOrderDay,kitOrderList,kitOrderText,kitCopyOrder,kitStaples,kitUsuals,kitSettings,kitPantry,panStatus,panAdd,panAddManual,panDel,panImportToggle,panImportApply,panClearGone,panToggleRegular,panIsRegular,panToggleManage,kitSweepDue,kitUsualQty,kitSlug,kitBuyLog,kitRate,kitRateChips,kitParseWeek,kitWkIso,kitWkImportToggle,kitImportWeekApply,kitPlanSlot,kitSlotText,panQtyEdit,kitMarkEaten,grEatApply,momChoresData,mcAll,mcAdd,mcDel,mcToggle,mcDoneOn,mcSetCad,mcCadToggleDay,mcDueToday,mcToggleManage,momChoresCardHTML,kitRotations,kitRotAll,kitRotEnsure,kitRotPlanFor,kitRotCapture,kitRotApply,kitRotSave,kitRotDel,kitRotToggle,kitRotSaveToggle,kitRotMondayOf,kitRotationsCardHTML,KIT_ROT_DEFAULT,panRowSheet,panListHTML};`)();
 
 // ── mdTodayName: weekday from the DATE ───────────────────────────────────────
 (() => {
@@ -779,7 +779,7 @@ const M = new Function(block + `; return {stpAskGo:(typeof stpAskGo==="function"
   M.kitPantry.p_old = { name: "Ancient kale", zone: "produce", addedIso: "2026-07-01", ts: 1 };
   M.renderKitchen(elStub);
   let h = elStub.innerHTML;
-  ok("an old item stays visible with ⚠️ until Mom checks it (her rule 2026-10-03)", h.includes("⚠️ Ancient kale"), null);
+  ok("an old item stays visible with a 🔴 dot + its place's ⚠️ count until Mom checks it (her rule 2026-10-03)", h.includes('data-pan-name="ancient kale"') && /Ancient kale[\s\S]{0,900}?background:#dc2626/.test(h) && h.includes("1 ⚠️"), null);
   ok("clear-gone button counts it", h.includes("Clear 1 probably-gone"), null);
   dbRemoves.length = 0;
   M.panClearGone();
@@ -795,14 +795,12 @@ const M = new Function(block + `; return {stpAskGo:(typeof stpAskGo==="function"
   M.kitPantry.p_soup = { name: "Leftover soup", zone: "fridge", addedIso: "2026-07-30", ts: 1 };
   M.renderKitchen(elStub);
   let h = elStub.innerHTML;
-  ok("place sections render w/ chips (old produce items show under 🧊 Fridge / 🍌 Counter — 2026-10-04)", h.includes("🧊 Fridge") && h.includes("Spinach") && h.includes("❄️ Freezer") && h.includes("chicken thighs"), null);
-  ok("aging chip carries 🕐", h.includes("🕐 peppers"), null);
-  ok("every chip offers the ⭐ regular toggle", h.includes("panToggleRegular(") && h.includes("☆"), null);
-  ok("manage mode hidden by default", !h.includes("panDel("), null);
-  M.panToggleManage();
-  M.renderKitchen(elStub);
-  ok("✎ manage shows ✕ per chip", elStub.innerHTML.includes("panDel("), null);
-  M.panToggleManage();
+  ok("place sections render w/ rows (old produce items show under 🧊 Fridge / 🍌 Counter — 2026-10-04)", h.includes("🧊 Fridge") && h.includes("Spinach") && h.includes("❄️ Freezer") && h.includes("chicken thighs"), null);
+  ok("aging row carries the 🟡 dot", /peppers[\s\S]{0,900}?background:#eab308/.test(h), null);
+  ok("PAN_LIST: no ✎ manage button and no ✕ on the list itself — a row tap opens its sheet", !h.includes("panToggleManage()") && !h.includes("panRowDel(") && h.includes("panRowSheet('" + pep + "')"), null);
+  M.panRowSheet(pep);
+  const sh = elStub.innerHTML;
+  ok("the row sheet offers ⭐ regular, 🛒, − / +, Move to…, 📅 and ✕ Remove", sh.includes("panToggleRegular('" + pep + "')") && sh.includes("grFromPantry('" + pep + "')") && sh.includes("panQtyStep('" + pep + "',-1)") && sh.includes("Move to…") && sh.includes('type="date"') && sh.includes("panRowDel('" + pep + "')"), null);
   M.panImportToggle();
   M.renderKitchen(elStub);
   ok("📥 opens the paste-import panel", elStub.innerHTML.includes('id="pan-import"') && elStub.innerHTML.includes("panImportApply()"), null);
