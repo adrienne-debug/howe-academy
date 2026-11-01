@@ -17630,6 +17630,7 @@ function mdCardDinner(iso){
       :((dpl&&kitEatGate())?'<button onclick="kitMarkEaten(\''+iso+'\')" style="border:none;background:rgba(255,255,255,0.25);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">✓ We ate it</button>':'')))
     +((typeof kitDinCardBtn==="function")?kitDinCardBtn(iso,dpl):'')   // KITDINNEREDIT: ✎ Change the planned dinner (the card had no way to)
     +'<button onclick="mpGoto(\'meals\')" style="border:none;background:rgba(255,255,255,0.2);color:#fff;border-radius:8px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">🗓 Plan week →</button></span></div>';
+  if(typeof kitMvCardHTML==="function") h+=kitMvCardHTML(iso);   // MEAL_MOVE_BTNS: ➡ Didn’t eat it — push a day · ✗ Didn’t happen
   if(typeof kitDinPickerHTML==="function") h+=kitDinPickerHTML(iso,"card");   // KITDINNEREDIT: the same library picker, under the header
   if(dMeal){
     const dSteps=kitPrepSteps(iso);
@@ -23816,6 +23817,41 @@ function kitRecipeHTML(mid){
   return h;
 }
 
+/* MEAL_MOVE_BTNS — her ask 2026-11-01: "if something isn't eaten I would like it to be able to shift the whole schedule
+   to the next day — I think something similar exists, but check." It did — ➡ Move forward and ✗ Didn’t happen — but only in
+   the calendar's day sheet, where she never looks. These put the SAME two actions on the Mom's Day / Dad's Day 🍽️ dinner card
+   and on each row of 🗓 This week's dinners. Nothing new is written: kitMoveForward (asks first, then one multi-path write)
+   and kitMarkSkipped do the work. Shown only on a planned dinner not already eaten / didn’t-happen / eating out, and only past
+   kitEatGate (Mom, or Dad on his link) — a kid never sees them. ✗ shows on tonight only, as in the day sheet. */
+// MEAL_MOVE_BTNS_START
+function kitMvOk(iso){ const p=kitPlan[iso]; return !!(p&&(p.mid||p.txt)&&!p.eaten&&!p.skipped&&!(typeof kitOutIs==="function"&&kitOutIs(iso,'d'))&&kitEatGate()); }
+// ➡ on the card asks which: dinner only, or the whole day (offered when breakfast / lunch / snack has something to move)
+function kitMvChoose(iso){
+  if(!kitMvOk(iso)) return;
+  const pl=kitPlanFor(iso), nm=pl?(pl.meal?pl.meal.name:(pl.txt||"")):"";
+  const more=["b","l","s"].some(s=>kitMoveChain(iso,s));
+  const btn=(on,label,col)=>'<button onclick="grPopClose();'+on+'" style="'+GR_BTN+'text-align:left;padding:12px 14px;border:2.5px solid '+col+';background:#fff;color:#1f2937">'+label+'</button>';
+  let h='<div style="font-weight:800;font-size:15px">➡ Didn’t eat it — push a day</div><div style="font-size:12px;color:#64748b;margin-top:2px">'+(nm?esc(nm)+' moves to the next day; ':'')+'every later one slides a day too — the order stays the same.</div>';
+  h+=btn("kitMoveForward('"+iso+"','d')","🍽️ "+(typeof kitDinnerWord==="function"?kitDinnerWord():"Dinner")+" only","#1d4ed8");
+  if(more) h+=btn("kitMoveForward('"+iso+"','all')","🗓 Whole day (breakfast, lunch, snack too)","#1d4ed8");
+  h+='<button onclick="grPopClose()" style="'+GR_BTN+'border:none;background:#f1f5f9;color:#475569">Cancel</button>';
+  grPop(h);
+}
+// the strip under the dinner card's header, beside ✓ We ate it
+function kitMvCardHTML(iso){
+  if(!kitMvOk(iso)) return '';
+  return '<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;padding:7px 14px;background:#fff7ed;border-bottom:1px solid #fed7aa">'
+    +'<button onclick="kitMvChoose(\''+iso+'\')" style="border:none;background:#eff6ff;color:#1d4ed8;border-radius:8px;padding:4px 10px;font-size:11.5px;font-weight:800;cursor:pointer">➡ Didn’t eat it — push a day</button>'
+    +(iso===_todayStr()?'<button onclick="kitMarkSkipped(\''+iso+'\')" style="border:none;background:#f1f5f9;color:#475569;border-radius:8px;padding:4px 10px;font-size:11.5px;font-weight:800;cursor:pointer">✗ Didn’t happen</button>':'')+'</div>';
+}
+// the week grid's row: small ➡ (dinner only) and ✗ — stopPropagation keeps the row's tap-to-pick
+function kitMvRowBtns(iso){
+  if(!kitMvOk(iso)) return '';
+  const b=(on,lbl,t,bg,c)=>'<button onclick="event.stopPropagation();'+on+'" title="'+t+'" aria-label="'+t+'" style="flex-shrink:0;border:none;background:'+bg+';color:'+c+';border-radius:7px;padding:3px 8px;font-size:12px;font-weight:800;cursor:pointer">'+lbl+'</button>';
+  return b("kitMoveForward('"+iso+"','d')","➡","Didn’t eat it — push a day","#eff6ff","#1d4ed8")
+    +(iso===_todayStr()?b("kitMarkSkipped('"+iso+"')","✗","Didn’t happen","#f1f5f9","#475569"):'');
+}
+// MEAL_MOVE_BTNS_END
 // KIT_WKRECIPE_START — in 🗓 This week's dinners, tapping a planned dinner's NAME opens its recipe in the same pop-up the
 // grocery list's 🍽 meal chips use (grMealPop — reused, not a second pop-up). Her ask 2026-10-07. The rest of the row still
 // opens the day picker (stopPropagation keeps the two taps apart). Read-only: nothing is written.
@@ -23866,6 +23902,7 @@ function renderKitchen(el){
       +'<span style="flex:0 0 92px;font-size:11px;font-weight:800;color:'+(i===0?'#c2410c':'#6b6560')+'">'+dayLbl+'</span>'
       +'<span style="flex:1;font-size:13px">'+what+'</span>'
       +(nPrep?'<span style="font-size:10px;font-weight:800;color:#c2410c">⏲ '+nPrep+'</span>':'')
+      +(typeof kitMvRowBtns==="function"?kitMvRowBtns(iso):'')   // MEAL_MOVE_BTNS: ➡ / ✗ (tap-to-pick kept)
       +'<span style="color:#9ca3af;font-size:12px">'+(kitPickIso===iso?'▴':'▾')+'</span></div>';
     const slotBits=[];
     [["b","🌅"],["l","☀️"],["s","🍎"]].forEach(sp=>{
