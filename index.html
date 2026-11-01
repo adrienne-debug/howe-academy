@@ -20606,14 +20606,14 @@ function grSortCount(){ return grSortIds().length+(grActiveStores().length?grSor
 // 🗑 Tossed · ✅ Still good · ❄️ Freezer · 🥫 Pantry. And the week's planned meals are checked against the pantry +
 // the list: anything missing → ✅ Bought / 🛒 Add to list / Skip.
 //   skipneed/{slug} = iso   "not needed" for this item until that date passes (a week)
-const PAN_ZONE_EMOJI={produce:"🥬",fridge:"🧊",freezer:"❄️",pantry:"🥫"};
+const PAN_ZONE_EMOJI={produce:"🥬",fridge:"🧊",freezer:"❄️",deepfreezer:"🥶",pantry:"🥫",counter:"🍌",household:"🧻"};
 function grPanOldIds(){ return Object.keys(kitPantry||{}).filter(id=>kitPantry[id]&&kitPantry[id].name&&panStatus(kitPantry[id])==="gone"&&kitPantry[id].qty!==0); }
 function grPanSet(id,patch){
   const it=kitPantry[id]; if(!it) return; Object.assign(it,patch); it.ts=Date.now();
   try{HA_LS.setItem('ha_kit_pantry',JSON.stringify(kitPantry));}catch(e){}
   if(typeof db!=='undefined'&&db) db.ref('kitchen/pantry/'+id).update(Object.assign({},patch,{ts:it.ts}));
 }
-function grPanZoneCycle(id){ const it=kitPantry[id]; if(!it) return; const z=["pantry","fridge","freezer","counter","household"]; const n=z[(z.indexOf(grPlaceOf(it))+1)%z.length]; grMemUpdate(it.name,{zone:n}); grPanSet(id,{zone:n}); mwToast(PAN_ZONE_EMOJI[n]+" "+it.name+" → "+n); grRepaint(); }
+function grPanZoneCycle(id){ const it=kitPantry[id]; if(!it) return; const z=["pantry","fridge","freezer","deepfreezer","counter","household"]; const n=z[(z.indexOf(grPlaceOf(it))+1)%z.length]; grMemUpdate(it.name,{zone:n}); grPanSet(id,{zone:n}); mwToast(PAN_ZONE_EMOJI[n]+" "+it.name+" → "+n); grRepaint(); }
 let _grOld=null;   // {tossed:{id:name}}
 function grPanCheckOpen(){ grGate(function(){ _grOld={tossed:{}}; grPanCheckDraw(); }); }
 function grPanCheckDraw(){
@@ -20629,7 +20629,7 @@ function grPanCheckDraw(){
       +'<div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:5px">'
       +'<button onclick="grPanToss(\''+id+'\')" style="'+b+'border:1.5px solid #fecaca;background:#fff;color:#b91c1c">🗑 Tossed</button>'
       +'<button onclick="grPanKeep(\''+id+'\')" style="'+b+'border:1.5px solid #86efac;background:#f0fdf4;color:#166534">✅ Still good</button>'
-      +(it.zone!=="freezer"?'<button onclick="grPanMove(\''+id+'\',\'freezer\')" style="'+b+'border:1.5px solid #bfdbfe;background:#eff6ff;color:#1d4ed8">❄️ It\'s in the freezer</button>':'')
+      +(!grIsFrozenZone(it.zone)?'<button onclick="grPanMove(\''+id+'\',\'freezer\')" style="'+b+'border:1.5px solid #bfdbfe;background:#eff6ff;color:#1d4ed8">❄️ It\'s in the freezer</button>':'')
       +(it.zone!=="pantry"?'<button onclick="grPanMove(\''+id+'\',\'pantry\')" style="'+b+'border:1.5px solid #e5e7eb;background:#fff;color:#57534e">🥫 Pantry shelf</button>':'')
       +'</div></div>'; });
   if(!ids.length&&!Object.keys(O.tossed).length) h+='<div style="font-size:13px;color:#64748b;padding:8px 0">All checked ✓</div>';
@@ -20865,7 +20865,9 @@ function grBudgetsMgrHTML(){
 //   putaway/{pantryId} = true      waiting to be put away
 //   pantry/{id}.useBy = iso        from the package — beats the guessed shelf life; 2 days before → 🔴 Now
 //   pantry/{id}.useOk = true       she said she's using it / it's fine (stops the reminder)
-const GR_PLACES=[["pantry","🥫 Pantry"],["fridge","🧊 Fridge"],["freezer","❄️ Freezer"],["counter","🍌 Counter"],["household","🧻 Household"]];   // GR_RCPT6
+const GR_PLACES=[["pantry","🥫 Pantry"],["fridge","🧊 Fridge"],["freezer","❄️ Freezer"],["deepfreezer","🥶 Deep freezer"],["counter","🍌 Counter"],["household","🧻 Household"]];   // GR_RCPT6 · DEEPFZ: her 2nd (big) freezer
+// DEEPFZ: either freezer stops the use-by clock
+function grIsFrozenZone(z){ return z==="freezer"||z==="deepfreezer"; }
 const GR_COUNTER_WORDS=/\b(bananas?|avocados?|tomato(es)?|onions?|potato(es)?|sweet potato(es)?|garlic|bread|bagels?|buns?|rolls?|tortillas?|lemons?|limes?|mangos?|mangoes|peach(es)?|pears?|pineapples?|squash|melons?|watermelons?|cantaloupes?|plantains?)\b/i;
 // where an item lives on screen: old "produce" items show under Counter or Fridge (nothing is rewritten until she moves one)
 function grPlaceOf(it){ const z=it&&it.zone; if(z==="produce") return GR_COUNTER_WORDS.test(it.name||"")?"counter":"fridge"; return GR_PLACES.some(p=>p[0]===z)?z:"pantry"; }
@@ -20889,13 +20891,13 @@ function grPutDraw(){
   ids.forEach(id=>{ const it=kitPantry[id], pl=grPlaceOf(it), dated=pl!=="pantry"&&pl!=="household";
     h+='<div style="padding:8px 0;border-bottom:1px solid #eef2f0"><div style="font-size:13.5px;font-weight:700">'+esc(it.name)+(typeof it.qty==="number"?' <span style="color:#64748b;font-weight:600">×'+it.qty+'</span>':'')+'</div>'
       +'<div style="display:flex;gap:5px;margin-top:5px;flex-wrap:wrap">'+GR_PLACES.map(p=>'<button onclick="grPutSet(\''+id+'\',\''+p[0]+'\')" aria-pressed="'+(pl===p[0])+'" style="'+b+'border:2px solid '+(pl===p[0]?'#3A7D44':'#e2e8f0')+';background:'+(pl===p[0]?'#f0fdf4':'#fff')+';color:#1f2937">'+p[1]+'</button>').join('')+'</div>'
-      +(dated?'<label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;font-weight:700;color:#475569">📅 '+(pl==="freezer"?'Use by':'Use or freeze by')+' <input type="date" value="'+esc(it.useBy||"")+'" onchange="grPutDate(\''+id+'\',this.value)" style="padding:5px 7px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif"> <span style="font-weight:400;color:#94a3b8">optional</span></label>':'')
+      +(dated?'<label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;font-weight:700;color:#475569">📅 '+(grIsFrozenZone(pl)?'Use by':'Use or freeze by')+' <input type="date" value="'+esc(it.useBy||"")+'" onchange="grPutDate(\''+id+'\',this.value)" style="padding:5px 7px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:13px;font-family:\'DM Sans\',sans-serif"> <span style="font-weight:400;color:#94a3b8">optional</span></label>':'')
       +'</div>'; });
   h+='</div><button onclick="grPutDone()" style="'+GR_BTN+'border:none;background:#3A7D44;color:#fff;margin-top:12px">✅ Put it all away</button>'
     +'<button onclick="grPopClose();grRepaint()" style="'+GR_BTN+'border:none;background:#f1f5f9;color:#334155">Later</button>';
   grPop(h);
 }
-function grPutSet(id,place){ const it=kitPantry[id]; if(!it) return; const patch={zone:place}; if(place==="freezer"){ patch.addedIso=_todayStr(); } grPanSet(id,patch); grPutDraw(); }
+function grPutSet(id,place){ const it=kitPantry[id]; if(!it) return; const patch={zone:place}; if(grIsFrozenZone(place)){ patch.addedIso=_todayStr(); } grPanSet(id,patch); grPutDraw(); }
 function grPutDate(id,v){ if(!kitPantry[id]) return; if(v&&/^\d{4}-\d{2}-\d{2}$/.test(v)){ grPanSet(id,{useBy:v}); } else { delete kitPantry[id].useBy; grPanSet(id,{useBy:null}); } }
 function grPutDone(){
   grPutIds().forEach(id=>{ const it=kitPantry[id]; if(it) grMemUpdate(it.name,{zone:grPlaceOf(it)}); delete grData.putaway[id]; if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/putaway/'+id).remove(); });
@@ -20904,7 +20906,7 @@ function grPutDone(){
 // 📅 use/freeze-by reminders: 2 days before the package date (not for frozen items)
 function grUseSoonIds(){
   const today=_todayStr(), soon=kitIsoPlus(today,2);
-  return Object.keys(kitPantry||{}).filter(id=>{ const it=kitPantry[id]; return it&&it.useBy&&!it.useOk&&it.qty!==0&&grPlaceOf(it)!=="freezer"&&it.useBy<=soon; })
+  return Object.keys(kitPantry||{}).filter(id=>{ const it=kitPantry[id]; return it&&it.useBy&&!it.useOk&&it.qty!==0&&!grIsFrozenZone(grPlaceOf(it))&&it.useBy<=soon; })
     .sort((a,b)=>String(kitPantry[a].useBy).localeCompare(String(kitPantry[b].useBy)));
 }
 function grUseByLabel(iso){ const t=_todayStr(); if(iso<t) return "was "+gwParseDate(iso).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"}); if(iso===t) return "today"; if(iso===kitIsoPlus(t,1)) return "tomorrow"; return gwParseDate(iso).toLocaleDateString("en-US",{weekday:"long"}); }
@@ -21472,12 +21474,12 @@ function grSyncDinClear(iso){
 // Zones carry a rough shelf-life in days. An item is fresh for the first 60%
 // of it, "aging" for the rest, and "probably gone" after — gone items hide
 // from every view (no auto-delete sweep; 🧹 Clear removes them on HER tap).
-const PAN_ZONES=[["produce","🥬 Produce",6],["fridge","🧊 Fridge",14],["freezer","❄️ Freezer",90],["pantry","🥫 Pantry",180],["counter","🍌 Counter",7],["household","🧻 Household",3650]];   // GR_RCPT6: 🧻 household supplies never go old
+const PAN_ZONES=[["produce","🥬 Produce",6],["fridge","🧊 Fridge",14],["freezer","❄️ Freezer",90],["pantry","🥫 Pantry",180],["counter","🍌 Counter",7],["household","🧻 Household",3650],["deepfreezer","🥶 Deep freezer",365]];   /* DEEPFZ: appended — panZoneMeta falls back to [3] = pantry */   // GR_RCPT6: 🧻 household supplies never go old
 function panZoneMeta(z){ return PAN_ZONES.find(p=>p[0]===z)||PAN_ZONES[3]; }
 function panStatus(it,todayIso){
   if(!todayIso) todayIso=_todayStr();
   // 📅 a date off the package beats the guess (not in the freezer — freezing stops that clock)
-  if(it.useBy&&/^\d{4}-\d{2}-\d{2}$/.test(it.useBy)&&it.zone!=="freezer"){ if(todayIso>it.useBy) return "gone"; return todayIso>=kitIsoPlus(it.useBy,-2)?"aging":"fresh"; }
+  if(it.useBy&&/^\d{4}-\d{2}-\d{2}$/.test(it.useBy)&&!grIsFrozenZone(it.zone)){ if(todayIso>it.useBy) return "gone"; return todayIso>=kitIsoPlus(it.useBy,-2)?"aging":"fresh"; }
   let life=panZoneMeta(it.zone)[2];
   if((it.zone==="fridge"||it.zone==="counter")&&typeof grIsProduceName==="function"&&grIsProduceName(it.name)) life=6;   // fresh fruit/veg keep the short clock wherever they sit
   const age=Math.round((gwParseDate(todayIso)-gwParseDate(it.addedIso||todayIso))/86400000);
@@ -23978,7 +23980,7 @@ function renderKitchen(el){
   h+='<div style="padding:10px 14px 12px">';
   if(panImportOpen){
     h+='<textarea id="pan-import" rows="6" placeholder="spinach | produce&#10;chicken thighs | freezer&#10;rice" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif"></textarea>'
-      +'<div style="font-size:11px;color:var(--muted);margin:6px 0 8px">One item per line — <b>name | zone | how many</b> (zones: produce, fridge, freezer, pantry; zone and count optional). Snap the receipt or cabinets, hand the pics to Claude, paste what it gives back. Re-importing refreshes dates; receipt counts quietly build your buying trends.</div>'
+      +'<div style="font-size:11px;color:var(--muted);margin:6px 0 8px">One item per line — <b>name | zone | how many</b> (zones: pantry, fridge, freezer, deepfreezer, counter, household; zone and count optional). Snap the receipt or cabinets, hand the pics to Claude, paste what it gives back. Re-importing refreshes dates; receipt counts quietly build your buying trends.</div>'
       +'<label style="display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:#4a4540;margin:0 0 8px;cursor:pointer"><input type="checkbox" id="pan-sweep" style="width:16px;height:16px"> 📸 This was a cabinet/freezer sweep (resets the reminder; sweeps don\'t count as purchases)</label>'
       +'<button onclick="panImportApply()" style="width:100%;padding:11px;border-radius:10px;border:none;background:#8a5a2c;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">📥 Import to pantry</button>';
   } else {
@@ -23995,7 +23997,7 @@ function renderKitchen(el){
       +'<select id="pan-zone" style="padding:9px 8px;border:1.5px solid #cbd5e1;border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif">'
       +GR_PLACES.map(z=>'<option value="'+z[0]+'">'+z[1]+'</option>').join('')+'</select>'
       +'<button onclick="panAddManual()" style="padding:9px 16px;border-radius:9px;border:none;background:#8a5a2c;color:#fff;font-size:13px;font-weight:700;cursor:pointer">＋ Add</button></div>'
-      +'<div style="font-size:11px;color:var(--muted);margin-top:7px">Loose by design: fresh fruit/veg ~6 days, fridge ~2 weeks, freezer ~3 months, pantry ~6 months — or the 📅 date you typed. Old items get a ⚠️ and Mom\'s Day asks; nothing disappears on its own. ⭐ makes an item a regular on the 🧺 staples check-list.</div>';
+      +'<div style="font-size:11px;color:var(--muted);margin-top:7px">Loose by design: fresh fruit/veg ~6 days, fridge ~2 weeks, freezer ~3 months, deep freezer ~1 year, pantry ~6 months — or the 📅 date you typed. Old items get a ⚠️ and Mom\'s Day asks; nothing disappears on its own. ⭐ makes an item a regular on the 🧺 staples check-list.</div>';
   }
   h+='</div></div>';
 
