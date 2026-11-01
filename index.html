@@ -19414,6 +19414,7 @@ function renderGrocery(el){
     +(grFromDad?'':'<button onclick="grPhotoListOpen()" style="margin:7px 0 0 6px;padding:7px 12px;border-radius:9px;border:1.5px solid #0f766e;background:#f0fdfa;color:#0f766e;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">📸 List from a photo</button>')
     +(grFromDad?'':'<button onclick="grRcptOpen()" style="margin:7px 0 0 6px;padding:7px 12px;border-radius:9px;border:1.5px solid #6B4C93;background:#f5f3ff;color:#5b21b6;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">📸 Read a receipt</button>')
     +((!grFromDad&&grWeekNeeds().length)?'<div><button onclick="grNeedsOpen()" style="margin-top:7px;padding:7px 12px;border-radius:9px;border:1.5px solid #ea580c;background:#fff7ed;color:#c2410c;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🍽 This week\'s meals need '+grWeekNeeds().length+' — check</button></div>':'')
+    +(grFromDad?'':'<div><button onclick="grPreShopOpen()" style="margin-top:7px;padding:9px 14px;border-radius:9px;border:1.5px solid #b91c1c;background:#fef2f2;color:#b91c1c;font-size:12.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🛒 Pre-shop check — the next 7 days</button></div>')   // PRESHOP
     +grShelfHTML(grFromDad?"dad":"list")
     +((sid==='all'&&grSortCount())?grQsBtnHTML():'');
   let any=false;
@@ -20691,6 +20692,199 @@ function grNeedsDraw(){
 function grNeedBought(i){ grGate(function(){ const r=grWeekNeeds()[i]; if(!r) return; try{ panAdd(r.name,grSecMeta(grSecFor(r.name))[2]||"pantry",1,"receipt"); }catch(e){} mwToast("✅ "+r.name+" — in the pantry"); grNeedsDraw(); }); }
 function grNeedList(i){ grGate(function(){ const r=grWeekNeeds()[i]; if(!r) return; if(!grFindDup(r.name)) grCreate({name:r.name},{k:"meal",lbl:r.meals.join(", ")},null); grSave(); mwToast("🛒 "+r.name+" — on the list"); grNeedsDraw(); }); }
 function grNeedSkipTap(i){ grGate(function(){ const r=grWeekNeeds()[i]; if(!r) return; const sl=kitSlug(r.name); const until=kitIsoPlus(_todayStr(),6); grData.skipneed[sl]=until; grSave(); if(typeof db!=='undefined'&&db) db.ref('kitchen/grocery/skipneed/'+sl).set(until); grNeedsDraw(); }); }
+// PRESHOP_START — 🛒 Pre-shop check (her ask 2026-11-01: a Sunday review before the order — every recipe planned for the
+// next 7 days, each ingredient ✓ have / ✗ out / ? check, with the counts running DOWN as the week's meals use them up, so two
+// recipes that each need the last bag of peas don't both look fine). grWeekNeeds only asks "is it in the house at all?" and
+// stays as it is; this shares its matching (grPanFind · grIngParse · grIsBasic · grNeedSkip · grFindDup).
+//   What a recipe needs: its uses [{name,qty}] when it has them, else its ing lines (spoon amounts and basics skipped, as
+//   grWeekNeeds does). grPanFind "exact"/"same" → that pantry item and its count. A "close" guess is never trusted (live
+//   11/1: "pizza sauce" → Worcestershire sauce, "oven fries" → broccoli stir-fry mix) — it shows ? check, the guess as a hint.
+//   A ⭐ staple marked out/low shows ✗/⚠ (it is already on the list as a staple row). An uncounted pantry item is ✓ have.
+//   Writes, Mom or Dad only (grGate): 🛒 Add → kitchen/grocery/items/{id} (grCreate, as grNeedList) · ✓ We have it →
+//   kitchen/grocery/skipneed/{slug} = today+6 (the same "Not needed" grNeedSkipTap writes) · ↩ undo → those slugs removed ·
+//   Actually we're out → kitchen/pantry/{id}/qty = 0 (grPanSet) and/or kitchen/staples/{id} state "out", then the list add.
+//   Opening it writes nothing.
+const GR_PS_SLOT={b:"Breakfast",l:"Lunch",d:"Dinner",side:"Side",s:"Snack"};
+const GR_PS_COOK=/^(tsps?|t|teaspoons?|tbsps?|tbs|tablespoons?|pinch|dash)$/i;
+const GR_PS_PKG=/^(cans?|jars?|bags?|box(es)?|packages?|pkgs?|pkg|packets?|cartons?|containers?|bottles?|loaf|loaves|heads?|bunch(es)?)$/i;
+const GR_PS_WEEKDAYS=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
+function _grPsWrite(){ return typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
+// one day's planned slots in eating order: [{slot,mid}|{slot,txt}] — eating-out slots and an eaten/skipped dinner drop out
+function grPreShopSlots(iso){
+  let p=(typeof kitPlanRec==='function')?kitPlanRec(iso):kitPlan[iso]; if(typeof kitOutStrip==='function') p=kitOutStrip(iso,p);
+  const out=[]; if(!p) return out;
+  const slot=sl=>{ const parts=kitSlotsParts(p[sl]); if(parts) kitSlotsList(parts).forEach(x=>out.push(x.mid?{slot:sl,mid:x.mid}:{slot:sl,txt:x.txt})); };
+  slot("b"); slot("l");
+  if(!p.eaten&&!p.skipped){
+    if(p.mid) out.push({slot:"d",mid:p.mid}); else if(p.txt) out.push({slot:"d",txt:p.txt});
+    const sl=kitSideRaw(p);
+    if(sl.length) sl.forEach(x=>out.push(x.mid?{slot:"side",mid:x.mid}:{slot:"side",txt:x.txt}));
+    else if(p.sides&&String(p.sides).trim()) out.push({slot:"side",txt:String(p.sides)});
+  }
+  slot("s");
+  return out;
+}
+// what one recipe takes out of the house: [{name, need, unit?}] — its uses first, else its ing lines
+function grPreShopNeeds(m){
+  const out=[], seen={};
+  const add=(name,need,unit)=>{ const k=grKey(name); if(!k||seen[k]||grIsBasic(name)) return; seen[k]=1; const r={name:String(name).trim(),need:need>0?need:1}; if(unit) r.unit=unit; out.push(r); };
+  const U=m&&m.uses&&(Array.isArray(m.uses)?m.uses:Object.keys(m.uses).map(k=>m.uses[k]));   // Firebase may hand a list back as {0:…}
+  if(U&&U.length){ U.forEach(u=>u&&u.name&&add(u.name,Number(u.qty)||1,"")); return out; }
+  String((m&&m.ing)||"").split("\n").reduce((a,l)=>a.concat(l.split(/\s\+\s/)),[]).forEach(l=>{
+    const p=grIngParse(l); if(!p||GR_PS_COOK.test(p.unit||"")) return;
+    const pkg=!p.unit||GR_PS_PKG.test(p.unit); add(p.name,pkg&&p.qty>0?p.qty:1,pkg&&p.unit?p.unit:"");   // "2 cans beans" → 2 · "1 cup rice" → 1 of whatever's on the shelf
+  });
+  return out;
+}
+// The check itself — pure (reads only). Days startIso … startIso+6, in order; every line's count is what is LEFT after the
+// meals before it. → {from, to, days:[{iso,label,items:[{slot,txt}|{slot,mid,name,emoji,lines:[…]}]}], groups:[…], sum}
+function grPreShop(startIso){
+  const from=startIso||_todayStr(), P=kitPantry||{}, S=kitStaples||{};
+  const left={}, G={}, groups=[], days=[]; let recipes=0;
+  for(let i=0;i<7;i++){
+    const iso=kitIsoPlus(from,i), label=gwParseDate(iso).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+    const day={iso:iso,label:label,items:[]}, wd=label.split(",")[0];
+    grPreShopSlots(iso).forEach(x=>{
+      if(!x.mid){ day.items.push({slot:x.slot,txt:x.txt}); return; }
+      const m=kitMeals[x.mid]; if(!m){ day.items.push({slot:x.slot,txt:"(recipe removed)"}); return; }
+      recipes++;
+      const rec={slot:x.slot,mid:x.mid,name:String(m.name||""),emoji:m.emoji||"",lines:[]}, who=wd+" · "+rec.name;
+      grPreShopNeeds(m).forEach(n=>{
+        const f=grPanFind(n.name), sure=!!(f&&f.how!=="close"&&P[f.pid]), it=sure?P[f.pid]:null;
+        const sid=grIsStapleName(n.name)||(it?grIsStapleName(it.name):null), st=(sid&&S[sid])?S[sid].state:"";
+        const key=sure?"p:"+f.pid:(sid?"s:"+sid:"n:"+grKey(n.name));
+        let g=G[key];
+        if(!g){ g=G[key]={key:key,gi:groups.length,name:it?String(it.name):(sid?String(S[sid].name):n.name),names:[],pid:sure?f.pid:null,sid:sid||null,
+            guess:(f&&!sure&&P[f.pid])?String(P[f.pid].name):"",have:(it&&typeof it.qty==="number")?it.qty:null,need:0,unit:n.unit||"",meals:[],lines:[],lastBy:""};
+          groups.push(g); left[key]=g.have; }
+        if(g.names.indexOf(n.name)<0) g.names.push(n.name); if(g.meals.indexOf(who)<0) g.meals.push(who); g.need+=n.need;
+        const ln={name:n.name,need:n.need,gi:g.gi}, l=left[key];
+        if(st==="out"){ ln.st="out"; ln.why="⭐ staple — marked out"; }
+        else if(st==="low"){ ln.st="low"; ln.why="⭐ staple — running low"; }
+        else if(it&&typeof l!=="number"){ ln.st="have"; ln.why="in the house · not counted"; }
+        else if(it){
+          if(l>=n.need){ ln.st="have"; ln.why="have "+l+" → "+(Math.round((l-n.need)*100)/100)+" left after this"; }
+          else { ln.st="out"; ln.why=g.have===0?"out — 0 in the house":(l<=0?"the last of it goes to "+g.lastBy:"only "+l+" left · this needs "+n.need); }
+        }
+        else if(st==="have"){ ln.st="have"; ln.why="⭐ staple — have"; }
+        else { ln.st="check"; ln.why=g.guess?"not sure — is it the "+g.guess+"?":"not on the house list"; }
+        if(typeof l==="number") left[key]=l-n.need;
+        g.lastBy=who; rec.lines.push(ln); g.lines.push(ln);
+      });
+      day.items.push(rec);
+    });
+    days.push(day);
+  }
+  const sum={days:7,recipes:recipes,buy:0,check:0,onList:0};
+  groups.forEach(g=>{
+    g.skip=g.names.concat(g.pid?[g.name]:[]).some(grNeedSkip);
+    g.dup=!!(grFindDup(g.name)||g.names.some(n=>grFindDup(n)));
+    g.bad=g.lines.some(l=>l.st==="out"||l.st==="low"); g.unsure=!g.bad&&g.lines.some(l=>l.st==="check");
+    g.qty=(typeof g.have==="number")?Math.max(0,Math.ceil(g.need-g.have)):(g.pid?0:Math.ceil(g.need));   // 🛒 Add: the week's shortfall
+    g.lines.forEach(l=>{ l.view=(g.skip&&l.st!=="have")?"skip":l.st; });
+    if(g.skip||!(g.bad||g.unsure)) return;
+    if(g.dup) sum.onList++; else if(g.bad) sum.buy++; else sum.check++;
+  });
+  return {from:from,to:kitIsoPlus(from,6),days:days,groups:groups,sum:sum};
+}
+function grPreShopSumTxt(s){ return s.days+" days · "+s.recipes+" recipe"+(s.recipes===1?"":"s")+" · "+s.buy+" to buy · "+s.check+" to check"; }
+// ── the sheet ──
+let _grPS=null;   // {from, hideOk, res}
+function grPreShopOpen(startIso){ _grPS={from:startIso||_todayStr(),hideOk:false,res:null}; grPreShopDraw(); }
+function grPreShopClose(){ _grPS=null; grPopClose(); grRepaint(); }
+function grPreShopHide(v){ if(_grPS){ _grPS.hideOk=!!v; grPreShopDraw(); } }
+const GR_PS_ICON={have:["✓","#166534"],skip:["✓","#166534"],out:["✗","#b91c1c"],low:["⚠","#b45309"],check:["?","#b45309"]};
+function grPreShopLineHTML(ln,g){
+  const B='padding:9px 12px;min-height:40px;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;';
+  const b='padding:6px 10px;min-height:34px;border-radius:9px;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;';
+  const ic=GR_PS_ICON[ln.view]||GR_PS_ICON.check;
+  let act='';
+  if(ln.view==="skip") act='<span style="font-size:12px;font-weight:700;color:#166534">you said we have it</span><button onclick="grPreShopUndo('+g.gi+')" style="'+b+'border:1.5px solid #e5e7eb;background:#fff;color:#64748b">↩ Undo</button>';
+  else if(ln.view==="have") act='<button onclick="grPreShopOut('+g.gi+')" style="'+b+'border:1.5px solid #fecaca;background:#fff;color:#b91c1c">Actually we\'re out</button>';
+  else if(g.dup) act='<span style="font-size:12.5px;font-weight:800;color:#3A7D44">🛒 on the list</span>';
+  else act=(g.sid&&!g.pid?'':'<button onclick="grPreShopAdd('+g.gi+')" style="'+B+'border:1.5px solid #3A7D44;background:#fff;color:#3A7D44">🛒 Add'+(g.qty>1?' '+g.qty+(g.unit?' '+esc(g.unit):''):'')+'</button>')
+    +'<button onclick="grPreShopHave('+g.gi+')" style="'+B+'border:1.5px solid #86efac;background:#f0fdf4;color:#166534">✓ We have it</button>';
+  return '<div style="padding:8px 0 8px 2px;border-bottom:1px solid #eef2f0">'
+    +'<div style="display:flex;gap:8px;align-items:baseline"><span style="width:16px;flex:none;text-align:center;font-weight:900;font-size:15px;color:'+ic[1]+'">'+ic[0]+'</span>'
+    +'<span style="flex:1;min-width:0;font-size:14px;font-weight:700">'+esc(ln.name)+(ln.need!==1?' <span style="font-weight:600;color:#64748b">×'+esc(String(ln.need))+'</span>':'')+'</span></div>'
+    +'<div style="font-size:11.5px;color:#64748b;margin:1px 0 0 24px">'+esc(ln.why)+'</div>'
+    +'<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:6px 0 0 24px">'+act+'</div></div>';
+}
+function grPreShopDraw(){
+  const S=_grPS; if(!S) return grPopClose();
+  const r=grPreShop(S.from); S.res=r; const s=r.sum;
+  const fmt=iso=>gwParseDate(iso).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+  const tab=(on,v,t)=>'<button onclick="grPreShopHide('+v+')" style="flex:1;padding:8px 6px;min-height:38px;border-radius:9px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;border:1.5px solid '+(on?'#3A7D44;background:#3A7D44;color:#fff':'#e5e7eb;background:#fff;color:#57534e')+'">'+t+'</button>';
+  let h='<div style="font-weight:800;font-size:17px">🛒 Pre-shop check</div>'
+    +'<style>#gr-pop .gr-pop-box{max-width:620px!important}</style>'
+    +'<div style="font-size:12px;color:#64748b;margin:2px 0 10px">'+esc(fmt(r.from))+' – '+esc(fmt(r.to))+' · counts go down as the week\'s meals use things up</div>'
+    +'<div style="background:#f8faf9;border:1px solid #e2ece6;border-radius:12px;padding:10px 12px;margin-bottom:10px">'
+    +'<div style="font-size:15px;font-weight:800;line-height:1.4">'+s.days+' days · '+s.recipes+' recipe'+(s.recipes===1?'':'s')+' · <span style="color:#b91c1c">'+s.buy+' to buy</span> · <span style="color:#b45309">'+s.check+' to check</span></div>'
+    +(s.onList?'<div style="font-size:12px;color:#3A7D44;font-weight:700;margin-top:2px">🛒 '+s.onList+' more already on the '+esc(SHOP_LIST_NAME)+'</div>':'')
+    +(!s.buy&&!s.check&&s.recipes?'<div style="font-size:12px;color:#166534;font-weight:700;margin-top:2px">✓ Everything the week needs is in the house or on the list</div>':'')
+    +'</div>'
+    +'<div style="display:flex;gap:6px;margin-bottom:4px">'+tab(!S.hideOk,0,'Everything')+tab(S.hideOk,1,'Just what needs you')+'</div>';
+  let shown=0;
+  r.days.forEach(d=>{
+    let dh='';
+    d.items.forEach(x=>{
+      const sl=GR_PS_SLOT[x.slot]||"";
+      if(x.txt!=null){ if(!S.hideOk) dh+='<div style="font-size:13px;color:#57534e;padding:6px 0 6px 2px;border-bottom:1px solid #eef2f0">📝 '+esc(x.txt)+' <span style="font-size:11px;font-weight:700;color:#94a3b8">'+sl+' · typed in, nothing to check</span></div>'; return; }
+      const lines=x.lines.filter(l=>!S.hideOk||(l.view!=="have"&&l.view!=="skip"));
+      if(S.hideOk&&!lines.length) return;
+      dh+='<div style="margin:8px 0 0;font-size:14.5px;font-weight:800">'+(x.emoji?esc(x.emoji)+' ':'')+esc(x.name)+' <span style="font-size:11px;font-weight:700;color:#94a3b8">'+sl+'</span></div>';
+      if(!x.lines.length) dh+='<div style="font-size:12px;color:#94a3b8;padding:4px 0 6px 2px">No ingredient list on this recipe</div>';
+      lines.forEach(l=>{ dh+=grPreShopLineHTML(l,r.groups[l.gi]); });
+    });
+    if(!dh&&S.hideOk) return;
+    shown++;
+    h+='<div style="font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#6b6560;margin:16px 0 2px">'+esc(d.label)+'</div>'
+      +(dh||'<div style="font-size:12.5px;color:#94a3b8;padding:4px 2px">Nothing planned</div>');
+  });
+  if(S.hideOk&&!shown) h+='<div style="font-size:13px;color:#166534;font-weight:700;padding:14px 2px">Nothing needs you ✓</div>';
+  h+='<button onclick="grPreShopClose()" style="'+GR_BTN+'border:none;background:#3A7D44;color:#fff;margin-top:14px">Done</button>';
+  grPop(h);
+}
+// ── the taps (each one recomputes from the live data, by group) ──
+function _grPsG(gi){ return (_grPS&&_grPS.res&&_grPS.res.groups[gi])||null; }
+function grPreShopListAdd(g){   // → true when something new went on the list
+  if(g.sid&&!g.pid) return false;   // a ⭐ staple marked out/low is already on the list as a staple row
+  if(grFindDup(g.name)||g.names.some(n=>grFindDup(n))) return false;
+  const p={name:g.name}; if(g.qty>0) p.qty=g.qty; if(g.unit&&GR_PS_PKG.test(g.unit)) p.unit=g.unit;
+  grCreate(p,{k:"meal",lbl:g.meals.join(", ")},null); return true;
+}
+function grPreShopAdd(gi){ grGate(function(){ const g=_grPsG(gi); if(!g) return; grPreShopListAdd(g); grSave(); mwToast("🛒 "+g.name+" — on the list"); grPreShopDraw(); }); }
+function grPreShopHave(gi){ grGate(function(){
+  const g=_grPsG(gi); if(!g) return; const until=kitIsoPlus(_todayStr(),6), up={};
+  grData.skipneed=grData.skipneed||{};
+  g.names.forEach(n=>{ const sl=kitSlug(n); if(!sl) return; grData.skipneed[sl]=until; up[sl]=until; });
+  grSave(); if(_grPsWrite()&&Object.keys(up).length) db.ref('kitchen/grocery/skipneed').update(up);
+  mwToast("✓ "+g.name+" — we have it"); grPreShopDraw();
+}); }
+function grPreShopUndo(gi){ grGate(function(){
+  const g=_grPsG(gi); if(!g) return; const up={}, sk=grData.skipneed||{};
+  g.names.concat(g.pid?[g.name]:[]).forEach(n=>{ const sl=kitSlug(n); if(sl&&sk[sl]!==undefined){ delete sk[sl]; up[sl]=null; } });
+  grSave(); if(_grPsWrite()&&Object.keys(up).length) db.ref('kitchen/grocery/skipneed').update(up);
+  grPreShopDraw();
+}); }
+function grPreShopOut(gi){ grGate(function(){
+  const g=_grPsG(gi); if(!g) return;
+  if(g.pid&&kitPantry[g.pid]) grPanSet(g.pid,{qty:0});
+  if(g.sid&&kitStaples[g.sid]&&kitStaples[g.sid].state!=="out"){ const s=kitStaples[g.sid]; s.state="out"; s.ts=Date.now();
+    try{HA_LS.setItem('ha_kit_staples',JSON.stringify(kitStaples));}catch(e){}
+    if(_grPsWrite()) db.ref('kitchen/staples/'+g.sid).update({state:"out",ts:s.ts}); }
+  const g2=grPreShop(_grPS.from).groups.find(x=>x.key===g.key)||g;   // recount: the whole week's need is now the shortfall
+  grPreShopListAdd(g2); grSave(); mwToast("✗ "+g.name+" — out · on the list"); grPreShopDraw();
+}); }
+// 🔴 Now on Mom's Day — on the 🛒 order day (Sunday when none is picked), while anything is still to buy or to check
+function grPreShopDay(){ return (typeof kitSettings!=="undefined"&&kitSettings&&kitSettings.orderDay)||"sunday"; }
+function grPreShopNowHTML(){
+  const t=_todayStr(); if(GR_PS_WEEKDAYS[gwParseDate(t).getDay()]!==grPreShopDay()) return {n:0,html:""};
+  const s=grPreShop(t).sum; if(!s.buy&&!s.check) return {n:0,html:""};
+  const what=[s.buy?s.buy+" to buy":"",s.check?s.check+" to check":""].filter(Boolean).join(" · ");
+  return {n:1,html:'<div onclick="grPreShopOpen()" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fef2f2;border-left:3px solid #dc2626;border-radius:8px;margin-bottom:6px"><span style="font-size:13px">🛒 <b>Pre-shop check</b> — '+what+' for the next 7 days\' meals · tap to go through it</span></div>'};
+}
+// PRESHOP_END
 // 🔴 Now lines on Mom's Day
 function grPantryAlertsHTML(){
   let h='', n=0;
@@ -20698,6 +20892,7 @@ function grPantryAlertsHTML(){
   if(old){ n++; h+='<div onclick="grPanCheckOpen()" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fef2f2;border-left:3px solid #dc2626;border-radius:8px;margin-bottom:6px"><span style="font-size:13px">🥫 <b>'+old+' thing'+(old===1?'':'s')+'</b> in the pantry may be old — tap to check</span></div>'; }
   const need=grWeekNeeds().length;
   if(need){ n++; h+='<div onclick="grNeedsOpen()" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fff7ed;border-left:3px solid #ea580c;border-radius:8px;margin-bottom:6px"><span style="font-size:13px">🍽 This week\'s meals need <b>'+need+' thing'+(need===1?'':'s')+'</b> you don\'t have — tap to check</span></div>'; }
+  try{ const _ps=grPreShopNowHTML(); n+=_ps.n; h+=_ps.html; }catch(e){}   // PRESHOP: 🛒 Pre-shop check on order day
   return {n:n,html:h};
 }
 // ── 🧾 Checkout + multiple budgets (her asks 10/3 late) ──
