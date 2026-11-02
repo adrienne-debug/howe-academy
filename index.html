@@ -18922,7 +18922,7 @@ function grVirtualRows(){
   const rows=[];
   try{
     const o=kitOrderList();
-    o.need.forEach(s=>rows.push({key:"st_"+s.id,name:s.name,sec:grSecFor(s.name),tag:s.state==="out"?"🧺 out":"🧺 low",virt:"staple",sid:s.id,stores:grHomeFor(s.name),sort:grActiveStores().length>0&&(grData.home||{})[kitSlug(s.name)]===undefined}));
+    o.need.forEach(s=>rows.push({key:"st_"+s.id,name:s.name,sec:grSecFor(s.name),tag:s.state==="out"?"🧺 out":"🧺 low",virt:"staple",sid:s.id,qty:s.qty>1?s.qty:undefined,stores:grHomeFor(s.name),sort:grActiveStores().length>0&&(grData.home||{})[kitSlug(s.name)]===undefined}));
     Object.keys(o.usuals).forEach(c=>o.usuals[c].forEach(u=>rows.push({key:"us_"+u.id,name:u.name,qty:u.qty>1?u.qty:undefined,sec:grSecFor(u.name),tag:"🔁 usual",virt:"usual",sid:u.id,stores:grHomeFor(u.name),sort:grActiveStores().length>0&&(grData.home||{})[kitSlug(u.name)]===undefined})));
   }catch(e){}
   return rows;
@@ -19306,7 +19306,7 @@ function grGroups(sid){
     const it=items[id]; if(!it||!it.name||!grShowsAt(it.stores,sid)) return;
     push(GR_SECS.some(s=>s[0]===it.sec)?it.sec:grSecFor(it.name),{id:id,name:it.name,photo:it.photo||"",q:grQtyTxt(it),note:it.note||"",tags:(it.src||[]).map(grSrcTxt).filter(Boolean),srcs:it.src||[],sort:grIsUnsorted(it)&&!it.done,done:!!it.done,doneTs:it.doneTs||0,stores:(it.stores||[]).filter(x=>grStores()[x])});
   });
-  grVirtualRows().forEach(r=>{ if(!grShowsAt(r.stores,sid)) return; push(r.sec,{key:r.key,name:r.name,q:r.qty?"×"+r.qty:"",note:"",tags:[r.tag],done:!!grData.vchk[r.key],doneTs:0,virt:true,stores:r.stores,sort:!!r.sort&&!grData.vchk[r.key]}); });
+  grVirtualRows().forEach(r=>{ if(!grShowsAt(r.stores,sid)) return; push(r.sec,{key:r.key,name:r.name,q:r.qty?"×"+r.qty:"",note:"",tags:[r.tag],done:!!grData.vchk[r.key],doneTs:0,virt:true,vst:r.virt==="staple"?r.sid:"",stores:r.stores,sort:!!r.sort&&!grData.vchk[r.key]}); });
   Object.keys(g).forEach(k=>g[k].sort((a,b)=>String(a.name).localeCompare(String(b.name))));
   return g;
 }
@@ -19352,7 +19352,7 @@ function grRowHTML(r,showStores){
       +(big?'':grTagsHTML(r))+st+(r.sort?(showStores?' <span style="font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:10px;background:#ccfbf1;color:#0f766e;white-space:nowrap">📥 to sort</span>':'<div style="font-size:11.5px;font-weight:800;color:#0f766e">📥 not sorted yet — Mom may get this somewhere else</div>'):'')+'</div>'
       +((showStores&&r.sort&&!qsOn)?grQsChipsHTML(r):'')   // 🏬 one tap sorts it right here on All
       +(r.note?'<div style="font-size:'+(big?14:12)+'px;color:#64748b">'+esc(r.note)+'</div>':'')+grPriceLineHTML(r)+grPaidMathHTML(r)+'</div>'
-    +((r.id&&!r.done)?grStepperHTML(r):(r.q?'<div style="font-size:'+(big?16:13)+'px;font-weight:800;color:#3A7D44;white-space:nowrap">'+esc(r.q)+'</div>':''))
+    +((r.id&&!r.done)?grStepperHTML(r):(r.vst&&!r.done)?grVStepperHTML(r):(r.q?'<div style="font-size:'+(big?16:13)+'px;font-weight:800;color:#3A7D44;white-space:nowrap">'+esc(r.q)+'</div>':''))
     +(grBig?grPaidBoxHTML(r):'')   // − 2 + on items still to get · 🏃 store mode: the price box
     +(big?'':'<button onclick="'+(r.virt?'grEditV(\''+r.key+'\')':'grEdit(\''+r.id+'\')')+'" aria-label="Edit" style="border:none;background:none;color:#94a3b8;font-size:15px;cursor:pointer;padding:2px 4px">✎</button>')
     +((!big&&r.id&&!qsOn)?'<button onclick="event.stopPropagation();grRemove(\''+r.id+'\')" aria-label="Take off the list" title="Not needed — take it off the list" style="border:none;background:none;color:#94a3b8;font-size:15px;cursor:pointer;padding:2px 6px">✕</button>':'')   // GR_XOFF (her ask 2026-11-01): one tap takes a double off the list, ticked or not — same grRemove as ✎ → Remove, so it lands in ↩ Recently cleared as "removed", never put away at 🏁 Trip done. Not in 🏃 store mode.
@@ -20297,6 +20297,28 @@ function grStepperHTML(r){
     +'<button onclick="grQtyType(\''+r.id+'\')" aria-label="Type an amount" style="min-width:'+(big?40:28)+'px;border:none;background:none;color:#1f2937;font-size:'+(big?18:14)+'px;font-weight:800;cursor:pointer;padding:0 2px;white-space:nowrap;font-family:\'DM Sans\',sans-serif">'+esc(grStepLabel(it))+(it.extra?'<span style="display:block;font-size:10px;color:#64748b;font-weight:700">+ '+esc(it.extra)+'</span>':'')+'</button>'
     +'<button onclick="grStep(\''+r.id+'\',1)" aria-label="One more" style="'+b+'">+</button></div>';
 }
+// GR_STAPLEQTY_START — ⭐ staple rows get − N + too (her ask 2026-11-01: "could I have the amount but in here to adjust").
+//   The amount lives on the staple (kitchen/staples/{id}/qty, absent = 1) so "2 regular milk" stays 2 every week until she changes it.
+//   grVirtualRows carries it as qty → grGroups shows ×N, the cart estimate × it (grEstMult / grPaidMult read "×N"), and 🏁 Trip done
+//   puts that many away (bought(r.name,r.qty,…)). Whole-number only; staples/usuals are otherwise still changed on 🍽 Meals.
+function grVStepperHTML(r){
+  const s=(typeof kitStaples!=="undefined"&&kitStaples[r.vst])||null; if(!s) return r.q?'<div style="font-size:'+(grBig?16:13)+'px;font-weight:800;color:#3A7D44;white-space:nowrap">'+esc(r.q)+'</div>':'';
+  const big=grBig, w=big?42:30, b='width:'+w+'px;height:'+w+'px;flex:0 0 auto;border-radius:50%;border:1.5px solid #b7d3bf;background:#fff;color:#3A7D44;font-size:'+(big?22:17)+'px;font-weight:800;line-height:1;cursor:pointer;padding:0;font-family:\'DM Sans\',sans-serif';
+  const q=s.qty>1?Math.round(s.qty):1, one=q<=1;
+  return '<div style="display:flex;align-items:center;gap:'+(big?6:4)+'px;flex:0 0 auto">'
+    +'<button onclick="grVStep(\''+r.vst+'\',-1)" aria-label="One less" '+(one?'disabled ':'')+'style="'+b+(one?';opacity:.35;cursor:default':'')+'">−</button>'
+    +'<span aria-label="Amount" style="min-width:'+(big?40:28)+'px;text-align:center;color:#1f2937;font-size:'+(big?18:14)+'px;font-weight:800;padding:0 2px;white-space:nowrap;font-family:\'DM Sans\',sans-serif">'+q+'</span>'
+    +'<button onclick="grVStep(\''+r.vst+'\',1)" aria-label="One more" style="'+b+'">+</button></div>';
+}
+function grVStep(sid,d){ grQtyGate(function(){
+  const s=kitStaples[sid]; if(!s) return;
+  const q=Math.max(1,(s.qty>1?Math.round(s.qty):1)+d);
+  if(q>1) s.qty=q; else delete s.qty;
+  try{ HA_LS.setItem('ha_kit_staples',JSON.stringify(kitStaples)); }catch(e){}
+  if(typeof db!=='undefined'&&db){ if(q>1) db.ref('kitchen/staples/'+sid+'/qty').set(q); else db.ref('kitchen/staples/'+sid+'/qty').remove(); }
+  grRepaint();
+}); }
+// GR_STAPLEQTY_END
 // ── 🏃 store mode: a price box on each row + a running total along the top (her ask 10/3 night) ──
 //   items/{id}.paid = what she typed this trip (per one; × the count) · vpaid/{st_|us_ key} = same for staple/usual rows
 // GR_PRICE_STAYS (her ask 2026-10-07: typed 1.25 in store mode, "when I clicked to next thing it disappeared"): typing a price
