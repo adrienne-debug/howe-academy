@@ -10617,6 +10617,7 @@ function taskCard(t, fromDay, readOnly, doneId){
   const nbAnsRow=(!readOnly&&momHereCards()&&typeof NB_WB_KIDS!=="undefined"&&NB_WB_KIDS[t.who]&&/Morning Notebook/.test(t.title||"")&&typeof nbChkOpen==="function")
     ?'<div style="margin-top:5px"><span onclick="event.stopPropagation();nbChkOpen(\''+t.who+'\',WK,\''+(t.day||"")+'\')" title="This day\u2019s notebook answers (Daily Grams key + the three test-prep items)" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#166534;cursor:pointer;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4D3} Answers \u2192</span></div>':"";
   // NBANS_END
+  const nbtRows=(!readOnly&&typeof nbtCardRows==="function")?(nbtCardRows(t)||""):"";   // 📱 NBTABLET: a Tablet kid’s Morning / Closing Notebook opens on the tablet; Mom also gets the answer pages
   // 📓 #66 NBREDO (her answers 2026-10-08): the Morning Notebook is assumed done first thing and holds its slot; Mom's
   // "↩ Not done" brings it back as the card in hand (a second tap puts it back to assumed-done).
   const nbRedoRow=(!readOnly&&!done&&momHereCards()&&t.mom!=="required"&&/Morning Notebook/i.test(t.title||"")&&typeof effectiveDay==="function"&&effectiveDay(t)===_todayDay&&!(typeof claimed!=="undefined"&&claimed&&claimed[t.id]))
@@ -10708,6 +10709,7 @@ function taskCard(t, fromDay, readOnly, doneId){
     '<div class="card-header"><span class="kid-badge badge-'+t.who+'">'+klbl+'</span>'+
     '<div class="task-title">'+disLabel+carryLabel+cascLabel+catchupLabel+pushLabel+(_eicL?eicCardTitle(t):taskTitleShow(t))+'</div>'+mb+((typeof mntXHTML==="function"&&mntXHTML(t,done,claimedHere,readOnly,!!mb))||"")+((typeof stClockHTML==="function"&&stClockHTML(t,done,claimedHere,readOnly,!!mb))||"")+'</div>'+   // MOMNOTTODAY: Mom's ✗ · SETTIME_TODAY: Mom's ⏰
     '<div class="task-detail">'+cleanDetail+'</div>'+famRow+dr+spinBtn+classRow+linkRow+wbRow+eicRow+rvRow+msRow+llRow+stRow+prRow+nbAnsRow+nbRedoRow+mpdRow+_lr.menu+_lr.kids+((typeof mmCardRow==="function"&&mmCardRow(t,done,claimedHere,readOnly))||"")+   // ⏱ MINMINUTES
+    nbtRows+   // 📱 NBTABLET: last in the chain (every earlier seam is pinned by a test)
     '</div></div></div>';
 }
 
@@ -44802,6 +44804,298 @@ function wbGoAssign(){
   if(v.dirty) wbSave().then(go).catch(go); else go();
 }
 // WB_ASSIGN_END
+// NBTABLET_START — 📱 Notebooks on the tablet (her ask 2026-11-02: "either print it or do it online, and pick per kid: tablet or
+// printed like it is … click it to go into the workbook, kind of like how we have the workbooks uploaded … the Mom version of it,
+// you get the pages that show the answers … keep the option to print").
+// Per kid: notebookSettings/<kid>/nbMode = "tablet" (missing = printed → nothing changes for anyone). Mom's "📱 Send to tablet"
+// builds the target week ONCE, exactly as 🖨 Print does (same pages, the same cursors move on), and stores the two documents the
+// builder already makes — the kid's pages and the parent guide (the answers) — at notebookDocs/<kid>/<week> = {student, parent,
+// ts, pages}, plus a small marker at notebookSettings/<kid>/tablet/<week> = {ts, pages} so the cards know a copy exists without
+// downloading it. Built once, not on every open: the notebook pulls live things in when it builds (drill misses → review
+// folding, pace bars, Daily Grams pages) and a rebuild mid-week would shuffle pages under the kid's writing. Copies older than
+// last week go with the send (one multi-path update). The viewer is the uploaded-workbook viewer's shape: one 8.5×11 page at a
+// time in a same-origin iframe scaled to the screen width, ◀ ▶, pen / erase / undo / clear / pencil-only, strokes normalised to
+// the page and autosaved one page per path at notebookWork/<kid>/<week>/<page>. A kid's device only ever downloads the student
+// copy; the parent copy is read only behind wbMomEyes(), checked at the button AND inside nbtOpen. Opening checks nothing off —
+// the card is done the same way as with paper. 🖨 Print / Parent / 👁 Look stay for every kid whatever the switch says.
+function nbtMode(kid){ try{ return ((((notebookSettings||{})[kid])||{}).nbMode==="tablet")?"tablet":"print"; }catch(e){ return "print"; } }
+function nbtSetMode(kid,mode){
+  if(!momHere()) return;
+  mode=(mode==="tablet")?"tablet":"print";
+  if(!notebookSettings[kid]) notebookSettings[kid]={};
+  notebookSettings[kid].nbMode=mode;
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ if(db&&!_dryRun()) db.ref("notebookSettings/"+kid+"/nbMode").set(mode); }catch(e){}   // one field, one path
+  if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
+}
+// the marker for a week's tablet copy ({ts,pages}) or null — the cards read this, never the copy itself
+function nbtBuilt(kid,wk){ try{ const m=(((((notebookSettings||{})[kid])||{}).tablet||{})[wk]); return (m&&m.ts)?m:null; }catch(e){ return null; } }
+function nbtPageCount(html){ try{ return new DOMParser().parseFromString(html||"","text/html").querySelectorAll(".page").length; }catch(e){ return 0; } }
+function nbtWhen(ts){ try{ const d=new Date(ts); return d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})+" "+d.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}); }catch(e){ return ""; } }
+function nbtInkPath(kid,wk,page){ return "notebookWork/"+kid+"/"+wk+"/"+page; }
+// Sending counts as building the week, the same as a print: every cursor the builder reports moves on (same-week sends write the
+// same values, as reprints do). Only the builders that use a letter/number window report those two.
+function nbtPersistCursors(kid,out){
+  if(!out) return;
+  try{ if(out.letterCursor){ const lc=(((notebookSettings||{})[kid])||{}).letterCursor||{}; const nc=out.letterCursor; if(lc.week!==nc.week||lc.idx!==nc.idx||lc.adv!==nc.adv) db.ref("notebookSettings/"+kid+"/letterCursor").set(nc); } }catch(e){}
+  try{ if(out.numberCursor){ const oc=(((notebookSettings||{})[kid])||{}).numberCursor||{}; const nc=out.numberCursor; if(oc.week!==nc.week||oc.from!==nc.from||oc.adv!==nc.adv) db.ref("notebookSettings/"+kid+"/numberCursor").set(nc); } }catch(e){}
+  try{ nbDgPersistCursor(kid,out); }catch(e){}
+  try{ nbWbPersistCursor(kid,out); }catch(e){}
+  try{ nbCqPersistCursor(kid,out); }catch(e){}
+  try{ nbQbPersistCursor(kid,out); }catch(e){}
+  try{ nbCvPersistCursor(kid,out); }catch(e){}
+}
+let _nbtSendBusy=false;
+async function nbtSend(kid){
+  if(!momHere()) return;
+  const say=m=>{ if(typeof gwShowToast==="function") gwShowToast(m); };
+  if(_nbtSendBusy){ say("A notebook is already being sent — one moment."); return; }
+  if(!db||_dryRun()){ say("Not connected — the tablet copy can't be saved right now."); return; }
+  let lib; try{ lib=await haLoadNotebooksLib(); }catch(e){ alert("Couldn't load the notebook builder ("+e.message+")."); return; }
+  _nbtSendBusy=true;
+  try{ await nbDgPrefetch(kid); }catch(e){}
+  try{
+    const wk=nbTargetWk(), wn=nbTargetWkNum();
+    say("📱 Building "+cap(kid)+"'s notebook…");
+    const ctx=haNbContext(kid); ctx.bindingMargin=false;   // no prongs on a tablet
+    const out=lib.generate(kid,ctx);
+    if(out&&out.warnings&&out.warnings.length) alert("⚠ "+cap(kid)+"'s notebook:\n\n"+out.warnings.join("\n\n"));
+    nbtPersistCursors(kid,out);
+    const student=(out&&out.student)||""; if(!student) throw new Error("the builder made no pages");
+    const parent=(out&&out.parent)||student;
+    const pages=nbtPageCount(student), ts=Date.now();
+    const upd={};
+    upd["notebookDocs/"+kid+"/"+wk]={student:student,parent:parent,ts:ts,pages:pages};
+    upd["notebookSettings/"+kid+"/tablet/"+wk]={ts:ts,pages:pages};
+    // older than last week → the marker, the copy and its writing go (this week + last week stay)
+    const marks=(((notebookSettings||{})[kid])||{}).tablet||{};
+    Object.keys(marks).forEach(k=>{ const n=parseInt(String(k).replace(/\D/g,""),10); if(n&&n<wn-1){ upd["notebookDocs/"+kid+"/"+k]=null; upd["notebookSettings/"+kid+"/tablet/"+k]=null; upd["notebookWork/"+kid+"/"+k]=null; } });
+    await db.ref().update(upd);   // one multi-path update: these exact paths, nothing else
+    say("✓ "+cap(kid)+"'s notebook is on the tablet — "+pages+" pages.");
+    if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
+  }catch(e){ alert("Couldn't send the notebook to the tablet: "+(e&&e.message||e)); console.error(e); }
+  finally{ _nbtSendBusy=false; }
+}
+// ── the viewer ──
+let nbtView=null;   // {kid,wk,which,page,n,strokes,dirty,tool,penOnly,sawPen,ink,key,ready}
+function nbtOpen(kid,wk,which){
+  which=(which==="parent")?"parent":"student";
+  if(which==="parent"&&!wbMomEyes()) return;   // the answers never open on a kid's device — whatever the caller asked for
+  wk=wk||WK;
+  if(!db){ alert("Not connected — the notebook can't be opened right now."); return; }
+  if(typeof gwShowToast==="function") gwShowToast("📓 Opening the notebook…");
+  db.ref("notebookDocs/"+kid+"/"+wk+"/"+which).once("value").then(s=>{   // just this one document
+    const html=s.val();
+    if(typeof html!=="string"||!html){ alert(which==="parent"?"This week's answer pages haven't been sent to the tablet yet.":"This week's notebook hasn't been sent to the tablet yet."); return; }
+    nbtShow(kid,wk,which,html);
+  }).catch(e=>{ alert("Couldn't open the notebook: "+(e&&e.message||e)); });
+}
+function nbtShow(kid,wk,which,html){
+  const ink=(which==="student");
+  const key="ha_nbt_page_"+kid+"_"+wk; let page=1; try{ page=parseInt(HA_LS.getItem(key)||"1",10)||1; }catch(e){}   // reopens where they left off (this device)
+  nbtView={kid:kid,wk:wk,which:which,page:page,n:0,strokes:[],dirty:false,tool:"pen",penOnly:false,sawPen:false,ink:ink,key:key,ready:false};
+  let ov=document.getElementById("nbt-view"); if(ov) ov.remove();
+  ov=document.createElement("div"); ov.id="nbt-view";
+  ov.style.cssText="position:fixed;inset:0;z-index:10050;background:#f8fafc;display:flex;flex-direction:column;overscroll-behavior:none";
+  ov.innerHTML=
+    '<div id="nbt-bar" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#fff;border-bottom:1px solid #e2e8f0;flex:none;font-family:\'DM Sans\',sans-serif;flex-wrap:wrap"></div>'+
+    '<div id="nbt-stage" style="flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:10px;-webkit-overflow-scrolling:touch">'+
+      '<div id="nbt-hold" style="position:relative;line-height:0;box-shadow:0 2px 14px rgba(0,0,0,.18);border-radius:4px;overflow:hidden;background:#fff;width:816px;height:1056px;flex:none'+(ink?'':';outline:3px solid #6ee7b7')+'">'+
+        // the page is laid out at its real 8.5in × 11in (816 × 1056 CSS px) and scaled as a whole — nothing reflows, nothing can clip
+        '<iframe id="nbt-doc" title="notebook page" sandbox="allow-same-origin" style="position:absolute;left:0;top:0;width:816px;height:1056px;border:0;transform-origin:0 0;pointer-events:none;background:#fff"></iframe>'+
+        (ink?'<canvas id="nbt-ink" style="position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair"></canvas>':'')+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(ov);
+  const fr=document.getElementById("nbt-doc");
+  fr.onload=()=>{ const v=nbtView; if(v!==nbtView||!v) return; try{ nbtPrepDoc(fr.contentDocument); v.n=nbtPages(fr.contentDocument).length; }catch(e){ v.n=0; } v.page=Math.max(1,Math.min(v.n||1,v.page)); v.ready=true; nbtShowPage(); nbtFitAll(); nbtLoadInk(); };
+  fr.srcdoc=html;
+  nbtBarRender(); nbtFitAll(); nbtWatchFit();
+}
+// Show one page at a time inside the document the builder made: every .page sits at the iframe's top-left at its own size,
+// only the one with .nbt-on is displayed (its own display value kept), and body-level extras that hold no page are hidden.
+function nbtPrepDoc(doc){
+  if(!doc||!doc.documentElement) return;
+  const st=doc.createElement("style"); st.id="nbt-css";
+  st.textContent="html,body{margin:0!important;padding:0!important;background:#fff!important;overflow:hidden!important;width:8.5in!important;height:11in!important;min-height:0!important}"+
+    ".page{margin:0!important;box-shadow:none!important;border-radius:0!important;transform:none!important;zoom:1!important;position:absolute!important;left:0!important;top:0!important}"+
+    ".page:not(.nbt-on){display:none!important}";
+  (doc.head||doc.documentElement).appendChild(st);
+  Array.prototype.slice.call(doc.body?doc.body.children:[]).forEach(el=>{ const tag=el.tagName; if(tag==="STYLE"||tag==="SCRIPT"||tag==="LINK") return; if(el.classList.contains("page")||el.querySelector(".page")) return; el.style.setProperty("display","none","important"); });
+}
+function nbtPages(doc){ return doc?Array.prototype.slice.call(doc.querySelectorAll(".page")):[]; }
+function nbtShowPage(){
+  const v=nbtView, fr=document.getElementById("nbt-doc"); if(!v||!fr||!fr.contentDocument) return;
+  nbtPages(fr.contentDocument).forEach((p,i)=>{ if(i===v.page-1) p.classList.add("nbt-on"); else p.classList.remove("nbt-on"); });
+  try{ HA_LS.setItem(v.key,String(v.page)); }catch(e){}
+  nbtBarRender();
+}
+function nbtFitAll(){
+  const st=document.getElementById("nbt-stage"), hold=document.getElementById("nbt-hold"), fr=document.getElementById("nbt-doc"); if(!st||!hold||!fr) return;
+  const k=Math.min(Math.max(200,st.clientWidth-20)/816,1.6);   // the page fills the width; the stage scrolls down the page
+  hold.style.width=Math.round(816*k)+"px"; hold.style.height=Math.round(1056*k)+"px";
+  fr.style.transform="scale("+k+")";
+  if(nbtFitCanvas()) nbtPaint();
+}
+let _nbtRO=null;
+function nbtWatchFit(){
+  const st=document.getElementById("nbt-stage"); if(!st) return;
+  try{ if(_nbtRO) _nbtRO.disconnect(); if(typeof ResizeObserver==="function"){ _nbtRO=new ResizeObserver(()=>nbtFitAll()); _nbtRO.observe(st); } }catch(e){}
+}
+function nbtClose(){
+  clearTimeout(_nbtAutoT); _nbtAutoT=null;
+  const go=()=>{ try{ if(_nbtRO) _nbtRO.disconnect(); }catch(e){} _nbtRO=null; const ov=document.getElementById("nbt-view"); if(ov) ov.remove(); nbtView=null; };
+  if(nbtView&&nbtView.dirty){ nbtSave().then(go).catch(go); } else go();
+}
+function nbtBarRender(){
+  const bar=document.getElementById("nbt-bar"); if(!bar||!nbtView) return; const v=nbtView;
+  const btn=(lbl,fn,on)=>'<button onclick="'+fn+'" style="padding:7px 11px;border-radius:9px;border:1.5px solid '+(on?"#1d4ed8":"#cbd5e1")+';background:'+(on?"#dbeafe":"#fff")+';font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
+  bar.innerHTML=
+    btn("✕","nbtClose()")+
+    '<span style="font-weight:800;font-size:13px;color:#0f172a;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(v.ink?"📓 Notebook":"👩 Answer pages")+' · '+String(v.wk).replace("week","Week ")+'</span>'+
+    '<span style="padding:3px 9px;border-radius:999px;background:'+((typeof SL_KCOL!=="undefined"&&SL_KCOL[v.kid])||"#64748b")+';color:#fff;font-size:11px;font-weight:800">'+((typeof SL_KLBL!=="undefined"&&SL_KLBL[v.kid])||v.kid)+'</span>'+
+    '<span style="flex:1"></span>'+
+    btn("◀","nbtGo(-1)")+
+    '<span style="font-size:12px;font-weight:700;color:#475569;min-width:64px;text-align:center">p '+v.page+' / '+(v.n||"…")+'</span>'+
+    btn("▶","nbtGo(1)")+
+    (v.ink?(
+      btn("✏️","nbtTool(\'pen\')",v.tool==="pen")+
+      btn("🩹 Erase","nbtTool(\'erase\')",v.tool==="erase")+
+      btn("↩︎ Undo","nbtUndo()")+
+      btn("🧽 Clear","nbtClear()")+
+      btn(v.penOnly?"✍️ Pencil only":"👆 Finger too","nbtTogglePen()",v.penOnly)+
+      btn(v.dirty?"💾 Save":"✓ Saved","nbtSave()",v.dirty)
+    ):"");
+  try{ const cv=document.getElementById("nbt-ink"); if(cv) cv.style.touchAction=v.penOnly?"pan-x pan-y":"none"; }catch(e){}   // 👆 as the workbooks: pencil-only lets a finger scroll
+}
+function nbtTool(t){ if(!nbtView) return; nbtView.tool=t; nbtBarRender(); }
+function nbtTogglePen(){ if(!nbtView) return; nbtView.penOnly=!nbtView.penOnly; nbtBarRender(); }
+async function nbtGo(d){
+  const v=nbtView; if(!v||!v.ready) return;
+  const n=v.page+d; if(n<1||n>(v.n||1)) return;
+  if(v.dirty) await nbtSave();
+  if(nbtView!==v) return;
+  v.page=n; v.strokes=[]; v.dirty=false; nbtPaint(); nbtShowPage(); nbtLoadInk();
+}
+async function nbtLoadInk(){
+  const v=nbtView; if(!v||!v.ink) return; const pg=v.page;
+  v.strokes=[]; v.dirty=false;
+  try{ if(db){ const s=await db.ref(nbtInkPath(v.kid,v.wk,pg)).once("value"); const d=s.val();
+    if(nbtView!==v||v.page!==pg) return;
+    if(d&&d.s) v.strokes=(Array.isArray(d.s)?d.s:Object.values(d.s)).map(k=>({c:k.c,w:k.w,p:Array.isArray(k.p)?k.p:Object.values(k.p||{})})); } }catch(e){}
+  nbtFitCanvas(); nbtPaint(); nbtBarRender();
+}
+function nbtFitCanvas(){
+  const hold=document.getElementById("nbt-hold"), cv=document.getElementById("nbt-ink"); if(!hold||!cv) return false;
+  const r=hold.getBoundingClientRect(); if(r.width<2||r.height<2) return false;
+  const dpr=Math.min(window.devicePixelRatio||1,2.5);
+  const w=Math.max(1,Math.round(r.width*dpr)), h=Math.max(1,Math.round(r.height*dpr));
+  if(cv.width===w&&cv.height===h) return true;
+  cv.width=w; cv.height=h; return true;
+}
+function nbtPaint(){
+  const cv=document.getElementById("nbt-ink"); if(!cv||!nbtView) return;
+  const g=cv.getContext("2d"); g.clearRect(0,0,cv.width,cv.height);
+  g.lineCap="round"; g.lineJoin="round";
+  (nbtView.strokes||[]).forEach(s=>{
+    const pts=s.p||[]; if(!pts.length) return;
+    g.strokeStyle=s.c||WB_PEN; g.lineWidth=Math.max(1,(s.w||0.003)*cv.width);
+    g.beginPath(); g.moveTo(pts[0][0]*cv.width,pts[0][1]*cv.height);
+    for(let i=1;i<pts.length;i++) g.lineTo(pts[i][0]*cv.width,pts[i][1]*cv.height);
+    if(pts.length===1) g.lineTo(pts[0][0]*cv.width+0.6,pts[0][1]*cv.height+0.6);
+    g.stroke();
+  });
+}
+// Pointer plumbing — the workbook viewer's, on this canvas. The first real Pencil touch flips to pen-only so a resting palm scrolls.
+(function nbtBindOnce(){
+  document.addEventListener("pointerdown",e=>{
+    const cv=document.getElementById("nbt-ink"); if(!cv||!nbtView||e.target!==cv) return;
+    if(e.pointerType==="pen"&&!nbtView.sawPen){ nbtView.sawPen=true; nbtView.penOnly=true; nbtBarRender(); }
+    if(nbtView.penOnly&&e.pointerType!=="pen") return;
+    e.preventDefault();
+    const _w0=cv.width; if(!nbtFitCanvas()) return; if(cv.width!==_w0) nbtPaint();
+    const p=nbtPt(e,cv); if(!p) return;
+    if(nbtView.tool==="erase"){ nbtEraseAt(p); return; }
+    const w=0.0026+0.0026*(e.pressure&&e.pressure>0?e.pressure:0.5);
+    nbtView._live={c:(typeof momHere==="function"&&momHere())?WB_MOMPEN:WB_PEN,w:+w.toFixed(5),p:[p]};   // Mom writes in red, as on a workbook
+    nbtView.strokes.push(nbtView._live); nbtMarkDirty(nbtView);
+    try{cv.setPointerCapture(e.pointerId);}catch(err){}
+  },{passive:false});
+  document.addEventListener("pointermove",e=>{
+    const cv=document.getElementById("nbt-ink"); if(!cv||!nbtView) return;
+    if(nbtView.tool==="erase"&&e.buttons&&e.target===cv){ e.preventDefault(); const ep=nbtPt(e,cv); if(ep) nbtEraseAt(ep); return; }
+    if(!nbtView._live) return;
+    e.preventDefault();
+    const evs=(e.getCoalescedEvents&&e.getCoalescedEvents())||[e];
+    evs.forEach(ev=>{ const q=nbtPt(ev,cv); if(q) nbtView._live.p.push(q); });
+    nbtPaint();
+  },{passive:false});
+  const end=()=>{ if(!nbtView) return; if(nbtView._live){ nbtView._live=null; nbtMarkDirty(nbtView); nbtBarRender(); } };
+  document.addEventListener("pointerup",end); document.addEventListener("pointercancel",end);
+  window.addEventListener("resize",()=>{ if(nbtView) nbtFitAll(); });
+})();
+function nbtPt(e,cv){ const r=cv.getBoundingClientRect(); if(r.width<2||r.height<2) return null; return [+((e.clientX-r.left)/r.width).toFixed(4),+((e.clientY-r.top)/r.height).toFixed(4)]; }
+function nbtEraseAt(p){
+  const v=nbtView; if(!v) return; const R=0.018;
+  const before=v.strokes.length;
+  v.strokes=v.strokes.filter(s=>!(s.p||[]).some(q=>Math.abs(q[0]-p[0])<R&&Math.abs(q[1]-p[1])<R));
+  if(v.strokes.length!==before){ nbtMarkDirty(v); nbtPaint(); nbtBarRender(); }
+}
+function nbtUndo(){ const v=nbtView; if(!v||!v.strokes.length) return; v.strokes.pop(); nbtMarkDirty(v); nbtPaint(); nbtBarRender(); }
+function nbtClear(){ const v=nbtView; if(!v||!v.strokes.length) return; if(!confirm("Clear everything written on this page?")) return; v.strokes=[]; nbtMarkDirty(v); nbtPaint(); nbtBarRender(); }
+let _nbtAutoT=null;
+function nbtMarkDirty(v){ if(!v) return; v.dirty=true; v._rev=(v._rev||0)+1; nbtAutoSaveSoon(); }
+function nbtAutoSaveSoon(){
+  clearTimeout(_nbtAutoT);
+  _nbtAutoT=setTimeout(function(){ _nbtAutoT=null; const v=nbtView; if(!v||!v.dirty) return;
+    if(v._live){ nbtAutoSaveSoon(); return; }
+    nbtSave(true); },3000);
+}
+async function nbtSave(quiet){
+  const v=nbtView; if(!v||!v.ink) return;
+  if(!db||_dryRun()){ v.dirty=false; nbtBarRender(); return; }
+  const rev=v._rev||0;
+  try{
+    await db.ref(nbtInkPath(v.kid,v.wk,v.page)).set({v:1,s:v.strokes,ts:Date.now()});   // one page, one path
+    if((v._rev||0)===rev) v.dirty=false;
+    if(nbtView===v) nbtBarRender();
+  }catch(e){ if(!quiet) alert("Couldn't save that page: "+(e.message||e)); else if(typeof dbg==="function") dbg("nbt autosave failed: "+(e.message||e)); }
+}
+// ── the cards: a Tablet kid's Morning / Closing Notebook card opens the notebook; Mom's device also gets the answer pages ──
+function nbtCardRows(t){
+  try{
+    if(!t||!/Morning Notebook|Closing Notebook/i.test(t.title||"")) return "";
+    if(nbtMode(t.who)!=="tablet") return "";
+    const chip=(fn,txt,title,col,bg,bd)=>'<div style="margin-top:5px"><span onclick="event.stopPropagation();'+fn+'" title="'+title+'" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:'+col+';cursor:pointer;background:'+bg+';border:1px solid '+bd+';border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">'+txt+'</span></div>';
+    if(!nbtBuilt(t.who,WK)) return momHereCards()?'<div style="margin-top:5px;font-size:11px;color:#b45309;font-weight:700">\u{1F4F1} This week’s notebook isn’t on the tablet yet — Notebook tab → Send to tablet</div>':"";
+    let h=chip("nbtOpen('"+t.who+"',WK,'student')","\u{1F4D3} Open notebook →","This week’s notebook, a page at a time — write on it with the pencil","#1d4ed8","#eff6ff","#bfdbfe");
+    if(momHereCards()) h+=chip("nbtOpen('"+t.who+"',WK,'parent')","\u{1F469} Answer pages →","The parent guide for this week — the pages that show the answers","#166534","#f0fdf4","#86efac");   // Mom only — and nbtOpen checks again
+    return h;
+  }catch(e){ return ""; }
+}
+// ── the Notebook tab: the per-kid switch, Send to tablet, and Mom's own doors ──
+function nbtTabHtml(kid,wkLabel){
+  if(!momHere()) return "";
+  const mode=nbtMode(kid), wk=nbTargetWk(), b=nbtBuilt(kid,wk);
+  const seg=(m,txt)=>'<button onclick="nbtSetMode(\''+kid+'\',\''+m+'\')" style="padding:7px 13px;border-radius:20px;border:1.5px solid '+(mode===m?'#1d4ed8':'var(--border)')+';background:'+(mode===m?'#dbeafe':'#fff')+';color:'+(mode===m?'#1e3a8a':'#1f2937')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+txt+'</button>';
+  const link=(which,txt)=>'<button onclick="nbtOpen(\''+kid+'\',\''+wk+'\',\''+which+'\')" style="border:none;background:none;padding:0 2px;color:#1e3a8a;font-size:11.5px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:\'DM Sans\',sans-serif">'+txt+'</button>';
+  let h='<div style="margin-top:14px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:12px;padding:12px 14px">'+
+    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">'+
+      '<div style="font-size:12px;font-weight:800;color:#1e3a8a">\u{1F4D3} This notebook is <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#bfdbfe;color:#1e3a8a;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span></div>'+
+      seg("print","\u{1F5A8} Printed")+seg("tablet","\u{1F4F1} On the tablet")+
+    '</div>'+
+    '<div style="font-size:10.5px;color:var(--muted);line-height:1.4;margin-top:6px">Printed = as today. On the tablet = the Morning and Closing Notebook cards open the notebook a page at a time, to write on with the pencil. \u{1F5A8} Print still works either way.</div>';
+  if(mode==="tablet"){
+    h+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">'+
+      '<button onclick="nbtSend(\''+kid+'\')" title="Builds '+wkLabel+' the same way Print does and puts it on the tablet" style="padding:9px 14px;border-radius:10px;border:none;background:#1d4ed8;color:#fff;font-size:12.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F4F1} Send '+wkLabel+' to the tablet</button>'+
+      (b?'<span style="font-size:11px;color:#166534;font-weight:700">✓ On the tablet — '+b.pages+' pages, sent '+nbtWhen(b.ts)+'</span>':'<span style="font-size:11px;color:#b45309;font-weight:700">Not sent yet — the cards show nothing until it is.</span>')+
+      '</div>'+
+      (b?'<div style="margin-top:8px;font-size:11.5px;color:var(--muted)">\u{1F441} Open: '+link("student","notebook")+' · '+link("parent","answer pages")+' <span style="opacity:.8">(sending again replaces this week’s copy; writing stays with its page number)</span></div>':'');
+  }
+  h+='</div>';
+  return h;
+}
+// NBTABLET_END
 
 // ── Add a book: rasterize every page locally, upload the JPEGs, write metadata ──
 async function wbAddBook(input){
@@ -58975,6 +59269,7 @@ function renderNotebook(el){
           ' <span style="opacity:.8">(a PDF takes a few seconds; on iPad it lands in Files → tap Share → Print)</span>'+
           // her ask 2026-10-04: the page view only prints right from Chrome (Safari ignores @page)
           '<div style="margin-top:3px;color:#9a3412;font-weight:700">⚠️ Printing from Look first only works in Chrome. On Safari (iPad, iPhone, Mac), use 🖨 Print.</div></div>'+
+        ((typeof nbtTabHtml==="function")?nbtTabHtml(sel,wkLabel):"")+   // 📱 NBTABLET: Printed / On the tablet switch + Send to tablet
         formHtml+
         xpHtml+
         reviewHtml+

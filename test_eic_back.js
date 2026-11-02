@@ -74,7 +74,7 @@ ok("every place that changes the page marks it for autosave",
   /if\(wbView\._live\)\{ wbView\._live=null; wbMarkDirty\(wbView\);/.test(src) &&
   /if\(v\.strokes\.length!==before\)\{ wbMarkDirty\(v\);/.test(src) &&
   /v\.strokes\.pop\(\); wbMarkDirty\(v\);/.test(src) && /v\.strokes=\[\]; wbMarkDirty\(v\);/.test(src) &&
-  (src.match(/\.dirty=true/g) || []).length === 1);   // only wbMarkDirty itself sets it
+  (src.slice(src.indexOf("let wbView=null;"), src.indexOf("function wbPanelOpen(")).match(/\.dirty=true/g) || []).length === 1);   // only wbMarkDirty itself sets it (counted inside the workbook viewer: 📱 NBTABLET’s notebook viewer has its own nbtMarkDirty, 2026-11-02)
 ok("✕ cancels the pending autosave (the close saves it)", /function wbClose\(\)\{\n  clearTimeout\(_wbAutoT\); _wbAutoT=null;/.test(src));
 
 // ── ✏️ ↩ back to today's page ──
