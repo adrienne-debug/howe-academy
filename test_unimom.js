@@ -41,5 +41,5 @@ ok("Plan next week code → haMomOn", /function pnwCheckPin[\s\S]{0,120}haMomOn\
 ok("tapping Mom off on the Schedule → haMomOff, and the screen redraws", /haMomOff\(\); kid="all"; schedShowAdmin=false; renderAll\(\);/.test(src));
 ok("Notebook 🔒 and Units 🔒 → haMomOff", /function nbPinLock\(\)\{ haMomOff\(\);/.test(src)&&/haMomOff\(\); unitPinOpen=false;/.test(src));
 ok("the check-up's kid-screen door still re-locks after the sitting", /function ckRelock\(\)\{[^\n]*haMomOff\(\)/.test(src));
-ok("Notebook and Units unlock through the Admin code door (checkAdminPin)", /checkAdminPin/.test(fn("nbPinToggle")||"")||/checkAdminPin\(/.test(src.slice(src.indexOf("// ── Notebook-tab Mom lock"),src.indexOf("// ── Notebook-tab Mom lock")+1500)));
+ok("Notebook and Units tabs no longer draw their own 🔒 Mom button / PIN box — the header's Mom switch is the one control (MOMSWITCH 2026-11-02)", /function _nbMomLockHtml\(\)\{ nbPinOpen=false; return ""; \}/.test(src)&&/function _unitMomLockHtml\(\)\{ unitPinOpen=false; return ""; \}/.test(src)&&!/nb-pin-inp|unit-pin-inp/.test(src));
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

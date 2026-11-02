@@ -46,13 +46,13 @@ console.log("── enter / leave ──");
   ok("tapping the kids' Schedule tab leaves the Mom view and hands Ben back", !w.api.st().msv && w.api.st().kid === "ben" && w.navBtns.find(b => b.dataset.tab === "schedule").active);
 }
 {
-  const w = world({ kid: "ava" }); w.api.msvEnter(); w.api.showTab("kids");
+  const w = world({ kid: "ava", momOn: true }); w.api.msvEnter(); w.api.showTab("kids");
   ok("any other tab leaves it too", !w.api.st().msv && w.api.st().kid === "ava" && w.api.st().tab === "kids");
-  const w2 = world({ kid: "ava" }); w2.api.msvEnter(); w2.api.mpGoto("meals");
+  const w2 = world({ kid: "ava", momOn: true }); w2.api.msvEnter(); w2.api.mpGoto("meals");
   ok("a Mom's Day tab (🍽 Meals) leaves it and opens Mom's Day", !w2.api.st().msv && w2.api.st().tab === "moms-plan" && w2.api.st().mpSubView === "meals");
-  const w3 = world({ kid: "ava" }); w3.api.msvEnter(); w3.api.mpSchSet("week");
+  const w3 = world({ kid: "ava", momOn: true }); w3.api.msvEnter(); w3.api.mpSchSet("week");
   ok("🗓 Week goes back to Mom's Day (its week view)", !w3.api.st().msv && w3.api.st().tab === "moms-plan" && w3.api.st().mpSubView === "cal");
-  const w4 = world({ kid: "ava" }); w4.api.mpSchSet("today");
+  const w4 = world({ kid: "ava", momOn: true }); w4.api.mpSchSet("today");
   ok("📆 Today from Mom's Day opens the Schedule page", w4.api.st().msv && w4.api.st().tab === "schedule");
 }
 console.log("\n── the page itself ──");
@@ -65,7 +65,7 @@ console.log("\n── the page itself ──");
   ok("the kids' Schedule kid row has no 👩 Mom chip (step 3)", kf2.indexOf("selKid('all')") >= 0 && kf2.indexOf("selKid('mom')") < 0);
 }
 {
-  const w = world({ give: "<b>Give Grandma</b>" }); w.api.msvEnter(); w.api.renderSchedSubtabs();
+  const w = world({ give: "<b>Give Grandma</b>", momOn: true }); w.api.msvEnter(); w.api.renderSchedSubtabs();
   const bar = w.els["msv-bar"];
   // STICKYSTACK (2026-10-22): the strip is display:contents, so the sub-menu inside it can stick against the page itself
   ok("Mom's Day tabs + Today·Week·Month strip shown above the Schedule", /^(block|contents)$/.test(bar.style.display) && /<nav>cal<\/nav>/.test(bar.innerHTML) && /mpSchSet\('today'\)/.test(bar.innerHTML) && /mpSchSet\('month'\)/.test(bar.innerHTML));
@@ -95,7 +95,7 @@ console.log("\n── 🔒 Mom's Day asks for the code once; inside, Mom mode is
   }
   ok("not in Mom mode → Mom's Day is closed", !gw().api.momGateOpen());
   ok("…every Mom's Day page (Schedule, Meals, Grocery, Prep, Weigh-In)", ["cal", "meals", "grocery", "prep", "weigh"].every(v => !gw({ sub: v }).api.momGateOpen()));
-  ok("Mom mode on but coming in from outside → still asks (her rule: the code at the door every visit)", !gw({ mom: true }).api.momGateOpen());
+  ok("MOMSWITCH (2026-11-02): the switch is on → Mom's Day opens from anywhere, no second code", gw({ mom: true }).api.momGateOpen());
   ok("already inside this visit → open, no code", gw({ mom: true, inside: true }).api.momGateOpen());
   ok("Dad's Day + his calendar never stopped", gw({ sub: "dad" }).api.momGateOpen() && gw({ sub: "dadcal" }).api.momGateOpen());
   ok("Dad's grocery list / meals from Dad's Day never stopped", gw({ sub: "grocery", fromDad: true }).api.momGateOpen() && gw({ sub: "meals", fromDad: true }).api.momGateOpen());
@@ -135,7 +135,7 @@ console.log("\n── 🧒 step 3: the kids' Schedule is never in Mom mode ─�
   ok("kids' Schedule ▸ Admin opens Mom's Day (code if needed) at Admin", /onclick="msvOpenAdmin\(\)">Admin/.test(w.els["sched-subtabs"].innerHTML));
   const wIn = world({ momOn: true }); wIn.api.msvEnter(); wIn.api.renderSchedSubtabs();
   ok("…inside Mom's Day ▸ Schedule, Admin works as always", /onclick="toggleSchedAdmin\(\)">Admin/.test(wIn.els["sched-subtabs"].innerHTML));
-  ok("Mom's Day ▸ Schedule only opens through Mom's Day's door", /if\(!momDayIn\)\{ mpSubView="cal"; showTab\("moms-plan"\); return; \}/.test(slice("msvEnter")));
+  ok("Mom's Day ▸ Schedule opens only with the Mom switch on (else → Mom's Day's door)", /if\(!momHere\(\)\)\{ mpSubView="cal"; showTab\("moms-plan"\); return; \}/.test(slice("msvEnter")));
   ok("review healing still runs on Mom's device while the kids' Schedule is open", /momHereReal\(\)/.test(slice("rvHeal")));
 }
 console.log("\n── 👩 inside Mom's Day, Mom mode is always on ──");
@@ -151,18 +151,15 @@ console.log("\n── 👩 inside Mom's Day, Mom mode is always on ──");
   const r = slice("_renderAllInner");
   ok("if Mom mode goes off elsewhere while here → back to the Mom's Day door (not the code box)", /if\(momSchedView&&tab==="schedule"&&!momHereReal\(\)\)\{ momDayIn=false; msvExit\(\); tab="moms-plan"; mpSubView="cal";/.test(r));
 }
-console.log("\n── 🔒 leaving Mom's Day turns Mom mode off ──");
+console.log("\n── 🔓 MOMSWITCH (her ask 2026-11-02): leaving Mom's Day keeps Mom mode on — the switch is the only off ──");
 {
   const w = world({ momOn: true }); w.api.msvEnter(); w.api.mpGoto("meals"); w.api.mpSchSet("today");
-  ok("moving between Mom's Day's own tabs (Schedule ⇄ Meals ⇄ Schedule) never locks", !w.log.off && w.api.st().inside === true && w.api.st().msv);
-  w.api.showTab("kids");
-  ok("going to any other tab → Mom mode off, visit over", w.log.off === 1 && w.api.st().inside === false);
-  w.api.showTab("schedule");
-  ok("…only once (already out)", w.log.off === 1);
+  ok("moving between Mom's Day's own tabs (Schedule ⇄ Meals ⇄ Schedule) never locks", !w.log.off && w.api.st().msv);
+  w.api.showTab("kids"); w.api.showTab("notebook"); w.api.showTab("schedule");
+  ok("going to any other tab never turns Mom mode off (was: off + the code again on return)", !w.log.off);
+  ok("showTab no longer calls haMomOff at all", !/haMomOff/.test(slice("showTab")));
   const w2 = world({ out: true }); w2.api.msvEnter();
-  ok("Mom's Day ▸ Schedule can't be opened from outside without the code (goes to the door)", !w2.api.st().msv && w2.api.st().tab === "moms-plan");
-  const w3 = world({ out: true }); w3.api.showTab("moms-plan"); w3.api.showTab("kids");
-  ok("Dad's side / anyone not inside never trips the lock", !w3.log.off);
+  ok("switch off → Mom's Day ▸ Schedule can't be opened (goes to the door)", !w2.api.st().msv && w2.api.st().tab === "moms-plan");
 }
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
