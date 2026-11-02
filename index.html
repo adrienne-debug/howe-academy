@@ -46897,6 +46897,7 @@ function renderUnitDetail(u){
     }
     h+=_unitPicsBtnHtml(u);   // UNIT_PICS: 🖼 Find pictures (Wikipedia, in this browser)
     if(typeof laIrrHtml==="function") h+=laIrrHtml(u,esc);   // LAIRR: ＋ Add Irregulars (Language Arts unit only; units step 9, 2026-10-26)
+    if(typeof laGrowHtml==="function") h+=laGrowHtml(u,esc);   // LAGROW: ＋ Grow Language Arts (Language Arts unit only, 2026-11-02)
     h+='</div>';
   }
   const enrolledKids=roster.filter(k=>(u.enrolled||{})[k]);
@@ -71815,7 +71816,7 @@ function mastFullBank(kidArg){
   const kid=kidArg||masteryKid||"julian";
   const base={};
   const src=MAST_BANK_MAP[kid]||{};
-  Object.entries(src).forEach(([k,v])=>{ if(typeof wrBuiltInRetired==="function"&&wrBuiltInRetired(kid,k)){ base[k]=[]; return; } base[k]=[...v]; });   // 🏛 WRATTACH: Lincoln's old roots spellings retire once he's hooked up
+  Object.entries(src).forEach(([k,v])=>{ if((typeof wrBuiltInRetired==="function"&&wrBuiltInRetired(kid,k))||(typeof laGrowRetired==="function"&&laGrowRetired(kid,k))){ base[k]=[]; return; } base[k]=[...v]; });   // 🏛 WRATTACH: Lincoln's old roots spellings retire once he's hooked up · 🌱 LAGROW: the old built-in Grammar list retires once Language Arts is grown
   let custom=masteryData[kid+"_custom_items"]||[];
   if(!Array.isArray(custom)) custom=Object.values(custom);  // Firebase returns sparse arrays as objects
   custom.forEach(ci=>{
@@ -85735,7 +85736,7 @@ function retrEditorStages(kid){
   if(!u||!Array.isArray(u.decks)) return [];
   const out=[];
   u.decks.forEach(d=>{
-    const deck=d&&d.key; if(!deck) return;
+    const deck=d&&d.key; if(!deck||d.sprint===false) return;   // 🌱 LAGROW: only the Editor rule decks are Editor stages
     RETR_EDITOR_DIFFS.forEach(diff=>out.push({key:deck+"|"+diff,label:retrDeckShort(deck)+" "+RETR_DIFF_SHORT[diff],deck:deck,diff:diff,full:deck+" · "+diff}));
   });
   return out;
@@ -87470,6 +87471,259 @@ function laIrrHtml(u,esc){   // the Mom panel row on the Language Arts unit only
 }
 // LAIRR_END
 function _laStrip(html){ return String(html||"").replace(/<[^>]*>/g,"").replace(/\s+/g," ").trim(); }
+// LAGROW_START — ＋ Grow Language Arts: ONE big Language Arts unit (her ask 2026-11-02: "get Ellis's language arts facts …
+// created into a unit. Build on that and put Lincoln's after that so it's like a big unit that covers everything … make sure
+// nothing's repeating. Then erase theirs — merge them over and keep their card status. Maybe Lincoln goes backwards and
+// learns some of Ellis's as well"; her answers 2026-11-02: grow the existing Language Arts unit · fold First Language
+// Lessons 4 into it · "Yes, build it"). The LAIRR / UNITATTACH pattern: laGrowPlan is pure and lists every write in plain
+// words; Yes rebuilds it and refuses if anything changed; ONE root-level update, then the app's own by-id deletes for the
+// repeats; never in ?dryrun=1; momHere() only.
+//   · The unit keeps its 7 Editor decks and gains, after them: the Irregulars (LAIRR's 40, when not in yet), the First
+//     Language Lessons 4 deck moved in from its book unit (same key, gate, mode, card fields — minus the 18 cards that
+//     repeat an Editor rule), Reading Detective (36) and Grammar (24, the older grammar terms; backs from MAST_VOCAB_DEFS).
+//     New decks carry sprint:false so the Editor-in-Chief Sprint and the Editor retrieval stages stay on the rule decks.
+//   · Cards link by deck + exact front, so every card a kid already has on a unit front keeps its id, rung, due day, dots.
+//   · Repeats (LAGROW_SAME, one card per fact): a kid's card on a repeat front MOVES onto the card that stays (subject,
+//     front and back change; id and status don't). When the kid has both, the stay card takes the higher rung and the
+//     repeat card is removed by id (mastRemoveByIds) with its list entry (mastBankRemove) — the app's own delete path.
+//   · Each enrolled kid's list gains the unit's cards they don't have yet, as new — the auto-pull starts them a few at a
+//     time. Mom can hold a deck for a kid in the panel; a card already in the kid's own built-in list always carries over.
+//   · Brand-new decks for a kid get the deck's card style + start cap (only where the kid has none) — nothing else of
+//     cat_modes / cat_intro_max / cat_gate / definitions is written.
+//   · Once grown (unitStudies/<unit>/grown) the old built-in Grammar list retires for kids on the unit (mastFullBank),
+//     so moved cards aren't made again.
+//   · The First Language Lessons 4 book unit itself is NOT touched — it goes in a separate step after Mom checks this.
+// No kid names: everything is read from the unit record and the enrolled kids' own lists.
+const LAGROW_FOLD={unit:"fll_4",deck:"First Language Lessons 4"};
+const LAGROW_RETIRE=["Grammar"];
+const LAGROW_STATUS=["status","tier","next_due","consecutive_correct","cycle","tally_dots","drop_count"];
+const LAGROW_RD=[
+  ["How do you find the best evidence?","Read the story, then the question. Go back and find the sentence that answers it most directly."],
+  ["The question asks what kind of person a character is, but the story never says. Where is the evidence?","In what the character says and does."],
+  ["What is a fact in a story?","Something the story says right out."],
+  ["What is an inference?","A conclusion you make from the facts. The facts are your evidence."],
+  ["Can an inference be wrong?","Yes. It is your best guess from the clues, so check the evidence carefully."],
+  ["How do you figure out a character’s traits?","Watch what they say and do, then decide what kind of person acts that way."],
+  ["What else can you use besides the story to make an inference?","What you already know about the world, added to the clues in the text."],
+  ["You hit a word you don’t know. What is the first thing to try?","Context clues: the other words in the sentence that hint at the meaning."],
+  ["How do you test your guess for a new word?","Swap your guess in for the word. If the sentence still makes sense, you are probably right."],
+  ["How can commas or parentheses help you define a word?","They often set off words that tell you what the word means."],
+  ["What does an exclamation mark tell you about a character?","Their mood or feelings."],
+  ["The sentence with the new word gives no clue. Where else can you look?","Nearby sentences, the title, what the characters do, and the pictures."],
+  ["What is the plot?","The series of events in a story: a beginning, a middle and an end."],
+  ["What is the conflict?","The main problem in the story. Most plots start with one."],
+  ["Name three kinds of conflict.","Character against character, character against nature, and a character’s inner struggle over what to do."],
+  ["What is the setting?","The time and place of the story. It may be stated or shown by clues."],
+  ["Time in a setting can mean three things. What are they?","Time of day, how much time passes, and the historical period."],
+  ["What are character traits?","Words for what kind of person a character is, like kind, brave, messy or strict. You learn them from their words and actions."],
+  ["What is the difference between the topic and the main idea?","The topic is what the article is about. The main idea is what the author wants to say about it."],
+  ["Where is the main idea of an article usually found?","In a topic sentence in the first paragraph."],
+  ["Where is a paragraph’s topic sentence usually found?","Usually first, but not always. Look for the sentence the others support."],
+  ["What are supporting details?","The other sentences in a paragraph. They explain or prove the topic sentence."],
+  ["What is the theme?","The meaning behind the events, a big idea like friendship, courage or honesty."],
+  ["How does an author usually show the theme?","Through what the characters do and say, not by saying it outright."],
+  ["What three questions help you find the theme?","What is the problem? How do the characters feel about it? What do they do to solve it? Then ask what truth the ending shows."],
+  ["What is a cause?","Why something happened."],
+  ["What is an effect?","What happened as a result."],
+  ["Two things happen at the same time. Did one cause the other?","Not always. Check that one really made the other happen."],
+  ["Name signal words for a cause.","because, since, due to, caused by, led to, the reason for."],
+  ["Name signal words for an effect.","so, therefore, then, as a result, thus, finally."],
+  ["Can one cause have more than one effect?","Yes. Find all of them."],
+  ["What is a chain of causes?","One event causes the next, which causes the next."],
+  ["Does the cause always come first in the story?","Usually, but sometimes the effects are told first and the cause last."],
+  ["What is a prediction?","A guess about what will happen next, made from as much evidence as you can find."],
+  ["How do you predict what a character will do?","Look at their traits and what they have done before."],
+  ["What makes a prediction more likely to be right?","More evidence."]];
+const LAGROW_GRAMMAR=["independent clause","dependent clause","relative clause","participial phrase","gerund","infinitive","active voice","passive voice","parallel structure","semicolon","colon","appositive","antecedent","subjective case","objective case","possessive case","dangling modifier","misplaced modifier","run-on sentence","sentence fragment","comma splice","correlative conjunctions","subordinating conjunctions","coordinating conjunctions"];
+// [repeat deck, repeat front, deck that stays, front that stays | null, rule that stays (an Editor card's back) | null]
+const LAGROW_SAME=[
+  ["First Language Lessons 4","Plurals: most nouns","Plural Nouns",null,"Add -s to the end of most nouns to make them plural."],
+  ["First Language Lessons 4","Plurals: nouns ending in s, sh, ch, x, or z","Plural Nouns",null,"Add -es to nouns ending in s, ss, sh, ch, x (and sometimes o)."],
+  ["First Language Lessons 4","Plurals: nouns ending in consonant + y","Plural Nouns",null,"If a noun ends in a consonant + y, change the y to i and add -es."],
+  ["First Language Lessons 4","Plurals: nouns ending in vowel + y","Plural Nouns",null,"If a noun ends in a vowel + y, just add -s."],
+  ["First Language Lessons 4","Apostrophes: singular or irregular plural nouns","Nouns & Pronouns",null,"A possessive noun shows ownership. Add ’s to make a singular or plural noun possessive."],
+  ["First Language Lessons 4","Apostrophes: plural nouns ending in s","Nouns & Pronouns",null,"If a noun already ends in s, add only an apostrophe (’) to make it possessive."],
+  ["First Language Lessons 4","Apostrophes: contractions","Punctuation",null,"Apostrophe — in a contraction, to show where letters are left out."],
+  ["First Language Lessons 4","Commas: city and state","Punctuation",null,"Comma — to separate a street address, city, and state."],
+  ["First Language Lessons 4","Commas: day and year","Punctuation",null,"Comma — to separate the day of the month from the year."],
+  ["First Language Lessons 4","Commas in a series","Punctuation",null,"Comma — to separate words in a series."],
+  ["First Language Lessons 4","Compound sentences: comma","Punctuation",null,"Comma — before a conjunction (and, but, or, so) to join two simple sentences."],
+  ["First Language Lessons 4","Compound sentences: semicolon","Punctuation",null,"Semicolon — to join two complete sentences in place of a conjunction."],
+  ["First Language Lessons 4","Pronoun","Nouns & Pronouns",null,"A pronoun is a word used in place of one or more nouns."],
+  ["First Language Lessons 4","Quotation at the end: capital letter","Capitalization",null,"First word of a direct quotation."],
+  ["First Language Lessons 4","Quotation at the beginning: capital letter","Capitalization",null,"First word of a direct quotation."],
+  ["First Language Lessons 4","Quotation at the end: quotation marks","Punctuation",null,"Quotation marks — at the beginning and end of a direct quotation."],
+  ["First Language Lessons 4","Quotation at the beginning: quotation marks","Punctuation",null,"Quotation marks — at the beginning and end of a direct quotation."],
+  ["First Language Lessons 4","Quotation at the end: comma","Punctuation",null,"Comma — to separate the speaker from a direct quotation."],
+  ["Grammar","noun","First Language Lessons 4","Noun",null],
+  ["Grammar","verb","First Language Lessons 4","Verb",null],
+  ["Grammar","adjective","First Language Lessons 4","Adjective",null],
+  ["Grammar","adverb","First Language Lessons 4","Adverb",null],
+  ["Grammar","pronoun","Nouns & Pronouns",null,"A pronoun is a word used in place of one or more nouns."],
+  ["Grammar","preposition","First Language Lessons 4","Preposition",null],
+  ["Grammar","conjunction","First Language Lessons 4","Conjunction",null],
+  ["Grammar","interjection","First Language Lessons 4","Interjection",null],
+  ["Grammar","subject","First Language Lessons 4","Simple subject",null]];
+function _lgEntries(raw){ if(Array.isArray(raw)) return raw.map((v,i)=>[i,v]).filter(e=>e[1]); return Object.keys(raw||{}).filter(k=>/^\d+$/.test(k)).map(k=>[Number(k),raw[k]]).filter(e=>e[1]); }
+function _lgNext(raw){ const e=Array.isArray(raw)?raw.map((v,i)=>i):Object.keys(raw||{}).filter(k=>/^\d+$/.test(k)).map(Number); return e.length?Math.max(...e)+1:0; }
+function _lgRank(it){ if(!it||it.status==="parked") return -1; if(it.status==="introduction") return 0;
+  const i=["daily","every_other_day","weekly","bi_weekly","monthly","graduated"].indexOf(it.tier); return i<0?1:i+1; }
+function laGrowRetired(kid,deck){ try{ if(LAGROW_RETIRE.indexOf(deck)<0) return false;
+  const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[LA_UNIT_ID]; return !!(u&&u.grown&&(u.enrolled||{})[kid]); }catch(e){ return false; } }
+function laGrowPlan(unitId,ts,hold){   // pure: reads memory, returns every write in plain words too
+  hold=hold||{};
+  const P={unitId:unitId||LA_UNIT_ID,ok:false,why:"",writes:[],removes:[],ts:ts||Date.now(),hold:hold,sum:{decks:[],keys:[],irr:0,kids:{}}};
+  const us=(typeof unitStudies!=="undefined"&&unitStudies)||{}, u=us[P.unitId];
+  if(!u||!Array.isArray(u.decks)){ P.why="The Language Arts unit isn’t in the database."; return P; }
+  if(u.stages){ P.why="This unit has stages — growing is for the plain Language Arts unit."; return P; }
+  if(u.grown){ P.why="The Language Arts unit is already grown."; return P; }
+  const book=us[LAGROW_FOLD.unit], bookDeck=book&&(book.decks||[]).find(d=>d&&d.key===LAGROW_FOLD.deck);
+  if(!bookDeck){ P.why="The "+LAGROW_FOLD.deck+" book unit isn’t in the database."; return P; }
+  const newKeys=[LAGROW_FOLD.deck,"Reading Detective","Grammar"], clash=u.decks.find(d=>d&&newKeys.indexOf(d.key)>=0);
+  if(clash){ P.why="The unit already has a "+clash.key+" deck."; return P; }
+  const W=(path,value,what)=>P.writes.push({path,value,what}), byOrder=(a,b)=>(a.order||0)-(b.order||0);
+  // 1 · the Irregulars (LAIRR), when they aren't in yet
+  const irr=(typeof laIrrPlan==="function")?laIrrPlan(P.unitId,P.ts):null;
+  const after={}; u.decks.forEach(d=>{ if(d&&d.key) after[d.key]=_lgEntries(d.cards).map(e=>e[1]).sort(byOrder); });
+  if(irr&&irr.ok) irr.writes.forEach(w=>{ W(w.path,w.value,w.what); after[u.decks[+w.path.split("/")[3]].key].push(w.value); P.sum.irr++; });
+  // 2 · the three new decks, after the Editor decks
+  const drop=new Set(LAGROW_SAME.filter(s=>s[0]===LAGROW_FOLD.deck).map(s=>s[1]));
+  const bookCards=_lgEntries(bookDeck.cards).map(e=>e[1]).sort(byOrder);
+  const lost=[...drop].filter(n=>!bookCards.some(c=>c.name===n));
+  if(lost.length){ P.writes=[]; P.why="The "+LAGROW_FOLD.deck+" deck has changed (no “"+lost[0]+"”). Nothing was changed."; return P; }
+  const fold=JSON.parse(JSON.stringify(bookDeck)); fold.cards=bookCards.filter(c=>!drop.has(c.name)).map(c=>JSON.parse(JSON.stringify(c))); fold.sprint=false;
+  const vd=(typeof MAST_VOCAB_DEFS!=="undefined"&&MAST_VOCAB_DEFS)||{};
+  const rd={key:"Reading Detective",mode:"flip",introCap:3,sprint:false,cards:LAGROW_RD.map((p,i)=>({name:p[0],def:p[1],order:i+1}))};
+  const gr={key:"Grammar",mode:"flip",introCap:2,sprint:false,cards:LAGROW_GRAMMAR.map((n,i)=>({name:n,def:vd[n.toLowerCase()]||"",order:i+1}))};
+  if(gr.cards.some(c=>!c.def)){ P.writes=[]; P.why="A Grammar card has no back. Nothing was changed."; return P; }
+  let di=_lgNext(u.decks);
+  [fold,rd,gr].forEach(d=>{ W("unitStudies/"+P.unitId+"/decks/"+(di++),d,"adds the "+d.key+" deck ("+d.cards.length+" cards)"); after[d.key]=d.cards; P.sum.decks.push({key:d.key,n:d.cards.length}); });
+  P.sum.dropped=drop.size;
+  W("unitStudies/"+P.unitId+"/grown",{v:1,ts:P.ts,from:LAGROW_FOLD.unit},"marks the unit grown — the old built-in Grammar list retires for kids on it");
+  P.sum.keys=Object.keys(after);
+  // 3 · the repeats: which card stays
+  const same=[]; let bad="";
+  LAGROW_SAME.forEach(s=>{ const to=(after[s[2]]||[]).find(c=>c&&(s[3]!=null?c.name===s[3]:c.def===s[4]));
+    if(!to){ bad=bad||(s[2]+" · "+(s[3]||s[4])); return; } same.push({fd:s[0],fn:s[1],td:s[2],tn:to.name,tdef:to.def}); });
+  if(bad){ P.writes=[]; P.why="Couldn’t find the card that stays: "+bad+". Nothing was changed."; return P; }
+  const md=(typeof masteryData!=="undefined"&&masteryData)||{};
+  const pk=(d,n)=>d+"\u0001"+n, name=k=>(typeof cap==="function"?cap(k):k);
+  const bmap=(typeof MAST_BANK_MAP!=="undefined"&&MAST_BANK_MAP)||{};
+  Object.keys(u.enrolled||{}).filter(k=>u.enrolled[k]).forEach(kid=>{
+    const K=P.sum.kids[kid]={moved:[],merged:[],added:{},held:{},leaves:[]}, nm=name(kid);
+    const items=_lgEntries(md[kid]), live={}; items.forEach(e=>{ live[pk(e[1].subject,e[1].prompt)]={i:e[0],it:e[1]}; });
+    const bankRaw=md[kid+"_custom_items"]||[], bank=_lgEntries(bankRaw), inBank=new Set(bank.map(e=>pk(e[1].cat,e[1].name)));
+    const full=(typeof mastFullBank==="function")?(mastFullBank(kid)||{}):{};
+    const st=md[kid+"_settings"]||{}, rmIds=[], rmBank=[], moved=new Set();
+    same.forEach(s=>{
+      const f=live[pk(s.fd,s.fn)], t=live[pk(s.td,s.tn)];
+      if(inBank.has(pk(s.fd,s.fn))){ rmBank.push([s.fd,s.fn]); inBank.delete(pk(s.fd,s.fn)); }
+      if(!f) return;
+      moved.add(pk(s.fd,s.fn));
+      const fl=_laStrip(s.fn)+" → "+_laStrip(s.tn);
+      if(!t){   // move: same id, same progress, new deck + front + back
+        const b="mastery/"+kid+"/"+f.i+"/";
+        W(b+"subject",s.td,nm+"’s “"+_laStrip(s.fn)+"” moves to "+s.td+" (progress kept)");
+        W(b+"prompt",s.tn,nm+"’s card front becomes “"+_laStrip(s.tn)+"”");
+        if(s.tdef) W(b+"answer",s.tdef,nm+"’s card back becomes the "+s.td+" wording");
+        if(!mastDefKeyOk(s.tn)&&f.it.review_mode!=="recite") W(b+"review_mode","recite",nm+"’s card flips to its rule");
+        delete live[pk(s.fd,s.fn)]; live[pk(s.td,s.tn)]={i:f.i,it:Object.assign({},f.it,{subject:s.td,prompt:s.tn})};
+        K.moved.push(fl);
+      } else {  // both: the card that stays keeps the higher rung; the repeat goes
+        const up=_lgRank(f.it)>_lgRank(t.it);
+        if(up){ LAGROW_STATUS.forEach(k=>W("mastery/"+kid+"/"+t.i+"/"+k,f.it[k]==null?null:f.it[k],nm+"’s “"+_laStrip(s.tn)+"” takes the higher rung ("+k+")")); t.it=Object.assign({},t.it); LAGROW_STATUS.forEach(k=>{ t.it[k]=f.it[k]; }); }
+        rmIds.push(f.it.id); delete live[pk(s.fd,s.fn)];
+        K.merged.push(fl+(up?" (its higher rung kept)":""));
+      }
+    });
+    // new to the kid's list — every unit card they don't have, in the unit's order
+    let next=_lgNext(bankRaw);
+    P.sum.keys.forEach(dk=>{ (after[dk]||[]).forEach(c=>{
+      const key=pk(dk,c.name); if(live[key]||inBank.has(key)) return;
+      const own=(full[dk]||[]).indexOf(c.name)>=0;   // already in the kid's own built-in list: always carries over
+      if(!own&&hold[kid]&&hold[kid][dk]){ K.held[dk]=(K.held[dk]||0)+1; return; }
+      const be={cat:dk,name:c.name}; if(c.def) be.def=c.def; if(c.ch!=null&&c.ch!=="") be.ch=c.ch;
+      W("mastery/"+kid+"_custom_items/"+(next++),be,"adds “"+_laStrip(c.name)+"” to "+nm+"’s "+dk+" list"); inBank.add(key);
+      K.added[dk]=(K.added[dk]||0)+1;
+    }); });
+    // a deck brand-new to the kid: its card style + start cap (only where the kid has none)
+    [fold,rd,gr].forEach(d=>{
+      if(!K.added[d.key]) return;
+      const had=items.some(e=>e[1].subject===d.key)||bank.some(e=>e[1].cat===d.key)||(full[d.key]||[]).length;
+      if(had) return;
+      if(!(st.cat_modes||{})[d.key]) W("mastery/"+kid+"_settings/cat_modes/"+d.key,d.mode||"flip",nm+"’s "+d.key+" cards flip");
+      if(d.introCap&&!(st.cat_intro_max||{})[d.key]) W("mastery/"+kid+"_settings/cat_intro_max/"+d.key,d.introCap,nm+" learns "+d.introCap+" new "+d.key+" cards at a time");
+    });
+    // the old built-in list that retires: what leaves (not started, not a unit card)
+    LAGROW_RETIRE.forEach(dk=>{ ((bmap[kid]||{})[dk]||[]).forEach(n=>{ const key=pk(dk,n); if(!live[key]&&!inBank.has(key)&&!moved.has(key)) K.leaves.push(n); }); });
+    if(rmIds.length||rmBank.length) P.removes.push({kid:kid,ids:rmIds,bank:rmBank});
+  });
+  P.ok=true; return P;
+}
+let laGrowView=null;   // {plan, hold, msg} while the panel is open
+function _lgRe(){ const el=document.getElementById("content"); if(el) renderUnits(el); }
+function laGrowOpen(){ if(!(typeof momHere==="function"&&momHere())) return; laGrowView={hold:{},plan:laGrowPlan(LA_UNIT_ID,undefined,{}),msg:""}; _lgRe(); }
+function laGrowClose(){ laGrowView=null; _lgRe(); }
+function laGrowHold(kid,i){ if(!laGrowView) return; const dk=(laGrowView.plan.sum.keys||[])[i]; if(!dk) return; const h=laGrowView.hold; h[kid]=h[kid]||{};
+  if(h[kid][dk]) delete h[kid][dk]; else h[kid][dk]=true; laGrowView.plan=laGrowPlan(LA_UNIT_ID,laGrowView.plan.ts,h); laGrowView.msg=""; _lgRe(); }
+function laGrowApply(plan){
+  if(!(typeof momHere==="function"&&momHere())||!plan||!plan.ok) return false;
+  const again=laGrowPlan(plan.unitId,plan.ts,plan.hold);
+  if(JSON.stringify(again.writes)!==JSON.stringify(plan.writes)||JSON.stringify(again.removes)!==JSON.stringify(plan.removes)){ laGrowView={hold:plan.hold,plan:again,msg:"Something changed since the plan was made — here’s the new plan. Nothing was written."}; _lgRe(); return false; }
+  if(typeof db==="undefined"||!db||(typeof _dryRun==="function"&&_dryRun())){ if(laGrowView) laGrowView.msg="Dry run — nothing was written."; _lgRe(); return false; }
+  const up={}; plan.writes.forEach(w=>{ up[w.path]=w.value; });
+  db.ref().update(up).then(()=>{
+    plan.writes.forEach(w=>_wrSetLocal(w.path,w.value));
+    plan.removes.forEach(r=>{
+      if(r.ids.length){ const rm=new Set(r.ids); let a=masteryData[r.kid]; if(!Array.isArray(a)) a=Object.values(a||{}); masteryData[r.kid]=a.filter(x=>x&&!rm.has(x.id)); mastRemoveByIds(r.kid,r.ids); }
+      if(r.bank.length){ const bk=new Set(r.bank.map(b=>b[0]+"\u0001"+b[1])), pred=e=>bk.has(e.cat+"\u0001"+e.name); let b=masteryData[r.kid+"_custom_items"]; if(!Array.isArray(b)) b=Object.values(b||{}); masteryData[r.kid+"_custom_items"]=b.filter(e=>e&&!pred(e)); mastBankRemove(r.kid,pred); }
+    });
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+    laGrowView=null; _lgRe();
+  }).catch(()=>{ if(laGrowView) laGrowView.msg="That didn’t save — nothing changed. Try again when you’re online."; _lgRe(); });
+  return true;
+}
+function laGrowHtml(u,esc){   // the Mom panel row on the Language Arts unit only
+  if(!u||u.id!==LA_UNIT_ID||!(typeof momHere==="function"&&momHere())) return "";
+  esc=esc||(v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"));
+  const btn=(bg,fg,bd)=>'padding:7px 14px;border-radius:10px;border:1.5px solid '+bd+';background:'+bg+';color:'+fg+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  const small=(bg,fg,bd)=>'padding:2px 8px;border-radius:8px;border:1.5px solid '+bd+';background:'+bg+';color:'+fg+';font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  const V=laGrowView, P=V?V.plan:laGrowPlan(u.id);
+  let h='<div style="margin-top:12px;padding-top:11px;border-top:1px solid var(--border)">';
+  if(!V){
+    h+='<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap"><span style="flex:1;min-width:150px;font-size:12px;font-weight:700;color:#1f2937">\u{1F331} Grow Language Arts<div style="font-size:10.5px;font-weight:600;color:var(--muted)">One big unit: First Language Lessons 4, Reading Detective and Grammar join the Editor decks — one card per fact, every card’s progress kept.</div></span>';
+    if(u.grown) h+='<span style="font-size:11px;font-weight:700;color:#15803d">✓ Language Arts is grown</span>';
+    else if(P.ok) h+='<button onclick="laGrowOpen()" style="'+btn("#fff","#1f2937","var(--border)")+'">＋ Grow Language Arts</button>';
+    else h+='<span style="font-size:11px;font-weight:700;color:#b45309">'+esc(P.why)+'</span>';
+    return h+'</div></div>';
+  }
+  h+='<div style="font-size:12.5px;font-weight:800;color:#1f2937;margin-bottom:6px">Grow '+esc(u.title||u.id)+'</div>';
+  if(V.msg) h+='<div style="font-size:11.5px;font-weight:700;color:#b45309;margin-bottom:6px">'+esc(V.msg)+'</div>';
+  if(!P.ok) return h+'<div style="font-size:11.5px;color:#374151;line-height:1.5">'+esc(P.why)+'</div><div style="margin-top:8px"><button onclick="laGrowClose()" style="'+btn("#fff","var(--muted)","var(--border)")+'">Close</button></div></div>';
+  const S=P.sum, li=t=>'<li style="margin:3px 0">'+t+'</li>';
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Here’s everything it does. Nothing is written until you tap Yes.</div><ul style="font-size:11.5px;color:#374151;line-height:1.45;padding-left:18px;margin:0">';
+  if(S.irr) h+=li('The <b>'+S.irr+' Irregulars</b> join Plural Nouns and Verb Tenses.');
+  h+=li('After the Editor decks: '+S.decks.map(d=>'<b>'+esc(d.key)+'</b> ('+d.n+')').join(' · ')+' — '+S.dropped+' First Language Lessons cards that repeat an Editor rule are left out.');
+  h+=li('<b>Every card a kid already has stays as it is</b> — same progress, same due days.');
+  Object.keys(S.kids).forEach(kid=>{
+    const K=S.kids[kid], nm=esc(typeof cap==="function"?cap(kid):kid);
+    let t='<b>'+nm+'</b>:';
+    if(K.moved.length) t+='<div>'+K.moved.length+' card'+(K.moved.length>1?'s':'')+' move onto the card that stays (progress kept): '+esc(K.moved.join(', '))+'.</div>';
+    if(K.merged.length) t+='<div>'+K.merged.length+' repeat'+(K.merged.length>1?'s':'')+' fold into the card that stays and are removed: '+esc(K.merged.join(', '))+'.</div>';
+    const deckBtn=(dk,n,held)=>{ const i=S.keys.indexOf(dk); return '<span style="display:inline-flex;align-items:center;gap:4px;margin:2px 8px 2px 0">'+esc(dk)+' '+n+' <button onclick="laGrowHold(\''+esc(kid)+'\','+i+')" style="'+(held?small("#fef3c7","#b45309","#fcd34d"):small("#fff","var(--muted)","var(--border)"))+'">'+(held?'held — give':'hold')+'</button></span>'; };
+    const add=Object.keys(K.added), held=Object.keys(K.held);
+    t+='<div>'+(add.length?'New to '+nm+'’s list (starts a few at a time): ':'Nothing new to '+nm+'’s list.')+add.map(dk=>deckBtn(dk,K.added[dk],false)).join('')+'</div>';
+    if(held.length) t+='<div>Held for '+nm+': '+held.map(dk=>deckBtn(dk,K.held[dk],true)).join('')+'</div>';
+    if(K.leaves.length) t+='<div>Leaves '+nm+'’s old built-in Grammar list (not started): '+esc(K.leaves.join(', '))+'.</div>';
+    h+=li(t);
+  });
+  h+=li('Not touched: the First Language Lessons 4 book unit (removed later, after you check), the Editor Sprint’s decks, other units, the notebook.');
+  h+='</ul><details style="margin-top:6px"><summary style="font-size:11px;font-weight:700;color:var(--muted);cursor:pointer">'+P.writes.length+' saved changes'+(P.removes.length?' + '+P.removes.reduce((n,r)=>n+r.ids.length+r.bank.length,0)+' removals':'')+'</summary><div style="font-size:10.5px;color:#374151;line-height:1.45;margin-top:4px;max-height:220px;overflow:auto">'+P.writes.map(w=>esc(w.what)).join('<br>')+'</div></details>';
+  h+='<div style="display:flex;gap:6px;margin-top:9px"><button onclick="laGrowApply(laGrowView&&laGrowView.plan)" style="'+btn("#2d6a4f","#fff","#2d6a4f")+'">✓ Yes, grow it</button><button onclick="laGrowClose()" style="'+btn("#fff","var(--muted)","var(--border)")+'">Cancel</button></div>';
+  if(typeof _dryRun==="function"&&_dryRun()) h+='<div style="font-size:10.5px;color:#b45309;margin-top:5px">Dry run — Yes writes nothing.</div>';
+  return h+'</div>';
+}
+// LAGROW_END
 const LA_MODES=[
   {v:"fix",l:"\u{270F}\u{FE0F} Fix It",desc:"Every sentence hides mistakes \u{2014} find each one and say the fix out loud."},
   {v:"judge",l:"\u{2696}\u{FE0F} Right or Wrong?",desc:"Some sentences are perfect, some are broken \u{2014} call it, and say why."},
@@ -87515,7 +87769,8 @@ function laSelectedIdx(deckKey,rules){
   }
   return laRuleSel[deckKey];
 }
-function laSetDeck(i){ const u=laUnitFor(masteryKid); if(!u) return; const d=(u.decks||[])[i]; if(d&&d.key){ laDeck=d.key; laReviewDecks=laReviewDecks.filter(k=>k!==d.key); } _mastRe(); }
+function laSetDeck(i){ const u=laUnitFor(masteryKid); if(!u) return; const d=(u.decks||[]).filter(x=>x&&x.key&&x.sprint!==false&&(x.cards||[]).length)[i];   // 🌱 LAGROW: i counts the pills shown
+  if(d&&d.key){ laDeck=d.key; laReviewDecks=laReviewDecks.filter(k=>k!==d.key); } _mastRe(); }
 function laToggleRule(i){ const sel=laRuleSel[laDeck]||{}; if(sel[i]) delete sel[i]; else sel[i]=true; laRuleSel[laDeck]=sel; _mastRe(); }
 function laRulesQuick(which){
   const u=laUnitFor(masteryKid); if(!u||!laDeck) return;
@@ -87856,7 +88111,7 @@ function buildSprintEditorHtml(color){
   const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
   const u=laUnitFor(masteryKid);
   if(!u) return '<div style="background:#faf8f5;border:1.5px dashed #e2ddd6;border-radius:14px;padding:24px 18px;text-align:center;font-size:13px;color:#78716c;line-height:1.6">'+(SL_KLBL[masteryKid]||"This kid")+' isn\u{2019}t enrolled in the Language Arts unit \u{2014} enroll it in the <b>Units</b> tab first.</div>';
-  const decks=(u.decks||[]).filter(d=>d&&d.key&&(d.cards||[]).length);
+  const decks=(u.decks||[]).filter(d=>d&&d.key&&d.sprint!==false&&(d.cards||[]).length);   // 🌱 LAGROW: sprint:false decks (FLL 4, Reading Detective, Grammar) aren't rule decks
   if(!decks.length) return '<div style="background:#faf8f5;border:1.5px dashed #e2ddd6;border-radius:14px;padding:24px 18px;text-align:center;font-size:13px;color:#78716c">The Language Arts unit has no rule decks yet.</div>';
   if(!laDeck||!decks.some(d=>d.key===laDeck)) laDeck=decks[0].key;
   laReviewDecks=laReviewDecks.filter(k=>k!==laDeck&&decks.some(d=>d.key===k));
