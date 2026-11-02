@@ -69866,11 +69866,12 @@ function gameLogRound(st){
 //   · NOT HERE (later slices): the drill ending in the games (3), Mom's teaching cues (3b), look-alike choices (4),
 //     "want to play more?" (5).
 const MP_NEED_FIRST=3, MP_NEED_LATER=1, MP_DAYS=3, MP_MAX_SHOWS=6, MP_KNOWN_TIERS=["weekly","bi_weekly","monthly"];
+const MP_STUDY_MISSES=2;   // a study sitting: wrong this many times (even if it passed in the end) → joins the list (her words 2026-11-02)
 let mpUI=null;   // the open practice round: {kid,dn,dk,q:[{pid,list}],i,cur,pool,modes,shows,changed,out,log,t0,secs,phase,grow,lock}
 function _mpMD(){ return (typeof masteryData!=="undefined"&&masteryData)||{}; }
 function mpCfg(kid){
   const s=_mpMD()[kid+"_settings"]||{}, m=(s.missPlay&&typeof s.missPlay==="object")?s.missPlay:{};
-  return {on:m.on===true,cap:Math.max(0,m.cap|0),secs:Math.max(0,m.secs|0),close:m.close!==false};
+  return {on:m.on===true,cap:Math.max(0,m.cap|0),secs:Math.max(0,m.secs|0),close:m.close!==false,study:m.study!==false};
 }
 function mpOn(kid){ return !!kid&&mpCfg(kid).on; }
 function mpItems(kid){ const v=_mpMD()[kid]; return Array.isArray(v)?v:Object.values(v||{}); }
@@ -69923,6 +69924,26 @@ function mpAfterDrill(kid,items,due,scores,touched){
     else if(sc==="c"&&g&&g.wait===true){ it.gp=null; mark(it); }                          // right while waiting: no longer needs the games
   });
   mpPromote(kid,items).forEach(mark);
+}
+// ── a study sitting was saved (_mstSaveInner's hook, beside Word Workout's). Her words 2026-11-02: "if they got it wrong,
+//    say more than one time, then it also means that it needs to be reviewed in games" — even when it passed in the end.
+//    A card wrong MP_STUDY_MISSES+ times in the sitting joins the list (same join rules as the drill: playable deck, cap).
+//    Nothing leaves the list here and the sitting itself is untouched: Mom's drill is still the say-it check. ──
+function mpAfterStudy(kid,items,state,touched){
+  if(!mpOn(kid)||!Array.isArray(items)||!state||!state.cards) return;
+  const c=mpCfg(kid); if(!c.study) return;
+  const dk=mpDayKey(); let pool=null;
+  const playable=id=>{ if(!pool) pool=new Set(_mpPool(kid,items).map(x=>x.id)); return pool.has(id); };
+  let on=items.filter(i=>i&&i.gp&&i.gp.on===true).length;
+  Object.keys(state.cards).forEach(k=>{
+    const sc=state.cards[k]; if(!sc||!sc.id||(sc.misses|0)<MP_STUDY_MISSES) return;
+    const it=items.find(x=>x&&x.id===sc.id); if(!it) return;
+    const g=it.gp||null; if(g&&(g.on===true||g.wait===true)) return;
+    if(!playable(it.id)) return;
+    if(c.cap&&on>=c.cap) it.gp={wait:true,since:dk};
+    else { it.gp={on:true,since:dk,need:MP_NEED_FIRST,days:[],m:0}; on++; }
+    if(touched.indexOf(it)<0) touched.push(it);
+  });
 }
 // ── the practice round ──
 function _mpShuffle(a,rnd){ rnd=rnd||Math.random; for(let i=a.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
@@ -70065,8 +70086,8 @@ function mpDayChipHtml(kid,day){
 // ── Mom HQ ▸ ⚙ Rules: the switches (saved right away, one field each) ──
 function mpCanEdit(){ return (typeof momHere==="function"&&momHere())||(typeof mastAdminPinOk!=="undefined"&&!!mastAdminPinOk); }
 function mpSet(kid,field,val){
-  if(!kid||["on","cap","secs","close"].indexOf(field)<0||!mpCanEdit()) return false;
-  if(field==="on"||field==="close") val=!!val; else val=Math.max(0,Math.min(field==="secs"?3600:99,val|0));
+  if(!kid||["on","cap","secs","close","study"].indexOf(field)<0||!mpCanEdit()) return false;
+  if(field==="on"||field==="close"||field==="study") val=!!val; else val=Math.max(0,Math.min(field==="secs"?3600:99,val|0));
   const md=_mpMD(), s=md[kid+"_settings"]||(md[kid+"_settings"]={}), m=(s.missPlay&&typeof s.missPlay==="object")?s.missPlay:(s.missPlay={});
   m[field]=val;
   if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){ try{ db.ref("mastery/"+kid+"_settings/missPlay/"+field).set(val); }catch(e){} }
@@ -70083,6 +70104,7 @@ function mpSettingsHtml(kid){
   h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0">'+tg("on",c.on)+'<div style="flex:1"><div class="mast-admin-label">Missed cards go to the games</div><div class="mast-admin-desc">'+(c.on?'On':'Off — the drill works as it always has')+'</div></div></div>';
   if(c.on){
     h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0">'+tg("close",c.close)+'<div style="flex:1"><div class="mast-admin-label">Close (~) cards go too</div><div class="mast-admin-desc">'+(c.close?'Close counts as a miss here':'Only ✗ cards go')+'</div></div></div>';
+    h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0">'+tg("study",c.study)+'<div style="flex:1"><div class="mast-admin-label">Study misses go too</div><div class="mast-admin-desc">'+(c.study?'A card wrong '+MP_STUDY_MISSES+' or more times in one study sitting joins the list, even if it passed in the end':'Only the drill sends cards to the games')+'</div></div></div>';   // 🎮 her words 2026-11-02
     h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0"><div style="flex:1"><div class="mast-admin-label">Cards on the list at once</div><div class="mast-admin-desc">More misses wait in the drill until a place opens</div></div>'+step("cap",c.cap,"",1)+'</div>';
     h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0"><div style="flex:1"><div class="mast-admin-label">Practice round time</div><div class="mast-admin-desc">The round ends kindly at the time; the rest carry to tomorrow</div></div>'+step("secs",c.secs,"",60)+'</div>';
     h+='<div class="mast-admin-desc" style="margin-top:6px">'+(L.length?'On the list now ('+L.length+'): '+L.map(i=>E((typeof _matchPlain==="function")?_matchPlain(i.prompt):i.prompt)).join(' · '):'Nothing on the list right now.')+'</div>';
@@ -74912,6 +74934,7 @@ function mstAnswer(state, key, ans) {
   const idx = state.queue.indexOf(key);
   if (idx === -1) return state;
   if (card.first === null) card.first = ans;
+  if (ans !== "good") card.misses = (card.misses | 0) + 1;   // 🎮 MISSPLAY: how often this card was missed in the sitting (study misses join the practice list)
 
   if (card.kind === "review") {
     state.queue.splice(idx, 1);
@@ -77760,6 +77783,7 @@ function _mstSaveInner(){
   let r; try{ r=mastApplyScores(items,due,scores,pn,settings,{prevShown:prevShownIds,autoPull:false,chain:false}); }catch(e){ r={touched:[],minted:[],changes:0}; }
   const touched=r.touched||[];
   try{ if(typeof scStudyWw==="function") scStudyWw(items,scores,touched); }catch(e){}   // 📚 STUDYCOUNTS → 🏋️ a spelling miss in a sitting counts for Word Workout
+  try{ if(typeof mpAfterStudy==="function") mpAfterStudy(kid,items,mstState,touched); }catch(e){}   // 🎮 MISSPLAY: wrong 2+ times in the sitting → the practice list
   const mintedAll=minted.slice();
   (r.minted||[]).forEach(it=>{ if(mintedAll.indexOf(it)===-1) mintedAll.push(it); });
   // ↔ BOTH DIRECTIONS: a card that finished learning in this sitting gets its 🇬🇧→🇩🇪 twin —
@@ -77821,6 +77845,7 @@ function _mstSaveInner(){
       upd[ix+"/dynamic"]=it.dynamic?true:null; upd[ix+"/dynSource"]=it.dynamic?(it.dynSource||null):null;
       upd[ix+"/dynFromTier"]=it.dynamic?(it.dynFromTier||null):null; upd[ix+"/dynAddedAt"]=it.dynamic?(it.dynAddedAt||null):null;
       if(it.ww) upd[ix+"/ww"]=it.ww;   // 🏋️ STUDYCOUNTS: Word Workout miss days, as the drill save writes them
+      if(it.gp!==undefined) upd[ix+"/gp"]=it.gp||null;   // 🎮 MISSPLAY: the practice list, as the drill save writes it
     });
     mintedAll.forEach(it=>{ const ix=items.indexOf(it); if(ix>=0) upd[ix]=JSON.parse(JSON.stringify(it)); });  // strips undefined fields Firebase would refuse
     if(Object.keys(upd).length) db.ref("mastery/"+kid).update(upd);
