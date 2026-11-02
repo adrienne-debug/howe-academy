@@ -79016,6 +79016,99 @@ function mhqSessSave() {
   mhqSessClose();
 }
 
+// SESSPUT_START — 🗓 Put on the schedule, from a study session (her ask 2026-11-02, after a DeWalt kid's spelling words never reached her:
+//   "we need a button kind of like from units where you can quickly schedule things into the schedule … when you create sessions in
+//   the mastery side"). The live gap it closes: two DeWalt kids' Daily Study was set up 10/30 but no school card pointed at it
+//   (their sister's Fact Practice card has study=daily_study, theirs had nothing), so neither kid ever opened it and 20 tested AAS
+//   words were never seen (mastery/studyLog: fact_study only). Mom HQ said "not on the schedule yet" with nothing to tap.
+//   · THE BUTTON: Mom-only, on a session row that no subject links to yet (mhqSessionRows' own `linked`), beside "not on the
+//     schedule yet". Every kind can go on: deck, Daily Study, Daily Mix, check-up.
+//   · THE SHEET: Card name (the session's name) · Minutes (10) · Days (Mon–Fri) · Mom needed (None for a session the kid does
+//     alone, Required when the session's who is "mom") · Device (iPad/Phone). A name whose subject key is taken is refused, as
+//     the Add Subject sheet refuses it.
+//   · THE WRITE: the record ceAddSave writes for a Daily subject with a Study session picked — display, device, mom, minutes,
+//     days, allowedDays, rules "sequential", tracking "daily", priority "normal", timesPerWeek = the days picked, study = the
+//     session id, noCarry — ONE set of curriculum/subjects/<kid>/<key> + curriculum/lastEdit, as ceAddSave. ?dryrun=1 writes
+//     nothing (the screen still changes). The card lays from the next week built; the sheet says 🔄 Regenerate adds it this week.
+//   · Nothing in the generator, lay, Mom loop, the session record, the study engine or any existing subject changes. No kid's name.
+const SP_DAYS=["Mon","Tue","Wed","Thu","Fri"];
+const SP_DEVICES=[["ipad/phone","\u{1F4F1} iPad/Phone"],["computer","\u{1F4BB} Computer"],["paper","\u{1F4C4} Paper"]];
+let spForm=null;   // {kid, sid, name, minutes, days, mom, device, msg} while the sheet is open
+function spMom(){ return (typeof momHere==="function")?momHere():false; }
+function spLive(){ return !!(typeof db!=="undefined"&&db)&&!((typeof _dryRun==="function")&&_dryRun()); }
+function spEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function spJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+// The key the Add Subject sheet would make from this name.
+function spKey(name){ return String(name||"").trim().toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,""); }
+// The subject record — exactly ceAddSave's Daily branch with a Study session picked.
+function spRecord(f){
+  const days=SP_DAYS.filter(d=>(f.days||[]).indexOf(d)>=0);
+  return {display:String(f.name||"").trim(),device:f.device||"ipad/phone",mom:f.mom||"none",minutes:Math.max(5,Math.min(240,parseInt(f.minutes,10)||10)),
+    days:days.join(" "),allowedDays:days,rules:"sequential",tracking:"daily",priority:"normal",timesPerWeek:days.length,study:f.sid,noCarry:true};
+}
+function spOpen(kid,sid){
+  if(!spMom()) return;
+  const s=((typeof mstSessions==="function")?mstSessions(kid):[]).find(x=>x&&x.sid===sid); if(!s) return;
+  spForm={kid:kid,sid:sid,name:String(s.name||sid),minutes:10,days:SP_DAYS.slice(),mom:s.who==="mom"?"required":"none",device:"ipad/phone",msg:""};
+  if(typeof renderAll==="function") renderAll();
+}
+function spClose(){ spForm=null; if(typeof renderAll==="function") renderAll(); }
+function spSet(field,val){
+  const f=spForm; if(!f) return;
+  if(field==="day"){ const i=f.days.indexOf(val); if(i>=0) f.days.splice(i,1); else f.days.push(val); }
+  else if(field==="minutes") f.minutes=Math.max(5,Math.min(240,(parseInt(f.minutes,10)||10)+(parseInt(val,10)||0)));
+  else if(field==="name"){ f.name=String(val==null?"":val); f.msg=""; return; }   // typed: no repaint (the box keeps its caret)
+  else f[field]=val;
+  f.msg="";
+  if(typeof renderAll==="function") renderAll();
+}
+function spApply(){
+  const f=spForm; if(!f||!spMom()) return;
+  const el=(typeof document!=="undefined")?document.getElementById("sp-name"):null; if(el) f.name=el.value;
+  const name=String(f.name||"").trim(), key=spKey(name);
+  const subs=(typeof currData!=="undefined"&&currData&&currData.subjects)?currData.subjects:null;
+  if(!name||!key){ f.msg="Give the card a name."; if(typeof renderAll==="function") renderAll(); return; }
+  if(!f.days.length){ f.msg="Pick at least one day."; if(typeof renderAll==="function") renderAll(); return; }
+  if(!subs){ f.msg="Curriculum still loading \u2014 try again in a moment."; if(typeof renderAll==="function") renderAll(); return; }
+  if(subs[f.kid]&&subs[f.kid][key]){ f.msg="A subject called \u201c"+name+"\u201d already exists \u2014 pick another name."; if(typeof renderAll==="function") renderAll(); return; }
+  const rec=spRecord(Object.assign({},f,{name:name}));
+  if(!subs[f.kid]) subs[f.kid]={};
+  subs[f.kid][key]=rec;
+  const ts=new Date().toISOString(); currData.lastEdit=ts;
+  if(spLive()){ db.ref("curriculum/subjects/"+f.kid+"/"+key).set(rec); db.ref("curriculum/lastEdit").set(ts); }
+  spForm=null;
+  if(typeof gwShowToast==="function") gwShowToast("\u{1F5D3} "+name+" is on the schedule from next week \u2014 \u{1F504} Regenerate adds it this week."+(spLive()?"":" (dry run: nothing written)"));
+  if(typeof renderAll==="function") renderAll();
+}
+// renderMastHQSessions' hook: the "not on the schedule yet" line, with the button (Mom) and the sheet while it is open.
+function spRowHTML(kid,r){
+  let h='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px"><span style="font-size:11px;color:var(--muted);font-style:italic">not on the schedule yet</span>';
+  if(spMom()&&!(spForm&&spForm.kid===kid&&spForm.sid===r.sid)) h+='<button data-sp="1" onclick="spOpen(\''+spJ(kid)+'\',\''+spJ(r.sid)+'\')" style="padding:5px 12px;border-radius:10px;border:none;background:#5b21b6;color:#fff;font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F5D3} Put on the schedule</button>';
+  h+='</div>';
+  if(spMom()&&spForm&&spForm.kid===kid&&spForm.sid===r.sid) h+=spSheetHTML();
+  return h;
+}
+function spSheetHTML(){
+  const f=spForm; if(!f) return "";
+  const chip=(on,txt,fn)=>'<div class="ce-chip'+(on?' sel':'')+'" onclick="'+fn+'">'+txt+'</div>';
+  const lab=t=>'<div class="ce-sheet-lbl" style="margin-top:10px">'+t+'</div>';
+  const step='width:32px;height:32px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:16px;font-weight:700;cursor:pointer';
+  let h='<div data-sp-sheet="1" onclick="event.stopPropagation()" style="margin-top:8px;padding:10px 12px 12px;background:#faf5ff;border:1.5px solid #c4b5fd;border-radius:12px;font-size:12px">';
+  h+=lab("Card name")+'<input id="sp-name" class="ce-sheet-input" value="'+spEsc(f.name)+'" oninput="spSet(\'name\',this.value)">';
+  h+=lab("Minutes")+'<div style="display:flex;align-items:center;gap:10px"><button onclick="spSet(\'minutes\',-5)" style="'+step+'">&minus;</button><span style="font-size:14px;font-weight:800">'+f.minutes+'</span><button onclick="spSet(\'minutes\',5)" style="'+step+'">+</button></div>';
+  h+=lab("Days")+'<div class="ce-chips">'+SP_DAYS.map(d=>chip(f.days.indexOf(d)>=0,d,"spSet('day','"+d+"')")).join("")+'</div>';
+  h+=lab("Mom needed")+'<div class="ce-chips">'+[["none","None"],["maybe","Maybe"],["required","Required"]].map(p=>chip(f.mom===p[0],p[1],"spSet('mom','"+p[0]+"')")).join("")+'</div>';
+  h+=lab("Device")+'<div class="ce-chips">'+SP_DEVICES.map(p=>chip(f.device===p[0],p[1],"spSet('device','"+p[0]+"')")).join("")+'</div>';
+  h+='<div style="font-size:10.5px;color:var(--muted);margin-top:8px">The card opens this study session. It goes on from the next week built \u2014 tap \u{1F504} Regenerate on the schedule to add it this week.</div>';
+  if(f.msg) h+='<div style="font-size:11.5px;color:#b45309;background:#fffbeb;border-radius:9px;padding:7px 10px;margin-top:8px">'+spEsc(f.msg)+'</div>';
+  h+='<div style="display:flex;gap:8px;align-items:center;margin-top:10px"><button onclick="spApply()" style="padding:8px 16px;border-radius:10px;border:none;background:#5b21b6;color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F5D3} Put it on</button>'
+    +'<button onclick="spClose()" style="padding:8px 14px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancel</button>';
+  if(!spLive()) h+='<span style="font-size:10px;color:var(--muted)">dry run \u2014 nothing is written</span>';
+  h+='</div></div>';
+  return h;
+}
+// SESSPUT_END
+
 function mhqSessDelete(sid) {
   const kid = mhqKid;
   const row = mhqSessionRows(kid).find(function (r) { return r.sid === sid; });
@@ -79210,7 +79303,7 @@ function _mhqRenderSessions(kid) {
     h += '<div style="font-size:11px;color:var(--muted);margin-top:4px">' + r.cards.learning + ' learning · ' + r.cards.active + ' active · ' + r.cards.bank + ' bank</div>';
     h += r.linked.length
       ? '<div style="font-size:11px;color:#15803d;margin-top:4px">on the schedule: ' + mhqEsc(r.linked.join(", ")) + '</div>'
-      : '<div style="font-size:11px;color:var(--muted);margin-top:4px;font-style:italic">not on the schedule yet</div>';
+      : ((typeof spRowHTML === "function") ? spRowHTML(kid, r) : '<div style="font-size:11px;color:var(--muted);margin-top:4px;font-style:italic">not on the schedule yet</div>');   // 🗓 SESSPUT: Put on the schedule
 
     h += '<div style="display:flex;gap:8px;margin-top:10px">';
     if (r.kind === "checkup") h += '<span style="font-size:11px;color:var(--muted);align-self:center">\u{1FA7A} set up from Units</span>';   // 🩺 CHECKUP
