@@ -102,7 +102,7 @@ ok(src.indexOf("// JU_NUMBERS_AHEAD_START") > 0 && src.indexOf("// JU_NUMBERS_AH
 ok((src.match(/numbersFront = /g) || []).length === 1 && !/juTurnNumbers/.test(src), "one shared engine, no per-kid copy");
 const app = fs.readFileSync(__dirname + "/index.html", "utf8");
 ok(/numberCursor:\(\(\(\(notebookSettings\|\|\{\}\)\[kid\]\)\|\|\{\}\)\.numberCursor\)\|\|null/.test(app), "app passes notebookSettings/<kid>/numberCursor into the notebook context");
-ok((app.match(/db\.ref\("notebookSettings\/"\+kid\+"\/numberCursor"\)\.set\(nc\)/g) || []).length === 2, "app saves the place after each print (both print paths), per kid, targeted write");
+ok((app.match(/db\.ref\("notebookSettings\/"\+kid\+"\/numberCursor"\)\.set\(nc\)/g) || []).length === 3, "app saves the place after each print (both print paths + 📱 Send to tablet, NBTABLET 2026-11-02), per kid, targeted write");
 ok(!/kid==="julian"&&out&&out\.numberCursor/.test(app), "no Julian-only cursor write");
 
 console.log("\n" + pass + "/" + (pass + fail) + " passed");
