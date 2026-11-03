@@ -51,7 +51,14 @@ function mk(o){
     gameKidSwitch:k=>calls.push(["gks",k]), mastMatchDecks:()=>[1], whichDecks:()=>[1], envFlashAvail:()=>false,
     buildMatchHtml:()=>"MATCHGAME", buildWhichHtml:()=>"WHICHGAME", _mastRe:()=>calls.push(["mastRe"]), mastSetView:v=>{ ctx.mastView=v; },
     mastMatchSetStyle:v=>{ ctx.matchStyle=v; },
-    MAST_BANK_MAP:{}, retrTodayQueue:()=>[], retrTracks:()=>[], sprintSource:"", mdJumped:false};
+    MAST_BANK_MAP:{}, retrTodayQueue:()=>[], retrTracks:()=>[], sprintSource:"", mdJumped:false,
+    // 🎴 KC_CARD: the Mastery page itself, as a stand-in that says what it drew (view, bare or not, Mom mode while drawing)
+    _renderMasteryInner:el=>{ el.innerHTML="MASTPAGE("+ctx.masteryKid+","+ctx.mastView+","+(ctx.get("mastBare")?"bare":"full")+","+(ctx._mom?"mom":"kid")+")"+(ctx.mastView==="drill"?'<button onclick="mastStartLog()">Log</button>':''); },
+    setTimeout:()=>0, mastLockSlideHeight:()=>{}, _dad:!!o.dad, dadAwardOk:()=>ctx._dad,
+    pinOk:v=>v==="1111", dadPinOk:v=>v==="2222",
+    _momSusp:null, _momSuspend:()=>{ ctx._momSusp={m:ctx._mom}; ctx._mom=false; }, _momResume:()=>{ ctx._mom=ctx._momSusp.m; ctx._momSusp=null; },
+    mastStartLog:()=>{ if(!ctx.kcLogGate()) return; ctx.mastLogMode=true; calls.push(["log"]); }};
+  ctx.document.createElement=()=>({innerHTML:""});
   vm.createContext(ctx);
   const code=GAMES+"\n"+KCM+"\n"+block+"\nlet kcModeMap=null; const KC_MODES=['today','lists','month'];\n"
     +["_kcModeMap","kcCalGet","kcCalSet","kcCalToggleHTML","kcModeBodyHTML","kcPick","renderKidsCorner","retrSchedGo","retrOpenSprint","showTab"].map(fn).join("\n");
@@ -102,17 +109,64 @@ console.log("Kids' Corner: links on the kid's cards");
   ok("a study link opens 📚 Drills under the header (no showTab)", c.shown().length===0&&c.get("kcPlay.mode")==="drills"&&c.get("mstSid")==="s1"&&draw(c).indexOf("Ava’s Corner")>0);
   ok("…the old header-less study bar is not used", c.get("kcStudyKid")===null&&draw(c).indexOf("kc-study-bar")<0);
   const g=mk(); g.retrSchedGo("kidA","match");
-  ok("a Match link opens 🎮 Games", g.shown().length===0&&g.get("kcPlay.mode")==="games");
+  ok("a Match link opens that Match in place — no games row (🎴 KC_CARD)", g.shown().length===0&&g.get("kcPlay.mode")==="card"&&g.get("kcPlay.view")==="match"&&draw(g).indexOf("MATCHGAME")>0&&!/class="games-sub"/.test(draw(g)));
   const d=mk(); d.retrSchedGo("kidA","drill");
-  ok("a Mom's-drill link keeps the old path (the Corner stays locked to itself)", d.shown().length===1&&d.get("kcPlay")===null);
+  ok("a drill link opens that drill in place, drawn bare (🎴 KC_CARD)", d.shown().length===0&&d.get("kcPlay.mode")==="card"&&draw(d).indexOf("MASTPAGE(kidA,drill,bare,kid)")>0);
   const k=mk(); k.retrSchedGo("kidA","study","ck1");
   ok("a check-up link keeps the old path", k.get("kcPlay")===null);
   const o=mk(); o.retrSchedGo("kidB","study","s1");
   ok("another kid's link keeps the old path", o.get("kcPlay")===null);
   const m=mk({mom:true}); m.retrSchedGo("kidA","study","s1");
-  ok("Mom mode on the Corner → the old path, nothing changes for Mom", m.get("kcPlay")===null);
+  ok("Mom switch on in the Corner → still the kid's page (🎴 KC_CARD, like KCLENS)", m.shown().length===0&&m.get("kcPlay.mode")==="drills");
   const t=mk(); t.kcCalSet("drills","kidA"); t.showTab("kids");
   ok("any tab tap closes Drills", t.get("kcPlay")===null);
+}
+console.log("🎴 KC_CARD: a schedule card opens its one thing in the Corner");
+{ const c=mk(); const h0=draw(c);
+  ok("the 📚 Drills button is now 📚 Study", h0.indexOf("\u{1F4DA} Study")>0&&h0.indexOf("\u{1F4DA} Drills")<0);
+  c.retrSchedGo("kidA","drill"); const h=draw(c);
+  ok("the kid's header and buttons stay on top", h.indexOf("Ava’s Corner")>0&&h.indexOf("kcPick('kidB')")>0&&h.indexOf("kcCalSet('today'")>0);
+  ok("then only that drill — the Mastery page drawn bare (no kid row, view tabs, game row)", h.indexOf("MASTPAGE(kidA,drill,bare,kid)")>0&&!/class="games-sub"/.test(h));
+  ok("no Study / Games button lit for a card", h.indexOf("border:2px dashed #d946ef;background:#d946ef")<0);
+  c.set("mastView","scores"); const h2=draw(c);
+  ok("a tap inside that changes the view can't move it off its drill", h2.indexOf("MASTPAGE(kidA,drill,bare,kid)")>0&&c.get("mastView")==="drill");
+  ok("the header line says it came from the school day", h.indexOf("From your school day")>0);
+  const s=mk(); s.retrOpenSprint("kidA");
+  ok("a Sprint card opens that sprint in place", s.shown().length===0&&s.get("kcPlay.view")==="sprint"&&draw(s).indexOf("MASTPAGE(kidA,sprint,bare,kid)")>0);
+  const m=mk({mom:true}); m.retrSchedGo("kidA","drill");
+  ok("with the Mom switch on, the Corner still opens it in place, drawn as the kid", m.shown().length===0&&m.get("kcPlay.mode")==="card"&&draw(m).indexOf("MASTPAGE(kidA,drill,bare,kid)")>0);
+  ok("…and the switch is straight back on after the draw", m._mom===true&&m._momSusp===null);
+  const o=mk(); o.retrSchedGo("kidB","drill");
+  ok("another kid's card keeps the old path", o.get("kcPlay")===null);
+  const t=mk(); t.retrSchedGo("kidA","drill"); t.showTab("kids");
+  ok("any tab tap closes the card", t.get("kcPlay")===null);
+  const p=mk(); p.retrSchedGo("kidA","drill"); p.kcCalSet("today","kidA");
+  ok("📆 Today closes it", p.get("kcPlay")===null&&draw(p).indexOf("TODAYBODY")>0);
+}
+console.log("🎴 KC_CARD: 📝 Log needs Mom's or Dad's code on the Corner");
+{ const c=mk(); c.retrSchedGo("kidA","drill"); c.mastStartLog();
+  ok("Log on a kid's Corner asks for the code — the drill doesn't start", c.get("mastLogMode")===false&&c.get("kcPlay.askLog")===true&&draw(c).indexOf('id="kc-log-pin"')>0);
+  c.kcLogCode("9999");
+  ok("a wrong code does nothing", c.get("mastLogMode")===false&&c.get("kcPlay.askLog")===true);
+  c.kcLogCode("1111");
+  ok("Mom's code starts the Log", c.get("mastLogMode")===true&&c.get("kcPlay.askLog")===false&&c.get("kcPlay.logOk")===true);
+  ok("…and never turns Mom mode on", c._mom===false&&!c.calls.some(x=>x[0]==="momOn"));
+  c.set("mastLogMode",false); c.mastStartLog();
+  ok("…good for this page: a second Log doesn't ask again", c.get("mastLogMode")===true);
+  c.kcCalSet("today","kidA"); c.retrSchedGo("kidA","drill"); c.set("mastLogMode",false); c.mastStartLog();
+  ok("…but leaving and coming back asks again", c.get("mastLogMode")===false&&c.get("kcPlay.askLog")===true);
+  c.kcLogCancel();
+  ok("Cancel closes the code box", c.get("kcPlay.askLog")===false&&draw(c).indexOf('id="kc-log-pin"')<0);
+  const d=mk(); d.retrSchedGo("kidA","drill"); d.kcLogCode("2222");
+  ok("a code typed with no box open does nothing", d.get("mastLogMode")===false);
+  d.mastStartLog(); d.kcLogCode("2222");
+  ok("Dad's code works too", d.get("mastLogMode")===true);
+  const m=mk({mom:true}); m.retrSchedGo("kidA","drill"); m.mastStartLog();
+  ok("with the Mom switch on, Log doesn't ask", m.get("mastLogMode")===true&&!m.get("kcPlay.askLog"));
+  const dd=mk({dad:true}); dd.retrSchedGo("kidA","drill"); dd.mastStartLog();
+  ok("with Dad's code already in, Log doesn't ask", dd.get("mastLogMode")===true);
+  const x=mk({tab:"mastery"}); x.mastStartLog();
+  ok("off the Corner Log is unchanged (no code)", x.get("mastLogMode")===true);
 }
 console.log("Dad's Day");
 { const c=mk({tab:"moms-plan",mpSubView:"dadall",kcKid:""}); c.retrSchedGo("kidB","study","x");
@@ -160,6 +214,9 @@ console.log("Wiring in the page");
   ok("Dad's Day routes dadmast to renderDadMast, and the Mom gate lets his page through", /mpSubView==='dadmast'\)\{ return renderDadMast\(el\); \}/.test(mv)&&/mpSubView==='dadmast'\) return true;/.test(fn("momGateOpen")));
   ok("no Today jump row on his Drills page", /"dadall","dadmast"\]/.test(src));
   ok("🎮 Games opens through GAMESTAB's own gamesOpen() — no second games entry", /if\(mode==="games"\) gamesOpen\(\);/.test(fn("kcPlayOpen"))&&!/function gamesOpen|GAMES_LIST/.test(block));
+  ok("🎴 a direct Mastery redraw while the Corner / Dad's page shows it repaints that page, not the Mastery page", /function renderMastery\(el\)\{\n  if\(typeof kcPlay!=="undefined"&&kcPlay&&typeof tab!=="undefined"&&tab!=="mastery"\)\{ renderAll\(\); return; \}/.test(src));
+  ok("🎴 bare: the Mastery header is cut back off, the Mom's Day banner never drawn, the Sprint source toggle hidden", /const _mbAt=h\.length;/.test(ri)&&/if\(typeof mastBare!=="undefined"&&mastBare\) h=h\.slice\(0,_mbAt\);/.test(ri)&&/let h=\(!_bare&&/.test(ri)&&/if\(!\(typeof mastBare!=="undefined"&&mastBare\)\) h\+=buildSprintSourceToggle\(color\);/.test(fn("buildSprintHtml")));
+  ok("🎴 the real mastStartLog asks kcLogGate first", /^function mastStartLog\(\)\{ if\(typeof kcLogGate==="function"&&!kcLogGate\(\)\) return;/m.test(src));
   ok("msOpenFor (book sprint) goes through the same doors", /function msOpenFor\(kid\)\{ if\(typeof mastLinkRoute==="function"&&mastLinkRoute\(kid,"sprint"\)\) return;[^\n]*mastShowTab\(\);/.test(src));
 }
 

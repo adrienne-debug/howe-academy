@@ -41105,7 +41105,7 @@ function kcListsHTML(k){
 // The page under the toggle, one place for Kids' Corner and the General tablet's My Day.
 function kcModeBodyHTML(k){
   const m=kcCalGet(k);
-  if(m==="drills"||m==="games") return kcPlayBodyHTML(k,m);   // 📚🎮 KC_PLAY
+  if(m==="drills"||m==="games"||m==="card") return kcPlayBodyHTML(k,m);   // 📚🎮 KC_PLAY · 🎴 KC_CARD
   if(m==="month") return '<div style="padding:12px 12px 0">'+calRenderMonthPreview({who:k,little:kcLittle(k)})+'</div>';
   if(m==="lists") return kcListsHTML(k);
   return kcTodayHTML(k);
@@ -41132,7 +41132,7 @@ function kcStudyOn(){
 // never a check-up.
 function kcStudyIntercept(kid,sid){
   try{
-    if(typeof tab==="undefined"||tab!=="kids"||momHere()) return false;
+    if(typeof tab==="undefined"||tab!=="kids") return false;   // 🎴 KC_CARD: the kid's lens even with the Mom switch on (was ||momHere())
     _kcLoadKid(); if(!kcKid||kid!==kcKid) return false;
     if(sid){ const s=(mstSessions(kid)||[]).find(function(x){ return x&&x.sid===sid; }); if(s&&s.kind==="checkup") return false; }
     return true;
@@ -41183,10 +41183,21 @@ function kcStudyHTML(k){
 //  · Mom's Day (Mom mode on — Home Base, ▸ Schedule): the full Mastery page opens UNDER the Mom's Day banner + menu
 //    (mdFrameOpen → showTab; mdFrameTab draws the banner); a menu tap goes back. Generic: any tab
 //    can be framed with mdFrameOpen(t) and draw mwBanner + mpSubnav when mdFrameOn(t).
+// 🎴 KC_CARD (her ask 2026-11-02, after trying it: "rename that study session instead of drills … the drills … and the match …
+// from the actual schedule — I do want those linked … like that drills button … and how the games is: where it just has that header
+// and then it just has those sub things. I don't want the kids to have a way to jump around in that. And Log would still need a Mom
+// or Dad PIN if it is clicked from the Kids' Corner version"; her "Yes, build it" 2026-11-02): the 📚 Drills button is now 📚 Study.
+// A Drill, Sprint or Match card tapped on Kids' Corner opens IN the Corner as mode "card": the kid's header and buttons, then that
+// one drill / sprint / game — no Mastery kid row, view tabs, game row or Sprint source toggle (mastBare), and a tap inside it
+// (mastSetView, "Go to Mastery") can't move it: the page re-draws the same view. It is the kid's lens even with the Mom switch on
+// (like 🧒 KCLENS), so the Corner no longer falls through to the whole Mastery page. 📝 Log on the Corner asks for Mom's or Dad's
+// code (pinOk / dadPinOk) unless the switch is on or Dad's code is in; the code is good for this page only and never turns Mom mode on.
 // Leaving Drills keeps a sitting in progress on the device (mstPersist, what "Quit for now" does); leaving Games pauses a Match
 // clock (the GAMEKID park). Display + navigation only: no Firebase writes of its own — a sitting or a game writes exactly what it
 // writes on the Mastery tab.
-var kcPlay=null;                    // {who, mode:"drills"|"games", from:"corner"|"dad", back, prevView}   (var: showTab reads it from earlier in the file)
+var kcPlay=null;                    // {who, mode:"drills"|"games"|"card", from:"corner"|"dad", back, prevView, view (card), logOk, askLog}   (var: showTab reads it from earlier in the file)
+var mastBare=false;                 // 🎴 KC_CARD: _renderMasteryInner draws the view alone (no kid row / view tabs / game row / Sprint sources)
+var KC_CARD_VIEWS=["drill","sprint","match","which"];
 var mdFrameTab=null, _mdFrameWant=null;   // the tab shown framed by Mom's Day (banner + menu, Mom mode kept) — "mastery" today (var: showTab / renderMastery read them)
 // The mastery state this kid's Drills / Games read. A different kid, or a link naming a session, is a fresh landing.
 function _kcPlayKid(k,sid){
@@ -41209,17 +41220,19 @@ function _kcPlayPark(){
     mastView=p.prevView||"drill";
   }
 }
-function kcPlayOpen(mode,k,from,sid){
-  mode=(mode==="games")?"games":"drills"; from=(from==="dad")?"dad":"corner";
+function kcPlayOpen(mode,k,from,sid,view){
+  mode=(mode==="games"||mode==="card")?mode:"drills"; from=(from==="dad")?"dad":"corner";
   if(!k||ROSTER.indexOf(k)<0) return;
-  if(kcPlay&&kcPlay.who===k&&kcPlay.mode===mode&&kcPlay.from===from&&sid===undefined){ renderAll(); return; }   // already there
+  if(mode==="card"&&(from!=="corner"||KC_CARD_VIEWS.indexOf(view)<0)) return;   // 🎴 KC_CARD: the Corner's one drill / sprint / game
+  if(mode!=="card") view=null;
+  if(kcPlay&&kcPlay.who===k&&kcPlay.mode===mode&&kcPlay.from===from&&sid===undefined&&(kcPlay.view||null)===(view||null)){ renderAll(); return; }   // already there
   const back=(from==="dad")?((kcPlay&&kcPlay.from==="dad")?kcPlay.back:((mpSubView==="dadcal"||mpSubView==="dadall")?mpSubView:"dad")):null;
   _kcPlayPark();
-  kcPlay={who:k,mode:mode,from:from,back:back,prevView:mastView};
+  kcPlay={who:k,mode:mode,from:from,back:back,prevView:mastView,view:view||null};
   _kcPlayKid(k,sid);
   if(from==="dad") mpSubView="dadmast";
   if(mode==="games") gamesOpen();   // GAMESTAB's own door: this kid's last game, else their first (it paints — off the Mastery tab _mastRe → renderAll)
-  else renderAll();
+  else { if(mode==="card") mastView=view; renderAll(); }
   try{ window.scrollTo(0,0); }catch(e){}
 }
 // No render — the callers (kcCalSet, kcPick, showTab, ← Dad's Day) paint.
@@ -41234,7 +41247,7 @@ function kcPlayToggleHTML(k,from){
   const col=KID_COLOR[k]||"#2B7A78", m=(kcPlay&&kcPlay.who===k&&kcPlay.from===from)?kcPlay.mode:"";
   const big=(from==="corner")&&kcLittle(k);
   const b=(v,lbl)=>'<button onclick="kcPlayOpen(\''+v+'\',\''+k+'\',\''+from+'\')" style="flex:1;padding:8px 6px;border-radius:20px;border:2px dashed '+col+';background:'+(m===v?col:'#fff')+';color:'+(m===v?'#fff':col)+';font-size:'+(big?'15px':'13px')+';font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+lbl+'</button>';
-  return '<div style="display:flex;gap:8px;flex:1 1 180px;min-width:0'+(from==="dad"?';padding:12px 12px 0;max-width:420px;margin:0 auto':'')+'">'+b('drills','\u{1F4DA} Drills')+b('games','\u{1F3AE} Games')+'</div>';
+  return '<div style="display:flex;gap:8px;flex:1 1 180px;min-width:0'+(from==="dad"?';padding:12px 12px 0;max-width:420px;margin:0 auto':'')+'">'+b('drills','\u{1F4DA} Study')+b('games','\u{1F3AE} Games')+'</div>';
 }
 // The page under the buttons, for the kid — the Mastery tab's own 📚 Study and 🎮 Games, nothing else of it.
 function kcPlayBodyHTML(k,mode){
@@ -41244,11 +41257,61 @@ function kcPlayBodyHTML(k,mode){
   try{
     if(typeof gameKidSwitch==="function") gameKidSwitch(k);
     masteryKid=k;   // both views read masteryKid — always this kid while the page shows it
-    if(mode==="games"){ if(!gamesActive()) mastView="games"; body=gamesSubHtml(col)+'<div style="margin-top:10px">'+gamesBodyHtml(col)+'</div>'; }
+    if(mode==="card") body=_kcCardBodyHTML(k,col);   // 🎴 KC_CARD
+    else if(mode==="games"){ if(!gamesActive()) mastView="games"; body=gamesSubHtml(col)+'<div style="margin-top:10px">'+gamesBodyHtml(col)+'</div>'; }
     else body=renderMastStudy({noCheckup:true});
-  }catch(e){ body='<div style="padding:20px;color:var(--muted)">Couldn’t load '+(mode==="games"?'your games':'your study cards')+' — try again</div>'; }
+  }catch(e){ body='<div style="padding:20px;color:var(--muted)">Couldn’t load '+(mode==="games"?'your games':mode==="card"?'this one':'your study cards')+' — try again</div>'; }
   return '<div class="kc-play" style="padding:12px 12px 80px">'+body+'</div>';
 }
+// 🎴 KC_CARD: the one view a schedule card opened — a game's own page (no game row), or the drill / sprint drawn bare, as the kid.
+function _kcCardBodyHTML(k,col){
+  const p=kcPlay, v=(p&&p.view)||"drill";
+  mastView=v;   // a tap inside (mastSetView, "Go to Mastery") never moves the page off its card
+  if(v==="match"||v==="which") return gamesBodyHtml(col);
+  let h=_kcLogAskHTML(k,col);
+  const tmp=document.createElement("div"), sus=(typeof _momSuspend==="function"&&!_momSusp);
+  if(sus) _momSuspend();   // the kid's lens even with the Mom switch on (KIDSLENS's own set-aside, only while drawing)
+  mastBare=true;
+  try{ _renderMasteryInner(tmp); } finally { mastBare=false; if(sus) _momResume(); }
+  h+=tmp.innerHTML;
+  setTimeout(function(){ try{ mastLockSlideHeight(document.getElementById("content")); }catch(e){} },0);   // what renderMastery does after a draw
+  return h;
+}
+// 🎴 KC_CARD: true = the drill / sprint / game opened in place (Kids' Corner, that kid's own card). Called by mastShowTab, after
+// retrSchedGo / retrOpenSprint / msOpenFor have set the kid, the view and the Sprint deck.
+function kcPlayCardOpen(k,v){
+  try{
+    if(typeof tab==="undefined"||tab!=="kids"||KC_CARD_VIEWS.indexOf(v)<0) return false;
+    _kcLoadKid(); if(!kcKid||k!==kcKid) return false;
+    kcPlayOpen("card",k,"corner",undefined,v); return true;
+  }catch(e){ return false; }
+}
+// A drill's 📝 Log on Kids' Corner: Mom's or Dad's code first (her ask 2026-11-02), unless the Mom switch is on or Dad's code is in.
+// false = not now (the code box shows above the drill). Anywhere else Log is unchanged.
+function kcLogGate(){
+  try{
+    const p=kcPlay;
+    if(!p||p.from!=="corner"||p.mode!=="card"||typeof tab==="undefined"||tab!=="kids") return true;
+    if(p.logOk||momHere()||(typeof dadAwardOk==="function"&&dadAwardOk())) return true;
+    p.askLog=true; renderAll();
+    setTimeout(function(){ try{ const i=document.getElementById("kc-log-pin"); if(i) i.focus(); }catch(e){} },50);
+    return false;
+  }catch(e){ return false; }
+}
+function _kcLogAskHTML(k,col){
+  const p=kcPlay; if(!p||!p.askLog) return '';
+  return '<div style="margin:0 0 12px;padding:12px;border:2px solid '+col+';border-radius:14px;background:#fff;text-align:center">'
+    +'<div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px">\u{1F512} Mom or Dad: type your code to Log this drill</div>'
+    +'<input id="kc-log-pin" type="password" inputmode="numeric" maxlength="8" placeholder="Code" autocomplete="off" oninput="kcLogCode(this.value)" style="width:120px;text-align:center;padding:8px;border:1.5px solid var(--border);border-radius:10px;font-size:16px;font-weight:700;letter-spacing:6px;font-family:\'DM Sans\',sans-serif">'
+    +' <button onclick="kcLogCancel()" style="margin-left:6px;padding:8px 14px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancel</button></div>';
+}
+function kcLogCode(v){
+  const p=kcPlay; if(!p||!p.askLog) return;
+  if(!(pinOk(v)||dadPinOk(v))) return;   // a check only — it never turns Mom mode or Dad's code on
+  p.logOk=true; p.askLog=false;
+  mastStartLog();
+}
+function kcLogCancel(){ const p=kcPlay; if(p) p.askLog=false; renderAll(); }
 // 👨 Dad's Day ▸ a kid's Drills · Games: his own top row (like ▸ Everyone today), then the two buttons and the page.
 function renderDadMast(el){
   const p=kcPlay;
@@ -41278,16 +41341,14 @@ function mdFrameOpen(t){
   showTab(t);   // leaves ▸ Schedule (msvExit: the kid row gets its kid back; ▸ Schedule reopens from the menu); Mom mode stays on (MOMSWITCH)
 }
 // The last step of every mastery link (retrSchedGo / retrOpenSprint / msOpenFor).
-function mastShowTab(){ if(mdFrameWanted()){ mdFrameOpen("mastery"); return; } showTab('mastery'); }
+function mastShowTab(){ if(kcPlayCardOpen(masteryKid,mastView)) return; if(mdFrameWanted()){ mdFrameOpen("mastery"); return; } showTab('mastery'); }   // 🎴 KC_CARD: Kids' Corner opens it in place
 // true = the link was handled here (Kids' Corner or Dad's Day). Mom's Day and every other page fall through to the old path.
 function mastLinkRoute(kid,view,sid){
   try{
     const game=(view==="match"||view==="which"||view==="games");
-    if(tab==="kids"){
-      if(momHere()) return false;
+    if(tab==="kids"){   // 🎴 KC_CARD: the kid's lens even with the Mom switch on
       if(view==="study"&&typeof kcStudyIntercept==="function"&&kcStudyIntercept(kid,sid)){ kcStudyOpen(kid,sid); return true; }
-      if(game){ _kcLoadKid(); if(kcKid&&kid===kcKid){ kcPlayOpen("games",kid,"corner"); return true; } }
-      return false;
+      return false;   // a drill / sprint / game: the link sets the view, then mastShowTab opens that one thing here (kcPlayCardOpen)
     }
     if(mdFrameWanted()) return false;
     if(_mastDadSide()&&(!momHere()||_kioskD())){
@@ -41501,7 +41562,7 @@ function renderKidsCorner(el){
       +'<div style="position:relative;z-index:1;display:flex;align-items:center;gap:12px">'
       +'<div style="width:54px;height:54px;border-radius:16px;background:rgba(255,255,255,0.22);display:flex;align-items:center;justify-content:center;font-size:30px;flex-shrink:0">'+kcEmoji(k)+'</div>'
       +'<div style="flex:1;min-width:0"><div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;margin-bottom:2px">'+esc(name)+'\u2019s Corner</div>'
-      +'<div style="font-size:12px;opacity:0.9;font-weight:600">'+((kcCalGet(k)==="today")?'Your day, your stars, your school.':(kcCalGet(k)==="drills")?'Your study cards \u2014 pick one and go.':(kcCalGet(k)==="games")?'Pick a game and play.':(kcCalGet(k)==="lists")?'Your lists for today \u2014 tap to tick.':(kcLittle(k)?'Tap a day!':'Tap a day to see what\u2019s up \u2014 and add your own things.'))+'</div></div>'
+      +'<div style="font-size:12px;opacity:0.9;font-weight:600">'+((kcCalGet(k)==="today")?'Your day, your stars, your school.':(kcCalGet(k)==="drills")?'Your study cards \u2014 pick one and go.':(kcCalGet(k)==="games")?'Pick a game and play.':(kcCalGet(k)==="card")?'From your school day \u2014 have a go.':(kcCalGet(k)==="lists")?'Your lists for today \u2014 tap to tick.':(kcLittle(k)?'Tap a day!':'Tap a day to see what\u2019s up \u2014 and add your own things.'))+'</div></div>'
       +((typeof kcOtherKidsHTML==="function")?kcOtherKidsHTML(k):'')   // KIDROWS2 (her ask 2026-10-22): the other kids as buttons, one tap switches — in place of "Not <name>?"
       +'</div>'+((typeof tsStripHTML==="function")?tsStripHTML(k):'')+'</div>';   // TROPHYSHELF (her decisions 2026-10-22): 🏆 Trophies + the streak nudge in the top strip
     {
@@ -71527,7 +71588,7 @@ function mastLogPause(){
   else mastLogPauseAt=Date.now();
   mastPersistLog(); _mastRe();
 }
-function mastStartLog(){ _mastResumed=""; mastLogMode=true; mastLogScores={}; mastLogStartTs=null; mastLogPausedMs=0; mastLogPauseAt=null; mastSlideIdx=0; mastOrderedDue(mastGetPrintNum()); /* reuse the frozen quiz order (or build it now if going straight to Log) — never reshuffle */ mastPersistLog(); const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastStartLog(){ if(typeof kcLogGate==="function"&&!kcLogGate()) return; _mastResumed=""; mastLogMode=true; mastLogScores={}; mastLogStartTs=null; mastLogPausedMs=0; mastLogPauseAt=null; mastSlideIdx=0; mastOrderedDue(mastGetPrintNum()); /* reuse the frozen quiz order (or build it now if going straight to Log) — never reshuffle */ mastPersistLog(); const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastCancelLog(){
   // All-or-nothing: nothing has been written yet, so Cancel really does throw the
   // session away — make sure that's what was meant when scores are already down.
@@ -81492,6 +81553,7 @@ function gamesBodyHtml(color){
 }
 // GAMESTAB_END
 function renderMastery(el){
+  if(typeof kcPlay!=="undefined"&&kcPlay&&typeof tab!=="undefined"&&tab!=="mastery"){ renderAll(); return; }   // 📚🎮 KC_PLAY · 🎴 KC_CARD: a tap inside the Corner's (or Dad's) drill redraws that page, never the Mastery page in its place
   try{ _renderMasteryInner(el); mastLockSlideHeight(el); }catch(e){ console.error("Mastery render error:",e); el.innerHTML='<div style="padding:40px;text-align:center;color:#dc2626"><b>Mastery tab error</b><br><span style="font-size:11px;color:#666">'+e.message+'</span></div>'; }
 }
 function _renderMasteryInner(el){
@@ -81505,8 +81567,10 @@ function _renderMasteryInner(el){
   const color=MAST_KID_COL[masteryKid];
   const emoji=MAST_KID_EMOJI[masteryKid];
 
-  let h=((typeof mdFrameOn==="function"&&mdFrameOn("mastery"))?(mwBanner('Mastery \u2014 study cards, drills and games')+mpSubnav('mastery')):'')+'<div style="padding:12px 12px 80px">';   // 📚🎮 KC_PLAY: opened from Mom's Day — her banner + menu stay on top
+  const _bare=(typeof mastBare!=="undefined"&&mastBare);   // 🎴 KC_CARD
+  let h=(!_bare&&(typeof mdFrameOn==="function"&&mdFrameOn("mastery"))?(mwBanner('Mastery \u2014 study cards, drills and games')+mpSubnav('mastery')):'')+'<div style="padding:12px 12px 80px">';   // 📚🎮 KC_PLAY: opened from Mom's Day — her banner + menu stay on top
 
+  const _mbAt=h.length;   // 🎴 KC_CARD: where the header starts — drawn alone on Kids' Corner, it is cut back off (below)
   // Kid filter + add button (sticky)
   h+='<div class="mast-sticky" style="position:sticky;top:calc(var(--hdr-h) + var(--nav-h));z-index:96;background:#fff;padding:10px 0 6px;margin:0 -12px;padding-left:12px;padding-right:12px;border-bottom:1px solid var(--border)">';   // NAVSTACK: right under header → nav
   h+='<div style="display:flex;gap:6px;overflow-x:auto;align-items:center">';
@@ -81534,6 +81598,7 @@ function _renderMasteryInner(el){
   h+='</div>';
   h+=gamesSubHtml(color);   // GAMESTAB: game sub-menu, inside the sticky header so it stays put on scroll
   h+='</div>';
+  if(typeof mastBare!=="undefined"&&mastBare) h=h.slice(0,_mbAt);   // 🎴 KC_CARD: no kid row, view tabs or game row on Kids' Corner
 
   // ── ADMIN VIEW (Julian only) ──
   if(mastView==="admin"){
@@ -89569,7 +89634,7 @@ function buildSprintHtml(){
 
   // R3: source toggle sits above everything. "From drill items" works for ALL kids (anyone with
   // drill items), so it short-circuits before the phonogram-only isActive gate below.
-  h+=buildSprintSourceToggle(color);
+  if(!(typeof mastBare!=="undefined"&&mastBare)) h+=buildSprintSourceToggle(color);   // 🎴 KC_CARD: Kids' Corner keeps the sprint the card opened
   h+=retrPlanCardHtml(color);   // P1 Sprint Plan card — shows for every source (gates are per-track)
   if(sprintSource==="drill") return h+buildSprintFromDrillHtml(color);
   if(sprintSource==="momsays") return h+buildSprintMomSaysHtml(color);   // 🗣 MOMSAYS: Mom only (answers on screen)
