@@ -133,6 +133,6 @@ ok("hidden once the family has it", !/starterUnitAdd\('math_fluency_path'\)/.tes
 ok("staged unit → enroll pending; ordinary unit → not", api._unitStagedEnrollPending(u) && !api._unitStagedEnrollPending({ id: "nc_snakes", decks: [] }));
 ok("renderUnitDetail swaps the plain kid buttons for the staged rows on a staged unit", /_unitStagedEnrollPending\(u\)\) h\+=_unitStageRowsHtml\(u,roster\);\n\s*else roster\.forEach/.test(src));
 ok("unitEnroll returns early for a staged unit", /function unitEnroll\(unitId,kid\)\{[\s\S]{0,200}if\(typeof _unitStagedEnrollPending==="function"&&_unitStagedEnrollPending\(u\)\) return;/.test(src));
-ok("📚 list rendered at the bottom of the Units tab", /h\+=_starterUnitsHtml\(\);\n  h\+='<\/div>';\n  con\.innerHTML=h;/.test(src));
+ok("📚 list rendered at the bottom of the Units tab", /h\+=_starterUnitsHtml\(\);\n  h\+='<\/div>';\n  con\.innerHTML=_fr\+h;/.test(src));
 
 function finish() { console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0); }

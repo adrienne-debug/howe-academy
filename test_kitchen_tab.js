@@ -8,7 +8,7 @@ const fn=name=>{ const i=src.indexOf("function "+name+"("); if(i<0) throw new Er
 const a=src.indexOf("// KITCHENTAB_START"), b=src.indexOf("// KITCHENTAB_END");
 ok("KITCHENTAB block is marked once", a>0&&b>a&&src.split("// KITCHENTAB_START").length===2);
 const block=src.slice(a,b);
-ok("…and its CSS block", src.indexOf("/* KITCHENTAB_CSS_START")>0&&src.indexOf("/* KITCHENTAB_CSS_END */")>0);
+ok("…and the sub-row CSS block (MPSUBROW, shared with School since 2026-11-02)", src.indexOf("/* MPSUBROW_CSS_START")>0&&src.indexOf("/* MPSUBROW_CSS_END */")>0);
 ok("every inline <script> still compiles", (()=>{ const re=/<script(?![^>]*src=)[^>]*>([\s\S]*?)<\/script>/g; let m,n=0; while((m=re.exec(src))){ n++; try{ new vm.Script(m[1]); }catch(e){ console.log("    script #"+n+": "+e.message); return false; } } return n>0; })());
 ok("no family or kid name in the block", !/lincoln|ellis|lucy|julian|howe|dewalt|burris/i.test(block));
 
@@ -26,24 +26,24 @@ function world(o){
 
 console.log("── the menu row ──");
 { const w=world(); const h=w.api.mpSubnav('plan');
-  ok("five tabs: Home Base · Schedule · Household · 🍳 Kitchen · Weigh-In", /mpGoto\('plan'\)[^>]*>🏡 Home Base<\/button><button onclick="mpGoto\('cal'\)[^>]*>🗓 Schedule<\/button><button onclick="mpGoto\('house'\)[^>]*>🧹 Household<\/button><button onclick="mpGoto\(mpKitchenLast\(\)\)"[^>]*>🍳 Kitchen<\/button><button onclick="mpGoto\('weigh'\)[^>]*>⚖️ Weigh-In<\/button>/.test(h));
+  ok("six tabs: Home Base · Schedule · Household · 🍳 Kitchen · 🎓 School · Weigh-In", /mpGoto\('plan'\)[^>]*>🏡 Home Base<\/button><button onclick="mpGoto\('cal'\)[^>]*>🗓 Schedule<\/button><button onclick="mpGoto\('house'\)[^>]*>🧹 Household<\/button><button onclick="mpGoto\(mpKitchenLast\(\)\)"[^>]*>🍳 Kitchen<\/button><button onclick="mpSchoolOpen\(mpSchoolLast\(\)\)"[^>]*>🎓 School<\/button><button onclick="mpGoto\('weigh'\)[^>]*>⚖️ Weigh-In<\/button>/.test(h));
   ok("Meals / Shopping List / Prep are no longer on the menu row", !/mpGoto\('meals'\)|mpGoto\('grocery'\)|mpGoto\('prep'\)/.test(h));
   ok("no Kitchen sub-row on Home Base", h.indexOf("mp-kitchen-row")<0);
   ok("Kitchen is grey there (not the lit tab)", /🍳 Kitchen/.test(h)&&/color:#9ca3af;background:transparent[^>]*>🍳 Kitchen/.test(h));
-  ok("the row keeps its id and wrap rule (STICKYSTACK / PHONEWIDTH unchanged)", /<div id="mp-subnav" style="display:flex;flex-wrap:wrap;gap:4px;background:#fff;border-bottom:2px solid #DEF2F1;padding:8px 10px">/.test(h));
+  ok("the row keeps its id and wrap rule (STICKYSTACK / PHONEWIDTH; MPSUBROW: the buttons in .mp-row inside it)", /<div id="mp-subnav" style="background:#fff;border-bottom:2px solid #DEF2F1"><div class="mp-row" style="display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px">/.test(h));
 }
 ok("▸ Schedule's bar (active 'cal') draws no Kitchen row either", world().api.mpSubnav('cal').indexOf("mp-kitchen-row")<0);
 
 console.log("── Kitchen's own row ──");
 ["meals","grocery","prep"].forEach(v=>{
   const h=world().api.mpSubnav(v);
-  ok("on '"+v+"': 🍳 Kitchen is lit and the sub-row follows the menu row", /color:#fff;background:#2B7A78[^>]*>🍳 Kitchen/.test(h)&&/<\/div><div id="mp-kitchen-row">/.test(h));
+  ok("on '"+v+"': 🍳 Kitchen is lit and the sub-row follows the menu row inside the sticky element", /color:#fff;background:#2B7A78[^>]*>🍳 Kitchen/.test(h)&&/<\/div><div id="mp-kitchen-row" class="mp-sub">[\s\S]*<\/div><\/div>$/.test(h));
   ok("…with 🍽 Menu · 🛒 Shopping List · 🧃 Prep, '"+v+"' outlined", new RegExp('mpGoto\\(\'meals\'\\)[^>]*>🍽 Menu</button><button onclick="mpGoto\\(\'grocery\'\\)[^>]*>🛒 Shopping List</button><button onclick="mpGoto\\(\'prep\'\\)[^>]*>🧃 Prep</button>').test(h)
     && new RegExp('mpGoto\\(\''+v+'\'\\)" style="[^"]*border:1.5px solid #2B7A78[^"]*background:#DEF2F1').test(h)
     && ["meals","grocery","prep"].filter(x=>x!==v).every(x=>new RegExp('mpGoto\\(\''+x+'\'\\)" style="[^"]*border:1.5px solid transparent').test(h)));
 });
-ok("the sub-row sticks right under the menu row — its top is the measured stack (--mp-h), never a pixel number", /#mp-kitchen-row\{position:sticky;top:calc\(var\(--hdr-h\) \+ var\(--nav-h\) \+ var\(--mp-h\)\);z-index:97;/.test(src));
-ok("…one thin scrollable strip on a phone (no wrap)", /#mp-kitchen-row\{[^}]*overflow-x:auto;[^}]*scrollbar-width:none\}/.test(src)&&/#mp-kitchen-row::-webkit-scrollbar\{display:none\}/.test(src));
+ok("the sub-row sticks with the menu row: it is drawn inside #mp-subnav (the one sticky, measured element), no pixel number anywhere", /#mp-subnav\{position:sticky;top:calc\(var\(--hdr-h\) \+ var\(--nav-h\)\);z-index:98\}/.test(src)&&!/#mp-kitchen-row\{/.test(src));
+ok("…one thin scrollable strip on a phone (no wrap)", /#mp-subnav \.mp-sub\{[^}]*overflow-x:auto;[^}]*scrollbar-width:none\}/.test(src)&&/#mp-subnav \.mp-sub::-webkit-scrollbar\{display:none\}/.test(src));
 ok("under the menu row in the stack (z 98 → 97)", /#mp-subnav\{position:sticky;top:calc\(var\(--hdr-h\) \+ var\(--nav-h\)\);z-index:98\}/.test(src));
 
 console.log("── which page the Kitchen tab opens ──");
