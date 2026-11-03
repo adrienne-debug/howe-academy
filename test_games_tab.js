@@ -61,7 +61,7 @@ console.log("tab row");
   ok("🎮 Games tab in the main row",h.indexOf('onclick="gamesOpen()">\\u{1F3AE} Games</button>')>=0||h.indexOf('onclick="gamesOpen()">\u{1F3AE} Games</button>')>=0);
   ok("no 🎯 Match tab in the main row",h.indexOf("mastSetView('match')")<0&&h.indexOf("\u{1F3AF} Match</button>")<0);
   ok("no 👆 Which one? tab in the main row",h.indexOf("mastSetView('which')")<0&&h.indexOf("Which one?</button>")<0);
-  ok("other tabs stay",["drill","study","sprint","scores","heatmap","admin"].every(v=>h.indexOf("mastSetView('"+v+"')")>=0));
+  ok("other tabs stay (MASTSET 2026-11-02: the Admin tab is retired)",["drill","study","sprint","scores","heatmap"].every(v=>h.indexOf("mastSetView('"+v+"')")>=0)&&h.indexOf("mastSetView('admin')")<0);
   ok("no sub-menu outside Games",h.indexOf("games-sub")<0);
   c.mastView="match";
   const h2=c._hdr("#e11d48");
