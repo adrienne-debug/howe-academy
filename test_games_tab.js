@@ -70,7 +70,7 @@ console.log("tab row");
   // Sticky: the sub-menu is inside the sticky header div (header + nav offset), so it never scrolls away.
   const stickyAt=hdr.indexOf("position:sticky;top:calc(var(--hdr-h) + var(--nav-h))"), subAt=hdr.indexOf("h+=gamesSubHtml(color)");
   const after=hdr.slice(subAt);
-  ok("sub-menu is drawn inside the sticky header",stickyAt>=0&&subAt>stickyAt&&/^h\+=gamesSubHtml\(color\);[^\n]*\n\s*h\+='<\/div>';\s*$/.test(after.trim()));
+  ok("sub-menu is drawn inside the sticky header",stickyAt>=0&&subAt>stickyAt&&/^h\+=gamesSubHtml\(color\);[^\n]*\n\s*h\+='<\/div>';(\s*if\(typeof mastBare!=="undefined"&&mastBare\) h=h\.slice\(0,_mbAt\);[^\n]*)?\s*$/.test(after.trim()));
   ok("rendered header: sticky div opens first, sub-menu before it closes",h2.indexOf("position:sticky")<h2.indexOf("games-sub")&&h2.trim().endsWith("</div></div>"));
 }
 

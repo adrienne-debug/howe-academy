@@ -56,7 +56,7 @@ console.log("The gate");
   ok("…with no session named (the card's subject has none) → still hers", c.kcStudyIntercept("taylor")===true);
   ok("another kid's study → not intercepted (old path)", c.kcStudyIntercept("kenzie","k1")===false);
   ok("a 🩺 check-up → not intercepted (Mom runs those; old path)", c.kcStudyIntercept("taylor","ck1")===false);
-  c._mom=true; ok("Mom mode on → not intercepted (nothing changes for Mom)", c.kcStudyIntercept("taylor","s1")===false);
+  c._mom=true; ok("Mom switch on → still the kid's study (🎴 KC_CARD 2026-11-02: the Corner is the kid's lens)", c.kcStudyIntercept("taylor","s1")===true);
   const d=mk({tab:"schedule"}); ok("off the Kids' Corner tab (Schedule, General tablet's My Day) → not intercepted", d.kcStudyIntercept("taylor","s1")===false);
   const e=mk({kcKid:""}); ok("no kid picked → not intercepted", e.kcStudyIntercept("taylor","s1")===false);
 }
@@ -70,7 +70,7 @@ console.log("retrSchedGo — the tap that used to be refused");
   ok("…and it re-renders", c.calls.some(x=>x[0]==="render"));
   ok("kcStudyOn() is true now", c.kcStudyOn()===true);
   const m=mk({mom:true}); m.retrSchedGo("taylor","study","s2");
-  ok("Mom mode: retrSchedGo still goes to the Mastery tab exactly as before", m.calls.some(x=>x[0]==="showTab"&&x[1]==="mastery")&&m.get("kcStudyKid")===null&&m.get("mastView")==="study");
+  ok("Mom switch on: the Corner's study link still opens in the Corner (🎴 KC_CARD)", !m.calls.some(x=>x[0]==="showTab")&&m.get("kcStudyKid")==="taylor");
   const d=mk(); d.retrSchedGo("taylor","drill");
   ok("a Drills link (not study) keeps the old path", d.calls.some(x=>x[0]==="showTab"&&x[1]==="mastery")&&d.get("kcStudyKid")===null);
   const k=mk(); k.retrSchedGo("taylor","study","ck1");
@@ -111,7 +111,7 @@ console.log("Leaving, and Mom mode");
   const p=mk(); p.kcStudyOpen("taylor","s1"); p.set("kcKid","kenzie");
   const e3={innerHTML:""}; p.renderKidsCorner(e3);
   ok("“Not Taylor?” → a different kid picked never inherits Taylor's study view", e3.innerHTML.indexOf("CORNERBODY")>0&&p.get("kcStudyKid")===null);
-  const q=mk({mom:true}); q.kcStudyOpen("taylor","s1"); ok("kcStudyOpen itself refuses in Mom mode", q.get("kcStudyKid")===null);
+  const q=mk({mom:true}); q.kcStudyOpen("taylor","s1"); ok("kcStudyOpen opens with the Mom switch on too (🎴 KC_CARD)", q.get("kcStudyKid")==="taylor");
 }
 console.log("The menus and the wiring");
 { const css=src.slice(src.indexOf("/* ── 🧒📚 KC_MASTERY"),src.indexOf("/* 🔢 Build fingerprint."));
