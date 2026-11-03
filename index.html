@@ -79426,6 +79426,255 @@ function buildMoleHtml(color){
   return h+'</div></div></div>';
 }
 // MOLE_END
+// JEOPARDY_START — 📺 "Jeopardy" (her "continue next items" 2026-11-03; games-later_design_2026-11-03.md #3; PLAN_practice_games_2026-10-23.md
+// Tier 3 "Jeopardy board: 5 categories × 5 values from his decks; he picks; harder = higher tier card; says/types the answer" — CR with
+// self-chosen difficulty). A board: one column per deck (up to JP_COLS of the kid's playable decks, the kid picks which on the start
+// screen), JP_ROWS rows of ★ → ★★★★★. A row's hardness comes from the ladder — ★ is the deck's best-known card (highest rung),
+// ★★★★★ its least-known (lowest rung) — the plan wrote "higher tier = harder", but on this ladder a high tier means the kid knows it
+// cold, so the stars run the other way. Choosing the cell is the kid's; the retrieval IS the move (plan rule 1): a cell opens its
+// card and the kid PRODUCES it — Go Fish's three acts: a picture / letter card is said out loud (🗣 honor tap, no mic on a tablet, the
+// app says the name back), a number back is typed on the number pad, a word back is picked from three of the deck's own backs.
+// Right → the ding, the cell turns green. Wrong → the bonk, one more try; wrong twice → "We'll come back to that one" (the answer is
+// never shown — the app never supplies what the kid must produce), the cell turns amber. When every cell is done the missed cards
+// come back once, then the finish: "N of M on the first try" against the kid's own best. No values, no points, no wager, no
+// lives, no clock, no opponent — a cell is worth exactly one card.
+// Cards: Which one?'s own pool (whichPool / whichDeckModes read RAW, like Go Fish — a deck turned off for Which one? still plays here),
+// then this game's grid cell gameDeckOn(kid,"jeop",deck); a deck needs JP_MIN+ cards. Writes (only these): <kid>_settings/match_best key
+// "<board> · jeop" (first-try rights, only when beaten) and the round's gameLog entry (GAMELOG, game:"jeop"). NEVER touches the ladder —
+// no scores, no next_due, no study log. db && !_dryRun() only. Per-kid park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT).
+// A round dropped (Stop, a kid switch) writes nothing.
+let jeopState=null;   // {kid,deck,decks:[name],mix,game:"jeop",t0,rows,cells:[{col,row,pid,act,done,first,fail}],open:{ci,t}|null,turns:[{pid,act,done,first,wrong:{},tries,fail,back,opts?,typed?}],phase:"play"|"back"|"done",backs,first,of,isPB,prevBest,lock,seq,msg,gameLogged}
+let jeopPickDecks=null;   // the start screen's deck toggles (this device; null = the first JP_COLS decks)
+let _jpRandom=Math.random;   // tests seed it
+const JP_COLS=5, JP_ROWS=5, JP_MIN=3, JP_TRIES=2, JP_BEAT=900;
+const JP_NUM=/^[-+]?\d+([.,]\d+)?$/;
+function _jpItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
+function _jpShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_jpRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function _jpRaw(fn){ const had=(typeof _gdRaw!=="undefined")?_gdRaw:null; try{ if(had!==null) _gdRaw=true; return fn(); } finally{ if(had!==null) _gdRaw=had; } }
+function jeopDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"jeop",deck); }
+function _jpWhichPool(items,kid){ return _jpRaw(()=>whichPool(items,WHICH_MIX,kid)); }
+function _jpModes(items,kid){ return _jpRaw(()=>whichDeckModes(items,kid)); }
+function _jpIt(st,pid){ return _jpItems(st.kid).find(x=>x&&x.id===pid)||null; }
+function jeopName(it){ return _matchPlain(it&&it.prompt); }
+// The decks that can be a column: Which one?'s playable decks with JP_MIN+ cards in play, and this game's cell on
+function jeopDecks(items,kid){
+  kid=kid||masteryKid;
+  const n={}; _jpWhichPool(items,kid).forEach(i=>{ const d=i.subject||"Other"; n[d]=(n[d]||0)+1; });
+  return Object.keys(n).filter(d=>n[d]>=JP_MIN&&jeopDeckOn(kid,d)).sort();
+}
+// What the kid DOES with a card (Go Fish's rule): "say" (picture / symbol), "type" (a number back), "pick" (a word back)
+function jeopKind(it,mode){ if(mode!=="answer") return "say"; return JP_NUM.test(String(_whichBack(it)).trim())?"type":"pick"; }
+// PURE: one column — the deck's cards ordered best-known → least-known (rung high → low, ties shuffled), one card per row, spread over the whole deck
+function jeopColumn(cards,rows,order){
+  order=order||((typeof MAST_TIER_ORDER!=="undefined"&&MAST_TIER_ORDER)||["daily","every_other_day","every_third_day","weekly","bi_weekly","monthly","learned","graduated"]);
+  const sorted=_jpShuffle(cards.slice()).sort((a,b)=>order.indexOf(b.tier||"daily")-order.indexOf(a.tier||"daily"));
+  const n=sorted.length, out=[];
+  for(let r=0;r<rows;r++) out.push(sorted[Math.min(n-1,Math.floor((r+0.5)/rows*n))]);
+  return out;
+}
+// The start screen's toggles: which of the kid's decks go on the board (up to JP_COLS on at once)
+function jeopDecksOn(decks){ const on=(jeopPickDecks&&jeopPickDecks.length)?decks.filter(d=>jeopPickDecks.indexOf(d)>=0):decks.slice(0,JP_COLS); return on.length?on:decks.slice(0,JP_COLS); }
+function jeopToggle(deck){
+  const decks=jeopDecks(_jpItems()), on=jeopDecksOn(decks), i=on.indexOf(deck);
+  if(i>=0){ if(on.length>1) on.splice(i,1); } else if(on.length<JP_COLS) on.push(deck);
+  jeopPickDecks=on.slice(); _mastRe();
+}
+function jeopBoardName(decks){ return decks.length===1?decks[0]:(decks.length+" decks"); }
+function jeopStart(){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the tap unlocks the ding / bonk (iPad)
+  const items=_jpItems(), modes=_jpModes(items), pool=_jpWhichPool(items,masteryKid), ok=jeopDecks(items), decks=jeopDecksOn(ok).filter(d=>ok.indexOf(d)>=0);
+  if(!decks.length){ jeopState=null; _mastRe(); return; }
+  const byDeck={}; decks.forEach(d=>{ byDeck[d]=pool.filter(i=>(i.subject||"Other")===d); });
+  const rows=Math.max(1,Math.min(JP_ROWS,Math.min.apply(null,decks.map(d=>byDeck[d].length))));
+  const cells=[];
+  decks.forEach((d,col)=>{ jeopColumn(byDeck[d],rows).forEach((it,row)=>{ cells.push({col:col,row:row,pid:it.id,act:jeopKind(it,modes[d]),done:false,first:false,fail:false}); }); });
+  jeopState={kid:masteryKid,deck:jeopBoardName(decks),decks:decks,mix:decks.length>1,game:"jeop",t0:Date.now(),rows:rows,cells:cells,open:null,turns:[],phase:"play",backs:null,first:0,of:cells.length,isPB:false,prevBest:null,lock:false,seq:0,msg:"Pick a square!",say:""};
+  _mastRe();
+}
+function jeopStop(){ jeopState=null; _mastRe(); }   // drop the round as it stands: nothing written
+function _jpSay(st,text){ st.say=text||""; if(!text||(typeof mastView!=="undefined"&&mastView!=="jeop")) return; try{ mastSpeak(text); }catch(e){} }
+function jeopSayAgain(){ const st=jeopState; if(st&&st.say) try{ mastSpeak(st.say); }catch(e){} }
+// Three backs for a pick: the card's own + two different backs from its deck (Which one?'s rule), shuffled
+function _jpLures(st,pid){
+  const it=_jpIt(st,pid); if(!it) return [];
+  const own=_whichBack(it), seen={}; seen[_whichNorm(own)]=1;
+  const more=_jpShuffle(_jpWhichPool(_jpItems(st.kid),st.kid).filter(x=>x.id!==pid&&(x.subject||"Other")===(it.subject||"Other"))).map(x=>_whichBack(x)).filter(b=>b&&!seen[_whichNorm(b)]&&(seen[_whichNorm(b)]=1)).slice(0,2);
+  return _jpShuffle([own].concat(more));
+}
+// Open a card: a cell (ci) or a come-back (ci null, pid given)
+function _jpOpen(st,ci,pid,act,back){
+  const t={pid:pid,act:act,done:false,first:false,wrong:{},tries:0,fail:false,back:!!back}; st.turns.push(t);
+  if(act==="pick") t.opts=_jpLures(st,pid);
+  if(act==="type") t.typed="";
+  st.open={ci:ci,t:st.turns.length-1};
+  const it=_jpIt(st,pid), lead=back?"One more time. ":"";
+  st.msg=lead+(act==="say"?"Say it out loud, then tap \u{1F5E3}":act==="type"?"Type the answer.":"Tap the answer.");
+  if(act==="say") _jpSay(st,lead+"What is it?"); else _jpSay(st,lead+(it&&!whichSilent(it)?jeopName(it):""));   // a word answer's FRONT is read (Which one? reads it too); a silent language is shown only
+}
+function jeopPickCell(ci){
+  const st=jeopState; if(!st||st.phase!=="play"||st.lock||st.open) return;
+  const c=st.cells[ci]; if(!c||c.done) return;
+  _jpOpen(st,ci,c.pid,c.act,false); _mastRe();
+}
+function _jpTurn(st,act){ if(!st||st.lock||st.phase==="done"||!st.open) return null; const t=st.turns[st.open.t]; return (t&&t.act===act&&!t.done)?t:null; }
+function jeopSaid(){   // 🗣 "I said it" — the honor system: a tablet can't hear; the app says the name back as the confirm
+  const st=jeopState, t=_jpTurn(st,"say"); if(!t) return;
+  t.done=true; t.first=true;
+  _jpSettle(st,t,"",jeopName(_jpIt(st,t.pid))); _mastRe();   // the name is SAID back, never written
+}
+function jeopKey(ch){   // the number pad
+  const st=jeopState, t=_jpTurn(st,"type"); if(!t) return;
+  if(ch==="back") t.typed=t.typed.slice(0,-1); else if(t.typed.length<6) t.typed+=ch;
+  _mastRe();
+}
+function _jpAnsOk(act,given,back){ if(act==="pick") return String(given)===String(back); return (typeof mstTypeAnsOk==="function")?mstTypeAnsOk(given,back):Number(String(given).replace(",","."))===Number(String(back).replace(",",".")); }
+// PURE: one answer against the card's back → "right" | "again" | "fail". A picked back that was wrong greys out (t.wrong)
+function jeopJudge(t,given,back){
+  if(_jpAnsOk(t.act,given,back)){ t.done=true; t.first=t.tries===0; return "right"; }
+  t.tries++; t.wrong[t.act==="pick"?String(given):String(t.tries)]=1; t.typed="";
+  if(t.tries>=JP_TRIES){ t.done=true; t.first=false; t.fail=true; return "fail"; }
+  return "again";
+}
+function jeopCheck(){
+  const st=jeopState, t=_jpTurn(st,"type"); if(!t||!t.typed) return;
+  _jpAfter(st,t,jeopJudge(t,t.typed,_whichBack(_jpIt(st,t.pid))));
+}
+function jeopPickTap(i){
+  const st=jeopState, t=_jpTurn(st,"pick"); if(!t||!t.opts||t.opts[i]==null||t.wrong[t.opts[i]]) return;
+  _jpAfter(st,t,jeopJudge(t,t.opts[i],_whichBack(_jpIt(st,t.pid))));
+}
+function _jpAfter(st,t,r){
+  if(r==="again"){ try{ matchBonk(); }catch(e){} st.msg="Almost \u2014 try again!"; _mastRe(); return; }
+  if(r==="fail") try{ matchBonk(); }catch(e){}
+  _jpSettle(st,t,r==="fail"?"We\u2019ll come back to that one.":""); _mastRe();
+}
+// The card is settled: mark its cell, a beat, then the board (or the next come-back). lead = the line on screen; spoken = said first (a picture's name)
+function _jpSettle(st,t,lead,spoken){
+  const o=st.open, c=(o&&o.ci!=null)?st.cells[o.ci]:null;
+  if(c){ c.done=true; c.first=t.first; c.fail=t.fail; if(t.first) st.first++; }
+  if(!t.fail) try{ matchDing(); }catch(e){}
+  st.msg=lead||(t.first?"That\u2019s it!":"Okay \u2014 next one.");
+  const pre=spoken?spoken+". ":(lead?lead+" ":"");
+  if(t.first) _jpSay(st,pre+"That\u2019s it!"); else _jpSay(st,lead||"Next one.");
+  st.lock=true; const seq=++st.seq;
+  setTimeout(()=>{ if(jeopState===st&&st.lock&&st.seq===seq) jeopNext(st); },JP_BEAT);
+}
+function jeopNext(st){
+  st=st||jeopState; if(!st||st!==jeopState) return;
+  st.lock=false; st.open=null;
+  if(st.phase==="back"){ _jpBackNext(st); _mastRe(); return; }
+  if(st.cells.every(c=>c.done)){ _jpEnd(st); _mastRe(); return; }
+  st.msg="Pick a square!"; st.say=""; _mastRe();
+}
+// ── the end: every cell done → the missed cards come back once → finish ──
+function _jpEnd(st){
+  st.phase="back";
+  const seen={}, backs=[];
+  st.turns.forEach(t=>{ if(t.back||seen[t.pid]) return; if(Object.keys(t.wrong).length||t.fail){ seen[t.pid]=1; backs.push({pid:t.pid,act:t.act}); } });
+  st.backs=backs;
+  if(!backs.length) return _jpFinish(st);
+  st.msg="The board is clear! Let\u2019s look at a few again."; _jpSay(st,"The board is clear! Let's look at a few again.");
+  st.lock=true; const seq=++st.seq; setTimeout(()=>{ if(jeopState===st&&st.lock&&st.seq===seq) jeopNext(st); },JP_BEAT*2);
+}
+function _jpBackNext(st){
+  const b=st.backs&&st.backs.shift();
+  if(!b) return _jpFinish(st);
+  _jpOpen(st,null,b.pid,b.act,true);
+}
+function jeopBestKey(deck){ return deck+" \u{00B7} jeop"; }
+function _jpFinish(st){
+  st.phase="done"; st.open=null; st.lock=false;
+  const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every act's result, game:"jeop"
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=jeopBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.first>0&&(prev==null||st.first>prev);
+  if(st.isPB){
+    s.match_best[key]=st.first;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+  st.msg="The board is clear!"; st.say="";
+  try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F4FA} You cleared the board!",{noSong:true}); }catch(e){}
+}
+// GAMEKID → 🎲 GAMEKIT resume: a beat that was mid-way when the kid switched settles here (no render; the caller renders)
+function jeopResume(){
+  const st=jeopState; if(!st||st.phase==="done") return;
+  if(st.lock){ st.lock=false; st.open=null; if(st.phase==="back") _jpBackNext(st); else if(st.cells.every(c=>c.done)) _jpEnd(st); else { st.msg="Pick a square!"; st.say=""; } return; }
+  if(st.say&&(typeof mastView==="undefined"||mastView==="jeop")) try{ mastSpeak(st.say); }catch(e){}
+}
+// ── the screen ──
+const JP_CSS='<style>.jp-grid{display:grid;gap:6px}.jp-head{font-size:11px;font-weight:800;color:#57534e;text-align:center;padding:4px 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:\'DM Sans\',sans-serif}'+
+  '.jp-cell{min-height:48px;border-radius:12px;border:2px solid #1e3a8a;background:#1d4ed8;color:#fde68a;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;letter-spacing:.02em;-webkit-tap-highlight-color:transparent}'+
+  '.jp-cell[disabled]{cursor:default}.jp-cell.jp-ok{background:#f0fdf4;border-color:#16a34a;color:#15803d;font-size:20px}.jp-cell.jp-miss{background:#fffbeb;border-color:#f59e0b;color:#b45309;font-size:20px}'+
+  '.jp-card{width:150px;height:160px;border-radius:14px;border:3px solid #a78bfa;background:#f5f3ff;display:flex;align-items:center;justify-content:center;overflow:hidden;margin:0 auto}.jp-card .jp-vis{pointer-events:none;transform:scale(1.5)}.jp-card .jp-txt{pointer-events:none;font-family:\'Fraunces\',serif;font-weight:800;font-size:34px;line-height:1.1;color:#292524;text-align:center;padding:6px;overflow-wrap:anywhere}'+
+  '.jp-btn{padding:12px 22px;border-radius:999px;border:none;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;-webkit-tap-highlight-color:transparent}.jp-btn[disabled],.jp-key[disabled],.jp-opt[disabled]{opacity:.45;cursor:default}'+
+  '.jp-key{width:64px;height:56px;border-radius:14px;border:2px solid #e2ddd6;background:#fff;font-family:\'Fraunces\',serif;font-size:26px;font-weight:800;color:#292524;cursor:pointer}'+
+  '.jp-opt{min-width:96px;padding:14px 18px;border-radius:16px;border:3px solid #e2ddd6;background:#fff;font-family:\'Fraunces\',serif;font-size:24px;font-weight:800;color:#292524;cursor:pointer;overflow-wrap:anywhere}.jp-opt.jp-wrong{opacity:.28;filter:grayscale(1);cursor:default}'+
+  '.jp-chip{padding:10px 16px;border-radius:999px;font-size:14px;font-weight:800;border:2px solid #e2ddd6;background:#fff;color:#57534e;cursor:pointer;font-family:\'DM Sans\',sans-serif}</style>';
+function _jpStars(r){ let s=""; for(let i=0;i<=r;i++) s+="\u2605"; return s; }
+function _jpCardVis(st,pid,act){
+  const it=_jpIt(st,pid); if(!it) return '';
+  if(act==="say"){ const v=_smTileVis(it); if(v) return '<span class="jp-vis">'+v+'</span>'; }
+  return '<span class="jp-txt">'+esc(jeopName(it))+'</span>';   // an answer card shows its FRONT (the kid produces the back)
+}
+function buildJeopHtml(color){
+  const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+  let h=JP_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const items=_jpItems(), decks=jeopDecks(items);
+  if(!decks.length){ h+='<div class="mast-none">No decks ready for Jeopardy yet \u{2014} it needs '+JP_MIN+' or more cards with a picture (or a short answer on the back).</div></div>'; return h; }
+  const st=jeopState;
+  if(!st||st.phase==="done"){
+    const on=jeopDecksOn(decks);
+    h+='<div style="font-size:13px;font-weight:700;color:var(--muted);margin:10px 0 6px">Which decks go on the board? (up to '+JP_COLS+')</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">';
+    decks.forEach(dk=>{ const sel=on.indexOf(dk)>=0; h+='<button class="jp-chip" onclick="jeopToggle(\''+q(dk)+'\')" aria-pressed="'+sel+'" style="'+(sel?'border-color:'+color+';background:'+color+';color:#fff':'')+'">'+esc(dk)+'</button>'; });
+    h+='</div>';
+    h+='<div style="display:flex;justify-content:center;margin:6px 0 14px"><button class="jp-btn" onclick="jeopStart()" style="background:'+color+';color:#fff;font-size:18px;padding:16px 32px">\u{1F4FA} '+(st?'Play again':'Build the board')+'</button></div>';
+    if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e;text-align:center">Pick any square. \u2605 is a card you know well, \u2605\u2605\u2605\u2605\u2605 one you\u2019re still learning. Answer it to clear it!</div></div>'; return h; }
+  }
+  const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[jeopBestKey(st.deck)];
+  if(st.phase==="done"){
+    h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+    h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} You cleared the board!</div>';
+    h+='<div style="font-size:17px;font-weight:800;color:#57534e;margin-top:10px">\u{1F4FA} '+st.first+' of '+st.of+' on the first try'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+    return h+'</div></div>';
+  }
+  // the board, with the open card above it
+  h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px;flex-wrap:wrap"><span style="font-size:13px;font-weight:800;color:#57534e">'+st.cells.filter(c=>c.done).length+' of '+st.of+' cleared</span>';
+  h+='<span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
+    '<button onclick="jeopStop()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{21A9} Stop</button></span></div>';
+  h+='<div style="display:flex;align-items:center;gap:10px;margin:10px 0 12px;padding:12px 14px;border-radius:18px;background:#eff6ff;border:2px solid #bfdbfe"><span style="font-size:28px;line-height:1">\u{1F4FA}</span><span style="flex:1;font-size:17px;font-weight:800;color:#1e3a8a">'+esc(st.msg)+'</span>'+
+    (st.say?'<button onclick="jeopSayAgain()" aria-label="Hear it again" style="width:56px;height:56px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:26px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button>':'')+'</div>';
+  const o=st.open, t=o?st.turns[o.t]:null, lock=st.lock;
+  if(t&&!t.done||t&&lock){
+    h+='<div style="margin:6px 0 12px"><span class="jp-card">'+_jpCardVis(st,t.pid,t.act)+'</span></div>';
+    if(t.act==="say") h+='<div style="display:flex;justify-content:center"><button class="jp-btn" onclick="jeopSaid()"'+(lock||t.done?' disabled':'')+' style="background:'+color+';color:#fff;font-size:20px;padding:18px 34px">\u{1F5E3} I said it</button></div>';
+    else if(t.act==="type"){
+      h+='<div style="display:flex;justify-content:center;margin-bottom:10px"><span style="min-width:120px;height:56px;border-radius:14px;border:3px solid '+color+';background:#fff;font-family:\'Fraunces\',serif;font-size:30px;font-weight:800;color:#292524;display:inline-flex;align-items:center;justify-content:center;padding:0 14px">'+esc(t.typed||"")+'</span></div>';
+      h+='<div style="display:grid;grid-template-columns:repeat(3,64px);gap:8px;justify-content:center">';
+      ["1","2","3","4","5","6","7","8","9","back","0","ok"].forEach(k=>{ if(k==="back") h+='<button class="jp-key" onclick="jeopKey(\'back\')"'+(lock?' disabled':'')+' aria-label="Erase">\u{232B}</button>'; else if(k==="ok") h+='<button class="jp-key" onclick="jeopCheck()"'+(lock||!t.typed?' disabled':'')+' style="background:'+color+';color:#fff;border-color:transparent" aria-label="Check">\u{2714}</button>'; else h+='<button class="jp-key" onclick="jeopKey(\''+k+'\')"'+(lock?' disabled':'')+'>'+k+'</button>'; });
+      h+='</div>';
+    } else {
+      h+='<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">';
+      (t.opts||[]).forEach((op,i)=>{ const w=!!t.wrong[op]; h+='<button class="jp-opt'+(w?' jp-wrong':'')+'" onclick="jeopPickTap('+i+')"'+(w||lock||t.done?' disabled':'')+'>'+esc(op)+'</button>'; });
+      h+='</div>';
+    }
+  }
+  if(st.phase==="play"){
+    const cols=st.decks.length;
+    h+='<div class="jp-grid" style="grid-template-columns:repeat('+cols+',1fr);margin-top:14px">';
+    st.decks.forEach(d=>{ h+='<div class="jp-head" title="'+esc(d)+'">'+esc(d)+'</div>'; });
+    for(let r=0;r<st.rows;r++){ for(let c=0;c<cols;c++){ const ci=st.cells.findIndex(x=>x.col===c&&x.row===r), cell=st.cells[ci];
+      if(!cell){ h+='<div></div>'; continue; }
+      const openNow=o&&o.ci===ci, can=!cell.done&&!o&&!lock;
+      h+='<button class="jp-cell'+(cell.done?(cell.first?' jp-ok':' jp-miss'):'')+'"'+(can?' onclick="jeopPickCell('+ci+')"':' disabled')+' aria-label="'+esc(st.decks[c])+' '+_jpStars(r)+(cell.done?(cell.first?' done':' missed'):'')+'"'+(openNow?' style="box-shadow:0 0 0 4px #fde68a"':'')+'>'+(cell.done?(cell.first?'\u2713':'\u25D0'):_jpStars(r))+'</button>'; } }
+    h+='</div>';
+  }
+  return h+'</div>';
+}
+// JEOPARDY_END
 // STUDYCOUNTS_START — 📚 Study sessions count everywhere (F3 of PLAN_learning_system, her yes 2026-10-24). A study
 // sitting logs to mastery/studyLog/<kid>/<sid>/<yyyymmdd>, but Scores, the Weekly report, sprint readiness (the ≥ 90%
 // untimed check) and the notebook's 🔁 review flags read only the drill's mastery/history/<kid>/<yyyymmdd>, so Lincoln —
@@ -83408,6 +83657,8 @@ const GAMES_LIST=[
      park:()=>gofishState, restore:v=>{ gofishState=v||null; }, resume:()=>gofishResume(), decks:k=>typeof gofishDecks==="function"?gofishDecks(_gamesItems(k),k):[]},   // 🐟 GOFISH · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
   {key:"mole",   emoji:"\u{1F439}", label:"Whack-a-mole", view:"mole",                 available:k=>typeof moleDecks==="function"&&moleDecks(_gamesItems(k),k).length>0, render:c=>buildMoleHtml(c),
      park:()=>moleState, restore:v=>{ moleState=v||null; }, resume:()=>moleResume(), decks:k=>typeof moleDecks==="function"?moleDecks(_gamesItems(k),k):[]},   // 🐹 MOLE · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
+  {key:"jeop",   emoji:"\u{1F4FA}", label:"Jeopardy",    view:"jeop",                 available:k=>typeof jeopDecks==="function"&&jeopDecks(_gamesItems(k),k).length>0, render:c=>buildJeopHtml(c),
+     park:()=>jeopState, restore:v=>{ jeopState=v||null; }, resume:()=>jeopResume(), decks:k=>typeof jeopDecks==="function"?jeopDecks(_gamesItems(k),k):[]},   // 📺 JEOPARDY · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
 ];
 const gamesLast={};   // kid → key of the last game played on this device
 function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k)&&(typeof gameDeckAny!=="function"||gameDeckAny(k,g)); }catch(e){ return false; } }); }   // 🎮 GAMEGRID: every deck off → the game isn't offered
