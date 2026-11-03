@@ -33,6 +33,9 @@ const need=h=>{ const m=/The plan needs <b>(\d+) new cards a day<\/b>[^<]*?\(~(\
 const strip=h=>{ const i=h.indexOf("Send-out dates"); return i<0?"":h.slice(i,h.indexOf('class="cpp-res',i)>0?h.indexOf('class="cpp-res',i):undefined); };
 const wild=w=>w.P.cppSections().find(s=>s.id==="wildlife");
 const saved=w=>w.P.cppPlanned(w.P.cppCls(),wild(w),null);
+// ⚙ LADDER1 (2026-11-03): one right climbs, so at the class's 95% the late stations no longer set the pace — the demo aims at 99% of core
+// (where Wildlife's late send-out binds again: 18 → 16 new a day when it goes 4 weeks earlier)
+const tight=x=>{ x._envc.cls.goal={name:"Area",pct:99}; };
 
 const run=async()=>{
 console.log("── the block and its hooks ──");
@@ -51,7 +54,7 @@ console.log("── the pure parts ──");
   ok("a day's words: Tue Jan 26 · weeks between two dates", X.cpseDay("2027-01-26")==="Tue Jan 26"&&X.cpseDay("nope")===""&&X.cpseWeeks("2026-12-29","2027-01-26")===4); }
 
 console.log("── the strip on 📅 Pace (demo, teacher) ──");
-const w=demo("teacher"), P=w.P, X=w.X;
+const w=demo("teacher",tight), P=w.P, X=w.X;
 { const h=w.G.content, s=strip(h);
   ok("📆 Send-out dates sits on the plan bar, before the result line", s.length>0&&h.indexOf("Send-out dates")<h.indexOf('class="cpp-res'));
   ok("the strip: one column a week from this week (Oct 26) to the goal's week, 🏫 on the class meetings, 🏁 on the goal", /<th>Oct 26<\/th>/.test(s)&&/<th>Mar 22<\/th>/.test(s)&&!/<th>Mar 29<\/th>/.test(s)&&/\u{1F3EB}/u.test(s)&&/\u{1F3C1}/u.test(s)&&/title="Tue Jan 26 · Wildlife"/.test(s));
@@ -121,7 +124,7 @@ console.log("── 🔒 locks/plan ──");
   ok("the admin can still move it", w6.P.cppDraft().sendOn.wildlife==="2027-01-19"); }
 
 console.log("── 💡 the suggestion ──");
-{ const w7=demo("teacher"), sg=w7.X.cpSendEarlySuggest({d:w7.P.cppDraft(),inp:w7.P.cppInputs(w7.P.cppDraft())}), s=strip(w7.G.content);
+{ const w7=demo("teacher",tight), sg=w7.X.cpSendEarlySuggest({d:w7.P.cppDraft(),inp:w7.P.cppInputs(w7.P.cppDraft())}), s=strip(w7.G.content);
   ok("it picks the section whose earlier send-out saves the most: Wildlife, about 4 weeks earlier", sg&&sg.kind==="sendEarly"&&sg.sec==="wildlife"&&sg.to<sg.from&&sg.weeks>=3&&sg.weeks<=5, sg);
   ok("…and it saves New cards a day and minutes", sg&&sg.need[1]<sg.need[0]&&sg.min[1]<sg.min[0]);
   ok("the strip shows it: 💡 \"Sending Wildlife out N weeks earlier … saves ~M min a day\" with Do it and Not now", sg&&s.indexOf("\u{1F4A1} "+sg.text.replace(/&/g,"&amp;"))>=0&&/>Do it<\/button>/.test(s)&&/>Not now<\/button>/.test(s), s.slice(s.indexOf("cpse-sug"),s.indexOf("cpse-sug")+300));

@@ -2,6 +2,7 @@
  * Node tests — ⚙ LADDER1: one right answer climbs one level (her rule 2026-11-03: "everything is at one, and then that
  * setting is taken out"). A stored ladder_streak / tier_streaks (DeWalt's old 3s) is ignored; a miss still sends the card
  * back down; the "Ladder Streak" row and the per-level streak buttons are gone from ⚙ Rules; the "3 in a row" labels are gone.
+ * Her follow-up the same day, "erase from envirothon as well": the class site's Right in a row rows (class settings, 📅 Pace) are gone too.
  *   run:  node test_ladder_one.js
  */
 const fs = require("fs"), path = require("path"), vm = require("vm");
@@ -80,18 +81,21 @@ const score = (ctx, items, scores) => ctx.mastApplyScores(items, Object.keys(sco
   ok("estimate config is 1 per level", cfg.streak === 1 && Object.keys(cfg.streaks).length === 0, cfg);
   ok("every-other-day → weekly gate = one interval (2 days)", ctx._unitLadderDaysToGate("every_other_day", 0, cfg) === 2); }
 
-// 8. the class site's own setting still lays over the top (site edition only)
-{ const ctx = world({ ladder: LADDER, ladder_streak: 3 }, (part, kid, s) => Object.assign({}, s, { ladder_streak: 2 }));
-  ok("class overlay still applies on the class site", ctx.mastDrillSettings().ladder_streak === 2); }
-
-// 8b. the class site (site edition) keeps its own setting as it was
-{ const ctx = world({ ladder: LADDER, ladder_streak: 3, tier_streaks: { weekly: 4 } });
+// 8. the class site (her follow-up 2026-11-03: "erase from envirothon as well"): a class value is ignored too, the rows are gone
+{ const ctx = world({ ladder: LADDER, ladder_streak: 3, tier_streaks: { weekly: 4 } }, (part, kid, s) => Object.assign({}, s, { ladder_streak: 2, tier_streaks: { weekly: 5 }, miss_drop: "one" }));
   ctx.envClsOn = () => true;
   const s = ctx.mastDrillSettings();
-  ok("class site: the stored 3 still counts", s.ladder_streak === 3 && s.tier_streaks.weekly === 4, s);
-  ok("class site: estimates keep its own streak", ctx._unitKidLadderCfg("kid1").streak === 3);
-  ctx.masteryData.kid1_settings = {};
-  ok("class site: nothing stored → 3 as before", ctx.mastDrillSettings().ladder_streak === 3); }
+  ok("class site: a class's Right in a row (2, per level 5) is ignored → 1", s.ladder_streak === 1 && Object.keys(s.tier_streaks).length === 0, s);
+  ok("class site: the class's other drill settings still apply", s.miss_drop === "one");
+  ok("class site: estimates are 1 per level", ctx._unitKidLadderCfg("kid1").streak === 1); }
+{ const F = src.slice(src.indexOf("const ENVCS_FIELDS"), src.indexOf("const _envcs="));
+  ok("class settings: no Right in a row rows (ladder_streak / tier_streaks)", F.length > 100 && F.indexOf('name:"ladder_streak"') < 0 && F.indexOf('name:"tier_streaks"') < 0);
+  const bar = slice("cppPlanBarHtml");
+  ok("📅 Pace: no Right in a row box", bar.indexOf("Right in a row") < 0 && bar.indexOf('num("streak"') < 0);
+  ok("📅 Pace: Save never writes settings/drill/ladder_streak", slice("cpPaceSave").indexOf("ladder_streak") < 0);
+  ok("📅 Pace: the planner runs at one right per level", /streak:1,/.test(slice("cppBase")));
+  ok("the demo class no longer gets Right in a row 2", slice("cppDemo").indexOf("ladder_streak") < 0);
+  ok("Days a card is learned sits above What a miss does", /findIndex\(f=>f&&f\.name==="miss_drop"\)/.test(slice("cpSeatsFields"))); }
 
 // 9. the setting is gone from the screens
 { const rules = slice("mastAdminRulesHtml");

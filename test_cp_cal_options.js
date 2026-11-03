@@ -5,8 +5,8 @@
  *   · the block (right after CPCAL_END) and its typeof-guarded hooks; writes only through envcWrite / envsWrite;
  *   · the pure parts: checkpoints from classes/<cid>/checkpoints, the next one, their targeted update;
  *   · 🎯 Checkpoints on 📅 Pace: add / ✕ / Save (ONE update, a path per date) / Undo; a past date or a bad number refused; 🔒 locks/plan greys it;
- *   · THE DEMO: Teacher sets 800 by Jan 15 ▸ Parent (Maya) ▸ 📅 Our study days shows the options (the real planner, from where Maya is) ▸ pick
- *     Mon–Thu (ONE set, CPCAL's record + npd) ▸ Teacher ▸ 📅 Pace: Maya on Mon–Thu, ✓ 800 by Jan 15, on pace; the parent's on-pace card and the
+ *   · THE DEMO: Teacher sets 975 by Jan 15 ▸ Parent (Maya) ▸ 📅 Our study days shows the options (the real planner, from where Maya is) ▸ pick
+ *     Mon–Thu (ONE set, CPCAL's record + npd) ▸ Teacher ▸ 📅 Pace: Maya on Mon–Thu, ✓ 975 by Jan 15, on pace; the parent's on-pace card and the
  *     kid's 🌿 sitting use the family's New cards a day;
  *   · the teacher's own number wins; Adrienne's 🔒 New cards a day: no npd written or used; the switch ON by default, off = read-only;
  *   · custom days tapped on CPCAL's chips become an option; the teacher's student page; the kid's / parent's lock listener;
@@ -75,35 +75,35 @@ console.log("── 🎯 Checkpoints on 📅 Pace ──");
   ok("🔒 locks/plan: the inputs and ✕ grey, \"set by\", add / ✕ / save do nothing", /onclick="cpCalCpDel\('2027-01-15'\)"/.test(h)&&/cpcal-x" disabled onclick="cpCalCpDel/.test(h)&&/🔒 set by/u.test(txt(h))&&(O.cpCalCpIn("on","2027-02-01"),O.cpCalCpIn("n","900"),O.cpCalCpAdd())===false&&(O.cpCalCpDel("2027-01-15"),O._cpco.draft===null)&&O.cpCalCpSave()===false&&w._envs.writes.length===W1);
   ok("…and the server refuses it too (rules: locks/plan != true)", /locks\/plan'\)\.val\(\) != true/.test(JSON.parse(fs.readFileSync(path.join(REPO,"envirothon","SITE_RULES.json"),"utf8")).rules.classes.$cid.checkpoints[".write"])); }
 
-console.log("── the demo: 800 by Jan 15 ▸ Parent (Maya) ▸ the options ▸ Mon–Thu ▸ Teacher ▸ 📅 Pace ──");
+console.log("── the demo (975: ⚙ LADDER1 2026-11-03 climbs faster, so Mon/Wed/Fri only fails above ~951): 975 by Jan 15 ▸ Parent (Maya) ▸ the options ▸ Mon–Thu ▸ Teacher ▸ 📅 Pace ──");
 { const w=demo("teacher"), O=w.O, P=w.P; w.envcView("pace"); settle(w);
-  ok("Teacher ▸ 📅 Pace ▸ 🎯 Checkpoints: 800 by Jan 15 ▸ Save", await addCp(w,"2027-01-15",800)&&w._envc.cls.checkpoints["2027-01-15"].n===800);
+  ok("Teacher ▸ 📅 Pace ▸ 🎯 Checkpoints: 975 by Jan 15 ▸ Save", await addCp(w,"2027-01-15",975)&&w._envc.cls.checkpoints["2027-01-15"].n===975);
   w.envsDemoGo("parent"); let h=settle(w); const card=h.slice(h.indexOf("Our study days"));
-  ok("Parent ▸ 📅 Our study days: \"Next checkpoint: 800 core cards learned by Fri Jan 15 · then 95% of the core cards by Area Mar 22\"", /Next checkpoint: <b>800 core cards learned by Fri Jan 15<\/b> · then <b>95% of the core cards by Area Mar 22<\/b>/.test(card));
+  ok("Parent ▸ 📅 Our study days: \"Next checkpoint: 975 core cards learned by Fri Jan 15 · then 95% of the core cards by Area Mar 22\"", /Next checkpoint: <b>975 core cards learned by Fri Jan 15<\/b> · then <b>95% of the core cards by Area Mar 22<\/b>/.test(card));
   const o=opts(card), f=o["Mon–Fri"], t=o["Mon–Thu"], m=o["Mon/Wed/Fri"], e=o["Every day"];
   console.log("       Maya from today: Mon–Fri "+nOf(f)+" · Mon–Thu "+nOf(t)+" · Every day "+nOf(e)+" · Mon/Wed/Fri: "+(m&&m.t));
   ok("the four options, each with new cards a day, minutes, and \"Area ✓\" (those days make the goal too)", f&&t&&m&&e&&/^Mon–Fri \d+ new a day · ~\d+ min · Area ✓$/.test(f.t)&&/^Mon–Thu \d+ new a day · ~\d+ min · Area ✓$/.test(t.t)&&/^Every day \d+ new a day · ~\d+ min · Area ✓$/.test(e.t)&&/Each option meets the checkpoint, worked out from where your child is today/.test(card), Object.keys(o).map(k=>o[k].t));
   ok("…fewer days need more a day: Every day < Mon–Fri < Mon–Thu", nOf(e)<nOf(f)&&nOf(f)<nOf(t));
-  ok("…Mon/Wed/Fri can't make it: marked ✗ with what it would reach instead, and can't be picked", m&&/can’t make 800 by Jan 15 · reaches about [\d,]+ even at 50 a day ✗$/.test(m.t)&&m.dis, m);
+  ok("…Mon/Wed/Fri can't make it: marked ✗ with what it would reach instead, and can't be picked", m&&/can’t make 975 by Jan 15 · reaches about [\d,]+ even at 50 a day ✗$/.test(m.t)&&m.dis, m);
   ok("…no option is picked yet: \"Until you pick, your child follows the class’s days.\"; CPCAL's own chips still below (\"Or tap your own days\")", !Object.keys(o).some(k=>o[k].on)&&/Until you pick, your child follows the class’s days\./.test(card)&&/Or tap your own days/.test(card)&&(card.match(/onclick="cpCalTap\('ramirez_maya',\d\)"/g)||[]).length===7);
   // the numbers ARE the planner's, from Maya's own state
   const nin=O.cpCalOptions(SID,{sync:true}).nin, fin=Object.assign({},nin,{calendar:{days:"own",wd:"1234",off:w.P.cppInputs(w.P.cppDraft()).calendar.off}});
-  const tot=w.P.cpPacePlan(Object.assign({},fin,{days:[]})).total, nf=w.P.cpNeedPerDay(fin).n, nc=w.P.cpNeedPerDay(Object.assign({},fin,{goal:"2027-01-15",end:"2027-01-15",target:800/tot})).n;
-  ok("Mon–Thu's number is the real planner's: the larger of what 800 by Jan 15 ("+nc+") and 95% by Area ("+nf+") need from Maya's state", nOf(t)===Math.max(nc,nf)&&nin.from&&Object.keys(nin.from).length>0&&nin.start==="2026-10-29", [nOf(t),nc,nf]);
+  const tot=w.P.cpPacePlan(Object.assign({},fin,{days:[]})).total, nf=w.P.cpNeedPerDay(fin).n, nc=w.P.cpNeedPerDay(Object.assign({},fin,{goal:"2027-01-15",end:"2027-01-15",target:975/tot})).n;
+  ok("Mon–Thu's number is the real planner's: the larger of what 975 by Jan 15 ("+nc+") and 95% by Area ("+nf+") need from Maya's state", nOf(t)===Math.max(nc,nf)&&nin.from&&Object.keys(nin.from).length>0&&nin.start==="2026-10-29", [nOf(t),nc,nf]);
   const W0=w._envs.writes.length, N=nOf(t); await O.cpCalOptPick(SID,"1234"); await w.flush(); const wr=w._envs.writes.slice(W0);
   ok("pick Mon–Thu: ONE set at students/ramirez_maya/calendar = {days 1234, by uid_p_maya, role parent, at, npd "+N+"}", wr.length===1&&wr[0].op==="set"&&wr[0].path==="students/"+SID+"/calendar"&&wr[0].val.days==="1234"&&wr[0].val.by==="uid_p_maya"&&wr[0].val.role==="parent"&&typeof wr[0].val.at==="number"&&wr[0].val.npd===N&&Object.keys(wr[0].val).length===5, wr);
   h=settle(w); const c2=h.slice(h.indexOf("Our study days")), o2=opts(c2);
-  ok("…the card marks it \"✓ your pick\" and says \"Your days: Mon–Thu at "+N+" new a day — ✓ on track for 800 by Jan 15\"", o2["Mon–Thu"].on&&/✓ your pick$/.test(o2["Mon–Thu"].t)&&new RegExp("Your days: Mon–Thu at "+N+" new a day — ✓ on track for 800 by Jan 15").test(txt(c2))&&/<b>Mon–Thu<\/b> <span class="envs-muted">· set by the family/.test(c2));
+  ok("…the card marks it \"✓ your pick\" and says \"Your days: Mon–Thu at "+N+" new a day — ✓ on track for 975 by Jan 15\"", o2["Mon–Thu"].on&&/✓ your pick$/.test(o2["Mon–Thu"].t)&&new RegExp("Your days: Mon–Thu at "+N+" new a day — ✓ on track for 975 by Jan 15").test(txt(c2))&&/<b>Mon–Thu<\/b> <span class="envs-muted">· set by the family/.test(c2));
   ok("…the parent's on-pace card: \""+"Maya gets "+N+" a day\"", new RegExp("Maya gets "+N+" a day\\.").test(h));
   w.envsDemoGo("kid"); const rec=w.envClassOverlay("study","maya",{name:"Envirothon",newPerDay:5,decks:[]});
   ok("Kid: the 🌿 sitting hands out the family's "+N+" new cards a day (envClassOverlay, in memory)", rec&&rec.newPerDay===N, rec&&rec.newPerDay);
   w.envsDemoGo("teacher"); w.envcView("pace"); h=settle(w); const row=h.slice(h.indexOf(">Maya R.</a>"),h.indexOf("</tr>",h.indexOf(">Maya R.</a>")));
-  ok("Teacher ▸ 📅 Pace: under Maya \"📅 Mon–Thu · "+N+" a day (their pick) · ✓ 800 by Jan 15\"", new RegExp("📅 Mon–Thu · "+N+" a day \\(their pick\\) · ✓ 800 by Jan 15").test(txt(row).replace(/\\u\{1F4C5\}/g,"📅")), txt(row));
+  ok("Teacher ▸ 📅 Pace: under Maya \"📅 Mon–Thu · "+N+" a day (their pick) · ✓ 975 by Jan 15\"", new RegExp("📅 Mon–Thu · "+N+" a day \\(their pick\\) · ✓ 975 by Jan 15").test(txt(row).replace(/\\u\{1F4C5\}/g,"📅")), txt(row));
   const r=w.P.cppRow(Object.assign({sid:SID},w._envc.students[SID]),w.P.cppDraft(),w.P.cpPacePlan(w.P.cppInputs(w.P.cppDraft())),{sync:true});
   ok("…her row counts "+N+" a day on her Mon–Thu, and she is on track (not behind): "+(r.verdict&&r.verdict.t), r.npd===N&&r.verdict&&r.verdict.k!=="behind"&&r.need&&r.need.n!=null&&N>=r.need.n, [r.npd,r.verdict,r.need&&r.need.n]);
-  ok("…another student: class days at the class's number, ✓ / ✗ against the checkpoint", /📅 class days · \d+ a day · [✓✗] 800 by Jan 15/.test(txt(h).replace(/\\u\{1F4C5\}/g,"📅")));
+  ok("…another student: class days at the class's number, ✓ / ✗ against the checkpoint", /📅 class days · \d+ a day · [✓✗] 975 by Jan 15/.test(txt(h).replace(/\\u\{1F4C5\}/g,"📅")));
   w.envcView("student",SID); h=w.G.content; const sp=h.slice(h.indexOf("Study days for Maya R."));
-  ok("Teacher ▸ Maya's page: the same options, \"✓ their pick\" on Mon–Thu, \"Their days: Mon–Thu at "+N+" new a day — ✓ on track\"", opts(sp)["Mon–Thu"]&&opts(sp)["Mon–Thu"].on&&/✓ their pick$/.test(opts(sp)["Mon–Thu"].t)&&new RegExp("Their days: Mon–Thu at "+N+" new a day — ✓ on track for 800 by Jan 15").test(txt(sp))&&/Options for Maya that meet the checkpoint, from where Maya is today/.test(txt(sp)));
+  ok("Teacher ▸ Maya's page: the same options, \"✓ their pick\" on Mon–Thu, \"Their days: Mon–Thu at "+N+" new a day — ✓ on track\"", opts(sp)["Mon–Thu"]&&opts(sp)["Mon–Thu"].on&&/✓ their pick$/.test(opts(sp)["Mon–Thu"].t)&&new RegExp("Their days: Mon–Thu at "+N+" new a day — ✓ on track for 975 by Jan 15").test(txt(sp))&&/Options for Maya that meet the checkpoint, from where Maya is today/.test(txt(sp)));
   const W1=w._envs.writes.length; await O.cpCalOptPick(SID,"12345"); await w.flush(); const tw=w._envs.writes.slice(W1);
   ok("…the teacher can change it: picking Mon–Fri writes ONE set with role teacher and Mon–Fri's own number", tw.length===1&&tw[0].val.days==="12345"&&tw[0].val.role==="teacher"&&tw[0].val.npd===nOf(f), tw); }
 
@@ -146,12 +146,14 @@ console.log("── no checkpoint: the options aim at the goal alone ──");
 
 console.log("── a goal those days can't make: the checkpoint is the bar, the option says where it leads ──");
 { const w=demo("teacher"), O=w.O; w.envcView("pace"); settle(w); await addCp(w,"2027-01-15",800); w._envc.cls.goal={name:"Area",pct:100};
+  // ⚙ LADDER1 (2026-11-03): one right climbs, so 100% by Mar 22 became reachable — Area moves to Feb 15 to keep it out of reach
+  (Array.isArray(w._envc.cls.goals)?w._envc.cls.goals:Object.values(w._envc.cls.goals)).forEach(g=>{ if(g.name==="Area") g.date="2027-02-15"; });
   w.envsDemoGo("parent"); const h=settle(w), o=opts(h), t=o["Mon–Thu"], ro=O.cpCalOptions(SID,{sync:true}).rows.find(r=>r.wd==="1234");
   ok("100% of core by Area can't be made: Mon–Thu still meets 800 by Jan 15 at its checkpoint number, \"Area ~N%\"", t&&/^Mon–Thu \d+ new a day · ~\d+ min · Area ~\d+%$/.test(t.t)&&!t.dis&&ro.nf===null&&ro.n===ro.nc&&ro.finPct<100, t&&t.t);
   const W0=w._envs.writes.length; await O.cpCalOptPick(SID,"1234"); await w.flush();
   ok("…pickable: ONE set with that number; \"Your days: … ✓ on track for 800 by Jan 15\"", w._envs.writes.length===W0+1&&w._envs.writes[W0].val.npd===ro.nc&&/Your days: Mon–Thu at \d+ new a day — ✓ on track for 800 by Jan 15/.test(txt(settle(w))));
   w._envc.cls.checkpoints={}; const h2=settle(w);
-  ok("…with no checkpoint, a goal no option can make leaves every option ✗ (nothing to aim at but the goal)", Object.values(opts(h2)).every(x=>x.dis&&/can’t make Area Mar 22/.test(x.t))); }
+  ok("…with no checkpoint, a goal no option can make leaves every option ✗ (nothing to aim at but the goal)", Object.values(opts(h2)).every(x=>x.dis&&/can’t make Area Feb 15/.test(x.t))); }
 
 console.log("── the kid's / parent's app: the lock listener and the family's record ──");
 { const w=W({remote:{["students/"+SID+"/calendar"]:{days:"1234",by:"uid_p",role:"parent",at:1,npd:22},"settings/locks/newPerDay":null}}), C=w.C, O=w.O;
