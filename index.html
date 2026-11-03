@@ -80504,7 +80504,7 @@ function gameRuleSet(kid,game,rule,val){
 // The grid's header cell: the game's name as a button that opens its rules (a small 📜 when it has any)
 function gameRulesBtnHtml(kid,g){
   const has=gameRuleDefs(g.key).length>0;
-  return '<button class="gr-hbtn" onclick="gameRulesOpen(\''+_grJ(kid)+'\',\''+_grJ(g.key)+'\')" aria-label="'+_grE(g.label)+' rules" title="Rules for '+_grE(g.label)+'" style="border:none;background:none;padding:0;font:inherit;font-weight:800;color:inherit;cursor:pointer;white-space:nowrap;text-decoration:underline dotted #a8a29e;text-underline-offset:3px">'+g.emoji+' '+_grE(g.label)+(has?' <span style="font-size:11px">\u{1F4DC}</span>':'')+'</button>';
+  return '<button class="gr-hbtn" onclick="gameRulesOpen(\''+_grJ(kid)+'\',\''+_grJ(g.key)+'\')" aria-label="'+_grE(g.label)+' rules" title="Rules for '+_grE(g.label)+'" style="border:none;background:none;padding:0;font:inherit;font-weight:800;color:inherit;cursor:pointer;white-space:nowrap;text-decoration:underline dotted #a8a29e;text-underline-offset:3px">'+g.emoji+' '+_grE(g.label)+(has?' <span style="font-size:11px">\u{1F4DC}</span>':'')+((typeof gameLikeTallyHtml==="function")?gameLikeTallyHtml(kid,g.key):'')+'</button>';   // 👍👎 GAMELIKE: the kid's tally
 }
 // PURE: the pop-up's body for one kid + game
 function gameRulesHtml(kid,game){
@@ -80513,6 +80513,7 @@ function gameRulesHtml(kid,game){
   let h='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px"><div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:800;color:#292524">'+g.emoji+' '+_grE(g.label)+' · rules</div>'+
     '<button onclick="gameRulesClose()" aria-label="Close" style="width:40px;height:40px;border-radius:50%;border:1.5px solid #e2ddd6;background:#fff;font-size:18px;cursor:pointer">✕</button></div>';
   h+='<div style="font-size:12.5px;color:var(--muted);margin-bottom:12px">For '+_grE(nm)+'. '+(edit?'Tap a pill to change it — it saves right away.':'Mom changes these.')+'</div>';
+  if(typeof gameLikeListHtml==="function") h+=gameLikeListHtml(kid,game);   // 👍👎 GAMELIKE: the last few answers, with dates
   if(!defs.length) return h+'<div class="mast-none" style="padding:14px">This game plays the same for everyone — no rules yet.</div>';
   defs.forEach(r=>{ const cur=gameRule(kid,game,r.key);
     h+='<div style="padding:12px 0;border-top:1px solid #f1f5f9"><div style="font-size:14px;font-weight:800;color:#292524;margin-bottom:8px">'+_grE(r.label)+'</div><div style="display:flex;gap:8px;flex-wrap:wrap">';
@@ -82206,6 +82207,85 @@ function jpWagerFinishHtml(st){
   return '<div style="font-size:14px;font-weight:800;color:#57534e;margin-top:8px">\u{1F3B0} Sure and right '+sr+' · Sure but missed '+sm+'</div>';
 }
 // JPWAGER_END
+// GAMELIKE_START — 👍👎 "Did you like it?" after a game (her words 2026-11-03: "a check mark for the kid that says, do you like it or do you
+// not like it… so the mom can know if that particular game is something the kid is enjoying, so they can either uncheck it or keep it
+// there"). Under every game's finish card — every GAMES_LIST game, Match and Memory flip included — one line: "Did you like it?" with
+// 👍 and 👎, and a small "skip". Optional, one tap, never asked twice for the same round; a kid may answer differently every time.
+//   · HOW IT KNOWS A ROUND IS OVER — each game's own state (GAME_LIKE_STATE: the game key → its state variable; "done" = phase "done", or
+//     Match's endTs), and the round's own start time as its identity, so the line shows once per finished round and goes away when a new
+//     round starts. A game not in the table (ID Flash, the class site's) just has no line. test_game_like.js pins the table to GAMES_LIST.
+//   · SAVED — mastery/<kid>_settings/gameLikes/<game key>/<ts> = {v: 1 | -1, deck, at}: ONE targeted set per answer, never a whole-node set;
+//     db && !_dryRun() only. A skip writes nothing (this device remembers it for the round). No points, nothing moves — it is a note to Mom.
+//   · MOM'S VIEW — the games grid's header shows the kid's tally beside each game's name (👍 4 · 👎 1, nothing until there is one); the game's
+//     rules pop-up lists the last few answers with their dates. Nothing changes on its own: unchecking a deck stays Mom's tap.
+//   · Hooks, each one guarded line: GAMESTAB's gamesBodyHtml (the line under the game), GAMERULES' gameRulesBtnHtml (the tally) and
+//     gameRulesHtml (the list). No names in code; phone-first (two big thumbs).
+const GAME_LIKE_STATE={   // game key → its round state; a game missing here simply has no line (the test pins every GAMES_LIST key but idflash)
+  match:()=>matchState, memory:()=>matchState, dump:()=>dumpState, which:()=>whichState, sort:()=>sortState, bingo:()=>bingoState, spell:()=>spellState,
+  gofish:()=>gofishState, mole:()=>moleState, jeop:()=>jeopState, teach:()=>teachState, four:()=>fourState, ship:()=>shipState, beat:()=>beatState,
+  truenot:()=>tnState, sure:()=>sureState, cats:()=>catsState, jumble:()=>jumbleState, kaboom:()=>kaboomState, hang:()=>hangState, nameall:()=>nameallState
+};
+const gameLikeSeen={};   // kid|game|round → 1 | -1 | "skip" (this device, in memory)
+function _glE(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function _glJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }
+// PURE-ish: the finished round on screen for this game, or null — {id, deck, kid}
+function gameLikeRound(key){
+  const g=GAME_LIKE_STATE[key]; if(!g) return null;
+  let st=null; try{ st=g(); }catch(e){ st=null; }
+  if(!st) return null;
+  const done=(key==="match"||key==="memory")?!!st.endTs:st.phase==="done";
+  if(!done) return null;
+  return {id:String(st.t0||st.startTs||st.endTs||""),deck:String(st.deck||""),kid:String(st.kid||masteryKid||"")};
+}
+function _glKey(kid,key,r){ return kid+"|"+key+"|"+r.id; }
+function _glRecs(kid,key){ try{ const s=(typeof masteryData!=="undefined"&&masteryData&&masteryData[kid+"_settings"])||{}, G=s.gameLikes&&s.gameLikes[key]; return G&&typeof G==="object"?G:{}; }catch(e){ return {}; } }
+// PURE: the kid's answers for a game → {up, down, last:[{at,v,deck}] newest first}
+function gameLikeTally(kid,key){
+  const R=_glRecs(kid,key), last=[]; let up=0, down=0;
+  Object.keys(R).forEach(k=>{ const r=R[k]; if(!r||(r.v!==1&&r.v!==-1)) return; if(r.v===1) up++; else down++; last.push({at:Number(r.at||k)||0,ts:Number(k)||0,v:r.v,deck:String(r.deck||"")}); });
+  last.sort((a,b)=>(b.at-a.at)||(b.ts-a.ts));   // newest first; the key breaks a tie
+  return {up:up,down:down,last:last};
+}
+// 👍 / 👎 — one targeted set; the round is remembered as answered on this device
+function gameLike(kid,key,v){
+  v=v===1||v==="1"||v===true?1:-1;
+  const r=gameLikeRound(key); if(!kid||!key||!r) return false;
+  const k=_glKey(kid,key,r); if(gameLikeSeen[k]) return false;
+  const rec={v:v,deck:r.deck,at:Date.now()}; let ts=String(rec.at);
+  gameLikeSeen[k]=v;
+  try{ const md=masteryData, s=md[kid+"_settings"]||(md[kid+"_settings"]={}), G=(s.gameLikes&&typeof s.gameLikes==="object")?s.gameLikes:(s.gameLikes={}), g=(G[key]&&typeof G[key]==="object")?G[key]:(G[key]={}); while(g[ts]) ts=String(Number(ts)+1); g[ts]=rec; }catch(e){}   // a key per answer, never two in one slot
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){ try{ db.ref("mastery/"+kid+"_settings/gameLikes/"+key+"/"+ts).set(rec); }catch(e){} }   // this answer only
+  try{ HA_LS.setItem("ha_mastery",JSON.stringify(masteryData)); }catch(e){}
+  try{ _mastRe(); }catch(e){}
+  return true;
+}
+function gameLikeSkip(kid,key){ const r=gameLikeRound(key); if(!kid||!key||!r) return false; const k=_glKey(kid,key,r); if(gameLikeSeen[k]) return false; gameLikeSeen[k]="skip"; try{ _mastRe(); }catch(e){} return true; }
+// The line under a finished round (GAMESTAB's hook). Nothing while a round runs, nothing once answered or skipped.
+function gameLikeHtml(kid,key,color){
+  const r=gameLikeRound(key); if(!kid||!key||!r) return "";
+  const seen=gameLikeSeen[_glKey(kid,key,r)];
+  if(seen==="skip") return "";
+  if(seen) return '<div class="glike" style="text-align:center;margin:8px 14px 18px;font-size:13px;font-weight:700;color:var(--muted)">You said '+(seen===1?'\u{1F44D}':'\u{1F44E}')+' — thanks!</div>';
+  const btn=(v,em,lbl)=>'<button onclick="gameLike(\''+_glJ(kid)+'\',\''+_glJ(key)+'\','+v+')" aria-label="'+lbl+'" style="width:84px;height:72px;border-radius:20px;border:3px solid '+(v===1?'#16a34a':'#e2ddd6')+';background:#fff;font-size:38px;line-height:1;cursor:pointer;-webkit-tap-highlight-color:transparent">'+em+'</button>';
+  return '<div class="glike" style="margin:4px 14px 18px;padding:14px;border-radius:18px;background:#f8f7f4;border:2px dashed #e2ddd6;text-align:center;font-family:\'DM Sans\',sans-serif">'+
+    '<div style="font-size:16px;font-weight:800;color:#57534e;margin-bottom:10px">Did you like it?</div>'+
+    '<div style="display:flex;gap:16px;justify-content:center">'+btn(1,'\u{1F44D}','I liked it')+btn(-1,'\u{1F44E}','I did not like it')+'</div>'+
+    '<button onclick="gameLikeSkip(\''+_glJ(kid)+'\',\''+_glJ(key)+'\')" style="margin-top:10px;border:none;background:none;font-size:12px;font-weight:700;color:var(--muted);cursor:pointer;text-decoration:underline;font-family:\'DM Sans\',sans-serif">skip</button></div>';
+}
+// Mom's view: the tally beside the game's name in the grid header (nothing until there is an answer)
+function gameLikeTallyHtml(kid,key){
+  const t=gameLikeTally(kid,key); if(!t.up&&!t.down) return "";
+  return ' <span class="glike-tally" style="font-size:11px;font-weight:800;color:#57534e;white-space:nowrap">\u{1F44D} '+t.up+' · \u{1F44E} '+t.down+'</span>';
+}
+function _glDate(at){ try{ const d=new Date(at); return d.toLocaleDateString(undefined,{month:"short",day:"numeric"}); }catch(e){ return ""; } }
+// Mom's view: the last few answers with their dates, in the game's rules pop-up (nothing until there is one)
+function gameLikeListHtml(kid,key){
+  const t=gameLikeTally(kid,key); if(!t.last.length) return "";
+  let h='<div style="padding:10px 0 4px;border-top:1px solid #f1f5f9;margin-top:4px"><div style="font-size:13px;font-weight:800;color:#292524">Did they like it? \u{1F44D} '+t.up+' · \u{1F44E} '+t.down+'</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">';
+  t.last.slice(0,6).forEach(x=>{ h+='<span style="padding:4px 10px;border-radius:999px;background:'+(x.v===1?'#f0fdf4':'#fef2f2')+';border:1.5px solid '+(x.v===1?'#bbf7d0':'#fecaca')+';font-size:12px;font-weight:700;color:#44403c">'+(x.v===1?'\u{1F44D}':'\u{1F44E}')+' '+_glE(_glDate(x.at))+(x.deck?' · '+_glE(x.deck):'')+'</span>'; });
+  return h+'</div></div>';
+}
+// GAMELIKE_END
 // STUDYCOUNTS_START — 📚 Study sessions count everywhere (F3 of PLAN_learning_system, her yes 2026-10-24). A study
 // sitting logs to mastery/studyLog/<kid>/<sid>/<yyyymmdd>, but Scores, the Weekly report, sprint readiness (the ≥ 90%
 // untimed check) and the notebook's 🔁 review flags read only the drill's mastery/history/<kid>/<yyyymmdd>, so Lincoln —
@@ -86254,7 +86334,7 @@ function gamesSubHtml(color){
 }
 function gamesBodyHtml(color){
   const g=GAMES_LIST.find(x=>x.key===gamesCurrentKey());
-  if(g) return g.render(color);
+  if(g) return g.render(color)+((typeof gameLikeHtml==="function")?gameLikeHtml(masteryKid,g.key,color):"");   // 👍👎 GAMELIKE: "Did you like it?" under a finished round
   if(gamesFor(masteryKid).length) return '<div class="mast-none">Pick a game above.</div>';
   return '<div class="mast-none">No games ready yet \u{2014} games need a deck with pictures or meanings.</div>';
 }
