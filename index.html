@@ -79735,6 +79735,190 @@ function buildJeopHtml(color){
   return h+'</div>';
 }
 // JEOPARDY_END
+// UNJUMBLE_START — 🧩 "Unjumble" (her go via the hub 2026-11-03; PLAN_practice_games_2026-10-23.md Tier 2 "Unjumble: drag words of a
+// sentence into order (Daily Grams, rule cards with `sentence`)" — demand SEQ). The words of one of the kid's own sentence cards come up
+// mixed as tiles; the kid taps them into order (tap a placed word to send it back), then ✔ Check. Phone-first: tap, no drag.
+//   Cards: a card's `sentence` field when it carries one, else a FRONT that is a sentence — UJ_MIN_WORDS..UJ_MAX_WORDS words ending . ? !
+//   (the grammar rule decks: "Isaac hit a grand slam." / "Kangaroos are native to Australia."); never a run of abbreviations, a rule's
+//   "boat → boats · …" example line, or a card Which one? leaves out (spelling / phonograms). The markup is dropped (<u>a</u>, the
+//   .mast-hl mark): the tiles are plain words with their own capital and punctuation (a worksheet unjumble gives those too). A deck
+//   needs UJ_MIN+ sentences; a round is UJ_ROUND of them; 🎲 Mix the decks when two or more decks have some. Readers only (dcLevel:
+//   not a pre-reader — never a name).
+//   Right → the soft ding, the sentence is SAID as the confirm (not for a silent language), next. Wrong → the soft bonk; the words that
+//   sit in their right place stay and lock (green), the rest go back to the tray — one more try. Wrong twice → "Here's how it goes"
+//   shows the sentence for a beat (the card's own face, which the drill shows every day) and that card comes back once at the end.
+//   No lives, no clock, no points.
+// Writes (only these): <kid>_settings/match_best key "<deck> · jumble" (first-try rights, only when beaten) and the round's gameLog
+//   entry (GAMELOG, game:"jumble"). NEVER touches the ladder — no scores, no next_due, no study log. db && !_dryRun() only. Per-kid
+//   park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT). A round dropped (Change deck, a kid switch) writes nothing.
+//   🎮 GAMEGRID: its own column — gameDeckOn(kid,"jumble",deck); the grid's preload asks raw (ujDecks).
+let jumbleState=null;   // {kid,deck,mix,game:"jumble",t0,turns:[{pid,words:[w],tiles:[wi],line:[wi|null],locked:{pos:1},wrong:{},tries,done,first,fail,back,show}],i,phase,first,of,isPB,prevBest,lock,seq,msg,returned:{},gameLogged}
+let _ujRandom=Math.random;   // tests seed it
+const UJ_MIN=3, UJ_ROUND=6, UJ_MIN_WORDS=4, UJ_MAX_WORDS=12, UJ_TRIES=2, UJ_BEAT=900, UJ_BEAT_SHOW=2600;
+function _ujItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
+function _ujShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_ujRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function ujDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"jumble",deck); }
+// The sentence's plain words: tags dropped, not spaced out ("Kentucky<b>.</b>" stays "Kentucky."), entities and runs of space collapsed
+function ujPlain(s){ return String(s==null?"":s).replace(/<[^>]*>/g,"").replace(/&nbsp;/g," ").replace(/&amp;/g,"&").replace(/\s+/g," ").trim(); }
+function ujWords(s){ const p=ujPlain(s); return p?p.split(" "):[]; }
+// PURE: is this text a sentence the game can jumble? (UJ_MIN_WORDS..UJ_MAX_WORDS words, ends . ? !, not a rule's example line, not a run
+// of abbreviations, and at least three different words — one word repeated has no order to find)
+function ujIsSentence(s){
+  const w=ujWords(s); if(w.length<UJ_MIN_WORDS||w.length>UJ_MAX_WORDS) return false;
+  const p=w.join(" "); if(!/[.?!]["\u201D\u2019']?$/.test(p)||/ \u00B7 |\u2192/.test(p)) return false;
+  if(w.slice(0,-1).filter(x=>/\.$/.test(x)).length>1) return false;   // "Fri.   Aug.   Ln.   Mrs." is a list, not a sentence
+  const seen={}; let distinct=0; w.forEach(x=>{ const k=x.toLowerCase(); if(!seen[k]){ seen[k]=1; distinct++; } });
+  return distinct>=3;
+}
+// The sentence a card carries: its `sentence` field, else a front that is one; "" when neither
+function ujSentence(it){ if(!it) return ""; const s=ujPlain(it.sentence); if(s&&ujIsSentence(s)) return s; const f=ujPlain(it.prompt); return ujIsSentence(f)?f:""; }
+function _ujLeftOut(it,kid){
+  if(!it||(it.status!=="active"&&it.status!=="introduction")||it.dir==="prod") return true;
+  try{ if(typeof _whichLeftOut==="function"&&_whichLeftOut(it,kid)) return true; }catch(e){}   // spelling / phonograms: the app never shows a spelling the child must produce
+  try{ if(typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin(kid,it.subject)) return true; }catch(e){}   // 📝 a station waiting for its check-in
+  try{ if(typeof cpceHidItem==="function"&&cpceHidItem(kid,it)) return true; }catch(e){}   // 📚 CPCARDSEDIT
+  try{ if(typeof cpSecOffItem==="function"&&cpSecOffItem(kid,it)) return true; }catch(e){}   // 🎚 CPSECTIONS
+  return false;
+}
+// Readers only: not a pre-reader by the roster's grade (never a name)
+function ujLevelOk(kid){ if(typeof dcLevel!=="function") return true; try{ return dcLevel(kid)!=="little"; }catch(e){ return true; } }
+// PURE: every sentence card this kid can play → {deck:[{pid,text}]} (one card per sentence), only decks with UJ_MIN+ that are on
+function ujPools(items,kid){
+  kid=kid||masteryKid;
+  const by={}, seen={};
+  (items||[]).forEach(i=>{ if(_ujLeftOut(i,kid)) return; const s=ujSentence(i); if(!s) return; const d=i.subject||"Other", k=d+"|"+s.toLowerCase(); if(seen[k]) return; seen[k]=1; (by[d]||(by[d]=[])).push({pid:i.id,text:s}); });
+  const out={}; Object.keys(by).sort().forEach(d=>{ if(by[d].length>=UJ_MIN&&ujDeckOn(kid,d)) out[d]=by[d]; });
+  return out;
+}
+function ujDecks(items,kid){ return Object.keys(ujPools(items,kid)); }   // the game's OWN deck list (the games-per-deck grid's preload asks this, raw)
+function ujAvail(kid){ return ujLevelOk(kid)&&ujDecks(_ujItems(kid),kid).length>0; }
+// PURE: a turn for a sentence — its words, the tiles shuffled (never the sentence's own order when another is possible), an empty line
+function ujTurn(pid,text,back){
+  const words=ujWords(text), n=words.length, tiles=[]; for(let i=0;i<n;i++) tiles.push(i);
+  let guard=0; do{ _ujShuffle(tiles); }while(guard++<20&&tiles.every((wi,p)=>words[wi].toLowerCase()===words[p].toLowerCase()));
+  const line=[]; for(let i=0;i<n;i++) line.push(null);
+  return {pid:pid,words:words,tiles:tiles,line:line,locked:{},wrong:{},tries:0,done:false,first:false,fail:false,back:!!back,show:false};
+}
+function jumbleStart(deck){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding / bonk (iPad)
+  const pools=ujPools(_ujItems(),masteryKid), mix=deck===WHICH_MIX, names=Object.keys(pools);
+  let cards=[]; if(mix) names.forEach(d=>{ cards=cards.concat(pools[d]); }); else cards=pools[deck]||[];
+  if(cards.length<UJ_MIN||(mix&&names.length<2)){ jumbleState=null; _mastRe(); return; }   // 🎮 GAMEGRID: a deck Mom turned off is not in pools
+  const picks=_ujShuffle(cards.slice()).slice(0,UJ_ROUND);
+  jumbleState={kid:masteryKid,deck:deck,mix:mix,game:"jumble",t0:Date.now(),turns:picks.map(c=>ujTurn(c.pid,c.text,false)),i:0,phase:"play",first:0,of:picks.length,isPB:false,prevBest:null,lock:false,seq:0,msg:"",returned:{}};
+  _mastRe();
+}
+function jumbleChangeDeck(){ jumbleState=null; _mastRe(); }   // drop the round as it stands: nothing written
+function _ujCur(st){ return (st&&st.phase==="play"&&!st.lock)?st.turns[st.i]:null; }
+// Tap a tile in the tray: it fills the first empty slot of the line
+function jumbleTap(wi){
+  const st=jumbleState, t=_ujCur(st); if(!t||t.done) return;
+  if(t.line.indexOf(wi)>=0||t.tiles.indexOf(wi)<0) return;
+  const p=t.line.indexOf(null); if(p<0) return;
+  t.line[p]=wi; st.msg=""; _mastRe();
+}
+// Tap a placed word: back to the tray (a locked one stays)
+function jumbleUntap(p){
+  const st=jumbleState, t=_ujCur(st); if(!t||t.done||t.locked[p]||t.line[p]==null) return;
+  t.line[p]=null; st.msg=""; _mastRe();
+}
+function jumbleClear(){ const st=jumbleState, t=_ujCur(st); if(!t||t.done) return; t.line=t.line.map((wi,p)=>t.locked[p]?wi:null); st.msg=""; _mastRe(); }
+// PURE: judge the line → "right" | "again" | "fail" | null (the line isn't full). Words compare by text, so two "the"s may swap. On a miss
+// the right positions lock and the others go back to the tray; the second miss is a fail.
+function ujJudge(t){
+  if(t.done||t.line.some(wi=>wi==null)) return null;
+  const okAt=t.line.map((wi,p)=>t.words[wi].toLowerCase()===t.words[p].toLowerCase());
+  if(okAt.every(Boolean)){ t.done=true; t.first=t.tries===0; return "right"; }
+  t.tries++; t.wrong[String(t.tries)]=1;
+  okAt.forEach((o,p)=>{ if(o) t.locked[p]=1; else t.line[p]=null; });
+  if(t.tries>=UJ_TRIES){ t.done=true; t.first=false; t.fail=true; return "fail"; }
+  return "again";
+}
+function ujText(t){ return t.words.join(" "); }
+function _ujSay(st,t){ try{ const it=_ujItems(st.kid).find(x=>x&&x.id===t.pid); if(typeof whichSilent==="function"&&whichSilent(it)) return; if(typeof mastView==="undefined"||mastView==="jumble") mastSpeak(ujText(t)); }catch(e){} }
+function jumbleCheck(){
+  const st=jumbleState, t=_ujCur(st); if(!t||t.done) return;
+  const r=ujJudge(t); if(!r) return;
+  if(r==="again"){ try{ matchBonk(); }catch(e){} st.msg="again"; _mastRe(); return; }
+  if(r==="right"){ if(!t.back&&t.first) st.first++; try{ matchDing(); }catch(e){} st.msg="right"; _ujSay(st,t); }
+  else {
+    try{ matchBonk(); }catch(e){}
+    st.msg="show"; t.show=true; t.line=t.words.map((w,p)=>p);   // "Here's how it goes" — the card's own face, for a beat
+    if(!t.back&&!st.returned[t.pid]){ st.returned[t.pid]=1; st.turns.push(ujTurn(t.pid,ujText(t),true)); }   // back once, at the end
+  }
+  st.lock=true; const seq=++st.seq;
+  _mastRe();
+  setTimeout(()=>{ if(jumbleState===st&&st.lock&&st.seq===seq) jumbleNext(st); },r==="fail"?UJ_BEAT_SHOW:UJ_BEAT);   // GAMEKID: never advances a parked / settled turn
+}
+function _ujStep(st){ st.lock=false; st.msg=""; st.i++; if(st.i>=st.turns.length) jumbleFinish(st); }
+function jumbleNext(st){ st=st||jumbleState; if(!st||st!==jumbleState) return; _ujStep(st); _mastRe(); }
+function jumbleBestKey(deck){ return deck+" \u{00B7} jumble"; }
+function jumbleFinish(st){
+  st.phase="done"; st.lock=false;
+  const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every sentence's result, game:"jumble"
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=jumbleBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.first>0&&(prev==null||st.first>prev);
+  if(st.isPB){
+    s.match_best[key]=st.first;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+  try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F9E9} Every sentence in order!",{noSong:true}); }catch(e){}
+}
+// GAMEKID → 🎲 GAMEKIT resume: a beat that was mid-way when the kid switched settles here (no render; the caller renders)
+function jumbleResume(){ const st=jumbleState; if(!st||st.phase!=="play") return; if(st.lock) _ujStep(st); }
+const UJ_CSS='<style>.uj-tile{display:inline-flex;align-items:center;justify-content:center;min-height:46px;padding:8px 14px;border-radius:14px;border:3px solid #e2ddd6;background:#fff;font-family:\'Fraunces\',serif;font-size:20px;font-weight:800;color:#292524;cursor:pointer;-webkit-tap-highlight-color:transparent;overflow-wrap:anywhere;max-width:100%;line-height:1.1}'+
+  '.uj-tile[disabled]{cursor:default}.uj-tile.uj-lock{border-color:#86efac;background:#f0fdf4;color:#15803d}.uj-tile.uj-show{border-color:#f59e0b;background:#fffbeb;color:#b45309}'+
+  '.uj-slot{display:inline-flex;min-width:56px;min-height:46px;border-radius:14px;border:3px dashed #d6d3d1;background:#fafaf9}'+
+  '.uj-line{display:flex;flex-wrap:wrap;gap:8px;align-items:center;min-height:66px;padding:10px;border-radius:18px;background:#f8f7f4;border:2px solid #e2ddd6;margin:10px 0 14px}.uj-tray{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-bottom:16px;min-height:46px}'+
+  '.uj-btn{padding:12px 22px;border-radius:999px;border:none;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;-webkit-tap-highlight-color:transparent}.uj-btn[disabled]{opacity:.45;cursor:default}'+
+  '.uj-ghost{padding:10px 16px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif}.uj-ghost[disabled]{opacity:.45;cursor:default}</style>';
+function buildJumbleHtml(color){
+  const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+  let h=UJ_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const items=_ujItems(), pools=ujPools(items), decks=Object.keys(pools);
+  if(!decks.length){ h+='<div class="mast-none">No decks ready for Unjumble yet \u{2014} it needs '+UJ_MIN+' or more sentence cards in a deck.</div></div>'; return h; }
+  const st=jumbleState;
+  const chip=(dk,lbl)=>{ const sel=st&&st.deck===dk; return '<button onclick="jumbleStart(\''+q(dk)+'\')" style="padding:10px 16px;border-radius:999px;font-size:14px;font-weight:800;border:2px solid '+(sel?color:'#e2ddd6')+';background:'+(sel?color:'#fff')+';color:'+(sel?'#fff':'#57534e')+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
+  if(!st||st.phase==="done"){
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">';
+    decks.forEach(dk=>{ h+=chip(dk,esc(dk)+' <span style="opacity:.7;font-weight:700">'+pools[dk].length+'</span>'); });
+    if(decks.length>1) h+=chip(WHICH_MIX,"\u{1F3B2} "+WHICH_MIX);
+    h+='</div>';
+  }
+  if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u{1F9E9} Pick a deck. The words of a sentence are mixed up \u{2014} tap them into order, then Check!</div></div>'; return h; }
+  const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[jumbleBestKey(st.deck)];
+  if(st.phase==="play"){
+    const t=st.turns[st.i], full=!t.line.some(wi=>wi==null);
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
+    st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
+    h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
+      '<button onclick="jumbleChangeDeck()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{1F5C2} Change deck</button></span></div>';
+    const m=st.msg;
+    h+='<div style="text-align:center;font-size:17px;font-weight:800;color:'+(m==="right"?'#16a34a':m==="show"?'#b45309':'#57534e')+';margin:6px 0 4px">'+
+      (m==="right"?'\u{2705} That\u2019s it!':m==="show"?'Here\u2019s how it goes \u{2014} we\u2019ll try it again later':m==="again"?'Almost \u{2014} the green ones are right. Try again!':t.back?'One more time \u{2014} put it in order':'Put the words in order')+'</div>';
+    h+='<div class="uj-line" aria-label="Your sentence">';
+    t.line.forEach((wi,p)=>{ if(wi==null) h+='<span class="uj-slot" aria-label="Empty slot"></span>'; else h+='<button class="uj-tile'+(t.locked[p]?' uj-lock':'')+(t.show?' uj-show':'')+'"'+(t.locked[p]||st.lock?' disabled':' onclick="jumbleUntap('+p+')"')+' aria-label="Word '+(p+1)+'">'+esc(t.words[wi])+'</button>'; });
+    h+='</div><div class="uj-tray">';
+    t.tiles.forEach(wi=>{ if(t.line.indexOf(wi)>=0) return; h+='<button class="uj-tile" onclick="jumbleTap('+wi+')"'+(st.lock?' disabled':'')+'>'+esc(t.words[wi])+'</button>'; });
+    h+='</div>';
+    h+='<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap"><button class="uj-btn" onclick="jumbleCheck()"'+(full&&!st.lock?'':' disabled')+' style="background:'+color+';color:#fff">\u{2714} Check</button><button class="uj-ghost" onclick="jumbleClear()"'+(st.lock?' disabled':'')+'>\u{21BA} Clear</button></div>';
+    return h+'</div>';
+  }
+  // Finish: first-try count against the kid's own best, Play again / Mix the decks
+  h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} All in order!</div>';
+  h+='<div style="font-size:17px;font-weight:800;color:#57534e;margin-top:10px">\u{1F9E9} '+st.first+' of '+st.of+' on the first try'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+  h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">';
+  h+='<button onclick="jumbleStart(\''+q(st.deck)+'\')" class="uj-btn" style="background:'+color+';color:#fff;font-size:15px">\u{1F501} Play again</button>';
+  if(decks.length>1&&!st.mix) h+='<button onclick="jumbleStart(\''+q(WHICH_MIX)+'\')" class="uj-btn" style="border:2px solid '+color+';background:#fff;color:'+color+';font-size:15px">\u{1F3B2} '+WHICH_MIX+'</button>';
+  return h+'</div></div></div>';
+}
+// UNJUMBLE_END
 // STUDYCOUNTS_START — 📚 Study sessions count everywhere (F3 of PLAN_learning_system, her yes 2026-10-24). A study
 // sitting logs to mastery/studyLog/<kid>/<sid>/<yyyymmdd>, but Scores, the Weekly report, sprint readiness (the ≥ 90%
 // untimed check) and the notebook's 🔁 review flags read only the drill's mastery/history/<kid>/<yyyymmdd>, so Lincoln —
@@ -83719,6 +83903,8 @@ const GAMES_LIST=[
      park:()=>moleState, restore:v=>{ moleState=v||null; }, resume:()=>moleResume(), decks:k=>typeof moleDecks==="function"?moleDecks(_gamesItems(k),k):[]},   // 🐹 MOLE · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
   {key:"jeop",   emoji:"\u{1F4FA}", label:"Jeopardy",    view:"jeop",                 available:k=>typeof jeopDecks==="function"&&jeopDecks(_gamesItems(k),k).length>0, render:c=>buildJeopHtml(c),
      park:()=>jeopState, restore:v=>{ jeopState=v||null; }, resume:()=>jeopResume(), decks:k=>typeof jeopDecks==="function"?jeopDecks(_gamesItems(k),k):[]},   // 📺 JEOPARDY · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
+  {key:"jumble", emoji:"\u{1F9E9}", label:"Unjumble",    view:"jumble",               available:k=>typeof ujAvail==="function"&&ujAvail(k), render:c=>buildJumbleHtml(c),
+     park:()=>jumbleState, restore:v=>{ jumbleState=v||null; }, resume:()=>jumbleResume(), decks:k=>typeof ujDecks==="function"?ujDecks(_gamesItems(k),k):[]},   // 🧩 UNJUMBLE · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
 ];
 const gamesLast={};   // kid → key of the last game played on this device
 function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k)&&(typeof gameDeckAny!=="function"||gameDeckAny(k,g)); }catch(e){ return false; } }); }   // 🎮 GAMEGRID: every deck off → the game isn't offered
