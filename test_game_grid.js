@@ -92,18 +92,17 @@ console.log("── Reset, Mom-only, dry run ──");
   const {c:c4,writes:w4}=world({dry:true});
   ok("dry run: in memory only",c4.gameDeckSet("k1","which","Letters",false)===true&&c4.gameDeckOn("k1","which","Letters")===false&&w4.length===0);
 }
-console.log("── a new game's entry with decks(), and one without ──");
+console.log("── a new game's entry with decks(), and one without (fake keys no real game owns) ──");
 {
   const {c}=world();
-  // fake keys (zz…) — the real Bingo / Brain Dump entries now sit in GAMES_LIST, and find() by key must reach THESE
-  c.GAMES_LIST.push({key:"zzpic",emoji:"🎱",label:"Fake pic game",view:"zzpic",available:()=>true,render:()=>"",decks:k=>["Letters"]});
-  c.GAMES_LIST.push({key:"zzdump",emoji:"🧠",label:"Fake dump game",view:"zzdump",available:()=>true,render:()=>""});
-  ok("decks() is the preload for a new game",c.gameDeckCan("k1",c.GAMES_LIST.find(g=>g.key==="zzpic")).join(",")==="Letters");
-  ok("an entry without decks() is tolerated: no cells, always offered",c.gameDeckCan("k1",c.GAMES_LIST.find(g=>g.key==="zzdump")).length===0&&c.gamesFor("k1").some(g=>g.key==="zzdump"));
-  c.gameDeckSet("k1","zzpic","Letters",false);
-  ok("every deck off → the new game is not offered",!c.gamesFor("k1").some(g=>g.key==="zzpic"));
-  const {c:c2}=world(); c2.GAMES_LIST.push({key:"boom",emoji:"💥",label:"Boom",view:"boom",available:()=>true,render:()=>"",decks:()=>{ throw new Error("boom"); }});
-  ok("a throwing decks() → no cells, still offered, raw flag reset",c2.gameDeckCan("k1",c2.GAMES_LIST.find(g=>g.key==="boom")).length===0&&c2.gamesFor("k1").some(g=>g.key==="boom")&&c2.__raw()===false);
+  c.GAMES_LIST.push({key:"zzz",emoji:"🎱",label:"Fake game",view:"zzz",available:()=>true,render:()=>"",decks:k=>["Letters"]});
+  c.GAMES_LIST.push({key:"zzy",emoji:"🧠",label:"Fake no-decks game",view:"zzy",available:()=>true,render:()=>""});
+  ok("decks() is the preload for a new game",c.gameDeckCan("k1",c.GAMES_LIST.find(g=>g.key==="zzz")).join(",")==="Letters");
+  ok("an entry without decks() is tolerated: no cells, always offered",c.gameDeckCan("k1",c.GAMES_LIST.find(g=>g.key==="zzy")).length===0&&c.gamesFor("k1").some(g=>g.key==="zzy"));
+  c.gameDeckSet("k1","zzz","Letters",false);
+  ok("every deck off → the new game is not offered",!c.gamesFor("k1").some(g=>g.key==="zzz"));
+  const {c:c2}=world(); c2.GAMES_LIST.push({key:"zzx",emoji:"💥",label:"Fake throwing game",view:"zzx",available:()=>true,render:()=>"",decks:()=>{ throw new Error("boom"); }});
+  ok("a throwing decks() → no cells, still offered, raw flag reset",c2.gameDeckCan("k1",c2.GAMES_LIST.find(g=>g.key==="zzx")).length===0&&c2.gamesFor("k1").some(g=>g.key==="zzx")&&c2.__raw()===false);
 }
 console.log("── the grid ──");
 {
