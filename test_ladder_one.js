@@ -102,5 +102,14 @@ const score = (ctx, items, scores) => ctx.mastApplyScores(items, Object.keys(sco
   ok("no '3 correct in a row' on the printed cards", src.indexOf("3 correct in a row") < 0);
   ok("no ladder_streak in a row label", src.indexOf("_jps.ladder_streak") < 0); }
 
+// 10. the two leftover streak labels are gone (her yes 2026-11-03); the level's name and the dot stay
+{ const i = src.indexOf("const tallyMax=isIntro?"), drill = src.slice(i, src.indexOf("\n", src.indexOf("else _tallyH+=", i)));
+  ok("drill card: no 'n/1 streak' under a review card", i > 0 && drill.indexOf("streak</div>") < 0 && drill.indexOf("' streak") < 0);
+  ok("drill card: the level's name stays", /else _tallyH\+='<div[^\n]*\(MAST_TIER_LBL\[it\.tier\]\|\|it\.tier\)\+'<\/div>'/.test(drill));
+  ok("drill card: the tally dots stay", /for\(let d=0;d<tallyMax;d\+\+\) _tallyH\+=/.test(drill));
+  const g = src.indexOf("const tierLbl=isIntro?\"Intro\""), grid = src.slice(g, g + 900);
+  ok("card grid hover: '(x/y)' only on a learning card, never '(0/1)' on a ladder card", g > 0 && grid.indexOf("(isIntro?' ('+dots+'/'+maxD+')':'')") > 0);
+  ok("card grid: the dots row stays", /for\(let d=0;d<maxD;d\+\+\) h\+=/.test(src.slice(g, g + 1400))); }
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
