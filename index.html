@@ -70866,16 +70866,21 @@ function gameKidSwitch(to){
   if(m&&m.startTs&&!m.endTs&&!m.pausedAt&&!m.gate) m.pausedAt=Date.now();   // ⏸ (an open gate is untimed already)
   if(window._matchTick){ clearInterval(window._matchTick); window._matchTick=null; }
   try{ if(window.speechSynthesis) speechSynthesis.cancel(); }catch(e){}
-  _gkPark[from]={match:m,style:matchStyle,pair:matchPairMode,which:whichState,spell:(typeof spellState!=="undefined")?spellState:null,sprintDeck:sprintDeck,sprintDeckScope:sprintDeckScope};   // 🔤 SPELLBUILD parks too
+  const gx={}; _gkEntries().forEach(g=>{ try{ gx[g.key]=g.park(); }catch(e){} });   // 🎲 GAMEKIT: each game's own round, by its entry (Build it, every new game)
+  _gkPark[from]={match:m,style:matchStyle,pair:matchPairMode,which:whichState,games:gx,sprintDeck:sprintDeck,sprintDeckScope:sprintDeckScope};
   const p=_gkPark[to]||null;
   matchState=(p&&p.match)||null;
   if(p){ matchStyle=p.style; matchPairMode=p.pair; }
   whichState=(p&&p.which)||null;
-  if(typeof spellState!=="undefined") spellState=(p&&p.spell)||null;   // 🔤 SPELLBUILD
+  _gkEntries().forEach(g=>{ try{ g.restore((p&&p.games&&p.games[g.key])||null); }catch(e){} });   // 🎲 GAMEKIT
   const sd=_gkSprintFor(to,p);
   sprintDeck=sd.deck; sprintDeckScope=sd.scope;
   _gkResume();
 }
+// 🎲 GAMEKIT (2026-11-02, so four games can be built at once without touching this block): a GAMES_LIST entry may carry
+//   park:()=>state · restore:(state|null)=>void · resume:()=>void (settle a tap that was mid-step; say the card again if on screen).
+//   Entries without them (Match, Memory, Which one?, ID Flash) are handled above as before.
+function _gkEntries(){ return ((typeof GAMES_LIST!=="undefined"&&Array.isArray(GAMES_LIST))?GAMES_LIST:[]).filter(g=>g&&typeof g.park==="function"&&typeof g.restore==="function"); }
 // The kid's own Sprint ▸ drill deck, or All decks when there's none or it's no longer one of their decks.
 function _gkSprintFor(kid,p){
   const all={deck:"__all__",scope:null};
@@ -70909,11 +70914,7 @@ function _gkResume(){
     if(w.lock){ w.grow=null; w.lock=false; w.i++; if(w.i>=w.turns.length) whichFinish(w); }   // whichNext, no render
     if(w.phase==="play"&&mastView==="which") _whichSay(w);   // back to the round: hear the card again
   }
-  const sp=(typeof spellState!=="undefined")?spellState:null;   // 🔤 SPELLBUILD: a Check that was mid-step settles the same way
-  if(sp&&sp.phase==="play"){
-    if(sp.lock){ sp.lock=false; sp.grow=false; sp.msg=""; sp.i++; if(sp.i>=sp.turns.length) spellFinish(sp); }
-    if(sp.phase==="play"&&mastView==="spell") _spellSay(sp);
-  }
+  _gkEntries().forEach(g=>{ try{ if(typeof g.resume==="function") g.resume(); }catch(e){} });   // 🎲 GAMEKIT: each game settles its own mid-step tap
 }
 // GAMEKID_END
 
@@ -77483,6 +77484,12 @@ function spellNext(st){
   if(typeof mastView==="undefined"||mastView==="spell") _spellSay(st);
 }
 function spellBestKey(deck){ return deck+" \u{00B7} spell"; }
+// GAMEKID → 🎲 GAMEKIT resume: a Check that was mid-step when the kid switched settles here (no render; the caller renders)
+function spellResume(){
+  const sp=spellState; if(!sp||sp.phase!=="play") return;
+  if(sp.lock){ sp.lock=false; sp.grow=false; sp.msg=""; sp.i++; if(sp.i>=sp.turns.length) spellFinish(sp); }
+  if(sp.phase==="play"&&(typeof mastView==="undefined"||mastView==="spell")) _spellSay(sp);
+}
 function spellFinish(st){
   st.phase="done";
   const kid=st.kid||masteryKid;   // GAMEKID
@@ -81506,7 +81513,8 @@ const GAMES_LIST=[
   {key:"memory", emoji:"\u{1F9E0}", label:"Memory flip", view:"match", style:"memory", available:k=>_gamesMatchPairs(k).length>0, render:c=>buildMatchHtml(c)},
   {key:"which",  emoji:"\u{1F446}", label:"Which one?",  view:"which",                 available:k=>whichDecks(_gamesItems(k)).length>0, render:c=>buildWhichHtml(c)},
   {key:"idflash",emoji:"\u26A1",     label:"ID Flash",    view:"idflash",               available:k=>typeof envFlashAvail==="function"&&envFlashAvail(k), render:c=>envFlashGameHtml(c)},   // ⚡ ENVIDFLASH
-  {key:"spell",  emoji:"\u{1F524}", label:"Build it",    view:"spell",                 available:k=>typeof spellPool==="function"&&spellPool(_gamesItems(k)).length>0, render:c=>buildSpellHtml(c)},   // 🔤 SPELLBUILD
+  {key:"spell",  emoji:"\u{1F524}", label:"Build it",    view:"spell",                 available:k=>typeof spellPool==="function"&&spellPool(_gamesItems(k)).length>0, render:c=>buildSpellHtml(c),
+     park:()=>spellState, restore:v=>{ spellState=v||null; }, resume:()=>spellResume()},   // 🔤 SPELLBUILD · 🎲 GAMEKIT: its own park / restore / resume
 ];
 const gamesLast={};   // kid → key of the last game played on this device
 function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k); }catch(e){ return false; } }); }
@@ -81516,7 +81524,9 @@ function gamesCurrentKey(){
   if(mastView==="idflash") return "idflash";   // ⚡ ENVIDFLASH
   if(mastView==="spell") return "spell";   // 🔤 SPELLBUILD
   if(mastView==="match") return matchStyle==="memory"?"memory":"match";
-  return mastView==="games"?"":null;
+  if(mastView==="games") return "";
+  const g=GAMES_LIST.find(x=>x&&!x.style&&x.view===mastView);   // 🎲 GAMEKIT (2026-11-02): any game whose entry names its view — no line here per game
+  return g?g.key:null;
 }
 function gamesActive(){ return gamesCurrentKey()!==null; }
 // 🎮 tab: this kid's last game if it's still playable, else the first one they have, else the empty section.
