@@ -24,7 +24,8 @@ function world(o) {
   const items = o.items || [];
   const ctx = { console, JSON, Object, Array, String, Number, Math, Set, Map, RegExp, Date, parseInt, isNaN,
     masteryKid: "other", calendarData: o.cal || {}, paceData: {}, today: o.today || "2026-10-27",
-    masteryData: Object.assign({ [KID]: items, [KID + "_settings"]: { cat_modes: { Words: "spell" }, definitions: { "7×8": "56" } } }, o.mastery || {}),
+    masteryData: Object.assign({ [KID]: items, [KID + "_settings"]: { cat_modes: { Words: "spell" }, definitions: { "7×8": "56" } },
+      history: { [KID]: { "20261027": { items: [] } } } }, o.mastery || {}),   // PDTODAY: today's drill done → the NEXT drill prints
     momHere: () => o.mom !== false, _dryRun: () => !!o.dry,
     db: { ref: p => ({ set: v => writes.push([p, v]) }) },
     gwShowToast: m => toasts.push(m), SL_KLBL: { [KID]: "Kid One" },

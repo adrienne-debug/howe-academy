@@ -82987,12 +82987,29 @@ function _pdWrite(kid,key,rec){
   masteryData[kid+"_paperDrills"]=masteryData[kid+"_paperDrills"]||{}; masteryData[kid+"_paperDrills"][key]=rec;
   if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("mastery/"+kid+"_paperDrills/"+key).set(rec);
 }
+// PDTODAY (her rule 2026-11-02: "if the drill has been ran that day, then have print the next day. If the drill hasn't been
+// ran … it should just be print today's drill" — tomorrow's cards depend on how today's drill goes, so a sheet for tomorrow
+// printed before today's drill is done would be wrong). Which drill the button prints:
+//   · today is a school day and today's drill is NOT done → today's (same cards the drill shows today, same grading);
+//   · today's drill is done (saved in the app, graded from paper, or its paper is waiting to be graded) or no school
+//     today → the next school day's, as before.
+// "Done" is read from the day's drill record (masteryData.history), never from the due list — learning cards stay due
+// all day, so the list doesn't empty after a drill.
+function pdPrintDay(kid,fromIso){
+  const today=fromIso||((typeof calToday==="function")?calToday():_pdIso(new Date()));
+  const n=mastSchoolDayNum(kid,today), y=new Date(today+"T12:00:00"); y.setDate(y.getDate()-1);
+  if(n>mastSchoolDayNum(kid,_pdIso(y))){
+    const key=today.replace(/-/g,""), r=pdRecs(kid)[key];
+    if(!_pdLogged(kid,key)&&!(r&&r.state==="pending")) return {iso:today,pn:n,today:true};
+  }
+  return pdNextDay(kid,today);
+}
 function pdPrintNext(kid){
   kid=kid||masteryKid;
   if(!(typeof momHere==="function"&&momHere())) return;
-  const day=pdNextDay(kid); if(!day){ if(typeof gwShowToast==="function") gwShowToast("No school day ahead to print"); return; }
+  const day=pdPrintDay(kid); if(!day){ if(typeof gwShowToast==="function") gwShowToast("No school day ahead to print"); return; }
   const items=pdNextList(kid,day);
-  if(!items.length){ if(typeof gwShowToast==="function") gwShowToast("Nothing comes due for the next drill"); return; }
+  if(!items.length){ if(typeof gwShowToast==="function") gwShowToast(day.today?"Nothing due in today’s drill":"Nothing comes due for the next drill"); return; }
   const key=day.iso.replace(/-/g,""), prev=pdRecs(kid)[key];
   if(!(prev&&prev.state==="printed")) _pdWrite(kid,key,{date:day.iso,pn:day.pn,ids:items.map(i=>i.id),q:items.map(i=>String(i.prompt==null?"":i.prompt)),ts:Date.now(),state:"printed"});
   try{ const w=window.open("","_blank"); if(!w){ if(typeof gwShowToast==="function") gwShowToast("Allow pop-ups to print"); return; }
@@ -83002,10 +83019,10 @@ function pdPrintNext(kid){
 function pdButtonHtml(kid){
   try{
     if(!(typeof momHere==="function"&&momHere())) return "";
-    const day=pdNextDay(kid); if(!day) return "";
+    const day=pdPrintDay(kid); if(!day) return "";
     const lbl=new Date(day.iso+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
     const saved=pdRecs(kid)[day.iso.replace(/-/g,"")];
-    return '<div style="margin:6px 14px 0;text-align:right"><button onclick="pdPrintNext(\''+pdEsc(kid)+'\')" title="For a no-tech day: the tester’s sheet with the answers, plus the picture cards to hold up" style="padding:6px 12px;border-radius:999px;border:1.5px solid #cbd5e1;background:#fff;color:#334155;font-size:12px;font-weight:800;cursor:pointer">🖨 Print next drill on paper · '+pdEsc(lbl)+(saved&&saved.state==="printed"?' (printed — reprint)':'')+'</button></div>';
+    return '<div style="margin:6px 14px 0;text-align:right"><button onclick="pdPrintNext(\''+pdEsc(kid)+'\')" title="For a no-tech day: the kid’s page to point at, plus the tester’s sheet with the answers" style="padding:6px 12px;border-radius:999px;border:1.5px solid #cbd5e1;background:#fff;color:#334155;font-size:12px;font-weight:800;cursor:pointer">'+(day.today?'🖨 Print today’s drill on paper':'🖨 Print next drill on paper · '+pdEsc(lbl))+(saved&&saved.state==="printed"?' (printed — reprint)':'')+'</button></div>';
   }catch(e){ return ""; }
 }
 // PDGRADE (her ask 2026-10-28/29: "when the drill card is checked off on the schedule by Grandma or anyone else and the drill
