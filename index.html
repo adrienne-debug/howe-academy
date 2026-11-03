@@ -40479,16 +40479,18 @@ function coopToggleMomDay(ds){
   if(on) calendarData.coopMomDays[ds]=true; else delete calendarData.coopMomDays[ds];
   if(typeof db!=="undefined"&&db){ const r=db.ref("calendar/coopMomDays/"+ds); if(on) r.set(true); else r.remove(); }
   const kids=[]; coopTimedOn(ds).forEach(function(c){ c.kids.forEach(function(k){ if(kids.indexOf(k)<0) kids.push(k); }); });
-  const relaid=[];
+  const relaid=[], _pairs=[];
   kids.forEach(function(kid){
     const subs=(((typeof currData!=="undefined"&&currData&&currData.subjects)||{})[kid])||{};
     Object.keys(subs).forEach(function(sk){
       const sub=subs[sk]||{};
       if(sub.mom!=="required"||sub.paused) return;
       if(typeof planBacked!=="function"||!planBacked(kid,sk)) return;
-      try{ if(typeof reprojectSubjectWeek==="function"){ reprojectSubjectWeek(kid,sk,on?"coop-mom-on":"coop-mom-off"); relaid.push(kid+"/"+sk); } }catch(e){ if(typeof dbg==="function") dbg("coop mom-day relay skip "+kid+"/"+sk+": "+e); }
+      relaid.push(kid+"/"+sk); _pairs.push({kid:kid,sk:sk});   // 🔁 RELAY3: queued for the one run below
     });
   });
+  // 🔁 RELAY3: one run through the door, chained, the banner line says what moved; Undo puts the flag and the cards back
+  if(_pairs.length){ if(typeof relayWeek==="function") relayWeek("coop-mom",{label:on?("👩 Mom's here "+ds):("🏫 Co-op rule "+ds),subjects:_pairs,undo:[on?{p:"calendar/coopMomDays/"+ds,gone:true}:{p:"calendar/coopMomDays/"+ds,was:true}]}); else _pairs.forEach(function(p){ try{ if(typeof reprojectSubjectWeek==="function") reprojectSubjectWeek(p.kid,p.sk,on?"coop-mom-on":"coop-mom-off"); }catch(e){ if(typeof dbg==="function") dbg("coop mom-day relay skip "+p.kid+"/"+p.sk+": "+e); } }); }
   if(typeof gwShowToast==="function") gwShowToast(on?("👩 Mom's available on "+ds+" — Mom-required lessons can land there again"):("🏫 Back to the co-op rule for "+ds+" — no Mom-required lessons laid there"));
   if(typeof renderAll==="function") renderAll();
   return {date:ds,on:on,kids:kids,relaid:relaid};
@@ -40584,15 +40586,17 @@ function cwdUseMonThu(kid){
 // plan-backed subject of those kids that carries noCoopDays — the way coopToggleMomDay does. Future weeks need no
 // re-lay: generation reads the field.
 function cwdRelayKids(kids,why){
-  const relaid=[];
+  const relaid=[], _pairs=[];
   (kids||[]).forEach(function(kid){
     const subs=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid])||{};
     Object.keys(subs).forEach(function(sk){ const sub=subs[sk]||{};
       if(sub.paused||!noCoopDaysOf(sub)) return;
       if(typeof planBacked!=="function"||!planBacked(kid,sk)) return;
-      try{ if(typeof reprojectSubjectWeek==="function"){ reprojectSubjectWeek(kid,sk,why||"coop-dates"); relaid.push(kid+"/"+sk); } }catch(e){ if(typeof dbg==="function") dbg("coop-dates relay skip "+kid+"/"+sk+": "+e); }
+      relaid.push(kid+"/"+sk); _pairs.push({kid:kid,sk:sk});   // 🔁 RELAY3: queued for the one run below
     });
   });
+  // 🔁 RELAY3: one run through the door, the subjects chained (before: every subject re-laid at once against the same week)
+  if(_pairs.length){ if(typeof relayWeek==="function") relayWeek("coop-dates",{label:"🏫 Co-op dates",subjects:_pairs}); else _pairs.forEach(function(p){ try{ if(typeof reprojectSubjectWeek==="function") reprojectSubjectWeek(p.kid,p.sk,why||"coop-dates"); }catch(e){ if(typeof dbg==="function") dbg("coop-dates relay skip "+p.kid+"/"+p.sk+": "+e); } }); }
   return relaid;
 }
 // COOPWEEKDAYS_END
@@ -42283,11 +42287,12 @@ let _rlwPend=null, _rlwTimer=null;
 // relayWeek("kidoff",{label:"😷 <Kid> off Wed, Nov 5", undo:[{p:"calendar/kidOverrides/<kid>/<iso>", gone:true}]})
 function relayWeek(why,info){
   info=info||{};
-  if(!_rlwPend) _rlwPend={whys:[],labels:[],undo:[],at:Date.now()};
+  if(!_rlwPend) _rlwPend={whys:[],labels:[],undo:[],subjects:[],at:Date.now()};
   _rlwPend.whys.push(String(why||"relay"));
   if(info.label&&_rlwPend.labels.indexOf(info.label)<0) _rlwPend.labels.push(String(info.label));
   // ten taps → one Undo back to BEFORE the first: a path's first "was" wins
   (info.undo||[]).forEach(function(u){ if(u&&u.p&&!_rlwPend.undo.some(x=>x.p===u.p)) _rlwPend.undo.push(u.gone?{p:u.p,gone:true}:{p:u.p,was:(u.was===undefined?null:u.was)}); });
+  (info.subjects||[]).forEach(function(s){ if(s&&s.kid&&s.sk&&!_rlwPend.subjects.some(x=>x.kid===s.kid&&x.sk===s.sk)) _rlwPend.subjects.push({kid:s.kid,sk:s.sk}); });   // 🔁 RELAY3: pass B — the subjects re-laid after the sweep, one after another
   try{ clearTimeout(_rlwTimer); }catch(e){}
   _rlwTimer=setTimeout(function(){ _rlwFire(0); },RLW_WAIT_MS);
 }
@@ -42302,8 +42307,11 @@ function _rlwFire(att){
   if(typeof haClaimSchedLock!=="function"||typeof cascadeIntraWeek!=="function") return;
   haClaimSchedLock("relay",function(release){
     if(!release){ if(typeof gwShowToast==="function") gwShowToast("Another device is updating the schedule — the week catches up on its next sweep"); return; }
-    try{ _rlwRun(pend,function(){ cascadeIntraWeek(); if(typeof runCascade==="function") runCascade(); }); }
-    finally{ release(); }
+    let _rel=false; const _done=function(){ if(_rel) return; _rel=true; try{ release(); }catch(e){} };
+    // 🔁 RELAY3: pass A (the sweep), then pass B (the listed subjects, chained through each re-lay's then) — one snapshot,
+    // one diff, one log line for both; the lock is released when the chain is over
+    try{ _rlwRun(pend,function(fin){ cascadeIntraWeek(); if(typeof runCascade==="function") runCascade(); _rlwChain(pend.subjects||[],pend,fin); },_done); }
+    catch(e){ dbg("relay run: "+e); _done(); }
   });
 }
 // ── pure: the snapshot and the diff ──
@@ -42347,16 +42355,16 @@ function _rlwWords(e){
   return s;
 }
 // one run: snapshot → fn() (the sweep) → diff → log + line. Used by relayWeek and by the 8 PM sweep / ⏩ push inside their lock.
-function _rlwRun(pend,fn){
+function _rlwRun(pend,fn,after){
   pend=pend||{};
   const tasks=(typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[];
   const now=new Date();
   const before=_rlwSnapOf(tasks,{checked:(typeof checked!=="undefined"&&checked)||{},claimed:(typeof claimed!=="undefined"&&claimed)||{},momMoves:(typeof momMoves!=="undefined"&&momMoves)||{},
     todayDay:(typeof _todayDay!=="undefined")?_todayDay:null,nowMin:now.getHours()*60+now.getMinutes(),
     isHeld:function(t){ return (typeof fdtHeld==="function"&&fdtHeld(t))||(typeof mvtHeldToday==="function"&&mvtHeldToday(t)); }});
-  fn();
-  const after=(typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[];
-  const d=_rlwDiff(before,after);
+  const finish=function(){
+  const _afterTasks=(typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[];
+  const d=_rlwDiff(before,_afterTasks);
   if(d.locked.length) dbg("⚠ relay tripwire ("+(pend.labels||pend.whys||[]).join(" · ")+"): held card(s) changed day — "+d.locked.join(" "));
   if(!d.n) return d;
   const at=Date.now();
@@ -42375,6 +42383,14 @@ function _rlwRun(pend,fn){
   if(typeof gwShowToast==="function") gwShowToast("🔁 "+_rlwWords(e));
   if(typeof renderAll==="function") renderAll();
   return d;
+  };
+  // 🔁 RELAY3: a step written as fn(fin) is asynchronous (the subject re-lays take their own lock and read the server) —
+  // it finishes when it calls fin; a plain step finishes at once. A fin that never comes (a re-lay that died) is closed
+  // after 45 s so the log line and the lock never hang.
+  const _end=function(){ let d=null; try{ d=finish(); }finally{ if(typeof after==="function") after(); } return d; };
+  if(typeof fn==="function"&&fn.length>=1){ let fired=false, _t=null; const fin=function(){ if(fired) return; fired=true; try{ clearTimeout(_t); }catch(e){} _end(); }; _t=setTimeout(fin,45000); try{ fn(fin); }catch(e){ dbg("relay step: "+e); fin(); } return null; }
+  try{ fn(); }catch(e){ dbg("relay step: "+e); }
+  return _end();
 }
 // the newest entry from today (local date), or null
 function _rlwLast(){
@@ -42443,6 +42459,36 @@ function dtUndoSnap(iso){
   return [L&&typeof L==="object"?{p:"config/rules/schoolDay/byDate/"+iso,was:Object.assign({},L)}:{p:"config/rules/schoolDay/byDate/"+iso,gone:true},
           W&&typeof W==="object"?{p:"config/rules/schoolDay/lunchByDate/"+iso+"/all",was:Object.assign({},W)}:{p:"config/rules/schoolDay/lunchByDate/"+iso+"/all",gone:true}];
 }
+// 🔁 RELAY3 (her word "Merged, continue" 2026-11-03; step 4, slice 3) — PASS B: the listed subjects re-laid one after another
+// through the SAME subject re-lay every grid edit already uses (reprojectSubjectWeek: Builder-paced only, active week,
+// one targeted update per subject, its then fires exactly once). The mode comes from the clock, never a question on any
+// device: before school today lays today fresh, mid-day keeps today's cards where they are, after school from tomorrow.
+// A subject that is not Builder-paced (a daily) is skipped here — its edit saves, and rlSet says so plainly.
+function _rlwModeNoAsk(){
+  try{
+    const now=new Date(); const nowMin=now.getHours()*60+now.getMinutes(); const td=(typeof _todayDay==="string")?_todayDay:"";
+    const _r0=(typeof gwRules==="function")?gwRules():{};
+    const r=(typeof dtSM==="function"&&td)?Object.assign({},_r0,{schoolStart:dtSM(td,_r0.schoolStart),schoolEnd:dtEM(td,_r0.schoolEnd)}):_r0;   // ⏰ DAYTIMES: today's own times
+    const schoolDay=["monday","tuesday","wednesday","thursday","friday"].indexOf(td)>=0&&!!((typeof DAY_DT!=="undefined"&&DAY_DT)||{})[td];
+    if(!schoolDay) return "tomorrow";
+    if(r.schoolStart!=null&&nowMin<r.schoolStart) return "fresh";
+    return "tomorrow";
+  }catch(e){ return "tomorrow"; }
+}
+function _rlwChain(list,pend,fin){
+  const q=(list||[]).slice(); const mode=_rlwModeNoAsk(); const why=(pend&&pend.whys&&pend.whys[0])||"relay";
+  const next=function(){
+    const s=q.shift(); if(!s){ fin(); return; }
+    let pb=false; try{ pb=(typeof planBacked==="function")&&planBacked(s.kid,s.sk); }catch(e){ pb=false; }
+    if(!pb||typeof reprojectSubjectWeek!=="function"){ next(); return; }
+    try{ reprojectSubjectWeek(s.kid,s.sk,why,{relayFrom:mode,then:function(){ next(); }}); }
+    catch(e){ dbg("relay pass B skip "+s.kid+"/"+s.sk+": "+e); next(); }
+  };
+  next();
+}
+// the curriculum fields the scheduler lays by, and their plain words for the banner line
+const RLW_LAY_FIELDS={mom:"Mom",momDays:"Mom days",momDayMin:"Mom minutes",lessonDay:"lesson day",lessonDayMissed:"missed lesson day",lessonDayPractice:"practice day",tpw:"times a week",cap:"max per day",minutes:"minutes",allowedDays:"days",noCoopDays:"co-op week days",coopDay:"co-op day",rulesTok:"order rule",fixedTime:"set time"};
+function _rlwFieldWords(f){ return RLW_LAY_FIELDS[f]||String(f||""); }
 // RELAY_END
 // RELAY2_START — 🔁 SETTINGS + CALENDAR THROUGH THE ONE DOOR (her word "continue next slice" 2026-11-03; step 4, slice 2).
 // Settings: every save of config/rules goes through saveRules; when a key the scheduler lays by changed (School Day Times,
@@ -62065,6 +62111,7 @@ function cbPinDay(sk,d){
 // re-lays plan-backed subjects when the field changes placement.
 function rlSet(kid,sk,field,val,relay){
   const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||!db) return;
+  const _wasF=(s[field]===undefined||s[field]===null)?undefined:JSON.parse(JSON.stringify(s[field]));   // 🔁 RELAY3: the field as it was, for Undo
   const _dp=document.getElementById("cb-daypin-scroll"); if(_dp) cbDayPinScroll=_dp.scrollTop;
   if(field==="tpw"){ const v=Math.max(1,Math.min(7,parseInt(val,10)||1)); s.pacing=Object.assign({},s.pacing||{mode:"timesPerWeek"},{tpw:v}); s.timesPerWeek=v;
     db.ref("curriculum/subjects/"+kid+"/"+sk).update({"pacing/tpw":v,timesPerWeek:v}); }
@@ -62074,8 +62121,18 @@ function rlSet(kid,sk,field,val,relay){
   currData.lastEdit=new Date().toISOString(); db.ref("curriculum/lastEdit").set(currData.lastEdit);
   // 👩 Mom changed (her ask 2026-09-22): this week's cards follow at once — the week re-lay restamps
   // them and keeps Mom-required work off a co-op's no-Mom day. Before, only the setting saved.
-  if((field==="mom"||field==="momDays"||field==="momDayMin"||field==="lessonDay"||field==="lessonDayMissed"||field==="lessonDayPractice")&&typeof planBacked==="function"&&planBacked(kid,sk)&&typeof reprojectSubjectWeek==="function"){
+  const _momF=(field==="mom"||field==="momDays"||field==="momDayMin"||field==="lessonDay"||field==="lessonDayMissed"||field==="lessonDayPractice");
+  const _pbF=(typeof planBacked==="function")&&planBacked(kid,sk);
+  // 🔁 RELAY3 (2026-11-03): through the one door — pass B re-lays the subject, the banner line says what moved, Undo puts the
+  // field and the cards back. (Days / times a week / max per day / minutes / co-op days take the Builder path below — the
+  // plan itself is re-paced — and reach the door from cbApply.)
+  if(_momF&&_pbF&&typeof relayWeek==="function"){
+    relayWeek("curriculum",{label:"📚 "+(s.display||sk)+": "+((typeof _rlwFieldWords==="function")?_rlwFieldWords(field):field),subjects:[{kid:kid,sk:sk}],
+      undo:[(_wasF===undefined)?{p:"curriculum/subjects/"+kid+"/"+sk+"/"+field,gone:true}:{p:"curriculum/subjects/"+kid+"/"+sk+"/"+field,was:_wasF}]}); }
+  else if(_momF&&_pbF&&typeof reprojectSubjectWeek==="function"){
     try{ reprojectSubjectWeek(kid,sk,"mom",{then:function(){ if(typeof renderAll==="function") renderAll(); }}); }catch(e){ if(typeof dbg==="function") dbg("mom relay skip "+kid+"/"+sk+": "+e); } }
+  // 🔁 RELAY3: a daily (not Builder-paced) only saves — say so plainly instead of leaving her to wonder
+  if(!_pbF&&typeof RLW_LAY_FIELDS!=="undefined"&&RLW_LAY_FIELDS[field]&&typeof gwShowToast==="function") gwShowToast("✎ Saved — "+(s.display||sk)+" isn't paced by the Builder, so this week's cards re-lay on the next week build or 🔄 Regenerate");
   if(relay&&typeof planBacked==="function"&&planBacked(kid,sk)&&s.pacing&&s.pacing.mode&&typeof _gvRelaySubject==="function"){ const _k=cbKid,_s=cbSubjKey; cbKid=kid; cbSubjKey=sk; const ok=_gvRelaySubject(kid,sk,(s.display||sk)+" re-laid"); cbKid=_k; cbSubjKey=_s; if(ok) return; }
   renderAll();
 }
@@ -62772,7 +62829,7 @@ function cbApply(){
   // (every rebuilt subject looked a week behind until an app reload or commit).
   try{ if(typeof buildCurrPaceCum==="function") buildCurrPaceCum(); }catch(e){}
   // Stage 3.4: the cells changed → this week's cards for the subject follow (plan-backed only).
-  try{ if(typeof reprojectSubjectWeek==="function") reprojectSubjectWeek(kid,sk,"relay"); }catch(e){}
+  try{ if(typeof relayWeek==="function") relayWeek("build",{label:"🧱 "+(s.display||sk)+" re-paced",subjects:[{kid:kid,sk:sk}]}); else if(typeof reprojectSubjectWeek==="function") reprojectSubjectWeek(kid,sk,"relay"); }catch(e){}   // 🔁 RELAY3: through the one door (pass B)
   cbPreviewRes=null; cbSubjKey=null; cbForm=null;
   renderAll();
 }
