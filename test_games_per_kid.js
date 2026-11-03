@@ -287,7 +287,7 @@ console.log("Same kid, view tabs, dry-run");
 console.log("Hooks: every way the kid changes goes through gameKidSwitch");
 {
   ok("mastSetKid parks before the kid changes",/function mastSetKid\(k,noRender\)\{[^\n]*gameKidSwitch\(k\); masteryKid=k;/.test(src));
-  const ro=src.slice(src.indexOf("function retrOpenSprint(kid){"),src.indexOf("function retrOpenSprint(kid){")+200);
+  const ro=src.slice(src.indexOf("function retrOpenSprint(kid){"),src.indexOf("function retrOpenSprint(kid){")+500);   // KC_PLAY 2026-11-02: one routing line sits on top
   ok("retrOpenSprint parks BEFORE this kid's plan sets the Sprint deck",ro.indexOf("gameKidSwitch(kid)")>0&&ro.indexOf("gameKidSwitch(kid)")<ro.indexOf("masteryKid=kid"));
   const ri=src.slice(src.indexOf("function _renderMasteryInner(el){"),src.indexOf("function _renderMasteryInner(el){")+600);
   ok("the Mastery render catches any other path",ri.indexOf("gameKidSwitch(masteryKid)")>ri.indexOf("masteryKid=kids[0]"));
