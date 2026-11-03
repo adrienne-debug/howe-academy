@@ -80349,6 +80349,168 @@ function gameRulesRender(){
   ov.innerHTML='<div style="width:100%;max-width:520px;background:#fff;border-radius:22px;padding:18px 18px 14px;box-shadow:0 20px 50px rgba(0,0,0,.25);font-family:\'DM Sans\',sans-serif">'+gameRulesHtml(U.kid,U.game)+'</div>';
 }
 // GAMERULES_END
+// BEAT_START — ⏱ "Beat my time" (her go 2026-11-03 "work on this and all the other games"; PLAN_practice_games_2026-10-23.md Tier 2 "Beat-my-time
+// Matching: current Matching, but only on decks at monthly+ tier; the clock is against her own best" — REC + FLU; plan rule 5: "time only what is
+// already ~90% accurate"). Match's face-up board — BEAT_PAIRS word ↔ meaning / picture pairs, tap two to match — with two differences:
+//   · ONLY MASTERED CARDS play: a card at the kid's gate tier or above (gate_tier, the Sprint rule, default weekly; mastTierAtLeast). A deck
+//     needs BEAT_MIN such cards. A learning card never meets a clock here.
+//   · THE CLOCK IS THE GAME: it starts on the first tap, runs big at the top beside the time to beat ("⏱ beat 23.4s"), and the finish is the
+//     kid's time against their OWN best for this deck — nobody else's (plan rule 4). A new best gets the small confetti.
+// A wrong pair (the soft bonk) marks both cards; when the board is clear the marked pairs come back once on a small UNTIMED board (the clock
+// has stopped — plan rule 3), then the finish: the time, and "N of M pairs clean". No lives, no leaderboard, no points.
+// Cards: Match's own pair content (_matchPairHtml: a picture, else the definition / answer), Match's hidden-card guards, one tile per
+// name; this game's grid cell gameDeckOn(kid,"beat",deck). Writes (only these): <kid>_settings/match_best key "<deck> · beat" (seconds,
+// lower is better, only when beaten) and the round's gameLog entry (GAMELOG, game:"beat"). NEVER touches the ladder. db && !_dryRun() only.
+// Per-kid park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT): parking pauses the clock, resume picks it up.
+let beatState=null;   // {kid,deck,game:"beat",t0,pairs:[pid],tiles:[{pid,html,isPrompt,matched,miss}],sel,lock,seq,startTs,endTs,pausedAt,pausedTotal,missed:{pid:1},phase:"play"|"back"|"done",turns:[],first,of,sec,isPB,prevBest,gameLogged}
+let _beatRandom=Math.random;   // tests seed it
+const BEAT_PAIRS=6, BEAT_MIN=4, BEAT_LINGER=650;
+function _beatNow(){ return Date.now(); }
+function _beatItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
+function _beatShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_beatRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function beatDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"beat",deck); }
+function beatGate(kid){ try{ const s=(typeof masteryData!=="undefined"&&masteryData&&masteryData[(kid||masteryKid)+"_settings"])||{}; return s.gate_tier||"weekly"; }catch(e){ return "weekly"; } }
+// Match's own door, asked as this kid in word ↔ meaning mode: not a production twin, not a card hidden for the class (ENVTEST / CPCARDSEDIT /
+// CPSECTIONS live inside _matchEligible — no hook line of their own here), and with pair content (_matchPairHtml)
+function _beatMatchOk(it,kid){
+  const kk=masteryKid, pm=(typeof matchPairMode!=="undefined")?matchPairMode:null;
+  try{ masteryKid=kid; if(pm!==null) matchPairMode="two"; return (typeof _matchEligible==="function")?!!_matchEligible(it):!!_matchPairHtml(it); }
+  finally{ masteryKid=kk; if(pm!==null) matchPairMode=pm; }
+}
+// A card the clock may meet: in play and mastered (gate tier or above), and through Match's door
+function beatEligible(it,kid){
+  kid=kid||masteryKid;
+  if(!it||it.status!=="active"||!String(it.prompt||"").trim()) return false;
+  if(typeof mastTierAtLeast==="function"&&!mastTierAtLeast(it.tier,beatGate(kid))) return false;
+  return _beatMatchOk(it,kid);
+}
+// PURE-ish: the deck's playable pairs, one per name and one per pair face (two cards sharing one rule text would make two identical tiles)
+function beatPool(items,deck,kid){
+  kid=kid||masteryKid;
+  const seenW={}, seenP={}, out=[];
+  (items||[]).forEach(it=>{ if(!beatEligible(it,kid)||(deck!==WHICH_MIX&&(it.subject||"Other")!==deck)) return;
+    const w=_matchPlain(it.prompt).toLowerCase(), p=_matchPlain(_matchPairHtml(it)).toLowerCase()||("pic:"+it.id); if(seenW[w]||seenP[p]) return; seenW[w]=seenP[p]=1; out.push(it); });
+  return out;
+}
+function beatDecks(items,kid){
+  kid=kid||masteryKid;
+  const n={}; beatPool(items,WHICH_MIX,kid).forEach(i=>{ const d=i.subject||"Other"; n[d]=(n[d]||0)+1; });
+  return Object.keys(n).filter(d=>n[d]>=BEAT_MIN&&beatDeckOn(kid,d)).sort();
+}
+function _beatTiles(st,pids){
+  const tiles=[];
+  pids.forEach(pid=>{ const it=_beatItems(st.kid).find(x=>x&&x.id===pid); if(!it) return;
+    tiles.push({pid:pid,isPrompt:true,matched:false,miss:false,html:'<span style="font-size:'+((_matchPlain(it.prompt)||"").length<=4?26:15)+'px;font-weight:800;color:#c2410c;pointer-events:none;word-break:break-word">'+(it.prompt||"")+'</span>'});
+    tiles.push({pid:pid,isPrompt:false,matched:false,miss:false,html:_matchPairHtml(it)||""}); });
+  return _beatShuffle(tiles);
+}
+function beatStart(deck){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding / bonk (iPad)
+  const items=_beatItems(), ok=beatDecks(items), pool=beatPool(items,deck).filter(i=>ok.indexOf(i.subject||"Other")>=0);
+  if(pool.length<BEAT_MIN||(deck!==WHICH_MIX&&!beatDeckOn(masteryKid,deck))){ beatState=null; _mastRe(); return; }   // 🎮 GAMEGRID: a deck Mom turned off for this game
+  const pairs=_beatShuffle(pool.slice()).slice(0,BEAT_PAIRS).map(i=>i.id);
+  beatState={kid:masteryKid,deck:deck,game:"beat",t0:_beatNow(),pairs:pairs,tiles:[],sel:-1,lock:false,seq:0,startTs:null,endTs:null,pausedAt:null,pausedTotal:0,missed:{},phase:"play",turns:[],first:0,of:pairs.length,sec:null,isPB:false,prevBest:null};
+  beatState.tiles=_beatTiles(beatState,pairs);
+  _beatTick(beatState);
+  _mastRe();
+}
+function beatChangeDeck(){ const st=beatState; beatState=null; if(st) st.seq++; _mastRe(); }   // drop the round as it stands: nothing written
+function beatElapsed(st){ if(!st||!st.startTs) return 0; const end=st.endTs||_beatNow(); return Math.max(0,end-st.startTs-st.pausedTotal-(st.pausedAt?(end-st.pausedAt):0)); }
+// the running clock: a light tick that only touches the clock's text; it stops by itself when the round is over, parked or off screen
+function _beatTick(st){
+  if(typeof setInterval!=="function"||typeof document==="undefined") return;
+  if(st._tick) return;
+  st._tick=setInterval(()=>{ if(beatState!==st||st.endTs||st.pausedAt||(typeof mastView!=="undefined"&&mastView!=="beat")){ clearInterval(st._tick); st._tick=null; return; }
+    const el=document.getElementById("beat-clock"); if(el) el.textContent=(beatElapsed(st)/1000).toFixed(1)+"s"; },100);
+}
+function beatTap(ix){
+  const st=beatState; if(!st||st.lock||st.phase==="done"||st.pausedAt) return;
+  const t=st.tiles[ix]; if(!t||t.matched||ix===st.sel) return;
+  if(st.phase==="play"&&!st.startTs){ st.startTs=_beatNow(); _beatTick(st); }   // the clock starts on the first tap — studying the board is free
+  if(st.sel<0){ st.sel=ix; _mastRe(); return; }
+  const a=st.tiles[st.sel];
+  if(a.pid===t.pid){
+    a.matched=t.matched=true; st.sel=-1; try{ matchDing(); }catch(e){}
+    if(st.tiles.every(x=>x.matched)) _beatBoardDone(st);
+    _mastRe(); return;
+  }
+  a.miss=t.miss=true; st.lock=true;
+  if(st.phase==="play"){ st.missed[a.pid]=1; st.missed[t.pid]=1; } else { st.backMiss[a.pid]=1; st.backMiss[t.pid]=1; }
+  try{ matchBonk(); }catch(e){}
+  _mastRe();
+  const seq=++st.seq; setTimeout(()=>{ if(beatState===st&&st.seq===seq){ a.miss=t.miss=false; st.sel=-1; st.lock=false; _mastRe(); } },BEAT_LINGER);
+}
+// the board is clear: stop the clock; the marked pairs come back once, untimed (a lone pair brings one clean pair along so there is still a choice)
+function _beatBoardDone(st){
+  if(st.phase==="play"){
+    st.endTs=_beatNow(); st.sec=Math.round(beatElapsed(st)/100)/10;
+    st.pairs.forEach(pid=>{ st.turns.push({pid:pid,done:true,first:!st.missed[pid],wrong:st.missed[pid]?{pair:1}:{},back:false}); });
+    st.first=st.pairs.filter(p=>!st.missed[p]).length;
+    const back=st.pairs.filter(p=>st.missed[p]);
+    if(!back.length) return beatFinish(st);
+    if(back.length===1){ const extra=st.pairs.find(p=>!st.missed[p]); if(extra) back.push(extra); }
+    st.phase="back"; st.backPairs=back; st.backMiss={}; st.sel=-1; st.tiles=_beatTiles(st,back);
+    return;
+  }
+  st.backPairs.forEach(pid=>{ if(st.missed[pid]) st.turns.push({pid:pid,done:true,first:!st.backMiss[pid],wrong:st.backMiss[pid]?{pair:1}:{},back:true}); });
+  beatFinish(st);
+}
+function beatBestKey(deck){ return deck+" \u{00B7} beat"; }
+function beatFinish(st){
+  st.phase="done"; st.lock=false;
+  const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: each pair clean or not, game:"beat"
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=beatBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.sec!=null&&st.sec>0&&(prev==null||st.sec<prev);   // seconds: lower is better
+  if(st.isPB){
+    s.match_best[key]=st.sec;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.sec});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+  try{ if(st.isPB&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u23F1 "+st.deck+" \u2014 new best!",{noSong:true}); }catch(e){}
+}
+// GAMEKID → 🎲 GAMEKIT: parking pauses the clock; resume picks it up where it left off
+function beatPark(){ const st=beatState; if(st&&st.startTs&&!st.endTs&&!st.pausedAt) st.pausedAt=_beatNow(); return st; }
+function beatResume(){ const st=beatState; if(!st||st.phase==="done") return; if(st.pausedAt){ st.pausedTotal+=_beatNow()-st.pausedAt; st.pausedAt=null; } if(st.lock){ st.lock=false; st.sel=-1; st.tiles.forEach(x=>{ x.miss=false; }); } _beatTick(st); }
+const BEAT_CSS='<style>.beat-tile{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:16px;border:3px solid #e2ddd6;background:#fff;cursor:pointer;overflow:hidden;padding:6px;text-align:center;-webkit-tap-highlight-color:transparent;transition:transform .15s}'+
+  '.beat-tile.beat-sel{border-color:#7c3aed;background:#f5f3ff;transform:scale(1.04)}.beat-tile.beat-miss{border-color:#dc2626;background:#fef2f2}.beat-tile.beat-done{opacity:0;pointer-events:none;transform:scale(.6)}</style>';
+function buildBeatHtml(color){
+  const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+  let h=BEAT_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const items=_beatItems(), decks=beatDecks(items);
+  if(!decks.length){ h+='<div class="mast-none">No decks ready for Beat my time yet \u{2014} it plays cards that have reached the gate level (the Sprint rule), '+BEAT_MIN+' or more in a deck.</div></div>'; return h; }
+  const st=beatState;
+  const chip=(dk,lbl)=>{ const sel=st&&st.deck===dk; return '<button onclick="beatStart(\''+q(dk)+'\')" style="padding:10px 16px;border-radius:999px;font-size:14px;font-weight:800;border:2px solid '+(sel?color:'#e2ddd6')+';background:'+(sel?color:'#fff')+';color:'+(sel?'#fff':'#57534e')+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
+  if(!st||st.phase==="done"){
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">';
+    decks.forEach(dk=>{ h+=chip(dk,esc(dk)); });
+    if(decks.length>1) h+=chip(WHICH_MIX,"\u{1F3B2} "+WHICH_MIX);
+    h+='</div>';
+  }
+  if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u23F1 Pick a deck. Match the pairs as fast as you can \u2014 the clock starts on your first tap. Beat your own best!</div></div>'; return h; }
+  const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[beatBestKey(st.deck)];
+  if(st.phase==="done"){
+    h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+    h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">'+(st.isPB?'\u{1F3C6} New best \u2014 '+st.sec+'s!':'\u23F1 '+st.sec+'s'+(st.prevBest!=null?' \u00B7 best '+st.prevBest+'s':''))+'</div>';
+    h+='<div style="font-size:17px;font-weight:800;color:#57534e;margin-top:10px">'+st.first+' of '+st.of+' pairs clean</div>';
+    h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">';
+    h+='<button onclick="beatStart(\''+q(st.deck)+'\')" style="padding:12px 24px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F501} Try to beat it</button>';
+    if(decks.length>1&&st.deck!==WHICH_MIX) h+='<button onclick="beatStart(\''+q(WHICH_MIX)+'\')" style="padding:12px 24px;border-radius:999px;border:2px solid '+color+';background:#fff;color:'+color+';font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F3B2} '+WHICH_MIX+'</button>';
+    return h+'</div></div></div>';
+  }
+  const timed=st.phase==="play";
+  h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 10px;flex-wrap:wrap">';
+  h+='<span style="display:flex;align-items:baseline;gap:10px"><span id="beat-clock" style="font-family:\'DM Mono\',monospace;font-size:30px;font-weight:800;color:'+(timed?color:'#a8a29e')+'">'+(beatElapsed(st)/1000).toFixed(1)+'s</span>'+(timed?(best!=null?'<span style="font-size:13px;font-weight:800;color:var(--muted)">\u23F1 beat '+best+'s</span>':'<span style="font-size:13px;font-weight:800;color:var(--muted)">first time \u2014 set your best!</span>'):'<span style="font-size:13px;font-weight:800;color:#b45309">clock stopped \u2014 one more look at these</span>')+'</span>';
+  h+='<span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+'<button onclick="beatChangeDeck()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{1F5C2} Change deck</button></span></div>';
+  const cols=st.tiles.length<=8?2:st.tiles.length<=12?3:4;
+  h+='<div style="display:grid;grid-template-columns:repeat('+cols+',1fr);gap:10px">';
+  st.tiles.forEach((t,ix)=>{ h+='<div class="beat-tile'+(t.matched?' beat-done':'')+(ix===st.sel?' beat-sel':'')+(t.miss?' beat-miss':'')+'" role="button" aria-label="Tile '+(ix+1)+'"'+(t.matched||st.lock?'':' onclick="beatTap('+ix+')"')+'>'+t.html+'</div>'; });
+  return h+'</div></div>';
+}
+// BEAT_END
 // STUDYCOUNTS_START — 📚 Study sessions count everywhere (F3 of PLAN_learning_system, her yes 2026-10-24). A study
 // sitting logs to mastery/studyLog/<kid>/<sid>/<yyyymmdd>, but Scores, the Weekly report, sprint readiness (the ≥ 90%
 // untimed check) and the notebook's 🔁 review flags read only the drill's mastery/history/<kid>/<yyyymmdd>, so Lincoln —
@@ -84339,6 +84501,8 @@ const GAMES_LIST=[
      park:()=>fourState, restore:v=>{ fourState=v||null; }, resume:()=>fourResume(), decks:k=>typeof fourDecks==="function"?fourDecks(_gamesItems(k),k):[]},   // 🔴 FOUR · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
   {key:"ship",   emoji:"\u{1F6A2}", label:"Battleship",  view:"ship",                 available:k=>typeof shipDecks==="function"&&shipDecks(_gamesItems(k),k).length>0, render:c=>buildShipHtml(c),
      park:()=>shipState, restore:v=>{ shipState=v||null; }, resume:()=>shipResume(), decks:k=>typeof shipDecks==="function"?shipDecks(_gamesItems(k),k):[]},   // 🚢 SHIP · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule (picture / symbol decks only)
+  {key:"beat",   emoji:"\u23F1",     label:"Beat my time",view:"beat",                 available:k=>typeof beatDecks==="function"&&beatDecks(_gamesItems(k),k).length>0, render:c=>buildBeatHtml(c),
+     park:()=>beatPark(), restore:v=>{ beatState=v||null; }, resume:()=>beatResume(), decks:k=>typeof beatDecks==="function"?beatDecks(_gamesItems(k),k):[]},   // ⏱ BEAT · 🎲 GAMEKIT: parking pauses its clock · 🎮 GAMEGRID: its own deck rule (mastered cards only)
 ];
 const gamesLast={};   // kid → key of the last game played on this device
 function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k)&&(typeof gameDeckAny!=="function"||gameDeckAny(k,g)); }catch(e){ return false; } }); }   // 🎮 GAMEGRID: every deck off → the game isn't offered
