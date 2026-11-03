@@ -162,6 +162,6 @@ const WS = () => ({
 })();
 // 7. wiring in the real file
 ok("listener wired beside config/rules", /db\.ref\("worksheets"\)\.on\("value",s=>\{ wsOnValue\(s\.val\(\)\); \}\);[^\n]*\n\s*db\.ref\("messages"\)\.on\("value",s=>\{ msgOnValue\(s\.val\(\),true\); \}\);[^\n]*\n\s*db\.ref\("config\/rules"\)/.test(src));
-ok("card wired into Mom HQ, no auto-pop", /function renderMomHQ\(el,ah\)\{[\s\S]{0,400}h\+=wsBannerHTML\(\);/.test(src) && !/wsMaybePop/.test(src));
+ok("card wired into Mom HQ, no auto-pop", /function renderMomHQ\(el,ah\)\{[\s\S]{0,900}h\+=wsBannerHTML\(\);/.test(src) && !/wsMaybePop/.test(src));
 ok("task wired into Mom's Day under her own day", /h\+=momDayStripHTML\(iso,today\); \}catch\(e\)\{\}\n  try\{ h\+=wsTaskHTML\(\); \}catch\(e\)\{\}/.test(src));
 

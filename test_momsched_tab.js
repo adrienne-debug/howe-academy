@@ -51,7 +51,7 @@ function world(o) {
   return { api, log };
 }
 console.log("── tab names ──");
-ok("Mom's Day tabs read 🏡 Home Base and 🗓 Schedule", src.indexOf("${btn('plan','🏡 Home Base')}${btn('cal','🗓 Schedule')}") >= 0 && src.indexOf("btn('plan','🏡 Today')") < 0);
+ok("Mom's Day tabs read 🏡 Home Base and 🗓 Schedule (MPGROUPS 2026-11-02: Home Base is drawn by tbtn, with its own sub-row)", src.indexOf("tbtn(home,\"mpGoto('plan')\",'🏡 Home Base')") >= 0 && src.indexOf("${hbtn}${btn('cal','🗓 Schedule')}") >= 0 && src.indexOf("btn('plan','🏡 Today')") < 0);
 console.log("\n── who + mode ──");
 {
   const w = world();
