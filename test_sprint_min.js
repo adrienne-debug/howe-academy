@@ -30,6 +30,7 @@ function world(o) {
     fn("mastTierAtLeast"), fn("_unitKidLadderCfg"), fn("_unitLadderDaysToGate"), fn("_unitEtaLbl"),
     block("DRILLGRID"), block("SPRINTMIN"), fn("sprintGenerateFromPool"), fn("buildSprintFromDrillHtml"),
     "function momHere(){ return _mom; }",
+    o.site ? "function envClsOn(){ return true; }" : "",   // ⚙ LADDER1: the class site keeps its own "Right in a row"
     "function mastDrillSettings(){ return {gate_tier:'weekly'}; }",
     "function mastKnowledgeType(it){ return (it&&it.knowledge_type)||'fact_association'; }",
     "function mastSprintSwitch(it){ return it.sprint!==false; }",
@@ -64,13 +65,13 @@ console.log("── 20 or more ready: exactly as today ──");
 
 console.log("── 11 ready + 12 climbing (Ellis's Math Facts) ──");
 {
-  // default ladder, streak 3: every_other_day cc2 → (3-2)×2 = 2 days; daily cc0 → 3×2 = 6 days. 9th smallest = 6.
+  // default ladder, one right climbs (LADDER1 2026-11-03): every_other_day → 0 days left (its next right climbs); daily cc0 → 1×2 = 2 days. 9th smallest = 2.
   const items = many(11, "weekly").concat(many(8, "every_other_day", 2), many(4, "daily", 0),
     many(3, "daily", 0, { sprint: false }), many(2, "daily", 0, { status: "introduction" }), many(2, "daily", 0, { knowledge_type: "concept" }));
   const w = world({ items });
   const days = w.call("sprintMinClimbDays('ellis',masteryData.ellis.filter(i=>i.status!=='introduction'),{gate_tier:'weekly'},null)");
   ok("climbing = switch-on, on-ladder, below the gate (switch off / intro / concept left out)", days.length === 12, days);
-  ok("days come from the ladder math, sorted", JSON.stringify(days) === JSON.stringify([2,2,2,2,2,2,2,2,6,6,6,6]), days);
+  ok("days come from the ladder math, sorted", JSON.stringify(days) === JSON.stringify([0,0,0,0,0,0,0,0,2,2,2,2]), days);
   const h = w.call("buildSprintFromDrillHtml('#123456')");
   ok("panel says 11 of 20 ready · 12 more climbing", h.includes("Not enough to sprint yet: 11 of 20 ready · 12 more climbing · about this week"), h.slice(h.indexOf("Not enough"), h.indexOf("Not enough") + 120));
   ok("no Generate, no Grid Size", !h.includes("Generate A &amp; B") && !h.includes("Grid Size"));
@@ -78,12 +79,12 @@ console.log("── 11 ready + 12 climbing (Ellis's Math Facts) ──");
   ok("score row + sheet slot stay (Sprint anyway draws there)", h.includes("<scores>") && h.includes('id="sp-sheets"'));
   ok("kids: no Sprint anyway", !h.includes("Sprint anyway") && !h.includes("sprintAnyway"));
 
-  // A slower ladder (streak 5): eod cc2 → 3×2 = 6; daily cc0 → 5×2 = 10. 11 ready → need 9 → 10 days → ~2 wk;
+  // A slower ladder (the class site's own streak 5): eod cc2 → 3×2 = 6; daily cc0 → 5×2 = 10. 11 ready → need 9 → 10 days → ~2 wk;
   // 12 ready → need 8 → 6 days → this week. Proves it's the (20−N)th smallest, not the max or min.
   const slow = { ladder_streak: 5 };
-  const w2 = world({ items: many(11, "weekly").concat(many(8, "every_other_day", 2), many(4, "daily", 0)), kidSettings: slow });
+  const w2 = world({ items: many(11, "weekly").concat(many(8, "every_other_day", 2), many(4, "daily", 0)), kidSettings: slow, site: true });
   ok("(20−N)th smallest: 11 ready → about 2 wk", w2.call("buildSprintFromDrillHtml('#1')").includes("11 of 20 ready · 12 more climbing · about 2 wk"));
-  const w3 = world({ items: many(12, "weekly").concat(many(8, "every_other_day", 2), many(4, "daily", 0)), kidSettings: slow });
+  const w3 = world({ items: many(12, "weekly").concat(many(8, "every_other_day", 2), many(4, "daily", 0)), kidSettings: slow, site: true });
   ok("(20−N)th smallest: 12 ready → about this week", w3.call("buildSprintFromDrillHtml('#1')").includes("12 of 20 ready · 12 more climbing · about this week"));
   ok("label matches the unit ETA style", w.call("_unitEtaLbl(10)") === "~2 wk" && w.call("_unitEtaLbl(6)") === "~this week");
 }
