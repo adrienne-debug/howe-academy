@@ -80361,6 +80361,195 @@ function buildHangHtml(color){
   return h+'</div></div></div>';
 }
 // HANGMAN_END
+// NAMEALL_START — 📋 "Name all N" (her go via the hub 2026-11-03; PLAN_practice_games_2026-10-23.md Tier 4 "Name all N (Sporcle): name the
+// 13 colonies / all 14 Greek roots in this deck against a timer, typed — demand FR + FLU; deck with ≥10 items"). The Sporcle shape: a title
+// ("Name all 7 World Geography cards" / "Name all 3 Roots that mean write"), a row of N blank slots, a clock counting DOWN, one typing box.
+// A name typed and entered fills its slot (the card's own spelling); the count climbs "4 of 7"; nothing is listed, hinted or auto-completed.
+// When the clock runs out, every slot is named or the kid taps "I'm done", the round is over: the slots that stayed blank fill in grey with
+// what they were (Sporcle's reveal — the recap, as Brain Dump's "Still in the deck"), and the finish shows named N of M against the kid's
+// own best. Brain Dump is the long form (10+ cards, 5 minutes, misses re-asked); this is the short, quick one: SMALL lists —
+//   · a whole deck of NA_MIN..NA_MAX nameable cards (a word or short phrase front: dumpNameable — never a sentence, a math fact, a rule's
+//     example line; spelling / phonograms stay out, Which one?'s rule). No back needed: the list's title is the cue.
+//   · a CATEGORY inside a deck: NA_CAT_MIN..NA_MAX cards that share one back ("Roots · write": graph, scrib; "Math? no — numbers are not
+//     names). The shared back is the title; a back longer than NA_CAT_LABEL letters is no title.
+//   Matching is Brain Dump's (dumpMatch: the Study Session's normalizer, a letter of slack, the article / a trailing "(…)" left off).
+//   Clock: NA_PER seconds a card, never under NA_SECS_MIN. Time while the kid is switched away (GAMEKID park) is not play time.
+//   Level middle / upper only (dcLevel from the roster's grade — never a name). No lives, no points, no score against the kid.
+// Writes (only these): <kid>_settings/match_best key "<list> · nameall" (most named, only when beaten; Firebase's illegal key characters
+//   swapped for _) and the round's gameLog entry (GAMELOG, game:"nameall": a card named = ok, missed = wrong). NEVER the ladder — no
+//   scores, no next_due, no study log. db && !_dryRun() only. Per-kid park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT).
+//   A round dropped (Change list, a kid switch) writes nothing. 🎮 GAMEGRID: its own column — gameDeckOn(kid,"nameall",deck) (a
+//   category follows its deck's cell); the entry's decks(k) = the real decks the lists come from.
+let nameallState=null;   // {kid,deck,list,title,game:"nameall",t0,secs,pausedTotal,pausedAt,cards:[{pid,front}],named:{pid:{how,text}},typed:[{text,pid,how}],turns,phase:"play"|"done",count,of,isPB,prevBest,gameLogged}
+const NA_MIN=5, NA_MAX=15, NA_CAT_MIN=3, NA_CAT_LABEL=40, NA_PER=12, NA_SECS_MIN=60;
+function _naItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
+function _naPlain(s){ return (typeof _matchPlain==="function")?_matchPlain(s):String(s==null?"":s).replace(/<[^>]*>/g," ").replace(/&nbsp;/g," ").replace(/\s+/g," ").trim(); }
+function _naE(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function _naQ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+function _naNorm(s){ return (typeof dumpNorm==="function")?dumpNorm(s):_naPlain(s).toLowerCase(); }
+function nameallDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"nameall",deck); }
+function _naLeftOut(it,kid){
+  if(!it||(it.status!=="active"&&it.status!=="introduction")||it.dir==="prod") return true;
+  try{ if(typeof _whichLeftOut==="function"&&_whichLeftOut(it,kid)) return true; }catch(e){}   // spelling / phonograms
+  try{ if(typeof mastKnowledgeType==="function"&&mastKnowledgeType(it)==="procedure_fluency") return true; }catch(e){}
+  try{ if(typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin(kid,it.subject)) return true; }catch(e){}   // 📝 a station waiting for its check-in
+  try{ if(typeof cpceHidItem==="function"&&cpceHidItem(kid,it)) return true; }catch(e){}   // 📚 CPCARDSEDIT
+  try{ if(typeof cpSecOffItem==="function"&&cpSecOffItem(kid,it)) return true; }catch(e){}   // 🎚 CPSECTIONS
+  return false;
+}
+// The card's back as a category title: the family's own wording, the card's answer; "" when none, the front, a sound, or too long
+function _naBack(kid,it){
+  let b=""; try{ b=_naPlain((typeof owRuleBack==="function")?owRuleBack(kid,it):it.answer); }catch(e){ b=_naPlain(it&&it.answer); }
+  if(!b||b.charAt(0)==="/"||b.length>NA_CAT_LABEL||_naNorm(b)===_naNorm(it.prompt)) return "";
+  return b;
+}
+function nameallLevelOk(kid){ if(typeof dcLevel!=="function") return true; try{ const l=dcLevel(kid); return l!=="little"&&l!=="early"; }catch(e){ return true; } }
+// PURE: every list this kid can play → [{key,deck,title,label,cards:[{pid,front}]}] — whole small decks first, then the categories, both by name
+function nameallLists(items,kid){
+  kid=kid||masteryKid;
+  if(typeof dumpNameable!=="function"||typeof dumpMatch!=="function") return [];
+  const by={}, seen={};
+  (items||[]).forEach(i=>{
+    if(_naLeftOut(i,kid)) return;
+    const front=_naPlain(i.prompt); if(!dumpNameable(front)) return;
+    const d=i.subject||"Other", k=d+"|"+_naNorm(front); if(!k||seen[k]) return; seen[k]=1;
+    (by[d]||(by[d]=[])).push({pid:i.id,front:front,back:_naBack(kid,i)});
+  });
+  const out=[];
+  Object.keys(by).sort().forEach(d=>{
+    if(!nameallDeckOn(kid,d)) return;   // 🎮 GAMEGRID
+    const cards=by[d], whole=cards.length>=NA_MIN&&cards.length<=NA_MAX;
+    if(whole) out.push({key:d,deck:d,title:"Name all "+cards.length+" "+d+" cards",label:d,cards:cards.map(c=>({pid:c.pid,front:c.front}))});
+    const cat={}; cards.forEach(c=>{ if(!c.back) return; const bk=_naNorm(c.back); (cat[bk]||(cat[bk]={label:c.back,cards:[]})).cards.push({pid:c.pid,front:c.front}); });
+    Object.keys(cat).sort().forEach(bk=>{ const g=cat[bk]; if(g.cards.length>=NA_CAT_MIN&&g.cards.length<=NA_MAX&&!(whole&&g.cards.length===cards.length)) out.push({key:d+" \u00B7 "+g.label,deck:d,title:"Name all "+g.cards.length+" "+d+" cards that mean \u201C"+g.label+"\u201D",label:d+" \u00B7 "+g.label,cards:g.cards}); });
+  });
+  return out;
+}
+function nameallDecks(items,kid){ const o={}; nameallLists(items,kid).forEach(l=>{ o[l.deck]=1; }); return Object.keys(o).sort(); }   // the real decks (the games-per-deck grid's preload asks this, raw)
+function nameallAvail(kid){ return nameallLevelOk(kid)&&nameallLists(_naItems(kid),kid).length>0; }
+function nameallSecs(n){ return Math.max(NA_SECS_MIN,n*NA_PER); }
+function nameallElapsed(st,now){ now=now!=null?now:Date.now(); return Math.max(0,now-st.t0-(st.pausedTotal||0)-(st.pausedAt?now-st.pausedAt:0)); }
+function nameallLeft(st,now){ return Math.max(0,st.secs*1000-nameallElapsed(st,now)); }
+function nameallClock(ms){ const s=Math.ceil(ms/1000); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
+function nameallStart(key){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the tap unlocks the ding (iPad)
+  const l=nameallLists(_naItems(),masteryKid).find(x=>x.key===key);
+  if(!l){ nameallState=null; _mastRe(); return; }   // 🎮 GAMEGRID: a deck Mom turned off is not listed
+  nameallState={kid:masteryKid,deck:l.key,list:l.deck,title:l.title,game:"nameall",t0:Date.now(),secs:nameallSecs(l.cards.length),pausedTotal:0,pausedAt:null,cards:l.cards.slice(),named:{},typed:[],turns:[],phase:"play",count:0,of:l.cards.length,isPB:false,prevBest:null,gameLogged:false};
+  _mastRe(); nameallTick(nameallState); nameallFocus();
+}
+function nameallChangeList(){ nameallState=null; _mastRe(); }   // drop the round as it stands: nothing written
+function nameallFocus(){ try{ setTimeout(()=>{ const e=document.getElementById("na-in"); if(e) e.focus(); },0); }catch(e){} }
+// The countdown: updates #na-clock each second; ends the round at zero. Clears itself once its round is parked or over.
+function nameallTick(st){
+  if(typeof setInterval!=="function") return;
+  if(window._naTick) clearInterval(window._naTick);
+  window._naTick=setInterval(()=>{
+    if(nameallState!==st||st.phase!=="play"||st.pausedAt){ clearInterval(window._naTick); window._naTick=null; return; }
+    const left=nameallLeft(st);
+    if(left<=0){ clearInterval(window._naTick); window._naTick=null; nameallStop(st); return; }
+    const el=document.getElementById("na-clock"); if(el){ el.textContent=nameallClock(left); if(left<=10000) el.style.color="#b91c1c"; }
+  },1000);
+}
+// PURE over the state: one entered name → "hit" | "close" | "dup" | "miss" | "" (blank)
+function nameallEnter(st,text){
+  const raw=_naPlain(text); if(!raw||st.phase!=="play") return "";
+  const m=dumpMatch(raw,st.cards,st.named);
+  if(!m){ if(!st.typed.some(x=>x.pid==null&&_naNorm(x.text)===_naNorm(raw))) st.typed.push({text:raw,pid:null,how:"miss"}); return "miss"; }
+  if(m.how==="dup") return "dup";
+  st.named[m.card.pid]={how:m.how,text:raw}; st.typed.push({text:raw,pid:m.card.pid,how:m.how}); st.count++;
+  return m.how;
+}
+function nameallAdd(){
+  const st=nameallState; if(!st||st.phase!=="play") return;
+  const el=document.getElementById("na-in"), text=el?el.value:"";
+  const r=nameallEnter(st,text);
+  if(el) el.value="";
+  if(r==="hit"||r==="close"){ try{ matchDing(); }catch(e){} }
+  else if(r==="miss"){ try{ matchBonk(); }catch(e){} }
+  // In place when the round is on screen (a re-render would drop the keyboard on an iPad); else the normal redraw.
+  const slots=document.getElementById("na-slots"), cnt=document.getElementById("na-count"), note=document.getElementById("na-note");
+  if(slots&&cnt&&note){
+    if(r==="hit"||r==="close"){ const x=st.typed[st.typed.length-1], ix=st.cards.findIndex(c=>c.pid===x.pid), s=slots.children[ix]; if(s){ s.className="na-slot na-on"; s.textContent=st.cards[ix].front; } cnt.textContent=st.count+" of "+st.of; }
+    note.textContent=r==="miss"?"\u201C"+_naPlain(text)+"\u201D is not on this list":r==="dup"?"Already named!":"";
+  } else _mastRe();
+  if(st.count>=st.of){ nameallStop(st); return; }
+  nameallFocus();
+}
+// "I'm done" / the clock / every slot named: the round is over — the cards' results, then the finish (no re-ask: Brain Dump has that)
+function nameallStop(st){
+  st=st||nameallState; if(!st||st.phase!=="play") return;
+  if(typeof window!=="undefined"&&window._naTick){ clearInterval(window._naTick); window._naTick=null; }
+  st.turns=st.cards.map(c=>({pid:c.pid,done:true,first:!!st.named[c.pid],wrong:st.named[c.pid]?{}:{1:1},back:false}));
+  nameallFinish(st); _mastRe();
+}
+function nameallBestKey(list){ return (list+" \u{00B7} nameall").replace(/[.#$\/\[\]]/g,"_"); }   // a category's back may carry a period: Firebase forbids it in a key
+function nameallFinish(st){
+  st.phase="done";
+  const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every card's result, game:"nameall"
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=nameallBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.count>0&&(prev==null||st.count>prev);
+  if(st.isPB){
+    s.match_best[key]=st.count;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.count});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+  try{ if(st.of>0&&st.count===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F4CB} You named them all!",{noSong:true}); }catch(e){}
+}
+// 🎲 GAMEKIT: park / restore / resume. Time away is not play time (no render here; the caller renders).
+function nameallPark(){ const st=nameallState; if(st&&st.phase==="play"&&!st.pausedAt) st.pausedAt=Date.now(); return st; }
+function nameallRestore(v){ nameallState=v||null; const st=nameallState; if(st&&st.pausedAt){ st.pausedTotal=(st.pausedTotal||0)+(Date.now()-st.pausedAt); st.pausedAt=null; } }
+function nameallResume(){ const st=nameallState; if(st&&st.phase==="play"&&(typeof mastView==="undefined"||mastView==="nameall")) nameallTick(st); }
+const NA_CSS='<style>.na-slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin:12px 0}.na-slot{min-height:42px;border-radius:12px;border:2px dashed #d6d3d1;background:#fafaf9;display:flex;align-items:center;justify-content:center;padding:6px 8px;font-size:14px;font-weight:800;color:#292524;text-align:center;overflow-wrap:anywhere;line-height:1.15}'+
+  '.na-slot.na-on{border-style:solid;border-color:#16a34a;background:#f0fdf4;color:#15803d}.na-slot.na-miss{border-style:solid;border-color:#e2ddd6;background:#fff;color:#a8a29e}'+
+  '.na-in{width:100%;box-sizing:border-box;padding:14px 16px;border-radius:14px;border:3px solid #e2ddd6;font-size:20px;font-family:\'DM Sans\',sans-serif;outline:none}.na-in:focus{border-color:#0ea5e9}'+
+  '.na-btn{padding:12px 22px;border-radius:999px;border:none;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif}.na-btn[disabled]{opacity:.45;cursor:default}'+
+  '.na-ghost{padding:10px 16px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif}'+
+  '.na-chip{padding:10px 14px;border-radius:999px;font-size:14px;font-weight:800;border:2px solid #e2ddd6;background:#fff;color:#57534e;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:left;line-height:1.2}</style>';
+function buildNameallHtml(color){
+  let h=NA_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const lists=nameallLists(_naItems(),masteryKid);
+  if(!lists.length){ h+='<div class="mast-none">No lists ready for Name all yet \u{2014} it needs a small deck of '+NA_MIN+' to '+NA_MAX+' named cards, or '+NA_CAT_MIN+' or more cards that share one answer.</div></div>'; return h; }
+  const st=nameallState;
+  if(!st||st.phase==="done"){
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">';
+    lists.forEach(l=>{ const sel=st&&st.deck===l.key; h+='<button class="na-chip" onclick="nameallStart(\''+_naQ(l.key)+'\')" style="'+(sel?'border-color:'+color+';background:'+color+';color:#fff':'')+'">'+_naE(l.label)+' <span style="opacity:.7;font-weight:700">'+l.cards.length+'</span></button>'; });
+    h+='</div>';
+  }
+  if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u{1F4CB} Pick a list, then name every card on it before the clock runs out \u{2014} one at a time, Enter after each.</div></div>'; return h; }
+  const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[nameallBestKey(st.deck)];
+  if(st.phase==="play"){
+    if(typeof window!=="undefined"&&!window._naTick&&!st.pausedAt) nameallTick(st);   // back on screen (another view, a parked kid): the clock ticks again
+    const left=nameallLeft(st);
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 10px;flex-wrap:wrap"><div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:800;color:#292524">'+_naE(st.title)+'</div>'+
+      '<span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+(best!=null?'\u{1F3C6} '+best:'')+'<button class="na-ghost" onclick="nameallChangeList()">\u{1F5C2} Change list</button></span></div>';
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><span id="na-count" style="font-size:17px;font-weight:800;color:'+color+'">'+st.count+' of '+st.of+'</span><span id="na-clock" style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800;color:'+(left<=10000?'#b91c1c':'#292524')+'">\u{23F1} '+nameallClock(left)+'</span></div>';
+    h+='<div style="display:flex;gap:8px;align-items:center"><input id="na-in" class="na-in" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Type one, press Enter" aria-label="A name you remember" onkeydown="if(event.key===\'Enter\'){event.preventDefault();nameallAdd();}">'+
+      '<button class="na-btn" style="background:'+color+'" onclick="nameallAdd()">Add</button></div>';
+    h+='<div id="na-note" style="min-height:20px;font-size:13px;font-weight:700;color:#78716c;margin-top:6px"></div>';
+    h+='<div id="na-slots" class="na-slots">';
+    st.cards.forEach((c,i)=>{ const n=st.named[c.pid]; h+='<div class="na-slot'+(n?' na-on':'')+'" aria-label="Slot '+(i+1)+'">'+(n?_naE(c.front):'')+'</div>'; });
+    h+='</div>';
+    h+='<div style="display:flex;justify-content:center"><button class="na-ghost" onclick="nameallStop()">\u{2714} I\u{2019}m done</button></div>';
+    return h+'</div>';
+  }
+  // Finish: the slots as they ended (the missed ones in grey — the reveal), named N of M, Play again.
+  h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} You named '+st.count+' of '+st.of+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+  h+='<div style="font-size:12px;font-weight:700;color:var(--muted);margin-top:4px">'+_naE(st.title)+' \u{00B7} '+nameallClock(Math.min(st.secs*1000,nameallElapsed(st)))+' used</div>';
+  h+='<div class="na-slots" style="text-align:left">';
+  st.cards.forEach(c=>{ const n=st.named[c.pid]; h+='<div class="na-slot '+(n?'na-on':'na-miss')+'">'+(n?'\u2713 ':'')+_naE(c.front)+'</div>'; });
+  h+='</div>';
+  const outside=st.typed.filter(x=>x.pid==null);
+  if(outside.length) h+='<div style="text-align:left;font-size:12px;font-weight:700;color:#a8a29e;margin-top:4px">Not on this list: '+outside.map(x=>_naE(x.text)).join(", ")+'</div>';
+  h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap"><button class="na-btn" style="background:'+color+'" onclick="nameallStart(\''+_naQ(st.deck)+'\')">\u{1F501} Play again</button></div>';
+  return h+'</div></div>';
+}
+// NAMEALL_END
 // STUDYCOUNTS_START — 📚 Study sessions count everywhere (F3 of PLAN_learning_system, her yes 2026-10-24). A study
 // sitting logs to mastery/studyLog/<kid>/<sid>/<yyyymmdd>, but Scores, the Weekly report, sprint readiness (the ≥ 90%
 // untimed check) and the notebook's 🔁 review flags read only the drill's mastery/history/<kid>/<yyyymmdd>, so Lincoln —
@@ -84351,6 +84540,8 @@ const GAMES_LIST=[
      park:()=>kaboomState, restore:v=>{ kaboomState=v||null; }, resume:()=>kaboomResume(), decks:k=>typeof kaboomDecks==="function"?kaboomDecks(_gamesItems(k),k):[]},   // 💥 KABOOM · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
   {key:"hang",   emoji:"\u{1F388}", label:"Hangman",     view:"hang",                 available:k=>typeof hangAvail==="function"&&hangAvail(k), render:c=>buildHangHtml(c),
      park:()=>hangState, restore:v=>{ hangState=v||null; }, resume:()=>hangResume(), decks:k=>typeof hangDecks==="function"?hangDecks(_gamesItems(k),k):[]},   // 🎈 HANGMAN · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
+  {key:"nameall",emoji:"\u{1F4CB}", label:"Name all",    view:"nameall",              available:k=>typeof nameallAvail==="function"&&nameallAvail(k), render:c=>buildNameallHtml(c),
+     park:()=>nameallPark(), restore:v=>{ nameallRestore(v); }, resume:()=>nameallResume(), decks:k=>typeof nameallDecks==="function"?nameallDecks(_gamesItems(k),k):[]},   // 📋 NAMEALL · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its real decks
 ];
 const gamesLast={};   // kid → key of the last game played on this device
 function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k)&&(typeof gameDeckAny!=="function"||gameDeckAny(k,g)); }catch(e){ return false; } }); }   // 🎮 GAMEGRID: every deck off → the game isn't offered
