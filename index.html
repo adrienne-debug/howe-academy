@@ -78019,8 +78019,9 @@ function spellPlayable(it){
 // The kid's LEARNING words: still being introduced, or in the Word Workout. Most-recently-missed first.
 function spellPool(items,kid){
   kid=kid||masteryKid;
-  const out=(items||[]).filter(i=>spellPlayable(i)&&(i.status==="introduction"||(i.ww&&i.ww.on))&&((typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"spell",i.subject)));   // 🎮 GAMEGRID: Mom's per-deck pick
-  return out.sort((a,b)=>String((b.ww||{}).d||"").localeCompare(String((a.ww||{}).d||""))||String(spellWordOf(a)).localeCompare(String(spellWordOf(b))));
+  const all=(typeof gameRule==="function"&&gameRule(kid,"spell","source")==="all"), lrn=i=>(i.status==="introduction"||(i.ww&&i.ww.on))?1:0;   // 📜 GAMERULES: Build it's "source" rule — "all" takes every spelling word in play, learning words still first
+  const out=(items||[]).filter(i=>spellPlayable(i)&&(all||lrn(i))&&((typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"spell",i.subject)));   // 🎮 GAMEGRID: Mom's per-deck pick
+  return out.sort((a,b)=>(lrn(b)-lrn(a))||String((b.ww||{}).d||"").localeCompare(String((a.ww||{}).d||""))||String(spellWordOf(a)).localeCompare(String(spellWordOf(b))));
 }
 function _spellShuffle(a,rnd){ rnd=rnd||Math.random; for(let i=a.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
 // PURE: the tiles for one word — its letters + SPELL_EXTRA extra letters from `others` (the kid's other words), shuffled.
@@ -79735,6 +79736,619 @@ function buildJeopHtml(color){
   return h+'</div>';
 }
 // JEOPARDY_END
+// TEACH_START — 🎓 "Teach it" (her word 2026-11-03: "Teach-it (moves nothing) … lets do these now"; games-later_design_2026-11-03.md #5;
+// PLAN_practice_games_2026-10-23.md Tier 4 "Teach it": self-explanation g≈.55, co-op across ages). The kid holding the device is the
+// TEACHER: a card from their own deck comes up — the front big, its picture when it has one — and they explain it to whoever is
+// listening (a sibling, Mom, Dad) in their own words. "Show the answer" turns the back over so the teacher can check themselves
+// (nothing is typed or graded by the app). Then the listener's verdict, two big buttons: ✓ "They got it" or ↻ "Teach it again".
+// A card taught again comes back once at the end of the round. That is the whole game: a card read, explained and checked out
+// loud. Her rule 2026-11-03: it MOVES NOTHING — no tier, no next_due, no drill answer for either kid, no credit to the listener;
+// if she ever wants the ✓ to count, that is a Mom-run Family-time drill designed on its own, not this block.
+// Cards: every card in play in the teacher's decks (active or introduction, not a production twin) with a front, INCLUDING the
+// concept / transfer "discuss / teach" cards the drills never ask (mastIsNeverDrill) — this is the one game made for them.
+// Spelling / phonogram decks stay out (_whichLeftOut: the app never shows a spelling a child must produce). A deck needs TEACH_MIN+
+// cards, and this game's grid cell gameDeckOn(kid,"teach",deck). A round is TEACH_N cards (fewer when the deck is small), Mix the decks
+// when there is more than one. Writes (only these): <kid>_settings/match_best key "<deck> · teach" (got it on the first teach, only
+// when beaten) and the round's gameLog entry (GAMELOG, game:"teach"). db && !_dryRun() only. Per-kid park / restore / resume through
+// its GAMES_LIST entry (🎲 GAMEKIT). A round dropped (Change deck, a kid switch) writes nothing.
+let teachState=null;   // {kid,deck,mix,game:"teach",t0,turns:[{pid,shown,done,first,wrong:{},back}],i,phase:"play"|"done",first,of,isPB,prevBest,returned:{},gameLogged}
+let _teachRandom=Math.random;   // tests seed it
+const TEACH_N=6, TEACH_MIN=3;
+function _teachItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
+function _teachShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_teachRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function teachDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"teach",deck); }
+function teachFront(it){ return _matchPlain(it&&it.prompt); }
+function teachBack(it,kid){ try{ return _matchPlain((typeof owRuleBack==="function")?owRuleBack(kid||masteryKid,it):(it&&it.answer)); }catch(e){ return _matchPlain(it&&it.answer); } }   // OURWORDS: the rule as the kid's own words, when set
+// The cards a teacher can teach: in play, with a front, not a production twin; spelling / phonograms out; hidden-for-class cards out
+function teachPool(items,deck,kid){
+  kid=kid||masteryKid;
+  return (items||[]).filter(i=>{
+    if(!i||(i.status!=="active"&&i.status!=="introduction")||i.dir==="prod") return false;
+    if(!teachFront(i)||_whichLeftOut(i,kid)) return false;
+    if(typeof cpceHidItem==="function"&&cpceHidItem(kid,i)) return false;   // 📚 CPCARDSEDIT
+    if(typeof cpSecOffItem==="function"&&cpSecOffItem(kid,i)) return false;   // 🎚 CPSECTIONS
+    if(deck!==WHICH_MIX&&(i.subject||"Other")!==deck) return false;
+    return true;
+  });
+}
+function teachDecks(items,kid){
+  kid=kid||masteryKid;
+  const n={}; teachPool(items,WHICH_MIX,kid).forEach(i=>{ const d=i.subject||"Other"; n[d]=(n[d]||0)+1; });
+  return Object.keys(n).filter(d=>n[d]>=TEACH_MIN&&teachDeckOn(kid,d)).sort();
+}
+function teachStart(deck){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding (iPad)
+  const items=_teachItems(), mix=deck===WHICH_MIX, ok=teachDecks(items);
+  const pool=teachPool(items,deck).filter(i=>ok.indexOf(i.subject||"Other")>=0);
+  if(pool.length<TEACH_MIN||(!mix&&!teachDeckOn(masteryKid,deck))){ teachState=null; _mastRe(); return; }   // 🎮 GAMEGRID: a deck Mom turned off for this game
+  const picks=_teachShuffle(pool.slice()).slice(0,TEACH_N);
+  teachState={kid:masteryKid,deck:deck,mix:mix,game:"teach",t0:Date.now(),turns:picks.map(it=>({pid:it.id,shown:false,done:false,first:false,wrong:{},back:false})),i:0,phase:"play",first:0,of:picks.length,isPB:false,prevBest:null,returned:{}};
+  _mastRe();
+}
+function teachChangeDeck(){ teachState=null; _mastRe(); }   // drop the round as it stands: nothing written
+function teachShow(){ const st=teachState, t=st&&st.turns[st.i]; if(!st||st.phase!=="play"||!t||t.done) return; t.shown=true; _mastRe(); }
+function teachSay(){ const st=teachState, t=st&&st.turns[st.i]; if(!st||!t) return; const it=_teachItems(st.kid).find(x=>x&&x.id===t.pid); if(it&&!whichSilent(it)) try{ mastSpeak(teachFront(it)); }catch(e){} }
+// The listener's verdict: got=true "✓ They got it" · got=false "↻ Teach it again" (the card comes back once at the end)
+function teachVerdict(got){
+  const st=teachState; if(!st||st.phase!=="play") return;
+  const t=st.turns[st.i]; if(!t||t.done||!t.shown) return;   // the answer must be turned over first
+  t.done=true;
+  if(got){ t.first=!Object.keys(t.wrong).length; if(!t.back&&t.first) st.first++; try{ matchDing(); }catch(e){} }
+  else { t.wrong.again=1; t.first=false; if(!t.back&&!st.returned[t.pid]){ st.returned[t.pid]=1; st.turns.push({pid:t.pid,shown:false,done:false,first:false,wrong:{},back:true}); } }
+  st.i++;
+  if(st.i>=st.turns.length) teachFinish(st);
+  _mastRe();
+}
+function teachBestKey(deck){ return deck+" \u{00B7} teach"; }
+function teachFinish(st){
+  st.phase="done";
+  const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: each card's verdict, game:"teach" — a log line, never a drill answer
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=teachBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.first>0&&(prev==null||st.first>prev);
+  if(st.isPB){
+    s.match_best[key]=st.first;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+  try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F393} You taught them all!",{noSong:true}); }catch(e){}
+}
+function teachResume(){}   // no timers, nothing mid-way: the round is exactly as it was left
+const TEACH_CSS='<style>.teach-card{border-radius:22px;border:3px solid #c4b5fd;background:#f5f3ff;padding:18px 16px;text-align:center}.teach-front{font-family:\'Fraunces\',serif;font-weight:800;color:#292524;line-height:1.15;overflow-wrap:anywhere}'+
+  '.teach-back{margin-top:14px;padding:12px 14px;border-radius:14px;background:#fff;border:2px solid #e2ddd6;font-size:17px;font-weight:700;color:#44403c;line-height:1.35;overflow-wrap:anywhere;text-align:left}'+
+  '.teach-btn{padding:14px 22px;border-radius:999px;border:none;font-size:17px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;-webkit-tap-highlight-color:transparent}</style>';
+function buildTeachHtml(color){
+  const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+  let h=TEACH_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const items=_teachItems(), decks=teachDecks(items);
+  if(!decks.length){ h+='<div class="mast-none">No decks ready for Teach it yet \u{2014} it needs '+TEACH_MIN+' or more cards in a deck.</div></div>'; return h; }
+  const st=teachState;
+  const chip=(dk,lbl)=>{ const sel=st&&st.deck===dk; return '<button onclick="teachStart(\''+q(dk)+'\')" style="padding:10px 16px;border-radius:999px;font-size:14px;font-weight:800;border:2px solid '+(sel?color:'#e2ddd6')+';background:'+(sel?color:'#fff')+';color:'+(sel?'#fff':'#57534e')+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
+  if(!st||st.phase==="done"){
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">';
+    decks.forEach(dk=>{ h+=chip(dk,esc(dk)); });
+    if(decks.length>1) h+=chip(WHICH_MIX,"\u{1F3B2} "+WHICH_MIX);
+    h+='</div>';
+  }
+  if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u{1F393} Pick a deck, then teach each card to someone \u{2014} in your own words. They tell you if they got it!</div></div>'; return h; }
+  const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[teachBestKey(st.deck)];
+  if(st.phase==="play"){
+    const t=st.turns[st.i], it=items.find(x=>x&&x.id===t.pid), fr=teachFront(it), bk=teachBack(it,st.kid), vis=_smTileVis(it,true), silent=whichSilent(it);
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
+    st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
+    h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
+      '<button onclick="teachChangeDeck()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{1F5C2} Change deck</button></span></div>';
+    h+='<div style="text-align:center;font-size:17px;font-weight:800;color:#57534e;margin:10px 0 12px">'+(t.back?'One more time \u{2014} teach it again!':'Teach it: tell them what this is, in your own words.')+'</div>';
+    h+='<div class="teach-card">';
+    if(vis) h+='<div style="display:flex;justify-content:center;margin-bottom:10px"><span style="display:inline-flex;transform:scale(1.4);margin:16px 0">'+vis+'</span></div>';
+    h+='<div style="display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap"><div class="teach-front" style="font-size:'+(fr.length<=8?'46px':fr.length<=18?'34px':fr.length<=40?'26px':'20px')+'">'+esc(fr)+'</div>'+
+      (silent?'':'<button onclick="teachSay()" aria-label="Hear it" style="width:48px;height:48px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:22px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button>')+'</div>';
+    if(t.shown){ h+='<div class="teach-back">'+(bk?esc(bk):'<span style="color:var(--muted)">(this card is its picture and its name)</span>')+'</div>'; }
+    else h+='<div style="margin-top:14px"><button class="teach-btn" onclick="teachShow()" style="background:#fff;color:'+color+';border:2px solid '+color+'">\u{1F440} Show the answer</button></div>';
+    h+='</div>';
+    if(t.shown){
+      h+='<div style="text-align:center;font-size:15px;font-weight:800;color:#57534e;margin:16px 0 10px">Did they get it?</div>';
+      h+='<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap"><button class="teach-btn" onclick="teachVerdict(true)" style="background:#16a34a;color:#fff;min-width:150px">\u2713 They got it</button><button class="teach-btn" onclick="teachVerdict(false)" style="background:#fff;color:#b45309;border:2px solid #f59e0b;min-width:150px">\u21BB Teach it again</button></div>';
+    }
+    return h+'</div>';
+  }
+  // Finish: how many got it on the first teach, against the kid's own best; Play again / Mix the decks
+  h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} You taught them all!</div>';
+  h+='<div style="font-size:17px;font-weight:800;color:#57534e;margin-top:10px">\u{1F393} '+st.first+' of '+st.of+' got it the first time'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+  h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">';
+  h+='<button onclick="teachStart(\''+q(st.deck)+'\')" class="teach-btn" style="background:'+color+';color:#fff;font-size:15px">\u{1F501} Play again</button>';
+  if(decks.length>1&&!st.mix) h+='<button onclick="teachStart(\''+q(WHICH_MIX)+'\')" class="teach-btn" style="border:2px solid '+color+';background:#fff;color:'+color+';font-size:15px">\u{1F3B2} '+WHICH_MIX+'</button>';
+  return h+'</div></div></div>';
+}
+// TEACH_END
+// FOUR_START — 🔴 "Connect Four" vs the app (her word 2026-11-03: "Connect Four … lets do these now" — her call over the plan's rule-4 note on
+// competitive play; PLAN_practice_games_2026-10-23.md Tier 3 "Connect Four: claim a cell by answering the card in it vs the app; cell content =
+// the problem (intrinsic)"). A C4_COLS × C4_ROWS board; every cell holds one of the deck's cards and SHOWS it (a short front, or its picture;
+// a long front shows "?" until it is asked), so the kid chooses the column by the problem they want — self-chosen difficulty, the retrieval IS
+// the move (plan rule 1). Tap a column: the disc would land on the lowest open cell, and that cell's card is asked — Go Fish's three acts (a
+// picture / letter card is said out loud, 🗣 honor tap, the app says the name back; a number back is typed; a word back is picked from three
+// of the deck's own backs). Right → the ding, the kid's 🟡 disc lands. Wrong → the bonk, one more try; wrong twice → "We'll come back to that
+// one" (the answer never shown), NO disc, the turn passes. Then the app drops a 🔴 disc — it answers nothing, it just plays: a winning column if
+// it has one, else it blocks the kid's, else a column near the middle (c4AppMove, pure). Four in a row wins; a full board is a tie. The missed
+// cards come back once at the end, then the finish: who connected four + "N of M on the first try" against the kid's own best — the best is the
+// ANSWERING, never the wins. No points, no steals, no lives, no clock.
+// Cards: Which one?'s own pool (whichPool / whichDeckModes read RAW, like Go Fish), then this game's grid cell gameDeckOn(kid,"four",deck); a
+// deck needs C4_MIN+ cards (cells repeat cards when the deck is smaller than the board). Writes (only these): <kid>_settings/match_best key
+// "<deck> · four" (first-try rights, only when beaten) and the round's gameLog entry (GAMELOG, game:"four"). NEVER touches the ladder — no
+// scores, no next_due, no study log. db && !_dryRun() only. Per-kid park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT): every
+// timer checks its round and sequence. A round dropped (Stop, a kid switch) writes nothing.
+let fourState=null;   // {kid,deck,mix,game:"four",t0,cols,rows,board:[[0|1|2]],cards:[[pid]],kinds:{pid},turns:[{pid,act,done,first,wrong:{},tries,fail,back,opts?,typed?}],open:{col,row,t}|null,who:"kid"|"app",winner:null|"kid"|"app"|"tie",last:{col,row,who}|null,phase:"play"|"back"|"done",backs,first,of,isPB,prevBest,lock,seq,msg,say,gameLogged}
+let _c4Random=Math.random;   // tests seed it
+const C4_COLS=7, C4_ROWS=6, C4_MIN=6, C4_TRIES=2, C4_BEAT=900, C4_LABEL_MAX=6;
+const C4_NUM=/^[-+]?\d+([.,]\d+)?$/;
+function _c4Items(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
+function _c4Shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_c4Random()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function _c4Raw(fn){ const had=(typeof _gdRaw!=="undefined")?_gdRaw:null; try{ if(had!==null) _gdRaw=true; return fn(); } finally{ if(had!==null) _gdRaw=had; } }
+function fourDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"four",deck); }
+function _c4WhichPool(items,kid){ return _c4Raw(()=>whichPool(items,WHICH_MIX,kid)); }
+function _c4Modes(items,kid){ return _c4Raw(()=>whichDeckModes(items,kid)); }
+function _c4It(st,pid){ return _c4Items(st.kid).find(x=>x&&x.id===pid)||null; }
+function fourName(it){ return _matchPlain(it&&it.prompt); }
+function fourDecks(items,kid){
+  kid=kid||masteryKid;
+  const n={}; _c4WhichPool(items,kid).forEach(i=>{ const d=i.subject||"Other"; n[d]=(n[d]||0)+1; });
+  return Object.keys(n).filter(d=>n[d]>=C4_MIN&&fourDeckOn(kid,d)).sort();
+}
+function fourPool(items,deck,kid){ kid=kid||masteryKid; const ok=fourDecks(items,kid); return _c4WhichPool(items,kid).filter(i=>ok.indexOf(i.subject||"Other")>=0&&(deck===WHICH_MIX||(i.subject||"Other")===deck)); }
+function fourKind(it,mode){ if(mode!=="answer") return "say"; return C4_NUM.test(String(_whichBack(it)).trim())?"type":"pick"; }
+// ── the board, pure ── board[row][col], row 0 at the TOP; 0 empty, 1 kid, 2 app
+function c4Empty(cols,rows){ const b=[]; for(let r=0;r<rows;r++){ b.push(new Array(cols).fill(0)); } return b; }
+function c4Drop(board,col){ for(let r=board.length-1;r>=0;r--){ if(board[r][col]===0) return r; } return -1; }   // the row a disc lands on, -1 when full
+function c4Full(board){ return board[0].every(v=>v!==0); }
+function c4Win(board,who,r,c){
+  const R=board.length, C=board[0].length, dirs=[[0,1],[1,0],[1,1],[1,-1]];
+  return dirs.some(([dr,dc])=>{ let n=1;
+    for(const s of [1,-1]){ let rr=r+dr*s, cc=c+dc*s; while(rr>=0&&rr<R&&cc>=0&&cc<C&&board[rr][cc]===who){ n++; rr+=dr*s; cc+=dc*s; } }
+    return n>=4; });
+}
+// The app's column: win if it can, else block the kid's win, else near the middle (random among the best); -1 when the board is full
+function c4AppMove(board,rnd){
+  rnd=rnd||_c4Random;
+  const C=board[0].length, open=[]; for(let c=0;c<C;c++){ if(c4Drop(board,c)>=0) open.push(c); }
+  if(!open.length) return -1;
+  const tryWin=who=>open.filter(c=>{ const r=c4Drop(board,c); board[r][c]=who; const w=c4Win(board,who,r,c); board[r][c]=0; return w; });
+  const w=tryWin(2); if(w.length) return w[Math.floor(rnd()*w.length)];
+  const b=tryWin(1); if(b.length) return b[Math.floor(rnd()*b.length)];
+  const mid=(C-1)/2, best=Math.min.apply(null,open.map(c=>Math.abs(c-mid))), near=open.filter(c=>Math.abs(c-mid)<=best+1);
+  return near[Math.floor(rnd()*near.length)];
+}
+// ── the round ──
+function _c4Say(st,text){ st.say=text||""; if(!text||(typeof mastView!=="undefined"&&mastView!=="four")) return; try{ mastSpeak(text); }catch(e){} }
+function fourSayAgain(){ const st=fourState; if(st&&st.say) try{ mastSpeak(st.say); }catch(e){} }
+function fourStart(deck){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding / bonk (iPad)
+  const items=_c4Items(), mix=deck===WHICH_MIX, modes=_c4Modes(items), pool=fourPool(items,deck);
+  if(pool.length<C4_MIN||(!mix&&!fourDeckOn(masteryKid,deck))){ fourState=null; _mastRe(); return; }   // 🎮 GAMEGRID: a deck Mom turned off for this game
+  const kinds={}; pool.forEach(i=>{ kinds[i.id]=fourKind(i,modes[i.subject||"Other"]); });
+  // every cell a card: the pool shuffled, then again when the board is bigger than the deck (no card twice before all are placed)
+  const need=C4_COLS*C4_ROWS; let seq=[]; while(seq.length<need) seq=seq.concat(_c4Shuffle(pool.map(i=>i.id)));
+  const cards=[]; for(let r=0;r<C4_ROWS;r++){ cards.push(seq.slice(r*C4_COLS,(r+1)*C4_COLS)); }
+  fourState={kid:masteryKid,deck:deck,mix:mix,game:"four",t0:Date.now(),cols:C4_COLS,rows:C4_ROWS,board:c4Empty(C4_COLS,C4_ROWS),cards:cards,kinds:kinds,turns:[],open:null,who:"kid",winner:null,last:null,phase:"play",backs:null,first:0,of:0,isPB:false,prevBest:null,lock:false,seq:0,msg:"Your turn! Tap a column.",say:""};
+  _c4Say(fourState,"Your turn!");
+  _mastRe();
+}
+function fourStop(){ fourState=null; _mastRe(); }   // drop the round as it stands: nothing written
+// Three backs for a pick: the card's own + two different backs from its deck (Which one?'s rule), shuffled
+function _c4Lures(st,pid){
+  const it=_c4It(st,pid); if(!it) return [];
+  const own=_whichBack(it), seen={}; seen[_whichNorm(own)]=1;
+  const more=_c4Shuffle(_c4WhichPool(_c4Items(st.kid),st.kid).filter(x=>x.id!==pid&&(x.subject||"Other")===(it.subject||"Other"))).map(x=>_whichBack(x)).filter(b=>b&&!seen[_whichNorm(b)]&&(seen[_whichNorm(b)]=1)).slice(0,2);
+  return _c4Shuffle([own].concat(more));
+}
+function _c4Ask(st,col,row,pid,back){
+  const act=st.kinds[pid]||"say", t={pid:pid,act:act,done:false,first:false,wrong:{},tries:0,fail:false,back:!!back}; st.turns.push(t);
+  if(act==="pick") t.opts=_c4Lures(st,pid);
+  if(act==="type") t.typed="";
+  st.open={col:col,row:row,t:st.turns.length-1};
+  const it=_c4It(st,pid), lead=back?"One more time. ":"";
+  st.msg=lead+(act==="say"?"Say it out loud, then tap \u{1F5E3}":act==="type"?"Type the answer.":"Tap the answer.");
+  if(act==="say") _c4Say(st,lead+"What is it?"); else _c4Say(st,lead+(it&&!whichSilent(it)?fourName(it):""));
+}
+function fourPickCol(col){
+  const st=fourState; if(!st||st.phase!=="play"||st.lock||st.open||st.who!=="kid") return;
+  const row=c4Drop(st.board,col); if(row<0) return;
+  _c4Ask(st,col,row,st.cards[row][col],false); _mastRe();
+}
+function _c4Turn(st,act){ if(!st||st.lock||st.phase==="done"||!st.open) return null; const t=st.turns[st.open.t]; return (t&&t.act===act&&!t.done)?t:null; }
+function fourSaid(){   // 🗣 "I said it" — the honor system: a tablet can't hear; the app says the name back as the confirm
+  const st=fourState, t=_c4Turn(st,"say"); if(!t) return;
+  t.done=true; t.first=true;
+  _c4Settle(st,t,"",fourName(_c4It(st,t.pid))); _mastRe();
+}
+function fourKey(ch){ const st=fourState, t=_c4Turn(st,"type"); if(!t) return; if(ch==="back") t.typed=t.typed.slice(0,-1); else if(t.typed.length<6) t.typed+=ch; _mastRe(); }
+function _c4AnsOk(act,given,back){ if(act==="pick") return String(given)===String(back); return (typeof mstTypeAnsOk==="function")?mstTypeAnsOk(given,back):Number(String(given).replace(",","."))===Number(String(back).replace(",",".")); }
+// PURE: one answer against the card's back → "right" | "again" | "fail"
+function fourJudge(t,given,back){
+  if(_c4AnsOk(t.act,given,back)){ t.done=true; t.first=t.tries===0; return "right"; }
+  t.tries++; t.wrong[t.act==="pick"?String(given):String(t.tries)]=1; t.typed="";
+  if(t.tries>=C4_TRIES){ t.done=true; t.first=false; t.fail=true; return "fail"; }
+  return "again";
+}
+function fourCheck(){ const st=fourState, t=_c4Turn(st,"type"); if(!t||!t.typed) return; _c4After(st,t,fourJudge(t,t.typed,_whichBack(_c4It(st,t.pid)))); }
+function fourPickTap(i){ const st=fourState, t=_c4Turn(st,"pick"); if(!t||!t.opts||t.opts[i]==null||t.wrong[t.opts[i]]) return; _c4After(st,t,fourJudge(t,t.opts[i],_whichBack(_c4It(st,t.pid)))); }
+function _c4After(st,t,r){
+  if(r==="again"){ try{ matchBonk(); }catch(e){} st.msg="Almost \u2014 try again!"; _mastRe(); return; }
+  if(r==="fail") try{ matchBonk(); }catch(e){}
+  _c4Settle(st,t,r==="fail"?"We\u2019ll come back to that one.":"",""); _mastRe();
+}
+// The card is settled. In play: a right answer lands the kid's disc (and may win); a fail lands nothing; either way the turn passes to the app after a beat.
+function _c4Settle(st,t,lead,spoken){
+  const o=st.open;
+  if(st.phase==="play"&&o&&!t.fail){
+    st.board[o.row][o.col]=1; st.last={col:o.col,row:o.row,who:"kid"}; st.of++; if(t.first) st.first++;
+    try{ matchDing(); }catch(e){}
+    if(c4Win(st.board,1,o.row,o.col)){ st.winner="kid"; st.msg="Four in a row \u2014 you did it!"; _c4Say(st,(spoken?spoken+". ":"")+"Four in a row! You did it!"); return _c4Beat(st,"end"); }
+    if(c4Full(st.board)){ st.winner="tie"; st.msg="The board is full \u2014 a tie!"; _c4Say(st,(spoken?spoken+". ":"")+"A tie!"); return _c4Beat(st,"end"); }
+    st.msg=t.first?"That\u2019s it! Your disc drops in.":"Got it \u2014 your disc drops in."; _c4Say(st,(spoken?spoken+". ":"")+"That\u2019s it!"); return _c4Beat(st,"app");
+  }
+  if(st.phase==="play"){ st.of++; st.msg=lead; _c4Say(st,lead); return _c4Beat(st,"app"); }   // a fail: no disc, the app plays
+  if(t.first){ try{ matchDing(); }catch(e){} st.msg="That\u2019s it!"; _c4Say(st,(spoken?spoken+". ":"")+"That\u2019s it!"); } else { st.msg=lead||"Okay \u2014 next one."; _c4Say(st,lead||"Next one."); }   // a come-back: nothing moves
+  return _c4Beat(st,"back");
+}
+function _c4Beat(st,after,ms){ st.lock=true; st.after=after; const seq=++st.seq; setTimeout(()=>{ if(fourState===st&&st.lock&&st.seq===seq) fourNext(st); },ms||C4_BEAT); }
+function fourNext(st){ st=st||fourState; if(!st||st!==fourState) return; st.lock=false; st.open=null; const a=st.after; st.after=null; _c4Go(st,a); _mastRe(); }
+function _c4Go(st,a){ if(a==="app") _c4AppTurn(st); else if(a==="kid") _c4KidTurn(st); else if(a==="end") _c4End(st); else if(a==="back") _c4BackNext(st); }
+function _c4KidTurn(st){ st.who="kid"; st.msg="Your turn! Tap a column."; _c4Say(st,"Your turn!"); }
+function _c4AppTurn(st){
+  st.who="app";
+  const col=c4AppMove(st.board); if(col<0){ st.winner="tie"; return _c4End(st); }
+  const row=c4Drop(st.board,col); st.board[row][col]=2; st.last={col:col,row:row,who:"app"};
+  if(c4Win(st.board,2,row,col)){ st.winner="app"; st.msg="I got four in a row this time!"; _c4Say(st,"I got four in a row this time!"); return _c4Beat(st,"end"); }
+  if(c4Full(st.board)){ st.winner="tie"; st.msg="The board is full \u2014 a tie!"; _c4Say(st,"A tie!"); return _c4Beat(st,"end"); }
+  st.msg="My disc goes here. Your turn!"; _c4Say(st,"My turn. Your turn!"); _c4Beat(st,"kid");
+}
+// ── the end: four in a row or a full board → the missed cards come back once → finish ──
+function _c4End(st){
+  if(st.phase!=="play") return;
+  st.phase="back"; st.open=null; st.who="kid";
+  const seen={}, backs=[];
+  st.turns.forEach(t=>{ if(t.back||seen[t.pid]) return; if(Object.keys(t.wrong).length||t.fail){ seen[t.pid]=1; backs.push(t.pid); } });
+  st.backs=backs;
+  if(!backs.length) return _c4Finish(st);
+  st.msg="Game over! Let\u2019s look at a few again."; _c4Say(st,"Let's look at a few again."); _c4Beat(st,"back",C4_BEAT*2);
+}
+function _c4BackNext(st){ const pid=st.backs&&st.backs.shift(); if(pid==null) return _c4Finish(st); _c4Ask(st,-1,-1,pid,true); }
+function fourBestKey(deck){ return deck+" \u{00B7} four"; }
+function _c4Finish(st){
+  st.phase="done"; st.open=null; st.lock=false; st.after=null;
+  const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every act's result, game:"four"
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=fourBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.first>0&&(prev==null||st.first>prev);
+  if(st.isPB){
+    s.match_best[key]=st.first;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+  st.msg=st.winner==="kid"?"Four in a row!":st.winner==="app"?"Good game \u2014 I got four this time.":"A tie!"; st.say="";
+  try{ if(st.winner==="kid"&&st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F534} Four in a row!",{noSong:true}); }catch(e){}
+}
+// GAMEKID → 🎲 GAMEKIT resume: a beat that was mid-way when the kid switched settles here (no render; the caller renders)
+function fourResume(){
+  const st=fourState; if(!st||st.phase==="done") return;
+  if(st.lock){ st.lock=false; st.open=null; const a=st.after; st.after=null; _c4Go(st,a); return; }
+  if(st.say&&(typeof mastView==="undefined"||mastView==="four")) try{ mastSpeak(st.say); }catch(e){}
+}
+// ── the screen ──
+const C4_CSS='<style>.c4-board{display:grid;gap:4px;background:#1d4ed8;border:4px solid #1e3a8a;border-radius:16px;padding:6px}.c4-cell{aspect-ratio:1;border-radius:50%;background:#eff6ff;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;min-width:0}'+
+  '.c4-cell .c4-lbl{font-size:clamp(9px,2.6vw,13px);font-weight:800;color:#1e3a8a;font-family:\'DM Sans\',sans-serif;text-align:center;line-height:1;pointer-events:none;overflow:hidden;padding:1px}.c4-cell .c4-pic{transform:scale(.42);pointer-events:none}'+
+  '.c4-cell.c4-kid{background:#facc15;box-shadow:inset 0 0 0 3px #ca8a04}.c4-cell.c4-app{background:#ef4444;box-shadow:inset 0 0 0 3px #b91c1c}.c4-cell.c4-last{outline:3px solid #fff}.c4-cell.c4-ask{background:#fef3c7;box-shadow:0 0 0 4px #fde68a}'+
+  '.c4-col{min-height:40px;border-radius:12px;border:2px solid #e2ddd6;background:#fff;font-size:18px;font-weight:800;cursor:pointer;color:#1e3a8a;-webkit-tap-highlight-color:transparent}.c4-col[disabled]{opacity:.4;cursor:default}'+
+  '.c4-card{width:150px;height:160px;border-radius:14px;border:3px solid #a78bfa;background:#f5f3ff;display:flex;align-items:center;justify-content:center;overflow:hidden;margin:0 auto}.c4-card .c4-vis{pointer-events:none;transform:scale(1.5)}.c4-card .c4-txt{pointer-events:none;font-family:\'Fraunces\',serif;font-weight:800;font-size:34px;line-height:1.1;color:#292524;text-align:center;padding:6px;overflow-wrap:anywhere}'+
+  '.c4-btn{padding:12px 22px;border-radius:999px;border:none;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;-webkit-tap-highlight-color:transparent}.c4-btn[disabled],.c4-key[disabled],.c4-opt[disabled]{opacity:.45;cursor:default}'+
+  '.c4-key{width:64px;height:56px;border-radius:14px;border:2px solid #e2ddd6;background:#fff;font-family:\'Fraunces\',serif;font-size:26px;font-weight:800;color:#292524;cursor:pointer}'+
+  '.c4-opt{min-width:96px;padding:14px 18px;border-radius:16px;border:3px solid #e2ddd6;background:#fff;font-family:\'Fraunces\',serif;font-size:24px;font-weight:800;color:#292524;cursor:pointer;overflow-wrap:anywhere}.c4-opt.c4-wrong{opacity:.28;filter:grayscale(1);cursor:default}</style>';
+// What a cell shows before a disc covers it: a short front, its picture, or "?" for a long front
+function _c4CellLabel(st,pid){
+  const it=_c4It(st,pid); if(!it) return '';
+  if((st.kinds[pid]||"say")==="say"){ const v=_smTileVis(it); if(v) return '<span class="c4-pic">'+v+'</span>'; }
+  const f=fourName(it); return '<span class="c4-lbl">'+(f.length<=C4_LABEL_MAX?esc(f):'?')+'</span>';
+}
+function _c4CardVis(st,pid){
+  const it=_c4It(st,pid); if(!it) return '';
+  if((st.kinds[pid]||"say")==="say"){ const v=_smTileVis(it); if(v) return '<span class="c4-vis">'+v+'</span>'; }
+  return '<span class="c4-txt">'+esc(fourName(it))+'</span>';   // an answer card shows its FRONT (the kid produces the back)
+}
+function buildFourHtml(color){
+  const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+  let h=C4_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const items=_c4Items(), decks=fourDecks(items);
+  if(!decks.length){ h+='<div class="mast-none">No decks ready for Connect Four yet \u{2014} it needs '+C4_MIN+' or more cards with a picture (or a short answer on the back).</div></div>'; return h; }
+  const st=fourState;
+  const chip=(dk,lbl)=>{ const sel=st&&st.deck===dk; return '<button onclick="fourStart(\''+q(dk)+'\')" style="padding:10px 16px;border-radius:999px;font-size:14px;font-weight:800;border:2px solid '+(sel?color:'#e2ddd6')+';background:'+(sel?color:'#fff')+';color:'+(sel?'#fff':'#57534e')+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
+  if(!st||st.phase==="done"){
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">';
+    decks.forEach(dk=>{ h+=chip(dk,esc(dk)); });
+    if(decks.length>1) h+=chip(WHICH_MIX,"\u{1F3B2} "+WHICH_MIX);
+    h+='</div>';
+  }
+  if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u{1F534} Pick a deck. Answer the card where your disc would land to drop it in \u{2014} four in a row wins!</div></div>'; return h; }
+  const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[fourBestKey(st.deck)];
+  const o=st.open, t=o?st.turns[o.t]:null, lock=st.lock;
+  const board=()=>{ let x='<div class="c4-board" style="grid-template-columns:repeat('+st.cols+',1fr)">';
+    for(let r=0;r<st.rows;r++){ for(let c=0;c<st.cols;c++){ const v=st.board[r][c], ask=!!(o&&o.col===c&&o.row===r&&st.phase==="play"), last=!!(st.last&&st.last.col===c&&st.last.row===r);
+      x+='<div class="c4-cell'+(v===1?' c4-kid':v===2?' c4-app':'')+(ask?' c4-ask':'')+(last?' c4-last':'')+'" aria-label="'+(v===1?'your disc':v===2?'the app\u2019s disc':'open')+'">'+(v?'':_c4CellLabel(st,st.cards[r][c]))+'</div>'; } }
+    return x+'</div>'; };
+  if(st.phase==="done"){
+    h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+    h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">'+(st.winner==="kid"?'\u{1F389} Four in a row \u2014 you did it!':st.winner==="app"?'\u{1F534} Good game! I got four this time.':'\u{1F91D} A tie!')+'</div>';
+    h+='<div style="margin:12px auto;max-width:380px">'+board()+'</div>';
+    h+='<div style="font-size:17px;font-weight:800;color:#57534e">\u{1F7E1} '+st.first+' of '+st.of+' on the first try'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+    h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">';
+    h+='<button onclick="fourStart(\''+q(st.deck)+'\')" class="c4-btn" style="background:'+color+';color:#fff;font-size:15px">\u{1F501} Play again</button>';
+    if(decks.length>1&&!st.mix) h+='<button onclick="fourStart(\''+q(WHICH_MIX)+'\')" class="c4-btn" style="border:2px solid '+color+';background:#fff;color:'+color+';font-size:15px">\u{1F3B2} '+WHICH_MIX+'</button>';
+    return h+'</div></div></div>';
+  }
+  h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px;flex-wrap:wrap"><span style="font-size:13px;font-weight:800;color:#57534e">\u{1F7E1} you \u00B7 \u{1F534} the app</span>';
+  h+='<span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
+    '<button onclick="fourStop()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{21A9} Stop</button></span></div>';
+  h+='<div style="display:flex;align-items:center;gap:10px;margin:10px 0 12px;padding:12px 14px;border-radius:18px;background:#fef2f2;border:2px solid #fecaca"><span style="font-size:28px;line-height:1">\u{1F534}</span><span style="flex:1;font-size:17px;font-weight:800;color:#7f1d1d">'+esc(st.msg)+'</span>'+
+    (st.say?'<button onclick="fourSayAgain()" aria-label="Hear it again" style="width:56px;height:56px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:26px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button>':'')+'</div>';
+  if(t&&(!t.done||lock)){
+    h+='<div style="margin:6px 0 12px"><span class="c4-card">'+_c4CardVis(st,t.pid)+'</span></div>';
+    if(t.act==="say") h+='<div style="display:flex;justify-content:center"><button class="c4-btn" onclick="fourSaid()"'+(lock||t.done?' disabled':'')+' style="background:'+color+';color:#fff;font-size:20px;padding:18px 34px">\u{1F5E3} I said it</button></div>';
+    else if(t.act==="type"){
+      h+='<div style="display:flex;justify-content:center;margin-bottom:10px"><span style="min-width:120px;height:56px;border-radius:14px;border:3px solid '+color+';background:#fff;font-family:\'Fraunces\',serif;font-size:30px;font-weight:800;color:#292524;display:inline-flex;align-items:center;justify-content:center;padding:0 14px">'+esc(t.typed||"")+'</span></div>';
+      h+='<div style="display:grid;grid-template-columns:repeat(3,64px);gap:8px;justify-content:center">';
+      ["1","2","3","4","5","6","7","8","9","back","0","ok"].forEach(k=>{ if(k==="back") h+='<button class="c4-key" onclick="fourKey(\'back\')"'+(lock?' disabled':'')+' aria-label="Erase">\u{232B}</button>'; else if(k==="ok") h+='<button class="c4-key" onclick="fourCheck()"'+(lock||!t.typed?' disabled':'')+' style="background:'+color+';color:#fff;border-color:transparent" aria-label="Check">\u{2714}</button>'; else h+='<button class="c4-key" onclick="fourKey(\''+k+'\')"'+(lock?' disabled':'')+'>'+k+'</button>'; });
+      h+='</div>';
+    } else {
+      h+='<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">';
+      (t.opts||[]).forEach((op,i)=>{ const w=!!t.wrong[op]; h+='<button class="c4-opt'+(w?' c4-wrong':'')+'" onclick="fourPickTap('+i+')"'+(w||lock||t.done?' disabled':'')+'>'+esc(op)+'</button>'; });
+      h+='</div>';
+    }
+  }
+  if(st.phase==="play"){
+    const can=st.who==="kid"&&!o&&!lock;
+    h+='<div style="display:grid;grid-template-columns:repeat('+st.cols+',1fr);gap:4px;margin:14px 0 6px">';
+    for(let c=0;c<st.cols;c++){ const full=c4Drop(st.board,c)<0; h+='<button class="c4-col" aria-label="Drop in column '+(c+1)+'"'+(can&&!full?' onclick="fourPickCol('+c+')"':' disabled')+'>\u2B07</button>'; }
+    h+='</div>'+board();
+  }
+  return h+'</div>';
+}
+// FOUR_END
+// SHIP_START — 🚢 "Battleship" (her word 2026-11-03: "Battleship/map pin. lets do these now"; PLAN_practice_games_2026-10-23.md Tier 4
+// "Battleship / map pin (geography, anatomy): tap the country / part on a picture; type its name — spatial REC → PROD"). The plan's map
+// needs a map image and a pin position per card, and NO deck carries either today, so this is the picture-grid form: the deck's own
+// pictures are the fleet, anchored on a sea grid with coordinates (A1 … D3) that stay put for the whole round — the "map" is the grid.
+// Two kinds of turn, alternating: 🎯 FIND — the app SAYS a name ("Fire at… the copperhead!"; never written), the kid taps that picture;
+// wrong → the bonk, said again, try again from the ones left. 📣 NAME — one tile lights up ("What's at B2?"), the kid says its name out
+// loud and taps 🗣 (the honor system — a tablet has no mic; the app says the name back as the confirm). A hit marks the tile 💥 (sunk);
+// every tile is fired at exactly once. Misses come back once at the end as a find, then the finish: "N of M sunk on the first shot"
+// against the kid's own best. No lives, no clock, no opponent fleet, no luck — every shot is a card.
+// Decks: Which one?'s picture and symbol decks only (whichDeckModes read RAW, like Go Fish — a deck turned off for Which one? still
+// plays here), with SHIP_MIN+ cards; answer-only decks (math, roots, capitals) can't be a map — hidden through decks:(k)=>…, never
+// asked about. Then this game's grid cell gameDeckOn(kid,"ship",deck). Writes (only these): <kid>_settings/match_best key "<deck> · ship"
+// (first-shot hits, only when beaten) and the round's gameLog entry (GAMELOG, game:"ship"). NEVER touches the ladder — no scores, no
+// next_due, no study log. db && !_dryRun() only. Per-kid park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT). A round
+// dropped (Change deck, a kid switch) writes nothing.
+let shipState=null;   // {kid,deck,mix,game:"ship",t0,cols,rows,grid:[pid],sunk:{pid:1},turns:[{pid,act:"find"|"name",done,first,wrong:{},back}],i,phase:"play"|"done",first,of,isPB,prevBest,lock,seq,msg,say,returned:{},gameLogged}
+let _shipRandom=Math.random;   // tests seed it
+const SHIP_MAX=12, SHIP_MIN=6, SHIP_BEAT=900, SHIP_LETTERS="ABCDEF";
+function _shipItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
+function _shipShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_shipRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function _shipRaw(fn){ const had=(typeof _gdRaw!=="undefined")?_gdRaw:null; try{ if(had!==null) _gdRaw=true; return fn(); } finally{ if(had!==null) _gdRaw=had; } }
+function shipDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"ship",deck); }
+function _shipModes(items,kid){ return _shipRaw(()=>whichDeckModes(items,kid)); }
+function _shipWhichPool(items,kid){ return _shipRaw(()=>whichPool(items,WHICH_MIX,kid)); }
+function shipName(it){ return _matchPlain(it&&it.prompt); }
+// The decks that can be a map: picture or symbol mode (a tile must be something to look at), SHIP_MIN+ cards
+function shipDecks(items,kid){
+  kid=kid||masteryKid;
+  const modes=_shipModes(items,kid), n={};
+  _shipWhichPool(items,kid).forEach(i=>{ const d=i.subject||"Other"; if(modes[d]==="picture"||modes[d]==="symbol") n[d]=(n[d]||0)+1; });
+  return Object.keys(n).filter(d=>n[d]>=SHIP_MIN&&shipDeckOn(kid,d)).sort();
+}
+function shipPool(items,deck,kid){ kid=kid||masteryKid; const ok=shipDecks(items,kid); return _shipWhichPool(items,kid).filter(i=>ok.indexOf(i.subject||"Other")>=0&&(deck===WHICH_MIX||(i.subject||"Other")===deck)); }
+// PURE: the grid shape for n tiles — 3 across up to 9, else 4 across
+function shipShape(n){ const cols=n<=9?3:4; return {cols:cols,rows:Math.ceil(n/cols)}; }
+function shipCoord(i,cols){ return SHIP_LETTERS.charAt(Math.floor(i/cols))+(i%cols+1); }   // "B2"
+function _shipSay(st,text){ st.say=text||""; if(!text||(typeof mastView!=="undefined"&&mastView!=="ship")) return; try{ mastSpeak(text); }catch(e){} }
+function shipSayAgain(){ const st=shipState; if(st&&st.say) try{ mastSpeak(st.say); }catch(e){} }
+function shipStart(deck){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding / bonk (iPad)
+  const items=_shipItems(), mix=deck===WHICH_MIX, pool=shipPool(items,deck);
+  if(pool.length<SHIP_MIN||(!mix&&!shipDeckOn(masteryKid,deck))){ shipState=null; _mastRe(); return; }   // 🎮 GAMEGRID: a deck Mom turned off for this game
+  const grid=_shipShuffle(pool.slice()).slice(0,SHIP_MAX).map(i=>i.id), sh=shipShape(grid.length);
+  // every tile once: the order shuffled, find / name alternating
+  const turns=_shipShuffle(grid.slice()).map((pid,k)=>({pid:pid,act:k%2===0?"find":"name",done:false,first:false,wrong:{},back:false}));
+  shipState={kid:masteryKid,deck:deck,mix:mix,game:"ship",t0:Date.now(),cols:sh.cols,rows:sh.rows,grid:grid,sunk:{},turns:turns,i:0,phase:"play",first:0,of:turns.length,isPB:false,prevBest:null,lock:false,seq:0,msg:"",say:"",returned:{}};
+  _shipAsk(shipState);
+  _mastRe();
+}
+function shipChangeDeck(){ shipState=null; _mastRe(); }   // drop the round as it stands: nothing written
+function _shipIt(st,pid){ return _shipItems(st.kid).find(x=>x&&x.id===pid)||null; }
+function _shipAsk(st){
+  const t=st.turns[st.i]; if(!t) return;
+  const it=_shipIt(st,t.pid), lead=t.back?"One more time. ":"";
+  if(t.act==="find"){ st.msg=lead+"\u{1F3AF} Fire at\u2026 (listen!) Tap it on the map."; _shipSay(st,lead+"Fire at the "+shipName(it)+"!"); }   // the name is SAID, never written
+  else { st.msg=lead+"\u{1F4E3} What\u2019s at "+shipCoord(st.grid.indexOf(t.pid),st.cols)+"? Say it, then tap \u{1F5E3}"; _shipSay(st,lead+"What's at "+shipCoord(st.grid.indexOf(t.pid),st.cols).split("").join(" ")+"?"); }
+}
+// 🎯 a find: the kid taps a tile
+function shipTap(gi){
+  const st=shipState; if(!st||st.phase!=="play"||st.lock) return;
+  const t=st.turns[st.i]; if(!t||t.done||t.act!=="find") return;
+  const pid=st.grid[gi]; if(pid==null||t.wrong[pid]||(st.sunk[pid]&&pid!==t.pid)) return;
+  if(pid!==t.pid){ t.wrong[pid]=1; try{ matchBonk(); }catch(e){} st.msg="Splash \u2014 not that one. Listen again!"; shipSayAgain(); _mastRe(); return; }
+  _shipHit(st,t,"");
+}
+// 📣 a name: 🗣 "I said it" — the honor system; the app says the name back
+function shipSaid(){
+  const st=shipState; if(!st||st.phase!=="play"||st.lock) return;
+  const t=st.turns[st.i]; if(!t||t.done||t.act!=="name") return;
+  _shipHit(st,t,shipName(_shipIt(st,t.pid)));
+}
+function _shipHit(st,t,spoken){
+  t.done=true; t.first=!Object.keys(t.wrong).length;
+  if(!t.back&&t.first) st.first++;
+  st.sunk[t.pid]=1;
+  if(!t.first&&!t.back&&!st.returned[t.pid]){ st.returned[t.pid]=1; st.turns.push({pid:t.pid,act:"find",done:false,first:false,wrong:{},back:true}); }   // a miss comes back once, as a find
+  try{ matchDing(); }catch(e){}
+  st.msg="\u{1F4A5} Hit!"; _shipSay(st,(spoken?spoken+". ":"")+"Hit!");
+  st.lock=true; const seq=++st.seq;
+  _mastRe();
+  setTimeout(()=>{ if(shipState===st&&st.lock&&st.seq===seq) shipNext(st); },SHIP_BEAT);
+}
+function shipNext(st){
+  st=st||shipState; if(!st||st!==shipState) return;
+  st.lock=false; st.i++;
+  if(st.i>=st.turns.length){ shipFinish(st); _mastRe(); return; }
+  _shipAsk(st); _mastRe();
+}
+function shipBestKey(deck){ return deck+" \u{00B7} ship"; }
+function shipFinish(st){
+  st.phase="done"; st.lock=false; st.say="";
+  const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every shot's result, game:"ship"
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=shipBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.first>0&&(prev==null||st.first>prev);
+  if(st.isPB){
+    s.match_best[key]=st.first;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+  try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F6A2} You sank them all!",{noSong:true}); }catch(e){}
+}
+// GAMEKID → 🎲 GAMEKIT resume: a beat that was mid-way when the kid switched settles here; back to a round: hear the ask again
+function shipResume(){
+  const st=shipState; if(!st||st.phase==="done") return;
+  if(st.lock){ st.lock=false; st.i++; if(st.i>=st.turns.length){ shipFinish(st); return; } _shipAsk(st); return; }
+  if(st.say&&(typeof mastView==="undefined"||mastView==="ship")) try{ mastSpeak(st.say); }catch(e){}
+}
+const SHIP_CSS='<style>.ship-sea{display:grid;gap:6px;padding:8px;border-radius:18px;background:linear-gradient(180deg,#bae6fd,#7dd3fc);border:3px solid #38bdf8}'+
+  '.ship-tile{position:relative;aspect-ratio:1;border-radius:14px;border:3px solid #e0f2fe;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .2s}'+
+  '.ship-tile .ship-vis{pointer-events:none;transform:scale(.9)}@media(min-width:560px){.ship-tile .ship-vis{transform:scale(1.25)}}'+
+  '.ship-tile .ship-co{position:absolute;left:4px;top:2px;font-size:10px;font-weight:800;color:#0369a1;font-family:\'DM Sans\',sans-serif;pointer-events:none}'+
+  '.ship-tile.ship-sunk{opacity:.55}.ship-tile.ship-sunk::after{content:"\\1F4A5";position:absolute;right:2px;bottom:0;font-size:22px}.ship-tile.ship-wrong{opacity:.3;filter:grayscale(1);cursor:default}'+
+  '.ship-tile.ship-lit{border-color:#f59e0b;box-shadow:0 0 0 5px #fde68a;transform:scale(1.06);cursor:default}.ship-tile.ship-still{cursor:default}'+
+  '.ship-btn{padding:14px 26px;border-radius:999px;border:none;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;-webkit-tap-highlight-color:transparent}.ship-btn[disabled]{opacity:.45;cursor:default}</style>';
+function buildShipHtml(color){
+  const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+  let h=SHIP_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const items=_shipItems(), decks=shipDecks(items);
+  if(!decks.length){ h+='<div class="mast-none">No decks ready for Battleship yet \u{2014} it needs '+SHIP_MIN+' or more cards with a picture.</div></div>'; return h; }
+  const st=shipState;
+  const chip=(dk,lbl)=>{ const sel=st&&st.deck===dk; return '<button onclick="shipStart(\''+q(dk)+'\')" style="padding:10px 16px;border-radius:999px;font-size:14px;font-weight:800;border:2px solid '+(sel?color:'#e2ddd6')+';background:'+(sel?color:'#fff')+';color:'+(sel?'#fff':'#57534e')+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
+  if(!st||st.phase==="done"){
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">';
+    decks.forEach(dk=>{ h+=chip(dk,esc(dk)); });
+    if(decks.length>1) h+=chip(WHICH_MIX,"\u{1F3B2} "+WHICH_MIX);
+    h+='</div>';
+  }
+  if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u{1F6A2} Pick a deck. Listen, then fire at the picture you hear \u{2014} or name what\u2019s at the square I call!</div></div>'; return h; }
+  const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[shipBestKey(st.deck)];
+  if(st.phase==="done"){
+    h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+    h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} You sank them all!</div>';
+    h+='<div style="font-size:17px;font-weight:800;color:#57534e;margin-top:10px">\u{1F6A2} '+st.first+' of '+st.of+' on the first shot'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+    h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">';
+    h+='<button onclick="shipStart(\''+q(st.deck)+'\')" class="ship-btn" style="background:'+color+';color:#fff;font-size:15px">\u{1F501} Play again</button>';
+    if(decks.length>1&&!st.mix) h+='<button onclick="shipStart(\''+q(WHICH_MIX)+'\')" class="ship-btn" style="border:2px solid '+color+';background:#fff;color:'+color+';font-size:15px">\u{1F3B2} '+WHICH_MIX+'</button>';
+    return h+'</div></div></div>';
+  }
+  const t=st.turns[st.i], find=!!(t&&t.act==="find"), lock=st.lock;
+  h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
+  st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
+  h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
+    '<button onclick="shipChangeDeck()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{1F5C2} Change deck</button></span></div>';
+  h+='<div style="display:flex;align-items:center;gap:10px;margin:10px 0 12px;padding:12px 14px;border-radius:18px;background:#f0f9ff;border:2px solid #bae6fd"><span style="font-size:28px;line-height:1">\u{1F6A2}</span><span style="flex:1;font-size:17px;font-weight:800;color:#0c4a6e">'+esc(st.msg)+'</span>'+
+    (st.say?'<button onclick="shipSayAgain()" aria-label="Hear it again" style="width:56px;height:56px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:26px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button>':'')+'</div>';
+  h+='<div class="ship-sea" style="grid-template-columns:repeat('+st.cols+',1fr)">';
+  st.grid.forEach((pid,gi)=>{ const it=_shipIt(st,pid), sunk=!!st.sunk[pid], wrong=!!(t&&t.wrong[pid]), lit=!!(t&&!find&&t.pid===pid&&!t.done), can=find&&!lock&&!wrong&&!(sunk&&pid!==t.pid);
+    h+='<div class="ship-tile'+(sunk?' ship-sunk':'')+(wrong?' ship-wrong':'')+(lit?' ship-lit':'')+(can?'':' ship-still')+'" role="button" aria-label="'+shipCoord(gi,st.cols)+'"'+(can?' onclick="shipTap('+gi+')"':'')+'><span class="ship-co">'+shipCoord(gi,st.cols)+'</span><span class="ship-vis">'+(_smTileVis(it)||'')+'</span></div>'; });
+  h+='</div>';
+  if(t&&!find) h+='<div style="display:flex;justify-content:center;margin-top:14px"><button class="ship-btn" onclick="shipSaid()"'+(lock||t.done?' disabled':'')+' style="background:'+color+';color:#fff">\u{1F5E3} I said it</button></div>';
+  return h+'</div>';
+}
+// SHIP_END
+// GAMERULES_START — 📜 Game rules pop-up (her design 2026-11-03: in Mom's Day ▸ School ▸ Mastery ▸ Settings ▸ 🎮 Games, "each game's name
+// across the top becomes a button; tap → a pop-up with that game's rules for the kid being viewed. Each game lists only the rules it has.")
+//   · The rules live in GAME_RULES: {game key: [{key, label, opts:[[value, label, help]], def}]}. A game with none says so ("plays the same
+//     for everyone — no rules yet") instead of showing an empty box. A new rule = one line here + one guarded read in its game.
+//   · READ — gameRule(kid, game, rule) → the stored value, or the rule's default. Every default is TODAY'S behaviour, so nothing changes for
+//     any kid until Mom flips a rule on purpose.
+//   · STORED — mastery/<kid>_settings/gameRules/<game>/<rule> = value: ONE targeted set per tap, never a whole-node set; Mom only
+//     (_gdCanEdit — the same lock as the grid's cells); db && !_dryRun() only. Nothing stored = the default.
+//   · THE POP-UP — #grules-panel appended to body (the practice round's #mp-panel shape), closes on ✕ or the backdrop; a kid can look, only
+//     Mom can tap a pill. One guarded line in GAMEGRID's header (gameRulesBtnHtml) opens it.
+//   · FIRST RULE — Build it (SPELLBUILD, key "spell") "source": "learning" (today: a spelling word still being introduced, or in the Word
+//     Workout) | "all" (every spelling word in play — learning words still first, then most-recently-missed first). One guarded line in
+//     spellPool reads it. Live 2026-11-03: a kid with 0 words at introduction and none in the Workout has no Build it at all until this is "all".
+//   · HER SECOND RULE — "a game with no deck checked for a kid is hidden from that kid's 🎮 tab" — is already how gamesFor works
+//     (GAMEGRID's gameDeckAny: every deck of a game off → the game is not offered; a deck never set counts as on). Nothing added; pinned by test.
+const GAME_RULES={
+  spell:[{key:"source",label:"Which words does Build it use?",def:"learning",opts:[
+    ["learning","Learning words only","Words still being introduced, or in the Word Workout — today’s rule."],
+    ["all","All spelling words","Every spelling word in play. Learning words still come first, then the ones missed most recently."]]}]
+};
+let gameRulesUI=null;   // {kid, game} while the pop-up is open (this device)
+function _grE(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function _grJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }
+function gameRuleDefs(game){ return (GAME_RULES[game]||[]).slice(); }
+// The rule's value for this kid: stored (and still one of the rule's options), else the default
+function gameRule(kid,game,rule){
+  const d=(GAME_RULES[game]||[]).find(r=>r.key===rule); if(!d) return null;
+  try{ const s=((typeof masteryData!=="undefined"&&masteryData&&masteryData[kid+"_settings"])||{}), v=s.gameRules&&s.gameRules[game]&&s.gameRules[game][rule]; if(v!=null&&d.opts.some(o=>o[0]===v)) return v; }catch(e){}
+  return d.def;
+}
+function gameRuleSet(kid,game,rule,val){
+  if(!kid||!game||!rule||typeof _gdCanEdit!=="function"||!_gdCanEdit()) return false;
+  const d=(GAME_RULES[game]||[]).find(r=>r.key===rule); if(!d||!d.opts.some(o=>o[0]===val)) return false;
+  const md=masteryData, s=md[kid+"_settings"]||(md[kid+"_settings"]={}), G=(s.gameRules&&typeof s.gameRules==="object")?s.gameRules:(s.gameRules={}), g=(G[game]&&typeof G[game]==="object")?G[game]:(G[game]={});
+  g[rule]=val;
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){ try{ db.ref("mastery/"+kid+"_settings/gameRules/"+game+"/"+rule).set(val); }catch(e){} }   // this rule only
+  try{ HA_LS.setItem("ha_mastery",JSON.stringify(md)); }catch(e){}
+  gameRulesRender();
+  try{ if(typeof renderAll==="function") renderAll(); }catch(e){}   // the grid underneath may change (a rule can give a game new decks)
+  return true;
+}
+// The grid's header cell: the game's name as a button that opens its rules (a small 📜 when it has any)
+function gameRulesBtnHtml(kid,g){
+  const has=gameRuleDefs(g.key).length>0;
+  return '<button class="gr-hbtn" onclick="gameRulesOpen(\''+_grJ(kid)+'\',\''+_grJ(g.key)+'\')" aria-label="'+_grE(g.label)+' rules" title="Rules for '+_grE(g.label)+'" style="border:none;background:none;padding:0;font:inherit;font-weight:800;color:inherit;cursor:pointer;white-space:nowrap;text-decoration:underline dotted #a8a29e;text-underline-offset:3px">'+g.emoji+' '+_grE(g.label)+(has?' <span style="font-size:11px">\u{1F4DC}</span>':'')+'</button>';
+}
+// PURE: the pop-up's body for one kid + game
+function gameRulesHtml(kid,game){
+  const g=((typeof GAMES_LIST!=="undefined"&&Array.isArray(GAMES_LIST))?GAMES_LIST:[]).find(x=>x&&x.key===game)||{emoji:"\u{1F3AE}",label:game};
+  const nm=(typeof cap==="function")?cap(kid):kid, edit=(typeof _gdCanEdit==="function")&&_gdCanEdit(), defs=gameRuleDefs(game);
+  let h='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px"><div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:800;color:#292524">'+g.emoji+' '+_grE(g.label)+' · rules</div>'+
+    '<button onclick="gameRulesClose()" aria-label="Close" style="width:40px;height:40px;border-radius:50%;border:1.5px solid #e2ddd6;background:#fff;font-size:18px;cursor:pointer">✕</button></div>';
+  h+='<div style="font-size:12.5px;color:var(--muted);margin-bottom:12px">For '+_grE(nm)+'. '+(edit?'Tap a pill to change it — it saves right away.':'Mom changes these.')+'</div>';
+  if(!defs.length) return h+'<div class="mast-none" style="padding:14px">This game plays the same for everyone — no rules yet.</div>';
+  defs.forEach(r=>{ const cur=gameRule(kid,game,r.key);
+    h+='<div style="padding:12px 0;border-top:1px solid #f1f5f9"><div style="font-size:14px;font-weight:800;color:#292524;margin-bottom:8px">'+_grE(r.label)+'</div><div style="display:flex;gap:8px;flex-wrap:wrap">';
+    r.opts.forEach(o=>{ const on=o[0]===cur;
+      h+='<button class="gr-pill'+(on?' on':'')+'" onclick="gameRuleSet(\''+_grJ(kid)+'\',\''+_grJ(game)+'\',\''+_grJ(r.key)+'\',\''+_grJ(o[0])+'\')"'+(edit?'':' disabled')+' aria-pressed="'+on+'" style="padding:9px 14px;border-radius:999px;font-size:13px;font-weight:800;border:2px solid '+(on?'#16a34a':'#e2ddd6')+';background:'+(on?'#f0fdf4':'#fff')+';color:'+(on?'#15803d':'#57534e')+';cursor:'+(edit?'pointer':'default')+';font-family:\'DM Sans\',sans-serif">'+(on?'✓ ':'')+_grE(o[1])+'</button>'; });
+    h+='</div>';
+    const cur2=r.opts.find(o=>o[0]===cur); if(cur2&&cur2[2]) h+='<div style="font-size:12px;color:var(--muted);margin-top:8px">'+_grE(cur2[2])+'</div>';
+    h+='</div>'; });
+  return h;
+}
+function gameRulesOpen(kid,game){ if(!kid||!game) return; gameRulesUI={kid:kid,game:game}; gameRulesRender(); }
+function gameRulesClose(){ gameRulesUI=null; try{ const ov=document.getElementById("grules-panel"); if(ov) ov.remove(); }catch(e){} }
+function gameRulesRender(){
+  if(typeof document==="undefined") return;
+  const U=gameRulesUI; let ov=document.getElementById("grules-panel");
+  if(!U){ if(ov) ov.remove(); return; }
+  if(!ov){ ov=document.createElement("div"); ov.id="grules-panel"; ov.style.cssText="position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 12px"; ov.onclick=function(ev){ if(ev&&ev.target===ov) gameRulesClose(); }; document.body.appendChild(ov); }
+  ov.innerHTML='<div style="width:100%;max-width:520px;background:#fff;border-radius:22px;padding:18px 18px 14px;box-shadow:0 20px 50px rgba(0,0,0,.25);font-family:\'DM Sans\',sans-serif">'+gameRulesHtml(U.kid,U.game)+'</div>';
+}
+// GAMERULES_END
 // TRUENOT_START — ✅ "True / Not true" (the hub's "build four games" 2026-11-03; PLAN_practice_games_2026-10-23.md Tier 2 "True / Not true
 // swipe: card flies by ('8 is more than 10'), swipe ✓ or ✗" — REC + speed, "only on mastered"). A statement comes up: a card's front with a
 // claim about it — its own back ("7+8 · 15", "geo · earth") or one of its deck's OTHER backs ("7+8 · 12": a plausible lure, plan rule 2).
@@ -84371,6 +84985,12 @@ const GAMES_LIST=[
      park:()=>moleState, restore:v=>{ moleState=v||null; }, resume:()=>moleResume(), decks:k=>typeof moleDecks==="function"?moleDecks(_gamesItems(k),k):[]},   // 🐹 MOLE · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
   {key:"jeop",   emoji:"\u{1F4FA}", label:"Jeopardy",    view:"jeop",                 available:k=>typeof jeopDecks==="function"&&jeopDecks(_gamesItems(k),k).length>0, render:c=>buildJeopHtml(c),
      park:()=>jeopState, restore:v=>{ jeopState=v||null; }, resume:()=>jeopResume(), decks:k=>typeof jeopDecks==="function"?jeopDecks(_gamesItems(k),k):[]},   // 📺 JEOPARDY · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
+  {key:"teach",  emoji:"\u{1F393}", label:"Teach it",    view:"teach",                available:k=>typeof teachDecks==="function"&&teachDecks(_gamesItems(k),k).length>0, render:c=>buildTeachHtml(c),
+     park:()=>teachState, restore:v=>{ teachState=v||null; }, resume:()=>teachResume(), decks:k=>typeof teachDecks==="function"?teachDecks(_gamesItems(k),k):[]},   // 🎓 TEACH · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
+  {key:"four",   emoji:"\u{1F534}", label:"Connect Four",view:"four",                 available:k=>typeof fourDecks==="function"&&fourDecks(_gamesItems(k),k).length>0, render:c=>buildFourHtml(c),
+     park:()=>fourState, restore:v=>{ fourState=v||null; }, resume:()=>fourResume(), decks:k=>typeof fourDecks==="function"?fourDecks(_gamesItems(k),k):[]},   // 🔴 FOUR · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
+  {key:"ship",   emoji:"\u{1F6A2}", label:"Battleship",  view:"ship",                 available:k=>typeof shipDecks==="function"&&shipDecks(_gamesItems(k),k).length>0, render:c=>buildShipHtml(c),
+     park:()=>shipState, restore:v=>{ shipState=v||null; }, resume:()=>shipResume(), decks:k=>typeof shipDecks==="function"?shipDecks(_gamesItems(k),k):[]},   // 🚢 SHIP · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule (picture / symbol decks only)
   {key:"truenot",emoji:"\u{2705}",     label:"True / Not true", view:"truenot",          available:k=>typeof tnDecks==="function"&&tnDecks(_gamesItems(k),k).length>0, render:c=>buildTnHtml(c),
      park:()=>tnState, restore:v=>{ tnState=v||null; }, resume:()=>tnResume(), decks:k=>typeof tnDecks==="function"?tnDecks(_gamesItems(k),k):[]},   // ✅ TRUENOT · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
   {key:"sure",   emoji:"\u{1F914}", label:"Sure? then flip", view:"sure",             available:k=>typeof sureDecks==="function"&&sureDecks(_gamesItems(k),k).length>0, render:c=>buildSureHtml(c),
@@ -84492,7 +85112,7 @@ function gameDecksHtml(kid){
   h+='<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Which games play which of '+E(nm)+'\u2019s decks. Preloaded from each game\u2019s own rule \u2014 tap a cell to turn a game off (or back on) for that deck. \u2013 = that game can\u2019t play the deck. Saves right away.'+(edit?'':' (Mom only to change.)')+'</div>';
   if(!decks.length) return h+'<div class="mast-none">No decks yet.</div></div>';
   h+='<div style="overflow-x:auto"><table style="border-collapse:collapse;min-width:420px;font-size:13px"><thead><tr><th style="text-align:left;padding:6px 8px;border-bottom:2px solid #e2ddd6">Deck</th>';
-  games.forEach(g=>{ h+='<th style="padding:6px 6px;border-bottom:2px solid #e2ddd6;white-space:nowrap;font-weight:800">'+g.emoji+' '+E(g.label)+'</th>'; });
+  games.forEach(g=>{ h+='<th style="padding:6px 6px;border-bottom:2px solid #e2ddd6;white-space:nowrap;font-weight:800">'+((typeof gameRulesBtnHtml==="function")?gameRulesBtnHtml(kid,g):(g.emoji+' '+E(g.label)))+'</th>'; });   // 📜 GAMERULES: the name is a button → that game's rules for this kid
   h+='</tr></thead><tbody>';
   decks.forEach(d=>{
     h+='<tr><td style="padding:6px 8px;border-bottom:1px solid #f1f5f9;font-weight:700;white-space:nowrap">'+E(d)+'</td>';
