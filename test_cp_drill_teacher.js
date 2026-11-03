@@ -149,7 +149,7 @@ const drill=(at,items,by)=>({at,by:by||"uid_t",name:"Ms. Brittany",items});
   const t=tdWrites(w), m=mWrites(w);
   ok("records in → the claim: a transaction on mastery/k_teacherDrills/d1 = {at, n:2} (the card she no longer has is skipped)", t.length===1&&t[0][0]==="transaction"&&t[0][1]==="mastery/k_teacherDrills/d1"&&J(t[0][2])===J({at:w.G.now,n:2}), t);
   ok("…then ONE targeted update of mastery/k: cards a and b only", m.length===1&&m[0][0]==="update"&&J([...new Set(Object.keys(m[0][2]).map(k=>k.split("/")[0]))].sort())===J(["0","1"]), m);
-  ok("…Cambium ✓ kept weekly and booked forward; Snag ✗ dropped from every 2 weeks", w.masteryData.k[0].tier==="weekly"&&w.masteryData.k[0].next_due>P0&&w.masteryData.k[1].tier!=="bi_weekly");
+  ok("…Cambium ✓ climbed weekly → every 2 weeks (one right climbs, ⚙ LADDER1) and booked forward; Snag ✗ dropped from every 2 weeks", w.masteryData.k[0].tier==="bi_weekly"&&w.masteryData.k[0].next_due>P0&&w.masteryData.k[1].tier!=="bi_weekly");
   ok("…no history, nothing else in the family's records", !w.G.writes.some(x=>/history/.test(x[1]))&&w.G.writes.filter(x=>/^mastery\//.test(x[1])).length===2);
   ok("…and a fresh drillPick (the drilled cards are no longer due)", w.G.writes.filter(x=>x[1]==="students/fam_k/drillPick").pop()[2].every(x=>x.name!=="Cambium"&&x.name!=="Snag"));
   const n=w.G.writes.length; w.G.listeners.find(l=>l.p==="drills/cls1/fam_k").fn({val:()=>w.G.remote["drills/cls1/fam_k"]}); await w.flush(); w.T.cpdtKidHtml("k"); await w.flush();
@@ -168,9 +168,10 @@ const drill=(at,items,by)=>({at,by:by||"uid_t",name:"Ms. Brittany",items});
 
 console.log("\n── THE REPLAY: two drills while the app is closed, then it opens ──");
 { const w=live("kid"), d1={}, d2={};
-  // the kid studies for 6 days in the 🌿 sitting (the real engine); the teacher drills on day 2 and day 4, the kid's app closed both times
-  const pick={}; for(let d=0;d<6;d++){ w.G.pn=P0+d; w.G.now=Date.UTC(2026,9,28,15)+d*DAY; if(d===2) pick.a=w.T.cpdtPick("k"); if(d===4) pick.b=w.T.cpdtPick("k"); w.E.study("k","envirothon",P0+d); }   // the pick goes out when the app opens, before that day's sitting
-  ok("(the setup) the kid's app picked cards on day 2 and day 4", (pick.a||[]).length>0&&(pick.b||[]).length>0, pick);
+  // the kid studies for 6 days in the 🌿 sitting (the real engine); the teacher drills on day 0 and day 3, the kid's app closed both times
+  // (⚙ LADDER1 2026-11-03: one right climbs, so a studied card is no longer due on day 2 / day 4 — the picks moved to days 0 and 3)
+  const pick={}; for(let d=0;d<6;d++){ w.G.pn=P0+d; w.G.now=Date.UTC(2026,9,28,15)+d*DAY; if(d===0) pick.a=w.T.cpdtPick("k"); if(d===3) pick.b=w.T.cpdtPick("k"); w.E.study("k","envirothon",P0+d); }   // the pick goes out when the app opens, before that day's sitting
+  ok("(the setup) the kid's app picked cards on day 0 and day 3", (pick.a||[]).length>0&&(pick.b||[]).length>0, pick);
   const recA=drill(Date.UTC(2026,9,30,15),pick.a.map((x,k)=>({deck:x.deck,name:x.name,r:k%3===1?"m":"c"}))), recB=drill(Date.UTC(2026,10,1,15),pick.b.map((x,k)=>({deck:x.deck,name:x.name,r:k===0?"m":"c"})));
   w.G.remote["drills/cls1/fam_k"]={dB:recB,dA:recA};   // keys out of order on purpose: the app goes by `at`
   // day 6: the app opens. The reference: Mom's drill grading the same marks on the same day, A then B

@@ -83,7 +83,7 @@ console.log("── the unit as it is today: the same question, the real core co
 console.log("── 📅 Pace in the demo console ──");
 { const w=demo("teacher"), P=w.P; let h=settle(w);
   ok("📋 Class shows 📅 Pace as the next chip", /📋 Class<\/button><button[^>]*envcView\('pace'\)">📅 Pace</.test(h.replace(/\\u\{1F4CB\}/g,"📋")) || h.indexOf("envcView('pace')")>h.indexOf("envcView('grid')"), h.slice(h.indexOf("envs-chips"),h.indexOf("envs-chips")+300));
-  ok("the demo class gets the worked example's days off and Right in a row 2", w._envc.cls.calendar.off["2026-12-25"]===true&&w._envc.cls.calendar.off["2027-01-18"]===true&&w._envc.cls.settings.drill.ladder_streak===2);
+  ok("the demo class gets the worked example's days off, and no Right in a row (⚙ LADDER1 2026-11-03: one right climbs)", w._envc.cls.calendar.off["2026-12-25"]===true&&w._envc.cls.calendar.off["2027-01-18"]===true&&!(((w._envc.cls.settings||{}).drill||{}).ladder_streak));
   ok("📋 Class: an on-pace mark under each name", (h.match(/title="against the 📅 Pace plan"/g)||[]).length===Object.keys(w._envc.students).length, (h.match(/title="against the 📅 Pace plan"/g)||[]).length);
   h=pace(w);
   ok("the plan bar: goal Area / State, target 95 %, the four study-day choices, ✎ Days off, New cards a day 5", /◉ Area Mar 22/.test(h)&&/○ State Apr 23/.test(h)&&/value="95"/.test(h)&&/◉ School days/.test(h)&&/○ Weekdays through the holidays/.test(h)&&/○ Weekends too/.test(h)&&/○ Every day/.test(h)&&/✎ Days off \(\d+\)/.test(h)&&/onchange="cppSet\('npd',this.value\)"/.test(h));

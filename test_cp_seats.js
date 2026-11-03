@@ -79,8 +79,8 @@ console.log("── where it sits, how it is hooked ──");
 console.log("\n── the settings list after the load step ──");
 { const w=demo("teacher"), F=w.ENVCS_FIELDS, m=F.find(f=>f.name==="maxCards"), d=F.find(f=>f.name==="intro_dots");
   ok("Cards a sitting: Auto by default, 0–200, its meaning names Auto", w.cps.CPS_FIELDS_SET===true&&m.kind==="seats"&&m.min===0&&m.max===200&&m.def==="auto"&&/Auto = New cards a day × Days a card is learned/.test(m.means));
-  ok("'Days a card is learned' joins the drill ladder (Advanced), first row, 1–10, default 5", d&&d.part==="drill"&&d.sect==="ladder"&&d.kind==="int"&&d.min===1&&d.max===10&&d.def===5&&F.indexOf(d)===F.findIndex(f=>f.name==="ladder_streak")-1);
-  ok("the update runs once: a second call adds no second row", w.cps.cpSeatsFields()===true&&F.filter(f=>f.name==="intro_dots").length===1&&F.length===16); }
+  ok("'Days a card is learned' joins the drill ladder (Advanced), first row, 1–10, default 5", d&&d.part==="drill"&&d.sect==="ladder"&&d.kind==="int"&&d.min===1&&d.max===10&&d.def===5&&F.indexOf(d)===F.findIndex(f=>f.name==="miss_drop")-1);   // ⚙ LADDER1: Right in a row is gone, so it sits above What a miss does
+  ok("the update runs once: a second call adds no second row", w.cps.cpSeatsFields()===true&&F.filter(f=>f.name==="intro_dots").length===1&&F.length===14); }
 
 console.log("\n── the pace math (pure) ──");
 { const w=demo("teacher"), A=w.cps.cpSeatsAuto, P=w.cps.cpSeatsPace;
@@ -115,7 +115,7 @@ console.log("\n── the teacher's ⚙️ Class settings: Auto, a number, the r
   ok("the Auto tap clears the class's value (it is the default): 'would write' {maxCards:null}", JSON.stringify(w._envs.writes[w._envs.writes.length-1]).indexOf('"maxCards":null')>=0);
   ok("the Advanced fold is closed: 'Days a card is learned' isn't up front", !/Days a card is learned<\/div>/.test(h));
   w._envcs.adv=true; w.renderAll(); h=w.G.content;
-  ok("Advanced ▸ The drill ladder: 'Days a card is learned' (1–10), now 5 (default), right above 'Right in a row to move up'", /Days a card is learned<\/div><div class="envs-muted">Learning days a new card gets in the 🌿 sitting before it climbs the drill ladder\. Auto cards a sitting grows with it\. \(1–10\)/.test(h)&&h.indexOf(">Days a card is learned<")<h.indexOf(">Right in a row to move up<")&&h.indexOf("The drill ladder")<h.indexOf(">Days a card is learned<"));
+  ok("Advanced ▸ The drill ladder: 'Days a card is learned' (1–10), now 5 (default), right above 'What a miss does'", /Days a card is learned<\/div><div class="envs-muted">Learning days a new card gets in the 🌿 sitting before it climbs the drill ladder\. Auto cards a sitting grows with it\. \(1–10\)/.test(h)&&h.indexOf(">Days a card is learned<")<h.indexOf(">What a miss does<")&&!/Right in a row/.test(h)&&h.indexOf("The drill ladder")<h.indexOf(">Days a card is learned<"));
   w.envClsInput("class","intro_dots","4"); await w.flush(); r=seatsRow(w.G.content);
   ok("Days a card is learned 4 → Auto is 80 (20 × 4)", /Auto \(80\)/.test(r)&&/= 80 cards a sitting/.test(r));
   const a=demo("admin"); a.envcView("classset"); a._envcs.adv=true; a.renderAll();
