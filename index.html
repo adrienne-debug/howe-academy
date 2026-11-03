@@ -98,6 +98,7 @@ body.md-frame .mast-sticky{top:calc(var(--hdr-h) + var(--nav-h) + var(--mp-h))!i
    The menu buttons are in .mp-row (the phone strip rules target it); the sub-row is .mp-sub, one thin scrollable strip. */
 #mp-subnav .mp-sub{display:flex;gap:6px;padding:0 10px 7px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
 #mp-subnav .mp-sub::-webkit-scrollbar{display:none}
+#mp-subnav .mp-sub2{border-top:1px dashed var(--border);padding-top:7px}   /* SCHOOLPAGES: School ▸ Mastery's own second row (Mastery · Settings) */
 /* MPSUBROW_CSS_END */
 .fb-dot{width:8px;height:8px;border-radius:50%;background:#4ade80;display:inline-block;margin-right:5px}
 .fb-dot.off{background:#f87171}
@@ -3978,6 +3979,7 @@ function haBusyReason(){
     // (a mid-drill update reload threw her back to the Schedule while drilling)
     if(typeof tab!=="undefined"&&tab==="mastery") return "in Mastery";
     if(typeof tab!=="undefined"&&tab==="schedule"&&typeof schedShowAdmin!=="undefined"&&schedShowAdmin&&typeof adminSubTab!=="undefined"&&adminSubTab==="mastery") return "in Mastery HQ";
+    if(typeof tab!=="undefined"&&tab==="moms-plan"&&typeof mpSubView!=="undefined"&&mpSubView==="mhq") return "in Mastery HQ";   // SCHOOLPAGES: Mom's Day ▸ School ▸ Mastery ▸ Settings
     if(typeof mastRecState!=="undefined"&&mastRecState) return "recording";
     if(typeof mstState!=="undefined"&&mstState) return "study sitting";
     if(document.getElementById("wb-view")||document.getElementById("ordblk-dlg")) return "viewer open";
@@ -4184,7 +4186,7 @@ function initFb() {
     db.ref("pointClaims").on("value",s=>{ pointClaims=s.val()||{}; pointClaimsLoaded=true; });
     db.ref("bank").on("value",s=>{ bank=s.val()||{}; });
     db.ref("readingLog").on("value",s=>{ readingLog=s.val()||{}; });
-    db.ref("esa").on("value",s=>{ esaData=s.val()||{}; try{ if(adminSubTab==="purchases") renderAllSoon(); }catch(e){} });
+    db.ref("esa").on("value",s=>{ esaData=s.val()||{}; try{ if(adminSubTab==="purchases"||(tab==="moms-plan"&&mpSubView==="purch")) renderAllSoon(); }catch(e){} });   // SCHOOLPAGES: + Mom's Day ▸ School ▸ Purchases
     db.ref("plans").on("value",s=>{ roadmapData=s.val()||{}; try{ if(tab==="moms-plan"||adminSubTab==="curriculum") renderAllSoon(); }catch(e){} });
     db.ref("digest").on("value",s=>{ digestData=s.val()||{}; });
     db.ref("scheduleOverrides").on("value",s=>{
@@ -4230,6 +4232,7 @@ function initFb() {
       try{HA_LS.setItem("ha_brainbreaks",JSON.stringify(brainBreaks));}catch(e){}
       if(tab==="schedule"&&!schedShowAdmin&&!schedShowHistory&&!schedShowPace){const el=document.getElementById("content");if(el)renderSchedule(el);}
       else if((tab==="history"||schedShowHistory)&&histTab==="trends"){const el=document.getElementById("content");if(el)renderHistory(el);}
+      else if(tab==="moms-plan"&&mpSubView==="hist"&&histTab==="trends"){const el=document.getElementById("content");if(el)renderMomsPlan(el);}   // SCHOOLPAGES: Mom's Day ▸ School ▸ History
     });
     db.ref("config/momLoop").on("value",s=>{
       momLoop=s.val()||{};
@@ -4465,7 +4468,7 @@ function initFb() {
       // 🗂 the Grid is live with the scheduler (her rule 2026-09-22): a check-off on any device
       // repaints the Grid's done cells here — unless a cell is mid-edit on this screen.
       try{
-        if(typeof schedShowAdmin!=="undefined"&&schedShowAdmin&&typeof adminSubTab!=="undefined"&&adminSubTab==="curriculum"&&typeof currInnerTab!=="undefined"&&currInnerTab==="grid"){
+        if(((typeof schedShowAdmin!=="undefined"&&schedShowAdmin&&typeof adminSubTab!=="undefined"&&adminSubTab==="curriculum")||(typeof mpCurrBare==="function"&&mpCurrBare()))&&typeof currInnerTab!=="undefined"&&currInnerTab==="grid"){   // SCHOOLPAGES: + Mom's Day ▸ School ▸ Curriculum
           const ae=document.activeElement; if(!(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))&&typeof renderAllSoon==="function") renderAllSoon();
         }
       }catch(e){}
@@ -4852,7 +4855,7 @@ function navStackSync(){
 // _mdwCan: Mom's page is hers (momHere); Dad's can be set from his link, his unlocked Day, or by Mom.
 // Navigation + display only: no scheduler, no kid data.
 let ssOrderData=null; try{ ssOrderData=JSON.parse(HA_LS.getItem('ha_day_order')||"null"); }catch(e){}
-const SS_OTHER_VIEWS=["prep","house","weigh","grocery","meals","cal","dadcal","dadall","dadmast"];   // every Mom's Day sub-view that is NOT a Today page (renderMomsPlanView's routes)
+const SS_OTHER_VIEWS=["prep","house","weigh","grocery","meals","cal","dadcal","dadall","dadmast","curr","sset","purch","hist","wins","mhq"];   // SCHOOLPAGES: + the School pages   // every Mom's Day sub-view that is NOT a Today page (renderMomsPlanView's routes)
 let _ssIds={}, _ssD=null;
 var _navStackRO, _navStackSeen;   // var: navStackWire (above) sets the observer before this line runs
 function ssJumpOn(){ try{ return tab==="moms-plan"&&!momSchedView&&SS_OTHER_VIEWS.indexOf(mpSubView)<0; }catch(e){ return false; } }   // Mom's Day ▸ Today (plan / null) or ▸ Dad's Day ('dad')
@@ -6888,6 +6891,7 @@ function toggleSchedPace(){ schedShowPace=!schedShowPace; schedShowAdmin=false; 
 function toggleSchedBoard(){ schedShowBoard=!schedShowBoard; schedShowAdmin=false; schedShowHistory=false; schedShowPace=false; schedShowPeek=false; renderAll(); }
 function goToStars(){ if(tab!=="schedule") showTab("schedule"); schedShowPace=true; schedShowAdmin=false; schedShowHistory=false; schedShowBoard=false; renderAll(); }
 function setAdminSub(s){ if(s==="calendar"&&typeof onecalGo==="function"){ onecalGo(); return; }   // ONECAL: the retired page's callers land on Mom's Day ▸ Schedule ▸ Month
+  if(typeof mpAdminRoute==="function"&&mpAdminRoute(s)) return;   // SCHOOLPAGES: on a Mom's Day page these land on the School page, not the Schedule's Admin hub
   if((s==="purchases"&&!pageOn("purchases"))||(s==="mastery"&&!pageOn("mastery"))) s="hq"; adminSubTab=s; renderAll(); }
 
 // ── MOM HQ HUB (phase 1: pure navigation — every row deep-links to an existing
@@ -7011,7 +7015,7 @@ function renderPurchasesView(el,ah){
   if(window._esLoading) return; window._esLoading=true;
   const s=document.createElement("script");
   s.src=/github\.io$/.test(location.hostname)?("esa.js?v="+Date.now()):"esa.js";
-  s.onload=()=>{ if(adminSubTab==="purchases") renderAll(); };
+  s.onload=()=>{ if(adminSubTab==="purchases"||(typeof mpSubView!=="undefined"&&tab==="moms-plan"&&mpSubView==="purch")) renderAll(); };   // SCHOOLPAGES
   s.onerror=()=>{ window._esLoading=false; el.innerHTML=(ah||"")+'<div style="padding:40px;text-align:center;color:var(--muted)">Couldn\'t load purchases.</div>'; };
   document.head.appendChild(s);
 }
@@ -11887,6 +11891,7 @@ function momGateTry(inp,final){
 function renderMomsPlanView(el){
   mpInit();
   if(!momGateOpen()){ el.innerHTML=momGateHTML(); setTimeout(function(){ const i=document.getElementById("mg-pin"); if(i) i.focus(); },30); return; }   // 🔒 MOMGATE
+  if(typeof MP_SCHOOL_VIEWS!=="undefined"&&MP_SCHOOL_VIEWS[mpSubView]){ return renderMPSchool(el); }   // SCHOOLPAGES: Curriculum · Settings · Purchases · History · Wins · Mastery settings
   if(mpSubView==='prep'){ return renderMPPrep(el); }
   if(mpSubView==='house'){ return renderHousehold(el); }   // 🏡 HOUSEHOLD
   if(mpSubView==='weigh'){ return renderMPWeigh(el); }
@@ -25006,19 +25011,59 @@ function mpKitchenRow(active){
 //    Admin is on Curriculum the bar lights School and draws this sub-row (mpSubnav maps 'cal' to 'curriculum' there).
 // The School tab reopens whichever of the four was used last on THIS device (HA_LS, never synced); first time it's Notebooks.
 // Display + navigation only: no Firebase writes.
-const MP_SCHOOL=['notebook','mastery','units','curriculum'];
+// SCHOOLPAGES (her plan-2 yes 2026-11-02, "...looks great"): the School row grows — Notebooks · Mastery · Units · Curriculum ·
+// Settings · 💰 Purchases · 📜 History · 🌟 Wins. Mastery gets a second row under it: Mastery (the tab) · Settings (Mastery HQ) —
+// "we have two masteries … combine those two mastery tabs … to one location". Curriculum, Settings, Purchases, History, Wins and
+// Mastery settings are Mom's Day pages of their own now (mpSubView curr / sset / purch / hist / wins / mhq): the same page
+// functions the Schedule's Admin hub draws, under her banner + this menu, with none of the Schedule's bars — Curriculum "opens up
+// just the curriculum … not the today, the week, the month … the schedule, the wins, the history, admin … you wouldn't need it
+// to say grid". Display + navigation only: no Firebase writes of their own.
+const MP_SCHOOL=['notebook','mastery','units','curriculum','settings','purchases','history','wins','mhq'];   // 'mhq' = Mastery ▸ Settings (lit under Mastery)
+const MP_SCHOOL_VIEWS={curr:'curriculum',sset:'settings',purch:'purchases',hist:'history',wins:'wins',mhq:'mhq'};   // Mom's Day sub-view → School chip
+const MP_SCHOOL_SUBS={curriculum:'The whole curriculum \u2014 grid, subject cards, pacing, rules',settings:'Kids, codes, page switches, family rules',purchases:'Orders, wishlist, the ESA grant and family money',history:'Completed work, trends, attendance, the weekly report',wins:'Stars, trophies and book progress',mhq:'Mastery settings \u2014 rules, decks, sessions, cards'};
+function mpSchoolSub(t){ for(const k in MP_SCHOOL_VIEWS) if(MP_SCHOOL_VIEWS[k]===t) return k; return null; }   // chip → its Mom's Day sub-view, null for a framed tab
 function mpSchoolLast(){ let v=null; try{ v=HA_LS.getItem('ha_mp_school'); }catch(e){} return MP_SCHOOL.indexOf(v)>=0?v:'notebook'; }
 function mpSchoolNote(t){ if(MP_SCHOOL.indexOf(t)<0) return; try{ HA_LS.setItem('ha_mp_school',t); }catch(e){} }
 function mpSchoolRow(active){
-  const b=(t,lbl)=>`<button onclick="mpSchoolOpen('${t}')" style="flex:0 0 auto;white-space:nowrap;padding:6px 12px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;border:1.5px solid ${active===t?'#2B7A78':'transparent'};border-radius:20px;cursor:pointer;color:${active===t?'#1f5e5c':'#6b7280'};background:${active===t?'#DEF2F1':'transparent'}">${lbl}</button>`;
-  return `<div id="mp-school-row" class="mp-sub">${b('notebook','📓 Notebooks')}${b('mastery','🧠 Mastery')}${b('units','📚 Units')}${b('curriculum','📖 Curriculum')}</div>`;
+  const chip=(on,t,lbl)=>`<button onclick="mpSchoolOpen('${t}')" style="flex:0 0 auto;white-space:nowrap;padding:6px 12px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;border:1.5px solid ${on?'#2B7A78':'transparent'};border-radius:20px;cursor:pointer;color:${on?'#1f5e5c':'#6b7280'};background:${on?'#DEF2F1':'transparent'}">${lbl}</button>`;
+  const b=(t,lbl)=>chip(active===t,t,lbl);
+  const mast=(active==='mastery'||active==='mhq');
+  const mhqOn=(typeof pageOn!=="function")||pageOn("mastery"), purchOn=(typeof pageOn!=="function")||pageOn("purchases");
+  let h=`<div id="mp-school-row" class="mp-sub">${b('notebook','📓 Notebooks')}${chip(mast,'mastery','🧠 Mastery')}${b('units','📚 Units')}${b('curriculum','📖 Curriculum')}${b('settings','⚙️ Settings')}${purchOn?b('purchases','💰 Purchases'):''}${b('history','📜 History')}${b('wins','🌟 Wins')}</div>`;
+  if(mast) h+=`<div id="mp-mastery-row" class="mp-sub mp-sub2">${b('mastery','🧠 Mastery')}${mhqOn?b('mhq','⚙️ Settings'):''}</div>`;   // the two masteries, one place
+  return h;
 }
 function mpSchoolOpen(t){
   if(MP_SCHOOL.indexOf(t)<0) t='notebook';
   mpSchoolNote(t);
-  if(t==='curriculum'){ adminSubTab='curriculum'; currInnerTab='grid'; msvOpenAdmin(); return; }   // Mom's Day ▸ Schedule ▸ Admin ▸ Curriculum (the grid)
-  mdFrameOpen(t);   // the tab itself, under Mom's Day's banner + menu
+  const v=mpSchoolSub(t);
+  if(v){ if(t==='curriculum'){ try{ currInnerTab='grid'; }catch(e){} } mpGoto(v); return; }   // a Mom's Day page of its own (the Curriculum chip lands on the grid)
+  mdFrameOpen(t);   // the tab itself (Notebooks / Mastery / Units), under Mom's Day's banner + menu
   try{ window.scrollTo(0,0); }catch(e){}
+}
+// Is the Curriculum grid showing as Mom's Day ▸ School ▸ Curriculum? (then it draws no "Grid" bar and its stickies sit under the menu)
+function mpCurrBare(){ try{ return tab==="moms-plan"&&mpSubView==="curr"; }catch(e){ return false; } }
+// Links that used to land on the Schedule's Admin hub land on the School page instead while she is on a Mom's Day page.
+function mpAdminRoute(sub){
+  try{ if(tab!=="moms-plan"||momSchedView) return false; }catch(e){ return false; }
+  const v=({curriculum:'curr',settings:'sset',rules:'sset',purchases:'purch',mastery:'mhq'})[sub]; if(!v) return false;
+  mpGoto(v); return true;
+}
+// All · each kid, for the pages that read the Schedule's kid pick (History) and have no kid row of their own here.
+function mpSchoolKidRow(){
+  const b=(k,lbl)=>{ const on=(k==="all")?(kid==="all"||kid==="mom"):(kid===k); return '<button onclick="selKid(\''+k+'\')" style="padding:5px 14px;border-radius:20px;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?'#2B7A78':'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
+  return '<div style="display:flex;gap:6px;flex-wrap:wrap;padding:12px 12px 0">'+b("all","All")+ROSTER.map(k=>b(k,cap(k))).join("")+'</div>';
+}
+function renderMPSchool(el){
+  const key=MP_SCHOOL_VIEWS[mpSubView]||'curriculum';
+  const top=mwBanner(MP_SCHOOL_SUBS[key]||'')+mpSubnav(key);
+  if(key==='curriculum'){ renderCurriculumView(el,top); return; }   // bare (mpCurrBare): no Grid bar, stickies under the menu
+  if(key==='settings'){ renderSettings(el,top); return; }
+  if(key==='purchases'){ renderPurchasesView(el,top); return; }
+  if(key==='mhq'){ renderMasteryHQ(el,top); return; }
+  el.innerHTML=top+(key==='history'?mpSchoolKidRow():'')+'<div id="mp-school-body"></div>';   // History / Wins draw into a box under the menu (they take no header)
+  const body=document.getElementById("mp-school-body"); if(!body) return;
+  if(key==='history') renderHistory(body); else renderPace(body);
 }
 // What a framed School page draws above its own content (Mastery has its own line in _renderMasteryInner).
 function mpSchoolFrame(t){
@@ -26523,7 +26568,7 @@ function histSubjOf(title,subjectKey){
   const first=s.split(/[—–]/)[0];
   return (first.replace(/^[\s\W]+/,"").trim())||subjectKey||"Other";
 }
-function setHistLogView(v){ histLogView=v; const el=document.getElementById("content"); if(el&&(tab==="history"||(tab==="schedule"&&schedShowHistory))) renderHistory(el); }
+function setHistLogView(v){ histLogView=v; const el=document.getElementById("content"); if(el&&tab==="moms-plan"&&mpSubView==="hist"){ renderMomsPlan(el); return; } if(el&&(tab==="history"||(tab==="schedule"&&schedShowHistory))) renderHistory(el); }   // SCHOOLPAGES: + Mom's Day ▸ School ▸ History
 // Collapse/expand one subject group in place (no full re-render, so scroll is kept).
 function histToggleGroup(gid){
   const b=document.getElementById(gid); if(!b) return;
@@ -26956,8 +27001,8 @@ function subjNoCarry(t){
   return !!(s&&(s.noCarry||s.tracking==="daily"));
 }
 
-function setHistTab(t){ histTab=t; const el=document.getElementById("content"); if(el&&(tab==="history"||(tab==="schedule"&&schedShowHistory))) renderHistory(el); }
-function setTrendKid(k){ histTrendKid=(histTrendKid===k)?null:k; const el=document.getElementById("content"); if(el&&(tab==="history"||(tab==="schedule"&&schedShowHistory))) renderHistory(el); }
+function setHistTab(t){ histTab=t; const el=document.getElementById("content"); if(el&&tab==="moms-plan"&&mpSubView==="hist"){ renderMomsPlan(el); return; } if(el&&(tab==="history"||(tab==="schedule"&&schedShowHistory))) renderHistory(el); }   // SCHOOLPAGES
+function setTrendKid(k){ histTrendKid=(histTrendKid===k)?null:k; const el=document.getElementById("content"); if(el&&tab==="moms-plan"&&mpSubView==="hist"){ renderMomsPlan(el); return; } if(el&&(tab==="history"||(tab==="schedule"&&schedShowHistory))) renderHistory(el); }   // SCHOOLPAGES
 function toggleAttWk(k){ const el=document.getElementById("attwk_"+k); if(el) el.style.display=el.style.display==="none"?"block":"none"; }
 
 function buildKidAttendance(kid){
@@ -28285,13 +28330,18 @@ function renderCurriculumView(el,headerHtml){
   // (Plans & Map retired 2026-07-02 the same way, then deleted.)
   if(currInnerTab==="plans"||currInnerTab==="subjects") currInnerTab="grid";
   let h=(headerHtml||'');
-  h+='<div style="position:sticky;top:calc(var(--hdr-h) + var(--nav-h) + var(--mp-h) + var(--sub-h) + 38px);z-index:89;background:var(--bg);display:flex;gap:0;margin:0;padding:0 4px;border-bottom:2px solid var(--border)">';   // NAVSTACK: under the Admin tab row (38px) above
+  const _cvBare=(typeof mpCurrBare==="function")&&mpCurrBare();   // SCHOOLPAGES: Mom's Day ▸ School ▸ Curriculum — "you wouldn't need it to say grid"
+  const _cvBar=!(_cvBare&&currInnerTab==="grid");                   // …the one-chip bar stays only as the way back from the Builder
+  const _cvTop='var(--hdr-h) + var(--nav-h) + var(--mp-h)'+(_cvBare?'':' + var(--sub-h) + 38px');   // under the menu, else under the Admin tab row (38px)
+  if(_cvBar){
+  h+='<div style="position:sticky;top:calc('+_cvTop+');z-index:89;background:var(--bg);display:flex;gap:0;margin:0;padding:0 4px;border-bottom:2px solid var(--border)">';   // NAVSTACK: under the Admin tab row (38px) above
   ["grid"].forEach(tab=>{
     const on=currInnerTab===tab;
     const label=tab==="subjects"?"Subjects":tab==="builder"?"Builder":"Grid";
     h+='<button style="flex:1;padding:9px 4px;font-size:12px;font-weight:700;border:none;background:none;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:'+(on?"var(--text)":"var(--muted)")+';border-bottom:2px solid '+(on?"var(--header)":"transparent")+';margin-bottom:-2px" onclick="setCurrInnerTab(\''+tab+'\')">'+label+'</button>';
   });
   h+='</div>';
+  }   // SCHOOLPAGES: _cvBar
 
   // Builder tab — pacing modes materialized into the lesson grid
   if(currInnerTab==="builder"){
@@ -28327,7 +28377,7 @@ function renderCurriculumView(el,headerHtml){
 
   // Kid selector — sticky below subtab bar
   const nw=currWeekNum()+1;
-  h+='<div style="position:sticky;top:calc(var(--hdr-h) + var(--nav-h) + var(--mp-h) + var(--sub-h) + 76px);z-index:88;background:var(--bg);padding:10px 0 8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">';   // NAVSTACK: under the Admin tab row + the Grid sub-tab bar (38px each)
+  h+='<div style="position:sticky;top:calc('+_cvTop+(_cvBar?' + 38px':'')+');z-index:88;background:var(--bg);padding:10px 0 8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">';   // NAVSTACK: under the Admin tab row + the Grid sub-tab bar (38px each)
   kids.forEach(kid=>{
     const on=kid===k;
     const c=KID_COLOR[kid]||"#333";
@@ -85515,7 +85565,7 @@ function saveRules(r){
 
 function rulesToggleCard(id){
   // In Settings the School Day card opens by itself (rulesOpen.school undefined) — first tap closes it.
-  if(id==="school"&&rulesOpen[id]===undefined&&typeof schedShowAdmin!=="undefined"&&schedShowAdmin&&typeof adminSubTab!=="undefined"&&(adminSubTab==="settings"||adminSubTab==="rules")) rulesOpen[id]=false;
+  if(id==="school"&&rulesOpen[id]===undefined&&((typeof schedShowAdmin!=="undefined"&&schedShowAdmin&&typeof adminSubTab!=="undefined"&&(adminSubTab==="settings"||adminSubTab==="rules"))||(typeof tab!=="undefined"&&tab==="moms-plan"&&typeof mpSubView!=="undefined"&&mpSubView==="sset"))) rulesOpen[id]=false;   // SCHOOLPAGES: + Mom's Day ▸ School ▸ Settings
   else rulesOpen[id]=!rulesOpen[id];
   renderAll();
 }

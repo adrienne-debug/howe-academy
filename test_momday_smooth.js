@@ -129,7 +129,7 @@ console.log("\n── 3b. …and the same CSS (iPad and phone) ──");
   });
   ok("the twins live in the phone media query (max-width:480px)", /@media \(max-width:480px\)\{[^]*\.md-banner~#mp-subnav \.mp-row\{/.test(CSS));
   ok(".md-banner~#mp-subnav matches the menu row on every section (it follows the banner as a sibling, ▸ Schedule's #msv-bar too)", /^<div class="md-banner"[^]*<\/div><div class="md-sum"[^>]*>[^<]*<\/div>$/.test(W.mwBanner("x").replace(/>\s+</g, "><")));
-  ok("no other rule singles out one section's banner, summary or menu row", rules.every(r => /^(#mp-subnav|#msv-bar #mp-subnav|\.md-banner~#mp-subnav)( \.mp-row| \.mp-sub)?(::-webkit-scrollbar| button)?$/.test(r.sel) || /^body\./.test(r.sel)), rules.map(r => r.sel));
+  ok("no other rule singles out one section's banner, summary or menu row", rules.every(r => /^(#mp-subnav|#msv-bar #mp-subnav|\.md-banner~#mp-subnav)( \.mp-row| \.mp-sub| \.mp-sub2)?(::-webkit-scrollbar| button)?$/.test(r.sel) || /^body\./.test(r.sel)), rules.map(r => r.sel));
   ok("the menu row is still sticky (STICKYSTACK untouched)", /#mp-subnav\{position:sticky;top:calc\(var\(--hdr-h\) \+ var\(--nav-h\)\);z-index:98\}/.test(src));
 }
 

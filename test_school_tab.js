@@ -44,7 +44,7 @@ console.log("── School's own row ──");
 ["notebook","mastery","units","curriculum"].forEach(t=>{
   const h=world().api.mpSubnav(t);
   ok("on '"+t+"': 🎓 School is lit and the sub-row sits inside the sticky element, after the button row", /color:#fff;background:#2B7A78[^>]*>🎓 School/.test(h)&&/<\/button><\/div><div id="mp-school-row" class="mp-sub">[\s\S]*<\/div><\/div>$/.test(h));
-  ok("…📓 Notebooks · 🧠 Mastery · 📚 Units · 📖 Curriculum, '"+t+"' outlined", /mpSchoolOpen\('notebook'\)[^>]*>📓 Notebooks<\/button><button onclick="mpSchoolOpen\('mastery'\)[^>]*>🧠 Mastery<\/button><button onclick="mpSchoolOpen\('units'\)[^>]*>📚 Units<\/button><button onclick="mpSchoolOpen\('curriculum'\)[^>]*>📖 Curriculum<\/button>/.test(h)
+  ok("…📓 Notebooks · 🧠 Mastery · 📚 Units · 📖 Curriculum …, '"+t+"' outlined (SCHOOLPAGES adds Settings · Purchases · History · Wins after them)", /mpSchoolOpen\('notebook'\)[^>]*>📓 Notebooks<\/button><button onclick="mpSchoolOpen\('mastery'\)[^>]*>🧠 Mastery<\/button><button onclick="mpSchoolOpen\('units'\)[^>]*>📚 Units<\/button><button onclick="mpSchoolOpen\('curriculum'\)[^>]*>📖 Curriculum<\/button>/.test(h)
     &&new RegExp("mpSchoolOpen\\('"+t+"'\\)\" style=\"[^\"]*border:1.5px solid #2B7A78[^\"]*background:#DEF2F1").test(h)
     &&["notebook","mastery","units","curriculum"].filter(x=>x!==t).every(x=>new RegExp("mpSchoolOpen\\('"+x+"'\\)\" style=\"[^\"]*border:1.5px solid transparent").test(h)));
 });
@@ -62,7 +62,7 @@ console.log("── opening each School page ──");
   w.api.mpSchoolOpen("mastery"); ok("Mastery: the same door Kids' Corner's links use", w.log[w.log.length-1]==="frame:mastery"&&w.api.mpSchoolLast()==="mastery");
   w.api.mpSchoolOpen("notebook"); ok("Notebooks: framed too", w.log[w.log.length-1]==="frame:notebook");
   w.api.mpSchoolOpen("curriculum");
-  ok("Curriculum: Mom's Day ▸ Schedule ▸ Admin ▸ Curriculum (the grid) through msvOpenAdmin — no frame, no new page", w.log[w.log.length-1]==="msvOpenAdmin"&&w.st.adminSubTab==="curriculum"&&w.st.currInnerTab==="grid"&&w.api.mpSchoolLast()==="curriculum");
+  ok("Curriculum: its own Mom's Day page (SCHOOLPAGES: mpGoto('curr'), the grid) — no frame, no Admin hub", w.log[w.log.length-1]==="renderMomsPlan"&&w.log.indexOf("msvOpenAdmin")<0&&w.st.currInnerTab==="grid"&&w.st.mpSubView==="curr"&&w.api.mpSchoolLast()==="curriculum");
   w.api.mpSchoolOpen("dad"); ok("a stray name opens Notebooks", w.log[w.log.length-1]==="frame:notebook"&&w.api.mpSchoolLast()==="notebook");
   w.ls.ha_mp_school="cal"; ok("a stray remembered value falls back to Notebooks", w.api.mpSchoolLast()==="notebook");
   const w2=world({broken:true}); w2.api.mpSchoolOpen("units");
