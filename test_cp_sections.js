@@ -96,7 +96,7 @@ console.log("── how it is hooked ──");
   const out=src.slice(0,a)+src.slice(b), hooks=out.split("\n").filter(l=>/🎚 CPSECTIONS/.test(l));
   ok("every line outside the block tagged 🎚 CPSECTIONS is typeof-guarded on a cpSec function", hooks.length>0&&hooks.every(l=>/typeof cpSec\w+ ?=== ?"function"/.test(l)), hooks.filter(l=>!/typeof cpSec\w+ ?=== ?"function"/.test(l)).map(l=>l.trim().slice(0,90)));
   const want=["cpSecBank","cpSecItems","cpSecOffItem","cpSecFlash","cpSecTestOff","cpSecListen","cpSecStartNote","cpSecHeadHtml","cpSecCellTag","cpSecGridHtml","cpSecStudentHtml","cpSecPaceOpt","cpSecPaceCell","cpSecPaceOut"];
-  ok("every hook is wired: bank, pile + drill, games ×2, ID Flash, check-in + final, listener, start line, grid ×3, student page, pace ×3", want.every(f=>hooks.some(l=>l.indexOf(f)>=0))&&hooks.filter(l=>/cpSecItems\(/.test(l)).length===2&&hooks.filter(l=>/cpSecOffItem\(/.test(l)).length===2&&hooks.filter(l=>/cpSecTestOff\(/.test(l)).length===2, want.filter(f=>!hooks.some(l=>l.indexOf(f)>=0)));
+  ok("every hook is wired: bank, pile + drill, games ×3 (Which one?, Memory, 🧺 Sort it 2026-11-02), ID Flash, check-in + final, listener, start line, grid ×3, student page, pace ×3", want.every(f=>hooks.some(l=>l.indexOf(f)>=0))&&hooks.filter(l=>/cpSecItems\(/.test(l)).length===2&&hooks.filter(l=>/cpSecOffItem\(/.test(l)).length===3&&hooks.filter(l=>/cpSecTestOff\(/.test(l)).length===2, want.filter(f=>!hooks.some(l=>l.indexOf(f)>=0)));
   ok("CPSHARE's cpSecState hook now has its reader (Review only / Off sections leave the split)", /typeof cpSecState==="function"/.test(SHARE)&&/function cpSecState\(kid,sec\)/.test(SEC)); }
 
 console.log("\n── the states (pure) ──");

@@ -77584,6 +77584,241 @@ function buildSpellHtml(color){
   return h+'</div></div>';
 }
 // SPELLBUILD_END
+// SORTIT_START — 🧺 "Sort it" (her "sure let's try", 2026-11-02; PLAN_practice_games_2026-10-23.md Tier 1 "Sort it" / Tier 3
+// "Group Sort", build order #3). One game, two faces: the little ones sort PICTURES into 2–3 bins (Animals / Colors / Shapes…);
+// the readers sort 12 cards into the rules or answers they belong to. The kid drags a card onto a bin, or taps the card and then
+// the bin — the sorting IS the recall (plan §2.1), nothing is answered to earn a turn at something else.
+// WHERE A BIN COMES FROM (read from the real decks 2026-11-02: no card carries a group / rule field, so nothing is invented):
+//   "pic"  — the 🖼 Pictures deck: every card with a BUILT-IN picture (emoji, color dot, shape — never a photo, so a photo ID deck
+//            like a chemistry set or a frog unit doesn't sort by "which deck is it from"); the bin is the card's own deck.
+//            2–3 bins a round (SORT_PIC_BINS), SORT_PER_BIN pictures each. A deck needs SORT_PER_BIN such cards to be a bin.
+//   "back" — any other deck whose BACKS repeat: the shared back is the bin (a rule deck: "Use a before a consonant sound" ×3 →
+//            the sentences sort to their rule; math facts: 1+4 / 2+3 / 4+1 → the bin "5"). A card belongs to exactly one bin.
+//            A bin needs SORT_MIN_PER cards; a deck plays with 2+ bins and SORT_MIN_CARDS+ cards on the board (her yes to the
+//            2-per-bin bar). Up to SORT_BINS_MAX bins and SORT_BOARD cards a round, split evenly; more bins than that → a
+//            random SORT_BINS_MAX of them each round. Left out, as in Which one?: spelling / phonograms (_whichLeftOut), a
+//            class's hidden cards, a back that is the front, a sound mark, a back too long for a bin label.
+//   Tap a picture card: hear its name. Tap a bin with nothing picked: hear the bin's name (a pre-reader's bin labels). Never
+//   the answer — the app never says which bin a card belongs in (feedback_howe_dont_do_the_work_for_them).
+//   Right bin → the soft ding, the card settles into the bin. Wrong bin → the soft bonk, the card shakes back into the tray
+//   (nothing is told), and that card comes back ONCE after the rest are placed (Which one?'s rule). No lives, no clock.
+// Writes (only these): <kid>_settings/match_best key "<deck> · sort" (most first-try right, only when beaten) and the round's
+//   gameLog entry (GAMELOG, game:"sort" — each card's first/wrong/back). NEVER touches the ladder: no scores, no next_due,
+//   no studyLog. db && !_dryRun() only. A round dropped (Change deck, kid switch) writes nothing. Per-kid park via GAMEKID
+//   through the GAMES_LIST entry (🎲 GAMEKIT). Pure pieces (sortDecks / sortRound / sortJudge) are what test_sortit.js runs.
+let sortState=null;   // {kid,deck,kind,game:"sort",t0,bins:[{key,label,ids:[]}],turns:[{pid,bin,done,first,wrong:{},back}],sel,shake,lit,phase,first,of,isPB,prevBest,returned:{},gameLogged}
+const SORT_PIC="Pictures", SORT_BOARD=12, SORT_BINS_MAX=4, SORT_PIC_BINS=3, SORT_PER_BIN=3, SORT_MIN_PER=2, SORT_MIN_CARDS=6, SORT_LABEL_MAX=120;
+const SORT_BIN_EMOJI={animals:"\u{1F43E}",colors:"\u{1F3A8}",shapes:"\u{1F537}",dinosaurs:"\u{1F996}",food:"\u{1F34E}",pictures:"\u{1F5BC}"};
+function _sortItems(kid){ let items=(typeof masteryData!=="undefined"&&masteryData&&masteryData[kid||masteryKid])||[]; if(!Array.isArray(items)) items=Object.values(items); return items; }
+function _sortPlain(s){ return (typeof _matchPlain==="function")?_matchPlain(s):String(s||"").replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim(); }
+function _sortNorm(s){ return _sortPlain(s).toLowerCase().replace(/\s+/g," ").trim(); }
+function _sortShuffle(a,rnd){ rnd=rnd||Math.random; for(let i=a.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+// A card in play for the games: active / introduction, not a 🇬🇧→🇩🇪 production twin, with a front, not one Which one? leaves out.
+function _sortInPlay(i,kid){
+  if(!i||(i.status!=="active"&&i.status!=="introduction")||i.dir==="prod") return false;
+  if(!String(i.prompt||"").trim()) return false;
+  try{ if(typeof _whichLeftOut==="function"&&_whichLeftOut(i,kid)) return false; }catch(e){}
+  try{ if(typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin(kid,i.subject)) return false; }catch(e){}   // 📝 ENVTEST
+  try{ if(typeof cpceHidItem==="function"&&cpceHidItem(kid,i)) return false; }catch(e){}   // 📚 CPCARDSEDIT
+  try{ if(typeof cpSecOffItem==="function"&&cpSecOffItem(kid,i)) return false; }catch(e){}   // 🎚 CPSECTIONS
+  return true;
+}
+// The card's built-in picture (emoji / color / shape / a unit's emoji visual) — "" for a photo or no picture at all.
+function _sortPic(it){ let v=null; try{ v=(typeof _smTileVis==="function")?_smTileVis(it,true):null; }catch(e){} return (v&&!/^\s*<img/i.test(v))?v:""; }
+// The card's back as a bin label — "" when it can't be one (none, the same as the front, a sound mark, too long).
+function _sortBack(it,kid){
+  let b=""; try{ b=(typeof owRuleBack==="function")?owRuleBack(kid,it):(it.answer!=null?String(it.answer):""); }catch(e){ b=it.answer!=null?String(it.answer):""; }   // OURWORDS
+  b=_sortPlain(b); const f=_sortPlain(it.prompt);
+  if(!b||!f||_sortNorm(b)===_sortNorm(f)||b.length>SORT_LABEL_MAX||b.charAt(0)==="/") return "";
+  return b;
+}
+// PURE: every deck this kid can sort → {deck:{kind:"pic"|"back", bins:[{key,label,ids:[...]}]}} (bins biggest first)
+function sortDecks(items,kid){
+  kid=kid||masteryKid;
+  const back={}, pic={}, seen={};
+  (items||[]).forEach(i=>{
+    if(!_sortInPlay(i,kid)) return;
+    const d=i.subject||"Other", nk=d+"|"+_sortNorm(i.prompt); if(seen[nk]) return; seen[nk]=1;   // one card per name
+    if(_sortPic(i)){ (pic[d]||(pic[d]={key:d,label:d,ids:[]})).ids.push(i.id); return; }
+    const b=_sortBack(i,kid); if(!b) return;
+    const g=back[d]||(back[d]={}), k=_sortNorm(b); (g[k]||(g[k]={key:k,label:b,ids:[]})).ids.push(i.id);
+  });
+  const out={}, bySize=(a,b)=>b.ids.length-a.ids.length||String(a.label).localeCompare(String(b.label),undefined,{numeric:true});
+  const pbins=Object.values(pic).filter(b=>b.ids.length>=SORT_PER_BIN).sort(bySize);
+  if(pbins.length>=2) out[SORT_PIC]={kind:"pic",bins:pbins};
+  Object.keys(back).sort().forEach(d=>{
+    const bins=Object.values(back[d]).filter(b=>b.ids.length>=SORT_MIN_PER).sort(bySize);
+    if(bins.length>=2&&bins.reduce((n,b)=>n+b.ids.length,0)>=SORT_MIN_CARDS) out[d]={kind:"back",bins:bins};
+  });
+  return out;
+}
+function sortDeckNames(decks){ return Object.keys(decks||{}).sort((a,b)=>(a===SORT_PIC?-1:b===SORT_PIC?1:a.localeCompare(b))); }
+// PURE: one round of a deck → {kind, bins:[{key,label,ids:[]}] (ids = what's been placed, in order), turns:[…] shuffled} or null
+function sortRound(deck,decks,rnd){
+  rnd=rnd||Math.random;
+  const d=decks&&decks[deck]; if(!d) return null;
+  const nb=d.kind==="pic"?SORT_PIC_BINS:SORT_BINS_MAX;
+  const picks=_sortShuffle(d.bins.slice(),rnd).slice(0,nb);
+  if(picks.length<2) return null;
+  const cap=d.kind==="pic"?SORT_PER_BIN:Math.ceil(SORT_BOARD/picks.length);
+  const turns=[];
+  picks.forEach(b=>{ _sortShuffle(b.ids.slice(),rnd).slice(0,cap).forEach(id=>turns.push({pid:id,bin:b.key,done:false,first:false,wrong:{},back:false})); });
+  _sortShuffle(turns,rnd);
+  const bins=picks.map(b=>({key:b.key,label:b.label,ids:[]})).sort((a,b)=>String(a.label).localeCompare(String(b.label),undefined,{numeric:true}));
+  return {kind:d.kind,bins:bins,turns:turns};
+}
+// PURE over the state: one drop of turn ti onto bin bi → "right" | "wrong" | null (nothing to do). On "right" the card is
+// placed; when the tray empties, every card that missed comes back once (the end of the round), else the round is over.
+function sortJudge(st,ti,bi){
+  const t=st&&st.turns[ti], b=st&&st.bins[bi]; if(!t||!b||t.done) return null;
+  if(t.bin!==b.key){ t.wrong[b.key]=1; return "wrong"; }
+  t.done=true; t.first=!Object.keys(t.wrong).length;
+  b.ids.push(t.pid);
+  if(!t.back&&t.first) st.first++;
+  if(st.turns.every(x=>x.done)){
+    const again=st.turns.filter(x=>!x.first&&!x.back&&!st.returned[x.pid]);
+    again.forEach(x=>{ st.returned[x.pid]=1; st.turns.push({pid:x.pid,bin:x.bin,done:false,first:false,wrong:{},back:true}); });
+    if(!again.length) st.phase="done";
+  }
+  return "right";
+}
+function _sortItem(st,pid){ return _sortItems(st.kid).find(x=>x&&x.id===pid)||null; }
+function _sortSilent(it){ try{ return typeof whichSilent==="function"&&whichSilent(it); }catch(e){ return false; } }
+function _sortSayCard(st,t){ const it=t&&_sortItem(st,t.pid); if(it&&!_sortSilent(it)) try{ mastSpeak(_sortPlain(it.prompt)); }catch(e){} }   // its NAME — never its bin
+function _sortSayBin(st,bi){ const b=st&&st.bins[bi]; if(b&&b.label) try{ mastSpeak(_sortPlain(b.label)); }catch(e){} }
+function sortStart(deck){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding / bonk (iPad)
+  const items=_sortItems(), decks=sortDecks(items), r=sortRound(deck,decks);
+  if(!r){ sortState=null; _mastRe(); return; }
+  sortState={kid:masteryKid,deck:deck,kind:r.kind,game:"sort",t0:Date.now(),bins:r.bins,turns:r.turns,sel:null,shake:null,lit:null,phase:"play",first:0,of:r.turns.length,isPB:false,prevBest:null,returned:{}};
+  _mastRe();
+  if(r.kind==="pic") try{ mastSpeak(r.bins.map(b=>_sortPlain(b.label)).join(", ")); }catch(e){}   // the bins' names, for a pre-reader
+}
+function sortChangeDeck(){ sortState=null; _mastRe(); }   // drop the round as it stands: nothing written
+// Tap a card: pick it up (tap again to put it down). Hear its name.
+function sortPick(ti){
+  const st=sortState; if(!st||st.phase!=="play") return;
+  const t=st.turns[ti]; if(!t||t.done) return;
+  st.shake=null; st.lit=null;
+  st.sel=st.sel===ti?null:ti;
+  _mastRe();
+  if(st.sel!==null) _sortSayCard(st,t);
+}
+// Tap a bin: the picked card goes in; with nothing picked, hear the bin's name.
+function sortBinTap(bi){
+  const st=sortState; if(!st||st.phase!=="play") return;
+  if(st.sel===null){ _sortSayBin(st,bi); return; }
+  sortDrop(st.sel,bi);
+}
+function sortDrop(ti,bi){
+  const st=sortState; if(!st||st.phase!=="play") return;
+  const t=st.turns[ti], r=sortJudge(st,ti,bi);
+  st.sel=null; st.shake=null; st.lit=null;
+  if(r==="wrong"){ try{ matchBonk(); }catch(e){} st.shake=ti; _mastRe(); _sortSayCard(st,t); return; }
+  if(r!=="right"){ _mastRe(); return; }
+  try{ matchDing(); }catch(e){}
+  st.lit=bi;
+  if(st.phase==="done") sortFinish(st);
+  _mastRe();
+}
+// Drag a card with a finger or the mouse: a move under 8px is a tap (sortPick); a drop lands on the bin under the pointer.
+function sortDown(ev,ti){
+  const st=sortState; if(!st||st.phase!=="play"||!ev||ev.button>0) return;
+  const el=ev.currentTarget; if(!el) return;
+  const x0=ev.clientX, y0=ev.clientY, pid=ev.pointerId; let moved=false;
+  try{ el.setPointerCapture(pid); }catch(e){}
+  const move=e=>{ const dx=e.clientX-x0, dy=e.clientY-y0; if(!moved&&Math.hypot(dx,dy)<8) return; moved=true; el.classList.add("sort-drag"); el.style.transform="translate("+dx+"px,"+dy+"px)"; _sortHover(e.clientX,e.clientY); };
+  const up=e=>{
+    el.removeEventListener("pointermove",move); el.removeEventListener("pointerup",up); el.removeEventListener("pointercancel",up);
+    try{ el.releasePointerCapture(pid); }catch(x){}
+    if(!moved){ sortPick(ti); return; }
+    el.style.transform=""; el.classList.remove("sort-drag"); _sortHover(-1,-1);
+    const bi=e.type==="pointercancel"?-1:_sortBinAt(e.clientX,e.clientY);
+    if(bi<0){ _mastRe(); return; }
+    sortDrop(ti,bi);
+  };
+  el.addEventListener("pointermove",move); el.addEventListener("pointerup",up); el.addEventListener("pointercancel",up);
+}
+function _sortBinAt(x,y){ try{ const n=document.elementFromPoint(x,y), b=n&&n.closest?n.closest("[data-sortbin]"):null; return b?parseInt(b.getAttribute("data-sortbin"),10):-1; }catch(e){ return -1; } }
+function _sortHover(x,y){ const bi=_sortBinAt(x,y); try{ document.querySelectorAll("[data-sortbin]").forEach(b=>b.classList.toggle("sort-over",parseInt(b.getAttribute("data-sortbin"),10)===bi)); }catch(e){} }
+function sortBestKey(deck){ return deck+" \u{00B7} sort"; }
+// GAMEKID → 🎲 GAMEKIT resume: a card picked up when the kid switched is put down (no render; the caller renders)
+function sortResume(){ const st=sortState; if(st){ st.sel=null; st.shake=null; st.lit=null; } }
+function sortFinish(st){
+  st.phase="done";
+  const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every card's result, game:"sort"
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=sortBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.first>0&&(prev==null||st.first>prev);
+  if(st.isPB){
+    s.match_best[key]=st.first;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+  try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F9FA} You sorted them all!",{noSong:true}); }catch(e){}
+}
+const SORT_CSS='<style>.sort-card{position:relative;display:flex;align-items:center;justify-content:center;min-height:72px;padding:8px 10px;border-radius:16px;border:3px solid #e2ddd6;background:#fff;cursor:grab;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none;-webkit-tap-highlight-color:transparent;transition:transform .15s,border-color .15s;font-family:\'Fraunces\',serif;font-weight:800;color:#292524;text-align:center;line-height:1.15}'+
+  '.sort-card .memoji,.sort-card img,.sort-card svg{pointer-events:none}.sort-card.sort-pic{aspect-ratio:1;min-height:0;padding:4px}.sort-card.sort-sel{border-color:#2563eb;background:#eff6ff;box-shadow:0 0 0 4px #bfdbfe;transform:translateY(-4px)}'+
+  '.sort-card.sort-drag{pointer-events:none;z-index:9;box-shadow:0 10px 24px rgba(0,0,0,.18);transition:none}.sort-card.sort-shake{animation:sortShake .45s;border-color:#f59e0b}'+
+  '@keyframes sortShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-9px)}40%{transform:translateX(8px)}60%{transform:translateX(-6px)}80%{transform:translateX(4px)}}'+
+  '.sort-bin{border-radius:18px;border:3px dashed #d6d3d1;background:#fafaf9;padding:8px;min-height:96px;cursor:pointer;transition:background .15s,border-color .15s;-webkit-tap-highlight-color:transparent}.sort-bin.sort-over,.sort-bin.sort-ready:hover{border-color:#2563eb;background:#eff6ff}'+
+  '.sort-bin.sort-lit{border-color:#16a34a;border-style:solid;background:#f0fdf4}.sort-bin-label{font-family:\'DM Sans\',sans-serif;font-weight:800;font-size:14px;color:#44403c;text-align:center;margin-bottom:6px;line-height:1.2}'+
+  '.sort-bin-chips{display:flex;flex-wrap:wrap;gap:4px;justify-content:center}.sort-chip{display:inline-flex;align-items:center;justify-content:center;max-width:100%;padding:3px 7px;border-radius:9px;background:#fff;border:1.5px solid #e2ddd6;font-size:12px;font-weight:700;color:#292524;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}'+
+  '.sort-chip.sort-chip-pic{width:40px;height:40px;padding:0}.sort-chip.sort-chip-pic>span{transform:scale(.5);pointer-events:none}</style>';
+// A card's face: its built-in picture, or its front as the drill shows it (markup kept: the <u>target word</u>, .mast-hl marks).
+function _sortFace(it,kind){
+  if(kind==="pic") return '<span class="sort-vis" style="pointer-events:none">'+(_sortPic(it)||'')+'</span>';
+  const p=String((it&&it.prompt)||""), n=_sortPlain(p).length;
+  return '<span style="pointer-events:none;font-size:'+(n<=4?'34px':n<=12?'22px':n<=40?'15px':'13px')+';overflow-wrap:anywhere">'+p+'</span>';
+}
+function buildSortHtml(color){
+  const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"), E=s=>(typeof esc==="function")?esc(s):String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  let h=SORT_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const items=_sortItems(), decks=sortDecks(items), names=sortDeckNames(decks);
+  if(!names.length){ h+='<div class="mast-none">No decks ready for Sort it yet \u{2014} it needs two or more groups of cards that belong together (pictures from two decks, or cards that share an answer or a rule).</div></div>'; return h; }
+  const st=sortState;
+  const chipLbl=dk=>dk===SORT_PIC?'\u{1F5BC} '+SORT_PIC:E(dk);
+  const chip=(dk)=>{ const sel=st&&st.deck===dk; return '<button onclick="sortStart(\''+q(dk)+'\')" style="padding:10px 16px;border-radius:999px;font-size:14px;font-weight:800;border:2px solid '+(sel?color:'#e2ddd6')+';background:'+(sel?color:'#fff')+';color:'+(sel?'#fff':'#57534e')+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+chipLbl(dk)+'</button>'; };
+  if(!st||st.phase==="done"){ h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">'; names.forEach(dk=>{ h+=chip(dk); }); h+='</div>'; }
+  if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u{1F9FA} Pick a deck. Drag each card to the bin where it belongs \u{2014} or tap the card, then tap the bin.</div></div>'; return h; }
+  const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[sortBestKey(st.deck)];
+  const binLabel=b=>{ const em=st.kind==="pic"?(SORT_BIN_EMOJI[String(b.label).toLowerCase()]||'\u{1F9FA}')+' ':''; return em+E(b.label); };
+  const chips=b=>{ let c='<div class="sort-bin-chips">'; b.ids.forEach(pid=>{ const it=_sortItem(st,pid); if(!it) return;
+      if(st.kind==="pic") c+='<span class="sort-chip sort-chip-pic"><span>'+(_sortPic(it)||'')+'</span></span>';
+      else { const p=_sortPlain(it.prompt); c+='<span class="sort-chip" title="'+E(p)+'">'+E(p.length>34?p.slice(0,32)+'\u{2026}':p)+'</span>'; } });
+    return c+'</div>'; };
+  if(st.phase==="play"){
+    const tray=[]; st.turns.forEach((t,ti)=>{ if(!t.done) tray.push(ti); });
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
+    st.turns.forEach((x,ix)=>{ h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):st.sel===ix?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
+    h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+chipLbl(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
+      '<button onclick="sortChangeDeck()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{1F5C2} Change deck</button></span></div>';
+    h+='<div style="text-align:center;font-size:16px;font-weight:800;color:#57534e;margin:6px 0 10px">'+(st.shake!==null?'Not that bin \u{2014} try another!':st.sel!==null?'Now tap the bin it belongs in':st.turns.some(t=>t.back&&!t.done)?'These come back for one more sort':'Where does each one belong?')+'</div>';
+    // the tray
+    h+='<div style="display:grid;grid-template-columns:repeat('+(st.kind==="pic"?'3':'2')+',1fr);gap:10px;margin-bottom:16px">';
+    tray.forEach(ti=>{ const t=st.turns[ti], it=_sortItem(st,t.pid); if(!it) return;
+      h+='<div class="sort-card'+(st.kind==="pic"?' sort-pic':'')+(st.sel===ti?' sort-sel':'')+(st.shake===ti?' sort-shake':'')+'" role="button" aria-label="Card '+(ti+1)+'" onpointerdown="sortDown(event,'+ti+')">'+_sortFace(it,st.kind)+'</div>'; });
+    h+='</div>';
+    // the bins
+    h+='<div style="display:grid;grid-template-columns:repeat('+(st.bins.length>=4?'2':st.bins.length)+',1fr);gap:10px">';
+    st.bins.forEach((b,bi)=>{ h+='<div class="sort-bin'+(st.sel!==null?' sort-ready':'')+(st.lit===bi?' sort-lit':'')+'" data-sortbin="'+bi+'" role="button" aria-label="Bin: '+E(_sortPlain(b.label))+'" onclick="sortBinTap('+bi+')"><div class="sort-bin-label">'+binLabel(b)+'</div>'+chips(b)+'</div>'; });
+    h+='</div></div>';
+    return h;
+  }
+  // Finish: the bins as sorted (the recap), first-try count, Play again.
+  h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} All sorted!</div>';
+  h+='<div style="display:grid;grid-template-columns:repeat('+(st.bins.length>=4?'2':st.bins.length)+',1fr);gap:8px;margin:12px 0;text-align:left">';
+  st.bins.forEach(b=>{ h+='<div class="sort-bin sort-lit" style="cursor:default"><div class="sort-bin-label">'+binLabel(b)+'</div>'+chips(b)+'</div>'; });
+  h+='</div>';
+  h+='<div style="font-size:17px;font-weight:800;color:#57534e">\u{1F9FA} '+st.first+' of '+st.of+' on the first try'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+  h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap"><button onclick="sortStart(\''+q(st.deck)+'\')" style="padding:12px 24px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F501} Play again</button></div>';
+  return h+'</div></div>';
+}
+// SORTIT_END
 // STUDYCOUNTS_START — 📚 Study sessions count everywhere (F3 of PLAN_learning_system, her yes 2026-10-24). A study
 // sitting logs to mastery/studyLog/<kid>/<sid>/<yyyymmdd>, but Scores, the Weekly report, sprint readiness (the ≥ 90%
 // untimed check) and the notebook's 🔁 review flags read only the drill's mastery/history/<kid>/<yyyymmdd>, so Lincoln —
@@ -81541,6 +81776,8 @@ const GAMES_LIST=[
   {key:"match",  emoji:"\u{1F3AF}", label:"Match",       view:"match", style:"match",  available:k=>_gamesMatchPairs(k).length>0, render:c=>buildMatchHtml(c)},
   {key:"memory", emoji:"\u{1F9E0}", label:"Memory flip", view:"match", style:"memory", available:k=>_gamesMatchPairs(k).length>0, render:c=>buildMatchHtml(c)},
   {key:"which",  emoji:"\u{1F446}", label:"Which one?",  view:"which",                 available:k=>whichDecks(_gamesItems(k)).length>0, render:c=>buildWhichHtml(c)},
+  {key:"sort",   emoji:"\u{1F9FA}", label:"Sort it",     view:"sort",                  available:k=>typeof sortDecks==="function"&&Object.keys(sortDecks(_gamesItems(k),k)).length>0, render:c=>buildSortHtml(c),
+     park:()=>sortState, restore:v=>{ sortState=v||null; }, resume:()=>sortResume()},   // 🧺 SORTIT · 🎲 GAMEKIT: its own park / restore / resume
   {key:"idflash",emoji:"\u26A1",     label:"ID Flash",    view:"idflash",               available:k=>typeof envFlashAvail==="function"&&envFlashAvail(k), render:c=>envFlashGameHtml(c)},   // ⚡ ENVIDFLASH
   {key:"spell",  emoji:"\u{1F524}", label:"Build it",    view:"spell",                 available:k=>typeof spellPool==="function"&&spellPool(_gamesItems(k)).length>0, render:c=>buildSpellHtml(c),
      park:()=>spellState, restore:v=>{ spellState=v||null; }, resume:()=>spellResume()},   // 🔤 SPELLBUILD · 🎲 GAMEKIT: its own park / restore / resume
