@@ -70,7 +70,7 @@ function world(o){
        fn("_kitMvGet"),fn("_kitMvFixed"),fn("kitMoveChain"),fn("kitMoveForward"),fn("kitOutIs"),fn("kitOutToggle"),fn("kitOutLbl"),fn("kitOutBtn"),fn("kitOutStrip"),fn("kitFlagDb"),fn("kitFlagPlanLS"),
        fn("kitRotAll"),fn("kitRotEnsure"),fn("kitRotMealByName"),fn("kitRotSlotVal"),fn("kitRotSlotName"),fn("kitRotMondayOf"),fn("kitRotPlanFor"),fn("kitRotCapture"),fn("kitRotRender"),fn("kitRotApply"),
        cut("// KIT_ROT_EDIT_START","// KIT_ROT_EDIT_END"),cut("// KITROT2_START","// KITROT2_END"),cut("// KITSLOTS_START","// KITSLOTS_END"),cut("// KITDINNEREDIT_START","// KITDINNEREDIT_END"),
-       fn("calDaySheetHTML")].join("\n"));
+       fn("calKidLens"),fn("calDaySheetHTML")].join("\n"));
   if(!o.base) run(BLOCK);
   run("kitRotSynced.plan=true; kitRotSynced.rots=true;");
   if(o.items) run("grData.items="+J(o.items));

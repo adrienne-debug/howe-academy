@@ -191,7 +191,7 @@ console.log("\n── 📖 School panel in the Corner: today's cards, the real c
   ok("the Corner always opens on TODAY", /if\(t==="kids"\)\{ try\{ day=_todayDay; \}catch\(e\)\{\} \}/.test(src));
   ok("School lives under Calendar ▸ Today (no separate subnav entry)", !/btn\('school'/.test(slice("kcSubnav")) && /if\(v==="school"\|\|v==="chores"\|\|v==="bank"\)\{ kcView="cal"; kcCalSet\("today"\); return; \}/.test(slice("kcGo")));
   // who is LOOKING gates the actions; whose calendar gates the content
-  ok("a kid's own device: kid actions (add / delete own)", /const kidMode=!!who&&!wbMomEyes\(\);/.test(sheet) && /if\(kidMode\)\{/.test(sheet));
+  ok("a kid's own device: kid actions (add / delete own)", /const kidMode=calKidLens\(who\);/.test(sheet) && /return !!who&&\(!wbMomEyes\(\)\|\|/.test(slice("calKidLens")) && /if\(kidMode\)\{/.test(sheet));
   ok("Mom through a kid's lens keeps her actions (meal buttons, edit, approve)", /if\(L\.meals&&kidMode\)\{/.test(sheet) && /\(kidMode\?\(\(e\.addedBy===who\)/.test(sheet));
   ok("Mom's Calendar has Today | Month and Family + each kid", /mpCalSet\('today'\)|tb\('today'/.test(slice("_calPageBody")) && /ROSTER\.map\(function\(k\)\{ return wb\(k,/.test(slice("_calPageBody")));
   ok("the points card never invents a school number — school pays spins", /bonus spin when done/.test(slice("kcPointsHTML")) && !/cards\.length\*|pts\*cards/.test(slice("kcPointsHTML")));
