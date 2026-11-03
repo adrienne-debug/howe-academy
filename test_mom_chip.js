@@ -12,15 +12,15 @@ ok("every inline <script> still compiles", (()=>{ const re=/<script(?![^>]*src=)
 ok("no family or kid name in the block", !/lincoln|ellis|lucy|julian|howe|dewalt|burris/i.test(block));
 
 console.log("── every paint: when Mom mode is set aside ──");
-const LINE=(src.match(/\n(  try\{ if\(tab==="schedule"&&!momSchedView&&kid!=="mom"\)\{ _momSuspend\(\); \} else _momResume\(\); \}catch\(e\)\{\}[^\n]*)\n/)||[])[1];
-ok("the KIDSLENS line now spares the 👩 Mom chip (and no longer forces Mom view → All)", !!LINE&&fn("_renderAllInner").indexOf(LINE)>0&&!/if\(kid==="mom"\) kid="all"/.test(fn("_renderAllInner")));
+const LINE=(src.match(/\n(  try\{ if\(tab==="schedule"&&!momSchedView\)\{ _momSuspend\(\); \} else _momResume\(\); \}catch\(e\)\{\}[^\n]*)\n/)||[])[1];
+ok("the KIDSLENS line sets Mom mode aside under every chip on the main Schedule (SCHEDBAR: the Mom chip too) and no longer forces Mom view → All", !!LINE&&fn("_renderAllInner").indexOf(LINE)>0&&!/if\(kid==="mom"\) kid="all"/.test(fn("_renderAllInner")));
 function lens(o){   // the real _momSuspend/_momResume/momHereReal/haMomOn/haMomOff + that one line, in a small world
   const L=["_momSuspend","_momResume","momHereReal","haMomOn","haMomOff"].map(fn).join("\n");
   const w=new Function("HA_LS","var _momSusp=null,momModeActive=false,momPinUnlocked=false,adminPinUnlocked=false,mastAdminPinOk=false;\n"+L
     +"\nreturn function(tab,momSchedView,kid,on){ if(on) haMomOn(); else haMomOff();\n"+LINE+"\nreturn {active:momModeActive,real:momHereReal()}; };")({setItem(){}});
   return w(o.tab,!!o.msv,o.kid,!!o.on);
 }
-ok("switch on, main Schedule, 👩 Mom chip → Mom mode ON (her tools)", lens({tab:"schedule",kid:"mom",on:true}).active===true);
+ok("switch on, main Schedule, 👩 Mom chip → still set aside: her view alone, no tools (SCHEDBAR, her plan-2: \"it cannot do permissions\")", (()=>{ const r=lens({tab:"schedule",kid:"mom",on:true}); return r.active===false&&r.real===true; })());
 ok("switch on, main Schedule, All → set aside (the kids' Schedule stays the kids')", (()=>{ const r=lens({tab:"schedule",kid:"all",on:true}); return r.active===false&&r.real===true; })());
 ok("…and a kid's chip → set aside too", lens({tab:"schedule",kid:"ava",on:true}).active===false);
 ok("switch off, 👩 Mom chip → her view alone, nothing on", (()=>{ const r=lens({tab:"schedule",kid:"mom",on:false}); return r.active===false&&r.real===false; })());
@@ -41,7 +41,7 @@ function row(o){
   ok("…no code box under the row (display none, emptied)", r.pin.style.display==="none"&&r.pin.innerHTML===""&&r.kf.indexOf("mom-pin-input")<0);
 }
 { const r=row({kid:"mom"}); ok("her view with the switch off: Mom chip lit, still no code box", /class="kid-btn active" data-kid="mom"/.test(r.kf)&&r.pin.style.display==="none"&&!/Enter Admin Code|checkMomPin/.test(r.kf+r.pin.innerHTML)); }
-{ const r=row({kid:"mom",on:true}); ok("her view with the switch on: ✓ Mom, lit", /class="kid-btn active" data-kid="mom" onclick="selKid\('mom'\)">✓ Mom<\/button>/.test(r.kf)); }
+{ const r=row({kid:"mom",on:true}); ok("(✓ Mom only ever shows where Mom mode is really on — Mom's Day ▸ Schedule)", /class="kid-btn active" data-kid="mom" onclick="selKid\('mom'\)">✓ Mom<\/button>/.test(r.kf)); }
 { const r=row({kid:"ava"}); ok("a kid's chip: that kid lit, ⭐ star chip as before", /class="kid-btn active" data-kid="ava"/.test(r.kf)&&/star-chip[^>]*>⭐ 7</.test(r.kf)); }
 { const r=row({kid:"mom",msv:true,on:true}); ok("Mom's Day ▸ Schedule: the same row (unchanged)", /selKid\('mom'\)">✓ Mom<\/button><button class="kid-btn" data-kid="all"/.test(r.kf)); }
 ok("the row is the one list everywhere (no per-page branch any more)", /\["mom","all",\.\.\.ROSTER\]\.map\(k=>\{/.test(fn("renderKidFilter"))&&!/momSchedView/.test(fn("renderKidFilter")));
@@ -65,7 +65,7 @@ console.log("── her agenda ──");
 ok("the Mom view draws her agenda whenever the Mom chip is picked — the morning-routine gate is the kids' (was: && unlocked → the kids' blurred list)", /\n  if\(kid==="mom"\)\{\n    h\+=momAgendaHtml\(tasks\);/.test(src)&&!/if\(kid==="mom" && unlocked\)/.test(src));
 ok("Mom-only extras on the schedule still need Mom mode (the switch on): the displacement summary", /if\(momModeActive&&\(kid==="mom"\|\|kid==="all"\)\) h\+=renderDisplacementSummary\(day, kid\);/.test(src));
 ok("cards: Mom tools only with Mom mode (momHereCards unchanged)", /function momHereCards\(\)\{ return momHere\(\)&&!\(typeof tab!=="undefined"&&tab==="kids"\); \}/.test(src));
-ok("the kids' Schedule ▸ Admin still goes through Mom's Day (unchanged)", /onclick="'\+\(momSchedView\?'toggleSchedAdmin\(\)':'msvOpenAdmin\(\)'\)\+'">Admin<\/button>/.test(src));
+ok("the kids' Schedule has no Admin button at all now (SCHEDBAR)", !/msvOpenAdmin\(\)'\)\+'">Admin/.test(src)&&/const el=document\.getElementById\("sched-subtabs"\);\n  if\(el\)\{ el\.style\.display="none"; el\.innerHTML=""; \}/.test(fn("renderSchedSubtabs")));
 
 console.log("── nothing else moved ──");
 ok("the retired code door (checkMomPin) still exists and turns the switch on if anything ever calls it", /haMomOn\(\)/.test(fn("checkMomPin")));

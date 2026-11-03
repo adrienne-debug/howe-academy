@@ -18,6 +18,6 @@ const ap=src.slice(src.indexOf("function momApprove("), src.indexOf("\nfunction 
 ok("…and Approve does not open it either",!/nbChkOpen/.test(ap));
 const tc=src.slice(src.indexOf("function taskCard("), src.indexOf("\nfunction ", src.indexOf("function taskCard(")+10));
 ok("instead the Morning Notebook card carries a Mom-mode 📓 Answers button (bank kids only)",/const nbAnsRow=\(!readOnly&&momHereCards\(\)&&typeof NB_WB_KIDS!=="undefined"&&NB_WB_KIDS\[t\.who\]&&\/Morning Notebook\/\.test\(t\.title\|\|""\)/.test(tc)&&/\+nbAnsRow\+/.test(tc));
-ok("the sheet itself stays Mom-only (nbChkOpen bails without momHere)",/function nbChkOpen\(kid,wk,day\)\{\n  if\(!momHere\(\)\|\|!NB_WB_KIDS\[kid\]\) return;/.test(src));
+ok("the sheet itself stays Mom-only (nbChkOpen bails without momHere)",/function nbChkOpen\(kid,wk,day(,opts)?\)\{[^\n]*\n  if\(!momHere\(\)\|\|!NB_WB_KIDS\[kid\]\) return;/.test(src));   // 📱 NBTABLET: + opts from the tablet view
 ok("a kid's claim path (send to Mom) is untouched — no sheet call before the claim write",!/pendingClaimMode\)\{[\s\S]{0,600}nbChkOpen/.test(src));
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

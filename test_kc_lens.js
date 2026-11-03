@@ -89,7 +89,7 @@ console.log("\n── wiring ──");
 {
   ok("the day sheet uses calKidLens", /const kidMode=calKidLens\(who\);/.test(slice("calDaySheetHTML")));
   ok("the month uses calKidLens (layer chips, school line)", /const kidMode=calKidLens\(who\);/.test(slice("calRenderMonthPreview")));
-  ok("momHere itself is untouched (KIDSLENS still only on the Schedule)", /function momHere\(\)\{ return momModeActive\|\|adminPinUnlocked; \}/.test(src) && /if\(tab==="schedule"&&!momSchedView&&kid!=="mom"\)\{ _momSuspend\(\); \}/.test(src));
+  ok("momHere itself is untouched (KIDSLENS still only on the Schedule)", /function momHere\(\)\{ return momModeActive\|\|adminPinUnlocked; \}/.test(src) && /if\(tab==="schedule"&&!momSchedView\)\{ _momSuspend\(\); \}/.test(src) /* SCHEDBAR 2026-11-02: the Mom chip is set aside too */);
   ok("no writes in the helper", !/db\.ref|\.set\(|\.update\(/.test(line("function calKidLens(")));
 }
 console.log("\n" + pass + " passed, " + fail + " failed");
