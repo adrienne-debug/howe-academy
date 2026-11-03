@@ -15,7 +15,7 @@ const blk=src.slice(a,b);
 const gl=src.slice(g,b);
 ok("the round remembers its start (t0)",/whichState=\{kid:masteryKid,deck:deck,mix:mix,t0:Date\.now\(\),/.test(blk));
 ok("one guarded hook in whichFinish",/function whichFinish\(st\)\{\n  st\.phase="done";\n  const kid=st\.kid\|\|masteryKid;   \/\/ GAMEKID\n  try\{ if\(typeof gameLogRound==="function"\) gameLogRound\(st\); \}catch\(e\)\{\}/.test(blk));
-ok("the hook is called exactly once in the file",(src.match(/gameLogRound\(st\); \}catch/g)||[]).length===1);
+ok("the hook is called once per game that logs (Which one?, 🔤 Build it)",(src.match(/gameLogRound\(st\); \}catch/g)||[]).length===2);   // 2026-11-02: Build it logs too
 ok("block writes only mastery/gameLog, by push",/db\.ref\("mastery\/gameLog\/"\+kid\+"\/"\+day\)\.push\(e\)/.test(gl)&&!/\.set\(|\.update\(|\.remove\(|transaction\(/.test(gl));
 ok("block never names studyLog/history paths in a write",!/ref\([^)]*(studyLog|history)/.test(gl));
 ok("no kid's name in the block",!/lincoln|ellis|lucy|julian|caleb|taylor|makenzie|andrew/i.test(gl));

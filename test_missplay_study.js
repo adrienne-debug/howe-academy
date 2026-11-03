@@ -79,7 +79,7 @@ console.log("already on the list stays as it was");
 { const c=sandbox(); card(c,"k_A").gp={on:true,since:"20261030",need:1,days:["3","4"],m:1}; const t=study(c,{k_A:4});
   ok("gp unchanged, not touched",card(c,"k_A").gp.since==="20261030"&&card(c,"k_A").gp.days.length===2&&t.length===0); }
 console.log("a deck the games can't play stays out");
-{ const c=sandbox(); const t=study(c,{k_w1:3,k_w2:2}); ok("spelling words don't join (no game for them yet)",t.length===0&&!card(c,"k_w1").gp&&!card(c,"k_w2").gp); }
+{ const c=sandbox(); const t=study(c,{k_w1:3,k_w2:2}); ok("spelling words don't join in THIS sandbox (no Build it block here; with it they do — test_spell_build.js)",t.length===0&&!card(c,"k_w1").gp&&!card(c,"k_w2").gp); }
 console.log("the cap: extra misses wait");
 { const c=sandbox({settings:{missPlay:{on:true,cap:1}}}); const t=study(c,{k_A:2,k_B:2});
   const on=c.masteryData.kid1.filter(i=>i.gp&&i.gp.on===true).length, wait=c.masteryData.kid1.filter(i=>i.gp&&i.gp.wait===true).length;
