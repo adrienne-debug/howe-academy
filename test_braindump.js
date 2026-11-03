@@ -18,7 +18,7 @@ const blk=src.slice(a,b);
 ok("no kid's name in the block",!/lincoln|ellis|lucy|julian|caleb|taylor|makenzie|kenzie|andrew/i.test(blk));
 ok("writes: match_best one key (guarded) + gameLogRound — no set / remove / push of its own",/db&&!_dryRun\(\)\) db\.ref\("mastery\/"\+kid\+"_settings\/match_best"\)\.update\(\{\[key\]:st\.count\}\)/.test(blk)&&/gameLogRound\(st\)/.test(blk)&&!/\.set\(|\.remove\(|\.push\(\{/.test(blk.replace(/st\.typed\.push|st\.turns\.push|out\.push|\.push\(\{pid:i\.id/g,"")));
 ok("never the ladder: no tier / next_due / studyLog / mastSaveResults writes",!/next_due\s*=|\.tier\s*=[^=]|mastery\/studyLog|studyLog\/|mastSaveResults|mstSave/.test(blk));
-ok("GAMES_LIST line right after Memory flip, with park / restore / resume",/\{key:"memory",[^\n]*\n\s*\{key:"dump",\s*emoji:"\\u\{1F4AD\}", label:"Brain Dump",\s*view:"dump",\s*available:k=>typeof dumpAvail==="function"&&dumpAvail\(k\), render:c=>buildDumpHtml\(c\),\s*park:\(\)=>dumpPark\(\), restore:v=>\{ dumpRestore\(v\); \}, resume:\(\)=>dumpResume\(\)\}/.test(src));
+ok("GAMES_LIST line right after Memory flip, with park / restore / resume",/\{key:"memory",[^\n]*\n\s*\{key:"dump",\s*emoji:"\\u\{1F4AD\}", label:"Brain Dump",\s*view:"dump",\s*available:k=>typeof dumpAvail==="function"&&dumpAvail\(k\), render:c=>buildDumpHtml\(c\),\s*park:\(\)=>dumpPark\(\), restore:v=>\{ dumpRestore\(v\); \}, resume:\(\)=>dumpResume\(\), decks:k=>typeof dumpDecks==="function"\?dumpDecks\(_gamesItems\(k\),k\):\[\]\}/.test(src));
 ok("GAMEKID / gamesCurrentKey untouched (no dump line there)",!/dump/i.test(cut("// GAMEKID_START","// GAMEKID_END"))&&!/dump/i.test(fnText("gamesCurrentKey")));
 ok("the input never autocompletes / autocorrects (no hints while typing)",/autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/.test(blk)&&!/<datalist|list="/.test(blk));
 
@@ -67,6 +67,19 @@ console.log("── which decks (pure) ──");
   const kings=KINGS.map(k=>Object.assign({},k)); const defs={}; kings.forEach(k=>{ defs[k.prompt]="a king"; });
   const w2=world(kings,{settings:{definitions:defs}});
   ok("a back from the definitions map counts",w2.c.dumpDecks(kings,"k").join(",")==="Monarchs");
+}
+
+console.log("── games per deck (GAMEGRID): Mom turned Brain Dump off for one deck ──");
+{
+  const {c}=world(ROOTS.concat(DEUTSCH));
+  c.gameDeckOn=(kid,game,deck)=>!(game==="dump"&&deck==="German");
+  ok("the raw rule still lists both (the grid's preload)",c.dumpDecks(c.masteryData.k,"k").join(",")==="German,Roots");
+  ok("the kid's list leaves German out; the game stays available for Roots",c.dumpDecksOn(c.masteryData.k,"k").join(",")==="Roots"&&c.dumpAvail("k")===true);
+  ok("the deck chips leave it out",c.buildDumpHtml("#1").indexOf("dumpStart(\x27German\x27)")<0&&c.buildDumpHtml("#1").indexOf("dumpStart(\x27Roots\x27)")>0);
+  c.dumpStart("German");
+  ok("an off deck will not start",c.dumpState===null);
+  c.gameDeckOn=()=>false;
+  ok("every deck off → not offered at all",c.dumpAvail("k")===false);
 }
 
 console.log("── matching (pure) ──");
