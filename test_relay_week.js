@@ -4,7 +4,7 @@
  *   0. shape: one RELAY block; the 😷 toggle, ⏰ day-times save/clear and the 8 PM sweep go through it; the listener sweep
  *      (schedCascade) never does; the lock waits for a "relay" claim like a regen; no kid names in the block
  *   1. the REAL cascade: a kid marked off on a LATER day → that day's open cards move into the rest of the week now (never back
- *      onto the off day, lesson order kept); dailies, claimed and checked cards stay; a holiday alone or no mark → untouched
+ *      onto the off day, lesson order kept); dailies, claimed and checked cards stay; no mark → untouched (a holiday on a later day: slice 2)
  *   2. the REAL school-end guard: open work laid before the day's start (⏰ a later start) re-lays from the start; a started
  *      card and the display pass are untouched; a day at or after its start is still "fine"
  *   3. the door: ten taps → one run under one lock; the lock held → waits, then gives up with a plain toast; the first "was"
@@ -89,7 +89,7 @@ console.log("1. the real cascade — a kid marked off on a later day");
     ok("the open one still moves",T.find(x=>x.id==="a_w1").day!=="wednesday"); }
   { const T=week(); const before=JSON.stringify(T.map(t=>[t.id,t.day,t.time]));
     run({tasks:T,checked:{a_m1:"10:20 AM Nov 2"},holidays:{"2026-11-04":"Holiday"}});
-    ok("a holiday alone (no per-kid mark) moves nothing — the mark is Mom's explicit per-kid one, as for today",JSON.stringify(T.map(t=>[t.id,t.day,t.time]))===before); }
+    ok("a holiday alone on a LATER day moves that day's open lessons too (slice 2, 2026-11-03: any calendar reason for a later day)",JSON.stringify(T.map(t=>[t.id,t.day,t.time]))!==before&&!T.some(t=>t.who==="kid_a"&&t.day==="wednesday"&&["a_w1","a_w2","a_w3"].includes(t.id))); }
   { const T=week();
     run({tasks:T,checked:{a_m1:"10:20 AM Nov 2"},calendar:{kidOverrides:{kid_a:{"2026-11-04":{school:true}}}}});
     ok("school:true (Mom restored the day) → nothing moves",T.filter(t=>t.who==="kid_a"&&t.day==="wednesday").length===4); }

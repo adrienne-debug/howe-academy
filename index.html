@@ -41725,7 +41725,10 @@ function calSave(type){
     if(prev&&prev.createdAt) entry.createdAt=prev.createdAt;
     entry.updatedAt=new Date().toISOString();
   }
+  const _wasCal=(type==="holiday"?(calendarData.holidays||{})[id]:(calendarData.vacations||{})[id])||null;   // 🔁 RELAY2
   db.ref(path+"/"+id).set(entry);
+  try{ const _m=(type==="holiday")?(calendarData.holidays=calendarData.holidays||{}):(calendarData.vacations=calendarData.vacations||{}); _m[id]=entry; }catch(e){}   // this device's mirror now; the listener confirms
+  if(typeof _rlwAfterCalendar==="function") _rlwAfterCalendar((type==="holiday"?"🗓 ":"🏖 ")+entry.name,path+"/"+id,_wasCal,entry.start,entry.end);   // 🔁 RELAY2: touches the board → re-lay
   calAddMode=null; calEditId=null;
   renderAll();
 }
@@ -41777,11 +41780,15 @@ function calDeleteEvent(id){
 function calRenderEventForm_END(){}
 function calDeleteHoliday(id){
   if(!confirm("Remove this holiday?")) return;
+  const _was=(calendarData.holidays||{})[id]||null;   // 🔁 RELAY2
   db.ref("calendar/holidays/"+id).remove();
+  if(_was){ try{ delete calendarData.holidays[id]; }catch(e){} if(typeof _rlwAfterCalendar==="function") _rlwAfterCalendar("🗓 "+(_was.name||"Holiday")+" removed","calendar/holidays/"+id,_was,_was.start,_was.end); }
 }
 function calDeleteVacation(id){
   if(!confirm("Remove this vacation?")) return;
+  const _was=(calendarData.vacations||{})[id]||null;   // 🔁 RELAY2
   db.ref("calendar/vacations/"+id).remove();
+  if(_was){ try{ delete calendarData.vacations[id]; }catch(e){} if(typeof _rlwAfterCalendar==="function") _rlwAfterCalendar("🏖 "+(_was.name||"Vacation")+" removed","calendar/vacations/"+id,_was,_was.start,_was.end); }
 }
 
 function calSaveOverride(kid){
@@ -41790,14 +41797,19 @@ function calSaveOverride(kid){
   const note=(document.getElementById("cal-ov-note")||{}).value||"";
   if(!date){ alert("Date is required."); return; }
   const entry={school:type==="on", note:note.trim()};
+  const _was=((calendarData.kidOverrides||{})[kid]||{})[date]||null;   // 🔁 RELAY2
   db.ref("calendar/kidOverrides/"+kid+"/"+date).set(entry);
+  try{ calendarData.kidOverrides=calendarData.kidOverrides||{}; (calendarData.kidOverrides[kid]=calendarData.kidOverrides[kid]||{})[date]=entry; }catch(e){}
+  if(typeof _rlwAfterCalendar==="function") _rlwAfterCalendar((entry.school?"✅ ":"😷 ")+cap(kid)+(entry.school?" on ":" off ")+((typeof stDateWords==="function")?stDateWords(date):date),"calendar/kidOverrides/"+kid+"/"+date,_was,date,date);   // 🔁 RELAY2
   calAddMode=null; calOverrideKid=null;
   renderAll();
 }
 
 function calDeleteOverride(kid,date){
   if(!confirm("Remove this override?")) return;
+  const _was=((calendarData.kidOverrides||{})[kid]||{})[date]||null;   // 🔁 RELAY2
   db.ref("calendar/kidOverrides/"+kid+"/"+date).remove();
+  if(_was){ try{ delete calendarData.kidOverrides[kid][date]; }catch(e){} if(typeof _rlwAfterCalendar==="function") _rlwAfterCalendar("😷 "+cap(kid)+" "+((typeof stDateWords==="function")?stDateWords(date):date)+" mark removed","calendar/kidOverrides/"+kid+"/"+date,_was,date,date); }
 }
 // ONECAL_START — 🗓 One calendar (her design 2026-10-23, doc "One Calendar"): Mom's Day ▸ Schedule ▸ Month is THE calendar.
 // Holidays, vacations, cleaning days, co-ops, family events and kid off days are added and edited HERE — from the day sheet
@@ -42432,6 +42444,49 @@ function dtUndoSnap(iso){
           W&&typeof W==="object"?{p:"config/rules/schoolDay/lunchByDate/"+iso+"/all",was:Object.assign({},W)}:{p:"config/rules/schoolDay/lunchByDate/"+iso+"/all",gone:true}];
 }
 // RELAY_END
+// RELAY2_START — 🔁 SETTINGS + CALENDAR THROUGH THE ONE DOOR (her word "continue next slice" 2026-11-03; step 4, slice 2).
+// Settings: every save of config/rules goes through saveRules; when a key the scheduler lays by changed (School Day Times,
+// Saturday overflow / cutoff, devices, stack gap, workflow order, with-sitter) the week on the board re-lays through
+// relayWeek, labelled by what changed, Undo = those keys back as they were (targeted per key, never the whole node). A save
+// that changed nothing the scheduler reads (hide carry-over, catch-up mode, sitter name) re-lays nothing.
+// Calendar (the Month page): a holiday / vacation / per-kid day off (or its removal) whose dates touch the week on the board
+// re-lays through the door, Undo = that one entry back as it was. The cascade's later-day strand (RELAY_OFFDAY) now reads
+// smapIsKidOff for days AFTER today — Mom's per-kid mark, a holiday, a vacation or a full-day co-op — so a holiday added
+// mid-week moves that day's open lessons now instead of waiting for that evening's sweep. TODAY keeps its narrow sick-day
+// rule (her explicit per-kid mark only). Nothing here writes anything new; the calendar and rules writes are the same ones.
+const RLW_RULES_KEYS={schoolDay:"School Day Times",saturdayOverflow:"Saturday overflow",saturday:"Saturday",devices:"Devices",stackGap:"Stack gap",workflow:"Workflow order",withSitter:"With the sitter"};
+// pure: which scheduling keys differ between two rules objects → [key…]
+function _rlwRulesDiff(prev,next){
+  prev=prev||{}; next=next||{}; const out=[];
+  Object.keys(RLW_RULES_KEYS).forEach(function(k){ if(JSON.stringify(prev[k]===undefined?null:prev[k])!==JSON.stringify(next[k]===undefined?null:next[k])) out.push(k); });
+  return out;
+}
+// after saveRules: re-lay if a laying key changed; Undo = those keys back (targeted)
+function _rlwAfterRules(prev,next){
+  try{
+    const keys=_rlwRulesDiff(prev,next); if(!keys.length) return keys;
+    if(typeof relayWeek!=="function") return keys;
+    const undo=keys.map(function(k){ const v=(prev||{})[k]; return (v===undefined||v===null)?{p:"config/rules/"+k,gone:true}:{p:"config/rules/"+k,was:JSON.parse(JSON.stringify(v))}; });
+    relayWeek("settings",{label:"⚙️ "+keys.map(function(k){ return RLW_RULES_KEYS[k]; }).join(", "),undo:undo});
+    return keys;
+  }catch(e){ return []; }
+}
+// does a date / a date range touch the week on the board (Mon–Sat of the plan week)?
+function _rlwOnBoard(start,end){
+  start=String(start||""); end=String(end||start); if(!start) return false;
+  const days=["monday","tuesday","wednesday","thursday","friday","saturday"];
+  for(let i=0;i<days.length;i++){ let ds=null; try{ ds=(typeof stDsOf==="function")?stDsOf(days[i]):null; }catch(e){} if(ds&&ds>=start&&ds<=end) return true; }
+  return false;
+}
+// a calendar write that touched the board → through the door (label, the entry's path, what it was — null = wasn't there)
+function _rlwAfterCalendar(label,p,was,start,end){
+  try{
+    if(!_rlwOnBoard(start,end)||typeof relayWeek!=="function") return false;
+    relayWeek("calendar",{label:label,undo:[(was===undefined||was===null)?{p:p,gone:true}:{p:p,was:JSON.parse(JSON.stringify(was))}]});
+    return true;
+  }catch(e){ return false; }
+}
+// RELAY2_END
 function schedCascade(){
   clearTimeout(cascadeDebounce);
   cascadeDebounce=setTimeout(()=>{
@@ -42811,7 +42866,12 @@ function cascadeIntraWeek(sweepTodayElapsed){
     // never a holiday or a co-op). Day-bound cards never reach here (a missed day is just missed); claimed work stays frozen;
     // the off day itself is refused as a landing day by offHere / the subject-spread below.
     if(idx>todayIdx){
-      if(!_kidOffOn(t.who,t.day)) return;
+      // 🔁 RELAY2 (slice 2): a LATER day is off for this kid for any calendar reason — Mom's mark, a holiday, a vacation, a
+      // full-day co-op (smapIsKidOff, the same reading that refuses the day as a landing day) — so a break added mid-week
+      // moves that day's open lessons now. Today keeps the narrow rule below.
+      let _offLater=_kidOffOn(t.who,t.day);
+      if(!_offLater){ try{ const _dsL=_cascDate(t.day); _offLater=!!(_dsL&&smapIsKidOff(t.who,_dsL)); }catch(e){ _offLater=false; } }
+      if(!_offLater) return;
       if(claimed&&claimed[t.id]) return;
     } else if(idx===todayIdx){
       // Today's tasks normally stay put — no intra-day moving goalposts while the kids
@@ -87735,8 +87795,10 @@ function renderDisplacementSummary(day, kid){
 // ── RULES SETTINGS ───────────────────────────────────────────────
 function saveRules(r){
   if(!db) return;
+  const _prev=rulesData;   // 🔁 RELAY2: what the rules were, for the re-lay + Undo
   db.ref("config/rules").set(r);
   rulesData=r;
+  if(typeof _rlwAfterRules==="function") _rlwAfterRules(_prev,r);   // 🔁 RELAY2: a laying key changed → the week on the board re-lays
   const t=document.createElement("div");t.className="rules-save-toast";t.textContent="Saved";
   document.body.appendChild(t);
   setTimeout(()=>{t.style.opacity="0";setTimeout(()=>t.remove(),500);},1200);
