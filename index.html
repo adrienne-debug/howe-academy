@@ -79735,6 +79735,135 @@ function buildJeopHtml(color){
   return h+'</div>';
 }
 // JEOPARDY_END
+// TEACH_START — 🎓 "Teach it" (her word 2026-11-03: "Teach-it (moves nothing) … lets do these now"; games-later_design_2026-11-03.md #5;
+// PLAN_practice_games_2026-10-23.md Tier 4 "Teach it": self-explanation g≈.55, co-op across ages). The kid holding the device is the
+// TEACHER: a card from their own deck comes up — the front big, its picture when it has one — and they explain it to whoever is
+// listening (a sibling, Mom, Dad) in their own words. "Show the answer" turns the back over so the teacher can check themselves
+// (nothing is typed or graded by the app). Then the listener's verdict, two big buttons: ✓ "They got it" or ↻ "Teach it again".
+// A card taught again comes back once at the end of the round. That is the whole game: a card read, explained and checked out
+// loud. Her rule 2026-11-03: it MOVES NOTHING — no tier, no next_due, no drill answer for either kid, no credit to the listener;
+// if she ever wants the ✓ to count, that is a Mom-run Family-time drill designed on its own, not this block.
+// Cards: every card in play in the teacher's decks (active or introduction, not a production twin) with a front, INCLUDING the
+// concept / transfer "discuss / teach" cards the drills never ask (mastIsNeverDrill) — this is the one game made for them.
+// Spelling / phonogram decks stay out (_whichLeftOut: the app never shows a spelling a child must produce). A deck needs TEACH_MIN+
+// cards, and this game's grid cell gameDeckOn(kid,"teach",deck). A round is TEACH_N cards (fewer when the deck is small), Mix the decks
+// when there is more than one. Writes (only these): <kid>_settings/match_best key "<deck> · teach" (got it on the first teach, only
+// when beaten) and the round's gameLog entry (GAMELOG, game:"teach"). db && !_dryRun() only. Per-kid park / restore / resume through
+// its GAMES_LIST entry (🎲 GAMEKIT). A round dropped (Change deck, a kid switch) writes nothing.
+let teachState=null;   // {kid,deck,mix,game:"teach",t0,turns:[{pid,shown,done,first,wrong:{},back}],i,phase:"play"|"done",first,of,isPB,prevBest,returned:{},gameLogged}
+let _teachRandom=Math.random;   // tests seed it
+const TEACH_N=6, TEACH_MIN=3;
+function _teachItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
+function _teachShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_teachRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function teachDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"teach",deck); }
+function teachFront(it){ return _matchPlain(it&&it.prompt); }
+function teachBack(it,kid){ try{ return _matchPlain((typeof owRuleBack==="function")?owRuleBack(kid||masteryKid,it):(it&&it.answer)); }catch(e){ return _matchPlain(it&&it.answer); } }   // OURWORDS: the rule as the kid's own words, when set
+// The cards a teacher can teach: in play, with a front, not a production twin; spelling / phonograms out; hidden-for-class cards out
+function teachPool(items,deck,kid){
+  kid=kid||masteryKid;
+  return (items||[]).filter(i=>{
+    if(!i||(i.status!=="active"&&i.status!=="introduction")||i.dir==="prod") return false;
+    if(!teachFront(i)||_whichLeftOut(i,kid)) return false;
+    if(typeof cpceHidItem==="function"&&cpceHidItem(kid,i)) return false;   // 📚 CPCARDSEDIT
+    if(typeof cpSecOffItem==="function"&&cpSecOffItem(kid,i)) return false;   // 🎚 CPSECTIONS
+    if(deck!==WHICH_MIX&&(i.subject||"Other")!==deck) return false;
+    return true;
+  });
+}
+function teachDecks(items,kid){
+  kid=kid||masteryKid;
+  const n={}; teachPool(items,WHICH_MIX,kid).forEach(i=>{ const d=i.subject||"Other"; n[d]=(n[d]||0)+1; });
+  return Object.keys(n).filter(d=>n[d]>=TEACH_MIN&&teachDeckOn(kid,d)).sort();
+}
+function teachStart(deck){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding (iPad)
+  const items=_teachItems(), mix=deck===WHICH_MIX, ok=teachDecks(items);
+  const pool=teachPool(items,deck).filter(i=>ok.indexOf(i.subject||"Other")>=0);
+  if(pool.length<TEACH_MIN||(!mix&&!teachDeckOn(masteryKid,deck))){ teachState=null; _mastRe(); return; }   // 🎮 GAMEGRID: a deck Mom turned off for this game
+  const picks=_teachShuffle(pool.slice()).slice(0,TEACH_N);
+  teachState={kid:masteryKid,deck:deck,mix:mix,game:"teach",t0:Date.now(),turns:picks.map(it=>({pid:it.id,shown:false,done:false,first:false,wrong:{},back:false})),i:0,phase:"play",first:0,of:picks.length,isPB:false,prevBest:null,returned:{}};
+  _mastRe();
+}
+function teachChangeDeck(){ teachState=null; _mastRe(); }   // drop the round as it stands: nothing written
+function teachShow(){ const st=teachState, t=st&&st.turns[st.i]; if(!st||st.phase!=="play"||!t||t.done) return; t.shown=true; _mastRe(); }
+function teachSay(){ const st=teachState, t=st&&st.turns[st.i]; if(!st||!t) return; const it=_teachItems(st.kid).find(x=>x&&x.id===t.pid); if(it&&!whichSilent(it)) try{ mastSpeak(teachFront(it)); }catch(e){} }
+// The listener's verdict: got=true "✓ They got it" · got=false "↻ Teach it again" (the card comes back once at the end)
+function teachVerdict(got){
+  const st=teachState; if(!st||st.phase!=="play") return;
+  const t=st.turns[st.i]; if(!t||t.done||!t.shown) return;   // the answer must be turned over first
+  t.done=true;
+  if(got){ t.first=!Object.keys(t.wrong).length; if(!t.back&&t.first) st.first++; try{ matchDing(); }catch(e){} }
+  else { t.wrong.again=1; t.first=false; if(!t.back&&!st.returned[t.pid]){ st.returned[t.pid]=1; st.turns.push({pid:t.pid,shown:false,done:false,first:false,wrong:{},back:true}); } }
+  st.i++;
+  if(st.i>=st.turns.length) teachFinish(st);
+  _mastRe();
+}
+function teachBestKey(deck){ return deck+" \u{00B7} teach"; }
+function teachFinish(st){
+  st.phase="done";
+  const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: each card's verdict, game:"teach" — a log line, never a drill answer
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=teachBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.first>0&&(prev==null||st.first>prev);
+  if(st.isPB){
+    s.match_best[key]=st.first;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+  try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F393} You taught them all!",{noSong:true}); }catch(e){}
+}
+function teachResume(){}   // no timers, nothing mid-way: the round is exactly as it was left
+const TEACH_CSS='<style>.teach-card{border-radius:22px;border:3px solid #c4b5fd;background:#f5f3ff;padding:18px 16px;text-align:center}.teach-front{font-family:\'Fraunces\',serif;font-weight:800;color:#292524;line-height:1.15;overflow-wrap:anywhere}'+
+  '.teach-back{margin-top:14px;padding:12px 14px;border-radius:14px;background:#fff;border:2px solid #e2ddd6;font-size:17px;font-weight:700;color:#44403c;line-height:1.35;overflow-wrap:anywhere;text-align:left}'+
+  '.teach-btn{padding:14px 22px;border-radius:999px;border:none;font-size:17px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;-webkit-tap-highlight-color:transparent}</style>';
+function buildTeachHtml(color){
+  const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+  let h=TEACH_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const items=_teachItems(), decks=teachDecks(items);
+  if(!decks.length){ h+='<div class="mast-none">No decks ready for Teach it yet \u{2014} it needs '+TEACH_MIN+' or more cards in a deck.</div></div>'; return h; }
+  const st=teachState;
+  const chip=(dk,lbl)=>{ const sel=st&&st.deck===dk; return '<button onclick="teachStart(\''+q(dk)+'\')" style="padding:10px 16px;border-radius:999px;font-size:14px;font-weight:800;border:2px solid '+(sel?color:'#e2ddd6')+';background:'+(sel?color:'#fff')+';color:'+(sel?'#fff':'#57534e')+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
+  if(!st||st.phase==="done"){
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">';
+    decks.forEach(dk=>{ h+=chip(dk,esc(dk)); });
+    if(decks.length>1) h+=chip(WHICH_MIX,"\u{1F3B2} "+WHICH_MIX);
+    h+='</div>';
+  }
+  if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u{1F393} Pick a deck, then teach each card to someone \u{2014} in your own words. They tell you if they got it!</div></div>'; return h; }
+  const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[teachBestKey(st.deck)];
+  if(st.phase==="play"){
+    const t=st.turns[st.i], it=items.find(x=>x&&x.id===t.pid), fr=teachFront(it), bk=teachBack(it,st.kid), vis=_smTileVis(it,true), silent=whichSilent(it);
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
+    st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
+    h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
+      '<button onclick="teachChangeDeck()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{1F5C2} Change deck</button></span></div>';
+    h+='<div style="text-align:center;font-size:17px;font-weight:800;color:#57534e;margin:10px 0 12px">'+(t.back?'One more time \u{2014} teach it again!':'Teach it: tell them what this is, in your own words.')+'</div>';
+    h+='<div class="teach-card">';
+    if(vis) h+='<div style="display:flex;justify-content:center;margin-bottom:10px"><span style="display:inline-flex;transform:scale(1.4);margin:16px 0">'+vis+'</span></div>';
+    h+='<div style="display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap"><div class="teach-front" style="font-size:'+(fr.length<=8?'46px':fr.length<=18?'34px':fr.length<=40?'26px':'20px')+'">'+esc(fr)+'</div>'+
+      (silent?'':'<button onclick="teachSay()" aria-label="Hear it" style="width:48px;height:48px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:22px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button>')+'</div>';
+    if(t.shown){ h+='<div class="teach-back">'+(bk?esc(bk):'<span style="color:var(--muted)">(this card is its picture and its name)</span>')+'</div>'; }
+    else h+='<div style="margin-top:14px"><button class="teach-btn" onclick="teachShow()" style="background:#fff;color:'+color+';border:2px solid '+color+'">\u{1F440} Show the answer</button></div>';
+    h+='</div>';
+    if(t.shown){
+      h+='<div style="text-align:center;font-size:15px;font-weight:800;color:#57534e;margin:16px 0 10px">Did they get it?</div>';
+      h+='<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap"><button class="teach-btn" onclick="teachVerdict(true)" style="background:#16a34a;color:#fff;min-width:150px">\u2713 They got it</button><button class="teach-btn" onclick="teachVerdict(false)" style="background:#fff;color:#b45309;border:2px solid #f59e0b;min-width:150px">\u21BB Teach it again</button></div>';
+    }
+    return h+'</div>';
+  }
+  // Finish: how many got it on the first teach, against the kid's own best; Play again / Mix the decks
+  h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} You taught them all!</div>';
+  h+='<div style="font-size:17px;font-weight:800;color:#57534e;margin-top:10px">\u{1F393} '+st.first+' of '+st.of+' got it the first time'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+  h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">';
+  h+='<button onclick="teachStart(\''+q(st.deck)+'\')" class="teach-btn" style="background:'+color+';color:#fff;font-size:15px">\u{1F501} Play again</button>';
+  if(decks.length>1&&!st.mix) h+='<button onclick="teachStart(\''+q(WHICH_MIX)+'\')" class="teach-btn" style="border:2px solid '+color+';background:#fff;color:'+color+';font-size:15px">\u{1F3B2} '+WHICH_MIX+'</button>';
+  return h+'</div></div></div>';
+}
+// TEACH_END
 // STUDYCOUNTS_START — 📚 Study sessions count everywhere (F3 of PLAN_learning_system, her yes 2026-10-24). A study
 // sitting logs to mastery/studyLog/<kid>/<sid>/<yyyymmdd>, but Scores, the Weekly report, sprint readiness (the ≥ 90%
 // untimed check) and the notebook's 🔁 review flags read only the drill's mastery/history/<kid>/<yyyymmdd>, so Lincoln —
@@ -83719,6 +83848,8 @@ const GAMES_LIST=[
      park:()=>moleState, restore:v=>{ moleState=v||null; }, resume:()=>moleResume(), decks:k=>typeof moleDecks==="function"?moleDecks(_gamesItems(k),k):[]},   // 🐹 MOLE · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
   {key:"jeop",   emoji:"\u{1F4FA}", label:"Jeopardy",    view:"jeop",                 available:k=>typeof jeopDecks==="function"&&jeopDecks(_gamesItems(k),k).length>0, render:c=>buildJeopHtml(c),
      park:()=>jeopState, restore:v=>{ jeopState=v||null; }, resume:()=>jeopResume(), decks:k=>typeof jeopDecks==="function"?jeopDecks(_gamesItems(k),k):[]},   // 📺 JEOPARDY · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
+  {key:"teach",  emoji:"\u{1F393}", label:"Teach it",    view:"teach",                available:k=>typeof teachDecks==="function"&&teachDecks(_gamesItems(k),k).length>0, render:c=>buildTeachHtml(c),
+     park:()=>teachState, restore:v=>{ teachState=v||null; }, resume:()=>teachResume(), decks:k=>typeof teachDecks==="function"?teachDecks(_gamesItems(k),k):[]},   // 🎓 TEACH · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
 ];
 const gamesLast={};   // kid → key of the last game played on this device
 function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k)&&(typeof gameDeckAny!=="function"||gameDeckAny(k,g)); }catch(e){ return false; } }); }   // 🎮 GAMEGRID: every deck off → the game isn't offered
