@@ -78080,6 +78080,9 @@ function buildDumpHtml(color){
 //   gameLog entry (GAMELOG, game:"sort" — each card's first/wrong/back). NEVER touches the ladder: no scores, no next_due,
 //   no studyLog. db && !_dryRun() only. A round dropped (Change deck, kid switch) writes nothing. Per-kid park via GAMEKID
 //   through the GAMES_LIST entry (🎲 GAMEKIT). Pure pieces (sortDecks / sortRound / sortJudge) are what test_sortit.js runs.
+//   🎮 GAMEGRID (Mom's per-deck pick, gameDeckOn(kid,"sort",deck), default on): a rule / answer deck she turned off is out; a
+//   picture deck she turned off is no longer a bin (Pictures stays while two bins remain). The grid's own preload (_gdRaw) sees
+//   the raw rule; the entry's decks(k) = sortDeckList, the REAL decks Sort it would play (the bins of Pictures, not "Pictures").
 let sortState=null;   // {kid,deck,kind,game:"sort",t0,bins:[{key,label,ids:[]}],turns:[{pid,bin,done,first,wrong:{},back}],sel,shake,lit,phase,first,of,isPB,prevBest,returned:{},gameLogged}
 const SORT_PIC="Pictures", SORT_BOARD=12, SORT_BINS_MAX=4, SORT_PIC_BINS=3, SORT_PER_BIN=3, SORT_MIN_PER=2, SORT_MIN_CARDS=6, SORT_LABEL_MAX=120;
 const SORT_BIN_EMOJI={animals:"\u{1F43E}",colors:"\u{1F3A8}",shapes:"\u{1F537}",dinosaurs:"\u{1F996}",food:"\u{1F34E}",pictures:"\u{1F5BC}"};
@@ -78106,6 +78109,8 @@ function _sortBack(it,kid){
   if(!b||!f||_sortNorm(b)===_sortNorm(f)||b.length>SORT_LABEL_MAX||b.charAt(0)==="/") return "";
   return b;
 }
+// 🎮 GAMEGRID: is this deck on for Sort it? (default on; the grid's preload asks for the raw rule)
+function _sortDeckOn(kid,deck){ try{ if(typeof _gdRaw!=="undefined"&&_gdRaw) return true; return typeof gameDeckOn!=="function"||gameDeckOn(kid,"sort",deck)!==false; }catch(e){ return true; } }
 // PURE: every deck this kid can sort → {deck:{kind:"pic"|"back", bins:[{key,label,ids:[...]}]}} (bins biggest first)
 function sortDecks(items,kid){
   kid=kid||masteryKid;
@@ -78113,6 +78118,7 @@ function sortDecks(items,kid){
   (items||[]).forEach(i=>{
     if(!_sortInPlay(i,kid)) return;
     const d=i.subject||"Other", nk=d+"|"+_sortNorm(i.prompt); if(seen[nk]) return; seen[nk]=1;   // one card per name
+    if(!_sortDeckOn(kid,d)) return;   // 🎮 GAMEGRID: Mom's per-deck pick
     if(_sortPic(i)){ (pic[d]||(pic[d]={key:d,label:d,ids:[]})).ids.push(i.id); return; }
     const b=_sortBack(i,kid); if(!b) return;
     const g=back[d]||(back[d]={}), k=_sortNorm(b); (g[k]||(g[k]={key:k,label:b,ids:[]})).ids.push(i.id);
@@ -78127,6 +78133,8 @@ function sortDecks(items,kid){
   return out;
 }
 function sortDeckNames(decks){ return Object.keys(decks||{}).sort((a,b)=>(a===SORT_PIC?-1:b===SORT_PIC?1:a.localeCompare(b))); }
+// 🎮 GAMEGRID: the REAL decks Sort it would play for this kid (a Pictures bin is its own deck), for the grid's rows
+function sortDeckList(items,kid){ const d=sortDecks(items,kid), o={}; Object.keys(d).forEach(n=>{ if(d[n].kind==="pic") d[n].bins.forEach(b=>{ o[b.label]=1; }); else o[n]=1; }); return Object.keys(o).sort(); }
 // PURE: one round of a deck → {kind, bins:[{key,label,ids:[]}] (ids = what's been placed, in order), turns:[…] shuffled} or null
 function sortRound(deck,decks,rnd){
   rnd=rnd||Math.random;
@@ -82255,7 +82263,7 @@ const GAMES_LIST=[
      park:()=>dumpPark(), restore:v=>{ dumpRestore(v); }, resume:()=>dumpResume(), decks:k=>typeof dumpDecks==="function"?dumpDecks(_gamesItems(k),k):[]},   // 💭 BRAINDUMP · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
   {key:"which",  emoji:"\u{1F446}", label:"Which one?",  view:"which",                 available:k=>whichDecks(_gamesItems(k)).length>0, render:c=>buildWhichHtml(c)},
   {key:"sort",   emoji:"\u{1F9FA}", label:"Sort it",     view:"sort",                  available:k=>typeof sortDecks==="function"&&Object.keys(sortDecks(_gamesItems(k),k)).length>0, render:c=>buildSortHtml(c),
-     park:()=>sortState, restore:v=>{ sortState=v||null; }, resume:()=>sortResume()},   // 🧺 SORTIT · 🎲 GAMEKIT: its own park / restore / resume
+     park:()=>sortState, restore:v=>{ sortState=v||null; }, resume:()=>sortResume(), decks:k=>typeof sortDeckList==="function"?sortDeckList(_gamesItems(k),k):[]},   // 🧺 SORTIT · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its real decks
   {key:"idflash",emoji:"\u26A1",     label:"ID Flash",    view:"idflash",               available:k=>typeof envFlashAvail==="function"&&envFlashAvail(k), render:c=>envFlashGameHtml(c)},   // ⚡ ENVIDFLASH
   {key:"spell",  emoji:"\u{1F524}", label:"Build it",    view:"spell",                 available:k=>typeof spellPool==="function"&&spellPool(_gamesItems(k)).length>0, render:c=>buildSpellHtml(c),
      park:()=>spellState, restore:v=>{ spellState=v||null; }, resume:()=>spellResume()},   // 🔤 SPELLBUILD · 🎲 GAMEKIT: its own park / restore / resume

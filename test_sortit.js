@@ -16,11 +16,11 @@ const seeded=seed=>{ let x=seed||7; return ()=>{ x=(x*1103515245+12345)&0x7fffff
 
 // ── by text ──
 const a=src.indexOf("// SORTIT_START"), b=src.indexOf("// SORTIT_END"), sp=src.indexOf("// SPELLBUILD_END");
-ok("SORTIT block sits right after SPELLBUILD_END",sp>0&&a>sp&&b>a&&src.slice(sp,a).trim()==="// SPELLBUILD_END");
+ok("one SORTIT block, after SPELLBUILD_END (the games' shared anchor) and before the Games tab",sp>0&&a>sp&&b>a&&src.indexOf("// SORTIT_START",a+1)<0&&b<src.indexOf("// GAMESTAB_START")&&/^\/\/ [A-Z_]+_END$/m.test(src.slice(sp,a).trim().split("\n").pop()||"// SPELLBUILD_END"));
 const blk=src.slice(a,b), code=blk.replace(/^\s*\/\/.*$/gm,"");   // code = the block without its comment lines
 ok("no kid's name in the block",!/lincoln|ellis|lucy|julian|caleb|taylor|makenzie|kenzie|andrew/i.test(blk));
 ok("no 🔀 anywhere in index.html",src.indexOf("\u{1F500}")<0);
-ok("GAMES_LIST: Sort it right after Which one?, with park / restore / resume on its entry",/\{key:"which",[^\n]*\n  \{key:"sort",\s*emoji:"\\u\{1F9FA\}", label:"Sort it",\s*view:"sort",\s*available:k=>typeof sortDecks==="function"&&Object\.keys\(sortDecks\(_gamesItems\(k\),k\)\)\.length>0, render:c=>buildSortHtml\(c\),\n\s*park:\(\)=>sortState, restore:v=>\{ sortState=v\|\|null; \}, resume:\(\)=>sortResume\(\)\}/.test(src));
+ok("GAMES_LIST: Sort it right after Which one?, with park / restore / resume on its entry",/\{key:"which",[^\n]*\n  \{key:"sort",\s*emoji:"\\u\{1F9FA\}", label:"Sort it",\s*view:"sort",\s*available:k=>typeof sortDecks==="function"&&Object\.keys\(sortDecks\(_gamesItems\(k\),k\)\)\.length>0, render:c=>buildSortHtml\(c\),\n\s*park:\(\)=>sortState, restore:v=>\{ sortState=v\|\|null; \}, resume:\(\)=>sortResume\(\), decks:k=>typeof sortDeckList==="function"\?sortDeckList\(_gamesItems\(k\),k\):\[\]\}/.test(src));
 ok("gamesCurrentKey / GAMEKID untouched (the entry does it)",!/sort/i.test(fnText("gamesCurrentKey"))&&!/sortState|sortResume/.test(cut("// GAMEKID_START","// GAMEKID_END")));
 ok("writes: match_best one key (guarded) + gameLogRound — nothing else, no set / remove / push",/db&&!_dryRun\(\)\) db\.ref\("mastery\/"\+kid\+"_settings\/match_best"\)\.update\(\{\[key\]:st\.first\}\)/.test(blk)&&/gameLogRound\(st\)/.test(blk)&&(blk.match(/db\.ref\(/g)||[]).length===1&&!/\.set\(|\.remove\(|\.push\(\{/.test(code.replace(/ids\.push|turns\.push|tray\.push|classList\.remove/g,"")));
 ok("the voice says a card's NAME or a bin's name — never which bin a card belongs in",/mastSpeak\(_sortPlain\(it\.prompt\)\)/.test(fnText("_sortSayCard"))&&!/\.bin\b/.test(fnText("_sortSayCard")+fnText("_sortSayBin")));
@@ -80,7 +80,20 @@ console.log("── sortDecks: where a bin comes from (pure) ──");
   ok("suspended / parked cards and production twins are out",(()=>{ const d=c.sortDecks(ARTICLES.map((x,i)=>Object.assign({},x,i<3?{status:"parked"}:i<6?{dir:"prod"}:{})),"k"); return Object.keys(d).length===0; })());
   ok("a back that is just the front, or a sound mark, is not a bin",Object.keys(c.sortDecks([].concat(rule(3,"x","x").map(x=>({...x,answer:x.prompt})),rule(3,"/ă/","y")),"k")).length===0);
   ok("one card per name",(()=>{ const d=c.sortDecks(ARTICLES.concat(ARTICLES.map(x=>({...x,id:x.id+"dup"}))),"k"); return d.Articles.bins.every(b=>b.ids.length===3); })());
+  ok("sortDeckList names the REAL decks for the grid: a Pictures bin is its own deck, never \"Pictures\"",c.sortDeckList(PICS.concat(ARTICLES),"k").join()==="Animals,Articles,Colors,Shapes");
   ok("sortDeckNames puts Pictures first",c.sortDeckNames({"Zed":1,[c.SORT_PIC]:1,"Articles":1}).join()===c.SORT_PIC+",Articles,Zed");
+}
+console.log("── 🎮 GAMEGRID: Mom's per-deck pick ──");
+{
+  const off={}; const {c}=world(PICS.concat(ARTICLES),{settings:{gameDecks:{Articles:{sort:false},Colors:{sort:false}}}});
+  vm.runInContext("function gameDeckOn(kid,game,deck){ const s=masteryData[kid+'_settings'], G=s&&s.gameDecks, g=G&&G[deck]; if(!g||g[game]==null) return true; return g[game]!==false; } var _gdRaw=false;",c);
+  const d=c.sortDecks(c.masteryData.k,"k");
+  ok("a rule deck Mom turned off for Sort it is gone",!d.Articles);
+  ok("a picture deck turned off is no longer a bin; Pictures stays while two bins remain",d[c.SORT_PIC]&&d[c.SORT_PIC].bins.map(b=>b.label).join()==="Animals,Shapes");
+  ok("the grid's own preload (_gdRaw) sees the raw rule",(c._gdRaw=true,Object.keys(c.sortDecks(c.masteryData.k,"k")).length===2&&c.sortDecks(c.masteryData.k,"k")[c.SORT_PIC].bins.length===3));
+  c._gdRaw=false;
+  ok("an off switch for another game changes nothing here",(c.masteryData.k_settings.gameDecks={Articles:{which:false}},!!c.sortDecks(c.masteryData.k,"k").Articles));
+  ok("without the grid (no gameDeckOn) everything plays",(()=>{ const w=world(ARTICLES); return !!w.c.sortDecks(ARTICLES,"k").Articles; })());
 }
 console.log("── sortRound: the board (pure) ──");
 {
