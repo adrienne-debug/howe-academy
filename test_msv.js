@@ -125,16 +125,16 @@ console.log("\n── 🧒 step 3: the kids' Schedule is never in Mom mode ─�
   api._momSuspend(); api.haMomOff(); api._momResume();
   ok("🔒 Lock while set aside really locks (nothing comes back)", api.f() === "false,false,false,false" && JSON.stringify(ls) === '[["ha_mom_on","0"]]');
   const r = slice("_renderAllInner");
-  ok("every render: kids' Schedule → set aside, except under the 👩 Mom chip (MOMCHIP); anything else → back", /if\(tab==="schedule"&&!momSchedView&&kid!=="mom"\)\{ _momSuspend\(\); \} else _momResume\(\);/.test(r));
+  ok("every render: kids' Schedule → set aside under every chip, the Mom chip too (SCHEDBAR: her view alone there); anything else → back", /if\(tab==="schedule"&&!momSchedView\)\{ _momSuspend\(\); \} else _momResume\(\);/.test(r));
 }
 {
   const w = world({ momOn: true }); w.api.showTab("schedule"); w.api.renderKidFilter();
   const kf = w.els["kid-filter"].innerHTML;
   ok("kids' Schedule kid row: 👩 Mom, All, each kid (MOMCHIP)", kf.indexOf("selKid('all')") >= 0 && kf.indexOf("selKid('mom')") >= 0 && kf.indexOf("selKid('mom')") < kf.indexOf("selKid('all')"));
   w.api.renderSchedSubtabs();
-  ok("kids' Schedule ▸ Admin opens Mom's Day (code if needed) at Admin", /onclick="msvOpenAdmin\(\)">Admin/.test(w.els["sched-subtabs"].innerHTML));
+  ok("kids' Schedule: no sub-bar at all (SCHEDBAR 2026-11-02 — was: Admin → Mom's Day)", w.els["sched-subtabs"].innerHTML === "" && w.els["sched-subtabs"].style.display === "none");
   const wIn = world({ momOn: true }); wIn.api.msvEnter(); wIn.api.renderSchedSubtabs();
-  ok("…inside Mom's Day ▸ Schedule, Admin works as always", /onclick="toggleSchedAdmin\(\)">Admin/.test(wIn.els["sched-subtabs"].innerHTML));
+  ok("…inside Mom's Day ▸ Schedule neither (Today · Week · Month only)", wIn.els["sched-subtabs"].innerHTML === "" && !/Admin/.test(wIn.els["msv-bar"].innerHTML));
   ok("Mom's Day ▸ Schedule opens only with the Mom switch on (else → Mom's Day's door)", /if\(!momHere\(\)\)\{ mpSubView="cal"; showTab\("moms-plan"\); return; \}/.test(slice("msvEnter")));
   ok("review healing still runs on Mom's device while the kids' Schedule is open", /momHereReal\(\)/.test(slice("rvHeal")));
 }
