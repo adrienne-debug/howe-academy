@@ -63643,7 +63643,7 @@ function fbStandingChecks(){
       if(noOpen.length) out.push({kid,kind:"nb",msg:cap(kid)+" has no MORNING notebook on "+noOpen.join(", ")});
       if(noClose.length) out.push({kid,kind:"nb",msg:cap(kid)+" has no CLOSING notebook on "+noClose.join(", ")});
       // 2. does this kid have their mastery/retrieval rows?
-      let tracks=0; try{ tracks=(typeof retrTracks==="function")?retrTracks(kid).length:0; }catch(e){}
+      let tracks=0; try{ tracks=(typeof retrOn==="function")?(retrOn(kid)?1:0):((typeof retrTracks==="function")?retrTracks(kid).length:0); }catch(e){}   // 🧠 RETRFAM: a ladder OR a saved rhythm
       if(!tracks) out.push({kid,kind:"mastery",msg:cap(kid)+" has no mastery rows — no drill or sprint slots will be placed."});
     });
   }catch(e){ out.push({kid:"",kind:"err",msg:"checks unavailable: "+e}); }
@@ -66253,7 +66253,7 @@ function renderCurrGrid(el){
     // Retrieval slots (🎯 Daily Drill / 🏃 Sprint / 🎯 Match) — generation adds one ~15-min
     // Mom-required slot per template day; it's not a grid subject, so add it to the load too.
     let retrievalMins=0;
-    if(!offReason&&!mapOff&&typeof retrTracks==="function"&&retrTracks(gvKid).length&&typeof retrDayKinds==="function"){ const _rks=retrDayKinds(gvKid,DOWS[d.getDay()].toLowerCase()).filter(k=>typeof RETR_SLOT_TITLE!=="undefined"&&RETR_SLOT_TITLE[k]); retrievalMins=_rks.reduce((n,k)=>n+((typeof retrSlotMinutes==="function")?retrSlotMinutes(gvKid,k):15),0); }
+    if(!offReason&&!mapOff&&((typeof retrOn==="function")?retrOn(gvKid):(typeof retrTracks==="function"&&retrTracks(gvKid).length))&&typeof retrDayKinds==="function"){ const _rks=retrDayKinds(gvKid,DOWS[d.getDay()].toLowerCase()).filter(k=>typeof RETR_SLOT_TITLE!=="undefined"&&RETR_SLOT_TITLE[k]); retrievalMins=_rks.reduce((n,k)=>n+((typeof retrSlotMinutes==="function")?retrSlotMinutes(gvKid,k):15),0); }   // 🧠 RETRFAM: a ladder OR a saved rhythm
     const cardMins=(!offReason&&!mapOff)?(_cardMinByDate[l.date]||0):0;
     const famMins=(!offReason&&!mapOff&&typeof famMinOn==="function")?famMinOn(gvKid,famDayOfISO(l.date),l.date):0;   // 🏡 family time
     const mins=gridMins+dailyMins+retrievalMins+cardMins+famMins;
@@ -88686,9 +88686,26 @@ function retrWeek2(kid){
   const rp=(masteryData.retrievalPlan||{})[kid]||{};
   return Object.assign({},RETR_WEEK2_DEFAULT[kid]||{},rp.week2||{});
 }
+// RETRFAM_START — drill/match cards for every family (her yes 2026-11-03, "yes to all and go to all"). Sara saved Andrew's
+// rhythm (drill Mon/Tue/Thu/Fri + match every day) and regenerated: no card came, because the week builder only let in a kid
+// with a sprint ladder (retrTracks), and only the Howe kids have ladders. Daily Drill and Match never read a ladder, so the
+// rule is now: a kid is in the rhythm when they have a ladder OR a saved Retrieval Plan with a day that isn't off. A kid with
+// no ladder runs Drill + Match only — a Sprint or Re-check card would open with nothing behind it. Every Howe kid has a
+// ladder, so Howe weeks come out exactly as before. (A slice without retrTracks counts as laddered — the old behaviour.)
+const RETR_NOLADDER_KINDS={drill:true,match:true};
+function retrHasLadder(kid){
+  if(typeof retrTracks!=="function") return true;
+  try{ return retrTracks(kid).length>0; }catch(e){ return false; }
+}
+function retrOn(kid){
+  if(retrHasLadder(kid)) return true;
+  const rp=((typeof masteryData!=="undefined"&&masteryData&&masteryData.retrievalPlan)||{})[kid]||{};
+  return [rp.week,rp.week2].some(w=>w&&typeof w==="object"&&RETR_DAYS.some(d=>w[d]&&w[d]!=="off"));
+}
+// RETRFAM_END
 function retrDayKinds(kid,dk){
-  const out=[];
-  [retrWeek(kid)[dk],retrWeek2(kid)[dk]].forEach(k=>{ if(k&&k!=="off"&&out.indexOf(k)<0) out.push(k); });
+  const out=[], lad=retrHasLadder(kid);
+  [retrWeek(kid)[dk],retrWeek2(kid)[dk]].forEach(k=>{ if(k&&k!=="off"&&out.indexOf(k)<0&&(lad||RETR_NOLADDER_KINDS[k])) out.push(k); });   // 🧠 RETRFAM: no ladder → drill + match only
   return out;
 }
 function retrTodayKinds(kid){
@@ -88919,7 +88936,7 @@ function retrOpenSprint(kid){
 }
 function retrSchedStripHtml(kid,day){
   try{
-    if(typeof masteryData==="undefined"||!masteryData||!retrTracks(kid).length) return "";
+    if(typeof masteryData==="undefined"||!masteryData||!retrOn(kid)) return "";   // 🧠 RETRFAM: a ladder OR a saved rhythm
     if(day!==_todayDay) return "";
     if(typeof kidOffOwnDay==="function"&&kidOffOwnDay(kid,day)) return "";   // 😷 off today: no drill chips either
     // If the week was generated WITH retrieval slots, the real task owns the day — the
@@ -94722,7 +94739,7 @@ function gwInjectRetrieval(allTasks,sortedDates,WDAY_MAP,skipSet,dates,dayOfYear
     if(!dn||skipSet.has(dn)||!dates[dn]) continue;
     const idPrefix=d.getFullYear()+"d"+dayOfYear(d)+"_";
     for(const kid of [...ROSTER]){
-      if(!retrTracks(kid).length) continue;
+      if(!((typeof retrOn==="function")?retrOn(kid):retrTracks(kid).length)) continue;   // 🧠 RETRFAM: a ladder OR a saved rhythm
       // Row 1 + optional Row 2 (retrievalPlan/{kid}/week2) — up to two slots that day,
       // never the same kind twice (retrDayKinds dedupes). Template keys are mon/tue/….
       const kinds=(typeof retrDayKinds==="function")?retrDayKinds(kid,dn.slice(0,3))
