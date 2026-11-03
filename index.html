@@ -81170,6 +81170,821 @@ function buildCatsHtml(color){
   return h+'</div></div>';
 }
 // CATS_END
+// UNJUMBLE_START — 🧩 "Unjumble" (her go via the hub 2026-11-03; PLAN_practice_games_2026-10-23.md Tier 2 "Unjumble: drag words of a
+// sentence into order (Daily Grams, rule cards with `sentence`)" — demand SEQ). The words of one of the kid's own sentence cards come up
+// mixed as tiles; the kid taps them into order (tap a placed word to send it back), then ✔ Check. Phone-first: tap, no drag.
+//   Cards: a card's `sentence` field when it carries one, else a FRONT that is a sentence — UJ_MIN_WORDS..UJ_MAX_WORDS words ending . ? !
+//   (the grammar rule decks: "Isaac hit a grand slam." / "Kangaroos are native to Australia."); never a run of abbreviations, a rule's
+//   "boat → boats · …" example line, or a card Which one? leaves out (spelling / phonograms). The markup is dropped (<u>a</u>, the
+//   .mast-hl mark): the tiles are plain words with their own capital and punctuation (a worksheet unjumble gives those too). A deck
+//   needs UJ_MIN+ sentences; a round is UJ_ROUND of them; 🎲 Mix the decks when two or more decks have some. Readers only (dcLevel:
+//   not a pre-reader — never a name).
+//   Right → the soft ding, the sentence is SAID as the confirm (not for a silent language), next. Wrong → the soft bonk; the words that
+//   sit in their right place stay and lock (green), the rest go back to the tray — one more try. Wrong twice → "Here's how it goes"
+//   shows the sentence for a beat (the card's own face, which the drill shows every day) and that card comes back once at the end.
+//   No lives, no clock, no points.
+// Writes (only these): <kid>_settings/match_best key "<deck> · jumble" (first-try rights, only when beaten) and the round's gameLog
+//   entry (GAMELOG, game:"jumble"). NEVER touches the ladder — no scores, no next_due, no study log. db && !_dryRun() only. Per-kid
+//   park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT). A round dropped (Change deck, a kid switch) writes nothing.
+//   🎮 GAMEGRID: its own column — gameDeckOn(kid,"jumble",deck); the grid's preload asks raw (ujDecks).
+let jumbleState=null;   // {kid,deck,mix,game:"jumble",t0,turns:[{pid,words:[w],tiles:[wi],line:[wi|null],locked:{pos:1},wrong:{},tries,done,first,fail,back,show}],i,phase,first,of,isPB,prevBest,lock,seq,msg,returned:{},gameLogged}
+let _ujRandom=Math.random;   // tests seed it
+const UJ_MIN=3, UJ_ROUND=6, UJ_MIN_WORDS=4, UJ_MAX_WORDS=12, UJ_TRIES=2, UJ_BEAT=900, UJ_BEAT_SHOW=2600;
+function _ujItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
+function _ujShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_ujRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function ujDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"jumble",deck); }
+// The sentence's plain words: tags dropped, not spaced out ("Kentucky<b>.</b>" stays "Kentucky."), entities and runs of space collapsed
+function ujPlain(s){ return String(s==null?"":s).replace(/<[^>]*>/g,"").replace(/&nbsp;/g," ").replace(/&amp;/g,"&").replace(/\s+/g," ").trim(); }
+function ujWords(s){ const p=ujPlain(s); return p?p.split(" "):[]; }
+// PURE: is this text a sentence the game can jumble? (UJ_MIN_WORDS..UJ_MAX_WORDS words, ends . ? !, not a rule's example line, not a run
+// of abbreviations, and at least three different words — one word repeated has no order to find)
+function ujIsSentence(s){
+  const w=ujWords(s); if(w.length<UJ_MIN_WORDS||w.length>UJ_MAX_WORDS) return false;
+  const p=w.join(" "); if(!/[.?!]["\u201D\u2019']?$/.test(p)||/ \u00B7 |\u2192/.test(p)) return false;
+  if(w.slice(0,-1).filter(x=>/\.$/.test(x)).length>1) return false;   // "Fri.   Aug.   Ln.   Mrs." is a list, not a sentence
+  const seen={}; let distinct=0; w.forEach(x=>{ const k=x.toLowerCase(); if(!seen[k]){ seen[k]=1; distinct++; } });
+  return distinct>=3;
+}
+// The sentence a card carries: its `sentence` field, else a front that is one; "" when neither
+function ujSentence(it){ if(!it) return ""; const s=ujPlain(it.sentence); if(s&&ujIsSentence(s)) return s; const f=ujPlain(it.prompt); return ujIsSentence(f)?f:""; }
+function _ujLeftOut(it,kid){
+  if(!it||(it.status!=="active"&&it.status!=="introduction")||it.dir==="prod") return true;
+  try{ if(typeof _whichLeftOut==="function"&&_whichLeftOut(it,kid)) return true; }catch(e){}   // spelling / phonograms: the app never shows a spelling the child must produce
+  try{ if(typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin(kid,it.subject)) return true; }catch(e){}   // 📝 a station waiting for its check-in
+  try{ if(typeof cpceHidItem==="function"&&cpceHidItem(kid,it)) return true; }catch(e){}   // 📚 CPCARDSEDIT
+  try{ if(typeof cpSecOffItem==="function"&&cpSecOffItem(kid,it)) return true; }catch(e){}   // 🎚 CPSECTIONS
+  return false;
+}
+// Readers only: not a pre-reader by the roster's grade (never a name)
+function ujLevelOk(kid){ if(typeof dcLevel!=="function") return true; try{ return dcLevel(kid)!=="little"; }catch(e){ return true; } }
+// PURE: every sentence card this kid can play → {deck:[{pid,text}]} (one card per sentence), only decks with UJ_MIN+ that are on
+function ujPools(items,kid){
+  kid=kid||masteryKid;
+  const by={}, seen={};
+  (items||[]).forEach(i=>{ if(_ujLeftOut(i,kid)) return; const s=ujSentence(i); if(!s) return; const d=i.subject||"Other", k=d+"|"+s.toLowerCase(); if(seen[k]) return; seen[k]=1; (by[d]||(by[d]=[])).push({pid:i.id,text:s}); });
+  const out={}; Object.keys(by).sort().forEach(d=>{ if(by[d].length>=UJ_MIN&&ujDeckOn(kid,d)) out[d]=by[d]; });
+  return out;
+}
+function ujDecks(items,kid){ return Object.keys(ujPools(items,kid)); }   // the game's OWN deck list (the games-per-deck grid's preload asks this, raw)
+function ujAvail(kid){ return ujLevelOk(kid)&&ujDecks(_ujItems(kid),kid).length>0; }
+// PURE: a turn for a sentence — its words, the tiles shuffled (never the sentence's own order when another is possible), an empty line
+function ujTurn(pid,text,back){
+  const words=ujWords(text), n=words.length, tiles=[]; for(let i=0;i<n;i++) tiles.push(i);
+  let guard=0; do{ _ujShuffle(tiles); }while(guard++<20&&tiles.every((wi,p)=>words[wi].toLowerCase()===words[p].toLowerCase()));
+  const line=[]; for(let i=0;i<n;i++) line.push(null);
+  return {pid:pid,words:words,tiles:tiles,line:line,locked:{},wrong:{},tries:0,done:false,first:false,fail:false,back:!!back,show:false};
+}
+function jumbleStart(deck){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding / bonk (iPad)
+  const pools=ujPools(_ujItems(),masteryKid), mix=deck===WHICH_MIX, names=Object.keys(pools);
+  let cards=[]; if(mix) names.forEach(d=>{ cards=cards.concat(pools[d]); }); else cards=pools[deck]||[];
+  if(cards.length<UJ_MIN||(mix&&names.length<2)){ jumbleState=null; _mastRe(); return; }   // 🎮 GAMEGRID: a deck Mom turned off is not in pools
+  const picks=_ujShuffle(cards.slice()).slice(0,UJ_ROUND);
+  jumbleState={kid:masteryKid,deck:deck,mix:mix,game:"jumble",t0:Date.now(),turns:picks.map(c=>ujTurn(c.pid,c.text,false)),i:0,phase:"play",first:0,of:picks.length,isPB:false,prevBest:null,lock:false,seq:0,msg:"",returned:{}};
+  _mastRe();
+}
+function jumbleChangeDeck(){ jumbleState=null; _mastRe(); }   // drop the round as it stands: nothing written
+function _ujCur(st){ return (st&&st.phase==="play"&&!st.lock)?st.turns[st.i]:null; }
+// Tap a tile in the tray: it fills the first empty slot of the line
+function jumbleTap(wi){
+  const st=jumbleState, t=_ujCur(st); if(!t||t.done) return;
+  if(t.line.indexOf(wi)>=0||t.tiles.indexOf(wi)<0) return;
+  const p=t.line.indexOf(null); if(p<0) return;
+  t.line[p]=wi; st.msg=""; _mastRe();
+}
+// Tap a placed word: back to the tray (a locked one stays)
+function jumbleUntap(p){
+  const st=jumbleState, t=_ujCur(st); if(!t||t.done||t.locked[p]||t.line[p]==null) return;
+  t.line[p]=null; st.msg=""; _mastRe();
+}
+function jumbleClear(){ const st=jumbleState, t=_ujCur(st); if(!t||t.done) return; t.line=t.line.map((wi,p)=>t.locked[p]?wi:null); st.msg=""; _mastRe(); }
+// PURE: judge the line → "right" | "again" | "fail" | null (the line isn't full). Words compare by text, so two "the"s may swap. On a miss
+// the right positions lock and the others go back to the tray; the second miss is a fail.
+function ujJudge(t){
+  if(t.done||t.line.some(wi=>wi==null)) return null;
+  const okAt=t.line.map((wi,p)=>t.words[wi].toLowerCase()===t.words[p].toLowerCase());
+  if(okAt.every(Boolean)){ t.done=true; t.first=t.tries===0; return "right"; }
+  t.tries++; t.wrong[String(t.tries)]=1;
+  okAt.forEach((o,p)=>{ if(o) t.locked[p]=1; else t.line[p]=null; });
+  if(t.tries>=UJ_TRIES){ t.done=true; t.first=false; t.fail=true; return "fail"; }
+  return "again";
+}
+function ujText(t){ return t.words.join(" "); }
+function _ujSay(st,t){ try{ const it=_ujItems(st.kid).find(x=>x&&x.id===t.pid); if(typeof whichSilent==="function"&&whichSilent(it)) return; if(typeof mastView==="undefined"||mastView==="jumble") mastSpeak(ujText(t)); }catch(e){} }
+function jumbleCheck(){
+  const st=jumbleState, t=_ujCur(st); if(!t||t.done) return;
+  const r=ujJudge(t); if(!r) return;
+  if(r==="again"){ try{ matchBonk(); }catch(e){} st.msg="again"; _mastRe(); return; }
+  if(r==="right"){ if(!t.back&&t.first) st.first++; try{ matchDing(); }catch(e){} st.msg="right"; _ujSay(st,t); }
+  else {
+    try{ matchBonk(); }catch(e){}
+    st.msg="show"; t.show=true; t.line=t.words.map((w,p)=>p);   // "Here's how it goes" — the card's own face, for a beat
+    if(!t.back&&!st.returned[t.pid]){ st.returned[t.pid]=1; st.turns.push(ujTurn(t.pid,ujText(t),true)); }   // back once, at the end
+  }
+  st.lock=true; const seq=++st.seq;
+  _mastRe();
+  setTimeout(()=>{ if(jumbleState===st&&st.lock&&st.seq===seq) jumbleNext(st); },r==="fail"?UJ_BEAT_SHOW:UJ_BEAT);   // GAMEKID: never advances a parked / settled turn
+}
+function _ujStep(st){ st.lock=false; st.msg=""; st.i++; if(st.i>=st.turns.length) jumbleFinish(st); }
+function jumbleNext(st){ st=st||jumbleState; if(!st||st!==jumbleState) return; _ujStep(st); _mastRe(); }
+function jumbleBestKey(deck){ return deck+" \u{00B7} jumble"; }
+function jumbleFinish(st){
+  st.phase="done"; st.lock=false;
+  const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every sentence's result, game:"jumble"
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=jumbleBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.first>0&&(prev==null||st.first>prev);
+  if(st.isPB){
+    s.match_best[key]=st.first;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+  try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F9E9} Every sentence in order!",{noSong:true}); }catch(e){}
+}
+// GAMEKID → 🎲 GAMEKIT resume: a beat that was mid-way when the kid switched settles here (no render; the caller renders)
+function jumbleResume(){ const st=jumbleState; if(!st||st.phase!=="play") return; if(st.lock) _ujStep(st); }
+const UJ_CSS='<style>.uj-tile{display:inline-flex;align-items:center;justify-content:center;min-height:46px;padding:8px 14px;border-radius:14px;border:3px solid #e2ddd6;background:#fff;font-family:\'Fraunces\',serif;font-size:20px;font-weight:800;color:#292524;cursor:pointer;-webkit-tap-highlight-color:transparent;overflow-wrap:anywhere;max-width:100%;line-height:1.1}'+
+  '.uj-tile[disabled]{cursor:default}.uj-tile.uj-lock{border-color:#86efac;background:#f0fdf4;color:#15803d}.uj-tile.uj-show{border-color:#f59e0b;background:#fffbeb;color:#b45309}'+
+  '.uj-slot{display:inline-flex;min-width:56px;min-height:46px;border-radius:14px;border:3px dashed #d6d3d1;background:#fafaf9}'+
+  '.uj-line{display:flex;flex-wrap:wrap;gap:8px;align-items:center;min-height:66px;padding:10px;border-radius:18px;background:#f8f7f4;border:2px solid #e2ddd6;margin:10px 0 14px}.uj-tray{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-bottom:16px;min-height:46px}'+
+  '.uj-btn{padding:12px 22px;border-radius:999px;border:none;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;-webkit-tap-highlight-color:transparent}.uj-btn[disabled]{opacity:.45;cursor:default}'+
+  '.uj-ghost{padding:10px 16px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif}.uj-ghost[disabled]{opacity:.45;cursor:default}</style>';
+function buildJumbleHtml(color){
+  const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+  let h=UJ_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const items=_ujItems(), pools=ujPools(items), decks=Object.keys(pools);
+  if(!decks.length){ h+='<div class="mast-none">No decks ready for Unjumble yet \u{2014} it needs '+UJ_MIN+' or more sentence cards in a deck.</div></div>'; return h; }
+  const st=jumbleState;
+  const chip=(dk,lbl)=>{ const sel=st&&st.deck===dk; return '<button onclick="jumbleStart(\''+q(dk)+'\')" style="padding:10px 16px;border-radius:999px;font-size:14px;font-weight:800;border:2px solid '+(sel?color:'#e2ddd6')+';background:'+(sel?color:'#fff')+';color:'+(sel?'#fff':'#57534e')+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
+  if(!st||st.phase==="done"){
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">';
+    decks.forEach(dk=>{ h+=chip(dk,esc(dk)+' <span style="opacity:.7;font-weight:700">'+pools[dk].length+'</span>'); });
+    if(decks.length>1) h+=chip(WHICH_MIX,"\u{1F3B2} "+WHICH_MIX);
+    h+='</div>';
+  }
+  if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u{1F9E9} Pick a deck. The words of a sentence are mixed up \u{2014} tap them into order, then Check!</div></div>'; return h; }
+  const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[jumbleBestKey(st.deck)];
+  if(st.phase==="play"){
+    const t=st.turns[st.i], full=!t.line.some(wi=>wi==null);
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
+    st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
+    h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
+      '<button onclick="jumbleChangeDeck()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{1F5C2} Change deck</button></span></div>';
+    const m=st.msg;
+    h+='<div style="text-align:center;font-size:17px;font-weight:800;color:'+(m==="right"?'#16a34a':m==="show"?'#b45309':'#57534e')+';margin:6px 0 4px">'+
+      (m==="right"?'\u{2705} That\u2019s it!':m==="show"?'Here\u2019s how it goes \u{2014} we\u2019ll try it again later':m==="again"?'Almost \u{2014} the green ones are right. Try again!':t.back?'One more time \u{2014} put it in order':'Put the words in order')+'</div>';
+    h+='<div class="uj-line" aria-label="Your sentence">';
+    t.line.forEach((wi,p)=>{ if(wi==null) h+='<span class="uj-slot" aria-label="Empty slot"></span>'; else h+='<button class="uj-tile'+(t.locked[p]?' uj-lock':'')+(t.show?' uj-show':'')+'"'+(t.locked[p]||st.lock?' disabled':' onclick="jumbleUntap('+p+')"')+' aria-label="Word '+(p+1)+'">'+esc(t.words[wi])+'</button>'; });
+    h+='</div><div class="uj-tray">';
+    t.tiles.forEach(wi=>{ if(t.line.indexOf(wi)>=0) return; h+='<button class="uj-tile" onclick="jumbleTap('+wi+')"'+(st.lock?' disabled':'')+'>'+esc(t.words[wi])+'</button>'; });
+    h+='</div>';
+    h+='<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap"><button class="uj-btn" onclick="jumbleCheck()"'+(full&&!st.lock?'':' disabled')+' style="background:'+color+';color:#fff">\u{2714} Check</button><button class="uj-ghost" onclick="jumbleClear()"'+(st.lock?' disabled':'')+'>\u{21BA} Clear</button></div>';
+    return h+'</div>';
+  }
+  // Finish: first-try count against the kid's own best, Play again / Mix the decks
+  h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} All in order!</div>';
+  h+='<div style="font-size:17px;font-weight:800;color:#57534e;margin-top:10px">\u{1F9E9} '+st.first+' of '+st.of+' on the first try'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+  h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">';
+  h+='<button onclick="jumbleStart(\''+q(st.deck)+'\')" class="uj-btn" style="background:'+color+';color:#fff;font-size:15px">\u{1F501} Play again</button>';
+  if(decks.length>1&&!st.mix) h+='<button onclick="jumbleStart(\''+q(WHICH_MIX)+'\')" class="uj-btn" style="border:2px solid '+color+';background:#fff;color:'+color+';font-size:15px">\u{1F3B2} '+WHICH_MIX+'</button>';
+  return h+'</div></div></div>';
+}
+// UNJUMBLE_END
+// KABOOM_START — 💥 "Kaboom" (her go via the hub 2026-11-03; PLAN_practice_games_2026-10-23.md Tier 2 "Kaboom: draw a stick from the jar:
+// say the card; a KABOOM stick means put them back (laughter, no loss of progress)" — CR + chance novelty, the open-the-box / random-wheel
+// pattern). A jar of sticks: one per card in the round plus KB_BOOMS "KABOOM!" sticks. The kid taps the jar to draw a stick; a card stick
+// opens its card and the kid PRODUCES it — Go Fish's three acts: a picture / letter card is said out loud (🗣 honor tap, no mic on a
+// tablet, the app says the name back), a number back is typed on the number pad, a word back is picked from three of the deck's own
+// backs. Right → the ding, the stick goes in the kid's pile. Wrong → the bonk, one more try; wrong twice → "We'll come back to that
+// one" (the answer is never shown — the app never supplies what the kid must produce) and the card comes back once at the end.
+//   KABOOM! → the big laugh line, and every stick in the pile goes BACK INTO THE JAR (shuffled into what is left): those cards are
+//   asked again — a free second retrieval — but as come-backs (back:true), so the first-try count never drops: no loss of progress,
+//   as the plan says. A KABOOM stick is spent once drawn, and never the first stick. The round ends when the jar is empty; then the
+//   missed cards come back once, then the finish: "N of M on the first try" and how many kabooms. No lives, no clock, no points.
+// Cards: Which one?'s own pool (whichPool / whichDeckModes read RAW, like Go Fish — a deck turned off for Which one? still plays here),
+//   then this game's grid cell gameDeckOn(kid,"kaboom",deck); a deck needs KB_MIN+ cards; KB_CARDS a round; 🎲 Mix the decks.
+// Writes (only these): <kid>_settings/match_best key "<deck> · kaboom" (first-try rights, only when beaten) and the round's gameLog entry
+//   (GAMELOG, game:"kaboom"). NEVER touches the ladder — no scores, no next_due, no study log. db && !_dryRun() only. Per-kid park /
+//   restore / resume through its GAMES_LIST entry (🎲 GAMEKIT). A round dropped (Stop, a kid switch) writes nothing.
+let kaboomState=null;   // {kid,deck,mix,game:"kaboom",t0,jar:[{pid}|{boom:true}],pile:[pid],open:{t}|null,turns:[{pid,act,done,first,wrong:{},tries,fail,back,opts?,typed?}],booms,phase:"play"|"back"|"done",backs,first,of,isPB,prevBest,lock,seq,msg,say,boomNow,gameLogged}
+let _kbRandom=Math.random;   // tests seed it
+const KB_CARDS=8, KB_BOOMS=2, KB_MIN=4, KB_TRIES=2, KB_BEAT=900, KB_BEAT_BOOM=2200;
+const KB_NUM=/^[-+]?\d+([.,]\d+)?$/;
+const KB_LAUGHS=["KABOOM! Back in the jar they go!","KABOOM! Ha! Everything back in the jar!","KABOOM! Whoops \u2014 the jar takes them all back!"];
+function _kbItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
+function _kbShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_kbRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function _kbRaw(fn){ const had=(typeof _gdRaw!=="undefined")?_gdRaw:null; try{ if(had!==null) _gdRaw=true; return fn(); } finally{ if(had!==null) _gdRaw=had; } }
+function kaboomDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"kaboom",deck); }
+function _kbWhichPool(items,kid){ return _kbRaw(()=>whichPool(items,WHICH_MIX,kid)); }
+function _kbModes(items,kid){ return _kbRaw(()=>whichDeckModes(items,kid)); }
+function _kbIt(st,pid){ return _kbItems(st.kid).find(x=>x&&x.id===pid)||null; }
+function kaboomName(it){ return _matchPlain(it&&it.prompt); }
+// The decks that can fill a jar: Which one?'s playable decks with KB_MIN+ cards in play, and this game's cell on
+function kaboomDecks(items,kid){
+  kid=kid||masteryKid;
+  const n={}; _kbWhichPool(items,kid).forEach(i=>{ const d=i.subject||"Other"; n[d]=(n[d]||0)+1; });
+  return Object.keys(n).filter(d=>n[d]>=KB_MIN&&kaboomDeckOn(kid,d)).sort();
+}
+function kaboomPool(items,deck,kid){ kid=kid||masteryKid; const ok=kaboomDecks(items,kid); return _kbWhichPool(items,kid).filter(i=>ok.indexOf(i.subject||"Other")>=0&&(deck===WHICH_MIX||(i.subject||"Other")===deck)); }
+// What the kid DOES with a card (Go Fish's rule): "say" (picture / symbol), "type" (a number back), "pick" (a word back)
+function kaboomKind(it,mode){ if(mode!=="answer") return "say"; return KB_NUM.test(String(_whichBack(it)).trim())?"type":"pick"; }
+// PURE: the jar — one stick per card, shuffled, then the KABOOM sticks dropped in at random spots that are never the first draw
+function kaboomJar(pids,booms){
+  const jar=_kbShuffle(pids.map(p=>({pid:p})));
+  for(let b=0;b<booms&&jar.length;b++){ const at=1+Math.floor(_kbRandom()*jar.length); jar.splice(at,0,{boom:true}); }
+  return jar;
+}
+function _kbSay(st,text){ st.say=text||""; if(!text||(typeof mastView!=="undefined"&&mastView!=="kaboom")) return; try{ mastSpeak(text); }catch(e){} }
+function kaboomSayAgain(){ const st=kaboomState; if(st&&st.say) try{ mastSpeak(st.say); }catch(e){} }
+function kaboomStart(deck){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding / bonk (iPad)
+  const items=_kbItems(), mix=deck===WHICH_MIX, pool=kaboomPool(items,deck);
+  if(pool.length<KB_MIN||(!mix&&!kaboomDeckOn(masteryKid,deck))){ kaboomState=null; _mastRe(); return; }   // 🎮 GAMEGRID: a deck Mom turned off for Kaboom
+  const picks=_kbShuffle(pool.slice()).slice(0,KB_CARDS), pids=picks.map(i=>i.id);
+  kaboomState={kid:masteryKid,deck:deck,mix:mix,game:"kaboom",t0:Date.now(),jar:kaboomJar(pids,KB_BOOMS),pile:[],open:null,turns:[],booms:0,phase:"play",backs:null,first:0,of:pids.length,isPB:false,prevBest:null,lock:false,seq:0,msg:"Tap the jar to draw a stick!",say:"",boomNow:false};
+  _mastRe();
+}
+function kaboomStop(){ kaboomState=null; _mastRe(); }   // drop the round as it stands: nothing written
+// Three backs for a pick: the card's own + two different backs from its deck (Which one?'s rule), shuffled
+function _kbLures(st,pid){
+  const it=_kbIt(st,pid); if(!it) return [];
+  const own=_whichBack(it), seen={}; seen[_whichNorm(own)]=1;
+  const more=_kbShuffle(_kbWhichPool(_kbItems(st.kid),st.kid).filter(x=>x.id!==pid&&(x.subject||"Other")===(it.subject||"Other"))).map(x=>_whichBack(x)).filter(b=>b&&!seen[_whichNorm(b)]&&(seen[_whichNorm(b)]=1)).slice(0,2);
+  return _kbShuffle([own].concat(more));
+}
+function _kbAct(st,pid){ const it=_kbIt(st,pid), modes=_kbModes(_kbItems(st.kid),st.kid); return kaboomKind(it,modes[(it&&it.subject)||"Other"]); }
+// Open a card's stick (back = a come-back: a KABOOM return, or one of the end's)
+function _kbOpen(st,pid,back){
+  const act=_kbAct(st,pid), t={pid:pid,act:act,done:false,first:false,wrong:{},tries:0,fail:false,back:!!back}; st.turns.push(t);
+  if(act==="pick") t.opts=_kbLures(st,pid);
+  if(act==="type") t.typed="";
+  st.open={t:st.turns.length-1}; st.boomNow=false;
+  const it=_kbIt(st,pid), lead=back?"One more time. ":"";
+  st.msg=lead+(act==="say"?"Say it out loud, then tap \u{1F5E3}":act==="type"?"Type the answer.":"Tap the answer.");
+  if(act==="say") _kbSay(st,lead+"What is it?"); else _kbSay(st,lead+(it&&!whichSilent(it)?kaboomName(it):""));   // a word answer's FRONT is read; a silent language is shown only
+}
+// 🏺 the draw: the top stick — a card to produce, or KABOOM
+function kaboomDraw(){
+  const st=kaboomState; if(!st||st.phase!=="play"||st.lock||st.open) return;
+  const s=st.jar.shift(); if(!s){ _kbEnd(st); _mastRe(); return; }
+  if(s.boom){ _kbBoom(st); _mastRe(); return; }
+  _kbOpen(st,s.pid,!!s.back); _mastRe();   // a KABOOM-returned stick is a come-back turn
+}
+// KABOOM! — the pile goes back into the jar (shuffled into what is left) as come-backs; the first-try count keeps every point it has
+function _kbBoom(st){
+  st.booms++; st.boomNow=true;
+  const back=st.pile.splice(0); back.forEach(p=>{ st.jar.push({pid:p,back:true}); }); _kbShuffle(st.jar);
+  try{ matchBonk(); }catch(e){}
+  const line=KB_LAUGHS[Math.min(KB_LAUGHS.length-1,st.booms-1)];
+  st.msg=line+(back.length?" ("+back.length+" back)":" (your pile was empty \u2014 phew!)"); _kbSay(st,line);
+  st.lock=true; const seq=++st.seq;
+  setTimeout(()=>{ if(kaboomState===st&&st.lock&&st.seq===seq) kaboomNext(st); },KB_BEAT_BOOM);
+}
+function _kbTurn(st,act){ if(!st||st.lock||st.phase==="done"||!st.open) return null; const t=st.turns[st.open.t]; return (t&&t.act===act&&!t.done)?t:null; }
+function kaboomSaid(){   // 🗣 "I said it" — the honor system: a tablet can't hear; the app says the name back as the confirm
+  const st=kaboomState, t=_kbTurn(st,"say"); if(!t) return;
+  t.done=true; t.first=true;
+  _kbSettle(st,t,"",kaboomName(_kbIt(st,t.pid))); _mastRe();   // the name is SAID back, never written
+}
+function kaboomKey(ch){   // the number pad
+  const st=kaboomState, t=_kbTurn(st,"type"); if(!t) return;
+  if(ch==="back") t.typed=t.typed.slice(0,-1); else if(t.typed.length<6) t.typed+=ch;
+  _mastRe();
+}
+function _kbAnsOk(act,given,back){ if(act==="pick") return String(given)===String(back); return (typeof mstTypeAnsOk==="function")?mstTypeAnsOk(given,back):Number(String(given).replace(",","."))===Number(String(back).replace(",",".")); }
+// PURE: one answer against the card's back → "right" | "again" | "fail". A picked back that was wrong greys out (t.wrong)
+function kaboomJudge(t,given,back){
+  if(_kbAnsOk(t.act,given,back)){ t.done=true; t.first=t.tries===0; return "right"; }
+  t.tries++; t.wrong[t.act==="pick"?String(given):String(t.tries)]=1; t.typed="";
+  if(t.tries>=KB_TRIES){ t.done=true; t.first=false; t.fail=true; return "fail"; }
+  return "again";
+}
+function kaboomCheck(){
+  const st=kaboomState, t=_kbTurn(st,"type"); if(!t||!t.typed) return;
+  _kbAfter(st,t,kaboomJudge(t,t.typed,_whichBack(_kbIt(st,t.pid))));
+}
+function kaboomPickTap(i){
+  const st=kaboomState, t=_kbTurn(st,"pick"); if(!t||!t.opts||t.opts[i]==null||t.wrong[t.opts[i]]) return;
+  _kbAfter(st,t,kaboomJudge(t,t.opts[i],_whichBack(_kbIt(st,t.pid))));
+}
+function _kbAfter(st,t,r){
+  if(r==="again"){ try{ matchBonk(); }catch(e){} st.msg="Almost \u2014 try again!"; _mastRe(); return; }
+  if(r==="fail") try{ matchBonk(); }catch(e){}
+  _kbSettle(st,t,r==="fail"?"We\u2019ll come back to that one.":""); _mastRe();
+}
+// The card is settled: a right one goes in the pile (a first-try right counts; a come-back counts for nothing), a beat, then the jar again
+function _kbSettle(st,t,lead,spoken){
+  if(!t.fail){ if(st.phase==="play") st.pile.push(t.pid); if(t.first&&!t.back) st.first++; try{ matchDing(); }catch(e){} }
+  st.msg=lead||(t.first?"That\u2019s it! Into your pile.":"Okay \u2014 next one.");
+  const pre=spoken?spoken+". ":(lead?lead+" ":"");
+  if(t.first) _kbSay(st,pre+"That\u2019s it!"); else _kbSay(st,lead||"Next one.");
+  st.lock=true; const seq=++st.seq;
+  setTimeout(()=>{ if(kaboomState===st&&st.lock&&st.seq===seq) kaboomNext(st); },KB_BEAT);
+}
+function kaboomNext(st){
+  st=st||kaboomState; if(!st||st!==kaboomState) return;
+  st.lock=false; st.open=null; st.boomNow=false;
+  if(st.phase==="back"){ _kbBackNext(st); _mastRe(); return; }
+  if(!st.jar.length){ _kbEnd(st); _mastRe(); return; }
+  st.msg="Tap the jar to draw a stick!"; st.say=""; _mastRe();
+}
+// ── the end: the jar is empty → the cards missed on their FIRST ask come back once → finish ──
+function _kbEnd(st){
+  if(st.phase!=="play") return;
+  st.phase="back"; st.open=null;
+  const seen={}, backs=[];
+  st.turns.forEach(t=>{ if(t.back||seen[t.pid]) return; if(Object.keys(t.wrong).length||t.fail){ seen[t.pid]=1; backs.push(t.pid); } });
+  st.backs=backs;
+  if(!backs.length) return _kbFinish(st);
+  st.msg="The jar is empty! Let\u2019s look at a few again."; _kbSay(st,"The jar is empty! Let's look at a few again.");
+  st.lock=true; const seq=++st.seq; setTimeout(()=>{ if(kaboomState===st&&st.lock&&st.seq===seq) kaboomNext(st); },KB_BEAT*2);
+}
+function _kbBackNext(st){
+  const pid=st.backs&&st.backs.shift();
+  if(pid==null) return _kbFinish(st);
+  _kbOpen(st,pid,true);
+}
+function kaboomBestKey(deck){ return deck+" \u{00B7} kaboom"; }
+function _kbFinish(st){
+  st.phase="done"; st.open=null; st.lock=false;
+  const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every act's result, game:"kaboom"
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=kaboomBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.first>0&&(prev==null||st.first>prev);
+  if(st.isPB){
+    s.match_best[key]=st.first;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+  st.msg="The jar is empty!"; st.say="";
+  try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F4A5} You emptied the jar!",{noSong:true}); }catch(e){}
+}
+// GAMEKID → 🎲 GAMEKIT resume: a beat that was mid-way when the kid switched settles here (no render; the caller renders)
+function kaboomResume(){
+  const st=kaboomState; if(!st||st.phase==="done") return;
+  if(st.lock){ st.lock=false; st.open=null; st.boomNow=false; if(st.phase==="back") _kbBackNext(st); else if(!st.jar.length) _kbEnd(st); else { st.msg="Tap the jar to draw a stick!"; st.say=""; } return; }
+  if(st.say&&(typeof mastView==="undefined"||mastView==="kaboom")) try{ mastSpeak(st.say); }catch(e){}
+}
+// ── the screen ──
+const KB_CSS='<style>.kb-jar{width:150px;height:170px;margin:0 auto;border-radius:22px 22px 44px 44px;background:linear-gradient(180deg,#c7d2fe,#818cf8);border:4px solid #4f46e5;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:14px;cursor:pointer;position:relative;overflow:visible;-webkit-tap-highlight-color:transparent;box-shadow:0 6px 0 #3730a3}'+
+  '.kb-jar[disabled]{cursor:default;opacity:.7}.kb-jar.kb-boom{background:linear-gradient(180deg,#fde68a,#f97316);border-color:#b45309;box-shadow:0 6px 0 #9a3412;animation:kbShake .5s}'+
+  '@keyframes kbShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-10px) rotate(-3deg)}40%{transform:translateX(9px) rotate(3deg)}60%{transform:translateX(-7px)}80%{transform:translateX(5px)}}'+
+  '.kb-sticks{position:absolute;top:-26px;left:0;right:0;display:flex;justify-content:center;gap:5px;pointer-events:none}.kb-stick{width:9px;height:44px;border-radius:5px;background:#d6b78a;border:2px solid #a16207}'+
+  '.kb-lbl{font-family:\'DM Sans\',sans-serif;font-weight:800;color:#fff;font-size:15px;text-shadow:0 1px 0 rgba(0,0,0,.25)}'+
+  '.kb-pile{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;min-height:48px;padding:8px;border-radius:16px;background:#f8f7f4;border:2px dashed #e2ddd6;margin:12px 0}'+
+  '.kb-won{width:44px;height:44px;border-radius:10px;border:2px solid #86efac;background:#f0fdf4;display:inline-flex;align-items:center;justify-content:center;overflow:hidden}.kb-won .kb-vis{transform:scale(.5);pointer-events:none}.kb-won .kb-txt{font-size:11px;padding:2px}'+
+  '.kb-card{width:150px;height:160px;border-radius:14px;border:3px solid #a78bfa;background:#f5f3ff;display:flex;align-items:center;justify-content:center;overflow:hidden;margin:0 auto}.kb-card .kb-vis{pointer-events:none;transform:scale(1.5)}.kb-card .kb-txt{pointer-events:none;font-family:\'Fraunces\',serif;font-weight:800;font-size:34px;line-height:1.1;color:#292524;text-align:center;padding:6px;overflow-wrap:anywhere}'+
+  '.kb-btn{padding:12px 22px;border-radius:999px;border:none;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;-webkit-tap-highlight-color:transparent}.kb-btn[disabled],.kb-key[disabled],.kb-opt[disabled]{opacity:.45;cursor:default}'+
+  '.kb-key{width:64px;height:56px;border-radius:14px;border:2px solid #e2ddd6;background:#fff;font-family:\'Fraunces\',serif;font-size:26px;font-weight:800;color:#292524;cursor:pointer}'+
+  '.kb-opt{min-width:96px;padding:14px 18px;border-radius:16px;border:3px solid #e2ddd6;background:#fff;font-family:\'Fraunces\',serif;font-size:24px;font-weight:800;color:#292524;cursor:pointer;overflow-wrap:anywhere}.kb-opt.kb-wrong{opacity:.28;filter:grayscale(1);cursor:default}</style>';
+function _kbCardVis(st,pid,act){
+  const it=_kbIt(st,pid); if(!it) return '';
+  if(act==="say"){ const v=_smTileVis(it); if(v) return '<span class="kb-vis">'+v+'</span>'; }
+  return '<span class="kb-txt">'+esc(kaboomName(it))+'</span>';   // an answer card shows its FRONT (the kid produces the back)
+}
+function buildKaboomHtml(color){
+  const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+  let h=KB_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const items=_kbItems(), decks=kaboomDecks(items);
+  if(!decks.length){ h+='<div class="mast-none">No decks ready for Kaboom yet \u{2014} it needs '+KB_MIN+' or more cards with a picture (or a short answer on the back).</div></div>'; return h; }
+  const st=kaboomState;
+  const chip=(dk,lbl)=>{ const sel=st&&st.deck===dk; return '<button onclick="kaboomStart(\''+q(dk)+'\')" style="padding:10px 16px;border-radius:999px;font-size:14px;font-weight:800;border:2px solid '+(sel?color:'#e2ddd6')+';background:'+(sel?color:'#fff')+';color:'+(sel?'#fff':'#57534e')+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
+  if(!st||st.phase==="done"){
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">';
+    decks.forEach(dk=>{ h+=chip(dk,esc(dk)); });
+    if(decks.length>1) h+=chip(WHICH_MIX,"\u{1F3B2} "+WHICH_MIX);
+    h+='</div>';
+  }
+  if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u{1F4A5} Pick a deck. Draw a stick from the jar and answer its card to keep it \u{2014} but watch out for KABOOM!</div></div>'; return h; }
+  const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[kaboomBestKey(st.deck)];
+  if(st.phase==="done"){
+    h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+    h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} The jar is empty!</div>';
+    h+='<div style="font-size:17px;font-weight:800;color:#57534e;margin-top:10px">\u{1F4A5} '+st.first+' of '+st.of+' on the first try'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+    h+='<div style="font-size:13px;font-weight:700;color:var(--muted);margin-top:6px">'+st.booms+' kaboom'+(st.booms===1?'':'s')+' \u{00B7} '+esc(st.deck)+'</div>';
+    h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">';
+    h+='<button onclick="kaboomStart(\''+q(st.deck)+'\')" class="kb-btn" style="background:'+color+';color:#fff;font-size:15px">\u{1F501} Play again</button>';
+    if(decks.length>1&&!st.mix) h+='<button onclick="kaboomStart(\''+q(WHICH_MIX)+'\')" class="kb-btn" style="border:2px solid '+color+';background:#fff;color:'+color+';font-size:15px">\u{1F3B2} '+WHICH_MIX+'</button>';
+    return h+'</div></div></div>';
+  }
+  h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px;flex-wrap:wrap"><span style="font-size:13px;font-weight:800;color:#57534e">'+st.pile.length+' in your pile \u{00B7} '+st.jar.length+' stick'+(st.jar.length===1?'':'s')+' left</span>';
+  h+='<span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
+    '<button onclick="kaboomStop()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{21A9} Stop</button></span></div>';
+  h+='<div style="display:flex;align-items:center;gap:10px;margin:10px 0 12px;padding:12px 14px;border-radius:18px;background:'+(st.boomNow?'#fff7ed':'#eef2ff')+';border:2px solid '+(st.boomNow?'#fdba74':'#c7d2fe')+'"><span style="font-size:28px;line-height:1">'+(st.boomNow?'\u{1F4A5}':'\u{1F3FA}')+'</span><span style="flex:1;font-size:17px;font-weight:800;color:'+(st.boomNow?'#9a3412':'#312e81')+'">'+esc(st.msg)+'</span>'+
+    (st.say?'<button onclick="kaboomSayAgain()" aria-label="Hear it again" style="width:56px;height:56px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:26px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button>':'')+'</div>';
+  const o=st.open, t=o?st.turns[o.t]:null, lock=st.lock;
+  if(t&&(!t.done||lock)){
+    h+='<div style="margin:6px 0 12px"><span class="kb-card">'+_kbCardVis(st,t.pid,t.act)+'</span></div>';
+    if(t.act==="say") h+='<div style="display:flex;justify-content:center"><button class="kb-btn" onclick="kaboomSaid()"'+(lock||t.done?' disabled':'')+' style="background:'+color+';color:#fff;font-size:20px;padding:18px 34px">\u{1F5E3} I said it</button></div>';
+    else if(t.act==="type"){
+      h+='<div style="display:flex;justify-content:center;margin-bottom:10px"><span style="min-width:120px;height:56px;border-radius:14px;border:3px solid '+color+';background:#fff;font-family:\'Fraunces\',serif;font-size:30px;font-weight:800;color:#292524;display:inline-flex;align-items:center;justify-content:center;padding:0 14px">'+esc(t.typed||"")+'</span></div>';
+      h+='<div style="display:grid;grid-template-columns:repeat(3,64px);gap:8px;justify-content:center">';
+      ["1","2","3","4","5","6","7","8","9","back","0","ok"].forEach(k=>{ if(k==="back") h+='<button class="kb-key" onclick="kaboomKey(\'back\')"'+(lock?' disabled':'')+' aria-label="Erase">\u{232B}</button>'; else if(k==="ok") h+='<button class="kb-key" onclick="kaboomCheck()"'+(lock||!t.typed?' disabled':'')+' style="background:'+color+';color:#fff;border-color:transparent" aria-label="Check">\u{2714}</button>'; else h+='<button class="kb-key" onclick="kaboomKey(\''+k+'\')"'+(lock?' disabled':'')+'>'+k+'</button>'; });
+      h+='</div>';
+    } else {
+      h+='<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">';
+      (t.opts||[]).forEach((op,i)=>{ const w=!!t.wrong[op]; h+='<button class="kb-opt'+(w?' kb-wrong':'')+'" onclick="kaboomPickTap('+i+')"'+(w||lock||t.done?' disabled':'')+'>'+esc(op)+'</button>'; });
+      h+='</div>';
+    }
+  } else if(st.phase==="play"){
+    // the jar: tap to draw. The sticks on top are just sticks — never which is next.
+    const n=Math.min(8,st.jar.length); let sticks='';
+    for(let i=0;i<n;i++) sticks+='<span class="kb-stick" style="height:'+(36+((i*7)%14))+'px"></span>';
+    h+='<div style="margin:30px 0 6px"><button class="kb-jar'+(st.boomNow?' kb-boom':'')+'" onclick="kaboomDraw()"'+(lock||!st.jar.length?' disabled':'')+' aria-label="Draw a stick"><span class="kb-sticks">'+sticks+'</span><span class="kb-lbl">'+(st.boomNow?'\u{1F4A5} KABOOM!':'\u{1F3FA} Draw a stick')+'</span></button></div>';
+  }
+  if(st.phase!=="done"){
+    h+='<div class="kb-pile" aria-label="Your pile">'+(st.pile.length?st.pile.map(p=>'<span class="kb-won">'+_kbCardVis(st,p,_kbAct(st,p))+'</span>').join(''):'<span style="font-size:12px;font-weight:700;color:var(--muted);align-self:center">your pile \u{2014} the sticks you keep</span>')+'</div>';
+  }
+  return h+'</div>';
+}
+// KABOOM_END
+// HANGMAN_START — 🎈 "Hangman" from definitions (her go via the hub 2026-11-03; PLAN_practice_games_2026-10-23.md Tier 3 "Hangman /
+// Crossword from definitions — spelling + vocab, demand PROD, the definitions map"). Of the two, Hangman is the one that fits a phone:
+// one word, one cue, a letter pad; a crossword needs a grid wider than a phone. The kid sees the card's BACK (its definition / meaning /
+// the family's own wording) and a row of blanks, and taps letters to find the FRONT — a vocabulary word, a root, a capital, a term.
+// The word is produced letter by letter; the app never shows a spelling the kid has to produce: a word that is not found is never
+// written out — "We'll come back to that one", and it comes back once at the end with fresh balloons. After HM_HINT misses a 🔊 "Hear
+// it" appears (the word is SAID — hearing it is allowed, seeing it is not; not for a silent language). HM_MISSES balloons; each wrong
+// letter pops one (no gallows — balloons). No lives beyond the balloons, no clock, no points.
+//   Cards: a card in play whose front is a WORD (letters only after folding accents, spaces / hyphens / apostrophes allowed, HM_LEN_MIN..
+//   HM_LEN_MAX letters, up to 3 words) with a text back that is not the front and does not contain it (a cue that spells the answer is
+//   no cue). Never spelling / phonogram decks (Which one?'s rule), never a procedure card, never a number. A deck needs HM_MIN+ words;
+//   a round is HM_ROUND; 🎲 Mix the decks. Readers at level middle / upper (dcLevel from the roster's grade — never a name).
+// Writes (only these): <kid>_settings/match_best key "<deck> · hang" (words found, only when beaten) and the round's gameLog entry
+//   (GAMELOG, game:"hang": ok = found, n = wrong letters + 1, fail = not found, back = the come-back). NEVER touches the ladder — no
+//   scores, no next_due, no study log. db && !_dryRun() only. Per-kid park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT).
+//   A round dropped (Change deck, a kid switch) writes nothing. 🎮 GAMEGRID: its own column — gameDeckOn(kid,"hang",deck).
+let hangState=null;   // {kid,deck,mix,game:"hang",t0,turns:[{pid,word,cue,letters:[{ch,key}],guessed:{a:1},misses,wrong:{},done,first,fail,back,hint}],i,phase,first,of,isPB,prevBest,lock,seq,msg,returned:{},gameLogged}
+let _hmRandom=Math.random;   // tests seed it
+const HM_MIN=4, HM_ROUND=6, HM_MISSES=6, HM_HINT=3, HM_LEN_MIN=3, HM_LEN_MAX=14, HM_BEAT=1100, HM_BEAT_FAIL=1800;
+const HM_KEYS="abcdefghijklmnopqrstuvwxyz".split("");
+function _hmItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
+function _hmShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_hmRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function _hmPlain(s){ return (typeof _matchPlain==="function")?_matchPlain(s):String(s==null?"":s).replace(/<[^>]*>/g," ").replace(/&nbsp;/g," ").replace(/\s+/g," ").trim(); }
+function hangDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"hang",deck); }
+// A letter's key: accents folded (é → e, ä → a), lowercase; "" when it is not a plain letter
+function hmFold(ch){ const f=String(ch||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase(); return /^[a-z]$/.test(f)?f:""; }
+// PURE: the word's letters → [{ch,key}] (key "" for a space / hyphen / apostrophe, shown as is), or null when it can't be a Hangman word
+function hmLetters(word){
+  const w=_hmPlain(word); if(!w) return null;
+  const out=[]; let n=0, words=1;
+  for(const ch of w){
+    if(ch===" "){ words++; out.push({ch:" ",key:""}); continue; }
+    if(ch==="-"||ch==="\u2010"||ch==="'"||ch==="\u2019"){ out.push({ch:ch,key:""}); continue; }
+    const k=hmFold(ch); if(!k) return null;
+    out.push({ch:ch,key:k}); n++;
+  }
+  if(n<HM_LEN_MIN||n>HM_LEN_MAX||words>3) return null;
+  const seen={}; let distinct=0; out.forEach(l=>{ if(l.key&&!seen[l.key]){ seen[l.key]=1; distinct++; } });
+  return distinct>=2?out:null;
+}
+// The card's back as the cue: the family's own wording, the card's answer, else the definitions map. "" when there is none or it gives the word away.
+function hmCue(kid,it){
+  let b=""; try{ b=_hmPlain((typeof owRuleBack==="function")?owRuleBack(kid,it):it.answer); }catch(e){ b=_hmPlain(it&&it.answer); }
+  if(!b){ try{ if(typeof mastGetDef==="function") b=_hmPlain(mastGetDef(kid,_hmPlain(it.prompt),it.subject)); }catch(e){} }
+  if(!b||b.charAt(0)==="/") return "";
+  const f=_hmPlain(it.prompt).toLowerCase(), bl=b.toLowerCase();
+  if(bl===f||bl.indexOf(f)>=0) return "";   // the cue spells the answer
+  return b;
+}
+function _hmLeftOut(it,kid){
+  if(!it||(it.status!=="active"&&it.status!=="introduction")||it.dir==="prod") return true;
+  try{ if(typeof _whichLeftOut==="function"&&_whichLeftOut(it,kid)) return true; }catch(e){}   // spelling / phonograms: the app never shows a spelling the child must produce
+  try{ if(typeof mastKnowledgeType==="function"&&mastKnowledgeType(it)==="procedure_fluency") return true; }catch(e){}
+  try{ if(typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin(kid,it.subject)) return true; }catch(e){}   // 📝 a station waiting for its check-in
+  try{ if(typeof cpceHidItem==="function"&&cpceHidItem(kid,it)) return true; }catch(e){}   // 📚 CPCARDSEDIT
+  try{ if(typeof cpSecOffItem==="function"&&cpSecOffItem(kid,it)) return true; }catch(e){}   // 🎚 CPSECTIONS
+  return false;
+}
+// Readers at level middle / upper (3rd grade and up by the roster) — never a name
+function hangLevelOk(kid){ if(typeof dcLevel!=="function") return true; try{ const l=dcLevel(kid); return l!=="little"&&l!=="early"; }catch(e){ return true; } }
+// PURE: every word this kid can play → {deck:[{pid,word,cue}]} (one card per word), only decks with HM_MIN+ that are on
+function hangPools(items,kid){
+  kid=kid||masteryKid;
+  const by={}, seen={};
+  (items||[]).forEach(i=>{
+    if(_hmLeftOut(i,kid)) return;
+    const word=_hmPlain(i.prompt); if(!hmLetters(word)) return;
+    const cue=hmCue(kid,i); if(!cue) return;
+    const d=i.subject||"Other", k=d+"|"+word.toLowerCase(); if(seen[k]) return; seen[k]=1;
+    (by[d]||(by[d]=[])).push({pid:i.id,word:word,cue:cue});
+  });
+  const out={}; Object.keys(by).sort().forEach(d=>{ if(by[d].length>=HM_MIN&&hangDeckOn(kid,d)) out[d]=by[d]; });
+  return out;
+}
+function hangDecks(items,kid){ return Object.keys(hangPools(items,kid)); }   // the game's OWN deck list (the games-per-deck grid's preload asks this, raw)
+function hangAvail(kid){ return hangLevelOk(kid)&&hangDecks(_hmItems(kid),kid).length>0; }
+function hmTurn(c,back){ return {pid:c.pid,word:c.word,cue:c.cue,letters:hmLetters(c.word),guessed:{},misses:0,wrong:{},done:false,first:false,fail:false,back:!!back,hint:false}; }
+function hangStart(deck){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding / bonk (iPad)
+  const pools=hangPools(_hmItems(),masteryKid), mix=deck===WHICH_MIX, names=Object.keys(pools);
+  let cards=[]; if(mix) names.forEach(d=>{ cards=cards.concat(pools[d]); }); else cards=pools[deck]||[];
+  if(cards.length<HM_MIN||(mix&&names.length<2)){ hangState=null; _mastRe(); return; }   // 🎮 GAMEGRID: a deck Mom turned off is not in pools
+  const picks=_hmShuffle(cards.slice()).slice(0,HM_ROUND);
+  hangState={kid:masteryKid,deck:deck,mix:mix,game:"hang",t0:Date.now(),turns:picks.map(c=>hmTurn(c,false)),i:0,phase:"play",first:0,of:picks.length,isPB:false,prevBest:null,lock:false,seq:0,msg:"",returned:{}};
+  _mastRe();
+}
+function hangChangeDeck(){ hangState=null; _mastRe(); }   // drop the round as it stands: nothing written
+function _hmCur(st){ return (st&&st.phase==="play"&&!st.lock)?st.turns[st.i]:null; }
+// PURE: is every letter of the word revealed?
+function hmSolved(t){ return t.letters.every(l=>!l.key||t.guessed[l.key]); }
+// PURE: one letter → "hit" | "miss" | "solved" | "fail" | null (already guessed / not a letter)
+function hmJudge(t,key){
+  key=hmFold(key); if(!key||t.done||t.guessed[key]) return null;
+  t.guessed[key]=1;
+  if(t.letters.some(l=>l.key===key)){ if(hmSolved(t)){ t.done=true; t.first=true; return "solved"; } return "hit"; }
+  t.misses++; t.wrong[key]=1;
+  if(t.misses>=HM_MISSES){ t.done=true; t.first=false; t.fail=true; return "fail"; }
+  return "miss";
+}
+function _hmSilent(st,t){ try{ const it=_hmItems(st.kid).find(x=>x&&x.id===t.pid); return typeof whichSilent==="function"&&whichSilent(it); }catch(e){ return false; } }
+function _hmSay(st,t){ if(_hmSilent(st,t)) return; if(typeof mastView==="undefined"||mastView==="hang") try{ mastSpeak(t.word); }catch(e){} }
+function hangGuess(key){
+  const st=hangState, t=_hmCur(st); if(!t||t.done) return;
+  const r=hmJudge(t,key); if(!r) return;
+  if(r==="hit"){ try{ matchDing(); }catch(e){} st.msg="hit"; _mastRe(); return; }
+  if(r==="miss"){ try{ matchBonk(); }catch(e){} st.msg="miss"; _mastRe(); return; }
+  if(r==="solved"){ if(!t.back) st.first++; try{ matchDing(); }catch(e){} st.msg="solved"; _hmSay(st,t); }
+  else {
+    try{ matchBonk(); }catch(e){}
+    st.msg="fail";   // the word is never written out
+    if(!t.back&&!st.returned[t.pid]){ st.returned[t.pid]=1; st.turns.push(hmTurn(t,true)); }   // back once, at the end, with fresh balloons
+  }
+  st.lock=true; const seq=++st.seq;
+  _mastRe();
+  setTimeout(()=>{ if(hangState===st&&st.lock&&st.seq===seq) hangNext(st); },r==="fail"?HM_BEAT_FAIL:HM_BEAT);   // GAMEKID: never advances a parked / settled turn
+}
+// 🔊 Hear it — after HM_HINT misses the word may be SAID (never shown); not for a silent language
+function hangHear(){ const st=hangState, t=_hmCur(st); if(!t||t.done||t.misses<HM_HINT||_hmSilent(st,t)) return; t.hint=true; try{ mastSpeak(t.word); }catch(e){} }
+function _hmStep(st){ st.lock=false; st.msg=""; st.i++; if(st.i>=st.turns.length) hangFinish(st); }
+function hangNext(st){ st=st||hangState; if(!st||st!==hangState) return; _hmStep(st); _mastRe(); }
+function hangBestKey(deck){ return deck+" \u{00B7} hang"; }
+function hangFinish(st){
+  st.phase="done"; st.lock=false;
+  const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every word's result, game:"hang"
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=hangBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.first>0&&(prev==null||st.first>prev);
+  if(st.isPB){
+    s.match_best[key]=st.first;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+  try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F388} You found every word!",{noSong:true}); }catch(e){}
+}
+// GAMEKID → 🎲 GAMEKIT resume: a beat that was mid-way when the kid switched settles here (no render; the caller renders)
+function hangResume(){ const st=hangState; if(!st||st.phase!=="play") return; if(st.lock) _hmStep(st); }
+const HM_CSS='<style>.hm-word{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;row-gap:12px;margin:14px 0}.hm-box{width:30px;height:40px;border-bottom:3px solid #a8a29e;display:inline-flex;align-items:flex-end;justify-content:center;font-family:\'Fraunces\',serif;font-size:26px;font-weight:800;color:#292524;line-height:1}'+
+  '.hm-box.hm-on{border-color:#16a34a;color:#15803d}.hm-box.hm-gap{border:none;width:14px}.hm-box.hm-mark{border:none;width:14px;color:#78716c}@media(min-width:560px){.hm-box{width:36px;height:46px;font-size:30px}}'+
+  '.hm-balloons{display:flex;justify-content:center;gap:6px;font-size:28px;line-height:1;margin:6px 0}.hm-balloons span{transition:opacity .2s,transform .2s}.hm-balloons .hm-pop{opacity:.25;transform:scale(.7)}'+
+  '.hm-cue{padding:14px 16px;border-radius:18px;background:#f8f7f4;border:2px solid #e2ddd6;font-size:17px;font-weight:700;color:#292524;text-align:center;line-height:1.35}'+
+  '.hm-pad{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;max-width:420px;margin:12px auto 0}.hm-key{height:46px;border-radius:12px;border:2px solid #e2ddd6;background:#fff;font-family:\'DM Sans\',sans-serif;font-size:19px;font-weight:800;color:#292524;cursor:pointer;text-transform:uppercase;-webkit-tap-highlight-color:transparent;padding:0}'+
+  '.hm-key[disabled]{cursor:default}.hm-key.hm-used{opacity:.3}.hm-key.hm-good{border-color:#86efac;background:#f0fdf4;color:#15803d;opacity:.8}'+
+  '.hm-btn{padding:12px 22px;border-radius:999px;border:none;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;-webkit-tap-highlight-color:transparent}.hm-btn[disabled]{opacity:.45;cursor:default}'+
+  '.hm-ghost{padding:8px 14px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif}</style>';
+function buildHangHtml(color){
+  const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+  let h=HM_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const items=_hmItems(), pools=hangPools(items), decks=Object.keys(pools);
+  if(!decks.length){ h+='<div class="mast-none">No decks ready for Hangman yet \u{2014} it needs '+HM_MIN+' or more word cards with a meaning on the back.</div></div>'; return h; }
+  const st=hangState;
+  const chip=(dk,lbl)=>{ const sel=st&&st.deck===dk; return '<button onclick="hangStart(\''+q(dk)+'\')" style="padding:10px 16px;border-radius:999px;font-size:14px;font-weight:800;border:2px solid '+(sel?color:'#e2ddd6')+';background:'+(sel?color:'#fff')+';color:'+(sel?'#fff':'#57534e')+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
+  if(!st||st.phase==="done"){
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">';
+    decks.forEach(dk=>{ h+=chip(dk,esc(dk)+' <span style="opacity:.7;font-weight:700">'+pools[dk].length+'</span>'); });
+    if(decks.length>1) h+=chip(WHICH_MIX,"\u{1F3B2} "+WHICH_MIX);
+    h+='</div>';
+  }
+  if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u{1F388} Pick a deck. Read the meaning, then tap letters to find the word before the balloons are gone!</div></div>'; return h; }
+  const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[hangBestKey(st.deck)];
+  if(st.phase==="play"){
+    const t=st.turns[st.i], m=st.msg, silent=_hmSilent(st,t);
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
+    st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
+    h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
+      '<button onclick="hangChangeDeck()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{1F5C2} Change deck</button></span></div>';
+    h+='<div class="hm-balloons" aria-label="'+(HM_MISSES-t.misses)+' balloons left">'; for(let i=0;i<HM_MISSES;i++) h+='<span class="'+(i<t.misses?'hm-pop':'')+'">'+(i<t.misses?'\u{1F4A8}':'\u{1F388}')+'</span>'; h+='</div>';
+    h+='<div class="hm-cue">'+(t.back?'<div style="font-size:12px;font-weight:800;color:#b45309;margin-bottom:4px">ONE MORE TIME</div>':'')+esc(t.cue)+'</div>';
+    h+='<div class="hm-word" aria-label="'+t.letters.filter(l=>l.key).length+' letters">';
+    t.letters.forEach(l=>{ if(!l.key) h+='<span class="hm-box '+(l.ch===" "?'hm-gap':'hm-mark')+'">'+(l.ch===" "?'':esc(l.ch))+'</span>'; else h+='<span class="hm-box'+(t.guessed[l.key]?' hm-on':'')+'">'+(t.guessed[l.key]?esc(l.ch):'')+'</span>'; });
+    h+='</div>';
+    h+='<div style="text-align:center;font-size:16px;font-weight:800;color:'+(m==="solved"?'#16a34a':m==="fail"?'#b45309':m==="miss"?'#b45309':'#57534e')+';margin:4px 0 6px;min-height:22px">'+
+      (m==="solved"?'\u{2705} That\u2019s it!':m==="fail"?'We\u2019ll come back to that one.':m==="miss"?'Pop! Not that one.':m==="hit"?'Yes!':'Tap a letter')+'</div>';
+    if(!silent&&t.misses>=HM_HINT&&!t.done) h+='<div style="display:flex;justify-content:center;margin-bottom:4px"><button class="hm-ghost" onclick="hangHear()"'+(st.lock?' disabled':'')+'>\u{1F50A} Hear it</button></div>';
+    h+='<div class="hm-pad">';
+    HM_KEYS.forEach(k=>{ const used=!!t.guessed[k], good=used&&t.letters.some(l=>l.key===k); h+='<button class="hm-key'+(used?(good?' hm-good':' hm-used'):'')+'" onclick="hangGuess(\''+k+'\')"'+(used||st.lock||t.done?' disabled':'')+' aria-label="'+k.toUpperCase()+'">'+k+'</button>'; });
+    h+='</div>';
+    return h+'</div>';
+  }
+  // Finish: words found against the kid's own best, Play again / Mix the decks. No word is written out.
+  h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} '+(st.first===st.of?'You found every word!':'Round over!')+'</div>';
+  h+='<div style="font-size:17px;font-weight:800;color:#57534e;margin-top:10px">\u{1F388} '+st.first+' of '+st.of+' words found'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+  h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">';
+  h+='<button onclick="hangStart(\''+q(st.deck)+'\')" class="hm-btn" style="background:'+color+';color:#fff;font-size:15px">\u{1F501} Play again</button>';
+  if(decks.length>1&&!st.mix) h+='<button onclick="hangStart(\''+q(WHICH_MIX)+'\')" class="hm-btn" style="border:2px solid '+color+';background:#fff;color:'+color+';font-size:15px">\u{1F3B2} '+WHICH_MIX+'</button>';
+  return h+'</div></div></div>';
+}
+// HANGMAN_END
+// NAMEALL_START — 📋 "Name all N" (her go via the hub 2026-11-03; PLAN_practice_games_2026-10-23.md Tier 4 "Name all N (Sporcle): name the
+// 13 colonies / all 14 Greek roots in this deck against a timer, typed — demand FR + FLU; deck with ≥10 items"). The Sporcle shape: a title
+// ("Name all 7 World Geography cards" / "Name all 3 Roots that mean write"), a row of N blank slots, a clock counting DOWN, one typing box.
+// A name typed and entered fills its slot (the card's own spelling); the count climbs "4 of 7"; nothing is listed, hinted or auto-completed.
+// When the clock runs out, every slot is named or the kid taps "I'm done", the round is over: the slots that stayed blank fill in grey with
+// what they were (Sporcle's reveal — the recap, as Brain Dump's "Still in the deck"), and the finish shows named N of M against the kid's
+// own best. Brain Dump is the long form (10+ cards, 5 minutes, misses re-asked); this is the short, quick one: SMALL lists —
+//   · a whole deck of NA_MIN..NA_MAX nameable cards (a word or short phrase front: dumpNameable — never a sentence, a math fact, a rule's
+//     example line; spelling / phonograms stay out, Which one?'s rule). No back needed: the list's title is the cue.
+//   · a CATEGORY inside a deck: NA_CAT_MIN..NA_MAX cards that share one back ("Roots · write": graph, scrib; "Math? no — numbers are not
+//     names). The shared back is the title; a back longer than NA_CAT_LABEL letters is no title.
+//   Matching is Brain Dump's (dumpMatch: the Study Session's normalizer, a letter of slack, the article / a trailing "(…)" left off).
+//   Clock: NA_PER seconds a card, never under NA_SECS_MIN. Time while the kid is switched away (GAMEKID park) is not play time.
+//   Level middle / upper only (dcLevel from the roster's grade — never a name). No lives, no points, no score against the kid.
+// Writes (only these): <kid>_settings/match_best key "<list> · nameall" (most named, only when beaten; Firebase's illegal key characters
+//   swapped for _) and the round's gameLog entry (GAMELOG, game:"nameall": a card named = ok, missed = wrong). NEVER the ladder — no
+//   scores, no next_due, no study log. db && !_dryRun() only. Per-kid park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT).
+//   A round dropped (Change list, a kid switch) writes nothing. 🎮 GAMEGRID: its own column — gameDeckOn(kid,"nameall",deck) (a
+//   category follows its deck's cell); the entry's decks(k) = the real decks the lists come from.
+let nameallState=null;   // {kid,deck,list,title,game:"nameall",t0,secs,pausedTotal,pausedAt,cards:[{pid,front}],named:{pid:{how,text}},typed:[{text,pid,how}],turns,phase:"play"|"done",count,of,isPB,prevBest,gameLogged}
+const NA_MIN=5, NA_MAX=15, NA_CAT_MIN=3, NA_CAT_LABEL=40, NA_PER=12, NA_SECS_MIN=60;
+function _naItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
+function _naPlain(s){ return (typeof _matchPlain==="function")?_matchPlain(s):String(s==null?"":s).replace(/<[^>]*>/g," ").replace(/&nbsp;/g," ").replace(/\s+/g," ").trim(); }
+function _naE(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function _naQ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+function _naNorm(s){ return (typeof dumpNorm==="function")?dumpNorm(s):_naPlain(s).toLowerCase(); }
+function nameallDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"nameall",deck); }
+function _naLeftOut(it,kid){
+  if(!it||(it.status!=="active"&&it.status!=="introduction")||it.dir==="prod") return true;
+  try{ if(typeof _whichLeftOut==="function"&&_whichLeftOut(it,kid)) return true; }catch(e){}   // spelling / phonograms
+  try{ if(typeof mastKnowledgeType==="function"&&mastKnowledgeType(it)==="procedure_fluency") return true; }catch(e){}
+  try{ if(typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin(kid,it.subject)) return true; }catch(e){}   // 📝 a station waiting for its check-in
+  try{ if(typeof cpceHidItem==="function"&&cpceHidItem(kid,it)) return true; }catch(e){}   // 📚 CPCARDSEDIT
+  try{ if(typeof cpSecOffItem==="function"&&cpSecOffItem(kid,it)) return true; }catch(e){}   // 🎚 CPSECTIONS
+  return false;
+}
+// The card's back as a category title: the family's own wording, the card's answer; "" when none, the front, a sound, or too long
+function _naBack(kid,it){
+  let b=""; try{ b=_naPlain((typeof owRuleBack==="function")?owRuleBack(kid,it):it.answer); }catch(e){ b=_naPlain(it&&it.answer); }
+  if(!b||b.charAt(0)==="/"||b.length>NA_CAT_LABEL||_naNorm(b)===_naNorm(it.prompt)) return "";
+  return b;
+}
+function nameallLevelOk(kid){ if(typeof dcLevel!=="function") return true; try{ const l=dcLevel(kid); return l!=="little"&&l!=="early"; }catch(e){ return true; } }
+// PURE: every list this kid can play → [{key,deck,title,label,cards:[{pid,front}]}] — whole small decks first, then the categories, both by name
+function nameallLists(items,kid){
+  kid=kid||masteryKid;
+  if(typeof dumpNameable!=="function"||typeof dumpMatch!=="function") return [];
+  const by={}, seen={};
+  (items||[]).forEach(i=>{
+    if(_naLeftOut(i,kid)) return;
+    const front=_naPlain(i.prompt); if(!dumpNameable(front)) return;
+    const d=i.subject||"Other", k=d+"|"+_naNorm(front); if(!k||seen[k]) return; seen[k]=1;
+    (by[d]||(by[d]=[])).push({pid:i.id,front:front,back:_naBack(kid,i)});
+  });
+  const out=[];
+  Object.keys(by).sort().forEach(d=>{
+    if(!nameallDeckOn(kid,d)) return;   // 🎮 GAMEGRID
+    const cards=by[d], whole=cards.length>=NA_MIN&&cards.length<=NA_MAX;
+    if(whole) out.push({key:d,deck:d,title:"Name all "+cards.length+" "+d+" cards",label:d,cards:cards.map(c=>({pid:c.pid,front:c.front}))});
+    const cat={}; cards.forEach(c=>{ if(!c.back) return; const bk=_naNorm(c.back); (cat[bk]||(cat[bk]={label:c.back,cards:[]})).cards.push({pid:c.pid,front:c.front}); });
+    Object.keys(cat).sort().forEach(bk=>{ const g=cat[bk]; if(g.cards.length>=NA_CAT_MIN&&g.cards.length<=NA_MAX&&!(whole&&g.cards.length===cards.length)) out.push({key:d+" \u00B7 "+g.label,deck:d,title:"Name all "+g.cards.length+" "+d+" cards that mean \u201C"+g.label+"\u201D",label:d+" \u00B7 "+g.label,cards:g.cards}); });
+  });
+  return out;
+}
+function nameallDecks(items,kid){ const o={}; nameallLists(items,kid).forEach(l=>{ o[l.deck]=1; }); return Object.keys(o).sort(); }   // the real decks (the games-per-deck grid's preload asks this, raw)
+function nameallAvail(kid){ return nameallLevelOk(kid)&&nameallLists(_naItems(kid),kid).length>0; }
+function nameallSecs(n){ return Math.max(NA_SECS_MIN,n*NA_PER); }
+function nameallElapsed(st,now){ now=now!=null?now:Date.now(); return Math.max(0,now-st.t0-(st.pausedTotal||0)-(st.pausedAt?now-st.pausedAt:0)); }
+function nameallLeft(st,now){ return Math.max(0,st.secs*1000-nameallElapsed(st,now)); }
+function nameallClock(ms){ const s=Math.ceil(ms/1000); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
+function nameallStart(key){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the tap unlocks the ding (iPad)
+  const l=nameallLists(_naItems(),masteryKid).find(x=>x.key===key);
+  if(!l){ nameallState=null; _mastRe(); return; }   // 🎮 GAMEGRID: a deck Mom turned off is not listed
+  nameallState={kid:masteryKid,deck:l.key,list:l.deck,title:l.title,game:"nameall",t0:Date.now(),secs:nameallSecs(l.cards.length),pausedTotal:0,pausedAt:null,cards:l.cards.slice(),named:{},typed:[],turns:[],phase:"play",count:0,of:l.cards.length,isPB:false,prevBest:null,gameLogged:false};
+  _mastRe(); nameallTick(nameallState); nameallFocus();
+}
+function nameallChangeList(){ nameallState=null; _mastRe(); }   // drop the round as it stands: nothing written
+function nameallFocus(){ try{ setTimeout(()=>{ const e=document.getElementById("na-in"); if(e) e.focus(); },0); }catch(e){} }
+// The countdown: updates #na-clock each second; ends the round at zero. Clears itself once its round is parked or over.
+function nameallTick(st){
+  if(typeof setInterval!=="function") return;
+  if(window._naTick) clearInterval(window._naTick);
+  window._naTick=setInterval(()=>{
+    if(nameallState!==st||st.phase!=="play"||st.pausedAt){ clearInterval(window._naTick); window._naTick=null; return; }
+    const left=nameallLeft(st);
+    if(left<=0){ clearInterval(window._naTick); window._naTick=null; nameallStop(st); return; }
+    const el=document.getElementById("na-clock"); if(el){ el.textContent=nameallClock(left); if(left<=10000) el.style.color="#b91c1c"; }
+  },1000);
+}
+// PURE over the state: one entered name → "hit" | "close" | "dup" | "miss" | "" (blank)
+function nameallEnter(st,text){
+  const raw=_naPlain(text); if(!raw||st.phase!=="play") return "";
+  const m=dumpMatch(raw,st.cards,st.named);
+  if(!m){ if(!st.typed.some(x=>x.pid==null&&_naNorm(x.text)===_naNorm(raw))) st.typed.push({text:raw,pid:null,how:"miss"}); return "miss"; }
+  if(m.how==="dup") return "dup";
+  st.named[m.card.pid]={how:m.how,text:raw}; st.typed.push({text:raw,pid:m.card.pid,how:m.how}); st.count++;
+  return m.how;
+}
+function nameallAdd(){
+  const st=nameallState; if(!st||st.phase!=="play") return;
+  const el=document.getElementById("na-in"), text=el?el.value:"";
+  const r=nameallEnter(st,text);
+  if(el) el.value="";
+  if(r==="hit"||r==="close"){ try{ matchDing(); }catch(e){} }
+  else if(r==="miss"){ try{ matchBonk(); }catch(e){} }
+  // In place when the round is on screen (a re-render would drop the keyboard on an iPad); else the normal redraw.
+  const slots=document.getElementById("na-slots"), cnt=document.getElementById("na-count"), note=document.getElementById("na-note");
+  if(slots&&cnt&&note){
+    if(r==="hit"||r==="close"){ const x=st.typed[st.typed.length-1], ix=st.cards.findIndex(c=>c.pid===x.pid), s=slots.children[ix]; if(s){ s.className="na-slot na-on"; s.textContent=st.cards[ix].front; } cnt.textContent=st.count+" of "+st.of; }
+    note.textContent=r==="miss"?"\u201C"+_naPlain(text)+"\u201D is not on this list":r==="dup"?"Already named!":"";
+  } else _mastRe();
+  if(st.count>=st.of){ nameallStop(st); return; }
+  nameallFocus();
+}
+// "I'm done" / the clock / every slot named: the round is over — the cards' results, then the finish (no re-ask: Brain Dump has that)
+function nameallStop(st){
+  st=st||nameallState; if(!st||st.phase!=="play") return;
+  if(typeof window!=="undefined"&&window._naTick){ clearInterval(window._naTick); window._naTick=null; }
+  st.turns=st.cards.map(c=>({pid:c.pid,done:true,first:!!st.named[c.pid],wrong:st.named[c.pid]?{}:{1:1},back:false}));
+  nameallFinish(st); _mastRe();
+}
+function nameallBestKey(list){ return (list+" \u{00B7} nameall").replace(/[.#$\/\[\]]/g,"_"); }   // a category's back may carry a period: Firebase forbids it in a key
+function nameallFinish(st){
+  st.phase="done";
+  const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every card's result, game:"nameall"
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=nameallBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.count>0&&(prev==null||st.count>prev);
+  if(st.isPB){
+    s.match_best[key]=st.count;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.count});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+  try{ if(st.of>0&&st.count===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F4CB} You named them all!",{noSong:true}); }catch(e){}
+}
+// 🎲 GAMEKIT: park / restore / resume. Time away is not play time (no render here; the caller renders).
+function nameallPark(){ const st=nameallState; if(st&&st.phase==="play"&&!st.pausedAt) st.pausedAt=Date.now(); return st; }
+function nameallRestore(v){ nameallState=v||null; const st=nameallState; if(st&&st.pausedAt){ st.pausedTotal=(st.pausedTotal||0)+(Date.now()-st.pausedAt); st.pausedAt=null; } }
+function nameallResume(){ const st=nameallState; if(st&&st.phase==="play"&&(typeof mastView==="undefined"||mastView==="nameall")) nameallTick(st); }
+const NA_CSS='<style>.na-slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin:12px 0}.na-slot{min-height:42px;border-radius:12px;border:2px dashed #d6d3d1;background:#fafaf9;display:flex;align-items:center;justify-content:center;padding:6px 8px;font-size:14px;font-weight:800;color:#292524;text-align:center;overflow-wrap:anywhere;line-height:1.15}'+
+  '.na-slot.na-on{border-style:solid;border-color:#16a34a;background:#f0fdf4;color:#15803d}.na-slot.na-miss{border-style:solid;border-color:#e2ddd6;background:#fff;color:#a8a29e}'+
+  '.na-in{width:100%;box-sizing:border-box;padding:14px 16px;border-radius:14px;border:3px solid #e2ddd6;font-size:20px;font-family:\'DM Sans\',sans-serif;outline:none}.na-in:focus{border-color:#0ea5e9}'+
+  '.na-btn{padding:12px 22px;border-radius:999px;border:none;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif}.na-btn[disabled]{opacity:.45;cursor:default}'+
+  '.na-ghost{padding:10px 16px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif}'+
+  '.na-chip{padding:10px 14px;border-radius:999px;font-size:14px;font-weight:800;border:2px solid #e2ddd6;background:#fff;color:#57534e;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:left;line-height:1.2}</style>';
+function buildNameallHtml(color){
+  let h=NA_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const lists=nameallLists(_naItems(),masteryKid);
+  if(!lists.length){ h+='<div class="mast-none">No lists ready for Name all yet \u{2014} it needs a small deck of '+NA_MIN+' to '+NA_MAX+' named cards, or '+NA_CAT_MIN+' or more cards that share one answer.</div></div>'; return h; }
+  const st=nameallState;
+  if(!st||st.phase==="done"){
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">';
+    lists.forEach(l=>{ const sel=st&&st.deck===l.key; h+='<button class="na-chip" onclick="nameallStart(\''+_naQ(l.key)+'\')" style="'+(sel?'border-color:'+color+';background:'+color+';color:#fff':'')+'">'+_naE(l.label)+' <span style="opacity:.7;font-weight:700">'+l.cards.length+'</span></button>'; });
+    h+='</div>';
+  }
+  if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u{1F4CB} Pick a list, then name every card on it before the clock runs out \u{2014} one at a time, Enter after each.</div></div>'; return h; }
+  const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[nameallBestKey(st.deck)];
+  if(st.phase==="play"){
+    if(typeof window!=="undefined"&&!window._naTick&&!st.pausedAt) nameallTick(st);   // back on screen (another view, a parked kid): the clock ticks again
+    const left=nameallLeft(st);
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 10px;flex-wrap:wrap"><div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:800;color:#292524">'+_naE(st.title)+'</div>'+
+      '<span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+(best!=null?'\u{1F3C6} '+best:'')+'<button class="na-ghost" onclick="nameallChangeList()">\u{1F5C2} Change list</button></span></div>';
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><span id="na-count" style="font-size:17px;font-weight:800;color:'+color+'">'+st.count+' of '+st.of+'</span><span id="na-clock" style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800;color:'+(left<=10000?'#b91c1c':'#292524')+'">\u{23F1} '+nameallClock(left)+'</span></div>';
+    h+='<div style="display:flex;gap:8px;align-items:center"><input id="na-in" class="na-in" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Type one, press Enter" aria-label="A name you remember" onkeydown="if(event.key===\'Enter\'){event.preventDefault();nameallAdd();}">'+
+      '<button class="na-btn" style="background:'+color+'" onclick="nameallAdd()">Add</button></div>';
+    h+='<div id="na-note" style="min-height:20px;font-size:13px;font-weight:700;color:#78716c;margin-top:6px"></div>';
+    h+='<div id="na-slots" class="na-slots">';
+    st.cards.forEach((c,i)=>{ const n=st.named[c.pid]; h+='<div class="na-slot'+(n?' na-on':'')+'" aria-label="Slot '+(i+1)+'">'+(n?_naE(c.front):'')+'</div>'; });
+    h+='</div>';
+    h+='<div style="display:flex;justify-content:center"><button class="na-ghost" onclick="nameallStop()">\u{2714} I\u{2019}m done</button></div>';
+    return h+'</div>';
+  }
+  // Finish: the slots as they ended (the missed ones in grey — the reveal), named N of M, Play again.
+  h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} You named '+st.count+' of '+st.of+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+  h+='<div style="font-size:12px;font-weight:700;color:var(--muted);margin-top:4px">'+_naE(st.title)+' \u{00B7} '+nameallClock(Math.min(st.secs*1000,nameallElapsed(st)))+' used</div>';
+  h+='<div class="na-slots" style="text-align:left">';
+  st.cards.forEach(c=>{ const n=st.named[c.pid]; h+='<div class="na-slot '+(n?'na-on':'na-miss')+'">'+(n?'\u2713 ':'')+_naE(c.front)+'</div>'; });
+  h+='</div>';
+  const outside=st.typed.filter(x=>x.pid==null);
+  if(outside.length) h+='<div style="text-align:left;font-size:12px;font-weight:700;color:#a8a29e;margin-top:4px">Not on this list: '+outside.map(x=>_naE(x.text)).join(", ")+'</div>';
+  h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap"><button class="na-btn" style="background:'+color+'" onclick="nameallStart(\''+_naQ(st.deck)+'\')">\u{1F501} Play again</button></div>';
+  return h+'</div></div>';
+}
+// NAMEALL_END
 // JPWAGER_START — 🎰 Jeopardy "Daily double" (her go 2026-11-03; PLAN_practice_games_2026-10-23.md Tier 4 "Jeopardy with wager: the Tier-3 board
 // plus a daily-double wager on confidence — CR + metacognition", and Tier 3 "Sure? then flip: a confident miss gets a louder correction + comes
 // back first" — the hypercorrection effect). There are no points on the board (the games contract), so the wager is CONFIDENCE: once a square's
@@ -85208,6 +86023,14 @@ const GAMES_LIST=[
      park:()=>sureState, restore:v=>{ sureState=v||null; }, resume:()=>sureResume(), decks:k=>typeof sureDecks==="function"?sureDecks(_gamesItems(k),k):[]},   // 🤔 SURE · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
   {key:"cats",   emoji:"\u{1F4CB}", label:"Categories",  view:"cats",                 available:k=>typeof catsAvail==="function"&&catsAvail(k), render:c=>buildCatsHtml(c),
      park:()=>catsPark(), restore:v=>{ catsRestore(v); }, resume:()=>catsResume(), decks:k=>typeof catsDecks==="function"?catsDecks(_gamesItems(k),k):[]},   // 📋 CATS · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
+  {key:"jumble", emoji:"\u{1F9E9}", label:"Unjumble",    view:"jumble",               available:k=>typeof ujAvail==="function"&&ujAvail(k), render:c=>buildJumbleHtml(c),
+     park:()=>jumbleState, restore:v=>{ jumbleState=v||null; }, resume:()=>jumbleResume(), decks:k=>typeof ujDecks==="function"?ujDecks(_gamesItems(k),k):[]},   // 🧩 UNJUMBLE · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
+  {key:"kaboom", emoji:"\u{1F4A5}", label:"Kaboom",      view:"kaboom",               available:k=>typeof kaboomDecks==="function"&&kaboomDecks(_gamesItems(k),k).length>0, render:c=>buildKaboomHtml(c),
+     park:()=>kaboomState, restore:v=>{ kaboomState=v||null; }, resume:()=>kaboomResume(), decks:k=>typeof kaboomDecks==="function"?kaboomDecks(_gamesItems(k),k):[]},   // 💥 KABOOM · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
+  {key:"hang",   emoji:"\u{1F388}", label:"Hangman",     view:"hang",                 available:k=>typeof hangAvail==="function"&&hangAvail(k), render:c=>buildHangHtml(c),
+     park:()=>hangState, restore:v=>{ hangState=v||null; }, resume:()=>hangResume(), decks:k=>typeof hangDecks==="function"?hangDecks(_gamesItems(k),k):[]},   // 🎈 HANGMAN · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
+  {key:"nameall",emoji:"\u{1F3C1}", label:"Name all",    view:"nameall",              available:k=>typeof nameallAvail==="function"&&nameallAvail(k), render:c=>buildNameallHtml(c),
+     park:()=>nameallPark(), restore:v=>{ nameallRestore(v); }, resume:()=>nameallResume(), decks:k=>typeof nameallDecks==="function"?nameallDecks(_gamesItems(k),k):[]},   // 📋 NAMEALL · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its real decks
 ];
 const gamesLast={};   // kid → key of the last game played on this device
 function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k)&&(typeof gameDeckAny!=="function"||gameDeckAny(k,g)); }catch(e){ return false; } }); }   // 🎮 GAMEGRID: every deck off → the game isn't offered
