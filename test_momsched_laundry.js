@@ -127,5 +127,5 @@ ok("the agenda gets the laundry rows with its cards", /momSchedLaundry\(day,dayT
 ok("the Mom chain steps over the blocks", /const Ls=lunchOf\(e\.kid\)\.concat\(fixedOf\(e\.kid\)\)\.concat\(_blkIv\);/.test(src));
 ok("listens for today's blocks and her minutes", /db\.ref\("momBlocks\/"\+mwTodayIso\(\)\)\.on\("value"/.test(src)&&/db\.ref\("settings\/laundryBlockMins"\)\.on\("value"/.test(src));
 ok("the laundry listener repaints the Mom-mode schedule", /else if\(tab==="schedule"&&kid==="mom"\) renderAllSoon\(\);   \/\/ MOMSCHED_LAUNDRY/.test(src));
-ok("momAgendaHtml is what the Mom-mode schedule renders", /if\(kid==="mom" && unlocked\)\{\n\s*h\+=momAgendaHtml\(tasks\);/.test(src));
+ok("momAgendaHtml is what the Mom view renders (MOMCHIP 2026-11-02: whenever the Mom chip is picked, switch on or off)", /if\(kid==="mom"\)\{\n\s*h\+=momAgendaHtml\(tasks\);/.test(src));
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
