@@ -95,12 +95,13 @@ console.log("── Reset, Mom-only, dry run ──");
 console.log("── a new game's entry with decks(), and one without ──");
 {
   const {c}=world();
-  c.GAMES_LIST.push({key:"bingo",emoji:"🎱",label:"Bingo",view:"bingo",available:()=>true,render:()=>"",decks:k=>["Letters"]});
-  c.GAMES_LIST.push({key:"dump",emoji:"🧠",label:"Brain Dump",view:"dump",available:()=>true,render:()=>""});
-  ok("decks() is the preload for a new game",c.gameDeckCan("k1",c.GAMES_LIST.find(g=>g.key==="bingo")).join(",")==="Letters");
-  ok("an entry without decks() is tolerated: no cells, always offered",c.gameDeckCan("k1",c.GAMES_LIST.find(g=>g.key==="dump")).length===0&&c.gamesFor("k1").some(g=>g.key==="dump"));
-  c.gameDeckSet("k1","bingo","Letters",false);
-  ok("every deck off → the new game is not offered",!c.gamesFor("k1").some(g=>g.key==="bingo"));
+  // fake keys (zz…) — the real Bingo / Brain Dump entries now sit in GAMES_LIST, and find() by key must reach THESE
+  c.GAMES_LIST.push({key:"zzpic",emoji:"🎱",label:"Fake pic game",view:"zzpic",available:()=>true,render:()=>"",decks:k=>["Letters"]});
+  c.GAMES_LIST.push({key:"zzdump",emoji:"🧠",label:"Fake dump game",view:"zzdump",available:()=>true,render:()=>""});
+  ok("decks() is the preload for a new game",c.gameDeckCan("k1",c.GAMES_LIST.find(g=>g.key==="zzpic")).join(",")==="Letters");
+  ok("an entry without decks() is tolerated: no cells, always offered",c.gameDeckCan("k1",c.GAMES_LIST.find(g=>g.key==="zzdump")).length===0&&c.gamesFor("k1").some(g=>g.key==="zzdump"));
+  c.gameDeckSet("k1","zzpic","Letters",false);
+  ok("every deck off → the new game is not offered",!c.gamesFor("k1").some(g=>g.key==="zzpic"));
   const {c:c2}=world(); c2.GAMES_LIST.push({key:"boom",emoji:"💥",label:"Boom",view:"boom",available:()=>true,render:()=>"",decks:()=>{ throw new Error("boom"); }});
   ok("a throwing decks() → no cells, still offered, raw flag reset",c2.gameDeckCan("k1",c2.GAMES_LIST.find(g=>g.key==="boom")).length===0&&c2.gamesFor("k1").some(g=>g.key==="boom")&&c2.__raw()===false);
 }
