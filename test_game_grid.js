@@ -13,7 +13,7 @@ function fnText(name){ const i=src.indexOf("function "+name+"("); if(i<0) return
 
 // ── by text ──
 ok("GAMEGRID block sits right after GAMESTAB_END",(()=>{ const a=src.indexOf("// GAMESTAB_END"), b=src.indexOf("// GAMEGRID_START"), c=src.indexOf("// GAMEGRID_END"); return a>0&&b>a&&c>b&&src.slice(a,b).trim()==="// GAMESTAB_END"; })());
-ok("Mastery HQ: the 🎮 Games pill right after ⚙ Rules; the view after the rules branch; renderMasteryHQ routes it",/_mhqPill\("\\u2699 Rules", mhqView === "rules", "mhqSetView\('rules'\)"\) \+\n\s*_mhqPill\("\\u\{1F3AE\} Games", mhqView === "games", "mhqSetView\('games'\)"\)/.test(src)&&/if \(mhqView === "rules"\) return _mhqRenderRules\(kid\);\n  if \(mhqView === "games"\)/.test(src)&&/mhqView==="rules"\|\|mhqView==="games"\)/.test(src));
+ok("Mastery HQ: the 🎮 Games pill right after ⚙ Rules; the view after the rules branch; renderMasteryHQ routes it",/_mhqPill\("\\u2699 Rules", mhqView === "rules", "mhqSetView\('rules'\)"\) \+\n\s*_mhqPill\("\\u\{1F3AE\} Games", mhqView === "games", "mhqSetView\('games'\)"\)/.test(src)&&/if \(mhqView === "rules"\) return _mhqRenderRules\(kid\);\n  if \(mhqView === "games"\)/.test(src)&&/mhqView==="rules"\|\|mhqView==="games"(\|\|mhqView==="[a-z]+")*\) h\+=/.test(src) /* MASTSET (2026-11-02) adds its views after games on the same line */);
 ok("GAMES_LIST lines untouched (the four game sessions insert after them)",/\{key:"which",  emoji:"\\u\{1F446\}", label:"Which one\?",  view:"which",                 available:k=>whichDecks\(_gamesItems\(k\)\)\.length>0, render:c=>buildWhichHtml\(c\)\},\n/.test(src));
 ok("Match decks, Which one? modes, Build it's pool, the practice-round pool and gamesFor each read gameDeckOn (one line each)",/gameDeckOn\(masteryKid,\(typeof matchStyle!=="undefined"&&matchStyle==="memory"\)\?"memory":"match",k\)/.test(fnText("mastMatchDecks"))&&/gameDeckOn\(kid,"which",d\)/.test(fnText("whichDeckModes"))&&/gameDeckOn\(kid,"spell",i\.subject\)/.test(fnText("spellPool"))&&/gameDeckOn\(kid,"spell",i\.subject\)/.test(fnText("_mpPool"))&&/gameDeckAny\(k,g\)/.test(fnText("gamesFor")));
 ok("writes: one targeted set per cell, one remove for Reset, nothing else",/db\.ref\("mastery\/"\+kid\+"_settings\/gameDecks\/"\+k\+"\/"\+game\)\.set\(!!on\)/.test(fnText("gameDeckSet"))&&/db\.ref\("mastery\/"\+kid\+"_settings\/gameDecks"\)\.remove\(\)/.test(fnText("gameDeckReset"))&&!/db\./.test(fnText("gameDeckOn")+fnText("gameDecksHtml")+fnText("gameDeckCan")));
@@ -92,18 +92,17 @@ console.log("── Reset, Mom-only, dry run ──");
   const {c:c4,writes:w4}=world({dry:true});
   ok("dry run: in memory only",c4.gameDeckSet("k1","which","Letters",false)===true&&c4.gameDeckOn("k1","which","Letters")===false&&w4.length===0);
 }
-console.log("── a new game's entry with decks(), and one without ──");
+console.log("── a new game's entry with decks(), and one without (fake keys no real game owns) ──");
 {
   const {c}=world();
-  // fake keys (zz…) — the real Bingo / Brain Dump entries now sit in GAMES_LIST, and find() by key must reach THESE
-  c.GAMES_LIST.push({key:"zzpic",emoji:"🎱",label:"Fake pic game",view:"zzpic",available:()=>true,render:()=>"",decks:k=>["Letters"]});
-  c.GAMES_LIST.push({key:"zzdump",emoji:"🧠",label:"Fake dump game",view:"zzdump",available:()=>true,render:()=>""});
-  ok("decks() is the preload for a new game",c.gameDeckCan("k1",c.GAMES_LIST.find(g=>g.key==="zzpic")).join(",")==="Letters");
-  ok("an entry without decks() is tolerated: no cells, always offered",c.gameDeckCan("k1",c.GAMES_LIST.find(g=>g.key==="zzdump")).length===0&&c.gamesFor("k1").some(g=>g.key==="zzdump"));
-  c.gameDeckSet("k1","zzpic","Letters",false);
-  ok("every deck off → the new game is not offered",!c.gamesFor("k1").some(g=>g.key==="zzpic"));
-  const {c:c2}=world(); c2.GAMES_LIST.push({key:"boom",emoji:"💥",label:"Boom",view:"boom",available:()=>true,render:()=>"",decks:()=>{ throw new Error("boom"); }});
-  ok("a throwing decks() → no cells, still offered, raw flag reset",c2.gameDeckCan("k1",c2.GAMES_LIST.find(g=>g.key==="boom")).length===0&&c2.gamesFor("k1").some(g=>g.key==="boom")&&c2.__raw()===false);
+  c.GAMES_LIST.push({key:"zzz",emoji:"🎱",label:"Fake game",view:"zzz",available:()=>true,render:()=>"",decks:k=>["Letters"]});
+  c.GAMES_LIST.push({key:"zzy",emoji:"🧠",label:"Fake no-decks game",view:"zzy",available:()=>true,render:()=>""});
+  ok("decks() is the preload for a new game",c.gameDeckCan("k1",c.GAMES_LIST.find(g=>g.key==="zzz")).join(",")==="Letters");
+  ok("an entry without decks() is tolerated: no cells, always offered",c.gameDeckCan("k1",c.GAMES_LIST.find(g=>g.key==="zzy")).length===0&&c.gamesFor("k1").some(g=>g.key==="zzy"));
+  c.gameDeckSet("k1","zzz","Letters",false);
+  ok("every deck off → the new game is not offered",!c.gamesFor("k1").some(g=>g.key==="zzz"));
+  const {c:c2}=world(); c2.GAMES_LIST.push({key:"zzx",emoji:"💥",label:"Fake throwing game",view:"zzx",available:()=>true,render:()=>"",decks:()=>{ throw new Error("boom"); }});
+  ok("a throwing decks() → no cells, still offered, raw flag reset",c2.gameDeckCan("k1",c2.GAMES_LIST.find(g=>g.key==="zzx")).length===0&&c2.gamesFor("k1").some(g=>g.key==="zzx")&&c2.__raw()===false);
 }
 console.log("── the grid ──");
 {

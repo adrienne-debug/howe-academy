@@ -105,7 +105,7 @@ console.log("\n── Mom only ──");
   ok("without Mom unlocked the panel doesn't open", c.pwUI === null);
 }
 console.log("\n── wiring ──");
-ok("the drill page has the 🚩 Problem words button next to ＋", /onclick="pwOpen\(masteryKid\)"/.test(src) && src.indexOf('onclick="pwOpen(masteryKid)"') < src.indexOf('onclick="mastOpenAdd()"'));
+ok("Problem words sits next to ＋ on Mom's Day ▸ School ▸ Mastery ▸ Settings ▸ 🃏 Cards (MASTSET 2026-11-02: off the drill page)", /b\("mastOpenAdd\(\)",'\\uFF0B Add a card'/.test(src) && /b\("pwOpen\('"\+mhqArgEsc\(kid\)\+"'\)",'\\u\{1F4DD\} Problem words'/.test(src) && src.indexOf('b("mastOpenAdd()"') < src.indexOf('b("pwOpen(') && !/onclick="pwOpen\(masteryKid\)"/.test(src));
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
