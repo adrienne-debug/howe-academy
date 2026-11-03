@@ -51,7 +51,7 @@ ok("Mom's Day ▸ Schedule reads the switch", /if\(!momHere\(\)\)\{ mpSubView="c
 ok("Notebook / Units tabs draw no 🔒 Mom button or PIN box of their own", /function _nbMomLockHtml\(\)\{ nbPinOpen=false; return ""; \}/.test(src)&&/function _unitMomLockHtml\(\)\{ unitPinOpen=false; return ""; \}/.test(src)&&!/nb-pin-inp|unit-pin-inp|nbPinToggle|unitPinToggle/.test(src));
 ok("every other code door still turns the switch on (haMomOn) — unchanged", ["checkMomPin","checkAdminPin","kitPinCheck","mastAdminCheckPin","pnwCheckPin","momGateTry"].every(n=>/haMomOn\(\)/.test(fn(n))));
 ok("Kids' Corner cards stay the kid's even with the switch on (momHereCards unchanged)", /function momHereCards\(\)\{ return momHere\(\)&&!\(typeof tab!=="undefined"&&tab==="kids"\); \}/.test(src));
-ok("the kids' Schedule still sets Mom mode aside — except under the 👩 Mom chip (KIDSLENS + MOMCHIP)", /if\(tab==="schedule"&&!momSchedView&&kid!=="mom"\)\{ _momSuspend\(\); \} else _momResume\(\);/.test(src));
+ok("the kids' Schedule still sets Mom mode aside (KIDSLENS; SCHEDBAR: under the Mom chip too)", /if\(tab==="schedule"&&!momSchedView\)\{ _momSuspend\(\); \} else _momResume\(\);/.test(src));
 ok("remembered per device, never synced: haMomOn/haMomOff still write ha_mom_on and nothing writes it to Firebase", /HA_LS\.setItem\('ha_mom_on','1'\)/.test(fn("haMomOn"))&&/HA_LS\.setItem\('ha_mom_on','0'\)/.test(fn("haMomOff"))&&!/ref\([^)]*ha_mom_on/.test(src));
 
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
