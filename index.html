@@ -78019,8 +78019,9 @@ function spellPlayable(it){
 // The kid's LEARNING words: still being introduced, or in the Word Workout. Most-recently-missed first.
 function spellPool(items,kid){
   kid=kid||masteryKid;
-  const out=(items||[]).filter(i=>spellPlayable(i)&&(i.status==="introduction"||(i.ww&&i.ww.on))&&((typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"spell",i.subject)));   // 🎮 GAMEGRID: Mom's per-deck pick
-  return out.sort((a,b)=>String((b.ww||{}).d||"").localeCompare(String((a.ww||{}).d||""))||String(spellWordOf(a)).localeCompare(String(spellWordOf(b))));
+  const all=(typeof gameRule==="function"&&gameRule(kid,"spell","source")==="all"), lrn=i=>(i.status==="introduction"||(i.ww&&i.ww.on))?1:0;   // 📜 GAMERULES: Build it's "source" rule — "all" takes every spelling word in play, learning words still first
+  const out=(items||[]).filter(i=>spellPlayable(i)&&(all||lrn(i))&&((typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"spell",i.subject)));   // 🎮 GAMEGRID: Mom's per-deck pick
+  return out.sort((a,b)=>(lrn(b)-lrn(a))||String((b.ww||{}).d||"").localeCompare(String((a.ww||{}).d||""))||String(spellWordOf(a)).localeCompare(String(spellWordOf(b))));
 }
 function _spellShuffle(a,rnd){ rnd=rnd||Math.random; for(let i=a.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
 // PURE: the tiles for one word — its letters + SPELL_EXTRA extra letters from `others` (the kid's other words), shuffled.
@@ -80275,6 +80276,79 @@ function buildShipHtml(color){
   return h+'</div>';
 }
 // SHIP_END
+// GAMERULES_START — 📜 Game rules pop-up (her design 2026-11-03: in Mom's Day ▸ School ▸ Mastery ▸ Settings ▸ 🎮 Games, "each game's name
+// across the top becomes a button; tap → a pop-up with that game's rules for the kid being viewed. Each game lists only the rules it has.")
+//   · The rules live in GAME_RULES: {game key: [{key, label, opts:[[value, label, help]], def}]}. A game with none says so ("plays the same
+//     for everyone — no rules yet") instead of showing an empty box. A new rule = one line here + one guarded read in its game.
+//   · READ — gameRule(kid, game, rule) → the stored value, or the rule's default. Every default is TODAY'S behaviour, so nothing changes for
+//     any kid until Mom flips a rule on purpose.
+//   · STORED — mastery/<kid>_settings/gameRules/<game>/<rule> = value: ONE targeted set per tap, never a whole-node set; Mom only
+//     (_gdCanEdit — the same lock as the grid's cells); db && !_dryRun() only. Nothing stored = the default.
+//   · THE POP-UP — #grules-panel appended to body (the practice round's #mp-panel shape), closes on ✕ or the backdrop; a kid can look, only
+//     Mom can tap a pill. One guarded line in GAMEGRID's header (gameRulesBtnHtml) opens it.
+//   · FIRST RULE — Build it (SPELLBUILD, key "spell") "source": "learning" (today: a spelling word still being introduced, or in the Word
+//     Workout) | "all" (every spelling word in play — learning words still first, then most-recently-missed first). One guarded line in
+//     spellPool reads it. Live 2026-11-03: a kid with 0 words at introduction and none in the Workout has no Build it at all until this is "all".
+//   · HER SECOND RULE — "a game with no deck checked for a kid is hidden from that kid's 🎮 tab" — is already how gamesFor works
+//     (GAMEGRID's gameDeckAny: every deck of a game off → the game is not offered; a deck never set counts as on). Nothing added; pinned by test.
+const GAME_RULES={
+  spell:[{key:"source",label:"Which words does Build it use?",def:"learning",opts:[
+    ["learning","Learning words only","Words still being introduced, or in the Word Workout — today’s rule."],
+    ["all","All spelling words","Every spelling word in play. Learning words still come first, then the ones missed most recently."]]}]
+};
+let gameRulesUI=null;   // {kid, game} while the pop-up is open (this device)
+function _grE(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function _grJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }
+function gameRuleDefs(game){ return (GAME_RULES[game]||[]).slice(); }
+// The rule's value for this kid: stored (and still one of the rule's options), else the default
+function gameRule(kid,game,rule){
+  const d=(GAME_RULES[game]||[]).find(r=>r.key===rule); if(!d) return null;
+  try{ const s=((typeof masteryData!=="undefined"&&masteryData&&masteryData[kid+"_settings"])||{}), v=s.gameRules&&s.gameRules[game]&&s.gameRules[game][rule]; if(v!=null&&d.opts.some(o=>o[0]===v)) return v; }catch(e){}
+  return d.def;
+}
+function gameRuleSet(kid,game,rule,val){
+  if(!kid||!game||!rule||typeof _gdCanEdit!=="function"||!_gdCanEdit()) return false;
+  const d=(GAME_RULES[game]||[]).find(r=>r.key===rule); if(!d||!d.opts.some(o=>o[0]===val)) return false;
+  const md=masteryData, s=md[kid+"_settings"]||(md[kid+"_settings"]={}), G=(s.gameRules&&typeof s.gameRules==="object")?s.gameRules:(s.gameRules={}), g=(G[game]&&typeof G[game]==="object")?G[game]:(G[game]={});
+  g[rule]=val;
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){ try{ db.ref("mastery/"+kid+"_settings/gameRules/"+game+"/"+rule).set(val); }catch(e){} }   // this rule only
+  try{ HA_LS.setItem("ha_mastery",JSON.stringify(md)); }catch(e){}
+  gameRulesRender();
+  try{ if(typeof renderAll==="function") renderAll(); }catch(e){}   // the grid underneath may change (a rule can give a game new decks)
+  return true;
+}
+// The grid's header cell: the game's name as a button that opens its rules (a small 📜 when it has any)
+function gameRulesBtnHtml(kid,g){
+  const has=gameRuleDefs(g.key).length>0;
+  return '<button class="gr-hbtn" onclick="gameRulesOpen(\''+_grJ(kid)+'\',\''+_grJ(g.key)+'\')" aria-label="'+_grE(g.label)+' rules" title="Rules for '+_grE(g.label)+'" style="border:none;background:none;padding:0;font:inherit;font-weight:800;color:inherit;cursor:pointer;white-space:nowrap;text-decoration:underline dotted #a8a29e;text-underline-offset:3px">'+g.emoji+' '+_grE(g.label)+(has?' <span style="font-size:11px">\u{1F4DC}</span>':'')+'</button>';
+}
+// PURE: the pop-up's body for one kid + game
+function gameRulesHtml(kid,game){
+  const g=((typeof GAMES_LIST!=="undefined"&&Array.isArray(GAMES_LIST))?GAMES_LIST:[]).find(x=>x&&x.key===game)||{emoji:"\u{1F3AE}",label:game};
+  const nm=(typeof cap==="function")?cap(kid):kid, edit=(typeof _gdCanEdit==="function")&&_gdCanEdit(), defs=gameRuleDefs(game);
+  let h='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px"><div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:800;color:#292524">'+g.emoji+' '+_grE(g.label)+' · rules</div>'+
+    '<button onclick="gameRulesClose()" aria-label="Close" style="width:40px;height:40px;border-radius:50%;border:1.5px solid #e2ddd6;background:#fff;font-size:18px;cursor:pointer">✕</button></div>';
+  h+='<div style="font-size:12.5px;color:var(--muted);margin-bottom:12px">For '+_grE(nm)+'. '+(edit?'Tap a pill to change it — it saves right away.':'Mom changes these.')+'</div>';
+  if(!defs.length) return h+'<div class="mast-none" style="padding:14px">This game plays the same for everyone — no rules yet.</div>';
+  defs.forEach(r=>{ const cur=gameRule(kid,game,r.key);
+    h+='<div style="padding:12px 0;border-top:1px solid #f1f5f9"><div style="font-size:14px;font-weight:800;color:#292524;margin-bottom:8px">'+_grE(r.label)+'</div><div style="display:flex;gap:8px;flex-wrap:wrap">';
+    r.opts.forEach(o=>{ const on=o[0]===cur;
+      h+='<button class="gr-pill'+(on?' on':'')+'" onclick="gameRuleSet(\''+_grJ(kid)+'\',\''+_grJ(game)+'\',\''+_grJ(r.key)+'\',\''+_grJ(o[0])+'\')"'+(edit?'':' disabled')+' aria-pressed="'+on+'" style="padding:9px 14px;border-radius:999px;font-size:13px;font-weight:800;border:2px solid '+(on?'#16a34a':'#e2ddd6')+';background:'+(on?'#f0fdf4':'#fff')+';color:'+(on?'#15803d':'#57534e')+';cursor:'+(edit?'pointer':'default')+';font-family:\'DM Sans\',sans-serif">'+(on?'✓ ':'')+_grE(o[1])+'</button>'; });
+    h+='</div>';
+    const cur2=r.opts.find(o=>o[0]===cur); if(cur2&&cur2[2]) h+='<div style="font-size:12px;color:var(--muted);margin-top:8px">'+_grE(cur2[2])+'</div>';
+    h+='</div>'; });
+  return h;
+}
+function gameRulesOpen(kid,game){ if(!kid||!game) return; gameRulesUI={kid:kid,game:game}; gameRulesRender(); }
+function gameRulesClose(){ gameRulesUI=null; try{ const ov=document.getElementById("grules-panel"); if(ov) ov.remove(); }catch(e){} }
+function gameRulesRender(){
+  if(typeof document==="undefined") return;
+  const U=gameRulesUI; let ov=document.getElementById("grules-panel");
+  if(!U){ if(ov) ov.remove(); return; }
+  if(!ov){ ov=document.createElement("div"); ov.id="grules-panel"; ov.style.cssText="position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 12px"; ov.onclick=function(ev){ if(ev&&ev.target===ov) gameRulesClose(); }; document.body.appendChild(ov); }
+  ov.innerHTML='<div style="width:100%;max-width:520px;background:#fff;border-radius:22px;padding:18px 18px 14px;box-shadow:0 20px 50px rgba(0,0,0,.25);font-family:\'DM Sans\',sans-serif">'+gameRulesHtml(U.kid,U.game)+'</div>';
+}
+// GAMERULES_END
 // STUDYCOUNTS_START — 📚 Study sessions count everywhere (F3 of PLAN_learning_system, her yes 2026-10-24). A study
 // sitting logs to mastery/studyLog/<kid>/<sid>/<yyyymmdd>, but Scores, the Weekly report, sprint readiness (the ≥ 90%
 // untimed check) and the notebook's 🔁 review flags read only the drill's mastery/history/<kid>/<yyyymmdd>, so Lincoln —
@@ -84380,7 +84454,7 @@ function gameDecksHtml(kid){
   h+='<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Which games play which of '+E(nm)+'\u2019s decks. Preloaded from each game\u2019s own rule \u2014 tap a cell to turn a game off (or back on) for that deck. \u2013 = that game can\u2019t play the deck. Saves right away.'+(edit?'':' (Mom only to change.)')+'</div>';
   if(!decks.length) return h+'<div class="mast-none">No decks yet.</div></div>';
   h+='<div style="overflow-x:auto"><table style="border-collapse:collapse;min-width:420px;font-size:13px"><thead><tr><th style="text-align:left;padding:6px 8px;border-bottom:2px solid #e2ddd6">Deck</th>';
-  games.forEach(g=>{ h+='<th style="padding:6px 6px;border-bottom:2px solid #e2ddd6;white-space:nowrap;font-weight:800">'+g.emoji+' '+E(g.label)+'</th>'; });
+  games.forEach(g=>{ h+='<th style="padding:6px 6px;border-bottom:2px solid #e2ddd6;white-space:nowrap;font-weight:800">'+((typeof gameRulesBtnHtml==="function")?gameRulesBtnHtml(kid,g):(g.emoji+' '+E(g.label)))+'</th>'; });   // 📜 GAMERULES: the name is a button → that game's rules for this kid
   h+='</tr></thead><tbody>';
   decks.forEach(d=>{
     h+='<tr><td style="padding:6px 8px;border-bottom:1px solid #f1f5f9;font-weight:700;white-space:nowrap">'+E(d)+'</td>';
