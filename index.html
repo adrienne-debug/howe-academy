@@ -77792,6 +77792,316 @@ function buildSpellHtml(color){
   return h+'</div></div>';
 }
 // SPELLBUILD_END
+// GOFISH_START — 🐟 "Go Fish" vs the app (her yes 2026-11-02 to gofish-design_2026-11-02.md; PLAN_practice_games_2026-10-23.md
+// Tier 2, build #6). A pairs game with the app as a friendly partner: every card twice, the kid holds a hand, the app holds a
+// hand, the rest is the pond. The kid's ASK is the production act — tap a card in hand, then PRODUCE it: a picture / letter
+// card is said out loud (a tablet has no mic, so the 🗣 tap is the honor system, never a miss, and the app says the name back
+// as the confirm); a number fact is typed on the number pad; a word answer is picked from three of the deck's own backs. The
+// app answers honestly from its real hand — "Yes! Here you go." (the pair goes down, ask again) or "Go fish!" (tap the pond).
+// On its turn the app asks for a card it really holds — a picture card by NAME (said, never written), an answer card by its
+// ANSWER ("Do you have… 15?") — and the kid FINDS it in hand (taps it) or taps 🎣 Go fish! when they don't have it: a wrong
+// tap, or Go fish! with the card in hand, is a miss (the soft bonk, hear it again, try again). Every pair goes down through
+// the kid — their ask, the app's ask, or a fished pair they name — so every card in the round is asked at least once. One
+// shared row of pairs, no lives, no clock, no score against the kid. When every pair is down the missed cards come back once
+// (one last produce or find each), then the finish: "N of M pairs clean". Cards: Which one?'s own pool (whichPool /
+// whichDeckModes — pictures, symbols, short backs; spelling and phonograms stay out), decks with GF_MIN+ cards, GF_PAIRS a round.
+// Writes (only these): <kid>_settings/match_best key "<deck> · gofish" (clean pairs, only when beaten) and the round's gameLog
+// entry (GAMELOG, game:"gofish"). NEVER touches the ladder — no scores, no next_due, no study log. db && !_dryRun() only.
+// Per-kid park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT). A round dropped (Stop, a kid switch) writes nothing.
+let gofishState=null;   // {kid,deck,mix,game:"gofish",t0,pairs:[pid],kinds:{pid:"say"|"type"|"pick"},hand,app,pond,table:[{pid,who}],turns:[{pid,act,why,done,first,wrong:{},tries,fail,back,opts?,typed?}],step:{k:"ask"|"produce"|"fish"|"find",…},after,phase:"play"|"back"|"done",first,of,isPB,prevBest,lock,seq,msg,say,asked:{},backs,gameLogged}
+let _gfRandom=Math.random;   // tests seed it
+const GF_PAIRS=8, GF_MIN=4, GF_TRIES=2, GF_BEAT=1600, GF_BEAT_LONG=2200;
+const GF_NUM=/^[-+]?\d+([.,]\d+)?$/;
+function _gfItems(kid){ let items=(typeof masteryData!=="undefined"&&masteryData&&masteryData[kid||masteryKid])||[]; if(!Array.isArray(items)) items=Object.values(items); return items; }
+function _gfShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_gfRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function _gfPick(a){ return a.length?a[Math.floor(_gfRandom()*a.length)]:undefined; }
+function _gfTake(arr,pid){ const j=arr.indexOf(pid); if(j>=0) arr.splice(j,1); }
+function _gfIt(st,pid){ return _gfItems(st.kid).find(x=>x&&x.id===pid)||null; }
+function gofishName(it){ return _matchPlain(it&&it.prompt); }
+// The decks that can deal a hand: Which one?'s playable decks with GF_MIN+ cards in play.
+function gofishDecks(items,kid){
+  kid=kid||masteryKid;
+  const n={}; whichPool(items,WHICH_MIX,kid).forEach(i=>{ const d=i.subject||"Other"; n[d]=(n[d]||0)+1; });
+  return Object.keys(n).filter(d=>n[d]>=GF_MIN).sort();
+}
+function gofishPool(items,deck,kid){ kid=kid||masteryKid; const ok=gofishDecks(items,kid); return whichPool(items,WHICH_MIX,kid).filter(i=>ok.indexOf(i.subject||"Other")>=0&&(deck===WHICH_MIX||(i.subject||"Other")===deck)); }
+// What the kid DOES with a card: "say" (picture / symbol — say it out loud), "type" (a number back — the number pad), "pick" (a word back — three of the deck's backs).
+function gofishKind(it,mode){ if(mode!=="answer") return "say"; return GF_NUM.test(String(_whichBack(it)).trim())?"type":"pick"; }
+// PURE: deal the pairs — the kid and the app each get H different cards; the rest (two copies of each card, less the ones held) is the pond.
+function gofishDeal(pids){
+  const h=pids.length>=6?5:3;
+  const hand=_gfShuffle(pids.slice()).slice(0,h), app=_gfShuffle(pids.slice()).slice(0,h);
+  const left={}; pids.forEach(p=>{ left[p]=2; }); hand.forEach(p=>{ left[p]--; }); app.forEach(p=>{ left[p]--; });
+  const pond=[]; pids.forEach(p=>{ for(let i=0;i<left[p];i++) pond.push(p); });
+  return {hand:hand,app:app,pond:_gfShuffle(pond)};
+}
+function _gfSay(st,text){ st.say=text||""; if(!text||(typeof mastView!=="undefined"&&mastView!=="gofish")) return; try{ mastSpeak(text); }catch(e){} }
+function gofishSayAgain(){ const st=gofishState; if(st&&st.say) try{ mastSpeak(st.say); }catch(e){} }
+function gofishStart(deck){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding / bonk (iPad)
+  const items=_gfItems(), mix=deck===WHICH_MIX, modes=whichDeckModes(items), pool=gofishPool(items,deck);
+  if(pool.length<GF_MIN){ gofishState=null; _mastRe(); return; }
+  const picks=_gfShuffle(pool.slice()).slice(0,GF_PAIRS), pids=picks.map(i=>i.id), kinds={};
+  picks.forEach(i=>{ kinds[i.id]=gofishKind(i,modes[i.subject||"Other"]); });
+  const d=gofishDeal(pids);
+  gofishState={kid:masteryKid,deck:deck,mix:mix,game:"gofish",t0:Date.now(),pairs:pids,kinds:kinds,hand:d.hand,app:d.app,pond:d.pond,table:[],turns:[],step:null,after:null,phase:"play",first:0,of:pids.length,isPB:false,prevBest:null,lock:false,seq:0,msg:"",say:"",asked:{},backs:null};
+  _gfKidTurn(gofishState);
+  _mastRe();
+}
+function gofishStop(){ gofishState=null; _mastRe(); }   // drop the round as it stands: nothing written
+function _gfDown(st){ return st.table.length>=st.pairs.length; }
+function _gfTurn(st,pid,act,why){ const t={pid:pid,act:act,why:why,done:false,first:false,wrong:{},tries:0,fail:false,back:false}; st.turns.push(t); return t; }
+// A beat between steps (the ding, the app's line), then `after` runs: "kid" | "app" | "back". GAMEKID: the timer checks its own seq, so it never acts on a parked / settled round.
+function _gfBeat(st,after,ms){ st.lock=true; st.after=after; const seq=++st.seq; setTimeout(()=>{ if(gofishState===st&&st.lock&&st.seq===seq) gofishNext(st); },ms||GF_BEAT); }
+function _gfGo(st,a){ if(a==="kid") _gfKidTurn(st); else if(a==="app") _gfAppTurn(st); else if(a==="back") _gfBackNext(st); }
+function gofishNext(st){ st=st||gofishState; if(!st||st!==gofishState) return; st.lock=false; const a=st.after; st.after=null; _gfGo(st,a); _mastRe(); }
+// ── the kid's turn ──
+function _gfKidTurn(st){
+  if(_gfDown(st)) return _gfEnd(st);
+  if(!st.hand.length){
+    if(!st.pond.length) return _gfAppTurn(st);
+    st.hand.push(st.pond.pop());   // an empty hand draws one (it can't pair with nothing)
+  }
+  st.step={k:"ask"}; st.msg="Your turn! Tap a card and ask me for it."; _gfSay(st,"Your turn!");
+}
+function gofishAsk(i){
+  const st=gofishState; if(!st||st.phase!=="play"||st.lock||!st.step||st.step.k!=="ask") return;
+  const pid=st.hand[i]; if(pid==null) return;
+  _gfProduce(st,pid,"ask"); _mastRe();
+}
+// The produce step — why: "ask" (the kid's ask) · "fished" (the kid drew its pair) · "appfished" (the app drew its pair) · "back" (one more look)
+function _gfProduce(st,pid,why){
+  const kind=st.kinds[pid]||"say", t=_gfTurn(st,pid,kind,why);
+  if(why==="back") t.back=true;
+  if(kind==="pick") t.opts=_gfLures(st,pid);
+  if(kind==="type") t.typed="";
+  st.step={k:"produce",pid:pid,why:why,t:st.turns.length-1};
+  const lead=why==="fished"?"You fished a pair! ":why==="appfished"?"I fished a pair! ":why==="back"?"One more time. ":"";
+  st.msg=lead+(kind==="say"?"Say it out loud, then tap \u{1F5E3}":kind==="type"?"Type the answer.":"Tap the answer.");
+  _gfSay(st,lead+"What is it?");
+}
+// Three backs for a pick: the card's own + two different backs from its deck (Which one?'s rule), shuffled.
+function _gfLures(st,pid){
+  const it=_gfIt(st,pid); if(!it) return [];
+  const own=_whichBack(it), seen={}; seen[_whichNorm(own)]=1;
+  const more=_gfShuffle(whichPool(_gfItems(st.kid),WHICH_MIX,st.kid).filter(x=>x.id!==pid&&(x.subject||"Other")===(it.subject||"Other"))).map(x=>_whichBack(x)).filter(b=>b&&!seen[_whichNorm(b)]&&(seen[_whichNorm(b)]=1)).slice(0,2);
+  return _gfShuffle([own].concat(more));
+}
+function _gfProdTurn(st,act){ if(!st||st.lock||st.phase==="done"||!st.step||st.step.k!=="produce") return null; const t=st.turns[st.step.t]; return (t&&t.act===act)?t:null; }
+function gofishSaid(){   // 🗣 "I said it" — the honor system: a tablet can't hear; the app says the name back as the confirm
+  const st=gofishState, t=_gfProdTurn(st,"say"); if(!t) return;
+  t.done=true; t.first=true;
+  _gfProduced(st,gofishName(_gfIt(st,t.pid))); _mastRe();
+}
+function gofishKey(ch){   // the number pad
+  const st=gofishState, t=_gfProdTurn(st,"type"); if(!t) return;
+  if(ch==="back") t.typed=t.typed.slice(0,-1); else if(t.typed.length<6) t.typed+=ch;
+  _mastRe();
+}
+function gofishCheck(){
+  const st=gofishState, t=_gfProdTurn(st,"type"); if(!t||!t.typed) return;
+  _gfAfterJudge(st,t,gofishJudge(t,t.typed,_whichBack(_gfIt(st,t.pid))));
+}
+function gofishPickTap(i){
+  const st=gofishState, t=_gfProdTurn(st,"pick"); if(!t||!t.opts||t.opts[i]==null||t.wrong[t.opts[i]]) return;
+  _gfAfterJudge(st,t,gofishJudge(t,t.opts[i],_whichBack(_gfIt(st,t.pid))));
+}
+function _gfAnsOk(act,given,back){ if(act==="pick") return String(given)===String(back); return (typeof mstTypeAnsOk==="function")?mstTypeAnsOk(given,back):Number(String(given).replace(",","."))===Number(String(back).replace(",",".")); }
+// PURE: one answer against the card's back → "right" | "again" | "fail". A picked back that was wrong greys out (t.wrong).
+function gofishJudge(t,given,back){
+  if(_gfAnsOk(t.act,given,back)){ t.done=true; t.first=t.tries===0; return "right"; }
+  t.tries++; t.wrong[t.act==="pick"?String(given):String(t.tries)]=1; t.typed="";
+  if(t.tries>=GF_TRIES){ t.done=true; t.first=false; t.fail=true; return "fail"; }
+  return "again";
+}
+function _gfAfterJudge(st,t,r){
+  if(r==="again"){ try{ matchBonk(); }catch(e){} st.msg="Almost \u2014 try again!"; _mastRe(); return; }
+  if(r==="fail") try{ matchBonk(); }catch(e){}
+  _gfProduced(st,r==="fail"?"We\u2019ll come back to that one.":""); _mastRe();
+}
+// The card was produced (or the kid tapped 🗣, or missed it twice): answer the ask from the app's real hand, or lay the fished pair down.
+function _gfProduced(st,lead){
+  const s=st.step, pid=s.pid, why=s.why, t=st.turns[s.t], say=lead?lead+" ":"", ding=()=>{ if(!(t&&t.fail)) try{ matchDing(); }catch(e){} };
+  if(why==="ask"){
+    if(st.app.indexOf(pid)>=0){ _gfTake(st.app,pid); _gfTake(st.hand,pid); st.table.push({pid:pid,who:"kid"}); ding(); st.msg="Yes! Here you go. Ask me again!"; _gfSay(st,say+"Yes! Here you go."); return _gfBeat(st,"kid"); }
+    if(!st.pond.length){ st.msg="Go fish! But the pond is empty \u2014 my turn."; _gfSay(st,say+"Go fish! The pond is empty, so it's my turn."); return _gfBeat(st,"app"); }
+    st.step={k:"fish"}; st.msg="Go fish! Tap the pond."; _gfSay(st,say+"Go fish!"); return;
+  }
+  if(why==="fished"){ _gfTake(st.hand,pid); _gfTake(st.hand,pid); st.table.push({pid:pid,who:"kid"}); ding(); st.msg="Down it goes! Ask me again!"; _gfSay(st,say+"Down it goes!"); return _gfBeat(st,"kid"); }
+  if(why==="appfished"){ _gfTake(st.app,pid); _gfTake(st.app,pid); st.table.push({pid:pid,who:"app"}); ding(); st.msg="Down it goes! Your turn."; _gfSay(st,say+"Down it goes! Your turn."); return _gfBeat(st,"kid"); }
+  if(t&&t.first){ ding(); st.msg="That\u2019s it!"; _gfSay(st,say+"That\u2019s it!"); } else { st.msg="Okay \u2014 next one."; _gfSay(st,say+"Next one."); }   // "back": nothing moves
+  return _gfBeat(st,"back");
+}
+function gofishFish(){   // 🎣 the kid taps the pond
+  const st=gofishState; if(!st||st.phase!=="play"||st.lock||!st.step||st.step.k!=="fish") return;
+  if(!st.pond.length){ st.msg="The pond is empty \u2014 my turn."; _gfSay(st,"The pond is empty. My turn!"); _gfBeat(st,"app"); _mastRe(); return; }
+  const pid=st.pond.pop(), had=st.hand.indexOf(pid)>=0;
+  st.hand.push(pid);
+  if(had){ _gfProduce(st,pid,"fished"); _mastRe(); return; }
+  st.msg="Into your hand it goes. My turn!"; _gfSay(st,"My turn!"); _gfBeat(st,"app"); _mastRe();
+}
+// ── the app's turn: it asks for a card it really holds (one it hasn't asked for yet, when it can) ──
+function _gfAppTurn(st){
+  if(_gfDown(st)) return _gfEnd(st);
+  if(!st.app.length){ if(!st.pond.length) return _gfEnd(st); st.app.push(st.pond.pop()); }
+  const fresh=st.app.filter(p=>!st.asked[p]), pid=_gfPick(fresh.length?fresh:st.app);
+  st.asked[pid]=1;
+  _gfFind(st,pid,false);
+}
+function _gfFind(st,pid,back){
+  const t=_gfTurn(st,pid,"find","find"); t.back=!!back;
+  st.step={k:"find",pid:pid,t:st.turns.length-1,back:!!back};
+  const it=_gfIt(st,pid), ans=st.kinds[pid]!=="say", ask=ans?_whichBack(it):gofishName(it);
+  st.msg=ans?"Do you have\u2026 "+ask+"?":"Do you have\u2026 (listen!)";   // a picture / letter is said, never written
+  _gfSay(st,"Do you have "+ask+"?");
+}
+function gofishFindTap(i){
+  const st=gofishState; if(!st||st.lock||st.phase==="done"||!st.step||st.step.k!=="find") return;
+  const t=st.turns[st.step.t], pid=st.hand[i]; if(!t||pid==null||t.wrong[pid]) return;
+  if(pid!==t.pid){ t.wrong[pid]=1; try{ matchBonk(); }catch(e){} st.msg="Almost \u2014 listen again!"; gofishSayAgain(); _mastRe(); return; }
+  t.done=true; t.first=!Object.keys(t.wrong).length;
+  try{ matchDing(); }catch(e){}
+  if(st.step.back){ st.msg="That\u2019s it!"; _gfSay(st,"That\u2019s it!"); _gfBeat(st,"back"); _mastRe(); return; }
+  _gfTake(st.hand,pid); _gfTake(st.app,pid); st.table.push({pid:pid,who:"app"});
+  st.msg="Thank you! I\u2019ll ask again."; _gfSay(st,"Thank you!"); _gfBeat(st,"app"); _mastRe();
+}
+function gofishGoFish(){   // 🎣 "Go fish!" — the kid says they don't have it
+  const st=gofishState; if(!st||st.lock||st.phase==="done"||!st.step||st.step.k!=="find"||st.step.back) return;
+  const t=st.turns[st.step.t]; if(!t) return;
+  if(st.hand.indexOf(t.pid)>=0){ t.wrong["gofish"]=1; try{ matchBonk(); }catch(e){} st.msg="Look again \u2014 you have it!"; gofishSayAgain(); _mastRe(); return; }
+  t.done=true; t.first=!Object.keys(t.wrong).length;
+  if(!st.pond.length){ st.msg="The pond is empty \u2014 your turn!"; _gfSay(st,"The pond is empty. Your turn!"); _gfBeat(st,"kid"); _mastRe(); return; }
+  const pid=st.pond.pop(), had=st.app.indexOf(pid)>=0;
+  st.app.push(pid);
+  if(had){ _gfProduce(st,pid,"appfished"); _mastRe(); return; }
+  st.msg="Go fish for me\u2026 no pair. Your turn!"; _gfSay(st,"No pair. Your turn!"); _gfBeat(st,"kid"); _mastRe();
+}
+// ── the end: every pair is down → the missed cards come back once, each as the act it was missed on → finish ──
+function _gfEnd(st){
+  if(st.phase!=="play") return;
+  st.phase="back"; st.step=null; st.hand=[]; st.app=[];
+  const seen={}, backs=[];
+  st.turns.forEach(t=>{ if(t.back||seen[t.pid]) return; if(Object.keys(t.wrong).length||t.fail){ seen[t.pid]=1; backs.push({pid:t.pid,act:t.act}); } });
+  st.backs=backs;
+  if(!backs.length) return _gfFinish(st);
+  st.msg="All the pairs are down! Let\u2019s look at a few again."; _gfSay(st,"All the pairs are down! Let's look at a few again."); _gfBeat(st,"back",GF_BEAT_LONG);
+}
+function _gfBackNext(st){
+  const b=st.backs&&st.backs.shift();
+  if(!b) return _gfFinish(st);
+  if(b.act==="find"){ st.hand=_gfBackHand(st,b.pid); _gfFind(st,b.pid,true); return; }
+  _gfProduce(st,b.pid,"back");
+}
+// Three cards for a last find: the missed card + two others from the round with different names
+function _gfBackHand(st,pid){
+  const nm=x=>_whichNorm(st.kinds[x.id]==="say"?gofishName(x):_whichBack(x)), seen={}, it=_gfIt(st,pid);
+  if(it) seen[nm(it)]=1;
+  const others=_gfShuffle(st.pairs.filter(p=>p!==pid)).map(p=>_gfIt(st,p)).filter(x=>x&&!seen[nm(x)]&&(seen[nm(x)]=1)).slice(0,2).map(x=>x.id);
+  return _gfShuffle([pid].concat(others));
+}
+function gofishBestKey(deck){ return deck+" \u{00B7} gofish"; }
+// PURE: clean pairs — the cards whose every act in the round (not the come-back) was right the first time
+function gofishClean(st){ const bad={}; st.turns.forEach(t=>{ if(!t.back&&(!t.first||t.fail)) bad[t.pid]=1; }); return st.pairs.filter(p=>!bad[p]).length; }
+function _gfFinish(st){
+  st.phase="done"; st.step=null; st.lock=false; st.after=null;
+  st.first=gofishClean(st);
+  const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every act's result, game:"gofish"
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=gofishBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.first>0&&(prev==null||st.first>prev);
+  if(st.isPB){
+    s.match_best[key]=st.first;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+  st.msg="All the pairs are down!"; st.say="";
+  try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F41F} All the pairs are down!",{noSong:true}); }catch(e){}
+}
+// GAMEKID → 🎲 GAMEKIT resume: a beat that was mid-way when the kid switched settles here (no render; the caller renders)
+function gofishResume(){
+  const st=gofishState; if(!st||st.phase==="done") return;
+  if(st.lock){ st.lock=false; const a=st.after; st.after=null; _gfGo(st,a); return; }
+  if(st.say&&(typeof mastView==="undefined"||mastView==="gofish")) try{ mastSpeak(st.say); }catch(e){}   // back to the round: hear the ask again
+}
+// ── the screen ──
+const GF_CSS='<style>.gf-card{width:92px;height:104px;border-radius:14px;border:3px solid #e2ddd6;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;padding:0;-webkit-tap-highlight-color:transparent;transition:transform .2s,opacity .2s}'+
+  '.gf-card .gf-vis{pointer-events:none;transform:scale(.95)}.gf-card .gf-txt{pointer-events:none;font-family:\'Fraunces\',serif;font-weight:800;font-size:22px;line-height:1.1;color:#292524;text-align:center;padding:4px;overflow-wrap:anywhere}'+
+  '.gf-card.gf-wrong{opacity:.28;filter:grayscale(1);cursor:default}.gf-card.gf-still{cursor:default;opacity:.8}.gf-card[disabled]{color:#292524}.gf-card.gf-big{width:150px;height:160px;border-color:#a78bfa;background:#f5f3ff;cursor:default}.gf-card.gf-big .gf-vis{transform:scale(1.5)}.gf-card.gf-big .gf-txt{font-size:38px}'+
+  '.gf-pair{width:44px;height:44px;border-radius:10px;border:2px solid #e2ddd6;background:#fff;display:inline-flex;align-items:center;justify-content:center;overflow:hidden}.gf-pair .gf-vis{transform:scale(.5);pointer-events:none}.gf-pair .gf-txt{font-size:11px;padding:2px}'+
+  '.gf-pair.gf-slot{border-style:dashed;background:#fafaf9;color:#d6d3d1;font-size:18px}'+
+  '.gf-btn{padding:12px 22px;border-radius:999px;border:none;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;-webkit-tap-highlight-color:transparent}.gf-btn[disabled],.gf-key[disabled],.gf-opt[disabled]{opacity:.45;cursor:default}'+
+  '.gf-key{width:64px;height:56px;border-radius:14px;border:2px solid #e2ddd6;background:#fff;font-family:\'Fraunces\',serif;font-size:26px;font-weight:800;color:#292524;cursor:pointer}'+
+  '.gf-opt{min-width:96px;padding:14px 18px;border-radius:16px;border:3px solid #e2ddd6;background:#fff;font-family:\'Fraunces\',serif;font-size:24px;font-weight:800;color:#292524;cursor:pointer;overflow-wrap:anywhere}.gf-opt.gf-wrong{opacity:.28;filter:grayscale(1);cursor:default}</style>';
+function _gfCardVis(st,pid){
+  const it=_gfIt(st,pid); if(!it) return '';
+  if(st.kinds[pid]==="say"){ const v=_smTileVis(it); if(v) return '<span class="gf-vis">'+v+'</span>'; }
+  return '<span class="gf-txt">'+esc(gofishName(it))+'</span>';   // an answer card shows its FRONT (the kid produces the back)
+}
+function buildGofishHtml(color){
+  const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+  let h=GF_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const items=_gfItems(), decks=gofishDecks(items);
+  if(!decks.length){ h+='<div class="mast-none">No decks ready for Go Fish yet \u{2014} it needs '+GF_MIN+' or more cards with a picture (or a short answer on the back).</div></div>'; return h; }
+  const st=gofishState;
+  const chip=(dk,lbl)=>{ const sel=st&&st.deck===dk; return '<button onclick="gofishStart(\''+q(dk)+'\')" style="padding:10px 16px;border-radius:999px;font-size:14px;font-weight:800;border:2px solid '+(sel?color:'#e2ddd6')+';background:'+(sel?color:'#fff')+';color:'+(sel?'#fff':'#57534e')+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
+  if(!st||st.phase==="done"){
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">';
+    decks.forEach(dk=>{ h+=chip(dk,esc(dk)); });
+    if(decks.length>1) h+=chip(WHICH_MIX,"\u{1F3B2} "+WHICH_MIX);
+    h+='</div>';
+  }
+  if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u{1F41F} Pick a deck. Ask me for a card by saying what it is \u{2014} if I have it, the pair goes down!</div></div>'; return h; }
+  const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[gofishBestKey(st.deck)];
+  // the table: one slot per pair, filled as the pairs go down (shared — no "mine / yours")
+  const down={}; st.table.forEach(p=>{ down[p.pid]=1; });
+  const table=st.pairs.map(p=>down[p]?'<span class="gf-pair">'+_gfCardVis(st,p)+'</span>':'<span class="gf-pair gf-slot">\u{1F41F}</span>').join('');
+  if(st.phase!=="done"){
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px;flex-wrap:wrap"><div style="display:flex;gap:4px;flex-wrap:wrap">'+table+'</div>';
+    h+='<span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
+      '<button onclick="gofishStop()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{21A9} Stop</button></span></div>';
+    // the app's line, with 🔊 to hear it again
+    h+='<div style="display:flex;align-items:center;gap:10px;margin:10px 0 12px;padding:12px 14px;border-radius:18px;background:#f0f9ff;border:2px solid #bae6fd"><span style="font-size:30px;line-height:1">\u{1F41F}</span><span style="flex:1;font-size:17px;font-weight:800;color:#0c4a6e">'+esc(st.msg)+'</span>'+
+      (st.say?'<button onclick="gofishSayAgain()" aria-label="Hear it again" style="width:56px;height:56px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:26px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button>':'')+'</div>';
+    const sp=st.step, lock=st.lock, t=sp&&sp.t!=null?st.turns[sp.t]:null;
+    const hand=(fn,wrong)=>{ let x='<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:6px 0 12px">';
+      st.hand.forEach((pid,i)=>{ const w=!!(wrong&&wrong[pid]); x+='<button class="gf-card'+(w?' gf-wrong':'')+(fn?'':' gf-still')+'" aria-label="Card '+(i+1)+'"'+(fn&&!w&&!lock?' onclick="'+fn+'('+i+')"':' disabled')+'>'+_gfCardVis(st,pid)+'</button>'; });
+      return x+'</div>'; };
+    const pond='<span style="font-size:13px;font-weight:700;color:var(--muted)">\u{1F30A} pond: '+st.pond.length+'</span>';
+    if(sp&&sp.k==="ask"){ h+='<div style="text-align:center;font-size:13px;font-weight:700;color:var(--muted);margin-top:8px">Your hand \u{00B7} '+pond+'</div>'+hand("gofishAsk"); }
+    else if(sp&&sp.k==="fish"){ h+='<div style="display:flex;justify-content:center;margin:14px 0"><button class="gf-btn" onclick="gofishFish()" style="background:'+color+';color:#fff;font-size:20px;padding:18px 34px">\u{1F3A3} Go fish!</button></div><div style="text-align:center;font-size:13px;font-weight:700;color:var(--muted)">Your hand \u{00B7} '+pond+'</div>'+hand(null); }
+    else if(sp&&sp.k==="find"){ h+='<div style="text-align:center;font-size:13px;font-weight:700;color:var(--muted);margin-top:8px">'+(sp.back?'Find it!':'Your hand \u{00B7} '+pond)+'</div>'+hand("gofishFindTap",t&&t.wrong);
+      if(!sp.back) h+='<div style="display:flex;justify-content:center"><button class="gf-btn" onclick="gofishGoFish()"'+(lock?' disabled':'')+' style="background:#fff;color:'+color+';border:2px solid '+color+'">\u{1F3A3} Go fish!</button></div>'; }
+    else if(sp&&sp.k==="produce"&&t){
+      h+='<div style="display:flex;justify-content:center;margin:6px 0 12px"><span class="gf-card gf-big">'+_gfCardVis(st,sp.pid)+'</span></div>';
+      if(t.act==="say") h+='<div style="display:flex;justify-content:center"><button class="gf-btn" onclick="gofishSaid()"'+(lock?' disabled':'')+' style="background:'+color+';color:#fff;font-size:20px;padding:18px 34px">\u{1F5E3} I said it</button></div>';
+      else if(t.act==="type"){
+        h+='<div style="display:flex;justify-content:center;margin-bottom:10px"><span style="min-width:120px;height:56px;border-radius:14px;border:3px solid '+color+';background:#fff;font-family:\'Fraunces\',serif;font-size:30px;font-weight:800;color:#292524;display:inline-flex;align-items:center;justify-content:center;padding:0 14px">'+esc(t.typed||"")+'</span></div>';
+        h+='<div style="display:grid;grid-template-columns:repeat(3,64px);gap:8px;justify-content:center">';
+        ["1","2","3","4","5","6","7","8","9","back","0","ok"].forEach(k=>{ if(k==="back") h+='<button class="gf-key" onclick="gofishKey(\'back\')"'+(lock?' disabled':'')+' aria-label="Erase">\u{232B}</button>'; else if(k==="ok") h+='<button class="gf-key" onclick="gofishCheck()"'+(lock||!t.typed?' disabled':'')+' style="background:'+color+';color:#fff;border-color:transparent" aria-label="Check">\u{2714}</button>'; else h+='<button class="gf-key" onclick="gofishKey(\''+k+'\')"'+(lock?' disabled':'')+'>'+k+'</button>'; });
+        h+='</div>';
+      } else {
+        h+='<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">';
+        (t.opts||[]).forEach((o,i)=>{ const w=!!t.wrong[o]; h+='<button class="gf-opt'+(w?' gf-wrong':'')+'" onclick="gofishPickTap('+i+')"'+(w||lock?' disabled':'')+'>'+esc(o)+'</button>'; });
+        h+='</div>';
+      }
+      if(!lock&&st.hand.length&&sp.why!=="back") h+='<div style="text-align:center;font-size:13px;font-weight:700;color:var(--muted);margin-top:14px">Your hand \u{00B7} '+pond+'</div>'+hand(null);
+    }
+    return h+'</div>';
+  }
+  // Finish: the pairs on the table, how many went down clean, Play again / Mix the decks
+  h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} All the pairs are down!</div>';
+  h+='<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin:12px 0">'+table+'</div>';
+  h+='<div style="font-size:17px;font-weight:800;color:#57534e">\u{1F41F} '+st.first+' of '+st.of+' pairs clean'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+  h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">';
+  h+='<button onclick="gofishStart(\''+q(st.deck)+'\')" class="gf-btn" style="background:'+color+';color:#fff;font-size:15px">\u{1F501} Play again</button>';
+  if(decks.length>1&&!st.mix) h+='<button onclick="gofishStart(\''+q(WHICH_MIX)+'\')" class="gf-btn" style="border:2px solid '+color+';background:#fff;color:'+color+';font-size:15px">\u{1F3B2} '+WHICH_MIX+'</button>';
+  return h+'</div></div></div>';
+}
+// GOFISH_END
 // STUDYCOUNTS_START — 📚 Study sessions count everywhere (F3 of PLAN_learning_system, her yes 2026-10-24). A study
 // sitting logs to mastery/studyLog/<kid>/<sid>/<yyyymmdd>, but Scores, the Weekly report, sprint readiness (the ≥ 90%
 // untimed check) and the notebook's 🔁 review flags read only the drill's mastery/history/<kid>/<yyyymmdd>, so Lincoln —
@@ -81752,6 +82062,8 @@ const GAMES_LIST=[
   {key:"idflash",emoji:"\u26A1",     label:"ID Flash",    view:"idflash",               available:k=>typeof envFlashAvail==="function"&&envFlashAvail(k), render:c=>envFlashGameHtml(c)},   // ⚡ ENVIDFLASH
   {key:"spell",  emoji:"\u{1F524}", label:"Build it",    view:"spell",                 available:k=>typeof spellPool==="function"&&spellPool(_gamesItems(k)).length>0, render:c=>buildSpellHtml(c),
      park:()=>spellState, restore:v=>{ spellState=v||null; }, resume:()=>spellResume()},   // 🔤 SPELLBUILD · 🎲 GAMEKIT: its own park / restore / resume
+  {key:"gofish", emoji:"\u{1F41F}", label:"Go Fish",     view:"gofish",                available:k=>typeof gofishDecks==="function"&&gofishDecks(_gamesItems(k),k).length>0, render:c=>buildGofishHtml(c),
+     park:()=>gofishState, restore:v=>{ gofishState=v||null; }, resume:()=>gofishResume()},   // 🐟 GOFISH · 🎲 GAMEKIT: its own park / restore / resume
 ];
 const gamesLast={};   // kid → key of the last game played on this device
 function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k); }catch(e){ return false; } }); }
