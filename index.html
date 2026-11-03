@@ -11209,6 +11209,13 @@ function mmDayStartMs(kid,nowMs){
   const m=/(\d{1,2}):(\d{2})\s*([AP]M)/i.exec(String(s||"")); if(!m) return null;
   let h=parseInt(m[1],10)%12; if(m[3].toUpperCase()==="PM") h+=12;
   const d=new Date(nowMs); d.setHours(h,parseInt(m[2],10),0,0);
+  // MMDAYFLOOR (Sara DeWalt's Monday 2026-11-02, Adrienne's yes 11/2): the day never starts before the school start in Settings —
+  // the day-start re-time floors the kid's day there (her rule 2026-09-23), so this clock takes the same floor (today's own start first, then
+  // the default). Live: Caleb's chores ended 8:21, his notebook ran 9:00→9:12, and the done row read "⏱ 15 min" (8:21→9:12 = 51,
+  // capped) where the real 12 was what Sara counted. Read only; nothing new is written.
+  try{ const _sd=((typeof rulesData!=="undefined"&&rulesData)||{}).schoolDay||{}; const _v=(((_sd.overrides||{})[_todayDay])||{}).start||_sd.defaultStart||"10:00 AM";
+    const fm=(typeof toMin==="function")?toMin((typeof dtS==="function")?dtS(_todayDay,_v):_v):null;
+    if(fm!=null&&fm>0){ const f=new Date(nowMs); f.setHours(Math.floor(fm/60),fm%60,0,0); if(f.getTime()>d.getTime()) d.setTime(f.getTime()); } }catch(e){}
   return d.getTime()<=nowMs?d.getTime():null;
 }
 // The clock a card reads: {ms, from:"start"|"check"|"day"} — the ▶ Start tap when there is one; otherwise the kid's last
@@ -11324,8 +11331,16 @@ function mmAlertsNowHTML(){
 // Minute-tick hook (the schedule's own setInterval): sends the overrun line for a started card still open past double its
 // time, and returns a signature that changes each minute while a countdown is on screen, so the body re-renders then — and
 // only then. Reads the day; writes only the one alert record.
+// MMWAKEGUARD (Sara DeWalt's Monday 2026-11-02, Adrienne's yes 11/2): a page that slept wakes with the check list it fell asleep
+// with — live, a device whose `checked` was 40 minutes old ran its first tick at 11:02:15 and sent "Andrew's Piano has been open
+// 59 minutes" and "Taylor's Reading has been open 82 minutes" for two cards the kids had checked at 10:40 and 10:55; its listener
+// caught up two seconds later. So the first tick after a gap longer than MM_WAKE_MS sends no overrun line at all — the next
+// minute's tick, with the listeners caught up, judges as before. The countdown signature is untouched; nothing new is written.
+const MM_WAKE_MS=150000;   // 2.5 min — the tick runs every minute, so a longer gap means the page was asleep
+let _mmTickAt=0;
 function mmTick(nowMs){
   nowMs=nowMs||Date.now(); let sig="";
+  const _woke=_mmTickAt>0&&(nowMs-_mmTickAt)>MM_WAKE_MS; _mmTickAt=nowMs;   // MMWAKEGUARD
   try{
     const list=(typeof weekData!=="undefined"&&weekData&&Array.isArray(weekData.tasks))?weekData.tasks:[];
     const td=(typeof _todayDay==="string")?_todayDay:"";
@@ -11338,7 +11353,7 @@ function mmTick(nowMs){
       const c=mmClock(t.id,nowMs); if(!c) return;
       const el=Math.max(0,(nowMs-c.ms)/60000);
       if(el<target+1&&(c.from==="start"||c.from==="time")) sig+="|"+t.id+"@"+Math.floor(nowMs/60000);   // TIMEDSTART: only a shown countdown re-renders — a fallback clock is never on screen
-      if(r.over&&c.from==="start"&&!t.famBlock&&el>=target*2) mmAlertSend("over",t,mmKidName(t.who)+"’s "+mmSubjName(t)+" has been open "+Math.floor(el)+" minutes ("+target+" planned)");   // ▶ Start only — a fallback clock never overruns
+      if(r.over&&!_woke&&c.from==="start"&&!t.famBlock&&el>=target*2) mmAlertSend("over",t,mmKidName(t.who)+"’s "+mmSubjName(t)+" has been open "+Math.floor(el)+" minutes ("+target+" planned)");   // ▶ Start only — a fallback clock never overruns
     });
   }catch(e){}
   return sig;
