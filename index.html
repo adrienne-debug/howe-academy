@@ -78387,6 +78387,209 @@ function buildGofishHtml(color){
   return h+'</div></div></div>';
 }
 // GOFISH_END
+// BINGO_START — 🎱 "Bingo" (her yes "I think options for both", 2026-11-02; PLAN_practice_games_2026-10-23.md Tier 1 Picture Bingo).
+// The classic for the littlest ones (Pre-K / K, any pre-reader): a board of pictures from the kid's own cards, the app
+// SAYS a name, the kid finds it on the board and taps it. Built on Which one?'s cards (whichPool keeps the hidden,
+// spelling, phonogram and answer-only cards out): a deck Which one? plays as "picture" (photo, deck visual, emoji, animal,
+// color, shape) or "symbol" (letters / numbers / sight words — hear it, tap the glyph; letter bingo is the classic).
+//   Board (her "options for both"): 9+ cards → 3×3; 4–8 cards → a small 2×2 board; a small deck ALSO pools into 🎲 Mix
+//   the decks (the Mix's board is sized from every picture card the kid has). One picture per name on a board.
+//   Calls: the board's own cards in a random order — every picture on the board is asked once (cover-all bingo); the lures
+//   are the other tiles, and the choice shrinks as tiles get marked (that's bingo). The name is never written: said once,
+//   a big 🔊 says it again, a wrong tap says it again.
+//   Right tap → the soft ding, a green stamp on the tile, next call. Wrong tap → that tile greys for this call, the soft
+//   bonk, hear it again, try again. The first full line (across, down, corner to corner) → "🎱 BINGO!" — the line glows,
+//   small confetti (no song, no points) — then "Fill the whole board!" and the calls go on to a full board.
+//   A card that took more than one tap comes back once at the end: the stamps clear and only the missed ones are called
+//   again ("One more time!"). No lives, no clock, no competition.
+// Writes (only these): <kid>_settings/match_best key "<deck> · bingo" (most on the first tap, only when beaten) and the
+//   round's gameLog entry (GAMELOG, game:"bingo", via gameLogRound — the only log). NEVER touches the ladder: no scores,
+//   no next-due, no study log. db && !_dryRun() only. Per-kid park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT).
+let bingoState=null;   // {kid,deck,mix,size,game:"bingo",t0,board:[pid…],marked:{pid:1},turns:[{pid,back,wrong:{},done,first}],i,phase,line,bingo,clearup,first,of,isPB,prevBest,lock,grow,returned:{},gameLogged}
+const BINGO_MIX="Mix the decks", BINGO_BIG=9, BINGO_SMALL=4;
+function _bingoItems(kid){ let items=(typeof masteryData!=="undefined"&&masteryData&&masteryData[kid||masteryKid])||[]; if(!Array.isArray(items)) items=Object.values(items); return items; }
+function _bingoName(i){ return (typeof _whichNorm==="function")?_whichNorm(i&&i.prompt):String((i&&i.prompt)||"").toLowerCase().trim(); }
+function _bingoShuffle(a,rnd){ rnd=rnd||Math.random; for(let i=a.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+// The cards Bingo can call: Which one?'s picture / symbol cards (active or introduction, not a production twin, one per
+// name in its deck, nothing hidden or waiting). Never an answer-mode deck — a tile must be the picture of what is said.
+// 🎮 GAMEGRID: Which one?'s own per-deck cells stand aside here (_gdRaw while asking) — Bingo has its OWN column in Mom's grid,
+// so a deck turned off for Which one? still plays Bingo, and bingoDeckOn (below) is the only switch that hides a deck from Bingo.
+function _bingoCards(items,kid){
+  if(typeof whichPool!=="function"||typeof whichDeckModes!=="function") return [];
+  const had=(typeof _gdRaw!=="undefined")?_gdRaw:null;
+  try{
+    if(had!==null) _gdRaw=true;
+    const modes=whichDeckModes(items,kid);
+    return whichPool(items,BINGO_MIX,kid).filter(i=>{ const m=modes[i.subject||"Other"]; return m==="picture"||m==="symbol"; });
+  } finally{ if(had!==null) _gdRaw=had; }
+}
+function bingoDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid||masteryKid,"bingo",deck); }   // 🎮 GAMEGRID: Mom's cell for this deck (default on; the preload asks raw)
+function bingoPool(items,kid){ return _bingoCards(items,kid).filter(i=>bingoDeckOn(kid,i.subject||"Other")); }
+// One card per name across decks (the Mix: "red" in Colors and "red" in Words would draw two of one picture).
+function _bingoDistinct(pool){ const seen={}; return (pool||[]).filter(i=>{ const k=_bingoName(i); if(!k||seen[k]) return false; seen[k]=1; return true; }); }
+// PURE: the board side for a card count — 3 (3×3) from BINGO_BIG, 2 (2×2) from BINGO_SMALL, 0 = not enough for a board.
+function bingoSize(n){ return n>=BINGO_BIG?3:n>=BINGO_SMALL?2:0; }
+// {deck: side} — every deck that fills a board, plus the Mix when two or more decks have cards and together fill one.
+// The game's OWN deck list (the games-per-deck grid's preload asks this; it asks raw, so every deck that fills a board is listed).
+function bingoDeckList(items,kid){ return Object.keys(bingoDecks(items,kid)).filter(d=>d!==BINGO_MIX); }
+function bingoDecks(items,kid){
+  const pool=bingoPool(items,kid), by={};
+  pool.forEach(i=>{ const d=i.subject||"Other"; by[d]=(by[d]||0)+1; });
+  const out={};
+  Object.keys(by).sort().forEach(d=>{ const s=bingoSize(by[d]); if(s) out[d]=s; });
+  if(Object.keys(by).length>1){ const s=bingoSize(_bingoDistinct(pool).length); if(s) out[BINGO_MIX]=s; }
+  return out;
+}
+// PURE: the lines of an n×n board as cell indexes — rows, columns, the two corner-to-corner runs.
+function bingoLines(n){
+  const L=[];
+  for(let r=0;r<n;r++){ const row=[], col=[]; for(let c=0;c<n;c++){ row.push(r*n+c); col.push(c*n+r); } L.push(row); L.push(col); }
+  const d1=[], d2=[]; for(let i=0;i<n;i++){ d1.push(i*n+i); d2.push(i*n+(n-1-i)); } L.push(d1); L.push(d2);
+  return L;
+}
+// PURE: the first full line on the board (cells), or null.
+function bingoLineDone(board,marked,n){ return bingoLines(n).find(l=>l.every(ci=>marked[board[ci]]))||null; }
+function _bingoSay(st){
+  const t=st&&st.turns[st.i]; if(!t) return;
+  const it=_bingoItems(st.kid).find(x=>x&&x.id===t.pid);
+  if(it&&it.prompt) try{ mastSpeak(_matchPlain(it.prompt)); }catch(e){}
+}
+function bingoStart(deck){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding / bonk (iPad)
+  const items=_bingoItems(), decks=bingoDecks(items), size=decks[deck]||0, mix=deck===BINGO_MIX;
+  const pool=_bingoDistinct(bingoPool(items).filter(i=>mix||i.subject===deck));
+  if(!size||pool.length<size*size){ bingoState=null; _mastRe(); return; }
+  const board=_bingoShuffle(pool.slice()).slice(0,size*size).map(i=>i.id);   // a fresh pick of the deck each round
+  const turns=_bingoShuffle(board.slice()).map(pid=>({pid:pid,back:false,wrong:{},done:false,first:false}));   // every tile asked once
+  bingoState={kid:masteryKid,deck:deck,mix:mix,size:size,game:"bingo",t0:Date.now(),board:board,marked:{},turns:turns,i:0,phase:"play",line:null,bingo:false,clearup:false,first:0,of:turns.length,isPB:false,prevBest:null,lock:false,grow:null,returned:{}};
+  _mastRe();
+  _bingoSay(bingoState);   // the first name, inside the tap
+}
+function bingoSayAgain(){ _bingoSay(bingoState); }
+function bingoChangeDeck(){ bingoState=null; _mastRe(); }   // drop the round as it stands: nothing written
+function bingoTap(ci){
+  const st=bingoState; if(!st||st.phase!=="play"||st.lock) return;
+  const t=st.turns[st.i]; if(!t) return;
+  const pid=st.board[ci]; if(pid==null||st.marked[pid]||t.wrong[pid]) return;   // a stamped tile, or one greyed this call, is not a tap
+  if(pid!==t.pid){
+    t.wrong[pid]=1;
+    try{ matchBonk(); }catch(e){}
+    _mastRe();
+    _bingoSay(st);   // hear it again, then try again
+    return;
+  }
+  t.done=true; t.first=!Object.keys(t.wrong).length;
+  if(!t.back&&t.first) st.first++;
+  // A card that took more than one tap comes back once, after the board is full.
+  if(!t.first&&!t.back&&!st.returned[t.pid]){ st.returned[t.pid]=1; st.turns.push({pid:t.pid,back:true,wrong:{},done:false,first:false}); }
+  st.marked[pid]=1;
+  try{ matchDing(); }catch(e){}
+  let gotLine=false;
+  if(!st.bingo&&!st.clearup){ const line=bingoLineDone(st.board,st.marked,st.size); if(line){ st.bingo=true; st.line=line; gotLine=true;
+    try{ if(typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(st.kid,"\u{1F3B1} BINGO!",{noSong:true}); }catch(e){} } }
+  st.grow=ci; st.lock=true;
+  _mastRe();
+  const at=st.i; setTimeout(()=>{ if(bingoState===st&&st.lock&&st.i===at) bingoNext(st); },gotLine?1600:900);   // GAMEKID: never advances a parked / settled turn
+}
+// PURE over the state: step to the next call (the comeback clears the stamps the first time it is reached); finishes the round at the end.
+function _bingoStep(st){
+  st.grow=null; st.lock=false;
+  st.i++;
+  if(st.i>=st.turns.length){ bingoFinish(st); return; }
+  if(st.turns[st.i].back&&!st.clearup){ st.clearup=true; st.marked={}; st.line=null; }   // "One more time!" — only the missed ones are called
+}
+function bingoNext(st){
+  st=st||bingoState; if(!st||st!==bingoState) return;
+  _bingoStep(st);
+  _mastRe();
+  if(st.phase==="play"&&(typeof mastView==="undefined"||mastView==="bingo")) _bingoSay(st);
+}
+// GAMEKID → 🎲 GAMEKIT resume: a tap that was mid-step when the kid switched settles here (no render; the caller renders)
+function bingoResume(){
+  const st=bingoState; if(!st||st.phase!=="play") return;
+  if(st.lock) _bingoStep(st);
+  if(st.phase==="play"&&(typeof mastView==="undefined"||mastView==="bingo")) _bingoSay(st);
+}
+function bingoBestKey(deck){ return deck+" \u{00B7} bingo"; }
+function bingoFinish(st){
+  st.phase="done";
+  const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every card's first-tap result, game:"bingo"
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=bingoBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.first>0&&(prev==null||st.first>prev);
+  if(st.isPB){
+    s.match_best[key]=st.first;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+}
+const BINGO_CSS='<style>.bingo-cell{position:relative;aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:20px;border:3px solid #e2ddd6;background:#fff;cursor:pointer;overflow:hidden;transition:transform .25s,opacity .2s;-webkit-tap-highlight-color:transparent}'+
+  '.bingo-cell .bingo-vis{transform:scale(1.1);pointer-events:none}.bingo-2 .bingo-cell .bingo-vis{transform:scale(1.6)}@media(min-width:560px){.bingo-cell .bingo-vis{transform:scale(1.6)}.bingo-2 .bingo-cell .bingo-vis{transform:scale(2.1)}}'+
+  '.bingo-cell.bingo-wrong{opacity:.28;filter:grayscale(1);cursor:default}.bingo-cell.bingo-grow{transform:scale(1.08);border-color:#16a34a;background:#f0fdf4;box-shadow:0 0 0 5px #bbf7d0}'+
+  '.bingo-cell.bingo-marked{cursor:default;border-color:#86efac;background:#f0fdf4}.bingo-cell.bingo-marked .bingo-vis{opacity:.55}'+
+  '.bingo-stamp{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:clamp(34px,9vw,64px);color:#16a34a;text-shadow:0 2px 0 #fff,0 0 12px #fff;pointer-events:none}'+
+  '.bingo-cell.bingo-line{border-color:#f59e0b;background:#fffbeb;box-shadow:0 0 0 4px #fde68a}.bingo-cell.bingo-line .bingo-stamp{color:#d97706}</style>';
+function buildBingoHtml(color){
+  const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+  let h=BINGO_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const items=_bingoItems(), decks=bingoDecks(items), names=Object.keys(decks).filter(d=>d!==BINGO_MIX);
+  if(!Object.keys(decks).length){
+    h+='<div class="mast-none">No decks ready for Bingo yet \u{2014} it needs 4 or more cards with a picture (9 for a big board).</div></div>';
+    return h;
+  }
+  const st=bingoState;
+  const chip=(dk,lbl)=>{ const sel=st&&st.deck===dk; return '<button onclick="bingoStart(\''+q(dk)+'\')" style="padding:10px 16px;border-radius:999px;font-size:14px;font-weight:800;border:2px solid '+(sel?color:'#e2ddd6')+';background:'+(sel?color:'#fff')+';color:'+(sel?'#fff':'#57534e')+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+(decks[dk]===2?' <span style="font-weight:700;opacity:.7">\u{00B7} small</span>':'')+'</button>'; };
+  if(!st||st.phase==="done"){
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">';
+    names.forEach(dk=>{ h+=chip(dk,esc(dk)); });
+    if(decks[BINGO_MIX]) h+=chip(BINGO_MIX,"\u{1F3B2} "+BINGO_MIX);
+    h+='</div>';
+  }
+  if(!st){
+    h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u{1F442} Pick a deck. Listen, then find it on your board!</div></div>';
+    return h;
+  }
+  const s=masteryData[st.kid+"_settings"]||{};
+  const best=(s.match_best||{})[bingoBestKey(st.deck)];
+  if(st.phase==="play"){
+    const t=st.turns[st.i], n=st.size;
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px">';
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+    st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
+    h+='</div>';
+    h+='<span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
+      '<button onclick="bingoChangeDeck()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{1F5C2} Change deck</button></span></div>';
+    const wrongNow=!!(t&&Object.keys(t.wrong).length), justLine=!!(st.lock&&st.line&&st.line.indexOf(st.grow)>=0&&!st.clearup);
+    h+='<div style="display:flex;justify-content:center;margin:10px 0 6px"><button onclick="bingoSayAgain()" aria-label="Hear it again" style="width:96px;height:96px;border-radius:50%;border:4px solid '+color+';background:#fff;color:'+color+';font-size:46px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button></div>';
+    h+='<div style="text-align:center;font-size:'+(justLine?'24px':'17px')+';font-weight:800;color:'+(justLine?'#d97706':'#57534e')+';margin-bottom:12px;font-family:'+(justLine?'\'Fraunces\',serif':'inherit')+'">'+
+      (justLine?'\u{1F3B1} BINGO!':wrongNow?'Almost \u{2014} listen again!':st.clearup?'One more time \u{2014} find the one you hear!':st.bingo?'Fill the whole board!':'Find the one you hear!')+'</div>';
+    h+='<div class="bingo-'+n+'" style="display:grid;grid-template-columns:repeat('+n+',1fr);gap:'+(n===2?'16px':'12px')+';max-width:'+(n===2?'440px':'720px')+';margin:0 auto">';
+    st.board.forEach((pid,ci)=>{
+      const it=items.find(x=>x&&x.id===pid), marked=!!st.marked[pid], onLine=!!(st.line&&st.line.indexOf(ci)>=0);
+      const cls='bingo-cell'+(marked?' bingo-marked':'')+(onLine?' bingo-line':'')+(t&&t.wrong[pid]?' bingo-wrong':'')+(st.grow===ci?' bingo-grow':'');
+      h+='<div class="'+cls+'" role="button" aria-label="Picture '+(ci+1)+'" onclick="bingoTap('+ci+')"><span class="bingo-vis">'+(_smTileVis(it)||'')+'</span>'+(marked?'<span class="bingo-stamp">\u{2713}</span>':'')+'</div>';
+    });
+    h+='</div></div>';
+    return h;
+  }
+  // Finish: the board's pictures, first-tap count, Play again / Mix the decks. Pictures only — no names.
+  h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F3B1} BINGO \u{2014} board full!</div>';
+  h+='<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin:12px 0">';
+  st.board.forEach(pid=>{ const it=items.find(y=>y&&y.id===pid);
+    h+='<span style="width:72px;height:72px;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;border-radius:14px;background:#fff;border:2px solid #e2ddd6"><span style="transform:scale(.8)">'+(_smTileVis(it)||'')+'</span></span>'; });
+  h+='</div>';
+  h+='<div style="font-size:17px;font-weight:800;color:#57534e">\u{1F446} '+st.first+' of '+st.of+' on the first tap'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+  h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">';
+  h+='<button onclick="bingoStart(\''+q(st.deck)+'\')" style="padding:12px 24px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F501} Play again</button>';
+  if(decks[BINGO_MIX]&&!st.mix) h+='<button onclick="bingoStart(\''+q(BINGO_MIX)+'\')" style="padding:12px 24px;border-radius:999px;border:2px solid '+color+';background:#fff;color:'+color+';font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F3B2} '+BINGO_MIX+'</button>';
+  h+='</div></div></div>';
+  return h;
+}
+// BINGO_END
 // STUDYCOUNTS_START — 📚 Study sessions count everywhere (F3 of PLAN_learning_system, her yes 2026-10-24). A study
 // sitting logs to mastery/studyLog/<kid>/<sid>/<yyyymmdd>, but Scores, the Weekly report, sprint readiness (the ≥ 90%
 // untimed check) and the notebook's 🔁 review flags read only the drill's mastery/history/<kid>/<yyyymmdd>, so Lincoln —
@@ -82336,6 +82539,7 @@ const GAMES_LIST=[
      park:()=>dumpPark(), restore:v=>{ dumpRestore(v); }, resume:()=>dumpResume(), decks:k=>typeof dumpDecks==="function"?dumpDecks(_gamesItems(k),k):[]},   // 💭 BRAINDUMP · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
   {key:"which",  emoji:"\u{1F446}", label:"Which one?",  view:"which",                 available:k=>whichDecks(_gamesItems(k)).length>0, render:c=>buildWhichHtml(c)},
   {key:"idflash",emoji:"\u26A1",     label:"ID Flash",    view:"idflash",               available:k=>typeof envFlashAvail==="function"&&envFlashAvail(k), render:c=>envFlashGameHtml(c)},   // ⚡ ENVIDFLASH
+  {key:"bingo",  emoji:"\u{1F3B1}", label:"Bingo",       view:"bingo",                 available:k=>typeof bingoDecks==="function"&&Object.keys(bingoDecks(_gamesItems(k),k)).length>0, render:c=>buildBingoHtml(c), park:()=>bingoState, restore:v=>{ bingoState=v||null; }, resume:()=>bingoResume(), decks:k=>typeof bingoDeckList==="function"?bingoDeckList(_gamesItems(k),k):[]},   // 🎱 BINGO · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
   {key:"spell",  emoji:"\u{1F524}", label:"Build it",    view:"spell",                 available:k=>typeof spellPool==="function"&&spellPool(_gamesItems(k)).length>0, render:c=>buildSpellHtml(c),
      park:()=>spellState, restore:v=>{ spellState=v||null; }, resume:()=>spellResume()},   // 🔤 SPELLBUILD · 🎲 GAMEKIT: its own park / restore / resume
   {key:"gofish", emoji:"\u{1F41F}", label:"Go Fish",     view:"gofish",                available:k=>typeof gofishDecks==="function"&&gofishDecks(_gamesItems(k),k).length>0, render:c=>buildGofishHtml(c),
