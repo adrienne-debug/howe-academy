@@ -13,7 +13,8 @@ function fnText(name){ const i=src.indexOf("function "+name+"("); if(i<0) return
 
 // ── by text ──
 const a=src.indexOf("// BINGO_START"), b=src.indexOf("// BINGO_END"), sp=src.indexOf("// SPELLBUILD_END");
-ok("BINGO block sits right after SPELLBUILD_END",sp>0&&a>sp&&b>a&&src.slice(sp,a).trim()==="// SPELLBUILD_END");
+const nxt=src.indexOf("// STUDYCOUNTS_START");
+ok("BINGO block sits in the games run after SPELLBUILD_END (beside the games built alongside it), before STUDYCOUNTS",sp>0&&a>sp&&b>a&&nxt>b);
 const blk=src.slice(a,b);
 ok("no kid's name in the block",!/lincoln|ellis|lucy|julian|caleb|taylor|makenzie|kenzie|andrew/i.test(blk));
 ok("no \u{1F500} in the block",blk.indexOf("\u{1F500}")<0);
