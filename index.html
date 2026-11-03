@@ -82214,6 +82214,9 @@ function jpWagerFinishHtml(st){
 //   · HOW IT KNOWS A ROUND IS OVER — each game's own state (GAME_LIKE_STATE: the game key → its state variable; "done" = phase "done", or
 //     Match's endTs), and the round's own start time as its identity, so the line shows once per finished round and goes away when a new
 //     round starts. A game not in the table (ID Flash, the class site's) just has no line. test_game_like.js pins the table to GAMES_LIST.
+//   · ONLY A PLAYED ROUND ASKS (her word 2026-11-03: "they had to actually play the game to score it"): the round's own log must hold at
+//     least one answered card (gameLogRound ran → st.gameLogged, and gameLogEntry still counts an item); Match / Memory flip need at least one
+//     pair matched. "I'm done" with nothing answered, a clock that ran out, a round bailed on → no line, no skip record, nothing.
 //   · SAVED — mastery/<kid>_settings/gameLikes/<game key>/<ts> = {v: 1 | -1, deck, at}: ONE targeted set per answer, never a whole-node set;
 //     db && !_dryRun() only. A skip writes nothing (this device remembers it for the round). No points, nothing moves — it is a note to Mom.
 //   · MOM'S VIEW — the games grid's header shows the kid's tally beside each game's name (👍 4 · 👎 1, nothing until there is one); the game's
@@ -82234,8 +82237,16 @@ function gameLikeRound(key){
   let st=null; try{ st=g(); }catch(e){ st=null; }
   if(!st) return null;
   const done=(key==="match"||key==="memory")?!!st.endTs:st.phase==="done";
-  if(!done) return null;
+  if(!done||!gameLikePlayed(key,st)) return null;
   return {id:String(st.t0||st.startTs||st.endTs||""),deck:String(st.deck||""),kid:String(st.kid||masteryKid||"")};
+}
+// PURE: was the round actually played? Match / Memory flip: a pair matched. Every other game: its log holds an answered card.
+function gameLikePlayed(key,st){
+  if(!st) return false;
+  if(key==="match"||key==="memory") return Array.isArray(st.tiles)&&st.tiles.some(t=>t&&t.matched);
+  if(st.gameLogged!==true) return false;
+  if(typeof gameLogEntry==="function"){ let e=null; try{ e=gameLogEntry(st); }catch(x){ e=null; } return !!(e&&Array.isArray(e.items)&&e.items.length>0); }
+  return true;
 }
 function _glKey(kid,key,r){ return kid+"|"+key+"|"+r.id; }
 function _glRecs(kid,key){ try{ const s=(typeof masteryData!=="undefined"&&masteryData&&masteryData[kid+"_settings"])||{}, G=s.gameLikes&&s.gameLikes[key]; return G&&typeof G==="object"?G:{}; }catch(e){ return {}; } }
