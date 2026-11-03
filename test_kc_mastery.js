@@ -119,7 +119,7 @@ console.log("The menus and the wiring");
   ok("renderAll toggles body.kc-study from kcStudyOn() on every draw (so it comes off when the view ends)", /document\.body\.classList\.toggle\("kc-study",typeof kcStudyOn==="function"&&kcStudyOn\(\)\)/.test(fn("_renderAllInner")));
   ok("showTab: any tab tap leaves the Corner's study view", /tab=t;\n\s*if\(typeof kcStudyKid!=="undefined"\) kcStudyKid=null;/.test(fn("showTab")));
   ok("the Corner link lock in showTab is unchanged", /if\(_kioskK\(\)&&t!=="kids"\) return;/.test(fn("showTab")));
-  ok("retrSchedGo's hook is study-only and asks the gate first", /^function retrSchedGo\(kid,view,sid\)\{\n\s*if\(view==="study"&&typeof kcStudyIntercept==="function"&&kcStudyIntercept\(kid,sid\)\)\{ kcStudyOpen\(kid,sid\); return; \}/.test(fn("retrSchedGo")));
+  ok("retrSchedGo's hook is study-only and asks the gate first", /^function retrSchedGo\(kid,view,sid\)\{\n(\s*if\(typeof mastLinkRoute==="function"&&mastLinkRoute\(kid,view,sid\)\) return;[^\n]*\n)?\s*if\(view==="study"&&typeof kcStudyIntercept==="function"&&kcStudyIntercept\(kid,sid\)\)\{ kcStudyOpen\(kid,sid\); return; \}/.test(fn("retrSchedGo")));
   ok("the Mastery page still calls renderMastStudy() with no options", /\(typeof renderMastStudy==="function"\)\?renderMastStudy\(\):''/.test(src));
 }
 
