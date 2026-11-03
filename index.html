@@ -14701,16 +14701,32 @@ function _llRtStepsRaw(slot,kid,steps,dayName){ if(!llDrivesKid(kid)) return ste
   const out=steps.map(function(st){ return llOldLaundryRow(st)?Object.assign({},st,{cad:"none",llHidden:true}):st; });
   const dn=dayName||(typeof day!=="undefined"?day:""), iso=(dn&&typeof calDateForWeekDay==="function")?calDateForWeekDay(dn):null; if(!iso) return out;
   const A=llAll();
-  if(slot==="morning") llKidDayLoads(kid,iso).forEach(function(id){ if(A[id]) out.push({emoji:A[id].emoji||"🧺",label:"Start your laundry: "+llLabelFull(id),pts:llKidPts(kid,"start"),cad:"daily",laundry:true,line:id}); });
+  if(slot==="morning"||slot==="afternoon") llKidDayLoads(kid,iso).forEach(function(id){ if(A[id]&&llWhen(id)===slot) out.push({emoji:A[id].emoji||"🧺",label:"Start your laundry: "+llLabelFull(id),pts:llKidPts(kid,"start"),cad:"daily",laundry:true,line:id}); });   // 🌤 LL_WHEN: an Afternoon load's Start row goes ahead of the Fold rows (they only grow at the end, so no tick key moves)
   if(slot==="afternoon") llKidFoldLoads(kid,iso).forEach(function(id){ if(A[id]) out.push({emoji:"👕",label:"Fold + put away: "+llLabelFull(id),pts:llKidPts(kid,"fold"),cad:"daily",laundry:"lineFold",line:id}); });
   return out; }
+// LL_WHEN_START — 🌅 / 🌤 which list a load's Start row goes on (Sara DeWalt's report 2026-11-02, via Adrienne: "I would like to do 2 for
+// the day but then Kenzie's school would not open because she couldn't check off the morning chore of putting in a load when there was
+// already a load from taylor in the machine. I tried to change it to an afternoon chore but … its not under chores in the settings tab";
+// Adrienne's yes 2026-11-02). Live 11/2: Kenzie's morning was all ticked at 8:19 but "Start your laundry: Boys' Clothes" — the Morning
+// list opens school — so her school waited until Mom tapped 🫧 Start at 9:17, right after the girls' load went in.
+// Each line load has a when: 🌅 Morning (the default, nothing saved — every family's lists are as before) or 🌤 Afternoon
+// (laundryLine/items/<id>/when = "afternoon"). Afternoon → the kid's "Start your laundry" row goes on their Afternoon list (which never
+// holds school), and Mom's / Dad's Start row moves to their Afternoon checklist the same way. The Fold row, the line, caps, the 8 PM
+// slide and the nudges are unchanged. The chip sits by 👤 on the line (Mom only; a 🔗 rider goes with its host). One targeted write.
+function llWhen(id){ const x=llAll()[id]||{}; return x.when==="afternoon"?"afternoon":"morning"; }
+function llWhenNext(id){ llMomGo(function(){ if(llOrder().indexOf(id)<0) return; const u={}; llEnsureItems(u); const it=laundryLine.items[id]; if(!it) return;
+  const w=llWhen(id)==="afternoon"?null:"afternoon"; if(w) it.when=w; else delete it.when; if(!u["items/"+id]) u["items/"+id+"/when"]=w;
+  llStore(); llWrite(u); hhRender(); }); }
+function llWhenChip(id,btn){ return llWith(id)?'':btn("llWhenNext('"+id+"')",llWhen(id)==="afternoon"?"🌤 Afternoon":"🌅 Morning"); }
+// LL_WHEN_END
 // 🧺 LINE_CHORES for Mom and Dad (her ask 2026-10-18: "id love for it to go to my checklist and dad as well like it does the kids"). Their
 // 🏡 My day checklist: ☀️ Morning gets "🧺 Start: <load>" for today's loads that are theirs (Mom → mom + Mom or Dad; Dad → dad + Mom or Dad),
 // 🌤 Afternoon gets "👕 Fold + put away: <load>" once it went in. Rows are derived (ids ll_*, never in momChores/dadChores) and count in the
 // slot's tally; done comes from the line itself (in the washer / put away). No line, nothing of theirs → the checklist is byte-for-byte as before.
 function llParentRows(who,slot){ if(!laundryLine||!Object.keys(laundryLine).length) return []; const t=llToday(), mine=function(id){ const w=llWho(id,t).who; return w===who||w==="both"; }, A=llAll(), LG=llDayLog(t), LD=(typeof laundryData!=="undefined"&&laundryData)||{};
-  if(slot==="morning"){ const r=llProjectNow(1)[0]; return r.loads.filter(function(id){ return mine(id)&&r.waited.indexOf(id)<0&&r.moved.indexOf(id)<0; }).map(function(id){ return {id:id,kind:"start",emoji:A[id].emoji||"🧺",label:"Start: "+llLabelFull(id),done:!!LG[id]}; }); }
-  if(slot==="afternoon") return Object.keys(LG).filter(function(id){ return llKnown(id)&&LG[id]&&!LG[id].with&&mine(id); }).map(function(id){ return {id:id,kind:"fold",emoji:"👕",label:"Fold + put away: "+llLabelFull(id),done:!(LG[id].load&&LD[LG[id].load])}; });
+  const starts=function(){ const r=llProjectNow(1)[0]; return r.loads.filter(function(id){ return mine(id)&&r.waited.indexOf(id)<0&&r.moved.indexOf(id)<0&&llWhen(id)===slot; }).map(function(id){ return {id:id,kind:"start",emoji:A[id].emoji||"🧺",label:"Start: "+llLabelFull(id),done:!!LG[id]}; }); };   // 🌤 LL_WHEN: on the load's own list
+  if(slot==="morning") return starts();
+  if(slot==="afternoon") return starts().concat(Object.keys(LG).filter(function(id){ return llKnown(id)&&LG[id]&&!LG[id].with&&mine(id); }).map(function(id){ return {id:id,kind:"fold",emoji:"👕",label:"Fold + put away: "+llLabelFull(id),done:!(LG[id].load&&LD[LG[id].load])}; }));
   return []; }
 function llParentRowHTML(r,who){ const done=r.done, on="llParentTick('"+r.id+"','"+r.kind+"','"+who+"')";
   return '<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;background:'+(done?'#f0fdf4':'#eff6ff')+';border:1.5px solid '+(done?'#86efac':'#bfdbfe')+';border-radius:9px;margin-bottom:5px">'
@@ -14799,7 +14815,7 @@ function llCardHTML(noGrid){
   if(mom) h+='<div style="display:flex;justify-content:flex-end;padding:0 12px 6px"><button onclick="llAddToggle(\'load\')" style="padding:3px 10px;border-radius:8px;border:1.5px solid #2563eb;background:'+(llAddOpen==="load"?'#2563eb':'#fff')+';color:'+(llAddOpen==="load"?'#fff':'#1d4ed8')+';font-size:11.5px;font-weight:800;cursor:pointer">'+(llAddOpen==="load"?'Cancel':'＋ Add a load')+'</button></div>'+llAddLoadHTML();
   o.forEach(function(id,n){ const x=it[id], up=id===nx;
     h+='<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px;padding:5px 12px;border-top:1px solid #eef2f0;font-size:12.5px;'+(up?'background:#f0fdf4':'')+'"><span style="width:16px;color:#6b6560;font-size:11px">'+(n+1)+'</span><span>'+esc(x.emoji||'🧺')+'</span><span style="flex:1;min-width:130px;font-weight:700">'+esc(x.label)+(up?' <span style="color:#16a34a;font-size:11px">▶ up next</span>':'')+'</span>'
-      +(mom?'<span style="display:flex;gap:4px;flex-wrap:wrap;margin-left:auto">'+(llWith(id)?btn("llEdToggle('"+id+"')","🔗 with "+esc(llShort(it[llWith(id)]))):(llMode()==="home"?btn("llHomeNext('"+id+"')","📅 "+LL_DL[llHome(id)]):''))+btn("llEdToggle('"+id+"')","✎")+btn("llDoerNext('"+id+"')","👤 "+esc(llName(llDoer(id))))+llCyChip(id,btn)+btn("llMove('"+id+"',-1)","↑",n===0)+btn("llMove('"+id+"',1)","↓",n===o.length-1)+((up||llMode()==="home"||llWith(id))?'':btn("llSetNext('"+id+"')","Up next"))
+      +(mom?'<span style="display:flex;gap:4px;flex-wrap:wrap;margin-left:auto">'+(llWith(id)?btn("llEdToggle('"+id+"')","🔗 with "+esc(llShort(it[llWith(id)]))):(llMode()==="home"?btn("llHomeNext('"+id+"')","📅 "+LL_DL[llHome(id)]):''))+btn("llEdToggle('"+id+"')","✎")+btn("llDoerNext('"+id+"')","👤 "+esc(llName(llDoer(id))))+llWhenChip(id,btn)+llCyChip(id,btn)+btn("llMove('"+id+"',-1)","↑",n===0)+btn("llMove('"+id+"',1)","↓",n===o.length-1)+((up||llMode()==="home"||llWith(id))?'':btn("llSetNext('"+id+"')","Up next"))
         +(llWith(id)?'':tb.indexOf(id)>=0&&ts.indexOf(id)<0?btn("llBump('"+id+"')","↩ Unbump"):(tl.indexOf(id)<0?btn("llBump('"+id+"')","⏫ Today"):''))+'</span>':'')+(mom?llCyEditorHTML(id)+llEdLoadHTML(id):'')+'</div>'; });
   // caps per weekday
   h+='<div style="padding:8px 12px;border-top:1px solid #eef2f0"><div style="font-size:11.5px;font-weight:800;margin-bottom:5px">Loads a day (cap)</div><div style="display:flex;gap:5px;flex-wrap:wrap">'
