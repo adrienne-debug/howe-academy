@@ -78050,16 +78050,26 @@ function _bingoName(i){ return (typeof _whichNorm==="function")?_whichNorm(i&&i.
 function _bingoShuffle(a,rnd){ rnd=rnd||Math.random; for(let i=a.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
 // The cards Bingo can call: Which one?'s picture / symbol cards (active or introduction, not a production twin, one per
 // name in its deck, nothing hidden or waiting). Never an answer-mode deck — a tile must be the picture of what is said.
-function bingoPool(items,kid){
+// 🎮 GAMEGRID: Which one?'s own per-deck cells stand aside here (_gdRaw while asking) — Bingo has its OWN column in Mom's grid,
+// so a deck turned off for Which one? still plays Bingo, and bingoDeckOn (below) is the only switch that hides a deck from Bingo.
+function _bingoCards(items,kid){
   if(typeof whichPool!=="function"||typeof whichDeckModes!=="function") return [];
-  const modes=whichDeckModes(items,kid);
-  return whichPool(items,BINGO_MIX,kid).filter(i=>{ const m=modes[i.subject||"Other"]; return m==="picture"||m==="symbol"; });
+  const had=(typeof _gdRaw!=="undefined")?_gdRaw:null;
+  try{
+    if(had!==null) _gdRaw=true;
+    const modes=whichDeckModes(items,kid);
+    return whichPool(items,BINGO_MIX,kid).filter(i=>{ const m=modes[i.subject||"Other"]; return m==="picture"||m==="symbol"; });
+  } finally{ if(had!==null) _gdRaw=had; }
 }
+function bingoDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid||masteryKid,"bingo",deck); }   // 🎮 GAMEGRID: Mom's cell for this deck (default on; the preload asks raw)
+function bingoPool(items,kid){ return _bingoCards(items,kid).filter(i=>bingoDeckOn(kid,i.subject||"Other")); }
 // One card per name across decks (the Mix: "red" in Colors and "red" in Words would draw two of one picture).
 function _bingoDistinct(pool){ const seen={}; return (pool||[]).filter(i=>{ const k=_bingoName(i); if(!k||seen[k]) return false; seen[k]=1; return true; }); }
 // PURE: the board side for a card count — 3 (3×3) from BINGO_BIG, 2 (2×2) from BINGO_SMALL, 0 = not enough for a board.
 function bingoSize(n){ return n>=BINGO_BIG?3:n>=BINGO_SMALL?2:0; }
 // {deck: side} — every deck that fills a board, plus the Mix when two or more decks have cards and together fill one.
+// The game's OWN deck list (the games-per-deck grid's preload asks this; it asks raw, so every deck that fills a board is listed).
+function bingoDeckList(items,kid){ return Object.keys(bingoDecks(items,kid)).filter(d=>d!==BINGO_MIX); }
 function bingoDecks(items,kid){
   const pool=bingoPool(items,kid), by={};
   pool.forEach(i=>{ const d=i.subject||"Other"; by[d]=(by[d]||0)+1; });
@@ -82180,7 +82190,7 @@ const GAMES_LIST=[
      park:()=>dumpPark(), restore:v=>{ dumpRestore(v); }, resume:()=>dumpResume(), decks:k=>typeof dumpDecks==="function"?dumpDecks(_gamesItems(k),k):[]},   // 💭 BRAINDUMP · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
   {key:"which",  emoji:"\u{1F446}", label:"Which one?",  view:"which",                 available:k=>whichDecks(_gamesItems(k)).length>0, render:c=>buildWhichHtml(c)},
   {key:"idflash",emoji:"\u26A1",     label:"ID Flash",    view:"idflash",               available:k=>typeof envFlashAvail==="function"&&envFlashAvail(k), render:c=>envFlashGameHtml(c)},   // ⚡ ENVIDFLASH
-  {key:"bingo",  emoji:"\u{1F3B1}", label:"Bingo",       view:"bingo",                 available:k=>typeof bingoDecks==="function"&&Object.keys(bingoDecks(_gamesItems(k),k)).length>0, render:c=>buildBingoHtml(c), park:()=>bingoState, restore:v=>{ bingoState=v||null; }, resume:()=>bingoResume()},   // 🎱 BINGO · 🎲 GAMEKIT: its own park / restore / resume
+  {key:"bingo",  emoji:"\u{1F3B1}", label:"Bingo",       view:"bingo",                 available:k=>typeof bingoDecks==="function"&&Object.keys(bingoDecks(_gamesItems(k),k)).length>0, render:c=>buildBingoHtml(c), park:()=>bingoState, restore:v=>{ bingoState=v||null; }, resume:()=>bingoResume(), decks:k=>typeof bingoDeckList==="function"?bingoDeckList(_gamesItems(k),k):[]},   // 🎱 BINGO · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
   {key:"spell",  emoji:"\u{1F524}", label:"Build it",    view:"spell",                 available:k=>typeof spellPool==="function"&&spellPool(_gamesItems(k)).length>0, render:c=>buildSpellHtml(c),
      park:()=>spellState, restore:v=>{ spellState=v||null; }, resume:()=>spellResume()},   // 🔤 SPELLBUILD · 🎲 GAMEKIT: its own park / restore / resume
 ];

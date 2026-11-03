@@ -25,7 +25,7 @@ ok("the start tap unlocks audio; sounds are the shared ding / bonk; speech is ma
 ok("confetti only through _showCelebration with noSong, guarded by celeb-overlay",/document\.getElementById\("celeb-overlay"\)\) _showCelebration\(st\.kid,"\\u\{1F3B1\} BINGO!",\{noSong:true\}\)/.test(blk));
 const li=src.indexOf('{key:"idflash",'), lb=src.indexOf('{key:"bingo",'), ls=src.indexOf('{key:"spell",');
 ok("GAMES_LIST: the bingo line sits right after idflash (before spell)",li>0&&lb>li&&ls>lb&&src.slice(li,lb).split("\n").length===2);
-ok("the entry has the final shape (view bingo, cheap guarded available, park / restore / resume)",/\{key:"bingo",\s*emoji:"\\u\{1F3B1\}", label:"Bingo",\s*view:"bingo",\s*available:k=>typeof bingoDecks==="function"&&Object\.keys\(bingoDecks\(_gamesItems\(k\),k\)\)\.length>0, render:c=>buildBingoHtml\(c\), park:\(\)=>bingoState, restore:v=>\{ bingoState=v\|\|null; \}, resume:\(\)=>bingoResume\(\)\}/.test(src));
+ok("the entry has the final shape (view bingo, cheap guarded available, park / restore / resume, decks for the grid)",/\{key:"bingo",\s*emoji:"\\u\{1F3B1\}", label:"Bingo",\s*view:"bingo",\s*available:k=>typeof bingoDecks==="function"&&Object\.keys\(bingoDecks\(_gamesItems\(k\),k\)\)\.length>0, render:c=>buildBingoHtml\(c\), park:\(\)=>bingoState, restore:v=>\{ bingoState=v\|\|null; \}, resume:\(\)=>bingoResume\(\), decks:k=>typeof bingoDeckList==="function"\?bingoDeckList\(_gamesItems\(k\),k\):\[\]\}/.test(src));
 ok("gamesCurrentKey / GAMEKID were not edited for it (the entry carries everything)",!/bingo/.test(fnText("gamesCurrentKey"))&&!/bingo/i.test(cut("// GAMEKID_START","// GAMEKID_END")));
 
 // ── a sandbox: WHICHONE (the cards) + GAMELOG + BINGO, a kid's cards, a recording db ──
@@ -37,7 +37,7 @@ const SPELL=["red","blue","green","black"].map(w=>({id:"s_"+w,subject:"Spelling"
 function world(items,o){
   o=o||{};
   const writes=[], said=[], dings=[], cel=[];
-  const CODE=cut("// WHICHONE_START","// WHICHONE_END")+"\n"+cut("// GAMELOG_START","// GAMELOG_END")+"\n"+cut("// BINGO_START","// BINGO_END");
+  const CODE=cut("// WHICHONE_START","// WHICHONE_END")+"\n"+cut("// GAMELOG_START","// GAMELOG_END")+"\n"+cut("// BINGO_START","// BINGO_END")+(o.grid?"\n"+cut("// GAMEGRID_START","// GAMEGRID_END"):"");
   const ctx={console,JSON,Object,Array,String,Number,Math,Set,Map,RegExp,Date,parseInt,isNaN,setTimeout:()=>0,
     document:{getElementById:id=>id==="celeb-overlay"?(o.noOverlay?null:{}):null},
     _dryRun:()=>!!o.dry,HA_LS:{setItem(){}},_mastRe(){},bbAudioUnlock(){},
@@ -47,10 +47,10 @@ function world(items,o){
     esc:s=>String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;"),
     _smTileVis:(it,noGlyph)=>!it?null:it.emoji?'<span class="memoji">'+it.emoji+'</span>':(!noGlyph&&(it.prompt||"").length<=3?'<span>'+it.prompt+'</span>':null),
     mastGetCatMode:(kid,d)=>/spell/i.test(d)?"spell":"",
-    masteryData:{k:items||[],k_settings:o.settings||{}},
+    masteryData:{k:items||[],k_settings:o.settings||{}},momHere:()=>true,renderAll(){},cap:s=>s,
     db:{ref:p=>({set:v=>writes.push(["set",p,v]),update:v=>writes.push(["update",p,v]),push:v=>writes.push(["push",p,v])})}};
   vm.createContext(ctx);
-  vm.runInContext(CODE+"\nObject.defineProperty(this,'bingoState',{get:()=>bingoState,set:v=>{bingoState=v;}}); this.BINGO_MIX=BINGO_MIX;",ctx);
+  vm.runInContext(CODE+"\nObject.defineProperty(this,'bingoState',{get:()=>bingoState,set:v=>{bingoState=v;}}); this.BINGO_MIX=BINGO_MIX; this.__raw=()=>(typeof _gdRaw!==\"undefined\")?_gdRaw:null;",ctx);
   return {c:ctx,writes,said,dings,cel};
 }
 const cellOf=(st,pid)=>st.board.indexOf(pid);
@@ -176,6 +176,22 @@ console.log("── a small 2×2 board, the Mix, Change deck ──");
   ok("a deck that isn't a Bingo deck starts nothing",w.c.bingoState===null);
   const e=world(FRUIT.slice(0,3));
   ok("no deck ready → the empty note, no chips",/No decks ready for Bingo/.test(e.c.buildBingoHtml("#000")));
+}
+console.log("── 🎮 the games-per-deck grid: Bingo's own column ──");
+{
+  const {c}=world(ANIMALS.concat(FRUIT),{grid:true,settings:{gameDecks:{Animals:{which:false}}}});
+  const d=c.bingoDecks(c.masteryData.k,"k");
+  ok("a deck turned off for Which one? still plays Bingo (its own column, not Which one?'s)",d.Animals===3&&d.Fruit===2&&d[c.BINGO_MIX]===3);
+  ok("…and Which one? itself does hide it",c.whichDecks(c.masteryData.k,"k").indexOf("Animals")<0);
+  const w=world(ANIMALS.concat(FRUIT),{grid:true,settings:{gameDecks:{Animals:{bingo:false}}}});
+  const d2=w.c.bingoDecks(w.c.masteryData.k,"k");
+  ok("a deck turned off for Bingo is gone from its chips, and out of the Mix (5 fruit left → a small Mix is not offered: one deck)",!d2.Animals&&d2.Fruit===2&&!d2[w.c.BINGO_MIX]);
+  w.c.bingoStart("Animals");
+  ok("…and cannot be started",w.c.bingoState===null);
+  ok("the grid's preload (gameDeckCan → decks(), asked raw) still lists it, so Mom can turn it back on",w.c.gameDeckCan("k",{key:"bingo",decks:k=>w.c.bingoDeckList(w.c.masteryData.k,k)}).join(",")==="Animals,Fruit");
+  ok("_gdRaw is put back as it was after the pool is read",w.c.__raw()===false&&(w.c.bingoPool(w.c.masteryData.k,"k"),w.c.__raw()===false));
+  const n=world(ANIMALS,{grid:true});
+  ok("nothing stored → every deck on (today byte for byte)",n.c.bingoDecks(n.c.masteryData.k,"k").Animals===3&&n.c.bingoDeckOn("k","Animals")===true);
 }
 console.log("── resume (GAMEKID → GAMEKIT) ──");
 {
