@@ -80170,6 +80170,197 @@ function buildKaboomHtml(color){
   return h+'</div>';
 }
 // KABOOM_END
+// HANGMAN_START — 🎈 "Hangman" from definitions (her go via the hub 2026-11-03; PLAN_practice_games_2026-10-23.md Tier 3 "Hangman /
+// Crossword from definitions — spelling + vocab, demand PROD, the definitions map"). Of the two, Hangman is the one that fits a phone:
+// one word, one cue, a letter pad; a crossword needs a grid wider than a phone. The kid sees the card's BACK (its definition / meaning /
+// the family's own wording) and a row of blanks, and taps letters to find the FRONT — a vocabulary word, a root, a capital, a term.
+// The word is produced letter by letter; the app never shows a spelling the kid has to produce: a word that is not found is never
+// written out — "We'll come back to that one", and it comes back once at the end with fresh balloons. After HM_HINT misses a 🔊 "Hear
+// it" appears (the word is SAID — hearing it is allowed, seeing it is not; not for a silent language). HM_MISSES balloons; each wrong
+// letter pops one (no gallows — balloons). No lives beyond the balloons, no clock, no points.
+//   Cards: a card in play whose front is a WORD (letters only after folding accents, spaces / hyphens / apostrophes allowed, HM_LEN_MIN..
+//   HM_LEN_MAX letters, up to 3 words) with a text back that is not the front and does not contain it (a cue that spells the answer is
+//   no cue). Never spelling / phonogram decks (Which one?'s rule), never a procedure card, never a number. A deck needs HM_MIN+ words;
+//   a round is HM_ROUND; 🎲 Mix the decks. Readers at level middle / upper (dcLevel from the roster's grade — never a name).
+// Writes (only these): <kid>_settings/match_best key "<deck> · hang" (words found, only when beaten) and the round's gameLog entry
+//   (GAMELOG, game:"hang": ok = found, n = wrong letters + 1, fail = not found, back = the come-back). NEVER touches the ladder — no
+//   scores, no next_due, no study log. db && !_dryRun() only. Per-kid park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT).
+//   A round dropped (Change deck, a kid switch) writes nothing. 🎮 GAMEGRID: its own column — gameDeckOn(kid,"hang",deck).
+let hangState=null;   // {kid,deck,mix,game:"hang",t0,turns:[{pid,word,cue,letters:[{ch,key}],guessed:{a:1},misses,wrong:{},done,first,fail,back,hint}],i,phase,first,of,isPB,prevBest,lock,seq,msg,returned:{},gameLogged}
+let _hmRandom=Math.random;   // tests seed it
+const HM_MIN=4, HM_ROUND=6, HM_MISSES=6, HM_HINT=3, HM_LEN_MIN=3, HM_LEN_MAX=14, HM_BEAT=1100, HM_BEAT_FAIL=1800;
+const HM_KEYS="abcdefghijklmnopqrstuvwxyz".split("");
+function _hmItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
+function _hmShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_hmRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function _hmPlain(s){ return (typeof _matchPlain==="function")?_matchPlain(s):String(s==null?"":s).replace(/<[^>]*>/g," ").replace(/&nbsp;/g," ").replace(/\s+/g," ").trim(); }
+function hangDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"hang",deck); }
+// A letter's key: accents folded (é → e, ä → a), lowercase; "" when it is not a plain letter
+function hmFold(ch){ const f=String(ch||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase(); return /^[a-z]$/.test(f)?f:""; }
+// PURE: the word's letters → [{ch,key}] (key "" for a space / hyphen / apostrophe, shown as is), or null when it can't be a Hangman word
+function hmLetters(word){
+  const w=_hmPlain(word); if(!w) return null;
+  const out=[]; let n=0, words=1;
+  for(const ch of w){
+    if(ch===" "){ words++; out.push({ch:" ",key:""}); continue; }
+    if(ch==="-"||ch==="\u2010"||ch==="'"||ch==="\u2019"){ out.push({ch:ch,key:""}); continue; }
+    const k=hmFold(ch); if(!k) return null;
+    out.push({ch:ch,key:k}); n++;
+  }
+  if(n<HM_LEN_MIN||n>HM_LEN_MAX||words>3) return null;
+  const seen={}; let distinct=0; out.forEach(l=>{ if(l.key&&!seen[l.key]){ seen[l.key]=1; distinct++; } });
+  return distinct>=2?out:null;
+}
+// The card's back as the cue: the family's own wording, the card's answer, else the definitions map. "" when there is none or it gives the word away.
+function hmCue(kid,it){
+  let b=""; try{ b=_hmPlain((typeof owRuleBack==="function")?owRuleBack(kid,it):it.answer); }catch(e){ b=_hmPlain(it&&it.answer); }
+  if(!b){ try{ if(typeof mastGetDef==="function") b=_hmPlain(mastGetDef(kid,_hmPlain(it.prompt),it.subject)); }catch(e){} }
+  if(!b||b.charAt(0)==="/") return "";
+  const f=_hmPlain(it.prompt).toLowerCase(), bl=b.toLowerCase();
+  if(bl===f||bl.indexOf(f)>=0) return "";   // the cue spells the answer
+  return b;
+}
+function _hmLeftOut(it,kid){
+  if(!it||(it.status!=="active"&&it.status!=="introduction")||it.dir==="prod") return true;
+  try{ if(typeof _whichLeftOut==="function"&&_whichLeftOut(it,kid)) return true; }catch(e){}   // spelling / phonograms: the app never shows a spelling the child must produce
+  try{ if(typeof mastKnowledgeType==="function"&&mastKnowledgeType(it)==="procedure_fluency") return true; }catch(e){}
+  try{ if(typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin(kid,it.subject)) return true; }catch(e){}   // 📝 a station waiting for its check-in
+  try{ if(typeof cpceHidItem==="function"&&cpceHidItem(kid,it)) return true; }catch(e){}   // 📚 CPCARDSEDIT
+  try{ if(typeof cpSecOffItem==="function"&&cpSecOffItem(kid,it)) return true; }catch(e){}   // 🎚 CPSECTIONS
+  return false;
+}
+// Readers at level middle / upper (3rd grade and up by the roster) — never a name
+function hangLevelOk(kid){ if(typeof dcLevel!=="function") return true; try{ const l=dcLevel(kid); return l!=="little"&&l!=="early"; }catch(e){ return true; } }
+// PURE: every word this kid can play → {deck:[{pid,word,cue}]} (one card per word), only decks with HM_MIN+ that are on
+function hangPools(items,kid){
+  kid=kid||masteryKid;
+  const by={}, seen={};
+  (items||[]).forEach(i=>{
+    if(_hmLeftOut(i,kid)) return;
+    const word=_hmPlain(i.prompt); if(!hmLetters(word)) return;
+    const cue=hmCue(kid,i); if(!cue) return;
+    const d=i.subject||"Other", k=d+"|"+word.toLowerCase(); if(seen[k]) return; seen[k]=1;
+    (by[d]||(by[d]=[])).push({pid:i.id,word:word,cue:cue});
+  });
+  const out={}; Object.keys(by).sort().forEach(d=>{ if(by[d].length>=HM_MIN&&hangDeckOn(kid,d)) out[d]=by[d]; });
+  return out;
+}
+function hangDecks(items,kid){ return Object.keys(hangPools(items,kid)); }   // the game's OWN deck list (the games-per-deck grid's preload asks this, raw)
+function hangAvail(kid){ return hangLevelOk(kid)&&hangDecks(_hmItems(kid),kid).length>0; }
+function hmTurn(c,back){ return {pid:c.pid,word:c.word,cue:c.cue,letters:hmLetters(c.word),guessed:{},misses:0,wrong:{},done:false,first:false,fail:false,back:!!back,hint:false}; }
+function hangStart(deck){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding / bonk (iPad)
+  const pools=hangPools(_hmItems(),masteryKid), mix=deck===WHICH_MIX, names=Object.keys(pools);
+  let cards=[]; if(mix) names.forEach(d=>{ cards=cards.concat(pools[d]); }); else cards=pools[deck]||[];
+  if(cards.length<HM_MIN||(mix&&names.length<2)){ hangState=null; _mastRe(); return; }   // 🎮 GAMEGRID: a deck Mom turned off is not in pools
+  const picks=_hmShuffle(cards.slice()).slice(0,HM_ROUND);
+  hangState={kid:masteryKid,deck:deck,mix:mix,game:"hang",t0:Date.now(),turns:picks.map(c=>hmTurn(c,false)),i:0,phase:"play",first:0,of:picks.length,isPB:false,prevBest:null,lock:false,seq:0,msg:"",returned:{}};
+  _mastRe();
+}
+function hangChangeDeck(){ hangState=null; _mastRe(); }   // drop the round as it stands: nothing written
+function _hmCur(st){ return (st&&st.phase==="play"&&!st.lock)?st.turns[st.i]:null; }
+// PURE: is every letter of the word revealed?
+function hmSolved(t){ return t.letters.every(l=>!l.key||t.guessed[l.key]); }
+// PURE: one letter → "hit" | "miss" | "solved" | "fail" | null (already guessed / not a letter)
+function hmJudge(t,key){
+  key=hmFold(key); if(!key||t.done||t.guessed[key]) return null;
+  t.guessed[key]=1;
+  if(t.letters.some(l=>l.key===key)){ if(hmSolved(t)){ t.done=true; t.first=true; return "solved"; } return "hit"; }
+  t.misses++; t.wrong[key]=1;
+  if(t.misses>=HM_MISSES){ t.done=true; t.first=false; t.fail=true; return "fail"; }
+  return "miss";
+}
+function _hmSilent(st,t){ try{ const it=_hmItems(st.kid).find(x=>x&&x.id===t.pid); return typeof whichSilent==="function"&&whichSilent(it); }catch(e){ return false; } }
+function _hmSay(st,t){ if(_hmSilent(st,t)) return; if(typeof mastView==="undefined"||mastView==="hang") try{ mastSpeak(t.word); }catch(e){} }
+function hangGuess(key){
+  const st=hangState, t=_hmCur(st); if(!t||t.done) return;
+  const r=hmJudge(t,key); if(!r) return;
+  if(r==="hit"){ try{ matchDing(); }catch(e){} st.msg="hit"; _mastRe(); return; }
+  if(r==="miss"){ try{ matchBonk(); }catch(e){} st.msg="miss"; _mastRe(); return; }
+  if(r==="solved"){ if(!t.back) st.first++; try{ matchDing(); }catch(e){} st.msg="solved"; _hmSay(st,t); }
+  else {
+    try{ matchBonk(); }catch(e){}
+    st.msg="fail";   // the word is never written out
+    if(!t.back&&!st.returned[t.pid]){ st.returned[t.pid]=1; st.turns.push(hmTurn(t,true)); }   // back once, at the end, with fresh balloons
+  }
+  st.lock=true; const seq=++st.seq;
+  _mastRe();
+  setTimeout(()=>{ if(hangState===st&&st.lock&&st.seq===seq) hangNext(st); },r==="fail"?HM_BEAT_FAIL:HM_BEAT);   // GAMEKID: never advances a parked / settled turn
+}
+// 🔊 Hear it — after HM_HINT misses the word may be SAID (never shown); not for a silent language
+function hangHear(){ const st=hangState, t=_hmCur(st); if(!t||t.done||t.misses<HM_HINT||_hmSilent(st,t)) return; t.hint=true; try{ mastSpeak(t.word); }catch(e){} }
+function _hmStep(st){ st.lock=false; st.msg=""; st.i++; if(st.i>=st.turns.length) hangFinish(st); }
+function hangNext(st){ st=st||hangState; if(!st||st!==hangState) return; _hmStep(st); _mastRe(); }
+function hangBestKey(deck){ return deck+" \u{00B7} hang"; }
+function hangFinish(st){
+  st.phase="done"; st.lock=false;
+  const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every word's result, game:"hang"
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=hangBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.first>0&&(prev==null||st.first>prev);
+  if(st.isPB){
+    s.match_best[key]=st.first;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+  try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F388} You found every word!",{noSong:true}); }catch(e){}
+}
+// GAMEKID → 🎲 GAMEKIT resume: a beat that was mid-way when the kid switched settles here (no render; the caller renders)
+function hangResume(){ const st=hangState; if(!st||st.phase!=="play") return; if(st.lock) _hmStep(st); }
+const HM_CSS='<style>.hm-word{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;row-gap:12px;margin:14px 0}.hm-box{width:30px;height:40px;border-bottom:3px solid #a8a29e;display:inline-flex;align-items:flex-end;justify-content:center;font-family:\'Fraunces\',serif;font-size:26px;font-weight:800;color:#292524;line-height:1}'+
+  '.hm-box.hm-on{border-color:#16a34a;color:#15803d}.hm-box.hm-gap{border:none;width:14px}.hm-box.hm-mark{border:none;width:14px;color:#78716c}@media(min-width:560px){.hm-box{width:36px;height:46px;font-size:30px}}'+
+  '.hm-balloons{display:flex;justify-content:center;gap:6px;font-size:28px;line-height:1;margin:6px 0}.hm-balloons span{transition:opacity .2s,transform .2s}.hm-balloons .hm-pop{opacity:.25;transform:scale(.7)}'+
+  '.hm-cue{padding:14px 16px;border-radius:18px;background:#f8f7f4;border:2px solid #e2ddd6;font-size:17px;font-weight:700;color:#292524;text-align:center;line-height:1.35}'+
+  '.hm-pad{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;max-width:420px;margin:12px auto 0}.hm-key{height:46px;border-radius:12px;border:2px solid #e2ddd6;background:#fff;font-family:\'DM Sans\',sans-serif;font-size:19px;font-weight:800;color:#292524;cursor:pointer;text-transform:uppercase;-webkit-tap-highlight-color:transparent;padding:0}'+
+  '.hm-key[disabled]{cursor:default}.hm-key.hm-used{opacity:.3}.hm-key.hm-good{border-color:#86efac;background:#f0fdf4;color:#15803d;opacity:.8}'+
+  '.hm-btn{padding:12px 22px;border-radius:999px;border:none;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;-webkit-tap-highlight-color:transparent}.hm-btn[disabled]{opacity:.45;cursor:default}'+
+  '.hm-ghost{padding:8px 14px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif}</style>';
+function buildHangHtml(color){
+  const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+  let h=HM_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const items=_hmItems(), pools=hangPools(items), decks=Object.keys(pools);
+  if(!decks.length){ h+='<div class="mast-none">No decks ready for Hangman yet \u{2014} it needs '+HM_MIN+' or more word cards with a meaning on the back.</div></div>'; return h; }
+  const st=hangState;
+  const chip=(dk,lbl)=>{ const sel=st&&st.deck===dk; return '<button onclick="hangStart(\''+q(dk)+'\')" style="padding:10px 16px;border-radius:999px;font-size:14px;font-weight:800;border:2px solid '+(sel?color:'#e2ddd6')+';background:'+(sel?color:'#fff')+';color:'+(sel?'#fff':'#57534e')+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
+  if(!st||st.phase==="done"){
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">';
+    decks.forEach(dk=>{ h+=chip(dk,esc(dk)+' <span style="opacity:.7;font-weight:700">'+pools[dk].length+'</span>'); });
+    if(decks.length>1) h+=chip(WHICH_MIX,"\u{1F3B2} "+WHICH_MIX);
+    h+='</div>';
+  }
+  if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u{1F388} Pick a deck. Read the meaning, then tap letters to find the word before the balloons are gone!</div></div>'; return h; }
+  const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[hangBestKey(st.deck)];
+  if(st.phase==="play"){
+    const t=st.turns[st.i], m=st.msg, silent=_hmSilent(st,t);
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
+    st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
+    h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
+      '<button onclick="hangChangeDeck()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{1F5C2} Change deck</button></span></div>';
+    h+='<div class="hm-balloons" aria-label="'+(HM_MISSES-t.misses)+' balloons left">'; for(let i=0;i<HM_MISSES;i++) h+='<span class="'+(i<t.misses?'hm-pop':'')+'">'+(i<t.misses?'\u{1F4A8}':'\u{1F388}')+'</span>'; h+='</div>';
+    h+='<div class="hm-cue">'+(t.back?'<div style="font-size:12px;font-weight:800;color:#b45309;margin-bottom:4px">ONE MORE TIME</div>':'')+esc(t.cue)+'</div>';
+    h+='<div class="hm-word" aria-label="'+t.letters.filter(l=>l.key).length+' letters">';
+    t.letters.forEach(l=>{ if(!l.key) h+='<span class="hm-box '+(l.ch===" "?'hm-gap':'hm-mark')+'">'+(l.ch===" "?'':esc(l.ch))+'</span>'; else h+='<span class="hm-box'+(t.guessed[l.key]?' hm-on':'')+'">'+(t.guessed[l.key]?esc(l.ch):'')+'</span>'; });
+    h+='</div>';
+    h+='<div style="text-align:center;font-size:16px;font-weight:800;color:'+(m==="solved"?'#16a34a':m==="fail"?'#b45309':m==="miss"?'#b45309':'#57534e')+';margin:4px 0 6px;min-height:22px">'+
+      (m==="solved"?'\u{2705} That\u2019s it!':m==="fail"?'We\u2019ll come back to that one.':m==="miss"?'Pop! Not that one.':m==="hit"?'Yes!':'Tap a letter')+'</div>';
+    if(!silent&&t.misses>=HM_HINT&&!t.done) h+='<div style="display:flex;justify-content:center;margin-bottom:4px"><button class="hm-ghost" onclick="hangHear()"'+(st.lock?' disabled':'')+'>\u{1F50A} Hear it</button></div>';
+    h+='<div class="hm-pad">';
+    HM_KEYS.forEach(k=>{ const used=!!t.guessed[k], good=used&&t.letters.some(l=>l.key===k); h+='<button class="hm-key'+(used?(good?' hm-good':' hm-used'):'')+'" onclick="hangGuess(\''+k+'\')"'+(used||st.lock||t.done?' disabled':'')+' aria-label="'+k.toUpperCase()+'">'+k+'</button>'; });
+    h+='</div>';
+    return h+'</div>';
+  }
+  // Finish: words found against the kid's own best, Play again / Mix the decks. No word is written out.
+  h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} '+(st.first===st.of?'You found every word!':'Round over!')+'</div>';
+  h+='<div style="font-size:17px;font-weight:800;color:#57534e;margin-top:10px">\u{1F388} '+st.first+' of '+st.of+' words found'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+  h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">';
+  h+='<button onclick="hangStart(\''+q(st.deck)+'\')" class="hm-btn" style="background:'+color+';color:#fff;font-size:15px">\u{1F501} Play again</button>';
+  if(decks.length>1&&!st.mix) h+='<button onclick="hangStart(\''+q(WHICH_MIX)+'\')" class="hm-btn" style="border:2px solid '+color+';background:#fff;color:'+color+';font-size:15px">\u{1F3B2} '+WHICH_MIX+'</button>';
+  return h+'</div></div></div>';
+}
+// HANGMAN_END
 // STUDYCOUNTS_START — 📚 Study sessions count everywhere (F3 of PLAN_learning_system, her yes 2026-10-24). A study
 // sitting logs to mastery/studyLog/<kid>/<sid>/<yyyymmdd>, but Scores, the Weekly report, sprint readiness (the ≥ 90%
 // untimed check) and the notebook's 🔁 review flags read only the drill's mastery/history/<kid>/<yyyymmdd>, so Lincoln —
@@ -84158,6 +84349,8 @@ const GAMES_LIST=[
      park:()=>jumbleState, restore:v=>{ jumbleState=v||null; }, resume:()=>jumbleResume(), decks:k=>typeof ujDecks==="function"?ujDecks(_gamesItems(k),k):[]},   // 🧩 UNJUMBLE · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
   {key:"kaboom", emoji:"\u{1F4A5}", label:"Kaboom",      view:"kaboom",               available:k=>typeof kaboomDecks==="function"&&kaboomDecks(_gamesItems(k),k).length>0, render:c=>buildKaboomHtml(c),
      park:()=>kaboomState, restore:v=>{ kaboomState=v||null; }, resume:()=>kaboomResume(), decks:k=>typeof kaboomDecks==="function"?kaboomDecks(_gamesItems(k),k):[]},   // 💥 KABOOM · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
+  {key:"hang",   emoji:"\u{1F388}", label:"Hangman",     view:"hang",                 available:k=>typeof hangAvail==="function"&&hangAvail(k), render:c=>buildHangHtml(c),
+     park:()=>hangState, restore:v=>{ hangState=v||null; }, resume:()=>hangResume(), decks:k=>typeof hangDecks==="function"?hangDecks(_gamesItems(k),k):[]},   // 🎈 HANGMAN · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
 ];
 const gamesLast={};   // kid → key of the last game played on this device
 function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k)&&(typeof gameDeckAny!=="function"||gameDeckAny(k,g)); }catch(e){ return false; } }); }   // 🎮 GAMEGRID: every deck off → the game isn't offered
