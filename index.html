@@ -76397,7 +76397,7 @@ function stSyncWeek(tasks,o){
       if(!placed){
         const s=Lt-dur, start=W?W.start:0;
         if(s>=start&&free(s)) T.time=fm(s);
-        else { T.time=L.time; L.time=fm(Lt+dur); }   // no room before it → the test takes the lesson's slot, the lesson follows
+        else { T.time=L.time; L.time=fm(Lt+dur); stSlideDown(L,busy,o,day,Lt); }   // no room before it → the test takes the lesson's slot, the lesson follows (🧱 STNOSTACK: and the cards after it make room)
       }
       // the pair sits together in the week's list too: the test right before its lesson (STAFTER: right after it)
       const ti=tasks.indexOf(T); tasks.splice(ti,1); tasks.splice(tasks.indexOf(L)+(after?1:0),0,T);
@@ -76406,6 +76406,33 @@ function stSyncWeek(tasks,o){
   }catch(e){}
   return out;
 }
+// STNOSTACK_START — 🧱 the test card taking its lesson's slot never stacks the lesson on the next card (her yes 2026-11-02,
+// "1 yes"). Live DeWalt week 5, Regenerate 11/2 6:57 PM: with no free 10 minutes before the lesson, the test took the lesson's
+// time and the lesson moved 10 minutes later — on top of the next card (Taylor's AAS 4 9:45–10:05 over Facts Check-up 9:55;
+// Andrew's AAS 1 9:35–9:55 over Arithmetic 9:45). The school-end guard saw the stack, re-laid the whole day, ran past 4:00 and
+// took a lesson off the week (Taylor's AAS 4 Lesson 13, Andrew's Phonics 61). Now that kid's later cards that day slide down
+// just enough to close the gap, in order: lunch is stepped over, and a checked / claimed / started / set-time / family card
+// never moves (the slide stops there). busy = [[start, end, card|null(lunch)]] for the kid that day, before the move; Lt = the
+// lesson's start before it moved.
+function stSlideDown(L,busy,o,day,Lt){
+  try{
+    const tm=o.toMin, fm=o.fromMin, ck=o.checked||{}, cl=o.claimed||{};
+    const held=x=>!!(ck[x.id]||cl[x.id])||!!x.famBlock||/lunch/i.test(x.title||"")||
+      !!(o.isFixed&&o.isFixed(x))||!!(o.started&&o.started(day,x));
+    const lunch=busy.filter(b=>!b[2]);
+    const after=busy.filter(b=>b[2]&&b[2]!==L&&!b[2]._dayDrop&&b[0]>=Lt).sort((a,b)=>a[0]-b[0]);
+    let end=tm(L.time)+(+L.dur||20);
+    for(const b of after){
+      const x=b[2], a=b[0], d=+x.dur||20;
+      if(a>=end) break;              // the gap is closed
+      if(held(x)) break;             // never move it — whatever still overlaps is the school-end guard's
+      let s=end;
+      lunch.forEach(w=>{ if(s<w[1]&&s+d>w[0]) s=w[1]; });
+      x.time=fm(s); end=s+d;
+    }
+  }catch(e){}
+}
+// STNOSTACK_END
 // The app's context for stSyncWeek.
 function stSyncCtx(extra){
   const _sd=((typeof rulesData!=="undefined"&&rulesData)||{}).schoolDay||{};
@@ -76424,7 +76451,10 @@ function stSyncCtx(extra){
       if(d.getTime()-n.getTime()>183*864e5) d.setFullYear(d.getFullYear()-1); else if(n.getTime()-d.getTime()>183*864e5) d.setFullYear(d.getFullYear()+1);
       return d.getTime()<new Date(n.getFullYear(),n.getMonth(),n.getDate()).getTime(); }catch(e){ return false; } },
     given:(kid,key)=>{ const r=stRecs(kid)[key]; return !!(r&&(r.state==="graded"||r.state==="learning")); },   // STPAPERCARD: pending is NOT given
-    paper:(kid,key)=>{ const r=stRecs(kid)[key]; return !!(r&&r.state==="pending"); }
+    paper:(kid,key)=>{ const r=stRecs(kid)[key]; return !!(r&&r.state==="pending"); },
+    // 🧱 STNOSTACK: cards the slide never moves — a set-time class / held card (the school-end guard's own test), and one already started today
+    isFixed:t=>{ try{ return (typeof seGuardCtx==="function")&&!!seGuardCtx().isClass(t); }catch(e){ return false; } },
+    started:(day,t)=>{ try{ if(typeof _todayDay==="undefined"||day!==_todayDay) return false; const n=new Date(), a=toMin(t.time); return a!=null&&a<=n.getHours()*60+n.getMinutes(); }catch(e){ return false; } }
   },extra||{});
 }
 // A tap on a test card or a locked lesson card (tapTask) → true when handled here.
