@@ -39890,16 +39890,22 @@ function utsFamilyHTML(isMom){
 //     carries ch = that day's n. Before Save nothing is written; after it the unit opens as any unit — enroll kids, 🗓 Put on the
 //     schedule. A unit cannot be put on the schedule or enrolled while a card is still unchecked (ubUnchecked; one guarded line
 //     in psApply and unitEnroll). Mom-only, dry-run inert (the record is kept in memory, nothing written), phone width, no kid's
-//     name in code. Rungs, words, craft and place are not here — the Days table edits them (UNITTRACK) and later steps add them.
+//     name in code. UBANYPASTE (Sara 2026-11-02: "I made them PDFs from chat … I did try to just copy and paste the words but then
+//     it could not separate the word with the definition"; Adrienne: "make it where it could read whatever she inserted in there
+//     … meet her where she's at"): 📸 takes a PDF as well as photos (sent to Claude as-is, like the receipt reader's GR_SCROLLPDF),
+//     and a pasted list (two or more lines) that isn't clean `front | back` goes to Claude to draft the lines (never
+//     videos — Claude can't invent a link; a single typed line stays here). With no key, or if Claude fails, the app splits each line itself — bullets,
+//     numbers and **bold** off, then the first tab, dash or colon (word – meaning, word: meaning). Every card still waits for a tick.
+//     Rungs, words, craft and place are not here — the Days table edits them (UNITTRACK) and later steps add them.
 let ubForm=null;   // the open Builder: {step, title, emoji, desc, ages, kind, first, mode, days:[…], boxes:{…}, nDays, perWeek, msg, busy, sources}
 const UB_KINDS=[["topic","Topic"],["skill","Skill path"],["book","Book companion"]];
-const UB_BOXES=[["cards","\u{1F0CF} Cards","front | back \u2014 one per line"],["books","\u{1F4DA} Books","title | by | link"],["videos","\u25B6 Videos","link | label"],["acts","\u{1F3A8} Activities & field trips","title | points | a line about it"]];
+const UB_BOXES=[["cards","\u{1F0CF} Cards","word | meaning \u2014 or paste a list in any shape"],["books","\u{1F4DA} Books","title | by | link"],["videos","\u25B6 Videos","link | label"],["acts","\u{1F3A8} Activities & field trips","title | points | a line about it"]];
 const UB_CRAFT_BOX=["craft","\u2702\uFE0F Craft","title \u00B7 steps \u00B7 supplies"];   // CRAFT (B3): the fifth box on a day
 const UB_PROMPTS={
-  cards:'This is a photo (or the text) of a homeschool mom\u2019s notes for drill cards: facts, vocabulary, names, dates. List every card as a short front and its back. Use ONLY what is there \u2014 never invent. Return ONLY strict JSON: {"items":[{"front":"","back":""}]}.',
-  books:'This is a photo (or the text) of a list of books for a homeschool unit. List each book. Use ONLY what is there. Return ONLY strict JSON: {"items":[{"title":"","by":""}]}.',
-  videos:'This is a photo (or the text) of a list of videos or links for a homeschool unit. List each one. Use ONLY what is there. Return ONLY strict JSON: {"items":[{"url":"","label":""}]}.',
-  acts:'This is a photo (or the text) of a homeschool mom\u2019s notes for activities, crafts and field trips for a unit. List each one with a short title and a line about it. Use ONLY what is there. Return ONLY strict JSON: {"items":[{"title":"","desc":""}]}.'};
+  cards:'This is a photo, a PDF or the pasted text of a homeschool mom\u2019s notes for drill cards: facts, vocabulary, names, dates. List every card as a short front and its back. Use ONLY what is there \u2014 never invent. Return ONLY strict JSON: {"items":[{"front":"","back":""}]}.',
+  books:'This is a photo, a PDF or the pasted text of a list of books for a homeschool unit. List each book. Use ONLY what is there. Return ONLY strict JSON: {"items":[{"title":"","by":""}]}.',
+  videos:'This is a photo, a PDF or the pasted text of a list of videos or links for a homeschool unit. List each one. Use ONLY what is there. Return ONLY strict JSON: {"items":[{"url":"","label":""}]}.',
+  acts:'This is a photo, a PDF or the pasted text of a homeschool mom\u2019s notes for activities, crafts and field trips for a unit. List each one with a short title and a line about it. Use ONLY what is there. Return ONLY strict JSON: {"items":[{"title":"","desc":""}]}.'};
 function ubMom(){ return (typeof momHere==="function")?momHere():false; }
 function ubDry(){ return (typeof _dryRun==="function")?_dryRun():false; }
 function ubLive(){ return !!(typeof db!=="undefined"&&db)&&!ubDry(); }
@@ -39943,19 +39949,29 @@ function ubGo(step){ if(!ubForm) return; const f=ubForm;
 function ubDayTitle(di,val){ if(!ubForm||!ubForm.days[di]) return; ubForm.days[di].t=ubStr(val,200); }
 function ubDayAdd(){ if(!ubForm) return; ubForm.days.push(ubNewDay(ubForm.days.length+1)); ubRe(); }
 // ── the four boxes: lines → items (typed or pasted), drafts from a photo ──
+// UBANYPASTE: one pasted line made plain — table pipes at the ends, **bold**/__bold__, a leading bullet or number come off
+function ubLine(l){ return String(l||"").replace(/\*\*|__/g,"").trim().replace(/^\|/,"").replace(/\|$/,"").trim().replace(/^(?:[-*\u2022\u25AA\u25E6\u00B7]|\(?\d{1,3}[.)])\s+/,"").trim(); }
+function ubLines(text){ return String(text||"").split(/\n+/).map(ubLine).filter(l=>l&&!/^[\s|:\u2013\u2014-]+$/.test(l)); }   // a table's ---|--- row is not a line
+// a line with no | splits at its first tab, spaced dash (– — -), colon or = : "word – meaning", "word: meaning"
+function ubSplitLoose(l){ const m=/\t+|\s+[\u2013\u2014-]+\s+|\s*[:=]\s+/.exec(l); return m?[l.slice(0,m.index).trim(),l.slice(m.index+m[0].length).trim()]:[l]; }
+// does this paste need Claude? a list of two or more lines with one not clean `a | b` (a single typed line stays here); videos never
+function ubMessy(kind,text){ const L=ubLines(text); if(L.length<2||kind==="videos") return false; return L.some(l=>l.indexOf("|")<0); }
 function ubParse(kind,text){
-  const out=[]; String(text||"").split(/\n+/).map(s=>s.trim()).filter(Boolean).forEach(l=>{ const b=l.split("|").map(s=>s.trim());
+  const out=[]; ubLines(text).forEach(l=>{ const piped=l.indexOf("|")>=0; let b=piped?l.split("|").map(s=>s.trim()):(kind==="videos"?[l]:ubSplitLoose(l));
+    if(!piped&&kind==="books"){ const by=/^(.+?)\s+by\s+(.+)$/i.exec(l); if(by) b=[by[1],by[2]]; }
     if(kind==="cards"){ if(b[0]) out.push({id:ubId(),front:ubStr(b[0],120),back:ubStr(b[1]||"",400)}); }
     else if(kind==="books"){ if(b[0]) out.push({id:ubId(),title:ubStr(b[0],120),by:ubStr(b[1]||"",80),url:ubUrl(b[2]||"")}); }
-    else if(kind==="videos"){ const u=ubUrl(b[0]); if(u) out.push({id:ubId(),url:u,label:ubStr(b[1]||"",60)}); }
-    else if(kind==="acts"){ if(b[0]){ const p=parseInt(b[1],10); out.push({id:ubId(),title:ubStr(b[0],120),points:(isFinite(p)&&p>0)?p:5,desc:ubStr(b[2]||"",240)}); } } });
+    else if(kind==="videos"){ let u=piped?ubUrl(b[0]):"", lab=b[1]||""; if(!piped){ const m=/https:\/\/\S+/i.exec(l); if(m){ u=ubUrl(m[0].replace(/[).,]+$/,"")); lab=l.replace(m[0],"").replace(/[()]/g,"").replace(/^[\s:\u2013\u2014-]+|[\s:\u2013\u2014-]+$/g,""); } } if(u) out.push({id:ubId(),url:u,label:ubStr(lab,60)}); }
+    else if(kind==="acts"){ if(b[0]){ const p=parseInt(b[1],10), num=isFinite(p)&&p>0; out.push({id:ubId(),title:ubStr(b[0],120),points:num?p:5,desc:ubStr((piped||num)?(b[2]||""):(b[1]||""),240)}); } } });
   return out;
 }
 function ubDi(di){ if(di===null||di===undefined||di==="null"||di==="") return null; const n=parseInt(di,10); return isFinite(n)?n:null; }   // the HTML hands the day index over as text
 function ubList(di,kind){ const f=ubForm; if(!f) return null; di=ubDi(di); if(di==null||di<0){ return (f.mode==="boxes"&&!f.spread)?f.boxes[kind]:(di==null&&f.mode==="boxes"?f.boxes[kind]:null); } return f.days[di]?f.days[di][kind]:null; }
 function ubAddLines(di,kind){
   if(!ubForm) return 0; const el=(typeof document!=="undefined"&&document.getElementById)?document.getElementById("ub-in-"+kind+"-"+(di==null?"all":di)):null; const text=el?el.value:"";
-  const items=ubParse(kind,text); const L=ubList(di,kind); if(!L) return 0; items.forEach(x=>L.push(x)); if(items.length) ubForm.sources.push({kind:"typed",box:kind,n:items.length,ts:Date.now()});
+  if(!ubList(di,kind)) return 0;
+  if(ubMessy(kind,text)&&ubCanAsk()){ if(el) el.value=""; return ubAsk(di,kind,[{type:"text",text:"Pasted text:\n"+String(text).slice(0,60000)}],{kind:"pasted",text:text}); }   // UBANYPASTE
+  const items=ubParse(kind,text); const L=ubList(di,kind); items.forEach(x=>L.push(x)); if(items.length) ubForm.sources.push({kind:"typed",box:kind,n:items.length,ts:Date.now()});
   if(el) el.value=""; ubRe(); return items.length;
 }
 function ubRemove(di,kind,id){ const L=ubList(di,kind); if(!L) return; const i=L.findIndex(x=>x.id===id); if(i>=0) L.splice(i,1); ubRe(); }
@@ -39969,19 +39985,34 @@ function ubParseAI(kind,txt){
     if(kind==="videos"){ const u=ubUrl(x.url||x.link); return u?{id:ubId(),url:u,label:ubStr(x.label||x.title||"",60),draft:true}:null; }
     const t=ubStr(x.title||x.item,120); return t?{id:ubId(),title:t,points:5,desc:ubStr(x.desc||x.note||"",240),draft:true}:null; }).filter(Boolean);
 }
+function ubCanAsk(){ return !!((typeof kitCapKey==="function")&&kitCapKey()&&typeof kitCapAsk==="function"); }
+const ubIsPdf=x=>/pdf/i.test((x&&x.type)||"")||/\.pdf$/i.test((x&&x.name)||"");
+function ubPdfB64(file){ return new Promise((res,rej)=>{ if(file&&file.size>15*1024*1024) return rej(new Error("That PDF is too big (over 15 MB) \u2014 try a screenshot of the page instead.")); const rd=new FileReader(); rd.onload=()=>{ const b=String(rd.result||"").split(",")[1]; b?res(b):rej(new Error("Couldn\u2019t open that PDF.")); }; rd.onerror=()=>rej(new Error("Couldn\u2019t open that PDF.")); rd.readAsDataURL(file); }); }
+// one reader for photos, PDFs and messy pastes: Claude drafts the lines into the box (drafted = waits for her tick)
+async function ubAsk(di,kind,content,src){
+  const f=ubForm; if(!f) return 0; f.busy=true; f.msg=""; ubRe(); let n=0;
+  const what=src.kind==="pasted"?"what you pasted":src.kind==="pdf"?"the PDF":"the photo"+((src.photos||0)>1?"s":"");
+  try{
+    const txt=await kitCapAsk(content.concat([{type:"text",text:UB_PROMPTS[kind]}]),null,{raw:true,maxTokens:8000});
+    const items=ubParseAI(kind,txt); const L=ubList(di,kind); if(L&&ubForm===f){ items.forEach(x=>L.push(x)); n=items.length; const s={kind:src.kind,box:kind,n:n,ts:Date.now()}; if(src.photos) s.photos=src.photos; if(src.pdfs) s.pdfs=src.pdfs; f.sources.push(s); f.msg=n?("\u2713 "+n+" drafted from "+what+(kind==="cards"?" \u2014 each one waits for your tick":"")):"Couldn\u2019t find anything in "+what+"."; }
+  }catch(e){ if(ubForm===f){
+    if(src.kind==="pasted"){ const items=ubParse(kind,src.text), L=ubList(di,kind); if(L){ items.forEach(x=>L.push(x)); n=items.length; if(n) f.sources.push({kind:"typed",box:kind,n:n,ts:Date.now()}); } f.msg="Claude couldn\u2019t read it ("+String(e&&e.message||e).slice(0,60)+"), so the app split it line by line \u2014 check each one."; }   // the paste is never lost
+    else f.msg=String(e&&e.message||e); } }
+  if(ubForm===f) f.busy=false; ubRe(); return n;
+}
 async function ubPhoto(di,kind,input){
   const files=[...((input&&input.files)||[])]; if(input) input.value=""; if(!files.length||!ubForm) return;
-  const key=(typeof kitCapKey==="function")?kitCapKey():""; if(!key){ ubForm.msg="Needs a Claude key \u2014 Admin \u25B8 Settings \u25B8 \u2728 AI key. Typing the lines always works."; ubRe(); return; }
-  if(typeof _cbShrinkImage!=="function"||typeof kitCapAsk!=="function"){ ubForm.msg="The photo reader isn\u2019t in this build."; ubRe(); return; }
-  const f=ubForm; f.busy=true; f.msg=""; ubRe();
+  const key=(typeof kitCapKey==="function")?kitCapKey():""; if(!key){ ubForm.msg="Needs a Claude key \u2014 Admin \u25B8 Settings \u25B8 \u2728 AI key. Typing or pasting the lines always works."; ubRe(); return; }
+  const pdfs=files.filter(ubIsPdf).slice(0,3), pics=files.filter(x=>!ubIsPdf(x)).slice(0,6);
+  if((pics.length&&typeof _cbShrinkImage!=="function")||typeof kitCapAsk!=="function"){ ubForm.msg="The photo reader isn\u2019t in this build."; ubRe(); return; }
+  const f=ubForm; let content=[];
   try{
-    const imgs=await Promise.all(files.slice(0,6).map(_cbShrinkImage));
-    const content=[]; imgs.forEach((b64,i)=>{ content.push({type:"text",text:"Photo "+(i+1)+":"}); content.push({type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}}); });
-    content.push({type:"text",text:UB_PROMPTS[kind]});
-    const txt=await kitCapAsk(content,null,{raw:true,maxTokens:2500});
-    const items=ubParseAI(kind,txt); const L=ubList(di,kind); if(L&&ubForm===f){ items.forEach(x=>L.push(x)); f.sources.push({kind:"photo",box:kind,n:items.length,photos:imgs.length,ts:Date.now()}); f.msg=items.length?("\u2713 "+items.length+" drafted from the photo"+(imgs.length>1?"s":"")+(kind==="cards"?" \u2014 each one waits for your tick":"")):"Couldn\u2019t find anything in that photo."; }
-  }catch(e){ if(ubForm===f) f.msg=String(e&&e.message||e); }
-  if(ubForm===f) f.busy=false; ubRe();
+    const imgs=await Promise.all(pics.map(_cbShrinkImage)), docs=await Promise.all(pdfs.map(ubPdfB64));
+    imgs.forEach((b64,i)=>{ content.push({type:"text",text:"Photo "+(i+1)+":"}); content.push({type:"image",source:{type:"base64",media_type:"image/jpeg",data:b64}}); });
+    docs.forEach((b64,i)=>{ content.push({type:"text",text:"PDF "+(i+1)+":"}); content.push({type:"document",source:{type:"base64",media_type:"application/pdf",data:b64}}); });   // UBANYPASTE: as the receipt reader sends one
+  }catch(e){ if(ubForm===f){ f.msg=String(e&&e.message||e); ubRe(); } return; }
+  if(!content.length) return;
+  return ubAsk(di,kind,content,{kind:(pdfs.length&&!pics.length)?"pdf":"photo",photos:pics.length,pdfs:pdfs.length});
 }
 // ── the spread (pure): books/videos on most days, activities on their own days (the last one last), cards 2–3 a day in order ──
 function ubSpreadPlan(boxes,nDays,perWeek){
@@ -40072,7 +40103,7 @@ function ubBoxHTML(di,kind){
   const f=ubForm, L=ubList(di,kind)||[], meta=UB_BOXES.find(b=>b[0]===kind), tag=(di==null?"all":di), a="'"+(di==null?"null":di)+"','"+kind+"'";
   let h='<div data-ub-box="'+kind+'" style="border:1px solid #eef0f3;border-radius:10px;padding:8px 10px;margin-top:8px;background:#fff">';
   h+='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:12px;font-weight:800;color:#1f2937;flex:1">'+meta[1]+' <span style="font-weight:600;color:var(--muted)">\u00B7 '+L.length+'</span></span>';
-  h+='<label style="padding:4px 10px;border-radius:999px;border:1.5px solid #a7f3d0;background:#f0fdf4;color:#15803d;font-size:11px;font-weight:700;cursor:pointer"><input type="file" accept="image/*" multiple onchange="ubPhoto('+(di==null?"null":di)+',\''+kind+'\',this)" style="display:none">\u{1F4F8} Snap a photo</label></div>';
+  h+='<label style="padding:4px 10px;border-radius:999px;border:1.5px solid #a7f3d0;background:#f0fdf4;color:#15803d;font-size:11px;font-weight:700;cursor:pointer"><input type="file" accept="image/*,application/pdf,.pdf" multiple onchange="ubPhoto('+(di==null?"null":di)+',\''+kind+'\',this)" style="display:none">\u{1F4F8} Photo or \u{1F4C4} PDF</label></div>';
   L.forEach(x=>{ const id="'"+ubJ(x.id)+"'";
     h+='<div data-ub-item="'+ubEsc(x.id)+'" style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding:5px 0;border-top:1px solid #f3f4f6;font-size:12px">';
     if(kind==="cards") h+='<input value="'+ubEsc(x.front)+'" placeholder="front" oninput="ubEdit('+a+','+id+',\'front\',this.value)" style="'+UB_INP+';flex:1 1 120px;width:auto"><input value="'+ubEsc(x.back)+'" placeholder="back" oninput="ubEdit('+a+','+id+',\'back\',this.value)" style="'+UB_INP+';flex:2 1 160px;width:auto">';
@@ -40097,7 +40128,7 @@ function ubNameHTML(f){
 function ubFillHTML(f){
   let h='';
   if(f.mode==="days"){
-    h+='<div style="font-size:11.5px;color:var(--muted)">Each day gets a title and its own four boxes. Type a line per item, paste a list, or snap a photo of your notes and Claude drafts the lines.</div>';
+    h+='<div style="font-size:11.5px;color:var(--muted)">Each day gets a title and its own four boxes. Type a line per item, paste a list in any shape (from ChatGPT, a document, anywhere), or add a photo, screenshot or PDF \u2014 Claude drafts the lines for you to check.</div>';
     f.days.forEach((d,di)=>{ h+='<div data-ub-day="'+(di+1)+'" style="border:1.5px solid var(--border);border-radius:12px;padding:10px 12px;margin-top:10px;background:#faf8f5">';
       h+='<div style="display:flex;gap:8px;align-items:center"><span style="font-size:13px;font-weight:800;color:#1f2937;white-space:nowrap">Day '+(di+1)+'</span><input value="'+ubEsc(d.t)+'" placeholder="What this day is about" oninput="ubDayTitle('+di+',this.value)" style="'+UB_INP+';flex:1;width:auto"></div>';
       UB_BOXES.forEach(b=>{ h+=ubBoxHTML(di,b[0]); }); h+=ubCraftBoxHTML(di); h+='</div>'; });   // CRAFT (B3): the fifth box
@@ -40107,7 +40138,7 @@ function ubFillHTML(f){
     UB_BOXES.forEach(b=>{ h+=ubBoxHTML(null,b[0]); });
     h+='<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px"><div>'+ubLab("How many days")+'<input type="number" min="1" max="60" value="'+f.nDays+'" onchange="ubSet(\'nDays\',this.value)" style="'+UB_INP+';width:80px"></div><div>'+ubLab("Days a week")+'<input type="number" min="1" max="5" value="'+f.perWeek+'" onchange="ubSet(\'perWeek\',this.value)" style="'+UB_INP+';width:80px"></div></div>';
   }
-  if(f.busy) h+='<div style="font-size:12px;font-weight:700;color:#15803d;margin-top:8px">\u23F3 Reading the photo\u2026</div>';
+  if(f.busy) h+='<div style="font-size:12px;font-weight:700;color:#15803d;margin-top:8px">\u23F3 Claude is reading it\u2026</div>';
   h+='<div style="display:flex;gap:8px;margin-top:14px">'+ubBtn(false,"\u2039 Back","ubGo('name')")+(f.mode==="boxes"?ubBtn(false,"Spread over the days \u203A","ubGo('days')",true):ubBtn(false,"Check the cards \u203A","ubGo('check')",true))+'</div>';
   return h;
 }
