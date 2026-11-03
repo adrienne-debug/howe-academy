@@ -853,13 +853,20 @@
   // The week's number list: `dayCount` new numbers from `start` (on to 100), then any bank number
   // flagged for 🔁 review. Returns a copy — the cover/parent pages and a caller-supplied
   // ctx.curriculum are never mutated. Past 100 (or no Numbers deck) → the list is left alone.
-  function juNumbersWeek(cur, start, dayCount) {
+  // JU_NUMPICK (her 2026-11-03: "I am not able to click the numbers … and adjust them to a different
+  // number"): since the list is only this week's five, a number Mom picks on the planner has to be
+  // added to it, or the slot can't resolve to it. `overrides` = ctx.juPicks for this week.
+  function juNumbersWeek(cur, start, dayCount, overrides) {
     if (!cur || cur.numbersFront == null || start == null || !(start >= 1) || start > 100) return cur;
     var list = [];
     for (var v = start; v <= 100 && list.length < Math.max(1, dayCount || 5); v++) list.push(String(v));
     Object.keys((cur.flag && cur.flag.numbers) || {}).forEach(function (p) { if (list.indexOf(p) < 0) list.push(p); });   // missed ones, for 🔁 review
+    var ovN = (overrides && overrides.numbers) || {};
+    Object.keys(ovN).forEach(function (d) { var p = ovN[d]; if (p != null && p !== "" && list.indexOf(String(p)) < 0) list.push(String(p)); });   // JU_NUMPICK: Mom's pick joins the list
     return Object.assign({}, cur, { numbers: list, numbersFromFront: true });
   }
+  // JU_NUMPICK: what the planner's Numbers chooser offers — every numeral 1–100, not just this week's.
+  function juNumberChoices() { var out = []; for (var v = 1; v <= 100; v++) out.push(String(v)); return out; }
   // The Number-of-the-Day count graphic + its label, shared by Julian's and Caleb's daily pages.
   // 1–20: ten-frames of the kid's counting picture (one frame, or two for 11–20 — "10 and some
   // more"). 21–100 (her ask 2026-10-12, numbers to 100): a child learns those numerals as tens and
@@ -993,7 +1000,7 @@
     var wk = parseInt(String(ctx.weekNum || "").replace(/\D/g, ""), 10) || 1;
     var dayCount = Object.keys((ctx.weekData && ctx.weekData.dates) || {}).length || 5;
     var cap = (ctx.reviewCap == null) ? JU_REVIEW_CAP : Math.max(0, Math.min(5, parseInt(ctx.reviewCap, 10) || 0));
-    cur = juNumbersWeek(cur, juNumberStart(ctx.numberCursor, wk, cur.numbersFront), dayCount);   // JU_NUMBERS_AHEAD: same list as the print, so the planner matches the pages
+    cur = juNumbersWeek(cur, juNumberStart(ctx.numberCursor, wk, cur.numbersFront), dayCount, ctx.juPicks);   // JU_NUMBERS_AHEAD: same list as the print, so the planner matches the pages
     var picks = juWeekPicks(wk, cur, dayCount, cap, ctx.juPicks, juLetterStart(ctx.letterCursor, wk, cur.letters.length));
     var subjects = ["letters", "numbers", "shapes", "colors", "animals"];
     var out = { weekNum: wk, dayCount: dayCount, subjects: {} };
@@ -1002,8 +1009,9 @@
       var flagSet = (cur.flag && cur.flag[sub]) || {};
       var scoreMap = (cur.flagScore && cur.flagScore[sub]) || {};
       var promptOf = function (v) { return Array.isArray(v) ? v[0] : v; };
+      var choices = (sub === "numbers" && cur.numbersFromFront) ? juNumberChoices() : list;   // JU_NUMPICK
       out.subjects[sub] = {
-        items: list.map(function (v) {
+        items: choices.map(function (v) {
           var p = promptOf(v);
           return { prompt: p, swatch: (Array.isArray(v) ? v[1] : null), flagged: !!flagSet[p], score: scoreMap[p] || 0 };
         }),
@@ -1407,7 +1415,7 @@
     var wkInt = parseInt(weekNum, 10) || 0;
     var letterStart = juLetterStart(ctx.letterCursor, wkInt || 1, cur.letters.length);
     var numStart = juNumberStart(ctx.numberCursor, wkInt || 1, cur.numbersFront);
-    var curWk = juNumbersWeek(cur, numStart, days.length);
+    var curWk = juNumbersWeek(cur, numStart, days.length, ctx.juPicks);   // JU_NUMPICK
     var picks = juWeekPicks(weekNum, curWk, days.length, reviewCap, ctx.juPicks, letterStart);
     var curCover = cur;
     if (curWk.numbersFromFront) {
