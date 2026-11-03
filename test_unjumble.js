@@ -38,7 +38,7 @@ const UNIT=["one","two","three"].map((f,i)=>C("Unit",f,{sentence:["The sun is a 
 function world(items,o){
   o=o||{};
   const writes=[], said=[], dings=[], timers=[];
-  const CODE=cut("// WHICHONE_START","// WHICHONE_END")+"\n"+cut("// GAMELOG_START","// GAMELOG_END")+"\n"+cut("// GAMEGRID_START","// GAMEGRID_END")+"\n"+cut("// UNJUMBLE_START","// UNJUMBLE_END")+"\n"+fnText("dcLevel");
+  const CODE=cut("// WHICHONE_START","// WHICHONE_END")+"\n"+cut("// GAMELOG_START","// GAMELOG_END")+"\n"+cut("// GAMEGRID_START","// GAMEGRID_END")+"\n"+cut("// GAMERULES_START","// GAMERULES_END")+"\n"+cut("// UNJUMBLE_START","// UNJUMBLE_END")+"\n"+fnText("dcLevel");
   const ctx={console,JSON,Object,Array,String,Number,Math,Set,Map,RegExp,Date,parseInt,isNaN,isFinite,setTimeout:(f,ms)=>{ timers.push({f,ms}); return timers.length; },
     document:{getElementById:()=>o.celeb?{}:null},
     _dryRun:()=>!!o.dry,HA_LS:{setItem(){}},_mastRe(){ ctx.renders=(ctx.renders||0)+1; },bbAudioUnlock(){},momHere:()=>true,renderAll(){},
@@ -152,6 +152,24 @@ console.log("── a silent language, resume (GAMEKID → GAMEKIT) ──");
   rc.jumbleResume(); ok("resume with nothing mid-step changes nothing",st.i===i1&&!st.lock);
   const v=world(ARTICLES,{view:"which"}); v.c.jumbleStart("Articles"); solve(v);
   ok("not on screen → no speech",v.said.length===0);
+}
+console.log("── 📜 GAMERULES: 'Show the sentence after…' — 2 misses (default, as above) / 3 misses / never ──");
+{ const w=world(ARTICLES.concat(CAPS)), c=w.c;
+  ok("the rule sits in the registry under the game's key 'jumble', default 2 (today), options 2 / 3 / never; the pop-up lists it",c.gameRuleDefs("jumble").length===1&&c.gameRuleDefs("jumble")[0].def==="2"&&c.gameRuleDefs("jumble")[0].opts.map(o=>o[0]).join()==="2,3,never"&&c.gameRule("k","jumble","reveal")==="2"&&/Show the sentence after/.test(c.gameRulesHtml("k","jumble")));
+  ok("the UNJUMBLE block reads it through one guarded gameRule() call",/gameRule\(kid,"jumble","reveal"\)/.test(fnText("ujRule"))&&/t\.limit=R\.limit/.test(fnText("jumbleCheck")));
+}
+{ const w=world(ARTICLES.concat(CAPS),{settings:{gameRules:{jumble:{reveal:"3"}}}}), c=w.c;
+  c.jumbleStart("Articles"); const st=c.jumbleState, t=st.turns[0];
+  solve(w,true); solve(w,true);
+  ok("'3 misses': the second miss is still a try — locks, no show, no fail",t.tries===2&&!t.done&&!t.show&&!t.fail);
+  solve(w,true);
+  ok("the third miss fails: the sentence shows for the long beat, the card comes back once",t.fail&&t.show&&/Here\u2019s how it goes/.test(c.buildJumbleHtml("#000"))&&st.turns.length===5&&st.turns[4].back&&w.timers.slice(-1)[0].ms===2600);
+}
+{ const w=world(ARTICLES.concat(CAPS),{settings:{gameRules:{jumble:{reveal:"never"}}}}), c=w.c;
+  c.jumbleStart("Articles"); const st=c.jumbleState, t=st.turns[0];
+  solve(w,true); solve(w,true);
+  ok("'never': two misses end the card WITHOUT the sentence — 'We'll come back to that one', the short beat, the card back once at the end",t.fail&&t.done&&!t.show&&t.line.some(wi=>wi==null)&&/come back to that one/.test(c.buildJumbleHtml("#000"))&&!/Here\u2019s how it goes/.test(c.buildJumbleHtml("#000"))&&!/uj-show"/.test(c.buildJumbleHtml("#000"))&&st.turns.length===5&&st.turns[4].back&&w.timers.slice(-1)[0].ms===900);   // uj-show" = a tile carrying the class (the stylesheet names it too)
+  w.flush(); ok("…and the round goes on",st.i===1&&!st.lock);
 }
 console.log("\n"+pass+" passed, "+fail+" failed");
 process.exit(fail?1:0);

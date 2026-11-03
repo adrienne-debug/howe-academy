@@ -80301,7 +80301,11 @@ const GAME_RULES={
     ["all","All spelling words","Every spelling word in play. Learning words still come first, then the ones missed most recently."]]}],
   jeop:[{key:"wager",label:"Daily double — say how sure you are before answering?",def:"off",opts:[   // 🎰 JPWAGER
     ["off","Off","A square opens straight to its card — today’s rule."],
-    ["on","On","Once the card is open: 👍 Sure or 🤷 Not sure. A sure miss gets a louder “look again” and comes back first at the end."]]}]
+    ["on","On","Once the card is open: 👍 Sure or 🤷 Not sure. A sure miss gets a louder “look again” and comes back first at the end."]]}],
+  jumble:[{key:"reveal",label:"Show the sentence after…",def:"2",opts:[   // 🧩 UNJUMBLE (her word 2026-11-03: "keep it but add a setting to adjust times or never")
+    ["2","2 misses","The second miss shows the sentence for a beat — today’s rule."],
+    ["3","3 misses","A third try first; the third miss shows it."],
+    ["never","Never","The sentence is never shown — after two misses the card just comes back once at the end, like the other games."]]}]
 };
 let gameRulesUI=null;   // {kid, game} while the pop-up is open (this device)
 function _grE(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -81266,24 +81270,28 @@ function ujJudge(t){
   if(okAt.every(Boolean)){ t.done=true; t.first=t.tries===0; return "right"; }
   t.tries++; t.wrong[String(t.tries)]=1;
   okAt.forEach((o,p)=>{ if(o) t.locked[p]=1; else t.line[p]=null; });
-  if(t.tries>=UJ_TRIES){ t.done=true; t.first=false; t.fail=true; return "fail"; }
+  if(t.tries>=(t.limit||UJ_TRIES)){ t.done=true; t.first=false; t.fail=true; return "fail"; }   // 📜 GAMERULES jumble.reveal: "3 misses" gives a third try
   return "again";
 }
 function ujText(t){ return t.words.join(" "); }
+// 📜 GAMERULES: Mom's "Show the sentence after…" rule for this kid (the games grid's pop-up) — {limit: misses before the card ends, show: reveal it then}.
+// Default "2" = today; "3" = one more try; "never" = no reveal, the card just comes back once at the end like the other games.
+function ujRule(kid){ const v=(typeof gameRule==="function")?gameRule(kid,"jumble","reveal"):null; return {limit:v==="3"?3:UJ_TRIES,show:v!=="never"}; }
 function _ujSay(st,t){ try{ const it=_ujItems(st.kid).find(x=>x&&x.id===t.pid); if(typeof whichSilent==="function"&&whichSilent(it)) return; if(typeof mastView==="undefined"||mastView==="jumble") mastSpeak(ujText(t)); }catch(e){} }
 function jumbleCheck(){
   const st=jumbleState, t=_ujCur(st); if(!t||t.done) return;
+  const R=ujRule(st.kid); t.limit=R.limit;   // 📜 GAMERULES jumble.reveal
   const r=ujJudge(t); if(!r) return;
   if(r==="again"){ try{ matchBonk(); }catch(e){} st.msg="again"; _mastRe(); return; }
   if(r==="right"){ if(!t.back&&t.first) st.first++; try{ matchDing(); }catch(e){} st.msg="right"; _ujSay(st,t); }
   else {
     try{ matchBonk(); }catch(e){}
-    st.msg="show"; t.show=true; t.line=t.words.map((w,p)=>p);   // "Here's how it goes" — the card's own face, for a beat
+    if(R.show){ st.msg="show"; t.show=true; t.line=t.words.map((w,p)=>p); } else st.msg="back";   // "Here's how it goes" — the card's own face, for a beat; 📜 GAMERULES "never": no reveal, it just comes back
     if(!t.back&&!st.returned[t.pid]){ st.returned[t.pid]=1; st.turns.push(ujTurn(t.pid,ujText(t),true)); }   // back once, at the end
   }
   st.lock=true; const seq=++st.seq;
   _mastRe();
-  setTimeout(()=>{ if(jumbleState===st&&st.lock&&st.seq===seq) jumbleNext(st); },r==="fail"?UJ_BEAT_SHOW:UJ_BEAT);   // GAMEKID: never advances a parked / settled turn
+  setTimeout(()=>{ if(jumbleState===st&&st.lock&&st.seq===seq) jumbleNext(st); },(r==="fail"&&t.show)?UJ_BEAT_SHOW:UJ_BEAT);   // GAMEKID: never advances a parked / settled turn
 }
 function _ujStep(st){ st.lock=false; st.msg=""; st.i++; if(st.i>=st.turns.length) jumbleFinish(st); }
 function jumbleNext(st){ st=st||jumbleState; if(!st||st!==jumbleState) return; _ujStep(st); _mastRe(); }
@@ -81335,7 +81343,7 @@ function buildJumbleHtml(color){
       '<button onclick="jumbleChangeDeck()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{1F5C2} Change deck</button></span></div>';
     const m=st.msg;
     h+='<div style="text-align:center;font-size:17px;font-weight:800;color:'+(m==="right"?'#16a34a':m==="show"?'#b45309':'#57534e')+';margin:6px 0 4px">'+
-      (m==="right"?'\u{2705} That\u2019s it!':m==="show"?'Here\u2019s how it goes \u{2014} we\u2019ll try it again later':m==="again"?'Almost \u{2014} the green ones are right. Try again!':t.back?'One more time \u{2014} put it in order':'Put the words in order')+'</div>';
+      (m==="right"?'\u{2705} That\u2019s it!':m==="show"?'Here\u2019s how it goes \u{2014} we\u2019ll try it again later':m==="back"?'We\u2019ll come back to that one':m==="again"?'Almost \u{2014} the green ones are right. Try again!':t.back?'One more time \u{2014} put it in order':'Put the words in order')+'</div>';
     h+='<div class="uj-line" aria-label="Your sentence">';
     t.line.forEach((wi,p)=>{ if(wi==null) h+='<span class="uj-slot" aria-label="Empty slot"></span>'; else h+='<button class="uj-tile'+(t.locked[p]?' uj-lock':'')+(t.show?' uj-show':'')+'"'+(t.locked[p]||st.lock?' disabled':' onclick="jumbleUntap('+p+')"')+' aria-label="Word '+(p+1)+'">'+esc(t.words[wi])+'</button>'; });
     h+='</div><div class="uj-tray">';
