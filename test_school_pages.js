@@ -69,7 +69,7 @@ console.log("── the History kid row ──");
 console.log("── the Admin hub's links follow her to the School pages ──");
 { const w=world({view:"sset"});
   ok("on a Mom's Day page: setAdminSub('curriculum') lands on School ▸ Curriculum (mpAdminRoute)", w.api.mpAdminRoute("curriculum")===true&&w.st.mpSubView==="curr");
-  ok("…settings / rules / purchases / mastery too; chores and hq not yet (slice B)", ["settings","rules","purchases","mastery"].every(s=>w.api.mpAdminRoute(s)===true)&&w.api.mpAdminRoute("chores")===false&&w.api.mpAdminRoute("hq")===false);
+  ok("…settings / rules / purchases / mastery too (chores / hq / generate since MPGROUPS)", ["settings","rules","purchases","mastery"].every(s=>w.api.mpAdminRoute(s)===true)&&w.api.mpAdminRoute("chores")===true&&w.st.mpSubView==="chores"&&w.api.mpAdminRoute("hq")===true&&w.st.mpSubView==="hq"&&w.api.mpAdminRoute("generate")===true&&w.st.mpSubView==="gen"&&w.api.mpAdminRoute("nope")===false);
   ok("on the Schedule (or inside ▸ Schedule, MSV) it stays out of the way", world({tab:"schedule"}).api.mpAdminRoute("curriculum")===false&&world({msv:true,tab:"schedule"}).api.mpAdminRoute("curriculum")===false);
   ok("setAdminSub asks it first (after the calendar redirect)", /function setAdminSub\(s\)\{ if\(s==="calendar"[^\n]*\n  if\(typeof mpAdminRoute==="function"&&mpAdminRoute\(s\)\) return;/.test(src)); }
 

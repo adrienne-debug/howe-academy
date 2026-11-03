@@ -139,7 +139,7 @@ console.log("Views and wiring");
   c.hhGo("today"); c.renderHousehold(el);
   ok("Today: morning ticks come from the morning key (Julian's Brush Teeth ✅)", /Julian[\s\S]*✅<\/span><span>🦷<\/span><span style="flex:1">Brush Teeth/.test(el.innerHTML));
   ok("Today: Lucy's Monday list with the done tick and Mom's due chores", /Let Chloe out/.test(el.innerHTML)&&/✅/.test(el.innerHTML)&&/Take sheets off beds/.test(el.innerHTML)&&/Wash the sheets/.test(el.innerHTML)&&!/shower/.test(el.innerHTML.split("Lucy")[1].split("Julian")[0]), el.innerHTML.slice(0,200));
-  ok("sub-nav chip + dispatch + listener", /btn\('house','🧹 Household'\)/.test(src)&&/if\(mpSubView==='house'\)\{ return renderHousehold\(el\); \}/.test(src)&&/db\.ref\("household"\)\.on\("value"/.test(src));
+  ok("sub-nav chip + dispatch + listener (MPGROUPS 2026-11-02: the Household tab carries a sub-row, so it is drawn by tbtn)", /tbtn\(house,"mpGoto\('house'\)",'🧹 Household'\)/.test(src)&&/if\(mpSubView==='house'\)\{ return renderHousehold\(el\); \}/.test(src)&&/db\.ref\("household"\)\.on\("value"/.test(src));
   ok("the block writes only under household/", !/db\.ref\("(config|momChores|dadChores|week|routineLog|bank|laundry)/.test(BLOCK)&&!/\.set\(routineCfg2\)/.test(BLOCK));
   ok("rtStepsFor itself untouched", /if\(raw\) return steps;\s*\/\/ editor\/config seeding must NEVER see a rotated label\n\s*const _r=rtApplyRot\(slot,kid,steps,dayName\);\n\s*return \(typeof llRtSteps==="function"\)\?llRtSteps\(slot,kid,_r,dayName\):_r;[^\n]*\n\}/.test(src)   /* untouched but for 🧺 LINE_CHORES (her ask 2026-10-18): the line's rows appended, raw untouched */);
   ok("no 🔀 in index.html", src.indexOf("🔀")<0);
