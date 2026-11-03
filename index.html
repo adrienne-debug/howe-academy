@@ -78928,6 +78928,107 @@ function buildSortHtml(color){
   return h+'</div></div>';
 }
 // SORTIT_END
+// TMAP_START — 🗺 Treasure map per deck (her "yes to all and go to all" 2026-11-03 to games-later_design_2026-11-03.md #1;
+// PLAN_practice_games_2026-10-23.md §4.5 / §5 #7: "progression skin per deck, not badges … levels are the one gamification element
+// with K-12 evidence"). A PICTURE OF THE LADDER, nothing more: on the kid's Study start card, and again on the "Nice work!" card
+// after a save, one map per deck in that session — a path whose stops are the kid's own ladder rungs (Daily → … → Monthly →
+// Graduated 🏆), a count of cards at each stop, and a ship ⛵ at the deck's AVERAGE rung. Only a card climbing or dropping a rung
+// in drills / study moves the ship; games, spins and points never do (games never move cards up — plan §4.3). The plan said
+// mastery %, but that moves only when a card crosses Monthly, weeks apart; the average rung moves on every climb and is as honest.
+//   · Stops: the kid's ladder (mastDrillSettings().ladder), with Daily in front when the ladder starts higher (the harbor where a
+//     placed card may still sit). A tier off the ladder maps to the nearest rung below it (the ETA rule, _unitKidLadderCfg).
+//   · Cards: the deck's on-ladder cards exactly as mastDeckMastery counts them — not introduction, not parked, not never-drill.
+//   · "⛵ <deck> moved ahead!" on the Nice work! card: the start card remembers each deck's ship (this device, this kid + session,
+//     in memory only) and the finish compares. A deck that slipped gets no line — the map already shows where it stands.
+//   · NO writes, no db, no points, no currency, no best, no sounds. Nothing while a sitting is running (the card stays compact).
+//   · Two guarded lines in renderMastStudy (tmapStudyHtml on the orange card, tmapMovedHtml on the Nice work! card). No kid names.
+const TMAP_LBL={daily:"Daily",every_other_day:"Every other",every_third_day:"Every 3rd",weekly:"Weekly",bi_weekly:"2 weeks",monthly:"Monthly",learned:"Learned",graduated:"Treasure"};
+const TMAP_DEFAULT_LADDER=["every_other_day","weekly","bi_weekly","monthly","graduated"];
+const tmapSnap={};   // kid|sid → {deck: ship fraction} as the start card last drew it (this device, in memory)
+function _tmapOrder(){ return (typeof MAST_TIER_ORDER!=="undefined"&&Array.isArray(MAST_TIER_ORDER))?MAST_TIER_ORDER:["daily","every_other_day","every_third_day","weekly","bi_weekly","monthly","learned","graduated"]; }
+function _tmapEsc(s){ return (typeof esc==="function")?esc(s):String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+// PURE: the stops of a kid's path — their ladder, Daily first when the ladder starts above it; only tiers the app knows, in ladder order
+function tmapStops(ladder){
+  const order=_tmapOrder();
+  let l=(Array.isArray(ladder)&&ladder.length?ladder:TMAP_DEFAULT_LADDER).filter(t=>order.indexOf(t)>=0);
+  if(!l.length) l=TMAP_DEFAULT_LADDER.slice();
+  l=l.slice().sort((a,b)=>order.indexOf(a)-order.indexOf(b)).filter((t,i,arr)=>arr.indexOf(t)===i);
+  if(l[0]!=="daily") l.unshift("daily");
+  return l;
+}
+// PURE: which stop a tier sits at — the highest stop at or below it (a tier below the first stop sits at the first)
+function tmapRung(tier,stops){
+  const order=_tmapOrder(), tp=order.indexOf(tier||"daily");
+  let idx=0;
+  for(let k=0;k<stops.length;k++){ if(order.indexOf(stops[k])<=tp) idx=k; }
+  return idx;
+}
+function _tmapOnLadder(i){
+  if(!i||i.status==="introduction"||i.status==="parked") return false;
+  if(typeof mastIsNeverDrill==="function"&&mastIsNeverDrill(i)) return false;
+  return true;
+}
+// PURE: one deck's map — the count at each stop, how many cards, the ship's average rung and its fraction along the path (0 = harbor, 1 = treasure)
+function tmapDeck(items,deck,stops){
+  if(!Array.isArray(items)) items=Object.values(items||{});
+  const counts=stops.map(()=>0); let n=0, sum=0;
+  items.forEach(i=>{ if(!_tmapOnLadder(i)||(i.subject||"Other")!==deck) return; const r=tmapRung(i.tier,stops); counts[r]++; n++; sum+=r; });
+  const avg=n?sum/n:0, last=Math.max(1,stops.length-1);
+  return {deck:deck,counts:counts,n:n,avg:avg,frac:n?avg/last:0,treasure:n?counts[stops.length-1]:0};
+}
+// PURE: the decks a session's map shows — its own decks; the Daily Mix shows the decks of the kid's deck sessions (it owns their middle rungs)
+function tmapDecksFor(session,sessions){
+  if(!session) return [];
+  if(session.kind==="mix"){ const o={}; (sessions||[]).forEach(s=>{ if(s&&(s.kind==="deck"||s.kind==="all")) (s.decks||[]).forEach(d=>{ o[d]=1; }); }); return Object.keys(o).sort(); }
+  if(session.kind==="checkup") return [];
+  return (session.decks||[]).slice();
+}
+function tmapLadder(){ try{ const s=(typeof mastDrillSettings==="function")?mastDrillSettings():null; if(s&&Array.isArray(s.ladder)&&s.ladder.length) return s.ladder; }catch(e){} return TMAP_DEFAULT_LADDER; }
+function _tmapItems(kid){ if(typeof _gamesItems==="function") return _gamesItems(kid); let it=(typeof masteryData!=="undefined"&&masteryData&&masteryData[kid])||[]; if(!Array.isArray(it)) it=Object.values(it); return it; }
+function _tmapSessions(kid){ try{ return (typeof mstSessions==="function"&&mstSessions(kid))||[]; }catch(e){ return []; } }
+// Every deck map for a kid + session (decks with no on-ladder card are left out — nothing to sail yet)
+function tmapMaps(kid,session){
+  const stops=tmapStops(tmapLadder()), items=_tmapItems(kid);
+  return {stops:stops,maps:tmapDecksFor(session,_tmapSessions(kid)).map(d=>tmapDeck(items,d,stops)).filter(m=>m.n>0)};
+}
+const TMAP_CSS='<style>.tmap-row{display:flex;align-items:center;gap:10px;margin-top:8px}.tmap-name{flex:0 0 92px;font-size:12px;font-weight:800;color:#57534e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}'+
+  '.tmap-track{flex:1;position:relative;padding-top:24px;min-width:0}.tmap-line{position:absolute;top:35px;height:4px;border-radius:2px;background:#e7e5e4}'+
+  '.tmap-ship{position:absolute;top:0;font-size:22px;line-height:1;transform:translateX(-50%);transition:left .6s ease;pointer-events:none}'+
+  '.tmap-stops{display:grid;position:relative}.tmap-stop{display:flex;flex-direction:column;align-items:center;min-width:0}'+
+  '.tmap-dot{width:26px;height:26px;border-radius:50%;border:2px solid #e7e5e4;background:#fff;font-size:11px;font-weight:800;color:#78716c;display:flex;align-items:center;justify-content:center;font-family:\'DM Sans\',sans-serif}'+
+  '.tmap-dot.tmap-has{color:#fff;border-color:transparent}.tmap-dot.tmap-chest{border-color:#f59e0b;background:#fffbeb;color:#b45309;font-size:14px}'+
+  '.tmap-lbl{font-size:9px;font-weight:700;color:#a8a29e;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}</style>';
+function _tmapRowHtml(m,stops){
+  const n=stops.length, col=(typeof MAST_TIER_COL!=="undefined"&&MAST_TIER_COL)||{};
+  const left=((m.avg+0.5)/n*100).toFixed(1);
+  let h='<div class="tmap-row"><div class="tmap-name" title="'+_tmapEsc(m.deck)+'">'+_tmapEsc(m.deck)+'</div><div class="tmap-track">';
+  h+='<div class="tmap-line" style="left:'+(50/n).toFixed(1)+'%;right:'+(50/n).toFixed(1)+'%"></div>';
+  h+='<div class="tmap-ship" style="left:'+left+'%" aria-label="'+m.n+' cards, on the way to the treasure">⛵</div>';
+  h+='<div class="tmap-stops" style="grid-template-columns:repeat('+n+',1fr)">';
+  stops.forEach((t,k)=>{ const c=m.counts[k], last=k===n-1;
+    const cls='tmap-dot'+(last?' tmap-chest':(c?' tmap-has':'')), bg=(!last&&c&&col[t])?' style="background:'+col[t]+'"':'';
+    h+='<div class="tmap-stop"><div class="'+cls+'"'+bg+'>'+(last?(c?c+'\u{1F3C6}':'\u{1F3C6}'):(c||'·'))+'</div><div class="tmap-lbl">'+_tmapEsc(TMAP_LBL[t]||t)+'</div></div>'; });
+  return h+'</div></div></div>';
+}
+// The maps on the orange Study card. phase: "start" (remember each ship), "done" (draw as they stand now), anything else → nothing.
+function tmapStudyHtml(kid,session,phase){
+  if(!kid||!session||(phase!=="start"&&phase!=="done")) return "";
+  const r=tmapMaps(kid,session); if(!r.maps.length) return "";
+  if(phase==="start"){ const snap={}; r.maps.forEach(m=>{ snap[m.deck]=m.frac; }); tmapSnap[kid+"|"+session.sid]=snap; }
+  let h=TMAP_CSS+'<div style="margin-top:12px;padding-top:10px;border-top:1.5px dashed #fed7aa"><div style="font-size:11px;font-weight:800;color:#c2410c;letter-spacing:.04em;text-transform:uppercase">\u{1F5FA} Treasure map</div>';
+  r.maps.forEach(m=>{ h+=_tmapRowHtml(m,r.stops); });
+  return h+'</div>';
+}
+// The "moved ahead" line on the Nice work! card — only decks whose ship is further along than the start card remembered
+function tmapMoved(kid,session){
+  const snap=tmapSnap[kid+"|"+(session&&session.sid)]; if(!snap) return [];
+  return tmapMaps(kid,session).maps.filter(m=>snap[m.deck]!=null&&m.frac>snap[m.deck]+0.0005).map(m=>m.deck);
+}
+function tmapMovedHtml(kid,session){
+  const moved=tmapMoved(kid,session); if(!moved.length) return "";
+  return '<div style="margin-top:10px;font-size:14px;font-weight:800;color:#c2410c">'+moved.map(d=>'⛵ '+_tmapEsc(d)+' moved ahead!').join('<br>')+'</div>';
+}
+// TMAP_END
 // MOLE_START — 🐹 "Whack-a-mole" (her "yes to all and go to all" 2026-11-03 to games-later_design_2026-11-03.md #2; PLAN_practice_games_2026-10-23.md
 // Tier 3 "Whack-a-mole / Find the match": "prompt at top; answers pop; tap only the right one, ignore wrong ones; Wordwall's most-loved
 // template at ages 9–10"; demand REC + inhibition + fluency). The one game here with a clock, so it keeps plan rule 5 — "time only what is
@@ -79982,6 +80083,7 @@ function renderMastStudy(opts){
     ? ((pile.reviews||[]).length+' due')
     : ((pile.newNames||[]).length+' new · '+(pile.reviews||[]).length+' due · '+(pile.learning||[]).length+' learning'))+'</div>';
   if(typeof mstSentBackPending==="function"&&mstSentBackPending(kid,session.sid)) h+='<div style="margin-top:10px;padding:10px 12px;background:#fffbeb;border:2px solid #f59e0b;border-radius:12px;font-size:14px;font-weight:800;color:#b45309">\u21A9\uFE0F Mom sent this back. Do it again \u2014 slowly. Read every card before you flip it.</div>';   // ↩ MSTALERT
+  if(typeof tmapStudyHtml==="function") h+=tmapStudyHtml(kid,session,(mstState&&mstSid===session.sid)?"run":(mstDone?"done":"start"));   // 🗺 TMAP: one map per deck — before the sitting and after the save, never during
   if(todayLog) h+='<div style="margin-top:8px;font-size:13px;color:#16a34a;font-weight:700">Done today: '+(todayLog.total||0)+' cards'+(todayLog.miss?', '+todayLog.miss+' again':'')+'</div>';
   if(typeof envRaStartHtml==="function") h+=envRaStartHtml(kid,session);   // 🔊 ENVREADALOUD: the kid's switch, the 🌿 session only
   h+='</div>';
@@ -80023,6 +80125,7 @@ function renderMastStudy(opts){
     h+='<div style="background:#fff7ed;border:2px solid #fed7aa;border-radius:20px;padding:24px;text-align:center;font-family:\'DM Sans\',sans-serif">';
     h+='<div style="font-size:32px;margin-bottom:8px">\u{1F389}</div><div style="font-size:17px;font-weight:800;color:#16a34a;margin-bottom:6px">Nice work!</div>';
     h+='<div style="font-size:14px;color:var(--muted);font-weight:600">'+mstDone.total+' cards · '+mstDone.correct+' good · '+mstDone.miss+' again</div>';
+    if(typeof tmapMovedHtml==="function") h+=tmapMovedHtml(kid,session);   // 🗺 TMAP: "⛵ <deck> moved ahead!" for a deck whose ship sailed on this sitting
     { const _mx=(session.kind==="mix"&&pile&&pile.mixLeft>0)?pile.mixLeft:0;   // MIX_FINISH: the rest of the backlog, if he wants it
       if(_mx) h+='<div style="margin-top:12px"><button onclick="mstStart()" style="min-height:48px;padding:0 24px;border-radius:14px;border:1.5px solid #7c3aed;background:#fff;color:#6d28d9;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Keep going · '+_mx+' left</button><div style="font-size:11.5px;color:var(--muted);margin-top:6px">Today\'s Mix is done \u2713 \u2014 this is extra, and every card counts.</div></div>'; }
     if(typeof cpReviewMoreHtml==="function") h+=cpReviewMoreHtml(session,pile,"done");   // 🔁 CPREVIEW: Keep going · N left after a capped 🌿 sitting
