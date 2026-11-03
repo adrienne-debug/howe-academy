@@ -70279,10 +70279,10 @@ function gameLogEntry(st,now){
   if(!st||st.phase!=="done"||!Array.isArray(st.turns)) return null;
   const items=[];
   st.turns.forEach(t=>{ if(!t||!t.done||t.pid==null) return;
-    const o={id:String(t.pid),ok:!!t.first,n:Object.keys(t.wrong||{}).length+1}; if(t.back) o.back=true; items.push(o); });
+    const o={id:String(t.pid),ok:!!t.first,n:Object.keys(t.wrong||{}).length+1}; if(t.back) o.back=true; if(t.fail) o.fail=true; items.push(o); });   // 🔤 SPELLBUILD: fail = never built right
   if(!items.length) return null;
   now=now!=null?now:Date.now();
-  const e={game:"which",deck:String(st.deck||""),at:now,items:items};
+  const e={game:st.game||"which",deck:String(st.deck||""),at:now,items:items};   // 🔤 SPELLBUILD: each game names itself
   if(st.t0) e.secs=Math.max(0,Math.round((now-st.t0)/1000));
   return e;
 }
@@ -70345,7 +70345,7 @@ function mpKey(kid,it){ const v=_mpMD()[kid]; if(Array.isArray(v)){ const ix=v.i
 function mpHeld(kid,it){ return !!(it&&it.gp&&it.gp.on===true&&mpOn(kid)); }
 function mpDayNum(kid){ try{ if(typeof mastSchoolDayNum==="function") return mastSchoolDayNum(kid); }catch(e){} return Math.floor(Date.now()/86400000); }   // right days = the kid's school days
 function mpDayKey(){ try{ if(typeof gameLogDay==="function") return gameLogDay(); }catch(e){} return new Date().toISOString().slice(0,10).replace(/-/g,""); }
-function _mpPool(kid,items){ try{ return whichPool(items,WHICH_MIX,kid); }catch(e){ return []; } }
+function _mpPool(kid,items){ try{ const w=whichPool(items,WHICH_MIX,kid); return (typeof spellPlayable==="function")?w.concat((items||[]).filter(i=>spellPlayable(i)&&w.indexOf(i)<0)):w; }catch(e){ return []; } }   // 🔤 SPELLBUILD: spelling cards play Build it
 function _mpModes(kid,items){ try{ return whichDeckModes(items,kid); }catch(e){ return {}; } }
 // how often a card was missed or close in its recent drills (who practices first)
 function mpMissCount(kid,id,days){
@@ -70435,13 +70435,34 @@ function _mpItem(U,pid){ return mpItems(U.kid).find(x=>x&&x.id===pid)||null; }
 function mpTurn(U){
   while(U.i<U.q.length){
     const e=U.q[U.i], it=_mpItem(U,e.pid), mode=it?U.modes[it.subject||"Other"]:null;
+    if(it&&!mode&&typeof spellPlayable==="function"&&spellPlayable(it)){   // 🔤 SPELLBUILD: a spelling card builds its word
+      const others=U.pool.filter(x=>x!==it&&spellPlayable(x)).map(spellWordOf);
+      const t=_spellTurn(it,others); U.cur={pid:e.pid,list:!!e.list,mode:"spell",tiles:t.tiles,word:t.word,placed:[],wrong:{},tries:0,msg:""}; return true;
+    }
     let tiles=null; try{ tiles=(it&&mode)?whichTiles(it,U.pool,null,mode):null; }catch(err){ tiles=null; }
     if(tiles){ U.cur={pid:e.pid,list:!!e.list,mode,tiles,wrong:{}}; return true; }
     U.i++;
   }
   U.cur=null; return false;
 }
-function mpSay(){ const U=mpUI; if(!U||!U.cur) return; const it=_mpItem(U,U.cur.pid); try{ if(it&&it.prompt&&!(U.cur.mode==="answer"&&typeof whichSilent==="function"&&whichSilent(it))) mastSpeak(_matchPlain(it.prompt)); }catch(e){} }
+function mpSay(){ const U=mpUI; if(!U||!U.cur) return; const it=_mpItem(U,U.cur.pid); try{ if(U.cur.mode==="spell"){ mastSpeak(U.cur.word,{spell:true}); return; } if(it&&it.prompt&&!(U.cur.mode==="answer"&&typeof whichSilent==="function"&&whichSilent(it))) mastSpeak(_matchPlain(it.prompt)); }catch(e){} }   // 🔤 SPELLBUILD: the slow spelling voice
+// 🔤 SPELLBUILD inside the round: the same tiles as Build it; a right first try / a second miss also = Word Workout's day (one ww write in the round's save)
+function mpSpellSayAgain(){ mpSay(); }
+function mpSpellTapTile(ti){ const U=mpUI; if(!U||U.phase!=="play"||U.lock||!U.cur||U.cur.mode!=="spell") return; const c=U.cur; if(!c.tiles[ti]||c.tiles[ti].used) return; c.tiles[ti].used=true; c.placed.push(ti); c.msg=""; mpRender(); }
+function mpSpellTapPlaced(pi){ const U=mpUI; if(!U||U.phase!=="play"||U.lock||!U.cur||U.cur.mode!=="spell") return; const c=U.cur; if(c.placed[pi]==null) return; const ti=c.placed.splice(pi,1)[0]; c.tiles[ti].used=false; c.msg=""; mpRender(); }
+function mpSpellClear(){ const U=mpUI; if(!U||U.phase!=="play"||U.lock||!U.cur||U.cur.mode!=="spell") return; const c=U.cur; c.placed.forEach(ti=>{ c.tiles[ti].used=false; }); c.placed=[]; c.msg=""; mpRender(); }
+function mpSpellCheck(){
+  const U=mpUI; if(!U||U.phase!=="play"||U.lock||!U.cur||U.cur.mode!=="spell") return;
+  const c=U.cur; if(!c.placed.length) return;
+  const r=spellJudge(c);
+  if(r==="again"){ try{ matchBonk(); }catch(e){} c.msg="again"; mpRender(); mpSay(); return; }
+  const first=r==="right"&&c.first, o={id:String(c.pid),ok:first,n:c.tries+1}; if(c.list) o.list=true; if(r==="fail") o.fail=true; U.log.push(o);
+  if(c.list) mpNote(U,c.pid,first);
+  const it=_mpItem(U,c.pid); if(it&&typeof wwNote==="function"&&(r==="fail"||first)){ try{ if(wwNote(it,first?"right":"miss")){ U.ww=U.ww||{}; U.ww[c.pid]=1; } }catch(e){} }
+  if(r==="right"){ try{ matchDing(); }catch(e){} c.msg="right"; } else { try{ matchBonk(); }catch(e){} c.msg="fail"; }
+  U.lock=true; mpRender();
+  const at=U.i; setTimeout(()=>{ if(mpUI===U&&U.lock&&U.i===at) mpNext(); },r==="right"?900:1400);
+}
 // a list card's tap: first-tap right counts toward today; a wrong tap starts its right days over
 function mpNote(U,pid,first){
   const it=_mpItem(U,pid); if(!it||!it.gp||it.gp.on!==true) return;
@@ -70483,6 +70504,7 @@ function mpFinish(U){
   const promoted=Object.keys(U.out).length?mpPromote(kid,items):[];
   const touched=Object.keys(U.changed).map(pid=>_mpItem(U,pid)).filter(Boolean).concat(promoted);
   touched.forEach(it=>{ const k=mpKey(kid,it); if(k==null) return; upd[k+"/gp"]=it.gp||null; if(U.out[it.id]) upd[k+"/next_due"]=it.next_due; });
+  Object.keys(U.ww||{}).forEach(pid=>{ const it=_mpItem(U,pid), k=it?mpKey(kid,it):null; if(k!=null) upd[k+"/ww"]=it.ww||null; });   // 🔤 SPELLBUILD: Word Workout's days, the Workout's own path
   const now=Date.now(), entry=U.log.length?{game:"practice",deck:"practice",at:now,secs:Math.max(0,Math.round((now-U.t0)/1000)),items:U.log.slice()}:null;
   if(entry){ try{ const G=_mpMD().gameLog||(_mpMD().gameLog={}), K=G[kid]||(G[kid]={}), D=K[U.dk]||(K[U.dk]={}); D["local_"+now]=entry; }catch(e){} }
   if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){
@@ -70510,6 +70532,7 @@ function mpRender(){
     const c=U.cur, items=mpItems(U.kid), it=_mpItem(U,c.pid), ans=c.mode==="answer", wrongNow=Object.keys(c.wrong).length>0;
     const left=U.q.length-U.i;
     h+='<div style="font-size:12.5px;color:#64748b;font-weight:700;margin:2px 0 10px">'+left+' to go</div>';
+    if(c.mode==="spell"&&typeof spellBoardHtml==="function"){ h+=SPELL_CSS+spellBoardHtml(c,{color:color,pre:"mpSpell",msg:c.msg,lock:U.lock}); ov.innerHTML=h+'</div>'; return; }   // 🔤 SPELLBUILD
     if(ans){
       const fr=_matchPlain(it&&it.prompt), mute=(typeof whichSilent==="function")&&whichSilent(it);
       h+='<div style="display:flex;align-items:center;justify-content:center;gap:14px;margin:6px 0 8px;flex-wrap:wrap"><div style="font-family:\'Fraunces\',serif;font-size:'+(fr.length<=8?'48px':fr.length<=18?'36px':'26px')+';font-weight:800;color:#292524;text-align:center;line-height:1.1">'+E(fr)+'</div>'+(mute?'':'<button onclick="mpSay()" aria-label="Hear it again" style="width:60px;height:60px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:28px;cursor:pointer">\u{1F50A}</button>')+'</div>';
@@ -70531,7 +70554,8 @@ function mpRender(){
       h+='<div style="padding:10px 0 4px;text-align:center;font-size:20px;font-weight:800;color:#15803d">\u{1F389} Great practicing!</div>';
       ids.forEach(id=>{ const it=_mpItem(U,id), g=(it&&it.gp)||{}, nd=Array.isArray(g.days)?g.days.length:0;
         const line=U.out[id]?'\u{1F3C6} Ready to show Mom!':(Array.isArray(g.days)&&g.days.indexOf(U.dn)>=0)?'⭐ Got it today · '+nd+' of '+MP_DAYS+' days':'\u{1F4AA} Keep practicing';
-        h+='<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-top:1px solid #f1f5f9"><div style="width:52px;height:52px;flex:none;display:flex;align-items:center;justify-content:center;border:2px solid #e2ddd6;border-radius:12px;overflow:hidden">'+((typeof _smTileVis==="function"&&it&&_smTileVis(it))||E(_matchPlain(it&&it.prompt)))+'</div><div style="font-size:15px;font-weight:800;color:#334155">'+line+'</div></div>'; });
+        const face=(typeof spellPlayable==="function"&&spellPlayable(it))?'\u{1F524}':((typeof _smTileVis==="function"&&it&&_smTileVis(it))||E(_matchPlain(it&&it.prompt)));   // 🔤 SPELLBUILD: a spelling word is never shown
+        h+='<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-top:1px solid #f1f5f9"><div style="width:52px;height:52px;flex:none;display:flex;align-items:center;justify-content:center;border:2px solid #e2ddd6;border-radius:12px;overflow:hidden">'+face+'</div><div style="font-size:15px;font-weight:800;color:#334155">'+line+'</div></div>'; });
     }
     h+='<div style="display:flex;justify-content:center;margin-top:14px"><button onclick="mpClose()" style="min-height:48px;padding:0 26px;border-radius:14px;border:none;background:'+color+';color:#fff;font-size:16px;font-weight:800;cursor:pointer">All done</button></div>';
   }
@@ -70598,11 +70622,12 @@ function gameKidSwitch(to){
   if(m&&m.startTs&&!m.endTs&&!m.pausedAt&&!m.gate) m.pausedAt=Date.now();   // ⏸ (an open gate is untimed already)
   if(window._matchTick){ clearInterval(window._matchTick); window._matchTick=null; }
   try{ if(window.speechSynthesis) speechSynthesis.cancel(); }catch(e){}
-  _gkPark[from]={match:m,style:matchStyle,pair:matchPairMode,which:whichState,sprintDeck:sprintDeck,sprintDeckScope:sprintDeckScope};
+  _gkPark[from]={match:m,style:matchStyle,pair:matchPairMode,which:whichState,spell:(typeof spellState!=="undefined")?spellState:null,sprintDeck:sprintDeck,sprintDeckScope:sprintDeckScope};   // 🔤 SPELLBUILD parks too
   const p=_gkPark[to]||null;
   matchState=(p&&p.match)||null;
   if(p){ matchStyle=p.style; matchPairMode=p.pair; }
   whichState=(p&&p.which)||null;
+  if(typeof spellState!=="undefined") spellState=(p&&p.spell)||null;   // 🔤 SPELLBUILD
   const sd=_gkSprintFor(to,p);
   sprintDeck=sd.deck; sprintDeckScope=sd.scope;
   _gkResume();
@@ -70639,6 +70664,11 @@ function _gkResume(){
   if(w&&w.phase==="play"){
     if(w.lock){ w.grow=null; w.lock=false; w.i++; if(w.i>=w.turns.length) whichFinish(w); }   // whichNext, no render
     if(w.phase==="play"&&mastView==="which") _whichSay(w);   // back to the round: hear the card again
+  }
+  const sp=(typeof spellState!=="undefined")?spellState:null;   // 🔤 SPELLBUILD: a Check that was mid-step settles the same way
+  if(sp&&sp.phase==="play"){
+    if(sp.lock){ sp.lock=false; sp.grow=false; sp.msg=""; sp.i++; if(sp.i>=sp.turns.length) spellFinish(sp); }
+    if(sp.phase==="play"&&mastView==="spell") _spellSay(sp);
   }
 }
 // GAMEKID_END
@@ -77076,6 +77106,176 @@ function wwDayChipHtml(kid,day){
   }catch(e){ return ""; }
 }
 // WORDWORKOUT_END
+
+// SPELLBUILD_START — 🔤 "Build it" (her "start the other 2", 2026-11-02; PLAN_practice_games_2026-10-23.md #4 Spell Builder).
+// The first game for SPELLING cards — Which one? leaves spelling out on purpose (the app never shows a spelling the child
+// must produce), so a spelling word could never reach the games. Build it keeps that rule: the kid HEARS the word (the slow
+// spelling voice, never spelled aloud, never written on screen) and builds it from letter tiles — the word's own letters plus
+// a few extra letters taken from the kid's other spelling words — tapping them in order; a placed tile taps back off.
+//   Check → right: the soft ding, the row turns green, next word. Wrong: the soft bonk, the tiles come back, hear it again,
+//   one more try. Wrong twice: the word moves on (the word is still never shown) and comes back once at the end of the round.
+//   No lives, no clock. A round = the kid's learning words (spellPool: a WW_DECKS card still "introduction", or in the Word
+//   Workout), most-recently-missed first, SPELL_ROUND at most. Available in 🎮 Games only while the kid has such a word.
+// Writes (only these): Word Workout's own rule on each word — right on the first try = a right DAY (wwNote "right"), wrong
+//   twice = a miss DAY (wwNote "miss"; two miss days turn the Workout on), one targeted mastery/<kid>/<ix>/ww set per word
+//   (_wwWriteCard, the Workout's own path); <kid>_settings/match_best key "<deck> · spell" (only when beaten); the round's
+//   gameLog entry (GAMELOG, game:"spell"). NEVER touches the ladder. db && !_dryRun() only. Per-kid park via GAMEKID.
+//   The practice round (MISSPLAY) uses the same tiles for a flagged spelling card: see mpTurn / mpSpell*.
+let spellState=null;   // {kid,deck,t0,turns:[{pid,word,tiles:[{ch,used}],placed:[ti],wrong:{},tries,done,first,fail,back}],i,phase,first,of,isPB,prevBest,lock,grow,msg,returned:{},game:"spell",gameLogged}
+const SPELL_ROUND=8, SPELL_EXTRA=3, SPELL_TRIES=2, SPELL_WORD_MAX=12;
+const SPELL_FILL="aeiostnrl";   // extra letters when the kid has no other words to borrow from
+function _spellItems(kid){ let items=(typeof masteryData!=="undefined"&&masteryData&&masteryData[kid||masteryKid])||[]; if(!Array.isArray(items)) items=Object.values(items); return items; }
+function spellWordOf(it){ return (typeof wwWord==="function")?wwWord(it):String((it&&(it.answer||it.prompt))||""); }
+// A spelling card the tiles can build: a WW_DECKS card in play, one word of letters (an apostrophe or hyphen is fine), not too long.
+function spellPlayable(it){
+  if(!it||typeof wwIsSpell!=="function"||!wwIsSpell(it)) return false;
+  if(it.status!=="active"&&it.status!=="introduction") return false;
+  const w=spellWordOf(it).trim();
+  return w.length>=2&&w.length<=SPELL_WORD_MAX&&/^[A-Za-z][A-Za-z'’\-]*$/.test(w);
+}
+// The kid's LEARNING words: still being introduced, or in the Word Workout. Most-recently-missed first.
+function spellPool(items){
+  const out=(items||[]).filter(i=>spellPlayable(i)&&(i.status==="introduction"||(i.ww&&i.ww.on)));
+  return out.sort((a,b)=>String((b.ww||{}).d||"").localeCompare(String((a.ww||{}).d||""))||String(spellWordOf(a)).localeCompare(String(spellWordOf(b))));
+}
+function _spellShuffle(a,rnd){ rnd=rnd||Math.random; for(let i=a.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+// PURE: the tiles for one word — its letters + SPELL_EXTRA extra letters from `others` (the kid's other words), shuffled.
+// The check compares the built string to the word, so an extra copy of one of its letters never makes a second right order.
+function spellTiles(word,others,rnd){
+  rnd=rnd||Math.random;
+  const letters=String(word).split("");
+  let cand=[]; (others||[]).forEach(w=>{ String(w).toLowerCase().split("").forEach(ch=>{ if(/[a-z]/.test(ch)) cand.push(ch); }); });
+  const have={}; letters.forEach(ch=>{ have[ch.toLowerCase()]=1; });
+  let pick=_spellShuffle(cand.filter(ch=>!have[ch]),rnd).filter((ch,i,a)=>a.indexOf(ch)===i).slice(0,SPELL_EXTRA);   // letters NOT in the word first (plausible, not confusing)
+  if(pick.length<SPELL_EXTRA) pick=pick.concat(_spellShuffle(SPELL_FILL.split("").filter(ch=>!have[ch]&&pick.indexOf(ch)<0),rnd).slice(0,SPELL_EXTRA-pick.length));
+  return _spellShuffle(letters.concat(pick).map(ch=>({ch:ch,used:false})),rnd);
+}
+function spellBuilt(t){ return (t.placed||[]).map(ti=>t.tiles[ti].ch).join(""); }
+// PURE: is the built string the word? (exact letters — a capital stays a capital, as AAS teaches it)
+function spellRight(t){ return spellBuilt(t)===String(t.word); }
+function _spellTurn(it,others,rnd){ const w=spellWordOf(it); return {pid:it.id,word:w,tiles:spellTiles(w,others,rnd),placed:[],wrong:{},tries:0,done:false,first:false,fail:false,back:false}; }
+function _spellSay(st){ const t=st&&st.turns[st.i]; if(!t) return; try{ mastSpeak(t.word,{spell:true}); }catch(e){} }   // 🔊 the slow spelling voice — never spelled out
+function spellStart(){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the start tap unlocks the ding / bonk (iPad)
+  const items=_spellItems(), pool=spellPool(items);
+  if(!pool.length){ spellState=null; _mastRe(); return; }
+  const picks=pool.slice(0,SPELL_ROUND), words=pool.map(spellWordOf);
+  const decks={}; picks.forEach(i=>{ decks[i.subject]=1; }); const dk=Object.keys(decks);
+  const turns=picks.map(it=>_spellTurn(it,words.filter(w=>w!==spellWordOf(it))));
+  spellState={kid:masteryKid,deck:dk.length===1?dk[0]:"Spelling",game:"spell",t0:Date.now(),turns:turns,i:0,phase:turns.length?"play":"done",first:0,of:turns.length,isPB:false,prevBest:null,lock:false,grow:false,msg:"",returned:{}};
+  _mastRe();
+  _spellSay(spellState);
+}
+function spellSayAgain(){ _spellSay(spellState); }
+function spellChangeRound(){ spellState=null; _mastRe(); }   // drop the round as it stands: nothing written
+function spellTapTile(ti){
+  const st=spellState; if(!st||st.phase!=="play"||st.lock) return;
+  const t=st.turns[st.i]; if(!t||!t.tiles[ti]||t.tiles[ti].used) return;
+  t.tiles[ti].used=true; t.placed.push(ti); st.msg=""; _mastRe();
+}
+function spellTapPlaced(pi){
+  const st=spellState; if(!st||st.phase!=="play"||st.lock) return;
+  const t=st.turns[st.i]; if(!t||t.placed[pi]==null) return;
+  const ti=t.placed.splice(pi,1)[0]; t.tiles[ti].used=false; st.msg=""; _mastRe();
+}
+function spellClear(){ const st=spellState; if(!st||st.phase!=="play"||st.lock) return; const t=st.turns[st.i]; if(!t) return; t.placed.forEach(ti=>{ t.tiles[ti].used=false; }); t.placed=[]; st.msg=""; _mastRe(); }
+// PURE over the state: one Check. Returns "right" | "again" | "fail".
+function spellJudge(t){
+  if(spellRight(t)){ t.done=true; t.first=t.tries===0; return "right"; }
+  t.tries++; t.wrong[t.tries]=1;
+  t.placed.forEach(ti=>{ t.tiles[ti].used=false; }); t.placed=[];   // the tiles come back
+  if(t.tries>=SPELL_TRIES){ t.done=true; t.first=false; t.fail=true; return "fail"; }
+  return "again";
+}
+function spellCheck(){
+  const st=spellState; if(!st||st.phase!=="play"||st.lock) return;
+  const t=st.turns[st.i]; if(!t||!t.placed.length) return;
+  const r=spellJudge(t);
+  if(r==="again"){ try{ matchBonk(); }catch(e){} st.msg="again"; _mastRe(); _spellSay(st); return; }
+  if(r==="right"){ if(!t.back&&t.first) st.first++; try{ matchDing(); }catch(e){} st.grow=true; st.msg="right"; }
+  else { try{ matchBonk(); }catch(e){} st.grow=false; st.msg="fail"; }
+  // Word Workout's own rule, on a word's first showing in the round: first try = a right day; wrong twice = a miss day.
+  if(!t.back){ const it=_spellItems(st.kid).find(x=>x&&x.id===t.pid); if(it&&typeof wwNote==="function"&&(r==="right"?t.first:true)){ try{ if(wwNote(it,r==="right"?"right":"miss")) _wwWriteCard(st.kid,it); }catch(e){} } }
+  // A word that took more than one try comes back once, at the end of the round.
+  if(!t.first&&!t.back&&!st.returned[t.pid]){ st.returned[t.pid]=1; const others=st.turns.filter(x=>x.pid!==t.pid).map(x=>x.word); const nt=_spellTurn({id:t.pid,answer:t.word},others); nt.back=true; st.turns.push(nt); }
+  st.lock=true; _mastRe();
+  const at=st.i; setTimeout(()=>{ if(spellState===st&&st.lock&&st.i===at) spellNext(st); },r==="right"?900:1400);   // GAMEKID: never advances a parked / settled turn
+}
+function spellNext(st){
+  st=st||spellState; if(!st||st!==spellState) return;
+  st.lock=false; st.grow=false; st.msg="";
+  st.i++;
+  if(st.i>=st.turns.length){ spellFinish(st); _mastRe(); return; }
+  _mastRe();
+  if(typeof mastView==="undefined"||mastView==="spell") _spellSay(st);
+}
+function spellBestKey(deck){ return deck+" \u{00B7} spell"; }
+function spellFinish(st){
+  st.phase="done";
+  const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every word's result, game:"spell"
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=spellBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.first>0&&(prev==null||st.first>prev);
+  if(st.isPB){
+    s.match_best[key]=st.first;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+  try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F524} You built them all!",{noSong:true}); }catch(e){}
+}
+// The tiles + the built row, shared with the practice round (fn = the onclick names: tile(ti), placed(pi), check, clear, say)
+function spellBoardHtml(t,o){
+  o=o||{}; const color=o.color||"#7c3aed", pre=o.pre||"spell", E=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  const msg=o.msg||"", lock=!!o.lock;
+  let h='<div style="display:flex;justify-content:center;margin:6px 0 4px"><button onclick="'+pre+'SayAgain()" aria-label="Hear it again" style="width:96px;height:96px;border-radius:50%;border:4px solid '+color+';background:#fff;color:'+color+';font-size:46px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button></div>';
+  h+='<div style="text-align:center;font-size:17px;font-weight:800;color:'+(msg==="right"?'#16a34a':msg==="fail"?'#b45309':'#57534e')+';margin-bottom:10px">'+(msg==="right"?'\u{2705} You built it!':msg==="fail"?'We\u{2019}ll try that one again later':msg==="again"?'Almost \u{2014} listen and try again!':'Listen, then tap the letters in order')+'</div>';
+  // the built row: one slot per letter of the word
+  h+='<div class="spell-row'+(msg==="right"?' spell-row-right':'')+'" style="display:flex;justify-content:center;gap:6px;flex-wrap:wrap;min-height:64px;margin-bottom:14px">';
+  for(let i=0;i<t.word.length;i++){ const ti=t.placed[i];
+    if(ti==null) h+='<span class="spell-slot"></span>';
+    else h+='<button class="spell-tile spell-placed" onclick="'+pre+'TapPlaced('+i+')" aria-label="Take back '+E(t.tiles[ti].ch)+'"'+(lock?' disabled':'')+'>'+E(t.tiles[ti].ch)+'</button>'; }
+  h+='</div>';
+  h+='<div class="spell-tray" style="display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-bottom:14px">';
+  t.tiles.forEach((x,ti)=>{ h+='<button class="spell-tile'+(x.used?' spell-used':'')+'" onclick="'+pre+'TapTile('+ti+')" aria-label="Letter '+E(x.ch)+'"'+(x.used||lock?' disabled':'')+'>'+E(x.ch)+'</button>'; });
+  h+='</div>';
+  h+='<div style="display:flex;justify-content:center;gap:10px"><button class="spell-btn" onclick="'+pre+'Clear()"'+(lock||!t.placed.length?' disabled':'')+' style="padding:12px 18px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Clear</button>'+
+    '<button class="spell-btn" onclick="'+pre+'Check()"'+(lock||t.placed.length<t.word.length?' disabled':'')+' style="padding:12px 28px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{2714} Check</button></div>';
+  return h;
+}
+const SPELL_CSS='<style>.spell-tile{min-width:52px;height:60px;padding:0 10px;border-radius:14px;border:3px solid #e2ddd6;background:#fff;font-family:\'Fraunces\',serif;font-size:30px;font-weight:800;color:#292524;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .15s,opacity .2s}'+
+  '.spell-tile.spell-used{opacity:.18;cursor:default}.spell-tile.spell-placed{border-color:#a78bfa;background:#f5f3ff}.spell-slot{display:inline-block;width:52px;height:60px;border-radius:14px;border:3px dashed #d6d3d1;background:#fafaf9}'+
+  '.spell-row-right .spell-tile{border-color:#16a34a;background:#f0fdf4;color:#15803d}.spell-tile[disabled]{cursor:default}.spell-btn[disabled]{opacity:.45;cursor:default}</style>';
+function buildSpellHtml(color){
+  let h=SPELL_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const items=_spellItems(), pool=spellPool(items), E=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
+  if(!pool.length){ h+='<div class="mast-none">No spelling words to build right now \u{2014} Build it plays the words still being learned.</div></div>'; return h; }
+  const st=spellState;
+  if(!st){
+    h+='<div style="font-size:15px;font-weight:700;color:#57534e;margin:10px 0 14px">\u{1F442} Hear a word, then build it from the letters \u{2014} '+pool.length+' word'+(pool.length===1?'':'s')+' to practice.</div>';
+    h+='<button onclick="spellStart()" style="padding:14px 28px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F524} Build it</button></div>';
+    return h;
+  }
+  const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[spellBestKey(st.deck)];
+  if(st.phase==="play"){
+    const t=st.turns[st.i];
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
+    st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
+    h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+E(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
+      '<button onclick="spellChangeRound()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{21A9} Stop</button></span></div>';
+    if(t) h+=spellBoardHtml(t,{color:color,pre:"spell",msg:st.msg,lock:st.lock});
+    return h+'</div>';
+  }
+  // Finish: how many on the first try (the words themselves stay unshown — the kid builds them, the app never shows them)
+  h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} Round done!</div>';
+  h+='<div style="font-size:17px;font-weight:800;color:#57534e;margin-top:10px">\u{1F524} '+st.first+' of '+st.of+' on the first try'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+  h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap"><button onclick="spellStart()" style="padding:12px 24px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F501} Play again</button></div>';
+  return h+'</div></div>';
+}
+// SPELLBUILD_END
 // STUDYCOUNTS_START — 📚 Study sessions count everywhere (F3 of PLAN_learning_system, her yes 2026-10-24). A study
 // sitting logs to mastery/studyLog/<kid>/<sid>/<yyyymmdd>, but Scores, the Weekly report, sprint readiness (the ≥ 90%
 // untimed check) and the notebook's 🔁 review flags read only the drill's mastery/history/<kid>/<yyyymmdd>, so Lincoln —
@@ -81032,6 +81232,7 @@ const GAMES_LIST=[
   {key:"memory", emoji:"\u{1F9E0}", label:"Memory flip", view:"match", style:"memory", available:k=>_gamesMatchPairs(k).length>0, render:c=>buildMatchHtml(c)},
   {key:"which",  emoji:"\u{1F446}", label:"Which one?",  view:"which",                 available:k=>whichDecks(_gamesItems(k)).length>0, render:c=>buildWhichHtml(c)},
   {key:"idflash",emoji:"\u26A1",     label:"ID Flash",    view:"idflash",               available:k=>typeof envFlashAvail==="function"&&envFlashAvail(k), render:c=>envFlashGameHtml(c)},   // ⚡ ENVIDFLASH
+  {key:"spell",  emoji:"\u{1F524}", label:"Build it",    view:"spell",                 available:k=>typeof spellPool==="function"&&spellPool(_gamesItems(k)).length>0, render:c=>buildSpellHtml(c)},   // 🔤 SPELLBUILD
 ];
 const gamesLast={};   // kid → key of the last game played on this device
 function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k); }catch(e){ return false; } }); }
@@ -81039,6 +81240,7 @@ function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k)
 function gamesCurrentKey(){
   if(mastView==="which") return "which";
   if(mastView==="idflash") return "idflash";   // ⚡ ENVIDFLASH
+  if(mastView==="spell") return "spell";   // 🔤 SPELLBUILD
   if(mastView==="match") return matchStyle==="memory"?"memory":"match";
   return mastView==="games"?"":null;
 }
