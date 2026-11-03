@@ -17266,6 +17266,10 @@ function tsShelfHTML(k){
   let any=false;
   if(troph.length){ any=true; h+=sec('\u{1F3C6} Trophies',tsTroShelf(troph,k,{corner:true})); }   // her ask 2026-10-23: the Wins page's trophies and book spines, drawn for the Corner
   if(reads.length){ any=true; h+=sec('\u{1F4D6} Reading log',reads.map(function(r){ return row('\u{1F4D6}',esc(r.title)+(r.pages?' <span style="font-weight:600;color:#64748b">'+esc(r.pages)+'</span>':''),r.when); }).join('')); }
+  // KCWINS (her plan-2 yes 2026-11-02): the Wins page's two kid-safe pieces the shelf lacked — where each book stands, and what's finished
+  let bars='', fin=''; try{ if(typeof spGridReset==="function") spGridReset(); if(typeof paceBarsHTML==="function") bars=paceBarsHTML(k,{noName:true}); if(typeof paceWinsListHTML==="function"&&typeof paceWins==="function") fin=paceWinsListHTML(k,paceWins(k),{bare:true}); }catch(e){ bars=''; fin=''; }
+  if(bars){ any=true; h+=sec('\u{1F4D8} Where I am',bars); }
+  if(fin){ any=true; h+=sec('\u{1F389} Finished','<div style="padding:2px 0 4px;font-size:'+fs+'">'+fin+'</div>'); }
   if(S&&(streaks.length||!S.ready)){ if(streaks.length) any=true;
     h+=sec('\u{1F525} Streaks <span style="font-weight:600;text-transform:none;letter-spacing:0;color:#92400e">\u2014 school days in a row</span>',streaks.map(function(st){ return tsStreakLineHTML(st,S[st.id],big,k); }).join('')
       +(S.ready?'':'<div style="padding:6px 10px;font-size:'+fs+';color:#64748b;font-weight:700">\u2705 routine lists \u2014 \u23F3 still counting your school days\u2026</div>')
@@ -68915,6 +68919,52 @@ function paceEncouragement(lt,stk,win){
 // GLANCE Pace view — kid + mom accomplishment dashboard. NOT the this-week/daily
 // tracker (that's on the Schedule); this is "how far you've come": book progress
 // beginning→end, pages, weeks accomplished, wins. Steering lives in Admin → Curriculum.
+// KCWINS_START — the Wins page's two kid-safe pieces, shared with the Corner's 🏆 Trophy Shelf (her plan-2 yes 2026-11-02: Wins
+// moved behind Mom's Day, so "a 🏆 Wins button in Kids' Corner showing the kid's own view only". The Corner already had the
+// 🏆 Trophies shelf (TROPHYSHELF, 10/22) with the trophy case, the reading log and the streaks; what it lacked from Wins were the
+// book progress bars and the "finished" list — these two helpers draw them for both pages). No Mom tools in either; no writes.
+// Each kid's card: every live book / subject with a bar (or "on …" when there is no clean counter). opt.noName: no name header.
+function paceBarsHTML(k,opt){
+  const bars=paceLiveKeys(k).map(sk=>subjectProgress(k,sk)).filter(Boolean);   // grid reads memoised by spGridReset (the caller's)
+  if(!bars.length) return '';
+  bars.sort((a,b)=>(a.done-b.done)||(b.pct-a.pct)); // in-progress first, nearest-done first
+  const col=PACE_KCOL[k];
+  let h='<div class="pace-kid-card">'+((opt&&opt.noName)?'':'<div class="pace-kid-name" style="color:'+col+';margin-bottom:8px">'+cap(k)+'</div>');
+  bars.forEach(b=>{
+    if(b.unit==='at'){ // no clean counter — just show their current spot
+      h+='<div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;margin-bottom:9px">'+
+        '<span style="font-weight:600">'+esc(b.label)+(b.done?' <span style="color:#16a34a">✓</span>':'')+'</span>'+
+        '<span style="color:var(--muted);font-size:11px">'+(b.now?'on '+esc(b.now):'in progress')+'</span></div>';
+      return;
+    }
+    const _bk=b.book?esc(b.book)+(b.bookCount>1?' <span style="opacity:0.6">(book '+b.bookNum+' of '+b.bookCount+')</span>':'')+' · ':'';
+    const lbl=b.unit==='page'?(_bk+'page '+b.cur.toLocaleString()+' of '+b.total.toLocaleString())
+      :(_bk+(b.now?esc(b.now)+' · ':'')+b.cur+' of '+b.total+' lessons');
+    h+='<div style="margin-bottom:9px">'+
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;margin-bottom:3px">'+
+      '<span style="font-weight:600">'+esc(b.label)+(b.done?' <span style="color:#16a34a">✓</span>':'')+'</span>'+
+      '<span style="color:var(--muted);font-size:11px">'+lbl+' · '+b.pct+'%</span></div>'+
+      '<div class="pace-bar"><div class="pace-bar-fill" style="width:'+b.pct+'%;background:'+(b.done?'#16a34a':col)+'"></div></div>'+
+      '</div>';
+  });
+  return h+'</div>';
+}
+// The finished list: books, completed subjects, approved Reading Log books (10 each). who = 'all' / 'mom' / a kid (names shown for
+// the family views); _win = paceWins(who). opt.bare: the lines alone, no green box or "Wins 🎉" header (the shelf has its own title).
+function paceWinsListHTML(who,_win,opt){
+  const _rwin=[];   // 📚 finished Reading Log books (approved → status done)
+  ((who==="all"||who==="mom")?PACE_KIDS:[who]).forEach(k=>rlBooks(k).filter(b=>b.status==="done").forEach(b=>_rwin.push({kid:k,name:b.title})));
+  if(!(_win.books.length||_win.done.length||_rwin.length)) return '';
+  const nm=(o,key)=>((who==="all"||who==="mom")?cap(o.kid)+' ':'')+'finished <b>'+esc(o[key])+'</b>';
+  let items='';
+  _win.books.slice(0,10).forEach(b=>{ items+='<div style="font-size:12px;color:#166534;padding:2px 0">📖 '+nm(b,'name')+'</div>'; });
+  _win.done.slice(0,10).forEach(d=>{ items+='<div style="font-size:12px;color:#166534;padding:2px 0">🎉 '+nm(d,'subject')+'</div>'; });
+  _rwin.slice(0,10).forEach(b=>{ items+='<div style="font-size:12px;color:#166534;padding:2px 0">📚 '+nm(b,'name')+'</div>'; });
+  if(opt&&opt.bare) return items;
+  return '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:12px 14px;margin-top:10px">'+
+    '<div style="font-size:10px;font-weight:800;color:#15803d;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px">Wins 🎉</div>'+items+'</div>';
+}
+// KCWINS_END
 function renderPace(el){
   spGridReset();   // fresh grid/done reads for this paint; cbDoneCellSet walks the archive
   if(!el){el=document.getElementById("content");if(!el)return;}
@@ -69021,45 +69071,11 @@ function renderPace(el){
 
   // ── Per-kid book progress: beginning → end of each book/subject ────────────
   const showKids=(kid==="all"||kid==="mom")?PACE_KIDS:[kid];
-  showKids.forEach(k=>{
-    const bars=paceLiveKeys(k).map(sk=>subjectProgress(k,sk)).filter(Boolean);   // grid reads memoised by spGridReset above
-    if(!bars.length) return;
-    bars.sort((a,b)=>(a.done-b.done)||(b.pct-a.pct)); // in-progress first, nearest-done first
-    const col=PACE_KCOL[k];
-    h+='<div class="pace-kid-card"><div class="pace-kid-name" style="color:'+col+';margin-bottom:8px">'+cap(k)+'</div>';
-    bars.forEach(b=>{
-      if(b.unit==='at'){ // no clean counter — just show their current spot
-        h+='<div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;margin-bottom:9px">'+
-          '<span style="font-weight:600">'+esc(b.label)+(b.done?' <span style="color:#16a34a">✓</span>':'')+'</span>'+
-          '<span style="color:var(--muted);font-size:11px">'+(b.now?'on '+esc(b.now):'in progress')+'</span></div>';
-        return;
-      }
-      const _bk=b.book?esc(b.book)+(b.bookCount>1?' <span style="opacity:0.6">(book '+b.bookNum+' of '+b.bookCount+')</span>':'')+' · ':'';
-      const lbl=b.unit==='page'?(_bk+'page '+b.cur.toLocaleString()+' of '+b.total.toLocaleString())
-        :(_bk+(b.now?esc(b.now)+' · ':'')+b.cur+' of '+b.total+' lessons');
-      h+='<div style="margin-bottom:9px">'+
-        '<div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;margin-bottom:3px">'+
-        '<span style="font-weight:600">'+esc(b.label)+(b.done?' <span style="color:#16a34a">✓</span>':'')+'</span>'+
-        '<span style="color:var(--muted);font-size:11px">'+lbl+' · '+b.pct+'%</span></div>'+
-        '<div class="pace-bar"><div class="pace-bar-fill" style="width:'+b.pct+'%;background:'+(b.done?'#16a34a':col)+'"></div></div>'+
-        '</div>';
-    });
-    h+='</div>';
-  });
+  showKids.forEach(k=>{ h+=paceBarsHTML(k); });   // KCWINS: the same card, drawn by the shared helper (the Corner's shelf draws it too)
 
   // ── Wins: finished books + completed subjects + reading-log finishes ───────
   const _win=paceWins(kid);
-  const _rwin=[];   // 📚 finished Reading Log books (approved → status done)
-  ((kid==="all"||kid==="mom")?PACE_KIDS:[kid]).forEach(k=>rlBooks(k).filter(b=>b.status==="done").forEach(b=>_rwin.push({kid:k,name:b.title})));
-  if(_win.books.length||_win.done.length||_rwin.length){
-    const nm=(o,key)=>((kid==="all"||kid==="mom")?cap(o.kid)+' ':'')+'finished <b>'+esc(o[key])+'</b>';
-    let items='';
-    _win.books.slice(0,10).forEach(b=>{ items+='<div style="font-size:12px;color:#166534;padding:2px 0">📖 '+nm(b,'name')+'</div>'; });
-    _win.done.slice(0,10).forEach(d=>{ items+='<div style="font-size:12px;color:#166534;padding:2px 0">🎉 '+nm(d,'subject')+'</div>'; });
-    _rwin.slice(0,10).forEach(b=>{ items+='<div style="font-size:12px;color:#166534;padding:2px 0">📚 '+nm(b,'name')+'</div>'; });
-    h+='<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:12px 14px;margin-top:10px">'+
-      '<div style="font-size:10px;font-weight:800;color:#15803d;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px">Wins 🎉</div>'+items+'</div>';
-  }
+  h+=paceWinsListHTML(kid,_win);   // KCWINS: shared helper (byte-identical card)
 
   // Encouraging closer — the warm banner Adrienne liked, now progress-aware
   h+='<div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:12px;padding:13px 14px;margin-top:12px;text-align:center"><div style="font-size:13px;color:#581c87;font-weight:600;line-height:1.45">'+paceEncouragement(_lt,_stk,_win)+'</div></div>';
