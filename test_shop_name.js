@@ -27,7 +27,7 @@ function mk(o){
     ROSTER_DEF:o.roster||[], HA_IS_HOWE:!!o.howe, mwBanner:sub=>'<div class="md-banner">'+sub+'</div>', momTipsGroceryHTML:()=>"", mpSubView:"grocery", momSchedView:false,
     document:{getElementById:id=>id==="gr-pop"?pop:null,createElement:()=>({}),body:{appendChild:()=>{}},querySelectorAll:()=>[]}};
   vm.createContext(ctx);
-  vm.runInContext(fn("kitSlug")+"\n"+SN+"\n"+GL+"\n"+fn("mpSubnav"),ctx);
+  vm.runInContext(fn("kitSlug")+"\n"+SN+"\n"+GL+"\n"+fn("mpSubnav")+"\n"+src.slice(src.indexOf("// KITCHENTAB_START"),src.indexOf("// KITCHENTAB_END")),ctx);   // KITCHENTAB: the chip sits on Kitchen's sub-row now
   ctx.grRepaint=()=>{}; ctx.grWeekNeeds=()=>[]; ctx.grPriceLineHTML=()=>""; ctx.grStepperHTML=()=>""; ctx.grPaidBoxHTML=()=>"";
   vm.runInContext("grData.stores="+JSON.stringify(o.stores||{})+"; grData.items="+JSON.stringify(o.items||{})+"; grData.home="+JSON.stringify(o.home||{})+";",ctx);
   return {run:e=>vm.runInContext(e,ctx),ctx,writes,toasts,pop,pins,data:()=>vm.runInContext("grData",ctx)};
@@ -58,7 +58,7 @@ console.log("── the rendered list views say Shopping List, never Grocery Lis
   const E=mk({stores:FIX.stores}); E.run("grSetStore('all')");
   ok("an empty list copies as '🛒 The Shopping List is empty.'", E.run("grText()")==="🛒 The Shopping List is empty.");
   ok("the add box's default placeholder", /placeholder="Add to the Shopping List…"/.test(T.run('grAddRowHTML("x","list")')));
-  ok("the Mom's Day sub-nav chip is 🛒 Shopping List and still routes to 'grocery'", /mpGoto\('grocery'\)[^>]*>🛒 Shopping List<\/button>/.test(T.run("mpSubnav('plan')")));
+  ok("the Mom's Day Kitchen chip is 🛒 Shopping List and still routes to 'grocery'", /mpGoto\('grocery'\)[^>]*>🛒 Shopping List<\/button>/.test(T.run("mpSubnav('grocery')")));
 }
 console.log("── the Mom-PIN lines and the toasts ──");
 { const T=mk(Object.assign({},FIX,{mom:false}));
