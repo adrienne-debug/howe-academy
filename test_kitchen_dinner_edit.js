@@ -64,7 +64,7 @@ function world(o){
        fn("_kitMvGet"),fn("_kitMvFixed"),fn("kitMoveChain"),fn("kitOutIs"),fn("kitOutBtn"),fn("kitOutLbl"),fn("kitOutTxt"),
        fn("kitRotAll"),fn("kitRotEnsure"),fn("kitRotMealByName"),fn("kitRotSlotVal"),fn("kitRotSlotName"),fn("kitRotMondayOf"),fn("kitRotRender"),
        cut("// KIT_ROT_EDIT_START","// KIT_ROT_EDIT_END"),cut("// KITROT2_START","// KITROT2_END"),cut("// KITSLOTS_START","// KITSLOTS_END"),
-       fn("calDaySheetHTML"),fn("mdCardDinner")].join("\n"));
+       fn("calKidLens"),fn("calDaySheetHTML"),fn("mdCardDinner")].join("\n"));
   if(!o.base) run(BLOCK);
   run("kitRotSynced.plan=true; kitRotSynced.rots=true;");
   W.run=run; W.ctx=ctx; W.plan=()=>run("kitPlan"); W.planWrites=()=>W.writes.filter(w=>/^kitchen\/plan/.test(w[1]));
