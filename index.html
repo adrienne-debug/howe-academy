@@ -80166,6 +80166,227 @@ function buildSureHtml(color){
   return h+'</div></div></div>';
 }
 // SURE_END
+// CATS_START — 📋 "Categories" (the hub's "build four games" 2026-11-03; PLAN_practice_games_2026-10-23.md Tier 3 "Categories dump
+// (Scattergories-lite): 'name every … about …' — 2 min, typed list, checked against the deck" — free recall by CATEGORY). Brain Dump
+// asks for a whole deck; this asks for one GROUP inside it: "Name every fact that makes 12", "Name every sentence that follows
+// 'Use a before a consonant sound'", "Name every 'a type of atom'". The category is the cue; the kid types every card in it they can,
+// one at a time, Enter after each — nothing is listed, hinted or auto-completed while they type.
+//   WHERE A CATEGORY COMES FROM (the same fact as Sort it's bins — no card carries a group field, so nothing is invented): a deck's
+//   cards that share one BACK (the rule, the answer, the kind). A group needs CATS_MIN_PER cards; a deck plays with CATS_MIN_CATS+
+//   groups. A round is up to CATS_PER_ROUND groups of the deck, drawn at random, each with its own quiet clock (CATS_SECS) and a
+//   "Next" button — Scattergories' timer, nothing to beat (plan §2.5: no clock against a learning card; this one only stops a category).
+//   A typed name becomes a chip: ✓ green when it is in this group; amber "another group" when it is a card of the deck that belongs
+//   elsewhere (which group is never told); grey "not in this deck". Hit = Brain Dump's own matcher when it is on the page (case,
+//   punctuation, one letter off on a long name), after a math-aware tidy (spaces out, x / * → ×, 4+8 counts for 8+4 — the same
+//   fact). A name typed twice is ignored. No re-ask: the category was the cue, and the kid saw it.
+//   The finish, per group: ✓ named, then "still in the group" (dim) — shown only AFTER the kid is done with it (the app never supplies
+//   what the child must produce before they produce it). Confetti (no song) only when every card of the round was named.
+//   Shown only to a kid at level middle / upper (dcLevel from the roster's grade: 3rd and up — readers who type) — never by name.
+// Writes (only these): <kid>_settings/match_best key "<deck> · cats" (most named in a round, only when beaten) and the round's gameLog
+//   entry (GAMELOG, game:"cats": a card named = ok, missed = wrong). NEVER the ladder — no tier, no next_due, no history, no studyLog.
+//   db && !_dryRun() only. Per-kid park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT): time away is not play time.
+//   A round dropped (Change deck, a kid switch) writes nothing.
+let catsState=null;   // {kid,deck,game:"cats",t0,catT0,pausedTotal,pausedAt,cats:[{key,label,cards:[{pid,front}],named:{pid:1},typed:[{text,pid,how}],secs}],others:[{pid,front}],ci,phase:"play"|"done",count,of,turns,isPB,prevBest,gameLogged}
+let _catsRandom=Math.random;   // tests seed it
+const CATS_PER_ROUND=3, CATS_MIN_PER=3, CATS_MIN_CATS=2, CATS_SECS=120, CATS_LABEL_MAX=120;
+function _catsItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
+function _catsPlain(s){ return (typeof _matchPlain==="function")?_matchPlain(s):String(s==null?"":s).replace(/<[^>]*>/g," ").replace(/&nbsp;/g," ").replace(/\s+/g," ").trim(); }
+function _catsE(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function _catsQ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+function _catsShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_catsRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function _catsNorm(s){ s=_catsPlain(s); return (typeof dumpNorm==="function")?dumpNorm(s):s.toLowerCase().replace(/[.,!?;:"()]/g," ").replace(/\s+/g," ").trim(); }
+// PURE: the math-aware tidy — a fact typed "6 + 6", "6x6", "6*6" is the card "6+6" / "6×6"; words are left as they are
+function catsPrep(s){
+  s=_catsPlain(s);
+  if(!/\d/.test(s)) return s;
+  return s.replace(/\s+/g,"").replace(/[xX*\u22C5\u00B7]/g,"\u00D7").replace(/[\u2212\u2013\u2014]/g,"-").replace(/[\u2044]/g,"/");
+}
+// PURE: a fact's twin with the two sides swapped ("4+8" → "8+4", "3×7" → "7×3"), or "" when it isn't one
+function catsSwap(s){ const m=/^(\d+)([+\u00D7])(\d+)$/.exec(catsPrep(s)); return m?m[3]+m[2]+m[1]:""; }
+// A card in play for the games: active / introduction, not a production twin, with a front, not one Which one? leaves out (spelling, phonograms), not hidden for a class
+function _catsInPlay(i,kid){
+  if(!i||(i.status!=="active"&&i.status!=="introduction")||i.dir==="prod") return false;
+  if(!String(i.prompt||"").trim()) return false;
+  try{ if(typeof _whichLeftOut==="function"&&_whichLeftOut(i,kid)) return false; }catch(e){}
+  try{ if(typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin(kid,i.subject)) return false; }catch(e){}
+  try{ if(typeof cpceHidItem==="function"&&cpceHidItem(kid,i)) return false; }catch(e){}
+  try{ if(typeof cpSecOffItem==="function"&&cpSecOffItem(kid,i)) return false; }catch(e){}
+  return true;
+}
+// The card's back as a category label — "" when it can't be one (none, the same as the front, a sound mark, too long)
+function _catsBack(it,kid){
+  let b=""; try{ b=(typeof owRuleBack==="function")?owRuleBack(kid,it):(it.answer!=null?String(it.answer):""); }catch(e){ b=it.answer!=null?String(it.answer):""; }
+  b=_catsPlain(b); const f=_catsPlain(it.prompt);
+  if(!b||!f||_catsNorm(b)===_catsNorm(f)||b.length>CATS_LABEL_MAX||b.charAt(0)==="/") return "";
+  return b;
+}
+function catsDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"cats",deck); }   // 🎮 GAMEGRID: Mom's cell for this deck (default on; the preload asks raw)
+// PURE: every deck's groups → {deck:[{key,label,cards:[{pid,front}]}]} (biggest first), only decks with CATS_MIN_CATS+ groups of CATS_MIN_PER+
+function catsGroups(items,kid){
+  kid=kid||masteryKid;
+  const by={}, seen={};
+  (items||[]).forEach(i=>{
+    if(!_catsInPlay(i,kid)) return;
+    const d=i.subject||"Other", front=_catsPlain(i.prompt), nk=d+"|"+_catsNorm(catsPrep(front)); if(seen[nk]) return; seen[nk]=1;   // one card per name
+    const b=_catsBack(i,kid); if(!b) return;
+    const g=by[d]||(by[d]={}), k=_catsNorm(b); (g[k]||(g[k]={key:k,label:b,cards:[]})).cards.push({pid:i.id,front:front});
+  });
+  const out={}, bySize=(a,b)=>b.cards.length-a.cards.length||String(a.label).localeCompare(String(b.label),undefined,{numeric:true});
+  Object.keys(by).sort().forEach(d=>{
+    const cats=Object.values(by[d]).filter(c=>c.cards.length>=CATS_MIN_PER).sort(bySize);
+    if(cats.length>=CATS_MIN_CATS&&catsDeckOn(kid,d)) out[d]=cats;
+  });
+  return out;
+}
+function catsDecks(items,kid){ return Object.keys(catsGroups(items,kid)).sort(); }   // the game's OWN rule (the games-per-deck grid's preload asks this, raw)
+// Only a kid at level middle / upper (3rd grade and up by the roster) — readers who type; never a kid's name
+function catsLevelOk(kid){ if(typeof dumpLevelOk==="function") return dumpLevelOk(kid); if(typeof dcLevel!=="function") return true; try{ const l=dcLevel(kid); return l!=="little"&&l!=="early"; }catch(e){ return true; } }
+function catsAvail(kid){ return catsLevelOk(kid)&&catsDecks(_catsItems(kid),kid).length>0; }
+// PURE: one round of a deck → {cats:[…up to CATS_PER_ROUND, shuffled], others:[{pid,front}] (the deck's grouped cards left out of this round)} or null
+function catsRound(deck,groups){
+  const g=groups&&groups[deck]; if(!g||g.length<CATS_MIN_CATS) return null;
+  const picks=_catsShuffle(g.slice()).slice(0,CATS_PER_ROUND);
+  const cats=picks.map(c=>({key:c.key,label:c.label,cards:c.cards.map(x=>({pid:x.pid,front:x.front})),named:{},typed:[],secs:0}));
+  const others=[]; g.forEach(c=>{ if(picks.indexOf(c)<0) c.cards.forEach(x=>others.push({pid:x.pid,front:x.front})); });
+  return {cats:cats,others:others};
+}
+// PURE: a typed name against a list of cards → {card,how:"hit"|"close"|"dup"} or null. Brain Dump's matcher when it is on the page (spelling
+// slack on long names), else exact; a fact counts with its sides swapped
+function catsMatch(typed,cards,named){
+  const t=catsPrep(typed); if(!t) return null;
+  const prepped=cards.map(c=>({pid:c.pid,front:catsPrep(c.front)})), nm=named||{};
+  const exact=(s)=>{ const n=_catsNorm(s); for(const c of prepped){ if(_catsNorm(c.front)===n) return {card:c,how:nm[c.pid]?"dup":"hit"}; } return null; };
+  let m=exact(t)||(catsSwap(t)?exact(catsSwap(t)):null);
+  if(!m&&typeof dumpMatch==="function"&&!/\d/.test(t)){ const r=dumpMatch(t,prepped,nm); if(r) m={card:r.card,how:r.how}; }
+  return m;
+}
+function catsElapsed(st,now){ now=now!=null?now:Date.now(); return Math.max(0,now-st.catT0-(st.pausedTotal||0)-(st.pausedAt?now-st.pausedAt:0)); }
+function catsClock(ms){ const s=Math.floor(ms/1000); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
+function catsStart(deck){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding (iPad)
+  const r=catsRound(deck,catsGroups(_catsItems(),masteryKid));
+  if(!r||!catsDeckOn(masteryKid,deck)){ catsState=null; _mastRe(); return; }   // 🎮 GAMEGRID: a deck Mom turned off for this game
+  catsState={kid:masteryKid,deck:deck,game:"cats",t0:Date.now(),catT0:Date.now(),pausedTotal:0,pausedAt:null,cats:r.cats,others:r.others,ci:0,phase:"play",count:0,of:r.cats.reduce((n,c)=>n+c.cards.length,0),turns:[],isPB:false,prevBest:null,gameLogged:false};
+  _mastRe(); catsTick(catsState); catsFocus();
+}
+function catsChangeDeck(){ catsState=null; _mastRe(); }   // the round is dropped as it stands: nothing written
+function catsFocus(){ try{ setTimeout(()=>{ const e=document.getElementById("cats-in"); if(e) e.focus(); },0); }catch(e){} }
+// The quiet clock of the open category: updates #cats-clock each second; moves on at CATS_SECS. Clears itself once its round is parked or over.
+function catsTick(st){
+  if(typeof setInterval!=="function") return;
+  if(window._catsTick) clearInterval(window._catsTick);
+  window._catsTick=setInterval(()=>{
+    if(catsState!==st||st.phase!=="play"||st.pausedAt){ clearInterval(window._catsTick); window._catsTick=null; return; }
+    const ms=catsElapsed(st);
+    if(ms>=CATS_SECS*1000){ clearInterval(window._catsTick); window._catsTick=null; catsNextCat(st); return; }
+    const el=document.getElementById("cats-clock"); if(el) el.textContent=catsClock(ms);
+  },1000);
+}
+// PURE over the state: one entered name → "hit" | "close" | "dup" | "other" (a card of the deck, another group) | "miss" (not in the deck) | "" (blank)
+function catsEnter(st,text){
+  const raw=_catsPlain(text), cat=st.cats[st.ci]; if(!raw||st.phase!=="play"||!cat) return "";
+  const m=catsMatch(raw,cat.cards,cat.named);
+  if(m){ if(m.how==="dup") return "dup"; cat.named[m.card.pid]=1; cat.typed.push({text:raw,pid:m.card.pid,how:m.how}); st.count++; return m.how; }
+  const elsewhere=[]; st.cats.forEach((c,i)=>{ if(i!==st.ci) elsewhere.push.apply(elsewhere,c.cards); }); elsewhere.push.apply(elsewhere,st.others||[]);
+  const how=catsMatch(raw,elsewhere,{})?"other":"miss";
+  if(!cat.typed.some(x=>x.pid==null&&_catsNorm(catsPrep(x.text))===_catsNorm(catsPrep(raw)))) cat.typed.push({text:raw,pid:null,how:how});
+  return how;
+}
+function catsAdd(){
+  const st=catsState; if(!st||st.phase!=="play") return;
+  const el=document.getElementById("cats-in"), text=el?el.value:"";
+  const r=catsEnter(st,text), cat=st.cats[st.ci];
+  if(el) el.value="";
+  if(r==="hit"||r==="close"){ try{ matchDing(); }catch(e){} }
+  // In place when the round is on screen (a re-render would drop the keyboard on an iPad); else the normal redraw.
+  const chips=document.getElementById("cats-chips"), cnt=document.getElementById("cats-count");
+  if(chips&&cnt&&r&&r!=="dup"){ chips.insertAdjacentHTML("beforeend",_catsChip(cat.typed[cat.typed.length-1])); cnt.textContent=Object.keys(cat.named).length+" of "+cat.cards.length; }
+  else if(!chips||!cnt) _mastRe();
+  if(cat&&Object.keys(cat.named).length>=cat.cards.length){ catsNextCat(st); return; }   // the group is complete
+  catsFocus();
+}
+function _catsChip(x){ const on=x.how==="hit"||x.how==="close"; return '<span class="cats-chip'+(on?' cats-on':x.how==="other"?' cats-other':'')+'">'+(on?'\u2713 ':'')+_catsE(x.text)+(x.how==="other"?' <i>\u{00B7} another group</i>':'')+'</span>'; }
+// "Next" / the clock / every card of the group named: close this category; the last one closes the round
+function catsNextCat(st){
+  st=st||catsState; if(!st||st.phase!=="play") return;
+  if(window._catsTick){ clearInterval(window._catsTick); window._catsTick=null; }
+  const cat=st.cats[st.ci]; if(cat) cat.secs=Math.round(catsElapsed(st)/1000);
+  st.ci++;
+  if(st.ci>=st.cats.length){ catsFinish(st); _mastRe(); return; }
+  st.catT0=Date.now(); st.pausedTotal=0; st.pausedAt=null;
+  _mastRe(); catsTick(st); catsFocus();
+}
+function catsBestKey(deck){ return deck+" \u{00B7} cats"; }
+function catsFinish(st){
+  st.phase="done"; st.ci=st.cats.length;
+  st.turns=[]; st.cats.forEach(c=>c.cards.forEach(x=>st.turns.push({pid:x.pid,done:true,first:!!c.named[x.pid],wrong:c.named[x.pid]?{}:{1:1},back:false})));
+  const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every card of the round's groups, game:"cats"
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=catsBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.count>0&&(prev==null||st.count>prev);
+  if(st.isPB){
+    s.match_best[key]=st.count;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.count});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+  try{ if(st.of>0&&st.count===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F4CB} You named every one!",{noSong:true}); }catch(e){}
+}
+// 🎲 GAMEKIT: park / restore / resume. Time away is not play time (no render here; the caller renders).
+function catsPark(){ const st=catsState; if(st&&st.phase==="play"&&!st.pausedAt) st.pausedAt=Date.now(); return st; }
+function catsRestore(v){ catsState=v||null; const st=catsState; if(st&&st.pausedAt){ st.pausedTotal=(st.pausedTotal||0)+(Date.now()-st.pausedAt); st.pausedAt=null; } }
+function catsResume(){ const st=catsState; if(st&&st.phase==="play"&&(typeof mastView==="undefined"||mastView==="cats")) catsTick(st); }
+const CATS_CSS='<style>.cats-chip{display:inline-block;padding:6px 11px;border-radius:999px;border:2px solid #e2ddd6;background:#fff;color:#78716c;font-size:14px;font-weight:700;margin:3px}'+
+  '.cats-chip.cats-on{border-color:#16a34a;background:#f0fdf4;color:#15803d}.cats-chip.cats-other{border-color:#fde68a;background:#fffbeb;color:#b45309}.cats-chip.cats-dim{border-style:dashed;color:#a8a29e}.cats-chip i{font-style:normal;font-weight:600;opacity:.8}'+
+  '.cats-in{width:100%;box-sizing:border-box;padding:14px 16px;border-radius:14px;border:3px solid #e2ddd6;font-size:20px;font-family:\'DM Sans\',sans-serif;outline:none}.cats-in:focus{border-color:#0ea5e9}'+
+  '.cats-btn{padding:12px 22px;border-radius:999px;border:none;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif}'+
+  '.cats-ghost{padding:10px 16px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif}'+
+  '.cats-cue{padding:16px 18px;border-radius:18px;background:#f5f3ff;border:2px solid #ddd6fe;text-align:center;font-family:\'Fraunces\',serif;font-weight:800;color:#4c1d95;line-height:1.25;overflow-wrap:anywhere}</style>';
+function buildCatsHtml(color){
+  let h=CATS_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const groups=catsGroups(_catsItems(),masteryKid), decks=Object.keys(groups).sort();
+  if(!decks.length){ h+='<div class="mast-none">No decks ready for Categories yet \u{2014} it needs a deck with '+CATS_MIN_CATS+' or more groups of '+CATS_MIN_PER+'+ cards that share an answer or a rule.</div></div>'; return h; }
+  const st=catsState;
+  const chip=(dk,lbl)=>{ const sel=st&&st.deck===dk; return '<button onclick="catsStart(\''+_catsQ(dk)+'\')" style="padding:10px 16px;border-radius:999px;font-size:14px;font-weight:800;border:2px solid '+(sel?color:'#e2ddd6')+';background:'+(sel?color:'#fff')+';color:'+(sel?'#fff':'#57534e')+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
+  if(!st||st.phase==="done"){
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">';
+    decks.forEach(dk=>{ h+=chip(dk,_catsE(dk)+' <span style="opacity:.7;font-weight:700">'+groups[dk].length+'</span>'); });
+    h+='</div>';
+  }
+  if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u{1F4CB} Pick a deck. A category comes up \u{2014} name every card in it you can, one at a time, Enter after each.</div></div>'; return h; }
+  const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[catsBestKey(st.deck)];
+  const head=(right)=>'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 10px;flex-wrap:wrap"><div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:800;color:#292524">'+right+'</div>'+
+    '<span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+_catsE(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
+    '<button class="cats-ghost" onclick="catsChangeDeck()">\u{1F5C2} Change deck</button></span></div>';
+  if(st.phase==="play"){
+    const cat=st.cats[st.ci], n=Object.keys(cat.named).length;
+    if(typeof window!=="undefined"&&!window._catsTick&&!st.pausedAt) catsTick(st);   // back on screen (another view, a parked kid): the clock ticks again
+    h+=head('Category '+(st.ci+1)+' of '+st.cats.length);
+    h+='<div class="cats-cue" style="font-size:'+(cat.label.length<=12?'32px':cat.label.length<=40?'22px':'17px')+'"><div style="font-size:12px;font-weight:800;color:#7c3aed;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;font-family:\'DM Sans\',sans-serif">Name every one that is\u2026</div>'+_catsE(cat.label)+'</div>';
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0 8px"><span id="cats-count" style="font-size:17px;font-weight:800;color:'+color+'">'+n+' of '+cat.cards.length+'</span><span id="cats-clock" style="font-size:13px;font-weight:700;color:var(--muted)">'+catsClock(catsElapsed(st))+'</span></div>';
+    h+='<div style="display:flex;gap:8px;align-items:center"><input id="cats-in" class="cats-in" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Type one, press Enter" aria-label="A card in this category" onkeydown="if(event.key===\'Enter\'){event.preventDefault();catsAdd();}">'+
+      '<button class="cats-btn" style="background:'+color+'" onclick="catsAdd()">Add</button></div>';
+    h+='<div id="cats-chips" style="margin:12px 0;min-height:40px">'+cat.typed.map(_catsChip).join("")+'</div>';
+    h+='<div style="display:flex;justify-content:center"><button class="cats-ghost" onclick="catsNextCat()">'+(st.ci+1<st.cats.length?'\u{27A1} Next category':'\u{2714} I\u{2019}m done')+'</button></div>';
+    return h+'</div>';
+  }
+  // Finish: named N of M, then each group — ✓ named, the rest dim (after the kid is done with it), the stray chips
+  h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} You named '+st.count+' of '+st.of+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+  h+='<div style="font-size:12px;font-weight:700;color:var(--muted);margin-top:4px">'+_catsE(st.deck)+' \u{00B7} '+st.cats.length+' categories</div>';
+  st.cats.forEach(cat=>{
+    h+='<div style="text-align:left;margin-top:12px"><div style="font-size:12px;font-weight:800;color:#57534e;text-transform:uppercase;letter-spacing:.04em">'+_catsE(cat.label)+' \u{00B7} '+Object.keys(cat.named).length+' of '+cat.cards.length+'</div><div style="margin-top:4px">';
+    cat.cards.forEach(x=>{ const t=cat.named[x.pid]?cat.typed.find(y=>y.pid===x.pid):null;
+      h+=t?'<span class="cats-chip cats-on">\u2713 '+(t.how==="close"?'<s style="opacity:.6">'+_catsE(t.text)+'</s> ':'')+_catsE(x.front)+'</span>':'<span class="cats-chip cats-dim">'+_catsE(x.front)+'</span>'; });
+    const stray=cat.typed.filter(y=>y.pid==null); if(stray.length) h+='<div style="margin-top:2px">'+stray.map(_catsChip).join("")+'</div>';
+    h+='</div></div>';
+  });
+  h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap"><button class="cats-btn" style="background:'+color+'" onclick="catsStart(\''+_catsQ(st.deck)+'\')">\u{1F501} Play again</button></div>';
+  return h+'</div></div>';
+}
+// CATS_END
 // STUDYCOUNTS_START — 📚 Study sessions count everywhere (F3 of PLAN_learning_system, her yes 2026-10-24). A study
 // sitting logs to mastery/studyLog/<kid>/<sid>/<yyyymmdd>, but Scores, the Weekly report, sprint readiness (the ≥ 90%
 // untimed check) and the notebook's 🔁 review flags read only the drill's mastery/history/<kid>/<yyyymmdd>, so Lincoln —
@@ -84154,6 +84375,8 @@ const GAMES_LIST=[
      park:()=>tnState, restore:v=>{ tnState=v||null; }, resume:()=>tnResume(), decks:k=>typeof tnDecks==="function"?tnDecks(_gamesItems(k),k):[]},   // ✅ TRUENOT · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
   {key:"sure",   emoji:"\u{1F914}", label:"Sure? then flip", view:"sure",             available:k=>typeof sureDecks==="function"&&sureDecks(_gamesItems(k),k).length>0, render:c=>buildSureHtml(c),
      park:()=>sureState, restore:v=>{ sureState=v||null; }, resume:()=>sureResume(), decks:k=>typeof sureDecks==="function"?sureDecks(_gamesItems(k),k):[]},   // 🤔 SURE · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
+  {key:"cats",   emoji:"\u{1F4CB}", label:"Categories",  view:"cats",                 available:k=>typeof catsAvail==="function"&&catsAvail(k), render:c=>buildCatsHtml(c),
+     park:()=>catsPark(), restore:v=>{ catsRestore(v); }, resume:()=>catsResume(), decks:k=>typeof catsDecks==="function"?catsDecks(_gamesItems(k),k):[]},   // 📋 CATS · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
 ];
 const gamesLast={};   // kid → key of the last game played on this device
 function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k)&&(typeof gameDeckAny!=="function"||gameDeckAny(k,g)); }catch(e){ return false; } }); }   // 🎮 GAMEGRID: every deck off → the game isn't offered
