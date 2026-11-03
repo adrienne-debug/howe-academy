@@ -200,7 +200,7 @@ console.log("── the practice round: wrong twice ──");
   const they=items.find(i=>i.id==="k_they");
   c.mpOpen("kid1"); const U=c.__ui();
   mpBuild(c,"thye"); mpBuild(c,"teyh");
-  ok("fail: logged with fail, moves on, a Workout miss day",U.cur.msg==="fail"&&U.lock===true&&U.log[0].ok===false&&U.log[0].fail===true&&they.ww.m===3&&they.ww.d==="2026-11-02"&&U.ww.k_they===1);
+  ok("fail: logged with fail, moves on, a Workout miss day",U.cur.msg==="fail"&&U.lock===true&&U.log[0].ok===false&&U.log[0].fail===true&&they.ww.m===3&&they.ww.d===c.wwToday()&&U.ww.k_they===1);
 }
 console.log("── study misses: a spelling word wrong twice now joins (Build it can play it) ──");
 {
