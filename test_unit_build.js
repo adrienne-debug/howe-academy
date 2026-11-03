@@ -118,7 +118,7 @@ console.log("── day by day is the first screen ──");
     }
     console.log("\n── the hooks, the block ──");
     {
-      ok("renderUnits opens the Builder while it is open (guarded), before the tabs", /if\(typeof ubOpenHTML==="function"\)\{ const _ub=ubOpenHTML\(\); if\(_ub\)\{ con\.innerHTML=_ub; return; \} \}/.test(fn("renderUnits")));
+      ok("renderUnits opens the Builder while it is open (guarded), before the tabs", /if\(typeof ubOpenHTML==="function"\)\{ const _ub=ubOpenHTML\(\); if\(_ub\)\{ con\.innerHTML=_fr\+_ub; return; \} \}/.test(fn("renderUnits")));
       ok("the library's ✚ Build a unit button is the UNITSTAB hook (ubOpen)", /ubOpen\(\)/.test(cut("// UNITSTAB_START", "// UNITSTAB_END")));
       ok("no kid's name in the block; no shuffle emoji in index.html; every write sits behind the live check", !/lincoln|ellis|lucy|julian/i.test(UB.replace(/\/\/.*$/gm, "")) && src.indexOf("🔀") < 0 && (UB.match(/db\.ref\(/g) || []).length === 1 && /if\(ubLive\(\)\)\{ db\.ref\("unitStudies\/"\+u\.id\)\.transaction/.test(UB));
       ok("phone width: the page is max-width 560 with wrapping rows", /max-width:560px/.test(c.ubPageHTML ? "max-width:560px" : "") && /flex-wrap:wrap/.test(UB));
