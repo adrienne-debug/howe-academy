@@ -54,7 +54,8 @@ ok(D.nbtDayOf("", "Howe Academy · Daily Notebook · Thursday · November 5") ==
 // ✅ Grade = the printed notebook's sheet
 ok(/function nbtCanGrade\(v\)\{ return !!\(v&&v\.ans&&typeof nbChkOpen==="function"&&typeof NB_WB_KIDS!=="undefined"&&NB_WB_KIDS\[v\.kid\]&&wbMomEyes\(\)\); \}/.test(blk), "Grade: only with the key pane (Mom), only the kids who have the sheet");
 ok(blk.indexOf("nbChkOpen(v.kid,v.wk,day,{noDgImg:true})") > 0, "Grade: opens the same sheet for the page's day, without the Daily Grams picture");
-ok(blk.indexOf("nbBankSave(") < 0 && blk.indexOf('"checks"') < 0 && !/db\.ref\([^)]*checks/.test(blk), "Grade: the block stores no grades of its own (the sheet's own storage)");
+const noAc = blk.slice(0, blk.indexOf("// NBT_AUTOCHK_START")) + blk.slice(blk.indexOf("// NBT_AUTOCHK_END"));   // the auto-check (test_nb_autochk.js) writes the kid's tap into the sheet's own record — Grade itself still stores nothing
+ok(noAc.indexOf("nbBankSave(") < 0 && noAc.indexOf('"checks"') < 0 && !/db\.ref\([^)]*checks/.test(noAc), "Grade: the block stores no grades of its own (the sheet's own storage)");
 const ck = src.slice(src.indexOf("function nbChkOpen("), src.indexOf("function nbChkHistory("));
 ok(/function nbChkOpen\(kid,wk,day,opts\)/.test(ck) && ck.indexOf("nbChkOpen(kid,wk,day,opts)") > 0 && ck.indexOf("noDg:!!(opts&&opts.noDgImg)") > 0, "the sheet: takes opts, keeps it through the lazy load");
 ok(ck.indexOf("if(dg&&dg.missing.length&&!nbChkState.noDg) nbChkDgFetch();") > 0 && ck.indexOf("if(s.noDg) h+=box('📝 '+esc(s.dg.title)+' — Day '+s.dg.day,") > 0, "the sheet: no key-page fetch and no picture when the key is beside her; the ✓/✗ row stays");

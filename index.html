@@ -4223,6 +4223,7 @@ function initFb() {
       try{HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings));}catch(e){}
       if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);}
       else if(tab==="schedule"&&typeof renderAllSoon==="function") renderAllSoon();   // 📱 NBTABLET: the Open notebook chips follow the switch / Send from another device (her yes 2026-11-02)
+      try{ if(typeof nbtView!=="undefined"&&nbtView&&typeof nbtAcDraw==="function") nbtAcDraw(); }catch(e){}   // NBT_AUTOCHK: an open notebook shows a mark that lands from another device
     });
     db.ref("together").on("value",s=>{ together=s.val()||{}; if(tab==="kids"||tab==="moms-plan") renderAllSoon(); });   // 🤝 Together — both devices follow the same session
     db.ref("mathSprints").on("value",s=>{ mathSprints=s.val()||{}; if(tab==="mastery"||tab==="schedule") renderAllSoon(); });   // 🔢 Book Sprints
@@ -44766,6 +44767,7 @@ function nbChkOpen(kid,wk,day,opts){   // 📱 NBTABLET: opts {noDgImg} from the
   if(!it.q1&&!it.q2&&!it.q3&&!dg){ if(typeof gwShowToast==="function") gwShowToast("No notebook answers to check for "+cap(day)+"."); return; }
   const old=(((notebookSettings||{})[kid]||{}).checks||{})[wk]||{}; const prev=old[day]||{};
   nbChkState={kid,wk,day,it,dg,q0:{t:"DG",ok:prev.dg?prev.dg.ok:null},q1:{t:it.q1?(it.q1.type||""):"",ok:prev.q1?prev.q1.ok:null},q2:{t:it.q2?(it.q2.qtype||""):"",ok:prev.q2?prev.q2.ok:null},q3:{t:(it.q3&&it.q3.bank)?(it.q3.ctype||""):"",ok:prev.q3?prev.q3.ok:null},noDg:!!(opts&&opts.noDgImg)};   // 📱 NBTABLET: noDg
+  ["q1","q2","q3"].forEach(q=>{ const p=prev[q]; if(p&&p.pick){ nbChkState[q].pick=p.pick; nbChkState[q].auto=!!p.auto; nbChkState[q].aok=p.ok; } });   // NBT_AUTOCHK: the kid's tap, shown on the row and kept on save
   nbChkRender();
   if(dg&&dg.missing.length&&!nbChkState.noDg) nbChkDgFetch();
 }
@@ -44774,6 +44776,7 @@ function nbChkClose(){ const ov=document.getElementById("nbchk-dlg"); if(ov) ov.
 function nbChkSave(){
   if(!momHere()||!nbChkState) return; const s=nbChkState, rec={ts:Date.now()};
   if(s.q1.ok!=null) rec.q1={t:s.q1.t,ok:s.q1.ok}; if(s.q2.ok!=null) rec.q2={t:s.q2.t,ok:s.q2.ok}; if(s.q3.ok!=null) rec.q3=s.q3.t?{t:s.q3.t,ok:s.q3.ok}:{ok:s.q3.ok};
+  ["q1","q2","q3"].forEach(q=>{ if(rec[q]&&s[q].pick){ rec[q].pick=s[q].pick; if(s[q].auto&&s[q].ok===s[q].aok) rec[q].auto=true; } });   // NBT_AUTOCHK: the tap stays with the row; a mark Mom flipped is hers (auto dropped)
   if(s.q0&&s.q0.ok!=null) rec.dg={t:"DG",d:(s.dg&&s.dg.day)||0,ok:s.q0.ok};   // NBANS: the Daily Grams page, right or wrong
   if(!rec.q1&&!rec.q2&&!rec.q3&&!rec.dg){ nbChkClose(); return; }
   nbBankSave(s.kid,"checks",s.wk+"/"+s.day,rec);
@@ -44787,7 +44790,8 @@ function nbChkRender(){
   const rw=(q,ok)=>'<div style="display:flex;gap:6px;margin-top:7px">'+
     '<button onclick="nbChkMark(\''+q+'\',true)" style="flex:1;padding:8px;border-radius:9px;font-weight:800;font-size:13px;cursor:pointer;'+F+'border:1.5px solid #86efac;background:'+(ok===true?'#16a34a':'#fff')+';color:'+(ok===true?'#fff':'#166534')+'">✓ Right</button>'+
     '<button onclick="nbChkMark(\''+q+'\',false)" style="flex:1;padding:8px;border-radius:9px;font-weight:800;font-size:13px;cursor:pointer;'+F+'border:1.5px solid #fca5a5;background:'+(ok===false?'#b91c1c':'#fff')+';color:'+(ok===false?'#fff':'#991b1b')+'">✗ Wrong</button></div>';
-  const box=(label,inner,q,ok)=>'<div style="text-align:left;background:#f9fafb;border:1px solid var(--border);border-radius:10px;padding:9px 11px;margin-bottom:8px"><div style="font-size:10px;font-weight:800;letter-spacing:.05em;color:var(--muted);margin-bottom:3px">'+label+'</div>'+inner+rw(q,ok)+'</div>';
+  const tapped=q=>(s[q]&&s[q].pick)?'<div style="font-size:11.5px;color:#1e3a8a;font-weight:700;margin-top:4px">📱 Tapped '+esc(s[q].pick)+(s[q].auto?' — checked by the app':'')+'</div>':'';   // NBT_AUTOCHK
+  const box=(label,inner,q,ok)=>'<div style="text-align:left;background:#f9fafb;border:1px solid var(--border);border-radius:10px;padding:9px 11px;margin-bottom:8px"><div style="font-size:10px;font-weight:800;letter-spacing:.05em;color:var(--muted);margin-bottom:3px">'+label+'</div>'+inner+tapped(q)+rw(q,ok)+'</div>';
   const ansOf=x=>{ const c=(x.choices||[]).find(c=>c.l===x.ans); return x.ans?('<b style="color:#166534">('+x.ans+') '+(c?c.t:'')+'</b>'):''; };
   let h='';
   if(s.dg){   // NBANS: Daily Grams key page first — tap the page to zoom; it covers several days, his Day is named in the label
@@ -45365,7 +45369,7 @@ function nbtShow(kid,wk,html,ansHtml,opts){
     // the card's day first: keep the remembered page when it is one of that day's pages, else the day's first page
     const first=v.days.indexOf(v.day)+1;
     if(first>0){ if(v.days[v.page-1]!==v.day) v.page=first; } else { v.noDay=true; v.page=1; }
-    v.ready=true; nbtShowPage(); nbtFitAll(); nbtLoadInk(); };
+    v.ready=true; nbtShowPage(); nbtFitAll(); nbtLoadInk(); nbtAcPrep(v); };   // NBT_AUTOCHK: arm the day pages' choice circles
   fr.srcdoc=html;
   if(ans){ const af=document.getElementById("nbt-ans");
     af.onload=()=>{ const v=nbtView; if(v!==nbtView||!v) return;
@@ -45391,6 +45395,7 @@ function nbtShowPage(){
   nbtPages(fr.contentDocument).forEach((p,i)=>{ if(i===v.page-1) p.classList.add("nbt-on"); else p.classList.remove("nbt-on"); });
   try{ HA_LS.setItem(v.key,String(v.page)); }catch(e){}
   nbtAnsFollow(); nbtShowAns();
+  nbtAcDraw();   // NBT_AUTOCHK: this page's circles
   nbtBarRender();
 }
 // the key pane follows the kid's page: a Daily Grams page → the Daily Grams key; anything else → the daily answer keys page
@@ -45510,12 +45515,15 @@ function nbtPaint(){
     if(pts.length===1) g.lineTo(pts[0][0]*cv.width+0.6,pts[0][1]*cv.height+0.6);
     g.stroke();
   });
+  nbtAcPaint(g,cv);   // NBT_AUTOCHK: rings and ✓ / ✗ over the ink
 }
 // Pointer plumbing — the workbook viewer's, on this canvas. The first real Pencil touch flips to pen-only so a resting palm scrolls.
 (function nbtBindOnce(){
   document.addEventListener("pointerdown",e=>{
     const cv=document.getElementById("nbt-ink"); if(!cv||!nbtView||e.target!==cv) return;
     if(e.pointerType==="pen"&&!nbtView.sawPen){ nbtView.sawPen=true; nbtView.penOnly=true; nbtBarRender(); }
+    const p0=nbtPt(e,cv), hit=p0?nbtAcHit(nbtView,p0):null;   // NBT_AUTOCHK: a tap on an open letter circle picks it (any pointer) — the pick lands on lift, in place
+    if(hit){ e.preventDefault(); nbtView._tap={hit:hit,p:p0,t:Date.now()}; try{cv.setPointerCapture(e.pointerId);}catch(err){} return; }
     if(nbtView.penOnly&&e.pointerType!=="pen") return;
     e.preventDefault();
     const _w0=cv.width; if(!nbtFitCanvas()) return; if(cv.width!==_w0) nbtPaint();
@@ -45528,6 +45536,7 @@ function nbtPaint(){
   },{passive:false});
   document.addEventListener("pointermove",e=>{
     const cv=document.getElementById("nbt-ink"); if(!cv||!nbtView) return;
+    if(nbtView._tap){ const q=nbtPt(e,cv); if(q&&(Math.abs(q[0]-nbtView._tap.p[0])>0.012||Math.abs(q[1]-nbtView._tap.p[1])>0.012)) nbtView._tap=null; return; }   // NBT_AUTOCHK: a drag is not a tap
     if(nbtView.tool==="erase"&&e.buttons&&e.target===cv){ e.preventDefault(); const ep=nbtPt(e,cv); if(ep) nbtEraseAt(ep); return; }
     if(!nbtView._live) return;
     e.preventDefault();
@@ -45535,7 +45544,11 @@ function nbtPaint(){
     evs.forEach(ev=>{ const q=nbtPt(ev,cv); if(q) nbtView._live.p.push(q); });
     nbtPaint();
   },{passive:false});
-  const end=()=>{ if(!nbtView) return; if(nbtView._live){ nbtView._live=null; nbtMarkDirty(nbtView); nbtBarRender(); } };
+  const end=(e)=>{ if(!nbtView) return;
+    if(nbtView._tap){ const tp=nbtView._tap; nbtView._tap=null;   // NBT_AUTOCHK: lifted on the same circle within 0.7 s = the pick; anything else is nothing
+      if(e&&e.type==="pointerup"&&Date.now()-tp.t<700){ const cv=document.getElementById("nbt-ink"), q=cv?nbtPt(e,cv):null, h2=q?nbtAcHit(nbtView,q):null; if(h2&&h2.arm===tp.hit.arm&&h2.l===tp.hit.l) nbtAcPick(nbtView,h2); }
+      return; }
+    if(nbtView._live){ nbtView._live=null; nbtMarkDirty(nbtView); nbtBarRender(); } };
   document.addEventListener("pointerup",end); document.addEventListener("pointercancel",end);
   window.addEventListener("resize",()=>{ if(nbtView) nbtFitAll(); });
 })();
@@ -45566,6 +45579,85 @@ async function nbtSave(quiet){
     if(nbtView===v) nbtBarRender();
   }catch(e){ if(!quiet) alert("Couldn't save that page: "+(e.message||e)); else if(typeof dbg==="function") dbg("nbt autosave failed: "+(e.message||e)); }
 }
+// NBT_AUTOCHK_START — ✅ the kid's answers are checked on the spot (her yes 2026-11-03: "yes for notebook auto check, kid, but don't
+// allow to change answer — leave it for Mom to talk about"). On a kid's device, the day's bank items with lettered choices — the
+// same three the ✅ Grade sheet rebuilds (CogAT, number reasoning, conventions; nbChkItems) — get a tap zone on each printed
+// letter circle. One tap = that letter, final: the circle gets a ring, ✓ or ✗ beside it, and the pick lands in the same per-day
+// record the Grade sheet reads — notebookSettings/<kid>/checks/<week>/<day>/<slot> = {t,ok,pick,auto:true,ts} — so the sheet
+// opens pre-filled from it and Mom's mark wins (a slot she already marked takes no tap). The right answer is never shown.
+// Handwritten work (Daily Grams, the word sentence, a CogAT-book day, the reflection) stays Mom's by hand. A block is armed only
+// when its printed choices match the rebuilt item word for word, so a bank edited after the send simply arms nothing.
+// The marks are drawn on the ink canvas, never into the page, so nothing on the page reflows or clips.
+const NBT_AC_SLOTS=["q1","q2","q3"];
+function nbtAcText(h){ const d=document.createElement("div"); d.innerHTML=String(h==null?"":h); return (d.textContent||"").replace(/\s+/g," ").trim().toLowerCase(); }
+function nbtAcDomText(el){ return ((el&&el.textContent)||"").replace(/\s+/g," ").trim().toLowerCase(); }
+// the choice blocks printed on one page: [{el, rows:[{el, letterEl, l, t}]}] — a row is a letter circle followed by its text
+function nbtAcBlocks(page){
+  return Array.prototype.slice.call(page.querySelectorAll(".choices")).map(b=>({el:b,rows:Array.prototype.slice.call(b.children).map(r=>{
+    const le=r.firstElementChild, l=le?nbtAcDomText(le).toUpperCase():"", t=nbtAcDomText(r);
+    return {el:r,letterEl:le,l:l,t:(l&&t.indexOf(l.toLowerCase())===0)?t.slice(l.length).trim():t};
+  }).filter(r=>r.letterEl&&/^[A-E]$/.test(r.l))})).filter(b=>b.rows.length>=2);
+}
+function nbtAcMatch(block,item){ const ch=(item&&item.choices)||[]; if(!ch.length||ch.length!==block.rows.length) return false; return ch.every((c,i)=>block.rows[i].l===String(c.l||"").toUpperCase()&&block.rows[i].t===nbtAcText(c.t)); }
+function nbtAcType(slot,item){ return slot==="q1"?(item.type||""):slot==="q2"?(item.qtype||""):(item.ctype||""); }   // the sheet's `t` for the slot
+// the stored record for an armed block — any mark there (the kid's tap, or Mom's by hand) closes the block to taps
+function nbtAcRec(v,a){ try{ const r=(((((notebookSettings||{})[v.kid]||{}).checks||{})[v.wk]||{})[a.day]||{})[a.slot]; return (r&&(r.pick||r.ok!=null))?r:null; }catch(e){ return null; } }
+function nbtAcCanTap(v){ return !!(v&&v.ready&&v.ac&&!wbMomEyes()); }   // the kid's device taps; Mom's device only shows the taps (her door is ✅ Grade)
+// arm the pages: each day page's blocks matched to that day's rebuilt items (the notebook library loads once if it isn't here yet)
+async function nbtAcPrep(v){
+  v.ac=null;
+  if(typeof nbChkItems!=="function"||typeof NB_WB_KIDS==="undefined"||!NB_WB_KIDS[v.kid]) return;
+  try{ if(!window.HoweNotebooks||!window.HoweNotebooks.cogatBankPlan){ if(typeof haLoadNotebooksLib!=="function") return; await haLoadNotebooksLib(); } }catch(e){ return; }
+  if(nbtView!==v) return;
+  const fr=document.getElementById("nbt-doc"), doc=fr&&fr.contentDocument; if(!doc) return;
+  const ac={}, byDay={};
+  nbtPages(doc).forEach((p,i)=>{
+    const d=v.days[i]; if(NBT_DAYS.indexOf(d)<0) return;
+    if(!(d in byDay)){ try{ byDay[d]=nbChkItems(v.kid,v.wk,d)||{}; }catch(e){ byDay[d]={}; } }
+    const it=byDay[d], blocks=nbtAcBlocks(p), arms=[];
+    NBT_AC_SLOTS.forEach(s=>{ const item=it[s]; if(!item||!item.bank||!item.ans||!(item.choices||[]).length) return; const b=blocks.find(x=>nbtAcMatch(x,item)); if(!b) return; arms.push({slot:s,day:d,item:item,block:b,t:nbtAcType(s,item),rects:null}); });
+    if(arms.length) ac[i+1]=arms;
+  });
+  v.ac=ac; nbtAcDraw();
+  try{ doc.fonts.ready.then(()=>{ if(nbtView===v) nbtAcDraw(); }); }catch(e){}   // the circles move a hair when the page's fonts land
+}
+// measure the page on screen (its layout is the real 816 × 1056, unscaled inside the frame) and paint
+function nbtAcDraw(){
+  const v=nbtView; if(!v||!v.ac) return; const arms=v.ac[v.page]; if(!arms) { nbtPaint(); return; }
+  arms.forEach(a=>{ a.rects=a.block.rows.map(r=>{ const b=r.letterEl.getBoundingClientRect(); return {l:r.l,x:b.left,y:b.top,w:b.width,h:b.height}; }); });
+  nbtPaint();
+}
+// hit-test a canvas point (0..1 of the hold) against the open blocks' letter circles → {arm,l} or null
+function nbtAcHit(v,p){
+  if(!nbtAcCanTap(v)) return null; const arms=v.ac[v.page]; if(!arms) return null;
+  const x=p[0]*816, y=p[1]*1056, pad=6;
+  for(const a of arms){ if(nbtAcRec(v,a)||!a.rects) continue; for(const r of a.rects){ if(r.w>0&&x>=r.x-pad&&x<=r.x+r.w+pad&&y>=r.y-pad&&y<=r.y+r.h+pad) return {arm:a,l:r.l}; } }
+  return null;
+}
+// the tap: that letter, right or wrong, into the sheet's record — one targeted write, final (nbtAcRec closes the block)
+function nbtAcPick(v,hit){
+  const a=hit.arm; if(nbtAcRec(v,a)) return;
+  const ok=hit.l===String(a.item.ans||"").toUpperCase(), rec={t:a.t,ok:ok,pick:hit.l,auto:true,ts:Date.now()};
+  try{ const ns=notebookSettings; ns[v.kid]=ns[v.kid]||{}; ns[v.kid].checks=ns[v.kid].checks||{}; ns[v.kid].checks[v.wk]=ns[v.kid].checks[v.wk]||{}; ns[v.kid].checks[v.wk][a.day]=ns[v.kid].checks[v.wk][a.day]||{}; ns[v.kid].checks[v.wk][a.day][a.slot]=rec; HA_LS.setItem("ha_nb_settings",JSON.stringify(ns)); }catch(e){}
+  if(db&&!_dryRun()){ try{ db.ref("notebookSettings/"+v.kid+"/checks/"+v.wk+"/"+a.day+"/"+a.slot).set(rec); }catch(e){ if(typeof dbg==="function") dbg("nbt auto-check save failed: "+(e.message||e)); } }
+  nbtAcDraw();
+  if(typeof gwShowToast==="function") gwShowToast(ok?"✓ Right!":"✗ Not that one — talk it over with Mom.");
+}
+// paint, over the ink: a dashed ring on each circle still open to a tap (kid's device), a solid ring + ✓ / ✗ on a tapped one
+function nbtAcPaint(g,cv){
+  const v=nbtView; if(!v||!v.ac) return; const arms=v.ac[v.page]; if(!arms) return;
+  const sx=cv.width/816, sy=cv.height/1056, s=(sx+sy)/2, tap=nbtAcCanTap(v);
+  arms.forEach(a=>{ if(!a.rects) return; const rec=nbtAcRec(v,a);
+    a.rects.forEach(r=>{ if(!(r.w>0)) return; const cx=(r.x+r.w/2)*sx, cy=(r.y+r.h/2)*sy, rad=Math.max(r.w*sx,r.h*sy)/2+3*s;
+      if(rec){ if(!rec.pick||rec.pick!==r.l) return;
+        g.setLineDash([]); g.lineWidth=2.5*s; g.strokeStyle="#1e3a8a"; g.beginPath(); g.arc(cx,cy,rad,0,Math.PI*2); g.stroke();
+        const mx=cx+rad*0.95, my=cy-rad*0.95; g.fillStyle="#fff"; g.beginPath(); g.arc(mx,my,9*s,0,Math.PI*2); g.fill();
+        g.fillStyle=rec.ok?"#16a34a":"#b91c1c"; g.font="900 "+Math.round(15*s)+"px 'DM Sans',sans-serif"; g.textAlign="center"; g.textBaseline="middle"; g.fillText(rec.ok?"✓":"✗",mx,my+0.5*s);
+      } else if(tap){ g.setLineDash([3*s,3*s]); g.lineWidth=1.5*s; g.strokeStyle="#60a5fa"; g.beginPath(); g.arc(cx,cy,rad,0,Math.PI*2); g.stroke(); g.setLineDash([]); }
+    });
+  });
+}
+// NBT_AUTOCHK_END
 // ── the cards: a Tablet kid's Morning / Closing Notebook card opens the notebook on that day's page (Mom's device: + the answer key) ──
 function nbtCardRows(t){
   try{
@@ -45588,7 +45680,7 @@ function nbtTabHtml(kid,wkLabel){
       '<div style="font-size:12px;font-weight:800;color:#1e3a8a">\u{1F4D3} This notebook is <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#bfdbfe;color:#1e3a8a;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span></div>'+
       seg("print","\u{1F5A8} Printed")+seg("tablet","\u{1F4F1} On the tablet")+
     '</div>'+
-    '<div style="font-size:10.5px;color:var(--muted);line-height:1.4;margin-top:6px">Printed = as today. On the tablet = the Morning and Closing Notebook cards open that day’s page of the notebook, to write on with the pencil; on your device the answer key sits beside it. \u{1F5A8} Print still works either way.</div>';
+    '<div style="font-size:10.5px;color:var(--muted);line-height:1.4;margin-top:6px">Printed = as today. On the tablet = the Morning and Closing Notebook cards open that day’s page of the notebook, to write on with the pencil — tapping a letter on a question checks it on the spot (one tap, final; it lands on the ✅ Grade sheet); on your device the answer key sits beside it. \u{1F5A8} Print still works either way.</div>';
   if(mode==="tablet"){
     h+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">'+
       '<button onclick="nbtSend(\''+kid+'\')" title="Builds '+wkLabel+' the same way Print does and puts it on the tablet" style="padding:9px 14px;border-radius:10px;border:none;background:#1d4ed8;color:#fff;font-size:12.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F4F1} Send '+wkLabel+' to the tablet</button>'+
