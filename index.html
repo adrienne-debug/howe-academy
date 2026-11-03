@@ -78085,12 +78085,17 @@ function _gfTake(arr,pid){ const j=arr.indexOf(pid); if(j>=0) arr.splice(j,1); }
 function _gfIt(st,pid){ return _gfItems(st.kid).find(x=>x&&x.id===pid)||null; }
 function gofishName(it){ return _matchPlain(it&&it.prompt); }
 // The decks that can deal a hand: Which one?'s playable decks with GF_MIN+ cards in play.
+// 🎮 GAMEGRID (2026-11-03): Go Fish has its own column in Mom's games-per-deck grid. Which one?'s modes are read RAW (Which one?'s
+// own cells stand aside — a deck turned off for Which one? still plays here), then this game's own cell: gameDeckOn(kid,"gofish",deck).
+function _gfRaw(fn){ const had=(typeof _gdRaw!=="undefined")?_gdRaw:null; try{ if(had!==null) _gdRaw=true; return fn(); } finally{ if(had!==null) _gdRaw=had; } }
+function gofishDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"gofish",deck); }
+function _gfWhichPool(items,kid){ return _gfRaw(()=>whichPool(items,WHICH_MIX,kid)); }
 function gofishDecks(items,kid){
   kid=kid||masteryKid;
-  const n={}; whichPool(items,WHICH_MIX,kid).forEach(i=>{ const d=i.subject||"Other"; n[d]=(n[d]||0)+1; });
-  return Object.keys(n).filter(d=>n[d]>=GF_MIN).sort();
+  const n={}; _gfWhichPool(items,kid).forEach(i=>{ const d=i.subject||"Other"; n[d]=(n[d]||0)+1; });
+  return Object.keys(n).filter(d=>n[d]>=GF_MIN&&gofishDeckOn(kid,d)).sort();
 }
-function gofishPool(items,deck,kid){ kid=kid||masteryKid; const ok=gofishDecks(items,kid); return whichPool(items,WHICH_MIX,kid).filter(i=>ok.indexOf(i.subject||"Other")>=0&&(deck===WHICH_MIX||(i.subject||"Other")===deck)); }
+function gofishPool(items,deck,kid){ kid=kid||masteryKid; const ok=gofishDecks(items,kid); return _gfWhichPool(items,kid).filter(i=>ok.indexOf(i.subject||"Other")>=0&&(deck===WHICH_MIX||(i.subject||"Other")===deck)); }
 // What the kid DOES with a card: "say" (picture / symbol — say it out loud), "type" (a number back — the number pad), "pick" (a word back — three of the deck's backs).
 function gofishKind(it,mode){ if(mode!=="answer") return "say"; return GF_NUM.test(String(_whichBack(it)).trim())?"type":"pick"; }
 // PURE: deal the pairs — the kid and the app each get H different cards; the rest (two copies of each card, less the ones held) is the pond.
@@ -78105,8 +78110,8 @@ function _gfSay(st,text){ st.say=text||""; if(!text||(typeof mastView!=="undefin
 function gofishSayAgain(){ const st=gofishState; if(st&&st.say) try{ mastSpeak(st.say); }catch(e){} }
 function gofishStart(deck){
   try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding / bonk (iPad)
-  const items=_gfItems(), mix=deck===WHICH_MIX, modes=whichDeckModes(items), pool=gofishPool(items,deck);
-  if(pool.length<GF_MIN){ gofishState=null; _mastRe(); return; }
+  const items=_gfItems(), mix=deck===WHICH_MIX, modes=_gfRaw(()=>whichDeckModes(items)), pool=gofishPool(items,deck);
+  if(pool.length<GF_MIN||(!mix&&!gofishDeckOn(masteryKid,deck))){ gofishState=null; _mastRe(); return; }   // 🎮 GAMEGRID: a deck Mom turned off for Go Fish
   const picks=_gfShuffle(pool.slice()).slice(0,GF_PAIRS), pids=picks.map(i=>i.id), kinds={};
   picks.forEach(i=>{ kinds[i.id]=gofishKind(i,modes[i.subject||"Other"]); });
   const d=gofishDeal(pids);
@@ -78150,7 +78155,7 @@ function _gfProduce(st,pid,why){
 function _gfLures(st,pid){
   const it=_gfIt(st,pid); if(!it) return [];
   const own=_whichBack(it), seen={}; seen[_whichNorm(own)]=1;
-  const more=_gfShuffle(whichPool(_gfItems(st.kid),WHICH_MIX,st.kid).filter(x=>x.id!==pid&&(x.subject||"Other")===(it.subject||"Other"))).map(x=>_whichBack(x)).filter(b=>b&&!seen[_whichNorm(b)]&&(seen[_whichNorm(b)]=1)).slice(0,2);
+  const more=_gfShuffle(_gfWhichPool(_gfItems(st.kid),st.kid).filter(x=>x.id!==pid&&(x.subject||"Other")===(it.subject||"Other"))).map(x=>_whichBack(x)).filter(b=>b&&!seen[_whichNorm(b)]&&(seen[_whichNorm(b)]=1)).slice(0,2);
   return _gfShuffle([own].concat(more));
 }
 function _gfProdTurn(st,act){ if(!st||st.lock||st.phase==="done"||!st.step||st.step.k!=="produce") return null; const t=st.turns[st.step.t]; return (t&&t.act===act)?t:null; }
@@ -82333,7 +82338,7 @@ const GAMES_LIST=[
   {key:"spell",  emoji:"\u{1F524}", label:"Build it",    view:"spell",                 available:k=>typeof spellPool==="function"&&spellPool(_gamesItems(k)).length>0, render:c=>buildSpellHtml(c),
      park:()=>spellState, restore:v=>{ spellState=v||null; }, resume:()=>spellResume()},   // 🔤 SPELLBUILD · 🎲 GAMEKIT: its own park / restore / resume
   {key:"gofish", emoji:"\u{1F41F}", label:"Go Fish",     view:"gofish",                available:k=>typeof gofishDecks==="function"&&gofishDecks(_gamesItems(k),k).length>0, render:c=>buildGofishHtml(c),
-     park:()=>gofishState, restore:v=>{ gofishState=v||null; }, resume:()=>gofishResume()},   // 🐟 GOFISH · 🎲 GAMEKIT: its own park / restore / resume
+     park:()=>gofishState, restore:v=>{ gofishState=v||null; }, resume:()=>gofishResume(), decks:k=>typeof gofishDecks==="function"?gofishDecks(_gamesItems(k),k):[]},   // 🐟 GOFISH · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
 ];
 const gamesLast={};   // kid → key of the last game played on this device
 function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k)&&(typeof gameDeckAny!=="function"||gameDeckAny(k,g)); }catch(e){ return false; } }); }   // 🎮 GAMEGRID: every deck off → the game isn't offered

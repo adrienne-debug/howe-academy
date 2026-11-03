@@ -14,14 +14,14 @@ function fnText(name){ const i=src.indexOf("function "+name+"("); if(i<0) return
 const seeded=seed=>{ let x=seed||7; return ()=>{ x=(x*1103515245+12345)&0x7fffffff; return (x%10000)/10000; }; };
 
 // ── by text ──
-const a=src.indexOf("// GOFISH_START"), b=src.indexOf("// GOFISH_END"), sp=src.indexOf("// SPELLBUILD_END");
-ok("GOFISH block sits right after SPELLBUILD_END",sp>0&&a>sp&&b>a&&src.slice(sp,a).trim()==="// SPELLBUILD_END");
+const a=src.indexOf("// GOFISH_START"), b=src.indexOf("// GOFISH_END"), sp=src.indexOf("// SPELLBUILD_END"), sc=src.indexOf("// STUDYCOUNTS_START");
+ok("GOFISH block sits among the game blocks after SPELLBUILD_END, before STUDYCOUNTS_START",sp>0&&a>sp&&b>a&&sc>b&&!/\n(?!\/\/ (BRAINDUMP|BINGO|SORTIT|GOFISH)_)[^\n]*(_START|_END)/.test(src.slice(sp+18,a)));
 ok("one block, once",src.indexOf("// GOFISH_START",a+1)<0&&src.indexOf("// GOFISH_END",b+1)<0);
 const blk=src.slice(a,b);
 ok("no kid's name in the block",!/lincoln|ellis|lucy|julian|caleb|taylor|makenzie|kenzie|andrew/i.test(blk));
 ok("no 🔀 anywhere",src.indexOf("\u{1F500}")<0);
 ok("writes: match_best one key (guarded) + gameLogRound — no set / remove / push of its own",/db&&!_dryRun\(\)\) db\.ref\("mastery\/"\+kid\+"_settings\/match_best"\)\.update\(\{\[key\]:st\.first\}\)/.test(blk)&&/gameLogRound\(st\)/.test(blk)&&!/\.set\(|\.remove\(|\.push\(e\)|next_due|studyLog/.test(blk.replace(/^\/\/.*$/gm,"").replace(/st\.turns\.push|st\.table\.push|backs\.push|st\.hand\.push|st\.app\.push|pond\.push/g,"")));
-ok("GAMES_LIST has Go Fish right after Build it, with park / restore / resume",/resume:\(\)=>spellResume\(\)\},[^\n]*\n\s*\{key:"gofish", emoji:"\\u\{1F41F\}", label:"Go Fish",\s*view:"gofish",\s*available:k=>typeof gofishDecks==="function"&&gofishDecks\(_gamesItems\(k\),k\)\.length>0, render:c=>buildGofishHtml\(c\),\s*park:\(\)=>gofishState, restore:v=>\{ gofishState=v\|\|null; \}, resume:\(\)=>gofishResume\(\)\},/.test(src));
+ok("GAMES_LIST has Go Fish right after Build it, with park / restore / resume",/resume:\(\)=>spellResume\(\)\},[^\n]*\n\s*\{key:"gofish", emoji:"\\u\{1F41F\}", label:"Go Fish",\s*view:"gofish",\s*available:k=>typeof gofishDecks==="function"&&gofishDecks\(_gamesItems\(k\),k\)\.length>0, render:c=>buildGofishHtml\(c\),\s*park:\(\)=>gofishState, restore:v=>\{ gofishState=v\|\|null; \}, resume:\(\)=>gofishResume\(\), decks:k=>typeof gofishDecks==="function"\?gofishDecks\(_gamesItems\(k\),k\):\[\]\},/.test(src));
 ok("gamesCurrentKey and GAMEKID untouched (the entry carries everything)",!/gofish/.test(fnText("gamesCurrentKey")+fnText("gameKidSwitch")+fnText("_gkResume")));
 ok("a picture card's name is never written in the ask (said only)",/"Do you have\\u2026 \(listen!\)"/.test(blk)&&!/Do you have\\u2026 "\+gofishName/.test(blk));
 ok("the start tap unlocks audio; the honor tap is documented as such",/bbAudioUnlock\(\)/.test(blk)&&/honor system/.test(blk));
@@ -36,10 +36,10 @@ const GERMAN=[G("gut","well"),G("ich","I"),G("du","you"),G("ja","yes"),G("nein",
 const SPELL=[{id:"s_1",subject:"AAS Words",prompt:"red",status:"introduction"},{id:"s_2",subject:"AAS Words",prompt:"bed",status:"introduction"},{id:"s_3",subject:"AAS Words",prompt:"fed",status:"introduction"},{id:"s_4",subject:"AAS Words",prompt:"led",status:"introduction"}];
 function world(items,o){
   o=o||{};
-  const writes=[], said=[], dings=[], timers=[], CODE=cut("// WHICHONE_START","// WHICHONE_END")+"\n"+cut("// GAMELOG_START","// GAMELOG_END")+"\n"+cut("// GOFISH_START","// GOFISH_END");
+  const writes=[], said=[], dings=[], timers=[], CODE=cut("// WHICHONE_START","// WHICHONE_END")+"\n"+cut("// GAMELOG_START","// GAMELOG_END")+"\n"+cut("// GOFISH_START","// GOFISH_END")+"\n"+cut("// GAMEGRID_START","// GAMEGRID_END");
   const ctx={console,JSON,Object,Array,String,Number,Math,Set,Map,RegExp,Date,parseInt,isNaN,setTimeout:(f,ms)=>{ timers.push(f); return timers.length; },
     document:{getElementById:()=>o.celeb?{}:null},
-    _dryRun:()=>!!o.dry,HA_LS:{setItem(){}},_mastRe(){},bbAudioUnlock(){},
+    _dryRun:()=>!!o.dry,HA_LS:{setItem(){}},_mastRe(){},bbAudioUnlock(){},momHere:()=>true,renderAll(){},_gamesItems:k=>(o.itemsFor&&o.itemsFor[k])||(k==="k"?items||[]:[]),
     _smTileVis:it=>(it&&it.emoji?'<span class="memoji">'+it.emoji+'</span>':null),
     _matchPlain:h=>String(h||"").replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim(),
     esc:s=>String(s||"").replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"),
@@ -248,6 +248,24 @@ console.log("── Mix the decks, dry run, Stop, park / resume ──");
   ok("no deck → the empty note, no round",/No decks ready for Go Fish/.test(c.buildGofishHtml("#123456")));
   c.gofishStart("Animals");
   ok("a start on a deck too small does nothing",c.gofishState===null);
+}
+console.log("── 🎮 the games-per-deck grid: Go Fish has its own column ──");
+{
+  const w=world(ANIMALS.concat(MATH,GERMAN),{settings:{gameDecks:{"Animals":{which:false}}}}), c=w.c;
+  ok("a deck turned off for Which one? still plays Go Fish (Which one?'s cell stands aside)",c.whichDecks(c.masteryData.k,"k").indexOf("Animals")<0&&c.gofishDecks(c.masteryData.k,"k").join()==="Animals,German,Math Facts"&&c.gofishPool(c.masteryData.k,c.WHICH_MIX,"k").some(i=>i.subject==="Animals"));
+  c.gofishStart("Animals");
+  ok("…and a round on it starts, picture cards playing as say",!!c.gofishState&&c.gofishState.pairs.length===8&&Object.values(c.gofishState.kinds).every(k=>k==="say"));
+}
+{
+  const w=world(ANIMALS.concat(MATH,GERMAN),{settings:{gameDecks:{"Animals":{gofish:false}}}}), c=w.c;
+  ok("a deck turned off for Go Fish is gone from its decks, its pool and Mix the decks",c.gofishDecks(c.masteryData.k,"k").join()==="German,Math Facts"&&c.gofishPool(c.masteryData.k,"Animals","k").length===0&&c.gofishPool(c.masteryData.k,c.WHICH_MIX,"k").every(i=>i.subject!=="Animals"));
+  c.gofishStart("Animals");
+  ok("a start on an off deck does nothing",c.gofishState===null);
+  const entry={key:"gofish",decks:k=>c.gofishDecks(c._gamesItems(k),k)};
+  ok("the grid's preload (decks() under the raw switch) still lists the deck — the cell shows, just off",c.gameDeckCan("k",entry).join()==="Animals,German,Math Facts"&&c.gameDeckOn("k","gofish","Animals")===false&&c.gameDeckAny("k",entry)===true);
+  const w2=world(ANIMALS,{settings:{gameDecks:{"Animals":{gofish:false}}}}), c2=w2.c;
+  ok("every deck off → gameDeckAny says no (gamesFor hides the game)",c2.gameDeckAny("k",{key:"gofish",decks:k=>c2.gofishDecks(c2._gamesItems(k),k)})===false&&c2.gofishDecks(c2.masteryData.k,"k").length===0);
+  ok("the Games tab's empty note, not a crash",/No decks ready for Go Fish/.test(c2.buildGofishHtml("#123456")));
 }
 console.log("── many seeds: every round ends, every card acted, every pair down, one log ──");
 {
