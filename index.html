@@ -78928,6 +78928,200 @@ function buildSortHtml(color){
   return h+'</div></div>';
 }
 // SORTIT_END
+// MOLE_START — 🐹 "Whack-a-mole" (her "yes to all and go to all" 2026-11-03 to games-later_design_2026-11-03.md #2; PLAN_practice_games_2026-10-23.md
+// Tier 3 "Whack-a-mole / Find the match": "prompt at top; answers pop; tap only the right one, ignore wrong ones; Wordwall's most-loved
+// template at ages 9–10"; demand REC + inhibition + fluency). The one game here with a clock, so it keeps plan rule 5 — "time only what is
+// already ~90% accurate": ONLY cards at the kid's gate tier or above play (gate_tier, the Sprint rule, default weekly); a learning card is
+// never timed. The prompt is Which one?'s: a picture / letter card is SAID (never written), an answer card shows its front big. Four moles
+// pop up one after another in four holes — the right answer and three of the deck's own wrong ones (plausible lures, plan rule 2) — and
+// each goes back down after MOLE_UP ms. Tap the right one before it hides → the soft ding. Tap a wrong one, or let the right one hide
+// untouched → the soft bonk, the prompt is said again, and the right mole comes back up and STAYS (no clock on a correction — plan rule 3)
+// until it is tapped. A round is MOLE_WAVES prompts (fewer when the deck is small), misses come back once at the end, then the finish:
+// "N on the first tap" against the kid's own best. No lives, no leaderboard, no points, no score against the kid.
+// Cards: Which one?'s own pool (whichPool / whichDeckModes read RAW, like Go Fish — a deck turned off for Which one? still plays here),
+// then this game's own grid cell gameDeckOn(kid,"mole",deck); a deck plays with MOLE_MIN+ gated cards that each have 2+ lures.
+// Writes (only these): <kid>_settings/match_best key "<deck> · mole" (first-tap rights, only when beaten) and the round's gameLog entry
+// (GAMELOG, game:"mole"). NEVER touches the ladder — no scores, no next_due, no study log. db && !_dryRun() only. Per-kid park /
+// restore / resume through its GAMES_LIST entry (🎲 GAMEKIT): every timer checks its own round and sequence, so a parked round's
+// moles never move; on resume the open wave's moles all come up and stay. A round dropped (Change deck, a kid switch) writes nothing.
+let moleState=null;   // {kid,deck,mix,game:"mole",t0,turns:[{pid,mode,tiles:[pid],up:{slot:1},wrong:{pid|late:1},done,first,back,hold}],i,seq,lock,grow,phase,first,of,isPB,prevBest,gameLogged}
+let _moleRandom=Math.random;   // tests seed it
+const MOLE_WAVES=10, MOLE_MIN=4, MOLE_HOLES=4, MOLE_GAP=450, MOLE_UP=2600, MOLE_BEAT=800;
+function _moleItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
+function _moleShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_moleRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function _moleRaw(fn){ const had=(typeof _gdRaw!=="undefined")?_gdRaw:null; try{ if(had!==null) _gdRaw=true; return fn(); } finally{ if(had!==null) _gdRaw=had; } }
+function moleDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"mole",deck); }
+function moleGate(kid){ try{ const s=(typeof masteryData!=="undefined"&&masteryData&&masteryData[(kid||masteryKid)+"_settings"])||{}; return s.gate_tier||"weekly"; }catch(e){ return "weekly"; } }
+// The Sprint rule: a card is timed only at the gate tier or above, and only once it is on the ladder
+function moleReady(it,kid){ if(!it||it.status!=="active") return false; return (typeof mastTierAtLeast==="function")?mastTierAtLeast(it.tier,moleGate(kid)):true; }
+function _moleWhichPool(items,kid){ return _moleRaw(()=>whichPool(items,WHICH_MIX,kid)); }
+function _moleModes(items,kid){ return _moleRaw(()=>whichDeckModes(items,kid)); }
+// The name a mole shows / the prompt asks for, by the deck's mode (answer mode: the BACK is the mole)
+function _moleName(it,mode){ return mode==="answer"?_whichNorm(_whichBack(it)):String(it&&it.prompt||"").trim().toLowerCase(); }
+// PURE: this wave's moles — the right card + up to MOLE_HOLES-1 different cards of ITS deck with different names (never fewer than 2 lures), shuffled into holes; null when the deck can't
+function moleTiles(it,pool,mode){
+  const seen={}; seen[_moleName(it,mode)]=1;
+  const lures=_moleShuffle((pool||[]).filter(x=>x&&x.id!==it.id&&x.subject===it.subject)).filter(x=>{ const n=_moleName(x,mode); if(!n||seen[n]) return false; seen[n]=1; return true; }).slice(0,MOLE_HOLES-1);
+  if(lures.length<2) return null;
+  return _moleShuffle([it.id].concat(lures.map(x=>x.id)));
+}
+// The cards a deck can time: Which one?'s pool, at the gate or above, with lures to pop beside them
+function molePool(items,deck,kid){
+  kid=kid||masteryKid;
+  const all=_moleWhichPool(items,kid), modes=_moleModes(items,kid);
+  return all.filter(i=>(deck===WHICH_MIX||(i.subject||"Other")===deck)&&moleReady(i,kid)&&!!moleTiles(i,all,modes[i.subject||"Other"]));
+}
+function moleDecks(items,kid){
+  kid=kid||masteryKid;
+  const n={}; molePool(items,WHICH_MIX,kid).forEach(i=>{ const d=i.subject||"Other"; n[d]=(n[d]||0)+1; });
+  return Object.keys(n).filter(d=>n[d]>=MOLE_MIN&&moleDeckOn(kid,d)).sort();
+}
+function _moleSay(st,t){
+  t=t||(st&&st.turns[st.i]); if(!st||!t) return;
+  const it=_moleItems(st.kid).find(x=>x&&x.id===t.pid);
+  if(it&&it.prompt&&!(t.mode==="answer"&&whichSilent(it))&&(typeof mastView==="undefined"||mastView==="mole")) try{ mastSpeak(_matchPlain(it.prompt)); }catch(e){} 
+}
+function moleSayAgain(){ const st=moleState; if(st&&st.phase==="play") _moleSay(st); }
+function moleStart(deck){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding / bonk (iPad)
+  const items=_moleItems(), mix=deck===WHICH_MIX, modes=_moleModes(items), ok=moleDecks(items), all=_moleWhichPool(items,masteryKid);
+  const pool=molePool(items,deck).filter(i=>ok.indexOf(i.subject||"Other")>=0);
+  if(pool.length<MOLE_MIN||(!mix&&!moleDeckOn(masteryKid,deck))){ moleState=null; _mastRe(); return; }   // 🎮 GAMEGRID: a deck Mom turned off for this game
+  const picks=_moleShuffle(pool.slice()).slice(0,MOLE_WAVES), turns=[];
+  picks.forEach(it=>{ const mode=modes[it.subject||"Other"], tiles=moleTiles(it,all,mode); if(tiles) turns.push({pid:it.id,mode:mode,tiles:tiles,up:{},wrong:{},done:false,first:false,back:false,hold:false}); });
+  moleState={kid:masteryKid,deck:deck,mix:mix,game:"mole",t0:Date.now(),turns:turns,i:0,seq:0,lock:false,grow:null,phase:turns.length?"play":"done",first:0,of:turns.length,isPB:false,prevBest:null,returned:{}};
+  _moleWave(moleState);
+  _mastRe();
+}
+function moleChangeDeck(){ moleState=null; _mastRe(); }   // drop the round as it stands: nothing written
+// A wave: the prompt, then the moles pop one after another; each hides MOLE_UP later unless it is the right one and the wave is on hold
+function _moleWave(st){
+  const t=st.turns[st.i]; if(!t) return;
+  const seq=++st.seq; st.lock=false; st.grow=null;
+  _moleSay(st,t);
+  t.tiles.forEach((pid,slot)=>{
+    setTimeout(()=>{ if(moleState!==st||st.seq!==seq||t.done) return; t.up[slot]=1; _mastRe();
+      setTimeout(()=>{ if(moleState!==st||st.seq!==seq||t.done||t.hold) return; _moleHide(st,t,slot); },MOLE_UP); },slot*MOLE_GAP);
+  });
+}
+function _moleHide(st,t,slot){
+  delete t.up[slot];
+  if(t.tiles[slot]===t.pid&&!t.wrong.late){   // the right one went down untouched: a miss — bring it back and hold it
+    t.wrong.late=1; _moleHold(st,t); return;
+  }
+  _mastRe();
+}
+// After any miss: the bonk, the prompt again, the right mole up and held (no clock on a correction), the wrong ones down
+function _moleHold(st,t){
+  try{ matchBonk(); }catch(e){}
+  t.hold=true; t.up={}; t.up[t.tiles.indexOf(t.pid)]=1;
+  _mastRe(); _moleSay(st,t);
+}
+function moleTap(slot){
+  const st=moleState; if(!st||st.phase!=="play"||st.lock) return;
+  const t=st.turns[st.i]; if(!t||t.done||!t.up[slot]) return;
+  const pid=t.tiles[slot];
+  if(pid!==t.pid){ t.wrong[pid]=1; _moleHold(st,t); return; }
+  t.done=true; t.first=!Object.keys(t.wrong).length;
+  if(!t.back&&t.first) st.first++;
+  // a card missed on its first wave comes back once, at the end of the round
+  if(!t.first&&!t.back&&!st.returned[t.pid]){
+    st.returned[t.pid]=1;
+    const it=_moleItems(st.kid).find(x=>x&&x.id===t.pid), tiles=it?moleTiles(it,_moleWhichPool(_moleItems(st.kid),st.kid),t.mode):null;
+    if(tiles) st.turns.push({pid:t.pid,mode:t.mode,tiles:tiles,up:{},wrong:{},done:false,first:false,back:true,hold:false});
+  }
+  try{ matchDing(); }catch(e){}
+  st.grow=slot; st.lock=true; const seq=++st.seq;
+  _mastRe();
+  setTimeout(()=>{ if(moleState===st&&st.lock&&st.seq===seq) moleNext(st); },MOLE_BEAT);
+}
+function moleNext(st){
+  st=st||moleState; if(!st||st!==moleState) return;
+  st.lock=false; st.grow=null; st.i++;
+  if(st.i>=st.turns.length){ moleFinish(st); _mastRe(); return; }
+  _moleWave(st); _mastRe();
+}
+function moleBestKey(deck){ return deck+" \u{00B7} mole"; }
+function moleFinish(st){
+  st.phase="done"; st.lock=false;
+  const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every card's first-tap result, game:"mole"
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=moleBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.first>0&&(prev==null||st.first>prev);
+  if(st.isPB){
+    s.match_best[key]=st.first;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+  try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F439} You got them all!",{noSong:true}); }catch(e){}
+}
+// GAMEKID → 🎲 GAMEKIT resume: the open wave's moles all come up and stay (its timers died with the switch); a beat that was mid-way settles
+function moleResume(){
+  const st=moleState; if(!st||st.phase!=="play") return;
+  if(st.lock){ st.lock=false; st.grow=null; st.i++; if(st.i>=st.turns.length){ moleFinish(st); return; } }
+  const t=st.turns[st.i]; if(!t||t.done) return;
+  st.seq++; t.hold=true; t.up={}; t.tiles.forEach((p,slot)=>{ if(!t.wrong[p]) t.up[slot]=1; });
+  _moleSay(st,t);
+}
+const MOLE_CSS='<style>.mole-hole{position:relative;aspect-ratio:1;border-radius:50%;background:radial-gradient(ellipse at 50% 70%,#8b6b47 0,#a98b66 55%,#d9cbb3 100%);overflow:hidden;-webkit-tap-highlight-color:transparent}'+
+  '.mole{position:absolute;left:8%;right:8%;top:8%;bottom:8%;border-radius:22px;border:3px solid #e2ddd6;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;transform:translateY(115%);transition:transform .22s ease-out}'+
+  '.mole.mole-up{transform:none}.mole.mole-held{border-color:#16a34a;box-shadow:0 0 0 5px #bbf7d0}.mole.mole-grow{transform:scale(1.08);border-color:#16a34a;background:#f0fdf4}'+
+  '.mole .mole-vis{transform:scale(1.1);pointer-events:none}@media(min-width:560px){.mole .mole-vis{transform:scale(1.6)}}'+
+  '.mole .mole-ans{padding:6px;text-align:center;font-weight:800;color:#292524;font-family:\'Fraunces\',serif;line-height:1.1;overflow-wrap:anywhere;pointer-events:none}</style>';
+function buildMoleHtml(color){
+  const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+  let h=MOLE_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const items=_moleItems(), decks=moleDecks(items);
+  if(!decks.length){ h+='<div class="mast-none">No decks ready for Whack-a-mole yet \u{2014} it plays cards that have reached the gate level (the Sprint rule), '+MOLE_MIN+' or more in a deck.</div></div>'; return h; }
+  const st=moleState;
+  const chip=(dk,lbl)=>{ const sel=st&&st.deck===dk; return '<button onclick="moleStart(\''+q(dk)+'\')" style="padding:10px 16px;border-radius:999px;font-size:14px;font-weight:800;border:2px solid '+(sel?color:'#e2ddd6')+';background:'+(sel?color:'#fff')+';color:'+(sel?'#fff':'#57534e')+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
+  if(!st||st.phase==="done"){
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">';
+    decks.forEach(dk=>{ h+=chip(dk,esc(dk)); });
+    if(decks.length>1) h+=chip(WHICH_MIX,"\u{1F3B2} "+WHICH_MIX);
+    h+='</div>';
+  }
+  if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u{1F439} Pick a deck. The answers pop up \u{2014} tap the right one before it hides!</div></div>'; return h; }
+  const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[moleBestKey(st.deck)];
+  if(st.phase==="play"){
+    const t=st.turns[st.i], tIt=t?items.find(x=>x&&x.id===t.pid):null, ans=!!(t&&t.mode==="answer"), mute=ans&&whichSilent(tIt), missed=!!(t&&Object.keys(t.wrong).length);
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
+    st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
+    h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
+      '<button onclick="moleChangeDeck()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{1F5C2} Change deck</button></span></div>';
+    if(ans){
+      const fr=_matchPlain(tIt&&tIt.prompt);
+      h+='<div style="display:flex;align-items:center;justify-content:center;gap:14px;margin:12px 0 8px;flex-wrap:wrap"><div style="font-family:\'Fraunces\',serif;font-size:'+(fr.length<=8?'52px':fr.length<=18?'38px':'28px')+';font-weight:800;color:#292524;text-align:center;line-height:1.1">'+esc(fr)+'</div>';
+      if(!mute) h+='<button onclick="moleSayAgain()" aria-label="Hear it again" style="width:56px;height:56px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:26px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button>';
+      h+='</div>';
+    } else {
+      h+='<div style="display:flex;justify-content:center;margin:10px 0 6px"><button onclick="moleSayAgain()" aria-label="Hear it again" style="width:84px;height:84px;border-radius:50%;border:4px solid '+color+';background:#fff;color:'+color+';font-size:40px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button></div>';
+    }
+    h+='<div style="text-align:center;font-size:17px;font-weight:800;color:#57534e;margin-bottom:12px">'+(missed?(t.hold?'Here it is \u{2014} tap it!':'Almost \u{2014} try again!'):(ans?'Tap the answer before it hides!':'Tap the one you hear before it hides!'))+'</div>';
+    h+='<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px;max-width:460px;margin:0 auto">';
+    (t?t.tiles:[]).forEach((pid,slot)=>{
+      const it=items.find(x=>x&&x.id===pid), up=!!t.up[slot], held=up&&t.hold&&pid===t.pid, grow=st.grow===slot;
+      let inner;
+      if(ans){ const bk=_whichBack(it); inner='<span class="mole-ans" style="font-size:'+(bk.length<=3?'clamp(30px,9vw,56px)':bk.length<=7?'clamp(22px,6vw,38px)':bk.length<=13?'clamp(16px,4.2vw,26px)':'clamp(13px,3.4vw,20px)')+'">'+esc(bk)+'</span>'; }
+      else inner='<span class="mole-vis">'+(_smTileVis(it)||'')+'</span>';
+      h+='<div class="mole-hole"><div class="mole'+(up?' mole-up':'')+(held?' mole-held':'')+(grow?' mole-grow':'')+'" role="button" aria-label="Mole '+(slot+1)+'"'+(up&&!st.lock?' onclick="moleTap('+slot+')"':'')+'>'+inner+'</div></div>';
+    });
+    h+='</div></div>';
+    return h;
+  }
+  // Finish: first-tap count against the kid's own best, Play again / Mix the decks
+  h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} You got them all!</div>';
+  h+='<div style="font-size:17px;font-weight:800;color:#57534e;margin-top:10px">\u{1F439} '+st.first+' of '+st.of+' on the first tap'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+  h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">';
+  h+='<button onclick="moleStart(\''+q(st.deck)+'\')" style="padding:12px 24px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F501} Play again</button>';
+  if(decks.length>1&&!st.mix) h+='<button onclick="moleStart(\''+q(WHICH_MIX)+'\')" style="padding:12px 24px;border-radius:999px;border:2px solid '+color+';background:#fff;color:'+color+';font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F3B2} '+WHICH_MIX+'</button>';
+  return h+'</div></div></div>';
+}
+// MOLE_END
 // STUDYCOUNTS_START — 📚 Study sessions count everywhere (F3 of PLAN_learning_system, her yes 2026-10-24). A study
 // sitting logs to mastery/studyLog/<kid>/<sid>/<yyyymmdd>, but Scores, the Weekly report, sprint readiness (the ≥ 90%
 // untimed check) and the notebook's 🔁 review flags read only the drill's mastery/history/<kid>/<yyyymmdd>, so Lincoln —
@@ -82906,6 +83100,8 @@ const GAMES_LIST=[
      park:()=>spellState, restore:v=>{ spellState=v||null; }, resume:()=>spellResume()},   // 🔤 SPELLBUILD · 🎲 GAMEKIT: its own park / restore / resume
   {key:"gofish", emoji:"\u{1F41F}", label:"Go Fish",     view:"gofish",                available:k=>typeof gofishDecks==="function"&&gofishDecks(_gamesItems(k),k).length>0, render:c=>buildGofishHtml(c),
      park:()=>gofishState, restore:v=>{ gofishState=v||null; }, resume:()=>gofishResume(), decks:k=>typeof gofishDecks==="function"?gofishDecks(_gamesItems(k),k):[]},   // 🐟 GOFISH · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
+  {key:"mole",   emoji:"\u{1F439}", label:"Whack-a-mole", view:"mole",                 available:k=>typeof moleDecks==="function"&&moleDecks(_gamesItems(k),k).length>0, render:c=>buildMoleHtml(c),
+     park:()=>moleState, restore:v=>{ moleState=v||null; }, resume:()=>moleResume(), decks:k=>typeof moleDecks==="function"?moleDecks(_gamesItems(k),k):[]},   // 🐹 MOLE · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
 ];
 const gamesLast={};   // kid → key of the last game played on this device
 function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k)&&(typeof gameDeckAny!=="function"||gameDeckAny(k,g)); }catch(e){ return false; } }); }   // 🎮 GAMEGRID: every deck off → the game isn't offered
