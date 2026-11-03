@@ -62,7 +62,7 @@ console.log("\n── the page itself ──");
   ok("kid row: 👩 Mom first, then All, then each kid, helpers last", ix("mom") >= 0 && ix("mom") < ix("all") && ix("all") < ix("ava") && ix("ava") < ix("ben") && kf.indexOf("<i>helper</i>") > ix("ben"));
   w.api.showTab("schedule"); w.api.renderKidFilter();
   const kf2 = w.els["kid-filter"].innerHTML;
-  ok("the kids' Schedule kid row has no 👩 Mom chip (step 3)", kf2.indexOf("selKid('all')") >= 0 && kf2.indexOf("selKid('mom')") < 0);
+  ok("the kids' Schedule kid row has 👩 Mom first too (MOMCHIP 2026-11-02; was: no Mom chip, step 3)", kf2.indexOf("selKid('mom')") >= 0 && kf2.indexOf("selKid('mom')") < kf2.indexOf("selKid('all')"));
 }
 {
   const w = world({ give: "<b>Give Grandma</b>", momOn: true }); w.api.msvEnter(); w.api.renderSchedSubtabs();
@@ -125,12 +125,12 @@ console.log("\n── 🧒 step 3: the kids' Schedule is never in Mom mode ─�
   api._momSuspend(); api.haMomOff(); api._momResume();
   ok("🔒 Lock while set aside really locks (nothing comes back)", api.f() === "false,false,false,false" && JSON.stringify(ls) === '[["ha_mom_on","0"]]');
   const r = slice("_renderAllInner");
-  ok("every render: kids' Schedule → set aside (+ Mom view → All); anything else → back", /if\(tab==="schedule"&&!momSchedView\)\{ _momSuspend\(\); if\(kid==="mom"\) kid="all"; \} else _momResume\(\);/.test(r));
+  ok("every render: kids' Schedule → set aside, except under the 👩 Mom chip (MOMCHIP); anything else → back", /if\(tab==="schedule"&&!momSchedView&&kid!=="mom"\)\{ _momSuspend\(\); \} else _momResume\(\);/.test(r));
 }
 {
   const w = world({ momOn: true }); w.api.showTab("schedule"); w.api.renderKidFilter();
   const kf = w.els["kid-filter"].innerHTML;
-  ok("kids' Schedule kid row: All + each kid, no 👩 Mom chip", kf.indexOf("selKid('all')") >= 0 && kf.indexOf("selKid('mom')") < 0);
+  ok("kids' Schedule kid row: 👩 Mom, All, each kid (MOMCHIP)", kf.indexOf("selKid('all')") >= 0 && kf.indexOf("selKid('mom')") >= 0 && kf.indexOf("selKid('mom')") < kf.indexOf("selKid('all')"));
   w.api.renderSchedSubtabs();
   ok("kids' Schedule ▸ Admin opens Mom's Day (code if needed) at Admin", /onclick="msvOpenAdmin\(\)">Admin/.test(w.els["sched-subtabs"].innerHTML));
   const wIn = world({ momOn: true }); wIn.api.msvEnter(); wIn.api.renderSchedSubtabs();

@@ -144,7 +144,7 @@ console.log("\n── 4. above the banner: the same bars on Mom's Day and ▸ Sc
   ok("Mom's Day: #msv-bar is hidden off ▸ Schedule", /const on=\(momSchedView&&tab==="schedule"\); mb\.style\.display=on\?"contents":"none"/.test(slice("renderSchedSubtabs")));
   ok("Mom's Day: the lights panel and the week strip are Schedule-tab only", /tab!=="schedule"[^\n]*panel\.style\.display="none"/.test(slice("renderSkylight")) && /if\(tab!=="schedule"[^\n]*el\.style\.display="none"/.test(slice("renderWeekStrip")));
   ok("the kiosk bars are hidden by default (CSS)", ["kiosk-kids", "kiosk-tabs", "kiosk-view", "kiosk-mom"].every(id => new RegExp("#" + id + "\\{display:none").test(src)));
-  ok("…and the only bar left, the Mom-code box, needs kid=mom with Mom mode off — never inside Mom's Day", /if\(kid==="mom" && !momModeActive\)\{\s*pinBar\.style\.display="block"/.test(slice("renderKidFilter")));
+  ok("…and the Mom-code box under the row is gone for good (MOMCHIP 2026-11-02: always hidden — the header switch is the one door)", /if\(pinBar\)\{ pinBar\.style\.display="none"; pinBar\.innerHTML=""; \}/.test(slice("renderKidFilter"))&&!/pinBar\.style\.display="block"/.test(slice("renderKidFilter")));
 }
 
 console.log("\n── display only ──");

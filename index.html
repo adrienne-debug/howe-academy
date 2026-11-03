@@ -4999,7 +4999,7 @@ function renderAll(){
   } finally { try{ if(typeof cdRenderEnd==="function") cdRenderEnd(_cdR0); }catch(e){} }   // ⏱ CDBOOTS
 }
 function _renderAllInner(){
-  try{ if(tab==="schedule"&&!momSchedView){ _momSuspend(); if(kid==="mom") kid="all"; } else _momResume(); }catch(e){}   // 🧒 KIDSLENS
+  try{ if(tab==="schedule"&&!momSchedView&&kid!=="mom"){ _momSuspend(); } else _momResume(); }catch(e){}   // 🧒 KIDSLENS · 👩 MOMCHIP (2026-11-02): under the Mom chip the switch's real state shows — her tools when it's on, her view alone when off
   // 👩 MSV: Mom mode went off somewhere else (a Notebook/Units lock, a check-up relock) while Mom's Day ▸ Schedule was open →
   // back to the Mom's Day door, never the code box on the schedule.
   try{ if(momSchedView&&tab==="schedule"&&!momHereReal()){ momDayIn=false; msvExit(); tab="moms-plan"; mpSubView="cal"; document.querySelectorAll(".nav-tab").forEach(b=>b.classList.toggle("active",b.dataset.tab==="moms-plan")); ["sched-subtabs","day-tabs","kid-filter","week-strip","msv-bar"].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display="none"; }); } }catch(e){}
@@ -5144,9 +5144,15 @@ function dayPct(d){
 }
 
 // ── KID FILTER ────────────────────────────────────────────────────
+// MOMCHIP_START — 👩 Mom first in the kid row on the main Schedule too (her ask 2026-11-02: "a Mom tab on the main schedule
+// showing her schedule with nothing code-gated unless the switch is on"). Switch off: the chip shows her agenda (Mom Needed |
+// May Need Mom, laundry / prep / house rows) as a view only — no code box under the row (the Mom switch in the header is the
+// one door), every Mom tool stays off. Switch on: the same view with her tools, because under the Mom chip KIDSLENS no longer
+// sets Mom mode aside (the All / kid chips still do — the kids' Schedule stays exactly the kids' Schedule). Tapping Mom never
+// turns the switch off (MOMSWITCH: the switch is the only off). Mom's Day ▸ Schedule (MSV) is unchanged. No Firebase writes.
 function renderKidFilter(){
   document.getElementById("kid-filter").innerHTML=
-    ((typeof momSchedView!=="undefined"&&momSchedView)?["mom","all",...ROSTER]:["all",...ROSTER]).map(k=>{   // 👩 MSV: Mom first on Mom's Day · 🧒 KIDSLENS: no Mom chip on the kids' Schedule
+    ["mom","all",...ROSTER].map(k=>{   // 👩 Mom first — on Mom's Day ▸ Schedule (MSV) and on the main Schedule (MOMCHIP)
       const isActive = (k===kid&&!(k==="all"&&typeof helperViewActive==="function"&&helperViewActive())) || (k==="mom" && momModeActive);
       return '<button class="kid-btn'+(isActive?" active":"")+'" data-kid="'+k+'" onclick="selKid(\''+k+'\')">'+
         (k==="mom" && momModeActive ? "✓ Mom" : cap(k))+'</button>';
@@ -5158,41 +5164,15 @@ function renderKidFilter(){
         ? '<button class="star-chip" onclick="goToStars()" title="Tap for '+cap(kid)+'’s Stars">⭐ '+bankBalance(kid)+'</button>'
         : '');
   const pinBar=document.getElementById("mom-pin-bar");
-  if(pinBar){
-    if(kid==="mom" && !momModeActive){
-      pinBar.style.display="block";
-      pinBar.innerHTML='<div style="font-size:13px;font-weight:700;color:#b5394a;margin-bottom:6px">Enter Admin Code</div>'+
-        '<input id="mom-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="off" '+
-        'style="width:100px;text-align:center;font-size:20px;letter-spacing:6px;padding:8px 10px;border:2px solid var(--border);border-radius:8px;font-family:monospace" '+
-        'oninput="checkMomPin(this.value)"/>'+
-        '<div id="mom-pin-err" style="font-size:11px;color:#b5394a;margin-top:4px;min-height:14px"></div>';
-      setTimeout(()=>{const i=document.getElementById("mom-pin-input");if(i)i.focus();},50);
-    } else {
-      pinBar.style.display="none";
-    }
-  }
+  if(pinBar){ pinBar.style.display="none"; pinBar.innerHTML=""; }   // MOMCHIP: the "Enter Admin Code" box under the row is retired — the header's Mom switch is the one door (checkMomPin stays for the record)
 }
+// MOMCHIP_END
 function selKid(k){
   try{ helperView=null; }catch(e){}   // 🙋 leave a helper's list
   // 👩 MSV (her rule 2026-10-08): inside Mom's Day Mom mode is ALWAYS on — the 👩 Mom chip only shows Mom's view; it never
-  // turns Mom mode off and never asks for the code (the code is asked at the Mom's Day door).
-  if(k==="mom"&&typeof momSchedView!=="undefined"&&momSchedView){ kid="mom"; schedShowAdmin=false; renderAll(); window.scrollTo({top:0,behavior:'smooth'}); return; }
-  if(k==="mom"){
-    if(momModeActive){
-      if(kid==="mom"){
-        // Already on the agenda → tapping Mom again exits Mom mode.
-        haMomOff(); kid="all"; schedShowAdmin=false; renderAll();
-      } else {
-        // In Mom mode but peeking at a kid → tapping Mom returns to the agenda (stays unlocked/red).
-        kid="mom"; schedShowAdmin=false; renderAll();
-        window.scrollTo({top:0,behavior:'smooth'});
-      }
-    } else {
-      kid="mom"; schedShowAdmin=false; renderAll();
-      window.scrollTo({top:0,behavior:'smooth'});
-    }
-    return;
-  }
+  // turns Mom mode off and never asks for the code. 👩 MOMCHIP (2026-11-02): the same on the main Schedule — the chip shows her
+  // view (tools only with the switch on); tapping it again never turns the switch off (it used to: the switch is the only off).
+  if(k==="mom"){ kid="mom"; schedShowAdmin=false; renderAll(); window.scrollTo({top:0,behavior:'smooth'}); return; }
   if(!momModeActive) momPinUnlocked=false;
   kid=k; schedShowAdmin=false; renderAll();
 }
@@ -9155,8 +9135,9 @@ function renderSchedule(el){
   }
 
   // Mom view: a two-column, time-aligned agenda (Mom Needed | May Need Mom) instead of the
-  // single-column kid schedule. Mom mode always unlocks, so no Skylight-lock handling here.
-  if(kid==="mom" && unlocked){
+  // single-column kid schedule. No lock handling here: the morning-routine gate is the kids' (MOMCHIP 2026-11-02: with the
+  // switch off the chip is her view alone, and it still shows — it used to fall into the kids' blurred list).
+  if(kid==="mom"){
     h+=momAgendaHtml(tasks);
   } else if(kid==="all"){
     // No whole-view gate here: allAgendaHtml locks each kid's column on its own.
