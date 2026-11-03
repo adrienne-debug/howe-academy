@@ -18,7 +18,7 @@ ok("study save: mpAfterStudy right after Word Workout, before the one targeted u
 ok("study save: the update carries gp (null clears it)",/if\(it\.gp!==undefined\) upd\[ix\+"\/gp"\]=it\.gp\|\|null;/.test(sv)&&sv.indexOf('upd[ix+"/gp"]')<iUpd);
 ok("study save hook appears once in the file",(src.match(/mpAfterStudy\(kid,items,mstState,touched\)/g)||[]).length===1);
 ok("mstAnswer counts misses on the card",/if \(ans !== "good"\) card\.misses = \(card\.misses \| 0\) \+ 1;/.test(fnText("mstAnswer")));
-ok("mpSet accepts the study field",/\["on","cap","secs","close","study"\]/.test(fnText("mpSet")));
+ok("mpSet accepts the study field",/\["on","cap","secs","close","study"(,"[a-z]+")*\]/.test(fnText("mpSet")));   // 📚 DRILLGATE 2026-11-02: later fields may follow
 ok("Mom HQ shows the Study misses row only while the switch is on",(()=>{ const t=fnText("mpSettingsHtml"); const a=t.indexOf("if(c.on){"), b=t.indexOf('tg("study",c.study)'); return a>0&&b>a; })());
 const blk=src.slice(src.indexOf("// MISSPLAY_START"),src.indexOf("// MISSPLAY_END"));
 ok("no kid's name in the block",!/lincoln|ellis|lucy|julian|caleb|taylor|makenzie|andrew/i.test(blk));
