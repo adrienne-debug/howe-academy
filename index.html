@@ -79919,6 +79919,257 @@ function buildJumbleHtml(color){
   return h+'</div></div></div>';
 }
 // UNJUMBLE_END
+// KABOOM_START — 💥 "Kaboom" (her go via the hub 2026-11-03; PLAN_practice_games_2026-10-23.md Tier 2 "Kaboom: draw a stick from the jar:
+// say the card; a KABOOM stick means put them back (laughter, no loss of progress)" — CR + chance novelty, the open-the-box / random-wheel
+// pattern). A jar of sticks: one per card in the round plus KB_BOOMS "KABOOM!" sticks. The kid taps the jar to draw a stick; a card stick
+// opens its card and the kid PRODUCES it — Go Fish's three acts: a picture / letter card is said out loud (🗣 honor tap, no mic on a
+// tablet, the app says the name back), a number back is typed on the number pad, a word back is picked from three of the deck's own
+// backs. Right → the ding, the stick goes in the kid's pile. Wrong → the bonk, one more try; wrong twice → "We'll come back to that
+// one" (the answer is never shown — the app never supplies what the kid must produce) and the card comes back once at the end.
+//   KABOOM! → the big laugh line, and every stick in the pile goes BACK INTO THE JAR (shuffled into what is left): those cards are
+//   asked again — a free second retrieval — but as come-backs (back:true), so the first-try count never drops: no loss of progress,
+//   as the plan says. A KABOOM stick is spent once drawn, and never the first stick. The round ends when the jar is empty; then the
+//   missed cards come back once, then the finish: "N of M on the first try" and how many kabooms. No lives, no clock, no points.
+// Cards: Which one?'s own pool (whichPool / whichDeckModes read RAW, like Go Fish — a deck turned off for Which one? still plays here),
+//   then this game's grid cell gameDeckOn(kid,"kaboom",deck); a deck needs KB_MIN+ cards; KB_CARDS a round; 🎲 Mix the decks.
+// Writes (only these): <kid>_settings/match_best key "<deck> · kaboom" (first-try rights, only when beaten) and the round's gameLog entry
+//   (GAMELOG, game:"kaboom"). NEVER touches the ladder — no scores, no next_due, no study log. db && !_dryRun() only. Per-kid park /
+//   restore / resume through its GAMES_LIST entry (🎲 GAMEKIT). A round dropped (Stop, a kid switch) writes nothing.
+let kaboomState=null;   // {kid,deck,mix,game:"kaboom",t0,jar:[{pid}|{boom:true}],pile:[pid],open:{t}|null,turns:[{pid,act,done,first,wrong:{},tries,fail,back,opts?,typed?}],booms,phase:"play"|"back"|"done",backs,first,of,isPB,prevBest,lock,seq,msg,say,boomNow,gameLogged}
+let _kbRandom=Math.random;   // tests seed it
+const KB_CARDS=8, KB_BOOMS=2, KB_MIN=4, KB_TRIES=2, KB_BEAT=900, KB_BEAT_BOOM=2200;
+const KB_NUM=/^[-+]?\d+([.,]\d+)?$/;
+const KB_LAUGHS=["KABOOM! Back in the jar they go!","KABOOM! Ha! Everything back in the jar!","KABOOM! Whoops \u2014 the jar takes them all back!"];
+function _kbItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
+function _kbShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_kbRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function _kbRaw(fn){ const had=(typeof _gdRaw!=="undefined")?_gdRaw:null; try{ if(had!==null) _gdRaw=true; return fn(); } finally{ if(had!==null) _gdRaw=had; } }
+function kaboomDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"kaboom",deck); }
+function _kbWhichPool(items,kid){ return _kbRaw(()=>whichPool(items,WHICH_MIX,kid)); }
+function _kbModes(items,kid){ return _kbRaw(()=>whichDeckModes(items,kid)); }
+function _kbIt(st,pid){ return _kbItems(st.kid).find(x=>x&&x.id===pid)||null; }
+function kaboomName(it){ return _matchPlain(it&&it.prompt); }
+// The decks that can fill a jar: Which one?'s playable decks with KB_MIN+ cards in play, and this game's cell on
+function kaboomDecks(items,kid){
+  kid=kid||masteryKid;
+  const n={}; _kbWhichPool(items,kid).forEach(i=>{ const d=i.subject||"Other"; n[d]=(n[d]||0)+1; });
+  return Object.keys(n).filter(d=>n[d]>=KB_MIN&&kaboomDeckOn(kid,d)).sort();
+}
+function kaboomPool(items,deck,kid){ kid=kid||masteryKid; const ok=kaboomDecks(items,kid); return _kbWhichPool(items,kid).filter(i=>ok.indexOf(i.subject||"Other")>=0&&(deck===WHICH_MIX||(i.subject||"Other")===deck)); }
+// What the kid DOES with a card (Go Fish's rule): "say" (picture / symbol), "type" (a number back), "pick" (a word back)
+function kaboomKind(it,mode){ if(mode!=="answer") return "say"; return KB_NUM.test(String(_whichBack(it)).trim())?"type":"pick"; }
+// PURE: the jar — one stick per card, shuffled, then the KABOOM sticks dropped in at random spots that are never the first draw
+function kaboomJar(pids,booms){
+  const jar=_kbShuffle(pids.map(p=>({pid:p})));
+  for(let b=0;b<booms&&jar.length;b++){ const at=1+Math.floor(_kbRandom()*jar.length); jar.splice(at,0,{boom:true}); }
+  return jar;
+}
+function _kbSay(st,text){ st.say=text||""; if(!text||(typeof mastView!=="undefined"&&mastView!=="kaboom")) return; try{ mastSpeak(text); }catch(e){} }
+function kaboomSayAgain(){ const st=kaboomState; if(st&&st.say) try{ mastSpeak(st.say); }catch(e){} }
+function kaboomStart(deck){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding / bonk (iPad)
+  const items=_kbItems(), mix=deck===WHICH_MIX, pool=kaboomPool(items,deck);
+  if(pool.length<KB_MIN||(!mix&&!kaboomDeckOn(masteryKid,deck))){ kaboomState=null; _mastRe(); return; }   // 🎮 GAMEGRID: a deck Mom turned off for Kaboom
+  const picks=_kbShuffle(pool.slice()).slice(0,KB_CARDS), pids=picks.map(i=>i.id);
+  kaboomState={kid:masteryKid,deck:deck,mix:mix,game:"kaboom",t0:Date.now(),jar:kaboomJar(pids,KB_BOOMS),pile:[],open:null,turns:[],booms:0,phase:"play",backs:null,first:0,of:pids.length,isPB:false,prevBest:null,lock:false,seq:0,msg:"Tap the jar to draw a stick!",say:"",boomNow:false};
+  _mastRe();
+}
+function kaboomStop(){ kaboomState=null; _mastRe(); }   // drop the round as it stands: nothing written
+// Three backs for a pick: the card's own + two different backs from its deck (Which one?'s rule), shuffled
+function _kbLures(st,pid){
+  const it=_kbIt(st,pid); if(!it) return [];
+  const own=_whichBack(it), seen={}; seen[_whichNorm(own)]=1;
+  const more=_kbShuffle(_kbWhichPool(_kbItems(st.kid),st.kid).filter(x=>x.id!==pid&&(x.subject||"Other")===(it.subject||"Other"))).map(x=>_whichBack(x)).filter(b=>b&&!seen[_whichNorm(b)]&&(seen[_whichNorm(b)]=1)).slice(0,2);
+  return _kbShuffle([own].concat(more));
+}
+function _kbAct(st,pid){ const it=_kbIt(st,pid), modes=_kbModes(_kbItems(st.kid),st.kid); return kaboomKind(it,modes[(it&&it.subject)||"Other"]); }
+// Open a card's stick (back = a come-back: a KABOOM return, or one of the end's)
+function _kbOpen(st,pid,back){
+  const act=_kbAct(st,pid), t={pid:pid,act:act,done:false,first:false,wrong:{},tries:0,fail:false,back:!!back}; st.turns.push(t);
+  if(act==="pick") t.opts=_kbLures(st,pid);
+  if(act==="type") t.typed="";
+  st.open={t:st.turns.length-1}; st.boomNow=false;
+  const it=_kbIt(st,pid), lead=back?"One more time. ":"";
+  st.msg=lead+(act==="say"?"Say it out loud, then tap \u{1F5E3}":act==="type"?"Type the answer.":"Tap the answer.");
+  if(act==="say") _kbSay(st,lead+"What is it?"); else _kbSay(st,lead+(it&&!whichSilent(it)?kaboomName(it):""));   // a word answer's FRONT is read; a silent language is shown only
+}
+// 🏺 the draw: the top stick — a card to produce, or KABOOM
+function kaboomDraw(){
+  const st=kaboomState; if(!st||st.phase!=="play"||st.lock||st.open) return;
+  const s=st.jar.shift(); if(!s){ _kbEnd(st); _mastRe(); return; }
+  if(s.boom){ _kbBoom(st); _mastRe(); return; }
+  _kbOpen(st,s.pid,!!s.back); _mastRe();   // a KABOOM-returned stick is a come-back turn
+}
+// KABOOM! — the pile goes back into the jar (shuffled into what is left) as come-backs; the first-try count keeps every point it has
+function _kbBoom(st){
+  st.booms++; st.boomNow=true;
+  const back=st.pile.splice(0); back.forEach(p=>{ st.jar.push({pid:p,back:true}); }); _kbShuffle(st.jar);
+  try{ matchBonk(); }catch(e){}
+  const line=KB_LAUGHS[Math.min(KB_LAUGHS.length-1,st.booms-1)];
+  st.msg=line+(back.length?" ("+back.length+" back)":" (your pile was empty \u2014 phew!)"); _kbSay(st,line);
+  st.lock=true; const seq=++st.seq;
+  setTimeout(()=>{ if(kaboomState===st&&st.lock&&st.seq===seq) kaboomNext(st); },KB_BEAT_BOOM);
+}
+function _kbTurn(st,act){ if(!st||st.lock||st.phase==="done"||!st.open) return null; const t=st.turns[st.open.t]; return (t&&t.act===act&&!t.done)?t:null; }
+function kaboomSaid(){   // 🗣 "I said it" — the honor system: a tablet can't hear; the app says the name back as the confirm
+  const st=kaboomState, t=_kbTurn(st,"say"); if(!t) return;
+  t.done=true; t.first=true;
+  _kbSettle(st,t,"",kaboomName(_kbIt(st,t.pid))); _mastRe();   // the name is SAID back, never written
+}
+function kaboomKey(ch){   // the number pad
+  const st=kaboomState, t=_kbTurn(st,"type"); if(!t) return;
+  if(ch==="back") t.typed=t.typed.slice(0,-1); else if(t.typed.length<6) t.typed+=ch;
+  _mastRe();
+}
+function _kbAnsOk(act,given,back){ if(act==="pick") return String(given)===String(back); return (typeof mstTypeAnsOk==="function")?mstTypeAnsOk(given,back):Number(String(given).replace(",","."))===Number(String(back).replace(",",".")); }
+// PURE: one answer against the card's back → "right" | "again" | "fail". A picked back that was wrong greys out (t.wrong)
+function kaboomJudge(t,given,back){
+  if(_kbAnsOk(t.act,given,back)){ t.done=true; t.first=t.tries===0; return "right"; }
+  t.tries++; t.wrong[t.act==="pick"?String(given):String(t.tries)]=1; t.typed="";
+  if(t.tries>=KB_TRIES){ t.done=true; t.first=false; t.fail=true; return "fail"; }
+  return "again";
+}
+function kaboomCheck(){
+  const st=kaboomState, t=_kbTurn(st,"type"); if(!t||!t.typed) return;
+  _kbAfter(st,t,kaboomJudge(t,t.typed,_whichBack(_kbIt(st,t.pid))));
+}
+function kaboomPickTap(i){
+  const st=kaboomState, t=_kbTurn(st,"pick"); if(!t||!t.opts||t.opts[i]==null||t.wrong[t.opts[i]]) return;
+  _kbAfter(st,t,kaboomJudge(t,t.opts[i],_whichBack(_kbIt(st,t.pid))));
+}
+function _kbAfter(st,t,r){
+  if(r==="again"){ try{ matchBonk(); }catch(e){} st.msg="Almost \u2014 try again!"; _mastRe(); return; }
+  if(r==="fail") try{ matchBonk(); }catch(e){}
+  _kbSettle(st,t,r==="fail"?"We\u2019ll come back to that one.":""); _mastRe();
+}
+// The card is settled: a right one goes in the pile (a first-try right counts; a come-back counts for nothing), a beat, then the jar again
+function _kbSettle(st,t,lead,spoken){
+  if(!t.fail){ if(st.phase==="play") st.pile.push(t.pid); if(t.first&&!t.back) st.first++; try{ matchDing(); }catch(e){} }
+  st.msg=lead||(t.first?"That\u2019s it! Into your pile.":"Okay \u2014 next one.");
+  const pre=spoken?spoken+". ":(lead?lead+" ":"");
+  if(t.first) _kbSay(st,pre+"That\u2019s it!"); else _kbSay(st,lead||"Next one.");
+  st.lock=true; const seq=++st.seq;
+  setTimeout(()=>{ if(kaboomState===st&&st.lock&&st.seq===seq) kaboomNext(st); },KB_BEAT);
+}
+function kaboomNext(st){
+  st=st||kaboomState; if(!st||st!==kaboomState) return;
+  st.lock=false; st.open=null; st.boomNow=false;
+  if(st.phase==="back"){ _kbBackNext(st); _mastRe(); return; }
+  if(!st.jar.length){ _kbEnd(st); _mastRe(); return; }
+  st.msg="Tap the jar to draw a stick!"; st.say=""; _mastRe();
+}
+// ── the end: the jar is empty → the cards missed on their FIRST ask come back once → finish ──
+function _kbEnd(st){
+  if(st.phase!=="play") return;
+  st.phase="back"; st.open=null;
+  const seen={}, backs=[];
+  st.turns.forEach(t=>{ if(t.back||seen[t.pid]) return; if(Object.keys(t.wrong).length||t.fail){ seen[t.pid]=1; backs.push(t.pid); } });
+  st.backs=backs;
+  if(!backs.length) return _kbFinish(st);
+  st.msg="The jar is empty! Let\u2019s look at a few again."; _kbSay(st,"The jar is empty! Let's look at a few again.");
+  st.lock=true; const seq=++st.seq; setTimeout(()=>{ if(kaboomState===st&&st.lock&&st.seq===seq) kaboomNext(st); },KB_BEAT*2);
+}
+function _kbBackNext(st){
+  const pid=st.backs&&st.backs.shift();
+  if(pid==null) return _kbFinish(st);
+  _kbOpen(st,pid,true);
+}
+function kaboomBestKey(deck){ return deck+" \u{00B7} kaboom"; }
+function _kbFinish(st){
+  st.phase="done"; st.open=null; st.lock=false;
+  const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every act's result, game:"kaboom"
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=kaboomBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.first>0&&(prev==null||st.first>prev);
+  if(st.isPB){
+    s.match_best[key]=st.first;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+  st.msg="The jar is empty!"; st.say="";
+  try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F4A5} You emptied the jar!",{noSong:true}); }catch(e){}
+}
+// GAMEKID → 🎲 GAMEKIT resume: a beat that was mid-way when the kid switched settles here (no render; the caller renders)
+function kaboomResume(){
+  const st=kaboomState; if(!st||st.phase==="done") return;
+  if(st.lock){ st.lock=false; st.open=null; st.boomNow=false; if(st.phase==="back") _kbBackNext(st); else if(!st.jar.length) _kbEnd(st); else { st.msg="Tap the jar to draw a stick!"; st.say=""; } return; }
+  if(st.say&&(typeof mastView==="undefined"||mastView==="kaboom")) try{ mastSpeak(st.say); }catch(e){}
+}
+// ── the screen ──
+const KB_CSS='<style>.kb-jar{width:150px;height:170px;margin:0 auto;border-radius:22px 22px 44px 44px;background:linear-gradient(180deg,#c7d2fe,#818cf8);border:4px solid #4f46e5;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:14px;cursor:pointer;position:relative;overflow:visible;-webkit-tap-highlight-color:transparent;box-shadow:0 6px 0 #3730a3}'+
+  '.kb-jar[disabled]{cursor:default;opacity:.7}.kb-jar.kb-boom{background:linear-gradient(180deg,#fde68a,#f97316);border-color:#b45309;box-shadow:0 6px 0 #9a3412;animation:kbShake .5s}'+
+  '@keyframes kbShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-10px) rotate(-3deg)}40%{transform:translateX(9px) rotate(3deg)}60%{transform:translateX(-7px)}80%{transform:translateX(5px)}}'+
+  '.kb-sticks{position:absolute;top:-26px;left:0;right:0;display:flex;justify-content:center;gap:5px;pointer-events:none}.kb-stick{width:9px;height:44px;border-radius:5px;background:#d6b78a;border:2px solid #a16207}'+
+  '.kb-lbl{font-family:\'DM Sans\',sans-serif;font-weight:800;color:#fff;font-size:15px;text-shadow:0 1px 0 rgba(0,0,0,.25)}'+
+  '.kb-pile{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;min-height:48px;padding:8px;border-radius:16px;background:#f8f7f4;border:2px dashed #e2ddd6;margin:12px 0}'+
+  '.kb-won{width:44px;height:44px;border-radius:10px;border:2px solid #86efac;background:#f0fdf4;display:inline-flex;align-items:center;justify-content:center;overflow:hidden}.kb-won .kb-vis{transform:scale(.5);pointer-events:none}.kb-won .kb-txt{font-size:11px;padding:2px}'+
+  '.kb-card{width:150px;height:160px;border-radius:14px;border:3px solid #a78bfa;background:#f5f3ff;display:flex;align-items:center;justify-content:center;overflow:hidden;margin:0 auto}.kb-card .kb-vis{pointer-events:none;transform:scale(1.5)}.kb-card .kb-txt{pointer-events:none;font-family:\'Fraunces\',serif;font-weight:800;font-size:34px;line-height:1.1;color:#292524;text-align:center;padding:6px;overflow-wrap:anywhere}'+
+  '.kb-btn{padding:12px 22px;border-radius:999px;border:none;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;-webkit-tap-highlight-color:transparent}.kb-btn[disabled],.kb-key[disabled],.kb-opt[disabled]{opacity:.45;cursor:default}'+
+  '.kb-key{width:64px;height:56px;border-radius:14px;border:2px solid #e2ddd6;background:#fff;font-family:\'Fraunces\',serif;font-size:26px;font-weight:800;color:#292524;cursor:pointer}'+
+  '.kb-opt{min-width:96px;padding:14px 18px;border-radius:16px;border:3px solid #e2ddd6;background:#fff;font-family:\'Fraunces\',serif;font-size:24px;font-weight:800;color:#292524;cursor:pointer;overflow-wrap:anywhere}.kb-opt.kb-wrong{opacity:.28;filter:grayscale(1);cursor:default}</style>';
+function _kbCardVis(st,pid,act){
+  const it=_kbIt(st,pid); if(!it) return '';
+  if(act==="say"){ const v=_smTileVis(it); if(v) return '<span class="kb-vis">'+v+'</span>'; }
+  return '<span class="kb-txt">'+esc(kaboomName(it))+'</span>';   // an answer card shows its FRONT (the kid produces the back)
+}
+function buildKaboomHtml(color){
+  const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+  let h=KB_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const items=_kbItems(), decks=kaboomDecks(items);
+  if(!decks.length){ h+='<div class="mast-none">No decks ready for Kaboom yet \u{2014} it needs '+KB_MIN+' or more cards with a picture (or a short answer on the back).</div></div>'; return h; }
+  const st=kaboomState;
+  const chip=(dk,lbl)=>{ const sel=st&&st.deck===dk; return '<button onclick="kaboomStart(\''+q(dk)+'\')" style="padding:10px 16px;border-radius:999px;font-size:14px;font-weight:800;border:2px solid '+(sel?color:'#e2ddd6')+';background:'+(sel?color:'#fff')+';color:'+(sel?'#fff':'#57534e')+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
+  if(!st||st.phase==="done"){
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">';
+    decks.forEach(dk=>{ h+=chip(dk,esc(dk)); });
+    if(decks.length>1) h+=chip(WHICH_MIX,"\u{1F3B2} "+WHICH_MIX);
+    h+='</div>';
+  }
+  if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u{1F4A5} Pick a deck. Draw a stick from the jar and answer its card to keep it \u{2014} but watch out for KABOOM!</div></div>'; return h; }
+  const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[kaboomBestKey(st.deck)];
+  if(st.phase==="done"){
+    h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+    h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} The jar is empty!</div>';
+    h+='<div style="font-size:17px;font-weight:800;color:#57534e;margin-top:10px">\u{1F4A5} '+st.first+' of '+st.of+' on the first try'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+    h+='<div style="font-size:13px;font-weight:700;color:var(--muted);margin-top:6px">'+st.booms+' kaboom'+(st.booms===1?'':'s')+' \u{00B7} '+esc(st.deck)+'</div>';
+    h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">';
+    h+='<button onclick="kaboomStart(\''+q(st.deck)+'\')" class="kb-btn" style="background:'+color+';color:#fff;font-size:15px">\u{1F501} Play again</button>';
+    if(decks.length>1&&!st.mix) h+='<button onclick="kaboomStart(\''+q(WHICH_MIX)+'\')" class="kb-btn" style="border:2px solid '+color+';background:#fff;color:'+color+';font-size:15px">\u{1F3B2} '+WHICH_MIX+'</button>';
+    return h+'</div></div></div>';
+  }
+  h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px;flex-wrap:wrap"><span style="font-size:13px;font-weight:800;color:#57534e">'+st.pile.length+' in your pile \u{00B7} '+st.jar.length+' stick'+(st.jar.length===1?'':'s')+' left</span>';
+  h+='<span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
+    '<button onclick="kaboomStop()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{21A9} Stop</button></span></div>';
+  h+='<div style="display:flex;align-items:center;gap:10px;margin:10px 0 12px;padding:12px 14px;border-radius:18px;background:'+(st.boomNow?'#fff7ed':'#eef2ff')+';border:2px solid '+(st.boomNow?'#fdba74':'#c7d2fe')+'"><span style="font-size:28px;line-height:1">'+(st.boomNow?'\u{1F4A5}':'\u{1F3FA}')+'</span><span style="flex:1;font-size:17px;font-weight:800;color:'+(st.boomNow?'#9a3412':'#312e81')+'">'+esc(st.msg)+'</span>'+
+    (st.say?'<button onclick="kaboomSayAgain()" aria-label="Hear it again" style="width:56px;height:56px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:26px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button>':'')+'</div>';
+  const o=st.open, t=o?st.turns[o.t]:null, lock=st.lock;
+  if(t&&(!t.done||lock)){
+    h+='<div style="margin:6px 0 12px"><span class="kb-card">'+_kbCardVis(st,t.pid,t.act)+'</span></div>';
+    if(t.act==="say") h+='<div style="display:flex;justify-content:center"><button class="kb-btn" onclick="kaboomSaid()"'+(lock||t.done?' disabled':'')+' style="background:'+color+';color:#fff;font-size:20px;padding:18px 34px">\u{1F5E3} I said it</button></div>';
+    else if(t.act==="type"){
+      h+='<div style="display:flex;justify-content:center;margin-bottom:10px"><span style="min-width:120px;height:56px;border-radius:14px;border:3px solid '+color+';background:#fff;font-family:\'Fraunces\',serif;font-size:30px;font-weight:800;color:#292524;display:inline-flex;align-items:center;justify-content:center;padding:0 14px">'+esc(t.typed||"")+'</span></div>';
+      h+='<div style="display:grid;grid-template-columns:repeat(3,64px);gap:8px;justify-content:center">';
+      ["1","2","3","4","5","6","7","8","9","back","0","ok"].forEach(k=>{ if(k==="back") h+='<button class="kb-key" onclick="kaboomKey(\'back\')"'+(lock?' disabled':'')+' aria-label="Erase">\u{232B}</button>'; else if(k==="ok") h+='<button class="kb-key" onclick="kaboomCheck()"'+(lock||!t.typed?' disabled':'')+' style="background:'+color+';color:#fff;border-color:transparent" aria-label="Check">\u{2714}</button>'; else h+='<button class="kb-key" onclick="kaboomKey(\''+k+'\')"'+(lock?' disabled':'')+'>'+k+'</button>'; });
+      h+='</div>';
+    } else {
+      h+='<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">';
+      (t.opts||[]).forEach((op,i)=>{ const w=!!t.wrong[op]; h+='<button class="kb-opt'+(w?' kb-wrong':'')+'" onclick="kaboomPickTap('+i+')"'+(w||lock||t.done?' disabled':'')+'>'+esc(op)+'</button>'; });
+      h+='</div>';
+    }
+  } else if(st.phase==="play"){
+    // the jar: tap to draw. The sticks on top are just sticks — never which is next.
+    const n=Math.min(8,st.jar.length); let sticks='';
+    for(let i=0;i<n;i++) sticks+='<span class="kb-stick" style="height:'+(36+((i*7)%14))+'px"></span>';
+    h+='<div style="margin:30px 0 6px"><button class="kb-jar'+(st.boomNow?' kb-boom':'')+'" onclick="kaboomDraw()"'+(lock||!st.jar.length?' disabled':'')+' aria-label="Draw a stick"><span class="kb-sticks">'+sticks+'</span><span class="kb-lbl">'+(st.boomNow?'\u{1F4A5} KABOOM!':'\u{1F3FA} Draw a stick')+'</span></button></div>';
+  }
+  if(st.phase!=="done"){
+    h+='<div class="kb-pile" aria-label="Your pile">'+(st.pile.length?st.pile.map(p=>'<span class="kb-won">'+_kbCardVis(st,p,_kbAct(st,p))+'</span>').join(''):'<span style="font-size:12px;font-weight:700;color:var(--muted);align-self:center">your pile \u{2014} the sticks you keep</span>')+'</div>';
+  }
+  return h+'</div>';
+}
+// KABOOM_END
 // STUDYCOUNTS_START — 📚 Study sessions count everywhere (F3 of PLAN_learning_system, her yes 2026-10-24). A study
 // sitting logs to mastery/studyLog/<kid>/<sid>/<yyyymmdd>, but Scores, the Weekly report, sprint readiness (the ≥ 90%
 // untimed check) and the notebook's 🔁 review flags read only the drill's mastery/history/<kid>/<yyyymmdd>, so Lincoln —
@@ -83905,6 +84156,8 @@ const GAMES_LIST=[
      park:()=>jeopState, restore:v=>{ jeopState=v||null; }, resume:()=>jeopResume(), decks:k=>typeof jeopDecks==="function"?jeopDecks(_gamesItems(k),k):[]},   // 📺 JEOPARDY · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
   {key:"jumble", emoji:"\u{1F9E9}", label:"Unjumble",    view:"jumble",               available:k=>typeof ujAvail==="function"&&ujAvail(k), render:c=>buildJumbleHtml(c),
      park:()=>jumbleState, restore:v=>{ jumbleState=v||null; }, resume:()=>jumbleResume(), decks:k=>typeof ujDecks==="function"?ujDecks(_gamesItems(k),k):[]},   // 🧩 UNJUMBLE · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
+  {key:"kaboom", emoji:"\u{1F4A5}", label:"Kaboom",      view:"kaboom",               available:k=>typeof kaboomDecks==="function"&&kaboomDecks(_gamesItems(k),k).length>0, render:c=>buildKaboomHtml(c),
+     park:()=>kaboomState, restore:v=>{ kaboomState=v||null; }, resume:()=>kaboomResume(), decks:k=>typeof kaboomDecks==="function"?kaboomDecks(_gamesItems(k),k):[]},   // 💥 KABOOM · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
 ];
 const gamesLast={};   // kid → key of the last game played on this device
 function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k)&&(typeof gameDeckAny!=="function"||gameDeckAny(k,g)); }catch(e){ return false; } }); }   // 🎮 GAMEGRID: every deck off → the game isn't offered
