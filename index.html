@@ -70843,6 +70843,82 @@ function mpStudyDoneHtml(kid,sid){
     return '<div class="mp-study-done" style="margin-top:14px;font-size:15px;font-weight:800;color:#15803d">\u2B50 Study done \u2014 no games needed today</div>';
   }catch(e){ return ""; }
 }
+// ── 🎮 DRILLEND — the drill ends in games (design slices 3 + 3b; her go 2026-11-02 "anything else that needs to be worked on
+//    and started, go"). Her words: "at the end of drills, it will then be, you have to play your game". With the switch on:
+//    Mom's drill saves exactly as now (the results are safe first) and "One more look" is skipped — the games are the second
+//    look. Then a hand-off screen over Scores: "🎉 Let's have fun with the ones we missed!" + Start / Not now. Start → 👀 Watch it:
+//    each card still needing practice today comes up big, one at a time, the app says its name and Mom's teaching cue when
+//    the card has one (item.cue); one tap moves on → the practice round (mpOpen, from:"drill"). Not now closes it; the Day-page
+//    🎮 chip keeps the round for later. Nothing missed and nothing waiting → Scores, as always. Switch off = the drill as it was.
+//    CUES (3b): Mom HQ ▸ ⚙ Rules ▸ the list — ✎ on each card → a short cue, ONE targeted set mastery/<kid>/<ix>/cue, Mom only. ──
+let mpHand=null;   // {kid, step:"hand"|"watch", list:[card ids], i}
+function mpAfterDrillSaved(kid){
+  if(!kid||!mpOn(kid)) return false;
+  const list=mpTodayList(kid); if(!list.length) return false;   // nothing to practice → Scores, as always
+  mpHand={kid:kid,step:"hand",list:list.map(i=>i.id),i:0};
+  mpHandRender(); return true;
+}
+function mpHandStart(){ const H=mpHand; if(!H||H.step!=="hand") return; try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){} H.step="watch"; H.i=0; mpHandRender(); mpWatchSay(); }   // Mom hands over the iPad; the tap unlocks the voice / ding / bonk
+function mpHandNotNow(){ mpHand=null; mpHandRender(); }
+function mpWatchItem(){ const H=mpHand; if(!H||H.step!=="watch") return null; return mpItems(H.kid).find(x=>x&&x.id===H.list[H.i])||null; }
+function mpWatchIsSpell(it){ return !!(it&&typeof spellPlayable==="function"&&spellPlayable(it)); }
+function mpWatchSay(){
+  const it=mpWatchItem(); if(!it) return;
+  try{ if(mpWatchIsSpell(it)) mastSpeak(spellWordOf(it),{spell:true}); else mastSpeak(_matchPlain(it.prompt)); }catch(e){}
+  if(it.cue){ setTimeout(()=>{ try{ if(mpWatchItem()===it) mastSpeak(String(it.cue)); }catch(e){} },1100); }   // then Mom's cue, in the app's voice
+}
+function mpWatchNext(){
+  const H=mpHand; if(!H||H.step!=="watch") return;
+  H.i++;
+  if(H.i>=H.list.length){ const kid=H.kid; mpHand=null; mpHandRender(); mpOpen(kid,"drill"); return; }   // watched them all → play
+  mpHandRender(); mpWatchSay();
+}
+function mpHandRender(){
+  if(typeof document==="undefined") return;
+  const H=mpHand; let ov=document.getElementById("mp-hand");
+  if(!H){ if(ov) ov.remove(); return; }
+  const E=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  const nm=(typeof cap==="function")?cap(H.kid):H.kid, em=(typeof MAST_KID_EMOJI!=="undefined"&&MAST_KID_EMOJI[H.kid])||"\u{1F3AE}", color="#7c3aed";
+  if(!ov){ ov=document.createElement("div"); ov.id="mp-hand"; ov.style.cssText="position:fixed;inset:0;z-index:9998;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:20px 12px"; document.body.appendChild(ov); }
+  let h='<div style="background:#fff;border-radius:22px;max-width:560px;width:100%;padding:18px 18px 22px;box-shadow:0 10px 40px rgba(0,0,0,.25);font-family:\'DM Sans\',sans-serif;text-align:center">';
+  if(H.step==="hand"){
+    h+='<div style="font-size:44px;line-height:1">'+em+'</div>';
+    h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800;color:'+color+';margin:8px 0 4px">\u{1F389} Let\u2019s have fun with the ones we missed!</div>';
+    h+='<div style="font-size:14px;font-weight:700;color:#64748b;margin-bottom:16px">'+E(nm)+' \u00b7 '+H.list.length+' card'+(H.list.length===1?'':'s')+' to practice</div>';
+    h+='<button onclick="mpHandStart()" style="min-height:60px;padding:0 40px;border-radius:16px;border:none;background:'+color+';color:#fff;font-size:20px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u25B6 Start</button>';
+    h+='<div style="margin-top:14px"><button onclick="mpHandNotNow()" style="padding:8px 16px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Not now</button></div>';
+  } else {
+    const it=mpWatchItem(), sp=mpWatchIsSpell(it);
+    const face=it?(sp?'<div style="font-family:\'Fraunces\',serif;font-size:56px;font-weight:800;color:#292524;letter-spacing:.04em">'+E(spellWordOf(it))+'</div>'
+      :((typeof _smTileVis==="function"&&_smTileVis(it))?'<div style="display:flex;justify-content:center;transform:scale(2.2);margin:40px 0">'+_smTileVis(it)+'</div>':'<div style="font-family:\'Fraunces\',serif;font-size:48px;font-weight:800;color:#292524;line-height:1.1">'+E(_matchPlain(it.prompt))+'</div>')):'';
+    h+='<div style="font-size:12.5px;color:#64748b;font-weight:700;margin-bottom:6px">\u{1F440} Watch it \u00b7 '+(H.i+1)+' of '+H.list.length+'</div>';
+    h+='<div style="min-height:150px;display:flex;align-items:center;justify-content:center;padding:10px 0">'+face+'</div>';
+    if(it&&it.cue) h+='<div style="margin:6px auto 0;max-width:420px;padding:10px 14px;border-radius:14px;background:#fffbeb;border:1.5px solid #fcd34d;color:#92400e;font-size:16px;font-weight:800">\u{1F4A1} '+E(it.cue)+'</div>';
+    h+='<div style="display:flex;justify-content:center;gap:12px;margin-top:16px;align-items:center">';
+    h+='<button onclick="mpWatchSay()" aria-label="Hear it again" style="width:60px;height:60px;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:28px;cursor:pointer">\u{1F50A}</button>';
+    h+='<button onclick="mpWatchNext()" style="min-height:56px;padding:0 36px;border-radius:16px;border:none;background:'+color+';color:#fff;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(H.i+1>=H.list.length?'\u{1F3AE} Play!':'Next \u2192')+'</button>';
+    h+='</div>';
+  }
+  ov.innerHTML=h+'</div>';
+}
+// ── cues (3b): Mom's short teaching line on a card, said and shown in Watch it ──
+function mpSetCue(kid,it,text){
+  if(!kid||!it||!mpCanEdit()) return false;
+  text=String(text==null?"":text).trim().slice(0,120);
+  if(text) it.cue=text; else delete it.cue;
+  const k=mpKey(kid,it);
+  if(k!=null&&typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){ try{ db.ref("mastery/"+kid+"/"+k+"/cue").set(text||null); }catch(e){} }   // this field only
+  try{ HA_LS.setItem("ha_mastery",JSON.stringify(_mpMD())); }catch(e){}
+  try{ if(typeof renderAll==="function") renderAll(); }catch(e){}
+  return true;
+}
+function mpCueEdit(kid,id){
+  if(!mpCanEdit()||typeof prompt!=="function") return false;
+  const it=mpItems(kid).find(x=>x&&x.id===id); if(!it) return false;
+  const v=prompt("Teaching cue for \u201c"+_matchPlain(it.prompt)+"\u201d \u2014 what you say to help (e.g. \u201cM has two mountains\u201d). Leave empty to clear.",it.cue||"");
+  if(v===null) return false;
+  return mpSetCue(kid,it,v);
+}
 // ── Mom HQ ▸ ⚙ Rules: the switches (saved right away, one field each) ──
 function mpCanEdit(){ return (typeof momHere==="function"&&momHere())||(typeof mastAdminPinOk!=="undefined"&&!!mastAdminPinOk); }
 function mpSet(kid,field,val){
@@ -70867,7 +70943,9 @@ function mpSettingsHtml(kid){
     h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0">'+tg("study",c.study)+'<div style="flex:1"><div class="mast-admin-label">Study misses go too</div><div class="mast-admin-desc">'+(c.study?'A card wrong '+MP_STUDY_MISSES+' or more times in one study sitting joins the list, even if it passed in the end':'Only the drill sends cards to the games')+'</div></div></div>';   // 🎮 her words 2026-11-02
     h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0"><div style="flex:1"><div class="mast-admin-label">Cards on the list at once</div><div class="mast-admin-desc">More misses wait in the drill until a place opens</div></div>'+step("cap",c.cap,"",1)+'</div>';
     h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0"><div style="flex:1"><div class="mast-admin-label">Practice round time</div><div class="mast-admin-desc">The round ends kindly at the time; the rest carry to tomorrow</div></div>'+step("secs",c.secs,"",60)+'</div>';
-    h+='<div class="mast-admin-desc" style="margin-top:6px">'+(L.length?'On the list now ('+L.length+'): '+L.map(i=>E((typeof _matchPlain==="function")?_matchPlain(i.prompt):i.prompt)).join(' · '):'Nothing on the list right now.')+'</div>';
+    const J=s=>String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+    h+='<div class="mast-admin-desc" style="margin-top:6px">'+(L.length?'On the list now ('+L.length+'): '+L.map(i=>'<span style="white-space:nowrap">'+E((typeof _matchPlain==="function")?_matchPlain(i.prompt):i.prompt)+(i.cue?' <span style="color:#92400e">\u{1F4A1} '+E(i.cue)+'</span>':'')+' <button onclick="mpCueEdit(\''+J(kid)+'\',\''+J(i.id)+'\')" title="Teaching cue" aria-label="Teaching cue" style="padding:0 6px;border-radius:8px;border:1px solid #e2ddd6;background:#fff;color:#57534e;font-size:11px;cursor:pointer">\u270E</button></span>').join(' · '):'Nothing on the list right now.')+'</div>';   // 🎮 DRILLEND cues (3b)
+    h+='<div class="mast-admin-desc" style="margin-top:4px">\u270E = a teaching cue the app says in \u{1F440} Watch it before the games (e.g. \u201cM has two mountains\u201d).</div>';
   }
   return h+'</div></div>';
 }
@@ -71966,6 +72044,7 @@ function mastSaveResults(){
   // Land on Scores so the kid sees today's result and the trend right after finishing.
   mastView="scores"; mastScoreItemId=null;
   const c=document.getElementById("content"); if(c) renderMastery(c);
+  try{ if(typeof mpAfterDrillSaved==="function") mpAfterDrillSaved(masteryKid); }catch(e){}   // 🎮 DRILLEND: "Let's have fun with the ones we missed" → Watch → the round (switch on only)
 }
 
 // ── ADD ITEMS ─────────────────────────────────────────────────────
@@ -82235,7 +82314,7 @@ function _renderMasteryInner(el){
     // showing before the drill ends. The tail grows live as ✗s land (every score tap
     // re-renders) and shrinks if Mom flips one back to ✓; nothing here writes or double-logs.
     const _slBase=slideItems.length;
-    const slideList=mastLogMode?slideItems.concat(slideItems.filter(i=>mastLogScores[i.id]==="m")):slideItems;
+    const slideList=(mastLogMode&&!(typeof mpOn==="function"&&mpOn(masteryKid)))?slideItems.concat(slideItems.filter(i=>mastLogScores[i.id]==="m")):slideItems;   // 🎮 DRILLEND: with the games switch on, the games are the second look (design slice 3)
     if(slideItems.length){
     if(mastSlideIdx<0) mastSlideIdx=0;
     if(mastSlideIdx>=slideList.length) mastSlideIdx=slideList.length-1;
