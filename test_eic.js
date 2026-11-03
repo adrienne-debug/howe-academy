@@ -137,7 +137,7 @@ ok("Mom's check view (ans) never also shows the rules",/const rules=\(!ans&&opts
 ok("the key still needs Mom's eyes",/\|\|!wbMomEyes\(\)\) ans=0;/.test(body));
 ok("rules pane is image-only (no canvas inside it)",!/wb-rules-hold[\s\S]*?<canvas[\s\S]*?id=\\?"wb-hold/.test(body));
 ok("📊 Score is Mom-only and EIC-only",src.indexOf('((v.eic&&wbMomEyes()&&window.eicScoreOpen)?btn("📊 Score","eicScoreOpen()"):"")')>0);
-ok("kid's ✏️ button is OFF unless mastery/<kid>_settings/eic",src.indexOf('if(((masteryData||{})[masteryKid+"_settings"]||{}).eic) h+=\'<button onclick="eicPanelOpen(')>0);
+ok("kid's ✏️ button is OFF unless mastery/<kid>_settings/eic (MASTSET 2026-11-02: it sits on Mom's Day ▸ School ▸ Mastery ▸ Settings ▸ 🃏 Cards now)",src.indexOf('const eicOn=!!(((masteryData||{})[kid+"_settings"]||{}).eic);')>0&&src.indexOf('(eicOn?b("eicPanelOpen(\'"+mhqArgEsc(kid)+"\')"')>0&&src.indexOf('onclick="eicPanelOpen(\'\'+masteryKid')<0);
 ok("eic.js is lazy — no <script src> at boot",!/<script[^>]+src=["']eic\.js/.test(src));
 const e=fs.readFileSync(path.join(__dirname,"eic.js"),"utf8");
 const ee=fs.readFileSync(path.join(__dirname,"eic.js"),"utf8");

@@ -11,7 +11,7 @@ const strip=src.replace(/function _momSuspend\(\)\{[^\n]*\n/,"")   // 🧒 KIDSL
 ok("no door sets a flag on its own any more (adminPinUnlocked / momModeActive / momPinUnlocked / mastAdminPinOk = true)", !/(adminPinUnlocked|momModeActive|momPinUnlocked|mastAdminPinOk)\s*=\s*true/.test(strip), (strip.match(/(adminPinUnlocked|momModeActive|momPinUnlocked|mastAdminPinOk)\s*=\s*true[^;]*/g)||[]));
 ok("no off sets flags one by one (only haMomOff clears them)", !/(momModeActive|momPinUnlocked)\s*=\s*false/.test(strip.replace(/let (momModeActive|momPinUnlocked)=false;/g,"").replace("if(!momModeActive) momPinUnlocked=false;","")), (strip.replace(/let (momModeActive|momPinUnlocked)=false;/g,"").replace("if(!momModeActive) momPinUnlocked=false;","").match(/(momModeActive|momPinUnlocked)\s*=\s*false[^;]*/g)||[]));
 ok("every single-flag door now reads momHere()", !/if\(!adminPinUnlocked\)\{/.test(src)&&(src.match(/if\(!momHere\(\)\)\{/g)||[]).length>=6);
-ok("the Mastery Database door opens in Mom mode", /if\(!mastAdminPinOk&&!momHere\(\)\)\{/.test(src));
+ok("the Mastery add-card door opens in Mom mode (MASTSET 2026-11-02: it lives on Mom's Day ▸ School ▸ Mastery ▸ Settings now)", /function mastOpenAdd\(\)\{ if\(!momHere\(\)&&!mastAdminPinOk\) return;/.test(src));
 console.log("── on, off, remembered on this device ──");
 function boot(stored){
   const ls={}; if(stored!==undefined) ls.ha_mom_on=stored;
