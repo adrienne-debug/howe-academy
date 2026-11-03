@@ -3210,7 +3210,7 @@ function haClaimSchedLock(kind,cb,_attempt){
       // genuine competing regen/autogen aborts immediately.
       var holder=null; try{ holder=snap&&snap.val(); }catch(e){}
       var att=_attempt||0;
-      if((kind==="regen"||kind==="autogen")&&att<16&&(!holder||holder.kind==="cascade")){
+      if((kind==="regen"||kind==="autogen"||kind==="relay")&&att<16&&(!holder||holder.kind==="cascade")){   // RELAY: a re-lay from a tap waits ~8 s for a passing sweep too
         setTimeout(function(){ haClaimSchedLock(kind,cb,att+1); },500);
         return;
       }
@@ -3716,6 +3716,10 @@ function attachWeekListeners(wk){
   const r8sw=db.ref(wk+"/eveningSweep");
   r8sw.on("value",s=>{ eveningSweeps=s.val()||{}; });
   fbWeekRefs.push(r8sw);
+  // 🔁 RELAY: what the last re-lays moved (the line on the day banner + Undo, on every Mom device)
+  const r8rl=db.ref(wk+"/relayLog");
+  r8rl.on("value",s=>{ relayLogData=s.val()||{}; if(typeof renderAllSoon==="function") renderAllSoon(); });
+  fbWeekRefs.push(r8rl);
 
   // 👩 Mom-loop hold — "once checked, who has it has it". One tiny value; every device
   // agrees on who has STARTED with Mom (see mlOnCheck / mlHold).
@@ -8486,7 +8490,7 @@ function schedRenderDayOffPicker(dn){
     p+='<button onclick="schedToggleKidOff(\''+k+'\',\''+ds+'\')" style="padding:6px 14px;border-radius:16px;border:1.5px solid '+(offByOverride?'transparent':'var(--border)')+';background:'+(offByOverride?c:'#fff')+';color:'+(offByOverride?'#fff':'var(--text)')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cap(k)+(offByOverride?' · off':(offWhy?' · '+esc(offWhy):''))+'</button>';
   });
   p+='</div>';
-  p+='<div style="font-size:10px;color:var(--muted);margin-top:6px">Tap to toggle a sick/off day — the same per-kid override as Admin → Calendar. Generation and catch-up skip an off kid; regenerate afterward to reflow their lessons.</div>';
+  p+='<div style="font-size:10px;color:var(--muted);margin-top:6px">Tap to toggle a sick/off day — the same per-kid override as Admin → Calendar. Generation and catch-up skip an off kid; their lessons for that day move into the rest of the week by themselves (Undo on the banner for 15 minutes).</div>';
   p+='</div>';
   return p;
 }
@@ -8502,12 +8506,15 @@ function schedToggleKidOff(k,ds){
     db.ref("calendar/kidOverrides/"+k+"/"+ds).set(entry);
     calendarData.kidOverrides=calendarData.kidOverrides||{};
     (calendarData.kidOverrides[k]=calendarData.kidOverrides[k]||{})[ds]=entry;
-    // 😷 Off TODAY takes effect now: the cascade moves their unfinished lessons into the rest
-    // of the week (same lock + debounce as every other sweep). A future date still waits for
-    // that morning's sweep, or a regenerate.
+    // 🔁 RELAY (her yes 2026-11-03): off on ANY day of the week on the board takes effect now — the one re-lay door moves
+    // their unfinished lessons into the rest of the week and the day banner says what moved (Undo for 15 min puts the mark
+    // and the cards back). A date outside this week has nothing on the board to move.
     const _offToday=(typeof routineDateISO==="function"&&routineDateISO(_todayDay)===ds);
-    if(_offToday&&typeof schedCascade==="function") schedCascade();
-    gwShowToast(_offToday?cap(k)+" is off today — moving their lessons into the rest of the week":cap(k)+" marked off — regenerate to reflow their lessons");
+    const _dn=(typeof stDayNameOf==="function")?stDayNameOf(ds):"", _onBoard=_offToday||!!(_dn&&typeof stDsOf==="function"&&stDsOf(_dn)===ds);
+    const _when=_offToday?"today":((typeof stDateWords==="function")?stDateWords(ds):ds);
+    if(_onBoard&&typeof relayWeek==="function") relayWeek("kidoff",{label:"😷 "+cap(k)+" off "+_when,undo:[{p:"calendar/kidOverrides/"+k+"/"+ds,gone:true}]});
+    else if(_offToday&&typeof schedCascade==="function") schedCascade();
+    gwShowToast(_onBoard?cap(k)+" is off "+_when+" — moving their lessons into the rest of the week":cap(k)+" marked off "+_when);
   }
   renderAll();
 }
@@ -9029,6 +9036,7 @@ function renderSchedule(el){
   if(day===_todayDay&&kid!=="all"&&kid!=="mom"){ try{ h+=hrKidButtonHTML(kid); }catch(e){} }   // 🙋 NEEDMOM: the kid's own page (hidden when Mom is here)
   if(day===_todayDay&&momHere()&&!momSchedView){ try{ const _hr=hrMomCardHTML((kid!=="all"&&kid!=="mom")?kid:null); if(_hr) h+='<div style="margin:0 0 10px">'+_hr+'</div>'; }catch(e){} }   // 🙋 NEEDMOM: who asked for Mom → ✓ Helped
   if(momHere()&&schedDayOffOpen) h+=schedRenderDayOffPicker(day);
+  if(momHere()){ try{ if(typeof relayLineHTML==="function") h+=relayLineHTML(day); }catch(e){} }   // 🔁 RELAY: what the last re-lay moved · Undo
   if(day===_todayDay&&kid!=="all"&&kid!=="mom"&&typeof hhCleanOn==="function"&&hhCleanOn(_todayStr())){ try{ h+=hhCleanPanelHTML(kid,_todayStr(),day); }catch(e){} }   // 🧽 CLEANINGDAY: Go clean on a normal day
 
   if(CONSTRAINT[day]){
@@ -37730,17 +37738,19 @@ function dtCheck(st){
 function dtSave(){
   const st=dtState; if(!st||!momHere()) return;
   const err=dtCheck(st); if(err){ st.err=err; dtRender(); return; }
+  const _was=(typeof dtUndoSnap==="function")?dtUndoSnap(st.iso):null;   // 🔁 RELAY: the leaves as they were, for Undo
   if(!stWrite(dtUpd(st))) return;
   const words=dtWords(st), when=(st.iso===stTodayIso())?"Today":stDateWords(st.iso);
-  dtClose(); if(typeof schedCascade==="function") schedCascade(); if(typeof renderAll==="function") renderAll();
+  dtClose(); if(typeof relayWeek==="function") relayWeek("daytimes",{label:"⏰ "+when+" "+fromMin(st.s)+"–"+fromMin(st.e),undo:_was}); else if(typeof schedCascade==="function") schedCascade(); if(typeof renderAll==="function") renderAll();   // 🔁 RELAY: through the one door
   if(typeof gwShowToast==="function") gwShowToast("⏰ "+when+": school "+words);
 }
 // "Back to normal": both of the date's leaves go; the day follows Settings again.
 function dtClear(iso){
   iso=iso||(dtState&&dtState.iso); if(!momHere()||!stIsoOk(iso)) return;
   const upd={}; upd["config/rules/schoolDay/byDate/"+iso]=null; upd["config/rules/schoolDay/lunchByDate/"+iso+"/all"]=null;
+  const _was=(typeof dtUndoSnap==="function")?dtUndoSnap(iso):null;   // 🔁 RELAY: the leaves as they were, for Undo
   if(!stWrite(upd)) return;
-  dtClose(); if(typeof schedCascade==="function") schedCascade(); if(typeof renderAll==="function") renderAll();
+  dtClose(); if(typeof relayWeek==="function") relayWeek("daytimes",{label:"⏰ "+((iso===stTodayIso())?"Today":stDateWords(iso))+" back to normal",undo:_was}); else if(typeof schedCascade==="function") schedCascade(); if(typeof renderAll==="function") renderAll();   // 🔁 RELAY: through the one door
   if(typeof gwShowToast==="function") gwShowToast("⏰ "+((iso===stTodayIso())?"Today":stDateWords(iso))+" back to the usual school times");
 }
 function dtRender(){
@@ -42241,6 +42251,187 @@ const _histOwnsCard=(h,t)=>!h||!h.who||!h.title||(h.who===t.who&&_sameLesson(h.t
 // sweep consults subjNoCarry (curriculum card flags); running before currData arrives
 // would silently read every "Drops that day" flag as false and sweep day-bound work
 // forward. The curriculum once() re-arms this when it answers last.
+// RELAY_START — 🔁 ONE RE-LAY DOOR (her yes 2026-11-03 "yes to all and go to all"; PLAN_day_adjust_2026-10-29 step 4, slice 1;
+// the design: side-session note living-step4_design_2026-11-03.md). Every edit that should re-lay the week on the board goes
+// through relayWeek(why,info): a day off this week (😷 — step 3, which never reached main), ⏰ a date's own school times, and
+// the 8 PM sweep / ⏩ push (through _rlwRun inside their own lock). It is the SAME sweep the app already trusts — cascadeIntraWeek
+// + runCascade, with the school-end guard inside safeWriteTasks — behind one lock claim ("relay", retried against a passing
+// sweep) and one 2 s wait (ten taps → one run). No third engine. Around the run: a snapshot of every card's day / time before,
+// a diff after → week<N>/relayLog/<ts> = {label, dev, at, n, moves, removed, undo}, the newest 10 kept (targeted removes), and
+// one line on the day banner (Mom lens): "⏰ Wed, Nov 5 11:00 AM–2:00 PM → 6 cards moved (3 for each of two kids) · Undo". Undo
+// (Mom, 15 min): the trigger's own paths go back to what they were (the kid's mark, the date's leaves) AND the listed cards go
+// back where they were — only cards still unchecked, unclaimed and not moved since; one multi-path update, targeted. A
+// tripwire in _debug if a claimed / started / set-time / Mom-moved card changed DAY (the sweep never does; checked cards
+// are the ts-heal's to move). Called only by a tap or the clock, never by a listener, so no device re-lays because another
+// one did. ?dryrun=1: the sweep runs in this device's memory, nothing is written. Pure helpers (_rlwSnapOf, _rlwDiff,
+// _rlwWords, _rlwUndoUpd) are sliced by test_relay_week.js.
+const RLW_WAIT_MS=2000, RLW_UNDO_MS=15*60*1000, RLW_KEEP=10, RLW_MAX_MOVES=80, RLW_MAX_REMOVED=20;
+let relayLogData={};      // mirror of week<N>/relayLog (listener in attachWeekListeners)
+let _rlwPend=null, _rlwTimer=null;
+// relayWeek("kidoff",{label:"😷 <Kid> off Wed, Nov 5", undo:[{p:"calendar/kidOverrides/<kid>/<iso>", gone:true}]})
+function relayWeek(why,info){
+  info=info||{};
+  if(!_rlwPend) _rlwPend={whys:[],labels:[],undo:[],at:Date.now()};
+  _rlwPend.whys.push(String(why||"relay"));
+  if(info.label&&_rlwPend.labels.indexOf(info.label)<0) _rlwPend.labels.push(String(info.label));
+  // ten taps → one Undo back to BEFORE the first: a path's first "was" wins
+  (info.undo||[]).forEach(function(u){ if(u&&u.p&&!_rlwPend.undo.some(x=>x.p===u.p)) _rlwPend.undo.push(u.gone?{p:u.p,gone:true}:{p:u.p,was:(u.was===undefined?null:u.was)}); });
+  try{ clearTimeout(_rlwTimer); }catch(e){}
+  _rlwTimer=setTimeout(function(){ _rlwFire(0); },RLW_WAIT_MS);
+}
+function _rlwFire(att){
+  const pend=_rlwPend; if(!pend) return;
+  const ready=(typeof fbCheckedLoaded==="undefined"||fbCheckedLoaded)&&(typeof fbTasksLoaded==="undefined"||fbTasksLoaded)&&(typeof fbHistoryLoaded==="undefined"||fbHistoryLoaded)&&(typeof fbCurrLoaded==="undefined"||fbCurrLoaded);
+  if(!ready||(typeof lockHeldByOther==="function"&&lockHeldByOther())){
+    if(att<20){ _rlwTimer=setTimeout(function(){ _rlwFire(att+1); },500); return; }   // ~10 s for a passing sweep / the data
+    _rlwPend=null; if(typeof gwShowToast==="function") gwShowToast("Another device is updating the schedule — the week catches up on its next sweep"); return;
+  }
+  _rlwPend=null;
+  if(typeof haClaimSchedLock!=="function"||typeof cascadeIntraWeek!=="function") return;
+  haClaimSchedLock("relay",function(release){
+    if(!release){ if(typeof gwShowToast==="function") gwShowToast("Another device is updating the schedule — the week catches up on its next sweep"); return; }
+    try{ _rlwRun(pend,function(){ cascadeIntraWeek(); if(typeof runCascade==="function") runCascade(); }); }
+    finally{ release(); }
+  });
+}
+// ── pure: the snapshot and the diff ──
+// o = {checked, claimed, momMoves, todayDay, nowMin, isHeld(t)}  →  {id:{d,t,cf,eo,ck,cl,st,fx,w,ti,card}}
+function _rlwSnapOf(tasks,o){
+  const out={}; o=o||{}; const ck=o.checked||{}, cl=o.claimed||{}, mm=o.momMoves||{};
+  (tasks||[]).forEach(function(t){
+    if(!t||!t.id||String(t.id).endsWith("_c")) return;
+    let st=false; try{ st=!!(o.todayDay&&t.day===o.todayDay&&o.nowMin!=null&&toMin(t.time)<=o.nowMin); }catch(e){}
+    let fx=!!t.famBlock||!!mm[t.id]; try{ if(!fx&&o.isHeld) fx=!!o.isHeld(t); }catch(e){}
+    out[t.id]={d:t.day,t:t.time,cf:t.cascadedFrom||null,eo:!!t._eowOverflow,ck:!!ck[t.id],cl:!!cl[t.id],st:st,fx:fx,w:t.who||"",ti:String(t.title||"").slice(0,48),card:Object.assign({},t)};
+  });
+  return out;
+}
+// → {n, moves:[{id,who,ti,from:{d,t,cf,eo},to:{d,t}}], removed:[card…], locked:[id…]}. A checked or claimed card is never a
+// "move" (the ts-heal owns checked cards; claimed work is frozen) — a claimed / started / held card that changed DAY trips the wire.
+function _rlwDiff(before,tasks){
+  const out={n:0,moves:[],removed:[],locked:[]}; const seen={};
+  (tasks||[]).forEach(function(t){
+    if(!t||!t.id||String(t.id).endsWith("_c")) return; seen[t.id]=true;
+    const b=before[t.id]; if(!b) return;
+    const dayCh=(t.day!==b.d), ch=dayCh||(t.time!==b.t)||(!!t._eowOverflow!==b.eo);
+    if(!ch) return;
+    if(dayCh&&(b.cl||b.st||b.fx)) out.locked.push(t.id);
+    if(b.ck||b.cl) return;
+    out.moves.push({id:t.id,who:b.w,ti:b.ti,from:{d:b.d,t:b.t,cf:b.cf,eo:b.eo},to:{d:t.day,t:t.time}});
+  });
+  Object.keys(before).forEach(function(id){ if(!seen[id]&&!before[id].ck&&!before[id].cl) out.removed.push(before[id].card); });
+  out.n=out.moves.length+out.removed.length;
+  return out;
+}
+function _rlwWords(e){
+  if(!e) return "";
+  const per={}; (e.moves||[]).forEach(function(m){ per[m.who]=(per[m.who]||0)+1; });
+  const kids=Object.keys(per).map(function(k){ return cap(k)+" "+per[k]; }).join(", ");
+  const nm=(e.moves||[]).length, nr=(e.removed||[]).length;
+  let s=(e.label||"Re-laid")+" → "+nm+" card"+(nm===1?"":"s")+" moved"+(kids?" ("+kids+")":"");
+  if(nr) s+=" · "+nr+" to next week";
+  if(e.locked&&e.locked.length) s+=" · ⚠ "+e.locked.length+" held card"+(e.locked.length===1?"":"s")+" changed day";
+  if(e.undone) s+=" · undone";
+  return s;
+}
+// one run: snapshot → fn() (the sweep) → diff → log + line. Used by relayWeek and by the 8 PM sweep / ⏩ push inside their lock.
+function _rlwRun(pend,fn){
+  pend=pend||{};
+  const tasks=(typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[];
+  const now=new Date();
+  const before=_rlwSnapOf(tasks,{checked:(typeof checked!=="undefined"&&checked)||{},claimed:(typeof claimed!=="undefined"&&claimed)||{},momMoves:(typeof momMoves!=="undefined"&&momMoves)||{},
+    todayDay:(typeof _todayDay!=="undefined")?_todayDay:null,nowMin:now.getHours()*60+now.getMinutes(),
+    isHeld:function(t){ return (typeof fdtHeld==="function"&&fdtHeld(t))||(typeof mvtHeldToday==="function"&&mvtHeldToday(t)); }});
+  fn();
+  const after=(typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[];
+  const d=_rlwDiff(before,after);
+  if(d.locked.length) dbg("⚠ relay tripwire ("+(pend.labels||pend.whys||[]).join(" · ")+"): held card(s) changed day — "+d.locked.join(" "));
+  if(!d.n) return d;
+  const at=Date.now();
+  const e={label:(pend.labels&&pend.labels.length?pend.labels:(pend.whys||[])).join(" · "),why:(pend.whys||[]).join(","),dev:(typeof HA_DEV_ID!=="undefined")?HA_DEV_ID:"",at:at,n:d.n,
+    moves:d.moves.slice(0,RLW_MAX_MOVES),removed:d.removed.slice(0,RLW_MAX_REMOVED)};
+  if(d.locked.length) e.locked=d.locked;
+  if(pend.undo&&pend.undo.length) e.undo=pend.undo;
+  relayLogData=Object.assign({},relayLogData); relayLogData[String(at)]=e;
+  const keys=Object.keys(relayLogData).sort(); const drop=[];
+  while(keys.length>RLW_KEEP) drop.push(keys.shift());
+  drop.forEach(function(k){ delete relayLogData[k]; });
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){
+    try{ db.ref(WK+"/relayLog/"+at).set(e); drop.forEach(function(k){ db.ref(WK+"/relayLog/"+k).remove(); }); }catch(err){ dbg("relay log write: "+err); }
+  }
+  dbg("🔁 relay: "+_rlwWords(e));
+  if(typeof gwShowToast==="function") gwShowToast("🔁 "+_rlwWords(e));
+  if(typeof renderAll==="function") renderAll();
+  return d;
+}
+// the newest entry from today (local date), or null
+function _rlwLast(){
+  const keys=Object.keys(relayLogData||{}).sort(); if(!keys.length) return null;
+  const e=relayLogData[keys[keys.length-1]]; if(!e||!e.at) return null;
+  const a=new Date(e.at), n=new Date(); if(a.toDateString()!==n.toDateString()) return null;
+  return e;
+}
+function _rlwCanUndo(e,nowMs){ return !!(e&&e.undo&&e.undo.length&&!e.undone&&((nowMs||Date.now())-e.at)<RLW_UNDO_MS); }
+// the day banner line (Mom lens): what the last re-lay moved today, with Undo while it is still possible
+function relayLineHTML(){
+  if(typeof momHere==="function"&&!momHere()) return "";
+  const e=_rlwLast(); if(!e) return "";
+  const t=new Date(e.at); const hm=fromMin(t.getHours()*60+t.getMinutes());
+  return '<div class="relay-line" style="margin:6px 12px 0;font-size:12px;color:#4c1d95;background:#f5f3ff;border:1.5px solid #ddd6fe;border-radius:10px;padding:6px 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="flex:1">🔁 '+esc(hm)+' · '+esc(_rlwWords(e))+'</span>'
+    +(_rlwCanUndo(e)?'<button onclick="relayUndo(\''+esc(String(e.at))+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid #c4b5fd;background:#fff;color:#5b21b6;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;font-size:12px">↩ Undo</button>':'')+'</div>';
+}
+// pure: the one multi-path update an Undo writes → {upd, cards, skipped}. Trigger paths back first, then each listed card that
+// is still unchecked, unclaimed and exactly where the re-lay put it; a removed card comes back whole.
+function _rlwUndoUpd(e,tasks,o){
+  o=o||{}; const ck=o.checked||{}, cl=o.claimed||{}, wk=o.wk||""; const upd={}; let cards=0, skipped=0;
+  (e.undo||[]).forEach(function(u){ if(u&&u.p) upd[u.p]=u.gone?null:(u.was===undefined?null:u.was); });
+  const byId={}; (tasks||[]).forEach(function(t){ if(t&&t.id) byId[t.id]=t; });
+  (e.moves||[]).forEach(function(m){
+    const t=byId[m.id]; if(!t||ck[m.id]||cl[m.id]||t.day!==m.to.d||t.time!==m.to.t){ skipped++; return; }
+    upd[wk+"/tasks/"+m.id+"/day"]=m.from.d; upd[wk+"/tasks/"+m.id+"/time"]=m.from.t;
+    upd[wk+"/tasks/"+m.id+"/cascadedFrom"]=m.from.cf||null; upd[wk+"/tasks/"+m.id+"/_eowOverflow"]=m.from.eo?true:null;
+    cards++;
+  });
+  (e.removed||[]).forEach(function(c){ if(!c||!c.id||byId[c.id]||ck[c.id]) return; upd[wk+"/tasks/"+c.id]=c; cards++; });
+  upd[wk+"/relayLog/"+e.at+"/undone"]=o.now||Date.now();
+  return {upd:upd,cards:cards,skipped:skipped};
+}
+function _rlwApplyLocal(p,v){
+  const parts=String(p).split("/");
+  if(parts[0]==="calendar"&&typeof calendarData!=="undefined"&&calendarData){ let o=calendarData; for(let i=1;i<parts.length-1;i++){ if(!o[parts[i]]||typeof o[parts[i]]!=="object") o[parts[i]]={}; o=o[parts[i]]; } if(v===null) delete o[parts[parts.length-1]]; else o[parts[parts.length-1]]=v; return; }
+  if(typeof stApplyLocal==="function") stApplyLocal(p,v);
+}
+function relayUndo(at){
+  if(typeof momHere==="function"&&!momHere()) return;
+  const e=(relayLogData||{})[String(at)];
+  if(!_rlwCanUndo(e)){ if(typeof gwShowToast==="function") gwShowToast("That re-lay can't be undone any more"); return; }
+  const tasks=(typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[];
+  const r=_rlwUndoUpd(e,tasks,{checked:(typeof checked!=="undefined"&&checked)||{},claimed:(typeof claimed!=="undefined"&&claimed)||{},wk:WK});
+  // this device's memory first (the listeners bring every other device along)
+  Object.keys(r.upd).forEach(function(p){
+    if(p.indexOf(WK+"/tasks/")===0){
+      const rest=p.slice((WK+"/tasks/").length).split("/"); const t=tasks.find(function(x){ return x&&x.id===rest[0]; });
+      if(rest.length===1){ if(r.upd[p]&&!t) tasks.push(Object.assign({},r.upd[p])); return; }
+      if(!t) return; if(r.upd[p]===null) delete t[rest[1]]; else t[rest[1]]=r.upd[p]; return;
+    }
+    if(p.indexOf(WK+"/relayLog/")===0) return;
+    _rlwApplyLocal(p,r.upd[p]);
+  });
+  e.undone=Date.now();
+  try{ sv(WK+"_tasks",tasks); }catch(err){}
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){ try{ db.ref().update(r.upd); }catch(err){ dbg("relay undo write: "+err); } }   // one multi-path update, never a whole node
+  dbg("↩ relay undo "+at+": "+r.cards+" card(s) back, "+r.skipped+" left (checked or moved since), "+Object.keys(r.upd).length+" paths");
+  if(typeof gwShowToast==="function") gwShowToast("↩ Put back "+r.cards+" card"+(r.cards===1?"":"s")+(r.skipped?" ("+r.skipped+" left — checked or moved since)":""));
+  if(typeof renderAll==="function") renderAll();
+}
+// ⏰ DAYTIMES: what the date's two leaves are right now, for a day-times Undo
+function dtUndoSnap(iso){
+  const sd=((typeof rulesData!=="undefined"&&rulesData)||{}).schoolDay||{};
+  const L=(sd.byDate||{})[iso], W=(((sd.lunchByDate||{})[iso])||{}).all;
+  return [L&&typeof L==="object"?{p:"config/rules/schoolDay/byDate/"+iso,was:Object.assign({},L)}:{p:"config/rules/schoolDay/byDate/"+iso,gone:true},
+          W&&typeof W==="object"?{p:"config/rules/schoolDay/lunchByDate/"+iso+"/all",was:Object.assign({},W)}:{p:"config/rules/schoolDay/lunchByDate/"+iso+"/all",gone:true}];
+}
+// RELAY_END
 function schedCascade(){
   clearTimeout(cascadeDebounce);
   cascadeDebounce=setTimeout(()=>{
@@ -42523,18 +42714,21 @@ function cascadeIntraWeek(sweepTodayElapsed){
   const _todaySchoolOver=(function(){ try{ const _s=((rulesData||{}).schoolDay)||{}; const _v=(((_s.overrides||{})[today])||{}).end||_s.defaultEnd||"4:15 PM"; return _nowMin>=toMin((typeof dtE==="function")?dtE(today,_v):_v); }catch(e){ return false; } })();
   // 😷 Is this kid marked off TODAY by Mom's own per-kid override? (memoised per sweep)
   const _offTodayMemo={};
-  const _kidOffToday=function(who){
-    if(_offTodayMemo[who]===undefined){
+  // RELAY_OFFDAY (her yes 2026-11-03): the same mark read for ANY day of the week on the board — a later day off re-lays at once (below)
+  const _kidOffOn=function(who,dn){
+    const _k=who+"|"+dn;
+    if(_offTodayMemo[_k]===undefined){
       let off=false;
       try{
-        const ds=_cascDate(today);
+        const ds=_cascDate(dn);
         const o=(ds&&typeof calendarData!=="undefined"&&calendarData&&((calendarData.kidOverrides||{})[who]||{})[ds])||null;
         off=!!(o&&o.school===false);
       }catch(e){ off=false; }
-      _offTodayMemo[who]=off;
+      _offTodayMemo[_k]=off;
     }
-    return _offTodayMemo[who];
+    return _offTodayMemo[_k];
   };
+  const _kidOffToday=function(who){ return _kidOffOn(who,today); };
   const _dbCursor={}; // per-kid chain cursor for regen re-timed day-bound tasks (today only)
   weekData.tasks.forEach(t=>{
     if(t.id.endsWith("_c")) return;
@@ -42609,8 +42803,17 @@ function cascadeIntraWeek(sweepTodayElapsed){
       return;
     }
     const idx=dayOrder.indexOf(t.day);
-    if(idx<0||idx>todayIdx) return;
-    if(idx===todayIdx){
+    if(idx<0) return;
+    // RELAY_OFFDAY (her yes 2026-11-03; step 3 of PLAN_day_adjust_2026-10-29, built here): a kid Mom marked OFF on a LATER day
+    // of this week is not working that day either — their unfinished cards on it join the pool NOW, so "Wednesday we can't"
+    // re-lays the week on the tap (😷 on the day banner, or the Calendar's per-kid mark) instead of waiting for Wednesday
+    // morning's sweep or a Regenerate. Exactly the mark today's sick-day sweep reads (her explicit per-kid school:false —
+    // never a holiday or a co-op). Day-bound cards never reach here (a missed day is just missed); claimed work stays frozen;
+    // the off day itself is refused as a landing day by offHere / the subject-spread below.
+    if(idx>todayIdx){
+      if(!_kidOffOn(t.who,t.day)) return;
+      if(claimed&&claimed[t.id]) return;
+    } else if(idx===todayIdx){
       // Today's tasks normally stay put — no intra-day moving goalposts while the kids
       // are working. On a REGENERATION commit (sweepTodayElapsed) only ELAPSED slots
       // sweep forward. The sweep is the janitor, not the author: the generator now
@@ -85054,7 +85257,8 @@ function mlEveningSweep(force){
     if(typeof haClaimSchedLock!=="function"||typeof cascadeIntraWeek!=="function") return false;
     haClaimSchedLock("cascade",function(release){
       if(!release){ if(force&&typeof gwShowToast==="function") gwShowToast("Couldn't sweep right now — another device is updating the schedule"); return; }
-      try{ cascadeIntraWeek(true); if(typeof runCascade==="function") runCascade(); }
+      const _swp=function(){ cascadeIntraWeek(true); if(typeof runCascade==="function") runCascade(); };
+      try{ if(typeof _rlwRun==="function") _rlwRun({whys:["sweep"],labels:[force?"⏩ Leftovers pushed":"🌙 8 PM sweep"]},_swp); else _swp(); }   // 🔁 RELAY: logged → the banner line
       finally{ release(); }
       const stamp=new Date().toISOString();
       eveningSweeps=Object.assign({},eveningSweeps); eveningSweeps[_todayDay]=stamp;
@@ -94374,13 +94578,14 @@ function seGuardWeek(tasks,o){
         const iv=mine.map(t=>[tm(t.time),tm(t.time)+dur(t),t]).sort((a,b)=>a[0]-b[0]);
         let stacked=false; for(let i=1;i<iv.length;i++) if(iv[i][0]<iv[i-1][1]) stacked=true;
         const late=mov.some(t=>tm(t.time)+dur(t)>W.end);
+        const early=mov.some(t=>tm(t.time)<W.start);   // RELAY_EARLY (2026-11-03): open work laid BEFORE the day's start (⏰ a later start for this date) is not fine either — it re-lays from the start
         // 📓 live 9/24: the 8 PM sweep carried Lincoln's pulled Eggspress back to Thursday's first slot, AHEAD of his
         // Morning Notebook — a day with the notebook behind other open work is not fine either
         const _nb=mov.find(isMorn), nbBehind=!!_nb&&mov.some(t=>t!==_nb&&tm(t.time)<tm(_nb.time));
         // 💻 a card sitting on a device another kid is already using (to capacity) is not fine either
         const _lb={}; const laneBusyC=l=>_lb[l]||(_lb[l]=laneBusy(kid,di,l));
         const laneClash=mov.some(t=>{ const l=laneOf(t); if(!l) return false; const a=tm(t.time), b=a+dur(t); return laneBusyC(l).some(iv=>a<iv[1]&&iv[0]<b); });
-        if(!o.displayOnly&&!stacked&&!late&&!laneClash&&nbBehind){
+        if(!o.displayOnly&&!stacked&&!late&&!early&&!laneClash&&nbBehind){
           // only the notebook is out of place → a SWAP, never a re-pack (a re-pack can run a minute past the end and roll a
           // lesson off the week — dry-run on live 9/24 did exactly that). The notebook takes the first open card's slot, the
           // cards that were ahead of it slide back by its length; skipped if that would touch a class, a checked card or
@@ -94397,7 +94602,7 @@ function seGuardWeek(tasks,o){
           }
           return;
         }
-        if(o.displayOnly?!laneClash:(!stacked&&!late&&!laneClash)) return;          // a fine day is left alone (display pass: lane clashes only)
+        if(o.displayOnly?!laneClash:(!stacked&&!late&&!early&&!laneClash)) return;          // a fine day is left alone (display pass: lane clashes only)
         // re-lay this kid's open cards in their current order
         const busy=mine.filter(fixed).map(t=>[tm(t.time),tm(t.time)+dur(t)]);
         if(W.lunchEnd>W.lunchStart) busy.push([W.lunchStart,W.lunchEnd]);
