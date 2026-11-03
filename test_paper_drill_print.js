@@ -24,7 +24,8 @@ function world(o) {
   const items = o.items || [];
   const ctx = { console, JSON, Object, Array, String, Number, Math, Set, Map, RegExp, Date, parseInt, isNaN,
     masteryKid: "other", calendarData: o.cal || {}, paceData: {}, today: o.today || "2026-10-27",
-    masteryData: Object.assign({ [KID]: items, [KID + "_settings"]: { cat_modes: { Words: "spell" }, definitions: { "7×8": "56" } } }, o.mastery || {}),
+    masteryData: Object.assign({ [KID]: items, [KID + "_settings"]: { cat_modes: { Words: "spell" }, definitions: { "7×8": "56" } },
+      history: { [KID]: { "20261027": { items: [] } } } }, o.mastery || {}),   // PDTODAY: today's drill done → the NEXT drill prints
     momHere: () => o.mom !== false, _dryRun: () => !!o.dry,
     db: { ref: p => ({ set: v => writes.push([p, v]) }) },
     gwShowToast: m => toasts.push(m), SL_KLBL: { [KID]: "Kid One" },
@@ -85,18 +86,20 @@ console.log("\n── the two sheets ──");
 {
   const c = world({ items: ITEMS }).ctx;
   const html = c.pdSheetsHtml(KID, { iso: "2026-10-28", pn: 210 }, ITEMS);
-  const tester = html.split("’s pictures")[0];
-  ok("the tester's sheet numbers every card 1–7", [1, 2, 3, 4, 5, 6, 7].every(n => tester.includes('<td class="n">' + n + ".</td>")) && !tester.includes('<td class="n">8.</td>'));
-  ok("…prints the spelling word and the fact's answer", /🔤 Spell: <b>garden<\/b>/.test(tester) && /7×8<\/td><td class="a">56</.test(tester));
-  ok("…and points a picture card at its number on the picture sheet, answer beside it", /🖼 Picture 2<\/td><td class="a">Excavator</.test(tester));
-  ok("it is dated for the drill day and says to keep it (answers)", /Wednesday, October 28/.test(tester) && /answers — keep this sheet/.test(tester));
-  const pics = html.split("’s pictures").slice(1).join("");
-  ok("5 picture cards → 2 picture pages (4 to a page)", (html.match(/’s pictures/g) || []).length === 2);
+  // PDKIDPAGE (2026-11-02): the kid's page prints first, then the tester's sheet (two columns, ✓ – ✗ to circle)
+  const kidPg = html.split("Tester’s sheet")[0], tester = html.slice(html.indexOf("Tester’s sheet"));
+  const N = n => '<div class="c"><div class="n">' + n + ".</div>";
+  ok("the tester's sheet numbers every card 1–7", [1, 2, 3, 4, 5, 6, 7].every(n => tester.includes(N(n))) && !tester.includes(N(8)));
+  ok("…prints the spelling word and the fact's answer", /🔤 garden<\/div>/.test(tester) && /<div class="q">7×8<\/div><div class="r"><div class="a">56</.test(tester));
+  ok("…and points a picture card at the kid's page, answer beside it", /<div class="n">2\.<\/div><div class="b"><div class="r"><div class="a">👀 Excavator</.test(tester));
+  ok("it is dated for the drill day and says to keep it (answers)", /Wednesday, October 28/.test(tester) && /keep this sheet/.test(tester));
+  ok("5 picture cards → one kid's page (12 to a page), before the tester's sheet", (html.match(/’s page<\/b>/g) || []).length === 1 && html.indexOf("’s page</b>") < html.indexOf("Tester’s sheet"));
+  const pics = kidPg;
   ok("each picture keeps its tester-sheet number (2, 4, 5, 6, 7)", ['<div class="num">2</div>', '<div class="num">4</div>', '<div class="num">5</div>', '<div class="num">6</div>', '<div class="num">7</div>'].every(s => pics.includes(s)) && !pics.includes('<div class="num">1</div>') && !pics.includes('<div class="num">3</div>'));
-  ok("the picture pages never show the answer (no names)", !/Excavator|Lion|garden|>56</.test(pics.replace(/src="[^"]*"/g, "")));
+  ok("the picture pages never show the answer (no names)", !/Excavator|Lion|garden|>56</.test(pics.replace(/src="[^"]*"/g, "").replace(/<title>[^<]*<\/title>/, "")));
   ok("the photo is on it", pics.includes('src="https://x/ex.jpg"'));
   const noPic = c.pdSheetsHtml(KID, { iso: "2026-10-28", pn: 210 }, [ITEMS[0], ITEMS[2]]);
-  ok("no picture cards → no picture page", !/’s pictures/.test(noPic));
+  ok("no picture cards → no kid's page", !/’s page<\/b>/.test(noPic));
 }
 
 console.log("\n── printing saves the list (Mom only) ──");
@@ -114,9 +117,9 @@ console.log("\n── printing saves the list (Mom only) ──");
   ok("one targeted write: mastery/<kid>_paperDrills/20261028", w.writes.length === 1 && w.writes[0][0] === "mastery/" + KID + "_paperDrills/20261028", w.writes.map(x => x[0]));
   const rec = w.writes[0][1];
   ok("…with the date, its school-day number, the cards in printed order, state printed", rec.date === "2026-10-28" && rec.pn === day.pn && rec.ids.length === 7 && rec.q.length === 7 && rec.state === "printed");
-  const rows = w.opened.length ? w.opened[0].html.split("<tr>").slice(1) : [];
+  const rows = w.opened.length ? w.opened[0].html.split('<div class="c">').slice(1) : [];
   ok("the printout lists the cards in the order the record keeps", rows.length === 7 && rec.ids.every((id, i) => { const it = ITEMS.find(x => x.id === id), r = rows[i];
-    return r.includes('<td class="n">' + (i + 1) + ".</td>") && (r.includes("🖼 Picture " + (i + 1)) || r.includes(it.prompt)); }));
+    return r.includes('<div class="n">' + (i + 1) + ".</div>") && (r.includes("👀 ") || r.includes(it.prompt)); }));
   ok("the button now offers a reprint for that day", /Print next drill on paper · Wed, Oct 28 \(printed — reprint\)/.test(w.ctx.pdButtonHtml(KID)));
   // the due set changes (today's drill was logged after printing) — a reprint still matches the paper
   w.ctx.masteryData[KID] = ITEMS.concat([{ id: "z", prompt: "new", subject: "Words" }]);
