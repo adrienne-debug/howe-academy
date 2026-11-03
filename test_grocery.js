@@ -527,7 +527,7 @@ ok("Checkout no longer has the ❄️ tick (Put away chooses the spot)", !/❄�
 ok("panStatus: a package date beats the guess; fruit/veg keep the short clock in the fridge or on the counter", /it\.useBy&&/.test(src)&&/life=6;   \/\/ fresh fruit\/veg/.test(src));
 // ── wiring ──
 ok("Mom's Day Shopping spot opens the list (not Meals)", /shop:grMdShopHTML \}/.test(src)&&/\+P\.shop\(\)/.test(src)&&!/Open the shopping list →/.test(src));
-ok("🛒 List tab in the Mom's Day tabs", /btn\('grocery','🛒 '\+SHOP_LIST_NAME\)/.test(src)&&/if\(mpSubView==='grocery'\)\{ return renderGrocery\(el\); \}/.test(src));
+ok("🛒 List tab in the Mom's Day tabs (KITCHENTAB 2026-11-02: on Kitchen's own row)", /\bb(?:tn)?\('grocery','🛒 '\+SHOP_LIST_NAME\)/.test(src)&&/if\(mpSubView==='grocery'\)\{ return renderGrocery\(el\); \}/.test(src));
 ok("Dad's Day has the grocery add (👨 DADMYDAY: inside his 🏡 My day)", /shop:grDadShopHTML \}/.test(src)&&/momDayStripHTML\(iso,dn,"dad"\)/.test(src));
 ok("kid's day page carries the ask box", /h\+=grKidBoxHTML\(k\)/.test(src));
 ok("live listener on kitchen/grocery", /db\.ref\("kitchen\/grocery"\)\.on\("value"/.test(src));

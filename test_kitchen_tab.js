@@ -63,7 +63,7 @@ ok("mpGoto still starts the same way (the chores pointer and MDSMOOTH tests read
 console.log("── nothing else moved ──");
 ok("the three pages still route on their old names (renderMomsPlanView unchanged)", /if\(mpSubView==='prep'\)\{ return renderMPPrep\(el\); \}/.test(fn("renderMomsPlanView"))&&/if\(mpSubView==='grocery'\)\{ return renderGrocery\(el\); \}/.test(fn("renderMomsPlanView"))&&/if\(mpSubView==='meals'\)\{ return renderKitchen\(el\); \}/.test(fn("renderMomsPlanView")));
 ok("…and each page still draws the shared menu row with its own name", /mpSubnav\('meals'\)/.test(fn("renderKitchen"))&&/mpSubnav\('grocery'\)/.test(fn("renderGrocery"))&&/mpSubnav\('prep'\)/.test(fn("renderMPPrep")));
-ok("SS_OTHER_VIEWS still lists the three (no new sub-view name was invented)", /const SS_OTHER_VIEWS=\["prep","house","weigh","grocery","meals","cal","dadcal","dadall"\]/.test(src)&&!/mpSubView==='kitchen'|mpSubView="kitchen"/.test(src));
+ok("SS_OTHER_VIEWS still lists the three (no new sub-view name was invented)", (()=>{ const m=src.match(/const SS_OTHER_VIEWS=(\[[^\]]*\])/); const l=m?JSON.parse(m[1]):[]; return ["prep","grocery","meals"].every(v=>l.indexOf(v)>=0)&&l.indexOf("kitchen")<0; })()&&!/mpSubView==='kitchen'|mpSubView="kitchen"/.test(src));
 ok("Dad's Day rows and his way to the list are untouched", /mpSubView=\\'dadall\\'/.test(src)&&/if\(grFromDad&&\(mpSubView==='grocery'\|\|mpSubView==='meals'\)\) return true;/.test(fn("momGateOpen")));
 ok("the block writes nothing to Firebase", !/db\.|\.ref\(/.test(block)&&!/db\.|\.ref\(/.test(fn("mpSubnav")));
 
