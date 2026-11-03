@@ -70681,7 +70681,7 @@ let mpUI=null;   // the open practice round: {kid,dn,dk,q:[{pid,list}],i,cur,poo
 function _mpMD(){ return (typeof masteryData!=="undefined"&&masteryData)||{}; }
 function mpCfg(kid){
   const s=_mpMD()[kid+"_settings"]||{}, m=(s.missPlay&&typeof s.missPlay==="object")?s.missPlay:{};
-  return {on:m.on===true,cap:Math.max(0,m.cap|0),secs:Math.max(0,m.secs|0),close:m.close!==false,study:m.study!==false};
+  return {on:m.on===true,cap:Math.max(0,m.cap|0),secs:Math.max(0,m.secs|0),close:m.close!==false,study:m.study!==false,wait:m.wait!==false};
 }
 function mpOn(kid){ return !!kid&&mpCfg(kid).on; }
 function mpItems(kid){ const v=_mpMD()[kid]; return Array.isArray(v)?v:Object.values(v||{}); }
@@ -71031,11 +71031,43 @@ function mpCueEdit(kid,id){
   if(v===null) return false;
   return mpSetCue(kid,it,v);
 }
+// ── 📚 DRILLGATE — drills wait for the daily study (step 6; her words 2026-11-02: "Their drills wouldn't open up until … their
+//    daily session's done"; her go "anything else that needs to be worked on and started, go"). With the kid's 🎮 switch on and
+//    "Drills wait for the daily study" on (missPlay.wait, default on): the Drills tab's 📝 Log is replaced by "📚 Study first ·
+//    <what's left>" until every one of the kid's study sessions (not check-ups) has a today log or nothing to do today (the
+//    study-end rule, mpStudySessionDone). Mom can tap "Drill anyway" (momHere or the admin PIN) — today, on that device, in
+//    memory. Switch off, toggle off, or no sessions = the drill opens as it always has. No writes but the toggle (one field). ──
+const _mpDrillAnyway={};   // kid → day key: Mom said "Drill anyway" today on this device
+function mpStudyLeft(kid){
+  let sessions=[]; try{ sessions=(typeof mstSessions==="function"&&mstSessions(kid))||[]; }catch(e){ sessions=[]; }
+  return sessions.filter(s=>s&&s.sid!=null&&s.kind!=="checkup"&&!mpStudySessionDone(kid,s.sid)).map(s=>({sid:s.sid,name:String(s.name||""),emoji:String(s.emoji||"")}));
+}
+// true = the drill may open
+function mpDrillGate(kid){
+  try{
+    if(!kid||!mpOn(kid)||!mpCfg(kid).wait) return true;
+    if(_mpDrillAnyway[kid]===mpDayKey()) return true;
+    return mpStudyLeft(kid).length===0;
+  }catch(e){ return true; }
+}
+function mpDrillAnyway(kid){ if(!kid||!mpCanEdit()) return false; _mpDrillAnyway[kid]=mpDayKey(); try{ if(typeof _mastRe==="function") _mastRe(); }catch(e){} return true; }
+// the Drills tab, in place of 📝 Log while the gate holds
+function mpDrillGateHtml(kid){
+  try{
+    if(mpDrillGate(kid)) return "";
+    const E=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    const J=s=>String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+    const left=mpStudyLeft(kid), nm=(typeof cap==="function")?cap(kid):kid;
+    let h='<span class="mp-drill-gate" style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:6px;padding:6px 12px;border-radius:999px;background:#fff7ed;border:1.5px solid #fed7aa;color:#c2410c;font-size:12.5px;font-weight:800;font-family:\'DM Sans\',sans-serif">\u{1F4DA} Study first \u00b7 '+E(left.map(x=>(x.emoji?x.emoji+' ':'')+x.name).join(' \u00b7 '))+'</span>';
+    if(mpCanEdit()) h+='<button onclick="mpDrillAnyway(\''+J(kid)+'\')" style="margin-left:6px;padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif" title="Open '+E(nm)+'\u2019s drill now, just for today on this device">Drill anyway</button>';
+    return h;
+  }catch(e){ return ""; }
+}
 // ── Mom HQ ▸ ⚙ Rules: the switches (saved right away, one field each) ──
 function mpCanEdit(){ return (typeof momHere==="function"&&momHere())||(typeof mastAdminPinOk!=="undefined"&&!!mastAdminPinOk); }
 function mpSet(kid,field,val){
-  if(!kid||["on","cap","secs","close","study"].indexOf(field)<0||!mpCanEdit()) return false;
-  if(field==="on"||field==="close"||field==="study") val=!!val; else val=Math.max(0,Math.min(field==="secs"?3600:99,val|0));
+  if(!kid||["on","cap","secs","close","study","wait"].indexOf(field)<0||!mpCanEdit()) return false;
+  if(field==="on"||field==="close"||field==="study"||field==="wait") val=!!val; else val=Math.max(0,Math.min(field==="secs"?3600:99,val|0));
   const md=_mpMD(), s=md[kid+"_settings"]||(md[kid+"_settings"]={}), m=(s.missPlay&&typeof s.missPlay==="object")?s.missPlay:(s.missPlay={});
   m[field]=val;
   if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){ try{ db.ref("mastery/"+kid+"_settings/missPlay/"+field).set(val); }catch(e){} }
@@ -71053,6 +71085,7 @@ function mpSettingsHtml(kid){
   if(c.on){
     h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0">'+tg("close",c.close)+'<div style="flex:1"><div class="mast-admin-label">Close (~) cards go too</div><div class="mast-admin-desc">'+(c.close?'Close counts as a miss here':'Only ✗ cards go')+'</div></div></div>';
     h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0">'+tg("study",c.study)+'<div style="flex:1"><div class="mast-admin-label">Study misses go too</div><div class="mast-admin-desc">'+(c.study?'A card wrong '+MP_STUDY_MISSES+' or more times in one study sitting joins the list, even if it passed in the end':'Only the drill sends cards to the games')+'</div></div></div>';   // 🎮 her words 2026-11-02
+    h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0">'+tg("wait",c.wait)+'<div style="flex:1"><div class="mast-admin-label">Drills wait for the daily study</div><div class="mast-admin-desc">'+(c.wait?'\u{1F4DD} Log opens only once every study session is done for the day (you can tap Drill anyway)':'The drill opens any time')+'</div></div></div>';   // 📚 DRILLGATE (her words 2026-11-02)
     h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0"><div style="flex:1"><div class="mast-admin-label">Cards on the list at once</div><div class="mast-admin-desc">More misses wait in the drill until a place opens</div></div>'+step("cap",c.cap,"",1)+'</div>';
     h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0"><div style="flex:1"><div class="mast-admin-label">Practice round time</div><div class="mast-admin-desc">The round ends kindly at the time; the rest carry to tomorrow</div></div>'+step("secs",c.secs,"",60)+'</div>';
     const J=s=>String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
@@ -71807,7 +71840,7 @@ function mastLogPause(){
   else mastLogPauseAt=Date.now();
   mastPersistLog(); _mastRe();
 }
-function mastStartLog(){ if(typeof kcLogGate==="function"&&!kcLogGate()) return; _mastResumed=""; mastLogMode=true; mastLogScores={}; mastLogStartTs=null; mastLogPausedMs=0; mastLogPauseAt=null; mastSlideIdx=0; mastOrderedDue(mastGetPrintNum()); /* reuse the frozen quiz order (or build it now if going straight to Log) — never reshuffle */ mastPersistLog(); const c=document.getElementById("content"); if(c) renderMastery(c); }
+function mastStartLog(){ if(typeof kcLogGate==="function"&&!kcLogGate()) return; if(typeof mpDrillGate==="function"&&!mpDrillGate(masteryKid)) return; _mastResumed=""; mastLogMode=true; mastLogScores={}; mastLogStartTs=null; mastLogPausedMs=0; mastLogPauseAt=null; mastSlideIdx=0; mastOrderedDue(mastGetPrintNum()); /* reuse the frozen quiz order (or build it now if going straight to Log) — never reshuffle */ mastPersistLog(); const c=document.getElementById("content"); if(c) renderMastery(c); }
 function mastCancelLog(){
   // All-or-nothing: nothing has been written yet, so Cancel really does throw the
   // session away — make sure that's what was meant when scores are already down.
@@ -82768,6 +82801,7 @@ function _renderMasteryInner(el){
         h+='<button class="mast-print-btn" onclick="mastPrintDrill()">\u{1F5A8}\u{FE0F} Print Quiz</button>';
       }
       if(_loggedToday) h+='<button class="mast-log-btn" onclick="mastRelog()" style="margin-left:6px">\u{1F501} Log another</button>';
+      else if(typeof mpDrillGate==="function"&&!mpDrillGate(masteryKid)) h+=mpDrillGateHtml(masteryKid);   // 📚 DRILLGATE: study first
       else h+='<button class="mast-log-btn" onclick="mastStartLog()" title="Start today\'s drill — mark each card, then Save Results" style="margin-left:6px">\u{1F4DD} Log</button>';
       h+='</div>';
     }
