@@ -79549,7 +79549,7 @@ function jeopStart(){
   const rows=Math.max(1,Math.min(JP_ROWS,Math.min.apply(null,decks.map(d=>byDeck[d].length))));
   const cells=[];
   decks.forEach((d,col)=>{ jeopColumn(byDeck[d],rows).forEach((it,row)=>{ cells.push({col:col,row:row,pid:it.id,act:jeopKind(it,modes[d]),done:false,first:false,fail:false}); }); });
-  jeopState={kid:masteryKid,deck:jeopBoardName(decks),decks:decks,mix:decks.length>1,game:"jeop",t0:Date.now(),rows:rows,cells:cells,open:null,turns:[],phase:"play",backs:null,first:0,of:cells.length,isPB:false,prevBest:null,lock:false,seq:0,msg:"Pick a square!",say:""};
+  jeopState={kid:masteryKid,deck:jeopBoardName(decks),decks:decks,mix:decks.length>1,game:"jeop",t0:Date.now(),rows:rows,cells:cells,open:null,turns:[],phase:"play",backs:null,first:0,of:cells.length,isPB:false,prevBest:null,lock:false,seq:0,msg:"Pick a square!",say:"",wager:null};
   _mastRe();
 }
 function jeopStop(){ jeopState=null; _mastRe(); }   // drop the round as it stands: nothing written
@@ -79568,6 +79568,7 @@ function _jpOpen(st,ci,pid,act,back){
   if(act==="pick") t.opts=_jpLures(st,pid);
   if(act==="type") t.typed="";
   st.open={ci:ci,t:st.turns.length-1};
+  if(!back&&typeof jpWagerAsk==="function") jpWagerAsk(st,st.turns.length-1);   // 🎰 JPWAGER: with the rule on, the card waits for 👍 / 🤷 before its controls show
   const it=_jpIt(st,pid), lead=back?"One more time. ":"";
   st.msg=lead+(act==="say"?"Say it out loud, then tap \u{1F5E3}":act==="type"?"Type the answer.":"Tap the answer.");
   if(act==="say") _jpSay(st,lead+"What is it?"); else _jpSay(st,lead+(it&&!whichSilent(it)?jeopName(it):""));   // a word answer's FRONT is read (Which one? reads it too); a silent language is shown only
@@ -79577,7 +79578,8 @@ function jeopPickCell(ci){
   const c=st.cells[ci]; if(!c||c.done) return;
   _jpOpen(st,ci,c.pid,c.act,false); _mastRe();
 }
-function _jpTurn(st,act){ if(!st||st.lock||st.phase==="done"||!st.open) return null; const t=st.turns[st.open.t]; return (t&&t.act===act&&!t.done)?t:null; }
+function _jpTurn(st,act){ if(!st||st.lock||st.phase==="done"||!st.open||st.wager!=null) return null;   // 🎰 JPWAGER: no answer before the confidence call
+   const t=st.turns[st.open.t]; return (t&&t.act===act&&!t.done)?t:null; }
 function jeopSaid(){   // 🗣 "I said it" — the honor system: a tablet can't hear; the app says the name back as the confirm
   const st=jeopState, t=_jpTurn(st,"say"); if(!t) return;
   t.done=true; t.first=true;
@@ -79605,9 +79607,9 @@ function jeopPickTap(i){
   _jpAfter(st,t,jeopJudge(t,t.opts[i],_whichBack(_jpIt(st,t.pid))));
 }
 function _jpAfter(st,t,r){
-  if(r==="again"){ try{ matchBonk(); }catch(e){} st.msg="Almost \u2014 try again!"; _mastRe(); return; }
+  if(r==="again"){ try{ matchBonk(); }catch(e){} st.msg=(typeof jpWagerMsg==="function"&&jpWagerMsg(t,r))||"Almost \u2014 try again!"; _mastRe(); return; }   // 🎰 JPWAGER: louder for a sure miss
   if(r==="fail") try{ matchBonk(); }catch(e){}
-  _jpSettle(st,t,r==="fail"?"We\u2019ll come back to that one.":""); _mastRe();
+  _jpSettle(st,t,r==="fail"?((typeof jpWagerMsg==="function"&&jpWagerMsg(t,r))||"We\u2019ll come back to that one."):""); _mastRe();
 }
 // The card is settled: mark its cell, a beat, then the board (or the next come-back). lead = the line on screen; spoken = said first (a picture's name)
 function _jpSettle(st,t,lead,spoken){
@@ -79632,7 +79634,7 @@ function _jpEnd(st){
   st.phase="back";
   const seen={}, backs=[];
   st.turns.forEach(t=>{ if(t.back||seen[t.pid]) return; if(Object.keys(t.wrong).length||t.fail){ seen[t.pid]=1; backs.push({pid:t.pid,act:t.act}); } });
-  st.backs=backs;
+  st.backs=(typeof jpWagerSort==="function")?jpWagerSort(st,backs):backs;   // 🎰 JPWAGER: the sure misses come back first
   if(!backs.length) return _jpFinish(st);
   st.msg="The board is clear! Let\u2019s look at a few again."; _jpSay(st,"The board is clear! Let's look at a few again.");
   st.lock=true; const seq=++st.seq; setTimeout(()=>{ if(jeopState===st&&st.lock&&st.seq===seq) jeopNext(st); },JP_BEAT*2);
@@ -79700,6 +79702,7 @@ function buildJeopHtml(color){
     h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
     h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} You cleared the board!</div>';
     h+='<div style="font-size:17px;font-weight:800;color:#57534e;margin-top:10px">\u{1F4FA} '+st.first+' of '+st.of+' on the first try'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+    if(typeof jpWagerFinishHtml==="function") h+=jpWagerFinishHtml(st);   // 🎰 JPWAGER: sure and right · sure but missed
     return h+'</div></div>';
   }
   // the board, with the open card above it
@@ -79711,6 +79714,7 @@ function buildJeopHtml(color){
   const o=st.open, t=o?st.turns[o.t]:null, lock=st.lock;
   if(t&&!t.done||t&&lock){
     h+='<div style="margin:6px 0 12px"><span class="jp-card">'+_jpCardVis(st,t.pid,t.act)+'</span></div>';
+    if(st.wager!=null&&typeof jpWagerAskHtml==="function") h+=jpWagerAskHtml(st,color); else   // 🎰 JPWAGER: 👍 Sure / 🤷 Not sure first
     if(t.act==="say") h+='<div style="display:flex;justify-content:center"><button class="jp-btn" onclick="jeopSaid()"'+(lock||t.done?' disabled':'')+' style="background:'+color+';color:#fff;font-size:20px;padding:18px 34px">\u{1F5E3} I said it</button></div>';
     else if(t.act==="type"){
       h+='<div style="display:flex;justify-content:center;margin-bottom:10px"><span style="min-width:120px;height:56px;border-radius:14px;border:3px solid '+color+';background:#fff;font-family:\'Fraunces\',serif;font-size:30px;font-weight:800;color:#292524;display:inline-flex;align-items:center;justify-content:center;padding:0 14px">'+esc(t.typed||"")+'</span></div>';
@@ -80294,7 +80298,10 @@ function buildShipHtml(color){
 const GAME_RULES={
   spell:[{key:"source",label:"Which words does Build it use?",def:"learning",opts:[
     ["learning","Learning words only","Words still being introduced, or in the Word Workout — today’s rule."],
-    ["all","All spelling words","Every spelling word in play. Learning words still come first, then the ones missed most recently."]]}]
+    ["all","All spelling words","Every spelling word in play. Learning words still come first, then the ones missed most recently."]]}],
+  jeop:[{key:"wager",label:"Daily double — say how sure you are before answering?",def:"off",opts:[   // 🎰 JPWAGER
+    ["off","Off","A square opens straight to its card — today’s rule."],
+    ["on","On","Once the card is open: 👍 Sure or 🤷 Not sure. A sure miss gets a louder “look again” and comes back first at the end."]]}]
 };
 let gameRulesUI=null;   // {kid, game} while the pop-up is open (this device)
 function _grE(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -80511,6 +80518,46 @@ function buildBeatHtml(color){
   return h+'</div></div>';
 }
 // BEAT_END
+// JPWAGER_START — 🎰 Jeopardy "Daily double" (her go 2026-11-03; PLAN_practice_games_2026-10-23.md Tier 4 "Jeopardy with wager: the Tier-3 board
+// plus a daily-double wager on confidence — CR + metacognition", and Tier 3 "Sure? then flip: a confident miss gets a louder correction + comes
+// back first" — the hypercorrection effect). There are no points on the board (the games contract), so the wager is CONFIDENCE: once a square's
+// card is open and before the kid answers it, two buttons — 👍 Sure / 🤷 Not sure. The answer is judged exactly as before; what changes is the
+// MISS: a sure miss gets the louder line ("You were sure — look again!") and, at the end, the sure misses come back FIRST. The finish adds one
+// line: "Sure and right N · Sure but missed M". Judged after the question is seen (not before, like TV's daily double): a confidence call
+// on the real question is the metacognition that teaches.
+// A Jeopardy GAME RULE (GAMERULES: GAME_RULES.jeop "wager", default "off" = today byte for byte; Mom flips it per kid in the games grid's
+// pop-up). Four guarded lines in the JEOPARDY block (_jpOpen asks, buildJeopHtml draws the two buttons, _jpAfter's miss line, _jpEnd's
+// come-back order) and one on the finish card. No writes of its own: the round still logs through gameLogRound (game:"jeop"); the sure flag
+// stays on the turn (st.turns[].sure) for the finish line only.
+function jeopWagerOn(st){ return !!(st&&typeof gameRule==="function"&&gameRule(st.kid,"jeop","wager")==="on"); }
+// _jpOpen's hook: with the rule on, the opened card waits for the confidence call (st.wager = the turn's index) before its controls show
+function jpWagerAsk(st,ti){ if(!jeopWagerOn(st)) return; st.wager=ti; }
+function jeopSure(sure){
+  const st=jeopState; if(!st||st.phase==="done"||st.lock||st.wager==null) return;
+  const t=st.turns[st.wager]; if(!t||t.done) return;
+  t.sure=!!sure; st.wager=null; _mastRe();
+}
+// the two buttons in place of the answer controls while the call is pending
+function jpWagerAskHtml(st,color){
+  if(st.wager==null) return "";
+  return '<div style="text-align:center;font-size:15px;font-weight:800;color:#57534e;margin:4px 0 10px">\u{1F3B0} Daily double — how sure are you?</div>'+
+    '<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap"><button class="jp-btn" onclick="jeopSure(true)" style="background:'+color+';color:#fff;min-width:140px">\u{1F44D} Sure</button><button class="jp-btn" onclick="jeopSure(false)" style="background:#fff;color:#57534e;border:2px solid #e2ddd6;min-width:140px">\u{1F937} Not sure</button></div>';
+}
+// _jpAfter's hook: the miss line — louder for a sure miss
+function jpWagerMsg(t,r){ if(!t||!t.sure) return ""; return r==="again"?"You were sure — look again!":"You were sure — we’ll come back to that one first."; }
+// _jpEnd's hook: the sure misses come back first (stable for the rest)
+function jpWagerSort(st,backs){
+  if(!st||!jeopWagerOn(st)||!Array.isArray(backs)) return backs;
+  const sure={}; st.turns.forEach(t=>{ if(t&&!t.back&&t.sure&&(Object.keys(t.wrong||{}).length||t.fail)) sure[t.pid]=1; });
+  return backs.map((b,i)=>[b,i]).sort((x,y)=>((sure[y[0].pid]?1:0)-(sure[x[0].pid]?1:0))||(x[1]-y[1])).map(x=>x[0]);
+}
+// the finish card's line (rule on only)
+function jpWagerFinishHtml(st){
+  if(!st||!jeopWagerOn(st)) return "";
+  let sr=0, sm=0; st.turns.forEach(t=>{ if(!t||t.back||!t.sure) return; if(t.first) sr++; else sm++; });
+  return '<div style="font-size:14px;font-weight:800;color:#57534e;margin-top:8px">\u{1F3B0} Sure and right '+sr+' · Sure but missed '+sm+'</div>';
+}
+// JPWAGER_END
 // STUDYCOUNTS_START — 📚 Study sessions count everywhere (F3 of PLAN_learning_system, her yes 2026-10-24). A study
 // sitting logs to mastery/studyLog/<kid>/<sid>/<yyyymmdd>, but Scores, the Weekly report, sprint readiness (the ≥ 90%
 // untimed check) and the notebook's 🔁 review flags read only the drill's mastery/history/<kid>/<yyyymmdd>, so Lincoln —
