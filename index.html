@@ -4861,7 +4861,7 @@ function navStackSync(){
 // _mdwCan: Mom's page is hers (momHere); Dad's can be set from his link, his unlocked Day, or by Mom.
 // Navigation + display only: no scheduler, no kid data.
 let ssOrderData=null; try{ ssOrderData=JSON.parse(HA_LS.getItem('ha_day_order')||"null"); }catch(e){}
-const SS_OTHER_VIEWS=["prep","house","weigh","grocery","meals","cal","dadcal","dadall","dadmast","curr","sset","purch","hist","wins","mhq","chores","hq","gen"];   // SCHOOLPAGES: + the School pages · MPGROUPS: + Chores & Stars, HQ, Generate Week   // every Mom's Day sub-view that is NOT a Today page (renderMomsPlanView's routes)
+const SS_OTHER_VIEWS=["prep","house","weigh","grocery","meals","cal","dadcal","dadall","dadmast","curr","sset","purch","hist","wins","scor","mhq","chores","hq","gen"];   // SCHOOLPAGES: + the School pages · MPGROUPS: + Chores & Stars, HQ, Generate Week   // every Mom's Day sub-view that is NOT a Today page (renderMomsPlanView's routes)
 let _ssIds={}, _ssD=null;
 var _navStackRO, _navStackSeen;   // var: navStackWire (above) sets the observer before this line runs
 function ssJumpOn(){ try{ return tab==="moms-plan"&&!momSchedView&&SS_OTHER_VIEWS.indexOf(mpSubView)<0; }catch(e){ return false; } }   // Mom's Day ▸ Today (plan / null) or ▸ Dad's Day ('dad')
@@ -25042,9 +25042,9 @@ function mpKitchenRow(active){
 // functions the Schedule's Admin hub draws, under her banner + this menu, with none of the Schedule's bars — Curriculum "opens up
 // just the curriculum … not the today, the week, the month … the schedule, the wins, the history, admin … you wouldn't need it
 // to say grid". Display + navigation only: no Firebase writes of their own.
-const MP_SCHOOL=['notebook','mastery','units','curriculum','settings','purchases','history','wins','mhq'];   // 'mhq' = Mastery ▸ Settings (lit under Mastery)
-const MP_SCHOOL_VIEWS={curr:'curriculum',sset:'settings',purch:'purchases',hist:'history',wins:'wins',mhq:'mhq'};   // Mom's Day sub-view → School chip
-const MP_SCHOOL_SUBS={curriculum:'The whole curriculum \u2014 grid, subject cards, pacing, rules',settings:'Kids, codes, page switches, family rules',purchases:'Orders, wishlist, the ESA grant and family money',history:'Completed work, trends, attendance, the weekly report',wins:'Stars, trophies and book progress',mhq:'Mastery settings \u2014 rules, decks, sessions, cards'};
+const MP_SCHOOL=['notebook','mastery','units','curriculum','settings','purchases','history','wins','scores','mhq'];   // SCORESPAGE: + 📊 Scores   // 'mhq' = Mastery ▸ Settings (lit under Mastery)
+const MP_SCHOOL_VIEWS={curr:'curriculum',sset:'settings',purch:'purchases',hist:'history',wins:'wins',scor:'scores',mhq:'mhq'};   // SCORESPAGE: scor → 📊 Scores   // Mom's Day sub-view → School chip
+const MP_SCHOOL_SUBS={curriculum:'The whole curriculum \u2014 grid, subject cards, pacing, rules',settings:'Kids, codes, page switches, family rules',purchases:'Orders, wishlist, the ESA grant and family money',history:'Completed work, trends, attendance, the weekly report',wins:'Stars, trophies and book progress',scores:'Where each kid is \u2014 right %, ladder, week, minutes, load',mhq:'Mastery settings \u2014 rules, decks, sessions, cards'};
 function mpSchoolSub(t){ for(const k in MP_SCHOOL_VIEWS) if(MP_SCHOOL_VIEWS[k]===t) return k; return null; }   // chip → its Mom's Day sub-view, null for a framed tab
 function mpSchoolLast(){ let v=null; try{ v=HA_LS.getItem('ha_mp_school'); }catch(e){} return MP_SCHOOL.indexOf(v)>=0?v:'notebook'; }
 function mpSchoolNote(t){ if(MP_SCHOOL.indexOf(t)<0) return; try{ HA_LS.setItem('ha_mp_school',t); }catch(e){} }
@@ -25053,7 +25053,7 @@ function mpSchoolRow(active){
   const b=(t,lbl)=>chip(active===t,t,lbl);
   const mast=(active==='mastery'||active==='mhq');
   const mhqOn=(typeof pageOn!=="function")||pageOn("mastery"), purchOn=(typeof pageOn!=="function")||pageOn("purchases");
-  let h=`<div id="mp-school-row" class="mp-sub">${b('notebook','📓 Notebooks')}${chip(mast,'mastery','🧠 Mastery')}${b('units','📚 Units')}${b('curriculum','📖 Curriculum')}${b('settings','⚙️ Settings')}${purchOn?b('purchases','💰 Purchases'):''}${b('history','📜 History')}${b('wins','🌟 Wins')}</div>`;
+  let h=`<div id="mp-school-row" class="mp-sub">${b('notebook','📓 Notebooks')}${chip(mast,'mastery','🧠 Mastery')}${b('units','📚 Units')}${b('curriculum','📖 Curriculum')}${b('settings','⚙️ Settings')}${purchOn?b('purchases','💰 Purchases'):''}${b('history','📜 History')}${b('wins','🌟 Wins')}${b('scores','📊 Scores')}</div>`;   // SCORESPAGE: the 📊 Scores chip
   if(mast) h+=`<div id="mp-mastery-row" class="mp-sub mp-sub2">${b('mastery','🧠 Mastery')}${mhqOn?b('mhq','⚙️ Settings'):''}</div>`;   // the two masteries, one place
   return h;
 }
@@ -25085,6 +25085,7 @@ function renderMPSchool(el){
   if(key==='settings'){ renderSettings(el,top); return; }
   if(key==='purchases'){ renderPurchasesView(el,top); return; }
   if(key==='mhq'){ renderMasteryHQ(el,top); return; }
+  if(key==='scores'&&typeof renderMPScores==="function"){ renderMPScores(el,top); return; }   // SCORESPAGE: the Overall card + Load meter, read-only
   el.innerHTML=top+(key==='history'?mpSchoolKidRow():'')+'<div id="mp-school-body"></div>';   // History / Wins draw into a box under the menu (they take no header)
   const body=document.getElementById("mp-school-body"); if(!body) return;
   if(key==='history') renderHistory(body); else renderPace(body);
@@ -28355,6 +28356,178 @@ function planBarHTML(kid){
   return h;
 }
 // SCORES_END
+// SCORESPAGE_START — 📊 Scores: the Overall card + Load meter (slice 1 of PLAN_scores_page_2026-11-03.md; her "Start it" 2026-11-03:
+// "an overall page that shows the average of where things are at — we don't have that"). Mom's Day ▸ School ▸ 📊 Scores: one card
+// per kid (All = every card, then a family line), READ-ONLY — nothing on this page writes, so ?dryrun=1 changes nothing. Four
+// numbers, each against the kid's OWN earlier window (never a sibling's), one headline, one word:
+//   · Right %  — right ÷ graded over the window: the drill history + the study sittings (a card graded in both on one day counts
+//                once, the worse grade — STUDYCOUNTS' scGradedDays rule) + the games' first-try taps at ½ weight (her 11/3 answer;
+//                a card that came back at the end of a round is not a second try). A "~" is graded, not right.
+//   · Ladder   — the average rung of the kid's cards in play: learning 0 · every other day 20 · every third day 30 · weekly 40 ·
+//                bi-weekly 60 · monthly 80 · learned 90 · graduated 100. Parked cards stay out; a card on no known rung is counted
+//                as a card but not averaged.
+//   · Week     — this week's cards done ÷ planned, the archive's completion rule (no carry copies, no lunch); last archived week beside it.
+//   · Minutes  — drill + study + games (½) minutes a school day over the window, ÷ the kid's school days in it (the drill clock);
+//                a sitting over 2 h was left open on the screen and is not counted (SC_LEFT_OPEN_SECS).
+//   · Where things are at = (Right + Ladder + Week) ÷ 3, the formula printed under it. A compass, not a grade: the three parts
+//                always sit beside it, because a kid can be 93 % right and 29 % through the week at the same time.
+//   · Load     — Minutes ÷ the kid's budget (mastery/<kid>_settings/load/budgetMin, PLAN_mental_load_2026-11-03.md §2D): Light under
+//                75 % · Steady · Heavy over 125 %. No budget → "no budget set yet" (this slice writes none; the dial — load slice 2 —
+//                will). Her four numbers are a data write she asks for, or the dial's.
+// 7-day arrow = this 7 days vs the 7 before; 4-week arrow = these 28 days vs the 28 before. Empty logs show "—" and the card still
+// draws (a family with no drills yet). Mom only (momHere). No kid or family names: the roster gives the kids, their names and colours.
+// Pure functions take their data as arguments (test_scores_overall.js); only scpGather / renderMPScores read the app's globals.
+const SCP_RUNG={daily:0,every_other_day:20,every_third_day:30,weekly:40,bi_weekly:60,monthly:80,learned:90,graduated:100};
+const SCP_GAME_W=0.5, SCP_LIGHT=0.75, SCP_HEAVY=1.25;
+function scpV(x){ return Array.isArray(x)?x.filter(Boolean):(x&&typeof x==="object"?Object.values(x).filter(Boolean):[]); }
+function scpKeyOf(d){ return d.toISOString().slice(0,10).replace(/-/g,""); }   // yyyymmdd (UTC — the drill's and the study log's day key)
+function scpToday(){ try{ if(typeof mstTodayKey==="function") return mstTodayKey(); }catch(e){} return scpKeyOf(new Date()); }
+function scpShift(key,days){ const y=+String(key).slice(0,4), m=+String(key).slice(4,6)-1, d=+String(key).slice(6,8); return scpKeyOf(new Date(Date.UTC(y,m,d)+days*86400000)); }
+function scpDash(k){ k=String(k); return /^\d{8}$/.test(k)?k.slice(0,4)+"-"+k.slice(4,6)+"-"+k.slice(6,8):k; }
+function scpIn(k,w){ k=String(k||""); return /^\d{8}$/.test(k)&&k>=w.from&&k<=w.to; }
+function scpWin(to,days){ return {from:scpShift(to,-(days-1)),to:String(to)}; }                 // the last `days` days, today included
+function scpPrevWin(w,days){ const t=scpShift(w.from,-1); return {from:scpShift(t,-(days-1)),to:t}; }   // the same length, just before
+// PURE: right ÷ graded inside a window → {graded, right, pct, drill:{g,r}, study:{g,r}, games:{n,ok}}; pct null when nothing was graded.
+function scpRight(kid,history,studyLog,gameLog,w,gw){
+  gw=(typeof gw==="number")?gw:SCP_GAME_W;
+  const out={graded:0,right:0,pct:null,drill:{g:0,r:0},study:{g:0,r:0},games:{n:0,ok:0}};
+  let days={};
+  if(typeof scGradedDays==="function") days=scGradedDays(kid,history||{},studyLog||{});
+  else { const dh=(history||{})[kid]||{}; Object.keys(dh).forEach(k=>{ const e=dh[k]; days[k]={items:scpV(e&&e.items).filter(it=>it.result==="c"||it.result==="m"||it.result==="~").map(it=>({result:it.result,src:"drill"}))}; }); }
+  Object.keys(days).forEach(k=>{ if(!scpIn(k,w)) return; scpV(days[k].items).forEach(it=>{ const b=(it.src==="study")?out.study:out.drill; b.g++; if(it.result==="c") b.r++; }); });
+  const gl=(gameLog||{})[kid]||{};
+  Object.keys(gl).forEach(day=>{ if(!scpIn(day,w)) return; scpV(gl[day]).forEach(e=>{ scpV(e.items).forEach(it=>{ if(it.back) return; out.games.n++; if(it.ok) out.games.ok++; }); }); });
+  out.graded=out.drill.g+out.study.g+out.games.n*gw; out.right=out.drill.r+out.study.r+out.games.ok*gw;
+  out.pct=out.graded>0?Math.round(out.right/out.graded*100):null;
+  return out;
+}
+// PURE: the kid's cards → {n (in play), score (0–100 or null), rungs:{learning, weekly, …}}
+function scpLadder(cards){
+  const r={n:0,score:null,rungs:{}}; let sum=0, cnt=0;
+  scpV(cards).forEach(c=>{ if(!c||c.status==="parked") return; r.n++;
+    const learn=(c.status==="introduction"||c.status==="learning"), key=learn?"learning":String(c.tier||"");
+    const v=learn?0:SCP_RUNG[key]; if(typeof v!=="number") return;
+    r.rungs[key]=(r.rungs[key]||0)+1; sum+=v; cnt++; });
+  if(cnt) r.score=Math.round(sum/cnt);
+  return r;
+}
+// PURE: one kid's week → {planned, done, pct|null}; the archive's rule (buildWeekCompletion): no "_c" carry copies, no lunch, done = checked or its carry checked.
+function scpWeek(tasks,checked,kid){
+  const ck=checked||{}; let planned=0, done=0;
+  scpV(tasks).forEach(t=>{ if(!t||t.who!==kid) return; const id=String(t.id||""); if(id.endsWith("_c")||/lunch/i.test(t.title||"")) return; planned++; if(ck[id]||ck[id+"_c"]) done++; });
+  return {planned:planned,done:done,pct:planned?Math.round(done/planned*100):null};
+}
+// PURE: the highest-numbered archived week below the current one (its tasks + checked), or null
+function scpPrevWeek(archive,curNum){
+  let best=null, bn=-1;
+  Object.keys(archive||{}).forEach(k=>{ const a=archive[k]; if(!a||!a.tasks) return; const n=parseInt((String(a.weekLabel||k).match(/\d+/)||[0])[0])||0; if(n&&n<curNum&&n>bn){ bn=n; best=a; } });
+  return best?{tasks:best.tasks,checked:best.checked||{},num:bn}:null;
+}
+// PURE: minutes inside a window → {drill, study, games, total (games at gw), days, perDay, any}; a sitting over the cap is left out
+function scpMinutes(kid,history,studyLog,gameLog,w,schoolDays,gw){
+  gw=(typeof gw==="number")?gw:SCP_GAME_W; const cap=(typeof SC_LEFT_OPEN_SECS==="number")?SC_LEFT_OPEN_SECS:7200;
+  const take=(arr,add)=>arr.forEach(s=>{ if(typeof s==="number"&&s>0&&s<=cap) add(s); });
+  let drill=0, study=0, games=0;
+  const dh=(history||{})[kid]||{};
+  Object.keys(dh).forEach(k=>{ if(!scpIn(k,w)) return; const e=dh[k]; if(!e||typeof e!=="object") return; const st=scpV(e.sessTimes); take(st.length?st:[e.secs],s=>{ drill+=s; }); });
+  const sl=(studyLog||{})[kid]||{};
+  Object.keys(sl).forEach(sid=>{ const days=sl[sid]; if(!days||typeof days!=="object") return;
+    Object.keys(days).forEach(k=>{ if(!scpIn(k,w)) return; const e=days[k]; if(!e||typeof e!=="object") return; const sits=scpV(e.sits).map(x=>x&&x.secs); take(sits.length?sits:[e.secs],s=>{ study+=s; }); }); });
+  const gl=(gameLog||{})[kid]||{};
+  Object.keys(gl).forEach(k=>{ if(!scpIn(k,w)) return; scpV(gl[k]).forEach(e=>{ take([e&&e.secs],s=>{ games+=s; }); }); });
+  const total=drill+study+games*gw, days=Math.max(1,schoolDays|0);
+  return {drill:Math.round(drill/60),study:Math.round(study/60),games:Math.round(games/60),total:Math.round(total/60),days:days,perDay:Math.round(total/60/days),any:(drill+study+games)>0};
+}
+// PURE: minutes a day against the budget → {ratio (%), word, budget} or null without a budget
+function scpLoad(perDay,budget){
+  budget=Number(budget); if(!(budget>0)||typeof perDay!=="number") return null;
+  const r=perDay/budget;
+  return {ratio:Math.round(r*100),word:r<SCP_LIGHT?"Light":(r>SCP_HEAVY?"Heavy":"Steady"),budget:budget};
+}
+// PURE: the headline — the average of the parts that exist; null when none do
+function scpHeadline(right,ladder,week){ const p=[right,ladder,week].filter(v=>typeof v==="number"); return p.length?Math.round(p.reduce((a,b)=>a+b,0)/p.length):null; }
+function scpFormula(right,ladder,week){ const p=[]; if(typeof right==="number") p.push("Right "+right); if(typeof ladder==="number") p.push("Ladder "+ladder); if(typeof week==="number") p.push("Week "+week); return p.length?p.join(" + ")+" ÷ "+p.length:"nothing logged yet"; }
+// PURE: every number for one kid. D = {history, studyLog, gameLog, cards, tasks, checked, prev:{tasks,checked}|null, budgetMin, today:yyyymmdd,
+//   schoolDays:(from,to)=>n, gameWeight?}
+function scpKidNumbers(kid,D){
+  D=D||{}; const today=D.today||scpToday(), w7=scpWin(today,7), p7=scpPrevWin(w7,7), w28=scpWin(today,28), p28=scpPrevWin(w28,28);
+  const sd=w=>{ try{ const n=D.schoolDays?D.schoolDays(w.from,w.to):null; return (typeof n==="number"&&n>0)?n:Math.max(1,Math.round((w.to>w.from?7:1)*5/7)); }catch(e){ return 5; } };
+  const R=w=>scpRight(kid,D.history,D.studyLog,D.gameLog,w,D.gameWeight), M=w=>scpMinutes(kid,D.history,D.studyLog,D.gameLog,w,sd(w),D.gameWeight);
+  const right={w7:R(w7),p7:R(p7),w28:R(w28),p28:R(p28)}, min={w7:M(w7),p7:M(p7),w28:M(w28),p28:M(p28)};
+  const ladder=scpLadder(D.cards), week=scpWeek(D.tasks,D.checked,kid), last=D.prev?scpWeek(D.prev.tasks,D.prev.checked,kid):null;
+  const load=scpLoad(min.w7.any?min.w7.perDay:(typeof D.budgetMin==="number"||D.budgetMin?0:null),D.budgetMin);
+  return {kid:kid,today:today,right:right,ladder:ladder,week:week,last:last,min:min,load:load,
+    headline:scpHeadline(right.w7.pct,ladder.score,week.pct),formula:scpFormula(right.w7.pct,ladder.score,week.pct),
+    any:!!(right.w28.graded||min.w28.any||ladder.n||week.planned)};
+}
+// The app's data for one kid, read only (masteryData, weekData, checked, archive, the drill clock).
+function scpGather(kid){
+  const md=(typeof masteryData!=="undefined"&&masteryData)||{};
+  const set=md[kid+"_settings"]||{}, load=(set.load&&typeof set.load==="object")?set.load:{};
+  let prev=null; try{ prev=scpPrevWeek((typeof archive!=="undefined")?archive:{},(typeof currWeekNum==="function")?currWeekNum():0); }catch(e){ prev=null; }
+  return scpKidNumbers(kid,{history:md.history,studyLog:md.studyLog,gameLog:md.gameLog,cards:md[kid],
+    tasks:(typeof weekData!=="undefined"&&weekData)?weekData.tasks:[],checked:(typeof checked!=="undefined")?checked:{},prev:prev,
+    budgetMin:load.budgetMin,today:scpToday(),
+    schoolDays:(from,to)=>{ if(typeof mastSchoolDayNum!=="function") return null; const n=mastSchoolDayNum(kid,scpDash(to))-mastSchoolDayNum(kid,scpDash(scpShift(from,-1))); return Math.max(1,n); }});
+}
+// ── the page ──
+let scpKid="all";
+function scpPick(k){ scpKid=k; const el=document.getElementById("content"); if(el&&typeof renderMomsPlan==="function") renderMomsPlan(el); }
+function scpE(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function scpN(v,suf){ return (typeof v==="number")?(v+(suf||"")):"—"; }
+function scpArrow(cur,prev){ if(typeof cur!=="number"||typeof prev!=="number") return '<span style="color:#cbd5e1">·</span>'; const d=cur-prev; if(Math.abs(d)<3) return '<span style="color:#94a3b8">·</span>'; return '<span style="color:'+(d>0?'#16a34a':'#b5394a')+';font-weight:800">'+(d>0?'▲':'▼')+Math.abs(d)+'</span>'; }
+function scpPctCol(p){ return (typeof p!=="number")?"#94a3b8":(p>=80?"#16a34a":(p>=60?"#d97706":"#b5394a")); }
+function scpLoadCol(w){ return w==="Light"?"#0e7490":(w==="Heavy"?"#b5394a":"#16a34a"); }
+function scpKidName(k){ try{ if(typeof KID_NAME!=="undefined"&&KID_NAME[k]) return KID_NAME[k]; if(typeof cap==="function") return cap(k); }catch(e){} return String(k); }
+function scpKidCol(k){ try{ if(typeof KID_COLOR!=="undefined"&&KID_COLOR[k]) return KID_COLOR[k]; }catch(e){} return "#2B7A78"; }
+function scpTile(lbl,val,col,sub){ return '<div style="flex:1 1 120px;min-width:120px;background:#f8fafc;border:1px solid #eef2f7;border-radius:10px;padding:8px 10px"><div style="font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#64748b">'+lbl+'</div><div style="font-family:\'Fraunces\',serif;font-size:24px;font-weight:800;line-height:1.15;color:'+col+'">'+val+'</div><div style="font-size:11px;color:#64748b;margin-top:2px">'+sub+'</div></div>'; }
+function scpCardHtml(r){
+  const w7=r.right.w7, m7=r.min.w7, col=scpKidCol(r.kid);
+  let h='<div class="scp-card" style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:12px 14px;margin:10px 12px">';
+  h+='<div style="display:flex;align-items:center;gap:8px"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:'+col+'"></span><span style="font-weight:800;font-size:15px">'+scpE(scpKidName(r.kid))+'</span><span style="font-size:11px;color:var(--muted)">last 7 days · arrows vs the 7 before, then the 4 weeks before</span></div>';
+  if(!r.any){ h+='<div style="font-size:13px;color:var(--muted);padding:10px 0 4px">Nothing logged yet — the card fills in after the first drill, study sitting, game or checked card.</div></div>'; return h; }
+  h+='<div style="display:flex;align-items:center;gap:12px;margin-top:8px"><div style="font-family:\'Fraunces\',serif;font-size:40px;font-weight:800;line-height:1;color:'+(typeof r.headline==="number"?'#0f172a':'#94a3b8')+'">'+scpN(r.headline)+'</div>'+
+    '<div><div style="font-weight:800;font-size:13px">Where things are at</div><div style="font-size:11.5px;color:var(--muted)">'+scpE(r.formula)+'</div></div></div>';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">';
+  h+=scpTile('Right',scpN(w7.pct,'%'),scpPctCol(w7.pct),(w7.graded?Math.round(w7.graded)+' graded':'none graded')+' · '+scpArrow(w7.pct,r.right.p7.pct)+' '+scpArrow(r.right.w28.pct,r.right.p28.pct));
+  h+=scpTile('Ladder',scpN(r.ladder.score),'#2B7A78',r.ladder.n+' card'+(r.ladder.n===1?'':'s')+' in play'+(r.ladder.rungs.learning?' · '+r.ladder.rungs.learning+' learning':''));
+  h+=scpTile('Week',scpN(r.week.pct,'%'),scpPctCol(r.week.pct),r.week.done+' of '+r.week.planned+(r.last&&typeof r.last.pct==="number"?' · last week '+r.last.pct+'%':''));
+  h+=scpTile('Minutes',scpN(m7.any?m7.perDay:null),'#0f172a','a school day · '+m7.days+' day'+(m7.days===1?'':'s')+' · '+scpArrow(m7.any?m7.perDay:null,r.min.p7.any?r.min.p7.perDay:null)+' '+scpArrow(r.min.w28.any?r.min.w28.perDay:null,r.min.p28.any?r.min.p28.perDay:null));
+  h+='</div>';
+  if(r.load) h+='<div style="margin-top:10px;font-size:13px"><span style="display:inline-block;padding:3px 10px;border-radius:999px;font-weight:800;color:#fff;background:'+scpLoadCol(r.load.word)+'">⚖️ '+r.load.word+'</span> <span style="color:#334155">'+(m7.any?m7.perDay:0)+' min a school day of '+r.load.budget+' ('+r.load.ratio+'%)'+(m7.any?' · drill '+m7.drill+' · study '+m7.study+' · games '+m7.games:'')+'</span></div>';
+  else h+='<div style="margin-top:10px;font-size:12.5px;color:var(--muted)">⚖️ Load: no budget set yet'+(m7.any?' · drill '+m7.drill+' · study '+m7.study+' · games '+m7.games+' min this week':'')+'</div>';
+  h+='<details style="margin-top:8px;font-size:11.5px;color:#64748b"><summary style="cursor:pointer;font-weight:700">How these are counted</summary><div style="padding:6px 0 2px;line-height:1.5">'+
+    'Right = right ÷ graded: drills + study sittings (one grade per card a day, the worse one) + games’ first taps at half weight.<br>'+
+    'Ladder = the average rung of the cards in play: learning 0 · every other day 20 · weekly 40 · bi-weekly 60 · monthly 80 · graduated 100. Parked cards stay out.<br>'+
+    'Week = cards done ÷ planned this week, the same rule as the archive.<br>'+
+    'Minutes = drill + study + games (half) ÷ school days in the window; a sitting left open over 2 hours is skipped.<br>'+
+    'Load = minutes ÷ budget: Light under 75%, Heavy over 125%, Steady between.</div></details>';
+  h+='</div>';
+  return h;
+}
+function scpFamilyHtml(rows){
+  const hs=rows.map(r=>r.headline).filter(v=>typeof v==="number"); if(!hs.length) return "";
+  const avg=Math.round(hs.reduce((a,b)=>a+b,0)/hs.length);
+  return '<div style="margin:10px 12px 0;padding:10px 14px;border-radius:12px;background:#DEF2F1;display:flex;align-items:center;gap:12px"><div style="font-family:\'Fraunces\',serif;font-size:28px;font-weight:800;color:#1f5e5c">'+avg+'</div><div><div style="font-weight:800;font-size:13px;color:#1f5e5c">The family, where things are at</div><div style="font-size:11.5px;color:#2B7A78">the average of '+hs.length+' kid'+(hs.length===1?'':'s')+'’ headlines · each kid against their own last week, never each other</div></div></div>';
+}
+function scpKidRowHtml(kids){
+  const b=(k,lbl)=>{ const on=(scpKid===k); return '<button onclick="scpPick(\''+scpE(k)+'\')" style="padding:5px 14px;border-radius:20px;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?'#2B7A78':'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
+  return '<div style="display:flex;gap:6px;flex-wrap:wrap;padding:12px 12px 0">'+b("all","All")+kids.map(k=>b(k,scpE(scpKidName(k)))).join("")+'</div>';
+}
+function renderMPScores(el,top){
+  if(!(typeof momHere==="function"&&momHere())){ el.innerHTML=(top||'')+'<div style="text-align:center;color:var(--muted);padding:34px 12px;line-height:1.6">\u{1F512} Mom only — turn on Mom mode to see the Scores.</div>'; return; }
+  const kids=(typeof ROSTER!=="undefined"&&Array.isArray(ROSTER))?ROSTER:[];
+  if(scpKid!=="all"&&kids.indexOf(scpKid)<0) scpKid="all";
+  const pick=(scpKid==="all")?kids:[scpKid];
+  const rows=pick.map(k=>{ try{ return scpGather(k); }catch(e){ console.error("[HA] scores",e); return null; } }).filter(Boolean);
+  let h=(top||'')+scpKidRowHtml(kids);
+  if(!kids.length) h+='<div style="font-size:13px;color:var(--muted);padding:14px">No kids on the roster yet.</div>';
+  if(pick.length>1) h+=scpFamilyHtml(rows);
+  h+=rows.map(scpCardHtml).join("");
+  h+='<div style="font-size:11px;color:var(--muted);padding:6px 14px 16px">Read-only. Drills, study, sprints, games and the rest get their own sections next (PLAN_scores_page_2026-11-03.md).</div>';
+  el.innerHTML=h;
+}
+// SCORESPAGE_END
 function renderCurriculumView(el,headerHtml){
   if(!momHere()){
     el.innerHTML=(headerHtml||'')+'<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center">'+
