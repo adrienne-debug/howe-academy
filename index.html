@@ -92067,6 +92067,36 @@ function gwMergeCarry(dayInput,carry){
     }
   }
 }
+// CARRYMAX_START — a carried lesson never breaks the subject's max per day (her rule 2026-11-02: "it should be looking at the
+// max 1 per day"). Live DeWalt week 5, Regenerate Mon 11/2 6:57 PM: the balancer put Taylor's Saxon 42 on Monday (today, after
+// school), Monday was laid from now so 42 ran past the cutoff, and gwMergeCarry added it onto Tuesday's Saxon 43 — two Saxon
+// lessons Tuesday, none Wednesday, though Saxon (plan-backed) is capped at 1 a day. Now, after the merge, a day that a carry
+// pushed over capFor keeps its first `cap` lessons (lowest first — the order gwMergeCarry keeps) and the rest carry on to the
+// next school day in order, exactly like a cutoff leftover (the week's end rolls them as before). Only subjects that were
+// carried in are looked at; a day the balancer stacked on purpose (cap 2+) is untouched. Returns the overflow carry, or null.
+function gwCapCarry(dayInput,carry){
+  let over=null;
+  for(const kid of Object.keys(carry||{})){
+    for(const sk of Object.keys(carry[kid]||{})){
+      const v=(dayInput[kid]||{})[sk]; if(!Array.isArray(v)) continue;
+      const cap=(typeof capFor==="function")?capFor(kid,sk,DEFAULT_DAY_CAP):DEFAULT_DAY_CAP;
+      if(!(cap>=1)||v.length<=cap) continue;
+      dayInput[kid][sk]=cap===1?v[0]:v.slice(0,cap);
+      if(!over) over={}; if(!over[kid]) over[kid]={};
+      over[kid][sk]=v.slice(cap);
+    }
+  }
+  return over;
+}
+// Two carries → one, a's lessons first (a = the day's own cutoff drops, b = what its max sent on: drops are among the kept,
+// so they are the lower lessons).
+function gwJoinCarry(a,b){
+  if(!a) return b||null; if(!b) return a;
+  const c=JSON.parse(JSON.stringify(a));
+  for(const kid of Object.keys(b)){ if(!c[kid]) c[kid]={}; for(const sk of Object.keys(b[kid])) c[kid][sk]=(c[kid][sk]||[]).concat(b[kid][sk]); }
+  return c;
+}
+// CARRYMAX_END
 function gwCarryToAssignments(carry){
   const out={};
   for(const kid of Object.keys(carry)){ out[kid]={}; for(const sk of Object.keys(carry[kid])){ const v=carry[kid][sk]; out[kid][sk]=v.length===1?v[0]:v.slice(); } }
@@ -92235,7 +92265,8 @@ function generateWeek(config){
     const dn=WDAY_MAP[d.getDay()];
     if(!dn||skipSet.has(dn)||!dates[dn]) continue;
     // Re-home the previous day's past-cutoff leftovers into this day, in lesson order.
-    if(_carry){ if(!balanced[dk]) balanced[dk]={}; gwMergeCarry(balanced[dk],_carry); _carry=null; }
+    let _capOver=null;   // 🔢 CARRYMAX: what this day's max per day sends on to the next day
+    if(_carry){ if(!balanced[dk]) balanced[dk]={}; gwMergeCarry(balanced[dk],_carry); _capOver=gwCapCarry(balanced[dk],_carry); _carry=null; }
     _lastDk=dk;
 
     const idPrefix=d.getFullYear()+"d"+dayOfYear(d)+"_";
@@ -92293,7 +92324,7 @@ function generateWeek(config){
       const _dayBound=!!(_s.noCarry||_s.tracking==="daily"||dp.key==="reflex"||dp.key==="retrieval");
       if(!_dayBound&&String(dp.reason||"").includes("CUTOFF")) _cut.push(dp); else allDropped.push(dp);
     });
-    _carry=_cut.length?gwCarryFromDrops(_cut):null;
+    _carry=gwJoinCarry(_cut.length?gwCarryFromDrops(_cut):null,_capOver);   // 🔢 CARRYMAX: + the lessons over this day's max
   }
   // Leftovers off the last weekday spill to a synthesized Saturday (unless the family
   // turned Saturday-overflow off); whatever still doesn't fit rolls to next week — the
