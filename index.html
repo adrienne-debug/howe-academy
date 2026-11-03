@@ -31214,10 +31214,15 @@ function ceGetSubject(){
 
 function ceSaveField(field,val){
   if(!currData||!ceEditKid||!ceEditKey||!db) return;
+  const _wasV=(currData.subjects[ceEditKid][ceEditKey][field]===undefined||currData.subjects[ceEditKid][ceEditKey][field]===null)?undefined:JSON.parse(JSON.stringify(currData.subjects[ceEditKid][ceEditKey][field]));   // 🔁 RELAY3D: for Undo
   currData.subjects[ceEditKid][ceEditKey][field]=val;
   db.ref("curriculum/subjects/"+ceEditKid+"/"+ceEditKey+"/"+field).set(val);
   currData.lastEdit=new Date().toISOString();
   db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  // 🔁 RELAY3D (2026-11-03): a daily's laying field from the editor sheet (minutes, set time…) re-lays its cards this week through the door
+  try{ if(typeof _rlwDailyOk==="function"&&_rlwDailyOk(ceEditKid,ceEditKey)&&typeof RLW_LAY_FIELDS!=="undefined"&&RLW_LAY_FIELDS[field]&&typeof relayWeek==="function"){
+    const _s=currData.subjects[ceEditKid][ceEditKey]; const _p="curriculum/subjects/"+ceEditKid+"/"+ceEditKey+"/"+field;
+    relayWeek("curriculum",{label:"📚 "+(_s.display||ceEditKey)+": "+_rlwFieldWords(field),subjects:[{kid:ceEditKid,sk:ceEditKey}],undo:[(_wasV===undefined)?{p:_p,gone:true}:{p:_p,was:_wasV}]}); } }catch(e){}
 }
 // Parse a pasted list of meeting dates. Shared by the edit sheet and the Add sheet so
 // there is ONE definition of a valid date. Real calendar validation (not just a regex:
@@ -32320,7 +32325,7 @@ function ceFindRuleOwner(kid,rule,excludeKey){
 function ceTogglePause(){
   const s=ceGetSubject();
   if(!s) return;
-  const wasPaused=!!s.paused;
+  const wasPaused=!!s.paused; const _wasSince=(s.pausedSince===undefined)?null:s.pausedSince;   // 🔁 RELAY3D: for Undo
   if(s.paused){
     ceSaveField("paused",false);
     ceSaveField("pausedSince",null);
@@ -32332,6 +32337,9 @@ function ceTogglePause(){
   }
   // ⏸/▶ keep THIS week in step (2026-09-14): open cards off on pause, back on resume; lane partners follow.
   try{ if(typeof lnPauseRelay==="function"&&typeof planBacked==="function"&&planBacked(ceEditKid,ceEditKey)) lnPauseRelay(ceEditKid,ceEditKey,!wasPaused); }catch(e){}
+  // 🔁 RELAY3D: a daily — paused, its open cards leave this week; resumed, they come back — through the door, Undo = the flag back
+  try{ if(typeof _rlwDailyOk==="function"&&_rlwDailyOk(ceEditKid,ceEditKey)&&typeof relayWeek==="function"){ const _P="curriculum/subjects/"+ceEditKid+"/"+ceEditKey+"/";
+    relayWeek("curriculum",{label:(wasPaused?"▶ ":"⏸ ")+(s.display||ceEditKey),subjects:[{kid:ceEditKid,sk:ceEditKey}],undo:[{p:_P+"paused",was:wasPaused},(_wasSince==null)?{p:_P+"pausedSince",gone:true}:{p:_P+"pausedSince",was:_wasSince}]}); } }catch(e){}
   ceRenderEditSheet();
   renderAll();
 }
@@ -32339,7 +32347,7 @@ function ceTogglePause(){
 function ceQuickPause(kid,key){
   const s=currData&&currData.subjects&&currData.subjects[kid]&&currData.subjects[kid][key];
   if(!s) return;
-  const now=!s.paused;
+  const now=!s.paused; const _wasSince=(s.pausedSince===undefined)?null:s.pausedSince;   // 🔁 RELAY3D: for Undo
   s.paused=now;
   s.pausedSince=now?new Date().toISOString():null;
   if(db){
@@ -32351,6 +32359,9 @@ function ceQuickPause(kid,key){
   }
   // ⏸/▶ keep THIS week in step (2026-09-14): open cards off on pause, back on resume; lane partners follow.
   try{ if(typeof lnPauseRelay==="function"&&typeof planBacked==="function"&&planBacked(kid,key)) lnPauseRelay(kid,key,now); }catch(e){}
+  // 🔁 RELAY3D: a daily — paused, its open cards leave this week; resumed, they come back — through the door, Undo = the flag back
+  try{ if(typeof _rlwDailyOk==="function"&&_rlwDailyOk(kid,key)&&typeof relayWeek==="function"){ const _P="curriculum/subjects/"+kid+"/"+key+"/";
+    relayWeek("curriculum",{label:(now?"⏸ ":"▶ ")+(s.display||key),subjects:[{kid:kid,sk:key}],undo:[{p:_P+"paused",was:!now},(_wasSince==null)?{p:_P+"pausedSince",gone:true}:{p:_P+"pausedSince",was:_wasSince}]}); } }catch(e){}
   renderAll();
 }
 
@@ -40485,7 +40496,7 @@ function coopToggleMomDay(ds){
     Object.keys(subs).forEach(function(sk){
       const sub=subs[sk]||{};
       if(sub.mom!=="required"||sub.paused) return;
-      if(typeof planBacked!=="function"||!planBacked(kid,sk)) return;
+      if(!((typeof planBacked==="function"&&planBacked(kid,sk))||(typeof _rlwDailyOk==="function"&&_rlwDailyOk(kid,sk)))) return;   // 🔁 RELAY3D: a Mom-required daily too
       relaid.push(kid+"/"+sk); _pairs.push({kid:kid,sk:sk});   // 🔁 RELAY3: queued for the one run below
     });
   });
@@ -40591,7 +40602,7 @@ function cwdRelayKids(kids,why){
     const subs=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid])||{};
     Object.keys(subs).forEach(function(sk){ const sub=subs[sk]||{};
       if(sub.paused||!noCoopDaysOf(sub)) return;
-      if(typeof planBacked!=="function"||!planBacked(kid,sk)) return;
+      if(!((typeof planBacked==="function"&&planBacked(kid,sk))||(typeof _rlwDailyOk==="function"&&_rlwDailyOk(kid,sk)))) return;   // 🔁 RELAY3D: a daily with co-op week days too
       relaid.push(kid+"/"+sk); _pairs.push({kid:kid,sk:sk});   // 🔁 RELAY3: queued for the one run below
     });
   });
@@ -42329,10 +42340,10 @@ function _rlwSnapOf(tasks,o){
 // → {n, moves:[{id,who,ti,from:{d,t,cf,eo},to:{d,t}}], removed:[card…], locked:[id…]}. A checked or claimed card is never a
 // "move" (the ts-heal owns checked cards; claimed work is frozen) — a claimed / started / held card that changed DAY trips the wire.
 function _rlwDiff(before,tasks){
-  const out={n:0,moves:[],removed:[],locked:[]}; const seen={};
+  const out={n:0,moves:[],removed:[],added:[],locked:[]}; const seen={};   // RELAY3D: added = a card that was not there before (Undo removes it while it is still unchecked)
   (tasks||[]).forEach(function(t){
     if(!t||!t.id||String(t.id).endsWith("_c")) return; seen[t.id]=true;
-    const b=before[t.id]; if(!b) return;
+    const b=before[t.id]; if(!b){ out.added.push(t.id); return; }
     const dayCh=(t.day!==b.d), ch=dayCh||(t.time!==b.t)||(!!t._eowOverflow!==b.eo);
     if(!ch) return;
     if(dayCh&&(b.cl||b.st||b.fx)) out.locked.push(t.id);
@@ -42340,7 +42351,7 @@ function _rlwDiff(before,tasks){
     out.moves.push({id:t.id,who:b.w,ti:b.ti,from:{d:b.d,t:b.t,cf:b.cf,eo:b.eo},to:{d:t.day,t:t.time}});
   });
   Object.keys(before).forEach(function(id){ if(!seen[id]&&!before[id].ck&&!before[id].cl) out.removed.push(before[id].card); });
-  out.n=out.moves.length+out.removed.length;
+  out.n=out.moves.length+out.removed.length+out.added.length;
   return out;
 }
 function _rlwWords(e){
@@ -42350,6 +42361,7 @@ function _rlwWords(e){
   const nm=(e.moves||[]).length, nr=(e.removed||[]).length;
   let s=(e.label||"Re-laid")+" → "+nm+" card"+(nm===1?"":"s")+" moved"+(kids?" ("+kids+")":"");
   if(nr) s+=" · "+nr+" to next week";
+  const na=(e.added||[]).length; if(na) s+=" · "+na+" added";   // RELAY3D
   if(e.locked&&e.locked.length) s+=" · ⚠ "+e.locked.length+" held card"+(e.locked.length===1?"":"s")+" changed day";
   if(e.undone) s+=" · undone";
   return s;
@@ -42371,6 +42383,7 @@ function _rlwRun(pend,fn,after){
   const e={label:(pend.labels&&pend.labels.length?pend.labels:(pend.whys||[])).join(" · "),why:(pend.whys||[]).join(","),dev:(typeof HA_DEV_ID!=="undefined")?HA_DEV_ID:"",at:at,n:d.n,
     moves:d.moves.slice(0,RLW_MAX_MOVES),removed:d.removed.slice(0,RLW_MAX_REMOVED)};
   if(d.locked.length) e.locked=d.locked;
+  if(d.added&&d.added.length) e.added=d.added.slice(0,RLW_MAX_MOVES);   // RELAY3D
   if(pend.undo&&pend.undo.length) e.undo=pend.undo;
   relayLogData=Object.assign({},relayLogData); relayLogData[String(at)]=e;
   const keys=Object.keys(relayLogData).sort(); const drop=[];
@@ -42421,6 +42434,7 @@ function _rlwUndoUpd(e,tasks,o){
     cards++;
   });
   (e.removed||[]).forEach(function(c){ if(!c||!c.id||byId[c.id]||ck[c.id]) return; upd[wk+"/tasks/"+c.id]=c; cards++; });
+  (e.added||[]).forEach(function(id){ const t=byId[id]; if(!t||ck[id]||cl[id]) return; upd[wk+"/tasks/"+id]=null; cards++; });   // RELAY3D: an added card goes again, unless it was checked or claimed since
   upd[wk+"/relayLog/"+e.at+"/undone"]=o.now||Date.now();
   return {upd:upd,cards:cards,skipped:skipped};
 }
@@ -42439,7 +42453,7 @@ function relayUndo(at){
   Object.keys(r.upd).forEach(function(p){
     if(p.indexOf(WK+"/tasks/")===0){
       const rest=p.slice((WK+"/tasks/").length).split("/"); const t=tasks.find(function(x){ return x&&x.id===rest[0]; });
-      if(rest.length===1){ if(r.upd[p]&&!t) tasks.push(Object.assign({},r.upd[p])); return; }
+      if(rest.length===1){ if(r.upd[p]&&!t) tasks.push(Object.assign({},r.upd[p])); else if(r.upd[p]===null&&t){ const k=tasks.indexOf(t); if(k>=0) tasks.splice(k,1); } return; }   // RELAY3D: an added card leaves this device's memory too
       if(!t) return; if(r.upd[p]===null) delete t[rest[1]]; else t[rest[1]]=r.upd[p]; return;
     }
     if(p.indexOf(WK+"/relayLog/")===0) return;
@@ -42463,7 +42477,7 @@ function dtUndoSnap(iso){
 // through the SAME subject re-lay every grid edit already uses (reprojectSubjectWeek: Builder-paced only, active week,
 // one targeted update per subject, its then fires exactly once). The mode comes from the clock, never a question on any
 // device: before school today lays today fresh, mid-day keeps today's cards where they are, after school from tomorrow.
-// A subject that is not Builder-paced (a daily) is skipped here — its edit saves, and rlSet says so plainly.
+// A daily (not Builder-paced) goes through the same shell with its own by-day diff (RELAY3D below).
 function _rlwModeNoAsk(){
   try{
     const now=new Date(); const nowMin=now.getHours()*60+now.getMinutes(); const td=(typeof _todayDay==="string")?_todayDay:"";
@@ -42479,16 +42493,109 @@ function _rlwChain(list,pend,fin){
   const q=(list||[]).slice(); const mode=_rlwModeNoAsk(); const why=(pend&&pend.whys&&pend.whys[0])||"relay";
   const next=function(){
     const s=q.shift(); if(!s){ fin(); return; }
-    let pb=false; try{ pb=(typeof planBacked==="function")&&planBacked(s.kid,s.sk); }catch(e){ pb=false; }
-    if(!pb||typeof reprojectSubjectWeek!=="function"){ next(); return; }
-    try{ reprojectSubjectWeek(s.kid,s.sk,why,{relayFrom:mode,then:function(){ next(); }}); }
+    let pb=false, dl=false; try{ pb=(typeof planBacked==="function")&&planBacked(s.kid,s.sk); dl=!pb&&_rlwDailyOk(s.kid,s.sk); }catch(e){ pb=false; dl=false; }
+    if((!pb&&!dl)||typeof reprojectSubjectWeek!=="function"){ next(); return; }
+    try{ reprojectSubjectWeek(s.kid,s.sk,why,dl?{relayFrom:mode,daily:true,then:function(){ next(); }}:{relayFrom:mode,then:function(){ next(); }}); }   // RELAY3D: a daily takes its own diff inside the same shell
     catch(e){ dbg("relay pass B skip "+s.kid+"/"+s.sk+": "+e); next(); }
   };
   next();
 }
 // the curriculum fields the scheduler lays by, and their plain words for the banner line
-const RLW_LAY_FIELDS={mom:"Mom",momDays:"Mom days",momDayMin:"Mom minutes",lessonDay:"lesson day",lessonDayMissed:"missed lesson day",lessonDayPractice:"practice day",tpw:"times a week",cap:"max per day",minutes:"minutes",allowedDays:"days",noCoopDays:"co-op week days",coopDay:"co-op day",rulesTok:"order rule",fixedTime:"set time"};
+const RLW_LAY_FIELDS={mom:"Mom",momDays:"Mom days",momDayMin:"Mom minutes",lessonDay:"lesson day",lessonDayMissed:"missed lesson day",lessonDayPractice:"practice day",tpw:"times a week",cap:"max per day",minutes:"minutes",allowedDays:"days",noCoopDays:"co-op week days",coopDay:"co-op day",rulesTok:"order rule",fixedTime:"set time",device:"device"};
 function _rlwFieldWords(f){ return RLW_LAY_FIELDS[f]||String(f||""); }
+// the Undo entries for a Rules-panel field (tpw writes two paths, an order token rewrites rules)
+function _rlwFieldUndo(kid,sk,field,s0){
+  const P="curriculum/subjects/"+kid+"/"+sk+"/"; s0=s0||{};
+  const u=function(p,v){ return (v===undefined||v===null)?{p:p,gone:true}:{p:p,was:v}; };
+  if(field==="tpw") return [u(P+"timesPerWeek",s0.tpw),u(P+"pacing/tpw",s0.ptpw)];
+  if(field==="rulesTok") return [u(P+"rules",s0.rules)];
+  return [u(P+field,s0.f)];
+}
+// RELAY3D (her answer "mid week too" 2026-11-03; step 4, slice 3) — THE DAILIES. A subject that is not Builder-paced
+// (Daily tracking: piano minutes, reading days, typing, notebooks, flash, spelling practice) re-lays this week through the
+// same door and the same shell (reprojectSubjectWeek with opts.daily: the lock, the generator's fresh week, the
+// server-checked targeted write, the school-end guard, then fires once) but through ITS OWN diff — by DAY, one card per
+// day, never by lesson id: a daily's date-id card is a real card here, never a phantom. Past days and a started, checked
+// or claimed card never change; mid-day today is kept whole (mode "tomorrow"); before school today re-lays too ("fresh").
+function _rlwDailyOk(kid,sk){
+  try{ const s=(((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid]; const x=s&&s[sk]; if(!x||x.tracking!=="daily") return false;
+    return !(typeof planBacked==="function"&&planBacked(kid,sk)); }catch(e){ return false; }
+}
+// what the generator wants for this daily this week: its cards, plus the days it DROPPED the daily for want of room — a
+// day-bound drop is still a day the subject runs, so the live card there stays (or a new one is laid and the guard judges it)
+function _rlwDailyWant(kid,sk,gen,wn){
+  const out=[]; const R=(gen&&gen.result)||{};
+  (R.tasks||[]).forEach(function(t){ if(t&&t.who===kid&&t.subjectKey===sk&&!String(t.id||"").endsWith("_c")) out.push(Object.assign({},t)); });
+  const have={}; out.forEach(function(t){ have[String(t.day||"").toLowerCase()]=1; });
+  const s=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid]||{})[sk]||{};
+  ((gen&&gen.dropped)||[]).forEach(function(dp){
+    if(!dp||dp.kid!==kid||dp.key!==sk||!dp.day) return; const day=String(dp.day).toLowerCase(); if(have[day]) return; have[day]=1;
+    let dur=s.minutes||20; try{ if(typeof coopDayMinutes==="function"&&typeof calDateForWeekDay==="function"){ const ds=calDateForWeekDay(day,wn); if(ds) dur=coopDayMinutes(kid,ds,s,dur); } }catch(e){}
+    let title=(s.display||sk), detail=""; try{ if(typeof gwTaskTitle==="function") title=gwTaskTitle(kid,sk,s.display||sk,day,false,false); if(typeof gwSubjectDetail==="function") detail=gwSubjectDetail(kid,sk)||""; }catch(e){}
+    out.push({id:null,who:kid,day:day,time:null,dur:dur,title:title,detail:detail,mom:s.mom||"none",cascade:true,device:s.device||"paper",subjectKey:sk});
+  });
+  return out;
+}
+// pure: {upd, summary, tasksAfter} — upd keyed under week<N>/tasks (id, or id/field; never both for one card).
+// o = {todayDay, nowMin, checked, claimed, toMin, fromMin, mode, dayCtx(day), packAround, days, rules}
+function _rlwDailyDiff(kid,sk,liveTasks,desired,o){
+  o=o||{}; const DAYS=o.days||["monday","tuesday","wednesday","thursday","friday","saturday"]; const tm=o.toMin, fm=o.fromMin;
+  const lc=function(d){ return String(d||"").toLowerCase(); };
+  const isCard=function(t){ return t&&t.who===kid&&t.subjectKey===sk&&!String(t.id||"").endsWith("_c"); };
+  const dayIx=function(d){ return DAYS.indexOf(lc(d)); }; const tIx=dayIx(o.todayDay);
+  const started=function(t){ const di=dayIx(t.day); if(di<0) return false; if(tIx>=0&&di<tIx) return true; return di===tIx&&o.nowMin!=null&&t.time!=null&&tm(t.time)<=o.nowMin; };
+  const locked=function(t){ return !!(o.checked&&o.checked[t.id])||!!(o.claimed&&o.claimed[t.id])||started(t); };
+  const upd={}; const summary={added:[],moved:[],removed:[],retitled:[],kept:[],unboxed:[],shifted:[],pushed:[],deferred:[],carried:[],resequenced:[],closing:[],relaid:[]};
+  const after=(liveTasks||[]).slice(); const ids={}; after.forEach(function(t){ if(t&&t.id) ids[t.id]=1; });
+  const fresh=function(base){ let id=String(base||("rl_"+sk+"_"+kid)); if(/_L\d+$/.test(id)||/_c$/.test(id)) id+="_d"; let n=0, x=id; while(ids[x]){ n++; x=id+"r"+n; } ids[x]=1; return x; };
+  const eligible=function(di){ return di>=0&&(tIx<0||di>tIx||(di===tIx&&o.mode!=="tomorrow")); };
+  const rulesLast=/\blast(Own)?\b/.test(String(o.rules||""))||sk==="closing_nb";
+  const norm=function(k,v){ if(k==="dur") return +v||20; if(k==="mom") return v||"none"; if(k==="device") return v||"paper"; return String(v==null?"":v); };
+  const added=[];
+  DAYS.forEach(function(day,di){
+    if(!eligible(di)) return;
+    const live=after.filter(function(t){ return isCard(t)&&lc(t.day)===day; }).sort(function(a,b){ return (tm(a.time)||0)-(tm(b.time)||0); });
+    const want=(desired||[]).filter(function(t){ return t&&t.who===kid&&t.subjectKey===sk&&lc(t.day)===day; }).sort(function(a,b){ return (a.time!=null?tm(a.time):1e9)-(b.time!=null?tm(b.time):1e9); });
+    const held=live.filter(locked), open=live.filter(function(t){ return !locked(t); });
+    const rest=want.slice(Math.min(held.length,want.length));   // a held card fills a wanted slot first
+    open.forEach(function(t,i){
+      const w=rest[i];
+      if(!w){ upd[t.id]=null; summary.removed.push(t.id); const k=after.indexOf(t); if(k>=0) after.splice(k,1); return; }
+      let ch=false;
+      ["dur","mom","device","title","detail"].forEach(function(f){ if(w[f]===undefined) return; const nv=norm(f,w[f]); if(nv===norm(f,t[f])) return; upd[t.id+"/"+f]=nv; t[f]=nv; ch=true; });
+      if(t._dayDrop){ delete t._dayDrop; upd[t.id+"/_dayDrop"]=null; summary.unboxed.push(t.id); }
+      if(t._eowOverflow){ delete t._eowOverflow; upd[t.id+"/_eowOverflow"]=null; if(summary.unboxed.indexOf(t.id)<0) summary.unboxed.push(t.id); }
+      if(ch) summary.retitled.push(t.id); else summary.kept.push(t.id);
+    });
+    rest.slice(open.length).forEach(function(w){
+      const nt={}; Object.keys(w).forEach(function(k){ if(w[k]!==undefined&&w[k]!==null) nt[k]=w[k]; });
+      nt.id=fresh(w.id); nt.who=kid; nt.subjectKey=sk; nt.day=day; nt.time=null; nt._want=(w.time!=null)?w.time:null;
+      after.push(nt); added.push(nt);
+    });
+  });
+  // time: a new card takes the generator's own slot for it if that is free, else the first hole the packer finds, else the
+  // end of the kid's day; a "last" card always closes the day. Nothing else on the day moves (the guard judges the day after).
+  added.forEach(function(nt){
+    const day=nt.day; const ctx=Object.assign({start:600,end:16*60+15},(o.dayCtx&&o.dayCtx(day))||{});
+    const isToday=(day===lc(o.todayDay)); const floor=Math.max(ctx.start||0,(ctx.kidStart&&ctx.kidStart[kid])||0,(isToday&&o.nowMin!=null)?o.nowMin:0);   // the kid's own start (after a timed co-op) counts
+    const dur=+nt.dur||20;
+    const onDay=after.filter(function(x){ return x&&x!==nt&&lc(x.day)===day&&x.time!=null&&!String(x.id||"").endsWith("_c")&&!x._eowOverflow&&!x._dayDrop; });
+    const mine=onDay.filter(function(x){ return x.who===kid; });
+    const endOf=function(x){ return tm(x.time)+(+x.dur||20); };
+    const lastEnd=mine.reduce(function(m,x){ return Math.max(m,endOf(x)); },floor);
+    const free=function(at){ return at!=null&&at>=floor&&!mine.some(function(x){ return at<endOf(x)&&tm(x.time)<at+dur; }); };
+    let at=null;
+    if(rulesLast) at=lastEnd;
+    else {
+      if(nt._want!=null&&free(tm(nt._want))) at=tm(nt._want);
+      if(at==null&&typeof o.packAround==="function"){ try{ const ov=o.packAround(onDay,[nt],Object.assign({},ctx,{start:floor})); if(nt.time!=null&&!(ov&&ov.indexOf(nt)>=0)) at=tm(nt.time); }catch(e){} nt.time=null; }
+      if(at==null) at=lastEnd;
+    }
+    nt.time=fm(at); delete nt._want;
+    upd[nt.id]=Object.assign({},nt); summary.added.push(nt.id);
+  });
+  return {upd:upd,summary:summary,tasksAfter:after};
+}
 // RELAY_END
 // RELAY2_START — 🔁 SETTINGS + CALENDAR THROUGH THE ONE DOOR (her word "continue next slice" 2026-11-03; step 4, slice 2).
 // Settings: every save of config/rules goes through saveRules; when a key the scheduler lays by changed (School Day Times,
@@ -62094,7 +62201,7 @@ function cbPinDay(sk,d){
   const kid=cbKid;
   const s=currData.subjects[kid][sk]; if(!s||!db) return;
   const _dp=document.getElementById("cb-daypin-scroll"); if(_dp) cbDayPinScroll=_dp.scrollTop;
-  const arr=(s.allowedDays||[]).slice();
+  const arr=(s.allowedDays||[]).slice(); const _wasD=arr.slice();   // 🔁 RELAY3D: for Undo
   const i=arr.indexOf(d);
   if(i>=0) arr.splice(i,1); else arr.push(d);
   s.allowedDays=arr;
@@ -62105,6 +62212,8 @@ function cbPinDay(sk,d){
   if(s.days!==undefined){ delete s.days; db.ref("curriculum/subjects/"+kid+"/"+sk+"/days").remove(); }
   // Plan-backed: placement rules re-lay at once (one truth — the grid follows the rule).
   if(typeof planBacked==="function"&&planBacked(kid,sk)&&s.pacing&&s.pacing.mode&&typeof _gvRelaySubject==="function"){ const _sv=cbSubjKey; cbSubjKey=sk; if(_gvRelaySubject(kid,sk,"Days changed — "+(s.display||sk)+" re-laid")) { cbSubjKey=_sv; return; } cbSubjKey=_sv; }
+  // 🔁 RELAY3D: a daily's days re-lay its cards this week through the door, Undo = the days back
+  if(typeof _rlwDailyOk==="function"&&_rlwDailyOk(kid,sk)&&typeof relayWeek==="function") relayWeek("curriculum",{label:"📚 "+(s.display||sk)+": days",subjects:[{kid:kid,sk:sk}],undo:[_wasD.length?{p:"curriculum/subjects/"+kid+"/"+sk+"/allowedDays",was:_wasD}:{p:"curriculum/subjects/"+kid+"/"+sk+"/allowedDays",gone:true}]});
   renderAll();
 }
 // ⚙ Rules panel setter — writes the SAME subject field the card uses (one record), then
@@ -62112,6 +62221,7 @@ function cbPinDay(sk,d){
 function rlSet(kid,sk,field,val,relay){
   const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||!db) return;
   const _wasF=(s[field]===undefined||s[field]===null)?undefined:JSON.parse(JSON.stringify(s[field]));   // 🔁 RELAY3: the field as it was, for Undo
+  const _was0={f:_wasF,tpw:s.timesPerWeek,ptpw:(s.pacing||{}).tpw,rules:s.rules};   // 🔁 RELAY3D: the paths a Rules-panel field really writes
   const _dp=document.getElementById("cb-daypin-scroll"); if(_dp) cbDayPinScroll=_dp.scrollTop;
   if(field==="tpw"){ const v=Math.max(1,Math.min(7,parseInt(val,10)||1)); s.pacing=Object.assign({},s.pacing||{mode:"timesPerWeek"},{tpw:v}); s.timesPerWeek=v;
     db.ref("curriculum/subjects/"+kid+"/"+sk).update({"pacing/tpw":v,timesPerWeek:v}); }
@@ -62131,8 +62241,11 @@ function rlSet(kid,sk,field,val,relay){
       undo:[(_wasF===undefined)?{p:"curriculum/subjects/"+kid+"/"+sk+"/"+field,gone:true}:{p:"curriculum/subjects/"+kid+"/"+sk+"/"+field,was:_wasF}]}); }
   else if(_momF&&_pbF&&typeof reprojectSubjectWeek==="function"){
     try{ reprojectSubjectWeek(kid,sk,"mom",{then:function(){ if(typeof renderAll==="function") renderAll(); }}); }catch(e){ if(typeof dbg==="function") dbg("mom relay skip "+kid+"/"+sk+": "+e); } }
-  // 🔁 RELAY3: a daily (not Builder-paced) only saves — say so plainly instead of leaving her to wonder
-  if(!_pbF&&typeof RLW_LAY_FIELDS!=="undefined"&&RLW_LAY_FIELDS[field]&&typeof gwShowToast==="function") gwShowToast("✎ Saved — "+(s.display||sk)+" isn't paced by the Builder, so this week's cards re-lay on the next week build or 🔄 Regenerate");
+  // 🔁 RELAY3D (her answer "mid week too" 2026-11-03): a daily's laying field re-lays its cards this week through the same door
+  // (its own by-day diff, never a phantom), with Undo = the field and the cards back. Anything else not Builder-paced only saves.
+  const _dlF=(typeof _rlwDailyOk==="function")&&_rlwDailyOk(kid,sk)&&typeof RLW_LAY_FIELDS!=="undefined"&&!!RLW_LAY_FIELDS[field];
+  if(_dlF&&typeof relayWeek==="function") relayWeek("curriculum",{label:"📚 "+(s.display||sk)+": "+_rlwFieldWords(field),subjects:[{kid:kid,sk:sk}],undo:_rlwFieldUndo(kid,sk,field,_was0)});
+  else if(!_pbF&&!_dlF&&typeof RLW_LAY_FIELDS!=="undefined"&&RLW_LAY_FIELDS[field]&&typeof gwShowToast==="function") gwShowToast("✎ Saved — "+(s.display||sk)+" isn't paced by the Builder, so this week's cards re-lay on the next week build or 🔄 Regenerate");
   if(relay&&typeof planBacked==="function"&&planBacked(kid,sk)&&s.pacing&&s.pacing.mode&&typeof _gvRelaySubject==="function"){ const _k=cbKid,_s=cbSubjKey; cbKid=kid; cbSubjKey=sk; const ok=_gvRelaySubject(kid,sk,(s.display||sk)+" re-laid"); cbKid=_k; cbSubjKey=_s; if(ok) return; }
   renderAll();
 }
@@ -65312,7 +65425,9 @@ function reprojectSubjectWeek(kid,sk,why,opts){
   // the partner straight away — live 2026-09-15: GWTM Purple's re-lay ran before Editor in Chief's
   // cards were gone, saw a full week, laid nothing, and its old date-id cards left as phantoms.
   const _then=function(v){ if(opts&&typeof opts.then==="function"&&!opts._thenDone){ opts._thenDone=true; try{ opts.then(v); }catch(e){} } };
-  if(typeof planBacked!=="function"||!planBacked(kid,sk)){ _then(null); return null; }
+  // 🔁 RELAY3D (2026-11-03): a daily comes through this same shell (opts.daily, from the relay door) with its own by-day diff
+  const _dl=!!(opts&&opts.daily)&&typeof _rlwDailyOk==="function"&&_rlwDailyOk(kid,sk);
+  if(!_dl&&(typeof planBacked!=="function"||!planBacked(kid,sk))){ _then(null); return null; }
   if(!weekData||!Array.isArray(weekData.tasks)||!WK){ _then(null); return null; }
   if(typeof fbTasksLoaded!=="undefined"&&!fbTasksLoaded){ _then(null); return null; }
   const wn=currWeekNum(); if(!wn){ _then(null); return null; }
@@ -65349,8 +65464,9 @@ function reprojectSubjectWeek(kid,sk,why,opts){
       const _blockedDays=[]; try{ if(typeof calDateForWeekDay==="function"&&typeof _ovRmX==="function"){ _RP_DAYS.forEach(function(d){ const ds=calDateForWeekDay(d,wn); if(ds&&_ovRmX(kid,ds,sk,false)) _blockedDays.push(d); }); } }catch(e){}
       // ⏭ pattern-forward: the subject's days come from its plan, not the generator's balancer
       const _nowMin=nowD.getHours()*60+nowD.getMinutes();
-      const _pw=_rpPatternWant(kid,sk,{wn,todayDay,nowMin:_nowMin,toMin,mode:_rpMode,dayCap:_rpCap,blockedDays:_blockedDays,liveTasks:weekData.tasks,genTasks:gen.result.tasks,checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{}});
-      const r=_reprojectPlan(kid,sk,weekData.tasks,_pw?_pw.desired:gen.result.tasks,{todayDay,nowMin:_nowMin,checked:checked||{},claimed:_pw?_pw.claimed:((typeof claimed!=="undefined"&&claimed)||{}),dayCtx,packAround,toMin,fromMin,dayCap:_rpCap,lidOrder:_subj.lessonIds||[],lsdSubj:(typeof lessonDayList==="function"&&lessonDayList(_subj).length)?_subj:null,allowedDays:_rpDays,doneLids:_doneLids,dropUnwanted:!!(opts&&opts.dropUnwanted)||!!_pw,patternForward:!!_pw,freshToday:!!_pw&&_rpMode==="fresh",blockedDays:_blockedDays});
+      const _pw=_dl?null:_rpPatternWant(kid,sk,{wn,todayDay,nowMin:_nowMin,toMin,mode:_rpMode,dayCap:_rpCap,blockedDays:_blockedDays,liveTasks:weekData.tasks,genTasks:gen.result.tasks,checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{}});
+      const r=_dl?_rlwDailyDiff(kid,sk,weekData.tasks,_rlwDailyWant(kid,sk,gen,wn),{todayDay,nowMin:_nowMin,checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{},toMin,fromMin,dayCtx,packAround,mode:_rpMode,days:_RP_DAYS,rules:String(_subj.rules||"")})   // 🔁 RELAY3D: by day, never a phantom
+        :_reprojectPlan(kid,sk,weekData.tasks,_pw?_pw.desired:gen.result.tasks,{todayDay,nowMin:_nowMin,checked:checked||{},claimed:_pw?_pw.claimed:((typeof claimed!=="undefined"&&claimed)||{}),dayCtx,packAround,toMin,fromMin,dayCap:_rpCap,lidOrder:_subj.lessonIds||[],lsdSubj:(typeof lessonDayList==="function"&&lessonDayList(_subj).length)?_subj:null,allowedDays:_rpDays,doneLids:_doneLids,dropUnwanted:!!(opts&&opts.dropUnwanted)||!!_pw,patternForward:!!_pw,freshToday:!!_pw&&_rpMode==="fresh",blockedDays:_blockedDays});
       try{ if(typeof seGuardWeek==="function"){ const _se=seGuardWeek(r.tasksAfter,seGuardCtx({kids:[kid],checked:checked||{}}));
         _rpMergeUpd(r.upd,_se.upd);   // RPMERGE: never a path beside its own child (Firebase rejects the whole save)
         r.summary.shifted=(r.summary.shifted||[]).concat(_se.retimed,_se.rolled,_se.dropped||[]); r.summary.removed=r.summary.removed.concat(_se.deferred); } }catch(eSE){ dbg&&dbg("school-end skip: "+eSE); }
