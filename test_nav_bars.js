@@ -66,9 +66,9 @@ function world(o) {
   return { sub: els["sched-subtabs"].style.display, day: els["day-tabs"].style.display, kf: els["kid-filter"].style.display };
 }
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-ok("Schedule: sub-tabs, day row and kid row", same(world({ tab: "schedule" }), { sub: "flex", day: "flex", kf: "flex" }));
-ok("Schedule ▸ History / Wins: day row goes, kid row stays", same(world({ tab: "schedule", schedShowHistory: true }), { sub: "flex", day: "none", kf: "flex" }) && same(world({ tab: "schedule", schedShowPace: true }), { sub: "flex", day: "none", kf: "flex" }));
-ok("Schedule ▸ Admin: only the sub-tabs", same(world({ tab: "schedule", schedShowAdmin: true }), { sub: "flex", day: "none", kf: "none" }));
+ok("Schedule: sub-tabs, day row and kid row", same(world({ tab: "schedule" }), { sub: "none" /* SCHEDBAR 2026-11-02: the Schedule · Wins · History · Admin bar is retired */, day: "flex", kf: "flex" }));
+ok("Schedule ▸ History / Wins: day row goes, kid row stays", same(world({ tab: "schedule", schedShowHistory: true }), { sub: "none" /* SCHEDBAR 2026-11-02: the Schedule · Wins · History · Admin bar is retired */, day: "none", kf: "flex" }) && same(world({ tab: "schedule", schedShowPace: true }), { sub: "none" /* SCHEDBAR 2026-11-02: the Schedule · Wins · History · Admin bar is retired */, day: "none", kf: "flex" }));
+ok("Schedule ▸ Admin: only the sub-tabs", same(world({ tab: "schedule", schedShowAdmin: true }), { sub: "none" /* SCHEDBAR 2026-11-02: the Schedule · Wins · History · Admin bar is retired */, day: "none", kf: "none" }));
 ok("Supplies: the day row only", same(world({ tab: "supplies" }), { sub: "none", day: "flex", kf: "none" }));
 ok("History / Pace pages: the kid row only", same(world({ tab: "history" }), { sub: "none", day: "none", kf: "flex" }) && same(world({ tab: "pace" }), { sub: "none", day: "none", kf: "flex" }));
 ["moms-plan", "kids", "notebook", "mastery", "units", "play", "babysitter", "activities"].forEach(t => {

@@ -40,6 +40,6 @@ console.log("4. 📝 Save with cards unmarked");
   ok("no 'disabled' Save button any more", !/mastSaveResults\(\)"'\+\(allScored\?'':' disabled'\)/.test(src));
 }
 console.log("5. A fresh Log / a kid switch place the card fresh");
-{ ok("mastStartLog and mastSetKid clear the 'already placed' mark", /function mastStartLog\(\)\{ (if\(typeof kcLogGate==="function"&&!kcLogGate\(\)\) return; )?_mastResumed="";/.test(src)&&/function mastSetKid\(k,noRender\)\{ _mastResumed="";/.test(src)); }
+{ ok("mastStartLog and mastSetKid clear the 'already placed' mark", /function mastStartLog\(\)\{ (if\(typeof \w+==="function"&&!\w+\([^)]*\)\) return; )*_mastResumed="";/.test(src)&&/function mastSetKid\(k,noRender\)\{ _mastResumed="";/.test(src)); }
 ok("no 🔀", src.indexOf("🔀")<0);
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

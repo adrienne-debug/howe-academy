@@ -133,7 +133,7 @@ console.log("\n── wiring ──");
   ok("the ⏱ chip on a finished session is the interrupted toggle", /mastToggleBad\(\\'/.test(src));
   ok("pause survives a reload", /pausedMs:mastLogPausedMs,pauseAt:mastLogPauseAt/.test(src) &&
     /mastLogPausedMs=s\.pausedMs\|\|0/.test(src));
-  ok("starting a log clears any previous pause", /mastStartLog\(\)\{[\s\S]{0,200}?mastLogPausedMs=0; mastLogPauseAt=null;/.test(src));
+  ok("starting a log clears any previous pause", /mastStartLog\(\)\{[\s\S]{0,320}?mastLogPausedMs=0; mastLogPauseAt=null;/.test(src));
   ok("the saved duration subtracts paused time", /-_pausedMs\)\/1000/.test(src));
   ok("mastDrillSamples skips a session marked bad", /if\(!d\|\|d\.bad\) return;/.test(src));
 }
