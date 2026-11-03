@@ -80118,6 +80118,163 @@ function buildFourHtml(color){
   return h+'</div>';
 }
 // FOUR_END
+// SHIP_START — 🚢 "Battleship" (her word 2026-11-03: "Battleship/map pin. lets do these now"; PLAN_practice_games_2026-10-23.md Tier 4
+// "Battleship / map pin (geography, anatomy): tap the country / part on a picture; type its name — spatial REC → PROD"). The plan's map
+// needs a map image and a pin position per card, and NO deck carries either today, so this is the picture-grid form: the deck's own
+// pictures are the fleet, anchored on a sea grid with coordinates (A1 … D3) that stay put for the whole round — the "map" is the grid.
+// Two kinds of turn, alternating: 🎯 FIND — the app SAYS a name ("Fire at… the copperhead!"; never written), the kid taps that picture;
+// wrong → the bonk, said again, try again from the ones left. 📣 NAME — one tile lights up ("What's at B2?"), the kid says its name out
+// loud and taps 🗣 (the honor system — a tablet has no mic; the app says the name back as the confirm). A hit marks the tile 💥 (sunk);
+// every tile is fired at exactly once. Misses come back once at the end as a find, then the finish: "N of M sunk on the first shot"
+// against the kid's own best. No lives, no clock, no opponent fleet, no luck — every shot is a card.
+// Decks: Which one?'s picture and symbol decks only (whichDeckModes read RAW, like Go Fish — a deck turned off for Which one? still
+// plays here), with SHIP_MIN+ cards; answer-only decks (math, roots, capitals) can't be a map — hidden through decks:(k)=>…, never
+// asked about. Then this game's grid cell gameDeckOn(kid,"ship",deck). Writes (only these): <kid>_settings/match_best key "<deck> · ship"
+// (first-shot hits, only when beaten) and the round's gameLog entry (GAMELOG, game:"ship"). NEVER touches the ladder — no scores, no
+// next_due, no study log. db && !_dryRun() only. Per-kid park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT). A round
+// dropped (Change deck, a kid switch) writes nothing.
+let shipState=null;   // {kid,deck,mix,game:"ship",t0,cols,rows,grid:[pid],sunk:{pid:1},turns:[{pid,act:"find"|"name",done,first,wrong:{},back}],i,phase:"play"|"done",first,of,isPB,prevBest,lock,seq,msg,say,returned:{},gameLogged}
+let _shipRandom=Math.random;   // tests seed it
+const SHIP_MAX=12, SHIP_MIN=6, SHIP_BEAT=900, SHIP_LETTERS="ABCDEF";
+function _shipItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
+function _shipShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_shipRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function _shipRaw(fn){ const had=(typeof _gdRaw!=="undefined")?_gdRaw:null; try{ if(had!==null) _gdRaw=true; return fn(); } finally{ if(had!==null) _gdRaw=had; } }
+function shipDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"ship",deck); }
+function _shipModes(items,kid){ return _shipRaw(()=>whichDeckModes(items,kid)); }
+function _shipWhichPool(items,kid){ return _shipRaw(()=>whichPool(items,WHICH_MIX,kid)); }
+function shipName(it){ return _matchPlain(it&&it.prompt); }
+// The decks that can be a map: picture or symbol mode (a tile must be something to look at), SHIP_MIN+ cards
+function shipDecks(items,kid){
+  kid=kid||masteryKid;
+  const modes=_shipModes(items,kid), n={};
+  _shipWhichPool(items,kid).forEach(i=>{ const d=i.subject||"Other"; if(modes[d]==="picture"||modes[d]==="symbol") n[d]=(n[d]||0)+1; });
+  return Object.keys(n).filter(d=>n[d]>=SHIP_MIN&&shipDeckOn(kid,d)).sort();
+}
+function shipPool(items,deck,kid){ kid=kid||masteryKid; const ok=shipDecks(items,kid); return _shipWhichPool(items,kid).filter(i=>ok.indexOf(i.subject||"Other")>=0&&(deck===WHICH_MIX||(i.subject||"Other")===deck)); }
+// PURE: the grid shape for n tiles — 3 across up to 9, else 4 across
+function shipShape(n){ const cols=n<=9?3:4; return {cols:cols,rows:Math.ceil(n/cols)}; }
+function shipCoord(i,cols){ return SHIP_LETTERS.charAt(Math.floor(i/cols))+(i%cols+1); }   // "B2"
+function _shipSay(st,text){ st.say=text||""; if(!text||(typeof mastView!=="undefined"&&mastView!=="ship")) return; try{ mastSpeak(text); }catch(e){} }
+function shipSayAgain(){ const st=shipState; if(st&&st.say) try{ mastSpeak(st.say); }catch(e){} }
+function shipStart(deck){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding / bonk (iPad)
+  const items=_shipItems(), mix=deck===WHICH_MIX, pool=shipPool(items,deck);
+  if(pool.length<SHIP_MIN||(!mix&&!shipDeckOn(masteryKid,deck))){ shipState=null; _mastRe(); return; }   // 🎮 GAMEGRID: a deck Mom turned off for this game
+  const grid=_shipShuffle(pool.slice()).slice(0,SHIP_MAX).map(i=>i.id), sh=shipShape(grid.length);
+  // every tile once: the order shuffled, find / name alternating
+  const turns=_shipShuffle(grid.slice()).map((pid,k)=>({pid:pid,act:k%2===0?"find":"name",done:false,first:false,wrong:{},back:false}));
+  shipState={kid:masteryKid,deck:deck,mix:mix,game:"ship",t0:Date.now(),cols:sh.cols,rows:sh.rows,grid:grid,sunk:{},turns:turns,i:0,phase:"play",first:0,of:turns.length,isPB:false,prevBest:null,lock:false,seq:0,msg:"",say:"",returned:{}};
+  _shipAsk(shipState);
+  _mastRe();
+}
+function shipChangeDeck(){ shipState=null; _mastRe(); }   // drop the round as it stands: nothing written
+function _shipIt(st,pid){ return _shipItems(st.kid).find(x=>x&&x.id===pid)||null; }
+function _shipAsk(st){
+  const t=st.turns[st.i]; if(!t) return;
+  const it=_shipIt(st,t.pid), lead=t.back?"One more time. ":"";
+  if(t.act==="find"){ st.msg=lead+"\u{1F3AF} Fire at\u2026 (listen!) Tap it on the map."; _shipSay(st,lead+"Fire at the "+shipName(it)+"!"); }   // the name is SAID, never written
+  else { st.msg=lead+"\u{1F4E3} What\u2019s at "+shipCoord(st.grid.indexOf(t.pid),st.cols)+"? Say it, then tap \u{1F5E3}"; _shipSay(st,lead+"What's at "+shipCoord(st.grid.indexOf(t.pid),st.cols).split("").join(" ")+"?"); }
+}
+// 🎯 a find: the kid taps a tile
+function shipTap(gi){
+  const st=shipState; if(!st||st.phase!=="play"||st.lock) return;
+  const t=st.turns[st.i]; if(!t||t.done||t.act!=="find") return;
+  const pid=st.grid[gi]; if(pid==null||t.wrong[pid]||(st.sunk[pid]&&pid!==t.pid)) return;
+  if(pid!==t.pid){ t.wrong[pid]=1; try{ matchBonk(); }catch(e){} st.msg="Splash \u2014 not that one. Listen again!"; shipSayAgain(); _mastRe(); return; }
+  _shipHit(st,t,"");
+}
+// 📣 a name: 🗣 "I said it" — the honor system; the app says the name back
+function shipSaid(){
+  const st=shipState; if(!st||st.phase!=="play"||st.lock) return;
+  const t=st.turns[st.i]; if(!t||t.done||t.act!=="name") return;
+  _shipHit(st,t,shipName(_shipIt(st,t.pid)));
+}
+function _shipHit(st,t,spoken){
+  t.done=true; t.first=!Object.keys(t.wrong).length;
+  if(!t.back&&t.first) st.first++;
+  st.sunk[t.pid]=1;
+  if(!t.first&&!t.back&&!st.returned[t.pid]){ st.returned[t.pid]=1; st.turns.push({pid:t.pid,act:"find",done:false,first:false,wrong:{},back:true}); }   // a miss comes back once, as a find
+  try{ matchDing(); }catch(e){}
+  st.msg="\u{1F4A5} Hit!"; _shipSay(st,(spoken?spoken+". ":"")+"Hit!");
+  st.lock=true; const seq=++st.seq;
+  _mastRe();
+  setTimeout(()=>{ if(shipState===st&&st.lock&&st.seq===seq) shipNext(st); },SHIP_BEAT);
+}
+function shipNext(st){
+  st=st||shipState; if(!st||st!==shipState) return;
+  st.lock=false; st.i++;
+  if(st.i>=st.turns.length){ shipFinish(st); _mastRe(); return; }
+  _shipAsk(st); _mastRe();
+}
+function shipBestKey(deck){ return deck+" \u{00B7} ship"; }
+function shipFinish(st){
+  st.phase="done"; st.lock=false; st.say="";
+  const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every shot's result, game:"ship"
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=shipBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.first>0&&(prev==null||st.first>prev);
+  if(st.isPB){
+    s.match_best[key]=st.first;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+  try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F6A2} You sank them all!",{noSong:true}); }catch(e){}
+}
+// GAMEKID → 🎲 GAMEKIT resume: a beat that was mid-way when the kid switched settles here; back to a round: hear the ask again
+function shipResume(){
+  const st=shipState; if(!st||st.phase==="done") return;
+  if(st.lock){ st.lock=false; st.i++; if(st.i>=st.turns.length){ shipFinish(st); return; } _shipAsk(st); return; }
+  if(st.say&&(typeof mastView==="undefined"||mastView==="ship")) try{ mastSpeak(st.say); }catch(e){}
+}
+const SHIP_CSS='<style>.ship-sea{display:grid;gap:6px;padding:8px;border-radius:18px;background:linear-gradient(180deg,#bae6fd,#7dd3fc);border:3px solid #38bdf8}'+
+  '.ship-tile{position:relative;aspect-ratio:1;border-radius:14px;border:3px solid #e0f2fe;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .2s}'+
+  '.ship-tile .ship-vis{pointer-events:none;transform:scale(.9)}@media(min-width:560px){.ship-tile .ship-vis{transform:scale(1.25)}}'+
+  '.ship-tile .ship-co{position:absolute;left:4px;top:2px;font-size:10px;font-weight:800;color:#0369a1;font-family:\'DM Sans\',sans-serif;pointer-events:none}'+
+  '.ship-tile.ship-sunk{opacity:.55}.ship-tile.ship-sunk::after{content:"\\1F4A5";position:absolute;right:2px;bottom:0;font-size:22px}.ship-tile.ship-wrong{opacity:.3;filter:grayscale(1);cursor:default}'+
+  '.ship-tile.ship-lit{border-color:#f59e0b;box-shadow:0 0 0 5px #fde68a;transform:scale(1.06);cursor:default}.ship-tile.ship-still{cursor:default}'+
+  '.ship-btn{padding:14px 26px;border-radius:999px;border:none;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;-webkit-tap-highlight-color:transparent}.ship-btn[disabled]{opacity:.45;cursor:default}</style>';
+function buildShipHtml(color){
+  const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+  let h=SHIP_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const items=_shipItems(), decks=shipDecks(items);
+  if(!decks.length){ h+='<div class="mast-none">No decks ready for Battleship yet \u{2014} it needs '+SHIP_MIN+' or more cards with a picture.</div></div>'; return h; }
+  const st=shipState;
+  const chip=(dk,lbl)=>{ const sel=st&&st.deck===dk; return '<button onclick="shipStart(\''+q(dk)+'\')" style="padding:10px 16px;border-radius:999px;font-size:14px;font-weight:800;border:2px solid '+(sel?color:'#e2ddd6')+';background:'+(sel?color:'#fff')+';color:'+(sel?'#fff':'#57534e')+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
+  if(!st||st.phase==="done"){
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">';
+    decks.forEach(dk=>{ h+=chip(dk,esc(dk)); });
+    if(decks.length>1) h+=chip(WHICH_MIX,"\u{1F3B2} "+WHICH_MIX);
+    h+='</div>';
+  }
+  if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u{1F6A2} Pick a deck. Listen, then fire at the picture you hear \u{2014} or name what\u2019s at the square I call!</div></div>'; return h; }
+  const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[shipBestKey(st.deck)];
+  if(st.phase==="done"){
+    h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+    h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} You sank them all!</div>';
+    h+='<div style="font-size:17px;font-weight:800;color:#57534e;margin-top:10px">\u{1F6A2} '+st.first+' of '+st.of+' on the first shot'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+    h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">';
+    h+='<button onclick="shipStart(\''+q(st.deck)+'\')" class="ship-btn" style="background:'+color+';color:#fff;font-size:15px">\u{1F501} Play again</button>';
+    if(decks.length>1&&!st.mix) h+='<button onclick="shipStart(\''+q(WHICH_MIX)+'\')" class="ship-btn" style="border:2px solid '+color+';background:#fff;color:'+color+';font-size:15px">\u{1F3B2} '+WHICH_MIX+'</button>';
+    return h+'</div></div></div>';
+  }
+  const t=st.turns[st.i], find=!!(t&&t.act==="find"), lock=st.lock;
+  h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
+  st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
+  h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
+    '<button onclick="shipChangeDeck()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{1F5C2} Change deck</button></span></div>';
+  h+='<div style="display:flex;align-items:center;gap:10px;margin:10px 0 12px;padding:12px 14px;border-radius:18px;background:#f0f9ff;border:2px solid #bae6fd"><span style="font-size:28px;line-height:1">\u{1F6A2}</span><span style="flex:1;font-size:17px;font-weight:800;color:#0c4a6e">'+esc(st.msg)+'</span>'+
+    (st.say?'<button onclick="shipSayAgain()" aria-label="Hear it again" style="width:56px;height:56px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:26px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button>':'')+'</div>';
+  h+='<div class="ship-sea" style="grid-template-columns:repeat('+st.cols+',1fr)">';
+  st.grid.forEach((pid,gi)=>{ const it=_shipIt(st,pid), sunk=!!st.sunk[pid], wrong=!!(t&&t.wrong[pid]), lit=!!(t&&!find&&t.pid===pid&&!t.done), can=find&&!lock&&!wrong&&!(sunk&&pid!==t.pid);
+    h+='<div class="ship-tile'+(sunk?' ship-sunk':'')+(wrong?' ship-wrong':'')+(lit?' ship-lit':'')+(can?'':' ship-still')+'" role="button" aria-label="'+shipCoord(gi,st.cols)+'"'+(can?' onclick="shipTap('+gi+')"':'')+'><span class="ship-co">'+shipCoord(gi,st.cols)+'</span><span class="ship-vis">'+(_smTileVis(it)||'')+'</span></div>'; });
+  h+='</div>';
+  if(t&&!find) h+='<div style="display:flex;justify-content:center;margin-top:14px"><button class="ship-btn" onclick="shipSaid()"'+(lock||t.done?' disabled':'')+' style="background:'+color+';color:#fff">\u{1F5E3} I said it</button></div>';
+  return h+'</div>';
+}
+// SHIP_END
 // STUDYCOUNTS_START — 📚 Study sessions count everywhere (F3 of PLAN_learning_system, her yes 2026-10-24). A study
 // sitting logs to mastery/studyLog/<kid>/<sid>/<yyyymmdd>, but Scores, the Weekly report, sprint readiness (the ≥ 90%
 // untimed check) and the notebook's 🔁 review flags read only the drill's mastery/history/<kid>/<yyyymmdd>, so Lincoln —
@@ -84106,6 +84263,8 @@ const GAMES_LIST=[
      park:()=>teachState, restore:v=>{ teachState=v||null; }, resume:()=>teachResume(), decks:k=>typeof teachDecks==="function"?teachDecks(_gamesItems(k),k):[]},   // 🎓 TEACH · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
   {key:"four",   emoji:"\u{1F534}", label:"Connect Four",view:"four",                 available:k=>typeof fourDecks==="function"&&fourDecks(_gamesItems(k),k).length>0, render:c=>buildFourHtml(c),
      park:()=>fourState, restore:v=>{ fourState=v||null; }, resume:()=>fourResume(), decks:k=>typeof fourDecks==="function"?fourDecks(_gamesItems(k),k):[]},   // 🔴 FOUR · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
+  {key:"ship",   emoji:"\u{1F6A2}", label:"Battleship",  view:"ship",                 available:k=>typeof shipDecks==="function"&&shipDecks(_gamesItems(k),k).length>0, render:c=>buildShipHtml(c),
+     park:()=>shipState, restore:v=>{ shipState=v||null; }, resume:()=>shipResume(), decks:k=>typeof shipDecks==="function"?shipDecks(_gamesItems(k),k):[]},   // 🚢 SHIP · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule (picture / symbol decks only)
 ];
 const gamesLast={};   // kid → key of the last game played on this device
 function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k)&&(typeof gameDeckAny!=="function"||gameDeckAny(k,g)); }catch(e){ return false; } }); }   // 🎮 GAMEGRID: every deck off → the game isn't offered
