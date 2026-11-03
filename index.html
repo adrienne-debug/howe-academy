@@ -79735,6 +79735,205 @@ function buildJeopHtml(color){
   return h+'</div>';
 }
 // JEOPARDY_END
+// TRUENOT_START — ✅ "True / Not true" (the hub's "build four games" 2026-11-03; PLAN_practice_games_2026-10-23.md Tier 2 "True / Not true
+// swipe: card flies by ('8 is more than 10'), swipe ✓ or ✗" — REC + speed, "only on mastered"). A statement comes up: a card's front with a
+// claim about it — its own back ("7+8 · 15", "geo · earth") or one of its deck's OTHER backs ("7+8 · 12": a plausible lure, plan rule 2).
+// For a picture / letter card the claim is a NAME, said and never written (Which one?'s rule — a pre-reader hears it; a written name
+// would be matched letter for letter). The kid swipes the card right = ✓ True, left = ✗ Not true, or taps the two big buttons.
+// Right → the soft ding, the card flies off. Wrong → the soft bonk, "Not that one" — nothing more is told (the app never supplies the
+// answer), and the card comes back ONCE at the end as a fresh statement. About half the statements are true. No clock, no lives, no
+// points, no opponent, no score against the kid.
+// MASTERED ONLY (the plan's "only on mastered" + the Sprint rule): a card plays only at the kid's gate tier or above (gate_tier, default
+// weekly) — a learning card must never be shown a false pairing it could remember as true. Cards: Which one?'s own pool (whichPool /
+// whichDeckModes read RAW, like Go Fish — a deck turned off for Which one? still plays here), then this game's own grid cell
+// gameDeckOn(kid,"truenot",deck); a deck plays with TN_MIN+ gated cards that each have a lure (a different back / name in the deck).
+// Writes (only these): <kid>_settings/match_best key "<deck> · truenot" (first-swipe rights, only when beaten) and the round's gameLog entry
+// (GAMELOG, game:"truenot"). NEVER touches the ladder — no scores, no next_due, no study log. db && !_dryRun() only. Per-kid park /
+// restore / resume through its GAMES_LIST entry (🎲 GAMEKIT). A round dropped (Change deck, a kid switch) writes nothing.
+let tnState=null;   // {kid,deck,mix,game:"truenot",t0,turns:[{pid,mode,cpid,truth,done,first,wrong:{},back}],i,lock,fly,shake,phase,first,of,isPB,prevBest,returned:{},gameLogged}
+let _tnRandom=Math.random;   // tests seed it
+const TN_ROUND=10, TN_MIN=4, TN_BEAT=700, TN_BEAT_WRONG=1400, TN_SWIPE=70;
+function _tnItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
+function _tnShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_tnRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function _tnRaw(fn){ const had=(typeof _gdRaw!=="undefined")?_gdRaw:null; try{ if(had!==null) _gdRaw=true; return fn(); } finally{ if(had!==null) _gdRaw=had; } }
+function tnDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"truenot",deck); }
+function tnGate(kid){ try{ const s=(typeof masteryData!=="undefined"&&masteryData&&masteryData[(kid||masteryKid)+"_settings"])||{}; return s.gate_tier||"weekly"; }catch(e){ return "weekly"; } }
+// The Sprint rule: only a card at the gate tier or above, and only once it is on the ladder — never a learning card
+function tnReady(it,kid){ if(!it||it.status!=="active") return false; return (typeof mastTierAtLeast==="function")?mastTierAtLeast(it.tier,tnGate(kid)):true; }
+function _tnWhichPool(items,kid){ return _tnRaw(()=>whichPool(items,WHICH_MIX,kid)); }
+function _tnModes(items,kid){ return _tnRaw(()=>whichDeckModes(items,kid)); }
+// What a claim is, by the deck's mode: an answer deck claims a BACK; a picture / symbol deck claims a NAME (the front, said)
+function _tnName(it,mode){ return mode==="answer"?_whichNorm(_whichBack(it)):String(it&&it.prompt||"").trim().toLowerCase(); }
+function _tnClaimText(it,mode){ return mode==="answer"?_whichBack(it):_matchPlain(it&&it.prompt); }
+// PURE: the cards of ITS deck whose claim differs from this card's — the lures a false statement can borrow
+function tnLures(it,pool,mode){
+  const own=_tnName(it,mode), seen={};
+  return (pool||[]).filter(x=>{ if(!x||x.id===it.id||x.subject!==it.subject) return false; const n=_tnName(x,mode); if(!n||n===own||seen[n]) return false; seen[n]=1; return true; });
+}
+// The cards a deck can play: Which one?'s pool, at the gate or above, with a lure beside them
+function tnPool(items,deck,kid){
+  kid=kid||masteryKid;
+  const all=_tnWhichPool(items,kid), modes=_tnModes(items,kid);
+  return all.filter(i=>(deck===WHICH_MIX||(i.subject||"Other")===deck)&&tnReady(i,kid)&&tnLures(i,all,modes[i.subject||"Other"]).length>0);
+}
+function tnDecks(items,kid){
+  kid=kid||masteryKid;
+  const n={}; tnPool(items,WHICH_MIX,kid).forEach(i=>{ const d=i.subject||"Other"; n[d]=(n[d]||0)+1; });
+  return Object.keys(n).filter(d=>n[d]>=TN_MIN&&tnDeckOn(kid,d)).sort();
+}
+// PURE: a balanced run of truths for n statements — half true (the extra one true), shuffled
+function tnTruths(n){ const t=[]; for(let i=0;i<n;i++) t.push(i<Math.ceil(n/2)); return _tnShuffle(t); }
+// One statement: the card, and the card whose claim is shown — itself when true, a lure when not
+function _tnTurn(it,pool,mode,truth,back){
+  const lures=tnLures(it,pool,mode); if(!truth&&!lures.length) truth=true;
+  const c=truth?it:lures[Math.floor(_tnRandom()*lures.length)];
+  return {pid:it.id,mode:mode,cpid:c.id,truth:!!truth,done:false,first:false,wrong:{},back:!!back};
+}
+// What is said: a picture / letter card's CLAIM (the name — never written); an answer card's FRONT (the claim is written), unless the voice can't say it
+function _tnSay(st,t){
+  t=t||(st&&st.turns[st.i]); if(!st||!t||(typeof mastView!=="undefined"&&mastView!=="truenot")) return;
+  const items=_tnItems(st.kid), it=items.find(x=>x&&x.id===t.pid), c=items.find(x=>x&&x.id===t.cpid);
+  if(t.mode==="answer"){ if(it&&it.prompt&&!whichSilent(it)) try{ mastSpeak(_matchPlain(it.prompt)); }catch(e){} }
+  else if(c&&c.prompt) try{ mastSpeak(_matchPlain(c.prompt)); }catch(e){}
+}
+function tnSayAgain(){ const st=tnState; if(st&&st.phase==="play") _tnSay(st); }
+function tnStart(deck){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding / bonk (iPad)
+  const items=_tnItems(), mix=deck===WHICH_MIX, modes=_tnModes(items), ok=tnDecks(items), all=_tnWhichPool(items,masteryKid);
+  const pool=tnPool(items,deck).filter(i=>ok.indexOf(i.subject||"Other")>=0);
+  if(pool.length<TN_MIN||(!mix&&!tnDeckOn(masteryKid,deck))){ tnState=null; _mastRe(); return; }   // 🎮 GAMEGRID: a deck Mom turned off for this game
+  const picks=_tnShuffle(pool.slice()).slice(0,TN_ROUND), truths=tnTruths(picks.length);
+  const turns=picks.map((it,i)=>_tnTurn(it,all,modes[it.subject||"Other"],truths[i],false));
+  tnState={kid:masteryKid,deck:deck,mix:mix,game:"truenot",t0:Date.now(),turns:turns,i:0,lock:false,fly:null,shake:false,phase:turns.length?"play":"done",first:0,of:turns.length,isPB:false,prevBest:null,returned:{}};
+  _mastRe();
+  _tnSay(tnState);   // the first statement, inside the tap
+}
+function tnChangeDeck(){ tnState=null; _mastRe(); }   // drop the round as it stands: nothing written
+// PURE over the state: the kid's call (true = "it belongs together") against the statement → "right" | "wrong" | null (nothing to judge)
+function tnJudge(st,call){
+  const t=st&&st.turns[st.i]; if(!t||t.done||st.lock) return null;
+  t.done=true;
+  if(!!call===t.truth){ t.first=true; if(!t.back) st.first++; return "right"; }
+  t.wrong[String(t.cpid)]=1; t.first=false;
+  return "wrong";
+}
+// ✓ True (call true) / ✗ Not true (call false): the swipe or the button
+function tnSwipe(call){
+  const st=tnState; if(!st||st.phase!=="play") return;
+  const t=st.turns[st.i], r=tnJudge(st,call); if(!r) return;
+  if(r==="right"){ try{ matchDing(); }catch(e){} st.fly=call?"right":"left"; }
+  else {
+    try{ matchBonk(); }catch(e){} st.shake=true;
+    // a card missed on its first statement comes back once, at the end, as a fresh statement
+    if(!t.back&&!st.returned[t.pid]){ st.returned[t.pid]=1;
+      const items=_tnItems(st.kid), it=items.find(x=>x&&x.id===t.pid);
+      if(it) st.turns.push(_tnTurn(it,_tnWhichPool(items,st.kid),t.mode,_tnRandom()<0.5,true)); }
+  }
+  st.lock=true; const at=st.i;
+  _mastRe();
+  setTimeout(()=>{ if(tnState===st&&st.lock&&st.i===at) tnNext(st); },r==="right"?TN_BEAT:TN_BEAT_WRONG);   // GAMEKID: never advances a parked / settled turn
+}
+// PURE over the state: step to the next statement; finishes the round at the end
+function _tnStep(st){
+  st.lock=false; st.fly=null; st.shake=false; st.i++;
+  if(st.i>=st.turns.length) tnFinish(st);
+}
+function tnNext(st){
+  st=st||tnState; if(!st||st!==tnState) return;
+  _tnStep(st); _mastRe();
+  if(st.phase==="play") _tnSay(st);
+}
+// GAMEKID → 🎲 GAMEKIT resume: a beat that was mid-way when the kid switched settles here (no render; the caller renders)
+function tnResume(){
+  const st=tnState; if(!st||st.phase!=="play") return;
+  if(st.lock) _tnStep(st);
+  if(st.phase==="play") _tnSay(st);
+}
+function tnBestKey(deck){ return deck+" \u{00B7} truenot"; }
+function tnFinish(st){
+  st.phase="done"; st.lock=false; st.fly=null; st.shake=false;
+  const kid=st.kid||masteryKid;   // GAMEKID
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every statement's first-swipe result, game:"truenot"
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=tnBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.first>0&&(prev==null||st.first>prev);
+  if(st.isPB){
+    s.match_best[key]=st.first;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+  try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{2705} You called them all!",{noSong:true}); }catch(e){}
+}
+// Drag the card with a finger or the mouse: past TN_SWIPE px right = True, left = Not true; a move under 8px is a tap (hear it again)
+function tnDown(ev){
+  const st=tnState; if(!st||st.phase!=="play"||st.lock||!ev||ev.button>0) return;
+  const el=ev.currentTarget; if(!el) return;
+  const x0=ev.clientX, pid=ev.pointerId; let moved=false, dx=0;
+  try{ el.setPointerCapture(pid); }catch(e){}
+  const move=e=>{ dx=e.clientX-x0; if(!moved&&Math.abs(dx)<8) return; moved=true; el.style.transition="none"; el.style.transform="translateX("+dx+"px) rotate("+(dx/18)+"deg)"; };
+  const up=e=>{
+    el.removeEventListener("pointermove",move); el.removeEventListener("pointerup",up); el.removeEventListener("pointercancel",up);
+    try{ el.releasePointerCapture(pid); }catch(x){}
+    el.style.transition=""; el.style.transform="";
+    if(!moved){ tnSayAgain(); return; }
+    if(e.type==="pointercancel"||Math.abs(dx)<TN_SWIPE) return;
+    tnSwipe(dx>0);
+  };
+  el.addEventListener("pointermove",move); el.addEventListener("pointerup",up); el.addEventListener("pointercancel",up);
+}
+const TN_CSS='<style>.tn-card{position:relative;max-width:360px;margin:0 auto;min-height:220px;padding:18px 16px;border-radius:24px;border:3px solid #e2ddd6;background:#fff;box-shadow:0 8px 24px rgba(0,0,0,.08);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;cursor:grab;user-select:none;-webkit-user-select:none;touch-action:pan-y;-webkit-tap-highlight-color:transparent;transition:transform .45s ease-in,opacity .4s}'+
+  '.tn-card .memoji,.tn-card img,.tn-card svg{pointer-events:none}.tn-card.tn-fly-right{transform:translateX(120vw) rotate(18deg);opacity:0}.tn-card.tn-fly-left{transform:translateX(-120vw) rotate(-18deg);opacity:0}'+
+  '.tn-card.tn-shake{animation:tnShake .5s;border-color:#f59e0b;background:#fffbeb}@keyframes tnShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-10px)}40%{transform:translateX(9px)}60%{transform:translateX(-6px)}80%{transform:translateX(4px)}}'+
+  '.tn-front{font-family:\'Fraunces\',serif;font-weight:800;color:#292524;text-align:center;line-height:1.1;overflow-wrap:anywhere;pointer-events:none}.tn-vis{pointer-events:none;transform:scale(1.5);margin:14px 0}'+
+  '.tn-claim{pointer-events:none;padding:10px 18px;border-radius:14px;background:#f5f3ff;border:2px solid #ddd6fe;font-family:\'Fraunces\',serif;font-weight:800;color:#4c1d95;text-align:center;line-height:1.1;overflow-wrap:anywhere}'+
+  '.tn-btn{flex:1;max-width:170px;padding:16px 10px;border-radius:18px;border:3px solid;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;-webkit-tap-highlight-color:transparent}.tn-btn[disabled]{opacity:.45;cursor:default}'+
+  '.tn-no{border-color:#fca5a5;background:#fef2f2;color:#b91c1c}.tn-yes{border-color:#86efac;background:#f0fdf4;color:#15803d}</style>';
+function buildTnHtml(color){
+  const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+  let h=TN_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const items=_tnItems(), decks=tnDecks(items);
+  if(!decks.length){ h+='<div class="mast-none">No decks ready for True / Not true yet \u{2014} it plays cards that have reached the gate level (the Sprint rule), '+TN_MIN+' or more in a deck.</div></div>'; return h; }
+  const st=tnState;
+  const chip=(dk,lbl)=>{ const sel=st&&st.deck===dk; return '<button onclick="tnStart(\''+q(dk)+'\')" style="padding:10px 16px;border-radius:999px;font-size:14px;font-weight:800;border:2px solid '+(sel?color:'#e2ddd6')+';background:'+(sel?color:'#fff')+';color:'+(sel?'#fff':'#57534e')+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
+  if(!st||st.phase==="done"){
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px">';
+    decks.forEach(dk=>{ h+=chip(dk,esc(dk)); });
+    if(decks.length>1) h+=chip(WHICH_MIX,"\u{1F3B2} "+WHICH_MIX);
+    h+='</div>';
+  }
+  if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u{2705} Pick a deck. A card and a claim come up \u{2014} swipe right if it\u2019s true, left if it\u2019s not!</div></div>'; return h; }
+  const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[tnBestKey(st.deck)];
+  if(st.phase==="play"){
+    const t=st.turns[st.i], it=t?items.find(x=>x&&x.id===t.pid):null, c=t?items.find(x=>x&&x.id===t.cpid):null, ans=!!(t&&t.mode==="answer"), mute=ans&&whichSilent(it);
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
+    st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
+    h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
+      '<button onclick="tnChangeDeck()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{1F5C2} Change deck</button></span></div>';
+    h+='<div style="text-align:center;font-size:17px;font-weight:800;color:'+(st.shake?'#b45309':'#57534e')+';margin:10px 0 12px">'+(st.shake?'Not that one.':st.lock?(t.truth?'\u{2705} True!':'\u{274C} Not true!'):(ans?'Do these go together?':'Is this what you hear?'))+'</div>';
+    // the card: the front (a picture, a letter, or the written front) and, for an answer deck, the written claim
+    h+='<div class="tn-card'+(st.fly==='right'?' tn-fly-right':st.fly==='left'?' tn-fly-left':'')+(st.shake?' tn-shake':'')+'" role="group" aria-label="Statement '+(st.i+1)+'" onpointerdown="tnDown(event)">';
+    if(ans){ const fr=_matchPlain(it&&it.prompt), cl=_tnClaimText(c,"answer");
+      h+='<div class="tn-front" style="font-size:'+(fr.length<=8?'46px':fr.length<=18?'32px':'22px')+'">'+esc(fr)+'</div>';
+      h+='<div style="font-size:12px;font-weight:800;color:#a8a29e;text-transform:uppercase;letter-spacing:.08em;pointer-events:none">is</div>';
+      h+='<div class="tn-claim" style="font-size:'+(cl.length<=6?'40px':cl.length<=14?'28px':'20px')+'">'+esc(cl)+'</div>';
+    } else h+='<span class="tn-vis">'+(_smTileVis(it)||'')+'</span>';   // the claim is SAID, never written
+    h+='</div>';
+    h+='<div style="display:flex;justify-content:center;margin:14px 0 6px">'+(mute?'':'<button onclick="tnSayAgain()" aria-label="Hear it again" style="width:64px;height:64px;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:30px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button>')+'</div>';
+    h+='<div style="display:flex;gap:12px;justify-content:center;margin-top:6px"><button class="tn-btn tn-no" onclick="tnSwipe(false)"'+(st.lock?' disabled':'')+'>\u{2B05} \u{274C} Not true</button><button class="tn-btn tn-yes" onclick="tnSwipe(true)"'+(st.lock?' disabled':'')+'>\u{2705} True \u{27A1}</button></div>';
+    return h+'</div>';
+  }
+  // Finish: first-swipe count against the kid's own best, Play again / Mix the decks
+  h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} All called!</div>';
+  h+='<div style="font-size:17px;font-weight:800;color:#57534e;margin-top:10px">\u{2705} '+st.first+' of '+st.of+' on the first swipe'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+  h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">';
+  h+='<button onclick="tnStart(\''+q(st.deck)+'\')" style="padding:12px 24px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F501} Play again</button>';
+  if(decks.length>1&&!st.mix) h+='<button onclick="tnStart(\''+q(WHICH_MIX)+'\')" style="padding:12px 24px;border-radius:999px;border:2px solid '+color+';background:#fff;color:'+color+';font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F3B2} '+WHICH_MIX+'</button>';
+  return h+'</div></div></div>';
+}
+// TRUENOT_END
 // STUDYCOUNTS_START — 📚 Study sessions count everywhere (F3 of PLAN_learning_system, her yes 2026-10-24). A study
 // sitting logs to mastery/studyLog/<kid>/<sid>/<yyyymmdd>, but Scores, the Weekly report, sprint readiness (the ≥ 90%
 // untimed check) and the notebook's 🔁 review flags read only the drill's mastery/history/<kid>/<yyyymmdd>, so Lincoln —
@@ -83719,6 +83918,8 @@ const GAMES_LIST=[
      park:()=>moleState, restore:v=>{ moleState=v||null; }, resume:()=>moleResume(), decks:k=>typeof moleDecks==="function"?moleDecks(_gamesItems(k),k):[]},   // 🐹 MOLE · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
   {key:"jeop",   emoji:"\u{1F4FA}", label:"Jeopardy",    view:"jeop",                 available:k=>typeof jeopDecks==="function"&&jeopDecks(_gamesItems(k),k).length>0, render:c=>buildJeopHtml(c),
      park:()=>jeopState, restore:v=>{ jeopState=v||null; }, resume:()=>jeopResume(), decks:k=>typeof jeopDecks==="function"?jeopDecks(_gamesItems(k),k):[]},   // 📺 JEOPARDY · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
+  {key:"truenot",emoji:"\u{2705}",     label:"True / Not true", view:"truenot",          available:k=>typeof tnDecks==="function"&&tnDecks(_gamesItems(k),k).length>0, render:c=>buildTnHtml(c),
+     park:()=>tnState, restore:v=>{ tnState=v||null; }, resume:()=>tnResume(), decks:k=>typeof tnDecks==="function"?tnDecks(_gamesItems(k),k):[]},   // ✅ TRUENOT · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
 ];
 const gamesLast={};   // kid → key of the last game played on this device
 function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k)&&(typeof gameDeckAny!=="function"||gameDeckAny(k,g)); }catch(e){ return false; } }); }   // 🎮 GAMEGRID: every deck off → the game isn't offered
