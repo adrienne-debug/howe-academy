@@ -47932,15 +47932,15 @@ function unitSprintRounds(u,kid){
   return out;
 }
 // ── U8: sprint-unlock ESTIMATES, locked to the ladder. Mirrors the real climb mechanics —
-// intro dots (one per drill day), then the kid's own TIER_LADDER climbed on tier_streaks/
-// ladder_streak consecutive corrects, with each tier's reviews arriving every MAST_TIER_INT
+// intro dots (one per drill day), then the kid's own TIER_LADDER climbed at
+// one right answer per level (LADDER1), with each tier's reviews arriving every MAST_TIER_INT
 // calendar days; bank cards first wait for an intro slot (cat_intro_max cohorts). Assumes
 // drills stay on pace with no misses, so it's an EARLIEST-around figure ("~2 wk"), display
 // only — the unlock itself always comes from the actual gate, never the estimate.
 function _unitKidLadderCfg(kid){
-  const s=masteryData[kid+"_settings"]||{};
+  const s=masteryData[kid+"_settings"]||{}, one=!(typeof envClsOn==="function"&&envClsOn());   // ⚙ LADDER1: one right climbs one level (the class site keeps its own)
   return {ladder:s.ladder||["every_other_day","weekly","bi_weekly","monthly","graduated"],
-    streaks:s.tier_streaks||{},streak:s.ladder_streak??3,gate:s.gate_tier||"weekly",
+    streaks:one?{}:(s.tier_streaks||{}),streak:one?1:(s.ladder_streak??3),gate:s.gate_tier||"weekly",
     introDots:s.intro_dots??5,catIntroDots:s.cat_intro_dots||{},catIntroMax:s.cat_intro_max||{}};
 }
 // Calendar days for an ON-LADDER item (tier,cc) to reach the gate tier. 0 = already there.
@@ -69134,7 +69134,16 @@ const MAST_LUCY_BANK={
 const MAST_FLASH_KIDS=new Set(["julian","lucy","ellis"]);
 function mastDrillSettings(){
   const kid=masteryKid||"julian";
-  const s=(typeof envClassOverlay==="function")?envClassOverlay("drill",kid,masteryData[kid+"_settings"]||{}):(masteryData[kid+"_settings"]||{});   // ⚙️ ENVCLASSSET: the class's drill settings, in memory (site edition only)
+  // LADDER1_START — her rule 2026-11-03: "everything is at one, and then that setting is taken out." One right answer
+  // climbs one level. "Right in a row" made cards crawl (DeWalt Oct 5–Nov 2: ~70% of right answers didn't climb, ~7½ days
+  // per level off every-other-day), and the next answer after a held-back right was right 96% of the time. A miss still
+  // sends a card back down (miss_drop), so a lucky guess costs one review. A stored ladder_streak / tier_streaks (old 3s)
+  // is ignored here, so no data change is needed. The class site (site edition) keeps its own "Right in a row" as it was,
+  // and a class's own value still lays over the top (envClassOverlay).
+  const _raw=masteryData[kid+"_settings"]||{};
+  const _own=(typeof envClsOn==="function"&&envClsOn())?_raw:Object.assign({},_raw,{ladder_streak:1,tier_streaks:{}});
+  // LADDER1_END
+  const s=(typeof envClassOverlay==="function")?envClassOverlay("drill",kid,_own):_own;   // ⚙️ ENVCLASSSET: the class's drill settings, in memory (site edition only)
   const defaultLadder=["every_other_day","weekly","bi_weekly","monthly","graduated"];
   return {intro_dots:s.intro_dots??5,ladder_streak:s.ladder_streak??3,max_per_cat:s.max_per_cat??5,max_intro_per_cat:s.max_intro_per_cat??3,max_learn_per_drill:s.max_learn_per_drill??0,max_overdue_per_drill:s.max_overdue_per_drill??0,auto_pull:s.auto_pull!==false,ladder:s.ladder||defaultLadder,cat_caps:s.cat_caps||{},cat_intro_dots:s.cat_intro_dots||{},cat_intro_max:s.cat_intro_max||{},miss_drop:s.miss_drop||"reset",close_behavior:s.close_behavior||"stay",drop_threshold:s.drop_threshold??0,tier_streaks:s.tier_streaks||{},gate_tier:s.gate_tier||"weekly",sprint_default:s.sprint_default===true,cat_sprint:s.cat_sprint||{},dynamic_decks:s.dynamic_decks===true,dynamic_cap:s.dynamic_cap??24,show_me:s.show_me!==false,match_speak:s.match_speak===true};
 }
@@ -72569,17 +72578,6 @@ function mastAdminCatIntroMax(cat,delta){
   else {
     const cur=mastAdminLocal.cat_intro_max[cat]??(mastAdminLocal.max_intro_per_cat||3);
     mastAdminLocal.cat_intro_max[cat]=Math.max(1,cur+delta);
-  }
-  mastAdminDirty=true;
-  _mastRe();
-}
-function mastAdminTierStreak(tier,delta){
-  if(!mastAdminLocal) mastAdminInit();
-  if(!mastAdminLocal.tier_streaks) mastAdminLocal.tier_streaks={};
-  if(delta===0){ delete mastAdminLocal.tier_streaks[tier]; }
-  else {
-    const cur=mastAdminLocal.tier_streaks[tier]??(mastAdminLocal.ladder_streak||3);
-    mastAdminLocal.tier_streaks[tier]=Math.max(1,Math.min(10,cur+delta));
   }
   mastAdminDirty=true;
   _mastRe();
@@ -81069,7 +81067,6 @@ function mastAdminRulesHtml(){
 
   const rules=[
     {key:"intro_dots",label:"Introduction Dots",desc:"How many times shown before entering the ladder",min:1,max:10},
-    {key:"ladder_streak",label:"Ladder Streak",desc:"Default consecutive correct to advance (per-tier overrides below)",min:1,max:10},
     {key:"max_per_cat",label:"Max Items / Category / Day",desc:"Cap on items per category in the daily drill (learning cards only — reviews always ride)",min:1,max:20},
     {key:"max_intro_per_cat",label:"Max New / Category",desc:"Max introduction items allowed per category at once",min:1,max:10},
     {key:"max_learn_per_drill",label:"Max Learning Cards / Drill",desc:"Daily cap on \u{2B50} learning cards across ALL categories — booked reviews are never cut; skipped cards come the next day (0 = no cap)",min:0,max:40},
@@ -81227,24 +81224,12 @@ function mastAdminRulesHtml(){
     const active=ladder.includes(t);
     const col=MAST_TIER_COL[t]||"#666";
     const isGrad=t==="graduated";
-    const tierSk=s.tier_streaks&&s.tier_streaks[t];
-    const hasTierStreak=tierSk!==undefined&&tierSk!==null;
-    const skVal=hasTierStreak?tierSk:(s.ladder_streak||3);
     h+='<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f3f1ee">';
     h+='<button class="mast-admin-toggle'+(active?" on":"")+'"'+(isGrad?' disabled title="Graduated is always the final tier"':' onclick="mastAdminToggleTier(\''+t+'\')"')+' style="width:36px;height:20px;flex-shrink:0'+(isGrad?';opacity:0.5':'')+'">';
     h+='</button>';
     h+='<span style="width:10px;height:10px;border-radius:50%;background:'+col+';flex-shrink:0"></span>';
     h+='<span style="flex:1;font-size:12px;font-weight:600">'+(MAST_TIER_LBL[t]||t)+'</span>';
     h+='<span style="font-size:10px;color:var(--muted)">'+tierInt[t]+'</span>';
-    if(!isGrad&&active){
-      h+='<span style="font-size:9px;color:var(--muted);margin-left:auto">streak</span>';
-      h+='<div style="display:flex;align-items:center;gap:2px;margin-left:2px">';
-      h+='<button onclick="mastAdminTierStreak(\''+t+'\',-1)" style="width:18px;height:18px;border-radius:4px;border:1px solid var(--border);background:#fff;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center"'+(skVal<=1?' disabled':'')+'>−</button>';
-      h+='<span style="font-size:11px;font-weight:700;min-width:16px;text-align:center;'+(hasTierStreak?'color:#c2410c':'color:var(--muted)')+'">'+skVal+'</span>';
-      h+='<button onclick="mastAdminTierStreak(\''+t+'\',1)" style="width:18px;height:18px;border-radius:4px;border:1px solid var(--border);background:#fff;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center"'+(skVal>=10?' disabled':'')+'>+</button>';
-      if(hasTierStreak) h+='<button onclick="mastAdminTierStreak(\''+t+'\',0)" style="width:16px;height:16px;border-radius:50%;border:1px solid #fca5a5;background:#fef2f2;color:#dc2626;font-size:9px;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-left:2px">\u{2715}</button>';
-      h+='</div>';
-    }
     h+='</div>';
   });
   h+='</div>';
@@ -82983,15 +82968,7 @@ function _renderMasteryInner(el){
           h+='<input value="'+_cdEsc(it.answer&&it.answer!==it.prompt?it.answer:"")+'" placeholder="answer / rule (blank = uses the definitions list)" onclick="event.stopPropagation()" onchange="event.stopPropagation();mastListEditText(\''+it.id+'\',\'answer\',this.value)" style="flex:1;font-size:12px;padding:6px 8px;border-radius:8px;border:1.5px solid #d1d5db;font-family:\'DM Sans\',sans-serif"></div>';
           if(mastGetCatMode(masteryKid,it.subject)==="flip") h+=mastListRecUI(it);
         }
-        h+='<div style="font-size:10px;font-weight:700;color:#4338ca;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Streak ('+((it.consecutive_correct||0))+'/3)</div>';
-        h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">';
-        h+='<button onclick="event.stopPropagation();var v=Math.max(0,('+((it.consecutive_correct||0))+')-1);mastListEditItem(\''+it.id+'\',\'consecutive_correct\',v);_mastRe()" style="width:32px;height:32px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;font-size:16px;cursor:pointer;font-weight:700">\u{2212}</button>';
-        h+='<div style="display:flex;gap:4px">';
-        for(let d=0;d<3;d++) h+='<div style="width:16px;height:16px;border-radius:50%;border:2px solid '+(d<(it.consecutive_correct||0)?'#16a34a':'#d1d5db')+';background:'+(d<(it.consecutive_correct||0)?'#16a34a':'#fff')+'"></div>';
-        h+='</div>';
-        h+='<button onclick="event.stopPropagation();var v=Math.min(3,('+((it.consecutive_correct||0))+')+1);mastListEditItem(\''+it.id+'\',\'consecutive_correct\',v);_mastRe()" style="width:32px;height:32px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;font-size:16px;cursor:pointer;font-weight:700">+</button>';
-        if(it.drop_count) h+='<span style="font-size:10px;color:#dc2626;font-weight:600">\u{2B07}'+it.drop_count+' drops</span>';
-        h+='</div>';
+        if(it.drop_count) h+='<div style="font-size:10px;color:#dc2626;font-weight:600;margin-bottom:10px">\u{2B07}'+it.drop_count+' drops</div>';   // ⚙ LADDER1: no streak to set — one right climbs
         // R7: per-item knowledge type. "" = Auto (derived from type). concept/transfer = never-drill.
         const _autoKt=mastKnowledgeType({type:it.type});
         const _curKt=it.knowledge_type||"";
@@ -83554,7 +83531,7 @@ function mastPrintCards(){
   page+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
   page+='<div><div style="font-size:1.1rem;font-weight:700;color:'+kc+'">\u{1F995} Julian</div>';
   const _jps=mastDrillSettings();
-  page+='<div style="font-size:0.6rem;color:#6b7280">Pre-K \u{00B7} Left = introduction \u{00B7} fill '+_jps.intro_dots+' dots \u{2192} \u{2B50} enters ladder \u{00B7} Right = ladder \u{00B7} '+_jps.ladder_streak+' in a row \u{2192} moves up</div></div>';
+  page+='<div style="font-size:0.6rem;color:#6b7280">Pre-K \u{00B7} Left = introduction \u{00B7} fill '+_jps.intro_dots+' dots \u{2192} \u{2B50} enters ladder \u{00B7} Right = ladder \u{00B7} right \u{2192} moves up</div></div>';
   page+='<div style="font-family:monospace;font-size:8.5px;color:#9ca3af;text-align:right;line-height:1.7">'+wkLabel+'<br>'+dayN+', '+dateStr+'</div></div>';
 
   page+='<div style="display:flex;gap:14px;flex:1;min-width:0;width:100%">';
@@ -83576,7 +83553,7 @@ function mastPrintCards(){
 
   page+='<div style="margin-top:6px;display:flex;align-items:center;justify-content:space-between;font-size:8px;color:#6b7280">';
   page+='<span>\u{1F995} Drill streak <span style="display:inline-block;border-bottom:1.5px solid '+kc+';width:26px;height:13px"></span> days</span>';
-  page+='<span>5 intro dots \u{2192} enters ladder \u{00B7} 3 correct in a row \u{2192} moves up \u{00B7} miss \u{2192} drops one tier</span></div>';
+  page+='<span>5 intro dots \u{2192} enters ladder \u{00B7} right \u{2192} moves up \u{00B7} miss \u{2192} drops one tier</span></div>';
   page+='</div>';
 
   let container=document.getElementById("mast-print-container");
