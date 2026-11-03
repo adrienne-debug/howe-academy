@@ -70069,7 +70069,7 @@ function mastMatchDecks(){
     if(!_matchEligible(i)) return;
     (by[i.subject||"Other"]=by[i.subject||"Other"]||[]).push(i);
   });
-  return Object.keys(by).filter(k=>by[k].length>=4).sort();
+  return Object.keys(by).filter(k=>by[k].length>=4&&((typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(masteryKid,(typeof matchStyle!=="undefined"&&matchStyle==="memory")?"memory":"match",k))).sort();   // 🎮 GAMEGRID: Mom's per-deck pick
 }
 function mastMatchStart(deck){
   let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
@@ -70384,6 +70384,7 @@ function whichDeckModes(items,kid){
   });
   const out={}, n=o=>Object.keys(o).length;
   Object.keys(by).forEach(d=>{ const g=by[d];
+    if(!(typeof _gdRaw!=="undefined"&&_gdRaw)&&typeof gameDeckOn==="function"&&!gameDeckOn(kid,"which",d)) return;   // 🎮 GAMEGRID: Mom's per-deck pick (the Games tab, Mix the decks and the practice round all go through here)
     if(n(g.sym)>=3) out[d]="symbol";
     else if(n(g.pic)>=3) out[d]="picture";
     else if(n(g.ans)>=3&&n(g.backs)>=3) out[d]="answer";
@@ -70675,7 +70676,7 @@ function mpKey(kid,it){ const v=_mpMD()[kid]; if(Array.isArray(v)){ const ix=v.i
 function mpHeld(kid,it){ return !!(it&&it.gp&&it.gp.on===true&&mpOn(kid)); }
 function mpDayNum(kid){ try{ if(typeof mastSchoolDayNum==="function") return mastSchoolDayNum(kid); }catch(e){} return Math.floor(Date.now()/86400000); }   // right days = the kid's school days
 function mpDayKey(){ try{ if(typeof gameLogDay==="function") return gameLogDay(); }catch(e){} return new Date().toISOString().slice(0,10).replace(/-/g,""); }
-function _mpPool(kid,items){ try{ const w=whichPool(items,WHICH_MIX,kid); return (typeof spellPlayable==="function")?w.concat((items||[]).filter(i=>spellPlayable(i)&&w.indexOf(i)<0)):w; }catch(e){ return []; } }   // 🔤 SPELLBUILD: spelling cards play Build it
+function _mpPool(kid,items){ try{ const w=whichPool(items,WHICH_MIX,kid); return (typeof spellPlayable==="function")?w.concat((items||[]).filter(i=>spellPlayable(i)&&w.indexOf(i)<0&&(typeof gameDeckOn!=="function"||gameDeckOn(kid,"spell",i.subject)))):w; }catch(e){ return []; } }   // 🎮 GAMEGRID: a spelling deck Mom turned off for Build it stays out of the round   // 🔤 SPELLBUILD: spelling cards play Build it
 function _mpModes(kid,items){ try{ return whichDeckModes(items,kid); }catch(e){ return {}; } }
 // how often a card was missed or close in its recent drills (who practices first)
 function mpMissCount(kid,id,days){
@@ -77644,8 +77645,9 @@ function spellPlayable(it){
   return w.length>=2&&w.length<=SPELL_WORD_MAX&&/^[A-Za-z][A-Za-z'’\-]*$/.test(w);
 }
 // The kid's LEARNING words: still being introduced, or in the Word Workout. Most-recently-missed first.
-function spellPool(items){
-  const out=(items||[]).filter(i=>spellPlayable(i)&&(i.status==="introduction"||(i.ww&&i.ww.on)));
+function spellPool(items,kid){
+  kid=kid||masteryKid;
+  const out=(items||[]).filter(i=>spellPlayable(i)&&(i.status==="introduction"||(i.ww&&i.ww.on))&&((typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"spell",i.subject)));   // 🎮 GAMEGRID: Mom's per-deck pick
   return out.sort((a,b)=>String((b.ww||{}).d||"").localeCompare(String((a.ww||{}).d||""))||String(spellWordOf(a)).localeCompare(String(spellWordOf(b))));
 }
 function _spellShuffle(a,rnd){ rnd=rnd||Math.random; for(let i=a.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
@@ -79490,7 +79492,7 @@ function renderMasteryHQ(el,ah){
   const rows=mhqDeckStats(mhqKid,pn);
 
   if(mhqDeck) h+=_mhqRenderDeckPage(mhqKid,mhqDeck,rows);
-  else if(mhqView==="sessions"||mhqView==="panel"||mhqView==="import"||mhqView==="rules") h+=((typeof _mhqExtraView==="function")?_mhqExtraView(mhqKid,rows,pn):'');
+  else if(mhqView==="sessions"||mhqView==="panel"||mhqView==="import"||mhqView==="rules"||mhqView==="games") h+=((typeof _mhqExtraView==="function")?_mhqExtraView(mhqKid,rows,pn):'');   // 🎮 GAMEGRID
   else if(mhqView==="decks") h+=_mhqRenderDecksList(mhqKid,rows);
   else h+=_mhqRenderWeekView(mhqKid,rows,pn);
 
@@ -80273,12 +80275,14 @@ function _mhqExtraView(kid, rows, pn) {
   if (mhqView === "panel") return _mhqRenderPanel(kid);
   if (mhqView === "import") return (typeof _mhqRenderImport === "function") ? _mhqRenderImport(kid) : "";
   if (mhqView === "rules") return _mhqRenderRules(kid);
+  if (mhqView === "games") return (typeof gameDecksHtml === "function") ? gameDecksHtml(kid) : "";   // 🎮 GAMEGRID
   return "";
 }
 function _mhqExtraPills() {
   return _mhqPill("Sessions", mhqView === "sessions", "mhqSetView('sessions')") +
          _mhqPill("Control panel", mhqView === "panel", "mhqSetView('panel')") +
          _mhqPill("\u2699 Rules", mhqView === "rules", "mhqSetView('rules')") +
+         _mhqPill("\u{1F3AE} Games", mhqView === "games", "mhqSetView('games')") +   // 🎮 GAMEGRID
          ((typeof _mhqImportPill === "function") ? _mhqImportPill() : "");
 }
 // ⚙ Rules — the kid-level drill rules, ladder and behaviour, rendered from the SAME section
@@ -81741,8 +81745,8 @@ function _gamesItems(k){ let it=(masteryData||{})[k]||[]; if(!Array.isArray(it))
 // Pair modes ("two" word↔meaning, "same" identical cards) that give this kid at least one Match deck.
 function _gamesMatchPairs(k){
   const kk=masteryKid, keep=matchPairMode, out=[];
-  try{ masteryKid=k; ["two","same"].forEach(p=>{ matchPairMode=p; if(mastMatchDecks().length) out.push(p); }); }
-  finally{ masteryKid=kk; matchPairMode=keep; }
+  try{ if(typeof _gdRaw!=="undefined") _gdRaw=true; masteryKid=k; ["two","same"].forEach(p=>{ matchPairMode=p; if(mastMatchDecks().length) out.push(p); }); }   // 🎮 GAMEGRID: the raw list — "has decks at all"; gameDeckAny decides per game
+  finally{ masteryKid=kk; matchPairMode=keep; if(typeof _gdRaw!=="undefined") _gdRaw=false; }
   return out;
 }
 const GAMES_LIST=[
@@ -81754,7 +81758,7 @@ const GAMES_LIST=[
      park:()=>spellState, restore:v=>{ spellState=v||null; }, resume:()=>spellResume()},   // 🔤 SPELLBUILD · 🎲 GAMEKIT: its own park / restore / resume
 ];
 const gamesLast={};   // kid → key of the last game played on this device
-function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k); }catch(e){ return false; } }); }
+function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k)&&(typeof gameDeckAny!=="function"||gameDeckAny(k,g)); }catch(e){ return false; } }); }   // 🎮 GAMEGRID: every deck off → the game isn't offered
 // The game on screen: a GAMES_LIST key, "" for the bare Games section, null when Mastery isn't in Games.
 function gamesCurrentKey(){
   if(mastView==="which") return "which";
@@ -81799,6 +81803,91 @@ function gamesBodyHtml(color){
   return '<div class="mast-none">No games ready yet \u{2014} games need a deck with pictures or meanings.</div>';
 }
 // GAMESTAB_END
+// GAMEGRID_START — 🎮 games per deck (her words 2026-11-02: "a spot in the Settings … for Mastery for games where it lists all the
+// decks per kid, where you could quickly pick which games would be applicable for that particular deck. And you could go ahead and
+// preload those to what you think is the proper one"). A grid per kid in Mastery HQ (Mom's Day ▸ School ▸ Mastery ▸ Settings ▸ 🎮 Games):
+// rows = the kid's decks, columns = every game in GAMES_LIST; a cell is ON when that game plays that deck, "–" when the game can't
+// play it (its own rule: no pictures, spelling, too few cards). PRELOADED from each game's own rule, so day one looks exactly like today.
+//   · STORAGE — only Mom's changes: mastery/<kid>_settings/gameDecks/<deck key>/<game key> = false (off) | true (back on), ONE targeted
+//     set per tap; nothing stored = the game's own default. Deck key = the deck name with Firebase's illegal characters (. # $ / [ ])
+//     swapped for _. "Reset" removes the kid's gameDecks node (overrides only, never the cards).
+//   · HOW A GAME READS IT — gameDeckOn(kid, game key, deck) (default true): Match / Memory flip's deck list (mastMatchDecks), Which one?'s
+//     deck modes (whichDeckModes → its pool, Mix the decks AND the practice round), Build it's words (spellPool, _mpPool); a new game's
+//     entry may carry decks:(k)=>[deck names] (its own rule) — then gamesFor hides it once every deck is off, and the game itself
+//     filters its deck list with gameDeckOn. An entry without decks() is tolerated (its cells show "–").
+//   · Mom only (momHere or the admin PIN); no kid names; nothing stored = today byte for byte.
+let _gdRaw=false;   // true while the grid asks a game for its OWN deck list (the preload), so the filters stand aside
+function gdKey(deck){ return String(deck==null?"":deck).replace(/[.#$\/\[\]]/g,"_"); }
+function _gdMD(){ return (typeof masteryData!=="undefined"&&masteryData)||{}; }
+function _gdCanEdit(){ return (typeof momHere==="function"&&momHere())||(typeof mastAdminPinOk!=="undefined"&&!!mastAdminPinOk); }
+function gameDeckOn(kid,game,deck){
+  try{ const s=_gdMD()[kid+"_settings"], G=s&&s.gameDecks, g=G&&G[gdKey(deck)]; if(!g||g[game]==null) return true; return g[game]!==false; }catch(e){ return true; }
+}
+function gameDeckSet(kid,game,deck,on){
+  if(!kid||!game||deck==null||!_gdCanEdit()) return false;
+  const md=_gdMD(), s=md[kid+"_settings"]||(md[kid+"_settings"]={}), G=(s.gameDecks&&typeof s.gameDecks==="object")?s.gameDecks:(s.gameDecks={}), k=gdKey(deck), g=(G[k]&&typeof G[k]==="object")?G[k]:(G[k]={});
+  g[game]=!!on;
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){ try{ db.ref("mastery/"+kid+"_settings/gameDecks/"+k+"/"+game).set(!!on); }catch(e){} }   // this cell only
+  try{ HA_LS.setItem("ha_mastery",JSON.stringify(md)); }catch(e){}
+  try{ if(typeof renderAll==="function") renderAll(); }catch(e){}
+  return true;
+}
+function gameDeckReset(kid){
+  if(!kid||!_gdCanEdit()) return false;
+  const md=_gdMD(), s=md[kid+"_settings"]; if(s) delete s.gameDecks;
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){ try{ db.ref("mastery/"+kid+"_settings/gameDecks").remove(); }catch(e){} }   // the overrides node only
+  try{ HA_LS.setItem("ha_mastery",JSON.stringify(md)); }catch(e){}
+  try{ if(typeof renderAll==="function") renderAll(); }catch(e){}
+  return true;
+}
+// Each game's OWN deck list for a kid (the preload). Built-in games here; a new game gives decks(k) on its entry.
+function _gdMatchDecks(k){
+  const kk=masteryKid, keep=(typeof matchPairMode!=="undefined")?matchPairMode:null, out={};
+  try{ masteryKid=k; ["two","same"].forEach(p=>{ try{ matchPairMode=p; (mastMatchDecks()||[]).forEach(d=>{ out[d]=1; }); }catch(e){} }); }
+  finally{ masteryKid=kk; if(keep!==null) matchPairMode=keep; }
+  return Object.keys(out).sort();
+}
+const GD_BUILTIN={
+  match:k=>_gdMatchDecks(k), memory:k=>_gdMatchDecks(k),
+  which:k=>(typeof whichDecks==="function")?whichDecks(_gamesItems(k),k):[],
+  spell:k=>{ const o={}; if(typeof spellPool==="function") spellPool(_gamesItems(k),k).forEach(i=>{ o[i.subject||"Other"]=1; }); return Object.keys(o).sort(); }
+};
+function gameDeckCan(k,g){
+  if(!g) return [];
+  const fn=(typeof g.decks==="function")?g.decks:GD_BUILTIN[g.key];
+  if(typeof fn!=="function") return [];
+  _gdRaw=true; try{ const d=fn(k); return Array.isArray(d)?d.map(String):[]; }catch(e){ return []; } finally{ _gdRaw=false; }
+}
+// gamesFor's check: a game whose every deck Mom turned off is not offered (an entry without decks() is left alone)
+function gameDeckAny(k,g){ try{ const d=gameDeckCan(k,g); if(!d.length) return true; return d.some(x=>gameDeckOn(k,g.key,x)); }catch(e){ return true; } }
+// the kid's decks (every subject their cards in play belong to)
+function _gdDecks(k){ const o={}; _gamesItems(k).forEach(i=>{ if(i&&(i.status==="active"||i.status==="introduction")&&i.dir!=="prod") o[i.subject||"Other"]=1; }); return Object.keys(o).sort(); }
+function gameDecksHtml(kid){
+  const E=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  const J=s=>String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+  const nm=(typeof cap==="function")?cap(kid):kid, edit=_gdCanEdit(), decks=_gdDecks(kid), games=(typeof GAMES_LIST!=="undefined")?GAMES_LIST:[];
+  const can={}; games.forEach(g=>{ const set={}; gameDeckCan(kid,g).forEach(d=>{ set[d]=1; }); can[g.key]=set; });
+  let h='<div class="gd-grid" style="font-family:\'DM Sans\',sans-serif">';
+  h+='<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Which games play which of '+E(nm)+'\u2019s decks. Preloaded from each game\u2019s own rule \u2014 tap a cell to turn a game off (or back on) for that deck. \u2013 = that game can\u2019t play the deck. Saves right away.'+(edit?'':' (Mom only to change.)')+'</div>';
+  if(!decks.length) return h+'<div class="mast-none">No decks yet.</div></div>';
+  h+='<div style="overflow-x:auto"><table style="border-collapse:collapse;min-width:420px;font-size:13px"><thead><tr><th style="text-align:left;padding:6px 8px;border-bottom:2px solid #e2ddd6">Deck</th>';
+  games.forEach(g=>{ h+='<th style="padding:6px 6px;border-bottom:2px solid #e2ddd6;white-space:nowrap;font-weight:800">'+g.emoji+' '+E(g.label)+'</th>'; });
+  h+='</tr></thead><tbody>';
+  decks.forEach(d=>{
+    h+='<tr><td style="padding:6px 8px;border-bottom:1px solid #f1f5f9;font-weight:700;white-space:nowrap">'+E(d)+'</td>';
+    games.forEach(g=>{
+      if(!can[g.key][d]){ h+='<td style="text-align:center;padding:6px;border-bottom:1px solid #f1f5f9;color:#cbd5e1">\u2013</td>'; return; }
+      const on=gameDeckOn(kid,g.key,d);
+      h+='<td style="text-align:center;padding:4px;border-bottom:1px solid #f1f5f9"><button class="gd-cell'+(on?' on':'')+'" onclick="gameDeckSet(\''+J(kid)+'\',\''+J(g.key)+'\',\''+J(d)+'\','+(on?'false':'true')+')"'+(edit?'':' disabled')+' aria-label="'+E(g.label)+' \u00b7 '+E(d)+(on?' on':' off')+'" style="width:40px;height:32px;border-radius:10px;border:1.5px solid '+(on?'#16a34a':'#e2ddd6')+';background:'+(on?'#f0fdf4':'#fff')+';color:'+(on?'#15803d':'#94a3b8')+';font-size:16px;font-weight:800;cursor:'+(edit?'pointer':'default')+'">'+(on?'\u2713':'\u25CB')+'</button></td>';
+    });
+    h+='</tr>';
+  });
+  h+='</tbody></table></div>';
+  const hasOverride=!!((_gdMD()[kid+"_settings"]||{}).gameDecks);
+  if(edit&&hasOverride) h+='<div style="margin-top:10px"><button onclick="gameDeckReset(\''+J(kid)+'\')" style="padding:8px 14px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u21BA Back to the app\u2019s picks</button></div>';
+  return h+'</div>';
+}
+// GAMEGRID_END
 function renderMastery(el){
   if(typeof kcPlay!=="undefined"&&kcPlay&&typeof tab!=="undefined"&&tab!=="mastery"){ renderAll(); return; }   // 📚🎮 KC_PLAY · 🎴 KC_CARD: a tap inside the Corner's (or Dad's) drill redraws that page, never the Mastery page in its place
   try{ _renderMasteryInner(el); mastLockSlideHeight(el); }catch(e){ console.error("Mastery render error:",e); el.innerHTML='<div style="padding:40px;text-align:center;color:#dc2626"><b>Mastery tab error</b><br><span style="font-size:11px;color:#666">'+e.message+'</span></div>'; }
