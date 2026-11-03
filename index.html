@@ -41305,7 +41305,7 @@ function _kcCardBodyHTML(k,col){
   const p=kcPlay, v=(p&&p.view)||"drill";
   mastView=v;   // a tap inside (mastSetView, "Go to Mastery") never moves the page off its card
   if(v==="match"||v==="which") return gamesBodyHtml(col);
-  let h=_kcLogAskHTML(k,col);
+  let h='<div id="kc-log-ask">'+_kcLogAskHTML(k,col)+'</div>';   // 🔒 KC_SPRINTCODE: filled in place for a Sprint save, so typed scores stay
   const tmp=document.createElement("div"), sus=(typeof _momSuspend==="function"&&!_momSusp);
   if(sus) _momSuspend();   // the kid's lens even with the Mom switch on (KIDSLENS's own set-aside, only while drawing)
   mastBare=true;
@@ -41325,12 +41325,17 @@ function kcPlayCardOpen(k,v){
 }
 // A drill's 📝 Log on Kids' Corner: Mom's or Dad's code first (her ask 2026-11-02), unless the Mom switch is on or Dad's code is in.
 // false = not now (the code box shows above the drill). Anywhere else Log is unchanged.
-function kcLogGate(){
+// 🔒 KC_SPRINTCODE (her "do all 6" yes 2026-11-03): a Sprint card's own saves — 📈 Log result, Met / Not, ✎ fix or undo a run,
+// ✎ Start here — ask the same code. after = the save to run once the code is in; what = the box's words. The box fills in place
+// (no redraw), so scores typed on the sheet are still there when the save runs.
+function kcLogGate(after,what){
   try{
     const p=kcPlay;
     if(!p||p.from!=="corner"||p.mode!=="card"||typeof tab==="undefined"||tab!=="kids") return true;
     if(p.logOk||momHere()||(typeof dadAwardOk==="function"&&dadAwardOk())) return true;
-    p.askLog=true; renderAll();
+    p.askLog=true; p.askAfter=(typeof after==="function")?after:null; p.askWhat=what||"";
+    const box=document.getElementById("kc-log-ask");
+    if(box) box.innerHTML=_kcLogAskHTML(p.who,KID_COLOR[p.who]||"#2B7A78"); else renderAll();
     setTimeout(function(){ try{ const i=document.getElementById("kc-log-pin"); if(i) i.focus(); }catch(e){} },50);
     return false;
   }catch(e){ return false; }
@@ -41338,7 +41343,7 @@ function kcLogGate(){
 function _kcLogAskHTML(k,col){
   const p=kcPlay; if(!p||!p.askLog) return '';
   return '<div style="margin:0 0 12px;padding:12px;border:2px solid '+col+';border-radius:14px;background:#fff;text-align:center">'
-    +'<div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px">\u{1F512} Mom or Dad: type your code to Log this drill</div>'
+    +'<div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px">\u{1F512} Mom or Dad: type your code to '+esc(p.askWhat||'Log this drill')+'</div>'
     +'<input id="kc-log-pin" type="password" inputmode="numeric" maxlength="8" placeholder="Code" autocomplete="off" oninput="kcLogCode(this.value)" style="width:120px;text-align:center;padding:8px;border:1.5px solid var(--border);border-radius:10px;font-size:16px;font-weight:700;letter-spacing:6px;font-family:\'DM Sans\',sans-serif">'
     +' <button onclick="kcLogCancel()" style="margin-left:6px;padding:8px 14px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancel</button></div>';
 }
@@ -41346,9 +41351,11 @@ function kcLogCode(v){
   const p=kcPlay; if(!p||!p.askLog) return;
   if(!(pinOk(v)||dadPinOk(v))) return;   // a check only — it never turns Mom mode or Dad's code on
   p.logOk=true; p.askLog=false;
-  mastStartLog();
+  const f=p.askAfter; p.askAfter=null;
+  if(f){ const box=document.getElementById("kc-log-ask"); if(box) box.innerHTML=""; f(); }   // 🔒 KC_SPRINTCODE: the Sprint save it held
+  else mastStartLog();
 }
-function kcLogCancel(){ const p=kcPlay; if(p) p.askLog=false; renderAll(); }
+function kcLogCancel(){ const p=kcPlay; if(p){ p.askLog=false; p.askAfter=null; } const box=document.getElementById("kc-log-ask"); if(box) box.innerHTML=""; else renderAll(); }
 // 👨 Dad's Day ▸ a kid's Drills · Games: his own top row (like ▸ Everyone today), then the two buttons and the page.
 function renderDadMast(el){
   const p=kcPlay;
@@ -89064,6 +89071,7 @@ function sprintUpdateGain(){
 // R6: log a finished sprint session so the personal-best trend (Scores view) can build. Parent-
 // initiated, low-frequency; appended with push() so concurrent devices can't clobber the log.
 function sprintLogResult(){
+  if(typeof kcLogGate==="function"&&!kcLogGate(sprintLogResult,"save this sprint")) return;   // 🔒 KC_SPRINTCODE
   const a=parseInt(document.getElementById("sp-score-a")?.value)||0;
   const b=parseInt(document.getElementById("sp-score-b")?.value)||0;
   if(!a&&!b){ alert("Enter a Sheet A and/or B score first."); return; }
@@ -89502,7 +89510,7 @@ function msStartHere(kid,cur,sheetK,why){
   if(typeof _mastRe==="function") _mastRe();
   return {cur:cur,sheet:sheet.k,move:mv};
 }
-function msStartFromForm(kid){ const c=document.getElementById("ms-sh-cur"), sh=document.getElementById("ms-sh-sheet"); if(!c||!sh) return; msStartHere(kid,c.value,sh.value,"start here"); }
+function msStartFromForm(kid){ if(typeof kcLogGate==="function"&&!kcLogGate(function(){ msStartFromForm(kid); },"pick where to start")) return; const c=document.getElementById("ms-sh-cur"), sh=document.getElementById("ms-sh-sheet"); if(!c||!sh) return; msStartHere(kid,c.value,sh.value,"start here"); }
 // MSSTART_END
 function msTodayRuns(kid){ const st=msState(kid); if(!st||!st.log) return 0; const d=msTodayISO(); let c=0; Object.keys(st.log).forEach(n=>{ msRuns(kid,n).forEach(r=>{ if(r&&r.d===d) c++; }); }); return c; }
 function msNextSprintN(kid,n){ const st=msState(kid); const L=msBookList(st.book); const i=L.findIndex(x=>x.n===n); return (i>=0&&i+1<L.length)?L[i+1].n:null; }
@@ -89519,6 +89527,7 @@ function msSetPosition(kid,book,cur,why){
 // one run: records the sheet + result; a met sheet passes the sprint and moves the kid on; the 4th run of the day
 // checks off today's Math Sprints card
 function msRecordRun(kid,met){
+  if(typeof kcLogGate==="function"&&!kcLogGate(function(){ msRecordRun(kid,met); },"record this run")) return null;   // 🔒 KC_SPRINTCODE
   if(typeof msMarkLocked==="function"&&msMarkLocked()) return null; /* ⏱ MSBUZZ: a tap at 0:00 can't mark */ const st=msState(kid); if(!st||!st.cur) return null;   // MSMARK: no Mom check (hub review 2026-10-15: this guard had been swallowed into the comment)
   const n=st.cur, sheet=msNextSheet(kid,n); if(!sheet) return null;
   const runs=msRuns(kid,n); const run={d:msTodayISO(),ts:nowTs(),at:Date.now(),sheet:sheet.k,met:!!met};
@@ -89554,6 +89563,7 @@ function _msApplyResult(kid,n,met,ts,u){
   else { delete st.log[n].passed; u["log/"+n+"/passed"]=null; st.cur=n; u["cur"]=n; if(st.done){ delete st.done; u["done"]=null; } }
 }
 function msEditRun(kid,met){
+  if(typeof kcLogGate==="function"&&!kcLogGate(function(){ msEditRun(kid,met); },"fix this run")) return null;   // 🔒 KC_SPRINTCODE
   const L=msLastTodayRun(kid); if(!L) return null; met=!!met;   // MSMARK: no Mom check
   if(!!L.run.met===met) return {n:L.n,sheet:L.run.sheet,met:met,changed:false};
   const st=msState(kid); const r=Object.assign({},L.run,{met:met,editedTs:nowTs()});
@@ -89566,6 +89576,7 @@ function msEditRun(kid,met){
   return {n:L.n,sheet:r.sheet,met:met,changed:true,cur:st.cur};
 }
 function msUndoRun(kid){
+  if(typeof kcLogGate==="function"&&!kcLogGate(function(){ msUndoRun(kid); },"undo this run")) return null;   // 🔒 KC_SPRINTCODE
   const L=msLastTodayRun(kid); if(!L) return null;   // MSMARK: no Mom check
   const st=msState(kid); const runs=msRuns(kid,L.n).slice(0,L.i); st.log[L.n].runs=runs;
   const u={}; u["log/"+L.n+"/runs/"+L.i]=null;
