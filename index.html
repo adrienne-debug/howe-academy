@@ -70511,11 +70511,11 @@ function mpBuildRound(kid,items,dn,rnd){
   for(let k=0;k<Math.max(list.length,known.length);k++){ if(list[k]) q.push({pid:list[k].id,list:true}); if(known[k]) q.push({pid:known[k].id,list:false}); }
   return {q,pool,modes,listIds:list.map(i=>i.id)};
 }
-function mpOpen(kid){
+function mpOpen(kid,from){   // from: "study" when the finish screen of the kid's last study session opened it (📚 STUDYEND)
   if(!mpOn(kid)) return false;
   try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the button tap unlocks the ding / bonk (iPad)
   const items=mpItems(kid), dn=mpDayNum(kid), R=mpBuildRound(kid,items,dn);
-  mpUI={kid,dn,dk:mpDayKey(),q:R.q,i:0,cur:null,pool:R.pool,modes:R.modes,shows:{},changed:{},out:{},log:[],t0:Date.now(),secs:mpCfg(kid).secs,phase:R.q.length?"play":"done",grow:null,lock:false,saved:false};
+  mpUI={kid,dn,dk:mpDayKey(),q:R.q,i:0,cur:null,pool:R.pool,modes:R.modes,shows:{},changed:{},out:{},log:[],t0:Date.now(),secs:mpCfg(kid).secs,phase:R.q.length?"play":"done",grow:null,lock:false,saved:false,from:from||null};
   if(mpUI.phase==="play") mpTurn(mpUI);
   mpRender(); if(mpUI&&mpUI.phase==="play") mpSay();
   return true;
@@ -70596,6 +70596,7 @@ function mpFinish(U){
   touched.forEach(it=>{ const k=mpKey(kid,it); if(k==null) return; upd[k+"/gp"]=it.gp||null; if(U.out[it.id]) upd[k+"/next_due"]=it.next_due; });
   Object.keys(U.ww||{}).forEach(pid=>{ const it=_mpItem(U,pid), k=it?mpKey(kid,it):null; if(k!=null) upd[k+"/ww"]=it.ww||null; });   // 🔤 SPELLBUILD: Word Workout's days, the Workout's own path
   const now=Date.now(), entry=U.log.length?{game:"practice",deck:"practice",at:now,secs:Math.max(0,Math.round((now-U.t0)/1000)),items:U.log.slice()}:null;
+  if(entry&&U.from) entry.from=U.from;   // 📚 STUDYEND: a round opened from the study's finish screen says so (one field; nothing reads it yet)
   if(entry){ try{ const G=_mpMD().gameLog||(_mpMD().gameLog={}), K=G[kid]||(G[kid]={}), D=K[U.dk]||(K[U.dk]={}); D["local_"+now]=entry; }catch(e){} }
   if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){
     try{ if(Object.keys(upd).length) db.ref("mastery/"+kid).update(upd); }catch(e){}
@@ -70659,6 +70660,43 @@ function mpDayChipHtml(kid,day){
     if(typeof kidOffOwnDay==="function"&&kidOffOwnDay(kid,day)) return "";
     const n=mpTodayList(kid).length; if(!n) return "";
     return '<div class="mp-day-chip" style="margin:0 0 10px"><button onclick="mpOpen(\''+kid+'\')" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:999px;border:1.5px solid #ddd6fe;background:#f5f3ff;color:#5b21b6;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F3AE} Practice · '+n+' card'+(n===1?'':'s')+'</button></div>';
+  }catch(e){ return ""; }
+}
+// ── 📚 STUDYEND — the daily study ends in games (step 4 of the game-flag plan; her yes 2026-11-02 to the design in
+//    study-ends-in-games_design_2026-11-02.md). Her words: "do all their daily studies first … then it would go to their daily
+//    mix … games". Decided: ONE round at the END of the daily study, not after each session. After a sitting saves, the
+//    Nice work! screen gains one line: the next session to open (named sessions in their order, the Daily Mix last), or — on the
+//    last session of the day — "🎮 Now your games · N cards" (the practice round, mpOpen; a TAP, never auto: the tap unlocks the
+//    ding / bonk on iPad), or "Study done — no games needed today". The study card's check-off is unchanged (the sitting's save);
+//    the games are the last step on the screen, not a gate. Switch off = the screen as it always was. Check-ups are Mom's, never
+//    a step here. Same line in Kids' Corner (its finish screen is this one). No writes of its own. ──
+// PURE: sessions (mstSessions order), the session just saved, isDone(sid) → the next session to open, or null when none is left
+function mpStudyNext(sessions,doneSid,isDone){
+  const list=(sessions||[]).filter(s=>s&&s.sid!=null&&s.kind!=="checkup");
+  const order=list.filter(s=>s.kind!=="mix").concat(list.filter(s=>s.kind==="mix"));   // her order: named sessions first, the Daily Mix last
+  const next=order.find(s=>s.sid!==doneSid&&!isDone(s.sid));
+  return next?{sid:next.sid,name:String(next.name||""),emoji:String(next.emoji||"")}:null;
+}
+// a session is done for today when it has a today log, or has nothing to do today (no new, no due, no learning)
+function mpStudySessionDone(kid,sid){
+  try{
+    if(typeof mstLogGet==="function"&&mstLogGet(kid,sid)) return true;
+    const pile=(typeof mstPile==="function")?mstPile(kid,sid,(typeof mastGetPrintNum==="function")?mastGetPrintNum(kid):1,null):null;
+    return !pile||(!(pile.newNames||[]).length&&!(pile.reviews||[]).length&&!(pile.learning||[]).length);
+  }catch(e){ return true; }
+}
+function mpStudyDoneHtml(kid,sid){
+  try{
+    if(!kid||!mpOn(kid)) return "";
+    let sessions=[]; try{ sessions=(typeof mstSessions==="function"&&mstSessions(kid))||[]; }catch(e){ sessions=[]; }
+    const E=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    const J=s=>(typeof mstEscJs==="function")?mstEscJs(s):String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+    const next=mpStudyNext(sessions,sid,x=>mpStudySessionDone(kid,x));
+    const btn='min-height:52px;padding:0 24px;border-radius:14px;border:none;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+    if(next) return '<div class="mp-study-next" style="margin-top:14px"><button onclick="mstPick(\''+J(next.sid)+'\')" style="'+btn+';background:#7c3aed;color:#fff">Next: '+E(next.emoji)+' '+E(next.name)+' \u2192</button></div>';
+    const n=mpTodayList(kid).length;
+    if(n) return '<div class="mp-study-games" style="margin-top:14px"><div style="font-size:13px;font-weight:700;color:#5b21b6;margin-bottom:8px">Study done \u2014 one more thing!</div><button onclick="mpOpen(\''+J(kid)+'\',\'study\')" style="'+btn+';background:#5b21b6;color:#fff">\u{1F3AE} Now your games \u00b7 '+n+' card'+(n===1?'':'s')+'</button></div>';
+    return '<div class="mp-study-done" style="margin-top:14px;font-size:15px;font-weight:800;color:#15803d">\u2B50 Study done \u2014 no games needed today</div>';
   }catch(e){ return ""; }
 }
 // ── Mom HQ ▸ ⚙ Rules: the switches (saved right away, one field each) ──
@@ -78300,6 +78338,7 @@ function renderMastStudy(opts){
     { const _mx=(session.kind==="mix"&&pile&&pile.mixLeft>0)?pile.mixLeft:0;   // MIX_FINISH: the rest of the backlog, if he wants it
       if(_mx) h+='<div style="margin-top:12px"><button onclick="mstStart()" style="min-height:48px;padding:0 24px;border-radius:14px;border:1.5px solid #7c3aed;background:#fff;color:#6d28d9;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Keep going · '+_mx+' left</button><div style="font-size:11.5px;color:var(--muted);margin-top:6px">Today\'s Mix is done \u2713 \u2014 this is extra, and every card counts.</div></div>'; }
     if(typeof cpReviewMoreHtml==="function") h+=cpReviewMoreHtml(session,pile,"done");   // 🔁 CPREVIEW: Keep going · N left after a capped 🌿 sitting
+    if(typeof mpStudyDoneHtml==="function") h+=mpStudyDoneHtml(kid,session.sid);   // 📚 STUDYEND: the next session, or the games on the last one
     h+='</div>';
   } else {
     const donePile=!(pile.newNames||[]).length&&!(pile.reviews||[]).length&&!(pile.learning||[]).length;
