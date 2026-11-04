@@ -80,4 +80,23 @@ console.log("2. the relay diff");
   ok("…the words say a held card changed",/1 held card changed/.test(vm.runInContext('_rlwWords({label:"x",moves:d.moves,removed:[],locked:d.locked})',ctx)));
   ok("_rlwIsClass: by the subject's set time; a subject without one, or none, is not a class",vm.runInContext('_rlwIsClass(T[0])&&!_rlwIsClass(T[1])&&!_rlwIsClass({who:"kid_z",subjectKey:"q"})',ctx)===true); }
 
+console.log("3. the check-off rotation (BUMPFX — live 11/04 9:53: flash cards done early slid the class to 11:30)");
+{ const ctx={WK:"wk",toMin,fromMin,dbg:()=>{},sv:()=>{},_dryRun:()=>true,db:null,lastTasksWrite:0,checked:{},claimed:{},
+    currData:{subjects:{kid_a:{class:{fixedTime:"10:00 AM"},flash:{},sci:{}}}},fxIsClass:s=>!!(s&&s.fixedTime&&String(s.fixedTime).trim())};
+  vm.createContext(ctx);
+  vm.runInContext(fn("taskTierOf")+"\n"+fn("_rlwIsClass")+"\n"+fn("bumpSkippedInTier"),ctx);
+  vm.runInContext('weekData={tasks:[{id:"sci",who:"kid_a",subjectKey:"sci",day:"wednesday",time:"9:15 AM",dur:5,device:"computer",mom:"none",title:"science flash"},'
+    +'{id:"cls",who:"kid_a",subjectKey:"class",day:"wednesday",time:"10:00 AM",dur:45,device:"computer",mom:"none",title:"Outschool German"},'
+    +'{id:"fl",who:"kid_a",subjectKey:"flash",day:"wednesday",time:"11:30 AM",dur:25,device:"computer",mom:"none",title:"German Flash Cards"},'
+    +'{id:"geo",who:"kid_a",subjectKey:"flash",day:"wednesday",time:"11:00 AM",dur:15,device:"computer",mom:"none",title:"geo"}]}; checked={sci:1,fl:1};'
+    +'bumpSkippedInTier(weekData.tasks[2]); R={}; weekData.tasks.forEach(t=>R[t.id]=t.time);',ctx);
+  const R=vm.runInContext("R",ctx);
+  ok("the class keeps 10:00 when a later card in its tier is done early",R.cls==="10:00 AM",R);
+  ok("…the other skipped card still rotates as before (done takes the earliest, it slides into done's slot)",R.fl==="11:00 AM"&&R.geo==="11:30 AM",R);
+  vm.runInContext('weekData.tasks.forEach(t=>{ if(t.id==="cls") t.time="10:00 AM"; if(t.id==="geo") t.time="9:30 AM"; if(t.id==="fl") t.time="11:30 AM"; }); checked={cls:1}; bumpSkippedInTier(weekData.tasks[1]); R2={}; weekData.tasks.forEach(t=>R2[t.id]=t.time);',ctx);
+  const R2=vm.runInContext("R2",ctx);
+  ok("a class checked off is never the card that rotates others",R2.cls==="10:00 AM"&&R2.geo==="9:30 AM",R2);
+  ok("no kid or family names in the new lines",!/lincoln|ellis|lucy|julian|taylor|kenzie|andrew|caleb|howe|dewalt|burris/i.test(fn("bumpSkippedInTier").split("\n").filter(l=>/_rlwIsClass/.test(l)).join("\n")));
+}
+
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
