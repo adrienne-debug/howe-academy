@@ -105,7 +105,7 @@ console.log("# the guard is in the source");
   const fnSrc = extractFn("bumpSkippedInTier");
   ok("BUMPFAM note present", /BUMPFAM/.test(fnSrc));
   ok("skipped filter excludes famBlock", /x\.day===done\.day&&!x\.famBlock/.test(fnSrc));
-  ok("done famBlock returns early", /isNb\(done\)\|\|done\.famBlock\) return/.test(fnSrc));
+  ok("done famBlock returns early", /isNb\(done\)\|\|done\.famBlock(\|\|\(typeof _rlwIsClass==="function"&&_rlwIsClass\(done\)\))?\) return/.test(fnSrc));
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");

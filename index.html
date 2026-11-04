@@ -9508,14 +9508,17 @@ function taskTierOf(t){
 function bumpSkippedInTier(done){
   if(!done||String(done.id||"").endsWith("_c")) return;
   const isNb=x=>(x.title||"").toLowerCase().includes("notebook");
-  if(isNb(done)||done.famBlock) return;
+  if(isNb(done)||done.famBlock||(typeof _rlwIsClass==="function"&&_rlwIsClass(done))) return;   // 🕙 BUMPFX: a fixed-time class neither rotates nor gives up its slot
   const tier=taskTierOf(done);
   const doneMin=toMin(done.time);
   // 🏡 BUMPFAM (her report 2026-10-19, DeWalt: "makenzies history isnt at the same time as everyone else … those are
   // family and stuck at a certain time"): live 11:09 Makenzie checked Typing (laid 2:50 PM, behind the family block) and
   // this rotation slid her 🏡 History / Science / Read Aloud to 1:30 / 2:00 / 2:50 while the other three kids stayed at
   // 1:00 / 1:30 / 2:00. Family time is held at the family's time — never one of the slots that rotate.
-  const skipped=weekData.tasks.filter(x=>x!==done&&x.who===done.who&&x.day===done.day&&!x.famBlock
+  // 🕙 BUMPFX (her report 2026-11-04): live 9:53 Lincoln checked German Flash Cards (laid 11:30) early; this rotation gave
+  // it the 10:00 slot and slid his Outschool German class (fixed 10:00) into 11:30. A class is held at its clock time, exactly
+  // like a family block — never one of the slots that rotate.
+  const skipped=weekData.tasks.filter(x=>x!==done&&x.who===done.who&&x.day===done.day&&!x.famBlock&&!(typeof _rlwIsClass==="function"&&_rlwIsClass(x))
     &&!String(x.id||"").endsWith("_c")&&!checked[x.id]&&!claimed[x.id]&&!isNb(x)
     &&taskTierOf(x)===tier&&toMin(x.time)<doneMin)
     .sort((a,b)=>toMin(a.time)-toMin(b.time));
@@ -42500,6 +42503,8 @@ function _rlwFire(att){
 }
 // ── pure: the snapshot and the diff ──
 // o = {checked, claimed, momMoves, todayDay, nowMin, isHeld(t)}  →  {id:{d,t,cf,eo,ck,cl,st,fx,w,ti,card}}
+// FXPIN: a fixed-time class is held (its subject has a set time) — the snapshot marks it, the diff never lists it as a move
+function _rlwIsClass(t){ try{ const s=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[t.who]||{})[t.subjectKey]; return typeof fxIsClass==="function"&&fxIsClass(s); }catch(e){ return false; } }
 function _rlwSnapOf(tasks,o){
   const out={}; o=o||{}; const ck=o.checked||{}, cl=o.claimed||{}, mm=o.momMoves||{};
   (tasks||[]).forEach(function(t){
@@ -42519,8 +42524,8 @@ function _rlwDiff(before,tasks){
     const b=before[t.id]; if(!b){ out.added.push(t.id); return; }
     const dayCh=(t.day!==b.d), ch=dayCh||(t.time!==b.t)||(!!t._eowOverflow!==b.eo);
     if(!ch) return;
-    if(dayCh&&(b.cl||b.st||b.fx)) out.locked.push(t.id);
-    if(b.ck||b.cl) return;
+    if((dayCh&&(b.cl||b.st))||b.fx) out.locked.push(t.id);   // FXPIN: a held card (class, ⏰ set time, family time, Mom-moved) that changed at all trips the wire
+    if(b.ck||b.cl||b.fx) return;                             // …and is never a "move" on the what-moved line
     out.moves.push({id:t.id,who:b.w,ti:b.ti,from:{d:b.d,t:b.t,cf:b.cf,eo:b.eo},to:{d:t.day,t:t.time}});
   });
   Object.keys(before).forEach(function(id){ if(!seen[id]&&!before[id].ck&&!before[id].cl) out.removed.push(before[id].card); });
@@ -42535,7 +42540,7 @@ function _rlwWords(e){
   let s=(e.label||"Re-laid")+" → "+nm+" card"+(nm===1?"":"s")+" moved"+(kids?" ("+kids+")":"");
   if(nr) s+=" · "+nr+" to next week";
   const na=(e.added||[]).length; if(na) s+=" · "+na+" added";   // RELAY3D
-  if(e.locked&&e.locked.length) s+=" · ⚠ "+e.locked.length+" held card"+(e.locked.length===1?"":"s")+" changed day";
+  if(e.locked&&e.locked.length) s+=" · ⚠ "+e.locked.length+" held card"+(e.locked.length===1?"":"s")+" changed";
   if(e.undone) s+=" · undone";
   return s;
 }
@@ -42546,7 +42551,7 @@ function _rlwRun(pend,fn,after){
   const now=new Date();
   const before=_rlwSnapOf(tasks,{checked:(typeof checked!=="undefined"&&checked)||{},claimed:(typeof claimed!=="undefined"&&claimed)||{},momMoves:(typeof momMoves!=="undefined"&&momMoves)||{},
     todayDay:(typeof _todayDay!=="undefined")?_todayDay:null,nowMin:now.getHours()*60+now.getMinutes(),
-    isHeld:function(t){ return (typeof fdtHeld==="function"&&fdtHeld(t))||(typeof mvtHeldToday==="function"&&mvtHeldToday(t)); }});
+    isHeld:function(t){ return (typeof fdtHeld==="function"&&fdtHeld(t))||(typeof mvtHeldToday==="function"&&mvtHeldToday(t))||_rlwIsClass(t); }});   // FXPIN: a class is held
   const finish=function(){
   const _afterTasks=(typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[];
   const d=_rlwDiff(before,_afterTasks);
@@ -89016,9 +89021,13 @@ function _mlQueueLayCore(tasks){
     const cur=_sc.cur;
     const now=mlNow();
     const isToday=function(t){ return t&&_mlDayOf(t)===_todayDay; };
+    // FXPIN (her report 2026-11-04: Outschool German fixed 10:00, saved 11:30, shown 11:15): a fixed-time class is a set time —
+    // this lay holds it at its saved time like family time and a Mom-set ⏰ time, and the kid's other cards step around it.
+    const _mlIsClass=function(t){ try{ const s=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[t.who]||{})[t.subjectKey]; return typeof fxIsClass==="function"&&fxIsClass(s); }catch(e){ return false; } };
     const movable=function(t){
       return isToday(t)&&!String(t.id||"").endsWith("_c")&&!t._eowOverflow&&!t._dayDrop   // DAYDROP: in the "didn't fit" box, not on the timeline
         &&!/lunch/i.test(t.title||"")&&!t.famBlock&&!(typeof fdtHeld==="function"&&fdtHeld(t))   // 👨‍👩‍👧 family time is held like lunch · ⏰ FIXEDDAYTIME: so is a card Mom set a time for
+        &&!_mlIsClass(t)   // FXPIN: a fixed-time class never moves on screen
         &&!_mlFinished(t.id,t);
     };
     const mine={}, momQ={};
@@ -89082,7 +89091,7 @@ function _mlQueueLayCore(tasks){
     const _lw=_mlLunchWin();
     const _famLay={};   // LIVINGDAY_FAM: famAuto card id → laid minute (filled below)
     const lunchOf=function(k){
-      return tasks.filter(function(x){ return isToday(x)&&x.who===k&&(/lunch/i.test(x.title||"")||((x.famBlock||(typeof fdtHeld==="function"&&fdtHeld(x)))&&!_mlFinished(x.id,x))); })   // a checked family card is over at its check (fixedOf has it) · ⏰ FIXEDDAYTIME: a set-time card holds like family time
+      return tasks.filter(function(x){ return isToday(x)&&x.who===k&&(/lunch/i.test(x.title||"")||((x.famBlock||(typeof fdtHeld==="function"&&fdtHeld(x))||_mlIsClass(x))&&!_mlFinished(x.id,x))); })   // a checked family card is over at its check (fixedOf has it) · ⏰ FIXEDDAYTIME: a set-time card holds like family time · FXPIN: so does a class
         .map(function(x){ const a=(_famLay[x.id]!==undefined)?_famLay[x.id]:toMin(x.time); return [a,a+(x.dur||30)]; })
         .concat(_lw?[_lw]:[]);
     };
@@ -97828,6 +97837,13 @@ function seGuardWeek(tasks,o){
     return out; };
   const setT=(t,day,min)=>{ const nt=fm(min); if(t.day!==day){ if(t.rolledFrom==null){ t.rolledFrom=t.day; out.upd[t.id+"/rolledFrom"]=t.day; } t.day=day; out.upd[t.id+"/day"]=day; } if(t.time!==nt){ t.time=nt; out.upd[t.id+"/time"]=nt; } };   // rolledFrom = "fell off that day" (early finish feeds it back)
   const kids=o.kids||Array.from(new Set(tasks.filter(t=>t&&t.who).map(t=>t.who)));
+  // FXPIN (her report 2026-11-04: Outschool German fixed 10:00 AM on 11/04, saved 11:30 by a sweep on a device whose curriculum
+  // copy didn't know the class): a fixed-time class sits at its own clock time. Before the day is judged, a card of one that is
+  // not at that time is put back there (unchecked, unclaimed; today and later), one targeted time write; the day is then judged
+  // with it held like any class. Every door's write and the display pass come through here, so the first up-to-date device heals it.
+  if(typeof o.classAt==="function"){ tasks.forEach(t=>{ if(skip(t)||ck[t.id]||cl[t.id]) return; const di=dIx(t); if(di<0||(ti>=0&&di<ti)) return;
+    let m=null; try{ m=o.classAt(t); }catch(e){ m=null; } if(m==null||isNaN(m)||tm(t.time)===m) return;
+    setT(t,t.day,m); if(out.retimed.indexOf(t.id)<0) out.retimed.push(t.id); }); }
   const first=ti>=0?ti:0;
   const lastDi=o.displayOnly?first:DAYS.length-1;   // 💻 display pass: today only
   for(let di=first;di<=lastDi;di++){
@@ -97939,6 +97955,8 @@ function seGuardCtx(extra){
     kidOff:(kid,day)=>{ try{ const ds=iso(day); return !!(ds&&typeof smapIsKidOff==="function"&&smapIsKidOff(kid,ds)); }catch(e){ return false; } },
     isClass:t=>{ try{ return !!(t&&t.famBlock)||(typeof mvtHeldToday==="function"&&mvtHeldToday(t))||   // 📅 MOVETODAY: held where Mom put it today
       (typeof fxIsClass==="function"&&fxIsClass(subj(t)))||(typeof fdtHeld==="function"&&fdtHeld(t)); }catch(e){ return false; } },   // 👨‍👩‍👧 family time too · ⏰ FIXEDDAYTIME: a set-time card
+    // FXPIN: a class's own clock time on this plan week's date of its day (null = not a class, or it doesn't meet that day)
+    classAt:t=>{ try{ const s=subj(t); if(!s||typeof fxIsClass!=="function"||!fxIsClass(s)||typeof fxWindow!=="function") return null; const ds=iso(String(t.day||"").toLowerCase()); if(!ds) return null; const w=fxWindow(s,ds,String(t.day||"").toLowerCase()); return (w&&w.s!=null)?w.s:null; }catch(e){ return null; } },
     isLesson:t=>{ try{ if(t.subjectKey==="morning_nb"||t.subjectKey==="closing_nb"||/notebook/i.test(t.title||"")) return false;
       if(typeof subjNoCarry==="function"&&subjNoCarry(t)) return false; return typeof planBacked==="function"&&!!planBacked(t.who,t.subjectKey); }catch(e){ return false; } },
     ahead:(kid,sk)=>{ try{ return (typeof planPace==="function")?(planPace(kid,sk).score||0):0; }catch(e){ return 0; } },   // vs the CURRENT plan
