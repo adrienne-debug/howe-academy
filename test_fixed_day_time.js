@@ -196,7 +196,7 @@ console.log("0. shape and hooks");
     ["dsRetime: the family-time shift leaves it out", /if\(!x\.famAuto&&\(x\.famBlock\|\|\(typeof fxIsClass==="function"&&fxIsClass\(_ks\[x\.subjectKey\]\)\)\|\|\(typeof fdtHeld==="function"&&fdtHeld\(x\)\)\)\) return;/],
     ["dsRetime: _isClass", /const _isClass=function\(t\)\{ return !!\(t&&t\.famBlock\)\|\|\(typeof fxIsClass==="function"&&fxIsClass\(_subs\[t\.subjectKey\]\)\)\|\|\(typeof fdtHeld==="function"&&fdtHeld\(t\)\); \};/],
     ["mlQueueLay: movable", /&&!\/lunch\/i\.test\(t\.title\|\|""\)&&!t\.famBlock&&!\(typeof fdtHeld==="function"&&fdtHeld\(t\)\)/],
-    ["mlQueueLay: lunchOf (the kid's cards step over it)", /\(\(x\.famBlock\|\|\(typeof fdtHeld==="function"&&fdtHeld\(x\)\)\)&&!_mlFinished\(x\.id,x\)\)/],
+    ["mlQueueLay: lunchOf (the kid's cards step over it)", /\(\(x\.famBlock\|\|\(typeof fdtHeld==="function"&&fdtHeld\(x\)\)(\|\|_mlIsClass\(x\))?\)&&!_mlFinished\(x\.id,x\)\)/],   // FXPIN adds the class term
     ["mlQueueLay: Mom's _blkIv (her other cards step over a Mom-required one)", /try\{ if\(typeof fdtHeld==="function"\) tasks\.forEach\(function\(x\)\{ if\(x&&isToday\(x\)&&_mr\(x\)&&fdtHeld\(x\)&&!_mlFinished\(x\.id,x\)\) _blkIv\.push\(\[toMin\(x\.time\),toMin\(x\.time\)\+\(x\.dur\|\|20\)\]\); \}\); \}catch\(e\)\{\}/],
     ["seGuardCtx.isClass", /\(typeof fxIsClass==="function"&&fxIsClass\(subj\(t\)\)\)\|\|\(typeof fdtHeld==="function"&&fdtHeld\(t\)\); \}catch\(e\)\{ return false; \} \},/],
     ["undoMomMove: the pin goes with the ↩", /if\(rec&&rec\.setTime&&typeof fdtOnUndo==="function"\) fdtOnUndo\(id\);/],
