@@ -37,7 +37,7 @@ function world(items,o){
   o=o||{};
   const writes=[], said=[], dings=[], timers=[]; let now=0, clock=1762600000000;
   class FakeDate extends Date{ static now(){ return clock+=1000; } }
-  const CODE=cut("// GAMELOG_START","// GAMELOG_END")+"\n"+cut("// GAMEGRID_START","// GAMEGRID_END")+"\n"+cut("// GAMERULES_START","// GAMERULES_END")+"\n"+cut("// JIGSAW_START","// JIGSAW_END");
+  const CODE=cut("// GAMELOG_START","// GAMELOG_END")+"\n"+cut("// GAMEGRID_START","// GAMEGRID_END")+"\n"+cut("// GAMERULES_START","// GAMERULES_END")+"\n"+cut("// UNITPIC_START","// UNITPIC_END")+"\n"+cut("// JIGSAW_START","// JIGSAW_END");
   const ctx={console,JSON,Object,Array,String,Number,Math,Set,Map,RegExp,Date:FakeDate,parseInt,isNaN,isFinite,Promise,encodeURIComponent,
     setTimeout:(f,ms)=>{ timers.push({at:now+(ms||0),f:f,id:timers.length+1}); return timers.length; },
     _dryRun:()=>!!o.dry,HA_LS:{setItem(){}},_mastRe(){ ctx._renders=(ctx._renders||0)+1; },momHere:()=>o.mom!==false,renderAll(){},cap:s=>s,
@@ -47,10 +47,10 @@ function world(items,o){
     mstTodayKey:()=>"20261108",mastView:"jigsaw",masteryKid:"k",
     masteryData:{k:items||[],k_settings:o.settings||{},gameLog:o.log||{}},
     db:{ref:p=>({set:v=>writes.push(["set",p,v]),update:v=>writes.push(["update",p,v]),push:v=>writes.push(["push",p,v]),remove:()=>writes.push(["remove",p])})}};
-  if(o.live) ctx.mastLiveImg=o.live;
   vm.createContext(ctx);
   vm.runInContext(CODE+"\nObject.defineProperty(this,'jigState',{get:()=>jigState,set:v=>{jigState=v;}}); Object.defineProperty(this,'_jigRandom',{get:()=>_jigRandom,set:v=>{_jigRandom=v;}});"+
     " this.GAME_RULES=GAME_RULES; this.JIG_PIECES=JIG_PIECES; this.JIG_SNAP=JIG_SNAP; this.JIG_SHOW_MS=JIG_SHOW_MS; this.JIG_CHOICES=JIG_CHOICES;",ctx);
+  if(o.live) vm.runInContext("mastLiveImg=__live;",Object.assign(ctx,{__live:o.live}));   // a stand-in for 🖼 UNITPIC's helper
   ctx._jigRandom=seeded(o.seed||3);
   const tick=t=>{ for(;;){ const due=timers.filter(x=>x.at<=t).sort((x,y)=>x.at-y.at||x.id-y.id)[0]; if(!due) break; timers.splice(timers.indexOf(due),1); now=due.at; due.f(); } now=t; };
   const flushAll=()=>{ let g=0; while(timers.length&&g++<200){ tick(Math.min.apply(null,timers.map(x=>x.at))); } };
@@ -66,7 +66,7 @@ const rightIx=st=>st.choices.indexOf(st.word);
   ok("no cards, or only emoji / drawn cards (nothing to cut) → not offered",world([]).c.jigAvail("k")===false&&world([C("cat",{imageUrl:"",emoji:"🐱"}),C("Circle",{imageUrl:""})]).c.jigAvail("k")===false);
   ok("a picture card not in play (parked, retired) or a production twin doesn't count",world([C("cat",{status:"parked"}),C("dog",{status:"retired"}),C("cow",{dir:"prod"})]).c.jigAvail("k")===false&&world([C("cat",{status:"introduction"})]).c.jigAvail("k")===true);
   ok("a picture from the kid's visuals (mastGetVisual imageUrl) counts; an emoji visual doesn't",world([C("cat",{imageUrl:""})],{vis:{cat:{imageUrl:"https://pics.example/x.png"}}}).c.jigAvail("k")===true&&world([C("cat",{imageUrl:""})],{vis:{cat:"🐱"}}).c.jigAvail("k")===false);
-  ok("🖼 UNITPIC's live picture wins when it is here (a live emoji → no picture; a live URL → the picture cut is that one)",world([C("cat")],{live:()=>""}).c.jigAvail("k")===false&&world([C("cat")],{live:()=>"https://live.example/c.jpg"}).c.jigPic(C("cat"),"k")==="https://live.example/c.jpg");
+  ok("🖼 UNITPIC's mastLiveImg is the one answer (a live emoji → no picture; a live URL → the picture cut is that one)",world([C("cat")],{live:()=>""}).c.jigAvail("k")===false&&world([C("cat")],{live:()=>"https://live.example/c.jpg"}).c.jigPic(C("cat"),"k")==="https://live.example/c.jpg");
   const off=world(DECK(),{settings:{gameDecks:{Pets:{jigsaw:false},Farm:{jigsaw:false}}}});
   ok("🎮 GAMEGRID: every picture deck off → not offered; the raw list still names the decks",off.c.jigAvail("k")===false&&JSON.stringify(off.c.gameDeckCan("k",{key:"jigsaw",decks:k=>off.c.jigDecks(off.c.masteryData.k,k)}))==='["Farm","Pets"]');
   ok("the decks: only those with a picture card",JSON.stringify(world(DECK()).c.jigDecks(DECK(),"k"))==='["Farm","Pets"]'&&JSON.stringify(world([C("hen",{imageUrl:""})]).c.jigDecks([C("hen",{imageUrl:""})],"k"))==="[]");
