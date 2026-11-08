@@ -180,7 +180,7 @@ function playRound(w,misses){
 
 // ── Mom's pin ──
 { const w=world(FULL), c=w.c;
-  ok("GAME_RULES.train: one rule \"level\" — auto / 1 / 2, default auto",JSON.stringify(c.GAME_RULES.train.map(r=>[r.key,r.def,r.opts.map(o=>o[0])]))==='[["level","auto",["auto","1","2"]]]');
+  ok("GAME_RULES.train: \"level\" — auto / 1 / 2, default auto (+ 🚂 PKTRAIN's \"study\" on / off, default on — test_prek_study_train.js)",JSON.stringify(c.GAME_RULES.train.map(r=>[r.key,r.def,r.opts.map(o=>o[0])]))==='[["level","auto",["auto","1","2"]],["study","on",["on","off"]]]');
   ok("the rules pop-up lists it",/Which level\?/.test(c.gameRulesHtml("k","train"))&&/Level 2/.test(c.gameRulesHtml("k","train")));
   ok("Mom pins level 2 → a kid with no rounds starts at level 2 (one targeted set)",c.gameRuleSet("k","train","level","2")===true&&c.trainLevel("k")===2&&JSON.stringify(w.writes)==='[["set","mastery/k_settings/gameRules/train/level","2"]]');
   c.trainStart(); ok("…and the round has 4 choices",c.trainState.level===2&&c.trainState.turns[0].choices.length===4);
