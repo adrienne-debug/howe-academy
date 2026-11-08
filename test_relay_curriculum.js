@@ -216,7 +216,7 @@ console.log("5. the dailies — their own diff, through the same shell (RELAY3D)
   const w=world({currData:{subjects:{kid_b:{daily_piano:{tracking:"daily"}},kid_a:{math:{planId:"p"}}}}});
   w.call('relayWeek("curriculum",{label:"📚 Piano: minutes",subjects:[{kid:"kid_a",sk:"math"},{kid:"kid_b",sk:"daily_piano"},{kid:"kid_b",sk:"daily_nope"}],undo:[{p:"curriculum/subjects/kid_b/daily_piano/minutes",was:20}]});');
   w.fire();
-  ok("pass B: the lesson subject plain, the daily with daily:true, both with the clock's mode; an unpaced subject that is no daily skipped",w.log.reproj.map(r=>r.k+"/"+r.s+":"+(r.daily?"daily":"plan")+":"+r.mode).join()==="kid_a/math:plan:tomorrow,kid_b/daily_piano:daily:tomorrow",w.log.reproj);
+  ok("pass B: the lesson subject plain, the daily with daily:true, both with the clock's mode (RELAY4: a curriculum run mid-day takes today too → \"today\"); an unpaced subject that is no daily skipped",w.log.reproj.map(r=>r.k+"/"+r.s+":"+(r.daily?"daily":"plan")+":"+r.mode).join()==="kid_a/math:plan:today,kid_b/daily_piano:daily:today",w.log.reproj);
   ok("the lock released once the chain is over",w.log.releases===1); }
 { // the diff and Undo know an added card
   const w=world({sweep:t=>{ t.push({id:"new1",who:"kid_a",subjectKey:"daily_piano",day:"thursday",time:"2:05 PM",dur:20,title:"🎹 Piano"}); t[0].time="10:30 AM"; }});

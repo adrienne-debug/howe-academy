@@ -3035,6 +3035,7 @@ let boForm={type:"fullDay",kids:[],start:"",end:"",momReturn:"",day:""};
 let isUploading = false;
 let lastCheckedWrite = 0;
 let lastTasksWrite = 0;
+let lastCurrWrite = 0; const CURR_ECHO_MS = 3000;   // 📚 CURRLIVE: this device's last curriculum write (the listener skips its own echo)
 let fbCheckedLoaded = false;
 let fbTasksLoaded = false;
 let fbHistoryLoaded = false;
@@ -4089,6 +4090,7 @@ function initFb() {
     }catch(eLP){}
     if(!(firebase.apps&&firebase.apps.length)) firebase.initializeApp(FB_CFG);   // haAuthGate may already have
     db = (typeof envSiteDb==="function"&&envSiteDb())||firebase.database();   // 🌿 ENVSITE: a kid or parent on the Envirothon site studies in the family's own instance; null for every other family
+    if(typeof currStampDb==="function") currStampDb(db);   // 📚 CURRLIVE: every curriculum write marks lastCurrWrite
 
     // DRY-RUN: neutralize every Firebase write (reads stay live) so the modified app
     // can be smoke-tested against real data without ever mutating the kids' schedule.
@@ -4507,15 +4509,9 @@ function initFb() {
         }
       }catch(e){}
     });
-    db.ref("curriculum").once("value",s=>{
-      fbCurrLoaded=true; // even an empty answer counts — the cascade may now trust subjNoCarry
-      if(s.val()){currData=s.val();buildCurrPaceCum();dbg("curriculum loaded: "+Object.keys(currData.subjects||{}).join(","));runDisplacement();if(tab==="schedule")renderAllSoon();setTimeout(autoGenerateWeekIfNeeded,3000);}
-      // A brand-new family has no curriculum node at all. Leaving currData null left the Subjects tab
-      // stuck on "No curriculum uploaded" with no "+ Add Subject" card — no first door (Dewalt, 2026-10-01).
-      // An empty skeleton renders the normal Subjects tab; the Add sheet writes only its own subject path.
-      else if(!currData||!currData.subjects){ currData=Object.assign(currData||{},{subjects:{},lessons:{},weekDays:{}}); dbg("curriculum empty — blank skeleton so the Subjects tab can add the first subject"); renderAllSoon(); }   // (the done-marks listener may already have made a {done:{}} stub — keep it)
-      schedCascade(); // curriculum may be the LAST loader to answer — re-arm the debounced sweep
-    });
+    // 📚 CURRLIVE (2026-11-08): the curriculum is LIVE — was .once("value"). The first arrival does exactly what the once did;
+    // a later one is this device's own echo (skipped) or another device's change (the copy + a redraw, never a re-lay).
+    db.ref("curriculum").on("value",s=>{ currOnValue(s.val()); });
     db.ref("config/helpers").on("value",s=>{ helpersOnValue(s.val()); });
     db.ref("settings/laundryTimes").on("value",s=>{ if(typeof laundryTimesOnValue==="function") laundryTimesOnValue(s.val()); });   // 🧺 LAUNDRYTIMES
     db.ref("settings/laundry").on("value",s=>{ if(typeof laundrySplitSettingsOnValue==="function") laundrySplitSettingsOnValue(s.val()); });   // 🧺 LAUNDRY_SPLIT: wetBasketMins, airDryHours
@@ -32520,13 +32516,18 @@ function _ceRelayAfterMark(kid,sk,msg){
   if(s.pacing&&s.pacing.mode&&typeof _gvRelaySubject==="function"){
     if(_gvRelaySubject(kid,sk,msg)) return;
   }
+  // 🔁 RELAY4 (2026-11-08): no Builder path (or it failed) — a Builder-paced subject or a daily still re-lays this week through the one door
+  try{ if(typeof _rlwCurrDoor==="function"&&typeof _rlwLays==="function"&&_rlwLays(kid,sk)){ _rlwCurrDoor(msg,[{kid:kid,sk:sk}],[],{toast:false}); cbMsg=msg; renderAll(); return; } }catch(e){}
   cbMsg=msg+" — "+(s.display||sk)+" isn’t Builder-paced, so nothing to re-lay.";
   renderAll();
 }
 function ceSetTargetEnd(kid,val){
   if(!currData.targetEnd) currData.targetEnd={};
+  const _u4=(typeof _rlwWas==="function")?[_rlwWas("curriculum/targetEnd/"+kid)]:[];   // 🔁 RELAY4: for Undo
   if(val){ currData.targetEnd[kid]=val; db.ref("curriculum/targetEnd/"+kid).set(val); }
   else { delete currData.targetEnd[kid]; db.ref("curriculum/targetEnd/"+kid).remove(); }
+  // 🔁 RELAY4 (2026-11-08): every subject of the kid re-lays this week through the one door; Undo = the date and the cards back
+  try{ if(typeof _rlwCurrDoor==="function"&&typeof _rlwKidPairs==="function") _rlwCurrDoor("📚 "+cap(kid)+": target end",_rlwKidPairs(kid),_u4,{toast:false}); }catch(e){}
   renderAll();
 }
 
@@ -33684,10 +33685,13 @@ function ceEditLesson(dayNum,val){
   if(!currData.lessons) currData.lessons={};
   if(!currData.lessons[kid]) currData.lessons[kid]={};
   if(!currData.lessons[kid][dayNum]) currData.lessons[kid][dayNum]={};
+  const _u4=(typeof _rlwWas==="function")?[_rlwWas("curriculum/lessons/"+kid+"/"+dayNum+"/"+key)]:[];   // 🔁 RELAY4: for Undo
   currData.lessons[kid][dayNum][key]=v;
   db.ref("curriculum/lessons/"+kid+"/"+dayNum+"/"+key).set(v);
   currData.lastEdit=new Date().toISOString();
   db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  // 🔁 RELAY4 (2026-11-08): the lesson's subject re-lays this week through the one door; Undo = the text and the cards back
+  try{ if(typeof _rlwCurrDoor==="function"){ const _s4=((currData.subjects||{})[kid]||{})[key]||{}; _rlwCurrDoor("📚 "+(_s4.display||key)+": lesson text",[{kid:kid,sk:key}],_u4); } }catch(e){}
 }
 
 // Remove a subject's CURRENT footprint — grid cells (Grid/Calendar/Lesson Map all read
@@ -33768,6 +33772,9 @@ function ceDeleteSubject(){
   currData.lastEdit=new Date().toISOString();
   if(db) db.ref("curriculum/lastEdit").set(currData.lastEdit);
   try{ if(typeof buildCurrPaceCum==="function") buildCurrPaceCum(); }catch(e){}
+  // 🔁 RELAY4 (2026-11-08): the kid's other subjects re-lay into the freed time through the one door (the deleted one is gone from
+  // the record, so it is never re-laid; its cards came off above). No field Undo — the delete itself cannot be undone.
+  try{ if(typeof _rlwCurrDoor==="function"&&typeof _rlwKidPairs==="function") _rlwCurrDoor("🗑 "+(s.display||sk)+" deleted",_rlwKidPairs(kid),[],{toast:false,sweep:true}); }catch(e){}
   ceCloseSheet();
   if(typeof gwShowToast==="function") gwShowToast("Deleted "+(s.display||sk)
     +(n?" — "+n+" grid cell"+(n!==1?"s":"")+" cleared":"")
@@ -34039,15 +34046,18 @@ function ceAddToggleRule(r){
       const owner=ceFindRuleOwner(ceAddKid,probe,null);
       if(owner&&!confirm('"'+owner+'" already has a "'+(RULE_LABEL[r]||r).replace(" of own work","").replace(" of day","")+'" rule. Only one subject can be '+(RULE_LABEL[r]||r)+' in the day. Replace it?')) return;
       if(owner){
-        const subs=currData.subjects[ceAddKid];
+        const subs=currData.subjects[ceAddKid]; const _p4=[], _u4=[];   // 🔁 RELAY4: the subjects whose rule moved, and their rules as they were
         for(const k of Object.keys(subs)){
           if(subs[k].paused) continue;
           if((subs[k].rules||"").includes(probe)){
             const oldParts=(subs[k].rules||"").split(",").map(x=>x.trim()).filter(Boolean).filter(x=>!_same(x));
+            _p4.push({kid:ceAddKid,sk:k}); _u4.push({p:"curriculum/subjects/"+ceAddKid+"/"+k+"/rules",was:subs[k].rules||""});
             subs[k].rules=oldParts.join(", ");
             db.ref("curriculum/subjects/"+ceAddKid+"/"+k+"/rules").set(subs[k].rules);
           }
         }
+        // 🔁 RELAY4 (2026-11-08): the subject that lost its first / last rule re-lays this week through the one door; Undo = its rule back
+        try{ if(_p4.length&&typeof _rlwCurrDoor==="function") _rlwCurrDoor("📚 "+owner+": order rule",_p4,_u4,{toast:false}); }catch(e){}
       }
     }
     parts.push(r);
@@ -34103,6 +34113,9 @@ function ceAddSave(){
   db.ref("curriculum/subjects/"+kid+"/"+key).set(subj);
   currData.lastEdit=new Date().toISOString();
   db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  // 🔁 RELAY4 (2026-11-08): a new DAILY lays into the rest of this week now, through the one door (Undo = the subject and its cards
+  // gone again); a new sequenced subject has no plan yet — it lays when she Builds it below (cbApply → the same door)
+  try{ if(typeof _rlwCurrDoor==="function") _rlwCurrDoor("📚 "+(subj.display||key)+" added",[{kid:kid,sk:key}],[{p:"curriculum/subjects/"+kid+"/"+key,gone:true}],{toast:false}); }catch(e){}
   ceCloseSheet();
   // A new SEQUENCED subject flows straight into pacing: its card sheet reopens
   // with 🧱 already expanded — set the mode, Preview, Build, done. (Dailies
@@ -38260,10 +38273,13 @@ function llSetOverride(key,url){
   if(u&&!llSafeUrl(u)){ llMsg="⚠ Not saved — the link has to start with https://"; ceRenderEditSheet(); return; }
   const s=currData.subjects[ceEditKid][ceEditKey];
   if(!s.lessonUrls||typeof s.lessonUrls!=="object") s.lessonUrls={};
+  const _u4=(typeof _rlwWas==="function")?[_rlwWas("curriculum/subjects/"+ceEditKid+"/"+ceEditKey+"/lessonUrls/"+k)]:[];   // 🔁 RELAY4: for Undo
   if(u) s.lessonUrls[k]=u; else delete s.lessonUrls[k];
   db.ref("curriculum/subjects/"+ceEditKid+"/"+ceEditKey+"/lessonUrls/"+k).set(u||null);
   currData.lastEdit=new Date().toISOString();
   db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  // 🔁 RELAY4 (2026-11-08): the subject re-lays this week through the one door (its cards carry the link); Undo = the link and the cards back
+  try{ if(typeof _rlwCurrDoor==="function") _rlwCurrDoor("📚 "+(s.display||ceEditKey)+": lesson link",[{kid:ceEditKid,sk:ceEditKey}],_u4,{toast:false}); }catch(e){}
   llMsg=u?"✓ Link saved for this lesson":"Cleared — this lesson uses the template again.";
   ceRenderEditSheet(); renderAll();
 }
@@ -39530,7 +39546,8 @@ function psApply(){
     if(subs[kid][key]) return re(psCap(kid)+" already has a subject with the key \u201c"+key+"\u201d.");
     const subj=psSubjectRec(u,days,minutes,f.at,f.time);
     subs[kid][key]=subj;
-    if(psLive()){ db.ref("curriculum/subjects/"+kid+"/"+key).set(subj); currData.lastEdit=new Date().toISOString(); db.ref("curriculum/lastEdit").set(currData.lastEdit); }
+    if(psLive()){ db.ref("curriculum/subjects/"+kid+"/"+key).set(subj); currData.lastEdit=new Date().toISOString(); db.ref("curriculum/lastEdit").set(currData.lastEdit);
+      try{ if(typeof _rlwCurrDoor==="function") _rlwCurrDoor("\u{1F5D3} "+String(u.title||u.id)+" on the schedule",[{kid:kid,sk:key}],[{p:"curriculum/subjects/"+kid+"/"+key,gone:true}],{toast:false}); }catch(e){} }   // 🔁 RELAY4 (2026-11-08): the unit's subject lays into this week through the one door; Undo = the subject gone
     res.kid={kid:kid,sk:key};
     psGateAndEnroll(u,kid,{subject:key});
   }
@@ -40825,16 +40842,20 @@ function cwdPinDay(sk,d){
 // plan-backed one re-lays the way a Days pill does. Paused subjects and subjects already set are left alone.
 function cwdUseMonThu(kid){
   if(typeof momHere==="function"&&!momHere()) return null;
-  const subs=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid])||{}; const up={}; const hit=[];
+  const subs=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid])||{}; const up={}; const hit=[]; const _u4=[];
   const MT=["Mon","Tue","Wed","Thu"];
   Object.keys(subs).forEach(function(sk){ const s=subs[sk]||{}; if(s.paused) return;
     const tpw=parseInt((s.pacing&&s.pacing.tpw)||s.timesPerWeek,10)||0; if(tpw!==4) return;
     if((noCoopDaysOf(s)||[]).join()===MT.join()) return;
+    if(typeof _rlwWas==="function") _u4.push(_rlwWas("curriculum/subjects/"+kid+"/"+sk+"/noCoopDays"));   // 🔁 RELAY4: for Undo
     s.noCoopDays=MT.slice(); up[sk+"/noCoopDays"]=MT.slice(); hit.push(sk); });
   if(!hit.length){ if(typeof gwShowToast==="function") gwShowToast("Every 4×/wk subject already has Mon–Thu for weeks without co-op — nothing written."); return {kid:kid,set:[],relaid:[]}; }
   if(typeof db!=="undefined"&&db&&!_dryRun()){ db.ref("curriculum/subjects/"+kid).update(up); currData.lastEdit=new Date().toISOString(); db.ref("curriculum/lastEdit").set(currData.lastEdit); }
   const relaid=[];
-  hit.forEach(function(sk){ const s=subs[sk]||{};
+  // 🔁 RELAY4 (2026-11-08): one run through the one door for every subject set (the re-lay reads noCoopDays itself, as cwdRelayKids's does);
+  // Undo = each field back. The Builder-gate path stays only where the door is absent.
+  if(typeof _rlwCurrDoor==="function"){ _rlwCurrDoor("🏫 Mon–Thu without co-op",hit.map(function(sk){ return {kid:kid,sk:sk}; }),_u4,{toast:false}).forEach(function(p){ relaid.push(p.sk); }); }
+  else hit.forEach(function(sk){ const s=subs[sk]||{};
     if(typeof planBacked==="function"&&planBacked(kid,sk)&&s.pacing&&s.pacing.mode&&typeof _gvRelaySubject==="function"){ const _k=cbKid,_s=cbSubjKey; cbKid=kid; cbSubjKey=sk; try{ if(_gvRelaySubject(kid,sk,(s.display||sk)+" re-laid")) relaid.push(sk); }catch(e){} cbKid=_k; cbSubjKey=_s; } });
   if(typeof gwShowToast==="function") gwShowToast("🏫 Weeks without co-op: Mon–Thu set on "+hit.length+" subject"+(hit.length!==1?"s":"")+(relaid.length?" — "+relaid.length+" re-laid":""));
   if(typeof renderAll==="function") renderAll();
@@ -42575,11 +42596,14 @@ let _rlwPend=null, _rlwTimer=null;
 // relayWeek("kidoff",{label:"😷 <Kid> off Wed, Nov 5", undo:[{p:"calendar/kidOverrides/<kid>/<iso>", gone:true}]})
 function relayWeek(why,info){
   info=info||{};
-  if(!_rlwPend) _rlwPend={whys:[],labels:[],undo:[],subjects:[],at:Date.now()};
+  if(!_rlwPend) _rlwPend={whys:[],labels:[],undo:[],subjects:[],at:Date.now(),today:false};
   _rlwPend.whys.push(String(why||"relay"));
+  if(info.today||(String(why)==="curriculum"&&typeof RLW_CURR_TODAY!=="undefined"&&RLW_CURR_TODAY)) _rlwPend.today=true;   // 🔁 RELAY4: a curriculum edit re-lays today's open cards too (plan question 1, behind RLW_CURR_TODAY)
   if(info.label&&_rlwPend.labels.indexOf(info.label)<0) _rlwPend.labels.push(String(info.label));
   // ten taps → one Undo back to BEFORE the first: a path's first "was" wins
-  (info.undo||[]).forEach(function(u){ if(u&&u.p&&!_rlwPend.undo.some(x=>x.p===u.p)) _rlwPend.undo.push(u.gone?{p:u.p,gone:true}:{p:u.p,was:(u.was===undefined?null:u.was)}); });
+  (info.undo||[]).forEach(function(u){ if(!u||!u.p||_rlwPend.undo.some(x=>x.p===u.p)) return;
+    try{ if(!u.gone&&u.was!=null&&JSON.stringify(u.was).length>((typeof RLW_UNDO_MAX_JSON!=="undefined")?RLW_UNDO_MAX_JSON:16000)){ dbg("relay undo: "+u.p+" too big to keep — the cards still come back"); return; } }catch(e){}   // 🔁 RELAY4
+    _rlwPend.undo.push(u.gone?{p:u.p,gone:true}:{p:u.p,was:(u.was===undefined?null:u.was)}); });
   (info.subjects||[]).forEach(function(s){ if(s&&s.kid&&s.sk&&!_rlwPend.subjects.some(x=>x.kid===s.kid&&x.sk===s.sk)) _rlwPend.subjects.push({kid:s.kid,sk:s.sk}); });   // 🔁 RELAY3: pass B — the subjects re-laid after the sweep, one after another
   try{ clearTimeout(_rlwTimer); }catch(e){}
   _rlwTimer=setTimeout(function(){ _rlwFire(0); },RLW_WAIT_MS);
@@ -42769,7 +42793,7 @@ function _rlwModeNoAsk(){
   }catch(e){ return "tomorrow"; }
 }
 function _rlwChain(list,pend,fin){
-  const q=(list||[]).slice(); const mode=_rlwModeNoAsk(); const why=(pend&&pend.whys&&pend.whys[0])||"relay";
+  const q=(list||[]).slice(); const mode=(pend&&pend.today&&typeof RLW_CURR_TODAY!=="undefined"&&RLW_CURR_TODAY&&typeof _rlwModeToday==="function")?_rlwModeToday():_rlwModeNoAsk(); const why=(pend&&pend.whys&&pend.whys[0])||"relay";   // 🔁 RELAY4: a curriculum run may take today too
   const next=function(){
     const s=q.shift(); if(!s){ fin(); return; }
     let pb=false, dl=false; try{ pb=(typeof planBacked==="function")&&planBacked(s.kid,s.sk); dl=!pb&&_rlwDailyOk(s.kid,s.sk); }catch(e){ pb=false; dl=false; }
@@ -42875,6 +42899,122 @@ function _rlwDailyDiff(kid,sk,liveTasks,desired,o){
   });
   return {upd:upd,summary:summary,tasksAfter:after};
 }
+// RELAY4_START — 📚 EVERY CURRICULUM DOOR RE-LAYS (her words 2026-11-08: "if I change something in the grid, if anything happens in
+// the grid or on the curriculums page, it all reflects in the week and everything is regenerated as well, without having to say
+// regenerate or generate"; PLAN_living_schedule_finish_2026-11-08 slice A). Every Curriculum-page door that only SAVED — a grid
+// cell (gvCommitCell, gvAddMissingDays, gvRecountTotal), lesson text (lmSaveSlotText, ceEditLesson), add / delete / copy a subject
+// (ceAddSave, ceDeleteSubject, cbCopyTo, psApply), the lanes (lnEditSave, lnRetire, lnDelete, lnUndoLast), max per day (cbSetCap),
+// target end (ceSetTargetEnd), a lesson link (llSetOverride), Mon–Thu (cwdUseMonThu), an Add-sheet order rule (ceAddToggleRule),
+// a hand mark with no Builder path (_ceRelayAfterMark) — now ends in _rlwCurrDoor: the SAME relayWeek("curriculum") run rlSet
+// already makes (pass A the sweep, pass B = reprojectSubjectWeek for exactly the kid+subject touched, chained, one lock, the
+// "what moved" line, Undo = the field AND the cards back). Ten cells typed within 2 s → one run (relayWeek's own wait). A subject
+// that is neither Builder-paced nor a daily (a card-only subject) saves and says so once — the engine has no re-lay for it
+// (RELAY3's rule). A checked card never moves and its text never changes; a fixed-time class stays at its time (FXPIN) — the
+// engines' own rules, unchanged here. The device that tapped re-lays; every other device only redraws (CURRLIVE below).
+const RLW_CURR_TODAY=true;   // plan question 1 (her answer pending): a curriculum edit mid-day re-lays TODAY's open cards too, from now ("today"); false = today kept, from tomorrow
+const RLW_UNDO_MAX_JSON=16000;   // an Undo "was" bigger than this (a kid's whole lesson grid) is not kept in the log — the cards still come back
+let _rlwSavedToastAt=0;
+// does the engine re-lay this subject at all? Builder-paced, or a daily — a paused one never
+function _rlwLays(kid,sk){
+  try{ const s=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid]||{})[sk]; if(!s||s.paused) return false;
+    return !!((typeof planBacked==="function"&&planBacked(kid,sk))||(typeof _rlwDailyOk==="function"&&_rlwDailyOk(kid,sk))); }catch(e){ return false; }
+}
+// every subject of a kid the engine re-lays — for a kid-wide door (max per day, target end, a deleted subject's freed time, added days)
+function _rlwKidPairs(kid){
+  const subs=(((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid]||{};
+  return Object.keys(subs).filter(function(sk){ return _rlwLays(kid,sk); }).map(function(sk){ return {kid:kid,sk:sk}; });
+}
+// the members of one or two lanes (before / after), as pairs
+function _rlwLanePairs(kid,a,b){
+  const out=[]; [a,b].forEach(function(l){ if(!l) return; let us=l.units; try{ us=(typeof _lnList==="function")?_lnList(us):(Array.isArray(us)?us:Object.values(us||{})); }catch(e){ us=[]; }
+    (us||[]).forEach(function(u){ let sks=[]; try{ sks=(typeof lnUnitSubs==="function")?lnUnitSubs(u):(u&&u.sk?[u.sk]:[]); }catch(e){} sks.forEach(function(sk){ if(!out.some(function(p){ return p.sk===sk; })) out.push({kid:kid,sk:String(sk)}); }); }); });
+  return out;
+}
+// an Undo entry for a curriculum path as it is RIGHT NOW in this device's copy — call it before the write
+function _rlwWas(p){
+  try{ const parts=String(p).split("/"); if(parts[0]!=="curriculum") return null; let o=(typeof currData!=="undefined")?currData:null;
+    for(let i=1;i<parts.length;i++){ if(o==null||typeof o!=="object"){ o=undefined; break; } o=o[parts[i]]; }
+    return (o===undefined||o===null)?{p:p,gone:true}:{p:p,was:JSON.parse(JSON.stringify(o))}; }catch(e){ return {p:p,gone:true}; }
+}
+// THE door: the label, the kid+subject pairs the edit touched, the Undo entries (captured before the write) → ONE
+// relayWeek("curriculum"). Returns the pairs the engine will re-lay. o.sweep: run even with no such pair (the sweep alone);
+// o.toast===false: never the "isn't paced" word (the caller has its own).
+function _rlwCurrDoor(label,pairs,undo,o){
+  o=o||{}; const lays=[]; const saved=[];
+  (pairs||[]).forEach(function(p){ if(!p||!p.kid||!p.sk) return; if(lays.some(function(x){ return x.kid===p.kid&&x.sk===p.sk; })) return; if(_rlwLays(p.kid,p.sk)) lays.push({kid:p.kid,sk:p.sk}); else saved.push(p); });
+  if(typeof relayWeek!=="function") return lays;
+  if(!lays.length&&!o.sweep){
+    if(saved.length&&o.toast!==false&&typeof gwShowToast==="function"&&Date.now()-_rlwSavedToastAt>10000){ _rlwSavedToastAt=Date.now();
+      const s=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[saved[0].kid]||{})[saved[0].sk]||{};
+      gwShowToast("✎ Saved — "+(s.display||saved[0].sk)+" isn't paced by the Builder, so this week's cards re-lay on the next week build or 🔄 Regenerate"); }
+    return lays; }
+  relayWeek("curriculum",{label:String(label||"📚 Curriculum"),subjects:lays,undo:(undo||[]).filter(Boolean)});
+  return lays;
+}
+// the mode for a curriculum run when RLW_CURR_TODAY: before school "fresh" (today laid by its pattern like any day), mid-day
+// "today" (today's open cards re-laid from now, their slots kept — the mode Mom's old OK gave), after school or no school
+// today "tomorrow" — never a question on any device
+function _rlwModeToday(){
+  try{
+    const now=new Date(); const nowMin=now.getHours()*60+now.getMinutes(); const td=(typeof _todayDay==="string")?_todayDay:"";
+    const _r0=(typeof gwRules==="function")?gwRules():{};
+    const r=(typeof dtSM==="function"&&td)?Object.assign({},_r0,{schoolStart:dtSM(td,_r0.schoolStart),schoolEnd:dtEM(td,_r0.schoolEnd)}):_r0;   // ⏰ DAYTIMES: today's own times
+    const schoolDay=["monday","tuesday","wednesday","thursday","friday"].indexOf(td)>=0&&!!((typeof DAY_DT!=="undefined"&&DAY_DT)||{})[td];
+    if(!schoolDay) return "tomorrow";
+    if(r.schoolStart!=null&&nowMin<r.schoolStart) return "fresh";
+    if(r.schoolEnd!=null&&nowMin>=r.schoolEnd) return "tomorrow";
+    return "today";
+  }catch(e){ return "tomorrow"; }
+}
+// RELAY4_END
+// CURRLIVE_START — 📚 THE CURRICULUM IS LIVE (slice A, 2026-11-08). Before: db.ref("curriculum").once("value") at boot — a grid edit on
+// one device did not reach another until it reloaded, and a kiosk open since Friday built Sunday's week from Friday's curriculum.
+// Now .on("value") through currOnValue: the FIRST arrival does exactly what the once did (fbCurrLoaded, the pace cumulatives,
+// displacement, the auto-build timer, the sweep re-armed, the empty-family skeleton); every later arrival within CURR_ECHO_MS of
+// this device's own curriculum write is its echo and is skipped (lastCurrWrite — the week listeners' lastTasksWrite rule); a real
+// change from another device replaces the copy (the currData object itself stays — readers hold it), rebuilds the cumulatives
+// and redraws — it NEVER re-lays (no relayWeek, no schedCascade): the device that saved re-lays, once, from its door. A screen
+// mid-edit (an input focused) keeps its field; the data is in, the redraw waits for the next render. The stamp: currStampDb
+// wraps db.ref once at init so every db.ref("curriculum…").set / update / remove, and a root update carrying a curriculum
+// path, marks lastCurrWrite.
+function _currIsPath(p){ const s=String(p==null?"":p); return s==="curriculum"||s.indexOf("curriculum/")===0; }
+function currStampDb(d){
+  if(!d||typeof d.ref!=="function"||d._currStamped) return d;
+  const _ref=d.ref.bind(d);
+  d.ref=function(p){ const r=_ref.apply(null,arguments); if(!r) return r;
+    try{
+      if(_currIsPath(p)){ ["set","update","remove"].forEach(function(m){ const f=r[m]; if(typeof f==="function") r[m]=function(){ lastCurrWrite=Date.now(); return f.apply(r,arguments); }; }); }
+      else if(p==null||p===""){ const u=r.update; if(typeof u==="function") r.update=function(o){ try{ if(o&&Object.keys(o).some(_currIsPath)) lastCurrWrite=Date.now(); }catch(e){} return u.apply(r,arguments); }; }
+    }catch(e){}
+    return r; };
+  d._currStamped=true; return d;
+}
+function currOnValue(v){
+  const first=!(typeof fbCurrLoaded!=="undefined"&&fbCurrLoaded);
+  if(first){
+    fbCurrLoaded=true; // even an empty answer counts — the cascade may now trust subjNoCarry
+    if(v){currData=v;buildCurrPaceCum();dbg("curriculum loaded: "+Object.keys(currData.subjects||{}).join(","));runDisplacement();if(tab==="schedule")renderAllSoon();setTimeout(autoGenerateWeekIfNeeded,3000);}
+    // A brand-new family has no curriculum node at all. Leaving currData null left the Subjects tab
+    // stuck on "No curriculum uploaded" with no "+ Add Subject" card — no first door (a new family, 2026-10-01).
+    // An empty skeleton renders the normal Subjects tab; the Add sheet writes only its own subject path.
+    else if(!currData||!currData.subjects){ currData=Object.assign(currData||{},{subjects:{},lessons:{},weekDays:{}}); dbg("curriculum empty — blank skeleton so the Subjects tab can add the first subject"); renderAllSoon(); }   // (the done-marks listener may already have made a {done:{}} stub — keep it)
+    schedCascade(); // curriculum may be the LAST loader to answer — re-arm the debounced sweep
+    return;
+  }
+  if(typeof isUploading!=="undefined"&&isUploading) return;
+  if(Date.now()-lastCurrWrite<CURR_ECHO_MS){ if(typeof dbg==="function") dbg("skip:curriculum echo"); return; }
+  if(!v||typeof v!=="object") return;   // a wiped node is never copied over a working screen
+  // another device's change: the copy follows, key by key (memory-only bits this device holds stay)
+  if(!currData||typeof currData!=="object") currData={};
+  Object.keys(currData).forEach(function(k){ if(v[k]===undefined&&k!=="momVerifyKid") delete currData[k]; });
+  Object.keys(v).forEach(function(k){ currData[k]=v[k]; });
+  try{ if(typeof buildCurrPaceCum==="function") buildCurrPaceCum(); }catch(e){}
+  try{ if(typeof runDisplacement==="function") runDisplacement(); }catch(e){}
+  if(typeof dbg==="function") dbg("curriculum updated from another device");
+  try{ const ae=(typeof document!=="undefined"&&document)?document.activeElement:null; if(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(String(ae.tagName||""))) return; }catch(e){}
+  if(typeof renderAllSoon==="function") renderAllSoon();
+}
+// CURRLIVE_END
 // RELAY_END
 // RELAY2_START — 🔁 SETTINGS + CALENDAR THROUGH THE ONE DOOR (her word "continue next slice" 2026-11-03; step 4, slice 2).
 // Settings: every save of config/rules goes through saveRules; when a key the scheduler lays by changed (School Day Times,
@@ -62961,10 +63101,13 @@ function cbSetCap(kid,val){
   if(!db) return;
   if(!currData.dayCap) currData.dayCap={};
   val=parseInt(val)||0;
+  const _u4=(typeof _rlwWas==="function")?[_rlwWas("curriculum/dayCap/"+kid)]:[];   // 🔁 RELAY4: for Undo
   if(val>0){ currData.dayCap[kid]=val; db.ref("curriculum/dayCap/"+kid).set(val); }
   else { delete currData.dayCap[kid]; db.ref("curriculum/dayCap/"+kid).remove(); }
   currData.lastEdit=new Date().toISOString();
   db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  // 🔁 RELAY4 (2026-11-08): every subject of the kid re-lays this week through the one door; Undo = the cap and the cards back
+  try{ if(typeof _rlwCurrDoor==="function"&&typeof _rlwKidPairs==="function") _rlwCurrDoor("📚 "+cap(kid)+": max per day",_rlwKidPairs(kid),_u4,{toast:false}); }catch(e){}
   renderAll();
 }
 function cbCapStep(kid,d){ cbSetCap(kid,cbDayCap(kid)+d); }
@@ -63073,6 +63216,8 @@ function lnEditSave(){
   db.ref("curriculum/lanes/"+kid+"/"+id).set(lane);
   currData.lastEdit=new Date().toISOString(); db.ref("curriculum/lastEdit").set(currData.lastEdit);
   lnUndo={kid:kid,id:id,prev:prev,label:(prev?"updated":"created")+" lane “"+name+"”"};
+  // 🔁 RELAY4 (2026-11-08): the lane's members (before and after) re-lay this week through the one door; Undo = the lane back
+  try{ if(typeof _rlwCurrDoor==="function"&&typeof _rlwLanePairs==="function") _rlwCurrDoor("🛤 lane “"+name+"”",_rlwLanePairs(kid,prev,lane),[prev?{p:"curriculum/lanes/"+kid+"/"+id,was:prev}:{p:"curriculum/lanes/"+kid+"/"+id,gone:true}],{toast:false}); }catch(e){}
   lnEdit=null; cbMsg=""; renderAll();
 }
 // 🛤 RETIRE — her rule 2026-09-12: a finished book "drops off and is held in the rules panel
@@ -63095,6 +63240,8 @@ function lnRetire(id,idx,on){
   db.ref("curriculum/lanes/"+kid+"/"+id).set(lane);
   currData.lastEdit=new Date().toISOString(); db.ref("curriculum/lastEdit").set(currData.lastEdit);
   lnUndo={kid:kid,id:id,prev:prev,label:(on?"retired ":"brought back ")+"“"+nm+"”"};
+  // 🔁 RELAY4 (2026-11-08): the lane's members re-lay this week through the one door; Undo = the lane back
+  try{ if(typeof _rlwCurrDoor==="function"&&typeof _rlwLanePairs==="function") _rlwCurrDoor("🛤 "+(on?"retired ":"brought back ")+"“"+nm+"”",_rlwLanePairs(kid,prev,lane),[{p:"curriculum/lanes/"+kid+"/"+id,was:prev}],{toast:false}); }catch(e){}
   renderAll();
 }
 function lnDelete(id){
@@ -63105,15 +63252,20 @@ function lnDelete(id){
   db.ref("curriculum/lanes/"+kid+"/"+id).remove();
   currData.lastEdit=new Date().toISOString(); db.ref("curriculum/lastEdit").set(currData.lastEdit);
   lnUndo={kid:kid,id:id,prev:prev,label:"removed lane “"+(l.name||id)+"”"};
+  // 🔁 RELAY4 (2026-11-08): the members go back to their own settings this week through the one door; Undo = the lane back
+  try{ if(typeof _rlwCurrDoor==="function"&&typeof _rlwLanePairs==="function") _rlwCurrDoor("🛤 lane “"+(l.name||id)+"” removed",_rlwLanePairs(kid,prev,null),[{p:"curriculum/lanes/"+kid+"/"+id,was:prev}],{toast:false}); }catch(e){}
   if(lnEdit&&lnEdit.id===id) lnEdit=null;
   renderAll();
 }
 function lnUndoLast(){
   if(!lnUndo||!db) return; const u=lnUndo; lnUndo=null;
   if(!currData.lanes) currData.lanes={}; if(!currData.lanes[u.kid]) currData.lanes[u.kid]={};
+  const _cur4=currData.lanes[u.kid][u.id]?JSON.parse(JSON.stringify(currData.lanes[u.kid][u.id])):null;   // 🔁 RELAY4: the lane as it is, for the door's Undo
   if(u.prev){ currData.lanes[u.kid][u.id]=u.prev; db.ref("curriculum/lanes/"+u.kid+"/"+u.id).set(u.prev); }
   else { delete currData.lanes[u.kid][u.id]; db.ref("curriculum/lanes/"+u.kid+"/"+u.id).remove(); }
   currData.lastEdit=new Date().toISOString(); db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  // 🔁 RELAY4 (2026-11-08): the members re-lay this week through the one door; its Undo = the lane as it was before this undo
+  try{ if(typeof _rlwCurrDoor==="function"&&typeof _rlwLanePairs==="function") _rlwCurrDoor("🛤 lane undo",_rlwLanePairs(u.kid,_cur4,u.prev),[_cur4?{p:"curriculum/lanes/"+u.kid+"/"+u.id,was:_cur4}:{p:"curriculum/lanes/"+u.kid+"/"+u.id,gone:true}],{toast:false}); }catch(e){}
   renderAll();
 }
 // Where a member stands: {name, pos, n, state:"up"|"waiting"|"done", prior:bool, multi:bool}
@@ -63291,6 +63443,8 @@ function cbCopyTo(toKid){
   db.ref("curriculum/subjects/"+toKid+"/"+sk).set(copy);
   currData.lastEdit=new Date().toISOString();
   db.ref("curriculum/lastEdit").set(currData.lastEdit);
+  // 🔁 RELAY4 (2026-11-08): the copy re-lays this week through the one door (a daily lays now; a sequenced copy lays when Built); Undo = the copy gone
+  try{ if(typeof _rlwCurrDoor==="function") _rlwCurrDoor("📚 "+(copy.display||sk)+" copied to "+cap(toKid),[{kid:toKid,sk:sk}],[{p:"curriculum/subjects/"+toKid+"/"+sk,gone:true}],{toast:false}); }catch(e){}
   cbMsg="✓ Copied "+(copy.display)+" to "+cap(toKid)+" — set their pacing and Build.";
   cbSetKid(toKid);
   cbOpenSubj(sk);
@@ -66818,8 +66972,11 @@ function gvRecountTotal(kid,sk){
   let n=0;
   for(const dn of Object.keys(lessons)){ if(gvFilled((lessons[dn]||{})[sk])) n++; }
   if(currData.subjects[kid]&&currData.subjects[kid][sk]){
+    const _was4=currData.subjects[kid][sk].total;   // 🔁 RELAY4: for Undo
     currData.subjects[kid][sk].total=n;
     db.ref("curriculum/subjects/"+kid+"/"+sk+"/total").set(n);
+    // 🔁 RELAY4: a changed count re-lays the subject this week through the one door (a bulk fill / clear comes here once per subject — one run)
+    if(_was4!==n){ try{ if(typeof _rlwCurrDoor==="function") _rlwCurrDoor("📚 "+(currData.subjects[kid][sk].display||sk)+": lesson count",[{kid:kid,sk:sk}],[(_was4==null)?{p:"curriculum/subjects/"+kid+"/"+sk+"/total",gone:true}:{p:"curriculum/subjects/"+kid+"/"+sk+"/total",was:_was4}],{toast:false}); }catch(e){} }
   }
 }
 
@@ -66843,6 +67000,9 @@ function gvCommitCell(kid,dn,sk,val){
   }
   const had=gvFilled(row[sk]);
   if(val===String(row[sk]||"").trim()){ gvEdit=null; renderAll(); return; }
+  // 🔁 RELAY4 (2026-11-08): the paths this door writes, as they are now — for Undo (the cell, the count; the list only if it is re-synced below)
+  const _P4="curriculum/subjects/"+kid+"/"+sk+"/";
+  const _u4=(typeof _rlwWas==="function")?[_rlwWas("curriculum/lessons/"+kid+"/"+dn+"/"+sk),_rlwWas(_P4+"total")]:[]; const _lw4=(typeof _rlwWas==="function")?[_rlwWas(_P4+"lessonSeq"),_rlwWas(_P4+"lessonIds"),_rlwWas(_P4+"nextLid")]:[];
   if(!val&&!had){ gvEdit=null; renderAll(); return; }
   if(!val){
     delete row[sk];
@@ -66860,10 +67020,12 @@ function gvCommitCell(kid,dn,sk,val){
   // stale version and quietly undo the edit. 2026-08-14: Lincoln's eggspress cells were
   // renamed to L175/L176 in the grid while the sequence still read L178/L179 twice, and
   // Lucy's hwt still listed p.16-p.26 after Mom cleared those cells.
-  { const _p={}; gvSyncSeqInto(_p,[sk],kid); if(Object.keys(_p).length) db.ref("curriculum").update(_p); }
+  { const _p={}; gvSyncSeqInto(_p,[sk],kid); if(Object.keys(_p).length){ db.ref("curriculum").update(_p); _lw4.forEach(function(u){ _u4.push(u); }); } }
   currData.lastEdit=new Date().toISOString();
   db.ref("curriculum/lastEdit").set(currData.lastEdit);
   buildCurrPaceCum();
+  // 🔁 RELAY4: the cell's subject re-lays this week through the one door (ten cells within 2 s → one run); Undo = the cell, the count, the list and the cards back
+  try{ if(typeof _rlwCurrDoor==="function"){ const _s4=(currData.subjects[kid]||{})[sk]||{}; _rlwCurrDoor("📚 "+(_s4.display||sk)+": lesson text",[{kid:kid,sk:sk}],_u4); } }catch(e){}
   gvEdit=null;
   renderAll();
 }
@@ -67140,6 +67302,7 @@ function gvAddMissingDays(){
   if(!confirm("Add "+miss.length+" school day"+(miss.length>1?"s":"")+" to "+cap(kid)+"'s map ("+miss.slice(0,6).join(", ")+(miss.length>6?" …":"")+") and pull lessons forward into them? One-level undo is kept.")) return;
   const lessons=currData.lessons[kid];
   try{HA_LS.setItem("ha_addDaysUndo",JSON.stringify({kid,lessons:lessons,weekDays:(currData.weekDays||{})[kid]||null,at:Date.now()}));}catch(e){}
+  const _u4=(typeof _rlwWas==="function")?[_rlwWas("curriculum/lessons/"+kid),_rlwWas("curriculum/weekDays/"+kid)]:[];   // 🔁 RELAY4: for Undo (kept only while small — the door drops a grid too big for the log)
   const rowsArr=Object.keys(lessons).map(Number).filter(n=>lessons[n]).sort((a,b)=>a-b).map(dn=>lessons[dn]);
   miss.forEach(ds=>rowsArr.push({date:ds,week:_gvWkLabelFor(kid,ds)}));
   rowsArr.sort((a,b)=>((a.date||"")<(b.date||"")?-1:1));
@@ -67161,6 +67324,8 @@ function gvAddMissingDays(){
     db.ref("curriculum/lastEdit").set(currData.lastEdit);
   }
   try{ if(typeof buildCurrPaceCum==="function") buildCurrPaceCum(); }catch(e){}
+  // 🔁 RELAY4 (2026-11-08): every subject of the kid re-lays this week through the one door (the pulled-forward lessons land on their new days)
+  try{ if(typeof _rlwCurrDoor==="function"&&typeof _rlwKidPairs==="function") _rlwCurrDoor("📚 "+cap(kid)+": "+miss.length+" day"+(miss.length>1?"s":"")+" added",_rlwKidPairs(kid),_u4,{toast:false,sweep:true}); }catch(e){}
   if(typeof gwShowToast==="function") gwShowToast("Added "+miss.length+" day"+(miss.length>1?"s":"")+" — "+moved+" cells pulled forward ✓");
   renderAll();
 }
@@ -68877,11 +69042,14 @@ function lmSaveSlotText(kid,dayNum,sk,val){
   val=String(val||"").trim();
   const lk=((currData||{}).lessons||{})[kid];
   if(!val||!lk||!lk[dayNum]||!lk[dayNum][sk]){ lmEditSlot=null; renderAll(); return; }
+  const _was4=lk[dayNum][sk];   // 🔁 RELAY4: for Undo
   lk[dayNum][sk]=val;
   currData.lastEdit=new Date().toISOString();
   db.ref("curriculum/lessons/"+kid+"/"+dayNum+"/"+sk).set(val);
   db.ref("curriculum/lastEdit").set(currData.lastEdit);
   buildCurrPaceCum();
+  // 🔁 RELAY4 (2026-11-08): the slot's subject re-lays this week through the one door; Undo = the text and the cards back
+  try{ if(typeof _rlwCurrDoor==="function"){ const _s4=(((currData||{}).subjects||{})[kid]||{})[sk]||{}; _rlwCurrDoor("📚 "+(_s4.display||sk)+": lesson text",[{kid:kid,sk:sk}],[{p:"curriculum/lessons/"+kid+"/"+dayNum+"/"+sk,was:_was4}]); } }catch(e){}
   lmEditSlot=null;
   renderAll();
 }
