@@ -86,11 +86,12 @@ const stillDirect=cbs.filter(c=>/\brenderAll\(\)/.test(c.body)&&!KEEP.some(k=>k.
 ok("no listener callback calls renderAll() directly any more",stillDirect.length===0,stillDirect.map(c=>c.line+" "+c.path));
 const soon=cbs.filter(c=>/renderAllSoon\(\)/.test(c.body)).map(c=>c.path.replace(/\s/g,""));
 const MUST=['"ha_active_wk"','"calendar"','"esa"','"plans"','"scheduleOverrides"','"together"','"mathSprints"','"reviews"','"config/momLoop"',
-  '"laundry"','"kitchen/prepDone"','"kitchen/grocery"','"curriculum/done"','"curriculum"','"settings/mealWords"','"config/rules"','"mastery"',
+  '"laundry"','"kitchen/prepDone"','"kitchen/grocery"','"curriculum/done"','"settings/mealWords"','"config/rules"','"mastery"',
   '"waved"','"spotChecks"','"settings/spotCheck"','"config/rewards"','"config/storeCfg"','"config/grabs"','"config/zones"','"config/zonePlan"',
   '"config/rotationPeriod"','"config/routineBonus"','"config/choreVerify"','"config/zoneBonus"','"pointRequests"','"grabClaims"','"techOff"',
   'pw+"/sl"','"curriculum/resources"','"rebuildLog"'];
 ok("initFb's feeds that repainted now combine ("+MUST.length+")",MUST.every(p=>soon.includes(p)),MUST.filter(p=>!soon.includes(p)));
+ok("curriculum (📚 CURRLIVE, live since 2026-11-08): the listener hands the value to currOnValue, which combines and never paints directly",/db\.ref\("curriculum"\)\.on\("value",s=>\{ currOnValue\(s\.val\(\)\); \}\);/.test(html)&&/renderAllSoon\(\)/.test(fnSrc("currOnValue"))&&!/\brenderAll\(\)/.test(fnSrc("currOnValue")));
 const WEEK=["meta","checked","claimed","sentBack","discuss","momMoves","sl","tasks","blockouts","dayStart","momHold","pending_spins","spin_results","co_manual_sat"];
 const aw=fnSrc("attachWeekListeners");
 ok("this week's feeds combine ("+WEEK.length+": meta, checked, claimed, … co_manual_sat)",WEEK.every(k=>{ const i=aw.indexOf('db.ref(wk+"/'+k+'")'); const j=aw.indexOf("fbWeekRefs.push",i); return i>0&&/renderAllSoon\(\)/.test(aw.slice(i,j))&&!/\brenderAll\(\)/.test(aw.slice(i,j)); }),
@@ -111,6 +112,7 @@ const ALLOWED_FN=["cpuWatch",   // 📦 CPUNIT (2026-10-28): a unit's catalog en
   "cplnLoad",   // 🌿 CPLINCOLN (2026-10-29): Lincoln's class settings, plan and override arriving (read once through his mirror)
   "cplntApplyOne","cplntAfter",   // 👩‍🏫 CPLINCOLNL3 (2026-10-29): a teacher's drill for Lincoln arriving (drills/<cid>/<sid> listener) and graded
   "cplnpLoad",   // 🌿 CPLINCOLNPARITY (2026-10-29): his class's card, trim and test layers arriving (read once through his mirror)
+  "currOnValue",   // 📚 CURRLIVE (2026-11-08): the curriculum arriving (first load, or another device's edit) — the listener's one helper
   "attachWeekListeners","initFb","_loadPrevSl","mmAttachWeek","momBlocksListen","peekLoad","lrListen","rbLogListen","wsOnValue","hrOnValue","helpersOnValue","helperDaysOnValue","helperGiveOnValue","famProgOnValue","msgOnValue","pagesApply","envmRelease","envtFinalAttach","envsReadShared","envcSub","envClsKidLoad"];   // 🌿 ENVMIRROR / ENVSITE: listener-attach helpers whose arrivals combine; the teacher's release listener (data arrived)
 const stray=[]; { let cur=null; html.split("\n").forEach((l,i)=>{ const m=l.match(/^(?:async\s+)?function\s+([\w$]+)/); if(m) cur=m[1];
   if(/renderAllSoon\(\)/.test(l)&&!/^function renderAllSoon|^\/\//.test(l)&&!/^\/\/ /.test(l.trim())&&!ALLOWED_FN.includes(cur)) stray.push((i+1)+" in "+cur); }); }
