@@ -57,11 +57,17 @@ function mk(o){
     setTimeout:()=>0, mastLockSlideHeight:()=>{}, _dad:!!o.dad, dadAwardOk:()=>ctx._dad,
     pinOk:v=>v==="1111", dadPinOk:v=>v==="2222",
     _momSusp:null, _momSuspend:()=>{ ctx._momSusp={m:ctx._mom}; ctx._mom=false; }, _momResume:()=>{ ctx._mom=ctx._momSusp.m; ctx._momSusp=null; },
-    mastStartLog:()=>{ if(!ctx.kcLogGate()) return; ctx.mastLogMode=true; calls.push(["log"]); }};
+    mastStartLog:()=>{ if(!ctx.kcLogGate()) return; ctx.mastLogMode=true; calls.push(["log"]); },
+    // 🩺 KC_CHECKUP: the check-up's own page, as a stand-in that says whether this sitting may run (the real ckMomOk) and whether it runs
+    ckSession:(k,sid)=>(k==="kidA"&&sid==="ck1")?{sid:"ck1",kind:"checkup",name:"Facts check-up"}:null,
+    ckRenderHtml:(k,s)=>"CKPAGE("+k+","+s.sid+","+(ctx.ckMomOk(k,s.sid)?"open":"locked")+","+(ctx.get("ckRun")?"running":"idle")+")"+(ctx.ckMomOk(k,s.sid)?"":'<button onclick="ckMomStart()">🔒 Mom or Dad: start the check-up</button>'),
+    ckIsSpelling:()=>false, CK_SPELL_HOWTO:"", ckRe:()=>calls.push(["ckRe"]), kitPinGate:()=>calls.push(["kitPin"]),
+    momModeActive:false, adminPinUnlocked:false, dadUnlocked:false, haMomOn:()=>{ ctx._mom=true; calls.push(["momOn"]); }};
   ctx.document.createElement=()=>({innerHTML:""});
   vm.createContext(ctx);
   const code=GAMES+"\n"+KCM+"\n"+block+"\nlet kcModeMap=null; const KC_MODES=['today','lists','month'];\n"
-    +["_kcModeMap","kcCalGet","kcCalSet","kcCalToggleHTML","kcModeBodyHTML","kcPick","renderKidsCorner","retrSchedGo","retrOpenSprint","showTab"].map(fn).join("\n");
+    +["_kcModeMap","kcCalGet","kcCalSet","kcCalToggleHTML","kcModeBodyHTML","kcPick","renderKidsCorner","retrSchedGo","retrOpenSprint","showTab"].map(fn).join("\n")
+    +"\nlet ckRun=null, ckTimerIv=null, ckKidUnlock=false;\n"+["ckMomOk","ckStart","ckMomStart","ckRelock","ckStop"].map(fn).join("\n");
   vm.runInContext(code,ctx);
   ctx.get=e=>vm.runInContext(e,ctx); ctx.set=(k,v)=>{ ctx.__v=v; vm.runInContext(k+"=__v",ctx); };
   ctx.shown=()=>ctx.get("tab")==="mastery"?[1]:[];   // showTab is the real one: "shown" = it reached the Mastery tab
@@ -113,7 +119,7 @@ console.log("Kids' Corner: links on the kid's cards");
   const d=mk(); d.retrSchedGo("kidA","drill");
   ok("a drill link opens that drill in place, drawn bare (🎴 KC_CARD)", d.shown().length===0&&d.get("kcPlay.mode")==="card"&&draw(d).indexOf("MASTPAGE(kidA,drill,bare,kid)")>0);
   const k=mk(); k.retrSchedGo("kidA","study","ck1");
-  ok("a check-up link keeps the old path", k.get("kcPlay")===null);
+  ok("a check-up link opens that check-up in the Corner (🩺 KC_CHECKUP)", k.shown().length===0&&k.get("kcPlay.view")==="checkup"&&k.get("kcPlay.sid")==="ck1");
   const o=mk(); o.retrSchedGo("kidB","study","s1");
   ok("another kid's link keeps the old path", o.get("kcPlay")===null);
   const m=mk({mom:true}); m.retrSchedGo("kidA","study","s1");
@@ -199,6 +205,50 @@ console.log("🔒 KC_SPRINTCODE: a Sprint card's own saves need the same code (h
   ok("↩ undo a run asks first", src.indexOf('function msUndoRun(kid){\n  '+G+'function(){ msUndoRun(kid); },"undo this run")) return null;')>=0);
   ok("✎ Start here asks first", src.indexOf('function msStartFromForm(kid){ '+G+'function(){ msStartFromForm(kid); },"pick where to start")) return;')>=0);
   ok("Mom Says' Save stays Mom-only (its own momHere check)", /function msaysSave\(\)\{\n  const u=msaysUI; if\(!u\|\|u\.phase!=="done"\|\|!\(typeof momHere==="function"&&momHere\(\)\)\) return;/.test(src));
+}
+console.log("🩺 KC_CHECKUP: a check-up card opens in the Corner; Mom's or Dad's code unlocks that sitting only (her words 2026-11-07)");
+{ for(const how of ["tab","kiosk"]){
+    const c=mk(how==="kiosk"?{kioskK:true}:{}); c.retrSchedGo("kidA","study","ck1"); const h=draw(c);
+    ok(how+": the check-up opens in the Corner — the Mastery tab is never asked for", c.get("tab")==="kids"&&c.get("kcPlay.mode")==="card"&&c.get("kcPlay.view")==="checkup"&&h.indexOf("CKPAGE(kidA,ck1,locked,idle)")>0&&h.indexOf("Ava’s Corner")>0);
+  }
+  const c=mk({kioskK:true}); c.retrSchedGo("kidA","study","ck1");
+  ok("it isn't the 📚 Study sitting: mstSid never takes the check-up, the Mastery view is left alone", c.get("mstSid")!=="ck1"&&c.get("mastView")==="scores");
+  const box={innerHTML:""}; c.document.getElementById=id=>id==="kc-log-ask"?box:null;
+  c.ckMomStart("kidA","ck1");
+  ok("Start asks for the code first — in place, nothing runs, no PIN dialog", box.innerHTML.indexOf('id="kc-log-pin"')>0&&box.innerHTML.indexOf("start this check-up")>0&&c.get("ckRun")===null&&!c.calls.some(x=>x[0]==="kitPin"));
+  c.kcLogCode("9999");
+  ok("a wrong code starts nothing", c.get("ckRun")===null);
+  c.kcLogCode("1111");
+  ok("Mom's code starts THAT sitting", c.get("ckRun&&ckRun.sid")==="ck1"&&draw(c).indexOf("CKPAGE(kidA,ck1,open,running)")>0);
+  const flags=x=>JSON.stringify([x._mom,x.momHere(),x.get("momModeActive"),x.get("adminPinUnlocked"),x.get("dadUnlocked"),("ha_mom_on" in x.ls),x.calls.some(y=>y[0]==="momOn")]);
+  const OFF=JSON.stringify([false,false,false,false,false,false,false]);
+  ok("…without turning Mom mode on: the Mom switch, admin unlock and Dad's flag are untouched (her words: \"doesnt flip the mom switch\")", flags(c)===OFF, flags(c));
+  ok("…and unlocks nothing else: another check-up, or the same one off this card", c.ckMomOk("kidA","ck2")===false&&c.ckMomOk("kidB","ck1")===false);
+  c.ckStop();
+  ok("the sitting ends (Stop) → locked again", c.get("ckRun")===null&&c.ckMomOk("kidA","ck1")===false&&draw(c).indexOf("CKPAGE(kidA,ck1,locked,idle)")>0);
+  ok("…and still nothing of Mom's or Dad's is on after it closes", flags(c)===OFF, flags(c));
+  c.ckStart("kidA","ck1",0);
+  ok("…so starting again (no code) does nothing", c.get("ckRun")===null);
+  const r=mk(); r.retrSchedGo("kidA","study","ck1"); r.ckMomStart("kidA","ck1"); r.kcLogCode("2222");
+  ok("Dad's code works too", r.get("ckRun&&ckRun.sid")==="ck1");
+  ok("…and it doesn't turn Dad's code on either", flags(r)===OFF, flags(r));
+  r.kcCalSet("today","kidA");
+  ok("closing the card locks it again", r.ckMomOk("kidA","ck1")===false);
+  r.retrSchedGo("kidA","study","ck1"); r.set("ckRun",null); r.ckStart("kidA","ck1",0);
+  ok("…coming back asks again", r.get("ckRun")===null);
+  const m=mk({mom:true}); m.retrSchedGo("kidA","study","ck1"); m.ckMomStart("kidA","ck1");
+  ok("with the Mom switch on, no code: it just starts", m.get("ckRun&&ckRun.sid")==="ck1"&&!m.get("kcPlay.askLog")&&!m.calls.some(x=>x[0]==="kitPin"));
+  const dd=mk({dad:true}); dd.retrSchedGo("kidA","study","ck1"); dd.ckMomStart("kidA","ck1");
+  ok("with Dad's code already in, no code: it just starts", dd.get("ckRun&&ckRun.sid")==="ck1");
+  const o=mk(); o.retrSchedGo("kidB","study","ck1");
+  ok("another kid's check-up card isn't opened here", o.get("kcPlay")===null);
+  const x=mk({tab:"mastery"}); x.ckMomStart("kidA","ck1");
+  ok("off the Corner, Mastery's own door is unchanged (its PIN dialog)", x.calls.some(y=>y[0]==="kitPin"));
+  ok("check-up scoring keeps its gate, now per sitting", /function ckTap\(r,name\)\{\n  if\(!ckRun\|\|!ckMomOk\(ckRun\.kid,ckRun\.sid\)\) return;/.test(src));
+  ok("the kid-or-Mom split on the check-up page reads the same gate", src.indexOf("if(!ckMomOk(kid,session.sid)){   // her rule 2026-10-04")>0);
+  const body=n=>{ const i=src.indexOf("function "+n+"("); let d=0; for(let k=src.indexOf("{",i);k<src.length;k++){ if(src[k]==="{") d++; else if(src[k]==="}"&&--d===0) return src.slice(i,k+1); } return ""; };
+  ok("the code check, the check-up door and its gate never set a Mom or Dad flag", ["pinOk","dadPinOk","kcLogCode","kcCkStart","kcCkOk","_kcCkCard","kcCkRelock","ckMomOk"].every(n=>{ const b=body(n); return b&&!/haMomOn|momModeActive\s*=|adminPinUnlocked\s*=|momPinUnlocked\s*=|dadUnlocked\s*=|ha_mom_on/.test(b); }));
+  ok("the route opens it before any showTab", /if\(view==="study"&&kcCheckupOpen\(kid,sid\)\) return true;/.test(src));
 }
 console.log("Dad's Day");
 { const c=mk({tab:"moms-plan",mpSubView:"dadall",kcKid:""}); c.retrSchedGo("kidB","study","x");
