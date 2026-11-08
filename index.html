@@ -72359,6 +72359,7 @@ function gameLogEntry(st,now){
   const e={game:st.game||"which",deck:String(st.deck||""),at:now,items:items};   // 🔤 SPELLBUILD: each game names itself
   if(st.t0) e.secs=Math.max(0,Math.round((now-st.t0)/1000));
   if(st.game==="train"&&st.level!=null){ e.level=st.level; e.clean=!!st.clean; }   // 🚂 TRAIN: the round's level + clean — its level-up reads them back
+  if(st.game==="jeop"&&st.money){ e.mode="money"; e.bank=st.bank; e.bets=(st.bets||[]).map(b=>Object.assign({},b)); e.result=st.result||""; }   // 💵 JPMONEY: the final bank, the bets, the result
   return e;
 }
 function gameLogRound(st){
@@ -81198,7 +81199,8 @@ function buildMoleHtml(color){
 // Right → the ding, the cell turns green. Wrong → the bonk, one more try; wrong twice → "We'll come back to that one" (the answer is
 // never shown — the app never supplies what the kid must produce), the cell turns amber. When every cell is done the missed cards
 // come back once, then the finish: "N of M on the first try" against the kid's own best. No values, no points, no wager, no
-// lives, no clock, no opponent — a cell is worth exactly one card.
+// lives, no clock, no opponent — a cell is worth exactly one card. (💵 JPMONEY, her words 2026-11-08: Mom's game rule "Play money?" → Money
+// prices the same board like the TV show — play money inside the one game; guarded hooks below, each marked 💵 JPMONEY.)
 // Cards: Which one?'s own pool (whichPool / whichDeckModes read RAW, like Go Fish — a deck turned off for Which one? still plays here),
 // then this game's grid cell gameDeckOn(kid,"jeop",deck); a deck needs JP_MIN+ cards. Writes (only these): <kid>_settings/match_best key
 // "<board> · jeop" (first-try rights, only when beaten) and the round's gameLog entry (GAMELOG, game:"jeop"). NEVER touches the ladder —
@@ -81249,7 +81251,8 @@ function jeopStart(){
   const rows=Math.max(1,Math.min(JP_ROWS,Math.min.apply(null,decks.map(d=>byDeck[d].length))));
   const cells=[];
   decks.forEach((d,col)=>{ jeopColumn(byDeck[d],rows).forEach((it,row)=>{ cells.push({col:col,row:row,pid:it.id,act:jeopKind(it,modes[d]),done:false,first:false,fail:false}); }); });
-  jeopState={kid:masteryKid,deck:jeopBoardName(decks),decks:decks,mix:decks.length>1,game:"jeop",t0:Date.now(),rows:rows,cells:cells,open:null,turns:[],phase:"play",backs:null,first:0,of:cells.length,isPB:false,prevBest:null,lock:false,seq:0,msg:"Pick a square!",say:"",wager:null};
+  jeopState={kid:masteryKid,deck:jeopBoardName(decks),decks:decks,mix:decks.length>1,game:"jeop",t0:Date.now(),rows:rows,cells:cells,open:null,turns:[],phase:"play",backs:null,first:0,of:cells.length,isPB:false,prevBest:null,lock:false,seq:0,msg:"Pick a square!",say:""};
+  if(typeof jpMoneyStart==="function") jpMoneyStart(jeopState);   // 💵 JPMONEY: Money adds the dollar values + a hidden Daily Double (Off adds nothing)
   _mastRe();
 }
 function jeopStop(){ jeopState=null; _mastRe(); }   // drop the round as it stands: nothing written
@@ -81268,21 +81271,22 @@ function _jpOpen(st,ci,pid,act,back){
   if(act==="pick") t.opts=_jpLures(st,pid);
   if(act==="type") t.typed="";
   st.open={ci:ci,t:st.turns.length-1};
-  if(!back&&typeof jpWagerAsk==="function") jpWagerAsk(st,st.turns.length-1);   // 🎰 JPWAGER: with the rule on, the card waits for 👍 / 🤷 before its controls show
   const it=_jpIt(st,pid), lead=back?"One more time. ":"";
   st.msg=lead+(act==="say"?"Say it out loud, then tap \u{1F5E3}":act==="type"?"Type the answer.":"Tap the answer.");
   if(act==="say") _jpSay(st,lead+"What is it?"); else _jpSay(st,lead+(it&&!whichSilent(it)?jeopName(it):""));   // a word answer's FRONT is read (Which one? reads it too); a silent language is shown only
 }
 function jeopPickCell(ci){
-  const st=jeopState; if(!st||st.phase!=="play"||st.lock||st.open) return;
+  const st=jeopState; if(!st||st.phase!=="play"||st.lock||st.open||st.bet) return;   // 💵 JPMONEY: not while a bet is being made
   const c=st.cells[ci]; if(!c||c.done) return;
+  if(st.money&&typeof jpMoneyPick==="function"&&jpMoneyPick(st,ci)){ _mastRe(); return; }   // 💵 JPMONEY: a Daily Double asks for the bet first
   _jpOpen(st,ci,c.pid,c.act,false); _mastRe();
 }
-function _jpTurn(st,act){ if(!st||st.lock||st.phase==="done"||!st.open||st.wager!=null) return null;   // 🎰 JPWAGER: no answer before the confidence call
+function _jpTurn(st,act){ if(!st||st.lock||st.phase==="done"||!st.open) return null;
    const t=st.turns[st.open.t]; return (t&&t.act===act&&!t.done)?t:null; }
 function jeopSaid(){   // 🗣 "I said it" — the honor system: a tablet can't hear; the app says the name back as the confirm
   const st=jeopState, t=_jpTurn(st,"say"); if(!t) return;
   t.done=true; t.first=true;
+  if(st.money&&typeof jpMoneyAnswer==="function") jpMoneyAnswer(st,t);   // 💵 JPMONEY: the honor tap is a right answer
   _jpSettle(st,t,"",jeopName(_jpIt(st,t.pid))); _mastRe();   // the name is SAID back, never written
 }
 function jeopKey(ch){   // the number pad
@@ -81307,9 +81311,10 @@ function jeopPickTap(i){
   _jpAfter(st,t,jeopJudge(t,t.opts[i],_whichBack(_jpIt(st,t.pid))));
 }
 function _jpAfter(st,t,r){
-  if(r==="again"){ try{ matchBonk(); }catch(e){} st.msg=(typeof jpWagerMsg==="function"&&jpWagerMsg(t,r))||"Almost \u2014 try again!"; _mastRe(); return; }   // 🎰 JPWAGER: louder for a sure miss
+  if(st.money&&typeof jpMoneyAnswer==="function") jpMoneyAnswer(st,t);   // 💵 JPMONEY: the FIRST answer moves the bank (the show takes one response)
+  if(r==="again"){ try{ matchBonk(); }catch(e){} st.msg=(st.money&&typeof jpMoneyMsg==="function"&&jpMoneyMsg(st,t,r))||"Almost \u2014 try again!"; _mastRe(); return; }   // 💵 JPMONEY: the dollars, louder for a Daily Double
   if(r==="fail") try{ matchBonk(); }catch(e){}
-  _jpSettle(st,t,r==="fail"?((typeof jpWagerMsg==="function"&&jpWagerMsg(t,r))||"We\u2019ll come back to that one."):""); _mastRe();
+  _jpSettle(st,t,r==="fail"?((st.money&&typeof jpMoneyMsg==="function"&&jpMoneyMsg(st,t,r))||"We\u2019ll come back to that one."):""); _mastRe();
 }
 // The card is settled: mark its cell, a beat, then the board (or the next come-back). lead = the line on screen; spoken = said first (a picture's name)
 function _jpSettle(st,t,lead,spoken){
@@ -81317,6 +81322,7 @@ function _jpSettle(st,t,lead,spoken){
   if(c){ c.done=true; c.first=t.first; c.fail=t.fail; if(t.first) st.first++; }
   if(!t.fail) try{ matchDing(); }catch(e){}
   st.msg=lead||(t.first?"That\u2019s it!":"Okay \u2014 next one.");
+  if(!lead&&st.money&&typeof jpMoneyMsg==="function") st.msg=jpMoneyMsg(st,t,"settle")||st.msg;   // 💵 JPMONEY: "That's it! +$400"
   const pre=spoken?spoken+". ":(lead?lead+" ":"");
   if(t.first) _jpSay(st,pre+"That\u2019s it!"); else _jpSay(st,lead||"Next one.");
   st.lock=true; const seq=++st.seq;
@@ -81331,10 +81337,11 @@ function jeopNext(st){
 }
 // ── the end: every cell done → the missed cards come back once → finish ──
 function _jpEnd(st){
+  if(st.money&&typeof jpMoneyRoundEnd==="function"&&jpMoneyRoundEnd(st)) return;   // 💵 JPMONEY: Double Jeopardy, then Final Jeopardy, before the come-backs
   st.phase="back";
   const seen={}, backs=[];
   st.turns.forEach(t=>{ if(t.back||seen[t.pid]) return; if(Object.keys(t.wrong).length||t.fail){ seen[t.pid]=1; backs.push({pid:t.pid,act:t.act}); } });
-  st.backs=(typeof jpWagerSort==="function")?jpWagerSort(st,backs):backs;   // 🎰 JPWAGER: the sure misses come back first
+  st.backs=backs;
   if(!backs.length) return _jpFinish(st);
   st.msg="The board is clear! Let\u2019s look at a few again."; _jpSay(st,"The board is clear! Let's look at a few again.");
   st.lock=true; const seq=++st.seq; setTimeout(()=>{ if(jeopState===st&&st.lock&&st.seq===seq) jeopNext(st); },JP_BEAT*2);
@@ -81348,6 +81355,7 @@ function jeopBestKey(deck){ return deck+" \u{00B7} jeop"; }
 function _jpFinish(st){
   st.phase="done"; st.open=null; st.lock=false;
   const kid=st.kid||masteryKid;   // GAMEKID
+  if(st.money&&typeof jpMoneyFinish==="function") return jpMoneyFinish(st,kid);   // 💵 JPMONEY: the final bank is the result, the deck's best bank the record
   try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every act's result, game:"jeop"
   const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
   if(!s.match_best) s.match_best={};
@@ -81395,26 +81403,27 @@ function buildJeopHtml(color){
     decks.forEach(dk=>{ const sel=on.indexOf(dk)>=0; h+='<button class="jp-chip" onclick="jeopToggle(\''+q(dk)+'\')" aria-pressed="'+sel+'" style="'+(sel?'border-color:'+color+';background:'+color+';color:#fff':'')+'">'+esc(dk)+'</button>'; });
     h+='</div>';
     h+='<div style="display:flex;justify-content:center;margin:6px 0 14px"><button class="jp-btn" onclick="jeopStart()" style="background:'+color+';color:#fff;font-size:18px;padding:16px 32px">\u{1F4FA} '+(st?'Play again':'Build the board')+'</button></div>';
-    if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e;text-align:center">Pick any square. \u2605 is a card you know well, \u2605\u2605\u2605\u2605\u2605 one you\u2019re still learning. Answer it to clear it!</div></div>'; return h; }
+    if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e;text-align:center">'+((typeof jpMoneyIntro==="function"&&jpMoneyIntro(masteryKid))||'Pick any square. \u2605 is a card you know well, \u2605\u2605\u2605\u2605\u2605 one you\u2019re still learning. Answer it to clear it!')+'</div></div>'; return h; }   // 💵 JPMONEY: Money's own line
   }
-  const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[jeopBestKey(st.deck)];
+  const s=masteryData[st.kid+"_settings"]||{}, best=(st.money&&typeof jpMoneyBest==="function")?jpMoneyBest(st):(s.match_best||{})[jeopBestKey(st.deck)];   // 💵 JPMONEY: the best bank
   if(st.phase==="done"){
+    if(st.money&&typeof jpMoneyFinishHtml==="function") return h+jpMoneyFinishHtml(st)+'</div>';   // 💵 JPMONEY: New record! / You won $N / Out of money
     h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
     h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} You cleared the board!</div>';
     h+='<div style="font-size:17px;font-weight:800;color:#57534e;margin-top:10px">\u{1F4FA} '+st.first+' of '+st.of+' on the first try'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
-    if(typeof jpWagerFinishHtml==="function") h+=jpWagerFinishHtml(st);   // 🎰 JPWAGER: sure and right · sure but missed
     return h+'</div></div>';
   }
   // the board, with the open card above it
-  h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px;flex-wrap:wrap"><span style="font-size:13px;font-weight:800;color:#57534e">'+st.cells.filter(c=>c.done).length+' of '+st.of+' cleared</span>';
+  h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px;flex-wrap:wrap"><span style="font-size:13px;font-weight:800;color:#57534e">'+st.cells.filter(c=>c.done).length+' of '+st.cells.length+' cleared</span>';
   h+='<span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
     '<button onclick="jeopStop()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{21A9} Stop</button></span></div>';
+  if(st.money&&typeof jpMoneyBarHtml==="function") h+=jpMoneyBarHtml(st);   // 💵 JPMONEY: the round and the bank, big
   h+='<div style="display:flex;align-items:center;gap:10px;margin:10px 0 12px;padding:12px 14px;border-radius:18px;background:#eff6ff;border:2px solid #bfdbfe"><span style="font-size:28px;line-height:1">\u{1F4FA}</span><span style="flex:1;font-size:17px;font-weight:800;color:#1e3a8a">'+esc(st.msg)+'</span>'+
     (st.say?'<button onclick="jeopSayAgain()" aria-label="Hear it again" style="width:56px;height:56px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:26px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button>':'')+'</div>';
   const o=st.open, t=o?st.turns[o.t]:null, lock=st.lock;
+  if(st.bet&&typeof jpMoneyBetHtml==="function") h+=jpMoneyBetHtml(st,color);   // 💵 JPMONEY: the Daily Double / Final Jeopardy bet
   if(t&&!t.done||t&&lock){
     h+='<div style="margin:6px 0 12px"><span class="jp-card">'+_jpCardVis(st,t.pid,t.act)+'</span></div>';
-    if(st.wager!=null&&typeof jpWagerAskHtml==="function") h+=jpWagerAskHtml(st,color); else   // 🎰 JPWAGER: 👍 Sure / 🤷 Not sure first
     if(t.act==="say") h+='<div style="display:flex;justify-content:center"><button class="jp-btn" onclick="jeopSaid()"'+(lock||t.done?' disabled':'')+' style="background:'+color+';color:#fff;font-size:20px;padding:18px 34px">\u{1F5E3} I said it</button></div>';
     else if(t.act==="type"){
       h+='<div style="display:flex;justify-content:center;margin-bottom:10px"><span style="min-width:120px;height:56px;border-radius:14px;border:3px solid '+color+';background:#fff;font-family:\'Fraunces\',serif;font-size:30px;font-weight:800;color:#292524;display:inline-flex;align-items:center;justify-content:center;padding:0 14px">'+esc(t.typed||"")+'</span></div>';
@@ -81427,14 +81436,14 @@ function buildJeopHtml(color){
       h+='</div>';
     }
   }
-  if(st.phase==="play"){
+  if(st.phase==="play"&&!(st.money&&st.round===3)){   // 💵 JPMONEY: Final Jeopardy has no board
     const cols=st.decks.length;
     h+='<div class="jp-grid" style="grid-template-columns:repeat('+cols+',1fr);margin-top:14px">';
     st.decks.forEach(d=>{ h+='<div class="jp-head" title="'+esc(d)+'">'+esc(d)+'</div>'; });
     for(let r=0;r<st.rows;r++){ for(let c=0;c<cols;c++){ const ci=st.cells.findIndex(x=>x.col===c&&x.row===r), cell=st.cells[ci];
       if(!cell){ h+='<div></div>'; continue; }
-      const openNow=o&&o.ci===ci, can=!cell.done&&!o&&!lock;
-      h+='<button class="jp-cell'+(cell.done?(cell.first?' jp-ok':' jp-miss'):'')+'"'+(can?' onclick="jeopPickCell('+ci+')"':' disabled')+' aria-label="'+esc(st.decks[c])+' '+_jpStars(r)+(cell.done?(cell.first?' done':' missed'):'')+'"'+(openNow?' style="box-shadow:0 0 0 4px #fde68a"':'')+'>'+(cell.done?(cell.first?'\u2713':'\u25D0'):_jpStars(r))+'</button>'; } }
+      const openNow=o&&o.ci===ci||st.bet&&st.bet.ci===ci, can=!cell.done&&!o&&!lock&&!st.bet, lab=(st.money&&typeof jpMoneyCell==="function")?jpMoneyCell(st,r):_jpStars(r);   // 💵 JPMONEY: $200 … $1000 for ★ … ★★★★★
+      h+='<button class="jp-cell'+(cell.done?(cell.first?' jp-ok':' jp-miss'):'')+'"'+(can?' onclick="jeopPickCell('+ci+')"':' disabled')+' aria-label="'+esc(st.decks[c])+' '+lab+(cell.done?(cell.first?' done':' missed'):'')+'"'+(openNow?' style="box-shadow:0 0 0 4px #fde68a"':'')+'>'+(cell.done?(cell.first?'\u2713':'\u25D0'):lab)+'</button>'; } }
     h+='</div>';
   }
   return h+'</div>';
@@ -81999,9 +82008,9 @@ const GAME_RULES={
   spell:[{key:"source",label:"Which words does Build it use?",def:"learning",opts:[
     ["learning","Learning words only","Words still being introduced, or in the Word Workout — today’s rule."],
     ["all","All spelling words","Every spelling word in play. Learning words still come first, then the ones missed most recently."]]}],
-  jeop:[{key:"wager",label:"Daily double — say how sure you are before answering?",def:"off",opts:[   // 🎰 JPWAGER
-    ["off","Off","A square opens straight to its card — today’s rule."],
-    ["on","On","Once the card is open: 👍 Sure or 🤷 Not sure. A sure miss gets a louder “look again” and comes back first at the end."]]}],
+  jeop:[{key:"mode",label:"Play money?",def:"off",opts:[   // 💵 JPMONEY (her words 2026-11-08 — the Sure / Not sure daily double is retired)
+    ["off","Off","A plain board: a square is worth one card, no money — today’s rule."],
+    ["money","Money","Like the TV show: $200–$1000 squares, then Double Jeopardy ($400–$2000) and Final Jeopardy. Right adds, wrong takes away; hidden Daily Doubles let the kid bet. Play money inside the game only — never Stars."]]}],
   jumble:[{key:"reveal",label:"Show the sentence after…",def:"2",opts:[   // 🧩 UNJUMBLE (her word 2026-11-03: "keep it but add a setting to adjust times or never")
     ["2","2 misses","The second miss shows the sentence for a beat — today’s rule."],
     ["3","3 misses","A third try first; the third miss shows it."],
@@ -83986,46 +83995,178 @@ function buildTrainHtml(color){
   return h+'</div></div>';
 }
 // TRAIN_END
-// JPWAGER_START — 🎰 Jeopardy "Daily double" (her go 2026-11-03; PLAN_practice_games_2026-10-23.md Tier 4 "Jeopardy with wager: the Tier-3 board
-// plus a daily-double wager on confidence — CR + metacognition", and Tier 3 "Sure? then flip: a confident miss gets a louder correction + comes
-// back first" — the hypercorrection effect). There are no points on the board (the games contract), so the wager is CONFIDENCE: once a square's
-// card is open and before the kid answers it, two buttons — 👍 Sure / 🤷 Not sure. The answer is judged exactly as before; what changes is the
-// MISS: a sure miss gets the louder line ("You were sure — look again!") and, at the end, the sure misses come back FIRST. The finish adds one
-// line: "Sure and right N · Sure but missed M". Judged after the question is seen (not before, like TV's daily double): a confidence call
-// on the real question is the metacognition that teaches.
-// A Jeopardy GAME RULE (GAMERULES: GAME_RULES.jeop "wager", default "off" = today byte for byte; Mom flips it per kid in the games grid's
-// pop-up). Four guarded lines in the JEOPARDY block (_jpOpen asks, buildJeopHtml draws the two buttons, _jpAfter's miss line, _jpEnd's
-// come-back order) and one on the finish card. No writes of its own: the round still logs through gameLogRound (game:"jeop"); the sure flag
-// stays on the turn (st.turns[].sure) for the finish line only.
-function jeopWagerOn(st){ return !!(st&&typeof gameRule==="function"&&gameRule(st.kid,"jeop","wager")==="on"); }
-// _jpOpen's hook: with the rule on, the opened card waits for the confidence call (st.wager = the turn's index) before its controls show
-function jpWagerAsk(st,ti){ if(!jeopWagerOn(st)) return; st.wager=ti; }
-function jeopSure(sure){
-  const st=jeopState; if(!st||st.phase==="done"||st.lock||st.wager==null) return;
-  const t=st.turns[st.wager]; if(!t||t.done) return;
-  t.sure=!!sure; st.wager=null; _mastRe();
+// JPMONEY_START — 💵 Jeopardy with play money (her words 2026-11-08: "I don't know if I really like the daily double jeopardy and the sure
+// versus not sure. I like the idea of the fake money and betting to see if they win the game or if they run out of money, kind of like the
+// real game … more like Double Jeopardy"; follow the TV show's rules for the bank; Sure / Not sure retired). DESIGN_jeopardy_money_2026-11-08.md
+// — where it and the TV rules differ, the TV rules win. A Jeopardy GAME RULE (GAMERULES: GAME_RULES.jeop "mode", default "off" = the plain
+// board byte for byte; Mom picks "money" per kid in the games grid's pop-up). Read once when the board is built (st.money), so a flip mid-game
+// changes nothing until the next board.
+//   · JEOPARDY! — the same board (same columns, same cards, same say / type / pick, same two tries), the rows priced like the show:
+//     $200 $400 $600 $800 $1000 (★ → ★★★★★; a smaller deck gets fewer rows, same steps: 3 rows = $200 $400 $600). Bank starts at $0.
+//   · THE FIRST ANSWER MOVES THE BANK (the show takes one response): right → + the square's value, wrong → − it. The second try is still
+//     there to learn on, worth nothing. The bank CAN go below $0 (the show's rule, both rounds). "I said it" (the honor tap) is right.
+//   · DAILY DOUBLES — 1 hidden in round 1, 2 in round 2 (different columns when there are columns enough), never in the top row. Tapping
+//     one asks for the bet BEFORE the card shows: a slider from $5 up to the larger of the bank and the round's top value, ±$100, and
+//     "True Daily Double" (the whole bank). Right → + the bet, wrong → − the bet, with the louder line ("That was your Daily Double — look
+//     again!") kept from the retired Sure / Not sure — free, and it teaches.
+//   · DOUBLE JEOPARDY! — when round 1's board is clear: a new board from the same decks (cards not on round 1 first), every value doubled.
+//   · FINAL JEOPARDY — after Double Jeopardy, only with more than $0 (the show's rule): the category (deck) is named, the bet is $0 up to the
+//     bank, then the card — the least-known card on the board's decks.
+//   · THE END — the cards missed on the first try come back once, as on the plain board (worth nothing; the answer is never shown — the app
+//     never supplies what the kid must produce), then the finish: "🏆 New record! You won $N" (beat the deck's best bank) / "🎉 You won $N" /
+//     "💸 Out of money" (the bank is $0 or less after Double Jeopardy — no Final — or after Final). One "Play again" (the start screen's).
+//   · WRITES (only these): the round's gameLog entry (GAMELOG, game:"jeop", right / miss per card as before, plus mode, bank, bets, result —
+//     one guarded line in gameLogEntry) and <kid>_settings/match_best key "<board> · jeop money" (the deck's best bank, only when beaten, > $0).
+//     Play money exists inside one game only: never the real points economy, never Stars, never the trophy shelf; it resets every game.
+//     db && !_dryRun() only. Guarded hooks in the JEOPARDY block, each marked 💵 JPMONEY.
+const JPM_BASE=200, JPM_DD_MIN=5, JPM_STEP=5;
+function jeopMoneyOn(kid){ return typeof gameRule==="function"&&gameRule(kid,"jeop","mode")==="money"; }
+function jpMoneyFmt(n){ n=Math.round(Number(n)||0); return (n<0?"−":"")+"$"+String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g,","); }
+// PURE: a row's value — round 1 $200 × (row+1), Double Jeopardy twice that
+function jpMoneyVal(st,row){ return JPM_BASE*(row+1)*((st&&st.round===2)?2:1); }
+function jpMoneyBestKey(deck){ return deck+" \u{00B7} jeop money"; }
+// PURE: a bet held to its bounds, in $5 steps
+function jpMoneyClamp(b,v){ v=Math.round((Number(v)||0)/JPM_STEP)*JPM_STEP; return Math.max(b.min,Math.min(b.max,v)); }
+// PURE: the bet's bounds — a Daily Double $5 … the larger of the bank and the round's top value; Final $0 … the bank
+function jpMoneyBounds(st,kind){ return kind==="final"?{min:0,max:Math.max(0,st.bank)}:{min:JPM_DD_MIN,max:Math.max(st.bank,st.top)}; }
+// Hide n Daily Doubles: never the top row ($200 / $400), different columns while there are any left
+function jpMoneyDD(st,n){
+  const cand=_jpShuffle(st.cells.filter(c=>c.row>0)), took=[], cols={};
+  cand.forEach(c=>{ if(took.length<n&&!cols[c.col]){ took.push(c); cols[c.col]=1; } });
+  cand.forEach(c=>{ if(took.length<n&&took.indexOf(c)<0) took.push(c); });
+  took.forEach(c=>{ c.dd=true; });
 }
-// the two buttons in place of the answer controls while the call is pending
-function jpWagerAskHtml(st,color){
-  if(st.wager==null) return "";
-  return '<div style="text-align:center;font-size:15px;font-weight:800;color:#57534e;margin:4px 0 10px">\u{1F3B0} Daily double — how sure are you?</div>'+
-    '<div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap"><button class="jp-btn" onclick="jeopSure(true)" style="background:'+color+';color:#fff;min-width:140px">\u{1F44D} Sure</button><button class="jp-btn" onclick="jeopSure(false)" style="background:#fff;color:#57534e;border:2px solid #e2ddd6;min-width:140px">\u{1F937} Not sure</button></div>';
+// jeopStart's hook: Money on → the bank, round 1's values and its one Daily Double (Off adds nothing — and draws no random number)
+function jpMoneyStart(st){
+  if(!st||!jeopMoneyOn(st.kid)) return;
+  st.money=true; st.round=1; st.bank=0; st.bets=[]; st.bet=null; st.final=null; st.result="";
+  st.top=jpMoneyVal(st,st.rows-1);
+  jpMoneyDD(st,1);
 }
-// _jpAfter's hook: the miss line — louder for a sure miss
-function jpWagerMsg(t,r){ if(!t||!t.sure) return ""; return r==="again"?"You were sure — look again!":"You were sure — we’ll come back to that one first."; }
-// _jpEnd's hook: the sure misses come back first (stable for the rest)
-function jpWagerSort(st,backs){
-  if(!st||!jeopWagerOn(st)||!Array.isArray(backs)) return backs;
-  const sure={}; st.turns.forEach(t=>{ if(t&&!t.back&&t.sure&&(Object.keys(t.wrong||{}).length||t.fail)) sure[t.pid]=1; });
-  return backs.map((b,i)=>[b,i]).sort((x,y)=>((sure[y[0].pid]?1:0)-(sure[x[0].pid]?1:0))||(x[1]-y[1])).map(x=>x[0]);
+// jeopPickCell's hook: a Daily Double asks for the bet first (the card stays hidden, like the show)
+function jpMoneyPick(st,ci){
+  const c=st&&st.cells[ci]; if(!c||!c.dd) return false;
+  const b=jpMoneyBounds(st,"dd"); b.kind="dd"; b.ci=ci; b.val=jpMoneyClamp(b,jpMoneyVal(st,c.row)); st.bet=b;
+  st.msg="Daily Double! How much do you bet?"; _jpSay(st,"Daily Double! How much do you bet?");
+  return true;
 }
-// the finish card's line (rule on only)
-function jpWagerFinishHtml(st){
-  if(!st||!jeopWagerOn(st)) return "";
-  let sr=0, sm=0; st.turns.forEach(t=>{ if(!t||t.back||!t.sure) return; if(t.first) sr++; else sm++; });
-  return '<div style="font-size:14px;font-weight:800;color:#57534e;margin-top:8px">\u{1F3B0} Sure and right '+sr+' · Sure but missed '+sm+'</div>';
+function jeopBetSlide(v){   // the slider: no re-draw while the finger moves — the two labels follow
+  const st=jeopState; if(!st||!st.bet) return;
+  st.bet.val=jpMoneyClamp(st.bet,v);
+  try{ const a=document.getElementById("jp-bet-amt"), g=document.getElementById("jp-bet-go"); if(a) a.textContent=jpMoneyFmt(st.bet.val); if(g) g.textContent="Bet "+jpMoneyFmt(st.bet.val); }catch(e){}
 }
-// JPWAGER_END
+function jeopBetStep(d){ const st=jeopState; if(!st||!st.bet) return; st.bet.val=jpMoneyClamp(st.bet,st.bet.val+d); _mastRe(); }
+function jeopBetAll(){ const st=jeopState; if(!st||!st.bet||st.bank<Math.max(1,st.bet.min)) return; st.bet.val=jpMoneyClamp(st.bet,st.bank); jeopBetGo(); }   // True Daily Double: the whole bank
+function jeopBetGo(){
+  const st=jeopState; if(!st||!st.money||!st.bet||st.lock||st.open||st.phase!=="play") return;
+  const b=st.bet, amt=jpMoneyClamp(b,b.val); st.bet=null;
+  if(b.kind==="dd"){ const c=st.cells[b.ci]; if(!c||c.done) return _mastRe(); _jpOpen(st,b.ci,c.pid,c.act,false); }
+  else{ if(!st.final) return _mastRe(); _jpOpen(st,null,st.final.pid,st.final.act,false); }
+  const t=st.turns[st.open.t]; t.bet=amt; if(b.kind==="dd") t.dd=true; else t.fin=true;
+  st.msg="You bet "+jpMoneyFmt(amt)+". "+st.msg;
+  _mastRe();
+}
+// _jpAfter's / jeopSaid's hook: the FIRST answer on a square moves the bank (once per square; a come-back is worth nothing)
+function jpMoneyAnswer(st,t){
+  if(!st||!st.money||!t||t.back||t.paid!=null) return;
+  const right=!!(t.done&&t.first), o=st.open, c=(o&&o.ci!=null)?st.cells[o.ci]:null;
+  const amt=t.bet!=null?t.bet:(c?jpMoneyVal(st,c.row):0);
+  t.paid=right?amt:-amt; st.bank+=t.paid;
+  if(t.bet!=null) st.bets.push({round:st.round,kind:t.fin?"final":"dd",bet:t.bet,ok:right});
+}
+// the money lines (Off → "", the plain board's lines stand)
+function jpMoneyMsg(st,t,r){
+  if(!st||!st.money||!t||t.back) return "";
+  if(r==="again") return t.dd?"That was your Daily Double — look again!":(t.paid<0?jpMoneyFmt(t.paid)+" · ":"")+"Almost — try again!";
+  if(r==="fail") return t.dd?"That was your Daily Double — we’ll come back to that one.":"";
+  if(r==="settle"&&t.first&&t.paid>0) return "That’s it! +"+jpMoneyFmt(t.paid);
+  return "";
+}
+// _jpEnd's hook: round 1 clear → Double Jeopardy; Double Jeopardy clear → Final (more than $0 only); else the come-backs and the finish
+function jpMoneyRoundEnd(st){
+  if(!st||!st.money) return false;
+  if(st.round===1){ jpMoneyRound2(st); return true; }
+  if(st.round===2&&st.bank>0) return jpMoneyFinal(st);
+  return false;
+}
+function jpMoneyRound2(st){
+  const items=_jpItems(st.kid), modes=_jpModes(items,st.kid), pool=_jpWhichPool(items,st.kid), used={}, old=st.cells, cells=[];
+  old.forEach(c=>{ used[c.pid]=1; });
+  st.decks.forEach((d,col)=>{
+    const all=pool.filter(i=>(i.subject||"Other")===d), fresh=all.filter(i=>!used[i.id]), from=fresh.length>=st.rows?fresh:all;
+    if(!from.length){ old.filter(c=>c.col===col).forEach(c=>{ cells.push({col:col,row:c.row,pid:c.pid,act:c.act,done:false,first:false,fail:false}); }); return; }   // a deck emptied mid-game keeps its round-1 cards
+    jeopColumn(from,st.rows).forEach((it,row)=>{ cells.push({col:col,row:row,pid:it.id,act:jeopKind(it,modes[d]),done:false,first:false,fail:false}); });
+  });
+  st.cells=cells; st.of+=cells.length; st.round=2; st.top=jpMoneyVal(st,st.rows-1);
+  jpMoneyDD(st,2);
+  st.msg="Double Jeopardy! Every square is worth double now."; _jpSay(st,"Double Jeopardy! Every square is worth double now.");
+  st.lock=true; const seq=++st.seq; setTimeout(()=>{ if(jeopState===st&&st.lock&&st.seq===seq) jeopNext(st); },JP_BEAT*2);
+}
+// Final Jeopardy's card: the least-known card on the board's decks (one not played yet when there's a tie)
+function jpMoneyFinal(st){
+  const items=_jpItems(st.kid), modes=_jpModes(items,st.kid), seen={};
+  const order=(typeof MAST_TIER_ORDER!=="undefined"&&MAST_TIER_ORDER)||["daily","every_other_day","every_third_day","weekly","bi_weekly","monthly","learned","graduated"];
+  st.turns.forEach(t=>{ seen[t.pid]=1; });
+  const pool=_jpShuffle(_jpWhichPool(items,st.kid).filter(i=>st.decks.indexOf(i.subject||"Other")>=0));
+  if(!pool.length) return false;
+  pool.sort((a,b)=>(order.indexOf(a.tier||"daily")-order.indexOf(b.tier||"daily"))||((seen[a.id]?1:0)-(seen[b.id]?1:0)));
+  const it=pool[0], d=it.subject||"Other";
+  st.final={pid:it.id,act:jeopKind(it,modes[d]),deck:d}; st.round=3;
+  const b=jpMoneyBounds(st,"final"); b.kind="final"; b.val=jpMoneyClamp(b,st.bank/2); st.bet=b;
+  st.msg="Final Jeopardy! The category is "+d+". How much do you bet?"; _jpSay(st,"Final Jeopardy! The category is "+d+". How much do you bet?");
+  return true;
+}
+// _jpFinish's hook: the final bank is the result; the deck's best bank is the record to beat
+function jpMoneyFinish(st,kid){
+  const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
+  if(!s.match_best) s.match_best={};
+  const key=jpMoneyBestKey(st.deck), prev=s.match_best[key];
+  st.prevBest=prev==null?null:prev;
+  st.isPB=st.bank>0&&(prev==null||st.bank>prev);
+  st.result=st.bank<=0?"out":(st.isPB?"record":"won");
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: right / miss per card + the bank, the bets, the result
+  if(st.isPB){
+    s.match_best[key]=st.bank;
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.bank});   // this key only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
+  st.msg=st.result==="out"?"Out of money!":"You won "+jpMoneyFmt(st.bank)+"!"; st.say="";
+  try{ if(st.isPB&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F3C6} New record! You won "+jpMoneyFmt(st.bank),{noSong:true}); }catch(e){}
+}
+// ── the screen's money parts ──
+function jpMoneyIntro(kid){ return jeopMoneyOn(kid)?"\u{1F4B5} Play money, like the TV show! Right adds the square’s dollars, wrong takes them away. Find the Daily Doubles, then it’s Double Jeopardy and Final Jeopardy.":""; }
+function jpMoneyBest(st){ const s=masteryData[st.kid+"_settings"]||{}, v=(s.match_best||{})[jpMoneyBestKey(st.deck)]; return v==null?null:jpMoneyFmt(v); }
+function jpMoneyCell(st,row){ return jpMoneyFmt(jpMoneyVal(st,row)); }
+function jpMoneyBarHtml(st){
+  const nm=st.round===3?"\u{1F3C1} Final Jeopardy!":st.round===2?"\u{1F4FA} Double Jeopardy!":"\u{1F4FA} Jeopardy!";
+  return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:8px 0 0;padding:10px 16px;border-radius:18px;background:#1e3a8a;color:#fff"><span style="font-family:\'Fraunces\',serif;font-size:18px;font-weight:800">'+nm+'</span>'+
+    '<span style="font-size:13px;font-weight:800;color:#bfdbfe">Bank <span style="font-family:\'Fraunces\',serif;font-size:28px;font-weight:800;color:'+(st.bank<0?'#fca5a5':'#fde68a')+'">'+jpMoneyFmt(st.bank)+'</span></span></div>';
+}
+function jpMoneyBetHtml(st,color){
+  const b=st.bet; if(!b) return "";
+  const dd=b.kind==="dd", c=dd?st.cells[b.ci]:null, cat=dd?(c?st.decks[c.col]:""):(st.final?st.final.deck:"");
+  let h='<div style="margin:6px 0 12px;padding:16px;border-radius:18px;background:#fffbeb;border:3px solid #f59e0b;text-align:center">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:24px;font-weight:800;color:#92400e">'+(dd?'\u{1F3AF} Daily Double!':'\u{1F3C1} Final Jeopardy')+'</div>';
+  h+='<div style="font-size:15px;font-weight:800;color:#57534e;margin-top:4px">Category: '+esc(cat)+'</div>';
+  h+='<div style="font-size:13px;font-weight:700;color:#78716c;margin-top:4px">Your bank '+jpMoneyFmt(st.bank)+' \u{00B7} bet '+jpMoneyFmt(b.min)+' to '+jpMoneyFmt(b.max)+'</div>';
+  h+='<div id="jp-bet-amt" style="font-family:\'Fraunces\',serif;font-size:40px;font-weight:800;color:#292524;margin:8px 0">'+jpMoneyFmt(b.val)+'</div>';
+  h+='<input id="jp-bet-range" type="range" min="'+b.min+'" max="'+b.max+'" step="'+JPM_STEP+'" value="'+b.val+'" oninput="jeopBetSlide(this.value)" aria-label="Your bet" style="width:100%;max-width:420px;height:36px;accent-color:'+color+'">';
+  h+='<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:8px"><button class="jp-chip" onclick="jeopBetStep(-100)"'+(b.val<=b.min?' disabled':'')+'>− $100</button><button class="jp-chip" onclick="jeopBetStep(100)"'+(b.val>=b.max?' disabled':'')+'>+ $100</button></div>';
+  h+='<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:12px"><button id="jp-bet-go" class="jp-btn" onclick="jeopBetGo()" style="background:'+color+';color:#fff;font-size:18px">Bet '+jpMoneyFmt(b.val)+'</button>';
+  if(st.bank>0&&st.bank>=b.min) h+='<button class="jp-btn" onclick="jeopBetAll()" style="background:#fff;color:#92400e;border:2px solid #f59e0b">'+(dd?'\u{1F525} True Daily Double':'\u{1F525} Bet it all')+' ('+jpMoneyFmt(st.bank)+')</button>';
+  return h+'</div></div>';
+}
+function jpMoneyFinishHtml(st){
+  const out=st.result==="out", rec=st.result==="record";
+  let h='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(rec?'#f0fdf4':out?'#fffbeb':'#f8f7f4')+';border:2px solid '+(rec?'#16a34a':out?'#f59e0b':'#e2ddd6')+'">';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:24px;font-weight:800">'+(out?'\u{1F4B8} Out of money':rec?'\u{1F3C6} New record! You won '+jpMoneyFmt(st.bank):'\u{1F389} You won '+jpMoneyFmt(st.bank))+'</div>';
+  if(out) h+='<div style="font-size:16px;font-weight:800;color:#92400e;margin-top:8px">Bank '+jpMoneyFmt(st.bank)+(st.final?'':' \u{2014} no Final Jeopardy this time')+'. Try again!</div>';
+  if(st.prevBest!=null) h+='<div style="font-size:14px;font-weight:800;color:#57534e;margin-top:8px">'+(rec?'Your old record: ':'Record to beat: ')+jpMoneyFmt(st.prevBest)+'</div>';
+  if(st.bets&&st.bets.length) h+='<div style="font-size:14px;font-weight:700;color:#57534e;margin-top:8px">'+st.bets.map(x=>(x.kind==="final"?'\u{1F3C1} Final ':'\u{1F3AF} Daily Double ')+(x.ok?'+':'−')+jpMoneyFmt(x.bet)).join(' \u{00B7} ')+'</div>';
+  h+='<div style="font-size:14px;font-weight:700;color:var(--muted);margin-top:8px">\u{1F4FA} '+st.first+' of '+st.of+' squares on the first try</div>';
+  return h+'</div>';
+}
+// JPMONEY_END
 // GAMELIKE_START — 👍👎 "Did you like it?" after a game (her words 2026-11-03: "a check mark for the kid that says, do you like it or do you
 // not like it… so the mom can know if that particular game is something the kid is enjoying, so they can either uncheck it or keep it
 // there"). Under every game's finish card — every GAMES_LIST game, Match and Memory flip included — one line: "Did you like it?" with
