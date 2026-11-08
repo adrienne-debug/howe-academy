@@ -107,7 +107,7 @@ console.log("\n── notebooks.js: the page and the starter notebook ──");
   ok("a kid with no custom notebook gets the starter notebook with the Spelling page", /📝 Spelling/.test(g.student) && /Taylor's Notebook/.test(g.student));
   ok("nothing turned on → one page that says where to turn things on", /Nothing to print yet/.test(N.generate("taylor", base).student));
   ok("custom notebooks still build (Lincoln)", /Lincoln/.test(N.generate("lincoln", base).student));
-  ok("every custom generator adds the spelling page after its unit pages", (nbSrc.match(/spellNbPages\(ctx, UNIT_INSERT_THEMES\.\w+\)\.forEach/g) || []).length === 5);
+  ok("every custom generator adds the spelling page after its unit pages", (nbSrc.match(/spellNbPages\(ctx, (UNIT_INSERT_THEMES\.\w+|uT)\)\.forEach/g) || []).length === 5);
 }
 console.log("\n── wiring in the app ──");
 ok("the notebook context carries the spelling page data and the kid's name", /spelling=nbSpellCtx\(kid,tasks,dates\)/.test(src) && /return \{ nbKidName:/.test(src));
