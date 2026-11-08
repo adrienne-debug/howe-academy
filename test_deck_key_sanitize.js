@@ -132,6 +132,8 @@ console.log("every keyed write goes through haKey (source scan)");
     }
     // multi-path keys built for a _settings update: upd["cat_hold/"+dk]
     const mm=L.match(/upd\["(?:cat_[a-z_]+|definitions|def_audio|match_best|show_me_cue)\/"\+(?!haKey\(|\(typeof haKey===)/); if(mm) bad.push((i+1)+": multi-path "+mm[0]);
+    // a multi-path prefix built from a name: base="visuals/"+key (UNITMULTIPIC) or "cat_hold/"+dk-style keys
+    const mb=L.match(/=\s*"(?:visuals|cat_[a-z_]+|definitions|def_audio|match_best|show_me_cue)\/"\+(?!haKey\(|\(typeof haKey===)/); if(mb) bad.push((i+1)+": multi-path prefix "+mb[0]);
   });
   ok("no unwrapped keyed write",!bad.length,bad.slice(0,12));
   const n=(src.match(/haKey\(|haKeys\(|haSettingsOut\(|haUnitOut\(/g)||[]).length;
