@@ -25,7 +25,7 @@ const DEF_ALEMBIC = "An early piece of specialized glassware used by chemists fo
 const DEF_BALANCE = "An instrument that measures mass by comparing an unknown mass to a known mass.";
 
 const NEEDED = ["mastGetDef", "mastCustomDef", "mastGetVisual", "mastCatFace", "mstEsc", "mstEscJs", "mstItemAnswer", "mstCardDef",
-  "mstCardMode", "mstIsRuleCard", "mstIsSpellCard", "mstFlipBtn", "mstAudioBtn", "mstCardPic", "mstPicCardHtml", "mstCardHtml"];
+  "mstCardMode", "mstIsRuleCard", "mstIsSpellCard", "mstFlipBtn", "mstAudioBtn", "_mastVisNorm", "mastLiveVisual", "mastLiveImg", "mstCardPic", "mstPicCardHtml", "mstCardHtml"];
 const MODES = { "Chemistry Instruments": "flip", "British Monarchs": "flip", "Vocabulary": "flip", "Capitalization": "flash", "Spelling": "spell", "Shapes": "flash" };
 
 function mk(code) {
