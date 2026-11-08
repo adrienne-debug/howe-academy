@@ -63,7 +63,7 @@ ok(/\{k:"caleb",\s*label:"Caleb \(K 🚜\)",\s*aam:false\}[\s\S]{0,80}\]\.filter
 ok(/Object\.keys\(\(lib&&lib\.GENERATORS\)\|\|\{\}\)\.filter\(k=>ROSTER\.includes\(k\)\)/.test(src), "admin picker lists only this family's kids");
 ok(/NB_KIDS\.find\(x=>x\.k===nbSelectedKid\)\?nbSelectedKid:\(\(NB_KIDS\[0\]\|\|\{\}\)\.k\|\|""\)/.test(src) && /No weekly notebooks are set up for this family yet/.test(src), "selection falls back to the family's first notebook kid; none = a message, no crash");
 ok(/letterCursor:\(\(\(\(notebookSettings\|\|\{\}\)\[kid\]\)\|\|\{\}\)\.letterCursor\)\|\|null, countEmoji:/.test(src) && /letterSounds:/.test(src), "ctx: per-kid letter cursor + countEmoji + letterSounds");
-ok((src.match(/\(kid==="julian"\|\|kid==="caleb"\)&&out&&out\.letterCursor\)[^\n]*db\.ref\("notebookSettings\/"\+kid\+"\/letterCursor"\)/g) || []).length === 2, "both Open and PDF save the letter place per kid");
+ok((src.match(/\(kid==="julian"\|\|kid==="caleb"(\|\|\(out&&out\.prekTheme\))?\)&&out&&out\.letterCursor\)[^\n]*db\.ref\("notebookSettings\/"\+kid\+"\/letterCursor"\)/g) || []).length === 2, "both Open and PDF save the letter place per kid");
 ok(!/db\.ref\("notebookSettings\/julian\/letterCursor"\)/.test(src), "no Julian-only cursor write left");
 
 console.log("CB_COVER_WEEK (her report 10/13: cover colors cut off)");
