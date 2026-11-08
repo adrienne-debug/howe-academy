@@ -138,7 +138,7 @@ console.log("── edges ──");
 }
 
 console.log("── wiring ──");
-ok("initFb binds through momBlocksListen() (the once-at-boot bind is gone)", /\n    momBlocksListen\(\);   \/\/ 🧺 MOMSCHED_LAUNDRY/.test(src)&&(src.match(/db\.ref\("momBlocks\/"\+mwTodayIso\(\)\)\.on\("value"/g)||[]).length===1&&MBD.indexOf('db.ref("momBlocks/"+mwTodayIso()).on("value",_mbCb)')>0);
+ok("initFb binds through momBlocksListen() (the once-at-boot bind is gone; a typeof guard for the Envirothon build is allowed, 2026-11-08)", /\n    (?:if\(typeof momBlocksListen==="function"\) )?momBlocksListen\(\);   \/\/ 🧺 MOMSCHED_LAUNDRY/.test(src)&&(src.match(/db\.ref\("momBlocks\/"\+mwTodayIso\(\)\)\.on\("value"/g)||[]).length===1&&MBD.indexOf('db.ref("momBlocks/"+mwTodayIso()).on("value",_mbCb)')>0);
 ok("dayRollCheck calls momBlocksListen before it re-renders", /_dayRollSeen=now;\n  if\(wasOnToday\) day=now;\n  try\{ if\(typeof momBlocksListen==="function"\) momBlocksListen\(\); \}catch\(e\)\{\}[^\n]*\n  if\(typeof renderAll==="function"\) renderAll\(\);/.test(src));
 ok("the old path is off()'d with its own callback", /db\.ref\("momBlocks\/"\+_mbIso\)\.off\("value",_mbCb\)/.test(MBD));
 ok("the stale cache is dropped on the roll", /momBlocks=\{\}; try\{ HA_LS\.removeItem\('ha_momblocks'\); \}catch\(e\)\{\}/.test(MBD));
