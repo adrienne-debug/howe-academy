@@ -24,7 +24,7 @@ ok("Configure step found", s>0&&e>s);
 
 // The week config keeps every other field, in the same order, at each place it is built.
 const cfgRe=/carSchool:\{\},saturday:(false|gwSatPlanned\(wn\)),redistribute:\[\],autoAdvance:true\}/g;
-ok("five fresh week configs build without theater", (src.match(cfgRe)||[]).length===5);
+ok("four fresh week configs build without theater", (src.match(cfgRe)||[]).length===4);   // 🗓 AUTOBUILD (2026-11-08): the self-build's fixed config became gwEffectiveConfig — four fixed configs remain (the default, Regenerate's fallback, reprojectSubjectWeek's fallback, the wizard's)
 ok("two loaded week configs build without theater", (src.match(/carSchool:v\.carSchool\|\|\{\},saturday:!!v\.saturday,/g)||[]).length===2);
 
 // The generator's day window still reads school hours from the rules.
