@@ -12,7 +12,7 @@ const cut = (a, b) => { const i = src.indexOf(a), j = src.indexOf(b, i); if (i <
 function slice(name) { const i = src.indexOf("function " + name + "("); if (i < 0) throw new Error("missing " + name);
   let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}") { d--; if (!d) return src.slice(i, k + 1); } } }
 const CODE = 'const MAST_CLOCK_EPOCH="2026-01-01"; let _mastClockMemo={};\n' + ["getSchoolDays", "mastKidSchoolDows", "mastSchoolDayNum", "mastShuffleDeck"].map(slice).join("\n")
-  + "\n" + cut("// PAPERDRILL_START", "// PAPERDRILL_END");
+  + "\n" + cut("// PRINTPHONE_START", "// PRINTPHONE_END") + "\n" + cut("// PAPERDRILL_START", "// PAPERDRILL_END");
 
 let pass = 0, fail = 0;
 const ok = (n, c, x) => { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  " + JSON.stringify(x) : "")); } };
