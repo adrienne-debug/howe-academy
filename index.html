@@ -72353,6 +72353,7 @@ function gameLogEntry(st,now){
   if(!items.length) return null;
   now=now!=null?now:Date.now();
   const e={game:st.game||"which",deck:String(st.deck||""),at:now,items:items};   // 🔤 SPELLBUILD: each game names itself
+  if(st.game==="jigsaw"&&st.level!=null){ e.level=st.level; e.clean=!!st.clean; }   // 🧩 JIGSAW: the round's level + clean, as the train's — its pieces level reads them back
   if(st.t0) e.secs=Math.max(0,Math.round((now-st.t0)/1000));
   if(st.game==="train"&&st.level!=null){ e.level=st.level; e.clean=!!st.clean; }   // 🚂 TRAIN: the round's level + clean — its level-up reads them back
   return e;
@@ -81680,6 +81681,11 @@ const GAME_RULES={
     ["2","2 misses","The second miss shows the sentence for a beat — today’s rule."],
     ["3","3 misses","A third try first; the third miss shows it."],
     ["never","Never","The sentence is never shown — after two misses the card just comes back once at the end, like the other games."]]}],
+  jigsaw:[{key:"pieces",label:"How many pieces?",def:"auto",opts:[   // 🧩 JIGSAW (her design 2026-11-08: "cut into 4 / 6 / 9 pieces by level")
+    ["auto","Auto","Starts at 4 pieces and moves up (6, then 9) after two clean rounds in a row \u{2014} clean = the picture named on the first tap."],
+    ["4","4 pieces","2 \u{00D7} 2, with the picture showing faintly in the frame to build on."],
+    ["6","6 pieces","3 \u{00D7} 2, an empty frame."],
+    ["9","9 pieces","3 \u{00D7} 3, an empty frame."]]}],
   // 🚂 TRAIN's level pin: levels 3–5 (hook up) are added by the TRAIN block
   train:[{key:"level",label:"Which level?",def:"auto",opts:[   // 🚂 TRAIN (her design 2026-11-08: "Mom can pin a level")
     ["auto","Auto","Starts at level 1 and moves up after two clean rounds in a row."],
@@ -83845,7 +83851,8 @@ const GAME_LIKE_STATE={   // game key → its round state; a game missing here s
   match:()=>matchState, memory:()=>matchState, dump:()=>dumpState, which:()=>whichState, sort:()=>sortState, bingo:()=>bingoState, spell:()=>spellState,
   gofish:()=>gofishState, mole:()=>moleState, jeop:()=>jeopState, teach:()=>teachState, four:()=>fourState, ship:()=>shipState, beat:()=>beatState,
   truenot:()=>tnState, sure:()=>sureState, cats:()=>catsState, jumble:()=>jumbleState, kaboom:()=>kaboomState, hang:()=>hangState, nameall:()=>nameallState,
-  train:()=>trainState   // 🚂 TRAIN
+  train:()=>trainState,   // 🚂 TRAIN
+  jigsaw:()=>jigState   // 🧩 JIGSAW
 };
 const gameLikeSeen={};   // kid|game|round → 1 | -1 | "skip" (this device, in memory)
 function _glE(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -83916,6 +83923,257 @@ function gameLikeListHtml(kid,key){
   return h+'</div></div>';
 }
 // GAMELIKE_END
+// JIGSAW_START — 🧩 "Picture Puzzle" (her design 2026-11-08, PLAN_abc_puzzle_games_2026-11-08.md Game 2; her words: "breaks some of the
+// flashcard pictures up into a puzzle, and then they can put the puzzle pieces together").
+//   · WHO GETS IT — a kid with picture cards: a card in play (active / introduction, not a production twin) with a real picture —
+//     the card's live picture (🖼 UNITPIC's mastLiveImg when it is here), else its own uploaded picture, else the kid's picture for it
+//     (mastGetVisual) — and a word to name it. An emoji or a drawn shape is not a picture here (it can't be cut). No such card → the
+//     game isn't listed. Found by the cards, never by a deck's or a kid's name; Mom switches it per deck (🎮 GAMEGRID).
+//   · THE PICTURE — a card the kid is learning (introduced, or still at the daily tier) when there is one, else any picture card,
+//     never the one just played when there's another. Cut into JIG_PIECES[level] pieces: level 1 four (2 × 2), level 2 six (3 × 2),
+//     level 3 nine (3 × 3). Each piece is the picture as a CSS background (one image, background-size / -position per piece:
+//     jigTiles — the picture covers the square frame, centred, never stretched). No canvas.
+//   · PLAY — the pieces scatter (shuffled, a little tilted) in the tray under the frame. Level 1's frame shows the whole picture
+//     faintly with the pieces' outlines; levels 2–3 an empty frame. The kid drags a piece (finger or mouse — pointer events, as Sort
+//     it; a tap picks a piece and a tap in the frame drops it there): dropped with its corner within JIG_SNAP of a piece's size of its
+//     own place it snaps in (the clack); anywhere else it goes back to the tray. No misses for pieces, and never placed for him.
+//   · THE FINISH — the whole picture, the card's word shown and said; then "What is it?" with JIG_CHOICES words (the card's own +
+//     other cards' words, its own deck first), so the card is still practiced, not only built. Right → the ding and the word again;
+//     wrong → that word greys out (the soft bonk) and he taps again — two wrong is the card's miss. One Play again (a new picture).
+//   · LEVEL — two CLEAN rounds in a row (named on the first tap) at the kid's level → the next level, read back from the kid's own
+//     game log (each round carries its level + clean), as the ABC Train does. Mom's pin (GAME_RULES.jigsaw "pieces": auto / 4 / 6 / 9).
+//   · WRITES — only the round's gameLog entry (GAMELOG, game:"jigsaw", one item: the card, ok = named on the first tap, + level /
+//     clean). No points, no ladder, no next_due, no study log, no best score. db && !_dryRun() only (gameLogRound's own guard). Per-kid
+//     park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT); a round dropped part-way writes nothing. No names in this block.
+let jigState=null;   // {kid,deck,game:"jigsaw",t0,level,pid,word,img,ar,n,tray:[piece i],placed:{i:1},tilt:{i:deg},sel,bounce,snap,phase:"play"|"show"|"ask"|"done",choices:[word],turns:[{pid,L,wrong,done,first,fail}],clean,levelBefore,levelAfter,seq,lastPid,gameLogged}
+let _jigRandom=Math.random;   // tests seed it
+const JIG_PIECES={1:4,2:6,3:9}, JIG_MAX_LEVEL=3, JIG_SNAP=0.45, JIG_CHOICES=3, JIG_MISS=2, JIG_SHOW_MS=2600;
+const _jigLast={};   // kid → the card of this device's last puzzle (so Play again brings a new picture)
+function _jigShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_jigRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function _jigItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
+function _jigPlain(p){ return String(p==null?"":p).replace(/<[^>]*>/g,"").replace(/&nbsp;/g," ").trim(); }
+function _jigE(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function jigDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"jigsaw",deck); }
+// The card's picture to cut — a URL, or "" (an emoji / drawn card has none)
+function jigPic(it,kid){
+  if(!it) return "";
+  if(typeof mastLiveImg==="function"){ try{ return String(mastLiveImg(it,kid)||""); }catch(e){ return ""; } }   // 🖼 UNITPIC: the live picture
+  if(it.imageUrl) return String(it.imageUrl);
+  try{ const v=(typeof mastGetVisual==="function")?mastGetVisual(it.subject,it.prompt):null; if(v&&typeof v==="object"&&v.imageUrl) return String(v.imageUrl); }catch(e){}
+  return "";
+}
+function _jigInPlay(i){ return !!i&&(i.status==="active"||i.status==="introduction")&&i.dir!=="prod"; }
+// The kid's picture cards the puzzle may use (deck on, in play, a picture, a word)
+function jigPool(items,kid){ kid=kid||masteryKid; return (items||[]).filter(i=>_jigInPlay(i)&&!!_jigPlain(i.prompt)&&!!jigPic(i,kid)&&jigDeckOn(kid,i.subject||"Other")); }
+function jigDecks(items,kid){ const o={}; jigPool(items,kid).forEach(i=>{ o[i.subject||"Other"]=1; }); return Object.keys(o).sort(); }
+function jigAvail(kid){ return jigPool(_jigItems(kid),kid).length>0; }
+// PURE-ish: the card to cut — a learning one (introduced, or at the daily tier) when there is one, never the last one when there's another
+function jigPick(pool,lastPid){
+  const lrn=(pool||[]).filter(i=>i.status==="introduction"||!i.tier||i.tier==="daily"), from=lrn.length?lrn:(pool||[]);
+  const fresh=from.filter(i=>String(i.id)!==String(lastPid)), list=fresh.length?fresh:from;
+  return list.length?list[Math.floor(_jigRandom()*list.length)]:null;
+}
+// PURE: the grid for n pieces
+function jigGrid(n){ n=Number(n)||4; if(n===6) return {cols:3,rows:2}; const c=Math.max(1,Math.round(Math.sqrt(n))); return {cols:c,rows:Math.ceil(n/c)}; }
+// PURE: the pieces of a square frame for a picture of aspect ar (width / height). Each: i (row by row), col, row, its place x,y,w,h
+// (fractions of the frame), and its slice — bgSize / bgPos — the picture covering the frame, centred (the long side cropped, nothing
+// stretched). bgPos is "where the piece's own corner sits on the picture", as CSS percentages of (picture − piece).
+function jigTiles(n,ar){
+  const g=jigGrid(n), C=g.cols, R=g.rows, a=ar>0&&isFinite(ar)?ar:1, iw=a>=1?a:1, ih=a>=1?1:1/a, ox=(iw-1)/2, oy=(ih-1)/2, sw=iw*C, sh=ih*R, r2=x=>Math.round(x*100)/100, out=[];
+  for(let r=0;r<R;r++) for(let c=0;c<C;c++)
+    out.push({i:r*C+c,col:c,row:r,x:c/C,y:r/R,w:1/C,h:1/R,bgSize:r2(sw*100)+"% "+r2(sh*100)+"%",bgPos:r2(sw>1?(ox*C+c)/(sw-1)*100:0)+"% "+r2(sh>1?(oy*R+r)/(sh-1)*100:0)+"%"});
+  return out;
+}
+// PURE: a piece dropped with its top-left corner at (x,y) — fractions of the frame — snaps when that corner is within JIG_SNAP of a
+// piece's width / height of its own place
+function jigSnap(tile,x,y){ return !!tile&&Math.abs(x-tile.x)<=JIG_SNAP*tile.w+1e-9&&Math.abs(y-tile.y)<=JIG_SNAP*tile.h+1e-9; }
+// PURE-ish: the "What is it?" words — the card's own + up to JIG_CHOICES-1 other words (its own deck first, then the kid's other cards
+// in play), each word once, shuffled
+function jigChoices(it,items){
+  const own=_jigPlain(it&&it.prompt), key=w=>w.toLowerCase(), seen={[key(own)]:1}, deck=it&&it.subject, pick=[];
+  const take=list=>{ _jigShuffle(list.slice()).forEach(i=>{ if(pick.length>=JIG_CHOICES-1) return; const w=_jigPlain(i.prompt); if(!w||seen[key(w)]) return; seen[key(w)]=1; pick.push(w); }); };
+  const live=(items||[]).filter(_jigInPlay);
+  take(live.filter(i=>i.subject===deck)); take(live.filter(i=>i.subject!==deck));
+  return _jigShuffle([own].concat(pick));
+}
+// The kid's puzzle rounds from the game log (this device's copy and the pushed one count once), oldest first
+function jigLogRounds(kid){
+  const G=((typeof masteryData!=="undefined"&&masteryData&&masteryData.gameLog)||{})[kid]||{}, seen={}, out=[];
+  Object.keys(G).forEach(day=>{ const D=G[day]||{}; Object.keys(D).forEach(k=>{ const e=D[k]; if(!e||e.game!=="jigsaw"||e.level==null) return; const id=(Number(e.at)||0)+"|"+JSON.stringify(e.items||[]); if(seen[id]) return; seen[id]=1; out.push(e); }); });
+  return out.sort((a,b)=>(Number(a.at)||0)-(Number(b.at)||0));
+}
+// PURE: the auto level — two clean rounds in a row at the level → up one (never past JIG_MAX_LEVEL)
+function jigLevelFrom(rounds){
+  let lvl=1, streak=0;
+  (rounds||[]).forEach(e=>{ if(!e||Number(e.level)!==lvl) return; if(e.clean){ streak++; if(streak>=2&&lvl<JIG_MAX_LEVEL){ lvl++; streak=0; } } else streak=0; });
+  return lvl;
+}
+function jigPin(kid){ const v=(typeof gameRule==="function")?gameRule(kid,"jigsaw","pieces"):null, L=Object.keys(JIG_PIECES).find(k=>String(JIG_PIECES[k])===String(v)); return L?Number(L):null; }
+function jigLevel(kid){ kid=kid||masteryKid; return jigPin(kid)||jigLevelFrom(jigLogRounds(kid)); }
+function _jigSay(text){ if(!text) return; try{ if(typeof mastSpeak==="function") mastSpeak(String(text)); }catch(e){} }
+function jigStart(){
+  const kid=masteryKid, items=_jigItems(kid), it=jigPick(jigPool(items,kid),_jigLast[kid]);
+  if(!it){ jigState=null; _mastRe(); return; }
+  _jigLast[kid]=it.id;
+  const level=jigLevel(kid), n=JIG_PIECES[level]||4, tray=_jigShuffle(Array.from({length:n},(x,i)=>i)), tilt={};
+  tray.forEach(i=>{ tilt[i]=Math.round((_jigRandom()*2-1)*8); });
+  if(n>1&&tray.every((x,i)=>x===i)) tray.push(tray.shift());   // never already in order
+  const word=_jigPlain(it.prompt);
+  jigState={kid:kid,deck:it.subject||"Other",game:"jigsaw",t0:Date.now(),level:level,pid:it.id!=null?String(it.id):null,word:word,img:jigPic(it,kid),ar:1,n:n,tray:tray,placed:{},tilt:tilt,sel:null,bounce:null,snap:null,
+    phase:"play",choices:jigChoices(it,items),turns:[{pid:it.id!=null?String(it.id):null,L:word,wrong:{},done:false,first:false,fail:false}],clean:null,levelBefore:level,levelAfter:null,seq:0};
+  _jigLoadAr(jigState);
+  _mastRe();
+}
+// The picture's own shape, once it loads (until then the pieces are cut as a square) — never redrawn under a finger mid-drag
+let _jigDragging=false;
+function _jigLoadAr(st){
+  try{ if(typeof Image==="undefined"||!st.img) return; const im=new Image();
+    im.onload=()=>{ if(jigState!==st||!im.naturalWidth||!im.naturalHeight) return; st.ar=im.naturalWidth/im.naturalHeight; if(!_jigDragging&&(typeof mastView==="undefined"||mastView==="jigsaw")) _mastRe(); };
+    im.src=st.img; }catch(e){}
+}
+// PURE-ish: piece i dropped at (x,y) (its corner, fractions of the frame) → "snap" | "back" | null (not now)
+function jigDropJudge(st,i,x,y){
+  if(!st||st.phase!=="play"||i==null||i<0||i>=st.n||st.placed[i]) return null;
+  st.sel=null;
+  const t=jigTiles(st.n,st.ar)[i];
+  if(x==null||y==null||!jigSnap(t,x,y)){ st.bounce=i; st.snap=null; return "back"; }
+  st.placed[i]=1; st.snap=i; st.bounce=null;
+  return "snap";
+}
+function jigDrop(i,x,y){
+  const st=jigState, r=jigDropJudge(st,i,x,y); if(!r) return;
+  if(r==="back"){ _mastRe(); return; }
+  try{ matchDing(); }catch(e){}
+  if(Object.keys(st.placed).length>=st.n) jigShow(st);
+  _mastRe();
+}
+// A tap: pick a piece (again = put it down); a tap in the frame drops the picked piece with its corner on the spot tapped's square
+function jigTapPiece(i){ const st=jigState; if(!st||st.phase!=="play"||st.placed[i]) return; st.sel=st.sel===i?null:i; st.bounce=null; st.snap=null; _mastRe(); }
+function jigFrameTap(ev){
+  const st=jigState; if(!st||st.phase!=="play"||st.sel==null||!ev||!ev.currentTarget) return;
+  const f=ev.currentTarget, b=f.getBoundingClientRect(), g=jigGrid(st.n), fx=(ev.clientX-b.left-(f.clientLeft||0))/(f.clientWidth||b.width), fy=(ev.clientY-b.top-(f.clientTop||0))/(f.clientHeight||b.height);
+  const c=Math.max(0,Math.min(g.cols-1,Math.floor(fx*g.cols))), r=Math.max(0,Math.min(g.rows-1,Math.floor(fy*g.rows)));
+  jigDrop(st.sel,c/g.cols,r/g.rows);
+}
+// Drag a piece with a finger or the mouse: a move under 8px is a tap (jigTapPiece); let go, its corner is measured against the frame
+function jigDown(ev,i){
+  const st=jigState; if(!st||st.phase!=="play"||!ev||ev.button>0) return;
+  const el=ev.currentTarget; if(!el) return;
+  const x0=ev.clientX, y0=ev.clientY, pid=ev.pointerId; let moved=false;
+  try{ el.setPointerCapture(pid); }catch(e){}
+  const move=e=>{ const dx=e.clientX-x0, dy=e.clientY-y0; if(!moved&&Math.hypot(dx,dy)<8) return; moved=true; _jigDragging=true; el.classList.add("jig-drag"); el.style.transform="translate("+dx+"px,"+dy+"px)"; };
+  const up=e=>{
+    el.removeEventListener("pointermove",move); el.removeEventListener("pointerup",up); el.removeEventListener("pointercancel",up);
+    try{ el.releasePointerCapture(pid); }catch(x){}
+    _jigDragging=false;
+    if(!moved){ jigTapPiece(i); return; }
+    let x=null, y=null;
+    try{ const f=document.getElementById("jig-frame"), b=f&&f.getBoundingClientRect(), r=el.getBoundingClientRect(), fw=f&&(f.clientWidth||b.width), fh=f&&(f.clientHeight||b.height); if(b&&fw&&e.type!=="pointercancel"){ x=(r.left-b.left-(f.clientLeft||0))/fw; y=(r.top-b.top-(f.clientTop||0))/fh; } }catch(x2){}
+    el.style.transform=""; el.classList.remove("jig-drag");
+    jigDrop(i,x,y);
+  };
+  el.addEventListener("pointermove",move); el.addEventListener("pointerup",up); el.addEventListener("pointercancel",up);
+}
+// The whole picture: its word shown and said, then (JIG_SHOW_MS later, or Next) "What is it?"
+function jigShow(st){
+  st.phase="show"; st.sel=null; st.bounce=null;
+  _jigSay(st.word);
+  const seq=++st.seq;
+  setTimeout(()=>{ if(jigState===st&&st.phase==="show"&&st.seq===seq){ jigAsk(st); _mastRe(); } },JIG_SHOW_MS);
+}
+function jigAsk(st){
+  st=st||jigState; if(!st||st.phase!=="show") return;
+  st.seq++;
+  if((st.choices||[]).length<2){ jigFinish(st); return; }   // no other word to choose from: nothing to ask
+  st.phase="ask"; _jigSay("What is it?");
+}
+function jigNext(){ const st=jigState; if(!st||st.phase!=="show") return; jigAsk(st); _mastRe(); }
+function jigHear(){ const st=jigState; if(!st) return; if(st.phase==="ask") _jigSay("What is it? "+st.choices.join(", or ")+"?"); else if(st.phase!=="play") _jigSay(st.word); }
+// PURE-ish: a tap on "What is it?" word ci → "right" | "wrong" | null
+function jigJudge(st,ci){
+  if(!st||st.phase!=="ask") return null;
+  const w=st.choices[ci], t=st.turns[0]; if(w==null||!t||t.done||t.wrong[w]) return null;
+  if(w!==st.word){ t.wrong[w]=1; if(Object.keys(t.wrong).length>=JIG_MISS) t.fail=true; st.bounce=ci; return "wrong"; }
+  t.done=true; t.first=!Object.keys(t.wrong).length; st.bounce=null;
+  return "right";
+}
+function jigTap(ci){
+  const st=jigState, r=jigJudge(st,ci); if(!r) return;
+  if(r==="wrong"){ try{ matchBonk(); }catch(e){} _mastRe(); return; }
+  try{ matchDing(); }catch(e){}
+  _jigSay(st.word);
+  jigFinish(st); _mastRe();
+}
+function jigFinish(st){
+  st.phase="done"; st.seq++;
+  st.clean=st.turns.every(t=>t.done&&t.first);
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: the card, named on the first tap or not, + the round's level / clean, game:"jigsaw"
+  st.levelAfter=jigLevel(st.kid);
+}
+// GAMEKID → 🎲 GAMEKIT: parking stops the show timer; resume puts a picked-up piece down and moves a cut-off show on to its question
+function jigPark(){ const st=jigState; if(st) st.seq++; _jigDragging=false; return st; }
+function jigResume(){ const st=jigState; if(!st) return; st.sel=null; st.bounce=null; st.snap=null; if(st.phase==="show") jigAsk(st); }
+const JIG_CSS='<style>.jig-board{--jig-s:min(84vw,46vh,400px);display:flex;flex-direction:column;align-items:center}'+
+  '#jig-frame{position:relative;width:var(--jig-s);height:var(--jig-s);border-radius:14px;border:3px dashed #a8a29e;background:#fafaf9;box-sizing:content-box;touch-action:manipulation}'+
+  '.jig-ghost{position:absolute;inset:0;background-image:var(--jig-img);background-size:cover;background-position:center;opacity:.18;border-radius:11px}'+
+  '.jig-cell{position:absolute;box-sizing:border-box;border:1.5px dashed rgba(120,113,108,.45)}'+
+  '.jig-pc{background-image:var(--jig-img);background-repeat:no-repeat;box-sizing:border-box}'+
+  '.jig-in{position:absolute;border-radius:2px}.jig-snap{animation:jigSnap .35s ease-out}@keyframes jigSnap{0%{transform:scale(1.12)}60%{transform:scale(.96)}100%{transform:none}}'+
+  '.jig-tray{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;padding:14px 8px;margin-top:14px;border-radius:18px;background:#f5f5f4;width:100%;box-sizing:border-box}'+
+  '.jig-tp{border:3px solid #fff;border-radius:8px;box-shadow:0 3px 8px rgba(0,0,0,.18);touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;cursor:grab;transition:box-shadow .15s}'+
+  '.jig-tp.jig-sel{box-shadow:0 0 0 4px #2563eb}.jig-tp.jig-drag{transition:none;z-index:30;position:relative;box-shadow:0 14px 28px rgba(0,0,0,.3);pointer-events:none}'+
+  '.jig-back{animation:jigBack .45s ease-out}@keyframes jigBack{0%{transform:translateY(-60px) scale(1.05)}70%{transform:translateY(5px)}100%{transform:none}}'+
+  '.jig-whole{position:absolute;inset:0;background-image:var(--jig-img);background-size:cover;background-position:center;border-radius:11px;animation:jigSnap .5s ease-out}'+
+  '.jig-word{font-family:\'Fraunces\',serif;font-size:clamp(30px,8vw,48px);font-weight:800;color:#292524;margin:14px 0 4px;text-align:center}'+
+  '.jig-ch{padding:14px 26px;border-radius:18px;border:3px solid #e2ddd6;background:#fff;font-family:\'Fraunces\',serif;font-size:clamp(20px,5.5vw,28px);font-weight:800;color:#292524;cursor:pointer;-webkit-tap-highlight-color:transparent}'+
+  '.jig-ch.jig-no{opacity:.35;cursor:default;animation:jigNo .45s}@keyframes jigNo{0%,100%{transform:none}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}</style>';
+// One CSS url() for the picture (set once on the board as --jig-img; every piece uses it)
+function _jigUrl(u){ return 'url(&quot;'+_jigE(String(u||"").replace(/["\\\n\r]/g,ch=>encodeURIComponent(ch)))+'&quot;)'; }
+function buildJigHtml(color){
+  let h=JIG_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const kid=masteryKid;
+  if(!jigAvail(kid)){ h+='<div class="mast-none">The Picture Puzzle needs cards with pictures \u{2014} add a picture to a card and it can be a puzzle.</div></div>'; return h; }
+  const st=jigState&&jigState.kid===kid?jigState:null, btn=(fn,lbl)=>'<button onclick="'+fn+'" style="padding:14px 30px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
+  const hear='<button onclick="jigHear()" aria-label="Hear it" style="width:46px;height:46px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:20px;cursor:pointer">\u{1F50A}</button>';
+  if(!st){
+    const lvl=jigLevel(kid);
+    h+='<div style="text-align:center;margin:18px 0 10px"><div style="font-size:64px;line-height:1">\u{1F9E9}</div><div style="font-family:\'Fraunces\',serif;font-size:24px;font-weight:800;color:#292524;margin:6px 0 4px">Picture Puzzle</div>';
+    h+='<div style="font-size:15px;font-weight:700;color:#57534e;margin-bottom:16px">'+(JIG_PIECES[lvl]||4)+' pieces \u{00B7} put the picture back together!</div>'+btn("jigStart()","\u{1F9E9} Let\u{2019}s go!")+'</div></div>';
+    return h;
+  }
+  const tiles=jigTiles(st.n,st.ar), g=jigGrid(st.n), pct=x=>Math.round(x*10000)/100+'%';
+  const pc=(t,extra)=>'background-size:'+t.bgSize+';background-position:'+t.bgPos+';'+(extra||'');
+  h+='<div class="jig-board" style="--jig-img:'+_jigUrl(st.img)+'">';
+  h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;margin:8px 0 8px"><span style="font-size:14px;font-weight:800;color:#57534e">\u{1F9E9} '+Object.keys(st.placed).length+' of '+st.n+' pieces</span><span style="font-size:12px;font-weight:800;color:var(--muted)">'+st.n+' pieces</span></div>';
+  h+='<div id="jig-frame"'+(st.phase==="play"?' onclick="jigFrameTap(event)"':'')+' role="img" aria-label="Puzzle frame">';
+  if(st.phase==="play"){
+    if(st.level===1){ h+='<div class="jig-ghost"></div>'; tiles.forEach(t=>{ h+='<div class="jig-cell" style="left:'+pct(t.x)+';top:'+pct(t.y)+';width:'+pct(t.w)+';height:'+pct(t.h)+'"></div>'; }); }   // level 1: the faint outline
+    tiles.forEach(t=>{ if(st.placed[t.i]) h+='<div class="jig-pc jig-in'+(st.snap===t.i?' jig-snap':'')+'" style="'+pc(t,'left:'+pct(t.x)+';top:'+pct(t.y)+';width:'+pct(t.w)+';height:'+pct(t.h))+'"></div>'; });
+  } else h+='<div class="jig-whole"></div>';
+  h+='</div>';
+  if(st.phase==="play"){
+    h+='<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-top:12px"><span style="font-size:17px;font-weight:800;color:#57534e;text-align:center">'+(st.sel!=null?'Now tap where it goes!':'Drag each piece into the frame!')+'</span></div>';
+    h+='<div class="jig-tray">';
+    st.tray.forEach(i=>{ if(st.placed[i]) return; const t=tiles[i];
+      h+='<div class="jig-pc jig-tp'+(st.sel===i?' jig-sel':'')+(st.bounce===i?' jig-back':'')+'" role="button" aria-label="Puzzle piece" onpointerdown="jigDown(event,'+i+')" style="'+pc(t,'width:calc(var(--jig-s) / '+g.cols+');height:calc(var(--jig-s) / '+g.rows+');'+(st.sel===i||st.bounce===i?'':'transform:rotate('+(st.tilt[i]||0)+'deg)'))+'"></div>'; });
+    return h+'</div></div></div>';
+  }
+  if(st.phase==="show"){
+    h+='<div class="jig-word">'+_jigE(st.word)+'</div><div style="display:flex;gap:10px;align-items:center;justify-content:center;margin-top:6px">'+hear+'<button onclick="jigNext()" style="padding:12px 24px;border-radius:999px;border:2px solid '+color+';background:#fff;color:'+color+';font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Next \u{27A1}</button></div>';
+    return h+'</div></div>';
+  }
+  if(st.phase==="ask"){
+    const t=st.turns[0];
+    h+='<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin:14px 0 10px"><span class="jig-word" style="margin:0">What is it?</span>'+hear+'</div><div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center">';
+    st.choices.forEach((w,ci)=>{ const no=!!t.wrong[w]; h+='<button class="jig-ch'+(no?' jig-no':'')+'" onclick="jigTap('+ci+')"'+(no?' disabled':'')+'>'+_jigE(w)+'</button>'; });
+    return h+'</div></div></div>';
+  }
+  h+='<div class="jig-word">\u{1F389} '+_jigE(st.word)+'!</div>';
+  if(st.levelAfter&&st.levelAfter>st.levelBefore) h+='<div style="font-size:18px;font-weight:800;color:#16a34a;margin-bottom:10px">\u{2B06} '+(JIG_PIECES[st.levelAfter]||"")+' pieces next time!</div>';
+  h+='<div style="margin-top:8px">'+btn("jigStart()","\u{1F501} Play again")+'</div>';
+  return h+'</div></div>';
+}
+// JIGSAW_END
 // STUDYCOUNTS_START — 📚 Study sessions count everywhere (F3 of PLAN_learning_system, her yes 2026-10-24). A study
 // sitting logs to mastery/studyLog/<kid>/<sid>/<yyyymmdd>, but Scores, the Weekly report, sprint readiness (the ≥ 90%
 // untimed check) and the notebook's 🔁 review flags read only the drill's mastery/history/<kid>/<yyyymmdd>, so Lincoln —
@@ -87926,6 +88184,8 @@ const GAMES_LIST=[
      park:()=>nameallPark(), restore:v=>{ nameallRestore(v); }, resume:()=>nameallResume(), decks:k=>typeof nameallDecks==="function"?nameallDecks(_gamesItems(k),k):[]},   // 📋 NAMEALL · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its real decks
   {key:"train",  emoji:"\u{1F682}", label:"ABC Train",   view:"train",                available:k=>typeof trainAvail==="function"&&trainAvail(k), render:c=>buildTrainHtml(c),
      park:()=>trainPark(), restore:v=>{ trainState=v||null; }, resume:()=>trainResume(), decks:k=>typeof trainDecks==="function"?trainDecks(_gamesItems(k),k):[]},   // 🚂 TRAIN · 🎲 GAMEKIT: parking stops the song · 🎮 GAMEGRID: its letters deck
+  {key:"jigsaw", emoji:"\u{1F9E9}", label:"Picture Puzzle", view:"jigsaw",           available:k=>typeof jigAvail==="function"&&jigAvail(k), render:c=>buildJigHtml(c),
+     park:()=>jigPark(), restore:v=>{ jigState=v||null; }, resume:()=>jigResume(), decks:k=>typeof jigDecks==="function"?jigDecks(_gamesItems(k),k):[]},   // 🧩 JIGSAW · 🎲 GAMEKIT: parking stops the show · 🎮 GAMEGRID: its picture decks
 ];
 const gamesLast={};   // kid → key of the last game played on this device
 function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k)&&(typeof gameDeckAny!=="function"||gameDeckAny(k,g)); }catch(e){ return false; } }); }   // 🎮 GAMEGRID: every deck off → the game isn't offered
