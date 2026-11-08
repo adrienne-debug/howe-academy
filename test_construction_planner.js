@@ -54,15 +54,20 @@ const BEFORE = {
 };
 
 const NB = loadNb(path.join(__dirname, "notebooks.js"));
-// The planner kid comes from the catalog (the entry that carries `plan`) — never named here.
-const PK = Object.keys(NB.GENERATORS).filter(k => typeof NB.GENERATORS[k].plan === "function");
+// The planner kid comes from the catalog (a Pre-K builder whose planner isn't the app's own) — never named here.
+// PREKLEVEL (2026-11-08): the planner lives in the one Pre-K notebook (generatePreK), so it follows the kid's look and levels.
+const PK = Object.keys(NB.GENERATORS).filter(k => NB.hasPlan(k));
 const K = PK[0];
 
 console.log("notebooks.js — the kid's own builder offers the planner");
-ok(PK.length === 1, "exactly one notebook builder carries a planner (the construction one)", PK);
+ok(PK.length === 1, "exactly one of the kids' own builders offers this planner (the construction one; the dinosaur one keeps the app's card)", PK);
 ok(NB.hasPlan(K) === true && KIDS.filter(k => k !== K).every(k => NB.hasPlan(k) === false), "hasPlan: that kid only");
 ok(KIDS.filter(k => k !== K).every(k => NB.planFor(k, J(FIX.mastery)) === null), "planFor: null for every other notebook (incl. the dinosaur one, which keeps its own juPlanPreview)");
-ok(NB.planFor(K, J(FIX.theme)) === null, "planFor: null when the kid's data sets a theme (the theme builds instead)");
+const PT = NB.planFor(K, J(FIX.theme));
+ok(PT && PT.look === "shark" && JSON.stringify(Object.keys(PT.subjects)) === '["letters","numbers","shapes","colors","animals"]' && PT.lowercase === true,
+   "a look set in the kid's data: the plan follows it (sharks count sea animals → an animals row), still the kid's own level", PT && [PT.look, Object.keys(PT.subjects)]);
+const PX = NB.planFor("kidx", J(FIX.theme));
+ok(NB.hasPlan("kidx", { notebookTheme: "shark" }) && PX && PX.look === "shark" && PX.lowercase === false && PX.days.length === 5, "a starter kid given a Pre-K look gets the planner too (capitals level)");
 const P = NB.planFor(K, J(FIX.mastery));
 ok(P && JSON.stringify(Object.keys(P.subjects)) === '["letters","numbers","shapes","colors"]', "the four things its daily page prints — letters, numbers, shapes, colors (no animals)", P && Object.keys(P.subjects));
 ok(P && JSON.stringify(P.days) === JSON.stringify(Object.keys(dates)) && Object.values(P.subjects).every(s => s.slots.length === 5), "one slot per day that gets a page", P && P.days);
@@ -92,8 +97,14 @@ ok(FIX.picks.planOnly === undefined, "the caller's ctx is not mutated");
 
 console.log("every other notebook is byte-for-byte as before");
 const NOW = hashes(NB);
-const changed = Object.keys(BEFORE).filter(k => k !== K + "/picks" && NOW[k] !== BEFORE[k]);
-ok(!changed.length, "all " + (Object.keys(BEFORE).length - 1) + " snapshots match (5 notebooks + the starter one × 6 fixtures, the dinosaur planner's juPlanPreview × 6)", changed.map(k => k + " now " + NOW[k]).join(", "));
+// PREKLEVEL (2026-11-08) moves the six "*/theme" rows ON PURPOSE (notebookTheme "shark" on every kid): an older kid's notebook
+// no longer wears a Pre-K look, a Pre-K kid keeps its own levels in a new look, and a long name ("Little Shark") is traced
+// smaller. Their new behaviour is asserted just below; test_prek_notebook_levels.js holds the fold's own snapshots.
+const THEMED = KIDS.map(k => k + "/theme");
+const changed = Object.keys(BEFORE).filter(k => k !== K + "/picks" && THEMED.indexOf(k) < 0 && NOW[k] !== BEFORE[k]);
+ok(!changed.length, "all " + (Object.keys(BEFORE).length - 1 - THEMED.length) + " snapshots match (5 notebooks + the starter one × 5 fixtures, the dinosaur planner's juPlanPreview × 6)", changed.map(k => k + " now " + NOW[k]).join(", "));
+ok(["lincoln", "ellis", "lucy"].every(k => NOW[k + "/theme"] === NOW[k + "/mastery"]), "*/theme: an older kid's notebook ignores a Pre-K look");
+ok(["julian", K, "kidx"].every(k => NB.generate(k, J(FIX.theme)).prekTheme === "shark") && NOW["julian/theme"] !== NOW[K + "/theme"], "*/theme: the Pre-K kids wear the shark look, each at their own level");
 ok(NOW[K + "/picks"] !== BEFORE[K + "/picks"], "the one intended change: the construction notebook WITH Mom's picks (her number pick now prints)");
 
 console.log("page fit — picks change words, not the layout");
@@ -161,7 +172,8 @@ function app(o) {
 }
 {
   ok(KIDS.filter(k => k !== K).every(k => app().nbPlanCardHtml(k) === ""), "every other kid: no card (\"\")");
-  ok(app({ fix: FIX.theme }).nbPlanCardHtml(K) === "", "a theme set in the kid's data: no card");
+  const ht = app({ fix: FIX.theme }).nbPlanCardHtml(K);
+  ok(/\u{1F988} This week’s swim plan/u.test(ht) && /Little letters/.test(ht) && /Animals/.test(ht) && (ht.match(/onclick="nbJuToggleOpen\(/g) || []).length === 25, "a look set in the kid's data: the card follows it (🦈 swim plan, an animals row)");
   ok(app({ noNb: true }).nbPlanCardHtml(K) === "", "notebooks.js not loaded (or an older one without planFor): no card");
 }
 
@@ -176,7 +188,7 @@ const names = /lincoln|ellis|lucy|julian|caleb|kenzie|sara\b|dewalt|howe/i;
 ok(!names.test(CARD.replace(/HoweNotebooks/g, "")), "index.html CBPLAN block: no kid or family names (bar the HoweNotebooks API name)");
 const nbBlock = src.slice(src.indexOf("// CBPLAN_START"), src.indexOf("// CBPLAN_END"));
 ok(nbBlock.length > 200 && !names.test(nbBlock.replace(/generateCaleb/g, "")), "notebooks.js CBPLAN block: no kid or family names (bar the existing builder's function name)");
-ok(/if \(ctx\.planOnly\) \{ var _pl = juPlanShape\(cur, picks, wkInt \|\| 1, days\.length, CB_PLAN_SUBS\);/.test(src), "the planner reads the build's own picks (one guarded line in the construction builder)");
+ok(/if \(ctx\.planOnly\) \{ var _pl = juPlanShape\(curWk, picks, wkInt \|\| 1, days\.length, pkPlanSubs\(T\)\);/.test(src), "the planner reads the build's own picks (one guarded line in the one Pre-K builder)");
 
 (async () => {
   let pw = null;

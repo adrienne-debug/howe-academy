@@ -35014,7 +35014,7 @@ function haNbContext(kid){
   // No field = the kid's notebook exactly as before.
   let nbRec={}; try{ nbRec=ROSTER_DEF.find(k=>k&&k.id===kid)||{}; }catch(e){}
   const nbNm=v=>(typeof v==="string"&&v.trim())||null;
-  return { nbKidName:kid.charAt(0).toUpperCase()+kid.slice(1), kidName:nbNm(nbRec.notebookName)||nbNm(nbRec.name), notebookTheme:(typeof nbRec.notebookTheme==="string"&&nbRec.notebookTheme)||null, spelling:spelling, wordBank:wordBank, cogatBank:cogatBank, quantBank:quantBank, convBank:convBank, dailyGrams:dailyGrams, loe:loe, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, numberCursor:((((notebookSettings||{})[kid])||{}).numberCursor)||null, letterCursor:((((notebookSettings||{})[kid])||{}).letterCursor)||null, countEmoji:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).count_emoji)||null), letterSounds:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).definitions)||null), masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true };
+  return { nbKidName:kid.charAt(0).toUpperCase()+kid.slice(1), kidName:nbNm(nbRec.notebookName)||nbNm(nbRec.name), notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), nbGrade:nbGradeOf(kid), spelling:spelling, wordBank:wordBank, cogatBank:cogatBank, quantBank:quantBank, convBank:convBank, dailyGrams:dailyGrams, loe:loe, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, numberCursor:((((notebookSettings||{})[kid])||{}).numberCursor)||null, letterCursor:((((notebookSettings||{})[kid])||{}).letterCursor)||null, countEmoji:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).count_emoji)||null), letterSounds:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).definitions)||null), masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true };
 }
 async function haNbOpen(kid,which){
   const lib=window.HoweNotebooks; if(!lib){ alert("Notebook builder not loaded yet."); return; }
@@ -45257,6 +45257,39 @@ function _nbMomLockHtml(){ nbPinOpen=false; return ""; }   // MOMSWITCH (2026-11
 function nbPinLock(){ haMomOff(); nbPinOpen=false; renderAll(); }   // UNIMOM
 // Review-folding cap (struggled-with drill items folded back into the week), per kid. Default 2, clamped 0–5.
 function nbReviewCap(kid){ const v=notebookSettings&&notebookSettings[kid]&&notebookSettings[kid].reviewCap; const n=parseInt(v,10); return isNaN(n)?2:Math.max(0,Math.min(5,n)); }
+// PREKLEVEL_WIRE_START — the notebook's look + level switches (her ask 2026-11-08: "a setting where they could change between
+// which theme, construction, dinosaurs, or sharks" → "for every kid, there will be a quick theme changer"). Mom's picker saves
+// to notebookSettings/<kid>/notebookTheme and notebookSettings/<kid>/nbLevel/<switch> (targeted writes, synced like reviewCap);
+// a look or switch set on the kid's Family record (notebookTheme / nbLowercase …) is the fallback. Not settings/family itself:
+// every device reloads on a settings/family change, and a family that never saved its Family page has no record to write to.
+// A change shapes the NEXT notebook built; nothing already printed or sent to a tablet changes.
+function nbRecOf(kid){ try{ return ROSTER_DEF.find(k=>k&&k.id===kid)||{}; }catch(e){ return {}; } }
+function nbThemeOf(kid){ const s=((notebookSettings||{})[kid]||{}).notebookTheme; if(typeof s==="string") return s; const r=nbRecOf(kid).notebookTheme; return (typeof r==="string"&&r)||null; }
+function nbLevelOf(kid){
+  const out={}, rec=nbRecOf(kid), saved=(((notebookSettings||{})[kid]||{}).nbLevel)||{};
+  const keys=((window.HoweNotebooks&&window.HoweNotebooks.prekLevels)||[]).map(d=>d.key);
+  (keys.length?keys:Object.keys(rec).concat(Object.keys(saved)).filter(k=>/^nb[A-Z]/.test(k))).forEach(k=>{ if(typeof saved[k]==="boolean") out[k]=saved[k]; else if(typeof rec[k]==="boolean") out[k]=rec[k]; });
+  return out;
+}
+function nbGradeOf(kid){ const g=((nbRecOf(kid).notebook||{}).gradeLabel); if(g==="K") return "Kindergarten"; if(typeof g==="string"&&g.trim()) return g.trim(); return isPreK(kid)?"Pre-K":null; }
+function nbLookOpts(kid){ const N=window.HoweNotebooks; return (N&&typeof N.notebookOptions==="function")?N.notebookOptions(kid,{isPreK:isPreK(kid),notebookTheme:nbThemeOf(kid),nbLevel:nbLevelOf(kid)}):null; }
+function nbSetLook(kid,key){ if(!momHere()) return;
+  if(!notebookSettings[kid]) notebookSettings[kid]={};
+  notebookSettings[kid].notebookTheme=String(key||"");
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db&&!_dryRun()) db.ref("notebookSettings/"+kid+"/notebookTheme").set(String(key||"")); }catch(e){}
+  if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
+}
+function nbSetLevel(kid,key){ if(!momHere()) return;
+  const o=nbLookOpts(kid); const d=o&&o.levels&&o.levels.find(x=>x.key===key); if(!d) return;
+  if(!notebookSettings[kid]) notebookSettings[kid]={};
+  if(!notebookSettings[kid].nbLevel) notebookSettings[kid].nbLevel={};
+  notebookSettings[kid].nbLevel[key]=!d.on;
+  try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db&&!_dryRun()) db.ref("notebookSettings/"+kid+"/nbLevel/"+key).set(!d.on); }catch(e){}
+  if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
+}
+// PREKLEVEL_WIRE_END
 // Extra-pages config (Notebook tab) — per-page {on, days:{monday:true,…}}, synced like reviewCap.
 // Missing config = page ON with no day assigned, so defaults match the old always-print behavior.
 function nbXpCfg(kid,key){ const c=(((notebookSettings||{})[kid]||{}).extraPages||{})[key]||{}; return { on:c.on!==false, days:c.days||{} }; }
@@ -46044,14 +46077,17 @@ let nbJuOpen=null;   // "letters:2" — which slot's item chooser is expanded
 // letter/number cursors, Mom's picks). No planner / a theme set / no slots → "" (the tab is byte-for-byte as before).
 // Writes: only Mom's picks, through nbJuSet / nbJuResetWeek → notebookSettings/<kid>/juPicks/<week>, the week node only.
 const NB_CB_SUBS=[{k:"letters",lbl:"Little letters",ico:"\u{1F524}"},{k:"numbers",lbl:"Numbers",ico:"\u{1F522}"},
-                  {k:"shapes",lbl:"Shapes",ico:"\u{1F53A}"},{k:"colors",lbl:"Colors",ico:"\u{1F3A8}"}];
-function nbPlanKid(kid){ try{ return !!(kid&&window.HoweNotebooks&&typeof window.HoweNotebooks.hasPlan==="function"&&window.HoweNotebooks.hasPlan(kid)); }catch(e){ return false; } }
+                  {k:"shapes",lbl:"Shapes",ico:"\u{1F53A}"},{k:"colors",lbl:"Colors",ico:"\u{1F3A8}"},{k:"animals",lbl:"Animals",ico:"\u{1F43E}"}];
+// PREKLEVEL: the card's title follows the look (a plan with no look = the construction card, as first built)
+const NB_PLAN_TITLE={construction:"\u{1F69C} This week\u2019s build plan",dino:"\u{1F995} This week\u2019s plan",shark:"\u{1F988} This week\u2019s swim plan"};
+// PREKLEVEL: any Pre-K notebook has one (a themed starter kid too), so the kid's look + levels go along.
+function nbPlanKid(kid){ try{ return !!(kid&&window.HoweNotebooks&&typeof window.HoweNotebooks.hasPlan==="function"&&window.HoweNotebooks.hasPlan(kid,{notebookTheme:(typeof nbThemeOf==="function"?nbThemeOf(kid):null),nbLevel:(typeof nbLevelOf==="function"?nbLevelOf(kid):null)})); }catch(e){ return false; } }
 function nbPlanCardHtml(kid){
   if(!nbPlanKid(kid)||typeof window.HoweNotebooks.planFor!=="function") return "";
   let plan=null;
   try{ plan=window.HoweNotebooks.planFor(kid,haNbContext(kid)); }catch(e){ return '<div style="margin-top:14px;font-size:11px;color:var(--muted)">Week plan unavailable ('+esc(String(e.message||e))+').</div>'; }
   if(!plan||!plan.subjects) return "";
-  const subs=NB_CB_SUBS.filter(s=>plan.subjects[s.k]&&(plan.subjects[s.k].slots||[]).length);
+  const subs=NB_CB_SUBS.filter(s=>plan.subjects[s.k]&&(plan.subjects[s.k].slots||[]).length).map(s=>(s.k==="letters"&&plan.lowercase===false)?Object.assign({},s,{lbl:"Letters"}):s);
   if(!subs.length) return "";
   const J=v=>String(v).replace(/\\/g,"\\\\").replace(/'/g,"\\'"), kq="'"+J(kid)+"'";
   const dayNames=(plan.days||[]).map(d=>(DAY_LBL[d]||d).slice(0,3));
@@ -46093,7 +46129,7 @@ function nbPlanCardHtml(kid){
   }).join("");
   return '<div class="nb-cbplan" style="margin-top:14px;background:#fff;border:1.5px solid #fed7aa;border-radius:12px;padding:12px 14px">'+
     '<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:2px">'+
-      '<span style="font-size:12px;font-weight:800;color:#c2410c">\u{1F69C} This week\u2019s build plan <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#fed7aa;color:#7c2d12;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span></span>'+
+      '<span style="font-size:12px;font-weight:800;color:#c2410c">'+(NB_PLAN_TITLE[plan.look]||NB_PLAN_TITLE.construction)+' <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#fed7aa;color:#7c2d12;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span></span>'+
       (nOv?'<button onclick="nbJuResetWeek('+kq+')" style="margin-left:auto;padding:3px 9px;border-radius:7px;border:1.5px solid var(--border);background:#fff;color:#6b7280;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u21BA All auto</button>':'')+
     '</div>'+
     '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:2px">What goes on each day\u2019s page. <b>\u{1F501}</b> = back for another look because it was missed in drills. Tap any day to swap it \u2014 <b>\u{1F4CC}</b> marks your pick. '+
@@ -61722,9 +61758,11 @@ function renderNotebook(el){
   // (HoweNotebooks.extraPageCatalog) so the UI list can never drift from what the generator builds.
   let xpHtml="";
   const xpCatalog=(window.HoweNotebooks&&window.HoweNotebooks.extraPageCatalog)||null;
-  if(momHere() && xpCatalog && xpCatalog[sel] && xpCatalog[sel].length){
+  const lookOpts=nbLookOpts(sel);   // PREKLEVEL_WIRE: any Pre-K notebook's pages come from the notebook it builds, not the kid id
+  const xpList=(lookOpts&&lookOpts.extraPages)||(xpCatalog&&xpCatalog[sel])||[];
+  if(momHere() && xpList.length){
     const dayDefs=[["monday","M"],["tuesday","T"],["wednesday","W"],["thursday","Th"],["friday","F"]];
-    const xpRows=xpCatalog[sel].map(p=>{
+    const xpRows=xpList.map(p=>{
       const c=nbXpCfg(sel,p.key);
       const chips=dayDefs.map(d=>{
         const on=!!c.days[d[0]];
@@ -61740,6 +61778,23 @@ function renderNotebook(el){
       '<div style="font-size:12px;font-weight:800;color:#9a3412;margin-bottom:2px">📄 Extra pages <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#fed7aa;color:#7c2d12;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span></div>'+
       '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:4px">Toggle which extra pages print in the notebook. Tap a day to assign the page — that day’s page adds a “\u{1F4CC} Extra pages today” reminder. No day = it just prints, no reminder.</div>'+
       xpRows+'</div>';
+  }
+  // 🎨 Look + level (PREKLEVEL_WIRE) — Mom-gated. Every kid gets the look row; the level switches are for a Pre-K notebook.
+  let lookHtml="";
+  if(momHere() && lookOpts && lookOpts.looks.length){
+    const pill=(on,lab,click,title)=>'<button onclick="'+click+'" title="'+title+'" style="padding:6px 11px;border-radius:20px;border:1.5px solid '+(on?'#ea580c':'var(--border)')+';background:'+(on?'#fff7ed':'#fff')+';color:'+(on?'#9a3412':'#1f2937')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lab+'</button>';
+    const looks=lookOpts.looks.map(l=>pill(l.key===lookOpts.current,esc(l.label),"nbSetLook('"+sel+"','"+l.key+"')",l.key===lookOpts.current?"This look is on":"Tap to use this look from the next notebook")).join("");
+    const lvRows=(lookOpts.levels||[]).map(d=>
+      '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--border)">'+
+        '<button onclick="nbSetLevel(\''+sel+'\',\''+d.key+'\')" title="'+(d.on?'On — tap to turn off':'Off — tap to turn on')+'" style="width:34px;height:20px;border-radius:20px;border:none;background:'+(d.on?'#16a34a':'#d1d5db')+';position:relative;cursor:pointer;flex-shrink:0;padding:0"><span style="position:absolute;top:2px;'+(d.on?'right:2px':'left:2px')+';width:16px;height:16px;border-radius:50%;background:#fff;display:block"></span></button>'+
+        '<span style="flex:1;font-size:12px;line-height:1.35;color:#1f2937"><b>'+d.emoji+' '+esc(d.label)+'</b> <span style="color:var(--muted);font-size:11px">— '+esc(d.hint)+'</span></span>'+
+      '</div>').join("");
+    lookHtml='<div id="nblook-card" style="margin-top:14px;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;padding:12px 14px">'+
+      '<div style="font-size:12px;font-weight:800;color:#9a3412;margin-bottom:2px">🎨 Notebook look <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#fed7aa;color:#7c2d12;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span></div>'+
+      '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:7px">'+(lookOpts.looks.length>1?'Pick the pictures and colors. It changes the next notebook you print — nothing already printed changes.':'This notebook has one look for now.')+'</div>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">'+looks+'</div>'+
+      (lvRows?'<div style="font-size:12px;font-weight:800;color:#9a3412;margin:12px 0 2px">📏 Level</div><div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:4px">The same notebook at a different level — turn on what this child is ready for.</div>'+lvRows:'')+
+    '</div>';
   }
   // Week switcher — only when a next week is already built and parked (generated ahead on the
   // weekend). Lets the packets be printed before that week goes live on its Monday.
@@ -61787,6 +61842,7 @@ function renderNotebook(el){
           '<div style="margin-top:3px;color:#9a3412;font-weight:700">⚠️ Printing from Look first only works in Chrome. On Safari (iPad, iPhone, Mac), use 🖨 Print.</div></div>'+
         ((typeof nbtTabHtml==="function")?nbtTabHtml(sel,wkLabel):"")+   // 📱 NBTABLET: Printed / On the tablet switch + Send to tablet
         formHtml+
+        lookHtml+
         xpHtml+
         reviewHtml+
         dgHtml+
