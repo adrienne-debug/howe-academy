@@ -51,7 +51,7 @@ const COUNTS=JSON.parse(fs.readFileSync(path.join(REPO,"units/nc_envirothon/COUN
 const run=async()=>{
 console.log("── the block, where it sits, how it is hooked ──");
 { const a=src.indexOf("// CPTRIM_START"), b=src.indexOf("// CPTRIM_END"), e=src.indexOf("// CPCARDSEDIT_END"), head=TR.slice(0,1600);
-  ok("one CPTRIM block, IMMEDIATELY after CPCARDSEDIT_END", a>0&&b>a&&src.indexOf("// CPTRIM_START",a+1)<0&&src.slice(e,a).trim()==="// CPCARDSEDIT_END");
+  ok("one CPTRIM block, IMMEDIATELY after CPCARDSEDIT_END (🚩 CPFLAG, 2026-10-30, may sit between)", a>0&&b>a&&src.indexOf("// CPTRIM_START",a+1)<0&&src.slice(e,a).replace(/\/\/ CPFLAG_START[\s\S]*?\/\/ CPFLAG_END\n/,"").trim()==="// CPCARDSEDIT_END");
   ok("its header: her words, the date, §6.6, §13 row 27, PR 27, the research §8", /we dont want to overload and make it impossible to complete this study/.test(head)&&/2026-10-28/.test(head)&&/§6\.6/.test(head)&&/§13 row 27/.test(head)&&/PR 27/.test(head)&&/§8\.1–§8\.4/.test(head));
   ok("…and it says nothing is trimmed by the block itself, and what reaches Lincoln", /nothing is trimmed by this block or by this PR/.test(TR)&&/LINCOLN: nothing here reaches him/.test(TR));
   ok("the block only declares (nothing runs at boot)", TR.split("\n").every(l=>!l.trim()||/^(\/\/|function |const | |})/.test(l)));

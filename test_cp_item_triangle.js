@@ -68,7 +68,7 @@ const P3=(c,s,a)=>({clay:c,silt:s,sand:a});
 const run=async()=>{
 console.log("── where it sits, how it is hooked ──");
 { const a=src.indexOf("// CPITEMTRIANGLE_START"), b=src.indexOf("// CPITEMTRIANGLE_END"), e=src.indexOf("// CPSENDEARLY_END\n");
-  ok("CPITEMTRIANGLE once, IMMEDIATELY after CPSENDEARLY_END (after CPSKILL, so its registry exists)", a>0&&b>a&&src.indexOf("// CPITEMTRIANGLE_START",a+1)<0&&e+"// CPSENDEARLY_END\n".length===a&&src.indexOf("// CPSKILL_END")<a);
+  ok("CPITEMTRIANGLE once, after CPSENDEARLY_END with only CPAHEAD between (after CPSKILL, so its registry exists)", a>0&&b>a&&src.indexOf("// CPITEMTRIANGLE_START",a+1)<0&&e>0&&e<a&&!/\/\/ CP(?!AHEAD)[A-Z]+_START/.test(src.slice(e,a))&&src.indexOf("// CPSKILL_END")<a);
   ok("the header names §4.1b, §13 rows 25–27, the research's §4.1, its #4 rank and §8.1, the exact rules, the inline SVG, the miss codes, what isn't built, and the dates", /§4\.1b/.test(BLK)&&/§13 rows\s*\n?\/\/ 25–27|§13 rows 25–27/.test(BLK)&&/RESEARCH_envirothon_skills_2026-10-28\.md §4\.1/.test(BLK)&&/ranked #4/.test(BLK)&&/§8\.1/.test(BLK)&&/Soil Survey Manual's own rule/.test(BLK)&&/inline SVG/.test(BLK)&&/WHICH STEP WAS MISSED/.test(BLK)&&/NOT BUILT/.test(BLK)&&/2026-10-28/.test(BLK)&&/2026-10-29/.test(BLK));
   ok("the block only declares, plus its one registration through CPSKILL's extension point", BLK.split("\n").every(l=>!l.trim()||/^(\/\/|function |const | |})/.test(l)||/^if\(typeof cpSkillTypeAdd==="function"\) cpSkillTypeAdd\("chart",CPT_CHART\);/.test(l)));
   const code=BLK.split("\n").filter(l=>!/^\s*\/\//.test(l)).join("\n").replace(/_cpt\.(pool|fn)\.set\(/g,"memo(");   // (its two in-memory memos are WeakMaps)
