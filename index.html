@@ -28568,11 +28568,146 @@ function renderMPScores(el,top){
   let h=(top||'')+scpKidRowHtml(kids);
   if(!kids.length) h+='<div style="font-size:13px;color:var(--muted);padding:14px">No kids on the roster yet.</div>';
   if(pick.length>1) h+=scpFamilyHtml(rows);
-  h+=rows.map(scpCardHtml).join("");
+  h+=rows.map(r=>scpCardHtml(r)+(typeof scgSectionHtml==="function"?scgSectionHtml(r.kid):"")).join("");   // 🎮 SCORESGAMES: the Games section under each card ("" without game records)
   h+='<div style="font-size:11px;color:var(--muted);padding:6px 14px 16px">Read-only. Drills, study, sprints, games and the rest get their own sections next (PLAN_scores_page_2026-11-03.md).</div>';
   el.innerHTML=h;
 }
 // SCORESPAGE_END
+// SCORESGAMES_START — 🎮 Games under each kid's Overall card (slice 2 of PLAN_scores_page_2026-11-03.md §3.2; her 11/3 ask: "to reflect
+// where the kids are in games"). READ-ONLY, like the rest of the page: nothing here writes, so ?dryrun=1 changes nothing. Per kid:
+//   · Rounds — the last 7 days (the Overall card's window) / all time. A round = one gameLog entry (every finished round of every game;
+//     Match and Memory flip too from 2026-11-08, GAMELOG's MATCHLOG add), plus the older Match / Memory / Which one? rounds that were only
+//     ever kept by "Save to Scores" (matchLog). A matchLog round counts only on a day BEFORE that game's first gameLog round, so no round
+//     is counted twice.
+//   · Per game — rounds, Right % = right on the first try ÷ cards answered (a card that came back at the end of a round is not a second
+//     try — the Overall card's game rule; the ½ weight is the Overall card's only, her 11/3 answer, so the raw % shows here); best from
+//     match_best as each game defines it: seconds for Match / Memory flip / Beat my time (lower is better), dollars for Jeopardy's money
+//     bank ("<board> · jeop money"), a count — first-try rights, clean pairs, words found — for every other game; 👍 / 👎 from gameLikes;
+//     minutes (a round over 2 h was left open on the screen — SC_LEFT_OPEN_SECS — and is skipped).
+//   · Per deck — which games each deck was played with and the Right % in each. A card is counted in its OWN deck (the card's subject),
+//     so a mixed round (Mix the decks, a 3-deck Jeopardy board, the practice list) splits into the decks it really came from.
+//   · Practice vs free — only when a round carries GAMELOG's `why` flag (2026-11-08); a practice-list round (game "practice") is always
+//     practice; rounds from before the flag are "not marked". No flagged round at all → the line is left out.
+//   · Cards learned through games — a card (not parked, not still in learning) counts when
+//       (a) its practice list closed it as learned (MISSPLAY's gp.ok: right in the games on 3 school days, then said right to Mom), or
+//       (b) its last two drill / study grades are a miss (✗ or ~) and then ✓, and between them — the miss day to the ✓ day, both
+//           included — it was right on the first try in at least one game round.
+//     That is: the right answers that took it from missed back to right came in game rounds, not in another drill.
+// No game records at all for the kid (no gameLog, matchLog, match_best, gameLikes) → "" so the page stays byte-identical to slice 1.
+// On a phone (under 600 px) the section is one line per kid (a closed <details>); wider, it opens. No kid or family names here.
+const SCG_TIME={match:1,memory:1,beat:1};             // best = seconds, lower is better
+const SCG_MATCHMOD={memory:1,same:1,pick:1,say:1};    // Match / Memory flip's key parts after the deck
+const SCG_SEP=" · ";
+function scgDay(d){ const k=String(d||"").replace(/-/g,"").slice(0,8); return /^\d{8}$/.test(k)?k:""; }
+// PURE: a match_best key → {deck, game, kind: "s" seconds | "$" dollars | "n" a count}
+function scgBestKey(k){
+  const p=String(k).split(SCG_SEP), n=p.length;
+  if(n>=2&&p[n-1]==="jeop money") return {deck:p.slice(0,-1).join(SCG_SEP),game:"jeop",kind:"$"};   // JPMONEY's "<board> · jeop money"
+  if(n>=2&&!SCG_MATCHMOD[p[n-1]]) return {deck:p.slice(0,-1).join(SCG_SEP),game:p[n-1],kind:SCG_TIME[p[n-1]]?"s":"n"};
+  let mem=false; while(p.length>1&&SCG_MATCHMOD[p[p.length-1]]){ if(p[p.length-1]==="memory") mem=true; p.pop(); }
+  return {deck:p.join(SCG_SEP),game:mem?"memory":"match",kind:"s"};
+}
+// PURE: the ids of the kid's cards learned through games (the rule above)
+function scgLearned(kid,cards,history,studyLog,gameLog){
+  const R={c:0,"~":1,m:2}, grades={}, right={}, gl=(gameLog||{})[kid]||{};
+  let days={};
+  if(typeof scGradedDays==="function") days=scGradedDays(kid,history||{},studyLog||{});
+  else { const dh=(history||{})[kid]||{}; Object.keys(dh).forEach(k=>{ days[k]={items:scpV(dh[k]&&dh[k].items)}; }); }
+  Object.keys(days).forEach(k=>{ scpV(days[k].items).forEach(it=>{ if(!it||it.id==null||!(it.result in R)) return;
+    const g=grades[String(it.id)]||(grades[String(it.id)]={}); if(g[k]==null||R[it.result]>R[g[k]]) g[k]=it.result; }); });   // one grade a day, the worse
+  Object.keys(gl).forEach(day=>{ scpV(gl[day]).forEach(e=>{ scpV(e&&e.items).forEach(it=>{ if(it&&it.ok&&!it.back&&it.id!=null) (right[String(it.id)]||(right[String(it.id)]=[])).push(day); }); }); });
+  const out=[];
+  scpV(cards).forEach(c=>{ if(!c||c.id==null||c.status==="parked") return; const id=String(c.id);
+    if(c.gp&&c.gp.ok){ out.push(id); return; }
+    if(c.status==="introduction"||c.status==="learning") return;
+    const g=grades[id]; if(!g) return; const ds=Object.keys(g).sort(); if(ds.length<2) return;
+    const last=ds[ds.length-1], prev=ds[ds.length-2];
+    if(g[last]!=="c"||g[prev]==="c") return;
+    if((right[id]||[]).some(d=>d>=prev&&d<=last)) out.push(id); });
+  return out;
+}
+// PURE: one kid's games. D = {gameLog, matchLog, settings (the kid's _settings: match_best, gameLikes), cards, history, studyLog, today}
+function scgStats(kid,D){
+  D=D||{}; const today=D.today||scpToday(), w7=scpWin(today,7), cap=(typeof SC_LEFT_OPEN_SECS==="number")?SC_LEFT_OPEN_SECS:7200;
+  const set=(D.settings&&typeof D.settings==="object")?D.settings:{}, gl=(D.gameLog||{})[kid]||{}, mb=(set.match_best&&typeof set.match_best==="object")?set.match_best:{};
+  const likes=(set.gameLikes&&typeof set.gameLikes==="object")?set.gameLikes:{}, deckOf={}, G={}, DK={}, first={}, rounds=[];
+  scpV(D.cards).forEach(c=>{ if(c&&c.id!=null&&c.subject) deckOf[String(c.id)]=String(c.subject); });
+  const gOf=k=>G[k]||(G[k]={key:k,rounds:0,w7:0,n:0,ok:0,secs:0,last:"",best:{},up:0,down:0});
+  Object.keys(gl).forEach(day=>{ if(!/^\d{8}$/.test(day)) return; scpV(gl[day]).forEach(e=>{ if(!e||typeof e!=="object") return;
+    const g=String(e.game||"which"); if(!first[g]||day<first[g]) first[g]=day; rounds.push({g:g,day:day,e:e,log:true}); }); });
+  scpV((D.matchLog||{})[kid]).forEach(e=>{ if(!e||typeof e!=="object") return;
+    const g=e.game?String(e.game):(e.style==="memory"?"memory":"match"), day=scgDay(e.date);
+    if(!day||(first[g]&&day>=first[g])) return; rounds.push({g:g,day:day,e:e,log:false}); });
+  const why={practice:0,free:0,none:0,flagged:false}, tot={rounds:0,w7:0,n:0,ok:0};
+  rounds.forEach(r=>{ const s=gOf(r.g), e=r.e, seen={};
+    s.rounds++; tot.rounds++; if(scpIn(r.day,w7)){ s.w7++; tot.w7++; } if(r.day>s.last) s.last=r.day;
+    const sec=r.log?e.secs:e.sec; if(typeof sec==="number"&&sec>0&&sec<=cap) s.secs+=sec;
+    if(e.why==="practice"||e.why==="free") why.flagged=true;
+    if(e.why==="practice"||r.g==="practice") why.practice++; else if(e.why==="free") why.free++; else why.none++;
+    const add=(deck,n,ok)=>{ const d=DK[deck]||(DK[deck]={deck:deck,rounds:0,games:{}}), x=d.games[r.g]||(d.games[r.g]={key:r.g,rounds:0,n:0,ok:0,best:{}});
+      if(!seen[deck]){ seen[deck]=1; d.rounds++; x.rounds++; } x.n+=n; x.ok+=ok; s.n+=n; s.ok+=ok; tot.n+=n; tot.ok+=ok; };
+    if(r.log){ let any=false; scpV(e.items).forEach(it=>{ if(!it||it.back) return; any=true; add(deckOf[String(it.id)]||String(e.deck||"—"),1,it.ok?1:0); });
+      if(!any) add(String(e.deck||"—"),0,0); }
+    else { const of=Math.max(0,+e.of||0), f=Math.min(of,Math.max(0,+e.first||0)); add(String(e.deck||"—"),of,f); }   // a saved round: its first-try count
+  });
+  Object.keys(mb).forEach(k=>{ const v=Number(mb[k]); if(!isFinite(v)) return; const b=scgBestKey(k), s=gOf(b.game);
+    const better=o=>!o||(b.kind==="s"?v<o.v:v>o.v);
+    if(better(s.best[b.kind])) s.best[b.kind]={v:v,deck:b.deck};
+    const x=DK[b.deck]&&DK[b.deck].games[b.game]; if(x&&better(x.best[b.kind])) x.best[b.kind]={v:v}; });
+  let nLikes=0;
+  Object.keys(likes).forEach(g=>{ scpV(likes[g]).forEach(a=>{ if(!a) return; const v=Number(a.v); if(!(v>0||v<0)) return; nLikes++; if(v>0) gOf(g).up++; else gOf(g).down++; }); });
+  const pct=(ok,n)=>n?Math.round(ok/n*100):null;
+  const games=Object.keys(G).map(k=>{ const s=G[k]; s.pct=pct(s.ok,s.n); s.min=Math.round(s.secs/60); return s; })
+    .sort((a,b)=>(b.rounds-a.rounds)||(a.key<b.key?-1:a.key>b.key?1:0));
+  const decks=Object.keys(DK).map(k=>{ const d=DK[k]; d.list=Object.keys(d.games).map(g=>{ const x=d.games[g]; x.pct=pct(x.ok,x.n); return x; }).sort((a,b)=>b.rounds-a.rounds||(a.key<b.key?-1:1)); return d; })
+    .sort((a,b)=>(b.rounds-a.rounds)||(a.deck<b.deck?-1:a.deck>b.deck?1:0));
+  const learned=scgLearned(kid,D.cards,D.history,D.studyLog,D.gameLog);
+  tot.pct=pct(tot.ok,tot.n);
+  return {kid:kid,today:today,any:!!(rounds.length||Object.keys(mb).length||nLikes),total:tot,games:games,decks:decks,why:why.flagged?why:null,learned:learned};
+}
+// ── the section ──
+function scgLabel(k){ if(k==="practice") return "\u{1F3AE} Practice list"; try{ const g=(typeof GAMES_LIST!=="undefined"&&Array.isArray(GAMES_LIST))?GAMES_LIST.find(x=>x&&x.key===k):null; if(g) return g.emoji+" "+g.label; }catch(e){} return String(k); }
+function scgBestTxt(b,withDeck){
+  const p=[], d=x=>(withDeck&&x.deck)?' <span style="color:#94a3b8">'+scpE(x.deck)+'</span>':'';
+  if(b&&b.n) p.push(scpE(b.n.v)+d(b.n));
+  if(b&&b.s) p.push(scpE(Math.round(b.s.v*10)/10)+' s'+d(b.s));
+  if(b&&b.$) p.push('$'+scpE(Math.round(b.$.v).toLocaleString("en-US"))+d(b.$));
+  return p.length?p.join(' · '):'—';
+}
+function scgHtml(s,open,cards){
+  if(!s||!s.any) return "";
+  const t=s.total, th='style="text-align:left;font-weight:700;color:#64748b;padding:3px 6px;white-space:nowrap"', td='style="padding:4px 6px;border-top:1px solid #eef2f7;vertical-align:top"';
+  let h='<div class="scg-card" style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:10px 14px;margin:0 12px 10px">';
+  h+='<details'+(open?' open':'')+'><summary style="cursor:pointer;font-weight:800;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\u{1F3AE} Games <span style="font-weight:600;font-size:12px;color:#64748b">· '+
+    t.w7+' round'+(t.w7===1?'':'s')+' in 7 days · '+t.rounds+' all time'+(typeof t.pct==="number"?' · '+t.pct+'% first try':'')+'</span></summary>';
+  if(s.why) h+='<div style="font-size:12px;color:#334155;margin-top:6px">Practice rounds '+s.why.practice+' · free play '+s.why.free+(s.why.none?' <span style="color:#94a3b8">· '+s.why.none+' from before rounds were marked</span>':'')+'</div>';
+  const byId={}; scpV(cards).forEach(c=>{ if(c&&c.id!=null) byId[String(c.id)]=c; });
+  const names=s.learned.slice(0,6).map(id=>{ const c=byId[id]||{}; return scpE(c.answer||c.prompt||id); });
+  h+='<div style="font-size:12px;color:#334155;margin-top:6px">\u{1F331} Cards learned through games: <b>'+s.learned.length+'</b>'+(names.length?' <span style="color:#64748b">· '+names.join(', ')+(s.learned.length>names.length?' …':'')+'</span>':'')+'</div>';
+  h+='<div style="overflow-x:auto;margin-top:8px"><table style="border-collapse:collapse;font-size:12px;width:100%"><tr><th '+th+'>Game</th><th '+th+'>Rounds 7 d / all</th><th '+th+'>Right</th><th '+th+'>Best</th><th '+th+'>\u{1F44D} \u{1F44E}</th><th '+th+'>Min</th></tr>';
+  s.games.forEach(g=>{ h+='<tr><td '+td+'>'+scpE(scgLabel(g.key))+'</td><td '+td+'>'+g.w7+' / '+g.rounds+'</td><td '+td+'><span style="font-weight:800;color:'+scpPctCol(g.pct)+'">'+scpN(g.pct,'%')+'</span>'+(g.n?' <span style="color:#94a3b8">of '+g.n+'</span>':'')+'</td><td '+td+'>'+scgBestTxt(g.best,true)+'</td><td '+td+'>'+((g.up||g.down)?g.up+' · '+g.down:'—')+'</td><td '+td+'>'+(g.rounds?g.min:'—')+'</td></tr>'; });
+  h+='</table></div>';
+  if(s.decks.length){
+    h+='<div style="font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#64748b;margin-top:10px">By deck</div>';
+    s.decks.forEach(d=>{ h+='<div style="font-size:12px;padding:4px 0;border-top:1px solid #eef2f7"><b>'+scpE(d.deck)+'</b> <span style="color:#94a3b8">'+d.rounds+' round'+(d.rounds===1?'':'s')+'</span><br>'+
+      d.list.map(x=>scpE(scgLabel(x.key))+' <span style="font-weight:800;color:'+scpPctCol(x.pct)+'">'+scpN(x.pct,'%')+'</span>'+(x.n?' <span style="color:#94a3b8">of '+x.n+'</span>':'')).join(' · ')+'</div>'; });
+  }
+  h+='<details style="margin-top:8px;font-size:11.5px;color:#64748b"><summary style="cursor:pointer;font-weight:700">How these are counted</summary><div style="padding:6px 0 2px;line-height:1.5">'+
+    'Right = right on the first try ÷ cards answered; a card that comes back at the end of a round is not a second try. (Overall counts games at half weight; this is the raw %.)<br>'+
+    'Best = the game’s own best: seconds for Match, Memory flip and Beat my time (lower is better), dollars for Jeopardy’s money game, a count for the rest.<br>'+
+    'A card is counted in its own deck, so a mixed round splits into the decks it came from.<br>'+
+    'Learned through games = a card the practice list marked learned, or one that was missed, then right on the first try in a game, then right in the next drill or study.</div></details>';
+  h+='</details></div>';
+  return h;
+}
+// The app's data for one kid's section, read only; "" when the kid has no game records.
+function scgSectionHtml(kid){
+  const md=(typeof masteryData!=="undefined"&&masteryData)||{};
+  const s=scgStats(kid,{gameLog:md.gameLog,matchLog:md.matchLog,settings:md[kid+"_settings"],cards:md[kid],history:md.history,studyLog:md.studyLog,today:scpToday()});
+  const open=!(typeof window!=="undefined"&&typeof window.innerWidth==="number"&&window.innerWidth<600);
+  return scgHtml(s,open,md[kid]);
+}
+// SCORESGAMES_END
 function renderCurriculumView(el,headerHtml){
   if(!momHere()){
     el.innerHTML=(headerHtml||'')+'<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center">'+
@@ -71924,6 +72059,7 @@ function mastMatchFinish(){
   st.ofN=Object.keys(st.res||{}).length; st.firstTry=Object.keys(st.res||{}).filter(k=>st.res[k]==="c").length;
   const prev=s.match_best[key];
   st.isPB=st.then!=="say"&&(prev==null||sec<prev); st.prevBest=prev; st.sec=sec; st.bestKey=key;   // say-it has no clock to beat
+  try{ if(typeof gameLogRound==="function"&&typeof gameLogMatchEntry==="function") gameLogRound(st,gameLogMatchEntry(st)); }catch(e){}   // 🎯 MATCHLOG: every finished round, one gameLog push
   // A clean sheet on Pick it (every card right first try) or a new best gets the confetti — the
   // only practice mode that had none. No points, no song: a 30-second game, not a day done.
   try{ if((st.then==="pick"&&st.ofN>0&&st.firstTry===st.ofN)||st.isPB){ if(typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F3AF} "+st.deck+" cleared!",{noSong:true}); } }catch(e){}
@@ -72350,13 +72486,14 @@ function gameLogEntry(st,now){
   if(!items.length) return null;
   now=now!=null?now:Date.now();
   const e={game:st.game||"which",deck:String(st.deck||""),at:now,items:items};   // 🔤 SPELLBUILD: each game names itself
+  e.why=st.why==="practice"?"practice":"free";   // 📊 SCORESGAMES (PLAN_scores_page §4 #3): free play, unless the round says it is practice
   if(st.t0) e.secs=Math.max(0,Math.round((now-st.t0)/1000));
   if(st.game==="train"&&st.level!=null){ e.level=st.level; e.clean=!!st.clean; }   // 🚂 TRAIN: the round's level + clean — its level-up reads them back
   return e;
 }
-function gameLogRound(st){
+function gameLogRound(st,pre){
   if(!st||st.gameLogged) return null;
-  const e=gameLogEntry(st); if(!e) return null;
+  const e=pre||gameLogEntry(st); if(!e) return null;   // 🎯 MATCHLOG: Match / Memory hand in their own entry (gameLogMatchEntry)
   st.gameLogged=true;
   const kid=st.kid||masteryKid, day=gameLogDay();
   try{
@@ -72366,6 +72503,21 @@ function gameLogRound(st){
   if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){
     try{ db.ref("mastery/gameLog/"+kid+"/"+day).push(e); }catch(err){}   // append-only push — never a whole-node set
   }
+  return e;
+}
+// 🎯 MATCHLOG (PLAN_scores_page_2026-11-03.md §4 #6, 2026-11-08): Match and Memory flip kept a round only on "Save to Scores"
+// (matchLog), so the Scores page could not count the rest. Now every FINISHED round also leaves ONE gameLog entry, by itself, through
+// gameLogRound (GAMELOG's own path and guards): {game:"match"|"memory", deck, at, secs (the round's clock), why:"free", items, then?, pair?}
+// — items are Pick it's first-try answers (st.res: c = right the first time, else missed), [] for a round with no per-card answer.
+// matchLog, the kid's Match Bests, the Day page's Match chip and "Save to Scores" are untouched (they read matchLog only).
+function gameLogMatchEntry(st,now){
+  if(!st||!st.deck||!st.endTs) return null;
+  now=now!=null?now:Date.now();
+  const res=st.res||{}, items=Object.keys(res).map(pid=>({id:String(pid),ok:res[pid]==="c",n:res[pid]==="c"?1:2}));
+  const e={game:st.style==="memory"?"memory":"match",deck:String(st.deck),at:now,items:items,why:"free"};
+  if(typeof st.sec==="number") e.secs=Math.max(0,Math.round(st.sec));
+  if(st.then&&st.then!=="none") e.then=st.then;
+  if(st.pairMode==="same") e.pair="same";
   return e;
 }
 // GAMELOG_END
@@ -72574,6 +72726,7 @@ function mpFinish(U){
   touched.forEach(it=>{ const k=mpKey(kid,it); if(k==null) return; upd[k+"/gp"]=it.gp||null; if(U.out[it.id]) upd[k+"/next_due"]=it.next_due; });
   Object.keys(U.ww||{}).forEach(pid=>{ const it=_mpItem(U,pid), k=it?mpKey(kid,it):null; if(k!=null) upd[k+"/ww"]=it.ww||null; });   // 🔤 SPELLBUILD: Word Workout's days, the Workout's own path
   const now=Date.now(), entry=U.log.length?{game:"practice",deck:"practice",at:now,secs:Math.max(0,Math.round((now-U.t0)/1000)),items:U.log.slice()}:null;
+  if(entry) entry.why="practice";   // 📊 SCORESGAMES (PLAN_scores_page §4 #3): a practice-list round
   if(entry&&U.from) entry.from=U.from;   // 📚 STUDYEND: a round opened from the study's finish screen says so (one field; nothing reads it yet)
   if(entry){ try{ const G=_mpMD().gameLog||(_mpMD().gameLog={}), K=G[kid]||(G[kid]={}), D=K[U.dk]||(K[U.dk]={}); D["local_"+now]=entry; }catch(e){} }
   if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){
