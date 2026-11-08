@@ -1003,7 +1003,11 @@
     var cap = (ctx.reviewCap == null) ? JU_REVIEW_CAP : Math.max(0, Math.min(5, parseInt(ctx.reviewCap, 10) || 0));
     cur = juNumbersWeek(cur, juNumberStart(ctx.numberCursor, wk, cur.numbersFront), dayCount, ctx.juPicks);   // JU_NUMBERS_AHEAD: same list as the print, so the planner matches the pages
     var picks = juWeekPicks(wk, cur, dayCount, cap, ctx.juPicks, juLetterStart(ctx.letterCursor, wk, cur.letters.length));
-    var subjects = ["letters", "numbers", "shapes", "colors", "animals"];
+    return juPlanShape(cur, picks, wk, dayCount, ["letters", "numbers", "shapes", "colors", "animals"]);
+  }
+  // The planner's shape for a week's picks: every item a slot can take (🔁 flags) + the day-by-day slots. Shared by
+  // the dinosaur Pre-K planner and the construction notebook's (CBPLAN).
+  function juPlanShape(cur, picks, wk, dayCount, subjects) {
     var out = { weekNum: wk, dayCount: dayCount, subjects: {} };
     subjects.forEach(function (sub) {
       var list = cur[sub] || [];
@@ -1489,7 +1493,7 @@
     curOpt: null
   };
   // His levels: capitals first, numbers and shapes from his decks, every school day a page, the rotation on the school-year week.
-  var JU_LEVEL = { nbLowercase: false, nbFindIt: false, nbTeens: false, nbShapesAhead: false, nbSkipNoSchoolDays: false, ownWeeks: false, numPicks: true };
+  var JU_LEVEL = { nbLowercase: false, nbFindIt: false, nbTeens: false, nbShapesAhead: false, nbSkipNoSchoolDays: false, ownWeeks: false };
 
   // T = the look (a theme object), lv = the level switches (pkLevel), kidId = whose cards count for nbSkipNoSchoolDays.
   function generatePreK(ctx, T, lv, kidId) {
@@ -1541,8 +1545,9 @@
       cur.shapes = _rot3;
     }
     var numStart = juNumberStart(ctx.numberCursor, wkInt || 1, cur.numbersFront);
-    var curWk = juNumbersWeek(cur, numStart, days.length, lv.numPicks === false ? undefined : ctx.juPicks);   // JU_NUMPICK
+    var curWk = juNumbersWeek(cur, numStart, days.length, ctx.juPicks);   // JU_NUMPICK (🚜 CBPLAN): a number Mom picks on the planner joins the list
     var picks = juWeekPicks(pickWk, curWk, days.length, reviewCap, ctx.juPicks, letterStart);
+    if (ctx.planOnly) { var _pl = juPlanShape(curWk, picks, wkInt || 1, days.length, pkPlanSubs(T)); _pl.days = days.slice(); _pl.lowercase = !!lv.nbLowercase; return { plan: _pl }; }   // 🚜 CBPLAN: the planner reads these exact picks
     var curCover = cur;
     if (curWk.numbersFromFront) {
       var wkNums = (picks.numbers || []).map(function (s2) { return curWk.numbers[s2.idx]; }).filter(function (v, i2, a) { return a.indexOf(v) === i2; });
@@ -1859,9 +1864,9 @@
     B: ["Bucket", "🪣"], D: ["Dig", "⛏️"], H: ["Hammer", "🔨"], J: ["Jet", "✈️"], L: ["Ladder", "🪜"], M: ["Magnet", "🧲"],
     N: ["Nut", "🔩"], R: ["Rock", "🪨"], S: ["Saw", "🪚"], T: ["Truck", "🚛"], W: ["Wheel", "🛞"]
   });
-  // His levels (PREKLEVEL): little letters, find it + match, teens, the Shapes Path run-ahead, no page on a no-school day, the
-  // rotation from his own first notebook week, and no planner hand-picks for numbers (the planner is not his).
-  var CB_LEVEL = { nbLowercase: true, nbFindIt: true, nbTeens: true, nbShapesAhead: true, nbSkipNoSchoolDays: true, ownWeeks: true, numPicks: false };
+  // His levels (PREKLEVEL): little letters, find it + match, teens, the Shapes Path run-ahead, no page on a no-school day, and the
+  // rotation from his own first notebook week.
+  var CB_LEVEL = { nbLowercase: true, nbFindIt: true, nbTeens: true, nbShapesAhead: true, nbSkipNoSchoolDays: true, ownWeeks: true };
   // His look — the construction theme with his own words. Same fields as every theme (see nbConstructionTheme, PREKLEVEL).
   var CB_THEME = {
     eyebrow: "Kindergarten", book: "Caleb's Notebook", guideTitle: "Caleb's Parent Guide", grade: "Kindergarten",
@@ -1894,16 +1899,15 @@
     { key: "nbShapesAhead",      emoji: "⭐", label: "Shapes Path",          hint: "shapes run ahead through the Shapes Path stage, the ones being learned first; no deck = 4 shapes, 8 colors" },
     { key: "nbSkipNoSchoolDays", emoji: "🗓", label: "Skip no-school days",  hint: "no daily page on a day with no school cards (a co-op day)" }
   ];
-  // ownWeeks / numPicks are not switches: ownWeeks = the rotation counts from the kid's first notebook week (a kid who
-  // starts mid-year opens on A); numPicks = Mom's planner hand-picks reach the numbers.
-  var PK_LEVEL_OFF = { nbLowercase: false, nbFindIt: false, nbTeens: false, nbShapesAhead: false, nbSkipNoSchoolDays: false, ownWeeks: false, numPicks: true };
+  // ownWeeks is not a switch: the rotation counts from the kid's first notebook week (a kid who starts mid-year opens on A).
+  var PK_LEVEL_OFF = { nbLowercase: false, nbFindIt: false, nbTeens: false, nbShapesAhead: false, nbSkipNoSchoolDays: false, ownWeeks: false };
   var PK_LEVEL_DEFAULT = Object.assign({}, PK_LEVEL_OFF, { ownWeeks: true });   // a kid with no notebook of their own
   // The kid's levels: ctx.nbLevel (the app reads notebookSettings, then the Family record) over the kid's defaults.
   // Only a real true/false counts; anything else keeps the default.
   function pkLevel(ctx, dflt) {
     dflt = dflt || PK_LEVEL_DEFAULT;
     var src = (ctx && ctx.nbLevel && typeof ctx.nbLevel === "object") ? ctx.nbLevel : {};
-    var out = { ownWeeks: !!dflt.ownWeeks, numPicks: dflt.numPicks !== false };
+    var out = { ownWeeks: !!dflt.ownWeeks };
     PK_LEVELS.forEach(function (d) { var v = src[d.key]; out[d.key] = (typeof v === "boolean") ? v : !!dflt[d.key]; });
     return out;
   }
@@ -2104,6 +2108,25 @@
     };
   }
   // PREKLEVEL_END
+  // CBPLAN_START — 🚜 "This week's plan" for a Pre-K notebook (11/3 note: the construction notebook had none; her yes 2026-11-08;
+  // folded into the one Pre-K notebook the same day). The app's Mom card (index.html CBPLAN) asks the kid's own build what it
+  // would pick, from the kid's own ctx (mastery decks, letter/number cursors, Mom's picks): planOnly stops generatePreK right
+  // after its picks, so the card and the printed pages can never disagree. Rows = what the daily page prints: letters,
+  // numbers, shapes, colors, and the animal too when the look counts animals (a look with its own counting picture doesn't).
+  // plan.days = the days that get a page; plan.look = the look on; plan.lowercase = little letters. Any Pre-K notebook has
+  // one — except where the planner lives in the app already (prek.ownPlanner: the dinosaur notebook's juPlanPreview card).
+  var PK_PLAN_SUBS = ["letters", "numbers", "shapes", "colors"];
+  function pkPlanSubs(T) { return (T && T.countEmoji) ? PK_PLAN_SUBS : PK_PLAN_SUBS.concat(["animals"]); }
+  function pkHasPlan(kid, opt) { var g = GENERATORS[kid], sp = pkSpec(kid, opt || {}); return !!sp && !(g && g.prek && g.prek.ownPlanner); }
+  function pkPlanFor(kid, ctx) {
+    if (!pkHasPlan(kid, ctx)) return null;
+    var sp = pkSpec(kid, ctx || {}), c = Object.assign({}, ctx || {}, { planOnly: true });
+    var r = generatePreK(c, sp.T || NB_THEMES[sp.key].theme(c, sp.L), sp.L, kid);
+    if (!r || !r.plan) return null;
+    r.plan.look = sp.key;
+    return r.plan;
+  }
+  // CBPLAN_END
 
   /* ============================================================================
    *  LINCOLN  (5th grade — snakes 🐍)
@@ -5451,7 +5474,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     lincoln: { label: "Lincoln (5th 🐍)", build: generateLincoln, looks: [{ key: "", label: "🐍 Snakes" }] },
     ellis: { label: "Ellis (4th 🤖)", build: generateEllis, looks: [{ key: "", label: "🤖 Robots" }] },
     lucy: { label: "Lucy (1st 🦄)", build: generateLucy, looks: [{ key: "", label: "🦄 Unicorns" }] },
-    julian: { label: "Julian (Pre-K 🦕)", build: generateJulian, prek: { native: "dino", theme: JU_THEME, level: JU_LEVEL } },
+    julian: { label: "Julian (Pre-K 🦕)", build: generateJulian, prek: { native: "dino", theme: JU_THEME, level: JU_LEVEL, ownPlanner: true } },   // his planner card is the app's (juPlanPreview)
     caleb: { label: "Caleb (K 🚜)", build: generateCaleb, prek: { native: "construction", theme: CB_THEME, level: CB_LEVEL } }   // DeWalt family (CALEB block); the app lists only kids on the family's roster
   };
 
@@ -5872,6 +5895,10 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     letterStrokes: JU_LETTER_STROKES,   // HWT-style capital formation scripts — the drill Trace overlay shows them
     lowerStrokes: CB_LOWER_STROKES,     // QA_BATCH1 (10/4): lowercase scripts (Caleb's notebook) — the Trace overlay uses them for a–z
     juPlanPreview: juPlanPreview,       // Julian's week planner: engine picks + struggled-with flags
+    // 🚜 CBPLAN: a kid's own builder's planner, when its catalog entry has one (a theme set in the data builds instead → none)
+    // 🚜 CBPLAN: any Pre-K notebook's planner (opt/ctx = the kid's notebookTheme / nbLevel, so a themed kid has one too)
+    hasPlan: pkHasPlan,
+    planFor: pkPlanFor,
     lincolnBuiltinQ3: function (wk, i) { return lnPick(LINCOLN_DATA.banks.conventions, wk, i); },   // the day's built-in conventions item (Mom's answer check)
     convBankPlan: lnConvBankPlan,       // Lincoln's conventions bank: same, for the Q3 slot
     quantBankPlan: lnQuantBankPlan,     // Lincoln's number-reasoning bank: same, for the Q2 math slot

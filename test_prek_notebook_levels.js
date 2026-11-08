@@ -60,8 +60,10 @@ function allCases() {
   return out;
 }
 // sha256 (first 16 hex) of JSON.stringify(generate(kid, ctx)) — taken from origin/main e5cbab4, BEFORE the fold.
+// caleb/picks refreshed ON PURPOSE (🚜 CBPLAN, merged 2026-11-08): Mom's planner number pick now prints in the construction
+// notebook (Tuesday reads 6, not 15), as in Julian's — the same refresh test_notebook_shark.js carries.
 const BEFORE = {"julian/empty":"8a86b1e0d153f181","julian/mastery":"fe558aa8ce3804e1","julian/cursors":"5455af6aaaf562f7","julian/extras":"e7a73a6c292926de","julian/spelling":"cf9da3a6129a42ad","julian/fourDay":"64f1989e078eaa38","julian/picks":"a89cffbae1f753d5","julian/big":"32c99d5b1b3f0671","julian/bigLater":"4342c2cb429e3f28","julian/skipDays":"fe558aa8ce3804e1","julian/noSchoolAtAll":"fe558aa8ce3804e1","julian/bindingMargin":"250df84ec62edb58",
-  "caleb/empty":"8b37fe802fbd9ed6","caleb/mastery":"844d75732e5723d3","caleb/cursors":"46cc24e6432e0fe9","caleb/extras":"29ca960f1a13df95","caleb/spelling":"a84698ec494f2eaa","caleb/fourDay":"785246ec8aeb0380","caleb/picks":"844d75732e5723d3","caleb/big":"c113f02366dea850","caleb/bigLater":"545ea4c736194e8b","caleb/skipDays":"18f84c03fa238b1d","caleb/noSchoolAtAll":"844d75732e5723d3","caleb/bindingMargin":"2fbaf876bf406cd7",
+  "caleb/empty":"8b37fe802fbd9ed6","caleb/mastery":"844d75732e5723d3","caleb/cursors":"46cc24e6432e0fe9","caleb/extras":"29ca960f1a13df95","caleb/spelling":"a84698ec494f2eaa","caleb/fourDay":"785246ec8aeb0380","caleb/picks":"2f6b157b07c2a86a","caleb/big":"c113f02366dea850","caleb/bigLater":"545ea4c736194e8b","caleb/skipDays":"18f84c03fa238b1d","caleb/noSchoolAtAll":"844d75732e5723d3","caleb/bindingMargin":"2fbaf876bf406cd7",
   "shark/empty":"23d7e0c0f1c87e99","shark/mastery":"c44529dc6d788321","shark/cursors":"7e74537b001bb706","shark/extras":"3682921ecb4befb0","shark/spelling":"7f7dd90aca9c03dd","shark/fourDay":"938786f7dc5b109b","shark/picks":"4fe95310ca003270","shark/big":"2639375c58f77a39","shark/bigLater":"8e4750b3d26b2eba","shark/skipDays":"c44529dc6d788321","shark/noSchoolAtAll":"c44529dc6d788321","shark/bindingMargin":"81c411704ab19628",
   "lincoln/empty":"40a3ec8aaba2b516","lincoln/binding":"a54db60c88dcfd27","ellis/empty":"c3a87b363fbdcf7e","ellis/binding":"8f3e5a2439f215df","lucy/empty":"6396d3822f2d341e","lucy/binding":"4ac7107eb66120ae","kid9/empty":"98cd36b5413f5b91","kid9/binding":"5221db6582d80428"};
 const C = allCases(), snap = {};
@@ -83,8 +85,8 @@ ok(/if \(!pkCurricLevel\(lv\)\) return juCurriculumFromMastery\(items, opt\);/.t
 const lvKeys = NB.prekLevels.map(d => d.key);
 ok(JSON.stringify(lvKeys) === JSON.stringify(["nbLowercase", "nbFindIt", "nbTeens", "nbShapesAhead", "nbSkipNoSchoolDays"]), "five level switches", lvKeys.join(","));
 ok(lvKeys.every(k => I.CB_LEVEL[k] === true) && lvKeys.every(k => I.JU_LEVEL[k] === false), "Caleb's defaults all on, Julian's all off");
-ok(I.CB_LEVEL.ownWeeks === true && I.CB_LEVEL.numPicks === false && I.JU_LEVEL.ownWeeks === false && I.JU_LEVEL.numPicks === true && I.PK_LEVEL_DEFAULT.ownWeeks === true,
-   "not switches: his rotation from his own first week (as the shark kid's), no planner number picks; Julian's on the school week");
+ok(I.CB_LEVEL.ownWeeks === true && I.JU_LEVEL.ownWeeks === false && I.PK_LEVEL_DEFAULT.ownWeeks === true && !/numPicks/.test(src),
+   "not a switch: his rotation from his own first week (as the shark kid's); Julian's on the school week; Mom's planner picks reach every Pre-K notebook");
 const L = (o) => I.pkLevel({ nbLevel: o }, I.JU_LEVEL);
 ok(L({ nbLowercase: true }).nbLowercase === true && L({ nbLowercase: "yes" }).nbLowercase === false && L({ nbLowercase: 1 }).nbLowercase === false && L(null).nbFindIt === false && I.pkLevel({ nbLevel: { nbFindIt: false } }, I.CB_LEVEL).nbFindIt === false,
    "levels read defensively: only a real true/false counts, else the kid's default");
