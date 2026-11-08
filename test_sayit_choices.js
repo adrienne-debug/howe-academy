@@ -87,7 +87,7 @@ console.log("👶 the switch: on for Pre-K to 2nd grade, off for 3rd up, Mom can
   ok("…and the game reads it at once",S.run('matchSaidPickOn("kidA")')===false);
   const K=sandbox({grade:1,mom:false});
   ok("a kid can look but not flip it",K.run('gameRuleSet("kidA","memory","saidpick","off")')===false&&K.L.dbWrites.length===0);
-  ok("the other games' rules are untouched",JSON.stringify(Object.keys(S.ctx.GAME_RULES))==='["spell","jeop","jumble","memory","train"]');
+  ok("the other games' rules are untouched (+ 🧩 JIGSAW's pieces rule — test_game_jigsaw.js)",JSON.stringify(Object.keys(S.ctx.GAME_RULES))==='["spell","jeop","jumble","jigsaw","memory","train"]');
 }
 
 console.log("🗣 I said it → three choices, nothing spoken, nothing picked");
