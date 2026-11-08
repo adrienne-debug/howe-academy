@@ -1372,6 +1372,7 @@ body.kioskr #kiosk-kids::-webkit-scrollbar{display:none}
 .smap-session-status{font-size:9px;font-weight:700;min-width:50px;text-align:right}
 
 /* Mastery print */
+/* MASTPRINT_CSS_START */
 .mast-print-page{display:none}
 .mast-print-page *{box-sizing:border-box}
 .mpp-sheet{padding:12px 18px}
@@ -1406,6 +1407,7 @@ body.kioskr #kiosk-kids::-webkit-scrollbar{display:none}
   .mpp-table-2col tr{height:26px!important}.mpp-table-2col td{height:26px!important}
   .mpp-ptable tr{height:26px!important}.mpp-ptable td{height:26px!important}
 }
+/* MASTPRINT_CSS_END */
 .celeb-overlay{position:fixed;inset:0;z-index:20000;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity 0.4s}
 .celeb-overlay.show{opacity:1;pointer-events:auto}
 .celeb-canvas{position:absolute;inset:0;z-index:1}
@@ -89616,6 +89618,55 @@ function _renderMasteryInner(el){
   el.innerHTML=h;
 }
 
+// PRINTPHONE_START — 🖨 one printer for the drill sheets (Sara's phone, 2026-11-08: she tapped print drills, the sheet came
+// up, and after printing / cancelling there was no way back to the app — the pages were drawn into the app's own page and
+// a phone's print sheet can leave it sitting in print layout. Her words: "I need it to be able to print without any extra
+// little button showing to go back to the main screen, but then after she's done printing it or seeing it, she can then
+// go back to the main app.")
+//   · phone / tablet (a coarse pointer, or a phone-width screen — the 640px phone layout) → the pages open in a NEW tab
+//     and print from there; closing that tab is the way back, and the app's page is never touched. No back button.
+//   · desktop → the in-page print, as before (it works there).
+//   · the new tab is blocked → the in-page print, and the pages are cleared on afterprint as well as by the timer.
+// Same pages and the same CSS either way: the new tab carries the app's own "Mastery print" rules (MASTPRINT_CSS markers).
+// opts.whole — `html` is already a whole document with its own layout script (the paper drill): it always gets its own
+// tab (its re-lay measures that page), and a blocked tab returns false so the caller can say "allow pop-ups".
+function haPrintIsPhone(){
+  try{ const mm=window.matchMedia; return !!(mm&&(mm("(pointer: coarse)").matches||mm("(max-width: 640px)").matches)); }catch(e){ return false; }
+}
+function haPrintCss(){
+  try{ const st=document.querySelectorAll("style");
+    for(let i=0;i<st.length;i++){ const t=st[i].textContent||"", a=t.indexOf("/* MASTPRINT_CSS_START */"), b=t.indexOf("/* MASTPRINT_CSS_END */");
+      if(a>=0&&b>a) return t.slice(a,b); } }catch(e){}
+  return "";
+}
+const HA_PRINT_GO='<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print()},250)}</scr'+'ipt>';
+function haPrintDoc(title,html,css,opts){
+  opts=opts||{};
+  if(opts.whole||haPrintIsPhone()){
+    let w=null; try{ w=window.open("","_blank"); }catch(e){ w=null; }
+    if(w){ try{
+      let doc;
+      if(opts.whole){ const i=html.lastIndexOf("</body>"); doc=i>=0?html.slice(0,i)+HA_PRINT_GO+html.slice(i):html+HA_PRINT_GO; }
+      else{
+        let fonts=""; try{ fonts=[].map.call(document.querySelectorAll('link[rel="stylesheet"][href*="fonts.googleapis.com"]'),l=>l.outerHTML).join(""); }catch(e){}
+        const t=String(title||"Print").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+        doc='<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+t+'</title>'+fonts
+          +'<style>'+(css||"")+'\nbody{margin:0;background:#fff}.mast-print-page{display:block}</style></head><body><div class="mast-print-page">'+html+'</div>'+HA_PRINT_GO+'</body></html>';
+      }
+      w.document.write(doc); w.document.close(); return "tab";
+    }catch(e){ try{ w.close(); }catch(_){} } }
+    if(opts.whole) return false;
+  }
+  let container=document.getElementById("mast-print-container");
+  if(!container){container=document.createElement("div");container.id="mast-print-container";container.className="mast-print-page";document.body.appendChild(container);}
+  container.innerHTML=html;
+  let done=false; const clear=()=>{ if(done) return; done=true; container.innerHTML=""; try{ window.removeEventListener("afterprint",clear); }catch(e){} };
+  try{ window.addEventListener("afterprint",clear); }catch(e){}
+  setTimeout(()=>{ window.print(); setTimeout(clear,1000); },100);
+  return "page";
+}
+// PRINTPHONE_END
+
 function mastPrintDrill(){
   const pStudent=document.getElementById("mast-chk-student")?.checked;
   const pParent=document.getElementById("mast-chk-parent")?.checked;
@@ -89671,10 +89722,7 @@ function mastPrintDrill(){
     pages+='<table class="mpp-ptable">'+rows+'</table></div>';
   }
 
-  let container=document.getElementById("mast-print-container");
-  if(!container){container=document.createElement("div");container.id="mast-print-container";container.className="mast-print-page";document.body.appendChild(container);}
-  container.innerHTML=pages;
-  setTimeout(()=>{ window.print(); setTimeout(()=>{ container.innerHTML=""; },1000); },100);
+  haPrintDoc(label+" — drill sheets",pages,haPrintCss());
 }
 
 // PAPERDRILL_START — 🖨 the NEXT drill on paper, for a no-tech day (her ask 2026-10-28/29 for Sara's Grandma Wednesdays:
@@ -89904,8 +89952,7 @@ function pdPrintNext(kid){
   if(!items.length){ if(typeof gwShowToast==="function") gwShowToast(day.today?"Nothing due in today’s drill":"Nothing comes due for the next drill"); return; }
   const key=day.iso.replace(/-/g,""), prev=pdRecs(kid)[key];
   if(!(prev&&prev.state==="printed")) _pdWrite(kid,key,{date:day.iso,pn:day.pn,ids:items.map(i=>i.id),q:items.map(i=>String(i.prompt==null?"":i.prompt)),ts:Date.now(),state:"printed"});
-  try{ const w=window.open("","_blank"); if(!w){ if(typeof gwShowToast==="function") gwShowToast("Allow pop-ups to print"); return; }
-    w.document.write(pdSheetsHtml(kid,day,items)); w.document.close(); w.onload=()=>w.print(); }catch(e){}
+  try{ if(!haPrintDoc("",pdSheetsHtml(kid,day,items),"",{whole:true})&&typeof gwShowToast==="function") gwShowToast("Allow pop-ups to print"); }catch(e){}
 }
 // The Mom-only line under the drill's header.
 function pdButtonHtml(kid){
@@ -90160,10 +90207,7 @@ function mastPrintCards(){
   page+='<span>5 intro dots \u{2192} enters ladder \u{00B7} right \u{2192} moves up \u{00B7} miss \u{2192} drops one tier</span></div>';
   page+='</div>';
 
-  let container=document.getElementById("mast-print-container");
-  if(!container){container=document.createElement("div");container.id="mast-print-container";container.className="mast-print-page";document.body.appendChild(container);}
-  container.innerHTML=page;
-  setTimeout(()=>{ window.print(); setTimeout(()=>{ container.innerHTML=""; },1000); },100);
+  haPrintDoc((SL_KLBL[masteryKid]||"")+" — flashcards",page,haPrintCss());
 }
 
 // ── DISPLACEMENT ENGINE ──────────────────────────────────────────
