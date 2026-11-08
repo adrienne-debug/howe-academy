@@ -64,8 +64,8 @@ function load(env) {
 
   // ── the pickers route through it ──
   for (const f of ["mastBankUploadImg", "mastVisEditUpload", "mastUploadImage", "unitEditPhoto"]) ok(f + " uploads through picStore", /picStore\(dataUrl,/.test(fnSrc(f)));
-  ok("unit picture still saved to unitStudies/<id>/visuals/<key> only", /db\.ref\("unitStudies\/"\+unitEdit\.unitId\+"\/visuals\/"\+key\)\.set\(\{imageUrl:unitEdit\.newImg\}\)/.test(fnSrc("unitEditSave")));
-  ok("Mastery visual still a one-key update", /db\.ref\("mastery\/"\+kid\+"_visuals"\)\.update\(\{\[key\]:val\|\|null\}\)/.test(fnSrc("mastSetVisual")));
+  ok("unit picture still saved to unitStudies/<id>/visuals/<key> only", /db\.ref\("unitStudies\/"\+unitEdit\.unitId\+"\/visuals\/"\+(?:key|\(typeof haKey==="function"\?haKey\(key\):key\))\)\.set\(\{imageUrl:unitEdit\.newImg\}\)/.test(fnSrc("unitEditSave")));
+  ok("Mastery visual still a one-key update", /db\.ref\("mastery\/"\+kid\+"_visuals"\)\.update\(\{\[(?:key|\(typeof haKey==="function"\?haKey\(key\):key\))\]:val\|\|null\}\)/.test(fnSrc("mastSetVisual")));
   ok("Add to Mastery waits while a picture saves", /if\(mastAddUploading\)\{[^}]*return;/.test(fnSrc("mastAddItems")));
   ok("bank Add waits while a picture saves", /if\(mastBankAddImgUploading\)\{[^}]*return;/.test(fnSrc("mastBankAddItem")));
 
