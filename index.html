@@ -40442,14 +40442,33 @@ function ubRecord(f){
 // Cards still unchecked on a unit record (Builder cards carry checked; a card flagged unchecked:true is never a starter's).
 function ubUnchecked(u){ const out=[]; (Array.isArray(u&&u.decks)?u.decks:Object.values((u&&u.decks)||{})).forEach(d=>{ (Array.isArray(d&&d.cards)?d.cards:Object.values((d&&d.cards)||{})).forEach(c=>{ if(c&&c.unchecked===true) out.push(c.name); }); }); return out; }
 // Save: ONE transaction creating unitStudies/<id>; nothing before; the unit opens afterwards.
+// UBSAVELOCK — Save locks while its transaction is out (her yes 2026-11-07, "also the saving fix"; live incident 11/2: one Save
+//   tapped three times in 3 s made <title>, <title>_2 and <title>_3 — each tap built a new record and ubUnitId suffixed it).
+//   The first tap marks the form saving: the button reads ⏳ Saving…, dimmed and disabled, and every further ubSave returns at once.
+//   Commit → done (once); not committed → the existing message; error → its message; each unlocks. A stuck network: no answer in
+//   UB_SAVE_WAIT_MS → unlock with a plain line, and the record waiting stays on the form (pendingU) so the next tap re-sends the SAME
+//   id and addedTs — a retry that finds its own first try already landed counts as done, so a slow network never makes a second unit.
+const UB_SAVE_WAIT_MS=20000;
 function ubSave(){
   const f=ubForm; if(!ubMom()||!f) return null;
+  if(f.saving) return null;   // UBSAVELOCK: a second tap while the first is out does nothing
   if(!f.title){ f.msg="Give the unit a name first."; f.step="name"; ubRe(); return null; }
   const left=ubUncheckedCount(); if(left){ f.msg=left+" card"+(left===1?" is":"s are")+" still unchecked \u2014 tick, fix or drop each one first."; f.step="check"; ubRe(); return null; }
   if(!ubAllCards().length&&!f.days.some(d=>d.books.length||d.videos.length||d.acts.length)){ f.msg="The unit is empty."; ubRe(); return null; }
-  const u=ubRecord(f); const us=(typeof unitStudies!=="undefined"&&unitStudies)||{};
-  const done=()=>{ us[u.id]=u; ubForm=null; if(typeof openUnit==="function") openUnit(u.id); else ubRe(); try{ if(typeof gwShowToast==="function") gwShowToast("\u2713 "+u.title+" is built"+(ubDry()?" (dry run: nothing written)":"")+" \u2014 enroll kids, then \u{1F5D3} Put on the schedule"); }catch(e){} };
-  if(ubLive()){ db.ref("unitStudies/"+u.id).transaction(cur=>cur?undefined:u).then(r=>{ if(r&&r.committed) done(); else { if(ubForm===f) f.msg="A unit with that name was just made on another device \u2014 rename and save again."; ubRe(); } }).catch(e=>{ if(ubForm===f) f.msg=String(e&&e.message||e); ubRe(); }); }
+  const u=f.pendingU||ubRecord(f); const us=(typeof unitStudies!=="undefined"&&unitStudies)||{};   // UBSAVELOCK: a retry re-sends the record that is still out
+  const unlock=msg=>{ if(f.saved) return; f.saving=false; if(f.saveTimer){ clearTimeout(f.saveTimer); f.saveTimer=null; } if(ubForm===f&&msg!=null) f.msg=msg; ubRe(); };
+  const done=()=>{ if(f.saved) return; f.saved=true; f.saving=false; f.pendingU=null; if(f.saveTimer){ clearTimeout(f.saveTimer); f.saveTimer=null; }   // UBSAVELOCK: once
+    us[u.id]=u; if(ubForm!==f){ ubRe(); return; } ubForm=null; if(typeof openUnit==="function") openUnit(u.id); else ubRe(); try{ if(typeof gwShowToast==="function") gwShowToast("\u2713 "+u.title+" is built"+(ubDry()?" (dry run: nothing written)":"")+" \u2014 enroll kids, then \u{1F5D3} Put on the schedule"); }catch(e){} };
+  if(ubLive()){
+    f.saving=true; f.pendingU=u; f.msg="";
+    f.saveTimer=setTimeout(()=>{ f.saveTimer=null; if(f.saving&&!f.saved) unlock("Still saving \u2014 check your connection, then tap Save again."); },UB_SAVE_WAIT_MS);
+    ubRe();
+    db.ref("unitStudies/"+u.id).transaction(cur=>cur?undefined:u).then(r=>{ if(r&&r.committed) return done();
+      const v=(r&&r.snapshot&&typeof r.snapshot.val==="function")?r.snapshot.val():null;
+      if(v&&v.id===u.id&&v.addedTs===u.addedTs) return done();   // UBSAVELOCK: what is there is this save's own first try
+      if(f.pendingU===u) f.pendingU=null; unlock("A unit with that name was just made on another device \u2014 rename and save again."); })
+    .catch(e=>{ if(f.pendingU===u) f.pendingU=null; unlock(String(e&&e.message||e)); });
+  }
   else done();
   return u;
 }
@@ -40530,7 +40549,7 @@ function ubCheckHTML(f){
     if(c.fix) h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><input value="'+ubEsc(c.front)+'" oninput="ubEdit(\''+(x.di<0?"null":x.di)+'\',\'cards\','+id+',\'front\',this.value)" style="'+UB_INP+';flex:1 1 120px;width:auto"><input value="'+ubEsc(c.back)+'" placeholder="back" oninput="ubEdit(\''+(x.di<0?"null":x.di)+'\',\'cards\','+id+',\'back\',this.value)" style="'+UB_INP+';flex:2 1 160px;width:auto">'+ubBtn(false,"\u2713 Keep it like this","ubKeep("+id+")",true)+'</div>';
     if(f.pic&&f.pic.id===c.id){ h+='<div style="margin-top:8px;font-size:12px">'+(f.pic.busy?'\u23F3 Looking on Wikipedia\u2026':(f.pic.hit?'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><img src="'+ubEsc(f.pic.hit.url)+'" alt="" style="width:72px;height:72px;object-fit:cover;border-radius:10px;border:1.5px solid var(--border)"><div style="flex:1;min-width:120px;font-size:10.5px;color:var(--muted)">'+ubEsc(f.pic.hit.credit)+'</div>'+ubBtn(false,"\u2713 Use it","ubPicUse("+id+",true)",true)+ubBtn(false,"Skip","ubPicUse("+id+",false)")+'</div>':'No picture found. '+ubBtn(false,"OK","ubPicUse("+id+",false)")))+'</div>'; }
     h+='</div>'; });
-  h+='<div style="display:flex;gap:8px;margin-top:14px;align-items:center;flex-wrap:wrap">'+ubBtn(false,"\u2039 Back",f.mode==="boxes"?"ubGo('days')":"ubGo('fill')")+'<button onclick="ubSave()" '+(left?'disabled ':'')+'style="padding:9px 18px;border-radius:10px;border:none;background:'+(left?'#9ca3af':'#2d6a4f')+';color:#fff;font-size:13px;font-weight:800;cursor:'+(left?'default':'pointer')+';font-family:\'DM Sans\',sans-serif">\u{1F4BE} Save the unit</button>'+(ubDry()?'<span style="font-size:10px;color:var(--muted)">dry run \u2014 nothing is written</span>':'')+'</div>';
+  h+='<div style="display:flex;gap:8px;margin-top:14px;align-items:center;flex-wrap:wrap">'+ubBtn(false,"\u2039 Back",f.mode==="boxes"?"ubGo('days')":"ubGo('fill')")+'<button onclick="ubSave()" '+(left||f.saving?'disabled ':'')+'style="padding:9px 18px;border-radius:10px;border:none;background:'+(left?'#9ca3af':'#2d6a4f')+';color:#fff;font-size:13px;font-weight:800;cursor:'+(left||f.saving?'default':'pointer')+(f.saving?';opacity:.55':'')+';font-family:\'DM Sans\',sans-serif">'+(f.saving?'\u23F3 Saving\u2026':'\u{1F4BE} Save the unit')+'</button>'+(ubDry()?'<span style="font-size:10px;color:var(--muted)">dry run \u2014 nothing is written</span>':'')+'</div>';
   return h;
 }
 function ubPageHTML(){
