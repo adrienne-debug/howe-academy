@@ -72173,6 +72173,7 @@ function gameLogEntry(st,now){
   now=now!=null?now:Date.now();
   const e={game:st.game||"which",deck:String(st.deck||""),at:now,items:items};   // 🔤 SPELLBUILD: each game names itself
   if(st.t0) e.secs=Math.max(0,Math.round((now-st.t0)/1000));
+  if(st.game==="train"&&st.level!=null){ e.level=st.level; e.clean=!!st.clean; }   // 🚂 TRAIN: the round's level + clean — its level-up reads them back
   return e;
 }
 function gameLogRound(st){
@@ -81497,7 +81498,11 @@ const GAME_RULES={
   jumble:[{key:"reveal",label:"Show the sentence after…",def:"2",opts:[   // 🧩 UNJUMBLE (her word 2026-11-03: "keep it but add a setting to adjust times or never")
     ["2","2 misses","The second miss shows the sentence for a beat — today’s rule."],
     ["3","3 misses","A third try first; the third miss shows it."],
-    ["never","Never","The sentence is never shown — after two misses the card just comes back once at the end, like the other games."]]}]
+    ["never","Never","The sentence is never shown — after two misses the card just comes back once at the end, like the other games."]]}],
+  train:[{key:"level",label:"Which level?",def:"auto",opts:[   // 🚂 TRAIN (her design 2026-11-08: "Mom can pin a level")
+    ["auto","Auto","Starts at level 1 and moves up after two clean rounds in a row."],
+    ["1","Level 1","What comes next? — the train starts at A, 3 cars to choose from."],
+    ["2","Level 2","4 cars to choose from, and the train can start anywhere in the alphabet."]]}]
 };
 let gameRulesUI=null;   // {kid, game} while the pop-up is open (this device)
 function _grE(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -83186,6 +83191,294 @@ function buildNameallHtml(color){
   return h+'</div></div>';
 }
 // NAMEALL_END
+// TRAIN_START — 🚂 "ABC Train" (her design 2026-11-08, PLAN_abc_puzzle_games_2026-11-08.md, step 1 of its build order: levels 1–2 + the
+// sung finish (a)). Her words: "a choice of a set number, a smaller number, to get them to get the ABCs in order … pick what comes next",
+// and at the end "sing the ABC song … the letter that is being said pops up". Her open questions took the doc's picks: 3 choices at
+// level 1; uppercase AND lowercase on every car from the start; Mom can pin a level (GAME_RULES.train "level").
+//   · WHO GETS IT — a kid whose Mastery has a LETTERS deck: a deck whose every card is one letter A–Z (TRAIN_MIN_LETTERS+ of them, one
+//     still in play). Found by its cards, never by a name; the deck with the most capital letters wins (a lowercase-only deck still counts).
+//   · THE CARS are the real alphabet A–Z, in order (the order IS the skill). Each car: big uppercase, small lowercase under it, and the
+//     kid's own card picture (mastItemVis) when that letter's card has one — else the letter alone. The engine is at the front.
+//   · LEVEL 1 — the engine + 2–3 cars already coupled from A; the kid taps the next car from 3 choices. LEVEL 2 — 4 choices, and the run
+//     can start anywhere in the alphabet (… J K L → ?). A round is TRAIN_STEPS cars to add. Right → the car rolls in, couples, and its
+//     letter is said (mastSpeak). Wrong → that car bounces back (the soft bonk) and the right one wiggles — the kid still taps it: the app
+//     never places a car for him. A letter missed twice on its turn is a miss (t.fail), logged like every game's miss.
+//   · LEVEL UP — two CLEAN rounds in a row (every car right on the first tap) at the kid's level → the next level. Read back from the
+//     kid's own game log (each train round carries its level + clean), so it needs no storage of its own and follows the kid to every
+//     device. Mom's pin (auto / 1 / 2, default auto) wins; rounds played on a pin don't move the auto level unless it was that level.
+//   · THE FINISH — the whole A–Z train rolls across while the ABC song plays as WebAudio tones (the Twinkle Twinkle melody, public
+//     domain: TRAIN_SONG) and each car lights on its letter, its name spoken at that note and popped up big. No AudioContext → the lights
+//     and letters run on their own clock, silent; no voice → the same, the letters still pop up. One "Play again" button.
+//   · WRITES — only the round's gameLog entry (GAMELOG, game:"train", + level / clean). No points (the games contract), no ladder, no
+//     next_due, no study log, no best score. db && !_dryRun() only (gameLogRound's own guard). Per-kid park / restore / resume through its
+//     GAMES_LIST entry (🎲 GAMEKIT): parking stops the song; a round dropped (a kid switch, leaving) writes nothing. No names in this block.
+let trainState=null;   // {kid,deck,game:"train",t0,level,start,coupled,on:[letter],turns:[{L,pid,choices:[letter],wrong:{},done,first,fail}],i,lock,seq,bounce,roll,phase:"play"|"done",clean,levelBefore,levelAfter,song:{i,end}|null,gameLogged}
+let _trainRandom=Math.random;   // tests seed it
+const TRAIN_ABC="ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+const TRAIN_MIN_LETTERS=5, TRAIN_STEPS=4, TRAIN_MAX_LEVEL=2, TRAIN_ROLL_MS=750, TRAIN_BEAT_S=0.55, TRAIN_MISS=2;
+const TRAIN_CHOICES={1:3,2:4};   // level → how many cars to choose from
+const TRAIN_HZ={C4:261.63,D4:293.66,E4:329.63,F4:349.23,G4:392.00,A4:440.00};
+// The ABC song on the Twinkle Twinkle melody — s: what is sung, n: the note, b: beats, k: "L" a letter (lit + said), "c" the same letter
+// held on (W's "dou-ble-u"), "w" a word of the last two lines (the whole train lit, the words shown).
+const TRAIN_SONG=[
+  {s:"A",n:"C4",b:1,k:"L"},{s:"B",n:"C4",b:1,k:"L"},{s:"C",n:"G4",b:1,k:"L"},{s:"D",n:"G4",b:1,k:"L"},{s:"E",n:"A4",b:1,k:"L"},{s:"F",n:"A4",b:1,k:"L"},{s:"G",n:"G4",b:2,k:"L"},
+  {s:"H",n:"F4",b:1,k:"L"},{s:"I",n:"F4",b:1,k:"L"},{s:"J",n:"E4",b:1,k:"L"},{s:"K",n:"E4",b:1,k:"L"},{s:"L",n:"D4",b:.5,k:"L"},{s:"M",n:"D4",b:.5,k:"L"},{s:"N",n:"D4",b:.5,k:"L"},{s:"O",n:"D4",b:.5,k:"L"},{s:"P",n:"C4",b:2,k:"L"},
+  {s:"Q",n:"G4",b:1,k:"L"},{s:"R",n:"G4",b:1,k:"L"},{s:"S",n:"F4",b:2,k:"L"},{s:"T",n:"E4",b:1,k:"L"},{s:"U",n:"E4",b:1,k:"L"},{s:"V",n:"D4",b:2,k:"L"},
+  {s:"W",n:"G4",b:1,k:"L"},{s:"W",n:"G4",b:1,k:"c"},{s:"W",n:"F4",b:1,k:"c"},{s:"X",n:"F4",b:1,k:"L"},{s:"Y",n:"E4",b:1,k:"L"},{s:"and",n:"E4",b:1,k:"w"},{s:"Z",n:"D4",b:2,k:"L"},
+  {s:"Now",n:"C4",b:1,k:"w"},{s:"I",n:"C4",b:1,k:"w"},{s:"know",n:"G4",b:1,k:"w"},{s:"my",n:"G4",b:1,k:"w"},{s:"A",n:"A4",b:1,k:"w"},{s:"B",n:"A4",b:1,k:"w"},{s:"C’s",n:"G4",b:2,k:"w"},
+  {s:"Next",n:"F4",b:1,k:"w"},{s:"time",n:"F4",b:1,k:"w"},{s:"won’t",n:"E4",b:1,k:"w"},{s:"you",n:"E4",b:1,k:"w"},{s:"sing",n:"D4",b:1,k:"w"},{s:"with",n:"D4",b:1,k:"w"},{s:"me?",n:"C4",b:2,k:"w"}
+];
+const TRAIN_LINE_A="Now I know my A B C’s", TRAIN_LINE_B="Next time won’t you sing with me?";
+// PURE: the song with its clock — each note's start t and length d in seconds
+function trainSongTimes(beatS){
+  beatS=beatS||TRAIN_BEAT_S; let t=0;
+  return TRAIN_SONG.map(x=>{ const o=Object.assign({},x,{t:Math.round(t*1000)/1000,d:Math.round(x.b*beatS*1000)/1000}); t+=x.b*beatS; return o; });
+}
+function _trainShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_trainRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function _trainItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
+function _trainPlain(p){ return String(p==null?"":p).replace(/<[^>]*>/g,"").trim(); }
+function _trainIsLetter(it){ return !!(it&&/^[A-Za-z]$/.test(_trainPlain(it.prompt))); }
+function trainDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"train",deck); }
+// PURE: the kid's letters decks — {deck: {cards:{A:card}, caps, n}} for every deck whose every card is a single letter A–Z,
+// TRAIN_MIN_LETTERS+ different letters, at least one card still in play. A retired card doesn't count either way.
+function trainLetterDecks(items){
+  const by={};
+  (items||[]).forEach(i=>{ if(!i||i.status==="retired") return; const d=i.subject||"Other"; (by[d]||(by[d]=[])).push(i); });
+  const out={};
+  Object.keys(by).forEach(d=>{
+    const cards=by[d]; if(!cards.every(_trainIsLetter)) return;
+    if(!cards.some(i=>i.status==="active"||i.status==="introduction")) return;
+    const m={}; let caps=0;
+    cards.forEach(i=>{ const p=_trainPlain(i.prompt), L=p.toUpperCase(); if(p===L) caps++; if(!m[L]||(p===L&&_trainPlain(m[L].prompt)!==L)) m[L]=i; });
+    if(Object.keys(m).length<TRAIN_MIN_LETTERS) return;
+    out[d]={cards:m,caps:caps,n:Object.keys(m).length};
+  });
+  return out;
+}
+function trainDecks(items,kid){ kid=kid||masteryKid; const D=trainLetterDecks(items); return Object.keys(D).filter(d=>trainDeckOn(kid,d)).sort(); }
+// The deck the train is built from: most capital letters, then most letters, then the name
+function trainDeck(items,kid){
+  const D=trainLetterDecks(items), ok=trainDecks(items,kid);
+  if(!ok.length) return null;
+  const d=ok.slice().sort((a,b)=>(D[b].caps-D[a].caps)||(D[b].n-D[a].n)||a.localeCompare(b))[0];
+  return {deck:d,cards:D[d].cards};
+}
+function trainAvail(kid){ return trainDecks(_trainItems(kid),kid).length>0; }
+// The kid's train rounds from the game log (this device's copy and the pushed one are the same round: one per time + items), oldest first
+function trainLogRounds(kid){
+  const G=((typeof masteryData!=="undefined"&&masteryData&&masteryData.gameLog)||{})[kid]||{}, seen={}, out=[];
+  Object.keys(G).forEach(day=>{ const D=G[day]||{}; Object.keys(D).forEach(k=>{ const e=D[k]; if(!e||e.game!=="train"||e.level==null) return; const id=(Number(e.at)||0)+"|"+JSON.stringify(e.items||[]); if(seen[id]) return; seen[id]=1; out.push(e); }); });
+  return out.sort((a,b)=>(Number(a.at)||0)-(Number(b.at)||0));
+}
+// PURE: the auto level from the rounds played — two clean rounds in a row at the level → up one (never past TRAIN_MAX_LEVEL)
+function trainLevelFrom(rounds){
+  let lvl=1, streak=0;
+  (rounds||[]).forEach(e=>{ if(!e||Number(e.level)!==lvl) return; if(e.clean){ streak++; if(streak>=2&&lvl<TRAIN_MAX_LEVEL){ lvl++; streak=0; } } else streak=0; });
+  return lvl;
+}
+function trainPin(kid){ const v=(typeof gameRule==="function")?gameRule(kid,"train","level"):null; return (v==="1"||v==="2")?Number(v):null; }
+function trainLevel(kid){ kid=kid||masteryKid; return trainPin(kid)||trainLevelFrom(trainLogRounds(kid)); }
+// PURE: the cars to choose from — the right one + n-1 of its nearest letters, shuffled. A car already on the train can be one of them
+// (B or C beside the right D): left out, the right car would always be the earliest letter at level 1 — a tell, not the order.
+function trainChoices(L,n){
+  const ai=TRAIN_ABC.indexOf(L);
+  const near=TRAIN_ABC.filter(x=>x!==L).sort((a,b)=>(Math.abs(TRAIN_ABC.indexOf(a)-ai)-Math.abs(TRAIN_ABC.indexOf(b)-ai))||(TRAIN_ABC.indexOf(a)-TRAIN_ABC.indexOf(b)));
+  const lures=_trainShuffle(near.slice(0,Math.max(n+1,4))).slice(0,Math.max(0,n-1));
+  return _trainShuffle([L].concat(lures));
+}
+// PURE: a round at a level — where it starts, the cars already coupled, the turns to play
+function trainRound(level,cards){
+  level=Math.max(1,Math.min(TRAIN_MAX_LEVEL,Number(level)||1));
+  const coupled=_trainRandom()<0.5?2:3, n=TRAIN_CHOICES[level]||3;
+  const start=level===1?0:Math.floor(_trainRandom()*(TRAIN_ABC.length-coupled-TRAIN_STEPS+1));
+  const on=TRAIN_ABC.slice(start,start+coupled), turns=[];
+  for(let j=0;j<TRAIN_STEPS;j++){ const L=TRAIN_ABC[start+coupled+j], c=cards&&cards[L];
+    turns.push({L:L,pid:c&&c.id!=null?String(c.id):null,choices:trainChoices(L,n),wrong:{},done:false,first:false,fail:false}); }
+  return {level:level,start:start,coupled:coupled,on:on,turns:turns};
+}
+function _trainSay(text){ if(!text) return; try{ if(typeof mastSpeak==="function") mastSpeak(String(text)); }catch(e){} }
+function trainStart(){
+  try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the Start / Play again tap unlocks the tones (iPad)
+  _trainStopSong();
+  const kid=masteryKid, d=trainDeck(_trainItems(kid),kid);
+  if(!d){ trainState=null; _mastRe(); return; }
+  const level=trainLevel(kid), r=trainRound(level,d.cards);
+  trainState={kid:kid,deck:d.deck,game:"train",t0:Date.now(),level:r.level,start:r.start,coupled:r.coupled,on:r.on.slice(),turns:r.turns,i:0,lock:false,seq:0,bounce:null,roll:null,phase:"play",clean:null,levelBefore:level,levelAfter:null,song:null};
+  _mastRe();
+}
+// PURE-ish: a tap on choice ci → "right" | "wrong" | null (not now). Right couples the car; wrong never moves the right one.
+function trainJudge(st,ci){
+  if(!st||st.phase!=="play"||st.lock) return null;
+  const t=st.turns[st.i]; if(!t||t.done) return null;
+  const L=t.choices[ci]; if(L==null) return null;
+  if(L!==t.L){ if(!t.wrong[L]){ t.wrong[L]=1; if(Object.keys(t.wrong).length>=TRAIN_MISS) t.fail=true; } st.bounce=ci; return "wrong"; }
+  t.done=true; t.first=!Object.keys(t.wrong).length; st.on.push(L); st.roll=L; st.bounce=null; st.lock=true;
+  return "right";
+}
+function trainTap(ci){
+  const st=trainState, r=trainJudge(st,ci); if(!r) return;
+  if(r==="wrong"){ try{ matchBonk(); }catch(e){} st.seq++; _mastRe(); return; }
+  try{ matchDing(); }catch(e){}
+  _trainSay(st.turns[st.i].L);
+  const seq=++st.seq; _mastRe();
+  setTimeout(()=>{ if(trainState===st&&st.lock&&st.seq===seq){ trainNext(st); _mastRe(); } },TRAIN_ROLL_MS);
+}
+function trainNext(st){
+  st=st||trainState; if(!st||st!==trainState) return;
+  st.lock=false; st.roll=null; st.bounce=null; st.i++;
+  if(st.i>=st.turns.length) trainFinish(st);
+}
+function trainHear(){ const st=trainState; if(!st||st.phase!=="play") return; _trainSay(st.on.slice(-3).join(", ")+". What comes next?"); }
+function trainFinish(st){
+  st.phase="done"; st.lock=false;
+  st.clean=st.turns.every(t=>t.done&&t.first);
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: each letter's first-tap result + the round's level / clean, game:"train"
+  st.levelAfter=trainLevel(st.kid);
+  trainSing(st);
+}
+// ── the song ─────────────────────────────────────────────────────────────
+let _trainOsc=[];   // this device's scheduled tones (stopped when the song is)
+function _trainStopSong(){ _trainOsc.forEach(o=>{ try{ o.stop(); }catch(e){} }); _trainOsc=[]; }
+function _trainCtx(){
+  try{
+    if(typeof window==="undefined"||!(window.AudioContext||window.webkitAudioContext)) return null;
+    if(!bbAlarmCtx||bbAlarmCtx.state==="closed") bbAlarmCtx=new (window.AudioContext||window.webkitAudioContext)();   // the context the Start tap unlocked
+    const ctx=bbAlarmCtx;
+    if(ctx.state==="suspended"){ try{ ctx.resume().catch(function(){}); }catch(e){} }
+    return ctx;
+  }catch(e){ return null; }
+}
+function _trainTones(notes){
+  const ctx=_trainCtx(); if(!ctx) return false;
+  try{
+    const t0=ctx.currentTime+0.15;
+    notes.forEach(x=>{ const o=ctx.createOscillator(), g=ctx.createGain(), a=t0+x.t, end=a+Math.max(0.12,x.d*0.92);
+      o.type="triangle"; o.frequency.value=TRAIN_HZ[x.n]||440; o.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(0.001,a); g.gain.exponentialRampToValueAtTime(0.16,a+0.03); g.gain.exponentialRampToValueAtTime(0.001,end);
+      o.start(a); o.stop(end+0.02); _trainOsc.push(o); });
+    return true;
+  }catch(e){ return false; }
+}
+// Where the finish train sits for a note: the lit car in the middle (left:50% + this shift); off to the right before the song; the
+// last two lines and after: the whole train, centred
+const TRAIN_CAR_W=80, TRAIN_GAP=8, TRAIN_ENG_W=96;
+function trainSongShift(i){
+  if(i==null||i<0) return "translateX(60vw)";
+  const x=TRAIN_SONG[i], L=(!x||x.k==="w")?"M":x.s, ci=TRAIN_ABC.indexOf(L);
+  return "translateX(-"+(TRAIN_ENG_W+TRAIN_GAP+ci*(TRAIN_CAR_W+TRAIN_GAP)+TRAIN_CAR_W/2)+"px)";
+}
+function trainSing(st){
+  _trainStopSong();
+  const notes=trainSongTimes(), seq=++st.seq;
+  st.song={i:-1,end:false,tones:_trainTones(notes)};
+  const alive=()=>trainState===st&&st.seq===seq&&st.song;
+  notes.forEach((x,i)=>{
+    setTimeout(()=>{ if(!alive()) return;
+      if(typeof document!=="undefined"&&!document.getElementById("trn-finish")){ st.song.end=true; _trainStopSong(); return; }   // left the game: the song stops
+      st.song.i=i; if(x.k==="L") _trainSay(x.s);
+      _trainSongPaint(st); },Math.round((x.t+0.15)*1000));
+  });
+  const last=notes[notes.length-1];
+  setTimeout(()=>{ if(!alive()) return; st.song.i=notes.length; st.song.end=true; _mastRe(); },Math.round((last.t+last.d+0.4)*1000));   // the train stays lit, Play again shows
+}
+// One note on screen without a re-render (so the train can glide): the shift, the lit car(s), the big letter
+function _trainSongPaint(st){
+  if(typeof document==="undefined") return;
+  try{
+    const strip=document.getElementById("trn-strip"), pop=document.getElementById("trn-pop"); if(!strip) return;
+    const i=st.song.i, x=trainSongTimes()[i];
+    strip.style.transition="transform .45s ease-in-out";
+    strip.style.transform=trainSongShift(i);
+    const lit=_trainLit(i);
+    Array.prototype.forEach.call(strip.querySelectorAll("[data-trn-l]"),el=>{ const on=lit==="*"||el.getAttribute("data-trn-l")===lit; if(on) el.classList.add("trn-lit"); else el.classList.remove("trn-lit"); });
+    if(pop) pop.innerHTML=_trainPopHtml(i);
+  }catch(e){}
+}
+// PURE: what is lit at note i — a letter, "*" (the whole train: the last two lines and after), "" (before the song)
+function _trainLit(i){ if(i==null||i<0) return ""; const x=TRAIN_SONG[i]; return (!x||x.k==="w")?"*":x.s; }
+function _trainPopHtml(i){
+  const x=TRAIN_SONG[i]; if(!x) return "";
+  if(x.k==="w") return '<span class="trn-popw">'+(i<TRAIN_SONG.findIndex(y=>y.s==="Next")?TRAIN_LINE_A:TRAIN_LINE_B)+'</span>';
+  return '<span class="trn-popl">'+x.s+'<small>'+x.s.toLowerCase()+'</small></span>';
+}
+// GAMEKID → 🎲 GAMEKIT: parking stops the song (its timers check the round); resume settles a car that was rolling in, and a song
+// cut off by the switch just shows the finish with Play again.
+function trainPark(){ const st=trainState; if(st){ st.seq++; if(st.song) st.song.end=true; } _trainStopSong(); return st; }
+function trainResume(){
+  const st=trainState; if(!st) return;
+  if(st.phase==="play"&&st.lock){ trainNext(st); if(st.phase==="done") _trainStopSong(); }
+  if(st.phase==="done"&&st.song) st.song.end=true;
+}
+const TRAIN_COLS=["#ef4444","#f97316","#eab308","#22c55e","#06b6d4","#3b82f6","#8b5cf6","#ec4899"];
+const TRAIN_CSS='<style>.trn-row{display:flex;align-items:flex-end;gap:6px;justify-content:center;padding:10px 0 4px;border-bottom:6px solid #78716c;margin:6px 0 18px}'+
+  '.trn-car{position:relative;flex:none;width:clamp(54px,15vw,92px);height:clamp(70px,19vw,112px);border-radius:14px;border:3px solid rgba(0,0,0,.18);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-family:\'Fraunces\',serif;line-height:1;box-sizing:border-box;margin-bottom:10px}'+
+  '.trn-car::before,.trn-car::after{content:"";position:absolute;bottom:-12px;width:16px;height:16px;border-radius:50%;background:#292524;border:3px solid #a8a29e}.trn-car::before{left:12%}.trn-car::after{right:12%}'+
+  '.trn-up{font-size:clamp(28px,8vw,50px);font-weight:800;text-shadow:0 2px 0 rgba(0,0,0,.18)}.trn-lo{font-size:clamp(15px,4vw,22px);font-weight:700;opacity:.92;margin-top:2px}'+
+  '.trn-pic{height:clamp(20px,5vw,30px);display:flex;align-items:center;justify-content:center;font-size:clamp(16px,4.5vw,24px);margin-bottom:2px;overflow:hidden}.trn-pic img{max-height:100%;max-width:100%;width:auto;border-radius:6px}'+
+  '.trn-eng{flex:none;font-size:clamp(44px,13vw,80px);line-height:1;margin-bottom:6px}.trn-dots{flex:none;font-size:22px;font-weight:800;color:#a8a29e;margin-bottom:30px}'+
+  '.trn-slot{background:#fff!important;border:3px dashed #a8a29e;color:#a8a29e}.trn-slot .trn-up{text-shadow:none}'+
+  '.trn-in{animation:trnIn .6s ease-out}@keyframes trnIn{0%{transform:translateX(140%)}80%{transform:translateX(-6%)}100%{transform:none}}'+
+  '.trn-choices{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:6px}.trn-choice{cursor:pointer;-webkit-tap-highlight-color:transparent;border:none;padding:0;background:none}'+
+  '.trn-choice .trn-car{width:clamp(70px,20vw,104px);height:clamp(88px,25vw,126px)}'+
+  '.trn-bounce{animation:trnBounce .5s ease-out}@keyframes trnBounce{0%,100%{transform:none}25%{transform:translateY(-16px)}50%{transform:translateX(-10px)}75%{transform:translateX(10px)}}'+
+  '.trn-wiggle{animation:trnWig .5s ease-in-out 4}@keyframes trnWig{0%,100%{transform:rotate(0)}25%{transform:rotate(-7deg)}75%{transform:rotate(7deg)}}'+
+  '.trn-stage{position:relative;height:150px;overflow:hidden;border-bottom:6px solid #78716c;margin:8px 0 14px}'+
+  '#trn-strip{position:absolute;left:50%;bottom:0;display:flex;align-items:flex-end;gap:'+TRAIN_GAP+'px;transform:translateX(60vw)}'+
+  '#trn-strip .trn-car{width:'+TRAIN_CAR_W+'px;height:100px;opacity:.55;transition:opacity .2s,transform .2s}#trn-strip .trn-car.trn-lit{opacity:1;transform:translateY(-8px) scale(1.06);box-shadow:0 0 0 4px #fde68a,0 0 22px #fbbf24}'+
+  '#trn-strip .trn-eng{width:'+TRAIN_ENG_W+'px;text-align:center;font-size:72px}'+
+  '#trn-pop{height:96px;display:flex;align-items:center;justify-content:center}.trn-popl{display:inline-flex;flex-direction:column;align-items:center;font-family:\'Fraunces\',serif;font-size:70px;font-weight:800;color:#292524;line-height:1;animation:trnPop .3s ease-out}'+
+  '.trn-popl small{font-size:28px;color:#57534e}.trn-popw{font-family:\'Fraunces\',serif;font-size:clamp(20px,5.5vw,30px);font-weight:800;color:#292524;text-align:center;animation:trnPop .3s ease-out}'+
+  '@keyframes trnPop{0%{transform:scale(.4);opacity:0}100%{transform:none;opacity:1}}</style>';
+function _trainCarHtml(L,o){
+  o=o||{}; const ix=TRAIN_ABC.indexOf(L), col=TRAIN_COLS[(ix<0?0:ix)%TRAIN_COLS.length];
+  let pic=""; const it=o.cards&&o.cards[L];
+  if(it&&(it.imageUrl||it.emoji||(typeof mastGetVisual==="function"&&mastGetVisual(it.subject,it.prompt)))){ try{ pic=mastItemVis(it)||""; }catch(e){ pic=""; } }
+  return '<div class="trn-car'+(o.cls?' '+o.cls:'')+'" data-trn-l="'+L+'" style="background:'+col+'">'+(pic?'<span class="trn-pic">'+pic+'</span>':'')+'<span class="trn-up">'+L+'</span><span class="trn-lo">'+L.toLowerCase()+'</span></div>';
+}
+function buildTrainHtml(color){
+  let h=TRAIN_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const kid=masteryKid, d=trainDeck(_trainItems(kid),kid);
+  if(!d){ h+='<div class="mast-none">The ABC Train needs a Letters deck \u{2014} a deck of single-letter cards (A, B, C\u{2026}).</div></div>'; return h; }
+  const st=trainState&&trainState.kid===kid?trainState:null, btn=(fn,lbl)=>'<button onclick="'+fn+'" style="padding:14px 30px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
+  if(!st){
+    const lvl=trainLevel(kid);
+    h+='<div style="text-align:center;margin:18px 0 10px"><div style="font-size:64px;line-height:1">\u{1F682}</div><div style="font-family:\'Fraunces\',serif;font-size:24px;font-weight:800;color:#292524;margin:6px 0 4px">ABC Train</div>';
+    h+='<div style="font-size:15px;font-weight:700;color:#57534e;margin-bottom:16px">Level '+lvl+' \u{00B7} pick the car that comes next!</div>'+btn("trainStart()","\u{1F682} Let’s go!")+'</div></div>';
+    return h;
+  }
+  if(st.phase==="play"){
+    const t=st.turns[st.i], shown=st.on.slice(-3), hidden=st.on.length>shown.length;
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 2px"><div style="display:flex;gap:6px">';
+    st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
+    h+='</div><span style="font-size:12px;font-weight:800;color:var(--muted)">Level '+st.level+'</span></div>';
+    h+='<div class="trn-row"><span class="trn-eng" aria-label="Engine">\u{1F682}</span>'+(hidden?'<span class="trn-dots">\u{2026}</span>':'');
+    shown.forEach(L=>{ h+=_trainCarHtml(L,{cards:d.cards,cls:st.roll===L?'trn-in':''}); });
+    if(!st.lock) h+='<div class="trn-car trn-slot"><span class="trn-up">?</span></div>';
+    h+='</div>';
+    h+='<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:12px"><span style="font-size:18px;font-weight:800;color:#57534e">'+(st.lock?'\u{1F389} Clack! It hooked on!':(t&&Object.keys(t.wrong).length?'Look for the wiggle!':'Which car comes next?'))+'</span>'+
+      '<button onclick="trainHear()" aria-label="Hear it" style="width:46px;height:46px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:20px;cursor:pointer">\u{1F50A}</button></div>';
+    if(t&&!st.lock){
+      const missed=Object.keys(t.wrong).length>0;
+      h+='<div class="trn-choices">';
+      t.choices.forEach((L,ci)=>{ const cls=st.bounce===ci?'trn-bounce':(missed&&L===t.L?'trn-wiggle':'');
+        h+='<button class="trn-choice '+cls+'" onclick="trainTap('+ci+')" aria-label="Car '+L+'">'+_trainCarHtml(L,{cards:d.cards})+'</button>'; });
+      h+='</div>';
+    }
+    return h+'</div>';
+  }
+  // The finish: the whole train rolls across while the ABC song plays (the song's own clock paints it — _trainSongPaint)
+  const sg=st.song||{i:-1,end:true}, end=!!sg.end, i=end?TRAIN_SONG.length:sg.i, lit=_trainLit(i);
+  h+='<div id="trn-finish" style="text-align:center;margin-top:6px">';
+  h+='<div id="trn-pop">'+(end?'<span class="trn-popw">\u{1F389} You built the train!</span>':_trainPopHtml(i))+'</div>';
+  h+='<div class="trn-stage"><div id="trn-strip" style="transform:'+trainSongShift(i)+'"><span class="trn-eng">\u{1F682}</span>';
+  TRAIN_ABC.forEach(L=>{ h+=_trainCarHtml(L,{cards:d.cards,cls:(lit==="*"||lit===L)?'trn-lit':''}); });
+  h+='</div></div>';
+  if(!sg.tones&&!end) h+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">\u{1F3B5} Sing along!</div>';
+  if(st.levelAfter&&st.levelAfter>st.levelBefore) h+='<div style="font-size:18px;font-weight:800;color:#16a34a;margin-bottom:10px">\u{2B06} Level '+st.levelAfter+' next time!</div>';
+  if(end) h+=btn("trainStart()","\u{1F501} Play again");
+  return h+'</div></div>';
+}
+// TRAIN_END
 // JPWAGER_START — 🎰 Jeopardy "Daily double" (her go 2026-11-03; PLAN_practice_games_2026-10-23.md Tier 4 "Jeopardy with wager: the Tier-3 board
 // plus a daily-double wager on confidence — CR + metacognition", and Tier 3 "Sure? then flip: a confident miss gets a louder correction + comes
 // back first" — the hypercorrection effect). There are no points on the board (the games contract), so the wager is CONFIDENCE: once a square's
@@ -83245,7 +83538,8 @@ function jpWagerFinishHtml(st){
 const GAME_LIKE_STATE={   // game key → its round state; a game missing here simply has no line (the test pins every GAMES_LIST key but idflash)
   match:()=>matchState, memory:()=>matchState, dump:()=>dumpState, which:()=>whichState, sort:()=>sortState, bingo:()=>bingoState, spell:()=>spellState,
   gofish:()=>gofishState, mole:()=>moleState, jeop:()=>jeopState, teach:()=>teachState, four:()=>fourState, ship:()=>shipState, beat:()=>beatState,
-  truenot:()=>tnState, sure:()=>sureState, cats:()=>catsState, jumble:()=>jumbleState, kaboom:()=>kaboomState, hang:()=>hangState, nameall:()=>nameallState
+  truenot:()=>tnState, sure:()=>sureState, cats:()=>catsState, jumble:()=>jumbleState, kaboom:()=>kaboomState, hang:()=>hangState, nameall:()=>nameallState,
+  train:()=>trainState   // 🚂 TRAIN
 };
 const gameLikeSeen={};   // kid|game|round → 1 | -1 | "skip" (this device, in memory)
 function _glE(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -87324,6 +87618,8 @@ const GAMES_LIST=[
      park:()=>hangState, restore:v=>{ hangState=v||null; }, resume:()=>hangResume(), decks:k=>typeof hangDecks==="function"?hangDecks(_gamesItems(k),k):[]},   // 🎈 HANGMAN · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its own deck rule
   {key:"nameall",emoji:"\u{1F3C1}", label:"Name all",    view:"nameall",              available:k=>typeof nameallAvail==="function"&&nameallAvail(k), render:c=>buildNameallHtml(c),
      park:()=>nameallPark(), restore:v=>{ nameallRestore(v); }, resume:()=>nameallResume(), decks:k=>typeof nameallDecks==="function"?nameallDecks(_gamesItems(k),k):[]},   // 📋 NAMEALL · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its real decks
+  {key:"train",  emoji:"\u{1F682}", label:"ABC Train",   view:"train",                available:k=>typeof trainAvail==="function"&&trainAvail(k), render:c=>buildTrainHtml(c),
+     park:()=>trainPark(), restore:v=>{ trainState=v||null; }, resume:()=>trainResume(), decks:k=>typeof trainDecks==="function"?trainDecks(_gamesItems(k),k):[]},   // 🚂 TRAIN · 🎲 GAMEKIT: parking stops the song · 🎮 GAMEGRID: its letters deck
 ];
 const gamesLast={};   // kid → key of the last game played on this device
 function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k)&&(typeof gameDeckAny!=="function"||gameDeckAny(k,g)); }catch(e){ return false; } }); }   // 🎮 GAMEGRID: every deck off → the game isn't offered
