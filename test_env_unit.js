@@ -165,7 +165,7 @@ console.log("\n── ➡ move up to Stage 1 (Forestry): held, coded keys for . 
   ok("kidStage now 1", w.us.nc_envirothon.kidStage.lincoln.stage === 1); }
 
 console.log("\n── the hooks in index.html ──");
-ok("unitStudies listener hydrates on every value", /unitStudies=s\.val\(\)\|\|\{\}; const _uFirst=!_haUnitsReady; _haUnitsReady=true; if\(typeof envHydrateAll==="function"\) envHydrateAll\(\); \/\* 🌿 ENVUNIT[^*]*\*\/ if\(tab==="units"\)/.test(src));
+ok("unitStudies listener hydrates on every value", /unitStudies=(?:s\.val\(\)\|\|\{\}|\(typeof haDecodeUnits==="function"\?haDecodeUnits\(s\.val\(\)\|\|\{\}\):s\.val\(\)\|\|\{\}\)); const _uFirst=!_haUnitsReady; _haUnitsReady=true; if\(typeof envHydrateAll==="function"\) envHydrateAll\(\); \/\* 🌿 ENVUNIT[^*]*\*\/ if\(tab==="units"\)/.test(src));
 ok("📚 Add hydrates the fresh copy", /unitStudies\[id\]=u; if\(typeof envHydrateAll==="function"\) envHydrateAll\(\);/.test(src));
 ok("_ustApply calls the hold hook once, before it returns", (block.match(/typeof envEnrollHold==="function"\) envEnrollHold\(u,st,cards,hold,modes,intro,defs\);/g) || []).length === 1 && block.indexOf('envEnrollHold(u,st,cards,hold,modes,intro,defs);') < block.indexOf("const iu={}; for(let i=startItems"));
 ok("unitStageEnroll writes the session after _ustWrite; move-up does not", /_ustWrite\(f\.unitId,f\.kid,w,rec\); if\(typeof envEnrollSession==="function"\) envEnrollSession\(u,f\.kid\);/.test(src) && !/_ustWrite\(unitId,kid,w,rec\); if\(typeof envEnrollSession/.test(src));
