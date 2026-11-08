@@ -9,6 +9,7 @@ const fs=require("fs"), path=require("path"), vm=require("vm");
 let pass=0, fail=0;
 function ok(n,c,x){ if(c){pass++;console.log("  ok  - "+n);} else {fail++;console.log("  FAIL- "+n+(x!==undefined?"  ("+JSON.stringify(x)+")":""));} }
 const src=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
+const UNITPIC = src.slice(src.indexOf("// UNITPIC_START"), src.indexOf("// UNITPIC_END"));   // the one card-picture helper (mastLiveVisual) the drawers call
 const cut=(a,b)=>{ const i=src.indexOf(a), j=src.indexOf(b,i); if(i<0||j<0) throw new Error("markers "+a); return src.slice(i,j); };
 function fnText(name){ const i=src.indexOf("function "+name+"("); if(i<0) return ""; const j=src.indexOf("\nfunction ",i+10); return src.slice(i,j<0?undefined:j); }
 const line=re=>{ const m=src.match(re); return m?m[0]:""; };
@@ -43,7 +44,7 @@ function world(items,o){
     masteryData:{k:items||[],k_settings:o.settings||{}},
     db:{ref:p=>({set:v=>writes.push(["set",p,v]),update:v=>writes.push(["update",p,v]),push:v=>writes.push(["push",p,v])})}};
   vm.createContext(ctx);
-  vm.runInContext(CODE+"\nObject.defineProperty(this,'sortState',{get:()=>sortState,set:v=>{sortState=v;}}); this.SORT_PIC=SORT_PIC; this.SORT_BOARD=SORT_BOARD;",ctx);
+  vm.runInContext(UNITPIC + "\n" + CODE+"\nObject.defineProperty(this,'sortState',{get:()=>sortState,set:v=>{sortState=v;}}); this.SORT_PIC=SORT_PIC; this.SORT_BOARD=SORT_BOARD;",ctx);
   return {c:ctx,writes,said,dings,celeb};
 }
 // cards
