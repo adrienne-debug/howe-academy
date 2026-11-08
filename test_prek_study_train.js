@@ -129,6 +129,21 @@ const flipStart=h=>/mstStart\(\)/.test(h)&&!/trainStart/.test(h);
   const S2=studySets(w), e2=S2[1]&&S2[1][2];
   ok("Play again merges into today's entry the sitting's way (counts summed, items + sits joined)",S2.length===2&&e2.total===8&&e2.correct===7&&e2.miss===1&&e2.items.length===8&&e2.sits.length===2,e2);
 }
+// 🚂 TRAIN levels 3–5 (hook up) through the study card: the same sitting, the tray's cars are the cars asked
+{ const slot=(st,L)=>ABC.indexOf(L)-st.start;
+  const hook=(w,missL)=>{ const c=w.c, st=c.trainState; for(let g=0;g<40&&st.phase==="play";g++){ const ti=st.turns.findIndex(t=>!t.done); if(ti<0) break; const t=st.turns[ti];
+      if(missL&&g===0){ const wk=st.turns.map((x,k)=>k).find(k=>ABC[st.start+k]!==t.L); c.trainDrop(ti,wk); }
+      c.trainDrop(ti,slot(st,t.L)); if(st.lock) w.tick(w.now()+c.TRAIN_ROLL_MS); } return st; };
+  [["3",5],["4",10],["5",26]].forEach(([lv,n])=>{
+    const w=world({settings:{gameRules:{train:{level:lv}}}}), c=w.c;
+    ok("level "+lv+" pinned: the study page shows the Train at level "+lv+" with this session's Start",/Level \d/.test(c.renderMastStudy())&&new RegExp("Level "+lv+" ").test(c.renderMastStudy())&&/trainStart\('s1'\)/.test(c.renderMastStudy()));
+    c.trainStart("s1"); const st=c.trainState;
+    ok("level "+lv+" study round: a hook-up tray of "+n+" cars, tied to the session",st.study&&st.study.sid==="s1"&&st.level===Number(lv)&&st.turns.length===n&&/Drag each car to its spot/.test(c.renderMastStudy()));
+    hook(w,true);
+    const S=studySets(w), e=S[0]&&S[0][2], g=w.writes.filter(x=>/^mastery\/gameLog\//.test(x[1]));
+    ok("level "+lv+": ONE sitting — total "+n+" cars, the wrong-slot car is the one miss; the game log says level "+lv,st.phase==="done"&&S.length===1&&e.total===n&&e.correct===n-1&&e.miss===1&&e.items.length===n&&g.length===1&&g[0][2].level===Number(lv)&&g[0][2].clean===false,e&&{total:e.total,correct:e.correct,miss:e.miss});
+  });
+}
 // a flip sitting already logged today: the Train merges into it
 {
   const prev={date:"20261108",printNum:41,total:5,correct:4,miss:1,shown:2,secs:60,items:[{id:"x",name:"x",deck:"Abc",result:"c"}],sits:[{secs:60,total:5}],before:[{id:"x"}]};
