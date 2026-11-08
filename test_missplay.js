@@ -24,7 +24,7 @@ ok("drill save: the update carries gp (null clears it)",/if\(it\.gp!==undefined\
 ok("drill save hook appears once in the file",(src.match(/mpAfterDrill\(masteryKid,items,due,mastLogScores,touched\)/g)||[]).length===1);
 ok("mastDueItems holds list cards out",/&&!\(typeof mpHeld==="function"&&mpHeld\(kid,i\)\)\);/.test(fnText("mastDueItems")));
 ok("mastSprintPool skips list cards",/if\(typeof mpHeld==="function"&&mpHeld\(kid,it\)\) return false;/.test(fnText("mastSprintPool")));
-ok("the Day page shows the Practice button beside Word Workout",/h\+=wwDayChipHtml\(kid,day\);[^\n]*\n  if\(kid!=="all"&&kid!=="mom"&&typeof mpDayChipHtml==="function"\) h\+=mpDayChipHtml\(kid,day\);/.test(src));
+ok("AFTERDRILL: the Day page shows one 'After the drill' line in place of the Practice + Word Workout chips",/if\(kid!=="all"&&kid!=="mom"&&typeof adDayLineHtml==="function"\) h\+=adDayLineHtml\(kid,day\);/.test(src)&&!/h\+=mpDayChipHtml\(kid,day\)/.test(src)&&!/h\+=wwDayChipHtml\(kid,day\)/.test(src));
 ok("Mom HQ ⚙ Rules shows the switches",/h\+=mastAdminRulesHtml\(\);\n    if\(typeof mpSettingsHtml==="function"\) h\+=mpSettingsHtml\(kid\);/.test(src));
 
 // ── a sandbox with the real WHICHONE + GAMELOG + MISSPLAY blocks ──

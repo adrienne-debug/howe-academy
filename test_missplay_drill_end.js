@@ -12,7 +12,7 @@ function fnText(name){ const i=src.indexOf("function "+name+"("); if(i<0) return
 
 // ── by text ──
 const sv=fnText("mastSaveResults");
-ok("the drill's save lands on Scores first, then the hand-off hook (once)",(()=>{ const a=sv.indexOf('mastView="scores"; mastScoreItemId=null;'), b=sv.indexOf('mpAfterDrillSaved(masteryKid)'); return a>0&&b>a&&(src.match(/mpAfterDrillSaved\(masteryKid\)/g)||[]).length===1; })());
+ok("the drill's save lands on Scores first, then the ONE hand-off hook (AFTERDRILL's, which runs DRILLEND's Watch → round for the cards)",(()=>{ const a=sv.indexOf('mastView="scores"; mastScoreItemId=null;'), b=sv.indexOf('adAfterDrillSaved(masteryKid)'); return a>0&&b>a&&(src.match(/adAfterDrillSaved\(masteryKid\)/g)||[]).length===1&&!/mpAfterDrillSaved\(masteryKid\)/.test(src); })());
 ok("One more look is skipped only while the games switch is on",/const slideList=\(mastLogMode&&!\(typeof mpOn==="function"&&mpOn\(masteryKid\)\)\)\?slideItems\.concat/.test(src));
 ok("the cue write is one targeted set on the card's own field",/db\.ref\("mastery\/"\+kid\+"\/"\+k\+"\/cue"\)\.set\(text\|\|null\)/.test(fnText("mpSetCue")));
 ok("Mom HQ lists each card with ✎ and shows its cue",/mpCueEdit\(/.test(fnText("mpSettingsHtml"))&&/i\.cue\?' <span/.test(fnText("mpSettingsHtml")));

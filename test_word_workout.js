@@ -77,6 +77,6 @@ console.log("\n── wiring ──");
 ok("drill save feeds the workout before its targeted write", /wwAfterDrill\(masteryKid,items,due,mastLogScores,touched\)/.test(src) && /upd\[ix\+"\/ww"\]=it\.ww;/.test(src));
 ok("spelling test and problem words feed it", /wwNote\(it,r==="m"\?"miss"/.test(src) && /wwNote\(it,"miss",undefined,true\);   \/\/ 🏋️ WORDWORKOUT: Mom flagging/.test(src));
 ok("the notebook's Practice Words includes workout words", /\(i\.ww&&i\.ww\.on\)/.test(src));
-ok("the drill page shows the kid's workout button", /h\+=wwBtnHtml\(masteryKid\)/.test(src));
+ok("the top Word Workout button is gone — the words are worked after the drill (AFTERDRILL, her ask 2026-11-08)", !/h\+=wwBtnHtml\(masteryKid\)/.test(src));
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

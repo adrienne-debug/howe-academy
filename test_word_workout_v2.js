@@ -132,14 +132,14 @@ console.log("\n── 3. the kid can find it on their Day page ──");
   ok("drawing it writes nothing", w.writes.length === 0);
 }
 {
-  const hook = src.indexOf('h+=wwDayChipHtml(kid,day)'), strip = src.indexOf('h+=retrSchedStripHtml(kid,day);');
-  ok("hooked on the kid's Day page right under the 🧠 brain work strip, typeof-guarded",
-    hook > strip && hook - strip < 200 && /typeof wwDayChipHtml==="function"\) h\+=wwDayChipHtml\(kid,day\)/.test(src));
+  const hook = src.indexOf('h+=adDayLineHtml(kid,day)'), strip = src.indexOf('h+=retrSchedStripHtml(kid,day);');
+  ok("AFTERDRILL: the Day page's one 'After the drill' line sits right under the 🧠 brain work strip, typeof-guarded (the chip is gone)",
+    hook > strip && hook - strip < 200 && /typeof adDayLineHtml==="function"\) h\+=adDayLineHtml\(kid,day\)/.test(src) && !/h\+=wwDayChipHtml\(kid,day\)/.test(src));
   const ww = cut("// WORDWORKOUT_START", "// WORDWORKOUT_END"), wwCode = ww.split("\n").filter(l => !/^\s*\/\//.test(l)).join("\n");
   ok("never a scheduled card: the Workout code never touches week tasks / checked", !/weekData|week\d|\/tasks|checked\[/.test(wwCode));
   ok("no new Firebase node: the only db write in the Workout is mastery/<kid>/<i>/ww", (ww.match(/db\.ref\(/g) || []).length === 1 && /db\.ref\("mastery\/"\+kid\+"\/"\+ix\+"\/ww"\)/.test(ww));
   ok("PATCCC's 4 s is read at call time (its const loads after this block — a load-time read would throw)", !/^(const|let|var) [^\n]*MST_COPY_HIDE_MS/m.test(ww) && src.indexOf("// WORDWORKOUT_START") < src.indexOf("const MST_COPY_HIDE_MS"));
-  ok("the Drills button stays",/h\+=wwBtnHtml\(masteryKid\)/.test(src));
+  ok("AFTERDRILL: the top Word Workout button is gone",!/h\+=wwBtnHtml\(masteryKid\)/.test(src));
   ok("'no time' passes noTime to stApplyResults", /stApplyResults\(S\.kid,S\.words\.map\(w=>w\.name\),res,S\.key,prev\.was\|\|null,true\)/.test(src));
 }
 
