@@ -8,6 +8,7 @@
  */
 const fs = require("fs"), path = require("path"), vm = require("vm");
 const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const UNITPIC = src.slice(src.indexOf("// UNITPIC_START"), src.indexOf("// UNITPIC_END"));   // the one card-picture helper (mastLiveVisual) the drawers call
 const cut = (a, b) => { const i = src.indexOf(a), j = src.indexOf(b, i); if (i < 0 || j < 0) throw new Error("markers " + a); return src.slice(i, j); };
 function slice(name) { const i = src.indexOf("function " + name + "("); if (i < 0) throw new Error("missing " + name);
   let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}") { d--; if (!d) return src.slice(i, k + 1); } } }
@@ -39,7 +40,7 @@ function world(o) {
     window: { open: () => { const w = { document: { write: h => { w.html = h; }, close() {} }, print() {} }; opened.push(w); return w; } } };
   ctx.calToday = () => ctx.today;
   vm.createContext(ctx);
-  vm.runInContext(CODE, ctx);
+  vm.runInContext(UNITPIC + "\n" + CODE, ctx);
   return { ctx, writes, toasts, opened, dueCalls };
 }
 
