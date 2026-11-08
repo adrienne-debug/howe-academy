@@ -71639,13 +71639,14 @@ function _matchPlain(h){ return String(h||"").replace(/<[^>]*>/g," ").replace(/&
 //   chipOf — renders a card as a chip on the asked side (lures use the same renderer, so they look alike).
 function _matchAsk(st,t,it){
   const word=c=>'<span style="font-size:15px;font-weight:800;color:#c2410c;pointer-events:none;word-break:break-word">'+(c.prompt||"")+'</span>';
-  if(st.pairMode==="same") return {say:"Say its name",pick:"Pick its name",speak:_matchPlain(it.prompt),chipOf:word};
-  if(!t.isPrompt) return {say:"Say the word",pick:"Pick the word",speak:_matchPlain(it.prompt),chipOf:word};
+  const nm=c=>_matchPlain(c.prompt), mn=c=>_matchPlain(_matchPairHtml(c));   // 🗣 SAIDPICK: speakOf — what the kid says, for any card of the deck
+  if(st.pairMode==="same") return {say:"Say its name",pick:"Pick its name",speak:_matchPlain(it.prompt),chipOf:word,speakOf:nm};
+  if(!t.isPrompt) return {say:"Say the word",pick:"Pick the word",speak:_matchPlain(it.prompt),chipOf:word,speakOf:nm};
   const pic=!!_smTileVis(it,true);
-  if(pic) return {say:"Read it out loud",pick:"Pick its picture",speak:_matchPlain(it.prompt),chipOf:c=>_matchPairHtml(c)};
+  if(pic) return {say:"Read it out loud",pick:"Pick its picture",speak:_matchPlain(it.prompt),chipOf:c=>_matchPairHtml(c),speakOf:nm};
   const ans=_matchPlain(_matchPairHtml(it));
-  if(/^[-\d.,\s\/⁄․]+$/.test(ans)) return {say:"Say the answer",pick:"Pick the answer",speak:ans,chipOf:c=>_matchPairHtml(c)};   // a math fact: "answer", not "meaning"
-  return {say:"Say what it means",pick:"Pick what it means",speak:ans,chipOf:c=>_matchPairHtml(c)};
+  if(/^[-\d.,\s\/⁄․]+$/.test(ans)) return {say:"Say the answer",pick:"Pick the answer",speak:ans,chipOf:c=>_matchPairHtml(c),speakOf:mn};   // a math fact: "answer", not "meaning"
+  return {say:"Say what it means",pick:"Pick what it means",speak:ans,chipOf:c=>_matchPairHtml(c),speakOf:mn};
 }
 // Two believable wrong answers from the same deck. Numbers: the nearest values (the classic
 // near-miss). Anything else: random, never a duplicate of the right chip or of each other.
@@ -71689,11 +71690,92 @@ function _matchGateOpen(st,t){
 }
 // "I said it" — the app answers AFTER the kid did, so the word is a check, not a hand-out.
 function mastMatchSaid(){
-  const st=matchState, g=st&&st.gate; if(!g||g.kind!=="say") return;
-  if(g.speak) try{ mastSpeak(g.speak); }catch(e){}
+  const st=matchState, g=st&&st.gate; if(!g||g.kind!=="say"||g.step==="choose") return;
   st.said=(st.said||0)+1;
+  if(typeof _matchSaidOpen==="function"&&_matchSaidOpen(st,g)){ _mastRe(); return; }   // 🗣 SAIDPICK: three choices, nothing spoken yet — the kid picks what they said
+  if(g.speak) try{ mastSpeak(g.speak); }catch(e){}
   _matchGateClose(st);
 }
+// SAIDPICK_START — 🗣 "I said it" → pick what you said (Sara list 2026-11-02, her yes 2026-11-08). Live gap: after "I said it" the
+// app spoke the answer and moved on — no check, so a pre-reader who said the wrong thing never knew. Now, when the rule is on:
+//   · "I said it" opens THREE choices — the right answer + two lures from the SAME deck (_matchLures: nearest numbers for a math
+//     fact, else random; never the right answer, never one twice). Each choice carries a 🔊 chip that says it aloud (mastSpeak),
+//     so a non-reader can find the one they said. TTS dead on this device (no engine, or proven engine-less with no voices) →
+//     no chips, the choices are plain text.
+//   · Nothing is spoken until the kid taps a choice — the app never picks for the kid and no timer picks.
+//     Right → soft ding + ✓. Wrong → soft bonk, the right one turns green and is spoken.
+//   · Logged like a Which one? pick: each card one turn {pid, first, wrong}; the finished board writes ONE gameLog entry through
+//     gameLogRound (game:"memory", items:[{id, ok, n}]). Nothing else is written; never touches the ladder.
+//   · The switch — GAME_RULES.memory "saidpick" (Mom's games grid ▸ 🧠 Memory flip ▸ rules pop-up). Not set = the age default the
+//     Say-it turn itself uses (_matchSayAge): on for Pre-K to 2nd grade, off for 3rd up. Off = "I said it" exactly as before.
+//     A deck with fewer than two lures to offer plays the old way too.
+function _matchSayAge(kid){   // the same age rule as mastMatchThen: Settings ▸ Family grade when set, else Pre-K
+  const g=(typeof ckGradeOf==="function")?ckGradeOf(kid):null;
+  if(g!=null) return g<=2;
+  return (typeof kcLittle==="function")&&!!kcLittle(kid);
+}
+function matchSaidPickOn(kid){ return typeof gameRule==="function"&&gameRule(kid,"memory","saidpick")==="on"; }
+function _matchTtsOk(){
+  try{ if(typeof window==="undefined"||!window.speechSynthesis) return false;
+    return !(window._ttsDead&&!(typeof _ttsVoicesLoaded==="function"&&_ttsVoicesLoaded())); }catch(e){ return false; }
+}
+// PURE-ish: the gate's three choices [{pid, text, ok}] shuffled, or null (rule off / not enough distinct lures)
+function _matchSaidChoices(st,g){
+  if(!st||!g||!matchSaidPickOn(st.kid||masteryKid)) return null;
+  const it=_matchItem(g.pid); if(!it) return null;
+  const t=(st.sel>=0&&st.tiles&&st.tiles[st.sel]&&st.tiles[st.sel].pid===g.pid)?st.tiles[st.sel]:{isPrompt:true};   // the tile the kid flipped
+  const a=_matchAsk(st,t,it), mine=a.speakOf(it); if(!mine) return null;
+  let items=masteryData[st.kid||masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);   // GAMEKID
+  const pool=items.filter(i=>i&&i.subject===st.deck&&(i.status==="active"||i.status==="introduction")&&_matchEligible(i));
+  const lures=_matchLures(it,pool,a.speakOf,2); if(lures.length<2) return null;
+  const ch=[{pid:it.id,text:mine,ok:true}].concat(lures.map(l=>({pid:l.it.id,text:l.k,ok:false})));
+  for(let i=ch.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const c=ch[i]; ch[i]=ch[j]; ch[j]=c; }
+  return ch;
+}
+function _matchSaidOpen(st,g){
+  const ch=_matchSaidChoices(st,g); if(!ch) return false;
+  g.choices=ch; g.step="choose"; g.picked=null; g.ask="Which one did you say?";
+  return true;
+}
+// 🔊 a choice's chip: says that choice — never picks it
+function mastMatchSaidHear(ci,ev){
+  try{ if(ev&&ev.stopPropagation) ev.stopPropagation(); }catch(e){}
+  const g=matchState&&matchState.gate, c=g&&g.step==="choose"&&g.choices&&g.choices[ci]; if(!c) return;
+  try{ mastSpeak(c.text); }catch(e){}
+}
+function mastMatchSaidPick(ci){
+  const st=matchState, g=st&&st.gate; if(!g||g.kind!=="say"||g.step!=="choose"||g.picked!=null) return;
+  const c=g.choices[ci]; if(!c) return;
+  g.picked=ci;
+  const turn={pid:g.pid,done:true,first:!!c.ok,wrong:{}}; if(!c.ok) turn.wrong[c.pid]=1;
+  (st.sayTurns||(st.sayTurns=[])).push(turn);
+  st.res[g.pid]=c.ok?"c":"m";
+  if(c.ok) matchDing();
+  else { matchBonk(); const r=g.choices.find(x=>x.ok); if(r) try{ mastSpeak(r.text); }catch(e){} }
+  _mastRe();
+  setTimeout(()=>{ if(matchState===st&&st.gate===g) _matchGateClose(st); },c.ok?600:1800);   // GAMEKID: never acts on a parked / settled gate
+}
+// The finished board's log entry — only when the kid picked on at least one card
+function _matchSaidLog(st){
+  if(!st||st.sayLogged||!Array.isArray(st.sayTurns)||!st.sayTurns.length) return null;
+  st.sayLogged=true;
+  try{ if(typeof gameLogRound==="function") return gameLogRound({game:"memory",kid:st.kid||masteryKid,deck:st.deck,phase:"done",turns:st.sayTurns,t0:st.startTs}); }catch(e){}
+  return null;
+}
+function _matchSaidHtml(g,color){
+  const tts=_matchTtsOk(), done=g.picked!=null;
+  let h='<div style="display:grid;grid-template-columns:repeat('+g.choices.length+',1fr);gap:8px">';
+  g.choices.forEach((c,i)=>{
+    const mine=g.picked===i;
+    const bd=done?(c.ok?'#16a34a':(mine?'#dc2626':'#e2ddd6')):'#e2ddd6', bg=done?(c.ok?'#f0fdf4':(mine?'#fef2f2':'#fff')):'#fff';
+    h+='<div class="said-ch" onclick="mastMatchSaidPick('+i+')" style="min-height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center;padding:6px;border-radius:12px;border:2.5px solid '+bd+';background:'+bg+';cursor:'+(done?'default':'pointer')+'">';
+    h+='<span style="font-size:16px;font-weight:800;color:#292524;word-break:break-word;pointer-events:none">'+(done&&c.ok?'\u2713 ':'')+esc(c.text)+'</span>';
+    if(tts) h+='<button class="said-hear" onclick="mastMatchSaidHear('+i+',event)" aria-label="Hear it" style="padding:4px 12px;border-radius:999px;border:1.5px solid '+color+';background:#fff;color:'+color+';font-size:15px;cursor:pointer">\u{1F50A}</button>';
+    h+='</div>';
+  });
+  return h+'</div>';
+}
+// SAIDPICK_END
 function mastMatchPick(ci){
   const st=matchState, g=st&&st.gate; if(!g||g.kind!=="pick"||g.picked!=null) return;
   const c=g.chips&&g.chips[ci]; if(!c) return;
@@ -71719,6 +71801,7 @@ function _matchGateClose(st){
 }
 function _matchBoardDone(st){
   st.endTs=Date.now();   // the hunt is over — the clock stops here; the clear-up round is untimed
+  try{ _matchSaidLog(st); }catch(e){}   // 🗣 SAIDPICK: the say-it picks → one gameLog entry
   if(st.then==="pick"&&st.missed.length){ st.phase="clearup"; st.cq=st.missed.slice(); _matchClearNext(st); return; }
   st.phase="done"; mastMatchFinish();
 }
@@ -71760,8 +71843,10 @@ function _matchGateHtml(st,color){
     h+='<div style="font-size:11px;font-weight:800;color:var(--muted);margin-bottom:6px">\u{1F9F9} Clear-up \u{00B7} '+(st.cq.length+1)+' to go</div>';
     h+='<div style="min-height:70px;display:flex;align-items:center;justify-content:center;text-align:center;margin-bottom:8px">'+g.qhtml+'</div>';
   }
-  h+='<div style="font-size:13.5px;font-weight:800;color:#57534e;text-align:center;margin-bottom:8px">'+esc(g.ask)+(g.clearup?'':' \u{2014} then go find it')+'</div>';
-  if(g.kind==="say"){
+  h+='<div style="font-size:13.5px;font-weight:800;color:#57534e;text-align:center;margin-bottom:8px">'+esc(g.ask)+(g.clearup||g.step==="choose"?'':' \u{2014} then go find it')+'</div>';
+  if(g.kind==="say"&&g.step==="choose"){
+    h+=_matchSaidHtml(g,color);   // 🗣 SAIDPICK: which one did you say?
+  } else if(g.kind==="say"){
     h+='<div style="display:flex;justify-content:center"><button onclick="mastMatchSaid()" style="padding:12px 28px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F3A4} I said it</button></div>';
   } else {
     h+='<div style="display:grid;grid-template-columns:repeat('+Math.min(3,g.chips.length)+',1fr);gap:8px">';
@@ -81677,6 +81762,9 @@ const GAME_RULES={
     ["2","2 misses","The second miss shows the sentence for a beat — today’s rule."],
     ["3","3 misses","A third try first; the third miss shows it."],
     ["never","Never","The sentence is never shown — after two misses the card just comes back once at the end, like the other games."]]}],
+  memory:[{key:"saidpick",label:"Say it first \u2014 after \u201CI said it\u201D, pick what you said?",def:"off",defFor:k=>(typeof _matchSayAge==="function"&&_matchSayAge(k))?"on":"off",opts:[   // 🗣 SAIDPICK (Sara list 2026-11-02, her yes 2026-11-08)
+    ["on","On","Three choices, each with a \u{1F50A} to hear it \u2014 tap the one you said. Right gets a \u2713; a wrong pick hears and sees the right one. Pre-K to 2nd grade start here."],
+    ["off","Off","\u201CI said it\u201D and the app says the answer \u2014 the old way. 3rd grade and up start here."]]}],
   train:[{key:"level",label:"Which level?",def:"auto",opts:[   // 🚂 TRAIN (her design 2026-11-08: "Mom can pin a level")
     ["auto","Auto","Starts at level 1 and moves up after two clean rounds in a row."],
     ["1","Level 1","What comes next? — the train starts at A, 3 cars to choose from."],
@@ -81690,6 +81778,7 @@ function gameRuleDefs(game){ return (GAME_RULES[game]||[]).slice(); }
 function gameRule(kid,game,rule){
   const d=(GAME_RULES[game]||[]).find(r=>r.key===rule); if(!d) return null;
   try{ const s=((typeof masteryData!=="undefined"&&masteryData&&masteryData[kid+"_settings"])||{}), v=s.gameRules&&s.gameRules[game]&&s.gameRules[game][rule]; if(v!=null&&d.opts.some(o=>o[0]===v)) return v; }catch(e){}
+  if(typeof d.defFor==="function"){ try{ const v=d.defFor(kid); if(d.opts.some(o=>o[0]===v)) return v; }catch(e){} }   // 🗣 SAIDPICK: a default that depends on the kid (age)
   return d.def;
 }
 function gameRuleSet(kid,game,rule,val){
