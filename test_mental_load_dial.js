@@ -12,7 +12,7 @@ const A=src.indexOf("// MLDIAL_START"), Z=src.indexOf("// MLDIAL_END"), block=sr
 const SCP=blk("// SCORESPAGE_START","// SCORESPAGE_END"), SCR=blk("const SC_RANK=","\n// History-shaped view");
 
 console.log("── the block ──");
-ok("marked once, right after SCORESPAGE_END", A>0&&Z>A&&src.split("// MLDIAL_START").length===2&&src.split("// MLDIAL_END").length===2&&src.indexOf("// SCORESPAGE_END\n// MLDIAL_START")>0);
+ok("marked once, in the Scores family (right after SCORESPAGE_END, or after SCORESGAMES_END which sits there)", A>0&&Z>A&&src.split("// MLDIAL_START").length===2&&src.split("// MLDIAL_END").length===2&&(src.indexOf("// SCORESPAGE_END\n// MLDIAL_START")>0||src.indexOf("// SCORESGAMES_END\n// MLDIAL_START")>0));
 ok("no family or kid name in the block", !/lincoln|ellis|lucy|julian|howe|dewalt|burris|taylor|makenzie|andrew|caleb|kenzie|sara|melanie/i.test(block));
 ok("every write is the one multi-path update in _mldSave, behind db && !_dryRun()", (block.match(/db\.ref\(/g)||[]).length===1&&/function _mldLive\(\)\{ return typeof db!=="undefined"&&!!db&&!\(typeof _dryRun==="function"&&_dryRun\(\)\); \}/.test(block)&&/if\(_mldLive\(\)\)\{ try\{ db\.ref\(\)\.update\(upd\);/.test(block)&&!/\.set\(|\.remove\(|\.transaction\(/.test(block));
 ok("the Scores block stays read-only (its own test's rule)", !/db\.ref\(|firebase|\.set\(|\.update\(|\.remove\(|\.transaction\(|HA_LS\.setItem/.test(SCP));

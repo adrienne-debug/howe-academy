@@ -25,6 +25,9 @@ const ELLIS=()=>["6×3:18","6×4:24","6×5:30","6×6:36","6×7:42","6×8:48"].ma
 const LUCY=()=>["cat","dog","cow","pig","hen","owl","fox","bee"].map((p,i)=>({id:"l"+i,subject:"Animals",prompt:p,emoji:"L"+i,status:"active"}))
   .concat(["sun","moon","star","tree"].map((p,i)=>({id:"w"+i,subject:"Sight Words",prompt:p,answer:p+"!",status:"active"})));
 
+// 🎯 MATCHLOG (2026-11-08): every finished Match / Memory round also pushes ONE gameLog entry under the round's own kid —
+// checked on its own below; the exact-write checks here look at the other writes (match_best, matchLog).
+const W=c=>c.L.dbWrites.filter(w=>w[0].indexOf("mastery/gameLog/")!==0), GL=c=>c.L.dbWrites.filter(w=>w[0].indexOf("mastery/gameLog/")===0);
 function sandbox(o){
   o=o||{};
   const T={now:100000};
@@ -92,10 +95,11 @@ console.log("Match (face-up): Ellis's round is kept, paused, resumed, saved to E
   ok("the minute on Lucy didn't count",c._matchElapsed(st)===3000,c._matchElapsed(st));
   c.T.now=166000; solve(c);
   ok("round finished: 5.0 s of real play",st.endTs&&st.sec===5,st.sec);
-  ok("best time written under Ellis only",c.L.dbWrites.length===1&&c.L.dbWrites[0][0]==="mastery/ellis_settings/match_best"&&c.L.dbWrites[0][2]["Math Facts"]===5,c.L.dbWrites);
+  ok("best time written under Ellis only",W(c).length===1&&W(c)[0][0]==="mastery/ellis_settings/match_best"&&W(c)[0][2]["Math Facts"]===5,c.L.dbWrites);
+  ok("MATCHLOG: the round's one gameLog push is under Ellis",GL(c).length===1&&GL(c)[0][0].indexOf("mastery/gameLog/ellis/")===0&&GL(c)[0][1]==="push"&&GL(c)[0][2].game==="match",GL(c));
   ok("local best is Ellis's, Lucy untouched",c.masteryData.ellis_settings.match_best["Math Facts"]===5&&!c.masteryData.lucy_settings.match_best);
   c.mastMatchLogResult();
-  ok("Save to Scores pushes to matchLog/ellis",c.L.dbWrites[1][0]==="mastery/matchLog/ellis"&&c.L.dbWrites[1][1]==="push"&&c.masteryData.matchLog.ellis.length===1&&!c.masteryData.matchLog.lucy);
+  ok("Save to Scores pushes to matchLog/ellis",W(c)[1][0]==="mastery/matchLog/ellis"&&W(c)[1][1]==="push"&&c.masteryData.matchLog.ellis.length===1&&!c.masteryData.matchLog.lucy);
 }
 
 console.log("A round finished after the kid changed (no render in between) still saves to its own kid");
@@ -106,7 +110,7 @@ console.log("A round finished after the kid changed (no render in between) still
   solve(c);
   c.mastMatchLogResult();
   ok("nothing written under Lucy",writesUnder(c,"lucy").length===0,c.L.dbWrites);
-  ok("best + log under Ellis",c.L.dbWrites.map(w=>w[0]).join(",")==="mastery/ellis_settings/match_best,mastery/matchLog/ellis",c.L.dbWrites);
+  ok("best + log under Ellis",W(c).map(w=>w[0]).join(",")==="mastery/ellis_settings/match_best,mastery/matchLog/ellis"&&GL(c).length===1&&GL(c)[0][0].indexOf("mastery/gameLog/ellis/")===0,c.L.dbWrites);
   ok("Lucy's local data untouched",!c.masteryData.lucy_settings.match_best&&!(c.masteryData.matchLog||{}).lucy);
 }
 
@@ -126,11 +130,11 @@ console.log("Memory flip: per kid, Style / Pairs follow the kid, saves to the ri
   c.mastSetKid("ellis");
   ok("Ellis's memory round comes back, style toggle back to Memory flip",c.__m()===st&&c.__style()==="memory");
   c.mastMatchPause(); solve(c);
-  ok("Ellis's memory best key under Ellis",c.L.dbWrites.length===1&&c.L.dbWrites[0][0]==="mastery/ellis_settings/match_best"&&keysOf(c.L.dbWrites[0][2])[0]==="Math Facts · memory",c.L.dbWrites);
+  ok("Ellis's memory best key under Ellis",W(c).length===1&&W(c)[0][0]==="mastery/ellis_settings/match_best"&&keysOf(W(c)[0][2])[0]==="Math Facts · memory"&&GL(c).length===1&&GL(c)[0][2].game==="memory",c.L.dbWrites);
   c.mastSetKid("lucy");
   ok("Lucy's face-up round is still hers",c.__m()===lst&&c.__style()==="match");
   solve(c);
-  ok("Lucy's best under Lucy",c.L.dbWrites[1][0]==="mastery/lucy_settings/match_best"&&keysOf(c.L.dbWrites[1][2])[0]==="Sight Words");
+  ok("Lucy's best under Lucy",W(c)[1][0]==="mastery/lucy_settings/match_best"&&keysOf(W(c)[1][2])[0]==="Sight Words"&&GL(c)[1][0].indexOf("mastery/gameLog/lucy/")===0);
   flush(c);                                    // memory linger timers — harmless
   ok("no write ever crossed kids",c.L.dbWrites.every(w=>(w[0].indexOf("ellis")>=0)!==(w[0].indexOf("lucy")>=0)));
 }
