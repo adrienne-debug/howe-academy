@@ -96,7 +96,7 @@ ok("pacing keeps the date in pages mode", /if\(f\.targetDate&&String\(f\.targetD
 ok("the Builder engine previews on the re-cut list and tags the result", /r\.rechunk=\{seq:rc\.seq,chunk:rc\.chunk/.test(src) && /finally \{ _s\.lessonSeq=keepSeq; _s\.lessonIds=keepIds; _s\.nextLid=keepNext; _s\.pacing=_pace; \}/.test(src));
 ok("cbApply writes the re-cut list before the cells", /if\(res\.rechunk&&Array\.isArray\(res\.rechunk\.seq\)\)\{[\s\S]{0,400}setLessonSeq\(kid,sk,res\.rechunk\.seq,\{patch:up,mint:true\}\);/.test(src));
 ok("the pages form has a Finish-by date", /Finish by <span[^<]*re-averaged toward this date/.test(src) && /onchange="cbSetField\(\\'targetDate\\',this\.value\)"/.test(src));
-ok("Sunday auto-generation re-averages first", /haClaimSchedLock\("autogen"[\s\S]{0,300}pgAutoApplyAll\("weekly"\)/.test(src));
+ok("Sunday auto-generation re-averages first", /function _abBuild\([\s\S]{0,900}pgAutoApplyAll\("weekly"\)[\s\S]{0,200}const gen=generateWeek\(cfg\)/.test(src));   // 🗓 AUTOBUILD (2026-11-08): the self-build's deal lives in _abBuild, inside the autogen lock + the week's claim
 ok("Mom's Regenerate re-averages first", /pgAutoApplyAll\("regenerate"\)[\s\S]{0,300}runGenerateWeek\(\);/.test(src));
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

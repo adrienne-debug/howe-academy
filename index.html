@@ -2794,6 +2794,7 @@ function dayRollCheck(){
   try{ if(typeof momBlocksListen==="function") momBlocksListen(); }catch(e){}   // MOMBLOCKS_DAYROLL: Mom's blocks are per day — listen to the new day's path
   if(typeof renderAll==="function") renderAll();
   try{ if(typeof reMorningAll==="function") reMorningAll(); }catch(e){}   // 🧠 REVIEWENGINE: a device left open past midnight levels the new school day
+  try{ if(typeof autoBuildOnDayRoll==="function") autoBuildOnDayRoll(); }catch(e){}   // 🗓 AUTOBUILD: Sunday 00:00 on an awake device — the new week builds itself
   return true;
 }
 // A school-room kiosk is never hidden and never blurred, so the interval is the one that
@@ -3588,6 +3589,7 @@ function attachWeekListeners(wk){
   _ckPending=null; _ckReplayTries=0;   // 🔁 pending refused check-offs are per week
   try{ if(typeof rlWindowAttach==="function") rlWindowAttach(wk); }catch(e){}   // RLWIN: routine history follows the week
   try{ if(typeof mmAttachWeek==="function") mmAttachWeek(wk); }catch(e){}   // ⏱ MINMINUTES: started + minAlerts follow the week
+  try{ if(typeof _abLoadSaved==="function"&&typeof _wkNumOf==="function") _abLoadSaved(_wkNumOf(wk)); }catch(e){}   // 🗓 AUTOBUILD: this week's saved settings, for a re-lay (a read)
   DAY_DT={}; // Clear stale dates so Sunday guard fires until meta arrives
   fbCheckedLoaded=false; // Reset so cascade waits for fresh data from Firebase
   fbTasksLoaded=false;
@@ -42630,6 +42632,7 @@ function _rlwDiff(before,tasks){
 }
 function _rlwWords(e){
   if(!e) return "";
+  if(e.built) return String(e.label||"");   // 🗓 AUTOBUILD: "Week N built itself (…) — N cards, …" — the words are the label
   const per={}; (e.moves||[]).forEach(function(m){ per[m.who]=(per[m.who]||0)+1; });
   const kids=Object.keys(per).map(function(k){ return cap(k)+" "+per[k]; }).join(", ");
   const nm=(e.moves||[]).length, nr=(e.removed||[]).length;
@@ -42683,7 +42686,9 @@ function _rlwRun(pend,fn,after){
 function _rlwLast(){
   const keys=Object.keys(relayLogData||{}).sort(); if(!keys.length) return null;
   const e=relayLogData[keys[keys.length-1]]; if(!e||!e.at) return null;
-  const a=new Date(e.at), n=new Date(); if(a.toDateString()!==n.toDateString()) return null;
+  const a=new Date(e.at), n=new Date();
+  if(e.built){ const a0=new Date(a.getFullYear(),a.getMonth(),a.getDate()).getTime(); return (n.getTime()-a0<2*864e5)?e:null; }   // 🗓 AUTOBUILD: the build day and the morning after
+  if(a.toDateString()!==n.toDateString()) return null;
   return e;
 }
 function _rlwCanUndo(e,nowMs){ return !!(e&&e.undo&&e.undo.length&&!e.undone&&((nowMs||Date.now())-e.at)<RLW_UNDO_MS); }
@@ -42692,7 +42697,7 @@ function relayLineHTML(){
   if(typeof momHere==="function"&&!momHere()) return "";
   const e=_rlwLast(); if(!e) return "";
   const t=new Date(e.at); const hm=fromMin(t.getHours()*60+t.getMinutes());
-  return '<div class="relay-line" style="margin:6px 12px 0;font-size:12px;color:#4c1d95;background:#f5f3ff;border:1.5px solid #ddd6fe;border-radius:10px;padding:6px 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="flex:1">🔁 '+esc(hm)+' · '+esc(_rlwWords(e))+'</span>'
+  return '<div class="relay-line" style="margin:6px 12px 0;font-size:12px;color:#4c1d95;background:#f5f3ff;border:1.5px solid #ddd6fe;border-radius:10px;padding:6px 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="flex:1">'+(e.built?'':'🔁 '+esc(hm)+' · ')+esc(_rlwWords(e))+'</span>'
     +(_rlwCanUndo(e)?'<button onclick="relayUndo(\''+esc(String(e.at))+'\')" style="padding:4px 10px;border-radius:8px;border:1.5px solid #c4b5fd;background:#fff;color:#5b21b6;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;font-size:12px">↩ Undo</button>':'')+'</div>';
 }
 // pure: the one multi-path update an Undo writes → {upd, cards, skipped}. Trigger paths back first, then each listed card that
@@ -66441,7 +66446,7 @@ function reprojectSubjectWeek(kid,sk,why,opts){
     let _rpAsync=false;   // E+F: the server read owns release()/then once it starts
     if(!release){ if(typeof gwShowToast==="function") gwShowToast("Another device is updating the schedule — this week's cards catch up on the next regenerate."); _then(null); return; }
     try{
-      const cfg={weekNum:String(wn),babysitter:{},withSitter:[],skipDays:[],lateStart:{},carSchool:{},saturday:gwSatPlanned(wn),redistribute:[],autoAdvance:true};
+      const cfg=(typeof gwEffectiveConfig==="function")?gwEffectiveConfig(wn):{weekNum:String(wn),babysitter:{},withSitter:[],skipDays:[],lateStart:{},carSchool:{},saturday:gwSatPlanned(wn),redistribute:[],autoAdvance:true};   // 🗓 AUTOBUILD: the week's real settings (sitter, late start, Saturday), not a fixed config
       const gen=generateWeek(cfg); if(!gen||gen.error||!gen.result) return;
       // One clock for the whole re-deal: "today" is the app's date (_todayStr), the same source
       // the cell lay and the generator read — never a second look at the wall clock.
@@ -98174,6 +98179,160 @@ function gwSatPlanned(wn){
 // build and commit it with a clean default config — the Calendar and Lesson
 // Map drive the shape. A review banner appears; the wizard can regenerate
 // with different settings anytime (auto overrides are cleared per commit).
+// AUTOBUILD_START — the week builds itself, properly (slice B of PLAN_living_schedule_finish_2026-11-08.md; her words 11/8:
+// "it all reflects in the week and everything is regenerated as well, without having to say regenerate or generate").
+// Before: this ran once per page load with a FIXED config (no sitter, no skip days, no late start — weekConfig/<wn>, which the
+// Generate Week page saves, was never read) and dayRollCheck never called it, so a device open across Saturday night sat on
+// Sunday with no new week until someone reloaded, and the Generate Week page was the only way to get the sitter in. Now:
+//   · ONE config — gwEffectiveConfig(wn): weekConfig/<wn> as saved (sitter, withSitter, skipDays, lateStart, carSchool, saturday,
+//     redistribute) → the by-date layer (⏰ DAYTIMES: a date's own later start wins over a saved late start; the calendar's off
+//     days per kid and 🔁 Sunday catch-up per kid ride along for Mom's words — the generator itself reads each date's times,
+//     lunch and the calendar) → the fixed defaults last (the grid's planned Saturday is never dropped). The self-build and
+//     reprojectSubjectWeek both build from it, so the sitter / a late start are not forgotten at the first mid-week re-lay.
+//   · weekConfig/<wn> is read from the server once before a build (schedRegenerateNow's own read, _wbGo) and cached per week;
+//     attachWeekListeners fills the cache for the week on the board so a re-lay has it.
+//   · dayRollCheck calls the same self-build when the new day belongs to a week not built yet — Sunday 00:00 on whichever device
+//     is awake (WKB: Sunday belongs to the coming week, for the whole family; a kid without Sunday catch-up has nothing on
+//     Sunday). AUTOBUILD_SUNDAY_AT is her question 2. Other devices get the week by WKRELOAD when ha_active_wk changes.
+//   · ONE builder — week<N>/meta/building = {dev, at}, taken by a transaction inside the scheduler lock and good for 2 minutes;
+//     the device that loses does nothing (it re-checks after the claim would have expired, in case the builder died). gwCommit's
+//     meta write clears the claim; a week that already has cards is adopted, as before.
+//   · ?dryrun=1: the week is generated in this device's memory and logged ("would build …"); nothing is written.
+//   · Mom's note — one relayLog entry (built:true, no Undo) → one line on the day banner (Mom lens) on the build day and the day
+//     after, in the what-moved style: "🗓 Week 12 built itself (Sun 00:00) — 112 cards, sitter Tue, Wed off for <kid>"; the
+//     extras only when there is something special. Carried cards, the archive and the switch are gwCommit's, exactly as before.
+// Pure helpers (_abMerge, _abWords, _abWhen, _abDue, _abRollWants, _abClaimTx) are sliced by test_autobuild_settings.js.
+const AUTOBUILD_SUNDAY_AT="midnight";   // her question 2 (open; the default is 00:00): "midnight" = the new week appears at Sunday 00:00 for everyone; "start" = on a Sunday the build waits until that Sunday's school start (Settings ▸ School Day Times ▸ Sunday, or the date's own ⏰ times) once a kid has Sunday catch-up on
+const AUTOBUILD_CLAIM_MS=2*60*1000;     // a building claim older than this is a dead builder's
+let _abSavedCfg={};                      // wn → weekConfig/<wn> as read from the server (null = nothing saved)
+const _AB_DAYS=["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
+const _AB_ABBR={monday:"Mon",tuesday:"Tue",wednesday:"Wed",thursday:"Thu",friday:"Fri",saturday:"Sat",sunday:"Sun"};
+// pure: the merge. saved = weekConfig/<wn> as saved (or null). ctx = {withSitter:[], satPlanned, dates:{dn:iso}, leaf(iso)→{start,end}|null,
+// usualStart(dn)→min, sunOn(kid), kidOff(kid,iso)→why|null, roster:[], toMin(s), normSitter(v)}
+function _abMerge(wn,saved,ctx){
+  ctx=ctx||{}; const s=(saved&&typeof saved==="object")?saved:null;
+  const norm=(typeof ctx.normSitter==="function")?ctx.normSitter:function(v){ return v; };
+  const tm=(typeof ctx.toMin==="function")?ctx.toMin:function(){ return null; };
+  const sitter={}; const raw=(s&&(s.babysitter||s.maggie))||{};
+  Object.keys(raw).forEach(function(dn){ if(raw[dn]) sitter[dn]=norm(raw[dn]); });
+  const cfg={weekNum:String(wn),
+    babysitter:sitter,
+    withSitter:(s&&Array.isArray(s.withSitter))?s.withSitter.slice():(Array.isArray(ctx.withSitter)?ctx.withSitter.slice():[]),
+    skipDays:(s&&Array.isArray(s.skipDays))?s.skipDays.slice():[],
+    lateStart:Object.assign({},(s&&s.lateStart)||{}),
+    carSchool:Object.assign({},(s&&s.carSchool)||{}),
+    saturday:!!((s&&s.saturday===true)||ctx.satPlanned),   // saved turns Saturday on; the grid's planned Saturday lessons are never dropped
+    redistribute:(s&&Array.isArray(s.redistribute))?s.redistribute.slice():[],
+    autoAdvance:true,
+    off:{},sunday:[],dayTimes:{}};   // the by-date layer, for Mom's words (the generator reads the dates and the calendar itself)
+  const dates=ctx.dates||{};
+  _AB_DAYS.forEach(function(dn){
+    const iso=dates[dn]; if(!iso) return;
+    let L=null; try{ L=(typeof ctx.leaf==="function")?ctx.leaf(iso):null; }catch(e){}
+    if(L&&(L.start||L.end)){
+      cfg.dayTimes[dn]={start:L.start||null,end:L.end||null};
+      // ⏰ the date's own LATER start is the day's late start (the balancer and the day's words see it); an earlier start the
+      // generator lays from on its own (dtS), so it is not called "late"
+      let u=null; try{ u=(typeof ctx.usualStart==="function")?ctx.usualStart(dn):null; }catch(e){}
+      const sm=tm(L.start); if(L.start&&sm!=null&&(u==null||sm>u)) cfg.lateStart[dn]=String(L.start).trim();
+    }
+    (ctx.roster||[]).forEach(function(k){ let why=null; try{ why=(typeof ctx.kidOff==="function")?ctx.kidOff(k,iso):null; }catch(e){} if(why){ (cfg.off[dn]=cfg.off[dn]||[]).push(k); } });
+  });
+  (ctx.roster||[]).forEach(function(k){ try{ if(typeof ctx.sunOn==="function"&&ctx.sunOn(k)) cfg.sunday.push(k); }catch(e){} });
+  return cfg;
+}
+// pure: Mom's line. "🗓 Week 12 built itself (Sun 00:00) — 112 cards, sitter Tue, Wed off for <kid>"; nothing after the count when nothing is special.
+function _abWords(cfg,count,when){
+  cfg=cfg||{}; const capK=(typeof cap==="function")?cap:function(s){ return String(s); };
+  let s="🗓 Week "+cfg.weekNum+" built itself"+(when?" ("+when+")":"")+" — "+count+" card"+(count===1?"":"s");
+  const x=[];
+  const sit=_AB_DAYS.filter(function(dn){ return cfg.babysitter&&cfg.babysitter[dn]; }); if(sit.length) x.push("sitter "+sit.map(function(d){ return _AB_ABBR[d]; }).join(" "));
+  _AB_DAYS.forEach(function(dn){ const ks=(cfg.off||{})[dn]; if(ks&&ks.length) x.push(_AB_ABBR[dn]+" off for "+ks.map(capK).join(", ")); });
+  const sk=(cfg.skipDays||[]).filter(function(d){ return _AB_ABBR[String(d).toLowerCase()]; }); if(sk.length) x.push("no school "+sk.map(function(d){ return _AB_ABBR[String(d).toLowerCase()]; }).join(" "));
+  _AB_DAYS.forEach(function(dn){ if((cfg.lateStart||{})[dn]) x.push(_AB_ABBR[dn]+" starts "+cfg.lateStart[dn]); });
+  _AB_DAYS.forEach(function(dn){ const c=(cfg.carSchool||{})[dn]; if(c) x.push(_AB_ABBR[dn]+" car school until "+(c.end||"12:00 PM")); });
+  if(cfg.saturday) x.push("Saturday on");
+  if(cfg.sunday&&cfg.sunday.length) x.push("Sunday catch-up for "+cfg.sunday.map(capK).join(", "));
+  return x.length?s+", "+x.join(", "):s;
+}
+function _abWhen(d){ d=d||new Date(); return _AB_ABBR[_AB_DAYS[(d.getDay()+6)%7]]+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }
+// pure: may the build run now? o = {dow (0 = Sunday), nowMin, startMin: that Sunday's school start, or null when no kid has Sunday catch-up}
+function _abDue(o,mode){ mode=mode||AUTOBUILD_SUNDAY_AT; if(mode!=="start") return true; if(!o||o.dow!==0||o.startMin==null) return true; return o.nowMin>=o.startMin; }
+// pure: does the new day want a build? o = {todayWn: the plan week today belongs to (Sunday → the coming week), currWn, activeEmpty}
+function _abRollWants(o){ o=o||{}; if(!o.todayWn) return false; return o.todayWn>(o.currWn||0)||!!o.activeEmpty; }
+// pure: the transaction on week<N>/meta/building — undefined (abort) while another device's claim is fresh, else this device's claim
+function _abClaimTx(cur,dev,now){ if(cur&&cur.dev&&cur.dev!==dev&&(now-(cur.at||0))<AUTOBUILD_CLAIM_MS) return; return {dev:dev,at:now}; }
+function _abDueCtx(){
+  const n=new Date(); let startMin=null;
+  try{ if(n.getDay()===0&&typeof sucAny==="function"&&sucAny()&&typeof dtDay==="function"&&typeof stTodayIso==="function"){ const d=dtDay("sunday",stTodayIso()); if(d&&d.s!=null) startMin=d.s; } }catch(e){}
+  return {dow:n.getDay(),nowMin:n.getHours()*60+n.getMinutes(),startMin:startMin};
+}
+// the live merge: saved = the cached server read unless given
+function gwEffectiveConfig(wn,saved){
+  if(saved===undefined) saved=(_abSavedCfg[wn]===undefined)?null:_abSavedCfg[wn];
+  const dates={};
+  try{ const r=gwWeekDateRange(wn); if(r&&r.start){ const mon=gwParseDate(r.start);
+    _AB_DAYS.forEach(function(dn,i){ const d=new Date(mon); d.setDate(d.getDate()+(dn==="sunday"?-1:i));   // SUNDAY_FIRST: the Sunday before the week's Monday
+      if(dn==="sunday"&&!(typeof sucAny==="function"&&sucAny())) return;
+      dates[dn]=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }); } }catch(e){}
+  return _abMerge(wn,saved,{withSitter:((typeof rulesData!=="undefined"&&rulesData&&rulesData.withSitter)||[]),satPlanned:(typeof gwSatPlanned==="function")?gwSatPlanned(wn):false,dates:dates,
+    leaf:function(iso){ return (typeof dtLeaf==="function")?dtLeaf(iso):null; },
+    usualStart:function(dn){ return (typeof dtUsual==="function")?dtUsual(dn).s:null; },
+    sunOn:function(k){ return typeof sucOn==="function"&&sucOn(k); },
+    kidOff:function(k,iso){ return (typeof smapIsKidOff==="function")?smapIsKidOff(k,iso):null; },
+    roster:(typeof ROSTER!=="undefined")?[...ROSTER]:[],toMin:(typeof toMin==="function")?toMin:null,normSitter:(typeof gwNormSitter==="function")?gwNormSitter:null});
+}
+// weekConfig/<wn> from the server, once, into the cache → cb(saved|null). No db: the cache (or null).
+function _abLoadSaved(wn,cb){
+  const have=function(){ return (_abSavedCfg[wn]===undefined)?null:_abSavedCfg[wn]; };
+  if(!db||!wn){ if(cb) cb(have()); return; }
+  try{ db.ref("weekConfig/"+wn).once("value",function(s){ const v=s.val(); _abSavedCfg[wn]=v||null; if(cb) cb(v||null); },function(){ if(cb) cb(have()); }); }
+  catch(e){ if(cb) cb(have()); }
+}
+// the building claim → cb(won). No db / dry run: nothing to serialize.
+function _abClaim(wn,cb){
+  if(!db||_dryRun()){ cb(true); return; }
+  try{ db.ref("week"+wn+"/meta/building").transaction(function(cur){ return _abClaimTx(cur,HA_DEV_ID,Date.now()); },function(err,committed){ cb(!err&&!!committed); }); }
+  catch(e){ dbg("autobuild claim: "+e); cb(false); }
+}
+// Mom's note: one targeted relayLog write on the NEW week (gwCommit has switched WK to it); the listener brings it to every device
+function _abNote(wn,words,at){
+  const e={label:words,why:"autobuild",dev:(typeof HA_DEV_ID!=="undefined")?HA_DEV_ID:"",at:at,n:0,moves:[],removed:[],built:true};
+  try{ relayLogData=Object.assign({},relayLogData); relayLogData[String(at)]=e; }catch(err){}
+  if(db&&!_dryRun()){ try{ db.ref("week"+wn+"/relayLog/"+at).set(e); }catch(err){ dbg("autobuild note write: "+err); } }
+}
+// the build itself, inside the scheduler lock + the claim, with the saved settings in hand
+function _abBuild(wn,saved){
+  const at=new Date();
+  const cfg=gwEffectiveConfig(wn,saved);
+  if(_dryRun()){
+    const g=generateWeek(cfg); const n=(g&&g.result&&g.result.tasks||[]).length;
+    dbg("🧪 dry run — would build: "+(g&&g.error?("(error: "+g.error+")"):_abWords(cfg,n,_abWhen(at))));
+    try{ console.log("[HA] dry run config",JSON.stringify(cfg)); }catch(e){}
+    return;
+  }
+  try{ if(typeof pgAutoApplyAll==="function") pgAutoApplyAll("weekly"); }catch(e){}   // ⏳ page books re-average before the deal
+  const gen=generateWeek(cfg);
+  if(gen.error){ dbg("auto-gen wk"+wn+" skipped: "+gen.error); return; }
+  const n=(gen.result&&gen.result.tasks||[]).length, words=_abWords(cfg,n,_abWhen(at));
+  gwConfig=cfg;
+  gwResult=gen.result; gwDropped=gen.dropped; gwCarryOverCount=gen.carryOverCount||0;
+  gwCursors=gen.cursors||null; gwCalendarSkips=gen.calendarSkips||null;
+  gwCommit();
+  try{HA_LS.setItem("ha_autogen_notice",JSON.stringify({week:wn,ts:Date.now()}));}catch(e){}
+  _abNote(wn,words,at.getTime());
+  dbg("auto-generated week "+wn+" — "+words);
+  renderAll();
+}
+// the day roll (dayRollCheck): the new day belongs to a week not built yet → the same self-build, once per date
+let _abRollDay=null;
+function autoBuildOnDayRoll(){
+  let today=null; try{ today=_todayStr(); }catch(e){ return false; }
+  if(!today||_abRollDay===today) return false; _abRollDay=today;
+  let wants=false; try{ wants=_abRollWants({todayWn:weekNumForDate(today),currWn:currWeekNum(),activeEmpty:_activeWeekEmpty()}); }catch(e){ return false; }
+  if(!wants) return false;
+  _autoGenTried=false; autoGenerateWeekIfNeeded(); return true;
+}
 let _autoGenTried=false;
 function autoGenerateWeekIfNeeded(){
   if(_autoGenTried) return;
@@ -98187,6 +98346,7 @@ function autoGenerateWeekIfNeeded(){
   // Retry until the listeners have answered.
   // NO_MIRROR: the retrieval (drill/sprint) slots come from Mastery's retrievalPlan — wait for it too.
   if(!fbCheckedLoaded||!fbTasksLoaded||!fbArchiveLoaded||!_haMastReady){ setTimeout(autoGenerateWeekIfNeeded,5000); return; }
+  if(!_abDue(_abDueCtx())){ setTimeout(autoGenerateWeekIfNeeded,60000); return; }   // her question 2, "start": a Sunday waits for its school start
   _autoGenTried=true;
   db.ref("week"+wn+"/tasks").once("value",s=>{
     const _existing=s.val();
@@ -98207,22 +98367,25 @@ function autoGenerateWeekIfNeeded(){
     // Sunday; the loser skips and picks the winner's build up off the listeners.
     haClaimSchedLock("autogen",function(release){
       if(!release){ dbg("auto-gen wk"+wn+" skipped: another device holds the scheduler lock"); return; }
+      let _rel=false; const _done=function(){ if(_rel) return; _rel=true; try{ release(); }catch(e){} };
       try{
-        try{ if(typeof pgAutoApplyAll==="function") pgAutoApplyAll("weekly"); }catch(e){}   // ⏳ page books re-average before the deal
-        const cfg={weekNum:String(wn),babysitter:{},withSitter:[],skipDays:[],lateStart:{},carSchool:{},saturday:gwSatPlanned(wn),redistribute:[],autoAdvance:true};
-        const gen=generateWeek(cfg);
-        if(gen.error){ dbg("auto-gen wk"+wn+" skipped: "+gen.error); return; }
-        gwConfig=cfg;
-        gwResult=gen.result; gwDropped=gen.dropped; gwCarryOverCount=gen.carryOverCount||0;
-        gwCursors=gen.cursors||null; gwCalendarSkips=gen.calendarSkips||null;
-        gwCommit();
-        try{HA_LS.setItem("ha_autogen_notice",JSON.stringify({week:wn,ts:Date.now()}));}catch(e){}
-        dbg("auto-generated week "+wn);
-        renderAll();
-      } finally { release(); }
+        // AUTOBUILD: one builder — the week's own claim (2 min), then the saved settings from the server, then the build
+        _abClaim(wn,function(won){
+          if(!won){
+            dbg("auto-gen wk"+wn+" skipped: another device is building it — this one waits for the new week");
+            _done();
+            setTimeout(function(){ _autoGenTried=false; autoGenerateWeekIfNeeded(); },AUTOBUILD_CLAIM_MS+30000);   // a dead builder: look again once its claim has expired
+            return;
+          }
+          _abLoadSaved(wn,function(saved){
+            try{ _abBuild(wn,saved); }catch(e){ dbg("auto-gen wk"+wn+" failed: "+e); }finally{ _done(); }
+          });
+        });
+      }catch(e){ dbg("auto-gen wk"+wn+" failed: "+e); _done(); }
     });
   });
 }
+// AUTOBUILD_END
 
 // ── OVERFLOW ROLL-FORWARD ────────────────────────────────────────────
 // When a day runs past the cutoff, its leftover lessons roll to the next
