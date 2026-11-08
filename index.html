@@ -1795,6 +1795,7 @@ if('serviceWorker' in navigator && location.protocol==='https:'){
 
 // ── CONSTANTS ────────────────────────────────────────────────────
 let WK = HA_LS.getItem("ha_active_wk") || "week3";
+const _haWkHadLocal=!!HA_LS.getItem("ha_active_wk");   // 🗓 WKRELOAD: a first-ever open has no old week on screen — no reload
 const DAYS = ["monday","tuesday","wednesday","thursday","friday","saturday"];
 // School runs Mon–Sat (DAYS). The LIFE layer — routines & chores — runs all seven days, so
 // Sunday exists here even though school never lands on it.
@@ -4042,6 +4043,32 @@ function haCvReturnRestore(){
   }catch(e){ return false; }
 }
 // CVRELOAD_END
+// 🗓 WKRELOAD (her ask 2026-11-08: "have it reload when it adds the new schedule … for families"):
+// when ANOTHER device moves the app to a new week, this screen switches live as before, then reloads
+// ONCE at the next idle moment (same busy check + 30-min cap as a code update), so nothing from last
+// week is left on screen. One reload per week per tab (sessionStorage), never in dry run; comes back
+// to the same screen. The device that built the week never reloads (its WK already matches).
+let _haWkPending=null, _haWkTimer=null, _haWkSince=0;
+function haWkReloadWhenIdle(wk){
+  if(!wk) return;
+  try{ if(typeof _dryRun==="function"&&_dryRun()) return; }catch(e){}
+  try{ if(sessionStorage.getItem("ha_wk_reload")===String(wk)) return; }catch(e){ return; }
+  const why=(typeof haBusyReason==="function")?haBusyReason():null;
+  const waited=_haWkSince?(Date.now()-_haWkSince):0;
+  if(why&&waited<HA_CV_MAX_WAIT_MS){
+    if(!_haWkPending){ _haWkSince=Date.now(); console.log("[HA] new week "+wk+" — reload waits: "+why); }
+    _haWkPending=wk;
+    if(!_haWkTimer) _haWkTimer=setInterval(function(){ haWkReloadWhenIdle(_haWkPending); },20000);
+    return;
+  }
+  if(_haWkTimer){ clearInterval(_haWkTimer); _haWkTimer=null; }
+  _haWkPending=null; _haWkSince=0;
+  try{ sessionStorage.setItem("ha_wk_reload",String(wk)); }catch(e){ return; }
+  try{ haCvReturnSave(); }catch(e){}   // ↩ back to this same screen
+  console.log("[HA] new week "+wk+" — reloading");
+  location.reload();
+}
+// WKRELOAD_END
 var _haMastReady=false, _haMastSkips=0;   // MASTGATE — see initFb
 function initFb() {
   if(!_haAuthOk){ haAuthGate(); return; }   // 🔒 sign-in first (inert while the rules are open)
@@ -4171,6 +4198,7 @@ function initFb() {
         momMoves=ld(WK+"_momMoves")||{};
         attachWeekListeners(WK);
         renderAllSoon();
+        try{ if(_haWkHadLocal&&typeof haWkReloadWhenIdle==="function") haWkReloadWhenIdle(WK); }catch(e){}   // 🗓 WKRELOAD
       }
     });
 
