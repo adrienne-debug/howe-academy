@@ -81680,6 +81680,7 @@ const GAME_RULES={
     ["2","2 misses","The second miss shows the sentence for a beat — today’s rule."],
     ["3","3 misses","A third try first; the third miss shows it."],
     ["never","Never","The sentence is never shown — after two misses the card just comes back once at the end, like the other games."]]}],
+  // 🚂 TRAIN's level pin: levels 3–5 (hook up) are added by the TRAIN block
   train:[{key:"level",label:"Which level?",def:"auto",opts:[   // 🚂 TRAIN (her design 2026-11-08: "Mom can pin a level")
     ["auto","Auto","Starts at level 1 and moves up after two clean rounds in a row."],
     ["1","Level 1","What comes next? — the train starts at A, 3 cars to choose from."],
@@ -83384,9 +83385,19 @@ function buildNameallHtml(color){
 //     can start anywhere in the alphabet (… J K L → ?). A round is TRAIN_STEPS cars to add. Right → the car rolls in, couples, and its
 //     letter is said (mastSpeak). Wrong → that car bounces back (the soft bonk) and the right one wiggles — the kid still taps it: the app
 //     never places a car for him. A letter missed twice on its turn is a miss (t.fail), logged like every game's miss.
+//   · LEVELS 3–5 — HOOK UP (step 2 of the build order, hub ask 2026-11-08): a tray of TRAIN_TRAY[level] cars, shuffled, and an empty
+//     track of that many slots behind the engine — level 3 five cars, level 4 ten (a run that starts anywhere in A–Z), level 5 the whole
+//     train, all 26 (the track is one long sideways scroll — the "floor puzzle"). The kid drags each car (finger or mouse: pointer
+//     events, as Sort it; a tap picks a car and a tap on a slot drops it there) onto its slot. Dropped close enough to an empty slot
+//     (trainSlotNear: its centre within TRAIN_SNAP of the slot's size) it is judged there: the right slot → it snaps in with the clack
+//     and its letter is said; a wrong slot → it slides back to the tray (the soft bonk). Dropped nowhere near a slot → back to the
+//     tray, no miss. Never placed for him. Any order works — it is the slots that know the alphabet. Each tray car is one turn, so
+//     the log, "clean" and the level-up are the same as levels 1–2 (two different wrong slots for one car = its miss). Level 5's
+//     empty slots show their letter faintly for the kid's first TRAIN_FAINT_ROUNDS level-5 rounds (read back from the game log),
+//     then nothing. The same sung finish.
 //   · LEVEL UP — two CLEAN rounds in a row (every car right on the first tap) at the kid's level → the next level. Read back from the
 //     kid's own game log (each train round carries its level + clean), so it needs no storage of its own and follows the kid to every
-//     device. Mom's pin (auto / 1 / 2, default auto) wins; rounds played on a pin don't move the auto level unless it was that level.
+//     device. Mom's pin (auto / 1–5, default auto) wins; rounds played on a pin don't move the auto level unless it was that level.
 //   · THE FINISH — the whole A–Z train rolls across while the ABC song plays as WebAudio tones (the Twinkle Twinkle melody, public
 //     domain: TRAIN_SONG) and each car lights on its letter, its name spoken at that note and popped up big. No AudioContext → the lights
 //     and letters run on their own clock, silent; no voice → the same, the letters still pop up. One "Play again" button.
@@ -83396,8 +83407,14 @@ function buildNameallHtml(color){
 let trainState=null;   // {kid,deck,game:"train",t0,level,start,coupled,on:[letter],turns:[{L,pid,choices:[letter],wrong:{},done,first,fail}],i,lock,seq,bounce,roll,phase:"play"|"done",clean,levelBefore,levelAfter,song:{i,end}|null,gameLogged}
 let _trainRandom=Math.random;   // tests seed it
 const TRAIN_ABC="ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-const TRAIN_MIN_LETTERS=5, TRAIN_STEPS=4, TRAIN_MAX_LEVEL=2, TRAIN_ROLL_MS=750, TRAIN_BEAT_S=0.55, TRAIN_MISS=2;
+const TRAIN_MIN_LETTERS=5, TRAIN_STEPS=4, TRAIN_MAX_LEVEL=5, TRAIN_ROLL_MS=750, TRAIN_BEAT_S=0.55, TRAIN_MISS=2;
 const TRAIN_CHOICES={1:3,2:4};   // level → how many cars to choose from
+const TRAIN_TRAY={3:5,4:10,5:26}, TRAIN_FAINT_ROUNDS=2, TRAIN_SNAP=0.8;   // hook-up levels → cars in the tray · level 5's faint letters for its first rounds · a drop counts on a slot when its centre is within this × the slot's size
+// 📜 GAMERULES: Mom's level pin gains the hook-up levels (GAME_RULES is written before this block; added once, in level order)
+(function(){ const r=(typeof GAME_RULES!=="undefined"&&GAME_RULES&&GAME_RULES.train||[]).find(x=>x&&x.key==="level"); if(!r||r.opts.some(o=>o[0]==="3")) return;
+  r.opts.push(["3","Level 3","Hook up five \u{2014} drag 5 mixed-up cars onto an empty track, in ABC order."],
+    ["4","Level 4","Hook up ten \u{2014} the same with 10 cars."],
+    ["5","Level 5","The whole train \u{2014} all 26 cars onto one long track; the letters show faintly for the first two rounds."]); })();
 const TRAIN_HZ={C4:261.63,D4:293.66,E4:329.63,F4:349.23,G4:392.00,A4:440.00};
 // The ABC song on the Twinkle Twinkle melody — s: what is sung, n: the note, b: beats, k: "L" a letter (lit + said), "c" the same letter
 // held on (W's "dou-ble-u"), "w" a word of the last two lines (the whole train lit, the words shown).
@@ -83457,7 +83474,7 @@ function trainLevelFrom(rounds){
   (rounds||[]).forEach(e=>{ if(!e||Number(e.level)!==lvl) return; if(e.clean){ streak++; if(streak>=2&&lvl<TRAIN_MAX_LEVEL){ lvl++; streak=0; } } else streak=0; });
   return lvl;
 }
-function trainPin(kid){ const v=(typeof gameRule==="function")?gameRule(kid,"train","level"):null; return (v==="1"||v==="2")?Number(v):null; }
+function trainPin(kid){ const v=(typeof gameRule==="function")?gameRule(kid,"train","level"):null, n=Number(v); return (/^[1-9]$/.test(String(v))&&n<=TRAIN_MAX_LEVEL)?n:null; }
 function trainLevel(kid){ kid=kid||masteryKid; return trainPin(kid)||trainLevelFrom(trainLogRounds(kid)); }
 // PURE: the cars to choose from — the right one + n-1 of its nearest letters, shuffled. A car already on the train can be one of them
 // (B or C beside the right D): left out, the right car would always be the earliest letter at level 1 — a tell, not the order.
@@ -83470,12 +83487,111 @@ function trainChoices(L,n){
 // PURE: a round at a level — where it starts, the cars already coupled, the turns to play
 function trainRound(level,cards){
   level=Math.max(1,Math.min(TRAIN_MAX_LEVEL,Number(level)||1));
+  if(TRAIN_TRAY[level]) return trainHookRound(level,cards);   // levels 3–5: hook up
   const coupled=_trainRandom()<0.5?2:3, n=TRAIN_CHOICES[level]||3;
   const start=level===1?0:Math.floor(_trainRandom()*(TRAIN_ABC.length-coupled-TRAIN_STEPS+1));
   const on=TRAIN_ABC.slice(start,start+coupled), turns=[];
   for(let j=0;j<TRAIN_STEPS;j++){ const L=TRAIN_ABC[start+coupled+j], c=cards&&cards[L];
     turns.push({L:L,pid:c&&c.id!=null?String(c.id):null,choices:trainChoices(L,n),wrong:{},done:false,first:false,fail:false}); }
   return {level:level,start:start,coupled:coupled,on:on,turns:turns};
+}
+// ── levels 3–5: hook up ──────────────────────────────────────────────────
+// PURE: a hook-up round — a run of TRAIN_TRAY[level] letters (all 26 at level 5, else starting anywhere it fits), its cars shuffled
+// into the tray (never already in order). turns = the tray's cars, in tray order; the track's slot k wants TRAIN_ABC[start+k].
+function trainHookRound(level,cards){
+  const n=Math.min(TRAIN_ABC.length,TRAIN_TRAY[level]||5), start=n>=TRAIN_ABC.length?0:Math.floor(_trainRandom()*(TRAIN_ABC.length-n+1));
+  const run=TRAIN_ABC.slice(start,start+n), tray=_trainShuffle(run.slice());
+  if(n>1&&tray.join("")===run.join("")) tray.push(tray.shift());
+  const turns=tray.map(L=>{ const c=cards&&cards[L]; return {L:L,pid:c&&c.id!=null?String(c.id):null,choices:[],wrong:{},done:false,first:false,fail:false}; });
+  return {level:level,start:start,coupled:0,on:[],turns:turns};
+}
+function _trainHook(st){ return !!(st&&TRAIN_TRAY[st.level]); }
+// PURE: level 5's empty slots show their letter faintly for the kid's first TRAIN_FAINT_ROUNDS level-5 rounds
+function trainFaintFor(rounds,level){ return Number(level)===5&&(rounds||[]).filter(e=>e&&Number(e.level)===5).length<TRAIN_FAINT_ROUNDS; }
+// PURE: the slot a dropped car lands on — the nearest of the empty slots [{k,x,y,w,h}] (x,y its centre) whose centre is within
+// TRAIN_SNAP × its width / height of the car's centre (cx,cy); -1 when it was dropped nowhere near one
+function trainSlotNear(slots,cx,cy){
+  let best=-1, bd=Infinity;
+  (slots||[]).forEach(o=>{ if(!o) return; const dx=Math.abs(cx-o.x), dy=Math.abs(cy-o.y); if(dx>o.w*TRAIN_SNAP||dy>o.h*TRAIN_SNAP) return; const d=dx*dx+dy*dy; if(d<bd){ bd=d; best=o.k; } });
+  return best;
+}
+// PURE-ish: tray car ti dropped on slot k → "right" | "wrong" | null (not now / not a slot / filled). Right snaps it in; wrong sends it back.
+function trainDropJudge(st,ti,k){
+  if(!st||st.phase!=="play"||st.lock||!_trainHook(st)) return null;
+  const t=st.turns[ti], n=st.turns.length; if(!t||t.done||k==null||k<0||k>=n) return null;
+  const want=TRAIN_ABC[st.start+k]; if(st.turns.some(x=>x.done&&x.L===want)) return null;
+  st.sel=null;
+  if(want!==t.L){ if(!t.wrong[want]){ t.wrong[want]=1; if(Object.keys(t.wrong).length>=TRAIN_MISS) t.fail=true; } st.bounce=ti; st.roll=null; return "wrong"; }
+  t.done=true; t.first=!Object.keys(t.wrong).length; st.on.push(t.L); st.roll=t.L; st.bounce=null;
+  const left=st.turns.filter(x=>!x.done).length;
+  if(left) st.i=n-left; else { st.i=n-1; st.lock=true; }   // the last car: trainNext finishes the round once it has clacked in
+  return "right";
+}
+function trainDrop(ti,k){
+  const st=trainState; if(!st) return;
+  const r=trainDropJudge(st,ti,k);
+  if(!r){ st.sel=null; st.roll=null; if(st.phase==="play"&&!st.lock&&st.turns[ti]&&!st.turns[ti].done) st.bounce=ti; _trainHookRe(st); return; }   // dropped nowhere: back to the tray, no miss
+  if(r==="wrong"){ try{ matchBonk(); }catch(e){} st.seq++; _trainHookRe(st); return; }
+  try{ matchDing(); }catch(e){}
+  _trainSay(st.roll);
+  const seq=++st.seq; _trainHookRe(st);
+  if(st.lock) setTimeout(()=>{ if(trainState===st&&st.lock&&st.seq===seq){ trainNext(st); _mastRe(); } },TRAIN_ROLL_MS);
+}
+// A tap: pick a tray car (again = put it down); a tap on an empty slot drops the picked car there
+function trainHookPick(ti){ const st=trainState; if(!st||st.phase!=="play"||st.lock||!st.turns[ti]||st.turns[ti].done) return; st.sel=st.sel===ti?null:ti; st.bounce=null; st.roll=null; _trainHookRe(st); }
+function trainSlotTap(k){ const st=trainState; if(!st||st.sel==null) return; trainDrop(st.sel,k); }
+function trainHookHear(){
+  const st=trainState; if(!_trainHook(st)||st.phase!=="play") return;
+  const on=TRAIN_ABC.slice(st.start,st.start+st.turns.length).filter(L=>st.turns.some(t=>t.done&&t.L===L));
+  _trainSay((on.length?on.join(", ")+". ":"")+"Put each car in its place on the track!");
+}
+// A re-render rebuilds the track, so its sideways scroll is put back (level 5's long train)
+function _trainHookRe(st){ _mastRe(); try{ const tr=typeof document!=="undefined"&&document.getElementById("trn-track"); if(tr&&st&&st.scroll) tr.scrollLeft=st.scroll; }catch(e){} }
+function _trainSlotRects(){
+  try{ return Array.prototype.map.call(document.querySelectorAll("[data-trn-slot]"),el=>{ const b=el.getBoundingClientRect(); return {k:parseInt(el.getAttribute("data-trn-slot"),10),x:b.left+b.width/2,y:b.top+b.height/2,w:b.width,h:b.height}; }); }catch(e){ return []; }
+}
+function _trainHookHover(k){ try{ document.querySelectorAll("[data-trn-slot]").forEach(el=>el.classList.toggle("trn-over",parseInt(el.getAttribute("data-trn-slot"),10)===k)); }catch(e){} }
+// Drag a tray car with a finger or the mouse: a move under 8px is a tap (trainHookPick). While it is held near the track's end the track
+// scrolls that way, and near the top / bottom of the screen the page does — the car can reach any slot of the long train.
+function trainHookDown(ev,ti){
+  const st=trainState; if(!st||st.phase!=="play"||st.lock||!ev||ev.button>0) return;
+  const el=ev.currentTarget; if(!el) return;
+  const x0=ev.clientX, y0=ev.clientY, pid=ev.pointerId; let moved=false, px=x0, py=y0, sx=0, sy=0;
+  try{ el.setPointerCapture(pid); }catch(e){}
+  const tr=document.getElementById("trn-track");
+  const near=()=>{ const r=el.getBoundingClientRect(); return trainSlotNear(_trainSlotRects(),r.left+r.width/2,r.top+r.height/2); };
+  const place=()=>{ el.style.transform="translate("+(px-x0+sx)+"px,"+(py-y0+sy)+"px)"; _trainHookHover(near()); };
+  const edge=setInterval(()=>{ if(!moved) return;
+    try{ if(tr){ const b=tr.getBoundingClientRect(); if(py>b.top-60&&py<b.bottom+60){ const v=px<b.left+48?-16:px>b.right-48?16:0; if(v){ tr.scrollLeft+=v; st.scroll=tr.scrollLeft; } } }
+      const h=window.innerHeight||0, v2=py<56?-14:(h&&py>h-56)?14:0; if(v2){ const y1=window.scrollY; window.scrollBy(0,v2); sy+=window.scrollY-y1; place(); } }catch(e){} },40);
+  const move=e=>{ px=e.clientX; py=e.clientY; if(!moved&&Math.hypot(px-x0,py-y0)<8) return; moved=true; el.classList.add("trn-drag"); place(); };
+  const up=e=>{
+    clearInterval(edge);
+    el.removeEventListener("pointermove",move); el.removeEventListener("pointerup",up); el.removeEventListener("pointercancel",up);
+    try{ el.releasePointerCapture(pid); }catch(x){}
+    if(!moved){ trainHookPick(ti); return; }
+    const k=e.type==="pointercancel"?-1:near();
+    el.style.transform=""; el.classList.remove("trn-drag"); _trainHookHover(-1);
+    trainDrop(ti,k);
+  };
+  el.addEventListener("pointermove",move); el.addEventListener("pointerup",up); el.addEventListener("pointercancel",up);
+}
+// The hook-up play screen: the engine + the track's slots (a car where it's hooked on), then the tray of cars still to place
+function _trainHookHtml(st,d,color){
+  if(st.faint==null){ try{ st.faint=trainFaintFor(trainLogRounds(st.kid),st.level); }catch(e){ st.faint=false; } }
+  const n=st.turns.length, done=st.turns.filter(t=>t.done).length, cards=d&&d.cards, last=st.turns[st.bounce];
+  let h='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 2px"><span style="font-size:14px;font-weight:800;color:#57534e">\u{1F682} '+done+' of '+n+' hooked on</span><span style="font-size:12px;font-weight:800;color:var(--muted)">Level '+st.level+'</span></div>';
+  h+='<div id="trn-track" class="trn-track" onscroll="if(trainState)trainState.scroll=this.scrollLeft"><div class="trn-trackin"><span class="trn-eng" aria-label="Engine">\u{1F682}</span>';
+  for(let k=0;k<n;k++){ const L=TRAIN_ABC[st.start+k];
+    if(st.turns.some(t=>t.done&&t.L===L)){ h+=_trainCarHtml(L,{cards:cards,cls:st.roll===L?'trn-clack':''}); continue; }
+    h+='<div class="trn-car trn-slot trn-hslot" data-trn-slot="'+k+'" role="button" aria-label="Empty spot '+(k+1)+'" onclick="trainSlotTap('+k+')">'+(st.faint?'<span class="trn-up trn-faint">'+L+'</span><span class="trn-lo trn-faint">'+L.toLowerCase()+'</span>':'')+'</div>'; }
+  h+='</div></div>';
+  h+='<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin:4px 0 10px"><span style="font-size:17px;font-weight:800;color:#57534e;text-align:center">'+(st.lock?'\u{1F389} Clack! The whole train is hooked up!':(last&&!last.done&&Object.keys(last.wrong).length?'Not that spot \u{2014} try another!':st.sel!=null?'Now tap its spot on the track!':'Drag each car to its spot on the track!'))+'</span>'+
+    '<button onclick="trainHookHear()" aria-label="Hear it" style="width:46px;height:46px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:20px;cursor:pointer">\u{1F50A}</button></div>';
+  h+='<div class="trn-tray'+(n>TRAIN_TRAY[4]?' trn-tray-s':'')+'">';
+  st.turns.forEach((t,ti)=>{ if(t.done) return;
+    h+='<div class="trn-tcar'+(st.sel===ti?' trn-sel':'')+(st.bounce===ti?' trn-back':'')+'" role="button" aria-label="Car '+t.L+'" onpointerdown="trainHookDown(event,'+ti+')">'+_trainCarHtml(t.L,{cards:cards})+'</div>'; });
+  return h+'</div>';
 }
 function _trainSay(text){ if(!text) return; try{ if(typeof mastSpeak==="function") mastSpeak(String(text)); }catch(e){} }
 function trainStart(){
@@ -83609,7 +83725,15 @@ const TRAIN_CSS='<style>.trn-row{display:flex;align-items:flex-end;gap:6px;justi
   '#trn-strip .trn-eng{width:'+TRAIN_ENG_W+'px;text-align:center;font-size:72px}'+
   '#trn-pop{height:96px;display:flex;align-items:center;justify-content:center}.trn-popl{display:inline-flex;flex-direction:column;align-items:center;font-family:\'Fraunces\',serif;font-size:70px;font-weight:800;color:#292524;line-height:1;animation:trnPop .3s ease-out}'+
   '.trn-popl small{font-size:28px;color:#57534e}.trn-popw{font-family:\'Fraunces\',serif;font-size:clamp(20px,5.5vw,30px);font-weight:800;color:#292524;text-align:center;animation:trnPop .3s ease-out}'+
-  '@keyframes trnPop{0%{transform:scale(.4);opacity:0}100%{transform:none;opacity:1}}</style>';
+  '@keyframes trnPop{0%{transform:scale(.4);opacity:0}100%{transform:none;opacity:1}}'+
+  '.trn-track{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;border-bottom:6px solid #78716c;margin:6px 0 14px;padding:10px 4px 4px}.trn-trackin{display:flex;align-items:flex-end;gap:6px;width:max-content;margin:0 auto}'+
+  '.trn-track .trn-car{width:clamp(46px,12vw,72px);height:clamp(62px,16vw,92px)}.trn-track .trn-up{font-size:clamp(22px,6vw,38px)}.trn-track .trn-lo{font-size:clamp(12px,3.4vw,18px)}.trn-track .trn-eng{font-size:clamp(40px,11vw,68px)}'+
+  '.trn-hslot{cursor:pointer;transition:background .15s,border-color .15s}.trn-hslot.trn-over{border-color:#16a34a;background:#f0fdf4!important;border-style:solid}.trn-faint{color:#d6d3d1!important;text-shadow:none!important}'+
+  '.trn-clack{animation:trnClack .4s ease-out}@keyframes trnClack{0%{transform:scale(1.25)}60%{transform:scale(.94)}100%{transform:none}}'+
+  '.trn-tray{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;padding:12px 6px;border-radius:18px;background:#f5f5f4}.trn-tcar{touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;cursor:grab;border-radius:16px;position:relative}'+
+  '.trn-tcar *{pointer-events:none;-webkit-user-drag:none}.trn-tcar .trn-car{width:clamp(56px,15vw,84px);height:clamp(72px,19vw,104px)}.trn-tray-s .trn-tcar .trn-car{width:clamp(48px,12vw,64px);height:clamp(62px,15.5vw,82px)}.trn-tray-s .trn-up{font-size:clamp(22px,6vw,34px)}'+
+  '.trn-tcar.trn-sel{box-shadow:0 0 0 4px #2563eb;transform:translateY(-6px)}.trn-tcar.trn-drag{z-index:30;pointer-events:none;box-shadow:0 12px 26px rgba(0,0,0,.25)}'+
+  '.trn-back{animation:trnBack .45s ease-out}@keyframes trnBack{0%{transform:translateY(-70px) scale(1.06)}70%{transform:translateY(6px)}100%{transform:none}}</style>';
 function _trainCarHtml(L,o){
   o=o||{}; const ix=TRAIN_ABC.indexOf(L), col=TRAIN_COLS[(ix<0?0:ix)%TRAIN_COLS.length];
   let pic=""; const it=o.cards&&o.cards[L];
@@ -83627,6 +83751,7 @@ function buildTrainHtml(color){
     h+='<div style="font-size:15px;font-weight:700;color:#57534e;margin-bottom:16px">Level '+lvl+' \u{00B7} pick the car that comes next!</div>'+btn("trainStart()","\u{1F682} Let’s go!")+'</div></div>';
     return h;
   }
+  if(st.phase==="play"&&_trainHook(st)) return h+_trainHookHtml(st,d,color)+'</div>';   // levels 3–5: hook up
   if(st.phase==="play"){
     const t=st.turns[st.i], shown=st.on.slice(-3), hidden=st.on.length>shown.length;
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 2px"><div style="display:flex;gap:6px">';
