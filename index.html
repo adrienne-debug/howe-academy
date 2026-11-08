@@ -10644,9 +10644,11 @@ function taskCard(t, fromDay, readOnly, doneId){
   // shows today's pile (new · due · learning) or "done today".
   const _dlSub=(_dlv==="study"&&typeof gwGetSubjects==="function")?(((gwGetSubjects(t.who)||{})[t.subjectKey])||null):null;
   const _go=(_dlv==="sprint")?("retrOpenSprint('"+t.who+"')"):(_dlv==="study"&&_dlSub)?("retrSchedGo('"+t.who+"','study','"+_dlSub.study+"')"):("retrSchedGo('"+t.who+"','"+_dlv+"')");
-  let linkRow=_dlv?'<div style="margin-top:5px"><span onclick="event.stopPropagation();'+_go+'" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#5b3a8c;cursor:pointer;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4C2} Open '+cap(t.who)+'’s '+taskDeepLinkLabel(_dlv)+' →</span></div>':"";
+  const _pkLbl=(_dlSub&&_dlSub.study&&typeof pktCardLabel==="function")?pktCardLabel(t.who,_dlSub.study):null;   // 🚂 PKTRAIN: "🚂 ABC Train — study"
+  let linkRow=_dlv?'<div style="margin-top:5px"><span onclick="event.stopPropagation();'+_go+'" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#5b3a8c;cursor:pointer;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:2px 9px;font-family:\'DM Sans\',sans-serif">\u{1F4C2} Open '+cap(t.who)+'’s '+(_pkLbl||taskDeepLinkLabel(_dlv))+' →</span></div>':"";
   const _ckLine=(_dlSub&&_dlSub.study&&typeof ckCardLine==="function")?ckCardLine(t.who,_dlSub.study):null;   // 🩺 CHECKUP
   if(_ckLine) linkRow+='<div style="margin-top:4px;font-size:11px;color:#0f766e;font-weight:700">'+_ckLine+'</div>';
+  else if(_pkLbl){ const _pl=pktCardLine(t.who,_dlSub.study); if(_pl) linkRow+='<div style="margin-top:4px;font-size:11px;color:var(--muted);font-weight:600">\u{1F682} '+_pl+'</div>'; }   // 🚂 PKTRAIN: no flip-card pile — done today once the Train logged
   else if(_dlSub&&_dlSub.study&&typeof mstPile==="function"){
     try{
       const _sp=mstPile(t.who,_dlSub.study,mastGetPrintNum(t.who),(typeof mstLogGet==="function")?mstLogGet(t.who,_dlSub.study):null);
@@ -81680,7 +81682,10 @@ const GAME_RULES={
   train:[{key:"level",label:"Which level?",def:"auto",opts:[   // 🚂 TRAIN (her design 2026-11-08: "Mom can pin a level")
     ["auto","Auto","Starts at level 1 and moves up after two clean rounds in a row."],
     ["1","Level 1","What comes next? — the train starts at A, 3 cars to choose from."],
-    ["2","Level 2","4 cars to choose from, and the train can start anywhere in the alphabet."]]}]
+    ["2","Level 2","4 cars to choose from, and the train can start anywhere in the alphabet."]]},
+    {key:"study",label:"Study card opens the Train?",def:"on",only:k=>typeof isPreK==="function"&&isPreK(k),opts:[   // 🚂 PKTRAIN: a Pre-K kid only
+    ["on","On","A study card whose deck is letters opens the ABC Train instead of flip cards, and the round counts as the study."],
+    ["off","Off","The study card opens the flip cards, as before."]]}]
 };
 let gameRulesUI=null;   // {kid, game} while the pop-up is open (this device)
 function _grE(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -81711,7 +81716,7 @@ function gameRulesBtnHtml(kid,g){
 // PURE: the pop-up's body for one kid + game
 function gameRulesHtml(kid,game){
   const g=((typeof GAMES_LIST!=="undefined"&&Array.isArray(GAMES_LIST))?GAMES_LIST:[]).find(x=>x&&x.key===game)||{emoji:"\u{1F3AE}",label:game};
-  const nm=(typeof cap==="function")?cap(kid):kid, edit=(typeof _gdCanEdit==="function")&&_gdCanEdit(), defs=gameRuleDefs(game);
+  const nm=(typeof cap==="function")?cap(kid):kid, edit=(typeof _gdCanEdit==="function")&&_gdCanEdit(), defs=gameRuleDefs(game).filter(r=>!r.only||r.only(kid));   // 🚂 PKTRAIN: a rule can be for some kids only
   let h='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px"><div style="font-family:\'Fraunces\',serif;font-size:20px;font-weight:800;color:#292524">'+g.emoji+' '+_grE(g.label)+' · rules</div>'+
     '<button onclick="gameRulesClose()" aria-label="Close" style="width:40px;height:40px;border-radius:50%;border:1.5px solid #e2ddd6;background:#fff;font-size:18px;cursor:pointer">✕</button></div>';
   h+='<div style="font-size:12.5px;color:var(--muted);margin-bottom:12px">For '+_grE(nm)+'. '+(edit?'Tap a pill to change it — it saves right away.':'Mom changes these.')+'</div>';
@@ -83390,7 +83395,7 @@ function buildNameallHtml(color){
 //   · WRITES — only the round's gameLog entry (GAMELOG, game:"train", + level / clean). No points (the games contract), no ladder, no
 //     next_due, no study log, no best score. db && !_dryRun() only (gameLogRound's own guard). Per-kid park / restore / resume through its
 //     GAMES_LIST entry (🎲 GAMEKIT): parking stops the song; a round dropped (a kid switch, leaving) writes nothing. No names in this block.
-let trainState=null;   // {kid,deck,game:"train",t0,level,start,coupled,on:[letter],turns:[{L,pid,choices:[letter],wrong:{},done,first,fail}],i,lock,seq,bounce,roll,phase:"play"|"done",clean,levelBefore,levelAfter,song:{i,end}|null,gameLogged}
+let trainState=null;   // {kid,deck,game:"train",t0,level,start,coupled,on:[letter],turns:[{L,pid,choices:[letter],wrong:{},done,first,fail}],i,lock,seq,bounce,roll,phase:"play"|"done",clean,levelBefore,levelAfter,song:{i,end}|null,gameLogged,study:{sid}|null (🚂 PKTRAIN)}
 let _trainRandom=Math.random;   // tests seed it
 const TRAIN_ABC="ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 const TRAIN_MIN_LETTERS=5, TRAIN_STEPS=4, TRAIN_MAX_LEVEL=2, TRAIN_ROLL_MS=750, TRAIN_BEAT_S=0.55, TRAIN_MISS=2;
@@ -83475,13 +83480,13 @@ function trainRound(level,cards){
   return {level:level,start:start,coupled:coupled,on:on,turns:turns};
 }
 function _trainSay(text){ if(!text) return; try{ if(typeof mastSpeak==="function") mastSpeak(String(text)); }catch(e){} }
-function trainStart(){
+function trainStart(sid){
   try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the Start / Play again tap unlocks the tones (iPad)
   _trainStopSong();
-  const kid=masteryKid, d=trainDeck(_trainItems(kid),kid);
+  const kid=masteryKid, ps=(sid!=null&&typeof pktSession==="function")?pktSession(kid,sid):null, d=ps||trainDeck(_trainItems(kid),kid);   // 🚂 PKTRAIN: a Pre-K study card's round is built from its session's letters deck
   if(!d){ trainState=null; _mastRe(); return; }
   const level=trainLevel(kid), r=trainRound(level,d.cards);
-  trainState={kid:kid,deck:d.deck,game:"train",t0:Date.now(),level:r.level,start:r.start,coupled:r.coupled,on:r.on.slice(),turns:r.turns,i:0,lock:false,seq:0,bounce:null,roll:null,phase:"play",clean:null,levelBefore:level,levelAfter:null,song:null};
+  trainState={kid:kid,deck:d.deck,game:"train",t0:Date.now(),level:r.level,start:r.start,coupled:r.coupled,on:r.on.slice(),turns:r.turns,i:0,lock:false,seq:0,bounce:null,roll:null,phase:"play",clean:null,levelBefore:level,levelAfter:null,song:null,study:ps?{sid:ps.sid}:null};
   _mastRe();
 }
 // PURE-ish: a tap on choice ci → "right" | "wrong" | null (not now). Right couples the car; wrong never moves the right one.
@@ -83511,6 +83516,7 @@ function trainFinish(st){
   st.phase="done"; st.lock=false;
   st.clean=st.turns.every(t=>t.done&&t.first);
   try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: each letter's first-tap result + the round's level / clean, game:"train"
+  if(st.study&&typeof pktLogSitting==="function"){ try{ pktLogSitting(st); }catch(e){} }   // 🚂 PKTRAIN: a Pre-K study card's round is that kid's study sitting too
   st.levelAfter=trainLevel(st.kid);
   trainSing(st);
 }
@@ -83613,15 +83619,16 @@ function _trainCarHtml(L,o){
   if(it&&(it.imageUrl||it.emoji||(typeof mastGetVisual==="function"&&mastGetVisual(it.subject,it.prompt)))){ try{ pic=mastItemVis(it)||""; }catch(e){ pic=""; } }
   return '<div class="trn-car'+(o.cls?' '+o.cls:'')+'" data-trn-l="'+L+'" style="background:'+col+'">'+(pic?'<span class="trn-pic">'+pic+'</span>':'')+'<span class="trn-up">'+L+'</span><span class="trn-lo">'+L.toLowerCase()+'</span></div>';
 }
-function buildTrainHtml(color){
+function buildTrainHtml(color,study){
   let h=TRAIN_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
-  const kid=masteryKid, d=trainDeck(_trainItems(kid),kid);
+  const kid=masteryKid, d=study||trainDeck(_trainItems(kid),kid);   // 🚂 PKTRAIN: study = pktSession(kid,sid) — the study card's round, drawn on its Study page
   if(!d){ h+='<div class="mast-none">The ABC Train needs a Letters deck \u{2014} a deck of single-letter cards (A, B, C\u{2026}).</div></div>'; return h; }
-  const st=trainState&&trainState.kid===kid?trainState:null, btn=(fn,lbl)=>'<button onclick="'+fn+'" style="padding:14px 30px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
+  const sk=study?String(study.sid):null, go=sk==null?"trainStart()":"trainStart('"+String(sk).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;")+"')";
+  const st=trainState&&trainState.kid===kid&&((trainState.study&&trainState.study.sid)||null)===sk?trainState:null, btn=(fn,lbl)=>'<button onclick="'+fn+'" style="padding:14px 30px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
   if(!st){
     const lvl=trainLevel(kid);
     h+='<div style="text-align:center;margin:18px 0 10px"><div style="font-size:64px;line-height:1">\u{1F682}</div><div style="font-family:\'Fraunces\',serif;font-size:24px;font-weight:800;color:#292524;margin:6px 0 4px">ABC Train</div>';
-    h+='<div style="font-size:15px;font-weight:700;color:#57534e;margin-bottom:16px">Level '+lvl+' \u{00B7} pick the car that comes next!</div>'+btn("trainStart()","\u{1F682} Let’s go!")+'</div></div>';
+    h+='<div style="font-size:15px;font-weight:700;color:#57534e;margin-bottom:16px">Level '+lvl+' \u{00B7} pick the car that comes next!</div>'+btn(go,"\u{1F682} Let’s go!")+'</div></div>';
     return h;
   }
   if(st.phase==="play"){
@@ -83653,10 +83660,94 @@ function buildTrainHtml(color){
   h+='</div></div>';
   if(!sg.tones&&!end) h+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">\u{1F3B5} Sing along!</div>';
   if(st.levelAfter&&st.levelAfter>st.levelBefore) h+='<div style="font-size:18px;font-weight:800;color:#16a34a;margin-bottom:10px">\u{2B06} Level '+st.levelAfter+' next time!</div>';
-  if(end) h+=btn("trainStart()","\u{1F501} Play again");
+  if(end) h+=btn(go,"\u{1F501} Play again");
   return h+'</div></div>';
 }
 // TRAIN_END
+// PKTRAIN_START — 🚂 a Pre-K kid's study card opens the ABC Train (hub ask 2026-11-08; her words 11/8: "the ABC order thing and the
+// train thing would be like a pre-K kindergarten study session, because they can't or won't do typical study sessions").
+//   · WHO — a Pre-K kid (isPreK) whose study session's decks are all LETTERS decks (TRAIN's own rule, trainLetterDecks: found by the
+//     cards, never by a name). A school kid, a Pre-K kid's other decks, a check-up, a deckless Mix: untouched (the flip cards).
+//   · THE SWITCH — the Train's rules pop-up: "Study card opens the Train?" (GAME_RULES.train "study", on / off, default on; listed for
+//     a Pre-K kid only). Off = the flip cards, as before. Stored by GAMERULES' own targeted set.
+//   · EVERY DOOR — the card's 📂 link, its Kids' Corner tap, Family time's 🧠, Dad's Day, Mom's Day, the 📚 Study tab and its session
+//     pills: all land on renderMastStudy for that session, and one guarded line there draws the Train (pktStudyHtml) instead of the
+//     flip-card start. A flip sitting already running for that session keeps running.
+//   · THE ROUND — the Train at the kid's own level (trainLevel), built from the session's letters deck. It still logs as a game,
+//     exactly as before (gameLogRound, game:"train" — its level-up reads it), and ALSO as the kid's study sitting (pktLogSitting): today's
+//     studyLog entry in the sitting's shape {date,printNum,total,correct,miss,shown,secs,items,sits,before}, merged into an entry
+//     already there the way mstSave merges (counts summed, items joined). total = cars asked, correct = right on the first tap,
+//     miss = the rest; items {id,name,deck,result} (id = that letter's card, else "train_<letter>"). So Scores, the streak, the weekly
+//     report, Mom's ⏰ "not done today" and the card's "✓ done today" count it — a sitting's check-off IS its today log.
+//   · NOT — no card moves: no tier, no next_due, no minting, no printLog (the Train asks the ORDER, not "say this letter"; TRAIN's
+//     contract). So the 🗺 treasure map's ship (card rungs) does not sail on a Train round.
+//   · WRITES — mastery/studyLog/<kid>/<sid>/<yyyymmdd> (one targeted set — the sitting's own path) and, only after Mom's ↩ send-back,
+//     the mastery/studyBack/<kid>/<sid> redo fields (an update), as a sitting does. db && !_dryRun() only. No names in this block.
+//   · CARD WORDING — the 📂 link reads "🚂 ABC Train — study" instead of "study cards"; its line "✓ done today" once logged. Label only.
+function pktOn(kid){ return !!kid&&typeof isPreK==="function"&&isPreK(kid)&&gameRule(kid,"train","study")!=="off"; }
+// The study session's Train — {sid,name,emoji,deck,cards} (the deck as trainDeck ranks them), or null when the flip cards stay
+function pktSession(kid,sid){
+  try{
+    if(sid==null||!pktOn(kid)) return null;
+    const s=((typeof mstSessions==="function"&&mstSessions(kid))||[]).find(x=>x&&String(x.sid)===String(sid));
+    if(!s||s.kind==="checkup") return null;
+    const ds=(s.decks||[]).filter(Boolean); if(!ds.length) return null;
+    const D=trainLetterDecks(_trainItems(kid)); if(!ds.every(d=>D[d])) return null;
+    const d=ds.slice().sort((a,b)=>(D[b].caps-D[a].caps)||(D[b].n-D[a].n)||a.localeCompare(b))[0];
+    return {sid:String(s.sid),name:String(s.name||""),emoji:String(s.emoji||""),deck:d,cards:D[d].cards};
+  }catch(e){ return null; }
+}
+// PURE: a finished study round → its sitting-shaped log entry (null when there is nothing to log)
+function pktEntry(st,now,pn,day){
+  if(!st||!st.study||st.phase!=="done"||!Array.isArray(st.turns)) return null;
+  const items=[]; let correct=0, miss=0;
+  st.turns.forEach(t=>{ if(!t||!t.done) return; const r=t.first?"c":"m"; if(r==="c") correct++; else miss++;
+    items.push({id:t.pid!=null?String(t.pid):"train_"+t.L,name:t.L,deck:String(st.deck||""),result:r}); });
+  if(!items.length) return null;
+  const total=items.length, secs=st.t0?Math.max(1,Math.round(((now!=null?now:Date.now())-st.t0)/1000)):null;
+  return {date:day,printNum:pn,total:total,correct:correct,miss:miss,shown:0,secs:secs,items:items,sits:[{secs:secs,total:total}],before:[]};
+}
+// PURE: into today's entry already there — mstSave's merge (sum the counts, join the items and sits; the first sitting's before wins)
+function pktMerge(prev,e){
+  if(!prev) return e;
+  const pi=Array.isArray(prev.items)?prev.items:Object.values(prev.items||{});
+  return {date:e.date,printNum:e.printNum,total:(prev.total||0)+e.total,correct:(prev.correct||0)+e.correct,miss:(prev.miss||0)+e.miss,shown:(prev.shown||0)+e.shown,
+    secs:e.secs!=null?e.secs:(prev.secs??null),items:pi.concat(e.items),
+    sits:(Array.isArray(prev.sits)?prev.sits:[{secs:prev.secs??null,total:prev.total||0}]).concat(e.sits),
+    before:(typeof mstBeforeMerge==="function")?mstBeforeMerge(prev.before,e.before):(prev.before||[])};
+}
+function pktLogSitting(st){
+  if(!st||!st.study||st.studyLogged) return null;
+  const kid=st.kid, sid=st.study.sid, day=(typeof mstTodayKey==="function")?mstTodayKey():gameLogDay();
+  let pn=null; try{ if(typeof mastGetPrintNum==="function") pn=mastGetPrintNum(kid); }catch(e){}
+  const e=pktEntry(st,Date.now(),pn,day); if(!e) return null;
+  st.studyLogged=true;
+  const md=masteryData, prev=(typeof mstLogGet==="function")?mstLogGet(kid,sid):null, entry=pktMerge(prev,e);
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){
+    try{ db.ref("mastery/studyLog/"+kid+"/"+sid+"/"+day).set(entry); }catch(err){}   // the sitting's own path — this kid, this session, today
+    try{ const sb=((md.studyBack||{})[kid]||{})[sid]; if(sb&&sb.ts&&!sb.redoneTs){ const rd={redoneTs:Date.now(),redoSecs:e.secs,redoTotal:e.total}; db.ref("mastery/studyBack/"+kid+"/"+sid).update(rd); Object.assign(sb,rd); } }catch(err){}   // ↩ MSTALERT: the redo
+  }
+  const L=md.studyLog||(md.studyLog={}), K=L[kid]||(L[kid]={}), S=K[sid]||(K[sid]={});
+  S[day]=entry;
+  try{ HA_LS.setItem("ha_mastery",JSON.stringify(md)); }catch(err){}
+  return entry;
+}
+// The study page for that session: its name, today's line, the Train; once the song is over, the next session or the games (📚 STUDYEND)
+function pktStudyHtml(kid,session){
+  const ps=session?pktSession(kid,session.sid):null; if(!ps) return "";
+  const col=(typeof KID_COLOR!=="undefined"&&KID_COLOR[kid])||"#7c3aed", lg=(typeof mstLogGet==="function")?mstLogGet(kid,ps.sid):null;
+  const E=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  let h='<div class="pkt-study"><div style="text-align:center;font-family:\'DM Sans\',sans-serif;font-size:15px;font-weight:800;color:#c2410c">'+E(ps.emoji)+' '+E(ps.name)+'</div>';
+  if(lg) h+='<div style="text-align:center;margin-top:4px;font-size:13px;color:#16a34a;font-weight:700">\u2713 Done today: '+(lg.total||0)+' cars</div>';
+  h+=buildTrainHtml(col,ps);
+  const st=trainState;
+  if(st&&st.kid===kid&&st.study&&st.study.sid===ps.sid&&st.phase==="done"&&st.song&&st.song.end&&typeof mpStudyDoneHtml==="function") h+='<div style="text-align:center">'+mpStudyDoneHtml(kid,ps.sid)+'</div>';
+  return h+'</div>';
+}
+// The card's 📂 link words and its line (label only)
+function pktCardLabel(kid,sid){ return pktSession(kid,sid)?"\u{1F682} ABC Train \u2014 study":null; }
+function pktCardLine(kid,sid){ return (typeof mstLogGet==="function"&&mstLogGet(kid,sid))?"\u2713 done today":""; }
+// PKTRAIN_END
 // JPWAGER_START — 🎰 Jeopardy "Daily double" (her go 2026-11-03; PLAN_practice_games_2026-10-23.md Tier 4 "Jeopardy with wager: the Tier-3 board
 // plus a daily-double wager on confidence — CR + metacognition", and Tier 3 "Sure? then flip: a confident miss gets a louder correction + comes
 // back first" — the hypercorrection effect). There are no points on the board (the games contract), so the wager is CONFIDENCE: once a square's
@@ -84637,6 +84728,7 @@ function renderMastStudy(opts){
   }
   if(session.kind==="checkup"&&typeof ckRenderHtml==="function") return h+ckRenderHtml(kid,session);   // 🩺 CHECKUP
   if(typeof envFlashRunningHtml==="function"){ const _ef=envFlashRunningHtml(kid); if(_ef) return h+_ef; }   // ⚡ ENVIDFLASH: a running ID Flash sitting
+  if(!(mstState&&mstSid===session.sid)&&typeof pktStudyHtml==="function"){ const _pk=pktStudyHtml(kid,session); if(_pk) return h+_pk; }   // 🚂 PKTRAIN: a Pre-K kid's letters study is the ABC Train
   const pn=mastGetPrintNum(kid);
   const todayLog=mstLogGet(kid,session.sid);
   let pile={reviews:[],learning:[],newNames:[]};
