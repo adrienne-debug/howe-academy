@@ -61,7 +61,7 @@ function world(items,o){
   if(o.doc) ctx.document={getElementById:id=>o.doc[id]||null};
   vm.createContext(ctx);
   vm.runInContext(UNITPIC + "\n" + CODE+"\nObject.defineProperty(this,'trainState',{get:()=>trainState,set:v=>{trainState=v;}}); Object.defineProperty(this,'_trainRandom',{get:()=>_trainRandom,set:v=>{_trainRandom=v;}});"+
-    " this.TRAIN_SONG=TRAIN_SONG; this.TRAIN_ROLL_MS=TRAIN_ROLL_MS; this.TRAIN_STEPS=TRAIN_STEPS; this.TRAIN_HZ=TRAIN_HZ; this.TRAIN_BEAT_S=TRAIN_BEAT_S; this.GAME_RULES=GAME_RULES; this._trainOsc=()=>_trainOsc;",ctx);
+    " this.TRAIN_SONG=TRAIN_SONG; this.TRAIN_ROLL_MS=TRAIN_ROLL_MS; this.TRAIN_STEPS=TRAIN_STEPS; this.TRAIN_HZ=TRAIN_HZ; this.TRAIN_LETTER_NAMES=TRAIN_LETTER_NAMES; this.TRAIN_BEAT_S=TRAIN_BEAT_S; this.GAME_RULES=GAME_RULES; this._trainOsc=()=>_trainOsc;",ctx);
   ctx._trainRandom=seeded(o.seed||3);
   const tick=t=>{ for(;;){ const due=timers.filter(x=>x.at<=t).sort((x,y)=>x.at-y.at||x.id-y.id)[0]; if(!due) break; timers.splice(timers.indexOf(due),1); now=due.at; due.f(); } now=t; };
   const flushAll=()=>{ let g=0; while(timers.length&&g++<500){ tick(Math.min.apply(null,timers.map(x=>x.at))); } };
@@ -128,7 +128,7 @@ function playRound(w,misses){
   const w2=t.choices.findIndex(x=>x!==t.L&&x!==wl); c.trainTap(w2);
   ok("a second different miss on the same letter → it counts as a miss (fail), still not placed",t.fail===true&&!t.done&&Object.keys(t.wrong).length===2);
   c.trainTap(rightIx(t));
-  ok("the right car: ding, it couples (rolls in), its letter is said, the round locks for the roll",t.done&&t.first===false&&st.on[st.on.length-1]===t.L&&st.roll===t.L&&st.lock&&w.said[w.said.length-1]===t.L&&w.dings[w.dings.length-1]==="ding");
+  ok("the right car: ding, it couples (rolls in), its letter's NAME is said (never a bare capital), the round locks for the roll",t.done&&t.first===false&&st.on[st.on.length-1]===t.L&&st.roll===t.L&&st.lock&&w.said[w.said.length-1]===c.TRAIN_LETTER_NAMES[t.L]&&w.dings[w.dings.length-1]==="ding");
   ok("…the new car carries the roll-in animation",new RegExp('class="trn-car trn-in" data-trn-l="'+t.L+'"').test(c.buildTrainHtml("#123")));
   const before=w.dings.length; c.trainTap(0);
   ok("a tap during the roll does nothing",w.dings.length===before&&st.i===0);
@@ -215,9 +215,9 @@ function playRound(w,misses){
   let h=c.buildTrainHtml("#000");
   ok("the finish screen: the whole A–Z train behind the engine, no Play again until the song ends",/id="trn-finish"/.test(h)&&ABC.every(x=>h.indexOf('data-trn-l="'+x+'"')>=0)&&!/Play again/.test(h));
   w.tick(w.now()+1000);
-  ok("a second in: A, B said on their notes and the car lit",w.said.slice(n0).join("")==="AB"&&st.song.i===1&&/class="trn-car trn-lit" data-trn-l="B"/.test(c.buildTrainHtml("#000")));
+  ok("a second in: A, B lit on their notes (no speech engine here: no words, never a voice per note)",w.said.slice(n0).length===0&&st.song.i===1&&/class="trn-car trn-lit" data-trn-l="B"/.test(c.buildTrainHtml("#000")));
   w.flushAll();
-  ok("the song says A to Z, each once, in order (W once)",w.said.slice(n0).join("")===ABC.join(""));
+  ok("no speech engine: the whole song says nothing (the tones + lights only)",w.said.slice(n0).length===0);
   h=c.buildTrainHtml("#000");
   ok("the end: one Play again button, the whole train lit",st.song.end===true&&(h.match(/Play again/g)||[]).length===1&&/onclick="trainStart\(\)"/.test(h)&&(h.match(/trn-car trn-lit/g)||[]).length===26);
   c.trainStart(); ok("Play again: a new round",c.trainState!==st&&c.trainState.phase==="play");
@@ -298,7 +298,7 @@ const R5=(lv,cl,at)=>({game:"train",level:lv,clean:cl,at:at});
   const wk2=emptySlots(st,t.L).find(k=>k!==wk); c.trainDrop(ti,wk2);
   ok("a second different wrong slot → that car is a miss (fail), still in the tray",t.fail===true&&!t.done);
   c.trainDrop(ti,slotOf(st,t.L));
-  ok("its own slot: ding, it snaps in, its letter is said; the next car is up",t.done&&t.first===false&&w.dings[w.dings.length-1]==="ding"&&w.said[w.said.length-1]===t.L&&st.i===1&&!st.lock);
+  ok("its own slot: ding, it snaps in, its letter's NAME is said (never a bare capital); the next car is up",t.done&&t.first===false&&w.dings[w.dings.length-1]==="ding"&&w.said[w.said.length-1]===c.TRAIN_LETTER_NAMES[t.L]&&st.i===1&&!st.lock);
   h=c.buildTrainHtml("#123");
   ok("…the car now sits in its slot (the clack), 4 slots left, 4 cars in the tray",new RegExp('class="trn-car trn-clack" data-trn-l="'+t.L+'"').test(h)&&(h.match(/data-trn-slot="/g)||[]).length===4&&(h.match(/trainHookDown\(event/g)||[]).length===4&&/1 of 5 hooked on/.test(h));
   const t1=st.turns[1], n0=w.dings.length;
@@ -311,7 +311,7 @@ const R5=(lv,cl,at)=>({game:"train",level:lv,clean:cl,at:at});
   c.trainHookPick(1); c.trainSlotTap(slotOf(st,t1.L));
   ok("…and a tap on its slot drops it there (judged like a drag)",t1.done&&t1.first===true&&st.sel===null);
   c.trainSlotTap(0); ok("a slot tap with no car picked does nothing",st.turns.filter(x=>x.done).length===2);
-  c.trainHookHear(); ok("🔊 says the cars on the track in order, never the ones still to place",(()=>{ const last=w.said[w.said.length-1], on=[t.L,t1.L].sort((a,b)=>ABC.indexOf(a)-ABC.indexOf(b)); return last.indexOf(on.join(", "))===0&&st.turns.filter(x=>!x.done).every(x=>last.indexOf(x.L+",")<0&&last.indexOf(x.L+".")<0); })());
+  c.trainHookHear(); ok("🔊 says the cars on the track in order, by name, never the ones still to place",(()=>{ const N=c.TRAIN_LETTER_NAMES, last=w.said[w.said.length-1], on=[t.L,t1.L].sort((a,b)=>ABC.indexOf(a)-ABC.indexOf(b)).map(x=>N[x]); return last.indexOf(on.join(", ")+". ")===0&&!/\b[A-Z]\b/.test(last)&&st.turns.filter(x=>!x.done).every(x=>last.indexOf(N[x.L]+",")<0&&last.indexOf(N[x.L]+".")<0); })());
   // finish
   for(let g=0;g<5;g++){ const k=st.turns.findIndex(x=>!x.done); if(k<0) break; c.trainDrop(k,slotOf(st,st.turns[k].L)); }
   ok("the last car: the round locks while it clacks in — not finished yet",st.lock&&st.phase==="play"&&/whole train is hooked up/.test(c.buildTrainHtml("#123")));

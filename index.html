@@ -71976,6 +71976,26 @@ function _ttsSpeakNow(text,rate){
     else synth.speak(u);
   }catch(e){}
 }
+// TTSLINE_START — one line spoken AFTER whatever is speaking (no cancel), with the caller's start / word / end hooks: the ABC Train's
+// sung finish (her report 2026-11-08, tablet: each letter's mastSpeak cancelled the one before, so the voice never finished a letter).
+// Same voice + clean-up as mastSpeak (_ttsUtter). false when this device has no engine (no speechSynthesis, or the proven engine-less
+// file mode) — the caller then runs without words. mastSpeakHush() stops it (and anything else speaking, and a tap still waiting).
+function mastSpeakLine(text,o){
+  o=o||{};
+  try{
+    if(!text||!window.speechSynthesis||(window._ttsDead&&!_ttsVoicesLoaded())) return false;
+    _ttsVoicesLoaded();
+    const u=_ttsUtter(String(text),o.rate||TTS_RATE);
+    if(o.onstart) u.onstart=o.onstart;
+    if(o.onboundary) u.onboundary=o.onboundary;
+    if(o.onend){ u.onend=o.onend; u.onerror=o.onend; }
+    speechSynthesis.resume();   // iPad: a synth left "paused" queues silently
+    speechSynthesis.speak(u);
+    return u;
+  }catch(e){ return false; }
+}
+function mastSpeakHush(){ _ttsSeq++; try{ if(window.speechSynthesis) speechSynthesis.cancel(); }catch(e){} }
+// TTSLINE_END
 // ── Flip cards: read the side that's SHOWING ─────────────────────────────────
 // The card's .mast-flip-wrap carries what each side says (data-say-front / data-say-back) and,
 // where Mom's recording belongs to a side, its key (data-rec-front / data-rec-back). Every flip
@@ -84541,8 +84561,8 @@ function buildNameallHtml(color){
 //     kid's own game log (each train round carries its level + clean), so it needs no storage of its own and follows the kid to every
 //     device. Mom's pin (auto / 1–5, default auto) wins; rounds played on a pin don't move the auto level unless it was that level.
 //   · THE FINISH — the whole A–Z train rolls across while the ABC song plays as WebAudio tones (the Twinkle Twinkle melody, public
-//     domain: TRAIN_SONG) and each car lights on its letter, its name spoken at that note and popped up big. No AudioContext → the lights
-//     and letters run on their own clock, silent; no voice → the same, the letters still pop up. One "Play again" button.
+//     domain: TRAIN_SONG) and each car lights on its letter as the voice says it, popped up big (THE VOICE LEADS: at the song's code).
+//     No voice → the tones + lights on the song's own clock, no words; no AudioContext either → the lights alone. One "Play again" button.
 //   · WRITES — only the round's gameLog entry (GAMELOG, game:"train", + level / clean). No points (the games contract), no ladder, no
 //     next_due, no study log, no best score. db && !_dryRun() only (gameLogRound's own guard). Per-kid park / restore / resume through its
 //     GAMES_LIST entry (🎲 GAMEKIT): parking stops the song; a round dropped (a kid switch, leaving) writes nothing. No names in this block.
@@ -84569,6 +84589,10 @@ const TRAIN_SONG=[
   {s:"Next",n:"F4",b:1,k:"w"},{s:"time",n:"F4",b:1,k:"w"},{s:"won’t",n:"E4",b:1,k:"w"},{s:"you",n:"E4",b:1,k:"w"},{s:"sing",n:"D4",b:1,k:"w"},{s:"with",n:"D4",b:1,k:"w"},{s:"me?",n:"C4",b:2,k:"w"}
 ];
 const TRAIN_LINE_A="Now I know my A B C’s", TRAIN_LINE_B="Next time won’t you sing with me?";
+// The voice's name for each letter — spelled, so no engine says "capital A" (her report 2026-11-08). The screen still shows "A".
+const TRAIN_LETTER_NAMES={A:"ay",B:"bee",C:"see",D:"dee",E:"ee",F:"eff",G:"gee",H:"aitch",I:"eye",J:"jay",K:"kay",L:"el",M:"em",N:"en",O:"oh",P:"pee",Q:"cue",R:"are",S:"ess",T:"tee",U:"you",V:"vee",W:"double-you",X:"ex",Y:"why",Z:"zee"};
+// PURE: what the voice is handed — every lone capital letter as its name ("J, K, L. What comes next?" → "jay, kay, el. What comes next?")
+function trainSpoken(text){ return String(text==null?"":text).replace(/\b[A-Z]\b/g,L=>TRAIN_LETTER_NAMES[L]||L); }
 // PURE: the song with its clock — each note's start t and length d in seconds
 function trainSongTimes(beatS){
   beatS=beatS||TRAIN_BEAT_S; let t=0;
@@ -84735,7 +84759,7 @@ function _trainHookHtml(st,d,color){
     h+='<div class="trn-tcar'+(st.sel===ti?' trn-sel':'')+(st.bounce===ti?' trn-back':'')+'" role="button" aria-label="Car '+t.L+'" onpointerdown="trainHookDown(event,'+ti+')">'+_trainCarHtml(t.L,{cards:cards})+'</div>'; });
   return h+'</div>';
 }
-function _trainSay(text){ if(!text) return; try{ if(typeof mastSpeak==="function") mastSpeak(String(text)); }catch(e){} }
+function _trainSay(text){ text=trainSpoken(text); if(!text) return; try{ if(typeof mastSpeak==="function") mastSpeak(text); }catch(e){} }
 function trainStart(sid){
   try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the Start / Play again tap unlocks the tones (iPad)
   _trainStopSong();
@@ -84777,8 +84801,18 @@ function trainFinish(st){
   trainSing(st);
 }
 // ── the song ─────────────────────────────────────────────────────────────
+// THE VOICE LEADS (her report + yes 2026-11-08, tablet: "capital A, capital B…" and it "totally messed up the song" — every note's
+// mastSpeak cancelled the one before, so no letter was ever finished): the song is sung one LINE per utterance (trainSongLines),
+// queued (mastSpeakLine — no cancel, the next line on the last one's end), a little slow (TRAIN_SING_RATE); each car lights as its
+// letter is actually said (the engine's word events; none → evenly spaced over the line), and the line's melody tones play under it
+// at the pace the line before was sung. Every Train word reaches the voice through trainSpoken (TRAIN_LETTER_NAMES): never a lone capital.
 let _trainOsc=[];   // this device's scheduled tones (stopped when the song is)
-function _trainStopSong(){ _trainOsc.forEach(o=>{ try{ o.stop(); }catch(e){} }); _trainOsc=[]; }
+let _trainRun=0, _trainVoiceOn=false;   // the song now running (a stop moves it on: every queued line / light checks it); the voice is singing
+function _trainStopSong(){
+  _trainRun++;
+  _trainOsc.forEach(o=>{ try{ o.stop(); }catch(e){} }); _trainOsc=[];
+  if(_trainVoiceOn){ _trainVoiceOn=false; try{ if(typeof mastSpeakHush==="function") mastSpeakHush(); }catch(e){} }   // the voice and its queue
+}
 function _trainCtx(){
   try{
     if(typeof window==="undefined"||!(window.AudioContext||window.webkitAudioContext)) return null;
@@ -84788,10 +84822,10 @@ function _trainCtx(){
     return ctx;
   }catch(e){ return null; }
 }
-function _trainTones(notes){
+function _trainTones(notes,lead){
   const ctx=_trainCtx(); if(!ctx) return false;
   try{
-    const t0=ctx.currentTime+0.15;
+    const t0=ctx.currentTime+(lead==null?0.15:lead);
     notes.forEach(x=>{ const o=ctx.createOscillator(), g=ctx.createGain(), a=t0+x.t, end=a+Math.max(0.12,x.d*0.92);
       o.type="triangle"; o.frequency.value=TRAIN_HZ[x.n]||440; o.connect(g); g.connect(ctx.destination);
       g.gain.setValueAtTime(0.001,a); g.gain.exponentialRampToValueAtTime(0.16,a+0.03); g.gain.exponentialRampToValueAtTime(0.001,end);
@@ -84799,6 +84833,35 @@ function _trainTones(notes){
     return true;
   }catch(e){ return false; }
 }
+// The voice-led song (her yes 2026-11-08): a little slow for the little ones; a breath (comma) where her lines have one
+const TRAIN_SING_RATE=0.8, TRAIN_SING_WORD_S=0.55, TRAIN_SING_WAIT_MS=2500;   // the first line's guess (s per word) until one is measured; no start by then → run on the guess
+const TRAIN_SING_WORDS={"Now":"now","Next":"next","A":"ay","B":"bee","C\u2019s":"sees","won\u2019t":"won't","me?":"me"}, TRAIN_BREATH={T:1,Y:1};
+// PURE: the song as the voice sings it — six lines of 8 beats; each {notes:[TRAIN_SONG index], words:[{w,i: its note,at: where it starts in say}], say}.
+// A held note ("c", W's dou-ble-u) says nothing of its own.
+function trainSongLines(){
+  const out=[]; let beats=0, cur=null;
+  TRAIN_SONG.forEach((x,i)=>{
+    if(!cur){ cur={notes:[],words:[],say:""}; out.push(cur); }
+    cur.notes.push(i);
+    if(x.k!=="c"){ const w=x.k==="L"?TRAIN_LETTER_NAMES[x.s]:(TRAIN_SING_WORDS[x.s]||x.s);
+      if(cur.words.length) cur.say+=(x.k==="L"&&TRAIN_BREATH[x.s])?", ":" ";
+      const wd={w:w,i:i,at:cur.say.length}; cur.words.push(wd); cur.say+=w; }
+    beats+=x.b; if(beats%8===0) cur=null;
+  });
+  return out;
+}
+// PURE: a line's notes with their own clock (t from the line's start, d = beats × beatS)
+function trainLineTimes(ln,beatS){ let t=0; return ln.notes.map(i=>{ const x=TRAIN_SONG[i], o=Object.assign({},x,{t:Math.round(t*1000)/1000,d:Math.round(x.b*beatS*1000)/1000}); t+=x.b*beatS; return o; }); }
+// PURE: the word an engine's word event is on — by where it starts in the line (charIndex; "double-you" read as two words is still W),
+// else by how many word events came before (n)
+function trainLineWordAt(ln,ci,n){
+  if(typeof ci==="number"&&ci>=0){ let j=0; ln.words.forEach((w,k)=>{ if(w.at<=ci) j=k; }); return j; }
+  return Math.max(0,Math.min(ln.words.length-1,n|0));
+}
+// PURE: no word events (iOS Safari often sends none) → the line's n words lit evenly across its length: word j at j × durS / n
+function trainFallbackTimes(n,durS){ const o=[]; for(let j=0;j<n;j++) o.push(Math.round(j*durS/n*1000)/1000); return o; }
+function _trainNow(){ try{ if(typeof performance!=="undefined"&&performance.now) return performance.now(); }catch(e){} return Date.now(); }
+function _trainLeft(st){ if(typeof document!=="undefined"&&!document.getElementById("trn-finish")){ st.song.end=true; _trainStopSong(); return true; } return false; }   // left the game: the song stops
 // Where the finish train sits for a note: the lit car in the middle (left:50% + this shift); off to the right before the song; the
 // last two lines and after: the whole train, centred
 const TRAIN_CAR_W=80, TRAIN_GAP=8, TRAIN_ENG_W=96;
@@ -84809,17 +84872,52 @@ function trainSongShift(i){
 }
 function trainSing(st){
   _trainStopSong();
-  const notes=trainSongTimes(), seq=++st.seq;
-  st.song={i:-1,end:false,tones:_trainTones(notes)};
-  const alive=()=>trainState===st&&st.seq===seq&&st.song;
+  const seq=++st.seq;
+  st.song={i:-1,end:false,tones:false,run:_trainRun};
+  const alive=()=>trainState===st&&st.seq===seq&&st.song&&st.song.run===_trainRun;
+  if(_trainSingVoice(st,alive)) return;
+  // No voice on this device: the tones + lights on the song's own clock, no words
+  const notes=trainSongTimes();
+  st.song.tones=_trainTones(notes);
   notes.forEach((x,i)=>{
-    setTimeout(()=>{ if(!alive()) return;
-      if(typeof document!=="undefined"&&!document.getElementById("trn-finish")){ st.song.end=true; _trainStopSong(); return; }   // left the game: the song stops
-      st.song.i=i; if(x.k==="L") _trainSay(x.s);
-      _trainSongPaint(st); },Math.round((x.t+0.15)*1000));
+    setTimeout(()=>{ if(!alive()||_trainLeft(st)) return;
+      st.song.i=i; _trainSongPaint(st); },Math.round((x.t+0.15)*1000));
   });
   const last=notes[notes.length-1];
   setTimeout(()=>{ if(!alive()) return; st.song.i=notes.length; st.song.end=true; _mastRe(); },Math.round((last.t+last.d+0.4)*1000));   // the train stays lit, Play again shows
+}
+// The voice leads: line k spoken (queued after whatever is still speaking), its tones started with it at the pace the last line was
+// sung, each car lit as its letter is said; the next line when this one ends. false = no voice here (the caller plays it silent).
+function _trainSingVoice(st,alive){
+  if(typeof mastSpeakLine!=="function") return false;
+  const lines=trainSongLines(); let perWord=TRAIN_SING_WORD_S, events=false;
+  const sing=k=>{
+    if(!alive()||_trainLeft(st)) return true;
+    if(k>=lines.length){ _trainVoiceOn=false; setTimeout(()=>{ if(!alive()) return; st.song.i=TRAIN_SONG.length; st.song.end=true; _mastRe(); },400); return true; }   // the train stays lit, Play again shows
+    const ln=lines[k], n=ln.words.length, est=n*perWord;
+    let started=false, done=false, lit=-1, t0=0, heard=0;
+    const light=j=>{ if(j<=lit||j>=n||!alive()||_trainLeft(st)) return; lit=j; st.song.i=ln.words[j].i; _trainSongPaint(st); };
+    const start=()=>{ if(started||done||!alive()) return; started=true; t0=_trainNow();
+      if(_trainTones(trainLineTimes(ln,Math.max(0.25,Math.min(0.9,est/8))),0.02)) st.song.tones=true;
+      light(0);
+      if(!events) trainFallbackTimes(n,est).forEach((s,j)=>{ if(j) setTimeout(()=>{ if(!events&&!done) light(j); },Math.round(s*1000)); });
+      setTimeout(end,Math.round((est*2+3)*1000));   // an engine that never says "ended": go on anyway
+    };
+    const end=()=>{ if(done||!alive()) return; if(!started) start(); done=true;
+      const dur=(_trainNow()-t0)/1000; if(dur>0.5) perWord=dur/n;   // the next line's pace = this line as sung
+      const rest=n-1-lit; for(let j=1;j<=rest;j++) setTimeout(()=>light(lit+1),j*90);   // letters the lights hadn't reached: in order, quickly
+      setTimeout(()=>sing(k+1),rest>0?rest*90+60:0);
+    };
+    const word=e=>{ if(done||(e&&e.name&&e.name!=="word")) return; events=true; if(!started) start(); light(trainLineWordAt(ln,e&&e.charIndex,heard++)); };
+    const u=mastSpeakLine(ln.say,{rate:TRAIN_SING_RATE,onstart:start,onboundary:word,onend:end});
+    if(!u){ if(k===0) return false; start(); setTimeout(end,Math.round(est*1000)); return true; }   // the voice dropped out mid-song: the line on its guess
+    _trainVoiceOn=true; st.song.u=u;   // a reference, so no engine collects it mid-line
+    setTimeout(()=>{ if(!started) start(); },TRAIN_SING_WAIT_MS);
+    return true;
+  };
+  if(!sing(0)) return false;
+  st.song.tones=st.song.tones||!!_trainCtx();
+  return true;
 }
 // One note on screen without a re-render (so the train can glide): the shift, the lit car(s), the big letter
 function _trainSongPaint(st){
