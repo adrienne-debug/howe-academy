@@ -146,7 +146,7 @@ function sbWorld(entry, o) {
   ok("Mom is asked first, told how many cards go back", /1 cards it moved today go back/.test(c._asked || ""), c._asked);
   ok("writes: card fields to mastery/lincoln", writes.some(w => w[0] === "update" && w[1] === "mastery/lincoln" && w[2]["0/status"] === "introduction" && w[2]["0/next_due"] === null), writes);
   ok("writes: today's log removed (session opens again)", writes.some(w => w[0] === "remove" && w[1] === "mastery/studyLog/lincoln/dailystudy/" + KEY));
-  ok("writes: a send-back record (the rushed run is kept there)", writes.some(w => w[0] === "set" && w[1] === "mastery/studyBack/lincoln/dailystudy" && w[2].secs === 10 && w[2].total === 18 && w[2].undone === 1));
+  ok("writes: a send-back record (the rushed run is kept there)", writes.some(w => w[0] === "update" && w[1] === "mastery/studyBack/lincoln/dailystudy" && w[2].redoneTs === null && w[2].secs === 10 && w[2].total === 18 && w[2].undone === 1));
   ok("exactly those 3 writes", writes.length === 3, writes);
   ok("local copy updated at once", md.lincoln[0].tally_dots === 2 && md.lincoln[0].next_due === undefined && !md.studyLog.lincoln.dailystudy[KEY]);
   ok("pending → his session + schedule card will say so", c.mstSentBackPending("lincoln", "dailystudy") === true);
@@ -166,7 +166,7 @@ function sbWorld(entry, o) {
   const { c, writes } = sbWorld({ total: 18, secs: 10 });
   c.mstAlertsAll(); c.mstSendBack(0);
   ok("old sitting (no before-copy): Mom is told progress can't be taken back", /can't be taken back/.test(c._asked || ""));
-  ok("…and only the log + record are written, no card writes", writes.length === 2 && !writes.some(w => w[0] === "update"), writes);
+  ok("…and only the log + record are written, no card writes", writes.length === 2 && !writes.some(w => w[1] === "mastery/lincoln"), writes);   // the record is a targeted update since SREVIEW (a set() wiped the earlier send-back)
 }
 {
   const { c, writes } = sbWorld({ total: 18, secs: 10, before: [] }, { kid: true });

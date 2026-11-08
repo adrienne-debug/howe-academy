@@ -18179,6 +18179,7 @@ function renderMomsDay(el){
   // the same buttons that live on their own cards, gathered where she already looks.
   try{ const _ap=_momApprovalsHTML(); nowN+=_ap.n; h+=_ap.html; }catch(e){}
   try{ const _sa=mstAlertsNowHTML(); nowN+=_sa.n; h+=_sa.html; }catch(e){}   // 🚩 study sessions rushed / missed / not done / stuck cards
+  try{ const _sr=srNowHTML(); nowN+=_sr.n; h+=_sr.html; }catch(e){}   // 🕒 SREVIEW: every finished study sitting today → 👍 Looks right · ↩ Too fast
   try{ const _mm=mmAlertsNowHTML(); nowN+=_mm.n; h+=_mm.html; }catch(e){}   // ⏱ MINMINUTES: an early check let through · a card open past double its time
   try{ const _lr=hhLevelReadyNowHTML(); nowN+=_lr.n; h+=_lr.html; }catch(e){}   // 🪜 LEVELREADY: a person's meter says move up
   // Load sitting in the washer / dryer / fold pile too long — the nudge that saves a re-wash (LAUNDRY_NUDGE).
@@ -85779,35 +85780,145 @@ function mstSendBack(i){
   const go=()=>mstSendBackDo(a.kid,a.sid);
   if(typeof momHere==="function"&&momHere()) go(); else if(typeof kitPinGate==="function") kitPinGate(go);
 }
-function mstSendBackDo(kid,sid){
+function mstSendBackDo(kid,sid,opt){   // opt {sit} = ↩ from 🕒 Study sittings today (SREVIEW)
   const key=_mstTodayLogKey(kid,sid);
   if(!key){ alert("There's no sitting from today to send back."); return; }
   const e=masteryData.studyLog[kid][sid][key];
   let ses=null; try{ ses=(mstSessions(kid)||[]).find(s=>s.sid===sid); }catch(_){}
   const nm=(ses&&ses.name)||sid, who=cap(kid);
   const before=e.before?(Array.isArray(e.before)?e.before:Object.values(e.before)):null;
-  const msg=before
+  const _nSits=(Array.isArray(e.sits)&&e.sits.length)||1;   // 🕒 SREVIEW: one day's sittings of a session share one log entry
+  const msg=(_nSits>1?("This sends back all "+_nSits+" of today's "+nm+" sittings — the cards go back to where they were before the first one.\n\n"):"")+(before
     ?("Send "+nm+" back to "+who+"?\n\nThe "+before.length+" cards it moved today go back to where they were, and "+nm+" opens again for "+who+" to redo.")
-    :("Send "+nm+" back to "+who+"?\n\nThis sitting was saved before Send back existed, so the progress it gave his cards can't be taken back. "+nm+" will open again for "+who+" to redo.");
+    :("Send "+nm+" back to "+who+"?\n\nThis sitting was saved before Send back existed, so the progress it gave his cards can't be taken back. "+nm+" will open again for "+who+" to redo."));
   if(!confirm(msg)) return;
   let items=masteryData[kid]; if(!Array.isArray(items)) items=Object.values(items||{});
   const upd=before?mstSendBackPatch(items,before):{};
   const rec={ts:Date.now(),date:key,total:e.total||0,secs:e.secs??null,correct:e.correct||0,miss:e.miss||0,undone:before?before.length:0};
-  if(typeof db!=="undefined"&&db){
+  // 🕒 SREVIEW: the sitting itself is kept, marked sent back, in mastery/studyBack/<kid>/<sid>/log/<day>_<ts> — the record
+  // used to be set() whole, so a second send-back of the same session wiped the first one's numbers.
+  const _arc=(typeof srArchived==="function")?srArchived(e,key,rec.ts,opt,((((masteryData.studyBack||{})[kid])||{})[sid]||{}).log):null;
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){
     if(Object.keys(upd).length) db.ref("mastery/"+kid).update(upd);
     db.ref("mastery/studyLog/"+kid+"/"+sid+"/"+key).remove();
-    db.ref("mastery/studyBack/"+kid+"/"+sid).set(rec);
+    db.ref("mastery/studyBack/"+kid+"/"+sid).update(Object.assign({},rec,{redoneTs:null,redoSecs:null,redoTotal:null},_arc?{["log/"+_arc.id]:_arc.rec}:{}));
   }
   masteryData[kid]=items;
   delete masteryData.studyLog[kid][sid][key];
   if(!masteryData.studyBack) masteryData.studyBack={};
   if(!masteryData.studyBack[kid]) masteryData.studyBack[kid]={};
-  masteryData.studyBack[kid][sid]=rec;
+  const _pb=masteryData.studyBack[kid][sid]||{}, _nb=Object.assign({},_pb,rec);
+  delete _nb.redoneTs; delete _nb.redoSecs; delete _nb.redoTotal;
+  if(_arc) _nb.log=Object.assign({},_pb.log||{},{[_arc.id]:_arc.rec});
+  masteryData.studyBack[kid][sid]=_nb;
   try{ HA_LS.setItem("ha_mastery",JSON.stringify(masteryData)); }catch(_){}
   if(typeof gwShowToast==="function") gwShowToast("↩ "+nm+" sent back to "+who);
   try{ if(typeof renderAll==="function") renderAll(); }catch(_){}
 }
 // MSTALERT_END
+// SREVIEW_START — 🕒 Study sittings today, in 🔴 Now — needs you (her ask 2026-11-08: "for study sessions, a little section in
+// Mom Needed where it tells how long each session that day took, if it's not a mom required session, for every kid. And there
+// would be an option to say great, I agree with this … and then no, this should have taken longer, let's send it back, and keep
+// the data on that as well."). The live incident: Daily Mix 11/4 — 60 cards in 97 s, sent back; the redo was 60 cards in 214 s
+// (3.6 s a card, over the ⚡ 3 s line) so no ⚡ row came up and the only row left was "✅ redone", which has no ↩ button — Send
+// back was only ever offered on a ⚡/❌ alert. Here every finished sitting of a non-Mom session gets its own row:
+//   deck · cards · m:ss · s/card (red under Mom's floor, default 3 s a card, ✏️ to change — mastery/studyReview/floor)
+//   👍 Looks right → judged {by,at,verdict:"ok"} on that sitting: mastery/studyLog/<kid>/<sid>/<day>/sits/<i>/judged (once)
+//   ↩ Too fast — send back → mstSendBackDo, the same re-queue as the ⚡ row; the sitting is kept, marked sent back, in
+//     mastery/studyBack/<kid>/<sid>/log/<day>_<ts> (shown here as "↩ Sent back").
+// Mom-run sessions (who:"mom", 🩺 check-ups) are left out. No sittings today → no section at all (the Now card is unchanged).
+// Writes only when db && !_dryRun().
+const SR_FLOOR_DEFAULT=3;
+let _srRows=[];
+function srFloor(){ const f=+((((typeof masteryData!=="undefined"&&masteryData)||{}).studyReview||{}).floor); return f>0?f:SR_FLOOR_DEFAULT; }
+function srBy(){ return (typeof _kioskD==="function"&&_kioskD())?"dad":"mom"; }
+function srMSS(secs){ if(secs==null||!isFinite(secs)) return "—"; secs=Math.max(0,Math.round(secs)); return Math.floor(secs/60)+":"+String(secs%60).padStart(2,"0"); }
+function srPerCard(secs,total){ return (secs!=null&&isFinite(secs)&&total>0)?Math.round(secs*10/total)/10:null; }
+function srSits(e){ return (Array.isArray(e.sits)&&e.sits.length)?e.sits:[{secs:e.secs??null,total:e.total||0}]; }
+// The sent-back copy of a day's log entry: every sitting in it marked sent back (a 👍 already given stays as it was).
+function srArchived(e,key,ts,opt,taken){
+  const J={by:srBy(),at:ts,verdict:"back"};
+  const rec=JSON.parse(JSON.stringify(e||{}));
+  rec.day=key;
+  rec.sits=srSits(e).map(s=>Object.assign({},s,(s&&s.judged)?{}:{judged:J}));
+  rec.sentBack=Object.assign({},J,(opt&&opt.sit!=null)?{sit:opt.sit}:{});
+  let id=key+"_"+ts, n=1; while(taken&&taken[id]) id=key+"_"+ts+"_"+(n++);   // two send-backs in one millisecond keep both
+  return {id:id,rec:rec};
+}
+// PURE over masteryData: today's finished sittings, every kid, in roster order (then any other kid with a log).
+function srRows(){
+  const M=(typeof masteryData!=="undefined"&&masteryData)||{}, out=[];
+  const lk=_todayStr().replace(/-/g,""), uk=mstTodayKey();
+  const kids=((typeof ROSTER!=="undefined"&&ROSTER)||[]).slice();
+  Object.keys(M.studyLog||{}).concat(Object.keys(M.studyBack||{})).forEach(k=>{ if(kids.indexOf(k)<0) kids.push(k); });
+  kids.forEach(kid=>{
+    let sessions=[]; try{ sessions=mstSessions(kid)||[]; }catch(e){}
+    sessions.forEach(s=>{
+      if(!s||s.kind==="checkup"||s.who==="mom") return;   // Mom runs and judges those herself
+      const deck=(s.emoji||"\u{1F4DA}")+" "+(s.name||s.sid);
+      const add=(sit,o)=>{ const total=(sit&&sit.total)||0; if(!total) return; out.push(Object.assign({kid,sid:s.sid,deck,total,secs:sit.secs??null,judged:sit.judged||null},o)); };
+      const sb=((M.studyBack||{})[kid]||{})[s.sid]||{}, log=sb.log||{};
+      if(!sb.log&&sb.ts&&(sb.date===lk||sb.date===uk)) add({secs:sb.secs,total:sb.total},{key:sb.date,i:0,back:true});   // sent back before SREVIEW: only the record's numbers
+      Object.keys(log).map(id=>({id,r:log[id]})).filter(x=>x.r&&(x.r.day===lk||x.r.day===uk))
+        .sort((a,b)=>((a.r.sentBack||{}).at||0)-((b.r.sentBack||{}).at||0))
+        .forEach(x=>srSits(x.r).forEach((sit,i)=>add(sit,{key:x.r.day,i,arc:x.id,back:true})));
+      const key=_mstTodayLogKey(kid,s.sid);
+      if(key) srSits(M.studyLog[kid][s.sid][key]).forEach((sit,i)=>add(sit,{key,i}));
+    });
+  });
+  return out;
+}
+function srRowHTML(r,i,floor){
+  const pc=srPerCard(r.secs,r.total), red=pc!=null&&pc<floor;
+  const btn=(fn,txt,bg)=>'<button onclick="'+fn+'('+i+')" style="padding:4px 10px;border-radius:8px;border:none;background:'+bg+';color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+txt+'</button>';
+  const v=r.back?'<span style="font-size:11px;font-weight:800;color:#b45309;white-space:nowrap">↩ Sent back</span>'
+    :(r.judged&&r.judged.verdict==="ok")?'<span style="font-size:11px;font-weight:800;color:#16a34a;white-space:nowrap">👍 Looks right</span>'
+    :btn("srOk","👍 Looks right","#16a34a")+btn("srBack","↩ Too fast — send back","#b45309");
+  return '<div style="display:flex;align-items:center;gap:6px;padding:7px 10px;background:'+(red?"#fef2f2":"#f8fafc")+';border-left:3px solid '+(red?"#dc2626":"#94a3b8")+';border-radius:8px;margin-bottom:6px;flex-wrap:wrap">'
+    +'<span style="flex:1;min-width:180px;font-size:13px"><b>'+esc(cap(r.kid))+'</b> — '+esc(r.deck)+' · '+r.total+' cards · '+srMSS(r.secs)+' · '
+    +'<b style="color:'+(red?"#dc2626":"inherit")+'">'+(pc==null?"—":pc+" s/card")+'</b></span>'+v+'</div>';
+}
+function srNowHTML(){
+  const rows=srRows(); _srRows=rows;
+  if(!rows.length) return {n:0,html:""};
+  const floor=srFloor();
+  return {n:rows.filter(r=>!r.back&&!r.judged).length,
+    html:'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:10px 0 6px">\u{1F552} Study sittings today'
+      +' <button onclick="srSetFloor()" style="margin-left:4px;padding:1px 7px;border-radius:7px;border:1px solid #d6d3d1;background:#fff;color:#6b6560;font-size:10px;font-weight:700;cursor:pointer;text-transform:none;letter-spacing:0">red under '+floor+' s/card ✏️</button></div>'
+      +rows.map((r,i)=>srRowHTML(r,i,floor)).join("")};
+}
+function _srGate(go){ if(typeof momHere==="function"&&momHere()) go(); else if(typeof kitPinGate==="function") kitPinGate(go); }
+function _srLive(){ return typeof db!=="undefined"&&!!db&&!(typeof _dryRun==="function"&&_dryRun()); }
+function srOkDo(r){
+  if(!r||r.back) return false;
+  const e=((((masteryData.studyLog||{})[r.kid])||{})[r.sid]||{})[r.key]; if(!e) return false;
+  const J={by:srBy(),at:Date.now(),verdict:"ok"}, base="mastery/studyLog/"+r.kid+"/"+r.sid+"/"+r.key;
+  if(Array.isArray(e.sits)&&e.sits.length){
+    const s=e.sits[r.i]; if(!s||s.judged) return false;   // a verdict is written once
+    s.judged=J;
+    if(_srLive()) db.ref(base+"/sits/"+r.i+"/judged").set(J);
+  } else {
+    if(r.i!==0) return false;
+    e.sits=[{secs:e.secs??null,total:e.total||0,judged:J}];   // a sitting logged before per-sitting times: its one sitting
+    if(_srLive()) db.ref(base+"/sits").set(e.sits);
+  }
+  return true;
+}
+function srOk(i){ const r=_srRows[i]; if(!r) return; _srGate(()=>{ if(srOkDo(r)){ try{ if(typeof renderAll==="function") renderAll(); }catch(_){} } }); }
+function srBack(i){ const r=_srRows[i]; if(!r||r.back||r.judged) return; _srGate(()=>mstSendBackDo(r.kid,r.sid,{sit:r.i})); }
+function srSetFloor(){
+  _srGate(()=>{
+    const v=prompt("Show a study sitting in red when it went faster than how many seconds a card?",String(srFloor()));
+    if(v==null) return;
+    const f=Math.round(parseFloat(v)*10)/10;
+    if(!(f>0&&f<=120)){ alert("Please type a number of seconds, like 3."); return; }
+    if(!masteryData.studyReview) masteryData.studyReview={};
+    masteryData.studyReview.floor=f;
+    if(_srLive()) db.ref("mastery/studyReview/floor").set(f);
+    try{ if(typeof renderAll==="function") renderAll(); }catch(_){}
+  });
+}
+// SREVIEW_END
 // ── MST_UI_END ──
 // ── MHQ_START ──
 // ── Mastery HQ — Mom-facing, READ-ONLY Anki-style deck browser over the existing
