@@ -358,7 +358,7 @@ const updates = w => w.writes.filter(x => x[0] === "update" && x[1] === "week2/t
   const w3 = healWorld({ tasks: [T, lesson("L1", "11:00 AM", "L19 NG · day 2 of 5")] }); w3.ctx._haUnitsReady = true;
   w3.ctx.stHeal();
   ok("…but with the unit loaded a really stale card (practice day now) still goes", updates(w3).length === 1 && updates(w3)[0]["andrew_st_L1-18"] === null);
-  ok("the units listener marks them ready and runs the heal once on first arrival", /unitStudies=s\.val\(\)\|\|\{\}; const _uFirst=!_haUnitsReady; _haUnitsReady=true;/.test(src) && /if\(_uFirst\)\{ try\{ if\(typeof stHeal==="function"\) stHeal\(\); \}catch\(e\)\{\} \}/.test(src) && /if\(!_haUnitsReady\) return;/.test(slice("stHeal")));
+  ok("the units listener marks them ready and runs the heal once on first arrival", /unitStudies=(?:s\.val\(\)\|\|\{\}|\(typeof haDecodeUnits==="function"\?haDecodeUnits\(s\.val\(\)\|\|\{\}\):s\.val\(\)\|\|\{\}\)); const _uFirst=!_haUnitsReady; _haUnitsReady=true;/.test(src) && /if\(_uFirst\)\{ try\{ if\(typeof stHeal==="function"\) stHeal\(\); \}catch\(e\)\{\} \}/.test(src) && /if\(!_haUnitsReady\) return;/.test(slice("stHeal")));
 }
 ok("the week's cards listener runs it right after rvHeal (first load or a changed task set)", /try\{ rvHeal\(\); \}catch\(e\)\{\} \}[^\n]*\n\s*if\(firstLoad \|\| inFP!==curFP\)\{ try\{ if\(typeof stHeal==="function"\) stHeal\(\); \}catch\(e\)\{\} \}/.test(src));
 ok("…and again when the mastery records first arrive and when the checked list lands (live 2026-10-14: the cards came first, the heal waited, nothing re-ran it)",

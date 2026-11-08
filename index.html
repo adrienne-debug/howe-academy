@@ -4495,7 +4495,7 @@ function initFb() {
     });
     db.ref("mastery").on("value",s=>{
       const v=s.val()||{};
-      masteryData={...v};
+      masteryData=(typeof haDecodeMastery==="function"?haDecodeMastery({...v}):{...v});   // 🔤 HAKEY: coded keys back to the names Mom typed
       const _mastFirst=!_haMastReady;
       try{ if(_mastFirst&&typeof cdMark==="function") cdMark("mastMs"); }catch(eM){}   // ⏱ CDBOOTS
       _haMastReady=true;   // MASTGATE: real data is in — Mastery writes allowed from here on
@@ -4531,7 +4531,7 @@ function initFb() {
     db.ref("grabClaims").on("value",s=>{ grabClaims=s.val()||{}; if(typeof renderAllSoon==="function") renderAllSoon(); });
     db.ref("techGrace").on("value",s=>{ techGrace=s.val()||{}; });
     db.ref("techOff").on("value",s=>{ techOff=s.val()||{}; if(typeof renderAllSoon==="function") renderAllSoon(); });   // 📱 TECHSWITCH
-    db.ref("unitStudies").on("value",s=>{ unitStudies=s.val()||{}; const _uFirst=!_haUnitsReady; _haUnitsReady=true; if(typeof envHydrateAll==="function") envHydrateAll(); /* 🌿 ENVUNIT: cards from envirothon.js */ if(tab==="units"){const el=document.getElementById("content");if(el)renderUnits(el);} else if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);}
+    db.ref("unitStudies").on("value",s=>{ unitStudies=(typeof haDecodeUnits==="function"?haDecodeUnits(s.val()||{}):s.val()||{}); const _uFirst=!_haUnitsReady; _haUnitsReady=true; if(typeof envHydrateAll==="function") envHydrateAll(); /* 🌿 ENVUNIT: cards from envirothon.js */ if(tab==="units"){const el=document.getElementById("content");if(el)renderUnits(el);} else if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);}
       if(_uFirst){ try{ if(typeof stHeal==="function") stHeal(); }catch(e){} } if(_uFirst){ try{ if(typeof ckSpentHeal==="function") ckSpentHeal(); }catch(e){} } });   // 📝 STHEAL waits for the units (live 2026-10-14 10:29 PM: it ran before they arrived, every test card looked stale, Andrew's was removed)
     db.ref("att_overrides").on("value",s=>{
       if(s.val()) attOverrides=s.val();
@@ -4573,7 +4573,7 @@ function boot() {
   try{ const af=HA_LS.getItem('act_favs'); if(af) actFavs=JSON.parse(af); }catch(e){}
   try{ const md=HA_LS.getItem("momday_data"); if(md) momdayData=JSON.parse(md); }catch(e){}
   try{ const pc=HA_LS.getItem("ha_pace"); if(pc) paceData=JSON.parse(pc); }catch(e){}
-  try{ const md=HA_LS.getItem("ha_mastery"); if(md) masteryData=JSON.parse(md); }catch(e){}
+  try{ const md=HA_LS.getItem("ha_mastery"); if(md) masteryData=(typeof haDecodeMastery==="function"?haDecodeMastery(JSON.parse(md)):JSON.parse(md)); }catch(e){}   // 🔤 HAKEY
   try{ const ao=HA_LS.getItem("ha_att_overrides"); if(ao) attOverrides=JSON.parse(ao); }catch(e){}
   try{ const ce=HA_LS.getItem("ha_co_excl"); if(ce) coExclusions=JSON.parse(ce); }catch(e){}
   try{ const we=HA_LS.getItem("ha_wb_excl"); if(we) walkbackExcl=JSON.parse(we); }catch(e){}
@@ -8308,6 +8308,7 @@ function renderMomHQ(el,ah){
   try{ if(typeof stPendingHTML==="function") h+=stPendingHTML(); }catch(e){}   // 📝 spelling tests waiting to be graded
   try{ if(typeof pdPendingHTML==="function") h+=pdPendingHTML(); }catch(e){}   // 🖨 PDGRADE: paper drills waiting to be graded
   try{ if(typeof cbNudgeHTML==="function") h+=cbNudgeHTML(); }catch(e){}   // 🔁 graduated words came back
+  try{ if(typeof haKeyHealHTML==="function") h+=haKeyHealHTML(); }catch(e){}   // 🔤 HAKEY: names with a period or slash saved under the wrong key (only when there are some)
   h+=_hqGroup("🏫","School",[
     // RETIREMENT Stage 2 (2026-08-11): the Subjects & Builder rows are hidden — the
     // Grid is the whole curriculum now (cards pop from column titles, 🧱 pacing
@@ -39789,7 +39790,7 @@ function psSet(field,val){
 // The gate for every deck of the unit, then the existing enroll for a kid who is not enrolled yet (not in dry run: unitEnroll writes directly).
 function psGateAndEnroll(u,kid,gate){
   const st=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={}); st.cat_gate=st.cat_gate||{}; let n=0;
-  utArr(u.decks).forEach(d=>{ if(!d||!d.key) return; st.cat_gate[d.key]=Object.assign({},gate); n++; if(psLive()) db.ref("mastery/"+kid+"_settings/cat_gate/"+d.key).set(st.cat_gate[d.key]); });
+  utArr(u.decks).forEach(d=>{ if(!d||!d.key) return; st.cat_gate[d.key]=Object.assign({},gate); n++; if(psLive()) db.ref("mastery/"+kid+"_settings/cat_gate/"+(typeof haKey==="function"?haKey(d.key):d.key)).set(st.cat_gate[d.key]); });
   const staged=(typeof _unitStagedEnrollPending==="function")&&_unitStagedEnrollPending(u);
   if(!(u.enrolled||{})[kid]&&!staged&&!psDry()&&typeof unitEnroll==="function") unitEnroll(u.id,kid);
   return n;
@@ -40810,7 +40811,7 @@ function ubSave(){
     f.saving=true; f.pendingU=u; f.msg="";
     f.saveTimer=setTimeout(()=>{ f.saveTimer=null; if(f.saving&&!f.saved) unlock("Still saving \u2014 check your connection, then tap Save again."); },UB_SAVE_WAIT_MS);
     ubRe();
-    db.ref("unitStudies/"+u.id).transaction(cur=>cur?undefined:u).then(r=>{ if(r&&r.committed) return done();
+    db.ref("unitStudies/"+u.id).transaction(cur=>cur?undefined:(typeof haUnitOut==="function"?haUnitOut(u):u)).then(r=>{ if(r&&r.committed) return done();
       const v=(r&&r.snapshot&&typeof r.snapshot.val==="function")?r.snapshot.val():null;
       if(v&&v.id===u.id&&v.addedTs===u.addedTs) return done();   // UBSAVELOCK: what is there is this save's own first try
       if(f.pendingU===u) f.pendingU=null; unlock("A unit with that name was just made on another device \u2014 rename and save again."); })
@@ -47961,7 +47962,7 @@ function wrPlanAttach(kid,ts){
   const have=new Set();
   W("unitStudies/word_roots/enrolled/"+kid,true,"puts him in the unit");
   W("unitStudies/word_roots/kidStage/"+kid,{stage:1,subject:sk,knows:"",map:"",ts:P.ts,via:"wr_attach"},"his start: Beginning, gated by his Word Roots lessons");
-  W("mastery/"+kid+"_settings/cat_gate/"+WR_DECK,{subject:sk,after:"done"},"new roots open once he checks off their Word Roots lesson");
+  W("mastery/"+kid+"_settings/cat_gate/"+(typeof haKey==="function"?haKey(WR_DECK):WR_DECK),{subject:sk,after:"done"},"new roots open once he checks off their Word Roots lesson");
   saved.forEach(({i,e})=>{ const n=e.name; have.add(n);
     if(WR_DROP.indexOf(n)>=0){ if(!isLive.has(n)){ W(base+i,null,"removes “"+n+"” (it never became a card)"); S.dropped.push(n); } else S.other.push(n); return; }
     const c=card[n];
@@ -47974,7 +47975,7 @@ function wrPlanAttach(kid,ts){
   });
   let next=idxs.length?Math.max(...idxs)+1:0;
   const backFor=(n,c)=>{ if(typeof mastDefKeyOk==="function"&&!mastDefKeyOk(n)) S.slashBacks.push(n);
-    else if(!defs[n]&&!(retire&&vocab(n))){ W("mastery/"+kid+"_settings/definitions/"+n,String(c.def),"back for "+n+": “"+c.def+"”"); S.defsNew.push(n); } };
+    else if(!defs[n]&&!(retire&&vocab(n))){ W("mastery/"+kid+"_settings/definitions/"+(typeof haKey==="function"?haKey(n):n),String(c.def),"back for "+n+": “"+c.def+"”"); S.defsNew.push(n); } };
   const was=n=>Object.keys(bmap).find(b=>bmap[b]===n);
   cards.filter(c=>c.stage===1).forEach(c=>{ const n=c.name; if(have.has(n)||isLive.has(n)) return; have.add(n);
     const bi=isBuiltIn(n);
@@ -48001,7 +48002,7 @@ function wrPlanAttach(kid,ts){
   const mix=[]; let bi=0,mi=0; while(bi<B.length||mi<M.length){ for(let k=0;k<3&&bi<B.length;k++) mix.push(B[bi++]); if(mi<M.length) mix.push(M[mi++]); }
   const rest=prev.concat(retire?builtIn.filter(b=>!bmap[b]):builtIn,saved.map(x=>x.e.name)).filter((n,ix,a)=>a.indexOf(n)===ix&&inBank(n)&&!isLive.has(n)&&!card[n]&&WR_DROP.indexOf(n)<0);
   const order=P.order=cardsFirst.concat(mix,L,rest);
-  W("mastery/"+kid+"_bank_order/"+WR_DECK,order,"his list order: book order, one More root after every 3 book roots");
+  W("mastery/"+kid+"_bank_order/"+(typeof haKey==="function"?haKey(WR_DECK):WR_DECK),order,"his list order: book order, one More root after every 3 book roots");
   // What would start next (the auto-pull reads the bank in this order, gate applied)
   const chPlan={}; saved.forEach(({e})=>{ const c=card[e.name]; const ch=chOf(c); if(ch!=null) chPlan[e.name]=ch; });
   cards.filter(c=>c.stage===1).forEach(c=>{ if(chPlan[c.name]==null&&!isLive.has(c.name)) chPlan[c.name]=c.lesson; });
@@ -48701,7 +48702,7 @@ function starterUnitAdd(id){
   const done=()=>{ unitStudies[id]=u; if(typeof envHydrateAll==="function") envHydrateAll(); const el=document.getElementById("content"); if(el) renderUnits(el); };   // 🌿 ENVUNIT
   if(db&&!_dryRun()){
     // Only ever creates the node — if this family already has it (another device), leave theirs alone.
-    db.ref("unitStudies/"+id).transaction(cur=>cur?undefined:u).then(r=>{ if(r&&r.committed) done(); }).catch(()=>{});
+    db.ref("unitStudies/"+id).transaction(cur=>cur?undefined:(typeof haUnitOut==="function"?haUnitOut(u):u)).then(r=>{ if(r&&r.committed) done(); }).catch(()=>{});
   } else done();
 }
 // UNIT_STAGES_START — staged enroll + book link (her plan 2026-10-02). A staged unit (u.stages) enrolls
@@ -48797,13 +48798,13 @@ function _ustWrite(unitId,kid,w,rec){
   if(!db||_dryRun()) return;
   if(Object.keys(w.iu).length) db.ref("mastery/"+kid).update(w.iu);
   if(Object.keys(w.bu).length) db.ref("mastery/"+kid+"_custom_items").update(w.bu);
-  db.ref("mastery/"+kid+"_settings/cat_modes").update(w.modes);
-  db.ref("mastery/"+kid+"_settings/cat_intro_max").update(w.intro);
-  if(Object.keys(w.defs).length) db.ref("mastery/"+kid+"_settings/definitions").update(w.defs);
-  if(w.gate) db.ref("mastery/"+kid+"_settings/cat_gate/"+w.gate.key).set(w.gate.v);
-  (w.gates||[]).forEach(g=>db.ref("mastery/"+kid+"_settings/cat_gate/"+g.key).set(g.v));   // 📘 AAS: every deck opens by lesson
-  if(w.hold&&Object.keys(w.hold).length) db.ref("mastery/"+kid+"_settings/cat_hold").update(w.hold);
-  if(w.howto&&Object.keys(w.howto.main).length){ db.ref("mastery/"+kid+"_settings/cat_instructions").update(w.howto.main); db.ref("mastery/"+kid+"_settings/cat_instructions_kid").update(w.howto.kid); }   // STARTER_HOWTO
+  db.ref("mastery/"+kid+"_settings/cat_modes").update((typeof haKeys==="function"?haKeys(w.modes):w.modes));
+  db.ref("mastery/"+kid+"_settings/cat_intro_max").update((typeof haKeys==="function"?haKeys(w.intro):w.intro));
+  if(Object.keys(w.defs).length) db.ref("mastery/"+kid+"_settings/definitions").update((typeof haKeys==="function"?haKeys(w.defs):w.defs));
+  if(w.gate) db.ref("mastery/"+kid+"_settings/cat_gate/"+(typeof haKey==="function"?haKey(w.gate.key):w.gate.key)).set(w.gate.v);
+  (w.gates||[]).forEach(g=>db.ref("mastery/"+kid+"_settings/cat_gate/"+(typeof haKey==="function"?haKey(g.key):g.key)).set(g.v));   // 📘 AAS: every deck opens by lesson
+  if(w.hold&&Object.keys(w.hold).length) db.ref("mastery/"+kid+"_settings/cat_hold").update((typeof haKeys==="function"?haKeys(w.hold):w.hold));
+  if(w.howto&&Object.keys(w.howto.main).length){ db.ref("mastery/"+kid+"_settings/cat_instructions").update((typeof haKeys==="function"?haKeys(w.howto.main):w.howto.main)); db.ref("mastery/"+kid+"_settings/cat_instructions_kid").update((typeof haKeys==="function"?haKeys(w.howto.kid):w.howto.kid)); }   // STARTER_HOWTO
   db.ref("unitStudies/"+unitId+"/kidStage/"+kid).set(rec);
   db.ref("unitStudies/"+unitId+"/enrolled/"+kid).set(true);
 }
@@ -49210,10 +49211,10 @@ function unitEnroll(unitId,kid){
   if(db){
     const iu={}; for(let i=startItems;i<items.length;i++) iu[i]=items[i]; if(Object.keys(iu).length) db.ref("mastery/"+kid).update(iu);
     const bu={}; for(let i=startBank;i<bank.length;i++) bu[i]=bank[i]; if(Object.keys(bu).length) db.ref("mastery/"+kid+"_custom_items").update(bu);
-    db.ref("mastery/"+kid+"_settings/cat_modes").update(settings.cat_modes);
-    db.ref("mastery/"+kid+"_settings/cat_intro_max").update(settings.cat_intro_max);
-    if(settings.cat_gate&&(u.decks||[]).some(d=>d&&d.gate&&d.gate.subject)){ const _gu={}; (u.decks||[]).forEach(d=>{ if(d&&d.gate&&d.gate.subject) _gu[d.key]={subject:d.gate.subject}; }); db.ref("mastery/"+kid+"_settings/cat_gate").update(_gu); }
-    db.ref("mastery/"+kid+"_settings/definitions").update(settings.definitions);
+    db.ref("mastery/"+kid+"_settings/cat_modes").update((typeof haKeys==="function"?haKeys(settings.cat_modes):settings.cat_modes));
+    db.ref("mastery/"+kid+"_settings/cat_intro_max").update((typeof haKeys==="function"?haKeys(settings.cat_intro_max):settings.cat_intro_max));
+    if(settings.cat_gate&&(u.decks||[]).some(d=>d&&d.gate&&d.gate.subject)){ const _gu={}; (u.decks||[]).forEach(d=>{ if(d&&d.gate&&d.gate.subject) _gu[d.key]={subject:d.gate.subject}; }); db.ref("mastery/"+kid+"_settings/cat_gate").update((typeof haKeys==="function"?haKeys(_gu):_gu)); }
+    db.ref("mastery/"+kid+"_settings/definitions").update((typeof haKeys==="function"?haKeys(settings.definitions):settings.definitions));
     db.ref("unitStudies/"+unitId+"/enrolled/"+kid).set(true);
   }
   if(!u.enrolled) u.enrolled={}; u.enrolled[kid]=true;
@@ -49717,7 +49718,7 @@ function envmRelease(kid,rel){
   Object.keys(rel).forEach(k=>{ if(!rel[k]) return; (u.decks||[]).forEach(d=>{ if(d&&d.key&&(d.key===k||d.station===k)&&hold[d.key]&&open.indexOf(d.key)<0) open.push(d.key); }); });
   open.forEach(dk=>{
     delete hold[dk];
-    if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("mastery/"+kid+"_settings/cat_hold/"+dk).remove();
+    if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("mastery/"+kid+"_settings/cat_hold/"+(typeof haKey==="function"?haKey(dk):dk)).remove();
     envmNotice("\u{1F33F} "+dk+" released by your teacher");
   });
   if(open.length){ envmSchedule("release"); if(typeof renderAllSoon==="function") renderAllSoon(); }
@@ -56715,11 +56716,11 @@ function cpsdRelease(kid,rel,u){
     (u.decks||[]).forEach(d=>{ if(!d||!d.key) return; const dk=d.key;
       if(p.level==="kc"){ if(d.station!==p.sec) return;
         if(Array.isArray(d.cards)&&d.cards.length){ const K=cpsdConcepts(p.sec); if(!d.cards.some(c=>cpsdKcOf(c,p.sec,K)===p.kc)) return; }   // a deck with none of this Key Concept stays as it is
-        if(hold[dk]){ upd["cat_hold/"+dk]=null; upd["cat_open/"+dk+"/"+p.kc]=ts; delete hold[dk]; setOpen(dk,Object.assign({},open[dk]||{},{[p.kc]:ts})); notes.push(cpsdLabel(k)); }
-        else if(open[dk]&&typeof open[dk]==="object"&&!open[dk][p.kc]){ upd["cat_open/"+dk+"/"+p.kc]=ts; open[dk][p.kc]=ts; notes.push(cpsdLabel(k)); }
+        if(hold[dk]){ upd["cat_hold/"+(typeof haKey==="function"?haKey(dk):dk)]=null; upd["cat_open/"+(typeof haKey==="function"?haKey(dk):dk)+"/"+p.kc]=ts; delete hold[dk]; setOpen(dk,Object.assign({},open[dk]||{},{[p.kc]:ts})); notes.push(cpsdLabel(k)); }
+        else if(open[dk]&&typeof open[dk]==="object"&&!open[dk][p.kc]){ upd["cat_open/"+(typeof haKey==="function"?haKey(dk):dk)+"/"+p.kc]=ts; open[dk][p.kc]=ts; notes.push(cpsdLabel(k)); }
         return; }
       if(dk!==k&&d.station!==k) return;
-      if(hold[dk]||open[dk]){ upd["cat_hold/"+dk]=null; upd["cat_open/"+dk]=null; delete hold[dk]; delete open[dk]; notes.push(dk); } }); });
+      if(hold[dk]||open[dk]){ upd["cat_hold/"+(typeof haKey==="function"?haKey(dk):dk)]=null; upd["cat_open/"+(typeof haKey==="function"?haKey(dk):dk)]=null; delete hold[dk]; delete open[dk]; notes.push(dk); } }); });
   const n=Object.keys(upd).length; if(!n) return 0;
   if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())&&!cpsdDemo()) db.ref("mastery/"+kid+"_settings").update(upd);
   notes.filter((x,i)=>notes.indexOf(x)===i).forEach(x=>{ if(typeof envmNotice==="function") envmNotice("\u{1F33F} "+x+" released by your teacher"); });
@@ -57228,7 +57229,7 @@ function cpAheadList(kid){
 function cpAheadApply(kid,secs){
   const M=(typeof masteryData!=="undefined"&&masteryData)||{}, st=M[kid+"_settings"]; if(!st||!Array.isArray(secs)||!secs.length) return 0; const hold=st.cat_hold||{}, open=st.cat_open||{}, upd={};
   if(cpahDemo()&&typeof cpsdDemoCards==="function"){ try{ const u=(typeof unitStudies!=="undefined"&&unitStudies)?unitStudies[(typeof ENV_UNIT_ID!=="undefined")?ENV_UNIT_ID:"nc_envirothon"]:null; const rel={}; secs.forEach(x=>{ rel[x]={openedAt:Date.now()}; }); if(u) cpsdDemoCards(kid,u,rel); }catch(e){} }   // the demo's sample deck brings a few real cards along
-  secs.forEach(sec=>{ ((cpahSec(sec)||{}).decks||[]).forEach(d=>{ const dk=d.key; if(hold[dk]||open[dk]){ upd["cat_hold/"+dk]=null; upd["cat_open/"+dk]=null; delete hold[dk]; delete open[dk]; } }); });
+  secs.forEach(sec=>{ ((cpahSec(sec)||{}).decks||[]).forEach(d=>{ const dk=d.key; if(hold[dk]||open[dk]){ upd["cat_hold/"+(typeof haKey==="function"?haKey(dk):dk)]=null; upd["cat_open/"+(typeof haKey==="function"?haKey(dk):dk)]=null; delete hold[dk]; delete open[dk]; } }); });
   const n=Object.keys(upd).length; if(!n) return 0;
   if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())&&!cpahDemo()) db.ref("mastery/"+kid+"_settings").update(upd);
   if(typeof envmSchedule==="function"&&!cpahDemo()) envmSchedule("release");
@@ -58154,7 +58155,7 @@ function unitBatchSave(){
     });
     const defsU={};
     fresh.forEach(c=>{ if(mastDefKeyOk(c.name)) defsU[c.name]=c.def; });
-    if(db&&Object.keys(defsU).length) db.ref("mastery/"+kid+"_settings/definitions").update(defsU);
+    if(db&&Object.keys(defsU).length) db.ref("mastery/"+kid+"_settings/definitions").update((typeof haKeys==="function"?haKeys(defsU):defsU));
   });
   unitBatchClose();
   alert("✓ "+fresh.length+" card"+(fresh.length>1?"s":"")+" added to "+deck.key+(kids.length?" — flowing to "+kids.map(cap).join(", ")+" via auto-pull":""));
@@ -58227,7 +58228,7 @@ function unitEditSave(){
     card.def=def; if(db) db.ref("unitStudies/"+unitEdit.unitId+"/decks/"+di+"/cards/"+ci+"/def").set(def);
     // The drill's flip answer is each kid's definitions map — push the edit to every enrolled kid
     const enr=Object.keys(u.enrolled||{}).filter(k=>(u.enrolled||{})[k]);
-    enr.forEach(k=>{ const s=masteryData[k+"_settings"]||(masteryData[k+"_settings"]={}); if(!s.definitions) s.definitions={}; s.definitions[card.name]=def; if(db) db.ref("mastery/"+k+"_settings/definitions").update({[card.name]:def}); });
+    enr.forEach(k=>{ const s=masteryData[k+"_settings"]||(masteryData[k+"_settings"]={}); if(!s.definitions) s.definitions={}; s.definitions[card.name]=def; if(db) db.ref("mastery/"+k+"_settings/definitions").update({[(typeof haKey==="function"?haKey(card.name):card.name)]:def}); });
   }
   { const _pw=unitPicsPlan(key,(u.visuals||{})[key],unitEdit.newImg,unitEdit.pics);   // UNITMULTIPIC: the photo + its extra pictures, targeted
     if(_pw){ if(!u.visuals) u.visuals={}; u.visuals[key]=_pw.vis; if(db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("unitStudies/"+unitEdit.unitId).update(_pw.up); } }
@@ -58306,7 +58307,7 @@ function unitPicsSave(){
   const upd={}; unitPics.found.forEach(f=>{ if(f.on&&f.url) upd[f.key]={imageUrl:f.url,credit:f.credit}; });
   if(Object.keys(upd).length){
     if(!u.visuals) u.visuals={}; Object.keys(upd).forEach(k=>{ u.visuals[k]=upd[k]; });
-    if(db&&!_dryRun()) db.ref("unitStudies/"+unitPics.unitId+"/visuals").update(upd);   // only the chosen keys; other visuals untouched
+    if(db&&!_dryRun()) db.ref("unitStudies/"+unitPics.unitId+"/visuals").update((typeof haKeys==="function"?haKeys(upd):upd));   // only the chosen keys; other visuals untouched
   }
   unitPicsClose();
   if(typeof document!=="undefined"){ const el=document.getElementById("content"); if(el&&typeof renderUnits==="function") renderUnits(el); }
@@ -71571,7 +71572,7 @@ function mastGetDef(kid,prompt,deck){
 // ── Definition audio: flip-card voice recordings ─────────────────
 // Mom records herself reading the definition when adding a flip card; the flip back gets
 // a 🔊 Hear It button. Stored like card photos — a data-URL in RTDB, keyed by prompt in
-// <kid>_settings/def_audio (same key rules as definitions: mastDefKeyOk, no periods).
+// <kid>_settings/def_audio (keyed by haKey(prompt) — 🔤 HAKEY: a front with a period or slash codes its key).
 // Recording prefers audio/mp4 (AAC) so a clip recorded on ANY device plays on the kids'
 // iPads — Safari can't play webm/opus; webm is the fallback when mp4 isn't available.
 let mastRecState=null;   // {recorder,timer} while the mic is live
@@ -71890,7 +71891,7 @@ function mastSetShowMeCue(kid,deck,v){
   const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
   if(!s.show_me_cue) s.show_me_cue={};
   s.show_me_cue[deck]=v;
-  if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/show_me_cue").update({[deck]:v});   // this deck only — never the whole map
+  if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/show_me_cue").update({[(typeof haKey==="function"?haKey(deck):deck)]:v});   // this deck only — never the whole map
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
@@ -72363,7 +72364,7 @@ function mastMatchFinish(){
   try{ if((st.then==="pick"&&st.ofN>0&&st.firstTry===st.ofN)||st.isPB){ if(typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F3AF} "+st.deck+" cleared!",{noSong:true}); } }catch(e){}
   if(st.isPB){
     s.match_best[key]=sec;
-    if(db) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:sec});  // this key only
+    if(db) db.ref("mastery/"+kid+"_settings/match_best").update({[(typeof haKey==="function"?haKey(key):key)]:sec});  // this key only
     try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
 }
@@ -72664,7 +72665,7 @@ function whichFinish(st){
   st.isPB=st.first>0&&(prev==null||st.first>prev);
   if(st.isPB){
     s.match_best[key]=st.first;
-    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[(typeof haKey==="function"?haKey(key):key)]:st.first});   // this key only
     try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
   // A clean round (every card on the first tap) gets the small confetti — no points, no song.
@@ -73597,7 +73598,7 @@ function mastRemoveDefAudio(kid,prompt){
   const s=masteryData[kid+"_settings"]||{};
   if(s.def_audio) delete s.def_audio[prompt];
   masteryData[kid+"_settings"]=s;
-  if(db) db.ref("mastery/"+kid+"_settings/def_audio").update({[prompt]:null});  // this key only
+  if(db) db.ref("mastery/"+kid+"_settings/def_audio").update({[(typeof haKey==="function"?haKey(prompt):prompt)]:null});  // this key only
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
@@ -73606,18 +73607,17 @@ function mastListSaveRec(id){
   let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
   const it=items.find(x=>x&&x.id===id);
   if(!it){ mastRecAudio=""; return; }
-  if(!mastDefKeyOk(it.prompt)){ mastRecErr="This card's front can't key a recording (. # $ [ ] /)"; mastRecAudio=""; return; }
   mastSaveDefAudio(masteryKid,it.prompt);
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 }
 // Save the pending clip for a prompt (targeted write, same key rules as definitions).
 function mastSaveDefAudio(kid,prompt){
-  if(!mastRecAudio||!mastDefKeyOk(prompt)) return false;
+  if(!mastRecAudio) return false;   // 🔤 HAKEY: any front keys a clip (coded key)
   const s=masteryData[kid+"_settings"]||{};
   if(!s.def_audio) s.def_audio={};
   s.def_audio[prompt]=mastRecAudio;
   masteryData[kid+"_settings"]=s;
-  if(db) db.ref("mastery/"+kid+"_settings/def_audio").update({[prompt]:mastRecAudio});  // this key only
+  if(db) db.ref("mastery/"+kid+"_settings/def_audio").update({[(typeof haKey==="function"?haKey(prompt):prompt)]:mastRecAudio});  // this key only
   mastRecAudio="";
   return true;
 }
@@ -73627,9 +73627,6 @@ function mastListRecUI(it){
   const esc=String(it.prompt).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
   const mine=mastRecTarget===it.id;
   let r='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap"><span style="font-size:11px;font-weight:600;min-width:62px;color:#374151">Voice</span>';
-  if(!mastDefKeyOk(it.prompt)){
-    return r+'<span style="font-size:10px;color:var(--muted)">front contains . # $ [ ] / \u{2014} can\'t key a clip</span></div>';
-  }
   const B='padding:5px 10px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif';
   if(mastRecState&&mine){
     r+='<button onclick="event.stopPropagation();mastRecStop()" style="'+B+';border-color:#fca5a5;background:#fee2e2;color:#dc2626">\u{23F9} Stop</button>';
@@ -74871,6 +74868,107 @@ function mastAdminCatIntroMax(cat,delta){
   mastAdminDirty=true;
   _mastRe();
 }
+// HAKEY_START — the "deck-name '.' key bug" on the open list (fixed 2026-11-08). Firebase forbids . # $ [ ] / in a KEY, and a
+// deck, card or unit name Mom types ("Ch. 3", "Dr. Seuss", "E.T.", "flex/flect") is the key of a dozen per-kid maps:
+// <kid>_settings/cat_* (cat_modes, cat_intro_max, cat_hold, cat_open, cat_gate, cat_face, …), definitions, def_audio,
+// show_me_cue, match_best, <kid>_visuals, <kid>_bank_order, and a unit's visuals. The SDK throws on . # $ [ ] (the whole
+// save fails — a new "Ch. 3" deck couldn't even get its mode) and reads / as a path (the record lands nested, under "Ch 3").
+//   · haKey(name) is the ONE key coding — the same %XX coding DEFEDIT's mastDefKey has used for definitions since 2026-10-24
+//     ("flex/flect" → "flex%2Fflect"), so every key already saved stays valid. A name without . # $ [ ] / is its own key,
+//     byte-for-byte; a coded key codes to itself (idempotent). haKeyName undoes it. The display name is never changed — it
+//     lives in the card's VALUE (cat / subject / name / prompt).
+//   · WRITES: every keyed write codes its key — a path segment +haKey(x), an update key {[haKey(x)]:v}, a whole map haKeys(m),
+//     a settings object haSettingsOut(o), a unit record haUnitOut(u).
+//   · READS: masteryData / unitStudies hold DISPLAY names in memory. haDecodeMastery / haDecodeUnits turn each coded key back
+//     into its name as the data arrives (the coded key wins over a raw one of the same name; a raw key with no coded twin — a
+//     local copy — stays as the fallback), so every reader that looks a deck up by its name finds it, unchanged.
+//   · Maps with their own "_" coding (paper_kid, cbDismiss, gameDecks) and <kid>_idflash (mastDefKey-coded in memory too) are
+//     not decoded — they never held a display name as a key.
+//   · Collisions: none between real names. haKeyName(haKey(n))===n for every n that doesn't itself contain a literal
+//     %2E %23 %24 %5B %5D %2F %25 — only such a name could meet a coded one.
+//   · HEAL (Mom HQ ▸ "Fix names with periods or slashes", shown only when something is affected): . # $ [ ] never reached the
+//     database (the SDK refused them), but a "/" name was written NESTED (cat_modes/Ch 3/4). haKeyHealPlan finds each one for a
+//     name the family really has, and the tap moves it to its coded key and removes the nested one — one targeted multi-path
+//     update per node, idempotent (a second plan is empty), never in dry run, Mom only.
+function haKeyOk(n){ return !/[.#$\[\]\/]/.test(String(n==null?"":n)); }
+function haKey(n){ n=String(n==null?"":n); return haKeyOk(n)?n:n.replace(/[.#$\[\]\/%]/g,c=>"%"+c.charCodeAt(0).toString(16).toUpperCase().padStart(2,"0")); }
+function haKeyName(k){ k=String(k==null?"":k); return /%(2E|23|24|5B|5D|2F|25)/i.test(k)?k.replace(/%(2E|23|24|5B|5D|2F|25)/gi,(m,h)=>String.fromCharCode(parseInt(h,16))):k; }
+// A map's keys coded for a write (a whole-map update). Not an object → as is.
+function haKeys(m){ if(!m||typeof m!=="object"||Array.isArray(m)) return m; const o={}, K=Object.keys(m); K.filter(k=>!haKeyOk(k)).forEach(k=>{ o[haKey(k)]=m[k]; }); K.filter(haKeyOk).forEach(k=>{ o[k]=m[k]; }); return o; }   // an already-coded key wins over its raw twin
+// Which <kid>_settings fields are keyed by a deck or card name (display names in memory, coded in the database).
+function haKeyField(f){ return /^cat_/.test(f)||f==="definitions"||f==="def_audio"||f==="show_me_cue"||f==="match_best"; }
+// A settings object (or a slice of one) ready to write: each name-keyed field's keys coded; nothing else touched.
+function haSettingsOut(o){ if(!o||typeof o!=="object") return o; let out=o; Object.keys(o).forEach(f=>{ if(haKeyField(f)&&o[f]&&typeof o[f]==="object"&&!Array.isArray(o[f])){ if(Object.keys(o[f]).some(k=>!haKeyOk(k))){ if(out===o) out=Object.assign({},o); out[f]=haKeys(o[f]); } } }); return out; }
+// A unit record ready to write: its visuals (keyed deck_front) coded.
+function haUnitOut(u){ if(!u||typeof u!=="object"||!u.visuals||typeof u.visuals!=="object") return u; return Object.keys(u.visuals).some(k=>!haKeyOk(k))?Object.assign({},u,{visuals:haKeys(u.visuals)}):u; }
+// One map back to display names. Untouched (same object) unless a key is coded; the coded key wins over a raw twin.
+function haDecodeMap(m){ if(!m||typeof m!=="object"||Array.isArray(m)) return m; let any=false; for(const k in m){ if(k.indexOf("%")>=0&&haKeyName(k)!==k){ any=true; break; } } if(!any) return m;
+  const o={}; Object.keys(m).forEach(k=>{ if(haKeyName(k)===k) o[k]=m[k]; }); Object.keys(m).forEach(k=>{ const n=haKeyName(k); if(n!==k) o[n]=m[k]; }); return o; }
+// The mastery node as it arrives (in place — it is a fresh copy): <kid>_settings name-keyed fields, <kid>_visuals, <kid>_bank_order.
+function haDecodeMastery(v){ if(!v||typeof v!=="object") return v;
+  Object.keys(v).forEach(k=>{ const x=v[k]; if(!x||typeof x!=="object"||Array.isArray(x)) return;
+    if(/_settings$/.test(k)) Object.keys(x).forEach(f=>{ if(haKeyField(f)){ const d=haDecodeMap(x[f]); if(d!==x[f]) x[f]=d; } });
+    else if(/_(visuals|bank_order)$/.test(k)){ const d=haDecodeMap(x); if(d!==x) v[k]=d; } });
+  return v; }
+// unitStudies as it arrives: each unit's visuals.
+function haDecodeUnits(us){ if(!us||typeof us!=="object") return us; Object.keys(us).forEach(id=>{ const u=us[id]; if(u&&typeof u==="object"&&u.visuals&&typeof u.visuals==="object"){ const d=haDecodeMap(u.visuals); if(d!==u.visuals) u.visuals=d; } }); return us; }
+// ── HEAL ──
+const HA_KEY_MB_SUFFIX=(()=>{ const o=[]; [""," \u{00B7} memory"].forEach(a=>[""," \u{00B7} same"].forEach(b=>[""," \u{00B7} pick"," \u{00B7} say"].forEach(c=>o.push(a+b+c)))); return o; })();   // match_best: deck + memory? + same? + pick|say
+function _hkArr(x){ return Array.isArray(x)?x:(x&&typeof x==="object"?Object.values(x):[]); }
+function _hkAt(m,segs){ let x=m; for(const s of segs){ if(!x||typeof x!=="object"||!Object.prototype.hasOwnProperty.call(x,s)) return undefined; x=x[s]; } return x; }
+// The names a kid really has: decks (item subject, bank cat, unit deck key) and cards (item prompt/name, bank name, unit card).
+function haKeyHealNames(M,us,kid){ const decks=new Set(), cards=new Set(), vis=new Set();
+  const add=(d,c)=>{ if(d!=null&&d!=="") decks.add(String(d)); if(c!=null&&c!=="") cards.add(String(c)); if(d!=null&&d!==""&&c!=null&&c!=="") vis.add(String(d)+"_"+String(c)); };
+  _hkArr(M[kid]).forEach(i=>{ if(i&&typeof i==="object") add(i.subject!=null?i.subject:i.cat,i.prompt!=null?i.prompt:i.name); });
+  _hkArr(M[kid+"_custom_items"]).forEach(e=>{ if(e&&typeof e==="object") add(e.cat,e.name); });
+  Object.keys(us||{}).forEach(id=>{ const u=us[id]; if(!u||!u.enrolled||!u.enrolled[kid]) return; _hkArr(u.decks).forEach(d=>{ if(!d||d.key==null) return; add(d.key,null); _hkArr(d.cards).forEach(c=>{ if(c&&c.name!=null) add(d.key,c.name); }); }); });
+  return {decks:decks,cards:cards,vis:vis}; }
+// Only a name whose one bad character is "/" can have left a record behind (nested); . # $ [ ] were refused outright.
+function _hkSlashOnly(n){ return n.indexOf("/")>=0&&haKeyOk(n.replace(/\//g,""))&&n.split("/").filter(Boolean).length>1; }
+// The plan: [{node, base, name, field, kid, op:"move"|"drop", value}] + the multi-path updates per node (mastery / a unit's visuals).
+function haKeyHealPlan(M,us,roster){ M=M||{}; us=us||{}; const items=[], upd={mastery:{}}, taken={};
+  const clash=(node,p)=>{ const L=taken[node]||(taken[node]=[]); if(L.some(q=>q===p||p.indexOf(q+"/")===0||q.indexOf(p+"/")===0)) return true; L.push(p); return false; };
+  const one=(node,base,map,name,field,kid)=>{ if(!map||typeof map!=="object") return; const v=_hkAt(map,name.split("/").filter(Boolean)); if(v===undefined) return;
+    const raw=name.split("/").filter(Boolean).join("/"); if(clash(node,base+"/"+raw)) return;
+    const U=node==="mastery"?upd.mastery:(upd[node]||(upd[node]={})), had=Object.prototype.hasOwnProperty.call(map,name);
+    if(!had) U[base+"/"+haKey(name)]=v; U[base+"/"+raw]=null; items.push({node:node,base:base,name:name,field:field,kid:kid,op:had?"drop":"move",value:v}); };
+  (roster||[]).forEach(kid=>{ const N=haKeyHealNames(M,us,kid), st=M[kid+"_settings"];
+    const decks=[...N.decks].filter(_hkSlashOnly), cards=[...N.cards].filter(_hkSlashOnly), vis=[...N.vis].filter(_hkSlashOnly);
+    if(st&&typeof st==="object") Object.keys(st).forEach(f=>{ if(!haKeyField(f)) return; const map=st[f];
+      const names=(f==="definitions"||f==="def_audio")?cards:f==="match_best"?[].concat(...decks.map(d=>HA_KEY_MB_SUFFIX.map(x=>d+x))):decks;
+      names.forEach(n=>one("mastery",kid+"_settings/"+f,map,n,f,kid)); });
+    vis.forEach(n=>one("mastery",kid+"_visuals",M[kid+"_visuals"],n,"visuals",kid));
+    decks.forEach(n=>one("mastery",kid+"_bank_order",M[kid+"_bank_order"],n,"bank_order",kid)); });
+  Object.keys(us).forEach(id=>{ const u=us[id]; if(!u||!u.visuals) return; const names=new Set(); _hkArr(u.decks).forEach(d=>{ if(d&&d.key!=null) _hkArr(d.cards).forEach(c=>{ if(c&&c.name!=null) names.add(String(d.key)+"_"+String(c.name)); }); });
+    [...names].filter(_hkSlashOnly).forEach(n=>one("unit:"+id,"visuals",u.visuals,n,"visuals",null)); });
+  if(!Object.keys(upd.mastery).length) delete upd.mastery;
+  return {items:items,upd:upd}; }
+const HA_KEY_FIELD_WORDS={definitions:"card back",def_audio:"voice clip",visuals:"picture",bank_order:"list order",match_best:"best time",cat_modes:"how the deck shows",cat_intro_max:"new at once",cat_hold:"waiting in the bank",cat_open:"opened",cat_gate:"opens after a lesson",cat_face:"flip face",show_me_cue:"show-me cue"};
+function haKeyHealHTML(){
+  if(!(typeof momHere==="function"&&momHere())) return "";
+  const roster=(typeof ROSTER!=="undefined")?[...ROSTER]:[]; let P; try{ P=haKeyHealPlan((typeof masteryData!=="undefined"&&masteryData)||{},(typeof unitStudies!=="undefined"&&unitStudies)||{},roster); }catch(e){ return ""; }
+  if(!P.items.length) return "";
+  const e=(typeof stEsc==="function")?stEsc:(s=>String(s).replace(/[&<>"']/g,c=>"&#"+c.charCodeAt(0)+";")), cp=s=>String(s).charAt(0).toUpperCase()+String(s).slice(1);
+  const lines=P.items.slice(0,8).map(it=>e(it.name)+' \u{2014} '+e(HA_KEY_FIELD_WORDS[it.field]||it.field)+(it.kid?' ('+e(cp(it.kid))+')':' (unit)')).join("<br>")+(P.items.length>8?"<br>…and "+(P.items.length-8)+" more":"");
+  return '<div style="margin:0 0 12px;display:flex;align-items:center;gap:10px;background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px;padding:10px 13px">'
+    +'<div style="font-size:18px">\u{1F524}</div><div style="flex:1"><div style="font-size:13px;font-weight:800;color:#78350f">Fix names with periods or slashes \u{2014} '+P.items.length+' saved setting'+(P.items.length===1?'':'s')+' under the wrong name</div>'
+    +'<div style="font-size:11.5px;color:#92400e">'+lines+'</div></div>'
+    +'<button onclick="haKeyHeal()" style="padding:6px 10px;border-radius:9px;border:none;background:#b45309;color:#fff;font-size:12px;font-weight:800;cursor:pointer">Fix names</button></div>';
+}
+function haKeyHeal(){
+  if(!(typeof momHere==="function"&&momHere())) return 0;
+  const roster=(typeof ROSTER!=="undefined")?[...ROSTER]:[], P=haKeyHealPlan(masteryData||{},(typeof unitStudies!=="undefined"&&unitStudies)||{},roster), n=P.items.length;
+  const say=m=>{ try{ if(typeof gwShowToast==="function") gwShowToast(m); }catch(e){} };
+  if(!n){ say("Nothing to fix"); return 0; }
+  if(typeof db==="undefined"||!db||(typeof _dryRun==="function"&&_dryRun())){ say("Dry run \u{2014} nothing written ("+n+" to fix)"); return 0; }
+  Object.keys(P.upd).forEach(node=>{ const u=P.upd[node]; if(!u||!Object.keys(u).length) return;
+    if(node==="mastery") db.ref("mastery").update(u);   // targeted paths only: <kid>_settings/<field>/<name>
+    else db.ref("unitStudies/"+node.slice(5)).update(u); });   // this unit's visuals/<name> only
+  say("\u{2713} Fixed "+n+" name"+(n===1?"":"s"));
+  try{ if(typeof renderAll==="function") renderAll(); }catch(e){}   // a tap: paint at once
+  return n;
+}
+// HAKEY_END
 // Firebase keys can't contain . # $ [ ] / — prompts with those (rule-card sentences)
 // can't live in the definitions map; their back belongs in item.answer instead.
 function mastDefKeyOk(p){ return !/[.#$\[\]\/]/.test(p); }
@@ -74878,7 +74976,7 @@ function mastDefKeyOk(p){ return !/[.#$\[\]\/]/.test(p); }
 // can fix meanings while I look through the book." Firebase can't use . # $ [ ] / in a key, so a meaning for a prompt like
 // "flex/flect" is saved under a coded key ("flex%2Fflect"); mastGetDef reads it right after the plain key, so every place
 // that shows a back picks it up. Plain prompts keep their plain key, byte-for-byte as before.
-function mastDefKey(p){ p=String(p); return mastDefKeyOk(p)?p:p.replace(/[.#$\[\]\/%]/g,c=>"%"+c.charCodeAt(0).toString(16).toUpperCase().padStart(2,"0")); }
+function mastDefKey(p){ p=String(p); return mastDefKeyOk(p)?p:p.replace(/[.#$\[\]\/%]/g,c=>"%"+c.charCodeAt(0).toString(16).toUpperCase().padStart(2,"0")); }   // 🔤 HAKEY: ≡ haKey(p), byte-for-byte (test_deck_key_sanitize)
 // A waiting (not yet started) name: save its meaning for this kid, and if its saved bank entry carries its own copy of the
 // meaning, update that copy too so the two never disagree (a pulled card reads the entry's copy first).
 function mastSaveWaitingDef(cat,name,def){
@@ -74901,9 +74999,10 @@ function mastSaveDef(prompt,def){
   const kid=masteryKid;
   const s=masteryData[kid+"_settings"]||{};
   if(!s.definitions) s.definitions={};
-  const key=mastDefKey(prompt);   // ✎ DEFEDIT: "flex/flect" saves under its coded key instead of being refused
-  if(def.trim()) s.definitions[key]=def.trim();
-  else delete s.definitions[key];
+  const key=mastDefKey(prompt), nm=String(prompt);   // ✎ DEFEDIT: "flex/flect" saves under its coded key instead of being refused
+  if(key!==nm) delete s.definitions[key];   // 🔤 HAKEY: memory keeps the name itself (haDecodeMastery); the coded key is the database's
+  if(def.trim()) s.definitions[nm]=def.trim();
+  else delete s.definitions[nm];
   masteryData[kid+"_settings"]=s;
   // Touch ONLY this key — writing the whole map from local state let a stale tab wipe
   // every definition added elsewhere (same wipe class as the old mastAdminSave bug).
@@ -74916,7 +75015,7 @@ function mastAdminCatMode(cat,mode){
   if(!s.cat_modes) s.cat_modes={};
   s.cat_modes[cat]=mode;
   masteryData[kid+"_settings"]=s;
-  if(db) db.ref("mastery/"+kid+"_settings/cat_modes").update({[cat]:mode});  // this cat only — never the whole map from local state
+  if(db) db.ref("mastery/"+kid+"_settings/cat_modes").update({[(typeof haKey==="function"?haKey(cat):cat)]:mode});  // this cat only — never the whole map from local state
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
@@ -74927,7 +75026,7 @@ function mastToggleCatFace(cat){
   const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
   if(!s.cat_face) s.cat_face={};
   s.cat_face[cat]=(mastCatFace(cat)==="name")?"desc":"name";
-  if(db) db.ref("mastery/"+kid+"_settings/cat_face").update({[cat]:s.cat_face[cat]});
+  if(db) db.ref("mastery/"+kid+"_settings/cat_face").update({[(typeof haKey==="function"?haKey(cat):cat)]:s.cat_face[cat]});
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
@@ -74941,7 +75040,7 @@ function mastAdminSave(){
   // it isn't handed untouched, so foreign data survives.
   const existing=masteryData[kid+"_settings"]||{};
   masteryData[kid+"_settings"]={...existing,...mastAdminLocal};
-  if(db) db.ref("mastery/"+kid+"_settings").update(mastAdminLocal);
+  if(db) db.ref("mastery/"+kid+"_settings").update((typeof haSettingsOut==="function"?haSettingsOut(mastAdminLocal):mastAdminLocal));
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   mastAdminDirty=false;
   _mastRe();
@@ -75008,7 +75107,7 @@ function mastSetStartAfter(cat,after){
   const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
   if(!s.cat_start_after) s.cat_start_after={};
   if(after) s.cat_start_after[cat]=after; else delete s.cat_start_after[cat];
-  if(db) db.ref("mastery/"+kid+"_settings/cat_start_after").update({[cat]:after||null});  // this deck only
+  if(db) db.ref("mastery/"+kid+"_settings/cat_start_after").update({[(typeof haKey==="function"?haKey(cat):cat)]:after||null});  // this deck only
   _mastRe();
 }
 function mastStartDeckNow(cat){
@@ -75117,7 +75216,7 @@ function mastSaveBankOrder(cat,orderedNames){
   const kid=masteryKid||"julian";
   if(!masteryData[kid+"_bank_order"]) masteryData[kid+"_bank_order"]={};
   masteryData[kid+"_bank_order"][cat]=orderedNames;
-  if(db) db.ref("mastery/"+kid+"_bank_order/"+cat).set(orderedNames);
+  if(db) db.ref("mastery/"+kid+"_bank_order/"+(typeof haKey==="function"?haKey(cat):cat)).set(orderedNames);
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 }
 function mastReorderToggle(cat){
@@ -75231,7 +75330,7 @@ function unitMorePicsHtml(u,key,cur){
 }
 // Save: the writes for this card's pictures. {up:{relative path under unitStudies/<id>: value}, vis:the new visual} or null.
 function unitPicsPlan(key,existing,newImg,pics){
-  const ex=(existing&&typeof existing==="object"&&existing.imageUrl)?existing:null, exAll=unitPicsOf(ex), exMore=exAll.slice(1), base="visuals/"+key;
+  const ex=(existing&&typeof existing==="object"&&existing.imageUrl)?existing:null, exAll=unitPicsOf(ex), exMore=exAll.slice(1), base="visuals/"+(typeof haKey==="function"?haKey(key):key);   // 🔤 HAKEY: a "Dr." front's pictures under its coded key
   if(!pics){   // the one-picture path, as before
     if(!newImg) return null;
     if(!exMore.length) return {up:{[base]:{imageUrl:newImg}},vis:{imageUrl:newImg}};
@@ -75315,7 +75414,7 @@ function mastRestartDeck(cat,reversed){
   const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
   if(!s.cat_face) s.cat_face={};
   s.cat_face[cat]=reversed?"reversed":"desc";
-  if(db) db.ref("mastery/"+kid+"_settings/cat_face").update({[cat]:s.cat_face[cat]});
+  if(db) db.ref("mastery/"+kid+"_settings/cat_face").update({[(typeof haKey==="function"?haKey(cat):cat)]:s.cat_face[cat]});
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   if(typeof gwShowToast==="function") gwShowToast("\u{1F501} "+cat+" restarted "+(reversed?"reversed":"normal")+" — "+deck.length+" cards back to Learning");
   _mastRe();
@@ -75328,7 +75427,7 @@ function mastSetVisual(cat,name,val){
   else delete masteryData[kid+"_visuals"][key];
   // Touch only this key — a whole-map set() from a stale tab wiped every other visual
   // (Julian's dino photos live here). Keys with . # $ [ ] / can't be written at all.
-  if(db&&mastDefKeyOk(key)) db.ref("mastery/"+kid+"_visuals").update({[key]:val||null});
+  if(db) db.ref("mastery/"+kid+"_visuals").update({[(typeof haKey==="function"?haKey(key):key)]:val||null});   // 🔤 HAKEY: a "Dr." card keeps its picture (was silently dropped)
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
 }
 function mastBankAddItem(){ if(!momHere()&&!mastAdminPinOk) return;
@@ -75359,7 +75458,7 @@ function mastBankAddItem(){ if(!momHere()&&!mastAdminPinOk) return;
     if(mastDefKeyOk(name)){
       s.definitions[name]=mastBankAddDef.trim();
       masteryData[kid+"_settings"]=s;
-      if(db) db.ref("mastery/"+kid+"_settings/definitions").update({[name]:mastBankAddDef.trim()});  // this key only
+      if(db) db.ref("mastery/"+kid+"_settings/definitions").update({[(typeof haKey==="function"?haKey(name):name)]:mastBankAddDef.trim()});  // this key only
     }
   }
   // Save the voice recording if one is waiting
@@ -75410,7 +75509,7 @@ function mastBankAddMany(kid,cat,entries){
     if(!s.definitions) s.definitions={};
     Object.assign(s.definitions,defs);
     masteryData[kid+"_settings"]=s;
-    if(db) db.ref("mastery/"+kid+"_settings/definitions").update(defs);  // these keys only
+    if(db) db.ref("mastery/"+kid+"_settings/definitions").update((typeof haKeys==="function"?haKeys(defs):defs));  // these keys only
   }
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   return {added:added,dupes:dupes,badDefKeys:badDefKeys};
@@ -75873,7 +75972,7 @@ function mastDeleteCategory(cat){
   const _visRm={};
   Object.keys(vis).forEach(k=>{ if(k.startsWith(prefix)){ delete vis[k]; _visRm[k]=null; } });
   // Remove only this category's keys — a whole-map set() from stale state wiped other decks' visuals.
-  if(db&&Object.keys(_visRm).length) db.ref("mastery/"+kid+"_visuals").update(_visRm);
+  if(db&&Object.keys(_visRm).length) db.ref("mastery/"+kid+"_visuals").update((typeof haKeys==="function"?haKeys(_visRm):_visRm));
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
@@ -76714,7 +76813,7 @@ function mastAddItems(){ if(!momHere()&&!mastAdminPinOk) return;
           if(!s.definitions) s.definitions={};
           s.definitions[p]=defInput.value.trim();
           masteryData[masteryKid+"_settings"]=s;
-          if(db) db.ref("mastery/"+masteryKid+"_settings/definitions").update({[p]:defInput.value.trim()});  // this key only
+          if(db) db.ref("mastery/"+masteryKid+"_settings/definitions").update({[(typeof haKey==="function"?haKey(p):p)]:defInput.value.trim()});  // this key only
         }
         // Save the voice recording if one is waiting
         if(mastRecAudio) mastSaveDefAudio(masteryKid,p);
@@ -78747,7 +78846,7 @@ function ckTap(r,name){
   if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){
     db.ref("mastery/"+kid).update(iu);
     if(Object.keys(bu).length) db.ref("mastery/"+kid+"_custom_items").update(bu);
-    if(Object.keys(du).length) db.ref("mastery/"+kid+"_settings/definitions").update(du);
+    if(Object.keys(du).length) db.ref("mastery/"+kid+"_settings/definitions").update((typeof haKeys==="function"?haKeys(du):du));
     db.ref("mastery/"+kid+"_checkup/"+sid+"/f/"+it.slug).set(st.f[it.slug]);
     db.ref("mastery/"+kid+"_checkup/"+sid+"/day/"+dk).set(st.day[dk]);
   }
@@ -78798,7 +78897,7 @@ function unitStageCheckup(){
   const ks={stage:f.stage,knows:"",subject:"",map:"",ts:Date.now(),checkup:sid};
   if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){
     db.ref("mastery/"+kid+"_sessions/"+sid).set(rec);
-    if(Object.keys(modes).length){ db.ref("mastery/"+kid+"_settings/cat_modes").update(modes); db.ref("mastery/"+kid+"_settings/cat_intro_max").update(intro); }
+    if(Object.keys(modes).length){ db.ref("mastery/"+kid+"_settings/cat_modes").update((typeof haKeys==="function"?haKeys(modes):modes)); db.ref("mastery/"+kid+"_settings/cat_intro_max").update((typeof haKeys==="function"?haKeys(intro):intro)); }
     db.ref("unitStudies/"+f.unitId+"/kidStage/"+kid).set(ks);
     db.ref("unitStudies/"+f.unitId+"/enrolled/"+kid).set(true);
   }
@@ -79672,7 +79771,7 @@ function pwApply(){
   if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){
     if(Object.keys(iu).length) db.ref("mastery/"+kid).update(iu);
     if(Object.keys(bu).length) db.ref("mastery/"+kid+"_custom_items").update(bu);
-    if(Object.keys(modes).length) db.ref("mastery/"+kid+"_settings/cat_modes").update(modes);
+    if(Object.keys(modes).length) db.ref("mastery/"+kid+"_settings/cat_modes").update((typeof haKeys==="function"?haKeys(modes):modes));
     comebacks.forEach(c=>db.ref("mastery/"+kid+"_comebacks").push(c));
   }
   try{ HA_LS.setItem("ha_mastery",JSON.stringify(masteryData)); }catch(e){}
@@ -80282,7 +80381,7 @@ function spellFinish(st){
   st.isPB=st.first>0&&(prev==null||st.first>prev);
   if(st.isPB){
     s.match_best[key]=st.first;
-    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[(typeof haKey==="function"?haKey(key):key)]:st.first});   // this key only
     try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
   try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F524} You built them all!",{noSong:true}); }catch(e){}
@@ -80532,7 +80631,7 @@ function dumpFinish(st){
   st.isPB=st.count>0&&(prev==null||st.count>prev);
   if(st.isPB){
     s.match_best[key]=st.count;
-    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.count});   // this key only
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[(typeof haKey==="function"?haKey(key):key)]:st.count});   // this key only
     try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
   try{ if(st.of>0&&st.count===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F4AD} You named them all!",{noSong:true}); }catch(e){}
@@ -80828,7 +80927,7 @@ function _gfFinish(st){
   st.isPB=st.first>0&&(prev==null||st.first>prev);
   if(st.isPB){
     s.match_best[key]=st.first;
-    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[(typeof haKey==="function"?haKey(key):key)]:st.first});   // this key only
     try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
   st.msg="All the pairs are down!"; st.say="";
@@ -81051,7 +81150,7 @@ function bingoFinish(st){
   st.isPB=st.first>0&&(prev==null||st.first>prev);
   if(st.isPB){
     s.match_best[key]=st.first;
-    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[(typeof haKey==="function"?haKey(key):key)]:st.first});   // this key only
     try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
 }
@@ -81298,7 +81397,7 @@ function sortFinish(st){
   st.isPB=st.first>0&&(prev==null||st.first>prev);
   if(st.isPB){
     s.match_best[key]=st.first;
-    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[(typeof haKey==="function"?haKey(key):key)]:st.first});   // this key only
     try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
   try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F9FA} You sorted them all!",{noSong:true}); }catch(e){}
@@ -81593,7 +81692,7 @@ function moleFinish(st){
   st.isPB=st.first>0&&(prev==null||st.first>prev);
   if(st.isPB){
     s.match_best[key]=st.first;
-    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[(typeof haKey==="function"?haKey(key):key)]:st.first});   // this key only
     try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
   try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F439} You got them all!",{noSong:true}); }catch(e){}
@@ -81838,7 +81937,7 @@ function _jpFinish(st){
   st.isPB=st.first>0&&(prev==null||st.first>prev);
   if(st.isPB){
     s.match_best[key]=st.first;
-    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[(typeof haKey==="function"?haKey(key):key)]:st.first});   // this key only
     try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
   st.msg="The board is clear!"; st.say="";
@@ -81998,7 +82097,7 @@ function teachFinish(st){
   st.isPB=st.first>0&&(prev==null||st.first>prev);
   if(st.isPB){
     s.match_best[key]=st.first;
-    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[(typeof haKey==="function"?haKey(key):key)]:st.first});   // this key only
     try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
   try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F393} You taught them all!",{noSong:true}); }catch(e){}
@@ -82216,7 +82315,7 @@ function _c4Finish(st){
   st.isPB=st.first>0&&(prev==null||st.first>prev);
   if(st.isPB){
     s.match_best[key]=st.first;
-    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[(typeof haKey==="function"?haKey(key):key)]:st.first});   // this key only
     try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
   st.msg=st.winner==="kid"?"Four in a row!":st.winner==="app"?"Good game \u2014 I got four this time.":"A tie!"; st.say="";
@@ -82406,7 +82505,7 @@ function shipFinish(st){
   st.isPB=st.first>0&&(prev==null||st.first>prev);
   if(st.isPB){
     s.match_best[key]=st.first;
-    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[(typeof haKey==="function"?haKey(key):key)]:st.first});   // this key only
     try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
   try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F6A2} You sank them all!",{noSong:true}); }catch(e){}
@@ -82670,7 +82769,7 @@ function beatFinish(st){
   st.isPB=st.sec!=null&&st.sec>0&&(prev==null||st.sec<prev);   // seconds: lower is better
   if(st.isPB){
     s.match_best[key]=st.sec;
-    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.sec});   // this key only
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[(typeof haKey==="function"?haKey(key):key)]:st.sec});   // this key only
     try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
   try{ if(st.isPB&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u23F1 "+st.deck+" \u2014 new best!",{noSong:true}); }catch(e){}
@@ -82840,7 +82939,7 @@ function tnFinish(st){
   st.isPB=st.first>0&&(prev==null||st.first>prev);
   if(st.isPB){
     s.match_best[key]=st.first;
-    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[(typeof haKey==="function"?haKey(key):key)]:st.first});   // this key only
     try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
   try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{2705} You called them all!",{noSong:true}); }catch(e){}
@@ -83055,7 +83154,7 @@ function sureFinish(st){
   st.isPB=st.first>0&&(prev==null||st.first>prev);
   if(st.isPB){
     s.match_best[key]=st.first;
-    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[(typeof haKey==="function"?haKey(key):key)]:st.first});   // this key only
     try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
   try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F914} You knew them all!",{noSong:true}); }catch(e){}
@@ -83308,7 +83407,7 @@ function catsFinish(st){
   st.isPB=st.count>0&&(prev==null||st.count>prev);
   if(st.isPB){
     s.match_best[key]=st.count;
-    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.count});   // this key only
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[(typeof haKey==="function"?haKey(key):key)]:st.count});   // this key only
     try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
   try{ if(st.of>0&&st.count===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F4CB} You named every one!",{noSong:true}); }catch(e){}
@@ -83499,7 +83598,7 @@ function jumbleFinish(st){
   st.isPB=st.first>0&&(prev==null||st.first>prev);
   if(st.isPB){
     s.match_best[key]=st.first;
-    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[(typeof haKey==="function"?haKey(key):key)]:st.first});   // this key only
     try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
   try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F9E9} Every sentence in order!",{noSong:true}); }catch(e){}
@@ -83720,7 +83819,7 @@ function _kbFinish(st){
   st.isPB=st.first>0&&(prev==null||st.first>prev);
   if(st.isPB){
     s.match_best[key]=st.first;
-    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[(typeof haKey==="function"?haKey(key):key)]:st.first});   // this key only
     try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
   st.msg="The jar is empty!"; st.say="";
@@ -83937,7 +84036,7 @@ function hangFinish(st){
   st.isPB=st.first>0&&(prev==null||st.first>prev);
   if(st.isPB){
     s.match_best[key]=st.first;
-    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.first});   // this key only
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[(typeof haKey==="function"?haKey(key):key)]:st.first});   // this key only
     try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
   try{ if(st.of>0&&st.first===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F388} You found every word!",{noSong:true}); }catch(e){}
@@ -84130,7 +84229,7 @@ function nameallFinish(st){
   st.isPB=st.count>0&&(prev==null||st.count>prev);
   if(st.isPB){
     s.match_best[key]=st.count;
-    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.count});   // this key only
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[(typeof haKey==="function"?haKey(key):key)]:st.count});   // this key only
     try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
   try{ if(st.of>0&&st.count===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F4CB} You named them all!",{noSong:true}); }catch(e){}
@@ -84605,7 +84704,7 @@ function jpMoneyFinish(st,kid){
   try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: right / miss per card + the bank, the bets, the result
   if(st.isPB){
     s.match_best[key]=st.bank;
-    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[key]:st.bank});   // this key only
+    if(db&&!_dryRun()) db.ref("mastery/"+kid+"_settings/match_best").update({[(typeof haKey==="function"?haKey(key):key)]:st.bank});   // this key only
     try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   }
   st.msg=st.result==="out"?"Out of money!":"You won "+jpMoneyFmt(st.bank)+"!"; st.say="";
@@ -84930,7 +85029,7 @@ function ckStartCreate(){
   u.kidStage[kid].checkup=sid;   // the enrolled row shows its progress (ckUnitRowHtml); the enrollment itself is untouched
   if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){
     db.ref("mastery/"+kid+"_sessions/"+sid).set(sess);
-    if(Object.keys(modes).length){ db.ref("mastery/"+kid+"_settings/cat_modes").update(modes); db.ref("mastery/"+kid+"_settings/cat_intro_max").update(intro); }
+    if(Object.keys(modes).length){ db.ref("mastery/"+kid+"_settings/cat_modes").update((typeof haKeys==="function"?haKeys(modes):modes)); db.ref("mastery/"+kid+"_settings/cat_intro_max").update((typeof haKeys==="function"?haKeys(intro):intro)); }
     db.ref("unitStudies/"+F.unitId+"/kidStage/"+kid+"/checkup").set(sid);
   }
   if(typeof gwShowToast==="function") gwShowToast("🩺 "+sess.name+" — "+cards.length+" cards, up to "+sess.perDay+" a day");
@@ -87685,8 +87784,8 @@ function deckInstrSet(kid,deck,main,kidText){
   if(main) s.cat_instructions[deck]=main; else delete s.cat_instructions[deck];
   if(kidText) s.cat_instructions_kid[deck]=kidText; else delete s.cat_instructions_kid[deck];
   if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){
-    db.ref("mastery/"+kid+"_settings/cat_instructions").update({[deck]:main||null});
-    db.ref("mastery/"+kid+"_settings/cat_instructions_kid").update({[deck]:kidText||null});
+    db.ref("mastery/"+kid+"_settings/cat_instructions").update({[(typeof haKey==="function"?haKey(deck):deck)]:main||null});
+    db.ref("mastery/"+kid+"_settings/cat_instructions_kid").update({[(typeof haKey==="function"?haKey(deck):deck)]:kidText||null});
   }
   try{ HA_LS.setItem("ha_mastery",JSON.stringify(masteryData)); }catch(e){}
   return true;
@@ -96353,8 +96452,8 @@ function laGrowPlan(unitId,ts,hold){   // pure: reads memory, returns every writ
       if(!K.added[d.key]) return;
       const had=items.some(e=>e[1].subject===d.key)||bank.some(e=>e[1].cat===d.key)||(full[d.key]||[]).length;
       if(had) return;
-      if(!(st.cat_modes||{})[d.key]) W("mastery/"+kid+"_settings/cat_modes/"+d.key,d.mode||"flip",nm+"’s "+d.key+" cards flip");
-      if(d.introCap&&!(st.cat_intro_max||{})[d.key]) W("mastery/"+kid+"_settings/cat_intro_max/"+d.key,d.introCap,nm+" learns "+d.introCap+" new "+d.key+" cards at a time");
+      if(!(st.cat_modes||{})[d.key]) W("mastery/"+kid+"_settings/cat_modes/"+(typeof haKey==="function"?haKey(d.key):d.key),d.mode||"flip",nm+"’s "+d.key+" cards flip");
+      if(d.introCap&&!(st.cat_intro_max||{})[d.key]) W("mastery/"+kid+"_settings/cat_intro_max/"+(typeof haKey==="function"?haKey(d.key):d.key),d.introCap,nm+" learns "+d.introCap+" new "+d.key+" cards at a time");
     });
     // the old built-in list that retires: what leaves (not started, not a unit card)
     LAGROW_RETIRE.forEach(dk=>{ ((bmap[kid]||{})[dk]||[]).forEach(n=>{ const key=pk(dk,n); if(!live[key]&&!inBank.has(key)&&!moved.has(key)) K.leaves.push(n); }); });
