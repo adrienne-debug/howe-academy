@@ -34725,7 +34725,7 @@ function haNbContext(kid){
     mItems=mItems.map(it=>Object.assign({},it,{recentMiss:miss[it.id]||0}));
   }catch(e){}
   // Julian only: Mom's hand-picked slots for THIS week (see nbJuPicks). Absent = pure engine.
-  let juPicks=null; try{ if(kid==="julian") juPicks=nbJuPicks(tgtWk); }catch(e){}
+  let juPicks=null; try{ if(kid==="julian") juPicks=nbJuPicks(tgtWk); else if(typeof nbPlanKid==="function"&&nbPlanKid(kid)) juPicks=nbJuPicks(tgtWk,kid); }catch(e){}   // 🚜 CBPLAN: a kid whose own notebook has a planner
   let dailyGrams=null; try{ dailyGrams=nbDgCtx(kid); }catch(e){}
   let wordBank=null; try{ wordBank=nbWbCtx(kid); }catch(e){}   // Mom's Word-of-the-day bank (Lincoln) — null = built-in words
   let cogatBank=null; try{ cogatBank=nbCqCtx(kid); }catch(e){}   // Mom's CogAT verbal bank (Lincoln) — null = built-in analogies
@@ -45726,13 +45726,14 @@ function nbUnitDayToggle(kid,unitId,day){
 const NB_JU_SUBS=[{k:"letters",lbl:"Letters",ico:"🔤"},{k:"numbers",lbl:"Numbers",ico:"🔢"},
                   {k:"shapes",lbl:"Shapes",ico:"⭐"},{k:"colors",lbl:"Colors",ico:"🎨"},
                   {k:"animals",lbl:"Animals",ico:"🦕"}];
-function nbJuPicks(wk){ return ((((notebookSettings||{}).julian||{}).juPicks||{})[wk||nbTargetWk()])||null; }
-function nbJuSet(sub,dayIdx,prompt){
+// 🚜 CBPLAN: the same store per kid — notebookSettings.<kid>.juPicks (no kid = the original planner's kid, as before).
+function nbJuPicks(wk,kid){ return ((((notebookSettings||{})[kid||"julian"]||{}).juPicks||{})[wk||nbTargetWk()])||null; }
+function nbJuSet(sub,dayIdx,prompt,kid){
   if(!momHere()) return;
-  const wk=nbTargetWk();
-  if(!notebookSettings.julian) notebookSettings.julian={};
-  if(!notebookSettings.julian.juPicks) notebookSettings.julian.juPicks={};
-  const all=notebookSettings.julian.juPicks;
+  const wk=nbTargetWk(), k=kid||"julian";
+  if(!notebookSettings[k]) notebookSettings[k]={};
+  if(!notebookSettings[k].juPicks) notebookSettings[k].juPicks={};
+  const all=notebookSettings[k].juPicks;
   const wkMap=Object.assign({},all[wk]||{});
   const subMap=Object.assign({},wkMap[sub]||{});
   if(prompt==null) delete subMap[dayIdx]; else subMap[dayIdx]=prompt;   // null = back to the engine
@@ -45740,21 +45741,85 @@ function nbJuSet(sub,dayIdx,prompt){
   if(Object.keys(wkMap).length) all[wk]=wkMap; else delete all[wk];
   try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
   // Firebase drops empty maps, so write the whole week node — a cleared week becomes null there too.
-  try{ if(typeof db!=="undefined"&&db) db.ref("notebookSettings/julian/juPicks/"+wk).set(all[wk]||null); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db) db.ref("notebookSettings/"+k+"/juPicks/"+wk).set(all[wk]||null); }catch(e){}
   nbJuOpen=null;
   if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
 }
-function nbJuResetWeek(){
+function nbJuResetWeek(kid){
   if(!momHere()) return;
-  const wk=nbTargetWk();
-  if(!(notebookSettings.julian&&notebookSettings.julian.juPicks&&notebookSettings.julian.juPicks[wk])) return;
-  delete notebookSettings.julian.juPicks[wk];
+  const wk=nbTargetWk(), k=kid||"julian";
+  if(!(notebookSettings[k]&&notebookSettings[k].juPicks&&notebookSettings[k].juPicks[wk])) return;
+  delete notebookSettings[k].juPicks[wk];
   try{ HA_LS.setItem("ha_nb_settings",JSON.stringify(notebookSettings)); }catch(e){}
-  try{ if(typeof db!=="undefined"&&db) db.ref("notebookSettings/julian/juPicks/"+wk).set(null); }catch(e){}
+  try{ if(typeof db!=="undefined"&&db) db.ref("notebookSettings/"+k+"/juPicks/"+wk).set(null); }catch(e){}
   nbJuOpen=null;
   if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); }
 }
 let nbJuOpen=null;   // "letters:2" — which slot's item chooser is expanded
+// CBPLAN_START — 🚜 "This week's plan" for the construction notebook (11/3 note: "has no planner card"; her yes 2026-11-08).
+// The same card the dinosaur Pre-K notebook has — what each day's page will teach, 🔁 for a card missed in drills, tap a day to swap
+// it (📌), ↺ back to auto — in the construction look. Data-driven: it shows only when the kid's OWN notebook builder offers a
+// planner (HoweNotebooks.planFor — notebooks.js CBPLAN, the catalog entry's `plan`), fed by that kid's own ctx (decks,
+// letter/number cursors, Mom's picks). No planner / a theme set / no slots → "" (the tab is byte-for-byte as before).
+// Writes: only Mom's picks, through nbJuSet / nbJuResetWeek → notebookSettings/<kid>/juPicks/<week>, the week node only.
+const NB_CB_SUBS=[{k:"letters",lbl:"Little letters",ico:"\u{1F524}"},{k:"numbers",lbl:"Numbers",ico:"\u{1F522}"},
+                  {k:"shapes",lbl:"Shapes",ico:"\u{1F53A}"},{k:"colors",lbl:"Colors",ico:"\u{1F3A8}"}];
+function nbPlanKid(kid){ try{ return !!(kid&&window.HoweNotebooks&&typeof window.HoweNotebooks.hasPlan==="function"&&window.HoweNotebooks.hasPlan(kid)); }catch(e){ return false; } }
+function nbPlanCardHtml(kid){
+  if(!nbPlanKid(kid)||typeof window.HoweNotebooks.planFor!=="function") return "";
+  let plan=null;
+  try{ plan=window.HoweNotebooks.planFor(kid,haNbContext(kid)); }catch(e){ return '<div style="margin-top:14px;font-size:11px;color:var(--muted)">Week plan unavailable ('+esc(String(e.message||e))+').</div>'; }
+  if(!plan||!plan.subjects) return "";
+  const subs=NB_CB_SUBS.filter(s=>plan.subjects[s.k]&&(plan.subjects[s.k].slots||[]).length);
+  if(!subs.length) return "";
+  const J=v=>String(v).replace(/\\/g,"\\\\").replace(/'/g,"\\'"), kq="'"+J(kid)+"'";
+  const dayNames=(plan.days||[]).map(d=>(DAY_LBL[d]||d).slice(0,3));
+  const ovWk=nbJuPicks(null,kid)||{};
+  const nOv=Object.keys(ovWk).reduce((a,s)=>a+Object.keys(ovWk[s]||{}).length,0);
+  const chip=(txt,sw)=>(sw?'<span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:'+sw+';vertical-align:-1px;margin-right:4px"></span>':'')+esc(txt);
+  const rows=subs.map(s=>{
+    const d=plan.subjects[s.k], flagged=d.items.filter(i=>i.flagged), pre=kid+"|"+s.k+":";
+    const slotBtns=d.slots.map((sl,i)=>{
+      const key=pre+i, open=(nbJuOpen===key);
+      const bg=sl.picked?'#fff7ed':(sl.review?'#fef3c7':'#fff');
+      const bc=open?'#ea580c':(sl.picked?'#fdba74':(sl.review?'#fcd34d':'var(--border)'));
+      return '<button onclick="nbJuToggleOpen(\''+J(key)+'\')" title="'+(dayNames[i]||('Day '+(i+1)))+'" style="flex:1;min-width:0;padding:5px 2px;border-radius:8px;border:1.5px solid '+bc+';background:'+bg+';cursor:pointer;font-family:\'DM Sans\',sans-serif;line-height:1.25">'+
+        '<div style="font-size:8.5px;font-weight:700;color:var(--muted);letter-spacing:.03em">'+(dayNames[i]||("D"+(i+1)))+'</div>'+
+        '<div style="font-size:12px;font-weight:800;color:#1f2937;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+chip(sl.prompt,sl.swatch)+'</div>'+
+        '<div style="font-size:8.5px;font-weight:700;color:'+(sl.picked?'#c2410c':(sl.review?'#b45309':'transparent'))+'">'+(sl.picked?'\u{1F4CC} picked':(sl.review?'\u{1F501} review':'\u00B7'))+'</div>'+
+      '</button>';
+    }).join("");
+    let chooser="";
+    if(nbJuOpen&&nbJuOpen.indexOf(pre)===0){
+      const di=parseInt(nbJuOpen.slice(pre.length),10);
+      const opts=d.items.map(it=>{
+        const on=(ovWk[s.k]||{})[di]===it.prompt;
+        return '<button onclick="nbJuSet(\''+s.k+'\','+di+',\''+J(it.prompt)+'\','+kq+')" style="padding:5px 9px;border-radius:8px;border:1.5px solid '+(on?'#ea580c':(it.flagged?'#fcd34d':'var(--border)'))+';background:'+(on?'#fff7ed':(it.flagged?'#fef3c7':'#fff'))+';color:#1f2937;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+chip(it.prompt,it.swatch)+(it.flagged?' <span style="font-size:9px">\u{1F501}</span>':'')+'</button>';
+      }).join("");
+      chooser='<div style="margin-top:7px;padding:9px;border-radius:9px;background:#fff7ed;border:1.5px solid #fed7aa">'+
+        '<div style="font-size:10.5px;font-weight:700;color:#9a3412;margin-bottom:6px">'+(dayNames[di]||("Day "+(di+1)))+' \u2014 pick '+s.lbl.toLowerCase()+' <span style="font-weight:600;color:var(--muted)">(\u{1F501} = missed in drills)</span></div>'+
+        '<div style="display:flex;flex-wrap:wrap;gap:5px">'+opts+'</div>'+
+        '<button onclick="nbJuSet(\''+s.k+'\','+di+',null,'+kq+')" style="margin-top:7px;padding:4px 10px;border-radius:7px;border:1.5px solid var(--border);background:#fff;color:#6b7280;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u21BA Back to auto</button>'+
+      '</div>';
+    }
+    return '<div style="padding:9px 0;border-top:1px solid var(--border)">'+
+      '<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:5px">'+
+        '<span style="font-size:11.5px;font-weight:800;color:#1f2937">'+s.ico+' '+s.lbl+'</span>'+
+        '<span style="font-size:10px;color:var(--muted)">'+d.items.length+' total'+(flagged.length?' \u00B7 <span style="color:#b45309;font-weight:700">'+flagged.length+' missed in drills</span>':'')+'</span>'+
+      '</div>'+
+      '<div style="display:flex;gap:4px">'+slotBtns+'</div>'+chooser+
+    '</div>';
+  }).join("");
+  return '<div class="nb-cbplan" style="margin-top:14px;background:#fff;border:1.5px solid #fed7aa;border-radius:12px;padding:12px 14px">'+
+    '<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:2px">'+
+      '<span style="font-size:12px;font-weight:800;color:#c2410c">\u{1F69C} This week\u2019s build plan <span style="font-weight:700;font-size:9.5px;letter-spacing:.04em;background:#fed7aa;color:#7c2d12;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px">MOM</span></span>'+
+      (nOv?'<button onclick="nbJuResetWeek('+kq+')" style="margin-left:auto;padding:3px 9px;border-radius:7px;border:1.5px solid var(--border);background:#fff;color:#6b7280;font-size:10px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u21BA All auto</button>':'')+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:2px">What goes on each day\u2019s page. <b>\u{1F501}</b> = back for another look because it was missed in drills. Tap any day to swap it \u2014 <b>\u{1F4CC}</b> marks your pick. '+
+      (nOv?'<b>'+nOv+' slot'+(nOv>1?'s':'')+' changed this week.</b> ':'')+'The rotation still moves on by itself, so next week picks up right where it would have.</div>'+
+    rows+'</div>';
+}
+// CBPLAN_END
 function nbJuToggleOpen(key){ nbJuOpen=(nbJuOpen===key)?null:key; if(tab==="notebook"){ const el=document.getElementById("content"); if(el) renderNotebook(el); } }
 function nbXpToggle(kid,key){ if(!momHere()) return; const c=nbXpCfg(kid,key); nbXpSave(kid,key,{on:!c.on,days:c.days}); }
 function nbXpDay(kid,key,day){ if(!momHere()) return; const c=nbXpCfg(kid,key); const d=Object.assign({},c.days); if(d[day]) delete d[day]; else d[day]=true; nbXpSave(kid,key,{on:c.on,days:d}); }
@@ -61328,6 +61393,7 @@ function renderNotebook(el){
         rows+'</div>';
     }catch(e){ juPlanHtml='<div style="margin-top:14px;font-size:11px;color:var(--muted)">Week plan unavailable ('+String(e.message||e)+').</div>'; }
   }
+  if(!juPlanHtml&&sel!=="julian"&&momHere()&&typeof nbPlanCardHtml==="function") juPlanHtml=nbPlanCardHtml(sel);   // 🚜 CBPLAN: the construction notebook's own planner (none → "")
   // 📝 Daily Grams — Mom-gated per-kid card (only when a book exists for this kid): on/off + which
   // Day the target week starts on. It advances one Day per school day on its own after that.
   let dgHtml="";

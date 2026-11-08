@@ -42,8 +42,10 @@ const BEFORE = {
   "julian/empty": "8a86b1e0d153f181", "julian/mastery": "fe558aa8ce3804e1", "julian/cursors": "5455af6aaaf562f7", "julian/extras": "e7a73a6c292926de",
   "julian/spelling": "cf9da3a6129a42ad", "julian/fourDay": "64f1989e078eaa38", "julian/picks": "a89cffbae1f753d5",
   "caleb/empty": "8b37fe802fbd9ed6", "caleb/mastery": "844d75732e5723d3", "caleb/cursors": "46cc24e6432e0fe9", "caleb/extras": "29ca960f1a13df95",
-  "caleb/spelling": "a84698ec494f2eaa", "caleb/fourDay": "785246ec8aeb0380", "caleb/picks": "844d75732e5723d3"
+  "caleb/spelling": "a84698ec494f2eaa", "caleb/fourDay": "785246ec8aeb0380", "caleb/picks": "2f6b157b07c2a86a"
 };
+// caleb/picks refreshed ON PURPOSE 2026-11-08 (🚜 CBPLAN, test_construction_planner.js): Mom's planner number pick now joins the
+// construction notebook's week list (JU_NUMPICK, as Julian's) — the Tuesday number reads 6, not 15. It used to equal caleb/mastery.
 const snap = {};
 for (const [kid, items] of [["julian", juItems], ["caleb", cbItems]]) {
   const F = FIXTURES(items);
