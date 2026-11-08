@@ -28512,7 +28512,7 @@ function scpGather(kid){
   let prev=null; try{ prev=scpPrevWeek((typeof archive!=="undefined")?archive:{},(typeof currWeekNum==="function")?currWeekNum():0); }catch(e){ prev=null; }
   return scpKidNumbers(kid,{history:md.history,studyLog:md.studyLog,gameLog:md.gameLog,cards:md[kid],
     tasks:(typeof weekData!=="undefined"&&weekData)?weekData.tasks:[],checked:(typeof checked!=="undefined")?checked:{},prev:prev,
-    budgetMin:load.budgetMin,today:scpToday(),
+    budgetMin:(Number(load.budgetMin)>0||typeof mldDefault!=="function")?load.budgetMin:mldDefault(kid),today:scpToday(),   // 🎚 MLDIAL: no stored budget → the dial's default for the kid's grade (read only)
     schoolDays:(from,to)=>{ if(typeof mastSchoolDayNum!=="function") return null; const n=mastSchoolDayNum(kid,scpDash(to))-mastSchoolDayNum(kid,scpDash(scpShift(from,-1))); return Math.max(1,n); }});
 }
 // ── the page ──
@@ -28530,7 +28530,7 @@ function scpCardHtml(r){
   const w7=r.right.w7, m7=r.min.w7, col=scpKidCol(r.kid);
   let h='<div class="scp-card" style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:12px 14px;margin:10px 12px">';
   h+='<div style="display:flex;align-items:center;gap:8px"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:'+col+'"></span><span style="font-weight:800;font-size:15px">'+scpE(scpKidName(r.kid))+'</span><span style="font-size:11px;color:var(--muted)">last 7 days · arrows vs the 7 before, then the 4 weeks before</span></div>';
-  if(!r.any){ h+='<div style="font-size:13px;color:var(--muted);padding:10px 0 4px">Nothing logged yet — the card fills in after the first drill, study sitting, game or checked card.</div></div>'; return h; }
+  if(!r.any){ h+='<div style="font-size:13px;color:var(--muted);padding:10px 0 4px">Nothing logged yet — the card fills in after the first drill, study sitting, game or checked card.</div>'; if(typeof mldDialHtml==="function"){ try{ h+=mldDialHtml(r.kid); }catch(e){} } h+='</div>'; return h; }   // 🎚 MLDIAL
   h+='<div style="display:flex;align-items:center;gap:12px;margin-top:8px"><div style="font-family:\'Fraunces\',serif;font-size:40px;font-weight:800;line-height:1;color:'+(typeof r.headline==="number"?'#0f172a':'#94a3b8')+'">'+scpN(r.headline)+'</div>'+
     '<div><div style="font-weight:800;font-size:13px">Where things are at</div><div style="font-size:11.5px;color:var(--muted)">'+scpE(r.formula)+'</div></div></div>';
   h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">';
@@ -28541,6 +28541,7 @@ function scpCardHtml(r){
   h+='</div>';
   if(r.load) h+='<div style="margin-top:10px;font-size:13px"><span style="display:inline-block;padding:3px 10px;border-radius:999px;font-weight:800;color:#fff;background:'+scpLoadCol(r.load.word)+'">⚖️ '+r.load.word+'</span> <span style="color:#334155">'+(m7.any?m7.perDay:0)+' min a school day of '+r.load.budget+' ('+r.load.ratio+'%)'+(m7.any?' · drill '+m7.drill+' · study '+m7.study+' · games '+m7.games:'')+'</span></div>';
   else h+='<div style="margin-top:10px;font-size:12.5px;color:var(--muted)">⚖️ Load: no budget set yet'+(m7.any?' · drill '+m7.drill+' · study '+m7.study+' · games '+m7.games+' min this week':'')+'</div>';
+  if(typeof mldDialHtml==="function"){ try{ h+=mldDialHtml(r.kid); }catch(e){} }   // 🎚 MLDIAL: the dial, under the meter
   h+='<details style="margin-top:8px;font-size:11.5px;color:#64748b"><summary style="cursor:pointer;font-weight:700">How these are counted</summary><div style="padding:6px 0 2px;line-height:1.5">'+
     'Right = right ÷ graded: drills + study sittings (one grade per card a day, the worse one) + games’ first taps at half weight.<br>'+
     'Ladder = the average rung of the cards in play: learning 0 · every other day 20 · weekly 40 · bi-weekly 60 · monthly 80 · graduated 100. Parked cards stay out.<br>'+
@@ -28573,6 +28574,168 @@ function renderMPScores(el,top){
   el.innerHTML=h;
 }
 // SCORESPAGE_END
+// MLDIAL_START — 🎚 THE LOAD DIAL (slice 2 of PLAN_mental_load_2026-11-03.md; her answers 2026-11-03: starting minutes by age 12 · 15 · 25 · 35,
+// "Suggest" mode later (slice 3), games at ½ weight (her "yes I think"), buffer later (slice 4)). Mom's Day ▸ School ▸ 📊 Scores ▸ each kid's card,
+// under the Load meter: "Minutes a day: N" (− / + in 5-minute steps, 5–120) and "Sittings: N" (1–4). ONE control per kid that WRITES the knobs
+// the app already has — it adds no 28th rule, and nothing reads the dial itself except the meter.
+//   · DEFAULT — from the kid's grade on the roster (Settings ▸ Family): Pre-K 12 · K–2 15 · 3–4 25 · 5+ 35 (MLD_BANDS). No grade: a kid who
+//     isn't school-age is Pre-K; anyone else has no default (the meter keeps "no budget set yet" until Mom taps the dial). The default is only
+//     shown and read by the meter — it is never written on its own.
+//   · STORED — mastery/<kid>_settings/load/{budgetMin, sittings} (the node the meter already reads) + load/last = {at, moved, undo} for Undo.
+//   · THE TRANSLATION — mlKnobsFor(minutes, sittings, kidState), PURE. Everything is counted in card showings: the day holds
+//     C = minutes × 60 ÷ the kid's own seconds a card (drill + study over the last 28 days, MLD_SECS_DEF when nothing is logged). The claim
+//     order (research order — retrieve before learn, learn before new, play last):
+//       1. reviews  — the ladder's reviews a day (NEWBUDGET's nbLoad), never dropped; they claim first, up to the whole day.
+//       2. learning — cards still at introduction × passes, inside the unknown room: at most MLD_UNKNOWN (30 %) of the day (Burns 2006/2010,
+//                     incremental rehearsal: a high known : unknown ratio).
+//       3. new      — what the unknown room has left ÷ passes; never under 1 a day, so a heavy ladder slows the kid, never stops them.
+//       4. games    — what the day has left after reviews and the unknown room, at ½ weight (a game minute costs half a budget minute).
+//     The knobs it writes (targeted paths, ONE multi-path update, only those whose value changes):
+//       _settings/new_budget             = new cards a day (1–60) — only when a session is in the budget (budgetRole), else NEWBUDGET is off
+//       _sessions/<sid>/newPerDay        = that session's share of the new cards (deck / Daily Study sessions outside the budget, 0–50)
+//       _sessions/<sid>/maxCards         = share × days a card is learned (intro_dots) — CPSEATS' "Auto" seats, so the new cards fit (1–60)
+//       _sessions/<sid>/mixFinish        = the Daily Mix's finish line: reviews ÷ sittings (5–60)
+//       _settings/max_learn_per_drill    = learning cards in one drill: the unknown room ÷ passes ÷ sittings (1–40)
+//       _settings/max_overdue_per_drill  = overdue reviews in one return-day drill: the day ÷ sittings (1–60)
+//       _settings/missPlay/cap           = cards on the missed-card games list: games showings ÷ 3 first-tap rights (1–99)
+//     Read, not written (the rest of the plan's knobs): passes, intro_dots, max_per_cat, max_intro_per_cat, cat_caps/cat_intro_max/cat_hold
+//     (per deck — the Area buffer, slice 4), focusDecks, mixInAt/handOffAt, check-up perDay, gameDecks/gameRules, sprint gate, retrieval slot
+//     minutes (already measured). A session in the budget keeps its own maxCards (NEWBUDGET grows it by the day's share).
+//     Monotonic: more minutes never give fewer cards to any knob; more sittings only make each sitting smaller.
+//   · WHEN — only when Mom taps the dial (momHere). Never on boot, never on render. db && !_dryRun() only; ?dryrun=1 writes nothing.
+//   · WHAT CHANGED + UNDO — the card lists the knobs the last tap moved ("New cards a day 12 → 10 · …") and an ↩ Undo puts every one back,
+//     the dial too (the relay Undo pattern: a list of {p, was} / {p, gone}, one multi-path update; stored in load/last so every Mom device has it).
+//   · No kid or family names: the roster gives the kids, their grades and names.
+const MLD_BANDS=[[-1,12,"Pre-K"],[2,15,"K–2"],[4,25,"3–4"],[99,35,"5+"]];   // up to grade → minutes a school day (K = 0, Pre-K = −1)
+const MLD_SECS_DEF=10, MLD_UNKNOWN=0.3, MLD_GAME_W=0.5, MLD_STEP=5, MLD_MIN=5, MLD_MAX=120, MLD_SIT_MAX=4, MLD_GAME_RIGHTS=3;
+function _mldClamp(n,a,b){ n=Math.floor(Number(n)||0); return Math.max(a,Math.min(b,n)); }
+function _mldMD(){ return (typeof masteryData!=="undefined"&&masteryData)||{}; }
+// the kid's grade → −1 Pre-K · 0 K · 1–12, or null
+function mldGrade(kid){
+  try{ const L=(typeof ROSTER_DEF!=="undefined"&&Array.isArray(ROSTER_DEF))?ROSTER_DEF:[]; const k=L.find(x=>x&&x.id===kid); if(!k) return null;
+    const g=String(k.grade==null?"":k.grade).trim().toUpperCase();
+    if(g==="PREK"||g==="PRE-K") return -1; if(g==="K") return 0; const n=parseInt(g,10); if(isFinite(n)) return n;
+    return k.schoolAge===false?-1:null; }catch(e){ return null; }
+}
+// PURE: grade → {min, label} or null
+function mldBandFor(g){ if(g==null||!isFinite(g)) return null; for(const b of MLD_BANDS){ if(g<=b[0]) return {min:b[1],label:b[2]}; } return {min:35,label:"5+"}; }
+function mldDefault(kid){ const b=mldBandFor(mldGrade(kid)); return b?b.min:undefined; }
+// the dial as it stands: stored, else the band's default (not stored)
+function mldDial(kid){
+  const s=_mldMD()[kid+"_settings"]||{}, L=(s.load&&typeof s.load==="object")?s.load:{};
+  const st=Number(L.budgetMin)>0, d=mldDefault(kid);
+  return {minutes:st?_mldClamp(L.budgetMin,MLD_MIN,MLD_MAX):(d||null),sittings:_mldClamp(L.sittings||1,1,MLD_SIT_MAX),stored:st,band:mldBandFor(mldGrade(kid))};
+}
+// PURE: the dial → the knobs. ks = {secsPerCard, reviewsPerDay, learning, passes, introDots, sessions:[{sid, kind, budgetRole}]}
+function mlKnobsFor(minutes,sittings,ks){
+  ks=ks||{}; minutes=Math.max(0,Math.floor(Number(minutes)||0)); sittings=_mldClamp(sittings||1,1,MLD_SIT_MAX);
+  const spc=Math.max(3,Math.min(60,Number(ks.secsPerCard)||MLD_SECS_DEF)), p=_mldClamp(ks.passes||2,1,5), dots=_mldClamp(ks.introDots||5,1,10);
+  const C=Math.floor(minutes*60/spc), R=Math.max(0,Math.round(Number(ks.reviewsPerDay)||0)), Lr=Math.max(0,Math.floor(Number(ks.learning)||0));
+  const rev=Math.min(R,C);                                         // 1 · reviews, first, never dropped
+  const unk=Math.min(C-rev,Math.floor(C*MLD_UNKNOWN));             // the unknown room
+  const learn=Math.min(Lr*p,unk);                                  // 2 · learning
+  const N=Math.max(1,Math.floor((unk-learn)/p));                   // 3 · new (at least 1 a day)
+  const games=Math.max(0,C-rev-unk);                               // 4 · games, what's left
+  const sess=(ks.sessions||[]).filter(s=>s&&s.sid!=null);
+  const study=sess.filter(s=>s.kind==="deck"||s.kind==="all"), inB=study.filter(s=>s.budgetRole), outB=study.filter(s=>!s.budgetRole), mix=sess.filter(s=>s.kind==="mix");
+  const units=outB.length+(inB.length?1:0), knobs=[];
+  const share=i=>units?Math.floor(N/units)+(i<N%units?1:0):0;
+  if(inB.length) knobs.push({knob:"new_budget",rel:"_settings/new_budget",value:_mldClamp(Math.max(1,share(outB.length)),1,60)});
+  outB.forEach((s,i)=>{ const n=_mldClamp(share(i),0,50);
+    knobs.push({knob:"newPerDay",sid:s.sid,rel:"_sessions/"+s.sid+"/newPerDay",value:n});
+    knobs.push({knob:"maxCards",sid:s.sid,rel:"_sessions/"+s.sid+"/maxCards",value:_mldClamp(Math.max(1,n)*dots,1,60)}); });   // a session with 0 new still seats its learning cards
+  mix.forEach(s=>{ knobs.push({knob:"mixFinish",sid:s.sid,rel:"_sessions/"+s.sid+"/mixFinish",value:_mldClamp(Math.max(5,Math.ceil(rev/sittings)),5,60)}); });
+  knobs.push({knob:"max_learn_per_drill",rel:"_settings/max_learn_per_drill",value:_mldClamp(Math.max(1,Math.ceil(Math.floor(unk/p)/sittings)),1,40)});
+  knobs.push({knob:"max_overdue_per_drill",rel:"_settings/max_overdue_per_drill",value:_mldClamp(Math.max(1,Math.ceil(C/sittings)),1,60)});
+  knobs.push({knob:"missPlay.cap",rel:"_settings/missPlay/cap",value:_mldClamp(Math.max(1,Math.floor(games/MLD_GAME_RIGHTS)),1,99)});
+  const m=x=>Math.round(x*spc/60);
+  return {cards:C,secsPerCard:spc,sittings:sittings,newCards:N,claim:{reviews:rev,learning:learn,new:N*p,games:games},reviewsDue:R,
+    minutes:{reviews:m(rev),learning:m(learn),new:m(N*p),games:Math.round(games*spc/60/MLD_GAME_W)},knobs:knobs};
+}
+// the kid's state for mlKnobsFor, read from the app (masteryData, the logs, the sessions as stored)
+function mldKidState(kid){
+  const md=_mldMD(), set=md[kid+"_settings"]||{};
+  let spc=MLD_SECS_DEF;
+  try{ const to=scpToday(), w=scpWin(to,28), mn=scpMinutes(kid,md.history,md.studyLog,{},w,1), rt=scpRight(kid,md.history,md.studyLog,{},w);
+    const g=rt.drill.g+rt.study.g, secs=(mn.drill+mn.study)*60; if(g>=20&&secs>0) spc=Math.round(secs/g); }catch(e){}
+  let R=0; try{ if(typeof nbLoad==="function") R=nbLoad(kid); }catch(e){}
+  let it=md[kid]||[]; if(!Array.isArray(it)) it=Object.values(it);
+  const learning=it.filter(i=>i&&i.status==="introduction").length;
+  const raw=md[kid+"_sessions"]||{}, keys=Array.isArray(raw)?raw.map((v,i)=>String(i)):Object.keys(raw), sessions=[], ps=[];
+  keys.forEach(sid=>{ const r=raw[sid]; if(!r||typeof r!=="object") return; const kind=r.kind||"deck";
+    if(typeof ENV_SESSION_SID!=="undefined"&&sid===ENV_SESSION_SID) return;   // 🌿 the class session keeps its class's settings (and is out of nbLoad's count)
+    sessions.push({sid:sid,kind:kind,budgetRole:(r.budgetRole==="fixed"||r.budgetRole==="pace"||r.budgetRole==="rest")?r.budgetRole:null});
+    if(kind==="deck"||kind==="all") ps.push(r.passes!=null?Number(r.passes):2); });
+  const passes=ps.length?Math.round(ps.reduce((a,b)=>a+b,0)/ps.length):2;
+  return {secsPerCard:spc,reviewsPerDay:R,learning:learning,passes:passes,introDots:set.intro_dots!=null?set.intro_dots:5,sessions:sessions};
+}
+// a path's value in this device's memory ("mastery/<kid>_settings/…"), undefined when absent
+function _mldGet(p){ const parts=String(p).split("/"); if(parts.shift()!=="mastery") return undefined; let o=_mldMD();
+  for(const k of parts){ if(o==null||typeof o!=="object") return undefined; o=o[k]; } return o; }
+function _mldApplyLocal(p,v){ const parts=String(p).split("/"); if(parts.shift()!=="mastery") return; let o=_mldMD();
+  for(let i=0;i<parts.length-1;i++){ const k=parts[i]; if(o[k]==null||typeof o[k]!=="object"){ if(v==null) return; o[k]={}; } o=o[k]; }
+  const last=parts[parts.length-1]; if(v==null) delete o[last]; else o[last]=v; }
+function _mldLive(){ return typeof db!=="undefined"&&!!db&&!(typeof _dryRun==="function"&&_dryRun()); }
+function _mldSave(upd){
+  Object.keys(upd).forEach(p=>_mldApplyLocal(p,upd[p]));
+  if(_mldLive()){ try{ db.ref().update(upd); }catch(e){ console.error("[HA] load dial",e); } }   // ONE multi-path update, never a whole node
+  try{ HA_LS.setItem("ha_mastery",JSON.stringify(_mldMD())); }catch(e){}
+}
+const MLD_KNOB_LBL={new_budget:"New cards a day",newPerDay:"New a day",maxCards:"Cards a sitting",mixFinish:"Mix finish line",max_learn_per_drill:"Learning cards a drill",max_overdue_per_drill:"Overdue a drill","missPlay.cap":"Games list",budgetMin:"Minutes a day",sittings:"Sittings"};
+// PURE: the batch for one dial move → {upd, moved, undo}; only the paths whose value changes (+ load/last)
+function mldBatch(kid,minutes,sittings,out,get,at){
+  const upd={}, moved=[], undo=[], S="mastery/"+kid;
+  const put=(p,v,lbl,sid)=>{ const was=get(p); if(was===v) return; upd[p]=v; undo.push(was==null?{p:p,gone:true}:{p:p,was:was}); moved.push({k:lbl,sid:sid==null?null:String(sid),from:was==null?null:was,to:v}); };
+  put(S+"_settings/load/budgetMin",minutes,"budgetMin"); put(S+"_settings/load/sittings",sittings,"sittings");
+  (out.knobs||[]).forEach(k=>put(S+k.rel,k.value,k.knob,k.sid));
+  upd[S+"_settings/load/last"]=moved.length?{at:at||Date.now(),moved:moved,undo:undo}:null;
+  return {upd:upd,moved:moved,undo:undo};
+}
+// PURE: Undo's batch from load/last → {p: was | null} + load/last cleared
+function mldUndoBatch(kid,last){
+  const upd={}; const L=Array.isArray(last&&last.undo)?last.undo:Object.values((last&&last.undo)||{});
+  L.forEach(u=>{ if(u&&u.p&&String(u.p).indexOf("mastery/"+kid+"_")===0) upd[u.p]=u.gone?null:(u.was===undefined?null:u.was); });
+  upd["mastery/"+kid+"_settings/load/last"]=null; return upd;
+}
+// Mom taps the dial → the knobs, one batch
+function mldSet(kid,minutes,sittings){
+  if(!kid||!(typeof momHere==="function"&&momHere())) return false;
+  minutes=_mldClamp(minutes,MLD_MIN,MLD_MAX); sittings=_mldClamp(sittings,1,MLD_SIT_MAX);
+  const out=mlKnobsFor(minutes,sittings,mldKidState(kid)), b=mldBatch(kid,minutes,sittings,out,_mldGet);
+  if(!b.moved.length) return false;
+  _mldSave(b.upd);
+  try{ if(typeof renderAll==="function") renderAll(); }catch(e){}
+  return b;
+}
+function mldStep(kid,dm,ds){ const d=mldDial(kid); return mldSet(kid,d.minutes!=null?d.minutes+(dm||0)*MLD_STEP:15,d.sittings+(ds||0)); }   // no grade, no dial yet → the first tap starts at 15
+function mldUndo(kid){
+  if(!kid||!(typeof momHere==="function"&&momHere())) return false;
+  const s=_mldMD()[kid+"_settings"]||{}, last=s.load&&s.load.last; if(!last) return false;
+  const upd=mldUndoBatch(kid,last); _mldSave(upd);
+  try{ if(typeof gwShowToast==="function") gwShowToast("↩ The dial and its settings are back"); }catch(e){}
+  try{ if(typeof renderAll==="function") renderAll(); }catch(e){}
+  return upd;
+}
+function _mldV(v){ return v==null?"—":String(v); }
+function _mldSessName(kid,sid){ const r=(_mldMD()[kid+"_sessions"]||{})[sid]; return r?((r.emoji||"")+" "+(r.name||sid)).trim():String(sid); }
+function mldMovedLine(kid,moved){ return (moved||[]).filter(m=>m&&m.k!=="budgetMin"&&m.k!=="sittings").map(m=>scpE((MLD_KNOB_LBL[m.k]||m.k)+(m.sid!=null?" ("+_mldSessName(kid,m.sid)+")":""))+" "+scpE(_mldV(m.from))+" → "+scpE(_mldV(m.to))).join(" · "); }
+// the dial on the kid's Scores card (Mom only — the page is)
+function mldDialHtml(kid){
+  const d=mldDial(kid), K=scpE(kid).replace(/'/g,"\\'");
+  const b='width:34px;height:34px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  let h='<div class="mld-dial" style="margin-top:8px;padding:8px 10px;border:1px solid #eef2f7;border-radius:10px;background:#fbfdff">';
+  h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px"><span style="font-weight:800">🎚 Minutes a day:</span>'+
+    '<button onclick="mldStep(\''+K+'\',-1,0)" style="'+b+'">&minus;</button><span style="min-width:30px;text-align:center;font-weight:800">'+_mldV(d.minutes)+'</span><button onclick="mldStep(\''+K+'\',1,0)" style="'+b+'">+</button>'+
+    '<span style="font-weight:800;margin-left:8px">Sittings:</span><button onclick="mldStep(\''+K+'\',0,-1)" style="'+b+'">&minus;</button><span style="min-width:18px;text-align:center;font-weight:800">'+d.sittings+'</span><button onclick="mldStep(\''+K+'\',0,1)" style="'+b+'">+</button></div>';
+  if(!d.stored) h+='<div style="font-size:11.5px;color:var(--muted);margin-top:4px">'+(d.minutes?'Suggested for '+scpE(d.band.label)+' — nothing changes until you tap the dial.':'No grade on the roster (Settings ▸ Family) — tap + to start at 15.')+'</div>';
+  else { let out=null; try{ out=mlKnobsFor(d.minutes,d.sittings,mldKidState(kid)); }catch(e){}
+    if(out) h+='<div style="font-size:11.5px;color:#334155;margin-top:4px">A day of '+d.minutes+' min ≈ '+out.cards+' cards ('+out.secsPerCard+' s each): reviews '+out.minutes.reviews+' min · learning '+out.minutes.learning+' · new '+out.newCards+' card'+(out.newCards===1?'':'s')+' · games '+out.minutes.games+' min</div>'; }
+  const L=((_mldMD()[kid+"_settings"]||{}).load||{}).last;
+  if(L){ const mv=Array.isArray(L.moved)?L.moved:Object.values(L.moved||{}), line=mldMovedLine(kid,mv);
+    h+='<div style="font-size:11.5px;color:#334155;margin-top:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span>'+(line?'Moved: '+line:'Only the dial moved.')+'</span><button onclick="mldUndo(\''+K+'\')" style="border:1.5px solid var(--border);background:#fff;border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">↩ Undo</button></div>'; }
+  return h+'</div>';
+}
+// MLDIAL_END
 function renderCurriculumView(el,headerHtml){
   if(!momHere()){
     el.innerHTML=(headerHtml||'')+'<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center">'+
