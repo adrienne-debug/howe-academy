@@ -42832,25 +42832,26 @@ function _rlwSnapOf(tasks,o){
     if(!t||!t.id||String(t.id).endsWith("_c")) return;
     let st=false; try{ st=!!(o.todayDay&&t.day===o.todayDay&&o.nowMin!=null&&toMin(t.time)<=o.nowMin); }catch(e){}
     let fx=!!t.famBlock||!!mm[t.id]; try{ if(!fx&&o.isHeld) fx=!!o.isHeld(t); }catch(e){}
-    out[t.id]={d:t.day,t:t.time,cf:t.cascadedFrom||null,eo:!!t._eowOverflow,ck:!!ck[t.id],cl:!!cl[t.id],st:st,fx:fx,w:t.who||"",ti:String(t.title||"").slice(0,48),card:Object.assign({},t)};
+    out[t.id]={d:t.day,t:t.time,cf:t.cascadedFrom||null,eo:!!t._eowOverflow,dd:!!t._dayDrop,ck:!!ck[t.id],cl:!!cl[t.id],st:st,fx:fx,w:t.who||"",ti:String(t.title||"").slice(0,48),card:Object.assign({},t)};
   });
   return out;
 }
 // → {n, moves:[{id,who,ti,from:{d,t,cf,eo},to:{d,t}}], removed:[card…], locked:[id…]}. A checked or claimed card is never a
 // "move" (the ts-heal owns checked cards; claimed work is frozen) — a claimed / started / held card that changed DAY trips the wire.
 function _rlwDiff(before,tasks){
-  const out={n:0,moves:[],removed:[],added:[],locked:[]}; const seen={};   // RELAY3D: added = a card that was not there before (Undo removes it while it is still unchecked)
+  const out={n:0,moves:[],removed:[],added:[],boxed:[],locked:[]}; const seen={};   // RELAY3D: added = a card that was not there before (Undo removes it while it is still unchecked) · DMSLOT: boxed = went to its day's "Didn't fit today" box
   (tasks||[]).forEach(function(t){
     if(!t||!t.id||String(t.id).endsWith("_c")) return; seen[t.id]=true;
     const b=before[t.id]; if(!b){ out.added.push(t.id); return; }
-    const dayCh=(t.day!==b.d), ch=dayCh||(t.time!==b.t)||(!!t._eowOverflow!==b.eo);
-    if(!ch) return;
+    const dayCh=(t.day!==b.d), ch=dayCh||(t.time!==b.t)||(!!t._eowOverflow!==b.eo), boxed=!!t._dayDrop&&!b.dd;
+    if(!ch&&!boxed) return;
     if((dayCh&&(b.cl||b.st))||b.fx) out.locked.push(t.id);   // FXPIN: a held card (class, ⏰ set time, family time, Mom-moved) that changed at all trips the wire
     if(b.ck||b.cl||b.fx) return;                             // …and is never a "move" on the what-moved line
+    if(boxed){ out.boxed.push({id:t.id,who:b.w,ti:b.ti,d:t.day,t:b.t}); return; }   // 🃏🎯 DMSLOT: didn't fit its day — the line says so
     out.moves.push({id:t.id,who:b.w,ti:b.ti,from:{d:b.d,t:b.t,cf:b.cf,eo:b.eo},to:{d:t.day,t:t.time}});
   });
   Object.keys(before).forEach(function(id){ if(!seen[id]&&!before[id].ck&&!before[id].cl) out.removed.push(before[id].card); });
-  out.n=out.moves.length+out.removed.length+out.added.length;
+  out.n=out.moves.length+out.removed.length+out.added.length+out.boxed.length;
   return out;
 }
 function _rlwWords(e){
@@ -42862,6 +42863,7 @@ function _rlwWords(e){
   let s=(e.label||"Re-laid")+" → "+nm+" card"+(nm===1?"":"s")+" moved"+(kids?" ("+kids+")":"");
   if(nr) s+=" · "+nr+" to next week";
   const na=(e.added||[]).length; if(na) s+=" · "+na+" added";   // RELAY3D
+  const nb=(e.boxed||[]).length; if(nb) s+=" · "+nb+" didn't fit (in the day's box)";   // 🃏🎯 DMSLOT
   if(e.locked&&e.locked.length) s+=" · ⚠ "+e.locked.length+" held card"+(e.locked.length===1?"":"s")+" changed";
   if(e.undone) s+=" · undone";
   return s;
@@ -42884,6 +42886,7 @@ function _rlwRun(pend,fn,after){
     moves:d.moves.slice(0,RLW_MAX_MOVES),removed:d.removed.slice(0,RLW_MAX_REMOVED)};
   if(d.locked.length) e.locked=d.locked;
   if(d.added&&d.added.length) e.added=d.added.slice(0,RLW_MAX_MOVES);   // RELAY3D
+  if(d.boxed&&d.boxed.length) e.boxed=d.boxed.slice(0,RLW_MAX_MOVES);   // 🃏🎯 DMSLOT
   if(pend.undo&&pend.undo.length) e.undo=pend.undo;
   relayLogData=Object.assign({},relayLogData); relayLogData[String(at)]=e;
   const keys=Object.keys(relayLogData).sort(); const drop=[];
@@ -42937,6 +42940,7 @@ function _rlwUndoUpd(e,tasks,o){
   });
   (e.removed||[]).forEach(function(c){ if(!c||!c.id||byId[c.id]||ck[c.id]) return; upd[wk+"/tasks/"+c.id]=c; cards++; });
   (e.added||[]).forEach(function(id){ const t=byId[id]; if(!t||ck[id]||cl[id]) return; upd[wk+"/tasks/"+id]=null; cards++; });   // RELAY3D: an added card goes again, unless it was checked or claimed since
+  (e.boxed||[]).forEach(function(b){ const t=byId[b.id]; if(!t||ck[b.id]||cl[b.id]||!t._dayDrop){ skipped++; return; } upd[wk+"/tasks/"+b.id+"/_dayDrop"]=null; cards++; });   // 🃏🎯 DMSLOT: back out of the box
   upd[wk+"/relayLog/"+e.at+"/undone"]=o.now||Date.now();
   return {upd:upd,cards:cards,skipped:skipped};
 }
@@ -100318,6 +100322,12 @@ function seGuardWeek(tasks,o){
         // 💻 a card sitting on a device another kid is already using (to capacity) is not fine either
         const _lb={}; const laneBusyC=l=>_lb[l]||(_lb[l]=laneBusy(kid,di,l));
         const laneClash=mov.some(t=>{ const l=laneOf(t); if(!l) return false; const a=tm(t.time), b=a+dur(t); return laneBusyC(l).some(iv=>a<iv[1]&&iv[0]<b); });
+        // 🃏🎯 DMSLOT: a retrieval card past the day's end first takes a free slot inside the day — nothing else moves. No
+        // slot → the rules below as before (re-lay in order, a lesson rolls, DAYDROP's box on a day not yet started).
+        if(!o.displayOnly&&late&&typeof o.retrSlot==="function"){ let _rs=false;
+          mov.filter(t=>t.subjectKey==="retrieval"&&tm(t.time)+dur(t)>W.end).forEach(t=>{ let m=null; try{ m=o.retrSlot(tasks.filter(x=>!skip(x)),t,W,{floor:S0}); }catch(e){ m=null; }
+            if(m!=null&&m!==tm(t.time)){ setT(t,day,m); if(out.retimed.indexOf(t.id)<0) out.retimed.push(t.id); _rs=true; } });
+          if(_rs) continue; }
         if(!o.displayOnly&&!stacked&&!late&&!early&&!laneClash&&nbBehind){
           // only the notebook is out of place → a SWAP, never a re-pack (a re-pack can run a minute past the end and roll a
           // lesson off the week — dry-run on live 9/24 did exactly that). The notebook takes the first open card's slot, the
@@ -100388,6 +100398,42 @@ function seGuardWeek(tasks,o){
   }
   return out;
 }
+// DMSLOT_START — 🃏 Daily Drill / 🎯 Match & Play take a free slot INSIDE the school day (her yes 2026-11-08). Live (a family
+// copy's Regenerate Thu 11/5 11:47 AM — co-op until 3:00, school end 4:00): the retrieval pass only looked AFTER the kid's
+// last card (Piano 3:40–4:00) and allowed 4 h of overtime, so Drill landed 4:00 and Match 4:05 — the free 3:30–3:40 was never
+// tried — and the guard, the day already running, could only log "daily-only overflow". One slot finder now, used by the
+// generator (gwInjectRetrieval) and by the school-end guard every re-lay door runs (seGuardWeek, through seGuardCtx):
+//   1. the first free window at/after the kid's last card that ENDS by the day's end — the end-of-block slot as before, so a
+//      day that had room is laid exactly as it was;
+//   2. else the earliest free window from the kid's day start (after co-op, after the Morning Notebook, after now on a running
+//      day) up to that last card;
+//   never on lunch, never on any of the kid's own cards (a fixed-time class included — nothing else moves), a Mom-required
+//   card never on another kid's Mom part, and the Closing Notebook still fits after it. null = no room: the generator puts the
+//   card in that day's "Didn't fit today" box (DAYDROP's `_dayDrop`), the guard leaves it to its own overflow rule.
+// Pure. W = {start,end,lunchStart,lunchEnd} (seGuardCtx().win); o = {toMin, floor?}. Test: test_drill_match_slot.js.
+function seRetrSlot(tasks,card,W,o){
+  o=o||{}; if(!card||!W||!(W.end>W.start)||typeof o.toMin!=="function") return null;
+  const tm=o.toMin, d=+card.dur||15, dur=t=>+t.dur||20, ov=(a1,a2,b1,b2)=>a1<b2&&b1<a2;
+  const isClose=t=>t.subjectKey==="closing_nb"||/closing notebook/i.test(t.title||"");
+  const isMorn=t=>t.subjectKey==="morning_nb"||/morning notebook/i.test(t.title||"");
+  const off=t=>!t||t===card||String(t.id||"").endsWith("_c")||!!t._eowOverflow||!!t._dayDrop||tm(t.time)==null||isNaN(tm(t.time));
+  const dayAll=(tasks||[]).filter(t=>!off(t)&&String(t.day||"").toLowerCase()===String(card.day||"").toLowerCase());
+  const mine=dayAll.filter(t=>t.who===card.who); if(!mine.length) return null;
+  const close=mine.filter(isClose)[0]||null, body=mine.filter(t=>!isClose(t)), morn=body.filter(isMorn)[0]||null;
+  const busy=body.map(t=>[tm(t.time),tm(t.time)+dur(t)]);
+  if(W.lunchStart!=null&&W.lunchEnd>W.lunchStart) busy.push([W.lunchStart,W.lunchEnd]);
+  const momBusy=(card.mom==="required")?dayAll.filter(t=>t.mom==="required"&&t.who!==card.who).map(t=>(typeof mlMomSpan==="function")?mlMomSpan(t,tm(t.time),dur(t)):[tm(t.time),tm(t.time)+dur(t)]):[];   // 👩 MOMPART3: their Mom part only
+  const floor=Math.max(W.start,Math.min.apply(null,mine.map(t=>tm(t.time))),morn?tm(morn.time)+dur(morn):0,+o.floor||0);
+  const fits=t0=>{ const t1=t0+d; if(t0<floor||t1>W.end) return false;
+    if(busy.some(b=>ov(t0,t1,b[0],b[1]))||momBusy.some(b=>ov(t0,t1,b[0],b[1]))) return false;
+    if(close&&t1>tm(close.time)&&t1+dur(close)>W.end) return false;   // the Closing Notebook is re-timed after it — it must still fit
+    return true; };
+  let last=0; body.forEach(t=>{ const e=tm(t.time)+dur(t); if(e>last) last=e; });
+  for(let t0=Math.max(last,floor);t0+d<=W.end;t0+=5) if(fits(t0)) return t0;
+  for(let t0=floor;t0<last&&t0+d<=W.end;t0+=5) if(fits(t0)) return t0;
+  return null;
+}
+// DMSLOT_END
 // The app's context for seGuardWeek: Settings school day (per-day override, else the default), the kid's off days,
 // fixed-time classes, plan-backed lessons (dailies and the notebooks never roll), and pace (cursor − expected, signed).
 function seGuardCtx(extra){
@@ -100401,8 +100447,9 @@ function seGuardCtx(extra){
     days:DAYS, todayDay:(typeof _todayDay!=="undefined")?_todayDay:null, nowMin:now.getHours()*60+now.getMinutes(),
     dayISO:iso,   // 🗓 WEEKEND (2026-10-11): lets the catch-up tell a finished week from the coming one
     checked:(typeof checked!=="undefined"&&checked)||{}, claimed:(typeof claimed!=="undefined"&&claimed)||{},
-    win:day=>{ const ov=(_sd.overrides||{})[day]||{}; const _vs=ov.start||_sd.defaultStart||"10:00 AM", _ve=ov.end||_sd.defaultEnd||"4:15 PM"; const _w=(typeof dtLunch==="function")?dtLunch(day):null;   // ⏰ DAYTIMES: this date's own times
-      return {start:toMin((typeof dtS==="function")?dtS(day,_vs):_vs),end:toMin((typeof dtE==="function")?dtE(day,_ve):_ve),lunchStart:_w?_w.s:_r.lunchStart,lunchEnd:_w?_w.e:_r.lunchEnd}; },
+    win:(day,iso)=>{ const ov=(_sd.overrides||{})[day]||{}; const _vs=ov.start||_sd.defaultStart||"10:00 AM", _ve=ov.end||_sd.defaultEnd||"4:15 PM"; const _w=(typeof dtLunch==="function")?dtLunch(day,iso):null;   // ⏰ DAYTIMES: this date's own times · DMSLOT: iso = the date the generator lays (the guard passes none, as before)
+      return {start:toMin((typeof dtS==="function")?dtS(day,_vs,iso):_vs),end:toMin((typeof dtE==="function")?dtE(day,_ve,iso):_ve),lunchStart:_w?_w.s:_r.lunchStart,lunchEnd:_w?_w.e:_r.lunchEnd}; },
+    retrSlot:(tasks,card,W,x)=>seRetrSlot(tasks,card,W,Object.assign({toMin:toMin,fromMin:fromMin},x||{})),   // 🃏🎯 DMSLOT
     kidOff:(kid,day)=>{ try{ const ds=iso(day); return !!(ds&&typeof smapIsKidOff==="function"&&smapIsKidOff(kid,ds)); }catch(e){ return false; } },
     isClass:t=>{ try{ return !!(t&&t.famBlock)||(typeof mvtHeldToday==="function"&&mvtHeldToday(t))||   // 📅 MOVETODAY: held where Mom put it today
       (typeof fxIsClass==="function"&&fxIsClass(subj(t)))||(typeof fdtHeld==="function"&&fdtHeld(t)); }catch(e){ return false; } },   // 👨‍👩‍👧 family time too · ⏰ FIXEDDAYTIME: a set-time card
@@ -100776,6 +100823,9 @@ function gwPlanIds(allTasks){
 
 function gwInjectRetrieval(allTasks,sortedDates,WDAY_MAP,skipSet,dates,dayOfYear){
   if(typeof retrTracks!=="function") return;
+  // 🃏🎯 DMSLOT: the guard's own school-day window (Settings + this date's ⏰ times + lunch); a running day lays from now
+  let _dmCtx=null; try{ _dmCtx=(typeof seGuardCtx==="function")?seGuardCtx():null; }catch(e){ _dmCtx=null; }
+  const _dmD=new Date(), _dmToday=_dmD.getFullYear()+"-"+String(_dmD.getMonth()+1).padStart(2,"0")+"-"+String(_dmD.getDate()).padStart(2,"0"), _dmNow=Math.ceil((_dmD.getHours()*60+_dmD.getMinutes())/5)*5;
   for(const dk of sortedDates){
     const d=gwParseDate(dk);
     const dn=WDAY_MAP[d.getDay()];
@@ -100803,38 +100853,26 @@ function gwInjectRetrieval(allTasks,sortedDates,WDAY_MAP,skipSet,dates,dayOfYear
       // is not lunch and not on any kid's Mom-required card (Mom lane — a Mom-required slot; 🎯 Match & Play is not, PRACTICE_SOLO),
       // then the kid's Closing Notebook is re-timed to stay last. The old "after the kid's last
       // card" ignored all three (wk17/18 audit: 15 "closing not last", 2 lunch overlaps, 16 Mom
-      // clashes — all retrieval slots) and is now only the never-drop fallback.
-      let placed=false;
+      // clashes — all retrieval slots).
+      // 🃏🎯 DMSLOT (her yes 2026-11-08): the slot takes a free window INSIDE this date's school day (seRetrSlot — the same finder
+      // the school-end guard uses on every re-lay): the end-of-block slot after the kid's last card when it ends by the day's
+      // end, else the earliest free window earlier in the day; then the kid's Closing Notebook is re-timed to stay last. No room
+      // → the card is born in that day's "Didn't fit today" box (`_dayDrop`, DAYDROP) — never past the end (it used to walk up
+      // to school end + 4 h; live 11/5 Drill 4:00 / Match 4:05 on a day ending 4:00).
+      let m=null;
       try{
-        if(typeof gwRules==="function"){
-          const isClosing=t=>(t.title||"").indexOf("Closing Notebook")>=0||t.subjectKey==="closing_nb";
-          const R=gwRules(); const dur=slot.dur||15;
-          const dayAll=allTasks.filter(t=>t.day===dn&&!String(t.id||"").endsWith("_c"));
-          const ov=(a1,a2,b1,b2)=>a1<b2&&b1<a2;
-          const kidCards=dayAll.filter(t=>t.who===kid&&!isClosing(t));
-          const momCards=dayAll.filter(t=>t.mom==="required"&&!(t.who===kid&&isClosing(t)));
-          let lastEnd=0; kidCards.forEach(t=>{ const e=toMin(t.time)+(t.dur||20); if(e>lastEnd) lastEnd=e; });
-          // First free window at/after the kid's own last card: not lunch, not on any of this
-          // kid's cards, not on ANY kid's Mom-required card (Mom lane). Walk in 5-min steps up
-          // to school end + 4h overtime so a slot always finds a home.
-          const limit=R.schoolEnd+240;
-          for(let t0=Math.max(lastEnd,R.schoolStart);t0+dur<=limit;t0+=5){
-            const t1=t0+dur;
-            if(R.lunchStart!=null&&ov(t0,t1,R.lunchStart,R.lunchEnd)) continue;
-            if(kidCards.some(x=>ov(t0,t1,toMin(x.time),toMin(x.time)+(x.dur||20)))) continue;
-            if(slot.mom==="required"&&momCards.some(x=>{ const _ms=(typeof mlMomSpan==="function")?mlMomSpan(x,toMin(x.time),x.dur||20):[toMin(x.time),toMin(x.time)+(x.dur||20)]; return ov(t0,t1,_ms[0],_ms[1]); })) continue;   // 👩 MOMPART3: their Mom part only
-            slot.time=fromMin(t0); placed=true; break;
-          }
-          if(placed){
-            const slotEnd=toMin(slot.time)+dur;   // keep the kid's Closing Notebook the last thing of the day
-            mine.filter(isClosing).forEach(c=>{ if(toMin(c.time)<slotEnd) c.time=fromMin(slotEnd); });
-          }
-        }
-      }catch(e){ placed=false; }
-      if(!placed){
-        // Fallback (never drop a slot): after the kid's last card, as before.
+        const W=_dmCtx?_dmCtx.win(dn,dk):(typeof gwRules==="function"?(R=>({start:R.schoolStart,end:R.schoolEnd,lunchStart:R.lunchStart,lunchEnd:R.lunchEnd}))(gwRules()):null);
+        m=W?seRetrSlot(allTasks,slot,W,{toMin:toMin,floor:dk===_dmToday?_dmNow:0}):null;
+      }catch(e){ m=null; }
+      if(m!=null){
+        slot.time=fromMin(m);
+        const slotEnd=m+slot.dur;   // keep the kid's Closing Notebook the last thing of the day
+        mine.filter(t=>(t.title||"").indexOf("Closing Notebook")>=0||t.subjectKey==="closing_nb").forEach(c=>{ if(toMin(c.time)<slotEnd) c.time=fromMin(slotEnd); });
+      } else {
+        // no room inside the day → the day's box; its time is after the kid's last card only so it sorts last
         let lastEnd=0; mine.forEach(t=>{ const e=toMin(t.time)+(t.dur||20); if(e>lastEnd) lastEnd=e; });
-        slot.time=fromMin(lastEnd);
+        slot.time=fromMin(lastEnd); slot._dayDrop=true;
+        if(typeof dbg==="function") dbg("🃏 retrieval: "+kid+" "+dn+" "+slot.title+" didn't fit the school day — in the day's box");
       }
       allTasks.push(slot);
       }
