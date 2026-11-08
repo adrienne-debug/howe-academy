@@ -37,7 +37,7 @@ function harness(items, defs) {
     block("// ── MST_ENGINE_START ──", "// ── MST_ENGINE_END ──"),
     "let mstState=null, mstFlipped=false, mstTyped='', mstChecked=null, mstSid=null;",
     ["mstEsc", "mstEscJs", "mstItemAnswer", "mstCardDef", "mstCardMode", "mstIsRuleCard", "mstIsSpellCard", "mstAudioBtn", "mstFlipBtn",
-      "mstCardPic", "mstPicCardHtml", "mstCardHtml", "mstTypeAnsOn", "_smTileVis", "_matchPlain", "_matchLures", "mstTap"].map(slice).join("\n"),
+      "_mastVisNorm", "mastLiveVisual", "mastLiveImg", "mstCardPic", "mstPicCardHtml", "mstCardHtml", "mstTypeAnsOn", "_smTileVis", "_matchPlain", "_matchLures", "mstTap"].map(slice).join("\n"),
     block("// MST_NAV_START", "// MST_NAV_END"),
     block("// PATPICK_START", "// PATPICK_END"),
   ].join("\n"), ctx);

@@ -71496,11 +71496,9 @@ let mastShowMe={};   // {"itemId|printNum": "ok" | tappedWrongId}
 function _smHash(s){ let h=0; for(let i=0;i<s.length;i++){ h=((h<<5)-h)+s.charCodeAt(i); h|=0; } return Math.abs(h); }
 function _smTileVis(it,noGlyph){
   if(!it) return null;
-  if(it.imageUrl) return '<img src="'+it.imageUrl+'" style="width:84px;height:84px;object-fit:cover;border-radius:12px;pointer-events:none">';
-  const mv=mastGetVisual(it.subject,it.prompt);
-  if(mv&&typeof mv==="string") return '<span class="memoji" style="font-size:54px;line-height:1;pointer-events:none">'+mv+'</span>';
-  if(mv&&mv.imageUrl) return '<img src="'+mv.imageUrl+'" style="width:84px;height:84px;object-fit:cover;border-radius:12px;pointer-events:none">';
-  if(it.emoji) return '<span class="memoji" style="font-size:54px;line-height:1;pointer-events:none">'+it.emoji+'</span>';
+  const lv=mastLiveVisual(it);   // UNITPIC: live picture first
+  if(lv&&lv.img) return '<img src="'+lv.img+'" style="width:84px;height:84px;object-fit:cover;border-radius:12px;pointer-events:none">';
+  if(lv) return '<span class="memoji" style="font-size:54px;line-height:1;pointer-events:none">'+lv.emoji+'</span>';
   if(MAST_ANIMAL_EMOJI[it.prompt]) return '<span class="memoji" style="font-size:54px;line-height:1;pointer-events:none">'+MAST_ANIMAL_EMOJI[it.prompt]+'</span>';
   if(it.subject==="Colors"&&MAST_COLOR_MAP[it.prompt]) return '<div style="width:64px;height:64px;border-radius:50%;background:'+MAST_COLOR_MAP[it.prompt]+';border:2px solid '+mastColorBorder(it.prompt)+';pointer-events:none"></div>';
   if(it.subject==="Shapes") return '<span class="memoji" style="font-size:54px;line-height:1;pointer-events:none">'+mastShapeVis(it.prompt,54)+'</span>';
@@ -74591,6 +74589,24 @@ function mastGetVisual(cat,name){
   if(typeof unitStudies!=="undefined"&&unitStudies){ for(const uid in unitStudies){ const uv=(unitStudies[uid]&&unitStudies[uid].visuals)||null; if(uv&&uv[key]) return uv[key]; } }
   return null;
 }
+// UNITPIC_START — the ONE answer to "which picture does this card show?" (a family's report 2026-11-08: Mom
+// added a new picture to a unit card; the unit menu showed it, but the flashcard kept the original wiki picture).
+// Enroll stamps the visual onto the kid's item (imageUrl / emoji) and every card drawer read that copy FIRST, so a
+// changed unit picture never reached the drill, study, games, Match or the print sheets. Live first now, the same
+// order as the unit menu (_unitPortrait): the kid's own _visuals override → the unit's shared visual → the item's
+// own imageUrl / emoji only as the last fallback (cards that aren't from a unit, or units not loaded yet).
+// Enroll still stamps the copy (offline / older cards) — it is just never read ahead of the live picture.
+// The live lookup IS mastGetVisual (kid override → unit visual), asked for the card's own kid when one is given.
+// Returns {img} or {emoji}, with from: "live" | "item"; null when the card has no picture of its own.
+function _mastVisNorm(v,from){ if(typeof v==="string"&&v) return {emoji:v,from:from}; if(v&&typeof v==="object"&&v.imageUrl) return {img:String(v.imageUrl),from:from}; return null; }
+function mastLiveVisual(it,kid){
+  if(!it) return null;
+  let v=null;
+  if(typeof mastGetVisual==="function"){ const _mk=masteryKid; if(kid) masteryKid=kid; try{ v=mastGetVisual(it.subject,it.prompt); }catch(e){ v=null; } finally{ masteryKid=_mk; } }
+  return _mastVisNorm(v,"live")||_mastVisNorm(it.imageUrl?{imageUrl:it.imageUrl}:it.emoji,"item");
+}
+function mastLiveImg(it,kid){ const lv=mastLiveVisual(it,kid); return (lv&&lv.img)||""; }
+// UNITPIC_END
 // Flip "face" mode for a deck: "desc" (name+pic front → description back, default)
 // or "name" (pic front → name back). Shared via the unit registry (deck.flipFace).
 function mastCatFace(subject){
@@ -75728,11 +75744,8 @@ function mastCountSync(wrap,k,n){
 }
 function mastCountVisBig(it){ return mastCountVis(mastCountN(it),240,true); }
 function mastItemVis(it){
-  if(it.imageUrl) return '<img src="'+it.imageUrl+'" class="mast-jcard-photo">';
-  if(it.emoji) return it.emoji;
-  const mv=mastGetVisual(it.subject,it.prompt);
-  if(mv&&typeof mv==="string") return mv;
-  if(mv&&mv.imageUrl) return '<img src="'+mv.imageUrl+'" class="mast-jcard-photo">';
+  const lv=mastLiveVisual(it);   // UNITPIC: the live picture first — the item's stamped copy only as the fallback
+  if(lv) return lv.img?'<img src="'+lv.img+'" class="mast-jcard-photo">':lv.emoji;
   if(MAST_ANIMAL_EMOJI[it.prompt]) return MAST_ANIMAL_EMOJI[it.prompt];
   const cat=it.subject||"";
   if(cat==="Colors"&&MAST_COLOR_MAP[it.prompt]) return '<div style="width:36px;height:36px;border-radius:50%;background:'+MAST_COLOR_MAP[it.prompt]+';border:1.5px solid '+mastColorBorder(it.prompt)+';margin:0 auto"></div>';
@@ -75748,7 +75761,7 @@ function mastExpandHtml(it){
   const _xa=(typeof owRuleBack==="function")?owRuleBack(masteryKid,it):it.answer;   // OURWORDS
   if(_xa&&_xa!==it.prompt) inner+='<div>'+_xa+'</div>';
   if(it.definition) inner+='<div>'+it.definition+'</div>';
-  if(it.imageUrl) inner+='<img src="'+it.imageUrl+'" class="mast-expand-img">';
+  { const _xi=mastLiveImg(it); if(_xi) inner+='<img src="'+_xi+'" class="mast-expand-img">'; }   // UNITPIC
 
   // Per-item quiz history
   const hist=masteryData.history&&masteryData.history[masteryKid]?masteryData.history[masteryKid]:{};
@@ -83610,7 +83623,7 @@ const TRAIN_CSS='<style>.trn-row{display:flex;align-items:flex-end;gap:6px;justi
 function _trainCarHtml(L,o){
   o=o||{}; const ix=TRAIN_ABC.indexOf(L), col=TRAIN_COLS[(ix<0?0:ix)%TRAIN_COLS.length];
   let pic=""; const it=o.cards&&o.cards[L];
-  if(it&&(it.imageUrl||it.emoji||(typeof mastGetVisual==="function"&&mastGetVisual(it.subject,it.prompt)))){ try{ pic=mastItemVis(it)||""; }catch(e){ pic=""; } }
+  if(it&&mastLiveVisual(it)){ try{ pic=mastItemVis(it)||""; }catch(e){ pic=""; } }   // UNITPIC
   return '<div class="trn-car'+(o.cls?' '+o.cls:'')+'" data-trn-l="'+L+'" style="background:'+col+'">'+(pic?'<span class="trn-pic">'+pic+'</span>':'')+'<span class="trn-up">'+L+'</span><span class="trn-lo">'+L.toLowerCase()+'</span></div>';
 }
 function buildTrainHtml(color){
@@ -84200,9 +84213,7 @@ function mstCardPic(card){
     { const _ep=(typeof envPicCycle==="function")?envPicCycle(card):""; if(_ep) return _ep; }   // ⚡ ENVIDFLASH: a different picture of the item each show
     let items=masteryData[masteryKid]; if(!Array.isArray(items)) items=Object.values(items||{});
     const it=items.find(i=>i&&(card.id?i.id===card.id:(i.prompt===card.name&&i.subject===card.deck)));
-    if(it&&it.imageUrl) return String(it.imageUrl);
-    const v=(typeof mastGetVisual==="function")?mastGetVisual(card.deck||"",card.name||""):null;
-    if(v&&typeof v==="object"&&v.imageUrl) return String(v.imageUrl);
+    return mastLiveImg(it||{subject:card.deck||"",prompt:card.name||""});   // UNITPIC: live picture first
   }catch(e){}
   return "";
 }
@@ -88598,9 +88609,8 @@ function _renderMasteryInner(el){
     if(secondLook) c+='<div style="display:inline-block;margin-bottom:8px;padding:4px 12px;border-radius:999px;background:#fef3c7;border:1.5px solid #f59e0b;color:#92400e;font-size:11px;font-weight:800;position:relative;z-index:2">\u{1F440} One more look — just look &amp; say it</div>';
 
     // Big visual
-    let bigVis=it.imageUrl?'<img src="'+it.imageUrl+'" style="height:100%;width:auto;max-width:100%;border-radius:18px;object-fit:contain">':'';
-    if(!bigVis&&it.emoji) bigVis='<span class="mast-bigmoji">'+it.emoji+'</span>';
-    if(!bigVis){ const _mv=mastGetVisual(it.subject,it.prompt); if(_mv&&typeof _mv==="string") bigVis='<span class="mast-bigmoji">'+_mv+'</span>'; else if(_mv&&_mv.imageUrl) bigVis='<img src="'+_mv.imageUrl+'" style="height:100%;width:auto;max-width:100%;border-radius:18px;object-fit:contain">'; }
+    const _lv=mastLiveVisual(it);   // UNITPIC: the live picture first — the item's stamped copy only as the fallback
+    let bigVis=!_lv?'':_lv.img?'<img src="'+_lv.img+'" style="height:100%;width:auto;max-width:100%;border-radius:18px;object-fit:contain">':'<span class="mast-bigmoji">'+_lv.emoji+'</span>';
     if(!bigVis&&MAST_ANIMAL_EMOJI[it.prompt]) bigVis='<span class="mast-bigmoji">'+MAST_ANIMAL_EMOJI[it.prompt]+'</span>';
     const cat=it.subject||"";
     if(!bigVis&&cat==="Colors"&&MAST_COLOR_MAP[it.prompt]) bigVis='<div style="width:240px;height:240px;border-radius:50%;background:'+MAST_COLOR_MAP[it.prompt]+';border:3px solid '+mastColorBorder(it.prompt)+'"></div>';
@@ -88639,7 +88649,7 @@ function _renderMasteryInner(el){
 
     // "Guess the name" mode: photo on the front, name on the back. Only when the card
     // actually has a picture (else it'd show the name on both sides).
-    const _hasPic=!!(it.imageUrl)||!!(typeof mastGetVisual==="function"&&mastGetVisual(it.subject,it.prompt));
+    const _hasPic=!!_lv&&(!!_lv.img||_lv.from!=="item");   // UNITPIC: a picture or a deck visual — an item's own emoji alone never counted
     const _faceName=(!_ruleStyle)&&(typeof mastCatFace==="function"&&mastCatFace(it.subject)==="name")&&_hasPic;
     // A LEARNING card in a quiz category flips to its answer while it's being learned
     // (math facts: 8×6 flips to 48) — once it graduates it moves to the quiz list, where
@@ -88853,7 +88863,7 @@ function _renderMasteryInner(el){
             const qsc=mastLogScores[it.id]||"";
             // Tap-to-reveal: the prompt expands to the answer/definition so the parent can
             // check the kid's answer without leaving the log (same expander as list view).
-            const qDetail=it.answer&&it.answer!==it.prompt||it.definition||it.imageUrl;
+            const qDetail=it.answer&&it.answer!==it.prompt||it.definition||mastLiveImg(it);   // UNITPIC
             h+='<div class="mast-log-item">';
             h+='<span class="mast-log-num">'+(i+1)+'.</span>';
             h+='<span class="mast-log-prompt'+(qDetail?' mast-ditem-tap':'')+'"'+(qDetail?' onclick="mastToggleExpand(\''+it.id+'\')" title="tap to reveal"':'')+'>'+it.prompt+(qDetail?' <span style="font-size:10px;opacity:0.55">\u{1F441}\u{FE0F}</span>':'')+'</span>';
@@ -88864,10 +88874,11 @@ function _renderMasteryInner(el){
             h+='</div></div>';
             if(qDetail) h+=mastExpandHtml(it);
           } else {
-            const hasDetail=it.answer&&it.answer!==it.prompt||it.definition||it.imageUrl;
+            const _dImg=mastLiveImg(it);   // UNITPIC
+            const hasDetail=it.answer&&it.answer!==it.prompt||it.definition||_dImg;
             h+='<div class="mast-ditem'+(hasDetail?" mast-ditem-tap":"")+'"'+(hasDetail?' onclick="mastToggleExpand(\''+it.id+'\')"':'')+'>';
             h+='<span class="mast-ditem-num">'+(i+1)+'.</span><span class="mast-ditem-prompt">'+it.prompt+'</span>';
-            if(it.imageUrl) h+='<img src="'+it.imageUrl+'" style="width:20px;height:20px;border-radius:3px;object-fit:cover;flex-shrink:0;margin-left:4px">';
+            if(_dImg) h+='<img src="'+_dImg+'" style="width:20px;height:20px;border-radius:3px;object-fit:cover;flex-shrink:0;margin-left:4px">';
             if(it.drop_count) h+='<span class="mast-irow-drop">\u{2B07}'+it.drop_count+'</span>';
             h+='<span class="mast-ditem-tier" style="background:'+tc+'15;color:'+tc+'">'+(MAST_TIER_LBL[it.tier]||it.tier)+'</span></div>';
             if(hasDetail) h+=mastExpandHtml(it);
@@ -89038,8 +89049,9 @@ function _renderMasteryInner(el){
       h+='<div class="mast-tier-items'+(coll?" collapsed":"")+'">';
       ladderTi.forEach(i=>{
         h+='<div class="mast-irow mast-irow-tap" onclick="mastToggleExpand(\''+i.id+'\')">';
-        if(i.imageUrl) h+='<img src="'+i.imageUrl+'" style="width:24px;height:24px;border-radius:4px;object-fit:cover;flex-shrink:0">';
-        else if(i.emoji) h+='<span style="display:inline-block;width:24px;text-align:center;flex-shrink:0">'+i.emoji+'</span>';
+        { const _lv=mastLiveVisual(i);   // UNITPIC
+          if(_lv&&_lv.img) h+='<img src="'+_lv.img+'" style="width:24px;height:24px;border-radius:4px;object-fit:cover;flex-shrink:0">';
+          else if(_lv) h+='<span style="display:inline-block;width:24px;text-align:center;flex-shrink:0">'+_lv.emoji+'</span>'; }
         h+='<span class="mast-irow-prompt">'+i.prompt+'</span>';
         if(i.drop_count) h+='<span class="mast-irow-drop">\u{2B07}'+i.drop_count+'</span>';
         // Booked review slot — visible so the schedule can be checked at a glance.
@@ -89247,11 +89259,9 @@ function pdRecs(kid){ return (masteryData&&masteryData[kid+"_paperDrills"])||{};
 // A card with a picture on its front (a photo, an emoji, a unit picture, or a drawn color / shape / count).
 function pdVisual(kid,it,px){
   if(!it) return "";
-  if(it.imageUrl) return '<img src="'+it.imageUrl+'" style="max-width:'+px+'px;max-height:'+px+'px;object-fit:contain">';
-  if(it.emoji) return '<span style="font-size:'+Math.round(px*0.7)+'px;line-height:1">'+it.emoji+'</span>';
-  const v=_pdAs(kid,()=>(typeof mastGetVisual==="function")?mastGetVisual(it.subject,it.prompt):null);
-  if(v&&typeof v==="string") return '<span style="font-size:'+Math.round(px*0.7)+'px;line-height:1">'+v+'</span>';
-  if(v&&v.imageUrl) return '<img src="'+v.imageUrl+'" style="max-width:'+px+'px;max-height:'+px+'px;object-fit:contain">';
+  const lv=mastLiveVisual(it,kid);   // UNITPIC: live picture first
+  if(lv&&lv.img) return '<img src="'+lv.img+'" style="max-width:'+px+'px;max-height:'+px+'px;object-fit:contain">';
+  if(lv) return '<span style="font-size:'+Math.round(px*0.7)+'px;line-height:1">'+lv.emoji+'</span>';
   if(typeof MAST_ANIMAL_EMOJI!=="undefined"&&MAST_ANIMAL_EMOJI[it.prompt]) return '<span style="font-size:'+Math.round(px*0.7)+'px;line-height:1">'+MAST_ANIMAL_EMOJI[it.prompt]+'</span>';
   const cat=it.subject||"";
   if(cat==="Colors"&&typeof MAST_COLOR_MAP!=="undefined"&&MAST_COLOR_MAP[it.prompt]) return '<div style="width:'+px+'px;height:'+px+'px;border-radius:50%;background:'+MAST_COLOR_MAP[it.prompt]+';border:2px solid #475569;-webkit-print-color-adjust:exact;print-color-adjust:exact"></div>';
@@ -89618,8 +89628,9 @@ function mastPrintCards(){
   const kc=MAST_KID_COL[masteryKid]||"#c2410c";
 
   function jVis(it,sz){
-    if(it.imageUrl) return '<img src="'+it.imageUrl+'" style="width:'+sz+'px;height:'+sz+'px;object-fit:contain;border-radius:4px">';
-    if(it.emoji) return '<span style="font-size:'+sz+'px">'+it.emoji+'</span>';
+    const lv=mastLiveVisual(it);   // UNITPIC: live picture first
+    if(lv&&lv.img) return '<img src="'+lv.img+'" style="width:'+sz+'px;height:'+sz+'px;object-fit:contain;border-radius:4px">';
+    if(lv) return '<span style="font-size:'+sz+'px">'+lv.emoji+'</span>';
     if(MAST_ANIMAL_EMOJI[it.prompt]) return '<span style="font-size:'+sz+'px">'+MAST_ANIMAL_EMOJI[it.prompt]+'</span>';
     const cat=it.subject||"";
     if(cat==="Colors"&&COLOR_MAP[it.prompt]){const s=Math.round(sz*0.85);return '<div style="width:'+s+'px;height:'+s+'px;border-radius:50%;background:'+COLOR_MAP[it.prompt]+';border:1.5px solid '+mastColorBorder(it.prompt)+';display:inline-block"></div>';}
