@@ -41481,16 +41481,16 @@ function _kcPlayPark(){
 function kcPlayOpen(mode,k,from,sid,view){
   mode=(mode==="games"||mode==="card")?mode:"drills"; from=(from==="dad")?"dad":"corner";
   if(!k||ROSTER.indexOf(k)<0) return;
-  if(mode==="card"&&(from!=="corner"||KC_CARD_VIEWS.indexOf(view)<0)) return;   // 🎴 KC_CARD: the Corner's one drill / sprint / game
+  if(mode==="card"&&(from!=="corner"||(KC_CARD_VIEWS.indexOf(view)<0&&!(view==="checkup"&&sid)))) return;   // 🎴 KC_CARD: the Corner's one drill / sprint / game · 🩺 KC_CHECKUP: one check-up (by its sid)
   if(mode!=="card") view=null;
   if(kcPlay&&kcPlay.who===k&&kcPlay.mode===mode&&kcPlay.from===from&&sid===undefined&&(kcPlay.view||null)===(view||null)){ renderAll(); return; }   // already there
   const back=(from==="dad")?((kcPlay&&kcPlay.from==="dad")?kcPlay.back:((mpSubView==="dadcal"||mpSubView==="dadall")?mpSubView:"dad")):null;
   _kcPlayPark();
-  kcPlay={who:k,mode:mode,from:from,back:back,prevView:mastView,view:view||null};
-  _kcPlayKid(k,sid);
+  kcPlay={who:k,mode:mode,from:from,back:back,prevView:mastView,view:view||null,sid:(view==="checkup")?sid:null};
+  _kcPlayKid(k,(mode==="card")?undefined:sid);   // 🩺 KC_CHECKUP: a check-up's sid is the card's own, never the 📚 Study sitting
   if(from==="dad") mpSubView="dadmast";
   if(mode==="games") gamesOpen();   // GAMESTAB's own door: this kid's last game, else their first (it paints — off the Mastery tab _mastRe → renderAll)
-  else { if(mode==="card") mastView=view; renderAll(); }
+  else { if(mode==="card"&&view!=="checkup") mastView=view; renderAll(); }
   try{ window.scrollTo(0,0); }catch(e){}
 }
 // No render — the callers (kcCalSet, kcPick, showTab, ← Dad's Day) paint.
@@ -41524,6 +41524,10 @@ function kcPlayBodyHTML(k,mode){
 // 🎴 KC_CARD: the one view a schedule card opened — a game's own page (no game row), or the drill / sprint drawn bare, as the kid.
 function _kcCardBodyHTML(k,col){
   const p=kcPlay, v=(p&&p.view)||"drill";
+  if(v==="checkup"){   // 🩺 KC_CHECKUP: the check-up itself, as the Mastery page runs it — the code box first (kcCkStart)
+    const s=(typeof ckSession==="function")?ckSession(k,p.sid):null;
+    return '<div id="kc-log-ask">'+_kcLogAskHTML(k,col)+'</div>'+(s?ckRenderHtml(k,s):'<div style="padding:20px;text-align:center;color:var(--muted)">This check-up isn\u2019t here any more.</div>');
+  }
   mastView=v;   // a tap inside (mastSetView, "Go to Mastery") never moves the page off its card
   if(v==="match"||v==="which") return gamesBodyHtml(col);
   let h='<div id="kc-log-ask">'+_kcLogAskHTML(k,col)+'</div>';   // 🔒 KC_SPRINTCODE: filled in place for a Sprint save, so typed scores stay
@@ -41544,6 +41548,31 @@ function kcPlayCardOpen(k,v){
     kcPlayOpen("card",k,"corner",undefined,v); return true;
   }catch(e){ return false; }
 }
+// 🩺 KC_CHECKUP (her words 2026-11-07: "check up cards can still open to the session and allow mom and or dad to put her pin in
+// just to unlock that drill"). A check-up card's 📂 link on Kids' Corner (the tab or the ?kiosk=corner link) opened nothing on the
+// kiosk (showTab('mastery') is locked out) and Mom's whole Mastery page on the tab. Now it opens THAT check-up here, as the Mastery
+// page runs it; its Start asks Mom's or Dad's code in place (kcLogGate — no code with the Mom switch on or Dad's code in). The unlock
+// is that sitting's only: it never turns Mom mode on, ends when the sitting ends (Stop / today's share done) or the card closes.
+// Scoring and saves are the check-up's own (ckTap — dry-run inert); this writes nothing.
+function kcCheckupOpen(kid,sid){
+  try{
+    if(typeof tab==="undefined"||tab!=="kids"||!sid||typeof ckSession!=="function"||!ckSession(kid,sid)) return false;
+    _kcLoadKid(); if(!kcKid||kid!==kcKid) return false;
+    kcPlayOpen("card",kid,"corner",sid,"checkup"); return true;
+  }catch(e){ return false; }
+}
+function _kcCkCard(kid,sid){ const p=kcPlay; return !!(p&&p.from==="corner"&&p.mode==="card"&&p.view==="checkup"&&p.who===kid&&p.sid===sid&&typeof tab!=="undefined"&&tab==="kids"); }
+// true = this check-up sitting was unlocked on its Corner card (read by ckRenderHtml / ckStart / ckTap beside momHere()).
+function kcCkOk(kid,sid){ return _kcCkCard(kid,sid)&&!!kcPlay.logOk; }
+// The kid's-screen Start (ckMomStart) on the Corner card: the code box in place, then the sitting. true = handled here.
+function kcCkStart(kid,sid){
+  if(!_kcCkCard(kid,sid)) return false;
+  const go=function(){ if(kcPlay) kcPlay.logOk=true; ckStart(kid,sid,0); };
+  if(kcLogGate(go,"start this check-up")) go();
+  return true;
+}
+// The sitting ended (ckRelock): the card locks again.
+function kcCkRelock(){ const p=kcPlay; if(p&&p.mode==="card"&&p.view==="checkup"&&p.logOk){ p.logOk=false; renderAll(); } }
 // A drill's 📝 Log on Kids' Corner: Mom's or Dad's code first (her ask 2026-11-02), unless the Mom switch is on or Dad's code is in.
 // false = not now (the code box shows above the drill). Anywhere else Log is unchanged.
 // 🔒 KC_SPRINTCODE (her "do all 6" yes 2026-11-03): a Sprint card's own saves — 📈 Log result, Met / Not, ✎ fix or undo a run,
@@ -41612,6 +41641,7 @@ function mastLinkRoute(kid,view,sid){
   try{
     const game=(view==="match"||view==="which"||view==="games");
     if(tab==="kids"){   // 🎴 KC_CARD: the kid's lens even with the Mom switch on
+      if(view==="study"&&kcCheckupOpen(kid,sid)) return true;   // 🩺 KC_CHECKUP: a check-up opens here, never the Mastery tab
       if(view==="study"&&typeof kcStudyIntercept==="function"&&kcStudyIntercept(kid,sid)){ kcStudyOpen(kid,sid); return true; }
       return false;   // a drill / sprint / game: the link sets the view, then mastShowTab opens that one thing here (kcPlayCardOpen)
     }
@@ -76964,7 +76994,7 @@ function ckProgressText(p){ return p.checked+" of "+p.families+" families checke
 function ckRenderHtml(kid,session){
   if(ckTimerIv){ clearInterval(ckTimerIv); ckTimerIv=null; }
   const box='background:#f0fdfa;border:2px solid #99f6e4;border-radius:20px;padding:20px;margin-bottom:16px;font-family:\'DM Sans\',sans-serif';
-  if(!(typeof momHere==="function"&&momHere())){   // her rule 2026-10-04: a check-up is never run on a kid's own screen…
+  if(!ckMomOk(kid,session.sid)){   // her rule 2026-10-04: a check-up is never run on a kid's own screen…
     // …but Mom can run it HERE (her ask 2026-10-05): a Start button asks for her code; the screen locks again when the sitting ends.
     const kc=ckCards(session); let kdone=false;
     if(kc.length){ const kst=ckState(kid,session.sid), kp=ckPlan(kc,session,kst); kdone=kp.complete||!Math.min(kp.queue.length,ckTodayLeft(session,kst,ckDayKey(),0)); }
@@ -77030,8 +77060,10 @@ function ckRenderHtml(kid,session){
   return h;
 }
 function ckRe(){ if(typeof _mastRe==="function") _mastRe(); }
+// 🩺 KC_CHECKUP: Mom here, or this one sitting unlocked with her / Dad's code on its Kids' Corner card.
+function ckMomOk(kid,sid){ return (typeof momHere==="function"&&momHere())||(typeof kcCkOk==="function"&&kcCkOk(kid,sid)); }
 function ckStart(kid,sid,extra){
-  if(!(typeof momHere==="function"&&momHere())) return;
+  if(!ckMomOk(kid,sid)) return;
   const prev=(ckRun&&ckRun.kid===kid&&ckRun.sid===sid)?ckRun.extra:0;
   ckRun={kid:kid,sid:sid,ts:Date.now(),extra:prev+(extra||0)}; ckRe();
 }
@@ -77049,16 +77081,17 @@ const CK_SPELL_HOWTO="Turn the screen away from the kid \u2014 the words show on
 // only when the unlock came through this door (Mom's own view stays as it was).
 let ckKidUnlock=false;
 function ckMomStart(kid,sid){
+  if(typeof kcCkStart==="function"&&kcCkStart(kid,sid)) return;   // 🩺 KC_CHECKUP: on its Kids' Corner card, the code box in place
   const was=(typeof momHere==="function"&&momHere());
   const go=function(){ ckKidUnlock=!was; ckStart(kid,sid,0); };
   const spell=(typeof ckIsSpelling==="function")&&ckIsSpelling(ckSession(kid,sid));   // CKWRITTEN: the spelling door says how to run it
   if(typeof kitPinGate==="function") kitPinGate(go,"Mom or Dad types their code to run the check-up on this screen."+(spell?" "+CK_SPELL_HOWTO:""),{dad:true}); else go();   // DADPIN
 }
-function ckRelock(){ if(!ckKidUnlock) return; ckKidUnlock=false; if(typeof haMomOff==="function") haMomOff(); else if(typeof adminPinUnlocked!=="undefined") adminPinUnlocked=false; if(typeof renderAll==="function") renderAll(); }
+function ckRelock(){ if(typeof kcCkRelock==="function") kcCkRelock(); if(!ckKidUnlock) return; ckKidUnlock=false; if(typeof haMomOff==="function") haMomOff(); else if(typeof adminPinUnlocked!=="undefined") adminPinUnlocked=false; if(typeof renderAll==="function") renderAll(); }
 function ckFlip(){ if(!ckRun) return; ckRun.show=!ckRun.show; ckRe(); }
 function ckStop(){ ckRun=null; if(ckTimerIv){ clearInterval(ckTimerIv); ckTimerIv=null; } ckRe(); ckRelock(); }
 function ckTap(r,name){
-  if(!ckRun||!(typeof momHere==="function"&&momHere())) return;
+  if(!ckRun||!ckMomOk(ckRun.kid,ckRun.sid)) return;
   const kid=ckRun.kid, sid=ckRun.sid, s=ckSession(kid,sid); if(!s) return;
   const cards=ckCards(s), dk=ckDayKey();
   const st=JSON.parse(JSON.stringify(ckState(kid,sid)));
