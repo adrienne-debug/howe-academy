@@ -9132,8 +9132,7 @@ function renderSchedule(el){
   const _noDayWork=(kid!=="all"&&kid!=="mom")&&!tasks.length&&!offToday.length&&!carriedOver.length;
   if(!_noDayWork||bbActive(kid)||(bbMomDraft&&bbMomDraft.kid===kid)) h+=bbBlock(kid); // 🧠 Brain break — button, or the active break card (pauses this kid's view only)
   if(kid!=="all"&&kid!=="mom") h+=retrSchedStripHtml(kid,day); // P4: retrieval strip (derived, no writes)
-  if(kid!=="all"&&kid!=="mom"&&typeof wwDayChipHtml==="function") h+=wwDayChipHtml(kid,day); // 🏋️ WWV2: Word Workout · N words (derived, no card)
-  if(kid!=="all"&&kid!=="mom"&&typeof mpDayChipHtml==="function") h+=mpDayChipHtml(kid,day); // 🎮 MISSPLAY: Practice · N cards (derived, no card)
+  if(kid!=="all"&&kid!=="mom"&&typeof adDayLineHtml==="function") h+=adDayLineHtml(kid,day); // ✅ AFTERDRILL: one "After the drill · N" line (was the 🏋️ Word Workout + 🎮 Practice chips; derived, no card)
 
   // ── SCHEDULE LOCK CHECK ──────────────────────────────────────────
   const _lookAhead = !_noDayWork && gateLookAhead(kid, day);
@@ -72936,7 +72935,7 @@ function mpFinish(U){
   try{ HA_LS.setItem("ha_mastery",JSON.stringify(_mpMD())); }catch(e){}
   return {upd,entry};
 }
-function mpClose(){ const U=mpUI; if(U&&U.phase==="play"&&U.log.length) mpFinish(U); mpUI=null; const ov=(typeof document!=="undefined")&&document.getElementById("mp-panel"); if(ov) ov.remove(); try{ if(typeof renderAll==="function") renderAll(); }catch(e){} }
+function mpClose(){ const U=mpUI, early=!!(U&&U.phase==="play"); if(U&&U.phase==="play"&&U.log.length) mpFinish(U); mpUI=null; const ov=(typeof document!=="undefined")&&document.getElementById("mp-panel"); if(ov) ov.remove(); try{ if(typeof renderAll==="function") renderAll(); }catch(e){} try{ if(typeof adPartClosed==="function") adPartClosed("cards",{early:early}); }catch(e){} }   // ✅ AFTERDRILL: on to what's next
 function mpRender(){
   if(typeof document==="undefined") return;
   const U=mpUI; if(!U){ const o=document.getElementById("mp-panel"); if(o) o.remove(); return; }
@@ -73170,6 +73169,113 @@ function mpSettingsHtml(kid){
   return h+'</div></div>';
 }
 // MISSPLAY_END
+// AFTERDRILL_START — ✅ After the drill: ONE list, ONE hand-off (her ask 2026-11-08: "word workout and then the games after
+// the drill are kind of 2 different things, but both are the same idea … one thing and it's just showing up after the drill
+// that day where they can work out all those things. I don't think we need the word workout button at the top any longer,
+// but I do like how it works out those words"). DESIGN_after_drill_one_2026-11-08.md.
+//   · THE LIST — today's 🏋️ Word Workout words (ww.on, not yet right today) ∪ today's 🎮 missed cards (mpTodayList, switch
+//     on only). A word that is also on the games list is listed ONCE, as a card: the round is the only thing that moves its
+//     games rule, and its Build it already moves its Word Workout rule (SPELLBUILD).
+//   · ENTRY / EXIT — each kind's own, untouched: wwNote / wwAfterDrill and mpAfterDrill / mpAfterStudy put things on;
+//     wwCheck and mpNote take them off. Nothing is collected more or less than before.
+//   · THE HAND-OFF — after Mom's drill saves and lands on Scores (in place of DRILLEND's), whenever the list has anything
+//     today: "🎉 Let's work out the ones we missed!" · Start → the words in the Workout as it is (see it, copy it → hear it /
+//     fill the gaps) → the cards (👀 Watch it → the round, from:"drill") → "All worked out". Closing a part early comes back
+//     here with what's left (Keep going / Not now). A word worked in this sitting doesn't come back in it. Empty → Scores.
+//   · THE DAY PAGE — "✅ After the drill · N" (today, the kid's own day) in place of the two chips, so Mom still sees the
+//     count; it opens the same hand-off, and its round opens with no `from`, as the 🎮 chip did (the game log reads the same).
+//     The top 🏋️ Word Workout button is gone.
+//   · WRITES — none of its own: the words save mastery/<kid>/<ix>/ww and the round its one update + gameLog entry, as always.
+//     No kid's name in this block.
+let adUI=null;   // the open hand-off: {kid, from:"drill"|null, seen:{word ids worked this sitting}, cardsDone, part:null|"words"|"cards", started}
+function adCards(kid){ try{ return (typeof mpOn==="function"&&mpOn(kid)&&typeof mpTodayList==="function")?mpTodayList(kid):[]; }catch(e){ return []; } }
+function adWords(kid,cards){
+  try{
+    if(typeof wwList!=="function") return [];
+    const day=wwToday(), asCard=new Set((cards||adCards(kid)).map(i=>i.id));
+    return wwList(kid).filter(i=>!asCard.has(i.id)&&!(Array.isArray(i.ww.r)&&i.ww.r.indexOf(day)>=0));
+  }catch(e){ return []; }
+}
+// PURE over masteryData: the one list, words first (the games come last), each card once
+function adList(kid){ const cards=adCards(kid); return adWords(kid,cards).map(it=>({kind:"word",id:it.id,it})).concat(cards.map(it=>({kind:"card",id:it.id,it}))); }
+function adCount(kid){ return kid?adList(kid).length:0; }
+// what's left in the open sitting
+function _adLeft(){
+  const U=adUI; if(!U) return {words:[],cards:[]};
+  const cards=adCards(U.kid);
+  return {words:adWords(U.kid,cards).filter(i=>!U.seen[i.id]),cards:U.cardsDone?[]:cards};
+}
+function adInFlow(){ return !!(adUI&&adUI.part==="words"); }
+// ── Mom's drill was saved (mastSaveResults, after Scores is drawn). Nothing on the list → Scores, as always. ──
+function adAfterDrillSaved(kid){ return adOpen(kid,"drill"); }
+function adOpen(kid,from){
+  if(!kid||!adCount(kid)) return false;
+  adUI={kid,from:from||null,seen:{},cardsDone:false,part:null,started:false};
+  adRender(); return true;
+}
+function adStart(){ const U=adUI; if(!U||U.part) return; try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){} U.started=true; adNextPart(); }   // the tap unlocks the voice / ding / bonk (iPad)
+function adNotNow(){ adUI=null; adRender(); }
+function adNextPart(){
+  const U=adUI; if(!U) return;
+  const L=_adLeft();
+  if(L.words.length){ U.part="words"; adRender(); _adWords(U,L.words); return; }
+  if(L.cards.length){ U.part="cards"; U.cardsDone=true; adRender(); _adCards(U,L.cards); return; }
+  adUI=null; adRender();
+  try{ if(U.started&&typeof gwShowToast==="function") gwShowToast("⭐ All worked out for today!"); }catch(e){}
+}
+// the words: the Workout as it is, on just this sitting's words (the others are marked done + skipped for this sitting)
+function _adWords(U,words){
+  wwOpen(U.kid); if(!wwUI){ U.part=null; words.forEach(i=>{ U.seen[i.id]=1; }); adNextPart(); return; }
+  const want=new Set(words.map(i=>i.id)), L=wwList(U.kid);
+  wwUI.skip={}; L.forEach(i=>{ if(!want.has(i.id)){ wwUI.skip[i.id]=1; wwUI.done[i.id]=true; } });
+  const j=L.findIndex(i=>want.has(i.id)); wwUI.i=j<0?0:j; wwStepReset(); wwRender();
+}
+// the cards: after the drill, DRILLEND's own Start (👀 Watch it → the round, from:"drill"); from the Day line, the round as the 🎮 chip opened it
+function _adCards(U,cards){
+  if(U.from==="drill"&&typeof mpHandStart==="function"){ mpHand={kid:U.kid,step:"hand",list:cards.map(i=>i.id),i:0}; mpHandStart(); return; }
+  mpOpen(U.kid);
+}
+// a part closed (wwClose / mpClose): finished → the next part; closed early → back here with what's left
+function adPartClosed(kind,was){
+  const U=adUI; if(!U||U.part!==kind) return;
+  U.part=null;
+  if(kind==="words"){
+    const sk=(was&&was.skip)||{}; Object.keys((was&&was.done)||{}).forEach(id=>{ if(!sk[id]) U.seen[id]=1; });
+    if(_adLeft().words.length){ adRender(); return; }
+  } else if(was&&was.early){ U.cardsDone=false; adRender(); return; }
+  adNextPart();
+}
+function adRender(){
+  if(typeof document==="undefined") return;
+  const U=adUI; let ov=document.getElementById("ad-hand");
+  if(!U||U.part){ if(ov) ov.remove(); return; }
+  const L=_adLeft(), nw=L.words.length, nc=L.cards.length;
+  const E=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  const nm=(typeof cap==="function")?cap(U.kid):U.kid, em=(typeof MAST_KID_EMOJI!=="undefined"&&MAST_KID_EMOJI[U.kid])||"✅", color="#7c3aed";
+  if(!ov){ ov=document.createElement("div"); ov.id="ad-hand"; ov.style.cssText="position:fixed;inset:0;z-index:9998;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:20px 12px"; document.body.appendChild(ov); }
+  const row=t=>'<div style="font-size:16px;font-weight:800;color:#334155;margin:4px 0">'+t+'</div>';
+  let h='<div style="background:#fff;border-radius:22px;max-width:560px;width:100%;padding:18px 18px 22px;box-shadow:0 10px 40px rgba(0,0,0,.25);font-family:\'DM Sans\',sans-serif;text-align:center">';
+  h+='<div style="font-size:44px;line-height:1">'+em+'</div>';
+  h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800;color:'+color+';margin:8px 0 4px">\u{1F389} Let’s work out the ones we missed!</div>';
+  h+='<div style="font-size:14px;font-weight:700;color:#64748b;margin-bottom:10px">'+E(nm)+'</div>';
+  if(nw) h+=row('\u{1F3CB}️ '+nw+' word'+(nw===1?'':'s')+' to work out');   // never the words themselves: the kid must produce them
+  if(nc) h+=row('\u{1F3AE} '+nc+' card'+(nc===1?'':'s')+' to play');
+  h+='<div style="margin-top:14px"><button onclick="adStart()" style="min-height:60px;padding:0 40px;border-radius:16px;border:none;background:'+color+';color:#fff;font-size:20px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">▶ '+(U.started?'Keep going':'Start')+'</button></div>';
+  h+='<div style="margin-top:14px"><button onclick="adNotNow()" style="padding:8px 16px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:13px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Not now</button></div>';
+  ov.innerHTML=h+'</div>';
+}
+// ── the kid's Day page: "✅ After the drill · N" (today, the kid's own day, something left) — opens the same hand-off ──
+function adDayLineHtml(kid,day){
+  try{
+    if(!kid||kid==="all"||kid==="mom") return "";
+    if(typeof _todayDay!=="undefined"&&day!==_todayDay) return "";
+    if(typeof kidOffOwnDay==="function"&&kidOffOwnDay(kid,day)) return "";
+    const n=adCount(kid); if(!n) return "";
+    const J=s=>String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+    return '<div class="ad-day-line" style="margin:0 0 10px"><button onclick="adOpen(\''+J(kid)+'\')" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:999px;border:1.5px solid #ddd6fe;background:#f5f3ff;color:#5b21b6;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✅ After the drill · '+n+'</button></div>';
+  }catch(e){ return ""; }
+}
+// AFTERDRILL_END
 
 // GAMEKID_START — each kid keeps their own game round (her words 2026-10-23: "Match, Memory, Which one? and the
 // Sprint deck keep their round per kid, pause when I switch away, resume when I switch back, and save to the right
@@ -74265,7 +74371,7 @@ function mastSaveResults(){
   // Land on Scores so the kid sees today's result and the trend right after finishing.
   mastView="scores"; mastScoreItemId=null;
   const c=document.getElementById("content"); if(c) renderMastery(c);
-  try{ if(typeof mpAfterDrillSaved==="function") mpAfterDrillSaved(masteryKid); }catch(e){}   // 🎮 DRILLEND: "Let's have fun with the ones we missed" → Watch → the round (switch on only)
+  try{ if(typeof adAfterDrillSaved==="function") adAfterDrillSaved(masteryKid); }catch(e){}   // ✅ AFTERDRILL: "Let's work out the ones we missed" → the Word Workout words → Watch → the round (was DRILLEND's mpAfterDrillSaved)
 }
 
 // ── ADD ITEMS ─────────────────────────────────────────────────────
@@ -79831,7 +79937,7 @@ let wwUI=null;   // {kid,i,mode:"hear"|"gaps",step:"look"|"cover"|"compare"|"fix
 function wwHideMs(){ return (typeof MST_COPY_HIDE_MS==="number")?MST_COPY_HIDE_MS:4000; }   // WWV2: the same 4 s as 👀 Copy it (read at call time — PATCCC loads after this block)
 function wwStepReset(){ if(!wwUI) return; wwUI.step="look"; wwUI.show=(wwUI.show||0)+1; wwUI.typed=""; wwUI.fix=""; wwUI.ok=null; wwUI.fixed=false; wwUI.fixMiss=false; wwUI.timer=false; }
 function wwOpen(kid){ const L=wwList(kid); if(!L.length) return; wwUI={kid,i:0,mode:"hear",tries:0,msg:"",done:{}}; wwStepReset(); wwRender(); }
-function wwClose(){ wwUI=null; const ov=document.getElementById("ww-panel"); if(ov) ov.remove(); try{ if(typeof _mastRe==="function") _mastRe(); }catch(e){} }
+function wwClose(){ const was=wwUI; wwUI=null; const ov=document.getElementById("ww-panel"); if(ov) ov.remove(); try{ if(typeof _mastRe==="function") _mastRe(); }catch(e){} try{ if(typeof adPartClosed==="function") adPartClosed("words",was); }catch(e){} }   // ✅ AFTERDRILL: on to what's next
 function wwWord(it){ return String(it.answer||it.prompt||"").replace(/․/g,"."); }
 function wwSay(){ try{ if(!wwUI) return; const it=wwList(wwUI.kid)[wwUI.i]; if(!it) return; mastSpeak(wwWord(it),{spell:true}); }catch(e){} }   // 🔊 TTS: the one shared speak path
 // "together" → "t_g_th_r": vowels become blanks (y stays) — the kid writes the WHOLE word, never just the gaps.
@@ -79907,10 +80013,10 @@ function wwNext(){ if(!wwUI) return; const L=wwList(wwUI.kid); if(!L.length){ ww
 // done for today (right, or missed twice) the box goes away, a "done for today" line shows, and the button becomes
 // Next word › — or All done ✓ when every word is done. The copy steps lost their separate Next word too.
 function wwLeft(){ if(!wwUI) return 0; return wwList(wwUI.kid).filter(x=>!wwUI.done[x.id]).length; }
-function wwFinish(){ wwClose(); if(typeof gwShowToast==="function") gwShowToast("🏋️ All done for today — come back tomorrow!"); }
+function wwFinish(){ const f=typeof adInFlow==="function"&&adInFlow(); wwClose(); if(!f&&typeof gwShowToast==="function") gwShowToast("🏋️ All done for today — come back tomorrow!"); }   // ✅ AFTERDRILL: mid-flow the games come next
 function wwRender(){
   if(!wwUI){ wwClose(); return; }
-  const L=wwList(wwUI.kid); if(!L.length){ wwClose(); if(typeof gwShowToast==="function") gwShowToast("🏋️ Workout done — every word is strong!"); return; }
+  const L=wwList(wwUI.kid); if(!L.length){ const f=typeof adInFlow==="function"&&adInFlow(); wwClose(); if(!f&&typeof gwShowToast==="function") gwShowToast("🏋️ Workout done — every word is strong!"); return; }
   if(wwUI.i>=L.length) wwUI.i=0; const it=L[wwUI.i], e=(typeof stEsc==="function")?stEsc:(s=>String(s));
   let ov=document.getElementById("ww-panel");
   if(!ov){ ov=document.createElement("div"); ov.id="ww-panel"; ov.style.cssText="position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px 12px"; document.body.appendChild(ov); }
@@ -79918,7 +80024,8 @@ function wwRender(){
   const done=!!wwUI.done[it.id], copying=!!(wwUI.step&&wwUI.step!=="test");
   let h='<div style="background:#fff;border-radius:18px;max-width:480px;width:100%;padding:18px 20px;box-shadow:0 10px 40px rgba(0,0,0,.25)">';
   h+='<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-family:\'Fraunces\',serif;font-size:21px;font-weight:800;color:#7c2d12">🏋️ Word Workout</div><button onclick="wwClose()" style="'+b("#fff","#475569","#cbd5e1")+';padding:5px 11px;font-size:13px">✕</button></div>';
-  h+='<div style="font-size:12.5px;color:#64748b;margin:3px 0 14px">Word '+(wwUI.i+1)+' of '+L.length+' · each word needs 3 right days</div>';
+  const _sk=wwUI.skip||{}, _LL=L.filter(x=>!_sk[x.id]), _ix=_LL.indexOf(it);   // ✅ AFTERDRILL: a word the games are working is not this sitting's
+  h+='<div style="font-size:12.5px;color:#64748b;margin:3px 0 14px">Word '+(_ix>=0?_ix+1:wwUI.i+1)+' of '+(_LL.length||L.length)+' · each word needs 3 right days</div>';
   if(copying){ h+=wwCopyHtml(it,b,e)+'</div>'; ov.innerHTML=h;   // WWONE: the step's own button is the only one
     const fid=wwUI.step==="cover"?"ww-copy-in":(wwUI.step==="fix"&&!wwUI.fixed?"ww-copy-fix":null);
     if(fid) setTimeout(()=>{ const i=document.getElementById(fid); if(i&&i.focus) i.focus(); },30);
@@ -88959,7 +89066,7 @@ function _renderMasteryInner(el){
     h+='<button class="kid-btn'+(active?' active':'')+'" data-kid="'+k+'" onclick="mastSetKid(\''+k+'\')" style="'+(active?'background:'+MAST_KID_COL[k]+';color:#fff;border-color:transparent':'')+'">';
     h+=MAST_KID_EMOJI[k]+' '+SL_KLBL[k]+' <span style="opacity:0.6;font-size:10px">('+kitems.length+')</span></button>';
   });
-  try{ if(typeof wwBtnHtml==="function") h+=wwBtnHtml(masteryKid); }catch(e){}   // 🏋️ WORDWORKOUT (kids too)
+  // ✅ AFTERDRILL (her ask 2026-11-08: "I don't think we need the word workout button at the top any longer"): the words are worked after the drill / from the Day page's "After the drill" line
   // MASTSET (her yes 2026-11-02): Problem words, ＋ add a card and Editor in Chief left this header — they are Mom's Day ▸ School ▸ Mastery ▸ Settings ▸ 🃏 Cards
   h+='</div>';
 
