@@ -30,7 +30,7 @@ function bodyOf(name) {
 }
 const REPAINT = /\b(renderAll|renderMastery|_mastRerender|renderSchedule|renderMomsDay|renderMomsPlan|renderNotebook|renderHistory)\s*\(/;
 // PIN boxes repaint only once the PIN is complete and correct — the box is gone by then.
-const PIN_OK = /^(checkAdminPin|checkMomPin|checkPtsPin|mastAdminCheckPin|pnwCheckPin)$/;
+const PIN_OK = /^(checkAdminPin|checkMomPin|checkPtsPin|mastAdminCheckPin)$/;
 
 const found = [];
 const tagRe = /<(input|textarea)\b[^>]*?\bon(?:input|keyup)=\\?"([^"]*?)\\?"[^>]*/g;

@@ -4,8 +4,8 @@
  *   0. shape: one GWGONE block, no kid or family names (block and this file)
  *   1. the doors that opened Generate Week on THIS week are gone: "Regenerate Week N", the ✨ notice's Review (agReview), the
  *      "Schedule structure changed" Regenerate; the HQ row / Mom's Day banner no longer say "Regenerate this week"
- *   2. the one door kept, and why: Car School has no home on 📅 This week, so "Plan Week N →" (next week) still opens the
- *      wizard — the only call of openPlanNextWeek left. When Car School gets a home (or she drops it) this test flips.
+ *   2. the Plan Next Week wizard is gone — every function, its state, its CSS, "Plan Week N →"; each of its settings has a home on
+ *      📅 This week (🚗 car school the last one, test_this_week_strip.js §8); the page keeps 📓 notebooks + ⬇️ week JSON
  *   3. the Phase-2 week-config card helpers nothing called are gone; gwShowToast / gwNormSitter stay
  *   4. the engine is untouched and still the self-build's: generateWeek, gwCommit, gwEffectiveConfig, autoGenerateWeekIfNeeded
  *   5. weekConfig/<wn> is still read (self-build, Regenerate, the strip's live read); nothing removes or migrates it
@@ -36,15 +36,22 @@ console.log("1. the doors into Generate Week for THIS week are gone");
   ok("the ✨ auto-built notice has no Review door (agReview gone), keeps its ✕",!/agReview/.test(src)&&/onclick="agDismiss\(\)"/.test(fn("renderSchedule"))&&/Built from the Calendar \+ Lesson Map\. Change this week in 📅 This week\./.test(fn("renderSchedule")));
   const rs=fn("renderSchedule"), i=rs.indexOf("Schedule structure changed"), sc=rs.slice(i,rs.indexOf("}catch(e){}",i));
   ok("\"Schedule structure changed\" has no button into the page, it names 🔄 Regenerate",i>0&&!/<button/.test(sc)&&/🔄 Regenerate on the day banner lays them in now\./.test(sc));
-  ok("HQ row: no \"Regenerate this week\"",/_hqRow\("generate","🪄","Generate Week","Plan next week, notebooks, week JSON"\)/.test(src)&&!/Regenerate this week/.test(src));
+  ok("HQ row: no \"Regenerate this week\" / \"plan next week\"",/_hqRow\("generate","🪄","Generate Week","Notebooks, week JSON — the week builds itself; change it in 📅 This week"\)/.test(src)&&!/Regenerate this week/.test(src)&&!/[Pp]lan next week/.test(src.replace(/\/\/[^\n]*/g,"")));
   ok("Settings ▸ sitter points at 📅 This week, not Plan Next Week",!/Set days &amp; times in Plan Next Week/.test(src)&&/Set days &amp; times in 📅 This week/.test(src)); }
 
-console.log("2. the one door kept — Car School has no home on 📅 This week");
-{ const calls=(src.match(/openPlanNextWeek\(/g)||[]).length-1;   // minus the definition
-  ok("openPlanNextWeek has exactly one caller left: \"Plan Week N →\" (next week) on the Generate Week page",calls===1&&/onclick="openPlanNextWeek\('\+nw\+'\)"[^\n]*Plan Week '\+nw\+' →/.test(fn("renderAdminGenerate")),calls);
-  ok("the wizard still offers Car School (the reason it stays)",/Car School/.test(fn("renderPlanNextWeek"))&&has("pnwToggleCar"));
+console.log("2. the Plan Next Week wizard is gone; its settings live on 📅 This week");
+{ ["openPlanNextWeek","pnwStartWizard","closePlanNextWeek","pnwGenerate","pnwApply","pnwBack","renderPlanNextWeek","pnwCheckPin","pnwToggleSitter","pnwToggleWithSitter",
+   "pnwToggleSkip","pnwToggleLate","pnwToggleCar","pnwToggleDay","pnwShowKid","pnwSaveAndGenerate","gwWeekExists","gwNextRealWeek"].forEach(n=>ok(n+" gone",!new RegExp("\\b"+n+"\\b").test(src)));
+  ok("its state (let pnw…) and overlay are gone",!/\bpnw[A-Z]\w*/.test(src)&&!/pnw-overlay/.test(src));
+  ok("its CSS is gone except .pnw-chip / .on (helpers and Settings draw with them)",!/\.pnw-(?!chip[{.])[\w-]+\{/.test(src)&&/\.pnw-chip\{/.test(src)&&/\.pnw-chip\.on\{/.test(src)&&!/\.pnw-chip\.skip/.test(src));
+  ok("no whole-node weekConfig write left (the wizard's .set({...gwConfig}))",!/weekConfig\/"\+[^)]*\)\.set\(/.test(src));
   const TW=block("THISWEEK_START","THISWEEK_END");
-  ok("…and the strip still has no Car School control (only the read-only line)",!/carSchool\s*[\[.]\s*\w*\s*\]?\s*=/.test(TW)&&!/"carSchool"/.test(TW)&&/Car school until/.test(TW)); }
+  const homes={"sitter days + hours":/function twsToggleSitter\(/,"with the sitter":/function twsToggleWithSitter\(/,"skip days → each kid off":/function twsToggleKid\(/,
+    "late start → ⏰ day times":/function twsTimes\(/,"Include Saturday":/function twsToggleSaturday\(/,"🚗 car school":/function twsToggleCar\(/,"next week":/function twsSetNext\(/};
+  Object.keys(homes).forEach(k=>ok("home on 📅 This week: "+k,homes[k].test(TW)));
+  ok("car school writes the leaf gwEffectiveConfig reads",/"weekConfig\/"\+wn\+"\/carSchool\/"\+dn/.test(TW)&&/carSchool:Object\.assign\(\{\},\(s&&s\.carSchool\)\|\|\{\}\)/.test(fn("_abMerge")));
+  const g=fn("renderAdminGenerate");
+  ok("the Generate Week page keeps 📓 notebooks and ⬇️ week JSON (their door), and the hint",/haOpenNotebookPicker\(\)/.test(g)&&/downloadWeekJSON\(\)/.test(g)&&/gwGoneHintHTML\(\)/.test(g)&&!/Plan Week/.test(g.replace(/\/\/[^\n]*/g,""))); }
 
 console.log("3. the Phase-2 week-config card helpers nothing called are gone");
 { ["loadWeekConfig","saveWeekConfig","gwToggleCard","gwToggleSitter","gwSetSitterTime","gwSetSitterStart","gwToggleSkip","gwToggleLate","gwSetLateTime","gwToggleCar","gwSetCarEnd","gwSetCarNote","gwToggleSaturday"].forEach(n=>ok(n+" gone",!new RegExp("\\b"+n+"\\b").test(src)));
@@ -96,13 +103,12 @@ function memLS(){ const m={}; return { m, getItem:k=>(k in m?m[k]:null), setItem
 { // the Generate Week page as drawn: the hint where "Regenerate Week N" was, "Plan Week N →" still there
   const ls=memLS(); const el={innerHTML:""};
   const ctx={ HA_LS:ls, document:{getElementById:()=>null}, console,
-    currData:{subjects:{a:1}}, currWeekNum:()=>11, _haNoWeekYet:()=>false, _firstPlanWeekOnOrAfter:()=>0, _todayStr:()=>"2026-11-08",
-    gwNextRealWeek:n=>n, WK:"week11", gwStatus:"", gwResult:null, esc:s=>s, cap:s=>s };
+    currData:{subjects:{a:1}}, WK:"week11", gwStatus:"", gwResult:null, esc:s=>s, cap:s=>s };
   vm.createContext(ctx); vm.runInContext(GG+"\n"+fn("renderAdminGenerate"),ctx);
   ctx.renderAdminGenerate(el,"");
   const h=el.innerHTML;
-  ok("the page shows the hint before the buttons",h.includes(HINT)&&h.indexOf(HINT)<h.indexOf("Plan Week 12 →"));
-  ok("no Regenerate Week button; Plan Week 12 →, notebooks and week JSON still there",!/Regenerate Week/.test(h)&&/openPlanNextWeek\(12\)/.test(h)&&/haOpenNotebookPicker\(\)/.test(h)&&/downloadWeekJSON\(\)/.test(h));
+  ok("the page shows the hint before the buttons",h.includes(HINT)&&h.indexOf(HINT)<h.indexOf("haOpenNotebookPicker()"));
+  ok("no Regenerate Week / Plan Week buttons; notebooks and week JSON still there",!/Regenerate Week|Plan Week|openPlanNextWeek/.test(h)&&/haOpenNotebookPicker\(\)/.test(h)&&/downloadWeekJSON\(\)/.test(h));
   ls.m["ha_gw_gone_hint"]="1"; ctx.renderAdminGenerate(el,"");
   ok("dismissed on this device → the page has no hint",!el.innerHTML.includes(HINT)); }
 
