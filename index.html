@@ -3615,6 +3615,7 @@ function attachWeekListeners(wk){
     renderAllSoon();
     try{ ckReplayPending(); }catch(e){}   // 🔁 anything this device was refused earlier lands now
     try{ if(typeof stHeal==="function") stHeal(); }catch(e){}   // 📝 STHEAL: the checked list is in (or changed) — idempotent, Mom's device only
+    try{ if(typeof ckSpentHeal==="function") ckSpentHeal(); }catch(e){}   // 🩺 CKSPENT: a finished / ended check-up's cards come off (idempotent, targeted)
     try{ obReplay(); }catch(e){}         // 📮 chores/claims/points from an earlier offline page load (no-op once done)
   });
   fbWeekRefs.push(r1);
@@ -3693,6 +3694,7 @@ function attachWeekListeners(wk){
     if(firstLoad || inFP!==curFP) schedCascade();
     if(firstLoad || inFP!==curFP){ try{ rvHeal(); }catch(e){} }   // 📅 a booked review whose card a rebuild dropped comes back
     if(firstLoad || inFP!==curFP){ try{ if(typeof stHeal==="function") stHeal(); }catch(e){} }   // 📝 STHEAL: the spelling test cards too (Mom's device, targeted write)
+    if(firstLoad || inFP!==curFP){ try{ if(typeof ckSpentHeal==="function") ckSpentHeal(); }catch(e){} }   // 🩺 CKSPENT: a rebuild that laid a finished check-up's cards again
   });
   fbWeekRefs.push(r5);
 
@@ -4545,7 +4547,7 @@ function initFb() {
       if(_mastFirst&&typeof envMirrorOn==="function") envMirrorOn("boot");   // 🌿 ENVMIRROR: boot catch-up (the named app opens here, after the default one; inert without the config block)
       // NO_MIRROR: there is no local copy any more, so the first arrival repaints whatever is
       // showing (Mastery HQ, Editor-in-Chief cards, drill strips), not just the Mastery tab.
-      if(_mastFirst){ try{ renderAllSoon(); }catch(e){} try{ if(typeof stHeal==="function") stHeal(); }catch(e){} }   // 📝 STHEAL: the records are in — the week's test cards can be checked now (live 2026-10-14: the cards arrived first, the heal waited, nothing re-ran it)
+      if(_mastFirst){ try{ renderAllSoon(); }catch(e){} try{ if(typeof stHeal==="function") stHeal(); }catch(e){} } if(_mastFirst){ try{ if(typeof ckSpentHeal==="function") ckSpentHeal(); }catch(e){} }   // 📝 STHEAL: the records are in — the week's test cards can be checked now (live 2026-10-14: the cards arrived first, the heal waited, nothing re-ran it)
       else if(tab==="mastery"){const el=document.getElementById("content");if(el)renderMastery(el);}
       try{ if(typeof reLoaded==="function") reLoaded("mastery"); }catch(e){}   // 🧠 REVIEWENGINE: the morning leveling
     });
@@ -4575,7 +4577,7 @@ function initFb() {
     db.ref("techGrace").on("value",s=>{ techGrace=s.val()||{}; });
     db.ref("techOff").on("value",s=>{ techOff=s.val()||{}; if(typeof renderAllSoon==="function") renderAllSoon(); });   // 📱 TECHSWITCH
     db.ref("unitStudies").on("value",s=>{ unitStudies=s.val()||{}; const _uFirst=!_haUnitsReady; _haUnitsReady=true; if(typeof envHydrateAll==="function") envHydrateAll(); /* 🌿 ENVUNIT: cards from envirothon.js */ if(tab==="units"){const el=document.getElementById("content");if(el)renderUnits(el);} else if(tab==="notebook"){const el=document.getElementById("content");if(el)renderNotebook(el);}
-      if(_uFirst){ try{ if(typeof stHeal==="function") stHeal(); }catch(e){} } });   // 📝 STHEAL waits for the units (live 2026-10-14 10:29 PM: it ran before they arrived, every test card looked stale, Andrew's was removed)
+      if(_uFirst){ try{ if(typeof stHeal==="function") stHeal(); }catch(e){} } if(_uFirst){ try{ if(typeof ckSpentHeal==="function") ckSpentHeal(); }catch(e){} } });   // 📝 STHEAL waits for the units (live 2026-10-14 10:29 PM: it ran before they arrived, every test card looked stale, Andrew's was removed)
     db.ref("att_overrides").on("value",s=>{
       if(s.val()) attOverrides=s.val();
       try{HA_LS.setItem("ha_att_overrides",JSON.stringify(attOverrides));}catch(e){}
@@ -11365,13 +11367,15 @@ function mmAlertRowHTML(a){
   const tm=a.at?new Date(a.at).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}):"";
   const old=(a.day&&a.day!==mmDayIso())?' <span style="color:var(--muted);font-size:11px">'+esc(a.day)+'</span>':"";
   return '<div style="display:flex;align-items:center;gap:6px;padding:7px 10px;background:#fffbeb;border-left:3px solid #d97706;border-radius:8px;margin-bottom:6px;flex-wrap:wrap">'
-    +'<span style="flex:1;min-width:180px;font-size:13px">⏱ '+esc(a.text)+(tm?' <span style="color:var(--muted);font-size:11px">'+tm+'</span>':'')+old+'</span>'
+    +'<span style="flex:1;min-width:180px;font-size:13px">'+(a.kind==="ckoff"?"\u{1FA7A} ":"⏱ ")+esc(a.text)+(tm?' <span style="color:var(--muted);font-size:11px">'+tm+'</span>':'')+old+'</span>'
     +'<button onclick="mmAlertDismiss(\''+esc(a.key)+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#d97706;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">✓ Got it</button></div>';
 }
 // Mom's Day 🔴 Now hook → {n, html}, the same shape as the study-session flags beside it.
 function mmAlertsNowHTML(){
   const al=mmAlertList(); if(!al.length) return {n:0,html:""};
-  return {n:al.length,html:'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:10px 0 6px">⏱ Timed cards</div>'+al.map(mmAlertRowHTML).join("")};
+  const hd=t=>'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:10px 0 6px">'+t+'</div>';
+  const tm=al.filter(a=>a.kind!=="ckoff"), ck=al.filter(a=>a.kind==="ckoff");   // 🩺 CKSPENT: a check-up that came off the schedule
+  return {n:al.length,html:(tm.length?hd("⏱ Timed cards")+tm.map(mmAlertRowHTML).join(""):"")+(ck.length?hd("\u{1FA7A} Check-ups")+ck.map(mmAlertRowHTML).join(""):"")};
 }
 // Minute-tick hook (the schedule's own setInterval): sends the overrun line for a started card still open past double its
 // time, and returns a signature that changes each minute while a countdown is on screen, so the body re-renders then — and
@@ -78064,6 +78068,7 @@ function ckTap(r,name){
   ckRun.ts=Date.now(); ckRun.show=false;
   const p2=ckPlan(cards,s,st);
   if(!p2.queue.length||!ckTodayLeft(s,st,dk,ckRun.extra)){ ckRun=null; ckRelock(); }
+  if(!p2.queue.length&&typeof ckSpentHeal==="function") ckSpentHeal();   // 🩺 CKSPENT: finished → the rest of its week cards come off, one note to Mom
   ckRe();
 }
 // Units page: the start form's check-up rows, and the enrolled kid's check-up line.
@@ -78106,6 +78111,106 @@ function unitStageCheckup(){
   }
   _ustDone(f.unitId,kid,ks);
 }
+// CKSPENT_START — 🩺 A finished (or ended) check-up comes off the schedule (Sara DeWalt 2026-11-08, Taylor's × ÷ check-up: "we took it
+// away, but when it finished, it stayed on her schedule … if there's a fact check-up, once it's finished, it needs to just automatically
+// come off the schedule and just make a note for mom that it came off the schedule because it was done, and any data that might need to
+// be given to the mom"). Live: checkup_math_fluency_path_7 had all 13 families passed/done on 10/29, but nothing looked at that — her
+// "Facts Check-up" subject (study → the session) kept laying a card a day, Mom checked a "check-up complete ✓" card off 10/30, 11/2,
+// 11/3 and 11/4, and Sara deleted the subject 11/5. Now a week card whose subject studies a check-up that is COMPLETE (ckPlan) or whose
+// session Mom DELETED (the sid is still on the subject) is spent → removed (CARD = SLOT, the stHeal way: one targeted multi-path update,
+// only those ids). Kept: a checked card, one waiting for Mom's check (claimed), and today's card when the check-up was worked today
+// (Mom checks that one as usual). ONE note to Mom per check-up: a 🩺 row in her 🔴 Now (the minAlerts list, ✓ Got it clears it) with
+// the score, and a marker mastery/<kid>_checkup/<sid>/off = {why,day,at} so no later week, rebuild or device sends it again. Any device
+// (like stHeal; two at once compute the same ids and the same keys); waits for the week, the checked list, Mastery and the units;
+// nothing in dry run.
+const CK_MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function ckSpentDate(k){ const s=String(k||""); return /^\d{8}$/.test(s)?CK_MON[+s.slice(4,6)-1]+" "+(+s.slice(6,8)):""; }
+// The check-up's own numbers: every answer in mastery/<kid>_checkup/<sid>/f → right (✓ + 〰), took a moment (〰), the missed cards, the
+// last day graded. Card names come from the session's cards (the state keys are slugs); a deleted session falls back to the slug.
+function ckSpentScore(st,cards){
+  const nm={}; (cards||[]).forEach(c=>{ if(c&&c.name!=null) nm[ckSlug(c.name)]=String(c.name); });
+  let c=0, s=0, last=""; const missed=[];
+  Object.keys((st&&st.f)||{}).forEach(f=>{ const a=((st.f[f]||{}).a)||{};
+    Object.keys(a).forEach(k=>{ const x=a[k]||{};
+      if(x.r==="c") c++; else if(x.r==="s") s++; else if(x.r==="m") missed.push(nm[k]||k);
+      if(x.d!=null&&String(x.d)>last) last=String(x.d); }); });
+  return {right:c+s,slow:s,missed:missed,total:c+s+missed.length,last:last};
+}
+// PURE: the week's tasks + ctx {subjectsOf(kid), sessionOf(kid,sid) → the session or null (deleted), stateOf(kid,sid), cardsOf(session),
+// done(id) → checked or claimed, dayOf(task), todayDay, todayKey} → {remove:[ids], spent:[{kid,sid,why:"done"|"ended",label,removed,score}]}
+function ckSpentPlan(tasks,ctx){
+  const remove=[], groups={}, order=[];
+  (tasks||[]).forEach(t=>{
+    if(!t||typeof t.id!=="string"||!t.who||!t.subjectKey) return;
+    const sub=(ctx.subjectsOf(t.who)||{})[t.subjectKey], sid=sub&&sub.study;
+    if(!sid||String(sid).indexOf("checkup_")!==0) return;   // every check-up sid is checkup_<unit>_<stage>… (unitStageCheckup, ckStartCreate)
+    const gk=t.who+"|"+sid;
+    if(!(gk in groups)){
+      let g=null; const s=ctx.sessionOf(t.who,sid), st=ctx.stateOf(t.who,sid)||{f:{},day:{}};
+      let why=null, cards=[];
+      if(!s) why="ended";
+      else if(s.kind==="checkup"){ cards=ctx.cardsOf(s)||[]; if(cards.length&&ckPlan(cards,s,st).complete) why="done"; }   // no cards (unit not in) is never "done"
+      if(why){
+        const lbl=s?String(s.name||"").replace(/^\s*check-?\s*up\s*:?\s*/i,""):String(sub.display||t.subjectKey).replace(/\s*check-?\s*up\s*/ig," ");
+        g={kid:t.who,sid:sid,why:why,label:lbl.trim()||"The",removed:[],score:ckSpentScore(st,cards),today:!!((st.day||{})[ctx.todayKey])};
+        order.push(gk);
+      }
+      groups[gk]=g;
+    }
+    const g=groups[gk];
+    if(!g||ctx.done(t.id)) return;   // checked / waiting for Mom → stays
+    if(g.today&&ctx.dayOf(t)===ctx.todayDay) return;   // worked today → today's card stays for Mom's check
+    g.removed.push(t.id); remove.push(t.id);
+  });
+  return {remove:remove,spent:order.map(k=>groups[k]).filter(g=>g.removed.length)};
+}
+// The note: "× and ÷ facts check-up came off Taylor’s schedule — done Oct 29: 131 of 141 right (49 took a moment) · missed 10: 11×7, …"
+function ckSpentText(g,kidName){
+  const sc=g.score||{total:0}, nums=sc.total?(sc.right+" of "+sc.total+" right"+(sc.slow?" ("+sc.slow+" took a moment)":"")):"";
+  const miss=(sc.missed&&sc.missed.length)?" · missed "+sc.missed.length+": "+sc.missed.slice(0,12).join(", ")+(sc.missed.length>12?" +"+(sc.missed.length-12)+" more":""):"";
+  const head=g.label+" check-up came off "+kidName+"’s schedule — ";
+  if(g.why==="done") return head+"done"+(sc.last?" "+ckSpentDate(sc.last):"")+(nums?": "+nums:"")+miss;
+  return head+"ended by Mom"+(nums?": "+nums+" so far":"")+miss;
+}
+function ckSpentHeal(){
+  try{
+    if(typeof db==="undefined"||!db||(typeof _dryRun==="function"&&_dryRun())) return;
+    if(typeof fbCheckedLoaded!=="undefined"&&!fbCheckedLoaded) return;
+    if(typeof fbTasksLoaded!=="undefined"&&!fbTasksLoaded) return;   // never the cached week
+    if(typeof _haMastReady!=="undefined"&&!_haMastReady) return;   // without the sessions every check-up would look deleted
+    if(typeof _haUnitsReady!=="undefined"&&!_haUnitsReady) return;   // without the units a check-up has no cards
+    const tasks=(weekData&&weekData.tasks)||[]; if(!Array.isArray(tasks)||!tasks.length) return;
+    const dk=ckDayKey();
+    const r=ckSpentPlan(tasks,{
+      subjectsOf:k=>((typeof gwGetSubjects==="function")&&gwGetSubjects(k))||{},
+      sessionOf:(k,sid)=>(mstSessions(k)||[]).find(s=>s&&s.sid===sid)||null,
+      stateOf:(k,sid)=>(((masteryData||{})[k+"_checkup"])||{})[sid]||null,
+      cardsOf:s=>ckCards(s),
+      done:id=>!!((typeof checked!=="undefined"&&checked&&checked[id])||(typeof claimed!=="undefined"&&claimed&&claimed[id])),
+      dayOf:t=>(typeof effectiveDay==="function")?effectiveDay(t):t.day,
+      todayDay:(typeof _todayDay==="string")?_todayDay:"", todayKey:dk});
+    if(!r.remove.length) return;
+    const gone=new Set(r.remove), upd={};
+    for(let i=tasks.length-1;i>=0;i--){ if(tasks[i]&&gone.has(tasks[i].id)) tasks.splice(i,1); }
+    r.remove.forEach(id=>{ upd[id]=null; });
+    sv(WK+"_tasks",tasks); lastTasksWrite=Date.now();
+    db.ref(WK+"/tasks").update(upd);   // only the spent ids — never the whole node
+    r.spent.forEach(g=>{
+      const all=masteryData[g.kid+"_checkup"]||(masteryData[g.kid+"_checkup"]={}), st=all[g.sid]||(all[g.sid]={f:{},day:{}});
+      if(st.off&&st.off.why===g.why) return;   // Mom was told already (this week or an earlier one, on any device)
+      const off={why:g.why,day:dk,at:Date.now()}; st.off=off;
+      db.ref("mastery/"+g.kid+"_checkup/"+g.sid+"/off").set(off);
+      const key="ckoff_"+String(g.kid+"_"+g.sid).replace(/[.#$\/\[\]]/g,"_");
+      const rec={kind:"ckoff",kid:g.kid,id:g.sid,title:g.label,text:ckSpentText(g,(typeof mmKidName==="function")?mmKidName(g.kid):g.kid),at:Date.now(),
+        day:(typeof mmDayIso==="function")?mmDayIso():""};
+      if(typeof minAlerts!=="undefined"){ if(!minAlerts) minAlerts={}; minAlerts[key]=rec; try{ sv(WK+"_minAlerts",minAlerts); }catch(e){} }
+      db.ref(WK+"/minAlerts/"+key).set(rec);   // targeted — the one record
+    });
+    if(typeof dbg==="function") dbg("🩺 check-up cards spent (heal): −"+r.remove.length+" "+r.spent.map(g=>g.kid+"/"+g.sid+"="+g.why).join(" "));
+    if(typeof renderAll==="function") renderAll();
+  }catch(e){ try{ dbg("checkup spent heal error: "+e); }catch(e2){} }
+}
+// CKSPENT_END
 // CHECKUP_END
 // SPELLTEST_START — 📝 Spelling test (her design 2026-10-04, step 2 of the All About Spelling plan; her "yes build").
 // ONE test per lesson, given by Mom (or whoever she hands it to — Mom-required, so a helper can pull it), never seen
@@ -86004,6 +86109,7 @@ function mhqSessDelete(sid) {
   if (masteryData[kid + "_sessions"]) delete masteryData[kid + "_sessions"][sid];
   if (typeof db !== "undefined" && db) db.ref("mastery/" + kid + "_sessions/" + sid).remove();
   try { HA_LS.setItem("ha_mastery", JSON.stringify(masteryData)); } catch (e) {}
+  try { if (typeof ckSpentHeal === "function") ckSpentHeal(); } catch (e) {}   // 🩺 CKSPENT: a check-up ended by Mom comes off the schedule
   renderAll();
 }
 
