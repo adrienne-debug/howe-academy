@@ -3591,6 +3591,7 @@ function attachWeekListeners(wk){
   try{ if(typeof rlWindowAttach==="function") rlWindowAttach(wk); }catch(e){}   // RLWIN: routine history follows the week
   try{ if(typeof mmAttachWeek==="function") mmAttachWeek(wk); }catch(e){}   // ⏱ MINMINUTES: started + minAlerts follow the week
   try{ if(typeof _abLoadSaved==="function"&&typeof _wkNumOf==="function") _abLoadSaved(_wkNumOf(wk)); }catch(e){}   // 🗓 AUTOBUILD: this week's saved settings, for a re-lay (a read)
+  try{ if(typeof twsListen==="function") twsListen(wk); }catch(e){}   // 📅 THISWEEK: …and kept live, so every device re-lays from the same settings (a read)
   DAY_DT={}; // Clear stale dates so Sunday guard fires until meta arrives
   fbCheckedLoaded=false; // Reset so cascade waits for fresh data from Firebase
   fbTasksLoaded=false;
@@ -3697,7 +3698,7 @@ function attachWeekListeners(wk){
   fbWeekRefs.push(r5);
 
   const r6=db.ref(wk+"/babysitter");
-  r6.on("value",s=>{ if(s.val()) weekData.babysitter=s.val(); });
+  let _r6had=false; r6.on("value",s=>{ if(s.val()){ weekData.babysitter=s.val(); _r6had=true; } else if(_r6had){ delete weekData.babysitter; _r6had=false; } });   // 📅 THISWEEK: a removed sitter node leaves this device too
   fbWeekRefs.push(r6);
 
   const r8=db.ref(wk+"/blockouts");
@@ -9063,6 +9064,7 @@ function renderSchedule(el){
   if(day===_todayDay&&momHere()&&!momSchedView){ try{ const _hr=hrMomCardHTML((kid!=="all"&&kid!=="mom")?kid:null); if(_hr) h+='<div style="margin:0 0 10px">'+_hr+'</div>'; }catch(e){} }   // 🙋 NEEDMOM: who asked for Mom → ✓ Helped
   if(momHere()&&schedDayOffOpen) h+=schedRenderDayOffPicker(day);
   if(momHere()){ try{ if(typeof relayLineHTML==="function") h+=relayLineHTML(day); }catch(e){} }   // 🔁 RELAY: what the last re-lay moved · Undo
+  if(momHere()){ try{ if(typeof twsHTML==="function") h+=twsHTML(); }catch(e){} }   // 📅 THISWEEK: the week's settings, editable while it runs
   if(day===_todayDay&&kid!=="all"&&kid!=="mom"&&typeof hhCleanOn==="function"&&hhCleanOn(_todayStr())){ try{ h+=hhCleanPanelHTML(kid,_todayStr(),day); }catch(e){} }   // 🧽 CLEANINGDAY: Go clean on a normal day
 
   if(CONSTRAINT[day]){
@@ -37992,7 +37994,7 @@ function dtSave(){
   const _was=(typeof dtUndoSnap==="function")?dtUndoSnap(st.iso):null;   // 🔁 RELAY: the leaves as they were, for Undo
   if(!stWrite(dtUpd(st))) return;
   const words=dtWords(st), when=(st.iso===stTodayIso())?"Today":stDateWords(st.iso);
-  dtClose(); if(typeof relayWeek==="function") relayWeek("daytimes",{label:"⏰ "+when+" "+fromMin(st.s)+"–"+fromMin(st.e),undo:_was}); else if(typeof schedCascade==="function") schedCascade(); if(typeof renderAll==="function") renderAll();   // 🔁 RELAY: through the one door
+  dtClose(); if(typeof _twsAfterBoard==="function"&&_twsAfterBoard(st.iso)){} else if(typeof relayWeek==="function") relayWeek("daytimes",{label:"⏰ "+when+" "+fromMin(st.s)+"–"+fromMin(st.e),undo:_was}); else if(typeof schedCascade==="function") schedCascade(); if(typeof renderAll==="function") renderAll();   // 🔁 RELAY: through the one door
   if(typeof gwShowToast==="function") gwShowToast("⏰ "+when+": school "+words);
 }
 // "Back to normal": both of the date's leaves go; the day follows Settings again.
@@ -38001,7 +38003,7 @@ function dtClear(iso){
   const upd={}; upd["config/rules/schoolDay/byDate/"+iso]=null; upd["config/rules/schoolDay/lunchByDate/"+iso+"/all"]=null;
   const _was=(typeof dtUndoSnap==="function")?dtUndoSnap(iso):null;   // 🔁 RELAY: the leaves as they were, for Undo
   if(!stWrite(upd)) return;
-  dtClose(); if(typeof relayWeek==="function") relayWeek("daytimes",{label:"⏰ "+((iso===stTodayIso())?"Today":stDateWords(iso))+" back to normal",undo:_was}); else if(typeof schedCascade==="function") schedCascade(); if(typeof renderAll==="function") renderAll();   // 🔁 RELAY: through the one door
+  dtClose(); if(typeof _twsAfterBoard==="function"&&_twsAfterBoard(iso)){} else if(typeof relayWeek==="function") relayWeek("daytimes",{label:"⏰ "+((iso===stTodayIso())?"Today":stDateWords(iso))+" back to normal",undo:_was}); else if(typeof schedCascade==="function") schedCascade(); if(typeof renderAll==="function") renderAll();   // 🔁 RELAY: through the one door
   if(typeof gwShowToast==="function") gwShowToast("⏰ "+((iso===stTodayIso())?"Today":stDateWords(iso))+" back to the usual school times");
 }
 function dtRender(){
@@ -42748,6 +42750,7 @@ function _rlwUndoUpd(e,tasks,o){
 }
 function _rlwApplyLocal(p,v){
   const parts=String(p).split("/");
+  if((parts[0]==="weekConfig"||parts[1]==="babysitter")&&typeof _twsApplyLocal==="function"){ _twsApplyLocal(p,v); return; }   // 📅 THISWEEK
   if(parts[0]==="calendar"&&typeof calendarData!=="undefined"&&calendarData){ let o=calendarData; for(let i=1;i<parts.length-1;i++){ if(!o[parts[i]]||typeof o[parts[i]]!=="object") o[parts[i]]={}; o=o[parts[i]]; } if(v===null) delete o[parts[parts.length-1]]; else o[parts[parts.length-1]]=v; return; }
   if(typeof stApplyLocal==="function") stApplyLocal(p,v);
 }
@@ -98855,6 +98858,247 @@ function autoGenerateWeekIfNeeded(){
   });
 }
 // AUTOBUILD_END
+// THISWEEK_START — 📅 THE "THIS WEEK" STRIP (slice C of PLAN_living_schedule_finish_2026-11-08.md; her words 10/29: "All the
+// settings we have in Generate Week need to be adjustable in the week we're currently in … 'Tuesday we can't, Wednesday…'").
+// Mom lens only (momHere — the ⏰ Day times gate), on the schedule's day banner, under the what-moved line. Collapsed it is one
+// line ("📅 This week · Tue sitter · Wed off: <kid> · Sat on"); tapped it opens a 7-column grid of the week on the board
+// (SUNDAY_FIRST: the week's Sunday is the day before its Monday, so it is the first column). Per day:
+//   · ⏰ start / finish / lunch — the step-1 DAYTIMES sheet itself (dtOpen(iso)); no second time editor
+//   · each kid on / off — calendar/kidOverrides/<kid>/<iso> = {school:false, note:"Day off"} (the 😷 Kid Off mark), or removed.
+//     A kid off for another reason (holiday, vacation, co-op) shows why and is changed on the Month calendar
+//   · 🌸 sitter on / off + hours (Mon–Fri) — weekConfig/<wn>/babysitter = {<day>:{start,end}} (the whole small day map); the
+//     week's kids "with the sitter" — weekConfig/<wn>/withSitter. On the week on the board, week<N>/babysitter (the node the
+//     sweep, the Mom loop and the Sitter tab read) is rebuilt in generateWeek's own shape (_twsSitterObj)
+//   · Saturday on / off — weekConfig/<wn>/saturday (the grid's planned Saturday is never dropped — AUTOBUILD's rule — so it
+//     shows locked on); Sunday — 🔁 Sunday catch-up per kid, config/rules/sundayCatchup/<kid> (step 2's standing switch)
+//   · Late start / car school / no-school days saved by the Generate Week page show read-only "(from Generate Week)".
+// Every write is ONE multi-path update of targeted leaves (?dryrun=1: this device's memory only), and on the week on the board
+// it goes through the one door — relayWeek(…) with Undo = those leaves back as they were (the RELAY2 Settings / Calendar way:
+// one re-lay, the what-moved line, Undo puts the setting AND the cards back; taps within 2 s are one run). A past day is shown
+// greyed, read-only; today is editable (today's open cards re-lay, checked cards never move). "Next week ›" opens the same grid
+// for week N+1, writing the same paths and re-laying nothing — the Sunday self-build (AUTOBUILD) reads them. weekConfig/<wn>
+// for the board is a live read (twsListen) so every device's re-lay builds from the same settings. Nothing is removed here:
+// the Generate Week page and ⏰ Day times stay (slice D). Pure helpers (_twsSitterObj, _twsModel, _twsLine) are sliced by
+// test_this_week_strip.js.
+const TWS_DAYS=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
+const TWS_SITTER_DAYS=["monday","tuesday","wednesday","thursday","friday"];   // the Generate Week page's sitter days
+const TWS_ABBR={sunday:"Sun",monday:"Mon",tuesday:"Tue",wednesday:"Wed",thursday:"Thu",friday:"Fri",saturday:"Sat"};
+let twsOpen=false, twsNext=false; const _twsLoading={};
+function _twsIso(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+// pure: the node a built week carries (week<N>/babysitter) for a sitter map — generateWeek's own shape (days, withSitter, hours…)
+function _twsSitterObj(map,withKids,norm){
+  norm=norm||function(v){ return v; }; const days=Object.keys(map||{}).filter(function(d){ return !!map[d]; }); if(!days.length) return null;
+  const o={days:days}; if(withKids&&withKids.length) o.withSitter=withKids.slice();
+  days.forEach(function(dn){ const mg=norm(map[dn]);
+    if(days.length===1){ o.hours=mg.start+" - "+mg.end; o.mom_return=mg.end; } else { o["hours_"+dn]=mg.start+" - "+mg.end; o["mom_return_"+dn]=mg.end; } });
+  return o;
+}
+// pure: the grid. o = {wn, board, dates:{dn:iso}, todayIso, cfg (gwEffectiveConfig), saved (weekConfig/<wn> as saved), roster,
+// kidOff(k,iso)→{mine, why}|null, sunOn(k), sunAny, satPlanned, day(dn,iso)→{s,e,ls,le}, own(iso), fromMin(m)}
+function _twsModel(o){
+  o=o||{}; const cfg=o.cfg||{}, saved=(o.saved&&typeof o.saved==="object")?o.saved:{}, roster=o.roster||[];
+  const days=TWS_DAYS.filter(function(dn){ return !!(o.dates||{})[dn]; }).map(function(dn){
+    const iso=o.dates[dn]; const past=!!(o.todayIso&&iso<o.todayIso), today=(iso===o.todayIso);
+    const x={dn:dn,iso:iso,past:past,today:today,own:!!(o.own&&o.own(iso)),t:(o.day?o.day(dn,iso):null),kids:[],sitter:null,canSitter:TWS_SITTER_DAYS.indexOf(dn)>=0,gw:[]};
+    if(dn!=="sunday") roster.forEach(function(k){ let off=null; try{ off=o.kidOff?o.kidOff(k,iso):null; }catch(e){} x.kids.push({k:k,off:!!off,mine:!!(off&&off.mine),why:(off&&off.why)||""}); });
+    else roster.forEach(function(k){ x.kids.push({k:k,sun:!!(o.sunOn&&o.sunOn(k))}); });
+    if(x.canSitter&&(cfg.babysitter||{})[dn]) x.sitter=Object.assign({},cfg.babysitter[dn]);
+    if((saved.lateStart||{})[dn]) x.gw.push("Late start "+saved.lateStart[dn]);
+    if((saved.carSchool||{})[dn]) x.gw.push("Car school until "+(saved.carSchool[dn].end||"12:00 PM"));
+    if((saved.skipDays||[]).indexOf(dn)>=0) x.gw.push("No school");
+    return x;
+  });
+  return {wn:o.wn,board:!!o.board,days:days,withSitter:(cfg.withSitter||[]).slice(),withSaved:Array.isArray(saved.withSitter),
+    saturday:!!cfg.saturday,satLocked:!!o.satPlanned,sunAny:!!o.sunAny,anySitter:days.some(function(d){ return !!d.sitter; })};
+}
+// pure: the collapsed line — only what is special; "as usual" when nothing is
+function _twsLine(m,capK){
+  capK=capK||function(s){ return String(s); }; const x=[];
+  (m.days||[]).forEach(function(d){
+    const A=TWS_ABBR[d.dn];
+    if(d.dn==="sunday"){ const on=d.kids.filter(function(k){ return k.sun; }).map(function(k){ return capK(k.k); }); if(on.length) x.push("Sun catch-up: "+on.join(", ")); return; }
+    if(d.dn==="saturday"&&!m.saturday) return;
+    if(d.own&&d.t&&m.fm) x.push(A+" "+m.fm(d.t.s)+"–"+m.fm(d.t.e));
+    if(d.sitter) x.push(A+" sitter");
+    const off=d.kids.filter(function(k){ return k.off; });
+    if(off.length) x.push(A+" off: "+((off.length===d.kids.length&&d.kids.length>1)?"everyone":off.map(function(k){ return capK(k.k); }).join(", ")));
+    d.gw.forEach(function(g){ x.push(A+" "+g.toLowerCase()); });
+  });
+  if(m.saturday) x.push("Sat on");
+  return x.length?x.join(" · "):"as usual";
+}
+// ── the week the strip is showing ──
+function _twsWn(){ const b=(typeof currWeekNum==="function")?currWeekNum():0; return twsNext?b+1:b; }
+function _twsDates(wn){
+  const out={}; let r=null; try{ r=(typeof gwWeekDateRange==="function")?gwWeekDateRange(wn):null; }catch(e){}
+  if(r&&r.start){ const mon=gwParseDate(r.start); TWS_DAYS.forEach(function(dn,i){ const d=new Date(mon); d.setDate(d.getDate()+(i===0?-1:i-1)); out[dn]=_twsIso(d); }); return out; }
+  if(wn===currWeekNum()) TWS_DAYS.forEach(function(dn){ const x=(dn==="sunday")?dtIso("sunday"):stDsOf(dn); if(x) out[dn]=x; });
+  return out;
+}
+function _twsKidOff(k,iso){
+  const ov=((((typeof calendarData!=="undefined"&&calendarData)||{}).kidOverrides||{})[k]||{})[iso];
+  if(ov&&ov.school===false) return {mine:true,why:ov.note||"Day off"};
+  let why=null; try{ why=(typeof smapIsKidOff==="function")?smapIsKidOff(k,iso):null; }catch(e){}
+  return why?{mine:false,why:String(why)}:null;
+}
+function _twsLive(){
+  const wn=_twsWn(), board=!twsNext;
+  if(_abSavedCfg[wn]===undefined&&!_twsLoading[wn]&&typeof db!=="undefined"&&db&&typeof _abLoadSaved==="function"){ _twsLoading[wn]=1; _abLoadSaved(wn,function(){ if(typeof renderAll==="function") renderAll(); }); }   // a read
+  const saved=(_abSavedCfg[wn]===undefined)?null:_abSavedCfg[wn];
+  const m=_twsModel({wn:wn,board:board,dates:_twsDates(wn),todayIso:stTodayIso(),cfg:gwEffectiveConfig(wn,saved),saved:saved,roster:(typeof ROSTER!=="undefined")?[...ROSTER]:[],
+    kidOff:_twsKidOff,sunOn:function(k){ return typeof sucOn==="function"&&sucOn(k); },sunAny:(typeof dtSunOk==="function")&&dtSunOk(),
+    satPlanned:(typeof gwSatPlanned==="function")?gwSatPlanned(wn):false,day:function(dn,iso){ return (typeof dtDay==="function")?dtDay(dn,iso):null; },own:function(iso){ return typeof dtHasOwn==="function"&&dtHasOwn(iso); }});
+  m.fm=fromMin; return m;
+}
+// ── the write: this device's copy, then ONE multi-path update (targeted leaves) ──
+function _twsApplyLocal(p,v){
+  const parts=String(p).split("/"); const val=(v===null||v===undefined)?null:JSON.parse(JSON.stringify(v));
+  if(parts[0]==="weekConfig"){ const wn=parts[1]; if(parts.length===2){ _abSavedCfg[wn]=val; return true; }
+    let o=_abSavedCfg[wn]; if(!o||typeof o!=="object") o=_abSavedCfg[wn]={};
+    for(let i=2;i<parts.length-1;i++){ if(!o[parts[i]]||typeof o[parts[i]]!=="object") o[parts[i]]={}; o=o[parts[i]]; }
+    if(val===null) delete o[parts[parts.length-1]]; else o[parts[parts.length-1]]=val; return true; }
+  if(parts.length===2&&parts[1]==="babysitter"&&typeof WK!=="undefined"&&parts[0]===WK){
+    if(typeof weekData!=="undefined"&&weekData){ if(val===null) delete weekData.babysitter; else weekData.babysitter=val; }
+    try{ if(typeof sv==="function") sv(WK+"_babysitter",val); }catch(e){} return true; }
+  if(parts[0]==="calendar"){ if(typeof calendarData==="undefined"||!calendarData) return false; let o=calendarData;
+    for(let i=1;i<parts.length-1;i++){ if(!o[parts[i]]||typeof o[parts[i]]!=="object") o[parts[i]]={}; o=o[parts[i]]; }
+    if(val===null) delete o[parts[parts.length-1]]; else o[parts[parts.length-1]]=val; return true; }
+  if(parts[0]==="config"&&typeof stApplyLocal==="function"){ stApplyLocal(p,val); return true; }
+  return false;
+}
+// an Undo entry for a path as it is RIGHT NOW in this device's copy — taken before the write
+function _twsWas(p){
+  const parts=String(p).split("/"); let o;
+  try{
+    if(parts[0]==="weekConfig"){ o=_abSavedCfg[parts[1]]; for(let i=2;i<parts.length&&o!=null;i++) o=(typeof o==="object")?o[parts[i]]:undefined; }
+    else if(parts[1]==="babysitter"){ o=(typeof weekData!=="undefined"&&weekData)?weekData.babysitter:undefined; }
+    else if(parts[0]==="calendar"){ o=(typeof calendarData!=="undefined")?calendarData:undefined; for(let i=1;i<parts.length&&o!=null;i++) o=o[parts[i]]; }
+    else if(parts[0]==="config"&&parts[1]==="rules"){ o=(typeof rulesData!=="undefined")?rulesData:undefined; for(let i=2;i<parts.length&&o!=null;i++) o=o[parts[i]]; }
+  }catch(e){ o=undefined; }
+  return (o===undefined||o===null)?{p:p,gone:true}:{p:p,was:JSON.parse(JSON.stringify(o))};
+}
+function _twsWrite(upd){
+  if(!momHere()) return false; const keys=Object.keys(upd||{}); if(!keys.length) return false;
+  keys.forEach(function(p){ _twsApplyLocal(p,upd[p]); });
+  if(typeof db!=="undefined"&&db&&!_dryRun()){ try{ db.ref().update(upd); }catch(e){ dbg("this week write: "+e); } }   // one multi-path update, never a whole week node
+  return true;
+}
+// THE door: Undo entries first, the write, then (the week on the board only) ONE relayWeek. A week not built yet re-lays nothing.
+function _twsDoor(why,label,upd,board,toast){
+  if(!momHere()) return false;
+  const undo=Object.keys(upd||{}).map(_twsWas);
+  if(!_twsWrite(upd)) return false;
+  const relay=!!board&&typeof relayWeek==="function";
+  if(relay) relayWeek(why,{label:label,undo:undo});
+  if(typeof gwShowToast==="function") gwShowToast(toast||label);
+  if(typeof renderAll==="function") renderAll();
+  return relay;
+}
+// ⏰ the DAYTIMES sheet's Save on a date after the week on the board: a week not built yet has nothing to re-lay
+function _twsAfterBoard(iso){ const sat=stDsOf("saturday"); return !!(sat&&stIsoOk(iso)&&iso>sat); }
+function _twsDayOk(iso){ return momHere()&&stIsoOk(iso)&&!(iso<stTodayIso()); }   // a past day is read-only
+function _twsWhen(iso){ return (iso===stTodayIso())?"today":stDateWords(iso); }
+// ── the controls ──
+function twsToggleKid(k,iso){
+  if(!_twsDayOk(iso)||!k) return;
+  const off=_twsKidOff(k,iso); const p="calendar/kidOverrides/"+k+"/"+iso, upd={};
+  if(off&&!off.mine){ if(typeof gwShowToast==="function") gwShowToast(cap(k)+" is off "+_twsWhen(iso)+" ("+off.why+") — change that on the Month calendar"); return; }
+  upd[p]=(off&&off.mine)?null:{school:false,note:"Day off"};
+  const lbl=(off?"✅ "+cap(k)+" back ":"😷 "+cap(k)+" off ")+_twsWhen(iso);
+  _twsDoor("kidoff",lbl,upd,!twsNext&&_rlwOnBoard(iso));
+}
+function _twsSitterUpd(wn,map,withKids){
+  const upd={};
+  upd["weekConfig/"+wn+"/babysitter"]=Object.keys(map).length?map:null;
+  if(withKids!==undefined) upd["weekConfig/"+wn+"/withSitter"]=(withKids&&withKids.length)?withKids:null;
+  if(!twsNext&&typeof WK!=="undefined"){   // what the live week reads — the kids as gwEffectiveConfig will merge them after this write
+    const ws=(withKids===undefined)?(gwEffectiveConfig(wn).withSitter||[]):((withKids&&withKids.length)?withKids:(((typeof rulesData!=="undefined"&&rulesData)||{}).withSitter||[]));
+    upd[WK+"/babysitter"]=_twsSitterObj(map,ws,gwNormSitter); }
+  return upd;
+}
+function _twsSitterMap(wn){ const m={}; const b=gwEffectiveConfig(wn).babysitter||{}; Object.keys(b).forEach(function(d){ m[d]={start:b[d].start,end:b[d].end}; }); return m; }
+function twsToggleSitter(dn,iso){
+  if(!_twsDayOk(iso)||TWS_SITTER_DAYS.indexOf(dn)<0) return;
+  const wn=_twsWn(); const map=_twsSitterMap(wn); const on=!map[dn];
+  if(on) map[dn]={start:"10:00 AM",end:"2:00 PM"}; else delete map[dn];
+  _twsDoor("sitter","🌸 "+(SITTER_NAME||"Sitter")+" "+TWS_ABBR[dn]+(on?" on":" off"),_twsSitterUpd(wn,map),!twsNext);
+}
+function twsSitterTime(dn,iso,f,v){
+  if(!_twsDayOk(iso)||(f!=="start"&&f!=="end")) return; const t=to12h(v); if(!t||toMin(t)==null) return;
+  const wn=_twsWn(); const map=_twsSitterMap(wn); if(!map[dn]) return;
+  map[dn][f]=t; if(!(toMin(map[dn].end)>toMin(map[dn].start))){ if(typeof gwShowToast==="function") gwShowToast("The sitter's hours have to end after they start"); return; }
+  _twsDoor("sitter","🌸 "+(SITTER_NAME||"Sitter")+" "+TWS_ABBR[dn]+" "+map[dn].start+"–"+map[dn].end,_twsSitterUpd(wn,map),!twsNext);
+}
+function twsToggleWithSitter(k){
+  if(!momHere()||!k) return; const wn=_twsWn(); const ws=(gwEffectiveConfig(wn).withSitter||[]).slice(); const i=ws.indexOf(k);
+  if(i>=0) ws.splice(i,1); else ws.push(k);
+  _twsDoor("sitter","🌸 With "+(SITTER_NAME||"the sitter")+": "+(ws.length?ws.map(cap).join(", "):"nobody"),_twsSitterUpd(wn,_twsSitterMap(wn),ws),!twsNext);
+}
+function twsToggleSaturday(){
+  if(!momHere()) return; const wn=_twsWn();
+  if(typeof gwSatPlanned==="function"&&gwSatPlanned(wn)){ if(typeof gwShowToast==="function") gwShowToast("The grid plans Saturday lessons in Week "+wn+" — Saturday stays on"); return; }
+  const dates=_twsDates(wn); if(dates.saturday&&dates.saturday<stTodayIso()) return;   // a past Saturday is read-only
+  const on=!gwEffectiveConfig(wn).saturday; const upd={}; upd["weekConfig/"+wn+"/saturday"]=on;
+  _twsDoor("saturday","📅 Saturday "+(on?"on":"off")+" (Week "+wn+")",upd,!twsNext);
+}
+function twsToggleSunday(k){
+  if(!momHere()||!k) return; const on=!(typeof sucOn==="function"&&sucOn(k)); const upd={}; upd["config/rules/sundayCatchup/"+k]=on?true:null;
+  try{ if(typeof _sucMemo!=="undefined") _sucMemo={key:null,tasks:null,set:null}; }catch(e){}
+  _twsDoor("sunday","🔁 Sunday catch-up "+(on?"on":"off")+" for "+cap(k)+" (every Sunday)",upd,!twsNext);
+}
+function twsTimes(iso){ if(!_twsDayOk(iso)) return; dtOpen(iso); }   // the step-1 ⏰ sheet itself
+function twsToggle(){ twsOpen=!twsOpen; if(!twsOpen) twsNext=false; if(typeof renderAll==="function") renderAll(); }
+function twsSetNext(on){ twsNext=!!on; twsOpen=true; if(typeof renderAll==="function") renderAll(); }
+// the board's weekConfig/<wn>, live (a read): every device re-lays from the same saved settings (attachWeekListeners)
+function twsListen(wk){
+  if(typeof db==="undefined"||!db||typeof _wkNumOf!=="function") return; const wn=_wkNumOf(wk); if(!wn) return;
+  const r=db.ref("weekConfig/"+wn); r.on("value",function(s){ _abSavedCfg[wn]=s.val()||null; });
+  if(typeof fbWeekRefs!=="undefined"&&Array.isArray(fbWeekRefs)) fbWeekRefs.push(r);
+}
+// ── the strip (the day banner, Mom lens) ──
+function twsHTML(){
+  try{
+    if(!momHere()||typeof gwEffectiveConfig!=="function") return '';
+    if(typeof currData==="undefined"||!currData||!currData.subjects) return '';
+    const m=_twsLive(); if(!m.days.length) return '';
+    const capK=(typeof cap==="function")?cap:String;
+    const chip=function(oc,lbl,on,col,title,dis){ return '<button'+(oc&&!dis?' onclick="'+oc+'"':' disabled')+(title?' title="'+esc(title)+'"':'')+' style="display:block;width:100%;margin:3px 0 0;padding:4px 6px;border-radius:9px;border:1.5px solid '+(on?(col||'#0f766e'):'var(--border)')+';background:'+(on?(col||'#0f766e'):'#fff')+';color:'+(on?'#fff':'var(--text)')+';font-size:11.5px;font-weight:700;cursor:'+(dis?'default':'pointer')+';font-family:\'DM Sans\',sans-serif;text-align:left">'+lbl+'</button>'; };
+    const head=(m.board?'📅 This week':'📅 Week '+m.wn)+' · '+esc(_twsLine(m,capK));
+    let h='<div class="tws-strip" style="margin:6px 12px 0;font-size:12px;color:#134e4a;background:#f0fdfa;border:1.5px solid #99f6e4;border-radius:10px;padding:6px 10px">';
+    h+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><button onclick="twsToggle()" style="flex:1;text-align:left;background:none;border:none;padding:0;color:inherit;font-weight:700;font-size:12px;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+head+' <span style="color:#0f766e">'+(twsOpen?'▴':'▾')+'</span></button>'
+      +(twsOpen?(m.board?'<button onclick="twsSetNext(true)" style="background:none;border:none;color:#0f766e;font-weight:800;cursor:pointer;font-size:12px;font-family:\'DM Sans\',sans-serif">Next week ›</button>':'<button onclick="twsSetNext(false)" style="background:none;border:none;color:#0f766e;font-weight:800;cursor:pointer;font-size:12px;font-family:\'DM Sans\',sans-serif">‹ This week</button>'):'')+'</div>';
+    if(!twsOpen) return h+'</div>';
+    h+='<div style="display:grid;grid-template-columns:repeat('+m.days.length+',minmax(96px,1fr));gap:6px;overflow-x:auto;padding:8px 0 4px">';
+    m.days.forEach(function(d){
+      const ro=d.past;
+      h+='<div style="background:#fff;border:1.5px solid '+(d.today?'#0f766e':'#ccfbf1')+';border-radius:10px;padding:6px;'+(ro?'opacity:.5;':'')+'min-width:0">';
+      h+='<div style="font-weight:800;font-size:12px">'+esc(TWS_ABBR[d.dn]+" "+parseInt(d.iso.slice(8),10))+(d.today?' · Today':'')+'</div>';
+      const tOk=d.t&&(d.dn!=="sunday"||m.sunAny);
+      if(tOk) h+=chip(ro?'':"twsTimes('"+d.iso+"')",'⏰ '+esc(fromMin(d.t.s)+'–'+fromMin(d.t.e))+'<br><span style="font-weight:600">🍎 '+esc(fromMin(d.t.ls)+'–'+fromMin(d.t.le))+'</span>',d.own,'#7c3aed',"Start, finish and lunch for this day only",ro);
+      if(d.dn==="saturday") h+=chip(ro?'':"twsToggleSaturday()",m.saturday?'📅 Saturday on':'Saturday off',m.saturday,'#0369a1',m.satLocked?"The grid plans Saturday lessons this week":"School on Saturday this week",ro||m.satLocked);
+      if(d.dn==="sunday"){ d.kids.forEach(function(x){ h+=chip(ro?'':"twsToggleSunday('"+stJ(x.k)+"')",(x.sun?'🔁 ':'')+esc(capK(x.k))+(x.sun?' catch-up':''),x.sun,(typeof KID_COLOR!=="undefined"&&KID_COLOR[x.k])||'#0f766e',"Sunday catch-up (every Sunday)",ro); }); }
+      else if(!(d.dn==="saturday"&&!m.saturday)) d.kids.forEach(function(x){
+        const lbl=esc(capK(x.k))+(x.off?' · '+esc(x.mine?'off':x.why):'');
+        h+=chip(ro?'':"twsToggleKid('"+stJ(x.k)+"','"+d.iso+"')",x.off?'<s>'+lbl+'</s>':lbl,!x.off,(typeof KID_COLOR!=="undefined"&&KID_COLOR[x.k])||'#0f766e',x.off&&!x.mine?x.why+" — change it on the Month calendar":(x.off?"Tap: back to school":"Tap: off this day"),ro||(x.off&&!x.mine));
+      });
+      if(d.canSitter){
+        h+=chip(ro?'':"twsToggleSitter('"+d.dn+"','"+d.iso+"')",'🌸 '+esc(SITTER_NAME||'Sitter')+(d.sitter?' on':''),!!d.sitter,'#be185d',"Sitter this day",ro);
+        if(d.sitter&&!ro) h+='<div style="display:flex;gap:2px;margin-top:3px"><input type="time" value="'+esc(ampmTo24(d.sitter.start))+'" onchange="twsSitterTime(\''+d.dn+'\',\''+d.iso+'\',\'start\',this.value)" style="width:50%;min-width:0;font-size:11px;padding:2px;border:1px solid var(--border);border-radius:6px"><input type="time" value="'+esc(ampmTo24(d.sitter.end))+'" onchange="twsSitterTime(\''+d.dn+'\',\''+d.iso+'\',\'end\',this.value)" style="width:50%;min-width:0;font-size:11px;padding:2px;border:1px solid var(--border);border-radius:6px"></div>';
+        else if(d.sitter) h+='<div style="font-size:11px;margin-top:2px">'+esc(d.sitter.start+'–'+d.sitter.end)+'</div>';
+      }
+      d.gw.forEach(function(g){ h+='<div style="font-size:10.5px;color:#92400e;margin-top:3px">'+esc(g)+' <span style="color:var(--muted)">(from Generate Week)</span></div>'; });
+      h+='</div>';
+    });
+    h+='</div>';
+    if(m.anySitter){ h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:2px 0"><span style="font-weight:700">🌸 With '+esc(SITTER_NAME||'the sitter')+':</span>';
+      (typeof ROSTER!=="undefined"?[...ROSTER]:[]).forEach(function(k){ const on=m.withSitter.indexOf(k)>=0;
+        h+='<button onclick="twsToggleWithSitter(\''+stJ(k)+'\')" style="padding:3px 10px;border-radius:12px;border:1.5px solid '+(on?'#be185d':'var(--border)')+';background:'+(on?'#be185d':'#fff')+';color:'+(on?'#fff':'var(--text)')+';font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+esc(capK(k))+'</button>'; });
+      h+=(m.withSaved?'':'<span style="font-size:11px;color:var(--muted)">(from Settings)</span>')+'</div>'; }
+    h+='<div style="font-size:11px;color:var(--muted);line-height:1.45;padding-top:2px">'+(m.board?'Each change re-lays this week from now — what moved shows above, with Undo. Past days stay as they were.':'Saved for Week '+esc(String(m.wn))+' — it builds with these on its Sunday. Nothing on this week moves.')+'</div>';
+    return h+'</div>';
+  }catch(e){ dbg("this week strip: "+e); return ''; }
+}
+// THISWEEK_END
 
 // ── OVERFLOW ROLL-FORWARD ────────────────────────────────────────────
 // When a day runs past the cutoff, its leftover lessons roll to the next
