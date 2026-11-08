@@ -77,6 +77,13 @@ body.md-frame .mast-sticky{top:calc(var(--hdr-h) + var(--nav-h) + var(--mp-h))!i
 .ss-grip{position:absolute;top:2px;left:50%;transform:translateX(-50%);z-index:2;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;color:#c4bfb8;font-size:13px;line-height:1;padding:4px 10px;border-radius:8px;background:rgba(255,255,255,.75)}   /* centred on the card's top edge — card headers keep their title at the left and their button at the right */
 .ss-col-dad>.ss-sec>.ss-grip{top:12px}   /* Dad's cards carry their own 10px top margin */
 .ss-line{height:3px;border-radius:2px;background:#2B7A78;margin:2px 12px}
+/* NOSEL_CSS — drag/draw surfaces never select the page (her report 2026-11-08, tablet: "when you try to click and drag stuff, the background
+   turns blue and everything on that page kind of gets selected" — the 🧩 Picture Puzzle and the tablet notebook). No touch-action here:
+   only the dragged piece / ink canvas carries touch-action:none, so the page still scrolls. Inputs inside stay selectable. */
+.ha-nosel{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-user-drag:none}
+.ha-nosel img,.ha-nosel a{-webkit-user-drag:none}
+.ha-nosel input,.ha-nosel textarea,.ha-nosel select,.ha-nosel [contenteditable="true"]{user-select:text;-webkit-user-select:text;-webkit-touch-callout:default}
+body.ha-dragging,body.ha-dragging *{user-select:none!important;-webkit-user-select:none!important;-webkit-touch-callout:none!important}   /* while a finger drags or draws (iOS long-press) */
 @media (max-width:480px){
   #msv-bar #mp-subnav .mp-row{flex-wrap:nowrap!important;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:3px 8px!important;gap:2px!important;scrollbar-width:none}
   #msv-bar #mp-subnav .mp-row::-webkit-scrollbar{display:none}
@@ -10578,6 +10585,32 @@ function kcBodyTap(e){
     return true;
   }catch(err){ return false; }
 }
+// NOSELDRAG_START — a drag or a stroke never starts a text selection or an image drag (her report 2026-11-08, tablet: "when you try to
+// click and drag stuff, the background turns blue and everything on that page kind of gets selected" — 🧩 Picture Puzzle, the Pre-K
+// tablet notebook). haDragStart(ev) on a drag/draw start: preventDefault unless the press landed on a control (button, link, input… —
+// kcBodyTap's list) so taps and typing inside the surface still work; body.ha-dragging (NOSEL_CSS) turns selection off page-wide until
+// the finger lifts — the belt to .ha-nosel's braces for iOS long-press selection.
+function haDragControl(ev){
+  try{
+    const b=ev&&ev.currentTarget;
+    for(let n=ev&&ev.target;n&&n!==b&&n.nodeType===1;n=n.parentElement){
+      const g=String(n.tagName||"").toUpperCase();
+      if(g==="BUTTON"||g==="A"||g==="INPUT"||g==="SELECT"||g==="TEXTAREA"||g==="LABEL"||n.isContentEditable||(n.hasAttribute&&n.hasAttribute("onclick"))) return true;
+    }
+  }catch(err){}
+  return false;
+}
+function haDragOn(){ try{ if(typeof document!=="undefined"&&document.body) document.body.classList.add("ha-dragging"); }catch(e){} }
+function haDragOff(){ try{ if(typeof document!=="undefined"&&document.body) document.body.classList.remove("ha-dragging"); }catch(e){} }
+function haDragStart(ev){
+  if(!ev||haDragControl(ev)) return false;
+  try{ if(ev.cancelable!==false&&typeof ev.preventDefault==="function") ev.preventDefault(); }catch(e){}
+  haDragOn(); return true;
+}
+// a lift anywhere ends it — the class can't stick if the dragged element was re-rendered away mid-drag
+try{ if(typeof document!=="undefined"&&document.addEventListener){ document.addEventListener("pointerup",haDragOff,true); document.addEventListener("pointercancel",haDragOff,true); }
+  if(typeof window!=="undefined"&&window.addEventListener) window.addEventListener("blur",haDragOff); }catch(e){}
+// NOSELDRAG_END
 function taskCard(t, fromDay, readOnly, doneId){
   // doneId: mirror another task's checked-state (used by the read-only "Carried Over"
   // box, which links each item to the lesson already sitting in the schedule).
@@ -46740,7 +46773,7 @@ function nbtShow(kid,wk,html,ansHtml,opts){
   const day=(NBT_DAYS.indexOf(opts.day)>=0)?opts.day:nbtTodayDay();
   nbtView={kid:kid,wk:wk,page:page,n:0,days:[],day:day,noDay:false,strokes:[],dirty:false,tool:"pen",penOnly:false,sawPen:false,ink:ink,key:key,ready:false,ans:ans,ansPage:1,ansN:0,ansLabels:[],ansReady:false};
   let ov=document.getElementById("nbt-view"); if(ov) ov.remove();
-  ov=document.createElement("div"); ov.id="nbt-view";
+  ov=document.createElement("div"); ov.id="nbt-view"; ov.className="ha-nosel";   // NOSELDRAG: the page never selects
   ov.style.cssText="position:fixed;inset:0;z-index:10050;background:#f8fafc;display:flex;flex-direction:column;overscroll-behavior:none";
   const F="font-family:'DM Sans',sans-serif";
   ov.innerHTML=
@@ -46918,9 +46951,9 @@ function nbtPaint(){
     const cv=document.getElementById("nbt-ink"); if(!cv||!nbtView||e.target!==cv) return;
     if(e.pointerType==="pen"&&!nbtView.sawPen){ nbtView.sawPen=true; nbtView.penOnly=true; nbtBarRender(); }
     const p0=nbtPt(e,cv), hit=p0?nbtAcHit(nbtView,p0):null;   // NBT_AUTOCHK: a tap on an open letter circle picks it (any pointer) — the pick lands on lift, in place
-    if(hit){ e.preventDefault(); nbtView._tap={hit:hit,p:p0,t:Date.now()}; try{cv.setPointerCapture(e.pointerId);}catch(err){} return; }
+    if(hit){ e.preventDefault(); nbtView._tap={hit:hit,p:p0,t:Date.now()}; try{cv.setPointerCapture(e.pointerId);}catch(err){} if(typeof haDragOn==="function") haDragOn(); return; }
     if(nbtView.penOnly&&e.pointerType!=="pen") return;
-    e.preventDefault();
+    e.preventDefault(); if(typeof haDragOn==="function") haDragOn();   // NOSELDRAG: a stroke never selects the page
     const _w0=cv.width; if(!nbtFitCanvas()) return; if(cv.width!==_w0) nbtPaint();
     const p=nbtPt(e,cv); if(!p) return;
     if(nbtView.tool==="erase"){ nbtEraseAt(p); return; }
@@ -46939,7 +46972,7 @@ function nbtPaint(){
     evs.forEach(ev=>{ const q=nbtPt(ev,cv); if(q) nbtView._live.p.push(q); });
     nbtPaint();
   },{passive:false});
-  const end=(e)=>{ if(!nbtView) return;
+  const end=(e)=>{ if(typeof haDragOff==="function") haDragOff(); if(!nbtView) return;
     if(nbtView._tap){ const tp=nbtView._tap; nbtView._tap=null;   // NBT_AUTOCHK: lifted on the same circle within 0.7 s = the pick; anything else is nothing
       if(e&&e.type==="pointerup"&&Date.now()-tp.t<700){ const cv=document.getElementById("nbt-ink"), q=cv?nbtPt(e,cv):null, h2=q?nbtAcHit(nbtView,q):null; if(h2&&h2.arm===tp.hit.arm&&h2.l===tp.hit.l) nbtAcPick(nbtView,h2); }
       return; }
@@ -47158,7 +47191,7 @@ function wbOpen(bookId,kid,page,opts){
   const assign=wbAssignClean(opts&&opts.assignment,b,page);   // 📌 WB_ASSIGN: from a card only; the panel / URL door pass none
   wbView={bookId:bookId,kid:kid,page:page,strokes:[],dirty:false,tool:"pen",penOnly:false,sawPen:false,ans:ans,rules:rules,eic:(opts&&opts.eic)||null,cover:cover,assignment:assign};
   let ov=document.getElementById("wb-view"); if(ov) ov.remove();
-  ov=document.createElement("div"); ov.id="wb-view";
+  ov=document.createElement("div"); ov.id="wb-view"; ov.className="ha-nosel";   // NOSELDRAG
   ov.style.cssText="position:fixed;inset:0;z-index:10050;background:#f8fafc;display:flex;flex-direction:column;overscroll-behavior:none";
   ov.innerHTML=
     '<div id="wb-bar" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#fff;border-bottom:1px solid #e2e8f0;flex:none;font-family:\'DM Sans\',sans-serif;flex-wrap:wrap"></div>'+
@@ -47291,7 +47324,7 @@ function wbPaint(){
     const cv=document.getElementById("wb-ink"); if(!cv||!wbView||e.target!==cv) return;
     if(e.pointerType==="pen"&&!wbView.sawPen){ wbView.sawPen=true; wbView.penOnly=true; wbBarRender(); }
     if(wbView.penOnly&&e.pointerType!=="pen") return;      // palm / finger scrolls instead
-    e.preventDefault();
+    e.preventDefault(); if(typeof haDragOn==="function") haDragOn();   // NOSELDRAG
     // Fit lazily too: ResizeObserver is the fast path, but a stroke must never be
     // recorded against a canvas that hasn't been sized to the page yet.
     const _w0=cv.width; if(!wbFit()) return; if(cv.width!==_w0) wbPaint();
@@ -47311,7 +47344,7 @@ function wbPaint(){
     evs.forEach(ev=>{ const q=wbPt(ev,cv); if(q) wbView._live.p.push(q); });
     wbPaint();
   },{passive:false});
-  const end=()=>{ if(!wbView) return; if(wbView._live){ wbView._live=null; wbMarkDirty(wbView); wbBarRender(); } };   // 💾 the finished stroke counts
+  const end=()=>{ if(typeof haDragOff==="function") haDragOff(); if(!wbView) return; if(wbView._live){ wbView._live=null; wbMarkDirty(wbView); wbBarRender(); } };   // 💾 the finished stroke counts
   document.addEventListener("pointerup",end); document.addEventListener("pointercancel",end);
   window.addEventListener("resize",()=>{ if(wbView){ wbFit(); wbPaint(); } });
 })();
@@ -73674,7 +73707,7 @@ function _gkResume(){
 // GAMEKID_END
 
 function buildMatchHtml(color){
-  let h='<div style="padding:4px 14px 20px">';
+  let h='<div class="ha-nosel" style="padding:4px 14px 20px">';
   const decks=mastMatchDecks();
   if(!decks.length){
     h+='<div class="mast-none">No decks ready for Match yet — it needs 4+ cards with a picture or definition.</div></div>';
@@ -81589,12 +81622,14 @@ function sortDrop(ti,bi){
 function sortDown(ev,ti){
   const st=sortState; if(!st||st.phase!=="play"||!ev||ev.button>0) return;
   const el=ev.currentTarget; if(!el) return;
+  if(typeof haDragStart==="function") haDragStart(ev);   // NOSELDRAG
   const x0=ev.clientX, y0=ev.clientY, pid=ev.pointerId; let moved=false;
   try{ el.setPointerCapture(pid); }catch(e){}
   const move=e=>{ const dx=e.clientX-x0, dy=e.clientY-y0; if(!moved&&Math.hypot(dx,dy)<8) return; moved=true; el.classList.add("sort-drag"); el.style.transform="translate("+dx+"px,"+dy+"px)"; _sortHover(e.clientX,e.clientY); };
   const up=e=>{
     el.removeEventListener("pointermove",move); el.removeEventListener("pointerup",up); el.removeEventListener("pointercancel",up);
     try{ el.releasePointerCapture(pid); }catch(x){}
+    if(typeof haDragOff==="function") haDragOff();
     if(!moved){ sortPick(ti); return; }
     el.style.transform=""; el.classList.remove("sort-drag"); _sortHover(-1,-1);
     const bi=e.type==="pointercancel"?-1:_sortBinAt(e.clientX,e.clientY);
@@ -81640,7 +81675,7 @@ function _sortFace(it,kind){
 }
 function buildSortHtml(color){
   const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"), E=s=>(typeof esc==="function")?esc(s):String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-  let h=SORT_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  let h=SORT_CSS+'<div class="ha-nosel" style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
   const items=_sortItems(), decks=sortDecks(items), names=sortDeckNames(decks);
   if(!names.length){ h+='<div class="mast-none">No decks ready for Sort it yet \u{2014} it needs two or more groups of cards that belong together (pictures from two decks, or cards that share an answer or a rule).</div></div>'; return h; }
   const st=sortState;
@@ -84698,6 +84733,7 @@ function _trainHookHover(k){ try{ document.querySelectorAll("[data-trn-slot]").f
 function trainHookDown(ev,ti){
   const st=trainState; if(!st||st.phase!=="play"||st.lock||!ev||ev.button>0) return;
   const el=ev.currentTarget; if(!el) return;
+  if(typeof haDragStart==="function") haDragStart(ev);   // NOSELDRAG
   const x0=ev.clientX, y0=ev.clientY, pid=ev.pointerId; let moved=false, px=x0, py=y0, sx=0, sy=0;
   try{ el.setPointerCapture(pid); }catch(e){}
   const tr=document.getElementById("trn-track");
@@ -84708,7 +84744,7 @@ function trainHookDown(ev,ti){
       const h=window.innerHeight||0, v2=py<56?-14:(h&&py>h-56)?14:0; if(v2){ const y1=window.scrollY; window.scrollBy(0,v2); sy+=window.scrollY-y1; place(); } }catch(e){} },40);
   const move=e=>{ px=e.clientX; py=e.clientY; if(!moved&&Math.hypot(px-x0,py-y0)<8) return; moved=true; el.classList.add("trn-drag"); place(); };
   const up=e=>{
-    clearInterval(edge);
+    clearInterval(edge); if(typeof haDragOff==="function") haDragOff();
     el.removeEventListener("pointermove",move); el.removeEventListener("pointerup",up); el.removeEventListener("pointercancel",up);
     try{ el.releasePointerCapture(pid); }catch(x){}
     if(!moved){ trainHookPick(ti); return; }
@@ -84884,7 +84920,7 @@ function _trainCarHtml(L,o){
   return '<div class="trn-car'+(o.cls?' '+o.cls:'')+'" data-trn-l="'+L+'" style="background:'+col+'">'+(pic?'<span class="trn-pic">'+pic+'</span>':'')+'<span class="trn-up">'+L+'</span><span class="trn-lo">'+L.toLowerCase()+'</span></div>';
 }
 function buildTrainHtml(color,study){
-  let h=TRAIN_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  let h=TRAIN_CSS+'<div class="ha-nosel" style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
   const kid=masteryKid, d=study||trainDeck(_trainItems(kid),kid);   // 🚂 PKTRAIN: study = pktSession(kid,sid) — the study card's round, drawn on its Study page
   if(!d){ h+='<div class="mast-none">The ABC Train needs a Letters deck \u{2014} a deck of single-letter cards (A, B, C\u{2026}).</div></div>'; return h; }
   const sk=study?String(study.sid):null, go=sk==null?"trainStart()":"trainStart('"+String(sk).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;")+"')";
@@ -85407,13 +85443,14 @@ function jigFrameTap(ev){
 function jigDown(ev,i){
   const st=jigState; if(!st||st.phase!=="play"||!ev||ev.button>0) return;
   const el=ev.currentTarget; if(!el) return;
+  if(typeof haDragStart==="function") haDragStart(ev);   // NOSELDRAG: no text selection / image drag
   const x0=ev.clientX, y0=ev.clientY, pid=ev.pointerId; let moved=false;
   try{ el.setPointerCapture(pid); }catch(e){}
   const move=e=>{ const dx=e.clientX-x0, dy=e.clientY-y0; if(!moved&&Math.hypot(dx,dy)<8) return; moved=true; _jigDragging=true; el.classList.add("jig-drag"); el.style.transform="translate("+dx+"px,"+dy+"px)"; };
   const up=e=>{
     el.removeEventListener("pointermove",move); el.removeEventListener("pointerup",up); el.removeEventListener("pointercancel",up);
     try{ el.releasePointerCapture(pid); }catch(x){}
-    _jigDragging=false;
+    _jigDragging=false; if(typeof haDragOff==="function") haDragOff();
     if(!moved){ jigTapPiece(i); return; }
     let x=null, y=null;
     try{ const f=document.getElementById("jig-frame"), b=f&&f.getBoundingClientRect(), r=el.getBoundingClientRect(), fw=f&&(f.clientWidth||b.width), fh=f&&(f.clientHeight||b.height); if(b&&fw&&e.type!=="pointercancel"){ x=(r.left-b.left-(f.clientLeft||0))/fw; y=(r.top-b.top-(f.clientTop||0))/fh; } }catch(x2){}
@@ -85478,7 +85515,7 @@ const JIG_CSS='<style>.jig-board{--jig-s:min(84vw,46vh,400px);display:flex;flex-
 // One CSS url() for the picture (set once on the board as --jig-img; every piece uses it)
 function _jigUrl(u){ return 'url(&quot;'+_jigE(String(u||"").replace(/["\\\n\r]/g,ch=>encodeURIComponent(ch)))+'&quot;)'; }
 function buildJigHtml(color){
-  let h=JIG_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  let h=JIG_CSS+'<div class="ha-nosel" style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
   const kid=masteryKid;
   if(!jigAvail(kid)){ h+='<div class="mast-none">The Picture Puzzle needs cards with pictures \u{2014} add a picture to a card and it can be a puzzle.</div></div>'; return h; }
   const st=jigState&&jigState.kid===kid?jigState:null, btn=(fn,lbl)=>'<button onclick="'+fn+'" style="padding:14px 30px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
