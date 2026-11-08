@@ -19,13 +19,13 @@ function sandbox(st){
   const els={}; const el=id=>els[id]||(els[id]={value:"",textContent:"",style:{},focus(){},previousElementSibling:null});
   const ctx={ console, String, setTimeout:()=>{}, HA_LS:{getItem:()=>null,setItem(){},removeItem(){}},
     document:{getElementById:el}, window:{}, renderAll(){ctx.rendered++;}, rendered:0, _mastRe(){}, _preserveUI(f){f();},
-    renderMomsPlan(){}, renderHistory(){}, pnwStartWizard(){ctx.wiz=1;}, plCloseSheet(){}, plSetMode(m){ctx.plMode=m;}, kitPinClose(){},
-    APP_PIN:st.app, DAD_PIN:st.dad, ADMIN_PIN:st.admin, pnwPendingWeek:null,
+    renderMomsPlan(){}, renderHistory(){}, plCloseSheet(){}, plSetMode(m){ctx.plMode=m;}, kitPinClose(){},
+    APP_PIN:st.app, DAD_PIN:st.dad, ADMIN_PIN:st.admin,
     momPinUnlocked:false, momModeActive:false, kid:"all", adminPinUnlocked:false, dadUnlocked:false, mastAdminPinOk:false,
     mastListEditMode:false, mastListEditPin:"", ptsEditUnlocked:false, attEditUnlocked:false, els };
   ctx.window=ctx;
   vm.createContext(ctx);
-  const names=["haMomOn","haMomOff","_pinStr","_adminPinOk","pinOk","dadPinOk","checkMomPin","checkAdminPin","kitPinCheck","mastAdminCheckPin","mastListEditCheck","checkPtsPin","checkAttPin","pnwCheckPin","dadPinTry"];
+  const names=["haMomOn","haMomOff","_pinStr","_adminPinOk","pinOk","dadPinOk","checkMomPin","checkAdminPin","kitPinCheck","mastAdminCheckPin","mastListEditCheck","checkPtsPin","checkAttPin","dadPinTry"];
   vm.runInContext(names.map(fn).join("\n")+"\n"+fnIn(libSrc,"lbPinTry")+"\n"+fnIn(playSrc,"plMomPinTry"),ctx);
   return ctx;
 }
@@ -37,7 +37,6 @@ const doors=[
   ["Mastery list edit", c=>{c.mastListEditCheck(c._v); return c.mastListEditMode;}],
   ["Points edit",   c=>{c.checkPtsPin(c._v);         return c.ptsEditUnlocked;}],
   ["Attendance",    c=>{c.els["att-pin-input"]={value:c._v,style:{}}; c.checkAttPin(); return c.attEditUnlocked;}],
-  ["Plan week",     c=>{c.pnwCheckPin(c._v);         return c.adminPinUnlocked&&c.wiz===1;}],
   ["Library",       c=>{c.lbPinTry(c._v);            return c._plMomOk===true;}],
   ["School Room",   c=>{c.plMomPinTry(c._v);         return c._plMomOk===true&&c.plMode==="mom";}],
   ["Dad stars",     c=>{c.els["dad-pin-input"]={value:c._v,style:{}}; c.dadPinTry(); return c.dadUnlocked;}],

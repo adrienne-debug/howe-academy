@@ -44,7 +44,7 @@ console.log("── the pages ──");
   const w2=world({view:"hq"}); w2.api.renderMPGroupPage(w2.content);
   ok("HQ = renderMomHQ under the banner + menu (Home Base lit, HQ outlined), and it knows it is bare there", /^<div class="md-banner">Alerts, Generate Week, links and doors<\/div><div id="mp-subnav"/.test(w2.drawn.hq)&&/mpGoto\('hq'\)" style="[^"]*border:1.5px solid #2B7A78/.test(w2.drawn.hq)&&w2.api.mpHQBare()===true);
   const w3=world({view:"gen"}); w3.api.renderMPGroupPage(w3.content);
-  ok("Generate Week = renderAdminGenerate the same way", /Regenerate this week or plan next week/.test(w3.drawn.gen)&&w3.api.mpHQBare()===false);
+  ok("Generate Week = renderAdminGenerate the same way", /The week builds itself on Sunday/.test(w3.drawn.gen)&&w3.api.mpHQBare()===false);
   ok("routes: chores / hq / gen are in SS_OTHER_VIEWS and renderMomsPlanView hands them to renderMPGroupPage after the School pages", (()=>{ const m=src.match(/const SS_OTHER_VIEWS=(\[[^\]]*\])/); const l=m?JSON.parse(m[1]):[]; return ["chores","hq","gen"].every(v=>l.indexOf(v)>=0)&&/return renderMPSchool\(el\); \}[^\n]*\n  if\(typeof MP_GROUP_VIEWS!=="undefined"&&MP_GROUP_VIEWS\[mpSubView\]\)\{ return renderMPGroupPage\(el\); \}/.test(fn("renderMomsPlanView")); })());
   const w4=world({view:"house"}); ok("the Admin hub's chores / hq / generate links land here from a Mom's Day page", w4.api.mpAdminRoute("chores")===true&&w4.st.mpSubView==="chores"&&w4.api.mpAdminRoute("generate")===true&&w4.st.mpSubView==="gen"&&w4.api.mpAdminRoute("hq")===true&&w4.st.mpSubView==="hq"); }
 

@@ -11,8 +11,10 @@
  *   3. each write = exactly one re-lay request with Undo; three taps within 2 s = one run; Undo puts the setting AND the card back
  *   4. a past day is read-only (no write, no re-lay, no tap in the grid); today is editable
  *   5. next week: the same paths for week N+1, no re-lay at all, nothing written to the week on the board
- *   6. the live sitter node is generateWeek's own shape; Generate Week's late start / car school show read-only
+ *   6. the live sitter node is generateWeek's own shape; Generate Week's late start / no school show read-only
  *   7. ?dryrun=1 writes nothing
+ *   8. 🚗 car school (slice D, GWGONE — the wizard was its only door): one leaf per day weekConfig/<wn>/carSchool/<day> = {end,note},
+ *      read back by gwEffectiveConfig; on / until re-lay with Undo, a note alone does not; next week writes N+1 only; past read-only
  *   run:  node test_this_week_strip.js
  */
 const fs=require("fs"), path=require("path"), vm=require("vm");
@@ -35,7 +37,7 @@ console.log("0. shape");
   ok("the DAYTIMES save / back-to-normal skip the re-lay for a week not built yet",/_twsAfterBoard\(st\.iso\)/.test(fn("dtSave"))&&/_twsAfterBoard\(iso\)/.test(fn("dtClear")));
   ok("the strip writes through one multi-path update only",(TW.match(/db\.ref\(/g)||[]).length===2&&/db\.ref\(\)\.update\(upd\)/.test(TW)&&/db\.ref\("weekConfig\/"\+wn\); r\.on\("value"/.test(TW));
   ok("…never a whole week node (tasks / checked / meta)",!/\/(tasks|checked|history|meta)"?\)?\.set\(/.test(TW)&&!/\.set\(/.test(TW));
-  ok("the Generate Week page and the ⏰ Day times button are still there (slice D removes the page)",/function renderPlanNextWeek\(/.test(src)&&/function dtBtnHTML\(/.test(src)&&/dtBtnHTML\(day\)/.test(src));
+  ok("the Generate Week wizard is gone (slice D) and the ⏰ Day times button is still there",!/function renderPlanNextWeek\(/.test(src)&&/function dtBtnHTML\(/.test(src)&&/dtBtnHTML\(day\)/.test(src));
   ok("generateWeek's sitter node shape is the one the strip copies",/sitterObj\["hours_"\+dn\]=mg\.start\+" - "\+mg\.end;/.test(src)&&/sitterObj\.hours=mg\.start\+" - "\+mg\.end;/.test(src)); }
 
 // ── the sandbox ──
@@ -211,7 +213,7 @@ console.log("5. next week: the same paths for N+1, no re-lay");
   const b=make(); run(b,"dtOpen('2026-11-12'); dtSet('e','14:00'); dtSave()");
   ok("…while a date on the board still re-lays through the door, as before",b.S.rw.length===1&&b.S.rw[0].why==="daytimes"); }
 
-console.log("6. the live sitter node; Generate Week's leftovers read-only");
+console.log("6. the live sitter node; Generate Week's leftovers read-only (car school is a control now — 8.)");
 { const c=make({rulesWithSitter:["kid_a"]});
   ok("one day: generateWeek's shape",JSON.stringify(run(c,"_twsSitterObj({tuesday:{start:'10:00 AM',end:'2:00 PM'}},['kid_a'],gwNormSitter)"))==='{"days":["tuesday"],"withSitter":["kid_a"],"hours":"10:00 AM - 2:00 PM","mom_return":"2:00 PM"}');
   ok("two days: per-day hours",JSON.stringify(run(c,"_twsSitterObj({tuesday:{start:'10:00 AM',end:'2:00 PM'},thursday:'1:00 PM'},[],gwNormSitter)"))==='{"days":["tuesday","thursday"],"hours_tuesday":"10:00 AM - 2:00 PM","mom_return_tuesday":"2:00 PM","hours_thursday":"10:00 AM - 1:00 PM","mom_return_thursday":"1:00 PM"}');
@@ -220,14 +222,57 @@ console.log("6. the live sitter node; Generate Week's leftovers read-only");
   ok("the board's node is written and this device reads it at once (with the Settings kids)",JSON.stringify(c.S.tree.week12.babysitter)==='{"days":["thursday"],"withSitter":["kid_a"],"hours":"10:00 AM - 2:00 PM","mom_return":"2:00 PM"}'&&run(c,"T.rd().weekData.babysitter.days[0]")==="thursday");
   const g=make({saved12:{lateStart:{tuesday:"11:00 AM"},carSchool:{friday:{end:"12:30 PM"}},skipDays:["thursday"]}});
   run(g,"T.setOpen(true)"); const h=run(g,"twsHTML()");
-  ok("late start / car school / no school from Generate Week show read-only",/Late start 11:00 AM <span[^>]*>\(from Generate Week\)/.test(h)&&/Car school until 12:30 PM/.test(h)&&/No school <span/.test(h)&&!/onclick="[^"]*lateStart/.test(h));
-  ok("…and in the collapsed line",/Tue late start 11:00 am/.test(h)&&/Thu no school/.test(h)); }
+  ok("late start / no school from Generate Week show read-only",/Late start 11:00 AM <span[^>]*>\(from Generate Week\)/.test(h)&&/No school <span/.test(h)&&!/onclick="[^"]*lateStart/.test(h));
+  ok("…an old car school day shows as the editable 🚗 row, the old wizard's note filled in",/twsToggleCar\('friday','2026-11-13'\)[^>]*>🚗 Car school until 12:30 PM</.test(h)&&/value="Travel Day"/.test(h)&&!/Car school until 12:30 PM <span[^>]*>\(from Generate Week\)/.test(h));
+  ok("…and in the collapsed line",/Tue late start 11:00 am/.test(h)&&/Thu no school/.test(h)&&/Fri car school till 12:30 PM/.test(h)); }
 
 console.log("7. dry run");
 { const c=make({dry:true});
   run(c,"twsToggleKid('kid_a','2026-11-12'); twsToggleSitter('friday','2026-11-13')");
   ok("?dryrun=1: nothing reaches the database",c.S.writes.length===0);
   ok("…this device's memory has it, and the door still runs (in memory)",c.calendarData.kidOverrides.kid_a["2026-11-12"]&&c.T.abSaved[12].babysitter.friday&&c.S.rw.length===2); }
+
+console.log("8. 🚗 car school — its home now (GWGONE)");
+{ const c=make();
+  run(c,"T.setOpen(true)"); const g=run(c,"twsHTML()");
+  ok("a 🚗 row on every school day Mon–Fri (taps from today on), none on Saturday / Sunday",(g.match(/🚗 Car school</g)||[]).length===5&&["wednesday","thursday","friday"].every(d=>g.indexOf("twsToggleCar('"+d+"'")>0)&&g.indexOf("twsToggleCar('monday'")<0&&g.indexOf("twsToggleCar('saturday'")<0&&g.indexOf("twsToggleCar('sunday'")<0);
+  run(c,"twsToggleCar('thursday','2026-11-12')");
+  ok("on → one targeted leaf, the old wizard's default",c.S.writes.length===1&&JSON.stringify(c.S.writes[0])==='{"weekConfig/12/carSchool/thursday":{"end":"12:00 PM","note":"Travel Day"}}',c.S.writes);
+  ok("…one re-lay through the door, Undo = the leaf as it was",c.S.rw.length===1&&c.S.rw[0].why==="carschool"&&JSON.stringify(c.S.rw[0].info.undo)==='[{"p":"weekConfig/12/carSchool/thursday","gone":true}]'&&/🚗 Car school Thu on/.test(c.S.rw[0].info.label),c.S.rw);
+  ok("gwEffectiveConfig (what generateWeek and every re-lay build from) reads it",JSON.stringify(effFrom(c.S.tree,12).carSchool)==='{"thursday":{"end":"12:00 PM","note":"Travel Day"}}');
+  run(c,"twsCarSet('thursday','2026-11-12','end','10:30')");
+  ok("until → the leaf with the new time, one more re-lay",JSON.stringify(c.S.writes[1])==='{"weekConfig/12/carSchool/thursday":{"end":"10:30 AM","note":"Travel Day"}}'&&c.S.rw.length===2&&/until 10:30 AM/.test(c.S.rw[1].info.label)&&c.S.rw[1].info.undo[0].was.end==="12:00 PM",c.S.writes[1]);
+  run(c,"twsCarSet('thursday','2026-11-12','note','  Road trip  ')");
+  ok("a note → written (trimmed), but re-lays nothing (it is only the day's words)",JSON.stringify(c.S.writes[2])==='{"weekConfig/12/carSchool/thursday":{"end":"10:30 AM","note":"Road trip"}}'&&c.S.rw.length===2);
+  run(c,"twsCarSet('thursday','2026-11-12','end','nonsense'); twsCarSet('thursday','2026-11-12','end','10:30'); twsCarSet('thursday','2026-11-12','x','1')");
+  ok("a bad / unchanged time or an unknown field writes nothing",c.S.writes.length===3);
+  run(c,"twsCarSet('friday','2026-11-13','end','11:00')");
+  ok("until on a day without car school does nothing",c.S.writes.length===3);
+  const h2=run(c,"twsHTML()");
+  ok("the grid shows it on, with the time and the note to change",/>🚗 Car school until 10:30 AM</.test(h2)&&/value="10:30"[^>]*twsCarSet\('thursday','2026-11-12','end'/.test(h2)&&/value="Road trip"[^>]*twsCarSet\('thursday','2026-11-12','note'/.test(h2)&&/Thu car school till 10:30 AM/.test(h2));
+  run(c,"twsToggleCar('thursday','2026-11-12')");
+  ok("off → the leaf removed, re-lay, and gwEffectiveConfig has no car school",c.S.writes[3]["weekConfig/12/carSchool/thursday"]===null&&c.S.rw.length===3&&!Object.keys(effFrom(c.S.tree,12).carSchool).length);
+  flushTimers(c);
+  ok("…the three re-lay taps within 2 s → one run whose Undo is the leaf before the first tap",c.S.fires===1&&c.S.pend.undo.length===1&&c.S.pend.undo[0].gone===true);
+  // keeps another day's car school (a leaf, never the whole map)
+  const k=make({saved12:{carSchool:{friday:{end:"1:00 PM",note:"Trip"}}}});
+  run(k,"twsToggleCar('thursday','2026-11-12')");
+  const ek=effFrom(Object.assign({weekConfig:{12:{carSchool:{friday:{end:"1:00 PM",note:"Trip"}}}}},{}),12);
+  ok("another day's car school is never touched (one leaf)",Object.keys(k.S.writes[0]).join()==="weekConfig/12/carSchool/thursday"&&k.T.abSaved[12].carSchool.friday.note==="Trip"&&ek.carSchool.friday.end==="1:00 PM");
+  // past day
+  run(k,"twsToggleCar('monday','2026-11-09'); twsCarSet('friday','2026-11-13','end','12:00')");
+  ok("a past day: no write; today / later: yes",k.S.writes.length===2&&Object.keys(k.S.writes[1]).join()==="weekConfig/12/carSchool/friday");
+  // next week
+  const n=make(); run(n,"T.setOpen(true); twsSetNext(true)");
+  ok("next week's grid has the 🚗 taps",run(n,"twsHTML()").indexOf("twsToggleCar('tuesday','2026-11-17')")>0);
+  run(n,"twsToggleCar('tuesday','2026-11-17'); twsCarSet('tuesday','2026-11-17','end','11:15')");
+  ok("next week: Week 13's leaf only, no re-lay",n.S.rw.length===0&&[].concat(...n.S.writes.map(u=>Object.keys(u))).every(p=>p==="weekConfig/13/carSchool/tuesday")&&effFrom(n.S.tree,13).carSchool.tuesday.end==="11:15 AM");
+  // no Mom, dry run
+  const kid=make({mom:false}); run(kid,"twsToggleCar('thursday','2026-11-12')");
+  ok("no Mom → nothing",!kid.S.writes.length&&!kid.S.rw.length);
+  const d=make({dry:true}); run(d,"twsToggleCar('thursday','2026-11-12')");
+  ok("?dryrun=1 → nothing to the database, this device's memory has it",!d.S.writes.length&&d.T.abSaved[12].carSchool.thursday.end==="12:00 PM");
+  ok("_twsCar: the old wizard's defaults for a missing field, null for nothing",JSON.stringify(run(d,"_twsCar({})"))==='{"end":"12:00 PM","note":"Travel Day"}'&&run(d,"_twsCar(null)")===null&&run(d,"_twsCar({end:'1:00 PM',note:''}).note")==="Travel Day"); }
 
 console.log("\n"+pass+" passed, "+fail+" failed");
 process.exit(fail?1:0);

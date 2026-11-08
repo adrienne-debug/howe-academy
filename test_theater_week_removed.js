@@ -16,16 +16,18 @@ ok("no config or dayConfig carries a theater key", !/\btheater\s*:/.test(code));
 ok("no Theater 4:30 note in the schedule window", !/Theater 4:30/.test(src));
 ok("Howe's first-boot window banner has no Theater note", !/Theater/.test(famCfg));
 
-// The page's other options are untouched (Sitter, Skip, Late, Car, Include Saturday).
-const s=src.indexOf("// ── STEP 1: CONFIGURE ──"), e=src.indexOf("// ── STEP 2: PREVIEW ──");
-const step1=src.slice(s,e);
-ok("Configure step found", s>0&&e>s);
-["Days'","Skip Days","Late Start","Car School","Include Saturday","pnwToggleWithSitter"].forEach(t=>ok("Configure still offers "+t, step1.includes(t)));
+// The page's other options (Sitter, Skip, Late, Car, Include Saturday) live on 📅 This week now — the Plan Next Week wizard
+// is gone (GWGONE, slice D 2026-11-08): sitter + with-sitter, each kid off, ⏰ day times (a later start), 🚗 car school, Saturday.
+const s=src.indexOf("// THISWEEK_START"), e=src.indexOf("// THISWEEK_END");
+const tw=src.slice(s,e);
+ok("the This week strip found, the wizard's Configure step gone", s>0&&e>s&&src.indexOf("// ── STEP 1: CONFIGURE ──")<0);
+["twsToggleSitter","twsToggleWithSitter","twsToggleKid","twsTimes","twsToggleCar","twsToggleSaturday"].forEach(t=>ok("This week offers "+t, tw.includes("function "+t+"(")));
+ok("…and no Theater Week there", !/[Tt]heater/.test(tw));
 
 // The week config keeps every other field, in the same order, at each place it is built.
 const cfgRe=/carSchool:\{\},saturday:(false|gwSatPlanned\(wn\)),redistribute:\[\],autoAdvance:true\}/g;
-ok("four fresh week configs build without theater", (src.match(cfgRe)||[]).length===4);   // 🗓 AUTOBUILD (2026-11-08): the self-build's fixed config became gwEffectiveConfig — four fixed configs remain (the default, Regenerate's fallback, reprojectSubjectWeek's fallback, the wizard's)
-ok("two loaded week configs build without theater", (src.match(/carSchool:v\.carSchool\|\|\{\},saturday:!!v\.saturday,/g)||[]).length===2);
+ok("three fresh week configs build without theater", (src.match(cfgRe)||[]).length===3);   // GWGONE: the wizard's own fresh config went with it   // 🗓 AUTOBUILD (2026-11-08): the self-build's fixed config became gwEffectiveConfig — four fixed configs remain (the default, Regenerate's fallback, reprojectSubjectWeek's fallback, the wizard's)
+ok("the loaded week config (🔄 Regenerate's) builds without theater", (src.match(/carSchool:v\.carSchool\|\|\{\},saturday:!!v\.saturday,/g)||[]).length===1);   // GWGONE: the wizard's load went with it
 
 // The generator's day window still reads school hours from the rules.
 ok("default window = school hours only", /windows\.default="School "\+fromMin\(gwR\.schoolStart\)\+"–"\+fromMin\(gwR\.schoolEnd\);/.test(src));

@@ -37,7 +37,7 @@ ok("Admin code → haMomOn", /function checkAdminPin[\s\S]{0,160}haMomOn\(\)/.te
 ok("kitchen/grocery/helper prompts (kitPinGate) → haMomOn", /if\(pinOk\(v\)\|\|dadOk\)\{ haMomOn\(\); const t=window\._kitPinThen;/.test(src));
 ok("Mastery Database code → haMomOn", /if\(pinOk\(val\)\)\{ haMomOn\(\); _mastRe\(\); \}/.test(src));
 ok("Blockout code → haMomOn", /if\(pinOk\(this\.value\)\)\{haMomOn\(\);closeBoDialog\(\);/.test(src));
-ok("Plan next week code → haMomOn", /function pnwCheckPin[\s\S]{0,120}haMomOn\(\)/.test(src));
+ok("Plan next week's PIN box is gone with the wizard (GWGONE, slice D)", !/function pnwCheckPin/.test(src));
 ok("tapping 👩 Mom on the Schedule shows her view and never turns the switch off (MOMCHIP 2026-11-02; was: a second tap → haMomOff)", /if\(k==="mom"\)\{ kid="mom"; schedShowAdmin=false; renderAll\(\); window\.scrollTo\(\{top:0,behavior:'smooth'\}\); return; \}/.test(src)&&!/haMomOff/.test(src.slice(src.indexOf("function selKid("),src.indexOf("\n}",src.indexOf("function selKid(")))));
 ok("Notebook 🔒 and Units 🔒 → haMomOff", /function nbPinLock\(\)\{ haMomOff\(\);/.test(src)&&/haMomOff\(\); unitPinOpen=false;/.test(src));
 ok("the check-up's kid-screen door still re-locks after the sitting", /function ckRelock\(\)\{[^\n]*haMomOff\(\)/.test(src));
