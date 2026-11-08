@@ -57,7 +57,8 @@ function world(o){
   o=o||{};
   const writes=[], timers=[]; let now=0, clock=1762600000000;
   class FakeDate extends Date{ static now(){ return clock+=1000; } }
-  const CODE=cut("// GAMELOG_START","// GAMELOG_END")+"\n"+cut("// GAMEGRID_START","// GAMEGRID_END")+"\n"+cut("// GAMERULES_START","// GAMERULES_END")+"\n"+cut("// TRAIN_START","// TRAIN_END")+"\n"+cut("// PKTRAIN_START","// PKTRAIN_END")+"\n"+fnText("renderMastStudy");
+  const UNITPIC=src.indexOf("// UNITPIC_START")>=0?cut("// UNITPIC_START","// UNITPIC_END"):"";   // the card-picture helper (mastLiveVisual) the Train's cars call
+  const CODE=UNITPIC+"\n"+cut("// GAMELOG_START","// GAMELOG_END")+"\n"+cut("// GAMEGRID_START","// GAMEGRID_END")+"\n"+cut("// GAMERULES_START","// GAMERULES_END")+"\n"+cut("// TRAIN_START","// TRAIN_END")+"\n"+cut("// PKTRAIN_START","// PKTRAIN_END")+"\n"+fnText("renderMastStudy");
   const items=o.items||LETTERS.concat(NUMS);
   const md={k:items,k_settings:o.settings||{},gameLog:{},studyLog:o.studyLog||{},studyBack:o.studyBack||{}};
   const ctx={console,JSON,Object,Array,String,Number,Math,Set,Map,RegExp,Date:FakeDate,parseInt,isNaN,Promise,
