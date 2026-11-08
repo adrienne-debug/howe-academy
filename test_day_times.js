@@ -67,7 +67,7 @@ ok("the block writes only through stWrite (no set / update / remove of its own)"
 const HOOKS = {
   gateStartMin: /dtS\(d,_v\)/, rvPlanDay: /dtS\(nd,_v\)/, _agLunchRow: /dtLunch\(dayName\)/, _mvtSchoolStartMin: /dtS\(_todayDay,_v\)/,
   _mlDayEndMin: /dtE\(_todayDay,_v\)/, _mlLunchWin: /dtLunch\(_todayDay\)/, dsRetime: /dtS\(d,_floorV\)/, resortDayTasks: /dtDay\(day\)/,
-  seGuardCtx: /dtLunch\(day\)[\s\S]*dtS\(day,_vs\)[\s\S]*dtE\(day,_ve\)/, stSyncCtx: /dtLunch\(day\)[\s\S]*dtS\(day,_v\)/,
+  seGuardCtx: /dtLunch\(day(,iso)?\)[\s\S]*dtS\(day,_vs(,iso)?\)[\s\S]*dtE\(day,_ve(,iso)?\)/,   // DMSLOT 2026-11-08: the generator may pass the date it lays stSyncCtx: /dtLunch\(day\)[\s\S]*dtS\(day,_v\)/,
   _rpRelayMode: /dtSM\(td,_r0\.schoolStart\)/, cbBeforeSchoolToday: /dtSM\(_todayDay,r\.schoolStart\)/, mstAlertsFor: /dtEM\(td,r\.schoolEnd\)/,
   gwBuildDayTasks: /dtEM\(dayName,cutoff,dayConfig\.dateStr\)[\s\S]*end:_cutD,/, gwAutoBalance: /dtS\(dayName,_ss0,dk\)[\s\S]*DAY_END_D/,
   generateWeek: /dtS\(dn,_ssw,dk\)[\s\S]*dtS\("saturday",_ds0,_satDk\)/, reprojectSubjectWeek: /dtSM\(day,gwR\.schoolStart,calDateForWeekDay\(day,wn\)\)/,
