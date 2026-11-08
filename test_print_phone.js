@@ -17,7 +17,9 @@ const cut = (a, b) => { const i = src.indexOf(a), j = src.indexOf(b, i); if (i <
 function slice(name) { const i = src.indexOf("function " + name + "("); if (i < 0) throw new Error("missing " + name);
   let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}") { d--; if (!d) return src.slice(i, k + 1); } } }
 const BLOCK = cut("// PRINTPHONE_START", "// PRINTPHONE_END");
-const CODE = BLOCK + "\n" + slice("mastPrintDrill") + "\n" + slice("mastPrintCards");
+// the card-picture helpers the print sheets call (UNITPIC), when the source has them
+const HELPERS = ["_mastVisNorm", "mastLiveVisual"].filter(n => src.includes("function " + n + "(")).map(slice).join("\n");
+const CODE = BLOCK + "\n" + HELPERS + "\n" + slice("mastPrintDrill") + "\n" + slice("mastPrintCards");
 const CSS = cut("/* MASTPRINT_CSS_START */", "/* MASTPRINT_CSS_END */");
 const FONT = '<link href="https://fonts.googleapis.com/css2?family=DM+Sans" rel="stylesheet"/>';
 
