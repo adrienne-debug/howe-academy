@@ -4,6 +4,8 @@
  * 2–3 cars from A, pick the next from 3; level 2: 4 choices, starting anywhere. Wrong → bounce, the right one wiggles, never placed for
  * the kid; a letter missed twice is a miss. Two clean rounds in a row → up a level (read back from the game log); Mom can pin it
  * (GAME_RULES.train "level"). Finish: the ABC song as WebAudio tones, each car lit + said on its note; one Play again.
+ * Levels 3–5 (step 2, hub ask 2026-11-08): hook up — a tray of 5 / 10 / 26 shuffled cars dragged onto an empty track; a wrong slot
+ * sends the car back; level 5 shows faint letters for its first two rounds; the pin gains 3 / 4 / 5.
  * Runs the REAL code (GAMELOG + GAMEGRID + GAMERULES + TRAIN) with timers by hand.
  *   run:  node test_game_train.js
  */
@@ -168,7 +170,7 @@ function playRound(w,misses){
   ok("pure: clean, missed, clean → still level 1 (in a row)",c.trainLevelFrom([R(1,true,1),R(1,false,2),R(1,true,3)])===1);
   ok("pure: clean, missed, clean, clean → level 2",c.trainLevelFrom([R(1,true,1),R(1,false,2),R(1,true,3),R(1,true,4)])===2);
   ok("pure: rounds played at another level don't count toward this one",c.trainLevelFrom([R(2,true,1),R(2,true,2),R(1,true,3)])===1);
-  ok("pure: never past level 2 (levels 3–5 come later)",c.trainLevelFrom([R(1,true,1),R(1,true,2),R(2,true,3),R(2,true,4),R(2,true,5)])===2);
+  ok("pure: level 2 → 3 → 4 → 5 the same way, and never past level 5",c.trainLevelFrom([R(1,true,1),R(1,true,2),R(2,true,3),R(2,true,4)])===3&&c.trainLevelFrom([R(1,true,1),R(1,true,2),R(2,true,3),R(2,true,4),R(3,true,5),R(3,true,6),R(4,true,7),R(4,true,8),R(5,true,9),R(5,true,10),R(5,true,11)])===5);
   const w=world(FULL), cc=w.c;
   cc.trainStart(); playRound(w); ok("after one clean round: still level 1",cc.trainLevel("k")===1&&cc.trainState.levelAfter===1);
   cc.trainStart(); playRound(w);
@@ -180,7 +182,7 @@ function playRound(w,misses){
 
 // ── Mom's pin ──
 { const w=world(FULL), c=w.c;
-  ok("GAME_RULES.train: \"level\" — auto / 1 / 2, default auto (+ 🚂 PKTRAIN's \"study\" on / off, default on — test_prek_study_train.js)",JSON.stringify(c.GAME_RULES.train.map(r=>[r.key,r.def,r.opts.map(o=>o[0])]))==='[["level","auto",["auto","1","2"]],["study","on",["on","off"]]]');
+  ok("GAME_RULES.train: \"level\" — auto / 1–5 (3–5 added by the TRAIN block, in order), default auto (+ 🚂 PKTRAIN's \"study\" on / off, default on — test_prek_study_train.js)",JSON.stringify(c.GAME_RULES.train.map(r=>[r.key,r.def,r.opts.map(o=>o[0])]))==='[["level","auto",["auto","1","2","3","4","5"]],["study","on",["on","off"]]]');
   ok("the rules pop-up lists it",/Which level\?/.test(c.gameRulesHtml("k","train"))&&/Level 2/.test(c.gameRulesHtml("k","train")));
   ok("Mom pins level 2 → a kid with no rounds starts at level 2 (one targeted set)",c.gameRuleSet("k","train","level","2")===true&&c.trainLevel("k")===2&&JSON.stringify(w.writes)==='[["set","mastery/k_settings/gameRules/train/level","2"]]');
   c.trainStart(); ok("…and the round has 4 choices",c.trainState.level===2&&c.trainState.turns[0].choices.length===4);
@@ -241,6 +243,156 @@ function playRound(w,misses){
   const w2=world(FULL), c2=w2.c; c2.trainStart(); const s2=c2.trainState; c2.trainTap(rightIx(s2.turns[0]));
   c2.trainPark(); c2.trainState=null; w2.flushAll(); c2.trainState=s2; c2.trainResume();
   ok("parked while a car rolled in: on resume the next turn is open (nothing lost, nothing doubled)",s2.i===1&&!s2.lock&&s2.on.filter(x=>x===s2.turns[0].L).length===1);
+}
+
+// ── levels 3–5: hook up ──
+const V=(c,x)=>vm.runInContext(x,c);
+const slotOf=(st,L)=>ABC.indexOf(L)-st.start;
+const emptySlots=(st,but)=>{ const o=[]; for(let k=0;k<st.turns.length;k++){ const L=ABC[st.start+k]; if(L!==but&&!st.turns.some(x=>x.done&&x.L===L)) o.push(k); } return o; };
+// play the open hook-up round to the end: misses = {letter: how many wrong slots first}
+function playHook(w,misses){
+  const c=w.c, st=c.trainState;
+  for(let g=0;g<60&&st.phase==="play";g++){
+    const ti=st.turns.findIndex(t=>!t.done); if(ti<0) break; const t=st.turns[ti], m=(misses&&misses[t.L])||0;
+    for(let q=0;q<m;q++){ const e=emptySlots(st,t.L); if(e.length) c.trainDrop(ti,e[q%e.length]); }
+    c.trainDrop(ti,slotOf(st,t.L));
+    if(st.lock) w.tick(w.now()+c.TRAIN_ROLL_MS);
+  }
+  return st;
+}
+const R5=(lv,cl,at)=>({game:"train",level:lv,clean:cl,at:at});
+{ const c=world(FULL).c, cards={}; FULL.forEach(x=>{ cards[x.prompt]=x; });
+  ok("TRAIN_TRAY: level 3 five cars, level 4 ten, level 5 all 26; the top level is 5",JSON.stringify(V(c,"TRAIN_TRAY"))==='{"3":5,"4":10,"5":26}'&&V(c,"TRAIN_MAX_LEVEL")===5);
+  let trayOk=true, late3=false, late4=false, order=true;
+  for(let s=1;s<=40;s++){
+    const cc=world(FULL,{seed:s}).c;
+    [3,4,5].forEach(lv=>{ const r=cc.trainRound(lv,cards), n=V(cc,"TRAIN_TRAY")[lv], run=ABC.slice(r.start,r.start+n);
+      if(!(r.level===lv&&r.turns.length===n&&r.on.length===0&&r.coupled===0&&r.start>=0&&r.start+n<=26&&r.turns.map(t=>t.L).slice().sort().join("")===run.join("")&&new Set(r.turns.map(t=>t.L)).size===n&&r.turns.every(t=>!t.done&&t.choices.length===0&&t.pid==="L_"+t.L))) trayOk=false;
+      if(r.turns.map(t=>t.L).join("")===run.join("")) order=false;
+      if(lv===5&&r.start!==0) trayOk=false;
+      if(lv===3&&r.start>0) late3=true; if(lv===4&&r.start>0) late4=true; });
+  }
+  ok("a hook-up round: the tray holds exactly 5 / 10 / 26 different cars — one run of the alphabet, inside A–Z, nothing on the track yet",trayOk);
+  ok("…the tray is shuffled, never already in order (40 seeds × 3 levels)",order);
+  ok("…levels 3 and 4 can start anywhere in the alphabet; level 5 is A–Z",late3&&late4);
+}
+// the snap rule (pure)
+{ const c=world(FULL).c, S=[{k:0,x:100,y:50,w:60,h:80},{k:1,x:170,y:50,w:60,h:80}], snap=V(c,"TRAIN_SNAP");
+  ok("snap: a car dropped right on a slot's centre lands there",c.trainSlotNear(S,100,50)===0&&c.trainSlotNear(S,170,50)===1);
+  ok("snap: close is enough — within TRAIN_SNAP × the slot's size",c.trainSlotNear(S,100+60*snap-1,50+80*snap-1)>=0&&c.trainSlotNear([S[0]],100-60*snap+1,50)===0);
+  ok("snap: too far (sideways or up) → no slot (-1)",c.trainSlotNear([S[0]],100+60*snap+1,50)===-1&&c.trainSlotNear(S,100,50+80*snap+1)===-1&&c.trainSlotNear([],100,50)===-1);
+  ok("snap: between two slots → the nearer one",c.trainSlotNear(S,130,50)===0&&c.trainSlotNear(S,140,50)===1);
+}
+// right / wrong drops
+{ const w=world(FULL,{settings:{gameRules:{train:{level:"3"}}}}), c=w.c;
+  c.trainStart(); const st=c.trainState;
+  ok("pinned at 3 → start: a hook-up round, 5 cars in the tray, level 3",st.level===3&&st.turns.length===5&&st.phase==="play");
+  let h=c.buildTrainHtml("#123");
+  ok("the screen: the engine first, 5 empty slots, the 5 tray cars to drag (pointer events), no tap-to-choose cars",h.indexOf("\u{1F682}")>=0&&(h.match(/data-trn-slot="/g)||[]).length===5&&(h.match(/onpointerdown="trainHookDown\(event,\d+\)"/g)||[]).length===5&&!/trainTap\(/.test(h)&&/id="trn-track"/.test(h));
+  ok("levels 3–4: the empty slots show nothing (no letters)",!/class="trn-up trn-faint"/.test(h));
+  const ti=0, t=st.turns[ti], wk=emptySlots(st,t.L)[0];
+  c.trainDrop(ti,wk);
+  ok("a wrong slot: the bonk, the car is not placed, it slides back to the tray (the slide-back animation)",w.dings.join()==="bonk"&&!t.done&&t.wrong[ABC[st.start+wk]]===1&&st.bounce===ti&&/class="trn-tcar trn-back" role="button" aria-label="Car /.test(c.buildTrainHtml("#123"))&&/Not that spot/.test(c.buildTrainHtml("#123")));
+  c.trainDrop(ti,wk);
+  ok("the same wrong slot again counts once",Object.keys(t.wrong).length===1&&!t.fail);
+  const wk2=emptySlots(st,t.L).find(k=>k!==wk); c.trainDrop(ti,wk2);
+  ok("a second different wrong slot → that car is a miss (fail), still in the tray",t.fail===true&&!t.done);
+  c.trainDrop(ti,slotOf(st,t.L));
+  ok("its own slot: ding, it snaps in, its letter is said; the next car is up",t.done&&t.first===false&&w.dings[w.dings.length-1]==="ding"&&w.said[w.said.length-1]===t.L&&st.i===1&&!st.lock);
+  h=c.buildTrainHtml("#123");
+  ok("…the car now sits in its slot (the clack), 4 slots left, 4 cars in the tray",new RegExp('class="trn-car trn-clack" data-trn-l="'+t.L+'"').test(h)&&(h.match(/data-trn-slot="/g)||[]).length===4&&(h.match(/trainHookDown\(event/g)||[]).length===4&&/1 of 5 hooked on/.test(h));
+  const t1=st.turns[1], n0=w.dings.length;
+  ok("a car can't go on a filled slot (nothing happens), a placed car can't move, a slot out of range is nothing",c.trainDropJudge(st,1,slotOf(st,t.L))===null&&c.trainDropJudge(st,0,slotOf(st,t.L))===null&&c.trainDropJudge(st,1,99)===null&&c.trainDropJudge(st,1,-1)===null&&w.dings.length===n0);
+  c.trainDrop(1,-1);
+  ok("dropped nowhere near a slot: back to the tray, no miss, no sound",!t1.done&&!Object.keys(t1.wrong).length&&w.dings.length===n0&&st.bounce===1);
+  c.trainHookPick(1);
+  ok("a tap picks a car (it lifts) …",st.sel===1&&/class="trn-tcar trn-sel"/.test(c.buildTrainHtml("#123"))&&/Now tap its spot/.test(c.buildTrainHtml("#123")));
+  c.trainHookPick(1); ok("…tapped again, it's put down",st.sel===null);
+  c.trainHookPick(1); c.trainSlotTap(slotOf(st,t1.L));
+  ok("…and a tap on its slot drops it there (judged like a drag)",t1.done&&t1.first===true&&st.sel===null);
+  c.trainSlotTap(0); ok("a slot tap with no car picked does nothing",st.turns.filter(x=>x.done).length===2);
+  c.trainHookHear(); ok("🔊 says the cars on the track in order, never the ones still to place",(()=>{ const last=w.said[w.said.length-1], on=[t.L,t1.L].sort((a,b)=>ABC.indexOf(a)-ABC.indexOf(b)); return last.indexOf(on.join(", "))===0&&st.turns.filter(x=>!x.done).every(x=>last.indexOf(x.L+",")<0&&last.indexOf(x.L+".")<0); })());
+  // finish
+  for(let g=0;g<5;g++){ const k=st.turns.findIndex(x=>!x.done); if(k<0) break; c.trainDrop(k,slotOf(st,st.turns[k].L)); }
+  ok("the last car: the round locks while it clacks in — not finished yet",st.lock&&st.phase==="play"&&/whole train is hooked up/.test(c.buildTrainHtml("#123")));
+  w.tick(w.now()+c.TRAIN_ROLL_MS);
+  const p=w.writes.filter(x=>x[0]==="push");
+  ok("…then the same sung finish, logged once: game train, level 3, not clean (one car missed), one item per car",st.phase==="done"&&st.song&&p.length===1&&p[0][2].level===3&&p[0][2].clean===false&&p[0][2].items.length===5&&p[0][2].items.find(x=>x.id==="L_"+t.L).fail===true&&/id="trn-finish"/.test(c.buildTrainHtml("#123")));
+  ok("nothing written but the log (the pin was already stored)",w.writes.length===1);
+}
+// a whole round: clean, any order of drops works, no auto-placing
+{ const w=world(FULL,{settings:{gameRules:{train:{level:"4"}}}}), c=w.c;
+  c.trainStart(); const st=c.trainState;
+  ok("level 4: 10 cars",st.turns.length===10);
+  for(let k=st.turns.length-1;k>=0;k--) c.trainDrop(k,slotOf(st,st.turns[k].L));   // tray order backwards
+  ok("cars can go on in any order (the slots know the alphabet)",st.turns.every(t=>t.done&&t.first)&&st.lock);
+  w.tick(w.now()+c.TRAIN_ROLL_MS);
+  ok("a clean level-4 round",st.phase==="done"&&st.clean===true&&w.writes.filter(x=>x[0]==="push")[0][2].level===4);
+  const w2=world(FULL,{settings:{gameRules:{train:{level:"3"}}}}); w2.c.trainStart(); const s2=w2.c.trainState; w2.flushAll();
+  ok("no auto-placing: left alone, the timers never hook a car on",s2.turns.every(t=>!t.done)&&s2.phase==="play");
+}
+// level-up through hook-up levels, read back from the log
+{ const lg={k:{"20261107":{"-a":R5(1,true,1),"-b":R5(1,true,2),"-c":R5(2,true,3),"-d":R5(2,true,4)}}};
+  const w=world(FULL,{log:lg}), c=w.c;
+  ok("two clean level-2 rounds → level 3",c.trainLevel("k")===3);
+  c.trainStart(); ok("…the next round is a hook-up of 5",c.trainState.level===3&&c.trainState.turns.length===5);
+  playHook(w); ok("one clean level-3 round: still 3",c.trainLevel("k")===3);
+  c.trainStart(); playHook(w,{[c.trainState.turns[0].L]:1});
+  ok("a round with a wrong slot isn't clean: still 3",c.trainState.clean===false&&c.trainLevel("k")===3);
+  c.trainStart(); playHook(w); c.trainStart(); playHook(w);
+  ok("two clean in a row → level 4, and the finish says so",c.trainLevel("k")===4&&/Level 4 next time/.test(c.buildTrainHtml("#000")));
+  c.trainStart(); playHook(w); c.trainStart(); playHook(w);
+  ok("→ level 5",c.trainLevel("k")===5);
+  c.trainStart(); ok("level 5: the whole train — 26 cars, A to Z",c.trainState.turns.length===26&&c.trainState.start===0);
+  playHook(w); c.trainStart(); playHook(w); c.trainStart();
+  ok("never past level 5",c.trainLevel("k")===5&&c.trainState.level===5);
+}
+// level 5's faint letters
+{ const c=world(FULL).c;
+  ok("pure: level 5 with 0 or 1 level-5 rounds played → faint; with 2 → not; any other level → never",c.trainFaintFor([],5)===true&&c.trainFaintFor([R5(5,false,1)],5)===true&&c.trainFaintFor([R5(5,false,1),R5(5,true,2)],5)===false&&c.trainFaintFor([],3)===false&&c.trainFaintFor([],4)===false);
+  const w=world(FULL,{settings:{gameRules:{train:{level:"5"}}}}), cc=w.c;
+  cc.trainStart(); let h=cc.buildTrainHtml("#000");
+  ok("level 5, first round: 26 empty slots, each showing its letter faintly; a smaller tray",(h.match(/data-trn-slot="/g)||[]).length===26&&(h.match(/class="trn-up trn-faint">[A-Z]</g)||[]).length===26&&/trn-up trn-faint">A<\/span><span class="trn-lo trn-faint">a</.test(h)&&/class="trn-tray trn-tray-s"/.test(h));
+  playHook(w); cc.trainStart(); ok("second round: still faint",/class="trn-up trn-faint"/.test(cc.buildTrainHtml("#000")));
+  playHook(w); cc.trainStart(); ok("third round: the slots are empty — nothing shown",!/class="trn-up trn-faint"/.test(cc.buildTrainHtml("#000"))&&cc.trainState.level===5);
+}
+// Mom's pin 3 / 4 / 5
+{ const w=world(FULL), c=w.c, h=c.gameRulesHtml("k","train");
+  ok("the rules pop-up lists levels 3, 4, 5",/Level 3/.test(h)&&/Level 4/.test(h)&&/Level 5/.test(h));
+  ok("Mom pins level 5 → the whole train at once (one targeted set)",c.gameRuleSet("k","train","level","5")===true&&c.trainLevel("k")===5&&JSON.stringify(w.writes)==='[["set","mastery/k_settings/gameRules/train/level","5"]]');
+  c.gameRuleSet("k","train","level","4"); c.trainStart(); ok("pinned at 4 → 10 cars",c.trainState.turns.length===10);
+  ok("the level opts are added once (loading twice doesn't double them)",(()=>{ vm.runInContext(cut("// TRAIN_START","// TRAIN_END").match(/\(function\(\)\{ const r=\(typeof GAME_RULES[\s\S]*?\}\)\(\);/)[0],c); return c.GAME_RULES.train[0].opts.length===6; })());
+  const lg={k:{"20261107":{"-a":R5(3,true,1),"-b":R5(3,true,2)}}}, w2=world(FULL,{log:lg,settings:{gameRules:{train:{level:"3"}}}});
+  ok("pinned at 3: stays at 3 after two clean level-3 rounds; back to auto → 1 (those rounds weren't at its level)",w2.c.trainLevel("k")===3&&w2.c.gameRuleSet("k","train","level","auto")&&w2.c.trainLevel("k")===1);
+}
+// park / resume mid hook-up
+{ const w=world(FULL,{settings:{gameRules:{train:{level:"3"}}}}), c=w.c;
+  c.trainStart(); const st=c.trainState; for(let g=0;g<5;g++) c.trainDrop(g,slotOf(st,st.turns[g].L));
+  const parked=c.trainPark(); c.trainState=null; w.flushAll(); c.trainState=parked; c.trainResume();
+  ok("parked while the last car clacked in: on resume the round is finished, logged once",st.phase==="done"&&w.writes.filter(x=>x[0]==="push").length===1);
+  const w2=world(FULL,{settings:{gameRules:{train:{level:"4"}}}}), c2=w2.c; c2.trainStart(); const s2=c2.trainState; c2.trainDrop(0,slotOf(s2,s2.turns[0].L));
+  c2.trainPark(); c2.trainState=null; c2.trainState=s2; c2.trainResume();
+  ok("parked mid-round: the placed car stays placed, the rest are still in the tray",s2.turns[0].done&&s2.turns.slice(1).every(t=>!t.done)&&s2.phase==="play");
+}
+// the drag itself, with a fake page: pointer down → move → up over a slot
+{ const w=world(FULL,{settings:{gameRules:{train:{level:"3"}}}}), c=w.c;
+  c.trainStart(); const st=c.trainState, t=st.turns[0], k=slotOf(st,t.L);
+  const mk=(r,attrs)=>{ const L={}, cls=new Set(); return {L,cls,style:{},attrs:attrs||{},getBoundingClientRect:()=>Object.assign({},r()),getAttribute(n){ return this.attrs[n]; },
+    classList:{add:x=>cls.add(x),remove:x=>cls.delete(x),toggle:(x,on)=>on?cls.add(x):cls.delete(x),contains:x=>cls.has(x)},addEventListener(n,f){ L[n]=f; },removeEventListener(n){ delete L[n]; },setPointerCapture(){},releasePointerCapture(){}}; };
+  const slots=[]; for(let j=0;j<5;j++) slots.push(mk(()=>({left:100+j*70,top:20,width:60,height:80}),{"data-trn-slot":String(j)}));
+  let car; car=mk(()=>{ const m=/translate\((-?[\d.]+)px,(-?[\d.]+)px\)/.exec(car.style.transform||""), dx=m?+m[1]:0, dy=m?+m[2]:0; return {left:200+dx,top:300+dy,width:60,height:80}; });
+  c.document={getElementById:()=>null,querySelectorAll:()=>slots}; c.window={innerHeight:800,scrollY:0,scrollBy(){}}; c.setInterval=()=>1; c.clearInterval=()=>{};
+  c.trainHookDown({clientX:230,clientY:340,pointerId:1,button:0,currentTarget:car},0);
+  ok("drag: pointer events on the car (move / up / cancel)",typeof car.L.pointermove==="function"&&typeof car.L.pointerup==="function"&&typeof car.L.pointercancel==="function");
+  const tx=100+k*70+30-30, ty=60-40;   // the car's centre onto slot k's centre
+  car.L.pointermove({clientX:230+(tx-200),clientY:340+(ty-300)});
+  ok("…it follows the finger, and the slot under it lights up",/translate/.test(car.style.transform)&&car.cls.has("trn-drag")&&slots[k].cls.has("trn-over"));
+  car.L.pointerup({type:"pointerup",clientX:230+(tx-200),clientY:340+(ty-300)});
+  ok("…let go over its slot → it snaps in",t.done&&t.first===true&&car.style.transform===""&&!car.cls.has("trn-drag"));
+  const t1=st.turns[1]; let car2; car2=mk(()=>({left:200,top:300,width:60,height:80}));
+  c.trainHookDown({clientX:230,clientY:340,pointerId:2,button:0,currentTarget:car2},1); car2.L.pointerup({type:"pointerup",clientX:232,clientY:341});
+  ok("a press that barely moves is a tap: it picks the car",st.sel===1&&!t1.done);
+  ok("CSS: the tray cars take the finger (touch-action:none), the track scrolls sideways",/\.trn-tcar\{touch-action:none/.test(src)&&/\.trn-track\{overflow-x:auto/.test(src));
 }
 
 console.log("\n"+pass+" passed, "+fail+" failed");

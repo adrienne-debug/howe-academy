@@ -73007,6 +73007,7 @@ function gameLogEntry(st,now){
   now=now!=null?now:Date.now();
   const e={game:st.game||"which",deck:String(st.deck||""),at:now,items:items};   // 🔤 SPELLBUILD: each game names itself
   e.why=st.why==="practice"?"practice":"free";   // 📊 SCORESGAMES (PLAN_scores_page §4 #3): free play, unless the round says it is practice
+  if(st.game==="jigsaw"&&st.level!=null){ e.level=st.level; e.clean=!!st.clean; }   // 🧩 JIGSAW: the round's level + clean, as the train's — its pieces level reads them back
   if(st.t0) e.secs=Math.max(0,Math.round((now-st.t0)/1000));
   if(st.game==="train"&&st.level!=null){ e.level=st.level; e.clean=!!st.clean; }   // 🚂 TRAIN: the round's level + clean — its level-up reads them back
   if(st.game==="jeop"&&st.money){ e.mode="money"; e.bank=st.bank; e.bets=(st.bets||[]).map(b=>Object.assign({},b)); e.result=st.result||""; }   // 💵 JPMONEY: the final bank, the bets, the result
@@ -82809,9 +82810,15 @@ const GAME_RULES={
     ["2","2 misses","The second miss shows the sentence for a beat — today’s rule."],
     ["3","3 misses","A third try first; the third miss shows it."],
     ["never","Never","The sentence is never shown — after two misses the card just comes back once at the end, like the other games."]]}],
+  jigsaw:[{key:"pieces",label:"How many pieces?",def:"auto",opts:[   // 🧩 JIGSAW (her design 2026-11-08: "cut into 4 / 6 / 9 pieces by level")
+    ["auto","Auto","Starts at 4 pieces and moves up (6, then 9) after two clean rounds in a row \u{2014} clean = the picture named on the first tap."],
+    ["4","4 pieces","2 \u{00D7} 2, with the picture showing faintly in the frame to build on."],
+    ["6","6 pieces","3 \u{00D7} 2, an empty frame."],
+    ["9","9 pieces","3 \u{00D7} 3, an empty frame."]]}],
   memory:[{key:"saidpick",label:"Say it first \u2014 after \u201CI said it\u201D, pick what you said?",def:"off",defFor:k=>(typeof _matchSayAge==="function"&&_matchSayAge(k))?"on":"off",opts:[   // 🗣 SAIDPICK (Sara list 2026-11-02, her yes 2026-11-08)
     ["on","On","Three choices, each with a \u{1F50A} to hear it \u2014 tap the one you said. Right gets a \u2713; a wrong pick hears and sees the right one. Pre-K to 2nd grade start here."],
     ["off","Off","\u201CI said it\u201D and the app says the answer \u2014 the old way. 3rd grade and up start here."]]}],
+  // 🚂 TRAIN's level pin: levels 3–5 (hook up) are added by the TRAIN block
   train:[{key:"level",label:"Which level?",def:"auto",opts:[   // 🚂 TRAIN (her design 2026-11-08: "Mom can pin a level")
     ["auto","Auto","Starts at level 1 and moves up after two clean rounds in a row."],
     ["1","Level 1","What comes next? — the train starts at A, 3 cars to choose from."],
@@ -84520,9 +84527,19 @@ function buildNameallHtml(color){
 //     can start anywhere in the alphabet (… J K L → ?). A round is TRAIN_STEPS cars to add. Right → the car rolls in, couples, and its
 //     letter is said (mastSpeak). Wrong → that car bounces back (the soft bonk) and the right one wiggles — the kid still taps it: the app
 //     never places a car for him. A letter missed twice on its turn is a miss (t.fail), logged like every game's miss.
+//   · LEVELS 3–5 — HOOK UP (step 2 of the build order, hub ask 2026-11-08): a tray of TRAIN_TRAY[level] cars, shuffled, and an empty
+//     track of that many slots behind the engine — level 3 five cars, level 4 ten (a run that starts anywhere in A–Z), level 5 the whole
+//     train, all 26 (the track is one long sideways scroll — the "floor puzzle"). The kid drags each car (finger or mouse: pointer
+//     events, as Sort it; a tap picks a car and a tap on a slot drops it there) onto its slot. Dropped close enough to an empty slot
+//     (trainSlotNear: its centre within TRAIN_SNAP of the slot's size) it is judged there: the right slot → it snaps in with the clack
+//     and its letter is said; a wrong slot → it slides back to the tray (the soft bonk). Dropped nowhere near a slot → back to the
+//     tray, no miss. Never placed for him. Any order works — it is the slots that know the alphabet. Each tray car is one turn, so
+//     the log, "clean" and the level-up are the same as levels 1–2 (two different wrong slots for one car = its miss). Level 5's
+//     empty slots show their letter faintly for the kid's first TRAIN_FAINT_ROUNDS level-5 rounds (read back from the game log),
+//     then nothing. The same sung finish.
 //   · LEVEL UP — two CLEAN rounds in a row (every car right on the first tap) at the kid's level → the next level. Read back from the
 //     kid's own game log (each train round carries its level + clean), so it needs no storage of its own and follows the kid to every
-//     device. Mom's pin (auto / 1 / 2, default auto) wins; rounds played on a pin don't move the auto level unless it was that level.
+//     device. Mom's pin (auto / 1–5, default auto) wins; rounds played on a pin don't move the auto level unless it was that level.
 //   · THE FINISH — the whole A–Z train rolls across while the ABC song plays as WebAudio tones (the Twinkle Twinkle melody, public
 //     domain: TRAIN_SONG) and each car lights on its letter, its name spoken at that note and popped up big. No AudioContext → the lights
 //     and letters run on their own clock, silent; no voice → the same, the letters still pop up. One "Play again" button.
@@ -84532,8 +84549,14 @@ function buildNameallHtml(color){
 let trainState=null;   // {kid,deck,game:"train",t0,level,start,coupled,on:[letter],turns:[{L,pid,choices:[letter],wrong:{},done,first,fail}],i,lock,seq,bounce,roll,phase:"play"|"done",clean,levelBefore,levelAfter,song:{i,end}|null,gameLogged,study:{sid}|null (🚂 PKTRAIN)}
 let _trainRandom=Math.random;   // tests seed it
 const TRAIN_ABC="ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-const TRAIN_MIN_LETTERS=5, TRAIN_STEPS=4, TRAIN_MAX_LEVEL=2, TRAIN_ROLL_MS=750, TRAIN_BEAT_S=0.55, TRAIN_MISS=2;
+const TRAIN_MIN_LETTERS=5, TRAIN_STEPS=4, TRAIN_MAX_LEVEL=5, TRAIN_ROLL_MS=750, TRAIN_BEAT_S=0.55, TRAIN_MISS=2;
 const TRAIN_CHOICES={1:3,2:4};   // level → how many cars to choose from
+const TRAIN_TRAY={3:5,4:10,5:26}, TRAIN_FAINT_ROUNDS=2, TRAIN_SNAP=0.8;   // hook-up levels → cars in the tray · level 5's faint letters for its first rounds · a drop counts on a slot when its centre is within this × the slot's size
+// 📜 GAMERULES: Mom's level pin gains the hook-up levels (GAME_RULES is written before this block; added once, in level order)
+(function(){ const r=(typeof GAME_RULES!=="undefined"&&GAME_RULES&&GAME_RULES.train||[]).find(x=>x&&x.key==="level"); if(!r||r.opts.some(o=>o[0]==="3")) return;
+  r.opts.push(["3","Level 3","Hook up five \u{2014} drag 5 mixed-up cars onto an empty track, in ABC order."],
+    ["4","Level 4","Hook up ten \u{2014} the same with 10 cars."],
+    ["5","Level 5","The whole train \u{2014} all 26 cars onto one long track; the letters show faintly for the first two rounds."]); })();
 const TRAIN_HZ={C4:261.63,D4:293.66,E4:329.63,F4:349.23,G4:392.00,A4:440.00};
 // The ABC song on the Twinkle Twinkle melody — s: what is sung, n: the note, b: beats, k: "L" a letter (lit + said), "c" the same letter
 // held on (W's "dou-ble-u"), "w" a word of the last two lines (the whole train lit, the words shown).
@@ -84593,7 +84616,7 @@ function trainLevelFrom(rounds){
   (rounds||[]).forEach(e=>{ if(!e||Number(e.level)!==lvl) return; if(e.clean){ streak++; if(streak>=2&&lvl<TRAIN_MAX_LEVEL){ lvl++; streak=0; } } else streak=0; });
   return lvl;
 }
-function trainPin(kid){ const v=(typeof gameRule==="function")?gameRule(kid,"train","level"):null; return (v==="1"||v==="2")?Number(v):null; }
+function trainPin(kid){ const v=(typeof gameRule==="function")?gameRule(kid,"train","level"):null, n=Number(v); return (/^[1-9]$/.test(String(v))&&n<=TRAIN_MAX_LEVEL)?n:null; }
 function trainLevel(kid){ kid=kid||masteryKid; return trainPin(kid)||trainLevelFrom(trainLogRounds(kid)); }
 // PURE: the cars to choose from — the right one + n-1 of its nearest letters, shuffled. A car already on the train can be one of them
 // (B or C beside the right D): left out, the right car would always be the earliest letter at level 1 — a tell, not the order.
@@ -84606,12 +84629,111 @@ function trainChoices(L,n){
 // PURE: a round at a level — where it starts, the cars already coupled, the turns to play
 function trainRound(level,cards){
   level=Math.max(1,Math.min(TRAIN_MAX_LEVEL,Number(level)||1));
+  if(TRAIN_TRAY[level]) return trainHookRound(level,cards);   // levels 3–5: hook up
   const coupled=_trainRandom()<0.5?2:3, n=TRAIN_CHOICES[level]||3;
   const start=level===1?0:Math.floor(_trainRandom()*(TRAIN_ABC.length-coupled-TRAIN_STEPS+1));
   const on=TRAIN_ABC.slice(start,start+coupled), turns=[];
   for(let j=0;j<TRAIN_STEPS;j++){ const L=TRAIN_ABC[start+coupled+j], c=cards&&cards[L];
     turns.push({L:L,pid:c&&c.id!=null?String(c.id):null,choices:trainChoices(L,n),wrong:{},done:false,first:false,fail:false}); }
   return {level:level,start:start,coupled:coupled,on:on,turns:turns};
+}
+// ── levels 3–5: hook up ──────────────────────────────────────────────────
+// PURE: a hook-up round — a run of TRAIN_TRAY[level] letters (all 26 at level 5, else starting anywhere it fits), its cars shuffled
+// into the tray (never already in order). turns = the tray's cars, in tray order; the track's slot k wants TRAIN_ABC[start+k].
+function trainHookRound(level,cards){
+  const n=Math.min(TRAIN_ABC.length,TRAIN_TRAY[level]||5), start=n>=TRAIN_ABC.length?0:Math.floor(_trainRandom()*(TRAIN_ABC.length-n+1));
+  const run=TRAIN_ABC.slice(start,start+n), tray=_trainShuffle(run.slice());
+  if(n>1&&tray.join("")===run.join("")) tray.push(tray.shift());
+  const turns=tray.map(L=>{ const c=cards&&cards[L]; return {L:L,pid:c&&c.id!=null?String(c.id):null,choices:[],wrong:{},done:false,first:false,fail:false}; });
+  return {level:level,start:start,coupled:0,on:[],turns:turns};
+}
+function _trainHook(st){ return !!(st&&TRAIN_TRAY[st.level]); }
+// PURE: level 5's empty slots show their letter faintly for the kid's first TRAIN_FAINT_ROUNDS level-5 rounds
+function trainFaintFor(rounds,level){ return Number(level)===5&&(rounds||[]).filter(e=>e&&Number(e.level)===5).length<TRAIN_FAINT_ROUNDS; }
+// PURE: the slot a dropped car lands on — the nearest of the empty slots [{k,x,y,w,h}] (x,y its centre) whose centre is within
+// TRAIN_SNAP × its width / height of the car's centre (cx,cy); -1 when it was dropped nowhere near one
+function trainSlotNear(slots,cx,cy){
+  let best=-1, bd=Infinity;
+  (slots||[]).forEach(o=>{ if(!o) return; const dx=Math.abs(cx-o.x), dy=Math.abs(cy-o.y); if(dx>o.w*TRAIN_SNAP||dy>o.h*TRAIN_SNAP) return; const d=dx*dx+dy*dy; if(d<bd){ bd=d; best=o.k; } });
+  return best;
+}
+// PURE-ish: tray car ti dropped on slot k → "right" | "wrong" | null (not now / not a slot / filled). Right snaps it in; wrong sends it back.
+function trainDropJudge(st,ti,k){
+  if(!st||st.phase!=="play"||st.lock||!_trainHook(st)) return null;
+  const t=st.turns[ti], n=st.turns.length; if(!t||t.done||k==null||k<0||k>=n) return null;
+  const want=TRAIN_ABC[st.start+k]; if(st.turns.some(x=>x.done&&x.L===want)) return null;
+  st.sel=null;
+  if(want!==t.L){ if(!t.wrong[want]){ t.wrong[want]=1; if(Object.keys(t.wrong).length>=TRAIN_MISS) t.fail=true; } st.bounce=ti; st.roll=null; return "wrong"; }
+  t.done=true; t.first=!Object.keys(t.wrong).length; st.on.push(t.L); st.roll=t.L; st.bounce=null;
+  const left=st.turns.filter(x=>!x.done).length;
+  if(left) st.i=n-left; else { st.i=n-1; st.lock=true; }   // the last car: trainNext finishes the round once it has clacked in
+  return "right";
+}
+function trainDrop(ti,k){
+  const st=trainState; if(!st) return;
+  const r=trainDropJudge(st,ti,k);
+  if(!r){ st.sel=null; st.roll=null; if(st.phase==="play"&&!st.lock&&st.turns[ti]&&!st.turns[ti].done) st.bounce=ti; _trainHookRe(st); return; }   // dropped nowhere: back to the tray, no miss
+  if(r==="wrong"){ try{ matchBonk(); }catch(e){} st.seq++; _trainHookRe(st); return; }
+  try{ matchDing(); }catch(e){}
+  _trainSay(st.roll);
+  const seq=++st.seq; _trainHookRe(st);
+  if(st.lock) setTimeout(()=>{ if(trainState===st&&st.lock&&st.seq===seq){ trainNext(st); _mastRe(); } },TRAIN_ROLL_MS);
+}
+// A tap: pick a tray car (again = put it down); a tap on an empty slot drops the picked car there
+function trainHookPick(ti){ const st=trainState; if(!st||st.phase!=="play"||st.lock||!st.turns[ti]||st.turns[ti].done) return; st.sel=st.sel===ti?null:ti; st.bounce=null; st.roll=null; _trainHookRe(st); }
+function trainSlotTap(k){ const st=trainState; if(!st||st.sel==null) return; trainDrop(st.sel,k); }
+function trainHookHear(){
+  const st=trainState; if(!_trainHook(st)||st.phase!=="play") return;
+  const on=TRAIN_ABC.slice(st.start,st.start+st.turns.length).filter(L=>st.turns.some(t=>t.done&&t.L===L));
+  _trainSay((on.length?on.join(", ")+". ":"")+"Put each car in its place on the track!");
+}
+// A re-render rebuilds the track, so its sideways scroll is put back (level 5's long train)
+function _trainHookRe(st){ _mastRe(); try{ const tr=typeof document!=="undefined"&&document.getElementById("trn-track"); if(tr&&st&&st.scroll) tr.scrollLeft=st.scroll; }catch(e){} }
+function _trainSlotRects(){
+  try{ return Array.prototype.map.call(document.querySelectorAll("[data-trn-slot]"),el=>{ const b=el.getBoundingClientRect(); return {k:parseInt(el.getAttribute("data-trn-slot"),10),x:b.left+b.width/2,y:b.top+b.height/2,w:b.width,h:b.height}; }); }catch(e){ return []; }
+}
+function _trainHookHover(k){ try{ document.querySelectorAll("[data-trn-slot]").forEach(el=>el.classList.toggle("trn-over",parseInt(el.getAttribute("data-trn-slot"),10)===k)); }catch(e){} }
+// Drag a tray car with a finger or the mouse: a move under 8px is a tap (trainHookPick). While it is held near the track's end the track
+// scrolls that way, and near the top / bottom of the screen the page does — the car can reach any slot of the long train.
+function trainHookDown(ev,ti){
+  const st=trainState; if(!st||st.phase!=="play"||st.lock||!ev||ev.button>0) return;
+  const el=ev.currentTarget; if(!el) return;
+  const x0=ev.clientX, y0=ev.clientY, pid=ev.pointerId; let moved=false, px=x0, py=y0, sx=0, sy=0;
+  try{ el.setPointerCapture(pid); }catch(e){}
+  const tr=document.getElementById("trn-track");
+  const near=()=>{ const r=el.getBoundingClientRect(); return trainSlotNear(_trainSlotRects(),r.left+r.width/2,r.top+r.height/2); };
+  const place=()=>{ el.style.transform="translate("+(px-x0+sx)+"px,"+(py-y0+sy)+"px)"; _trainHookHover(near()); };
+  const edge=setInterval(()=>{ if(!moved) return;
+    try{ if(tr){ const b=tr.getBoundingClientRect(); if(py>b.top-60&&py<b.bottom+60){ const v=px<b.left+48?-16:px>b.right-48?16:0; if(v){ tr.scrollLeft+=v; st.scroll=tr.scrollLeft; } } }
+      const h=window.innerHeight||0, v2=py<56?-14:(h&&py>h-56)?14:0; if(v2){ const y1=window.scrollY; window.scrollBy(0,v2); sy+=window.scrollY-y1; place(); } }catch(e){} },40);
+  const move=e=>{ px=e.clientX; py=e.clientY; if(!moved&&Math.hypot(px-x0,py-y0)<8) return; moved=true; el.classList.add("trn-drag"); place(); };
+  const up=e=>{
+    clearInterval(edge);
+    el.removeEventListener("pointermove",move); el.removeEventListener("pointerup",up); el.removeEventListener("pointercancel",up);
+    try{ el.releasePointerCapture(pid); }catch(x){}
+    if(!moved){ trainHookPick(ti); return; }
+    const k=e.type==="pointercancel"?-1:near();
+    el.style.transform=""; el.classList.remove("trn-drag"); _trainHookHover(-1);
+    trainDrop(ti,k);
+  };
+  el.addEventListener("pointermove",move); el.addEventListener("pointerup",up); el.addEventListener("pointercancel",up);
+}
+// The hook-up play screen: the engine + the track's slots (a car where it's hooked on), then the tray of cars still to place
+function _trainHookHtml(st,d,color){
+  if(st.faint==null){ try{ st.faint=trainFaintFor(trainLogRounds(st.kid),st.level); }catch(e){ st.faint=false; } }
+  const n=st.turns.length, done=st.turns.filter(t=>t.done).length, cards=d&&d.cards, last=st.turns[st.bounce];
+  let h='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 2px"><span style="font-size:14px;font-weight:800;color:#57534e">\u{1F682} '+done+' of '+n+' hooked on</span><span style="font-size:12px;font-weight:800;color:var(--muted)">Level '+st.level+'</span></div>';
+  h+='<div id="trn-track" class="trn-track" onscroll="if(trainState)trainState.scroll=this.scrollLeft"><div class="trn-trackin"><span class="trn-eng" aria-label="Engine">\u{1F682}</span>';
+  for(let k=0;k<n;k++){ const L=TRAIN_ABC[st.start+k];
+    if(st.turns.some(t=>t.done&&t.L===L)){ h+=_trainCarHtml(L,{cards:cards,cls:st.roll===L?'trn-clack':''}); continue; }
+    h+='<div class="trn-car trn-slot trn-hslot" data-trn-slot="'+k+'" role="button" aria-label="Empty spot '+(k+1)+'" onclick="trainSlotTap('+k+')">'+(st.faint?'<span class="trn-up trn-faint">'+L+'</span><span class="trn-lo trn-faint">'+L.toLowerCase()+'</span>':'')+'</div>'; }
+  h+='</div></div>';
+  h+='<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin:4px 0 10px"><span style="font-size:17px;font-weight:800;color:#57534e;text-align:center">'+(st.lock?'\u{1F389} Clack! The whole train is hooked up!':(last&&!last.done&&Object.keys(last.wrong).length?'Not that spot \u{2014} try another!':st.sel!=null?'Now tap its spot on the track!':'Drag each car to its spot on the track!'))+'</span>'+
+    '<button onclick="trainHookHear()" aria-label="Hear it" style="width:46px;height:46px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:20px;cursor:pointer">\u{1F50A}</button></div>';
+  h+='<div class="trn-tray'+(n>TRAIN_TRAY[4]?' trn-tray-s':'')+'">';
+  st.turns.forEach((t,ti)=>{ if(t.done) return;
+    h+='<div class="trn-tcar'+(st.sel===ti?' trn-sel':'')+(st.bounce===ti?' trn-back':'')+'" role="button" aria-label="Car '+t.L+'" onpointerdown="trainHookDown(event,'+ti+')">'+_trainCarHtml(t.L,{cards:cards})+'</div>'; });
+  return h+'</div>';
 }
 function _trainSay(text){ if(!text) return; try{ if(typeof mastSpeak==="function") mastSpeak(String(text)); }catch(e){} }
 function trainStart(sid){
@@ -84746,7 +84868,15 @@ const TRAIN_CSS='<style>.trn-row{display:flex;align-items:flex-end;gap:6px;justi
   '#trn-strip .trn-eng{width:'+TRAIN_ENG_W+'px;text-align:center;font-size:72px}'+
   '#trn-pop{height:96px;display:flex;align-items:center;justify-content:center}.trn-popl{display:inline-flex;flex-direction:column;align-items:center;font-family:\'Fraunces\',serif;font-size:70px;font-weight:800;color:#292524;line-height:1;animation:trnPop .3s ease-out}'+
   '.trn-popl small{font-size:28px;color:#57534e}.trn-popw{font-family:\'Fraunces\',serif;font-size:clamp(20px,5.5vw,30px);font-weight:800;color:#292524;text-align:center;animation:trnPop .3s ease-out}'+
-  '@keyframes trnPop{0%{transform:scale(.4);opacity:0}100%{transform:none;opacity:1}}</style>';
+  '@keyframes trnPop{0%{transform:scale(.4);opacity:0}100%{transform:none;opacity:1}}'+
+  '.trn-track{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;border-bottom:6px solid #78716c;margin:6px 0 14px;padding:10px 4px 4px}.trn-trackin{display:flex;align-items:flex-end;gap:6px;width:max-content;margin:0 auto}'+
+  '.trn-track .trn-car{width:clamp(46px,12vw,72px);height:clamp(62px,16vw,92px)}.trn-track .trn-up{font-size:clamp(22px,6vw,38px)}.trn-track .trn-lo{font-size:clamp(12px,3.4vw,18px)}.trn-track .trn-eng{font-size:clamp(40px,11vw,68px)}'+
+  '.trn-hslot{cursor:pointer;transition:background .15s,border-color .15s}.trn-hslot.trn-over{border-color:#16a34a;background:#f0fdf4!important;border-style:solid}.trn-faint{color:#d6d3d1!important;text-shadow:none!important}'+
+  '.trn-clack{animation:trnClack .4s ease-out}@keyframes trnClack{0%{transform:scale(1.25)}60%{transform:scale(.94)}100%{transform:none}}'+
+  '.trn-tray{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;padding:12px 6px;border-radius:18px;background:#f5f5f4}.trn-tcar{touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;cursor:grab;border-radius:16px;position:relative}'+
+  '.trn-tcar *{pointer-events:none;-webkit-user-drag:none}.trn-tcar .trn-car{width:clamp(56px,15vw,84px);height:clamp(72px,19vw,104px)}.trn-tray-s .trn-tcar .trn-car{width:clamp(48px,12vw,64px);height:clamp(62px,15.5vw,82px)}.trn-tray-s .trn-up{font-size:clamp(22px,6vw,34px)}'+
+  '.trn-tcar.trn-sel{box-shadow:0 0 0 4px #2563eb;transform:translateY(-6px)}.trn-tcar.trn-drag{z-index:30;pointer-events:none;box-shadow:0 12px 26px rgba(0,0,0,.25)}'+
+  '.trn-back{animation:trnBack .45s ease-out}@keyframes trnBack{0%{transform:translateY(-70px) scale(1.06)}70%{transform:translateY(6px)}100%{transform:none}}</style>';
 function _trainCarHtml(L,o){
   o=o||{}; const ix=TRAIN_ABC.indexOf(L), col=TRAIN_COLS[(ix<0?0:ix)%TRAIN_COLS.length];
   let pic=""; const it=o.cards&&o.cards[L];
@@ -84765,6 +84895,7 @@ function buildTrainHtml(color,study){
     h+='<div style="font-size:15px;font-weight:700;color:#57534e;margin-bottom:16px">Level '+lvl+' \u{00B7} pick the car that comes next!</div>'+btn(go,"\u{1F682} Let’s go!")+'</div></div>';
     return h;
   }
+  if(st.phase==="play"&&_trainHook(st)) return h+_trainHookHtml(st,d,color)+'</div>';   // levels 3–5: hook up
   if(st.phase==="play"){
     const t=st.turns[st.i], shown=st.on.slice(-3), hidden=st.on.length>shown.length;
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 2px"><div style="display:flex;gap:6px">';
@@ -85074,7 +85205,8 @@ const GAME_LIKE_STATE={   // game key → its round state; a game missing here s
   match:()=>matchState, memory:()=>matchState, dump:()=>dumpState, which:()=>whichState, sort:()=>sortState, bingo:()=>bingoState, spell:()=>spellState,
   gofish:()=>gofishState, mole:()=>moleState, jeop:()=>jeopState, teach:()=>teachState, four:()=>fourState, ship:()=>shipState, beat:()=>beatState,
   truenot:()=>tnState, sure:()=>sureState, cats:()=>catsState, jumble:()=>jumbleState, kaboom:()=>kaboomState, hang:()=>hangState, nameall:()=>nameallState,
-  train:()=>trainState   // 🚂 TRAIN
+  train:()=>trainState,   // 🚂 TRAIN
+  jigsaw:()=>jigState   // 🧩 JIGSAW
 };
 const gameLikeSeen={};   // kid|game|round → 1 | -1 | "skip" (this device, in memory)
 function _glE(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -85145,6 +85277,251 @@ function gameLikeListHtml(kid,key){
   return h+'</div></div>';
 }
 // GAMELIKE_END
+// JIGSAW_START — 🧩 "Picture Puzzle" (her design 2026-11-08, PLAN_abc_puzzle_games_2026-11-08.md Game 2; her words: "breaks some of the
+// flashcard pictures up into a puzzle, and then they can put the puzzle pieces together").
+//   · WHO GETS IT — a kid with picture cards: a card in play (active / introduction, not a production twin) with a real picture —
+//     the card's live picture (🖼 UNITPIC's mastLiveImg: the kid's picture for it, else the unit's, else the card's own upload) —
+//     and a word to name it. An emoji or a drawn shape is not a picture here (it can't be cut). No such card → the
+//     game isn't listed. Found by the cards, never by a deck's or a kid's name; Mom switches it per deck (🎮 GAMEGRID).
+//   · THE PICTURE — a card the kid is learning (introduced, or still at the daily tier) when there is one, else any picture card,
+//     never the one just played when there's another. Cut into JIG_PIECES[level] pieces: level 1 four (2 × 2), level 2 six (3 × 2),
+//     level 3 nine (3 × 3). Each piece is the picture as a CSS background (one image, background-size / -position per piece:
+//     jigTiles — the picture covers the square frame, centred, never stretched). No canvas.
+//   · PLAY — the pieces scatter (shuffled, a little tilted) in the tray under the frame. Level 1's frame shows the whole picture
+//     faintly with the pieces' outlines; levels 2–3 an empty frame. The kid drags a piece (finger or mouse — pointer events, as Sort
+//     it; a tap picks a piece and a tap in the frame drops it there): dropped with its corner within JIG_SNAP of a piece's size of its
+//     own place it snaps in (the clack); anywhere else it goes back to the tray. No misses for pieces, and never placed for him.
+//   · THE FINISH — the whole picture, the card's word shown and said; then "What is it?" with JIG_CHOICES words (the card's own +
+//     other cards' words, its own deck first), so the card is still practiced, not only built. Right → the ding and the word again;
+//     wrong → that word greys out (the soft bonk) and he taps again — two wrong is the card's miss. One Play again (a new picture).
+//   · LEVEL — two CLEAN rounds in a row (named on the first tap) at the kid's level → the next level, read back from the kid's own
+//     game log (each round carries its level + clean), as the ABC Train does. Mom's pin (GAME_RULES.jigsaw "pieces": auto / 4 / 6 / 9).
+//   · WRITES — only the round's gameLog entry (GAMELOG, game:"jigsaw", one item: the card, ok = named on the first tap, + level /
+//     clean). No points, no ladder, no next_due, no study log, no best score. db && !_dryRun() only (gameLogRound's own guard). Per-kid
+//     park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT); a round dropped part-way writes nothing. No names in this block.
+let jigState=null;   // {kid,deck,game:"jigsaw",t0,level,pid,word,img,ar,n,tray:[piece i],placed:{i:1},tilt:{i:deg},sel,bounce,snap,phase:"play"|"show"|"ask"|"done",choices:[word],turns:[{pid,L,wrong,done,first,fail}],clean,levelBefore,levelAfter,seq,lastPid,gameLogged}
+let _jigRandom=Math.random;   // tests seed it
+const JIG_PIECES={1:4,2:6,3:9}, JIG_MAX_LEVEL=3, JIG_SNAP=0.45, JIG_CHOICES=3, JIG_MISS=2, JIG_SHOW_MS=2600;
+const _jigLast={};   // kid → the card of this device's last puzzle (so Play again brings a new picture)
+function _jigShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_jigRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function _jigItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
+function _jigPlain(p){ return String(p==null?"":p).replace(/<[^>]*>/g,"").replace(/&nbsp;/g," ").trim(); }
+function _jigE(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function jigDeckOn(kid,deck){ return (typeof _gdRaw!=="undefined"&&_gdRaw)||typeof gameDeckOn!=="function"||gameDeckOn(kid,"jigsaw",deck); }
+// The card's picture to cut — a URL, or "" (an emoji / drawn card has none). 🖼 UNITPIC's one answer: the live picture first
+function jigPic(it,kid){ if(!it||typeof mastLiveImg!=="function") return ""; try{ return String(mastLiveImg(it,kid)||""); }catch(e){ return ""; } }
+function _jigInPlay(i){ return !!i&&(i.status==="active"||i.status==="introduction")&&i.dir!=="prod"; }
+// The kid's picture cards the puzzle may use (deck on, in play, a picture, a word)
+function jigPool(items,kid){ kid=kid||masteryKid; return (items||[]).filter(i=>_jigInPlay(i)&&!!_jigPlain(i.prompt)&&!!jigPic(i,kid)&&jigDeckOn(kid,i.subject||"Other")); }
+function jigDecks(items,kid){ const o={}; jigPool(items,kid).forEach(i=>{ o[i.subject||"Other"]=1; }); return Object.keys(o).sort(); }
+function jigAvail(kid){ return jigPool(_jigItems(kid),kid).length>0; }
+// PURE-ish: the card to cut — a learning one (introduced, or at the daily tier) when there is one, never the last one when there's another
+function jigPick(pool,lastPid){
+  const lrn=(pool||[]).filter(i=>i.status==="introduction"||!i.tier||i.tier==="daily"), from=lrn.length?lrn:(pool||[]);
+  const fresh=from.filter(i=>String(i.id)!==String(lastPid)), list=fresh.length?fresh:from;
+  return list.length?list[Math.floor(_jigRandom()*list.length)]:null;
+}
+// PURE: the grid for n pieces
+function jigGrid(n){ n=Number(n)||4; if(n===6) return {cols:3,rows:2}; const c=Math.max(1,Math.round(Math.sqrt(n))); return {cols:c,rows:Math.ceil(n/c)}; }
+// PURE: the pieces of a square frame for a picture of aspect ar (width / height). Each: i (row by row), col, row, its place x,y,w,h
+// (fractions of the frame), and its slice — bgSize / bgPos — the picture covering the frame, centred (the long side cropped, nothing
+// stretched). bgPos is "where the piece's own corner sits on the picture", as CSS percentages of (picture − piece).
+function jigTiles(n,ar){
+  const g=jigGrid(n), C=g.cols, R=g.rows, a=ar>0&&isFinite(ar)?ar:1, iw=a>=1?a:1, ih=a>=1?1:1/a, ox=(iw-1)/2, oy=(ih-1)/2, sw=iw*C, sh=ih*R, r2=x=>Math.round(x*100)/100, out=[];
+  for(let r=0;r<R;r++) for(let c=0;c<C;c++)
+    out.push({i:r*C+c,col:c,row:r,x:c/C,y:r/R,w:1/C,h:1/R,bgSize:r2(sw*100)+"% "+r2(sh*100)+"%",bgPos:r2(sw>1?(ox*C+c)/(sw-1)*100:0)+"% "+r2(sh>1?(oy*R+r)/(sh-1)*100:0)+"%"});
+  return out;
+}
+// PURE: a piece dropped with its top-left corner at (x,y) — fractions of the frame — snaps when that corner is within JIG_SNAP of a
+// piece's width / height of its own place
+function jigSnap(tile,x,y){ return !!tile&&Math.abs(x-tile.x)<=JIG_SNAP*tile.w+1e-9&&Math.abs(y-tile.y)<=JIG_SNAP*tile.h+1e-9; }
+// PURE-ish: the "What is it?" words — the card's own + up to JIG_CHOICES-1 other words (its own deck first, then the kid's other cards
+// in play), each word once, shuffled
+function jigChoices(it,items){
+  const own=_jigPlain(it&&it.prompt), key=w=>w.toLowerCase(), seen={[key(own)]:1}, deck=it&&it.subject, pick=[];
+  const take=list=>{ _jigShuffle(list.slice()).forEach(i=>{ if(pick.length>=JIG_CHOICES-1) return; const w=_jigPlain(i.prompt); if(!w||seen[key(w)]) return; seen[key(w)]=1; pick.push(w); }); };
+  const live=(items||[]).filter(_jigInPlay);
+  take(live.filter(i=>i.subject===deck)); take(live.filter(i=>i.subject!==deck));
+  return _jigShuffle([own].concat(pick));
+}
+// The kid's puzzle rounds from the game log (this device's copy and the pushed one count once), oldest first
+function jigLogRounds(kid){
+  const G=((typeof masteryData!=="undefined"&&masteryData&&masteryData.gameLog)||{})[kid]||{}, seen={}, out=[];
+  Object.keys(G).forEach(day=>{ const D=G[day]||{}; Object.keys(D).forEach(k=>{ const e=D[k]; if(!e||e.game!=="jigsaw"||e.level==null) return; const id=(Number(e.at)||0)+"|"+JSON.stringify(e.items||[]); if(seen[id]) return; seen[id]=1; out.push(e); }); });
+  return out.sort((a,b)=>(Number(a.at)||0)-(Number(b.at)||0));
+}
+// PURE: the auto level — two clean rounds in a row at the level → up one (never past JIG_MAX_LEVEL)
+function jigLevelFrom(rounds){
+  let lvl=1, streak=0;
+  (rounds||[]).forEach(e=>{ if(!e||Number(e.level)!==lvl) return; if(e.clean){ streak++; if(streak>=2&&lvl<JIG_MAX_LEVEL){ lvl++; streak=0; } } else streak=0; });
+  return lvl;
+}
+function jigPin(kid){ const v=(typeof gameRule==="function")?gameRule(kid,"jigsaw","pieces"):null, L=Object.keys(JIG_PIECES).find(k=>String(JIG_PIECES[k])===String(v)); return L?Number(L):null; }
+function jigLevel(kid){ kid=kid||masteryKid; return jigPin(kid)||jigLevelFrom(jigLogRounds(kid)); }
+function _jigSay(text){ if(!text) return; try{ if(typeof mastSpeak==="function") mastSpeak(String(text)); }catch(e){} }
+function jigStart(){
+  const kid=masteryKid, items=_jigItems(kid), it=jigPick(jigPool(items,kid),_jigLast[kid]);
+  if(!it){ jigState=null; _mastRe(); return; }
+  _jigLast[kid]=it.id;
+  const level=jigLevel(kid), n=JIG_PIECES[level]||4, tray=_jigShuffle(Array.from({length:n},(x,i)=>i)), tilt={};
+  tray.forEach(i=>{ tilt[i]=Math.round((_jigRandom()*2-1)*8); });
+  if(n>1&&tray.every((x,i)=>x===i)) tray.push(tray.shift());   // never already in order
+  const word=_jigPlain(it.prompt);
+  jigState={kid:kid,deck:it.subject||"Other",game:"jigsaw",t0:Date.now(),level:level,pid:it.id!=null?String(it.id):null,word:word,img:jigPic(it,kid),ar:1,n:n,tray:tray,placed:{},tilt:tilt,sel:null,bounce:null,snap:null,
+    phase:"play",choices:jigChoices(it,items),turns:[{pid:it.id!=null?String(it.id):null,L:word,wrong:{},done:false,first:false,fail:false}],clean:null,levelBefore:level,levelAfter:null,seq:0};
+  _jigLoadAr(jigState);
+  _mastRe();
+}
+// The picture's own shape, once it loads (until then the pieces are cut as a square) — never redrawn under a finger mid-drag
+let _jigDragging=false;
+function _jigLoadAr(st){
+  try{ if(typeof Image==="undefined"||!st.img) return; const im=new Image();
+    im.onload=()=>{ if(jigState!==st||!im.naturalWidth||!im.naturalHeight) return; st.ar=im.naturalWidth/im.naturalHeight; if(!_jigDragging&&(typeof mastView==="undefined"||mastView==="jigsaw")) _mastRe(); };
+    im.src=st.img; }catch(e){}
+}
+// PURE-ish: piece i dropped at (x,y) (its corner, fractions of the frame) → "snap" | "back" | null (not now)
+function jigDropJudge(st,i,x,y){
+  if(!st||st.phase!=="play"||i==null||i<0||i>=st.n||st.placed[i]) return null;
+  st.sel=null;
+  const t=jigTiles(st.n,st.ar)[i];
+  if(x==null||y==null||!jigSnap(t,x,y)){ st.bounce=i; st.snap=null; return "back"; }
+  st.placed[i]=1; st.snap=i; st.bounce=null;
+  return "snap";
+}
+function jigDrop(i,x,y){
+  const st=jigState, r=jigDropJudge(st,i,x,y); if(!r) return;
+  if(r==="back"){ _mastRe(); return; }
+  try{ matchDing(); }catch(e){}
+  if(Object.keys(st.placed).length>=st.n) jigShow(st);
+  _mastRe();
+}
+// A tap: pick a piece (again = put it down); a tap in the frame drops the picked piece with its corner on the spot tapped's square
+function jigTapPiece(i){ const st=jigState; if(!st||st.phase!=="play"||st.placed[i]) return; st.sel=st.sel===i?null:i; st.bounce=null; st.snap=null; _mastRe(); }
+function jigFrameTap(ev){
+  const st=jigState; if(!st||st.phase!=="play"||st.sel==null||!ev||!ev.currentTarget) return;
+  const f=ev.currentTarget, b=f.getBoundingClientRect(), g=jigGrid(st.n), fx=(ev.clientX-b.left-(f.clientLeft||0))/(f.clientWidth||b.width), fy=(ev.clientY-b.top-(f.clientTop||0))/(f.clientHeight||b.height);
+  const c=Math.max(0,Math.min(g.cols-1,Math.floor(fx*g.cols))), r=Math.max(0,Math.min(g.rows-1,Math.floor(fy*g.rows)));
+  jigDrop(st.sel,c/g.cols,r/g.rows);
+}
+// Drag a piece with a finger or the mouse: a move under 8px is a tap (jigTapPiece); let go, its corner is measured against the frame
+function jigDown(ev,i){
+  const st=jigState; if(!st||st.phase!=="play"||!ev||ev.button>0) return;
+  const el=ev.currentTarget; if(!el) return;
+  const x0=ev.clientX, y0=ev.clientY, pid=ev.pointerId; let moved=false;
+  try{ el.setPointerCapture(pid); }catch(e){}
+  const move=e=>{ const dx=e.clientX-x0, dy=e.clientY-y0; if(!moved&&Math.hypot(dx,dy)<8) return; moved=true; _jigDragging=true; el.classList.add("jig-drag"); el.style.transform="translate("+dx+"px,"+dy+"px)"; };
+  const up=e=>{
+    el.removeEventListener("pointermove",move); el.removeEventListener("pointerup",up); el.removeEventListener("pointercancel",up);
+    try{ el.releasePointerCapture(pid); }catch(x){}
+    _jigDragging=false;
+    if(!moved){ jigTapPiece(i); return; }
+    let x=null, y=null;
+    try{ const f=document.getElementById("jig-frame"), b=f&&f.getBoundingClientRect(), r=el.getBoundingClientRect(), fw=f&&(f.clientWidth||b.width), fh=f&&(f.clientHeight||b.height); if(b&&fw&&e.type!=="pointercancel"){ x=(r.left-b.left-(f.clientLeft||0))/fw; y=(r.top-b.top-(f.clientTop||0))/fh; } }catch(x2){}
+    el.style.transform=""; el.classList.remove("jig-drag");
+    jigDrop(i,x,y);
+  };
+  el.addEventListener("pointermove",move); el.addEventListener("pointerup",up); el.addEventListener("pointercancel",up);
+}
+// The whole picture: its word shown and said, then (JIG_SHOW_MS later, or Next) "What is it?"
+function jigShow(st){
+  st.phase="show"; st.sel=null; st.bounce=null;
+  _jigSay(st.word);
+  const seq=++st.seq;
+  setTimeout(()=>{ if(jigState===st&&st.phase==="show"&&st.seq===seq){ jigAsk(st); _mastRe(); } },JIG_SHOW_MS);
+}
+function jigAsk(st){
+  st=st||jigState; if(!st||st.phase!=="show") return;
+  st.seq++;
+  if((st.choices||[]).length<2){ jigFinish(st); return; }   // no other word to choose from: nothing to ask
+  st.phase="ask"; _jigSay("What is it?");
+}
+function jigNext(){ const st=jigState; if(!st||st.phase!=="show") return; jigAsk(st); _mastRe(); }
+function jigHear(){ const st=jigState; if(!st) return; if(st.phase==="ask") _jigSay("What is it? "+st.choices.join(", or ")+"?"); else if(st.phase!=="play") _jigSay(st.word); }
+// PURE-ish: a tap on "What is it?" word ci → "right" | "wrong" | null
+function jigJudge(st,ci){
+  if(!st||st.phase!=="ask") return null;
+  const w=st.choices[ci], t=st.turns[0]; if(w==null||!t||t.done||t.wrong[w]) return null;
+  if(w!==st.word){ t.wrong[w]=1; if(Object.keys(t.wrong).length>=JIG_MISS) t.fail=true; st.bounce=ci; return "wrong"; }
+  t.done=true; t.first=!Object.keys(t.wrong).length; st.bounce=null;
+  return "right";
+}
+function jigTap(ci){
+  const st=jigState, r=jigJudge(st,ci); if(!r) return;
+  if(r==="wrong"){ try{ matchBonk(); }catch(e){} _mastRe(); return; }
+  try{ matchDing(); }catch(e){}
+  _jigSay(st.word);
+  jigFinish(st); _mastRe();
+}
+function jigFinish(st){
+  st.phase="done"; st.seq++;
+  st.clean=st.turns.every(t=>t.done&&t.first);
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: the card, named on the first tap or not, + the round's level / clean, game:"jigsaw"
+  st.levelAfter=jigLevel(st.kid);
+}
+// GAMEKID → 🎲 GAMEKIT: parking stops the show timer; resume puts a picked-up piece down and moves a cut-off show on to its question
+function jigPark(){ const st=jigState; if(st) st.seq++; _jigDragging=false; return st; }
+function jigResume(){ const st=jigState; if(!st) return; st.sel=null; st.bounce=null; st.snap=null; if(st.phase==="show") jigAsk(st); }
+const JIG_CSS='<style>.jig-board{--jig-s:min(84vw,46vh,400px);display:flex;flex-direction:column;align-items:center}'+
+  '#jig-frame{position:relative;width:var(--jig-s);height:var(--jig-s);border-radius:14px;border:3px dashed #a8a29e;background:#fafaf9;box-sizing:content-box;touch-action:manipulation}'+
+  '.jig-ghost{position:absolute;inset:0;background-image:var(--jig-img);background-size:cover;background-position:center;opacity:.18;border-radius:11px}'+
+  '.jig-cell{position:absolute;box-sizing:border-box;border:1.5px dashed rgba(120,113,108,.45)}'+
+  '.jig-pc{background-image:var(--jig-img);background-repeat:no-repeat;box-sizing:border-box}'+
+  '.jig-in{position:absolute;border-radius:2px}.jig-snap{animation:jigSnap .35s ease-out}@keyframes jigSnap{0%{transform:scale(1.12)}60%{transform:scale(.96)}100%{transform:none}}'+
+  '.jig-tray{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;padding:14px 8px;margin-top:14px;border-radius:18px;background:#f5f5f4;width:100%;box-sizing:border-box}'+
+  '.jig-tp{border:3px solid #fff;border-radius:8px;box-shadow:0 3px 8px rgba(0,0,0,.18);touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;cursor:grab;transition:box-shadow .15s}'+
+  '.jig-tp.jig-sel{box-shadow:0 0 0 4px #2563eb}.jig-tp.jig-drag{transition:none;z-index:30;position:relative;box-shadow:0 14px 28px rgba(0,0,0,.3);pointer-events:none}'+
+  '.jig-back{animation:jigBack .45s ease-out}@keyframes jigBack{0%{transform:translateY(-60px) scale(1.05)}70%{transform:translateY(5px)}100%{transform:none}}'+
+  '.jig-whole{position:absolute;inset:0;background-image:var(--jig-img);background-size:cover;background-position:center;border-radius:11px;animation:jigSnap .5s ease-out}'+
+  '.jig-word{font-family:\'Fraunces\',serif;font-size:clamp(30px,8vw,48px);font-weight:800;color:#292524;margin:14px 0 4px;text-align:center}'+
+  '.jig-ch{padding:14px 26px;border-radius:18px;border:3px solid #e2ddd6;background:#fff;font-family:\'Fraunces\',serif;font-size:clamp(20px,5.5vw,28px);font-weight:800;color:#292524;cursor:pointer;-webkit-tap-highlight-color:transparent}'+
+  '.jig-ch.jig-no{opacity:.35;cursor:default;animation:jigNo .45s}@keyframes jigNo{0%,100%{transform:none}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}</style>';
+// One CSS url() for the picture (set once on the board as --jig-img; every piece uses it)
+function _jigUrl(u){ return 'url(&quot;'+_jigE(String(u||"").replace(/["\\\n\r]/g,ch=>encodeURIComponent(ch)))+'&quot;)'; }
+function buildJigHtml(color){
+  let h=JIG_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
+  const kid=masteryKid;
+  if(!jigAvail(kid)){ h+='<div class="mast-none">The Picture Puzzle needs cards with pictures \u{2014} add a picture to a card and it can be a puzzle.</div></div>'; return h; }
+  const st=jigState&&jigState.kid===kid?jigState:null, btn=(fn,lbl)=>'<button onclick="'+fn+'" style="padding:14px 30px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:18px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
+  const hear='<button onclick="jigHear()" aria-label="Hear it" style="width:46px;height:46px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:20px;cursor:pointer">\u{1F50A}</button>';
+  if(!st){
+    const lvl=jigLevel(kid);
+    h+='<div style="text-align:center;margin:18px 0 10px"><div style="font-size:64px;line-height:1">\u{1F9E9}</div><div style="font-family:\'Fraunces\',serif;font-size:24px;font-weight:800;color:#292524;margin:6px 0 4px">Picture Puzzle</div>';
+    h+='<div style="font-size:15px;font-weight:700;color:#57534e;margin-bottom:16px">'+(JIG_PIECES[lvl]||4)+' pieces \u{00B7} put the picture back together!</div>'+btn("jigStart()","\u{1F9E9} Let\u{2019}s go!")+'</div></div>';
+    return h;
+  }
+  const tiles=jigTiles(st.n,st.ar), g=jigGrid(st.n), pct=x=>Math.round(x*10000)/100+'%';
+  const pc=(t,extra)=>'background-size:'+t.bgSize+';background-position:'+t.bgPos+';'+(extra||'');
+  h+='<div class="jig-board" style="--jig-img:'+_jigUrl(st.img)+'">';
+  h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;margin:8px 0 8px"><span style="font-size:14px;font-weight:800;color:#57534e">\u{1F9E9} '+Object.keys(st.placed).length+' of '+st.n+' pieces</span><span style="font-size:12px;font-weight:800;color:var(--muted)">'+st.n+' pieces</span></div>';
+  h+='<div id="jig-frame"'+(st.phase==="play"?' onclick="jigFrameTap(event)"':'')+' role="img" aria-label="Puzzle frame">';
+  if(st.phase==="play"){
+    if(st.level===1){ h+='<div class="jig-ghost"></div>'; tiles.forEach(t=>{ h+='<div class="jig-cell" style="left:'+pct(t.x)+';top:'+pct(t.y)+';width:'+pct(t.w)+';height:'+pct(t.h)+'"></div>'; }); }   // level 1: the faint outline
+    tiles.forEach(t=>{ if(st.placed[t.i]) h+='<div class="jig-pc jig-in'+(st.snap===t.i?' jig-snap':'')+'" style="'+pc(t,'left:'+pct(t.x)+';top:'+pct(t.y)+';width:'+pct(t.w)+';height:'+pct(t.h))+'"></div>'; });
+  } else h+='<div class="jig-whole"></div>';
+  h+='</div>';
+  if(st.phase==="play"){
+    h+='<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-top:12px"><span style="font-size:17px;font-weight:800;color:#57534e;text-align:center">'+(st.sel!=null?'Now tap where it goes!':'Drag each piece into the frame!')+'</span></div>';
+    h+='<div class="jig-tray">';
+    st.tray.forEach(i=>{ if(st.placed[i]) return; const t=tiles[i];
+      h+='<div class="jig-pc jig-tp'+(st.sel===i?' jig-sel':'')+(st.bounce===i?' jig-back':'')+'" role="button" aria-label="Puzzle piece" onpointerdown="jigDown(event,'+i+')" style="'+pc(t,'width:calc(var(--jig-s) / '+g.cols+');height:calc(var(--jig-s) / '+g.rows+');'+(st.sel===i||st.bounce===i?'':'transform:rotate('+(st.tilt[i]||0)+'deg)'))+'"></div>'; });
+    return h+'</div></div></div>';
+  }
+  if(st.phase==="show"){
+    h+='<div class="jig-word">'+_jigE(st.word)+'</div><div style="display:flex;gap:10px;align-items:center;justify-content:center;margin-top:6px">'+hear+'<button onclick="jigNext()" style="padding:12px 24px;border-radius:999px;border:2px solid '+color+';background:#fff;color:'+color+';font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Next \u{27A1}</button></div>';
+    return h+'</div></div>';
+  }
+  if(st.phase==="ask"){
+    const t=st.turns[0];
+    h+='<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin:14px 0 10px"><span class="jig-word" style="margin:0">What is it?</span>'+hear+'</div><div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center">';
+    st.choices.forEach((w,ci)=>{ const no=!!t.wrong[w]; h+='<button class="jig-ch'+(no?' jig-no':'')+'" onclick="jigTap('+ci+')"'+(no?' disabled':'')+'>'+_jigE(w)+'</button>'; });
+    return h+'</div></div></div>';
+  }
+  h+='<div class="jig-word">\u{1F389} '+_jigE(st.word)+'!</div>';
+  if(st.levelAfter&&st.levelAfter>st.levelBefore) h+='<div style="font-size:18px;font-weight:800;color:#16a34a;margin-bottom:10px">\u{2B06} '+(JIG_PIECES[st.levelAfter]||"")+' pieces next time!</div>';
+  h+='<div style="margin-top:8px">'+btn("jigStart()","\u{1F501} Play again")+'</div>';
+  return h+'</div></div>';
+}
+// JIGSAW_END
 // STUDYCOUNTS_START — 📚 Study sessions count everywhere (F3 of PLAN_learning_system, her yes 2026-10-24). A study
 // sitting logs to mastery/studyLog/<kid>/<sid>/<yyyymmdd>, but Scores, the Weekly report, sprint readiness (the ≥ 90%
 // untimed check) and the notebook's 🔁 review flags read only the drill's mastery/history/<kid>/<yyyymmdd>, so Lincoln —
@@ -89266,6 +89643,8 @@ const GAMES_LIST=[
      park:()=>nameallPark(), restore:v=>{ nameallRestore(v); }, resume:()=>nameallResume(), decks:k=>typeof nameallDecks==="function"?nameallDecks(_gamesItems(k),k):[]},   // 📋 NAMEALL · 🎲 GAMEKIT: its own park / restore / resume · 🎮 GAMEGRID: its real decks
   {key:"train",  emoji:"\u{1F682}", label:"ABC Train",   view:"train",                available:k=>typeof trainAvail==="function"&&trainAvail(k), render:c=>buildTrainHtml(c),
      park:()=>trainPark(), restore:v=>{ trainState=v||null; }, resume:()=>trainResume(), decks:k=>typeof trainDecks==="function"?trainDecks(_gamesItems(k),k):[]},   // 🚂 TRAIN · 🎲 GAMEKIT: parking stops the song · 🎮 GAMEGRID: its letters deck
+  {key:"jigsaw", emoji:"\u{1F9E9}", label:"Picture Puzzle", view:"jigsaw",           available:k=>typeof jigAvail==="function"&&jigAvail(k), render:c=>buildJigHtml(c),
+     park:()=>jigPark(), restore:v=>{ jigState=v||null; }, resume:()=>jigResume(), decks:k=>typeof jigDecks==="function"?jigDecks(_gamesItems(k),k):[]},   // 🧩 JIGSAW · 🎲 GAMEKIT: parking stops the show · 🎮 GAMEGRID: its picture decks
 ];
 const gamesLast={};   // kid → key of the last game played on this device
 function gamesFor(k){ return GAMES_LIST.filter(g=>{ try{ return !!g.available(k)&&(typeof gameDeckAny!=="function"||gameDeckAny(k,g)); }catch(e){ return false; } }); }   // 🎮 GAMEGRID: every deck off → the game isn't offered
