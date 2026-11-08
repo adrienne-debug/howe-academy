@@ -132,7 +132,8 @@ const wire = html.slice(html.indexOf("// PREKTHEME_WIRE"), html.indexOf("// PREK
 ok(wire.length > 100 && !names.some(n => new RegExp("\\b" + n + "\\b").test(wire)), "the app wiring names no child either");
 
 console.log("index.html wiring");
-ok(/notebookTheme:\(typeof nbRec\.notebookTheme==="string"&&nbRec\.notebookTheme\)\|\|null/.test(html) && /nbRec=ROSTER_DEF\.find\(k=>k&&k\.id===kid\)/.test(html), "haNbContext reads notebookTheme off the kid's Family record (missing = null)");
+// PREKLEVEL (2026-11-08): Mom's Notebook-tab pick (notebookSettings/<kid>/notebookTheme) first, the Family record second
+ok(/notebookTheme:nbThemeOf\(kid\)/.test(html) && /function nbThemeOf\(kid\)\{[^\n]*typeof r==="string"&&r\)\|\|null; \}/.test(html) && /nbRec=ROSTER_DEF\.find\(k=>k&&k\.id===kid\)/.test(html), "haNbContext reads notebookTheme (the picker's, else the kid's Family record; missing = null)");
 ok(/kidName:nbNm\(nbRec\.notebookName\)\|\|nbNm\(nbRec\.name\)/.test(html), "…and the name to print: notebookName (when the app shows a nickname), else the record's name");
 ok((html.match(/\(kid==="julian"\|\|kid==="caleb"\|\|\(out&&out\.prekTheme\)\)&&out&&out\.letterCursor/g) || []).length === 2 &&
    (html.match(/\(kid==="julian"\|\|kid==="caleb"\|\|\(out&&out\.prekTheme\)\)&&out&&out\.numberCursor/g) || []).length === 2, "print + PDF save a themed kid's letter/number cursors (so next week continues)");
