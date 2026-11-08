@@ -8,6 +8,10 @@
  * Runs the REAL code (WHICHONE + GAMELOG + GAMEGRID + GAMERULES + JEOPARDY + JPMONEY).
  *   run:  node test_jeop_money.js
  *   the Off snapshot was taken from main 2026-11-08 (e5cbab4):  JP_SNAP_SRC=<main's index.html> node test_jeop_money.js --snap
+ *   Merged with SCORESGAMES (claude/scores-games-section, 2026-11-08): the snapshot is retaken on the merged tree. The ONLY difference
+ *   from main is one new logging field — GAMELOG's why:"free" on the round's gameLog push (PLAN_scores_page §4 #3). Every screen,
+ *   every word said, every sound and every other write is main's, byte for byte: the trace with that field taken out still hashes to
+ *   main's snapshot (checked below). Off still changes nothing a kid or Mom sees.
  */
 const fs=require("fs"), path=require("path"), vm=require("vm"), crypto=require("crypto");
 let pass=0, fail=0;
@@ -61,7 +65,7 @@ function answer(w,bad){
 }
 
 // ── OFF = main byte for byte: one scripted afternoon, every screen + every write + every word said, hashed ──
-function offSession(S){
+function offSession(S,raw){
   const log=[], snap=(w,tag)=>log.push(tag+"\n"+w.c.buildJeopHtml("#123456"));
   { const w=world(ANIMALS.concat(MATH,GERMAN),{src:S}), c=w.c;
     snap(w,"start"); c.jeopToggle("German"); snap(w,"toggle"); c.jeopPickDecks=["Animals","Math Facts"];
@@ -82,10 +86,12 @@ function offSession(S){
     snap(w,"g-done"); log.push("g "+JSON.stringify(w.writes.map(x=>x[0]==="push"?[x[0],x[1]]:x))+JSON.stringify(w.said)+JSON.stringify(w.dings));
   }
   if(process.env.JP_SNAP_DUMP) fs.writeFileSync(process.env.JP_SNAP_DUMP,log.join("\n──\n"));
+  if(raw) return log.join("\n──\n");
   return crypto.createHash("sha256").update(log.join("\n──\n")).digest("hex");
 }
 if(SNAP_ONLY){ console.log(offSession(src)); process.exit(0); }
-const OFF_SNAP="f04c238f22c6e57fa7fcfefd227f7ce58477943ff9b205ece3dd52549fbeb763";   // offSession(main e5cbab4's index.html), 2026-11-08
+const OFF_MAIN="f04c238f22c6e57fa7fcfefd227f7ce58477943ff9b205ece3dd52549fbeb763";   // offSession(main e5cbab4's index.html), 2026-11-08
+const OFF_SNAP="61f179b2a99626b08c366f25d178fa8f8202e65dce655eb3fa2b36fd46cfe489";   // offSession(merged with SCORESGAMES), 2026-11-08 — main + why:"free"
 
 // ── by text ──
 const a=src.indexOf("// JPMONEY_START"), b=src.indexOf("// JPMONEY_END"), sp=src.indexOf("// SPELLBUILD_END"), sc=src.indexOf("// STUDYCOUNTS_START");
@@ -100,7 +106,10 @@ ok("play money only: no real points, Star Bank, spins, trophies or bankDirect in
 ok("every JEOPARDY hook is guarded (typeof … === \"function\") and marked 💵 JPMONEY",(JP.match(/💵 JPMONEY/g)||[]).length===18&&(JP.match(/typeof jpMoney\w+==="function"/g)||[]).length===15&&/if\(typeof jpMoneyStart==="function"\) jpMoneyStart\(jeopState\);/.test(JP));
 ok("GAMELOG: one guarded line keeps mode, bank, bets and result on a money round",/if\(st\.game==="jeop"&&st\.money\)\{ e\.mode="money"; e\.bank=st\.bank; e\.bets=/.test(fnText("gameLogEntry")));
 ok("the answer is still never shown, and judging is Jeopardy's own (jeopJudge untouched by money)",!/jeopJudge|_jpAnsOk/.test(code)&&!/It was|The answer (is|was)/.test(blk));
-ok("Off = main byte for byte: every screen, write, word said and sound of a scripted afternoon hashes to main's snapshot",offSession(src)===OFF_SNAP);
+ok("Off = the snapshot: every screen, write, word said and sound of a scripted afternoon hashes to the merged tree's snapshot",offSession(src)===OFF_SNAP);
+{ const tr=offSession(src,true), sha=s=>crypto.createHash("sha256").update(s).digest("hex");
+  ok("…and = main byte for byte but for ONE logging field: the round's gameLog push carries why:\"free\" once; without it the trace hashes to main's snapshot",
+    (tr.match(/"why":"free"/g)||[]).length===1&&sha(tr.replace(',"why":"free"',""))===OFF_MAIN); }
 
 // ── money games ──
 const MON=()=>({settings:{gameRules:{jeop:{mode:"money"}}}});   // a fresh settings object per world (match_best must not leak between games)
