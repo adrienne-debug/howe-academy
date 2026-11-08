@@ -98480,6 +98480,40 @@ function gwCheckTsMs(ts){
   if(t>now.getTime()+864e5) t=new Date(now.getFullYear()-1,mo,d,h,mi).getTime();
   return t;
 }
+// REGENNOPAST_START — a Regenerate never adds a NEW card to a day before today (her rule 2026-11-07: "Past days first").
+// Live (a family copy's week 5), Regenerate Thu 11/5 11:47 AM: generateWeek lays EVERY day of the week, past ones too, and gwCommit
+// pairs each past-day card with the one already there. A subject made after those days (two daily Spelling Practice /
+// Fact Review subjects made Monday evening) and a retrieval Drill + Match switched on mid-week (RETRFAM 11/3) had nothing
+// there to pair with, so they landed as 9 open "missed" cards: 6 on Monday, 2 Tuesday, 1 Wednesday. Day-bound cards
+// (subjNoCarry: dailies, retrieval, family time, notebooks, classes) are never swept off their day, so they stuck.
+// Rule: on a day of this week before today, a generated day-bound card that is not checked / claimed / consumed and has no
+// card for the same kid + subject (family time, retrieval kind) on that day in the week as it stood is left off. A card
+// that was already there keeps exactly what it had (the match + keep passes above are unchanged). Carried work (lessons)
+// is left to the cascade, which moves it to today or later in order, as before. Only when today is a day of this week,
+// so the Sunday catch-up and a coming week's build are untouched. No write of its own: gwCommit's save writes the week.
+// Test: test_regen_no_past.js.
+function gwNoPastNew(tasks,oldTasks,c){
+  const order=["monday","tuesday","wednesday","thursday","friday","saturday"];
+  const now=c.now||new Date(); const mid=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+  const at=dn=>{ const s=(c.dates||{})[dn]; if(!s) return NaN; const x=new Date(s+", "+now.getFullYear()); x.setHours(0,0,0,0); return x.getTime(); };
+  const todayDn=order.find(dn=>at(dn)===mid); if(!todayDn) return [];
+  const past=new Set(order.slice(0,order.indexOf(todayDn)).filter(dn=>at(dn)<mid));
+  if(!past.size) return [];
+  const kindOf=t=>t.famBlock?"fam:"+t.famBlock
+    :(t.subjectKey==="retrieval"||/_retr_/.test(t.id||""))?"retr:"+(t.retrieval||(/_retr_([a-z0-9]+)_/.exec(t.id||"")||[])[1]||"")
+    :"s:"+(t.subjectKey||t.title||"");
+  const had=new Set(); (oldTasks||[]).forEach(t=>{ if(t&&past.has(t.day)) had.add((t.who||"")+"|"+t.day+"|"+kindOf(t)); });
+  const gone=[];
+  for(let i=tasks.length-1;i>=0;i--){
+    const t=tasks[i]; if(!t||!past.has(t.day)||String(t.id||"").endsWith("_c")) continue;
+    if((c.checked||{})[t.id]||(c.claimed||{})[t.id]||(c.consumed&&c.consumed(t.id))) continue;
+    if(!(c.noCarry&&c.noCarry(t))) continue;
+    if(had.has((t.who||"")+"|"+t.day+"|"+kindOf(t))) continue;
+    gone.push(t); tasks.splice(i,1);
+  }
+  return gone.reverse();
+}
+// REGENNOPAST_END
 function gwCommit(){
   if(!gwResult) return;
   // Build a fake file-load event to reuse loadJson's write logic
@@ -98690,6 +98724,8 @@ function gwCommit(){
       });
     })();
     // GWC_MATCH_END
+    try{ const _np=gwNoPastNew(d.tasks,weekData.tasks||[],{dates:d.dates||DAY_DT,checked:snapChecked,claimed:(typeof claimed!=="undefined"&&claimed)||{},noCarry:subjNoCarry,consumed:id=>_gwConsumedCard(id,d&&d.week)});   // REGENNOPAST
+      if(_np.length) dbg("📅 past days (regenerate): left off "+_np.length+" new card(s) — "+_np.map(t=>t.who+" "+t.day.slice(0,3)+" "+(t.title||t.subjectKey||"")).join(", ")); }catch(eNP){ try{ dbg("past-day guard skip: "+eNP); }catch(e2){} }
     const snapSl=ld(activeWK+"_sl")||slState||{};
     // Re-attach carry-overs (rebaselined subjects sit out — the rebuild absorbed them)
     const newIds=new Set(d.tasks.map(t=>t.id));

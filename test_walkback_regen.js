@@ -30,7 +30,7 @@ const GWC = slice("gwCommit");
 const CASCADE = ["toMin", "fromMin", "_parseCheckTs", "_dismissed", "_normOrderArr", "taskDevice", "taskSubject", "taskTier", "capFor", "capForDisplay",
   "catchupDayCap", "isCatchupCapped", "subjNoCarry", "applyStickyOrder", "packDay", "packAround", "momClosingSlot", "cascadeIntraWeek", "runCascade"].map(slice).join("\n")
   + "\n" + ["_normTitle", "_lessonPart", "_sameLesson", "_histOwnsCard"].map(sliceConst).join("\n") + "\n";
-const CODE = GWC + "\n" + slice("gwCheckTsMs") + "\n" + slice("ceWalkApply") + "\n" + slice("_walkDoneKey") + "\n" + slice("baseId") + "\n" + CASCADE;
+const CODE = GWC + "\n" + slice("gwCheckTsMs") + "\n" + slice("gwNoPastNew") + "\n" + slice("ceWalkApply") + "\n" + slice("_walkDoneKey") + "\n" + slice("baseId") + "\n" + CASCADE;
 // the control: the same code with the fix sliced out
 const CODE_OLD = CODE.replace(/ *\/\/ WBREGEN_START[\s\S]*?\/\/ WBREGEN_END\n/, "");
 
