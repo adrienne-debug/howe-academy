@@ -48357,6 +48357,48 @@ function renderUnits(el){
 }
 function openUnit(id){ unitOpenId=id; const el=document.getElementById("content"); if(el) renderUnits(el); }
 function closeUnit(){ unitOpenId=null; const el=document.getElementById("content"); if(el) renderUnits(el); }
+// UNITDEL_START — 🗑 Delete unit, Mom-only, for a unit made in the ✚ Builder (her ask 2026-11-07: "need a delet button for the
+//   the units that we make she accidently added a unit 3 times" — one Builder Save tapped three times in 3 s made <title>, _2, _3).
+//   · Only a Builder unit (it carries author, never starter) shows the button: a starter or a unit the code carries is never deleted.
+//   · It deletes only when nothing uses the unit: no kid enrolled, no kid's work saved in it (kidStage, activity claims / log), and
+//     nothing on the schedule pointing at it (psPointers: a family item's line u / week-by-week track.unit, a kid's subject .unit).
+//     Otherwise one plain line says why, and nothing is written.
+//   · Two taps (no confirm() — dead in kiosk browsers): the first arms "Tap again to delete <title>" for 6 s, the second deletes.
+//   · ONE targeted remove of unitStudies/<id> behind the live check (db && not ?dryrun=1); the local copy goes and the page goes back
+//     to the units list with a toast. No kid's name in code.
+let udelArmed=null;   // the unit id armed for delete; clears itself after 6 s
+function udelLive(){ return !!(typeof db!=="undefined"&&db)&&!((typeof _dryRun==="function")&&_dryRun()); }
+function udelCap(s){ return (typeof cap==="function")?cap(s):String(s||""); }
+function udelIsBuilt(u){ return !!(u&&u.id&&u.author&&!u.starter); }
+// every reason the unit must stay, in plain words (empty = it can go)
+function udelBlockers(u){
+  const out=[]; if(!u) return out; const en=u.enrolled||{};
+  Object.keys(en).filter(k=>en[k]).forEach(k=>out.push(udelCap(k)+" is enrolled in this unit."));
+  const work=[]; ["kidStage","activityClaims","activityLog"].forEach(f=>Object.keys(u[f]||{}).forEach(k=>{ const v=u[f][k]; if(v&&(typeof v!=="object"||Object.keys(v).length)&&!en[k]&&work.indexOf(k)<0) work.push(k); }));
+  work.forEach(k=>out.push(udelCap(k)+" has work saved in this unit."));
+  ((typeof psPointers==="function")?psPointers(u.id):[]).forEach(p=>out.push(p.kind==="kid"?(udelCap(p.kid)+"’s "+p.name+" on the schedule uses this unit."):("“"+p.name+"” in "+p.block+" uses this unit.")));
+  return out;
+}
+function udelHtml(u,esc){
+  if(!momHere()||!udelIsBuilt(u)) return "";
+  const B=udelBlockers(u), id=String(u.id).replace(/\\/g,"\\\\").replace(/'/g,"\\'"), armed=udelArmed===u.id;
+  let h='<div data-udel="'+esc(u.id)+'" style="margin-top:12px;padding-top:11px;border-top:1px solid var(--border)">';
+  if(B.length) h+='<div style="font-size:11.5px;color:var(--muted);line-height:1.45">\u{1F5D1} '+esc(B[0])+(B.length>1?' (+'+(B.length-1)+' more)':'')+' A unit can be deleted only when nothing uses it.</div>';
+  else h+='<button onclick="unitDelete(\''+esc(id)+'\')" style="padding:7px 14px;border-radius:10px;border:1.5px solid #fca5a5;background:'+(armed?'#dc2626;color:#fff':'#fff;color:#b91c1c')+';font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(armed?'\u{1F5D1} Tap again to delete '+esc(u.title||u.id):'\u{1F5D1} Delete unit')+'</button>';
+  return h+'</div>';
+}
+function udelRe(){ const el=(typeof document!=="undefined"&&document.getElementById)?document.getElementById("content"):null; if(el&&typeof renderUnits==="function") renderUnits(el); }
+function unitDelete(id){
+  if(!momHere()) return false; const us=(typeof unitStudies!=="undefined"&&unitStudies)||{}; const u=us[id]; if(!udelIsBuilt(u)) return false;
+  if(udelBlockers(u).length){ udelArmed=null; udelRe(); return false; }
+  if(udelArmed!==id){ udelArmed=id; setTimeout(()=>{ if(udelArmed===id){ udelArmed=null; udelRe(); } },6000); udelRe(); return false; }
+  udelArmed=null; const live=udelLive();
+  if(live) db.ref("unitStudies/"+id).remove();   // ONE targeted remove — never a set of unitStudies
+  delete us[id]; if(unitOpenId===id) unitOpenId=null;
+  if(typeof gwShowToast==="function") gwShowToast("\u{1F5D1} "+String(u.title||id)+" deleted"+(live?"":" (dry run — nothing saved)"));
+  udelRe(); return true;
+}
+// UNITDEL_END
 function renderUnitDetail(u){
   const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
   const roster=(typeof ROSTER!=="undefined")?ROSTER:["lincoln","ellis","lucy","julian"];
@@ -48387,6 +48429,7 @@ function renderUnitDetail(u){
     h+=_unitPicsBtnHtml(u);   // UNIT_PICS: 🖼 Find pictures (Wikipedia, in this browser)
     if(typeof laIrrHtml==="function") h+=laIrrHtml(u,esc);   // LAIRR: ＋ Add Irregulars (Language Arts unit only; units step 9, 2026-10-26)
     if(typeof laGrowHtml==="function") h+=laGrowHtml(u,esc);   // LAGROW: ＋ Grow Language Arts (Language Arts unit only, 2026-11-02)
+    if(typeof udelHtml==="function") h+=udelHtml(u,esc);   // UNITDEL: 🗑 Delete unit (a Builder unit nothing uses, two taps)
     h+='</div>';
   }
   const enrolledKids=roster.filter(k=>(u.enrolled||{})[k]);
