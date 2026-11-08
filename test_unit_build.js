@@ -18,7 +18,7 @@ const ok = (n, c, x) => { if (c) { pass++; console.log("  ok  - " + n); } else {
 const J = x => JSON.stringify(x);
 function world(o) {
   o = o || {}; const writes = [], tx = [];
-  const ctx = { console, JSON, Object, Array, String, Number, Math, Set, Map, RegExp, Date, parseInt, isNaN, isFinite, WeakMap, Promise, setTimeout,
+  const ctx = { console, JSON, Object, Array, String, Number, Math, Set, Map, RegExp, Date, parseInt, isNaN, isFinite, WeakMap, Promise, setTimeout, clearTimeout,
     unitStudies: o.units || {}, ROSTER: ["taylor", "makenzie", "andrew", "caleb"], momHere: () => o.mom !== false, _dryRun: () => !!o.dry,
     db: { ref: p => ({ set: v => writes.push([p, v]), update: v => writes.push([p, v]), transaction: f => { const cur = o.exists ? { id: "x" } : null; const r = f(cur); tx.push([p, r]); return { then: cb => { cb({ committed: r !== undefined }); return { catch: () => {} }; } }; } }) },
     window: { HA_FAMILY: { familyId: "dewalt", familyName: "DeWalt Academy" } }, HA_LS: { getItem: () => "Sara", setItem: () => {} }, cap: s => s ? s[0].toUpperCase() + s.slice(1) : s,
@@ -120,7 +120,7 @@ console.log("── day by day is the first screen ──");
     {
       ok("renderUnits opens the Builder while it is open (guarded), before the tabs", /if\(typeof ubOpenHTML==="function"\)\{ const _ub=ubOpenHTML\(\); if\(_ub\)\{ con\.innerHTML=_fr\+_ub; return; \} \}/.test(fn("renderUnits")));
       ok("the library's ✚ Build a unit button is the UNITSTAB hook (ubOpen)", /ubOpen\(\)/.test(cut("// UNITSTAB_START", "// UNITSTAB_END")));
-      ok("no kid's name in the block; no shuffle emoji in index.html; every write sits behind the live check", !/lincoln|ellis|lucy|julian/i.test(UB.replace(/\/\/.*$/gm, "")) && src.indexOf("🔀") < 0 && (UB.match(/db\.ref\(/g) || []).length === 1 && /if\(ubLive\(\)\)\{ db\.ref\("unitStudies\/"\+u\.id\)\.transaction/.test(UB));
+      ok("no kid's name in the block; no shuffle emoji in index.html; every write sits behind the live check", !/lincoln|ellis|lucy|julian/i.test(UB.replace(/\/\/.*$/gm, "")) && src.indexOf("🔀") < 0 && (UB.match(/db\.ref\(/g) || []).length === 1 && /if\(ubLive\(\)\)\{[\s\S]{0,600}?db\.ref\("unitStudies\/"\+u\.id\)\.transaction[\s\S]{0,900}?\n  else done\(\);/.test(UB));
       ok("phone width: the page is max-width 560 with wrapping rows", /max-width:560px/.test(c.ubPageHTML ? "max-width:560px" : "") && /flex-wrap:wrap/.test(UB));
     }
     console.log("\n" + pass + " passed, " + fail + " failed");
