@@ -2808,6 +2808,7 @@ let pendingId=null;
 let archive={};
 let sessionDone={};        // {kid: {planKey: ts}} — sessions whose completion has been celebrated (fire-once, cross-device)
 let trophies={};           // {kid: {trophyId: {type,key,name,ts,points}}} — permanent trophy case (subjects/sessions finished)
+let trophiesLoaded=false;  // 🏴‍☠️ TCHEST: the trophies listener has delivered once — never mint a treasure flag against the empty boot map
 let pointClaims={};         // {kid: {WK: {day: {status:claimed|cashed, earned, claimedTs, cashedTs, note}}}} — end-of-day points economy
 let pointClaimsLoaded=false; // guards forfeitSweep: a fresh boot renders before the pointClaims
                              // listener delivers, and a sweep against the empty map re-forfeits
@@ -4218,7 +4219,7 @@ function initFb() {
       try{ if(typeof reLoaded==="function") reLoaded("calendar"); }catch(e){}   // 🧠 REVIEWENGINE: school days need the calendar
     });
     db.ref("session_done").on("value",s=>{ sessionDone=s.val()||{}; });
-    db.ref("trophies").on("value",s=>{ trophies=s.val()||{}; });
+    db.ref("trophies").on("value",s=>{ trophies=s.val()||{}; trophiesLoaded=true; });   // 🏴‍☠️ TCHEST: trophiesLoaded
     db.ref("pointClaims").on("value",s=>{ pointClaims=s.val()||{}; pointClaimsLoaded=true; });
     db.ref("bank").on("value",s=>{ bank=s.val()||{}; });
     db.ref("readingLog").on("value",s=>{ readingLog=s.val()||{}; });
@@ -17319,6 +17320,7 @@ function tsShelfHTML(k){
     +'<button onclick="event.stopPropagation();tsToggle(\''+k+'\')" style="border:none;background:rgba(146,64,14,0.12);color:#92400e;border-radius:9px;padding:5px 10px;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">✕ close</button></div>';
   let any=false;
   if(troph.length){ any=true; h+=sec('\u{1F3C6} Trophies',tsTroShelf(troph,k,{corner:true})); }   // her ask 2026-10-23: the Wins page's trophies and book spines, drawn for the Corner
+  { const _tch=(typeof tchShelfHtml==="function")?tchShelfHtml(k,{noHead:true}):""; if(_tch){ any=true; h+=sec('\u{1F3F4}\u200D\u2620\uFE0F Treasures',_tch); } }   // 🏴‍☠️ TCHEST: a chest per deck reached
   if(reads.length){ any=true; h+=sec('\u{1F4D6} Reading log',reads.map(function(r){ return row('\u{1F4D6}',esc(r.title)+(r.pages?' <span style="font-weight:600;color:#64748b">'+esc(r.pages)+'</span>':''),r.when); }).join('')); }
   // KCWINS (her plan-2 yes 2026-11-02): the Wins page's two kid-safe pieces the shelf lacked — where each book stands, and what's finished
   let bars='', fin=''; try{ if(typeof spGridReset==="function") spGridReset(); if(typeof paceBarsHTML==="function") bars=paceBarsHTML(k,{noName:true}); if(typeof paceWinsListHTML==="function"&&typeof paceWins==="function") fin=paceWinsListHTML(k,paceWins(k),{bare:true}); }catch(e){ bars=''; fin=''; }
@@ -28530,7 +28532,7 @@ function scpCardHtml(r){
   const w7=r.right.w7, m7=r.min.w7, col=scpKidCol(r.kid);
   let h='<div class="scp-card" style="background:#fff;border:1.5px solid var(--border);border-radius:14px;padding:12px 14px;margin:10px 12px">';
   h+='<div style="display:flex;align-items:center;gap:8px"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:'+col+'"></span><span style="font-weight:800;font-size:15px">'+scpE(scpKidName(r.kid))+'</span><span style="font-size:11px;color:var(--muted)">last 7 days · arrows vs the 7 before, then the 4 weeks before</span></div>';
-  if(!r.any){ h+='<div style="font-size:13px;color:var(--muted);padding:10px 0 4px">Nothing logged yet — the card fills in after the first drill, study sitting, game or checked card.</div>'; if(typeof mldDialHtml==="function"){ try{ h+=mldDialHtml(r.kid); }catch(e){} } h+='</div>'; return h; }   // 🎚 MLDIAL
+  if(!r.any){ h+='<div style="font-size:13px;color:var(--muted);padding:10px 0 4px">Nothing logged yet — the card fills in after the first drill, study sitting, game or checked card.</div>'; if(typeof mldDialHtml==="function"){ try{ h+=mldDialHtml(r.kid); }catch(e){} } h+=((typeof tchScoresHtml==="function")?tchScoresHtml(r.kid):'')+'</div>'; return h; }   // 🎚 MLDIAL · 🏴‍☠️ TCHEST
   h+='<div style="display:flex;align-items:center;gap:12px;margin-top:8px"><div style="font-family:\'Fraunces\',serif;font-size:40px;font-weight:800;line-height:1;color:'+(typeof r.headline==="number"?'#0f172a':'#94a3b8')+'">'+scpN(r.headline)+'</div>'+
     '<div><div style="font-weight:800;font-size:13px">Where things are at</div><div style="font-size:11.5px;color:var(--muted)">'+scpE(r.formula)+'</div></div></div>';
   h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">';
@@ -28542,6 +28544,7 @@ function scpCardHtml(r){
   if(r.load) h+='<div style="margin-top:10px;font-size:13px"><span style="display:inline-block;padding:3px 10px;border-radius:999px;font-weight:800;color:#fff;background:'+scpLoadCol(r.load.word)+'">⚖️ '+r.load.word+'</span> <span style="color:#334155">'+(m7.any?m7.perDay:0)+' min a school day of '+r.load.budget+' ('+r.load.ratio+'%)'+(m7.any?' · drill '+m7.drill+' · study '+m7.study+' · games '+m7.games:'')+'</span></div>';
   else h+='<div style="margin-top:10px;font-size:12.5px;color:var(--muted)">⚖️ Load: no budget set yet'+(m7.any?' · drill '+m7.drill+' · study '+m7.study+' · games '+m7.games+' min this week':'')+'</div>';
   if(typeof mldDialHtml==="function"){ try{ h+=mldDialHtml(r.kid); }catch(e){} }   // 🎚 MLDIAL: the dial, under the meter
+  if(typeof tchScoresHtml==="function") h+=tchScoresHtml(r.kid);   // 🏴‍☠️ TCHEST: "<deck> treasure reached <date>", read-only
   h+='<details style="margin-top:8px;font-size:11.5px;color:#64748b"><summary style="cursor:pointer;font-weight:700">How these are counted</summary><div style="padding:6px 0 2px;line-height:1.5">'+
     'Right = right ÷ graded: drills + study sittings (one grade per card a day, the worse one) + games’ first taps at half weight.<br>'+
     'Ladder = the average rung of the cards in play: learning 0 · every other day 20 · weekly 40 · bi-weekly 60 · monthly 80 · graduated 100. Parked cards stay out.<br>'+
@@ -29462,7 +29465,151 @@ function mintTrophy(kid,trophyId,data){
   trophies[kid][trophyId]=data;
   if(db) db.ref("trophies/"+kid+"/"+trophyId).set(data);
 }
-function kidTrophies(kid){ return Object.values((trophies&&trophies[kid])||{}).sort((a,b)=>(b.ts||"").localeCompare(a.ts||"")); }
+function kidTrophies(kid){ return Object.values((trophies&&trophies[kid])||{}).filter(t=>!(t&&t.type==="treasure")).sort((a,b)=>(b.ts||"").localeCompare(a.ts||"")); }   // 🏴‍☠️ TCHEST: a treasure chest draws in its own row, never as a cup
+// TCHEST_START — 🏴‍☠️ Treasure reached (her ask 2026-11-08, from a family whose kids are "ecstatic" about the 🗺 Treasure map's
+// ship reaching the treasure: something must happen when it gets there, "and also something in their trophies … that isn't like
+// the other categories (books, trophies, ribbons etc). I'd love at the end of the year their shelf really shows how awesome the kid
+// did visually with all the areas of their school").
+//   · REACHED = every on-ladder card of the deck graduated, counted by mastDeckMastery itself (the map's own on-ladder rule: not
+//     introduction, not parked, not never-drill) over the deck's cards (subject, "Other" when blank — the map's grouping).
+//   · THE ONE WRITE: trophies/<kid>/treasure_<deckKey> = {type:"treasure",key:<deck>,name:<deck>,emoji,n,date,ts} through mintTrophy,
+//     the first time the kid's map is drawn with the deck reached (the Study start card or the Nice work! card) — so a deck that was
+//     already reached before this shipped gets its flag the first time the kid opens that map, one deck at a time, never a bulk
+//     write. Only when the trophies listener has delivered (trophiesLoaded — never mint against an empty boot map), never in dry
+//     run, never with Mom mode on (her look at a kid's map must not use up the kid's moment), never on the class site edition.
+//   · THE MOMENT: the device that mints plays a ONE-TIME arrival card on that map — the chest's lid opens, confetti, "⛵ <deck> —
+//     you learned all N!" — for that card only (this kid + session + phase, in memory); starting the sitting or tapping 💰 Yay! ends
+//     it. The flag makes it once per deck per kid across devices. Dry run plays it once per page life and writes nothing.
+//   · From then on the map's last stop is the OPEN chest 💰 (reached now, or flagged before — a card added later can't close it).
+//   · THE SHELF PIECE, a kind of its own: a wooden treasure chest (CSS, no art files) with gold bands, the deck's emoji in a gold
+//     medallion on the lid and the deck's name on a parchment tag, standing on a sea-blue wave board in its own row, 🏴‍☠️ Treasures —
+//     on the Wins page's Trophy Case and the kid's Trophy Shelf in Kids' Corner. Not a cup (metal statue), not a rosette, not a
+//     spine: one chest per area of school, oldest first, so a year of them reads as every deck the kid finished. Tap = the date.
+//     kidTrophies leaves treasure records out, so a chest never draws as a stray cup in the trophy rows.
+//   · Mom's 📊 Scores: one line per reached deck on that kid's card ("🏴‍☠️ <deck> treasure reached Nov 8"). Read-only.
+//   · No points, no Stars, no bankDirect, no sounds — recognition, not currency (the games contract). No kid or family names.
+const tchShow={};   // kid|deck → "<sid>|<phase>": the map card this device is playing the arrival on (memory only)
+const tchSeen={};   // kid|deck → true: the arrival already played on this device (the dry-run guard; a flag covers the rest)
+function _tchEsc(s){ return (typeof esc==="function")?esc(s):String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function tchDeckKey(deck){ return String(deck||"").toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"")||"deck"; }
+function tchId(deck){ return "treasure_"+tchDeckKey(deck); }
+// PURE: is every on-ladder card of this deck graduated? (mastDeckMastery's counting; a deck with no on-ladder card is not reached)
+function tchReachedDeck(items,deck){
+  if(!Array.isArray(items)) items=Object.values(items||{});
+  const mine=items.filter(i=>i&&(i.subject||"Other")===deck);
+  const m=mastDeckMastery(mine,"graduated");
+  return {reached:m.total>0&&m.mastered===m.total,n:m.total};
+}
+// PURE: the lid's emoji — by the deck's name, else a one-deck study session's own emoji, else a gem
+const TCH_EMOJI=[[/german|spanish|french|latin|language|deutsch/i,"\u{1F5E3}\uFE0F"],[/tree|plant|leaf|forest|wildlife|soil|aquatic|envir|bird|animal/i,"\u{1F33F}"],
+  [/science|bio|chem|physic|anatomy|body/i,"\u{1F52C}"],[/geograph|state|capital|countr|map|continent/i,"\u{1F30D}"],[/history|president|timeline/i,"\u{1F3DB}\uFE0F"],
+  [/bible|verse|catechism|scripture/i,"\u{1F4DC}"],[/music|piano/i,"\u{1F3B5}"],[/\bart\b|artist|paint/i,"\u{1F3A8}"],[/vocab|grammar|root|definition/i,"\u{1F4DD}"],
+  [/spell|phonogram|phonics|word|sight/i,"\u{1F524}"],[/read|book|poem|poetry/i,"\u{1F4D6}"],[/math|fact|multipl|divis|fraction|\badd|subtract|number|count/i,"\u2797"]];   // first match wins: subjects first, math ("… Facts") last
+function tchDeckEmoji(deck,sessions){
+  const d=String(deck||"");
+  for(const [re,e] of TCH_EMOJI){ if(re.test(d)) return e; }
+  const s=(sessions||[]).find(x=>x&&x.kind==="deck"&&Array.isArray(x.decks)&&x.decks.length===1&&x.decks[0]===deck&&x.emoji);
+  return s?String(s.emoji):"\u{1F48E}";
+}
+function _tchIso(){ const n=new Date(); return n.getFullYear()+"-"+String(n.getMonth()+1).padStart(2,"0")+"-"+String(n.getDate()).padStart(2,"0"); }
+function tchDateLbl(iso){ const m=String(iso||"").match(/^(\d{4})-(\d{2})-(\d{2})$/); if(!m) return ""; return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m[2]-1]+" "+(+m[3]); }
+// May this device mint the flag now? (the listener has delivered, not dry run, not Mom mode, not the class site)
+function tchCanMint(){
+  try{
+    if(typeof trophiesLoaded==="undefined"||!trophiesLoaded) return false;
+    if(typeof _dryRun==="function"&&_dryRun()) return false;
+    if(typeof momHere==="function"&&momHere()) return false;
+    if(typeof envSiteOn==="function"&&envSiteOn()) return false;
+    return typeof mintTrophy==="function";
+  }catch(e){ return false; }
+}
+// Called by the map as it draws (TMAP's tmapStudyHtml, phase start/done): marks each reached/flagged row m.open, mints the flag
+// for a deck reached but not yet flagged, and hands back the decks whose arrival plays on THIS card.
+function tchMapCheck(kid,session,phase,maps,items){
+  const tok=(session&&session.sid)+"|"+phase, out=[];
+  (maps||[]).forEach(m=>{
+    const key=kid+"|"+m.deck, flagged=(typeof hasTrophy==="function")&&hasTrophy(kid,tchId(m.deck));
+    const r=tchReachedDeck(items,m.deck);
+    m.open=!!(r.reached||flagged);
+    if(tchShow[key]&&tchShow[key]!==tok) delete tchShow[key];   // that card is gone (the sitting started, or another session)
+    if(r.reached&&!flagged&&!tchSeen[key]){
+      const dry=(typeof _dryRun==="function"&&_dryRun());
+      if(tchCanMint()){
+        mintTrophy(kid,tchId(m.deck),{type:"treasure",key:m.deck,name:m.deck,emoji:tchDeckEmoji(m.deck,_tchSessions(kid)),n:r.n,date:_tchIso(),ts:(typeof nowTs==="function")?nowTs():""});
+        tchSeen[key]=true; tchShow[key]=tok;
+      } else if(dry&&!(typeof momHere==="function"&&momHere())){ tchSeen[key]=true; tchShow[key]=tok; }   // dry run: the moment once, nothing written
+    }
+    if(tchShow[key]===tok) out.push({deck:m.deck,n:r.n});
+  });
+  return out;
+}
+function _tchSessions(kid){ try{ return (typeof mstSessions==="function"&&mstSessions(kid))||[]; }catch(e){ return []; } }
+function tchDismiss(btn,kid,deck){ delete tchShow[kid+"|"+deck]; try{ const c=btn&&btn.closest&&btn.closest(".tch-arrive"); if(c) c.remove(); }catch(e){} }
+function tchTap(el){ try{ el.classList.toggle("tch-on"); }catch(e){} }
+const TCH_CSS='<style>.tch-box{position:relative;width:58px;height:46px;margin:0 auto}'+
+  '.tch-lid{position:absolute;left:0;right:0;top:0;height:21px;border-radius:29px 29px 3px 3px/18px 18px 3px 3px;background:linear-gradient(180deg,#b45309,#78350f);border:2px solid #451a03;box-sizing:border-box;transform-origin:4px 19px}'+
+  '.tch-body{position:absolute;left:0;right:0;bottom:0;height:27px;border-radius:2px 2px 6px 6px;background:repeating-linear-gradient(180deg,#92400e 0 8px,#78350f 8px 9px);border:2px solid #451a03;box-sizing:border-box}'+
+  '.tch-band{position:absolute;top:0;bottom:0;width:5px;background:linear-gradient(90deg,#fde68a,#f59e0b);border-left:1px solid #92400e;border-right:1px solid #92400e}'+
+  '.tch-lock{position:absolute;left:50%;top:3px;width:10px;height:11px;margin-left:-5px;border-radius:2px;background:linear-gradient(180deg,#fde68a,#d97706);border:1px solid #92400e}'+
+  '.tch-seam{position:absolute;left:3px;right:3px;top:19px;height:3px;border-radius:2px;background:#fde047;box-shadow:0 0 7px 2px #facc15}'+
+  '.tch-emo{position:absolute;left:50%;top:-9px;width:24px;height:24px;margin-left:-12px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fffbeb,#fbbf24 60%,#d97706);border:2px solid #b45309;display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1;z-index:2}'+
+  '.tch-shelf{margin-top:10px;border-radius:12px;background:linear-gradient(180deg,#f0f9ff,#e0f2fe);border:1.5px solid #7dd3fc;overflow:hidden}'+
+  '.tch-hd{font-size:11px;font-weight:800;color:#0e7490;text-transform:uppercase;letter-spacing:.4px;padding:8px 10px 2px}'+
+  '.tch-row{display:flex;flex-wrap:wrap;justify-content:center;align-items:flex-end;gap:14px 8px;padding:14px 6px 4px}'+
+  '.tch{width:76px;display:flex;flex-direction:column;align-items:center;cursor:pointer;-webkit-tap-highlight-color:transparent}'+
+  '.tch.tch-on .tch-box{animation:tchHop .45s ease-out 1}'+
+  '.tch-tag{margin-top:5px;max-width:76px;padding:1px 6px;border-radius:3px;background:#fef3c7;border:1px solid #d97706;font-size:10px;font-weight:800;color:#78350f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:\'DM Sans\',sans-serif}'+
+  '.tch-dt{display:none;font-size:9.5px;font-weight:700;color:#0e7490;margin-top:2px;white-space:nowrap}.tch.tch-on .tch-dt{display:block}'+
+  '.tch-sea{height:12px;background:radial-gradient(circle at 8px -2px,transparent 7px,#38bdf8 8px) 0 0/16px 12px repeat-x,linear-gradient(180deg,#38bdf8,#0369a1)}'+
+  '.tch-arrive{position:relative;overflow:hidden;margin-top:10px;padding:16px 12px 12px;border-radius:16px;background:linear-gradient(135deg,#fffbeb,#fde68a);border:2px solid #f59e0b;text-align:center;font-family:\'DM Sans\',sans-serif}'+
+  '.tch-arrive .tch-box{transform:scale(1.5);margin:14px auto 18px}.tch-arrive .tch-lid{animation:tchLid .8s .35s ease-out forwards}'+
+  '.tch-gold{position:absolute;left:50%;top:6px;margin-left:-16px;font-size:24px;opacity:0;animation:tchRise .9s .7s ease-out forwards;z-index:1}'+
+  '.tch-cf{position:absolute;top:-12px;width:7px;height:11px;border-radius:2px;opacity:0;animation:tchFall 2.4s ease-in 1 forwards}'+
+  '.tch-say{font-size:19px;font-weight:800;color:#92400e;line-height:1.3}'+
+  '.tch-yay{margin-top:10px;border:none;background:#f59e0b;color:#fff;border-radius:12px;padding:9px 18px;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;min-height:44px}'+
+  '@keyframes tchLid{to{transform:translateY(-6px) rotate(-28deg)}}@keyframes tchRise{0%{opacity:0;transform:translateY(14px)}100%{opacity:1;transform:translateY(-10px)}}'+
+  '@keyframes tchFall{0%{opacity:1;transform:translateY(0) rotate(0)}100%{opacity:0;transform:translateY(230px) rotate(540deg)}}@keyframes tchHop{40%{transform:translateY(-6px)}}</style>';
+function tchChestHtml(emoji,gold){
+  return '<div class="tch-box">'+(gold?'<div class="tch-gold">\u{1F4B0}✨</div>':'')+
+    '<div class="tch-body"><div class="tch-band" style="left:9px"></div><div class="tch-band" style="right:9px"></div><div class="tch-lock"></div></div>'+
+    '<div class="tch-seam"></div>'+
+    '<div class="tch-lid"><div class="tch-band" style="left:7px"></div><div class="tch-band" style="right:7px"></div><div class="tch-emo">'+_tchEsc(emoji||"\u{1F48E}")+'</div></div></div>';
+}
+// The arrival card(s) on the map — one per deck reached on this card
+function tchArriveHtml(kid,arrivals){
+  if(!arrivals||!arrivals.length) return "";
+  const cols=["#f59e0b","#ef4444","#10b981","#3b82f6","#a855f7","#ec4899","#facc15","#14b8a6"];
+  let h=TCH_CSS;
+  arrivals.forEach(a=>{
+    let cf=""; for(let k=0;k<16;k++) cf+='<span class="tch-cf" style="left:'+((k*37+11)%96+2)+'%;background:'+cols[k%cols.length]+';animation-delay:'+((k%6)*0.12).toFixed(2)+'s"></span>';
+    const jk=String(kid).replace(/\\/g,"\\\\").replace(/'/g,"\\'"), jd=String(a.deck).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+    h+='<div class="tch-arrive" role="status">'+cf+tchChestHtml(tchDeckEmoji(a.deck,_tchSessions(kid)),true)+
+      '<div class="tch-say">⛵ '+_tchEsc(a.deck)+' — you learned all '+a.n+'!</div>'+
+      '<div style="font-size:13px;font-weight:700;color:#b45309;margin-top:3px">Your ship reached the treasure. The chest is on your Trophy Shelf now!</div>'+
+      '<button class="tch-yay" onclick="event.stopPropagation();tchDismiss(this,\''+_tchEsc(jk)+'\',\''+_tchEsc(jd)+'\')">\u{1F4B0} Yay!</button></div>';
+  });
+  return h;
+}
+// A kid's reached decks, oldest first (the order they were reached)
+function kidTreasures(kid){
+  const T=(typeof trophies!=="undefined"&&trophies&&trophies[kid])||{};
+  return Object.values(T).filter(t=>t&&t.type==="treasure").sort((a,b)=>String(a.date||"").localeCompare(String(b.date||""))||String(a.name||"").localeCompare(String(b.name||"")));
+}
+// The 🏴‍☠️ Treasures row — one chest per reached deck; nothing when there are none
+function tchShelfHtml(kid,opt){
+  const list=kidTreasures(kid); if(!list.length) return "";
+  let h=TCH_CSS+'<div class="tch-shelf">'+((opt&&opt.noHead)?'':'<div class="tch-hd">\u{1F3F4}‍☠️ Treasures</div>')+'<div class="tch-row">';
+  list.forEach(t=>{ const dl=tchDateLbl(t.date);
+    h+='<div class="tch" onclick="tchTap(this)" title="'+_tchEsc(t.name)+(dl?' — '+_tchEsc(dl):'')+'">'+tchChestHtml(t.emoji)+
+      '<div class="tch-tag">'+_tchEsc(t.name)+'</div><div class="tch-dt">reached '+_tchEsc(dl||"")+'</div></div>'; });
+  return h+'</div><div class="tch-sea"></div></div>';
+}
+// Mom's 📊 Scores: one line per reached deck on the kid's card
+function tchScoresHtml(kid){
+  const list=kidTreasures(kid); if(!list.length) return "";
+  return '<div style="margin-top:8px;font-size:12.5px;color:#0e7490;font-weight:700;line-height:1.5">'+list.map(t=>'\u{1F3F4}‍☠️ '+_tchEsc(t.name)+' treasure reached '+_tchEsc(tchDateLbl(t.date))).join('<br>')+'</div>';
+}
+// TCHEST_END
 // ── TROPHY SHELF (Wins tab) — inline-SVG trophies on a wooden shelf ──────────
 // Gold cup = subject done, standing gold book = book done, ribbon medal = session done.
 // Newest trophy wears a pulsing NEW! badge for 7 days. Tap a trophy → wobble.
@@ -70881,7 +71028,9 @@ function renderPace(el){
     h+='<div style="font-size:11px;font-weight:800;color:#b45309;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:8px">🏆 '+cap(kid)+'’s Trophy Case</div>';
     // trophy shelf — SVG trophies (cup/gold book/medal) + finished reading books as real spines
     h+='<div style="margin-bottom:'+(close.length?'10px':'0')+'">'+_troShelfHTML(troph,kid);
-    if(!troph.length) h+='<div style="text-align:center;font-size:11px;color:#92400e;margin-top:6px">No trophies yet — finish a book, subject, or session to earn one!</div>';
+    const _tch=(typeof tchShelfHtml==="function")?tchShelfHtml(kid):"";   // 🏴‍☠️ TCHEST: one chest per deck whose ship reached the treasure
+    h+=_tch;
+    if(!troph.length&&!_tch) h+='<div style="text-align:center;font-size:11px;color:#92400e;margin-top:6px">No trophies yet — finish a book, subject, or session to earn one!</div>';
     h+='</div>';
     // close-to-a-badge nudges
     if(close.length){
@@ -80739,6 +80888,8 @@ function buildSortHtml(color){
 //   · "⛵ <deck> moved ahead!" on the Nice work! card: the start card remembers each deck's ship (this device, this kid + session,
 //     in memory only) and the finish compares. A deck that slipped gets no line — the map already shows where it stands.
 //   · NO writes, no db, no points, no currency, no best, no sounds. Nothing while a sitting is running (the card stays compact).
+//     (🏴‍☠️ TCHEST, 2026-11-08: when every card of a deck graduated the last stop is the open chest 💰 and a one-time arrival plays;
+//     its one write — the treasure flag, through mintTrophy — lives in the TCHEST block, called by one guarded line below.)
 //   · Two guarded lines in renderMastStudy (tmapStudyHtml on the orange card, tmapMovedHtml on the Nice work! card). No kid names.
 const TMAP_LBL={daily:"Daily",every_other_day:"Every other",every_third_day:"Every 3rd",weekly:"Weekly",bi_weekly:"2 weeks",monthly:"Monthly",learned:"Learned",graduated:"Treasure"};
 const TMAP_DEFAULT_LADDER=["every_other_day","weekly","bi_weekly","monthly","graduated"];
@@ -80795,6 +80946,7 @@ const TMAP_CSS='<style>.tmap-row{display:flex;align-items:center;gap:10px;margin
   '.tmap-stops{display:grid;position:relative}.tmap-stop{display:flex;flex-direction:column;align-items:center;min-width:0}'+
   '.tmap-dot{width:26px;height:26px;border-radius:50%;border:2px solid #e7e5e4;background:#fff;font-size:11px;font-weight:800;color:#78716c;display:flex;align-items:center;justify-content:center;font-family:\'DM Sans\',sans-serif}'+
   '.tmap-dot.tmap-has{color:#fff;border-color:transparent}.tmap-dot.tmap-chest{border-color:#f59e0b;background:#fffbeb;color:#b45309;font-size:14px}'+
+  '.tmap-dot.tmap-open{border-color:#d97706;background:#fde68a;color:#92400e;box-shadow:0 0 8px #fbbf24}'+
   '.tmap-lbl{font-size:9px;font-weight:700;color:#a8a29e;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}</style>';
 function _tmapRowHtml(m,stops){
   const n=stops.length, col=(typeof MAST_TIER_COL!=="undefined"&&MAST_TIER_COL)||{};
@@ -80804,17 +80956,19 @@ function _tmapRowHtml(m,stops){
   h+='<div class="tmap-ship" style="left:'+left+'%" aria-label="'+m.n+' cards, on the way to the treasure">⛵</div>';
   h+='<div class="tmap-stops" style="grid-template-columns:repeat('+n+',1fr)">';
   stops.forEach((t,k)=>{ const c=m.counts[k], last=k===n-1;
-    const cls='tmap-dot'+(last?' tmap-chest':(c?' tmap-has':'')), bg=(!last&&c&&col[t])?' style="background:'+col[t]+'"':'';
-    h+='<div class="tmap-stop"><div class="'+cls+'"'+bg+'>'+(last?(c?c+'\u{1F3C6}':'\u{1F3C6}'):(c||'·'))+'</div><div class="tmap-lbl">'+_tmapEsc(TMAP_LBL[t]||t)+'</div></div>'; });
+    const cls='tmap-dot'+(last?' tmap-chest'+(m.open?' tmap-open':''):(c?' tmap-has':'')), bg=(!last&&c&&col[t])?' style="background:'+col[t]+'"':'';
+    h+='<div class="tmap-stop"><div class="'+cls+'"'+bg+'>'+(last?(m.open?(c?c+'\u{1F4B0}':'\u{1F4B0}'):(c?c+'\u{1F3C6}':'\u{1F3C6}')):(c||'·'))+'</div><div class="tmap-lbl">'+_tmapEsc(TMAP_LBL[t]||t)+'</div></div>'; });
   return h+'</div></div></div>';
 }
 // The maps on the orange Study card. phase: "start" (remember each ship), "done" (draw as they stand now), anything else → nothing.
 function tmapStudyHtml(kid,session,phase){
   if(!kid||!session||(phase!=="start"&&phase!=="done")) return "";
   const r=tmapMaps(kid,session); if(!r.maps.length) return "";
+  const arr=(typeof tchMapCheck==="function")?tchMapCheck(kid,session,phase,r.maps,_tmapItems(kid)):[];   // 🏴‍☠️ TCHEST: m.open (the open chest 💰) + the one-time arrival
   if(phase==="start"){ const snap={}; r.maps.forEach(m=>{ snap[m.deck]=m.frac; }); tmapSnap[kid+"|"+session.sid]=snap; }
   let h=TMAP_CSS+'<div style="margin-top:12px;padding-top:10px;border-top:1.5px dashed #fed7aa"><div style="font-size:11px;font-weight:800;color:#c2410c;letter-spacing:.04em;text-transform:uppercase">\u{1F5FA} Treasure map</div>';
   r.maps.forEach(m=>{ h+=_tmapRowHtml(m,r.stops); });
+  if(arr.length&&typeof tchArriveHtml==="function") h+=tchArriveHtml(kid,arr);   // 🏴‍☠️ TCHEST: the chest opens, once
   return h+'</div>';
 }
 // The "moved ahead" line on the Nice work! card — only decks whose ship is further along than the start card remembered
