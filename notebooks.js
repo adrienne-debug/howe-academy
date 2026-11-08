@@ -1003,7 +1003,11 @@
     var cap = (ctx.reviewCap == null) ? JU_REVIEW_CAP : Math.max(0, Math.min(5, parseInt(ctx.reviewCap, 10) || 0));
     cur = juNumbersWeek(cur, juNumberStart(ctx.numberCursor, wk, cur.numbersFront), dayCount, ctx.juPicks);   // JU_NUMBERS_AHEAD: same list as the print, so the planner matches the pages
     var picks = juWeekPicks(wk, cur, dayCount, cap, ctx.juPicks, juLetterStart(ctx.letterCursor, wk, cur.letters.length));
-    var subjects = ["letters", "numbers", "shapes", "colors", "animals"];
+    return juPlanShape(cur, picks, wk, dayCount, ["letters", "numbers", "shapes", "colors", "animals"]);
+  }
+  // The planner's shape for a week's picks: every item a slot can take (🔁 flags) + the day-by-day slots. Shared by
+  // the dinosaur Pre-K planner and the construction notebook's (CBPLAN).
+  function juPlanShape(cur, picks, wk, dayCount, subjects) {
     var out = { weekNum: wk, dayCount: dayCount, subjects: {} };
     subjects.forEach(function (sub) {
       var list = cur[sub] || [];
@@ -2036,8 +2040,9 @@
       cur.shapes = _rot3;
     }
     var numStart = juNumberStart(ctx.numberCursor, wkInt || 1, cur.numbersFront);   // JU_NUMBERS_AHEAD: a new number a day, on to 100
-    cur = juNumbersWeek(cur, numStart, days.length);
+    cur = juNumbersWeek(cur, numStart, days.length, ctx.juPicks);   // JU_NUMPICK (🚜 CBPLAN): a number Mom picks on the planner joins the list
     var picks = juWeekPicks(relWk, cur, days.length, reviewCap, ctx.juPicks, letterStart);
+    if (ctx.planOnly) { var _pl = juPlanShape(cur, picks, wkInt || 1, days.length, CB_PLAN_SUBS); _pl.days = days.slice(); return { plan: _pl }; }   // 🚜 CBPLAN: the planner reads these exact picks
 
     var parts = [juHtmlHead(weekNum, "Caleb's Notebook", CB_CSS, CB_FONTS)];
     parts.push(cbPageCover(weekNum, weekDates, cur, picks));
@@ -2060,6 +2065,13 @@
     if (wkInt > 0 && picks._numbers && numStart != null) out.numberCursor = { week: wkInt, from: numStart, adv: picks._numbers.adv };   // JU_NUMBERS_AHEAD
     return out;
   }
+  // CBPLAN_START — 🚜 the construction notebook's "This week's plan" card (11/3 note: it had none; her yes 2026-11-08).
+  // The app's Mom card (index.html CBPLAN) asks the kid's own builder what it would pick, from the kid's own ctx (mastery
+  // decks, letter/number cursors, Mom's picks): planOnly stops generateCaleb right after its picks, so the card and the
+  // printed pages can never disagree. Only the four things its daily page prints; plan.days = the days that get a page.
+  var CB_PLAN_SUBS = ["letters", "numbers", "shapes", "colors"];
+  function cbPlanPreview(ctx) { var r = generateCaleb(Object.assign({}, ctx || {}, { planOnly: true })); return (r && r.plan) || null; }
+  // CBPLAN_END
   // CALEB_END
 
   /* ============================================================================
@@ -5403,7 +5415,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     ellis: { label: "Ellis (4th 🤖)", build: generateEllis },
     lucy: { label: "Lucy (1st 🦄)", build: generateLucy },
     julian: { label: "Julian (Pre-K 🦕)", build: generateJulian },
-    caleb: { label: "Caleb (K 🚜)", build: generateCaleb }   // DeWalt family (CALEB block); the app lists only kids on the family's roster
+    caleb: { label: "Caleb (K 🚜)", build: generateCaleb, plan: cbPlanPreview }   // DeWalt family (CALEB block); the app lists only kids on the family's roster · 🚜 CBPLAN: its planner
   };
 
   // ── ½" prong/binding margin (Notebook tab toggle → notebookSettings/bindingMargin) ──
@@ -5819,6 +5831,9 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     letterStrokes: JU_LETTER_STROKES,   // HWT-style capital formation scripts — the drill Trace overlay shows them
     lowerStrokes: CB_LOWER_STROKES,     // QA_BATCH1 (10/4): lowercase scripts (Caleb's notebook) — the Trace overlay uses them for a–z
     juPlanPreview: juPlanPreview,       // Julian's week planner: engine picks + struggled-with flags
+    // 🚜 CBPLAN: a kid's own builder's planner, when its catalog entry has one (a theme set in the data builds instead → none)
+    hasPlan: function (kid) { var g = GENERATORS[kid]; return !!(g && typeof g.plan === "function"); },
+    planFor: function (kid, ctx) { if (nbThemeKey(ctx)) return null; var g = GENERATORS[kid]; return (g && typeof g.plan === "function") ? g.plan(ctx || {}) : null; },
     lincolnBuiltinQ3: function (wk, i) { return lnPick(LINCOLN_DATA.banks.conventions, wk, i); },   // the day's built-in conventions item (Mom's answer check)
     convBankPlan: lnConvBankPlan,       // Lincoln's conventions bank: same, for the Q3 slot
     quantBankPlan: lnQuantBankPlan,     // Lincoln's number-reasoning bank: same, for the Q2 math slot
