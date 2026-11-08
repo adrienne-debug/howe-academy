@@ -153,12 +153,14 @@ function referencedNames(ast, wanted, src) {
     if (parent.type === "UnaryExpression" && parent.operator === "typeof") return;   // typeof x never throws
     if (parent.type === "AssignmentExpression" && parent.left === node) return;       // a write creates the global
     // Guarded = cannot throw at runtime: inside a try block, or behind a `typeof name` test (if / ?: / &&).
-    let guarded = false;
+    // byTypeof = behind a `typeof name` test, which is the only guard that keeps a BOOT path alive: a try block swallows the throw
+    // but the rest of that boot step is skipped (initFb's catch reads "FB offline", and the class site never reaches sign-in).
+    let guarded = false, byTypeof = false;
     for (let i = ancestors.length - 2; i >= 0; i--) {
       const a = ancestors[i], child = ancestors[i + 1];
       if (a.type === "TryStatement" && a.block === child) { guarded = true; break; }
-      if ((a.type === "IfStatement" || a.type === "ConditionalExpression") && child !== a.test && testHasTypeof(a.test, node.name)) { guarded = true; break; }
-      if (a.type === "LogicalExpression" && a.right === child && testHasTypeof(a.left, node.name)) { guarded = true; break; }
+      if ((a.type === "IfStatement" || a.type === "ConditionalExpression") && child !== a.test && testHasTypeof(a.test, node.name)) { guarded = true; byTypeof = true; break; }
+      if (a.type === "LogicalExpression" && a.right === child && testHasTypeof(a.left, node.name)) { guarded = true; byTypeof = true; break; }
       if (/Function/.test(a.type)) break;
     }
     let fn = null;
@@ -168,7 +170,7 @@ function referencedNames(ast, wanted, src) {
       fnName = (fn.id && fn.id.name) || null;
       if (!fnName) { const p = ancestors[ancestors.indexOf(fn) - 1]; fnName = (p && p.type === "VariableDeclarator" && p.id.name) || (p && p.type === "Property" && p.key && p.key.name) || (p && p.type === "AssignmentExpression" && p.left.type === "MemberExpression" && p.left.property && p.left.property.name) || "(anonymous)"; }
     }
-    refs.push({ name: node.name, line: node.loc.start.line, fn: fnName, topLevel: !fn, guarded });
+    refs.push({ name: node.name, line: node.loc.start.line, fn: fnName, topLevel: !fn, guarded, byTypeof });
   });
   return refs;
 }
@@ -234,13 +236,27 @@ async function main() {
     active = active.filter(n => !culprits.has(n));
   }
   // Map dangling-in-function lines back to source lines and to the block that declared the name.
-  const danglingReport = danglingInFn.map(r => ({ name: r.name, declaredIn: (origDecl.get(r.name) || []).map(blockOfLine).find(Boolean) || "?", usedBy: r.fn, srcLine: strip.lineMap[r.line - 1] + 1, guarded: r.guarded }));
+  const danglingReport = danglingInFn.map(r => ({ name: r.name, declaredIn: (origDecl.get(r.name) || []).map(blockOfLine).find(Boolean) || "?", usedBy: r.fn, srcLine: strip.lineMap[r.line - 1] + 1, guarded: r.guarded, byTypeof: r.byTypeof }));
   const byName = {}, guardedOnly = {};
   for (const d of danglingReport) {
     if (d.guarded) { (guardedOnly[d.name] = guardedOnly[d.name] || { declaredIn: d.declaredIn, callers: new Set() }).callers.add(d.usedBy); continue; }
     (byName[d.name] = byName[d.name] || { declaredIn: d.declaredIn, callers: new Set() }).callers.add(d.usedBy);
   }
   for (const n of Object.keys(guardedOnly)) if (byName[n]) delete guardedOnly[n];   // a name with one bare use is listed as bare
+
+  // ── boot-path guard (2026-11-08): a BARE reference from a function that runs at every boot throws on the class site before the
+  //    sign-in card is reached (found that day: initFb → momBlocksListen, rlWindowAttach, added on the Howe side after the 10/28 build;
+  //    the built page read "Offline" and painted Howe's home). Such a call must be typeof-guarded in index.html, or its block kept;
+  //    a try block does NOT count here (initFb's try caught the throw and the site read "Offline" all the same).
+  //    Only the functions that run unconditionally at boot are checked: renderAll's tab branches never run on the class site
+  //    (envSiteRender takes the paint before the tab switch), so a bare name there is the edition lock's business, as before.
+  const BOOT_FNS = new Set(["boot", "initFb", "dayRollCheck"]);
+  const bootBare = danglingReport.filter(d => !d.byTypeof && BOOT_FNS.has(d.usedBy));
+  if (bootBare.length && !args.includes("--allow-boot-dangling")) {
+    const rows = bootBare.map(d => `  ${d.usedBy} → ${d.name}  (declared in ${d.declaredIn}, index.html line ${d.srcLine})`);
+    throw new Error("boot-path code calls into stripped blocks without a typeof guard — the class site would boot \"Offline\":\n" + rows.join("\n") +
+      "\nGuard each call in index.html (if(typeof X===\"function\") X();) or move the block to `keep` in strip_list.json. --allow-boot-dangling overrides (never for a shipped build).");
+  }
 
   let js = strip.lines.join("\n");
   if (FORCE_DRYRUN) {
