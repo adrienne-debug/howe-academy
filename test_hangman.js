@@ -53,7 +53,7 @@ function world(items,o){
     masteryData:{k:items||[],k_settings:o.settings||{}},
     db:{ref:p=>({set:v=>writes.push(["set",p,v]),update:v=>writes.push(["update",p,v]),push:v=>writes.push(["push",p,v]),remove:()=>writes.push(["remove",p])})}};
   vm.createContext(ctx);
-  vm.runInContext(CODE+"\nObject.defineProperty(this,'hangState',{get:()=>hangState,set:v=>{hangState=v;}}); Object.defineProperty(this,'_hmRandom',{get:()=>_hmRandom,set:v=>{_hmRandom=v;}}); this.HM_MIN=HM_MIN; this.HM_ROUND=HM_ROUND; this.HM_MISSES=HM_MISSES; this.HM_HINT=HM_HINT; this.HM_BEAT=HM_BEAT; this.HM_BEAT_FAIL=HM_BEAT_FAIL; this.WHICH_MIX=WHICH_MIX;",ctx);
+  vm.runInContext(CODE+"\nObject.defineProperty(this,'hangState',{get:()=>hangState,set:v=>{hangState=v;}}); Object.defineProperty(this,'_hmRandom',{get:()=>_hmRandom,set:v=>{_hmRandom=v;}}); this.HM_MIN=HM_MIN; this.HM_ROUND=HM_ROUND; this.HM_MISSES=HM_MISSES; this.HM_HINT=HM_HINT; this.HM_CLEAN=HM_CLEAN; this.HM_BEAT=HM_BEAT; this.HM_BEAT_FAIL=HM_BEAT_FAIL; this.WHICH_MIX=WHICH_MIX;",ctx);
   ctx._hmRandom=seeded(o.seed||3);
   const flush=()=>{ while(timers.length){ const x=timers.shift(); x.f(); } };
   return {c:ctx,writes,said,dings,timers,flush};
@@ -99,7 +99,7 @@ console.log("── a round: hits, misses, a solve, a fail that comes back, the 
   missN(w,2); const n=w.said.length;
   ok("after three misses the 🔊 Hear it shows; tapping it SAYS the word (never writes it)",/hangHear\(\)/.test(c.buildHangHtml("#000"))&&(c.hangHear(),w.said.length===n+1&&w.said[n]===t.word&&t.hint)&&c.buildHangHtml("#000").indexOf(">"+t.word+"<")<0);
   solve(w);
-  ok("every letter found → solved: first, the ding, the word said as the confirm, a beat",t.done&&t.first&&st.first===1&&w.dings.slice(-1)[0]==="ding"&&w.said.slice(-1)[0]===t.word&&st.lock&&/That\u2019s it!/.test(c.buildHangHtml("#000")));
+  ok("every letter found after 3 misses + Hear it → solved and FOUND (counted in words found), but not a first try (⚖️ HMCLEAN); the ding, the word said, a beat",t.done&&t.found&&!t.first&&!t.fail&&st.first===1&&w.dings.slice(-1)[0]==="ding"&&w.said.slice(-1)[0]===t.word&&st.lock&&/That\u2019s it!/.test(c.buildHangHtml("#000")));
   w.flush(); ok("after the beat: the next word",st.i===1&&!st.lock);
   t=st.turns[1]; missN(w,6);
   ok("six misses → fail: \"We'll come back to that one\", the word never written, the card queued for the end",t.fail&&t.done&&!t.first&&st.first===1&&/come back to that one/.test(c.buildHangHtml("#000"))&&c.buildHangHtml("#000").indexOf(">"+t.word+"<")<0&&st.turns.length===7&&st.turns[6].back&&st.turns[6].pid===t.pid&&w.timers[0].ms===c.HM_BEAT_FAIL);
@@ -109,12 +109,33 @@ console.log("── a round: hits, misses, a solve, a fail that comes back, the 
   solve(w); w.flush();
   ok("the round ends: 5 of 6 found (the come-back counts for nothing)",st.phase==="done"&&st.first===5&&st.of===6);
   const mb=w.writes.filter(x=>x[1]==="mastery/k_settings/match_best"), gl=w.writes.filter(x=>x[0]==="push"&&x[1]==="mastery/gameLog/k/20261103");
-  ok("writes: match_best ONE key, update, only this game's key; ONE gameLog push with game hang, every word, n = wrong letters + 1",mb.length===1&&mb[0][0]==="update"&&JSON.stringify(mb[0][2])==="{\"Roots · hang\":5}"&&gl.length===1&&gl[0][2].game==="hang"&&gl[0][2].items.length===7&&gl[0][2].items.filter(i=>i.ok).length===6&&gl[0][2].items.filter(i=>i.fail).length===1&&gl[0][2].items[0].n===4&&gl[0][2].items.filter(i=>i.back).length===1&&w.writes.length===2);
+  ok("writes: match_best ONE key, update, only this game's key; ONE gameLog push with game hang, every word, n = wrong letters + 1",mb.length===1&&mb[0][0]==="update"&&JSON.stringify(mb[0][2])==="{\"Roots · hang\":5}"&&gl.length===1&&gl[0][2].game==="hang"&&gl[0][2].items.length===7&&gl[0][2].items.filter(i=>i.ok).length===5&&!gl[0][2].items[0].ok&&!gl[0][2].items[0].fail&&gl[0][2].items.filter(i=>i.fail).length===1&&gl[0][2].items[0].n===4&&gl[0][2].items.filter(i=>i.back).length===1&&w.writes.length===2);
   ok("the finish shows the count against the kid's own best, no word written; no confetti on a round with a miss",/5 of 6 words found/.test(c.buildHangHtml("#000"))&&/new best/.test(c.buildHangHtml("#000"))&&!w.dings.some(x=>/celeb/.test(x))&&st.turns.every(x=>c.buildHangHtml("#000").indexOf(">"+x.word+"<")<0));
   c.hangStart("Roots"); const st2=c.hangState; g=0; while(st2.phase==="play"&&g++<20){ solve(w); w.flush(); }
   ok("a clean round: 6 of 6, a new best written",st2.first===6&&w.writes.filter(x=>x[1]==="mastery/k_settings/match_best").length===2);
   c.hangStart("Roots"); const st3=c.hangState; g=0; while(st3.phase==="play"&&g++<20){ solve(w); w.flush(); }
   ok("a best that is not beaten writes nothing more",w.writes.filter(x=>x[1]==="mastery/k_settings/match_best").length===2&&st3.isPB===false);
+}
+console.log("── ⚖️ HMCLEAN: first = a clean solve only (no Hear it, at most 1 wrong letter) ──");
+{ const w=world(ROOTS), c=w.c;
+  ok("hmClean (pure): 0 or 1 miss without the hint → clean; 2 misses, or any Hear it → not",c.hmClean({misses:0,hint:false})&&c.hmClean({misses:1,hint:false})&&!c.hmClean({misses:2,hint:false})&&!c.hmClean({misses:0,hint:true})&&!c.hmClean({misses:3,hint:true})&&c.HM_CLEAN===1);
+  c.hangStart("Roots"); const st=c.hangState;
+  let t=st.turns[0]; solve(w);
+  ok("no misses → found and a first try",t.found&&t.first&&st.first===1); w.flush();
+  t=st.turns[1]; missN(w,1); solve(w);
+  ok("one wrong letter → still a first try (the clean-solve allowance)",t.misses===1&&t.found&&t.first&&st.first===2); w.flush();
+  t=st.turns[2]; missN(w,2); solve(w);
+  ok("two wrong letters → found (counts in words found, \"That\u2019s it!\", no come-back) but NOT a first try",t.misses===2&&t.found&&!t.first&&!t.fail&&st.first===3&&/That\u2019s it!/.test(c.buildHangHtml("#000"))&&st.turns.length===6); w.flush();
+  t=st.turns[3]; missN(w,3); c.hangHear(); solve(w);
+  ok("Hear it used → found but NOT a first try",t.hint&&t.found&&!t.first&&st.first===4); w.flush();
+  t=st.turns[4]; c.hangHear(); solve(w);
+  ok("a Hear it tap before HM_HINT misses does nothing, so the solve stays clean",!t.hint&&t.first); w.flush();
+  t=st.turns[5]; missN(w,6);
+  ok("six misses still fail and come back once (unchanged)",t.fail&&!t.found&&!t.first&&st.turns.length===7&&st.turns[6].back); w.flush();
+  solve(w); w.flush();
+  const gl=w.writes.filter(x=>x[0]==="push")[0][2], items=gl.items.filter(i=>!i.back);
+  ok("the log: ok only for the clean solves (3 of 6), the two messy solves ok:false without fail, the failed word fail; n = wrong letters + 1",st.phase==="done"&&JSON.stringify(items.map(i=>i.ok))==="[true,true,false,false,true,false]"&&!items[2].fail&&!items[3].fail&&items[5].fail&&items[2].n===3&&items[3].n===4);
+  ok("the finish still counts every found word: 5 of 6 words found",/5 of 6 words found/.test(c.buildHangHtml("#000"))&&st.first===5);
 }
 console.log("── a two-word term, a silent language, dry run, the round's own kid, confetti, the Mix, resume ──");
 { const w=world(VOCAB.concat(ROOTS)), c=w.c; c.hangStart("Vocabulary"); const st=c.hangState;

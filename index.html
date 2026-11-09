@@ -81431,6 +81431,10 @@ function buildGofishHtml(color){
 // Writes (only these): <kid>_settings/match_best key "<deck> · bingo" (most on the first tap, only when beaten) and the
 //   round's gameLog entry (GAMELOG, game:"bingo", via gameLogRound — the only log). NEVER touches the ladder: no scores,
 //   no next-due, no study log. db && !_dryRun() only. Per-kid park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT).
+// ⚖️ BINGOFORCED (games honesty audit §7 #12, her decision via the hub 2026-11-08: "Bingo's forced last call is not counted as a
+//   first-try"): every tile is called once, so the last call always has ONE un-stamped tile left — a guaranteed first tap, logged
+//   ok:true every round. That call is now not logged at all (nolog, GAMELOG skips it — Battleship's last-tile find does the same) and
+//   leaves "N of M on the first tap" and the best (a full 3×3 is "8 of 8"). It is still called, stamped, and fills the board.
 let bingoState=null;   // {kid,deck,mix,size,game:"bingo",t0,board:[pid…],marked:{pid:1},turns:[{pid,back,wrong:{},done,first}],i,phase,line,bingo,clearup,first,of,isPB,prevBest,lock,grow,returned:{},gameLogged}
 const BINGO_MIX="Mix the decks", BINGO_BIG=9, BINGO_SMALL=4;
 function _bingoItems(kid){ let items=(typeof masteryData!=="undefined"&&masteryData&&masteryData[kid||masteryKid])||[]; if(!Array.isArray(items)) items=Object.values(items); return items; }
@@ -81506,7 +81510,8 @@ function bingoTap(ci){
     return;
   }
   t.done=true; t.first=!Object.keys(t.wrong).length;
-  if(!t.back&&t.first) st.first++;
+  if(!t.back&&st.board.filter(p=>!st.marked[p]).length<=1){ t.nolog=true; st.of=Math.max(0,st.of-1); }   // ⚖️ BINGOFORCED: one tile left — a forced tap, not a first try
+  else if(!t.back&&t.first) st.first++;
   // A card that took more than one tap comes back once, after the board is full.
   if(!t.first&&!t.back&&!st.returned[t.pid]){ st.returned[t.pid]=1; st.turns.push({pid:t.pid,back:true,wrong:{},done:false,first:false}); }
   st.marked[pid]=1;
@@ -83302,18 +83307,24 @@ function buildBeatHtml(color){
 // For a picture / letter card the claim is a NAME, said and never written (Which one?'s rule — a pre-reader hears it; a written name
 // would be matched letter for letter). The kid swipes the card right = ✓ True, left = ✗ Not true, or taps the two big buttons.
 // Right → the soft ding, the card flies off. Wrong → the soft bonk, "Not that one" — nothing more is told (the app never supplies the
-// answer), and the card comes back ONCE at the end as a fresh statement. About half the statements are true. No clock, no lives, no
-// points, no opponent, no score against the kid.
+// answer), and the card comes back ONCE at the end as a fresh statement. No clock, no lives, no points, no opponent, no score against the kid.
+// ⚖️ TNBOTH (games honesty audit §7 #11, her pick via the hub 2026-11-08: "each card both ways in a round"): exactly half the statements
+//   were true and each card was asked once, so always tapping ✓ logged 50% right — a coin flip read as "knew it". Now a round is
+//   TN_CARDS cards, each asked TWICE: once true (its own claim) and once not (a same-deck lure), in a shuffled order where a card's two
+//   statements are never back to back (tnOrder). The card's `first` (= the log's ok) is true only when BOTH calls were right — blind
+//   tapping drops to 1 in 4. One log item per card: the pair's first-asked statement is nolog, the second carries the pair (its n
+//   counts both statements' wrong calls). TN_CARDS = half of TN_ROUND, so a round is still TN_ROUND swipes. "N of M" and the best
+//   count cards called right both ways. Each statement still gets its own ding / "Not that one", and a miss still comes back once.
 // MASTERED ONLY (the plan's "only on mastered" + the Sprint rule): a card plays only at the kid's gate tier or above (gate_tier, default
 // weekly) — a learning card must never be shown a false pairing it could remember as true. Cards: Which one?'s own pool (whichPool /
 // whichDeckModes read RAW, like Go Fish — a deck turned off for Which one? still plays here), then this game's own grid cell
 // gameDeckOn(kid,"truenot",deck); a deck plays with TN_MIN+ gated cards that each have a lure (a different back / name in the deck).
-// Writes (only these): <kid>_settings/match_best key "<deck> · truenot" (first-swipe rights, only when beaten) and the round's gameLog entry
+// Writes (only these): <kid>_settings/match_best key "<deck> · truenot" (cards right both ways, only when beaten) and the round's gameLog entry
 // (GAMELOG, game:"truenot"). NEVER touches the ladder — no scores, no next_due, no study log. db && !_dryRun() only. Per-kid park /
 // restore / resume through its GAMES_LIST entry (🎲 GAMEKIT). A round dropped (Change deck, a kid switch) writes nothing.
-let tnState=null;   // {kid,deck,mix,game:"truenot",t0,turns:[{pid,mode,cpid,truth,done,first,wrong:{},back}],i,lock,fly,shake,phase,first,of,isPB,prevBest,returned:{},gameLogged}
+let tnState=null;   // {kid,deck,mix,game:"truenot",t0,turns:[{pid,mode,cpid,truth,done,right,first,wrong:{},back,nolog}],i,lock,fly,shake,phase,first,of,isPB,prevBest,returned:{},gameLogged}
 let _tnRandom=Math.random;   // tests seed it
-const TN_ROUND=10, TN_MIN=4, TN_BEAT=700, TN_BEAT_WRONG=1400, TN_SWIPE=70;
+const TN_ROUND=10, TN_CARDS=TN_ROUND/2, TN_MIN=4, TN_BEAT=700, TN_BEAT_WRONG=1400, TN_SWIPE=70;
 function _tnItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
 function _tnShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_tnRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
 function _tnRaw(fn){ const had=(typeof _gdRaw!=="undefined")?_gdRaw:null; try{ if(had!==null) _gdRaw=true; return fn(); } finally{ if(had!==null) _gdRaw=had; } }
@@ -83342,13 +83353,22 @@ function tnDecks(items,kid){
   const n={}; tnPool(items,WHICH_MIX,kid).forEach(i=>{ const d=i.subject||"Other"; n[d]=(n[d]||0)+1; });
   return Object.keys(n).filter(d=>n[d]>=TN_MIN&&tnDeckOn(kid,d)).sort();
 }
-// PURE: a balanced run of truths for n statements — half true (the extra one true), shuffled
-function tnTruths(n){ const t=[]; for(let i=0;i<n;i++) t.push(i<Math.ceil(n/2)); return _tnShuffle(t); }
+// ⚖️ TNBOTH — PURE: the order of a round of n cards asked both ways → 2n slots [{k: card index, truth}], each card once true and once
+// not, shuffled, and a card's two slots never side by side (n ≥ 2). Random tries first; the fallback (every card, then every card
+// again in the same order) can never put a card next to itself.
+function tnOrder(n){
+  const adj=a=>a.some((x,i)=>i>0&&a[i-1]===x);
+  let ks=null;
+  for(let tries=0;tries<60&&n>=2;tries++){ const a=[]; for(let k=0;k<n;k++) a.push(k,k); _tnShuffle(a); if(!adj(a)){ ks=a; break; } }
+  if(!ks){ const p=[]; for(let k=0;k<n;k++) p.push(k); _tnShuffle(p); ks=p.concat(p); }
+  const firstTrue=[]; for(let k=0;k<n;k++) firstTrue.push(_tnRandom()<0.5);
+  const seen={}; return ks.map(k=>{ const one=!seen[k]; seen[k]=1; return {k:k,truth:one?firstTrue[k]:!firstTrue[k]}; });
+}
 // One statement: the card, and the card whose claim is shown — itself when true, a lure when not
 function _tnTurn(it,pool,mode,truth,back){
   const lures=tnLures(it,pool,mode); if(!truth&&!lures.length) truth=true;
   const c=truth?it:lures[Math.floor(_tnRandom()*lures.length)];
-  return {pid:it.id,mode:mode,cpid:c.id,truth:!!truth,done:false,first:false,wrong:{},back:!!back};
+  return {pid:it.id,mode:mode,cpid:c.id,truth:!!truth,done:false,right:false,first:false,wrong:{},back:!!back};
 }
 // What is said: a picture / letter card's CLAIM (the name — never written); an answer card's FRONT (the claim is written), unless the voice can't say it
 function _tnSay(st,t){
@@ -83363,21 +83383,29 @@ function tnStart(deck){
   const items=_tnItems(), mix=deck===WHICH_MIX, modes=_tnModes(items), ok=tnDecks(items), all=_tnWhichPool(items,masteryKid);
   const pool=tnPool(items,deck).filter(i=>ok.indexOf(i.subject||"Other")>=0);
   if(pool.length<TN_MIN||(!mix&&!tnDeckOn(masteryKid,deck))){ tnState=null; _mastRe(); return; }   // 🎮 GAMEGRID: a deck Mom turned off for this game
-  const picks=_tnShuffle(pool.slice()).slice(0,TN_ROUND), truths=tnTruths(picks.length);
-  const turns=picks.map((it,i)=>_tnTurn(it,all,modes[it.subject||"Other"],truths[i],false));
-  tnState={kid:masteryKid,deck:deck,mix:mix,game:"truenot",t0:Date.now(),turns:turns,i:0,lock:false,fly:null,shake:false,phase:turns.length?"play":"done",first:0,of:turns.length,isPB:false,prevBest:null,returned:{}};
+  const picks=_tnShuffle(pool.slice()).slice(0,TN_CARDS);   // ⚖️ TNBOTH: TN_CARDS cards, each asked both ways
+  const turns=tnOrder(picks.length).map(o=>{ const it=picks[o.k]; return _tnTurn(it,all,modes[it.subject||"Other"],o.truth,false); });
+  tnState={kid:masteryKid,deck:deck,mix:mix,game:"truenot",t0:Date.now(),turns:turns,i:0,lock:false,fly:null,shake:false,phase:turns.length?"play":"done",first:0,of:picks.length,isPB:false,prevBest:null,returned:{}};
   _mastRe();
   _tnSay(tnState);   // the first statement, inside the tap
 }
 function tnChangeDeck(){ tnState=null; _mastRe(); }   // drop the round as it stands: nothing written
 // PURE over the state: the kid's call (true = "it belongs together") against the statement → "right" | "wrong" | null (nothing to judge)
+// ⚖️ TNBOTH: the card's first is settled on its SECOND statement — right only when both calls were; the first-asked one is nolog.
 function tnJudge(st,call){
   const t=st&&st.turns[st.i]; if(!t||t.done||st.lock) return null;
   if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
-  t.done=true;
-  if(!!call===t.truth){ t.first=true; if(!t.back) st.first++; return "right"; }
-  t.wrong[String(t.cpid)]=1; t.first=false;
-  return "wrong";
+  t.done=true; t.right=!!call===t.truth;
+  if(!t.right) t.wrong[String(t.cpid)]=1;
+  if(t.back){ t.first=t.right; return t.right?"right":"wrong"; }   // a come-back: one statement, never counted
+  const mate=st.turns.find(x=>x!==t&&!x.back&&x.pid===t.pid);
+  if(mate&&!mate.done){ t.nolog=true; t.first=false; }   // the pair's first half: its call rides on the second
+  else {
+    if(mate) Object.keys(mate.wrong||{}).forEach(k=>{ t.wrong[k]=1; });   // n = both statements' wrong calls + 1
+    t.first=t.right&&(!mate||mate.right);
+    if(t.first) st.first++;
+  }
+  return t.right?"right":"wrong";
 }
 // ✓ True (call true) / ✗ Not true (call false): the swipe or the button
 function tnSwipe(call){
@@ -83415,7 +83443,7 @@ function tnBestKey(deck){ return deck+" \u{00B7} truenot"; }
 function tnFinish(st){
   st.phase="done"; st.lock=false; st.fly=null; st.shake=false;
   const kid=st.kid||masteryKid;   // GAMEKID
-  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every statement's first-swipe result, game:"truenot"
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: one item per card (ok = both calls right — ⚖️ TNBOTH), game:"truenot"
   const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
   if(!s.match_best) s.match_best={};
   const key=tnBestKey(st.deck), prev=s.match_best[key];
@@ -83471,7 +83499,7 @@ function buildTnHtml(color){
     const t=st.turns[st.i], it=t?items.find(x=>x&&x.id===t.pid):null, c=t?items.find(x=>x&&x.id===t.cpid):null, ans=!!(t&&t.mode==="answer"), mute=ans&&whichSilent(it);
     if(typeof gameCardShown==="function") gameCardShown(t);   // ⏱ CARDSECS: the card is on screen — its clock starts at the first paint
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
-    st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
+    st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.right?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });   // ⚖️ TNBOTH: a dot per statement, by its own call
     h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
       '<button onclick="tnChangeDeck()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{1F5C2} Change deck</button></span></div>';
     h+='<div style="text-align:center;font-size:17px;font-weight:800;color:'+(st.shake?'#b45309':'#57534e')+';margin:10px 0 12px">'+(st.shake?'Not that one.':st.lock?(t.truth?'\u{2705} True!':'\u{274C} Not true!'):(ans?'Do these go together?':'Is this what you hear?'))+'</div>';
@@ -83487,10 +83515,10 @@ function buildTnHtml(color){
     h+='<div style="display:flex;gap:12px;justify-content:center;margin-top:6px"><button class="tn-btn tn-no" onclick="tnSwipe(false)"'+(st.lock?' disabled':'')+'>\u{2B05} \u{274C} Not true</button><button class="tn-btn tn-yes" onclick="tnSwipe(true)"'+(st.lock?' disabled':'')+'>\u{2705} True \u{27A1}</button></div>';
     return h+'</div>';
   }
-  // Finish: first-swipe count against the kid's own best, Play again / Mix the decks
+  // Finish: cards called right both ways against the kid's own best, Play again / Mix the decks
   h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
   h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} All called!</div>';
-  h+='<div style="font-size:17px;font-weight:800;color:#57534e;margin-top:10px">\u{2705} '+st.first+' of '+st.of+' on the first swipe'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+  h+='<div style="font-size:17px;font-weight:800;color:#57534e;margin-top:10px">\u{2705} '+st.first+' of '+st.of+' cards right both ways'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
   h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">';
   h+='<button onclick="tnStart(\''+q(st.deck)+'\')" style="padding:12px 24px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F501} Play again</button>';
   if(decks.length>1&&!st.mix) h+='<button onclick="tnStart(\''+q(WHICH_MIX)+'\')" style="padding:12px 24px;border-radius:999px;border:2px solid '+color+';background:#fff;color:'+color+';font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F3B2} '+WHICH_MIX+'</button>';
@@ -84452,12 +84480,17 @@ function buildKaboomHtml(color){
 //   no cue). Never spelling / phonogram decks (Which one?'s rule), never a procedure card, never a number. A deck needs HM_MIN+ words;
 //   a round is HM_ROUND; 🎲 Mix the decks. Readers at level middle / upper (dcLevel from the roster's grade — never a name).
 // Writes (only these): <kid>_settings/match_best key "<deck> · hang" (words found, only when beaten) and the round's gameLog entry
-//   (GAMELOG, game:"hang": ok = found, n = wrong letters + 1, fail = not found, back = the come-back). NEVER touches the ladder — no
+//   (GAMELOG, game:"hang": ok = a CLEAN solve, n = wrong letters + 1, fail = not found, back = the come-back). NEVER touches the ladder — no
 //   scores, no next_due, no study log. db && !_dryRun() only. Per-kid park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT).
 //   A round dropped (Change deck, a kid switch) writes nothing. 🎮 GAMEGRID: its own column — gameDeckOn(kid,"hang",deck).
-let hangState=null;   // {kid,deck,mix,game:"hang",t0,turns:[{pid,word,cue,letters:[{ch,key}],guessed:{a:1},misses,wrong:{},done,first,fail,back,hint}],i,phase,first,of,isPB,prevBest,lock,seq,msg,returned:{},gameLogged}
+// ⚖️ HMCLEAN (games honesty audit §7 #10, her decision via the hub 2026-11-08: "Hangman counts first-try only for a clean solve"): a word
+//   found eventually was logged ok:true however many letters missed, even after 🔊 Hear it SAID the word — "found eventually" read as
+//   "knew it". Now `first` (= the log's ok) is true only when the word is found with no Hear it and at most HM_CLEAN wrong letters; a
+//   hinted or 2+-miss solve is still found (the ding, "That's it!", it counts in "N of M words found" and the best) but logs ok:false.
+//   The balloons and a failed word's come-back are unchanged.
+let hangState=null;   // {kid,deck,mix,game:"hang",t0,turns:[{pid,word,cue,letters:[{ch,key}],guessed:{a:1},misses,wrong:{},done,found,first,fail,back,hint}],i,phase,first,of,isPB,prevBest,lock,seq,msg,returned:{},gameLogged}
 let _hmRandom=Math.random;   // tests seed it
-const HM_MIN=4, HM_ROUND=6, HM_MISSES=6, HM_HINT=3, HM_LEN_MIN=3, HM_LEN_MAX=14, HM_BEAT=1100, HM_BEAT_FAIL=1800;
+const HM_MIN=4, HM_ROUND=6, HM_MISSES=6, HM_HINT=3, HM_CLEAN=1, HM_LEN_MIN=3, HM_LEN_MAX=14, HM_BEAT=1100, HM_BEAT_FAIL=1800;
 const HM_KEYS="abcdefghijklmnopqrstuvwxyz".split("");
 function _hmItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
 function _hmShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_hmRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
@@ -84515,7 +84548,7 @@ function hangPools(items,kid){
 }
 function hangDecks(items,kid){ return Object.keys(hangPools(items,kid)); }   // the game's OWN deck list (the games-per-deck grid's preload asks this, raw)
 function hangAvail(kid){ return hangLevelOk(kid)&&hangDecks(_hmItems(kid),kid).length>0; }
-function hmTurn(c,back){ return {pid:c.pid,word:c.word,cue:c.cue,letters:hmLetters(c.word),guessed:{},misses:0,wrong:{},done:false,first:false,fail:false,back:!!back,hint:false}; }
+function hmTurn(c,back){ return {pid:c.pid,word:c.word,cue:c.cue,letters:hmLetters(c.word),guessed:{},misses:0,wrong:{},done:false,found:false,first:false,fail:false,back:!!back,hint:false}; }
 function hangStart(deck){
   try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding / bonk (iPad)
   const pools=hangPools(_hmItems(),masteryKid), mix=deck===WHICH_MIX, names=Object.keys(pools);
@@ -84529,12 +84562,14 @@ function hangChangeDeck(){ hangState=null; _mastRe(); }   // drop the round as i
 function _hmCur(st){ return (st&&st.phase==="play"&&!st.lock)?st.turns[st.i]:null; }
 // PURE: is every letter of the word revealed?
 function hmSolved(t){ return t.letters.every(l=>!l.key||t.guessed[l.key]); }
+// ⚖️ HMCLEAN — PURE: a solve counts as a first try only when it was clean: no 🔊 Hear it, at most HM_CLEAN wrong letters
+function hmClean(t){ return !!t&&!t.hint&&(t.misses||0)<=HM_CLEAN; }
 // PURE: one letter → "hit" | "miss" | "solved" | "fail" | null (already guessed / not a letter)
 function hmJudge(t,key){
   key=hmFold(key); if(!key||t.done||t.guessed[key]) return null;
   if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   t.guessed[key]=1;
-  if(t.letters.some(l=>l.key===key)){ if(hmSolved(t)){ t.done=true; t.first=true; return "solved"; } return "hit"; }
+  if(t.letters.some(l=>l.key===key)){ if(hmSolved(t)){ t.done=true; t.found=true; t.first=hmClean(t); return "solved"; } return "hit"; }
   t.misses++; t.wrong[key]=1;
   if(t.misses>=HM_MISSES){ t.done=true; t.first=false; t.fail=true; return "fail"; }
   return "miss";
@@ -84564,7 +84599,7 @@ function hangBestKey(deck){ return deck+" \u{00B7} hang"; }
 function hangFinish(st){
   st.phase="done"; st.lock=false;
   const kid=st.kid||masteryKid;   // GAMEKID
-  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every word's result, game:"hang"
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every word's result, game:"hang" (ok = a clean solve — ⚖️ HMCLEAN)
   const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
   if(!s.match_best) s.match_best={};
   const key=hangBestKey(st.deck), prev=s.match_best[key];
