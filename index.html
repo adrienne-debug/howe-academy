@@ -73021,7 +73021,7 @@ function gameLogDay(){ try{ if(typeof mstTodayKey==="function") return mstTodayK
 function gameLogEntry(st,now){
   if(!st||st.phase!=="done"||!Array.isArray(st.turns)) return null;
   const items=[];
-  st.turns.forEach(t=>{ if(!t||!t.done||t.pid==null) return;
+  st.turns.forEach(t=>{ if(!t||!t.done||t.pid==null||t.nolog) return;   // ⚖️ GAMEJUDGE: nolog = the turn judged nothing (Go Fish's honest "Go fish!", Battleship's last-tile find)
     const o={id:String(t.pid),ok:!!t.first,n:Object.keys(t.wrong||{}).length+1}; if(t.back) o.back=true; if(t.fail) o.fail=true; items.push(o); });   // 🔤 SPELLBUILD: fail = never built right
   if(!items.length) return null;
   now=now!=null?now:Date.now();
@@ -80959,6 +80959,9 @@ function buildDumpHtml(color){
 // Writes (only these): <kid>_settings/match_best key "<deck> · gofish" (clean pairs, only when beaten) and the round's gameLog
 // entry (GAMELOG, game:"gofish"). NEVER touches the ladder — no scores, no next_due, no study log. db && !_dryRun() only.
 // Per-kid park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT). A round dropped (Stop, a kid switch) writes nothing.
+// ⚖️ GAMEJUDGE (her decision 2026-11-08, from the games audit — Go Fish's 🗣 logged a right every time): the say act is judged by the
+// kid's ONE setting (say it then pick it / type it / Mom judges) — _gfJudgeOpen / _gfJudged below; the honor tap only when the deck
+// has no other name to pick from. The round is stamped (st.judge → gameLog judge) so Scores can tell judged rounds from older ones.
 let gofishState=null;   // {kid,deck,mix,game:"gofish",t0,pairs:[pid],kinds:{pid:"say"|"type"|"pick"},hand,app,pond,table:[{pid,who}],turns:[{pid,act,why,done,first,wrong:{},tries,fail,back,opts?,typed?}],step:{k:"ask"|"produce"|"fish"|"find",…},after,phase:"play"|"back"|"done",first,of,isPB,prevBest,lock,seq,msg,say,asked:{},backs,gameLogged}
 let _gfRandom=Math.random;   // tests seed it
 const GF_PAIRS=8, GF_MIN=4, GF_TRIES=2, GF_BEAT=1600, GF_BEAT_LONG=2200;
@@ -81001,6 +81004,7 @@ function gofishStart(deck){
   picks.forEach(i=>{ kinds[i.id]=gofishKind(i,modes[i.subject||"Other"]); });
   const d=gofishDeal(pids);
   gofishState={kid:masteryKid,deck:deck,mix:mix,game:"gofish",t0:Date.now(),pairs:pids,kinds:kinds,hand:d.hand,app:d.app,pond:d.pond,table:[],turns:[],step:null,after:null,phase:"play",first:0,of:pids.length,isPB:false,prevBest:null,lock:false,seq:0,msg:"",say:"",asked:{},backs:null};
+  if(typeof gameJudgeMode==="function"){ gofishState.judge=gameJudgeMode(masteryKid); gofishState.nch=gameJudgeChoices(masteryKid); }   // ⚖️ GAMEJUDGE: the kid's setting, read once a round (stamps the log)
   _gfKidTurn(gofishState);
   _mastRe();
 }
@@ -81035,6 +81039,7 @@ function _gfProduce(st,pid,why){
   const lead=why==="fished"?"You fished a pair! ":why==="appfished"?"I fished a pair! ":why==="back"?"One more time. ":"";
   st.msg=lead+(kind==="say"?"Say it out loud, then tap \u{1F5E3}":kind==="type"?"Type the answer.":"Tap the answer.");
   _gfSay(st,lead+"What is it?");
+  if(st.judge) _gfJudgeOpen(st,t,lead);   // ⚖️ GAMEJUDGE: a say card is judged (pick / type / Mom) instead of the honor tap
 }
 // Three backs for a pick: the card's own + two different backs from its deck (Which one?'s rule), shuffled.
 function _gfLures(st,pid){
@@ -81046,6 +81051,7 @@ function _gfLures(st,pid){
 function _gfProdTurn(st,act){ if(!st||st.lock||st.phase==="done"||!st.step||st.step.k!=="produce") return null; const t=st.turns[st.step.t]; return (t&&t.act===act)?t:null; }
 function gofishSaid(){   // 🗣 "I said it" — the honor system: a tablet can't hear; the app says the name back as the confirm
   const st=gofishState, t=_gfProdTurn(st,"say"); if(!t) return;
+  if(t.gj){ gameJudgeSaid(); return; }   // ⚖️ GAMEJUDGE: no self-report — "I said it" opens the choices (pick); type / Mom have their own taps
   t.done=true; t.first=true;
   _gfProduced(st,gofishName(_gfIt(st,t.pid))); _mastRe();
 }
@@ -81126,11 +81132,35 @@ function gofishGoFish(){   // 🎣 "Go fish!" — the kid says they don't have i
   const t=st.turns[st.step.t]; if(!t) return;
   if(st.hand.indexOf(t.pid)>=0){ t.wrong["gofish"]=1; try{ matchBonk(); }catch(e){} st.msg="Look again \u2014 you have it!"; gofishSayAgain(); _mastRe(); return; }
   t.done=true; t.first=!Object.keys(t.wrong).length;
+  if(t.first) t.nolog=true;   // ⚖️ GAMEJUDGE (games audit): the card was never in the kid's hand — a right "Go fish!" knows nothing about IT, so it isn't logged
   if(!st.pond.length){ st.msg="The pond is empty \u2014 your turn!"; _gfSay(st,"The pond is empty. Your turn!"); _gfBeat(st,"kid"); _mastRe(); return; }
   const pid=st.pond.pop(), had=st.app.indexOf(pid)>=0;
   st.app.push(pid);
   if(had){ _gfProduce(st,pid,"appfished"); _mastRe(); return; }
   st.msg="Go fish for me\u2026 no pair. Your turn!"; _gfSay(st,"No pair. Your turn!"); _gfBeat(st,"kid"); _mastRe();
+}
+// ⚖️ GAMEJUDGE: a say card's produce goes to the shared judge. Right → as the honor tap was (the ask is answered / the pair goes down).
+// Wrong → a miss like a missed find: ok:false in the log, the bonk, "It's <name>." said (the right one stays lit), and the card is NOT a
+// pair yet — an ask goes unanswered (the app's turn); a fished card goes back to the bottom of the pond (the app's turn); an app-fished
+// pair is the app's and still goes down; a come-back moves on. Like any miss it comes back once at the end.
+function _gfJudgeOpen(st,t,lead){
+  if(!st.judge||t.act!=="say"||typeof gameJudgeAct!=="function") return;
+  const it=_gfIt(st,t.pid); if(!it) return;
+  const deck=it.subject||"Other", names=_gfWhichPool(_gfItems(st.kid),st.kid).filter(x=>x&&x.id!==it.id&&(x.subject||"Other")===deck).map(x=>gofishName(x));
+  if(gameJudgeAct(st,t,{kid:st.kid,deck:deck,right:gofishName(it),names:names,mode:st.judge,n:st.nch,shuffle:_gfShuffle,
+    live:()=>gofishState===st&&_gfProdTurn(st,"say")===t&&!t.done, line:s=>{ st.msg=lead+s; },
+    onRight:x=>_gfJudged(st,x,true), onWrong:(x,g)=>_gfJudged(st,x,false,g)})) t.judge=st.judge;   // false (no other name) → the honor tap
+}
+function _gfJudged(st,t,right,given){
+  const name=gofishName(_gfIt(st,t.pid));
+  t.done=true; t.first=!!right;
+  if(right) return _gfProduced(st,name);   // the name said back, as before
+  t.tries=1; t.fail=true; t.wrong[(given!=null&&String(given)!=="")?String(given):"1"]=1;
+  try{ matchBonk(); }catch(e){}
+  const s=st.step, lead="It\u2019s "+name+".";
+  if(s.why==="ask"){ st.msg=lead+" Not a pair yet \u2014 my turn."; _gfSay(st,lead+" Not a pair yet. My turn!"); return _gfBeat(st,"app",GF_BEAT_LONG); }
+  if(s.why==="fished"){ _gfTake(st.hand,s.pid); st.pond.unshift(s.pid); st.msg=lead+" Not a pair yet \u2014 back in the pond. My turn!"; _gfSay(st,lead+" Back in the pond. My turn!"); return _gfBeat(st,"app",GF_BEAT_LONG); }
+  return _gfProduced(st,lead);   // the app's own pair still goes down; a come-back moves on
 }
 // ── the end: every pair is down → the missed cards come back once, each as the act it was missed on → finish ──
 function _gfEnd(st){
@@ -81232,7 +81262,8 @@ function buildGofishHtml(color){
       if(!sp.back) h+='<div style="display:flex;justify-content:center"><button class="gf-btn" onclick="gofishGoFish()"'+(lock?' disabled':'')+' style="background:#fff;color:'+color+';border:2px solid '+color+'">\u{1F3A3} Go fish!</button></div>'; }
     else if(sp&&sp.k==="produce"&&t){
       h+='<div style="display:flex;justify-content:center;margin:6px 0 12px"><span class="gf-card gf-big">'+_gfCardVis(st,sp.pid)+'</span></div>';
-      if(t.act==="say") h+='<div style="display:flex;justify-content:center"><button class="gf-btn" onclick="gofishSaid()"'+(lock?' disabled':'')+' style="background:'+color+';color:#fff;font-size:20px;padding:18px 34px">\u{1F5E3} I said it</button></div>';
+      if(t.act==="say"&&t.gj&&typeof gameJudgeHtml==="function") h+=gameJudgeHtml(t,color,lock);   // ⚖️ GAMEJUDGE: the choices / the typing box / Mom's ✓ ✗
+      else if(t.act==="say") h+='<div style="display:flex;justify-content:center"><button class="gf-btn" onclick="gofishSaid()"'+(lock?' disabled':'')+' style="background:'+color+';color:#fff;font-size:20px;padding:18px 34px">\u{1F5E3} I said it</button></div>';
       else if(t.act==="type"){
         h+='<div style="display:flex;justify-content:center;margin-bottom:10px"><span style="min-width:120px;height:56px;border-radius:14px;border:3px solid '+color+';background:#fff;font-family:\'Fraunces\',serif;font-size:30px;font-weight:800;color:#292524;display:inline-flex;align-items:center;justify-content:center;padding:0 14px">'+esc(t.typed||"")+'</span></div>';
         h+='<div style="display:grid;grid-template-columns:repeat(3,64px);gap:8px;justify-content:center">';

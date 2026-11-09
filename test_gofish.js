@@ -100,7 +100,7 @@ console.log("── a whole round, every act right (pictures: say-it honor syste
   ok("every act was either a say or a find; no misses → no come-backs",st.turns.every(t=>(t.act==="say"||t.act==="find")&&t.done&&t.first&&!t.back));
   ok("8 of 8 pairs clean → new best, written as one key",st.first===8&&st.of===8&&st.isPB&&w.writes.filter(x=>x[0]==="update"&&x[1]==="mastery/k_settings/match_best"&&JSON.stringify(x[2])==='{"Animals \u00b7 gofish":8}').length===1);
   const logs=w.writes.filter(x=>x[0]==="push");
-  ok("ONE gameLog push, game gofish, deck Animals, one item per act, all ok",logs.length===1&&logs[0][1]==="mastery/gameLog/k/20261102"&&logs[0][2].game==="gofish"&&logs[0][2].deck==="Animals"&&logs[0][2].items.length===st.turns.length&&logs[0][2].items.every(i=>i.ok&&i.n===1));
+  ok("ONE gameLog push, game gofish, deck Animals, one item per act (a right \"Go fish!\" — the card not in hand — is left out: ⚖️ GAMEJUDGE), all ok",logs.length===1&&logs[0][1]==="mastery/gameLog/k/20261102"&&logs[0][2].game==="gofish"&&logs[0][2].deck==="Animals"&&logs[0][2].items.length===st.turns.filter(t=>!t.nolog).length&&st.turns.some(t=>t.nolog&&t.act==="find")&&logs[0][2].items.every(i=>i.ok&&i.n===1));
   ok("nothing else written",w.writes.length===2);
   ok("the app spoke each picture's name on its asks, and said the name back after 🗣",w.said.some(s=>/^Do you have (cat|dog|cow|pig|fox|owl|bee|ant|hen)\?$/.test(s))&&w.said.some(s=>/^(cat|dog|cow|pig|fox|owl|bee|ant|hen) (Yes! Here you go\.|Go fish!|Down it goes!)/.test(s)));
   ok("a clean round gets the small confetti only when the overlay exists (none here)",!w.dings.some(d=>/celeb/.test(d)));
