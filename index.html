@@ -28431,6 +28431,13 @@ function scpDash(k){ k=String(k); return /^\d{8}$/.test(k)?k.slice(0,4)+"-"+k.sl
 function scpIn(k,w){ k=String(k||""); return /^\d{8}$/.test(k)&&k>=w.from&&k<=w.to; }
 function scpWin(to,days){ return {from:scpShift(to,-(days-1)),to:String(to)}; }                 // the last `days` days, today included
 function scpPrevWin(w,days){ const t=scpShift(w.from,-1); return {from:scpShift(t,-(days-1)),to:t}; }   // the same length, just before
+// ⚖️ GAMEJUDGE "before judging" (her decision 2026-11-08, from the games audit): Go Fish, Connect Four, Battleship, Kaboom, Sure? then flip
+// and Jeopardy took "I said it" on the honor system — a tap logged a right — until each round was judged and stamped (gameLog `judge`:
+// pick / type / mom). A round of one of THESE games without the stamp is "before judging": left out of Right % (scpRight) and out of
+// learned-through-games (scgLearned); the 🎮 Games section shows it grey with that label. Keyed on the game list — the honest games
+// never carry the stamp and are untouched.
+const SCP_SAY_GAMES={gofish:1,four:1,ship:1,sure:1,kaboom:1,jeop:1};
+function scpPreJudge(e){ return !!(e&&typeof e==="object"&&SCP_SAY_GAMES[String(e.game||"")]===1&&!e.judge); }
 // PURE: right ÷ graded inside a window → {graded, right, pct, drill:{g,r}, study:{g,r}, games:{n,ok}}; pct null when nothing was graded.
 function scpRight(kid,history,studyLog,gameLog,w,gw){
   gw=(typeof gw==="number")?gw:SCP_GAME_W;
@@ -28440,7 +28447,8 @@ function scpRight(kid,history,studyLog,gameLog,w,gw){
   else { const dh=(history||{})[kid]||{}; Object.keys(dh).forEach(k=>{ const e=dh[k]; days[k]={items:scpV(e&&e.items).filter(it=>it.result==="c"||it.result==="m"||it.result==="~").map(it=>({result:it.result,src:"drill"}))}; }); }
   Object.keys(days).forEach(k=>{ if(!scpIn(k,w)) return; scpV(days[k].items).forEach(it=>{ const b=(it.src==="study")?out.study:out.drill; b.g++; if(it.result==="c") b.r++; }); });
   const gl=(gameLog||{})[kid]||{};
-  Object.keys(gl).forEach(day=>{ if(!scpIn(day,w)) return; scpV(gl[day]).forEach(e=>{ scpV(e.items).forEach(it=>{ if(it.back) return; out.games.n++; if(it.ok) out.games.ok++; }); }); });
+  Object.keys(gl).forEach(day=>{ if(!scpIn(day,w)) return; scpV(gl[day]).forEach(e=>{ if(scpPreJudge(e)) return;   // ⚖️ GAMEJUDGE: a round before judging is not counted
+    scpV(e.items).forEach(it=>{ if(it.back) return; out.games.n++; if(it.ok) out.games.ok++; }); }); });
   out.graded=out.drill.g+out.study.g+out.games.n*gw; out.right=out.drill.r+out.study.r+out.games.ok*gw;
   out.pct=out.graded>0?Math.round(out.right/out.graded*100):null;
   return out;
@@ -28594,6 +28602,8 @@ function renderMPScores(el,top){
 //       (b) its last two drill / study grades are a miss (✗ or ~) and then ✓, and between them — the miss day to the ✓ day, both
 //           included — it was right on the first try in at least one game round.
 //     That is: the right answers that took it from missed back to right came in game rounds, not in another drill.
+//   · ⚖️ Before judging (2026-11-08) — a round of a say-it game (SCP_SAY_GAMES) without its `judge` stamp: shown grey on its own row,
+//     with its own rounds / minutes, and counted in NO Right % (the game's, the deck's, the summary's) and not in learned-through-games.
 // No game records at all for the kid (no gameLog, matchLog, match_best, gameLikes) → "" so the page stays byte-identical to slice 1.
 // On a phone (under 600 px) the section is one line per kid (a closed <details>); wider, it opens. No kid or family names here.
 const SCG_TIME={match:1,memory:1,beat:1};             // best = seconds, lower is better
@@ -28616,7 +28626,8 @@ function scgLearned(kid,cards,history,studyLog,gameLog){
   else { const dh=(history||{})[kid]||{}; Object.keys(dh).forEach(k=>{ days[k]={items:scpV(dh[k]&&dh[k].items)}; }); }
   Object.keys(days).forEach(k=>{ scpV(days[k].items).forEach(it=>{ if(!it||it.id==null||!(it.result in R)) return;
     const g=grades[String(it.id)]||(grades[String(it.id)]={}); if(g[k]==null||R[it.result]>R[g[k]]) g[k]=it.result; }); });   // one grade a day, the worse
-  Object.keys(gl).forEach(day=>{ scpV(gl[day]).forEach(e=>{ scpV(e&&e.items).forEach(it=>{ if(it&&it.ok&&!it.back&&it.id!=null) (right[String(it.id)]||(right[String(it.id)]=[])).push(day); }); }); });
+  Object.keys(gl).forEach(day=>{ scpV(gl[day]).forEach(e=>{ if(scpPreJudge(e)) return;   // ⚖️ GAMEJUDGE: an honor-tap right from before judging teaches nothing here
+    scpV(e&&e.items).forEach(it=>{ if(it&&it.ok&&!it.back&&it.id!=null) (right[String(it.id)]||(right[String(it.id)]=[])).push(day); }); }); });
   const out=[];
   scpV(cards).forEach(c=>{ if(!c||c.id==null||c.status==="parked") return; const id=String(c.id);
     if(c.gp&&c.gp.ok){ out.push(id); return; }
@@ -28640,11 +28651,12 @@ function scgStats(kid,D){
     const g=e.game?String(e.game):(e.style==="memory"?"memory":"match"), day=scgDay(e.date);
     if(!day||(first[g]&&day>=first[g])) return; rounds.push({g:g,day:day,e:e,log:false}); });
   const why={practice:0,free:0,none:0,flagged:false}, tot={rounds:0,w7:0,n:0,ok:0};
-  rounds.forEach(r=>{ const s=gOf(r.g), e=r.e, seen={};
-    s.rounds++; tot.rounds++; if(scpIn(r.day,w7)){ s.w7++; tot.w7++; } if(r.day>s.last) s.last=r.day;
-    const sec=r.log?e.secs:e.sec; if(typeof sec==="number"&&sec>0&&sec<=cap) s.secs+=sec;
+  rounds.forEach(r=>{ const s=gOf(r.g), e=r.e, seen={}, pre=r.log&&scpPreJudge(e), b=pre?(s.pre||(s.pre={rounds:0,w7:0,n:0,ok:0,secs:0})):s;   // ⚖️ GAMEJUDGE: before judging → its own grey bucket
+    b.rounds++; tot.rounds++; if(scpIn(r.day,w7)){ b.w7++; tot.w7++; } if(r.day>s.last) s.last=r.day;
+    const sec=r.log?e.secs:e.sec; if(typeof sec==="number"&&sec>0&&sec<=cap) b.secs+=sec;
     if(e.why==="practice"||e.why==="free") why.flagged=true;
     if(e.why==="practice"||r.g==="practice") why.practice++; else if(e.why==="free") why.free++; else why.none++;
+    if(pre){ scpV(e.items).forEach(it=>{ if(!it||it.back) return; b.n++; if(it.ok) b.ok++; }); return; }   // shown grey, in no Right % and no deck
     const add=(deck,n,ok)=>{ const d=DK[deck]||(DK[deck]={deck:deck,rounds:0,games:{}}), x=d.games[r.g]||(d.games[r.g]={key:r.g,rounds:0,n:0,ok:0,best:{}});
       if(!seen[deck]){ seen[deck]=1; d.rounds++; x.rounds++; } x.n+=n; x.ok+=ok; s.n+=n; s.ok+=ok; tot.n+=n; tot.ok+=ok; };
     if(r.log){ let any=false; scpV(e.items).forEach(it=>{ if(!it||it.back) return; any=true; add(deckOf[String(it.id)]||String(e.deck||"—"),1,it.ok?1:0); });
@@ -28658,7 +28670,7 @@ function scgStats(kid,D){
   let nLikes=0;
   Object.keys(likes).forEach(g=>{ scpV(likes[g]).forEach(a=>{ if(!a) return; const v=Number(a.v); if(!(v>0||v<0)) return; nLikes++; if(v>0) gOf(g).up++; else gOf(g).down++; }); });
   const pct=(ok,n)=>n?Math.round(ok/n*100):null;
-  const games=Object.keys(G).map(k=>{ const s=G[k]; s.pct=pct(s.ok,s.n); s.min=Math.round(s.secs/60); return s; })
+  const games=Object.keys(G).map(k=>{ const s=G[k]; s.pct=pct(s.ok,s.n); s.min=Math.round(s.secs/60); if(s.pre){ s.pre.pct=pct(s.pre.ok,s.pre.n); s.pre.min=Math.round(s.pre.secs/60); } return s; })
     .sort((a,b)=>(b.rounds-a.rounds)||(a.key<b.key?-1:a.key>b.key?1:0));
   const decks=Object.keys(DK).map(k=>{ const d=DK[k]; d.list=Object.keys(d.games).map(g=>{ const x=d.games[g]; x.pct=pct(x.ok,x.n); return x; }).sort((a,b)=>b.rounds-a.rounds||(a.key<b.key?-1:1)); return d; })
     .sort((a,b)=>(b.rounds-a.rounds)||(a.deck<b.deck?-1:a.deck>b.deck?1:0));
@@ -28686,7 +28698,9 @@ function scgHtml(s,open,cards){
   const names=s.learned.slice(0,6).map(id=>{ const c=byId[id]||{}; return scpE(c.answer||c.prompt||id); });
   h+='<div style="font-size:12px;color:#334155;margin-top:6px">\u{1F331} Cards learned through games: <b>'+s.learned.length+'</b>'+(names.length?' <span style="color:#64748b">· '+names.join(', ')+(s.learned.length>names.length?' …':'')+'</span>':'')+'</div>';
   h+='<div style="overflow-x:auto;margin-top:8px"><table style="border-collapse:collapse;font-size:12px;width:100%"><tr><th '+th+'>Game</th><th '+th+'>Rounds 7 d / all</th><th '+th+'>Right</th><th '+th+'>Best</th><th '+th+'>\u{1F44D} \u{1F44E}</th><th '+th+'>Min</th></tr>';
-  s.games.forEach(g=>{ h+='<tr><td '+td+'>'+scpE(scgLabel(g.key))+'</td><td '+td+'>'+g.w7+' / '+g.rounds+'</td><td '+td+'><span style="font-weight:800;color:'+scpPctCol(g.pct)+'">'+scpN(g.pct,'%')+'</span>'+(g.n?' <span style="color:#94a3b8">of '+g.n+'</span>':'')+'</td><td '+td+'>'+scgBestTxt(g.best,true)+'</td><td '+td+'>'+((g.up||g.down)?g.up+' · '+g.down:'—')+'</td><td '+td+'>'+(g.rounds?g.min:'—')+'</td></tr>'; });
+  s.games.forEach(g=>{ const p=g.pre, only=p&&!g.rounds&&!Object.keys(g.best).length&&!g.up&&!g.down;
+    if(!only) h+='<tr><td '+td+'>'+scpE(scgLabel(g.key))+'</td><td '+td+'>'+g.w7+' / '+g.rounds+'</td><td '+td+'><span style="font-weight:800;color:'+scpPctCol(g.pct)+'">'+scpN(g.pct,'%')+'</span>'+(g.n?' <span style="color:#94a3b8">of '+g.n+'</span>':'')+'</td><td '+td+'>'+scgBestTxt(g.best,true)+'</td><td '+td+'>'+((g.up||g.down)?g.up+' · '+g.down:'—')+'</td><td '+td+'>'+(g.rounds?g.min:'—')+'</td></tr>';
+    if(p) h+='<tr class="scg-pre" style="color:#94a3b8"><td '+td+'>'+scpE(scgLabel(g.key))+' <i style="font-size:11px">· before judging</i></td><td '+td+'>'+p.w7+' / '+p.rounds+'</td><td '+td+'>'+scpN(p.pct,'%')+' <span style="font-size:11px">not counted</span></td><td '+td+'>—</td><td '+td+'>—</td><td '+td+'>'+p.min+'</td></tr>'; });   // ⚖️ GAMEJUDGE: grey, never in a Right %
   h+='</table></div>';
   if(s.decks.length){
     h+='<div style="font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#64748b;margin-top:10px">By deck</div>';
@@ -28697,7 +28711,8 @@ function scgHtml(s,open,cards){
     'Right = right on the first try ÷ cards answered; a card that comes back at the end of a round is not a second try. (Overall counts games at half weight; this is the raw %.)<br>'+
     'Best = the game’s own best: seconds for Match, Memory flip and Beat my time (lower is better), dollars for Jeopardy’s money game, a count for the rest.<br>'+
     'A card is counted in its own deck, so a mixed round splits into the decks it came from.<br>'+
-    'Learned through games = a card the practice list marked learned, or one that was missed, then right on the first try in a game, then right in the next drill or study.</div></details>';
+    'Learned through games = a card the practice list marked learned, or one that was missed, then right on the first try in a game, then right in the next drill or study.<br>'+
+    'Before judging = Go Fish, Connect Four, Battleship, Kaboom, Sure? then flip and Jeopardy rounds from before “I said it” was checked: a tap counted as right, so they are shown grey and left out of every Right % and of learned through games.</div></details>';
   h+='</details></div>';
   return h;
 }
