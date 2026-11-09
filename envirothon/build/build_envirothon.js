@@ -313,13 +313,17 @@ async function main() {
   let commit = "unknown"; try { commit = execSync("git rev-parse --short HEAD", { cwd: REPO, stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch (e) {}
   const banner = `/* Howe Academy · Envirothon edition · built ${new Date().toISOString()} from ${commit}${FORCE_DRYRUN ? " · VERIFICATION BUILD (dry-run forced)" : ""} · ${COPYRIGHT} */\n`;
   const outHtml = head + banner + obfuscated + "\n" + tail;
+  // ENVBOOTHIDE: the class site never paints the Howe home — the html class that hides the shell goes on at build time, before any markup
+  const HTML_TAG = '<html lang="en">';
+  if (outHtml.split(HTML_TAG).length !== 2) throw new Error("expected exactly one " + HTML_TAG + " in the source");
+  const outHtmlB = outHtml.replace(HTML_TAG, '<html lang="en" class="env-site-boot">');
   const closeTags = (h) => (h.match(/<\/script>/gi) || []).length;
-  if (closeTags(outHtml) !== closeTags(html)) throw new Error("built page has " + closeTags(outHtml) + " </script> tags, source has " + closeTags(html));
+  if (closeTags(outHtmlB) !== closeTags(html)) throw new Error("built page has " + closeTags(outHtmlB) + " </script> tags, source has " + closeTags(html));
   fs.mkdirSync(OUT, { recursive: true });
-  fs.writeFileSync(path.join(OUT, "index.html"), outHtml);
+  fs.writeFileSync(path.join(OUT, "index.html"), outHtmlB);
   const copied = [];
   for (const f of COPY_FILES) { const p = path.join(REPO, f); if (fs.existsSync(p)) { fs.copyFileSync(p, path.join(OUT, f)); copied.push(f); } else log("  (not found, not copied: " + f + ")"); }
-  const sizeAfter = Buffer.byteLength(outHtml);
+  const sizeAfter = Buffer.byteLength(outHtmlB);
 
   // Report.
   const kept = keptByNeed.map(k => k.block); const keptSet = [...new Set(kept)];
