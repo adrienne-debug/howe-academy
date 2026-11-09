@@ -5,11 +5,12 @@
 //   · Loaded ONCE, on first need, as a classic <script> by haLazyLoad("classes") in index.html: with the Envirothon cards
 //     (envLoad), on the class link (envmReady / envmRelAttach), and before boot on the Envirothon site or demo (haLazyBoot).
 //     Its functions and top-level const/let land in the page's one global scope, exactly as when they sat in index.html.
+//     env.js (the Envirothon site, console, class settings and mirror) always loads first: this file calls into it.
 //   · Every call index.html makes into this file is typeof-guarded (test_lazy_split.js checks it): before the file arrives
 //     the class platform is simply not there yet.
 //   · EDIT THE CODE HERE. Each block's place in index.html is its marker line `// ⇢ classes.js: NAME`; test_src.js puts the
 //     blocks back at their markers so the tests read one source.
-//   · Runs after index.html's main script (never before): its top-level lines read index.html's tables (ENVCS_FIELDS, …).
+//   · Runs after index.html's main script and env.js (never before): its top-level lines read their tables (ENVCS_FIELDS, …).
 // CPLINCOLN_START — 🌿 LINCOLN FOLLOWS THE CLASS: L1 of DESIGN_class_platform_2026-10-28.md §12.1 / §13 row L1. Her words 2026-10-28:
 // "I want Lincoln's cards limit to follow what the class limit is. And I don't want his Envirothon to affect his overall cards, but to be
 // incorporated as needed. And they have to keep being in there, but it can still be in the study session." Her two picks 2026-10-29: his
