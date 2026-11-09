@@ -73031,7 +73031,7 @@ function gameLogEntry(st,now){
   if(st.t0) e.secs=Math.max(0,Math.round((now-st.t0)/1000));
   if(st.game==="train"&&st.level!=null){ e.level=st.level; e.clean=!!st.clean; }   // 🚂 TRAIN: the round's level + clean — its level-up reads them back
   if(st.game==="jeop"&&st.money){ e.mode="money"; e.bank=st.bank; e.bets=(st.bets||[]).map(b=>Object.assign({},b)); e.result=st.result||""; }   // 💵 JPMONEY: the final bank, the bets, the result
-  if(st.game==="jeop"&&st.money&&st.judge) e.judge=st.judge;   // ⚖️ JPJUDGE: how the say-it squares were judged (pick / type / mom)
+  if(st.judge&&typeof gameJudgeStamp==="function") gameJudgeStamp(e,st.judge);   // ⚖️ GAMEJUDGE: a judged round says how (pick / type / mom) — Jeopardy money first
   return e;
 }
 function gameLogRound(st,pre){
@@ -82830,15 +82830,7 @@ const GAME_RULES={
     ["all","All spelling words","Every spelling word in play. Learning words still come first, then the ones missed most recently."]]}],
   jeop:[{key:"mode",label:"Play money?",def:"off",opts:[   // 💵 JPMONEY (her words 2026-11-08 — the Sure / Not sure daily double is retired)
     ["off","Off","A plain board: a square is worth one card, no money — today’s rule."],
-    ["money","Money","Like the TV show: $200–$1000 squares, then Double Jeopardy ($400–$2000) and Final Jeopardy. Right adds, wrong takes away; hidden Daily Doubles let the kid bet. Play money inside the game only — never Stars."]]},
-    {key:"judge",label:"How is the answer judged?",def:"pick",only:k=>typeof jeopMoneyOn==="function"&&jeopMoneyOn(k),opts:[   // ⚖️ JPJUDGE (her yes 2026-11-08: with money on, "I said it" let everybody win)
-    ["pick","Say it, then pick it","The kid says it out loud first, then taps what they said from a few choices, each with a \u{1F50A} to hear it. Right adds, wrong takes away and shows the right one. For the picture and letter squares \u2014 number and word answers are already typed or picked."],
-    ["type","Type it","For readers: type the answer, then Check. Capitals and extra spaces don\u2019t count. Wrong takes away and shows the right one."],
-    ["mom","Mom judges","The kid says it out loud. \u201CShow Mom the answer\u201D asks for Mom\u2019s or Dad\u2019s code (none with the Mom switch on), then Mom taps \u2713 or \u2717."]]},
-    {key:"choices",label:"How many choices?",def:"4",only:k=>typeof jeopMoneyOn==="function"&&jeopMoneyOn(k)&&gameRule(k,"jeop","judge")==="pick",opts:[   // ⚖️ JPJUDGE: Say it, then pick it
-    ["3","3","The right one and 2 others from the same deck."],
-    ["4","4","The right one and 3 others from the same deck."],
-    ["5","5","The right one and 4 others from the same deck. A small deck shows fewer."]]}],
+    ["money","Money","Like the TV show: $200–$1000 squares, then Double Jeopardy ($400–$2000) and Final Jeopardy. Right adds, wrong takes away; hidden Daily Doubles let the kid bet. Play money inside the game only — never Stars."]]}],
   jumble:[{key:"reveal",label:"Show the sentence after…",def:"2",opts:[   // 🧩 UNJUMBLE (her word 2026-11-03: "keep it but add a setting to adjust times or never")
     ["2","2 misses","The second miss shows the sentence for a beat — today’s rule."],
     ["3","3 misses","A third try first; the third miss shows it."],
@@ -85296,154 +85288,210 @@ function jpMoneyFinishHtml(st){
   return h+'</div>';
 }
 // JPMONEY_END
-// JPJUDGE_START — ⚖️ How a Jeopardy answer is judged with money on (her finding on the tablet 2026-11-08: the board asks "What is it?" and
-// the kid taps "I said it" — with money on "everybody would win and there's no challenge"; her yes to this design the same night).
-// Only the SAY-IT squares (a picture or a letter — Go Fish's "say" act) self-reported; a number back is typed and a word back is picked
-// already, and those stay exactly as they are. Off mode never reaches this block: the honor tap stays as today, byte for byte.
-// A Jeopardy GAME RULE "judge" (GAMERULES, shown only with Money on), read once when the board is built (st.judge):
-//   · "pick" (default) — SAY IT, THEN PICK IT: the line "Say it out loud… then tap what you said", the 🗣 I said it button (recall first),
-//     then the choices: the right name + other names from the SAME deck of the same kind (Which one?'s pool for that deck — a picture
-//     deck's pictures, a letter deck's letters), never the right one twice, never one text twice, shuffled. How many: the "choices" rule,
-//     3 / 4 / 5 (default 4). A small deck shows fewer — as many as it has (a board's deck always has 3+ names, so at least 3); no other
-//     name at all → the honor tap, as before. Every choice carries Say-it's 🔊 chip (SAIDPICK: mastSpeak; no chips when TTS is dead on
-//     this device), so a non-reader can find the one they said. The 🔊 only says it — it never picks.
-//   · "type" — readers type the name, then Check: the study session's typed-answer match (mstTypeAnsOk — capitals, extra spaces, − / ×
-//     forms and number forms don't count).
-//   · "mom" — the kid says it out loud; "🔒 Show Mom the answer" opens the answer behind the Mom gate: momHere(), else Mom's or Dad's code
-//     typed in place (the check-up's Corner unlock: pinOk / dadPinOk, a check only — it never turns Mom mode on; good for the rest of
-//     this game only). Then Mom taps ✓ or ✗.
-// ONE RESPONSE (the show's rule): right → + the square's value (or the bet); wrong → − it, the right name lit and SAID (so the miss still
-// teaches), a longer beat, and the card comes back once at the end like any miss (worth nothing then). The Daily Double and Final
-// Jeopardy open through the same _jpOpen, so they are judged the same way and their bet rides on the same answer (jpMoneyAnswer).
-// WRITES: nothing of its own. The round's gameLog entry (gameLogRound, game:"jeop") is unchanged but for judge:"pick"|"type"|"mom"
-// (one guarded line in gameLogEntry). Guarded hooks in JEOPARDY, each marked ⚖️ JPJUDGE.
-const JPJ_MODES=["pick","type","mom"];
-function jeopJudgeMode(kid){ const v=(typeof gameRule==="function")?gameRule(kid,"jeop","judge"):null; return JPJ_MODES.indexOf(v)>=0?v:"pick"; }
-function jeopJudgeChoices(kid){ const v=parseInt((typeof gameRule==="function")?gameRule(kid,"jeop","choices"):"",10); return (v>=3&&v<=5)?v:4; }
+// JPJUDGE_START — ⚖️ Jeopardy's say-it squares with money on, judged by the kid's ONE judging setting (GAMEJUDGE — her decision
+// 2026-11-08: "one setting per kid, not a pill per game"; her finding on the tablet that night: the board asks "What is it?" and the kid
+// taps "I said it" — with money on "everybody would win and there's no challenge"). Only the SAY-IT squares (a picture or a letter — Go
+// Fish's "say" act) self-reported; a number back is typed and a word back is picked already, and those stay exactly as they are. Off
+// mode never reaches this block: the honor tap stays as today, byte for byte.
+//   · The kid's setting (gameJudgeMode / gameJudgeChoices) is read once when the board is built (st.judge, st.nch).
+//   · The other choices for "pick" = the other names in the SAME deck of Which one?'s pool (a picture deck's pictures, a letter deck's
+//     letters). A board's deck always has 3+ names, so at least 3 choices.
+//   · ONE RESPONSE (the show's rule): right → + the square's value (or the bet); wrong → − it, "It's <name>." lit and SAID (so the miss
+//     still teaches), a longer beat, and the card comes back once at the end like any miss (worth nothing then). The Daily Double and
+//     Final Jeopardy open through the same _jpOpen, so they are judged the same way and their bet rides on the same answer.
+//   · WRITES: nothing of its own. The round's gameLog entry (gameLogRound, game:"jeop") gains judge:"pick"|"type"|"mom" (GAMEJUDGE's
+//     gameJudgeStamp, one guarded line in gameLogEntry — st.judge is set only on a money board), so Scores can tell judged rounds from older ones. Guarded hooks in JEOPARDY, each marked ⚖️ JPJUDGE.
 // jeopStart's hook: money boards only (Off adds nothing to the state)
 function jpJudgeStart(st){
-  if(!st||!st.money) return;
-  st.judge=jeopJudgeMode(st.kid); st.nch=jeopJudgeChoices(st.kid); st.momOk=false;
+  if(!st||!st.money||typeof gameJudgeMode!=="function") return;
+  st.judge=gameJudgeMode(st.kid); st.nch=gameJudgeChoices(st.kid);
 }
-// PURE-ish: the choices for one say-it card — [{text, ok}] shuffled; n = how many in all. Fewer when the deck has fewer names.
-function jpJudgeChoices(st,it,n){
-  if(!it) return [];
-  const mine=jeopName(it), seen={}; seen[_whichNorm(mine)]=1;
-  const pool=_jpWhichPool(_jpItems(st.kid),st.kid).filter(x=>x&&x.id!==it.id&&(x.subject||"Other")===(it.subject||"Other"));
-  const lures=((typeof _matchLures==="function")?_matchLures(it,pool,c=>jeopName(c),pool.length).map(l=>l.k):_jpShuffle(pool.map(c=>jeopName(c))))
-    .filter(k=>{ const z=_whichNorm(k); if(!z||seen[z]) return false; seen[z]=1; return true; }).slice(0,Math.max(0,(n||4)-1));   // _matchLures: the nearest numbers first for a number deck, else random
-  if(!lures.length) return [];
-  return _jpShuffle([{text:mine,ok:true}].concat(lures.map(k=>({text:k,ok:false}))));
-}
-// _jpOpen's hook: a say-it square on a money board takes the board's judging
+// _jpOpen's hook: a say-it square on a money board goes to the shared judging
 function jpJudgeOpen(st,t){
-  if(!st||!st.money||!st.judge||!t||t.act!=="say") return;
-  const it=_jpIt(st,t.pid), lead=t.back?"One more time. ":"";
-  if(st.judge==="pick"){
-    const ch=jpJudgeChoices(st,it,st.nch||4); if(ch.length<2) return;   // no other name in the deck → the honor tap, as before
-    t.ch=ch; t.step="say"; st.msg=lead+"Say it out loud… then tap what you said.";
-  } else if(st.judge==="type"){ t.typed=""; st.msg=lead+"Type what it is, then Check."; }
-  else { st.msg=lead+"Say it out loud to Mom."; }
-  t.judge=st.judge;
+  if(!st||!st.money||!st.judge||!t||t.act!=="say"||typeof gameJudgeAct!=="function") return;
+  const it=_jpIt(st,t.pid); if(!it) return;
+  const lead=t.back?"One more time. ":"", name=jeopName(it), deck=it.subject||"Other";
+  const names=_jpWhichPool(_jpItems(st.kid),st.kid).filter(x=>x&&x.id!==it.id&&(x.subject||"Other")===deck).map(x=>jeopName(x));
+  if(gameJudgeAct(st,t,{kid:st.kid,deck:deck,right:name,names:names,mode:st.judge,n:st.nch,shuffle:_jpShuffle,
+    live:()=>jeopState===st&&_jpTurn(st,"say")===t, line:s=>{ st.msg=lead+s; },
+    onRight:x=>jpJudgeSettle(st,x,true), onWrong:(x,g)=>jpJudgeSettle(st,x,false,g)})) t.judge=st.judge;   // false (no other name) → the honor tap
 }
-function _jpjTurn(judge){ const st=jeopState, t=_jpTurn(st,"say"); return (t&&t.judge===judge)?t:null; }
 // jeopSaid's hook: "I said it" on a pick card shows the choices; on a type / Mom card it does nothing (no self-report with money on)
-function jpJudgeSaid(st,t){
-  if(t.judge==="pick"&&t.step==="say"&&t.ch){ t.step="pick"; st.msg="Tap what you said."; }
-  _mastRe();
-}
-function jeopJudgeHear(i,ev){   // 🔊 a choice's chip: says that choice — never picks it
-  try{ if(ev&&ev.stopPropagation) ev.stopPropagation(); }catch(e){}
-  const t=_jpjTurn("pick"), c=t&&t.step==="pick"&&t.ch&&t.ch[i]; if(!c) return;
-  try{ mastSpeak(c.text); }catch(e){}
-}
-function jeopJudgePick(i){
-  const st=jeopState, t=_jpjTurn("pick"); if(!t||t.step!=="pick"||!t.ch||!t.ch[i]) return;
-  t.picked=i; jpJudgeSettle(st,t,!!t.ch[i].ok,t.ch[i].text);
-}
-function jeopJudgeTyped(v){ const t=_jpjTurn("type"); if(t) t.typed=String(v==null?"":v); }   // no re-draw while typing
-function jeopJudgeCheck(){
-  const st=jeopState, t=_jpjTurn("type"); if(!t) return;
-  try{ const el=document.getElementById("jp-judge-in"); if(el&&el.value!=null) t.typed=String(el.value); }catch(e){}
-  if(!String(t.typed||"").trim()) return;
-  const name=jeopName(_jpIt(st,t.pid));
-  const right=(typeof mstTypeAnsOk==="function")?mstTypeAnsOk(t.typed,name):_whichNorm(t.typed)===_whichNorm(name);   // the study session's typed match
-  jpJudgeSettle(st,t,right,t.typed);
-}
-// Mom judges: the answer only behind the Mom gate
-function _jpjMomOk(st){ return (typeof momHere==="function"&&momHere())||!!(st&&st.momOk); }
-function jeopJudgeMomShow(){
-  const st=jeopState, t=_jpjTurn("mom"); if(!t) return;
-  if(_jpjMomOk(st)) t.momShow=true; else t.momAsk=true;
-  _mastRe();
-  if(t.momAsk) setTimeout(()=>{ try{ const i=document.getElementById("jp-mom-pin"); if(i) i.focus(); }catch(e){} },50);
-}
-function jeopJudgeCode(v){
-  const st=jeopState, t=_jpjTurn("mom"); if(!t||!t.momAsk) return;
-  if(!((typeof pinOk==="function"&&pinOk(v))||(typeof dadPinOk==="function"&&dadPinOk(v)))) return;   // a check only — never turns Mom mode on
-  st.momOk=true; t.momAsk=false; t.momShow=true; _mastRe();
-}
-function jeopJudgeMomCancel(){ const t=_jpjTurn("mom"); if(!t) return; t.momAsk=false; _mastRe(); }
-function jeopJudgeMom(right){
-  const st=jeopState, t=_jpjTurn("mom"); if(!t||!t.momShow||!_jpjMomOk(st)) return;
-  jpJudgeSettle(st,t,!!right,right?"":"mom");
-}
+function jpJudgeSaid(st,t){ if(t.judge==="pick") gameJudgeSaid(); }
+function jpJudgeHtml(st,t,color,lock){ return gameJudgeHtml(t,color,lock); }
 // One response settles the square: right → the plain board's "That's it!" (+ the dollars); wrong → − the dollars, the right name lit and said
 function jpJudgeSettle(st,t,right,given){
-  const it=_jpIt(st,t.pid), name=jeopName(it);
+  const name=jeopName(_jpIt(st,t.pid));
   t.done=true; t.first=!!right; t.verdict=right?"right":"wrong";
   if(!right){ t.tries=1; t.fail=true; t.wrong[(given!=null&&String(given)!=="")?String(given):"1"]=1; }
   if(typeof jpMoneyAnswer==="function") jpMoneyAnswer(st,t);
-  if(right){ _jpSettle(st,t,"",name); _mastRe(); return; }
+  if(right){ _jpSettle(st,t,"",name); return; }
   try{ matchBonk(); }catch(e){}
   const lead=(t.dd?"That was your Daily Double! ":t.fin?"That was Final Jeopardy! ":"")+"It’s "+name+".";
   _jpSettle(st,t,lead);   // says the lead: the right name
   if(t.paid<0&&typeof jpMoneyFmt==="function") st.msg=lead+" "+jpMoneyFmt(t.paid);
   const seq=++st.seq; setTimeout(()=>{ if(jeopState===st&&st.lock&&st.seq===seq) jeopNext(st); },JP_BEAT*2);   // a longer beat: the right one stays lit
-  _mastRe();
 }
-// ── the screen: under the card ──
-function _jpjTtsOk(){ return (typeof _matchTtsOk==="function")?_matchTtsOk():false; }
-function jpJudgeHtml(st,t,color,lock){
-  const done=!!t.done, off=lock||done, name=jeopName(_jpIt(st,t.pid));
+// JPJUDGE_END
+// GAMEJUDGE_START — ⚖️ How "I said it" is checked, for every game, ONE setting per KID (her decision 2026-11-08, from the games audit:
+// "the judging rule is one setting per kid, not a pill per game"). A tablet can't hear, so a say-it card used to be the honor tap; with
+// a challenge on (Jeopardy money first — her finding that night: "everybody would win") the kid's answer is checked one of three ways:
+//   · "pick" — SAY IT, THEN PICK IT: the line "Say it out loud… then tap what you said" and 🗣 I said it (recall first), THEN the
+//     choices: the right answer + others from the same deck of the same kind (the caller hands them in), never one text twice,
+//     shuffled; nearest numbers first for a number deck (Say-it's _matchLures). How many: judgeChoices 3 / 4 / 5 (default 4); a deck
+//     with fewer names shows fewer; none at all → false (the caller keeps its honor tap). Each choice carries Say-it's 🔊 chip
+//     (SAIDPICK: mastSpeak; no chips when TTS is dead on this device). The 🔊 only says it — it never picks.
+//   · "type" — readers type it, then Check: the study session's typed match (mstTypeAnsOk — capitals, extra spaces, number forms don't count).
+//   · "mom" — "🔒 Show Mom the answer": momHere(), else Mom's or Dad's code typed in place (the check-up's Corner unlock: pinOk /
+//     dadPinOk — a check only, it never turns Mom mode on; good for the rest of that round). Then Mom taps ✓ or ✗.
+// STORED — mastery/<kid>_settings/games/judge ("pick"|"type"|"mom") and …/games/judgeChoices (3|4|5): ONE targeted set per tap, Mom only
+// (_gdCanEdit — the games grid's lock), db && !_dryRun() only. Read defensively. Nothing stored = by grade (Settings ▸ Family): Pre-K to
+// 2nd grade → pick, 3rd grade up → type; grade unknown → pick. Mom sets it in Mom's Day ▸ School ▸ Mastery ▸ Settings ▸ 🎮 Games (the
+// row above the grid — gameJudgeRowHtml, one guarded line in GAMEGRID).
+// THE HELPER — a game hands one turn to it and gets the verdict back:
+//   gameJudgeAct(st, turn, {kid, deck, right, names, onRight, onWrong, speakerChips?, mode?, n?, shuffle?, live?, line?}) → true when
+//     judging is on for this turn (turn.gj holds it), false → keep the honor tap. right = the answer text; names = the deck's other
+//     answers of the same kind; onRight(turn) / onWrong(turn, given) settle the card the game's own way (sounds, score, the beat);
+//     speakerChips (default true) = the 🔊 on each choice; mode / n override the kid's setting; shuffle = the game's own (seeded) shuffle;
+//     live() → false once the turn is no longer the game's open one; line(text) shows the ask on the game's own message line.
+//   gameJudgeStamp(round, mode) → round.judge = mode (a judged round; gameLogEntry calls it, so the log entry carries judge).
+//   gameJudgeHtml(turn, color, lock) → what goes under the card. Taps: gameJudgeSaid() (the game's "I said it" calls it),
+//     gameJudgePick(i), gameJudgeHear(i), gameJudgeTyped(v), gameJudgeCheck(), gameJudgeMomShow(), gameJudgeCode(v),
+//     gameJudgeMomCancel(), gameJudgeMom(right). A game stamps the mode on its round (judge) so Scores can tell judged rounds from older ones.
+// Writes nothing else; the app never answers for the kid (the right one is shown only after the kid's answer, or to Mom behind her code).
+const GJ_MODES=["pick","type","mom"];
+let gameJudgeCur=null;   // the turn on screen whose judging the taps act on (in memory; a render re-points it)
+function _gjSet(kid){ try{ const md=(typeof masteryData!=="undefined"&&masteryData)||{}, s=md[kid+"_settings"], g=s&&s.games; return (g&&typeof g==="object")?g:{}; }catch(e){ return {}; } }
+function gameJudgeDefault(kid){ const g=(typeof ckGradeOf==="function")?ckGradeOf(kid):null; return (g!=null&&g>=3)?"type":"pick"; }
+function gameJudgeMode(kid){ const v=_gjSet(kid).judge; return GJ_MODES.indexOf(v)>=0?v:gameJudgeDefault(kid); }
+function gameJudgeChoices(kid){ const v=parseInt(_gjSet(kid).judgeChoices,10); return (v>=3&&v<=5)?v:4; }
+function gameJudgeSet(kid,key,val){
+  if(!kid||typeof _gdCanEdit!=="function"||!_gdCanEdit()) return false;
+  if(key==="judge"){ if(GJ_MODES.indexOf(val)<0) return false; }
+  else if(key==="judgeChoices"){ val=parseInt(val,10); if(!(val>=3&&val<=5)) return false; }
+  else return false;
+  const md=masteryData, s=md[kid+"_settings"]||(md[kid+"_settings"]={}), g=(s.games&&typeof s.games==="object")?s.games:(s.games={});
+  g[key]=val;
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){ try{ db.ref("mastery/"+kid+"_settings/games/"+key).set(val); }catch(e){} }   // this value only
+  try{ HA_LS.setItem("ha_mastery",JSON.stringify(md)); }catch(e){}
+  try{ if(typeof renderAll==="function") renderAll(); }catch(e){}
+  return true;
+}
+function gameJudgeStamp(round,mode){ if(round&&GJ_MODES.indexOf(mode)>=0) round.judge=mode; return round; }   // the round record says how it was judged
+function _gjNorm(s){ return String(s==null?"":s).replace(/<[^>]*>/g," ").toLowerCase().replace(/\s+/g," ").trim(); }
+// PURE-ish: [{text, ok}] — the right answer + up to n-1 others, no text twice, shuffled. [] when there is no other.
+function gameJudgePickChoices(right,names,n,shuffle){
+  shuffle=shuffle||(a=>{ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; });
+  const seen={}; seen[_gjNorm(right)]=1;
+  const pool=(names||[]).map((t,i)=>({id:"n"+i,t:String(t==null?"":t)}));
+  const order=(typeof _matchLures==="function")?_matchLures({id:"r",t:String(right)},pool,c=>c.t,pool.length).map(l=>l.it.t):shuffle(pool.map(c=>c.t));
+  const others=order.filter(k=>{ const z=_gjNorm(k); if(!z||seen[z]) return false; seen[z]=1; return true; }).slice(0,Math.max(0,(n||4)-1));
+  if(!others.length) return [];
+  return shuffle([{text:String(right),ok:true}].concat(others.map(k=>({text:k,ok:false}))));
+}
+function _gjCtx(turn){ return (turn&&turn.gj&&turn.gj._ctx)||null; }
+function _gjLive(turn){ const x=_gjCtx(turn); if(!x||turn.gj.done) return false; try{ return typeof x.opts.live!=="function"||!!x.opts.live(); }catch(e){ return false; } }
+function _gjLine(turn,text){ const x=_gjCtx(turn); if(x&&typeof x.opts.line==="function") try{ x.opts.line(text); }catch(e){} }
+function _gjRe(){ try{ if(typeof _mastRe==="function") _mastRe(); }catch(e){} }
+function gameJudgeAct(st,turn,opts){
+  if(!st||!turn||!opts||opts.right==null||String(opts.right)==="") return false;
+  const mode=GJ_MODES.indexOf(opts.mode)>=0?opts.mode:gameJudgeMode(opts.kid||st.kid);
+  const gj={mode:mode,step:"say",done:false,ok:null,picked:null,typed:"",momAsk:false,momShow:false,right:String(opts.right),deck:opts.deck==null?"":String(opts.deck)};
+  if(mode==="pick"){ gj.ch=gameJudgePickChoices(opts.right,opts.names,opts.n||gameJudgeChoices(opts.kid||st.kid),opts.shuffle); if(gj.ch.length<2) return false; }
+  Object.defineProperty(gj,"_ctx",{value:{st:st,opts:opts},enumerable:false});   // in memory only — never in a JSON copy of the round
+  turn.gj=gj; gameJudgeCur=turn;
+  _gjLine(turn,mode==="pick"?"Say it out loud… then tap what you said.":mode==="type"?"Type what it is, then Check.":"Say it out loud to Mom.");
+  return true;
+}
+function _gjTurn(mode){ const t=gameJudgeCur; return (t&&t.gj&&t.gj.mode===mode&&_gjLive(t))?t:null; }
+function _gjSettle(turn,right,given){
+  const gj=turn.gj, x=_gjCtx(turn); gj.done=true; gj.ok=!!right; gj.given=given==null?"":String(given);
+  try{ if(right) x.opts.onRight(turn); else x.opts.onWrong(turn,gj.given); }catch(e){}
+  _gjRe();
+}
+function gameJudgeSaid(){   // the game's 🗣 I said it: a pick card shows its choices; a type / Mom card has no self-report
+  const t=_gjTurn("pick"); if(!t||t.gj.step!=="say") return false;
+  t.gj.step="pick"; _gjLine(t,"Tap what you said."); _gjRe(); return true;
+}
+function gameJudgeHear(i,ev){   // 🔊 a choice's chip: says that choice — never picks it
+  try{ if(ev&&ev.stopPropagation) ev.stopPropagation(); }catch(e){}
+  const t=_gjTurn("pick"), c=t&&t.gj.step==="pick"&&t.gj.ch[i]; if(!c) return;
+  try{ mastSpeak(c.text); }catch(e){}
+}
+function gameJudgePick(i){ const t=_gjTurn("pick"); if(!t||t.gj.step!=="pick"||!t.gj.ch[i]) return; t.gj.picked=i; _gjSettle(t,!!t.gj.ch[i].ok,t.gj.ch[i].text); }
+function gameJudgeTyped(v){ const t=_gjTurn("type"); if(t) t.gj.typed=String(v==null?"":v); }   // no re-draw while typing
+function gameJudgeCheck(){
+  const t=_gjTurn("type"); if(!t) return;
+  try{ const el=document.getElementById("gj-type-in"); if(el&&el.value!=null) t.gj.typed=String(el.value); }catch(e){}
+  if(!String(t.gj.typed||"").trim()) return;
+  const right=(typeof mstTypeAnsOk==="function")?mstTypeAnsOk(t.gj.typed,t.gj.right):_gjNorm(t.gj.typed)===_gjNorm(t.gj.right);   // the study session's typed match
+  _gjSettle(t,right,t.gj.typed);
+}
+function _gjMomOk(turn){ const x=_gjCtx(turn); return (typeof momHere==="function"&&momHere())||!!(x&&x.st&&x.st.gjMomOk); }
+function gameJudgeMomShow(){
+  const t=_gjTurn("mom"); if(!t) return;
+  if(_gjMomOk(t)) t.gj.momShow=true; else t.gj.momAsk=true;
+  _gjRe();
+  if(t.gj.momAsk) setTimeout(()=>{ try{ const i=document.getElementById("gj-mom-pin"); if(i) i.focus(); }catch(e){} },50);
+}
+function gameJudgeCode(v){
+  const t=_gjTurn("mom"); if(!t||!t.gj.momAsk) return;
+  if(!((typeof pinOk==="function"&&pinOk(v))||(typeof dadPinOk==="function"&&dadPinOk(v)))) return;   // a check only — never turns Mom mode on
+  _gjCtx(t).st.gjMomOk=true; t.gj.momAsk=false; t.gj.momShow=true; _gjRe();
+}
+function gameJudgeMomCancel(){ const t=_gjTurn("mom"); if(!t) return; t.gj.momAsk=false; _gjRe(); }
+function gameJudgeMom(right){ const t=_gjTurn("mom"); if(!t||!t.gj.momShow||!_gjMomOk(t)) return; _gjSettle(t,!!right,right?"":"mom"); }
+// ── under the card ──
+function gameJudgeHtml(turn,color,lock){
+  const gj=turn&&turn.gj; if(!gj) return '';
+  if(!gj.done) gameJudgeCur=turn;
+  const E=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  const done=gj.done, off=!!lock||done, btn='padding:16px 30px;border-radius:999px;border:none;font-size:19px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;-webkit-tap-highlight-color:transparent';
   let h='';
-  if(t.judge==="pick"){
-    if(t.step!=="pick"&&!done) return '<div style="display:flex;justify-content:center"><button class="jp-btn" onclick="jeopSaid()"'+(off?' disabled':'')+' style="background:'+color+';color:#fff;font-size:20px;padding:18px 34px">\u{1F5E3} I said it</button></div>';
-    const tts=_jpjTtsOk();
-    h+='<div class="jp-judge-ch" style="display:grid;grid-template-columns:repeat('+Math.min(t.ch.length,3)+',1fr);gap:10px;max-width:560px;margin:0 auto">';
-    t.ch.forEach((c,i)=>{
-      const mine=t.picked===i, bd=done?(c.ok?'#16a34a':(mine?'#dc2626':'#e2ddd6')):'#e2ddd6', bg=done?(c.ok?'#f0fdf4':(mine?'#fef2f2':'#fff')):'#fff';
-      h+='<div class="said-ch" role="button" aria-label="'+esc(c.text)+'"'+(off?'':' onclick="jeopJudgePick('+i+')"')+' style="min-height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center;padding:8px;border-radius:16px;border:3px solid '+bd+';background:'+bg+';cursor:'+(off?'default':'pointer')+'">';
-      h+='<span style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800;color:#292524;overflow-wrap:anywhere;pointer-events:none">'+(done&&c.ok?'✓ ':'')+esc(c.text)+'</span>';
-      if(tts) h+='<button class="said-hear" onclick="jeopJudgeHear('+i+',event)" aria-label="Hear it" style="padding:4px 14px;border-radius:999px;border:1.5px solid '+color+';background:#fff;color:'+color+';font-size:16px;cursor:pointer">\u{1F50A}</button>';
+  if(gj.mode==="pick"){
+    if(gj.step!=="pick"&&!done) return '<div style="display:flex;justify-content:center"><button class="gj-said" onclick="gameJudgeSaid()"'+(off?' disabled':'')+' style="'+btn+';background:'+color+';color:#fff">\u{1F5E3} I said it</button></div>';
+    const x=_gjCtx(turn), tts=!(x&&x.opts.speakerChips===false)&&(typeof _matchTtsOk==="function")&&_matchTtsOk();
+    h+='<div class="gj-choices" style="display:grid;grid-template-columns:repeat('+Math.min(gj.ch.length,3)+',1fr);gap:10px;max-width:560px;margin:0 auto">';
+    gj.ch.forEach((c,i)=>{
+      const mine=gj.picked===i, bd=done?(c.ok?'#16a34a':(mine?'#dc2626':'#e2ddd6')):'#e2ddd6', bg=done?(c.ok?'#f0fdf4':(mine?'#fef2f2':'#fff')):'#fff';
+      h+='<div class="said-ch" role="button" aria-label="'+E(c.text)+'"'+(off?'':' onclick="gameJudgePick('+i+')"')+' style="min-height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center;padding:8px;border-radius:16px;border:3px solid '+bd+';background:'+bg+';cursor:'+(off?'default':'pointer')+'">';
+      h+='<span style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800;color:#292524;overflow-wrap:anywhere;pointer-events:none">'+(done&&c.ok?'✓ ':'')+E(c.text)+'</span>';
+      if(tts) h+='<button class="said-hear" onclick="gameJudgeHear('+i+',event)" aria-label="Hear it" style="padding:4px 14px;border-radius:999px;border:1.5px solid '+color+';background:#fff;color:'+color+';font-size:16px;cursor:pointer">\u{1F50A}</button>';
       h+='</div>';
     });
     return h+'</div>';
   }
-  if(t.judge==="type"){
-    if(!done){
-      h+='<div style="display:flex;flex-direction:column;align-items:center;gap:10px"><input id="jp-judge-in" type="text" value="'+esc(t.typed||"")+'" oninput="jeopJudgeTyped(this.value)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();jeopJudgeCheck();}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="type it here"'+(off?' disabled':'')+' style="width:100%;max-width:320px;box-sizing:border-box;padding:12px 14px;border-radius:14px;border:3px solid '+color+';font-size:24px;text-align:center;font-family:\'DM Sans\',sans-serif">';
-      h+='<button class="jp-btn" onclick="jeopJudgeCheck()"'+(off?' disabled':'')+' style="background:'+color+';color:#fff;font-size:18px">Check</button></div>';
-      return h;
-    }
-    return '<div style="text-align:center;font-size:20px;font-weight:800;color:'+(t.first?'#16a34a':'#dc2626')+'">'+(t.first?'✓ '+esc(name):'You typed “'+esc(t.typed||"")+'” · it’s <span style="color:#15803d">'+esc(name)+'</span>')+'</div>';
+  if(gj.mode==="type"){
+    if(done) return '<div class="gj-verdict" style="text-align:center;font-size:20px;font-weight:800;color:'+(gj.ok?'#16a34a':'#dc2626')+'">'+(gj.ok?'✓ '+E(gj.right):'You typed “'+E(gj.typed)+'” · it’s <span style="color:#15803d">'+E(gj.right)+'</span>')+'</div>';
+    h+='<div style="display:flex;flex-direction:column;align-items:center;gap:10px"><input id="gj-type-in" type="text" value="'+E(gj.typed)+'" oninput="gameJudgeTyped(this.value)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();gameJudgeCheck();}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="type it here"'+(off?' disabled':'')+' style="width:100%;max-width:320px;box-sizing:border-box;padding:12px 14px;border-radius:14px;border:3px solid '+color+';font-size:24px;text-align:center;font-family:\'DM Sans\',sans-serif">';
+    return h+'<button class="gj-check" onclick="gameJudgeCheck()"'+(off?' disabled':'')+' style="'+btn+';background:'+color+';color:#fff">Check</button></div>';
   }
-  // Mom judges
-  if(done) return '<div style="text-align:center;font-size:20px;font-weight:800;color:'+(t.first?'#16a34a':'#dc2626')+'">'+(t.first?'✓ Mom says right!':'✗ It’s <span style="color:#15803d">'+esc(name)+'</span>')+'</div>';
-  if(t.momShow&&_jpjMomOk(st)){
-    h+='<div style="margin:0 auto;max-width:420px;padding:14px;border-radius:18px;border:3px solid #2B7A78;background:#f0fdfa;text-align:center"><div style="font-size:13px;font-weight:800;color:#0f766e">\u{1F512} For Mom</div>';
-    h+='<div style="font-family:\'Fraunces\',serif;font-size:30px;font-weight:800;color:#292524;margin:6px 0 10px;overflow-wrap:anywhere">'+esc(name)+'</div>';
-    h+='<div style="display:flex;gap:12px;justify-content:center"><button class="jp-btn" onclick="jeopJudgeMom(true)"'+(off?' disabled':'')+' aria-label="Right" style="background:#16a34a;color:#fff;font-size:22px;min-width:96px">✓</button><button class="jp-btn" onclick="jeopJudgeMom(false)"'+(off?' disabled':'')+' aria-label="Not right" style="background:#dc2626;color:#fff;font-size:22px;min-width:96px">✗</button></div></div>';
-    return h;
+  if(done) return '<div class="gj-verdict" style="text-align:center;font-size:20px;font-weight:800;color:'+(gj.ok?'#16a34a':'#dc2626')+'">'+(gj.ok?'✓ Mom says right!':'✗ It’s <span style="color:#15803d">'+E(gj.right)+'</span>')+'</div>';
+  if(gj.momShow&&_gjMomOk(turn)){
+    h+='<div class="gj-mom" style="margin:0 auto;max-width:420px;padding:14px;border-radius:18px;border:3px solid #2B7A78;background:#f0fdfa;text-align:center"><div style="font-size:13px;font-weight:800;color:#0f766e">\u{1F512} For Mom</div>';
+    h+='<div style="font-family:\'Fraunces\',serif;font-size:30px;font-weight:800;color:#292524;margin:6px 0 10px;overflow-wrap:anywhere">'+E(gj.right)+'</div>';
+    return h+'<div style="display:flex;gap:12px;justify-content:center"><button onclick="gameJudgeMom(true)"'+(off?' disabled':'')+' aria-label="Right" style="'+btn+';background:#16a34a;color:#fff;min-width:96px">✓</button><button onclick="gameJudgeMom(false)"'+(off?' disabled':'')+' aria-label="Not right" style="'+btn+';background:#dc2626;color:#fff;min-width:96px">✗</button></div></div>';
   }
-  if(t.momAsk){
-    return '<div style="margin:0 auto;max-width:420px;padding:12px;border:2px solid '+color+';border-radius:14px;background:#fff;text-align:center"><div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px">\u{1F512} Mom or Dad: type your code to see the answer</div>'+
-      '<input id="jp-mom-pin" type="password" inputmode="numeric" maxlength="8" placeholder="Code" autocomplete="off" oninput="jeopJudgeCode(this.value)" style="width:120px;text-align:center;padding:8px;border:1.5px solid var(--border);border-radius:10px;font-size:16px;font-weight:700;letter-spacing:6px;font-family:\'DM Sans\',sans-serif">'+
-      ' <button onclick="jeopJudgeMomCancel()" style="margin-left:6px;padding:8px 14px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancel</button></div>';
-  }
-  return '<div style="display:flex;justify-content:center"><button class="jp-btn" onclick="jeopJudgeMomShow()"'+(off?' disabled':'')+' style="background:#2B7A78;color:#fff;font-size:18px;padding:16px 28px">\u{1F512} Show Mom the answer</button></div>';
+  if(gj.momAsk) return '<div style="margin:0 auto;max-width:420px;padding:12px;border:2px solid '+color+';border-radius:14px;background:#fff;text-align:center"><div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px">\u{1F512} Mom or Dad: type your code to see the answer</div>'+
+    '<input id="gj-mom-pin" type="password" inputmode="numeric" maxlength="8" placeholder="Code" autocomplete="off" oninput="gameJudgeCode(this.value)" style="width:120px;text-align:center;padding:8px;border:1.5px solid var(--border);border-radius:10px;font-size:16px;font-weight:700;letter-spacing:6px;font-family:\'DM Sans\',sans-serif">'+
+    ' <button onclick="gameJudgeMomCancel()" style="margin-left:6px;padding:8px 14px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Cancel</button></div>';
+  return '<div style="display:flex;justify-content:center"><button class="gj-momshow" onclick="gameJudgeMomShow()"'+(off?' disabled':'')+' style="'+btn+';background:#2B7A78;color:#fff">\u{1F512} Show Mom the answer</button></div>';
 }
-// JPJUDGE_END
+// ── Mom's row above the 🎮 Games grid: this kid's one setting ──
+function gameJudgeRowHtml(kid){
+  const E=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  const J=s=>String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+  const nm=(typeof cap==="function")?cap(kid):kid, edit=(typeof _gdCanEdit==="function")&&_gdCanEdit(), cur=gameJudgeMode(kid), n=gameJudgeChoices(kid), set=GJ_MODES.indexOf(_gjSet(kid).judge)>=0;
+  const pill=(on,js,label)=>'<button class="gj-pill'+(on?' on':'')+'" onclick="'+js+'"'+(edit?'':' disabled')+' aria-pressed="'+on+'" style="padding:7px 12px;border-radius:999px;font-size:12.5px;font-weight:800;border:2px solid '+(on?'#16a34a':'#e2ddd6')+';background:'+(on?'#f0fdf4':'#fff')+';color:'+(on?'#15803d':'#57534e')+';cursor:'+(edit?'pointer':'default')+';font-family:\'DM Sans\',sans-serif">'+(on?'✓ ':'')+label+'</button>';
+  let h='<div class="gj-row" style="margin:0 0 12px;padding:10px 12px;border:1.5px solid #e2ddd6;border-radius:14px;background:#fafaf9;font-family:\'DM Sans\',sans-serif">';
+  h+='<div style="font-size:13px;font-weight:800;color:#292524;margin-bottom:8px">⚖️ How is “I said it” checked for '+E(nm)+'?</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
+  [["pick","Say it, then pick it"],["type","Type it"],["mom","Mom judges"]].forEach(o=>{ h+=pill(o[0]===cur,'gameJudgeSet(\''+J(kid)+'\',\'judge\',\''+o[0]+'\')',o[1]); });
+  if(cur==="pick"){ h+='<span style="font-size:12px;font-weight:700;color:var(--muted);margin-left:8px">Choices</span>'; [3,4,5].forEach(k=>{ h+=pill(k===n,'gameJudgeSet(\''+J(kid)+'\',\'judgeChoices\','+k+')',String(k)); }); }
+  h+='</div><div style="font-size:11.5px;color:var(--muted);margin-top:6px">'+(cur==="pick"?'Says it out loud first, then taps what they said (each choice has a \u{1F50A}).':cur==="type"?'Types the answer, then Check. Capitals and extra spaces don’t count.':'Taps “Show Mom the answer” — Mom’s or Dad’s code, then ✓ or ✗.')+
+    ' Used when a game keeps score (Jeopardy with money on).'+(set?'':' Not set — the app’s pick for this grade.')+(edit?'':' (Mom only to change.)')+'</div>';
+  return h+'</div>';
+}
+// GAMEJUDGE_END
 // GAMELIKE_START — 👍👎 "Did you like it?" after a game (her words 2026-11-03: "a check mark for the kid that says, do you like it or do you
 // not like it… so the mom can know if that particular game is something the kid is enjoying, so they can either uncheck it or keep it
 // there"). Under every game's finish card — every GAMES_LIST game, Match and Memory flip included — one line: "Did you like it?" with
@@ -90017,6 +90065,7 @@ function gameDecksHtml(kid){
   const can={}; games.forEach(g=>{ const set={}; gameDeckCan(kid,g).forEach(d=>{ set[d]=1; }); can[g.key]=set; });
   let h='<div class="gd-grid" style="font-family:\'DM Sans\',sans-serif">';
   h+='<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Which games play which of '+E(nm)+'\u2019s decks. Preloaded from each game\u2019s own rule \u2014 tap a cell to turn a game off (or back on) for that deck. \u2013 = that game can\u2019t play the deck. Saves right away.'+(edit?'':' (Mom only to change.)')+'</div>';
+  if(typeof gameJudgeRowHtml==="function") h+=gameJudgeRowHtml(kid);   // ⚖️ GAMEJUDGE: this kid's one "how is I said it checked" setting
   if(!decks.length) return h+'<div class="mast-none">No decks yet.</div></div>';
   h+='<div style="overflow-x:auto"><table style="border-collapse:collapse;min-width:420px;font-size:13px"><thead><tr><th style="text-align:left;padding:6px 8px;border-bottom:2px solid #e2ddd6">Deck</th>';
   games.forEach(g=>{ h+='<th style="padding:6px 6px;border-bottom:2px solid #e2ddd6;white-space:nowrap;font-weight:800">'+((typeof gameRulesBtnHtml==="function")?gameRulesBtnHtml(kid,g):(g.emoji+' '+E(g.label)))+'</th>'; });   // 📜 GAMERULES: the name is a button → that game's rules for this kid
