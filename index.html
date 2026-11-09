@@ -38580,14 +38580,16 @@ function sucComingWeek(todayIso){
   const d=new Date(todayIso+"T12:00:00"); d.setDate(d.getDate()+1);
   return mon===(d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"));
 }
-// PURE: the ids that show on Sunday. on(kid) = the switch; coming = the board holds the coming week.
-function sucPick(tasks,on,coming){
+// PURE: the ids that show on Sunday. on(kid) = the switch; coming = the board holds the coming week; behind = sucBehind's
+// {kid|sk: n} for the plan-backed subjects (SUCPB), optional.
+function sucPick(tasks,on,coming,behind){
   const out=new Set(); if(!coming||!Array.isArray(tasks)) return out;
   const ORD={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
   const live=tasks.filter(function(t){ return t&&t.id&&on(t.who)&&!String(t.id).endsWith("_c")&&!t._eowOverflow&&!t.famBlock&&ORD[t.day]; });
   live.forEach(function(t){ if(/\(Carried from /.test(t.detail||"")) out.add(t.id); });
   const need={};   // kid|sk → catch-up sittings the generator added
   live.forEach(function(t){ if(t.catchup===true&&t.subjectKey){ const k=t.who+"|"+t.subjectKey; need[k]=(need[k]||0)+1; } });
+  Object.keys(behind||{}).forEach(function(k){ if(behind[k]>0) need[k]=Math.max(need[k]||0,behind[k]); });   // SUCPB
   Object.keys(need).forEach(function(k){
     const p=k.split("|");
     live.filter(function(t){ return t.who===p[0]&&t.subjectKey===p[1]; })
@@ -38596,13 +38598,47 @@ function sucPick(tasks,on,coming){
   });
   return out;
 }
+// SUCPB_START — 🔁 Sunday catch-up for PLAN-BACKED subjects (FINDING F4 of the living demo run, 2026-11-09). A plan-backed subject
+// never makes a "(Carried from …)" twin (carryPlanBacked) or a catchup:true card (_pbCatch: the projection owns backlog — the new
+// week simply serves the earliest undone lessons first), so Sunday's tab was EMPTY for exactly the subjects the family runs.
+// Now, from the archive of the week that just closed: the lessons that week still owed — a lesson card open on its board at the
+// close, or a lesson a re-lay sent "to next week" (archive.deferred, written by gwCommit from that week's relayLog) — counted per
+// kid + subject among the cards the NEW week serves (so a lesson checked off on Sunday keeps its place and the count never
+// shifts), and that many of the subject's earliest cards show on Sunday, exactly as a catch-up sitting does. Nothing written.
+// PURE: prev = the closed week's archive entry, tasks = the board, on(kid) = the switch, pb(kid,sk) = plan-backed → {kid|sk: n}
+function sucBehind(prev,tasks,on,pb){
+  const out={}; if(!prev||typeof prev!=="object"||!Array.isArray(tasks)) return out;
+  const ck=prev.checked||{}, owed={};
+  const add=function(k,sk,l){ if(!k||!sk||!l||!on(k)||!pb(k,sk)) return; (owed[k+"|"+sk]=owed[k+"|"+sk]||{})[l]=1; };
+  const pt=Array.isArray(prev.tasks)?prev.tasks:Object.values(prev.tasks||{});
+  pt.forEach(function(t){ if(t&&t.id&&t.lid&&!String(t.id).endsWith("_c")&&!ck[t.id]) add(t.who,t.subjectKey,t.lid); });
+  const df=prev.deferred||{}; Object.keys(df).forEach(function(k){ Object.keys(df[k]||{}).forEach(function(sk){ (Array.isArray(df[k][sk])?df[k][sk]:[]).forEach(function(l){ add(k,sk,l); }); }); });
+  Object.keys(owed).forEach(function(key){ const p=key.split("|");
+    const n=tasks.filter(function(t){ return t&&t.id&&t.who===p[0]&&t.subjectKey===p[1]&&t.lid&&owed[key][t.lid]&&!String(t.id).endsWith("_c"); }).length;
+    if(n) out[key]=n; });
+  return out;
+}
+// PURE: the week's relayLog → {kid:{sk:[lid…]}} of the lessons its re-lays sent "to next week" (an undone run never counts), or null
+function sucDeferredOf(log){
+  const out={}; let any=false;
+  Object.keys(log||{}).forEach(function(at){ const e=log[at]; if(!e||e.built||e.undone) return;
+    (e.removed||[]).forEach(function(c){ if(!c||!c.lid||!c.who||!c.subjectKey) return;
+      const m=(out[c.who]=out[c.who]||{}), a=m[c.subjectKey]||[]; if(a.indexOf(c.lid)<0){ m[c.subjectKey]=a.concat([c.lid]); any=true; } }); });
+  return any?out:null;
+}
+function _sucPrevArchive(){
+  try{ const wn=(typeof currWeekNum==="function")?currWeekNum():0; if(!wn||typeof archive==="undefined"||!archive) return null; return archive["week"+(wn-1)]||null; }catch(e){ return null; }
+}
+// SUCPB_END
 let _sucMemo={key:null,tasks:null,set:null};
 function sucSet(){
   if(typeof _todayDay==="undefined"||_todayDay!=="sunday"||!sucAny()) return null;
   const tasks=(typeof weekData!=="undefined"&&weekData&&weekData.tasks)||null; if(!Array.isArray(tasks)) return null;
-  const today=stTodayIso(), key=(weekData.week||"")+"|"+tasks.length+"|"+today+"|"+JSON.stringify(sucOnMap());
+  const prev=_sucPrevArchive();   // SUCPB
+  const today=stTodayIso(), key=(weekData.week||"")+"|"+tasks.length+"|"+today+"|"+JSON.stringify(sucOnMap())+"|"+(prev?(prev.archivedAt||1):0);
   if(_sucMemo.key===key&&_sucMemo.tasks===tasks) return _sucMemo.set;
-  const set=sucPick(tasks,sucOn,sucComingWeek(today));
+  const coming=sucComingWeek(today);
+  const set=sucPick(tasks,sucOn,coming,coming?sucBehind(prev,tasks,sucOn,function(k,sk){ return typeof planBacked==="function"&&planBacked(k,sk); }):null);
   _sucMemo={key:key,tasks:tasks,set:set};
   return set;
 }
@@ -102557,6 +102593,7 @@ function gwCommit(){
     if(hasAnything){
       const snapSlotPts=ld(oldWK+"_slot_points")||{};
       const entry={weekLabel:oldWK,archivedAt:nowTs(),history:snapHist,tasks:snapTasks,checked:snapChecked,dates:{...DAY_DT},slot_points:snapSlotPts,completion:buildWeekCompletion(snapTasks,snapChecked,snapHist)};
+      try{ const _df=(typeof sucDeferredOf==="function")?sucDeferredOf(relayLogData):null; if(_df) entry.deferred=_df; }catch(e3){}   // 🔁 SUCPB: the lessons this week's re-lays sent "to next week" — Sunday catch-up reads them
       archive[oldWK]=entry;
       try{HA_LS.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
       if(db) db.ref("archive/"+oldWK).set(entry);

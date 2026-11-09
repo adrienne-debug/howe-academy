@@ -409,9 +409,17 @@ async function sweepAt(iso){ clock.now=hm(iso,20,0); const r=A.fn("mlEveningSwee
     ok("S12: the subjects added mid-week are in the new week; the deleted one is not",board().some(t=>t.who==="kid_c"&&t.subjectKey==="music")&&board().some(t=>t.who==="kid_b"&&t.subjectKey==="geography")&&!board().some(t=>t.who==="kid_a"&&t.subjectKey==="history"),inWk3);
     // Sunday catch-up for kid_a: what shows on Sunday's tab
     clock.now=hm("2026-11-22",9,0); const set=A.fn("sucSet")(); const sunCards=set?Array.from(set):[];
-    // kid_a's lessons that were on week 2's board at some point and are still not done = what "fell behind" last week
+    // kid_a's lessons that were on week 2's board at some point and are still not done = what "fell behind" last week (the harness's own account, to judge SUCPB by)
     const behindA=[]; Object.keys(SEEN_LIDS[2]||{}).filter(k=>/^kid_a\//.test(k)).forEach(k=>{ const [kid,sk]=k.split("/"); const done=((A.get("currData.done")||{})[kid]||{})[sk]||{}; SEEN_LIDS[2][k].forEach(l=>{ if(!done[l]) behindA.push(k+" "+l); }); });
-    ok("FINDING F4 (documented, proposal): Sunday catch-up shows NOTHING for a kid whose subjects are plan-backed — the lessons that fell behind in week 2 are served first in week 3 with no carried/catch-up flag for sucPick to read",sunCards.length===0&&behindA.length>0,{sunday:sunCards.length,behind:behindA}); }
+    const sunIds=new Set(sunCards); const sunList=board().filter(t=>sunIds.has(t.id));
+    const arch=db.get("archive/week2")||{}; const r6=board().find(t=>t.who==="kid_a"&&t.subjectKey==="reading"&&t.lid==="L0006");
+    ok("F4 (SUCPB) premise: kid_a's Reading L0006 was sent to next week in week 2 (S8) and the archive of week 2 says so (deferred)",behindA.indexOf("kid_a/reading L0006")>=0&&((arch.deferred||{}).kid_a||{}).reading&&arch.deferred.kid_a.reading.indexOf("L0006")>=0&&!!r6,{behind:behindA,deferred:arch.deferred||null});
+    ok("F4 (SUCPB): Sunday's tab shows kid_a's deferred Reading L0006 (Sunday catch-up on for kid_a)",!!r6&&sunIds.has(r6.id),{sunday:sunList.map(t=>t.who+"/"+t.subjectKey+" "+t.day+" "+t.lid)});
+    ok("F4: Sunday shows only what week 2 still owed — kid_a's plan-backed lessons from the archive (open at the close or sent to next week), each subject's earliest cards; nothing for a kid without Sunday catch-up",sunList.length>0&&sunList.every(t=>t.who==="kid_a"&&t.lid&&behindA.indexOf(t.who+"/"+t.subjectKey+" "+t.lid)>=0),{sunday:sunList.map(t=>t.who+"/"+t.subjectKey+" "+t.lid),behind:behindA});
+    // a lesson checked off on Sunday keeps its place; the others stay on Sunday
+    if(r6){ const before=Array.from(sunIds).sort().join(); clock.now=hm("2026-11-22",9,40); B.fn("finalizeDone")(r6.id,B.fn("nowTs")()); await flush(6000);
+      const after=Array.from(A.fn("sucSet")()||[]).sort().join();
+      ok("F4: checking the Sunday Reading off keeps every other Sunday card on Sunday (the count is read from the board, not from 'done')",after===before&&!!checkedMap()[r6.id],{before,after}); } }
 
   // ── the table ──
   console.log("\n3. steps × checks");
