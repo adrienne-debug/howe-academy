@@ -20,8 +20,9 @@ function cut(a,b){ const i=src.indexOf(a); if(i<0) throw new Error("no "+a); ret
 const NAMES=["_matchPlain","_matchAsk","_matchLures","_matchItem","_matchGateBuild","_matchGateOpen","mastMatchSaid","mastMatchPick",
   "_matchGateClose","_matchBoardDone","_matchClearNext","_matchTone","matchDing","matchBonk","mastMatchThen","mastMatchSetThen",
   "mastMatchTap","mastMatchFinish","_matchElapsed","mastMatchPause","_matchEligible","mastMatchStart","_matchSpeakTile","_matchGateHtml","_matchPairHtml",
-  "_matchSayAge","matchSaidPickOn","_matchTtsOk","_matchSaidChoices","_matchSaidOpen","mastMatchSaidHear","mastMatchSaidPick","_matchSaidLog","_matchSaidHtml",
-  "_grE","_grJ","gameRuleDefs","gameRule","gameRuleSet","gameRulesHtml","gameRulesRender","gameLogDay","gameLogEntry","gameLogRound"];
+  "_matchSayAge","matchSaidPickOn","_matchTtsOk","_matchSaidChoices","_matchSaidOpen","mastMatchSaidHear","mastMatchSaidPick","_matchSaidHtml",
+  "_grE","_grJ","gameRuleDefs","gameRule","gameRuleSet","gameRulesHtml","gameRulesRender","gameLogDay","gameLogEntry","gameLogRound",
+  "_matchThenDefault","_matchBestKey","gameLogMatchEntry"];   // MEMLOGFIX: the REAL finish log is loaded — it used to be left out, which hid the double log
 const RULES=cut("const GAME_RULES={","\n};")+"\nlet gameRulesUI=null;";
 
 const SUMS=[
@@ -88,6 +89,7 @@ console.log("👶 the switch: on for Pre-K to 2nd grade, off for 3rd up, Mom can
   const K=sandbox({grade:1,mom:false});
   ok("a kid can look but not flip it",K.run('gameRuleSet("kidA","memory","saidpick","off")')===false&&K.L.dbWrites.length===0);
   ok("the other games' rules are untouched (+ 🧩 JIGSAW's pieces rule — test_game_jigsaw.js)",JSON.stringify(Object.keys(S.ctx.GAME_RULES))==='["spell","jeop","jumble","jigsaw","memory","train"]');
+  ok("Memory flip's rules: Then, then Say it first (MEMLOGFIX)",JSON.stringify(S.ctx.GAME_RULES.memory.map(r=>r.key))==='["then","saidpick"]');
 }
 
 console.log("🗣 I said it → three choices, nothing spoken, nothing picked");
@@ -169,14 +171,14 @@ console.log("📝 the finished board logs through gameLogRound like a Which one?
   }
   ok("the board finished",S.run('!!matchState.endTs')&&S.run('matchState.phase')==="done");
   const push=S.L.dbWrites.filter(w=>w[1]==="push");
-  ok("one gameLog push, at GAMELOG's path",push.length===1&&push[0][0]==="mastery/gameLog/kidA/20261108",S.L.dbWrites);
+  ok("one gameLog push, at GAMELOG's path (MEMLOGFIX: MATCHLOG's record, the only one)",push.length===1&&push[0][0]==="mastery/gameLog/kidA/20261108",S.L.dbWrites);
   const e=push[0]&&push[0][2];
   ok("game:\"memory\", the deck, one item per card",e&&e.game==="memory"&&e.deck==="Adding"&&e.items.length===picks);
   ok("items read like Which one?: {id, ok, n}",e&&e.items[0].ok===false&&e.items[0].n===2&&e.items.slice(1).every(i=>i.ok===true&&i.n===1),e&&e.items);
   ok("the device's own copy is kept until the listener brings it",Object.keys(S.run('masteryData.gameLog.kidA["20261108"]')).length===1);
   ok("never touches the ladder: no other writes but the log",S.L.dbWrites.every(w=>w[1]==="push"||/_settings\/match_best$/.test(w[0])),S.L.dbWrites);
-  S.run('_matchSaidLog(matchState)');
-  ok("logged once",S.L.dbWrites.filter(w=>w[1]==="push").length===1);
+  S.run('mastMatchFinish()');
+  ok("logged once (a second finish finds st.gameLogged)",S.L.dbWrites.filter(w=>w[1]==="push").length===1);
 }
 
 console.log("⏭ the switch off, or a deck too thin: I said it as before");
@@ -230,7 +232,7 @@ console.log("wiring");
   ok("the only write is gameLogRound's (no db.ref in the block)",!/db\.ref/.test(blk));
   ok("I said it reaches the choices through a guarded call",/typeof _matchSaidOpen==="function"&&_matchSaidOpen\(st,g\)/.test(fn("mastMatchSaid")));
   ok("the gate renders the choose step",/g\.step==="choose"\)\{\s*h\+=_matchSaidHtml/.test(fn("_matchGateHtml")));
-  ok("the board's end logs the picks",/_matchSaidLog\(st\)/.test(fn("_matchBoardDone")));
+  ok("the board's end pushes no log of its own — the picks ride in st.res to MATCHLOG's one entry (MEMLOGFIX)",!/_matchSaidLog|gameLogRound/.test(fn("_matchBoardDone"))&&src.indexOf("function _matchSaidLog(")<0&&/st\.res\[g\.pid\]=c\.ok\?"c":"m";/.test(fn("mastMatchSaidPick")));
   ok("gameRule honours a rule's defFor (kid-aware default)",/d\.defFor/.test(fn("gameRule")));
 }
 

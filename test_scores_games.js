@@ -138,7 +138,7 @@ ok("Match / Memory: ONE guarded line in mastMatchFinish", (fn("mastMatchFinish")
 ok("no new write paths: the adds hold no db.ref of their own — the only push is GAMELOG's existing one", !/db\.ref/.test(fn("gameLogMatchEntry"))&&!/db\.ref/.test(fn("gameLogEntry"))&&(fn("gameLogRound").match(/db\.ref/g)||[]).length===1);
 { const writes=[]; const c={console,Date,Math,Object,String,Array,JSON,isFinite};
   vm.createContext(c);
-  vm.runInContext(["gameLogDay","gameLogEntry","gameLogMatchEntry","gameLogRound","_matchElapsed","mastMatchFinish"].map(fn).join("\n")+
+  vm.runInContext(["gameLogDay","gameLogEntry","gameLogMatchEntry","gameLogRound","_matchElapsed","_matchBestKey","mastMatchFinish"].map(fn).join("\n")+
     "\nvar masteryKid='kidA', masteryData={}; var HA_LS={setItem(){}}; var _dry=false; function _dryRun(){ return _dry; } function mstTodayKey(){ return '20261108'; }"+
     "\nvar db={ref:p=>({push:v=>{ W.push(['push',p,JSON.parse(JSON.stringify(v))]); },update:v=>{ W.push(['update',p,v]); },set:v=>{ W.push(['set',p,v]); }})}; var matchState=null;",c);
   c.W=writes;

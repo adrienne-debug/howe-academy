@@ -2,7 +2,8 @@
  * GAMESTAB_STYLE (her words 2026-11-02): "If you click Match, you wouldn't even need to see the style buttons — that would
  * be covered at the top. Keep the pairs because that still matters." The Face-up / Memory flip toggle under the Match
  * screen is gone; the 🎯 Match / 🧠 Memory flip buttons in the games row pick the style. Pairs and Voice stay under both;
- * Memory flip's "Then" row shows only under Memory flip. Runs the REAL buildMatchHtml + GAMESTAB code.
+ * Memory flip's "Then" row is gone from the kid's screen (MEMLOGFIX 2026-11-08: Mom's 📜 rule now — test_memory_log_fix.js).
+ * Runs the REAL buildMatchHtml + GAMESTAB code.
  *   run:  node test_games_tab_style.js
  */
 const fs=require("fs"), path=require("path"), vm=require("vm");
@@ -15,7 +16,7 @@ function fnText(name){ const i=src.indexOf("function "+name+"("); if(i<0) return
 const bm=fnText("buildMatchHtml");
 ok("no Style label, no Face-up / Memory flip toggle in the Match screen",bm.indexOf(">Style</span>")<0&&bm.indexOf("\\u{1F0CF} Face-up")<0&&!/mastMatchSetStyle\(\\'(match|memory)\\'\)/.test(bm));
 ok("Pairs and Voice toggles stay",bm.indexOf(">Pairs</span>")>0&&bm.indexOf(">Voice</span>")>0&&/mastMatchSetPair\(\\'two\\'\)/.test(bm)&&/mastMatchSetPair\(\\'same\\'\)/.test(bm));
-ok("Memory flip's Then row is under Memory flip only",/if\(matchStyle==="memory"\)\{[\s\S]{0,400}>Then<\/span>/.test(bm));
+ok("no Then row in the Match screen (MEMLOGFIX: Mom's rule now)",bm.indexOf(">Then</span>")<0&&bm.indexOf("mastMatchSetThen")<0);
 ok("the games row still picks the style (gamesPick → mastMatchSetStyle)",/if\(pairMove\|\|g\.style!==matchStyle\) return mastMatchSetStyle\(g\.style\);/.test(fnText("gamesPick")));
 ok("mastMatchSetStyle itself is unchanged (other callers, Kids' Corner)",/^function mastMatchSetStyle\(v\)\{ matchStyle=v; matchState=null; _mastRe\(\); \}/m.test(src));
 
@@ -36,7 +37,7 @@ ok("mastMatchSetStyle itself is unchanged (other callers, Kids' Corner)",/^funct
     else {
       ok("rendered Match: Pairs shown, Style not, Then not",h.indexOf("Pairs")>=0&&h.indexOf("Face-up")<0&&h.indexOf(">Style<")<0&&h.indexOf(">Then<")<0);
       ctx.matchStyle="memory"; let h2=""; try{ h2=ctx.buildMatchHtml("#7c3aed"); }catch(e){ h2=""; }
-      ok("rendered Memory flip: Then shown, Style not",h2.indexOf(">Then<")>=0&&h2.indexOf("Face-up")<0);
+      ok("rendered Memory flip: no Then, no Style (MEMLOGFIX)",h2.indexOf(">Then<")<0&&h2.indexOf("Face-up")<0&&h2.indexOf("Pairs")>=0);
     }
   }
 }

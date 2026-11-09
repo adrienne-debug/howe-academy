@@ -72199,7 +72199,7 @@ function mastMatchToggleSpeak(){
   const k=masteryKid;
   const s=masteryData[k+"_settings"]||(masteryData[k+"_settings"]={});
   s.match_speak=!(s.match_speak===true);
-  if(db) db.ref("mastery/"+k+"_settings/match_speak").set(s.match_speak);
+  if(db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("mastery/"+k+"_settings/match_speak").set(s.match_speak);   // MEMLOGFIX: ?dryrun=1 stays inert
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   _mastRe();
 }
@@ -72217,22 +72217,36 @@ function mastMatchSetPair(v){ matchPairMode=v; matchState=null; _mastRe(); }
 //   "none" — the game exactly as before.
 // A card is asked once per game (the first time one of its tiles is the first flip). Memory flip only;
 // Face-up shows every answer on the board so there is nothing to retrieve. Never touches the ladder.
-// Writes: <kid>_settings/match_then (the per-kid choice, this key only) + the existing match_best / matchLog.
-function mastMatchThen(){
-  const s=masteryData[masteryKid+"_settings"]||{};
-  if(s.match_then==="say"||s.match_then==="pick"||s.match_then==="none") return s.match_then;
-  const g=(typeof ckGradeOf==="function")?ckGradeOf(masteryKid):null;   // Settings ▸ Family grade when Mom set one
+// Writes: <kid>_settings/gameRules/memory/then (Mom only, this rule only) + the existing match_best / matchLog.
+// MEMLOGFIX (her decision 2026-11-08, games honesty audit §4 #2): the "Then" row sat under the board for whoever held the
+// tablet, so a kid could tap "Just find pairs" and turn the check off. Now it is GAME_RULES.memory "then" — Mom's games grid ▸
+// 🧠 Memory flip ▸ 📜 rules pop-up, behind the Mom gate — and the kid-facing row is gone. A <kid>_settings/match_then Mom saved
+// before keeps working (it is the rule's default until she picks in the pop-up); not set = the age default, as before.
+function _matchThenDefault(kid){
+  const s=masteryData[kid+"_settings"]||{};
+  if(s.match_then==="say"||s.match_then==="pick"||s.match_then==="none") return s.match_then;   // the old per-kid choice
+  const g=(typeof ckGradeOf==="function")?ckGradeOf(kid):null;   // Settings ▸ Family grade when Mom set one
   if(g!=null) return g<=2?"say":"pick";
-  return (typeof kcLittle==="function"&&kcLittle(masteryKid))?"say":"pick";   // no grade: Pre-K says, school-age picks
+  return (typeof kcLittle==="function"&&kcLittle(kid))?"say":"pick";   // no grade: Pre-K says, school-age picks
+}
+function mastMatchThen(){
+  if(typeof gameRule==="function"){ const v=gameRule(masteryKid,"memory","then"); if(v==="say"||v==="pick"||v==="none") return v; }
+  return _matchThenDefault(masteryKid);
 }
 function mastMatchSetThen(v){
-  if(v!=="say"&&v!=="pick"&&v!=="none") return;
+  if(v!=="say"&&v!=="pick"&&v!=="none") return false;
+  if(typeof momHere!=="function"||!momHere()) return false;   // MEMLOGFIX: Mom only
   const k=masteryKid;
-  const s=masteryData[k+"_settings"]||(masteryData[k+"_settings"]={});
-  s.match_then=v;
-  if(db) db.ref("mastery/"+k+"_settings/match_then").set(v);   // this key only
-  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  if(typeof gameRuleSet==="function"){ if(!gameRuleSet(k,"memory","then",v)) return false; }   // db && !_dryRun() inside; this rule only
+  else {
+    const s=masteryData[k+"_settings"]||(masteryData[k+"_settings"]={});
+    const G=(s.gameRules&&typeof s.gameRules==="object")?s.gameRules:(s.gameRules={}), g=(G.memory&&typeof G.memory==="object")?G.memory:(G.memory={});
+    g.then=v;
+    if(db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("mastery/"+k+"_settings/gameRules/memory/then").set(v);   // this rule only
+    try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  }
   matchState=null; _mastRe();   // a game shape, like Style / Pairs → fresh board
+  return true;
 }
 // Tiles carry HTML (<u> target words, .mast-hl spans, pictures) — the voice and the lure
 // de-dupe need plain words.
@@ -72307,8 +72321,11 @@ function mastMatchSaid(){
 //     no chips, the choices are plain text.
 //   · Nothing is spoken until the kid taps a choice — the app never picks for the kid and no timer picks.
 //     Right → soft ding + ✓. Wrong → soft bonk, the right one turns green and is spoken.
-//   · Logged like a Which one? pick: each card one turn {pid, first, wrong}; the finished board writes ONE gameLog entry through
-//     gameLogRound (game:"memory", items:[{id, ok, n}]). Nothing else is written; never touches the ladder.
+//   · Logged like a Which one? pick: each pick goes into st.res (c = right, m = missed) and the finished board writes ONE gameLog
+//     entry — MATCHLOG's (mastMatchFinish → gameLogRound(st, gameLogMatchEntry(st)): game:"memory", items:[{id, ok, n}]).
+//     MEMLOGFIX 2026-11-08: the board used to push a second entry of its own (_matchSaidLog, guarded on a different object), so
+//     every Pre-K–2nd pick counted twice in Right %, per-deck % and "learned through games". Gone; one record, one guard (st).
+//     st.sayTurns stays on the board as the round's own turn list. Nothing else is written; never touches the ladder.
 //   · The switch — GAME_RULES.memory "saidpick" (Mom's games grid ▸ 🧠 Memory flip ▸ rules pop-up). Not set = the age default the
 //     Say-it turn itself uses (_matchSayAge): on for Pre-K to 2nd grade, off for 3rd up. Off = "I said it" exactly as before.
 //     A deck with fewer than two lures to offer plays the old way too.
@@ -72358,13 +72375,6 @@ function mastMatchSaidPick(ci){
   _mastRe();
   setTimeout(()=>{ if(matchState===st&&st.gate===g) _matchGateClose(st); },c.ok?600:1800);   // GAMEKID: never acts on a parked / settled gate
 }
-// The finished board's log entry — only when the kid picked on at least one card
-function _matchSaidLog(st){
-  if(!st||st.sayLogged||!Array.isArray(st.sayTurns)||!st.sayTurns.length) return null;
-  st.sayLogged=true;
-  try{ if(typeof gameLogRound==="function") return gameLogRound({game:"memory",kid:st.kid||masteryKid,deck:st.deck,phase:"done",turns:st.sayTurns,t0:st.startTs}); }catch(e){}
-  return null;
-}
 function _matchSaidHtml(g,color){
   const tts=_matchTtsOk(), done=g.picked!=null;
   let h='<div style="display:grid;grid-template-columns:repeat('+g.choices.length+',1fr);gap:8px">';
@@ -72404,7 +72414,6 @@ function _matchGateClose(st){
 }
 function _matchBoardDone(st){
   st.endTs=Date.now();   // the hunt is over — the clock stops here; the clear-up round is untimed
-  try{ _matchSaidLog(st); }catch(e){}   // 🗣 SAIDPICK: the say-it picks → one gameLog entry
   if(st.then==="pick"&&st.missed.length){ st.phase="clearup"; st.cq=st.missed.slice(); _matchClearNext(st); return; }
   st.phase="done"; mastMatchFinish();
 }
@@ -72600,15 +72609,17 @@ function mastMatchTap(ix){
     setTimeout(()=>{ a.miss=t.miss=false; st.sel=-1; st.lock=false; _mastRe(); },650);
   }
 }
+// The round's Match Bests key. Separate bests per game shape — a memory time and a face-up time aren't comparable.
+// MATCH_THEN: nor is a say-it / pick-it round against a plain one — its own key. MEMLOGFIX: the header reads this too
+// (it left off "· pick" / "· say" and showed a plain round's best on a Pick it board).
+function _matchBestKey(st){ return st.deck+(st.style==="memory"?" \u{00B7} memory":"")+(st.pairMode==="same"?" \u{00B7} same":"")+(st.then==="pick"?" \u{00B7} pick":st.then==="say"?" \u{00B7} say":""); }
 function mastMatchFinish(){
   const st=matchState;
   const sec=Math.round(_matchElapsed(st)/100)/10;
   const kid=st.kid||masteryKid;   // GAMEKID: the round's own kid, never whoever is picked now
   const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
   if(!s.match_best) s.match_best={};
-  // Separate bests per game shape — a memory time and a face-up time aren't comparable.
-  // MATCH_THEN: nor is a say-it / pick-it round against a plain one — its own key.
-  const key=st.deck+(st.style==="memory"?" \u{00B7} memory":"")+(st.pairMode==="same"?" \u{00B7} same":"")+(st.then==="pick"?" \u{00B7} pick":st.then==="say"?" \u{00B7} say":"");
+  const key=_matchBestKey(st);
   st.ofN=Object.keys(st.res||{}).length; st.firstTry=Object.keys(st.res||{}).filter(k=>st.res[k]==="c").length;
   const prev=s.match_best[key];
   st.isPB=st.then!=="say"&&(prev==null||sec<prev); st.prevBest=prev; st.sec=sec; st.bestKey=key;   // say-it has no clock to beat
@@ -72728,7 +72739,7 @@ function mastMatchLogResult(){
   if(!masteryData.matchLog) masteryData.matchLog={};
   if(!Array.isArray(masteryData.matchLog[kid])) masteryData.matchLog[kid]=Object.values(masteryData.matchLog[kid]||{});
   masteryData.matchLog[kid].push(entry);
-  if(db) db.ref("mastery/matchLog/"+kid).push(entry);   // append-only push — never a whole-node set
+  if(db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("mastery/matchLog/"+kid).push(entry);   // append-only push — never a whole-node set; MEMLOGFIX: ?dryrun=1 stays inert
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   st.logged=true;
   _mastRe();
@@ -73714,7 +73725,8 @@ function buildMatchHtml(color){
     h+='<div class="mast-none">No decks ready for Match yet — it needs 4+ cards with a picture or definition.</div></div>';
     return h;
   }
-  // Game shape toggles — pair content (word↔meaning vs two identical cards), voice, and Memory flip's "Then".
+  // Game shape toggles — pair content (word↔meaning vs two identical cards) and voice. MEMLOGFIX: Memory flip's "Then" is
+  // Mom's now (GAME_RULES.memory "then", the 📜 rules pop-up) — no kid-facing row.
   // Changing a pair resets the board. GAMESTAB_STYLE (her words 2026-11-02: "you wouldn't even need to see the style
   // buttons — that would be covered at the top"): the Face-up / Memory flip toggle is gone; the 🎯 Match / 🧠 Memory flip
   // buttons in the games row pick the style (gamesPick → mastMatchSetStyle). Each game's own controls sit under its own tab.
@@ -73725,14 +73737,6 @@ function buildMatchHtml(color){
   h+=_tog(matchPairMode==="same","\u{1F46F} Same pair","mastMatchSetPair(\'same\')");
   h+='<span style="font-size:9.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-left:8px">Voice</span>';
   h+=_tog(mastDrillSettings().match_speak,"\u{1F5E3} Say the word","mastMatchToggleSpeak()");
-  if(matchStyle==="memory"){
-    // MATCH_THEN: what the first flip of a turn asks for. Per kid, persisted; age default until Mom picks.
-    const th=mastMatchThen();
-    h+='<span style="font-size:9.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-left:8px">Then</span>';
-    h+=_tog(th==="say","\u{1F3A4} Say it first","mastMatchSetThen(\'say\')");
-    h+=_tog(th==="pick","\u{1F3AF} Pick it first","mastMatchSetThen(\'pick\')");
-    h+=_tog(th==="none","\u{23ED} Just find pairs","mastMatchSetThen(\'none\')");
-  }
   h+='</div>';
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 12px">';
   decks.forEach(dk=>{
@@ -73754,7 +73758,7 @@ function buildMatchHtml(color){
     const _th=matchStyle==="memory"?mastMatchThen():"none";
     h+='<div style="font-size:12.5px;color:var(--muted)">Pick a deck \u{2014} '+(matchStyle==="memory"?(_th==="say"?'flip a card, say it out loud, then find its pair!':_th==="pick"?'flip a card, pick its answer, then find its pair!':'flip two cards, find the pairs, they disappear!'):'match each word to its picture or meaning as fast as you can!')+(_th==="say"?'':' \u{23F1} The clock starts on your first tap.')+'</div></div>'; return h; }
   const s=masteryData[masteryKid+"_settings"]||{};
-  const best=(s.match_best||{})[st.deck+(st.style==="memory"?" \u{00B7} memory":"")+(st.pairMode==="same"?" \u{00B7} same":"")];
+  const best=(s.match_best||{})[_matchBestKey(st)];   // MEMLOGFIX: the same key the finish saves under
   h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px">';
   h+='<span style="display:flex;align-items:center;gap:8px">';
   if(st.then==="say") h+='<span style="font-size:13px;font-weight:800;color:'+color+'">\u{1F3A4} Say it, then find it</span>';   // MATCH_THEN: no clock on a little kid's round
@@ -82855,7 +82859,11 @@ const GAME_RULES={
     ["4","4 pieces","2 \u{00D7} 2, with the picture showing faintly in the frame to build on."],
     ["6","6 pieces","3 \u{00D7} 2, an empty frame."],
     ["9","9 pieces","3 \u{00D7} 3, an empty frame."]]}],
-  memory:[{key:"saidpick",label:"Say it first \u2014 after \u201CI said it\u201D, pick what you said?",def:"off",defFor:k=>(typeof _matchSayAge==="function"&&_matchSayAge(k))?"on":"off",opts:[   // 🗣 SAIDPICK (Sara list 2026-11-02, her yes 2026-11-08)
+  memory:[{key:"then",label:"Then \u2014 after the first flip, the kid\u2026",def:"pick",defFor:k=>(typeof _matchThenDefault==="function")?_matchThenDefault(k):"pick",opts:[   // MEMLOGFIX (her decision 2026-11-08): was a kid-tappable row under the board
+    ["say","Says it first","Say it out loud, tap \u201CI said it\u201D, then the app answers. No clock. Pre-K to 2nd grade start here."],
+    ["pick","Picks it first","Three choices \u2014 the answer and two from the same deck. A miss comes back once the board is clear. 3rd grade and up start here."],
+    ["none","Just finds pairs","Plain Memory flip \u2014 nothing asked."]]},
+    {key:"saidpick",label:"Say it first \u2014 after \u201CI said it\u201D, pick what you said?",def:"off",defFor:k=>(typeof _matchSayAge==="function"&&_matchSayAge(k))?"on":"off",opts:[   // 🗣 SAIDPICK (Sara list 2026-11-02, her yes 2026-11-08)
     ["on","On","Three choices, each with a \u{1F50A} to hear it \u2014 tap the one you said. Right gets a \u2713; a wrong pick hears and sees the right one. Pre-K to 2nd grade start here."],
     ["off","Off","\u201CI said it\u201D and the app says the answer \u2014 the old way. 3rd grade and up start here."]]}],
   // 🚂 TRAIN's level pin: levels 3–5 (hook up) are added by the TRAIN block
