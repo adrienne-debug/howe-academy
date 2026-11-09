@@ -2,10 +2,12 @@
  * 🧩 Picture Puzzle (her design 2026-11-08, PLAN_abc_puzzle_games_2026-11-08.md Game 2).
  * Offered only for a kid with picture cards (a real picture to cut — found by the cards, never a name). A card the kid is learning
  * is cut into 4 / 6 / 9 pieces by level (CSS background tiles, no canvas); the pieces scatter in the tray; level 1's frame shows a
- * faint outline; drag (or tap) a piece close to its place and it snaps in, anywhere else it goes back. Finish: the whole picture, the
- * word shown + said, then "What is it?" with 3 words — logged through gameLogRound as a round of that card. Two clean rounds in a
- * row → more pieces; Mom can pin the pieces (GAME_RULES.jigsaw "pieces").
- * Runs the REAL code (GAMELOG + GAMEGRID + GAMERULES + JIGSAW) with timers by hand.
+ * faint outline; drag (or tap) a piece close to its place and it snaps in, anywhere else it goes back. Finish (games audit 2026-11-08
+ * §7 rank 9): the whole picture and "What is it?" FIRST — the word not shown or said — judged by ⚖️ GAMEJUDGE with the kid's setting
+ * (say it, then pick 1 of 3 with 🔊 chips for Pre-K; type; Mom); THEN the word shown + said as the confirm (a wrong answer shows the
+ * right one). Logged through gameLogRound as a round of that card, stamped judge. Two clean rounds (the right answer) in a row → more
+ * pieces; Mom can pin the pieces (GAME_RULES.jigsaw "pieces").
+ * Runs the REAL code (GAMELOG + GAMEGRID + GAMERULES + GAMEJUDGE + JIGSAW) with timers by hand.
  *   run:  node test_game_jigsaw.js
  */
 const fs=require("fs"), path=require("path"), vm=require("vm");
@@ -28,7 +30,8 @@ ok("GAMES_LIST: the puzzle after the ABC Train, with park / restore / resume and
 ok("GAME_LIKE_STATE names the puzzle's state (the 👍👎 line)",/\n  jigsaw:\(\)=>jigState/.test(cut("const GAME_LIKE_STATE={","\n};")));
 ok("GAMELOG: one guarded line adds level + clean to a puzzle round",/if\(st\.game==="jigsaw"&&st\.level!=null\)\{ e\.level=st\.level; e\.clean=!!st\.clean; \}/.test(cut("// GAMELOG_START","// GAMELOG_END")));
 ok("drag: pointer events, a piece takes the finger (touch-action:none)",/addEventListener\("pointermove"/.test(code)&&/addEventListener\("pointerup"/.test(code)&&/addEventListener\("pointercancel"/.test(code)&&/\.jig-tp\{[^}]*touch-action:none/.test(blk));
-ok("the show timer checks its own round",/jigState===st&&st\.phase==="show"&&st\.seq===seq/.test(code));
+ok("ask first: no show timer, no 'show' phase; the last piece goes straight to the question",!/JIG_SHOW_MS|phase==="show"|setTimeout/.test(code)&&/if\(Object\.keys\(st\.placed\)\.length>=st\.n\) jigAsk\(st\);/.test(code));
+ok("the question goes through the shared judge (gameJudgeAct) with the kid's setting and 🔊 chips; no honor tap of its own",/gameJudgeAct\(st,t,\{kid:kid,deck:st\.deck,right:st\.word,[^\n]*mode:mode,n:n,[^\n]*speakerChips:true/.test(code)&&/gameJudgeMode\(kid\)/.test(code)&&!/I said it/.test(code));
 
 // ── a sandbox ──
 let _id=0;
@@ -37,9 +40,10 @@ function world(items,o){
   o=o||{};
   const writes=[], said=[], dings=[], timers=[]; let now=0, clock=1762600000000;
   class FakeDate extends Date{ static now(){ return clock+=1000; } }
-  const CODE=cut("// GAMELOG_START","// GAMELOG_END")+"\n"+cut("// GAMEGRID_START","// GAMEGRID_END")+"\n"+cut("// GAMERULES_START","// GAMERULES_END")+"\n"+cut("// UNITPIC_START","// UNITPIC_END")+"\n"+cut("// JIGSAW_START","// JIGSAW_END");
+  const CODE=cut("// GAMELOG_START","// GAMELOG_END")+"\n"+cut("// GAMEGRID_START","// GAMEGRID_END")+"\n"+cut("// GAMERULES_START","// GAMERULES_END")+"\n"+cut("// UNITPIC_START","// UNITPIC_END")+"\n"+cut("// GAMEJUDGE_START","// GAMEJUDGE_END")+"\n"+cut("// JIGSAW_START","// JIGSAW_END");
   const ctx={console,JSON,Object,Array,String,Number,Math,Set,Map,RegExp,Date:FakeDate,parseInt,isNaN,isFinite,Promise,encodeURIComponent,
     setTimeout:(f,ms)=>{ timers.push({at:now+(ms||0),f:f,id:timers.length+1}); return timers.length; },
+    isPreK:k=>o.prek!==false,ckGradeOf:k=>(o.prek===false?(o.grade!=null?o.grade:1):null),_matchTtsOk:()=>o.tts!==false,
     _dryRun:()=>!!o.dry,HA_LS:{setItem(){}},_mastRe(){ ctx._renders=(ctx._renders||0)+1; },momHere:()=>o.mom!==false,renderAll(){},cap:s=>s,
     _gamesItems:k=>(k==="k"?items||[]:[]),
     mastGetVisual:(cat,name)=>(o.vis&&o.vis[name])||null,
@@ -49,7 +53,7 @@ function world(items,o){
     db:{ref:p=>({set:v=>writes.push(["set",p,v]),update:v=>writes.push(["update",p,v]),push:v=>writes.push(["push",p,v]),remove:()=>writes.push(["remove",p])})}};
   vm.createContext(ctx);
   vm.runInContext(CODE+"\nObject.defineProperty(this,'jigState',{get:()=>jigState,set:v=>{jigState=v;}}); Object.defineProperty(this,'_jigRandom',{get:()=>_jigRandom,set:v=>{_jigRandom=v;}});"+
-    " this.GAME_RULES=GAME_RULES; this.JIG_PIECES=JIG_PIECES; this.JIG_SNAP=JIG_SNAP; this.JIG_SHOW_MS=JIG_SHOW_MS; this.JIG_CHOICES=JIG_CHOICES;",ctx);
+    " this.GAME_RULES=GAME_RULES; this.JIG_PIECES=JIG_PIECES; this.JIG_SNAP=JIG_SNAP; this.JIG_CHOICES=JIG_CHOICES;",ctx);
   if(o.live) vm.runInContext("mastLiveImg=__live;",Object.assign(ctx,{__live:o.live}));   // a stand-in for 🖼 UNITPIC's helper
   ctx._jigRandom=seeded(o.seed||3);
   const tick=t=>{ for(;;){ const due=timers.filter(x=>x.at<=t).sort((x,y)=>x.at-y.at||x.id-y.id)[0]; if(!due) break; timers.splice(timers.indexOf(due),1); now=due.at; due.f(); } now=t; };
@@ -59,7 +63,9 @@ function world(items,o){
 const DECK=()=>[C("cat"),C("dog"),C("cow"),C("pig",{subject:"Farm"}),C("hen",{subject:"Farm",imageUrl:""})];
 // place every piece at its own spot
 function build(w){ const c=w.c, st=c.jigState, T=c.jigTiles(st.n,st.ar); st.tray.slice().forEach(i=>c.jigDrop(i,T[i].x,T[i].y)); return st; }
-const rightIx=st=>st.choices.indexOf(st.word);
+// the judge's choices on the turn; say it, then pick the right (or a wrong) one
+const CH=st=>(st.turns[0].gj&&st.turns[0].gj.ch)||[];
+function answer(c,st,right){ c.gameJudgeSaid(); const ch=CH(st); c.gameJudgePick(ch.findIndex(x=>!!x.ok===!!right)); }
 
 // ── availability ──
 { ok("picture cards → offered",world(DECK()).c.jigAvail("k")===true);
@@ -123,45 +129,51 @@ const rightIx=st=>st.choices.indexOf(st.word);
   ok("…it shows in the frame at its place, 3 pieces left in the tray",new RegExp('class="jig-pc jig-in jig-snap" style="background-size:'+T[i0].bgSize.replace(/%/g,"%")+';background-position:'+T[i0].bgPos+';left:'+(T[i0].x*100)+'%;top:'+(T[i0].y*100)+'%').test(h)&&(h.match(/jigDown\(event/g)||[]).length===3&&/1 of 4 pieces/.test(h));
   ok("a placed piece can't be dropped again",c.jigDropJudge(st,i0,T[i0].x,T[i0].y)===null);
   st.tray.slice(1).forEach(i=>c.jigDrop(i,T[i].x,T[i].y));
-  ok("the last piece: the whole picture, its word shown and said",st.phase==="show"&&w.said[w.said.length-1]===st.word&&/class="jig-whole"/.test(c.buildJigHtml("#123"))&&new RegExp('class="jig-word">'+st.word+'<').test(c.buildJigHtml("#123")));
-  ok("no tray, no outline once it's whole",!/jigDown\(event/.test(c.buildJigHtml("#123"))&&!/class="jig-ghost"/.test(c.buildJigHtml("#123")));
-  w.tick(w.now()+c.JIG_SHOW_MS);
-  ok("then \"What is it?\" — said, 3 different words, the card's own among them",st.phase==="ask"&&w.said[w.said.length-1]==="What is it?"&&st.choices.length===3&&new Set(st.choices).size===3&&st.choices.indexOf(st.word)>=0);
-  ok("…the other words come from its own deck first",st.choices.every(x=>["cat","dog","cow"].indexOf(x)>=0)||st.word==="pig");
+  const nSaid=w.said.length;
   h=c.buildJigHtml("#123");
-  ok("the question: the whole picture stays, 3 word buttons, the word itself not shown above them",/class="jig-whole"/.test(h)&&(h.match(/class="jig-ch" onclick="jigTap\(\d\)"/g)||[]).length===3&&!/class="jig-word">[a-z]/.test(h));
-  const wi=st.choices.findIndex(x=>x!==st.word);
-  c.jigTap(wi);
-  ok("a wrong word: the bonk, it greys out (can't be tapped again), the question stays",w.dings[w.dings.length-1]==="bonk"&&st.phase==="ask"&&new RegExp('class="jig-ch jig-no" onclick="jigTap\\('+wi+'\\)" disabled').test(c.buildJigHtml("#123"))&&c.jigJudge(st,wi)===null);
-  const wi2=st.choices.findIndex((x,k)=>x!==st.word&&k!==wi); c.jigTap(wi2);
-  ok("two wrong → the card's miss (fail), still his tap to make",st.turns[0].fail===true&&st.phase==="ask");
-  c.jigTap(rightIx(st));
+  ok("the last piece: the whole picture and \"What is it?\" FIRST — said, the word NOT said and NOT shown",st.phase==="ask"&&w.said[w.said.length-1]==="What is it?"&&w.said.indexOf(st.word)<0&&/class="jig-whole"/.test(h)&&/What is it\?/.test(h)&&h.indexOf(">"+st.word+"<")<0&&h.indexOf(st.word+"!")<0);
+  ok("no tray, no outline once it's whole",!/jigDown\(event/.test(h)&&!/class="jig-ghost"/.test(h));
+  ok("judged by the shared helper, the kid's setting (Pre-K → say it, then pick it): the line and the 🗣 I said it, no choices yet",st.turns[0].gj&&st.turns[0].gj.mode==="pick"&&st.turns[0].gj.step==="say"&&/Say it out loud… then tap what you said\./.test(h)&&/onclick="gameJudgeSaid\(\)"/.test(h)&&!/gameJudgePick\(/.test(h));
+  ok("🔊 on the question says only \"What is it?\" (never the choices, never the word)",(c.jigHear(),w.said[w.said.length-1]==="What is it?"&&w.said.indexOf(st.word)<0));
+  c.gameJudgeSaid(); h=c.buildJigHtml("#123");
+  ok("after \"I said it\": 3 choices for a Pre-K kid, all different, the card's own among them, each with its 🔊 chip",CH(st).length===c.JIG_CHOICES&&new Set(CH(st).map(x=>x.text)).size===3&&CH(st).filter(x=>x.ok).length===1&&CH(st).find(x=>x.ok).text===st.word&&(h.match(/onclick="gameJudgePick\(\d\)"/g)||[]).length===3&&(h.match(/onclick="gameJudgeHear\(\d,event\)"/g)||[]).length===3);
+  ok("…the other words come from its own deck first",CH(st).every(x=>["cat","dog","cow"].indexOf(x.text)>=0)||st.word==="pig");
+  ok("…still nothing shown or said as the answer (the chips are the choices)",w.said.indexOf(st.word)<0&&!/class="jig-word">[^W]/.test(h));
+  const wi=CH(st).findIndex(x=>!x.ok); c.gameJudgePick(wi);
   const p=w.writes.filter(x=>x[0]==="push");
-  ok("the right word: ding, said again, done",st.phase==="done"&&w.dings[w.dings.length-1]==="ding"&&w.said[w.said.length-1]===st.word);
-  ok("logged once through gameLogRound: game jigsaw, the card's deck, one item (the card: ok false, n 3, fail), level 1, not clean",p.length===1&&p[0][1]==="mastery/gameLog/k/20261108"&&p[0][2].game==="jigsaw"&&p[0][2].deck===st.deck&&p[0][2].level===1&&p[0][2].clean===false&&JSON.stringify(p[0][2].items)===JSON.stringify([{id:st.pid,ok:false,n:3,fail:true}]));
-  ok("nothing else is written",w.writes.length===1);
   h=c.buildJigHtml("#123");
-  ok("the finish: the word, one Play again",new RegExp('🎉 '+st.word+'!').test(h)&&(h.match(/Play again/g)||[]).length===1&&/onclick="jigStart\(\)"/.test(h));
+  ok("a wrong pick: the bonk, done — THEN the right one shown and said (\"It's <word>\"), the right choice marked, the picked one red",st.phase==="done"&&w.dings[w.dings.length-1]==="bonk"&&w.said[w.said.length-1]==="It\u2019s "+st.word+"."&&new RegExp('class="jig-word">It\u2019s '+st.word+'\\.<').test(h)&&h.indexOf("✓ "+st.word)>0&&/#dc2626/.test(h));
+  ok("…the word was said only after the answer",w.said.slice(nSaid).indexOf(st.word)<0&&w.said.slice(nSaid).filter(x=>x.indexOf(st.word)>=0).length===1);
+  ok("logged once: game jigsaw, the card (ok false, fail), level 1, NOT clean, judge pick",p.length===1&&p[0][1]==="mastery/gameLog/k/20261108"&&p[0][2].game==="jigsaw"&&p[0][2].deck===st.deck&&p[0][2].level===1&&p[0][2].clean===false&&p[0][2].judge==="pick"&&JSON.stringify(p[0][2].items)===JSON.stringify([{id:st.pid,ok:false,n:2,fail:true}]),p[0]&&p[0][2]);
+  ok("nothing else is written",w.writes.length===1);
+  ok("the finish: one Play again",(h.match(/Play again/g)||[]).length===1&&/onclick="jigStart\(\)"/.test(h));
+  ok("a second pick after the verdict does nothing",(c.gameJudgePick(CH(st).findIndex(x=>x.ok)),w.writes.length===1&&st.turns[0].first===false));
   c.jigStart();
   ok("Play again: a new round with a different picture",c.jigState!==st&&c.jigState.pid!==st.pid&&c.jigState.phase==="play");
 }
-// clean round, Next button, logging edge cases
+// a right pick, other settings, logging edge cases
 { const w=world(DECK()), c=w.c;
-  c.jigStart(); const st=build(w);
-  ok("Next skips the wait",st.phase==="show"&&(c.jigNext(),st.phase==="ask"));
-  c.jigTap(rightIx(st));
-  const e=w.writes[0][2];
-  ok("named on the first tap: ok true, n 1, the round is clean",e.clean===true&&JSON.stringify(e.items)===JSON.stringify([{id:st.pid,ok:true,n:1}]));
-  w.flushAll(); ok("the old show timer does nothing after Next",st.phase==="done"&&w.writes.length===1);
-  const d=world(DECK(),{dry:true}); d.c.jigStart(); const sd=build(d); d.c.jigNext(); d.c.jigTap(rightIx(sd));
+  c.jigStart(); const st=build(w); answer(c,st,true);
+  const e=w.writes[0][2], h=c.buildJigHtml("#000");
+  ok("the right pick: ding, THEN the word said and shown (🎉 word!)",st.phase==="done"&&w.dings[w.dings.length-1]==="ding"&&w.said[w.said.length-1]===st.word&&new RegExp('🎉 '+st.word+'!').test(h));
+  ok("…ok true, n 1, the round is clean, stamped judge pick",e.clean===true&&e.judge==="pick"&&JSON.stringify(e.items)===JSON.stringify([{id:st.pid,ok:true,n:1}]));
+  const d=world(DECK(),{dry:true}); d.c.jigStart(); const sd=build(d); answer(d.c,sd,true);
   ok("?dryrun=1: nothing written (this device keeps its copy)",d.writes.length===0&&Object.keys(d.c.masteryData.gameLog.k["20261108"]).length===1);
   const part=world(DECK()); part.c.jigStart(); const sp=part.c.jigState, T=part.c.jigTiles(4,1); part.c.jigDrop(sp.tray[0],T[sp.tray[0]].x,T[sp.tray[0]].y); part.c.jigStart();
   ok("a round dropped part-way writes nothing",part.writes.length===0);
-  const lone=world([C("cat")]); lone.c.jigStart(); const sl=build(lone); lone.flushAll();
-  ok("only one word anywhere: no question to ask — the whole picture, then the finish; nothing to log",sl.phase==="done"&&lone.writes.length===0&&/Play again/.test(lone.c.buildJigHtml("#000")));
-  const two=world([C("cat"),C("dog",{imageUrl:"",subject:"Farm"})]); two.c.jigStart();
-  ok("words come from the kid's other decks when its own deck is short (a word card with no picture is fine)",JSON.stringify(two.c.jigState.choices.slice().sort())==='["cat","dog"]');
-  ok("the question never repeats a word (case, markup ignored)",(()=>{ const c2=world([]).c, ch=c2.jigChoices(C("Cat"),[C("cat"),C("<b>CAT</b>"),C("dog"),C("Dog"),C("cow")]); return ch.length===3&&new Set(ch.map(x=>x.toLowerCase())).size===3; })());
+  const lone=world([C("cat")]); lone.c.jigStart(); const sl=build(lone);
+  ok("only one word anywhere: nothing to judge against → no question, NO honor tap, nothing logged; the word shown as the finish",sl.phase==="done"&&!sl.turns[0].gj&&sl.turns[0].nolog===true&&sl.clean===false&&lone.writes.length===0&&/🎉 cat!/.test(lone.c.buildJigHtml("#000"))&&/Play again/.test(lone.c.buildJigHtml("#000")));
+  const two=world([C("cat"),C("dog",{imageUrl:"",subject:"Farm"})]); two.c.jigStart(); const s2=build(two); two.c.gameJudgeSaid();
+  ok("words come from the kid's other decks when its own deck is short (a word card with no picture is fine)",JSON.stringify(CH(s2).map(x=>x.text).sort())==='["cat","dog"]');
+  ok("the words never repeat a word (case, markup ignored), never the card's own",(()=>{ const c2=world([]).c, ns=c2.jigNames(C("Cat"),[C("cat"),C("<b>CAT</b>"),C("dog"),C("Dog"),C("cow")]); return ns.length===2&&new Set(ns.map(x=>x.toLowerCase())).size===2&&ns.every(x=>x.toLowerCase()!=="cat"); })());
+  const big=world(DECK().concat([C("ant"),C("bee"),C("emu")]),{prek:false,grade:1,settings:{games:{judgeChoices:5}}}); big.c.jigStart(); const sb=build(big); big.c.gameJudgeSaid();
+  ok("a school kid on say-then-pick: the kid's own judgeChoices (5)",CH(sb).length===5);
+  const ty=world(DECK(),{prek:false,grade:3}); ty.c.jigStart(); const st3=build(ty);
+  ok("a reader (3rd grade → type it): the typing box, the word still not shown",st3.turns[0].gj.mode==="type"&&/id="gj-type-in"/.test(ty.c.buildJigHtml("#000"))&&ty.c.buildJigHtml("#000").indexOf(st3.word+"<")<0);
+  ty.c.gameJudgeTyped("zzz"); ty.c.gameJudgeCheck();
+  ok("…typed wrong: the card's miss, not clean, judge type, and the right word shown",st3.phase==="done"&&ty.writes[0][2].clean===false&&ty.writes[0][2].judge==="type"&&ty.writes[0][2].items[0].ok===false&&new RegExp("It\u2019s "+st3.word).test(ty.c.buildJigHtml("#000")));
+  const mm=world(DECK(),{settings:{games:{judge:"mom"}}}); mm.c.jigStart(); const sm=build(mm);
+  ok("Mom judges: the 🔒 Show Mom the answer, then her ✓ → right, judge mom",/gameJudgeMomShow\(\)/.test(mm.c.buildJigHtml("#000"))&&(mm.c.gameJudgeMomShow(),mm.c.gameJudgeMom(true),sm.phase==="done"&&mm.writes[0][2].judge==="mom"&&mm.writes[0][2].clean===true));
 }
 // which card
 { const c=world([]).c, pool=[C("cat",{tier:"weekly"}),C("dog",{status:"introduction",tier:"weekly"}),C("cow",{tier:"monthly"})];
@@ -181,8 +193,9 @@ const rightIx=st=>st.choices.indexOf(st.word);
 { const c=world([]).c, R=(lv,cl,at)=>({game:"jigsaw",level:lv,clean:cl,at:at});
   ok("pure: no rounds → level 1; two clean in a row → 2; then → 3; never past 3",c.jigLevelFrom([])===1&&c.jigLevelFrom([R(1,true,1),R(1,true,2)])===2&&c.jigLevelFrom([R(1,true,1),R(1,true,2),R(2,true,3),R(2,true,4)])===3&&c.jigLevelFrom([R(1,true,1),R(1,true,2),R(2,true,3),R(2,true,4),R(3,true,5),R(3,true,6)])===3);
   ok("pure: clean, not clean, clean → still 1; another game's rounds don't count",c.jigLevelFrom([R(1,true,1),R(1,false,2),R(1,true,3)])===1&&world([],{log:{k:{"20261107":{"-a":{game:"train",level:1,clean:true,at:1},"-b":{game:"train",level:1,clean:true,at:2}}}}}).c.jigLevel("k")===1);
-  const w=world(DECK()), cc=w.c, play=()=>{ cc.jigStart(); const st=build(w); cc.jigNext(); cc.jigTap(rightIx(st)); return st; };
-  play(); ok("one clean round: still 4 pieces",cc.jigLevel("k")===1);
+  const w=world(DECK()), cc=w.c, play=right=>{ cc.jigStart(); const st=build(w); answer(cc,st,right!==false); return st; };
+  play(); play(false); play();
+  ok("level-up needs the RIGHT pick: clean, wrong, clean → still 4 pieces",cc.jigLevel("k")===1);
   const s2=play(); ok("two clean in a row: 6 pieces next time, and the finish says so",cc.jigLevel("k")===2&&s2.levelAfter===2&&/6 pieces next time/.test(cc.buildJigHtml("#000")));
   cc.jigStart(); ok("the next round: 6 pieces",cc.jigState.n===6);
   const lg={k:{"20261107":{"-a":R(1,true,5),"local_5":R(1,true,5),"-b":R(1,true,6)}}};
@@ -200,9 +213,9 @@ const rightIx=st=>st.choices.indexOf(st.word);
 { const w=world(DECK()), c=w.c;
   c.jigStart(); const st=build(w); const n0=w.said.length;
   const parked=c.jigPark(); c.jigState=null; w.flushAll();
-  ok("parked during the whole-picture moment: its timer does nothing",parked===st&&st.phase==="show"&&w.said.length===n0);
-  c.jigState=parked; c.jigResume();
-  ok("back to that kid: straight to the question",st.phase==="ask");
+  ok("parked on the question: nothing said, nothing written, no pick lands",parked===st&&st.phase==="ask"&&w.said.length===n0&&(c.gameJudgeSaid(),c.gameJudgePick(0),w.writes.length===0&&!st.turns[0].done));
+  c.jigState=parked; c.jigResume(); c.buildJigHtml("#000");
+  ok("back to that kid: the same question, still unanswered, and it can be answered",st.phase==="ask"&&!st.turns[0].done&&(answer(c,st,true),st.phase==="done"&&w.writes.length===1&&w.writes[0][2].clean===true));
   const w2=world(DECK()), c2=w2.c; c2.jigStart(); const s2=c2.jigState; c2.jigTapPiece(s2.tray[0]); c2.jigPark(); c2.jigResume();
   ok("parked holding a piece: on resume it's put down, nothing placed",s2.sel===null&&!Object.keys(s2.placed).length&&s2.phase==="play");
 }
@@ -243,7 +256,7 @@ const rightIx=st=>st.choices.indexOf(st.word);
   const h=w.c.buildJigHtml("#000");
   ok("a picture URL with a quote, a backslash or & can't break out of the page's markup",w.c.jigState.word==="cat"&&h.indexOf('--jig-img:url(&quot;https://x.example/a%22b%5Cc&amp;d.jpg&quot;)')>=0&&h.indexOf('a"b')<0);
 }
-{ let err=null; try{ const w=world(DECK(),{noVoice:true}); w.c.jigStart(); build(w); w.flushAll(); w.c.jigTap(rightIx(w.c.jigState)); }catch(e){ err=e; }
+{ let err=null; try{ const w=world(DECK(),{noVoice:true,tts:false}); w.c.jigStart(); const st=build(w); w.flushAll(); answer(w.c,st,true); if(st.phase!=="done") err="not done"; }catch(e){ err=e; }
   ok("no voice on the device: no crash",err===null);
 }
 
