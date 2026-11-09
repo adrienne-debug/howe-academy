@@ -28479,6 +28479,16 @@ function scpPrevWin(w,days){ const t=scpShift(w.from,-1); return {from:scpShift(
 // never carry the stamp and are untouched.
 const SCP_SAY_GAMES={gofish:1,four:1,ship:1,sure:1,kaboom:1,jeop:1};
 function scpPreJudge(e){ return !!(e&&typeof e==="object"&&SCP_SAY_GAMES[String(e.game||"")]===1&&!e.judge); }
+// 🎓 TEACHSCORE (her decision 2026-11-08, games audit §4 #12 / Q6: Teach it "as its own line ('taught: N')"): Teach it's ✓ is the
+// LISTENER's verdict tapped on the teacher's device — an honor game by design, and her 2026-11-03 rule says it "moves nothing". Its
+// rounds are still logged (count, minutes) but a game listed here is UNSCORED: left out of Right % (scpRight) and learned-through-games
+// (scgLearned); the 🎮 Games section shows it on its own line ("🎓 taught: N cards · M rounds"), no Right %.
+const SCP_UNSCORED={teach:1};
+function scpUnscored(e){ return !!(e&&typeof e==="object"&&SCP_UNSCORED[String(e.game||"")]===1); }
+// 🚂 PKTRAIN no double count (games audit 2026-11-08 §4 #23 / §7 rank 8): a Pre-K study card's Train round that EARNED the study is
+// logged twice — the studyLog sitting (full weight) and its gameLog round, tagged study:<sid>. The sitting is the one that counts:
+// a tagged round is left out of Right %, the minutes and learned-through-games (its letters' grades are the sitting's).
+function scpStudyRound(e){ return !!(e&&typeof e==="object"&&e.study); }
 // PURE: right ÷ graded inside a window → {graded, right, pct, drill:{g,r}, study:{g,r}, games:{n,ok}}; pct null when nothing was graded.
 function scpRight(kid,history,studyLog,gameLog,w,gw){
   gw=(typeof gw==="number")?gw:SCP_GAME_W;
@@ -28488,7 +28498,7 @@ function scpRight(kid,history,studyLog,gameLog,w,gw){
   else { const dh=(history||{})[kid]||{}; Object.keys(dh).forEach(k=>{ const e=dh[k]; days[k]={items:scpV(e&&e.items).filter(it=>it.result==="c"||it.result==="m"||it.result==="~").map(it=>({result:it.result,src:"drill"}))}; }); }
   Object.keys(days).forEach(k=>{ if(!scpIn(k,w)) return; scpV(days[k].items).forEach(it=>{ const b=(it.src==="study")?out.study:out.drill; b.g++; if(it.result==="c") b.r++; }); });
   const gl=(gameLog||{})[kid]||{};
-  Object.keys(gl).forEach(day=>{ if(!scpIn(day,w)) return; scpV(gl[day]).forEach(e=>{ if(scpPreJudge(e)) return;   // ⚖️ GAMEJUDGE: a round before judging is not counted
+  Object.keys(gl).forEach(day=>{ if(!scpIn(day,w)) return; scpV(gl[day]).forEach(e=>{ if(scpPreJudge(e)||scpUnscored(e)||scpStudyRound(e)) return;   // ⚖️ GAMEJUDGE: a round before judging is not counted · 🎓 TEACHSCORE: nor Teach it · 🚂 PKTRAIN: nor a round that is a study sitting
     scpV(e.items).forEach(it=>{ if(it.back) return; out.games.n++; if(it.ok) out.games.ok++; }); }); });
   out.graded=out.drill.g+out.study.g+out.games.n*gw; out.right=out.drill.r+out.study.r+out.games.ok*gw;
   out.pct=out.graded>0?Math.round(out.right/out.graded*100):null;
@@ -28527,7 +28537,7 @@ function scpMinutes(kid,history,studyLog,gameLog,w,schoolDays,gw){
   Object.keys(sl).forEach(sid=>{ const days=sl[sid]; if(!days||typeof days!=="object") return;
     Object.keys(days).forEach(k=>{ if(!scpIn(k,w)) return; const e=days[k]; if(!e||typeof e!=="object") return; const sits=scpV(e.sits).map(x=>x&&x.secs); take(sits.length?sits:[e.secs],s=>{ study+=s; }); }); });
   const gl=(gameLog||{})[kid]||{};
-  Object.keys(gl).forEach(k=>{ if(!scpIn(k,w)) return; scpV(gl[k]).forEach(e=>{ take([e&&e.secs],s=>{ games+=s; }); }); });
+  Object.keys(gl).forEach(k=>{ if(!scpIn(k,w)) return; scpV(gl[k]).forEach(e=>{ if(scpStudyRound(e)) return; take([e&&e.secs],s=>{ games+=s; }); }); });   // 🚂 PKTRAIN: its minutes are the sitting's
   const total=drill+study+games*gw, days=Math.max(1,schoolDays|0);
   return {drill:Math.round(drill/60),study:Math.round(study/60),games:Math.round(games/60),total:Math.round(total/60),days:days,perDay:Math.round(total/60/days),any:(drill+study+games)>0};
 }
@@ -28667,7 +28677,7 @@ function scgLearned(kid,cards,history,studyLog,gameLog){
   else { const dh=(history||{})[kid]||{}; Object.keys(dh).forEach(k=>{ days[k]={items:scpV(dh[k]&&dh[k].items)}; }); }
   Object.keys(days).forEach(k=>{ scpV(days[k].items).forEach(it=>{ if(!it||it.id==null||!(it.result in R)) return;
     const g=grades[String(it.id)]||(grades[String(it.id)]={}); if(g[k]==null||R[it.result]>R[g[k]]) g[k]=it.result; }); });   // one grade a day, the worse
-  Object.keys(gl).forEach(day=>{ scpV(gl[day]).forEach(e=>{ if(scpPreJudge(e)) return;   // ⚖️ GAMEJUDGE: an honor-tap right from before judging teaches nothing here
+  Object.keys(gl).forEach(day=>{ scpV(gl[day]).forEach(e=>{ if(scpPreJudge(e)||scpUnscored(e)||scpStudyRound(e)) return;   // ⚖️ GAMEJUDGE: an honor-tap right from before judging teaches nothing here · 🎓 TEACHSCORE: nor a listener's ✓ · 🚂 PKTRAIN: nor a study round (its own grade)
     scpV(e&&e.items).forEach(it=>{ if(it&&it.ok&&!it.back&&it.id!=null) (right[String(it.id)]||(right[String(it.id)]=[])).push(day); }); }); });
   const out=[];
   scpV(cards).forEach(c=>{ if(!c||c.id==null||c.status==="parked") return; const id=String(c.id);
@@ -28698,6 +28708,7 @@ function scgStats(kid,D){
     if(e.why==="practice"||e.why==="free") why.flagged=true;
     if(e.why==="practice"||r.g==="practice") why.practice++; else if(e.why==="free") why.free++; else why.none++;
     if(pre){ scpV(e.items).forEach(it=>{ if(!it||it.back) return; b.n++; if(it.ok) b.ok++; }); return; }   // shown grey, in no Right % and no deck
+    if(r.log&&scpUnscored(e)){ s.cards=(s.cards||0)+scpV(e.items).filter(it=>it&&!it.back).length; return; }   // 🎓 TEACHSCORE: cards taught — no Right %, no deck
     const add=(deck,n,ok)=>{ const d=DK[deck]||(DK[deck]={deck:deck,rounds:0,games:{}}), x=d.games[r.g]||(d.games[r.g]={key:r.g,rounds:0,n:0,ok:0,best:{}});
       if(!seen[deck]){ seen[deck]=1; d.rounds++; x.rounds++; } x.n+=n; x.ok+=ok; s.n+=n; s.ok+=ok; tot.n+=n; tot.ok+=ok; };
     if(r.log){ let any=false; scpV(e.items).forEach(it=>{ if(!it||it.back) return; any=true; add(deckOf[String(it.id)]||String(e.deck||"—"),1,it.ok?1:0); });
@@ -28717,7 +28728,9 @@ function scgStats(kid,D){
     .sort((a,b)=>(b.rounds-a.rounds)||(a.deck<b.deck?-1:a.deck>b.deck?1:0));
   const learned=scgLearned(kid,D.cards,D.history,D.studyLog,D.gameLog);
   tot.pct=pct(tot.ok,tot.n);
-  return {kid:kid,today:today,any:!!(rounds.length||Object.keys(mb).length||nLikes),total:tot,games:games,decks:decks,why:why.flagged?why:null,learned:learned};
+  const ti=games.findIndex(g=>SCP_UNSCORED[g.key]===1), tg=ti>=0?games.splice(ti,1)[0]:null;   // 🎓 TEACHSCORE: Teach it leaves the table for its own line
+  const taught=tg&&tg.rounds?{cards:tg.cards||0,rounds:tg.rounds,w7:tg.w7,min:tg.min}:null;
+  return {kid:kid,today:today,any:!!(rounds.length||Object.keys(mb).length||nLikes),total:tot,games:games,decks:decks,why:why.flagged?why:null,learned:learned,taught:taught};
 }
 // ── the section ──
 function scgLabel(k){ if(k==="practice") return "\u{1F3AE} Practice list"; try{ const g=(typeof GAMES_LIST!=="undefined"&&Array.isArray(GAMES_LIST))?GAMES_LIST.find(x=>x&&x.key===k):null; if(g) return g.emoji+" "+g.label; }catch(e){} return String(k); }
@@ -28738,6 +28751,7 @@ function scgHtml(s,open,cards){
   const byId={}; scpV(cards).forEach(c=>{ if(c&&c.id!=null) byId[String(c.id)]=c; });
   const names=s.learned.slice(0,6).map(id=>{ const c=byId[id]||{}; return scpE(c.answer||c.prompt||id); });
   h+='<div style="font-size:12px;color:#334155;margin-top:6px">\u{1F331} Cards learned through games: <b>'+s.learned.length+'</b>'+(names.length?' <span style="color:#64748b">· '+names.join(', ')+(s.learned.length>names.length?' …':'')+'</span>':'')+'</div>';
+  if(s.taught) h+='<div class="scg-taught" style="font-size:12px;color:#334155;margin-top:4px">\u{1F393} taught: <b>'+s.taught.cards+'</b> card'+(s.taught.cards===1?'':'s')+' · '+s.taught.rounds+' round'+(s.taught.rounds===1?'':'s')+'</div>';   // 🎓 TEACHSCORE: no Right %
   h+='<div style="overflow-x:auto;margin-top:8px"><table style="border-collapse:collapse;font-size:12px;width:100%"><tr><th '+th+'>Game</th><th '+th+'>Rounds 7 d / all</th><th '+th+'>Right</th><th '+th+'>Best</th><th '+th+'>\u{1F44D} \u{1F44E}</th><th '+th+'>Min</th></tr>';
   s.games.forEach(g=>{ const p=g.pre, only=p&&!g.rounds&&!Object.keys(g.best).length&&!g.up&&!g.down;
     if(!only) h+='<tr><td '+td+'>'+scpE(scgLabel(g.key))+'</td><td '+td+'>'+g.w7+' / '+g.rounds+'</td><td '+td+'><span style="font-weight:800;color:'+scpPctCol(g.pct)+'">'+scpN(g.pct,'%')+'</span>'+(g.n?' <span style="color:#94a3b8">of '+g.n+'</span>':'')+'</td><td '+td+'>'+scgBestTxt(g.best,true)+'</td><td '+td+'>'+((g.up||g.down)?g.up+' · '+g.down:'—')+'</td><td '+td+'>'+(g.rounds?g.min:'—')+'</td></tr>';
@@ -28753,7 +28767,8 @@ function scgHtml(s,open,cards){
     'Best = the game’s own best: seconds for Match, Memory flip and Beat my time (lower is better), dollars for Jeopardy’s money game, a count for the rest.<br>'+
     'A card is counted in its own deck, so a mixed round splits into the decks it came from.<br>'+
     'Learned through games = a card the practice list marked learned, or one that was missed, then right on the first try in a game, then right in the next drill or study.<br>'+
-    'Before judging = Go Fish, Connect Four, Battleship, Kaboom, Sure? then flip and Jeopardy rounds from before “I said it” was checked: a tap counted as right, so they are shown grey and left out of every Right % and of learned through games.</div></details>';
+    'Before judging = Go Fish, Connect Four, Battleship, Kaboom, Sure? then flip and Jeopardy rounds from before “I said it” was checked: a tap counted as right, so they are shown grey and left out of every Right % and of learned through games.<br>'+
+    'Taught = Teach it: the listener’s ✓ is tapped on the teacher’s device, so it counts as cards taught and rounds only — never in a Right % or in learned through games.</div></details>';
   h+='</details></div>';
   return h;
 }
@@ -73105,6 +73120,7 @@ function gameLogEntry(st,now){
   if(st.game==="jigsaw"&&st.level!=null){ e.level=st.level; e.clean=!!st.clean; }   // 🧩 JIGSAW: the round's level + clean, as the train's — its pieces level reads them back
   if(st.t0) e.secs=Math.max(0,Math.round((now-st.t0)/1000));
   if(st.game==="train"&&st.level!=null){ e.level=st.level; e.clean=!!st.clean; }   // 🚂 TRAIN: the round's level + clean — its level-up reads them back
+  if(st.game==="train"&&st.studyLogged&&st.study&&st.study.sid!=null) e.study=String(st.study.sid);   // 🚂 PKTRAIN: this round IS a study sitting — Scores counts it once
   if(st.game==="jeop"&&st.money){ e.mode="money"; e.bank=st.bank; e.bets=(st.bets||[]).map(b=>Object.assign({},b)); e.result=st.result||""; }   // 💵 JPMONEY: the final bank, the bets, the result
   if(st.judge&&typeof gameJudgeStamp==="function") gameJudgeStamp(e,st.judge);   // ⚖️ GAMEJUDGE: a judged round says how (pick / type / mom) — Jeopardy money first
   return e;
@@ -82985,7 +83001,7 @@ const GAME_RULES={
     ["3","3 misses","A third try first; the third miss shows it."],
     ["never","Never","The sentence is never shown — after two misses the card just comes back once at the end, like the other games."]]}],
   jigsaw:[{key:"pieces",label:"How many pieces?",def:"auto",opts:[   // 🧩 JIGSAW (her design 2026-11-08: "cut into 4 / 6 / 9 pieces by level")
-    ["auto","Auto","Starts at 4 pieces and moves up (6, then 9) after two clean rounds in a row \u{2014} clean = the picture named on the first tap."],
+    ["auto","Auto","Starts at 4 pieces and moves up (6, then 9) after two clean rounds in a row \u{2014} clean = the picture named right when it asks “What is it?”."],
     ["4","4 pieces","2 \u{00D7} 2, with the picture showing faintly in the frame to build on."],
     ["6","6 pieces","3 \u{00D7} 2, an empty frame."],
     ["9","9 pieces","3 \u{00D7} 3, an empty frame."]]}],
@@ -83002,8 +83018,12 @@ const GAME_RULES={
     ["1","Level 1","What comes next? — the train starts at A, 3 cars to choose from."],
     ["2","Level 2","4 cars to choose from, and the train can start anywhere in the alphabet."]]},
     {key:"study",label:"Study card opens the Train?",def:"on",only:k=>typeof isPreK==="function"&&isPreK(k),opts:[   // 🚂 PKTRAIN: a Pre-K kid only
-    ["on","On","A study card whose deck is letters opens the ABC Train instead of flip cards, and the round counts as the study."],
-    ["off","Off","The study card opens the flip cards, as before."]]}]
+    ["on","On","A study card whose deck is letters opens the ABC Train instead of flip cards, and a round counts as the study once enough cars are right on the first tap (the next rule)."],
+    ["off","Off","The study card opens the flip cards, as before."]]},
+    {key:"studyMin",label:"Study counts after how many cars right on the first tap?",def:"5",only:k=>typeof isPreK==="function"&&isPreK(k),opts:[   // 🚂 PKTRAIN (games audit 2026-11-08 §7 rank 8)
+    ["3","3 cars","Three cars right on the first tap finish today's study."],
+    ["5","5 cars","Five cars right on the first tap — the default. Levels 1–3 have fewer cars, so there every car must be right on the first tap."],
+    ["8","8 cars","Eight cars right on the first tap (a short round needs every car)."]]}]
 };
 let gameRulesUI=null;   // {kid, game} while the pop-up is open (this device)
 function _grE(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -84996,8 +85016,8 @@ function trainHear(){ const st=trainState; if(!st||st.phase!=="play") return; _t
 function trainFinish(st){
   st.phase="done"; st.lock=false;
   st.clean=st.turns.every(t=>t.done&&t.first);
+  if(st.study&&typeof pktLogSitting==="function"){ try{ pktLogSitting(st); }catch(e){} }   // 🚂 PKTRAIN: a Pre-K study card's round is that kid's study sitting too — when earned; first, so the game log below carries study:<sid>
   try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: each letter's first-tap result + the round's level / clean, game:"train"
-  if(st.study&&typeof pktLogSitting==="function"){ try{ pktLogSitting(st); }catch(e){} }   // 🚂 PKTRAIN: a Pre-K study card's round is that kid's study sitting too
   st.levelAfter=trainLevel(st.kid);
   trainSing(st);
 }
@@ -85183,7 +85203,21 @@ function buildTrainHtml(color,study){
 //   · WRITES — mastery/studyLog/<kid>/<sid>/<yyyymmdd> (one targeted set — the sitting's own path) and, only after Mom's ↩ send-back,
 //     the mastery/studyBack/<kid>/<sid> redo fields (an update), as a sitting does. db && !_dryRun() only. No names in this block.
 //   · CARD WORDING — the 📂 link reads "🚂 ABC Train — study" instead of "study cards"; its line "✓ done today" once logged. Label only.
+//   · EARNED (games audit 2026-11-08 §4 #23 / §7 rank 8: the Train can't be lost — a wrong car makes the right one wiggle — so "done today"
+//     needed no knowing). A round is the study sitting only when at least PKTRAIN_MIN_FIRST cars (Mom's GAME_RULES.train "studyMin",
+//     3 / 5 / 8, default 5) were right on the first tap — never more than the round has cars (levels 1–2 ask 4, level 3 five: there
+//     every car). Short of it: no studyLog, the card stays open, the page says how many it takes and the kid can play again. The
+//     Train itself stays soft. NO DOUBLE COUNT: trainFinish logs the sitting FIRST, so GAMELOG tags that round's gameLog entry
+//     study:<sid>, and Scores (scpStudyRound) counts it once — the sitting — not again at ½ weight or in learned-through-games.
 function pktOn(kid){ return !!kid&&typeof isPreK==="function"&&isPreK(kid)&&gameRule(kid,"train","study")!=="off"; }
+const PKTRAIN_MIN_FIRST=5;
+function pktMinFirst(kid){ const v=parseInt((typeof gameRule==="function")?gameRule(kid,"train","studyMin"):"",10); return v>0?v:PKTRAIN_MIN_FIRST; }
+// PURE-ish: a finished round → {first (cars right on the first tap), need (the floor, at most the round's cars), ok}
+function pktEarned(st){
+  const turns=(st&&Array.isArray(st.turns))?st.turns:[], first=turns.filter(t=>t&&t.done&&t.first).length;
+  const need=Math.max(1,Math.min(pktMinFirst(st&&st.kid),turns.length||1));
+  return {first:first,need:need,ok:first>=need};
+}
 // The study session's Train — {sid,name,emoji,deck,cards} (the deck as trainDeck ranks them), or null when the flip cards stay
 function pktSession(kid,sid){
   try{
@@ -85217,6 +85251,7 @@ function pktMerge(prev,e){
 }
 function pktLogSitting(st){
   if(!st||!st.study||st.studyLogged) return null;
+  st.earn=pktEarned(st); if(!st.earn.ok) return null;   // 🚂 EARNED: short of the floor → no sitting, the card stays open
   const kid=st.kid, sid=st.study.sid, day=(typeof mstTodayKey==="function")?mstTodayKey():gameLogDay();
   let pn=null; try{ if(typeof mastGetPrintNum==="function") pn=mastGetPrintNum(kid); }catch(e){}
   const e=pktEntry(st,Date.now(),pn,day); if(!e) return null;
@@ -85239,8 +85274,9 @@ function pktStudyHtml(kid,session){
   let h='<div class="pkt-study"><div style="text-align:center;font-family:\'DM Sans\',sans-serif;font-size:15px;font-weight:800;color:#c2410c">'+E(ps.emoji)+' '+E(ps.name)+'</div>';
   if(lg) h+='<div style="text-align:center;margin-top:4px;font-size:13px;color:#16a34a;font-weight:700">\u2713 Done today: '+(lg.total||0)+' cars</div>';
   h+=buildTrainHtml(col,ps);
-  const st=trainState;
-  if(st&&st.kid===kid&&st.study&&st.study.sid===ps.sid&&st.phase==="done"&&st.song&&st.song.end&&typeof mpStudyDoneHtml==="function") h+='<div style="text-align:center">'+mpStudyDoneHtml(kid,ps.sid)+'</div>';
+  const st=trainState, mine=st&&st.kid===kid&&st.study&&st.study.sid===ps.sid&&st.phase==="done";
+  if(mine&&!st.studyLogged&&st.earn&&!st.earn.ok) h+='<div class="pkt-short" style="text-align:center;margin-top:10px;font-size:15px;font-weight:800;color:#b45309">⭐ '+st.earn.first+' car'+(st.earn.first===1?'':'s')+' right the first time. Get '+st.earn.need+' right the first time to finish today’s study — play again!</div>';   // 🚂 EARNED: the card stays open
+  if(mine&&lg&&st.song&&st.song.end&&typeof mpStudyDoneHtml==="function") h+='<div style="text-align:center">'+mpStudyDoneHtml(kid,ps.sid)+'</div>';   // the next step only once today's study is done
   return h+'</div>';
 }
 // The card's 📂 link words and its line (label only)
@@ -85619,7 +85655,7 @@ function gameJudgeRowHtml(kid){
   [["pick","Say it, then pick it"],["type","Type it"],["mom","Mom judges"]].forEach(o=>{ h+=pill(o[0]===cur,'gameJudgeSet(\''+J(kid)+'\',\'judge\',\''+o[0]+'\')',o[1]); });
   if(cur==="pick"){ h+='<span style="font-size:12px;font-weight:700;color:var(--muted);margin-left:8px">Choices</span>'; [3,4,5].forEach(k=>{ h+=pill(k===n,'gameJudgeSet(\''+J(kid)+'\',\'judgeChoices\','+k+')',String(k)); }); }
   h+='</div><div style="font-size:11.5px;color:var(--muted);margin-top:6px">'+(cur==="pick"?'Says it out loud first, then taps what they said (each choice has a \u{1F50A}).':cur==="type"?'Types the answer, then Check. Capitals and extra spaces don’t count.':'Taps “Show Mom the answer” — Mom’s or Dad’s code, then ✓ or ✗.')+
-    ' Used in Go Fish, Connect Four, Battleship, Kaboom, Sure? then flip, and Jeopardy with money on.'+(set?'':' Not set — the app’s pick for this grade.')+(edit?'':' (Mom only to change.)')+'</div>';
+    ' Used in Go Fish, Connect Four, Battleship, Kaboom, Sure? then flip, Jeopardy with money on, and the Picture Puzzle.'+(set?'':' Not set — the app’s pick for this grade.')+(edit?'':' (Mom only to change.)')+'</div>';
   return h+'</div>';
 }
 // GAMEJUDGE_END
@@ -85729,17 +85765,22 @@ function gameLikeListHtml(kid,key){
 //     faintly with the pieces' outlines; levels 2–3 an empty frame. The kid drags a piece (finger or mouse — pointer events, as Sort
 //     it; a tap picks a piece and a tap in the frame drops it there): dropped with its corner within JIG_SNAP of a piece's size of its
 //     own place it snaps in (the clack); anywhere else it goes back to the tray. No misses for pieces, and never placed for him.
-//   · THE FINISH — the whole picture, the card's word shown and said; then "What is it?" with JIG_CHOICES words (the card's own +
-//     other cards' words, its own deck first), so the card is still practiced, not only built. Right → the ding and the word again;
-//     wrong → that word greys out (the soft bonk) and he taps again — two wrong is the card's miss. One Play again (a new picture).
-//   · LEVEL — two CLEAN rounds in a row (named on the first tap) at the kid's level → the next level, read back from the kid's own
+//   · THE FINISH — ASK FIRST (games audit 2026-11-08 §4 #24 / §7 rank 9: the word used to be shown and said 2.6 s BEFORE "What is it?",
+//     so the answer came before the question). Now the last piece snaps → the whole picture and "What is it?", the word NOT shown or
+//     said, judged by ⚖️ GAMEJUDGE's shared helper with the kid's own setting (gameJudgeMode): say it, then pick it — JIG_CHOICES (3)
+//     words for a Pre-K kid, the kid's judgeChoices for the rest, the card's own + other cards' words (its own deck first), each with
+//     its 🔊 chip — or type it, or Mom judges. THEN the confirm: the word shown and said; a wrong answer shows the right one (marked on
+//     the choices, and "It's <word>"). No honor tap, ever: no other word to judge against → nothing asked and nothing logged. One
+//     answer per round (the helper's): right = the card right, wrong = the card's miss. The round is stamped judge (gameJudgeStamp).
+//     One Play again (a new picture).
+//   · LEVEL — two CLEAN rounds in a row (the right answer when asked) at the kid's level → the next level, read back from the kid's own
 //     game log (each round carries its level + clean), as the ABC Train does. Mom's pin (GAME_RULES.jigsaw "pieces": auto / 4 / 6 / 9).
-//   · WRITES — only the round's gameLog entry (GAMELOG, game:"jigsaw", one item: the card, ok = named on the first tap, + level /
-//     clean). No points, no ladder, no next_due, no study log, no best score. db && !_dryRun() only (gameLogRound's own guard). Per-kid
+//   · WRITES — only the round's gameLog entry (GAMELOG, game:"jigsaw", one item: the card, ok = the judged answer right, + level /
+//     clean + judge). No points, no ladder, no next_due, no study log, no best score. db && !_dryRun() only (gameLogRound's own guard). Per-kid
 //     park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT); a round dropped part-way writes nothing. No names in this block.
-let jigState=null;   // {kid,deck,game:"jigsaw",t0,level,pid,word,img,ar,n,tray:[piece i],placed:{i:1},tilt:{i:deg},sel,bounce,snap,phase:"play"|"show"|"ask"|"done",choices:[word],turns:[{pid,L,wrong,done,first,fail}],clean,levelBefore,levelAfter,seq,lastPid,gameLogged}
+let jigState=null;   // {kid,deck,game:"jigsaw",t0,level,pid,word,img,ar,n,tray:[piece i],placed:{i:1},tilt:{i:deg},sel,bounce,snap,phase:"play"|"ask"|"done",names:[word],judge,msg,turns:[{pid,L,wrong,done,first,fail,nolog,gj}],clean,levelBefore,levelAfter,seq,lastPid,gameLogged}
 let _jigRandom=Math.random;   // tests seed it
-const JIG_PIECES={1:4,2:6,3:9}, JIG_MAX_LEVEL=3, JIG_SNAP=0.45, JIG_CHOICES=3, JIG_MISS=2, JIG_SHOW_MS=2600;
+const JIG_PIECES={1:4,2:6,3:9}, JIG_MAX_LEVEL=3, JIG_SNAP=0.45, JIG_CHOICES=3;   // JIG_CHOICES: a Pre-K kid's "What is it?" choices
 const _jigLast={};   // kid → the card of this device's last puzzle (so Play again brings a new picture)
 function _jigShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_jigRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
 function _jigItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
@@ -85773,15 +85814,17 @@ function jigTiles(n,ar){
 // PURE: a piece dropped with its top-left corner at (x,y) — fractions of the frame — snaps when that corner is within JIG_SNAP of a
 // piece's width / height of its own place
 function jigSnap(tile,x,y){ return !!tile&&Math.abs(x-tile.x)<=JIG_SNAP*tile.w+1e-9&&Math.abs(y-tile.y)<=JIG_SNAP*tile.h+1e-9; }
-// PURE-ish: the "What is it?" words — the card's own + up to JIG_CHOICES-1 other words (its own deck first, then the kid's other cards
-// in play), each word once, shuffled
-function jigChoices(it,items){
-  const own=_jigPlain(it&&it.prompt), key=w=>w.toLowerCase(), seen={[key(own)]:1}, deck=it&&it.subject, pick=[];
-  const take=list=>{ _jigShuffle(list.slice()).forEach(i=>{ if(pick.length>=JIG_CHOICES-1) return; const w=_jigPlain(i.prompt); if(!w||seen[key(w)]) return; seen[key(w)]=1; pick.push(w); }); };
+// PURE-ish: the OTHER words "What is it?" can offer — the kid's cards in play, its own deck first (shuffled), then the other decks
+// (shuffled), each word once, never the card's own (case and markup ignored)
+function jigNames(it,items){
+  const own=_jigPlain(it&&it.prompt), key=w=>w.toLowerCase(), seen={[key(own)]:1}, deck=it&&it.subject, out=[];
+  const take=list=>{ _jigShuffle(list.slice()).forEach(i=>{ const w=_jigPlain(i.prompt); if(!w||seen[key(w)]) return; seen[key(w)]=1; out.push(w); }); };
   const live=(items||[]).filter(_jigInPlay);
   take(live.filter(i=>i.subject===deck)); take(live.filter(i=>i.subject!==deck));
-  return _jigShuffle([own].concat(pick));
+  return out;
 }
+// How many "What is it?" choices: JIG_CHOICES for a Pre-K kid, else the kid's GAMEJUDGE judgeChoices
+function jigChoiceN(kid){ return (typeof isPreK==="function"&&isPreK(kid))?JIG_CHOICES:((typeof gameJudgeChoices==="function")?gameJudgeChoices(kid):JIG_CHOICES); }
 // The kid's puzzle rounds from the game log (this device's copy and the pushed one count once), oldest first
 function jigLogRounds(kid){
   const G=((typeof masteryData!=="undefined"&&masteryData&&masteryData.gameLog)||{})[kid]||{}, seen={}, out=[];
@@ -85806,7 +85849,7 @@ function jigStart(){
   if(n>1&&tray.every((x,i)=>x===i)) tray.push(tray.shift());   // never already in order
   const word=_jigPlain(it.prompt);
   jigState={kid:kid,deck:it.subject||"Other",game:"jigsaw",t0:Date.now(),level:level,pid:it.id!=null?String(it.id):null,word:word,img:jigPic(it,kid),ar:1,n:n,tray:tray,placed:{},tilt:tilt,sel:null,bounce:null,snap:null,
-    phase:"play",choices:jigChoices(it,items),turns:[{pid:it.id!=null?String(it.id):null,L:word,wrong:{},done:false,first:false,fail:false}],clean:null,levelBefore:level,levelAfter:null,seq:0};
+    phase:"play",names:jigNames(it,items),judge:null,msg:"",turns:[{pid:it.id!=null?String(it.id):null,L:word,wrong:{},done:false,first:false,fail:false}],clean:null,levelBefore:level,levelAfter:null,seq:0};
   _jigLoadAr(jigState);
   _mastRe();
 }
@@ -85830,7 +85873,7 @@ function jigDrop(i,x,y){
   const st=jigState, r=jigDropJudge(st,i,x,y); if(!r) return;
   if(r==="back"){ _mastRe(); return; }
   try{ matchDing(); }catch(e){}
-  if(Object.keys(st.placed).length>=st.n) jigShow(st);
+  if(Object.keys(st.placed).length>=st.n) jigAsk(st);   // the whole picture → "What is it?" FIRST (the word not shown, not said)
   _mastRe();
 }
 // A tap: pick a piece (again = put it down); a tap in the frame drops the picked piece with its corner on the spot tapped's square
@@ -85861,45 +85904,37 @@ function jigDown(ev,i){
   };
   el.addEventListener("pointermove",move); el.addEventListener("pointerup",up); el.addEventListener("pointercancel",up);
 }
-// The whole picture: its word shown and said, then (JIG_SHOW_MS later, or Next) "What is it?"
-function jigShow(st){
-  st.phase="show"; st.sel=null; st.bounce=null;
-  _jigSay(st.word);
-  const seq=++st.seq;
-  setTimeout(()=>{ if(jigState===st&&st.phase==="show"&&st.seq===seq){ jigAsk(st); _mastRe(); } },JIG_SHOW_MS);
-}
+// The whole picture, then "What is it?" — through ⚖️ GAMEJUDGE with the kid's own setting; the word is shown and said only AFTER the answer
 function jigAsk(st){
-  st=st||jigState; if(!st||st.phase!=="show") return;
-  st.seq++;
-  if((st.choices||[]).length<2){ jigFinish(st); return; }   // no other word to choose from: nothing to ask
-  st.phase="ask"; _jigSay("What is it?");
+  st=st||jigState; if(!st||st.phase!=="play") return;
+  st.sel=null; st.bounce=null; st.seq++;
+  const t=st.turns[0], kid=st.kid, n=jigChoiceN(kid), mode=(typeof gameJudgeMode==="function")?gameJudgeMode(kid):null;
+  st.phase="ask";
+  const on=!!t&&typeof gameJudgeAct==="function"&&gameJudgeAct(st,t,{kid:kid,deck:st.deck,right:st.word,names:(st.names||[]).slice(0,Math.max(1,n-1)),mode:mode,n:n,shuffle:_jigShuffle,speakerChips:true,
+    live:()=>jigState===st&&st.phase==="ask"&&!t.done, line:x=>{ st.msg=x; },
+    onRight:x=>_jigJudged(st,x,true), onWrong:(x,g)=>_jigJudged(st,x,false,g)});
+  if(!on){ if(t) t.nolog=true; _jigSay(st.word); jigFinish(st); return; }   // nothing to judge against: no question, no honor tap — nothing logged
+  st.judge=t.gj.mode;   // the round says how it was judged (gameLogEntry → gameJudgeStamp)
+  _jigSay("What is it?");
 }
-function jigNext(){ const st=jigState; if(!st||st.phase!=="show") return; jigAsk(st); _mastRe(); }
-function jigHear(){ const st=jigState; if(!st) return; if(st.phase==="ask") _jigSay("What is it? "+st.choices.join(", or ")+"?"); else if(st.phase!=="play") _jigSay(st.word); }
-// PURE-ish: a tap on "What is it?" word ci → "right" | "wrong" | null
-function jigJudge(st,ci){
-  if(!st||st.phase!=="ask") return null;
-  const w=st.choices[ci], t=st.turns[0]; if(w==null||!t||t.done||t.wrong[w]) return null;
-  if(w!==st.word){ t.wrong[w]=1; if(Object.keys(t.wrong).length>=JIG_MISS) t.fail=true; st.bounce=ci; return "wrong"; }
-  t.done=true; t.first=!Object.keys(t.wrong).length; st.bounce=null;
-  return "right";
+// The helper's verdict → the confirm: the word shown and said (a wrong answer: "It's <word>", the right choice marked)
+function _jigJudged(st,t,right,given){
+  t.done=true; t.first=!!right;
+  if(right){ try{ matchDing(); }catch(e){} }
+  else { t.fail=true; t.wrong[(given!=null&&String(given)!=="")?String(given):"1"]=1; try{ matchBonk(); }catch(e){} }
+  _jigSay(right?st.word:"It’s "+st.word+".");
+  jigFinish(st);
 }
-function jigTap(ci){
-  const st=jigState, r=jigJudge(st,ci); if(!r) return;
-  if(r==="wrong"){ try{ matchBonk(); }catch(e){} _mastRe(); return; }
-  try{ matchDing(); }catch(e){}
-  _jigSay(st.word);
-  jigFinish(st); _mastRe();
-}
+function jigHear(){ const st=jigState; if(!st) return; if(st.phase==="ask") _jigSay("What is it?"); else if(st.phase==="done") _jigSay(st.word); }   // never the answer before it is given
 function jigFinish(st){
   st.phase="done"; st.seq++;
   st.clean=st.turns.every(t=>t.done&&t.first);
-  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: the card, named on the first tap or not, + the round's level / clean, game:"jigsaw"
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: the card, its judged answer right or not, + the round's level / clean / judge, game:"jigsaw"
   st.levelAfter=jigLevel(st.kid);
 }
-// GAMEKID → 🎲 GAMEKIT: parking stops the show timer; resume puts a picked-up piece down and moves a cut-off show on to its question
+// GAMEKID → 🎲 GAMEKIT: resume puts a picked-up piece down; a question asked stays asked (its judging lives on the turn)
 function jigPark(){ const st=jigState; if(st) st.seq++; _jigDragging=false; return st; }
-function jigResume(){ const st=jigState; if(!st) return; st.sel=null; st.bounce=null; st.snap=null; if(st.phase==="show") jigAsk(st); }
+function jigResume(){ const st=jigState; if(!st) return; st.sel=null; st.bounce=null; st.snap=null; }
 const JIG_CSS='<style>.jig-board{--jig-s:min(84vw,46vh,400px);display:flex;flex-direction:column;align-items:center}'+
   '#jig-frame{position:relative;width:var(--jig-s);height:var(--jig-s);border-radius:14px;border:3px dashed #a8a29e;background:#fafaf9;box-sizing:content-box;touch-action:manipulation}'+
   '.jig-ghost{position:absolute;inset:0;background-image:var(--jig-img);background-size:cover;background-position:center;opacity:.18;border-radius:11px}'+
@@ -85911,9 +85946,7 @@ const JIG_CSS='<style>.jig-board{--jig-s:min(84vw,46vh,400px);display:flex;flex-
   '.jig-tp.jig-sel{box-shadow:0 0 0 4px #2563eb}.jig-tp.jig-drag{transition:none;z-index:30;position:relative;box-shadow:0 14px 28px rgba(0,0,0,.3);pointer-events:none}'+
   '.jig-back{animation:jigBack .45s ease-out}@keyframes jigBack{0%{transform:translateY(-60px) scale(1.05)}70%{transform:translateY(5px)}100%{transform:none}}'+
   '.jig-whole{position:absolute;inset:0;background-image:var(--jig-img);background-size:cover;background-position:center;border-radius:11px;animation:jigSnap .5s ease-out}'+
-  '.jig-word{font-family:\'Fraunces\',serif;font-size:clamp(30px,8vw,48px);font-weight:800;color:#292524;margin:14px 0 4px;text-align:center}'+
-  '.jig-ch{padding:14px 26px;border-radius:18px;border:3px solid #e2ddd6;background:#fff;font-family:\'Fraunces\',serif;font-size:clamp(20px,5.5vw,28px);font-weight:800;color:#292524;cursor:pointer;-webkit-tap-highlight-color:transparent}'+
-  '.jig-ch.jig-no{opacity:.35;cursor:default;animation:jigNo .45s}@keyframes jigNo{0%,100%{transform:none}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}</style>';
+  '.jig-word{font-family:\'Fraunces\',serif;font-size:clamp(30px,8vw,48px);font-weight:800;color:#292524;margin:14px 0 4px;text-align:center}</style>';
 // One CSS url() for the picture (set once on the board as --jig-img; every piece uses it)
 function _jigUrl(u){ return 'url(&quot;'+_jigE(String(u||"").replace(/["\\\n\r]/g,ch=>encodeURIComponent(ch)))+'&quot;)'; }
 function buildJigHtml(color){
@@ -85945,17 +85978,17 @@ function buildJigHtml(color){
       h+='<div class="jig-pc jig-tp'+(st.sel===i?' jig-sel':'')+(st.bounce===i?' jig-back':'')+'" role="button" aria-label="Puzzle piece" onpointerdown="jigDown(event,'+i+')" style="'+pc(t,'width:calc(var(--jig-s) / '+g.cols+');height:calc(var(--jig-s) / '+g.rows+');'+(st.sel===i||st.bounce===i?'':'transform:rotate('+(st.tilt[i]||0)+'deg)'))+'"></div>'; });
     return h+'</div></div></div>';
   }
-  if(st.phase==="show"){
-    h+='<div class="jig-word">'+_jigE(st.word)+'</div><div style="display:flex;gap:10px;align-items:center;justify-content:center;margin-top:6px">'+hear+'<button onclick="jigNext()" style="padding:12px 24px;border-radius:999px;border:2px solid '+color+';background:#fff;color:'+color+';font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Next \u{27A1}</button></div>';
+  const t=st.turns[0];
+  if(st.phase==="ask"){
+    h+='<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin:14px 0 6px"><span class="jig-word" style="margin:0">What is it?</span>'+hear+'</div>';
+    if(st.msg) h+='<div class="jig-msg" style="text-align:center;font-size:15px;font-weight:700;color:#57534e;margin-bottom:10px">'+_jigE(st.msg)+'</div>';
+    h+='<div style="width:100%">'+((t&&t.gj&&typeof gameJudgeHtml==="function")?gameJudgeHtml(t,color,false):'')+'</div>';
     return h+'</div></div>';
   }
-  if(st.phase==="ask"){
-    const t=st.turns[0];
-    h+='<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin:14px 0 10px"><span class="jig-word" style="margin:0">What is it?</span>'+hear+'</div><div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center">';
-    st.choices.forEach((w,ci)=>{ const no=!!t.wrong[w]; h+='<button class="jig-ch'+(no?' jig-no':'')+'" onclick="jigTap('+ci+')"'+(no?' disabled':'')+'>'+_jigE(w)+'</button>'; });
-    return h+'</div></div></div>';
-  }
-  h+='<div class="jig-word">\u{1F389} '+_jigE(st.word)+'!</div>';
+  // the confirm: the word shown (and said) only now — right, or the right one after a wrong answer
+  const right=!!(t&&((t.done&&t.first)||t.nolog));   // nolog: nothing was asked, so nothing was missed
+  h+='<div class="jig-word">'+(right?'\u{1F389} '+_jigE(st.word)+'!':'It’s '+_jigE(st.word)+'.')+'</div>';
+  if(t&&t.gj&&t.gj.done&&typeof gameJudgeHtml==="function") h+='<div style="width:100%;margin-bottom:10px">'+gameJudgeHtml(t,color,true)+'</div>';
   if(st.levelAfter&&st.levelAfter>st.levelBefore) h+='<div style="font-size:18px;font-weight:800;color:#16a34a;margin-bottom:10px">\u{2B06} '+(JIG_PIECES[st.levelAfter]||"")+' pieces next time!</div>';
   h+='<div style="margin-top:8px">'+btn("jigStart()","\u{1F501} Play again")+'</div>';
   return h+'</div></div>';

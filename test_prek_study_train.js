@@ -35,8 +35,8 @@ ok("writes: only the sitting's studyLog path (a set) and the send-back redo (an 
 ok("no card moves: no tier, next_due, minting, printLog, points",!/next_due|\.tier\s*=|mastApplyScores|mastMintFromBank|printLog|bankDirect/.test(code));
 ok("renderMastStudy: one guarded line draws the Train when no flip sitting of that session is running",
   /if\(!\(mstState&&mstSid===session\.sid\)&&typeof pktStudyHtml==="function"\)\{ const _pk=pktStudyHtml\(kid,session\); if\(_pk\) return h\+_pk; \}/.test(fnText("renderMastStudy")));
-ok("trainFinish: one guarded line logs the study round; the game log line is unchanged",
-  /gameLogRound\(st\); \}catch\(e\)\{\}[^\n]*\n  if\(st\.study&&typeof pktLogSitting==="function"\)\{ try\{ pktLogSitting\(st\); \}catch\(e\)\{\} \}/.test(fnText("trainFinish")));
+ok("trainFinish: one guarded line logs the study round FIRST (so the game log can carry its study tag); the game log line is unchanged",
+  /\n  if\(st\.study&&typeof pktLogSitting==="function"\)\{ try\{ pktLogSitting\(st\); \}catch\(e\)\{\} \}[^\n]*\n  try\{ if\(typeof gameLogRound==="function"\) gameLogRound\(st\); \}catch\(e\)\{\}/.test(fnText("trainFinish")));
 ok("taskCard: the 📂 link's words come from pktCardLabel, else the old label",/pktCardLabel\(t\.who,_dlSub\.study\)/.test(fnText("taskCard"))&&/\(_pkLbl\|\|taskDeepLinkLabel\(_dlv\)\)/.test(fnText("taskCard")));
 ok("the doors are untouched: retrSchedGo / mastLinkRoute / kcStudyOpen / kcPlayOpen don't know the Train",
   !/pkt|train/i.test(fnText("retrSchedGo")+fnText("mastLinkRoute")+fnText("kcStudyOpen")+fnText("kcPlayOpen")));
@@ -79,7 +79,7 @@ function world(o){
     db:{ref:p=>({set:v=>writes.push(["set",p,v]),update:v=>writes.push(["update",p,v]),push:v=>writes.push(["push",p,v]),remove:()=>writes.push(["remove",p])})}};
   vm.createContext(ctx);
   vm.runInContext(CODE+"\nObject.defineProperty(this,'trainState',{get:()=>trainState,set:v=>{trainState=v;}}); Object.defineProperty(this,'_trainRandom',{get:()=>_trainRandom,set:v=>{_trainRandom=v;}});"+
-    " this.TRAIN_ROLL_MS=TRAIN_ROLL_MS; this.TRAIN_STEPS=TRAIN_STEPS; this.GAME_RULES=GAME_RULES;",ctx);
+    " this.TRAIN_ROLL_MS=TRAIN_ROLL_MS; this.TRAIN_STEPS=TRAIN_STEPS; this.GAME_RULES=GAME_RULES; this.PKTRAIN_MIN_FIRST=PKTRAIN_MIN_FIRST;",ctx);
   ctx._trainRandom=seeded(o.seed||5);
   const tick=t=>{ for(;;){ const due=timers.filter(x=>x.at<=t).sort((x,y)=>x.at-y.at||x.id-y.id)[0]; if(!due) break; timers.splice(timers.indexOf(due),1); now=due.at; due.f(); } now=t; };
   const flushAll=()=>{ let g=0; while(timers.length&&g++<500){ tick(Math.min.apply(null,timers.map(x=>x.at))); } };
@@ -97,9 +97,10 @@ function playRound(w,missFirst){
 const studySets=w=>w.writes.filter(x=>/^mastery\/studyLog\//.test(x[1]));
 const flipStart=h=>/mstStart\(\)/.test(h)&&!/trainStart/.test(h);
 
-// ── Pre-K kid + letters deck → the Train, logged as the sitting ──
+// ── Pre-K kid + letters deck → the Train, logged as the sitting (Mom's floor at 3 cars here: the round below has one miss) ──
+const MIN3={gameRules:{train:{studyMin:"3"}}};
 {
-  const w=world(), c=w.c;
+  const w=world({settings:MIN3}), c=w.c;
   ok("pktSession: the letters session → its Train (the session's deck)",(()=>{ const p=c.pktSession("k","s1"); return p&&p.sid==="s1"&&p.deck==="Abc"&&Object.keys(p.cards).length===10; })());
   const h=c.renderMastStudy();
   ok("the study page draws the Train with a Start for THIS session, no flip-card Start",/ABC Train/.test(h)&&/trainStart\('s1'\)/.test(h)&&!/mstStart\(\)/.test(h),h.slice(0,200));
@@ -136,7 +137,7 @@ const flipStart=h=>/mstStart\(\)/.test(h)&&!/trainStart/.test(h);
       if(missL&&g===0){ const wk=st.turns.map((x,k)=>k).find(k=>ABC[st.start+k]!==t.L); c.trainDrop(ti,wk); }
       c.trainDrop(ti,slot(st,t.L)); if(st.lock) w.tick(w.now()+c.TRAIN_ROLL_MS); } return st; };
   [["3",5],["4",10],["5",26]].forEach(([lv,n])=>{
-    const w=world({settings:{gameRules:{train:{level:lv}}}}), c=w.c;
+    const w=world({settings:{gameRules:{train:{level:lv,studyMin:"3"}}}}), c=w.c;
     ok("level "+lv+" pinned: the study page shows the Train at level "+lv+" with this session's Start",/Level \d/.test(c.renderMastStudy())&&new RegExp("Level "+lv+" ").test(c.renderMastStudy())&&/trainStart\('s1'\)/.test(c.renderMastStudy()));
     c.trainStart("s1"); const st=c.trainState;
     ok("level "+lv+" study round: a hook-up tray of "+n+" cars, tied to the session",st.study&&st.study.sid==="s1"&&st.level===Number(lv)&&st.turns.length===n&&/Drag each car to its spot/.test(c.renderMastStudy()));
@@ -188,6 +189,45 @@ const flipStart=h=>/mstStart\(\)/.test(h)&&!/trainStart/.test(h);
   ok("a 🎮 Games-tab Train round (no session) logs the game only — never a study sitting",!c.trainState.study&&studySets(w).length===0&&w.writes.filter(x=>/gameLog/.test(x[1])).length===1);
   c.mstSid="s1";
   ok("…and the study page doesn't show that games round — its own Start",/Let’s go!/.test(c.renderMastStudy())&&/trainStart\('s1'\)/.test(c.renderMastStudy()));
+}
+// ── EARNED (games audit 2026-11-08 §7 rank 8): the round is the study only with enough cars right on the first tap ──
+{ const w=world(), c=w.c;
+  ok("the floor: PKTRAIN_MIN_FIRST = 5 = the rule's default; Mom's rule 3 / 5 / 8, a Pre-K kid only",c.PKTRAIN_MIN_FIRST===5&&(()=>{ const r=c.GAME_RULES.train.find(x=>x.key==="studyMin"); return r&&r.def===String(c.PKTRAIN_MIN_FIRST)&&r.opts.map(o=>o[0]).join()==="3,5,8"&&r.only("k")===true; })()&&c.pktMinFirst("k")===5);
+  ok("…listed in the Train's rules pop-up",/Study counts after how many cars right on the first tap\?/.test(c.gameRulesHtml("k","train")));
+  ok("never more than the round has cars: a 4-car round needs 4, a 10-car round needs 5",c.pktEarned({kid:"k",turns:[1,2,3,4].map(()=>({done:true,first:true}))}).need===4&&c.pktEarned({kid:"k",turns:Array.from({length:10},()=>({done:true,first:false}))}).need===5);
+  c.trainStart("s1"); const st=playRound(w,true);
+  ok("below the floor (3 of 4 right on the first tap): NO studyLog write, nothing on this device",st.phase==="done"&&studySets(w).length===0&&!(w.md.studyLog.k&&w.md.studyLog.k.s1),studySets(w));
+  ok("…the card stays open (no \"✓ done today\")",c.pktCardLine("k","s1")===""&&c.mstLogGet("k","s1")===null);
+  ok("…the round still logs as a game, with NO study tag (it is not a sitting)",(()=>{ const g=w.writes.filter(x=>/^mastery\/gameLog\//.test(x[1])); return g.length===1&&g[0][2].game==="train"&&!("study" in g[0][2]); })());
+  w.flushAll(); let h=c.renderMastStudy();
+  ok("…the page says how many it takes and offers Play again; no next step yet",/class="pkt-short"/.test(h)&&/3 cars right the first time\. Get 4 right the first time to finish today/.test(h)&&/Play again/.test(h)&&/trainStart\('s1'\)/.test(h)&&!/next after s1/.test(h)&&!/Done today/.test(h));
+  c.trainStart("s1"); const st2=playRound(w,false);
+  const S=studySets(w), g=w.writes.filter(x=>/^mastery\/gameLog\//.test(x[1]));
+  ok("at the floor (4 of 4): ONE studyLog entry, on the sitting's path, only this round's cars",S.length===1&&S[0][1]==="mastery/studyLog/k/s1/20261108"&&S[0][2].total===4&&S[0][2].correct===4&&S[0][2].miss===0);
+  ok("…the card is checked off",c.pktCardLine("k","s1")==="✓ done today");
+  ok("…its game log entry carries study:\"s1\" (the sitting logged first)",g.length===2&&g[1][2].study==="s1"&&st2.studyLogged===true);
+  w.flushAll(); h=c.renderMastStudy();
+  ok("…the page: Done today and the next step, no 'get N' line",/Done today: 4 cars/.test(h)&&/next after s1/.test(h)&&!/class="pkt-short"/.test(h));
+  // Scores: counted once — the sitting, not again through gameLog
+  const SC=cut("const SC_RANK=","\n// History-shaped view")+"\n"+cut("// SCORESPAGE_START","// SCORESPAGE_END")+"\n"+cut("// SCORESGAMES_START","// SCORESGAMES_END");
+  const sx={console}; vm.createContext(sx); vm.runInContext(SC,sx);
+  const W={from:"20261102",to:"20261108"}, GL={k:{"20261108":{}}}; g.forEach((x,i)=>{ GL.k["20261108"]["p"+i]=x[2]; });
+  const SL={k:{s1:{"20261108":S[0][2]}}}, R=vm.runInContext("scpRight",sx)("k",{},SL,GL,W);
+  ok("Scores Right %: the earned round's cars count ONCE (the sitting: 4 study), only the unearned round as a game",R.study.g===4&&R.study.r===4&&R.games.n===4&&R.games.ok===3,R);
+  const M=vm.runInContext("scpMinutes",sx)("k",{},SL,{k:{"20261108":{a:Object.assign({},g[1][2],{secs:120})}}},W,1);
+  ok("Scores minutes: the tagged round's minutes are the sitting's, not added again",M.games===0);
+  const cards=[{id:"L_E",status:"active",tier:"weekly"}], H={k:{"20261101":{items:[{id:"L_E",result:"m"}]}}};
+  const SLc={k:{s1:{"20261108":{items:[{id:"L_E",name:"E",deck:"Abc",result:"c"}]}}}}, tag={k:{"20261108":{p:{game:"train",study:"s1",items:[{id:"L_E",ok:true,n:1}]}}}};
+  const learned=vm.runInContext("scgLearned",sx);
+  ok("learned-through-games: a study round's own ✓ doesn't also credit the games",learned("k",cards,H,SLc,tag).length===0&&learned("k",cards,H,SLc,{k:{"20261108":{p:{game:"train",items:[{id:"L_E",ok:true,n:1}]}}}}).length===1);
+}
+{ const w=world({settings:{gameRules:{train:{level:"4"}}}}), c=w.c;   // 10 cars: the default 5 is reachable without a clean round
+  c.trainStart("s1"); const st=c.trainState, slot=L=>ABC.indexOf(L)-st.start;
+  for(let g=0;g<40&&st.phase==="play";g++){ const ti=st.turns.findIndex(t=>!t.done); if(ti<0) break; const t=st.turns[ti];
+    if(g<5){ const wk=st.turns.map((x,k)=>k).find(k=>ABC[st.start+k]!==t.L); c.trainDrop(ti,wk); }   // 5 cars missed first
+    c.trainDrop(ti,slot(t.L)); if(st.lock) w.tick(w.now()+c.TRAIN_ROLL_MS); }
+  ok("level 4 (10 cars) with misses: the floor is 5, so a round that isn't clean still earns the sitting",st.phase==="done"&&st.earn&&st.earn.need===5&&st.earn.first>=5&&st.earn.first<10&&studySets(w).length===1,st.earn);
+  ok("(pure) 5 of 10 earns, 4 of 10 doesn't",c.pktEarned({kid:"k",turns:Array.from({length:10},(x,i)=>({done:true,first:i<5}))}).ok===true&&c.pktEarned({kid:"k",turns:Array.from({length:10},(x,i)=>({done:true,first:i<4}))}).ok===false);
 }
 // ── dry run ──
 {
