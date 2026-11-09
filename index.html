@@ -82723,6 +82723,11 @@ function buildFourHtml(color){
 // (first-shot hits, only when beaten) and the round's gameLog entry (GAMELOG, game:"ship"). NEVER touches the ladder — no scores, no
 // next_due, no study log. db && !_dryRun() only. Per-kid park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT). A round
 // dropped (Change deck, a kid switch) writes nothing.
+// ⚖️ GAMEJUDGE (her decision 2026-11-08, from the games audit — half of every round was a free 🗣 right, and the last find was forced):
+//   · the NAME act is judged by the kid's ONE setting (say it then pick it / type it / Mom judges) — _shipJudgeOpen / _shipJudged below.
+//     A wrong judge: ok:false, the bonk, "It's <name>." said (the right one stays lit), the tile still sinks, and it comes back once as a
+//     find. The honor tap only when the deck has no other name. Rounds are stamped (st.judge → gameLog judge).
+//   · a FIND with only one tile left to tap is forced: it isn't logged (nolog) and isn't a first shot — "N of M" leaves it out.
 let shipState=null;   // {kid,deck,mix,game:"ship",t0,cols,rows,grid:[pid],sunk:{pid:1},turns:[{pid,act:"find"|"name",done,first,wrong:{},back}],i,phase:"play"|"done",first,of,isPB,prevBest,lock,seq,msg,say,returned:{},gameLogged}
 let _shipRandom=Math.random;   // tests seed it
 const SHIP_MAX=12, SHIP_MIN=6, SHIP_BEAT=900, SHIP_LETTERS="ABCDEF";
@@ -82754,6 +82759,7 @@ function shipStart(deck){
   // every tile once: the order shuffled, find / name alternating
   const turns=_shipShuffle(grid.slice()).map((pid,k)=>({pid:pid,act:k%2===0?"find":"name",done:false,first:false,wrong:{},back:false}));
   shipState={kid:masteryKid,deck:deck,mix:mix,game:"ship",t0:Date.now(),cols:sh.cols,rows:sh.rows,grid:grid,sunk:{},turns:turns,i:0,phase:"play",first:0,of:turns.length,isPB:false,prevBest:null,lock:false,seq:0,msg:"",say:"",returned:{}};
+  if(typeof gameJudgeMode==="function"){ shipState.judge=gameJudgeMode(masteryKid); shipState.nch=gameJudgeChoices(masteryKid); }   // ⚖️ GAMEJUDGE: the kid's setting, read once a round (stamps the log)
   _shipAsk(shipState);
   _mastRe();
 }
@@ -82763,7 +82769,8 @@ function _shipAsk(st){
   const t=st.turns[st.i]; if(!t) return;
   const it=_shipIt(st,t.pid), lead=t.back?"One more time. ":"";
   if(t.act==="find"){ st.msg=lead+"\u{1F3AF} Fire at\u2026 (listen!) Tap it on the map."; _shipSay(st,lead+"Fire at the "+shipName(it)+"!"); }   // the name is SAID, never written
-  else { st.msg=lead+"\u{1F4E3} What\u2019s at "+shipCoord(st.grid.indexOf(t.pid),st.cols)+"? Say it, then tap \u{1F5E3}"; _shipSay(st,lead+"What's at "+shipCoord(st.grid.indexOf(t.pid),st.cols).split("").join(" ")+"?"); }
+  else { st.msg=lead+"\u{1F4E3} What\u2019s at "+shipCoord(st.grid.indexOf(t.pid),st.cols)+"? Say it, then tap \u{1F5E3}"; _shipSay(st,lead+"What's at "+shipCoord(st.grid.indexOf(t.pid),st.cols).split("").join(" ")+"?");
+    if(st.judge) _shipJudgeOpen(st,t,lead+"\u{1F4E3} What\u2019s at "+shipCoord(st.grid.indexOf(t.pid),st.cols)+"? "); }   // ⚖️ GAMEJUDGE: the name is judged (pick / type / Mom)
 }
 // 🎯 a find: the kid taps a tile
 function shipTap(gi){
@@ -82777,18 +82784,33 @@ function shipTap(gi){
 function shipSaid(){
   const st=shipState; if(!st||st.phase!=="play"||st.lock) return;
   const t=st.turns[st.i]; if(!t||t.done||t.act!=="name") return;
+  if(t.gj){ gameJudgeSaid(); return; }   // ⚖️ GAMEJUDGE: no self-report — "I said it" opens the choices (pick); type / Mom have their own taps
   _shipHit(st,t,shipName(_shipIt(st,t.pid)));
 }
-function _shipHit(st,t,spoken){
+// ⚖️ GAMEJUDGE: the name act goes to the shared judge. Right → the Hit, as the honor tap was. Wrong → a miss (see the header).
+function _shipJudgeOpen(st,t,lead){
+  if(!st.judge||t.act!=="name"||typeof gameJudgeAct!=="function") return;
+  const it=_shipIt(st,t.pid); if(!it) return;
+  const deck=it.subject||"Other", names=_shipWhichPool(_shipItems(st.kid),st.kid).filter(x=>x&&x.id!==it.id&&(x.subject||"Other")===deck).map(x=>shipName(x));
+  if(gameJudgeAct(st,t,{kid:st.kid,deck:deck,right:shipName(it),names:names,mode:st.judge,n:st.nch,shuffle:_shipShuffle,
+    live:()=>shipState===st&&st.phase==="play"&&!st.lock&&st.turns[st.i]===t&&!t.done, line:s=>{ st.msg=lead+s; },
+    onRight:x=>_shipHit(st,x,shipName(it)), onWrong:(x,g)=>_shipJudged(st,x,g)})) t.judge=st.judge;   // false (no other name) → the honor tap
+}
+function _shipJudged(st,t,given){
+  t.fail=true; t.wrong[(given!=null&&String(given)!=="")?String(given):"1"]=1;
+  _shipHit(st,t,"","It\u2019s "+shipName(_shipIt(st,t.pid))+".");
+}
+function _shipHit(st,t,spoken,miss){   // miss: a wrong judged name — the line that says the right one
   t.done=true; t.first=!Object.keys(t.wrong).length;
-  if(!t.back&&t.first) st.first++;
+  if(!t.back&&t.act==="find"&&st.grid.filter(p=>!st.sunk[p]).length<=1){ t.nolog=true; st.of=Math.max(0,st.of-1); }   // ⚖️ GAMEJUDGE: one tile left — a forced find, not a first shot
+  else if(!t.back&&t.first) st.first++;
   st.sunk[t.pid]=1;
   if(!t.first&&!t.back&&!st.returned[t.pid]){ st.returned[t.pid]=1; st.turns.push({pid:t.pid,act:"find",done:false,first:false,wrong:{},back:true}); }   // a miss comes back once, as a find
-  try{ matchDing(); }catch(e){}
-  st.msg="\u{1F4A5} Hit!"; _shipSay(st,(spoken?spoken+". ":"")+"Hit!");
+  if(miss){ try{ matchBonk(); }catch(e){} st.msg=miss; _shipSay(st,miss); }   // ⚖️ GAMEJUDGE: the right name, after the kid's answer
+  else { try{ matchDing(); }catch(e){} st.msg="\u{1F4A5} Hit!"; _shipSay(st,(spoken?spoken+". ":"")+"Hit!"); }
   st.lock=true; const seq=++st.seq;
   _mastRe();
-  setTimeout(()=>{ if(shipState===st&&st.lock&&st.seq===seq) shipNext(st); },SHIP_BEAT);
+  setTimeout(()=>{ if(shipState===st&&st.lock&&st.seq===seq) shipNext(st); },miss?SHIP_BEAT*2:SHIP_BEAT);
 }
 function shipNext(st){
   st=st||shipState; if(!st||st!==shipState) return;
@@ -82861,7 +82883,8 @@ function buildShipHtml(color){
   st.grid.forEach((pid,gi)=>{ const it=_shipIt(st,pid), sunk=!!st.sunk[pid], wrong=!!(t&&t.wrong[pid]), lit=!!(t&&!find&&t.pid===pid&&!t.done), can=find&&!lock&&!wrong&&!(sunk&&pid!==t.pid);
     h+='<div class="ship-tile'+(sunk?' ship-sunk':'')+(wrong?' ship-wrong':'')+(lit?' ship-lit':'')+(can?'':' ship-still')+'" role="button" aria-label="'+shipCoord(gi,st.cols)+'"'+(can?' onclick="shipTap('+gi+')"':'')+'><span class="ship-co">'+shipCoord(gi,st.cols)+'</span><span class="ship-vis">'+(_smTileVis(it)||'')+'</span></div>'; });
   h+='</div>';
-  if(t&&!find) h+='<div style="display:flex;justify-content:center;margin-top:14px"><button class="ship-btn" onclick="shipSaid()"'+(lock||t.done?' disabled':'')+' style="background:'+color+';color:#fff">\u{1F5E3} I said it</button></div>';
+  if(t&&!find&&t.gj&&typeof gameJudgeHtml==="function") h+='<div style="margin-top:14px">'+gameJudgeHtml(t,color,lock)+'</div>';   // ⚖️ GAMEJUDGE: the choices / the typing box / Mom's ✓ ✗
+  else if(t&&!find) h+='<div style="display:flex;justify-content:center;margin-top:14px"><button class="ship-btn" onclick="shipSaid()"'+(lock||t.done?' disabled':'')+' style="background:'+color+';color:#fff">\u{1F5E3} I said it</button></div>';
   return h+'</div>';
 }
 // SHIP_END
