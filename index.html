@@ -58578,10 +58578,11 @@ function unitPicsSave(){
 //     pictures), so ID Flash — "what is this?" — runs per ITEM (species / tool), which is how the design counts it too
 //     ("fluent 31 of 40 species"). A sitting: up to 12 items, each a picture with a 10 s bar; the kid picks (3 lures from the
 //     same deck, _matchLures) or types the name (mstTypedOk, the study's own checker, over the item's accepted names — the
-//     item plus every way its cards name it); ✓/✗ and the name after; the time per show is recorded. FLUENT = the last three
-//     CORRECT shows were on three DIFFERENT pictures, each under 10 s. A fluent item leaves ID Flash; the cards' own ladder
-//     (new → learning → mastered) and spaced review are untouched.
-//   · Writes, at the end of a sitting only: mastery/<kid>_idflash/<deckKey>/<itemKey> = {shows:[{pic,ok,secs,at}×last 5],
+//     item plus every way its cards name it); ✓/✗ and the name after; the time per show (and Pick or Type) is recorded. FLUENT =
+//     three quick rights (each under 10 s) on three DIFFERENT pictures, either the last three TYPED rights or the last three
+//     shows IN A ROW (a miss resets it — the only way Pick answers count; IDFLASH_ROW 2026-11-08). A fluent item leaves ID
+//     Flash; the cards' own ladder (new → learning → mastered) and spaced review are untouched.
+//   · Writes, at the end of a sitting only: mastery/<kid>_idflash/<deckKey>/<itemKey> = {shows:[{pic,ok,secs,at,mode}×last 5],
 //     fluent, at} (itemKey = mastDefKey(item); ONE multi-path update on mastery/<kid>_idflash, every path targeted) and the
 //     day's entry under mastery/studyLog/<kid>/idflash/<yyyymmdd> in the shape _mstSaveInner writes (items {id,name,deck,
 //     result} merged into the day), so Scores, the streak and the weekly report count it. Dry run: runs and scores on the
@@ -58668,12 +58669,17 @@ function envFlashDecks(kid){
 }
 function envFlashState(kid,deck,itemKey){ const s=(((typeof masteryData!=="undefined"&&masteryData)||{})[kid+"_idflash"]||{})[deck]; const e=s&&s[itemKey]; return (e&&typeof e==="object")?e:null; }
 function envFlashShows(st){ let a=st&&st.shows; if(!a) return []; if(!Array.isArray(a)) a=Object.values(a); return a.filter(x=>x&&typeof x==="object"); }
-// THE RULE: the last three CORRECT shows, on three DIFFERENT pictures, each under 10 s.
+// THE RULE: three rights, each under 10 s, on three DIFFERENT pictures — either the last three TYPED rights (typing the
+// name is the real check, so a miss between them doesn't undo it) or the last three shows IN A ROW, every one right.
+// IDFLASH_ROW (games honesty audit #13, 2026-11-08): a Pick is 1 of 4, and counting the last three correct shows with misses
+// in between let guessing retire an item for good; the design's words are "three times in a row". So a Pick right counts
+// only inside an unbroken run, and a miss resets it. A show saved before the mode was recorded counts as a Pick.
 function envFlashFluent(shows){
-  const ok=(shows||[]).filter(s=>s&&s.ok===true).slice(-ENVFLASH_NEED);
-  if(ok.length<ENVFLASH_NEED) return false;
-  if(!ok.every(s=>typeof s.secs==="number"&&s.secs<ENVFLASH_SECS)) return false;
-  return new Set(ok.map(s=>String(s.pic))).size===ENVFLASH_NEED;
+  const all=(shows||[]).filter(s=>s&&typeof s==="object");
+  const three=a=>a.length===ENVFLASH_NEED&&a.every(s=>s.ok===true&&typeof s.secs==="number"&&s.secs<ENVFLASH_SECS)
+    &&new Set(a.map(s=>String(s.pic))).size===ENVFLASH_NEED;
+  if(three(all.filter(s=>s.ok===true&&s.mode==="type").slice(-ENVFLASH_NEED))) return true;
+  return three(all.slice(-ENVFLASH_NEED));
 }
 function envFlashNext(prev,show){ const shows=envFlashShows(prev).concat([show]).slice(-ENVFLASH_KEEP); return {shows:shows,fluent:envFlashFluent(shows),at:show.at}; }
 function envFlashCount(kid,d){ let f=0; (d.items||[]).forEach(e=>{ const st=envFlashState(kid,d.key,e.key); if(st&&st.fluent) f++; }); return {fluent:f,total:(d.items||[]).length}; }
@@ -58740,7 +58746,7 @@ function envFlashAnswer(ok,typed){
   if(!envFlash||envFlash.ans||envFlash.done) return; const c=envFlash.cards[envFlash.i]; if(!c) return;
   envFlashTimerStop(); const secs=envFlashSecs();
   envFlash.ans={ok:!!ok,secs:secs,typed:typed==null?null:String(typed)};
-  envFlash.results.push({deck:c.deck,item:c.item,key:c.key,pic:String(c.pic.url),ok:!!ok,secs:secs,at:Date.now()});
+  envFlash.results.push({deck:c.deck,item:c.item,key:c.key,pic:String(c.pic.url),ok:!!ok,secs:secs,at:Date.now(),mode:envFlash.mode==="type"?"type":"pick"});
   if(typeof _mastRe==="function") _mastRe();
   if(typeof envRaFlashSaid==="function") envRaFlashSaid(envFlash.kid,c.item);   // 🔊 ENVREADALOUD: the name after the answer (Auto)
 }
@@ -58764,7 +58770,7 @@ function envFlashFinish(){
   const f=envFlash, kid=f.kid, res=f.results, dry=f.dry, md=masteryData;
   const live=!!((typeof db!=="undefined")&&db&&!dry&&res.length);
   const upd={}, newly=[]; let states=md[kid+"_idflash"]; if(!states||typeof states!=="object") states=md[kid+"_idflash"]={};
-  res.forEach(r=>{ const prev=envFlashState(kid,r.deck,r.key); const next=envFlashNext(prev,{pic:r.pic,ok:r.ok,secs:r.secs,at:r.at});
+  res.forEach(r=>{ const prev=envFlashState(kid,r.deck,r.key); const next=envFlashNext(prev,{pic:r.pic,ok:r.ok,secs:r.secs,at:r.at,mode:r.mode});
     if(!states[r.deck]||typeof states[r.deck]!=="object") states[r.deck]={}; states[r.deck][r.key]=next; upd[r.deck+"/"+r.key]=next;
     if(next.fluent&&!(prev&&prev.fluent)&&newly.indexOf(r.item)<0) newly.push(r.item); });
   const secs=Math.max(1,Math.round((Date.now()-f.startedAt)/1000));
@@ -58800,7 +58806,7 @@ function envFlashDoorHtml(kid,session){
   h+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><div style="flex:1;min-width:140px;font-size:18px;font-weight:800;color:#166534">\u26A1 ID Flash</div><div style="display:flex;gap:6px">';
   ["pick","type"].forEach(m=>{ const on=mode===m; h+='<button onclick="envFlashSetMode(\''+js(kid)+'\',\''+m+'\')" style="padding:6px 12px;border-radius:999px;border:2px solid '+(on?'#166534':'#bbf7d0')+';background:'+(on?'#166534':'#fff')+';color:'+(on?'#fff':'#166534')+';font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(m==="pick"?'\u{1F446} Pick':'\u2328\uFE0F Type')+'</button>'; });
   h+='</div></div>';
-  h+='<div style="font-size:12px;color:var(--muted);font-weight:600;margin:4px 0 8px;line-height:1.4">A picture, '+ENVFLASH_SECS+' seconds, name it. Three quick rights on three different pictures and it\u2019s fluent.</div>';
+  h+='<div style="font-size:12px;color:var(--muted);font-weight:600;margin:4px 0 8px;line-height:1.4">A picture, '+ENVFLASH_SECS+' seconds, name it. Three quick rights in a row, on three different pictures, and it\u2019s fluent.</div>';
   let open=0;
   decks.forEach(d=>{ const c=envFlashCount(kid,d), left=c.total-c.fluent; if(left) open++;
     h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #dcfce7"><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:800;color:#1f2937">'+esc(d.key)+'</div><div style="font-size:12px;font-weight:700;color:#15803d">'+esc(envFlashLine(kid,d))+'</div></div>'
