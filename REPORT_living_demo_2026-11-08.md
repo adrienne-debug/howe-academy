@@ -227,6 +227,6 @@ for the plan-backed subjects (F4).
 
 ## 6. The suite
 
-`for t in test_*.js; do node "$t"; done` — see the hand-over note / the final message for the count. Only `test_sunday_catchup.js`
-(date-bound) is expected to fail. New: `test_demo_week.js` (52 checks), `test_bump_closing.js` (8), `test_relay_guard.js` (12),
+`for t in test_*.js; do node "$t"; done` on the rebased tree (origin/main f99b1f5): 732 files, 1 failure — `test_sunday_catchup.js`
+(date-bound, always fails). The perf budget passes (the sandbox lives under `test_fixtures/` so its timer stubs are not scanned). New: `test_demo_week.js` (52 checks), `test_bump_closing.js` (8), `test_relay_guard.js` (12),
 `test_rppat_retitle.js` (8), `test_relay_sweep_wire.js` (5).
