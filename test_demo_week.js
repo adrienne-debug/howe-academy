@@ -59,6 +59,8 @@ const fpOf=tasks=>tasks.map(t=>t.id+"|"+t.day+"|"+t.time+"|"+(t.title||"")).sort
 const snapOf=tasks=>{ const o={}; tasks.forEach(t=>{ o[t.id]={day:t.day,time:t.time,title:t.title||"",eo:!!t._eowOverflow,dd:!!t._dayDrop}; }); return o; };
 const isNb=t=>t.subjectKey==="morning_nb"||t.subjectKey==="closing_nb";
 const CHECK_SNAP={};   // id → {day,time,title} the moment the check settled (C5)
+const SEEN_LIDS={};    // week → kid/sk → Set of lesson ids that were ever on that week's board (the F4 premise)
+function noteSeen(){ const w=WN(); const m=SEEN_LIDS[w]=SEEN_LIDS[w]||{}; board().forEach(t=>{ if(t&&t.lid&&t.who&&t.subjectKey){ const k=t.who+"/"+t.subjectKey; (m[k]=m[k]||new Set()).add(t.lid); } }); }
 const dbgSince=(mark,re)=>db.debug.slice(mark).map(d=>d.msg).filter(m=>!re||re.test(String(m)));
 
 // ── the week's dates and each subject's pattern (what the app itself reads) ──
@@ -200,7 +202,7 @@ async function step(name,atMs,act,o){
   console.log("\n── "+name+" — "+new Date(atMs).toString().slice(0,24));
   let actOut=null; try{ actOut=await act(); }catch(e){ ok(name+": the door ran without throwing",false,String(e&&e.stack||e).slice(0,400)); }
   await flush(o.settleMs==null?30000:o.settleMs);
-  const post=snapOf(board()), ws=db.log.slice(mark), entry=newestRelay(logBefore);
+  noteSeen(); const post=snapOf(board()), ws=db.log.slice(mark), entry=newestRelay(logBefore);
   const notes=[]; const F=checkAll({dbgMark,notes}).concat(checkRelayLog());
   if(o.expectRelay){ if(!entry) F.push({code:"C10",msg:"no what-moved entry was written for this step"}); else { const p2=Object.assign({},pre); (o.ignoreIds||[]).forEach(id=>{ delete p2[id]; }); const q2=Object.assign({},post); (o.ignoreIds||[]).forEach(id=>{ delete q2[id]; }); F.push(...checkWhatMoved(p2,q2,entry,ckPre)); } }
   if(process.env.DEMO_DUMP){ const k=process.env.DEMO_DUMP; board().filter(t=>t.who===k).sort((a,b)=>DN.indexOf(a.day)-DN.indexOf(b.day)||toMin(a.time)-toMin(b.time)).forEach(t=>console.log("      "+t.day.slice(0,3)+" "+String(t.time).padStart(8)+" +"+t.dur+" "+(checkedMap()[t.id]?"✓":" ")+" "+t.subjectKey+" "+(t.lid||"")+(t.cascadedFrom?" ↩"+t.cascadedFrom.slice(0,3):"")+(t._eowOverflow?" [box]":"")+(t._dayDrop?" [day-box]":""))); }
@@ -361,7 +363,7 @@ async function sweepAt(iso){ clock.now=hm(iso,20,0); const r=A.fn("mlEveningSwee
   // Friday 11/20
   await rollDay("2026-11-20");
   { // S10 — Fri 9:00: Saturday on (the 📅 strip)
-    const r=await step("S10 Fri 9:00 Saturday on (📅 This week)",hm("2026-11-20",9,0),async()=>{ A.fn("twsToggleSaturday")(); },{expectRelay:true});
+    const r=await step("S10 Fri 9:00 Saturday on (📅 This week)",hm("2026-11-20",9,0),async()=>{ A.fn("twsToggleSaturday")(); },{expectRelay:false});   // nothing moves → no what-moved entry (FINDING F3)
     const satCards=board().filter(t=>t.day==="saturday"&&!String(t.id).endsWith("_c"));
     ok("S10: weekConfig/2/saturday is true and the effective config says Saturday on",db.get("weekConfig/2/saturday")===true&&satOn(2));
     ok("FINDING F3 (documented, known limit): Saturday on mid-week writes the setting but the board week has no Saturday tab (meta.dates) and no pattern lays onto it until a rebuild",!(db.get("week2/meta/dates")||{}).saturday&&!r.entry,{metaSat:(db.get("week2/meta/dates")||{}).saturday||null,satCards:satCards.map(t=>t.who+"/"+t.subjectKey+" "+t.time),dbg:r.rec.dbg.slice(0,5)}); }
@@ -385,8 +387,9 @@ async function sweepAt(iso){ clock.now=hm(iso,20,0); const r=A.fn("mlEveningSwee
     ok("S12: the subjects added mid-week are in the new week; the deleted one is not",board().some(t=>t.who==="kid_c"&&t.subjectKey==="music")&&board().some(t=>t.who==="kid_b"&&t.subjectKey==="geography")&&!board().some(t=>t.who==="kid_a"&&t.subjectKey==="history"),inWk3);
     // Sunday catch-up for kid_a: what shows on Sunday's tab
     clock.now=hm("2026-11-22",9,0); const set=A.fn("sucSet")(); const sunCards=set?Array.from(set):[];
-    const kidAOpenWk2=wk2Open.filter(x=>/^kid_a\//.test(x)).length;
-    ok("FINDING F4 (documented, proposal): Sunday catch-up shows NOTHING for a kid whose subjects are plan-backed — the lessons left open in week 2 are served first in week 3 with no carried/catch-up flag for sucPick to read",sunCards.length===0&&kidAOpenWk2>0,{sunday:sunCards.length,kidAOpenInWeek2:kidAOpenWk2}); }
+    // kid_a's lessons that were on week 2's board at some point and are still not done = what "fell behind" last week
+    const behindA=[]; Object.keys(SEEN_LIDS[2]||{}).filter(k=>/^kid_a\//.test(k)).forEach(k=>{ const [kid,sk]=k.split("/"); const done=((A.get("currData.done")||{})[kid]||{})[sk]||{}; SEEN_LIDS[2][k].forEach(l=>{ if(!done[l]) behindA.push(k+" "+l); }); });
+    ok("FINDING F4 (documented, proposal): Sunday catch-up shows NOTHING for a kid whose subjects are plan-backed — the lessons that fell behind in week 2 are served first in week 3 with no carried/catch-up flag for sucPick to read",sunCards.length===0&&behindA.length>0,{sunday:sunCards.length,behind:behindA}); }
 
   // ── the table ──
   console.log("\n3. steps × checks");
