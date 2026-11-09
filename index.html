@@ -84332,12 +84332,17 @@ function buildKaboomHtml(color){
 //   no cue). Never spelling / phonogram decks (Which one?'s rule), never a procedure card, never a number. A deck needs HM_MIN+ words;
 //   a round is HM_ROUND; 🎲 Mix the decks. Readers at level middle / upper (dcLevel from the roster's grade — never a name).
 // Writes (only these): <kid>_settings/match_best key "<deck> · hang" (words found, only when beaten) and the round's gameLog entry
-//   (GAMELOG, game:"hang": ok = found, n = wrong letters + 1, fail = not found, back = the come-back). NEVER touches the ladder — no
+//   (GAMELOG, game:"hang": ok = a CLEAN solve, n = wrong letters + 1, fail = not found, back = the come-back). NEVER touches the ladder — no
 //   scores, no next_due, no study log. db && !_dryRun() only. Per-kid park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT).
 //   A round dropped (Change deck, a kid switch) writes nothing. 🎮 GAMEGRID: its own column — gameDeckOn(kid,"hang",deck).
-let hangState=null;   // {kid,deck,mix,game:"hang",t0,turns:[{pid,word,cue,letters:[{ch,key}],guessed:{a:1},misses,wrong:{},done,first,fail,back,hint}],i,phase,first,of,isPB,prevBest,lock,seq,msg,returned:{},gameLogged}
+// ⚖️ HMCLEAN (games honesty audit §7 #10, her decision via the hub 2026-11-08: "Hangman counts first-try only for a clean solve"): a word
+//   found eventually was logged ok:true however many letters missed, even after 🔊 Hear it SAID the word — "found eventually" read as
+//   "knew it". Now `first` (= the log's ok) is true only when the word is found with no Hear it and at most HM_CLEAN wrong letters; a
+//   hinted or 2+-miss solve is still found (the ding, "That's it!", it counts in "N of M words found" and the best) but logs ok:false.
+//   The balloons and a failed word's come-back are unchanged.
+let hangState=null;   // {kid,deck,mix,game:"hang",t0,turns:[{pid,word,cue,letters:[{ch,key}],guessed:{a:1},misses,wrong:{},done,found,first,fail,back,hint}],i,phase,first,of,isPB,prevBest,lock,seq,msg,returned:{},gameLogged}
 let _hmRandom=Math.random;   // tests seed it
-const HM_MIN=4, HM_ROUND=6, HM_MISSES=6, HM_HINT=3, HM_LEN_MIN=3, HM_LEN_MAX=14, HM_BEAT=1100, HM_BEAT_FAIL=1800;
+const HM_MIN=4, HM_ROUND=6, HM_MISSES=6, HM_HINT=3, HM_CLEAN=1, HM_LEN_MIN=3, HM_LEN_MAX=14, HM_BEAT=1100, HM_BEAT_FAIL=1800;
 const HM_KEYS="abcdefghijklmnopqrstuvwxyz".split("");
 function _hmItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
 function _hmShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_hmRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
@@ -84395,7 +84400,7 @@ function hangPools(items,kid){
 }
 function hangDecks(items,kid){ return Object.keys(hangPools(items,kid)); }   // the game's OWN deck list (the games-per-deck grid's preload asks this, raw)
 function hangAvail(kid){ return hangLevelOk(kid)&&hangDecks(_hmItems(kid),kid).length>0; }
-function hmTurn(c,back){ return {pid:c.pid,word:c.word,cue:c.cue,letters:hmLetters(c.word),guessed:{},misses:0,wrong:{},done:false,first:false,fail:false,back:!!back,hint:false}; }
+function hmTurn(c,back){ return {pid:c.pid,word:c.word,cue:c.cue,letters:hmLetters(c.word),guessed:{},misses:0,wrong:{},done:false,found:false,first:false,fail:false,back:!!back,hint:false}; }
 function hangStart(deck){
   try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding / bonk (iPad)
   const pools=hangPools(_hmItems(),masteryKid), mix=deck===WHICH_MIX, names=Object.keys(pools);
@@ -84409,11 +84414,13 @@ function hangChangeDeck(){ hangState=null; _mastRe(); }   // drop the round as i
 function _hmCur(st){ return (st&&st.phase==="play"&&!st.lock)?st.turns[st.i]:null; }
 // PURE: is every letter of the word revealed?
 function hmSolved(t){ return t.letters.every(l=>!l.key||t.guessed[l.key]); }
+// ⚖️ HMCLEAN — PURE: a solve counts as a first try only when it was clean: no 🔊 Hear it, at most HM_CLEAN wrong letters
+function hmClean(t){ return !!t&&!t.hint&&(t.misses||0)<=HM_CLEAN; }
 // PURE: one letter → "hit" | "miss" | "solved" | "fail" | null (already guessed / not a letter)
 function hmJudge(t,key){
   key=hmFold(key); if(!key||t.done||t.guessed[key]) return null;
   t.guessed[key]=1;
-  if(t.letters.some(l=>l.key===key)){ if(hmSolved(t)){ t.done=true; t.first=true; return "solved"; } return "hit"; }
+  if(t.letters.some(l=>l.key===key)){ if(hmSolved(t)){ t.done=true; t.found=true; t.first=hmClean(t); return "solved"; } return "hit"; }
   t.misses++; t.wrong[key]=1;
   if(t.misses>=HM_MISSES){ t.done=true; t.first=false; t.fail=true; return "fail"; }
   return "miss";
@@ -84443,7 +84450,7 @@ function hangBestKey(deck){ return deck+" \u{00B7} hang"; }
 function hangFinish(st){
   st.phase="done"; st.lock=false;
   const kid=st.kid||masteryKid;   // GAMEKID
-  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every word's result, game:"hang"
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every word's result, game:"hang" (ok = a clean solve — ⚖️ HMCLEAN)
   const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
   if(!s.match_best) s.match_best={};
   const key=hangBestKey(st.deck), prev=s.match_best[key];
