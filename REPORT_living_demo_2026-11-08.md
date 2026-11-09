@@ -8,7 +8,7 @@ Compare: https://github.com/adrienne-debug/howe-academy/compare/main...claude/li
 
 | commit | what |
 |---|---|
-| 2a0e2a5 | the harness: `test_demo_week.js`, `demo_week_sandbox.js`, `test_fixtures/living_demo_family.json` |
+| 2a0e2a5 | the harness: `test_demo_week.js`, `test_fixtures/demo_week_sandbox.js`, `test_fixtures/living_demo_family.json` |
 | 4c94e04 | **BUMPCLOSE** — the early check-off rotation keeps the Closing Notebook last (step S3) · `test_bump_closing.js` |
 | 0dcdec4 | **RELAYGUARD** — the re-lay door runs the school-end guard even when nothing sweeps (S6) · `test_relay_guard.js` |
 | 03019b8 | **RPPAT_TEXT** — a held card still takes the list's text on a re-lay (S7) · `test_rppat_retitle.js` |
@@ -18,7 +18,7 @@ Compare: https://github.com/adrienne-debug/howe-academy/compare/main...claude/li
 ## 1. What the harness is
 
 `node test_demo_week.js` (2.8 s). The WHOLE app — index.html's main script, unedited except two string patches that make
-`renderAll` / `renderAllSoon` return at once — runs inside a Node vm sandbox (`demo_week_sandbox.js`):
+`renderAll` / `renderAllSoon` return at once — runs inside a Node vm sandbox (`test_fixtures/demo_week_sandbox.js`):
 
 - a fake DOM that swallows every paint;
 - ONE in-memory Firebase tree shared by two devices — `ref().on / once / set / update / remove / transaction / push`, value listeners

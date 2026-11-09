@@ -2,7 +2,7 @@
  * 🧪 DEMO WEEK — slice E of PLAN_living_schedule_finish_2026-11-08.md (her words 11/8: "run demo runs and find any issues …
  * make sure that no subjects get skipped or deleted or anything along those lines").
  *
- * The WHOLE app (index.html's main script) runs in a vm sandbox — see demo_week_sandbox.js — on a SYNTHETIC family
+ * The WHOLE app (index.html's main script) runs in a vm sandbox — see test_fixtures/demo_week_sandbox.js — on a SYNTHETIC family
  * (test_fixtures/living_demo_family.json: four fake kids, plan-backed lessons, dailies with pattern days, a fixed-time class,
  * a timed co-op, a Mom-required subject, Sunday catch-up for one kid, a sitter Tuesday). Two devices share one in-memory
  * Firebase tree: A is Mom's (every door is tapped here), B is a kid's tablet (it only listens, and checks cards off).
@@ -22,7 +22,7 @@
 "use strict";
 process.env.TZ="America/New_York";
 const fs=require("fs"), path=require("path");
-const S=require(path.join(__dirname,"demo_week_sandbox.js"));
+const S=require(path.join(__dirname,"test_fixtures","demo_week_sandbox.js"));
 const FX=JSON.parse(fs.readFileSync(path.join(__dirname,"test_fixtures","living_demo_family.json"),"utf8"));
 const INDEX=path.join(__dirname,"index.html");
 const VERBOSE=!!process.env.DEMO_VERBOSE;

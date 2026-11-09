@@ -1,5 +1,6 @@
 /*
- * demo_week_sandbox.js — the harness behind test_demo_week.js (slice E of PLAN_living_schedule_finish_2026-11-08.md).
+ * test_fixtures/demo_week_sandbox.js — the harness behind test_demo_week.js (slice E of PLAN_living_schedule_finish_2026-11-08.md).
+ * (It lives under test_fixtures so the perf-budget scanner, which reads the app's own root *.js, never counts its setTimeout/setInterval stubs.)
  *
  * Runs the WHOLE app script (the last <script> block of index.html) inside a Node vm sandbox, once per "device":
  *   · a fake DOM that swallows every paint (renderAll / renderAllSoon are patched to return at once — the harness is about
