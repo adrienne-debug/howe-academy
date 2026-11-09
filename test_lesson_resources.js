@@ -20,7 +20,7 @@
 const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
-const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const src = require("./test_src.js")(path.join(__dirname, "index.html"));
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {

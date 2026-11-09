@@ -3,6 +3,7 @@
  * slow every week"; the cause is CODE SIZE. Areas most devices never open moved VERBATIM out of index.html into their own files,
  * loaded once on first need (haLazyLoad):
  *   classes.js — the class platform (every CP* block)
+ *   games.js   — the practice games (Brain Dump … Picture Puzzle; the games study and drills use stay in index.html)
  * This test checks the split itself (the other tests read the joined page through test_src.js and check behaviour):
  *   · each file parses, ends with its ready flag, and is EXACTLY its header + the blocks its markers name + the flag line
  *     (so the joined page the tests read is the page the devices run, nothing extra hiding in a file)
@@ -28,6 +29,9 @@ const joined = testSrc();
 // file → its sentinel (haLazyReady's "the code is here") and the local-variable names that only LOOK like its globals
 const SPLITS = {
   "classes.js": { name: "classes", sentinel: "cpSeason", locals: ["_cp"] },
+  // GAMES_LIST / GAME_LIKE_STATE hold each game's closures (render, park, state…): never called before games.js — gamesBodyHtml
+  // and _gkEntries ask gamesLoaded first, gameLikeRound calls inside try/catch (both checked below)
+  "games.js": { name: "games", sentinel: "buildJeopHtml", locals: [], tables: ["GAMES_LIST", "GAME_LIKE_STATE"] },
 };
 const rawL = raw.split("\n"), cmL = P.scanJs(raw).cm.split("\n");
 const mainA = rawL.lastIndexOf("<script>"), mainB = rawL.lastIndexOf("</script>");
@@ -78,11 +82,12 @@ for (const [file, cfg] of Object.entries(SPLITS)) {
   ok(file + " declares its sentinel " + cfg.sentinel + "()", new RegExp("^function " + cfg.sentinel + "\\(", "m").test(js));
   const dup = [...names].filter(n => mainNames.has(n));
   ok("no top-level name is declared both in index.html and in " + file, dup.length === 0, dup);
-  const bare = [];
+  const bare = [], inTable = new Array(rawL.length).fill(false);
+  for (const t of cfg.tables || []) { const s0 = rawL.findIndex(l => l.startsWith("const " + t + "=")); let e0 = s0; while (s0 >= 0 && e0 < rawL.length && !/^[\]}];/.test(rawL[e0])) e0++; for (let i = s0; s0 >= 0 && i <= e0; i++) inTable[i] = true; }
   for (const n of names) {
     if (cfg.locals.includes(n) || n.length < 3) continue;
     const re = new RegExp("(^|[^\\w$.])" + n.replace(/\$/g, "\\$") + "(?![\\w$])"), g = new RegExp("typeof\\s+(window\\.)?" + n.replace(/\$/g, "\\$") + "(?![\\w$])|window\\." + n.replace(/\$/g, "\\$") + "(?![\\w$])");
-    for (let i = mainA + 1; i < mainB; i++) { const l = cmL[i]; if (l.indexOf(n) < 0 || !re.test(l)) continue; if (!g.test(l)) bare.push((i + 1) + " " + n); }
+    for (let i = mainA + 1; i < mainB; i++) { const l = cmL[i]; if (inTable[i] || l.indexOf(n) < 0 || !re.test(l)) continue; if (!g.test(l)) bare.push((i + 1) + " " + n); }
   }
   ok("every use in index.html of a name " + file + " declares is guarded on its line (typeof / window.)", bare.length === 0, bare.slice(0, 8));
   const bootA = rawL.findIndex(l => /^\/\/ ── INIT ── runs LAST/.test(l));
@@ -142,6 +147,28 @@ function world(host) {
   const bi = rawL.indexOf("boot();"), hb = rawL.findIndex(l => /^haLazyBoot\(\);/.test(l));
   ok("haLazyBoot() runs in the INIT block, before boot() (after every declaration)", hb > 0 && hb < bi && hb > rawL.findIndex(l => /^\/\/ ── INIT ── runs LAST/.test(l)));
   ok("haLazyBoot loads classes.js only on the Envirothon site / demo", /envSiteOn\(\)\) haLazyBootSync\("classes"\)/.test(raw.slice(a, b)));
+
+  console.log("\n── the doors (games.js) ──");
+  const gm = raw.slice(raw.indexOf("const GAMES_MAIN="), raw.indexOf("// GAMESTAB_END"));
+  ok("the games a study sitting or a drill uses stay in index.html (GAMES_MAIN) and never wait", /const GAMES_MAIN=\["match","memory","which","spell","idflash","train"\];/.test(gm));
+  const gjs = fs.readFileSync(path.join(DIR, "games.js"), "utf8");
+  const mainGames = ["buildMatchHtml", "buildWhichHtml", "buildSpellHtml", "buildTrainHtml", "envFlashGameHtml"].filter(n => !new RegExp("^function " + n + "\\(", "m").test(raw) || new RegExp("^function " + n + "\\(", "m").test(gjs));
+  ok("…and their code really is in index.html, not games.js", mainGames.length === 0, mainGames);
+  const moved = ["buildDumpHtml", "buildGofishHtml", "buildBingoHtml", "buildSortHtml", "buildMoleHtml", "buildJeopHtml", "buildTeachHtml", "buildFourHtml", "buildShipHtml", "buildBeatHtml", "buildTnHtml", "buildSureHtml", "buildCatsHtml", "buildJumbleHtml", "buildKaboomHtml", "buildHangHtml", "buildNameallHtml", "buildJigHtml"];
+  ok("every other game in GAMES_LIST is in games.js", moved.every(n => new RegExp("^function " + n + "\\(", "m").test(gjs)), moved.filter(n => !new RegExp("^function " + n + "\\(", "m").test(gjs)));
+  ok("gamesSubHtml asks for games.js when the section is on screen", /gamesLazy\(\);/.test(fn("gamesSubHtml")));
+  ok("gamesBodyHtml shows 'Loading games…' for a game still on its way (never calls a missing render)", /if\(g&&!gamesLoaded\(g\.key\)\)\{ gamesLazy\(\); return GAMES_LOADING; \}/.test(fn("gamesBodyHtml")));
+  ok("gamesOpen waits for games.js, then opens this kid's last game as before (unless they moved on)", /haLazyLoad\("games"\)\.then\(go,go\)/.test(fn("gamesOpen")) && /gamesCurrentKey\(\)===""\) gamesOpen\(1\)/.test(fn("gamesOpen")));
+  ok("the kid switch parks / restores only games whose code is here (_gkEntries)", /gamesLoaded\(g\.key\)/.test(raw.slice(raw.indexOf("function _gkEntries"), raw.indexOf("function _gkEntries") + 400)));
+  ok("GAME_LIKE_STATE's closures are only called inside try/catch (gameLikeRound)", /let st=null; try\{ st=g\(\); \}catch\(e\)\{ st=null; \}/.test(fn("gameLikeRound")));
+  ok("GAMES_LIST's render is only reached through gamesBodyHtml's gamesLoaded check", (raw.match(/\.render\(color\)/g) || []).length === 1 && fn("gamesBodyHtml").indexOf("gamesLoaded(g.key)") < fn("gamesBodyHtml").indexOf("g.render(color)"));
+  ok("Mom's games grid (gameDecksHtml) waits for every game's own deck rule", /gamesLazy\(\)\) return GAMES_LOADING;/.test(fn("gameDecksHtml")));
+  { const ctx = { GAMES_MAIN: null, haLazyReady: () => false, haLazyLoad: () => Promise.resolve(true), _mastRe() { ctx.re = (ctx.re || 0) + 1; }, re: 0 };
+    vm.createContext(ctx); vm.runInContext(gm.replace("const GAMES_MAIN=", "GAMES_MAIN=").replace("const GAMES_LOADING=", "var GAMES_LOADING=") + ";this.gamesLoaded=gamesLoaded;this.gamesLazy=gamesLazy;", ctx);
+    ok("before games.js: Match / Which one? / Build it / ABC Train / ID Flash still play; Jeopardy waits", ["match", "memory", "which", "spell", "train", "idflash"].every(k => ctx.gamesLoaded(k)) && !ctx.gamesLoaded("jeop") && !ctx.gamesLoaded(null));
+    ctx.gamesLazy(); await new Promise(r => setTimeout(r, 0));
+    ok("…and when it lands the section repaints in place (_mastRe)", ctx.re === 1);
+    ctx.haLazyReady = () => true; ok("after: every game is here", ctx.gamesLoaded("jeop") && ctx.gamesLazy() === true); }
 
   console.log("\n── one-page copies (the Envirothon site build and the demo) ──");
   const md = fs.readFileSync(path.join(DIR, "envirothon", "build", "make_demo.js"), "utf8"), be = fs.readFileSync(path.join(DIR, "envirothon", "build", "build_envirothon.js"), "utf8");

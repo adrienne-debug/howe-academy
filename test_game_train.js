@@ -12,7 +12,7 @@
 const fs=require("fs"), path=require("path"), vm=require("vm");
 let pass=0, fail=0;
 function ok(n,c,x){ if(c){pass++;console.log("  ok  - "+n);} else {fail++;console.log("  FAIL- "+n+(x!==undefined?"  ("+JSON.stringify(x)+")":""));} }
-const src=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
+const src=require("./test_src.js")(path.join(__dirname,"index.html"));
 const UNITPIC = src.slice(src.indexOf("// UNITPIC_START"), src.indexOf("// UNITPIC_END"));   // the one card-picture helper (mastLiveVisual) the drawers call
 const cut=(a,b)=>{ const i=src.indexOf(a), j=src.indexOf(b,i); if(i<0||j<0) throw new Error("markers "+a); return src.slice(i,j); };
 function fnText(name){ const i=src.indexOf("function "+name+"("); if(i<0) return ""; const j=src.indexOf("\nfunction ",i+10); return src.slice(i,j<0?undefined:j); }

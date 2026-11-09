@@ -17,7 +17,7 @@ const fs=require("fs"), path=require("path"), vm=require("vm"), crypto=require("
 let pass=0, fail=0;
 function ok(n,c,x){ if(c){pass++;console.log("  ok  - "+n);} else {fail++;console.log("  FAIL- "+n+(x!==undefined?"  ("+JSON.stringify(x)+")":""));} }
 const SNAP_ONLY=process.argv.indexOf("--snap")>=0;
-const src=fs.readFileSync(process.env.JP_SNAP_SRC||path.join(__dirname,"index.html"),"utf8");
+const src=require("./test_src.js")(process.env.JP_SNAP_SRC||path.join(__dirname,"index.html"));
 const cutIn=(s,a,b)=>{ const i=s.indexOf(a), j=s.indexOf(b,i); if(i<0||j<0) throw new Error("markers "+a); return s.slice(i,j); };
 const cut=(a,b)=>cutIn(src,a,b);
 function fnText(name){ const i=src.indexOf("function "+name+"("); if(i<0) return ""; const j=src.indexOf("\nfunction ",i+10); return src.slice(i,j<0?undefined:j); }
