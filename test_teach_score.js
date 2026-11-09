@@ -10,7 +10,7 @@ const blk=(a,z)=>{ const i=src.indexOf(a); if(i<0) throw new Error("missing "+a)
 
 console.log("── by text ──");
 ok("one SCP_UNSCORED list: Teach it only", /const SCP_UNSCORED=\{teach:1\};/.test(src)&&src.split("const SCP_UNSCORED=").length===2);
-ok("scpRight and scgLearned both skip it (one guarded clause each)", (src.match(/if\(scpPreJudge\(e\)\|\|scpUnscored\(e\)\) return;/g)||[]).length===2);
+ok("scpRight and scgLearned both skip it (one guarded clause each)", (src.match(/if\(scpPreJudge\(e\)\|\|scpUnscored\(e\)[|)]/g)||[]).length===2);
 ok("the TEACH block still logs its round (game teach) — nothing in it changed", /try\{ if\(typeof gameLogRound==="function"\) gameLogRound\(st\); \}catch\(e\)\{\}   \/\/ 🎮 GAMELOG: each card's verdict, game:"teach"/.test(blk("// TEACH_START","// TEACH_END")));
 ok("no 🔀 anywhere in index.html", src.indexOf("\u{1F500}")<0);
 

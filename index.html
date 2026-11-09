@@ -28477,6 +28477,10 @@ function scpPreJudge(e){ return !!(e&&typeof e==="object"&&SCP_SAY_GAMES[String(
 // (scgLearned); the 🎮 Games section shows it on its own line ("🎓 taught: N cards · M rounds"), no Right %.
 const SCP_UNSCORED={teach:1};
 function scpUnscored(e){ return !!(e&&typeof e==="object"&&SCP_UNSCORED[String(e.game||"")]===1); }
+// 🚂 PKTRAIN no double count (games audit 2026-11-08 §4 #23 / §7 rank 8): a Pre-K study card's Train round that EARNED the study is
+// logged twice — the studyLog sitting (full weight) and its gameLog round, tagged study:<sid>. The sitting is the one that counts:
+// a tagged round is left out of Right %, the minutes and learned-through-games (its letters' grades are the sitting's).
+function scpStudyRound(e){ return !!(e&&typeof e==="object"&&e.study); }
 // PURE: right ÷ graded inside a window → {graded, right, pct, drill:{g,r}, study:{g,r}, games:{n,ok}}; pct null when nothing was graded.
 function scpRight(kid,history,studyLog,gameLog,w,gw){
   gw=(typeof gw==="number")?gw:SCP_GAME_W;
@@ -28486,7 +28490,7 @@ function scpRight(kid,history,studyLog,gameLog,w,gw){
   else { const dh=(history||{})[kid]||{}; Object.keys(dh).forEach(k=>{ const e=dh[k]; days[k]={items:scpV(e&&e.items).filter(it=>it.result==="c"||it.result==="m"||it.result==="~").map(it=>({result:it.result,src:"drill"}))}; }); }
   Object.keys(days).forEach(k=>{ if(!scpIn(k,w)) return; scpV(days[k].items).forEach(it=>{ const b=(it.src==="study")?out.study:out.drill; b.g++; if(it.result==="c") b.r++; }); });
   const gl=(gameLog||{})[kid]||{};
-  Object.keys(gl).forEach(day=>{ if(!scpIn(day,w)) return; scpV(gl[day]).forEach(e=>{ if(scpPreJudge(e)||scpUnscored(e)) return;   // ⚖️ GAMEJUDGE: a round before judging is not counted · 🎓 TEACHSCORE: nor Teach it
+  Object.keys(gl).forEach(day=>{ if(!scpIn(day,w)) return; scpV(gl[day]).forEach(e=>{ if(scpPreJudge(e)||scpUnscored(e)||scpStudyRound(e)) return;   // ⚖️ GAMEJUDGE: a round before judging is not counted · 🎓 TEACHSCORE: nor Teach it · 🚂 PKTRAIN: nor a round that is a study sitting
     scpV(e.items).forEach(it=>{ if(it.back) return; out.games.n++; if(it.ok) out.games.ok++; }); }); });
   out.graded=out.drill.g+out.study.g+out.games.n*gw; out.right=out.drill.r+out.study.r+out.games.ok*gw;
   out.pct=out.graded>0?Math.round(out.right/out.graded*100):null;
@@ -28525,7 +28529,7 @@ function scpMinutes(kid,history,studyLog,gameLog,w,schoolDays,gw){
   Object.keys(sl).forEach(sid=>{ const days=sl[sid]; if(!days||typeof days!=="object") return;
     Object.keys(days).forEach(k=>{ if(!scpIn(k,w)) return; const e=days[k]; if(!e||typeof e!=="object") return; const sits=scpV(e.sits).map(x=>x&&x.secs); take(sits.length?sits:[e.secs],s=>{ study+=s; }); }); });
   const gl=(gameLog||{})[kid]||{};
-  Object.keys(gl).forEach(k=>{ if(!scpIn(k,w)) return; scpV(gl[k]).forEach(e=>{ take([e&&e.secs],s=>{ games+=s; }); }); });
+  Object.keys(gl).forEach(k=>{ if(!scpIn(k,w)) return; scpV(gl[k]).forEach(e=>{ if(scpStudyRound(e)) return; take([e&&e.secs],s=>{ games+=s; }); }); });   // 🚂 PKTRAIN: its minutes are the sitting's
   const total=drill+study+games*gw, days=Math.max(1,schoolDays|0);
   return {drill:Math.round(drill/60),study:Math.round(study/60),games:Math.round(games/60),total:Math.round(total/60),days:days,perDay:Math.round(total/60/days),any:(drill+study+games)>0};
 }
@@ -28665,7 +28669,7 @@ function scgLearned(kid,cards,history,studyLog,gameLog){
   else { const dh=(history||{})[kid]||{}; Object.keys(dh).forEach(k=>{ days[k]={items:scpV(dh[k]&&dh[k].items)}; }); }
   Object.keys(days).forEach(k=>{ scpV(days[k].items).forEach(it=>{ if(!it||it.id==null||!(it.result in R)) return;
     const g=grades[String(it.id)]||(grades[String(it.id)]={}); if(g[k]==null||R[it.result]>R[g[k]]) g[k]=it.result; }); });   // one grade a day, the worse
-  Object.keys(gl).forEach(day=>{ scpV(gl[day]).forEach(e=>{ if(scpPreJudge(e)||scpUnscored(e)) return;   // ⚖️ GAMEJUDGE: an honor-tap right from before judging teaches nothing here · 🎓 TEACHSCORE: nor a listener's ✓
+  Object.keys(gl).forEach(day=>{ scpV(gl[day]).forEach(e=>{ if(scpPreJudge(e)||scpUnscored(e)||scpStudyRound(e)) return;   // ⚖️ GAMEJUDGE: an honor-tap right from before judging teaches nothing here · 🎓 TEACHSCORE: nor a listener's ✓ · 🚂 PKTRAIN: nor a study round (its own grade)
     scpV(e&&e.items).forEach(it=>{ if(it&&it.ok&&!it.back&&it.id!=null) (right[String(it.id)]||(right[String(it.id)]=[])).push(day); }); }); });
   const out=[];
   scpV(cards).forEach(c=>{ if(!c||c.id==null||c.status==="parked") return; const id=String(c.id);
@@ -73080,6 +73084,7 @@ function gameLogEntry(st,now){
   if(st.game==="jigsaw"&&st.level!=null){ e.level=st.level; e.clean=!!st.clean; }   // 🧩 JIGSAW: the round's level + clean, as the train's — its pieces level reads them back
   if(st.t0) e.secs=Math.max(0,Math.round((now-st.t0)/1000));
   if(st.game==="train"&&st.level!=null){ e.level=st.level; e.clean=!!st.clean; }   // 🚂 TRAIN: the round's level + clean — its level-up reads them back
+  if(st.game==="train"&&st.studyLogged&&st.study&&st.study.sid!=null) e.study=String(st.study.sid);   // 🚂 PKTRAIN: this round IS a study sitting — Scores counts it once
   if(st.game==="jeop"&&st.money){ e.mode="money"; e.bank=st.bank; e.bets=(st.bets||[]).map(b=>Object.assign({},b)); e.result=st.result||""; }   // 💵 JPMONEY: the final bank, the bets, the result
   if(st.judge&&typeof gameJudgeStamp==="function") gameJudgeStamp(e,st.judge);   // ⚖️ GAMEJUDGE: a judged round says how (pick / type / mom) — Jeopardy money first
   return e;
@@ -82977,8 +82982,12 @@ const GAME_RULES={
     ["1","Level 1","What comes next? — the train starts at A, 3 cars to choose from."],
     ["2","Level 2","4 cars to choose from, and the train can start anywhere in the alphabet."]]},
     {key:"study",label:"Study card opens the Train?",def:"on",only:k=>typeof isPreK==="function"&&isPreK(k),opts:[   // 🚂 PKTRAIN: a Pre-K kid only
-    ["on","On","A study card whose deck is letters opens the ABC Train instead of flip cards, and the round counts as the study."],
-    ["off","Off","The study card opens the flip cards, as before."]]}]
+    ["on","On","A study card whose deck is letters opens the ABC Train instead of flip cards, and a round counts as the study once enough cars are right on the first tap (the next rule)."],
+    ["off","Off","The study card opens the flip cards, as before."]]},
+    {key:"studyMin",label:"Study counts after how many cars right on the first tap?",def:"5",only:k=>typeof isPreK==="function"&&isPreK(k),opts:[   // 🚂 PKTRAIN (games audit 2026-11-08 §7 rank 8)
+    ["3","3 cars","Three cars right on the first tap finish today's study."],
+    ["5","5 cars","Five cars right on the first tap — the default. Levels 1–3 have fewer cars, so there every car must be right on the first tap."],
+    ["8","8 cars","Eight cars right on the first tap (a short round needs every car)."]]}]
 };
 let gameRulesUI=null;   // {kid, game} while the pop-up is open (this device)
 function _grE(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -84971,8 +84980,8 @@ function trainHear(){ const st=trainState; if(!st||st.phase!=="play") return; _t
 function trainFinish(st){
   st.phase="done"; st.lock=false;
   st.clean=st.turns.every(t=>t.done&&t.first);
+  if(st.study&&typeof pktLogSitting==="function"){ try{ pktLogSitting(st); }catch(e){} }   // 🚂 PKTRAIN: a Pre-K study card's round is that kid's study sitting too — when earned; first, so the game log below carries study:<sid>
   try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: each letter's first-tap result + the round's level / clean, game:"train"
-  if(st.study&&typeof pktLogSitting==="function"){ try{ pktLogSitting(st); }catch(e){} }   // 🚂 PKTRAIN: a Pre-K study card's round is that kid's study sitting too
   st.levelAfter=trainLevel(st.kid);
   trainSing(st);
 }
@@ -85158,7 +85167,21 @@ function buildTrainHtml(color,study){
 //   · WRITES — mastery/studyLog/<kid>/<sid>/<yyyymmdd> (one targeted set — the sitting's own path) and, only after Mom's ↩ send-back,
 //     the mastery/studyBack/<kid>/<sid> redo fields (an update), as a sitting does. db && !_dryRun() only. No names in this block.
 //   · CARD WORDING — the 📂 link reads "🚂 ABC Train — study" instead of "study cards"; its line "✓ done today" once logged. Label only.
+//   · EARNED (games audit 2026-11-08 §4 #23 / §7 rank 8: the Train can't be lost — a wrong car makes the right one wiggle — so "done today"
+//     needed no knowing). A round is the study sitting only when at least PKTRAIN_MIN_FIRST cars (Mom's GAME_RULES.train "studyMin",
+//     3 / 5 / 8, default 5) were right on the first tap — never more than the round has cars (levels 1–2 ask 4, level 3 five: there
+//     every car). Short of it: no studyLog, the card stays open, the page says how many it takes and the kid can play again. The
+//     Train itself stays soft. NO DOUBLE COUNT: trainFinish logs the sitting FIRST, so GAMELOG tags that round's gameLog entry
+//     study:<sid>, and Scores (scpStudyRound) counts it once — the sitting — not again at ½ weight or in learned-through-games.
 function pktOn(kid){ return !!kid&&typeof isPreK==="function"&&isPreK(kid)&&gameRule(kid,"train","study")!=="off"; }
+const PKTRAIN_MIN_FIRST=5;
+function pktMinFirst(kid){ const v=parseInt((typeof gameRule==="function")?gameRule(kid,"train","studyMin"):"",10); return v>0?v:PKTRAIN_MIN_FIRST; }
+// PURE-ish: a finished round → {first (cars right on the first tap), need (the floor, at most the round's cars), ok}
+function pktEarned(st){
+  const turns=(st&&Array.isArray(st.turns))?st.turns:[], first=turns.filter(t=>t&&t.done&&t.first).length;
+  const need=Math.max(1,Math.min(pktMinFirst(st&&st.kid),turns.length||1));
+  return {first:first,need:need,ok:first>=need};
+}
 // The study session's Train — {sid,name,emoji,deck,cards} (the deck as trainDeck ranks them), or null when the flip cards stay
 function pktSession(kid,sid){
   try{
@@ -85192,6 +85215,7 @@ function pktMerge(prev,e){
 }
 function pktLogSitting(st){
   if(!st||!st.study||st.studyLogged) return null;
+  st.earn=pktEarned(st); if(!st.earn.ok) return null;   // 🚂 EARNED: short of the floor → no sitting, the card stays open
   const kid=st.kid, sid=st.study.sid, day=(typeof mstTodayKey==="function")?mstTodayKey():gameLogDay();
   let pn=null; try{ if(typeof mastGetPrintNum==="function") pn=mastGetPrintNum(kid); }catch(e){}
   const e=pktEntry(st,Date.now(),pn,day); if(!e) return null;
@@ -85214,8 +85238,9 @@ function pktStudyHtml(kid,session){
   let h='<div class="pkt-study"><div style="text-align:center;font-family:\'DM Sans\',sans-serif;font-size:15px;font-weight:800;color:#c2410c">'+E(ps.emoji)+' '+E(ps.name)+'</div>';
   if(lg) h+='<div style="text-align:center;margin-top:4px;font-size:13px;color:#16a34a;font-weight:700">\u2713 Done today: '+(lg.total||0)+' cars</div>';
   h+=buildTrainHtml(col,ps);
-  const st=trainState;
-  if(st&&st.kid===kid&&st.study&&st.study.sid===ps.sid&&st.phase==="done"&&st.song&&st.song.end&&typeof mpStudyDoneHtml==="function") h+='<div style="text-align:center">'+mpStudyDoneHtml(kid,ps.sid)+'</div>';
+  const st=trainState, mine=st&&st.kid===kid&&st.study&&st.study.sid===ps.sid&&st.phase==="done";
+  if(mine&&!st.studyLogged&&st.earn&&!st.earn.ok) h+='<div class="pkt-short" style="text-align:center;margin-top:10px;font-size:15px;font-weight:800;color:#b45309">⭐ '+st.earn.first+' car'+(st.earn.first===1?'':'s')+' right the first time. Get '+st.earn.need+' right the first time to finish today’s study — play again!</div>';   // 🚂 EARNED: the card stays open
+  if(mine&&lg&&st.song&&st.song.end&&typeof mpStudyDoneHtml==="function") h+='<div style="text-align:center">'+mpStudyDoneHtml(kid,ps.sid)+'</div>';   // the next step only once today's study is done
   return h+'</div>';
 }
 // The card's 📂 link words and its line (label only)
