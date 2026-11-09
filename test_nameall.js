@@ -95,7 +95,7 @@ console.log("── a round: slots fill, close / dup / miss, I'm done, the revea
   const mb=w.writes.filter(x=>x[1]==="mastery/k_settings/match_best"), gl=w.writes.filter(x=>x[0]==="push"&&x[1]==="mastery/gameLog/k/20261103");
   ok("writes: match_best ONE key, update; ONE gameLog push with game nameall and every card",mb.length===1&&mb[0][0]==="update"&&JSON.stringify(mb[0][2])==="{\"World Geography · nameall\":2}"&&gl.length===1&&gl[0][2].game==="nameall"&&gl[0][2].items.length===7&&gl[0][2].items.filter(i=>i.ok).length===2&&w.writes.length===2);
   const hf=c.buildNameallHtml("#000");
-  ok("the finish: named 2 of 7, the two in green, the other five revealed in grey, the stray name listed",/You named 2 of 7/.test(hf)&&(hf.match(/na-slot na-on/g)||[]).length===2&&(hf.match(/na-slot na-miss/g)||[]).length===5&&/na-miss">Greece</.test(hf)&&/Not on this list: Belgium/.test(hf)&&/new best/.test(hf));
+  ok("the finish: named 2 of 7, the two in green, the other five grey and BLANK (🏁 NAOFF: no answer key for Play again), the stray name listed",/You named 2 of 7/.test(hf)&&(hf.match(/na-slot na-on/g)||[]).length===2&&(hf.match(/na-slot na-miss">\?</g)||[]).length===5&&!/Greece|Spain|Portugal|Italy|United Kingdom/.test(hf)&&/5 more to find/.test(hf)&&/Not on this list: Belgium/.test(hf)&&/new best/.test(hf));
   ok("no confetti on a round with misses",!c.celebrated);
   c.nameallStart("World Geography"); const st2=c.nameallState; GEO.forEach(g=>{ if(st2.phase==="play") type(w,g.prompt); });
   ok("every slot named → the round stops itself: 7 of 7, a new best",st2.phase==="done"&&st2.count===7&&w.writes.filter(x=>x[1]==="mastery/k_settings/match_best").length===2);
@@ -115,7 +115,9 @@ console.log("── the clock, park / restore (time away is not play time), dry 
   ok("parked for two minutes: not play time — still 54 s left after the restore",st.pausedAt===null&&st.pausedTotal===120000&&c.nameallLeft(st)===54000);
   w.tick(); ok("the tick after a park is a fresh interval (resume starts it), the clock reads 0:54",(c.nameallResume(),w.tick(),w.els["na-clock"].textContent==="0:54"));
   c.clock+=55000; w.tick();
-  ok("time up → the round stops itself: 0 of 7, the log written",st.phase==="done"&&st.count===0&&w.writes.filter(x=>x[0]==="push").length===1&&w.writes.filter(x=>x[0]==="update").length===0);
+  ok("time up → the round stops itself: 0 of 7 — 🏁 NAOFF: nothing named, so nothing logged and no best",st.phase==="done"&&st.count===0&&st.unlogged===true&&w.writes.length===0&&!(c.masteryData.gameLog&&c.masteryData.gameLog.k));
+  const hz=c.buildNameallHtml("#000");
+  ok("…and the finish says so kindly, with no answers",/Not this time/.test(hz)&&/isn\u2019t saved/.test(hz)&&!/You named 0/.test(hz)&&!/France|Greece/.test(hz));
   const d=world(GEO,{dry:true}); d.c.nameallStart("World Geography"); GEO.forEach(g=>{ if(d.c.nameallState.phase==="play") type(d,g.prompt); });
   ok("?dryrun=1: nothing written (best and log stay in memory)",d.writes.length===0&&d.c.masteryData.k_settings.match_best["World Geography \u00B7 nameall"]===7&&d.c.masteryData.gameLog.k["20261103"]);
   const g2=world(GEO); g2.c.nameallStart("World Geography"); g2.c.masteryKid="other"; type(g2,"Spain"); g2.c.nameallStop();
@@ -127,5 +129,33 @@ console.log("── the clock, park / restore (time away is not play time), dry 
   const s=world(GEO); s.c.nameallStart("World Geography"); type(s,"Italy"); s.c.nameallChangeList();
   ok("Change list drops the round: nothing written",s.c.nameallState===null&&s.writes.length===0);
 }
+console.log("── 🏁 NAOFF (2026-11-08, games honesty audit #15): off screen the clock holds; I'm done with 0 named logs nothing ──");
+{ const w=world(GEO), c=w.c;
+  c.nameallStart("World Geography"); const st=c.nameallState;
+  w.els["na-clock"]={textContent:"",style:{}}; c.clock+=10000; w.tick();
+  ok("on screen: the clock runs (84 − 10 = 74 s left)",w.els["na-clock"].textContent==="1:14"&&!st.offAt);
+  delete w.els["na-clock"]; w.tick();
+  ok("the view leaves Name all (no #na-clock in the page) → the clock is held",st.offAt===c.clock&&c.nameallLeft(st)===74000);
+  c.clock+=600000; for(let i=0;i<5;i++) w.tick();
+  ok("ten minutes away: still 74 s left, the round still playing, nothing written",st.phase==="play"&&c.nameallLeft(st)===74000&&w.writes.length===0&&c._iv);
+  w.els["na-clock"]={textContent:"",style:{}}; w.tick();
+  ok("back on screen → the time away is folded out and the clock picks up at 1:14",st.offAt===null&&st.pausedTotal===600000&&w.els["na-clock"].textContent==="1:14");
+  c.clock+=4000; w.tick(); ok("…and runs on (1:10)",w.els["na-clock"].textContent==="1:10");
+  c.document.hidden=true; w.tick();
+  ok("the page hidden (another tab, the tablet asleep) holds it too",!!st.offAt&&c.nameallLeft(st)===70000);
+  c.document.hidden=false; c.clock+=300000; w.tick(); ok("…shown again: 1:10 still",w.els["na-clock"].textContent==="1:10"&&st.pausedTotal===900000);
+  c.document.hidden=true; c.nameallOffCheck(); const off=st.offAt;
+  ok("visibilitychange (nameallOffCheck) holds the clock even when no tick runs while hidden",off===c.clock);
+  c.clock+=50000; c.nameallPark(); c.clock+=20000; c.nameallRestore(st);
+  ok("a kid switch while off screen: the park starts when it went off, nothing counted twice (still 70 s)",st.pausedAt===null&&st.offAt===null&&c.nameallLeft(st)===70000);
+  c.document.hidden=false;
+  type(w,"Spain"); c.nameallStop();
+  ok("a named card then I'm done → logged as usual (1 named)",st.phase==="done"&&w.writes.filter(x=>x[0]==="push").length===1);
+  const z=world(GEO), zc=z.c; zc.nameallStart("World Geography"); type(z,"Belgium"); zc.nameallStop();
+  ok("I'm done with 0 named → no gameLog, no best, nothing written",zc.nameallState.phase==="done"&&zc.nameallState.unlogged===true&&z.writes.length===0&&!(zc.masteryData.gameLog&&zc.masteryData.gameLog.k));
+  const zh=zc.buildNameallHtml("#000");
+  ok("…the finish says nothing was named and the round isn't saved, Play again is there, no answers shown",/Nothing was named, so this round isn’t saved/.test(zh)&&/Play again/.test(zh)&&!/France|Greece|Spain/.test(zh)&&/Not on this list: Belgium/.test(zh));
+}
+
 console.log("\n"+pass+" passed, "+fail+" failed");
 process.exit(fail?1:0);
