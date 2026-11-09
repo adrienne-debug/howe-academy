@@ -43122,9 +43122,24 @@ function _rlwFire(att){
     let _rel=false; const _done=function(){ if(_rel) return; _rel=true; try{ release(); }catch(e){} };
     // 🔁 RELAY3: pass A (the sweep), then pass B (the listed subjects, chained through each re-lay's then) — one snapshot,
     // one diff, one log line for both; the lock is released when the chain is over
-    try{ _rlwRun(pend,function(fin){ cascadeIntraWeek(); if(typeof runCascade==="function") runCascade(); _rlwChain(pend.subjects||[],pend,fin); },_done); }
+    try{ _rlwRun(pend,function(fin){ cascadeIntraWeek(); if(typeof runCascade==="function") runCascade(); _rlwGuard(pend); _rlwChain(pend.subjects||[],pend,fin); },_done); }
     catch(e){ dbg("relay run: "+e); _done(); }
   });
+}
+// ⏰ RELAYGUARD (slice E demo run, 2026-11-08): the school-end guard runs on pass A even when the sweep had nothing to sweep. The
+// cascade's quiet path (no card from a past day to move) heals and re-packs but never calls seGuardWeek — only its sweeping path
+// does, inside safeWriteTasks — so ⏰ a shorter Thursday (11:00–2:30) set on Wednesday left a kid's Typing 2:20–2:35 and Closing
+// 2:35 past the 2:30 finish: the scar re-pack keeps a card that doesn't fit in its old slot. Same guard, same context, targeted
+// writes only (never the whole node); after a sweep it finds nothing to do. Its moves land in the same what-moved line and Undo.
+function _rlwGuard(pend){
+  try{
+    if(typeof seGuardWeek!=="function"||typeof seGuardCtx!=="function"||typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return null;
+    const se=seGuardWeek(weekData.tasks,seGuardCtx()); const ks=Object.keys(se.upd||{}); if(!ks.length) return se;
+    try{ sv(WK+"_tasks",weekData.tasks); }catch(e){}
+    if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){ lastTasksWrite=Date.now(); db.ref(WK+"/tasks").update(se.upd); }
+    dbg("⏰ school end (relay "+((pend&&pend.whys)||[]).join(",")+"): re-laid "+se.retimed.length+", rolled "+se.rolled.length+", deferred "+se.deferred.length+(se.dropped&&se.dropped.length?", dropped for the day "+se.dropped.join(" "):"")+" ("+ks.length+" paths)");
+    return se;
+  }catch(e){ dbg("relay guard skip: "+e); return null; }
 }
 // ── pure: the snapshot and the diff ──
 // o = {checked, claimed, momMoves, todayDay, nowMin, isHeld(t)}  →  {id:{d,t,cf,eo,ck,cl,st,fx,w,ti,card}}
