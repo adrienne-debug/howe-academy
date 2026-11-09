@@ -213,7 +213,9 @@ console.log("5. the dailies — their own diff, through the same shell (RELAY3D)
     ok("Mom / device / title follow the subject on the open cards (one field write each)",r.upd["d308_1/mom"]==="required"&&r.upd["d308_1/device"]==="paper"&&r.upd["d308_1/title"]==="🎹 Piano 2"&&r.upd["d307_1/mom"]===undefined,r.upd); }
 }
 { // the chain routes a daily to the shell with opts.daily, a Builder-paced one without, an unknown one is skipped
-  const w=world({currData:{subjects:{kid_b:{daily_piano:{tracking:"daily"}},kid_a:{math:{planId:"p"}}}}});
+  // clock frozen mid-day: RELAY4's "today" mode depends on the hour, and this file runs at any time of day (hub fix 2026-11-08)
+  const RealDate=Date, at1130=class F extends RealDate{ constructor(...a){ if(!a.length) super("2026-11-03T11:30:00"); else super(...a); } static now(){ return new RealDate("2026-11-03T11:30:00").getTime(); } };
+  const w=world({Date:at1130,currData:{subjects:{kid_b:{daily_piano:{tracking:"daily"}},kid_a:{math:{planId:"p"}}}}});
   w.call('relayWeek("curriculum",{label:"📚 Piano: minutes",subjects:[{kid:"kid_a",sk:"math"},{kid:"kid_b",sk:"daily_piano"},{kid:"kid_b",sk:"daily_nope"}],undo:[{p:"curriculum/subjects/kid_b/daily_piano/minutes",was:20}]});');
   w.fire();
   ok("pass B: the lesson subject plain, the daily with daily:true, both with the clock's mode (RELAY4: a curriculum run mid-day takes today too → \"today\"); an unpaced subject that is no daily skipped",w.log.reproj.map(r=>r.k+"/"+r.s+":"+(r.daily?"daily":"plan")+":"+r.mode).join()==="kid_a/math:plan:today,kid_b/daily_piano:daily:today",w.log.reproj);
