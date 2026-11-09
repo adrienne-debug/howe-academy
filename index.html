@@ -28471,6 +28471,12 @@ function scpPrevWin(w,days){ const t=scpShift(w.from,-1); return {from:scpShift(
 // never carry the stamp and are untouched.
 const SCP_SAY_GAMES={gofish:1,four:1,ship:1,sure:1,kaboom:1,jeop:1};
 function scpPreJudge(e){ return !!(e&&typeof e==="object"&&SCP_SAY_GAMES[String(e.game||"")]===1&&!e.judge); }
+// 🎓 TEACHSCORE (her decision 2026-11-08, games audit §4 #12 / Q6: Teach it "as its own line ('taught: N')"): Teach it's ✓ is the
+// LISTENER's verdict tapped on the teacher's device — an honor game by design, and her 2026-11-03 rule says it "moves nothing". Its
+// rounds are still logged (count, minutes) but a game listed here is UNSCORED: left out of Right % (scpRight) and learned-through-games
+// (scgLearned); the 🎮 Games section shows it on its own line ("🎓 taught: N cards · M rounds"), no Right %.
+const SCP_UNSCORED={teach:1};
+function scpUnscored(e){ return !!(e&&typeof e==="object"&&SCP_UNSCORED[String(e.game||"")]===1); }
 // PURE: right ÷ graded inside a window → {graded, right, pct, drill:{g,r}, study:{g,r}, games:{n,ok}}; pct null when nothing was graded.
 function scpRight(kid,history,studyLog,gameLog,w,gw){
   gw=(typeof gw==="number")?gw:SCP_GAME_W;
@@ -28480,7 +28486,7 @@ function scpRight(kid,history,studyLog,gameLog,w,gw){
   else { const dh=(history||{})[kid]||{}; Object.keys(dh).forEach(k=>{ const e=dh[k]; days[k]={items:scpV(e&&e.items).filter(it=>it.result==="c"||it.result==="m"||it.result==="~").map(it=>({result:it.result,src:"drill"}))}; }); }
   Object.keys(days).forEach(k=>{ if(!scpIn(k,w)) return; scpV(days[k].items).forEach(it=>{ const b=(it.src==="study")?out.study:out.drill; b.g++; if(it.result==="c") b.r++; }); });
   const gl=(gameLog||{})[kid]||{};
-  Object.keys(gl).forEach(day=>{ if(!scpIn(day,w)) return; scpV(gl[day]).forEach(e=>{ if(scpPreJudge(e)) return;   // ⚖️ GAMEJUDGE: a round before judging is not counted
+  Object.keys(gl).forEach(day=>{ if(!scpIn(day,w)) return; scpV(gl[day]).forEach(e=>{ if(scpPreJudge(e)||scpUnscored(e)) return;   // ⚖️ GAMEJUDGE: a round before judging is not counted · 🎓 TEACHSCORE: nor Teach it
     scpV(e.items).forEach(it=>{ if(it.back) return; out.games.n++; if(it.ok) out.games.ok++; }); }); });
   out.graded=out.drill.g+out.study.g+out.games.n*gw; out.right=out.drill.r+out.study.r+out.games.ok*gw;
   out.pct=out.graded>0?Math.round(out.right/out.graded*100):null;
@@ -28659,7 +28665,7 @@ function scgLearned(kid,cards,history,studyLog,gameLog){
   else { const dh=(history||{})[kid]||{}; Object.keys(dh).forEach(k=>{ days[k]={items:scpV(dh[k]&&dh[k].items)}; }); }
   Object.keys(days).forEach(k=>{ scpV(days[k].items).forEach(it=>{ if(!it||it.id==null||!(it.result in R)) return;
     const g=grades[String(it.id)]||(grades[String(it.id)]={}); if(g[k]==null||R[it.result]>R[g[k]]) g[k]=it.result; }); });   // one grade a day, the worse
-  Object.keys(gl).forEach(day=>{ scpV(gl[day]).forEach(e=>{ if(scpPreJudge(e)) return;   // ⚖️ GAMEJUDGE: an honor-tap right from before judging teaches nothing here
+  Object.keys(gl).forEach(day=>{ scpV(gl[day]).forEach(e=>{ if(scpPreJudge(e)||scpUnscored(e)) return;   // ⚖️ GAMEJUDGE: an honor-tap right from before judging teaches nothing here · 🎓 TEACHSCORE: nor a listener's ✓
     scpV(e&&e.items).forEach(it=>{ if(it&&it.ok&&!it.back&&it.id!=null) (right[String(it.id)]||(right[String(it.id)]=[])).push(day); }); }); });
   const out=[];
   scpV(cards).forEach(c=>{ if(!c||c.id==null||c.status==="parked") return; const id=String(c.id);
@@ -28690,6 +28696,7 @@ function scgStats(kid,D){
     if(e.why==="practice"||e.why==="free") why.flagged=true;
     if(e.why==="practice"||r.g==="practice") why.practice++; else if(e.why==="free") why.free++; else why.none++;
     if(pre){ scpV(e.items).forEach(it=>{ if(!it||it.back) return; b.n++; if(it.ok) b.ok++; }); return; }   // shown grey, in no Right % and no deck
+    if(r.log&&scpUnscored(e)){ s.cards=(s.cards||0)+scpV(e.items).filter(it=>it&&!it.back).length; return; }   // 🎓 TEACHSCORE: cards taught — no Right %, no deck
     const add=(deck,n,ok)=>{ const d=DK[deck]||(DK[deck]={deck:deck,rounds:0,games:{}}), x=d.games[r.g]||(d.games[r.g]={key:r.g,rounds:0,n:0,ok:0,best:{}});
       if(!seen[deck]){ seen[deck]=1; d.rounds++; x.rounds++; } x.n+=n; x.ok+=ok; s.n+=n; s.ok+=ok; tot.n+=n; tot.ok+=ok; };
     if(r.log){ let any=false; scpV(e.items).forEach(it=>{ if(!it||it.back) return; any=true; add(deckOf[String(it.id)]||String(e.deck||"—"),1,it.ok?1:0); });
@@ -28709,7 +28716,9 @@ function scgStats(kid,D){
     .sort((a,b)=>(b.rounds-a.rounds)||(a.deck<b.deck?-1:a.deck>b.deck?1:0));
   const learned=scgLearned(kid,D.cards,D.history,D.studyLog,D.gameLog);
   tot.pct=pct(tot.ok,tot.n);
-  return {kid:kid,today:today,any:!!(rounds.length||Object.keys(mb).length||nLikes),total:tot,games:games,decks:decks,why:why.flagged?why:null,learned:learned};
+  const ti=games.findIndex(g=>SCP_UNSCORED[g.key]===1), tg=ti>=0?games.splice(ti,1)[0]:null;   // 🎓 TEACHSCORE: Teach it leaves the table for its own line
+  const taught=tg&&tg.rounds?{cards:tg.cards||0,rounds:tg.rounds,w7:tg.w7,min:tg.min}:null;
+  return {kid:kid,today:today,any:!!(rounds.length||Object.keys(mb).length||nLikes),total:tot,games:games,decks:decks,why:why.flagged?why:null,learned:learned,taught:taught};
 }
 // ── the section ──
 function scgLabel(k){ if(k==="practice") return "\u{1F3AE} Practice list"; try{ const g=(typeof GAMES_LIST!=="undefined"&&Array.isArray(GAMES_LIST))?GAMES_LIST.find(x=>x&&x.key===k):null; if(g) return g.emoji+" "+g.label; }catch(e){} return String(k); }
@@ -28730,6 +28739,7 @@ function scgHtml(s,open,cards){
   const byId={}; scpV(cards).forEach(c=>{ if(c&&c.id!=null) byId[String(c.id)]=c; });
   const names=s.learned.slice(0,6).map(id=>{ const c=byId[id]||{}; return scpE(c.answer||c.prompt||id); });
   h+='<div style="font-size:12px;color:#334155;margin-top:6px">\u{1F331} Cards learned through games: <b>'+s.learned.length+'</b>'+(names.length?' <span style="color:#64748b">· '+names.join(', ')+(s.learned.length>names.length?' …':'')+'</span>':'')+'</div>';
+  if(s.taught) h+='<div class="scg-taught" style="font-size:12px;color:#334155;margin-top:4px">\u{1F393} taught: <b>'+s.taught.cards+'</b> card'+(s.taught.cards===1?'':'s')+' · '+s.taught.rounds+' round'+(s.taught.rounds===1?'':'s')+'</div>';   // 🎓 TEACHSCORE: no Right %
   h+='<div style="overflow-x:auto;margin-top:8px"><table style="border-collapse:collapse;font-size:12px;width:100%"><tr><th '+th+'>Game</th><th '+th+'>Rounds 7 d / all</th><th '+th+'>Right</th><th '+th+'>Best</th><th '+th+'>\u{1F44D} \u{1F44E}</th><th '+th+'>Min</th></tr>';
   s.games.forEach(g=>{ const p=g.pre, only=p&&!g.rounds&&!Object.keys(g.best).length&&!g.up&&!g.down;
     if(!only) h+='<tr><td '+td+'>'+scpE(scgLabel(g.key))+'</td><td '+td+'>'+g.w7+' / '+g.rounds+'</td><td '+td+'><span style="font-weight:800;color:'+scpPctCol(g.pct)+'">'+scpN(g.pct,'%')+'</span>'+(g.n?' <span style="color:#94a3b8">of '+g.n+'</span>':'')+'</td><td '+td+'>'+scgBestTxt(g.best,true)+'</td><td '+td+'>'+((g.up||g.down)?g.up+' · '+g.down:'—')+'</td><td '+td+'>'+(g.rounds?g.min:'—')+'</td></tr>';
@@ -28745,7 +28755,8 @@ function scgHtml(s,open,cards){
     'Best = the game’s own best: seconds for Match, Memory flip and Beat my time (lower is better), dollars for Jeopardy’s money game, a count for the rest.<br>'+
     'A card is counted in its own deck, so a mixed round splits into the decks it came from.<br>'+
     'Learned through games = a card the practice list marked learned, or one that was missed, then right on the first try in a game, then right in the next drill or study.<br>'+
-    'Before judging = Go Fish, Connect Four, Battleship, Kaboom, Sure? then flip and Jeopardy rounds from before “I said it” was checked: a tap counted as right, so they are shown grey and left out of every Right % and of learned through games.</div></details>';
+    'Before judging = Go Fish, Connect Four, Battleship, Kaboom, Sure? then flip and Jeopardy rounds from before “I said it” was checked: a tap counted as right, so they are shown grey and left out of every Right % and of learned through games.<br>'+
+    'Taught = Teach it: the listener’s ✓ is tapped on the teacher’s device, so it counts as cards taught and rounds only — never in a Right % or in learned through games.</div></details>';
   h+='</details></div>';
   return h;
 }
