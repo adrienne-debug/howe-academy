@@ -82,10 +82,10 @@ function right(w){ const c=w.c, st=c.shipState, t=st.turns[st.i]; if(t.act==="fi
   w.flush();
   ok("a sunk tile can't be fired at on a later find (only the asked one)",(()=>{ const t=st.turns[st.i]; if(t.act!=="find") return true; const sunkOther=st.grid.findIndex(p=>st.sunk[p]&&p!==t.pid); c.shipTap(sunkOther); return !t.done&&!t.wrong[st.grid[sunkOther]]; })());
   let guard=0; while(st.phase==="play"&&guard++<20){ right(w); w.flush(); }
-  ok("the round ends after the come-back: 6 of 7 on the first shot; the come-back counts for nothing",st.phase==="done"&&st.first===6&&st.of===7&&st.turns.length===8);
+  ok("the round ends after the come-back: 5 of 6 on the first shot — the last find (one tile left) is forced, so it isn't counted (⚖️ GAMEJUDGE); the come-back counts for nothing",st.phase==="done"&&st.first===5&&st.of===6&&st.turns.length===8&&st.turns[6].act==="find"&&st.turns[6].nolog===true);
   const mb=w.writes.filter(x=>x[1]==="mastery/k_settings/match_best"), gl=w.writes.filter(x=>x[0]==="push"&&x[1]==="mastery/gameLog/k/20261103");
-  ok("writes: match_best ONE key 'NC Snakes · ship' = 6; ONE gameLog push, game ship, 8 items (1 back); nothing else",mb.length===1&&JSON.stringify(mb[0][2])==="{\"NC Snakes · ship\":6}"&&gl.length===1&&gl[0][2].game==="ship"&&gl[0][2].items.length===8&&gl[0][2].items.filter(i=>i.back).length===1&&w.writes.length===2);
-  ok("the finish: '6 of 7 on the first shot — new best', Play again",/6 of 7 on the first shot/.test(c.buildShipHtml("#000"))&&/new best/.test(c.buildShipHtml("#000"))&&/Play again/.test(c.buildShipHtml("#000"))&&!w.dings.some(x=>/celeb/.test(x)));
+  ok("writes: match_best ONE key 'NC Snakes · ship' = 5; ONE gameLog push, game ship, 7 items (1 back; the forced find left out); nothing else",mb.length===1&&JSON.stringify(mb[0][2])==="{\"NC Snakes · ship\":5}"&&gl.length===1&&gl[0][2].game==="ship"&&gl[0][2].items.length===7&&gl[0][2].items.filter(i=>i.back).length===1&&w.writes.length===2);
+  ok("the finish: '5 of 6 on the first shot — new best', Play again",/5 of 6 on the first shot/.test(c.buildShipHtml("#000"))&&/new best/.test(c.buildShipHtml("#000"))&&/Play again/.test(c.buildShipHtml("#000"))&&!w.dings.some(x=>/celeb/.test(x)));
 }
 { const w=world(LETTERS,{celeb:true}), c=w.c;
   c.shipStart("Letters"); const st=c.shipState;

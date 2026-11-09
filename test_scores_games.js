@@ -42,11 +42,14 @@ console.log("── the live fixture ──");
   ok("kid3 Whack-a-mole: 3 rounds, 30 cards, 57 % first try (the PLAN's live table, 11/3)", mole.rounds===3&&mole.n===30&&mole.pct===57, mole);
   ok("…its best is the match_best count (8 · Math Facts)", mole.best.n&&mole.best.n.v===8&&mole.best.n.deck==="Math Facts"&&!mole.best.s);
   const gf=G(s,"gofish");
-  ok("kid3 Go Fish: 5 rounds, right = first try ÷ answered (came-back cards left out)", gf.rounds===5&&gf.n===64&&gf.pct===Math.round(gf.ok/64*100));
+  ok("kid3 Go Fish: 5 rounds, all from before judging (⚖️ GAMEJUDGE: no judge stamp) → its own grey bucket, 64 answered, no Right %", gf.rounds===0&&gf.n===0&&gf.pct===null&&gf.pre.rounds===5&&gf.pre.n===64&&gf.pre.pct===Math.round(gf.pre.ok/64*100));
   ok("👍 / 👎 from gameLikes: Bingo 1 · 0", G(s,"bingo").up===1&&G(s,"bingo").down===0);
   ok("Memory flip rounds come from matchLog (Save to Scores) and its best is seconds", G(s,"memory").rounds===3&&G(s,"memory").best.s.v===20.7);
   ok("a game with only a best (Which one?, never logged) shows 0 rounds and its best", G(s,"which").rounds===0&&G(s,"which").best.n.v===8);
-  ok("a mixed round splits by the card's own deck: the 3-deck Jeopardy board → NC Frogs & Toads + Math Facts", DK(s,"NC Frogs & Toads").games.jeop.n===5&&DK(s,"Math Facts").games.jeop.n===5&&!DK(s,"3 decks"));
+  ok("the 3-deck Jeopardy board from before judging is in no deck's Right %", !(DK(s,"NC Frogs & Toads")||{games:{}}).games.jeop&&!(DK(s,"Math Facts")||{games:{}}).games.jeop&&G(s,"jeop").pre.rounds>=1);
+  { const GL=JSON.parse(JSON.stringify(FX.gameLog)); Object.values(GL.kid3).forEach(d=>Object.values(d).forEach(e=>{ if(e.game==="jeop") e.judge="pick"; }));
+    const j=scgStats("kid3",{gameLog:GL,matchLog:FX.matchLog,settings:FX.settings.kid3,cards:FX.cards.kid3,today:"20261108"});
+    ok("a mixed round splits by the card's own deck: the same 3-deck Jeopardy board, judged → NC Frogs & Toads + Math Facts", DK(j,"NC Frogs & Toads").games.jeop.n===5&&DK(j,"Math Facts").games.jeop.n===5&&!DK(j,"3 decks")&&!G(j,"jeop").pre); }
   ok("the practice list's round splits into its decks too (Spelling, NC Frogs & Toads)", DK(s,"Spelling").games.practice.n===15&&DK(s,"NC Frogs & Toads").games.practice.n===4);
   ok("no round carries the why flag yet → practice vs free is left out", s.why===null); }
 { const s=live("kid4");
