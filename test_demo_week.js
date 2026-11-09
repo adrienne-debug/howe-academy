@@ -77,7 +77,7 @@ function runsOn(kid,sk,s,iso,dn){
   if(al.length&&al.indexOf(dow)<0) return false;
   if(/\b(first|last)\b/.test(String(s.rules||""))) return true;   // bookends: every school day the kid has
   try{ if(A.fn("_ovRmX")(kid,iso,sk,false)) return false; }catch(e){}   // a co-op no-Mom day, or ✕'d off for it
-  if(s.tracking!=="daily"&&!s.planId&&!/\b(first|last)\b/.test(String(s.rules||""))) return false;   // a card-only subject: the engine has no re-lay for it (FINDING F2 covers the add-a-subject case)
+  if(s.tracking!=="daily"&&!s.planId&&!/\b(first|last)\b/.test(String(s.rules||""))) return false;   // a card-only subject: the engine has no re-lay for it (a subject added on the Add sheet is born plan-backed — ADDPB, F2)
   if(s.tracking!=="daily"&&s.planId){ const left=(s.lessonSeq||[]).length-Object.keys((((A.get("currData.done")||{})[kid]||{})[sk])||{}).length; if(left<=0) return false; }
   return true;
 }
@@ -194,6 +194,9 @@ function writesSummary(ws){
   return {total:ws.length,byDev,whole,top:Object.entries(by).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([k,n])=>n+"× "+k)};
 }
 function newestRelay(before){ const L=relayLog(); const keys=Object.keys(L).sort(); const fresh=keys.filter(k=>!before[k]); return fresh.length?L[fresh[fresh.length-1]]:null; }
+// every what-moved entry a step wrote, as one (a step with two doors — S4 adds two subjects — writes two lines; C10 judges them together)
+function stepRelays(before){ const L=relayLog(); const fresh=Object.keys(L).sort().filter(k=>!before[k]&&!L[k].built).map(k=>L[k]); if(fresh.length<2) return null;
+  return {moves:[].concat(...fresh.map(e=>e.moves||[])),removed:[].concat(...fresh.map(e=>e.removed||[])),added:[].concat(...fresh.map(e=>e.added||[]))}; }
 
 // ── one step: set the clock, snapshot, act, settle, check, record ──
 async function step(name,atMs,act,o){
@@ -204,7 +207,7 @@ async function step(name,atMs,act,o){
   await flush(o.settleMs==null?30000:o.settleMs);
   noteSeen(); const post=snapOf(board()), ws=db.log.slice(mark), entry=newestRelay(logBefore);
   const notes=[]; const F=checkAll({dbgMark,notes}).concat(checkRelayLog());
-  if(o.expectRelay){ if(!entry) F.push({code:"C10",msg:"no what-moved entry was written for this step"}); else { const p2=Object.assign({},pre); (o.ignoreIds||[]).forEach(id=>{ delete p2[id]; }); const q2=Object.assign({},post); (o.ignoreIds||[]).forEach(id=>{ delete q2[id]; }); F.push(...checkWhatMoved(p2,q2,entry,ckPre)); } }
+  if(o.expectRelay){ if(!entry) F.push({code:"C10",msg:"no what-moved entry was written for this step"}); else { const p2=Object.assign({},pre); (o.ignoreIds||[]).forEach(id=>{ delete p2[id]; }); const q2=Object.assign({},post); (o.ignoreIds||[]).forEach(id=>{ delete q2[id]; }); F.push(...checkWhatMoved(p2,q2,stepRelays(logBefore)||entry,ckPre)); } }
   if(process.env.DEMO_DUMP){ const k=process.env.DEMO_DUMP; board().filter(t=>t.who===k).sort((a,b)=>DN.indexOf(a.day)-DN.indexOf(b.day)||toMin(a.time)-toMin(b.time)).forEach(t=>console.log("      "+t.day.slice(0,3)+" "+String(t.time).padStart(8)+" +"+t.dur+" "+(checkedMap()[t.id]?"✓":" ")+" "+t.subjectKey+" "+(t.lid||"")+(t.cascadedFrom?" ↩"+t.cascadedFrom.slice(0,3):"")+(t._eowOverflow?" [box]":"")+(t._dayDrop?" [day-box]":""))); }
   const wsum=writesSummary(ws);
   wsum.whole.forEach(w=>{ if(/\(dev_b/.test(w)) F.push({code:"C15",msg:"whole-node write from the kid's device: "+w}); else notes.push("C15 whole-node write (the cascade's own): "+w); });
@@ -308,7 +311,9 @@ async function sweepAt(iso){ clock.now=hm(iso,20,0); const r=A.fn("mlEveningSwee
     },{expectRelay:true});
     const music=board().filter(t=>t.who==="kid_c"&&t.subjectKey==="music"), geo=board().filter(t=>t.who==="kid_b"&&t.subjectKey==="geography");
     ok("S4: the new daily (Tue/Thu) has its cards for today and Thursday",music.some(t=>t.day==="tuesday")&&music.some(t=>t.day==="thursday")&&music.length===2,music.map(t=>t.day+" "+t.time));
-    ok("FINDING F2 (documented, proposal): a sequenced subject added and Built mid-week gets NO cards this week — its cells are written, but it is not plan-backed and not a daily, so the engine has no re-lay for it until Sunday",geo.length===0&&!A.fn("planBacked")("kid_b","geography")&&Object.values(A.get("currData.lessons.kid_b")).some(l=>l.geography),{cards:geo.map(t=>t.day+" "+t.time),planBacked:A.fn("planBacked")("kid_b","geography"),cells:Object.values(A.get("currData.lessons.kid_b")).filter(l=>l.geography).map(l=>l.date+" "+l.geography).slice(0,4),dbg:r.rec.dbg.filter(m=>/eography|isn't paced|relay/.test(m)).slice(0,4)}); }
+    const geoWant=["wednesday","friday"].filter(dn=>runsOn("kid_b","geography",A.get("currData.subjects.kid_b.geography"),weekDates(2)[dn],dn));
+    ok("F2 (ADDPB): the sequenced subject added and Built mid-week is born plan-backed and lays this week — one card on each remaining pattern day (Wed, Fri), its first lessons in list order",A.fn("planBacked")("kid_b","geography")&&geoWant.length===2&&geoWant.every(dn=>geo.filter(t=>t.day===dn).length===1)&&geo.length===2&&geo.map(t=>t.lid).sort().join()===A.get("currData.subjects.kid_b.geography").lessonIds.slice(0,2).join(),{cards:geo.map(t=>t.day+" "+t.time+" "+t.lid),planBacked:A.fn("planBacked")("kid_b","geography"),want:geoWant,dbg:r.rec.dbg.filter(m=>/eography|isn't paced|relay/.test(m)).slice(0,4)});
+    ok("F2: Mom's what-moved line names the new subject (its cards are in 'added', so Undo takes them off again)",Object.values(relayLog()).some(e=>/Geography added/.test(e.label)&&(e.added||[]).some(id=>geo.some(t=>t.id===id))),Object.values(relayLog()).map(e=>e.label)); }
   await playDay("2026-11-17",t=>t.subjectKey==="spelling");
   { // S5 — Tue 3:00 PM: kid_b off Wednesday (the 📅 strip) — then Undo, check the exact restore, redo
     const wedBefore=board().filter(t=>t.who==="kid_b"&&t.day==="wednesday"&&!checkedMap()[t.id]).map(t=>t.subjectKey+" "+t.lid).sort();
@@ -384,8 +389,9 @@ async function sweepAt(iso){ clock.now=hm(iso,20,0); const r=A.fn("mlEveningSwee
     ok("S12: every lesson left open in week 2 is served in week 3 (nothing lost or skipped at the turn)",served.length===wk2Open.length,{open:wk2Open.length,served:served.length,missing:wk2Open.filter(x=>served.indexOf(x)<0).slice(0,8)});
     ok("S12: week 2 is archived with its checks and history",!!db.get("archive/week2")&&Object.keys((db.get("archive/week2")||{}).checked||{}).length>0);
     const added=["kid_c/music","kid_b/geography"]; const inWk3=added.map(x=>{ const [k,s]=x.split("/"); return x+":"+board().filter(t=>t.who===k&&t.subjectKey===s).length; });
-    const geo3=board().filter(t=>t.who==="kid_b"&&t.subjectKey==="geography"&&t.day==="monday").length;
-    ok("FINDING F2b (documented): the never-dealt Geography cells of week 2 count as 'behind' at the week turn, so week 3 deals TWO Geography cards on its first days (the legacy catch-up doubling)",geo3===2,{mondayGeo:geo3});
+    const geo3=board().filter(t=>t.who==="kid_b"&&t.subjectKey==="geography"), gsub=A.get("currData.subjects.kid_b.geography"), gdone=Object.keys(((A.get("currData.done")||{}).kid_b||{}).geography||{});
+    const gPat=["monday","wednesday","friday"].filter(dn=>!A.fn("smapIsKidOff")("kid_b",weekDates(3)[dn]));
+    ok("F2 (ADDPB): week 3 deals ONE Geography card per pattern day (no catch-up doubling), the next undone lessons in order",gPat.every(dn=>geo3.filter(t=>t.day===dn).length===1)&&geo3.length===gPat.length&&geo3.slice().sort((a,b)=>DN.indexOf(a.day)-DN.indexOf(b.day)).map(t=>t.lid).join()===gsub.lessonIds.filter(l=>gdone.indexOf(l)<0).slice(0,gPat.length).join(),{cards:geo3.map(t=>t.day+" "+t.time+" "+t.lid),pattern:gPat,done:gdone});
     ok("S12: the subjects added mid-week are in the new week; the deleted one is not",board().some(t=>t.who==="kid_c"&&t.subjectKey==="music")&&board().some(t=>t.who==="kid_b"&&t.subjectKey==="geography")&&!board().some(t=>t.who==="kid_a"&&t.subjectKey==="history"),inWk3);
     // Sunday catch-up for kid_a: what shows on Sunday's tab
     clock.now=hm("2026-11-22",9,0); const set=A.fn("sucSet")(); const sunCards=set?Array.from(set):[];
