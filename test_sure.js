@@ -38,7 +38,7 @@ const SMALL=[{id:"x1",subject:"Tiny",prompt:"a",emoji:"🅰️",status:"active"}
 function world(items,o){
   o=o||{};
   const writes=[], said=[], dings=[], timers=[];
-  const CODE=cut("// WHICHONE_START","// WHICHONE_END")+"\n"+cut("// GAMELOG_START","// GAMELOG_END")+"\n"+cut("// GAMEGRID_START","// GAMEGRID_END")+"\n"+cut("// SURE_START","// SURE_END");
+  const CODE=cut("// WHICHONE_START","// WHICHONE_END")+"\n"+cut("// GAMELOG_START","// GAMELOG_END")+"\n"+cut("// GAMEGRID_START","// GAMEGRID_END")+"\n"+cut("// SURE_START","// SURE_END")+(o.noJudge?"":"\n"+cut("// GAMEJUDGE_START","// GAMEJUDGE_END"));   // ⚖️ GAMEJUDGE: a said card is judged before the flip
   const ctx={console,JSON,Object,Array,String,Number,Math,Set,Map,RegExp,Date,parseInt,isNaN,setTimeout:(f,ms)=>{ timers.push(f); return timers.length; },
     document:{getElementById:()=>o.celeb?{}:null},
     _dryRun:()=>!!o.dry,HA_LS:{setItem(){}},_mastRe(){},bbAudioUnlock(){},momHere:()=>true,renderAll(){},
@@ -59,11 +59,13 @@ function world(items,o){
 }
 const item=(c,pid)=>c.masteryData.k.find(x=>x.id===pid);
 const backOf=(c,pid)=>c._whichBack(item(c,pid));
+// ⚖️ GAMEJUDGE: the kid's pick after "I said it" — the right choice, or (bad) another one
+function pickSaid(c,t,bad){ const ch=t.gj.ch, i=ch.findIndex(x=>x.ok); c.gameJudgePick(bad?(i+1)%ch.length:i); }
 // one whole card: the confidence call, the act (right or wrong), then whatever the flip asks for
 function play(c,w,sure,bad){
   const st=c.sureState, t=st.turns[st.i];
   c.sureCall(sure);
-  if(t.act==="say"){ c.sureSaid(); c.sureMark(!bad); }
+  if(t.act==="say"){ c.sureSaid(); pickSaid(c,t,bad); }
   else if(t.act==="type"){ const right=backOf(c,t.pid); String(bad?Number(right)+1:right).split("").forEach(ch=>c.sureKey(ch)); c.sureCheck(); }
   else { const i=t.opts.indexOf(backOf(c,t.pid)); c.surePickTap(bad?(i+1)%t.opts.length:i); }
   if(t.ok) w.flush(); else c.sureGotIt();
@@ -83,38 +85,40 @@ console.log("── which decks play (pure) ──");
   const e=world(SMALL);
   ok("no deck ready → the empty note",/No decks ready for Sure/.test(e.c.buildSureHtml("#000")));
 }
-console.log("── a round of pictures: sure → say → flip → own mark ──");
+console.log("── a round of pictures: sure → say → pick (judged BEFORE the flip) → flip ──");
 { const w=world(ANIMALS), c=w.c;
   c.sureStart("Animals"); const st=c.sureState;
   ok("a round: 6 cards (fewer than SURE_ROUND), every one at the sure step, nothing said for a picture (its name is what the kid produces)",st&&st.phase==="play"&&st.turns.length===6&&st.of===6&&st.turns.every(t=>t.step==="sure"&&t.act==="say"&&t.sure===null)&&w.said.length===0&&st.game==="sure"&&st.kid==="k");
   let h=c.buildSureHtml("#000"), t=st.turns[0];
   ok("the sure step: the picture, 👍 I'm sure / 🤷 Not sure, 'How sure are you?' — no answer anywhere, no 🗣 yet",/sure-vis/.test(h)&&/sureCall\(true\)/.test(h)&&/sureCall\(false\)/.test(h)&&/How sure are you/.test(h)&&!/sureSaid/.test(h)&&!ANIMALS.some(x=>h.indexOf(">"+x.prompt+"<")>=0));
-  c.sureSaid(); c.sureMark(true);
-  ok("say / mark before the confidence call do nothing",t.step==="sure"&&!t.done);
+  c.sureSaid(); c.gameJudgePick(0);
+  ok("say / pick before the confidence call do nothing",t.step==="sure"&&!t.done&&!t.gj);
   c.sureCall(true); h=c.buildSureHtml("#000");
-  ok("👍 → the produce step: 🗣 I said it, still no name written",t.sure===true&&t.step==="produce"&&/sureSaid\(\)/.test(h)&&!/class="sure-flip/.test(h)&&h.indexOf(">"+item(c,t.pid).prompt+"<")<0);
-  c.sureSaid(); h=c.buildSureHtml("#000");
-  ok("🗣 → the flip: the name written AND said, 'Did you have it?' with ✓ I had it / ✗ Not quite",t.step==="flip"&&t.ok===null&&/class="sure-flip/.test(h)&&h.indexOf(">"+item(c,t.pid).prompt+"<")>0&&w.said.slice(-1)[0]===item(c,t.pid).prompt&&/Did you have it/.test(h)&&/sureMark\(true\)/.test(h)&&/sureMark\(false\)/.test(h));
-  c.sureMark(true); h=c.buildSureHtml("#000");
-  ok("✓ I had it → right, first, the ding, 'You knew it!', the board locks for a beat; tally sure&right",t.done&&t.ok===true&&t.first&&st.first===1&&w.dings.slice(-1)[0]==="ding"&&st.lock&&/You knew it/.test(h)&&/sure-ok/.test(h)&&st.tally.sr===1&&w.timers.length===1);
+  ok("👍 → the produce step: 🗣 I said it (the judge's — say it first, then pick), still no name written",t.sure===true&&t.step==="produce"&&t.judge==="pick"&&/gameJudgeSaid\(\)/.test(h)&&/Say it out loud/.test(h)&&!/class="sure-flip/.test(h)&&h.indexOf(">"+item(c,t.pid).prompt+"<")<0);
+  const nSaid=w.said.length; c.sureSaid(); h=c.buildSureHtml("#000");
+  ok("🗣 → NOT the flip: the choices (Tap what you said), still no flip, nothing said — the judge comes before the flip",t.step==="produce"&&t.ok===null&&t.judge==="pick"&&t.gj.step==="pick"&&/gameJudgePick\(/.test(h)&&/Tap what you said/.test(h)&&!/class="sure-flip/.test(h)&&w.said.length===nSaid);
+  ok("no self-mark anywhere: no ✅ I had it / ❌ Not quite, no sureMark",typeof c.sureMark==="undefined"&&!/I had it|Not quite|sureMark/.test(h+src.slice(src.indexOf("// SURE_START"),src.indexOf("// SURE_END")).replace(/^\/\/.*$/gm,"")));
+  pickSaid(c,t,false); h=c.buildSureHtml("#000");
+  ok("the right pick → the flip: the name written AND said (the confirm)",t.step==="flip"&&/class="sure-flip/.test(h)&&h.indexOf(">"+item(c,t.pid).prompt+"<")>0&&w.said.slice(-1)[0]===item(c,t.pid).prompt);
+  ok("✓ right pick → right, first, the ding, 'You knew it!', the board locks for a beat; tally sure&right",t.done&&t.ok===true&&t.first&&st.first===1&&w.dings.slice(-1)[0]==="ding"&&st.lock&&/You knew it/.test(h)&&/sure-ok/.test(h)&&st.tally.sr===1&&w.timers.length===1);
   w.flush();
   ok("after the beat the next card is up at its sure step",st.i===1&&!st.lock&&st.turns[1].step==="sure");
   // card 2: SURE and wrong → the loud correction, comes back FIRST
-  t=st.turns[1]; c.sureCall(true); c.sureSaid(); const d0=w.dings.length; c.sureMark(false); h=c.buildSureHtml("#000");
-  ok("👍 then ✗ → the LOUDER correction: the bonk, the big red flip 'You were sure — look closely', the name said TWICE, ➡ Got it (no timer)",t.ok===false&&t.fail&&!t.first&&w.dings.slice(-1)[0]==="bonk"&&w.dings.length===d0+1&&/sure-loud/.test(h)&&/You were sure/.test(h)&&w.said.slice(-1)[0]===item(c,t.pid).prompt+". "+item(c,t.pid).prompt+"."&&/sureGotIt\(\)/.test(h)&&w.timers.length===0&&st.tally.sw===1);
+  t=st.turns[1]; c.sureCall(true); c.sureSaid(); const d0=w.dings.length; pickSaid(c,t,true); h=c.buildSureHtml("#000");
+  ok("👍 then a wrong pick → the LOUDER correction: the bonk, the big red flip 'You were sure — look closely', the name said TWICE, ➡ Got it (no timer)",t.ok===false&&t.fail&&!t.first&&w.dings.slice(-1)[0]==="bonk"&&w.dings.length===d0+1&&/sure-loud/.test(h)&&/You were sure/.test(h)&&w.said.slice(-1)[0]===item(c,t.pid).prompt+". "+item(c,t.pid).prompt+"."&&/sureGotIt\(\)/.test(h)&&w.timers.length===0&&st.tally.sw===1);
   ok("…and the card is queued to come back once, marked as a confident miss",st.turns.length===7&&st.turns[6].back&&st.turns[6].pid===t.pid&&st.turns[6].sureFirst===true);
   c.sureGotIt();
   // card 3: NOT sure and wrong → the soft correction, comes back AFTER the confident one
-  t=st.turns[2]; c.sureCall(false); c.sureSaid(); c.sureMark(false); h=c.buildSureHtml("#000");
-  ok("🤷 then ✗ → the soft correction: the bonk, the amber flip 'Not yet — it's', the name said once",t.ok===false&&/sure-soft/.test(h)&&/Not yet/.test(h)&&w.said.slice(-1)[0]===item(c,t.pid).prompt&&st.tally.nw===1);
+  t=st.turns[2]; c.sureCall(false); c.sureSaid(); pickSaid(c,t,true); h=c.buildSureHtml("#000");
+  ok("🤷 then a wrong pick → the soft correction: the bonk, the amber flip 'Not yet — it's', the name said once",t.ok===false&&/sure-soft/.test(h)&&/Not yet/.test(h)&&w.said.slice(-1)[0]===item(c,t.pid).prompt&&st.tally.nw===1);
   ok("its come-back goes AFTER the confident miss's",st.turns.length===8&&st.turns[7].back&&st.turns[7].pid===t.pid&&!st.turns[7].sureFirst&&st.turns[6].pid===st.turns[1].pid);
   c.sureGotIt();
   // card 4: NOT sure and right
-  t=st.turns[3]; c.sureCall(false); c.sureSaid(); c.sureMark(true); h=c.buildSureHtml("#000");
-  ok("🤷 then ✓ → 'You had it after all!', counted first-time right",t.first&&st.first===2&&/had it after all/.test(h)&&st.tally.nr===1);
+  t=st.turns[3]; c.sureCall(false); c.sureSaid(); pickSaid(c,t,false); h=c.buildSureHtml("#000");
+  ok("🤷 then the right pick → 'You had it after all!', counted first-time right",t.first&&st.first===2&&/had it after all/.test(h)&&st.tally.nr===1);
   w.flush();
   // card 5: another SURE miss → it comes back right after the first confident miss, still before the unsure one
-  t=st.turns[4]; c.sureCall(true); c.sureSaid(); c.sureMark(false); c.sureGotIt();
+  t=st.turns[4]; c.sureCall(true); c.sureSaid(); pickSaid(c,t,true); c.sureGotIt();
   ok("a second confident miss lines up behind the first, both before the unsure one",st.turns.length===9&&st.turns[6].pid===st.turns[1].pid&&st.turns[7].pid===st.turns[4].pid&&st.turns[8].pid===st.turns[2].pid);
   play(c,w,true,false);
   ok("the come-backs: the first one up is the confident miss, 'One more look'",st.i===6&&st.turns[6].back&&/One more look/.test(c.buildSureHtml("#000")));
