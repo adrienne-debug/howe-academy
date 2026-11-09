@@ -36,7 +36,7 @@ function world(items,o){
   o=o||{};
   const writes=[], said=[], dings=[], timers=[], nodes={};
   const S=o.src||src, opt=(a,b)=>S.indexOf(a)>=0?"\n"+cutIn(S,a,b):"";
-  const CODE=cutIn(S,"// WHICHONE_START","// WHICHONE_END")+"\n"+cutIn(S,"// GAMELOG_START","// GAMELOG_END")+"\n"+cutIn(S,"// GAMEGRID_START","// GAMEGRID_END")+"\n"+cutIn(S,"// GAMERULES_START","// GAMERULES_END")+"\n"+cutIn(S,"// JEOPARDY_START","// JEOPARDY_END")+opt("// JPWAGER_START","// JPWAGER_END")+opt("// JPMONEY_START","// JPMONEY_END");
+  const CODE=cutIn(S,"// WHICHONE_START","// WHICHONE_END")+"\n"+cutIn(S,"// GAMELOG_START","// GAMELOG_END")+"\n"+cutIn(S,"// GAMEGRID_START","// GAMEGRID_END")+"\n"+cutIn(S,"// GAMERULES_START","// GAMERULES_END")+"\n"+cutIn(S,"// JEOPARDY_START","// JEOPARDY_END")+opt("// JPWAGER_START","// JPWAGER_END")+opt("// JPMONEY_START","// JPMONEY_END")+opt("// JPJUDGE_START","// JPJUDGE_END")+opt("// GAMEJUDGE_START","// GAMEJUDGE_END");   // ⚖️ JPJUDGE / GAMEJUDGE ride along: Off must still hash to the snapshot
   const ctx={console,JSON,Object,Array,String,Number,Math,Set,Map,RegExp,Date,parseInt,isNaN,setTimeout:(f,ms)=>{ timers.push(f); return timers.length; },
     document:{getElementById:id=>nodes[id]||(o.celeb&&id==="celeb-overlay"?{}:null),createElement:()=>({style:{},remove(){}}),body:{appendChild(){}}},
     _dryRun:()=>!!o.dry,HA_LS:{setItem(){}},_mastRe(){},bbAudioUnlock(){},momHere:()=>true,renderAll(){},cap:s=>s,
