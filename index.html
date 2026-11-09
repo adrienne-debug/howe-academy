@@ -3000,6 +3000,8 @@ let lastTasksWrite = 0;
 let lastCurrWrite = 0; const CURR_ECHO_MS = 3000;   // 📚 CURRLIVE: this device's last curriculum write (the listener skips its own echo)
 let fbCheckedLoaded = false;
 let fbTasksLoaded = false;
+let _abTasksNullWk = null;    // 🆕 ABFIRST: the week whose tasks node the server answered EMPTY (a brand-new family) — read by the self-build only
+let _abActiveWkNull = false;  // 🆕 ABFIRST: the server answered ha_active_wk = nothing (no week was ever committed)
 let fbHistoryLoaded = false;
 let fbCurrLoaded = false;   // curriculum once() answered (even empty) — subjNoCarry flags readable
 let fbArchiveLoaded = false; // archive listener answered — cursor math has the full completion record
@@ -3556,6 +3558,7 @@ function attachWeekListeners(wk){
   DAY_DT={}; // Clear stale dates so Sunday guard fires until meta arrives
   fbCheckedLoaded=false; // Reset so cascade waits for fresh data from Firebase
   fbTasksLoaded=false;
+  _abTasksNullWk=null;   // 🆕 ABFIRST: per week
   fbHistoryLoaded=false;
   clearTimeout(cascadeDebounce);
 
@@ -3638,7 +3641,7 @@ function attachWeekListeners(wk){
   const r5=db.ref(wk+"/tasks");
   r5.on("value",s=>{
     if(isUploading) return;
-    if(!s.val()) return;
+    if(!s.val()){ _abTasksNullWk=wk; return; }   // 🆕 ABFIRST: never "loaded" on an empty node (a live week's wipe stays harmless) — the self-build alone reads this
     // Suppress echo from our own cascade writes (prevents runaway cascade chains)
     if(Date.now()-lastTasksWrite<3000){ dbg("skip:tasks echo"); return; }
     const incoming=_haRealCards(Object.values(s.val()));   // GHOSTCARD
@@ -4157,6 +4160,7 @@ function initFb() {
     // Fires immediately on connect and any time another device changes the week.
     db.ref("ha_active_wk").on("value",s=>{
       const fbWk=s.val();
+      _abActiveWkNull=!fbWk;   // 🆕 ABFIRST
       if(fbWk && fbWk!==WK){
         dbg("ha_active_wk changed FB="+fbWk+" local="+WK);
         WK=fbWk; HA_LS.setItem("ha_active_wk",WK); weekData.week=WK;
@@ -100712,7 +100716,7 @@ function autoGenerateWeekIfNeeded(){
   // empty; generating then would undercount cursors and re-schedule finished lessons.
   // Retry until the listeners have answered.
   // NO_MIRROR: the retrieval (drill/sprint) slots come from Mastery's retrievalPlan — wait for it too.
-  if(!fbCheckedLoaded||!fbTasksLoaded||!fbArchiveLoaded||!_haMastReady){ setTimeout(autoGenerateWeekIfNeeded,5000); return; }
+  if(!fbCheckedLoaded||!(fbTasksLoaded||_abFirstWeek())||!fbArchiveLoaded||!_haMastReady){ setTimeout(autoGenerateWeekIfNeeded,5000); return; }   // 🆕 ABFIRST: a brand-new family's empty week counts as loaded here
   if(!_abDue(_abDueCtx())){ setTimeout(autoGenerateWeekIfNeeded,60000); return; }   // her question 2, "start": a Sunday waits for its school start
   _autoGenTried=true;
   db.ref("week"+wn+"/tasks").once("value",s=>{
@@ -100752,6 +100756,17 @@ function autoGenerateWeekIfNeeded(){
     });
   });
 }
+// ABFIRST_START — 🆕 a brand-new family's first week builds itself (FINDING F1 of the living demo run, 2026-11-09). With no week
+// node at all, the tasks listener never says "loaded" (`if(!s.val()) return;` — deliberate: a live week's wiped node must never
+// look like an empty week to a sweep), so the self-build above waited for ever, and the Generate Week page that used to bootstrap
+// a new family is gone (slice D). For the SELF-BUILD ONLY the week counts as loaded when ALL hold: the server answered
+// ha_active_wk = nothing AND this device never wrote it (no week was ever committed), the active week has no cards in memory, and
+// the server answered that week's tasks node = nothing. fbTasksLoaded stays false — the sweep, the cascade, the heals and the
+// re-lay doors keep waiting exactly as before. Once the first build commits, ha_active_wk is written and this is false for good.
+function _abFirstWeek(){
+  try{ return !!WK&&_abTasksNullWk===WK&&_abActiveWkNull&&!HA_LS.getItem("ha_active_wk")&&_activeWeekEmpty(); }catch(e){ return false; }
+}
+// ABFIRST_END
 // AUTOBUILD_END
 // THISWEEK_START — 📅 THE "THIS WEEK" STRIP (slice C of PLAN_living_schedule_finish_2026-11-08.md; her words 10/29: "All the
 // settings we have in Generate Week need to be adjustable in the week we're currently in … 'Tuesday we can't, Wednesday…'").

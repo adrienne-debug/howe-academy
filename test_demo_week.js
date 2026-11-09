@@ -238,13 +238,15 @@ async function sweepAt(iso){ clock.now=hm(iso,20,0); const r=A.fn("mlEveningSwee
   A=boot("A (Mom)","dev_a"); A.momOn(); await flush(500);
   ok("the whole app booted in the sandbox (curriculum, rules, calendar, archive, mastery arrived)",A.get("fbCurrLoaded")===true&&A.get("fbCheckedLoaded")===true&&A.get("fbArchiveLoaded")===true&&A.get("_haMastReady")===true&&A.get("rulesLoaded")===true,{logs:A.logs.slice(-5)});
   ok("the roster is the synthetic family (no real names anywhere in the sandbox)",JSON.stringify(A.get("ROSTER"))==='["kid_a","kid_b","kid_c","kid_d"]'&&!/lincoln|ellis|lucy|julian|howe|dewalt|burris|maggie/i.test(JSON.stringify(FX)));
-  // a brand-new family: the active week's tasks node is empty, so the tasks listener never says "loaded" and the self-build waits forever
-  await flush(90000);
-  const builtEarly=!!db.get("week1/tasks");
-  ok("FINDING F1 (new family only): with no week ever built, the self-build never runs by itself — fbTasksLoaded stays false on an empty tasks node",!builtEarly&&A.get("fbTasksLoaded")===false,{tasksLoaded:A.get("fbTasksLoaded")});
-  A.set("fbTasksLoaded",true);   // harness bootstrap: what a first Regenerate / an existing week would have set
-  await flush(20000);
-  ok("bootstrap: week 1 built itself once the flag was set (one whole-node tasks write, Mom's note)",Object.keys(db.get("week1/tasks")||{}).length>60&&db.log.filter(w=>w.op==="set"&&w.path==="week1/tasks").length>=1&&Object.values(db.get("week1/relayLog")||{}).some(e=>e.built),{n:Object.keys(db.get("week1/tasks")||{}).length});
+  // F1 (ABFIRST) — a brand-new family: no ha_active_wk, no week node at all. The Sunday 00:00 roll builds week 1 by itself, with the claim
+  ok("F1 premise: an empty database (no ha_active_wk, no week node) and a curriculum",db.get("ha_active_wk")==null&&!db.get("week1")&&!db.get("week3")&&!!A.get("currData.subjects.kid_a"));
+  { const mark=db.log.length; A.fn("dayRollCheck")(); await flush(90000);
+    const ws=db.log.slice(mark), txs=ws.filter(w=>w.op==="tx"&&w.path==="week1/meta/building"&&w.committed), sets=ws.filter(w=>w.op==="set"&&w.path==="week1/tasks");
+    ok("F1: week 1 built itself at Sunday 00:00 — one committed building claim, the tasks written, Mom's note, ha_active_wk = week1",Object.keys(db.get("week1/tasks")||{}).length>60&&txs.length===1&&sets.length>=1&&db.get("ha_active_wk")==="week1"&&Object.values(db.get("week1/relayLog")||{}).some(e=>e.built&&/Week 1 built itself/.test(e.label)),{n:Object.keys(db.get("week1/tasks")||{}).length,tx:txs.length,sets:sets.length,wk:db.get("ha_active_wk"),dbg:dbgSince(0,/auto-gen|built itself|skipped/).slice(-4)});
+    ok("F1: the empty week never counted as 'loaded' for anything but the self-build (no sweep, no cascade write before the build)",!ws.slice(0,ws.findIndex(w=>w.op==="tx")).some(w=>/^week\d+\/(tasks|checked|history)/.test(w.path)),ws.slice(0,6).map(w=>w.op+" "+w.path));
+    const mark2=db.log.length; A.set("_abRollDay",null); A.set("_autoGenTried",false); A.fn("dayRollCheck")(); A.fn("autoGenerateWeekIfNeeded")(); await flush(90000);
+    const ws2=db.log.slice(mark2).filter(w=>/^week\d+\/(tasks|meta)|^ha_active_wk/.test(w.path));
+    ok("F1: a second run does nothing (the week exists, ha_active_wk is written — no claim, no tasks write)",!ws2.length&&!A.fn("_abFirstWeek")(),ws2.map(w=>w.op+" "+w.path)); }
   ok("week 1 has the class pinned at its time on its Wednesday",board().some(t=>t.subjectKey==="german_class"&&t.day==="wednesday"&&t.time==="10:00 AM"));
   STEPS.push({name:"S0 bootstrap: week 1 built (Sun 11/08)",at:"Sun Nov 08 2026 00:00",failures:checkAll({dbgMark:0}),writes:writesSummary(db.log.slice(0)),cards:board().length});
   ok("S0 checks on the freshly built week 1",!STEPS[0].failures.length,STEPS[0].failures.slice(0,6).map(f=>f.code+" "+f.msg));
