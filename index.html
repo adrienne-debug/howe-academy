@@ -83662,6 +83662,9 @@ function buildSureHtml(color){
 //   elsewhere (which group is never told); grey "not in this deck". Hit = Brain Dump's own matcher when it is on the page (case,
 //   punctuation, one letter off on a long name), after a math-aware tidy (spaces out, x / * → ×, 4+8 counts for 8+4 — the same
 //   fact). A name typed twice is ignored. No re-ask: the category was the cue, and the kid saw it.
+//   📋 CATSCAP (games honesty audit #16, 2026-11-08): a wrong entry cost nothing, so a kid who knew the deck's FRONTS but not the groups
+//   could type every front into every group and collect the hits. Each group now takes at most its size + CATS_EXTRA entries (a name
+//   typed twice is still free); past that an entry is refused with a soft line ("tap Next") — nothing is counted, nothing is logged.
 //   The finish, per group: ✓ named, then "still in the group" (dim) — shown only AFTER the kid is done with it (the app never supplies
 //   what the child must produce before they produce it). Confetti (no song) only when every card of the round was named.
 //   Shown only to a kid at level middle / upper (dcLevel from the roster's grade: 3rd and up — readers who type) — never by name.
@@ -83671,7 +83674,10 @@ function buildSureHtml(color){
 //   A round dropped (Change deck, a kid switch) writes nothing.
 let catsState=null;   // {kid,deck,game:"cats",t0,catT0,pausedTotal,pausedAt,cats:[{key,label,cards:[{pid,front}],named:{pid:1},typed:[{text,pid,how}],secs}],others:[{pid,front}],ci,phase:"play"|"done",count,of,turns,isPB,prevBest,gameLogged}
 let _catsRandom=Math.random;   // tests seed it
-const CATS_PER_ROUND=3, CATS_MIN_PER=3, CATS_MIN_CATS=2, CATS_SECS=120, CATS_LABEL_MAX=120;
+const CATS_PER_ROUND=3, CATS_MIN_PER=3, CATS_MIN_CATS=2, CATS_SECS=120, CATS_LABEL_MAX=120, CATS_EXTRA=3;
+function catsCap(cat){ return ((cat&&cat.cards)?cat.cards.length:0)+CATS_EXTRA; }   // 📋 CATSCAP: the most entries one group takes
+function catsFull(cat){ return !!cat&&(cat.typed||[]).length>=catsCap(cat); }
+const CATS_FULL_LINE="That\u2019s plenty for this category \u2014 tap Next when you\u2019re ready.";
 function _catsItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
 function _catsPlain(s){ return (typeof _matchPlain==="function")?_matchPlain(s):String(s==null?"":s).replace(/<[^>]*>/g," ").replace(/&nbsp;/g," ").replace(/\s+/g," ").trim(); }
 function _catsE(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -83765,11 +83771,14 @@ function catsTick(st){
     const el=document.getElementById("cats-clock"); if(el) el.textContent=catsClock(ms);
   },1000);
 }
-// PURE over the state: one entered name → "hit" | "close" | "dup" | "other" (a card of the deck, another group) | "miss" (not in the deck) | "" (blank)
+// PURE over the state: one entered name → "hit" | "close" | "dup" | "other" (a card of the deck, another group) | "miss" (not in the deck)
+// | "full" (📋 CATSCAP: the group has taken its size + CATS_EXTRA entries — refused, nothing counted) | "" (blank)
 function catsEnter(st,text){
   const raw=_catsPlain(text), cat=st.cats[st.ci]; if(!raw||st.phase!=="play"||!cat) return "";
   const m=catsMatch(raw,cat.cards,cat.named);
-  if(m){ if(m.how==="dup") return "dup"; cat.named[m.card.pid]=1; cat.typed.push({text:raw,pid:m.card.pid,how:m.how}); st.count++; return m.how; }
+  if(m&&m.how==="dup") return "dup";
+  if(catsFull(cat)) return "full";   // 📋 CATSCAP
+  if(m){ cat.named[m.card.pid]=1; cat.typed.push({text:raw,pid:m.card.pid,how:m.how}); st.count++; return m.how; }
   const elsewhere=[]; st.cats.forEach((c,i)=>{ if(i!==st.ci) elsewhere.push.apply(elsewhere,c.cards); }); elsewhere.push.apply(elsewhere,st.others||[]);
   const how=catsMatch(raw,elsewhere,{})?"other":"miss";
   if(!cat.typed.some(x=>x.pid==null&&_catsNorm(catsPrep(x.text))===_catsNorm(catsPrep(raw)))) cat.typed.push({text:raw,pid:null,how:how});
@@ -83782,8 +83791,9 @@ function catsAdd(){
   if(el) el.value="";
   if(r==="hit"||r==="close"){ try{ matchDing(); }catch(e){} }
   // In place when the round is on screen (a re-render would drop the keyboard on an iPad); else the normal redraw.
-  const chips=document.getElementById("cats-chips"), cnt=document.getElementById("cats-count");
-  if(chips&&cnt&&r&&r!=="dup"){ chips.insertAdjacentHTML("beforeend",_catsChip(cat.typed[cat.typed.length-1])); cnt.textContent=Object.keys(cat.named).length+" of "+cat.cards.length; }
+  const chips=document.getElementById("cats-chips"), cnt=document.getElementById("cats-count"), note=document.getElementById("cats-note");
+  if(note) note.textContent=(r==="full"||catsFull(cat))?CATS_FULL_LINE:"";   // 📋 CATSCAP: the soft line
+  if(chips&&cnt&&r&&r!=="dup"&&r!=="full"){ chips.insertAdjacentHTML("beforeend",_catsChip(cat.typed[cat.typed.length-1])); cnt.textContent=Object.keys(cat.named).length+" of "+cat.cards.length; }
   else if(!chips||!cnt) _mastRe();
   if(cat&&Object.keys(cat.named).length>=cat.cards.length){ catsNextCat(st); return; }   // the group is complete
   catsFocus();
@@ -83851,6 +83861,7 @@ function buildCatsHtml(color){
     h+='<div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0 8px"><span id="cats-count" style="font-size:17px;font-weight:800;color:'+color+'">'+n+' of '+cat.cards.length+'</span><span id="cats-clock" style="font-size:13px;font-weight:700;color:var(--muted)">'+catsClock(catsElapsed(st))+'</span></div>';
     h+='<div style="display:flex;gap:8px;align-items:center"><input id="cats-in" class="cats-in" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Type one, press Enter" aria-label="A card in this category" onkeydown="if(event.key===\'Enter\'){event.preventDefault();catsAdd();}">'+
       '<button class="cats-btn" style="background:'+color+'" onclick="catsAdd()">Add</button></div>';
+    h+='<div id="cats-note" style="min-height:20px;font-size:13px;font-weight:700;color:#78716c;margin-top:6px">'+(catsFull(cat)?_catsE(CATS_FULL_LINE):'')+'</div>';   // 📋 CATSCAP
     h+='<div id="cats-chips" style="margin:12px 0;min-height:40px">'+cat.typed.map(_catsChip).join("")+'</div>';
     h+='<div style="display:flex;justify-content:center"><button class="cats-ghost" onclick="catsNextCat()">'+(st.ci+1<st.cats.length?'\u{27A1} Next category':'\u{2714} I\u{2019}m done')+'</button></div>';
     return h+'</div>';
