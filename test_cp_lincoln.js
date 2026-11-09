@@ -17,7 +17,7 @@
  *     His Envirothon cards keep coming and none drops out.                                          run: node test_cp_lincoln.js
  */
 const fs=require("fs"), path=require("path"), vm=require("vm");
-const src=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
+const src=require("./test_src.js")(path.join(__dirname,"index.html"));
 let pass=0, fail=0;
 const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  "+JSON.stringify(x).slice(0,400):"")); } };
 const cut=(a,b)=>{ const i=src.indexOf(a); if(i<0) throw new Error("missing "+a); const j=src.indexOf(b,i); if(j<0) throw new Error("missing "+b); return src.slice(i,j+b.length); };

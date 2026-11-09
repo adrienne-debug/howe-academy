@@ -194,7 +194,7 @@ function collectReserved(html, script, extra) {
 async function main() {
   const t0 = Date.now();
   const list = JSON.parse(fs.readFileSync(LIST_PATH, "utf8"));
-  const html = fs.readFileSync(SRC, "utf8");
+  const html = require(path.join(REPO, "test_src.js"))(SRC);   // 🪶 LAZYSPLIT: the site ships ONE page — classes.js (and any other moved file) goes back in at its markers
   const sizeBefore = Buffer.byteLength(html);
   const { head, script, tail } = splitPage(html);
   const lines = script.split("\n");
