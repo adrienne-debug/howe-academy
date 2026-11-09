@@ -43274,7 +43274,7 @@ function _rlwUndoUpd(e,tasks,o){
 }
 function _rlwApplyLocal(p,v){
   const parts=String(p).split("/");
-  if((parts[0]==="weekConfig"||parts[1]==="babysitter")&&typeof _twsApplyLocal==="function"){ _twsApplyLocal(p,v); return; }   // 📅 THISWEEK
+  if((parts[0]==="weekConfig"||parts[1]==="babysitter"||parts[1]==="meta")&&typeof _twsApplyLocal==="function"){ _twsApplyLocal(p,v); return; }   // 📅 THISWEEK (TWSSAT: the board's Saturday tab)
   if(parts[0]==="calendar"&&typeof calendarData!=="undefined"&&calendarData){ let o=calendarData; for(let i=1;i<parts.length-1;i++){ if(!o[parts[i]]||typeof o[parts[i]]!=="object") o[parts[i]]={}; o=o[parts[i]]; } if(v===null) delete o[parts[parts.length-1]]; else o[parts[parts.length-1]]=v; return; }
   if(typeof stApplyLocal==="function") stApplyLocal(p,v);
 }
@@ -43363,12 +43363,18 @@ function _rlwDailyWant(kid,sk,gen,wn){
   (R.tasks||[]).forEach(function(t){ if(t&&t.who===kid&&t.subjectKey===sk&&!String(t.id||"").endsWith("_c")) out.push(Object.assign({},t)); });
   const have={}; out.forEach(function(t){ have[String(t.day||"").toLowerCase()]=1; });
   const s=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid]||{})[sk]||{};
-  ((gen&&gen.dropped)||[]).forEach(function(dp){
-    if(!dp||dp.kid!==kid||dp.key!==sk||!dp.day) return; const day=String(dp.day).toLowerCase(); if(have[day]) return; have[day]=1;
+  const tpl=function(day){
     let dur=s.minutes||20; try{ if(typeof coopDayMinutes==="function"&&typeof calDateForWeekDay==="function"){ const ds=calDateForWeekDay(day,wn); if(ds) dur=coopDayMinutes(kid,ds,s,dur); } }catch(e){}
     let title=(s.display||sk), detail=""; try{ if(typeof gwTaskTitle==="function") title=gwTaskTitle(kid,sk,s.display||sk,day,false,false); if(typeof gwSubjectDetail==="function") detail=gwSubjectDetail(kid,sk)||""; }catch(e){}
-    out.push({id:null,who:kid,day:day,time:null,dur:dur,title:title,detail:detail,mom:s.mom||"none",cascade:true,device:s.device||"paper",subjectKey:sk});
+    return {id:null,who:kid,day:day,time:null,dur:dur,title:title,detail:detail,mom:s.mom||"none",cascade:true,device:s.device||"paper",subjectKey:sk};
+  };
+  ((gen&&gen.dropped)||[]).forEach(function(dp){
+    if(!dp||dp.kid!==kid||dp.key!==sk||!dp.day) return; const day=String(dp.day).toLowerCase(); if(have[day]) return; have[day]=1;
+    out.push(tpl(day));
   });
+  // 📅 TWSSAT: Saturday on for the week on the board — the generator lays only the grid's days, so a daily that names Saturday
+  // is wanted there like a dropped day (lessons stay Mon–Fri, her rule: only dailies come here)
+  try{ if(!have.saturday&&typeof _twsSatRuns==="function"&&_twsSatRuns(kid,sk,wn)){ have.saturday=1; out.push(tpl("saturday")); } }catch(e){}
   return out;
 }
 // pure: {upd, summary, tasksAfter} — upd keyed under week<N>/tasks (id, or id/field; never both for one card).
@@ -100885,6 +100891,9 @@ function _twsApplyLocal(p,v){
     for(let i=1;i<parts.length-1;i++){ if(!o[parts[i]]||typeof o[parts[i]]!=="object") o[parts[i]]={}; o=o[parts[i]]; }
     if(val===null) delete o[parts[parts.length-1]]; else o[parts[parts.length-1]]=val; return true; }
   if(parts[0]==="config"&&typeof stApplyLocal==="function"){ stApplyLocal(p,val); return true; }
+  if(parts.length===4&&parts[1]==="meta"&&parts[2]==="dates"&&typeof WK!=="undefined"&&parts[0]===WK){   // 📅 TWSSAT: the board's Saturday tab
+    DAY_DT=Object.assign({},(typeof DAY_DT!=="undefined"&&DAY_DT)||{}); if(val===null) delete DAY_DT[parts[3]]; else DAY_DT[parts[3]]=val;
+    try{ const m=ld(WK+"_meta")||{}; m.dates=Object.assign({},DAY_DT); sv(WK+"_meta",m); }catch(e){} return true; }
   return false;
 }
 // an Undo entry for a path as it is RIGHT NOW in this device's copy — taken before the write
@@ -100893,6 +100902,7 @@ function _twsWas(p){
   try{
     if(parts[0]==="weekConfig"){ o=_abSavedCfg[parts[1]]; for(let i=2;i<parts.length&&o!=null;i++) o=(typeof o==="object")?o[parts[i]]:undefined; }
     else if(parts[1]==="babysitter"){ o=(typeof weekData!=="undefined"&&weekData)?weekData.babysitter:undefined; }
+    else if(parts[1]==="meta"&&parts[2]==="dates"){ o=((typeof DAY_DT!=="undefined"&&DAY_DT)||{})[parts[3]]; }   // 📅 TWSSAT
     else if(parts[0]==="calendar"){ o=(typeof calendarData!=="undefined")?calendarData:undefined; for(let i=1;i<parts.length&&o!=null;i++) o=o[parts[i]]; }
     else if(parts[0]==="config"&&parts[1]==="rules"){ o=(typeof rulesData!=="undefined")?rulesData:undefined; for(let i=2;i<parts.length&&o!=null;i++) o=o[parts[i]]; }
   }catch(e){ o=undefined; }
@@ -100905,12 +100915,12 @@ function _twsWrite(upd){
   return true;
 }
 // THE door: Undo entries first, the write, then (the week on the board only) ONE relayWeek. A week not built yet re-lays nothing.
-function _twsDoor(why,label,upd,board,toast){
+function _twsDoor(why,label,upd,board,toast,subjects){
   if(!momHere()) return false;
   const undo=Object.keys(upd||{}).map(_twsWas);
   if(!_twsWrite(upd)) return false;
   const relay=!!board&&typeof relayWeek==="function";
-  if(relay) relayWeek(why,{label:label,undo:undo});
+  if(relay) relayWeek(why,{label:label,undo:undo,subjects:subjects||[]});   // 📅 TWSSAT: Saturday re-lays its dailies in pass B
   if(typeof gwShowToast==="function") gwShowToast(toast||label);
   if(typeof renderAll==="function") renderAll();
   return relay;
@@ -100976,8 +100986,57 @@ function twsToggleSaturday(){
   if(typeof gwSatPlanned==="function"&&gwSatPlanned(wn)){ if(typeof gwShowToast==="function") gwShowToast("The grid plans Saturday lessons in Week "+wn+" — Saturday stays on"); return; }
   const dates=_twsDates(wn); if(dates.saturday&&dates.saturday<stTodayIso()) return;   // a past Saturday is read-only
   const on=!gwEffectiveConfig(wn).saturday; const upd={}; upd["weekConfig/"+wn+"/saturday"]=on;
-  _twsDoor("saturday","📅 Saturday "+(on?"on":"off")+" (Week "+wn+")",upd,!twsNext);
+  let lbl="📅 Saturday "+(on?"on":"off")+" (Week "+wn+")", pairs=[];
+  if(!twsNext&&typeof WK!=="undefined"&&WK&&dates.saturday){   // 📅 TWSSAT: the week on the board gets (or loses) its Saturday tab, and its Saturday dailies
+    pairs=_twsSatDailies(); const p=WK+"/meta/dates/saturday", has=!!((typeof DAY_DT!=="undefined"&&DAY_DT)||{}).saturday;
+    if(on){ if(!has) upd[p]=_twsSatLabel(dates.saturday);
+      const nm=_twsSatNames(pairs,dates.saturday); if(nm.length) lbl+=" · Sat: "+nm.join(", "); }
+    else if(has){ const k=_twsSatKeep(pairs); if(k.n) lbl+=" — the Saturday tab stays ("+k.n+" card"+(k.n===1?"":"s")+" on it"+(k.ck?", "+k.ck+" checked":"")+")"; else upd[p]=null; }
+  }
+  _twsDoor("saturday",lbl,upd,!twsNext,undefined,pairs);
 }
+// TWSSAT_START — 📅 SATURDAY ON MID-WEEK (FINDING F3 of the living demo run, 2026-11-09). Before: Saturday on wrote
+// weekConfig/<wn>/saturday and nothing else — the board week had no Saturday tab (meta.dates comes from the build) and no
+// pattern laid onto it, so nothing moved and no line was written. Now, for the week on the board: Saturday on writes
+// week<N>/meta/dates/saturday (one targeted leaf, generateWeek's own "November 21" words) and re-lays the DAILIES that name
+// Saturday (allowedDays has "Sat", or no allowedDays and "Sat" in days) through the one door — pass B, the RELAY3D daily shell,
+// _rlwDailyWant asking for Saturday. Lessons stay Mon–Fri (her rule): a sequenced subject is never sent and never wanted there.
+// Saturday off: the same dailies' open Saturday cards go; the date goes too unless a card still sits on Saturday (a checked card,
+// or the sweep's overflow) — then the tab stays and the line says so. Undo = the setting, the date and the cards back.
+// A week not built yet re-lays nothing (the Sunday build reads weekConfig, as before; it lays only the grid's days).
+function _twsSatNamesSat(s){ const al=((s&&s.allowedDays)||[]).map(String); return al.length?al.indexOf("Sat")>=0:/\bsat/i.test(String((s&&s.days)||"")); }
+// every kid's dailies that name Saturday → [{kid,sk}]
+function _twsSatDailies(){
+  const subs=(((typeof currData!=="undefined"&&currData)||{}).subjects)||{}; const out=[];
+  Object.keys(subs).forEach(function(k){ Object.keys(subs[k]||{}).forEach(function(sk){ const s=subs[k][sk];
+    if(s&&!s.paused&&s.tracking==="daily"&&!s.fixedTime&&_twsSatNamesSat(s)) out.push({kid:k,sk:sk}); }); });
+  return out;
+}
+// does this daily run on the board week's Saturday right now? (Saturday on, the tab on the board, the kid not off, the day not ✕'d)
+function _twsSatRuns(kid,sk,wn){
+  try{
+    if(typeof currWeekNum!=="function"||wn!==currWeekNum()) return false;
+    if(!((typeof DAY_DT!=="undefined"&&DAY_DT)||{}).saturday||!gwEffectiveConfig(wn).saturday) return false;
+    const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||s.paused||s.tracking!=="daily"||s.fixedTime||!_twsSatNamesSat(s)) return false;
+    const iso=calDateForWeekDay("saturday",wn); if(!iso) return false;
+    if(typeof smapIsKidOff==="function"&&smapIsKidOff(kid,iso)) return false;
+    if(typeof _ovOffX==="function"&&(_ovOffX(kid,iso,false)||_ovRmX(kid,iso,sk,false))) return false;
+    return true;
+  }catch(e){ return false; }
+}
+function _twsSatLabel(iso){ return gwParseDate(iso).toLocaleDateString("en-US",{month:"long",day:"numeric",timeZone:"UTC"}); }   // generateWeek's own meta.dates words
+function _twsSatNames(pairs,iso){
+  return (pairs||[]).filter(function(p){ return !(typeof smapIsKidOff==="function"&&smapIsKidOff(p.kid,iso)); })
+    .map(function(p){ const s=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[p.kid]||{})[p.sk]||{}; return (s.display||p.sk)+" ("+cap(p.kid)+")"; });
+}
+// what still sits on Saturday once the Saturday dailies' open cards go → {n, ck}
+function _twsSatKeep(pairs){
+  const ck=(typeof checked!=="undefined"&&checked)||{}; const mine={}; (pairs||[]).forEach(function(p){ mine[p.kid+"|"+p.sk]=1; });
+  const on=((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]).filter(function(t){ return t&&t.id&&t.day==="saturday"&&!String(t.id).endsWith("_c"); });
+  const stay=on.filter(function(t){ return ck[t.id]||!mine[t.who+"|"+t.subjectKey]; });
+  return {n:stay.length,ck:stay.filter(function(t){ return !!ck[t.id]; }).length};
+}
+// TWSSAT_END
 function twsToggleSunday(k){
   if(!momHere()||!k) return; const on=!(typeof sucOn==="function"&&sucOn(k)); const upd={}; upd["config/rules/sundayCatchup/"+k]=on?true:null;
   try{ if(typeof _sucMemo!=="undefined") _sucMemo={key:null,tasks:null,set:null}; }catch(e){}

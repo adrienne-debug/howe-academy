@@ -13,7 +13,7 @@
  *   Sun 00:00 self-build (both devices awake) → Mon 9:40 a Grid ✕ (off this day) on one subject → Mon 10:05 a card checked early →
  *   Tue add a subject (a daily; and a sequenced one, built) → Tue a kid off for Wed (📅 strip; Undo, redo) → Wed ⏰ day times for Thu
  *   (Undo, redo) → Wed a lesson-text edit on today's open card (list save) → Thu delete a subject → Thu 8 PM sweep →
- *   Fri Saturday on (📅 strip) → Sat → next Sunday 00:00 (week 3 builds; carries).
+ *   Fri Saturday on (📅 strip; the Saturday tab + its dailies — Undo, redo, off, on) → Sat → next Sunday 00:00 (week 3 builds; carries).
  * After EVERY step the same checks run (see CHECKS below). Each failure names the cards and the rule; the report
  * (REPORT_living_demo_2026-11-08.md) says which are real bugs and which are harness gaps.
  *
@@ -369,11 +369,25 @@ async function sweepAt(iso){ clock.now=hm(iso,20,0); const r=A.fn("mlEveningSwee
     ok("S9: the sweep's one whole-node tasks write is the cascade's own (known), from Mom's device only",r.ws.filter(w=>w.whole).every(w=>w.dev===A.id)&&r.ws.filter(w=>w.whole).length<=1,r.ws.filter(w=>w.whole).map(w=>w.dev+" "+w.path)); }
   // Friday 11/20
   await rollDay("2026-11-20");
-  { // S10 — Fri 9:00: Saturday on (the 📅 strip)
-    const r=await step("S10 Fri 9:00 Saturday on (📅 This week)",hm("2026-11-20",9,0),async()=>{ A.fn("twsToggleSaturday")(); },{expectRelay:false});   // nothing moves → no what-moved entry (FINDING F3)
-    const satCards=board().filter(t=>t.day==="saturday"&&!String(t.id).endsWith("_c"));
+  { // S10 — Fri 9:00: Saturday on (the 📅 strip) → the Saturday tab + the dailies that name Saturday (F3, TWSSAT) → Undo → redo → off → on
+    const satDaily=t=>t.day==="saturday"&&((t.who==="kid_a"&&t.subjectKey==="piano")||(t.who==="kid_b"&&t.subjectKey==="baking"));
+    const r=await step("S10 Fri 9:00 Saturday on (📅 This week)",hm("2026-11-20",9,0),async()=>{ A.fn("twsToggleSaturday")(); },{expectRelay:true});
+    const satCards=board().filter(satDaily);
     ok("S10: weekConfig/2/saturday is true and the effective config says Saturday on",db.get("weekConfig/2/saturday")===true&&satOn(2));
-    ok("FINDING F3 (documented, known limit): Saturday on mid-week writes the setting but the board week has no Saturday tab (meta.dates) and no pattern lays onto it until a rebuild",!(db.get("week2/meta/dates")||{}).saturday&&!r.entry,{metaSat:(db.get("week2/meta/dates")||{}).saturday||null,satCards:satCards.map(t=>t.who+"/"+t.subjectKey+" "+t.time),dbg:r.rec.dbg.slice(0,5)}); }
+    ok("F3 (TWSSAT): the board week has its Saturday tab (week2/meta/dates/saturday, the build's own words) on both devices",db.get("week2/meta/dates/saturday")==="November 21"&&A.get("DAY_DT.saturday")==="November 21"&&B.get("DAY_DT.saturday")==="November 21",{db:db.get("week2/meta/dates/saturday"),a:A.get("DAY_DT.saturday"),b:B.get("DAY_DT.saturday")});
+    ok("F3: the dailies that name Saturday are laid on it (kid_a Piano, kid_b Baking); no lesson was laid on Saturday by the toggle",satCards.length===2&&!r.entry.added.some(id=>{ const t=boardObj()[id]; return !t||!satDaily(t); }),{sat:board().filter(t=>t.day==="saturday").map(t=>t.who+"/"+t.subjectKey+" "+t.time),added:r.entry&&r.entry.added});
+    ok("F3: the what-moved line names them and lists their cards as added",!!r.entry&&/Piano \(Kid A\)/.test(r.entry.label)&&/Baking \(Kid B\)/.test(r.entry.label)&&satCards.every(t=>(r.entry.added||[]).indexOf(t.id)>=0),r.entry&&{label:r.entry.label,added:r.entry.added});
+    ok("F3: the writes are targeted (the setting, the date leaf, the cards) — no whole-node write",!r.ws.some(w=>w.whole)&&r.ws.some(w=>w.op==="update"),r.ws.map(w=>w.op+" "+w.path).slice(0,8));
+    const e=r.entry; if(e){ A.fn("relayUndo")(String(e.at)); await flush(8000);
+      ok("S10 Undo: the setting, the Saturday tab and the Saturday dailies are gone again",!db.get("weekConfig/2/saturday")&&!satOn(2)&&db.get("week2/meta/dates/saturday")==null&&!board().some(satDaily)&&!A.get("DAY_DT.saturday")&&!B.get("DAY_DT.saturday"),{cfg:db.get("weekConfig/2/saturday"),date:db.get("week2/meta/dates/saturday"),sat:board().filter(satDaily).map(t=>t.id)});
+      const F=checkAll({dbgMark:db.debug.length}); ok("S10 Undo: the week checks clean after the undo",!F.length,F.slice(0,5).map(f=>f.code+" "+f.msg));
+      await step("S10b Fri 9:05 Saturday on again (after Undo)",hm("2026-11-20",9,5),async()=>{ A.fn("twsToggleSaturday")(); },{expectRelay:true});
+      ok("S10b: the tab and both Saturday dailies are back",db.get("week2/meta/dates/saturday")==="November 21"&&board().filter(satDaily).length===2); }
+    const other=board().filter(t=>t.day==="saturday"&&!satDaily(t));
+    const r3=await step("S10c Fri 9:10 Saturday off",hm("2026-11-20",9,10),async()=>{ A.fn("twsToggleSaturday")(); },{expectRelay:true});
+    ok("S10c: Saturday off takes the Saturday dailies off; the tab "+(other.length?"stays (the sweep's overflow card sits there) and the line says so":"goes"),!board().some(t=>satDaily(t)&&!checkedMap()[t.id])&&(other.length?db.get("week2/meta/dates/saturday")==="November 21"&&/the Saturday tab stays \(1 card on it\)/.test(r3.entry&&r3.entry.label):db.get("week2/meta/dates/saturday")==null),{other:other.map(t=>t.who+"/"+t.subjectKey),date:db.get("week2/meta/dates/saturday"),label:r3.entry&&r3.entry.label});
+    await step("S10d Fri 9:15 Saturday on (for the rest of the replay)",hm("2026-11-20",9,15),async()=>{ A.fn("twsToggleSaturday")(); },{expectRelay:true});
+    ok("S10d: Saturday is on with both Saturday dailies (the tab was kept, so only the cards are written)",satOn(2)&&board().filter(satDaily).length===2); }
   await playDay("2026-11-20",t=>t.subjectKey==="math"&&t.who==="kid_b");
   await sweepAt("2026-11-20");
   // Saturday 11/21
