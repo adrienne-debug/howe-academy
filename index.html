@@ -18165,6 +18165,7 @@ function renderMomsDay(el){
   try{ const _sr=srNowHTML(); nowN+=_sr.n; h+=_sr.html; }catch(e){}   // 🕒 SREVIEW: every finished study sitting today → 👍 Looks right · ↩ Too fast
   try{ const _mm=mmAlertsNowHTML(); nowN+=_mm.n; h+=_mm.html; }catch(e){}   // ⏱ MINMINUTES: an early check let through · a card open past double its time
   try{ const _lr=hhLevelReadyNowHTML(); nowN+=_lr.n; h+=_lr.html; }catch(e){}   // 🪜 LEVELREADY: a person's meter says move up
+  try{ if(typeof mlsNowHTML==="function"){ const _ml=mlsNowHTML(); nowN+=_ml.n; h+=_ml.html; } }catch(e){}   // 🧠 MLSUGGEST: the load dial's one suggestion per kid → Apply · Not now
   // Load sitting in the washer / dryer / fold pile too long — the nudge that saves a re-wash (LAUNDRY_NUDGE).
   try{ laundryNudgeList(Date.now()).forEach(x=>{ nowN++; h+=laundryNudgeRowHTML(x); }); }catch(e){}
   // Bills that can't wait — overdue or due today — with one-tap ✓ Paid.
@@ -28916,9 +28917,155 @@ function mldDialHtml(kid){
   const L=((_mldMD()[kid+"_settings"]||{}).load||{}).last;
   if(L){ const mv=Array.isArray(L.moved)?L.moved:Object.values(L.moved||{}), line=mldMovedLine(kid,mv);
     h+='<div style="font-size:11.5px;color:#334155;margin-top:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span>'+(line?'Moved: '+line:'Only the dial moved.')+'</span><button onclick="mldUndo(\''+K+'\')" style="border:1.5px solid var(--border);background:#fff;border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">↩ Undo</button></div>'; }
+  if(d.stored&&typeof mlsModeHtml==="function") h+=mlsModeHtml(kid);   // 🧠 MLSUGGEST: Suggest / Off, once the dial is stored
   return h+'</div>';
 }
 // MLDIAL_END
+// MLSUGGEST_START — 🧠 THE LOAD DIAL SUGGESTS (slice 3 of PLAN_mental_load_2026-11-03.md; her answer 2026-11-03: Mode = "Suggest" — the app
+// never moves the dial on its own, and every suggestion goes to Mom's Day ("it needs to go to Mom's Day needs your attention")). After a
+// 3-day window, ONE row per kid in Mom's Day ▸ 🔴 Now — needs you:
+//   "🧠 <kid>: 3 days at 72% first-try, 28 of 25 min — turn down to 20 min?"  [Apply] [Not now]
+//   · THE WINDOW — mlWindow(kid, days=3, D), PURE: the last 3 days with mastery work logged, before today (today is still going), at most
+//     MLS_LOOK days back, and only days AFTER the dial's last change (load/last.at). Per day, the Scores page's own formulas (§2D):
+//     minutes = drill + study + games × ½ (scpMinutes) + sprints (sprintLog: secsA + secsB, else the clock × sheets, 60 s a sheet without
+//     one); first-try % = scpRight (drill + study, one grade a card a day, + games' first taps at ½, rounds before judging left out);
+//     sittings = drill sittings + study sittings. The window's numbers = the per-day average minutes, right ÷ graded over the 3 days, and
+//     the Load word (scpLoad: Light · Steady · Heavy against the dial).
+//   · THE RULE — mlSuggest(kid, window, dial), PURE, one suggestion or none:
+//       turn DOWN 5 min — on each of the 3 days the minutes were over the dial, OR on each of the 3 days first-try was under 80 %;
+//                         at the 5-minute floor it offers one sitting fewer instead (none when that is 1 already).
+//       turn UP 5 min   — on each of the 3 days the minutes were under the dial AND first-try over 85 % AND every sitting on the dial
+//                         was done (the day finished early, not cut short); never past 120.
+//     Down is checked first, so never two at once. 80–85 % is the target band (plan §2E) — inside it, nothing.
+//   · QUIET — no dial stored for the kid (no load/budgetMin) → nothing at all (Mom's Day byte-identical); load/mode "off" → nothing;
+//     Not now → load/snooze = the day it may ask again (today + 3); and the first 3 days after any dial change (the window only counts
+//     days after load/last.at, and today must be past that day + 3).
+//   · APPLY — re-checks the suggestion, then mldSet(kid, minutes, sittings): the dial's own path (one multi-path update of the dial + the
+//     knobs it drives + load/last), with its what-changed line and ↩ Undo (shown here on this device after the tap, and on the Scores card).
+//   · MODE — load/mode = "suggest" (the default, unset) / "off", per kid, on the dial's card (📊 Scores). "Auto-down, ask-up" is NOT built
+//     (plan slice 3b, later).
+// Mom only (momHere). Writes only on Mom's tap, through _mldSave (db && !_dryRun()); never on boot or render. No kid or family names.
+const MLS_DAYS=3, MLS_LOOK=14, MLS_LOW=80, MLS_HIGH=85, MLS_SNOOZE=3, MLS_QUIET=3;
+function _mlsKeyOf(v){ if(v==null||v==="") return ""; if(typeof v==="number"&&isFinite(v)) return scpKeyOf(new Date(v)); const k=String(v).replace(/-/g,"").slice(0,8); return /^\d{8}$/.test(k)?k:""; }
+// PURE: one sprint entry's seconds (capped like a sitting)
+function mlsSprintSecs(e,cap){
+  if(!e||typeof e!=="object") return 0;
+  const sheets=(e.a?1:0)+(e.b?1:0)||1, live=(+e.secsA>0?+e.secsA:0)+(+e.secsB>0?+e.secsB:0);
+  const s=live>0?live:((+e.clk>0?+e.clk:60)*sheets);
+  return (s>0&&s<=cap)?s:0;
+}
+// PURE: one day's measures. The Scores formulas, fed only that day's slice of each log.
+function mlsDay(kid,k,D,gw){
+  const cap=(typeof SC_LEFT_OPEN_SECS==="number")?SC_LEFT_OPEN_SECS:7200, w={from:k,to:k};
+  const dh=((D.history||{})[kid]||{})[k], sl=(D.studyLog||{})[kid]||{}, gl=((D.gameLog||{})[kid]||{})[k];
+  const H={}, S={}, G={}; if(dh) H[kid]={[k]:dh};
+  const st={}; Object.keys(sl).forEach(sid=>{ const e=sl[sid]&&sl[sid][k]; if(e) st[sid]={[k]:e}; }); S[kid]=st; if(gl) G[kid]={[k]:gl};
+  const mn=scpMinutes(kid,H,S,G,w,1,gw), rt=scpRight(kid,H,S,G,w,gw);
+  let sp=0; scpV((D.sprintLog||{})[kid]).forEach(e=>{ if(_mlsKeyOf(e&&(e.date||e.ts))===k) sp+=mlsSprintSecs(e,cap); });
+  let sits=0;
+  if(dh&&typeof dh==="object"){ const t=scpV(dh.sessTimes).filter(s=>typeof s==="number"&&s>0&&s<=cap); sits+=t.length||((dh.secs>0||scpV(dh.items).length)?1:0); }
+  Object.keys(st).forEach(sid=>{ const e=st[sid][k]; if(!e||typeof e!=="object") return; const n=scpV(e.sits).length; sits+=n||((e.secs>0||e.total>0)?1:0); });
+  const min=Math.round(((mn.drill+mn.study)*60+mn.games*60*gw+sp)/60);
+  return {day:k,min:min,drill:mn.drill,study:mn.study,games:mn.games,sprint:Math.round(sp/60),graded:rt.graded,right:rt.right,pct:rt.pct,sittings:sits,
+    any:!!(mn.any||sp>0||rt.graded>0)};
+}
+// PURE when D is given: the last `days` days with work, before today and after the last dial change.
+//   D = {history, studyLog, gameLog, sprintLog, today:yyyymmdd, since:yyyymmdd|"" (the change day), budgetMin, sittings, gameWeight?}
+function mlWindow(kid,days,D){
+  days=(Number(days)>0)?Math.floor(days):MLS_DAYS; D=D||mlsData(kid);
+  const gw=(typeof D.gameWeight==="number")?D.gameWeight:SCP_GAME_W, today=String(D.today||scpToday()), since=_mlsKeyOf(D.since), look=Math.max(days,MLS_LOOK), out=[];
+  for(let i=1;i<=look&&out.length<days;i++){ const k=scpShift(today,-i); if(since&&k<=since) break; const d=mlsDay(kid,k,D,gw); if(d.any) out.push(d); }
+  const n=out.length, budget=Number(D.budgetMin)>0?Number(D.budgetMin):null;
+  const g=out.reduce((a,d)=>a+d.graded,0), r=out.reduce((a,d)=>a+d.right,0);
+  const minPerDay=n?Math.round(out.reduce((a,d)=>a+d.min,0)/n):null;
+  return {kid:kid,today:today,since:since,need:days,n:n,ready:n>=days,days:out,minPerDay:minPerDay,graded:g,right:r,pct:g>0?Math.round(r/g*100):null,
+    sittings:n?Math.round(out.reduce((a,d)=>a+d.sittings,0)/n*10)/10:null,budget:budget,dialSittings:Math.max(1,Math.floor(Number(D.sittings)||1)),
+    load:(n&&budget)?scpLoad(minPerDay,budget):null};
+}
+// PURE: the one suggestion (or null). dial = {minutes, sittings, stored, mode, snooze:yyyymmdd, changed:yyyymmdd}
+function mlSuggest(kid,win,dial){
+  if(!dial||!dial.stored||!(Number(dial.minutes)>0)) return null;
+  if(dial.mode==="off") return null;
+  if(!win||!win.ready) return null;
+  const today=String(win.today||""), B=Math.floor(Number(dial.minutes)), S=Math.max(1,Math.floor(Number(dial.sittings)||1)), D=win.days.slice(0,win.need||MLS_DAYS);
+  if(dial.snooze&&today<String(dial.snooze)) return null;
+  const ch=_mlsKeyOf(dial.changed); if(ch&&(D.some(d=>d.day<=ch)||today<=scpShift(ch,MLS_QUIET))) return null;
+  const pct=x=>typeof x==="number";
+  const mk=(dir,what,m,s,why)=>{
+    const head=D.length+" days at "+(pct(win.pct)?win.pct+"% first-try":"nothing graded")+", "+win.minPerDay+" of "+B+" min";
+    const ask=what==="sittings"?s+" sitting"+(s===1?"":"s")+" a day instead of "+S+"?":"turn "+(dir==="down"?"down":"up")+" to "+m+" min?";
+    return {kid:kid,dir:dir,what:what,why:why,from:{minutes:B,sittings:S},minutes:m,sittings:s,text:head+(dir==="up"?", every sitting done":"")+" — "+ask};
+  };
+  const over=D.every(d=>d.min>B), low=D.every(d=>pct(d.pct)&&d.pct<MLS_LOW);
+  if(over||low){ const why=over&&low?"over+low":(over?"over":"low");
+    if(B-MLD_STEP>=MLD_MIN) return mk("down","minutes",B-MLD_STEP,S,why);
+    if(S>1) return mk("down","sittings",B,S-1,why);
+    return null; }
+  const under=D.every(d=>d.min<B), high=D.every(d=>pct(d.pct)&&d.pct>MLS_HIGH), done=D.every(d=>d.sittings>=S);
+  if(under&&high&&done&&B+MLD_STEP<=MLD_MAX) return mk("up","minutes",B+MLD_STEP,S,"room");
+  return null;
+}
+// The app's data (read only): the logs + the dial as stored.
+function mlsDialOf(kid){
+  const s=_mldMD()[kid+"_settings"]||{}, L=(s.load&&typeof s.load==="object")?s.load:{}, d=mldDial(kid);
+  return {minutes:d.minutes,sittings:d.sittings,stored:d.stored,mode:L.mode==="off"?"off":"suggest",snooze:_mlsKeyOf(L.snooze),changed:_mlsKeyOf(L.last&&L.last.at)};
+}
+function mlsData(kid){
+  const md=_mldMD(), dl=mlsDialOf(kid);
+  return {history:md.history,studyLog:md.studyLog,gameLog:md.gameLog,sprintLog:md.sprintLog,today:scpToday(),since:dl.changed,budgetMin:dl.stored?dl.minutes:null,sittings:dl.sittings};
+}
+function mlsFor(kid){ const dl=mlsDialOf(kid); if(!dl.stored||dl.mode==="off") return null; return mlSuggest(kid,mlWindow(kid,MLS_DAYS,mlsData(kid)),dl); }
+const _mlsDone={};   // kid → the load/last.at this device's Apply made (its what-changed + Undo row stays until that changes)
+function mlsApply(kid){
+  if(!kid||!(typeof momHere==="function"&&momHere())) return false;
+  const sg=mlsFor(kid); if(!sg) return false;
+  const b=mldSet(kid,sg.minutes,sg.sittings); if(!b) return false;
+  try{ const L=(_mldMD()[kid+"_settings"]||{}).load; if(L&&L.last) _mlsDone[kid]=L.last.at; }catch(e){}
+  try{ if(typeof gwShowToast==="function") gwShowToast("🧠 "+scpKidName(kid)+": "+(sg.what==="sittings"?sg.sittings+" sitting"+(sg.sittings===1?"":"s"):sg.minutes+" min")+" a day"); }catch(e){}
+  try{ if(typeof renderAll==="function") renderAll(); }catch(e){}
+  return b;
+}
+function mlsSnooze(kid){
+  if(!kid||!(typeof momHere==="function"&&momHere())) return false;
+  const upd={["mastery/"+kid+"_settings/load/snooze"]:scpShift(scpToday(),MLS_SNOOZE)}; _mldSave(upd);
+  try{ if(typeof renderAll==="function") renderAll(); }catch(e){}
+  return upd;
+}
+function mlsSetMode(kid,mode){
+  if(!kid||!(typeof momHere==="function"&&momHere())||(mode!=="suggest"&&mode!=="off")) return false;
+  const upd={["mastery/"+kid+"_settings/load/mode"]:mode}; _mldSave(upd);
+  try{ if(typeof renderAll==="function") renderAll(); }catch(e){}
+  return upd;
+}
+// Mom's Day ▸ 🔴 Now: one row per kid with a suggestion → {n, html}; "" when no kid has one (and no Apply to undo)
+function mlsNowHTML(){
+  if(!(typeof momHere==="function"&&momHere())) return {n:0,html:""};
+  const kids=(typeof ROSTER!=="undefined"&&Array.isArray(ROSTER))?ROSTER:[], rows=[], done=[];
+  kids.forEach(kid=>{ let sg=null; try{ sg=mlsFor(kid); }catch(e){ console.error("[HA] load suggest",e); } if(sg) rows.push(sg);
+    const L=((_mldMD()[kid+"_settings"]||{}).load||{}).last; if(_mlsDone[kid]!=null&&L&&L.at===_mlsDone[kid]) done.push({kid:kid,L:L}); });
+  if(!rows.length&&!done.length) return {n:0,html:""};
+  const btn=(bg,fg,bd)=>'padding:4px 10px;border-radius:8px;border:'+bd+';background:'+bg+';color:'+fg+';font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap';
+  const q=k=>scpE(k).replace(/'/g,"\\'");
+  let h='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:10px 0 6px">🧠 Mental load</div>';
+  rows.forEach(sg=>{ h+='<div class="mls-row" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:#eef2ff;border-left:3px solid #6366f1;border-radius:8px;margin-bottom:6px">'
+    +'<span style="flex:1;font-size:13px">🧠 <b>'+scpE(scpKidName(sg.kid))+'</b>: '+scpE(sg.text)+'</span>'
+    +'<button onclick="mlsApply(\''+q(sg.kid)+'\')" style="'+btn('#4f46e5','#fff','none')+'">Apply</button>'
+    +'<button onclick="mlsSnooze(\''+q(sg.kid)+'\')" style="'+btn('#fff','#475569','1.5px solid #cbd5e1')+'">Not now</button></div>'; });
+  done.forEach(x=>{ const mv=Array.isArray(x.L.moved)?x.L.moved:Object.values(x.L.moved||{}), line=mldMovedLine(x.kid,mv);
+    h+='<div class="mls-done" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:#f8fafc;border-left:3px solid #94a3b8;border-radius:8px;margin-bottom:6px">'
+    +'<span style="flex:1;font-size:12px;color:#334155">🧠 <b>'+scpE(scpKidName(x.kid))+'</b>: applied'+(line?' · Moved: '+line:'')+'</span>'
+    +'<button onclick="mldUndo(\''+q(x.kid)+'\')" style="'+btn('#fff','#475569','1.5px solid #cbd5e1')+'">↩ Undo</button></div>'; });
+  return {n:rows.length,html:h};
+}
+// the Mode line on the dial's card (only once the dial is stored — before that there is nothing to suggest)
+function mlsModeHtml(kid){
+  const m=mlsDialOf(kid).mode, K=scpE(kid).replace(/'/g,"\\'");
+  const c=on=>'padding:2px 10px;border-radius:999px;border:1.5px solid '+(on?'#4f46e5':'var(--border)')+';background:'+(on?'#4f46e5':'#fff')+';color:'+(on?'#fff':'#475569')+';font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  return '<div class="mls-mode" style="font-size:11.5px;color:#334155;margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span style="font-weight:800">🧠 Suggestions:</span>'+
+    '<button onclick="mlsSetMode(\''+K+'\',\'suggest\')" style="'+c(m==="suggest")+'">Suggest</button><button onclick="mlsSetMode(\''+K+'\',\'off\')" style="'+c(m==="off")+'">Off</button>'+
+    '<span style="color:var(--muted)">'+(m==="off"?'no suggestions for this kid':'after 3 days, Mom’s Day asks — nothing changes until you tap Apply')+'</span></div>';
+}
+// MLSUGGEST_END
 function renderCurriculumView(el,headerHtml){
   if(!momHere()){
     el.innerHTML=(headerHtml||'')+'<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center">'+
