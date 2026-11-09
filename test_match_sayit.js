@@ -17,7 +17,7 @@ function fn(n){
   return src.slice(i,src.indexOf("\n}",i)+2);
 }
 const NAMES=["_matchPlain","_matchAsk","_matchLures","_matchItem","_matchGateBuild","_matchGateOpen","mastMatchSaid","mastMatchPick",
-  "_matchGateClose","_matchBoardDone","_matchClearNext","_matchTone","matchDing","matchBonk","mastMatchThen","mastMatchSetThen",
+  "_matchGateClose","_matchBoardDone","_matchClearNext","_matchTone","matchDing","matchBonk","_matchThenDefault","mastMatchThen","mastMatchSetThen","_matchBestKey",
   "mastMatchTap","mastMatchFinish","_matchElapsed","mastMatchPause","_matchEligible","mastMatchStart","_matchSpeakTile","_matchGateHtml"];
 
 // A fresh sandbox per scenario: deck of × facts for a 4th grader (pick) or a picture deck for Pre-K (say).
@@ -52,6 +52,7 @@ function sandbox(o){
     esc:s=>String(s||""), document:{getElementById:()=>({})},
     _showCelebration:(k,t,opts)=>L.celebrated.push([k,t,opts]),
     alert:m=>{ L.alert=m; },
+    momHere:()=>o.mom!==false,   // MEMLOGFIX: the Then setter is Mom only
   };
   vm.createContext(ctx);
   // _matchPairHtml as shipped: picture first, else the definition/answer text.
@@ -92,12 +93,15 @@ console.log("👶 the age default and the saved choice");
   ok("4th grade → Pick it",sandbox({grade:4}).run("mastMatchThen()")==="pick");
   ok("no grade set, Pre-K (not school-age) → Say it",sandbox({little:true}).run("mastMatchThen()")==="say");
   ok("no grade set, school-age → Pick it",sandbox({}).run("mastMatchThen()")==="pick");
-  ok("Mom's saved choice beats the age default",sandbox({grade:1,settings:{match_then:"pick"}}).run("mastMatchThen()")==="pick");
+  ok("Mom's saved choice beats the age default (an old match_then keeps working)",sandbox({grade:1,settings:{match_then:"pick"}}).run("mastMatchThen()")==="pick");
   const S=sandbox({grade:1});
   S.run('matchState={deck:"x"}; mastMatchSetThen("none")');
-  ok("choosing writes ONLY mastery/<kid>_settings/match_then and resets the board",
-    S.L.dbWrites.length===1&&S.L.dbWrites[0][0]==="mastery/ellis_settings/match_then"&&S.L.dbWrites[0][2]==="none"&&S.ctx.matchState===null,S.L.dbWrites);
-  ok("a bad value is ignored",(S.run('mastMatchSetThen("loud"); masteryData.ellis_settings.match_then'))==="none");
+  ok("Mom choosing writes ONLY mastery/<kid>_settings/gameRules/memory/then and resets the board (MEMLOGFIX)",
+    S.L.dbWrites.length===1&&S.L.dbWrites[0][0]==="mastery/ellis_settings/gameRules/memory/then"&&S.L.dbWrites[0][2]==="none"&&S.ctx.matchState===null,S.L.dbWrites);
+  ok("a bad value is ignored",(S.run('mastMatchSetThen("loud"); masteryData.ellis_settings.gameRules.memory.then'))==="none");
+  const K=sandbox({grade:1,mom:false});
+  K.run('matchState={deck:"x"}');
+  ok("not Mom → nothing changes, nothing written (MEMLOGFIX)",K.run('mastMatchSetThen("none")')===false&&K.L.dbWrites.length===0&&K.run("mastMatchThen()")==="say"&&K.ctx.matchState!==null);
 }
 
 console.log("🎯 Pick it: the first flip asks, the board waits, a miss comes back");
@@ -217,8 +221,8 @@ console.log("⏭ untouched games");
 }
 
 console.log("wiring");
-ok("the Then row is drawn only inside the Memory-flip branch",/if\(matchStyle==="memory"\)\{\n\s*\/\/ MATCH_THEN[^\n]*\n\s*const th=mastMatchThen\(\);/.test(src));
-ok("three Then choices: Say it first · Pick it first · Just find pairs",/mastMatchSetThen\(\\'say\\'\)/.test(src)&&/mastMatchSetThen\(\\'pick\\'\)/.test(src)&&/mastMatchSetThen\(\\'none\\'\)/.test(src));
+ok("no kid-facing Then row: nothing in the page calls mastMatchSetThen (MEMLOGFIX — it is Mom's 📜 rule now)",(src.match(/mastMatchSetThen\(/g)||[]).length===1);
+ok("three Then choices in the rule: say · pick · none",/key:"then"[\s\S]{0,300}\["say","Says it first"[\s\S]{0,300}\["pick","Picks it first"[\s\S]{0,300}\["none","Just finds pairs"/.test(src));
 ok("the gate panel renders under the board while a round runs",/if\(st\.gate&&!st\.endTs\) h\+=_matchGateHtml\(st,color\);/.test(src));
 ok("the clear-up panel replaces the empty board",/else if\(st\.phase==="clearup"&&st\.gate\)\{\n\s*h\+=_matchGateHtml\(st,color\);/.test(src));
 ok("Save to Scores records what was asked and missed",/then:st\.then\|\|"none",first:st\.firstTry\|\|0,of:st\.ofN\|\|0,missed:\(st\.missed\|\|\[\]\)\.slice\(\)/.test(src));
