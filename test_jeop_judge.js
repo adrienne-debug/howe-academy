@@ -57,6 +57,9 @@ function world(items,o){
 }
 const nameOf=(c,pid)=>c.masteryData.k.find(x=>x.id===pid).prompt;
 
+// ⏱ CARDSECS (2026-11-08): the per-card timing fields (items' ms, turns' shownAt / answeredAt / ms) are new and clock-bound — the snapshot
+// is main's with exactly those left out (test_card_seconds.js covers them).
+const NO_CARDSECS=(k,v)=>(k==="ms"||k==="shownAt"||k==="answeredAt")?undefined:v;
 // ── OFF = main byte for byte: a scripted say-it afternoon (every screen, write, word said, sound), hashed ──
 function offSession(S){
   const log=[], snap=(w,tag)=>log.push(tag+"\n"+w.c.buildJeopHtml("#123456"));
@@ -69,9 +72,9 @@ function offSession(S){
       snap(w,"ans"); }
     w.flush(); snap(w,"beat");
   }
-  log.push("writes "+JSON.stringify(w.writes.map(x=>[x[0],x[1],x[0]==="push"?Object.assign({},x[2],{at:0,secs:0}):x[2]])));
+  log.push("writes "+JSON.stringify(w.writes.map(x=>[x[0],x[1],x[0]==="push"?Object.assign({},x[2],{at:0,secs:0}):x[2]]),NO_CARDSECS));
   log.push("said "+JSON.stringify(w.said)); log.push("dings "+JSON.stringify(w.dings)); log.push("state "+JSON.stringify(Object.keys(st).sort()));
-  log.push("turns "+JSON.stringify(st.turns));
+  log.push("turns "+JSON.stringify(st.turns,NO_CARDSECS));
   return crypto.createHash("sha256").update(log.join("\n──\n")).digest("hex");
 }
 if(SNAP_ONLY){ console.log(offSession(src)); process.exit(0); }

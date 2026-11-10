@@ -28651,6 +28651,19 @@ function scpMinutes(kid,history,studyLog,gameLog,w,schoolDays,gw){
   const total=drill+study+games*gw, days=Math.max(1,schoolDays|0);
   return {drill:Math.round(drill/60),study:Math.round(study/60),games:Math.round(games/60),total:Math.round(total/60),days:days,perDay:Math.round(total/60/days),any:(drill+study+games)>0};
 }
+// ⏱ CARDSECS — PURE: study seconds a card inside a window → {s, timed, n} or null when no sitting: the median of the cards' own times
+// (studyLog items' ms) when any carry one, else the sittings' time ÷ cards, as SREVIEW always gave it (a sitting over the cap is left out).
+function scpCardSecs(kid,studyLog,w){
+  const cap=(typeof SC_LEFT_OPEN_SECS==="number")?SC_LEFT_OPEN_SECS:7200, sl=(studyLog||{})[kid]||{}, items=[];
+  let secs=0, cards=0;
+  Object.keys(sl).forEach(sid=>{ const days=sl[sid]; if(!days||typeof days!=="object") return;
+    Object.keys(days).forEach(k=>{ if(!scpIn(k,w)) return; const e=days[k]; if(!e||typeof e!=="object") return;
+      scpV(e.items).forEach(it=>items.push(it));
+      const sits=scpV(e.sits); (sits.length?sits:[{secs:e.secs,total:e.total}]).forEach(x=>{ const t=+(x&&x.total)||0, v=x&&x.secs; if(t>0&&typeof v==="number"&&v>0&&v<=cap){ secs+=v; cards+=t; } }); }); });
+  const m=(typeof cardSecsMedian==="function")?cardSecsMedian(items):null;
+  if(m!=null) return {s:Math.round(m/100)/10,timed:true,n:items.filter(it=>typeof gameCardMs!=="function"||gameCardMs(it)!=null).length};
+  return cards?{s:Math.round(secs*10/cards)/10,timed:false,n:cards}:null;
+}
 // PURE: minutes a day against the budget → {ratio (%), word, budget} or null without a budget
 function scpLoad(perDay,budget){
   budget=Number(budget); if(!(budget>0)||typeof perDay!=="number") return null;
@@ -28669,7 +28682,7 @@ function scpKidNumbers(kid,D){
   const right={w7:R(w7),p7:R(p7),w28:R(w28),p28:R(p28)}, min={w7:M(w7),p7:M(p7),w28:M(w28),p28:M(p28)};
   const ladder=scpLadder(D.cards), week=scpWeek(D.tasks,D.checked,kid), last=D.prev?scpWeek(D.prev.tasks,D.prev.checked,kid):null;
   const load=scpLoad(min.w7.any?min.w7.perDay:(typeof D.budgetMin==="number"||D.budgetMin?0:null),D.budgetMin);
-  return {kid:kid,today:today,right:right,ladder:ladder,week:week,last:last,min:min,load:load,
+  return {kid:kid,today:today,right:right,ladder:ladder,week:week,last:last,min:min,load:load,cardSecs:scpCardSecs(kid,D.studyLog,w7),   // ⏱ CARDSECS
     headline:scpHeadline(right.w7.pct,ladder.score,week.pct),formula:scpFormula(right.w7.pct,ladder.score,week.pct),
     any:!!(right.w28.graded||min.w28.any||ladder.n||week.planned)};
 }
@@ -28709,6 +28722,7 @@ function scpCardHtml(r){
   h+='</div>';
   if(r.load) h+='<div style="margin-top:10px;font-size:13px"><span style="display:inline-block;padding:3px 10px;border-radius:999px;font-weight:800;color:#fff;background:'+scpLoadCol(r.load.word)+'">⚖️ '+r.load.word+'</span> <span style="color:#334155">'+(m7.any?m7.perDay:0)+' min a school day of '+r.load.budget+' ('+r.load.ratio+'%)'+(m7.any?' · drill '+m7.drill+' · study '+m7.study+' · games '+m7.games:'')+'</span></div>';
   else h+='<div style="margin-top:10px;font-size:12.5px;color:var(--muted)">⚖️ Load: no budget set yet'+(m7.any?' · drill '+m7.drill+' · study '+m7.study+' · games '+m7.games+' min this week':'')+'</div>';
+  if(r.cardSecs) h+='<div class="scp-cardsecs" style="margin-top:6px;font-size:12.5px;color:#334155">\u23F1 Study, a card: <b>'+scpE(r.cardSecs.s)+' s</b> <span style="color:var(--muted)">'+(r.cardSecs.timed?'the middle time from a card showing to the first answer · '+r.cardSecs.n+' card'+(r.cardSecs.n===1?'':'s')+' timed':'sitting time ÷ cards — no card timed yet')+' · last 7 days</span></div>';   // ⏱ CARDSECS
   if(typeof mldDialHtml==="function"){ try{ h+=mldDialHtml(r.kid); }catch(e){} }   // 🎚 MLDIAL: the dial, under the meter
   if(typeof tchScoresHtml==="function") h+=tchScoresHtml(r.kid);   // 🏴‍☠️ TCHEST: "<deck> treasure reached <date>", read-only
   h+='<details style="margin-top:8px;font-size:11.5px;color:#64748b"><summary style="cursor:pointer;font-weight:700">How these are counted</summary><div style="padding:6px 0 2px;line-height:1.5">'+
@@ -28803,7 +28817,7 @@ function scgLearned(kid,cards,history,studyLog,gameLog){
 function scgStats(kid,D){
   D=D||{}; const today=D.today||scpToday(), w7=scpWin(today,7), cap=(typeof SC_LEFT_OPEN_SECS==="number")?SC_LEFT_OPEN_SECS:7200;
   const set=(D.settings&&typeof D.settings==="object")?D.settings:{}, gl=(D.gameLog||{})[kid]||{}, mb=(set.match_best&&typeof set.match_best==="object")?set.match_best:{};
-  const likes=(set.gameLikes&&typeof set.gameLikes==="object")?set.gameLikes:{}, deckOf={}, G={}, DK={}, first={}, rounds=[];
+  const likes=(set.gameLikes&&typeof set.gameLikes==="object")?set.gameLikes:{}, deckOf={}, G={}, DK={}, first={}, rounds=[], CS={};   // ⏱ CARDSECS: CS = game → its judged items
   scpV(D.cards).forEach(c=>{ if(c&&c.id!=null&&c.subject) deckOf[String(c.id)]=String(c.subject); });
   const gOf=k=>G[k]||(G[k]={key:k,rounds:0,w7:0,n:0,ok:0,secs:0,last:"",best:{},up:0,down:0});
   Object.keys(gl).forEach(day=>{ if(!/^\d{8}$/.test(day)) return; scpV(gl[day]).forEach(e=>{ if(!e||typeof e!=="object") return;
@@ -28821,7 +28835,7 @@ function scgStats(kid,D){
     if(r.log&&scpUnscored(e)){ s.cards=(s.cards||0)+scpV(e.items).filter(it=>it&&!it.back).length; return; }   // 🎓 TEACHSCORE: cards taught — no Right %, no deck
     const add=(deck,n,ok)=>{ const d=DK[deck]||(DK[deck]={deck:deck,rounds:0,games:{}}), x=d.games[r.g]||(d.games[r.g]={key:r.g,rounds:0,n:0,ok:0,best:{}});
       if(!seen[deck]){ seen[deck]=1; d.rounds++; x.rounds++; } x.n+=n; x.ok+=ok; s.n+=n; s.ok+=ok; tot.n+=n; tot.ok+=ok; };
-    if(r.log){ let any=false; scpV(e.items).forEach(it=>{ if(!it||it.back) return; any=true; add(deckOf[String(it.id)]||String(e.deck||"—"),1,it.ok?1:0); });
+    if(r.log){ let any=false; scpV(e.items).forEach(it=>{ if(!it||it.back) return; any=true; add(deckOf[String(it.id)]||String(e.deck||"—"),1,it.ok?1:0); const a=CS[r.g]||(CS[r.g]=[]); a[a.length]=it; });   // ⏱ CARDSECS: the judged cards, for the median
       if(!any) add(String(e.deck||"—"),0,0); }
     else { const of=Math.max(0,+e.of||0), f=Math.min(of,Math.max(0,+e.first||0)); add(String(e.deck||"—"),of,f); }   // a saved round: its first-try count
   });
@@ -28832,7 +28846,7 @@ function scgStats(kid,D){
   let nLikes=0;
   Object.keys(likes).forEach(g=>{ scpV(likes[g]).forEach(a=>{ if(!a) return; const v=Number(a.v); if(!(v>0||v<0)) return; nLikes++; if(v>0) gOf(g).up++; else gOf(g).down++; }); });
   const pct=(ok,n)=>n?Math.round(ok/n*100):null;
-  const games=Object.keys(G).map(k=>{ const s=G[k]; s.pct=pct(s.ok,s.n); s.min=Math.round(s.secs/60); if(s.pre){ s.pre.pct=pct(s.pre.ok,s.pre.n); s.pre.min=Math.round(s.pre.secs/60); } return s; })
+  const games=Object.keys(G).map(k=>{ const s=G[k]; s.pct=pct(s.ok,s.n); s.min=Math.round(s.secs/60); s.ms=(typeof cardSecsMedian==="function")?cardSecsMedian(CS[k]||[]):null; /* ⏱ CARDSECS: median ms, null = none timed */ if(s.pre){ s.pre.pct=pct(s.pre.ok,s.pre.n); s.pre.min=Math.round(s.pre.secs/60); } return s; })
     .sort((a,b)=>(b.rounds-a.rounds)||(a.key<b.key?-1:a.key>b.key?1:0));
   const decks=Object.keys(DK).map(k=>{ const d=DK[k]; d.list=Object.keys(d.games).map(g=>{ const x=d.games[g]; x.pct=pct(x.ok,x.n); return x; }).sort((a,b)=>b.rounds-a.rounds||(a.key<b.key?-1:1)); return d; })
     .sort((a,b)=>(b.rounds-a.rounds)||(a.deck<b.deck?-1:a.deck>b.deck?1:0));
@@ -28862,10 +28876,10 @@ function scgHtml(s,open,cards){
   const names=s.learned.slice(0,6).map(id=>{ const c=byId[id]||{}; return scpE(c.answer||c.prompt||id); });
   h+='<div style="font-size:12px;color:#334155;margin-top:6px">\u{1F331} Cards learned through games: <b>'+s.learned.length+'</b>'+(names.length?' <span style="color:#64748b">· '+names.join(', ')+(s.learned.length>names.length?' …':'')+'</span>':'')+'</div>';
   if(s.taught) h+='<div class="scg-taught" style="font-size:12px;color:#334155;margin-top:4px">\u{1F393} taught: <b>'+s.taught.cards+'</b> card'+(s.taught.cards===1?'':'s')+' · '+s.taught.rounds+' round'+(s.taught.rounds===1?'':'s')+'</div>';   // 🎓 TEACHSCORE: no Right %
-  h+='<div style="overflow-x:auto;margin-top:8px"><table style="border-collapse:collapse;font-size:12px;width:100%"><tr><th '+th+'>Game</th><th '+th+'>Rounds 7 d / all</th><th '+th+'>Right</th><th '+th+'>Best</th><th '+th+'>\u{1F44D} \u{1F44E}</th><th '+th+'>Min</th></tr>';
+  h+='<div style="overflow-x:auto;margin-top:8px"><table style="border-collapse:collapse;font-size:12px;width:100%"><tr><th '+th+'>Game</th><th '+th+'>Rounds 7 d / all</th><th '+th+'>Right</th><th '+th+'>Best</th><th '+th+'>\u{1F44D} \u{1F44E}</th><th '+th+'>Min</th><th '+th+'>\u23F1 per card</th></tr>';
   s.games.forEach(g=>{ const p=g.pre, only=p&&!g.rounds&&!Object.keys(g.best).length&&!g.up&&!g.down;
-    if(!only) h+='<tr><td '+td+'>'+scpE(scgLabel(g.key))+'</td><td '+td+'>'+g.w7+' / '+g.rounds+'</td><td '+td+'><span style="font-weight:800;color:'+scpPctCol(g.pct)+'">'+scpN(g.pct,'%')+'</span>'+(g.n?' <span style="color:#94a3b8">of '+g.n+'</span>':'')+'</td><td '+td+'>'+scgBestTxt(g.best,true)+'</td><td '+td+'>'+((g.up||g.down)?g.up+' · '+g.down:'—')+'</td><td '+td+'>'+(g.rounds?g.min:'—')+'</td></tr>';
-    if(p) h+='<tr class="scg-pre" style="color:#94a3b8"><td '+td+'>'+scpE(scgLabel(g.key))+' <i style="font-size:11px">· before judging</i></td><td '+td+'>'+p.w7+' / '+p.rounds+'</td><td '+td+'>'+scpN(p.pct,'%')+' <span style="font-size:11px">not counted</span></td><td '+td+'>—</td><td '+td+'>—</td><td '+td+'>'+p.min+'</td></tr>'; });   // ⚖️ GAMEJUDGE: grey, never in a Right %
+    if(!only) h+='<tr><td '+td+'>'+scpE(scgLabel(g.key))+'</td><td '+td+'>'+g.w7+' / '+g.rounds+'</td><td '+td+'><span style="font-weight:800;color:'+scpPctCol(g.pct)+'">'+scpN(g.pct,'%')+'</span>'+(g.n?' <span style="color:#94a3b8">of '+g.n+'</span>':'')+'</td><td '+td+'>'+scgBestTxt(g.best,true)+'</td><td '+td+'>'+((g.up||g.down)?g.up+' · '+g.down:'—')+'</td><td '+td+'>'+(g.rounds?g.min:'—')+'</td><td '+td+'>'+((typeof cardSecsTxt==="function")?cardSecsTxt(g.ms):'—')+'</td></tr>';
+    if(p) h+='<tr class="scg-pre" style="color:#94a3b8"><td '+td+'>'+scpE(scgLabel(g.key))+' <i style="font-size:11px">· before judging</i></td><td '+td+'>'+p.w7+' / '+p.rounds+'</td><td '+td+'>'+scpN(p.pct,'%')+' <span style="font-size:11px">not counted</span></td><td '+td+'>—</td><td '+td+'>—</td><td '+td+'>'+p.min+'</td><td '+td+'>—</td></tr>'; });   // ⚖️ GAMEJUDGE: grey, never in a Right %
   h+='</table></div>';
   if(s.decks.length){
     h+='<div style="font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#64748b;margin-top:10px">By deck</div>';
@@ -28875,6 +28889,7 @@ function scgHtml(s,open,cards){
   h+='<details style="margin-top:8px;font-size:11.5px;color:#64748b"><summary style="cursor:pointer;font-weight:700">How these are counted</summary><div style="padding:6px 0 2px;line-height:1.5">'+
     'Right = right on the first try ÷ cards answered; a card that comes back at the end of a round is not a second try. (Overall counts games at half weight; this is the raw %.)<br>'+
     'Best = the game’s own best: seconds for Match, Memory flip and Beat my time (lower is better), dollars for Jeopardy’s money game, a count for the rest.<br>'+
+    '⏱ per card = the middle (median) time from a card showing to the first answer on it, over the cards counted in Right. — = no card timed yet (rounds from before the timer, and games with every card out at once).<br>'+
     'A card is counted in its own deck, so a mixed round splits into the decks it came from.<br>'+
     'Learned through games = a card the practice list marked learned, or one that was missed, then right on the first try in a game, then right in the next drill or study.<br>'+
     'Before judging = Go Fish, Connect Four, Battleship, Kaboom, Sure? then flip and Jeopardy rounds from before “I said it” was checked: a tap counted as right, so they are shown grey and left out of every Right % and of learned through games.<br>'+
@@ -40162,6 +40177,7 @@ function utEditorHTML(u,d){
   h+=lab("\u{1F3A7} Read strand")+'<div style="display:flex;gap:6px;flex-wrap:wrap"><select id="ut-e-rmode" style="'+inp+';flex:0 0 130px;width:auto"><option value="">(none)</option>'+UT_READ_MODES.map(m=>'<option value="'+m+'"'+((d.read||{}).mode===m?' selected':'')+'>'+({listen:"\u{1F3A7} Listen",mom:"\u{1F4D6} Mom reads",recite:"\u{1F5E3} Recite"}[m])+'</option>').join("")+'</select><input id="ut-e-rwhat" type="text" value="'+utEsc((d.read||{}).what||"")+'" placeholder="What (chapter, poem\u2026)" style="'+inp+';flex:1 1 160px;width:auto"><input id="ut-e-rurl" type="url" value="'+utEsc((d.read||{}).url||"")+'" placeholder="https:// link (optional)" style="'+inp+';flex:1 1 160px;width:auto"></div>';
   h+=((typeof crDayEditorHTML==="function")?crDayEditorHTML(u,d):"");   // CRAFT (B3): ✂️ the craft on this day
   h+=((typeof uaUploadHTML==="function")?uaUploadHTML(u,d):"");   // UNITAUDIO (A1): ⬆ Upload recording, under the read strand
+  h+=((typeof utaaEditorHTML==="function")?utaaEditorHTML(u,d):"");   // UTADDACT: 🎨 Activity on this day (add after Save — Sara 2026-11-09)
   h+=lab("\u{1F4DD} Note under the card")+ta("ut-e-note",d.note||"","The honest note \u2014 what to say, what to skip",2);
   h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px"><button onclick="utEditSave('+a+')" style="padding:7px 16px;border-radius:10px;border:none;background:#c2410c;color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save this day</button>';
   h+='<button onclick="utWrite('+a+',\'off\','+(d.off?'false':'true')+')" style="padding:7px 12px;border-radius:10px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(d.off?'\u21A9 Put this day back':'\u2298 Mark this day off')+'</button>';
@@ -40940,6 +40956,80 @@ function crCardHTML(g){
   return (typeof dcSection==="function")?dcSection("\u2702\uFE0F Craft",h):'<section>'+h+'</section>';
 }
 // CRAFT_END
+// UTADDACT_START — 🎨 an activity on a unit day AFTER the unit is saved (Sara, a beta mom, 2026-11-09: "I found this really cute
+//   gratitude scavenger hunt. I can not figure out how to add things or edit the unit. I did click on the unit and the day but then
+//   I could not see where I could add an activity. So is that a thing we could do??"). On main the ✚ Builder's "🎨 Activities &
+//   field trips" box exists only before Save; afterwards nothing on the unit page adds an activity (the day editor skipped nb).
+//   · THE DAYS TABLE (UNITTRACK's day editor, under the craft): a 🎨 Activity on this day box. A day without one takes ONE line in
+//     the Builder's own shape — "title | points | a line about it" — and + Add. A day that already names one (nb.activity) shows that
+//     activity's title, points and line with ✎ Save; + Add never re-points a day that has one.
+//   · THE RECORD is the Builder's (ubRecord), so the day card (dcActivity) and the 🎨 Activities section read it unchanged:
+//     unitStudies/<id>/activities/<next free index> = {key, title, emoji:"🎨", kind:"sheet", points (5 when blank), day:n, desc?}
+//     and unitStudies/<id>/track/days/<i>/nb = {activity:key} — ONE multi-path update, both paths targeted (never a whole-node set
+//     of activities or track). The key is slugged like ubSlug, suffixed _2, _3… when the unit already has it.
+//   · ✎ Save writes only unitStudies/<id>/activities/<j>/title | points | desc (the changed ones, one update); nb stays.
+//   · Mom-only (momHere), dry-run inert, plain kid-safe text; no interval, no listener, no kid's or family's name in code.
+function utaaStr(v,n){ return String(v==null?"":v).trim().slice(0,n||120); }
+function utaaSlug(s){ return String(s||"").toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,40)||"activity"; }   // = ubSlug's rule
+function utaaLive(){ return !!(typeof db!=="undefined"&&db)&&!((typeof _dryRun==="function")&&_dryRun()); }
+function utaaKey(uid,dayId){ return String(uid).replace(/[^a-zA-Z0-9_-]/g,"_")+"-"+String(dayId).replace(/[^a-zA-Z0-9_-]/g,"_"); }
+// the unit's activities as [{k:<storage key>, a:<record>}] — an array or (as Firebase hands a sparse list back) an object
+function utaaActs(u){ const raw=u&&u.activities; if(!raw||typeof raw!=="object") return []; const keys=Array.isArray(raw)?raw.map((x,i)=>String(i)):Object.keys(raw); return keys.filter(k=>raw[k]&&typeof raw[k]==="object").map(k=>({k:k,a:raw[k]})); }
+function utaaNextIndex(u){ const raw=u&&u.activities; if(!raw||typeof raw!=="object") return 0; if(Array.isArray(raw)) return raw.length; let m=-1; Object.keys(raw).forEach(k=>{ const n=parseInt(k,10); if(/^\d+$/.test(k)&&n>m) m=n; }); return m+1; }
+function utaaFreeKey(u,title){ const taken={}; utaaActs(u).forEach(x=>{ if(x.a.key) taken[x.a.key]=1; }); const base=utaaSlug(title); let key=base, n=2; while(taken[key]) key=base+"_"+(n++); return key; }
+function utaaOfDay(u,d){ const key=d&&d.nb&&d.nb.activity; if(!key) return null; return utaaActs(u).find(x=>x.a.key===key)||null; }
+// "title | points | a line about it" → {title, points, desc?}; points blank or not a number → 5 (the Builder's default)
+function utaaParse(line){ const bits=String(line||"").split("|").map(s=>s.trim()); const title=utaaStr(bits[0],120); if(!title) return null; const p=Math.round(Number(bits[1])); const o={title:title,points:(isFinite(p)&&p>0)?p:5}; const desc=utaaStr(bits[2],240); if(desc) o.desc=desc; return o; }
+function utaaVal(id){ const el=(typeof document!=="undefined"&&document.getElementById)?document.getElementById(id):null; return el?String(el.value||""):""; }
+function utaaRe(){ if(typeof renderAll==="function") renderAll(); }
+// + Add: the record onto activities at its next free index AND the day's nb, one update. A day that already names an activity is left alone.
+function utaaAdd(uid,dayId){
+  if(!utMom()||!uid||dayId==null) return false;
+  const u=utUnits()[uid]; const t=utTrack(u); const d=utDay(u,dayId); if(!t||!d) return false;
+  if(d.nb&&d.nb.activity) return false;   // ✎ is the door for a day that has one — never re-point it from + Add
+  const k=utDayKey(u,dayId); if(k==null||!t.days[k]) return false;
+  const p=utaaParse(utaaVal("utaa-"+utaaKey(uid,dayId)+"-line")); if(!p) return false;
+  const key=utaaFreeKey(u,p.title), i=utaaNextIndex(u), n=utInt(d.n)||utInt(d.wk)||(parseInt(k,10)+1);
+  const act={key:key,title:p.title,emoji:"\u{1F3A8}",kind:"sheet",points:p.points,day:n}; if(p.desc) act.desc=p.desc;
+  if(!u.activities||typeof u.activities!=="object") u.activities=[]; if(Array.isArray(u.activities)) u.activities[i]=act; else u.activities[String(i)]=act;
+  t.days[k].nb={activity:key}; utTouched(u);
+  if(utaaLive()){ const upd={}; upd["unitStudies/"+uid+"/activities/"+i]=act; upd["unitStudies/"+uid+"/track/days/"+k+"/nb"]={activity:key}; db.ref().update(upd); }
+  utaaRe(); return true;
+}
+// ✎ Save: the activity this day names — title, points, a line about it — only what changed, one update, each field its own path.
+function utaaEdit(uid,dayId){
+  if(!utMom()||!uid||dayId==null) return false;
+  const u=utUnits()[uid]; const d=utDay(u,dayId); const x=utaaOfDay(u,d); if(!x) return false;
+  const kk=utaaKey(uid,dayId), title=utaaStr(utaaVal("utaa-"+kk+"-title"),120), pn=Math.round(Number(utaaVal("utaa-"+kk+"-points"))), desc=utaaStr(utaaVal("utaa-"+kk+"-desc"),240);
+  if(!title) return false; const points=(isFinite(pn)&&pn>=0)?pn:(x.a.points||5);
+  const upd={}, base="unitStudies/"+uid+"/activities/"+x.k+"/";
+  if(title!==x.a.title){ x.a.title=title; upd[base+"title"]=title; }
+  if(points!==x.a.points){ x.a.points=points; upd[base+"points"]=points; }
+  if(desc!==(x.a.desc||"")){ if(desc) x.a.desc=desc; else delete x.a.desc; upd[base+"desc"]=desc||null; }
+  if(Object.keys(upd).length&&utaaLive()) db.ref().update(upd);
+  utaaRe(); return Object.keys(upd).length>0;
+}
+// ── the editor (UNITTRACK's day editor hook) ──
+function utaaEditorHTML(u,d){
+  if(!utMom()||!u||!d) return "";
+  const kk=utaaKey(u.id,d.id), a="'"+utJ(u.id)+"','"+utJ(d.id)+"'", inp='width:100%;box-sizing:border-box;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif;background:#fff';
+  const btn='padding:6px 14px;border-radius:10px;border:none;background:#b45309;color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  let h='<div data-utaa-editor="'+utEsc(kk)+'" style="margin-top:8px;padding:8px 10px;border:1px dashed #fcd34d;border-radius:10px;background:#fff">';
+  h+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:#b45309;margin-bottom:4px">\u{1F3A8} Activity on this day</div>';
+  const x=utaaOfDay(u,d);
+  if(x){
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap"><input id="utaa-'+kk+'-title" type="text" value="'+utEsc(x.a.title||"")+'" placeholder="What they do" style="'+inp+';flex:2 1 180px;width:auto"><input id="utaa-'+kk+'-points" type="number" min="0" value="'+utEsc(x.a.points==null?"":x.a.points)+'" placeholder="Points" style="'+inp+';flex:0 0 80px;width:auto"></div>';
+    h+='<input id="utaa-'+kk+'-desc" type="text" value="'+utEsc(x.a.desc||"")+'" placeholder="A line about it (optional)" style="'+inp+';margin-top:6px">';
+    h+='<div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><button onclick="utaaEdit('+a+')" style="'+btn+'">✎ Save the activity</button><span style="font-size:10.5px;color:var(--muted)">It shows on this day’s card and in \u{1F3A8} Activities. Points are what finishing it earns.</span></div>';
+  } else if(d.nb&&d.nb.activity){
+    h+='<div style="font-size:11px;color:var(--muted)">This day names an activity that isn’t on the unit any more ('+utEsc(d.nb.activity)+').</div>';
+  } else {
+    h+='<input id="utaa-'+kk+'-line" type="text" placeholder="title | points | a line about it" style="'+inp+'">';
+    h+='<div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><button onclick="utaaAdd('+a+')" style="'+btn+'">+ Add</button><span style="font-size:10.5px;color:var(--muted)">The Builder’s shape: Gratitude scavenger hunt | 5 | Find one thing you’re thankful for in each room. Points default to 5.</span></div>';
+  }
+  return h+'</div>';
+}
+// UTADDACT_END
 // UNITSTAB_START — 📚 All units · 🧒 one tab per kid · 🏡 Family ("One shape" §4 the Units page; BRIEF_units_build_2026-10-27.md
 //   T3; her go 2026-10-27). A VIEW over data that already exists plus the unit tracks: the only writes are the buttons that write
 //   today (enroll, the notebook switch, a stage move-up, the staged + Kid form) and the two buttons other steps add (✚ Build,
@@ -61693,6 +61783,7 @@ function mastMatchSaidPick(ci){
   const turn={pid:g.pid,done:true,first:!!c.ok,wrong:{}}; if(!c.ok) turn.wrong[c.pid]=1;
   (st.sayTurns||(st.sayTurns=[])).push(turn);
   st.res[g.pid]=c.ok?"c":"m";
+  if(g.openedAt) (st.resMs||(st.resMs={}))[g.pid]=Date.now()-g.openedAt;   // ⏱ CARDSECS: the card's gate open → the pick
   if(c.ok) matchDing();
   else { matchBonk(); const r=g.choices.find(x=>x.ok); if(r) try{ mastSpeak(r.text); }catch(e){} }
   _mastRe();
@@ -61723,6 +61814,7 @@ function mastMatchPick(ci){
     setTimeout(()=>{ if(matchState===st&&st.gate===g) _matchClearNext(st); },c.ok?500:1400);   // GAMEKID: never acts on a parked / settled gate
     return;
   }
+  if(g.openedAt) (st.resMs||(st.resMs={}))[g.pid]=Date.now()-g.openedAt;   // ⏱ CARDSECS: the card's gate open → the pick
   if(c.ok){ st.res[g.pid]="c"; matchDing(); }
   else { st.res[g.pid]="m"; st.missed.push(g.pid); matchBonk(); }
   _mastRe();
@@ -62212,6 +62304,7 @@ function whichTap(ti){
   const st=whichState; if(!st||st.phase!=="play"||st.lock) return;
   const t=st.turns[st.i]; if(!t) return;
   const pid=t.tiles[ti]; if(pid==null||t.wrong[pid]) return;
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   if(pid!==t.pid){
     t.wrong[pid]=1;
     try{ matchBonk(); }catch(e){}
@@ -62300,6 +62393,7 @@ function buildWhichHtml(color){
   const best=(s.match_best||{})[whichBestKey(st.deck)];
   if(st.phase==="play"){
     const t=st.turns[st.i];
+    if(typeof gameCardShown==="function") gameCardShown(t);   // ⏱ CARDSECS: the card is on screen — its clock starts at the first paint
     // Progress dots: one per turn; a card coming back adds its own dot at the end.
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px">';
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
@@ -62369,7 +62463,7 @@ function gameLogEntry(st,now){
   if(!st||st.phase!=="done"||!Array.isArray(st.turns)) return null;
   const items=[];
   st.turns.forEach(t=>{ if(!t||!t.done||t.pid==null||t.nolog) return;   // ⚖️ GAMEJUDGE: nolog = the turn judged nothing (Go Fish's honest "Go fish!", Battleship's last-tile find)
-    const o={id:String(t.pid),ok:!!t.first,n:Object.keys(t.wrong||{}).length+1}; if(t.back) o.back=true; if(t.fail) o.fail=true; items.push(o); });   // 🔤 SPELLBUILD: fail = never built right
+    const o={id:String(t.pid),ok:!!t.first,n:Object.keys(t.wrong||{}).length+1}; if(t.back) o.back=true; if(t.fail) o.fail=true; if(typeof gameCardMsTo==="function") gameCardMsTo(o,t); items.push(o); });   // 🔤 SPELLBUILD: fail = never built right · ⏱ CARDSECS: ms
   if(!items.length) return null;
   now=now!=null?now:Date.now();
   const e={game:st.game||"which",deck:String(st.deck||""),at:now,items:items};   // 🔤 SPELLBUILD: each game names itself
@@ -62404,13 +62498,61 @@ function gameLogRound(st,pre){
 function gameLogMatchEntry(st,now){
   if(!st||!st.deck||!st.endTs) return null;
   now=now!=null?now:Date.now();
-  const res=st.res||{}, items=Object.keys(res).map(pid=>({id:String(pid),ok:res[pid]==="c",n:res[pid]==="c"?1:2}));
+  const res=st.res||{}, rms=st.resMs||{}, items=Object.keys(res).map(pid=>{ const o={id:String(pid),ok:res[pid]==="c",n:res[pid]==="c"?1:2}; if(typeof gameCardMsTo==="function") gameCardMsTo(o,{ms:rms[pid]}); return o; });   // ⏱ CARDSECS: ms
   const e={game:st.style==="memory"?"memory":"match",deck:String(st.deck),at:now,items:items,why:"free"};
   if(typeof st.sec==="number") e.secs=Math.max(0,Math.round(st.sec));
   if(st.then&&st.then!=="none") e.then=st.then;
   if(st.pairMode==="same") e.pair="same";
   return e;
 }
+// CARDSECS_START — ⏱ time per card (PLAN_scores_page_2026-11-03.md §6 #1–2, the one logging add Scores slice 2 left; her ask: time per
+// card, so a rushed answer shows). A card's clock starts the first time it is on screen — gameCardShown, called where each game paints its
+// current card (and where a study sitting draws its card); it stamps once, so a re-render never restarts it — and stops at the kid's FIRST
+// answer on it — gameCardAnswered: the first tap, Check, pick, letter, "I said it", turn-over or grade; later tries never move it. The
+// turn (or study card) then carries ms, and the save that already happens copies it onto the item it writes:
+//   gameLog items {id, ok, n, back?, fail?, ms?} (GAMELOG / MATCHLOG / MISSPLAY) · studyLog sitting items {id, name, deck, result, ms?}
+// No new write path: ms only rides inside the entries those saves already write. A card with no single "on screen" moment has no ms:
+// Sort it's tray, the jigsaw's pieces, the train's hook-up levels, and the say-them-all games (Brain dump, Categories, Name them all,
+// Beat my time); nor has any record from before this. A card left on screen longer than CARDSECS_MAX_MS (the kid walked away, a parked
+// round) is not timed. Readers treat a missing ms as "not timed": the Scores show "—" or fall back to the sitting's time ÷ cards.
+// Medians only — never a fastest list (no racing). Turns live in memory (a study card also in this device's saved sitting), never in the DB.
+const CARDSECS_MAX_MS=10*60*1000;
+function gameCardShown(t,now){ if(t&&typeof t==="object"&&t.shownAt==null&&!t.done) t.shownAt=(now!=null?now:Date.now()); return t; }
+function gameCardAnswered(t,now){
+  if(!t||typeof t!=="object"||t.answeredAt!=null||typeof t.shownAt!=="number") return t;
+  const at=(now!=null?now:Date.now()), ms=Math.round(at-t.shownAt);
+  t.answeredAt=at; if(ms>=0&&ms<=CARDSECS_MAX_MS) t.ms=ms;
+  return t;
+}
+// PURE: a record's ms, or null when it has none (old records) or it can't be a real answer time
+function gameCardMs(o){ const v=o&&o.ms; return (typeof v==="number"&&isFinite(v)&&v>=0&&v<=CARDSECS_MAX_MS)?Math.round(v):null; }
+// the save sites: the turn's ms onto the item being written (nothing when the turn has none)
+function gameCardMsTo(o,t){ const v=gameCardMs(t); if(o&&v!=null) o.ms=v; return o; }
+// PURE: the median ms of the items that carry one → a number, or null when none do
+function cardSecsMedian(items){
+  const a=(Array.isArray(items)?items:[]).map(gameCardMs).filter(v=>v!=null).sort((x,y)=>x-y);
+  if(!a.length) return null;
+  const m=a.length>>1; return a.length%2?a[m]:Math.round((a[m-1]+a[m])/2);
+}
+function cardSecsTxt(ms){ return (typeof ms==="number"&&isFinite(ms))?(Math.round(ms/100)/10)+" s":"\u2014"; }   // 2400 → "2.4 s"; none → "—"
+// PURE: a study sitting's state → {key: ms} for its cards with a time — "id:<id>" for a card on the ladder, "new:<deck>|<name>" for a
+// bank card met this sitting (it gets its id only when the save mints it)
+function cardSecsStudyMs(state){
+  const out={}, cards=(state&&state.cards)||{};
+  Object.keys(cards).forEach(k=>{ const c=cards[k], v=gameCardMs(c); if(v==null) return;
+    if(c.id!=null) out["id:"+c.id]=v; else out["new:"+(c.deck||"")+"|"+(c.name||"")]=v; });
+  return out;
+}
+// PURE: the items of sitting i in a day's study entry — the entry's items are the sittings' items joined in order (mstSave's merge), so
+// sitting i's are the `total` items after every earlier sitting's. An entry from before sits (one sitting) → all its items.
+function cardSecsSitItems(e,i){
+  const items=Array.isArray(e&&e.items)?e.items:Object.values((e&&e.items)||{});
+  const sits=(Array.isArray(e&&e.sits)&&e.sits.length)?e.sits:null;
+  if(!sits) return items;
+  let off=0; for(let j=0;j<i&&j<sits.length;j++) off+=((sits[j]&&sits[j].total)|0);
+  return items.slice(off,off+(((sits[i]||{}).total)|0));
+}
+// CARDSECS_END
 // GAMELOG_END
 
 // MISSPLAY_START — 🎮 the practice list: a card missed in the drill goes to the games until it's learned (slice 2 of
@@ -62548,10 +62690,10 @@ function mpTurn(U){
     const e=U.q[U.i], it=_mpItem(U,e.pid), mode=it?U.modes[it.subject||"Other"]:null;
     if(it&&!mode&&typeof spellPlayable==="function"&&spellPlayable(it)){   // 🔤 SPELLBUILD: a spelling card builds its word
       const others=U.pool.filter(x=>x!==it&&spellPlayable(x)).map(spellWordOf);
-      const t=_spellTurn(it,others); U.cur={pid:e.pid,list:!!e.list,mode:"spell",tiles:t.tiles,word:t.word,placed:[],wrong:{},tries:0,msg:""}; return true;
+      const t=_spellTurn(it,others); U.cur={pid:e.pid,list:!!e.list,mode:"spell",tiles:t.tiles,word:t.word,placed:[],wrong:{},tries:0,msg:""}; if(typeof gameCardShown==="function") gameCardShown(U.cur); return true;   // ⏱ CARDSECS
     }
     let tiles=null; try{ tiles=(it&&mode)?whichTiles(it,U.pool,null,mode):null; }catch(err){ tiles=null; }
-    if(tiles){ U.cur={pid:e.pid,list:!!e.list,mode,tiles,wrong:{}}; return true; }
+    if(tiles){ U.cur={pid:e.pid,list:!!e.list,mode,tiles,wrong:{}}; if(typeof gameCardShown==="function") gameCardShown(U.cur); return true; }   // ⏱ CARDSECS
     U.i++;
   }
   U.cur=null; return false;
@@ -62567,7 +62709,7 @@ function mpSpellCheck(){
   const c=U.cur; if(!c.placed.length) return;
   const r=spellJudge(c);
   if(r==="again"){ try{ matchBonk(); }catch(e){} c.msg="again"; mpRender(); mpSay(); return; }
-  const first=r==="right"&&c.first, o={id:String(c.pid),ok:first,n:c.tries+1}; if(c.list) o.list=true; if(r==="fail") o.fail=true; U.log.push(o);
+  const first=r==="right"&&c.first, o={id:String(c.pid),ok:first,n:c.tries+1}; if(c.list) o.list=true; if(r==="fail") o.fail=true; if(typeof gameCardMsTo==="function") gameCardMsTo(o,c); U.log.push(o);   // ⏱ CARDSECS: ms (spellJudge stopped the clock)
   if(c.list) mpNote(U,c.pid,first);
   const it=_mpItem(U,c.pid); if(it&&typeof wwNote==="function"&&(r==="fail"||first)){ try{ if(wwNote(it,first?"right":"miss")){ U.ww=U.ww||{}; U.ww[c.pid]=1; } }catch(e){} }
   if(r==="right"){ try{ matchDing(); }catch(e){} c.msg="right"; } else { try{ matchBonk(); }catch(e){} c.msg="fail"; }
@@ -62593,9 +62735,10 @@ function mpNote(U,pid,first){
 function mpTap(ti){
   const U=mpUI; if(!U||U.phase!=="play"||U.lock||!U.cur) return;
   const c=U.cur, pid=c.tiles[ti]; if(pid==null||c.wrong[pid]) return;
+  if(typeof gameCardAnswered==="function") gameCardAnswered(c);   // ⏱ CARDSECS: the first tap on this card stops its clock
   if(pid!==c.pid){ c.wrong[pid]=1; try{ matchBonk(); }catch(e){} mpRender(); mpSay(); return; }
   const n=Object.keys(c.wrong).length+1, first=n===1;
-  const o={id:String(c.pid),ok:first,n}; if(c.list) o.list=true; U.log.push(o);
+  const o={id:String(c.pid),ok:first,n}; if(c.list) o.list=true; if(typeof gameCardMsTo==="function") gameCardMsTo(o,c); U.log.push(o);   // ⏱ CARDSECS: ms
   if(c.list) mpNote(U,c.pid,first);
   try{ matchDing(); }catch(e){}
   U.grow=ti; U.lock=true; mpRender();
@@ -67157,6 +67300,7 @@ function mstAnswer(state, key, ans) {
   const idx = state.queue.indexOf(key);
   if (idx === -1) return state;
   if (card.first === null) card.first = ans;
+  if (typeof gameCardAnswered === "function") gameCardAnswered(card);   // ⏱ CARDSECS: the first grade stops the card's clock (no-op without gameCardShown)
   if (ans !== "good") card.misses = (card.misses | 0) + 1;   // 🎮 MISSPLAY: how often this card was missed in the sitting (study misses join the practice list)
 
   if (card.kind === "review") {
@@ -69058,6 +69202,7 @@ function spellTapPlaced(pi){
 function spellClear(){ const st=spellState; if(!st||st.phase!=="play"||st.lock) return; const t=st.turns[st.i]; if(!t) return; t.placed.forEach(ti=>{ t.tiles[ti].used=false; }); t.placed=[]; st.msg=""; _mastRe(); }
 // PURE over the state: one Check. Returns "right" | "again" | "fail".
 function spellJudge(t){
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   if(spellRight(t)){ t.done=true; t.first=t.tries===0; return "right"; }
   t.tries++; t.wrong[t.tries]=1;
   t.placed.forEach(ti=>{ t.tiles[ti].used=false; }); t.placed=[];   // the tiles come back
@@ -69144,6 +69289,7 @@ function buildSpellHtml(color){
   const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[spellBestKey(st.deck)];
   if(st.phase==="play"){
     const t=st.turns[st.i];
+    if(typeof gameCardShown==="function") gameCardShown(t);   // ⏱ CARDSECS: the card is on screen — its clock starts at the first paint
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
     st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
     h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+E(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
@@ -69627,6 +69773,7 @@ function trainStart(sid){
 function trainJudge(st,ci){
   if(!st||st.phase!=="play"||st.lock) return null;
   const t=st.turns[st.i]; if(!t||t.done) return null;
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   const L=t.choices[ci]; if(L==null) return null;
   if(L!==t.L){ if(!t.wrong[L]){ t.wrong[L]=1; if(Object.keys(t.wrong).length>=TRAIN_MISS) t.fail=true; } st.bounce=ci; return "wrong"; }
   t.done=true; t.first=!Object.keys(t.wrong).length; st.on.push(L); st.roll=L; st.bounce=null; st.lock=true;
@@ -69785,6 +69932,7 @@ function buildTrainHtml(color,study){
   if(st.phase==="play"&&_trainHook(st)) return h+_trainHookHtml(st,d,color)+'</div>';   // levels 3–5: hook up
   if(st.phase==="play"){
     const t=st.turns[st.i], shown=st.on.slice(-3), hidden=st.on.length>shown.length;
+    if(typeof gameCardShown==="function") gameCardShown(t);   // ⏱ CARDSECS: the card is on screen — its clock starts at the first paint
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 2px"><div style="display:flex;gap:6px">';
     st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
     h+='</div><span style="font-size:12px;font-weight:800;color:var(--muted)">Level '+st.level+'</span></div>';
@@ -69868,7 +70016,7 @@ function pktEntry(st,now,pn,day){
   if(!st||!st.study||st.phase!=="done"||!Array.isArray(st.turns)) return null;
   const items=[]; let correct=0, miss=0;
   st.turns.forEach(t=>{ if(!t||!t.done) return; const r=t.first?"c":"m"; if(r==="c") correct++; else miss++;
-    items.push({id:t.pid!=null?String(t.pid):"train_"+t.L,name:t.L,deck:String(st.deck||""),result:r}); });
+    const o={id:t.pid!=null?String(t.pid):"train_"+t.L,name:t.L,deck:String(st.deck||""),result:r}; if(typeof gameCardMsTo==="function") gameCardMsTo(o,t); items.push(o); });   // ⏱ CARDSECS: ms
   if(!items.length) return null;
   const total=items.length, secs=st.t0?Math.max(1,Math.round(((now!=null?now:Date.now())-st.t0)/1000)):null;
   return {date:day,printNum:pn,total:total,correct:correct,miss:miss,shown:0,secs:secs,items:items,sits:[{secs:secs,total:total}],before:[]};
@@ -69990,6 +70138,7 @@ function gameJudgeAct(st,turn,opts){
 }
 function _gjTurn(mode){ const t=gameJudgeCur; return (t&&t.gj&&t.gj.mode===mode&&_gjLive(t))?t:null; }
 function _gjSettle(turn,right,given){
+  if(typeof gameCardAnswered==="function") gameCardAnswered(turn);   // ⏱ CARDSECS: the judged answer stops the clock (an earlier "I said it" already did)
   const gj=turn.gj, x=_gjCtx(turn); gj.done=true; gj.ok=!!right; gj.given=given==null?"":String(given);
   try{ if(right) x.opts.onRight(turn); else x.opts.onWrong(turn,gj.given); }catch(e){}
   _gjRe();
@@ -71048,6 +71197,7 @@ function renderMastStudy(opts){
     let card=null; try{ card=mstCurrent(mstState); }catch(e){}
     if(card){
       mstLockArm();   // MST_NAV: taps in the first 350 ms after this draw are swallowed
+      if(typeof gameCardShown==="function") gameCardShown(card);   // ⏱ CARDSECS: the card is on screen — its clock starts at the first draw
       h+=mstCardHtml(session,card);
       if(typeof mstCopyOn==="function"&&mstCopyOn(session,card)){ /* 👀 PATCCC: Check / Next live inside the card */ } else
       if(mstCardMode(card)==="type"||(typeof mstTypeAnsOn==="function"&&mstTypeAnsOn(session,card))||(typeof mstPickOn==="function"&&mstPickOn(session,card))){   // ⌨️ MST_TYPEANS · 🎯 PATPICK
@@ -71483,12 +71633,14 @@ function _mstSaveInner(){
   const secs=mstStartTs?Math.max(1,Math.round((Date.now()-mstStartTs)/1000)):null;
   let correct=0,miss=0,shown=0;
   const logItems=[];
+  let _csMs={}; try{ if(typeof cardSecsStudyMs==="function") _csMs=cardSecsStudyMs(mstState); }catch(e){}   // ⏱ CARDSECS: each card's first-answer time
+  const _cs=(o,it)=>{ const v=_csMs["id:"+o.id]!=null?_csMs["id:"+o.id]:(it&&mintedAll.indexOf(it)!==-1?_csMs["new:"+(it.subject||"")+"|"+(it.prompt||"")]:null); if(v!=null) o.ms=v; return o; };   // ⏱ CARDSECS: a minted card is found by its deck + name
   Object.keys(scores).forEach(id=>{
     const sc=scores[id];
     const it=items.find(i=>i&&i.id===id);
     const nm=(it&&it.prompt)||id, dk=(it&&it.subject)||"";
-    if(sc==="shown"){ shown++; logItems.push({id:id,name:nm,deck:dk,result:"shown"}); }
-    else { if(sc==="c") correct++; else if(sc==="m") miss++; logItems.push({id:id,name:nm,deck:dk,result:sc}); }
+    if(sc==="shown"){ shown++; logItems.push(_cs({id:id,name:nm,deck:dk,result:"shown"},it)); }
+    else { if(sc==="c") correct++; else if(sc==="m") miss++; logItems.push(_cs({id:id,name:nm,deck:dk,result:sc},it)); }
   });
   const total=logItems.length;
   let entry={date:todayKey,printNum:pn,total:total,correct:correct,miss:miss,shown:shown,secs:secs,items:logItems,sits:[{secs:secs,total:total}],before:_before};   // 🚩 MSTALERT: per-sitting time
@@ -71772,26 +71924,27 @@ function srRows(){
       if(!s||s.kind==="checkup"||s.who==="mom") return;   // Mom runs and judges those herself
       const deck=(s.emoji||"\u{1F4DA}")+" "+(s.name||s.sid);
       const add=(sit,o)=>{ const total=(sit&&sit.total)||0; if(!total) return; out.push(Object.assign({kid,sid:s.sid,deck,total,secs:sit.secs??null,judged:sit.judged||null},o)); };
+      const ms=(e,i)=>{ const m=(typeof cardSecsMedian==="function"&&typeof cardSecsSitItems==="function")?cardSecsMedian(cardSecsSitItems(e,i)):null; return m!=null?{ms:m}:{}; };   // ⏱ CARDSECS: the sitting's cards' own times
       const sb=((M.studyBack||{})[kid]||{})[s.sid]||{}, log=sb.log||{};
       if(!sb.log&&sb.ts&&(sb.date===lk||sb.date===uk)) add({secs:sb.secs,total:sb.total},{key:sb.date,i:0,back:true});   // sent back before SREVIEW: only the record's numbers
       Object.keys(log).map(id=>({id,r:log[id]})).filter(x=>x.r&&(x.r.day===lk||x.r.day===uk))
         .sort((a,b)=>((a.r.sentBack||{}).at||0)-((b.r.sentBack||{}).at||0))
-        .forEach(x=>srSits(x.r).forEach((sit,i)=>add(sit,{key:x.r.day,i,arc:x.id,back:true})));
+        .forEach(x=>srSits(x.r).forEach((sit,i)=>add(sit,Object.assign({key:x.r.day,i,arc:x.id,back:true},ms(x.r,i)))));
       const key=_mstTodayLogKey(kid,s.sid);
-      if(key) srSits(M.studyLog[kid][s.sid][key]).forEach((sit,i)=>add(sit,{key,i}));
+      if(key){ const e=M.studyLog[kid][s.sid][key]; srSits(e).forEach((sit,i)=>add(sit,Object.assign({key,i},ms(e,i)))); }
     });
   });
   return out;
 }
 function srRowHTML(r,i,floor){
-  const pc=srPerCard(r.secs,r.total), red=pc!=null&&pc<floor;
+  const pc=(typeof r.ms==="number")?Math.round(r.ms/100)/10:srPerCard(r.secs,r.total), red=pc!=null&&pc<floor;   // ⏱ CARDSECS: the cards' median time when timed, else time ÷ cards
   const btn=(fn,txt,bg)=>'<button onclick="'+fn+'('+i+')" style="padding:4px 10px;border-radius:8px;border:none;background:'+bg+';color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+txt+'</button>';
   const v=r.back?'<span style="font-size:11px;font-weight:800;color:#b45309;white-space:nowrap">↩ Sent back</span>'
     :(r.judged&&r.judged.verdict==="ok")?'<span style="font-size:11px;font-weight:800;color:#16a34a;white-space:nowrap">👍 Looks right</span>'
     :btn("srOk","👍 Looks right","#16a34a")+btn("srBack","↩ Too fast — send back","#b45309");
   return '<div style="display:flex;align-items:center;gap:6px;padding:7px 10px;background:'+(red?"#fef2f2":"#f8fafc")+';border-left:3px solid '+(red?"#dc2626":"#94a3b8")+';border-radius:8px;margin-bottom:6px;flex-wrap:wrap">'
     +'<span style="flex:1;min-width:180px;font-size:13px"><b>'+esc(cap(r.kid))+'</b> — '+esc(r.deck)+' · '+r.total+' cards · '+srMSS(r.secs)+' · '
-    +'<b style="color:'+(red?"#dc2626":"inherit")+'">'+(pc==null?"—":pc+" s/card")+'</b></span>'+v+'</div>';
+    +'<b style="color:'+(red?"#dc2626":"inherit")+'"'+(typeof r.ms==="number"?' title="the middle time from a card showing to the first answer"':'')+'>'+(pc==null?"—":pc+" s/card"+(typeof r.ms==="number"?" \u23F1":""))+'</b></span>'+v+'</div>';
 }
 function srNowHTML(){
   const rows=srRows(); _srRows=rows;

@@ -64,6 +64,9 @@ function answer(w,bad){
   const right=backOf(c,t.pid); c.jeopPickTap(bad?t.opts.findIndex(o=>o!==right&&!t.wrong[o]):t.opts.indexOf(right));
 }
 
+// ⏱ CARDSECS (2026-11-08): the per-card timing fields (items' ms, turns' shownAt / answeredAt / ms) are new and clock-bound — the snapshot
+// is main's with exactly those left out (test_card_seconds.js covers them).
+const NO_CARDSECS=(k,v)=>(k==="ms"||k==="shownAt"||k==="answeredAt")?undefined:v;
 // ── OFF = main byte for byte: one scripted afternoon, every screen + every write + every word said, hashed ──
 function offSession(S,raw){
   const log=[], snap=(w,tag)=>log.push(tag+"\n"+w.c.buildJeopHtml("#123456"));
@@ -76,7 +79,7 @@ function offSession(S,raw){
       if(st.open&&!st.lock){ const t=st.turns[st.open.t]; const bad=(step%4===1)||(step%7===3&&t.tries===1); answer(w,bad&&!t.back); step++; snap(w,"ans"+step); }
       w.flush(); snap(w,"beat"+step);
     }
-    snap(w,"done"); log.push("writes "+JSON.stringify(w.writes.map(x=>[x[0],x[1],x[0]==="push"?Object.assign({},x[2],{at:0,secs:0}):x[2]])));
+    snap(w,"done"); log.push("writes "+JSON.stringify(w.writes.map(x=>[x[0],x[1],x[0]==="push"?Object.assign({},x[2],{at:0,secs:0}):x[2]]),NO_CARDSECS));
     log.push("said "+JSON.stringify(w.said)); log.push("dings "+JSON.stringify(w.dings));
     c.jeopStart(); snap(w,"again"); c.jeopStop(); snap(w,"stop");
   }
