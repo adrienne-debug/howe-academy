@@ -86557,6 +86557,7 @@ function mstAutoPlayCurrent(session){
   try{ const card=mstCurrent(mstState);
     if(mstIsSpellCard(card)){ if(card.name) mastSpeak(card.name,{spell:true}); return; }
     if(mstIsRuleCard(card)) return;   // language-arts rule cards: no sound   // 🔊 Spell: say the word itself (TTS — recordings are definitions)
+    if(typeof mstTilesOn==="function"&&mstTilesOn(session,card)){ mstTilesSay(card); return; }   // 🔤 PATTILES: he hears the word he builds
     if(card&&mstCardMode(card)!=="rec") return;   // playing the German first would give away a say/type answer
     if(card&&card.name){ if(mastGetDefAudio(masteryKid,card.name)) mastPlayDefAudio(card.name); else mastSpeak(card.name); }
   }catch(e){}
@@ -86651,6 +86652,7 @@ function mstCardHtml(session,card){
     r+='<div class="mast-flip-hint">\u{1F4A1} tap to flip back</div></div>';
     return r+'</div></div></div>';
   }
+  if(typeof mstTilesOn==="function"&&mstTilesOn(session,card)) return mstTilesHtml(session,card,def,_lrn);   // 🔤 PATTILES (ahead of the spell-deck flip: a "tiles" day builds the word)
   if(mstIsSpellCard(card)){
     // 🔊 Spell deck: hear it, spell it out loud, flip to check — the word only on the back.
     const _say=(big)=>'<button onclick="event.stopPropagation();ttsFlipSay(this)" style="'+(big?'margin:18px 0 6px;padding:18px 34px;border:2.5px solid #4f46e5;font-size:30px':'margin-top:10px;padding:8px 18px;border:2px solid #4f46e5;font-size:15px')+';border-radius:999px;background:#eef2ff;color:#4f46e5;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;position:relative;z-index:3">\u{1F50A} Hear it</button>';
@@ -87056,6 +87058,7 @@ function renderMastStudy(opts){
       if(typeof mstCopyOn==="function"&&mstCopyOn(session,card)){ /* 👀 PATCCC: Check / Next live inside the card */ } else
       if(mstCardMode(card)==="type"||(typeof mstTypeAnsOn==="function"&&mstTypeAnsOn(session,card))||(typeof mstPickOn==="function"&&mstPickOn(session,card))){   // ⌨️ MST_TYPEANS · 🎯 PATPICK
         // Check / Next live inside the card — no self-grading on a typed answer.
+      } else if(typeof mstTilesOn==="function"&&mstTilesOn(session,card)){   // 🔤 PATTILES: tiles + Check live inside the card, no ✗/✓
       } else if(typeof mstIdeasOn==="function"&&mstIdeasOn(session,card)){   // 🧩 PATIDEAS: chips + Check live inside the card, no ✗/✓
       } else if(mstFlipped){
         h+='<div style="display:flex;gap:12px;margin-top:16px">';
@@ -87298,6 +87301,117 @@ function mstIdeasCheck(){
   },MST_IDEAS_BEAT_MS);
 }
 // PATIDEAS_END
+// PATTILES_START — 🔤 "Build it" with letter tiles as a learning-pattern step (her research plan 2026-10-23,
+// PLAN_learning_patterns_2026-10-23.md, new step #4: "Hears the word, drags letter … tiles into place" — spelling,
+// sight words, German spelling; build order 5: "Letter tiles, shared with the Spell Builder game"). The tiles,
+// the built row and the check are SPELLBUILD's own (spellTiles · spellBoardHtml · spellJudge), so a "tiles" day
+// looks and judges exactly like 🎮 Build it: he HEARS the card's word (the slow spelling voice, or Mom's recording
+// on a non-spelling deck), and taps its letters in order from the word's letters plus 3 extra letters taken from
+// the deck's other words. The word is never written on screen (the app never supplies what he must produce); a
+// non-spelling card may show its meaning as a clue, only when the meaning doesn't contain the word.
+//   ENTRY: the card's pattern slot is "tiles"; its word (card.name) is ONE word of 2–SPELL_WORD_MAX letters (any
+//   alphabet, an apostrophe or hyphen is fine); the session has sound on; not a rule card or a picture card.
+//   Anything else keeps its usual face — a spell-deck card its 🔊 spell-it-aloud flip, any other card the plain flip
+//   with ✗ / ✓ (same fallback as 🎯 Pick it). Every card whose slot isn't "tiles" is drawn exactly as before.
+//   EXIT: Check → right on the first try: ✅ + the ding, a beat, then good. Wrong: the bonk, the tiles come back, he
+//   hears it again, one more try (SPELL_TRIES). Right on the second try, or wrong twice: a beat, then again, so the
+//   card goes to the back of the line and comes back later in the sitting (the word still isn't shown).
+//   No ✗/✓ under the card — renderMastStudy hides them via mstTilesOn.
+// Writes nothing new: grades go through mstTap → mstAnswer → the sitting's own Save. Unlike the 🎮 game, a study day
+// never moves the Word Workout (no wwNote) — the sitting's grade is that day's record.
+// NOT built (plan's note "multi-letter tiles (sh, igh) match AAS"): tiles are single letters, as Build it's are.
+MST_PATTERN_MODES.push("tiles");
+const MST_TILES_BEAT_OK=900, MST_TILES_BEAT_MISS=1400;   // Build it's own beats
+let mstTilesSt=null;   // {show, t:{word,tiles,placed,wrong,tries,done,first,fail}, msg, lock}: the showing card's board
+function mstTilesWord(card){ return String((card&&card.name)||"").normalize("NFC").trim(); }
+function mstTilesWordOk(w){ w=String(w||""); return w.length>=2&&w.length<=SPELL_WORD_MAX&&/^\p{L}[\p{L}'’\-]*$/u.test(w); }
+function mstTilesOn(session,card){
+  if(!card||card.mode!=="tiles") return false;
+  if(!session||session.audio==="off") return false;   // he has to hear the word
+  if(mstIsRuleCard(card)) return false;
+  if(typeof mstCardPic==="function"&&mstCardPic(card)) return false;
+  if(typeof spellTiles!=="function"||typeof spellBoardHtml!=="function") return false;
+  return mstTilesWordOk(mstTilesWord(card));
+}
+// A spelling word: a spell-mode deck, or one of the Word Workout's spelling decks.
+function mstTilesIsSpelling(card){ return mstIsSpellCard(card)||(typeof WW_DECKS!=="undefined"&&WW_DECKS.indexOf(card&&card.deck)>=0); }
+// The deck's other words (bank items of the deck + this sitting's cards of the deck): the extra tiles come from these.
+function mstTilesOthers(card){
+  const w=mstTilesWord(card).toLowerCase(), out=[], seen={};
+  const add=s=>{ s=String(s||"").trim(); const k=s.toLowerCase(); if(s&&k!==w&&!seen[k]){ seen[k]=1; out.push(s); } };
+  let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  items.forEach(i=>{ if(i&&i.subject===card.deck&&i.dir!=="prod") add(i.prompt); });
+  const sc=(mstState&&mstState.cards)||{}; Object.keys(sc).forEach(k=>{ const c=sc[k]; if(c&&c.deck===card.deck) add(c.name); });
+  return out;
+}
+// One board per SHOWING (the card's key + the MST_NAV history length, which every grade and every ← Back changes).
+function mstTilesShowId(card){ let n=0; try{ n=(typeof mstHist!=="undefined"&&mstHist)?mstHist.length:0; }catch(e){} return (card&&card.key||"")+"|"+n; }
+function mstTilesCur(card){
+  const id=mstTilesShowId(card);
+  if(!mstTilesSt||mstTilesSt.show!==id){ const w=mstTilesWord(card);
+    mstTilesSt={show:id,t:{word:w,tiles:spellTiles(w,mstTilesOthers(card)),placed:[],wrong:{},tries:0,done:false,first:false,fail:false},msg:"",lock:false}; }
+  return mstTilesSt;
+}
+function mstTilesSay(card){
+  const w=mstTilesWord(card); if(!w) return;
+  try{ if(!mstTilesIsSpelling(card)&&mastGetDefAudio(masteryKid,w)) mastPlayDefAudio(w); else mastSpeak(w,{spell:true}); }catch(e){}
+}
+function mstTilesClue(card,def){
+  if(mstTilesIsSpelling(card)) return "";
+  const d=String(def||"").replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim(), w=mstTilesWord(card).toLowerCase();
+  return (d&&d.toLowerCase().indexOf(w)===-1)?d:"";
+}
+function mstTilesHtml(session,card,def,lrn){
+  const st=mstTilesCur(card), t=st.t, clue=mstTilesClue(card,def);
+  let h=SPELL_CSS+'<div class="mast-slide"><div class="mast-flip-wrap"><div class="mast-flip-inner"><div class="mast-flip-front" data-tiles-msg="'+mstEsc(st.msg)+'">';
+  h+='<div class="mast-slide-cat">'+mstEsc(card.deck||session.name||"")+(lrn||"")+'</div>';
+  h+='<div style="display:inline-block;margin-top:2px;padding:3px 10px;border-radius:999px;background:#ede9fe;color:#6d28d9;font-size:11px;font-weight:800">\u{1F524} Build it</div>';
+  if(clue) h+='<div class="mast-flip-def" style="font-size:20px;margin-top:6px">'+mstEsc(clue)+'</div>';
+  h+='<div style="width:100%">'+spellBoardHtml(t,{color:"#7c3aed",pre:"mstTiles",msg:st.msg,lock:st.lock})+'</div>';
+  if(st.lock&&st.msg==="right"&&!t.first) h+='<div style="margin-top:8px;font-size:14px;font-weight:700;color:#6d28d9">You\u{2019}ll see it again soon</div>';
+  return h+'</div></div></div></div>';
+}
+function mstTilesCtx(){
+  if(!mstState) return null;
+  let cur=null; try{ cur=mstCurrent(mstState); }catch(e){}
+  let ses=null; try{ ses=(mstSessions(masteryKid)||[]).find(x=>x.sid===mstSid)||null; }catch(e){}
+  if(!cur||!ses||!mstTilesOn(ses,cur)) return null;
+  return {cur:cur,ses:ses,st:mstTilesCur(cur)};
+}
+// Tile taps redraw without the MST_NAV tap lock (as 🎮 Build it's do): a placed tile taps back off, and Check
+// needs every slot filled, so a stray tap can't grade anything.
+function mstTilesSayAgain(){ const c=mstTilesCtx(); if(c) mstTilesSay(c.cur); }
+function mstTilesTapTile(ti){
+  const c=mstTilesCtx(); if(!c||c.st.lock) return; const t=c.st.t;
+  if(!t.tiles[ti]||t.tiles[ti].used||t.placed.length>=t.word.length) return;
+  t.tiles[ti].used=true; t.placed.push(ti); c.st.msg=""; _mastRe();
+}
+function mstTilesTapPlaced(pi){
+  const c=mstTilesCtx(); if(!c||c.st.lock) return; const t=c.st.t;
+  if(t.placed[pi]==null) return;
+  const ti=t.placed.splice(pi,1)[0]; t.tiles[ti].used=false; c.st.msg=""; _mastRe();
+}
+function mstTilesClear(){
+  const c=mstTilesCtx(); if(!c||c.st.lock) return; const t=c.st.t;
+  t.placed.forEach(ti=>{ t.tiles[ti].used=false; }); t.placed=[]; c.st.msg=""; _mastRe();
+}
+function mstTilesCheck(){
+  const c=mstTilesCtx(); if(!c||c.st.lock) return; const st=c.st, t=st.t;
+  if(t.placed.length<t.word.length) return;
+  const r=spellJudge(t);
+  if(r==="again"){ try{ matchBonk(); }catch(e){} st.msg="again"; _mastRe(); mstTilesSay(c.cur); return; }
+  if(r==="right"){ try{ matchDing(); }catch(e){} st.msg="right"; } else { try{ matchBonk(); }catch(e){} st.msg="fail"; }
+  st.lock=true; _mastRe();
+  const grade=(r==="right"&&t.first)?"good":"again", tok=st, state=mstState, key=c.cur.key;
+  setTimeout(function(){
+    if(mstTilesSt!==tok||mstState!==state) return;   // ← Back / Quit during the beat
+    let now=null; try{ now=mstCurrent(state); }catch(e){}
+    if(!now||now.key!==key) return;
+    mstTilesSt=null; mstLockTs=0;   // the beat already gave the tap lock its time
+    mstTap(grade);
+  },r==="right"?MST_TILES_BEAT_OK:MST_TILES_BEAT_MISS);
+}
+// PATTILES_END
 
 // ── Save — writes touched/minted cards field-by-field (mirrors mastSaveResults), merges
 // today's session log, updates local state. All remote writes guarded by db.
@@ -88602,6 +88716,7 @@ function _mhqRenderSessForm(kid) {
     if (f.pattern) {
       const _pl = { rec: "\u{1F1E9}\u{1F1EA} See it", say: "\u{1F5E3} Say it", type: "\u2328\uFE0F Type it", ideas: "\u{1F9E9} Key ideas", pick: "\u{1F3AF} Pick it" };
       _pl.copy = "\u{1F440} Copy it";   // 👀 PATCCC
+      _pl.tiles = "\u{1F524} Build it";   // 🔤 PATTILES
       f.pattern.forEach(function (m, i) { h += '<button onclick="mhqPatCycle(' + i + ')" style="min-height:40px;padding:6px 10px;border-radius:10px;border:1.5px solid #c4b5fd;background:#f5f3ff;color:#6d28d9;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">' + (i + 1) + ' \u00B7 ' + _pl[m] + '</button>'; });
       h += '<button onclick="mhqPatLen(-1)" style="width:36px;height:36px;border-radius:8px;border:1.5px solid var(--border);background:var(--card);font-weight:700;cursor:pointer">&minus;</button><button onclick="mhqPatLen(1)" style="width:36px;height:36px;border-radius:8px;border:1.5px solid var(--border);background:var(--card);font-weight:700;cursor:pointer">+</button>';
     }
