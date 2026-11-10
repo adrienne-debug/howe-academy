@@ -106,7 +106,7 @@ console.log("── no config block → inert, byte-identical boot ──");
   ok("Settings card is empty, even for Mom", w.envMirrorCardHtml() === "");
   ok("a release call does nothing without a config (no app could be listening)", w.envmRelease(KID, { soils: true }) === 0 && w.G.writes.length === 0 && w.G.masteryData[KID + "_settings"].cat_hold[DK.st] === true); }
 { const famBlock = fs.readFileSync(path.join(__dirname, "family-config.js"), "utf8");
-  ok("family-config.js on main carries no envirothon block (Howe's boot is unchanged until Adrienne pastes it)", !/envirothon\s*:/.test(famBlock)); }
+  ok("family-config.js on main carries the envirothon block (pasted and merged 2026-11-09, PR #303; before that Howe's boot was unchanged)", /envirothon\s*:/.test(famBlock) && /howe-envirothon-default-rtdb/.test(famBlock)); }
 { const w = world({ cfg: { firebase: { apiKey: "k" } } });   // half a config: no databaseURL
   ok("a config without a databaseURL counts as absent", w.envmCfg() === null && w.envMirrorOn("boot") === false && w.G.inits.length === 0); }
 
