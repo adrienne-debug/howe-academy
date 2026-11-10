@@ -51090,6 +51090,9 @@ function envSiteGate(user,cont){
   const val=s=>(s&&typeof s.val==="function")?s.val():null;
   sdb.ref("release/locked").once("value").then(s=>{ _envs.lockRaw=val(s); return sdb.ref("logins/"+_envs.uid).once("value"); })
     .then(s=>{ const L=val(s); if(L&&L.role) return L; return sdb.ref("admins/"+_envs.uid).once("value").then(a=>val(a)===true?{role:"admin"}:null); })
+    // CPTEACHERGATE (2026-11-09): + Teacher writes teachers/<uid> and no logins row (the logins rule wants a family and a kid, which a teacher has not) —
+    // so a teacher record alone signs her in, to the first class it lists; her own record is readable under the teachers/$uid rule. Found on Brittany's setup.
+    .then(L=>L||sdb.ref("teachers/"+_envs.uid).once("value").then(t=>{ const T=val(t), ks=Object.keys((T&&T.classes)||{}); return ks.length?{role:"teacher",cid:ks[0],name:String(T.name||"")}:null; }))
     .then(L=>{ if(!L){ envsCard("notset"); return; } envsApplyLogin(L); _envs.lock=envsLockState(_envs.lockRaw);
       if(_envs.lock.locked&&_envs.role!=="admin"){ envsCard("closed"); return; } envsEnter(cont); })
     .catch(e=>{ _envs.err=String((e&&e.message)||e); envsCard("error",{msg:_envs.err}); });
@@ -51715,7 +51718,9 @@ function envcNewCode(sid){
     .then(()=>{ _envc.newLogin={name:s.meta.name,code,sid}; _envc.busy=""; envcRe(); }).catch(e=>{ _envc.busy=""; _envc.err=String((e&&e.message)||e); envcRe(); });
 }
 function envcAddHowe(){ if(!envcOn()) return; const g=id=>((document.getElementById(id)||{}).value||"").trim(); const sid=g("envc-howe-sid").toLowerCase(), name=g("envc-howe-name"); if(!/^[a-z0-9-]+_[a-z0-9-]+$/.test(sid)){ envsToast("A student id looks like family_kid."); return; }
-  const o={["classes/"+_envc.cid+"/students/"+sid]:true,["students/"+sid+"/class"]:_envc.cid,["students/"+sid+"/app"]:"howe"}; if(name) o["students/"+sid+"/meta/name"]=name;
+  // CPHOWEMETA (2026-11-09): meta is validated as a whole (familyId, kid, name, at) — the old meta/name alone was refused by the rules; the family's app rewrites meta at its first sign-in
+  const fid=sid.split("_")[0], kid=sid.split("_")[1];
+  const o={["classes/"+_envc.cid+"/students/"+sid]:true,["students/"+sid+"/class"]:_envc.cid,["students/"+sid+"/app"]:"howe",["students/"+sid+"/meta"]:{familyId:fid,kid,name:(name||kid).slice(0,40),at:Date.now()}};
   envcMulti(o,"Added").then(()=>{ if(envsDemo()){ _envc.students[sid]={meta:{name:name||sid,familyId:sid.split("_")[0],kid:sid.split("_")[1]},class:_envc.cid,app:"howe"}; _envc.cls.students[sid]=true; envcRe(); } }).catch(()=>{}); }
 function envcCodeCardHtml(L){
   return '<div class="envs-card" style="border-color:#86efac;background:#f0fdf4"><div class="envs-row"><div style="flex:1"><div class="envs-h2" style="margin:0">\u{1F39F} '+envcEsc(L.name)+'’s card</div><div class="envs-muted">'+(L.email?'A password-reset email went to '+envcEsc(L.email)+'. ':'')+'Print or copy the code now — it is not kept anywhere.'+(L.demo?' (demo)':'')+'</div></div><button class="envs-btn sec" onclick="envcPrintCard()">\u{1F5A8} Print card</button><button class="envs-btn sec" onclick="_envc.newLogin=null;envcRe()">Done</button></div>'+
