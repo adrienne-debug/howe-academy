@@ -10,7 +10,10 @@ const blk=(a,z)=>{ const i=src.indexOf(a); if(i<0) throw new Error("missing "+a)
 
 console.log("── by text ──");
 ok("one SCP_UNSCORED list: Teach it only", /const SCP_UNSCORED=\{teach:1\};/.test(src)&&src.split("const SCP_UNSCORED=").length===2);
-ok("scpRight and scgLearned both skip it (one guarded clause each)", (src.match(/if\(scpPreJudge\(e\)\|\|scpUnscored\(e\)[|)]/g)||[]).length===2);
+// 📊 SCPSKIP (2026-11-08): every Right % / learned-through-games exclusion lives in ONE list, read by both readers
+const skipList=(src.match(/const SCP_SKIP=\[([\s\S]*?)\];/)||[])[1]||"";
+ok("SCP_SKIP is the one list: before judging, Teach it, a study round, a Pictures sort", ["scpPreJudge","scpUnscored","scpStudyRound","scpCatSort"].every(f=>new RegExp("^\\s*"+f+",?\\s*//","m").test(skipList)) && (src.match(/const SCP_SKIP=/g)||[]).length===1);
+ok("scpRight and scgLearned both skip through it (one guarded clause each), and nothing else names the rules there", (src.match(/forEach\(e=>\{ if\(scpSkip\(e\)\) return;/g)||[]).length===2 && !/scpUnscored\(e\)\|\||scpPreJudge\(e\)\) return/.test(src));
 ok("the TEACH block still logs its round (game teach) — nothing in it changed", /try\{ if\(typeof gameLogRound==="function"\) gameLogRound\(st\); \}catch\(e\)\{\}   \/\/ 🎮 GAMELOG: each card's verdict, game:"teach"/.test(blk("// TEACH_START","// TEACH_END")));
 ok("no 🔀 anywhere in index.html", src.indexOf("\u{1F500}")<0);
 

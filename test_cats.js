@@ -162,4 +162,26 @@ console.log("── park / restore / resume (GAMEKID → GAMEKIT): time away is 
   c._iv=null; c.mastView="which"; c.catsResume();
   ok("not on screen → no clock",c._iv===null);
 }
+console.log("── 📋 CATSCAP (2026-11-08, games honesty audit #16): a group takes its size + 3 entries; spraying fronts is capped ──");
+{ const w=world(MATH), c=w.c; c.catsStart("Math Facts"); const st=c.catsState, cat=st.cats[st.ci];
+  const cap=cat.cards.length+3, mine=cat.cards.map(x=>x.front);
+  const elsewhere=[]; st.cats.forEach((g,i)=>{ if(i!==st.ci) g.cards.forEach(x=>elsewhere.push(x.front)); }); (st.others||[]).forEach(x=>elsewhere.push(x.front));
+  ok("the cap is the group's size + 3 (CATS_EXTRA)",c.catsCap(cat)===cap&&elsewhere.length>=cap-2);
+  // spray: every other front first (each a free "another group" today), then this group's own cards
+  const spray=elsewhere.slice(0,cap-2).concat(mine);
+  const rs=[]; spray.forEach(f=>{ w.els["cats-note"]={textContent:""}; if(st.ci===0&&st.phase==="play") rs.push([f,c.catsEnter(st,f)]); });
+  const kept=cat.typed.length, hits=Object.keys(cat.named).length;
+  ok("entries stop at the cap: "+cap+" kept, the rest refused as 'full'",kept===cap&&rs.slice(cap).every(r=>r[1]==="full")&&rs.slice(0,cap).every(r=>r[1]!=="full"),rs.map(r=>r[1]));
+  ok("…so only 2 of the group's "+mine.length+" are counted (the spray cost the rest)",hits===2&&st.count===2);
+  ok("a name already counted is still free past the cap (dup, not full)",c.catsEnter(st,cat.typed.find(x=>x.pid!=null).text)==="dup");
+  type(w,mine[mine.length-1]);
+  ok("catsAdd on a full group: no chip added, the soft line shown, the count unchanged",!w.chips&&w.els["cats-note"].textContent==="That’s plenty for this category — tap Next when you’re ready."&&st.count===2);
+  ok("…the screen keeps the line on a redraw",c.buildCatsHtml("#000").includes('id="cats-note"')&&c.buildCatsHtml("#000").includes("plenty for this category"));
+  const n=world(MATH), nc=n.c; nc.catsStart("Math Facts"); const ncat=nc.catsState.cats[0];
+  ok("a group under its cap has no line",!nc.buildCatsHtml("#000").includes("plenty for this category")&&!nc.catsFull(ncat));
+  while(nc.catsState.ci<nc.catsState.cats.length) nc.catsNextCat();
+  const e=(w.c.catsNextCat(),w.c.catsNextCat(),w.c.catsNextCat(),w.writes.find(x=>x[0]==="push"));
+  ok("the round logs the capped group honestly: its 2 named ok, the rest missed",!!e&&e[2].items.filter(it=>cat.cards.some(x=>String(x.pid)===it.id)).filter(it=>it.ok).length===2);
+}
+
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
