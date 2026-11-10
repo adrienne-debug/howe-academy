@@ -8784,8 +8784,9 @@ function boardStatPop(kid,slot,d){
       .forEach(a=>rows.push({lab:a.note||"earned",done:true,ts:a.ts||"",amt:a.amount||0}));
   } else { const names={afternoon:"☀️ Afternoon",chores:"🧹 Chores",evening:"🌙 Evening"}; title=names[slot]||slot;
     const steps=rtStepsFor(slot,kid,false,day);
-    steps.forEach((st,i)=>{ if(!cadDueOn(st.cad||"daily",day)) return; const rec=slState[activeWk()+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i]||{};
-      rows.push({lab:(st.emoji?st.emoji+" ":"")+st.label+(st.pts?" +"+st.pts+" ⭐":""),done:rtDoneOn(slot,kid,day,i),ts:rec.ts||"",i:i,wv:(typeof rtWaved==="function")&&rtWaved(slot,kid,day,i)}); });   // LISTS_TAP; KIDROWS2: wv
+    steps.forEach((st,i)=>{ const _ln=(typeof mdLateDays==="function")?mdLateDays(slot,kid,day,i,st):0;   // KIDSLATE: carried-over rows too, as Kids' Corner lists them
+      if(!cadDueOn(st.cad||"daily",day)&&!(_ln>0)) return; const rec=slState[activeWk()+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i]||{};
+      rows.push({lab:(st.emoji?st.emoji+" ":"")+st.label+(st.pts?" +"+st.pts+" ⭐":""),done:rtDoneOn(slot,kid,day,i),ts:rec.ts||"",i:i,wv:(typeof rtWaved==="function")&&rtWaved(slot,kid,day,i),late:_ln}); });   // LISTS_TAP; KIDROWS2: wv
   }
   // LISTS_TAP (her ask 2026-10-21: "make on both mom and dads day all the lists clickable but do not change the look or size on any" —
   // "each individual list you can open for each kid like morning etc"): the ○/✅ on a morning / afternoon / chores / evening row is the
@@ -8803,7 +8804,7 @@ function boardStatPop(kid,slot,d){
   const _waveOk=_tapOk&&(typeof kr2WaveBtnHTML==="function");
   let inner=rows.length?rows.map(r=>'<div style="display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid #f3f4f6;font-size:13px'+(r.wv?';opacity:.55':'')+'">'+
       (isStars?'':'<span'+((_tapOk&&r.i!=null&&!r.wv)?' onclick="event.stopPropagation();mdKidTick(\''+slot+'\',\''+kid+'\',\''+_d+'\','+r.i+');boardStatPop(\''+kid+'\',\''+slot+'\',\''+_d+'\')" style="width:20px;text-align:center;cursor:pointer"':' style="width:20px;text-align:center"')+'>'+(r.done?"✅":r.wv?"–":"○")+'</span>')+   // LISTS_TAP; KIDROWS2: a waved row has no tick
-      '<span style="flex:1;min-width:0;'+(r.done?'':'color:var(--muted)')+(r.wv?';text-decoration:line-through':'')+'">'+esc(r.lab)+'</span>'+
+      '<span style="flex:1;min-width:0;'+(r.done?'':'color:var(--muted)')+(r.wv?';text-decoration:line-through':'')+'">'+esc(r.lab)+((r.late>0&&!r.done&&!r.wv)?'<span class="rt-late">'+r.late+' day'+(r.late>1?'s':'')+' late</span>':'')+'</span>'+   // KIDSLATE: the same tag Kids' Corner shows
       (r.amt!=null?'<span style="font-weight:800;color:'+(r.amt<0?"#b91c1c":"#b45309")+';white-space:nowrap">'+(r.amt<0?"−"+(-r.amt):"+"+r.amt)+' ⭐</span>':'')+
       (r.ts?'<span style="font-size:10.5px;color:var(--muted);white-space:nowrap">'+esc(r.ts)+'</span>':'')+
       ((_waveOk&&r.i!=null&&!r.done)?kr2WaveBtnHTML(slot,kid,_d,r.i,!!r.wv):'')+'</div>').join('')   // KIDROWS2: ✕ today / undo
@@ -12110,12 +12111,26 @@ function momdayEdit(f){
   const el=document.getElementById('content'); if(el) renderMomsPlan(el);
 }
 
+// KIDSLATE_START — her report 2026-11-10: "The kids' chores in the Kids' Corner is listing things that are late, which is
+// definitely what I want. But those are not being reflected in Mom and Dad's Day view and showing all those things as well."
+// Kids' Corner puts a step on today's list when it is due OR carried over from a day it was missed (rtLateDays > 0); the
+// 🧒 Kids today card (Mom's Day + Dad's Day) asked only cadDueOn, so a missed Tuesday chore the kid still saw on Thursday
+// was missing from the card's fractions, its chore list and the pill pop-ups. This says how many days late step i is on the
+// card's day dn: 0 unless dn is the real today (carry-overs only on today's tab, exactly as Kids' Corner) and the step is
+// inside its window (a course that has ended never comes back as "late"). Read-only: Kids' Corner files the miss
+// (_rtLogLateMiss), the card never does. A step waved today is the caller's call — counts skip it, the pop-up greys it.
+function mdLateDays(slot,kid,dn,i,st){
+  if(dn!==_todayDay||typeof rtLateDays!=="function") return 0;
+  if(typeof stepWindowOk==="function"&&!stepWindowOk(st,dn)) return 0;
+  const _pd=day; try{ day=dn; return rtLateDays(slot,kid,i)||0; } finally { day=_pd; }   // rtLateDays reads the steps through the global `day`
+}
+// KIDSLATE_END
 // One kid's routine-slot counts for TODAY (same math as the Board's, but
 // pinned to the real date rather than the global `day` the Board uses).
 function mdSlotCounts(slot,kid,today){
   const steps=rtStepsFor(slot,kid,false,today); let due=0,done=0;
   for(let i=0;i<steps.length;i++){
-    if(!cadDueOn(steps[i].cad||"daily",today)) continue;
+    if(!cadDueOn(steps[i].cad||"daily",today)&&!(typeof mdLateDays==="function"&&mdLateDays(slot,kid,today,i,steps[i])>0)) continue;   // KIDSLATE: or carried over, as Kids' Corner counts it
     if(typeof rtWaved==="function"&&rtWaved(slot,kid,today,i)) continue;   // WAVE
     due++; if(rtDoneOn(slot,kid,today,i)) done++;
   }
@@ -17724,7 +17739,8 @@ function mdCardKidsToday(today,isSchoolDay,bank,dadCtl){   // bank=true: Mom's D
         shower=!!(findDue("afternoon",kid,/shower/i)||findDue("evening",kid,/shower/i));
         pA=findDue("afternoon",kid,/pickup|pick up/i); pE=findDue("evening",kid,/pickup|pick up/i);
         const cs=rtStepsFor("chores",kid);
-        for(let ci=0;ci<cs.length;ci++){ if(cadDueOn(cs[ci].cad||"daily",_kd)) chores.push((cs[ci].emoji?cs[ci].emoji+" ":"")+cs[ci].label); }
+        for(let ci=0;ci<cs.length;ci++){ const _ln=(typeof rtWaved==="function"&&rtWaved("chores",kid,_kd,ci))?0:((typeof mdLateDays==="function")?mdLateDays("chores",kid,_kd,ci,cs[ci]):0);   // KIDSLATE: a late one rides along, marked
+          if(cadDueOn(cs[ci].cad||"daily",_kd)||_ln>0) chores.push((cs[ci].emoji?cs[ci].emoji+" ":"")+cs[ci].label+(_ln>0?" ("+_ln+" day"+(_ln>1?"s":"")+" late)":"")); }   // the list is joined with " · ", so the tag sits in brackets
         if(bank) ["morning","afternoon","chores","evening"].forEach(sl=>{ try{ lt[sl]=slCellState(sl,kid); }catch(e){} });   // 🧒 KIDBAR: the All tab's lights
       } finally { day=_pd; }
       if(bank) bal=(typeof bankBalance==="function")?(bankBalance(kid)||0):0;
