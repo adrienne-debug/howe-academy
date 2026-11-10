@@ -186,6 +186,7 @@ const unnudge = s => String(s).replace(/  \/\/ Load sitting in the washer[\s\S]*
   .replace(/\n[^\n]*\/\/ KITFLAG[^\n]*/g, "")   // 🍳 KITFLAG (2026-10-23): one 🔴 Now line (a meal the kids rate low → ✓ Got it · Swap…), tagged — normalized away on both sides
   .replace(/\n[^\n]*\/\/ LESSONRES: 🧺[^\n]*/g, "")
   .replace(/\n[^\n]*\/\/ 🌿 CPLINCOLNPARITY[^\n]*/g, "")   // 🌿 CPLINCOLNPARITY (2026-10-29): one My day line (Brittany's drills with Lincoln this week, Q23), tagged — normalized away on both sides
+  .replace(/\n[^\n]*\/\/ 🧠 MLSUGGEST[^\n]*/g, "")   // 🧠 MLSUGGEST (2026-11-08): one 🔴 Now line (the load dial's suggestion per kid), tagged — normalized away on both sides
   .replace(/\n[^\n]*\/\/ 📺 DAYCARD[^\n]*/g, "")   // 📺 DAYCARD (2026-10-27): one 🔴 Now line (Today's card for a family block running today), tagged — normalized away on both sides
   .replace(/\n  const dt=gwParseDate\(iso\);\n  const dateLine=[^\n]*/, "").replace(/\n  const wn=\(typeof currWeekNum[^\n]*/, "")
   .replace(/  h\+='<div style="background:linear-gradient\(135deg,#2B7A78,#3AAFA9\)[\s\S]*?\+'<\/div><\/div>';\n/, "  /*banner*/\n").replace(/  h\+=mwBanner\('(?:Today at a glance)?'\);[^\n]*\n/, "  /*banner*/\n");   // 🏡 MDBANNER (2026-10-24): Home Base's own banner became the shared mwBanner('') — that swap (and its date vars) normalized away on both sides

@@ -128,7 +128,7 @@ console.log("2. each control writes what slice B reads (gwEffectiveConfig on the
   run(c,"twsToggleSaturday()");
   run(c,"twsToggleSunday('kid_b')");
   const paths=[].concat(...c.S.writes.map(u=>Object.keys(u)));
-  ok("only the paths slice B reads (+ the live week's sitter node)",paths.every(p=>/^weekConfig\/12\/(babysitter|withSitter|saturday)$/.test(p)||/^calendar\/kidOverrides\/kid_a\/2026-11-13$/.test(p)||/^config\/rules\/sundayCatchup\/kid_b$/.test(p)||p==="week12/babysitter"),paths);
+  ok("only the paths slice B reads (+ the live week's sitter node and, TWSSAT, its Saturday tab)",paths.every(p=>/^weekConfig\/12\/(babysitter|withSitter|saturday)$/.test(p)||/^calendar\/kidOverrides\/kid_a\/2026-11-13$/.test(p)||/^config\/rules\/sundayCatchup\/kid_b$/.test(p)||p==="week12/babysitter"||p==="week12/meta/dates/saturday"),paths);
   const cfg=effFrom(c.S.tree,12);
   ok("sitter Thursday with its hours",cfg.babysitter.thursday&&cfg.babysitter.thursday.start==="10:00 AM"&&cfg.babysitter.thursday.end==="1:30 PM",cfg.babysitter);
   ok("…and only Thursday",Object.keys(cfg.babysitter).join()==="thursday");
@@ -170,7 +170,7 @@ console.log("3. one re-lay request per write, with Undo; taps within 2 s = one r
   ok("…no run yet (the 2 s wait)",c.S.fires===0);
   flushTimers(c);
   ok("three taps within 2 s → one run",c.S.fires===1,c.S.fires);
-  ok("…its Undo holds every path, as it was before the first tap",c.S.pend&&c.S.pend.undo.length===4&&c.S.pend.undo.every(u=>u.gone===true),c.S.pend&&c.S.pend.undo);
+  ok("…its Undo holds every path, as it was before the first tap",c.S.pend&&c.S.pend.undo.length===5&&c.S.pend.undo.every(u=>u.gone===true)&&c.S.pend.undo.some(u=>u.p==="week12/meta/dates/saturday"),c.S.pend&&c.S.pend.undo);
   ok("…and all three labels",c.S.pend.labels.length===3);
   // Undo: a run moved one card; the entry carries the door's undo
   const at=Date.now();

@@ -127,7 +127,14 @@ console.log("\n── the fluency rule ──");
   ok("two fast + one slow (10 s is not under 10) ≠ fluent", W.envFlashFluent([sh("p1", true, 4), sh("p2", true, 3), sh("p3", true, 10)]) === false);
   ok("three fast corrects on the SAME picture ≠ fluent", W.envFlashFluent([sh("p1", true, 4), sh("p1", true, 3), sh("p1", true, 2)]) === false);
   ok("two different pictures among three ≠ fluent", W.envFlashFluent([sh("p1", true, 4), sh("p2", true, 3), sh("p1", true, 2)]) === false);
-  ok("only the last three CORRECT shows count: a miss in between doesn't break it", W.envFlashFluent([sh("p1", true, 4), sh("p2", false, 2), sh("p2", true, 3), sh("p3", true, 2)]) === true);
+  // IDFLASH_ROW (2026-11-08, games honesty audit #13): Pick rights count only three IN A ROW; Type rights may have misses between
+  const pk = (pic, ok, secs) => ({ pic, ok, secs, at: 1, mode: "pick" }), ty = (pic, ok, secs) => ({ pic, ok, secs, at: 1, mode: "type" });
+  ok("IDFLASH_ROW: a Pick miss between Pick rights resets the streak (was fluent before)", W.envFlashFluent([sh("p1", true, 4), sh("p2", false, 2), sh("p2", true, 3), sh("p3", true, 2)]) === false && W.envFlashFluent([pk("p1", true, 4), pk("p2", false, 2), pk("p2", true, 3), pk("p3", true, 2)]) === false);
+  ok("IDFLASH_ROW: three Pick rights in a row on three pictures = fluent", W.envFlashFluent([pk("p0", false, 2), pk("p1", true, 4), pk("p2", true, 3), pk("p3", true, 2)]) === true);
+  ok("IDFLASH_ROW: guessing — right, miss, right, miss, right on 5 pictures ≠ fluent", W.envFlashFluent([pk("a", true, 2), pk("b", false, 2), pk("c", true, 2), pk("d", false, 2), pk("e", true, 2)]) === false);
+  ok("IDFLASH_ROW: three Type rights with misses between = fluent", W.envFlashFluent([ty("p1", true, 4), ty("p2", false, 2), ty("p2", true, 3), pk("p4", false, 1), ty("p3", true, 2)]) === true);
+  ok("IDFLASH_ROW: two Type rights + one Pick right, a miss between ≠ fluent (the Pick only counts in a row)", W.envFlashFluent([ty("p1", true, 4), pk("p2", true, 2), ty("p0", false, 3), ty("p3", true, 2)]) === false);
+  ok("IDFLASH_ROW: a mixed unbroken run of three (Type, Pick, Type) = fluent", W.envFlashFluent([ty("p1", true, 4), pk("p2", true, 2), ty("p3", true, 3)]) === true);
   ok("an earlier slow correct is ignored once three fast ones follow", W.envFlashFluent([sh("p0", true, 30), sh("p1", true, 4), sh("p2", true, 3), sh("p3", true, 2)]) === true);
   ok("a slow correct among the last three blocks it", W.envFlashFluent([sh("p1", true, 4), sh("p2", true, 3), sh("p0", true, 30), sh("p3", true, 2)]) === false);
   ok("fewer than three corrects ≠ fluent; empty ≠ fluent", W.envFlashFluent([sh("p1", true, 1), sh("p2", true, 1)]) === false && W.envFlashFluent([]) === false);
@@ -227,7 +234,7 @@ console.log("\n── the pictures on the cards (envPicsOn / envPicsApply / envP
   ok("exactly two writes: one multi-path update on mastery/kidA_idflash and the day's study-log entry", ws.length === 2 && ws[0][0] === "update" && ws[0][1] === "mastery/kidA_idflash" && ws[1][0] === "set" && ws[1][1] === "mastery/studyLog/kidA/idflash/20261027");
   const upd = ws[0][2];
   ok("the update's keys are <deckKey>/<itemKey>, one per item shown, each {shows, fluent, at}", Object.keys(upd).length === 12 && Object.keys(upd).every(k => k.startsWith("Forestry · ID/") && !/[.#$\[\]]/.test(k)) && Object.values(upd).every(v => Object.keys(v).sort().join() === "at,fluent,shows" && v.shows.length === 1 && v.fluent === false));
-  ok("each show = {pic, ok, secs, at}; the miss and the slow one recorded as they happened", Object.values(upd).every(v => Object.keys(v.shows[0]).sort().join() === "at,ok,pic,secs") && upd["Forestry · ID/" + f.cards[2].key].shows[0].ok === false && upd["Forestry · ID/" + f.cards[3].key].shows[0].secs >= 12);
+  ok("each show = {pic, ok, secs, at, mode:'pick'}; the miss and the slow one recorded as they happened", Object.values(upd).every(v => Object.keys(v.shows[0]).sort().join() === "at,mode,ok,pic,secs" && v.shows[0].mode === "pick") && upd["Forestry · ID/" + f.cards[2].key].shows[0].ok === false && upd["Forestry · ID/" + f.cards[3].key].shows[0].secs >= 12);
   const entry = ws[1][2];
   const stockKeys = (() => { const t = src.slice(src.indexOf("function _mstSaveInner("), src.indexOf("// MSTALERT_START")); const m = /let entry=\{([^}]*)\}/.exec(t.replace(/\{secs:secs,total:total\}/g, "")); return m[1].split(",").map(x => x.split(":")[0].trim()).filter(Boolean).sort(); })();
   ok("the study-log entry has a normal show's shape (the stock entry's fields minus `before`; items {id,name,deck,result})", stockKeys.join() === Object.keys(entry).concat("before").sort().join() && entry.items.length === 12 && entry.items.every(it => Object.keys(it).sort().join() === "deck,id,name,result") && entry.items.filter(it => it.result === "c").length === 11 && entry.items[2].result === "m" && entry.total === 12 && entry.correct === 11 && entry.miss === 1 && entry.shown === 0 && entry.printNum === 42 && entry.sits.length === 1, { stockKeys, got: Object.keys(entry) });
@@ -266,6 +273,20 @@ console.log("\n── the pictures on the cards (envPicsOn / envPicsApply / envP
   ok("a fluent item is out of the next sitting; the deck line says ⚡ 1 of 24 fluent", W4.envFlashOpen("kidA", "Forestry · ID").cards.every(c => c.item !== "Sassafras") && W4.envFlashDoorHtml("kidA", null).includes("⚡ 1 of 24 fluent"));
   W4.envFlashQuit();
   ok("the pictures the shows were on are the repo URLs", st4.shows.slice(1).every(s => /^envirothon\/pics\/forestry_id\/sassafras\/\d\.jpg$/.test(s.pic)));
+  ok("typed shows are saved with mode:'type'", st4.shows.slice(1).every(s => s.mode === "type"));
+
+  console.log("\n── IDFLASH_ROW: Pick mode needs three in a row ──");
+  const W4p = family({ release: ["Forestry · ID"] });
+  await W4p.envPicsLoad(fakeFetch); W4p.envHydrate(W4p.us.nc_envirothon, LIB);
+  W4p.G.masteryData.kidA_idflash = { "Forestry · ID": { Sassafras: { shows: [{ pic: "old", ok: false, secs: 11, at: 1 }], fluent: false, at: 1 } } };
+  const pickSit = right => { const ff = W4p.envFlashOpen("kidA", "Forestry · ID"); const ix = ff.cards.findIndex(c => c.item === "Sassafras");
+    for (let i = 0; i < ff.cards.length; i++) { ff.shownAt = Date.now() - 2000; const c = ff.cards[i]; W4p.envFlashPickTap(c.lures.findIndex(l => (i === ix && right) ? l.ok : !l.ok)); W4p.envFlashNextCard(); }
+    W4p.envFlashQuit(); return W4p.G.masteryData.kidA_idflash["Forestry · ID"].Sassafras; };
+  pickSit(true); pickSit(false); pickSit(true); const stP = pickSit(true);
+  const okPics = stP.shows.filter(s => s.ok).map(s => s.pic);
+  ok("Pick: right, miss, right, right (three rights on three pictures) → NOT fluent — the miss reset the streak", stP.fluent === false && okPics.length === 3 && new Set(okPics).size === 3 && stP.shows.every(s => s.pic === "old" || s.mode === "pick"), stP.shows);
+  const stP2 = pickSit(true);
+  ok("… one more quick Pick right makes three in a row on three pictures → fluent", stP2.fluent === true && new Set(stP2.shows.slice(-3).map(s => s.pic)).size === 3, stP2.shows);
 
   console.log("\n── dry run ──");
   const W5 = family({ release: ["Forestry · ID", "Wildlife · ID"], dry: true });
