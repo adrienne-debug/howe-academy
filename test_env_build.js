@@ -8,7 +8,7 @@
 const fs = require("fs"), path = require("path"), os = require("os"), cp = require("child_process");
 const REPO = __dirname;
 const BUILD_DIR = path.join(REPO, "envirothon", "build");
-const src = fs.readFileSync(path.join(REPO, "index.html"), "utf8");
+const src = require("./test_src.js")(path.join(REPO, "index.html"));
 let pass = 0, fail = 0;
 function ok(cond, msg) { if (cond) { pass++; } else { fail++; console.log("  ✗ " + msg); } }
 
@@ -92,7 +92,7 @@ if (!installed) {
     ok(/## Stripped \(\d+ listed blocks/.test(rep) && rep.includes("## Kept although listed"), "BUILD_REPORT.md lists stripped and kept");
   }
   // index.html untouched by the build
-  ok(fs.readFileSync(path.join(REPO, "index.html"), "utf8") === src, "index.html is byte-for-byte unchanged after the build");
+  ok(require("./test_src.js")(path.join(REPO, "index.html")) === src, "index.html is byte-for-byte unchanged after the build");
   try { fs.rmSync(out, { recursive: true, force: true }); } catch (e) {}
 }
 

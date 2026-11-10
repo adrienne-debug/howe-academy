@@ -14,7 +14,7 @@
  *   run: node test_env_tests.js
  */
 const fs = require("fs"), path = require("path"), vm = require("vm");
-const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const src = require("./test_src.js")(path.join(__dirname, "index.html"));
 const LIB = require(path.join(__dirname, "envirothon.js"));
 const FOR_CORE = JSON.parse(fs.readFileSync(path.join(__dirname, "units", "nc_envirothon", "COUNTS.json"), "utf8")).sections.forestry.core;   // the Forestry core count compile_unit.js wrote, not a typed number
 const JSON_T = JSON.parse(fs.readFileSync(path.join(__dirname, "envirothon", "nc_envirothon_tests.json"), "utf8"));

@@ -55,7 +55,7 @@ return html;
 module.exports={buildDemo,demoTests,testsScript,demoBrowse,browseScript,demoPics,picsScript};
 if(require.main===module){
   let commit="?"; try{ commit=cp.execSync("git rev-parse --short HEAD",{cwd:REPO,stdio:["ignore","pipe","ignore"]}).toString().trim(); }catch(e){}
-  const html=buildDemo(fs.readFileSync(SRC,"utf8"),commit,demoTests(),demoBrowse(),demoPics());
+  const html=buildDemo(require(path.join(REPO,"test_src.js"))(SRC),commit,demoTests(),demoBrowse(),demoPics());   // 🪶 LAZYSPLIT: the demo is ONE page — classes.js (and any other moved file) goes back in at its markers
   fs.writeFileSync(OUT,html);
   console.log("wrote "+path.relative(REPO,OUT)+" ("+html.length.toLocaleString()+" bytes, from "+commit+")");
 }

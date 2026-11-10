@@ -1,7 +1,7 @@
 // CPTEACHERGATE (2026-11-09): a teacher record (teachers/<uid> with a class) signs the teacher in when there is no logins row and
 // no admin flag — + Teacher writes no logins row, and the logins rule could not take one (it wants a family and a kid).
 const fs=require("fs"), assert=require("assert"), vm=require("vm");
-const src=fs.readFileSync(__dirname+"/index.html","utf8");
+const src=require("./test_src.js")(__dirname+"/index.html");
 let n=0; const ok=(c,m)=>{ assert(c,m); n++; };
 const m=src.match(/\nfunction envSiteGate\(user,cont\)\{[\s\S]*?\n\}\n/); ok(m,"envSiteGate found");
 const fn=m[0];

@@ -1,6 +1,6 @@
 // test_cp_wave5_glue.js — the wave-5 merge (2026-10-29): PR 8 📅 Pace and PR 25 🧩 skills meet. Pace's station rows show the skill
 // engine's "skills learned N of M" (cpSkillPaceLine, defined in CPSKILL) through one typeof-guarded line inside CPPACE.
-const fs=require("fs"), path=require("path"); const src=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
+const fs=require("fs"), path=require("path"); const src=require("./test_src.js")(path.join(__dirname,"index.html"));
 let pass=0, fail=0; const ok=(n,c)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n); } };
 const slice=(a,b)=>{ const i=src.indexOf("// "+a), j=src.indexOf("// "+b); return i>=0&&j>i?src.slice(i,j):""; };
 const PACE=slice("CPPACE_START","CPPACE_END"), SKILL=slice("CPSKILL_START","CPSKILL_END");

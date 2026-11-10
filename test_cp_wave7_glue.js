@@ -1,6 +1,6 @@
 // test_cp_wave7_glue.js — the wave-7 merge (2026-10-29): PR 28 📆 "send a section out earlier" joins PR 16 💡 Suggestions. The strip hands its
 // suggestion over (cpSuggestOwns("sendEarly")), the list shows it once with Do it / Not now, and its id is made safe for classes/<cid>/dismissed.
-const fs=require("fs"), path=require("path"), vm=require("vm"); const src=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
+const fs=require("fs"), path=require("path"), vm=require("vm"); const src=require("./test_src.js")(path.join(__dirname,"index.html"));
 let pass=0, fail=0; const ok=(n,c)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n); } };
 const slice=(a,b)=>{ const i=src.indexOf("// "+a), j=src.indexOf("// "+b); return i>=0&&j>i?src.slice(i,j):""; };
 const SG=slice("CPSUGGEST_START","CPSUGGEST_END"), SE=slice("CPSENDEARLY_START","CPSENDEARLY_END");

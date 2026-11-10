@@ -15,7 +15,7 @@
  *   · the rules file.                                                                                    run: node test_cp_ahead.js
  */
 const fs=require("fs"), path=require("path");
-const REPO=__dirname, src=fs.readFileSync(path.join(REPO,"index.html"),"utf8");
+const REPO=__dirname, src=require("./test_src.js")(path.join(REPO,"index.html"));
 let pass=0, fail=0;
 const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  "+JSON.stringify(x).slice(0,600):"")); } };
 const cut=(a,b)=>{ const i=src.indexOf(a); if(i<0) throw new Error("missing "+a); const j=src.indexOf(b,i); return src.slice(i,j+b.length); };

@@ -1,7 +1,7 @@
 // CPADMINREAD (2026-11-09): the admin console subscribes to the WHOLE classes and teachers nodes, so the rules must grant
 // a node-level admin read there — Firebase refuses a parent read that only the children grant (first live sign-in).
 const fs=require("fs"), assert=require("assert");
-const src=fs.readFileSync(__dirname+"/index.html","utf8");
+const src=require("./test_src.js")(__dirname+"/index.html");
 const R=JSON.parse(fs.readFileSync(__dirname+"/envirothon/SITE_RULES.json","utf8")).rules;
 const ADMIN="auth != null && root.child('admins/'+auth.uid).val() == true";
 let n=0; const ok=(c,m)=>{ assert(c,m); n++; };
