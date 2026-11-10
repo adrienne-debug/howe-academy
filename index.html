@@ -28578,6 +28578,19 @@ function scpMinutes(kid,history,studyLog,gameLog,w,schoolDays,gw){
   const total=drill+study+games*gw, days=Math.max(1,schoolDays|0);
   return {drill:Math.round(drill/60),study:Math.round(study/60),games:Math.round(games/60),total:Math.round(total/60),days:days,perDay:Math.round(total/60/days),any:(drill+study+games)>0};
 }
+// ⏱ CARDSECS — PURE: study seconds a card inside a window → {s, timed, n} or null when no sitting: the median of the cards' own times
+// (studyLog items' ms) when any carry one, else the sittings' time ÷ cards, as SREVIEW always gave it (a sitting over the cap is left out).
+function scpCardSecs(kid,studyLog,w){
+  const cap=(typeof SC_LEFT_OPEN_SECS==="number")?SC_LEFT_OPEN_SECS:7200, sl=(studyLog||{})[kid]||{}, items=[];
+  let secs=0, cards=0;
+  Object.keys(sl).forEach(sid=>{ const days=sl[sid]; if(!days||typeof days!=="object") return;
+    Object.keys(days).forEach(k=>{ if(!scpIn(k,w)) return; const e=days[k]; if(!e||typeof e!=="object") return;
+      scpV(e.items).forEach(it=>items.push(it));
+      const sits=scpV(e.sits); (sits.length?sits:[{secs:e.secs,total:e.total}]).forEach(x=>{ const t=+(x&&x.total)||0, v=x&&x.secs; if(t>0&&typeof v==="number"&&v>0&&v<=cap){ secs+=v; cards+=t; } }); }); });
+  const m=(typeof cardSecsMedian==="function")?cardSecsMedian(items):null;
+  if(m!=null) return {s:Math.round(m/100)/10,timed:true,n:items.filter(it=>typeof gameCardMs!=="function"||gameCardMs(it)!=null).length};
+  return cards?{s:Math.round(secs*10/cards)/10,timed:false,n:cards}:null;
+}
 // PURE: minutes a day against the budget → {ratio (%), word, budget} or null without a budget
 function scpLoad(perDay,budget){
   budget=Number(budget); if(!(budget>0)||typeof perDay!=="number") return null;
@@ -28596,7 +28609,7 @@ function scpKidNumbers(kid,D){
   const right={w7:R(w7),p7:R(p7),w28:R(w28),p28:R(p28)}, min={w7:M(w7),p7:M(p7),w28:M(w28),p28:M(p28)};
   const ladder=scpLadder(D.cards), week=scpWeek(D.tasks,D.checked,kid), last=D.prev?scpWeek(D.prev.tasks,D.prev.checked,kid):null;
   const load=scpLoad(min.w7.any?min.w7.perDay:(typeof D.budgetMin==="number"||D.budgetMin?0:null),D.budgetMin);
-  return {kid:kid,today:today,right:right,ladder:ladder,week:week,last:last,min:min,load:load,
+  return {kid:kid,today:today,right:right,ladder:ladder,week:week,last:last,min:min,load:load,cardSecs:scpCardSecs(kid,D.studyLog,w7),   // ⏱ CARDSECS
     headline:scpHeadline(right.w7.pct,ladder.score,week.pct),formula:scpFormula(right.w7.pct,ladder.score,week.pct),
     any:!!(right.w28.graded||min.w28.any||ladder.n||week.planned)};
 }
@@ -28636,6 +28649,7 @@ function scpCardHtml(r){
   h+='</div>';
   if(r.load) h+='<div style="margin-top:10px;font-size:13px"><span style="display:inline-block;padding:3px 10px;border-radius:999px;font-weight:800;color:#fff;background:'+scpLoadCol(r.load.word)+'">⚖️ '+r.load.word+'</span> <span style="color:#334155">'+(m7.any?m7.perDay:0)+' min a school day of '+r.load.budget+' ('+r.load.ratio+'%)'+(m7.any?' · drill '+m7.drill+' · study '+m7.study+' · games '+m7.games:'')+'</span></div>';
   else h+='<div style="margin-top:10px;font-size:12.5px;color:var(--muted)">⚖️ Load: no budget set yet'+(m7.any?' · drill '+m7.drill+' · study '+m7.study+' · games '+m7.games+' min this week':'')+'</div>';
+  if(r.cardSecs) h+='<div class="scp-cardsecs" style="margin-top:6px;font-size:12.5px;color:#334155">\u23F1 Study, a card: <b>'+scpE(r.cardSecs.s)+' s</b> <span style="color:var(--muted)">'+(r.cardSecs.timed?'the middle time from a card showing to the first answer · '+r.cardSecs.n+' card'+(r.cardSecs.n===1?'':'s')+' timed':'sitting time ÷ cards — no card timed yet')+' · last 7 days</span></div>';   // ⏱ CARDSECS
   if(typeof mldDialHtml==="function"){ try{ h+=mldDialHtml(r.kid); }catch(e){} }   // 🎚 MLDIAL: the dial, under the meter
   if(typeof tchScoresHtml==="function") h+=tchScoresHtml(r.kid);   // 🏴‍☠️ TCHEST: "<deck> treasure reached <date>", read-only
   h+='<details style="margin-top:8px;font-size:11.5px;color:#64748b"><summary style="cursor:pointer;font-weight:700">How these are counted</summary><div style="padding:6px 0 2px;line-height:1.5">'+
@@ -28730,7 +28744,7 @@ function scgLearned(kid,cards,history,studyLog,gameLog){
 function scgStats(kid,D){
   D=D||{}; const today=D.today||scpToday(), w7=scpWin(today,7), cap=(typeof SC_LEFT_OPEN_SECS==="number")?SC_LEFT_OPEN_SECS:7200;
   const set=(D.settings&&typeof D.settings==="object")?D.settings:{}, gl=(D.gameLog||{})[kid]||{}, mb=(set.match_best&&typeof set.match_best==="object")?set.match_best:{};
-  const likes=(set.gameLikes&&typeof set.gameLikes==="object")?set.gameLikes:{}, deckOf={}, G={}, DK={}, first={}, rounds=[];
+  const likes=(set.gameLikes&&typeof set.gameLikes==="object")?set.gameLikes:{}, deckOf={}, G={}, DK={}, first={}, rounds=[], CS={};   // ⏱ CARDSECS: CS = game → its judged items
   scpV(D.cards).forEach(c=>{ if(c&&c.id!=null&&c.subject) deckOf[String(c.id)]=String(c.subject); });
   const gOf=k=>G[k]||(G[k]={key:k,rounds:0,w7:0,n:0,ok:0,secs:0,last:"",best:{},up:0,down:0});
   Object.keys(gl).forEach(day=>{ if(!/^\d{8}$/.test(day)) return; scpV(gl[day]).forEach(e=>{ if(!e||typeof e!=="object") return;
@@ -28748,7 +28762,7 @@ function scgStats(kid,D){
     if(r.log&&scpUnscored(e)){ s.cards=(s.cards||0)+scpV(e.items).filter(it=>it&&!it.back).length; return; }   // 🎓 TEACHSCORE: cards taught — no Right %, no deck
     const add=(deck,n,ok)=>{ const d=DK[deck]||(DK[deck]={deck:deck,rounds:0,games:{}}), x=d.games[r.g]||(d.games[r.g]={key:r.g,rounds:0,n:0,ok:0,best:{}});
       if(!seen[deck]){ seen[deck]=1; d.rounds++; x.rounds++; } x.n+=n; x.ok+=ok; s.n+=n; s.ok+=ok; tot.n+=n; tot.ok+=ok; };
-    if(r.log){ let any=false; scpV(e.items).forEach(it=>{ if(!it||it.back) return; any=true; add(deckOf[String(it.id)]||String(e.deck||"—"),1,it.ok?1:0); });
+    if(r.log){ let any=false; scpV(e.items).forEach(it=>{ if(!it||it.back) return; any=true; add(deckOf[String(it.id)]||String(e.deck||"—"),1,it.ok?1:0); const a=CS[r.g]||(CS[r.g]=[]); a[a.length]=it; });   // ⏱ CARDSECS: the judged cards, for the median
       if(!any) add(String(e.deck||"—"),0,0); }
     else { const of=Math.max(0,+e.of||0), f=Math.min(of,Math.max(0,+e.first||0)); add(String(e.deck||"—"),of,f); }   // a saved round: its first-try count
   });
@@ -28759,7 +28773,7 @@ function scgStats(kid,D){
   let nLikes=0;
   Object.keys(likes).forEach(g=>{ scpV(likes[g]).forEach(a=>{ if(!a) return; const v=Number(a.v); if(!(v>0||v<0)) return; nLikes++; if(v>0) gOf(g).up++; else gOf(g).down++; }); });
   const pct=(ok,n)=>n?Math.round(ok/n*100):null;
-  const games=Object.keys(G).map(k=>{ const s=G[k]; s.pct=pct(s.ok,s.n); s.min=Math.round(s.secs/60); if(s.pre){ s.pre.pct=pct(s.pre.ok,s.pre.n); s.pre.min=Math.round(s.pre.secs/60); } return s; })
+  const games=Object.keys(G).map(k=>{ const s=G[k]; s.pct=pct(s.ok,s.n); s.min=Math.round(s.secs/60); s.ms=(typeof cardSecsMedian==="function")?cardSecsMedian(CS[k]||[]):null; /* ⏱ CARDSECS: median ms, null = none timed */ if(s.pre){ s.pre.pct=pct(s.pre.ok,s.pre.n); s.pre.min=Math.round(s.pre.secs/60); } return s; })
     .sort((a,b)=>(b.rounds-a.rounds)||(a.key<b.key?-1:a.key>b.key?1:0));
   const decks=Object.keys(DK).map(k=>{ const d=DK[k]; d.list=Object.keys(d.games).map(g=>{ const x=d.games[g]; x.pct=pct(x.ok,x.n); return x; }).sort((a,b)=>b.rounds-a.rounds||(a.key<b.key?-1:1)); return d; })
     .sort((a,b)=>(b.rounds-a.rounds)||(a.deck<b.deck?-1:a.deck>b.deck?1:0));
@@ -28789,10 +28803,10 @@ function scgHtml(s,open,cards){
   const names=s.learned.slice(0,6).map(id=>{ const c=byId[id]||{}; return scpE(c.answer||c.prompt||id); });
   h+='<div style="font-size:12px;color:#334155;margin-top:6px">\u{1F331} Cards learned through games: <b>'+s.learned.length+'</b>'+(names.length?' <span style="color:#64748b">· '+names.join(', ')+(s.learned.length>names.length?' …':'')+'</span>':'')+'</div>';
   if(s.taught) h+='<div class="scg-taught" style="font-size:12px;color:#334155;margin-top:4px">\u{1F393} taught: <b>'+s.taught.cards+'</b> card'+(s.taught.cards===1?'':'s')+' · '+s.taught.rounds+' round'+(s.taught.rounds===1?'':'s')+'</div>';   // 🎓 TEACHSCORE: no Right %
-  h+='<div style="overflow-x:auto;margin-top:8px"><table style="border-collapse:collapse;font-size:12px;width:100%"><tr><th '+th+'>Game</th><th '+th+'>Rounds 7 d / all</th><th '+th+'>Right</th><th '+th+'>Best</th><th '+th+'>\u{1F44D} \u{1F44E}</th><th '+th+'>Min</th></tr>';
+  h+='<div style="overflow-x:auto;margin-top:8px"><table style="border-collapse:collapse;font-size:12px;width:100%"><tr><th '+th+'>Game</th><th '+th+'>Rounds 7 d / all</th><th '+th+'>Right</th><th '+th+'>Best</th><th '+th+'>\u{1F44D} \u{1F44E}</th><th '+th+'>Min</th><th '+th+'>\u23F1 per card</th></tr>';
   s.games.forEach(g=>{ const p=g.pre, only=p&&!g.rounds&&!Object.keys(g.best).length&&!g.up&&!g.down;
-    if(!only) h+='<tr><td '+td+'>'+scpE(scgLabel(g.key))+'</td><td '+td+'>'+g.w7+' / '+g.rounds+'</td><td '+td+'><span style="font-weight:800;color:'+scpPctCol(g.pct)+'">'+scpN(g.pct,'%')+'</span>'+(g.n?' <span style="color:#94a3b8">of '+g.n+'</span>':'')+'</td><td '+td+'>'+scgBestTxt(g.best,true)+'</td><td '+td+'>'+((g.up||g.down)?g.up+' · '+g.down:'—')+'</td><td '+td+'>'+(g.rounds?g.min:'—')+'</td></tr>';
-    if(p) h+='<tr class="scg-pre" style="color:#94a3b8"><td '+td+'>'+scpE(scgLabel(g.key))+' <i style="font-size:11px">· before judging</i></td><td '+td+'>'+p.w7+' / '+p.rounds+'</td><td '+td+'>'+scpN(p.pct,'%')+' <span style="font-size:11px">not counted</span></td><td '+td+'>—</td><td '+td+'>—</td><td '+td+'>'+p.min+'</td></tr>'; });   // ⚖️ GAMEJUDGE: grey, never in a Right %
+    if(!only) h+='<tr><td '+td+'>'+scpE(scgLabel(g.key))+'</td><td '+td+'>'+g.w7+' / '+g.rounds+'</td><td '+td+'><span style="font-weight:800;color:'+scpPctCol(g.pct)+'">'+scpN(g.pct,'%')+'</span>'+(g.n?' <span style="color:#94a3b8">of '+g.n+'</span>':'')+'</td><td '+td+'>'+scgBestTxt(g.best,true)+'</td><td '+td+'>'+((g.up||g.down)?g.up+' · '+g.down:'—')+'</td><td '+td+'>'+(g.rounds?g.min:'—')+'</td><td '+td+'>'+((typeof cardSecsTxt==="function")?cardSecsTxt(g.ms):'—')+'</td></tr>';
+    if(p) h+='<tr class="scg-pre" style="color:#94a3b8"><td '+td+'>'+scpE(scgLabel(g.key))+' <i style="font-size:11px">· before judging</i></td><td '+td+'>'+p.w7+' / '+p.rounds+'</td><td '+td+'>'+scpN(p.pct,'%')+' <span style="font-size:11px">not counted</span></td><td '+td+'>—</td><td '+td+'>—</td><td '+td+'>'+p.min+'</td><td '+td+'>—</td></tr>'; });   // ⚖️ GAMEJUDGE: grey, never in a Right %
   h+='</table></div>';
   if(s.decks.length){
     h+='<div style="font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#64748b;margin-top:10px">By deck</div>';
@@ -28802,6 +28816,7 @@ function scgHtml(s,open,cards){
   h+='<details style="margin-top:8px;font-size:11.5px;color:#64748b"><summary style="cursor:pointer;font-weight:700">How these are counted</summary><div style="padding:6px 0 2px;line-height:1.5">'+
     'Right = right on the first try ÷ cards answered; a card that comes back at the end of a round is not a second try. (Overall counts games at half weight; this is the raw %.)<br>'+
     'Best = the game’s own best: seconds for Match, Memory flip and Beat my time (lower is better), dollars for Jeopardy’s money game, a count for the rest.<br>'+
+    '⏱ per card = the middle (median) time from a card showing to the first answer on it, over the cards counted in Right. — = no card timed yet (rounds from before the timer, and games with every card out at once).<br>'+
     'A card is counted in its own deck, so a mixed round splits into the decks it came from.<br>'+
     'Learned through games = a card the practice list marked learned, or one that was missed, then right on the first try in a game, then right in the next drill or study.<br>'+
     'Before judging = Go Fish, Connect Four, Battleship, Kaboom, Sure? then flip and Jeopardy rounds from before “I said it” was checked: a tap counted as right, so they are shown grey and left out of every Right % and of learned through games.<br>'+
@@ -72831,6 +72846,7 @@ function mastMatchSaidPick(ci){
   const turn={pid:g.pid,done:true,first:!!c.ok,wrong:{}}; if(!c.ok) turn.wrong[c.pid]=1;
   (st.sayTurns||(st.sayTurns=[])).push(turn);
   st.res[g.pid]=c.ok?"c":"m";
+  if(g.openedAt) (st.resMs||(st.resMs={}))[g.pid]=Date.now()-g.openedAt;   // ⏱ CARDSECS: the card's gate open → the pick
   if(c.ok) matchDing();
   else { matchBonk(); const r=g.choices.find(x=>x.ok); if(r) try{ mastSpeak(r.text); }catch(e){} }
   _mastRe();
@@ -72861,6 +72877,7 @@ function mastMatchPick(ci){
     setTimeout(()=>{ if(matchState===st&&st.gate===g) _matchClearNext(st); },c.ok?500:1400);   // GAMEKID: never acts on a parked / settled gate
     return;
   }
+  if(g.openedAt) (st.resMs||(st.resMs={}))[g.pid]=Date.now()-g.openedAt;   // ⏱ CARDSECS: the card's gate open → the pick
   if(c.ok){ st.res[g.pid]="c"; matchDing(); }
   else { st.res[g.pid]="m"; st.missed.push(g.pid); matchBonk(); }
   _mastRe();
@@ -73350,6 +73367,7 @@ function whichTap(ti){
   const st=whichState; if(!st||st.phase!=="play"||st.lock) return;
   const t=st.turns[st.i]; if(!t) return;
   const pid=t.tiles[ti]; if(pid==null||t.wrong[pid]) return;
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   if(pid!==t.pid){
     t.wrong[pid]=1;
     try{ matchBonk(); }catch(e){}
@@ -73438,6 +73456,7 @@ function buildWhichHtml(color){
   const best=(s.match_best||{})[whichBestKey(st.deck)];
   if(st.phase==="play"){
     const t=st.turns[st.i];
+    if(typeof gameCardShown==="function") gameCardShown(t);   // ⏱ CARDSECS: the card is on screen — its clock starts at the first paint
     // Progress dots: one per turn; a card coming back adds its own dot at the end.
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px">';
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
@@ -73507,7 +73526,7 @@ function gameLogEntry(st,now){
   if(!st||st.phase!=="done"||!Array.isArray(st.turns)) return null;
   const items=[];
   st.turns.forEach(t=>{ if(!t||!t.done||t.pid==null||t.nolog) return;   // ⚖️ GAMEJUDGE: nolog = the turn judged nothing (Go Fish's honest "Go fish!", Battleship's last-tile find)
-    const o={id:String(t.pid),ok:!!t.first,n:Object.keys(t.wrong||{}).length+1}; if(t.back) o.back=true; if(t.fail) o.fail=true; items.push(o); });   // 🔤 SPELLBUILD: fail = never built right
+    const o={id:String(t.pid),ok:!!t.first,n:Object.keys(t.wrong||{}).length+1}; if(t.back) o.back=true; if(t.fail) o.fail=true; if(typeof gameCardMsTo==="function") gameCardMsTo(o,t); items.push(o); });   // 🔤 SPELLBUILD: fail = never built right · ⏱ CARDSECS: ms
   if(!items.length) return null;
   now=now!=null?now:Date.now();
   const e={game:st.game||"which",deck:String(st.deck||""),at:now,items:items};   // 🔤 SPELLBUILD: each game names itself
@@ -73542,13 +73561,61 @@ function gameLogRound(st,pre){
 function gameLogMatchEntry(st,now){
   if(!st||!st.deck||!st.endTs) return null;
   now=now!=null?now:Date.now();
-  const res=st.res||{}, items=Object.keys(res).map(pid=>({id:String(pid),ok:res[pid]==="c",n:res[pid]==="c"?1:2}));
+  const res=st.res||{}, rms=st.resMs||{}, items=Object.keys(res).map(pid=>{ const o={id:String(pid),ok:res[pid]==="c",n:res[pid]==="c"?1:2}; if(typeof gameCardMsTo==="function") gameCardMsTo(o,{ms:rms[pid]}); return o; });   // ⏱ CARDSECS: ms
   const e={game:st.style==="memory"?"memory":"match",deck:String(st.deck),at:now,items:items,why:"free"};
   if(typeof st.sec==="number") e.secs=Math.max(0,Math.round(st.sec));
   if(st.then&&st.then!=="none") e.then=st.then;
   if(st.pairMode==="same") e.pair="same";
   return e;
 }
+// CARDSECS_START — ⏱ time per card (PLAN_scores_page_2026-11-03.md §6 #1–2, the one logging add Scores slice 2 left; her ask: time per
+// card, so a rushed answer shows). A card's clock starts the first time it is on screen — gameCardShown, called where each game paints its
+// current card (and where a study sitting draws its card); it stamps once, so a re-render never restarts it — and stops at the kid's FIRST
+// answer on it — gameCardAnswered: the first tap, Check, pick, letter, "I said it", turn-over or grade; later tries never move it. The
+// turn (or study card) then carries ms, and the save that already happens copies it onto the item it writes:
+//   gameLog items {id, ok, n, back?, fail?, ms?} (GAMELOG / MATCHLOG / MISSPLAY) · studyLog sitting items {id, name, deck, result, ms?}
+// No new write path: ms only rides inside the entries those saves already write. A card with no single "on screen" moment has no ms:
+// Sort it's tray, the jigsaw's pieces, the train's hook-up levels, and the say-them-all games (Brain dump, Categories, Name them all,
+// Beat my time); nor has any record from before this. A card left on screen longer than CARDSECS_MAX_MS (the kid walked away, a parked
+// round) is not timed. Readers treat a missing ms as "not timed": the Scores show "—" or fall back to the sitting's time ÷ cards.
+// Medians only — never a fastest list (no racing). Turns live in memory (a study card also in this device's saved sitting), never in the DB.
+const CARDSECS_MAX_MS=10*60*1000;
+function gameCardShown(t,now){ if(t&&typeof t==="object"&&t.shownAt==null&&!t.done) t.shownAt=(now!=null?now:Date.now()); return t; }
+function gameCardAnswered(t,now){
+  if(!t||typeof t!=="object"||t.answeredAt!=null||typeof t.shownAt!=="number") return t;
+  const at=(now!=null?now:Date.now()), ms=Math.round(at-t.shownAt);
+  t.answeredAt=at; if(ms>=0&&ms<=CARDSECS_MAX_MS) t.ms=ms;
+  return t;
+}
+// PURE: a record's ms, or null when it has none (old records) or it can't be a real answer time
+function gameCardMs(o){ const v=o&&o.ms; return (typeof v==="number"&&isFinite(v)&&v>=0&&v<=CARDSECS_MAX_MS)?Math.round(v):null; }
+// the save sites: the turn's ms onto the item being written (nothing when the turn has none)
+function gameCardMsTo(o,t){ const v=gameCardMs(t); if(o&&v!=null) o.ms=v; return o; }
+// PURE: the median ms of the items that carry one → a number, or null when none do
+function cardSecsMedian(items){
+  const a=(Array.isArray(items)?items:[]).map(gameCardMs).filter(v=>v!=null).sort((x,y)=>x-y);
+  if(!a.length) return null;
+  const m=a.length>>1; return a.length%2?a[m]:Math.round((a[m-1]+a[m])/2);
+}
+function cardSecsTxt(ms){ return (typeof ms==="number"&&isFinite(ms))?(Math.round(ms/100)/10)+" s":"\u2014"; }   // 2400 → "2.4 s"; none → "—"
+// PURE: a study sitting's state → {key: ms} for its cards with a time — "id:<id>" for a card on the ladder, "new:<deck>|<name>" for a
+// bank card met this sitting (it gets its id only when the save mints it)
+function cardSecsStudyMs(state){
+  const out={}, cards=(state&&state.cards)||{};
+  Object.keys(cards).forEach(k=>{ const c=cards[k], v=gameCardMs(c); if(v==null) return;
+    if(c.id!=null) out["id:"+c.id]=v; else out["new:"+(c.deck||"")+"|"+(c.name||"")]=v; });
+  return out;
+}
+// PURE: the items of sitting i in a day's study entry — the entry's items are the sittings' items joined in order (mstSave's merge), so
+// sitting i's are the `total` items after every earlier sitting's. An entry from before sits (one sitting) → all its items.
+function cardSecsSitItems(e,i){
+  const items=Array.isArray(e&&e.items)?e.items:Object.values((e&&e.items)||{});
+  const sits=(Array.isArray(e&&e.sits)&&e.sits.length)?e.sits:null;
+  if(!sits) return items;
+  let off=0; for(let j=0;j<i&&j<sits.length;j++) off+=((sits[j]&&sits[j].total)|0);
+  return items.slice(off,off+(((sits[i]||{}).total)|0));
+}
+// CARDSECS_END
 // GAMELOG_END
 
 // MISSPLAY_START — 🎮 the practice list: a card missed in the drill goes to the games until it's learned (slice 2 of
@@ -73686,10 +73753,10 @@ function mpTurn(U){
     const e=U.q[U.i], it=_mpItem(U,e.pid), mode=it?U.modes[it.subject||"Other"]:null;
     if(it&&!mode&&typeof spellPlayable==="function"&&spellPlayable(it)){   // 🔤 SPELLBUILD: a spelling card builds its word
       const others=U.pool.filter(x=>x!==it&&spellPlayable(x)).map(spellWordOf);
-      const t=_spellTurn(it,others); U.cur={pid:e.pid,list:!!e.list,mode:"spell",tiles:t.tiles,word:t.word,placed:[],wrong:{},tries:0,msg:""}; return true;
+      const t=_spellTurn(it,others); U.cur={pid:e.pid,list:!!e.list,mode:"spell",tiles:t.tiles,word:t.word,placed:[],wrong:{},tries:0,msg:""}; if(typeof gameCardShown==="function") gameCardShown(U.cur); return true;   // ⏱ CARDSECS
     }
     let tiles=null; try{ tiles=(it&&mode)?whichTiles(it,U.pool,null,mode):null; }catch(err){ tiles=null; }
-    if(tiles){ U.cur={pid:e.pid,list:!!e.list,mode,tiles,wrong:{}}; return true; }
+    if(tiles){ U.cur={pid:e.pid,list:!!e.list,mode,tiles,wrong:{}}; if(typeof gameCardShown==="function") gameCardShown(U.cur); return true; }   // ⏱ CARDSECS
     U.i++;
   }
   U.cur=null; return false;
@@ -73705,7 +73772,7 @@ function mpSpellCheck(){
   const c=U.cur; if(!c.placed.length) return;
   const r=spellJudge(c);
   if(r==="again"){ try{ matchBonk(); }catch(e){} c.msg="again"; mpRender(); mpSay(); return; }
-  const first=r==="right"&&c.first, o={id:String(c.pid),ok:first,n:c.tries+1}; if(c.list) o.list=true; if(r==="fail") o.fail=true; U.log.push(o);
+  const first=r==="right"&&c.first, o={id:String(c.pid),ok:first,n:c.tries+1}; if(c.list) o.list=true; if(r==="fail") o.fail=true; if(typeof gameCardMsTo==="function") gameCardMsTo(o,c); U.log.push(o);   // ⏱ CARDSECS: ms (spellJudge stopped the clock)
   if(c.list) mpNote(U,c.pid,first);
   const it=_mpItem(U,c.pid); if(it&&typeof wwNote==="function"&&(r==="fail"||first)){ try{ if(wwNote(it,first?"right":"miss")){ U.ww=U.ww||{}; U.ww[c.pid]=1; } }catch(e){} }
   if(r==="right"){ try{ matchDing(); }catch(e){} c.msg="right"; } else { try{ matchBonk(); }catch(e){} c.msg="fail"; }
@@ -73731,9 +73798,10 @@ function mpNote(U,pid,first){
 function mpTap(ti){
   const U=mpUI; if(!U||U.phase!=="play"||U.lock||!U.cur) return;
   const c=U.cur, pid=c.tiles[ti]; if(pid==null||c.wrong[pid]) return;
+  if(typeof gameCardAnswered==="function") gameCardAnswered(c);   // ⏱ CARDSECS: the first tap on this card stops its clock
   if(pid!==c.pid){ c.wrong[pid]=1; try{ matchBonk(); }catch(e){} mpRender(); mpSay(); return; }
   const n=Object.keys(c.wrong).length+1, first=n===1;
-  const o={id:String(c.pid),ok:first,n}; if(c.list) o.list=true; U.log.push(o);
+  const o={id:String(c.pid),ok:first,n}; if(c.list) o.list=true; if(typeof gameCardMsTo==="function") gameCardMsTo(o,c); U.log.push(o);   // ⏱ CARDSECS: ms
   if(c.list) mpNote(U,c.pid,first);
   try{ matchDing(); }catch(e){}
   U.grow=ti; U.lock=true; mpRender();
@@ -79156,6 +79224,7 @@ function mstAnswer(state, key, ans) {
   const idx = state.queue.indexOf(key);
   if (idx === -1) return state;
   if (card.first === null) card.first = ans;
+  if (typeof gameCardAnswered === "function") gameCardAnswered(card);   // ⏱ CARDSECS: the first grade stops the card's clock (no-op without gameCardShown)
   if (ans !== "good") card.misses = (card.misses | 0) + 1;   // 🎮 MISSPLAY: how often this card was missed in the sitting (study misses join the practice list)
 
   if (card.kind === "review") {
@@ -81057,6 +81126,7 @@ function spellTapPlaced(pi){
 function spellClear(){ const st=spellState; if(!st||st.phase!=="play"||st.lock) return; const t=st.turns[st.i]; if(!t) return; t.placed.forEach(ti=>{ t.tiles[ti].used=false; }); t.placed=[]; st.msg=""; _mastRe(); }
 // PURE over the state: one Check. Returns "right" | "again" | "fail".
 function spellJudge(t){
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   if(spellRight(t)){ t.done=true; t.first=t.tries===0; return "right"; }
   t.tries++; t.wrong[t.tries]=1;
   t.placed.forEach(ti=>{ t.tiles[ti].used=false; }); t.placed=[];   // the tiles come back
@@ -81143,6 +81213,7 @@ function buildSpellHtml(color){
   const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[spellBestKey(st.deck)];
   if(st.phase==="play"){
     const t=st.turns[st.i];
+    if(typeof gameCardShown==="function") gameCardShown(t);   // ⏱ CARDSECS: the card is on screen — its clock starts at the first paint
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
     st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
     h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+E(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
@@ -81530,6 +81601,7 @@ function _gfLures(st,pid){
 function _gfProdTurn(st,act){ if(!st||st.lock||st.phase==="done"||!st.step||st.step.k!=="produce") return null; const t=st.turns[st.step.t]; return (t&&t.act===act)?t:null; }
 function gofishSaid(){   // 🗣 "I said it" — the honor system: a tablet can't hear; the app says the name back as the confirm
   const st=gofishState, t=_gfProdTurn(st,"say"); if(!t) return;
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   if(t.gj){ gameJudgeSaid(); return; }   // ⚖️ GAMEJUDGE: no self-report — "I said it" opens the choices (pick); type / Mom have their own taps
   t.done=true; t.first=true;
   _gfProduced(st,gofishName(_gfIt(st,t.pid))); _mastRe();
@@ -81550,6 +81622,7 @@ function gofishPickTap(i){
 function _gfAnsOk(act,given,back){ if(act==="pick") return String(given)===String(back); return (typeof mstTypeAnsOk==="function")?mstTypeAnsOk(given,back):Number(String(given).replace(",","."))===Number(String(back).replace(",",".")); }
 // PURE: one answer against the card's back → "right" | "again" | "fail". A picked back that was wrong greys out (t.wrong).
 function gofishJudge(t,given,back){
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   if(_gfAnsOk(t.act,given,back)){ t.done=true; t.first=t.tries===0; return "right"; }
   t.tries++; t.wrong[t.act==="pick"?String(given):String(t.tries)]=1; t.typed="";
   if(t.tries>=GF_TRIES){ t.done=true; t.first=false; t.fail=true; return "fail"; }
@@ -81599,6 +81672,7 @@ function _gfFind(st,pid,back){
 function gofishFindTap(i){
   const st=gofishState; if(!st||st.lock||st.phase==="done"||!st.step||st.step.k!=="find") return;
   const t=st.turns[st.step.t], pid=st.hand[i]; if(!t||pid==null||t.wrong[pid]) return;
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   if(pid!==t.pid){ t.wrong[pid]=1; try{ matchBonk(); }catch(e){} st.msg="Almost \u2014 listen again!"; gofishSayAgain(); _mastRe(); return; }
   t.done=true; t.first=!Object.keys(t.wrong).length;
   try{ matchDing(); }catch(e){}
@@ -81609,6 +81683,7 @@ function gofishFindTap(i){
 function gofishGoFish(){   // 🎣 "Go fish!" — the kid says they don't have it
   const st=gofishState; if(!st||st.lock||st.phase==="done"||!st.step||st.step.k!=="find"||st.step.back) return;
   const t=st.turns[st.step.t]; if(!t) return;
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   if(st.hand.indexOf(t.pid)>=0){ t.wrong["gofish"]=1; try{ matchBonk(); }catch(e){} st.msg="Look again \u2014 you have it!"; gofishSayAgain(); _mastRe(); return; }
   t.done=true; t.first=!Object.keys(t.wrong).length;
   if(t.first) t.nolog=true;   // ⚖️ GAMEJUDGE (games audit): the card was never in the kid's hand — a right "Go fish!" knows nothing about IT, so it isn't logged
@@ -81731,6 +81806,7 @@ function buildGofishHtml(color){
     h+='<div style="display:flex;align-items:center;gap:10px;margin:10px 0 12px;padding:12px 14px;border-radius:18px;background:#f0f9ff;border:2px solid #bae6fd"><span style="font-size:30px;line-height:1">\u{1F41F}</span><span style="flex:1;font-size:17px;font-weight:800;color:#0c4a6e">'+esc(st.msg)+'</span>'+
       (st.say?'<button onclick="gofishSayAgain()" aria-label="Hear it again" style="width:56px;height:56px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:26px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button>':'')+'</div>';
     const sp=st.step, lock=st.lock, t=sp&&sp.t!=null?st.turns[sp.t]:null;
+    if(typeof gameCardShown==="function") gameCardShown(t);   // ⏱ CARDSECS: the card is on screen — its clock starts at the first paint
     const hand=(fn,wrong)=>{ let x='<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:6px 0 12px">';
       st.hand.forEach((pid,i)=>{ const w=!!(wrong&&wrong[pid]); x+='<button class="gf-card'+(w?' gf-wrong':'')+(fn?'':' gf-still')+'" aria-label="Card '+(i+1)+'"'+(fn&&!w&&!lock?' onclick="'+fn+'('+i+')"':' disabled')+'>'+_gfCardVis(st,pid)+'</button>'; });
       return x+'</div>'; };
@@ -81856,6 +81932,7 @@ function bingoTap(ci){
   const st=bingoState; if(!st||st.phase!=="play"||st.lock) return;
   const t=st.turns[st.i]; if(!t) return;
   const pid=st.board[ci]; if(pid==null||st.marked[pid]||t.wrong[pid]) return;   // a stamped tile, or one greyed this call, is not a tap
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   if(pid!==t.pid){
     t.wrong[pid]=1;
     try{ matchBonk(); }catch(e){}
@@ -81942,6 +82019,7 @@ function buildBingoHtml(color){
   const best=(s.match_best||{})[bingoBestKey(st.deck)];
   if(st.phase==="play"){
     const t=st.turns[st.i], n=st.size;
+    if(typeof gameCardShown==="function") gameCardShown(t);   // ⏱ CARDSECS: the card is on screen — its clock starts at the first paint
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px">';
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
     st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
@@ -82422,6 +82500,7 @@ function _moleHold(st,t){
 function moleTap(slot){
   const st=moleState; if(!st||st.phase!=="play"||st.lock) return;
   const t=st.turns[st.i]; if(!t||t.done||!t.up[slot]) return;
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   const pid=t.tiles[slot];
   if(pid!==t.pid){ t.wrong[pid]=1; _moleHold(st,t); return; }
   t.done=true; t.first=!Object.keys(t.wrong).length;
@@ -82490,6 +82569,7 @@ function buildMoleHtml(color){
   const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[moleBestKey(st.deck)];
   if(st.phase==="play"){
     const t=st.turns[st.i], tIt=t?items.find(x=>x&&x.id===t.pid):null, ans=!!(t&&t.mode==="answer"), mute=ans&&whichSilent(tIt), missed=!!(t&&Object.keys(t.wrong).length);
+    if(typeof gameCardShown==="function") gameCardShown(t);   // ⏱ CARDSECS: the card is on screen — its clock starts at the first paint
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
     st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
     h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
@@ -82623,6 +82703,7 @@ function _jpTurn(st,act){ if(!st||st.lock||st.phase==="done"||!st.open) return n
    const t=st.turns[st.open.t]; return (t&&t.act===act&&!t.done)?t:null; }
 function jeopSaid(){   // 🗣 "I said it" — the honor system: a tablet can't hear; the app says the name back as the confirm
   const st=jeopState, t=_jpTurn(st,"say"); if(!t) return;
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   if(t.judge&&typeof jpJudgeSaid==="function"){ jpJudgeSaid(st,t); return; }   // ⚖️ JPJUDGE: no self-report with money on — "I said it" opens the choices (pick), else nothing
   t.done=true; t.first=true;
   if(st.money&&typeof jpMoneyAnswer==="function") jpMoneyAnswer(st,t);   // 💵 JPMONEY: the honor tap is a right answer
@@ -82636,6 +82717,7 @@ function jeopKey(ch){   // the number pad
 function _jpAnsOk(act,given,back){ if(act==="pick") return String(given)===String(back); return (typeof mstTypeAnsOk==="function")?mstTypeAnsOk(given,back):Number(String(given).replace(",","."))===Number(String(back).replace(",",".")); }
 // PURE: one answer against the card's back → "right" | "again" | "fail". A picked back that was wrong greys out (t.wrong)
 function jeopJudge(t,given,back){
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   if(_jpAnsOk(t.act,given,back)){ t.done=true; t.first=t.tries===0; return "right"; }
   t.tries++; t.wrong[t.act==="pick"?String(given):String(t.tries)]=1; t.typed="";
   if(t.tries>=JP_TRIES){ t.done=true; t.first=false; t.fail=true; return "fail"; }
@@ -82760,6 +82842,7 @@ function buildJeopHtml(color){
   h+='<div style="display:flex;align-items:center;gap:10px;margin:10px 0 12px;padding:12px 14px;border-radius:18px;background:#eff6ff;border:2px solid #bfdbfe"><span style="font-size:28px;line-height:1">\u{1F4FA}</span><span style="flex:1;font-size:17px;font-weight:800;color:#1e3a8a">'+esc(st.msg)+'</span>'+
     (st.say?'<button onclick="jeopSayAgain()" aria-label="Hear it again" style="width:56px;height:56px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:26px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button>':'')+'</div>';
   const o=st.open, t=o?st.turns[o.t]:null, lock=st.lock;
+  if(typeof gameCardShown==="function") gameCardShown(t);   // ⏱ CARDSECS: the card is on screen — its clock starts at the first paint
   if(st.bet&&typeof jpMoneyBetHtml==="function") h+=jpMoneyBetHtml(st,color);   // 💵 JPMONEY: the Daily Double / Final Jeopardy bet
   if(t&&!t.done||t&&lock){
     h+='<div style="margin:6px 0 12px"><span class="jp-card">'+_jpCardVis(st,t.pid,t.act)+'</span></div>';
@@ -82839,7 +82922,7 @@ function teachStart(deck){
   _mastRe();
 }
 function teachChangeDeck(){ teachState=null; _mastRe(); }   // drop the round as it stands: nothing written
-function teachShow(){ const st=teachState, t=st&&st.turns[st.i]; if(!st||st.phase!=="play"||!t||t.done) return; t.shown=true; _mastRe(); }
+function teachShow(){ const st=teachState, t=st&&st.turns[st.i]; if(!st||st.phase!=="play"||!t||t.done) return; if(typeof gameCardAnswered==="function") gameCardAnswered(t); t.shown=true; _mastRe(); }   // ⏱ CARDSECS: turning it over = the answer given
 function teachSay(){ const st=teachState, t=st&&st.turns[st.i]; if(!st||!t) return; const it=_teachItems(st.kid).find(x=>x&&x.id===t.pid); if(it&&!whichSilent(it)) try{ mastSpeak(teachFront(it)); }catch(e){} }
 // The listener's verdict: got=true "✓ They got it" · got=false "↻ Teach it again" (the card comes back once at the end)
 function teachVerdict(got){
@@ -82890,6 +82973,7 @@ function buildTeachHtml(color){
   const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[teachBestKey(st.deck)];
   if(st.phase==="play"){
     const t=st.turns[st.i], it=items.find(x=>x&&x.id===t.pid), fr=teachFront(it), bk=teachBack(it,st.kid), vis=_smTileVis(it,true), silent=whichSilent(it);
+    if(typeof gameCardShown==="function") gameCardShown(t);   // ⏱ CARDSECS: the card is on screen — its clock starts at the first paint
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
     st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
     h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
@@ -83019,6 +83103,7 @@ function fourPickCol(col){
 function _c4Turn(st,act){ if(!st||st.lock||st.phase==="done"||!st.open) return null; const t=st.turns[st.open.t]; return (t&&t.act===act&&!t.done)?t:null; }
 function fourSaid(){   // 🗣 "I said it" — the honor system: a tablet can't hear; the app says the name back as the confirm
   const st=fourState, t=_c4Turn(st,"say"); if(!t) return;
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   if(t.gj){ gameJudgeSaid(); return; }   // ⚖️ GAMEJUDGE: no self-report — "I said it" opens the choices (pick); type / Mom have their own taps
   t.done=true; t.first=true;
   _c4Settle(st,t,"",fourName(_c4It(st,t.pid))); _mastRe();
@@ -83045,6 +83130,7 @@ function fourKey(ch){ const st=fourState, t=_c4Turn(st,"type"); if(!t) return; i
 function _c4AnsOk(act,given,back){ if(act==="pick") return String(given)===String(back); return (typeof mstTypeAnsOk==="function")?mstTypeAnsOk(given,back):Number(String(given).replace(",","."))===Number(String(back).replace(",",".")); }
 // PURE: one answer against the card's back → "right" | "again" | "fail"
 function fourJudge(t,given,back){
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   if(_c4AnsOk(t.act,given,back)){ t.done=true; t.first=t.tries===0; return "right"; }
   t.tries++; t.wrong[t.act==="pick"?String(given):String(t.tries)]=1; t.typed="";
   if(t.tries>=C4_TRIES){ t.done=true; t.first=false; t.fail=true; return "fail"; }
@@ -83154,6 +83240,7 @@ function buildFourHtml(color){
   if(!st){ h+='<div style="font-size:15px;font-weight:700;color:#57534e">\u{1F534} Pick a deck. Answer the card where your disc would land to drop it in \u{2014} four in a row wins!</div></div>'; return h; }
   const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[fourBestKey(st.deck)];
   const o=st.open, t=o?st.turns[o.t]:null, lock=st.lock;
+  if(typeof gameCardShown==="function") gameCardShown(t);   // ⏱ CARDSECS: the card is on screen — its clock starts at the first paint
   const board=()=>{ let x='<div class="c4-board" style="grid-template-columns:repeat('+st.cols+',1fr)">';
     for(let r=0;r<st.rows;r++){ for(let c=0;c<st.cols;c++){ const v=st.board[r][c], ask=!!(o&&o.col===c&&o.row===r&&st.phase==="play"), last=!!(st.last&&st.last.col===c&&st.last.row===r);
       x+='<div class="c4-cell'+(v===1?' c4-kid':v===2?' c4-app':'')+(ask?' c4-ask':'')+(last?' c4-last':'')+'" aria-label="'+(v===1?'your disc':v===2?'the app\u2019s disc':'open')+'">'+(v?'':_c4CellLabel(st,st.cards[r][c]))+'</div>'; } }
@@ -83266,6 +83353,7 @@ function shipTap(gi){
   const st=shipState; if(!st||st.phase!=="play"||st.lock) return;
   const t=st.turns[st.i]; if(!t||t.done||t.act!=="find") return;
   const pid=st.grid[gi]; if(pid==null||t.wrong[pid]||(st.sunk[pid]&&pid!==t.pid)) return;
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   if(pid!==t.pid){ t.wrong[pid]=1; try{ matchBonk(); }catch(e){} st.msg="Splash \u2014 not that one. Listen again!"; shipSayAgain(); _mastRe(); return; }
   _shipHit(st,t,"");
 }
@@ -83273,6 +83361,7 @@ function shipTap(gi){
 function shipSaid(){
   const st=shipState; if(!st||st.phase!=="play"||st.lock) return;
   const t=st.turns[st.i]; if(!t||t.done||t.act!=="name") return;
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   if(t.gj){ gameJudgeSaid(); return; }   // ⚖️ GAMEJUDGE: no self-report — "I said it" opens the choices (pick); type / Mom have their own taps
   _shipHit(st,t,shipName(_shipIt(st,t.pid)));
 }
@@ -83362,6 +83451,7 @@ function buildShipHtml(color){
     return h+'</div></div></div>';
   }
   const t=st.turns[st.i], find=!!(t&&t.act==="find"), lock=st.lock;
+  if(typeof gameCardShown==="function") gameCardShown(t);   // ⏱ CARDSECS: the card is on screen — its clock starts at the first paint
   h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
   st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
   h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
@@ -83738,6 +83828,7 @@ function tnChangeDeck(){ tnState=null; _mastRe(); }   // drop the round as it st
 // ⚖️ TNBOTH: the card's first is settled on its SECOND statement — right only when both calls were; the first-asked one is nolog.
 function tnJudge(st,call){
   const t=st&&st.turns[st.i]; if(!t||t.done||st.lock) return null;
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   t.done=true; t.right=!!call===t.truth;
   if(!t.right) t.wrong[String(t.cpid)]=1;
   if(t.back){ t.first=t.right; return t.right?"right":"wrong"; }   // a come-back: one statement, never counted
@@ -83840,6 +83931,7 @@ function buildTnHtml(color){
   const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[tnBestKey(st.deck)];
   if(st.phase==="play"){
     const t=st.turns[st.i], it=t?items.find(x=>x&&x.id===t.pid):null, c=t?items.find(x=>x&&x.id===t.cpid):null, ans=!!(t&&t.mode==="answer"), mute=ans&&whichSilent(it);
+    if(typeof gameCardShown==="function") gameCardShown(t);   // ⏱ CARDSECS: the card is on screen — its clock starts at the first paint
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
     st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.right?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });   // ⚖️ TNBOTH: a dot per statement, by its own call
     h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
@@ -83954,6 +84046,7 @@ function sureCall(sure){
 }
 function sureSaid(){   // 🗣 "I said it" — judged now (GAMEJUDGE); the honor system only when there is no other name to pick from
   const st=sureState, t=_sureOpen(st,"produce"); if(!t||t.act!=="say") return;
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   if(t.gj){ gameJudgeSaid(); return; }   // ⚖️ GAMEJUDGE: "I said it" opens the choices (pick); type / Mom have their own taps
   _sureJudged(st,t,true);   // the honor tap: counted right, the flip shows and says the name
 }
@@ -83979,6 +84072,7 @@ function sureKey(ch){   // the number pad
 function _sureAnsOk(act,given,back){ if(act==="pick") return String(given)===String(back); return (typeof mstTypeAnsOk==="function")?mstTypeAnsOk(given,back):Number(String(given).replace(",","."))===Number(String(back).replace(",",".")); }
 // PURE over the state: the produced answer (typed, picked, or a said card's judge) settles the turn → "right" | "wrong"
 function sureJudge(st,t,okNow){
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   t.ok=!!okNow; t.done=true; t.step="flip";
   if(t.ok){ t.first=true; if(!t.back) st.first++; }
   else { t.first=false; t.fail=true; t.wrong[t.sure?"sure":"unsure"]=1; }
@@ -84069,6 +84163,7 @@ function buildSureHtml(color){
   const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[sureBestKey(st.deck)];
   if(st.phase==="play"){
     const t=st.turns[st.i], it=_sureIt(st,t.pid), mute=!!(t.mode==="answer"&&whichSilent(it)), lock=st.lock;
+    if(typeof gameCardShown==="function") gameCardShown(t);   // ⏱ CARDSECS: the card is on screen — its clock starts at the first paint
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
     st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
     h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
@@ -84440,6 +84535,7 @@ function jumbleClear(){ const st=jumbleState, t=_ujCur(st); if(!t||t.done) retur
 // the right positions lock and the others go back to the tray; the second miss is a fail.
 function ujJudge(t){
   if(t.done||t.line.some(wi=>wi==null)) return null;
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   const okAt=t.line.map((wi,p)=>t.words[wi].toLowerCase()===t.words[p].toLowerCase());
   if(okAt.every(Boolean)){ t.done=true; t.first=t.tries===0; return "right"; }
   t.tries++; t.wrong[String(t.tries)]=1;
@@ -84511,6 +84607,7 @@ function buildJumbleHtml(color){
   const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[jumbleBestKey(st.deck)];
   if(st.phase==="play"){
     const t=st.turns[st.i], full=!t.line.some(wi=>wi==null);
+    if(typeof gameCardShown==="function") gameCardShown(t);   // ⏱ CARDSECS: the card is on screen — its clock starts at the first paint
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
     st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
     h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
@@ -84635,6 +84732,7 @@ function _kbBoom(st){
 function _kbTurn(st,act){ if(!st||st.lock||st.phase==="done"||!st.open) return null; const t=st.turns[st.open.t]; return (t&&t.act===act&&!t.done)?t:null; }
 function kaboomSaid(){   // 🗣 "I said it" — the honor system: a tablet can't hear; the app says the name back as the confirm
   const st=kaboomState, t=_kbTurn(st,"say"); if(!t) return;
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   if(t.gj){ gameJudgeSaid(); return; }   // ⚖️ GAMEJUDGE: no self-report — "I said it" opens the choices (pick); type / Mom have their own taps
   t.done=true; t.first=true;
   _kbSettle(st,t,"",kaboomName(_kbIt(st,t.pid))); _mastRe();   // the name is SAID back, never written
@@ -84664,6 +84762,7 @@ function kaboomKey(ch){   // the number pad
 function _kbAnsOk(act,given,back){ if(act==="pick") return String(given)===String(back); return (typeof mstTypeAnsOk==="function")?mstTypeAnsOk(given,back):Number(String(given).replace(",","."))===Number(String(back).replace(",",".")); }
 // PURE: one answer against the card's back → "right" | "again" | "fail". A picked back that was wrong greys out (t.wrong)
 function kaboomJudge(t,given,back){
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   if(_kbAnsOk(t.act,given,back)){ t.done=true; t.first=t.tries===0; return "right"; }
   t.tries++; t.wrong[t.act==="pick"?String(given):String(t.tries)]=1; t.typed="";
   if(t.tries>=KB_TRIES){ t.done=true; t.first=false; t.fail=true; return "fail"; }
@@ -84786,6 +84885,7 @@ function buildKaboomHtml(color){
   h+='<div style="display:flex;align-items:center;gap:10px;margin:10px 0 12px;padding:12px 14px;border-radius:18px;background:'+(st.boomNow?'#fff7ed':'#eef2ff')+';border:2px solid '+(st.boomNow?'#fdba74':'#c7d2fe')+'"><span style="font-size:28px;line-height:1">'+(st.boomNow?'\u{1F4A5}':'\u{1F3FA}')+'</span><span style="flex:1;font-size:17px;font-weight:800;color:'+(st.boomNow?'#9a3412':'#312e81')+'">'+esc(st.msg)+'</span>'+
     (st.say?'<button onclick="kaboomSayAgain()" aria-label="Hear it again" style="width:56px;height:56px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:26px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button>':'')+'</div>';
   const o=st.open, t=o?st.turns[o.t]:null, lock=st.lock;
+  if(typeof gameCardShown==="function") gameCardShown(t);   // ⏱ CARDSECS: the card is on screen — its clock starts at the first paint
   if(t&&(!t.done||lock)){
     h+='<div style="margin:6px 0 12px"><span class="kb-card">'+_kbCardVis(st,t.pid,t.act)+'</span></div>';
     if(t.act==="say"&&t.gj&&typeof gameJudgeHtml==="function") h+=gameJudgeHtml(t,color,lock);   // ⚖️ GAMEJUDGE: the choices / the typing box / Mom's ✓ ✗
@@ -84912,6 +85012,7 @@ function hmClean(t){ return !!t&&!t.hint&&(t.misses||0)<=HM_CLEAN; }
 // PURE: one letter → "hit" | "miss" | "solved" | "fail" | null (already guessed / not a letter)
 function hmJudge(t,key){
   key=hmFold(key); if(!key||t.done||t.guessed[key]) return null;
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   t.guessed[key]=1;
   if(t.letters.some(l=>l.key===key)){ if(hmSolved(t)){ t.done=true; t.found=true; t.first=hmClean(t); return "solved"; } return "hit"; }
   t.misses++; t.wrong[key]=1;
@@ -84983,6 +85084,7 @@ function buildHangHtml(color){
   const s=masteryData[st.kid+"_settings"]||{}, best=(s.match_best||{})[hangBestKey(st.deck)];
   if(st.phase==="play"){
     const t=st.turns[st.i], m=st.msg, silent=_hmSilent(st,t);
+    if(typeof gameCardShown==="function") gameCardShown(t);   // ⏱ CARDSECS: the card is on screen — its clock starts at the first paint
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
     st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
     h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
@@ -85455,6 +85557,7 @@ function trainStart(sid){
 function trainJudge(st,ci){
   if(!st||st.phase!=="play"||st.lock) return null;
   const t=st.turns[st.i]; if(!t||t.done) return null;
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   const L=t.choices[ci]; if(L==null) return null;
   if(L!==t.L){ if(!t.wrong[L]){ t.wrong[L]=1; if(Object.keys(t.wrong).length>=TRAIN_MISS) t.fail=true; } st.bounce=ci; return "wrong"; }
   t.done=true; t.first=!Object.keys(t.wrong).length; st.on.push(L); st.roll=L; st.bounce=null; st.lock=true;
@@ -85613,6 +85716,7 @@ function buildTrainHtml(color,study){
   if(st.phase==="play"&&_trainHook(st)) return h+_trainHookHtml(st,d,color)+'</div>';   // levels 3–5: hook up
   if(st.phase==="play"){
     const t=st.turns[st.i], shown=st.on.slice(-3), hidden=st.on.length>shown.length;
+    if(typeof gameCardShown==="function") gameCardShown(t);   // ⏱ CARDSECS: the card is on screen — its clock starts at the first paint
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 2px"><div style="display:flex;gap:6px">';
     st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
     h+='</div><span style="font-size:12px;font-weight:800;color:var(--muted)">Level '+st.level+'</span></div>';
@@ -85696,7 +85800,7 @@ function pktEntry(st,now,pn,day){
   if(!st||!st.study||st.phase!=="done"||!Array.isArray(st.turns)) return null;
   const items=[]; let correct=0, miss=0;
   st.turns.forEach(t=>{ if(!t||!t.done) return; const r=t.first?"c":"m"; if(r==="c") correct++; else miss++;
-    items.push({id:t.pid!=null?String(t.pid):"train_"+t.L,name:t.L,deck:String(st.deck||""),result:r}); });
+    const o={id:t.pid!=null?String(t.pid):"train_"+t.L,name:t.L,deck:String(st.deck||""),result:r}; if(typeof gameCardMsTo==="function") gameCardMsTo(o,t); items.push(o); });   // ⏱ CARDSECS: ms
   if(!items.length) return null;
   const total=items.length, secs=st.t0?Math.max(1,Math.round(((now!=null?now:Date.now())-st.t0)/1000)):null;
   return {date:day,printNum:pn,total:total,correct:correct,miss:miss,shown:0,secs:secs,items:items,sits:[{secs:secs,total:total}],before:[]};
@@ -85949,6 +86053,7 @@ function jpJudgeSaid(st,t){ if(t.judge==="pick") gameJudgeSaid(); }
 function jpJudgeHtml(st,t,color,lock){ return gameJudgeHtml(t,color,lock); }
 // One response settles the square: right → the plain board's "That's it!" (+ the dollars); wrong → − the dollars, the right name lit and said
 function jpJudgeSettle(st,t,right,given){
+  if(typeof gameCardAnswered==="function") gameCardAnswered(t);   // ⏱ CARDSECS: the first answer on this card stops its clock
   const name=jeopName(_jpIt(st,t.pid));
   t.done=true; t.first=!!right; t.verdict=right?"right":"wrong";
   if(!right){ t.tries=1; t.fail=true; t.wrong[(given!=null&&String(given)!=="")?String(given):"1"]=1; }
@@ -86033,6 +86138,7 @@ function gameJudgeAct(st,turn,opts){
 }
 function _gjTurn(mode){ const t=gameJudgeCur; return (t&&t.gj&&t.gj.mode===mode&&_gjLive(t))?t:null; }
 function _gjSettle(turn,right,given){
+  if(typeof gameCardAnswered==="function") gameCardAnswered(turn);   // ⏱ CARDSECS: the judged answer stops the clock (an earlier "I said it" already did)
   const gj=turn.gj, x=_gjCtx(turn); gj.done=true; gj.ok=!!right; gj.given=given==null?"":String(given);
   try{ if(right) x.opts.onRight(turn); else x.opts.onWrong(turn,gj.given); }catch(e){}
   _gjRe();
@@ -87333,6 +87439,7 @@ function renderMastStudy(opts){
     let card=null; try{ card=mstCurrent(mstState); }catch(e){}
     if(card){
       mstLockArm();   // MST_NAV: taps in the first 350 ms after this draw are swallowed
+      if(typeof gameCardShown==="function") gameCardShown(card);   // ⏱ CARDSECS: the card is on screen — its clock starts at the first draw
       h+=mstCardHtml(session,card);
       if(typeof mstCopyOn==="function"&&mstCopyOn(session,card)){ /* 👀 PATCCC: Check / Next live inside the card */ } else
       if(mstCardMode(card)==="type"||(typeof mstTypeAnsOn==="function"&&mstTypeAnsOn(session,card))||(typeof mstPickOn==="function"&&mstPickOn(session,card))){   // ⌨️ MST_TYPEANS · 🎯 PATPICK
@@ -87768,12 +87875,14 @@ function _mstSaveInner(){
   const secs=mstStartTs?Math.max(1,Math.round((Date.now()-mstStartTs)/1000)):null;
   let correct=0,miss=0,shown=0;
   const logItems=[];
+  let _csMs={}; try{ if(typeof cardSecsStudyMs==="function") _csMs=cardSecsStudyMs(mstState); }catch(e){}   // ⏱ CARDSECS: each card's first-answer time
+  const _cs=(o,it)=>{ const v=_csMs["id:"+o.id]!=null?_csMs["id:"+o.id]:(it&&mintedAll.indexOf(it)!==-1?_csMs["new:"+(it.subject||"")+"|"+(it.prompt||"")]:null); if(v!=null) o.ms=v; return o; };   // ⏱ CARDSECS: a minted card is found by its deck + name
   Object.keys(scores).forEach(id=>{
     const sc=scores[id];
     const it=items.find(i=>i&&i.id===id);
     const nm=(it&&it.prompt)||id, dk=(it&&it.subject)||"";
-    if(sc==="shown"){ shown++; logItems.push({id:id,name:nm,deck:dk,result:"shown"}); }
-    else { if(sc==="c") correct++; else if(sc==="m") miss++; logItems.push({id:id,name:nm,deck:dk,result:sc}); }
+    if(sc==="shown"){ shown++; logItems.push(_cs({id:id,name:nm,deck:dk,result:"shown"},it)); }
+    else { if(sc==="c") correct++; else if(sc==="m") miss++; logItems.push(_cs({id:id,name:nm,deck:dk,result:sc},it)); }
   });
   const total=logItems.length;
   let entry={date:todayKey,printNum:pn,total:total,correct:correct,miss:miss,shown:shown,secs:secs,items:logItems,sits:[{secs:secs,total:total}],before:_before};   // 🚩 MSTALERT: per-sitting time
@@ -88057,26 +88166,27 @@ function srRows(){
       if(!s||s.kind==="checkup"||s.who==="mom") return;   // Mom runs and judges those herself
       const deck=(s.emoji||"\u{1F4DA}")+" "+(s.name||s.sid);
       const add=(sit,o)=>{ const total=(sit&&sit.total)||0; if(!total) return; out.push(Object.assign({kid,sid:s.sid,deck,total,secs:sit.secs??null,judged:sit.judged||null},o)); };
+      const ms=(e,i)=>{ const m=(typeof cardSecsMedian==="function"&&typeof cardSecsSitItems==="function")?cardSecsMedian(cardSecsSitItems(e,i)):null; return m!=null?{ms:m}:{}; };   // ⏱ CARDSECS: the sitting's cards' own times
       const sb=((M.studyBack||{})[kid]||{})[s.sid]||{}, log=sb.log||{};
       if(!sb.log&&sb.ts&&(sb.date===lk||sb.date===uk)) add({secs:sb.secs,total:sb.total},{key:sb.date,i:0,back:true});   // sent back before SREVIEW: only the record's numbers
       Object.keys(log).map(id=>({id,r:log[id]})).filter(x=>x.r&&(x.r.day===lk||x.r.day===uk))
         .sort((a,b)=>((a.r.sentBack||{}).at||0)-((b.r.sentBack||{}).at||0))
-        .forEach(x=>srSits(x.r).forEach((sit,i)=>add(sit,{key:x.r.day,i,arc:x.id,back:true})));
+        .forEach(x=>srSits(x.r).forEach((sit,i)=>add(sit,Object.assign({key:x.r.day,i,arc:x.id,back:true},ms(x.r,i)))));
       const key=_mstTodayLogKey(kid,s.sid);
-      if(key) srSits(M.studyLog[kid][s.sid][key]).forEach((sit,i)=>add(sit,{key,i}));
+      if(key){ const e=M.studyLog[kid][s.sid][key]; srSits(e).forEach((sit,i)=>add(sit,Object.assign({key,i},ms(e,i)))); }
     });
   });
   return out;
 }
 function srRowHTML(r,i,floor){
-  const pc=srPerCard(r.secs,r.total), red=pc!=null&&pc<floor;
+  const pc=(typeof r.ms==="number")?Math.round(r.ms/100)/10:srPerCard(r.secs,r.total), red=pc!=null&&pc<floor;   // ⏱ CARDSECS: the cards' median time when timed, else time ÷ cards
   const btn=(fn,txt,bg)=>'<button onclick="'+fn+'('+i+')" style="padding:4px 10px;border-radius:8px;border:none;background:'+bg+';color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+txt+'</button>';
   const v=r.back?'<span style="font-size:11px;font-weight:800;color:#b45309;white-space:nowrap">↩ Sent back</span>'
     :(r.judged&&r.judged.verdict==="ok")?'<span style="font-size:11px;font-weight:800;color:#16a34a;white-space:nowrap">👍 Looks right</span>'
     :btn("srOk","👍 Looks right","#16a34a")+btn("srBack","↩ Too fast — send back","#b45309");
   return '<div style="display:flex;align-items:center;gap:6px;padding:7px 10px;background:'+(red?"#fef2f2":"#f8fafc")+';border-left:3px solid '+(red?"#dc2626":"#94a3b8")+';border-radius:8px;margin-bottom:6px;flex-wrap:wrap">'
     +'<span style="flex:1;min-width:180px;font-size:13px"><b>'+esc(cap(r.kid))+'</b> — '+esc(r.deck)+' · '+r.total+' cards · '+srMSS(r.secs)+' · '
-    +'<b style="color:'+(red?"#dc2626":"inherit")+'">'+(pc==null?"—":pc+" s/card")+'</b></span>'+v+'</div>';
+    +'<b style="color:'+(red?"#dc2626":"inherit")+'"'+(typeof r.ms==="number"?' title="the middle time from a card showing to the first answer"':'')+'>'+(pc==null?"—":pc+" s/card"+(typeof r.ms==="number"?" \u23F1":""))+'</b></span>'+v+'</div>';
 }
 function srNowHTML(){
   const rows=srRows(); _srRows=rows;
