@@ -33304,6 +33304,8 @@ function ceQuickPause(kid,key){
 //   different length → match by text only; mint for the rest. Never guess a rename
 //     across a delete+insert — a wrong guess would make a NEW lesson look done.
 //   A dropped id is never reused.
+//   Regroup ("· day k of N" ↔ plain, or N days ↔ M days): the SAME lesson keeps its id — see
+//   REGROUP_CARRY inside _lidAlign; setLessonSeq carries the ✓ for lines that had to be minted.
 const _lidNorm=s=>String(s==null?"":s).replace(/[–—−]/g,"-").replace(/\s+/g," ").trim().toLowerCase();
 function _lidMake(n){ return "L"+String(n).padStart(4,"0"); }
 function _lidNextFrom(ids){
@@ -33335,8 +33337,40 @@ function _lidAlign(oldSeq,oldIds,newSeq,nextLid,hint,mint){
     const leftOld=[]; usedOld.forEach((u,i)=>{ if(!u) leftOld.push(i); });
     let li=0; ids.forEach((id,i)=>{ if(id===null&&li<leftOld.length){ ids[i]=oldIds[leftOld[li++]]; } });
   }
+  // REGROUP_CARRY_START — 🔁 a days-per-lesson regroup keeps progress (Sara, DeWalt 2026-11-09: "×1" then
+  // Save list on Kenzie's AAS 4 and Andrew's AAS 1 minted a fresh id for every line, so 22 + 25 ✓ marks
+  // stopped counting and both kids were "back on" the first lesson of the list — she re-marked by hand).
+  // "Lesson 3 · day 4 of 5" and "Lesson 3" are ONE lesson. A new line still without an id claims the old
+  // lines with the same stem (text minus the "· day k of N" suffix):
+  //   · a plain new line takes the LAST old step's id — finished ⇔ the last step was finished, and a
+  //     lesson still in progress stays the current one;
+  //   · "· day j of M" takes the old "day j" (a plain old line counts as day 1); days that did not exist
+  //     before are minted below and listed in `carry`, so setLessonSeq can mark them done when the whole
+  //     old lesson was done (×4 on a finished lesson must not hand back "day 2 of 4").
+  // Ambiguous stems — repeated among the new plain lines, or among the old plain lines — are left to
+  // minting, exactly as before. Same-length edits never reach here (handled above).
+  const carry=[];
+  { const DAY_RE=/\s*·\s*day (\d+) of \d+\s*$/i;
+    const stemOf=t=>_lidNorm(String(t).replace(DAY_RE,"")), dayOf=t=>{ const m=String(t).match(DAY_RE); return m?parseInt(m[1],10):0; };
+    const groupAll={}, free={};
+    oldN.forEach((t,i)=>{ const k=stemOf(t); (groupAll[k]=groupAll[k]||[]).push(i); if(!usedOld[i]) (free[k]=free[k]||[]).push(i); });
+    const newPlain={}; seqN.forEach((t,i)=>{ if(ids[i]===null&&!dayOf(t)){ const k=stemOf(t); newPlain[k]=(newPlain[k]||0)+1; } });
+    seqN.forEach((t,i)=>{
+      if(ids[i]!==null) return;
+      const k=stemOf(t), all=groupAll[k]; if(!all||!all.length) return;  // a lesson that never existed: minted below, never carried
+      const g=free[k]||[];                                                 // its old lines still unclaimed (may be none)
+      if(all.filter(oi=>!dayOf(oldN[oi])).length>1) return;              // "Review" twice as plain old lines: ambiguous
+      const j=dayOf(t);
+      let oi;
+      if(!j){ if(newPlain[k]!==1) return; oi=g.length?g[g.length-1]:undefined; }
+      else { oi=g.find(x=>dayOf(oldN[x])===j); if(oi===undefined&&j===1) oi=g.find(x=>!dayOf(oldN[x])); }
+      if(oi!==undefined){ ids[i]=oldIds[oi]; usedOld[oi]=true; g.splice(g.indexOf(oi),1); }
+      else carry.push({i:i,from:groupAll[k].map(x=>oldIds[x])});
+    });
+  }
+  // REGROUP_CARRY_END
   for(let i=0;i<ids.length;i++) if(ids[i]===null) ids[i]=fresh();
-  return {ids,nextLid:next};
+  return {ids,nextLid:next,carry:carry};
 }
 // The subject's ids, or null when it has none / they are out of step (treat as none).
 function lidsFor(kid,sk){
@@ -33391,22 +33425,38 @@ function setLessonSeq(kid,sk,newSeq,opts){
     return {lessonSeq:null,lessonIds:null,total:0,nextLid:s.nextLid||1};
   }
   const seq=(newSeq||[]).map(x=>String(x==null?"":x));
-  let ids=null, next=s.nextLid;
+  let ids=null, next=s.nextLid, carry=null, doneBefore=null;
   if(Array.isArray(opts.restoreIds)&&opts.restoreIds.length===seq.length){ ids=opts.restoreIds.slice(); next=opts.restoreNext||Math.max(parseInt(next,10)||1,_lidNextFrom(ids)); }
-  else{ const r=_lidAlign(s.lessonSeq,s.lessonIds,seq,s.nextLid,opts.hint,!!opts.mint); ids=r.ids; next=r.nextLid;
+  else{
+    // REGROUP_CARRY: read what was finished BEFORE the list changes (lidDoneSet needs the old ids in place).
+    try{ doneBefore=(typeof lidDoneSet==="function")?lidDoneSet(kid,sk):null; }catch(e){ doneBefore=null; }
+    const r=_lidAlign(s.lessonSeq,s.lessonIds,seq,s.nextLid,opts.hint,!!opts.mint); ids=r.ids; next=r.nextLid; carry=r.carry||null;
     // EGGQUIZ: plan-backed only — there the LIST is the truth and `done` (by id) says what's finished.
     // A list copied from grid cells must mirror the cells exactly, so it is left alone. Undo/restore
     // (restoreIds) never reaches here, and the ids-only mint (gvAssignLids) only runs on unstamped,
     // so never plan-backed, subjects.
     if(ids&&typeof planBacked==="function"&&planBacked(kid,sk)&&eqIsEggs(kid,sk,s)){
       const sp=eqSplit(seq,ids,lidDoneSet(kid,sk),next);
-      if(sp.n){ seq.length=0; sp.seq.forEach(x=>seq.push(x)); ids=sp.ids; next=sp.nextLid; }
+      if(sp.n){ seq.length=0; sp.seq.forEach(x=>seq.push(x)); ids=sp.ids; next=sp.nextLid; carry=null; }   // re-indexed → carry positions are stale
     }
   }
   s.lessonSeq=seq; s.total=seq.length;
   patch[base+"lessonSeq"]=seq; patch[base+"total"]=seq.length;
   if(ids){ s.lessonIds=ids; s.nextLid=next; patch[base+"lessonIds"]=ids; patch[base+"nextLid"]=next; }
   else if(s.lessonIds){ delete s.lessonIds; patch[base+"lessonIds"]=null; }   // was out of step → drop, don't guess
+  // REGROUP_CARRY — a finished lesson stays finished across a regroup: ONE targeted done/<kid>/<sk>/<id>
+  // record per minted line whose whole old lesson was done. Never for a lesson still in progress, never
+  // for a subject without stamped ids (no truth to carry), never over a record that already exists.
+  if(ids&&carry&&carry.length&&doneBefore){
+    currData.done=currData.done||{}; const node=((currData.done[kid]=currData.done[kid]||{})[sk]=currData.done[kid][sk]||{});
+    carry.forEach(c=>{
+      if(!c.from.length||!c.from.every(id=>doneBefore.has(id))) return;
+      const id=ids[c.i]; if(!id||node[id]) return;
+      let day=""; c.from.forEach(f=>{ const o=node[f]; if(o&&o.day&&String(o.day)>day) day=String(o.day); });
+      const rec={ts:new Date().toISOString(),day:day||((typeof cbTodayISO==="function")?cbTodayISO():""),src:"carry",via:"regroup",from:c.from[c.from.length-1]};
+      patch["done/"+kid+"/"+sk+"/"+id]=rec; node[id]=rec;
+    });
+  }
   return {lessonSeq:seq,lessonIds:ids,total:seq.length,nextLid:next};
 }
 // Which subjects (all kids) have a master list but no ids yet.
@@ -34004,6 +34054,7 @@ function lidTrimDescription(t){
 // spans N days becomes N ordinary sittings — "Lesson 3: … · day 2 of 4" — so the scheduler, cards,
 // check-offs, pause and lanes all keep working unchanged. Idempotent: lines already carrying a
 // "· day k of M" suffix are regrouped first, so ×4 on a ×2 list gives 4 each and ×1 undoes it.
+// Saving a regrouped list keeps what was finished finished — REGROUP_CARRY in _lidAlign / setLessonSeq.
 const LESSON_DAY_RE=/\s*·\s*day \d+ of \d+\s*$/i;
 function lessonExpandDays(lines,n){
   n=Math.max(1,Math.min(10,parseInt(n,10)||1));
