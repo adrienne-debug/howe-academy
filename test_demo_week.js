@@ -13,7 +13,7 @@
  *   Sun 00:00 self-build (both devices awake) → Mon 9:40 a Grid ✕ (off this day) on one subject → Mon 10:05 a card checked early →
  *   Tue add a subject (a daily; and a sequenced one, built) → Tue a kid off for Wed (📅 strip; Undo, redo) → Wed ⏰ day times for Thu
  *   (Undo, redo) → Wed a lesson-text edit on today's open card (list save) → Thu delete a subject → Thu 8 PM sweep →
- *   Fri Saturday on (📅 strip) → Sat → next Sunday 00:00 (week 3 builds; carries).
+ *   Fri Saturday on (📅 strip; the Saturday tab + its dailies — Undo, redo, off, on) → Sat → next Sunday 00:00 (week 3 builds; carries).
  * After EVERY step the same checks run (see CHECKS below). Each failure names the cards and the rule; the report
  * (REPORT_living_demo_2026-11-08.md) says which are real bugs and which are harness gaps.
  *
@@ -77,7 +77,7 @@ function runsOn(kid,sk,s,iso,dn){
   if(al.length&&al.indexOf(dow)<0) return false;
   if(/\b(first|last)\b/.test(String(s.rules||""))) return true;   // bookends: every school day the kid has
   try{ if(A.fn("_ovRmX")(kid,iso,sk,false)) return false; }catch(e){}   // a co-op no-Mom day, or ✕'d off for it
-  if(s.tracking!=="daily"&&!s.planId&&!/\b(first|last)\b/.test(String(s.rules||""))) return false;   // a card-only subject: the engine has no re-lay for it (FINDING F2 covers the add-a-subject case)
+  if(s.tracking!=="daily"&&!s.planId&&!/\b(first|last)\b/.test(String(s.rules||""))) return false;   // a card-only subject: the engine has no re-lay for it (a subject added on the Add sheet is born plan-backed — ADDPB, F2)
   if(s.tracking!=="daily"&&s.planId){ const left=(s.lessonSeq||[]).length-Object.keys((((A.get("currData.done")||{})[kid]||{})[sk])||{}).length; if(left<=0) return false; }
   return true;
 }
@@ -194,6 +194,9 @@ function writesSummary(ws){
   return {total:ws.length,byDev,whole,top:Object.entries(by).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([k,n])=>n+"× "+k)};
 }
 function newestRelay(before){ const L=relayLog(); const keys=Object.keys(L).sort(); const fresh=keys.filter(k=>!before[k]); return fresh.length?L[fresh[fresh.length-1]]:null; }
+// every what-moved entry a step wrote, as one (a step with two doors — S4 adds two subjects — writes two lines; C10 judges them together)
+function stepRelays(before){ const L=relayLog(); const fresh=Object.keys(L).sort().filter(k=>!before[k]&&!L[k].built).map(k=>L[k]); if(fresh.length<2) return null;
+  return {moves:[].concat(...fresh.map(e=>e.moves||[])),removed:[].concat(...fresh.map(e=>e.removed||[])),added:[].concat(...fresh.map(e=>e.added||[]))}; }
 
 // ── one step: set the clock, snapshot, act, settle, check, record ──
 async function step(name,atMs,act,o){
@@ -204,7 +207,7 @@ async function step(name,atMs,act,o){
   await flush(o.settleMs==null?30000:o.settleMs);
   noteSeen(); const post=snapOf(board()), ws=db.log.slice(mark), entry=newestRelay(logBefore);
   const notes=[]; const F=checkAll({dbgMark,notes}).concat(checkRelayLog());
-  if(o.expectRelay){ if(!entry) F.push({code:"C10",msg:"no what-moved entry was written for this step"}); else { const p2=Object.assign({},pre); (o.ignoreIds||[]).forEach(id=>{ delete p2[id]; }); const q2=Object.assign({},post); (o.ignoreIds||[]).forEach(id=>{ delete q2[id]; }); F.push(...checkWhatMoved(p2,q2,entry,ckPre)); } }
+  if(o.expectRelay){ if(!entry) F.push({code:"C10",msg:"no what-moved entry was written for this step"}); else { const p2=Object.assign({},pre); (o.ignoreIds||[]).forEach(id=>{ delete p2[id]; }); const q2=Object.assign({},post); (o.ignoreIds||[]).forEach(id=>{ delete q2[id]; }); F.push(...checkWhatMoved(p2,q2,stepRelays(logBefore)||entry,ckPre)); } }
   if(process.env.DEMO_DUMP){ const k=process.env.DEMO_DUMP; board().filter(t=>t.who===k).sort((a,b)=>DN.indexOf(a.day)-DN.indexOf(b.day)||toMin(a.time)-toMin(b.time)).forEach(t=>console.log("      "+t.day.slice(0,3)+" "+String(t.time).padStart(8)+" +"+t.dur+" "+(checkedMap()[t.id]?"✓":" ")+" "+t.subjectKey+" "+(t.lid||"")+(t.cascadedFrom?" ↩"+t.cascadedFrom.slice(0,3):"")+(t._eowOverflow?" [box]":"")+(t._dayDrop?" [day-box]":""))); }
   const wsum=writesSummary(ws);
   wsum.whole.forEach(w=>{ if(/\(dev_b/.test(w)) F.push({code:"C15",msg:"whole-node write from the kid's device: "+w}); else notes.push("C15 whole-node write (the cascade's own): "+w); });
@@ -238,13 +241,15 @@ async function sweepAt(iso){ clock.now=hm(iso,20,0); const r=A.fn("mlEveningSwee
   A=boot("A (Mom)","dev_a"); A.momOn(); await flush(500);
   ok("the whole app booted in the sandbox (curriculum, rules, calendar, archive, mastery arrived)",A.get("fbCurrLoaded")===true&&A.get("fbCheckedLoaded")===true&&A.get("fbArchiveLoaded")===true&&A.get("_haMastReady")===true&&A.get("rulesLoaded")===true,{logs:A.logs.slice(-5)});
   ok("the roster is the synthetic family (no real names anywhere in the sandbox)",JSON.stringify(A.get("ROSTER"))==='["kid_a","kid_b","kid_c","kid_d"]'&&!/lincoln|ellis|lucy|julian|howe|dewalt|burris|maggie/i.test(JSON.stringify(FX)));
-  // a brand-new family: the active week's tasks node is empty, so the tasks listener never says "loaded" and the self-build waits forever
-  await flush(90000);
-  const builtEarly=!!db.get("week1/tasks");
-  ok("FINDING F1 (new family only): with no week ever built, the self-build never runs by itself — fbTasksLoaded stays false on an empty tasks node",!builtEarly&&A.get("fbTasksLoaded")===false,{tasksLoaded:A.get("fbTasksLoaded")});
-  A.set("fbTasksLoaded",true);   // harness bootstrap: what a first Regenerate / an existing week would have set
-  await flush(20000);
-  ok("bootstrap: week 1 built itself once the flag was set (one whole-node tasks write, Mom's note)",Object.keys(db.get("week1/tasks")||{}).length>60&&db.log.filter(w=>w.op==="set"&&w.path==="week1/tasks").length>=1&&Object.values(db.get("week1/relayLog")||{}).some(e=>e.built),{n:Object.keys(db.get("week1/tasks")||{}).length});
+  // F1 (ABFIRST) — a brand-new family: no ha_active_wk, no week node at all. The Sunday 00:00 roll builds week 1 by itself, with the claim
+  ok("F1 premise: an empty database (no ha_active_wk, no week node) and a curriculum",db.get("ha_active_wk")==null&&!db.get("week1")&&!db.get("week3")&&!!A.get("currData.subjects.kid_a"));
+  { const mark=db.log.length; A.fn("dayRollCheck")(); await flush(90000);
+    const ws=db.log.slice(mark), txs=ws.filter(w=>w.op==="tx"&&w.path==="week1/meta/building"&&w.committed), sets=ws.filter(w=>w.op==="set"&&w.path==="week1/tasks");
+    ok("F1: week 1 built itself at Sunday 00:00 — one committed building claim, the tasks written, Mom's note, ha_active_wk = week1",Object.keys(db.get("week1/tasks")||{}).length>60&&txs.length===1&&sets.length>=1&&db.get("ha_active_wk")==="week1"&&Object.values(db.get("week1/relayLog")||{}).some(e=>e.built&&/Week 1 built itself/.test(e.label)),{n:Object.keys(db.get("week1/tasks")||{}).length,tx:txs.length,sets:sets.length,wk:db.get("ha_active_wk"),dbg:dbgSince(0,/auto-gen|built itself|skipped/).slice(-4)});
+    ok("F1: the empty week never counted as 'loaded' for anything but the self-build (no sweep, no cascade write before the build)",!ws.slice(0,ws.findIndex(w=>w.op==="tx")).some(w=>/^week\d+\/(tasks|checked|history)/.test(w.path)),ws.slice(0,6).map(w=>w.op+" "+w.path));
+    const mark2=db.log.length; A.set("_abRollDay",null); A.set("_autoGenTried",false); A.fn("dayRollCheck")(); A.fn("autoGenerateWeekIfNeeded")(); await flush(90000);
+    const ws2=db.log.slice(mark2).filter(w=>/^week\d+\/(tasks|meta)|^ha_active_wk/.test(w.path));
+    ok("F1: a second run does nothing (the week exists, ha_active_wk is written — no claim, no tasks write)",!ws2.length&&!A.fn("_abFirstWeek")(),ws2.map(w=>w.op+" "+w.path)); }
   ok("week 1 has the class pinned at its time on its Wednesday",board().some(t=>t.subjectKey==="german_class"&&t.day==="wednesday"&&t.time==="10:00 AM"));
   STEPS.push({name:"S0 bootstrap: week 1 built (Sun 11/08)",at:"Sun Nov 08 2026 00:00",failures:checkAll({dbgMark:0}),writes:writesSummary(db.log.slice(0)),cards:board().length});
   ok("S0 checks on the freshly built week 1",!STEPS[0].failures.length,STEPS[0].failures.slice(0,6).map(f=>f.code+" "+f.msg));
@@ -306,7 +311,9 @@ async function sweepAt(iso){ clock.now=hm(iso,20,0); const r=A.fn("mlEveningSwee
     },{expectRelay:true});
     const music=board().filter(t=>t.who==="kid_c"&&t.subjectKey==="music"), geo=board().filter(t=>t.who==="kid_b"&&t.subjectKey==="geography");
     ok("S4: the new daily (Tue/Thu) has its cards for today and Thursday",music.some(t=>t.day==="tuesday")&&music.some(t=>t.day==="thursday")&&music.length===2,music.map(t=>t.day+" "+t.time));
-    ok("FINDING F2 (documented, proposal): a sequenced subject added and Built mid-week gets NO cards this week — its cells are written, but it is not plan-backed and not a daily, so the engine has no re-lay for it until Sunday",geo.length===0&&!A.fn("planBacked")("kid_b","geography")&&Object.values(A.get("currData.lessons.kid_b")).some(l=>l.geography),{cards:geo.map(t=>t.day+" "+t.time),planBacked:A.fn("planBacked")("kid_b","geography"),cells:Object.values(A.get("currData.lessons.kid_b")).filter(l=>l.geography).map(l=>l.date+" "+l.geography).slice(0,4),dbg:r.rec.dbg.filter(m=>/eography|isn't paced|relay/.test(m)).slice(0,4)}); }
+    const geoWant=["wednesday","friday"].filter(dn=>runsOn("kid_b","geography",A.get("currData.subjects.kid_b.geography"),weekDates(2)[dn],dn));
+    ok("F2 (ADDPB): the sequenced subject added and Built mid-week is born plan-backed and lays this week — one card on each remaining pattern day (Wed, Fri), its first lessons in list order",A.fn("planBacked")("kid_b","geography")&&geoWant.length===2&&geoWant.every(dn=>geo.filter(t=>t.day===dn).length===1)&&geo.length===2&&geo.map(t=>t.lid).sort().join()===A.get("currData.subjects.kid_b.geography").lessonIds.slice(0,2).join(),{cards:geo.map(t=>t.day+" "+t.time+" "+t.lid),planBacked:A.fn("planBacked")("kid_b","geography"),want:geoWant,dbg:r.rec.dbg.filter(m=>/eography|isn't paced|relay/.test(m)).slice(0,4)});
+    ok("F2: Mom's what-moved line names the new subject (its cards are in 'added', so Undo takes them off again)",Object.values(relayLog()).some(e=>/Geography added/.test(e.label)&&(e.added||[]).some(id=>geo.some(t=>t.id===id))),Object.values(relayLog()).map(e=>e.label)); }
   await playDay("2026-11-17",t=>t.subjectKey==="spelling");
   { // S5 — Tue 3:00 PM: kid_b off Wednesday (the 📅 strip) — then Undo, check the exact restore, redo
     const wedBefore=board().filter(t=>t.who==="kid_b"&&t.day==="wednesday"&&!checkedMap()[t.id]).map(t=>t.subjectKey+" "+t.lid).sort();
@@ -362,11 +369,25 @@ async function sweepAt(iso){ clock.now=hm(iso,20,0); const r=A.fn("mlEveningSwee
     ok("S9: the sweep's one whole-node tasks write is the cascade's own (known), from Mom's device only",r.ws.filter(w=>w.whole).every(w=>w.dev===A.id)&&r.ws.filter(w=>w.whole).length<=1,r.ws.filter(w=>w.whole).map(w=>w.dev+" "+w.path)); }
   // Friday 11/20
   await rollDay("2026-11-20");
-  { // S10 — Fri 9:00: Saturday on (the 📅 strip)
-    const r=await step("S10 Fri 9:00 Saturday on (📅 This week)",hm("2026-11-20",9,0),async()=>{ A.fn("twsToggleSaturday")(); },{expectRelay:false});   // nothing moves → no what-moved entry (FINDING F3)
-    const satCards=board().filter(t=>t.day==="saturday"&&!String(t.id).endsWith("_c"));
+  { // S10 — Fri 9:00: Saturday on (the 📅 strip) → the Saturday tab + the dailies that name Saturday (F3, TWSSAT) → Undo → redo → off → on
+    const satDaily=t=>t.day==="saturday"&&((t.who==="kid_a"&&t.subjectKey==="piano")||(t.who==="kid_b"&&t.subjectKey==="baking"));
+    const r=await step("S10 Fri 9:00 Saturday on (📅 This week)",hm("2026-11-20",9,0),async()=>{ A.fn("twsToggleSaturday")(); },{expectRelay:true});
+    const satCards=board().filter(satDaily);
     ok("S10: weekConfig/2/saturday is true and the effective config says Saturday on",db.get("weekConfig/2/saturday")===true&&satOn(2));
-    ok("FINDING F3 (documented, known limit): Saturday on mid-week writes the setting but the board week has no Saturday tab (meta.dates) and no pattern lays onto it until a rebuild",!(db.get("week2/meta/dates")||{}).saturday&&!r.entry,{metaSat:(db.get("week2/meta/dates")||{}).saturday||null,satCards:satCards.map(t=>t.who+"/"+t.subjectKey+" "+t.time),dbg:r.rec.dbg.slice(0,5)}); }
+    ok("F3 (TWSSAT): the board week has its Saturday tab (week2/meta/dates/saturday, the build's own words) on both devices",db.get("week2/meta/dates/saturday")==="November 21"&&A.get("DAY_DT.saturday")==="November 21"&&B.get("DAY_DT.saturday")==="November 21",{db:db.get("week2/meta/dates/saturday"),a:A.get("DAY_DT.saturday"),b:B.get("DAY_DT.saturday")});
+    ok("F3: the dailies that name Saturday are laid on it (kid_a Piano, kid_b Baking); no lesson was laid on Saturday by the toggle",satCards.length===2&&!r.entry.added.some(id=>{ const t=boardObj()[id]; return !t||!satDaily(t); }),{sat:board().filter(t=>t.day==="saturday").map(t=>t.who+"/"+t.subjectKey+" "+t.time),added:r.entry&&r.entry.added});
+    ok("F3: the what-moved line names them and lists their cards as added",!!r.entry&&/Piano \(Kid A\)/.test(r.entry.label)&&/Baking \(Kid B\)/.test(r.entry.label)&&satCards.every(t=>(r.entry.added||[]).indexOf(t.id)>=0),r.entry&&{label:r.entry.label,added:r.entry.added});
+    ok("F3: the writes are targeted (the setting, the date leaf, the cards) — no whole-node write",!r.ws.some(w=>w.whole)&&r.ws.some(w=>w.op==="update"),r.ws.map(w=>w.op+" "+w.path).slice(0,8));
+    const e=r.entry; if(e){ A.fn("relayUndo")(String(e.at)); await flush(8000);
+      ok("S10 Undo: the setting, the Saturday tab and the Saturday dailies are gone again",!db.get("weekConfig/2/saturday")&&!satOn(2)&&db.get("week2/meta/dates/saturday")==null&&!board().some(satDaily)&&!A.get("DAY_DT.saturday")&&!B.get("DAY_DT.saturday"),{cfg:db.get("weekConfig/2/saturday"),date:db.get("week2/meta/dates/saturday"),sat:board().filter(satDaily).map(t=>t.id)});
+      const F=checkAll({dbgMark:db.debug.length}); ok("S10 Undo: the week checks clean after the undo",!F.length,F.slice(0,5).map(f=>f.code+" "+f.msg));
+      await step("S10b Fri 9:05 Saturday on again (after Undo)",hm("2026-11-20",9,5),async()=>{ A.fn("twsToggleSaturday")(); },{expectRelay:true});
+      ok("S10b: the tab and both Saturday dailies are back",db.get("week2/meta/dates/saturday")==="November 21"&&board().filter(satDaily).length===2); }
+    const other=board().filter(t=>t.day==="saturday"&&!satDaily(t));
+    const r3=await step("S10c Fri 9:10 Saturday off",hm("2026-11-20",9,10),async()=>{ A.fn("twsToggleSaturday")(); },{expectRelay:true});
+    ok("S10c: Saturday off takes the Saturday dailies off; the tab "+(other.length?"stays (the sweep's overflow card sits there) and the line says so":"goes"),!board().some(t=>satDaily(t)&&!checkedMap()[t.id])&&(other.length?db.get("week2/meta/dates/saturday")==="November 21"&&/the Saturday tab stays \(1 card on it\)/.test(r3.entry&&r3.entry.label)&&/· 2 off Saturday$/.test(A.fn("_rlwWords")(r3.entry))&&!/to next week/.test(A.fn("_rlwWords")(r3.entry)):db.get("week2/meta/dates/saturday")==null),{other:other.map(t=>t.who+"/"+t.subjectKey),date:db.get("week2/meta/dates/saturday"),words:r3.entry&&A.fn("_rlwWords")(r3.entry)});
+    await step("S10d Fri 9:15 Saturday on (for the rest of the replay)",hm("2026-11-20",9,15),async()=>{ A.fn("twsToggleSaturday")(); },{expectRelay:true});
+    ok("S10d: Saturday is on with both Saturday dailies (the tab was kept, so only the cards are written)",satOn(2)&&board().filter(satDaily).length===2); }
   await playDay("2026-11-20",t=>t.subjectKey==="math"&&t.who==="kid_b");
   await sweepAt("2026-11-20");
   // Saturday 11/21
@@ -382,14 +403,23 @@ async function sweepAt(iso){ clock.now=hm(iso,20,0); const r=A.fn("mlEveningSwee
     ok("S12: every lesson left open in week 2 is served in week 3 (nothing lost or skipped at the turn)",served.length===wk2Open.length,{open:wk2Open.length,served:served.length,missing:wk2Open.filter(x=>served.indexOf(x)<0).slice(0,8)});
     ok("S12: week 2 is archived with its checks and history",!!db.get("archive/week2")&&Object.keys((db.get("archive/week2")||{}).checked||{}).length>0);
     const added=["kid_c/music","kid_b/geography"]; const inWk3=added.map(x=>{ const [k,s]=x.split("/"); return x+":"+board().filter(t=>t.who===k&&t.subjectKey===s).length; });
-    const geo3=board().filter(t=>t.who==="kid_b"&&t.subjectKey==="geography"&&t.day==="monday").length;
-    ok("FINDING F2b (documented): the never-dealt Geography cells of week 2 count as 'behind' at the week turn, so week 3 deals TWO Geography cards on its first days (the legacy catch-up doubling)",geo3===2,{mondayGeo:geo3});
+    const geo3=board().filter(t=>t.who==="kid_b"&&t.subjectKey==="geography"), gsub=A.get("currData.subjects.kid_b.geography"), gdone=Object.keys(((A.get("currData.done")||{}).kid_b||{}).geography||{});
+    const gPat=["monday","wednesday","friday"].filter(dn=>!A.fn("smapIsKidOff")("kid_b",weekDates(3)[dn]));
+    ok("F2 (ADDPB): week 3 deals ONE Geography card per pattern day (no catch-up doubling), the next undone lessons in order",gPat.every(dn=>geo3.filter(t=>t.day===dn).length===1)&&geo3.length===gPat.length&&geo3.slice().sort((a,b)=>DN.indexOf(a.day)-DN.indexOf(b.day)).map(t=>t.lid).join()===gsub.lessonIds.filter(l=>gdone.indexOf(l)<0).slice(0,gPat.length).join(),{cards:geo3.map(t=>t.day+" "+t.time+" "+t.lid),pattern:gPat,done:gdone});
     ok("S12: the subjects added mid-week are in the new week; the deleted one is not",board().some(t=>t.who==="kid_c"&&t.subjectKey==="music")&&board().some(t=>t.who==="kid_b"&&t.subjectKey==="geography")&&!board().some(t=>t.who==="kid_a"&&t.subjectKey==="history"),inWk3);
     // Sunday catch-up for kid_a: what shows on Sunday's tab
     clock.now=hm("2026-11-22",9,0); const set=A.fn("sucSet")(); const sunCards=set?Array.from(set):[];
-    // kid_a's lessons that were on week 2's board at some point and are still not done = what "fell behind" last week
+    // kid_a's lessons that were on week 2's board at some point and are still not done = what "fell behind" last week (the harness's own account, to judge SUCPB by)
     const behindA=[]; Object.keys(SEEN_LIDS[2]||{}).filter(k=>/^kid_a\//.test(k)).forEach(k=>{ const [kid,sk]=k.split("/"); const done=((A.get("currData.done")||{})[kid]||{})[sk]||{}; SEEN_LIDS[2][k].forEach(l=>{ if(!done[l]) behindA.push(k+" "+l); }); });
-    ok("FINDING F4 (documented, proposal): Sunday catch-up shows NOTHING for a kid whose subjects are plan-backed — the lessons that fell behind in week 2 are served first in week 3 with no carried/catch-up flag for sucPick to read",sunCards.length===0&&behindA.length>0,{sunday:sunCards.length,behind:behindA}); }
+    const sunIds=new Set(sunCards); const sunList=board().filter(t=>sunIds.has(t.id));
+    const arch=db.get("archive/week2")||{}; const r6=board().find(t=>t.who==="kid_a"&&t.subjectKey==="reading"&&t.lid==="L0006");
+    ok("F4 (SUCPB) premise: kid_a's Reading L0006 was sent to next week in week 2 (S8) and the archive of week 2 says so (deferred)",behindA.indexOf("kid_a/reading L0006")>=0&&((arch.deferred||{}).kid_a||{}).reading&&arch.deferred.kid_a.reading.indexOf("L0006")>=0&&!!r6,{behind:behindA,deferred:arch.deferred||null});
+    ok("F4 (SUCPB): Sunday's tab shows kid_a's deferred Reading L0006 (Sunday catch-up on for kid_a)",!!r6&&sunIds.has(r6.id),{sunday:sunList.map(t=>t.who+"/"+t.subjectKey+" "+t.day+" "+t.lid)});
+    ok("F4: Sunday shows only what week 2 still owed — kid_a's plan-backed lessons from the archive (open at the close or sent to next week), each subject's earliest cards; nothing for a kid without Sunday catch-up",sunList.length>0&&sunList.every(t=>t.who==="kid_a"&&t.lid&&behindA.indexOf(t.who+"/"+t.subjectKey+" "+t.lid)>=0),{sunday:sunList.map(t=>t.who+"/"+t.subjectKey+" "+t.lid),behind:behindA});
+    // a lesson checked off on Sunday keeps its place; the others stay on Sunday
+    if(r6){ const before=Array.from(sunIds).sort().join(); clock.now=hm("2026-11-22",9,40); B.fn("finalizeDone")(r6.id,B.fn("nowTs")()); await flush(6000);
+      const after=Array.from(A.fn("sucSet")()||[]).sort().join();
+      ok("F4: checking the Sunday Reading off keeps every other Sunday card on Sunday (the count is read from the board, not from 'done')",after===before&&!!checkedMap()[r6.id],{before,after}); } }
 
   // ── the table ──
   console.log("\n3. steps × checks");

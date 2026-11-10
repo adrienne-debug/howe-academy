@@ -15,9 +15,20 @@ Compare: https://github.com/adrienne-debug/howe-academy/compare/main...claude/li
 | 55bbf53 | **RELAYWIRE** — the 8 PM sweep's own moves never trip the "held card changed" wire (S9) · `test_relay_sweep_wire.js` |
 | 594f540 | harness: S10 expects no what-moved line; F4's premise from the board history |
 
+**Update 2026-11-09 — F1–F4 built** on `claude/living-f1-f4-faceee` (cut from slice E; one commit each, each proven by its own
+harness scenario). Compare: https://github.com/adrienne-debug/howe-academy/compare/claude/living-slice-e-13af3f...claude/living-f1-f4-faceee?expand=1
+
+| commit | what |
+|---|---|
+| 90567f9 | **ABFIRST** (F1) — a brand-new family's first week builds itself; the harness no longer sets a flag by hand |
+| 35953cc | **ADDPB** (F2) — a sequenced subject added on the Add sheet is born plan-backed and lays this week |
+| 894d081 | **TWSSAT** (F3) — Saturday on mid-week adds the Saturday tab and lays the dailies that name Saturday · `test_this_week_strip` updated |
+| ac31e23 | **SUCPB** (F4) — Sunday catch-up shows plan-backed subjects (the archive now records what a week deferred) |
+| e9ab5d1 | TWSSAT words — Saturday off says "· 2 off Saturday", not "to next week" |
+
 ## 1. What the harness is
 
-`node test_demo_week.js` (2.8 s). The WHOLE app — index.html's main script, unedited except two string patches that make
+`node test_demo_week.js` (~4 s). The WHOLE app — index.html's main script, unedited except two string patches that make
 `renderAll` / `renderAllSoon` return at once — runs inside a Node vm sandbox (`test_fixtures/demo_week_sandbox.js`):
 
 - a fake DOM that swallows every paint;
@@ -30,12 +41,13 @@ Compare: https://github.com/adrienne-debug/howe-academy/compare/main...claude/li
 - Device **A** is Mom's (Mom mode on; every door is tapped here). Device **B** is a kid's tablet: it only listens, and checks cards off.
 
 The family is SYNTHETIC (`test_fixtures/living_demo_family.json`, 44 KB, no real names or data): kid_a / kid_b / kid_c (school) and
-kid_d (Pre-K, bookends + one daily); 8 / 7 / 7 subjects — Builder-paced (plan-backed) lessons with lists and ids, dailies with
+kid_d (Pre-K, bookends + one daily); 8 / 8 / 7 subjects — Builder-paced (plan-backed) lessons with lists and ids, dailies with
 pattern days, a fixed-time class (Wednesdays 10:00, real dates), a Mom-required subject per kid, a timed co-op (kid_b, Thursdays
 9:00–1:00, "no Mom-required lessons"), Sunday catch-up on for kid_a, a sitter Tuesday 10:00–1:00 with kid_c in `weekConfig/2`.
-School 9:00–3:30, lunch 12:00–12:45. A 6-week grid (Mon–Fri rows; no Saturday rows, so the grid never "plans" Saturday).
+School 9:00–3:30, lunch 12:00–12:45. A 6-week grid (Mon–Fri rows; no Saturday rows, so the grid never "plans" Saturday). Two dailies
+name Saturday (kid_a Piano Mon–Sat, kid_b Baking Saturday only — added 11/9 for F3); they run only in a week with Saturday on.
 
-The replay: week 1 is built on Sunday 11/08 and played out (the kid's tablet boots Monday, cards are checked at their times, two
+The replay: week 1 builds ITSELF on Sunday 11/08 00:00 from an empty database (no `ha_active_wk`, no week node — F1) and is played out (the kid's tablet boots Monday, cards are checked at their times, two
 lessons a day are left undone on Wed/Fri, the 8 PM sweep runs daily) so week 2 has history to carry. Then the week under test:
 
 | step | when | the door |
@@ -49,7 +61,7 @@ lessons a day are left undone on Wed/Fri, the 8 PM sweep runs daily) so week 2 h
 | S7 | Wed 10:30 | lesson-text edit on today's open card: kid_a Math "Math 5" → "Math 5 (review)" (✎ Save list, `ceConvApply`) |
 | S8 | Thu 9:30 | delete a subject: kid_a History (`ceDeleteSubject`) |
 | S9 | Thu 8:00 PM | the sweep (`mlEveningSweep`) |
-| S10 | Fri 9:00 | 📅 This week: Saturday on (`twsToggleSaturday`) |
+| S10 | Fri 9:00 | 📅 This week: Saturday on (`twsToggleSaturday`) → **Undo** → redo → Saturday off → on again |
 | S11 | Sat 00:00 | the day rolls (no build) |
 | S12 | Sun 11/22 00:00 | both devices awake → week 3 builds; carries |
 
@@ -82,25 +94,30 @@ After EVERY step the same checks run on the database tree (not on a device's mem
 
 | step | C1 | C2 | C3 | C4 | C5 | C6 | C7 | C8 | C9 | C10 | C12 | C14 | C15 | writes | whole-node | what-moved line |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| S0 week 1 built (Sun 11/08) | · | · | · | · | · | · | · | · | · | · | · | · | · | 15 | 3 (commit) | 🗓 Week 1 built itself — 99 cards |
+| S0 week 1 built itself (Sun 11/08, empty database) | · | · | · | · | · | · | · | · | · | · | · | · | · | 15 | 3 (commit) | 🗓 Week 1 built itself — 99 cards |
 | S0b week 1 played (Fri 8 PM) | · | · | · | · | · | · | · | · | · | · | · | · | · | 491 | 6 (commit + 5 sweeps) | — |
 | S1 Sun 00:00 self-build | · | · | · | · | · | · | · | · | · | · | · | · | · | 18 | 3 (commit) | 🗓 Week 2 built itself (Sun 00:00) — 99 cards, sitter Tue, Sunday catch-up for Kid A |
 | S2 Mon 9:40 Grid ✕ | · | · | · | · | · | · | · | · | · | · | · | · | · | 11 | 0 | 🧱 Spelling re-paced → 1 moved · 1 to next week |
 | S3 Mon 10:05 early check | · | · | · | · | · | · | **·** | · | · | · | · | · | · | 6 | 0 | (a check, no re-lay) |
-| S4 Tue 9:15 add a subject | · | · | · | · | · | · | · | · | · | · | · | · | · | 16 | 0 | 📚 Music added → 1 moved · 2 added |
-| S5 Tue 3 PM kid off Wed | · | · | · | · | · | · | · | · | · | · | · | · | 1 ⚑ | 7 | 1 (sweep) | 😷 Kid B off Wed, Nov 18 → 11 moved (Kid B 6, Kid C 5) |
-| S5 Undo → S5b redo | · | · | · | · | · | · | · | · | · | · | · | · | 1 ⚑ | 7 | 1 (sweep) | same line, same 11 cards |
-| S6 Wed 8:30 ⏰ Thu 11–2:30 | · | · | · | · | · | · | · | **·** | · | · | · | · | · | 8 | 0 | ⏰ Thu, Nov 19 11:00 AM–2:30 PM → 15 moved · 1 to next week |
+| S4 Tue 9:15 add a subject | · | · | · | · | · | · | · | · | · | · | · | · | · | 26 | 0 | 📚 Music added → 1 moved · 2 added · 📚 Geography added → 2 moved · 2 added (F2) |
+| S5 Tue 3 PM kid off Wed | · | · | · | · | · | · | · | · | · | · | · | · | 1 ⚑ | 7 | 1 (sweep) | 😷 Kid B off Wed, Nov 18 → 12 moved (Kid B 7, Kid C 5) |
+| S5 Undo → S5b redo | · | · | · | · | · | · | · | · | · | · | · | · | 1 ⚑ | 7 | 1 (sweep) | same line, same 12 cards |
+| S6 Wed 8:30 ⏰ Thu 11–2:30 | · | · | · | · | · | · | · | **·** | · | · | · | · | · | 8 | 0 | ⏰ Thu, Nov 19 11:00 AM–2:30 PM → 19 moved · 1 to next week |
 | S6 Undo → S6b redo | · | · | · | · | · | · | · | · | · | · | · | · | · | 8 | 0 | same |
 | S7 Wed 10:30 lesson text | · | · | · | · | · | · | · | · | · | · | · | · | · | 11 | 0 | 🧱 Math re-paced → 0 moved · 1 to next week (today's card retitled ✎1) |
 | S8 Thu 9:30 delete subject | · | · | · | · | · | · | · | · | · | · | · | · | · | 29 | 0 | 🗑 History deleted → 1 moved · 1 to next week |
-| S9 Thu 8 PM sweep | · | · | · | · | · | · | · | · | · | · | · | · | 1 ⚑ | 8 | 1 (sweep) | 🌙 8 PM sweep → 14 moved (no ⚠ any more) |
-| S10 Fri 9:00 Saturday on | · | · | · | · | · | · | · | · | · | · | · | · | · | 3 | 0 | (nothing moves — F3) |
+| S9 Thu 8 PM sweep | · | · | · | · | · | · | · | · | · | · | · | · | 1 ⚑ | 8 | 1 (sweep) | 🌙 8 PM sweep → 15 moved (no ⚠ any more) |
+| S10 Fri 9:00 Saturday on | · | · | · | · | · | · | · | · | · | · | · | · | · | 17 | 0 | 📅 Saturday on (Week 2) · Sat: Piano (Kid A), Baking (Kid B) → 0 moved · 2 added (F3) |
+| S10 Undo → S10b redo | · | · | · | · | · | · | · | · | · | · | · | · | · | 17 | 0 | same line, same 2 cards |
+| S10c Fri 9:10 Saturday off | · | · | · | · | · | · | · | · | · | · | · | · | · | 13 | 0 | 📅 Saturday off (Week 2) — the Saturday tab stays (1 card on it) → 0 moved · 2 off Saturday |
+| S10d Fri 9:15 Saturday on | · | · | · | · | · | · | · | · | · | · | · | · | · | 13 | 0 | the Saturday-on line again (the tab was kept, so only the cards are written) |
 | S11 Sat roll | · | · | · | · | · | · | · | · | · | · | · | · | · | 0 | 0 | — |
-| S12 Sun 00:00 week 3 | · | · | · | · | · | · | · | · | · | · | · | · | · | 17 | 3 (commit) | 🗓 Week 3 built itself (Sun 00:00) — 104 cards, Sunday catch-up for Kid A |
+| S12 Sun 00:00 week 3 | · | · | · | · | · | · | · | · | · | · | · | · | · | 17 | 3 (commit) | 🗓 Week 3 built itself (Sun 00:00) — 102 cards, Sunday catch-up for Kid A; Sunday's tab: Kid A Math L0008, Reading L0006 (F4) |
 
 `·` = clear. ⚑ = flagged (not a failure): the cascade's own whole-node `set week2/tasks` from Mom's device — see note N1.
 Before the fixes the table had: S3 C7×1, S6/S6b/S7 C8×2, S7 title not updated, S9 "⚠ 2 held cards changed". 52 checks pass, 0 fail.
+After F1–F4 (11/9): 69 checks pass, 0 fail. S5/S6/S9 move one to four more cards than on 11/8 — kid_b's new Geography cards (F2) and
+Saturday's dailies now sit in the week and move with it. C10 now judges a step that writes two what-moved lines (S4: two adds) against both.
 
 ## 3. Findings
 
@@ -136,35 +153,44 @@ cards the sweep had just carried to Friday, which is its job. Cause: `_rlwRun`'s
 started/held; the wire exists for OTHER doors. Fix: a run whose why is "sweep" (the 8 PM sweep, ⏩ push) snapshots with no clock;
 every other door keeps the wire (a started or claimed card that changes day is logged and listed).
 
-### Documented, not fixed — proposals (each a design decision, so not code here)
+### Fixed on `claude/living-f1-f4-faceee` (11/9) — the four proposals, each one commit + its harness scenario
 
-**F1 · a brand-new family's first week never builds by itself.** With no week node at all, the tasks listener never sets
-`fbTasksLoaded` (`if(!s.val()) return;` protects a live week from a wiped node — deliberate), so `autoGenerateWeekIfNeeded` waits
-for ever. The Generate Week page that used to bootstrap a new family is gone (slice D). Not the Howe family's problem (a week always
-exists); it is every NEW family's. Proposal: when `ha_active_wk` was never written AND the active week is empty AND the tasks node is
-null, treat the week as loaded for the self-build only (never for a sweep). Harness: bootstrap sets the flag by hand after proving the
-gap (90 virtual seconds with no build).
+**F1 · ABFIRST — a brand-new family's first week builds itself.** Was: with no week node, the tasks listener never sets
+`fbTasksLoaded` (`if(!s.val()) return;` — deliberate, a wiped live week must not look empty), so `autoGenerateWeekIfNeeded` waited
+for ever and Generate Week (the old bootstrap) is gone. Now, for the self-build ONLY, the week counts as loaded when ALL hold: the server
+answered `ha_active_wk` = nothing, this device never wrote it, the active week has no cards, and the server answered that week's tasks
+node = nothing (`_abFirstWeek`). `fbTasksLoaded` is untouched — the sweep, cascade, heals and re-lay doors wait exactly as before.
+Harness S0: an empty database + a curriculum → Sunday 00:00 builds week 1 (one committed claim, the tasks, Mom's note,
+`ha_active_wk = week1`), nothing touched a week node before the build, and a second run writes nothing.
 
-**F2 · "add a subject" lays nothing this week for a SEQUENCED subject.** `ceAddSave` + Build wrote Geography's cells (Wed 11/18,
-Fri 11/20 …) but the subject is neither plan-backed (`planId`, `doneImportedAt` are set only by an import or 🧭 Make plan-backed) nor
-a daily, so the door says "isn't paced by the Builder" and the engine has no re-lay for it until Sunday — the plan's promise
-"add-subject lays the new subject into the remaining days of this week" is unmet. **F2b**: at the week turn those never-dealt cells
-count as "behind", and week 3 dealt TWO Geography cards on Monday and Wednesday (the legacy catch-up doubling, within cap 2).
-A new DAILY (Music) laid Tuesday and Thursday at once, as designed. Proposal: a sequenced subject born on the Add sheet is born
-plan-backed (`planId` + `doneImportedAt` at creation — it has ids already and no history for "done by id" to disagree with), so its
-Build re-lays this week and the catch-up doubling never applies. One decision for Adrienne; ~3 lines in `ceAddSave`.
+**F2 · ADDPB — a sequenced subject added mid-week lays this week.** `ceAddSave` stamps `planId` + `doneImportedAt` on a new sequenced
+subject (it is born with ids and has no history for done-by-id to disagree with), so it is plan-backed from birth: the add itself and
+its Build re-lay through the door ("📚 Geography added → 2 moved · 2 added"), and the week turn never applies the legacy catch-up
+doubling to its never-dealt cells. A new daily lays as before. Harness S4: Geography L0001 Wed, L0002 Fri (L0001 later follows kid_b's
+day off to Thursday and is checked there); S12: week 3 deals ONE per pattern day — Mon L0003, Wed L0004, Fri L0005 (was two on Monday).
+Note for Adrienne: the new subject lays by its days the moment it is saved, before she paces it; a Build then re-lays it as paced.
 
-**F3 · Saturday on mid-week does nothing visible.** `weekConfig/2/saturday=true` is written and the effective config says Saturday,
-but the board week has no Saturday tab (`meta.dates` comes from the build), the pattern-forward re-lay is Mon–Fri by her rule, and the
-"saturday" relay lists no subjects — so nothing moves and no line is written. Slice C listed this as a known limit; the replay confirms
-it. (The one Saturday card seen, kid_c Math 9:00, is the sweep's Saturday overflow, not the toggle.) Proposal: on Saturday-on for the
-board week write `week<N>/meta/dates/saturday` (targeted) and re-lay the dailies that run Saturdays; lessons stay Mon–Fri by her rule.
+**F3 · TWSSAT — Saturday on mid-week adds the Saturday tab and its dailies.** For the week on the board, Saturday on writes
+`week<N>/meta/dates/saturday` (one targeted leaf, the build's own "November 21" words) and sends the DAILIES that name Saturday
+(`allowedDays` has "Sat", or no `allowedDays` and "Sat" in `days`) through the one door — pass B's daily shell, with `_rlwDailyWant`
+wanting a Saturday card for them (the generator lays only the grid's days, so Saturday is asked for like a dropped day). Lessons stay
+Mon–Fri (her rule): a sequenced subject is never sent and never wanted there. The line names them: "📅 Saturday on (Week 2) · Sat:
+Piano (Kid A), Baking (Kid B) → 0 moved · 2 added". Saturday off takes those dailies' open Saturday cards off and removes the date
+unless a card still sits on Saturday — a checked one, or the sweep's overflow — then the tab stays and the line says so ("— the Saturday
+tab stays (1 card on it) → 0 moved · 2 off Saturday"). Undo = the setting, the date and the cards back. Harness S10–S10d: the tab on
+both devices, both dailies laid, targeted writes only, Undo removes all of it, redo, off (kid_c's overflow Math keeps the tab), on.
+A week not built yet is unchanged: the Sunday build reads `weekConfig` as before and lays only the grid's days — see §4.
 
-**F4 · Sunday catch-up shows nothing for a plan-backed family.** kid_a had lessons that fell behind in week 2 (Reading L0006 deferred,
-History gone), week 3 serves them first — but `sucPick` reads "(Carried from …)" twins and `catchup:true` flags, and plan-backed
-subjects produce neither (`carryPlanBacked` skips the twin; `_pbCatch` turns the generator's catch-up off). Sunday's tab is empty for
-exactly the subjects Howe runs. Proposal: `sucPick` also takes, per plan-backed subject, the earliest N lessons of the new week where N
-= lessons that were open on the archived week's board and are still undone (the archive holds them).
+**F4 · SUCPB — Sunday catch-up shows plan-backed subjects.** A plan-backed subject never makes a "(Carried from …)" twin or a
+`catchup:true` card, so Sunday's tab was empty for exactly the subjects Howe runs. `sucPick` now also takes, per plan-backed subject of a
+kid with Sunday catch-up, its earliest N cards of the new week, N = the lessons the closed week still OWED that the new week serves.
+"Owed" is read from the archive: a lesson card open on the archived board, **or a lesson a re-lay sent "to next week"**. The second half
+is new — the proposal's "open on the archived board" alone finds nothing here: every kid_a lesson on week 2's board was checked at the
+close; L0006 had been taken OFF the board by S8's re-lay. So `gwCommit` now adds `deferred` ({kid:{sk:[lid]}}, from the closing week's
+relayLog, undone runs skipped) to the archive entry it already writes. N is counted on the new board, not from `done`, so checking a
+Sunday card off never shifts the rest. Harness S12: `archive/week2.deferred` names kid_a Reading L0006 (and Math L0008, kid_b Math
+L0008); Sunday shows kid_a Math L0008 and Reading L0006 and nothing else (kid_b has no Sunday catch-up; kid_a's History L0004 is not
+served — the subject was deleted); checking Reading off on Sunday leaves the Sunday set as it was.
 
 ### Notes — by design, worth knowing
 
@@ -199,7 +225,13 @@ Mom's note: "🗓 Week 2 built itself (Sun 00:00) — 99 cards, sitter Tue, Sund
   real SDK's latency is what the 3 s echo guards are for. `?dryrun=1` is not the mode run.
 - The kids never tap a screen: check-offs call `finalizeDone` the way a tap does; nothing else on the tablet (Mastery drills,
   retrieval, points, chores, brain breaks, family time, lanes, car school, late start, helpers) is in the fixture.
-- Bootstrap: a brand-new family's first build needs the flag set by hand (F1).
+- F3, a week not built yet: Saturday on for NEXT week (the strip's "Next week ›") writes only `weekConfig`; the Sunday build lays the
+  grid's days, so a Saturday-only daily gets no Saturday card in a week whose grid has no Saturday rows until the board-week toggle (or
+  any re-lay of that daily) runs. Unchanged from before; not replayed.
+- F4: `archive.deferred` comes from the closing week's relayLog, which keeps the newest 10 runs — a deferral older than that in a busy
+  week is not counted (that lesson is still served first; it only would not show on Sunday). Archives written before this branch have no
+  `deferred`; for them only lessons open at the close count. The other archive writer (the Plan Next Week / upload path at ~27580) does
+  not add it.
 - One family shape. The checks read patterns through the app's own functions, so a different fixture (more kids, Saturday rows,
   a lane, a page book) would run — but was not.
 
@@ -214,9 +246,12 @@ never change their words. A fixed-time class stays at its time. Morning Notebook
 for everything, the lesson furthest ahead goes to next week and the line says so — nothing is dropped from the plan; next week's
 build serves it first. The 8 PM line no longer says "⚠ held cards changed" about its own moves.
 
-Two things still wait for a Regenerate or Sunday (proposals F2 and F3 above): a brand-new SEQUENCED subject you add mid-week has no
-cards until Sunday (a new daily does), and turning Saturday on mid-week does not add a Saturday tab. And Sunday catch-up shows nothing
-for the plan-backed subjects (F4).
+With F1–F4 (11/9): a subject you add mid-week — a daily or a sequenced one — shows on the rest of this week's days at once, and next
+week deals it one lesson per day (no doubled Monday). Turning Saturday on in 📅 This week adds a Saturday tab with the dailies that
+run on Saturdays (a Saturday daily, or one like Piano set to Mon–Sat) — never lessons — and the line names them; Saturday off takes them
+off again (the tab stays if something is still on Saturday, and the line says so). On Sunday, a kid with Sunday catch-up sees the lessons
+that fell behind last week — including ones a re-lay pushed to next week — at the top of Sunday's tab. A new family's first week builds
+itself on Sunday night like every other week.
 
 **What to do if a card looks wrong.**
 1. Look at the line on the day banner: it says what moved and why. **↩ Undo** (15 minutes) puts the setting and the cards back.
@@ -230,3 +265,7 @@ for the plan-backed subjects (F4).
 `for t in test_*.js; do node "$t"; done` on the rebased tree (origin/main f99b1f5): 732 files, 1 failure — `test_sunday_catchup.js`
 (date-bound, always fails). The perf budget passes (the sandbox lives under `test_fixtures/` so its timer stubs are not scanned). New: `test_demo_week.js` (52 checks), `test_bump_closing.js` (8), `test_relay_guard.js` (12),
 `test_rppat_retitle.js` (8), `test_relay_sweep_wire.js` (5).
+
+**11/9, after F1–F4** (`claude/living-f1-f4-faceee`): 732 files, 1 failure — `test_sunday_catchup.js` (date-bound; the same 4 date checks
+fail with and without these commits). The perf budget passes. `test_demo_week.js` 69 checks (was 52); `test_this_week_strip.js` 79 (the
+Saturday-on path list now includes the board week's Saturday tab leaf, and the Undo holds it).
