@@ -13,7 +13,7 @@
  *   run: node test_env_read_aloud.js
  */
 const fs = require("fs"), path = require("path");
-const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const src = require("./test_src.js")(path.join(__dirname, "index.html"));
 const LIB = require(path.join(__dirname, "envirothon.js"));
 let pass = 0, fail = 0;
 const ok = (n, c, x) => { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  " + JSON.stringify(x).slice(0, 300) : "")); } };

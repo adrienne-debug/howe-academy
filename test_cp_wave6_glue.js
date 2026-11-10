@@ -1,6 +1,6 @@
 // test_cp_wave6_glue.js — the wave-6 merge (2026-10-29): PR 17 🧠 CPWATCH and PR 22 📅 CPCAL meet. The watch counts a student's missed
 // study days on the family's OWN days once the family has some: cpwCal → cpCalOf (CPCAL) → cppStudy (CPPACE) → cpCalStudy for a {wd} calendar.
-const fs=require("fs"), path=require("path"), vm=require("vm"); const src=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
+const fs=require("fs"), path=require("path"), vm=require("vm"); const src=require("./test_src.js")(path.join(__dirname,"index.html"));
 let pass=0, fail=0; const ok=(n,c)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n); } };
 const slice=(a,b)=>{ const i=src.indexOf("// "+a), j=src.indexOf("// "+b); return i>=0&&j>i?src.slice(i,j):""; };
 const WATCH=slice("CPWATCH_START","CPWATCH_END"), CAL=slice("CPCAL_START","CPCAL_END"), PACE=slice("CPPACE_START","CPPACE_END");

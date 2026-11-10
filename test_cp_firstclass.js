@@ -1,7 +1,7 @@
 // test_cp_firstclass.js — CPFIRSTCLASS (2026-11-08): the first live sign-in on a brand-new class site sat on "Loading the class…" forever.
 // envConsoleHtml waited for a class before drawing any view, but the only place to create the first class (+ Class) is the 🔑 Admin
 // view behind that wait. Now the admin's Admin view draws with no class, and the waiting card tells the admin where to go.
-const fs=require("fs"), path=require("path"); const src=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
+const fs=require("fs"), path=require("path"); const src=require("./test_src.js")(path.join(__dirname,"index.html"));
 let pass=0, fail=0; const ok=(n,c)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n); } };
 const i=src.indexOf("function envConsoleHtml(){"), j=src.indexOf("\n}\n",i); const FN=i>=0?src.slice(i,j):"";
 ok("envConsoleHtml is present once", i>=0&&src.split("function envConsoleHtml(){").length===2);

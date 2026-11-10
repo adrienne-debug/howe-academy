@@ -41,6 +41,24 @@ self.addEventListener('fetch', (e) => {
     })());
     return;
   }
+  // LAZYSPLIT (2026-11-08): the areas that moved out of index.html (classes.js = the class platform, games.js = the practice games, env.js = the Envirothon site + class link) used to ride inside
+  // the cached page; keep an offline copy of each one too (network-first, same as the page). Keyed by name, so the
+  // GitHub Pages cache-bust query (?v=…) never piles up copies.
+  const lazyM = req.method === 'GET' && /\/(classes|games|env)\.js$/.exec(new URL(req.url).pathname);
+  if (lazyM) {
+    const key = 'ha-lazy-' + lazyM[1];
+    e.respondWith((async () => {
+      try {
+        const fresh = await fetch(req, { cache: 'no-store' });
+        if (fresh && fresh.ok) { const cache = await caches.open(CACHE); cache.put(key, fresh.clone()); }
+        return fresh;
+      } catch (err) {
+        const cached = await caches.open(CACHE).then(c => c.match(key));
+        return cached || Response.error();
+      }
+    })());
+    return;
+  }
   if (!isDoc) return; // everything else: let the browser handle it normally (no caching)
   e.respondWith((async () => {
     try {

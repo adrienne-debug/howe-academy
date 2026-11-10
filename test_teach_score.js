@@ -4,7 +4,7 @@
    logged (TEACH block → gameLogRound) with its count and minutes.
    run: node test_teach_score.js */
 const fs=require("fs"), path=require("path"), vm=require("vm");
-const src=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
+const src=require("./test_src.js")(path.join(__dirname,"index.html"));
 let pass=0, fail=0; const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  ("+JSON.stringify(x)+")":"")); } };
 const blk=(a,z)=>{ const i=src.indexOf(a); if(i<0) throw new Error("missing "+a); const j=src.indexOf(z,i); if(j<0) throw new Error("missing end "+z); return src.slice(i,j); };
 

@@ -1,7 +1,7 @@
 // CPRULESGUARD + CPHOWEMETA (2026-11-09): an admin or teacher has no logins row, so a rule that concatenates logins/<uid>/familyId
 // FIRST errors and denies the whole read (seen live: admin read of students/<sid> → PERMISSION_DENIED while classes read fine).
 const fs=require("fs"), assert=require("assert");
-const src=fs.readFileSync(__dirname+"/index.html","utf8");
+const src=require("./test_src.js")(__dirname+"/index.html");
 const D=JSON.parse(fs.readFileSync(__dirname+"/envirothon/SITE_RULES.json","utf8")), R=D.rules, S=R.students.$sid;
 const ADMIN="root.child('admins/'+auth.uid).val() == true";
 const FAM="$sid.beginsWith(root.child('logins/'+auth.uid+'/familyId').val() + '_')";

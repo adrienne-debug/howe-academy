@@ -14,7 +14,7 @@
 // shared node harness for ENVSITE + ENVCONSOLE: the real blocks (+ ENVMIRROR for envSummary, ENVUNIT's constants) in a tiny fake world
 const fs=require("fs"), path=require("path");
 const REPO=__dirname;
-const src=fs.readFileSync(path.join(REPO,"index.html"),"utf8");
+const src=require("./test_src.js")(path.join(REPO,"index.html"));
 function slice(a,b){ const i=src.indexOf(a), j=src.indexOf(b,i); if(i<0||j<0) throw new Error("slice missing "+a); return src.slice(i,j+b.length); }
 const SITE=slice("// ENVSITE_START","// ENVSITE_END"), CON=slice("// ENVCONSOLE_START","// ENVCONSOLE_END"), MIR=slice("// ENVMIRROR_START","// ENVMIRROR_END");
 const CLS=slice("// ENVCLASSSET_START","// ENVCLASSSET_END");   // ⚙️ the class settings (2026-10-28): the console's panel + the kid's overlay

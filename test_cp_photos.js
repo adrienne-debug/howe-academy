@@ -210,9 +210,9 @@ console.log("\n── the demo file carries the photo set ──");
 { const M=require(path.join(REPO,"envirothon","build","make_demo.js")), p=M.demoPics(), n=Object.values(p.items).reduce((s,a)=>s+a.length,0);
   const urls=new Set([].concat(...Object.values(PICS).map(a=>a.map(x=>x.url))));
   ok("make_demo: every repo picture under its item (each picture once per item), two places to find the files", n>=urls.size&&[...urls].every(u=>Object.values(p.items).some(a=>a.some(r=>r[0]===u)))&&p.bases[0]==="../"&&/^file:\/\//.test(p.bases[1])&&p.items[ITEM].length===REPO_N);
-  const html=M.buildDemo(fs.readFileSync(path.join(REPO,"index.html"),"utf8"),"test",{},null,p);
+  const html=M.buildDemo(require("./test_src.js")(path.join(REPO,"index.html")),"test",{},null,p);
   ok("…written into the page as window.HowePicsDemo, right after the config", /window\.HowePicsDemo=\{"bases"/.test(html)&&html.indexOf("window.HowePicsDemo")<html.indexOf("// CPPHOTOS_START"));
-  ok("…and a page built without it has none (the other demos are unchanged)", !/HowePicsDemo=/.test(M.buildDemo(fs.readFileSync(path.join(REPO,"index.html"),"utf8"),"test",{},null))); }
+  ok("…and a page built without it has none (the other demos are unchanged)", !/HowePicsDemo=/.test(M.buildDemo(require("./test_src.js")(path.join(REPO,"index.html")),"test",{},null))); }
 
 console.log("\n"+pass+" passed, "+fail+" failed"); if(fail) process.exit(1);
 };
