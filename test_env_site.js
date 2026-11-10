@@ -261,11 +261,17 @@ console.log("\n── every door the micro doc lists as off is unreachable under
   ok("the kid's Games view uses the app's own games sub-menu and body (🏋️ on the Envirothon decks)", (()=>{ w.envsView("games"); return /fake-games-sub/.test(w.G.content)&&/fake-games-body/.test(w.G.content); })());
   ok("the kid's ⚙️ has sign out but no Color card (CPGEAR 2026-10-28: the color is the class's), no PIN (the parent has the PIN) and no family editing", (()=>{ w.envsView("settings"); const h=w.G.content; return !/Color|envsSetColor|type="color"/.test(h)&&/Sign out/.test(h)&&!/PIN/.test(h)&&!/Add kid|Remove/.test(h); })()); }
 
-console.log("\n── stars per finished sitting ──");
-{ const w=world({fam:FAM}); w._envs.role="kid"; w._envs.kid="maya";
-  ok("live: a finished sitting banks ENVS_STARS ("+3+") through bankDirect, once", w.envSiteSittingDone("maya",{total:8,correct:7,miss:1})===true&&w.G.bankWrites.length===1&&w.G.bankWrites[0][1]===w.ENVS_STARS&&w.ENVS_STARS===3);
-  ok("another kid's sitting, an empty sitting, or dry run → nothing", w.envSiteSittingDone("other",{total:8})===false&&w.envSiteSittingDone("maya",{total:0})===false&&(()=>{ w.G.dry=true; const r=w.envSiteSittingDone("maya",{total:3}); w.G.dry=false; return r===false; })()&&w.G.bankWrites.length===1);
-  const d=world({fam:FAM,search:"?demo=1&role=kid"}); d.envSiteDemoBoot(); const before=d._envs.bankDemo; ok("demo: the count goes up on screen, bankDirect is never called", d.envSiteSittingDone("maya",{total:5})===true&&d._envs.bankDemo===before+3&&!d.G.bankWrites); }
+console.log("\n── stars per finished sitting (HOW MANY is ⭐ CPPOINTS' since 2026-11-10; its own test_cp_points.js has the math) ──");
+{ const w=world({fam:FAM}); w._envs.role="kid"; w._envs.kid="maya"; w.initFb();
+  ok("without CPPOINTS the hook banks nothing (the flat ENVS_STARS per sitting is gone)", w.envSiteSittingDone("maya",{total:8,correct:7,miss:1})===false&&!w.G.bankWrites);
+  const PTS=slice("// CPPOINTS_START","// CPPOINTS_END");
+  const x=world({fam:FAM,rev:PTS}); x._envs.role="kid"; x._envs.kid="maya"; x.initFb();
+  const r1=x.envSiteSittingDone("maya",{total:8,correct:7,miss:1}); await x.flush();
+  ok("live: a finished sitting (no study engine in this world → a part day) banks 1 star through bankDirect, after a transaction on the day's ledger", r1===true&&(x.G.bankWrites||[]).length===1&&x.G.bankWrites[0][1]===1&&x.G.writes.some(z=>z[0]==="transaction"&&/^mastery\/maya_envstars\/\d{8}$/.test(z[1])), x.G.bankWrites);
+  x.envSiteSittingDone("maya",{total:4}); await x.flush();
+  ok("a second sitting the same day pays nothing (the ledger says the part day was paid)", x.G.bankWrites.length===1);
+  ok("another kid's sitting, an empty sitting, dry run, or the parent's own page → nothing", x.envSiteSittingDone("other",{total:8})===false&&x.envSiteSittingDone("maya",{total:0})===false&&(()=>{ x.G.dry=true; const r=x.envSiteSittingDone("maya",{total:3}); x.G.dry=false; return r===false; })()&&(()=>{ x._envs.role="parent"; const r=x.envSiteSittingDone("maya",{total:3}); x._envs.role="kid"; return r===false; })()&&x.G.bankWrites.length===1);
+  const d=world({fam:FAM,search:"?demo=1&role=kid",rev:PTS}); d.envSiteDemoBoot(); const before=d._envs.bankDemo; ok("demo: the count goes up on screen by the same math, bankDirect is never called", d.envSiteSittingDone("maya",{total:5})===true&&d._envs.bankDemo===before+1&&!d.G.bankWrites); }
 
 console.log("\n── the first signed-in boot enrolls the kid, every stage, through the app's own enroll ──");
 { const w=world({fam:FAM,mastReady:true,unitsReady:true}); w._envs.role="parent"; w._envs.kid="maya"; w._envs.dbUrl="https://howe-envirothon-ramirez.firebaseio.com"; w.initFb();
