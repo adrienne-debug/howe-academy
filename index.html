@@ -40089,6 +40089,7 @@ function utEditorHTML(u,d){
   h+=lab("\u{1F3A7} Read strand")+'<div style="display:flex;gap:6px;flex-wrap:wrap"><select id="ut-e-rmode" style="'+inp+';flex:0 0 130px;width:auto"><option value="">(none)</option>'+UT_READ_MODES.map(m=>'<option value="'+m+'"'+((d.read||{}).mode===m?' selected':'')+'>'+({listen:"\u{1F3A7} Listen",mom:"\u{1F4D6} Mom reads",recite:"\u{1F5E3} Recite"}[m])+'</option>').join("")+'</select><input id="ut-e-rwhat" type="text" value="'+utEsc((d.read||{}).what||"")+'" placeholder="What (chapter, poem\u2026)" style="'+inp+';flex:1 1 160px;width:auto"><input id="ut-e-rurl" type="url" value="'+utEsc((d.read||{}).url||"")+'" placeholder="https:// link (optional)" style="'+inp+';flex:1 1 160px;width:auto"></div>';
   h+=((typeof crDayEditorHTML==="function")?crDayEditorHTML(u,d):"");   // CRAFT (B3): ✂️ the craft on this day
   h+=((typeof uaUploadHTML==="function")?uaUploadHTML(u,d):"");   // UNITAUDIO (A1): ⬆ Upload recording, under the read strand
+  h+=((typeof utaaEditorHTML==="function")?utaaEditorHTML(u,d):"");   // UTADDACT: 🎨 Activity on this day (add after Save — Sara 2026-11-09)
   h+=lab("\u{1F4DD} Note under the card")+ta("ut-e-note",d.note||"","The honest note \u2014 what to say, what to skip",2);
   h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px"><button onclick="utEditSave('+a+')" style="padding:7px 16px;border-radius:10px;border:none;background:#c2410c;color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save this day</button>';
   h+='<button onclick="utWrite('+a+',\'off\','+(d.off?'false':'true')+')" style="padding:7px 12px;border-radius:10px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(d.off?'\u21A9 Put this day back':'\u2298 Mark this day off')+'</button>';
@@ -40867,6 +40868,80 @@ function crCardHTML(g){
   return (typeof dcSection==="function")?dcSection("\u2702\uFE0F Craft",h):'<section>'+h+'</section>';
 }
 // CRAFT_END
+// UTADDACT_START — 🎨 an activity on a unit day AFTER the unit is saved (Sara, a beta mom, 2026-11-09: "I found this really cute
+//   gratitude scavenger hunt. I can not figure out how to add things or edit the unit. I did click on the unit and the day but then
+//   I could not see where I could add an activity. So is that a thing we could do??"). On main the ✚ Builder's "🎨 Activities &
+//   field trips" box exists only before Save; afterwards nothing on the unit page adds an activity (the day editor skipped nb).
+//   · THE DAYS TABLE (UNITTRACK's day editor, under the craft): a 🎨 Activity on this day box. A day without one takes ONE line in
+//     the Builder's own shape — "title | points | a line about it" — and + Add. A day that already names one (nb.activity) shows that
+//     activity's title, points and line with ✎ Save; + Add never re-points a day that has one.
+//   · THE RECORD is the Builder's (ubRecord), so the day card (dcActivity) and the 🎨 Activities section read it unchanged:
+//     unitStudies/<id>/activities/<next free index> = {key, title, emoji:"🎨", kind:"sheet", points (5 when blank), day:n, desc?}
+//     and unitStudies/<id>/track/days/<i>/nb = {activity:key} — ONE multi-path update, both paths targeted (never a whole-node set
+//     of activities or track). The key is slugged like ubSlug, suffixed _2, _3… when the unit already has it.
+//   · ✎ Save writes only unitStudies/<id>/activities/<j>/title | points | desc (the changed ones, one update); nb stays.
+//   · Mom-only (momHere), dry-run inert, plain kid-safe text; no interval, no listener, no kid's or family's name in code.
+function utaaStr(v,n){ return String(v==null?"":v).trim().slice(0,n||120); }
+function utaaSlug(s){ return String(s||"").toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,40)||"activity"; }   // = ubSlug's rule
+function utaaLive(){ return !!(typeof db!=="undefined"&&db)&&!((typeof _dryRun==="function")&&_dryRun()); }
+function utaaKey(uid,dayId){ return String(uid).replace(/[^a-zA-Z0-9_-]/g,"_")+"-"+String(dayId).replace(/[^a-zA-Z0-9_-]/g,"_"); }
+// the unit's activities as [{k:<storage key>, a:<record>}] — an array or (as Firebase hands a sparse list back) an object
+function utaaActs(u){ const raw=u&&u.activities; if(!raw||typeof raw!=="object") return []; const keys=Array.isArray(raw)?raw.map((x,i)=>String(i)):Object.keys(raw); return keys.filter(k=>raw[k]&&typeof raw[k]==="object").map(k=>({k:k,a:raw[k]})); }
+function utaaNextIndex(u){ const raw=u&&u.activities; if(!raw||typeof raw!=="object") return 0; if(Array.isArray(raw)) return raw.length; let m=-1; Object.keys(raw).forEach(k=>{ const n=parseInt(k,10); if(/^\d+$/.test(k)&&n>m) m=n; }); return m+1; }
+function utaaFreeKey(u,title){ const taken={}; utaaActs(u).forEach(x=>{ if(x.a.key) taken[x.a.key]=1; }); const base=utaaSlug(title); let key=base, n=2; while(taken[key]) key=base+"_"+(n++); return key; }
+function utaaOfDay(u,d){ const key=d&&d.nb&&d.nb.activity; if(!key) return null; return utaaActs(u).find(x=>x.a.key===key)||null; }
+// "title | points | a line about it" → {title, points, desc?}; points blank or not a number → 5 (the Builder's default)
+function utaaParse(line){ const bits=String(line||"").split("|").map(s=>s.trim()); const title=utaaStr(bits[0],120); if(!title) return null; const p=Math.round(Number(bits[1])); const o={title:title,points:(isFinite(p)&&p>0)?p:5}; const desc=utaaStr(bits[2],240); if(desc) o.desc=desc; return o; }
+function utaaVal(id){ const el=(typeof document!=="undefined"&&document.getElementById)?document.getElementById(id):null; return el?String(el.value||""):""; }
+function utaaRe(){ if(typeof renderAll==="function") renderAll(); }
+// + Add: the record onto activities at its next free index AND the day's nb, one update. A day that already names an activity is left alone.
+function utaaAdd(uid,dayId){
+  if(!utMom()||!uid||dayId==null) return false;
+  const u=utUnits()[uid]; const t=utTrack(u); const d=utDay(u,dayId); if(!t||!d) return false;
+  if(d.nb&&d.nb.activity) return false;   // ✎ is the door for a day that has one — never re-point it from + Add
+  const k=utDayKey(u,dayId); if(k==null||!t.days[k]) return false;
+  const p=utaaParse(utaaVal("utaa-"+utaaKey(uid,dayId)+"-line")); if(!p) return false;
+  const key=utaaFreeKey(u,p.title), i=utaaNextIndex(u), n=utInt(d.n)||utInt(d.wk)||(parseInt(k,10)+1);
+  const act={key:key,title:p.title,emoji:"\u{1F3A8}",kind:"sheet",points:p.points,day:n}; if(p.desc) act.desc=p.desc;
+  if(!u.activities||typeof u.activities!=="object") u.activities=[]; if(Array.isArray(u.activities)) u.activities[i]=act; else u.activities[String(i)]=act;
+  t.days[k].nb={activity:key}; utTouched(u);
+  if(utaaLive()){ const upd={}; upd["unitStudies/"+uid+"/activities/"+i]=act; upd["unitStudies/"+uid+"/track/days/"+k+"/nb"]={activity:key}; db.ref().update(upd); }
+  utaaRe(); return true;
+}
+// ✎ Save: the activity this day names — title, points, a line about it — only what changed, one update, each field its own path.
+function utaaEdit(uid,dayId){
+  if(!utMom()||!uid||dayId==null) return false;
+  const u=utUnits()[uid]; const d=utDay(u,dayId); const x=utaaOfDay(u,d); if(!x) return false;
+  const kk=utaaKey(uid,dayId), title=utaaStr(utaaVal("utaa-"+kk+"-title"),120), pn=Math.round(Number(utaaVal("utaa-"+kk+"-points"))), desc=utaaStr(utaaVal("utaa-"+kk+"-desc"),240);
+  if(!title) return false; const points=(isFinite(pn)&&pn>=0)?pn:(x.a.points||5);
+  const upd={}, base="unitStudies/"+uid+"/activities/"+x.k+"/";
+  if(title!==x.a.title){ x.a.title=title; upd[base+"title"]=title; }
+  if(points!==x.a.points){ x.a.points=points; upd[base+"points"]=points; }
+  if(desc!==(x.a.desc||"")){ if(desc) x.a.desc=desc; else delete x.a.desc; upd[base+"desc"]=desc||null; }
+  if(Object.keys(upd).length&&utaaLive()) db.ref().update(upd);
+  utaaRe(); return Object.keys(upd).length>0;
+}
+// ── the editor (UNITTRACK's day editor hook) ──
+function utaaEditorHTML(u,d){
+  if(!utMom()||!u||!d) return "";
+  const kk=utaaKey(u.id,d.id), a="'"+utJ(u.id)+"','"+utJ(d.id)+"'", inp='width:100%;box-sizing:border-box;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif;background:#fff';
+  const btn='padding:6px 14px;border-radius:10px;border:none;background:#b45309;color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  let h='<div data-utaa-editor="'+utEsc(kk)+'" style="margin-top:8px;padding:8px 10px;border:1px dashed #fcd34d;border-radius:10px;background:#fff">';
+  h+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:#b45309;margin-bottom:4px">\u{1F3A8} Activity on this day</div>';
+  const x=utaaOfDay(u,d);
+  if(x){
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap"><input id="utaa-'+kk+'-title" type="text" value="'+utEsc(x.a.title||"")+'" placeholder="What they do" style="'+inp+';flex:2 1 180px;width:auto"><input id="utaa-'+kk+'-points" type="number" min="0" value="'+utEsc(x.a.points==null?"":x.a.points)+'" placeholder="Points" style="'+inp+';flex:0 0 80px;width:auto"></div>';
+    h+='<input id="utaa-'+kk+'-desc" type="text" value="'+utEsc(x.a.desc||"")+'" placeholder="A line about it (optional)" style="'+inp+';margin-top:6px">';
+    h+='<div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><button onclick="utaaEdit('+a+')" style="'+btn+'">✎ Save the activity</button><span style="font-size:10.5px;color:var(--muted)">It shows on this day’s card and in \u{1F3A8} Activities. Points are what finishing it earns.</span></div>';
+  } else if(d.nb&&d.nb.activity){
+    h+='<div style="font-size:11px;color:var(--muted)">This day names an activity that isn’t on the unit any more ('+utEsc(d.nb.activity)+').</div>';
+  } else {
+    h+='<input id="utaa-'+kk+'-line" type="text" placeholder="title | points | a line about it" style="'+inp+'">';
+    h+='<div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><button onclick="utaaAdd('+a+')" style="'+btn+'">+ Add</button><span style="font-size:10.5px;color:var(--muted)">The Builder’s shape: Gratitude scavenger hunt | 5 | Find one thing you’re thankful for in each room. Points default to 5.</span></div>';
+  }
+  return h+'</div>';
+}
+// UTADDACT_END
 // UNITSTAB_START — 📚 All units · 🧒 one tab per kid · 🏡 Family ("One shape" §4 the Units page; BRIEF_units_build_2026-10-27.md
 //   T3; her go 2026-10-27). A VIEW over data that already exists plus the unit tracks: the only writes are the buttons that write
 //   today (enroll, the notebook switch, a stage move-up, the staged + Kid form) and the two buttons other steps add (✚ Build,
