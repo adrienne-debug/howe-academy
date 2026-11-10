@@ -141,9 +141,14 @@ function world(host) {
     ok("loaded but its last line never ran (an error part-way) → rejects, not 'ready'", failed && w.ctx.haLazyReady("games") === false); }
   { const w = world(); vm.runInContext("function cpSeason(){}", w.ctx);
     ok("the code already in the page (a one-page build) → ready, nothing fetched", w.ctx.haLazyReady("classes") === true && (await w.ctx.haLazyLoad("classes")) === true && w.tags.length === 0); }
-  for (const [what, fam, search] of [["Howe (its real family-config.js)", "real", ""], ["no config", null, ""], ["a family with ?role= but no demo", { familyId: "x" }, "?role=kid"]]) {
+  { const w = world(); const c = { window: {} }; vm.createContext(c); vm.runInContext(fs.readFileSync(path.join(DIR, "family-config.js"), "utf8"), c); w.W.HA_FAMILY = c.window.HA_FAMILY;
+    let xhr = 0; w.ctx.XMLHttpRequest = function () { xhr++; this.open = () => {}; this.send = () => {}; };
+    w.ctx.haLazyBoot(); await new Promise(r => setTimeout(r, 0));
+    // main 2026-11-09 (#303): Howe's family-config.js carries the envirothon block (Lincoln's mirror) → Howe is a class-linked family
+    ok("haLazyBoot on Howe (its real family-config.js, class link since #303): env.js preloads after boot, nothing synchronous", w.tags.length === 1 && w.tags[0].src === "env.js" && xhr === 0); }
+  for (const [what, fam, search] of [["no config", null, ""], ["a family with ?role= but no demo", { familyId: "x" }, "?role=kid"]]) {
     const w = world(); w.ctx.location.search = search;
-    if (fam === "real") { const c = { window: {} }; vm.createContext(c); vm.runInContext(fs.readFileSync(path.join(DIR, "family-config.js"), "utf8"), c); w.W.HA_FAMILY = c.window.HA_FAMILY; } else if (fam) w.W.HA_FAMILY = fam;
+    if (fam) w.W.HA_FAMILY = fam;
     let xhr = 0; w.ctx.XMLHttpRequest = function () { xhr++; this.open = () => {}; this.send = () => {}; };
     w.ctx.haLazyBoot(); await new Promise(r => setTimeout(r, 0));
     ok("haLazyBoot on " + what + ": nothing fetched, nothing waits", w.tags.length === 0 && xhr === 0); }

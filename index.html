@@ -1523,6 +1523,19 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
 .nt-tbl td{border:1px solid #e2e8f0;padding:3px 7px;vertical-align:top}
 .nt-tbl tr:first-child td{font-weight:700;background:#f8fafc}
 </style>
+<style>
+/* ENVBOOTHIDE (2026-11-08) — the class site never paints the Howe home. The 🌿 edition is the Howe app with blocks stripped, so the page
+   drew Howe's header, tabs, week strip and the ⚙️ Mom-PIN gear first and laid the sign-in card over them: the gear peeked through the
+   teacher/admin console, and "Offline" plus an empty Sunday showed behind the card in dry-run. html.env-site-boot is set on <html> by the Envirothon build itself
+   (build_envirothon.js, so it is there before the first byte of markup); for an unbuilt copy served with an edition family file, the small
+   script after family-config.js sets it too. Then: the Howe shell is hidden for every role (every role on
+   the class site is Envirothon-only UI), #content stays hidden until the gate resolves a role (body.env-site, set in envsEnter — the
+   console, study and parent pages draw into #content), and the page is the card's green until then. Lincoln's Howe app at home has no
+   edition and is untouched. Same id list as body.kiosk (+ #admin-panel, the gear's panel). */
+html.env-site-boot #app-header,html.env-site-boot #nav-tabs,html.env-site-boot #sched-subtabs,html.env-site-boot #day-tabs,html.env-site-boot #kid-filter,html.env-site-boot #mom-pin-bar,html.env-site-boot #skylight-panel,html.env-site-boot #week-strip,html.env-site-boot #admin-btn,html.env-site-boot #scroll-top,html.env-site-boot #hq-back,html.env-site-boot #md-back,html.env-site-boot #admin-panel{display:none!important}
+html.env-site-boot body:not(.env-site) #content{display:none!important}
+html.env-site-boot body:not(.env-site){background:#0f2e1f}
+</style>
 </head>
 <body>
 
@@ -1679,6 +1692,11 @@ table.gv{border-collapse:separate;border-spacing:0;font-size:11px;font-family:'D
   setInterval(function(){ if(navigator.onLine!==false) again(); },20000);
 })();
 // FAMCFG_GUARD_END
+</script>
+<script>
+// ENVBOOTHIDE_START — fallback for an UNBUILT copy served with an edition family file (the built class site carries the class on <html>); see the <style> in <head>
+(function(){ try{ var f=window.HA_FAMILY; if(f&&f.edition==="envirothon") document.documentElement.classList.add("env-site-boot"); }catch(e){} })();
+// ENVBOOTHIDE_END
 </script>
 <script>
 // 🏷 Family name under the emblem (2026-10-04): family-config.js familyName "Dewalt Family" → "The Dewalt Family".
@@ -3000,6 +3018,8 @@ let lastTasksWrite = 0;
 let lastCurrWrite = 0; const CURR_ECHO_MS = 3000;   // 📚 CURRLIVE: this device's last curriculum write (the listener skips its own echo)
 let fbCheckedLoaded = false;
 let fbTasksLoaded = false;
+let _abTasksNullWk = null;    // 🆕 ABFIRST: the week whose tasks node the server answered EMPTY (a brand-new family) — read by the self-build only
+let _abActiveWkNull = false;  // 🆕 ABFIRST: the server answered ha_active_wk = nothing (no week was ever committed)
 let fbHistoryLoaded = false;
 let fbCurrLoaded = false;   // curriculum once() answered (even empty) — subjNoCarry flags readable
 let fbArchiveLoaded = false; // archive listener answered — cursor math has the full completion record
@@ -3556,6 +3576,7 @@ function attachWeekListeners(wk){
   DAY_DT={}; // Clear stale dates so Sunday guard fires until meta arrives
   fbCheckedLoaded=false; // Reset so cascade waits for fresh data from Firebase
   fbTasksLoaded=false;
+  _abTasksNullWk=null;   // 🆕 ABFIRST: per week
   fbHistoryLoaded=false;
   clearTimeout(cascadeDebounce);
 
@@ -3638,7 +3659,7 @@ function attachWeekListeners(wk){
   const r5=db.ref(wk+"/tasks");
   r5.on("value",s=>{
     if(isUploading) return;
-    if(!s.val()) return;
+    if(!s.val()){ _abTasksNullWk=wk; return; }   // 🆕 ABFIRST: never "loaded" on an empty node (a live week's wipe stays harmless) — the self-build alone reads this
     // Suppress echo from our own cascade writes (prevents runaway cascade chains)
     if(Date.now()-lastTasksWrite<3000){ dbg("skip:tasks echo"); return; }
     const incoming=_haRealCards(Object.values(s.val()));   // GHOSTCARD
@@ -4157,6 +4178,7 @@ function initFb() {
     // Fires immediately on connect and any time another device changes the week.
     db.ref("ha_active_wk").on("value",s=>{
       const fbWk=s.val();
+      _abActiveWkNull=!fbWk;   // 🆕 ABFIRST
       if(fbWk && fbWk!==WK){
         dbg("ha_active_wk changed FB="+fbWk+" local="+WK);
         WK=fbWk; HA_LS.setItem("ha_active_wk",WK); weekData.week=WK;
@@ -9640,6 +9662,14 @@ function bumpSkippedInTier(done){
     const nt=fromMin(start);
     if(x.time!==nt){ x.time=nt; upd[x.id+"/time"]=nt; }
   });
+  // 📓 BUMPCLOSE (slice E demo run, 2026-11-08): a longer card sliding into a later slot ends past where the group used to end — and past
+  // the kid's Closing Notebook (the demo: Piano 20 min checked early at 10:05 took Reading's 9:35; Reading 25 min took Piano's 10:00 and
+  // ran to 10:25 under a 10:20 Closing). The wrap-up stays last: an open Closing on that day that would now start inside the group moves
+  // to the group's new end — one more targeted time write; a checked or claimed Closing never moves.
+  { const _ge=Math.max.apply(null,order.map(x=>toMin(x.time)+(x.dur||20)));
+    weekData.tasks.forEach(c=>{ if(!c||c.who!==done.who||c.day!==done.day||String(c.id||"").endsWith("_c")||checked[c.id]||claimed[c.id]) return;
+      if(!(c.subjectKey==="closing_nb"||/closing notebook/i.test(c.title||""))) return;
+      if(toMin(c.time)<_ge){ const nt=fromMin(_ge); if(c.time!==nt){ c.time=nt; upd[c.id+"/time"]=nt; } } }); }
   if(!Object.keys(upd).length) return;
   sv(WK+"_tasks",weekData.tasks);
   lastTasksWrite=Date.now();
@@ -18238,6 +18268,7 @@ function renderMomsDay(el){
   try{ const _sr=srNowHTML(); nowN+=_sr.n; h+=_sr.html; }catch(e){}   // 🕒 SREVIEW: every finished study sitting today → 👍 Looks right · ↩ Too fast
   try{ const _mm=mmAlertsNowHTML(); nowN+=_mm.n; h+=_mm.html; }catch(e){}   // ⏱ MINMINUTES: an early check let through · a card open past double its time
   try{ const _lr=hhLevelReadyNowHTML(); nowN+=_lr.n; h+=_lr.html; }catch(e){}   // 🪜 LEVELREADY: a person's meter says move up
+  try{ if(typeof mlsNowHTML==="function"){ const _ml=mlsNowHTML(); nowN+=_ml.n; h+=_ml.html; } }catch(e){}   // 🧠 MLSUGGEST: the load dial's one suggestion per kid → Apply · Not now
   // Load sitting in the washer / dryer / fold pile too long — the nudge that saves a re-wash (LAUNDRY_NUDGE).
   try{ laundryNudgeList(Date.now()).forEach(x=>{ nowN++; h+=laundryNudgeRowHTML(x); }); }catch(e){}
   // Bills that can't wait — overdue or due today — with one-tap ✓ Paid.
@@ -28544,6 +28575,30 @@ function scpPrevWin(w,days){ const t=scpShift(w.from,-1); return {from:scpShift(
 // never carry the stamp and are untouched.
 const SCP_SAY_GAMES={gofish:1,four:1,ship:1,sure:1,kaboom:1,jeop:1};
 function scpPreJudge(e){ return !!(e&&typeof e==="object"&&SCP_SAY_GAMES[String(e.game||"")]===1&&!e.judge); }
+// 🧺 SORTPIC (games honesty audit #14, 2026-11-08): a Sort it PICTURES round (the bin is the card's own deck) is logged tagged
+// cat:true — "that's an animal" is the category, not the card, so it must not mark a drill-missed "zebra" as known. Left out of
+// Right % (scpRight) and learned-through-games (scgLearned); its rounds and minutes still count. Rule / math-back sorts carry no tag.
+function scpCatSort(e){ return !!(e&&typeof e==="object"&&e.cat===true); }
+// 🎓 TEACHSCORE (her decision 2026-11-08, games audit §4 #12 / Q6: Teach it "as its own line ('taught: N')"): Teach it's ✓ is the
+// LISTENER's verdict tapped on the teacher's device — an honor game by design, and her 2026-11-03 rule says it "moves nothing". Its
+// rounds are still logged (count, minutes) but a game listed here is UNSCORED: left out of Right % (scpRight) and learned-through-games
+// (scgLearned); the 🎮 Games section shows it on its own line ("🎓 taught: N cards · M rounds"), no Right %.
+const SCP_UNSCORED={teach:1};
+function scpUnscored(e){ return !!(e&&typeof e==="object"&&SCP_UNSCORED[String(e.game||"")]===1); }
+// 🚂 PKTRAIN no double count (games audit 2026-11-08 §4 #23 / §7 rank 8): a Pre-K study card's Train round that EARNED the study is
+// logged twice — the studyLog sitting (full weight) and its gameLog round, tagged study:<sid>. The sitting is the one that counts:
+// a tagged round is left out of Right %, the minutes and learned-through-games (its letters' grades are the sitting's).
+function scpStudyRound(e){ return !!(e&&typeof e==="object"&&e.study); }
+// 📊 SCPSKIP (2026-11-08, games audit ranks 7–9 + 13–16 together): ONE list of what Right % (scpRight) and learned-through-games
+// (scgLearned) leave out of a gameLog round — each rule is its own predicate above, and both readers ask scpSkip only. The round itself
+// still counts as a round (and its minutes, except a study round — scpMinutes asks scpStudyRound itself).
+const SCP_SKIP=[
+  scpPreJudge,     // ⚖️ GAMEJUDGE: an honor-tap round from before judging
+  scpUnscored,     // 🎓 TEACHSCORE: Teach it — the listener's ✓, its own "taught" line
+  scpStudyRound,   // 🚂 PKTRAIN: a Train round that IS the Pre-K study sitting (counted once, as the sitting)
+  scpCatSort       // 🧺 SORTPIC: a Sort it Pictures round — the category, not the card
+];
+function scpSkip(e){ return SCP_SKIP.some(f=>f(e)); }
 // PURE: right ÷ graded inside a window → {graded, right, pct, drill:{g,r}, study:{g,r}, games:{n,ok}}; pct null when nothing was graded.
 function scpRight(kid,history,studyLog,gameLog,w,gw){
   gw=(typeof gw==="number")?gw:SCP_GAME_W;
@@ -28553,7 +28608,7 @@ function scpRight(kid,history,studyLog,gameLog,w,gw){
   else { const dh=(history||{})[kid]||{}; Object.keys(dh).forEach(k=>{ const e=dh[k]; days[k]={items:scpV(e&&e.items).filter(it=>it.result==="c"||it.result==="m"||it.result==="~").map(it=>({result:it.result,src:"drill"}))}; }); }
   Object.keys(days).forEach(k=>{ if(!scpIn(k,w)) return; scpV(days[k].items).forEach(it=>{ const b=(it.src==="study")?out.study:out.drill; b.g++; if(it.result==="c") b.r++; }); });
   const gl=(gameLog||{})[kid]||{};
-  Object.keys(gl).forEach(day=>{ if(!scpIn(day,w)) return; scpV(gl[day]).forEach(e=>{ if(scpPreJudge(e)) return;   // ⚖️ GAMEJUDGE: a round before judging is not counted
+  Object.keys(gl).forEach(day=>{ if(!scpIn(day,w)) return; scpV(gl[day]).forEach(e=>{ if(scpSkip(e)) return;   // 📊 SCPSKIP: before judging · Teach it · a study round · a Pictures sort
     scpV(e.items).forEach(it=>{ if(it.back) return; out.games.n++; if(it.ok) out.games.ok++; }); }); });
   out.graded=out.drill.g+out.study.g+out.games.n*gw; out.right=out.drill.r+out.study.r+out.games.ok*gw;
   out.pct=out.graded>0?Math.round(out.right/out.graded*100):null;
@@ -28592,7 +28647,7 @@ function scpMinutes(kid,history,studyLog,gameLog,w,schoolDays,gw){
   Object.keys(sl).forEach(sid=>{ const days=sl[sid]; if(!days||typeof days!=="object") return;
     Object.keys(days).forEach(k=>{ if(!scpIn(k,w)) return; const e=days[k]; if(!e||typeof e!=="object") return; const sits=scpV(e.sits).map(x=>x&&x.secs); take(sits.length?sits:[e.secs],s=>{ study+=s; }); }); });
   const gl=(gameLog||{})[kid]||{};
-  Object.keys(gl).forEach(k=>{ if(!scpIn(k,w)) return; scpV(gl[k]).forEach(e=>{ take([e&&e.secs],s=>{ games+=s; }); }); });
+  Object.keys(gl).forEach(k=>{ if(!scpIn(k,w)) return; scpV(gl[k]).forEach(e=>{ if(scpStudyRound(e)) return; take([e&&e.secs],s=>{ games+=s; }); }); });   // 🚂 PKTRAIN: its minutes are the sitting's
   const total=drill+study+games*gw, days=Math.max(1,schoolDays|0);
   return {drill:Math.round(drill/60),study:Math.round(study/60),games:Math.round(games/60),total:Math.round(total/60),days:days,perDay:Math.round(total/60/days),any:(drill+study+games)>0};
 }
@@ -28732,7 +28787,7 @@ function scgLearned(kid,cards,history,studyLog,gameLog){
   else { const dh=(history||{})[kid]||{}; Object.keys(dh).forEach(k=>{ days[k]={items:scpV(dh[k]&&dh[k].items)}; }); }
   Object.keys(days).forEach(k=>{ scpV(days[k].items).forEach(it=>{ if(!it||it.id==null||!(it.result in R)) return;
     const g=grades[String(it.id)]||(grades[String(it.id)]={}); if(g[k]==null||R[it.result]>R[g[k]]) g[k]=it.result; }); });   // one grade a day, the worse
-  Object.keys(gl).forEach(day=>{ scpV(gl[day]).forEach(e=>{ if(scpPreJudge(e)) return;   // ⚖️ GAMEJUDGE: an honor-tap right from before judging teaches nothing here
+  Object.keys(gl).forEach(day=>{ scpV(gl[day]).forEach(e=>{ if(scpSkip(e)) return;   // 📊 SCPSKIP: none of these teaches the card (before judging · a listener's ✓ · a study round · a category)
     scpV(e&&e.items).forEach(it=>{ if(it&&it.ok&&!it.back&&it.id!=null) (right[String(it.id)]||(right[String(it.id)]=[])).push(day); }); }); });
   const out=[];
   scpV(cards).forEach(c=>{ if(!c||c.id==null||c.status==="parked") return; const id=String(c.id);
@@ -28763,6 +28818,7 @@ function scgStats(kid,D){
     if(e.why==="practice"||e.why==="free") why.flagged=true;
     if(e.why==="practice"||r.g==="practice") why.practice++; else if(e.why==="free") why.free++; else why.none++;
     if(pre){ scpV(e.items).forEach(it=>{ if(!it||it.back) return; b.n++; if(it.ok) b.ok++; }); return; }   // shown grey, in no Right % and no deck
+    if(r.log&&scpUnscored(e)){ s.cards=(s.cards||0)+scpV(e.items).filter(it=>it&&!it.back).length; return; }   // 🎓 TEACHSCORE: cards taught — no Right %, no deck
     const add=(deck,n,ok)=>{ const d=DK[deck]||(DK[deck]={deck:deck,rounds:0,games:{}}), x=d.games[r.g]||(d.games[r.g]={key:r.g,rounds:0,n:0,ok:0,best:{}});
       if(!seen[deck]){ seen[deck]=1; d.rounds++; x.rounds++; } x.n+=n; x.ok+=ok; s.n+=n; s.ok+=ok; tot.n+=n; tot.ok+=ok; };
     if(r.log){ let any=false; scpV(e.items).forEach(it=>{ if(!it||it.back) return; any=true; add(deckOf[String(it.id)]||String(e.deck||"—"),1,it.ok?1:0); });
@@ -28782,7 +28838,9 @@ function scgStats(kid,D){
     .sort((a,b)=>(b.rounds-a.rounds)||(a.deck<b.deck?-1:a.deck>b.deck?1:0));
   const learned=scgLearned(kid,D.cards,D.history,D.studyLog,D.gameLog);
   tot.pct=pct(tot.ok,tot.n);
-  return {kid:kid,today:today,any:!!(rounds.length||Object.keys(mb).length||nLikes),total:tot,games:games,decks:decks,why:why.flagged?why:null,learned:learned};
+  const ti=games.findIndex(g=>SCP_UNSCORED[g.key]===1), tg=ti>=0?games.splice(ti,1)[0]:null;   // 🎓 TEACHSCORE: Teach it leaves the table for its own line
+  const taught=tg&&tg.rounds?{cards:tg.cards||0,rounds:tg.rounds,w7:tg.w7,min:tg.min}:null;
+  return {kid:kid,today:today,any:!!(rounds.length||Object.keys(mb).length||nLikes),total:tot,games:games,decks:decks,why:why.flagged?why:null,learned:learned,taught:taught};
 }
 // ── the section ──
 function scgLabel(k){ if(k==="practice") return "\u{1F3AE} Practice list"; try{ const g=(typeof GAMES_LIST!=="undefined"&&Array.isArray(GAMES_LIST))?GAMES_LIST.find(x=>x&&x.key===k):null; if(g) return g.emoji+" "+g.label; }catch(e){} return String(k); }
@@ -28803,6 +28861,7 @@ function scgHtml(s,open,cards){
   const byId={}; scpV(cards).forEach(c=>{ if(c&&c.id!=null) byId[String(c.id)]=c; });
   const names=s.learned.slice(0,6).map(id=>{ const c=byId[id]||{}; return scpE(c.answer||c.prompt||id); });
   h+='<div style="font-size:12px;color:#334155;margin-top:6px">\u{1F331} Cards learned through games: <b>'+s.learned.length+'</b>'+(names.length?' <span style="color:#64748b">· '+names.join(', ')+(s.learned.length>names.length?' …':'')+'</span>':'')+'</div>';
+  if(s.taught) h+='<div class="scg-taught" style="font-size:12px;color:#334155;margin-top:4px">\u{1F393} taught: <b>'+s.taught.cards+'</b> card'+(s.taught.cards===1?'':'s')+' · '+s.taught.rounds+' round'+(s.taught.rounds===1?'':'s')+'</div>';   // 🎓 TEACHSCORE: no Right %
   h+='<div style="overflow-x:auto;margin-top:8px"><table style="border-collapse:collapse;font-size:12px;width:100%"><tr><th '+th+'>Game</th><th '+th+'>Rounds 7 d / all</th><th '+th+'>Right</th><th '+th+'>Best</th><th '+th+'>\u{1F44D} \u{1F44E}</th><th '+th+'>Min</th></tr>';
   s.games.forEach(g=>{ const p=g.pre, only=p&&!g.rounds&&!Object.keys(g.best).length&&!g.up&&!g.down;
     if(!only) h+='<tr><td '+td+'>'+scpE(scgLabel(g.key))+'</td><td '+td+'>'+g.w7+' / '+g.rounds+'</td><td '+td+'><span style="font-weight:800;color:'+scpPctCol(g.pct)+'">'+scpN(g.pct,'%')+'</span>'+(g.n?' <span style="color:#94a3b8">of '+g.n+'</span>':'')+'</td><td '+td+'>'+scgBestTxt(g.best,true)+'</td><td '+td+'>'+((g.up||g.down)?g.up+' · '+g.down:'—')+'</td><td '+td+'>'+(g.rounds?g.min:'—')+'</td></tr>';
@@ -28818,7 +28877,8 @@ function scgHtml(s,open,cards){
     'Best = the game’s own best: seconds for Match, Memory flip and Beat my time (lower is better), dollars for Jeopardy’s money game, a count for the rest.<br>'+
     'A card is counted in its own deck, so a mixed round splits into the decks it came from.<br>'+
     'Learned through games = a card the practice list marked learned, or one that was missed, then right on the first try in a game, then right in the next drill or study.<br>'+
-    'Before judging = Go Fish, Connect Four, Battleship, Kaboom, Sure? then flip and Jeopardy rounds from before “I said it” was checked: a tap counted as right, so they are shown grey and left out of every Right % and of learned through games.</div></details>';
+    'Before judging = Go Fish, Connect Four, Battleship, Kaboom, Sure? then flip and Jeopardy rounds from before “I said it” was checked: a tap counted as right, so they are shown grey and left out of every Right % and of learned through games.<br>'+
+    'Taught = Teach it: the listener’s ✓ is tapped on the teacher’s device, so it counts as cards taught and rounds only — never in a Right % or in learned through games.</div></details>';
   h+='</details></div>';
   return h;
 }
@@ -28989,9 +29049,155 @@ function mldDialHtml(kid){
   const L=((_mldMD()[kid+"_settings"]||{}).load||{}).last;
   if(L){ const mv=Array.isArray(L.moved)?L.moved:Object.values(L.moved||{}), line=mldMovedLine(kid,mv);
     h+='<div style="font-size:11.5px;color:#334155;margin-top:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span>'+(line?'Moved: '+line:'Only the dial moved.')+'</span><button onclick="mldUndo(\''+K+'\')" style="border:1.5px solid var(--border);background:#fff;border-radius:999px;padding:3px 10px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">↩ Undo</button></div>'; }
+  if(d.stored&&typeof mlsModeHtml==="function") h+=mlsModeHtml(kid);   // 🧠 MLSUGGEST: Suggest / Off, once the dial is stored
   return h+'</div>';
 }
 // MLDIAL_END
+// MLSUGGEST_START — 🧠 THE LOAD DIAL SUGGESTS (slice 3 of PLAN_mental_load_2026-11-03.md; her answer 2026-11-03: Mode = "Suggest" — the app
+// never moves the dial on its own, and every suggestion goes to Mom's Day ("it needs to go to Mom's Day needs your attention")). After a
+// 3-day window, ONE row per kid in Mom's Day ▸ 🔴 Now — needs you:
+//   "🧠 <kid>: 3 days at 72% first-try, 28 of 25 min — turn down to 20 min?"  [Apply] [Not now]
+//   · THE WINDOW — mlWindow(kid, days=3, D), PURE: the last 3 days with mastery work logged, before today (today is still going), at most
+//     MLS_LOOK days back, and only days AFTER the dial's last change (load/last.at). Per day, the Scores page's own formulas (§2D):
+//     minutes = drill + study + games × ½ (scpMinutes) + sprints (sprintLog: secsA + secsB, else the clock × sheets, 60 s a sheet without
+//     one); first-try % = scpRight (drill + study, one grade a card a day, + games' first taps at ½, rounds before judging left out);
+//     sittings = drill sittings + study sittings. The window's numbers = the per-day average minutes, right ÷ graded over the 3 days, and
+//     the Load word (scpLoad: Light · Steady · Heavy against the dial).
+//   · THE RULE — mlSuggest(kid, window, dial), PURE, one suggestion or none:
+//       turn DOWN 5 min — on each of the 3 days the minutes were over the dial, OR on each of the 3 days first-try was under 80 %;
+//                         at the 5-minute floor it offers one sitting fewer instead (none when that is 1 already).
+//       turn UP 5 min   — on each of the 3 days the minutes were under the dial AND first-try over 85 % AND every sitting on the dial
+//                         was done (the day finished early, not cut short); never past 120.
+//     Down is checked first, so never two at once. 80–85 % is the target band (plan §2E) — inside it, nothing.
+//   · QUIET — no dial stored for the kid (no load/budgetMin) → nothing at all (Mom's Day byte-identical); load/mode "off" → nothing;
+//     Not now → load/snooze = the day it may ask again (today + 3); and the first 3 days after any dial change (the window only counts
+//     days after load/last.at, and today must be past that day + 3).
+//   · APPLY — re-checks the suggestion, then mldSet(kid, minutes, sittings): the dial's own path (one multi-path update of the dial + the
+//     knobs it drives + load/last), with its what-changed line and ↩ Undo (shown here on this device after the tap, and on the Scores card).
+//   · MODE — load/mode = "suggest" (the default, unset) / "off", per kid, on the dial's card (📊 Scores). "Auto-down, ask-up" is NOT built
+//     (plan slice 3b, later).
+// Mom only (momHere). Writes only on Mom's tap, through _mldSave (db && !_dryRun()); never on boot or render. No kid or family names.
+const MLS_DAYS=3, MLS_LOOK=14, MLS_LOW=80, MLS_HIGH=85, MLS_SNOOZE=3, MLS_QUIET=3;
+function _mlsKeyOf(v){ if(v==null||v==="") return ""; if(typeof v==="number"&&isFinite(v)) return scpKeyOf(new Date(v)); const k=String(v).replace(/-/g,"").slice(0,8); return /^\d{8}$/.test(k)?k:""; }
+// PURE: one sprint entry's seconds (capped like a sitting)
+function mlsSprintSecs(e,cap){
+  if(!e||typeof e!=="object") return 0;
+  const sheets=(e.a?1:0)+(e.b?1:0)||1, live=(+e.secsA>0?+e.secsA:0)+(+e.secsB>0?+e.secsB:0);
+  const s=live>0?live:((+e.clk>0?+e.clk:60)*sheets);
+  return (s>0&&s<=cap)?s:0;
+}
+// PURE: one day's measures. The Scores formulas, fed only that day's slice of each log.
+function mlsDay(kid,k,D,gw){
+  const cap=(typeof SC_LEFT_OPEN_SECS==="number")?SC_LEFT_OPEN_SECS:7200, w={from:k,to:k};
+  const dh=((D.history||{})[kid]||{})[k], sl=(D.studyLog||{})[kid]||{}, gl=((D.gameLog||{})[kid]||{})[k];
+  const H={}, S={}, G={}; if(dh) H[kid]={[k]:dh};
+  const st={}; Object.keys(sl).forEach(sid=>{ const e=sl[sid]&&sl[sid][k]; if(e) st[sid]={[k]:e}; }); S[kid]=st; if(gl) G[kid]={[k]:gl};
+  const mn=scpMinutes(kid,H,S,G,w,1,gw), rt=scpRight(kid,H,S,G,w,gw);
+  let sp=0; scpV((D.sprintLog||{})[kid]).forEach(e=>{ if(_mlsKeyOf(e&&(e.date||e.ts))===k) sp+=mlsSprintSecs(e,cap); });
+  let sits=0;
+  if(dh&&typeof dh==="object"){ const t=scpV(dh.sessTimes).filter(s=>typeof s==="number"&&s>0&&s<=cap); sits+=t.length||((dh.secs>0||scpV(dh.items).length)?1:0); }
+  Object.keys(st).forEach(sid=>{ const e=st[sid][k]; if(!e||typeof e!=="object") return; const n=scpV(e.sits).length; sits+=n||((e.secs>0||e.total>0)?1:0); });
+  const min=Math.round(((mn.drill+mn.study)*60+mn.games*60*gw+sp)/60);
+  return {day:k,min:min,drill:mn.drill,study:mn.study,games:mn.games,sprint:Math.round(sp/60),graded:rt.graded,right:rt.right,pct:rt.pct,sittings:sits,
+    any:!!(mn.any||sp>0||rt.graded>0)};
+}
+// PURE when D is given: the last `days` days with work, before today and after the last dial change.
+//   D = {history, studyLog, gameLog, sprintLog, today:yyyymmdd, since:yyyymmdd|"" (the change day), budgetMin, sittings, gameWeight?}
+function mlWindow(kid,days,D){
+  days=(Number(days)>0)?Math.floor(days):MLS_DAYS; D=D||mlsData(kid);
+  const gw=(typeof D.gameWeight==="number")?D.gameWeight:SCP_GAME_W, today=String(D.today||scpToday()), since=_mlsKeyOf(D.since), look=Math.max(days,MLS_LOOK), out=[];
+  for(let i=1;i<=look&&out.length<days;i++){ const k=scpShift(today,-i); if(since&&k<=since) break; const d=mlsDay(kid,k,D,gw); if(d.any) out.push(d); }
+  const n=out.length, budget=Number(D.budgetMin)>0?Number(D.budgetMin):null;
+  const g=out.reduce((a,d)=>a+d.graded,0), r=out.reduce((a,d)=>a+d.right,0);
+  const minPerDay=n?Math.round(out.reduce((a,d)=>a+d.min,0)/n):null;
+  return {kid:kid,today:today,since:since,need:days,n:n,ready:n>=days,days:out,minPerDay:minPerDay,graded:g,right:r,pct:g>0?Math.round(r/g*100):null,
+    sittings:n?Math.round(out.reduce((a,d)=>a+d.sittings,0)/n*10)/10:null,budget:budget,dialSittings:Math.max(1,Math.floor(Number(D.sittings)||1)),
+    load:(n&&budget)?scpLoad(minPerDay,budget):null};
+}
+// PURE: the one suggestion (or null). dial = {minutes, sittings, stored, mode, snooze:yyyymmdd, changed:yyyymmdd}
+function mlSuggest(kid,win,dial){
+  if(!dial||!dial.stored||!(Number(dial.minutes)>0)) return null;
+  if(dial.mode==="off") return null;
+  if(!win||!win.ready) return null;
+  const today=String(win.today||""), B=Math.floor(Number(dial.minutes)), S=Math.max(1,Math.floor(Number(dial.sittings)||1)), D=win.days.slice(0,win.need||MLS_DAYS);
+  if(dial.snooze&&today<String(dial.snooze)) return null;
+  const ch=_mlsKeyOf(dial.changed); if(ch&&(D.some(d=>d.day<=ch)||today<=scpShift(ch,MLS_QUIET))) return null;
+  const pct=x=>typeof x==="number";
+  const mk=(dir,what,m,s,why)=>{
+    const head=D.length+" days at "+(pct(win.pct)?win.pct+"% first-try":"nothing graded")+", "+win.minPerDay+" of "+B+" min";
+    const ask=what==="sittings"?s+" sitting"+(s===1?"":"s")+" a day instead of "+S+"?":"turn "+(dir==="down"?"down":"up")+" to "+m+" min?";
+    return {kid:kid,dir:dir,what:what,why:why,from:{minutes:B,sittings:S},minutes:m,sittings:s,text:head+(dir==="up"?", every sitting done":"")+" — "+ask};
+  };
+  const over=D.every(d=>d.min>B), low=D.every(d=>pct(d.pct)&&d.pct<MLS_LOW);
+  if(over||low){ const why=over&&low?"over+low":(over?"over":"low");
+    if(B-MLD_STEP>=MLD_MIN) return mk("down","minutes",B-MLD_STEP,S,why);
+    if(S>1) return mk("down","sittings",B,S-1,why);
+    return null; }
+  const under=D.every(d=>d.min<B), high=D.every(d=>pct(d.pct)&&d.pct>MLS_HIGH), done=D.every(d=>d.sittings>=S);
+  if(under&&high&&done&&B+MLD_STEP<=MLD_MAX) return mk("up","minutes",B+MLD_STEP,S,"room");
+  return null;
+}
+// The app's data (read only): the logs + the dial as stored.
+function mlsDialOf(kid){
+  const s=_mldMD()[kid+"_settings"]||{}, L=(s.load&&typeof s.load==="object")?s.load:{}, d=mldDial(kid);
+  return {minutes:d.minutes,sittings:d.sittings,stored:d.stored,mode:L.mode==="off"?"off":"suggest",snooze:_mlsKeyOf(L.snooze),changed:_mlsKeyOf(L.last&&L.last.at)};
+}
+function mlsData(kid){
+  const md=_mldMD(), dl=mlsDialOf(kid);
+  return {history:md.history,studyLog:md.studyLog,gameLog:md.gameLog,sprintLog:md.sprintLog,today:scpToday(),since:dl.changed,budgetMin:dl.stored?dl.minutes:null,sittings:dl.sittings};
+}
+function mlsFor(kid){ const dl=mlsDialOf(kid); if(!dl.stored||dl.mode==="off") return null; return mlSuggest(kid,mlWindow(kid,MLS_DAYS,mlsData(kid)),dl); }
+const _mlsDone={};   // kid → the load/last.at this device's Apply made (its what-changed + Undo row stays until that changes)
+function mlsApply(kid){
+  if(!kid||!(typeof momHere==="function"&&momHere())) return false;
+  const sg=mlsFor(kid); if(!sg) return false;
+  const b=mldSet(kid,sg.minutes,sg.sittings); if(!b) return false;
+  try{ const L=(_mldMD()[kid+"_settings"]||{}).load; if(L&&L.last) _mlsDone[kid]=L.last.at; }catch(e){}
+  try{ if(typeof gwShowToast==="function") gwShowToast("🧠 "+scpKidName(kid)+": "+(sg.what==="sittings"?sg.sittings+" sitting"+(sg.sittings===1?"":"s"):sg.minutes+" min")+" a day"); }catch(e){}
+  try{ if(typeof renderAll==="function") renderAll(); }catch(e){}
+  return b;
+}
+function mlsSnooze(kid){
+  if(!kid||!(typeof momHere==="function"&&momHere())) return false;
+  const upd={["mastery/"+kid+"_settings/load/snooze"]:scpShift(scpToday(),MLS_SNOOZE)}; _mldSave(upd);
+  try{ if(typeof renderAll==="function") renderAll(); }catch(e){}
+  return upd;
+}
+function mlsSetMode(kid,mode){
+  if(!kid||!(typeof momHere==="function"&&momHere())||(mode!=="suggest"&&mode!=="off")) return false;
+  const upd={["mastery/"+kid+"_settings/load/mode"]:mode}; _mldSave(upd);
+  try{ if(typeof renderAll==="function") renderAll(); }catch(e){}
+  return upd;
+}
+// Mom's Day ▸ 🔴 Now: one row per kid with a suggestion → {n, html}; "" when no kid has one (and no Apply to undo)
+function mlsNowHTML(){
+  if(!(typeof momHere==="function"&&momHere())) return {n:0,html:""};
+  const kids=(typeof ROSTER!=="undefined"&&Array.isArray(ROSTER))?ROSTER:[], rows=[], done=[];
+  kids.forEach(kid=>{ let sg=null; try{ sg=mlsFor(kid); }catch(e){ console.error("[HA] load suggest",e); } if(sg) rows.push(sg);
+    const L=((_mldMD()[kid+"_settings"]||{}).load||{}).last; if(_mlsDone[kid]!=null&&L&&L.at===_mlsDone[kid]) done.push({kid:kid,L:L}); });
+  if(!rows.length&&!done.length) return {n:0,html:""};
+  const btn=(bg,fg,bd)=>'padding:4px 10px;border-radius:8px;border:'+bd+';background:'+bg+';color:'+fg+';font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap';
+  const q=k=>scpE(k).replace(/'/g,"\\'");
+  let h='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:10px 0 6px">🧠 Mental load</div>';
+  rows.forEach(sg=>{ h+='<div class="mls-row" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:#eef2ff;border-left:3px solid #6366f1;border-radius:8px;margin-bottom:6px">'
+    +'<span style="flex:1;font-size:13px">🧠 <b>'+scpE(scpKidName(sg.kid))+'</b>: '+scpE(sg.text)+'</span>'
+    +'<button onclick="mlsApply(\''+q(sg.kid)+'\')" style="'+btn('#4f46e5','#fff','none')+'">Apply</button>'
+    +'<button onclick="mlsSnooze(\''+q(sg.kid)+'\')" style="'+btn('#fff','#475569','1.5px solid #cbd5e1')+'">Not now</button></div>'; });
+  done.forEach(x=>{ const mv=Array.isArray(x.L.moved)?x.L.moved:Object.values(x.L.moved||{}), line=mldMovedLine(x.kid,mv);
+    h+='<div class="mls-done" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:#f8fafc;border-left:3px solid #94a3b8;border-radius:8px;margin-bottom:6px">'
+    +'<span style="flex:1;font-size:12px;color:#334155">🧠 <b>'+scpE(scpKidName(x.kid))+'</b>: applied'+(line?' · Moved: '+line:'')+'</span>'
+    +'<button onclick="mldUndo(\''+q(x.kid)+'\')" style="'+btn('#fff','#475569','1.5px solid #cbd5e1')+'">↩ Undo</button></div>'; });
+  return {n:rows.length,html:h};
+}
+// the Mode line on the dial's card (only once the dial is stored — before that there is nothing to suggest)
+function mlsModeHtml(kid){
+  const m=mlsDialOf(kid).mode, K=scpE(kid).replace(/'/g,"\\'");
+  const c=on=>'padding:2px 10px;border-radius:999px;border:1.5px solid '+(on?'#4f46e5':'var(--border)')+';background:'+(on?'#4f46e5':'#fff')+';color:'+(on?'#fff':'#475569')+';font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  return '<div class="mls-mode" style="font-size:11.5px;color:#334155;margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span style="font-weight:800">🧠 Suggestions:</span>'+
+    '<button onclick="mlsSetMode(\''+K+'\',\'suggest\')" style="'+c(m==="suggest")+'">Suggest</button><button onclick="mlsSetMode(\''+K+'\',\'off\')" style="'+c(m==="off")+'">Off</button>'+
+    '<span style="color:var(--muted)">'+(m==="off"?'no suggestions for this kid':'after 3 days, Mom’s Day asks — nothing changes until you tap Apply')+'</span></div>';
+}
+// MLSUGGEST_END
 function renderCurriculumView(el,headerHtml){
   if(!momHere()){
     el.innerHTML=(headerHtml||'')+'<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;text-align:center">'+
@@ -33171,6 +33377,8 @@ function ceQuickPause(kid,key){
 //   different length → match by text only; mint for the rest. Never guess a rename
 //     across a delete+insert — a wrong guess would make a NEW lesson look done.
 //   A dropped id is never reused.
+//   Regroup ("· day k of N" ↔ plain, or N days ↔ M days): the SAME lesson keeps its id — see
+//   REGROUP_CARRY inside _lidAlign; setLessonSeq carries the ✓ for lines that had to be minted.
 const _lidNorm=s=>String(s==null?"":s).replace(/[–—−]/g,"-").replace(/\s+/g," ").trim().toLowerCase();
 function _lidMake(n){ return "L"+String(n).padStart(4,"0"); }
 function _lidNextFrom(ids){
@@ -33202,8 +33410,40 @@ function _lidAlign(oldSeq,oldIds,newSeq,nextLid,hint,mint){
     const leftOld=[]; usedOld.forEach((u,i)=>{ if(!u) leftOld.push(i); });
     let li=0; ids.forEach((id,i)=>{ if(id===null&&li<leftOld.length){ ids[i]=oldIds[leftOld[li++]]; } });
   }
+  // REGROUP_CARRY_START — 🔁 a days-per-lesson regroup keeps progress (Sara, DeWalt 2026-11-09: "×1" then
+  // Save list on Kenzie's AAS 4 and Andrew's AAS 1 minted a fresh id for every line, so 22 + 25 ✓ marks
+  // stopped counting and both kids were "back on" the first lesson of the list — she re-marked by hand).
+  // "Lesson 3 · day 4 of 5" and "Lesson 3" are ONE lesson. A new line still without an id claims the old
+  // lines with the same stem (text minus the "· day k of N" suffix):
+  //   · a plain new line takes the LAST old step's id — finished ⇔ the last step was finished, and a
+  //     lesson still in progress stays the current one;
+  //   · "· day j of M" takes the old "day j" (a plain old line counts as day 1); days that did not exist
+  //     before are minted below and listed in `carry`, so setLessonSeq can mark them done when the whole
+  //     old lesson was done (×4 on a finished lesson must not hand back "day 2 of 4").
+  // Ambiguous stems — repeated among the new plain lines, or among the old plain lines — are left to
+  // minting, exactly as before. Same-length edits never reach here (handled above).
+  const carry=[];
+  { const DAY_RE=/\s*·\s*day (\d+) of \d+\s*$/i;
+    const stemOf=t=>_lidNorm(String(t).replace(DAY_RE,"")), dayOf=t=>{ const m=String(t).match(DAY_RE); return m?parseInt(m[1],10):0; };
+    const groupAll={}, free={};
+    oldN.forEach((t,i)=>{ const k=stemOf(t); (groupAll[k]=groupAll[k]||[]).push(i); if(!usedOld[i]) (free[k]=free[k]||[]).push(i); });
+    const newPlain={}; seqN.forEach((t,i)=>{ if(ids[i]===null&&!dayOf(t)){ const k=stemOf(t); newPlain[k]=(newPlain[k]||0)+1; } });
+    seqN.forEach((t,i)=>{
+      if(ids[i]!==null) return;
+      const k=stemOf(t), all=groupAll[k]; if(!all||!all.length) return;  // a lesson that never existed: minted below, never carried
+      const g=free[k]||[];                                                 // its old lines still unclaimed (may be none)
+      if(all.filter(oi=>!dayOf(oldN[oi])).length>1) return;              // "Review" twice as plain old lines: ambiguous
+      const j=dayOf(t);
+      let oi;
+      if(!j){ if(newPlain[k]!==1) return; oi=g.length?g[g.length-1]:undefined; }
+      else { oi=g.find(x=>dayOf(oldN[x])===j); if(oi===undefined&&j===1) oi=g.find(x=>!dayOf(oldN[x])); }
+      if(oi!==undefined){ ids[i]=oldIds[oi]; usedOld[oi]=true; g.splice(g.indexOf(oi),1); }
+      else carry.push({i:i,from:groupAll[k].map(x=>oldIds[x])});
+    });
+  }
+  // REGROUP_CARRY_END
   for(let i=0;i<ids.length;i++) if(ids[i]===null) ids[i]=fresh();
-  return {ids,nextLid:next};
+  return {ids,nextLid:next,carry:carry};
 }
 // The subject's ids, or null when it has none / they are out of step (treat as none).
 function lidsFor(kid,sk){
@@ -33258,22 +33498,38 @@ function setLessonSeq(kid,sk,newSeq,opts){
     return {lessonSeq:null,lessonIds:null,total:0,nextLid:s.nextLid||1};
   }
   const seq=(newSeq||[]).map(x=>String(x==null?"":x));
-  let ids=null, next=s.nextLid;
+  let ids=null, next=s.nextLid, carry=null, doneBefore=null;
   if(Array.isArray(opts.restoreIds)&&opts.restoreIds.length===seq.length){ ids=opts.restoreIds.slice(); next=opts.restoreNext||Math.max(parseInt(next,10)||1,_lidNextFrom(ids)); }
-  else{ const r=_lidAlign(s.lessonSeq,s.lessonIds,seq,s.nextLid,opts.hint,!!opts.mint); ids=r.ids; next=r.nextLid;
+  else{
+    // REGROUP_CARRY: read what was finished BEFORE the list changes (lidDoneSet needs the old ids in place).
+    try{ doneBefore=(typeof lidDoneSet==="function")?lidDoneSet(kid,sk):null; }catch(e){ doneBefore=null; }
+    const r=_lidAlign(s.lessonSeq,s.lessonIds,seq,s.nextLid,opts.hint,!!opts.mint); ids=r.ids; next=r.nextLid; carry=r.carry||null;
     // EGGQUIZ: plan-backed only — there the LIST is the truth and `done` (by id) says what's finished.
     // A list copied from grid cells must mirror the cells exactly, so it is left alone. Undo/restore
     // (restoreIds) never reaches here, and the ids-only mint (gvAssignLids) only runs on unstamped,
     // so never plan-backed, subjects.
     if(ids&&typeof planBacked==="function"&&planBacked(kid,sk)&&eqIsEggs(kid,sk,s)){
       const sp=eqSplit(seq,ids,lidDoneSet(kid,sk),next);
-      if(sp.n){ seq.length=0; sp.seq.forEach(x=>seq.push(x)); ids=sp.ids; next=sp.nextLid; }
+      if(sp.n){ seq.length=0; sp.seq.forEach(x=>seq.push(x)); ids=sp.ids; next=sp.nextLid; carry=null; }   // re-indexed → carry positions are stale
     }
   }
   s.lessonSeq=seq; s.total=seq.length;
   patch[base+"lessonSeq"]=seq; patch[base+"total"]=seq.length;
   if(ids){ s.lessonIds=ids; s.nextLid=next; patch[base+"lessonIds"]=ids; patch[base+"nextLid"]=next; }
   else if(s.lessonIds){ delete s.lessonIds; patch[base+"lessonIds"]=null; }   // was out of step → drop, don't guess
+  // REGROUP_CARRY — a finished lesson stays finished across a regroup: ONE targeted done/<kid>/<sk>/<id>
+  // record per minted line whose whole old lesson was done. Never for a lesson still in progress, never
+  // for a subject without stamped ids (no truth to carry), never over a record that already exists.
+  if(ids&&carry&&carry.length&&doneBefore){
+    currData.done=currData.done||{}; const node=((currData.done[kid]=currData.done[kid]||{})[sk]=currData.done[kid][sk]||{});
+    carry.forEach(c=>{
+      if(!c.from.length||!c.from.every(id=>doneBefore.has(id))) return;
+      const id=ids[c.i]; if(!id||node[id]) return;
+      let day=""; c.from.forEach(f=>{ const o=node[f]; if(o&&o.day&&String(o.day)>day) day=String(o.day); });
+      const rec={ts:new Date().toISOString(),day:day||((typeof cbTodayISO==="function")?cbTodayISO():""),src:"carry",via:"regroup",from:c.from[c.from.length-1]};
+      patch["done/"+kid+"/"+sk+"/"+id]=rec; node[id]=rec;
+    });
+  }
   return {lessonSeq:seq,lessonIds:ids,total:seq.length,nextLid:next};
 }
 // Which subjects (all kids) have a master list but no ids yet.
@@ -33871,6 +34127,7 @@ function lidTrimDescription(t){
 // spans N days becomes N ordinary sittings — "Lesson 3: … · day 2 of 4" — so the scheduler, cards,
 // check-offs, pause and lanes all keep working unchanged. Idempotent: lines already carrying a
 // "· day k of M" suffix are regrouped first, so ×4 on a ×2 list gives 4 each and ×1 undoes it.
+// Saving a regrouped list keeps what was finished finished — REGROUP_CARRY in _lidAlign / setLessonSeq.
 const LESSON_DAY_RE=/\s*·\s*day \d+ of \d+\s*$/i;
 function lessonExpandDays(lines,n){
   n=Math.max(1,Math.min(10,parseInt(n,10)||1));
@@ -34663,6 +34920,10 @@ function ceAddSave(){
     if(typeof eqSplit==="function"&&eqIsEggs(ceAddKid,null,{display:name})) lessonSeq=eqSplit(lessonSeq,null,null,1).seq;
     subj={display:name,device:f.device,mom:f.mom,minutes:f.minutes,days:f.days,allowedDays:dayArr,rules:f.rules,total:lessonSeq.length,priority:f.priority,carryoverCap:f.carryoverCap,lessonSeq:lessonSeq,timesPerWeek:f.timesPerWeek||5};
     { const _r=_lidAlign(null,null,lessonSeq,1,null,true); subj.lessonIds=_r.ids; subj.nextLid=_r.nextLid; }   // born with ids — no other device can hold a competing set
+    // ADDPB (demo run F2, 2026-11-09): born PLAN-BACKED — it has ids and no history for "done by id" to disagree with, so its Build
+    // re-lays this week through the one door (not "isn't paced by the Builder" until Sunday) and the week turn never deals its
+    // never-dealt cells twice as "behind" (the legacy catch-up doubling is off for plan-backed subjects)
+    subj.planId=(typeof planIdFor==="function")?planIdFor(kid,key):kid+"__"+key; subj.doneImportedAt=new Date().toISOString();
   }
   if(f.stickyWith){ subj.stickyWith=f.stickyWith; subj.stickyOrder=f.stickyOrder||"after"; }
   // A class set up on the Add sheet carries its clock time through to the saved subject.
@@ -34679,7 +34940,8 @@ function ceAddSave(){
   currData.lastEdit=new Date().toISOString();
   db.ref("curriculum/lastEdit").set(currData.lastEdit);
   // 🔁 RELAY4 (2026-11-08): a new DAILY lays into the rest of this week now, through the one door (Undo = the subject and its cards
-  // gone again); a new sequenced subject has no plan yet — it lays when she Builds it below (cbApply → the same door)
+  // gone again); a new sequenced subject is born plan-backed (ADDPB) — it lays here by its days, and again when she Builds it below
+  // (cbApply → the same door)
   try{ if(typeof _rlwCurrDoor==="function") _rlwCurrDoor("📚 "+(subj.display||key)+" added",[{kid:kid,sk:key}],[{p:"curriculum/subjects/"+kid+"/"+key,gone:true}],{toast:false}); }catch(e){}
   ceCloseSheet();
   // A new SEQUENCED subject flows straight into pacing: its card sheet reopens
@@ -38636,14 +38898,16 @@ function sucComingWeek(todayIso){
   const d=new Date(todayIso+"T12:00:00"); d.setDate(d.getDate()+1);
   return mon===(d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"));
 }
-// PURE: the ids that show on Sunday. on(kid) = the switch; coming = the board holds the coming week.
-function sucPick(tasks,on,coming){
+// PURE: the ids that show on Sunday. on(kid) = the switch; coming = the board holds the coming week; behind = sucBehind's
+// {kid|sk: n} for the plan-backed subjects (SUCPB), optional.
+function sucPick(tasks,on,coming,behind){
   const out=new Set(); if(!coming||!Array.isArray(tasks)) return out;
   const ORD={monday:1,tuesday:2,wednesday:3,thursday:4,friday:5,saturday:6};
   const live=tasks.filter(function(t){ return t&&t.id&&on(t.who)&&!String(t.id).endsWith("_c")&&!t._eowOverflow&&!t.famBlock&&ORD[t.day]; });
   live.forEach(function(t){ if(/\(Carried from /.test(t.detail||"")) out.add(t.id); });
   const need={};   // kid|sk → catch-up sittings the generator added
   live.forEach(function(t){ if(t.catchup===true&&t.subjectKey){ const k=t.who+"|"+t.subjectKey; need[k]=(need[k]||0)+1; } });
+  Object.keys(behind||{}).forEach(function(k){ if(behind[k]>0) need[k]=Math.max(need[k]||0,behind[k]); });   // SUCPB
   Object.keys(need).forEach(function(k){
     const p=k.split("|");
     live.filter(function(t){ return t.who===p[0]&&t.subjectKey===p[1]; })
@@ -38652,13 +38916,47 @@ function sucPick(tasks,on,coming){
   });
   return out;
 }
+// SUCPB_START — 🔁 Sunday catch-up for PLAN-BACKED subjects (FINDING F4 of the living demo run, 2026-11-09). A plan-backed subject
+// never makes a "(Carried from …)" twin (carryPlanBacked) or a catchup:true card (_pbCatch: the projection owns backlog — the new
+// week simply serves the earliest undone lessons first), so Sunday's tab was EMPTY for exactly the subjects the family runs.
+// Now, from the archive of the week that just closed: the lessons that week still owed — a lesson card open on its board at the
+// close, or a lesson a re-lay sent "to next week" (archive.deferred, written by gwCommit from that week's relayLog) — counted per
+// kid + subject among the cards the NEW week serves (so a lesson checked off on Sunday keeps its place and the count never
+// shifts), and that many of the subject's earliest cards show on Sunday, exactly as a catch-up sitting does. Nothing written.
+// PURE: prev = the closed week's archive entry, tasks = the board, on(kid) = the switch, pb(kid,sk) = plan-backed → {kid|sk: n}
+function sucBehind(prev,tasks,on,pb){
+  const out={}; if(!prev||typeof prev!=="object"||!Array.isArray(tasks)) return out;
+  const ck=prev.checked||{}, owed={};
+  const add=function(k,sk,l){ if(!k||!sk||!l||!on(k)||!pb(k,sk)) return; (owed[k+"|"+sk]=owed[k+"|"+sk]||{})[l]=1; };
+  const pt=Array.isArray(prev.tasks)?prev.tasks:Object.values(prev.tasks||{});
+  pt.forEach(function(t){ if(t&&t.id&&t.lid&&!String(t.id).endsWith("_c")&&!ck[t.id]) add(t.who,t.subjectKey,t.lid); });
+  const df=prev.deferred||{}; Object.keys(df).forEach(function(k){ Object.keys(df[k]||{}).forEach(function(sk){ (Array.isArray(df[k][sk])?df[k][sk]:[]).forEach(function(l){ add(k,sk,l); }); }); });
+  Object.keys(owed).forEach(function(key){ const p=key.split("|");
+    const n=tasks.filter(function(t){ return t&&t.id&&t.who===p[0]&&t.subjectKey===p[1]&&t.lid&&owed[key][t.lid]&&!String(t.id).endsWith("_c"); }).length;
+    if(n) out[key]=n; });
+  return out;
+}
+// PURE: the week's relayLog → {kid:{sk:[lid…]}} of the lessons its re-lays sent "to next week" (an undone run never counts), or null
+function sucDeferredOf(log){
+  const out={}; let any=false;
+  Object.keys(log||{}).forEach(function(at){ const e=log[at]; if(!e||e.built||e.undone) return;
+    (e.removed||[]).forEach(function(c){ if(!c||!c.lid||!c.who||!c.subjectKey) return;
+      const m=(out[c.who]=out[c.who]||{}), a=m[c.subjectKey]||[]; if(a.indexOf(c.lid)<0){ m[c.subjectKey]=a.concat([c.lid]); any=true; } }); });
+  return any?out:null;
+}
+function _sucPrevArchive(){
+  try{ const wn=(typeof currWeekNum==="function")?currWeekNum():0; if(!wn||typeof archive==="undefined"||!archive) return null; return archive["week"+(wn-1)]||null; }catch(e){ return null; }
+}
+// SUCPB_END
 let _sucMemo={key:null,tasks:null,set:null};
 function sucSet(){
   if(typeof _todayDay==="undefined"||_todayDay!=="sunday"||!sucAny()) return null;
   const tasks=(typeof weekData!=="undefined"&&weekData&&weekData.tasks)||null; if(!Array.isArray(tasks)) return null;
-  const today=stTodayIso(), key=(weekData.week||"")+"|"+tasks.length+"|"+today+"|"+JSON.stringify(sucOnMap());
+  const prev=_sucPrevArchive();   // SUCPB
+  const today=stTodayIso(), key=(weekData.week||"")+"|"+tasks.length+"|"+today+"|"+JSON.stringify(sucOnMap())+"|"+(prev?(prev.archivedAt||1):0);
   if(_sucMemo.key===key&&_sucMemo.tasks===tasks) return _sucMemo.set;
-  const set=sucPick(tasks,sucOn,sucComingWeek(today));
+  const coming=sucComingWeek(today);
+  const set=sucPick(tasks,sucOn,coming,coming?sucBehind(prev,tasks,sucOn,function(k,sk){ return typeof planBacked==="function"&&planBacked(k,sk); }):null);
   _sucMemo={key:key,tasks:tasks,set:set};
   return set;
 }
@@ -43187,9 +43485,24 @@ function _rlwFire(att){
     let _rel=false; const _done=function(){ if(_rel) return; _rel=true; try{ release(); }catch(e){} };
     // 🔁 RELAY3: pass A (the sweep), then pass B (the listed subjects, chained through each re-lay's then) — one snapshot,
     // one diff, one log line for both; the lock is released when the chain is over
-    try{ _rlwRun(pend,function(fin){ cascadeIntraWeek(); if(typeof runCascade==="function") runCascade(); _rlwChain(pend.subjects||[],pend,fin); },_done); }
+    try{ _rlwRun(pend,function(fin){ cascadeIntraWeek(); if(typeof runCascade==="function") runCascade(); _rlwGuard(pend); _rlwChain(pend.subjects||[],pend,fin); },_done); }
     catch(e){ dbg("relay run: "+e); _done(); }
   });
+}
+// ⏰ RELAYGUARD (slice E demo run, 2026-11-08): the school-end guard runs on pass A even when the sweep had nothing to sweep. The
+// cascade's quiet path (no card from a past day to move) heals and re-packs but never calls seGuardWeek — only its sweeping path
+// does, inside safeWriteTasks — so ⏰ a shorter Thursday (11:00–2:30) set on Wednesday left a kid's Typing 2:20–2:35 and Closing
+// 2:35 past the 2:30 finish: the scar re-pack keeps a card that doesn't fit in its old slot. Same guard, same context, targeted
+// writes only (never the whole node); after a sweep it finds nothing to do. Its moves land in the same what-moved line and Undo.
+function _rlwGuard(pend){
+  try{
+    if(typeof seGuardWeek!=="function"||typeof seGuardCtx!=="function"||typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return null;
+    const se=seGuardWeek(weekData.tasks,seGuardCtx()); const ks=Object.keys(se.upd||{}); if(!ks.length) return se;
+    try{ sv(WK+"_tasks",weekData.tasks); }catch(e){}
+    if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){ lastTasksWrite=Date.now(); db.ref(WK+"/tasks").update(se.upd); }
+    dbg("⏰ school end (relay "+((pend&&pend.whys)||[]).join(",")+"): re-laid "+se.retimed.length+", rolled "+se.rolled.length+", deferred "+se.deferred.length+(se.dropped&&se.dropped.length?", dropped for the day "+se.dropped.join(" "):"")+" ("+ks.length+" paths)");
+    return se;
+  }catch(e){ dbg("relay guard skip: "+e); return null; }
 }
 // ── pure: the snapshot and the diff ──
 // o = {checked, claimed, momMoves, todayDay, nowMin, isHeld(t)}  →  {id:{d,t,cf,eo,ck,cl,st,fx,w,ti,card}}
@@ -43229,8 +43542,10 @@ function _rlwWords(e){
   const per={}; (e.moves||[]).forEach(function(m){ per[m.who]=(per[m.who]||0)+1; });
   const kids=Object.keys(per).map(function(k){ return cap(k)+" "+per[k]; }).join(", ");
   const nm=(e.moves||[]).length, nr=(e.removed||[]).length;
+  const nSat=(String(e.why||"").split(",").indexOf("saturday")>=0)?(e.removed||[]).filter(function(c){ return c&&c.day==="saturday"&&!c.lid; }).length:0;   // 📅 TWSSAT: a Saturday daily taken off is not "to next week"
   let s=(e.label||"Re-laid")+" → "+nm+" card"+(nm===1?"":"s")+" moved"+(kids?" ("+kids+")":"");
-  if(nr) s+=" · "+nr+" to next week";
+  if(nr-nSat) s+=" · "+(nr-nSat)+" to next week";
+  if(nSat) s+=" · "+nSat+" off Saturday";
   const na=(e.added||[]).length; if(na) s+=" · "+na+" added";   // RELAY3D
   const nb=(e.boxed||[]).length; if(nb) s+=" · "+nb+" didn't fit (in the day's box)";   // 🃏🎯 DMSLOT
   if(e.locked&&e.locked.length) s+=" · ⚠ "+e.locked.length+" held card"+(e.locked.length===1?"":"s")+" changed";
@@ -43243,7 +43558,7 @@ function _rlwRun(pend,fn,after){
   const tasks=(typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[];
   const now=new Date();
   const before=_rlwSnapOf(tasks,{checked:(typeof checked!=="undefined"&&checked)||{},claimed:(typeof claimed!=="undefined"&&claimed)||{},momMoves:(typeof momMoves!=="undefined"&&momMoves)||{},
-    todayDay:(typeof _todayDay!=="undefined")?_todayDay:null,nowMin:now.getHours()*60+now.getMinutes(),
+    todayDay:(typeof _todayDay!=="undefined")?_todayDay:null,nowMin:((pend.whys||[]).indexOf("sweep")>=0)?null:(now.getHours()*60+now.getMinutes()),   // 🌙 RELAYWIRE (slice E, 2026-11-08): the 8 PM sweep / ⏩ push MOVE today's started-but-unfinished cards on purpose — not "held" for it, so its own line never says "held cards changed"
     isHeld:function(t){ return (typeof fdtHeld==="function"&&fdtHeld(t))||(typeof mvtHeldToday==="function"&&mvtHeldToday(t))||_rlwIsClass(t); }});   // FXPIN: a class is held
   const finish=function(){
   const _afterTasks=(typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[];
@@ -43315,7 +43630,7 @@ function _rlwUndoUpd(e,tasks,o){
 }
 function _rlwApplyLocal(p,v){
   const parts=String(p).split("/");
-  if((parts[0]==="weekConfig"||parts[1]==="babysitter")&&typeof _twsApplyLocal==="function"){ _twsApplyLocal(p,v); return; }   // 📅 THISWEEK
+  if((parts[0]==="weekConfig"||parts[1]==="babysitter"||parts[1]==="meta")&&typeof _twsApplyLocal==="function"){ _twsApplyLocal(p,v); return; }   // 📅 THISWEEK (TWSSAT: the board's Saturday tab)
   if(parts[0]==="calendar"&&typeof calendarData!=="undefined"&&calendarData){ let o=calendarData; for(let i=1;i<parts.length-1;i++){ if(!o[parts[i]]||typeof o[parts[i]]!=="object") o[parts[i]]={}; o=o[parts[i]]; } if(v===null) delete o[parts[parts.length-1]]; else o[parts[parts.length-1]]=v; return; }
   if(typeof stApplyLocal==="function") stApplyLocal(p,v);
 }
@@ -43404,12 +43719,18 @@ function _rlwDailyWant(kid,sk,gen,wn){
   (R.tasks||[]).forEach(function(t){ if(t&&t.who===kid&&t.subjectKey===sk&&!String(t.id||"").endsWith("_c")) out.push(Object.assign({},t)); });
   const have={}; out.forEach(function(t){ have[String(t.day||"").toLowerCase()]=1; });
   const s=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid]||{})[sk]||{};
-  ((gen&&gen.dropped)||[]).forEach(function(dp){
-    if(!dp||dp.kid!==kid||dp.key!==sk||!dp.day) return; const day=String(dp.day).toLowerCase(); if(have[day]) return; have[day]=1;
+  const tpl=function(day){
     let dur=s.minutes||20; try{ if(typeof coopDayMinutes==="function"&&typeof calDateForWeekDay==="function"){ const ds=calDateForWeekDay(day,wn); if(ds) dur=coopDayMinutes(kid,ds,s,dur); } }catch(e){}
     let title=(s.display||sk), detail=""; try{ if(typeof gwTaskTitle==="function") title=gwTaskTitle(kid,sk,s.display||sk,day,false,false); if(typeof gwSubjectDetail==="function") detail=gwSubjectDetail(kid,sk)||""; }catch(e){}
-    out.push({id:null,who:kid,day:day,time:null,dur:dur,title:title,detail:detail,mom:s.mom||"none",cascade:true,device:s.device||"paper",subjectKey:sk});
+    return {id:null,who:kid,day:day,time:null,dur:dur,title:title,detail:detail,mom:s.mom||"none",cascade:true,device:s.device||"paper",subjectKey:sk};
+  };
+  ((gen&&gen.dropped)||[]).forEach(function(dp){
+    if(!dp||dp.kid!==kid||dp.key!==sk||!dp.day) return; const day=String(dp.day).toLowerCase(); if(have[day]) return; have[day]=1;
+    out.push(tpl(day));
   });
+  // 📅 TWSSAT: Saturday on for the week on the board — the generator lays only the grid's days, so a daily that names Saturday
+  // is wanted there like a dropped day (lessons stay Mon–Fri, her rule: only dailies come here)
+  try{ if(!have.saturday&&typeof _twsSatRuns==="function"&&_twsSatRuns(kid,sk,wn)){ have.saturday=1; out.push(tpl("saturday")); } }catch(e){}
   return out;
 }
 // pure: {upd, summary, tasksAfter} — upd keyed under week<N>/tasks (id, or id/field; never both for one card).
@@ -50421,10 +50742,11 @@ function unitPicsSave(){
 //     pictures), so ID Flash — "what is this?" — runs per ITEM (species / tool), which is how the design counts it too
 //     ("fluent 31 of 40 species"). A sitting: up to 12 items, each a picture with a 10 s bar; the kid picks (3 lures from the
 //     same deck, _matchLures) or types the name (mstTypedOk, the study's own checker, over the item's accepted names — the
-//     item plus every way its cards name it); ✓/✗ and the name after; the time per show is recorded. FLUENT = the last three
-//     CORRECT shows were on three DIFFERENT pictures, each under 10 s. A fluent item leaves ID Flash; the cards' own ladder
-//     (new → learning → mastered) and spaced review are untouched.
-//   · Writes, at the end of a sitting only: mastery/<kid>_idflash/<deckKey>/<itemKey> = {shows:[{pic,ok,secs,at}×last 5],
+//     item plus every way its cards name it); ✓/✗ and the name after; the time per show (and Pick or Type) is recorded. FLUENT =
+//     three quick rights (each under 10 s) on three DIFFERENT pictures, either the last three TYPED rights or the last three
+//     shows IN A ROW (a miss resets it — the only way Pick answers count; IDFLASH_ROW 2026-11-08). A fluent item leaves ID
+//     Flash; the cards' own ladder (new → learning → mastered) and spaced review are untouched.
+//   · Writes, at the end of a sitting only: mastery/<kid>_idflash/<deckKey>/<itemKey> = {shows:[{pic,ok,secs,at,mode}×last 5],
 //     fluent, at} (itemKey = mastDefKey(item); ONE multi-path update on mastery/<kid>_idflash, every path targeted) and the
 //     day's entry under mastery/studyLog/<kid>/idflash/<yyyymmdd> in the shape _mstSaveInner writes (items {id,name,deck,
 //     result} merged into the day), so Scores, the streak and the weekly report count it. Dry run: runs and scores on the
@@ -50511,12 +50833,17 @@ function envFlashDecks(kid){
 }
 function envFlashState(kid,deck,itemKey){ const s=(((typeof masteryData!=="undefined"&&masteryData)||{})[kid+"_idflash"]||{})[deck]; const e=s&&s[itemKey]; return (e&&typeof e==="object")?e:null; }
 function envFlashShows(st){ let a=st&&st.shows; if(!a) return []; if(!Array.isArray(a)) a=Object.values(a); return a.filter(x=>x&&typeof x==="object"); }
-// THE RULE: the last three CORRECT shows, on three DIFFERENT pictures, each under 10 s.
+// THE RULE: three rights, each under 10 s, on three DIFFERENT pictures — either the last three TYPED rights (typing the
+// name is the real check, so a miss between them doesn't undo it) or the last three shows IN A ROW, every one right.
+// IDFLASH_ROW (games honesty audit #13, 2026-11-08): a Pick is 1 of 4, and counting the last three correct shows with misses
+// in between let guessing retire an item for good; the design's words are "three times in a row". So a Pick right counts
+// only inside an unbroken run, and a miss resets it. A show saved before the mode was recorded counts as a Pick.
 function envFlashFluent(shows){
-  const ok=(shows||[]).filter(s=>s&&s.ok===true).slice(-ENVFLASH_NEED);
-  if(ok.length<ENVFLASH_NEED) return false;
-  if(!ok.every(s=>typeof s.secs==="number"&&s.secs<ENVFLASH_SECS)) return false;
-  return new Set(ok.map(s=>String(s.pic))).size===ENVFLASH_NEED;
+  const all=(shows||[]).filter(s=>s&&typeof s==="object");
+  const three=a=>a.length===ENVFLASH_NEED&&a.every(s=>s.ok===true&&typeof s.secs==="number"&&s.secs<ENVFLASH_SECS)
+    &&new Set(a.map(s=>String(s.pic))).size===ENVFLASH_NEED;
+  if(three(all.filter(s=>s.ok===true&&s.mode==="type").slice(-ENVFLASH_NEED))) return true;
+  return three(all.slice(-ENVFLASH_NEED));
 }
 function envFlashNext(prev,show){ const shows=envFlashShows(prev).concat([show]).slice(-ENVFLASH_KEEP); return {shows:shows,fluent:envFlashFluent(shows),at:show.at}; }
 function envFlashCount(kid,d){ let f=0; (d.items||[]).forEach(e=>{ const st=envFlashState(kid,d.key,e.key); if(st&&st.fluent) f++; }); return {fluent:f,total:(d.items||[]).length}; }
@@ -50583,7 +50910,7 @@ function envFlashAnswer(ok,typed){
   if(!envFlash||envFlash.ans||envFlash.done) return; const c=envFlash.cards[envFlash.i]; if(!c) return;
   envFlashTimerStop(); const secs=envFlashSecs();
   envFlash.ans={ok:!!ok,secs:secs,typed:typed==null?null:String(typed)};
-  envFlash.results.push({deck:c.deck,item:c.item,key:c.key,pic:String(c.pic.url),ok:!!ok,secs:secs,at:Date.now()});
+  envFlash.results.push({deck:c.deck,item:c.item,key:c.key,pic:String(c.pic.url),ok:!!ok,secs:secs,at:Date.now(),mode:envFlash.mode==="type"?"type":"pick"});
   if(typeof _mastRe==="function") _mastRe();
   if(typeof envRaFlashSaid==="function") envRaFlashSaid(envFlash.kid,c.item);   // 🔊 ENVREADALOUD: the name after the answer (Auto)
 }
@@ -50607,7 +50934,7 @@ function envFlashFinish(){
   const f=envFlash, kid=f.kid, res=f.results, dry=f.dry, md=masteryData;
   const live=!!((typeof db!=="undefined")&&db&&!dry&&res.length);
   const upd={}, newly=[]; let states=md[kid+"_idflash"]; if(!states||typeof states!=="object") states=md[kid+"_idflash"]={};
-  res.forEach(r=>{ const prev=envFlashState(kid,r.deck,r.key); const next=envFlashNext(prev,{pic:r.pic,ok:r.ok,secs:r.secs,at:r.at});
+  res.forEach(r=>{ const prev=envFlashState(kid,r.deck,r.key); const next=envFlashNext(prev,{pic:r.pic,ok:r.ok,secs:r.secs,at:r.at,mode:r.mode});
     if(!states[r.deck]||typeof states[r.deck]!=="object") states[r.deck]={}; states[r.deck][r.key]=next; upd[r.deck+"/"+r.key]=next;
     if(next.fluent&&!(prev&&prev.fluent)&&newly.indexOf(r.item)<0) newly.push(r.item); });
   const secs=Math.max(1,Math.round((Date.now()-f.startedAt)/1000));
@@ -50643,7 +50970,7 @@ function envFlashDoorHtml(kid,session){
   h+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><div style="flex:1;min-width:140px;font-size:18px;font-weight:800;color:#166534">\u26A1 ID Flash</div><div style="display:flex;gap:6px">';
   ["pick","type"].forEach(m=>{ const on=mode===m; h+='<button onclick="envFlashSetMode(\''+js(kid)+'\',\''+m+'\')" style="padding:6px 12px;border-radius:999px;border:2px solid '+(on?'#166534':'#bbf7d0')+';background:'+(on?'#166534':'#fff')+';color:'+(on?'#fff':'#166534')+';font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(m==="pick"?'\u{1F446} Pick':'\u2328\uFE0F Type')+'</button>'; });
   h+='</div></div>';
-  h+='<div style="font-size:12px;color:var(--muted);font-weight:600;margin:4px 0 8px;line-height:1.4">A picture, '+ENVFLASH_SECS+' seconds, name it. Three quick rights on three different pictures and it\u2019s fluent.</div>';
+  h+='<div style="font-size:12px;color:var(--muted);font-weight:600;margin:4px 0 8px;line-height:1.4">A picture, '+ENVFLASH_SECS+' seconds, name it. Three quick rights in a row, on three different pictures, and it\u2019s fluent.</div>';
   let open=0;
   decks.forEach(d=>{ const c=envFlashCount(kid,d), left=c.total-c.fluent; if(left) open++;
     h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #dcfce7"><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:800;color:#1f2937">'+esc(d.key)+'</div><div style="font-size:12px;font-weight:700;color:#15803d">'+esc(envFlashLine(kid,d))+'</div></div>'
@@ -56132,6 +56459,17 @@ function _rpPatternWant(kid,sk,o){
     delete nt.catchup; delete nt.cascadedFrom; delete nt._eowOverflow; delete nt._dayDrop; delete nt.pulledFrom;   // a card cloned from a live template is never born in either box — the add-path sibling of the un-box block above (her "fold it in" 2026-10-15)
     mine.push(nt);
   }
+  // ✎ RPPAT_TEXT (slice E demo run, 2026-11-08): a card HELD where it is — started, or today's in "start from tomorrow" — still takes
+  // the LIST's text, so a lesson-text edit (✎ list save, the Grid) shows on today's card now, not tomorrow. Its lesson is `taken`, so
+  // the loop above never minted it and _reprojectPlan saw no want for it (locked → left alone, old title). A same-id, same-day entry is
+  // never a move; _reprojectPlan retitles an unchecked card whose wanted title differs. Only when the text really changed (the card's
+  // title no longer ends with its lesson's text) — a card whose text is current adds nothing. Checked cards are records: untouched.
+  live.forEach(function(t){
+    const l=lidOf(t.id); if(!l||!taken[l]||isDone(t)||mine.some(function(x){ return x.id===t.id; })) return;
+    const i=ids.indexOf(l); if(i<0||typeof gwTaskTitle!=="function") return;
+    const text=String(seq[i]==null?"":seq[i]); if(!text||String(t.title||"").endsWith(text)) return;
+    const nt=Object.assign({},t); nt.lid=l; nt.title=gwTaskTitle(kid,sk,text,t.day,false,false); mine.push(nt);
+  });
   const desired=(o.genTasks||[]).filter(function(t){ return !(t&&t.who===kid&&t.subjectKey===sk); }).concat(mine);
   return {desired:desired,claimed:claimed,slots:slots,lessons:mine.map(function(t){ return t.day+" "+t.lid; })};
 }
@@ -62039,6 +62377,7 @@ function gameLogEntry(st,now){
   if(st.game==="jigsaw"&&st.level!=null){ e.level=st.level; e.clean=!!st.clean; }   // 🧩 JIGSAW: the round's level + clean, as the train's — its pieces level reads them back
   if(st.t0) e.secs=Math.max(0,Math.round((now-st.t0)/1000));
   if(st.game==="train"&&st.level!=null){ e.level=st.level; e.clean=!!st.clean; }   // 🚂 TRAIN: the round's level + clean — its level-up reads them back
+  if(st.game==="train"&&st.studyLogged&&st.study&&st.study.sid!=null) e.study=String(st.study.sid);   // 🚂 PKTRAIN: this round IS a study sitting — Scores counts it once
   if(st.game==="jeop"&&st.money){ e.mode="money"; e.bank=st.bank; e.bets=(st.bets||[]).map(b=>Object.assign({},b)); e.result=st.result||""; }   // 💵 JPMONEY: the final bank, the bets, the result
   if(st.judge&&typeof gameJudgeStamp==="function") gameJudgeStamp(e,st.judge);   // ⚖️ GAMEJUDGE: a judged round says how (pick / type / mom) — Jeopardy money first
   return e;
@@ -68962,7 +69301,7 @@ const GAME_RULES={
     ["3","3 misses","A third try first; the third miss shows it."],
     ["never","Never","The sentence is never shown — after two misses the card just comes back once at the end, like the other games."]]}],
   jigsaw:[{key:"pieces",label:"How many pieces?",def:"auto",opts:[   // 🧩 JIGSAW (her design 2026-11-08: "cut into 4 / 6 / 9 pieces by level")
-    ["auto","Auto","Starts at 4 pieces and moves up (6, then 9) after two clean rounds in a row \u{2014} clean = the picture named on the first tap."],
+    ["auto","Auto","Starts at 4 pieces and moves up (6, then 9) after two clean rounds in a row \u{2014} clean = the picture named right when it asks “What is it?”."],
     ["4","4 pieces","2 \u{00D7} 2, with the picture showing faintly in the frame to build on."],
     ["6","6 pieces","3 \u{00D7} 2, an empty frame."],
     ["9","9 pieces","3 \u{00D7} 3, an empty frame."]]}],
@@ -68979,8 +69318,12 @@ const GAME_RULES={
     ["1","Level 1","What comes next? — the train starts at A, 3 cars to choose from."],
     ["2","Level 2","4 cars to choose from, and the train can start anywhere in the alphabet."]]},
     {key:"study",label:"Study card opens the Train?",def:"on",only:k=>typeof isPreK==="function"&&isPreK(k),opts:[   // 🚂 PKTRAIN: a Pre-K kid only
-    ["on","On","A study card whose deck is letters opens the ABC Train instead of flip cards, and the round counts as the study."],
-    ["off","Off","The study card opens the flip cards, as before."]]}]
+    ["on","On","A study card whose deck is letters opens the ABC Train instead of flip cards, and a round counts as the study once enough cars are right on the first tap (the next rule)."],
+    ["off","Off","The study card opens the flip cards, as before."]]},
+    {key:"studyMin",label:"Study counts after how many cars right on the first tap?",def:"5",only:k=>typeof isPreK==="function"&&isPreK(k),opts:[   // 🚂 PKTRAIN (games audit 2026-11-08 §7 rank 8)
+    ["3","3 cars","Three cars right on the first tap finish today's study."],
+    ["5","5 cars","Five cars right on the first tap — the default. Levels 1–3 have fewer cars, so there every car must be right on the first tap."],
+    ["8","8 cars","Eight cars right on the first tap (a short round needs every car)."]]}]
 };
 let gameRulesUI=null;   // {kid, game} while the pop-up is open (this device)
 function _grE(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -69306,8 +69649,8 @@ function trainHear(){ const st=trainState; if(!st||st.phase!=="play") return; _t
 function trainFinish(st){
   st.phase="done"; st.lock=false;
   st.clean=st.turns.every(t=>t.done&&t.first);
+  if(st.study&&typeof pktLogSitting==="function"){ try{ pktLogSitting(st); }catch(e){} }   // 🚂 PKTRAIN: a Pre-K study card's round is that kid's study sitting too — when earned; first, so the game log below carries study:<sid>
   try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: each letter's first-tap result + the round's level / clean, game:"train"
-  if(st.study&&typeof pktLogSitting==="function"){ try{ pktLogSitting(st); }catch(e){} }   // 🚂 PKTRAIN: a Pre-K study card's round is that kid's study sitting too
   st.levelAfter=trainLevel(st.kid);
   trainSing(st);
 }
@@ -69493,7 +69836,21 @@ function buildTrainHtml(color,study){
 //   · WRITES — mastery/studyLog/<kid>/<sid>/<yyyymmdd> (one targeted set — the sitting's own path) and, only after Mom's ↩ send-back,
 //     the mastery/studyBack/<kid>/<sid> redo fields (an update), as a sitting does. db && !_dryRun() only. No names in this block.
 //   · CARD WORDING — the 📂 link reads "🚂 ABC Train — study" instead of "study cards"; its line "✓ done today" once logged. Label only.
+//   · EARNED (games audit 2026-11-08 §4 #23 / §7 rank 8: the Train can't be lost — a wrong car makes the right one wiggle — so "done today"
+//     needed no knowing). A round is the study sitting only when at least PKTRAIN_MIN_FIRST cars (Mom's GAME_RULES.train "studyMin",
+//     3 / 5 / 8, default 5) were right on the first tap — never more than the round has cars (levels 1–2 ask 4, level 3 five: there
+//     every car). Short of it: no studyLog, the card stays open, the page says how many it takes and the kid can play again. The
+//     Train itself stays soft. NO DOUBLE COUNT: trainFinish logs the sitting FIRST, so GAMELOG tags that round's gameLog entry
+//     study:<sid>, and Scores (scpStudyRound) counts it once — the sitting — not again at ½ weight or in learned-through-games.
 function pktOn(kid){ return !!kid&&typeof isPreK==="function"&&isPreK(kid)&&gameRule(kid,"train","study")!=="off"; }
+const PKTRAIN_MIN_FIRST=5;
+function pktMinFirst(kid){ const v=parseInt((typeof gameRule==="function")?gameRule(kid,"train","studyMin"):"",10); return v>0?v:PKTRAIN_MIN_FIRST; }
+// PURE-ish: a finished round → {first (cars right on the first tap), need (the floor, at most the round's cars), ok}
+function pktEarned(st){
+  const turns=(st&&Array.isArray(st.turns))?st.turns:[], first=turns.filter(t=>t&&t.done&&t.first).length;
+  const need=Math.max(1,Math.min(pktMinFirst(st&&st.kid),turns.length||1));
+  return {first:first,need:need,ok:first>=need};
+}
 // The study session's Train — {sid,name,emoji,deck,cards} (the deck as trainDeck ranks them), or null when the flip cards stay
 function pktSession(kid,sid){
   try{
@@ -69527,6 +69884,7 @@ function pktMerge(prev,e){
 }
 function pktLogSitting(st){
   if(!st||!st.study||st.studyLogged) return null;
+  st.earn=pktEarned(st); if(!st.earn.ok) return null;   // 🚂 EARNED: short of the floor → no sitting, the card stays open
   const kid=st.kid, sid=st.study.sid, day=(typeof mstTodayKey==="function")?mstTodayKey():gameLogDay();
   let pn=null; try{ if(typeof mastGetPrintNum==="function") pn=mastGetPrintNum(kid); }catch(e){}
   const e=pktEntry(st,Date.now(),pn,day); if(!e) return null;
@@ -69549,8 +69907,9 @@ function pktStudyHtml(kid,session){
   let h='<div class="pkt-study"><div style="text-align:center;font-family:\'DM Sans\',sans-serif;font-size:15px;font-weight:800;color:#c2410c">'+E(ps.emoji)+' '+E(ps.name)+'</div>';
   if(lg) h+='<div style="text-align:center;margin-top:4px;font-size:13px;color:#16a34a;font-weight:700">\u2713 Done today: '+(lg.total||0)+' cars</div>';
   h+=buildTrainHtml(col,ps);
-  const st=trainState;
-  if(st&&st.kid===kid&&st.study&&st.study.sid===ps.sid&&st.phase==="done"&&st.song&&st.song.end&&typeof mpStudyDoneHtml==="function") h+='<div style="text-align:center">'+mpStudyDoneHtml(kid,ps.sid)+'</div>';
+  const st=trainState, mine=st&&st.kid===kid&&st.study&&st.study.sid===ps.sid&&st.phase==="done";
+  if(mine&&!st.studyLogged&&st.earn&&!st.earn.ok) h+='<div class="pkt-short" style="text-align:center;margin-top:10px;font-size:15px;font-weight:800;color:#b45309">⭐ '+st.earn.first+' car'+(st.earn.first===1?'':'s')+' right the first time. Get '+st.earn.need+' right the first time to finish today’s study — play again!</div>';   // 🚂 EARNED: the card stays open
+  if(mine&&lg&&st.song&&st.song.end&&typeof mpStudyDoneHtml==="function") h+='<div style="text-align:center">'+mpStudyDoneHtml(kid,ps.sid)+'</div>';   // the next step only once today's study is done
   return h+'</div>';
 }
 // The card's 📂 link words and its line (label only)
@@ -69714,7 +70073,7 @@ function gameJudgeRowHtml(kid){
   [["pick","Say it, then pick it"],["type","Type it"],["mom","Mom judges"]].forEach(o=>{ h+=pill(o[0]===cur,'gameJudgeSet(\''+J(kid)+'\',\'judge\',\''+o[0]+'\')',o[1]); });
   if(cur==="pick"){ h+='<span style="font-size:12px;font-weight:700;color:var(--muted);margin-left:8px">Choices</span>'; [3,4,5].forEach(k=>{ h+=pill(k===n,'gameJudgeSet(\''+J(kid)+'\',\'judgeChoices\','+k+')',String(k)); }); }
   h+='</div><div style="font-size:11.5px;color:var(--muted);margin-top:6px">'+(cur==="pick"?'Says it out loud first, then taps what they said (each choice has a \u{1F50A}).':cur==="type"?'Types the answer, then Check. Capitals and extra spaces don’t count.':'Taps “Show Mom the answer” — Mom’s or Dad’s code, then ✓ or ✗.')+
-    ' Used in Go Fish, Connect Four, Battleship, Kaboom, Sure? then flip, and Jeopardy with money on.'+(set?'':' Not set — the app’s pick for this grade.')+(edit?'':' (Mom only to change.)')+'</div>';
+    ' Used in Go Fish, Connect Four, Battleship, Kaboom, Sure? then flip, Jeopardy with money on, and the Picture Puzzle.'+(set?'':' Not set — the app’s pick for this grade.')+(edit?'':' (Mom only to change.)')+'</div>';
   return h+'</div>';
 }
 // GAMEJUDGE_END
@@ -70192,6 +70551,7 @@ function mstAutoPlayCurrent(session){
   try{ const card=mstCurrent(mstState);
     if(mstIsSpellCard(card)){ if(card.name) mastSpeak(card.name,{spell:true}); return; }
     if(mstIsRuleCard(card)) return;   // language-arts rule cards: no sound   // 🔊 Spell: say the word itself (TTS — recordings are definitions)
+    if(typeof mstTilesOn==="function"&&mstTilesOn(session,card)){ mstTilesSay(card); return; }   // 🔤 PATTILES: he hears the word he builds
     if(card&&mstCardMode(card)!=="rec") return;   // playing the German first would give away a say/type answer
     if(card&&card.name){ if(mastGetDefAudio(masteryKid,card.name)) mastPlayDefAudio(card.name); else mastSpeak(card.name); }
   }catch(e){}
@@ -70286,6 +70646,7 @@ function mstCardHtml(session,card){
     r+='<div class="mast-flip-hint">\u{1F4A1} tap to flip back</div></div>';
     return r+'</div></div></div>';
   }
+  if(typeof mstTilesOn==="function"&&mstTilesOn(session,card)) return mstTilesHtml(session,card,def,_lrn);   // 🔤 PATTILES (ahead of the spell-deck flip: a "tiles" day builds the word)
   if(mstIsSpellCard(card)){
     // 🔊 Spell deck: hear it, spell it out loud, flip to check — the word only on the back.
     const _say=(big)=>'<button onclick="event.stopPropagation();ttsFlipSay(this)" style="'+(big?'margin:18px 0 6px;padding:18px 34px;border:2.5px solid #4f46e5;font-size:30px':'margin-top:10px;padding:8px 18px;border:2px solid #4f46e5;font-size:15px')+';border-radius:999px;background:#eef2ff;color:#4f46e5;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;position:relative;z-index:3">\u{1F50A} Hear it</button>';
@@ -70691,6 +71052,7 @@ function renderMastStudy(opts){
       if(typeof mstCopyOn==="function"&&mstCopyOn(session,card)){ /* 👀 PATCCC: Check / Next live inside the card */ } else
       if(mstCardMode(card)==="type"||(typeof mstTypeAnsOn==="function"&&mstTypeAnsOn(session,card))||(typeof mstPickOn==="function"&&mstPickOn(session,card))){   // ⌨️ MST_TYPEANS · 🎯 PATPICK
         // Check / Next live inside the card — no self-grading on a typed answer.
+      } else if(typeof mstTilesOn==="function"&&mstTilesOn(session,card)){   // 🔤 PATTILES: tiles + Check live inside the card, no ✗/✓
       } else if(typeof mstIdeasOn==="function"&&mstIdeasOn(session,card)){   // 🧩 PATIDEAS: chips + Check live inside the card, no ✗/✓
       } else if(mstFlipped){
         h+='<div style="display:flex;gap:12px;margin-top:16px">';
@@ -70933,6 +71295,117 @@ function mstIdeasCheck(){
   },MST_IDEAS_BEAT_MS);
 }
 // PATIDEAS_END
+// PATTILES_START — 🔤 "Build it" with letter tiles as a learning-pattern step (her research plan 2026-10-23,
+// PLAN_learning_patterns_2026-10-23.md, new step #4: "Hears the word, drags letter … tiles into place" — spelling,
+// sight words, German spelling; build order 5: "Letter tiles, shared with the Spell Builder game"). The tiles,
+// the built row and the check are SPELLBUILD's own (spellTiles · spellBoardHtml · spellJudge), so a "tiles" day
+// looks and judges exactly like 🎮 Build it: he HEARS the card's word (the slow spelling voice, or Mom's recording
+// on a non-spelling deck), and taps its letters in order from the word's letters plus 3 extra letters taken from
+// the deck's other words. The word is never written on screen (the app never supplies what he must produce); a
+// non-spelling card may show its meaning as a clue, only when the meaning doesn't contain the word.
+//   ENTRY: the card's pattern slot is "tiles"; its word (card.name) is ONE word of 2–SPELL_WORD_MAX letters (any
+//   alphabet, an apostrophe or hyphen is fine); the session has sound on; not a rule card or a picture card.
+//   Anything else keeps its usual face — a spell-deck card its 🔊 spell-it-aloud flip, any other card the plain flip
+//   with ✗ / ✓ (same fallback as 🎯 Pick it). Every card whose slot isn't "tiles" is drawn exactly as before.
+//   EXIT: Check → right on the first try: ✅ + the ding, a beat, then good. Wrong: the bonk, the tiles come back, he
+//   hears it again, one more try (SPELL_TRIES). Right on the second try, or wrong twice: a beat, then again, so the
+//   card goes to the back of the line and comes back later in the sitting (the word still isn't shown).
+//   No ✗/✓ under the card — renderMastStudy hides them via mstTilesOn.
+// Writes nothing new: grades go through mstTap → mstAnswer → the sitting's own Save. Unlike the 🎮 game, a study day
+// never moves the Word Workout (no wwNote) — the sitting's grade is that day's record.
+// NOT built (plan's note "multi-letter tiles (sh, igh) match AAS"): tiles are single letters, as Build it's are.
+MST_PATTERN_MODES.push("tiles");
+const MST_TILES_BEAT_OK=900, MST_TILES_BEAT_MISS=1400;   // Build it's own beats
+let mstTilesSt=null;   // {show, t:{word,tiles,placed,wrong,tries,done,first,fail}, msg, lock}: the showing card's board
+function mstTilesWord(card){ return String((card&&card.name)||"").normalize("NFC").trim(); }
+function mstTilesWordOk(w){ w=String(w||""); return w.length>=2&&w.length<=SPELL_WORD_MAX&&/^\p{L}[\p{L}'’\-]*$/u.test(w); }
+function mstTilesOn(session,card){
+  if(!card||card.mode!=="tiles") return false;
+  if(!session||session.audio==="off") return false;   // he has to hear the word
+  if(mstIsRuleCard(card)) return false;
+  if(typeof mstCardPic==="function"&&mstCardPic(card)) return false;
+  if(typeof spellTiles!=="function"||typeof spellBoardHtml!=="function") return false;
+  return mstTilesWordOk(mstTilesWord(card));
+}
+// A spelling word: a spell-mode deck, or one of the Word Workout's spelling decks.
+function mstTilesIsSpelling(card){ return mstIsSpellCard(card)||(typeof WW_DECKS!=="undefined"&&WW_DECKS.indexOf(card&&card.deck)>=0); }
+// The deck's other words (bank items of the deck + this sitting's cards of the deck): the extra tiles come from these.
+function mstTilesOthers(card){
+  const w=mstTilesWord(card).toLowerCase(), out=[], seen={};
+  const add=s=>{ s=String(s||"").trim(); const k=s.toLowerCase(); if(s&&k!==w&&!seen[k]){ seen[k]=1; out.push(s); } };
+  let items=masteryData[masteryKid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  items.forEach(i=>{ if(i&&i.subject===card.deck&&i.dir!=="prod") add(i.prompt); });
+  const sc=(mstState&&mstState.cards)||{}; Object.keys(sc).forEach(k=>{ const c=sc[k]; if(c&&c.deck===card.deck) add(c.name); });
+  return out;
+}
+// One board per SHOWING (the card's key + the MST_NAV history length, which every grade and every ← Back changes).
+function mstTilesShowId(card){ let n=0; try{ n=(typeof mstHist!=="undefined"&&mstHist)?mstHist.length:0; }catch(e){} return (card&&card.key||"")+"|"+n; }
+function mstTilesCur(card){
+  const id=mstTilesShowId(card);
+  if(!mstTilesSt||mstTilesSt.show!==id){ const w=mstTilesWord(card);
+    mstTilesSt={show:id,t:{word:w,tiles:spellTiles(w,mstTilesOthers(card)),placed:[],wrong:{},tries:0,done:false,first:false,fail:false},msg:"",lock:false}; }
+  return mstTilesSt;
+}
+function mstTilesSay(card){
+  const w=mstTilesWord(card); if(!w) return;
+  try{ if(!mstTilesIsSpelling(card)&&mastGetDefAudio(masteryKid,w)) mastPlayDefAudio(w); else mastSpeak(w,{spell:true}); }catch(e){}
+}
+function mstTilesClue(card,def){
+  if(mstTilesIsSpelling(card)) return "";
+  const d=String(def||"").replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim(), w=mstTilesWord(card).toLowerCase();
+  return (d&&d.toLowerCase().indexOf(w)===-1)?d:"";
+}
+function mstTilesHtml(session,card,def,lrn){
+  const st=mstTilesCur(card), t=st.t, clue=mstTilesClue(card,def);
+  let h=SPELL_CSS+'<div class="mast-slide"><div class="mast-flip-wrap"><div class="mast-flip-inner"><div class="mast-flip-front" data-tiles-msg="'+mstEsc(st.msg)+'">';
+  h+='<div class="mast-slide-cat">'+mstEsc(card.deck||session.name||"")+(lrn||"")+'</div>';
+  h+='<div style="display:inline-block;margin-top:2px;padding:3px 10px;border-radius:999px;background:#ede9fe;color:#6d28d9;font-size:11px;font-weight:800">\u{1F524} Build it</div>';
+  if(clue) h+='<div class="mast-flip-def" style="font-size:20px;margin-top:6px">'+mstEsc(clue)+'</div>';
+  h+='<div style="width:100%">'+spellBoardHtml(t,{color:"#7c3aed",pre:"mstTiles",msg:st.msg,lock:st.lock})+'</div>';
+  if(st.lock&&st.msg==="right"&&!t.first) h+='<div style="margin-top:8px;font-size:14px;font-weight:700;color:#6d28d9">You\u{2019}ll see it again soon</div>';
+  return h+'</div></div></div></div>';
+}
+function mstTilesCtx(){
+  if(!mstState) return null;
+  let cur=null; try{ cur=mstCurrent(mstState); }catch(e){}
+  let ses=null; try{ ses=(mstSessions(masteryKid)||[]).find(x=>x.sid===mstSid)||null; }catch(e){}
+  if(!cur||!ses||!mstTilesOn(ses,cur)) return null;
+  return {cur:cur,ses:ses,st:mstTilesCur(cur)};
+}
+// Tile taps redraw without the MST_NAV tap lock (as 🎮 Build it's do): a placed tile taps back off, and Check
+// needs every slot filled, so a stray tap can't grade anything.
+function mstTilesSayAgain(){ const c=mstTilesCtx(); if(c) mstTilesSay(c.cur); }
+function mstTilesTapTile(ti){
+  const c=mstTilesCtx(); if(!c||c.st.lock) return; const t=c.st.t;
+  if(!t.tiles[ti]||t.tiles[ti].used||t.placed.length>=t.word.length) return;
+  t.tiles[ti].used=true; t.placed.push(ti); c.st.msg=""; _mastRe();
+}
+function mstTilesTapPlaced(pi){
+  const c=mstTilesCtx(); if(!c||c.st.lock) return; const t=c.st.t;
+  if(t.placed[pi]==null) return;
+  const ti=t.placed.splice(pi,1)[0]; t.tiles[ti].used=false; c.st.msg=""; _mastRe();
+}
+function mstTilesClear(){
+  const c=mstTilesCtx(); if(!c||c.st.lock) return; const t=c.st.t;
+  t.placed.forEach(ti=>{ t.tiles[ti].used=false; }); t.placed=[]; c.st.msg=""; _mastRe();
+}
+function mstTilesCheck(){
+  const c=mstTilesCtx(); if(!c||c.st.lock) return; const st=c.st, t=st.t;
+  if(t.placed.length<t.word.length) return;
+  const r=spellJudge(t);
+  if(r==="again"){ try{ matchBonk(); }catch(e){} st.msg="again"; _mastRe(); mstTilesSay(c.cur); return; }
+  if(r==="right"){ try{ matchDing(); }catch(e){} st.msg="right"; } else { try{ matchBonk(); }catch(e){} st.msg="fail"; }
+  st.lock=true; _mastRe();
+  const grade=(r==="right"&&t.first)?"good":"again", tok=st, state=mstState, key=c.cur.key;
+  setTimeout(function(){
+    if(mstTilesSt!==tok||mstState!==state) return;   // ← Back / Quit during the beat
+    let now=null; try{ now=mstCurrent(state); }catch(e){}
+    if(!now||now.key!==key) return;
+    mstTilesSt=null; mstLockTs=0;   // the beat already gave the tap lock its time
+    mstTap(grade);
+  },r==="right"?MST_TILES_BEAT_OK:MST_TILES_BEAT_MISS);
+}
+// PATTILES_END
 
 // ── Save — writes touched/minted cards field-by-field (mirrors mastSaveResults), merges
 // today's session log, updates local state. All remote writes guarded by db.
@@ -72237,6 +72710,7 @@ function _mhqRenderSessForm(kid) {
     if (f.pattern) {
       const _pl = { rec: "\u{1F1E9}\u{1F1EA} See it", say: "\u{1F5E3} Say it", type: "\u2328\uFE0F Type it", ideas: "\u{1F9E9} Key ideas", pick: "\u{1F3AF} Pick it" };
       _pl.copy = "\u{1F440} Copy it";   // 👀 PATCCC
+      _pl.tiles = "\u{1F524} Build it";   // 🔤 PATTILES
       f.pattern.forEach(function (m, i) { h += '<button onclick="mhqPatCycle(' + i + ')" style="min-height:40px;padding:6px 10px;border-radius:10px;border:1.5px solid #c4b5fd;background:#f5f3ff;color:#6d28d9;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">' + (i + 1) + ' \u00B7 ' + _pl[m] + '</button>'; });
       h += '<button onclick="mhqPatLen(-1)" style="width:36px;height:36px;border-radius:8px;border:1.5px solid var(--border);background:var(--card);font-weight:700;cursor:pointer">&minus;</button><button onclick="mhqPatLen(1)" style="width:36px;height:36px;border-radius:8px;border:1.5px solid var(--border);background:var(--card);font-weight:700;cursor:pointer">+</button>';
     }
@@ -84581,7 +85055,7 @@ function autoGenerateWeekIfNeeded(){
   // empty; generating then would undercount cursors and re-schedule finished lessons.
   // Retry until the listeners have answered.
   // NO_MIRROR: the retrieval (drill/sprint) slots come from Mastery's retrievalPlan — wait for it too.
-  if(!fbCheckedLoaded||!fbTasksLoaded||!fbArchiveLoaded||!_haMastReady){ setTimeout(autoGenerateWeekIfNeeded,5000); return; }
+  if(!fbCheckedLoaded||!(fbTasksLoaded||_abFirstWeek())||!fbArchiveLoaded||!_haMastReady){ setTimeout(autoGenerateWeekIfNeeded,5000); return; }   // 🆕 ABFIRST: a brand-new family's empty week counts as loaded here
   if(!_abDue(_abDueCtx())){ setTimeout(autoGenerateWeekIfNeeded,60000); return; }   // her question 2, "start": a Sunday waits for its school start
   _autoGenTried=true;
   db.ref("week"+wn+"/tasks").once("value",s=>{
@@ -84621,6 +85095,17 @@ function autoGenerateWeekIfNeeded(){
     });
   });
 }
+// ABFIRST_START — 🆕 a brand-new family's first week builds itself (FINDING F1 of the living demo run, 2026-11-09). With no week
+// node at all, the tasks listener never says "loaded" (`if(!s.val()) return;` — deliberate: a live week's wiped node must never
+// look like an empty week to a sweep), so the self-build above waited for ever, and the Generate Week page that used to bootstrap
+// a new family is gone (slice D). For the SELF-BUILD ONLY the week counts as loaded when ALL hold: the server answered
+// ha_active_wk = nothing AND this device never wrote it (no week was ever committed), the active week has no cards in memory, and
+// the server answered that week's tasks node = nothing. fbTasksLoaded stays false — the sweep, the cascade, the heals and the
+// re-lay doors keep waiting exactly as before. Once the first build commits, ha_active_wk is written and this is false for good.
+function _abFirstWeek(){
+  try{ return !!WK&&_abTasksNullWk===WK&&_abActiveWkNull&&!HA_LS.getItem("ha_active_wk")&&_activeWeekEmpty(); }catch(e){ return false; }
+}
+// ABFIRST_END
 // AUTOBUILD_END
 // THISWEEK_START — 📅 THE "THIS WEEK" STRIP (slice C of PLAN_living_schedule_finish_2026-11-08.md; her words 10/29: "All the
 // settings we have in Generate Week need to be adjustable in the week we're currently in … 'Tuesday we can't, Wednesday…'").
@@ -84734,6 +85219,9 @@ function _twsApplyLocal(p,v){
     for(let i=1;i<parts.length-1;i++){ if(!o[parts[i]]||typeof o[parts[i]]!=="object") o[parts[i]]={}; o=o[parts[i]]; }
     if(val===null) delete o[parts[parts.length-1]]; else o[parts[parts.length-1]]=val; return true; }
   if(parts[0]==="config"&&typeof stApplyLocal==="function"){ stApplyLocal(p,val); return true; }
+  if(parts.length===4&&parts[1]==="meta"&&parts[2]==="dates"&&typeof WK!=="undefined"&&parts[0]===WK){   // 📅 TWSSAT: the board's Saturday tab
+    DAY_DT=Object.assign({},(typeof DAY_DT!=="undefined"&&DAY_DT)||{}); if(val===null) delete DAY_DT[parts[3]]; else DAY_DT[parts[3]]=val;
+    try{ const m=ld(WK+"_meta")||{}; m.dates=Object.assign({},DAY_DT); sv(WK+"_meta",m); }catch(e){} return true; }
   return false;
 }
 // an Undo entry for a path as it is RIGHT NOW in this device's copy — taken before the write
@@ -84742,6 +85230,7 @@ function _twsWas(p){
   try{
     if(parts[0]==="weekConfig"){ o=_abSavedCfg[parts[1]]; for(let i=2;i<parts.length&&o!=null;i++) o=(typeof o==="object")?o[parts[i]]:undefined; }
     else if(parts[1]==="babysitter"){ o=(typeof weekData!=="undefined"&&weekData)?weekData.babysitter:undefined; }
+    else if(parts[1]==="meta"&&parts[2]==="dates"){ o=((typeof DAY_DT!=="undefined"&&DAY_DT)||{})[parts[3]]; }   // 📅 TWSSAT
     else if(parts[0]==="calendar"){ o=(typeof calendarData!=="undefined")?calendarData:undefined; for(let i=1;i<parts.length&&o!=null;i++) o=o[parts[i]]; }
     else if(parts[0]==="config"&&parts[1]==="rules"){ o=(typeof rulesData!=="undefined")?rulesData:undefined; for(let i=2;i<parts.length&&o!=null;i++) o=o[parts[i]]; }
   }catch(e){ o=undefined; }
@@ -84754,12 +85243,12 @@ function _twsWrite(upd){
   return true;
 }
 // THE door: Undo entries first, the write, then (the week on the board only) ONE relayWeek. A week not built yet re-lays nothing.
-function _twsDoor(why,label,upd,board,toast){
+function _twsDoor(why,label,upd,board,toast,subjects){
   if(!momHere()) return false;
   const undo=Object.keys(upd||{}).map(_twsWas);
   if(!_twsWrite(upd)) return false;
   const relay=!!board&&typeof relayWeek==="function";
-  if(relay) relayWeek(why,{label:label,undo:undo});
+  if(relay) relayWeek(why,{label:label,undo:undo,subjects:subjects||[]});   // 📅 TWSSAT: Saturday re-lays its dailies in pass B
   if(typeof gwShowToast==="function") gwShowToast(toast||label);
   if(typeof renderAll==="function") renderAll();
   return relay;
@@ -84825,8 +85314,57 @@ function twsToggleSaturday(){
   if(typeof gwSatPlanned==="function"&&gwSatPlanned(wn)){ if(typeof gwShowToast==="function") gwShowToast("The grid plans Saturday lessons in Week "+wn+" — Saturday stays on"); return; }
   const dates=_twsDates(wn); if(dates.saturday&&dates.saturday<stTodayIso()) return;   // a past Saturday is read-only
   const on=!gwEffectiveConfig(wn).saturday; const upd={}; upd["weekConfig/"+wn+"/saturday"]=on;
-  _twsDoor("saturday","📅 Saturday "+(on?"on":"off")+" (Week "+wn+")",upd,!twsNext);
+  let lbl="📅 Saturday "+(on?"on":"off")+" (Week "+wn+")", pairs=[];
+  if(!twsNext&&typeof WK!=="undefined"&&WK&&dates.saturday){   // 📅 TWSSAT: the week on the board gets (or loses) its Saturday tab, and its Saturday dailies
+    pairs=_twsSatDailies(); const p=WK+"/meta/dates/saturday", has=!!((typeof DAY_DT!=="undefined"&&DAY_DT)||{}).saturday;
+    if(on){ if(!has) upd[p]=_twsSatLabel(dates.saturday);
+      const nm=_twsSatNames(pairs,dates.saturday); if(nm.length) lbl+=" · Sat: "+nm.join(", "); }
+    else if(has){ const k=_twsSatKeep(pairs); if(k.n) lbl+=" — the Saturday tab stays ("+k.n+" card"+(k.n===1?"":"s")+" on it"+(k.ck?", "+k.ck+" checked":"")+")"; else upd[p]=null; }
+  }
+  _twsDoor("saturday",lbl,upd,!twsNext,undefined,pairs);
 }
+// TWSSAT_START — 📅 SATURDAY ON MID-WEEK (FINDING F3 of the living demo run, 2026-11-09). Before: Saturday on wrote
+// weekConfig/<wn>/saturday and nothing else — the board week had no Saturday tab (meta.dates comes from the build) and no
+// pattern laid onto it, so nothing moved and no line was written. Now, for the week on the board: Saturday on writes
+// week<N>/meta/dates/saturday (one targeted leaf, generateWeek's own "November 21" words) and re-lays the DAILIES that name
+// Saturday (allowedDays has "Sat", or no allowedDays and "Sat" in days) through the one door — pass B, the RELAY3D daily shell,
+// _rlwDailyWant asking for Saturday. Lessons stay Mon–Fri (her rule): a sequenced subject is never sent and never wanted there.
+// Saturday off: the same dailies' open Saturday cards go; the date goes too unless a card still sits on Saturday (a checked card,
+// or the sweep's overflow) — then the tab stays and the line says so. Undo = the setting, the date and the cards back.
+// A week not built yet re-lays nothing (the Sunday build reads weekConfig, as before; it lays only the grid's days).
+function _twsSatNamesSat(s){ const al=((s&&s.allowedDays)||[]).map(String); return al.length?al.indexOf("Sat")>=0:/\bsat/i.test(String((s&&s.days)||"")); }
+// every kid's dailies that name Saturday → [{kid,sk}]
+function _twsSatDailies(){
+  const subs=(((typeof currData!=="undefined"&&currData)||{}).subjects)||{}; const out=[];
+  Object.keys(subs).forEach(function(k){ Object.keys(subs[k]||{}).forEach(function(sk){ const s=subs[k][sk];
+    if(s&&!s.paused&&s.tracking==="daily"&&!s.fixedTime&&_twsSatNamesSat(s)) out.push({kid:k,sk:sk}); }); });
+  return out;
+}
+// does this daily run on the board week's Saturday right now? (Saturday on, the tab on the board, the kid not off, the day not ✕'d)
+function _twsSatRuns(kid,sk,wn){
+  try{
+    if(typeof currWeekNum!=="function"||wn!==currWeekNum()) return false;
+    if(!((typeof DAY_DT!=="undefined"&&DAY_DT)||{}).saturday||!gwEffectiveConfig(wn).saturday) return false;
+    const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||s.paused||s.tracking!=="daily"||s.fixedTime||!_twsSatNamesSat(s)) return false;
+    const iso=calDateForWeekDay("saturday",wn); if(!iso) return false;
+    if(typeof smapIsKidOff==="function"&&smapIsKidOff(kid,iso)) return false;
+    if(typeof _ovOffX==="function"&&(_ovOffX(kid,iso,false)||_ovRmX(kid,iso,sk,false))) return false;
+    return true;
+  }catch(e){ return false; }
+}
+function _twsSatLabel(iso){ return gwParseDate(iso).toLocaleDateString("en-US",{month:"long",day:"numeric",timeZone:"UTC"}); }   // generateWeek's own meta.dates words
+function _twsSatNames(pairs,iso){
+  return (pairs||[]).filter(function(p){ return !(typeof smapIsKidOff==="function"&&smapIsKidOff(p.kid,iso)); })
+    .map(function(p){ const s=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[p.kid]||{})[p.sk]||{}; return (s.display||p.sk)+" ("+cap(p.kid)+")"; });
+}
+// what still sits on Saturday once the Saturday dailies' open cards go → {n, ck}
+function _twsSatKeep(pairs){
+  const ck=(typeof checked!=="undefined"&&checked)||{}; const mine={}; (pairs||[]).forEach(function(p){ mine[p.kid+"|"+p.sk]=1; });
+  const on=((typeof weekData!=="undefined"&&weekData&&weekData.tasks)||[]).filter(function(t){ return t&&t.id&&t.day==="saturday"&&!String(t.id).endsWith("_c"); });
+  const stay=on.filter(function(t){ return ck[t.id]||!mine[t.who+"|"+t.subjectKey]; });
+  return {n:stay.length,ck:stay.filter(function(t){ return !!ck[t.id]; }).length};
+}
+// TWSSAT_END
 function twsToggleSunday(k){
   if(!momHere()||!k) return; const on=!(typeof sucOn==="function"&&sucOn(k)); const upd={}; upd["config/rules/sundayCatchup/"+k]=on?true:null;
   try{ if(typeof _sucMemo!=="undefined") _sucMemo={key:null,tasks:null,set:null}; }catch(e){}
@@ -86347,6 +86885,7 @@ function gwCommit(){
     if(hasAnything){
       const snapSlotPts=ld(oldWK+"_slot_points")||{};
       const entry={weekLabel:oldWK,archivedAt:nowTs(),history:snapHist,tasks:snapTasks,checked:snapChecked,dates:{...DAY_DT},slot_points:snapSlotPts,completion:buildWeekCompletion(snapTasks,snapChecked,snapHist)};
+      try{ const _df=(typeof sucDeferredOf==="function")?sucDeferredOf(relayLogData):null; if(_df) entry.deferred=_df; }catch(e3){}   // 🔁 SUCPB: the lessons this week's re-lays sent "to next week" — Sunday catch-up reads them
       archive[oldWK]=entry;
       try{HA_LS.setItem("ha_archive",JSON.stringify(archive));}catch(e2){}
       if(db) db.ref("archive/"+oldWK).set(entry);

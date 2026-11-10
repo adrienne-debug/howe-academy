@@ -26,5 +26,18 @@ window.HA_FAMILY = {
     {id:"ellis",   name:"Ellis",   color:"#2d5a3d", badge:"#dcfce7", schoolAge:true},
     {id:"lucy",    name:"Lucy",    color:"#5b3a8c", badge:"#ede9fe", schoolAge:true},
     {id:"julian",  name:"Julian",  color:"#c45e1a", badge:"#ffedd5", schoolAge:false} // Pre-K: no 180-day attendance, separate drills track
-  ]
+  ],
+  // ── 🌿 Envirothon mirror (MIRROR_SETUP.md §1) — the class project's PUBLIC web config; the rules are the lock ──
+  envirothon: {
+    firebase: {
+      apiKey:      "AIzaSyA0TClq3p_rsTOXrl9NFxQSLsGf6Ao33hc",
+      authDomain:  "howe-envirothon.firebaseapp.com",
+      databaseURL: "https://howe-envirothon-default-rtdb.firebaseio.com",
+      projectId:   "howe-envirothon",
+      appId:       "1:381633534809:web:a04576c76290f25b81ca48"
+    },
+    familyId: "howe",             // sid = howe_lincoln
+    classId:  "ms-science-2026",  // Brittany's class
+    kids: ["lincoln"]             // mirror only Lincoln
+  }
 };

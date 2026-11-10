@@ -23,7 +23,7 @@ ok("no kid's name in the block",!/lincoln|ellis|lucy|julian|caleb|taylor|makenzi
 ok("no 🔀 anywhere in index.html",src.indexOf("\u{1F500}")<0);
 ok("GAMES_LIST: Sort it right after Which one?, with park / restore / resume on its entry",/\{key:"which",[^\n]*\n  \{key:"sort",\s*emoji:"\\u\{1F9FA\}", label:"Sort it",\s*view:"sort",\s*available:k=>typeof sortDecks==="function"&&Object\.keys\(sortDecks\(_gamesItems\(k\),k\)\)\.length>0, render:c=>buildSortHtml\(c\),\n\s*park:\(\)=>sortState, restore:v=>\{ sortState=v\|\|null; \}, resume:\(\)=>sortResume\(\), decks:k=>typeof sortDeckList==="function"\?sortDeckList\(_gamesItems\(k\),k\):\[\]\}/.test(src));
 ok("gamesCurrentKey / GAMEKID untouched (the entry does it)",!/sort/i.test(fnText("gamesCurrentKey"))&&!/sortState|sortResume/.test(cut("// GAMEKID_START","// GAMEKID_END")));
-ok("writes: match_best one key (guarded) + gameLogRound — nothing else, no set / remove / push",/db&&!_dryRun\(\)\) db\.ref\("mastery\/"\+kid\+"_settings\/match_best"\)\.update\(\{\[(?:key|\(typeof haKey==="function"\?haKey\(key\):key\))\]:st\.first\}\)/.test(blk)&&/gameLogRound\(st\)/.test(blk)&&(blk.match(/db\.ref\(/g)||[]).length===1&&!/\.set\(|\.remove\(|\.push\(\{/.test(code.replace(/ids\.push|turns\.push|tray\.push|classList\.remove/g,"")));
+ok("writes: match_best one key (guarded) + gameLogRound — nothing else, no set / remove / push",/db&&!_dryRun\(\)\) db\.ref\("mastery\/"\+kid\+"_settings\/match_best"\)\.update\(\{\[(?:key|\(typeof haKey==="function"\?haKey\(key\):key\))\]:st\.first\}\)/.test(blk)&&/gameLogRound\(st,pre\)/.test(blk)&&(blk.match(/db\.ref\(/g)||[]).length===1&&!/\.set\(|\.remove\(|\.push\(\{/.test(code.replace(/ids\.push|turns\.push|tray\.push|classList\.remove/g,"")));
 ok("the voice says a card's NAME or a bin's name — never which bin a card belongs in",/mastSpeak\(_sortPlain\(it\.prompt\)\)/.test(fnText("_sortSayCard"))&&!/\.bin\b/.test(fnText("_sortSayCard")+fnText("_sortSayBin")));
 ok("no ladder contact: no next_due / tier / studyLog / consecutive_correct in the block",!/next_due|\.tier\b|studyLog|consecutive_correct|mstLog|scStudy/.test(code));
 ok("no clock, no lives, no leaderboard",!/setInterval|lives|hearts|leaderboard|timer/i.test(code));
@@ -194,6 +194,38 @@ console.log("── what the kid sees ──");
   const h3=w.c.buildSortHtml("#333");
   ok("a placed card leaves the tray and shows as a chip in its bin",(h3.match(/class="sort-card/g)||[]).length===8&&/sort-chip/.test(h3));
   ok("GAMES_LIST availability is cheap and true only with a sortable deck",(()=>{ const avail=src.match(/\{key:"sort",[^\n]*available:(k=>.*?\.length>0)/)[1]; const f=w.c.sortDecks; const g=new Function("sortDecks","_gamesItems","return "+avail)(f,k=>w.c.masteryData[k]||[]); return g("k")===true&&g("nobody")===false; })());
+}
+
+console.log("── 🧺 SORTPIC (2026-11-08, games honesty audit #14): a Pictures sort is tagged cat:true and Scores skips it ──");
+{
+  const pw=world(PICS); pw.c.sortStart(pw.c.SORT_PIC); const ps=pw.c.sortState;
+  ps.turns.forEach((t,i)=>{ pw.c.sortDrop(i,ps.bins.findIndex(b=>b.key===t.bin)); });
+  const pe=(pw.writes.find(w=>w[0]==="push")||[])[2];
+  ok("a Pictures round's gameLog entry carries cat:true (items as before)",!!pe&&pe.cat===true&&pe.game==="sort"&&pe.items.length===9&&pe.items.every(x=>x.ok));
+  const aw=world(ARTICLES); aw.c.sortStart("Articles"); const as=aw.c.sortState;
+  as.turns.forEach((t,i)=>{ aw.c.sortDrop(i,as.bins.findIndex(b=>b.key===t.bin)); });
+  const ae=(aw.writes.find(w=>w[0]==="push")||[])[2];
+  const mw=world(MATH); mw.c.sortStart("Math Facts"); const ms=mw.c.sortState;
+  ms.turns.forEach((t,i)=>{ mw.c.sortDrop(i,ms.bins.findIndex(b=>b.key===t.bin)); });
+  const me=(mw.writes.find(w=>w[0]==="push")||[])[2];
+  ok("a rule sort and a math-back sort carry no tag (unchanged)",!!ae&&!("cat" in ae)&&!!me&&!("cat" in me));
+  // the Scores readers, from the real source
+  const ctx={console}; vm.createContext(ctx);
+  vm.runInContext(cut("const SC_RANK=","\n// History-shaped view")+"\n"+cut("// SCORESPAGE_START","// SCORESPAGE_END")+"\n"+cut("// SCORESGAMES_START","// SCORESGAMES_END"),ctx);
+  const scpRight=vm.runInContext("scpRight",ctx), scgLearned=vm.runInContext("scgLearned",ctx), W={from:"20261102",to:"20261108"};
+  const H={k:{"20261103":{items:[{id:"a0",result:"m"}]}}};
+  const base=scpRight("k",H,{},{},W);
+  const withPic=scpRight("k",H,{},{k:{"20261105":{a:pe}}},W);
+  ok("a Pictures round changes no Right %: same graded, same right, same pct (games 0)",withPic.pct===base.pct&&withPic.graded===base.graded&&withPic.right===base.right&&withPic.games.n===0,{base,withPic});
+  const untagged=Object.assign({},pe); delete untagged.cat;
+  ok("…the same round untagged would have moved it (the tag is what keeps it out)",scpRight("k",H,{},{k:{"20261105":{a:untagged}}},W).games.n===9);
+  const withRule=scpRight("k",H,{},{k:{"20261105":{a:ae}}},W);
+  ok("a rule sort still counts in Right % (9 cards, all first try)",withRule.games.n===9&&withRule.games.ok===9);
+  // learned through games: missed in the drill, right in a Pictures sort, ✓ next drill → not credited to the games
+  const cid=pe.items[0].id, cards=[{id:cid,status:"active",tier:"weekly"}];
+  const H2={k:{"20261101":{items:[{id:cid,result:"m"}]},"20261106":{items:[{id:cid,result:"c"}]}}};
+  ok("scgLearned: a Pictures-sort right doesn't make a drill-missed card 'learned through games'",scgLearned("k",cards,H2,{},{k:{"20261103":{a:pe}}}).length===0);
+  ok("…untagged it would have (the tag is what keeps it out)",scgLearned("k",cards,H2,{},{k:{"20261103":{a:untagged}}}).length===1);
 }
 
 console.log("\n"+pass+" passed, "+fail+" failed");

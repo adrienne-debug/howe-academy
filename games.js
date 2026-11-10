@@ -639,6 +639,10 @@ function buildGofishHtml(color){
 // Writes (only these): <kid>_settings/match_best key "<deck> · bingo" (most on the first tap, only when beaten) and the
 //   round's gameLog entry (GAMELOG, game:"bingo", via gameLogRound — the only log). NEVER touches the ladder: no scores,
 //   no next-due, no study log. db && !_dryRun() only. Per-kid park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT).
+// ⚖️ BINGOFORCED (games honesty audit §7 #12, her decision via the hub 2026-11-08: "Bingo's forced last call is not counted as a
+//   first-try"): every tile is called once, so the last call always has ONE un-stamped tile left — a guaranteed first tap, logged
+//   ok:true every round. That call is now not logged at all (nolog, GAMELOG skips it — Battleship's last-tile find does the same) and
+//   leaves "N of M on the first tap" and the best (a full 3×3 is "8 of 8"). It is still called, stamped, and fills the board.
 let bingoState=null;   // {kid,deck,mix,size,game:"bingo",t0,board:[pid…],marked:{pid:1},turns:[{pid,back,wrong:{},done,first}],i,phase,line,bingo,clearup,first,of,isPB,prevBest,lock,grow,returned:{},gameLogged}
 const BINGO_MIX="Mix the decks", BINGO_BIG=9, BINGO_SMALL=4;
 function _bingoItems(kid){ let items=(typeof masteryData!=="undefined"&&masteryData&&masteryData[kid||masteryKid])||[]; if(!Array.isArray(items)) items=Object.values(items); return items; }
@@ -713,7 +717,8 @@ function bingoTap(ci){
     return;
   }
   t.done=true; t.first=!Object.keys(t.wrong).length;
-  if(!t.back&&t.first) st.first++;
+  if(!t.back&&st.board.filter(p=>!st.marked[p]).length<=1){ t.nolog=true; st.of=Math.max(0,st.of-1); }   // ⚖️ BINGOFORCED: one tile left — a forced tap, not a first try
+  else if(!t.back&&t.first) st.first++;
   // A card that took more than one tap comes back once, after the board is full.
   if(!t.first&&!t.back&&!st.returned[t.pid]){ st.returned[t.pid]=1; st.turns.push({pid:t.pid,back:true,wrong:{},done:false,first:false}); }
   st.marked[pid]=1;
@@ -843,7 +848,8 @@ function buildBingoHtml(color){
 //   Right bin → the soft ding, the card settles into the bin. Wrong bin → the soft bonk, the card shakes back into the tray
 //   (nothing is told), and that card comes back ONCE after the rest are placed (Which one?'s rule). No lives, no clock.
 // Writes (only these): <kid>_settings/match_best key "<deck> · sort" (most first-try right, only when beaten) and the round's
-//   gameLog entry (GAMELOG, game:"sort" — each card's first/wrong/back). NEVER touches the ladder: no scores, no next_due,
+//   gameLog entry (GAMELOG, game:"sort" — each card's first/wrong/back; a Pictures round is tagged cat:true, 🧺 SORTPIC
+//   2026-11-08, so Scores' Right % and learned-through-games skip it). NEVER touches the ladder: no scores, no next_due,
 //   no studyLog. db && !_dryRun() only. A round dropped (Change deck, kid switch) writes nothing. Per-kid park via GAMEKID
 //   through the GAMES_LIST entry (🎲 GAMEKIT). Pure pieces (sortDecks / sortRound / sortJudge) are what test_sortit.js runs.
 //   🎮 GAMEGRID (Mom's per-deck pick, gameDeckOn(kid,"sort",deck), default on): a rule / answer deck she turned off is out; a
@@ -997,7 +1003,9 @@ function sortResume(){ const st=sortState; if(st){ st.sel=null; st.shake=null; s
 function sortFinish(st){
   st.phase="done";
   const kid=st.kid||masteryKid;   // GAMEKID
-  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every card's result, game:"sort"
+  try{ if(typeof gameLogRound==="function"){   // 🎮 GAMELOG: every card's result, game:"sort"
+    let pre=null; if(st.kind==="pic"&&typeof gameLogEntry==="function"){ pre=gameLogEntry(st); if(pre) pre.cat=true; }   // 🧺 SORTPIC: a category sort, tagged
+    gameLogRound(st,pre); } }catch(e){}
   const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
   if(!s.match_best) s.match_best={};
   const key=sortBestKey(st.deck), prev=s.match_best[key];
@@ -2284,18 +2292,24 @@ function buildBeatHtml(color){
 // For a picture / letter card the claim is a NAME, said and never written (Which one?'s rule — a pre-reader hears it; a written name
 // would be matched letter for letter). The kid swipes the card right = ✓ True, left = ✗ Not true, or taps the two big buttons.
 // Right → the soft ding, the card flies off. Wrong → the soft bonk, "Not that one" — nothing more is told (the app never supplies the
-// answer), and the card comes back ONCE at the end as a fresh statement. About half the statements are true. No clock, no lives, no
-// points, no opponent, no score against the kid.
+// answer), and the card comes back ONCE at the end as a fresh statement. No clock, no lives, no points, no opponent, no score against the kid.
+// ⚖️ TNBOTH (games honesty audit §7 #11, her pick via the hub 2026-11-08: "each card both ways in a round"): exactly half the statements
+//   were true and each card was asked once, so always tapping ✓ logged 50% right — a coin flip read as "knew it". Now a round is
+//   TN_CARDS cards, each asked TWICE: once true (its own claim) and once not (a same-deck lure), in a shuffled order where a card's two
+//   statements are never back to back (tnOrder). The card's `first` (= the log's ok) is true only when BOTH calls were right — blind
+//   tapping drops to 1 in 4. One log item per card: the pair's first-asked statement is nolog, the second carries the pair (its n
+//   counts both statements' wrong calls). TN_CARDS = half of TN_ROUND, so a round is still TN_ROUND swipes. "N of M" and the best
+//   count cards called right both ways. Each statement still gets its own ding / "Not that one", and a miss still comes back once.
 // MASTERED ONLY (the plan's "only on mastered" + the Sprint rule): a card plays only at the kid's gate tier or above (gate_tier, default
 // weekly) — a learning card must never be shown a false pairing it could remember as true. Cards: Which one?'s own pool (whichPool /
 // whichDeckModes read RAW, like Go Fish — a deck turned off for Which one? still plays here), then this game's own grid cell
 // gameDeckOn(kid,"truenot",deck); a deck plays with TN_MIN+ gated cards that each have a lure (a different back / name in the deck).
-// Writes (only these): <kid>_settings/match_best key "<deck> · truenot" (first-swipe rights, only when beaten) and the round's gameLog entry
+// Writes (only these): <kid>_settings/match_best key "<deck> · truenot" (cards right both ways, only when beaten) and the round's gameLog entry
 // (GAMELOG, game:"truenot"). NEVER touches the ladder — no scores, no next_due, no study log. db && !_dryRun() only. Per-kid park /
 // restore / resume through its GAMES_LIST entry (🎲 GAMEKIT). A round dropped (Change deck, a kid switch) writes nothing.
-let tnState=null;   // {kid,deck,mix,game:"truenot",t0,turns:[{pid,mode,cpid,truth,done,first,wrong:{},back}],i,lock,fly,shake,phase,first,of,isPB,prevBest,returned:{},gameLogged}
+let tnState=null;   // {kid,deck,mix,game:"truenot",t0,turns:[{pid,mode,cpid,truth,done,right,first,wrong:{},back,nolog}],i,lock,fly,shake,phase,first,of,isPB,prevBest,returned:{},gameLogged}
 let _tnRandom=Math.random;   // tests seed it
-const TN_ROUND=10, TN_MIN=4, TN_BEAT=700, TN_BEAT_WRONG=1400, TN_SWIPE=70;
+const TN_ROUND=10, TN_CARDS=TN_ROUND/2, TN_MIN=4, TN_BEAT=700, TN_BEAT_WRONG=1400, TN_SWIPE=70;
 function _tnItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
 function _tnShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_tnRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
 function _tnRaw(fn){ const had=(typeof _gdRaw!=="undefined")?_gdRaw:null; try{ if(had!==null) _gdRaw=true; return fn(); } finally{ if(had!==null) _gdRaw=had; } }
@@ -2324,13 +2338,22 @@ function tnDecks(items,kid){
   const n={}; tnPool(items,WHICH_MIX,kid).forEach(i=>{ const d=i.subject||"Other"; n[d]=(n[d]||0)+1; });
   return Object.keys(n).filter(d=>n[d]>=TN_MIN&&tnDeckOn(kid,d)).sort();
 }
-// PURE: a balanced run of truths for n statements — half true (the extra one true), shuffled
-function tnTruths(n){ const t=[]; for(let i=0;i<n;i++) t.push(i<Math.ceil(n/2)); return _tnShuffle(t); }
+// ⚖️ TNBOTH — PURE: the order of a round of n cards asked both ways → 2n slots [{k: card index, truth}], each card once true and once
+// not, shuffled, and a card's two slots never side by side (n ≥ 2). Random tries first; the fallback (every card, then every card
+// again in the same order) can never put a card next to itself.
+function tnOrder(n){
+  const adj=a=>a.some((x,i)=>i>0&&a[i-1]===x);
+  let ks=null;
+  for(let tries=0;tries<60&&n>=2;tries++){ const a=[]; for(let k=0;k<n;k++) a.push(k,k); _tnShuffle(a); if(!adj(a)){ ks=a; break; } }
+  if(!ks){ const p=[]; for(let k=0;k<n;k++) p.push(k); _tnShuffle(p); ks=p.concat(p); }
+  const firstTrue=[]; for(let k=0;k<n;k++) firstTrue.push(_tnRandom()<0.5);
+  const seen={}; return ks.map(k=>{ const one=!seen[k]; seen[k]=1; return {k:k,truth:one?firstTrue[k]:!firstTrue[k]}; });
+}
 // One statement: the card, and the card whose claim is shown — itself when true, a lure when not
 function _tnTurn(it,pool,mode,truth,back){
   const lures=tnLures(it,pool,mode); if(!truth&&!lures.length) truth=true;
   const c=truth?it:lures[Math.floor(_tnRandom()*lures.length)];
-  return {pid:it.id,mode:mode,cpid:c.id,truth:!!truth,done:false,first:false,wrong:{},back:!!back};
+  return {pid:it.id,mode:mode,cpid:c.id,truth:!!truth,done:false,right:false,first:false,wrong:{},back:!!back};
 }
 // What is said: a picture / letter card's CLAIM (the name — never written); an answer card's FRONT (the claim is written), unless the voice can't say it
 function _tnSay(st,t){
@@ -2345,20 +2368,28 @@ function tnStart(deck){
   const items=_tnItems(), mix=deck===WHICH_MIX, modes=_tnModes(items), ok=tnDecks(items), all=_tnWhichPool(items,masteryKid);
   const pool=tnPool(items,deck).filter(i=>ok.indexOf(i.subject||"Other")>=0);
   if(pool.length<TN_MIN||(!mix&&!tnDeckOn(masteryKid,deck))){ tnState=null; _mastRe(); return; }   // 🎮 GAMEGRID: a deck Mom turned off for this game
-  const picks=_tnShuffle(pool.slice()).slice(0,TN_ROUND), truths=tnTruths(picks.length);
-  const turns=picks.map((it,i)=>_tnTurn(it,all,modes[it.subject||"Other"],truths[i],false));
-  tnState={kid:masteryKid,deck:deck,mix:mix,game:"truenot",t0:Date.now(),turns:turns,i:0,lock:false,fly:null,shake:false,phase:turns.length?"play":"done",first:0,of:turns.length,isPB:false,prevBest:null,returned:{}};
+  const picks=_tnShuffle(pool.slice()).slice(0,TN_CARDS);   // ⚖️ TNBOTH: TN_CARDS cards, each asked both ways
+  const turns=tnOrder(picks.length).map(o=>{ const it=picks[o.k]; return _tnTurn(it,all,modes[it.subject||"Other"],o.truth,false); });
+  tnState={kid:masteryKid,deck:deck,mix:mix,game:"truenot",t0:Date.now(),turns:turns,i:0,lock:false,fly:null,shake:false,phase:turns.length?"play":"done",first:0,of:picks.length,isPB:false,prevBest:null,returned:{}};
   _mastRe();
   _tnSay(tnState);   // the first statement, inside the tap
 }
 function tnChangeDeck(){ tnState=null; _mastRe(); }   // drop the round as it stands: nothing written
 // PURE over the state: the kid's call (true = "it belongs together") against the statement → "right" | "wrong" | null (nothing to judge)
+// ⚖️ TNBOTH: the card's first is settled on its SECOND statement — right only when both calls were; the first-asked one is nolog.
 function tnJudge(st,call){
   const t=st&&st.turns[st.i]; if(!t||t.done||st.lock) return null;
-  t.done=true;
-  if(!!call===t.truth){ t.first=true; if(!t.back) st.first++; return "right"; }
-  t.wrong[String(t.cpid)]=1; t.first=false;
-  return "wrong";
+  t.done=true; t.right=!!call===t.truth;
+  if(!t.right) t.wrong[String(t.cpid)]=1;
+  if(t.back){ t.first=t.right; return t.right?"right":"wrong"; }   // a come-back: one statement, never counted
+  const mate=st.turns.find(x=>x!==t&&!x.back&&x.pid===t.pid);
+  if(mate&&!mate.done){ t.nolog=true; t.first=false; }   // the pair's first half: its call rides on the second
+  else {
+    if(mate) Object.keys(mate.wrong||{}).forEach(k=>{ t.wrong[k]=1; });   // n = both statements' wrong calls + 1
+    t.first=t.right&&(!mate||mate.right);
+    if(t.first) st.first++;
+  }
+  return t.right?"right":"wrong";
 }
 // ✓ True (call true) / ✗ Not true (call false): the swipe or the button
 function tnSwipe(call){
@@ -2396,7 +2427,7 @@ function tnBestKey(deck){ return deck+" \u{00B7} truenot"; }
 function tnFinish(st){
   st.phase="done"; st.lock=false; st.fly=null; st.shake=false;
   const kid=st.kid||masteryKid;   // GAMEKID
-  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every statement's first-swipe result, game:"truenot"
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: one item per card (ok = both calls right — ⚖️ TNBOTH), game:"truenot"
   const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
   if(!s.match_best) s.match_best={};
   const key=tnBestKey(st.deck), prev=s.match_best[key];
@@ -2451,7 +2482,7 @@ function buildTnHtml(color){
   if(st.phase==="play"){
     const t=st.turns[st.i], it=t?items.find(x=>x&&x.id===t.pid):null, c=t?items.find(x=>x&&x.id===t.cpid):null, ans=!!(t&&t.mode==="answer"), mute=ans&&whichSilent(it);
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 4px"><div style="display:flex;gap:6px;flex-wrap:wrap">';
-    st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.first?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });
+    st.turns.forEach((x,ix)=>{ const cur=ix===st.i; h+='<span style="width:14px;height:14px;border-radius:50%;display:inline-block;'+(x.done?'background:'+(x.right?'#16a34a':'#f59e0b'):cur?'background:#fff;border:3px solid '+color:'background:#e7e5e4')+'"></span>'; });   // ⚖️ TNBOTH: a dot per statement, by its own call
     h+='</div><span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
       '<button onclick="tnChangeDeck()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{1F5C2} Change deck</button></span></div>';
     h+='<div style="text-align:center;font-size:17px;font-weight:800;color:'+(st.shake?'#b45309':'#57534e')+';margin:10px 0 12px">'+(st.shake?'Not that one.':st.lock?(t.truth?'\u{2705} True!':'\u{274C} Not true!'):(ans?'Do these go together?':'Is this what you hear?'))+'</div>';
@@ -2467,10 +2498,10 @@ function buildTnHtml(color){
     h+='<div style="display:flex;gap:12px;justify-content:center;margin-top:6px"><button class="tn-btn tn-no" onclick="tnSwipe(false)"'+(st.lock?' disabled':'')+'>\u{2B05} \u{274C} Not true</button><button class="tn-btn tn-yes" onclick="tnSwipe(true)"'+(st.lock?' disabled':'')+'>\u{2705} True \u{27A1}</button></div>';
     return h+'</div>';
   }
-  // Finish: first-swipe count against the kid's own best, Play again / Mix the decks
+  // Finish: cards called right both ways against the kid's own best, Play again / Mix the decks
   h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
   h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} All called!</div>';
-  h+='<div style="font-size:17px;font-weight:800;color:#57534e;margin-top:10px">\u{2705} '+st.first+' of '+st.of+' on the first swipe'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+  h+='<div style="font-size:17px;font-weight:800;color:#57534e;margin-top:10px">\u{2705} '+st.first+' of '+st.of+' cards right both ways'+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
   h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap">';
   h+='<button onclick="tnStart(\''+q(st.deck)+'\')" style="padding:12px 24px;border-radius:999px;border:none;background:'+color+';color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F501} Play again</button>';
   if(decks.length>1&&!st.mix) h+='<button onclick="tnStart(\''+q(WHICH_MIX)+'\')" style="padding:12px 24px;border-radius:999px;border:2px solid '+color+';background:#fff;color:'+color+';font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F3B2} '+WHICH_MIX+'</button>';
@@ -2739,6 +2770,9 @@ function buildSureHtml(color){
 //   elsewhere (which group is never told); grey "not in this deck". Hit = Brain Dump's own matcher when it is on the page (case,
 //   punctuation, one letter off on a long name), after a math-aware tidy (spaces out, x / * → ×, 4+8 counts for 8+4 — the same
 //   fact). A name typed twice is ignored. No re-ask: the category was the cue, and the kid saw it.
+//   📋 CATSCAP (games honesty audit #16, 2026-11-08): a wrong entry cost nothing, so a kid who knew the deck's FRONTS but not the groups
+//   could type every front into every group and collect the hits. Each group now takes at most its size + CATS_EXTRA entries (a name
+//   typed twice is still free); past that an entry is refused with a soft line ("tap Next") — nothing is counted, nothing is logged.
 //   The finish, per group: ✓ named, then "still in the group" (dim) — shown only AFTER the kid is done with it (the app never supplies
 //   what the child must produce before they produce it). Confetti (no song) only when every card of the round was named.
 //   Shown only to a kid at level middle / upper (dcLevel from the roster's grade: 3rd and up — readers who type) — never by name.
@@ -2748,7 +2782,10 @@ function buildSureHtml(color){
 //   A round dropped (Change deck, a kid switch) writes nothing.
 let catsState=null;   // {kid,deck,game:"cats",t0,catT0,pausedTotal,pausedAt,cats:[{key,label,cards:[{pid,front}],named:{pid:1},typed:[{text,pid,how}],secs}],others:[{pid,front}],ci,phase:"play"|"done",count,of,turns,isPB,prevBest,gameLogged}
 let _catsRandom=Math.random;   // tests seed it
-const CATS_PER_ROUND=3, CATS_MIN_PER=3, CATS_MIN_CATS=2, CATS_SECS=120, CATS_LABEL_MAX=120;
+const CATS_PER_ROUND=3, CATS_MIN_PER=3, CATS_MIN_CATS=2, CATS_SECS=120, CATS_LABEL_MAX=120, CATS_EXTRA=3;
+function catsCap(cat){ return ((cat&&cat.cards)?cat.cards.length:0)+CATS_EXTRA; }   // 📋 CATSCAP: the most entries one group takes
+function catsFull(cat){ return !!cat&&(cat.typed||[]).length>=catsCap(cat); }
+const CATS_FULL_LINE="That\u2019s plenty for this category \u2014 tap Next when you\u2019re ready.";
 function _catsItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
 function _catsPlain(s){ return (typeof _matchPlain==="function")?_matchPlain(s):String(s==null?"":s).replace(/<[^>]*>/g," ").replace(/&nbsp;/g," ").replace(/\s+/g," ").trim(); }
 function _catsE(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -2842,11 +2879,14 @@ function catsTick(st){
     const el=document.getElementById("cats-clock"); if(el) el.textContent=catsClock(ms);
   },1000);
 }
-// PURE over the state: one entered name → "hit" | "close" | "dup" | "other" (a card of the deck, another group) | "miss" (not in the deck) | "" (blank)
+// PURE over the state: one entered name → "hit" | "close" | "dup" | "other" (a card of the deck, another group) | "miss" (not in the deck)
+// | "full" (📋 CATSCAP: the group has taken its size + CATS_EXTRA entries — refused, nothing counted) | "" (blank)
 function catsEnter(st,text){
   const raw=_catsPlain(text), cat=st.cats[st.ci]; if(!raw||st.phase!=="play"||!cat) return "";
   const m=catsMatch(raw,cat.cards,cat.named);
-  if(m){ if(m.how==="dup") return "dup"; cat.named[m.card.pid]=1; cat.typed.push({text:raw,pid:m.card.pid,how:m.how}); st.count++; return m.how; }
+  if(m&&m.how==="dup") return "dup";
+  if(catsFull(cat)) return "full";   // 📋 CATSCAP
+  if(m){ cat.named[m.card.pid]=1; cat.typed.push({text:raw,pid:m.card.pid,how:m.how}); st.count++; return m.how; }
   const elsewhere=[]; st.cats.forEach((c,i)=>{ if(i!==st.ci) elsewhere.push.apply(elsewhere,c.cards); }); elsewhere.push.apply(elsewhere,st.others||[]);
   const how=catsMatch(raw,elsewhere,{})?"other":"miss";
   if(!cat.typed.some(x=>x.pid==null&&_catsNorm(catsPrep(x.text))===_catsNorm(catsPrep(raw)))) cat.typed.push({text:raw,pid:null,how:how});
@@ -2859,8 +2899,9 @@ function catsAdd(){
   if(el) el.value="";
   if(r==="hit"||r==="close"){ try{ matchDing(); }catch(e){} }
   // In place when the round is on screen (a re-render would drop the keyboard on an iPad); else the normal redraw.
-  const chips=document.getElementById("cats-chips"), cnt=document.getElementById("cats-count");
-  if(chips&&cnt&&r&&r!=="dup"){ chips.insertAdjacentHTML("beforeend",_catsChip(cat.typed[cat.typed.length-1])); cnt.textContent=Object.keys(cat.named).length+" of "+cat.cards.length; }
+  const chips=document.getElementById("cats-chips"), cnt=document.getElementById("cats-count"), note=document.getElementById("cats-note");
+  if(note) note.textContent=(r==="full"||catsFull(cat))?CATS_FULL_LINE:"";   // 📋 CATSCAP: the soft line
+  if(chips&&cnt&&r&&r!=="dup"&&r!=="full"){ chips.insertAdjacentHTML("beforeend",_catsChip(cat.typed[cat.typed.length-1])); cnt.textContent=Object.keys(cat.named).length+" of "+cat.cards.length; }
   else if(!chips||!cnt) _mastRe();
   if(cat&&Object.keys(cat.named).length>=cat.cards.length){ catsNextCat(st); return; }   // the group is complete
   catsFocus();
@@ -2928,6 +2969,7 @@ function buildCatsHtml(color){
     h+='<div style="display:flex;align-items:center;justify-content:space-between;margin:10px 0 8px"><span id="cats-count" style="font-size:17px;font-weight:800;color:'+color+'">'+n+' of '+cat.cards.length+'</span><span id="cats-clock" style="font-size:13px;font-weight:700;color:var(--muted)">'+catsClock(catsElapsed(st))+'</span></div>';
     h+='<div style="display:flex;gap:8px;align-items:center"><input id="cats-in" class="cats-in" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Type one, press Enter" aria-label="A card in this category" onkeydown="if(event.key===\'Enter\'){event.preventDefault();catsAdd();}">'+
       '<button class="cats-btn" style="background:'+color+'" onclick="catsAdd()">Add</button></div>';
+    h+='<div id="cats-note" style="min-height:20px;font-size:13px;font-weight:700;color:#78716c;margin-top:6px">'+(catsFull(cat)?_catsE(CATS_FULL_LINE):'')+'</div>';   // 📋 CATSCAP
     h+='<div id="cats-chips" style="margin:12px 0;min-height:40px">'+cat.typed.map(_catsChip).join("")+'</div>';
     h+='<div style="display:flex;justify-content:center"><button class="cats-ghost" onclick="catsNextCat()">'+(st.ci+1<st.cats.length?'\u{27A1} Next category':'\u{2714} I\u{2019}m done')+'</button></div>';
     return h+'</div>';
@@ -3424,12 +3466,17 @@ function buildKaboomHtml(color){
 //   no cue). Never spelling / phonogram decks (Which one?'s rule), never a procedure card, never a number. A deck needs HM_MIN+ words;
 //   a round is HM_ROUND; 🎲 Mix the decks. Readers at level middle / upper (dcLevel from the roster's grade — never a name).
 // Writes (only these): <kid>_settings/match_best key "<deck> · hang" (words found, only when beaten) and the round's gameLog entry
-//   (GAMELOG, game:"hang": ok = found, n = wrong letters + 1, fail = not found, back = the come-back). NEVER touches the ladder — no
+//   (GAMELOG, game:"hang": ok = a CLEAN solve, n = wrong letters + 1, fail = not found, back = the come-back). NEVER touches the ladder — no
 //   scores, no next_due, no study log. db && !_dryRun() only. Per-kid park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT).
 //   A round dropped (Change deck, a kid switch) writes nothing. 🎮 GAMEGRID: its own column — gameDeckOn(kid,"hang",deck).
-let hangState=null;   // {kid,deck,mix,game:"hang",t0,turns:[{pid,word,cue,letters:[{ch,key}],guessed:{a:1},misses,wrong:{},done,first,fail,back,hint}],i,phase,first,of,isPB,prevBest,lock,seq,msg,returned:{},gameLogged}
+// ⚖️ HMCLEAN (games honesty audit §7 #10, her decision via the hub 2026-11-08: "Hangman counts first-try only for a clean solve"): a word
+//   found eventually was logged ok:true however many letters missed, even after 🔊 Hear it SAID the word — "found eventually" read as
+//   "knew it". Now `first` (= the log's ok) is true only when the word is found with no Hear it and at most HM_CLEAN wrong letters; a
+//   hinted or 2+-miss solve is still found (the ding, "That's it!", it counts in "N of M words found" and the best) but logs ok:false.
+//   The balloons and a failed word's come-back are unchanged.
+let hangState=null;   // {kid,deck,mix,game:"hang",t0,turns:[{pid,word,cue,letters:[{ch,key}],guessed:{a:1},misses,wrong:{},done,found,first,fail,back,hint}],i,phase,first,of,isPB,prevBest,lock,seq,msg,returned:{},gameLogged}
 let _hmRandom=Math.random;   // tests seed it
-const HM_MIN=4, HM_ROUND=6, HM_MISSES=6, HM_HINT=3, HM_LEN_MIN=3, HM_LEN_MAX=14, HM_BEAT=1100, HM_BEAT_FAIL=1800;
+const HM_MIN=4, HM_ROUND=6, HM_MISSES=6, HM_HINT=3, HM_CLEAN=1, HM_LEN_MIN=3, HM_LEN_MAX=14, HM_BEAT=1100, HM_BEAT_FAIL=1800;
 const HM_KEYS="abcdefghijklmnopqrstuvwxyz".split("");
 function _hmItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
 function _hmShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_hmRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
@@ -3487,7 +3534,7 @@ function hangPools(items,kid){
 }
 function hangDecks(items,kid){ return Object.keys(hangPools(items,kid)); }   // the game's OWN deck list (the games-per-deck grid's preload asks this, raw)
 function hangAvail(kid){ return hangLevelOk(kid)&&hangDecks(_hmItems(kid),kid).length>0; }
-function hmTurn(c,back){ return {pid:c.pid,word:c.word,cue:c.cue,letters:hmLetters(c.word),guessed:{},misses:0,wrong:{},done:false,first:false,fail:false,back:!!back,hint:false}; }
+function hmTurn(c,back){ return {pid:c.pid,word:c.word,cue:c.cue,letters:hmLetters(c.word),guessed:{},misses:0,wrong:{},done:false,found:false,first:false,fail:false,back:!!back,hint:false}; }
 function hangStart(deck){
   try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the deck tap unlocks the ding / bonk (iPad)
   const pools=hangPools(_hmItems(),masteryKid), mix=deck===WHICH_MIX, names=Object.keys(pools);
@@ -3501,11 +3548,13 @@ function hangChangeDeck(){ hangState=null; _mastRe(); }   // drop the round as i
 function _hmCur(st){ return (st&&st.phase==="play"&&!st.lock)?st.turns[st.i]:null; }
 // PURE: is every letter of the word revealed?
 function hmSolved(t){ return t.letters.every(l=>!l.key||t.guessed[l.key]); }
+// ⚖️ HMCLEAN — PURE: a solve counts as a first try only when it was clean: no 🔊 Hear it, at most HM_CLEAN wrong letters
+function hmClean(t){ return !!t&&!t.hint&&(t.misses||0)<=HM_CLEAN; }
 // PURE: one letter → "hit" | "miss" | "solved" | "fail" | null (already guessed / not a letter)
 function hmJudge(t,key){
   key=hmFold(key); if(!key||t.done||t.guessed[key]) return null;
   t.guessed[key]=1;
-  if(t.letters.some(l=>l.key===key)){ if(hmSolved(t)){ t.done=true; t.first=true; return "solved"; } return "hit"; }
+  if(t.letters.some(l=>l.key===key)){ if(hmSolved(t)){ t.done=true; t.found=true; t.first=hmClean(t); return "solved"; } return "hit"; }
   t.misses++; t.wrong[key]=1;
   if(t.misses>=HM_MISSES){ t.done=true; t.first=false; t.fail=true; return "fail"; }
   return "miss";
@@ -3535,7 +3584,7 @@ function hangBestKey(deck){ return deck+" \u{00B7} hang"; }
 function hangFinish(st){
   st.phase="done"; st.lock=false;
   const kid=st.kid||masteryKid;   // GAMEKID
-  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every word's result, game:"hang"
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every word's result, game:"hang" (ok = a clean solve — ⚖️ HMCLEAN)
   const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
   if(!s.match_best) s.match_best={};
   const key=hangBestKey(st.deck), prev=s.match_best[key];
@@ -3606,22 +3655,25 @@ function buildHangHtml(color){
 // 13 colonies / all 14 Greek roots in this deck against a timer, typed — demand FR + FLU; deck with ≥10 items"). The Sporcle shape: a title
 // ("Name all 7 World Geography cards" / "Name all 3 Roots that mean write"), a row of N blank slots, a clock counting DOWN, one typing box.
 // A name typed and entered fills its slot (the card's own spelling); the count climbs "4 of 7"; nothing is listed, hinted or auto-completed.
-// When the clock runs out, every slot is named or the kid taps "I'm done", the round is over: the slots that stayed blank fill in grey with
-// what they were (Sporcle's reveal — the recap, as Brain Dump's "Still in the deck"), and the finish shows named N of M against the kid's
-// own best. Brain Dump is the long form (10+ cards, 5 minutes, misses re-asked); this is the short, quick one: SMALL lists —
+// When the clock runs out, every slot is named or the kid taps "I'm done", the round is over: the slots that stayed blank stay blank, grey
+// (NAOFF 2026-11-08: no reveal — the finish list was the next round's answer key, since "Play again" asks the same list; the app never
+// supplies what a child must produce), and the finish shows named N of M against the kid's own best. Brain Dump is the long form (10+ cards, 5 minutes, misses re-asked); this is the short, quick one: SMALL lists —
 //   · a whole deck of NA_MIN..NA_MAX nameable cards (a word or short phrase front: dumpNameable — never a sentence, a math fact, a rule's
 //     example line; spelling / phonograms stay out, Which one?'s rule). No back needed: the list's title is the cue.
 //   · a CATEGORY inside a deck: NA_CAT_MIN..NA_MAX cards that share one back ("Roots · write": graph, scrib; "Math? no — numbers are not
 //     names). The shared back is the title; a back longer than NA_CAT_LABEL letters is no title.
 //   Matching is Brain Dump's (dumpMatch: the Study Session's normalizer, a letter of slack, the article / a trailing "(…)" left off).
 //   Clock: NA_PER seconds a card, never under NA_SECS_MIN. Time while the kid is switched away (GAMEKID park) is not play time.
+//   🏁 NAOFF (games honesty audit #15, 2026-11-08): nor is time while the round is NOT ON SCREEN — another view or game, another tab, the
+//   tablet asleep — the clock pauses (st.offAt) and picks up where it was on return, so a round left open no longer runs to 0:00 and
+//   logs every card as a miss. A round that ends with NOTHING named is not logged at all (it says so, kindly); it isn't a fair test.
 //   Level middle / upper only (dcLevel from the roster's grade — never a name). No lives, no points, no score against the kid.
 // Writes (only these): <kid>_settings/match_best key "<list> · nameall" (most named, only when beaten; Firebase's illegal key characters
-//   swapped for _) and the round's gameLog entry (GAMELOG, game:"nameall": a card named = ok, missed = wrong). NEVER the ladder — no
+//   swapped for _) and the round's gameLog entry (GAMELOG, game:"nameall": a card named = ok, missed = wrong; none when 0 named). NEVER the ladder — no
 //   scores, no next_due, no study log. db && !_dryRun() only. Per-kid park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT).
 //   A round dropped (Change list, a kid switch) writes nothing. 🎮 GAMEGRID: its own column — gameDeckOn(kid,"nameall",deck) (a
 //   category follows its deck's cell); the entry's decks(k) = the real decks the lists come from.
-let nameallState=null;   // {kid,deck,list,title,game:"nameall",t0,secs,pausedTotal,pausedAt,cards:[{pid,front}],named:{pid:{how,text}},typed:[{text,pid,how}],turns,phase:"play"|"done",count,of,isPB,prevBest,gameLogged}
+let nameallState=null;   // {kid,deck,list,title,game:"nameall",t0,secs,pausedTotal,pausedAt,offAt,cards:[{pid,front}],named:{pid:{how,text}},typed:[{text,pid,how}],turns,phase:"play"|"done",count,of,isPB,prevBest,gameLogged}
 const NA_MIN=5, NA_MAX=15, NA_CAT_MIN=3, NA_CAT_LABEL=40, NA_PER=12, NA_SECS_MIN=60;
 function _naItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
 function _naPlain(s){ return (typeof _matchPlain==="function")?_matchPlain(s):String(s==null?"":s).replace(/<[^>]*>/g," ").replace(/&nbsp;/g," ").replace(/\s+/g," ").trim(); }
@@ -3669,24 +3721,33 @@ function nameallLists(items,kid){
 function nameallDecks(items,kid){ const o={}; nameallLists(items,kid).forEach(l=>{ o[l.deck]=1; }); return Object.keys(o).sort(); }   // the real decks (the games-per-deck grid's preload asks this, raw)
 function nameallAvail(kid){ return nameallLevelOk(kid)&&nameallLists(_naItems(kid),kid).length>0; }
 function nameallSecs(n){ return Math.max(NA_SECS_MIN,n*NA_PER); }
-function nameallElapsed(st,now){ now=now!=null?now:Date.now(); return Math.max(0,now-st.t0-(st.pausedTotal||0)-(st.pausedAt?now-st.pausedAt:0)); }
+function nameallElapsed(st,now){ now=now!=null?now:Date.now(); return Math.max(0,now-st.t0-(st.pausedTotal||0)-(st.pausedAt?now-st.pausedAt:0)-(st.offAt?now-st.offAt:0)); }
+// 🏁 NAOFF: is the round on screen? Its clock is in the page and the page isn't hidden (another tab, the tablet asleep).
+function nameallShowing(){ try{ if(typeof document==="undefined") return true; if(document.hidden) return false; return !!document.getElementById("na-clock"); }catch(e){ return true; } }
+// 🏁 NAOFF: the round went off screen → the clock stops here (the tick folds it back in when the round shows again)
+function nameallOffCheck(){ const st=nameallState; if(st&&st.phase==="play"&&!st.pausedAt&&!st.offAt&&!nameallShowing()) st.offAt=Date.now(); }
+function _naFoldOff(st,now){ if(st&&st.offAt){ st.pausedTotal=(st.pausedTotal||0)+Math.max(0,(now!=null?now:Date.now())-st.offAt); st.offAt=null; } }
 function nameallLeft(st,now){ return Math.max(0,st.secs*1000-nameallElapsed(st,now)); }
 function nameallClock(ms){ const s=Math.ceil(ms/1000); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
 function nameallStart(key){
   try{ if(typeof bbAudioUnlock==="function") bbAudioUnlock(); }catch(e){}   // the tap unlocks the ding (iPad)
   const l=nameallLists(_naItems(),masteryKid).find(x=>x.key===key);
   if(!l){ nameallState=null; _mastRe(); return; }   // 🎮 GAMEGRID: a deck Mom turned off is not listed
-  nameallState={kid:masteryKid,deck:l.key,list:l.deck,title:l.title,game:"nameall",t0:Date.now(),secs:nameallSecs(l.cards.length),pausedTotal:0,pausedAt:null,cards:l.cards.slice(),named:{},typed:[],turns:[],phase:"play",count:0,of:l.cards.length,isPB:false,prevBest:null,gameLogged:false};
+  nameallState={kid:masteryKid,deck:l.key,list:l.deck,title:l.title,game:"nameall",t0:Date.now(),secs:nameallSecs(l.cards.length),pausedTotal:0,pausedAt:null,offAt:null,cards:l.cards.slice(),named:{},typed:[],turns:[],phase:"play",count:0,of:l.cards.length,isPB:false,prevBest:null,gameLogged:false};
+  try{ if(typeof window!=="undefined"&&!window._naVis&&typeof document!=="undefined"&&typeof document.addEventListener==="function"){ window._naVis=1; document.addEventListener("visibilitychange",nameallOffCheck); } }catch(e){}   // 🏁 NAOFF: the tablet sleeping / the tab hidden stops the clock (the tick may not run then)
   _mastRe(); nameallTick(nameallState); nameallFocus();
 }
 function nameallChangeList(){ nameallState=null; _mastRe(); }   // drop the round as it stands: nothing written
 function nameallFocus(){ try{ setTimeout(()=>{ const e=document.getElementById("na-in"); if(e) e.focus(); },0); }catch(e){} }
 // The countdown: updates #na-clock each second; ends the round at zero. Clears itself once its round is parked or over.
+// 🏁 NAOFF: while the round is off screen it keeps ticking but holds the clock (offAt); back on screen, the time away is folded out.
 function nameallTick(st){
   if(typeof setInterval!=="function") return;
   if(window._naTick) clearInterval(window._naTick);
   window._naTick=setInterval(()=>{
     if(nameallState!==st||st.phase!=="play"||st.pausedAt){ clearInterval(window._naTick); window._naTick=null; return; }
+    if(!nameallShowing()){ if(!st.offAt) st.offAt=Date.now(); return; }
+    _naFoldOff(st);
     const left=nameallLeft(st);
     if(left<=0){ clearInterval(window._naTick); window._naTick=null; nameallStop(st); return; }
     const el=document.getElementById("na-clock"); if(el){ el.textContent=nameallClock(left); if(left<=10000) el.style.color="#b91c1c"; }
@@ -3721,6 +3782,7 @@ function nameallAdd(){
 function nameallStop(st){
   st=st||nameallState; if(!st||st.phase!=="play") return;
   if(typeof window!=="undefined"&&window._naTick){ clearInterval(window._naTick); window._naTick=null; }
+  _naFoldOff(st);   // 🏁 NAOFF
   st.turns=st.cards.map(c=>({pid:c.pid,done:true,first:!!st.named[c.pid],wrong:st.named[c.pid]?{}:{1:1},back:false}));
   nameallFinish(st); _mastRe();
 }
@@ -3728,7 +3790,8 @@ function nameallBestKey(list){ return (list+" \u{00B7} nameall").replace(/[.#$\/
 function nameallFinish(st){
   st.phase="done";
   const kid=st.kid||masteryKid;   // GAMEKID
-  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: every card's result, game:"nameall"
+  if(st.count>0){ try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){} }   // 🎮 GAMELOG: every card's result, game:"nameall"
+  else st.unlogged=true;   // 🏁 NAOFF: nothing named → nothing logged (a round left or given up isn't a test of the cards)
   const s=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={});
   if(!s.match_best) s.match_best={};
   const key=nameallBestKey(st.deck), prev=s.match_best[key];
@@ -3742,7 +3805,7 @@ function nameallFinish(st){
   try{ if(st.of>0&&st.count===st.of&&typeof _showCelebration==="function"&&document.getElementById("celeb-overlay")) _showCelebration(kid,"\u{1F4CB} You named them all!",{noSong:true}); }catch(e){}
 }
 // 🎲 GAMEKIT: park / restore / resume. Time away is not play time (no render here; the caller renders).
-function nameallPark(){ const st=nameallState; if(st&&st.phase==="play"&&!st.pausedAt) st.pausedAt=Date.now(); return st; }
+function nameallPark(){ const st=nameallState; if(st&&st.phase==="play"&&!st.pausedAt){ st.pausedAt=st.offAt||Date.now(); st.offAt=null; } return st; }   // 🏁 NAOFF: already off screen → the park began then
 function nameallRestore(v){ nameallState=v||null; const st=nameallState; if(st&&st.pausedAt){ st.pausedTotal=(st.pausedTotal||0)+(Date.now()-st.pausedAt); st.pausedAt=null; } }
 function nameallResume(){ const st=nameallState; if(st&&st.phase==="play"&&(typeof mastView==="undefined"||mastView==="nameall")) nameallTick(st); }
 const NA_CSS='<style>.na-slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin:12px 0}.na-slot{min-height:42px;border-radius:12px;border:2px dashed #d6d3d1;background:#fafaf9;display:flex;align-items:center;justify-content:center;padding:6px 8px;font-size:14px;font-weight:800;color:#292524;text-align:center;overflow-wrap:anywhere;line-height:1.15}'+
@@ -3778,13 +3841,16 @@ function buildNameallHtml(color){
     h+='<div style="display:flex;justify-content:center"><button class="na-ghost" onclick="nameallStop()">\u{2714} I\u{2019}m done</button></div>';
     return h+'</div>';
   }
-  // Finish: the slots as they ended (the missed ones in grey — the reveal), named N of M, Play again.
+  // Finish: the slots as they ended (the named ones in green; the missed ones stay blank — 🏁 NAOFF, no answer key), named N of M, Play again.
   h+='<div style="margin-top:6px;text-align:center;padding:16px;border-radius:18px;background:'+(st.isPB?'#f0fdf4':'#f8f7f4')+';border:2px solid '+(st.isPB?'#16a34a':'#e2ddd6')+'">';
-  h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} You named '+st.count+' of '+st.of+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
+  if(st.count===0) h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F331} Not this time \u{2014} that\u{2019}s okay!</div>'+
+    '<div id="na-unsaved" style="font-size:14px;font-weight:700;color:#57534e;margin-top:6px">Nothing was named, so this round isn\u{2019}t saved. Look over your '+_naE(st.list)+' cards, then try again.</div>';
+  else h+='<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800">\u{1F389} You named '+st.count+' of '+st.of+(st.isPB?' \u{2014} \u{1F3C6} new best!':(st.prevBest!=null?' \u{00B7} best '+st.prevBest:''))+'</div>';
   h+='<div style="font-size:12px;font-weight:700;color:var(--muted);margin-top:4px">'+_naE(st.title)+' \u{00B7} '+nameallClock(Math.min(st.secs*1000,nameallElapsed(st)))+' used</div>';
   h+='<div class="na-slots" style="text-align:left">';
-  st.cards.forEach(c=>{ const n=st.named[c.pid]; h+='<div class="na-slot '+(n?'na-on':'na-miss')+'">'+(n?'\u2713 ':'')+_naE(c.front)+'</div>'; });
+  st.cards.forEach(c=>{ const n=st.named[c.pid]; h+='<div class="na-slot '+(n?'na-on':'na-miss')+'">'+(n?'\u2713 '+_naE(c.front):'?')+'</div>'; });
   h+='</div>';
+  if(st.count>0&&st.count<st.of) h+='<div style="font-size:13px;font-weight:700;color:#78716c;margin-top:4px">'+(st.of-st.count)+' more to find \u{2014} they\u{2019}re in your '+_naE(st.list)+' cards.</div>';
   const outside=st.typed.filter(x=>x.pid==null);
   if(outside.length) h+='<div style="text-align:left;font-size:12px;font-weight:700;color:#a8a29e;margin-top:4px">Not on this list: '+outside.map(x=>_naE(x.text)).join(", ")+'</div>';
   h+='<div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap"><button class="na-btn" style="background:'+color+'" onclick="nameallStart(\''+_naQ(st.deck)+'\')">\u{1F501} Play again</button></div>';
@@ -4022,17 +4088,22 @@ function jpJudgeSettle(st,t,right,given){
 //     faintly with the pieces' outlines; levels 2–3 an empty frame. The kid drags a piece (finger or mouse — pointer events, as Sort
 //     it; a tap picks a piece and a tap in the frame drops it there): dropped with its corner within JIG_SNAP of a piece's size of its
 //     own place it snaps in (the clack); anywhere else it goes back to the tray. No misses for pieces, and never placed for him.
-//   · THE FINISH — the whole picture, the card's word shown and said; then "What is it?" with JIG_CHOICES words (the card's own +
-//     other cards' words, its own deck first), so the card is still practiced, not only built. Right → the ding and the word again;
-//     wrong → that word greys out (the soft bonk) and he taps again — two wrong is the card's miss. One Play again (a new picture).
-//   · LEVEL — two CLEAN rounds in a row (named on the first tap) at the kid's level → the next level, read back from the kid's own
+//   · THE FINISH — ASK FIRST (games audit 2026-11-08 §4 #24 / §7 rank 9: the word used to be shown and said 2.6 s BEFORE "What is it?",
+//     so the answer came before the question). Now the last piece snaps → the whole picture and "What is it?", the word NOT shown or
+//     said, judged by ⚖️ GAMEJUDGE's shared helper with the kid's own setting (gameJudgeMode): say it, then pick it — JIG_CHOICES (3)
+//     words for a Pre-K kid, the kid's judgeChoices for the rest, the card's own + other cards' words (its own deck first), each with
+//     its 🔊 chip — or type it, or Mom judges. THEN the confirm: the word shown and said; a wrong answer shows the right one (marked on
+//     the choices, and "It's <word>"). No honor tap, ever: no other word to judge against → nothing asked and nothing logged. One
+//     answer per round (the helper's): right = the card right, wrong = the card's miss. The round is stamped judge (gameJudgeStamp).
+//     One Play again (a new picture).
+//   · LEVEL — two CLEAN rounds in a row (the right answer when asked) at the kid's level → the next level, read back from the kid's own
 //     game log (each round carries its level + clean), as the ABC Train does. Mom's pin (GAME_RULES.jigsaw "pieces": auto / 4 / 6 / 9).
-//   · WRITES — only the round's gameLog entry (GAMELOG, game:"jigsaw", one item: the card, ok = named on the first tap, + level /
-//     clean). No points, no ladder, no next_due, no study log, no best score. db && !_dryRun() only (gameLogRound's own guard). Per-kid
+//   · WRITES — only the round's gameLog entry (GAMELOG, game:"jigsaw", one item: the card, ok = the judged answer right, + level /
+//     clean + judge). No points, no ladder, no next_due, no study log, no best score. db && !_dryRun() only (gameLogRound's own guard). Per-kid
 //     park / restore / resume through its GAMES_LIST entry (🎲 GAMEKIT); a round dropped part-way writes nothing. No names in this block.
-let jigState=null;   // {kid,deck,game:"jigsaw",t0,level,pid,word,img,ar,n,tray:[piece i],placed:{i:1},tilt:{i:deg},sel,bounce,snap,phase:"play"|"show"|"ask"|"done",choices:[word],turns:[{pid,L,wrong,done,first,fail}],clean,levelBefore,levelAfter,seq,lastPid,gameLogged}
+let jigState=null;   // {kid,deck,game:"jigsaw",t0,level,pid,word,img,ar,n,tray:[piece i],placed:{i:1},tilt:{i:deg},sel,bounce,snap,phase:"play"|"ask"|"done",names:[word],judge,msg,turns:[{pid,L,wrong,done,first,fail,nolog,gj}],clean,levelBefore,levelAfter,seq,lastPid,gameLogged}
 let _jigRandom=Math.random;   // tests seed it
-const JIG_PIECES={1:4,2:6,3:9}, JIG_MAX_LEVEL=3, JIG_SNAP=0.45, JIG_CHOICES=3, JIG_MISS=2, JIG_SHOW_MS=2600;
+const JIG_PIECES={1:4,2:6,3:9}, JIG_MAX_LEVEL=3, JIG_SNAP=0.45, JIG_CHOICES=3;   // JIG_CHOICES: a Pre-K kid's "What is it?" choices
 const _jigLast={};   // kid → the card of this device's last puzzle (so Play again brings a new picture)
 function _jigShuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(_jigRandom()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
 function _jigItems(kid){ return (typeof _gamesItems==="function")?_gamesItems(kid||masteryKid):[]; }
@@ -4066,15 +4137,17 @@ function jigTiles(n,ar){
 // PURE: a piece dropped with its top-left corner at (x,y) — fractions of the frame — snaps when that corner is within JIG_SNAP of a
 // piece's width / height of its own place
 function jigSnap(tile,x,y){ return !!tile&&Math.abs(x-tile.x)<=JIG_SNAP*tile.w+1e-9&&Math.abs(y-tile.y)<=JIG_SNAP*tile.h+1e-9; }
-// PURE-ish: the "What is it?" words — the card's own + up to JIG_CHOICES-1 other words (its own deck first, then the kid's other cards
-// in play), each word once, shuffled
-function jigChoices(it,items){
-  const own=_jigPlain(it&&it.prompt), key=w=>w.toLowerCase(), seen={[key(own)]:1}, deck=it&&it.subject, pick=[];
-  const take=list=>{ _jigShuffle(list.slice()).forEach(i=>{ if(pick.length>=JIG_CHOICES-1) return; const w=_jigPlain(i.prompt); if(!w||seen[key(w)]) return; seen[key(w)]=1; pick.push(w); }); };
+// PURE-ish: the OTHER words "What is it?" can offer — the kid's cards in play, its own deck first (shuffled), then the other decks
+// (shuffled), each word once, never the card's own (case and markup ignored)
+function jigNames(it,items){
+  const own=_jigPlain(it&&it.prompt), key=w=>w.toLowerCase(), seen={[key(own)]:1}, deck=it&&it.subject, out=[];
+  const take=list=>{ _jigShuffle(list.slice()).forEach(i=>{ const w=_jigPlain(i.prompt); if(!w||seen[key(w)]) return; seen[key(w)]=1; out.push(w); }); };
   const live=(items||[]).filter(_jigInPlay);
   take(live.filter(i=>i.subject===deck)); take(live.filter(i=>i.subject!==deck));
-  return _jigShuffle([own].concat(pick));
+  return out;
 }
+// How many "What is it?" choices: JIG_CHOICES for a Pre-K kid, else the kid's GAMEJUDGE judgeChoices
+function jigChoiceN(kid){ return (typeof isPreK==="function"&&isPreK(kid))?JIG_CHOICES:((typeof gameJudgeChoices==="function")?gameJudgeChoices(kid):JIG_CHOICES); }
 // The kid's puzzle rounds from the game log (this device's copy and the pushed one count once), oldest first
 function jigLogRounds(kid){
   const G=((typeof masteryData!=="undefined"&&masteryData&&masteryData.gameLog)||{})[kid]||{}, seen={}, out=[];
@@ -4099,7 +4172,7 @@ function jigStart(){
   if(n>1&&tray.every((x,i)=>x===i)) tray.push(tray.shift());   // never already in order
   const word=_jigPlain(it.prompt);
   jigState={kid:kid,deck:it.subject||"Other",game:"jigsaw",t0:Date.now(),level:level,pid:it.id!=null?String(it.id):null,word:word,img:jigPic(it,kid),ar:1,n:n,tray:tray,placed:{},tilt:tilt,sel:null,bounce:null,snap:null,
-    phase:"play",choices:jigChoices(it,items),turns:[{pid:it.id!=null?String(it.id):null,L:word,wrong:{},done:false,first:false,fail:false}],clean:null,levelBefore:level,levelAfter:null,seq:0};
+    phase:"play",names:jigNames(it,items),judge:null,msg:"",turns:[{pid:it.id!=null?String(it.id):null,L:word,wrong:{},done:false,first:false,fail:false}],clean:null,levelBefore:level,levelAfter:null,seq:0};
   _jigLoadAr(jigState);
   _mastRe();
 }
@@ -4123,7 +4196,7 @@ function jigDrop(i,x,y){
   const st=jigState, r=jigDropJudge(st,i,x,y); if(!r) return;
   if(r==="back"){ _mastRe(); return; }
   try{ matchDing(); }catch(e){}
-  if(Object.keys(st.placed).length>=st.n) jigShow(st);
+  if(Object.keys(st.placed).length>=st.n) jigAsk(st);   // the whole picture → "What is it?" FIRST (the word not shown, not said)
   _mastRe();
 }
 // A tap: pick a piece (again = put it down); a tap in the frame drops the picked piece with its corner on the spot tapped's square
@@ -4154,45 +4227,37 @@ function jigDown(ev,i){
   };
   el.addEventListener("pointermove",move); el.addEventListener("pointerup",up); el.addEventListener("pointercancel",up);
 }
-// The whole picture: its word shown and said, then (JIG_SHOW_MS later, or Next) "What is it?"
-function jigShow(st){
-  st.phase="show"; st.sel=null; st.bounce=null;
-  _jigSay(st.word);
-  const seq=++st.seq;
-  setTimeout(()=>{ if(jigState===st&&st.phase==="show"&&st.seq===seq){ jigAsk(st); _mastRe(); } },JIG_SHOW_MS);
-}
+// The whole picture, then "What is it?" — through ⚖️ GAMEJUDGE with the kid's own setting; the word is shown and said only AFTER the answer
 function jigAsk(st){
-  st=st||jigState; if(!st||st.phase!=="show") return;
-  st.seq++;
-  if((st.choices||[]).length<2){ jigFinish(st); return; }   // no other word to choose from: nothing to ask
-  st.phase="ask"; _jigSay("What is it?");
+  st=st||jigState; if(!st||st.phase!=="play") return;
+  st.sel=null; st.bounce=null; st.seq++;
+  const t=st.turns[0], kid=st.kid, n=jigChoiceN(kid), mode=(typeof gameJudgeMode==="function")?gameJudgeMode(kid):null;
+  st.phase="ask";
+  const on=!!t&&typeof gameJudgeAct==="function"&&gameJudgeAct(st,t,{kid:kid,deck:st.deck,right:st.word,names:(st.names||[]).slice(0,Math.max(1,n-1)),mode:mode,n:n,shuffle:_jigShuffle,speakerChips:true,
+    live:()=>jigState===st&&st.phase==="ask"&&!t.done, line:x=>{ st.msg=x; },
+    onRight:x=>_jigJudged(st,x,true), onWrong:(x,g)=>_jigJudged(st,x,false,g)});
+  if(!on){ if(t) t.nolog=true; _jigSay(st.word); jigFinish(st); return; }   // nothing to judge against: no question, no honor tap — nothing logged
+  st.judge=t.gj.mode;   // the round says how it was judged (gameLogEntry → gameJudgeStamp)
+  _jigSay("What is it?");
 }
-function jigNext(){ const st=jigState; if(!st||st.phase!=="show") return; jigAsk(st); _mastRe(); }
-function jigHear(){ const st=jigState; if(!st) return; if(st.phase==="ask") _jigSay("What is it? "+st.choices.join(", or ")+"?"); else if(st.phase!=="play") _jigSay(st.word); }
-// PURE-ish: a tap on "What is it?" word ci → "right" | "wrong" | null
-function jigJudge(st,ci){
-  if(!st||st.phase!=="ask") return null;
-  const w=st.choices[ci], t=st.turns[0]; if(w==null||!t||t.done||t.wrong[w]) return null;
-  if(w!==st.word){ t.wrong[w]=1; if(Object.keys(t.wrong).length>=JIG_MISS) t.fail=true; st.bounce=ci; return "wrong"; }
-  t.done=true; t.first=!Object.keys(t.wrong).length; st.bounce=null;
-  return "right";
+// The helper's verdict → the confirm: the word shown and said (a wrong answer: "It's <word>", the right choice marked)
+function _jigJudged(st,t,right,given){
+  t.done=true; t.first=!!right;
+  if(right){ try{ matchDing(); }catch(e){} }
+  else { t.fail=true; t.wrong[(given!=null&&String(given)!=="")?String(given):"1"]=1; try{ matchBonk(); }catch(e){} }
+  _jigSay(right?st.word:"It’s "+st.word+".");
+  jigFinish(st);
 }
-function jigTap(ci){
-  const st=jigState, r=jigJudge(st,ci); if(!r) return;
-  if(r==="wrong"){ try{ matchBonk(); }catch(e){} _mastRe(); return; }
-  try{ matchDing(); }catch(e){}
-  _jigSay(st.word);
-  jigFinish(st); _mastRe();
-}
+function jigHear(){ const st=jigState; if(!st) return; if(st.phase==="ask") _jigSay("What is it?"); else if(st.phase==="done") _jigSay(st.word); }   // never the answer before it is given
 function jigFinish(st){
   st.phase="done"; st.seq++;
   st.clean=st.turns.every(t=>t.done&&t.first);
-  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: the card, named on the first tap or not, + the round's level / clean, game:"jigsaw"
+  try{ if(typeof gameLogRound==="function") gameLogRound(st); }catch(e){}   // 🎮 GAMELOG: the card, its judged answer right or not, + the round's level / clean / judge, game:"jigsaw"
   st.levelAfter=jigLevel(st.kid);
 }
-// GAMEKID → 🎲 GAMEKIT: parking stops the show timer; resume puts a picked-up piece down and moves a cut-off show on to its question
+// GAMEKID → 🎲 GAMEKIT: resume puts a picked-up piece down; a question asked stays asked (its judging lives on the turn)
 function jigPark(){ const st=jigState; if(st) st.seq++; _jigDragging=false; return st; }
-function jigResume(){ const st=jigState; if(!st) return; st.sel=null; st.bounce=null; st.snap=null; if(st.phase==="show") jigAsk(st); }
+function jigResume(){ const st=jigState; if(!st) return; st.sel=null; st.bounce=null; st.snap=null; }
 const JIG_CSS='<style>.jig-board{--jig-s:min(84vw,46vh,400px);display:flex;flex-direction:column;align-items:center}'+
   '#jig-frame{position:relative;width:var(--jig-s);height:var(--jig-s);border-radius:14px;border:3px dashed #a8a29e;background:#fafaf9;box-sizing:content-box;touch-action:manipulation}'+
   '.jig-ghost{position:absolute;inset:0;background-image:var(--jig-img);background-size:cover;background-position:center;opacity:.18;border-radius:11px}'+
@@ -4204,9 +4269,7 @@ const JIG_CSS='<style>.jig-board{--jig-s:min(84vw,46vh,400px);display:flex;flex-
   '.jig-tp.jig-sel{box-shadow:0 0 0 4px #2563eb}.jig-tp.jig-drag{transition:none;z-index:30;position:relative;box-shadow:0 14px 28px rgba(0,0,0,.3);pointer-events:none}'+
   '.jig-back{animation:jigBack .45s ease-out}@keyframes jigBack{0%{transform:translateY(-60px) scale(1.05)}70%{transform:translateY(5px)}100%{transform:none}}'+
   '.jig-whole{position:absolute;inset:0;background-image:var(--jig-img);background-size:cover;background-position:center;border-radius:11px;animation:jigSnap .5s ease-out}'+
-  '.jig-word{font-family:\'Fraunces\',serif;font-size:clamp(30px,8vw,48px);font-weight:800;color:#292524;margin:14px 0 4px;text-align:center}'+
-  '.jig-ch{padding:14px 26px;border-radius:18px;border:3px solid #e2ddd6;background:#fff;font-family:\'Fraunces\',serif;font-size:clamp(20px,5.5vw,28px);font-weight:800;color:#292524;cursor:pointer;-webkit-tap-highlight-color:transparent}'+
-  '.jig-ch.jig-no{opacity:.35;cursor:default;animation:jigNo .45s}@keyframes jigNo{0%,100%{transform:none}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}</style>';
+  '.jig-word{font-family:\'Fraunces\',serif;font-size:clamp(30px,8vw,48px);font-weight:800;color:#292524;margin:14px 0 4px;text-align:center}</style>';
 // One CSS url() for the picture (set once on the board as --jig-img; every piece uses it)
 function _jigUrl(u){ return 'url(&quot;'+_jigE(String(u||"").replace(/["\\\n\r]/g,ch=>encodeURIComponent(ch)))+'&quot;)'; }
 function buildJigHtml(color){
@@ -4238,17 +4301,17 @@ function buildJigHtml(color){
       h+='<div class="jig-pc jig-tp'+(st.sel===i?' jig-sel':'')+(st.bounce===i?' jig-back':'')+'" role="button" aria-label="Puzzle piece" onpointerdown="jigDown(event,'+i+')" style="'+pc(t,'width:calc(var(--jig-s) / '+g.cols+');height:calc(var(--jig-s) / '+g.rows+');'+(st.sel===i||st.bounce===i?'':'transform:rotate('+(st.tilt[i]||0)+'deg)'))+'"></div>'; });
     return h+'</div></div></div>';
   }
-  if(st.phase==="show"){
-    h+='<div class="jig-word">'+_jigE(st.word)+'</div><div style="display:flex;gap:10px;align-items:center;justify-content:center;margin-top:6px">'+hear+'<button onclick="jigNext()" style="padding:12px 24px;border-radius:999px;border:2px solid '+color+';background:#fff;color:'+color+';font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Next \u{27A1}</button></div>';
+  const t=st.turns[0];
+  if(st.phase==="ask"){
+    h+='<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin:14px 0 6px"><span class="jig-word" style="margin:0">What is it?</span>'+hear+'</div>';
+    if(st.msg) h+='<div class="jig-msg" style="text-align:center;font-size:15px;font-weight:700;color:#57534e;margin-bottom:10px">'+_jigE(st.msg)+'</div>';
+    h+='<div style="width:100%">'+((t&&t.gj&&typeof gameJudgeHtml==="function")?gameJudgeHtml(t,color,false):'')+'</div>';
     return h+'</div></div>';
   }
-  if(st.phase==="ask"){
-    const t=st.turns[0];
-    h+='<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin:14px 0 10px"><span class="jig-word" style="margin:0">What is it?</span>'+hear+'</div><div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center">';
-    st.choices.forEach((w,ci)=>{ const no=!!t.wrong[w]; h+='<button class="jig-ch'+(no?' jig-no':'')+'" onclick="jigTap('+ci+')"'+(no?' disabled':'')+'>'+_jigE(w)+'</button>'; });
-    return h+'</div></div></div>';
-  }
-  h+='<div class="jig-word">\u{1F389} '+_jigE(st.word)+'!</div>';
+  // the confirm: the word shown (and said) only now — right, or the right one after a wrong answer
+  const right=!!(t&&((t.done&&t.first)||t.nolog));   // nolog: nothing was asked, so nothing was missed
+  h+='<div class="jig-word">'+(right?'\u{1F389} '+_jigE(st.word)+'!':'It’s '+_jigE(st.word)+'.')+'</div>';
+  if(t&&t.gj&&t.gj.done&&typeof gameJudgeHtml==="function") h+='<div style="width:100%;margin-bottom:10px">'+gameJudgeHtml(t,color,true)+'</div>';
   if(st.levelAfter&&st.levelAfter>st.levelBefore) h+='<div style="font-size:18px;font-weight:800;color:#16a34a;margin-bottom:10px">\u{2B06} '+(JIG_PIECES[st.levelAfter]||"")+' pieces next time!</div>';
   h+='<div style="margin-top:8px">'+btn("jigStart()","\u{1F501} Play again")+'</div>';
   return h+'</div></div>';

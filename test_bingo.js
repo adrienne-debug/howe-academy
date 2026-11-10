@@ -104,13 +104,13 @@ console.log("── a clean 3×3 round ──");
   let lineAt=null;
   for(let n=0;n<9;n++){ const t=st.turns[st.i]; play(c); if(lineAt===null&&st.bingo) lineAt=n+1; }
   ok("every tile right on the first tap → stamped, 9 dings, no bonk",Object.keys(st.marked).length===0||st.phase==="done",{marked:Object.keys(st.marked).length,phase:st.phase});
-  ok("the round finished after the 9 calls (nothing came back)",st.phase==="done"&&st.turns.length===9&&st.first===9&&st.of===9&&dings.filter(x=>x==="ding").length===9&&dings.indexOf("bonk")<0);
+  ok("the round finished after the 9 calls (nothing came back); ⚖️ BINGOFORCED: the 9th call (one tile left) is not a first try → 8 of 8",st.phase==="done"&&st.turns.length===9&&st.first===8&&st.of===8&&st.turns[8].nolog===true&&st.turns.slice(0,8).every(t=>!t.nolog)&&dings.filter(x=>x==="ding").length===9&&dings.indexOf("bonk")<0);
   ok("the first line came between the 3rd and 7th call and got ONE confetti (noSong, the round's kid)",lineAt>=3&&lineAt<=7&&cel.length===1&&cel[0][0]==="k"&&cel[0][2].noSong===true&&/BINGO/.test(cel[0][1]));
   const up=writes.find(w=>w[0]==="update"), lg=writes.find(w=>w[0]==="push");
-  ok("new best: ONE targeted update on <kid>_settings/match_best, key 'Animals · bingo' (the log is pushed first, like Which one?)",writes.length===2&&writes[0][0]==="push"&&up&&up[1]==="mastery/k_settings/match_best"&&JSON.stringify(up[2])===JSON.stringify({"Animals \u00B7 bingo":9})&&st.isPB===true);
-  ok("the game log: one push to mastery/gameLog/<kid>/<day>, game 'bingo', 9 items all ok",lg[0]==="push"&&lg[1]==="mastery/gameLog/k/20261102"&&lg[2].game==="bingo"&&lg[2].deck==="Animals"&&lg[2].items.length===9&&lg[2].items.every(i=>i.ok&&i.n===1&&!i.back));
+  ok("new best: ONE targeted update on <kid>_settings/match_best, key 'Animals · bingo' (the log is pushed first, like Which one?)",writes.length===2&&writes[0][0]==="push"&&up&&up[1]==="mastery/k_settings/match_best"&&JSON.stringify(up[2])===JSON.stringify({"Animals \u00B7 bingo":8})&&st.isPB===true);
+  ok("the game log: one push to mastery/gameLog/<kid>/<day>, game 'bingo', 8 items all ok — the forced last call is not in it",lg[0]==="push"&&lg[1]==="mastery/gameLog/k/20261102"&&lg[2].game==="bingo"&&lg[2].deck==="Animals"&&lg[2].items.length===8&&lg[2].items.every(i=>i.id!==String(st.turns[8].pid))&&lg[2].items.every(i=>i.ok&&i.n===1&&!i.back));
   const h=c.buildBingoHtml("#000");
-  ok("finish screen: the pictures, '9 of 9 on the first tap — new best', Play again; no card names",/9 of 9 on the first tap/.test(h)&&/new best/.test(h)&&/Play again/.test(h)&&!ANIMALS.some(x=>new RegExp(">"+x.prompt+"<").test(h)));
+  ok("finish screen: the pictures, '8 of 8 on the first tap — new best', Play again; no card names",/8 of 8 on the first tap/.test(h)&&/new best/.test(h)&&/Play again/.test(h)&&!ANIMALS.some(x=>new RegExp(">"+x.prompt+"<").test(h)));
 }
 console.log("── misses: grey, bonk, say again, come back once after the board is full ──");
 {
@@ -138,10 +138,28 @@ console.log("── misses: grey, bonk, say again, come back once after the boar
   const celN=cel.length;
   play(c); play(c);
   ok("found both → the round ends; no second confetti",st.phase==="done"&&cel.length===celN&&cel.length===1);
-  ok("first-tap count 7 of 9; best saved as 7",st.first===7&&st.of===9&&writes.find(w=>w[0]==="update")[2]["Animals \u00B7 bingo"]===7);
+  ok("first-tap count 6 of 8 (the forced 9th call left out); best saved as 6",st.first===6&&st.of===8&&writes.find(w=>w[0]==="update")[2]["Animals \u00B7 bingo"]===6);
   const items=writes.find(w=>w[0]==="push")[2].items;
-  ok("the log has 11 items: 7 ok, 2 misses with n=2, 2 comeback turns marked back",items.length===11&&items.filter(i=>i.ok&&!i.back).length===7&&items.filter(i=>!i.ok&&i.n===2&&!i.back).length===2&&items.filter(i=>i.back).length===2);
-  ok("a comeback card found on the first tap never adds to the first-tap count",st.first===7);
+  ok("the log has 10 items: 6 ok, 2 misses with n=2, 2 comeback turns marked back (the forced 9th call not logged)",items.length===10&&items.filter(i=>i.ok&&!i.back).length===6&&items.filter(i=>!i.ok&&i.n===2&&!i.back).length===2&&items.filter(i=>i.back).length===2);
+  ok("a comeback card found on the first tap never adds to the first-tap count",st.first===6);
+}
+console.log("── ⚖️ BINGOFORCED: the last call never counts ──");
+{ let bad=0, rounds=0;
+  for(const deck of [["Animals",ANIMALS],["Fruit",FRUIT]]) for(let r=0;r<20;r++){
+    const {c,writes}=world(deck[1]); c.bingoStart(deck[0]); const st=c.bingoState, N=st.board.length;
+    for(let n=0;n<N;n++){ if(r%3===1&&n===N-2) play(c,true); else play(c); }   // some rounds miss the call before the last
+    let g=0; while(st.phase==="play"&&g++<20) play(c);
+    rounds++;
+    const last=st.turns[N-1], lg=writes.find(w=>w[0]==="push"), main=lg?lg[2].items.filter(i=>!i.back):[];
+    if(!(last.nolog&&last.first&&!last.back&&st.of===N-1&&main.length===N-1&&!main.some(i=>i.id===String(last.pid))&&st.first<=N-1)) bad++;
+  }
+  ok("40 rounds (3×3 and 2×2, some with a miss right before the end): the last call is never logged and never in 'N of M'",bad===0&&rounds===40,bad);
+  const {c,writes}=world(ANIMALS); c.bingoStart("Animals"); const st=c.bingoState;
+  for(let n=0;n<8;n++) play(c,n===0); const last=st.turns[8];
+  ok("with one tile left only the called picture is tappable; the forced call still stamps and fills the board",Object.keys(st.marked).length===8&&st.board.filter(p=>!st.marked[p])[0]===last.pid&&(c.bingoTap(cellOf(st,st.board.find(p=>p!==last.pid))),Object.keys(last.wrong).length===0&&!last.done)&&(c.bingoTap(cellOf(st,last.pid)),st.marked[last.pid]===1&&last.done&&last.nolog===true));
+  settle(c);
+  let g=0; while(st.phase==="play"&&g++<20) play(c);
+  ok("the come-back calls (board cleared) are unaffected — logged as back, never counted",st.phase==="done"&&st.turns.filter(t=>t.back).length===1&&!st.turns.find(t=>t.back).nolog&&writes.find(w=>w[0]==="push")[2].items.filter(i=>i.back).length===1);
 }
 console.log("── the best, the dry run, the kid ──");
 {
@@ -150,7 +168,7 @@ console.log("── the best, the dry run, the kid ──");
   play(c,true); for(let n=1;n<9;n++) play(c); play(c);
   ok("a round that doesn't beat the best writes no best (the log still goes)",st.phase==="done"&&st.isPB===false&&st.prevBest===9&&writes.length===1&&writes[0][0]==="push");
   const w2=world(ANIMALS,{dry:true}); w2.c.bingoStart("Animals"); for(let n=0;n<9;n++) play(w2.c);
-  ok("?dryrun=1: nothing written (best and log stay in memory)",w2.c.bingoState.phase==="done"&&w2.writes.length===0&&w2.c.masteryData.k_settings.match_best["Animals \u00B7 bingo"]===9&&w2.c.masteryData.gameLog.k["20261102"]);
+  ok("?dryrun=1: nothing written (best and log stay in memory)",w2.c.bingoState.phase==="done"&&w2.writes.length===0&&w2.c.masteryData.k_settings.match_best["Animals \u00B7 bingo"]===8&&w2.c.masteryData.gameLog.k["20261102"]);
   const w3=world(ANIMALS); w3.c.bingoStart("Animals"); w3.c.masteryKid="other";   // the kid switched mid-round (GAMEKID parks; here just the global)
   for(let n=0;n<9;n++) play(w3.c);
   ok("the finish saves to the round's OWN kid, not the kid picked now",w3.writes.find(w=>w[0]==="update")[1]==="mastery/k_settings/match_best"&&w3.writes.find(w=>w[0]==="push")[1]==="mastery/gameLog/k/20261102");
@@ -165,7 +183,7 @@ console.log("── a small 2×2 board, the Mix, Change deck ──");
   play(c); play(c);
   ok("on a 2×2 the second stamp is always a line → BINGO",st.bingo===true&&cel.length===1);
   play(c); play(c);
-  ok("four calls → done, 4 of 4",st.phase==="done"&&st.first===4&&st.of===4);
+  ok("four calls → done, 3 of 3 (the 4th call, one tile left, is forced and not counted)",st.phase==="done"&&st.first===3&&st.of===3&&st.turns[3].nolog===true);
   const w=world(ANIMALS.concat(FRUIT));
   w.c.bingoStart(w.c.BINGO_MIX); const m=w.c.bingoState;
   ok("the Mix: a 3×3 drawn from both decks",m.size===3&&m.mix===true&&m.deck===w.c.BINGO_MIX&&m.board.length===9);
