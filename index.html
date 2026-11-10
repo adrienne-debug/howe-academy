@@ -56122,6 +56122,8 @@ function cpptCss(){
 //     📅 Pace (PR 8) · cpSkillQuestionLine(qid, students) — "4 students haven't learned Biotic index" for the item analysis · CPSK_COST — the
 //     planner's fixed cost per skill. Until those land, the line shows on every station row (Scores, the parent page, the student page) and
 //     the fold sits under 🏫 Class setup ▸ 🧩 Skills.
+//   · ▶ TRY IT (2026-11-10): cpSkillTryOpen(fb) in 🏫 Class setup ▸ 🧩 Skills opens a skill's 👀 Watch it for the teacher in a read-only overlay
+//     (cpSkillTryHtml) — the kid's renderer on a tryIt run: nothing recorded, nothing written, dry-run safe.
 //   · classSkills/<cid>/<skillKey> = {hide:true} | {core:bool} (+ by, ts) — the teacher's layer, like classCards: her class only, never the
 //     unit. 🏫 Class setup ▸ 🧩 Skills: Hide / Show again, Make optional / Make core, and per section "the final waits for the core skills
 //     too" = classes/<cid>/plan/<key>/skillsForFinal (default off, [?] Q38). When it is on, the final doesn't open by itself until the
@@ -56253,7 +56255,7 @@ function cpSkillInput(i,v){ const r=_cpsk.run; if(!r||r.checked) return; r.ans[i
 function cpSkillPick(i,v){ const r=_cpsk.run; if(!r||r.checked) return; r.ans[i]=String(v); cpskRe(); }
 function cpSkillHelp(){ const r=_cpsk.run; if(!r||r.checked) return; r.help=true; cpskRe(); }
 // 👀 the worked example: one more step lit; after the last, "Got it" counts it and the next problem comes
-function cpSkillStep(){ const r=_cpsk.run; if(!r||r.done||r.stage!=="shown") return; if(r.shown<r.prob.steps.length){ r.shown++; cpskRe(); return; } cpskRecord(r,true,null,null); cpSkillNextTry(); }
+function cpSkillStep(){ const r=_cpsk.run; if(!r||r.done||r.stage!=="shown") return; if(r.shown<r.prob.steps.length){ r.shown++; cpskRe(); return; } if(r.tryIt){ cpskNewProblem(r); cpskRe(); return; } cpskRecord(r,true,null,null); cpSkillNextTry(); }   // ▶ Try it: another worked example, nothing recorded
 function cpSkillCheckTry(){
   const r=_cpsk.run; if(!r||r.done||r.checked||r.stage==="shown") return; const S=r.prob.steps, T=CPSK_TYPES[r.sk.type]||{};
   for(let i=r.from;i<S.length;i++) if(r.ans[i]==null||String(r.ans[i]).trim()===""){ cpskToast("Fill in every step first"); return; }
@@ -56276,7 +56278,7 @@ function cpskWrite(upd,dry){
 }
 // the end of a sitting: the skill's state + the day's study-log entry (merged), in ONE write; then the summary
 function cpSkillFinish(){
-  const r=_cpsk.run; if(!r||r.done) return null; const kid=r.kid, sk=r.sk, now=Date.now(), md=masteryData;
+  const r=_cpsk.run; if(!r||r.done||r.tryIt) return null; const kid=r.kid, sk=r.sk, now=Date.now(), md=masteryData;
   const kidT=r.tries.filter(t=>t.s!=="shown"), shown=r.tries.length-kidT.length, correct=kidT.filter(t=>t.ok).length, secs=Math.max(1,Math.round((now-r.startedAt)/1000));
   const today=(typeof mstTodayKey==="function")?mstTodayKey():cpskDay(now), was=cpskKidState(kid,sk);
   let S=md[kid+"_skills"]; if(!S||typeof S!=="object") S=md[kid+"_skills"]={}; if(!S[sk.unit]||typeof S[sk.unit]!=="object") S[sk.unit]={}; S[sk.unit][sk.fb]=r.st;
@@ -56335,7 +56337,7 @@ function cpSkillSittingHtml(){
     if(d.dry) h+='<div style="margin-top:8px;font-size:12px;font-weight:800;color:#b45309">Dry run \u2014 scored here only, nothing saved.</div>';
     return h+'<div style="margin-top:14px"><button onclick="cpSkillQuit()" style="'+CPSK_BTN+'">Done</button></div></div>'; }
   const S=r.prob.steps, n=S.length;
-  let h='<div style="font-family:\'DM Sans\',sans-serif"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--muted);font-weight:700;margin-bottom:8px"><span>\u{1F9E9} '+cpskEsc(sk.label)+' · try '+r.n+' of '+CPSK_SITTING+'</span><span style="background:#ccfbf1;color:#115e59;border-radius:999px;padding:3px 10px;font-weight:800">'+cpskEsc(CPSK_STAGE_LBL[r.stage]||r.stage)+'</span></div>';
+  let h='<div style="font-family:\'DM Sans\',sans-serif"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--muted);font-weight:700;margin-bottom:8px"><span>\u{1F9E9} '+cpskEsc(sk.label)+(r.tryIt?' · example '+r.n:' · try '+r.n+' of '+CPSK_SITTING)+'</span><span style="background:#ccfbf1;color:#115e59;border-radius:999px;padding:3px 10px;font-weight:800">'+cpskEsc(CPSK_STAGE_LBL[r.stage]||r.stage)+'</span></div>';
   if(r.moved&&!r.checked) h+='<div style="background:#ecfeff;border:1.5px solid #67e8f9;border-radius:12px;padding:8px 12px;font-size:13px;font-weight:800;color:#155e75;margin-bottom:8px">'+(r.moved==="faded"?'\u2B06\uFE0F Now the first steps are done for you \u2014 you finish the rest.':r.moved==="solo"?'\u2B06\uFE0F Now it’s all yours \u2014 every step.':'\u2B07\uFE0F Let’s watch one worked out again.')+'</div>';
   h+='<div style="font-size:12.5px;color:#374151;font-weight:600;margin-bottom:8px">'+(r.stage==="shown"?'Watch how it’s done, one step at a time.':r.stage==="faded"?'Steps 1\u2013'+r.from+' are done for you. Do '+(n-r.from===1?'the last step':'the last '+(n-r.from)+' steps')+'.':'Do every step yourself.')+'</div>';
   h+='<div style="background:#fff;border:2px solid #e5e7eb;border-radius:18px;padding:12px 14px">';
@@ -56343,13 +56345,13 @@ function cpSkillSittingHtml(){
   if(T.help){ if(r.stage!=="solo"||r.help){ try{ h+=T.help(r.prob,sk)||""; }catch(e){} } else if(!r.checked) h+='<div style="margin:6px 0"><button onclick="cpSkillHelp()" style="'+CPSK_BTN2+';min-height:40px;font-size:13px">\u{1F4CB} Show the chart</button> <span style="font-size:11.5px;color:var(--muted)">(a try with the chart doesn’t count toward learned)</span></div>'; }
   for(let i=0;i<n;i++) h+=cpskStepRow(r,i);
   h+='</div>';
-  if(r.stage==="shown") h+='<div style="text-align:center;margin-top:12px"><button onclick="cpSkillStep()" style="'+CPSK_BTN+';min-height:52px;padding:0 30px;font-size:16px">'+(r.shown<n?'Next step \u25B6':'Got it \u2713')+'</button></div>';
+  if(r.stage==="shown") h+='<div style="text-align:center;margin-top:12px"><button onclick="cpSkillStep()" style="'+CPSK_BTN+';min-height:52px;padding:0 30px;font-size:16px">'+(r.shown<n?'Next step \u25B6':r.tryIt?'Another example \u25B6':'Got it \u2713')+'</button></div>';
   else if(!r.checked) h+='<div style="text-align:center;margin-top:12px"><button onclick="cpSkillCheckTry()" style="'+CPSK_BTN+';min-height:52px;padding:0 34px;font-size:16px">Check</button></div>';
   else { const c=r.checked; h+='<div style="margin-top:12px;text-align:center;font-size:17px;font-weight:900;color:'+(c.ok?'#15803d':'#dc2626')+'">'+(c.ok?'\u2713 All right!':'\u2717 Missed at step '+(c.step+1)+': '+cpskEsc(cpSkillMissLabel(sk,c.miss)))+'</div>';
     if(r.moved) h+='<div style="text-align:center;font-size:13px;font-weight:800;color:#155e75;margin-top:4px">'+(r.moved==="faded"?'Next: you finish the last step.':r.moved==="solo"?'Next: on your own!':'Next: another worked example.')+'</div>';
     h+='<div style="text-align:center;margin-top:12px"><button onclick="cpSkillNextTry()" style="'+CPSK_BTN+';min-height:52px;padding:0 34px;font-size:16px">'+(r.tries.length<CPSK_SITTING?'Next problem \u25B6':'Finish')+'</button></div>'; }
   if(typeof cpFlagSkillHtml==="function") h+=cpFlagSkillHtml(r);   // 🚩 CPFLAG: once the try is checked (or a worked example)
-  h+='<div style="text-align:center;margin-top:16px"><a href="javascript:void(0)" onclick="cpSkillQuit()" style="font-size:13px;color:var(--muted);text-decoration:underline;cursor:pointer">'+(r.tries.length?'Stop here (keeps what you did)':'Quit for now')+'</a></div>';
+  h+='<div style="text-align:center;margin-top:16px"><a href="javascript:void(0)" onclick="cpSkillQuit()" style="font-size:13px;color:var(--muted);text-decoration:underline;cursor:pointer">'+(r.tryIt?'Close':r.tries.length?'Stop here (keeps what you did)':'Quit for now')+'</a></div>';
   return h+'</div>';
 }
 // ENVSITE's envsStudyHtml (the one guarded line): a running sitting takes the page; otherwise the door sits under the 🌿 study start
@@ -56411,13 +56413,14 @@ function cpSkillSetupHtml(){
   envsStations().forEach(sec=>{ const mine=L.filter(s=>s.section===sec.id); if(!mine.length) return;
     h+='<div style="border-top:1px solid #f1efe9;padding:8px 0"><div style="font-weight:800;font-size:13.5px">'+cpskEsc((sec.emoji?sec.emoji+" ":"")+(sec.label||sec.id))+'</div>';
     mine.forEach(s=>{ h+='<div class="envs-row" style="padding:5px 0;gap:8px"><div style="flex:1;min-width:150px'+(s.hide?';opacity:.55':'')+'"><b>'+cpskEsc(s.label)+'</b><div class="envs-muted">'+cpskEsc(s.type)+' · '+(s.hide?'hidden':s.core?'core':'optional')+'</div></div>'
+      +(s.hide||!CPSK_TYPES[s.type]?'':'<button class="envs-btn sec cp-btn" onclick="cpSkillTryOpen(\''+cpskJ(s.fb)+'\')" title="See it as a student first does: a worked example. Nothing is saved.">\u25B6 Try it</button>')
       +(s.hide?'':'<button class="envs-btn sec cp-btn" onclick="cpSkillSetCore(\''+cpskJ(s.fb)+'\','+(!s.core)+')">'+(s.core?'Make optional':'Make core')+'</button>')
       +'<button class="envs-btn sec cp-btn" onclick="cpSkillSetHide(\''+cpskJ(s.fb)+'\','+(!s.hide)+')">'+(s.hide?'\u21A9 Show again':'\u{1F648} Hide')+'</button></div>';
       const T=CPSK_TYPES[s.type]; if(!s.hide&&T&&typeof T.note==="function"){ try{ h+=T.note(s)||""; }catch(e){} } });   // 🧰 CPITEMGEAR: a type's teacher note (the gear photos)
     const on=!!(P[sec.id]&&P[sec.id].skillsForFinal===true);
     h+='<label class="envs-row" style="min-height:40px;font-size:13px"><input type="checkbox" '+(on?'checked':'')+' onchange="cpSkillSetFinal(\''+cpskJ(sec.id)+'\',this.checked)"> The '+cpskEsc(post)+' waits for the core skills too</label></div>'; });
   h+='<div class="envs-muted">Saved at classSkills/'+cpskEsc(_envc.cid)+' and classes/'+cpskEsc(_envc.cid)+'/plan. Students see it the next time their page loads.</div></div>';
-  return h+cpSkillFoldHtml((typeof envcStudents==="function")?envcStudents():[],{open:true});
+  return h+cpSkillFoldHtml((typeof envcStudents==="function")?envcStudents():[],{open:true})+cpSkillTryHtml();
 }
 // one skill's record in the layer: set when something differs from the unit, removed when nothing does (targeted path, by = the uid)
 function cpskLayerSave(fb,rec){
@@ -56433,6 +56436,27 @@ function cpSkillSetFinal(key,on){
   if(typeof envcOn!=="function"||!envcOn()||!_envc.cid||!key) return false;
   envcWrite("classes/"+_envc.cid,{["plan/"+key+"/skillsForFinal"]:!!on},"update").then(()=>{ const C=_envc.cls||(_envc.cls={}), P=C.plan||(C.plan={}); (P[key]=P[key]||{}).skillsForFinal=!!on; if(!_envs.cls) _envs.cls=C; envcRe(); }).catch(()=>{});
   return true;
+}
+// ── ▶ Try it (2026-11-10, her ask "demos of the skills"): the teacher (or admin) opens a skill as a student first sees it — 👀 Watch it, a worked
+//    example lit step by step, then another, as many as she likes — in a read-only overlay over the console. The same run object and the same
+//    cpSkillSittingHtml the kid's page uses, flagged tryIt: no kid, no saved state, nothing recorded, nothing written (cpSkillStep deals a new
+//    example instead of counting one; cpSkillFinish refuses), so the demo, a dry run and the live console all behave the same.
+function cpSkillTryOn(){ return cpskOn()&&typeof envcOn==="function"&&envcOn()&&!!_envc.cid; }
+function cpSkillTryOpen(fb,seed){
+  if(!cpSkillTryOn()) return false; const sk=cpSkillList(_envc.cls,null,{all:true}).find(s=>s.fb===fb&&!s.hide); if(!sk||!CPSK_TYPES[sk.type]) return false;
+  const r={kid:null,sk,st:cpSkillFresh(),tries:[],startedAt:Date.now(),seed:(seed!=null?seed:Date.now())>>>0,n:0,dry:true,done:null,moved:null,tryIt:true};
+  if(!cpskNewProblem(r)){ cpskToast("This skill can’t make a problem yet"); return false; }
+  _cpsk.run=r; cpskRe(); return true;
+}
+function cpSkillTryClose(){ const r=_cpsk.run; if(!r||!r.tryIt) return false; _cpsk.run=null; cpskRe(); return true; }
+function cpSkillTryHtml(){
+  const r=_cpsk.run; if(!r||!r.tryIt||!cpSkillTryOn()) return ""; const sec=((typeof envsStations==="function")?envsStations():[]).find(x=>x.id===r.sk.section)||{};
+  let h='<div id="cpsk-try" style="position:fixed;inset:0;z-index:450;background:#faf8f5;overflow-y:auto;-webkit-overflow-scrolling:touch"><div style="max-width:560px;margin:0 auto;padding:16px 16px 40px;font-family:\'DM Sans\',sans-serif">';
+  h+='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><div style="font-size:16px;font-weight:800;color:#14532d">▶ Try it · '+cpskEsc((sec.emoji?sec.emoji+" ":"")+r.sk.label)+'</div>'
+    +'<div style="font-size:12.5px;color:var(--muted);font-weight:700;line-height:1.4">What a student sees first: '+cpskEsc(CPSK_STAGE_LBL.shown)+', one step at a time. Each example is a new problem. Nothing is scored or saved.</div></div>'
+    +'<button onclick="cpSkillTryClose()" style="border:none;background:none;color:var(--muted);font-size:13px;font-weight:800;cursor:pointer;padding:6px;white-space:nowrap">Close ✕</button></div>';
+  h+='<div style="margin-top:14px">'+cpSkillSittingHtml()+'</div>';
+  return h+'</div></div>';
 }
 // ── the minimal `sheet` maker: a "tally" worksheet — count the kinds in each group, × each group's weight, add, pick the band. The full
 //    `sheet` type (basal area, tree height, cord volume …) is its own PR and replaces this registration from its own block.
