@@ -8,7 +8,7 @@ const FAM="$sid.beginsWith(root.child('logins/'+auth.uid+'/familyId').val() + '_
 const G="(root.child('logins/'+auth.uid+'/familyId').exists() && "+FAM+")";
 let n=0; const ok=(c,m)=>{ assert(c,m); n++; };
 const all=[]; (function walk(o,p){ Object.keys(o).forEach(k=>{ const v=o[k]; if(typeof v==="string"){ if(v.indexOf(FAM)>=0) all.push([p+" "+k,v]); } else if(v&&typeof v==="object") walk(v,p+"/"+k); }); })(R,"");
-ok(all.length===11&&all.reduce((a,[,v])=>a+v.split(FAM).length-1,0)===12,"eleven rules carry the family clause, twelve occurrences (review write has two)");
+ok(all.length===13&&all.reduce((a,[,v])=>a+v.split(FAM).length-1,0)===14,"thirteen rules carry the family clause, fourteen occurrences (review write has two; CPSIBLINGS added students/$sid/logins/kid + kidAt)");
 all.forEach(([where,v])=>{ ok(v.split(FAM).length-1===v.split(G).length-1,"every family clause is guarded by .exists(): "+where); ok(v.indexOf("(root.child('logins/'+auth.uid+'/familyId').exists() && (root.child")<0,"…and only once: "+where); });
 ["summary","weeks","drillPick"].forEach(k=>ok(S[k][".write"]==="auth != null && ("+ADMIN+" || "+G+")",k+": admin first, then the guarded family"));
 ok(S[".read"].indexOf(ADMIN)<S[".read"].indexOf(FAM)&&S[".read"].indexOf("(data.child('class').exists() && root.child('classes/'+data.child('class').val()")>0,"students read: admin first, teacher clause guarded on class");
