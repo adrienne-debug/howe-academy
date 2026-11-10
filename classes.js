@@ -635,9 +635,11 @@ function cplnpReady(kid){
 function envsSettingsHtml(){
   const kid=_envs.kid;
   let h='';
-  if(_envs.role==="kid"&&typeof envRaToggleHtml==="function") h+='<div class="envs-card">'+envRaToggleHtml(kid)+'<div class="envs-muted" style="margin-top:6px">Auto reads each card and each check-in question out loud. Off: only when you tap \u{1F50A}.</div></div>';   // 🔊 ENVREADALOUD
-  if(_envs.role==="parent") h+='<div class="envs-card"><div class="envs-h2">\u{1F510} Parent PIN</div><div class="envs-muted" style="margin-bottom:6px">The PIN opens the parent view on a shared device.</div><div class="envs-row"><input id="envs-pin" class="envs-in" type="text" inputmode="numeric" maxlength="4" placeholder="4 digits" style="width:110px;text-align:center;letter-spacing:6px"><button class="envs-btn sec" onclick="envsSetPin()">Save PIN</button></div></div>';
-  h+='<div class="envs-card"><div class="envs-row"><div style="flex:1"><div class="envs-h2" style="margin:0">Signed in</div><div class="envs-muted">'+envsEsc(_envs.email||(_envs.role==="kid"?"student code":""))+'</div></div><button class="envs-btn red" onclick="envsSignOut()">Sign out</button></div></div>';
+  const pr=(typeof envsPageRole==="function")?envsPageRole():_envs.role;   // CPKIDMODE: the page's role (kid view on a parent login → kid)
+  if(pr==="kid"&&typeof envRaToggleHtml==="function") h+='<div class="envs-card">'+envRaToggleHtml(kid)+'<div class="envs-muted" style="margin-top:6px">Auto reads each card and each check-in question out loud. Off: only when you tap \u{1F50A}.</div></div>';   // 🔊 ENVREADALOUD
+  if(pr==="parent") h+='<div class="envs-card"><div class="envs-h2">\u{1F510} Parent PIN</div><div class="envs-muted" style="margin-bottom:6px">The PIN opens the parent view on a shared device.</div><div class="envs-row"><input id="envs-pin" class="envs-in" type="text" inputmode="numeric" maxlength="4" placeholder="4 digits" style="width:110px;text-align:center;letter-spacing:6px"><button class="envs-btn sec" onclick="envsSetPin()">Save PIN</button></div></div>';
+  if(_envs.kidMode&&_envs.role==="parent") h+='<div class="envs-card"><div class="envs-h2" style="margin:0">Signed in</div><div class="envs-muted">A parent\u2019s login, in '+envsEsc(envsKidName(kid))+'\u2019s view. \u{1F469} Parent (top right) and the password go back.</div></div>';   // CPKIDMODE: no Sign out in a kid's view
+  else h+='<div class="envs-card"><div class="envs-row"><div style="flex:1"><div class="envs-h2" style="margin:0">Signed in</div><div class="envs-muted">'+envsEsc(_envs.email||(_envs.role==="kid"?"student code":""))+'</div></div><button class="envs-btn red" onclick="envsSignOut()">Sign out</button></div></div>';
   h+='<div class="envs-muted" style="text-align:center;padding:8px">'+envsEsc(envsLicenseLine())+'</div>';
   return h;
 }
