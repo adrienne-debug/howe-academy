@@ -3,7 +3,7 @@
 // gbDefault() for Up for Grabs (PR #14). (2026-10-07.) The school-room supplies list (SUP_DEFAULT, 29 Howe items)
 // is GONE since 2026-10-23: the Sunday list is derived from the lessons (LESSONRES) and starts empty for every family.
 // Run: node test_howe_house_defaults.js
-const fs=require("fs"); const src=fs.readFileSync(__dirname+"/index.html","utf8");
+const fs=require("fs"); const src=require("./test_src.js")(__dirname+"/index.html");
 let fail=0; const ok=(c,m)=>{ if(!c){fail++;console.log("FAIL "+m);} else console.log("ok   "+m); };
 const slice=(a,b)=>{ const i=src.indexOf(a), j=src.indexOf(b,i); if(i<0||j<0) throw new Error("missing "+a); return src.slice(i,j+b.length); };
 const morning=slice("const MORNING_STEPS_DEFAULT =","\n};");

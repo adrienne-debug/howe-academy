@@ -3,7 +3,7 @@
 // renderAllSoon() → ONE renderAll a moment later for the whole burst; a direct renderAll() (every tap) paints at once and drops
 // the waiting one; the CDBOOTS counters count real redraws only.   run: node test_render_soon.js
 const fs=require("fs"), path=require("path"); const dir=process.argv[2]||__dirname;
-const html=fs.readFileSync(path.join(dir,"index.html"),"utf8");
+const html=require("./test_src.js")(path.join(dir,"index.html"));
 let pass=0,fail=0; const ok=(n,c,x)=>{ if(c){pass++;console.log("  ✓ "+n);} else {fail++;console.log("  ✗ "+n+(x!==undefined?"  → "+JSON.stringify(x):""));} };
 const slice=(a,b)=>{ const i=html.indexOf(a), j=html.indexOf(b,i); return (i<0||j<0)?"":html.slice(i,j+b.length); };
 const blk=slice("// RENDERSOON_START","// RENDERSOON_END"), cdb=slice("// CDBOOTS_START","// CDBOOTS_END");
@@ -114,7 +114,7 @@ const ALLOWED_FN=["cpuWatch",   // 📦 CPUNIT (2026-10-28): a unit's catalog en
   "cplntApplyOne","cplntAfter",   // 👩‍🏫 CPLINCOLNL3 (2026-10-29): a teacher's drill for Lincoln arriving (drills/<cid>/<sid> listener) and graded
   "cplnpLoad",   // 🌿 CPLINCOLNPARITY (2026-10-29): his class's card, trim and test layers arriving (read once through his mirror)
   "currOnValue",   // 📚 CURRLIVE (2026-11-08): the curriculum arriving (first load, or another device's edit) — the listener's one helper
-  "attachWeekListeners","initFb","_loadPrevSl","mmAttachWeek","momBlocksListen","peekLoad","lrListen","rbLogListen","wsOnValue","hrOnValue","helpersOnValue","helperDaysOnValue","helperGiveOnValue","famProgOnValue","msgOnValue","pagesApply","envmRelease","envtFinalAttach","envsReadShared","envcSub","envClsKidLoad"];   // 🌿 ENVMIRROR / ENVSITE: listener-attach helpers whose arrivals combine; the teacher's release listener (data arrived)
+  "attachWeekListeners","initFb","_loadPrevSl","mmAttachWeek","momBlocksListen","peekLoad","lrListen","rbLogListen","wsOnValue","hrOnValue","helpersOnValue","helperDaysOnValue","helperGiveOnValue","famProgOnValue","msgOnValue","pagesApply","envmRelease","envtFinalAttach","envsReadShared","envsHomeReadHowe","envcSub","envClsKidLoad"];   // 🌿 ENVMIRROR / ENVSITE: listener-attach helpers whose arrivals combine; the teacher's release listener (data arrived)
 const stray=[]; { let cur=null; html.split("\n").forEach((l,i)=>{ const m=l.match(/^(?:async\s+)?function\s+([\w$]+)/); if(m) cur=m[1];
   if(/renderAllSoon\(\)/.test(l)&&!/^function renderAllSoon|^\/\//.test(l)&&!/^\/\/ /.test(l.trim())&&!ALLOWED_FN.includes(cur)) stray.push((i+1)+" in "+cur); }); }
 ok("renderAllSoon is used nowhere else (no tap path combines)",stray.length===0,stray);

@@ -2,7 +2,7 @@
 // tabs, week strip and the ⚙️ Mom-PIN gear and laid the sign-in card over them; the gear peeked through the teacher/admin console and
 // "Offline" + an empty Sunday showed behind the card. Now html.env-site-boot is set right after family-config.js, before the shell is laid
 // out, whenever the family file says edition "envirothon"; the shell is hidden for every role, #content until the gate resolves a role.
-const fs=require("fs"), path=require("path"); const src=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
+const fs=require("fs"), path=require("path"); const src=require("./test_src.js")(path.join(__dirname,"index.html"));
 let pass=0, fail=0; const ok=(n,c)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n); } };
 const i=src.indexOf("// ENVBOOTHIDE_START"), j=src.indexOf("// ENVBOOTHIDE_END"); const JS=i>=0&&j>i?src.slice(i,j):"";
 ok("the ENVBOOTHIDE script block is present once", JS&&src.split("// ENVBOOTHIDE_START").length===2&&src.split("// ENVBOOTHIDE_END").length===2);

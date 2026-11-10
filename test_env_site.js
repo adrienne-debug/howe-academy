@@ -14,7 +14,7 @@
 // shared node harness for ENVSITE + ENVCONSOLE: the real blocks (+ ENVMIRROR for envSummary, ENVUNIT's constants) in a tiny fake world
 const fs=require("fs"), path=require("path");
 const REPO=__dirname;
-const src=fs.readFileSync(path.join(REPO,"index.html"),"utf8");
+const src=require("./test_src.js")(path.join(REPO,"index.html"));
 function slice(a,b){ const i=src.indexOf(a), j=src.indexOf(b,i); if(i<0||j<0) throw new Error("slice missing "+a); return src.slice(i,j+b.length); }
 const SITE=slice("// ENVSITE_START","// ENVSITE_END"), CON=slice("// ENVCONSOLE_START","// ENVCONSOLE_END"), MIR=slice("// ENVMIRROR_START","// ENVMIRROR_END");
 const CLS=slice("// ENVCLASSSET_START","// ENVCLASSSET_END");   // ⚙️ the class settings (2026-10-28): the console's panel + the kid's overlay
@@ -82,6 +82,7 @@ function world(o){
       cp:{ CP_HUES, CP_EMOJI, CP_DEF, CP_LABELS_UNIT, CP_LABELS_PLAIN, CP_FEATURES, CP_CAL_DAYS, _cp, cpHex, cpLum, cpContrast, cpTextOn, cpAccentOn, cpTitleOk, cpEmojiOk, cpDateOk, cpDateLabel, cpBrand, cpLabel, cpFeature, cpSeason, cpLockKey, cpLockLabel, cpTopHtml, cpBarHtml, cpClassIn, cpDraftOf, cpDraft, cpCheck, cpCan, cpSet, cpEmojiType, cpGoal, cpGoalAdd, cpGoalDel, cpOffAdd, cpOffDel, cpFeat, cpWord, cpCancel, cpSave, cpPrevHtml, cpSetupHtml, cpNewClass, cpAdminClassHtml, cpClassAdd, cpDemoStart, cpCls },
       envsAutoLockLabel, envsPickKid, envsKidTabsHtml, envsParentNewCode, envsCodesCardHtml, envsNewCodePaths, envcAddSiblingPaths, envcSiblingHtml, envcAddSibling,   // CPSIBLINGS (2026-11-10)
       ENVS_MODE_KEY, envsModeFmt, envsModeParse, envsKidSwapOn, envsModeApply, envsPageRole, envsModeKids, envsModeBtns, envsModeBtnsHtml, envsGoKid, envsLeaveKidMode, envsReauthMsg, envsParentCheck, envsParentAsk, envsParentAskHtml, envsParentClose, envsParentSubmit, envsKidSwapHtml, envsSetKidSwap, envsSignOut,   // CPKIDMODE (2026-11-10)
+      ENVS_HOME_KEY, envsHomeRec, envsHomePick, envsHomeGate, envsHomeApply, envsHomeBtnHtml, envsHomeGo, envsHomeBack, envsHomeReadHowe, envsSummary,   // CPHOMELINK (2026-11-10)
       cps:{ CPS_SEATS_MAX, CPS_DAYS_ROW, CPS_FIELDS_SET, cpSeatsFields, cpSeatsAuto, cpSeatsPace, cpSeatsDef, cpSeatsCheck, cpSeatsFmt, cpSeatsDays, cpSeatsStudy, cpSeatsNums, cpSeatsCtlHtml, cpSeatsPaceHtml },
       cpu:${o.noCpu?"null":"{ CPU_UNITS, CPU_DEFAULT, _cpu, cpuOn, cpuReg, cpuUnit, cpuQid, cpuLoad, cpuIndex, cpuIds, cpuDecks, cpuSections, cpuSum, cpuWatch, cpuAdminWatch, cpuAttached, cpuStations, cpuLabel, cpuFeature, cpuUnitRecord, cpuGeneric, cpuHydrate, cpuHydrateAll, cpuEnrollSession, cpuAutoEnroll, cpuUnitsHtml, cpuPublish, cpuPubState, cpuSetupHtml, cpuUnitsAfter, cpuAttach, cpuNewUnitsHtml, cpuNewUnits, cpuDemoStart, get win(){ return window; } }"},
       core:${o.cpcore?"{ CPCORE_FIELD, _cpcore, cpCoreOn, cpCoreSetting, cpCoreSet, cpCoreLeft, cpCoreNames, cpCoreFresh, cpCoreDemoSeed }":"null"},

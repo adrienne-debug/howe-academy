@@ -77,7 +77,7 @@ console.log("── where it sits, how it is hooked ──");
   ok("cpReviewWhoNote: asks cpdrWhoNote after its own site / role guard", /return "";\n  if\(typeof cpdrWhoNote==="function"\)\{ const t=cpdrWhoNote\(who\); if\(t\) return t; \}/.test(fn("cpReviewWhoNote")));
   ok("envsReadShared: the listener after the class read, with that function's combined redraw", /go\(val\(s\)\)\);\n  if\(typeof cpdrListen==="function"\) cpdrListen\(sdb,re\);/.test(fn("envsReadShared")));
   const ph=fn("envsParentHtml");
-  ok("envsParentHtml: the 🧠 card first on the home view; the 'pdrill' view ahead of boards / tips / settings", /else \{ if\(typeof cpdrCardHtml==="function"\) h\+=cpdrCardHtml\(kid\); h\+=envsStreakHtml\(s\);/.test(ph)&&/if\(v==="pdrill"&&typeof cpdrDrillHtml==="function"\) h\+=cpdrDrillHtml\(kid\);[^\n]*\n  else if\(v==="boards"\)/.test(ph));
+  ok("envsParentHtml: the 🧠 card first on the home view; the 'pdrill' view ahead of boards / tips / settings", /else \{ if\((?:!hw&&)?typeof cpdrCardHtml==="function"\) h\+=cpdrCardHtml\(kid\); h\+=envsStreakHtml\(s\);/.test(ph)&&/if\(v==="pdrill"&&typeof cpdrDrillHtml==="function"\) h\+=cpdrDrillHtml\(kid\);[^\n]*\n  else if\(v==="boards"\)/.test(ph));
   ok("test_env_site.js is not touched by this PR (the world comes in through its existing `o.rev` line)", (fs.readFileSync(path.join(REPO,"test_env_site.js"),"utf8").match(/cpdr|CPDRILLPARENT/g)||[]).length===0); }
 
 console.log("\n── the rule: students/<sid>/review ──");

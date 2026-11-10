@@ -139,7 +139,7 @@ console.log("\n── the compiler's rules, on fixture units ──");
     put(R,"fix.js","module.exports={unit:{decks:[{key:'Fix · Ch 1',cards:[{name:'alpha',core:true}]},{key:'Fix · Ch 2',cards:[{name:'gamma',core:true}]}]}};"); const x=C.compile("fix_unit",{root:R}); return !x.ok&&x.err.some(e=>/fix\.js is stale for “Fix · Ch 1”/.test(e)); })());
   ok("index.html's CPU_UNITS is a compile output: a plain run rewrites the unit's entry (others kept, ids sorted), --check flags it stale", (()=>{ const R=tmpRoot(); put(R,"units/fix_unit/unit.json",fixUnit());
     put(R,"index.html",'<script>\n// CPUNIT_START\nconst CPU_UNITS={"zz_other":{"id":"zz_other"}};   // = units/<id>/index.json — WRITTEN by units/build/compile_unit.js\nconst CPU_DEFAULT=[];\n</script>\n');
-    const a=C.compile("fix_unit",{root:R,write:true}), h=fs.readFileSync(path.join(R,"index.html"),"utf8"), cat=C.catalogIn(R);
+    const a=C.compile("fix_unit",{root:R,write:true}), h=require("./test_src.js")(path.join(R,"index.html")), cat=C.catalogIn(R);
     const b=C.compile("fix_unit",{root:R,check:true}); const u=fixUnit(); u.decks[0].cards[1].core=true; put(R,"units/fix_unit/unit.json",u);
     const c=C.compile("fix_unit",{root:R,check:true}), d=C.compile("fix_unit",{root:R,write:true}), e=C.compile("fix_unit",{root:R,check:true});
     return a.ok&&a.page&&Object.keys(cat.cur).join()==="fix_unit,zz_other"&&cat.cur.fix_unit.core===2&&/\nconst CPU_DEFAULT=\[\];/.test(h)&&/WRITTEN by units\/build\/compile_unit\.js\n/.test(h)&&b.ok&&!b.page

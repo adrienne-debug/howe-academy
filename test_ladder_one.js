@@ -6,7 +6,7 @@
  *   run:  node test_ladder_one.js
  */
 const fs = require("fs"), path = require("path"), vm = require("vm");
-const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const src = require("./test_src.js")(path.join(__dirname, "index.html"));
 const cut = (a, b) => { const i = src.indexOf(a), j = src.indexOf(b, i); if (i < 0 || j < 0) throw new Error("markers " + a); return src.slice(i, j); };
 function slice(name) { const i = src.indexOf("function " + name + "("); if (i < 0) throw new Error("missing " + name);
   let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}") { d--; if (!d) return src.slice(i, k + 1); } } }
