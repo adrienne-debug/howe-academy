@@ -604,7 +604,7 @@ function buildGofishHtml(color){
       else if(t.act==="type"){
         h+='<div style="display:flex;justify-content:center;margin-bottom:10px"><span style="min-width:120px;height:56px;border-radius:14px;border:3px solid '+color+';background:#fff;font-family:\'Fraunces\',serif;font-size:30px;font-weight:800;color:#292524;display:inline-flex;align-items:center;justify-content:center;padding:0 14px">'+esc(t.typed||"")+'</span></div>';
         h+='<div style="display:grid;grid-template-columns:repeat(3,64px);gap:8px;justify-content:center">';
-        ["1","2","3","4","5","6","7","8","9","back","0","ok"].forEach(k=>{ if(k==="back") h+='<button class="gf-key" onclick="gofishKey(\'back\')"'+(lock?' disabled':'')+' aria-label="Erase">\u{232B}</button>'; else if(k==="ok") h+='<button class="gf-key" onclick="gofishCheck()"'+(lock||!t.typed?' disabled':'')+' style="background:'+color+';color:#fff;border-color:transparent" aria-label="Check">\u{2714}</button>'; else h+='<button class="gf-key" onclick="gofishKey(\''+k+'\')"'+(lock?' disabled':'')+'>'+k+'</button>'; });
+        ["1","2","3","4","5","6","7","8","9","back","0","ok"].concat(typeof typeKeysPadFor==="function"?typeKeysPadFor(st):[]).forEach(k=>{ if(k==="back") h+='<button class="gf-key" onclick="gofishKey(\'back\')"'+(lock?' disabled':'')+' aria-label="Erase">\u{232B}</button>'; else if(k==="ok") h+='<button class="gf-key" onclick="gofishCheck()"'+(lock||!t.typed?' disabled':'')+' style="background:'+color+';color:#fff;border-color:transparent" aria-label="Check">\u{2714}</button>'; else h+='<button class="gf-key" onclick="gofishKey(\''+k+'\')"'+(lock?' disabled':'')+'>'+k+'</button>'; });
         h+='</div>';
       } else {
         h+='<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">';
@@ -1527,7 +1527,7 @@ function buildJeopHtml(color){
     else if(t.act==="type"){
       h+='<div style="display:flex;justify-content:center;margin-bottom:10px"><span style="min-width:120px;height:56px;border-radius:14px;border:3px solid '+color+';background:#fff;font-family:\'Fraunces\',serif;font-size:30px;font-weight:800;color:#292524;display:inline-flex;align-items:center;justify-content:center;padding:0 14px">'+esc(t.typed||"")+'</span></div>';
       h+='<div style="display:grid;grid-template-columns:repeat(3,64px);gap:8px;justify-content:center">';
-      ["1","2","3","4","5","6","7","8","9","back","0","ok"].forEach(k=>{ if(k==="back") h+='<button class="jp-key" onclick="jeopKey(\'back\')"'+(lock?' disabled':'')+' aria-label="Erase">\u{232B}</button>'; else if(k==="ok") h+='<button class="jp-key" onclick="jeopCheck()"'+(lock||!t.typed?' disabled':'')+' style="background:'+color+';color:#fff;border-color:transparent" aria-label="Check">\u{2714}</button>'; else h+='<button class="jp-key" onclick="jeopKey(\''+k+'\')"'+(lock?' disabled':'')+'>'+k+'</button>'; });
+      ["1","2","3","4","5","6","7","8","9","back","0","ok"].concat(typeof typeKeysPadFor==="function"?typeKeysPadFor(st):[]).forEach(k=>{ if(k==="back") h+='<button class="jp-key" onclick="jeopKey(\'back\')"'+(lock?' disabled':'')+' aria-label="Erase">\u{232B}</button>'; else if(k==="ok") h+='<button class="jp-key" onclick="jeopCheck()"'+(lock||!t.typed?' disabled':'')+' style="background:'+color+';color:#fff;border-color:transparent" aria-label="Check">\u{2714}</button>'; else h+='<button class="jp-key" onclick="jeopKey(\''+k+'\')"'+(lock?' disabled':'')+'>'+k+'</button>'; });
       h+='</div>';
     } else {
       h+='<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">';
@@ -1943,7 +1943,7 @@ function buildFourHtml(color){
     else if(t.act==="type"){
       h+='<div style="display:flex;justify-content:center;margin-bottom:10px"><span style="min-width:120px;height:56px;border-radius:14px;border:3px solid '+color+';background:#fff;font-family:\'Fraunces\',serif;font-size:30px;font-weight:800;color:#292524;display:inline-flex;align-items:center;justify-content:center;padding:0 14px">'+esc(t.typed||"")+'</span></div>';
       h+='<div style="display:grid;grid-template-columns:repeat(3,64px);gap:8px;justify-content:center">';
-      ["1","2","3","4","5","6","7","8","9","back","0","ok"].forEach(k=>{ if(k==="back") h+='<button class="c4-key" onclick="fourKey(\'back\')"'+(lock?' disabled':'')+' aria-label="Erase">\u{232B}</button>'; else if(k==="ok") h+='<button class="c4-key" onclick="fourCheck()"'+(lock||!t.typed?' disabled':'')+' style="background:'+color+';color:#fff;border-color:transparent" aria-label="Check">\u{2714}</button>'; else h+='<button class="c4-key" onclick="fourKey(\''+k+'\')"'+(lock?' disabled':'')+'>'+k+'</button>'; });
+      ["1","2","3","4","5","6","7","8","9","back","0","ok"].concat(typeof typeKeysPadFor==="function"?typeKeysPadFor(st):[]).forEach(k=>{ if(k==="back") h+='<button class="c4-key" onclick="fourKey(\'back\')"'+(lock?' disabled':'')+' aria-label="Erase">\u{232B}</button>'; else if(k==="ok") h+='<button class="c4-key" onclick="fourCheck()"'+(lock||!t.typed?' disabled':'')+' style="background:'+color+';color:#fff;border-color:transparent" aria-label="Check">\u{2714}</button>'; else h+='<button class="c4-key" onclick="fourKey(\''+k+'\')"'+(lock?' disabled':'')+'>'+k+'</button>'; });
       h+='</div>';
     } else {
       h+='<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">';
@@ -2751,7 +2751,7 @@ function buildSureHtml(color){
       else if(t.act==="type"){
         h+='<div style="display:flex;justify-content:center;margin-bottom:10px"><span style="min-width:120px;height:56px;border-radius:14px;border:3px solid '+color+';background:#fff;font-family:\'Fraunces\',serif;font-size:30px;font-weight:800;color:#292524;display:inline-flex;align-items:center;justify-content:center;padding:0 14px">'+esc(t.typed||"")+'</span></div>';
         h+='<div style="display:grid;grid-template-columns:repeat(3,64px);gap:8px;justify-content:center">';
-        ["1","2","3","4","5","6","7","8","9","back","0","ok"].forEach(k=>{ if(k==="back") h+='<button class="sure-key" onclick="sureKey(\'back\')" aria-label="Erase">\u{232B}</button>'; else if(k==="ok") h+='<button class="sure-key" onclick="sureCheck()"'+(!t.typed?' disabled':'')+' style="background:'+color+';color:#fff;border-color:transparent" aria-label="Check">\u{2714}</button>'; else h+='<button class="sure-key" onclick="sureKey(\''+k+'\')">'+k+'</button>'; });
+        ["1","2","3","4","5","6","7","8","9","back","0","ok"].concat(typeof typeKeysPadFor==="function"?typeKeysPadFor(st):[]).forEach(k=>{ if(k==="back") h+='<button class="sure-key" onclick="sureKey(\'back\')" aria-label="Erase">\u{232B}</button>'; else if(k==="ok") h+='<button class="sure-key" onclick="sureCheck()"'+(!t.typed?' disabled':'')+' style="background:'+color+';color:#fff;border-color:transparent" aria-label="Check">\u{2714}</button>'; else h+='<button class="sure-key" onclick="sureKey(\''+k+'\')">'+k+'</button>'; });
         h+='</div>';
       } else {
         h+='<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">';
@@ -3463,7 +3463,7 @@ function buildKaboomHtml(color){
     else if(t.act==="type"){
       h+='<div style="display:flex;justify-content:center;margin-bottom:10px"><span style="min-width:120px;height:56px;border-radius:14px;border:3px solid '+color+';background:#fff;font-family:\'Fraunces\',serif;font-size:30px;font-weight:800;color:#292524;display:inline-flex;align-items:center;justify-content:center;padding:0 14px">'+esc(t.typed||"")+'</span></div>';
       h+='<div style="display:grid;grid-template-columns:repeat(3,64px);gap:8px;justify-content:center">';
-      ["1","2","3","4","5","6","7","8","9","back","0","ok"].forEach(k=>{ if(k==="back") h+='<button class="kb-key" onclick="kaboomKey(\'back\')"'+(lock?' disabled':'')+' aria-label="Erase">\u{232B}</button>'; else if(k==="ok") h+='<button class="kb-key" onclick="kaboomCheck()"'+(lock||!t.typed?' disabled':'')+' style="background:'+color+';color:#fff;border-color:transparent" aria-label="Check">\u{2714}</button>'; else h+='<button class="kb-key" onclick="kaboomKey(\''+k+'\')"'+(lock?' disabled':'')+'>'+k+'</button>'; });
+      ["1","2","3","4","5","6","7","8","9","back","0","ok"].concat(typeof typeKeysPadFor==="function"?typeKeysPadFor(st):[]).forEach(k=>{ if(k==="back") h+='<button class="kb-key" onclick="kaboomKey(\'back\')"'+(lock?' disabled':'')+' aria-label="Erase">\u{232B}</button>'; else if(k==="ok") h+='<button class="kb-key" onclick="kaboomCheck()"'+(lock||!t.typed?' disabled':'')+' style="background:'+color+';color:#fff;border-color:transparent" aria-label="Check">\u{2714}</button>'; else h+='<button class="kb-key" onclick="kaboomKey(\''+k+'\')"'+(lock?' disabled':'')+'>'+k+'</button>'; });
       h+='</div>';
     } else {
       h+='<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">';
