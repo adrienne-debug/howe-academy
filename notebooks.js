@@ -1498,7 +1498,7 @@
   // T = the look (a theme object), lv = the level switches (pkLevel), kidId = whose cards count for nbSkipNoSchoolDays.
   function generatePreK(ctx, T, lv, kidId) {
     ctx = ctx || {};
-    T = T || JU_THEME;
+    T = pkOwnName(T || JU_THEME, ctx);   // NBNAME: a name set on the Notebook tab reaches a kid's own look too
     lv = lv || JU_LEVEL;
     var weekData = ctx.weekData || {};
     if (Array.isArray(weekData)) weekData = weekData[0] || {};
@@ -2108,6 +2108,28 @@
     };
   }
   // PREKLEVEL_END
+
+  // NBNAME_START — the name a kid's OWN look prints can be changed (her ask 2026-11-10: "can we also have the option on
+  // notebooks for caleb 3d and julian to edit the name, so 3d will be David in his notebook"). The data-driven looks already
+  // print ctx.kidName; a look written for one child (no T.key) carries that child's name in its words. When ctx.kidName names
+  // someone else, every themed string holding the look's own name (its traceNameMixed) takes the new one, the trace is sized
+  // by pkKidName's rule, a letter word that is the old name falls back to the dinosaur set's word, and the guide is the one
+  // built from the levels (the legacy guide names the child throughout). Same name, or none = the look untouched, byte for byte.
+  function pkOwnName(T, ctx) {
+    var own = T && !T.key && T.traceNameMixed, want = String((ctx && ctx.kidName) || "").trim();
+    if (!own || !want || want.toLowerCase() === String(own).toLowerCase()) return T;
+    var K = pkKidName({ kidName: want, nbGrade: T.grade }, own);
+    var re = new RegExp("\\b" + String(own).replace(/[^A-Za-z]/g, "") + "\\b", "g");
+    var sub = function (v) { return typeof v === "string" ? v.replace(re, K.nm) : v; };
+    var out = Object.assign({}, T, { name: K.nm, traceName: K.up, traceNameMixed: K.mixed, traceSize: K.size, traceSizeMixed: K.size, parent: null });
+    ["book", "guideTitle", "hello", "footer", "dayTitle", "daySub", "drawHint"].forEach(function (f) { out[f] = sub(T[f]); });
+    out.P = Object.assign({}, T.P, { footer: sub((T.P || {}).footer) });
+    var lw = {};
+    Object.keys(T.letterWords || {}).forEach(function (l) { var w = T.letterWords[l]; lw[l] = (w && re.test(w[0])) ? (DN_LETTER_WORDS[l] || ["", ""]) : w; re.lastIndex = 0; });
+    out.letterWords = lw;
+    return out;
+  }
+  // NBNAME_END
   // CBPLAN_START — 🚜 "This week's plan" for a Pre-K notebook (11/3 note: the construction notebook had none; her yes 2026-11-08;
   // folded into the one Pre-K notebook the same day). The app's Mom card (index.html CBPLAN) asks the kid's own build what it
   // would pick, from the kid's own ctx (mastery decks, letter/number cursors, Mom's picks): planOnly stops generatePreK right
