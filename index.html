@@ -70377,7 +70377,7 @@ function trainFinish(st){
 let _trainOsc=[];   // this device's scheduled tones (stopped when the song is)
 let _trainRun=0;   // the song now running (a stop moves it on: every light checks it)
 function _trainStopSong(){
-  _trainRun++;
+  _trainRun++; try{ _trainHumStop(); }catch(e){}   // ABCTRAIN_AUDIO3
   _trainOsc.forEach(o=>{ try{ o.stop(); }catch(e){} }); _trainOsc=[];
 }
 // ABCTRAIN_AUDIO_START — 🔊 the song ran but made no sound (her report 2026-11-11: "all things work on the song properly but
@@ -70394,6 +70394,7 @@ function _trainUnlock(){
     if(ctx.state!=="running"){ try{ ctx.resume().catch(function(){}); }catch(e){} }   // ABCTRAIN_AUDIO2: "interrupted" too (iPad after speech), not only "suspended"
     const b=ctx.createBuffer(1,1,22050), src=ctx.createBufferSource(); src.buffer=b; src.connect(ctx.destination); src.start(0);   // the silent frame that unlocks iPad Safari
   }catch(e){}
+  try{ _trainHumStart(); }catch(e){}   // ABCTRAIN_AUDIO3: the playback route, started inside the tap
 }
 // PURE-ish: is the song's context able to sound right now? null = no WebAudio at all (the lights alone, as before)
 function _trainCtxRunning(){ try{ const ctx=(typeof bbAlarmCtx!=="undefined")?bbAlarmCtx:null; if(!ctx) return null; return ctx.state==="running"; }catch(e){ return null; } }
@@ -70404,6 +70405,23 @@ function trainSound(){
   setTimeout(()=>{ if(trainState!==st||st.phase!=="done") return; if(_trainCtxRunning()!==false){ trainSing(st); } st.song.muted=(_trainCtxRunning()===false); _mastRe(); },60);
 }
 // ABCTRAIN_AUDIO_END
+// ABCTRAIN_AUDIO3_START — 🔇 her report 2026-11-11 after AUDIO2, with the device's own breadcrumbs: "train song start: ctx=running
+// … osc=43 … muted=false" and still "no sound". A running context with 43 scheduled tones that no one hears is the iPad's
+// silent mode: WebKit plays WebAudio through the "ambient" route, which the mute switch / Control Center silent mode silences,
+// while speech (which she hears) goes another way. The known way through (unmute.js): a tiny silent <audio> element playing
+// during the song moves the page to the "playback" route, which silent mode does not cut. The element starts inside the kid's
+// tap (autoplay rules), loops silently while the song plays, and stops when the song ends or the game is parked. No writes.
+let _trainHum=null;
+const TRAIN_SILENT_WAV="data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YSADAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==";
+function _trainHumStart(){
+  try{
+    if(typeof document==="undefined") return;
+    if(!_trainHum){ const a=document.createElement("audio"); a.src=TRAIN_SILENT_WAV; a.loop=true; a.setAttribute("playsinline",""); a.setAttribute("webkit-playsinline",""); a.volume=0.01; a.style.display="none"; document.body.appendChild(a); _trainHum=a; }
+    const p=_trainHum.play(); if(p&&p.catch) p.catch(function(){});
+  }catch(e){}
+}
+function _trainHumStop(){ try{ if(_trainHum){ _trainHum.pause(); _trainHum.currentTime=0; } }catch(e){} }
+// ABCTRAIN_AUDIO3_END
 function _trainCtx(){
   try{
     if(typeof window==="undefined"||!(window.AudioContext||window.webkitAudioContext)) return null;
@@ -70455,7 +70473,7 @@ function trainSing(st){
       st.song.i=i; _trainSongPaint(st); },Math.round((x.t+0.15)*1000));
   });
   const last=notes[notes.length-1];
-  setTimeout(()=>{ if(!alive()) return; st.song.i=notes.length; st.song.end=true; _mastRe(); },Math.round((last.t+last.d+0.4)*1000));   // the train stays lit, Play again shows
+  setTimeout(()=>{ if(!alive()) return; st.song.i=notes.length; st.song.end=true; try{ _trainHumStop(); }catch(e){} _mastRe(); },Math.round((last.t+last.d+0.4)*1000));   // ABCTRAIN_AUDIO3: hum off with the song   // the train stays lit, Play again shows
 }
 // One note on screen without a re-render (so the train can glide): the shift, the lit car(s), the big letter
 function _trainSongPaint(st){
