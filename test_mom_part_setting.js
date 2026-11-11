@@ -15,6 +15,7 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const CURRWORDS = src.slice(src.indexOf("// CURRWORDS_START"), src.indexOf("// CURRWORDS_END"));   // CURRWORDS (2026-11-11): the page's words come from cw() — load the label map with the code under test
 const a = src.indexOf("// MOMLOOP_START"), b = src.indexOf("// MOMLOOP_END");
 function slice(name) {
   const i = src.indexOf("function " + name + "(");
@@ -50,7 +51,7 @@ function world(o) {
   ctx._mlLunchOverride = [13 * 60, 14 * 60];
   Object.defineProperty(ctx, "_todayDay", { get: () => "thursday" });
   vm.createContext(ctx);
-  vm.runInContext(HELPERS, ctx); vm.runInContext(BLOCK, ctx);
+  vm.runInContext(CURRWORDS, ctx); vm.runInContext(HELPERS, ctx); vm.runInContext(BLOCK, ctx);
   vm.runInContext("momLoop={cursor:0,order:" + JSON.stringify(o.order || ["lucy", "ellis"]) + "};", ctx);
   return { ctx, call: e => vm.runInContext(e, ctx),
     lay: () => { const laid = vm.runInContext("mlQueueLay(weekData.tasks)", ctx); return id => laid.find(t => t.id === id); } };
@@ -186,7 +187,7 @@ console.log("\n── the setting in the subject's edit sheet: targeted single-f
     currData: { subjects: { lucy: { math: { mom: "required", minutes: 40 } } } },
     db: { ref: p => ({ update: u => writes.push([p, u]) }) }, ceRenderEditSheet: () => {}, renderAll: () => {},
     esc: s => String(s), cap: s => String(s) };
-  vm.createContext(c); vm.runInContext(FN, c);
+  vm.createContext(c); vm.runInContext(CURRWORDS, c); vm.runInContext(FN, c);
   const html0 = vm.runInContext("ceMomPartSectionHTML('lucy','math',currData.subjects.lucy.math)", c);
   ok("shows on a Mom-required subject: Whole lesson selected", /Whole lesson/.test(html0) && /ce-chip sel"[^>]*>Whole lesson/.test(html0));
   vm.runInContext("ceMomPartSet('momPartMins',10)", c);

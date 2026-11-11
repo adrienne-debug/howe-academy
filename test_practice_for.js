@@ -7,6 +7,7 @@
  */
 const fs = require("fs"), path = require("path"), vm = require("vm");
 const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const CURRWORDS = src.slice(src.indexOf("// CURRWORDS_START"), src.indexOf("// CURRWORDS_END"));   // CURRWORDS (2026-11-11): the page's words come from cw() — load the label map with the code under test
 let pass = 0, fail = 0;
 function ok(name, cond, extra) { if (cond) { pass++; console.log("  ok  - " + name); } else { fail++; console.log("  FAIL- " + name + (extra !== undefined ? "  (" + JSON.stringify(extra) + ")" : "")); } }
 const sl = (a, b) => { const i = src.indexOf(a), j = src.indexOf(b, i); if (i < 0 || j < 0) throw new Error("slice " + a); return src.slice(i, j); };
@@ -18,6 +19,7 @@ function world(subjects, tasks, moves) {
   const ctx = { currData: { subjects }, weekData: { tasks }, DAYS_ALL: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
     moves: moves || {}, writes: [], renders: 0 };
   vm.createContext(ctx);
+  vm.runInContext(CURRWORDS, ctx);
   vm.runInContext(`
     function effectiveDay(t){ return moves[t.id]||t.day; }
     function momHere(){ return true; } function _dryRun(){ return false; } function esc(s){ return String(s); }

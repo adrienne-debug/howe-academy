@@ -88,7 +88,7 @@ console.log("1. the door helper");
   ok("a daily lays too (same pending run, two subjects now)",r2.length===1&&w.call("_rlwPend.subjects.length")===2);
   w.call("_rlwPend=null; _rlwTimer=null;"); w.log.timers.length=0;
   const r3=w.call('_rlwCurrDoor("📚 Cards: lesson text",[{kid:"kid_a",sk:"cards"}],[{p:"curriculum/lessons/kid_a/3/cards",was:"c1"}])');
-  ok("a card-only subject (not Builder-paced, not a daily): saved only — no run, one plain word",r3.length===0&&w.call("_rlwPend")===null&&w.log.timers.length===0&&w.log.toasts.length===1&&/Cards isn't paced by the Builder/.test(w.log.toasts[0]),w.log.toasts);
+  ok("a card-only subject (not Builder-paced, not a daily): saved only — no run, one plain word",r3.length===0&&w.call("_rlwPend")===null&&w.log.timers.length===0&&w.log.toasts.length===1&&/Cards isn't paced, so this week's cards update/.test(w.log.toasts[0]),w.log.toasts);   // CURRWORDS 2026-11-11: the toast's words
   w.call('_rlwCurrDoor("📚 Cards: lesson text",[{kid:"kid_a",sk:"cards"}],[])');
   ok("…the word is not repeated within 10 s (ten cells, one word)",w.log.toasts.length===1);
   w.call('_rlwCurrDoor("x",[{kid:"kid_a",sk:"cards"}],[],{toast:false})');

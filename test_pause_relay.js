@@ -104,7 +104,7 @@ console.log("\n── lnPauseRelay ──");
   const c = world({}, GRAMMAR, []);
   const r = c.lnPauseRelay("kid", "conv", false);
   ok("resume: EIC re-laid WITHOUT the drop flag, then the partner", eq(c.calls.map(x => [x[1], x[2], x[3]]), [["conv", "resume", null], ["gwtm", "resume:partner", null]]), c.calls);
-  ok("resume toast", /Editor in Chief is back — laid from the next open day; GWTM Purple re-laid around it/.test(c.toasts[0]), c.toasts);
+  ok("resume toast", /Editor in Chief is back — laid from the next open day; GWTM Purple moved around it/.test(c.toasts[0]), c.toasts);   // CURRWORDS 2026-11-11: the toast's words
 }
 {
   // a stack: pausing 3B makes 4A the unit up → it is re-laid so it steps in this week
