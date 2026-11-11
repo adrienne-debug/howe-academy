@@ -199,7 +199,7 @@ function playRound(w,misses){
   ok("the song's letters: A to Z, each once, in order",letters.join("")===ABC.join(""));
   ok("Twinkle Twinkle: A–G = C C G G A A G(held)",S.slice(0,7).map(x=>x.n+":"+x.b).join(" ")==="C4:1 C4:1 G4:1 G4:1 A4:1 A4:1 G4:2");
   ok("L M N O are quick (half beats) on D, then P held on C",S.filter(x=>"LMNO".indexOf(x.s)>=0&&x.k==="L").every(x=>x.b===0.5&&x.n==="D4")&&S.find(x=>x.s==="P").b===2&&S.find(x=>x.s==="P").n==="C4");
-  ok("W is held over three notes (dou-ble-u) and said once",S.filter(x=>x.s==="W").map(x=>x.k).join("")==="Lcc");
+  ok("W is held over two notes (her rule 2026-11-10: \"w is two beats\") and said once",S.filter(x=>x.s==="W").map(x=>x.k).join("")==="Lc");
   ok("the last two lines are words (\"Now I know my A B C's …\"), lit as a whole train, not said as letters",S.slice(S.findIndex(x=>x.s==="Now")).every(x=>x.k==="w")&&c._trainLit(S.findIndex(x=>x.s==="Now"))==="*");
   ok("six lines of 8 beats each: 48 beats",S.reduce((n,x)=>n+x.b,0)===48);
   ok("timing table: starts at 0, each note after the last, length = beats × the beat",T[0].t===0&&T.every((x,i)=>i===0||x.t>T[i-1].t)&&T.every(x=>x.d===x.b*0.5));
