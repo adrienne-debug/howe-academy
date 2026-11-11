@@ -62742,7 +62742,7 @@ function mpKey(kid,it){ const v=_mpMD()[kid]; if(Array.isArray(v)){ const ix=v.i
 function mpHeld(kid,it){ return !!(it&&it.gp&&it.gp.on===true&&mpOn(kid)); }
 function mpDayNum(kid){ try{ if(typeof mastSchoolDayNum==="function") return mastSchoolDayNum(kid); }catch(e){} return Math.floor(Date.now()/86400000); }   // right days = the kid's school days
 function mpDayKey(){ try{ if(typeof gameLogDay==="function") return gameLogDay(); }catch(e){} return new Date().toISOString().slice(0,10).replace(/-/g,""); }
-function _mpPool(kid,items){ try{ const w=whichPool(items,WHICH_MIX,kid); return (typeof spellPlayable==="function")?w.concat((items||[]).filter(i=>spellPlayable(i)&&w.indexOf(i)<0&&(typeof gameDeckOn!=="function"||gameDeckOn(kid,"spell",i.subject)))):w; }catch(e){ return []; } }   // 🎮 GAMEGRID: a spelling deck Mom turned off for Build it stays out of the round   // 🔤 SPELLBUILD: spelling cards play Build it
+function _mpPool(kid,items){ try{ const w=whichPool(items,WHICH_MIX,kid), p=(typeof spellPlayable==="function")?w.concat((items||[]).filter(i=>spellPlayable(i)&&w.indexOf(i)<0&&(typeof gameDeckOn!=="function"||gameDeckOn(kid,"spell",i.subject)))):w; return (typeof mpMeanPool==="function")?p.concat(mpMeanPool(kid,items,p)):p; }catch(e){ return []; } }   // 📖 MISSPLAY_MEANING: a long-answer card plays its meaning turn   // 🎮 GAMEGRID: a spelling deck Mom turned off for Build it stays out of the round   // 🔤 SPELLBUILD: spelling cards play Build it
 function _mpModes(kid,items){ try{ return whichDeckModes(items,kid); }catch(e){ return {}; } }
 // how often a card was missed or close in its recent drills (who practices first)
 function mpMissCount(kid,id,days){
@@ -62806,6 +62806,87 @@ function mpAfterStudy(kid,items,state,touched){
     if(touched.indexOf(it)<0) touched.push(it);
   });
 }
+// MISSPLAY_MEANING_START — 📖 the practice round's "meaning" turn (her yes 2026-11-11, after her report the same day on a drill: "he only had
+// one game card at the end, even though he had eight missed"). Why: Which one?'s rule (2026-10-23) lets a card play only when its
+// back fits a tile (WHICH_BACK_MAX letters) — "a definition paragraph is a drill card, not a pick-3" — so 7 of his 8 misses
+// (Geography / Grammar / Vocabulary / Punctuation / Capitalization / Math definitions and rules, 25–131 letters) never joined the list.
+//   · WHICH CARD — a card whose back is LONGER than WHICH_BACK_MAX (and is a real back: not empty, not the front, not a /sound/),
+//     with a front that fits one line (WHICH_FRONT_MAX). Spelling, phonogram and procedure cards stay out, as do Which one?'s other
+//     card rules (in play, not a production twin, the class / section / check-in filters) and Mom's 🎮 grid column for Which one?.
+//   · THE TURN — reversed: the app shows and says the BACK (the definition, mastSpeak — the drill's voice) and the kid taps the right
+//     FRONT from three. The two lures are other cards of the same deck: a different front, and a back that is not the same as this
+//     card's (two Capitalization sentences can share "First word of a sentence." — never two right answers). Fewer than 2 lures →
+//     the card can't play: it stays in the drill, as before. The tiles are the round's text tiles (class "tf", TILEFIT).
+//   · EVERYTHING ELSE IS THE ROUND'S OWN — the tap is mpTap (a wrong tap greys out and it says it again), the first-tap rights and
+//     the "needs rights today" rule (mpNote), the known cards between, the round's one save and its game-log entry. No new writes.
+//   · ONLY THE PRACTICE ROUND — the drill's after-games, the Day line and the study-end round (all mpOpen). The 🎮 Games tab's
+//     Which one? (whichDeckModes / whichPool / whichTiles) is untouched. No kid's name in this block.
+function _mpMeanEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function _mpMeanBack(kid,i){ return _matchPlain(i&&((typeof owRuleBack==="function")?owRuleBack(kid,i):i.answer)); }   // OURWORDS: Mom's own wording first
+// Which one?'s card rules for any card that stands in a meaning turn (the card itself or a lure)
+function _mpMeanBase(kid,i){
+  if(!i||(i.status!=="active"&&i.status!=="introduction")||i.dir==="prod") return false;
+  const f=_matchPlain(i.prompt); if(!f||f.length>WHICH_FRONT_MAX) return false;
+  if(_whichLeftOut(i,kid)) return false;
+  if(typeof wwIsSpell==="function"&&wwIsSpell(i)) return false;
+  try{ if(typeof mastKnowledgeType==="function"&&mastKnowledgeType(i)==="procedure_fluency") return false; }catch(e){}
+  if(typeof envtWaitsForCheckin==="function"&&envtWaitsForCheckin(kid,i.subject)) return false;
+  if(typeof cpceHidItem==="function"&&cpceHidItem(kid,i)) return false;
+  if(typeof cpSecOffItem==="function"&&cpSecOffItem(kid,i)) return false;
+  if(typeof gameDeckOn==="function"&&!gameDeckOn(kid,"which",i.subject||"Other")) return false;
+  return true;
+}
+// PURE: a card that plays the meaning turn (its back is too long for a Which one? tile)
+function mpMeanCard(kid,i){
+  if(!_mpMeanBase(kid,i)) return false;
+  const b=_mpMeanBack(kid,i);
+  return b.length>WHICH_BACK_MAX&&b.charAt(0)!=="/"&&_whichNorm(b)!==_whichNorm(i.prompt);
+}
+function _mpMeanDecks(kid,items){ const by={}; (items||[]).forEach(x=>{ if(_mpMeanBase(kid,x)){ const d=x.subject||"Other"; (by[d]||(by[d]=[])).push(x); } }); return by; }
+// the deck's cards that can stand beside it: a different front (one per front), a real back that isn't this card's back
+function _mpMeanLures(kid,it,deck){
+  const f=_whichNorm(it.prompt), b=_whichNorm(_mpMeanBack(kid,it)), seen={}; seen[f]=1;
+  return (deck||[]).filter(x=>{ if(!x||x===it||x.id===it.id) return false; const k=_whichNorm(x.prompt), xb=_whichNorm(_mpMeanBack(kid,x)); if(!k||seen[k]||!xb||xb===b) return false; seen[k]=1; return true; });
+}
+// PURE: the turn's three tiles (card ids), or null when the deck has fewer than 2 lures
+function mpMeanTiles(kid,it,items,rnd){
+  const c=_mpShuffle(_mpMeanLures(kid,it,_mpMeanDecks(kid,items)[it.subject||"Other"]),rnd);
+  if(c.length<2) return null;
+  return _mpShuffle([it.id,c[0].id,c[1].id],rnd);
+}
+// the cards the practice round can play this way (not already in its pool)
+function mpMeanPool(kid,items,have){
+  const hv=new Set((have||[]).map(x=>x&&x.id)), by=_mpMeanDecks(kid,items), out=[];
+  (items||[]).forEach(i=>{ if(i&&!hv.has(i.id)&&mpMeanCard(kid,i)&&_mpMeanLures(kid,i,by[i.subject||"Other"]).length>=2) out.push(i); });
+  return out;
+}
+// mpTurn's hook: null = not a meaning card (the round goes on as before) · false = can't build (skipped) · the turn
+function mpMeanTurn(U,it,list){
+  if(!U||!it||!mpMeanCard(U.kid,it)) return null;
+  const m=U.modes&&U.modes[it.subject||"Other"];   // a card its deck already plays as a picture / symbol keeps that turn
+  try{ if((m==="symbol"&&_smTileVis(it))||(m==="picture"&&_smTileVis(it,true))) return null; }catch(e){}
+  const tiles=mpMeanTiles(U.kid,it,mpItems(U.kid));
+  if(!tiles) return false;
+  const t={pid:it.id,list:!!list,mode:"meaning",tiles,wrong:{},back:_mpMeanBack(U.kid,it)};
+  if(typeof gameCardShown==="function") gameCardShown(t);   // ⏱ CARDSECS
+  return t;
+}
+function mpMeanSay(c){ try{ if(c&&c.back) mastSpeak(c.back); }catch(e){} }
+// the turn's top: the back, big, with 🔊
+function mpMeanHeadHtml(c,color,wrongNow){
+  const b=String((c&&c.back)||""), fs=b.length<=40?'26px':b.length<=90?'21px':'18px';
+  return '<div style="display:flex;align-items:center;justify-content:center;gap:14px;margin:6px 0 8px"><div style="flex:1;font-family:\'Fraunces\',serif;font-size:'+fs+';font-weight:800;color:#292524;text-align:center;line-height:1.25">'+_mpMeanEsc(b)+'</div><button onclick="mpSay()" aria-label="Hear it again" style="width:60px;height:60px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:28px;cursor:pointer">\u{1F50A}</button></div>'+
+    '<div style="text-align:center;font-size:17px;font-weight:800;color:#57534e;margin-bottom:12px">'+(wrongNow?'Almost — try again!':'Which one is it? Tap it!')+'</div>';
+}
+// a front as a tile shows it: text escaped; Mom's own <u> <b> <i> <em> <strong> marks kept (bare), so "Kangaroos" stays underlined
+function mpMeanFaceHtml(p){
+  return String(p==null?"":p).split(/(<[^>]*>)/).map(x=>{ const m=/^<(\/?)(u|b|i|em|strong)\b[^>]*>$/i.exec(x); if(m) return "<"+m[1]+m[2].toLowerCase()+">"; if(/^<[^>]*>$/.test(x)) return " "; return _mpMeanEsc(x); }).join("");
+}
+function mpMeanTileHtml(t,ti,cls){
+  const n=_matchPlain(t&&t.prompt).length, fs=n<=8?'clamp(20px,5.5vw,34px)':n<=18?'clamp(15px,4.2vw,24px)':'clamp(12px,3.4vw,18px)';
+  return '<div class="'+cls+'" role="button" aria-label="Choice '+(ti+1)+'" onclick="mpTap('+ti+')"><span class="mp-ans tf" style="font-size:'+fs+'">'+mpMeanFaceHtml(t&&t.prompt)+'</span></div>';
+}
+// MISSPLAY_MEANING_END
 // ── the practice round ──
 function _mpShuffle(a,rnd){ rnd=rnd||Math.random; for(let i=a.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); const t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
 // PURE over its inputs: today's list cards (most-missed first), each followed by a known card from the same decks
@@ -62836,13 +62917,15 @@ function mpTurn(U){
       const others=U.pool.filter(x=>x!==it&&spellPlayable(x)).map(spellWordOf);
       const t=_spellTurn(it,others); U.cur={pid:e.pid,list:!!e.list,mode:"spell",tiles:t.tiles,word:t.word,placed:[],wrong:{},tries:0,msg:""}; if(typeof gameCardShown==="function") gameCardShown(U.cur); return true;   // ⏱ CARDSECS
     }
+    const mt=(it&&typeof mpMeanTurn==="function")?mpMeanTurn(U,it,!!e.list):null;   // 📖 MISSPLAY_MEANING: a long-answer card — show its back, tap its front
+    if(mt){ U.cur=mt; return true; } if(mt===false){ U.i++; continue; }
     let tiles=null; try{ tiles=(it&&mode)?whichTiles(it,U.pool,null,mode):null; }catch(err){ tiles=null; }
     if(tiles){ U.cur={pid:e.pid,list:!!e.list,mode,tiles,wrong:{}}; if(typeof gameCardShown==="function") gameCardShown(U.cur); return true; }   // ⏱ CARDSECS
     U.i++;
   }
   U.cur=null; return false;
 }
-function mpSay(){ const U=mpUI; if(!U||!U.cur) return; const it=_mpItem(U,U.cur.pid); try{ if(U.cur.mode==="spell"){ mastSpeak(U.cur.word,{spell:true}); return; } if(it&&it.prompt&&!(U.cur.mode==="answer"&&typeof whichSilent==="function"&&whichSilent(it))) mastSpeak(_matchPlain(it.prompt)); }catch(e){} }   // 🔤 SPELLBUILD: the slow spelling voice
+function mpSay(){ const U=mpUI; if(!U||!U.cur) return; const it=_mpItem(U,U.cur.pid); try{ if(U.cur.mode==="spell"){ mastSpeak(U.cur.word,{spell:true}); return; } if(U.cur.mode==="meaning"){ if(typeof mpMeanSay==="function") mpMeanSay(U.cur); return; }   /* 📖 MISSPLAY_MEANING: says the back */ if(it&&it.prompt&&!(U.cur.mode==="answer"&&typeof whichSilent==="function"&&whichSilent(it))) mastSpeak(_matchPlain(it.prompt)); }catch(e){} }   // 🔤 SPELLBUILD: the slow spelling voice
 // 🔤 SPELLBUILD inside the round: the same tiles as Build it; a right first try / a second miss also = Word Workout's day (one ww write in the round's save)
 function mpSpellSayAgain(){ mpSay(); }
 function mpSpellTapTile(ti){ const U=mpUI; if(!U||U.phase!=="play"||U.lock||!U.cur||U.cur.mode!=="spell") return; const c=U.cur; if(!c.tiles[ti]||c.tiles[ti].used) return; c.tiles[ti].used=true; c.placed.push(ti); c.msg=""; mpRender(); }
@@ -62934,7 +63017,8 @@ function mpRender(){
     const left=U.q.length-U.i;
     h+='<div style="font-size:12.5px;color:#64748b;font-weight:700;margin:2px 0 10px">'+left+' to go</div>';
     if(c.mode==="spell"&&typeof spellBoardHtml==="function"){ h+=SPELL_CSS+spellBoardHtml(c,{color:color,pre:"mpSpell",msg:c.msg,lock:U.lock}); ov.innerHTML=h+'</div>'; return; }   // 🔤 SPELLBUILD
-    if(ans){
+    if(c.mode==="meaning"&&typeof mpMeanHeadHtml==="function") h+=mpMeanHeadHtml(c,color,wrongNow);   // 📖 MISSPLAY_MEANING
+    else if(ans){
       const fr=_matchPlain(it&&it.prompt), mute=(typeof whichSilent==="function")&&whichSilent(it);
       h+='<div style="display:flex;align-items:center;justify-content:center;gap:14px;margin:6px 0 8px;flex-wrap:wrap"><div style="font-family:\'Fraunces\',serif;font-size:'+(fr.length<=8?'48px':fr.length<=18?'36px':'26px')+';font-weight:800;color:#292524;text-align:center;line-height:1.1">'+E(fr)+'</div>'+(mute?'':'<button onclick="mpSay()" aria-label="Hear it again" style="width:60px;height:60px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:28px;cursor:pointer">\u{1F50A}</button>')+'</div>';
       h+='<div style="text-align:center;font-size:17px;font-weight:800;color:#57534e;margin-bottom:12px">'+(wrongNow?'Almost — try again!':'Tap the answer!')+'</div>';
@@ -62944,7 +63028,8 @@ function mpRender(){
     }
     h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">';
     c.tiles.forEach((pid,ti)=>{ const t=items.find(x=>x&&x.id===pid), cls='mp-tile'+(c.wrong[pid]?' mp-wrong':'')+(U.grow===ti?' mp-grow':'');
-      if(ans){ const bk=(typeof _whichBack==="function")?_whichBack(t):String((t&&t.answer)||""); h+='<div class="'+cls+'" role="button" aria-label="Answer '+(ti+1)+'" onclick="mpTap('+ti+')"><span class="mp-ans tf" style="font-size:'+(bk.length<=3?'clamp(28px,8vw,54px)':bk.length<=7?'clamp(20px,5.5vw,36px)':'clamp(14px,4vw,24px)')+'">'+E(bk)+'</span></div>'; }
+      if(c.mode==="meaning"&&typeof mpMeanTileHtml==="function") h+=mpMeanTileHtml(t,ti,cls);   // 📖 MISSPLAY_MEANING
+      else if(ans){ const bk=(typeof _whichBack==="function")?_whichBack(t):String((t&&t.answer)||""); h+='<div class="'+cls+'" role="button" aria-label="Answer '+(ti+1)+'" onclick="mpTap('+ti+')"><span class="mp-ans tf" style="font-size:'+(bk.length<=3?'clamp(28px,8vw,54px)':bk.length<=7?'clamp(20px,5.5vw,36px)':'clamp(14px,4vw,24px)')+'">'+E(bk)+'</span></div>'; }
       else h+='<div class="'+cls+'" role="button" aria-label="Picture '+(ti+1)+'" onclick="mpTap('+ti+')"><span class="mp-vis">'+((typeof _smTileVis==="function"&&_smTileVis(t))||'')+'</span></div>'; });
     h+='</div>';
   } else {
