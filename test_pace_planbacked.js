@@ -89,7 +89,7 @@ console.log("momDismiss 'skip for good' — refused for plan-backed, unchanged f
 
 console.log("card — hand-count inputs hidden for plan-backed (source assertions)");
 {
-  ok("card branches on planBacked and shows a Progress line", /const _pbCard=\(typeof planBacked==="function"\)&&planBacked\(ceEditKid,ceEditKey\);/.test(src) && src.indexOf("Counted by lesson id from the done record") >= 0);
+  ok("card branches on planBacked and shows a Progress line", /_pbCard=\(typeof planBacked==="function"\)&&planBacked\(ceEditKid,ceEditKey\);/.test(src) && src.indexOf("Counted by lesson id from the done record") >= 0);   // CURRCARD 2026-11-11: declared once at the top of the card, assigned here
   ok("Clear-them button wired to cePaceClearHand", src.indexOf("cePaceClearHand(\\''+ceEditKid+'\\',\\''+ceEditKey+'\\')") >= 0);
   ok("legacy inputs still present in the else branch", src.indexOf("onchange=\"ceSetCount(\\'adjust\\'") >= 0 && src.indexOf("onchange=\"ceSetCount(\\'paceAdjust\\'") >= 0);
 }
