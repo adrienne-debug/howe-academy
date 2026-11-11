@@ -13,6 +13,12 @@ The four constraints this plan holds to: keep the grid and the lanes · remove n
 spot, with new-subject setup as the one guided flow apart from it · nothing reachable from two places unless one is a plain
 shortcut that opens the same panel.
 
+**Amended the same day with her answers to questions 1 and 2** (relayed 2026-11-10): *"i like the rules table better than
+the builder i want to get away from builder except for the initial setup."* So: every per-subject setting **writes and
+re-lays on the tap**, Rules-table style; the **⚙ Rules table stays a live editor**; the Builder form survives **only inside the
+guided Add**. And a bug she reported in the same breath — tapping a Rules-table pill "takes me back to the top" — is diagnosed
+in §4.0 as a pre-slice fix, **RULESCROLL**.
+
 ---
 
 ## The short version
@@ -20,8 +26,9 @@ shortcut that opens the same panel.
 | | Today | Proposed |
 |---|---|---|
 | Controls a Mom can reach on the page | **≈330** (331 counted; see §1) | the same set, moved — none removed |
-| Places that hold per-subject settings | **5**: Add sheet · subject card · ⚙ Rules table · 🧱 Builder form · Family-time editor | **1** card (+ the Add flow, which is setup) |
-| Per-subject settings writable from 2+ editors | **18 groups** (§1.4) | **0** — each has one editor; the Rules table becomes a compare view whose cells open the card |
+| Places that hold per-subject settings | **5**: Add sheet · subject card · ⚙ Rules table · 🧱 Builder form · Family-time editor | **1 editor, drawn in 2 places** — the card and the ⚙ Rules table draw the same pill through one function (+ the Add flow, which is setup) |
+| Per-subject settings writable from 2+ editors | **18 groups** (§1.4) | **0** — one function writes each field; the Builder form no longer edits anything after setup |
+| When a change takes effect | Rules table: on the tap · Builder: staged until Build · card: mixed | **always on the tap**, the week re-lays, ↩ Undo one tap (her answer to question 1) |
 | Housekeeping / migration / audit banners above the grid | **14** different banners, each its own colour | one collapsed **🔍 Checks (n)** drawer, shown only when n > 0 |
 | Toolbar buttons and toggles above the table | **11** | **5** (kid chips · 🏡 Family · ＋ Add subject · 📅 *Kid*'s year · ⋯ More) |
 | First subject from a book, until it is on the week | **21 taps · 5 screens · 20 Howe words, 5 of them decisions you must get right** | **16 taps · 3 screens · 2 Howe words (lane, card), 0 forced decisions** |
@@ -110,6 +117,9 @@ sheet sets a field the card later edits) are listed separately; your rule allows
 | 16 | `scheduleOverrides/<date>/<kid>/added/<sk>` | editor **➕** make-up 57008 | removed by **✕ make-up** 57002 | |
 | 17 | `curriculum/dayCap/<kid>` and the whole ⚙ Rules panel | grid **⚙ Rules & day cap** (#5) | Builder tab **⚙ Rules & day cap for *Kid*** (#166) | |
 | 18 | the Family-time block editor (`famBlockEditorHTML` 36830) | grid 🏡 **⚙ Family time** panel 37943 | Family-time **sheet** (band tap / column tap) 37311 | Settings door · Mom's Day roadmap row · Units **⚙ Edit on the Grid** — these three are shortcuts to the same editor (allowed) |
+
+After her answers to questions 1 and 2, rows 1–4 resolve as *one function, drawn in the table and on the card* (the Builder's
+staged copy goes); rows 13–14 shrink to the guided Add plus "Lay it out again" and its one ↩ Undo.
 
 **Create-vs-edit pairs** (Add sheet field → the card/Rules editor that changes it later; allowed by your rule, but they are
 why a new mom meets `device`, `priority`, `carryover cap`, `sticky`, `first/last` *before* she has a subject): device, Mom
@@ -255,8 +265,15 @@ the spot while the Builder stages until Build.
 ```
 
 Three panels instead of five: **the subject card** (every per-subject option), **📅 *Kid*'s year** (every per-kid option,
-including lanes), and **Settings** (family-wide, already there, one door). The **＋ Add subject** flow is the one guided
-path apart from them.
+including lanes **and the live ⚙ Rules table**), and **Settings** (family-wide, already there, one door). The **＋ Add subject**
+flow is the one guided path apart from them, and it is the **only place the 🧱 Builder form is drawn** after this plan.
+
+**How "one spot" and "the Rules table stays" fit together (her answer to question 2).** The card's *When it runs* section
+and the Rules table's row for that subject are **one control drawn twice**: one function, `rlPillHTML(kid, sk, field)`,
+returns the pill for a field (Days pins, times a week, most in one day, minutes, Mom, device, priority, order in the day,
+right after, if missed, co-op day, Mom days, new-lesson day) and every place that shows that field calls it. There is one
+editor per field in the code; the table is where she edits twenty subjects at once, the card is where she edits one. No
+"shortcut cells", no second implementation, no staged copy.
 
 ### 3.2 The one subject card — sections and what moves in
 
@@ -268,19 +285,22 @@ chip — all **shortcuts to the same card** (allowed). Sections, top to bottom; 
 |---|---|---|---|---|
 | hdr | *name* · *where it happens* emoji · **⏸ Pause / ▶ Resume** · **Delete** (⋯) | rename; pause toggle moves up from section 27 to the header; delete behind ⋯ with the same confirm | card Display Name; card Status (33085); card Delete (33094) | `display`, `paused`/`pausedSince`/`planAnchor`, delete path |
 | 1 | **The basics** | *Where it happens* (paper/computer/iPad/book/keyboard) · *How long* (minutes) · *Needs you?* (No / Sometimes / Yes) · *Who does it* (this kid; "do it together" → opens the Family-time editor) | **⚙ Rules table** Device · Min · Mom (53550) and the Add sheet's copies | `device`, `minutes`, `mom` via `rlSet` 53418 |
-| 2 | **When it runs** | *Days of the week* (Mon–Fri pins) · *How many times a week* · *Most in one day* (cap) · *Order in the day*: First thing / Last thing / Last of their own work / Right after ___ (sticky + before/after) · *If it's missed* (carries / skip it) · *Co-op days* (keep / shorter / skip; the no-co-op-week days) · *Lesson day* (📌 new lesson stays on …, if missed …, missed practice …) · *Mom on which days* (multi-day lessons) · *A class at a set time* (⏰ time · meeting dates · join link) | **⚙ Rules table** Days, ×/wk, Cap, Co-op day, Mom days, 📌 new lesson, First/last, Sticky, No-carry, seq; **🧱 Builder** Days it can land on, Times per week (become the SAME controls — question 1); card ⏰ Set time | `allowedDays` (`cbPinDay`), `pacing/tpw`+`timesPerWeek`, `cap`, `coopDay`, `noCoopDays`, `momDays`, `momDayMin`, `lessonDay*`, `rules` tokens, `stickyWith/Order`, `noCarry`, `fixedTime/fixedDates/joinUrl` |
+| 2 | **When it runs** | *Days of the week* (Mon–Fri pins) · *How many times a week* · *Most in one day* (cap) · *Order in the day*: First thing / Last thing / Last of their own work / Right after ___ (sticky + before/after) · *If it's missed* (carries / skip it) · *Co-op days* (keep / shorter / skip; the no-co-op-week days) · *Lesson day* (📌 new lesson stays on …, if missed …, missed practice …) · *Mom on which days* (multi-day lessons) · *A class at a set time* (⏰ time · meeting dates · join link) — **every pill is `rlPillHTML`, the same pill the Rules table draws; every one writes and re-lays on the tap** | **⚙ Rules table** Days, ×/wk, Cap, Co-op day, Mom days, 📌 new lesson, First/last, Sticky, No-carry, seq (the table keeps drawing them too); **🧱 Builder** Days it can land on, Times per week — the Builder's staged copies go away, these are the only Days / times controls; card ⏰ Set time | `allowedDays` (`cbPinDay`), `pacing/tpw`+`timesPerWeek`, `cap`, `coopDay`, `noCoopDays`, `momDays`, `momDayMin`, `lessonDay*`, `rules` tokens, `stickyWith/Order`, `noCarry`, `fixedTime/fixedDates/joinUrl` — all through `rlSet` 53418 / `cbPinDay` 53397, re-lay as today |
 | 3 | **The lessons** | the list (per-line rename · ✎ edit as a list with sort / trim / ×N days) · *Mark one done* (✓, ↓ through here, day it was done) · *Not done* (↩ chips, make contiguous, hand-marks ×) · *Lessons in order?* (Sequenced / Same every day — tracking) · *Days per lesson* · 📎 *Links & supplies for this subject* (the resources panel's subject defaults) | card Lesson list, ✓ Mark a lesson done, Lesson Tracking; the cell menu's 📎 subject-default half (`lrSetSubjectDefault` 39671) | `lessonSeq`/`lessonIds`/`nextLid`/`total`, `done/…`, `manualDone`, `tracking`, `curriculum/resources/<kid>/<sk>/_subject` |
-| 4 | **Pace** (*was 🧱 Pacing & build*) | *How to pace it*: Finish by a date / So many a week / Until a date / By pages / Just minutes · Start on · mode fields (finish by, stop after, pages, 📸 scan the table of contents, units, label, cell text) · *Where they are* (N of M done · ahead/behind · finishes ~date — the Progress block) · **Preview** → *Put it on the schedule* / *Lay it out again* · ↩ Undo the last lay-out · *Catch up now* (↻ Re-lay remaining) · *When behind* (extras on other days) | 🧱 Builder form minus Days/Times (now §2); card Progress, When behind, Re-lay remaining | `pacing/*`, `cbApply`'s multi-path update, `planAnchor`, `overflowExtras` |
+| 4 | **Pace** (*was 🧱 Pacing & build*) | *How to pace it*: Finish by a date / So many a week / Until a date / By pages / Just minutes · mode fields (finish by, stop after, total pages · start page · pages a day · label · chapters · cell text) — **each writes its `pacing/*` leaf on the tap and re-lays through the same door the Rules table's ×/wk uses** (`rlSet(…, relay=true)` → `_gvRelaySubject`), so the grid's derived column IS the preview · *Where they are* (N of M done · ahead/behind · finishes ~date — the Progress block) · *Lay it out again* (= ↻ Rebuild this one subject, with the Keep/Dismiss gate when a legacy subject has leftovers, as today) · ↩ Undo the last lay-out · *Catch up now* (↻ Re-lay remaining) · *When behind* (extras on other days) · 📸 *Photo of the table of contents* (the scan, writes `pacing/pages/units` when she keeps the result) | 🧱 Builder form's mode + mode fields (now saved fields, not a staged form); card Progress, When behind, Re-lay remaining. **Not here:** *Start on* and *Preview* — those exist only inside the guided Add (initial setup), per her answer | `pacing/mode`, `pacing/targetDate`, `pacing/windowEnd`, `pacing/pages/*`, `pacing/minutesText` (new `rlSet` fields, same path `cbApply` writes today), then `cbApply`'s multi-path update via `_gvRelaySubject`; `planAnchor`, `overflowExtras` |
 | 5 | **Lane** | "In lane *Math* · 2 of 3 · up now / waiting" · *Edit this lane* (opens the lane editor in 📅 *Kid*'s year) · *Stack a book after this one* (= `lnEditStart(null,sk)`) | ⚙ Rules ▸ 🛤 Lanes chips (53316) | none here (shortcuts) |
 | 6 | **Checking off** | *You approve check-offs* (Mom check) · *Allow out-of-order check-offs* · *Timed card* (minimum minutes, show countdown) · *Mom's part* (whole / part · minutes · at the beginning) · *Record a score* (+ format) · *Reading log* (+ who logs) · *Opens a workbook* · *Opens a study session* · *Practice for* (dailies) | card sections 6–9, 14–17 | `momVerify`, `allowOutOfOrder`, `minMin`, `minShow`, `momPartMins/Start`, `scored`, `scoreType`, `readingLog(By)`, `workbook`, `study`, `practiceFor`, `practiceDayFrom` |
 | 7 | **Links** | 🔗 lesson link template · button label · per-lesson overrides | card 🔗 Lesson link | `lessonUrl`, `linkLabel`, `lessonUrls/<id>` |
 | 8 | **Rewards** | 🏆 completion points · 📖 book milestones (+ points) | card sections 25–26 | `completionPoints`, `bookMilestones`, `bookPoints` |
 | 9 | **Fix-ups** (Everything view only) | *Fix false check-offs* (walk back) · *Hand counts* (Completed / Schedule next-lesson / Clear them) · *Pace keyword · Starts week* · *Carry-over cap* · *Copy to another kid* · *Priority* | card sections 20–22, Carryover Cap; Builder Copy to another kid; Rules Priority | `pace/subjects/<kid>/<sk>`, `carryoverCap`, `priority`, `cbCopyTo` |
 
-Every control keeps its function and its write. The **⚙ Rules table** keeps existing as the kid-level **Compare** view
-(§3.3) — what changes is that its cells stop being a second editor (question 2). The **Builder tab** (`renderCurrBuilder`)
-loses its two remaining doors (`⤒ Delete & shift up` and `Add it back…` land on the card's Pace section instead); it is
-not deleted in this plan.
+Every control keeps its function and its write. The **⚙ Rules table** stays exactly where it is and stays live (§3.3) —
+it and the card call the same `rlPillHTML`. **The Builder as an editor goes away after setup**: the card's Pace section
+holds the saved pacing fields (writing on the tap), the guided Add holds the Builder form for the first lay-out, and the
+**Builder tab** (`renderCurrBuilder`) loses its two remaining doors — `⤒ Delete & shift up` (55006) and `Add it back…`
+(55759) today jump to it to show a preview; after slice 3 each shows its one-time preview inside the card's Pace section
+("Lay it out again?" with the same Preview card → Build / Cancel) and the tab is no longer reachable from any `onclick`.
+It is not deleted in this plan (question 4).
 
 ### 3.3 The 📅 *Kid*'s year panel — every per-kid option
 
@@ -291,7 +311,7 @@ Replaces the two kid-tool buttons (`⚙ Rules & day cap`, `🏁 Target · Mom Ch
 | **Hours & load** | *Longest school day* (the day cap − / + · reset to school hours) · *Finish the year by* (target date · clear) · *You approve check-offs for this kid* (the Mom-check master) · door: *Family-wide hours, sitter, devices, order of the day → Settings* | ⚙ Rules day cap (53563); 🏁 panel target + Mom Check (57426–57428); Rules footer door (53644) |
 | **School terms** (*was School Sessions*) | the sessions list and editor exactly as today (name, dates, kids, school days, points, song, goals, soft/hard, delete, new) | 🏁 panel `ceRenderSessions` 29725 |
 | **Lanes** | the lane list and editor exactly as today (+ New lane, ✎ edit, ✕ remove, retire, ↩ Undo, "not stacked yet" chips) | ⚙ Rules ▸ 🛤 Lanes `lnRenderSection` 53316 — also opened by tapping a **🛤 lane band** in the grid |
-| **Compare subjects** (Everything view) | the per-subject table, one row per subject, same columns — **read-only; tapping a cell opens that subject's card at that section** | ⚙ Rules table `cbRenderRules` 53550 (question 2) |
+| **All subjects** (*the ⚙ Rules table, live*) | the per-subject table exactly as today — one row per subject, every pill editable, writes and re-lays on the tap — drawn by the same `rlPillHTML` the card uses, so a change made here and a change made on the card are the same code path. Scrolls cleanly after RULESCROLL (§4.0). In Simple view the advanced columns (Co-op day, Mom days, 📌 new lesson, Sticky, If missed, Priority) are hidden, not removed | ⚙ Rules table `cbRenderRules` 53550 (her answer to question 2: "i like the rules table better than the builder") |
 
 ### 3.4 What the grid itself keeps
 
@@ -312,7 +332,7 @@ take turns in: when one finishes, the next starts."). Internal names (`planBacke
 
 | Before (on screen today) | After |
 |---|---|
-| ⚙ Rules & day cap · Per-subject placement rules — the scheduler reads these; the grid follows | 📅 *Kid*'s year ▸ Compare subjects |
+| ⚙ Rules & day cap · Per-subject placement rules — the scheduler reads these; the grid follows | 📅 *Kid*'s year ▸ All subjects |
 | 🏁 Target · Mom Check · Sessions | 📅 *Kid*'s year |
 | Daily cap — no day over · min/day | Longest school day · minutes |
 | 🏁 Finish Line Target | Finish the year by |
@@ -369,8 +389,8 @@ One family-wide switch, `config/ui/curriculum/view` = `"simple"` | `"everything"
 Keep it simple**. Default: **everything** for a family that has a lane or 8+ subjects when this ships (you and the two
 beta families keep exactly what they see today); **simple** for a family with fewer. Per family, not per device (question 3).
 
-**Simple hides** (never deletes): card §5–9 and the Lane section until the kid has 2+ subjects with lessons; the Compare
-tab; the plan bar's three strips; ⋯ More ▸ Edit many cells / Order by end date; the Checks drawer's *Tidy-up* group (the
+**Simple hides** (never deletes): card §5–9 and the Lane section until the kid has 2+ subjects with lessons; the advanced
+columns of the All-subjects table (the table itself stays); the plan bar's three strips; ⋯ More ▸ Edit many cells / Order by end date; the Checks drawer's *Tidy-up* group (the
 *Worth a look* group still shows when n > 0); on the Add flow, everything behind *More options*. A one-line footer on the
 card says "More options are under **Show everything** (⋯ More)". In **Everything**, the page carries every control it does
 today — the slice tests assert that.
@@ -384,6 +404,7 @@ identical to today's Add → 🧱 → Preview → Build.
 | Step | Screen | Fields (defaults in brackets) | Behind *More options* |
 |---|---|---|---|
 | 1 · **What is it?** | name · *Who does it* (this kid; two or more → it becomes family time, as today) · *What kind*: 📖 **A book or course with lessons in order** [default] · 🔁 **Something they do every school day** · ⏰ **A class at a set time** | maps to tracking sequenced / daily / fixedTime | — |
+| *(the Builder form lives here and only here — steps 2–4 are `cbRenderForm`'s fields re-chunked; **Start on** is the one field that stays staged, because it only means anything at the first lay-out)* | | | |
 | 2 · **The lessons** (books only) | **How many lessons?** [50] with *they're called* Lesson / pg / Ch. / Unit… and *start at* [1] · or **Type the list** · or 📸 **Photo of the table of contents** (when the family has an AI key — the Builder's scan) · or **It's a workbook — go by pages** (total pages, start page, pages a day) | lessonSource auto / manual; pacing mode pages | Days per lesson |
 | 3 · **When** | **Days of the week** [Mon–Fri] · **How many times a week** [= days lit; tap to make it fewer] · **How long** [25 min] · **Needs you?** [No] · **Finish by** [blank → "so many a week" pacing; a date → "finish by a date"] | allowedDays, tpw, minutes, mom, pacing mode | Where it happens · Order in the day · Right after ___ · If it's missed · Most in one day · How many missed can pile up · If the day is tight · set-time dates & join link · Study session |
 | 4 · **Here's the plan** | the Builder's preview card (first weeks, finishes ~date, "starts from where *Kid* is") · **Put it on the schedule** · *Back* | `ceAddSave` → `cbRunPreview` → `cbApply` in one tap (the sequence today's Add runs across two sheets) | — |
@@ -397,7 +418,7 @@ nothing is lost for you.
 | Task | Today | After | What actually changed |
 |---|---|---|---|
 | First subject from a book → on the week (§2.1) | 21 taps · 5 screens · 20 Howe words · 5 forced decisions · 3 things asked twice | **16 taps · 3 screens · 2 Howe words · 0 forced decisions · 0 asked twice** (Mom switch + code 1 · Mom's Day 1 · School 1 · Curriculum 1 · ＋ Add 1 · name 1 · Next 1 · how many 1 · Next 1 · days 2 · minutes 1 · needs you 1 · Next 1 · Put it on 1 · Schedule 1) | one path, defaults that are the common case, plain words |
-| Change days a week 3 → 4 (§2.2) | 2 taps if she knows it is under ⚙ Rules; 5 via the card | **2** (name ▸ How many times a week +) — the only door | one editor |
+| Change days a week 3 → 4 (§2.2) | 2 taps if she knows it is under ⚙ Rules; 5 via the card and the Builder | **2** either way — 📅 *Kid*'s year ▸ All subjects ▸ + (the table), or name ▸ How many times a week + (the card); the same pill, the same write, on the tap | one editor drawn twice; the Builder path (stage, preview, build) is gone |
 | Pause / resume (§2.3) | 2 / 2 | **2 / 2** (name ▸ ⏸ in the header; ⏸ strip ▸ name ▸ ▶) | pause is at the top, not section 27 |
 | Delete (§2.4) | 3 | **3** (name ▸ ⋯ ▸ Delete ▸ confirm) | same |
 | Reorder books in a lane (§2.5) | 4+ via ⚙ Rules ▸ Lanes ▸ ✎ edit | **3** (tap the 🛤 band ▸ ▲▼ ▸ Save) | the band is the door |
@@ -405,33 +426,81 @@ nothing is lost for you.
 
 ---
 
-## 4 · Build plan — six slices
+## 4 · Build plan — a pre-slice fix and six slices
 
 Each slice is one branch off `origin/main`, one PR, its own `test_<feature>.js` that slices the block by its
 `// NAME_START … NAME_END` markers, replays the affected doors on stubs and asserts (a) every pre-existing control is still
 rendered somewhere in the Everything view and (b) every Firebase write path is unchanged for the same inputs. The page
 works fully after every slice; nothing is removed at any point — a control only moves once its new home renders.
 
+### 4.0 · RULESCROLL — the Rules table jumps to its top on every tap (ships before slice 1)
+
+**Her report (2026-11-10):** *"if i click something [in the Rules table] it takes me back to the top instead of allowing me to
+edit cleanly without movement."*
+
+**What the code does on a Rules-table tap, in order** (verified by reading, not run):
+
+1. The pill's `onclick` is `rlSet(kid,sk,field,val,relay)` 53418 (or `cbPinDay` 53397 for a Days pin, `lsdToggleDay` 34260 /
+   `cwdPinDay` 41812 which call `rlSet`). Both save **only the panel's inner vertical scroll**:
+   `cbDayPinScroll = document.getElementById("cb-daypin-scroll").scrollTop` (53400, 53422). `scrollLeft` is never saved.
+2. The write happens, then `renderAll()` (53452). For a Days / ×/wk / Cap / Min / Co-op / Priority pill on a plan-backed
+   subject, `_gvRelaySubject` (56770) runs first → `cbBuildGate` → `cbApply` → its own `renderAll()` (54146) → `relayWeek("build")`,
+   whose chain calls `renderAll()` again ~2 s later (43699 / 43773).
+3. Every `renderAll` goes through `_preserveUI` (4975): it snapshots `window.scrollX/Y`, rebuilds `#content`, and **restores the
+   window scroll when the view signature is unchanged** (`_viewSig` 4962 = tab · admin flags · adminSubTab · histTab · mastView ·
+   day · kid). `rlSet` changes none of those, so **the page's own scroll position is kept** — on Mom's Day ▸ School ▸ Curriculum
+   as on Schedule ▸ Admin.
+4. The rebuild redraws the Rules panel from scratch: `renderCurrGrid` 57421 → `cbRenderRules` 53550 → a fresh
+   `<div id="cb-daypin-scroll" style="max-height:340px;overflow:auto">` (53583) with its scroll at **0, 0**. The only line that
+   puts `cbDayPinScroll` back is **54507, inside `renderCurrBuilder` — the retired Builder tab**. `renderCurrGrid`'s post-render
+   restore (58049–58054) restores `.gv-wrap` (the lesson grid) and focuses the cell editor; it never touches the Rules box.
+
+**So the diagnosis is:** the window does not move; the **340-px table box snaps back to its first row and its first column**
+on every tap — and Lincoln's table is 20+ rows tall and 19 columns wide, so the row she was editing scrolls out of view and
+the column she was in slides off the right. Twice when the tap re-lays (the relay's own render, ~2 s later, resets it again
+even if she has scrolled back). On a phone the horizontal snap is the bigger half: `scrollLeft` was never saved anywhere.
+If she means the **whole page** goes to the top, the only candidates are a navigation call (`mpGoto` 25331, `mpSchoolOpen`
+25272 — neither runs here) or the Keep/Dismiss gate opening for a legacy subject (a modal, which reads as "movement") — worth
+one look on her device, but the box snap is certain from the code.
+
+**The fix (one block, `// RULESCROLL_START … RULESCROLL_END`, ~15 lines):**
+
+- `rsGrab()`: read `#cb-daypin-scroll`'s `scrollTop` **and** `scrollLeft` into `cbDayPinScroll = {top,left}`; called at the
+  **top of `renderCurrGrid`** (and `renderCurrBuilder`) while the old box is still in the DOM — so it also covers the renders
+  that are *not* a tap (the relay chain's `renderAll`, a Firebase-triggered `renderAllSoon`), which the two existing
+  per-tap saves in `rlSet`/`cbPinDay` miss. Those two saves stay (harmless) or call `rsGrab()`.
+- `rsRestore()`: put both back; called in `renderCurrGrid`'s existing post-render `setTimeout` (58049) next to the `.gv-wrap`
+  restore, and in place of 54507 on the Builder tab. Clamped by the browser if the table got shorter.
+- Nothing written to Firebase; no behaviour change beyond the box staying put.
+
+**`test_rules_scroll.js`:** slices the block; a fake `document` whose `getElementById("cb-daypin-scroll")` returns an object
+with `scrollTop`/`scrollLeft`; asserts `rsGrab` captures both axes, `rsRestore` writes both back, `renderCurrGrid`'s source
+calls `rsGrab` before `el.innerHTML` is assigned and `rsRestore` inside its `setTimeout`, `renderCurrBuilder` still restores,
+`rlSet`/`cbPinDay` still save before their write; mutation check: with the block removed, the grid path has no restore.
+Also pins that `_preserveUI` still restores window scroll for an unchanged `_viewSig` (the half that already works, so a
+later change cannot quietly break it). Risk: very low — display state only.
+
 | # | Slice (block) | What moves | Test asserts | Risk |
 |---|---|---|---|---|
 | 1 | **CURRWORDS** — the words | One label map (`CW` = {old key → plain label}) used by the grid, card, Add sheet, Rules panel, Builder, gate, banners; tooltips rewritten per §3.5. No logic. | every "before" string of §3.5 is absent from `index.html`'s on-screen strings (allow-list for code comments); every existing `test_*.js` that pins a label updated in the same PR; byte-identical DOM apart from text nodes | low — but it touches ~60 tests' string pins; do it first so every later slice is written in the new words |
-| 2 | **CURRCARD** — one subject card | `ceRenderEditSheet` re-sectioned per §3.2; **Basics / When it runs** draw the same pills the Rules table draws, calling the same `rlSet` / `cbPinDay`; the Builder's Days and Times-per-week chips become those controls (question 1); Progress, When behind, Re-lay remaining fold into Pace; pause to the header; the Rules table's cells become shortcuts (`ceOpenEdit(kid,sk,"when")`) — in Everything view (question 2) | for each of the 20 `rlSet` fields + `allowedDays`: exactly one editor on the page writes it, and it writes the same path and value as before; `cbApply`'s multi-path update is byte-identical for a given form; the Rules table cell taps open the card at the right section; section visibility rules (daily vs sequenced, plan-backed, class) match today's conditions one for one | **highest — see below** |
-| 3 | **KIDYEAR** — 📅 *Kid*'s year | The two kid-tool buttons become one panel with Hours & load / School terms / Lanes / Compare; the Builder tab's two doors (`gvSelShiftUp` 55006, `gvAuditFixGap` 55759) land on the card's Pace section; a 🛤 band tap opens the Lanes tab on that lane | `curriculum/dayCap`, `targetEnd`, `momVerifyKid`, `pace/plans`, `curriculum/lanes` writes unchanged; every lane control present; `renderCurrBuilder` no longer reachable from any `onclick` | medium — the lane editor keeps its state (`lnEdit`) across a panel re-render |
+| 2 | **CURRCARD** — one subject card, one pill function | (a) `rlPillHTML(kid,sk,field)` is lifted out of `cbRenderRules` 53550 — the table's cells become calls to it, byte-identical output. (b) `ceRenderEditSheet` is re-sectioned per §3.2; **Basics / When it runs** are `rlPillHTML` calls for the same fields, so every setting **writes and re-lays on the tap** (her answer to question 1) — `rlSet` 53418 / `cbPinDay` 53397 unchanged. (c) `rlSet` learns the **pacing fields** (`mode`, `targetDate`, `windowEnd`, `pages/*`, `minutesText`) with `relay=true`, writing the same `pacing/*` leaves `cbApply` writes today, then `_gvRelaySubject`; the card's **Pace** section draws them as pills, and the Builder form (`cbRenderForm`) is **no longer drawn in the card** — `ceOpenBuild` / `_ceMaybeBuilder` / the 🧱 button go, "Lay it out again" (= `_gvRelaySubject` for this subject) and ↩ Undo stay. (d) Progress, When behind, Re-lay remaining fold into Pace; pause to the header | for each of the 20 `rlSet` fields + `allowedDays` + the 5 pacing fields: exactly ONE function writes it, and the table's pill and the card's pill are the same string for the same subject; `cbRenderRules` output is byte-identical to before the slice; for a given subject the `pacing/*` leaves a card tap writes equal what `cbApply` wrote from the equivalent form; the derived column (`gvDerivedColumn`) after a card tap equals the preview the Builder would have shown for the same fields; section visibility (daily vs sequenced × plan-backed vs legacy × paused × class) matches today one for one; `cbRenderForm` is referenced only from the Add flow / Builder tab | **highest — see below** |
+| 3 | **KIDYEAR** — 📅 *Kid*'s year | The two kid-tool buttons become one panel with Hours & load / School terms / Lanes / **All subjects (the live ⚙ Rules table, unchanged)**; the Builder tab's two doors (`gvSelShiftUp` 55006, `gvAuditFixGap` 55759) show their one-time preview in the card's Pace section instead; a 🛤 band tap opens the Lanes tab on that lane | `curriculum/dayCap`, `targetEnd`, `momVerifyKid`, `pace/plans`, `curriculum/lanes` writes unchanged; the table renders inside the panel with the same `rlPillHTML` output and keeps its scroll (RULESCROLL); every lane control present; `renderCurrBuilder` no longer reachable from any `onclick` | medium — the lane editor keeps its state (`lnEdit`) across a panel re-render |
 | 4 | **CURRTOOLS** — toolbar and the Checks drawer | Toolbar = kid chips · 🏡 · ＋ Add · 📅 · ⋯ More (Show past days · Edit many cells · Order columns by end date · Lay everything out again · Show everything/Keep it simple); the 14 banners + audit + evening-out + daily-missed render inside one `🔍 Checks (n)` drawer in two groups, collapsed, drawn only when n > 0 | with each banner's condition forced true, its buttons render inside the drawer with the same `onclick`; the count badge equals the number of true conditions; with all false the drawer is absent and the grid is byte-identical | low |
 | 5 | **ADDFLOW** — the guided Add | `ceRenderAddSheet` gets a `step` (1–4) and a *More options* expander; step 4 runs `ceAddSave` → `cbDefaultForm` → `cbRunPreview` and its button runs `cbBuildGate`; "Show all options at once" renders today's sheet; after the build, no card re-opens (today's `ceOpenEdit` at 34988 is skipped only when the flow built) | for the same answers, the subject record written by step 4 equals today's `ceAddSave` record and the build writes equal today's Add → Build; a brand-new kid with no grid builds from the synthetic Wk 1 (`cbExtendInfo` 53003); a daily subject skips steps 2 and 4; two kids → `famWhoSave` as today | medium — chains two write doors in one tap; the gate (`cbBuildGate`) must still be able to appear for a legacy subject copied in |
 | 6 | **CURRSIMPLE** — Simple / Everything | the `config/ui/curriculum/view` switch; the default rule at first load; hiding per §3.6 | in Everything the page is byte-identical to the end of slice 5; in Simple every hidden control is absent and nothing else changes; the default rule picks everything for a family with a lane or ≥ 8 subjects | low |
 
-**The riskiest slice is 2 (CURRCARD)**, for two reasons. First, it is the only slice that changes *when* a write happens:
-today the Builder's Days / Times-per-week are **staged** in `cbForm` until Build, while the Rules table's pins and ×/wk write
-**at once and re-lay the week** (`cbPinDay` 53397, `rlSet(…,true)` → `_gvRelaySubject`). Making them one control means
-picking one behaviour (question 1); the preview must then read the subject fields, not the form. Second, it rewrites the
-~2,000-line card that eleven other features render into (`cePracticeSectionHTML`, `ceMomPartSectionHTML`,
-`mmEditorSectionHTML`, `fxDoor*`, `llSet*`, `_ceMarkDoneUI`, the walk-back panel, LESSONRES, the Builder, the gate, the
-restore-point banner), each gated by its own condition — the test has to replay every condition pair (daily / sequenced ×
-plan-backed / legacy × paused × class) and prove the same sections appear. Mitigation: slice 2 ships with the Rules table
-still drawing its pills **but** `cbRenderRules` and the card calling one shared `rlPillHTML(kid,sk,field)` — so for one PR
-there are two doors to one function, then slice 3 turns the table cells into shortcuts. That is the one place this plan
-allows a duplicate to exist for a week.
+**The riskiest slice is 2 (CURRCARD)**, for two reasons. First, it is the slice that changes *when* a write happens for the
+**pacing fields**: today "finish by", "pages a day", the mode itself are **staged** in `cbForm` until Build, while the Rules
+table's pins and ×/wk write **at once and re-lay the week** (`cbPinDay` 53397, `rlSet(…,true)` → `_gvRelaySubject`). Her
+answer makes them all write on the tap; that means a tap on "By pages" re-paces a whole column with no preview step —
+the grid's derived column is the preview, and ↩ Undo is the safety (the same safety every Rules-table tap relies on today).
+The subject-by-subject risk is a legacy (not plan-backed) subject, where `_gvRelaySubject` can open the Keep/Dismiss gate
+mid-tap — that is today's Rules-table behaviour too, so nothing new, but the card has to render the gate above itself as it
+already does for the Builder (z-index 320). Second, it rewrites the ~2,000-line card that eleven other features render into
+(`cePracticeSectionHTML`, `ceMomPartSectionHTML`, `mmEditorSectionHTML`, `fxDoor*`, `llSet*`, `_ceMarkDoneUI`, the walk-back
+panel, LESSONRES, the Builder, the gate, the restore-point banner), each gated by its own condition — the test has to replay
+every condition pair (daily / sequenced × plan-backed / legacy × paused × class) and prove the same sections appear. The
+shared `rlPillHTML` is no longer a stop-gap but the design: one function, two drawings (card and table), zero staged copies.
 
 Not in any slice (unchanged on purpose): the generator/scheduler, every re-lay door (RELAY4), `cbApply`, `relayWeek`, the
 cell menu's actions, lanes' data model, Settings, 📅 This week, the Family-time editor's internals, the Lesson Map code.
@@ -440,14 +509,15 @@ cell menu's actions, lanes' data model, Settings, 📅 This week, the Family-tim
 
 ## 5 · Open questions for you (each with my default)
 
-1. **Days and times-a-week: write at once, or stage until "Lay it out again"?** Today both exist (Rules table writes and
-   re-lays on the tap; the Builder stages). One control has to pick one. **Default: write at once**, like the Rules table
-   and the lanes already do — the week updates, ↩ Undo is one tap, and the Pace section's preview always shows the live
-   fields. The Builder's "Start on" stays staged (it only matters at a lay-out).
-2. **The ⚙ Rules table: keep its cells editable (a second editor) or make them shortcuts into the card?** **Default:
-   shortcuts** — one editor per setting is your rule, and the table keeps its value as the one place to *see* every
-   subject's days / times / minutes / Mom side by side. If the table is how you actually work on Monday mornings, say so
-   and slice 3 keeps the pills live (that is one more duplicate, by choice).
+1. ~~**Days and times-a-week: write at once, or stage until "Lay it out again"?**~~ **Answered 2026-11-10: write at once.**
+   *"i like the rules table better than the builder i want to get away from builder except for the initial setup."* Every
+   per-subject setting — days, times a week, most in one day, minutes, and now the pacing fields too — writes and re-lays
+   on the tap, Rules-table style. The Builder form is drawn only inside the guided Add (initial setup); "Start on" is the
+   one field that stays staged there. Folded into §3.1, §3.2 (sections 2 and 4), slices 2 and 3.
+2. ~~**The ⚙ Rules table: keep its cells editable or make them shortcuts into the card?**~~ **Answered 2026-11-10: it stays a
+   live editor** — it is how she works. Reconciled with the "one spot" rule by making the table and the card's *When it
+   runs* section **one control drawn twice** through `rlPillHTML` (§3.1): one function writes each field, drawn in the
+   table for twenty subjects at once and on the card for one. The "cells become shortcuts" step is dropped from slice 3.
 3. **Simple / Everything: per family or per device? And where does your family start?** **Default: per family**
    (`config/ui/curriculum/view`, so a phone and the LG agree), **your family and both beta families start on Everything**
    (the rule: a lane or 8+ subjects), a new family on Simple.
