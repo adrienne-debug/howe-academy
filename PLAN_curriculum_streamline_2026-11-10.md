@@ -389,7 +389,8 @@ take turns in: when one finishes, the next starts."). Internal names (`planBacke
 
 One family-wide switch, `config/ui/curriculum/view` = `"simple"` | `"everything"`, in ⋯ More as **Show everything /
 Keep it simple**. Default: **everything** for a family that has a lane or 8+ subjects when this ships (you and the two
-beta families keep exactly what they see today); **simple** for a family with fewer. Per family, not per device (question 3).
+beta families keep exactly what they see today); **simple** for a family with fewer. Per family, not per device — her
+answer to question 3 ("3 per family").
 
 **Simple hides** (never deletes): card §5–9 and the Lane section until the kid has 2+ subjects with lessons; the advanced
 columns of the All-subjects table (the table itself stays); the plan bar's three strips; ⋯ More ▸ Edit many cells / Order by end date; the Checks drawer's *Tidy-up* group (the
@@ -569,8 +570,7 @@ cell menu's actions, lanes' data model, Settings, 📅 This week, the Family-tim
 
 ## 5 · Open questions for you (each with my default)
 
-Status 2026-11-10: **1, 2, 4, 5 and 6 answered** (folded into the sections they touch); **3 open** — its default stands until
-she says otherwise.
+Status 2026-11-10: **all six answered**, each folded into the section it touches. Nothing in this plan waits on a decision.
 
 1. ~~**Days and times-a-week: write at once, or stage until "Lay it out again"?**~~ **Answered 2026-11-10: write at once.**
    *"i like the rules table better than the builder i want to get away from builder except for the initial setup."* Every
@@ -581,9 +581,10 @@ she says otherwise.
    live editor** — it is how she works. Reconciled with the "one spot" rule by making the table and the card's *When it
    runs* section **one control drawn twice** through `rlPillHTML` (§3.1): one function writes each field, drawn in the
    table for twenty subjects at once and on the card for one. The "cells become shortcuts" step is dropped from slice 3.
-3. **Simple / Everything: per family or per device? And where does your family start?** **Default: per family**
-   (`config/ui/curriculum/view`, so a phone and the LG agree), **your family and both beta families start on Everything**
-   (the rule: a lane or 8+ subjects), a new family on Simple.
+3. ~~**Simple / Everything: per family or per device? And where does your family start?**~~ **Answered 2026-11-10: per
+   family** (*"3 per family"*), with the plan's start rule standing: `config/ui/curriculum/view`, one value for every
+   device; a family with a lane or 8+ subjects when slice 6 ships starts on **Everything** (hers and both beta families keep
+   exactly what they see today), a new family starts on **Simple**. Folded into §3.6 and slice 6.
 4. ~~**The 41 unreachable Lesson Map controls and the Builder tab** — leave or remove?~~ **Answered 2026-11-10: remove and
    clean up, audit first.** *"lets remove and clean up but def audit to make sure it causes no issues before you do it."*
    Now slices 3a (audit only, its own committed `AUDIT_lessonmap_dead_2026-11-xx.md` + harness, nothing deleted) and 3b
