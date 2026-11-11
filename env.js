@@ -350,14 +350,14 @@ function envmSendNow(){ if(typeof momHere!=="function"||!momHere()||!envmReady()
 const ENVS_TAB="envsite", ENVS_STARS=3, ENVS_AUTOLOCK="20270424", ENVS_SEASON="2026-27", ENVS_ROLES=["kid","parent","teacher","admin"];
 const ENVS_OFF_TABS=["schedule","notebook","play","moms-plan","babysitter","supplies","history","pace","activities","grid","generate","chorePlan","kitchen","workbooks","eic","purchases","helpers","mastery","units","kids"];   // every door the micro doc lists as off, plus the app's own tabs: the site has ONE page
 const ENVS_FULL_APP=["🗓 A daily schedule laid out for each kid, re-laid from now when the day slips","📓 Weekly notebooks and workbooks generated for each kid","🧹 Chores, laundry and routines with stars that buy things Mom sets up","🍽 Meals, the shopping list and the kitchen","👩 Mom's Day and Dad's Day","📚 Every unit you add, your own cards, Problem words, the Curriculum Builder"];
-const ENVS_TIPS=[  // PLACEHOLDER — Adrienne's six lines + contact line (her 8.7: the card ships with placeholders until she writes them)
-  "PLACEHOLDER tip 1 — two views: the student's screen is his; a parent's login sees how he is doing.",
-  "PLACEHOLDER tip 2 — the kid's code card works on a school device or a phone; add the page to the home screen.",
-  "PLACEHOLDER tip 3 — a little most days beats a lot once: the cards come back on their own schedule.",
-  "PLACEHOLDER tip 4 — the teacher sends out each station as the class reaches it; a station starts with a short check-in.",
-  "PLACEHOLDER tip 5 — ⭐ stars arrive after each finished sitting; what they are for is coming.",
-  "PLACEHOLDER tip 6 — questions about the app go to the line below, questions about the class go to the teacher."];
-const ENVS_CONTACT="PLACEHOLDER contact line — e.g. Adrienne · adrienne@example.com";
+const ENVS_TIPS=[  // Adrienne's six lines + contact line, approved 2026-11-10
+  "Your student's screen is theirs. Your login shows you how they're doing without changing anything.",
+  "The code card works on any device. Open the page, tap Students, type the code. Adding the page to the home screen makes it one tap.",
+  "A little most days beats a lot once. The cards come back on their own schedule, so short sittings add up.",
+  "Ms. Brittany sends out each station as the class reaches it. A station starts with a short check-in so the app knows what to practice.",
+  "Stars arrive after every finished sitting. More on what they earn soon.",
+  "Stuck on a card? Tap the flag and it goes straight to Ms. Brittany. App trouble goes to the line below."];
+const ENVS_CONTACT="App questions: Adrienne \u00B7 adrienne@howeenterprises.com";
 const _envs={demo:null,demoRole:"",role:"",uid:"",email:"",familyId:"",kid:"",sid:"",kids:[],kidNames:{},kidMode:"",kidSwap:true,home:null,homeOf:"",homeApp:"",homeSum:null,homeWeeks:null,newCard:null,cid:"",dbUrl:"",lockRaw:undefined,lock:null,view:"study",sub:{},dbEdition:"",writes:[],toastT:null,css:false,mirrorArmed:false,autoEnroll:"",err:"",boards:null,who:"",cls:null,gateDone:false,stars:0,bankDemo:0};
 function envsQuery(){ try{ return (typeof location!=="undefined"&&location.search)||""; }catch(e){ return ""; } }
 function envsFam(){ try{ return (typeof window!=="undefined"&&window.HA_FAMILY)||null; }catch(e){ return null; } }
