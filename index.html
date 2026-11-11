@@ -40643,7 +40643,7 @@ function dcVisual(u,deck,name){ try{ const v=((u&&u.visuals)||{})[deck+"_"+name]
 function dcFeature(g){
   const d=g.day, u=g.u; if(!d) return null;
   if(d.place&&d.place.img&&!/^data:/i.test(d.place.img)) return {img:d.place.img,caption:d.place.caption||d.place.name||"",credit:d.place.license||""};
-  const c=(d.cards&&d.cards[0]); if(c&&c.names&&c.names.length){ for(const nm of c.names){ const v=dcVisual(u,c.deck,nm); if(v&&v.img) return {img:v.img,caption:nm,credit:v.credit||""}; } }
+  const c=(d.cards&&d.cards[0]); if(c&&c.names&&c.names.length){ for(const nm of c.names){ const v=dcVisual(u,c.deck,nm); if(v&&v.img) return {img:v.img,caption:nm,credit:v.credit||"",deck:c.deck}; } }   // UNITPICS_CREDIT: deck → the 📷 chip
   return null;
 }
 function dcLinks(g){ try{ const rec=(typeof frCardRec==="function")?frCardRec(g.first):null; return (typeof lrLinksFor==="function")?lrLinksFor(g.first,null,"",rec||undefined):[]; }catch(e){ return []; } }
@@ -40690,7 +40690,8 @@ function dcCardsHTML(g){
 function dcDayHTML(g){
   const d=g.day, u=g.u; let h='';
   const f=dcFeature(g);
-  if(f) h+='<figure style="margin:18px 0 0"><img src="'+dcEsc(f.img)+'" alt="" style="width:100%;max-height:52vh;object-fit:cover;border-radius:20px;display:block">'+(f.caption?'<figcaption style="font-size:17px;color:#cbd5e1;margin-top:8px">'+dcEsc(f.caption)+(f.credit?' <span style="font-size:12px;color:#64748b">\u00B7 '+dcEsc(f.credit)+'</span>':'')+'</figcaption>':'')+'</figure>';
+  if(f) h+='<figure style="margin:18px 0 0"><div style="position:relative"><img src="'+dcEsc(f.img)+'" alt="" style="width:100%;max-height:52vh;object-fit:cover;border-radius:20px;display:block">'+(f.deck&&typeof unitPicsChipHtml==="function"?unitPicsChipHtml(((u&&u.visuals)||{})[f.deck+"_"+f.caption],f.deck+"_"+f.caption):"")+'</div>'+   // UNITPICS_CREDIT: 📷 +N
+    (f.caption?'<figcaption style="font-size:17px;color:#cbd5e1;margin-top:8px">'+dcEsc(f.caption)+(f.credit?' <span style="font-size:12px;color:#64748b">\u00B7 '+dcEsc(f.credit)+'</span>':'')+'</figcaption>':'')+'</figure>';
   const books=(d.res&&d.res.books)||[]; if(books.length) h+=dcSection("\u{1F4DA} The book",books.map(b=>'<div style="font-size:24px;font-weight:800;color:#fff">'+dcEsc(b.title)+(b.by?' <span style="font-size:16px;font-weight:600;color:#cbd5e1">by '+dcEsc(b.by)+'</span>':'')+'</div>').join(""));
   const links=dcLinks(g); if(links.length) h+=dcSection("\u25B6 Watch \u00B7 open",'<div style="display:flex;gap:10px;flex-wrap:wrap">'+links.map(dcLinkBtn).join("")+'</div>');
   const act=dcActivity(g); if(act) h+=dcSection("\u{1F3A8} Today\u2019s activity",'<div style="font-size:24px;font-weight:800;color:#fff">'+dcEsc((act.emoji||"\u{1F3A8}")+" "+act.title)+(act.points?' <span style="font-size:15px;color:#fde68a">\u00B7 '+act.points+' \u2B50</span>':'')+'</div>'+(act.desc?'<div style="font-size:17px;color:#e2e8f0;margin-top:4px">'+dcEsc(act.desc)+'</div>':''));
@@ -50794,7 +50795,7 @@ function unitEditSave(){
     const enr=Object.keys(u.enrolled||{}).filter(k=>(u.enrolled||{})[k]);
     enr.forEach(k=>{ const s=masteryData[k+"_settings"]||(masteryData[k+"_settings"]={}); if(!s.definitions) s.definitions={}; s.definitions[card.name]=def; if(db) db.ref("mastery/"+k+"_settings/definitions").update({[(typeof haKey==="function"?haKey(card.name):card.name)]:def}); });
   }
-  { const _pw=unitPicsPlan(key,(u.visuals||{})[key],unitEdit.newImg,unitEdit.pics);   // UNITMULTIPIC: the photo + its extra pictures, targeted
+  { let _pw=unitPicsPlan(key,(u.visuals||{})[key],unitEdit.newImg,unitEdit.pics); if(typeof unitPicCreditPlan==="function") _pw=unitPicCreditPlan(key,_pw,unitEdit.picBy);   // UNITMULTIPIC: the photo + its extra pictures, targeted; UNITPICS_CREDIT: + their credits
     if(_pw){ if(!u.visuals) u.visuals={}; u.visuals[key]=_pw.vis; if(db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("unitStudies/"+unitEdit.unitId).update(_pw.up); } }
   unitEditClose();
   const el=document.getElementById("content"); if(el) renderUnits(el);
@@ -65175,10 +65176,10 @@ function unitMorePicAdd(input){
   const f=input&&input.files&&input.files[0]; if(!f||!unitEdit) return;
   if(typeof mastCompressImg!=="function"){ alert("Image tool not ready."); return; }
   // the same upload/resize path as the card's photo (PICSTORE); Save waits while it uploads
-  const _ue=unitEdit; const _busy=function(on){ if(_ue) _ue.picBusy=on; const b=document.getElementById("unit-edit-save"); if(b){ b.disabled=on; b.textContent=on?"Saving picture…":"Save"; } };
+  const _ue=unitEdit, _by=(typeof unitPicCreditTyped==="function")?unitPicCreditTyped():""; const _busy=function(on){ if(_ue) _ue.picBusy=on; const b=document.getElementById("unit-edit-save"); if(b){ b.disabled=on; b.textContent=on?"Saving picture…":"Save"; } };
   _busy(true);
   mastCompressImg(f,420,0.82).then(function(dataUrl){ return picStore(dataUrl,["units",_ue&&_ue.unitId,_ue&&_ue.deckKey,_ue&&_ue.order,"more"]); })
-    .then(function(url){ _busy(false); if(unitEdit&&unitEdit===_ue){ unitMorePicPush(url); _ueRedraw(); } }).catch(function(e){ _busy(false); alert("Image failed: "+(e&&e.message||e)); });
+    .then(function(url){ _busy(false); if(unitEdit&&unitEdit===_ue){ if(unitMorePicPush(url)&&_by&&typeof unitPicCreditStage==="function") unitPicCreditStage(url,_by); _ueRedraw(); } }).catch(function(e){ _busy(false); alert("Image failed: "+(e&&e.message||e)); });   // UNITPICS_CREDIT: its "Photo by" rides along
 }
 // The extra pictures under the card's photo: thumbnails with ✕ and ★, and "＋ another picture" (only once there is a photo).
 function unitMorePicsHtml(u,key,cur){
@@ -65194,7 +65195,7 @@ function unitMorePicsHtml(u,key,cur){
         '<button onclick="unitMorePicStar('+i+')" title="Make this the card’s main picture" style="margin-top:3px;width:64px;padding:2px 0;border-radius:6px;border:1px solid #b7e4c7;background:#fff;color:#2d6a4f;font-size:9.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">★ make default</button></div>'; });
     h+='</div>';
   }
-  if(pics.length<1+UNIT_MORE_MAX) h+='<label style="display:inline-block;padding:6px 12px;border-radius:9px;border:1.5px dashed #2d6a4f;background:#fff;color:#2d6a4f;font-size:11.5px;font-weight:700;cursor:pointer">＋ another picture<input type="file" accept="image/*" onchange="unitMorePicAdd(this)" style="display:none"></label>';
+  if(pics.length<1+UNIT_MORE_MAX) h+='<label style="display:inline-block;padding:6px 12px;border-radius:9px;border:1.5px dashed #2d6a4f;background:#fff;color:#2d6a4f;font-size:11.5px;font-weight:700;cursor:pointer">＋ another picture<input type="file" accept="image/*" onchange="unitMorePicAdd(this)" style="display:none"></label>'+(typeof unitPicCreditInputHtml==="function"?unitPicCreditInputHtml():"");   // UNITPICS_CREDIT: an optional "Photo by"
   else h+='<div style="font-size:10px;color:var(--muted)">5 pictures — the most one card holds.</div>';
   if(more.length&&!u.mixPics) h+='<div style="font-size:10px;color:#b45309;font-weight:700;line-height:1.4;margin-top:5px">🎲 Multiple pictures is off for this unit — only the first picture shows.</div>';
   return h+'</div>';
@@ -65234,6 +65235,95 @@ function unitToggleMixPics(unitId){
   renderAll();
 }
 // UNITMULTIPIC_END
+// UNITPICS_CREDIT_START — 📷 a card's extra pictures, and who took each one (her words 2026-11-11: "go on the website that I
+// attach and get the additional pictures for each of the frogs and toads and the snakes of North Carolina and add them to
+// those units" — herpsofnc.org, where every photo is credited to its photographer). Sits beside UNITMULTIPIC and changes
+// none of it: `more` stays a list of URL strings, at most 4 extras, and the 🎲 switch still decides what the drill shows.
+//   · DATA (additive): unitStudies/<id>/visuals/<key>/moreBy/<unitPicCreditKey(url)> = {by, src} — by = the photographer as
+//     the source prints it, src = the page the photo came from (kept for the record, never shown: the page name is often the
+//     answer). Keyed by the picture's own URL, so a credit follows its picture through ★ and ✕; a stale entry is ignored.
+//     The main picture's credit is still visuals/<key>/credit when it has one. No credit → no line. Nothing else changes.
+//   · SHOWING (read-only, no writes): a card whose unit picture has extras gets a small "📷 +N" chip on the study flip card
+//     and on the day card's picture. Tap → a plain full-screen gallery: the main picture first, then the extras; ◀ ▶,
+//     swipe or the arrow keys; "Photo by …" under each when known; "2 / 5"; ✕ or Esc closes. No autoplay; the fade is off
+//     under prefers-reduced-motion. The gallery never prints the card's name (it opens on the question side of a card).
+//     A kid's own picture override (mastery/<kid>_visuals) is one picture → no chip.
+//   · WRITES (Mom, the card sheet): "＋ another picture" takes an optional "Photo by" line; Save adds
+//     visuals/<key>/moreBy/<k> = {by} for each picture added with one, inside UNITMULTIPIC's ONE multi-path update on
+//     unitStudies/<id> (inside the card's object when that update writes the whole card). Nothing in dry run.
+function unitPicCreditKey(url){ return "p"+_upvHash(String(url||"")).toString(36); }   // "p…": never an all-digit key (RTDB would make it an array)
+// {by, src} for one of the card's pictures, or null. Defensive: any odd shape → null.
+function unitPicCredit(v,url){
+  if(!v||typeof v!=="object"||!url) return null;
+  const mb=(v.moreBy&&typeof v.moreBy==="object")?v.moreBy[unitPicCreditKey(url)]:null;
+  if(mb&&typeof mb==="object"&&typeof mb.by==="string"&&mb.by.trim()) return {by:mb.by.trim(),src:typeof mb.src==="string"?mb.src:""};
+  if(String(url)===String(v.imageUrl)&&typeof v.credit==="string"&&v.credit.trim()) return {by:v.credit.trim(),src:""};
+  return null;
+}
+// Every picture of a unit visual for the gallery, main first: [{url, by}] ([] for an emoji or none).
+function unitPicsGallery(v){ return unitPicsOf(v).map(url=>{ const c=unitPicCredit(v,url); return {url,by:c?c.by:""}; }); }
+// The card's unit visual as stored (never the 🎲 pick), or null. The same lookup order as mastGetVisual: a kid's own override wins.
+function unitPicsVisualFor(cat,name,kid){
+  const key=cat+"_"+name, k=kid||(typeof masteryKid!=="undefined"&&masteryKid)||"";
+  const own=(typeof masteryData!=="undefined"&&masteryData&&masteryData[k+"_visuals"])||{};
+  if(own[key]) return null;
+  if(typeof unitStudies!=="undefined"&&unitStudies){ for(const uid in unitStudies){ const uv=(unitStudies[uid]&&unitStudies[uid].visuals)||null, hit=uv&&uv[key]; if(hit) return hit; } }
+  return null;
+}
+let _ugReg={}, _ug=null;   // chip id → its pictures; the open gallery {pics, i}
+function _ugEsc(v){ return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+// The chip, or "" when the card has no extras. The key only finds the pictures again (hashed; never in the markup).
+function unitPicsChipHtml(v,key){
+  const pics=unitPicsGallery(v); if(pics.length<2) return "";
+  const id="g"+_upvHash(String(key||"")).toString(36); _ugReg[id]=pics;   // an opaque id: the card's name never sits in the markup
+  return '<button class="ug-chip" onclick="event.stopPropagation();unitGalleryOpen(\''+id+'\')" aria-label="See '+(pics.length-1)+' more picture'+(pics.length===2?'':'s')+'" style="position:absolute;right:10px;bottom:10px;z-index:3;padding:6px 11px;border-radius:999px;border:none;background:rgba(17,24,39,.72);color:#fff;font-size:14px;font-weight:800;line-height:1.1;cursor:pointer;font-family:\'DM Sans\',sans-serif">📷 +'+(pics.length-1)+'</button>';
+}
+// The gallery for picture i of pics. Main first; the credit line only when one is known; no names, no links.
+function unitGalleryHtml(pics,i){
+  const n=pics.length; i=((i%n)+n)%n; const p=pics[i];
+  const nav=(d,lbl,ch)=>'<button onclick="unitGalleryGo('+d+')" aria-label="'+lbl+'" style="flex:none;width:52px;height:52px;border-radius:50%;border:none;background:rgba(255,255,255,.16);color:#fff;font-size:22px;cursor:pointer">'+ch+'</button>';
+  return '<style>#unit-gallery img{transition:opacity .2s}@media (prefers-reduced-motion: reduce){#unit-gallery img{transition:none}}</style>'+
+    '<button onclick="unitGalleryClose()" aria-label="Close" style="position:absolute;top:12px;right:12px;width:48px;height:48px;border-radius:50%;border:none;background:rgba(255,255,255,.16);color:#fff;font-size:22px;font-weight:800;cursor:pointer">✕</button>'+
+    '<div style="display:flex;align-items:center;gap:10px;width:100%;max-width:1100px;flex:1;min-height:0;padding:64px 10px 0;box-sizing:border-box">'+
+    (n>1?nav(-1,"Previous picture","◀"):"")+
+    '<div style="flex:1;min-width:0;height:100%;display:flex;align-items:center;justify-content:center"><img src="'+_ugEsc(p.url)+'" alt="" draggable="false" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:14px"></div>'+
+    (n>1?nav(1,"Next picture","▶"):"")+'</div>'+
+    '<div style="padding:10px 16px max(18px,env(safe-area-inset-bottom));text-align:center;color:#e5e7eb;font-size:14px;line-height:1.4">'+
+    (p.by?'<div class="ug-by">📷 Photo by '+_ugEsc(p.by)+'</div>':'')+
+    '<div style="color:#9ca3af;font-size:12px;margin-top:3px">'+(i+1)+' / '+n+'</div></div>';
+}
+function _ugDraw(){ const ov=typeof document!=="undefined"&&document.getElementById("unit-gallery"); if(ov&&_ug) ov.innerHTML=unitGalleryHtml(_ug.pics,_ug.i); }
+function _ugKey(e){ if(!_ug) return; if(e.key==="Escape") unitGalleryClose(); else if(e.key==="ArrowRight") unitGalleryGo(1); else if(e.key==="ArrowLeft") unitGalleryGo(-1); }
+function unitGalleryOpen(id){
+  const pics=_ugReg[String(id)]; if(!pics||!pics.length||typeof document==="undefined") return;
+  unitGalleryClose(); _ug={pics,i:0};
+  const ov=document.createElement("div"); ov.id="unit-gallery"; ov.setAttribute("role","dialog"); ov.setAttribute("aria-label","Pictures");
+  ov.style.cssText="position:fixed;inset:0;z-index:10050;background:rgba(0,0,0,.94);display:flex;flex-direction:column;align-items:center";
+  let x0=null; ov.addEventListener("touchstart",e=>{ x0=e.touches&&e.touches[0]?e.touches[0].clientX:null; },{passive:true});
+  ov.addEventListener("touchend",e=>{ if(x0==null) return; const t=e.changedTouches&&e.changedTouches[0]; const dx=t?t.clientX-x0:0; x0=null; if(Math.abs(dx)>40) unitGalleryGo(dx<0?1:-1); });
+  ov.addEventListener("click",e=>{ e.stopPropagation(); });   // a tap in the gallery never flips the card underneath
+  document.body.appendChild(ov); document.addEventListener("keydown",_ugKey); _ugDraw();
+}
+function unitGalleryGo(d){ if(!_ug) return; const n=_ug.pics.length; _ug.i=((_ug.i+d)%n+n)%n; _ugDraw(); }
+function unitGalleryClose(){ _ug=null; if(typeof document==="undefined") return; document.removeEventListener("keydown",_ugKey); const ov=document.getElementById("unit-gallery"); if(ov) ov.remove(); }
+// ── the card sheet (Mom): the optional "Photo by" line for the next picture she adds ──
+function unitPicCreditInputHtml(){ return '<input id="unit-pic-by" type="text" maxlength="120" placeholder="Photo by (optional)" style="margin-left:8px;padding:6px 9px;border-radius:9px;border:1.5px solid var(--border);font-size:11.5px;width:150px;font-family:\'DM Sans\',sans-serif">'; }
+function unitPicCreditTyped(){ if(typeof document==="undefined") return ""; const el=document.getElementById("unit-pic-by"); return el?String(el.value||"").trim().slice(0,120):""; }
+function unitPicCreditStage(url,by){ if(!unitEdit||!url||!by) return; if(!unitEdit.picBy) unitEdit.picBy={}; unitEdit.picBy[String(url)]=String(by).slice(0,120); }
+// Save: add the staged credits to UNITMULTIPIC's plan {up, vis} — only visuals/<key>/moreBy/<k> paths (or inside the card's
+// object when the plan writes the card whole, so no two paths of one update overlap). Pictures no longer on the card are skipped.
+function unitPicCreditPlan(key,pw,picBy){
+  if(!pw||!pw.vis||!pw.up||!picBy) return pw;
+  const base="visuals/"+(typeof haKey==="function"?haKey(key):key), have=unitPicsOf(pw.vis), add={};
+  Object.keys(picBy).forEach(url=>{ const by=String(picBy[url]||"").trim().slice(0,120); if(by&&have.indexOf(url)>=0) add[unitPicCreditKey(url)]={by}; });
+  if(!Object.keys(add).length) return pw;
+  const whole=(pw.up[base]&&typeof pw.up[base]==="object")?pw.up[base]:null;
+  pw.vis.moreBy=Object.assign({},(pw.vis.moreBy&&typeof pw.vis.moreBy==="object")?pw.vis.moreBy:{},add);
+  if(whole){ if(whole!==pw.vis) whole.moreBy=Object.assign({},(whole.moreBy&&typeof whole.moreBy==="object")?whole.moreBy:{},add); }
+  else Object.keys(add).forEach(k=>{ pw.up[base+"/moreBy/"+k]=add[k]; });
+  return pw;
+}
+// UNITPICS_CREDIT_END
 function mastGetVisual(cat,name){
   const kid=masteryKid||"julian";
   const key=cat+"_"+name;
@@ -70933,7 +71023,7 @@ function mstPicCardHtml(session,card,pic,def,lrn){
   const img='<img src="'+mstEsc(pic)+'" alt="" style="height:100%;width:auto;max-width:100%;border-radius:18px;object-fit:contain">';
   let c='<div class="mast-slide"><div class="mast-flip-wrap'+(mstFlipped?" flipped":"")+'"'+ttsFlipAttrs(showName?{front:name,back:def,recBack:name}:{back:name})+' onclick="mstFlip()"><div class="mast-flip-inner">';
   c+='<div class="mast-flip-front"><div class="mast-slide-cat">'+mstEsc(d)+lrn+'</div>';
-  c+='<div class="mast-slide-img">'+img+'</div>';
+  c+='<div class="mast-slide-img" style="position:relative">'+img+(typeof unitPicsChipHtml==="function"?unitPicsChipHtml(unitPicsVisualFor(card.deck||"",name),(card.deck||"")+"_"+name):"")+'</div>';   // UNITPICS_CREDIT: 📷 +N
   if(showName) c+='<div class="mast-slide-name">'+mstEsc(name)+'</div>'+mstFlipBtn(session,false);
   c+='<div class="mast-flip-hint">\u{1F4A1} tap to see '+(showName?'the definition':'what this is')+'</div></div>';
   c+='<div class="mast-flip-back"><div class="mast-slide-cat">'+mstEsc(d)+'</div>';
