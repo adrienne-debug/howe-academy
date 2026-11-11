@@ -7,7 +7,7 @@ nothing is saved). Then, when you are ready:
 
 ## 1. The Firebase project (≈ 20 minutes)
 1. Firebase console → **Add project** (suggested id `howe-envirothon`; the id becomes part of every family's instance name,
-   so pick it once). **Blaze** with a budget alert at $5 (your decision 8.1; expected ≈ $0). No Storage bucket.
+   so pick it once). **Blaze** with a budget alert at $5 (your decision 8.1; expected ≈ $0). No Storage bucket yet (the photos' bucket is §7).
 2. **Authentication → Sign-in method → Email/Password → Enable.** (Nothing else: no Google, no anonymous.)
    Also under Authentication → Settings → **User actions: turn OFF "Email enumeration protection"** is NOT needed — leave defaults.
 3. **Realtime Database → Create database** (us-central1, locked mode). This is the DEFAULT instance: roster, logins,
@@ -153,3 +153,24 @@ for the next season, "Reopen the season" after that date writes `{locked:false, 
 - the six tips lines + the contact line (`ENVS_TIPS`, `ENVS_CONTACT` in the ENVSITE block — marked PLACEHOLDER on the card);
 - the teacher's agreement text (the © line on the card reads "© 2026 Howe Academy · licensed to <className> for the 2026-27 season · not for redistribution");
 - the host repo name; the project id; App Check (later).
+
+## 7. Photos: Storage (📷 My photo, 2026-11-10)
+The teacher's and your own photos (📚 Cards → open a card → ＋ Add photo → **📷 My photo**) upload to Firebase Storage in this
+project; the page shrinks each one first (longest side 1280 px, JPEG, usually 100–400 KB). Once:
+1. Firebase console → **Build → Storage → Get started** → **Start in production mode** → location: the same region as the
+   database (**us-central1**) → Done.
+2. The bucket it makes should be **`howe-envirothon.firebasestorage.app`** (the Files tab shows `gs://howe-envirothon.firebasestorage.app`).
+   The site finds that name by itself. If the console shows another name (e.g. `howe-envirothon.appspot.com`), add
+   `storageBucket: "<that name>"` to BOTH `firebase` blocks of the host's `family-config.js` (`~/Desktop/Envirothon/host/`).
+3. Storage → **Rules** → replace everything with `~/Desktop/Envirothon/STORAGE_RULES_PASTE.txt` (the same text as
+   `envirothon/STORAGE_RULES.txt`) → **Publish**.
+4. Realtime Database → **Rules** → paste `~/Desktop/Envirothon/RULES_default_PASTE.json` again (a photo's address may now be
+   this bucket's, and `how` may be `"upload"`) → **Publish**.
+5. Rebuild and push the host (§2) so the 📷 chip is on the site.
+
+What Storage can't check: its rules cannot read the database, so any signed-in login of this project could technically
+upload a JPEG (under 3 MB) under a class path. What the app shows is the database record, which only the class's teacher or
+you can write. A photo's address carries a token, so anyone holding the address can open that one picture (like a Wikimedia link).
+
+**Test:** signed in as yourself → 📚 Cards → open any ID card → ＋ Add photo → 📷 My photo → pick a photo → tick what it
+shows → Save: it appears in the strip, Storage → Files shows `classPhotos/<class>/<item>/p….jpg`, and Undo removes both.
