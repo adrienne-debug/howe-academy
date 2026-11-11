@@ -15754,6 +15754,25 @@ function laundryNowOpen(){ mpSubView="house"; hhView="laundry"; const el=(typeof
 // Dad: his 🏡 My day, where the 🫧 Machines now card is.
 function laundryNowDadOpen(){ if(typeof ssJumpTo==="function") ssJumpTo("myday"); }
 // LAUNDRY_NOWONE_END
+// LAUNDRY_HOLDORDER_START — 🧺 the loads hold their places while you work (her report 2026-11-11: "when you click and change the status
+// of something, it changes the order in which the things are. I don't mind that necessarily happening at some point, but when I'm
+// doing it and I have to chase the thing around to change the different settings, that part is a little frustrating"; her yes the
+// same day). The 🧺 Laundry card sorts by each load's stage clock (ts), and every move restarts that clock — so the load just tapped
+// dropped to the bottom (and in Household ▸ Laundry, a load whose 🔴 light went off sank). Now the order a card was first drawn in
+// is kept for as long as you stay on that page: a load you tap stays where it is, a new load joins at the bottom, a put-away load
+// leaves. Go to another page (or tab, or another Household view) and come back → sorted fresh (Household: the loads that need you
+// first, then oldest first). "Still here" = the same page key AND this card is on the screen now (a hidden data-lho marker), so a
+// trip through a page that doesn't draw the card still re-sorts. Browser only (window), per device, nothing written; the Node tests
+// without window see the plain sort as before.
+let _lho={page:"",cards:{}};
+function laundryHoldPage(){ return [(typeof tab!=="undefined")?tab:"",(typeof mpSubView!=="undefined")?mpSubView:"",(typeof hhView!=="undefined")?hhView:""].join("|"); }
+// lids = the fresh sort; card = which card on the page (Household's, My day's, Mom's Day's). Returns the order to draw.
+function laundryHold(lids,card){ if(typeof window==="undefined") return lids; const pg=laundryHoldPage();
+  if(pg!==_lho.page){ _lho={page:pg,cards:{}}; }
+  else if(typeof document!=="undefined"&&document&&typeof document.querySelector==="function"&&!document.querySelector('[data-lho="'+card+'"]')) delete _lho.cards[card];   // not on the screen just now — you were elsewhere
+  const prev=_lho.cards[card], out=prev?prev.filter(function(id){ return lids.indexOf(id)>=0; }).concat(lids.filter(function(id){ return prev.indexOf(id)<0; })):lids.slice();
+  _lho.cards[card]=out; return out; }
+// LAUNDRY_HOLDORDER_END
 function laundrySince(ts){
   try{ return new Date(ts).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}); }catch(e){ return ""; }
 }
@@ -17226,6 +17245,7 @@ function mdCardLaundry(noAdd,bare,jump){   // 🧺 LAUNDRYADD: noAdd = Mom's Day
     const lids=Object.keys(laundryData).sort((a,b2)=>(laundryData[a].ts||0)-(laundryData[b2].ts||0));
     const _ny=(jump&&typeof laundryNeedsYou==="function")?lids.reduce(function(o,k){ o[k]=laundryNeedsYou(k); return o; },{}):null;   // 🧺 LAUNDRY_NOWONE: Household ▸ Laundry — the loads that need a step first, a red light on each
     if(_ny) lids.sort((a,b2)=>(_ny[b2]?1:0)-(_ny[a]?1:0));
+    const _hk=(jump?"j":"")+(bare?"b":"")+(noAdd?"n":"")+"c"; if(typeof laundryHold==="function"){ const _ho=laundryHold(lids,_hk); lids.splice.apply(lids,[0,lids.length].concat(_ho)); h+='<span data-lho="'+_hk+'" hidden></span>'; }   // 🧺 LAUNDRY_HOLDORDER: a load you tap keeps its place while you stay on this page
     const td=(typeof llTdListHTML==="function")?llTdListHTML():'';   // 📝 LLTODO_LIST: the laundry to-do checklist
     if(noAdd&&!lids.length&&!td) return '';   // nothing running → no empty card (start a load from 🏡 My day)
     if(bare&&!lids.length) return '<div style="margin-top:8px">'+td+'</div>';   // LLTODO_LIST: My day with nothing running — just the list
