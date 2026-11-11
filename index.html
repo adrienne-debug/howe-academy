@@ -53856,11 +53856,28 @@ function lnRenderSection(kid,col){
   return h;
 }
 // LANE_UI_END
+// RULESCROLL_START — the ⚙ Rules table stays where she was (her words 2026-11-10: "if i click something it takes me back to
+// the top instead of allowing me to edit cleanly without movement"). Every tap re-renders the page; the window kept its scroll
+// (_preserveUI) but the 340-px #cb-daypin-scroll box came back at row 1, column 1 — only scrollTop was ever saved, and only the
+// retired Builder tab put it back, never the Grid. rsGrab saves BOTH axes (taps, and the box's own onscroll, so the relay's
+// second render ~2 s later lands where she is now); rsRestore puts them back right after the markup is in the DOM, on the
+// Grid and the Builder alike, for the same kid only. Display state only — nothing written.
+function rsGrab(){
+  const b=document.getElementById("cb-daypin-scroll"); if(!b) return;   // no box: keep the last position
+  cbDayPinScroll={top:b.scrollTop||0,left:b.scrollLeft||0,kid:(typeof cbKid!=="undefined"?cbKid:null)};
+}
+function rsRestore(){
+  const b=document.getElementById("cb-daypin-scroll"); if(!b) return;
+  const v=(typeof cbDayPinScroll==="number")?{top:cbDayPinScroll,left:0}:(cbDayPinScroll||{});   // the old numeric save still reads
+  if(v.kid!=null&&typeof cbKid!=="undefined"&&v.kid!==cbKid) return;   // another kid's table starts at its top
+  b.scrollTop=v.top||0; b.scrollLeft=v.left||0;   // the browser clamps if the table got shorter
+}
+// RULESCROLL_END
 // Day pinning — same allowedDays field the subject editor and builder use
 function cbPinDay(sk,d){
   const kid=cbKid;
   const s=currData.subjects[kid][sk]; if(!s||!db) return;
-  const _dp=document.getElementById("cb-daypin-scroll"); if(_dp) cbDayPinScroll=_dp.scrollTop;
+  if(typeof rsGrab==="function") rsGrab();   // RULESCROLL: both axes of the ⚙ Rules box, before the write re-renders it
   const arr=(s.allowedDays||[]).slice(); const _wasD=arr.slice();   // 🔁 RELAY3D: for Undo
   const i=arr.indexOf(d);
   if(i>=0) arr.splice(i,1); else arr.push(d);
@@ -53882,7 +53899,7 @@ function rlSet(kid,sk,field,val,relay){
   const s=(((currData||{}).subjects||{})[kid]||{})[sk]; if(!s||!db) return;
   const _wasF=(s[field]===undefined||s[field]===null)?undefined:JSON.parse(JSON.stringify(s[field]));   // 🔁 RELAY3: the field as it was, for Undo
   const _was0={f:_wasF,tpw:s.timesPerWeek,ptpw:(s.pacing||{}).tpw,rules:s.rules};   // 🔁 RELAY3D: the paths a Rules-panel field really writes
-  const _dp=document.getElementById("cb-daypin-scroll"); if(_dp) cbDayPinScroll=_dp.scrollTop;
+  if(typeof rsGrab==="function") rsGrab();   // RULESCROLL: both axes of the ⚙ Rules box, before the write re-renders it
   if(field==="tpw"){ const v=Math.max(1,Math.min(7,parseInt(val,10)||1)); s.pacing=Object.assign({},s.pacing||{mode:"timesPerWeek"},{tpw:v}); s.timesPerWeek=v;
     db.ref("curriculum/subjects/"+kid+"/"+sk).update({"pacing/tpw":v,timesPerWeek:v}); }
   else if(field==="rulesTok"){ const tok=String(val); const set=new Set(String(s.rules||"").split(/[,\s]+/).filter(Boolean)); if(set.has(tok)) set.delete(tok); else { if(tok==="first"){ set.delete("last"); set.delete("lastOwn"); } if(tok==="last"||tok==="lastOwn"){ set.delete("first"); set.delete(tok==="last"?"lastOwn":"last"); } set.add(tok); }
@@ -54043,7 +54060,7 @@ function cbRenderRules(col){
   // 🏫 COOPWEEKDAYS: the "weeks without co-op" row shows for a kid in ANY co-op (timed or full-day)
   const _coopAny=(function(){ try{ const m=coopsMap(); for(const id in m){ const c=m[id]; if(c&&(c.kids||[]).indexOf(kid)>=0) return true; } }catch(e){} return false; })();
   if(_coopAny) h+='<div style="font-size:10px;color:var(--muted);margin:2px 0 6px">🏫 <b>Weeks without co-op:</b> each subject has a second row of days under <b>Days</b> for weeks when '+window.cap(kid)+' has no co-op (none lit = same days every week). <span onclick="cwdUseMonThu(\''+kid+'\')" style="text-decoration:underline;cursor:pointer;font-weight:700">Use Mon–Thu for every 4×/wk subject</span></div>';
-  h+='<div id="cb-daypin-scroll" style="max-height:340px;overflow:auto;border:1px solid var(--border);border-radius:8px">';
+  h+='<div id="cb-daypin-scroll" onscroll="rsGrab()" style="max-height:340px;overflow:auto;border:1px solid var(--border);border-radius:8px">';   // RULESCROLL: track where she is
   h+='<table style="border-collapse:collapse;font-size:10.5px;min-width:100%"><thead><tr style="background:var(--bg)">'+["Subject","Days","×/wk","Cap","Min"].concat(_coopCol?["Co-op day"]:[]).concat(["Mom","Device","Priority","First/last","Sticky","No-carry","Rules"]).map(x=>'<th style="text-align:left;padding:5px 6px;white-space:nowrap;font-size:10px;color:var(--muted)">'+x+'</th>').join("")+'</tr></thead><tbody>';
   for(const [sk,s] of entries){
     const al=s.allowedDays||[]; const pb=(typeof planBacked==="function")&&planBacked(kid,sk); const seqd=s.tracking!=="daily";
@@ -54967,7 +54984,7 @@ function renderCurrBuilder(el){
   el.innerHTML+=h;
   // Restore the day-pinning list's own scroll — renderAll only preserves window scroll,
   // so without this each day tap rebuilds the inner list back at the top.
-  const _dp=document.getElementById("cb-daypin-scroll"); if(_dp) _dp.scrollTop=cbDayPinScroll;
+  rsRestore();   // RULESCROLL: both axes, same helper as the Grid
 }
 
 // CBTODAYNOTE_START — 🔁 the Build preview says when TODAY's open card is about to move (her pick 2026-10-24, after Makenzie's AAS 4
@@ -58507,6 +58524,7 @@ function renderCurrGrid(el){
   if(typeof cbGate!=="undefined"&&cbGate) h+=cbRenderGate();
   if(typeof lrPanelHTML==="function") h+=lrPanelHTML(gvKid);   // LESSONRES: the 📎 resources sheet for the tapped lesson
   el.innerHTML+=h;
+  if(cbRulesOpen) rsRestore();   // RULESCROLL: the ⚙ Rules box back where she was, before she can see it at the top
 
   // Restore scroll + focus the open editor (renderAll rebuilds the DOM)
   setTimeout(()=>{
