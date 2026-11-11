@@ -31,7 +31,8 @@ database was read once, read-only, to see what Lincoln and Ellis have). Line num
 | Where do the pictures live? | **In a lazy code file `geo.js`** (SVG outlines, ~250 KB), put on the record *in memory* at load — never in the database | 1–3 KB per outline vs 20–80 KB per photo; the record stays ~40 KB; every picture surface already works from `visuals[deck_name]`. |
 | How are existing cards adopted? | **Same deck keys** — `"State Capitals"`, `"World Geography"` and `"Geography"` (Ellis's vocabulary deck) — and the existing Hook-up engine | Zero card writes; Ellis's 16 capitals + 13 words and Lincoln's 7 cards keep their tiers, due days and answers. |
 | Vocabulary (her addendum 11/10: "pull in the geography vocabulary … Ellis has, maybe Lincoln as well") | **One words deck, `Geography`, running through Stages 2, 3, 4 and 6** — globe and map words early, landforms beside the US and world stages, a picture per term | Ellis's 24 terms land in it with his own backs; Lincoln has no geography vocabulary deck (his map and earth terms are science cards, left alone). |
-| Stages | 7 core + 3 optional enrichment, ≈ 350 core cards (≈ 290 places + ≈ 60 words) | Shape before name, name before capital, capital before fact; home outward, familiar first. |
+| Stages | **10 stages**, ≈ 480 cards (≈ 290 places + ≈ 60 words + ≈ 130 flags, rivers, mountains and landmarks) — her call 2026-11-10: "def do the optionals" | Shape before name, name before capital, capital before fact; home outward, familiar first. |
+| Home state | **North Carolina** for the Howe family (her answer 2026-11-10: "our state is nc"); other families pick theirs once at Add | Stage 3's "My state" card and Stage 4's region order start from it. |
 | First usable slice | Stages 1–3 (continents, oceans and globe words, my country) with pictures — Julian can start | Then shapes and countries, then the two capitals stages with the hook-up in the same slice. |
 
 Stage list (details in §5):
@@ -45,9 +46,12 @@ Stage list (details in §5):
 | 5 | 🏛 State capitals | 3–6 | **State Capitals** · flip (adopts Ellis's deck) | 50 | The same state outline rides on the front; capital on the back |
 | 6 | 🗺 Countries by continent | 3–7 | Countries · flash · ≈ 87 — **Geography** · 22 world-landform and earth words | ≈ 109 | The country lit on its continent; a real-world example lit on a map per word |
 | 7 | 🌐 World capitals | 5+ | **World Geography** · flip (adopts Lincoln's deck) | ≈ 60 | The same country picture; capital on the back |
-| 8 | 🏳️ Flags *(optional)* | 3+ | Flags · flash | ≈ 87 | Flag → say the country |
-| 9 | 🏔 Rivers & mountains *(optional)* | 4+ | Rivers & Mountains · flash | ≈ 20 | Map with the feature lit |
-| 10 | 🗽 Landmarks *(optional)* | 2+ | Landmarks · flip | ≈ 24 | Photo (Commons, credited) → name + country |
+| 8 | 🏳️ Flags | 3+ | Flags · flash | ≈ 87 | Flag → say the country |
+| 9 | 🏔 Rivers & mountains | 4+ | Rivers & Mountains · flash | 24 | Map with the feature lit |
+| 10 | 🗽 Landmarks | 2+ | Landmarks · flip | 24 | Photo (Commons, credited) → name + country |
+
+Stages 8–10 are enrichment by nature (facts on places already known) but **planned and built like the others** — her
+2026-11-10 "def do the optionals". Each is its own stage so Mom still chooses when a kid starts it.
 
 ---
 
@@ -242,7 +246,7 @@ Three ideas from how children actually learn geography, all three agreeing:
 3. **Paired-associate recall** (state → capital, country → capital) is a reading-age, verbal-memory task that is far
    easier once the *place* already means something — a shape the kid can see, a neighbourhood of states she has
    traced. Capitals without places are a list; capitals after shapes are labels on a map she knows. Facts
-   (rivers, landmarks, flags) attach best to places already known, so they come last and optional.
+   (rivers, landmarks, flags) attach best to places already known, so they come last — Stages 8–10.
 
 So: **shape before name, name before capital, capital before fact; whole globe first, then home outward.** Stage 2
 (oceans and globe words) sits between the continents and "my country" because the words — equator, north, poles,
@@ -383,15 +387,29 @@ Deck **`World Geography`**, **flip**, `introCap:3`, ≈ 60 cards: his 30 built-i
 Families = continents in Stage 6's order. Types: flip / say / **type**, as Stage 5. **Ready:** 54 of 60. **Placement:**
 Lincoln — **🔗 Hook up**; others — stage pick or check-up.
 
-**Stages 8–10 · optional enrichment** (Mom moves a kid up only if she wants them; each is its own stage so she can
-pick): **8 🏳️ Flags** — deck `Flags`, flash, flag → say the country, same ≈ 87 countries, families = continents (the
-flag pictures are the one set that can't be drawn from map data — Commons SVGs/PNGs per flag with per-file credits,
-§6). **9 🏔 Rivers & mountains** — deck `Rivers & Mountains`, flash, the feature lit on a map → name (Nile, Amazon,
-Mississippi, Yangtze, Danube, Rhine, Ganges, Congo…; Rockies, Andes, Alps, Himalayas, Appalachians, Urals, Atlas…;
-≈ 20). **10 🗽 Landmarks** — deck `Landmarks`, flip, photo → name and country (Eiffel Tower, Great Wall, Pyramids of
-Giza, Statue of Liberty, Taj Mahal, Machu Picchu, Colosseum, Big Ben, Sydney Opera House, Grand Canyon…; ≈ 24;
-Commons photos, credited, loaded the sharks way or through the Pictures card to Storage). None of these count toward
-"ready" of anything.
+**Stage 8 · 🏳️ Flags** — 3rd and up (any kid who knows the Stage-6 countries). Deck `Flags`, **flash** (flag → say
+the country), `introCap:3`, the same ≈ 87 countries as Stage 6, families = continents in Stage 6's order (the flag is
+a second face of a place the kid already knows). **Picture:** the flag alone, 3:2, flat (the one set that can't be
+drawn from map data — Commons *Flag of X.svg* per flag, PD-only, rendered to a small PNG or kept as SVG, per-file
+credit, §6). Look-alikes are placed in the same family on purpose so the drill tells them apart (Chad/Romania,
+Ireland/Côte d'Ivoire are not both in; Norway/Iceland, Australia/New Zealand, Indonesia/Monaco-type pairs are noted
+in Appendix B for her). **Ready:** 78 of 87. **Placement:** check-up (6 families of quick 5) or "knows through".
+
+**Stage 9 · 🏔 Rivers & mountains** — 4th and up. Deck `Rivers & Mountains`, **flash** (the feature lit on its
+continent → say its name), `introCap:3`, 24 cards (Appendix E): families "Rivers of the world" (12) and "Mountains
+of the world" (12), home continent first. **Picture:** Natural Earth's rivers and the mountain ranges' extent drawn on
+the continent map — all public domain. **Ready:** 22 of 24.
+
+**Stage 10 · 🗽 Landmarks** — 2nd and up (a picture deck a younger kid can enjoy early; Mom can move a kid here
+straight from Stage 3). Deck `Landmarks`, **flip** with `flipFace:"name"` (photo front → name + country on the back,
+the sharks pattern), `introCap:3`, 24 cards (Appendix E), families = continents, the US first. **Picture:** a Commons
+photo per landmark, PD / CC0 / CC BY only, each credited in `credits` like the sharks file; loaded as data URIs in
+`geo.js` (≈ 24 × 40 KB ≈ 1 MB — the one heavy set, so it is the last thing in the lazy file) or moved to Storage
+through the Pictures card. **Ready:** 22 of 24.
+
+None of Stages 8–10 is needed for "ready" of any earlier stage, and a kid can be moved into any of them from any
+stage (the ➡ button always offers the next stage; Mom's "Start a check-up" or the enroll stage pick reaches the
+others).
 
 **Not for this unit:** the ABC-Train-style ordering game (there is no natural order to drill); Math-Fact Dash /
 sprints (the `Math Facts` special case). The Match and Memory games already work on any deck with pictures, so
@@ -504,7 +522,7 @@ notebook's "Your Journey" insert, both of which will show the geography cards as
 | 1 | **Order of the seven continents** and the "hook" for each (animal, landmark, a song the kids know). | §5.2 Stage 1 table: North America → Africa, Antarctica, Australia → South America, Europe, Asia. |
 | 2 | **Four or five oceans.** | Five (Southern Ocean in). |
 | 3 | **The geography words, and which belong to which grade band** — Appendix C sorts ≈ 59 terms into Stage 2 (K–2 globe words), Stage 3 (K–2 land and water), Stage 4 (3rd–4th map skills), Stage 6 (4th–7th world landforms and earth words). She may move any term up or down a stage, drop one, add one (isthmus for a 2nd grader? *fumarole* at all?), and reword any back. Ellis's 24 keep his wording unless she changes it. | Appendix C as written. |
-| 4 | **Home state** and what belongs in "My country" (14 default cards; add the Outer Banks? the Smokies?). | North Carolina; the 14 in §5.2 Stage 3. |
+| 4 | ~~Home state~~ **Answered 2026-11-10: North Carolina.** Still hers: what belongs in "My country" (14 default cards; add the Outer Banks? the Smokies?). | The 14 in §5.2 Stage 3. |
 | 5 | **The regions of the states, which states go where** (Delaware and Maryland: Northeast or Southeast?), and the **order inside each region** — she knows which neighbours her kids already talk about. Any **mnemonics or songs** ("Fifty Nifty United States" is alphabetical — if the kids know it, an alphabetical option for Stage 4 is a one-line switch). | Five regions, Appendix A order, home outward. |
 | 6 | **Ellis's capitals order from here:** keep alphabetical (his list today) or switch to regions. | Keep alphabetical; the hook-up offers the switch as a checkbox. |
 | 7 | **Which countries, how many, first ones per continent**; names ("Czechia" or "Czech Republic", "Burma" or "Myanmar"). | Appendix B, ≈ 87, US-classroom names; Lincoln's 30 spelled the built-in way. |
@@ -528,12 +546,12 @@ duplicate capital in between).
 | # | Slice (block name) | What lands | Test | Notes |
 |---|---|---|---|---|
 | 0 | **GEODATA** | `tools/build_geo_js.py` + the generated `geo.js` (`HoweGeo`: paths, `svg()`, credits) + `perf_budget.json` lazy-file entry | `test_geo_data.js`: every name in Appendices A–D has a path; every SVG parses; size caps; credits; no kid names | No app behaviour change. Needs one internet fetch of the two datasets. |
-| 1 | **GEOPATH** | `STARTER_UNITS.geography_path` with Stages 1–3 (Continents, Oceans, My Country, and the `Geography` words deck's Stage-2 and Stage-3 shares), `picsInCode:"geo"`, `geoHydrate` from `envHydrateAll`, `HA_LAZY_FILES.geo`, the Add card's "your state" pick → `home`, `STARTER_HOWTO` lines, `nbInsert` on | `test_geography_path.js`: enroll a Pre-K kid at Stage 1 → 2 continents learning, 7 in the bank; pictures resolve through `_unitPortrait` and `mastLiveVisual` for places AND words; move-up to Stage 2 seeds only Stage 2 (oceans + 13 words, deck `Geography` set to flip); dry run writes nothing; the record has no picture data | **Julian can start after this.** The words deck is born here under its final key so no later rename is ever needed. |
+| 1 | **GEOPATH** | `STARTER_UNITS.geography_path` with Stages 1–3 (Continents, Oceans, My Country, and the `Geography` words deck's Stage-2 and Stage-3 shares), `picsInCode:"geo"`, `geoHydrate` from `envHydrateAll`, `HA_LAZY_FILES.geo`, the Add card's "your state" pick → `home` (pre-filled "North Carolina" for the Howe family), `STARTER_HOWTO` lines, `nbInsert` on | `test_geography_path.js`: enroll a Pre-K kid at Stage 1 → 2 continents learning, 7 in the bank; pictures resolve through `_unitPortrait` and `mastLiveVisual` for places AND words; move-up to Stage 2 seeds only Stage 2 (oceans + 13 words, deck `Geography` set to flip); dry run writes nothing; the record has no picture data | **Julian can start after this.** The words deck is born here under its final key so no later rename is ever needed. |
 | 2 | **GEOSTATES** | Stage 4 (State Shapes, regions ordered from `home`, + 14 map-skills words) and Stage 6 (Countries + 22 world-landform and earth words) | extends the test: 50 states once each, region order from three different home states; 87 countries, every Lincoln built-in present; the 24 **(E)** words spelled and worded exactly as Ellis's (byte-compare against a fixture copied from his list) | Pure content + ordering. |
 | 3 | **GEOADOPT** ⚠️ | Stage 5 (`State Capitals`) and Stage 7 (`World Geography`) decks with the built-in names/backs; `UA_ATTACH.geography_path` rows for Ellis (5, `strayOk`) and Lincoln (7, `strayOk`); the optional "switch to regions" bank-order checkbox; the **never-replace-a-saved-back guard** in `_ustApply` (§4) | `test_attach_geo_ellis.js` / `test_attach_geo_lincoln.js`: fixtures shaped exactly like their live cards (16 capitals + 13 words, and 7) → **zero card writes**, `enrolled` + `kidStage` + the right bank appends only, Ellis's 13 words counted as earlier-stage/kept and his 5 non-path words as strays, next-10 as expected, backs identical to the built-ins (a byte-compare of the 80 names and 80 backs against `MAST_*_BANK` / `MAST_VOCAB_DEFS`), stock "+ Kid" closed for both, dry run inert; `test_unit_stages.js` gains the guard case (a saved back survives a move-up) | **Riskiest slice** — it touches two live kids' decks (three decks). Safety: the plan is pure and shown first, nothing is written until Yes, and the test replays their real card shapes. Ship outside school hours. |
 | 4 | **GEONB** | `notebooks.js` stage pages (§7 table), fed from `ctx.units[].learning[].portrait` plus an `outline`/`trace` variant from `HoweGeo`; optional Pre-K "Continent of the Day" | `test_geo_notebook.js`: pages render, no `.page` overflow (measured in the in-app browser per the notebook rule), snapshot hashes of the other kids' notebooks unchanged | Notebook-only; the generic insert already prints before this. |
-| 5 | **GEOEXTRA** | Stages 8–10 (Flags from Commons with per-file credits; Rivers & Mountains from Natural Earth; Landmarks photos) | extends `test_geo_data.js` (credits, licences PD/CC0/CC BY only) and the unit test (stages 8–10 never count toward ready) | Content; Stage 10's photos go through the Pictures card to Storage the sharks way. |
-| 6 | **GEOCHECK** *(small, optional)* | Check-up quick-picks for picture decks: a `hard` hint on cards (the small Northeast states, the look-alike countries) so `ckQuickPicks` asks the hard ones first, as it does for × ÷ | `test_checkup_geo.js` | Only if her check-ups feel too easy. |
+| 5 | **GEOEXTRA** | Stages 8–10 (Flags from Commons with per-file credits; Rivers & Mountains from Natural Earth; Landmarks photos, Appendix E) | extends `test_geo_data.js` (credits, licences PD/CC0/CC BY only; every flag PD) and the unit test (stages 8–10 never count toward an earlier stage's ready; Stage 10 reachable from Stage 3) | **Planned, not optional** (her "def do the optionals"). Stage 10's photos go through the Pictures card to Storage the sharks way. |
+| 6 | **GEOCHECK** | Check-up quick-picks for picture decks: a `hard` hint on cards (the small Northeast states, the look-alike countries and flags) so `ckQuickPicks` asks the hard ones first, as it does for × ÷ | `test_checkup_geo.js` | **Planned** (same answer). Small; can ride with GEOEXTRA if it stays under 60 KB. |
 
 Each slice: one branch off `main`, its block marked `// GEO…_START — <her words + date> … // GEO…_END`, every write
 a targeted path through `db` only when `db && !_dryRun()`, the full test suite green, `test_perf_budget.js` green
@@ -546,7 +564,7 @@ a targeted path through `db` only when `db && !_dryRun()`, the full test suite g
 | # | Question | Default |
 |---|---|---|
 | Q1 | Four oceans or five? | **Five** (Southern Ocean). |
-| Q2 | The family's home state — asked once on the Add card and saved as `unitStudies/geography_path/home`, or left out (no "My state" card, regions in a fixed order)? | **Ask once at Add**; absent → 13 cards and the Appendix-A region order. |
+| Q2 | ~~The family's home state~~ **Answered 2026-11-10: "our state is nc."** The Howe record gets `home:"North Carolina"`; other families are asked once at Add. | Done; absent (a family that skips it) → 13 cards and the Appendix-A region order. |
 | Q3 | Which region scheme: the five classroom regions (default), the Census Bureau's four, or her own? Where do Delaware and Maryland go? | **Five regions**, Delaware and Maryland in the Northeast. |
 | Q4 | Ellis's new capitals: keep coming alphabetically (nothing written) or switch to the regional order (one `bank_order` write at hook-up)? | **Keep alphabetical**; the checkbox is there. |
 | Q5 | Flags on the Stage-6 country cards (needs the multi-picture branch merged) or as Stage 8? | **Stage 8.** |
@@ -645,7 +663,29 @@ evergreen trees".
 irrigation · fertilizer · barge · industry. His *fumarole* is a sixth — add it to Earth words if she wants it (default
 left as his own).
 
-## Appendix D — my country, default 14 (home = North Carolina)
+## Appendix E — Stages 9 and 10, default lists (her "def do the optionals")
+
+**Rivers of the world (12):** Mississippi (USA) · Amazon (South America) · Nile (Africa) · Congo (Africa) · Danube
+(Europe) · Rhine (Europe) · Thames (England) · Volga (Russia) · Ganges (India) · Yangtze (China) · Mekong (Southeast
+Asia) · Murray (Australia). **Mountains of the world (12):** Appalachians (USA) · Rockies (North America) · Sierra
+Nevada (USA) · Andes (South America) · Alps (Europe) · Pyrenees (Europe) · Urals (Russia) · Caucasus · Himalayas
+(Asia) · Atlas (Africa) · Drakensberg (South Africa) · Great Dividing Range (Australia). Each lit on its continent
+from Natural Earth's rivers and the range's extent; the back (for a flip-reversed pass) names the continent or
+country.
+
+**Landmarks (24), US first then by continent:** Statue of Liberty (New York) · Golden Gate Bridge (San Francisco) ·
+Grand Canyon (Arizona) · Mount Rushmore (South Dakota) · Washington Monument (Washington DC) · Niagara Falls (US/
+Canada) · Chichén Itzá (Mexico) · Machu Picchu (Peru) · Christ the Redeemer (Brazil) · Eiffel Tower (France) · Big Ben
+(England) · Colosseum (Italy) · Leaning Tower of Pisa (Italy) · Parthenon (Greece) · Neuschwanstein Castle (Germany) ·
+Sagrada Família (Spain) · Pyramids of Giza (Egypt) · Victoria Falls (Zambia/Zimbabwe) · Table Mountain (South Africa)
+· Taj Mahal (India) · Great Wall of China · Mount Fuji (Japan) · Petra (Jordan) · Sydney Opera House (Australia).
+Photos: Wikimedia Commons, PD / CC0 / CC BY only, one credit each (the sharks README's table shape); US ones prefer
+National Park Service photos (public domain).
+
+**Flags (Stage 8):** the Appendix-B country list, one flag each; a flag whose Commons file is not public domain is
+left out and the country stays in Stage 6 only (the test asserts every flag's licence is PD).
+
+## Appendix D — my country, default 14 (home = North Carolina — her answer 2026-11-10)
 
 United States · Washington DC · My state (North Carolina) · Canada · Mexico · Pacific Ocean · Atlantic Ocean ·
 Gulf of Mexico · Great Lakes · Mississippi River · Rocky Mountains · Appalachian Mountains · Alaska · Hawaii.
