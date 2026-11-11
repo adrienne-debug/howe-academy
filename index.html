@@ -70102,7 +70102,7 @@ function _trainUnlock(){
   try{
     if(typeof bbAudioUnlock==="function") bbAudioUnlock();
     const ctx=(typeof bbAlarmCtx!=="undefined")?bbAlarmCtx:null; if(!ctx||ctx.state==="closed") return;
-    if(ctx.state==="suspended"){ try{ ctx.resume().catch(function(){}); }catch(e){} }
+    if(ctx.state!=="running"){ try{ ctx.resume().catch(function(){}); }catch(e){} }   // ABCTRAIN_AUDIO2: "interrupted" too (iPad after speech), not only "suspended"
     const b=ctx.createBuffer(1,1,22050), src=ctx.createBufferSource(); src.buffer=b; src.connect(ctx.destination); src.start(0);   // the silent frame that unlocks iPad Safari
   }catch(e){}
 }
@@ -70120,7 +70120,7 @@ function _trainCtx(){
     if(typeof window==="undefined"||!(window.AudioContext||window.webkitAudioContext)) return null;
     if(!bbAlarmCtx||bbAlarmCtx.state==="closed") bbAlarmCtx=new (window.AudioContext||window.webkitAudioContext)();   // the context the Start tap unlocked
     const ctx=bbAlarmCtx;
-    if(ctx.state==="suspended"){ try{ ctx.resume().catch(function(){}); }catch(e){} }
+    if(ctx.state!=="running"){ try{ ctx.resume().catch(function(){}); }catch(e){} }   // ABCTRAIN_AUDIO2: resume "interrupted" too
     return ctx;
   }catch(e){ return null; }
 }
@@ -70152,6 +70152,14 @@ function trainSing(st){
   const notes=trainSongTimes();
   st.song.tones=_trainTones(notes);
   st.song.muted=(_trainCtxRunning()===false);   // ABCTRAIN_AUDIO: tones scheduled on a context that cannot sound yet
+  // ABCTRAIN_AUDIO2_START — her report 2026-11-11, after ABCTRAIN_AUDIO: "the video looks great, but it's no sound". Two breadcrumbs in _debug so one
+  // play on the iPad says what the device saw: the context's state and whether its clock moves, the tones flag, the oscillator count,
+  // and whether the speech engine was still talking. Read-only breadcrumbs (dbg); nothing else changes.
+  try{ const c=(typeof bbAlarmCtx!=="undefined")?bbAlarmCtx:null; const t0=c?c.currentTime:-1;
+    dbg("train song start: ctx="+(c?c.state:"none")+" t="+(c?c.currentTime.toFixed(2):"-")+" sr="+(c?c.sampleRate:"-")+" tones="+st.song.tones+" osc="+_trainOsc.length+" tts="+(window.speechSynthesis?(window.speechSynthesis.speaking?"speaking":"quiet"):"none"));
+    setTimeout(()=>{ try{ if(!alive()) return; dbg("train song +1.2s: ctx="+(c?c.state:"none")+" clock "+(c?(c.currentTime-t0).toFixed(2):"-")+"s moved · tts="+(window.speechSynthesis&&window.speechSynthesis.speaking?"speaking":"quiet")+" muted="+st.song.muted); }catch(e){} },1200);
+  }catch(e){}
+  // ABCTRAIN_AUDIO2_END
   setTimeout(()=>{ if(!alive()||st.song.end) return; const m=(_trainCtxRunning()===false); if(m!==st.song.muted){ st.song.muted=m; _mastRe(); } },700);   // ABCTRAIN_AUDIO: a resume that lands late
   notes.forEach((x,i)=>{
     setTimeout(()=>{ if(!alive()||_trainLeft(st)) return;
