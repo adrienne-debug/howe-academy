@@ -34,7 +34,7 @@ console.log("── the block, where it sits, how it is hooked ──");
   ok("one CPPOINTS block, right after CPTEAMPICK_END", a>0&&b>a&&src.indexOf("// CPPOINTS_START",a+1)<0&&src.slice(src.indexOf("// CPTEAMPICK_END"),a).trim()==="// CPTEAMPICK_END");
   ok("the header names the scheme, the date and the ledger path", /2026-11-10/.test(PTS.slice(0,600))&&/mastery\/<kid>_envstars\/<YYYYMMDD>/.test(PTS)&&/INFORMATIONAL/.test(PTS));
   ok("the block only declares (nothing runs at load)", PTS.split("\n").every(l=>!l.trim()||/^(\/\/|function |const | |})/.test(l)));
-  const out=src.slice(0,a)+src.slice(b), hooks=out.split("\n").filter(l=>/\bcpPts[A-Z]\w*\(/.test(l));
+  const out=(src.slice(0,a)+src.slice(b)).replace(/\/\/ CPMYCLASS_START[\s\S]*?\/\/ CPMYCLASS_END\n/,""), hooks=out.split("\n").filter(l=>/\bcpPts[A-Z]\w*\(/.test(l));   // 🏫 CPMYCLASS reads CPPOINTS' week line for his 🌿 tile: a reader, not a hook
   ok("six hook lines outside the block, each typeof-guarded and tagged ⭐ CPPOINTS", hooks.length===6&&hooks.every(l=>/typeof cpPts\w+==="function"/.test(l)&&/⭐ CPPOINTS/.test(l)), hooks.map(l=>l.trim().slice(0,80)));
   const fn=(name)=>{ const i=src.indexOf("function "+name+"("); return src.slice(i,src.indexOf("\n}",i)); };
   ok("…envSiteSittingDone hands the sitting over (no flat ENVS_STARS write left in it)", /cpPtsSitting\(kid,done\)/.test(fn("envSiteSittingDone"))&&!/bankDirect|bankDemo\+=/.test(fn("envSiteSittingDone")));

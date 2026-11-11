@@ -253,6 +253,7 @@ function envmRelAttach(kid,_lz){
   if(typeof cplnLoad==="function") cplnLoad(kid,cid,_envm.edb,envmSid(kid));   // 🌿 CPLINCOLN: his class settings, plan and override, read once (memory only)
   if(typeof cplntAttach==="function") cplntAttach(kid,cid,_envm.edb,_envm.subs,envmSid(kid));   // 👩‍🏫 CPLINCOLNL3: the teacher's drills for him (drills/<cid>/<sid>), graded into Howe once each
   if(typeof cplnpLoad==="function") cplnpLoad(kid,cid,_envm.edb,envmSid(kid));   // 🌿 CPLINCOLNPARITY: his class's card, trim and test layers, read once (memory only)
+  if(typeof cpmcAttach==="function") cpmcAttach(kid,cid,_envm.edb,_envm.subs,envmSid(kid));   // 🏫 CPMYCLASS: the class boards (boards/<cid>) for his 🌿 tile, one listener with the others (off the class site only)
 }
 // A release record {<deckKey>|<station>: truthy}: clear each matching deck's hold once — the family database's one targeted removal.
 function envmRelease(kid,rel){
@@ -736,6 +737,7 @@ function envsWhen(k){ const a=envsDaysAgo(k); if(a==null) return "never"; if(a<=
 function envsStationRowsHtml(summary,opts){
   opts=opts||{}; let h='';
   envsStations().forEach(st=>{ const s=envsStationStat(summary,st);
+    if(opts.released&&!s.released) return;   // 🏫 CPMYCLASS: his 🌿 tile shows the stations sent out only (every other caller leaves it off)
     h+='<div style="padding:8px 0;border-top:1px solid #f1efe9"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div style="font-weight:800;flex:1;min-width:120px">'+envsEsc(st.label)+(s.grad?' \u{1F393}':'')+'</div>';
     if(!s.released) h+='<span class="envs-muted">\u{1F512} not sent out yet</span>';
     else h+='<span class="envs-muted">'+s.mastered+' mastered \u00B7 '+s.learning+' in progress \u00B7 '+s.new+' to come'+(s.acc14!=null?' \u00B7 '+s.acc14+'% right (14 d)':'')+' \u00B7 last '+envsWhen(s.last)+'</span>';

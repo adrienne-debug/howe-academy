@@ -628,6 +628,146 @@ function cplnpReady(kid){
   }catch(e){ return false; }
 }
 // CPLINCOLNPARITY_END
+// CPMYCLASS_START — 🏫 "MY CLASS" ON HIS 🌿 TILE (2026-11-10). Her words that night: Lincoln is "missing out on seeing how many stars he gets
+// for this, how the team scores are and what his scores are like", and she wants a way to play games on JUST Envirothon while all his
+// sessions stay mixed as they are. Her yes: build it.
+// A "🏫 My class" strip under the 🌿 Envirothon start in the kid's own 📚 Study (Kids' Corner, or Dad's Day ▸ his Study: KC_PLAY's page),
+// drawn by renderMastStudy's one guarded line, ONLY while CPLINCOLN's class layer is in for him (cplnOn). Four parts, in this order:
+//   · ⭐ STARS FOR THIS — today's and the season's CLASS stars, CPPOINTS' own numbers: the summary his mirror sends the teacher (envSummary →
+//     cpPtsSum: summary.days[<today>].stars, summary.stars; informational, his Star Bank never moves). Today's "how" in CPPOINTS' words
+//     (🌿 Day done / 🌿 Part of the day · 🌿 Extra · N cards · 🎮 rounds), the week in cpPtsWeekLine's line, the rule from CPPTS.
+//   · TEAM — the class boards exactly as the class site's Team tab draws them (envsBoardsHtml, his effort row marked "(you)"), from
+//     boards/<cid> on the mirror's app: ONE on("value") listener, attached by envmRelAttach's guarded line with the mirror's other
+//     subscriptions (_envm.subs) and detached with them (envmDetach: signed out). A refused read → "Boards aren't posted yet".
+//   · MY SCORES — the class site's station rows (envsStationRowsHtml, released stations only) fed with the summary his app builds:
+//     mastered bar, in progress, check-in / final, 14-day accuracy, how far to the final.
+//   · 🎮 GAMES, JUST THIS — a door into his 🎮 Games (KC_PLAY's own kcPlayOpen) with ONE filter on: _gamesItems and gameDeckOn (GAMEGRID's
+//     per-deck rule every game reads) keep only his Envirothon decks (cplnDecks, the 15 unit decks). A chip "🌿 Envirothon only · ✕" tops
+//     the section and clears it; it clears itself when he leaves the section: the filter belongs to that one Games page (the kcPlay object
+//     the door opened) — 📚 Study, another kid, ← back, another tab or the class layer going away ends it. His own 🎮 Games button is
+//     untouched: every deck, mixed. A judged round played through the door is logged by GAMELOG like any round, and CPPOINTS' cpPtsSum
+//     already counts each day's judged Envirothon rounds from mastery/gameLog — nothing is added for it here.
+// Writes NOTHING to any database (no set / update / push / transaction): memory, plus one HA_LS key per kid for open / closed
+// (ha_cpmc_open_<kid>, open by default). No setting. Never on the class site; any other kid or family: "" — the page is what it was.
+const _cpmc={boards:{},gf:null};   // boards: <kid> → {cid, val, state:"wait"|"ok"|"refused"} · gf: the games filter {kid, play, pending, decks}
+function cpmcEsc(v){ return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function cpmcJs(v){ return String(v==null?"":v).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }
+function cpmcN(v){ v=Math.floor(Number(v)||0); return v>0?v:0; }
+// env.js here? (it always arrives before this file, but never assumed: not ready → ask for it, repaint when it lands)
+function cpmcEnv(){
+  if(typeof haLazyReady==="function"&&!haLazyReady("env")){ try{ haLazyLoad("env").then(()=>{ if(typeof renderAllSoon==="function") renderAllSoon(); }).catch(()=>{}); }catch(e){} return false; }
+  return typeof envsBoardsHtml==="function"&&typeof envsStationRowsHtml==="function"&&typeof envSummary==="function";
+}
+// the kid's own 📚 Study page right now (Kids' Corner / Dad's Day: KC_PLAY), never Mom's Mastery tab
+function cpmcStudyPage(kid){ return typeof kcPlay!=="undefined"&&!!kcPlay&&kcPlay.who===kid&&kcPlay.mode==="drills"; }
+// ── TEAM: envmRelAttach's guarded line — boards/<cid>, one listener in the mirror's subs (envmDetach takes it off with the others)
+function cpmcAttach(kid,cid,edb,subs,sid){
+  try{
+    if(!kid||!cid||!edb||!subs||(typeof envSiteOn==="function"&&envSiteOn())) return false;
+    const sk=kid+"|cpmcBoards"; if(subs[sk]) return false;
+    const rec=_cpmc.boards[kid]={cid:cid,val:null,state:"wait"};
+    const r=edb.ref("boards/"+cid);
+    const fn=s=>{ if(_cpmc.boards[kid]!==rec) return; rec.val=(s&&typeof s.val==="function")?s.val():null; rec.state="ok"; cpmcPaint(); };
+    r.on("value",fn,()=>{ if(_cpmc.boards[kid]!==rec) return; rec.val=null; rec.state="refused"; cpmcPaint(); });
+    subs[sk]={r:r,fn:fn}; return true;
+  }catch(e){ return false; }
+}
+// the boards arrived: repaint only when the strip is on screen (never under a running sitting: the strip isn't drawn then)
+function cpmcPaint(){ try{ if(typeof document!=="undefined"&&document.getElementById("cpmc-strip")&&typeof renderAllSoon==="function") renderAllSoon(); }catch(e){} }
+// ── STARS (PURE): the summary (envSummary + CPPOINTS' cpPtsSum), today's key, the week's YYYY-MM-DD dates → {today, season, how:[…], week}
+function cpmcStars(sm,today,wk){
+  const D=(sm&&sm.days)||{}, d=D[today]||null, how=[];
+  if(d&&d.cleared===true) how.push("\u{1F33F} Day done"); else if(d&&cpmcN(d.done)>0) how.push("\u{1F33F} Part of the day");
+  if(d&&d.cleared===true&&cpmcN(d.extra)>0) how.push("\u{1F33F} Extra · "+cpmcN(d.extra)+" cards");
+  const g=(d&&d.games)||{}; if(cpmcN(g.rounds)>0) how.push("\u{1F3AE} Games · "+cpmcN(g.rounds)+" round"+(cpmcN(g.rounds)===1?"":"s")+", "+Math.round(cpmcN(g.right)/Math.max(1,cpmcN(g.total))*100)+"% right");
+  const week=(wk&&typeof cpPtsWeekOf==="function"&&typeof cpPtsWeekLine==="function")?cpPtsWeekLine(cpPtsWeekOf(D,wk),null):"";
+  return {today:d?cpmcN(d.stars):0,season:cpmcN(sm&&sm.stars),how:how,week:week};
+}
+// CPPOINTS' rule in one line, from its own numbers (CPPTS)
+function cpmcRule(){
+  if(typeof CPPTS==="undefined") return "";
+  const P=CPPTS; return "Stars: "+P.done+" for a day’s cards all done ("+P.part+" for part of them), 1 per "+P.extraPer+" extra cards ("+P.extraMax+" a day at most), "+P.gLoStars+"–"+P.gHiStars+" a game round at "+P.gLo+"% right or better ("+P.gMax+" a day at most).";
+}
+function cpmcStarsHtml(kid,sm){
+  const today=(typeof cpPtxDay==="function")?cpPtxDay():null, wk=(typeof cpPtxWeekDays==="function"&&typeof cpPtxToday==="function")?cpPtxWeekDays(cpPtxToday()):null;
+  const s=cpmcStars(sm,today,wk);
+  let h='<div class="envs-card" data-cpmc="stars"><div class="envs-h2">⭐ Stars for this</div>';
+  h+='<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:baseline"><div style="font-size:22px;font-weight:900;color:#14532d">⭐ '+s.today+' <span style="font-size:13px;font-weight:800">class star'+(s.today===1?'':'s')+' today</span></div>'
+    +'<div style="font-size:15px;font-weight:800;color:#374151">⭐ '+s.season+' <span style="font-size:12px">this season</span></div></div>';
+  h+='<div style="font-size:12.5px;font-weight:700;margin-top:4px">'+(s.how.length?cpmcEsc(s.how.join(" · ")):'Nothing yet today.')+'</div>';
+  if(s.week) h+='<div class="envs-muted" style="margin-top:3px">This week: '+cpmcEsc(s.week)+'</div>';
+  const rule=cpmcRule(); if(rule) h+='<div class="envs-muted" style="margin-top:3px">'+cpmcEsc(rule)+'</div>';
+  h+='<div class="envs-muted" style="margin-top:3px">Class stars count for your class — they are not in your Star Bank.</div>';
+  return h+'</div>';
+}
+function cpmcTeamHtml(kid){
+  const rec=_cpmc.boards[kid], sid=(typeof envmSid==="function")?envmSid(kid):null;
+  let h='<div class="envs-h2" style="margin:4px 0 6px">\u{1F3C6} Team</div>';
+  if(!rec||rec.state==="refused") return h+'<div class="envs-card envs-muted" data-cpmc="noboards">Boards aren’t posted yet.</div>';
+  if(rec.state!=="ok") return h+'<div class="envs-card envs-muted" data-cpmc="boardswait">Loading the boards…</div>';
+  return h+'<div data-cpmc="boards">'+envsBoardsHtml(rec.val,sid)+'</div>';
+}
+function cpmcScoresHtml(kid,sm){
+  const rows=envsStationRowsHtml(sm,{kid:kid,released:true});
+  return '<div class="envs-card" data-cpmc="scores"><div class="envs-h2">\u{1F4CA} My scores</div>'+(rows||'<div class="envs-muted">No station has been sent out yet.</div>')+'</div>';
+}
+function cpmcGamesDoorHtml(kid){
+  const col=(typeof KID_COLOR!=="undefined"&&KID_COLOR[kid])||"#14532d";
+  return '<div style="text-align:center;margin:4px 0 8px"><button data-cpmc="gamesdoor" onclick="cpmcGames(\''+cpmcJs(kid)+'\')" style="min-height:48px;padding:0 22px;border-radius:14px;border:2px solid '+col+';background:#fff;color:'+col+';font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F3AE} Games, just Envirothon</button></div>';
+}
+// open / closed, per kid on this device (HA_LS), open by default
+function cpmcIsOpen(kid){ try{ return typeof HA_LS==="undefined"||HA_LS.getItem("ha_cpmc_open_"+kid)!=="0"; }catch(e){ return true; } }
+function cpmcToggle(kid){ const o=!cpmcIsOpen(kid); try{ if(typeof HA_LS!=="undefined") HA_LS.setItem("ha_cpmc_open_"+kid,o?"1":"0"); }catch(e){} try{ if(typeof renderAll==="function") renderAll(); }catch(e){} }
+// renderMastStudy's guarded line: the strip under his 🌿 start ("" for every other kid, session, page or family)
+function cpMyClassHtml(kid,session){
+  try{
+    if(!kid||!session||typeof ENV_SESSION_SID==="undefined"||session.sid!==ENV_SESSION_SID) return "";
+    if(typeof cplnOn!=="function"||!cplnOn(kid)||!cpmcStudyPage(kid)) return "";
+    if(!cpmcEnv()) return "";
+    if(typeof envsCss==="function") envsCss();   // the class site's card styles (every rule is .envs-* or body.env-site: nothing else on the page moves)
+    const open=cpmcIsOpen(kid);
+    let h='<div id="cpmc-strip" data-cpmc="strip" style="margin-top:16px;font-family:\'DM Sans\',sans-serif">';
+    h+='<button data-cpmc="toggle" onclick="cpmcToggle(\''+cpmcJs(kid)+'\')" aria-expanded="'+open+'" style="width:100%;display:flex;align-items:center;gap:8px;min-height:44px;padding:0 14px;margin-bottom:10px;border-radius:14px;border:2px solid #bbf7d0;background:#f0fdf4;color:#14532d;font-size:15px;font-weight:900;cursor:pointer;font-family:inherit;text-align:left"><span style="flex:1">\u{1F3EB} My class</span><span>'+(open?'▾':'▸')+'</span></button>';
+    if(!open) return h+'</div>';
+    let sm=null; try{ sm=envSummary(kid); }catch(e){ sm=null; }
+    h+=cpmcStarsHtml(kid,sm);
+    h+=cpmcTeamHtml(kid);
+    h+=cpmcScoresHtml(kid,sm);
+    h+=cpmcGamesDoorHtml(kid);
+    return h+'</div>';
+  }catch(e){ return ""; }
+}
+// ── 🎮 GAMES, JUST THIS: the door — his 🎮 Games page (KC_PLAY), the filter on for that page only
+function cpmcGames(kid){
+  try{
+    if(!kid||typeof cplnOn!=="function"||!cplnOn(kid)||typeof kcPlay==="undefined"||!kcPlay||kcPlay.who!==kid||typeof kcPlayOpen!=="function") return false;
+    _cpmc.gf={kid:kid,play:null,pending:true,decks:new Set(cplnDecks(kid))};
+    kcPlayOpen("games",kid,kcPlay.from);   // the filter is on before the page picks his game (gamesOpen → gamesFor)
+    const g=_cpmc.gf; if(g&&g.pending){ if(kcPlay&&kcPlay.who===kid&&kcPlay.mode==="games"){ g.play=kcPlay; g.pending=false; } else _cpmc.gf=null; }
+    return !!_cpmc.gf;
+  }catch(e){ _cpmc.gf=null; return false; }
+}
+// is the filter on for this kid? It binds to the Games page the door opened; any other page ends it (cleared here, on the first look)
+function cpmcGamesOn(kid){
+  const g=_cpmc.gf; if(!g) return false;
+  try{
+    const p=(typeof kcPlay!=="undefined")?kcPlay:null;
+    if(g.pending){ if(p&&p.who===g.kid&&p.mode==="games"){ g.play=p; g.pending=false; } else return kid===g.kid; }
+    if(!p||p!==g.play||p.mode!=="games"||p.who!==g.kid||typeof cplnOn!=="function"||!cplnOn(g.kid)){ _cpmc.gf=null; return false; }
+    return kid===g.kid;
+  }catch(e){ return false; }
+}
+// _gamesItems' guarded line: his cards on the Envirothon decks only while the filter is on (the same array otherwise)
+function cpmcItems(kid,items){ if(!Array.isArray(items)||!cpmcGamesOn(kid)) return items; const D=_cpmc.gf.decks; return items.filter(i=>!!i&&D.has(i.subject)); }
+// gameDeckOn's guarded line: true = this deck is off while the filter is on (any deck but his Envirothon ones)
+function cpmcDeckOff(kid,deck){ return cpmcGamesOn(kid)&&!_cpmc.gf.decks.has(String(deck)); }
+// the chip on top of the section, and its ✕
+function cpmcGamesChip(kid){
+  if(!cpmcGamesOn(kid)) return "";
+  return '<div data-cpmc="chip" style="margin:0 0 8px"><button onclick="cpmcGamesOff()" style="min-height:36px;padding:0 14px;border-radius:999px;border:2px solid #15803d;background:#f0fdf4;color:#14532d;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F33F} Envirothon only · ✕</button></div>';
+}
+function cpmcGamesOff(){ _cpmc.gf=null; try{ if(typeof renderAll==="function") renderAll(); }catch(e){} }
+// CPMYCLASS_END
 // CPGEAR_START — each role's ⚙️ shows only its own things (design §7g). Her answer 2026-10-28 (Q19): the bar color is the
 // class's, set by the teacher; kids and parents have no color option at all. So the 🎨 Color card is gone from every role
 // (kid, parent, teacher, admin) and envsSetColor with it; the color moves to 🏫 Class setup (CPCLASS).
