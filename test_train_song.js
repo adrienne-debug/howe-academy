@@ -82,9 +82,9 @@ function runSong(w,st){
 
 // ── the letter names (the level play's voice) ──
 { const c=world({noSynth:true}).c, N=c.TRAIN_LETTER_NAMES;
-  ok("a name for every letter A–Z, the ones she approved",ABC.map(x=>N[x]).join(" ")==="ey bee see dee ee eff gee aitch eye jay kay el em en oh pee cue are ess tee you vee double-you ex why zee");   // ABCTRAIN_SAY_A (2026-11-11): A is "ey" — "ay" was read as "aye"
-  ok("no name is itself a capital letter",ABC.every(x=>!loneCap(N[x])&&N[x]===N[x].toLowerCase()));
-  ok("trainSpoken: a letter → its name",c.trainSpoken("A")==="ey"&&c.trainSpoken("W")==="double-you");
+  ok("a name for every letter A–Z, the ones she approved",ABC.map(x=>N[x]).join(" ")==="A bee see dee ee eff gee aitch eye jay kay el em en oh pee cue are ess tee you vee double-you ex why zee");   // ABCTRAIN_SAY_A (2026-11-11): A is "ey" — "ay" was read as "aye"
+  ok("no name is itself a capital letter (except A, the letter itself — ABCTRAIN_SAY_A2 2026-11-11: \"ay\" read as I, \"ey\" as E)",ABC.filter(x=>x!=="A").every(x=>!/^[A-Z]$/.test(N[x]))&&N.A==="A");
+  ok("trainSpoken: a letter → its name",c.trainSpoken("A")==="A"&&c.trainSpoken("W")==="double-you");
   ok("trainSpoken: the 🔊 \"what comes next\" line",c.trainSpoken("J, K, L. What comes next?")==="jay, kay, el. What comes next?");
   ok("…and words keep their capitals (What, Put)",c.trainSpoken("What comes next? Put each car in its place!")==="What comes next? Put each car in its place!");
 }
@@ -93,7 +93,7 @@ function runSong(w,st){
 { const w=world({audio:true}), c=w.c, S=c.TRAIN_SONG, B=c.TRAIN_BEAT_S;
   c.trainStart();
   c.trainHear(); const heard=w.spoken[w.spoken.length-1];
-  ok("level play: 🔊 says the letters on the track by name, then \"What comes next?\"",heard&&/What comes next\?$/.test(heard.text)&&!loneCap(heard.text.replace(/What comes next\?$/,"")),heard);
+  ok("level play: 🔊 says the letters on the track by name, then \"What comes next?\"",heard&&/What comes next\?$/.test(heard.text)&&!loneCap(heard.text.replace(/What comes next\?$/,"").replace(/\bA\b/g,"")),heard);   // ABCTRAIN_SAY_A2: A is spoken as the letter itself
   const st=playRound(w);
   ok("level play: each right car's letter said by its name",st.turns.every(t=>w.spoken.some(x=>x.text===c.TRAIN_LETTER_NAMES[t.L])));
   const n0=w.spoken.length, k0=w.cancels(), t0=w.now();
