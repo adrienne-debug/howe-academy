@@ -69970,6 +69970,7 @@ function trainDropJudge(st,ti,k){
   return "right";
 }
 function trainDrop(ti,k){
+  _trainUnlock();   // ABCTRAIN_AUDIO: the kid's drop unlocks the tones
   const st=trainState; if(!st) return;
   const r=trainDropJudge(st,ti,k);
   if(!r){ st.sel=null; st.roll=null; if(st.phase==="play"&&!st.lock&&st.turns[ti]&&!st.turns[ti].done) st.bounce=ti; _trainHookRe(st); return; }   // dropped nowhere: back to the tray, no miss
@@ -70057,6 +70058,7 @@ function trainJudge(st,ci){
   return "right";
 }
 function trainTap(ci){
+  _trainUnlock();   // ABCTRAIN_AUDIO: the kid's tap unlocks the tones
   const st=trainState, r=trainJudge(st,ci); if(!r) return;
   if(r==="wrong"){ try{ matchBonk(); }catch(e){} st.seq++; _mastRe(); return; }
   try{ matchDing(); }catch(e){}
@@ -70089,6 +70091,30 @@ function _trainStopSong(){
   _trainRun++;
   _trainOsc.forEach(o=>{ try{ o.stop(); }catch(e){} }); _trainOsc=[];
 }
+// ABCTRAIN_AUDIO_START — 🔊 the song ran but made no sound (her report 2026-11-11: "all things work on the song properly but
+// no sound"). The tones are scheduled on the shared AudioContext (bbAlarmCtx); a browser that keeps that context suspended
+// (iPad after a fresh load, a context first made outside a tap) lets the lights run on their clock while every oscillator
+// is silent. Two things: (1) the kid's own car tap / drop now unlocks the context the standard way (resume + a one-frame
+// silent buffer played INSIDE the gesture); (2) when the finish starts the song and the context still is not running, the
+// finish shows "🔊 Tap for sound" — that tap unlocks the context and starts the song again from A, inside a gesture where
+// every browser allows it. A context that is running shows nothing new. Read-only: no writes.
+function _trainUnlock(){
+  try{
+    if(typeof bbAudioUnlock==="function") bbAudioUnlock();
+    const ctx=(typeof bbAlarmCtx!=="undefined")?bbAlarmCtx:null; if(!ctx||ctx.state==="closed") return;
+    if(ctx.state==="suspended"){ try{ ctx.resume().catch(function(){}); }catch(e){} }
+    const b=ctx.createBuffer(1,1,22050), src=ctx.createBufferSource(); src.buffer=b; src.connect(ctx.destination); src.start(0);   // the silent frame that unlocks iPad Safari
+  }catch(e){}
+}
+// PURE-ish: is the song's context able to sound right now? null = no WebAudio at all (the lights alone, as before)
+function _trainCtxRunning(){ try{ const ctx=(typeof bbAlarmCtx!=="undefined")?bbAlarmCtx:null; if(!ctx) return null; return ctx.state==="running"; }catch(e){ return null; } }
+// The 🔊 button: unlock inside this tap, then start the song again (from A) so the tones land on a running context
+function trainSound(){
+  const st=trainState; if(!st||st.phase!=="done"||!st.song) return;
+  _trainUnlock();
+  setTimeout(()=>{ if(trainState!==st||st.phase!=="done") return; if(_trainCtxRunning()!==false){ trainSing(st); } st.song.muted=(_trainCtxRunning()===false); _mastRe(); },60);
+}
+// ABCTRAIN_AUDIO_END
 function _trainCtx(){
   try{
     if(typeof window==="undefined"||!(window.AudioContext||window.webkitAudioContext)) return null;
@@ -70125,6 +70151,8 @@ function trainSing(st){
   const alive=()=>trainState===st&&st.seq===seq&&st.song&&st.song.run===_trainRun;
   const notes=trainSongTimes();
   st.song.tones=_trainTones(notes);
+  st.song.muted=(_trainCtxRunning()===false);   // ABCTRAIN_AUDIO: tones scheduled on a context that cannot sound yet
+  setTimeout(()=>{ if(!alive()||st.song.end) return; const m=(_trainCtxRunning()===false); if(m!==st.song.muted){ st.song.muted=m; _mastRe(); } },700);   // ABCTRAIN_AUDIO: a resume that lands late
   notes.forEach((x,i)=>{
     setTimeout(()=>{ if(!alive()||_trainLeft(st)) return;
       st.song.i=i; _trainSongPaint(st); },Math.round((x.t+0.15)*1000));
@@ -70238,6 +70266,7 @@ function buildTrainHtml(color,study){
   TRAIN_ABC.forEach(L=>{ h+=_trainCarHtml(L,{cards:d.cards,cls:(lit==="*"||lit===L)?'trn-lit':''}); });
   h+='</div></div>';
   if(!sg.tones&&!end) h+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">\u{1F3B5} Sing along!</div>';
+  if(sg.tones&&sg.muted&&!end) h+='<button onclick="trainSound()" style="min-height:44px;padding:8px 18px;border-radius:12px;border:2px solid #f59e0b;background:#fffbeb;color:#92400e;font-size:15px;font-weight:800;margin:4px 0 10px">\u{1F50A} Tap for sound</button>';   // ABCTRAIN_AUDIO
   if(st.levelAfter&&st.levelAfter>st.levelBefore) h+='<div style="font-size:18px;font-weight:800;color:#16a34a;margin-bottom:10px">\u{2B06} Level '+st.levelAfter+' next time!</div>';
   if(end) h+=btn(go,"\u{1F501} Play again");
   return h+'</div></div>';
