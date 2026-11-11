@@ -558,6 +558,9 @@ cell menu's actions, lanes' data model, Settings, 📅 This week, the Family-tim
 
 ## 5 · Open questions for you (each with my default)
 
+Status 2026-11-10: **1, 2, 4 and 5 answered** (folded into the sections they touch); **3 open** — its default stands until she
+says otherwise; **6 open**.
+
 1. ~~**Days and times-a-week: write at once, or stage until "Lay it out again"?**~~ **Answered 2026-11-10: write at once.**
    *"i like the rules table better than the builder i want to get away from builder except for the initial setup."* Every
    per-subject setting — days, times a week, most in one day, minutes, and now the pacing fields too — writes and re-lays
@@ -575,9 +578,10 @@ cell menu's actions, lanes' data model, Settings, 📅 This week, the Family-tim
    Now slices 3a (audit only, its own committed `AUDIT_lessonmap_dead_2026-11-xx.md` + harness, nothing deleted) and 3b
    (the deletion, with `test_lessonmap_cleanup.js`), after slice 3 has moved the three features whose only door is the dead
    code. The keep / move / go lists and the one decision (the ↩ Undo banner at 57737 — recommendation: go) are in §4.3.
-5. **The words "Build" and "Rebuild".** Options: *Put it on the schedule / Lay it out again* (my default), *Plan it / Plan
-   it again*, or keep *Build*. **Default: Put it on the schedule** for the first lay-out of a subject and **Lay it out
-   again** for every later one — it says what a mom sees happen.
+5. ~~**The words "Build" and "Rebuild".**~~ **Answered 2026-11-10: the plan's pick** (*"i like the plan's pick"*). **Put it
+   on the schedule** for a subject's first lay-out (the guided Add's last button), **Lay it out again** for every later one
+   (the card's Pace section), and **Lay everything out again (N)** for the kid-tools button that was ↻ Rebuild all. Already in
+   the §3.5 word list; slice 1 (CURRWORDS) carries them.
 6. **Column order.** Columns are alphabetical with no way to order them by hand (only the per-device "Sort by end date").
    If by "reorder lanes" you meant *columns*, that is a new feature (a drag handle or ▲▼ list in 📅 *Kid*'s year ▸
    Compare, saved to `curriculum/colOrder/<kid>`), not a move. **Default: not in this plan** — ask, and if yes it is a
