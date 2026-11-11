@@ -4174,7 +4174,8 @@ function cptrHydrate(u){
 // options to add photos for when that's needed, or is that going to be part of the skill area?" — the answer is both, from one pool — and
 // her yes to building the design 2026-10-28 ("Yes, add it"). Pictures are needed next by the gear, ID and label skills and the tree-part trim.
 // INERT unless the Envirothon site's edition is on: Howe, DeWalt and Burris never reach a line of it, and Lincoln's ID Flash pictures in Howe
-// stay the repo set exactly as today (test_cp_photos.js). NO uploads here: 📷 camera / file and Firebase Storage are PR 30.
+// stay the repo set exactly as today (test_cp_photos.js). NO uploads here: 📷 camera / file and Firebase Storage are PR 30 (CPPHOTOUP,
+// after CPPHOTOTODO_END; its hooks here are typeof-guarded lines tagged 📷 CPPHOTOUP).
 //   · A PHOTO BELONGS TO AN ITEM: the card's `item` (the species, the gear name), else the front before " · " on an ID card, else the
 //     card's own front. Every card of "Bald Eagle" shares Bald Eagle's photos, as ENVIDFLASH does. The item's database key is
 //     cpphKey(item): lower case, spaces collapsed, . # $ [ ] / % coded.
@@ -4226,7 +4227,7 @@ function cpphShotTags(shot){ const s=String(shot||"").toLowerCase(), t=[]; const
   if(!t.length) t.push("live"); return t; }
 function cpphRepoId(url){ const m=/^envirothon\/pics\/([a-z0-9_\/-]+)\.jpg$/.exec(String(url||"")); return m?"r~"+m[1].replace(/\//g,"~"):""; }
 function cpphDemoUrlOk(u){ try{ return envsDemo()&&/^data:image\/svg\+xml/.test(String(u)); }catch(e){ return false; } }
-function cpphUrlOk(u){ return CPPH_WIKI_RE.test(String(u||""))||CPPH_REPO_RE.test(String(u||""))||cpphDemoUrlOk(u); }
+function cpphUrlOk(u){ return CPPH_WIKI_RE.test(String(u||""))||CPPH_REPO_RE.test(String(u||""))||cpphDemoUrlOk(u)||(typeof cpupUrlOk==="function"&&cpupUrlOk(u)); }   // 📷 CPPHOTOUP: a Storage upload
 // ── the repo set: envirothon/pics/index.json (ENVIDFLASH) by item; the demo file's copy (window.HowePicsDemo) when that is all there is
 function cpphDemoPics(){ try{ return (envsDemo()&&typeof window!=="undefined"&&window.HowePicsDemo&&window.HowePicsDemo.items)?window.HowePicsDemo:null; }catch(e){ return null; } }
 function cpphIdx(){ return (typeof envPicsIndex==="function")?envPicsIndex():null; }
@@ -4362,8 +4363,8 @@ function cpphPickHtml(c,p){ const E=cpcsEsc, J=envcJ, cm=p.from!=="repo"&&/^http
 function cpphAddHtml(c,item){
   const A=_cpph.add, d=A.draft, E=cpcsEsc, J=envcJ;
   let h='<div class="cpph-add" id="cpph-add"><div class="cpph-ah"><span>Add a photo to “'+E(item)+'”</span><button class="cpce-xs" onclick="cpphAddClose()" aria-label="Close">✕</button></div>';
-  h+='<div class="cpcs-chips">'+[["wiki","\u{1F50E} Wikipedia / Commons"],["pool","\u{1F5C2} The unit’s pool"]].map(w=>'<button class="cpcs-chip'+(A.way===w[0]?' on':'')+'" onclick="cpphWay(\''+w[0]+'\')">'+w[1]+'</button>').join("")+'</div>';
-  h+='<div class="cpph-was">\u{1F4F7} Camera or file comes with uploads (next).</div>';
+  h+='<div class="cpcs-chips">'+[["wiki","\u{1F50E} Wikipedia / Commons"],["pool","\u{1F5C2} The unit’s pool"]].concat((typeof cpupOn==="function"&&cpupOn())?[["up","\u{1F4F7} My photo"]]:[]).map(w=>'<button class="cpcs-chip'+(A.way===w[0]?' on':'')+'" onclick="cpphWay(\''+w[0]+'\')">'+w[1]+'</button>').join("")+'</div>';   // 📷 CPPHOTOUP: the third chip
+  if(typeof cpupOn==="function"&&cpupOn()){ if(A.way==="up"&&typeof cpupPaneHtml==="function") h+=cpupPaneHtml(c,item); } else h+='<div class="cpph-was">\u{1F4F7} Camera or file comes with uploads (next).</div>';   // 📷 CPPHOTOUP: the pane
   if(A.way==="wiki") h+='<div class="cpph-row"><input id="cpph-q" class="cpce-in" value="'+E(A.q||item)+'" oninput="cpphIn(\'q\',this.value)" onkeydown="if(event.key===\'Enter\'){ cpphWiki('+c.i+'); return false; }" aria-label="Name to look up"><button class="cpce-btn" onclick="cpphWiki('+c.i+')">Look up</button></div>'+
     '<div class="cpph-was">'+E(A.msg||"Looks the name up on Wikipedia. The thumbnail is hot-linked from Wikimedia, so it needs no storage.")+'</div>';
   if(A.way==="pool"){ const pool=cpphPool(A.pq); A.list=pool.slice(0,CPPH_POOL_SHOW);
@@ -4397,7 +4398,7 @@ function cpphAddOpen(i){ if(!cpphOn()) return; const c=cpphCard(i); if(!c) retur
   _cpph.add={way:"pool",q:"",msg:"",pq:"",list:[],draft:{url:"",credit:"",lic:"",tags:{},main:false,scope:"class",how:"",size:"",commons:""}}; cpphRe(); if(typeof cpcsScroll==="function") cpcsScroll("cpph-add"); }
 function cpphAddClose(){ _cpph.add=null; cpphRe(); }
 function cpphIn(f,v){ const A=_cpph.add; if(!A) return; if(f==="q") A.q=String(v); else A.draft[f]=v; }
-function cpphWay(w){ const A=_cpph.add; if(!A) return; A.way=w==="wiki"?"wiki":"pool"; cpphRe(); }
+function cpphWay(w){ const A=_cpph.add; if(!A) return; if(w==="up"&&typeof cpupWay==="function") cpupWay(A); else A.way=w==="wiki"?"wiki":"pool"; cpphRe(); }   // 📷 CPPHOTOUP
 function cpphLic(v){ const A=_cpph.add; if(!A) return; A.draft.lic=CPPH_LIC.some(l=>l[0]===v)?v:""; if(!CPPH_FREE[A.draft.lic]) A.draft.scope="class"; cpphRe(); }
 function cpphTag(t){ const A=_cpph.add; if(!A||CPPH_TAGS.indexOf(t)<0) return; A.draft.tags[t]=!A.draft.tags[t]; cpphRe(); }
 function cpphPoolQ(v){ const A=_cpph.add; if(!A) return; clearTimeout(_cpph.pqT); const go=()=>{ A.pq=String(v||""); cpphRe(); cpphFocus("cpph-pq"); }; if(typeof setTimeout==="function") _cpph.pqT=setTimeout(go,220); else go(); }
@@ -4428,10 +4429,11 @@ function cpphDraftWhy(d,have,unit){ d=d||{};
   if(unit&&!CPPH_FREE[d.lic]) return "Only a free-licence photo can go to the unit.";
   return ""; }
 function cpphRec(d,item,by,ts){ const tags={}; Object.keys(d.tags||{}).forEach(t=>{ if(d.tags[t]&&CPPH_TAGS.indexOf(t)>=0) tags[t]=true; });
-  return {url:String(d.url),credit:String(d.credit||"").trim().slice(0,CPPH_CREDIT_MAX),lic:d.lic,tags,item:String(item||"").slice(0,80),how:d.how==="wiki"?"wiki":"pool",by,ts}; }
+  return {url:String(d.url),credit:String(d.credit||"").trim().slice(0,CPPH_CREDIT_MAX),lic:d.lic,tags,item:String(item||"").slice(0,80),how:d.how==="wiki"?"wiki":(d.how==="upload"&&typeof cpupOn==="function")?"upload":"pool",by,ts}; }   // 📷 CPPHOTOUP: how "upload"
 function cpphNewId(){ return "p"+Date.now().toString(36)+Math.floor(Math.random()*46656).toString(36); }
 function cpphSave(i){
   if(!cpphOn()) return null; const c=cpphCard(i), A=_cpph.add; if(!c||!A) return null; const d=A.draft;
+  if(A.way==="up"&&typeof cpupSave==="function") return cpupSave(i);   // 📷 CPPHOTOUP: upload, then the record (below)
   ["credit"].forEach(f=>{ const v=cpphVal("cpph-"+f); if(v!=null) d[f]=v; });
   const item=cpphItemOf(c), k=cpphKey(item), cid=cpphCid(), unit=d.scope==="unit"&&cpphAdmin()&&!!CPPH_FREE[d.lic];
   const why=cpphDraftWhy(d,cpphLayeredK(k,{card:c.name,item}).list,unit); if(why){ envsToast(why); return null; }
@@ -4461,6 +4463,7 @@ function cpphCommit(ch,label,undoing){
   cpphNote(undoing?"↩︎ Undone":label,!undoing);
   return Promise.resolve(w).then(r=>r,e=>{ envsToast("Couldn’t save: "+String((e&&e.message)||e)); return null; }); }
 function cpphUndo(){ if(!cpphOn()) return; const u=_cpph.undo.pop(); if(!u){ cpphRe(); return; } const back={}, ts=Date.now();
+  if(u.up&&typeof cpupDel==="function") cpupDel(u.up);   // 📷 CPPHOTOUP: the uploaded file goes too (best effort, never waits)
   Object.keys(u.prev).forEach(p=>{ const r=u.prev[p]; back[p]=(r&&typeof r==="object"&&r.url)?Object.assign({},r,{by:_envs.uid,ts}):r; });   // the rules take only her own uid as `by`
   cpphCommit(back,"",true); cpphRe(); }
 // the note under the page (the card layer's look): what changed, with Undo, for a few seconds
@@ -4703,6 +4706,109 @@ function cpptCss(){
     document.head.appendChild(s); }catch(e){}
 }
 // CPPHOTOTODO_END
+// CPPHOTOUP_START — 📷 MY PHOTO: the third way in ＋ Add photo — the teacher's or Adrienne's own picture, from the camera or a file, uploaded
+// to Firebase Storage on the class site's project and landing in the class pool like any other photo (PR 30 of the class platform, the one
+// the CPPHOTOS header names; her words 2026-11-10: "yep add the photo").
+// INERT unless the site's console is on (cpupOn = cpphOn: the teacher or Adrienne on the Envirothon site): Howe, DeWalt and Burris never reach
+// a line of it; Lincoln's ID Flash and Mom's units are untouched. Its hooks in CPPHOTOS are typeof-guarded lines tagged 📷 CPPHOTOUP (the chip
+// and the pane in cpphAddHtml, cpphWay, cpphUrlOk, cpphRec's `how`, cpphSave, cpphUndo): without this block they do exactly what they did.
+//   · ONE photo at a time: <input type="file" accept="image/*" capture="environment"> (a phone offers the camera, a laptop a file picker).
+//   · SHRUNK ON THE DEVICE before anything leaves it: the longest side ≤ 1280 px, JPEG at 0.82, the camera's EXIF turn honoured
+//     (createImageBitmap(file,{imageOrientation:"from-image"}) where the browser has it, else an <img>, which the browser turns itself);
+//     not an image, or over 12 MB → a plain message. The preview and its size ("about 180 KB") show before Save.
+//   · SAVE (live): Storage classPhotos/<cid>/<itemKey>/<photoId>.jpg (the record's own cpphKey and cpphNewId), contentType image/jpeg, the
+//     progress shown → getDownloadURL() → the same record write as the other ways (cpphRec / cpphCommit) with how "upload". The licence
+//     starts "Own photo (I took it)" (editable); the credit starts as the class's teacherName for the teacher (Adrienne: "my photo"), else
+//     "my photo"; tags as always; My class only — an own photo may go to the unit for Adrienne, as the free-licence rule already allows.
+//     Undo removes the record AND, best effort and never waited on, the Storage file; a record write that is refused removes the file again.
+//   · The bucket: the config's storageBucket, else <projectId>.firebasestorage.app — the console's name for a new bucket (the host's
+//     family-config.js has no storageBucket today; envirothon/SITE_SETUP.md §7 says what to add if the console shows another name).
+//   · Demo (and ?dryrun=1): the chip, the picker, the shrink and the preview all work on the device; Save says "Demo · not saved" — no
+//     upload, no write, no network.
+//   · Storage rules (envirothon/STORAGE_RULES.txt) cannot read the database, so they check a signed-in login, a JPEG and < 3 MB only; the
+//     record the pool shows is still the class's teacher's or Adrienne's alone (SITE_RULES.json classPhotos/$cid/$item).
+const CPUP_SIDE=1280, CPUP_Q=0.82, CPUP_MAX_IN=12*1024*1024;
+const CPUP_URL_RE=/^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/[a-z0-9._-]{3,120}\/o\/classPhotos%2F[^\s"<>]{1,600}$/;
+const CPUP_CHECK_URL="https://firebasestorage.googleapis.com/v0/b/check.firebasestorage.app/o/classPhotos%2Fcheck.jpg?alt=media";   // stands in for the address the upload will get, so the draft is checked BEFORE uploading
+const _cpup={css:false};
+function cpupOn(){ return cpphOn(); }
+// ── PURE
+function cpupUrlOk(u){ return CPUP_URL_RE.test(String(u||"")); }
+function cpupPath(cid,k,pid){ return "classPhotos/"+cid+"/"+k+"/"+pid+".jpg"; }
+function cpupFit(w,h,max){ max=max||CPUP_SIDE; w=Math.max(1,Math.round(+w||0)); h=Math.max(1,Math.round(+h||0)); const s=Math.min(1,max/Math.max(w,h));
+  return {w:Math.max(1,Math.round(w*s)),h:Math.max(1,Math.round(h*s))}; }
+function cpupKB(n){ n=+n||0; if(n>=1024*1024) return "about "+(Math.round(n/104857.6)/10)+" MB"; const k=n/1024; return "about "+(k>=100?Math.round(k/10)*10:Math.max(1,Math.round(k)))+" KB"; }
+function cpupFileWhy(f){ if(!f) return "Pick a photo first.";
+  if(!/^image\//i.test(String(f.type||""))) return "That isn’t a photo. Pick a picture (JPEG, PNG …).";
+  if((+f.size||0)>CPUP_MAX_IN) return "That photo is over 12 MB. Pick a smaller one.";
+  return ""; }
+function cpupCredit(){ if(!cpphAdmin()){ const c=(typeof _envc!=="undefined"&&_envc.cls)||_envs.cls||{}, n=String((c&&c.teacherName)||"").trim().slice(0,40); if(n) return n; } return "my photo"; }
+// ── the way: its draft starts as an own photo (a pick from the pool or Wikipedia in between leaves its own credit and licence behind)
+function cpupWay(A){ if(!A) return; A.way="up"; A.up=A.up||{blob:null,prev:"",size:"",msg:"",busy:false,pct:0};
+  const d=A.draft; if(d.how!=="upload") Object.assign(d,{url:"",how:"upload",lic:"own",credit:cpupCredit(),tags:{},commons:"",size:"",scope:"class"}); }
+function cpupPaneHtml(c,item){ cpupCss(); const A=_cpph.add, U=(A&&A.up)||{}, E=cpcsEsc;
+  let h='<div class="cpph-row"><label class="cpce-btn pri cpup-pick'+(U.busy?' off':'')+'">\u{1F4F7} '+(U.blob?'Take or choose another':'Take or choose a photo')+
+    '<input type="file" accept="image/*" capture="environment" class="cpup-in" onchange="cpupPick(this)" aria-label="Take or choose a photo"'+(U.busy?' disabled':'')+'></label></div>';
+  if(U.prev) h+='<div class="cpph-pv"><img class="cpph-pi" src="'+E(U.prev)+'" alt="'+E(item)+'"><div class="cpph-was">'+E(U.size||"")+'</div></div>';
+  if(U.busy) h+='<div class="cpup-bar"><span id="cpup-bar" style="width:'+Math.round(U.pct||0)+'%"></span></div>';
+  h+='<div class="cpph-was" id="cpup-msg">'+E(U.msg||"Your own photo. It is made smaller on this device (longest side 1280 px) before it uploads.")+'</div>';
+  return h; }
+// ── pick → shrink → preview (all on the device, the demo too)
+function cpupObjUrl(b){ try{ return URL.createObjectURL(b); }catch(e){ return ""; } }
+function cpupRevoke(U){ try{ if(U&&U.prev) URL.revokeObjectURL(U.prev); }catch(e){} if(U) U.prev=""; }
+function cpupImgEl(f){ return new Promise((ok,no)=>{ try{ const u=URL.createObjectURL(f), im=new Image(); im._u=u; im.onload=()=>ok(im); im.onerror=()=>{ try{ URL.revokeObjectURL(u); }catch(e){} no(new Error("unreadable")); }; im.src=u; }catch(e){ no(e); } }); }
+function cpupDecode(f){ if(typeof createImageBitmap==="function") return createImageBitmap(f,{imageOrientation:"from-image"}).catch(()=>cpupImgEl(f)); return cpupImgEl(f); }
+function cpupShrink(f){
+  return cpupDecode(f).then(src=>new Promise((ok,no)=>{
+    const W=src.naturalWidth||src.width, H=src.naturalHeight||src.height; if(!W||!H) return no(new Error("empty"));
+    const s=cpupFit(W,H), cv=document.createElement("canvas"); cv.width=s.w; cv.height=s.h; const x=cv.getContext("2d");
+    x.fillStyle="#fff"; x.fillRect(0,0,s.w,s.h); x.drawImage(src,0,0,s.w,s.h);
+    try{ if(typeof src.close==="function") src.close(); if(src._u) URL.revokeObjectURL(src._u); }catch(e){}
+    cv.toBlob(b=>b?ok({blob:b,w:s.w,h:s.h}):no(new Error("encode")),"image/jpeg",CPUP_Q); })); }
+function cpupPick(inp){
+  const A=_cpph.add; if(!cpupOn()||!A||A.way!=="up") return Promise.resolve(null); const U=A.up, f=inp&&inp.files&&inp.files[0];
+  if(U.busy) return Promise.resolve(null); const why=cpupFileWhy(f); if(why){ U.msg=why; envsToast(why); cpphRe(); return Promise.resolve(null); }
+  U.msg="Making it smaller …"; cpphRe();
+  return cpupShrink(f).then(r=>{ if(_cpph.add!==A) return null; cpupRevoke(U); U.blob=r.blob; U.prev=cpupObjUrl(r.blob);
+      U.size=cpupKB(r.blob.size)+" · "+r.w+" × "+r.h+" px"; U.msg="Ready: tick what it shows, then Save."; cpphRe(); return r; },
+    ()=>{ if(_cpph.add===A){ U.msg="Couldn’t read that photo. Try a JPEG or PNG."; cpphRe(); } return null; }); }
+// ── Storage: the config's bucket, else the console's default name for this project
+function cpupBucket(){ try{ const o=firebase.app().options||{}; return String(o.storageBucket||(o.projectId?o.projectId+".firebasestorage.app":"")); }catch(e){ return ""; } }
+function cpupStore(){ const o=firebase.app().options||{}; if(o.storageBucket) return firebase.storage(); const b=cpupBucket(); if(!b) throw new Error("no bucket"); return firebase.app().storage("gs://"+b); }
+function cpupDel(path){ if(!path||envsDemo()||(typeof _dryRun==="function"&&_dryRun())) return false;
+  try{ const p=cpupStore().ref(path).delete(); if(p&&typeof p.catch==="function") p.catch(()=>{}); return true; }catch(e){ return false; } }
+function cpupBar(p,msg){ try{ const b=document.getElementById("cpup-bar"), m=document.getElementById("cpup-msg"); if(b) b.style.width=Math.round(p)+"%"; if(m) m.textContent=msg; }catch(e){} }
+// ── Save: check the draft, upload, then the record — ONE targeted write through cpphCommit, its Undo carrying the file's path
+function cpupSave(i){
+  if(!cpupOn()) return Promise.resolve(null); const c=cpphCard(i), A=_cpph.add; if(!c||!A||A.way!=="up") return Promise.resolve(null); const U=A.up||{}, d=A.draft;
+  if(U.busy) return Promise.resolve(null); const v=cpphVal("cpph-credit"); if(v!=null) d.credit=v;
+  if(!U.blob){ envsToast("Take or choose a photo first."); return Promise.resolve(null); }
+  const item=cpphItemOf(c), k=cpphKey(item), cid=cpphCid(), unit=d.scope==="unit"&&cpphAdmin()&&!!CPPH_FREE[d.lic];
+  const why=cpphDraftWhy(Object.assign({},d,{url:CPUP_CHECK_URL}),[],unit); if(why){ envsToast(why); return Promise.resolve(null); }
+  if(envsDemo()||(typeof _dryRun==="function"&&_dryRun())){ const m=envsDemo()?"Demo · not saved":"Dry run · not saved"; U.msg=m+": nothing was uploaded or written."; envsToast(m); cpphRe(); return Promise.resolve(null); }
+  if(!cid||!k){ envsToast("That photo can’t be saved here."); return Promise.resolve(null); }
+  let st; try{ st=cpupStore(); }catch(e){ U.msg="Photo storage isn’t set up on this site yet."; envsToast(U.msg); cpphRe(); return Promise.resolve(null); }
+  const pid=cpphNewId(), path=cpupPath(cid,k,pid), ref=st.ref(path); U.busy=true; U.pct=0; U.msg="Uploading … 0%"; cpphRe();
+  return new Promise((ok,no)=>{ const t=ref.put(U.blob,{contentType:"image/jpeg"});
+      if(t&&typeof t.on==="function") t.on("state_changed",s=>{ const p=(s&&s.totalBytes)?100*s.bytesTransferred/s.totalBytes:0; U.pct=p; U.msg="Uploading … "+Math.round(p)+"%"; cpupBar(p,U.msg); },no,()=>ok());
+      else Promise.resolve(t).then(()=>ok(),no); })
+    .then(()=>ref.getDownloadURL()).then(url=>{ if(!cpupUrlOk(url)) throw new Error("the photo’s address isn’t one this page knows"); return url; })
+    .then(url=>{ const rec=cpphRec(Object.assign({},d,{url,how:"upload"}),item,_envs.uid,Date.now()), ch={};
+        ch[unit?"units/"+cpphUnitOf(c)+"/photos/"+k+"/"+pid:"classPhotos/"+cid+"/"+k+"/"+pid]=rec; if(d.main) ch["classPhotos/"+cid+"/"+k+"/_main"]=pid;
+        const top=_cpph.undo[_cpph.undo.length-1], w=cpphCommit(ch,"\u{1F4F7} Your photo added for "+(unit?"every class":"your class")), u=_cpph.undo[_cpph.undo.length-1];
+        if(u&&u!==top) u.up=path;
+        U.busy=false; cpupRevoke(U); if(_cpph.add===A){ _cpph.add=null; _cpph.open=k; _cpph.pick=pid; } cpphRe();
+        return w.then(r=>{ if(r===null){ cpupDel(path); return null; } return pid; }); },
+      e=>{ U.busy=false; U.msg="Couldn’t upload: "+String((e&&e.message)||e).slice(0,160); envsToast(U.msg); cpupDel(path); cpphRe(); return null; }); }
+function cpupCss(){
+  if(_cpup.css||typeof document==="undefined"||!document.createElement) return; _cpup.css=true;
+  try{ const s=document.createElement("style"); s.id="cpup-css"; s.textContent=
+    '.cpup-pick{position:relative;overflow:hidden;display:inline-flex;align-items:center;min-height:44px;cursor:pointer}.cpup-pick.off{opacity:.5;pointer-events:none}'+
+    '.cpup-in{position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;cursor:pointer}'+
+    '.cpup-bar{height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden;margin:6px 0}.cpup-bar span{display:block;height:100%;background:#16a34a;transition:width .2s}';
+    document.head.appendChild(s); }catch(e){}
+}
+// CPPHOTOUP_END
 // CPSKILL_START — 🧩 THE SKILL ENGINE: practice that isn't a card, for any unit (DESIGN_class_platform_2026-10-28.md §4.1b, §9, §12,
 // §13 row 25; RESEARCH_envirothon_skills_2026-10-28.md §2–§3; PR 25 of the class platform; her yes to building the design, 2026-10-28).
 // The research's finding: about 1 Area question in 4 needs a SKILL (read a chart, use a table, fill a worksheet, label a picture, name a
