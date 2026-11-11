@@ -637,7 +637,7 @@ function envsSettingsHtml(){
   let h='';
   const pr=(typeof envsPageRole==="function")?envsPageRole():_envs.role;   // CPKIDMODE: the page's role (kid view on a parent login → kid)
   if(pr==="kid"&&typeof envRaToggleHtml==="function") h+='<div class="envs-card">'+envRaToggleHtml(kid)+'<div class="envs-muted" style="margin-top:6px">Auto reads each card and each check-in question out loud. Off: only when you tap \u{1F50A}.</div></div>';   // 🔊 ENVREADALOUD
-  if(pr==="parent") h+='<div class="envs-card"><div class="envs-h2">\u{1F510} Parent PIN</div><div class="envs-muted" style="margin-bottom:6px">The PIN opens the parent view on a shared device.</div><div class="envs-row"><input id="envs-pin" class="envs-in" type="text" inputmode="numeric" maxlength="4" placeholder="4 digits" style="width:110px;text-align:center;letter-spacing:6px"><button class="envs-btn sec" onclick="envsSetPin()">Save PIN</button></div></div>';
+  if(pr==="parent"&&_envs.homeApp!=="howe") h+='<div class="envs-card"><div class="envs-h2">\u{1F510} Parent PIN</div><div class="envs-muted" style="margin-bottom:6px">The PIN opens the parent view on a shared device.</div><div class="envs-row"><input id="envs-pin" class="envs-in" type="text" inputmode="numeric" maxlength="4" placeholder="4 digits" style="width:110px;text-align:center;letter-spacing:6px"><button class="envs-btn sec" onclick="envsSetPin()">Save PIN</button></div></div>';
   if(_envs.kidMode&&_envs.role==="parent") h+='<div class="envs-card"><div class="envs-h2" style="margin:0">Signed in</div><div class="envs-muted">A parent\u2019s login, in '+envsEsc(envsKidName(kid))+'\u2019s view. \u{1F469} Parent (top right) and the password go back.</div></div>';   // CPKIDMODE: no Sign out in a kid's view
   else h+='<div class="envs-card"><div class="envs-row"><div style="flex:1"><div class="envs-h2" style="margin:0">Signed in</div><div class="envs-muted">'+envsEsc(_envs.email||(_envs.role==="kid"?"student code":""))+'</div></div><button class="envs-btn red" onclick="envsSignOut()">Sign out</button></div></div>';
   h+='<div class="envs-muted" style="text-align:center;padding:8px">'+envsEsc(envsLicenseLine())+'</div>';
@@ -731,7 +731,7 @@ function cpLine(role,b,who,cls){
 function cpTopHtml(role,who,right){
   if(!cpOn()) return ""; cpCss(); const cls=cpCls(), b=cpBrand(cls), con=role==="teacher"||role==="admin";
   if(con&&typeof _envc!=="undefined"&&_envc.view!=="setup") _cp.d=null;   // away from 🏫 Class setup: its draft starts again from the class next time
-  if(con&&right==null){ const n=(typeof envcStudents==="function")?envcStudents().length:0; right='<div style="font-size:11.5px;font-weight:700">'+n+' student'+(n===1?'':'s')+'</div>'; }
+  if(con&&right==null){ const n=(typeof envcStudents==="function")?envcStudents().length:0; right='<div style="font-size:11.5px;font-weight:700">'+n+' student'+(n===1?'':'s')+'</div>'+((typeof envsHomeBtnHtml==="function")?envsHomeBtnHtml():""); }   // 🏠 CPHOMELINK
   return cpBarHtml(b,cpLine(role,b,who,cls),right,'<button onclick="'+(con?'envcView':'envsView')+'(\'settings\')" aria-label="Settings">⚙️</button>');
 }
 function cpCss(){
@@ -747,7 +747,7 @@ function cpCss(){
 // ── the class record arriving (envsReadShared, envcPickClass): the lock date may close it ──
 function cpClassIn(){
   if(!cpOn()) return false; try{ _envs.lock=envsLockState(_envs.lockRaw); }catch(e){ return false; }
-  if(_envs.lock&&_envs.lock.locked&&_envs.role!=="admin"&&!envsDemo()){ envsCard("closed"); return true; }
+  if(_envs.lock&&_envs.lock.locked&&_envs.role!=="admin"&&_envs.homeOf!=="admin"&&!envsDemo()){ envsCard("closed"); return true; }
   return false;
 }
 // ── 🏫 CLASS SETUP (teacher + admin) ──
@@ -8684,9 +8684,9 @@ function cpWeekParentHtml(kid){
   try{
     if(!cpwkSite()||!kid||typeof _envs==="undefined"||!_envs.sid) return ""; cpwkCss();
     const demo=cpwkDemo()&&typeof _envc!=="undefined"&&_envc.demo; if(demo) cpwkDemoSeed();
-    const row=demo?(_envc.students||{})[_envs.sid]:null, sm=row?row.summary:((typeof envsSummary==="function")?envsSummary(kid):null);
+    const hw=!demo&&_envs.homeApp==="howe", row=demo?(_envc.students||{})[_envs.sid]:hw?{summary:_envs.homeSum,weeks:_envs.homeWeeks}:null, sm=row?row.summary:((typeof envsSummary==="function")?envsSummary(kid):null);   // CPHOMELINK: a Howe-app kid's mirrored weeks
     const cur=cpWeekId(cpwkToday()), wk=cpWeekShift(cur,-_cpwk.pback), name=(typeof envsKidName==="function")?envsKidName(kid):kid, s={sid:_envs.sid,summary:sm,weeks:row?row.weeks:null,meta:{name}};
-    const v=cpwkView(s,wk,demo?{name,parent:true}:{name,parent:true,own:true,kid});
+    const v=cpwkView(s,wk,(demo||hw)?{name,parent:true}:{name,parent:true,own:true,kid});
     let h='<div class="envs-card"><div class="envs-h2">\u{1F4CA} '+(wk===cur?'This week':_cpwk.pback===1?'Last week':'Week of '+cpwkEsc(cpwkMo(cpWeekStart(wk))))+'</div>';
     h+='<div class="cpwk-nav"><button onclick="cpwkTap(\'pb\',1)" aria-label="An earlier week"'+(_cpwk.pback>=CPWK_PARENT_BACK?' disabled':'')+'>◀</button><div>'+cpwkEsc(cpWeekLabel(wk))+'</div><button onclick="cpwkTap(\'pb\',-1)" aria-label="A later week"'+(_cpwk.pback<=0?' disabled':'')+'>▶</button></div>';
     h+='<div class="cpwk-syn">'+cpwkEsc(v.text)+'</div>';
