@@ -134,7 +134,8 @@ ok(wire.length > 100 && !names.some(n => new RegExp("\\b" + n + "\\b").test(wire
 console.log("index.html wiring");
 // PREKLEVEL (2026-11-08): Mom's Notebook-tab pick (notebookSettings/<kid>/notebookTheme) first, the Family record second
 ok(/notebookTheme:nbThemeOf\(kid\)/.test(html) && /function nbThemeOf\(kid\)\{[^\n]*typeof r==="string"&&r\)\|\|null; \}/.test(html) && /nbRec=ROSTER_DEF\.find\(k=>k&&k\.id===kid\)/.test(html), "haNbContext reads notebookTheme (the picker's, else the kid's Family record; missing = null)");
-ok(/kidName:nbNm\(nbRec\.notebookName\)\|\|nbNm\(nbRec\.name\)/.test(html), "…and the name to print: notebookName (when the app shows a nickname), else the record's name");
+// NBNAME (2026-11-10): a name Mom set on the Notebook tab (notebookSettings/<kid>/notebookName) now comes first — see test_nb_name.js
+ok(/kidName:(?:nbNm\(\(\(\(notebookSettings\|\|\{\}\)\[kid\]\)\|\|\{\}\)\.notebookName\)\|\|)?nbNm\(nbRec\.notebookName\)\|\|nbNm\(nbRec\.name\)/.test(html), "…and the name to print: notebookName (when the app shows a nickname), else the record's name");
 ok((html.match(/\(kid==="julian"\|\|kid==="caleb"\|\|\(out&&out\.prekTheme\)\)&&out&&out\.letterCursor/g) || []).length === 2 &&
    (html.match(/\(kid==="julian"\|\|kid==="caleb"\|\|\(out&&out\.prekTheme\)\)&&out&&out\.numberCursor/g) || []).length === 2, "print + PDF save a themed kid's letter/number cursors (so next week continues)");
 ok(/famSave[\s\S]{0,900}Object\.assign\(\{\},k,/.test(html), "the Family editor keeps extra fields on save, so notebookTheme survives renames");
