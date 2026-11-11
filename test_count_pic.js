@@ -62,7 +62,7 @@ const DINO = "\u{1F995}", CAR = "\u{1F697}";
   ok("a pick that isn't on the list is refused", w.G.writes.length === 1 && s.caleb_settings.count_emoji === CAR); }
 { const s = {}; const w = world(s, false); w.mastSetCountEmoji("caleb", CAR);
   ok("kids can't change it", w.G.writes.length === 0 && !s.caleb_settings); }
-ok("12 picks, all distinct", (() => { const m = /const MAST_COUNT_PICS=(\[[\s\S]*?\]\]);/.exec(block); const arr = eval(m[1]); return arr.length === 12 && new Set(arr.map(x => x[0])).size === 12 && arr[0][0] === DINO; })());
+ok("13 picks, all distinct", (() => { const m = /const MAST_COUNT_PICS=(\[[\s\S]*?\]\]);/.exec(block); const arr = eval(m[1]); return arr.length === 13 && new Set(arr.map(x => x[0])).size === 13 && arr[0][0] === DINO; })());   // COUNTPIC_SHARK: 🦈 sharks added 2026-11-10
 // ── Stage 5 partner frames ──
 { const w = world({ caleb_settings: { count_emoji: CAR } });
   const f5 = w.mastPartnerVis("3 and ? make 5", 240), f10 = w.mastPartnerVis("7 and ? make 10", 240);
