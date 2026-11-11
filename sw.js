@@ -44,7 +44,7 @@ self.addEventListener('fetch', (e) => {
   // LAZYSPLIT (2026-11-08): the areas that moved out of index.html (classes.js = the class platform, games.js = the practice games, env.js = the Envirothon site + class link) used to ride inside
   // the cached page; keep an offline copy of each one too (network-first, same as the page). Keyed by name, so the
   // GitHub Pages cache-bust query (?v=…) never piles up copies.
-  const lazyM = req.method === 'GET' && /\/(classes|games|env)\.js$/.exec(new URL(req.url).pathname);
+  const lazyM = req.method === 'GET' && /\/(classes|games|env|geo)\.js$/.exec(new URL(req.url).pathname);   // GEOPATH (2026-11-11): + geo.js, the Geography Path's pictures
   if (lazyM) {
     const key = 'ha-lazy-' + lazyM[1];
     e.respondWith((async () => {
