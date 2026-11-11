@@ -61,8 +61,11 @@ const nameOf=(c,pid)=>c.masteryData.k.find(x=>x.id===pid).prompt;
 // is main's with exactly those left out (test_card_seconds.js covers them).
 const NO_CARDSECS=(k,v)=>(k==="ms"||k==="shownAt"||k==="answeredAt")?undefined:v;
 // ── OFF = main byte for byte: a scripted say-it afternoon (every screen, write, word said, sound), hashed ──
+// 🔠 TILEFIT (2026-11-10): the answer squares' text gained ONE class, "tf" (the shared fit-to-square rule, test_tilefit.js) —
+// the snapshot is main's with exactly that class left out.
+const NO_TILEFIT=h=>h.replace(/ class="tf"/g,"").replace(/class="tf /g,'class="').replace(/ tf"/g,'"');
 function offSession(S){
-  const log=[], snap=(w,tag)=>log.push(tag+"\n"+w.c.buildJeopHtml("#123456"));
+  const log=[], snap=(w,tag)=>log.push(tag+"\n"+NO_TILEFIT(w.c.buildJeopHtml("#123456")));
   const w=world(ANIMALS.concat(MATH),{src:S,settings:{games:{judge:"mom",judgeChoices:5}}}), c=w.c;   // a judging setting stored: Off ignores it
   c.jeopPickDecks=["Animals","Math Facts"]; c.jeopStart(); snap(w,"board"); const st=c.jeopState; let g=0, step=0;
   while(st.phase!=="done"&&g++<80){

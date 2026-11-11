@@ -118,7 +118,7 @@ const openCell=(w,ci)=>{ w.c.jeopPickCell(ci); return w.c.jeopState.open; };
   c.jeopPickDecks=["German"]; c.jeopStart(); const st=c.jeopState;
   ok("one deck: a 1-column board of 4 (the deck's size), named by the deck",st.decks.length===1&&st.rows===4&&st.of===4&&st.deck==="German");
   openCell(w,0); const t=st.turns[0];
-  ok("a word square: pick from 3 of the deck's own backs, the card's own among them; a silent language's front is shown, not said",t.act==="pick"&&t.opts.length===3&&t.opts.indexOf(backOf(c,t.pid))>=0&&w.said.length===0&&(c.buildJeopHtml("#000").match(/class="jp-opt"/g)||[]).length===3);
+  ok("a word square: pick from 3 of the deck's own backs, the card's own among them; a silent language's front is shown, not said",t.act==="pick"&&t.opts.length===3&&t.opts.indexOf(backOf(c,t.pid))>=0&&w.said.length===0&&(c.buildJeopHtml("#000").match(/class="tf jp-opt"/g)||[]).length===3);
   let guard=0; while(st.phase!=="done"&&guard++<20){ if(!st.open&&st.phase==="play"){ const ci=st.cells.findIndex(x=>!x.done); openCell(w,ci); } answer(w); w.flush(); }
   ok("a clean board: 4 of 4, the small confetti with the overlay present (noSong)",st.first===4&&w.dings.some(x=>x==="celeb:\u{1F4FA} You cleared the board!"));
   c.jeopStart(); const st2=c.jeopState; guard=0; while(st2.phase!=="done"&&guard++<20){ if(!st2.open&&st2.phase==="play"){ openCell(w,st2.cells.findIndex(x=>!x.done)); } answer(w); w.flush(); }

@@ -130,7 +130,7 @@ const beat=(w)=>w.tick(w.now()+w.c.MOLE_BEAT);   // the lock beat after a right 
 { const w=world(ANIMALS.concat(MATH)), c=w.c;
   c.moleStart("Math Facts"); const st=c.moleState; w.tick(3*c.MOLE_GAP);
   const h=c.buildMoleHtml("#000"), t=st.turns[0], it=MATH.find(x=>x.id===t.pid);
-  ok("answer mode: the FRONT is shown big and said; the moles are BACKS (the card's own + 3 other answers)",h.indexOf(it.prompt)>0&&w.said[0]===it.prompt&&h.indexOf('class="mole-ans"')>0&&t.tiles.length===4&&h.indexOf(">"+it.answer+"<")>0);
+  ok("answer mode: the FRONT is shown big and said; the moles are BACKS (the card's own + 3 other answers)",h.indexOf(it.prompt)>0&&w.said[0]===it.prompt&&h.indexOf('class="mole-ans tf"')>0&&t.tiles.length===4&&h.indexOf(">"+it.answer+"<")>0);
   c.moleStart(c.WHICH_MIX); const mx=c.moleState;
   ok("Mix the decks: cards from both decks, each wave's lures from the card's OWN deck",mx.mix&&new Set(mx.turns.map(t=>c.masteryData.k.find(x=>x.id===t.pid).subject)).size===2&&mx.turns.every(t=>{ const d=c.masteryData.k.find(x=>x.id===t.pid).subject; return t.tiles.every(p=>c.masteryData.k.find(x=>x.id===p).subject===d); }));
   ok("Change deck mid-round drops it: nothing written",(c.moleChangeDeck(),c.moleState===null&&w.writes.length===0));

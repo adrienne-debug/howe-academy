@@ -61695,7 +61695,7 @@ function _matchPlain(h){ return String(h||"").replace(/<[^>]*>/g," ").replace(/&
 //   say  — the spoken instruction; pick — the chip instruction; speak — what the app says after "I said it";
 //   chipOf — renders a card as a chip on the asked side (lures use the same renderer, so they look alike).
 function _matchAsk(st,t,it){
-  const word=c=>'<span style="font-size:15px;font-weight:800;color:#c2410c;pointer-events:none;word-break:break-word">'+(c.prompt||"")+'</span>';
+  const word=c=>'<span class="tf" style="font-size:15px;font-weight:800;color:#c2410c;pointer-events:none;word-break:break-word">'+(c.prompt||"")+'</span>';
   const nm=c=>_matchPlain(c.prompt), mn=c=>_matchPlain(_matchPairHtml(c));   // 🗣 SAIDPICK: speakOf — what the kid says, for any card of the deck
   if(st.pairMode==="same") return {say:"Say its name",pick:"Pick its name",speak:_matchPlain(it.prompt),chipOf:word,speakOf:nm};
   if(!t.isPrompt) return {say:"Say the word",pick:"Pick the word",speak:_matchPlain(it.prompt),chipOf:word,speakOf:nm};
@@ -61823,7 +61823,7 @@ function _matchSaidHtml(g,color){
     const mine=g.picked===i;
     const bd=done?(c.ok?'#16a34a':(mine?'#dc2626':'#e2ddd6')):'#e2ddd6', bg=done?(c.ok?'#f0fdf4':(mine?'#fef2f2':'#fff')):'#fff';
     h+='<div class="said-ch" onclick="mastMatchSaidPick('+i+')" style="min-height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center;padding:6px;border-radius:12px;border:2.5px solid '+bd+';background:'+bg+';cursor:'+(done?'default':'pointer')+'">';
-    h+='<span style="font-size:16px;font-weight:800;color:#292524;word-break:break-word;pointer-events:none">'+(done&&c.ok?'\u2713 ':'')+esc(c.text)+'</span>';
+    h+='<span class="tf" style="font-size:16px;font-weight:800;color:#292524;word-break:break-word;pointer-events:none">'+(done&&c.ok?'\u2713 ':'')+esc(c.text)+'</span>';
     if(tts) h+='<button class="said-hear" onclick="mastMatchSaidHear('+i+',event)" aria-label="Hear it" style="padding:4px 12px;border-radius:999px;border:1.5px solid '+color+';background:#fff;color:'+color+';font-size:15px;cursor:pointer">\u{1F50A}</button>';
     h+='</div>';
   });
@@ -61921,7 +61921,7 @@ function _matchPairHtml(it){
   const def=mastGetDef(masteryKid,it.prompt,it.subject)||((it.answer&&it.answer!==it.prompt)?it.answer:"")||it.definition||"";   // OURWORDS
   // Rendered RAW like everywhere else in the app — prompts/defs carry markup (<u> for the
   // rule-deck target word, .mast-hl spans); escaping showed literal "<u>" on the tiles.
-  if(def) return '<span style="font-size:11.5px;font-weight:600;line-height:1.35;pointer-events:none;word-break:break-word">'+String(def).slice(0,120)+'</span>';
+  if(def) return '<span class="tf" style="font-size:11.5px;font-weight:600;line-height:1.35;pointer-events:none;word-break:break-word">'+String(def).slice(0,120)+'</span>';
   return null;
 }
 // Same-pair mode: any tile-able visual counts, glyphs included — two "B" cards to find
@@ -61970,7 +61970,7 @@ function mastMatchStart(deck){
       tiles.push({pid:it.id,matched:false,miss:false,up:false,html:v});
       tiles.push({pid:it.id,matched:false,miss:false,up:false,html:v});
     } else {
-      tiles.push({pid:it.id,matched:false,miss:false,up:false,isPrompt:true,html:'<span style="font-size:'+((it.prompt||"").length<=4?26:15)+'px;font-weight:800;color:#c2410c;pointer-events:none;word-break:break-word">'+it.prompt+'</span>'});
+      tiles.push({pid:it.id,matched:false,miss:false,up:false,isPrompt:true,html:'<span class="tf" style="font-size:'+((it.prompt||"").length<=4?26:15)+'px;font-weight:800;color:#c2410c;pointer-events:none;word-break:break-word">'+it.prompt+'</span>'});
       tiles.push({pid:it.id,matched:false,miss:false,up:false,html:_matchPairHtml(it)});
     }
   });
@@ -62187,6 +62187,83 @@ function mastMatchLogResult(){
   _mastRe();
 }
 
+// TILEFIT_START — 🔠 every answer square shows its whole word (her words 2026-11-10: "in all the games the options after say it the
+// words wrap and dont finish in the square and it doesnt look great could we make this look more professional either shrink the words
+// to fit or another option you could see fit"). One shared rule for every text tile in the games, the practice panel, Memory flip,
+// Pick it and the "I said it → pick" choices: a word is never broken mid-word, never clipped, never ellipsized (the kid has to read
+// it to answer). Phrases wrap only at spaces.
+//   · CSS first pass: a tile's text element carries class "tf" → no mid-word break, no hyphens, no ellipsis (!important, so it wins
+//     over each game's own overflow-wrap). Nothing else about a game's look changes.
+//   · Shrink to fit: tileFitSoon() (called once by each tile render site, tag // TILEFIT) queues ONE fit pass as a microtask — it runs
+//     right after the caller drops the HTML into the page and BEFORE the browser paints, so nothing flashes. Each .tf steps its
+//     font-size down (×0.9 a step) from its own size to a floor of TILEFIT_FLOOR (60%) of it, stopping at the first size that fits.
+//   · A tile keeps its own slot: its min-width is set to 0 first, so an unbroken long word can't quietly widen the grid column and
+//     push the next choice off the screen (seen at phone width in the scratch check) — the word shrinks instead.
+//   · Still too big at the floor (one very long word): the tile grows (.tf-grow — taller, and wider by just that word) instead of
+//     cutting the word; its neighbours are re-fitted to the space left. A slightly bigger tile beats a cut word.
+//   · Idempotent and cheap: a tile already fitted at its current width is skipped; a resize / a web font arriving re-fits only what
+//     changed. A hidden tile (width 0) waits for its next render. No database writes, nothing stored.
+const TILEFIT_FLOOR=0.6;
+const TILEFIT_CSS='.tf{overflow-wrap:normal!important;word-break:keep-all!important;-webkit-hyphens:none!important;hyphens:none!important;white-space:normal!important;text-overflow:clip!important;max-width:100%;min-width:0}'+
+  '.tf-grow{overflow:visible!important;aspect-ratio:auto!important;height:auto!important;min-width:min-content!important}';
+// PURE: the sizing loop. base → floor in ×0.9 steps (0.5 px grain); fits(size) applies a size and says whether the tile holds it.
+// Returns the first size that fits, or the floor with fit:false. Never goes below the floor.
+function tileFitSize(base,floor,fits){
+  base=+base||0; floor=Math.min(base,Math.max(0,+floor||0));
+  let s=base;
+  if(fits(s)) return {size:s,fit:true};
+  while(s>floor){
+    s=Math.max(floor,Math.floor(s*0.9*2)/2);
+    if(fits(s)) return {size:s,fit:true};
+  }
+  return {size:floor,fit:false};
+}
+function _tfCss(){
+  try{ if(typeof document==="undefined"||!document.head||document.getElementById("tf-css")) return;
+    const s=document.createElement("style"); s.id="tf-css"; s.textContent=TILEFIT_CSS; document.head.appendChild(s); }catch(e){}
+}
+// one text element in its tile (the .tf-box ancestor if a site marks one, else the parent)
+function _tfBox(el){ return (el.closest&&el.closest(".tf-box"))||el.parentElement; }
+function _tfOne(el,force){
+  const box=_tfBox(el); if(!box) return;
+  const w=box.clientWidth; if(!w) return;   // hidden — fitted on its next render
+  if(!force&&el.getAttribute("data-tf-w")===String(w)) return;   // already fitted at this width
+  if(el.getAttribute("data-tf-fs0")==null) el.setAttribute("data-tf-fs0",el.style.fontSize||"");
+  el.style.fontSize=el.getAttribute("data-tf-fs0");   // back to the site's own size (clamp / length class) before measuring
+  if(box.classList.contains("tf-grow")){ box.classList.remove("tf-grow"); box.style.minHeight=box.getAttribute("data-tf-mh0")||""; }
+  const base=parseFloat(getComputedStyle(el).fontSize)||16, h0=box.clientHeight;
+  const over=()=>el.scrollWidth>el.clientWidth+1||box.scrollWidth>box.clientWidth+1||box.scrollHeight>box.clientHeight+1;
+  const r=tileFitSize(base,base*TILEFIT_FLOOR,s=>{ el.style.fontSize=s+"px"; return !over(); });
+  if(r.size===base) el.style.fontSize=el.getAttribute("data-tf-fs0");
+  if(!r.fit){ if(box.getAttribute("data-tf-mh0")==null) box.setAttribute("data-tf-mh0",box.style.minHeight||""); box.style.minHeight=h0+"px"; box.classList.add("tf-grow"); }
+  el.setAttribute("data-tf-w",String(box.clientWidth));
+}
+function tileFit(root,force){
+  if(typeof document==="undefined") return;
+  _tfCss();
+  const r=root||document; if(!r.querySelectorAll) return;
+  const els=Array.prototype.slice.call(r.querySelectorAll(".tf"));
+  els.forEach(el=>{ const b=_tfBox(el); if(b&&b.style.minWidth!=="0px") b.style.minWidth="0px"; });   // every tile keeps its slot (writes only)
+  els.forEach(el=>{ try{ _tfOne(el,!!force); }catch(e){} });
+  els.forEach(el=>{ try{ _tfOne(el,false); }catch(e){} });   // a grown tile squeezed its neighbours → re-fit only those whose width moved
+}
+let _tfPending=false;
+function tileFitSoon(){
+  if(_tfPending||typeof document==="undefined") return;
+  _tfPending=true;
+  const run=()=>{ _tfPending=false; try{ tileFit(document); }catch(e){} };
+  if(typeof queueMicrotask==="function") queueMicrotask(run); else Promise.resolve().then(run);
+  if(typeof requestAnimationFrame==="function") requestAnimationFrame(()=>{ try{ tileFit(document); }catch(e){} });   // a render inserted a beat later
+}
+_tfCss();
+try{
+  if(typeof window!=="undefined"&&window.addEventListener&&typeof document!=="undefined"){
+    let _tfRaf=false;
+    window.addEventListener("resize",()=>{ if(_tfRaf||typeof requestAnimationFrame!=="function") return; _tfRaf=true; requestAnimationFrame(()=>{ _tfRaf=false; try{ tileFit(document); }catch(e){} }); });
+    if(document.fonts&&document.fonts.addEventListener) document.fonts.addEventListener("loadingdone",()=>{ try{ tileFit(document,true); }catch(e){} });   // Fraunces arriving changes every width
+  }
+}catch(e){}
+// TILEFIT_END
 // WHICHONE_START — 👆 "Which one?" (her yes 2026-10-23; PLAN_practice_games_2026-10-23.md build #2).
 // The first truly solo game for a pre-reader (Julian, Pre-K): the app SAYS a card's name, three big
 // pictures come up, he taps the one he heard. Built on the Drills "Show me" pick-3 pieces (_smTileVis
@@ -62393,6 +62470,7 @@ function whichLogResult(){
   _mastRe();
 }
 function buildWhichHtml(color){
+  if(typeof tileFitSoon==="function") tileFitSoon();   // TILEFIT
   const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
   let h='<style>.which-tile{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:20px;border:3px solid #e2ddd6;background:#fff;cursor:pointer;overflow:hidden;transition:transform .25s,opacity .2s;-webkit-tap-highlight-color:transparent}'+
     '.which-tile .which-vis{transform:scale(1.15);pointer-events:none}@media(min-width:560px){.which-tile .which-vis{transform:scale(1.7)}}'+
@@ -62446,7 +62524,7 @@ function buildWhichHtml(color){
     (t?t.tiles:[]).forEach((pid,ti)=>{
       const it=items.find(x=>x&&x.id===pid);
       const cls='which-tile'+(t.wrong[pid]?' which-wrong':'')+(st.grow===ti?' which-grow':'');
-      if(ans){ const bk=_whichBack(it); h+='<div class="'+cls+'" role="button" aria-label="Answer '+(ti+1)+'" onclick="whichTap('+ti+')"><span class="which-ans" style="font-size:'+(bk.length<=3?'clamp(30px,9vw,60px)':bk.length<=7?'clamp(22px,6vw,40px)':bk.length<=13?'clamp(16px,4.2vw,28px)':'clamp(13px,3.4vw,21px)')+'">'+esc(bk)+'</span></div>'; return; }
+      if(ans){ const bk=_whichBack(it); h+='<div class="'+cls+'" role="button" aria-label="Answer '+(ti+1)+'" onclick="whichTap('+ti+')"><span class="which-ans tf" style="font-size:'+(bk.length<=3?'clamp(30px,9vw,60px)':bk.length<=7?'clamp(22px,6vw,40px)':bk.length<=13?'clamp(16px,4.2vw,28px)':'clamp(13px,3.4vw,21px)')+'">'+esc(bk)+'</span></div>'; return; }
       h+='<div class="'+cls+'" role="button" aria-label="Picture '+(ti+1)+'" onclick="whichTap('+ti+')"><span class="which-vis">'+(_smTileVis(it)||'')+'</span></div>';
     });
     h+='</div></div>';
@@ -62801,6 +62879,7 @@ function mpFinish(U){
 function mpClose(){ const U=mpUI, early=!!(U&&U.phase==="play"); if(U&&U.phase==="play"&&U.log.length) mpFinish(U); mpUI=null; const ov=(typeof document!=="undefined")&&document.getElementById("mp-panel"); if(ov) ov.remove(); try{ if(typeof renderAll==="function") renderAll(); }catch(e){} try{ if(typeof adPartClosed==="function") adPartClosed("cards",{early:early}); }catch(e){} }   // ✅ AFTERDRILL: on to what's next
 function mpRender(){
   if(typeof document==="undefined") return;
+  if(typeof tileFitSoon==="function") tileFitSoon();   // TILEFIT
   const U=mpUI; if(!U){ const o=document.getElementById("mp-panel"); if(o) o.remove(); return; }
   const E=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   const nm=(typeof cap==="function")?cap(U.kid):U.kid, color="#7c3aed";
@@ -62827,7 +62906,7 @@ function mpRender(){
     }
     h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">';
     c.tiles.forEach((pid,ti)=>{ const t=items.find(x=>x&&x.id===pid), cls='mp-tile'+(c.wrong[pid]?' mp-wrong':'')+(U.grow===ti?' mp-grow':'');
-      if(ans){ const bk=(typeof _whichBack==="function")?_whichBack(t):String((t&&t.answer)||""); h+='<div class="'+cls+'" role="button" aria-label="Answer '+(ti+1)+'" onclick="mpTap('+ti+')"><span class="mp-ans" style="font-size:'+(bk.length<=3?'clamp(28px,8vw,54px)':bk.length<=7?'clamp(20px,5.5vw,36px)':'clamp(14px,4vw,24px)')+'">'+E(bk)+'</span></div>'; }
+      if(ans){ const bk=(typeof _whichBack==="function")?_whichBack(t):String((t&&t.answer)||""); h+='<div class="'+cls+'" role="button" aria-label="Answer '+(ti+1)+'" onclick="mpTap('+ti+')"><span class="mp-ans tf" style="font-size:'+(bk.length<=3?'clamp(28px,8vw,54px)':bk.length<=7?'clamp(20px,5.5vw,36px)':'clamp(14px,4vw,24px)')+'">'+E(bk)+'</span></div>'; }
       else h+='<div class="'+cls+'" role="button" aria-label="Picture '+(ti+1)+'" onclick="mpTap('+ti+')"><span class="mp-vis">'+((typeof _smTileVis==="function"&&_smTileVis(t))||'')+'</span></div>'; });
     h+='</div>';
   } else {
@@ -63214,6 +63293,7 @@ function _gkResume(){
 // GAMEKID_END
 
 function buildMatchHtml(color){
+  if(typeof tileFitSoon==="function") tileFitSoon();   // TILEFIT
   let h='<div class="ha-nosel" style="padding:4px 14px 20px">';
   const decks=mastMatchDecks();
   if(!decks.length){
@@ -70206,6 +70286,7 @@ function gameJudgeMom(right){ const t=_gjTurn("mom"); if(!t||!t.gj.momShow||!_gj
 // ── under the card ──
 function gameJudgeHtml(turn,color,lock){
   const gj=turn&&turn.gj; if(!gj) return '';
+  if(typeof tileFitSoon==="function") tileFitSoon();   // TILEFIT
   if(!gj.done) gameJudgeCur=turn;
   const E=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   const done=gj.done, off=!!lock||done, btn='padding:16px 30px;border-radius:999px;border:none;font-size:19px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;-webkit-tap-highlight-color:transparent';
@@ -70217,7 +70298,7 @@ function gameJudgeHtml(turn,color,lock){
     gj.ch.forEach((c,i)=>{
       const mine=gj.picked===i, bd=done?(c.ok?'#16a34a':(mine?'#dc2626':'#e2ddd6')):'#e2ddd6', bg=done?(c.ok?'#f0fdf4':(mine?'#fef2f2':'#fff')):'#fff';
       h+='<div class="said-ch" role="button" aria-label="'+E(c.text)+'"'+(off?'':' onclick="gameJudgePick('+i+')"')+' style="min-height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;text-align:center;padding:8px;border-radius:16px;border:3px solid '+bd+';background:'+bg+';cursor:'+(off?'default':'pointer')+'">';
-      h+='<span style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800;color:#292524;overflow-wrap:anywhere;pointer-events:none">'+(done&&c.ok?'✓ ':'')+E(c.text)+'</span>';
+      h+='<span class="tf" style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:800;color:#292524;overflow-wrap:anywhere;pointer-events:none">'+(done&&c.ok?'✓ ':'')+E(c.text)+'</span>';
       if(tts) h+='<button class="said-hear" onclick="gameJudgeHear('+i+',event)" aria-label="Hear it" style="padding:4px 14px;border-radius:999px;border:1.5px solid '+color+';background:#fff;color:'+color+';font-size:16px;cursor:pointer">\u{1F50A}</button>';
       h+='</div>';
     });
@@ -70987,7 +71068,7 @@ function _mstPickChipOf(pic){
   return e=>{
     if(pic){ const v=_mstPickVis(e); return v?v+'<span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">'+mstEsc(e.card.name||"")+'</span>':null; }
     const d=String(mstCardDef(e.card)||"").trim();
-    return d?'<span style="pointer-events:none;word-break:break-word">'+mstEsc(d)+'</span>':null;
+    return d?'<span class="tf" style="pointer-events:none;word-break:break-word">'+mstEsc(d)+'</span>':null;
   };
 }
 function mstPickChips(card){
@@ -71018,6 +71099,7 @@ function mstPickOn(session,card){
   return !!mstPickChips(card);
 }
 function mstPickHtml(session,card,lrn){
+  if(typeof tileFitSoon==="function") tileFitSoon();   // TILEFIT
   const chips=mstPickChips(card)||[], name=card.name||"";
   const sel=(mstPickSel&&mstPickSel.state===mstState&&mstPickSel.key===card.key)?mstPickSel.ci:null;
   let h='<div class="mast-slide"><div class="mast-flip-wrap"><div class="mast-flip-inner"><div class="mast-flip-front">';
