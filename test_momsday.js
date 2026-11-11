@@ -444,10 +444,10 @@ const M = new Function(block + `; return {stpAskGo:(typeof stpAskGo==="function"
   const lid = lw[0].split("/").pop();
   M.renderMomsDay(elStub);
   ok("laundry card shows load + stage trail", elStub.innerHTML.includes("Towels") && elStub.innerHTML.includes("🫧 washer") && elStub.innerHTML.includes("→ Dryer"), null);
-  ok("fresh washer load: no NOW nudge", !elStub.innerHTML.includes("before it sours"), null);
+  ok("fresh washer load: no NOW nudge", !elStub.innerHTML.includes("Laundry needs you"), null);   // LAUNDRY_NOWONE (2026-11-11): one row, not "before it sours"
   M.laundryData[lid].ts = Date.now() - 2 * 3600 * 1000; // sat 2h
   M.renderMomsDay(elStub);
-  ok("stale washer load nudges in NOW", elStub.innerHTML.includes("before it sours"), null);
+  ok("stale washer load nudges in NOW", elStub.innerHTML.includes("🧺 Laundry needs you · 1 step")&&elStub.innerHTML.includes("laundryNowOpen()")&&!elStub.innerHTML.includes("before it sours"), null);
   dbWrites.length = 0;
   M.laundryAdvance(lid);
   ok("LAUNDRY_SPLIT (2026-10-22): the washer's tap asks where first — the load stays in the washer, nothing written", dbWrites.length === 0 && M.laundryData[lid].stage === "washer", dbWrites);
