@@ -82,7 +82,7 @@ function runSong(w,st){
 
 // ── the letter names (the level play's voice) ──
 { const c=world({noSynth:true}).c, N=c.TRAIN_LETTER_NAMES;
-  ok("a name for every letter A–Z, the ones she approved",ABC.map(x=>N[x]).join(" ")==="ey bee see dee ee eff gee aitch eye jay kay el em en oh pee cue are ess tee you vee double-you ex why zee"   // ABCTRAIN_SAY_A (2026-11-11): A is "ey" — "ay" was read as "aye");
+  ok("a name for every letter A–Z, the ones she approved",ABC.map(x=>N[x]).join(" ")==="ey bee see dee ee eff gee aitch eye jay kay el em en oh pee cue are ess tee you vee double-you ex why zee");   // ABCTRAIN_SAY_A (2026-11-11): A is "ey" — "ay" was read as "aye"
   ok("no name is itself a capital letter",ABC.every(x=>!loneCap(N[x])&&N[x]===N[x].toLowerCase()));
   ok("trainSpoken: a letter → its name",c.trainSpoken("A")==="ey"&&c.trainSpoken("W")==="double-you");
   ok("trainSpoken: the 🔊 \"what comes next\" line",c.trainSpoken("J, K, L. What comes next?")==="jay, kay, el. What comes next?");
