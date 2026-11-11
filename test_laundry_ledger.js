@@ -146,7 +146,7 @@ console.log("8. Wiring");
 { const i=src.indexOf("// LAUNDRY_LEDGER_START"), j=src.indexOf("// LAUNDRY_LEDGER_END");
   ok("one marked block, right after LAUNDRY_SYNC_END", i>0&&j>i&&src.indexOf("// LAUNDRY_SYNC_END\n// LAUNDRY_LEDGER_START")>0&&src.split("// LAUNDRY_LEDGER_START").length===2);
   ok("the block writes nothing itself (no db.ref) — every undo is a function that already existed", !/db\.ref/.test(LG));
-  ok("Household ▸ Laundry: the fold under the 🧺 card (the to-do list), before the schedule; the old bottom Put away today list is gone", (()=>{ const f=fn("hhLaundryHTML"); const a=f.indexOf("mdCardLaundry(true)"), b=f.indexOf("luLgHTML()"), d=f.indexOf("llWeekCardHTML()"); return a>0&&b>a&&d>b&&!/luAwayRowsHTML/.test(f); })());
+  ok("Household ▸ Laundry: the fold under the 🧺 card (the to-do list), before the schedule; the old bottom Put away today list is gone", (()=>{ const f=fn("hhLaundryHTML"); const a=f.indexOf("mdCardLaundry(true"), b=f.indexOf("luLgHTML()"), d=f.indexOf("llWeekCardHTML()"); return a>0&&b>a&&d>b&&!/luAwayRowsHTML/.test(f); })());
   ok("My day: the fold under the laundry line card (bare), the Put away today rows folded into it", (()=>{ const f=fn("llMyDayLaundryHTML"); return f.indexOf("luLgHTML(true)")>f.indexOf("llDadCardHTML(who,true)")&&!/luAwayRowsHTML/.test(f); })());
   ok("luLgUndo is luUndo on the same record (the bar's path); luLgRows reuses luAwayList / luValid / _luWords", /luLast=s; const ok=luUndo\(\)/.test(LG)&&/luAwayList\(\)/.test(LG)&&/luValid\(s\)/.test(LG)&&/_luWords\(/.test(LG));
   ok("no kid's name and no 🔀 in the block", !/Lincoln|Ellis|Lucy|Julian|Taylor|Makenzie|Andrew|Caleb|🔀/.test(LG));
