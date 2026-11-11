@@ -1470,6 +1470,7 @@ function _jpFinish(st){
 // GAMEKID → 🎲 GAMEKIT resume: a beat that was mid-way when the kid switched settles here (no render; the caller renders)
 function jeopResume(){
   const st=jeopState; if(!st||st.phase==="done") return;
+  if(st.jr&&typeof jeoRoundClear==="function") jeoRoundClear(st);   // 🎬 JEOROUND: back from parking → the board, not the overlay
   if(st.lock){ st.lock=false; st.open=null; if(st.phase==="back") _jpBackNext(st); else if(st.cells.every(c=>c.done)) _jpEnd(st); else { st.msg="Pick a square!"; st.say=""; } return; }
   if(st.say&&(typeof mastView==="undefined"||mastView==="jeop")) try{ mastSpeak(st.say); }catch(e){}
 }
@@ -1515,6 +1516,7 @@ function buildJeopHtml(color){
   h+='<span style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--muted)">'+esc(st.deck)+(best!=null?' \u{00B7} \u{1F3C6} '+best:'')+
     '<button onclick="jeopStop()" style="padding:6px 12px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;font-family:\'DM Sans\',sans-serif">\u{21A9} Stop</button></span></div>';
   if(st.money&&typeof jpMoneyBarHtml==="function") h+=jpMoneyBarHtml(st);   // 💵 JPMONEY: the round and the bank, big
+  if(st.jr&&typeof jeoRoundHtml==="function") h+=jeoRoundHtml(st);   // 🎬 JEOROUND: the between-rounds overlay (money boards only)
   h+='<div style="display:flex;align-items:center;gap:10px;margin:10px 0 12px;padding:12px 14px;border-radius:18px;background:#eff6ff;border:2px solid #bfdbfe"><span style="font-size:28px;line-height:1">\u{1F4FA}</span><span style="flex:1;font-size:17px;font-weight:800;color:#1e3a8a">'+esc(st.msg)+'</span>'+
     (st.say?'<button onclick="jeopSayAgain()" aria-label="Hear it again" style="width:56px;height:56px;flex:none;border-radius:50%;border:3px solid '+color+';background:#fff;color:'+color+';font-size:26px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center">\u{1F50A}</button>':'')+'</div>';
   const o=st.open, t=o?st.turns[o.t]:null, lock=st.lock;
@@ -3978,8 +3980,8 @@ function jpMoneyMsg(st,t,r){
 // _jpEnd's hook: round 1 clear → Double Jeopardy; Double Jeopardy clear → Final (more than $0 only); else the come-backs and the finish
 function jpMoneyRoundEnd(st){
   if(!st||!st.money) return false;
-  if(st.round===1){ jpMoneyRound2(st); return true; }
-  if(st.round===2&&st.bank>0) return jpMoneyFinal(st);
+  if(st.round===1){ jpMoneyRound2(st); if(typeof jeoRoundShow==="function") jeoRoundShow(st); return true; }   // 🎬 JEOROUND: "Round 2 · Double Jeopardy!"
+  if(st.round===2&&st.bank>0){ const fin=jpMoneyFinal(st); if(fin&&typeof jeoRoundShow==="function") jeoRoundShow(st); return fin; }   // 🎬 JEOROUND: "Round 3 · Final Jeopardy!"
   return false;
 }
 function jpMoneyRound2(st){
@@ -4349,5 +4351,78 @@ function buildJigHtml(color){
   return h+'</div></div>';
 }
 // JIGSAW_END
+// JEOROUND_START — 🎬 the moment between rounds (her words 2026-11-10: "when jeopardy goes to the next round make it special and let them
+// know whats happening"). Rounds exist only on a 💵 Money board (JPMONEY): round 1 Jeopardy! → round 2 Double Jeopardy! (every value
+// doubled, 2 Daily Doubles) → round 3 Final Jeopardy! (only with more than $0). The plain board has no rounds and never reaches this block.
+//   · jpMoneyRoundEnd calls jeoRoundShow once right after it builds the next round (Double Jeopardy's board / Final's bet). The overlay is
+//     full screen in the board's own navy and gold, big enough to read across the room: "Round 2" + the round's name, what changes (read
+//     from the round's own data — the values on the board, the Daily Doubles hidden, Final's category and bet limit), the bank and the
+//     squares right the first time side by side, and a rising flourish on the game's own tone (_matchTone, the ding's; no AudioContext →
+//     silent). The spoken line is JPMONEY's own (unchanged). It goes on its own after JR_MS, or on a tap / "Let's go!"; then the next
+//     board (or Final's bet) is exactly what it was before this block.
+//   · ONCE per round change (st.jrDone[round]); drawn from the state, so Stop / a kid switch / leaving the game takes it with the round,
+//     and a parked round comes back without it (jeopResume clears it). A re-draw mid-way keeps its place (negative animation delay).
+//     prefers-reduced-motion: no animation, same words.
+//   · WRITES: nothing. No points, no Firebase, no log — the round's gameLog entry is JPMONEY's as before.
+const JR_MS=4200;
+// PURE: the words for the round the board has just moved to → {kicker, name, lines:[…], stats:[{label,value,neg}]} or null
+function jeoRoundText(st){
+  if(!st||!st.money||!(st.round===2||st.round===3)) return null;
+  const played=(st.turns||[]).filter(t=>t&&!t.back&&t.done).length;
+  const stats=[{label:"Your bank",value:jpMoneyFmt(st.bank),neg:st.bank<0},{label:"Right the first time",value:(st.first||0)+" of "+played}];
+  if(st.round===2){
+    const lines=["Every square is worth double now: "+jpMoneyFmt(jpMoneyVal(st,0))+" to "+jpMoneyFmt(jpMoneyVal(st,st.rows-1))+"."];
+    const dd=(st.cells||[]).filter(c=>c.dd).length;
+    if(dd) lines.push(dd===1?"1 Daily Double is hiding on the board.":dd+" Daily Doubles are hiding on the board.");
+    return {kicker:"Round 2",name:"Double Jeopardy!",lines:lines,stats:stats};
+  }
+  const b=jpMoneyBounds(st,"final");
+  return {kicker:"Round 3",name:"Final Jeopardy!",lines:["One last question. The category is "+((st.final&&st.final.deck)||"")+".","Bet from "+jpMoneyFmt(b.min)+" up to "+jpMoneyFmt(b.max)+" — your whole bank."],stats:stats};
+}
+// jpMoneyRoundEnd's hook: the next round is built → the overlay, once for this round change
+function jeoRoundShow(st){
+  if(!jeoRoundText(st)) return false;
+  st.jrDone=st.jrDone||{}; if(st.jrDone[st.round]) return false;
+  st.jrDone[st.round]=1;
+  const seq=(st.jrSeq||0)+1; st.jrSeq=seq; st.jr={round:st.round,t0:Date.now(),seq:seq};
+  try{ if(typeof _matchTone==="function") _matchTone(st.round===3?[392,523,659,784]:[523,659,784,1047,1319],st.round===3?0.3:0.2,0.14); }catch(e){}   // a rising flourish on the game's own tone (Final: lower, slower)
+  setTimeout(()=>{ if(st.jr&&st.jr.seq===seq) jeoRoundGo(st); },JR_MS);
+  return true;
+}
+// a tap, "Let's go!", or the clock: the overlay goes and the board is as it was
+function jeoRoundGo(st){
+  st=st||jeopState; if(!st||!st.jr) return;
+  st.jr=null;
+  if(st===jeopState&&(typeof mastView==="undefined"||mastView==="jeop")) _mastRe();
+}
+function jeoRoundClear(st){ if(st) st.jr=null; }   // jeopResume's hook: a parked round comes back to its board, not to the overlay
+const JR_CSS='<style>.jr-ov{position:fixed;inset:0;z-index:19990;display:flex;align-items:center;justify-content:center;padding:24px 16px;box-sizing:border-box;overflow-x:hidden;overflow-y:auto;cursor:pointer;'+
+  'background:radial-gradient(ellipse at 50% 40%,#1d4ed8 0,#1e3a8a 55%,#0f1d4a 100%);color:#fff;font-family:\'DM Sans\',sans-serif;text-align:center;-webkit-tap-highlight-color:transparent;animation:jrIn .35s ease-out both;animation-delay:var(--jr-t)}'+
+  '.jr-ov::before{content:"";position:absolute;top:0;bottom:0;left:-40%;width:40%;background:linear-gradient(100deg,transparent,rgba(253,230,138,.28),transparent);animation:jrSweep 1.1s ease-in-out both;animation-delay:calc(var(--jr-t) + .25s);pointer-events:none}'+
+  '.jr-box{position:relative;max-width:1700px;width:100%;margin:auto}'+
+  '.jr-kick{font-size:clamp(22px,min(4vw,6vh),68px);font-weight:800;color:#bfdbfe;letter-spacing:.12em;text-transform:uppercase;animation:jrUp .45s ease-out both;animation-delay:calc(var(--jr-t) + .1s)}'+
+  '.jr-name{font-family:\'Fraunces\',serif;font-size:clamp(46px,min(10.5vw,15vh),200px);font-weight:800;line-height:1.02;color:#fde68a;text-shadow:0 4px 0 #92400e,0 0 40px rgba(253,230,138,.45);margin:.08em 0 .18em;animation:jrPop .7s cubic-bezier(.2,1.4,.4,1) both;animation-delay:calc(var(--jr-t) + .2s)}'+
+  '.jr-line{font-size:clamp(19px,min(2.9vw,4.4vh),52px);font-weight:800;color:#fff;line-height:1.25;margin:.15em auto;max-width:28em;animation:jrUp .45s ease-out both;animation-delay:calc(var(--jr-t) + .6s)}'+
+  '.jr-stats{display:flex;gap:clamp(12px,2.5vw,48px);justify-content:center;flex-wrap:wrap;margin:clamp(14px,min(3vw,4vh),52px) 0 clamp(12px,min(2.4vw,3.4vh),40px);animation:jrUp .45s ease-out both;animation-delay:calc(var(--jr-t) + .9s)}'+
+  '.jr-stat{min-width:min(42vw,420px);padding:clamp(10px,1.6vw,28px) clamp(14px,2.4vw,40px);border-radius:clamp(16px,2vw,32px);background:rgba(255,255,255,.1);border:3px solid #fde68a;box-sizing:border-box}'+
+  '.jr-stat-l{font-size:clamp(14px,min(1.8vw,2.8vh),32px);font-weight:800;color:#bfdbfe}.jr-stat-v{font-family:\'Fraunces\',serif;font-size:clamp(32px,min(5.6vw,8.5vh),104px);font-weight:800;color:#fde68a;line-height:1.1}.jr-stat-v.jr-neg{color:#fca5a5}'+
+  '.jr-go{padding:clamp(14px,1.6vw,28px) clamp(30px,3.6vw,64px);border-radius:999px;border:none;background:#fde68a;color:#1e3a8a;font-family:\'DM Sans\',sans-serif;font-size:clamp(20px,min(2.6vw,4vh),46px);font-weight:800;cursor:pointer;animation:jrUp .45s ease-out both;animation-delay:calc(var(--jr-t) + 1.1s)}'+
+  '.jr-bar{position:absolute;left:0;bottom:0;height:clamp(6px,.7vw,12px);width:100%;background:#fde68a;transform-origin:left;animation:jrBar linear both;animation-duration:'+JR_MS+'ms;animation-delay:var(--jr-t)}'+
+  '@keyframes jrIn{from{opacity:0}to{opacity:1}}@keyframes jrUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}'+
+  '@keyframes jrPop{0%{opacity:0;transform:scale(.3)}70%{opacity:1;transform:scale(1.08)}100%{opacity:1;transform:none}}'+
+  '@keyframes jrSweep{from{left:-40%}to{left:110%}}@keyframes jrBar{from{transform:scaleX(1)}to{transform:scaleX(0)}}'+
+  '@media (prefers-reduced-motion:reduce){.jr-ov,.jr-ov *{animation:none!important}.jr-ov::before,.jr-bar{display:none}}</style>';
+// buildJeopHtml's hook: the overlay over the new board while st.jr is up (past JR_MS it is simply gone)
+function jeoRoundHtml(st){
+  const tx=st&&st.jr?jeoRoundText(st):null; if(!tx) return "";
+  const el=Math.max(0,Date.now()-st.jr.t0); if(el>=JR_MS){ st.jr=null; return ""; }
+  let h=JR_CSS+'<div class="jr-ov" role="dialog" aria-modal="true" aria-label="'+esc(tx.kicker+": "+tx.name)+'" onclick="jeoRoundGo()" style="--jr-t:-'+el+'ms"><div class="jr-box">';
+  h+='<div class="jr-kick">'+esc(tx.kicker)+'</div><div class="jr-name">'+esc(tx.name)+'</div>';
+  tx.lines.forEach(l=>{ h+='<div class="jr-line">'+esc(l)+'</div>'; });
+  h+='<div class="jr-stats">'+tx.stats.map(s=>'<div class="jr-stat"><div class="jr-stat-l">'+esc(s.label)+'</div><div class="jr-stat-v'+(s.neg?' jr-neg':'')+'">'+esc(s.value)+'</div></div>').join("")+'</div>';
+  h+='<button class="jr-go" onclick="event.stopPropagation();jeoRoundGo()">Let’s go!</button>';
+  return h+'</div><div class="jr-bar"></div></div>';
+}
+// JEOROUND_END
 // ── end of games.js — the flag below tells index.html the whole file ran (haLazyReady) ──
 if(typeof window!=="undefined") window._haLazy_games=true;
