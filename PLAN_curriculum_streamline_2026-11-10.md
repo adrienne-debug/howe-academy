@@ -32,7 +32,7 @@ in §4.0 as a pre-slice fix, **RULESCROLL**.
 | Housekeeping / migration / audit banners above the grid | **14** different banners, each its own colour | one collapsed **🔍 Checks (n)** drawer, shown only when n > 0 |
 | Toolbar buttons and toggles above the table | **11** | **5** (kid chips · 🏡 Family · ＋ Add subject · 📅 *Kid*'s year · ⋯ More) |
 | First subject from a book, until it is on the week | **21 taps · 5 screens · 20 Howe words, 5 of them decisions you must get right** | **16 taps · 3 screens · 2 Howe words (lane, card), 0 forced decisions** |
-| Lesson Map editor controls nobody can reach | 41 (the Subjects tab it lived on redirects to the Grid on every render) | unchanged by this plan — question 4 |
+| Lesson Map editor controls nobody can reach | 41 (the Subjects tab it lived on redirects to the Grid on every render) | **audited, then removed** (slice 3b LMCLEANUP, her answer to question 4): ≈95 KB less `index.html` for the LG |
 
 The tap count barely moves. The real cost today is not taps, it is the **20 words a first-year mom has to already know**,
 spread over **5 editors that each hold part of one subject**, with **14 coloured banners** that are really maintenance
@@ -168,7 +168,7 @@ with-sitter are each in Settings *and* 📅 This week; per-date school hours hav
    cards (29422–29589) and the Move picker are drawn. `lmSetView` 58994 and `lmRenderSubjectView` 59131 have no callers;
    `gvMenuMove` 56133 (◀▶ move a day) is never drawn, so the grid's "Moved … ↩ Undo" banner (57737) has no live trigger.
    What survived into the grid is the cell menu's ✕ off day / ➡ move / ➕ make-up / ↩ put back and the Align banner,
-   all reusing `lm*` write functions. 41 controls of UI, 0 reachable. (Question 4.)
+   all reusing `lm*` write functions. 41 controls of UI, 0 reachable. (Question 4 — answered: audit, then remove; §4.3.)
 2. **"Shared curriculum (paused)" has no code.** No block, door or flag exists in this checkout; the only "shared" on the
    page is Units' "Shared units · by kid" (two kids enrolled). Nothing to move.
 
@@ -290,7 +290,7 @@ chip — all **shortcuts to the same card** (allowed). Sections, top to bottom; 
 | 4 | **Pace** (*was 🧱 Pacing & build*) | *How to pace it*: Finish by a date / So many a week / Until a date / By pages / Just minutes · mode fields (finish by, stop after, total pages · start page · pages a day · label · chapters · cell text) — **each writes its `pacing/*` leaf on the tap and re-lays through the same door the Rules table's ×/wk uses** (`rlSet(…, relay=true)` → `_gvRelaySubject`), so the grid's derived column IS the preview · *Where they are* (N of M done · ahead/behind · finishes ~date — the Progress block) · *Lay it out again* (= ↻ Rebuild this one subject, with the Keep/Dismiss gate when a legacy subject has leftovers, as today) · ↩ Undo the last lay-out · *Catch up now* (↻ Re-lay remaining) · *When behind* (extras on other days) · 📸 *Photo of the table of contents* (the scan, writes `pacing/pages/units` when she keeps the result) | 🧱 Builder form's mode + mode fields (now saved fields, not a staged form); card Progress, When behind, Re-lay remaining. **Not here:** *Start on* and *Preview* — those exist only inside the guided Add (initial setup), per her answer | `pacing/mode`, `pacing/targetDate`, `pacing/windowEnd`, `pacing/pages/*`, `pacing/minutesText` (new `rlSet` fields, same path `cbApply` writes today), then `cbApply`'s multi-path update via `_gvRelaySubject`; `planAnchor`, `overflowExtras` |
 | 5 | **Lane** | "In lane *Math* · 2 of 3 · up now / waiting" · *Edit this lane* (opens the lane editor in 📅 *Kid*'s year) · *Stack a book after this one* (= `lnEditStart(null,sk)`) | ⚙ Rules ▸ 🛤 Lanes chips (53316) | none here (shortcuts) |
 | 6 | **Checking off** | *You approve check-offs* (Mom check) · *Allow out-of-order check-offs* · *Timed card* (minimum minutes, show countdown) · *Mom's part* (whole / part · minutes · at the beginning) · *Record a score* (+ format) · *Reading log* (+ who logs) · *Opens a workbook* · *Opens a study session* · *Practice for* (dailies) | card sections 6–9, 14–17 | `momVerify`, `allowOutOfOrder`, `minMin`, `minShow`, `momPartMins/Start`, `scored`, `scoreType`, `readingLog(By)`, `workbook`, `study`, `practiceFor`, `practiceDayFrom` |
-| 7 | **Links** | 🔗 lesson link template · button label · per-lesson overrides | card 🔗 Lesson link | `lessonUrl`, `linkLabel`, `lessonUrls/<id>` |
+| 7 | **Links & supplies** | 🔗 lesson link template · button label · per-lesson overrides · **📋 the whole subject's 📎 links, supplies, books and notes in one table** (`lrpBuilderHTML` — today drawn only on the retired Builder tab) | card 🔗 Lesson link; **Builder tab 📋 Plan resources** (54560) | `lessonUrl`, `linkLabel`, `lessonUrls/<id>`, `curriculum/resources/<kid>/<sk>/…` |
 | 8 | **Rewards** | 🏆 completion points · 📖 book milestones (+ points) | card sections 25–26 | `completionPoints`, `bookMilestones`, `bookPoints` |
 | 9 | **Fix-ups** (Everything view only) | *Fix false check-offs* (walk back) · *Hand counts* (Completed / Schedule next-lesson / Clear them) · *Pace keyword · Starts week* · *Carry-over cap* · *Copy to another kid* · *Priority* | card sections 20–22, Carryover Cap; Builder Copy to another kid; Rules Priority | `pace/subjects/<kid>/<sk>`, `carryoverCap`, `priority`, `cbCopyTo` |
 
@@ -300,7 +300,9 @@ holds the saved pacing fields (writing on the tap), the guided Add holds the Bui
 **Builder tab** (`renderCurrBuilder`) loses its two remaining doors — `⤒ Delete & shift up` (55006) and `Add it back…`
 (55759) today jump to it to show a preview; after slice 3 each shows its one-time preview inside the card's Pace section
 ("Lay it out again?" with the same Preview card → Build / Cancel) and the tab is no longer reachable from any `onclick`.
-It is not deleted in this plan (question 4).
+It is then removed — after an audit — in slice 3b (her answer to question 4). One thing on that tab is a real feature with
+no other door today: **📋 Plan resources** (`lrpBuilderHTML` 39922, the whole subject's 📎 links / supplies / books in one
+table). It moves into the card's **Links** section (§3.2 row 7) in slice 3, before the tab goes.
 
 ### 3.3 The 📅 *Kid*'s year panel — every per-kid option
 
@@ -426,7 +428,7 @@ nothing is lost for you.
 
 ---
 
-## 4 · Build plan — a pre-slice fix and six slices
+## 4 · Build plan — a pre-slice fix, six slices, and a two-part cleanup after slice 3
 
 Each slice is one branch off `origin/main`, one PR, its own `test_<feature>.js` that slices the block by its
 `// NAME_START … NAME_END` markers, replays the affected doors on stubs and asserts (a) every pre-existing control is still
@@ -485,6 +487,8 @@ later change cannot quietly break it). Risk: very low — display state only.
 | 1 | **CURRWORDS** — the words | One label map (`CW` = {old key → plain label}) used by the grid, card, Add sheet, Rules panel, Builder, gate, banners; tooltips rewritten per §3.5. No logic. | every "before" string of §3.5 is absent from `index.html`'s on-screen strings (allow-list for code comments); every existing `test_*.js` that pins a label updated in the same PR; byte-identical DOM apart from text nodes | low — but it touches ~60 tests' string pins; do it first so every later slice is written in the new words |
 | 2 | **CURRCARD** — one subject card, one pill function | (a) `rlPillHTML(kid,sk,field)` is lifted out of `cbRenderRules` 53550 — the table's cells become calls to it, byte-identical output. (b) `ceRenderEditSheet` is re-sectioned per §3.2; **Basics / When it runs** are `rlPillHTML` calls for the same fields, so every setting **writes and re-lays on the tap** (her answer to question 1) — `rlSet` 53418 / `cbPinDay` 53397 unchanged. (c) `rlSet` learns the **pacing fields** (`mode`, `targetDate`, `windowEnd`, `pages/*`, `minutesText`) with `relay=true`, writing the same `pacing/*` leaves `cbApply` writes today, then `_gvRelaySubject`; the card's **Pace** section draws them as pills, and the Builder form (`cbRenderForm`) is **no longer drawn in the card** — `ceOpenBuild` / `_ceMaybeBuilder` / the 🧱 button go, "Lay it out again" (= `_gvRelaySubject` for this subject) and ↩ Undo stay. (d) Progress, When behind, Re-lay remaining fold into Pace; pause to the header | for each of the 20 `rlSet` fields + `allowedDays` + the 5 pacing fields: exactly ONE function writes it, and the table's pill and the card's pill are the same string for the same subject; `cbRenderRules` output is byte-identical to before the slice; for a given subject the `pacing/*` leaves a card tap writes equal what `cbApply` wrote from the equivalent form; the derived column (`gvDerivedColumn`) after a card tap equals the preview the Builder would have shown for the same fields; section visibility (daily vs sequenced × plan-backed vs legacy × paused × class) matches today one for one; `cbRenderForm` is referenced only from the Add flow / Builder tab | **highest — see below** |
 | 3 | **KIDYEAR** — 📅 *Kid*'s year | The two kid-tool buttons become one panel with Hours & load / School terms / Lanes / **All subjects (the live ⚙ Rules table, unchanged)**; the Builder tab's two doors (`gvSelShiftUp` 55006, `gvAuditFixGap` 55759) show their one-time preview in the card's Pace section instead; a 🛤 band tap opens the Lanes tab on that lane | `curriculum/dayCap`, `targetEnd`, `momVerifyKid`, `pace/plans`, `curriculum/lanes` writes unchanged; the table renders inside the panel with the same `rlPillHTML` output and keeps its scroll (RULESCROLL); every lane control present; `renderCurrBuilder` no longer reachable from any `onclick` | medium — the lane editor keeps its state (`lnEdit`) across a panel re-render |
+| 3a | **LMCLEANUP-audit** — prove the dead code is dead (no deletion) | A read-only pass that produces `AUDIT_lessonmap_dead_2026-11-xx.md` (committed on its own, before any deletion): for every name in §4.3 below, its definition line, every reference in `index.html` with the line's purpose (live code · dead branch · comment · its own body), every `test_*.js` that pins it, and for the state variables which live code reads them. Backed by a Node harness `audit_lessonmap_dead.js` that loads `index.html` in a vm with the dead branch forced unreachable and asserts no reachable `onclick`/`onchange`/caller names them. Plus one **data** check on her device, read-only: whether any `scheduleOverrides/<date>/<kid>/added` entries still carry the old Extend make-ups (`flExtendMakeupCount`), because the only "Clear make-ups" button is in the dead branch | the audit file lists every name with a verdict: **keep** (reachable), **move** (a feature with no other door), **go** (dead); the harness passes; no file in the repo other than the audit doc and the harness changes | low — it writes nothing |
+| 3b | **LMCLEANUP** — the deletion | Removes exactly the **go** list from the audit; re-points the three live callers of the dead names (§4.3); updates the tests that pin them; simplifies the router (`case "curriculum": currInnerTab="subjects"` 6942 → `"grid"`) and drops the one-chip "Grid" bar (`_cvBar`, 29266–29274) that only existed as the way back from the Builder tab | `test_lessonmap_cleanup.js`: every **go** name is absent from `index.html`; every **keep** writer is present and its body byte-identical to before; `_normOrderArr` still reads a stored `order` override (the generator's 44629 / 84103 read is unchanged); the grid's ➡ move, ✕ off day, ➕ make-up, ↩ put back and Align still call the kept functions; `renderCurriculumView` has one branch; the whole `test_*.js` suite is green; `index.html` is smaller by at least 90 KB | medium — a wrong "go" removes a live door; the audit commit is the protection |
 | 4 | **CURRTOOLS** — toolbar and the Checks drawer | Toolbar = kid chips · 🏡 · ＋ Add · 📅 · ⋯ More (Show past days · Edit many cells · Order columns by end date · Lay everything out again · Show everything/Keep it simple); the 14 banners + audit + evening-out + daily-missed render inside one `🔍 Checks (n)` drawer in two groups, collapsed, drawn only when n > 0 | with each banner's condition forced true, its buttons render inside the drawer with the same `onclick`; the count badge equals the number of true conditions; with all false the drawer is absent and the grid is byte-identical | low |
 | 5 | **ADDFLOW** — the guided Add | `ceRenderAddSheet` gets a `step` (1–4) and a *More options* expander; step 4 runs `ceAddSave` → `cbDefaultForm` → `cbRunPreview` and its button runs `cbBuildGate`; "Show all options at once" renders today's sheet; after the build, no card re-opens (today's `ceOpenEdit` at 34988 is skipped only when the flow built) | for the same answers, the subject record written by step 4 equals today's `ceAddSave` record and the build writes equal today's Add → Build; a brand-new kid with no grid builds from the synthetic Wk 1 (`cbExtendInfo` 53003); a daily subject skips steps 2 and 4; two kids → `famWhoSave` as today | medium — chains two write doors in one tap; the gate (`cbBuildGate`) must still be able to appear for a legacy subject copied in |
 | 6 | **CURRSIMPLE** — Simple / Everything | the `config/ui/curriculum/view` switch; the default rule at first load; hiding per §3.6 | in Everything the page is byte-identical to the end of slice 5; in Simple every hidden control is absent and nothing else changes; the default rule picks everything for a family with a lane or ≥ 8 subjects | low |
@@ -502,8 +506,53 @@ panel, LESSONRES, the Builder, the gate, the restore-point banner), each gated b
 every condition pair (daily / sequenced × plan-backed / legacy × paused × class) and prove the same sections appear. The
 shared `rlPillHTML` is no longer a stop-gap but the design: one function, two drawings (card and table), zero staged copies.
 
+### 4.3 · LMCLEANUP — what the audit has to rule on (pre-audit by reference count, 2026-11-10)
+
+Her words: *"lets remove and clean up but def audit to make sure it causes no issues before you do it."* Below is the
+candidate list from a word-match count over `index.html` and `test_*.js` on b4e8689 — the **starting list for 3a, not its
+result**. Counts include the definition line. "Dead branch" = the Subjects branch of `renderCurriculumView` (29291–29597).
+
+**Keep — reachable from the live grid or the generator (named explicitly; 3b must not touch their bodies):**
+
+| Name | Why it stays | Live callers |
+|---|---|---|
+| `lmDropSlot` 58686 → `lmRemoveSubj` 58679 | ✕ off day · ✕ make-up | `gvMenuOff` 56145, `gvMenuOffAdded` 57005 |
+| `lmRestoreSubj` 58697 | ↩ put back | `gvMenuRestore` 56782 |
+| `lmAddSubj` 58701 | ➕ make-up | `gvMenuAddMakeup` 57012 |
+| `alignPlanPreview` 58793 · `alignPlanApply` 58847 · `lmWeekAnchor` 58778 · `lmWeekNumOfDate` 58783 | the Align banner and its preview | grid 57701 / 57707; pinned by `test_lanes_grid.js`, `test_lanes_nothing_drops.js` |
+| `_lmKidOff` 59032 | kid-off check inside the cell tap and the move target | `gvOpenCell` 56128, `gvPickMoveTarget` 56811 / 56818 |
+| `_normOrderArr` 58717 | the **generator reads** a stored per-day `order` override | 44629, 84103 (+ 15 tests). Its only *writers* (`lmNudgeSubj`, `lmResetOrder`) are dead — existing stored orders keep working, nothing new can write one; say so in the audit |
+| `lmMovePick`, `lmMoveWeek` (state) | the grid's own ➡ move is armed on `lmMovePick` and cleared with `lmMoveWeek` | `gvMenuStartMove` 56788–56795, `gvPickMoveTarget` 56805–56814, the banner 57726–57730, the row class 57898 |
+| `currViewKid` 2967 | the grid falls back to it for its first kid | `renderCurrGrid` 57387 (2 tests) |
+| `ceRenderSessions` 29725, `ceSessToggle` 29724, `ceSetTargetEnd`, `ceToggleMomVerifyKid`, `downloadCurrTemplate` 35262, `ceWorkflowTier` 27756 | drawn by the live 🏁 panel / Admin panel / Settings matcher (79083) — only their dead-branch *buttons* go | — |
+
+**Move — a feature whose only door is the dead code (3 names, moved in slice 3 before 3b runs):**
+`lrpBuilderHTML` 39922 (📋 Plan resources → the card's Links & supplies); the two Builder-tab doors `gvSelShiftUp` 55007 and
+`gvAuditFixGap` 55760 (`cbOpenSubj` + `cbRunPreview` → their one-time preview in the card's Pace section); and `cbCopyTo`
+53487–53488, which lands in the target kid's Builder tab (`cbSetKid`, `cbOpenSubj`) → lands on the copy's card instead.
+
+**Go — defined, never reached (the deletion list, pending the audit):**
+
+| Group | Names | Lines · bytes | Tests that pin a name |
+|---|---|---|---|
+| The dead Subjects branch of `renderCurriculumView` | everything after the grid `return` (29291–29597): kid chips, Template, Generate, Scheduling Setup, the Finish Line Target / Sessions / Mom Check copies, tier groups, `ceBuildCard` cards, Lesson Map (N weeks), the By-Week day cards, Make-up suggestions, Whole-week-off note; `setCurrViewKid`, `setCurrViewWeek`, `currViewWeek` 2968 | ≈24.5 KB | — |
+| The Subjects-page card and its embedded Builder | `ceOpenBuild` 29604, `_ceMaybeBuilder` 29610, `ceBuildCard` 29626 (after slice 2 removes the 🧱 from the card sheet, `ceOpenBuild`'s last live caller at 32648 / 32862 / 54551 is gone) | 29604–29723 · ≈7.9 KB | — |
+| Lesson Map UI and its state | `lmToggleDayOff`, `lmOpenAdd`, `lmLessonByDate`, `lmDayRunOrder`, `lmNudgeSubj`, `lmResetOrder`, `lmWeekMonday`, `lmRenderOffWeek`, `lmSchedCheckState`, `lmRenderMovePicker`, `lmSetView`, `lmCalData`, `_lmWeekMon`, `lmCalDayChips`, `_lmDayKind`, `lmSelSubj`, `lmEditSlotOpen`, `lmEditSlotCancel`, `lmEditAddedOpen`, `lmSaveAddedText`, `lmSaveSlotText`, `lmOpenMove`, `lmPickMoveWeek`, `lmMoveSlot`, `lmRenderSubjectView`, `_lmSnapMove`, `_lmRestoreOverride`, `_lmLessonEntry`, `_lmMovingVal`, `lmMoveDay`, `lmSubjJumpWk`, `lmSubjStepWk`, `lmRenderSubjectGrid`, `lmComputeSuggestions`; state `lmViewMode`, `lmEditSlot` (one dead read inside `lmDropSlot` 58694 goes with it), `lmAddOpen`, `lmSubjKey`, `lmSubjWk` | inside 58673–59450 · ≈45 KB of its 49.7 KB | `test_relay_curriculum_doors.js` (`lmSaveSlotText`, `lmEditSlot`), `test_coop_week_days.js` (`lmComputeSuggestions`), `test_one_calendar.js` (`lmCalData`, `lmCalDayChips`, `_lmDayKind`), `test_cleaning_day.js` (`_lmDayKind`) — the audit says per test whether it only stubs the global or asserts behaviour |
+| The ◀▶ move and its Undo banner | `gvMenuMove` 56133 (never drawn), `lmMoveDay`, `lmUndoMove` 59229, `lmLastMove` 58992 and the grid banner 57733–57738 | — | `test_lanes_grid.js`, `test_lanes_nothing_drops.js` (`lmLastMove` as a stubbed global) |
+| The Builder tab | `renderCurrBuilder` 54440, `cbSetKid` 54392, `cbSummaryToggle` 53492, `cbRenderSummary` 53495, `cbCloseSubj` 54430, `cbOpenSubj` 54393 (after the three moves), `cbJumpTo` 54425, `gvJumpBuilder` 57082, `cbFamilyRulesToggle` 53156, `cbFamilyRulesOpen`; the router case 6943 (`"builder"`), the HQ comment rows 8426–8427, the `_cvBar` one-chip bar | 54440–54537 ≈7.9 KB + 53492–53549 ≈3.3 KB | `test_relay_curriculum_doors.js` (`cbSetKid`, `cbOpenSubj`), `test_grid_audit_gapfix.js` (`cbOpenSubj`), `test_lr_planner.js` (`lrpBuilderHTML` — moves, so the test re-points) |
+| Finish Line Extend | `renderFinishLine` 60135 (never called), `flExtendSubject` 60073, `flExtendMakeupCount` 60170, `flUndoExtend` 60181 — **after** the device data check shows no leftover Extend make-ups (if there are some, the one-time "Clear make-ups" runs first, by her tap) | 60073–60203 · ≈7.7 KB | — |
+
+**The one decision in the list — the "Moved … ↩ Undo" banner at 57737.** Options: keep it and give it a live trigger, or
+let it go with `lmMoveDay` / `lmMoveSlot`. **Recommendation: go.** The grid's own ➡ move (`gvPickMoveTarget` 56804) does not
+use that path; it parks through `scheduleOverrides` + `cbApply` and has its own Undo (`_gvDelUndo` folded into the build's
+↩ Undo, and a cancelled gate rolls the park back — 54201). A second Undo banner for a move nobody can make would only confuse.
+
+**Size.** The go list is ≈95 KB of a 7.37 MB `index.html` (≈1.3 %) — small, but every byte is parsed on the LG StanbyME at each
+boot and each reload, and this is dead weight with zero risk once the audit confirms it. `test_lessonmap_cleanup.js` pins the
+byte win so it cannot creep back.
+
 Not in any slice (unchanged on purpose): the generator/scheduler, every re-lay door (RELAY4), `cbApply`, `relayWeek`, the
-cell menu's actions, lanes' data model, Settings, 📅 This week, the Family-time editor's internals, the Lesson Map code.
+cell menu's actions, lanes' data model, Settings, 📅 This week, the Family-time editor's internals.
 
 ---
 
@@ -521,9 +570,11 @@ cell menu's actions, lanes' data model, Settings, 📅 This week, the Family-tim
 3. **Simple / Everything: per family or per device? And where does your family start?** **Default: per family**
    (`config/ui/curriculum/view`, so a phone and the LG agree), **your family and both beta families start on Everything**
    (the rule: a lane or 8+ subjects), a new family on Simple.
-4. **The 41 unreachable Lesson Map controls and the Builder tab** — leave the code (this plan does not touch it) or
-   remove it in a separate cleanup PR once slice 3 lands? **Default: leave it**, note it in the repo's retirement comments,
-   and decide later; deleting dead code is not streamlining and would muddy these PRs.
+4. ~~**The 41 unreachable Lesson Map controls and the Builder tab** — leave or remove?~~ **Answered 2026-11-10: remove and
+   clean up, audit first.** *"lets remove and clean up but def audit to make sure it causes no issues before you do it."*
+   Now slices 3a (audit only, its own committed `AUDIT_lessonmap_dead_2026-11-xx.md` + harness, nothing deleted) and 3b
+   (the deletion, with `test_lessonmap_cleanup.js`), after slice 3 has moved the three features whose only door is the dead
+   code. The keep / move / go lists and the one decision (the ↩ Undo banner at 57737 — recommendation: go) are in §4.3.
 5. **The words "Build" and "Rebuild".** Options: *Put it on the schedule / Lay it out again* (my default), *Plan it / Plan
    it again*, or keep *Build*. **Default: Put it on the schedule** for the first lay-out of a subject and **Lay it out
    again** for every later one — it says what a mom sees happen.
