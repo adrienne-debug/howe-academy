@@ -105,9 +105,9 @@ console.log("\nHowe-shaped (saved Workflow Orders) — untouched");
 }
 
 console.log("\npickers + labels");
-ok("Add Subject offers 'last of day' and 'last of own work'", /\["sequential","sticky","first","last","lastOwn"\]\.forEach/.test(src) && /RULE_LABEL=\{last:"last of day",lastOwn:"last of own work"\}/.test(src));
+ok("Add Subject offers 'last of day' and 'last of own work'", /\["sequential","sticky","first","last","lastOwn"\]\.forEach/.test(src) && /RULE_LABEL=\{sequential:cw\("seq"\),sticky:cw\("stickWith"\),first:cw\("first"\),last:cw\("lastOfDay"\),lastOwn:cw\("lastOwn"\)\}/.test(src));   // CURRWORDS 2026-11-11: label text now comes from cw()
 ok("choosing one 'last' clears the other (one end-of-day slot)", /probe==="last"\?\(x==="last"\|\|x==="lastOwn"\)/.test(src));
-ok("⚙ Rules table has 'Last of day' + 'Last of own work' pills", />Last of day<\/span>/.test(src) && />Last of own work<\/span>/.test(src) && /set\.delete\(tok==="last"\?"lastOwn":"last"\)/.test(src));
+ok("⚙ Rules table has 'Last of day' + 'Last of own work' pills", />'\+cw\("lastOfDay"\)\+'<\/span>/.test(src) && />'\+cw\("lastOwn"\)\+'<\/span>/.test(src) && /set\.delete\(tok==="last"\?"lastOwn":"last"\)/.test(src));
 ok("Subjects page labels it 'End of own work'", /label:"End of own work"/.test(src));
 ok("lastOwn still reads as a 'last' card to every other engine (contains \"last\")", "lastOwn".includes("last"));
 

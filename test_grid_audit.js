@@ -14,6 +14,7 @@
 const fs = require("fs");
 const path = require("path");
 const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const CURRWORDS = src.slice(src.indexOf("// CURRWORDS_START"), src.indexOf("// CURRWORDS_END"));   // CURRWORDS (2026-11-11): the page's words come from cw() — load the label map with the code under test
 
 const a = src.indexOf("// GVAUDIT_START");
 const b = src.indexOf("// GVAUDIT_END");
@@ -32,7 +33,7 @@ const prelude = `
   var currData={subjects:{},lessons:{}};
   var lidDoneIdx=function(){return new Set();};   // plan-backed path: nothing done in fixtures
 `;
-const api = new Function(prelude + block +
+const api = new Function(prelude + CURRWORDS + "\n" + block +
   "; return {find:gvAuditFindings, render:gvAuditRender, toggle:gvAuditToggle, rec:gvReconcile," +
   " set:function(d){currData=d;}, setSkip:function(s){currData.skiplog=s;}};")();
 
@@ -288,7 +289,7 @@ console.log("\nadopt guard (plan-backed)");
   const iGuard = fn.indexOf("planBacked(kid,sk)"), iWrite = fn.indexOf("gvSyncSeqInto");
   ok("the refusal happens BEFORE any patch is built",
     iGuard >= 0 && iWrite > iGuard, { guard: iGuard, write: iWrite });
-  ok("it points her at Rebuild instead", /Rebuild the subject instead/.test(fn));
+  ok("it points her at laying it out again instead", /Lay the subject out again instead/.test(fn));   // CURRWORDS 2026-11-11: was "Rebuild the subject instead"
 
   const rStart = srcAll.indexOf("Card list vs grid — out of step");
   const render = rStart < 0 ? "" : srcAll.slice(rStart, rStart + 4000);
@@ -320,7 +321,7 @@ console.log("\nplan-backed lag rows and the headline count");
   api.toggle();
   h = api.render("kid", "#333");
   api.toggle();
-  ok("the row is still listed when opened", h.indexOf("A rebuild would <b>insert</b>") > 0);
+  ok("the row is still listed when opened", h.indexOf("Laying it out again would <b>insert</b>") > 0);   // CURRWORDS 2026-11-11: was "A rebuild would"
   ok("under the calm title", h.indexOf("Stored cells behind the plan") > 0);
   ok("not the alarming one", h.indexOf("out of step") < 0);
   api.set(grid(["L1","L2","L3","L4"], { subj: { lessonSeq: ["L1","L2","L3"] } }));

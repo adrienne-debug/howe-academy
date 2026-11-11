@@ -9,6 +9,7 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const CURRWORDS = src.slice(src.indexOf("// CURRWORDS_START"), src.indexOf("// CURRWORDS_END"));   // CURRWORDS (2026-11-11): the page's words come from cw() — load the label map with the code under test
 
 function braceSlice(name) {
   const sig = "function " + name + "("; const i = src.indexOf(sig); if (i < 0) throw new Error("fn not found: " + name);
@@ -43,7 +44,7 @@ function mkEnv() {
     JSON, Object, Array, String, Number, Math, parseInt, console,
   };
   vm.createContext(env);
-  new vm.Script(code).runInContext(env);
+  new vm.Script(CURRWORDS + "\n" + code).runInContext(env);
   return env;
 }
 
@@ -54,7 +55,7 @@ console.log("cbRenderRules — Rules + Max/day columns");
   try { h = e.cbRenderRules("#123456"); } catch (er) { ok("renders without throwing", false, String(er)); }   // arg = kid colour; kid comes from cbKid
   if (h) {
     ok("renders", typeof h === "string" && h.length > 200);
-    ok("header has Rules column and NO Max/day column (6c-2: Cap is the one number)", h.indexOf(">Rules<") >= 0 && h.indexOf(">Max/day<") < 0 && h.indexOf(">Cap<") >= 0);
+    ok("header has Rules column and NO Max/day column (6c-2: Cap is the one number)", h.indexOf(">Rules<") >= 0 && h.indexOf(">Max/day<") < 0 && h.indexOf(">Most in one day<") >= 0);   // CURRWORDS 2026-11-11: the Cap header reads "Most in one day"
     ok("token chip wired for sequential only", h.indexOf("rlSet('lincoln','ws','rulesTok','sequential'") >= 0 && h.indexOf("rulesTok','max1'") < 0);
     ok("no-fri / mon-thu chips are GONE (6c-1: Days pins are the one door)", h.indexOf("rulesTok','no-fri'") < 0 && h.indexOf("rulesTok','mon-thu'") < 0);
     // selected state: ws has sequential + no-fri on

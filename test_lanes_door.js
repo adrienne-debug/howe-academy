@@ -12,6 +12,7 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const CURRWORDS = src.slice(src.indexOf("// CURRWORDS_START"), src.indexOf("// CURRWORDS_END"));   // CURRWORDS (2026-11-11): the page's words come from cw() — load the label map with the code under test
 
 function block(a, b) { const i = src.indexOf(a), j = src.indexOf(b, i); if (i < 0 || j < 0) throw new Error("markers " + a); return src.slice(i, j); }
 function braceSlice(name) {
@@ -52,7 +53,7 @@ function world(o) {
   ctx.planBacked = (k, sk) => !!(subjects[sk] && subjects[sk].planId && ctx.lidStamped(k, sk));
   ctx.lidDoneIdx = (k, sk) => { if (!ctx.lidStamped(k, sk)) return null; const d = new Set(Object.keys(done[sk] || {})); const out = new Set(); (subjects[sk].lessonIds || []).forEach((id, i) => { if (d.has(id)) out.add(i); }); return out; };
   vm.createContext(ctx);
-  new vm.Script(CODE).runInContext(ctx);
+  new vm.Script(CURRWORDS + "\n" + CODE).runInContext(ctx);
   return ctx;
 }
 const MATH = { math: { name: "Math", units: [{ sk: "s3b", rhythm: "own" }, { sk: "s4a", rhythm: "prior" }] } };
@@ -70,7 +71,7 @@ console.log("── section ──");
   const h = c.lnRenderSection("kid", "#123456");
   ok("lists the lane by name with its units in order", h.indexOf("Math") > 0 && h.indexOf("Singapore 3B") < h.indexOf("DM 4A"));
   ok("3B is 'up now', 4A is 'waiting'", /Singapore 3B<\/span><span[^>]*>up now/.test(h) && /DM 4A<\/span><span[^>]*>waiting/.test(h), h.slice(h.indexOf("Singapore 3B"), h.indexOf("Singapore 3B") + 400));
-  ok("a borrowing unit says ↑ same as before", /same as before/.test(h));
+  ok("a borrowing unit says ↑ same as the book before", /same as the book before/.test(h));   // CURRWORDS 2026-11-11: new words
   ok("edit + remove buttons wired to the lane id", /lnEditStart\('math'\)/.test(h) && /lnDelete\('math'\)/.test(h));
   const c2 = world({ lanes: MATH, done: { s3b: doneN(2) } });
   const h2 = c2.lnRenderSection("kid", "#123456");
@@ -189,11 +190,11 @@ console.log("\n── panel ──");
 {
   const c = world({ lanes: MATH });
   let h = ""; try { h = c.cbRenderRules("#123456"); } catch (e) { ok("cbRenderRules renders with a lane", false, String(e)); }
-  ok("the panel embeds the lanes section", /🛤 Lanes — a category/.test(h) && /lnEditStart\('math'\)/.test(h));
+  ok("the panel embeds the lanes section", /🛤 Lanes — books that take turns in one column/.test(h) && /lnEditStart\('math'\)/.test(h));
   const row4a = h.slice(h.indexOf('title="DM 4A"'), h.indexOf("rlSet('kid','s4a','minutes'"));
-  ok("4A's row carries its standing", /🛤 Math · 2 of 2 · waiting · ↑ same as before/.test(row4a), row4a.slice(0, 300));
+  ok("4A's row carries its standing", /🛤 Math · 2 of 2 · waiting · ↑ same as the book before/.test(row4a), row4a.slice(0, 300));
   ok("4A's Days / ×wk / Cap cells are dimmed (the unit before decides)", (row4a.match(/opacity:\.4/g) || []).length === 3, (row4a.match(/opacity:\.4/g) || []).length);
-  ok("— with a title saying why", /same as the unit before it in lane Math/.test(row4a));
+  ok("— with a title saying why", /same as the book before in lane Math/.test(row4a));   // CURRWORDS 2026-11-11: new words
   const row3b = h.slice(h.indexOf('title="Singapore 3B"'), h.indexOf("rlSet('kid','s3b','minutes'"));
   ok("3B's row says up now and keeps its controls live", /🛤 Math · 1 of 2 · up now/.test(row3b) && !/opacity:\.4/.test(row3b));
   const rowGeo = h.slice(h.indexOf('title="Daily Geo"'), h.indexOf("rlSet('kid','geo','minutes'"));
@@ -201,7 +202,7 @@ console.log("\n── panel ──");
   const c2 = world({ lanes: { gs: { name: "Geo/Sci", units: [{ subs: ["geo", "sci"], pattern: "AB", rhythm: "own", allowedDays: ["Mon"], timesPerWeek: 1 }] } } });
   const h2 = c2.cbRenderRules("#1");
   const rg = h2.slice(h2.indexOf('title="Daily Geo"'), h2.indexOf("rlSet('kid','geo','minutes'"));
-  ok("a multiple-card member is dimmed too, titled to the card", (rg.match(/opacity:\.4/g) || []).length === 3 && /multiple card’s rhythm applies/.test(rg));
+  ok("a multiple-card member is dimmed too, titled to the card", (rg.match(/opacity:\.4/g) || []).length === 3 && /the days of the several books taking turns apply/.test(rg));   // CURRWORDS 2026-11-11: new words
 }
 
 // ── 6. wiring in the source ──────────────────────────────────────────────────
@@ -265,7 +266,7 @@ console.log("\n── retire: a finished book is filed away in ⚙ Rules (her ru
     w && eq(w[2].units, [{ sk: "s3b", rhythm: "own", retired: true }, { sk: "s4a", rhythm: "prior" }]), w && w[2]);
   ok("nothing is written to the subject, its lessons or its done record", !c.writes.some(x => /subjects|lessons|done/.test(x[0])));
   h = c.lnRenderSection("kid", "#1");
-  ok("it leaves the main line and is filed underneath as retired", /retired: Singapore 3B/.test(h) && !/line-through[^>]*>Singapore 3B/.test(h));
+  ok("it leaves the main line and is filed underneath as retired", /filed away: Singapore 3B/.test(h) && !/line-through[^>]*>Singapore 3B/.test(h));
   ok("— with a ↩ to bring it back", /lnRetire\('math',0,false\)/.test(h));
   ok("4A is still up and unaffected", /DM 4A<\/span><span[^>]*>up now/.test(h));
   ok("it STAYS a lane member, so it never returns as its own Grid column", c.lnOf("kid", "s3b") !== null);
@@ -304,7 +305,7 @@ console.log("\n── wiring ──");
 {
   ok("state declared beside the panel's other state", /let lnEdit=null, lnUndo=null;/.test(src));
   ok("closing the panel drops an open editor", /function cbRulesToggle\(\)\{ cbRulesOpen=!cbRulesOpen; lnEdit=null; renderAll\(\); \}/.test(src));
-  ok("the subject card shows the lane line under Progress", /lnMemberInfo\(ceEditKid,ceEditKey\)/.test(src) && /edit in Grid ▸ ⚙ Rules ▸ 🛤 Lanes/.test(src));
+  ok("the subject card shows the lane line under Progress", /lnMemberInfo\(ceEditKid,ceEditKey\)/.test(src) && /edit in Grid ▸ '\+cw\("kidYearAll",\{kid:cap\(ceEditKid\)\}\)\+' ▸ 🛤 Lanes/.test(src));   // CURRWORDS 2026-11-11: new words
   const ui = block("// LANE_UI_START", "// LANE_UI_END");
   const refs = ui.match(/db\.ref\([^)]*\)/g) || [];
   ok("the door writes ONLY under curriculum/lanes/<kid>/<id> and curriculum/lastEdit", refs.length > 0 && refs.every(r => r === 'db.ref("curriculum/lastEdit")' || /^db\.ref\("curriculum\/lanes\/"\+[a-z.]+\+"\/"\+[a-z.]+\)$/.test(r)), refs);

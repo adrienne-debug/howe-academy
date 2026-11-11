@@ -14,6 +14,7 @@
 const fs = require("fs");
 const path = require("path");
 const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const CURRWORDS = src.slice(src.indexOf("// CURRWORDS_START"), src.indexOf("// CURRWORDS_END"));   // CURRWORDS (2026-11-11): the page's words come from cw() — load the label map with the code under test
 
 const a = src.indexOf("// WFEDIT_START");
 const b = src.indexOf("// WFEDIT_END");
@@ -68,7 +69,7 @@ function fresh() {
     var currData={subjects:{lincoln:${JSON.stringify(SUBJECTS)}}};
     var rulesData={workflow:{lincoln:{normal:${JSON.stringify(STEPS)}}}};
   `;
-  return new Function(prelude + block + rankFn + `;
+  return new Function(prelude + CURRWORDS + "\n" + block + rankFn + `;
     var weekData={tasks:[]};
     return { match:wfMatch, resolve:wfResolveEntry, unmatched:wfUnmatched,
       move:wfSubjMove, remove:wfSubjRemove, add:wfSubjAdd,
@@ -205,7 +206,8 @@ console.log("\nsource wiring — the one matcher really owns all four sites");
   ok("no ranking site still substring-matches on its own",
     (src.match(/subjL\.includes\(String\(subs\[j\]\)/g) || []).length === 0 &&
     (src.match(/subj\.includes\(subs\[j\]\.toLowerCase\(\)\)/g) || []).length === 0);
-  const card = src.slice(src.indexOf("Workflow Orders</div>"), src.indexOf("Workflow Orders</div>") + 12000);
+  const _wfAt = src.indexOf("cw(\"wfOrders\")+'</div>");   // CURRWORDS 2026-11-11: the card title is cw("wfOrders") (was "Workflow Orders</div>")
+  const card = src.slice(_wfAt, _wfAt + 12000);
   ok("chips wire to the three mutators",
     card.indexOf("wfSubjMove") > 0 && card.indexOf("wfSubjRemove") > 0 && card.indexOf("wfSubjAdd") > 0);
   ok("the picker stores the subject KEY as the option value", card.indexOf("esc(o2.sk)") > 0);

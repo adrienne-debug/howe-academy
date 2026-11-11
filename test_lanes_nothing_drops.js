@@ -24,6 +24,7 @@
  */
 const fs = require("fs"), path = require("path"), vm = require("vm");
 const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const CURRWORDS = src.slice(src.indexOf("// CURRWORDS_START"), src.indexOf("// CURRWORDS_END"));   // CURRWORDS (2026-11-11): the page's words come from cw() — load the label map with the code under test
 const FX = JSON.parse(fs.readFileSync(path.join(__dirname, "test_fixture_lanes_live_2026-09-11.json"), "utf8"));
 const TODAY = "2026-09-11";
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -298,7 +299,7 @@ console.log("── C. the rendered grid, real data, lanes injected ──");
       Object.keys(L).map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b).forEach(dn => { const l = L[dn]; if (!l || !l.date || l.date <= TODAY) return; let usedMin = 0; for (const k2 of Object.keys(subs)) { if (k2 === sk || subs[k2].paused) continue; if (filled(l[k2])) usedMin += subs[k2].minutes || 20; } const ov = ctx.schedOv(l.date, k) || {};
         rows.push({ dayNum: dn, date: l.date, week: l.week || "", dow: DOW[new Date(l.date + "T12:00:00").getDay()], off: !!(ov.dayOff || (ov.removed || {})[sk]), usedMin, hadMine: !!filled(l[sk]) }); });
       return rows; };
-    vm.createContext(ctx); new vm.Script(GRID).runInContext(ctx);
+    vm.createContext(ctx); new vm.Script(CURRWORDS + "\n" + GRID).runInContext(ctx);
     ctx._subjects = subjects; ctx._done = done;
     if (mutate) mutate(ctx, subjects, done);
     const el = { innerHTML: "" }; ctx.renderCurrGrid(el);

@@ -13,6 +13,7 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const CURRWORDS = src.slice(src.indexOf("// CURRWORDS_START"), src.indexOf("// CURRWORDS_END"));   // CURRWORDS (2026-11-11): the page's words come from cw() — load the label map with the code under test
 
 function block(a, b) { const i = src.indexOf(a), j = src.indexOf(b, i); if (i < 0 || j < 0) throw new Error("markers " + a); return src.slice(i, j); }
 function braceSlice(name) {
@@ -89,7 +90,7 @@ function world(o) {
     braceSlice("renderCurrGrid"),
   ].join("\n");
   vm.createContext(ctx);
-  new vm.Script(CODE).runInContext(ctx);
+  new vm.Script(CURRWORDS + "\n" + CODE).runInContext(ctx);
   ctx._lessons = lessons; ctx._dns = dns;
   return ctx;
 }
@@ -148,7 +149,7 @@ console.log("\n── render ──");
     // a queued book now SHOWS on the days it will land once the book ahead runs out — faded,
     // display-only — and still never shares a day with, or lands before, the book that is up.
     ok("a queued book is previewed in day rows, faded (gv-queued)", /id="gv-c-\d+-s4a"[^>]*>[\s\S]{0,160}class="gv-queued"/.test(h));
-    ok("4A is NOT in the 'on their cards, not in the grid yet' strip", !/not in the grid yet[\s\S]{0,400}DM 4A/.test(h));
+    ok("4A is NOT in the 'on their cards, not in the grid yet' strip", !/Not on the schedule yet[\s\S]{0,400}DM 4A/.test(h));   // CURRWORDS 2026-11-11: was "not in the grid yet"
     ok("the plain subject still has its own header", /<th[^>]*>Plain</.test(h));
     ok("column count = lanes + plain (3)", /× 3 subjects/.test(h));
     // rows: the lane column's future cells are 3B's projected lessons, keyed to s3b
@@ -190,7 +191,7 @@ console.log("\n── render ──");
   try { h = render(c); } catch (e) { ok("renders without lanes", false, String(e)); }
   ok("no lanes → every subject keeps its own header", /<th[^>]*>Singapore 3B</.test(h) && /<th[^>]*>DM 4A</.test(h) === false && /× 4 subjects/.test(h));
   ok("no lanes → NO band row at all, so the Grid is unchanged for a kid with no lanes", !/gv-bandrow/.test(h));
-  ok("— and 4A (no cells) sits in the card-only strip as before", /not in the grid yet[\s\S]{0,400}DM 4A/.test(h));
+  ok("— and 4A (no cells) sits in the card-only strip as before", /Not on the schedule yet[\s\S]{0,400}DM 4A/.test(h));   // CURRWORDS 2026-11-11: was "not in the grid yet"
 }
 
 // ── 3. wiring ────────────────────────────────────────────────────────────────

@@ -11,6 +11,7 @@
  */
 const fs = require("fs"), path = require("path"), vm = require("vm");
 const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const CURRWORDS = src.slice(src.indexOf("// CURRWORDS_START"), src.indexOf("// CURRWORDS_END"));   // CURRWORDS (2026-11-11): the page's words come from cw() — load the label map with the code under test
 const a = src.indexOf("// MINMINUTES_START"), b = src.indexOf("// MINMINUTES_END");
 if (a < 0 || b < 0) { console.error("MINMINUTES markers not found"); process.exit(1); }
 const pa = src.indexOf("function _parseCheckTs(ts){"), pb = src.indexOf("\n}", pa) + 2;
@@ -54,7 +55,7 @@ function world(opts) {
   };
   ctx.sv = (k, v) => { ctx._ls[k] = JSON.stringify(v); }; ctx.ld = k => ctx._ls[k] ? JSON.parse(ctx._ls[k]) : null;
   if (opts.dad) ctx.dadTapCtx = { by: "dad" };
-  vm.createContext(ctx); vm.runInContext(BLOCK, ctx);
+  vm.createContext(ctx); vm.runInContext(CURRWORDS + "\n" + BLOCK, ctx);
   const run = code => vm.runInContext(code, ctx);
   return { ctx, run, writes, toasts, ceSaved, subjects, setNow: ms => { NOW = ms; }, now: () => NOW,
     startAgo: (id, min) => run("started[" + JSON.stringify(id) + "]=" + (NOW - min * 60000)) };

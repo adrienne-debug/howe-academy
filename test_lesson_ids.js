@@ -13,6 +13,7 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const CURRWORDS = src.slice(src.indexOf("// CURRWORDS_START"), src.indexOf("// CURRWORDS_END"));   // CURRWORDS (2026-11-11): the page's words come from cw() — load the label map with the code under test
 
 const la = src.indexOf("// LID_START"), lb = src.indexOf("// LID_END");
 if (la < 0 || lb < 0) { console.error("LID block markers not found"); process.exit(1); }
@@ -65,7 +66,7 @@ function mk(subjects) {
   env.db = { ref: () => ({ update: u => { env.written = u; return { catch: () => {} }; } }) };
   env.window = env;
   vm.createContext(env);
-  new vm.Script(block + "\n" + serveBlock + "\n" + writers).runInContext(env);
+  new vm.Script(CURRWORDS + "\n" + block + "\n" + serveBlock + "\n" + writers).runInContext(env);
   return env;
 }
 const S = (seq, ids, next) => { const s = { display: "MR", lessonSeq: seq.slice() }; if (ids) { s.lessonIds = ids.slice(); s.nextLid = next; } return s; };

@@ -30,7 +30,7 @@ console.log("0. shape");
   ok("no kid or family names in the block",!/lincoln|ellis|lucy|julian|taylor|kenzie|makenzie|andrew|caleb|sara|howe|dewalt|burris/i.test(BLK));
   ok("_rlwModeNoAsk never asks",!/confirm\(/.test(BLK));
   const rl=fn("rlSet"); ok("rlSet: the Mom fields go through relayWeek with the field's Undo, the direct call kept as fallback",/relayWeek\("curriculum"/.test(rl)&&/else if\(_momF&&_pbF&&typeof reprojectSubjectWeek==="function"\)/.test(rl)&&/_wasF/.test(rl));
-  ok("rlSet: a daily's laying field goes through the door; another unpaced subject's only saves",/_rlwDailyOk\(kid,sk\)/.test(rl)&&/isn't paced by the Builder/.test(rl)&&/_rlwFieldUndo\(kid,sk,field,_was0\)/.test(rl));
+  ok("rlSet: a daily's laying field goes through the door; another unpaced subject's only saves",/_rlwDailyOk\(kid,sk\)/.test(rl)&&/isn't paced, so this week's cards update/.test(rl)&&/_rlwFieldUndo\(kid,sk,field,_was0\)/.test(rl));
   const rs=fn("reprojectSubjectWeek"); ok("the shell takes a daily (opts.daily) through its own diff, the gate otherwise unchanged",/opts&&opts\.daily/.test(rs)&&/_rlwDailyDiff\(kid,sk,weekData\.tasks,_rlwDailyWant\(kid,sk,gen,wn\)/.test(rs)&&/if\(!_dl&&\(typeof planBacked!=="function"\|\|!planBacked\(kid,sk\)\)\)\{ _then\(null\); return null; \}/.test(rs)&&/_dl\?null:_rpPatternWant/.test(rs));
   ok("the daily helpers live in the RELAY block, no phantom test in them",/function _rlwDailyOk\(/.test(BLK)&&/function _rlwDailyWant\(/.test(BLK)&&/function _rlwDailyDiff\(/.test(BLK)&&!/isPhantom/.test(fn("_rlwDailyDiff")));
   ok("the Days pins, the editor sheet, pause / quick pause send a daily through the door",/_rlwDailyOk\(kid,sk\)&&typeof relayWeek/.test(fn("cbPinDay"))&&/_rlwDailyOk\(ceEditKid,ceEditKey\)/.test(fn("ceSaveField"))&&/_rlwDailyOk\(ceEditKid,ceEditKey\)/.test(fn("ceTogglePause"))&&/_rlwDailyOk\(kid,key\)/.test(fn("ceQuickPause")));
@@ -116,7 +116,7 @@ function rlWorld(o){
 { const w=rlWorld(); w.call('rlSet("kid_a","daily_piano","tpw",3,true)');
   ok("a daily's times a week: Undo names both paths the field writes (timesPerWeek, pacing/tpw — both were absent → gone)",w.log.relay.length===1&&w.log.relay[0][1].undo.map(u=>u.p+(u.gone?":gone":":was")).join()==="curriculum/subjects/kid_a/daily_piano/timesPerWeek:gone,curriculum/subjects/kid_a/daily_piano/pacing/tpw:gone",w.log.relay[0][1].undo); }
 { const w=rlWorld(); w.call('rlSet("kid_a","other","minutes",30,true)');
-  ok("a subject that is neither Builder-paced nor a daily: saved + the plain toast, no re-lay (as before)",/Other isn't paced by the Builder/.test(w.log.toasts[0])&&!w.log.relay.length,w.log.toasts); }
+  ok("a subject that is neither Builder-paced nor a daily: saved + the plain toast, no re-lay (as before)",/Other isn't paced, so this week's cards update/.test(w.log.toasts[0])&&!w.log.relay.length,w.log.toasts); }
 { const w=rlWorld(); w.call('rlSet("kid_a","math","tpw",4,true)'); ok("times a week on a Builder-paced subject keeps the Builder path (re-paced, then the door from cbApply)",w.log.gv.join()==="kid_a/math"&&!w.log.relay.length); }
 { const w=rlWorld(); w.call('rlSet("kid_a","daily_piano","mom","required",false)'); ok("Mom on a daily → through the door, Undo = Mom back to none",w.log.relay.length===1&&w.log.relay[0][1].undo[0].was==="none"&&!w.log.reproj.length&&!w.log.toasts.length,w.log); }
 

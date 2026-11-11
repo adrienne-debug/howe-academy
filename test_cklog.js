@@ -6,6 +6,7 @@
  */
 const fs = require("fs"), path = require("path"), vm = require("vm");
 const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const CURRWORDS = src.slice(src.indexOf("// CURRWORDS_START"), src.indexOf("// CURRWORDS_END"));   // CURRWORDS (2026-11-11): the page's words come from cw() — load the label map with the code under test
 const a = src.indexOf("// CKLOG_START"), b = src.indexOf("// CKLOG_END");
 if (a < 0 || b < 0) { console.error("CKLOG markers not found"); process.exit(1); }
 const fn = n => { const i = src.indexOf("function " + n + "("); return src.slice(i, src.indexOf("\n}", i) + 2); };
@@ -25,7 +26,7 @@ function world(o) {
     ld: () => ({}), sv: () => {}, _dryRun: () => false, db: { ref: p => ({ update: v => writes.push([p, v]) }) },
     Object, Array, String, Number, Math, Date, JSON, RegExp,
   };
-  vm.createContext(ctx); vm.runInContext(BLOCK, ctx);
+  vm.createContext(ctx); vm.runInContext(CURRWORDS + "\n" + BLOCK, ctx);
   return { ctx, writes, banks, confirms, call: e => vm.runInContext(e, ctx) };
 }
 const T = [{ id: "dm", who: "lucy", day: "thursday", title: "📄 Dimensions Math 1A — Ch4-3" }, { id: "rd", who: "ellis", day: "thursday", title: "📄 Reading Detective — Ex. 45" }, { id: "old", who: "ellis", day: "wednesday", title: "yesterday" }];
