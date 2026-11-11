@@ -40001,6 +40001,7 @@ function utClean(day){
   const note=utStr(day.note,2000); if(note) d.note=note;
   if(day.nb&&typeof day.nb==="object"){ const a=utStr(day.nb.activity,80); if(a) d.nb={activity:a}; }
   if(day.off===true) d.off=true;
+  if(typeof uxCleanInto==="function") uxCleanInto(day,d);   // UNITDAY_EXTRAS: the day's res.docs + snack
   return d;
 }
 // ── readers ──
@@ -40094,7 +40095,8 @@ function utResOf(days){
   (days||[]).forEach(d=>{ if(!d) return; const r=d.res||{};
     ["links","supplies","books","orders"].forEach(p=>(r[p]||[]).forEach(x=>push(p,x)));
     if(r.notes&&out.notes.indexOf(r.notes)<0) out.notes=out.notes?out.notes+"\n"+r.notes:r.notes;
-    ((d.craft&&d.craft.supplies)||[]).concat((d._unitCraft&&d._unitCraft.supplies)||[]).forEach(s=>push("supplies",Object.assign({},s,{craft:true}))); });   // CRAFT (B3): the unit-level craft too
+    ((d.craft&&d.craft.supplies)||[]).concat((d._unitCraft&&d._unitCraft.supplies)||[]).forEach(s=>push("supplies",Object.assign({},s,{craft:true})));   // CRAFT (B3): the unit-level craft too
+    ((d.snack&&d.snack.supplies)||[]).forEach(s=>push("supplies",Object.assign({},s,{snack:true}))); });   // UNITDAY_EXTRAS: 🍎 the snack's supplies, beside the craft's
   return out;
 }
 // ── the writes (Mom-only, one targeted set each, dry-run inert) ──
@@ -40157,13 +40159,13 @@ function utTrackSet(id,field,value){
 // ── the 📅 Days section (renderUnitDetail's hook) ──
 let utEdit=null;   // {uid, dayId} while a day's editor is open
 function utEditOpen(uid,dayId){ if(!utMom()) return; utEdit=(utEdit&&utEdit.uid===uid&&utEdit.dayId===dayId)?null:{uid:uid,dayId:dayId}; if(typeof renderAll==="function") renderAll(); }
-function utCellList(d,part){ const r=d.res||{}; const L=r[part]||[]; if(part==="links") return L.map(x=>x.label||((typeof lrHost==="function")?lrHost(x.url):"link")); if(part==="supplies") return L.map(x=>(x.qty?x.qty+" ":"")+x.name).concat(((d.craft&&d.craft.supplies)||[]).map(x=>"\u2702\uFE0F "+(x.qty?x.qty+" ":"")+x.name)); if(part==="books") return L.map(x=>x.title); return []; }
+function utCellList(d,part){ const r=d.res||{}; const L=r[part]||[]; if(part==="links") return L.map(x=>x.label||((typeof lrHost==="function")?lrHost(x.url):"link")); if(part==="supplies") return L.map(x=>(x.qty?x.qty+" ":"")+x.name).concat(((d.craft&&d.craft.supplies)||[]).map(x=>"\u2702\uFE0F "+(x.qty?x.qty+" ":"")+x.name)).concat((typeof uxSnackSupplyCells==="function")?uxSnackSupplyCells(d):[]); if(part==="books") return L.map(x=>x.title); return []; }
 function utDayLabel(d){ return (d.n?"Day "+d.n:(d.wk?"Wk "+d.wk+(d.role?" \u00B7 "+d.role:""):""))+(d.t?(d.n||d.wk?" \u2014 ":"")+d.t:""); }
 function utRowHTML(u,d,isMom){
   const cell=(cap,items)=>'<div class="ut-cell" style="flex:1 1 100px;min-width:0;overflow-wrap:anywhere"><div class="ut-cap" style="font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:var(--muted)">'+cap+'</div>'+(items.length?utEsc(items.join(", ")):'<span style="color:#cbd5e1">\u2014</span>')+'</div>';
   const on=utEdit&&utEdit.uid===u.id&&utEdit.dayId===d.id;
   let h='<div class="ut-row" data-ut-day="'+utEsc(d.id)+'" '+(isMom?'onclick="utEditOpen(\''+utJ(u.id)+'\',\''+utJ(d.id)+'\')" ':'')+'style="display:flex;flex-wrap:wrap;gap:4px 8px;padding:7px 8px;border-top:1px solid #eef0f3;font-size:12px;line-height:1.35;'+(isMom?'cursor:pointer;':'')+'background:'+(on?'#fff7ed':'#fff')+';opacity:'+(d.off?'.5':'1')+'">';
-  h+='<div style="flex:1 1 150px;min-width:0;font-weight:700;overflow-wrap:anywhere">'+utEsc(utDayLabel(d)||"(untitled day)")+(d.off?' <span style="font-size:10px;color:#9ca3af">off</span>':'')+(d.rungs?' <span title="has rungs" style="font-size:10px">\u{1FA9C}</span>':'')+(d.words?' <span title="words on the screen" style="font-size:10px">\u{1F4DC}</span>':'')+'</div>';
+  h+='<div style="flex:1 1 150px;min-width:0;font-weight:700;overflow-wrap:anywhere">'+utEsc(utDayLabel(d)||"(untitled day)")+(d.off?' <span style="font-size:10px;color:#9ca3af">off</span>':'')+(d.rungs?' <span title="has rungs" style="font-size:10px">\u{1FA9C}</span>':'')+(d.words?' <span title="words on the screen" style="font-size:10px">\u{1F4DC}</span>':'')+((typeof uxRowBadges==="function")?uxRowBadges(d):'')+'</div>';   // UNITDAY_EXTRAS: 🖼 N · 🍎
   h+=cell("\u{1F517} Links",utCellList(d,"links"))+cell("\u{1F4DA} Books",utCellList(d,"books"))+cell("\u{1F392} Supplies",utCellList(d,"supplies"));
   h+=cell("\u{1F0CF} Cards",utArr(d.cards).map(c=>c.deck+": "+c.names.length))+cell("\u2702\uFE0F Craft",d.craft&&d.craft.title?[d.craft.title]:[]);
   h+='</div>';
@@ -40202,6 +40204,7 @@ function utEditorHTML(u,d){
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">'+UT_LEVELS.map(l=>'<input id="ut-e-wpart-'+l+'" type="text" value="'+utEsc(((d.words||{}).parts||{})[l]||"")+'" placeholder="'+UT_LEVEL_LABEL[l]+' learns\u2026" style="'+inp+';flex:1 1 140px;width:auto">').join("")+'</div>';
   h+=lab("\u{1F3A7} Read strand")+'<div style="display:flex;gap:6px;flex-wrap:wrap"><select id="ut-e-rmode" style="'+inp+';flex:0 0 130px;width:auto"><option value="">(none)</option>'+UT_READ_MODES.map(m=>'<option value="'+m+'"'+((d.read||{}).mode===m?' selected':'')+'>'+({listen:"\u{1F3A7} Listen",mom:"\u{1F4D6} Mom reads",recite:"\u{1F5E3} Recite"}[m])+'</option>').join("")+'</select><input id="ut-e-rwhat" type="text" value="'+utEsc((d.read||{}).what||"")+'" placeholder="What (chapter, poem\u2026)" style="'+inp+';flex:1 1 160px;width:auto"><input id="ut-e-rurl" type="url" value="'+utEsc((d.read||{}).url||"")+'" placeholder="https:// link (optional)" style="'+inp+';flex:1 1 160px;width:auto"></div>';
   h+=((typeof crDayEditorHTML==="function")?crDayEditorHTML(u,d):"");   // CRAFT (B3): ✂️ the craft on this day
+  h+=((typeof uxEditorHTML==="function")?uxEditorHTML(u,d):"");   // UNITDAY_EXTRAS: 🖼 Pictures & documents · 🍎 Snack (Sara 2026-11-11)
   h+=((typeof uaUploadHTML==="function")?uaUploadHTML(u,d):"");   // UNITAUDIO (A1): ⬆ Upload recording, under the read strand
   h+=((typeof utaaEditorHTML==="function")?utaaEditorHTML(u,d):"");   // UTADDACT: 🎨 Activity on this day (add after Save — Sara 2026-11-09)
   h+=lab("\u{1F4DD} Note under the card")+ta("ut-e-note",d.note||"","The honest note \u2014 what to say, what to skip",2);
@@ -40217,7 +40220,7 @@ function utEditSave(uid,dayId){
   const same=(a,b)=>JSON.stringify(a===undefined?null:a)===JSON.stringify(b===undefined?null:b);
   const put=(part,val)=>{ const probe={id:"x"}; probe[part]=val; const c=utClean(probe); const v=(c&&c[part]!=null)?c[part]:null; if(same(v,d[part]===undefined?null:d[part])) return; if(utWrite(uid,dayId,part,val)) n++; };
   put("t",utVal("ut-e-t"));
-  put("res",{links:utParseLines("links",utVal("ut-e-links")),books:utParseLines("books",utVal("ut-e-books")),supplies:utParseLines("supplies",utVal("ut-e-supplies")),orders:utParseLines("orders",utVal("ut-e-orders")),notes:(d.res||{}).notes||""});
+  put("res",{links:utParseLines("links",utVal("ut-e-links")),books:utParseLines("books",utVal("ut-e-books")),supplies:utParseLines("supplies",utVal("ut-e-supplies")),orders:utParseLines("orders",utVal("ut-e-orders")),notes:(d.res||{}).notes||"",docs:(d.res||{}).docs||[]});   // UNITDAY_EXTRAS: docs ride along, never wiped
   put("cards",utParseLines("cards",utVal("ut-e-cards")));
   const rungs={}; UT_LEVELS.forEach(l=>{ rungs[l]=utVal("ut-e-rung-"+l); }); put("rungs",rungs);
   const parts={}; UT_LEVELS.forEach(l=>{ parts[l]=utVal("ut-e-wpart-"+l); }); put("words",{title:utVal("ut-e-wtitle"),by:utVal("ut-e-wby"),text:utVal("ut-e-wtext"),parts:parts});
@@ -40694,8 +40697,9 @@ function dcDayHTML(g){
     (f.caption?'<figcaption style="font-size:17px;color:#cbd5e1;margin-top:8px">'+dcEsc(f.caption)+(f.credit?' <span style="font-size:12px;color:#64748b">\u00B7 '+dcEsc(f.credit)+'</span>':'')+'</figcaption>':'')+'</figure>';
   const books=(d.res&&d.res.books)||[]; if(books.length) h+=dcSection("\u{1F4DA} The book",books.map(b=>'<div style="font-size:24px;font-weight:800;color:#fff">'+dcEsc(b.title)+(b.by?' <span style="font-size:16px;font-weight:600;color:#cbd5e1">by '+dcEsc(b.by)+'</span>':'')+'</div>').join(""));
   const links=dcLinks(g); if(links.length) h+=dcSection("\u25B6 Watch \u00B7 open",'<div style="display:flex;gap:10px;flex-wrap:wrap">'+links.map(dcLinkBtn).join("")+'</div>');
+  if(typeof uxDocsCardHTML==="function") h+=uxDocsCardHTML(g);   // UNITDAY_EXTRAS: 🖼 Pictures & documents
   const act=dcActivity(g); if(act) h+=dcSection("\u{1F3A8} Today\u2019s activity",'<div style="font-size:24px;font-weight:800;color:#fff">'+dcEsc((act.emoji||"\u{1F3A8}")+" "+act.title)+(act.points?' <span style="font-size:15px;color:#fde68a">\u00B7 '+act.points+' \u2B50</span>':'')+'</div>'+(act.desc?'<div style="font-size:17px;color:#e2e8f0;margin-top:4px">'+dcEsc(act.desc)+'</div>':''));
-  h+=dcCardsHTML(g); if(typeof crCardHTML==="function") h+=crCardHTML(g); h+=dcRungsHTML(g); h+=dcWordsHTML(g); h+=dcReadHTML(g);   // CRAFT (B3): the steps, big
+  h+=dcCardsHTML(g); if(typeof crCardHTML==="function") h+=crCardHTML(g); if(typeof uxSnackCardHTML==="function") h+=uxSnackCardHTML(g); h+=dcRungsHTML(g); h+=dcWordsHTML(g); h+=dcReadHTML(g);   // CRAFT (B3): the steps, big · UNITDAY_EXTRAS: 🍎 Snack under ✂️ Craft
   if(d.note) h+=dcSection("\u{1F4DD} Note",'<div style="font-size:17px;line-height:1.5;color:#e2e8f0;background:rgba(255,255,255,.06);border-radius:14px;padding:12px 16px">'+dcEsc(d.note)+'</div>');
   return h;
 }
@@ -41057,6 +41061,203 @@ function utaaEditorHTML(u,d){
   return h+'</div>';
 }
 // UTADDACT_END
+// UNITDAY_EXTRAS_START — 🖼 Pictures & documents and 🍎 Snack on a unit day (her words 2026-11-11, for Sara, a beta mom: "Sarah would
+//   like to add on day 6 a gratitude scavenger hunt. She has a picture of it. So it would be good if on each day another section that
+//   they could add to that is pictures and documents that would open when they click it on that day. Also, a section for snacks that
+//   could be added, kind of like there's crafts and videos and all those things.").
+//   · SHAPES — additive on the day, nothing existing moves:
+//       day.res.docs = [{kind:"image"|"pdf"|"doc"|"link", title, url, by?}]   (https links only — never a data URI in the record)
+//       day.snack    = {title, steps:[{text}], supplies:[{name, qty?, kids}]}  (craft's shape, cleaned by craft's own rule)
+//     utClean keeps both (uxCleanInto, its one hook), so every reader of a cleaned day sees them; a day without them cleans as before.
+//   · THE DAY EDITOR (Mom, the 📅 Days table), under ✂️ Craft: "🖼 Pictures & documents" — 📷 a picture from the camera roll or a file
+//     (image/*, shrunk, stored by picStore under pictures/units/<unitId>/days/<dayId>/…), 📄 a PDF (up to UX_PDF_MAX_MB, the same
+//     folder, contentType application/pdf), or a pasted https link; a title each (✎ in place), ▲ ▼ to reorder, ✕ to take it off.
+//     "🍎 Snack" — the craft editor's boxes with the snack's words: title, steps one per line, supplies "qty name" one per line
+//     ("| mom" = not on the kids' line — the day's Supplies box rule).
+//   · THE WRITES — exactly two paths, ONE set each, Mom only, dry-run inert (db && !_dryRun):
+//       unitStudies/<id>/track/days/<i>/res/docs      ·      unitStudies/<id>/track/days/<i>/snack
+//     "Save this day" writes the day's res whole (utWrite, as today) — its one hook carries docs along so the Links / Books boxes never
+//     wipe them. A picture or PDF taken off leaves its file in Storage (stamped names are never reused); only the link goes.
+//   · THE DAY CARD (DAYCARD — the big screen and each family card's 📺 Open today's card, the same view): "🖼 Pictures & documents" after
+//     ▶ Watch — a picture's thumbnail opens full screen in UNITPICS_CREDIT's gallery (◀ ▶ through the day's pictures, ✕ / Esc), a PDF,
+//     document or link opens in a new tab. "🍎 Snack" right after ✂️ Craft, drawn the way Craft is (steps, then the supplies). Titles
+//     only — no URL is ever shown. A day with neither draws byte-for-byte as before.
+//   · SUPPLIES: a snack's supplies join the day's supplies in utResOf (tagged snack:true) next to a craft's, so the Sunday list, its
+//     🏡 Family group, the shopping-list rule and the kids' "🎒 bring" line read them as they read a craft's. The Days table lists them
+//     in its 🎒 Supplies cell as "🍎 …" and badges a day with 🖼 N / 🍎. (The kitchen's 🛒 Pre-shop check reads only the meal plan's
+//     recipes — it never read craft supplies — so it is not touched.)
+//   No kid's name in code. Nothing in the scheduler, lay or Builder changes.
+const UX_PDF_MAX_MB=20;
+const UX_MAX_DOCS=24;
+const UX_DOC_KINDS=["image","pdf","doc","link"];
+const UX_KIND_ICON={image:"\u{1F5BC}",pdf:"\u{1F4C4}",doc:"\u{1F4DD}",link:"\u{1F517}"};
+const UX_KIND_NAME={image:"Picture",pdf:"PDF",doc:"Document",link:"Link"};
+let uxStatus={};   // {<uid>|<dayId>: "Saving the picture…"} — the line under the buttons while a file uploads
+function uxMom(){ return (typeof momHere==="function")?momHere():false; }
+function uxLive(){ return !!(typeof db!=="undefined"&&db)&&!((typeof _dryRun==="function")&&_dryRun()); }
+function uxDry(){ return (typeof _dryRun==="function")?_dryRun():false; }
+function uxEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function uxJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+function uxStr(v,n){ return String(v==null?"":v).trim().slice(0,n||120); }
+function uxRe(){ if(typeof renderAll==="function") renderAll(); }
+function uxUrl(u){ if(typeof utUrl==="function") return utUrl(u); const s=String(u||"").trim(); return /^https:\/\//i.test(s)?s:""; }
+function uxK(uid,dayId){ return String(uid).replace(/[^a-zA-Z0-9_-]/g,"_")+"-"+String(dayId).replace(/[^a-zA-Z0-9_-]/g,"_"); }
+function uxHash(s){ let h=0x811c9dc5; s=String(s||""); for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,0x01000193)>>>0; } return h>>>0; }
+// a link's kind from its address (a Storage link keeps its file's extension before the ?)
+function uxKindOf(url){ const s=String(url||"").toLowerCase().split("#")[0];
+  if(/\.(jpe?g|png|gif|webp|heic|heif)(\?|$)/.test(s)) return "image"; if(/\.pdf(\?|$)/.test(s)) return "pdf";
+  if(/\.(docx?|pptx?|xlsx?|odt|rtf|txt)(\?|$)/.test(s)||/docs\.google\.com\/(document|presentation|spreadsheets)/.test(s)) return "doc"; return "link"; }
+// ── the shapes, cleaned (utClean's hook) ──
+function uxCleanDocs(v){
+  const L=(typeof utArr==="function")?utArr(v):(Array.isArray(v)?v.filter(x=>x!=null):[]); const out=[];
+  L.forEach(x=>{ if(!x||typeof x!=="object") return; const url=uxUrl(x.url); if(!url) return;
+    let k=uxStr(x.kind,8); if(UX_DOC_KINDS.indexOf(k)<0) k=uxKindOf(url);
+    const o={kind:k,title:uxStr(x.title,120)||UX_KIND_NAME[k],url:url}; const by=uxStr(x.by,120); if(by) o.by=by; out.push(o); });
+  return out.slice(0,UX_MAX_DOCS);
+}
+function uxCleanSnack(v){ if(!v||typeof v!=="object"||typeof utClean!=="function") return null; const c=utClean({id:"x",craft:v}); return (c&&c.craft)?c.craft:null; }
+function uxCleanInto(day,d){
+  if(!day||!d) return d;
+  const docs=uxCleanDocs(day.res&&typeof day.res==="object"?day.res.docs:null); if(docs.length){ if(!d.res) d.res={}; d.res.docs=docs; }
+  const sn=uxCleanSnack(day.snack); if(sn) d.snack=sn;
+  return d;
+}
+// ── the two writes: ONE targeted set each ──
+function uxRawDay(uid,dayId){
+  const u=(typeof utUnits==="function")?utUnits()[uid]:null; const t=(u&&typeof utTrack==="function")?utTrack(u):null; if(!t) return null;
+  const k=(typeof utDayKey==="function")?utDayKey(u,dayId):null; if(k==null||!t.days[k]) return null; return {u:u,k:k,raw:t.days[k]};
+}
+function uxWriteDocs(uid,dayId,list){
+  if(!uxMom()||!uid||dayId==null) return false; const x=uxRawDay(uid,dayId); if(!x) return false;
+  const docs=uxCleanDocs(list), v=docs.length?docs:null, raw=x.raw;
+  if(v){ if(!raw.res||typeof raw.res!=="object") raw.res={}; raw.res.docs=v; }
+  else if(raw.res&&typeof raw.res==="object"){ delete raw.res.docs; if(!Object.keys(raw.res).length) delete raw.res; }
+  if(typeof utTouched==="function") utTouched(x.u);
+  if(uxLive()) db.ref("unitStudies/"+uid+"/track/days/"+x.k+"/res/docs").set(v);
+  uxRe(); return true;
+}
+function uxWriteSnack(uid,dayId,value){
+  if(!uxMom()||!uid||dayId==null) return false; const x=uxRawDay(uid,dayId); if(!x) return false;
+  const v=uxCleanSnack(value);
+  if(v) x.raw.snack=v; else delete x.raw.snack;
+  if(typeof utTouched==="function") utTouched(x.u);
+  if(uxLive()) db.ref("unitStudies/"+uid+"/track/days/"+x.k+"/snack").set(v);
+  uxRe(); return true;
+}
+// ── 🖼 the editor's actions — each reads the day fresh, then writes the whole docs list once ──
+function uxDocsOf(uid,dayId){ const u=(typeof utUnits==="function")?utUnits()[uid]:null; const d=(u&&typeof utDay==="function")?utDay(u,dayId):null; return ((d&&d.res&&d.res.docs)||[]).map(o=>Object.assign({},o)); }
+function uxVal(id){ const el=(typeof document!=="undefined"&&document.getElementById)?document.getElementById(id):null; return el?String(el.value||""):""; }
+function uxSet(uid,dayId,msg){ uxStatus[uid+"|"+dayId]=msg||""; const el=(typeof document!=="undefined"&&document.getElementById)?document.getElementById("ux-st-"+uxK(uid,dayId)):null; if(el) el.textContent=msg||""; }
+function uxDocAdd(uid,dayId,doc){ if(!uxMom()) return false; const L=uxDocsOf(uid,dayId); if(L.length>=UX_MAX_DOCS){ uxSet(uid,dayId,"That\u2019s "+UX_MAX_DOCS+" already \u2014 take one off first."); return false; } L.push(doc); return uxWriteDocs(uid,dayId,L); }
+function uxDocAddLink(uid,dayId){
+  if(!uxMom()) return false; const k=uxK(uid,dayId); const url=uxUrl(uxVal("ux-"+k+"-url"));
+  if(!url){ uxSet(uid,dayId,"Paste a link that starts with https://"); return false; }
+  const kind=uxKindOf(url); return uxDocAdd(uid,dayId,{kind:kind,title:uxStr(uxVal("ux-"+k+"-title"),120)||UX_KIND_NAME[kind],url:url});
+}
+function uxDocTitle(uid,dayId,i,val){ if(!uxMom()) return false; const L=uxDocsOf(uid,dayId); if(!L[i]) return false; const t=uxStr(val,120); if(!t||t===L[i].title) return false; L[i].title=t; return uxWriteDocs(uid,dayId,L); }
+function uxDocMove(uid,dayId,i,dir){ if(!uxMom()) return false; const L=uxDocsOf(uid,dayId); const j=i+dir; if(!L[i]||j<0||j>=L.length) return false; const t=L[i]; L[i]=L[j]; L[j]=t; return uxWriteDocs(uid,dayId,L); }
+function uxDocRemove(uid,dayId,i){
+  if(!uxMom()) return false; const L=uxDocsOf(uid,dayId); if(!L[i]) return false;
+  if(typeof confirm==="function"&&!confirm("Take \u201C"+L[i].title+"\u201D off this day?")) return false;
+  L.splice(i,1); return uxWriteDocs(uid,dayId,L);
+}
+// a file: a picture (shrunk → picStore) or a PDF (its own put, application/pdf) — both under pictures/units/<unitId>/days/<dayId>/
+function uxPdfPath(uid,dayId,name){ const base=String(name||"document").replace(/\.pdf$/i,""); const p=(typeof picStorePath==="function")?picStorePath(["units",uid,"days",dayId,base]):"pictures/units/"+uxK(uid,dayId)+"_"+Date.now().toString(36)+".jpg"; return p.replace(/\.jpg$/,".pdf"); }
+function uxFileOk(file){
+  if(!file) return "Pick a file first.";
+  const pdf=/^application\/pdf$/i.test(String(file.type||""))||/\.pdf$/i.test(String(file.name||"")), img=/^image\//i.test(String(file.type||""));
+  if(!pdf&&!img) return "Please pick a picture or a PDF.";
+  if(pdf&&file.size>UX_PDF_MAX_MB*1024*1024) return "That PDF is too large (max "+UX_PDF_MAX_MB+" MB).";
+  return "";
+}
+async function uxDocFile(uid,dayId,input){
+  const file=input&&input.files&&input.files[0]; if(input) input.value=""; if(!uxMom()) return false;
+  const why=uxFileOk(file); if(why){ uxSet(uid,dayId,why); return false; }
+  if(uxDry()){ uxSet(uid,dayId,"Dry run \u2014 nothing uploaded, nothing written."); return false; }
+  const pdf=!/^image\//i.test(String(file.type||"")); const title=uxStr(uxVal("ux-"+uxK(uid,dayId)+"-title"),120)||uxStr(String(file.name||"").replace(/\.[^.]+$/,"").replace(/[_-]+/g," "),120)||UX_KIND_NAME[pdf?"pdf":"image"];
+  uxSet(uid,dayId,pdf?"Saving the PDF\u2026":"Saving the picture\u2026");
+  try{
+    let url="";
+    if(pdf){
+      if(typeof firebase==="undefined"||typeof firebase.storage!=="function") throw new Error("Storage isn\u2019t ready on this device");
+      const ref=firebase.storage().ref(uxPdfPath(uid,dayId,file.name));
+      await ref.put(file,{contentType:"application/pdf",cacheControl:"public,max-age=31536000"}); url=await ref.getDownloadURL();
+    } else {
+      if(typeof mastCompressImg!=="function"||typeof picStore!=="function") throw new Error("the photo tool isn\u2019t ready");
+      const dataUrl=await mastCompressImg(file,1600,0.85); url=await picStore(dataUrl,["units",uid,"days",dayId,title]);
+    }
+    if(!/^https:\/\//i.test(String(url||""))) throw new Error("no link came back \u2014 nothing saved");   // never a data URI in the record
+    uxSet(uid,dayId,""); uxDocAdd(uid,dayId,{kind:pdf?"pdf":"image",title:title,url:url});
+  }catch(e){ uxSet(uid,dayId,"Didn\u2019t save: "+(e&&e.message||e)); return false; }
+  return true;
+}
+// ── 🍎 the snack's boxes (the craft editor's look and parsers; supplies keep the "| mom" rule) ──
+function uxSnackLines(c){ return ((c&&c.supplies)||[]).map(s=>(s.qty?s.qty+" ":"")+s.name+(s.kids===false?" | mom":"")).join("\n"); }
+function uxSnackFromBoxes(uid,dayId){
+  const k=uxK(uid,dayId); const out={}; const t=uxStr(uxVal("ux-"+k+"-stitle"),120); if(t) out.title=t;
+  const steps=(typeof crParseSteps==="function")?crParseSteps(uxVal("ux-"+k+"-ssteps")):String(uxVal("ux-"+k+"-ssteps")).split(/\n+/).map(s=>s.trim()).filter(Boolean).map(s=>({text:s}));
+  if(steps.length) out.steps=steps;
+  const sup=(typeof utParseLines==="function")?utParseLines("supplies",uxVal("ux-"+k+"-ssup")):[]; if(sup.length) out.supplies=sup;
+  return Object.keys(out).length?out:null;
+}
+function uxSnackSave(uid,dayId){ if(!uxMom()) return false; return uxWriteSnack(uid,dayId,uxSnackFromBoxes(uid,dayId)); }
+// ── the editor (UNITTRACK's day editor hook) ──
+function uxEditorHTML(u,d){
+  if(!uxMom()||!u||!d) return ""; const k=uxK(u.id,d.id), a="'"+uxJ(u.id)+"','"+uxJ(d.id)+"'";
+  const inp='box-sizing:border-box;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif;background:#fff';
+  const btn=(c)=>'padding:5px 11px;border-radius:999px;border:1.5px solid '+c+';background:#fff;color:'+c+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+  const docs=(d.res&&d.res.docs)||[];
+  let h='<div data-ux-docs="'+uxEsc(k)+'" style="margin-top:8px;padding:8px 10px;border:1px dashed #93c5fd;border-radius:10px;background:#fff">';
+  h+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:#1d4ed8;margin-bottom:4px">\u{1F5BC} Pictures &amp; documents \u2014 they open when the day\u2019s card is tapped</div>';
+  docs.forEach((x,i)=>{
+    h+='<div style="display:flex;gap:6px;align-items:center;margin-top:4px">'+(x.kind==="image"?'<img src="'+uxEsc(x.url)+'" alt="" style="width:34px;height:34px;object-fit:cover;border-radius:6px;flex:none">':'<span class="memoji" style="width:34px;text-align:center;font-size:20px;flex:none">'+UX_KIND_ICON[x.kind]+'</span>');
+    h+='<input type="text" value="'+uxEsc(x.title)+'" onchange="uxDocTitle('+a+','+i+',this.value)" aria-label="Title" style="'+inp+';flex:1;min-width:0">';
+    h+='<button onclick="uxDocMove('+a+','+i+',-1)" title="Move up" '+(i?'':'disabled ')+'style="border:none;background:none;color:#64748b;cursor:pointer;padding:0 3px">\u25B2</button><button onclick="uxDocMove('+a+','+i+',1)" title="Move down" '+(i<docs.length-1?'':'disabled ')+'style="border:none;background:none;color:#64748b;cursor:pointer;padding:0 3px">\u25BC</button><button onclick="uxDocRemove('+a+','+i+')" title="Take it off this day" style="border:none;background:none;color:#9ca3af;cursor:pointer;padding:0 4px;font-size:14px">\u2715</button></div>';
+  });
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px"><input id="ux-'+k+'-title" type="text" placeholder="Title (e.g. Gratitude scavenger hunt)" style="'+inp+';flex:1 1 180px;min-width:0">';
+  h+='<label style="'+btn("#1d4ed8")+'">\u{1F4F7} Add a picture<input type="file" accept="image/*" onchange="uxDocFile('+a+',this)" style="display:none"></label>';
+  h+='<label style="'+btn("#1d4ed8")+'">\u{1F4C4} Add a PDF<input type="file" accept="application/pdf,.pdf" onchange="uxDocFile('+a+',this)" style="display:none"></label></div>';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px"><input id="ux-'+k+'-url" type="url" placeholder="\u2026or paste a link (https://)" style="'+inp+';flex:1 1 220px;min-width:0"><button onclick="uxDocAddLink('+a+')" style="'+btn("#1d4ed8")+'">+ Add the link</button></div>';
+  h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px"><span id="ux-st-'+k+'" style="font-size:11px;color:#1d4ed8;font-weight:700">'+uxEsc(uxStatus[u.id+"|"+d.id]||"")+'</span><span style="font-size:10px;color:var(--muted)">A picture is shrunk and stored by link; a PDF up to '+UX_PDF_MAX_MB+' MB. Type the title first, then add.</span></div></div>';
+  const s=d.snack||null;
+  h+='<div data-ux-snack="'+uxEsc(k)+'" style="margin-top:8px;padding:8px 10px;border:1px dashed #86efac;border-radius:10px;background:#fff">';
+  h+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;color:#15803d;margin-bottom:4px">\u{1F34E} Snack on this day</div>';
+  h+='<input id="ux-'+k+'-stitle" type="text" value="'+uxEsc((s&&s.title)||"")+'" placeholder="What they eat (e.g. Pilgrim corn muffins)" style="'+inp+';width:100%">';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><div style="flex:2 1 220px;min-width:0"><div style="font-size:10px;font-weight:800;color:var(--muted)">Steps \u2014 one per line</div><textarea id="ux-'+k+'-ssteps" rows="3" placeholder="Wash the apples\nSlice them\nDip in caramel" style="'+inp+';width:100%;resize:vertical">'+uxEsc((typeof crLinesSteps==="function")?crLinesSteps(s):"")+'</textarea></div>';
+  h+='<div style="flex:1 1 160px;min-width:0"><div style="font-size:10px;font-weight:800;color:var(--muted)">Supplies \u2014 qty name (| mom = not on the kids\u2019 line)</div><textarea id="ux-'+k+'-ssup" rows="3" placeholder="4 apples\ncaramel dip\nknife | mom" style="'+inp+';width:100%;resize:vertical">'+uxEsc(uxSnackLines(s))+'</textarea></div></div>';
+  h+='<div style="display:flex;gap:8px;align-items:center;margin-top:8px"><button onclick="uxSnackSave('+a+')" style="padding:6px 14px;border-radius:10px;border:none;background:#15803d;color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save the snack</button><span style="font-size:10.5px;color:var(--muted)">Its supplies join the Sunday list the week the day is laid, beside the craft\u2019s.</span></div></div>';
+  return h;
+}
+// ── the day card (DAYCARD's hooks) ──
+function uxPicOpen(gid,i){
+  if(typeof unitGalleryOpen!=="function"){ const L=(typeof _ugReg!=="undefined"&&_ugReg[gid])||[]; const p=L[i]; if(p&&typeof window!=="undefined"&&window.open) window.open(p.url,"_blank","noopener"); return; }
+  unitGalleryOpen(gid); if(typeof _ug!=="undefined"&&_ug&&_ug.pics&&i>0&&i<_ug.pics.length){ _ug.i=i; if(typeof _ugDraw==="function") _ugDraw(); }
+}
+function uxDocsCardHTML(g){
+  const d=g&&g.day, docs=(d&&d.res&&d.res.docs)||[]; if(!docs.length) return "";
+  const pics=docs.filter(x=>x.kind==="image"); const gid="ux"+uxHash(String(d.uid||"")+"|"+String(d.id||"")).toString(36);   // an opaque id: no title or link in the onclick
+  if(pics.length&&typeof _ugReg!=="undefined") _ugReg[gid]=pics.map(p=>({url:p.url,by:p.by||""}));
+  const tile='display:flex;flex-direction:column;align-items:center;gap:6px;width:150px;padding:0;border:none;background:none;color:#fff;cursor:pointer;text-decoration:none;font-family:\'DM Sans\',sans-serif';
+  const cap=t=>'<span style="font-size:16px;font-weight:800;color:#fff;text-align:center;line-height:1.2;overflow-wrap:anywhere">'+uxEsc(t)+'</span>';
+  let h='<div style="display:flex;gap:14px;flex-wrap:wrap">', pi=0;
+  docs.forEach(x=>{
+    if(x.kind==="image"){ h+='<button data-ux-pic="1" onclick="uxPicOpen(\''+gid+'\','+(pi++)+')" style="'+tile+'"><img src="'+uxEsc(x.url)+'" alt="" style="width:150px;height:150px;object-fit:cover;border-radius:16px;border:2px solid rgba(255,255,255,.2)">'+cap(x.title)+'</button>'; }
+    else h+='<a data-ux-open="'+x.kind+'" href="'+uxEsc(x.url)+'" target="_blank" rel="noopener noreferrer" style="'+tile+'"><span class="memoji" style="width:150px;height:150px;border-radius:16px;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:64px">'+UX_KIND_ICON[x.kind]+'</span>'+cap(x.title)+'</a>';
+  });
+  h+='</div>';
+  return (typeof dcSection==="function")?dcSection("\u{1F5BC} Pictures &amp; documents",h):'<section>'+h+'</section>';
+}
+function uxSnackCardHTML(g){
+  const c=g&&g.day&&g.day.snack; if(!c||(!c.title&&!(c.steps||[]).length&&!(c.supplies||[]).length)) return "";
+  let h='<div style="font-size:26px;font-weight:800;color:#fff">'+uxEsc(c.title||"The snack")+'</div>';
+  if((c.steps||[]).length){ h+='<ol style="margin:10px 0 0;padding-left:28px;font-size:22px;line-height:1.45;color:#fff">'; c.steps.forEach(s=>{ h+='<li style="margin:6px 0">'+uxEsc(s.text||"")+(s.img?'<div><img src="'+uxEsc(s.img)+'" alt="" style="max-width:min(100%,420px);max-height:40vh;border-radius:14px;margin-top:6px;display:block"></div>':'')+'</li>'; }); h+='</ol>'; }
+  if((c.supplies||[]).length) h+='<div style="margin-top:10px;font-size:17px;color:#fde68a;font-weight:700">\u{1F392} '+uxEsc(c.supplies.map(s=>(s.qty?s.qty+" ":"")+s.name).join(" \u00B7 "))+'</div>';
+  return (typeof dcSection==="function")?dcSection("\u{1F34E} Snack",h):'<section>'+h+'</section>';
+}
+// ── the Days table (utRowHTML / utCellList hooks): 🖼 N and 🍎 badges, the snack's supplies as "🍎 …" ──
+function uxRowBadges(d){ const n=((d&&d.res&&d.res.docs)||[]).length; return (n?' <span title="pictures &amp; documents" style="font-size:10px">\u{1F5BC} '+n+'</span>':'')+(d&&d.snack?' <span title="a snack" style="font-size:10px">\u{1F34E}</span>':''); }
+function uxSnackSupplyCells(d){ return ((d&&d.snack&&d.snack.supplies)||[]).map(x=>"\u{1F34E} "+(x.qty?x.qty+" ":"")+x.name); }
+// UNITDAY_EXTRAS_END
 // UNITSTAB_START — 📚 All units · 🧒 one tab per kid · 🏡 Family ("One shape" §4 the Units page; BRIEF_units_build_2026-10-27.md
 //   T3; her go 2026-10-27). A VIEW over data that already exists plus the unit tracks: the only writes are the buttons that write
 //   today (enroll, the notebook switch, a stage move-up, the staged + Kid form) and the two buttons other steps add (✚ Build,
