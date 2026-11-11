@@ -156,6 +156,7 @@ function envSummary(kid,ctx){
   if(typeof cpSkillSummary==="function"){ const sk=cpSkillSummary(kid,M,now); if(sk) out.skills=sk; }   // 🧩 CPSKILL: summary.skills on the class site only (null for Howe and Lincoln)
   if(typeof cpWatchSum==="function"){ const rv=cpWatchSum(kid,M,now); if(rv) out.review=rv; }   // 🧠 CPWATCH: summary.review, the parent drill watch (the class site only; null for Howe and Lincoln)
   if(typeof cpWeekSum==="function") cpWeekSum(kid,out,M,u);   // 📊 CPWEEK: each day's cards split by section, days.<date>.by.<section> = {n,c,m,secs} (counts only; Lincoln's mirror too, §8.11)
+  if(typeof cpPtsSum==="function") cpPtsSum(kid,out,M,u,ctx);   // ⭐ CPPOINTS: days.<date> + {due, done, cleared, extra, games, stars}, summary.stars (Lincoln's mirror too: his stars are what the scheme WOULD give, starsInfo)
   return out;
 }
 function envmHash(s){ const o=Object.assign({},s); delete o.at; const str=JSON.stringify(o); let h=5381; for(let i=0;i<str.length;i++) h=((h*33)^str.charCodeAt(i))>>>0; return h.toString(36)+":"+str.length; }
@@ -340,7 +341,7 @@ function envmSendNow(){ if(typeof momHere!=="function"||!momHere()||!envmReady()
 //     the password lives only in Auth), and the © + license line. LOCKED SEASON (release/locked, Adrienne only; AUTO after 2027-04-24 —
 //     envsLockState) → the "season closed" card and nothing else loads; data is kept; an admin's {locked:false, at:<after that date>}
 //     reopens it for the next season.
-//   · WRITES from this block (live, never in demo or dry run): bank/<kid>/adjustments (ENVS_STARS stars per finished sitting, bankDirect);
+//   · WRITES from this block (live, never in demo or dry run): bank/<kid>/adjustments (stars for a finished sitting, bankDirect — how many: CPPOINTS);
 //     the first signed-in boot's auto-enroll of the family's kid into the unit, every deck held (her 8.4: "a kid can start at school before
 //     the parent ever opens the app"), through the app's own _ustApply/_ustWrite; settings/pin from the parent's ⚙️
 //     panel (the app's own path; the 🎨 Color card went with CPGEAR 2026-10-28). Everything else here is a read or a screen.
@@ -769,14 +770,13 @@ function envsTipsHtml(role){
 }
 // ⇢ classes.js: CPGEAR
 function envsSetPin(){ const v=((document.getElementById("envs-pin")||{}).value||"").trim(); if(!/^\d{4}$/.test(v)){ envsToast("A PIN is exactly 4 digits."); return; } if(envsDemo()){ envsToast("demo: would set settings/pin"); return; } try{ APP_PIN=v; HA_LS.setItem("ha_app_pin",v); if(db&&!_dryRun()) db.ref("settings/pin").set(v); envsToast("PIN saved"); }catch(e){ envsToast("Couldn\u2019t save: "+((e&&e.message)||e)); } }
-// ⭐ stars per finished sitting (the one line in _mstSaveInner; her 8.5 "stars for a finished study sitting: yes, small fixed count")
+// ⭐ stars for a finished sitting (the one line in _mstSaveInner; her 8.5 "stars for a finished study sitting: yes, small fixed count"; HOW MANY is
+// CPPOINTS' since 2026-11-10 — her approved scheme replaced the flat ENVS_STARS per sitting)
 function envSiteSittingDone(kid,done){
   if(!envSiteOn()||!(_envs.role==="kid"||_envs.role==="parent")||!kid||kid!==_envs.kid) return false;
   if(!done||!(done.total>0)) return false;
   if(typeof cpdtPickSend==="function") cpdtPickSend(kid);   // 🧠 CPDRILLTEACHER: a sitting moved cards, so today's drillPick may have changed
-  if(envsDemo()){ _envs.bankDemo+=ENVS_STARS; envsToast("\u2B50 +"+ENVS_STARS+" for a finished sitting (demo: would write bank/"+kid+"/adjustments)"); return true; }
-  if(typeof _dryRun==="function"&&_dryRun()) return false;
-  try{ if(typeof bankDirect==="function"){ bankDirect(kid,ENVS_STARS,"\u{1F33F} Envirothon study sitting"); envsToast("\u2B50 +"+ENVS_STARS+" stars"); return true; } }catch(e){}
+  if(typeof cpPtsSitting==="function") return cpPtsSitting(kid,done);   // ⭐ CPPOINTS (2026-11-10): Day done 3 · Part 1 · Extra 1 per 5 cards — the kid's own sitting only, once a day (its ledger)
   return false;
 }
 // the first signed-in boot (kid or parent) enrolls the family's kid in the unit, every deck held — through the app's own enroll (every stage, so
@@ -1274,6 +1274,7 @@ function envcStudentHtml(sid){
   let h='<div class="envs-card"><div class="envs-row"><button class="envs-btn sec" onclick="envcView(\'grid\')">← class</button><div style="flex:1"><div class="envs-h2" style="margin:0">'+envcEsc(envcName(s))+(envcApp(s)==="howe"?' · Howe Academy app':'')+'</div><div class="envs-muted">'+(sm?'content v'+(sm.unitVer||1)+' · streak '+((sm.streak&&sm.streak.days)||0)+' d · '+Object.keys(sm.days||{}).filter(k=>envsDaysAgo(k)<30).length+' study days this month · last mirrored '+envcEsc(envsWhen(sm.at?envsDayKey(sm.at):null)):'no study mirrored yet')+'</div></div></div></div>';
   if(typeof cpWatchStudentHtml==="function") h+=cpWatchStudentHtml(sid);   // 🧠 CPWATCH: ⚠ the parent's drill not run, with Leave it
   if(typeof cpMoveBackStudentHtml==="function") h+=cpMoveBackStudentHtml(sid);   // ↩ CPMOVEBACK: the teacher moves the reviews back (or lets the parent choose again)
+  if(typeof cpPtsStudentHtml==="function") h+=cpPtsStudentHtml(sid);   // ⭐ CPPOINTS: ⭐ This week — stars, days done, extra cards, games
   h+='<div class="envs-card"><div class="envs-h2">Stations</div>'+envsStationRowsHtml(sm,{weak:true})+'</div>';
   if(typeof cpSecStudentHtml==="function") h+=cpSecStudentHtml(sid);   // 🎚 CPSECTIONS: On · Review only · Off per section
   if(typeof cpSpecStudentHtml==="function") h+=cpSpecStudentHtml(sid);   // 🏅 CPSPECIALIST: the 🏅 Specialist card
