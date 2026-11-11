@@ -8,8 +8,11 @@
 //   · Stage 1 = "Sharks" (picture → name, no backs); Stage 2 = "Shark Facts" (one short fact each, its source kept)
 //   · staged enroll (_ustApply): Stage 1 seeds only Sharks (3 to start), Stage 2 only Shark Facts with the fact as answer
 //   · no family or kid names, no enrolled / kidStage — the draft enrolls nobody
+// v2 (her words 2026-11-10, told it had 18 of 500+ species: "i want a bigger list for sure"): 56 sharks. v1 was imported
+//   into a live database that night, so its 18 cards stay first and byte-identical (names, order, groups, facts, pictures,
+//   credits) — checked against the v1 commit itself; the new sharks are appended, each with a one-sentence fact.
 //   run: node test_sharks_unit_draft.js
-const fs = require("fs"), path = require("path"), vm = require("vm");
+const fs = require("fs"), path = require("path"), vm = require("vm"), cp = require("child_process");
 const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 const raw = fs.readFileSync(path.join(__dirname, "sharks_unit_DRAFT.json"), "utf8");
 const u = JSON.parse(raw);
@@ -36,7 +39,9 @@ ok("two stages: 1 picture & name, 2 facts — a staged unit (enroll picks the st
 console.log("── the decks ──");
 ok("deck 1 is Sharks: flip, picture → name, 3 at a time, stage 1", D1.key === "Sharks" && D1.mode === "flip" && D1.flipFace === "name" && D1.introCap === 3 && D1.stage === 1);
 ok("deck 2 is Shark Facts: flip, name + picture → fact, 3 at a time, stage 2", D2.key === "Shark Facts" && D2.mode === "flip" && D2.flipFace === "desc" && D2.introCap === 3 && D2.stage === 2);
-ok("16–20 sharks, the same ones in both decks, same order", D1.cards.length >= 16 && D1.cards.length <= 20 && JSON.stringify(D1.cards.map(c => c.name)) === JSON.stringify(D2.cards.map(c => c.name)), D1.cards.length);
+ok("40–60 sharks, the same ones in both decks, same order", D1.cards.length >= 40 && D1.cards.length <= 60 && JSON.stringify(D1.cards.map(c => c.name)) === JSON.stringify(D2.cards.map(c => c.name)), D1.cards.length);
+ok("no two sharks share a name, even ignoring capitals and accents", new Set(D1.cards.map(c => c.name.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase())).size === D1.cards.length);
+ok("every card is in one of the five v1 groups", D1.cards.concat(D2.cards).every(c => ["Famous Sharks", "Giant Sharks", "Open-Ocean & Reef Sharks", "Sea-Floor Sharks", "Deep & Cold Sharks"].includes(c.group)));
 decks.forEach(d => {
   const names = d.cards.map(c => c.name), orders = d.cards.map(c => c.order);
   ok(d.key + ": names unique and non-empty", new Set(names).size === names.length && names.every(n => typeof n === "string" && n.trim() === n && n.length > 0));
@@ -46,6 +51,25 @@ decks.forEach(d => {
 });
 ok("Sharks cards have no back (Pre-K: picture and name only)", D1.cards.every(c => c.def == null && c.bio == null && c.info == null));
 ok("every Shark Facts card has one short fact (≤ 130 chars, ends with . or !)", D2.cards.every(c => typeof c.def === "string" && c.def.length >= 20 && c.def.length <= 130 && /[.!]$/.test(c.def)), D2.cards.map(c => c.def.length));
+const sentences = s => (s.match(/[.!?](\s|$)/g) || []).length;
+ok("every shark added in v2 has a one-sentence fact (v1's 18 keep their words as imported)", D2.cards.slice(18).every(c => sentences(c.def) === 1), D2.cards.slice(18).filter(c => sentences(c.def) !== 1).map(c => c.name));
+
+console.log("── v1's 18 sharks are untouched (v1 is in a live database) ──");
+{
+  // the v1 commit itself, so this still means something once v2 is on main; origin/main only if that commit isn't here
+  let v1 = null;
+  for (const ref of ["b758651", "origin/main"]) { try { v1 = JSON.parse(cp.execSync("git show " + ref + ":sharks_unit_DRAFT.json", { cwd: __dirname, maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "ignore"] }).toString()); if (v1.version === 1) break; v1 = null; } catch (e) { v1 = null; } }
+  ok("v1 found in git (the 18 cards as imported)", !!v1 && v1.decks[0].cards.length === 18);
+  if (v1) {
+    ok("same id and title; version 2", u.id === v1.id && u.title === v1.title && u.version === 2);
+    ok("same stages and the same deck settings", JSON.stringify(u.stages) === JSON.stringify(v1.stages) && decks.every((d, i) => JSON.stringify(Object.assign({}, d, { cards: 0 })) === JSON.stringify(Object.assign({}, v1.decks[i], { cards: 0 }))));
+    ok("both decks: the first 18 cards are v1's, field for field (name, group, order, stage, fact)", decks.every((d, i) => JSON.stringify(d.cards.slice(0, 18)) === JSON.stringify(v1.decks[i].cards)));
+    const v1keys = Object.keys(v1.visuals);
+    ok("v1's 36 pictures and credit lines are byte-identical", v1keys.length === 36 && v1keys.every(k => u.visuals[k] && u.visuals[k].imageUrl === v1.visuals[k].imageUrl && u.visuals[k].credit === v1.visuals[k].credit));
+    ok("v1's 18 credits come first, unchanged", JSON.stringify(u.credits.slice(0, 18)) === JSON.stringify(v1.credits));
+    ok("new sharks are appended: order 19…n, none reuses a v1 name", D1.cards.slice(18).every((c, i) => c.order === 19 + i && !v1.decks[0].cards.some(o => o.name === c.name)));
+  }
+}
 
 console.log("── the pictures ──");
 const vkeys = Object.keys(u.visuals || {}), want = allCards.map(x => x.d.key + "_" + x.c.name);
@@ -84,7 +108,7 @@ console.log("── staged enroll, the real _ustApply ──");
   ctx.masteryData = {};
   const w = ctx._ustApply(u, "kid", 1, "", "", "");
   const items = Object.values(w.iu), bank = Object.values(w.bu);
-  ok("Stage 1: only Sharks cards — 3 start (introCap), all 18 wait in the bank", items.length === 3 && items.every(i => i.subject === "Sharks" && i.status === "introduction") && bank.length === D1.cards.length && bank.every(b => b.cat === "Sharks"), [items.length, bank.length]);
+  ok("Stage 1: only Sharks cards — 3 start (introCap), every shark waits in the bank", items.length === 3 && items.every(i => i.subject === "Sharks" && i.status === "introduction") && bank.length === D1.cards.length && bank.every(b => b.cat === "Sharks"), [items.length, bank.length]);
   ok("Stage 1: the first three are the first three sharks, no answer (the kid names it)", JSON.stringify(items.map(i => i.prompt)) === JSON.stringify(D1.cards.slice(0, 3).map(c => c.name)) && items.every(i => i.answer == null));
   ok("Stage 1: no definitions written, no deck held", Object.keys(w.defs).length === 0 && Object.keys(w.hold).length === 0 && w.modes.Sharks === "flip" && !("Shark Facts" in w.modes));
   // Stage 2 on top of Stage 1 (Mom's "move up")
@@ -99,7 +123,7 @@ console.log("── staged enroll, the real _ustApply ──");
 console.log("── size ──");
 const total = Buffer.byteLength(raw), pics = sizes.reduce((a, b) => a + b, 0);
 console.log("  file " + (total / 1048576).toFixed(2) + " MB · " + sizes.length + " pictures (" + sizes.length / 2 + " different) · largest " + Math.round(Math.max(...sizes) / 1024) + " KB");
-ok("the whole draft is under 2 MB", total < 2 * 1048576, total);
+ok("the whole draft is under 6 MB (it's a Realtime Database node; ~4.5 MB with 56 sharks)", total < 6 * 1048576, total);
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
