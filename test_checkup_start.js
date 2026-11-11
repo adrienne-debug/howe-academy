@@ -9,7 +9,7 @@ const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 const cut = (a, b) => { const i = src.indexOf(a), j = src.indexOf(b, i); if (i < 0 || j < 0) throw new Error("markers " + a); return src.slice(i, j); };
 function slice(name) { const i = src.indexOf("function " + name + "("); if (i < 0) throw new Error("missing " + name);
   let d = 0; for (let k = src.indexOf("{", i); k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}") { d--; if (!d) return src.slice(i, k + 1); } } }
-const CODE = cut("// AAS_START", "// AAS_END") + "\n" + ["_ustCards", "_ustFamilies", "_ustFamNum", "_ustStageDef", "_ustStagesWithCards"].map(slice).join("\n") + "\n"
+const CODE = cut("// AAS_START", "// AAS_END") + "\n" + ["_ustCards", "_ustFamilies", "_ustFamNum", "_ustStageDef", "_ustStagesWithCards"].map(slice).join("\n") + "\n" + slice("cap") + "\n"   // KIDNAME_ROSTER: ckStartHtml names the kid through cap()
   + cut("// CHECKUP_START", "// CHECKUP_END") + "\n" + cut("// CKSTART_START", "// CKSTART_END");
 let pass = 0, fail = 0;
 const ok = (n, c, x) => { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  " + JSON.stringify(x) : "")); } };

@@ -17,7 +17,9 @@ const a = src.indexOf("// DIGEST_START");
 const b = src.indexOf("// DIGEST_END");
 if (a < 0 || b < 0) { console.error("DIGEST markers not found"); process.exit(1); }
 const block = src.slice(a, b);
-const D = new Function(block + `; return {digestDetect,digestTriage,digestFilterModelIds,digestBuildWeekReport,
+// KIDNAME_ROSTER: digestRecordHtml names kids through the real cap() (roster name, else the capitalized id)
+const capSrc = src.match(/^function cap\(s\)\{[^\n]*\}$/m)[0];
+const D = new Function(capSrc + "\n" + block + `; return {digestDetect,digestTriage,digestFilterModelIds,digestBuildWeekReport,
   dgDetectBrainBreakCluster,dgDetectSprintSlide,dgDetectSubjectSlippage,dgDetectCarryStacking,dgDetectGateStall,
   dgIn,dgRange,dgKeyMinusDays,digestRecordHtml,dgSafeKeys};`)();
 
