@@ -41287,7 +41287,8 @@ function uxSnackSupplyCells(d){ return ((d&&d.snack&&d.snack.supplies)||[]).map(
 //   · THE DAY CARD (DAYCARD — the big screen and 📺 Open today's card, the same view): "🎲 Game" right after 🍎 Snack — the title,
 //     "⏱ N min · 👥 players", the steps, the supplies (as Craft draws them), then two controls only when the game asks:
 //     TIMER — a big mm:ss, Start / Pause / Reset; the Start tap unlocks sound (bbAudioUnlock, as the Brain Break does) and the end
-//     plays the Brain Break chime (bbChime) once; nothing starts by itself; the zero flash is off under prefers-reduced-motion.
+//     plays the Brain Break chime (bbChime) once; nothing starts by itself (no standing interval: a setTimeout
+//     chain steps once a second only while a countdown runs, and stops on Pause / Reset / zero / leaving the card); the zero flash is off under prefers-reduced-motion.
 //     SCOREBOARD — one row per kid on today's card (present, names from KID_NAME), big +1 / −1 and a tally, a "Clear" link. Kept in
 //     memory on this screen only: no Firebase write, no points (no bankDirect, ever).
 //     A day without a game draws byte-for-byte as before.
@@ -41300,7 +41301,7 @@ const UGM_PLAYERS_LABEL={"everyone":"Everyone together","teams":"Teams","one at 
 const UGM_TIMERS=[30,60,90,120];
 let ugmTimers={};   // {<uid>|<dayId>: {total, left, endAt, running, done}} — the day card's countdowns, this screen only
 let ugmScores={};   // {<uid>|<dayId>: {<kid>: n}} — the scoreboard's tallies, this screen only (never written)
-let ugmInt=null;
+let ugmT={};       // {<uid>|<dayId>: setTimeout id} — the one pending step of a countdown that is running (no standing interval)
 function ugmMom(){ return (typeof momHere==="function")?momHere():false; }
 function ugmLive(){ return !!(typeof db!=="undefined"&&db)&&!((typeof _dryRun==="function")&&_dryRun()); }
 function ugmEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
@@ -41387,7 +41388,7 @@ function ugmEditorHTML(u,d){
   h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px"><button onclick="ugmSaveFromBoxes('+a+')" style="padding:6px 14px;border-radius:10px;border:none;background:#6d28d9;color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Save the game</button><span style="font-size:10.5px;color:var(--muted)">Just for fun \u2014 no points. Its supplies join the Sunday list beside the craft\u2019s. A notebook page uses the game\u2019s name and steps.</span></div></div>';
   return h;
 }
-// ── the timer: pure steps (tested), then the screen's one interval ──
+// ── the timer: pure steps (tested), then a setTimeout chain that runs only while it counts ──
 function ugmTimerNew(total){ total=Math.max(1,Math.round(Number(total)||0)); return {total:total,left:total,endAt:0,running:false,done:false}; }
 function ugmTick(st,now){
   if(!st||!st.running) return st; const left=Math.max(0,Math.ceil((st.endAt-now)/1000));
@@ -41407,19 +41408,24 @@ function ugmTimerInnerHTML(key){
   return h;
 }
 function ugmTimerPaint(key){ const el=(typeof document!=="undefined"&&document.getElementById)?document.getElementById("ugm-timer-"+ugmK.apply(null,String(key).split("|"))):null; if(el) el.innerHTML=ugmTimerInnerHTML(key); return !!el; }
-function ugmLoop(){
-  const now=Date.now(); let any=false;
-  Object.keys(ugmTimers).forEach(key=>{ const st=ugmTimers[key]; if(!st||!st.running) return; const nx=ugmTick(st,now); ugmTimers[key]=nx;
-    const shown=ugmTimerPaint(key); if(nx.done){ if(shown&&typeof bbChime==="function") bbChime(); } else any=true; });
-  if(!any&&ugmInt){ clearInterval(ugmInt); ugmInt=null; }
+// The countdown steps by a setTimeout chain, once a second on the second, ONLY while a timer is counting: Start begins it;
+// Pause, Reset, zero, or the card no longer on screen ends it (perf budget 2026-11-11: no new standing interval on the LG).
+function ugmNext(st,now){ if(!st||!st.running) return 0; const ms=(st.endAt-now)%1000; return Math.max(50,ms>0?ms:1000); }
+function ugmTimerEl(key){ return (typeof document!=="undefined"&&document.getElementById)?document.getElementById("ugm-timer-"+ugmK.apply(null,String(key).split("|"))):null; }
+function ugmStop(key){ if(ugmT[key]!=null&&typeof clearTimeout==="function") clearTimeout(ugmT[key]); delete ugmT[key]; }
+function ugmSchedule(key){ ugmStop(key); const st=ugmTimers[key]; if(!st||!st.running||typeof setTimeout!=="function") return false; ugmT[key]=setTimeout(function(){ ugmStep(key); },ugmNext(st,Date.now())); return true; }
+function ugmStep(key){
+  delete ugmT[key]; const st=ugmTimers[key]; if(!st||!st.running) return; const now=Date.now();
+  if(!ugmTimerEl(key)){ ugmTimers[key]=ugmPauseSt(st,now); return; }   // left the card: the timer holds where it was
+  const nx=ugmTick(st,now); ugmTimers[key]=nx; ugmTimerPaint(key);
+  if(nx.done){ if(typeof bbChime==="function") bbChime(); } else ugmSchedule(key);
 }
 function ugmStart(key){
   if(typeof bbAudioUnlock==="function") bbAudioUnlock();   // inside the tap, as the Brain Break does — tablets block sound otherwise
-  const st=ugmTimers[key]; if(!st) return false; ugmTimers[key]=ugmStartSt(st,Date.now()); ugmTimerPaint(key);
-  if(!ugmInt&&typeof setInterval==="function") ugmInt=setInterval(ugmLoop,250); return true;
+  const st=ugmTimers[key]; if(!st) return false; ugmTimers[key]=ugmStartSt(st,Date.now()); ugmTimerPaint(key); ugmSchedule(key); return true;
 }
-function ugmPause(key){ const st=ugmTimers[key]; if(!st) return false; ugmTimers[key]=ugmPauseSt(st,Date.now()); ugmTimerPaint(key); return true; }
-function ugmReset(key){ const st=ugmTimers[key]; if(!st) return false; ugmTimers[key]=ugmResetSt(st); ugmTimerPaint(key); return true; }
+function ugmPause(key){ const st=ugmTimers[key]; if(!st) return false; ugmStop(key); ugmTimers[key]=ugmPauseSt(st,Date.now()); ugmTimerPaint(key); return true; }
+function ugmReset(key){ const st=ugmTimers[key]; if(!st) return false; ugmStop(key); ugmTimers[key]=ugmResetSt(st); ugmTimerPaint(key); return true; }
 // ── the scoreboard: pure steps (tested), display only — no write, no points ──
 function ugmScoreAdd(tally,kid,delta){ const t=Object.assign({},tally||{}); const n=(Number(t[kid])||0)+(Number(delta)||0); t[kid]=Math.max(0,n); return t; }
 function ugmScoreClear(){ return {}; }

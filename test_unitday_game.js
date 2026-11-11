@@ -35,7 +35,7 @@ const UNIT = () => ({ id: "fall", title: "Fall", emoji: "🍂", decks: [],
     { id: "d2", n: 2, t: "Why leaves fall", game: LEAF },
     { id: "d3", n: 3, t: "Thankful", nb: { activity: "gratitude_hunt" } }] } });
 function world(o) {
-  o = o || {}; const writes = [], intervals = [], chimes = [], unlocks = []; const dom = o.dom || {};
+  o = o || {}; const writes = [], intervals = [], timeouts = [], cleared = [], chimes = [], unlocks = []; const dom = o.dom || {};
   const ctx = { console, JSON, Object, Array, String, Number, Math, Set, Map, RegExp, Date, Promise, Error, parseInt, isNaN, isFinite, WeakMap, URL,
     unitStudies: { fall: o.unit || UNIT() }, momHere: () => o.mom !== false, _dryRun: () => !!o.dry,
     KID_NAME: { k1: "Ada", k2: "Ben" },
@@ -43,11 +43,12 @@ function world(o) {
     renderAll: () => { ctx.repaints = (ctx.repaints || 0) + 1; }, repaints: 0, confirm: () => true,
     document: { getElementById: id => (id in dom) ? dom[id] : null },
     setInterval: f => { intervals.push(f); return intervals.length; }, clearInterval: () => {},
+    setTimeout: (f, ms) => { timeouts.push({ f, ms }); return timeouts.length; }, clearTimeout: id => cleared.push(id),
     bbChime: () => chimes.push(1), bbAudioUnlock: () => unlocks.push(1),
     bankDirect: () => { throw new Error("bankDirect called"); } };
   vm.createContext(ctx);
   vm.runInContext(LR + "\n" + UT + "\n" + CR + "\n" + DC + "\n" + UA + "\n" + UX + "\n" + (o.noGame ? "" : GM), ctx);
-  return { ctx, writes, dom, intervals, chimes, unlocks };
+  return { ctx, writes, dom, intervals, timeouts, cleared, chimes, unlocks };
 }
 const G = (c, id, present) => { const u = c.unitStudies.fall; return { day: c.utRef("fall", c.utDay(u, id)), u: u, first: null, present: present || [] }; };
 const P_GAME = i => "unitStudies/fall/track/days/" + i + "/game";
@@ -63,7 +64,8 @@ ok("UNITDAY_GAME is a marked block; its hooks sit in utClean, utResOf, utCellLis
   ok("writes go through db only when db && !_dryRun; Mom-only on the writer and the editor", /function ugmLive\(\)\{ return !!\(typeof db!=="undefined"&&db\)&&!\(\(typeof _dryRun==="function"\)&&_dryRun\(\)\); \}/.test(GM) && /function ugmSave\(uid,dayId,value\)\{\n  if\(!ugmMom\(\)/.test(GM) && /function ugmEditorHTML\(u,d\)\{\n  if\(!ugmMom\(\)/.test(GM));
   ok("no points: no bankDirect (or any bank/award call) anywhere in the block's code", !/bankDirect|bankPts|awardPoints|addPoints/.test(GM.replace(/^\s*\/\/.*$/mg, "")) && /\bbankDirect\b/.test(src));
   ok("no 🔀 in the block; no kid's name", GM.indexOf("\u{1F500}") < 0 && !/Lincoln|Ellis|Lucy|Julian|Sara\b(?![,'’ ])/.test(GM.replace(/^\/\/.*$/mg, "")));
-  ok("nothing autoplays: the interval starts only inside ugmStart (a tap), which unlocks sound first", (GM.match(/setInterval\(/g) || []).length === 1 && /function ugmStart\(key\)\{\n  if\(typeof bbAudioUnlock==="function"\) bbAudioUnlock\(\);[\s\S]*?setInterval\(ugmLoop,250\)/.test(GM));
+  ok("no setInterval at all (perf budget 2026-11-11): the countdown is a setTimeout chain", !/setInterval/.test(GM.replace(/^\s*\/\/.*$/mg, "")) && (GM.match(/setTimeout\(/g) || []).length === 1);
+  ok("nothing autoplays: the chain starts only inside ugmStart (a tap), which unlocks sound first", /function ugmStart\(key\)\{\n  if\(typeof bbAudioUnlock==="function"\) bbAudioUnlock\(\);[^\n]*\n[^\n]*ugmSchedule\(key\)/.test(GM) && (GM.match(/ugmSchedule\(key\);/g) || []).length === 2);
   ok("the zero flash is under prefers-reduced-motion: no-preference only", /@media \(prefers-reduced-motion: no-preference\)\{\.ugm-zero\{animation:/.test(GM) && (GM.match(/animation:/g) || []).length === 1);
 }
 
@@ -125,13 +127,25 @@ console.log("\n── the timer ──");
   const box = { innerHTML: "" }; const w = world({ dom: { "ugm-timer-fall-d2": box } }), c = w.ctx;
   c.utTrack(c.unitStudies.fall).days[1].game = Object.assign({}, LEAF, { timer: 30 }); c.utTouched(c.unitStudies.fall);
   c.ugmCardHTML(G(c, "d2"));
-  ok("drawing the card starts nothing (no interval, no sound)", w.intervals.length === 0 && w.chimes.length === 0);
+  ok("drawing the card starts nothing (no timer step, no sound)", w.intervals.length === 0 && w.timeouts.length === 0 && w.chimes.length === 0);
   c.ugmStart("fall|d2");
-  ok("Start (a tap) unlocks sound and starts the one interval; the box repaints with ⏸ Pause", w.unlocks.length === 1 && w.intervals.length === 1 && /Pause/.test(box.innerHTML));
-  const t = vm.runInContext("ugmTimers", c)["fall|d2"]; t.endAt = Date.now() - 1; w.intervals[0]();
-  ok("at zero the chime plays once and the box says Time's up", w.chimes.length === 1 && /Time’s up/.test(box.innerHTML) && />0:00</.test(box.innerHTML));
-  w.intervals[0]();
-  ok("…and never again for that round", w.chimes.length === 1);
+  ok("Start (a tap) unlocks sound and queues ONE step for the next whole second; the box repaints with ⏸ Pause", w.unlocks.length === 1 && w.intervals.length === 0 && w.timeouts.length === 1 && w.timeouts[0].ms > 0 && w.timeouts[0].ms <= 1000 && /Pause/.test(box.innerHTML));
+  const T = () => vm.runInContext("ugmTimers", c)["fall|d2"];
+  T().endAt = Date.now() + 20500; w.timeouts[0].f();
+  ok("a step repaints the count (0:21) and queues exactly one next step, ~0.5 s to the next second", />0:21</.test(box.innerHTML) && w.timeouts.length === 2 && w.timeouts[1].ms >= 450 && w.timeouts[1].ms <= 500, w.timeouts.map(x => x.ms));
+  c.ugmPause("fall|d2");
+  ok("Pause clears the pending step and holds the time", w.cleared.indexOf(2) >= 0 && T().running === false && T().left === 21 && /Keep going/.test(box.innerHTML));
+  w.timeouts[1].f();
+  ok("a step that fires after Pause does nothing (no new step)", w.timeouts.length === 2);
+  c.ugmStart("fall|d2"); c.ugmReset("fall|d2");
+  ok("Reset clears the pending step; back to 0:30, stopped", w.cleared.indexOf(3) >= 0 && T().left === 30 && T().running === false && />0:30</.test(box.innerHTML));
+  c.ugmStart("fall|d2"); const n0 = w.timeouts.length; T().endAt = Date.now() - 1; w.timeouts[n0 - 1].f();
+  ok("at zero the chime plays once, the box says Time's up, and the chain ends", w.chimes.length === 1 && /Time\u2019s up/.test(box.innerHTML) && />0:00</.test(box.innerHTML) && w.timeouts.length === n0);
+  w.timeouts[n0 - 1].f();
+  ok("…and never again for that round", w.chimes.length === 1 && w.timeouts.length === n0);
+  c.ugmStart("fall|d2"); const n1 = w.timeouts.length; delete w.dom["ugm-timer-fall-d2"]; w.timeouts[n1 - 1].f();
+  ok("leaving the card ends the chain and holds the timer (paused, no chime)", w.timeouts.length === n1 && T().running === false && T().left > 0 && w.chimes.length === 1);
+  ok("ugmNext: the wait to the next whole second (never 0, never over 1 s)", c.ugmNext({ running: true, endAt: 10000 }, 7300) === 700 && c.ugmNext({ running: true, endAt: 10000 }, 7000) === 1000 && c.ugmNext({ running: true, endAt: 10000 }, 9990) === 50 && c.ugmNext({ running: false }, 0) === 0);
 }
 
 console.log("\n── the scoreboard ──");
