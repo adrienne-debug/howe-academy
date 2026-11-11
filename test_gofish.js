@@ -119,7 +119,7 @@ console.log("── math facts: the ask is typed; a wrong answer twice fails the
   const t0=st.turns[0];
   ok("tapping a hand card opens the produce step with the number pad",st.step.k==="produce"&&t0.act==="type"&&t0.typed===""&&/Type the answer/.test(st.msg));
   const html1=c.buildGofishHtml("#123456");
-  ok("the card shows its FRONT, never its back; the pad has 0–9, erase, check",html1.indexOf(">"+t0.pid.slice(2)+"<")>=0&&html1.indexOf(backOf(c,t0.pid))<0||(html1.indexOf("gf-big")>=0&&/gofishKey\('7'\)/.test(html1)&&/gofishCheck\(\)/.test(html1)&&!new RegExp('<span class="gf-txt">'+backOf(c,t0.pid)+'</span>').test(html1)));
+  ok("the card shows its FRONT, never its back; the pad has 0–9, erase, check",html1.indexOf(">"+t0.pid.slice(2)+"<")>=0&&html1.indexOf(backOf(c,t0.pid))<0||(html1.indexOf("gf-big")>=0&&/gofishKey\('7'\)/.test(html1)&&/gofishCheck\(\)/.test(html1)&&!new RegExp('<span class="gf-txt tf">'+backOf(c,t0.pid)+'</span>').test(html1)));
   c.gofishKey("9"); c.gofishKey("9"); c.gofishCheck();
   ok("wrong once → again, bonk, the typed box clears, still the kid's produce step",!t0.done&&t0.tries===1&&t0.typed===""&&w.dings[w.dings.length-1]==="bonk"&&st.step.k==="produce"&&/try again/.test(st.msg));
   c.gofishKey("9"); c.gofishCheck();
@@ -186,7 +186,7 @@ console.log("── word answers: pick from three of the deck's own backs ──
   const t=st.turns[0], own=backOf(c,t.pid);
   ok("three different backs, the card's own among them",t.act==="pick"&&t.opts.length===3&&t.opts.indexOf(own)>=0&&new Set(t.opts).size===3);
   const html=c.buildGofishHtml("#123456");
-  ok("the front shows big, the three backs are buttons",html.indexOf('<span class="gf-txt">'+t.pid.slice(2)+'</span>')>=0&&(html.match(/class="gf-opt"/g)||[]).length===3);
+  ok("the front shows big, the three backs are buttons",html.indexOf('<span class="gf-txt tf">'+t.pid.slice(2)+'</span>')>=0&&(html.match(/class="tf gf-opt"/g)||[]).length===3);
   const wrong=t.opts.findIndex(o=>o!==own);
   c.gofishPickTap(wrong);
   ok("a wrong back greys out, bonk, try again",t.wrong[t.opts[wrong]]===1&&!t.done&&w.dings[w.dings.length-1]==="bonk");

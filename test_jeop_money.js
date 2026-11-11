@@ -68,8 +68,11 @@ function answer(w,bad){
 // is main's with exactly those left out (test_card_seconds.js covers them).
 const NO_CARDSECS=(k,v)=>(k==="ms"||k==="shownAt"||k==="answeredAt")?undefined:v;
 // ── OFF = main byte for byte: one scripted afternoon, every screen + every write + every word said, hashed ──
+// 🔠 TILEFIT (2026-11-10): the answer squares' text gained ONE class, "tf" (the shared fit-to-square rule, test_tilefit.js) —
+// the snapshot is main's with exactly that class left out.
+const NO_TILEFIT=h=>h.replace(/ class="tf"/g,"").replace(/class="tf /g,'class="').replace(/ tf"/g,'"');
 function offSession(S,raw){
-  const log=[], snap=(w,tag)=>log.push(tag+"\n"+w.c.buildJeopHtml("#123456"));
+  const log=[], snap=(w,tag)=>log.push(tag+"\n"+NO_TILEFIT(w.c.buildJeopHtml("#123456")));
   { const w=world(ANIMALS.concat(MATH,GERMAN),{src:S}), c=w.c;
     snap(w,"start"); c.jeopToggle("German"); snap(w,"toggle"); c.jeopPickDecks=["Animals","Math Facts"];
     c.jeopStart(); snap(w,"board"); const st=c.jeopState;

@@ -75,7 +75,7 @@ function sandbox(o){
 }
 const flush=c=>{ const t=c.L.timers.splice(0); t.forEach(x=>x.f()); };
 const itemOf=(c,id)=>c.masteryData.ellis.find(x=>x.id===id);
-const ansTiles=h=>(h.match(/class="which-ans"[^>]*>([^<]*)</g)||[]).map(s=>s.replace(/^[^>]*>/,"").replace(/<$/,"").replace(/&amp;/g,"&"));
+const ansTiles=h=>(h.match(/class="which-ans tf"[^>]*>([^<]*)</g)||[]).map(s=>s.replace(/^[^>]*>/,"").replace(/<$/,"").replace(/&amp;/g,"&"));
 
 console.log("which decks play, and how");
 {

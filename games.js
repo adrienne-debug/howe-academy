@@ -560,9 +560,10 @@ const GF_CSS='<style>.gf-card{width:92px;height:104px;border-radius:14px;border:
 function _gfCardVis(st,pid){
   const it=_gfIt(st,pid); if(!it) return '';
   if(st.kinds[pid]==="say"){ const v=_smTileVis(it); if(v) return '<span class="gf-vis">'+v+'</span>'; }
-  return '<span class="gf-txt">'+esc(gofishName(it))+'</span>';   // an answer card shows its FRONT (the kid produces the back)
+  return '<span class="gf-txt tf">'+esc(gofishName(it))+'</span>';   // an answer card shows its FRONT (the kid produces the back)
 }
 function buildGofishHtml(color){
+  if(typeof tileFitSoon==="function") tileFitSoon();   // TILEFIT
   const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
   let h=GF_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
   const items=_gfItems(), decks=gofishDecks(items);
@@ -608,7 +609,7 @@ function buildGofishHtml(color){
         h+='</div>';
       } else {
         h+='<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">';
-        (t.opts||[]).forEach((o,i)=>{ const w=!!t.wrong[o]; h+='<button class="gf-opt'+(w?' gf-wrong':'')+'" onclick="gofishPickTap('+i+')"'+(w||lock?' disabled':'')+'>'+esc(o)+'</button>'; });
+        (t.opts||[]).forEach((o,i)=>{ const w=!!t.wrong[o]; h+='<button class="tf gf-opt'+(w?' gf-wrong':'')+'" onclick="gofishPickTap('+i+')"'+(w||lock?' disabled':'')+'>'+esc(o)+'</button>'; });
         h+='</div>';
       }
       if(!lock&&st.hand.length&&sp.why!=="back") h+='<div style="text-align:center;font-size:13px;font-weight:700;color:var(--muted);margin-top:14px">Your hand \u{00B7} '+pond+'</div>'+hand(null);
@@ -1037,9 +1038,10 @@ const SORT_CSS='<style>.sort-card{position:relative;display:flex;align-items:cen
 function _sortFace(it,kind){
   if(kind==="pic") return '<span class="sort-vis" style="pointer-events:none">'+(_sortPic(it)||'')+'</span>';
   const p=String((it&&it.prompt)||""), n=_sortPlain(p).length;
-  return '<span style="pointer-events:none;font-size:'+(n<=4?'34px':n<=12?'22px':n<=40?'15px':'13px')+';overflow-wrap:anywhere">'+p+'</span>';
+  return '<span class="tf" style="pointer-events:none;font-size:'+(n<=4?'34px':n<=12?'22px':n<=40?'15px':'13px')+';overflow-wrap:anywhere">'+p+'</span>';
 }
 function buildSortHtml(color){
+  if(typeof tileFitSoon==="function") tileFitSoon();   // TILEFIT
   const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"), E=s=>(typeof esc==="function")?esc(s):String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   let h=SORT_CSS+'<div class="ha-nosel" style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
   const items=_sortItems(), decks=sortDecks(items), names=sortDeckNames(decks);
@@ -1229,6 +1231,7 @@ const MOLE_CSS='<style>.mole-hole{position:relative;aspect-ratio:1;border-radius
   '.mole .mole-vis{transform:scale(1.1);pointer-events:none}@media(min-width:560px){.mole .mole-vis{transform:scale(1.6)}}'+
   '.mole .mole-ans{padding:6px;text-align:center;font-weight:800;color:#292524;font-family:\'Fraunces\',serif;line-height:1.1;overflow-wrap:anywhere;pointer-events:none}</style>';
 function buildMoleHtml(color){
+  if(typeof tileFitSoon==="function") tileFitSoon();   // TILEFIT
   const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
   let h=MOLE_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
   const items=_moleItems(), decks=moleDecks(items);
@@ -1263,7 +1266,7 @@ function buildMoleHtml(color){
     (t?t.tiles:[]).forEach((pid,slot)=>{
       const it=items.find(x=>x&&x.id===pid), up=!!t.up[slot], held=up&&t.hold&&pid===t.pid, grow=st.grow===slot;
       let inner;
-      if(ans){ const bk=_whichBack(it); inner='<span class="mole-ans" style="font-size:'+(bk.length<=3?'clamp(30px,9vw,56px)':bk.length<=7?'clamp(22px,6vw,38px)':bk.length<=13?'clamp(16px,4.2vw,26px)':'clamp(13px,3.4vw,20px)')+'">'+esc(bk)+'</span>'; }
+      if(ans){ const bk=_whichBack(it); inner='<span class="mole-ans tf" style="font-size:'+(bk.length<=3?'clamp(30px,9vw,56px)':bk.length<=7?'clamp(22px,6vw,38px)':bk.length<=13?'clamp(16px,4.2vw,26px)':'clamp(13px,3.4vw,20px)')+'">'+esc(bk)+'</span>'; }
       else inner='<span class="mole-vis">'+(_smTileVis(it)||'')+'</span>';
       h+='<div class="mole-hole"><div class="mole'+(up?' mole-up':'')+(held?' mole-held':'')+(grow?' mole-grow':'')+'" role="button" aria-label="Mole '+(slot+1)+'"'+(up&&!st.lock?' onclick="moleTap('+slot+')"':'')+'>'+inner+'</div></div>';
     });
@@ -1486,9 +1489,10 @@ function _jpStars(r){ let s=""; for(let i=0;i<=r;i++) s+="\u2605"; return s; }
 function _jpCardVis(st,pid,act){
   const it=_jpIt(st,pid); if(!it) return '';
   if(act==="say"){ const v=_smTileVis(it); if(v) return '<span class="jp-vis">'+v+'</span>'; }
-  return '<span class="jp-txt">'+esc(jeopName(it))+'</span>';   // an answer card shows its FRONT (the kid produces the back)
+  return '<span class="jp-txt tf">'+esc(jeopName(it))+'</span>';   // an answer card shows its FRONT (the kid produces the back)
 }
 function buildJeopHtml(color){
+  if(typeof tileFitSoon==="function") tileFitSoon();   // TILEFIT
   const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
   let h=JP_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
   const items=_jpItems(), decks=jeopDecks(items);
@@ -1531,7 +1535,7 @@ function buildJeopHtml(color){
       h+='</div>';
     } else {
       h+='<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">';
-      (t.opts||[]).forEach((op,i)=>{ const w=!!t.wrong[op]; h+='<button class="jp-opt'+(w?' jp-wrong':'')+'" onclick="jeopPickTap('+i+')"'+(w||lock||t.done?' disabled':'')+'>'+esc(op)+'</button>'; });
+      (t.opts||[]).forEach((op,i)=>{ const w=!!t.wrong[op]; h+='<button class="tf jp-opt'+(w?' jp-wrong':'')+'" onclick="jeopPickTap('+i+')"'+(w||lock||t.done?' disabled':'')+'>'+esc(op)+'</button>'; });
       h+='</div>';
     }
   }
@@ -1898,9 +1902,10 @@ function _c4CellLabel(st,pid){
 function _c4CardVis(st,pid){
   const it=_c4It(st,pid); if(!it) return '';
   if((st.kinds[pid]||"say")==="say"){ const v=_smTileVis(it); if(v) return '<span class="c4-vis">'+v+'</span>'; }
-  return '<span class="c4-txt">'+esc(fourName(it))+'</span>';   // an answer card shows its FRONT (the kid produces the back)
+  return '<span class="c4-txt tf">'+esc(fourName(it))+'</span>';   // an answer card shows its FRONT (the kid produces the back)
 }
 function buildFourHtml(color){
+  if(typeof tileFitSoon==="function") tileFitSoon();   // TILEFIT
   const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
   let h=C4_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
   const items=_c4Items(), decks=fourDecks(items);
@@ -1947,7 +1952,7 @@ function buildFourHtml(color){
       h+='</div>';
     } else {
       h+='<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">';
-      (t.opts||[]).forEach((op,i)=>{ const w=!!t.wrong[op]; h+='<button class="c4-opt'+(w?' c4-wrong':'')+'" onclick="fourPickTap('+i+')"'+(w||lock||t.done?' disabled':'')+'>'+esc(op)+'</button>'; });
+      (t.opts||[]).forEach((op,i)=>{ const w=!!t.wrong[op]; h+='<button class="tf c4-opt'+(w?' c4-wrong':'')+'" onclick="fourPickTap('+i+')"'+(w||lock||t.done?' disabled':'')+'>'+esc(op)+'</button>'; });
       h+='</div>';
     }
   }
@@ -2194,7 +2199,7 @@ function beatDecks(items,kid){
 function _beatTiles(st,pids){
   const tiles=[];
   pids.forEach(pid=>{ const it=_beatItems(st.kid).find(x=>x&&x.id===pid); if(!it) return;
-    tiles.push({pid:pid,isPrompt:true,matched:false,miss:false,html:'<span style="font-size:'+((_matchPlain(it.prompt)||"").length<=4?26:15)+'px;font-weight:800;color:#c2410c;pointer-events:none;word-break:break-word">'+(it.prompt||"")+'</span>'});
+    tiles.push({pid:pid,isPrompt:true,matched:false,miss:false,html:'<span class="tf" style="font-size:'+((_matchPlain(it.prompt)||"").length<=4?26:15)+'px;font-weight:800;color:#c2410c;pointer-events:none;word-break:break-word">'+(it.prompt||"")+'</span>'});
     tiles.push({pid:pid,isPrompt:false,matched:false,miss:false,html:_matchPairHtml(it)||""}); });
   return _beatShuffle(tiles);
 }
@@ -2272,6 +2277,7 @@ function beatResume(){ const st=beatState; if(!st||st.phase==="done") return; if
 const BEAT_CSS='<style>.beat-tile{aspect-ratio:1;display:flex;align-items:center;justify-content:center;border-radius:16px;border:3px solid #e2ddd6;background:#fff;cursor:pointer;overflow:hidden;padding:6px;text-align:center;-webkit-tap-highlight-color:transparent;transition:transform .15s}'+
   '.beat-tile.beat-sel{border-color:#7c3aed;background:#f5f3ff;transform:scale(1.04)}.beat-tile.beat-miss{border-color:#dc2626;background:#fef2f2}.beat-tile.beat-done{opacity:0;pointer-events:none;transform:scale(.6)}</style>';
 function buildBeatHtml(color){
+  if(typeof tileFitSoon==="function") tileFitSoon();   // TILEFIT
   const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
   let h=BEAT_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
   const items=_beatItems(), decks=beatDecks(items);
@@ -2714,9 +2720,10 @@ function _sureCardVis(st,t){
   const it=_sureIt(st,t.pid); if(!it) return '';
   if(t.act==="say"){ const v=_smTileVis(it); if(v) return '<span class="sure-vis">'+v+'</span>'; }
   const fr=sureName(it);
-  return '<span class="sure-txt" style="font-size:'+(fr.length<=8?'38px':fr.length<=18?'28px':'20px')+'">'+esc(fr)+'</span>';   // an answer card shows its FRONT (the kid produces the back)
+  return '<span class="sure-txt tf" style="font-size:'+(fr.length<=8?'38px':fr.length<=18?'28px':'20px')+'">'+esc(fr)+'</span>';   // an answer card shows its FRONT (the kid produces the back)
 }
 function buildSureHtml(color){
+  if(typeof tileFitSoon==="function") tileFitSoon();   // TILEFIT
   const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
   let h=SURE_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
   const items=_sureItems(), decks=sureDecks(items);
@@ -2755,7 +2762,7 @@ function buildSureHtml(color){
         h+='</div>';
       } else {
         h+='<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">';
-        (t.opts||[]).forEach((op,i)=>{ h+='<button class="sure-opt" onclick="surePickTap('+i+')">'+esc(op)+'</button>'; });
+        (t.opts||[]).forEach((op,i)=>{ h+='<button class="tf sure-opt" onclick="surePickTap('+i+')">'+esc(op)+'</button>'; });
         h+='</div>';
       }
     } else {   // the flip: the answer, written — after the kid produced
@@ -3161,6 +3168,7 @@ const UJ_CSS='<style>.uj-tile{display:inline-flex;align-items:center;justify-con
   '.uj-btn{padding:12px 22px;border-radius:999px;border:none;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;-webkit-tap-highlight-color:transparent}.uj-btn[disabled]{opacity:.45;cursor:default}'+
   '.uj-ghost{padding:10px 16px;border-radius:999px;border:1.5px solid #e2ddd6;background:#fff;color:#57534e;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif}.uj-ghost[disabled]{opacity:.45;cursor:default}</style>';
 function buildJumbleHtml(color){
+  if(typeof tileFitSoon==="function") tileFitSoon();   // TILEFIT
   const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
   let h=UJ_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
   const items=_ujItems(), pools=ujPools(items), decks=Object.keys(pools);
@@ -3186,9 +3194,9 @@ function buildJumbleHtml(color){
     h+='<div style="text-align:center;font-size:17px;font-weight:800;color:'+(m==="right"?'#16a34a':m==="show"?'#b45309':'#57534e')+';margin:6px 0 4px">'+
       (m==="right"?'\u{2705} That\u2019s it!':m==="show"?'Here\u2019s how it goes \u{2014} we\u2019ll try it again later':m==="back"?'We\u2019ll come back to that one':m==="again"?'Almost \u{2014} the green ones are right. Try again!':t.back?'One more time \u{2014} put it in order':'Put the words in order')+'</div>';
     h+='<div class="uj-line" aria-label="Your sentence">';
-    t.line.forEach((wi,p)=>{ if(wi==null) h+='<span class="uj-slot" aria-label="Empty slot"></span>'; else h+='<button class="uj-tile'+(t.locked[p]?' uj-lock':'')+(t.show?' uj-show':'')+'"'+(t.locked[p]||st.lock?' disabled':' onclick="jumbleUntap('+p+')"')+' aria-label="Word '+(p+1)+'">'+esc(t.words[wi])+'</button>'; });
+    t.line.forEach((wi,p)=>{ if(wi==null) h+='<span class="uj-slot" aria-label="Empty slot"></span>'; else h+='<button class="tf uj-tile'+(t.locked[p]?' uj-lock':'')+(t.show?' uj-show':'')+'"'+(t.locked[p]||st.lock?' disabled':' onclick="jumbleUntap('+p+')"')+' aria-label="Word '+(p+1)+'">'+esc(t.words[wi])+'</button>'; });
     h+='</div><div class="uj-tray">';
-    t.tiles.forEach(wi=>{ if(t.line.indexOf(wi)>=0) return; h+='<button class="uj-tile" onclick="jumbleTap('+wi+')"'+(st.lock?' disabled':'')+'>'+esc(t.words[wi])+'</button>'; });
+    t.tiles.forEach(wi=>{ if(t.line.indexOf(wi)>=0) return; h+='<button class="tf uj-tile" onclick="jumbleTap('+wi+')"'+(st.lock?' disabled':'')+'>'+esc(t.words[wi])+'</button>'; });
     h+='</div>';
     h+='<div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap"><button class="uj-btn" onclick="jumbleCheck()"'+(full&&!st.lock?'':' disabled')+' style="background:'+color+';color:#fff">\u{2714} Check</button><button class="uj-ghost" onclick="jumbleClear()"'+(st.lock?' disabled':'')+'>\u{21BA} Clear</button></div>';
     return h+'</div>';
@@ -3422,9 +3430,10 @@ const KB_CSS='<style>.kb-jar{width:150px;height:170px;margin:0 auto;border-radiu
 function _kbCardVis(st,pid,act){
   const it=_kbIt(st,pid); if(!it) return '';
   if(act==="say"){ const v=_smTileVis(it); if(v) return '<span class="kb-vis">'+v+'</span>'; }
-  return '<span class="kb-txt">'+esc(kaboomName(it))+'</span>';   // an answer card shows its FRONT (the kid produces the back)
+  return '<span class="kb-txt tf">'+esc(kaboomName(it))+'</span>';   // an answer card shows its FRONT (the kid produces the back)
 }
 function buildKaboomHtml(color){
+  if(typeof tileFitSoon==="function") tileFitSoon();   // TILEFIT
   const q=s=>String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
   let h=KB_CSS+'<div style="padding:4px 14px 24px;max-width:720px;margin:0 auto">';
   const items=_kbItems(), decks=kaboomDecks(items);
@@ -3467,7 +3476,7 @@ function buildKaboomHtml(color){
       h+='</div>';
     } else {
       h+='<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">';
-      (t.opts||[]).forEach((op,i)=>{ const w=!!t.wrong[op]; h+='<button class="kb-opt'+(w?' kb-wrong':'')+'" onclick="kaboomPickTap('+i+')"'+(w||lock||t.done?' disabled':'')+'>'+esc(op)+'</button>'; });
+      (t.opts||[]).forEach((op,i)=>{ const w=!!t.wrong[op]; h+='<button class="tf kb-opt'+(w?' kb-wrong':'')+'" onclick="kaboomPickTap('+i+')"'+(w||lock||t.done?' disabled':'')+'>'+esc(op)+'</button>'; });
       h+='</div>';
     }
   } else if(st.phase==="play"){
