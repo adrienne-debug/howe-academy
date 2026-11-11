@@ -70941,6 +70941,7 @@ function mstCardHtml(session,card){
     t+='<div class="mast-flip-def">'+mstEsc(def)+'</div>';
     if(!mstChecked){
       t+='<input id="mst-type-in" type="text" value="'+mstEsc(mstTyped)+'" oninput="mstTyped=this.value" onkeydown="if(event.key===\'Enter\'){event.preventDefault();mstCheckTyped();}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="der / die / das \u2026" style="margin-top:12px;width:100%;max-width:320px;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:2px solid #c4b5fd;font-size:20px;text-align:center;font-family:\'DM Sans\',sans-serif">';
+      if(typeof typeKeysRowHtml==="function") t+=typeKeysRowHtml("mst-type-in",typeKeysForDeck(card.deck,"name"));   // ⌨️ TYPEKEYS: the deck's own special letters
       t+='<button onclick="mstCheckTyped()" style="margin-top:12px;min-height:48px;padding:0 32px;border-radius:14px;border:none;background:#7c3aed;color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Check</button>';
     } else {
       const ok=mstChecked.ok;
@@ -71026,6 +71027,7 @@ function mstTypeAnsHtml(session,card,def,lrn){
   t+='<div class="mast-slide-name">'+mstEsc(name)+'</div>';
   if(!mstChecked){
     t+='<input id="mst-typeans-in" type="text" value="'+mstEsc(mstTyped)+'" oninput="mstTyped=this.value" onkeydown="if(event.key===\'Enter\'){event.preventDefault();mstCheckTypeAns();}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="your answer" style="margin-top:12px;width:100%;max-width:320px;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:2px solid #c4b5fd;font-size:22px;text-align:center;font-family:\'DM Sans\',sans-serif">';
+    if(typeof typeKeysRowHtml==="function") t+=typeKeysRowHtml("mst-typeans-in",typeKeysForDeck(card.deck,"def"));   // ⌨️ TYPEKEYS
     t+='<button onclick="mstCheckTypeAns()" style="margin-top:12px;min-height:48px;padding:0 32px;border-radius:14px;border:none;background:#7c3aed;color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Check</button>';
   } else {
     const ok=mstChecked.ok;
@@ -71046,6 +71048,103 @@ function mstCheckTypeAns(){
   _mastRe();
 }
 // MST_TYPEANS_END
+// TYPEKEYS_START — ⌨️ Keys a plain keyboard lacks, for a typed answer (her report 2026-11-10: "the decimal questions
+// will not allow me to add a . when needing to type so no way it can be right also when needing to type german words in
+// we dont always have the special characters needed could we have those added to be able to be pushed when typing").
+// (1) THE DECIMAL: the games' number pad (Go Fish, Jeopardy, Connect 4, Sure?, Kaboom — games.js) takes every card whose
+//     back is a number by GF_NUM /^[-+]?\d+([.,]\d+)?$/ — so 3.5 and -4 too — but its keys were only 1–9, 0, ⌫, ✔, so 3.5
+//     could never be typed. typeKeysPadFor(state) gives the pad a "." (or ",") and a "-" when the game's own cards'
+//     number backs use them; a deck of whole numbers keeps the pad as it was. Judging is unchanged (mstTypeAnsOk already
+//     reads 3.50 as 3.5).
+// (2) SPECIAL LETTERS: a row of letter keys under the Study session's typed-answer boxes (⌨️ Type it in German —
+//     mst-type-in, and ⌨️ Type the answer — mst-typeans-in). The letters come from the DECK, never the card: every answer
+//     in the deck is scanned for letters outside a–z (ä ö ü ß, é ñ, and ¿ ¡), deduped, the 12 most used kept, then sorted
+//     (small letters, then capitals) — the same row on every card of the deck, so it never spells or orders the answer.
+//     No such letters (English, math) → no row. A tap puts the letter at the caret, keeps the keyboard up (the key never
+//     takes focus) and fires the box's own input event, as a typed key does.
+// Writes nothing.
+const TYPEKEYS_CAP=12;
+const TYPEKEYS_NUM=/^[-+]?\d+([.,]\d+)?$/;   // the games' own "this back goes to the number pad" rule (GF_NUM …)
+// PURE: the deck's answer strings → the special letters to offer, sorted. Only the deck's list goes in — no current card.
+function typeKeysFrom(strs,cap){
+  cap=cap||TYPEKEYS_CAP; const n={};
+  (strs||[]).forEach(s=>{
+    for(const ch of String(s==null?"":s).normalize("NFC")){
+      if(ch.charCodeAt(0)<128) continue;                                  // a–z, digits, plain punctuation: every keyboard has them
+      if(!/\p{L}/u.test(ch)&&ch!=="¿"&&ch!=="¡") continue;      // letters only (and ¿ ¡) — no × ÷ ½ “ ” …
+      n[ch]=(n[ch]||0)+1;
+    }
+  });
+  let ks=Object.keys(n);
+  if(ks.length>cap) ks=ks.sort((a,b)=>(n[b]-n[a])||(a<b?-1:1)).slice(0,cap);   // the most used
+  const grp=c=>(c.toLowerCase()===c&&c.toUpperCase()!==c)?0:(c.toUpperCase()===c&&c.toLowerCase()!==c)?1:2;   // small · capital · ¿ ¡
+  return ks.sort((a,b)=>(grp(a)-grp(b))||a.localeCompare(b)||(a<b?-1:1));
+}
+// PURE: a deck's number backs → the pad's extra keys: "." / "," when a back has that decimal mark, "-" when one is negative.
+function typeKeysPadExtra(backs){
+  const nums=(backs||[]).map(b=>String(b==null?"":b).trim()).filter(b=>TYPEKEYS_NUM.test(b)), out=[];
+  if(nums.some(b=>b.indexOf(".")>=0)) out.push(".");
+  if(nums.some(b=>b.indexOf(",")>=0)) out.push(",");
+  if(nums.some(b=>b.charAt(0)==="-")) out.push("-");
+  return out;
+}
+// A game's pad extras, from every card in that game (kinds · cells · turns · jar · pile — whichever the game keeps).
+// Remembered per game state in a WeakMap, so nothing is added to the state a game parks.
+const _typeKeysPadMemo=(typeof WeakMap==="function")?new WeakMap():null;
+function typeKeysPadFor(st){
+  if(!st) return [];
+  if(_typeKeysPadMemo&&_typeKeysPadMemo.has(st)) return _typeKeysPadMemo.get(st);
+  const pids={}, add=p=>{ if(p!=null) pids[p]=1; };
+  Object.keys(st.kinds||{}).forEach(add);
+  ["cells","turns","jar"].forEach(k=>{ (Array.isArray(st[k])?st[k]:[]).forEach(x=>{ if(x) add(x.pid); }); });
+  (Array.isArray(st.pile)?st.pile:[]).forEach(add);
+  let items=(typeof masteryData!=="undefined"&&masteryData&&masteryData[st.kid])||[]; if(!Array.isArray(items)) items=Object.values(items);
+  const backs=[]; items.forEach(i=>{ if(i&&pids[i.id]) backs.push(typeof _whichBack==="function"?_whichBack(i):i.answer); });
+  const out=typeKeysPadExtra(backs);
+  if(_typeKeysPadMemo) _typeKeysPadMemo.set(st,out);
+  return out;
+}
+// The Study deck's answer strings — side "name" (⌨️ Type it: the word is typed) or "def" (⌨️ Type the answer): every bank
+// item of the deck + this sitting's new cards of the deck. Remembered for the sitting.
+let _typeKeysDeckMemo={k:null,st:null,keys:[]};
+function typeKeysForDeck(deck,side){
+  try{
+    let items=(typeof masteryData!=="undefined"&&masteryData&&masteryData[masteryKid])||[]; if(!Array.isArray(items)) items=Object.values(items);
+    const ms=(typeof mstState!=="undefined")?mstState:null, sc=(ms&&ms.cards)||{};
+    const k=[masteryKid,deck,side,items.length,Object.keys(sc).length].join("|");
+    if(_typeKeysDeckMemo.k===k&&_typeKeysDeckMemo.st===ms) return _typeKeysDeckMemo.keys;
+    const strs=[], val=c=>side==="def"?mstCardDef(c):c.name;
+    items.forEach(i=>{ if(i&&i.subject===deck) strs.push(val({id:i.id,name:i.prompt,deck:i.subject})); });
+    Object.keys(sc).forEach(x=>{ const c=sc[x]; if(c&&c.deck===deck) strs.push(val(c)); });
+    const keys=typeKeysFrom(strs);
+    _typeKeysDeckMemo={k:k,st:ms,keys:keys};
+    return keys;
+  }catch(e){ return []; }
+}
+// The key row under a typed-answer box. No keys → nothing.
+function typeKeysRowHtml(inputId,keys){
+  if(!keys||!keys.length) return "";
+  const id=String(inputId).replace(/[^\w-]/g,"");
+  let h='<div class="typekeys" role="group" aria-label="Special letters" style="display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin:10px auto 0;max-width:340px">';
+  keys.forEach(ch=>{
+    const e=String(ch).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    h+='<button type="button" tabindex="-1" data-ch="'+e+'" onpointerdown="if(event.button)return;event.preventDefault();typeKeysIns(\''+id+'\',this.dataset.ch)" onclick="if(event.detail===0)typeKeysIns(\''+id+'\',this.dataset.ch)" aria-label="'+e+'" style="min-width:44px;min-height:44px;padding:0 8px;border-radius:12px;border:2px solid #c4b5fd;background:#f5f3ff;color:#5b21b6;font-size:21px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;touch-action:manipulation;-webkit-user-select:none;user-select:none">'+e+'</button>';
+  });
+  return h+'</div>';
+}
+// A tap: the letter goes in at the caret (replacing a selection; at the end when the box isn't focused yet), the caret
+// lands after it, the box keeps focus and hears the same input event a typed key sends (so mstTyped follows it).
+function typeKeysIns(inputId,ch){
+  const el=(typeof document!=="undefined")?document.getElementById(inputId):null;
+  if(!el||el.disabled||!ch) return;
+  const len=el.value.length, focused=(document.activeElement===el);
+  const s=(focused&&el.selectionStart!=null)?el.selectionStart:len, e=(focused&&el.selectionEnd!=null)?el.selectionEnd:s;
+  if(typeof el.setRangeText==="function") el.setRangeText(ch,s,e,"end");
+  else { el.value=el.value.slice(0,s)+ch+el.value.slice(e); try{ el.setSelectionRange(s+ch.length,s+ch.length); }catch(_){} }
+  try{ el.dispatchEvent(new Event("input",{bubbles:true})); }catch(_){}
+  try{ el.focus({preventScroll:true}); }catch(_){ el.focus(); }
+}
+// TYPEKEYS_END
 // PATPICK_START — 🎯 "Pick it": a learning-pattern step (her research plan 2026-10-23, PLAN_learning_patterns_2026-10-23.md:
 // picking from 3 is a good first-day step, and the wrong choices must be believable). The card's front as the "rec" face
 // shows it, plus three chips: the right answer and two lures from the SAME deck, chosen by the Memory game's _matchLures
