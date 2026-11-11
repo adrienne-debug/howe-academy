@@ -17,7 +17,8 @@ function braceSlice(name) {
   for (let k = j; k < src.length; k++) { if (src[k] === "{") d++; else if (src[k] === "}") { d--; if (d === 0) return src.slice(i, k + 1); } }
   throw new Error("unbalanced: " + name);
 }
-const code = ["cbRenderRules", "capFor"].map(braceSlice).join("\n");
+const CURRCARD = src.slice(src.indexOf("// CURRCARD_START"), src.indexOf("// CURRCARD_END"));   // CURRCARD (2026-11-11): the table's cells are rlPillHTML — load it with the table
+const code = CURRCARD + "\n" + ["cbRenderRules", "capFor"].map(braceSlice).join("\n");
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {

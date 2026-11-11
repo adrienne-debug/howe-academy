@@ -210,12 +210,14 @@ console.log("\nwiring — every day picker asks the helper; the field rides rlSe
   ok("reprojectSubjectWeek's _rpDays are the week's set (lane rhythm's field honoured; its own lines untouched)", /if\(_rh&&!_rh\.own\) _rpNc=_rh\.noCoopDays;/.test(fn("reprojectSubjectWeek")) && /_rpDays=subjDaysFor\(kid,\{allowedDays:_rpDays,noCoopDays:_rpNc\},_wISO\)/.test(fn("reprojectSubjectWeek")) && /let _rpDays=_subj\.allowedDays\|\|\[\], _rpCap=_subj\.cap\|\|1;/.test(fn("reprojectSubjectWeek")));
   ok("grid views (lost-to-co-op chips, daily minutes) ask per row date", (src.match(/subjDaysFor\(gvKid,s2,l2\.date\)/g) || []).length === 1 && (src.match(/subjDaysFor\(gvKid,s,l\.date\)/g) || []).length === 1);
   ok("make-up suggester + make-up appender ask per week", /subjDaysFor\(k,s,dy\.date\):al/.test(fn("lmComputeSuggestions")) && /subjDaysFor\(kid,s,range\.start\)/.test(src));
-  ok("placement-rules table: a second pill row + the one-tap link, only for a kid in a co-op", /_coopAny\?\(function\(\)\{ const _nc=/.test(src) && /onclick="cwdPinDay\(\\''\+sk\+'\\',\\''\+d\+'\\'\)"/.test(src) && /onclick="cwdUseMonThu\(\\''\+kid\+'\\'\)"/.test(src) && /if\(_coopAny\) h\+=/.test(src));
+  // CURRCARD 2026-11-11: the second row is rlPillHTML's "noCoopDays" case, drawn by the table (under _coopAny) and by the card
+  ok("placement-rules table: a second pill row + the one-tap link, only for a kid in a co-op", /_P\("days"\)\+\(_coopAny\?_P\("noCoopDays"\):''\)/.test(fn("cbRenderRules")) && /case "noCoopDays": \{/.test(fn("rlPillHTML")) && /onclick="'\+arm\+'cwdPinDay\(\\''\+sk\+'\\',\\''\+d\+'\\'\)"/.test(fn("rlPillHTML")) && /onclick="cwdUseMonThu\(\\''\+kid\+'\\'\)"/.test(src) && /if\(_coopAny\) h\+=/.test(src));
   ok("rlSet's generic branch writes curriculum/subjects/<kid>/<sk>/<field> — noCoopDays rides it (null removes)", /db\.ref\("curriculum\/subjects\/"\+kid\+"\/"\+sk\+"\/"\+field\)\.set\(val===undefined\?null:val\)/.test(fn("rlSet")));
   // live 2026-10-14: Makenzie's rules + day cap came up blank. cbRenderRules has a local `cap`
   // (the kid's minutes), so the two co-op lines must reach the global name helper via window.cap.
   { const _r = fn("cbRenderRules");
-    ok("cbRenderRules never calls its local minutes `cap` as a function (the co-op lines use window.cap)", !/[^.\w]cap\(kid\)/.test(_r) && (_r.match(/window\.cap\(kid\)/g) || []).length === 2); }
+    // CURRCARD 2026-11-11: the no-co-op row moved into rlPillHTML, which has no local `cap` — it calls the global helper plainly
+    ok("cbRenderRules never calls its local minutes `cap` as a function (its co-op line uses window.cap; the row's line lives in rlPillHTML, which has no `cap` local)", !/[^.\w]cap\(kid\)/.test(_r) && (_r.match(/window\.cap\(kid\)/g) || []).length === 1 && !/const cap=/.test(fn("rlPillHTML")) && (fn("rlPillHTML").match(/[^.\w]cap\(kid\)/g) || []).length === 1); }
   ok("no 🔀 anywhere", src.indexOf("\u{1F500}") < 0);
 }
 

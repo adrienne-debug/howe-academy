@@ -42,7 +42,7 @@ const run = (items, ctx) => { const p = packDay(items, Object.assign({ start: 54
 
 // 4. the choices + wiring
 ok("Add Subject offers 🎹 Keyboard", /\["paper","computer","ipad\/phone","book","keyboard"\]\.forEach\(d=>\{/.test(src));
-ok("Rules table device pill cycles through Keyboard", src.includes('_cyc(sk,"device",["paper","computer","ipad/phone","book","keyboard"],dev,false)'));
+ok("Rules table device pill cycles through Keyboard", src.includes('_rlCyc(kid,sk,"device",["paper","computer","ipad/phone","book","keyboard"],dev,false)'));   // CURRCARD 2026-11-11: the device pill is rlPillHTML's (drawn by the table and the card)
 ok("label + emoji", src.includes('book:"Book",keyboard:"Keyboard"};') && src.includes('book:"\\u{1F4D6}",keyboard:"\\u{1F3B9}"};'));
 ok("Settings ▸ Devices has a Keyboards row", src.includes("rulesUpdateDevice(\\'keyboard\\',this.value)"));
 ok("generator passes keyboard as a lane with the family caps", src.includes('lanes:["computer","screen","ipadLucy","keyboard"],laneCap:gwDeviceCaps()'));
