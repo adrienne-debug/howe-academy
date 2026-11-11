@@ -36527,6 +36527,7 @@ function famLayout(b,dayName,ds){   // ⏰ SETTIME_TODAY: ds (optional) = the da
   const out=[];
   famList(b.items).forEach(function(it){
     if(!it||!it.key||!famRunsOn(it.days,dayName)) return;
+    if(typeof uftOnDay==="function"&&!uftOnDay(b,it,dayName,ds)) return;   // UNITFT: a unit item lays from its start date, at its pace, not while paused
     const d=Math.max(5,parseInt(it.minutes,10)||30);
     out.push({it:it,s:at,e:at+d}); at+=d;
   });
@@ -36580,6 +36581,7 @@ function famAutoUnits(dayName,ds){
     let off=0; const items=[];
     famList(b.items).forEach(function(it){
       if(!it||!it.key||!famRunsOn(it.days,dayName)) return;
+      if(typeof uftOnDay==="function"&&!uftOnDay(b,it,dayName,ds)) return;   // UNITFT: the same gate for a scheduler-picks block
       const d=Math.max(5,parseInt(it.minutes,10)||30);
       const ik=famItemKids(b,it).filter(function(k){ return kids.indexOf(k)>=0; }); if(!ik.length) return;
       items.push({it:it,off:off,dur:d,kids:ik}); off+=d;
@@ -37308,7 +37310,7 @@ function famGridStripHTML(kid){
       const was=(it.from&&it.from[kid])?((((currData||{}).subjects||{})[kid]||{})[it.from[kid]]||{}):null;
       chips.push('<button onclick="famGoEdit()" title="'+esc((b.name||"Family time")+" · "+famDaysLabel(b,it))+'" style="margin:2px 4px 2px 0;padding:3px 10px;border-radius:12px;border:1px solid #c4b5fd;background:#fff;color:#5b21b6;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+
         (it.from?'\u{1F9E9} ':FAM_ICON+' ')+esc(it.name||"")+' <span style="font-weight:600;color:#7c3aed">'+esc(famWhenLabel(b,it))+' · '+(Math.max(5,parseInt(it.minutes,10)||30))+'m'+
-        (others.length?' · with '+esc(others.map(cap).join(" & ")):'')+(was?' · was '+esc(was.display||"")+' ('+(+was.minutes||20)+'m alone)':'')+'</span></button>'); }); });
+        (typeof uftWords==="function"&&uftWords(it)?' · '+esc(uftWords(it)):'')+(others.length?' · with '+esc(others.map(cap).join(" & ")):'')+(was?' · was '+esc(was.display||"")+' ('+(+was.minutes||20)+'m alone)':'')+'</span></button>'); }); });
   if(!chips.length) return "";
   return '<div style="background:#faf5ff;border:1.5px solid #c4b5fd;border-radius:10px;padding:8px 12px;margin:0 0 8px">'+
     '<span style="font-size:11px;color:#5b21b6;font-weight:700">'+FAM_ICON+' Together — family time, done with siblings: </span>'+chips.join('')+
@@ -37332,6 +37334,7 @@ function famGridDates(){
 function famCellState(b,it,ds){
   const dn=famDayOfISO(ds);
   if(b.off||!famRunsOn(b.days,dn)||!famRunsOn(it.days,dn)) return {runs:false};
+  if(typeof uftOnDay==="function"&&!uftOnDay(b,it,dn,ds)) return {runs:false,uft:true};   // UNITFT: before its start / past its pace / paused → the Grid and the lesson map skip the day
   const L=(typeof famAutoOn==="function"?famAutoOn(b,dn):famIsAuto(b))?null:famLayout(b,dn), x=L?L.find(function(v){ return v.it.key===it.key; }):null;   // 🕰 FAMDAYSTART
   const st=x?x.s:Infinity, ik=famItemKids(b,it);
   const inK=ik.filter(function(k){ return famKidIn(k,ds,st,null); });
@@ -37376,7 +37379,7 @@ function famGridHTML(){
       '<div style="font-size:11px;font-weight:800;color:var(--text)">'+(it.from?'\u{1F9E9} ':'')+esc(it.name||"")+'</div>'+
       '<div style="font-size:9px;font-weight:600;color:var(--muted)">'+esc(famDaysLabel(g.b,it))+' · '+(Math.max(5,parseInt(it.minutes,10)||30))+'m'+(pts?' · ⭐'+pts:'')+'</div>'+
       (ik.length<famList(g.b.kids).length?'<div style="font-size:9px;font-weight:700">'+who(ik,famList(g.b.kids).length)+'</div>':'')+
-      (function(){ const _lm=(typeof famLessonMap==="function")?famLessonMap(g.b,g.id,it):null; return (_lm&&!_lm.none)?'<div style="font-size:9px;font-weight:700;color:'+g.col+'">'+(_lm.ends?'ends '+famFmtDate(_lm.ends):'ends \u2014')+(_lm.left!=null?' \u00B7 '+_lm.left+' left':'')+'</div>':'<div style="font-size:9px;font-weight:700;color:'+g.col+'">ends \u2014 <span style="font-weight:600;color:var(--muted)">(add lessons)</span></div>'; })()+'</th>'; }); });
+      (typeof uftGridTag==="function"?uftGridTag(it,g.col):"")+(function(){ const _lm=(typeof famLessonMap==="function")?famLessonMap(g.b,g.id,it):null; return (_lm&&!_lm.none)?'<div style="font-size:9px;font-weight:700;color:'+g.col+'">'+(_lm.ends?'ends '+famFmtDate(_lm.ends):'ends \u2014')+(_lm.left!=null?' \u00B7 '+_lm.left+' left':'')+'</div>':'<div style="font-size:9px;font-weight:700;color:'+g.col+'">ends \u2014 <span style="font-weight:600;color:var(--muted)">(add lessons)</span></div>'; })()+'</th>'; }); });   // UNITFT: "starts Thu, Nov 12" / paused on the column
   h+='</tr></thead><tbody>';
   const ncol=groups.reduce(function(a,g){ return a+g.items.length; },0);
   let lastWk=null;
@@ -37562,7 +37565,7 @@ function famRunDates(b,it){ return famGridDates().map(function(r){ return r.date
 let _famRdCache={t:0,v:{}};
 function famRunDatesC(b,id,it){
   const now=Date.now(); if(now-_famRdCache.t>1500) _famRdCache={t:now,v:{}};
-  const k=id+"|"+it.key+"|"+JSON.stringify([b.days,it.days,it.kids,b.kids,b.at,b.off,b.items&&famList(b.items).map(function(x){ return x&&[x.key,x.minutes]; }),b.atByDay||null]);   // 🕰 FAMDAYSTART: a day's own start is part of the key
+  const k=id+"|"+it.key+"|"+JSON.stringify([(typeof uftTr==="function"&&uftTr(it))?[it.track.startDate||null,it.track.perWeek||null,!!it.track.paused]:null,b.days,it.days,it.kids,b.kids,b.at,b.off,b.items&&famList(b.items).map(function(x){ return x&&[x.key,x.minutes]; }),b.atByDay||null]);   // 🕰 FAMDAYSTART: a day's own start is part of the key · UNITFT: a unit's start / pace / pause too
   if(!_famRdCache.v[k]) _famRdCache.v[k]=famRunDates(b,it);
   return _famRdCache.v[k];
 }
@@ -37739,7 +37742,7 @@ function famTrackSaveSeq(id,i){
   const dflt=Math.max(1,parseInt(_famTv(id,i,"n"),10)||1);
   const list=String(_famTv(id,i,"list")||"").split(/\n/).map(function(l){ return l.trim(); }).filter(Boolean).map(function(l){
     const m=l.match(/^(.*?)\s*[×xX]\s*(\d{1,2})\s*$/); return m?{t:m[1].trim(),n:Math.max(1,Math.min(10,parseInt(m[2],10)))}:{t:l,n:dflt}; });
-  its[i].track=famKeepMissed(its[i].track,{mode:"seq",list:list}); famWrite(id+"/items",its);
+  its[i].track=(typeof uftKeep==="function"?uftKeep:function(o,n){ return n; })(its[i].track,famKeepMissed(its[i].track,{mode:"seq",list:list})); famWrite(id+"/items",its);   // UNITFT: the start, pace, pause and unit days ride along
 }
 function famTrackEveryN(id,i,n){ const e=document.getElementById("famtr-"+id+"-"+i+"-list"); if(!e) return;
   e.value=e.value.split(/\n/).map(function(l){ const t=l.replace(/\s*[×xX]\s*\d{1,2}\s*$/,"").trim(); return t?t+" ×"+n:""; }).filter(Boolean).join("\n"); }
@@ -37749,6 +37752,7 @@ function famTrackSaveWeek(id,i){
   const topics={}; String(_famTv(id,i,"topics")||"").split(/\n/).forEach(function(l){ const m=l.match(/^\s*(?:wk|week)?\s*(\d{1,3})\s*[:.\-–]\s*(.+)$/i); if(m) topics[m[1]]=m[2].trim(); });
   its[i].track=famKeepMissed(its[i].track,{mode:"week",book:String(_famTv(id,i,"book")||"").trim(),startDate:_famTv(id,i,"start")||cbTodayISO(),
     startWeek:Math.max(1,parseInt(_famTv(id,i,"sw"),10)||1),total:Math.max(0,parseInt(_famTv(id,i,"total"),10)||0),days:days,topics:topics});
+  if(typeof uftKeep==="function") its[i].track=uftKeep(famItems(id)[i].track,its[i].track);   // UNITFT: the pause and a unit's week ride along
   famWrite(id+"/items",its);
 }
 // FAMMAKEUP: the "If a day is missed" setting rides along when the lessons are re-saved; its own control saves at once.
@@ -37773,6 +37777,7 @@ function famLessonsEditorHTML(id,b,it,i,ed){
   const status='<div style="font-size:11px;font-weight:700;color:#5b21b6;padding-bottom:4px">\u{1F4DA} '+(m.now?'Next: '+esc(m.now):'Nothing scheduled yet')+(m.ends?' · ends '+famFmtDate(m.ends):'')+((m.owed&&m.owed.length)?' · <span style="color:#b45309">'+m.owed.length+' to make up</span>':'')+(typeof famBoMissedWords==="function"?' · <span style="font-weight:600;color:var(--muted)">'+esc(famBoMissedWords(tr))+'</span>':'')+'</div>';   // 🚫 FAMBLOCKOUT: the setting in plain words
   if(!ed) return box(status);
   let h=status;
+  if(typeof uftControlsHTML==="function") h+=uftControlsHTML(id,it.key);   // UNITFT: Starts on · Runs on · Pause for a unit item
   if(tr.mode==="seq"){
     const sit=famSittings(it), done=famDoneN(id,it.key);
     h+='<div style="font-size:10px;color:var(--muted)">One lesson per line. End a line with ×3 for 3 days on it (“day 1 of 3”…). New books just go underneath.</div>';
@@ -40535,6 +40540,7 @@ function psApply(){
   if(kids.length>=2){
     const it={key:"i"+Date.now().toString(36),name:String(u.title||u.id),minutes:minutes};
     it.track=(mode==="seq")?{mode:"seq",list:psSeqList(u)}:psWeekTrack(u,start);
+    if(mode==="seq"){ it.track.startDate=start; it.track.perWeek=utPerWeek(u); }   // UNITFT: the First day and the unit's pace — the sheet's date was dropped for in-order (2026-11-11)
     if(typeof famBoTrackDefault==="function") famBoTrackDefault(it.track);
     let id=(typeof famWhoBlockFor==="function")?famWhoBlockFor(kids):null;
     if(id){ const b=famDefs()[id]; const bd=famList(b.days); if(bd.slice().sort().join()!==days.slice().sort().join()) it.days=days.slice();   // its own days when they differ from the block's
@@ -40543,6 +40549,7 @@ function psApply(){
       if(!famWrite(id,{name:String(u.title||u.id),kids:kids,days:days,at:at,items:[it]})) return re("Mom mode to put it on the schedule."); }
     res.fam={id:id,key:it.key};
     kids.forEach(k=>psGateAndEnroll(u,k,{fam:id,item:it.key}));
+    if(typeof uftAfterApply==="function") uftAfterApply(id,it.key,!!res.joined,u.title||u.id);   // UNITFT: lay it into this week now (the relay door), so the Grid and the schedule agree
   } else {
     const kid=kids[0], subs=psSubjects(); if(!subs[kid]) subs[kid]={}; const key=psKeyFor(u);
     if(subs[kid][key]) return re(psCap(kid)+" already has a subject with the key \u201c"+key+"\u201d.");
@@ -40576,6 +40583,7 @@ function psButtonHTML(u){
   if(ptrs.length) h+=ptrs.map(psPointerChipHTML).join("");
   else h+='<button onclick="psOpen(\''+psJ(u.id)+'\')" style="padding:7px 14px;border-radius:10px;border:none;background:'+(psForm&&psForm.uid===u.id?'#7c3aed':'#5b21b6')+';color:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F5D3} Put on the schedule'+(psForm&&psForm.uid===u.id?' \u00D7':'')+'</button>';
   h+='</div>';
+  if(typeof uftControlsHTML==="function") ptrs.forEach(p=>{ if(p.kind==="fam") h+=uftControlsHTML(p.id,p.key); });   // UNITFT: the unit's row: Starts on · Runs on · Pause
   if(psForm&&psForm.uid===u.id&&!ptrs.length) h+=psSheetHTML(u);
   return h;
 }
@@ -40592,6 +40600,7 @@ function psSheetHTML(u){
   h+=lab("In order or week by week?")+'<div class="ce-chips">'+chip(f.mode!=="week","In order \u2014 "+nDays+" days, one per sitting","psSet('mode','seq')")+chip(f.mode==="week","Week by week \u2014 by the calendar, each weekday its role","psSet('mode','week')")+'</div>';
   if(f.mode==="week"&&!Object.keys(psRoles(u)).length) h+='<div style="font-size:10.5px;color:#b45309;margin-top:4px">This unit\u2019s days have no weekday roles yet (Mon: The object, Tue: Nature \u2026) \u2014 in order works now.</div>';
   h+='<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:4px"><div>'+lab("Minutes")+'<input type="number" min="5" max="240" step="5" value="'+f.minutes+'" onchange="psSet(\'minutes\',this.value)" style="'+inp+';width:72px"></div><div>'+lab("First day")+'<input type="date" value="'+psEsc(f.start)+'" onchange="psSet(\'start\',this.value)" style="'+inp+'"></div></div>';
+  if(typeof uftPreviewHTML==="function") h+=uftPreviewHTML(u,f);   // UNITFT: where the days land, before anything is written
   if(kids.length>=2){
     const id=(typeof famWhoBlockFor==="function")?famWhoBlockFor(kids):null, b=id?famDefs()[id]:null;
     h+=lab("Starts");
@@ -40641,6 +40650,220 @@ function psGateUpto(kid,deck){
   return null;
 }
 // PUTSCHED_END
+// UNITFT_START — 🗓 A UNIT ON FAMILY TIME STARTS ON ITS DAY, AND STAYS ADJUSTABLE (her words 2026-11-11, Sara's Thanksgiving unit:
+//   "she clicked for tomorrow, but it showed up for today in the grid. And then there is no way that you can actually click it
+//   and change the date. And even though it shows up for today, it is not in her schedule either … we definitely need things to
+//   be adjustable on when they start. And so she can play with it and kind of see what it looks like … It needs to be pretty
+//   adjustable.")
+// The live incident (DeWalt, 2026-11-11, block fbmusz3l9q, item imwcjdfwd): psApply wrote the in-order item with NO start date
+//   (the sheet's First day only reached week-by-week tracks), so famLessonMap gave Day 1 to the first run day ≥ today (Wed 11/11)
+//   on all five block days (the unit's 4 a week unread); and family cards are laid only when a week is BUILT (famDayCards inside
+//   gwBuildDayTasks) — nothing laid the new item into the built week6, so the Grid (drawn from the block) showed a card that
+//   week6/tasks never had. The only date picker on the item afterwards was the make-up "counting from" date, which moves nothing.
+// What this block does — only for a UNIT item (its lines carry u:{id,d}, or week by week track.unit) that carries track.startDate,
+// track.perWeek or track.paused; every other family item lays exactly as before:
+//   · THE GATE uftOnDay(b,it,dayName,ds): nothing before startDate (local "YYYY-MM-DD" strings compared as text, never a Date read
+//     through UTC), nothing while paused, and in order at most perWeek of its run days in one Mon–Sun week (the first ones from
+//     the start). famLayout, famAutoUnits and famCellState ask it (one tagged line each), so the week build, the re-timers, the
+//     Grid, the lesson map ("Day n") and the preview all read the SAME days.
+//   · THE RE-LAY: the one re-lay door, relayWeek (RELAY_START), takes {fams:[{id,key}]} — pass F (uftRelayFams) runs inside the
+//     relay's lock before the sweep: the item's cards for the board week's remaining days from its start are the generator's own
+//     (famDayCards); missing copies are added, open copies on a day it no longer runs come off — ONE multi-path update of
+//     week<N>/tasks/<id> leaves, never the whole node. Past days, a card already checked or claimed, and today's card once its
+//     time has come never change (a card is still ADDED for today when the start is today, even after its time: the Grid shows
+//     today's day, so the schedule does too — Mom checks it or it is made up by the item's own "if a day is missed"). The relay's own diff writes the what-moved line ("· 6 added") and its Undo (cards + setting).
+//   · psApply writes startDate (the sheet's First day) + perWeek (the unit's pace) on an in-order family item, then re-lays.
+//   · "Starts on" (date) · "Runs on" (days) · "⏸ Pause / ▶ Resume" on the item, in the Family Time editor and on the unit's row in
+//     the Units tab — one leaf each under config/rules/familyBlocks/<id>/items/<i>/…, through famWrite (Mom only), then the re-lay.
+//   · THE PREVIEW: the Put-on sheet draws the first two weeks ("Thu 12 · Day 1") from the same gate before anything is written.
+// Next week isn't built yet: the week build lays it through the same gate. ?dryrun=1 → this device's memory only.
+const UFT_DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const UFT_MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const UFT_DN={Sun:"sunday",Mon:"monday",Tue:"tuesday",Wed:"wednesday",Thu:"thursday",Fri:"friday",Sat:"saturday"};
+const UFT_DAYS=["monday","tuesday","wednesday","thursday","friday","saturday"];
+// ── dates: local calendar strings only ──
+function uftISO(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function uftParse(s){ const p=String(s).split("-"); return new Date(+p[0],+p[1]-1,+p[2]); }   // local midnight — never new Date("YYYY-MM-DD") (that is UTC)
+function uftOk(s){ return /^\d{4}-\d{2}-\d{2}$/.test(String(s||"")); }
+function uftAdd(s,n){ const d=uftParse(s); d.setDate(d.getDate()+n); return uftISO(d); }
+function uftMonOf(s){ const d=uftParse(s); d.setDate(d.getDate()-((d.getDay()+6)%7)); return uftISO(d); }
+function uftToday(){ return (typeof cbTodayISO==="function")?cbTodayISO():uftISO(new Date()); }
+function uftFmt(s){ const d=uftParse(s); return UFT_DOW[d.getDay()]+" "+d.getDate(); }
+function uftFmtLong(s){ const d=uftParse(s); return UFT_DOW[d.getDay()]+", "+UFT_MON[d.getMonth()]+" "+d.getDate(); }
+function uftEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function uftJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
+// ── the gate ──
+function uftIsUnit(it){ const tr=it&&it.track; if(!tr) return false; if(tr.unit&&tr.unit.id) return true; return tr.mode==="seq"&&famList(tr.list).some(function(l){ return l&&l.u&&l.u.id; }); }
+function uftTr(it){ if(!uftIsUnit(it)) return null; const tr=it.track; return (tr.startDate||tr.perWeek||tr.paused)?tr:null; }
+let _uftSd={t:0,v:null,n:0};
+function uftSchoolSet(){   // the family's school dates (the Grid's rows), cached a moment
+  const now=Date.now(); if(_uftSd.v&&now-_uftSd.t<1500) return _uftSd;
+  const v={}; try{ famGridDates().forEach(function(r){ v[r.date]=1; }); }catch(e){}
+  _uftSd={t:now,v:v,n:Object.keys(v).length}; return _uftSd;
+}
+// a day the block + item run on without the gate: a school day, the block's and the item's days, someone there
+function uftBaseRuns(b,it,ds){
+  if(!b||b.off||!uftOk(ds)) return false; const S=uftSchoolSet(); if(S.n&&!S.v[ds]) return false;
+  const dn=UFT_DN[UFT_DOW[uftParse(ds).getDay()]]; if(!famRunsOn(b.days,dn)||!famRunsOn(it.days,dn)) return false;
+  const st=famStartMin(b,dn); return famItemKids(b,it).some(function(k){ return famKidIn(k,ds,st,null); });
+}
+function uftOnDay(b,it,dayName,ds){
+  const tr=uftTr(it); if(!tr) return true;
+  if(tr.paused) return false;
+  if(!uftOk(ds)){ try{ ds=(typeof routineDateISO==="function")?routineDateISO(dayName):""; }catch(e){ ds=""; } }   // a board card's day → its date
+  if(!uftOk(ds)) return true;   // no date to judge by → as before
+  if(uftOk(tr.startDate)&&ds<tr.startDate) return false;
+  const pw=parseInt(tr.perWeek,10)||0; if(!pw||tr.mode!=="seq") return true;
+  const mon=uftMonOf(ds); let n=0;   // the pace: the first pw run days of this Mon–Sun week, from the start
+  for(let k=0;k<7;k++){ const d=uftAdd(mon,k); if(d>ds) break; if(uftOk(tr.startDate)&&d<tr.startDate) continue; if(d===ds||uftBaseRuns(b,it,d)) n++; }
+  return n<=pw;
+}
+// the dates an item lays on from `from` for `weeks` Mon–Sun weeks — the Grid's rows + its own famCellState (so, the gate) → ["YYYY-MM-DD"…]
+function uftPlanDates(b,it,from,weeks){
+  const out=[]; if(!b||!it||!uftOk(from)) return out; const end=uftAdd(uftMonOf(from),7*(weeks||2)), S=uftSchoolSet();
+  for(let d=from;d<end;d=uftAdd(d,1)){ if(S.n&&!S.v[d]) continue; const c=famCellState(b,it,d); if(c.runs&&c.kids&&c.kids.length) out.push(d); }   // the Grid's rows: school days only
+  return out;
+}
+// The Grid / strip words: "starts Thu, Nov 12" until then · "paused"
+function uftWords(it){
+  const tr=uftTr(it); if(!tr) return "";
+  if(tr.paused) return "\u23F8 paused";
+  return (uftOk(tr.startDate)&&tr.startDate>uftToday())?"starts "+uftFmtLong(tr.startDate):"";
+}
+function uftGridTag(it,col){ const w=uftWords(it); return w?'<div style="font-size:9px;font-weight:800;color:'+(col||"#5b21b6")+'">'+uftEsc(w)+'</div>':''; }
+// ── pass F: the board week's cards for ONE family item (pure) ──
+// o = {days, dayISO(dn), todayDay, nowMin, checked, claimed, want(dn,ds) → [{who,s,e,title,detail}], toMin, fromMin}
+// → {upd:{<id>:card|null}, added:[card], removed:[id]} — keys are week<N>/tasks children: one card each, never the node
+function uftWeekDiff(id,key,tasks,o){
+  o=o||{}; const out={upd:{},added:[],removed:[]}; const days=o.days||UFT_DAYS, tIx=days.indexOf(o.todayDay);
+  const tm=o.toMin||toMin, fm=o.fromMin||fromMin;
+  const ids={}; (tasks||[]).forEach(function(t){ if(t&&t.id) ids[t.id]=1; });
+  const fresh=function(dn,who){ const b="uft_"+key+"_"+dn.slice(0,3)+"_"+who; let x=b, n=0; while(ids[x]){ n++; x=b+"_"+n; } ids[x]=1; return x; };
+  days.forEach(function(dn,di){
+    const ds=o.dayISO?o.dayISO(dn):null; if(!uftOk(ds)) return;
+    if(tIx>=0&&di<tIx) return;   // a past day never changes
+    const isToday=(di===tIx), now=(isToday&&o.nowMin!=null)?o.nowMin:-1;
+    const live=(tasks||[]).filter(function(t){ return t&&t.famBlock===id&&t.famItem===key&&t.day===dn&&!String(t.id||"").endsWith("_c"); });
+    const held=function(t){ return !!(o.checked&&o.checked[t.id])||!!(o.claimed&&o.claimed[t.id])||(isToday&&t.time!=null&&tm(t.time)<=now); };
+    const want=(o.want?o.want(dn,ds):[])||[], wk={}; want.forEach(function(c){ wk[c.who]=c; });
+    live.forEach(function(t){ if(held(t)||wk[t.who]) return; out.upd[t.id]=null; out.removed.push(t.id); });
+    want.forEach(function(c){
+      if(live.some(function(t){ return t.who===c.who; })) return;
+      const card={id:fresh(dn,c.who),who:c.who,day:dn,time:fm(c.s),dur:c.e-c.s,title:c.title,detail:c.detail,mom:"none",cascade:true,device:"paper",famBlock:id,famItem:key};   // the generator's own shape
+      out.upd[card.id]=card; out.added.push(card); });
+  });
+  return out;
+}
+// pass F inside relayWeek's run (its lock, its snapshot before and diff after): lay the listed items into the board week
+function uftRelayFams(pend){
+  const fams=(pend&&pend.fams)||[]; if(!fams.length) return null;
+  try{
+    if(typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return null;
+    const now=new Date(), all={upd:{},added:[],removed:[]};
+    fams.forEach(function(f){
+      const d=uftWeekDiff(f.id,f.key,weekData.tasks,{days:UFT_DAYS,
+        dayISO:function(dn){ try{ return routineDateISO(dn); }catch(e){ return null; } },
+        todayDay:(typeof _todayDay==="string")?_todayDay:null, nowMin:now.getHours()*60+now.getMinutes(),
+        checked:(typeof checked!=="undefined"&&checked)||{}, claimed:(typeof claimed!=="undefined"&&claimed)||{},
+        want:function(dn,ds){ return famDayCards(dn,ds,null).filter(function(c){ return c.b===f.id&&c.k===f.key; }); }});
+      d.removed.forEach(function(id){ const k=weekData.tasks.findIndex(function(t){ return t&&t.id===id; }); if(k>=0) weekData.tasks.splice(k,1); });   // this device's memory first
+      d.added.forEach(function(c){ weekData.tasks.push(Object.assign({},c)); });
+      Object.assign(all.upd,d.upd); all.added=all.added.concat(d.added); all.removed=all.removed.concat(d.removed);
+    });
+    if(!Object.keys(all.upd).length) return all;
+    try{ sv(WK+"_tasks",weekData.tasks); }catch(e){}
+    if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){ lastTasksWrite=Date.now(); db.ref(WK+"/tasks").update(all.upd); }   // targeted: one leaf per card
+    try{ dbg("\u{1F5D3} family items laid ("+fams.map(function(f){ return f.id+"/"+f.key; }).join(" ")+"): +"+all.added.length+" −"+all.removed.length); }catch(e){}
+    return all;
+  }catch(e){ try{ dbg("unitft pass F: "+e); }catch(x){} return null; }
+}
+// ── the writes: one leaf under the item, then the re-lay (Undo = the leaf as it was + the cards back) ──
+function uftItemAt(id,key){ const b=famDefs()[id]; const raw=b?fbArr(b.items):null; const i=Array.isArray(raw)?raw.findIndex(function(x){ return x&&x.key===key; }):-1; return {b:b,i:i,it:i>=0?raw[i]:null}; }
+function uftWrite(id,key,sub,val,label){
+  if(typeof momHere==="function"&&!momHere()) return false;
+  const at=uftItemAt(id,key); if(!at.it) return false;
+  const rel=id+"/items/"+at.i+"/"+sub, P="config/rules/familyBlocks/"+rel;
+  let was; try{ was=sub.split("/").reduce(function(o,k){ return o==null?undefined:o[k]; },at.it); }catch(e){ was=undefined; }
+  if(!famWrite(rel,(val===undefined)?null:val)) return false;
+  try{ _famLmMemo={}; _famRdCache={t:0,v:{}}; }catch(e){}
+  if(typeof relayWeek==="function") relayWeek("famtime",{label:label,fams:[{id:id,key:key}],undo:[(was===undefined||was===null)?{p:P,gone:true}:{p:P,was:JSON.parse(JSON.stringify(was))}]});
+  return true;
+}
+function uftSetStart(id,key,v){ if(!uftOk(v)) return false; const at=uftItemAt(id,key); if(!at.it) return false; return uftWrite(id,key,"track/startDate",v,"\u{1F5D3} "+(at.it.name||"")+" starts "+uftFmtLong(v)); }
+function uftPause(id,key,on){ const at=uftItemAt(id,key); if(!at.it) return false; return uftWrite(id,key,"track/paused",on?true:null,(on?"\u23F8 ":"\u25B6 ")+(at.it.name||"")+(on?" paused":" resumed")); }
+function uftRunDays(b){ return FAM_DAYS.filter(function(d){ return famRunsOn(b.days,FAM_DN[d]); }); }
+function uftToggleDay(id,key,d){
+  const at=uftItemAt(id,key); if(!at.it||!at.b) return false; const bd=uftRunDays(at.b);
+  const cur=famList(at.it.days).length?famList(at.it.days):bd.slice(), has=cur.indexOf(d)>=0;
+  const nx=bd.filter(function(x){ return has?(x!==d&&cur.indexOf(x)>=0):(x===d||cur.indexOf(x)>=0); });
+  if(!nx.length) return false;   // it runs on at least one day
+  return uftWrite(id,key,"days",nx.length===bd.length?null:nx,"\u{1F5D3} "+(at.it.name||"")+" runs "+nx.join("/"));   // every block day = no list (follows the block)
+}
+// re-saving the lessons keeps the start, the pace, the pause, and each line's unit day (matched by its words)
+function uftKeep(oldTr,newTr){
+  if(!oldTr||!newTr) return newTr;
+  ["startDate","perWeek","paused"].forEach(function(f){ if(oldTr[f]!=null&&newTr[f]==null) newTr[f]=oldTr[f]; });
+  if(newTr.mode==="seq"&&oldTr.mode==="seq"){ const old=famList(oldTr.list); famList(newTr.list).forEach(function(l){ if(!l||l.u) return; const m=old.find(function(o){ return o&&o.u&&o.t===l.t; }); if(m) l.u=m.u; }); }
+  return newTr;
+}
+// psApply (2+ kids) put the unit on a block: lay it into this week through the door; Undo takes the item (or the new block) off
+function uftAfterApply(id,key,joined,title){
+  if(typeof relayWeek!=="function") return;
+  const at=uftItemAt(id,key), b=at.b||{};
+  const undo=joined?(at.i>=0?[{p:"config/rules/familyBlocks/"+id+"/items/"+at.i,gone:true}]:[]):[{p:"config/rules/familyBlocks/"+id,gone:true}];
+  relayWeek("famtime",{label:"\u{1F5D3} "+String(title||"")+" on "+String(b.name||"Family time"),fams:[{id:id,key:key}],undo:undo});
+}
+// ── the controls: the Family Time editor (ed) and the unit's row in the Units tab ──
+function uftControlsHTML(id,key){
+  if(typeof momHere==="function"&&!momHere()) return "";
+  const at=uftItemAt(id,key), b=at.b, it=at.it; if(!b||!it||!uftIsUnit(it)) return "";
+  const tr=it.track, a="'"+uftJ(id)+"','"+uftJ(key)+"'", bd=uftRunDays(b), mine=famList(it.days).length?famList(it.days):bd;
+  const inp='padding:4px 7px;border:1.5px solid var(--border);border-radius:7px;font-size:12px;font-family:\'DM Sans\',sans-serif;background:#fff';
+  let h='<div data-uft="1" onclick="event.stopPropagation()" style="margin-top:6px;padding:7px 9px;border-radius:9px;background:#faf5ff;border:1.5px solid #ddd6fe;font-size:11.5px">';
+  h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-weight:800;color:#5b21b6">Starts on</span><input type="date" value="'+uftEsc(uftOk(tr.startDate)?tr.startDate:"")+'" onchange="uftSetStart('+a+',this.value)" style="'+inp+'">'+
+    '<button onclick="uftPause('+a+','+(tr.paused?'false':'true')+')" style="margin-left:auto;padding:4px 11px;border-radius:8px;border:1.5px solid #c4b5fd;background:'+(tr.paused?'#5b21b6':'#fff')+';color:'+(tr.paused?'#fff':'#5b21b6')+';font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(tr.paused?'\u25B6 Resume':'\u23F8 Pause')+'</button></div>';
+  h+='<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:5px"><span style="font-weight:800;color:#5b21b6;margin-right:4px">Runs on</span>'+bd.map(function(d){ return _famChip(mine.indexOf(d)>=0,d,"uftToggleDay("+a+",'"+d+"')",true); }).join("")+'</div>';
+  const today=uftToday();
+  if(tr.paused) h+='<div style="margin-top:5px;color:#b45309;font-weight:700">\u23F8 Paused \u2014 nothing goes on the schedule until you resume. It picks up where you left off.</div>';
+  else { let m=null; try{ m=famLessonMap(b,id,it); }catch(e){ m=null; }
+    const ds=m?Object.keys(m.byDate||{}).filter(function(d){ return d>=today&&!/^\u2713/.test(m.byDate[d]); }).sort():[];
+    const sh=function(d){ return String((m.short&&m.short[d])||m.byDate[d]).split(" \u2014 ")[0]; };
+    h+='<div style="margin-top:5px;color:#4c1d95">'+(ds.length?ds.slice(0,6).map(function(d){ return '<b>'+uftEsc(uftFmt(d))+'</b> \u00B7 '+uftEsc(sh(d)); }).join(' \u00A0 ')+(ds.length>6?' \u2026 last: <b>'+uftEsc(uftFmtLong(ds[ds.length-1]))+'</b>':''):'Nothing left to put on the schedule.')+'</div>'; }
+  return h+'</div>';
+}
+// ── the preview on the Put-on sheet: the first two weeks from the First day, before anything is written ──
+function uftPreviewItem(u,f){   // → {b, it} as psApply would make them (null when it would be one kid's own subject)
+  const kids=psRoster().filter(function(k){ return f.kids.indexOf(k)>=0; }), days=PS_DAYS.filter(function(d){ return f.days.indexOf(d)>=0; });
+  if(kids.length<2||!days.length||!utDaysOn(u).length) return null;
+  const start=uftOk(f.start)?f.start:psToday(), mode=f.mode==="week"?"week":"seq";
+  const it={key:"__uftpv",name:String(u.title||u.id),minutes:Math.max(5,Math.min(240,parseInt(f.minutes,10)||30))};
+  it.track=(mode==="seq")?{mode:"seq",list:psSeqList(u),startDate:start,perWeek:utPerWeek(u)}:psWeekTrack(u,start);
+  const id=(typeof famWhoBlockFor==="function")?famWhoBlockFor(kids):null, b0=id?famDefs()[id]:null;
+  let b;
+  if(b0){ if(famList(b0.days).slice().sort().join()!==days.slice().sort().join()) it.days=days.slice(); b=Object.assign({},b0,{items:famList(b0.items).concat([it])}); }
+  else b={name:String(u.title||u.id),kids:kids,days:days,at:f.at==="auto"?"auto":(f.at==="time"?String(f.time||"1:00 PM"):"lunch"),items:[it]};
+  return {b:b,it:it,start:start,mode:mode};
+}
+function uftPreview(u,f){   // → [{date, label}] for the first two weeks, plus the last day if it falls later
+  const P=uftPreviewItem(u,f); if(!P) return null;
+  const total=(P.mode==="seq")?famList(P.it.track.list).length:0, roles=(P.mode==="week")?psRoles(u):{};
+  const all=uftPlanDates(P.b,P.it,P.start,P.mode==="seq"?26:2);
+  const two=uftAdd(uftMonOf(P.start),14), out=[];
+  all.forEach(function(d,i){ if(P.mode==="seq"&&i>=total) return; const lb=(P.mode==="seq")?"Day "+(i+1):(roles[UFT_DOW[uftParse(d).getDay()]]||"");
+    if(d<two) out.push({date:d,label:lb}); else if(P.mode==="seq"&&i===total-1) out.push({date:d,label:lb,last:true}); });
+  return out;
+}
+function uftPreviewHTML(u,f){
+  const pv=uftPreview(u,f); if(pv===null) return "";
+  if(!pv.length) return '<div style="font-size:11px;color:#b45309;margin-top:8px">Nothing lands in the first two weeks from that day \u2014 try another First day or more days.</div>';
+  const P=uftPreviewItem(u,f), wk1=uftMonOf(P.start), wk2=uftAdd(wk1,7);
+  const row=function(lo,hi){ const r=pv.filter(function(x){ return !x.last&&x.date>=lo&&x.date<hi; }); return r.length?'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">'+r.map(function(x){ return '<span style="padding:3px 8px;border-radius:8px;background:#fff;border:1px solid #ddd6fe;font-size:11px"><b>'+uftEsc(uftFmt(x.date))+'</b> \u00B7 '+uftEsc(x.label)+'</span>'; }).join("")+'</div>':''; };
+  const last=pv.find(function(x){ return x.last; });
+  return '<div data-uft-preview="1" style="margin-top:8px"><div class="ce-sheet-lbl">Where the days land</div>'+row(wk1,wk2)+row(wk2,uftAdd(wk1,14))+
+    (last?'<div style="font-size:10.5px;color:var(--muted);margin-top:3px">\u2026 last day: <b>'+uftEsc(uftFmtLong(last.date))+'</b> \u00B7 '+uftEsc(last.label)+'</div>':'')+
+    '<div style="font-size:10px;color:var(--muted);margin-top:3px">'+(P.mode==="seq"?utPerWeek(u)+' a week at most, on the days picked; school days only. ':'')+'Change the First day or the days and this updates \u2014 nothing is saved until Put it on.</div></div>';
+}
+// UNITFT_END
 // DAYCARD_START — 📺 today's day card on one screen, for the whole family ("One shape" §3 Screen in both examples, §5 the board;
 //   BRIEF_units_build_2026-10-27.md B2; her answers 2026-10-26: 3 "rungs only on a day where Mom adds a question", 4 "logging is
 //   Mom's option per unit: graded + logged per kid, or not tracked", 8 "the big screen AND an Open today's card button on each
@@ -43880,6 +44103,7 @@ function relayWeek(why,info){
     try{ if(!u.gone&&u.was!=null&&JSON.stringify(u.was).length>((typeof RLW_UNDO_MAX_JSON!=="undefined")?RLW_UNDO_MAX_JSON:16000)){ dbg("relay undo: "+u.p+" too big to keep — the cards still come back"); return; } }catch(e){}   // 🔁 RELAY4
     _rlwPend.undo.push(u.gone?{p:u.p,gone:true}:{p:u.p,was:(u.was===undefined?null:u.was)}); });
   (info.subjects||[]).forEach(function(s){ if(s&&s.kid&&s.sk&&!_rlwPend.subjects.some(x=>x.kid===s.kid&&x.sk===s.sk)) _rlwPend.subjects.push({kid:s.kid,sk:s.sk}); });   // 🔁 RELAY3: pass B — the subjects re-laid after the sweep, one after another
+  (info.fams||[]).forEach(function(f){ if(!f||!f.id||!f.key) return; if(!_rlwPend.fams) _rlwPend.fams=[]; if(!_rlwPend.fams.some(x=>x.id===f.id&&x.key===f.key)) _rlwPend.fams.push({id:f.id,key:f.key}); });   // UNITFT: pass F — family items laid into the board week
   try{ clearTimeout(_rlwTimer); }catch(e){}
   _rlwTimer=setTimeout(function(){ _rlwFire(0); },RLW_WAIT_MS);
 }
@@ -43897,7 +44121,7 @@ function _rlwFire(att){
     let _rel=false; const _done=function(){ if(_rel) return; _rel=true; try{ release(); }catch(e){} };
     // 🔁 RELAY3: pass A (the sweep), then pass B (the listed subjects, chained through each re-lay's then) — one snapshot,
     // one diff, one log line for both; the lock is released when the chain is over
-    try{ _rlwRun(pend,function(fin){ cascadeIntraWeek(); if(typeof runCascade==="function") runCascade(); _rlwGuard(pend); _rlwChain(pend.subjects||[],pend,fin); },_done); }
+    try{ _rlwRun(pend,function(fin){ if(typeof uftRelayFams==="function") uftRelayFams(pend); cascadeIntraWeek(); if(typeof runCascade==="function") runCascade(); _rlwGuard(pend); _rlwChain(pend.subjects||[],pend,fin); },_done); }   // UNITFT: pass F before the sweep, so the sweep and the guard pack around the new family cards
     catch(e){ dbg("relay run: "+e); _done(); }
   });
 }
