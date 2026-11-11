@@ -29,7 +29,7 @@ in §4.0 as a pre-slice fix, **RULESCROLL**.
 | Places that hold per-subject settings | **5**: Add sheet · subject card · ⚙ Rules table · 🧱 Builder form · Family-time editor | **1 editor, drawn in 2 places** — the card and the ⚙ Rules table draw the same pill through one function (+ the Add flow, which is setup) |
 | Per-subject settings writable from 2+ editors | **18 groups** (§1.4) | **0** — one function writes each field; the Builder form no longer edits anything after setup |
 | When a change takes effect | Rules table: on the tap · Builder: staged until Build · card: mixed | **always on the tap**, the week re-lays, ↩ Undo one tap (her answer to question 1) |
-| Housekeeping / migration / audit banners above the grid | **14** different banners, each its own colour | one collapsed **🔍 Checks (n)** drawer, shown only when n > 0 |
+| Housekeeping / migration / audit banners above the grid | **14** different banners, each its own colour | one collapsed **🔍 Checks (n)** drawer, shown only when n > 0; in Simple the tidy-ups fold to "n more under Show everything", never out of the count |
 | Toolbar buttons and toggles above the table | **11** | **5** (kid chips · 🏡 Family · ＋ Add subject · 📅 *Kid*'s year · ⋯ More) |
 | First subject from a book, until it is on the week | **21 taps · 5 screens · 20 Howe words, 5 of them decisions you must get right** | **16 taps · 3 screens · 2 Howe words (lane, card), 0 forced decisions** |
 | Lesson Map editor controls nobody can reach | 41 (the Subjects tab it lived on redirects to the Grid on every render) | **audited, then removed** (slice 3b LMCLEANUP, her answer to question 4): ≈95 KB less `index.html` for the LG |
@@ -388,15 +388,23 @@ take turns in: when one finishes, the next starts."). Internal names (`planBacke
 ### 3.6 Progressive disclosure — Simple and Everything
 
 One family-wide switch, `config/ui/curriculum/view` = `"simple"` | `"everything"`, in ⋯ More as **Show everything /
-Keep it simple**. Default: **everything** for a family that has a lane or 8+ subjects when this ships (you and the two
-beta families keep exactly what they see today); **simple** for a family with fewer. Per family, not per device — her
-answer to question 3 ("3 per family").
+Keep it simple**. **Every family starts on Simple — hers included** (her answer to question 3: *"3 per family"*, then
+*"lets put us on simple as well"*). There is no start rule by grid size: the owner with the biggest grid chose Simple, so
+Simple is the page, and Everything is one tap away in ⋯ More ▸ **Show everything**, remembered per family (one value for every
+device, not per device). The slice ships with the switch absent from the database, which reads as Simple.
 
-**Simple hides** (never deletes): card §5–9 and the Lane section until the kid has 2+ subjects with lessons; the advanced
-columns of the All-subjects table (the table itself stays); the plan bar's three strips; ⋯ More ▸ Edit many cells / Order by end date; the Checks drawer's *Tidy-up* group (the
-*Worth a look* group still shows when n > 0); on the Add flow, everything behind *More options*. A one-line footer on the
-card says "More options are under **Show everything** (⋯ More)". In **Everything**, the page carries every control it does
-today — the slice tests assert that.
+**Simple hides and never deletes.** Every control on the page today is still reachable after the flip; the hidden ones are
+rendered, with the same handlers and the same writes, the moment the switch is on, and the slice tests assert that the
+Everything view is byte-identical to the end of slice 5. What Simple hides: card §5–9 and the Lane section until the kid has
+2+ subjects with lessons; the advanced columns of the All-subjects table (the table itself stays); the plan bar's three
+strips; ⋯ More ▸ Edit many cells / Order by end date; the Checks drawer's *Tidy-up* group; on the Add flow, everything behind
+*More options*. A one-line footer on the card says "More options are under **Show everything** (⋯ More)".
+
+**A hidden check is never silently invisible.** The 🔍 Checks drawer's badge counts **every** true condition, Tidy-up
+included, in both views. In Simple the drawer shows the *Worth a look* rows in full and, under them, one line per hidden
+group: "**n more under Show everything** — one-time tidy-ups for an older curriculum", which is itself the tap that flips the
+switch. So a migration banner she needs (Assign lesson ids, Import completions, Fold into Cap, Remove N from grid …) still
+counts, still names itself, and is one tap away — it is folded, not gone.
 
 ### 3.7 The first-subject guided flow (＋ Add subject)
 
@@ -492,7 +500,7 @@ later change cannot quietly break it). Risk: very low — display state only.
 | 3b | **LMCLEANUP** — the deletion | Removes exactly the **go** list from the audit; re-points the three live callers of the dead names (§4.3); updates the tests that pin them; simplifies the router (`case "curriculum": currInnerTab="subjects"` 6942 → `"grid"`) and drops the one-chip "Grid" bar (`_cvBar`, 29266–29274) that only existed as the way back from the Builder tab | `test_lessonmap_cleanup.js`: every **go** name is absent from `index.html`; every **keep** writer is present and its body byte-identical to before; `_normOrderArr` still reads a stored `order` override (the generator's 44629 / 84103 read is unchanged); the grid's ➡ move, ✕ off day, ➕ make-up, ↩ put back and Align still call the kept functions; `renderCurriculumView` has one branch; the whole `test_*.js` suite is green; `index.html` is smaller by at least 90 KB | medium — a wrong "go" removes a live door; the audit commit is the protection |
 | 4 | **CURRTOOLS** — toolbar and the Checks drawer | Toolbar = kid chips · 🏡 · ＋ Add · 📅 · ⋯ More (Show past days · Edit many cells · Order columns by end date · Lay everything out again · Show everything/Keep it simple); the 14 banners + audit + evening-out + daily-missed render inside one `🔍 Checks (n)` drawer in two groups, collapsed, drawn only when n > 0 | with each banner's condition forced true, its buttons render inside the drawer with the same `onclick`; the count badge equals the number of true conditions; with all false the drawer is absent and the grid is byte-identical | low |
 | 5 | **ADDFLOW** — the guided Add | `ceRenderAddSheet` gets a `step` (1–4) and a *More options* expander; step 4 runs `ceAddSave` → `cbDefaultForm` → `cbRunPreview` and its button runs `cbBuildGate`; "Show all options at once" renders today's sheet; after the build, no card re-opens (today's `ceOpenEdit` at 34988 is skipped only when the flow built) | for the same answers, the subject record written by step 4 equals today's `ceAddSave` record and the build writes equal today's Add → Build; a brand-new kid with no grid builds from the synthetic Wk 1 (`cbExtendInfo` 53003); a daily subject skips steps 2 and 4; two kids → `famWhoSave` as today | medium — chains two write doors in one tap; the gate (`cbBuildGate`) must still be able to appear for a legacy subject copied in |
-| 6 | **CURRSIMPLE** — Simple / Everything | the `config/ui/curriculum/view` switch; the default rule at first load; hiding per §3.6 | in Everything the page is byte-identical to the end of slice 5; in Simple every hidden control is absent and nothing else changes; the default rule picks everything for a family with a lane or ≥ 8 subjects | low |
+| 6 | **CURRSIMPLE** — Simple / Everything | the `config/ui/curriculum/view` switch (absent = Simple, for every family, hers included); hiding per §3.6; the Checks badge counts hidden Tidy-up conditions and the drawer's "n more under Show everything" line | in Everything the page is byte-identical to the end of slice 5; in Simple every hidden control is absent and nothing else changes; with the switch flipped every hidden control renders with the same `onclick` and write as in Everything; with a Tidy-up condition forced true in Simple the badge count includes it and the drawer carries the "n more" line; no start rule by grid size exists in the code | low |
 | 7 | **COLORDER** — a custom column order (her answer to question 6) | Columns stay **alphabetical by default** (`lnFoldColumns` 52917 sorts the folded column keys by label today). A **Column order** list in 📅 *Kid*'s year ▸ All subjects shows the grid's columns in their current order — a lane is one entry (🛤 name), as it is one column — each with **▲ ▼**, plus **Back to A–Z**. One pure function `gvColOrder(cols, saved, labelOf)` sits between `lnFoldColumns` and the grid: no saved order → alphabetical (today's result, byte-identical); a saved order → that order for the keys that still exist, **deleted columns dropped, new columns appended alphabetically at the end**; cleared → A–Z. The saved order is `curriculum/colOrder/<kid>` = an array of column keys (`<sk>` or `lane:<id>`), written by one targeted `set` on each ▲/▼ tap and `remove` on Back to A–Z, Mom only, display only — **no re-lay, no card moves**. **Sort by end date coexists** as it is: a per-device view toggle that writes nothing; **a custom order wins while one is set** — the end-date button then reads *Order by end date · off while a custom order is set — Back to A–Z first*, so the two never fight over the same columns. The 🏡 Family grid has its own grouping and is not touched. | `test_col_order.js`: the pure function — alphabetical when `saved` is null; the saved order kept for existing keys; a new subject appears at the end in alphabetical position among the appended; a deleted subject is dropped; a lane key moves as one column; clearing restores A–Z exactly; ▲ on the first and ▼ on the last are no-ops; the write is `curriculum/colOrder/<kid>` `set` of the whole small array (targeted to the kid) and `remove` on clear, nothing else written; with end-date sort on and no custom order the end-date order applies, with a custom order set it does not; the grid header markup is byte-identical apart from order | low — display only; the only new write is one small per-kid array |
 
 **Slice 7 — arrows, not drag (her addendum: "or arrows to change if that's better").** Recommendation: **arrows, and no drag
@@ -582,9 +590,10 @@ Status 2026-11-10: **all six answered**, each folded into the section it touches
    runs* section **one control drawn twice** through `rlPillHTML` (§3.1): one function writes each field, drawn in the
    table for twenty subjects at once and on the card for one. The "cells become shortcuts" step is dropped from slice 3.
 3. ~~**Simple / Everything: per family or per device? And where does your family start?**~~ **Answered 2026-11-10: per
-   family** (*"3 per family"*), with the plan's start rule standing: `config/ui/curriculum/view`, one value for every
-   device; a family with a lane or 8+ subjects when slice 6 ships starts on **Everything** (hers and both beta families keep
-   exactly what they see today), a new family starts on **Simple**. Folded into §3.6 and slice 6.
+   family, and everyone starts on Simple** (*"3 per family"*, then *"lets put us on simple as well"*). `config/ui/curriculum/view`
+   is one value for every device; the lane-or-8-subjects start rule is dropped — hers, both beta families and every new
+   family start on Simple, and Everything is one tap away in ⋯ More ▸ Show everything, remembered per family. Simple hides and
+   never deletes; the Checks badge still counts hidden Tidy-up items. Folded into §3.6 and slice 6.
 4. ~~**The 41 unreachable Lesson Map controls and the Builder tab** — leave or remove?~~ **Answered 2026-11-10: remove and
    clean up, audit first.** *"lets remove and clean up but def audit to make sure it causes no issues before you do it."*
    Now slices 3a (audit only, its own committed `AUDIT_lessonmap_dead_2026-11-xx.md` + harness, nothing deleted) and 3b
