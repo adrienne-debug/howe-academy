@@ -313,7 +313,7 @@ Replaces the two kid-tool buttons (`⚙ Rules & day cap`, `🏁 Target · Mom Ch
 | **Hours & load** | *Longest school day* (the day cap − / + · reset to school hours) · *Finish the year by* (target date · clear) · *You approve check-offs for this kid* (the Mom-check master) · door: *Family-wide hours, sitter, devices, order of the day → Settings* | ⚙ Rules day cap (53563); 🏁 panel target + Mom Check (57426–57428); Rules footer door (53644) |
 | **School terms** (*was School Sessions*) | the sessions list and editor exactly as today (name, dates, kids, school days, points, song, goals, soft/hard, delete, new) | 🏁 panel `ceRenderSessions` 29725 |
 | **Lanes** | the lane list and editor exactly as today (+ New lane, ✎ edit, ✕ remove, retire, ↩ Undo, "not stacked yet" chips) | ⚙ Rules ▸ 🛤 Lanes `lnRenderSection` 53316 — also opened by tapping a **🛤 lane band** in the grid |
-| **All subjects** (*the ⚙ Rules table, live*) | the per-subject table exactly as today — one row per subject, every pill editable, writes and re-lays on the tap — drawn by the same `rlPillHTML` the card uses, so a change made here and a change made on the card are the same code path. Scrolls cleanly after RULESCROLL (§4.0). In Simple view the advanced columns (Co-op day, Mom days, 📌 new lesson, Sticky, If missed, Priority) are hidden, not removed | ⚙ Rules table `cbRenderRules` 53550 (her answer to question 2: "i like the rules table better than the builder") |
+| **All subjects** (*the ⚙ Rules table, live*) | the per-subject table exactly as today — one row per subject, every pill editable, writes and re-lays on the tap — drawn by the same `rlPillHTML` the card uses, so a change made here and a change made on the card are the same code path. Scrolls cleanly after RULESCROLL (§4.0). In Simple view the advanced columns (Co-op day, Mom days, 📌 new lesson, Sticky, If missed, Priority) are hidden, not removed. Above it, **Column order** (slice 7): the grid's columns in order, a lane as one entry, ▲ ▼ per entry, **Back to A–Z** | ⚙ Rules table `cbRenderRules` 53550 (her answer to question 2: "i like the rules table better than the builder"); Column order is new (question 6) |
 
 ### 3.4 What the grid itself keeps
 
@@ -424,11 +424,11 @@ nothing is lost for you.
 | Pause / resume (§2.3) | 2 / 2 | **2 / 2** (name ▸ ⏸ in the header; ⏸ strip ▸ name ▸ ▶) | pause is at the top, not section 27 |
 | Delete (§2.4) | 3 | **3** (name ▸ ⋯ ▸ Delete ▸ confirm) | same |
 | Reorder books in a lane (§2.5) | 4+ via ⚙ Rules ▸ Lanes ▸ ✎ edit | **3** (tap the 🛤 band ▸ ▲▼ ▸ Save) | the band is the door |
-| Reorder columns | not possible | not possible (question 6) | — |
+| Reorder columns | not possible (alphabetical only) | **3** (📅 *Kid*'s year ▸ All subjects ▸ Column order ▸ ▲ or ▼; Back to A–Z is 1) | new in slice 7, her answer to question 6 |
 
 ---
 
-## 4 · Build plan — a pre-slice fix, six slices, and a two-part cleanup after slice 3
+## 4 · Build plan — a pre-slice fix, seven slices, and a two-part cleanup after slice 3
 
 Each slice is one branch off `origin/main`, one PR, its own `test_<feature>.js` that slices the block by its
 `// NAME_START … NAME_END` markers, replays the affected doors on stubs and asserts (a) every pre-existing control is still
@@ -492,6 +492,17 @@ later change cannot quietly break it). Risk: very low — display state only.
 | 4 | **CURRTOOLS** — toolbar and the Checks drawer | Toolbar = kid chips · 🏡 · ＋ Add · 📅 · ⋯ More (Show past days · Edit many cells · Order columns by end date · Lay everything out again · Show everything/Keep it simple); the 14 banners + audit + evening-out + daily-missed render inside one `🔍 Checks (n)` drawer in two groups, collapsed, drawn only when n > 0 | with each banner's condition forced true, its buttons render inside the drawer with the same `onclick`; the count badge equals the number of true conditions; with all false the drawer is absent and the grid is byte-identical | low |
 | 5 | **ADDFLOW** — the guided Add | `ceRenderAddSheet` gets a `step` (1–4) and a *More options* expander; step 4 runs `ceAddSave` → `cbDefaultForm` → `cbRunPreview` and its button runs `cbBuildGate`; "Show all options at once" renders today's sheet; after the build, no card re-opens (today's `ceOpenEdit` at 34988 is skipped only when the flow built) | for the same answers, the subject record written by step 4 equals today's `ceAddSave` record and the build writes equal today's Add → Build; a brand-new kid with no grid builds from the synthetic Wk 1 (`cbExtendInfo` 53003); a daily subject skips steps 2 and 4; two kids → `famWhoSave` as today | medium — chains two write doors in one tap; the gate (`cbBuildGate`) must still be able to appear for a legacy subject copied in |
 | 6 | **CURRSIMPLE** — Simple / Everything | the `config/ui/curriculum/view` switch; the default rule at first load; hiding per §3.6 | in Everything the page is byte-identical to the end of slice 5; in Simple every hidden control is absent and nothing else changes; the default rule picks everything for a family with a lane or ≥ 8 subjects | low |
+| 7 | **COLORDER** — a custom column order (her answer to question 6) | Columns stay **alphabetical by default** (`lnFoldColumns` 52917 sorts the folded column keys by label today). A **Column order** list in 📅 *Kid*'s year ▸ All subjects shows the grid's columns in their current order — a lane is one entry (🛤 name), as it is one column — each with **▲ ▼**, plus **Back to A–Z**. One pure function `gvColOrder(cols, saved, labelOf)` sits between `lnFoldColumns` and the grid: no saved order → alphabetical (today's result, byte-identical); a saved order → that order for the keys that still exist, **deleted columns dropped, new columns appended alphabetically at the end**; cleared → A–Z. The saved order is `curriculum/colOrder/<kid>` = an array of column keys (`<sk>` or `lane:<id>`), written by one targeted `set` on each ▲/▼ tap and `remove` on Back to A–Z, Mom only, display only — **no re-lay, no card moves**. **Sort by end date coexists** as it is: a per-device view toggle that writes nothing; **a custom order wins while one is set** — the end-date button then reads *Order by end date · off while a custom order is set — Back to A–Z first*, so the two never fight over the same columns. The 🏡 Family grid has its own grouping and is not touched. | `test_col_order.js`: the pure function — alphabetical when `saved` is null; the saved order kept for existing keys; a new subject appears at the end in alphabetical position among the appended; a deleted subject is dropped; a lane key moves as one column; clearing restores A–Z exactly; ▲ on the first and ▼ on the last are no-ops; the write is `curriculum/colOrder/<kid>` `set` of the whole small array (targeted to the kid) and `remove` on clear, nothing else written; with end-date sort on and no custom order the end-date order applies, with a custom order set it does not; the grid header markup is byte-identical apart from order | low — display only; the only new write is one small per-kid array |
+
+**Slice 7 — arrows, not drag (her addendum: "or arrows to change if that's better").** Recommendation: **arrows, and no drag
+on the column headers at all.** The grid is 19 columns wide on a tablet and lives inside its own sideways-scrolling box
+(`.gv-wrap`), so a horizontal drag on a header fights the scroll gesture the kids and she already use; the header's one tap
+opens the card, so a drag would need a long-press or a grip handle and an explanation a new mom has to be given; the LG
+StanbyME is driven by remote-style taps where a drag is awkward at best; and lanes fold several subjects into one column, so
+a header drag would have to move the band and its members as one. An ordered list with ▲ ▼ is unambiguous, needs no gesture
+or hint text, works on every device the family uses, and shows the whole order at a glance — the same pattern the lane
+editor already uses for its books (`lnEditMove` 53201). The saved order and the pure function are identical either way, so if
+she later wants a drag on a big screen it can be added without touching the data.
 
 **The riskiest slice is 2 (CURRCARD)**, for two reasons. First, it is the slice that changes *when* a write happens for the
 **pacing fields**: today "finish by", "pages a day", the mode itself are **staged** in `cbForm` until Build, while the Rules
@@ -558,8 +569,8 @@ cell menu's actions, lanes' data model, Settings, 📅 This week, the Family-tim
 
 ## 5 · Open questions for you (each with my default)
 
-Status 2026-11-10: **1, 2, 4 and 5 answered** (folded into the sections they touch); **3 open** — its default stands until she
-says otherwise; **6 open**.
+Status 2026-11-10: **1, 2, 4, 5 and 6 answered** (folded into the sections they touch); **3 open** — its default stands until
+she says otherwise.
 
 1. ~~**Days and times-a-week: write at once, or stage until "Lay it out again"?**~~ **Answered 2026-11-10: write at once.**
    *"i like the rules table better than the builder i want to get away from builder except for the initial setup."* Every
@@ -582,10 +593,11 @@ says otherwise; **6 open**.
    on the schedule** for a subject's first lay-out (the guided Add's last button), **Lay it out again** for every later one
    (the card's Pace section), and **Lay everything out again (N)** for the kid-tools button that was ↻ Rebuild all. Already in
    the §3.5 word list; slice 1 (CURRWORDS) carries them.
-6. **Column order.** Columns are alphabetical with no way to order them by hand (only the per-device "Sort by end date").
-   If by "reorder lanes" you meant *columns*, that is a new feature (a drag handle or ▲▼ list in 📅 *Kid*'s year ▸
-   Compare, saved to `curriculum/colOrder/<kid>`), not a move. **Default: not in this plan** — ask, and if yes it is a
-   seventh slice after 6.
+6. ~~**Column order.**~~ **Answered 2026-11-10: yes.** *"i think alphabetical order but draggable to be in a customizable order
+   as well"* — then *"or arrows to change if that's better."* Now **slice 7 COLORDER**: alphabetical by default, a per-kid
+   custom order saved to `curriculum/colOrder/<kid>`, **▲ ▼ arrows** in 📅 *Kid*'s year ▸ All subjects ▸ Column order and a
+   one-tap **Back to A–Z**; no drag on the headers (the reasons are under slice 7). The per-device Sort by end date stays a
+   view toggle that writes nothing; a custom order wins while one is set.
 
 ---
 
