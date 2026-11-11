@@ -4628,6 +4628,15 @@ function toMin(s){
   if(p[3].toUpperCase()==="AM"&&h===12)h=0;
   return h*60+parseInt(p[2]);
 }
+// KIDNAME_ROSTER_START — a kid's display name always comes from the roster through cap(), never from the raw id.
+// Her report 2026-11-10: "the kid is named D3 for Burris. It's supposed to be 3D". Kid ids can't start with a digit
+// (they feed CSS class names), so a child whose name starts with a digit gets an id that differs from the name
+// (id d3, name 3D). cap() already resolves KID_NAME and only capitalizes the id when the roster has no name.
+// Call sites switched from charAt(0).toUpperCase()+id.slice(1) to cap(id), each tagged // KIDNAME_ROSTER:
+//   digestRecordHtml (weekly education record), renderHistoryReport (kName), haNbContext (nbKidName → starter
+//   notebook header), haNbPickerRows (starter notebook label), loadActJson (NB_KIDS starter label),
+//   mastRescueStaleLog (mastery header), ckStartHtml (check-up heading).
+// KIDNAME_ROSTER_END
 function cap(s){ if(typeof KID_NAME!=="undefined"&&KID_NAME&&KID_NAME[s]) return KID_NAME[s]; s=String(s); return s.charAt(0).toUpperCase()+s.slice(1); }
 
 // Returns the current weekday as a DAYS string ("monday" etc.), or null if weekend
@@ -26263,7 +26272,7 @@ function digestRecordHtml(data,opts){
 
   (data.kids||[]).forEach((k,ki)=>{
     const kt=tasks.filter(t=>t&&t.who===k&&!/lunch/i.test(t.title||""));
-    const name=esc((opts.kidNames||{})[k]||k.charAt(0).toUpperCase()+k.slice(1));
+    const name=esc((opts.kidNames||{})[k]||cap(k)); // KIDNAME_ROSTER
     h+='<div class="student'+(ki===0?' first':'')+'"><h2>'+name+'</h2>';
 
     // Attendance — same rule as the Attendance tab: worked that day, unless overridden.
@@ -26470,7 +26479,7 @@ function digestToggleKid(k){ digestKidOpen[k]=!digestKidOpen[k];
 function renderHistoryReport(){
   if(!momHere()) return '<div style="text-align:center;color:var(--muted);padding:40px 20px">📋 The weekly report is a Mom-only view.<br>Unlock Mom mode to read it.</div>';
   const KC={lincoln:"#2a78d6",ellis:"#1baf7a",lucy:"#eda100",julian:"#9333ea"};
-  const kName=k=>k.charAt(0).toUpperCase()+k.slice(1);
+  const kName=k=>cap(k); // KIDNAME_ROSTER
   const wk=digestWkSel||WK, isCur=wk===WK;
   const rep=isCur?digestBuildWeekReport(digestGatherData(WK)):digestFreezeIfNeeded(wk);
   let h='<div style="padding:8px 12px 20px">';
@@ -35594,7 +35603,7 @@ function haNbContext(kid){
   // No field = the kid's notebook exactly as before.
   let nbRec={}; try{ nbRec=ROSTER_DEF.find(k=>k&&k.id===kid)||{}; }catch(e){}
   const nbNm=v=>(typeof v==="string"&&v.trim())||null;
-  return { nbKidName:kid.charAt(0).toUpperCase()+kid.slice(1), kidName:nbNm(nbRec.notebookName)||nbNm(nbRec.name), notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), nbGrade:nbGradeOf(kid), spelling:spelling, wordBank:wordBank, cogatBank:cogatBank, quantBank:quantBank, convBank:convBank, dailyGrams:dailyGrams, loe:loe, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, numberCursor:((((notebookSettings||{})[kid])||{}).numberCursor)||null, letterCursor:((((notebookSettings||{})[kid])||{}).letterCursor)||null, countEmoji:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).count_emoji)||null), letterSounds:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).definitions)||null), masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true };
+  return { nbKidName:cap(kid), kidName:nbNm(nbRec.notebookName)||nbNm(nbRec.name), notebookTheme:nbThemeOf(kid), nbLevel:nbLevelOf(kid), nbGrade:nbGradeOf(kid), spelling:spelling, wordBank:wordBank, cogatBank:cogatBank, quantBank:quantBank, convBank:convBank, dailyGrams:dailyGrams, loe:loe, weekData:{dates:dates, tasks:tasks}, weekNum:tgtWk, weekDates:weekDates, juPicks:juPicks, numberCursor:((((notebookSettings||{})[kid])||{}).numberCursor)||null, letterCursor:((((notebookSettings||{})[kid])||{}).letterCursor)||null, countEmoji:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).count_emoji)||null), letterSounds:((((typeof masteryData!=="undefined"&&masteryData[kid+"_settings"])||{}).definitions)||null), masteryItems:mItems, reviewCap:nbReviewCap(kid), personal:personal, prevSummary:prevSummary, prevStats:prevStats, pace:pace, coloring:coloring, dotdot:dotdot, symmetry:symmetry, maze:maze, pattern:pattern, dolls:dolls, passage:passage, units:units, extraPages:(((notebookSettings||{})[kid])||{}).extraPages||{}, bindingMargin:(notebookSettings||{}).bindingMargin===true }; // KIDNAME_ROSTER
 }
 async function haNbOpen(kid,which){
   const lib=window.HoweNotebooks; if(!lib){ alert("Notebook builder not loaded yet."); return; }
@@ -35719,7 +35728,7 @@ function haNbPickerRows(lib){
   const kids=Object.keys((lib&&lib.GENERATORS)||{}).filter(k=>ROSTER.includes(k)).concat([...ROSTER].filter(k=>!((lib&&lib.GENERATORS)||{})[k]));   // CALEB_WIRE: this family's kids only (+ 📓 starter notebooks)
   if(!kids.length) return '<div style="font-size:12px;color:var(--muted);padding:12px 0">No generators available.</div>';
   return kids.map(k=>{
-    const g=lib.GENERATORS[k]||{label:k.charAt(0).toUpperCase()+k.slice(1)+" (starter notebook)"};
+    const g=lib.GENERATORS[k]||{label:cap(k)+" (starter notebook)"}; // KIDNAME_ROSTER
     return `<div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border)">
       <div style="flex:1;font-weight:700;font-size:13px;color:#1f2937">${g.label}</div>
       <!-- NBPRINT: 🖨 Print = the letter-size PDF (prints right from Safari/iPad/AirPrint), her call 2026-10-03 for every family; 👁 = the quick page view -->
@@ -45955,7 +45964,7 @@ const NB_KIDS=[
   {k:"caleb",  label:"Caleb (K 🚜)",     aam:false}    // DeWalt — notebooks.js CALEB block (2026-10-04)
 ].filter(x=>ROSTER.includes(x.k));   // CALEB_WIRE: only THIS family's kids — the list was Howe's four everywhere (2026-10-04)
 // 📓 GENERICNB (her ask 2026-10-04): every other kid in the family gets a starter notebook (notebooks.js generateGeneric)
-[...ROSTER].filter(k=>!NB_KIDS.some(x=>x.k===k)).forEach(k=>NB_KIDS.push({k,label:k.charAt(0).toUpperCase()+k.slice(1)+" (starter notebook)",aam:false,generic:true}));
+[...ROSTER].filter(k=>!NB_KIDS.some(x=>x.k===k)).forEach(k=>NB_KIDS.push({k,label:cap(k)+" (starter notebook)",aam:false,generic:true})); // KIDNAME_ROSTER
 // Lucy's activity-page slots — each upload fills its brain-break page.
 const NB_ACT_CATS=[
   {cat:"coloring", label:"🎨 Coloring",   hint:"unicorn · fairy · mermaid"},
@@ -66410,7 +66419,7 @@ function mastRestoreLog(){
 // mastSaveResults' "log another" merge.
 function mastRescueStaleLog(s){
   const _n=Object.keys(s.scores).length;
-  const _kid=masteryKid.charAt(0).toUpperCase()+masteryKid.slice(1);
+  const _kid=cap(masteryKid); // KIDNAME_ROSTER
   if(!confirm("Found an UNSAVED drill session for "+_kid+" from "+s.date+" ("+_n+" cards marked).\n\nSave it to that date's scores? (Cancel throws it away.)")){ mastClearLogPersist(); return; }
   let items=masteryData[masteryKid]||[];
   if(!Array.isArray(items)) items=Object.values(items);
@@ -70549,7 +70558,7 @@ function ckStartHtml(u,kid,ks){
   const lopt=(cur,blank,L)=>'<option value="">'+blank+'</option>'+(L||lessons).map(n=>'<option value="'+n+'"'+(String(cur)===String(n)?' selected':'')+'>Lesson '+n+'</option>').join('');
   const g=ckGradeOf(kid), sug=ckSuggest(kid);
   let h='<div style="margin-top:6px;border:1.5px solid #99f6e4;border-radius:11px;padding:9px 11px;background:#f0fdfa;font-size:11px;color:#134e4a;font-weight:700">';
-  h+='<div style="font-size:12px;font-weight:800;margin-bottom:6px">🩺 New check-up for '+e(kid.charAt(0).toUpperCase()+kid.slice(1))+'</div>';
+  h+='<div style="font-size:12px;font-weight:800;margin-bottom:6px">🩺 New check-up for '+e(cap(kid))+'</div>'; // KIDNAME_ROSTER
   h+='<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center">';
   h+='<span>Level</span><span><select style="'+sel+'" onchange="ckStartSet(\'level\',this.value)">'+levels.map(s=>'<option value="'+s.n+'"'+(s.n===F.level?' selected':'')+'>'+e(s.label)+'</option>').join('')+'</select>'
     +' through <select style="'+sel+'" onchange="ckStartSet(\'levelTo\',this.value)">'+levels.filter(s=>s.n>=F.level).map(s=>'<option value="'+s.n+'"'+(s.n===(F.levelTo||F.level)?' selected':'')+'>'+e(s.label)+'</option>').join('')+'</select></span>';   // CKSPAN
