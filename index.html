@@ -53423,7 +53423,7 @@ function cbMaterialize(cfg){
   const capSkipped=rows.filter(r=>dayFits(r)&&!(r.usedMin+myMin<=cap)&&cap).length;
 
   // 1) Units to place
-  let units;
+  let units, _rng=null;
   if(cfg.mode==="pages"){
     const pg=cfg.pages||{};
     if(pg.units&&pg.units.length){
@@ -53433,9 +53433,11 @@ function cbMaterialize(cfg){
       // range made scanned cells unreadably long ("Chapter 9: Fractions of a Set ·
       // pp. 120–125") next to hand-written neighbours like "5B Ch.3 L4" (2026-08-11).
       // Unlabelled units still fall back to the page range so a cell is never blank.
+      _rng=[];
       units=pg.units.map(u=>{
         const a=u.startPage|0, b=(u.endPage|0)||a;
         const range=a===b?("p. "+a):("pp. "+a+"–"+b);
+        _rng.push(a>0?[a,b]:null);
         return u.label?String(u.label).trim():range;
       });
     } else {
@@ -53448,10 +53450,11 @@ function cbMaterialize(cfg){
       const start=pg.startPage||1, end=pg.totalPages||0;
       if(end<start) return {error:"Total pages ("+end+") is the last page of the book — it must be at least the start page ("+start+")."};
       const u=pg.unitLabel||"pp.";
-      units=[];
+      units=[]; _rng=[];
       let p=start,i=0;
       while(p<=end){
         const n=Math.max(1,pat[i%pat.length]|0), q=Math.min(p+n-1,end);
+        _rng.push([p,q]);
         if(u==="pp.") units.push(p===q?("p. "+p):("pp. "+p+"–"+q));
         else units.push(p===q?(u+" "+p):(u+" "+p+"–"+q));
         p=q+1; i++;
@@ -53464,11 +53467,15 @@ function cbMaterialize(cfg){
     // legitimately repeats still gets its later sittings.
     if(pg.done&&units.length){
       const left=new Map(pg.done), kept=[];
-      for(const t of units){
+      units.forEach((t,ui)=>{
         const k=String(t).trim().toLowerCase(), c=left.get(k)||0;
-        if(c>0){ left.set(k,c-1); continue; }
+        if(c>0){ left.set(k,c-1); return; }
+        // PGDONE: a unit whose text no done record carries (the book was re-patterned) but
+        // whose every page is in a finished record's range is finished too.
+        const r=_rng&&_rng[ui];
+        if(pg.donePages&&r&&!pg.done.has(k)){ let all=true; for(let q=r[0];q<=r[1];q++){ if(!pg.donePages.has(q)){ all=false; break; } } if(all) return; }
         kept.push(t);
-      }
+      });
       units=kept;
       if(!units.length) return {error:"Every page in this range is already finished — nothing left to place."};
     }
@@ -55214,6 +55221,28 @@ function cbBuildCfg(){
     // Hand the materializer a tally of completed unit texts so it can skip them; the
     // same one-per-completion rule the other modes use.
     try{
+      // PGDONE_START — a page book that keeps done records BY LESSON ID is relaid from those
+      // records, not from task titles (2026-11-12: Lucy's Math Reasoning B, done through p.52,
+      // relaid from pp. 5–8 — her sittings were multi-page cards like "pp. 37–52" and "pp. 21–28"
+      // that match no 4-page unit, and a carried card ("…_c") is never read as a title at all, so
+      // only pp. 1–4, 13–16 and 17–20 counted as done). Same truth cbRemainingContent uses
+      // (lidDoneIdx: exact, wins when present). Each finished lesson's text is spent once per
+      // record; `donePages` lets a re-patterned book (4 → 5 pages a sitting) still skip a unit
+      // whose every page was finished, so finished pages are never laid again.
+      const _di=(typeof lidDoneIdx==="function")?lidDoneIdx(kid,sk):null;
+      if(_di){
+        const _seq=s.lessonSeq||[], _done=new Map(), _pgs=new Set();
+        const _ul=String(cfg.pages.unitLabel||"pp.").replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+        const _rx=new RegExp("^(?:pp?\\.|"+_ul+")\\s*(\\d+)(?:\\s*[–-]\\s*(\\d+))?$","i");
+        _di.forEach(i=>{
+          const t=String(_seq[i]||"").trim(); if(!t) return;
+          const k=t.toLowerCase(); _done.set(k,(_done.get(k)||0)+1);
+          const m=t.match(_rx); if(!m) return;
+          const a=+m[1], b=m[2]?+m[2]:a; for(let q=a;q<=b&&q-a<2000;q++) _pgs.add(q);
+        });
+        cfg.pages.done=_done; if(_pgs.size) cfg.pages.donePages=_pgs;
+      } else {
+      // PGDONE_END
       const _ps=(((paceData||{}).subjects||{})[kid]||{})[sk];
       const _done=new Map();
       (paceDoneTitles(kid,paceKeywords(kid,sk,_ps),null,sk)||[]).forEach(t=>{
@@ -55222,6 +55251,7 @@ function cbBuildCfg(){
         if(p) _done.set(p,(_done.get(p)||0)+1);
       });
       if(_done.size) cfg.pages.done=_done;
+      }
     }catch(e){}
   }
   if(f.mode==="minutes"){ cfg.tpw=f.tpw; cfg.minutesText=f.minutesText; if(f.windowEnd) cfg.windowEnd=f.windowEnd; }
