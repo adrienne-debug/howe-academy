@@ -280,12 +280,12 @@ let G, Gid, Cd, Cdid, Cd2, Cd2id;
 {
   G = renderGrid(src, false); Gid = renderGrid(src, true);
   ok("the Grid renders", G.length > 2000 && /gvRulesToggle\(\)/.test(G));
-  ok("toolbar: 📅 Kid's year ▸ All subjects, 📅 Kid's year, Lay everything out again, Edit many cells at once, Order columns by end date",
-    G.indexOf("📅 kid’s year ▸ All subjects") >= 0 && G.indexOf("📅 kid’s year ") >= 0 && G.indexOf("Lay everything out again (") >= 0
+  ok("toolbar: 📅 Kid's year (one button since KIDYEAR — the old ▸ All subjects button is a tab now), Lay everything out again, Edit many cells at once, Order columns by end date",
+    G.indexOf("📅 kid’s year ▸ All subjects") < 0 && G.indexOf("📅 kid’s year ") >= 0 && G.indexOf("Lay everything out again (") >= 0
     && G.indexOf("☑︎ Edit many cells at once") >= 0 && G.indexOf("Order columns by end date") >= 0, G.slice(0, 0));
   ok("footer: tap a subject's name to open it", G.indexOf("tap a subject’s name to open it") >= 0);
   ok("no before word anywhere in the rendered Grid (text or tooltip)", beforeIn(G).length === 0, beforeIn(G));
-  ok("the identity map shows the keys instead (proves the words come from the map)", Gid.indexOf(">kidYearAll ") >= 0 && Gid.indexOf("selCells") >= 0);
+  ok("the identity map shows the keys instead (proves the words come from the map)", Gid.indexOf(">kidYear ") >= 0 && Gid.indexOf("selCells") >= 0);
 
   Cd = renderCard(src, false); Cdid = renderCard(src, true);
   ok("the subject card renders", Cd.length > 2000 && /ce-sheet-title/.test(Cd), Cd.length);

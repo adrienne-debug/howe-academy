@@ -306,7 +306,7 @@ console.log("\n── wiring ──");
   ok("state declared beside the panel's other state", /let lnEdit=null, lnUndo=null;/.test(src));
   ok("closing the panel drops an open editor", /function cbRulesToggle\(\)\{ cbRulesOpen=!cbRulesOpen; lnEdit=null; renderAll\(\); \}/.test(src));
   // CURRCARD 2026-11-11: the lane line moved from under Progress into the card's own Lane section, with two shortcuts into the lane editor here
-  ok("the subject card shows the lane line in its Lane section, with ✎ edit / stack-after shortcuts into this editor", /lnMemberInfo\(K,SK\)/.test(src) && /onclick="ceLaneEdit\(\\''\+K\+'\\',\\''\+esc\(_lmC\.id\)\+'\\'\)"/.test(src) && /onclick="ceLaneEdit\(\\''\+K\+'\\',null,\\''\+SK\+'\\'\)"/.test(src) && /function ceLaneEdit\(kid,id,seedSk\)\{ ceCloseSheet\(\); cbKid=kid; cbRulesOpen=true; lnEditStart\(id\|\|null,seedSk\|\|null\); \}/.test(src));
+  ok("the subject card shows the lane line in its Lane section, with ✎ edit / stack-after shortcuts into this editor", /lnMemberInfo\(K,SK\)/.test(src) && /onclick="ceLaneEdit\(\\''\+K\+'\\',\\''\+esc\(_lmC\.id\)\+'\\'\)"/.test(src) && /onclick="ceLaneEdit\(\\''\+K\+'\\',null,\\''\+SK\+'\\'\)"/.test(src) && /function ceLaneEdit\(kid,id,seedSk\)\{ ceCloseSheet\(\); kyLane\(kid,id\|\|null,seedSk\|\|null\); \}/.test(src));   // KIDYEAR: → 📅 Kid’s year ▸ Lanes (kyLane opens the panel, then lnEditStart as before)
   const ui = block("// LANE_UI_START", "// LANE_UI_END");
   const refs = ui.match(/db\.ref\([^)]*\)/g) || [];
   ok("the door writes ONLY under curriculum/lanes/<kid>/<id> and curriculum/lastEdit", refs.length > 0 && refs.every(r => r === 'db.ref("curriculum/lastEdit")' || /^db\.ref\("curriculum\/lanes\/"\+[a-z.]+\+"\/"\+[a-z.]+\)$/.test(r)), refs);

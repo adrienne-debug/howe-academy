@@ -354,7 +354,7 @@ function fixture() {
   // hooks in the Grid
   const grid = extractFn("renderCurrGrid");
   ok("the cell menu carries 📎 for Mom (one line)", /if\(gvFilled\(v\)&&momHere\(\)&&typeof lrGridBtnHTML==="function"\) m\+=lrGridBtnHTML\(gvKid,dn,sk\);/.test(grid));
-  ok("the Grid draws the resources sheet (one line)", /if\(typeof lrPanelHTML==="function"\) h\+=lrPanelHTML\(gvKid\);/.test(grid));
+  ok("the Grid draws the resources sheet (one line; KIDYEAR: not while the card's 📋 Plan resources draws it)", /if\(typeof lrPanelHTML==="function"&&!\(typeof kyLrpOnCard==="function"&&kyLrpOnCard\(\)\)\) h\+=lrPanelHTML\(gvKid\);/.test(grid));
   ok("the Firebase listeners start with the others (one line)", /if\(typeof lrListen==="function"\) lrListen\(\);/.test(src) && /db\.ref\("curriculum\/resources"\)\.on\("value"/.test(LR) && /db\.ref\("supplies\/staples"\)\.on\("value"/.test(LR));
 }
 

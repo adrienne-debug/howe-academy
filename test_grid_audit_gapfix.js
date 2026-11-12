@@ -40,7 +40,7 @@ function mkEnv(o) {
     updates: [], alerts: [], toasts: [], opened: [], previews: 0,
     prompt: () => (o.label === undefined ? "pg 3–4" : o.label), confirm: () => (o.confirm !== false),
     alert: m => { env.alerts.push(m); }, gwShowToast: m => { env.toasts.push(m); },
-    cbOpenSubj: sk => { env.opened.push(sk); }, cbRunPreview: () => { env.previews++; },
+    kyPaceDoor: (kid, sk) => { env.opened.push(sk); env.previews++; },   // KIDYEAR: the card's Pace preview (was cbOpenSubj + cbRunPreview on the Builder tab)
     cbKid: null, adminSubTab: null, currInnerTab: null,
     Date, Math, Object, JSON, String, Number, Array, parseInt, console, RegExp,
   };
@@ -65,8 +65,8 @@ console.log("happy path — insert 'pg 3–4' after 'pg 2'");
   ok("ids stay aligned with the list (one new id minted, others kept)", (() => { const ids = u["subjects/lincoln/conventions/lessonIds"]; return Array.isArray(ids) && ids.length === 5 && ids[0] === "L0001" && ids[1] === "L0002" && ids[3] === "L0003" && ids[4] === "L0004" && !["L0001","L0002","L0003","L0004"].includes(ids[2]); })(), u["subjects/lincoln/conventions/lessonIds"]);
   ok("total = 5", u["subjects/lincoln/conventions/total"] === 5);
   ok("grid rows in memory untouched", JSON.stringify(e.currData.lessons.lincoln) === e.lessonsBefore);
-  ok("hands off to a Builder PREVIEW of this subject (no Apply)", e.opened.length === 1 && e.opened[0] === "conventions" && e.previews === 1);
-  ok("toast says review then Apply", /review/.test(e.toasts[0] || "") && /Apply/.test(e.toasts[0] || ""), e.toasts);
+  ok("hands off to the card's Pace PREVIEW of this subject (no Apply)", e.opened.length === 1 && e.opened[0] === "conventions" && e.previews === 1);
+  ok("toast says review then ✓", /review/.test(e.toasts[0] || "") && /✓/.test(e.toasts[0] || ""), e.toasts);
   ok("no alert", e.alerts.length === 0, e.alerts);
 }
 

@@ -27940,6 +27940,8 @@ const CURR_MOM_BADGE={required:"Mom Required",maybe:"May Need Mom",none:""};
 var CW={
   kidYearAll:"📅 {kid}’s year ▸ All subjects",        // ⚙ Rules & day cap
   kidYear:"📅 {kid}’s year",                           // 🏁 Target · Mom Check · Sessions
+  kyHours:"Hours & load",                              // (new tab of 📅 Kid’s year) ⚙ Rules day cap · 🏁 Target · Mom Check
+  kyLanes:"Lanes",                                     // (new tab of 📅 Kid’s year) ⚙ Rules ▸ 🛤 Lanes
   allSubjects:"All subjects",                          // Per-subject placement rules — the scheduler reads these; the grid follows
   dayCap:"Longest school day",                         // Daily cap — no day over
   minPerDay:"minutes",                                 // min/day
@@ -33301,10 +33303,10 @@ function ceRenderEditSheet(){
   }
   // Lay it out again / Put it on the schedule → the preview card (saved fields), then ✓ through the same gate as the Builder
   h+='<button onclick="ceCardPreview()" style="width:100%;margin-top:14px;padding:11px;border-radius:10px;border:none;background:'+col+';color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(_laid?'↻ '+cw("layAgain"):cw("putOn"))+' <span style="font-weight:400;opacity:.85">— '+cw("preview").toLowerCase()+' first</span></button>';
-  if(cbPreviewRes&&_armed) h+='<div style="margin-top:10px">'+cbPreviewCardHTML(col,s)+'</div>';
+  if(cbPreviewRes&&_armed) h+='<div id="ce-pace-preview" style="margin-top:10px">'+cbPreviewCardHTML(col,s)+'</div>';   // KIDYEAR: kyPaceDoor scrolls here
   } // end Pace
 
-  // ── 5 · Lane (shortcuts into 📅 Kid's year ▸ All subjects ▸ 🛤 Lanes) ──
+  // ── 5 · Lane (shortcuts into 📅 Kid's year ▸ Lanes — kyLane, KIDYEAR) ──
   h+=_sec(5,cw("secLane"));
   if(_lmC){
     h+='<div style="font-size:11px;margin-top:6px;padding:5px 8px;border-radius:8px;background:#f8fafc;border:1px solid var(--border)">🛤 '+esc(_lmC.name)+' · '+_lmC.pos+' of '+_lmC.n+' · '+(_lmC.state==="up"?'<b>up now</b>':_lmC.state==="done"?'finished':'waiting — <b>'+esc(_lmC.upLabel)+'</b> is up')+(_lmC.prior?' · '+cw("rhythm")+' '+cw("sameBefore"):'')+(_lmC.multi?' · one of '+cw("manyBooks"):'')+'</div>';
@@ -33434,6 +33436,7 @@ function ceRenderEditSheet(){
     if(llMsg){ h+='<div style="font-size:10px;color:var(--muted);margin-top:3px">'+esc(llMsg)+'</div>'; llMsg=""; }
   }
   // LESSONLINK_SHEET_END
+  if(typeof lrpBuilderHTML==="function") h+=lrpBuilderHTML(K,SK);   // KIDYEAR: 📋 Plan resources — the whole subject's 📎 links · supplies · books · notes in one table (its only door was the retired Builder tab)
 
   // ── 8 · Rewards (sequenced) ──
   if(trk!=="daily"){
@@ -54766,7 +54769,7 @@ function cbCopyTo(toKid){
   const src=currData.subjects[kid][sk];
   if(!src) return;
   if(((currData.subjects||{})[toKid]||{})[sk]){
-    cbMsg="⚠ "+cap(toKid)+" already has "+(src.display||sk)+" — open it in their Builder instead.";
+    cbMsg="⚠ "+cap(toKid)+" already has "+(src.display||sk)+" — change it on their card instead.";
     renderAll(); return;
   }
   const copy={display:src.display||sk,device:src.device||"paper",mom:src.mom||"none",
@@ -54791,9 +54794,8 @@ function cbCopyTo(toKid){
   db.ref("curriculum/lastEdit").set(currData.lastEdit);
   // 🔁 RELAY4 (2026-11-08): the copy re-lays this week through the one door (a daily lays now; a sequenced copy lays when Built); Undo = the copy gone
   try{ if(typeof _rlwCurrDoor==="function") _rlwCurrDoor("📚 "+(copy.display||sk)+" copied to "+cap(toKid),[{kid:toKid,sk:sk}],[{p:"curriculum/subjects/"+toKid+"/"+sk,gone:true}],{toast:false}); }catch(e){}
-  cbMsg="✓ Copied "+(copy.display)+" to "+cap(toKid)+" — set their pacing and Build.";
-  cbSetKid(toKid);
-  cbOpenSubj(sk);
+  cbMsg="✓ Copied "+(copy.display)+" to "+cap(toKid)+" — here is their card: set the pace, then "+cw("putOn").toLowerCase()+".";
+  kyCopyLand(toKid,sk);   // KIDYEAR: land on the copy's card (was the target kid's Builder tab)
 }
 
 let cbSummaryOpen=false;
@@ -54945,11 +54947,11 @@ function ceCardSaveUnits(){
   rlSet(kid,sk,"pacing/pages/units",u,true);
 }
 function ceCardDiscardUnits(){ if(!ceCardArm()) return; cbForm=cbDefaultForm(ceEditKid,ceEditKey); cbScanStatus=""; cbPreviewRes=null; renderAll(); }
-// 🛤 Lane shortcuts: the lane editor lives in 📅 Kid's year ▸ All subjects (the ⚙ Rules panel) — open it there, on this lane / seeded from this book.
-function ceLaneEdit(kid,id,seedSk){ ceCloseSheet(); cbKid=kid; cbRulesOpen=true; lnEditStart(id||null,seedSk||null); }
+// 🛤 Lane shortcuts: the lane editor lives in 📅 Kid's year ▸ Lanes — open it there, on this lane / seeded from this book (KIDYEAR).
+function ceLaneEdit(kid,id,seedSk){ ceCloseSheet(); kyLane(kid,id||null,seedSk||null); }
 function ceMoreToggle(){ const k=ceEditKid+"|"+ceEditKey; ceMoreOpen=(ceMoreOpen===k)?null:k; ceRenderEditSheet(); }
 // CURRCARD_END
-function cbRenderRules(col){
+function cbRenderRules(col,part){   // KIDYEAR: part "cap" | "table" | "door" = that one section, unwrapped, for a 📅 Kid’s year tab; no part = the whole panel, byte-identical
   const kid=cbKid;
   const subs=currData.subjects[kid]||{};
   const entries=Object.entries(subs).filter(([_,s])=>!s.paused).sort((a,b)=>(a[1].display||a[0]).localeCompare(b[1].display||b[0]));
@@ -54958,8 +54960,9 @@ function cbRenderRules(col){
   const over=cbOverCapDays(kid);
   const disp=sk=>esc((subs[sk]||{}).display||sk);
 
-  let h='<div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px">';
+  let h=part?'':'<div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px">';
 
+  if(!part||part==="cap"){
   // Day cap
   h+='<div class="ce-sheet-lbl" style="margin-top:0">'+cw("dayCap")+'</div>';
   h+='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">';
@@ -54967,10 +54970,12 @@ function cbRenderRules(col){
   h+='<span style="font-size:11px;color:var(--muted)">'+cw("minPerDay")+' · '+(capSet?'custom <button onclick="cbSetCap(\''+kid+'\',0)" style="padding:2px 8px;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:10px;cursor:pointer;margin-left:4px">Reset to school hours</button>':'default from school hours')+'</span>';
   h+='</div>';
   if(over) h+='<div style="font-size:11px;color:#92400e;background:#fffbeb;border-radius:6px;padding:5px 8px;margin-top:6px">⚠ '+over+' future day'+(over!==1?'s':'')+' already exceed'+(over===1?'s':'')+' this — lay the biggest subjects out again, or check the Grid’s Min column.</div>';
+  }
 
   // 🛤 Lanes — a category: units in order; the first with open lessons is up
-  if(typeof lnRenderSection==="function") h+=lnRenderSection(kid,col);
+  if(!part&&typeof lnRenderSection==="function") h+=lnRenderSection(kid,col);   // KIDYEAR: the Lanes tab draws it on its own
 
+  if(!part||part==="table"){
   // Per-subject placement rules — ONE place (her rule: every setting has a home and a
   // consumer). Each cell writes the same subject field the card used to; plan-backed
   // subjects re-lay at once when a placement rule changes.
@@ -55011,12 +55016,15 @@ function cbRenderRules(col){
   }
   h+='</tbody></table></div>';
   h+='<div style="font-size:10px;color:var(--muted);margin-top:6px">'+["days","tpw","cap","duration","priority"].map(function(k){ return cw(k); }).join(" · ")+' change WHERE work lands — the week updates right away (grid ↩ Undo). '+["momReq","device","schedRules","stickWith","noCarry"].map(function(k){ return cw(k); }).join(" · ")+' shape the day’s order. Subject cards keep name, emoji, '+cw("tracking").toLowerCase()+', check-offs, reading log, scored and '+cw("pace").toLowerCase()+'.</div>';
+  }
+  if(!part||part==="door"){
   // ── Family-wide day rules live in ONE place: Settings (back there 2026-10-02, her ask — they sat
   //    here from 2026-08-17). Subject-level placement stays above with the subject. This is a door.
   h+='<div style="margin-top:14px;border-top:1px dashed var(--border);padding-top:10px">';
   h+='<button onclick="setAdminSub(\'settings\')" style="width:100%;text-align:left;padding:8px 10px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">🏠 '+cw("famWide")+' <u>Settings</u> <span style="font-weight:600;color:var(--muted)">— also overlap, carry-over &amp; Saturday</span> <span style="float:right;color:var(--muted)">›</span></button>';
   h+='</div>';
-  h+='</div>';
+  }
+  if(!part) h+='</div>';
   return h;
 }
 
@@ -55932,7 +55940,7 @@ function cbRenderForm(col,embedded){
     h+='<span style="font-size:11px;color:var(--muted)">'+(s.minutes||20)+' min a day</span>';
     h+='</div>';
   }
-  if(!embedded&&typeof lrpBuilderHTML==="function") h+=lrpBuilderHTML(kid,sk);   // LRPLANNER: 📋 Plan resources — the whole subject's 📎 record
+  // KIDYEAR: 📋 Plan resources (lrpBuilderHTML) moved to the subject card's Links & supplies section.
 
   // Mode chips
   h+='<div class="ce-sheet-lbl">'+cw("paceHow")+'</div><div class="ce-chips">';
@@ -56118,6 +56126,73 @@ let _gvDelUndo=null; // pending 🗑 delete snapshot — folded into the relay's
 function gvRebuildAll(){ cbKid=gvKid; cbRebuildAll(); }
 function gvRulesToggle(){ cbKid=gvKid; cbRulesToggle(); }
 function gvKidCfgToggle(){ gvKidCfgOpen=!gvKidCfgOpen; renderAll(); }
+// KIDYEAR_START — 📅 <Kid>’s year: ONE panel for every per-kid option (Curriculum streamline slice 3,
+//   PLAN_curriculum_streamline_2026-11-10.md §3.3 and §4 row 3; her answers 2026-11-10). It replaces the Grid's two kid-tool
+//   buttons — ⚙ Rules & day cap and 🏁 Target · Mom Check · Sessions — with one button and four tabs. Every control the two
+//   panels had is here, with the same handler and the same write:
+//     Hours & load — Longest school day (cbCapStep / cbSetCap → curriculum/dayCap/<kid>) · Finish the year by
+//                    (ceSetTargetEnd → curriculum/targetEnd/<kid>) · You approve check-offs (ceToggleMomVerifyKid →
+//                    curriculum/momVerifyKid/<kid>) · the door to Settings (setAdminSub('settings'))
+//     School terms — ceRenderSessions as it was (pace/plans/<key>)
+//     Lanes        — lnRenderSection as it was (curriculum/lanes/<kid>/<id>). A half-made lane (lnEdit) survives a tab
+//                    switch and every re-render; only closing the panel drops it, as before (cbRulesToggle).
+//     All subjects — the ⚙ Rules table, live (her answer 2026-11-10: "i like the rules table better than the builder"):
+//                    cbRenderRules' own table section, rlPillHTML pills, its scroll kept by RULESCROLL.
+//   A 🛤 lane band tap on the Grid and the card's Lane shortcuts (Edit this lane · Stack a book after this one) open the
+//   Lanes tab on that lane (kyLane). Open / closed is still cbRulesOpen. Nothing in this block writes.
+//   The doors that moved off the retired Builder tab live here too, so renderCurrBuilder is reached by no onclick (it is
+//   removed in slice 3b, after the audit): ⤒ Delete & shift up and the audit's Add it back… show their preview in the
+//   subject card's Pace section (kyPaceDoor); Copy to another kid lands on the copy's card (kyCopyLand); 📋 Plan resources
+//   draws in the card's Links & supplies section, and kyLrpOnCard keeps its 📎 panel from being drawn twice.
+let kyTab="hours";   // the open tab, remembered for the session — a second open lands where she was
+function kySetTab(t){ kyTab=t; renderAll(); }   // lnEdit is NOT touched: a half-made lane waits while she looks elsewhere
+// After the re-render, bring the panel into view (a band tap sits far below it; the card closes over it).
+function kyReveal(){ try{ setTimeout(function(){ const e=document.getElementById("ky-panel"); if(e&&e.scrollIntoView) e.scrollIntoView({block:"start",behavior:"smooth"}); },80); }catch(e){} }
+// The Lanes tab: on lane `id` (✎ edit), or a new lane seeded from a book (`seedSk` — Stack a book after this one).
+function kyLane(kid,id,seedSk){
+  if(kid&&typeof gvKid!=="undefined"&&gvKid!==kid&&typeof gvSetKid==="function") gvSetKid(kid);   // the panel and the editor show the same kid
+  if(kid) cbKid=kid;
+  cbRulesOpen=true; kyTab="lanes";
+  if(id||seedSk) lnEditStart(id||null,seedSk||null); else renderAll();
+  kyReveal();
+}
+function kyPanelHTML(kid,col){
+  cbKid=kid;   // cbRenderRules / the lane editor read cbKid, as they did under the old ⚙ button
+  const tabs=[["hours",cw("kyHours")],["terms",cw("schoolSessions")],["lanes",cw("kyLanes")],["all",cw("allSubjects")]];
+  if(!tabs.some(function(t){ return t[0]===kyTab; })) kyTab="hours";
+  let h='<div id="ky-panel" style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px;scroll-margin-top:170px">';
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">';
+  tabs.forEach(function(t){ const on=kyTab===t[0];
+    h+='<button onclick="kySetTab(\''+t[0]+'\')" style="padding:5px 12px;border-radius:14px;border:1.5px solid '+(on?col:'var(--border)')+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':'var(--text)')+';font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+t[1]+'</button>'; });
+  h+='</div>';
+  if(kyTab==="hours"){
+    h+=cbRenderRules(col,"cap");   // Longest school day: the same − / + and Reset to school hours
+    const _tgt=((currData.targetEnd||{})[kid])||"";   // 🏁 and Mom Check: the old 🏁 panel's rows, same handlers
+    h+='<div style="font-size:11px;font-weight:800;color:'+col+';text-transform:uppercase;letter-spacing:0.4px;margin:14px 0 4px">🏁 '+cw("finishTarget")+'</div>';
+    h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><input type="date" value="'+_tgt+'" onchange="ceSetTargetEnd(\''+kid+'\',this.value)" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:\'DM Sans\',sans-serif;font-size:13px">'+(_tgt?'<button onclick="ceSetTargetEnd(\''+kid+'\',\'\')" style="border:none;background:none;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:\'DM Sans\',sans-serif">clear</button>':'')+'</div>';
+    const _mvOn=!!((currData.momVerifyKid||{})[kid]);
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px"><div style="font-size:12px"><b>'+cw("momCheckKid",{kid:cap(kid)})+'</b></div><button onclick="ceToggleMomVerifyKid(\''+kid+'\')" style="flex-shrink:0;border:none;border-radius:14px;padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;background:'+(_mvOn?'#16a34a':'#e5e7eb')+';color:'+(_mvOn?'#fff':'#6b7280')+'">'+(_mvOn?'ON':'OFF')+'</button></div>';
+    h+=cbRenderRules(col,"door");   // 🏠 family-wide hours, sitter, devices, order of the day → Settings
+  } else if(kyTab==="terms"){ try{ h+=ceRenderSessions(kid,col); }catch(e){} }
+  else if(kyTab==="lanes"){ if(typeof lnRenderSection==="function") h+=lnRenderSection(kid,col); }
+  else h+=cbRenderRules(col,"table");   // All subjects: the live ⚙ Rules table
+  return h+'</div>';
+}
+// ⤒ Delete & shift up / the audit's Add it back…: the one-time preview, laid from the SAVED fields, in the subject card's
+// Pace section (ceCardPreview — the card's own "Lay it out again" button), then ✓ through the same gate. Was the Builder tab.
+function kyPaceDoor(kid,sk){
+  ceOpenEdit(kid,sk); ceCardPreview();
+  try{ setTimeout(function(){ const e=document.getElementById("ce-pace-preview"); if(e&&e.scrollIntoView) e.scrollIntoView({block:"center",behavior:"smooth"}); },300); }catch(e){}
+}
+// Copy to another kid: land on the copy's own card (was the target kid's Builder tab).
+function kyCopyLand(kid,sk){
+  cbKid=kid; cbSubjKey=null; cbForm=null; cbPreviewRes=null;
+  ceOpenEdit(kid,sk); renderAll();
+  if(cbMsg&&typeof gwShowToast==="function") gwShowToast(cbMsg);   // the Grid's banner is under the card
+}
+// 📋 Plan resources on the card draws its 📎 panel itself; the Grid then must not draw a second copy (its inputs are read by id).
+function kyLrpOnCard(){ return !!(typeof lrPanel!=="undefined"&&lrPanel&&typeof ceEditKid!=="undefined"&&ceEditKid===lrPanel.kid&&ceEditKey===lrPanel.sk&&typeof lrpIsOpen==="function"&&lrpIsOpen(lrPanel.kid,lrPanel.sk)); }
+// KIDYEAR_END
 // Multi-cell (Excel-style) selection: pick many cells, then Clear or Fill them at once.
 let gvSelMode=false, gvSel=new Set(), gvSelAnchor=null, gvSelUndo=null;
 
@@ -56377,18 +56452,16 @@ function gvSelSingleSubject(){
 }
 // Delete the selected cells, then RE-LAY the rest of that subject up to close the gap —
 // via the Builder's own materializer, so the shift respects the subject's allowed days,
-// times-per-week and day cap. Lands on the Builder preview so the
-// compacted plan is reviewed before Apply (the delete has its own grid Undo meanwhile).
+// times-per-week and day cap. Lands on the preview in the subject card's Pace section (KIDYEAR — was
+// the Builder tab) so the compacted plan is reviewed before ✓ (the delete has its own grid Undo meanwhile).
 function gvSelShiftUp(){
   const sk=gvSelSingleSubject();
   if(!sk){ gwShowToast("Pick cells in one subject (column) to shift up."); return; }
   const kid=gvKid, disp=((currData.subjects[kid]||{})[sk]||{}).display||sk;
   gvSelClear();                       // delete cells + sync lessonSeq + capture Undo
   gvSelMode=false; gvSel=new Set(); gvSelAnchor=null;
-  cbKid=kid; adminSubTab="curriculum"; currInnerTab="builder";
-  cbOpenSubj(sk);                     // load the subject's SAVED pacing into the form
-  cbRunPreview();                     // materialize the compacted layout (pattern-aware)
-  gwShowToast("Deleted — here's "+disp+" shifted up to close the gap. Review, then Apply.");
+  kyPaceDoor(kid,sk);                 // KIDYEAR: the card's Pace preview from the SAVED pacing (pattern-aware) — was the Builder tab
+  gwShowToast("Deleted — here's "+disp+" shifted up to close the gap. Review it on the card, then tap ✓.");
 }
 // Keep a card's lessonSeq in lockstep with its grid cells (card-origin subjects like HWT).
 // After a bulk clear/fill the grid is authoritative, so rebuild lessonSeq from the grid in
@@ -57112,7 +57185,7 @@ function gvAuditFixGap(kid,sk,dn,after,missing){
   // Disconnected 2026-08-15 after Lincoln's AAS lost 91 future cells with `builtAt`
   // untouched. RE-CONNECTED 2026-09-04, traced: this function writes ONLY the subject's
   // list paths (lessonSeq / lessonIds / total / nextLid / lastEdit) and then opens a
-  // Builder PREVIEW — cbOpenSubj + cbRunPreview are pure. The only code that nulls a
+  // PREVIEW (since KIDYEAR 2026-11-11 in the subject card's Pace section, kyPaceDoor) — it is pure. The only code that nulls a
   // grid cell lives in cbApply (behind Apply), gvDeleteLesson, gvMenuDone,
   // ceMarkLessonDone and ceSetTracking; none is on this path. The 08-15 fingerprint
   // (lastEdit moved, builtAt not, future cells gone) was the OLD "Edit as a list" Save,
@@ -57133,14 +57206,13 @@ function gvAuditFixGap(kid,sk,dn,after,missing){
   let at=seq.findIndex(x=>_gaNorm(x)===_gaNorm(after));
   if(at<0){ alert("Couldn't find \""+after+"\" in "+disp+"'s lesson list — the list and the grid disagree here. Open the subject and check it by hand."); return; }
   seq.splice(at+1,0,v);
-  if(!confirm("Insert \""+v+"\" after \""+after+"\" in "+disp+"'s lesson list?\n\nThe rest of the plan then moves from there so nothing is lost, and you see a preview first. Nothing changes on the grid until you tap Apply.")) return;
+  if(!confirm("Insert \""+v+"\" after \""+after+"\" in "+disp+"'s lesson list?\n\nThe rest of the plan then moves from there so nothing is lost, and you see a preview first. Nothing changes on the grid until you tap ✓.")) return;
   const patch={};
   setLessonSeq(kid,sk,seq,{patch,hint:{index:at+1,op:"insert"}});
   patch["lastEdit"]=new Date().toISOString(); currData.lastEdit=patch["lastEdit"];
   db.ref("curriculum").update(patch);
-  cbKid=kid; adminSubTab="curriculum"; currInnerTab="builder";
-  cbOpenSubj(sk); cbRunPreview();
-  gwShowToast("Added to "+disp+" — review the plan, then Apply.");
+  kyPaceDoor(kid,sk);   // KIDYEAR: the preview in the subject card's Pace section (was the Builder tab) — pure, as before
+  gwShowToast("Added to "+disp+" — review the plan on its card, then tap ✓.");
 }
 
 // Jump to the cell a finding is about and open it for editing.
@@ -58794,23 +58866,12 @@ function renderCurrGrid(el){
     const _pacedN=Object.keys(_gsubs).filter(sk=>(typeof cbRebuildable==="function")?cbRebuildable(gvKid,sk):false).length;
     if(_pacedN) h+='<button onclick="gvRebuildAll()" style="padding:5px 12px;border-radius:10px;border:1px solid #bbf7d0;background:#f0fdf4;color:#15803d;font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">↻ '+cw("layAll")+' ('+_pacedN+')</button>';
   }
-  h+='<button onclick="gvRulesToggle()" style="padding:5px 12px;border-radius:10px;border:1px solid var(--border);background:'+(cbRulesOpen?'var(--bg)':'#fff')+';font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cw("kidYearAll",{kid:cap(gvKid)})+' '+(cbRulesOpen?'▴':'▾')+'</button>';
-  h+='<button onclick="gvKidCfgToggle()" style="padding:5px 12px;border-radius:10px;border:1px solid var(--border);background:'+(gvKidCfgOpen?'var(--bg)':'#fff')+';font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cw("kidYear",{kid:cap(gvKid)})+' '+(gvKidCfgOpen?'▴':'▾')+'</button>';
+  h+='<button onclick="gvRulesToggle()" style="padding:5px 12px;border-radius:10px;border:1px solid var(--border);background:'+(cbRulesOpen?'var(--bg)':'#fff')+';font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cw("kidYear",{kid:cap(gvKid)})+' '+(cbRulesOpen?'▴':'▾')+'</button>';   // KIDYEAR: ONE 📅 Kid’s year button (was ⚙ Rules & day cap + 🏁 Target · Mom Check · Sessions)
   h+='</div>';
   if(cbMsg){
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:6px 10px;margin:0 0 8px;font-size:11.5px;color:#15803d"><span>'+esc(cbMsg)+'</span><span style="display:flex;gap:6px;flex-shrink:0">'+(cbLastBuild?'<button onclick="cbUndo()" style="border:1px solid #86efac;background:#fff;color:#15803d;border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">&#8617; Undo</button>':'')+'<button onclick="cbMsg=\'\';renderAll()" style="border:none;background:none;color:var(--muted);font-weight:700;cursor:pointer">&times;</button></span></div>';
   }
-  if(cbRulesOpen){ cbKid=gvKid; h+=cbRenderRules(_gcol); }
-  if(gvKidCfgOpen){
-    const _tgt=((currData.targetEnd||{})[gvKid])||"";
-    h+='<div style="background:#f9fafb;border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:0 0 8px">';
-    h+='<div style="font-size:11px;font-weight:800;color:'+_gcol+';text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px">🏁 '+cw("finishTarget")+'</div>';
-    h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><input type="date" value="'+_tgt+'" onchange="ceSetTargetEnd(\''+gvKid+'\',this.value)" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:\'DM Sans\',sans-serif;font-size:13px">'+(_tgt?'<button onclick="ceSetTargetEnd(\''+gvKid+'\',\'\')" style="border:none;background:none;color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:\'DM Sans\',sans-serif">clear</button>':'')+'</div>';
-    const _mvOn=!!((currData.momVerifyKid||{})[gvKid]);
-    h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px"><div style="font-size:12px"><b>'+cw("momCheckKid",{kid:cap(gvKid)})+'</b></div><button onclick="ceToggleMomVerifyKid(\''+gvKid+'\')" style="flex-shrink:0;border:none;border-radius:14px;padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;background:'+(_mvOn?'#16a34a':'#e5e7eb')+';color:'+(_mvOn?'#fff':'#6b7280')+'">'+(_mvOn?'ON':'OFF')+'</button></div>';
-    try{ h+=ceRenderSessions(gvKid,_gcol); }catch(e){}
-    h+='</div>';
-  }
+  if(cbRulesOpen){ cbKid=gvKid; h+=kyPanelHTML(gvKid,_gcol); }   // KIDYEAR: 📅 Kid’s year — Hours & load · School terms · Lanes · All subjects
 
   const lessons=(currData.lessons||{})[gvKid]||{};
   const subs=(currData.subjects||{})[gvKid]||{};
@@ -59133,7 +59194,7 @@ function renderCurrGrid(el){
   {
     let _band='<tr class="gv-bandrow"><th class="gv-fix"></th><th class="gv-min"></th>'; let _any=false;
     for(const ck of cols){ const _lc=_lnCols[ck];
-      if(_lc){ _any=true; _band+='<th title="'+esc("Lane "+_lc.name)+'"><span class="gv-lnband" style="background:'+col+'18;color:'+col+'">🛤 '+esc(_lc.name)+'</span></th>'; }
+      if(_lc){ _any=true; _band+='<th title="'+esc("Lane "+_lc.name)+'"><span class="gv-lnband" onclick="kyLane(\''+gvKid+'\',\''+esc(_lc.id)+'\')" style="cursor:pointer;background:'+col+'18;color:'+col+'">🛤 '+esc(_lc.name)+'</span></th>'; }
       else _band+='<th></th>';
     }
     if(_any) h+=_band+'</tr>';
@@ -59424,7 +59485,7 @@ function renderCurrGrid(el){
   // A build can start from a subject card opened HERE (column-header tap) — the
   // Keep/Dismiss sheet must render on this tab too.
   if(typeof cbGate!=="undefined"&&cbGate) h+=cbRenderGate();
-  if(typeof lrPanelHTML==="function") h+=lrPanelHTML(gvKid);   // LESSONRES: the 📎 resources sheet for the tapped lesson
+  if(typeof lrPanelHTML==="function"&&!(typeof kyLrpOnCard==="function"&&kyLrpOnCard())) h+=lrPanelHTML(gvKid);   // LESSONRES: the 📎 resources sheet for the tapped lesson · KIDYEAR: not while the card's 📋 Plan resources draws it (one copy)
   el.innerHTML+=h;
   if(cbRulesOpen) rsRestore();   // RULESCROLL: the ⚙ Rules box back where she was, before she can see it at the top
 
@@ -81588,7 +81649,7 @@ function rulesFamilyCardsHTML(openSchool){
 
   return h;
 }
-function rulesGoGrid(){ try{ currInnerTab="grid"; cbRulesOpen=true; }catch(e){} setAdminSub("curriculum"); }
+function rulesGoGrid(){ try{ currInnerTab="grid"; cbRulesOpen=true; kyTab="all"; }catch(e){} setAdminSub("curriculum"); }   // KIDYEAR: 📅 Kid’s year ▸ All subjects
 function renderRules(el,headerHtml){
   if(!el){el=document.getElementById("content");if(!el)return;}
   // 2026-10-02: the family rules render inside renderSettings (right under Pages) via renderFamilyRulesWrap.
