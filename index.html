@@ -14383,7 +14383,7 @@ function llEarlyOn(Q,iso,closed){ const st=llLog(iso); if(!st.length||typeof Q.c
 // LL_EARLY_END
 function llLayDay(Q,iso,closed,plain){
   const ear=plain?{}:llEarlyOn(Q,iso,closed);   // ⏩ LL_EARLY (before _llLx is set below — the plain lay walks its own copy)
-  const dow=llDow(iso), b=llBreakOn(iso), br=(b&&!b.run)?b:null, c=br?0:llCap(dow), st=plain?[]:llLog(iso), bu=llBumps(iso), jp=llJumps(iso), o=(_llLx=Q.lastX,llLineOrder(iso)), fz=laundryLine&&laundryLine.plan&&laundryLine.plan[iso], loads=[], LGd=llDayLog(iso);   // 🛏 the walking last-washed for blanket checks
+  const dow=llDow(iso), b=llBreakOn(iso), br=(b&&!b.run)?b:null, c=br?0:llCap(dow), st=plain?[]:llLog(iso), bu=llBumps(iso), jp=llJumps(iso), ov=(plain||closed||typeof llOvers!=="function")?[]:llOvers(iso),   /* ➕ LL_OVER: extra today, over the cap — never in the plain lay (so a started one rides over the cap, LL_EARLY) or a closed day (unstarted = gone at 8 PM) */ o=(_llLx=Q.lastX,llLineOrder(iso)), fz=laundryLine&&laundryLine.plan&&laundryLine.plan[iso], loads=[], LGd=llDayLog(iso);   // 🛏 the walking last-washed for blanket checks
   if(Q.home) o.forEach(function(id){ if(llHome(id)!==dow||Q.q.indexOf(id)>=0) return;   // 📅 its home day: joins behind what's waiting…
     if(Q.credit[id]){ const c=Q.credit[id]; delete Q.credit[id];   // …unless an early wash already covered this one
       const wd=(typeof c==="string"&&/^w:/.test(c))?c.slice(2):"";   // 💦 an accident wash covers it only within 3 days (her pick 2026-10-19)
@@ -14397,7 +14397,7 @@ function llLayDay(Q,iso,closed,plain){
   const _joinX=function(){ llExtraIds().forEach(function(id){ if(llExtras()[id].rideWith) return; const l=Q.lastX[id], d=llDue(llExtras()[id],l||undefined); if(Q.q.indexOf(id)<0&&loads.indexOf(id)<0&&d&&d<=iso) Q.q.push(id); }); };   // 🗓 plain rotation: come due → behind what's waiting
   const _joinO=function(){ llOnceIds().forEach(function(id){ if(Q.onceDone[id]||Q.q.indexOf(id)>=0||loads.indexOf(id)>=0) return; if(String(llOnce()[id].from||"")<=iso) Q.q.push(id); }); };   // ☑️ plain rotation: it waits its turn in line
   if(!Q.home) llOpenOrder().forEach(function(k){ if(k==="once") _joinO(); else _joinX(); });   // ☑️🗓 LL_OPENSPACE: the chosen kind joins first
-  const wt=function(id){ return llCoverOf(id,iso)==="wait"&&st.indexOf(id)<0; }, cnt=function(){ return loads.filter(function(id){ return !wt(id)&&!ear[id]; }).length; };   // ⏩ LL_EARLY: an early wash rides over the cap
+  const wt=function(id){ return llCoverOf(id,iso)==="wait"&&st.indexOf(id)<0; }, cnt=function(){ return loads.filter(function(id){ return !wt(id)&&!ear[id]&&ov.indexOf(id)<0; }).length; };   // ⏩ LL_EARLY: an early wash rides over the cap
   if(!fz) while(cnt()+jp.length<c){ const id=Q.draw(loads); if(!id) break; loads.push(id); }   // 💦 each jump-in holds a slot · ⏸ a load that waits a day doesn't
   if(!fz&&Q.home){   // ☑️ 🗓 home days: one-time loads and due every-few-weeks items take OPEN room only — never a home-day load's slot
     // (her picks 2026-10-17 / 10-18: "next open slot"; "Open room only"), oldest date first
@@ -14405,13 +14405,14 @@ function llLayDay(Q,iso,closed,plain){
     llExtraIds().forEach(function(id){ if(llExtras()[id].rideWith) return; const d=llDue(llExtras()[id],Q.lastX[id]||undefined); if(d&&d<=iso&&loads.indexOf(id)<0) F.push([d,id]); });   // 🛏 a blanket rides its sheets, never a slot of its own
     const _ok=llOpenOrder(), _rk=function(id){ return _ok.indexOf(llOnce()[id]?"once":"extras"); };   // ☑️🗓 LL_OPENSPACE: which kind first, then oldest
     F.sort(function(a,b){ return (_rk(a[1])-_rk(b[1]))||(a[0]<b[0]?-1:a[0]>b[0]?1:0); }).forEach(function(f){ if(cnt()+jp.length>=c) return; Q.take(f[1]); loads.push(f[1]); }); }
-  const left=loads.filter(function(id){ return st.indexOf(id)<0; });
+  ov.forEach(function(id){ if(loads.indexOf(id)<0) loads.push(id); });   // ➕ LL_OVER: after the day's own loads, no slot, the line untouched until it goes in (then the st path above takes it)
+  const left=loads.filter(function(id){ return st.indexOf(id)<0&&ov.indexOf(id)<0; });   // ➕ LL_OVER: an unstarted extra assumes nothing (no extra/blanket marked washed)
   if(!closed) left.forEach(function(id){ if(id in Q.lastX&&!wt(id)) Q.lastX[id]=iso; if(llOnce()[id]&&!wt(id)) Q.onceDone[id]=true;
     if(!wt(id)) [id].concat(llRiders(id,iso)).forEach(function(h){ llBlanketsDueOn(h,iso).forEach(function(b){ Q.lastX[b]=iso; }); }); });   // 🛏 the lay assumes its blanket goes in with it   // the lay assumes a laid extra / one-time load gets washed that day
   if(!closed){ const w=loads.filter(wt); if(w.length) Q.q=w.concat(Q.q.filter(function(id){ return w.indexOf(id)<0; })); }   // ⏸ waits a day: at the front tomorrow
   if(closed&&left.length){ const back=left.filter(function(id){ return !(Q.home&&(llOnce()[id]||llExtras()[id])); }); Q.q=back.concat(Q.q.filter(function(id){ return back.indexOf(id)<0; })); }   // ☑️ an unwashed one-time load just looks for room again
   const lbl={}, sh={}; loads.forEach(function(id){ lbl[id]=llLabelFull(id,iso); sh[id]=llShortFull(id,iso); });   // 🛏 names fixed as the day is laid (blankets / riders as of THAT day)
-  return {iso:iso,dow:dow,brk:br?br.name:"",tag:(b&&b.run)?b.name:"",cap:c,loads:loads,started:st,early:Object.keys(ear).filter(function(id){ return loads.indexOf(id)>=0; }),bumped:bu,jumps:jp,waited:loads.filter(wt),moved:closed?left:[],lbl:lbl,sh:sh};
+  return {iso:iso,dow:dow,brk:br?br.name:"",tag:(b&&b.run)?b.name:"",cap:c,loads:loads,started:st,early:Object.keys(ear).filter(function(id){ return loads.indexOf(id)>=0; }),bumped:bu,over:ov.filter(function(id){ return loads.indexOf(id)>=0; }),jumps:jp,waited:loads.filter(wt),moved:closed?left:[],lbl:lbl,sh:sh};
 }
 // ⏫ the loads bumped onto a date (first-bumped first) · 💦 the jump-ins reported that date [{id,label}]
 function llBumps(iso){ const B=(laundryLine&&laundryLine.bump&&laundryLine.bump[iso])||{}, o=llOrder(); return Object.keys(B).filter(function(id){ return o.indexOf(id)>=0&&B[id]; }).sort(function(a,b){ return (B[a]||0)-(B[b]||0); }); }
@@ -14468,6 +14469,38 @@ function llBump(id){ llMomGo(function(){ if(llOrder().indexOf(id)<0||llWith(id))
 // 💦 A jump-in (wtReport): holds a slot on the day it was reported. Returns the toast tail — what slid to tomorrow, if anything.
 let _llBefore=null;
 function llSlid(){ const b=_llBefore; _llBefore=null; if(!b) return ""; const now=llProjectNow(1)[0].loads, it=llAll(); return b.filter(function(id){ return now.indexOf(id)<0; }).map(function(id){ return it[id]?it[id].label:id; }).join(", "); }
+// LL_OVER_START — ➕ ⏫ Today, extra: over the cap, nothing moves (her ask 2026-11-11, "yes on the additional add" — after "today we're
+// really crazy far behind. How could I keep the normal days assigned … but then be able to … pick what is the highest priority").
+// ⏫ Today now asks: ⏫ Instead (as before — it takes a slot, the last of today slides; the button names it) · ➕ Extra (over the cap,
+// nothing moves) · Cancel. An extra sits on today with no slot and leaves the line alone until it goes in; then it is the same as a
+// load washed ahead of its day (LL_EARLY): a missed turn paid, or its next home day covered (credit) — nothing slides. Not started by
+// 8 PM → it just comes off today (the closed lay never sees it), the line as if it was never tapped. ↩ Unbump takes it back until it
+// goes in. Mom only (llMomGo). Write: laundryLine/over/<iso>/<item> = tap time (null on undo) — its own node, so ⏫ bumps are untouched.
+let llBumpAsk=null;   // the load whose ⏫ Today question is open
+function llOvers(iso){ const B=(laundryLine&&laundryLine.over&&laundryLine.over[iso])||{}, o=llOrder(); return Object.keys(B).filter(function(id){ return o.indexOf(id)>=0&&B[id]; }).sort(function(a,b){ return (B[a]||0)-(B[b]||0); }); }
+function llBumpAskOpen(id){ llMomGo(function(){ llBumpAsk=(llBumpAsk===id)?null:id; hhRender(); }); }
+// What ⏫ Instead would push to tomorrow — the bump tried on the side, then put back (nothing written).
+function llBumpPreview(id){ const t=llToday(); if(!laundryLine) return []; const B=laundryLine.bump=laundryLine.bump||{}, had=B[t], before=llProjectNow(1)[0].loads.slice(); let after=before;
+  B[t]=Object.assign({},had||{}); B[t][id]=Date.now(); llMemoReset();
+  try{ after=llProjectNow(1)[0].loads.slice(); } finally { if(had) B[t]=had; else delete B[t]; if(!Object.keys(B).length) delete laundryLine.bump; llMemoReset(); }
+  return before.filter(function(x){ return after.indexOf(x)<0; }); }
+function llBumpAskHTML(id){ if(llBumpAsk!==id) return ""; const it=llAll(), sl=llBumpPreview(id).map(function(x){ return esc(llShort(it[x])); }).join(", ");
+  const b=function(on,t,solid){ return '<button onclick="'+on+'" style="padding:5px 10px;border-radius:8px;border:'+(solid?'none':'1.5px solid #cbd5e1')+';background:'+(solid?'#2563eb':'#fff')+';color:'+(solid?'#fff':'#475569')+';font-size:11.5px;font-weight:800;cursor:pointer;text-align:left">'+t+'</button>'; };
+  return '<div class="ll-bumpask" style="flex:1 1 100%;display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 8px;margin:4px 0 2px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px">'
+    +'<span style="font-size:11.5px;font-weight:800;color:#1e3a8a">⏫ '+esc(llShort(it[id]))+' today:</span>'
+    +b("llBumpAsk=null;llBump('"+id+"')",'⏫ Instead — '+(sl?sl+' moves to tomorrow':'takes a slot, nothing moves'),true)
+    +b("llOverToggle('"+id+"')",'➕ Extra — over the cap, nothing moves',true)
+    +b("llBumpAsk=null;hhRender()",'Cancel')+'</div>'; }
+// ➕ on / off for today. Once it has gone in, the extra stands (like a bump).
+function llOverToggle(id){ llMomGo(function(){ if(llOrder().indexOf(id)<0||llWith(id)) return; const t=llToday(), on=llOvers(t).indexOf(id)>=0, u={};
+  if(on&&llLog(t).indexOf(id)>=0) return;   // it went in — it stands
+  if(!on&&(llProjectNow(1)[0].loads.indexOf(id)>=0||llBumps(t).indexOf(id)>=0)) return;   // already on today
+  laundryLine.over=laundryLine.over||{}; laundryLine.over[t]=laundryLine.over[t]||{};
+  if(on){ delete laundryLine.over[t][id]; u["over/"+t+"/"+id]=null; } else { laundryLine.over[t][id]=Date.now(); u["over/"+t+"/"+id]=laundryLine.over[t][id]; }
+  llBumpAsk=null; llEnsureItems(u); llStore(); llWrite(u);
+  if(!on&&typeof mwToast==="function") mwToast('➕ '+llItems()[id].label+' — extra today, nothing moves');
+  hhRender(); }); }
+// LL_OVER_END
 function llJumpAdd(wid,label){ if(!laundryLine||!Object.keys(laundryLine).length) return "";   // the line isn't set up — the bin works as always
   const t=llToday(); _llBefore=llProjectNow(1)[0].loads.slice(); laundryLine.jump=laundryLine.jump||{}; laundryLine.jump[t]=laundryLine.jump[t]||{};
   laundryLine.jump[t][wid]={label:label,at:Date.now()}; llStore(); const u={}; u["jump/"+t+"/"+wid]=laundryLine.jump[t][wid]; llWrite(u);
@@ -15025,7 +15058,7 @@ function llFront(){ const R=llProjectNow(21); for(let i=0;i<R.length;i++){ for(l
 function llWeekCardHTML(){ const mom=(typeof momHere==="function")?momHere():false;
   return '<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);margin-bottom:10px;padding:9px 12px 10px"><div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><span style="font-size:13px;font-weight:800;flex:1">📅 The laundry schedule</span></div>'+llWeekGridHTML(llToday(),llNowMin()>=LL_SWEEP_MIN,mom)+'</div>'; }   // 📝 LLTODO_LIST: ＋ To-do moved to the 🧺 Laundry card's checklist
 function llCardHTML(noGrid){
-  const it=llItems(), o=llOrder(), nx=llFront(), mom=(typeof momHere==="function")?momHere():false, today=llToday(), r0=llProjectNow(1)[0], tl=r0.loads, ts=r0.started, tb=r0.bumped;
+  const it=llItems(), o=llOrder(), nx=llFront(), mom=(typeof momHere==="function")?momHere():false, today=llToday(), r0=llProjectNow(1)[0], tl=r0.loads, ts=r0.started, tb=r0.bumped, tov=r0.over||[];
   const btn=function(on,t,dis){ return '<button onclick="'+on+'"'+(dis?' disabled':'')+' style="padding:2px 8px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;font-size:11px;font-weight:700;cursor:pointer;'+(dis?'opacity:.35':'')+'">'+t+'</button>'; };
   let h='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);margin-bottom:10px;overflow:hidden"><div style="padding:9px 12px 2px;font-size:13px;font-weight:800;display:flex;align-items:center;gap:6px"><span style="flex:1">🧺 The laundry line</span>'+((mom||(typeof _kioskD==="function"&&_kioskD()))?llMomSickBtn():'')+'</div>'
     +'<div style="padding:0 12px 6px;font-size:11px;color:var(--muted)">'+(llMode()==="home"?'Each load has a home day. On a caught-up week it goes on its day; anything missed waits at the front, in order, and fills the caps first.':'The loads keep their order and go round again. Each day fills to its cap.')+' A load counts once it\'s in the washer; one not started by 8 PM stays at the front and everything behind it slides a day. A load washed ahead of its day goes over that day\'s cap, so nothing else moves.</div>';
@@ -15037,7 +15070,7 @@ function llCardHTML(noGrid){
   o.forEach(function(id,n){ const x=it[id], up=id===nx;
     h+='<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px 6px;padding:5px 12px;border-top:1px solid #eef2f0;font-size:12.5px;'+(up?'background:#f0fdf4':'')+'"><span style="width:16px;color:#6b6560;font-size:11px">'+(n+1)+'</span><span>'+esc(x.emoji||'🧺')+'</span><span style="flex:1;min-width:130px;font-weight:700">'+esc(x.label)+(up?' <span style="color:#16a34a;font-size:11px">▶ up next</span>':'')+'</span>'
       +(mom?'<span style="display:flex;gap:4px;flex-wrap:wrap;margin-left:auto">'+(llWith(id)?btn("llEdToggle('"+id+"')","🔗 with "+esc(llShort(it[llWith(id)]))):(llMode()==="home"?btn("llHomeNext('"+id+"')","📅 "+LL_DL[llHome(id)]):''))+btn("llEdToggle('"+id+"')","✎")+btn("llDoerNext('"+id+"')","👤 "+esc(llName(llDoer(id))))+llWhenChip(id,btn)+llCyChip(id,btn)+btn("llMove('"+id+"',-1)","↑",n===0)+btn("llMove('"+id+"',1)","↓",n===o.length-1)+((up||llMode()==="home"||llWith(id))?'':btn("llSetNext('"+id+"')","Up next"))
-        +(llWith(id)?'':tb.indexOf(id)>=0&&ts.indexOf(id)<0?btn("llBump('"+id+"')","↩ Unbump"):(tl.indexOf(id)<0?btn("llBump('"+id+"')","⏫ Today"):''))+'</span>':'')+(mom?llCyEditorHTML(id)+llEdLoadHTML(id):'')+'</div>'; });
+        +(llWith(id)?'':tb.indexOf(id)>=0&&ts.indexOf(id)<0?btn("llBump('"+id+"')","↩ Unbump"):tov.indexOf(id)>=0&&ts.indexOf(id)<0?btn("llOverToggle('"+id+"')","↩ Unbump"):(tl.indexOf(id)<0?btn("llBumpAskOpen('"+id+"')","⏫ Today"):''))+'</span>':'')+((mom&&typeof llBumpAskHTML==="function")?llBumpAskHTML(id):'')+(mom?llCyEditorHTML(id)+llEdLoadHTML(id):'')+'</div>'; });   // ➕ LL_OVER: ⏫ Today asks Instead / Extra
   // caps per weekday
   h+='<div style="padding:8px 12px;border-top:1px solid #eef2f0"><div style="font-size:11.5px;font-weight:800;margin-bottom:5px">Loads a day (cap)</div><div style="display:flex;gap:5px;flex-wrap:wrap">'
     +LL_DL.map(function(d,x){ const c=llCap(x); return '<div style="text-align:center;border:1px solid #eef2f0;border-radius:9px;padding:4px 5px;min-width:44px;background:'+(c?'#f0fdf4':'#f8fafc')+'"><div style="font-size:10.5px;color:#6b6560">'+d+'</div><div style="font-size:14px;font-weight:800">'+c+'</div>'
@@ -15069,7 +15102,7 @@ function llWeekGridHTML(today,closeToday,mom,by){
   llProject(today,7*(llWeek+1)-llDow(today),closeToday).forEach(function(r){ byIso[r.iso]=r; });   // the re-lay starts today; earlier days show what really went in
   const nb=function(d,t,dis){ return '<button onclick="llWeekNav('+d+')"'+(dis?' disabled':'')+' style="padding:1px 9px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;font-size:13px;font-weight:800;cursor:pointer;'+(dis?'opacity:.3':'')+'">'+t+'</button>'; };
   const md=function(iso){ const p=iso.split("-"); return (+p[1])+'/'+(+p[2]); };
-  const load=function(id,mark,extra){ return '<div style="text-align:center;padding-top:4px;line-height:1.15;'+(mark==="moved"?'opacity:.45':'')+'"><div style="font-size:15px">'+esc(it[id].emoji||'🧺')+'</div><div style="font-size:9.5px;font-weight:700;letter-spacing:-.2px;overflow-wrap:normal;word-break:normal">'+(mark==="done"?'<span style="color:#16a34a">✓</span> ':mark==="moved"?'→ ':mark==="bump"?'⏫ ':'')+esc((_llCurR&&_llCurR.sh&&_llCurR.sh[id])||llShortFull(id))+'</div>'+(extra||'')+'</div>'; };
+  const load=function(id,mark,extra){ return '<div style="text-align:center;padding-top:4px;line-height:1.15;'+(mark==="moved"?'opacity:.45':'')+'"><div style="font-size:15px">'+esc(it[id].emoji||'🧺')+'</div><div style="font-size:9.5px;font-weight:700;letter-spacing:-.2px;overflow-wrap:normal;word-break:normal">'+(mark==="done"?'<span style="color:#16a34a">✓</span> ':mark==="moved"?'→ ':mark==="bump"?'⏫ ':mark==="over"?'➕ ':'')+esc((_llCurR&&_llCurR.sh&&_llCurR.sh[id])||llShortFull(id))+'</div>'+(extra||'')+'</div>'; };
   let h='<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><span style="font-size:11.5px;font-weight:800;flex:1">'+(llWeek===0?'This week':llWeek===1?'Next week':'Week of '+md(mon))+' <span style="font-weight:400;color:#6b6560">· '+md(mon)+'–'+md(sun)+'</span></span>'+nb(-1,'‹',llWeek===0)+nb(1,'›',llWeek===8)+'</div>';
   h+='<div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px">';
   for(let d=0;d<7;d++){ const iso=llAddDays(mon,d), r=byIso[iso], past=iso<today, isT=iso===today, pl=past?llLog(iso):[];
@@ -15086,7 +15119,7 @@ function llWeekGridHTML(today,closeToday,mom,by){
         if(mv&&isT&&mom) return load(id,"moved",sub+(llLateStartOK(r,id)?llLateStartBtn(id,by):'')+'<button onclick="llMarkDone(\''+id+'\''+(by?',\''+by+'\'':'')+')" title="It was done — mark it done today" style="margin-top:2px;padding:1px 3px;border-radius:6px;border:1px solid #16a34a;background:#f0fdf4;color:#15803d;font-size:9px;font-weight:700;cursor:pointer;white-space:nowrap;max-width:100%">✓Done</button>')+tdAfter(id);   // ✓ DONE after 8 PM · 🫧 LL_LATESTART
         const _dn=(isT&&!done&&mom)?'<button onclick="llMarkDone(\''+id+'\''+(by?',\''+by+'\'':'')+')" title="Washed and put away without being tracked — mark it done today" style="margin-top:2px;padding:1px 3px;border-radius:6px;border:1px solid #16a34a;background:#f0fdf4;color:#15803d;font-size:9px;font-weight:700;cursor:pointer;white-space:nowrap;max-width:100%">✓Done</button>':'';   // ✓ DONE
         const _un=(isT&&done&&mom&&llIsDoneOnly(id,iso))?'<button onclick="llUndone(\''+id+'\')" title="Not done after all" style="margin-top:2px;padding:1px 4px;border-radius:6px;border:1px solid #cbd5e1;background:#fff;color:#64748b;font-size:9px;font-weight:700;cursor:pointer">↩︎</button>':'';
-        return load(id,done?"done":mv?"moved":(r.bumped.indexOf(id)>=0?"bump":""),sub+((isT&&!done&&!mv&&mom)?'<button onclick="llStart(\''+id+'\''+(by?',\''+by+'\'':'')+')" style="margin-top:2px;padding:1px 3px;border-radius:6px;border:1px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-size:9px;font-weight:700;cursor:pointer;white-space:nowrap;max-width:100%">🫧Start</button>':'')+_dn+_un)+tdAfter(id); }).join('');
+        return load(id,done?"done":mv?"moved":(r.bumped.indexOf(id)>=0?"bump":(r.over||[]).indexOf(id)>=0?"over":""),sub+((isT&&!done&&!mv&&mom)?'<button onclick="llStart(\''+id+'\''+(by?',\''+by+'\'':'')+')" style="margin-top:2px;padding:1px 3px;border-radius:6px;border:1px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-size:9px;font-weight:700;cursor:pointer;white-space:nowrap;max-width:100%">🫧Start</button>':'')+_dn+_un)+tdAfter(id); }).join('');
     else if(r&&r.brk) h+='<div style="text-align:center;font-size:10px;color:#6b6560;padding-top:4px;line-height:1.2">⏸<br>'+esc(r.brk)+'</div>';
     else if(!tds.length) h+='<div style="text-align:center;font-size:10px;color:#9ca3af;padding-top:4px">no laundry</div>';
     h+='</div>'; }

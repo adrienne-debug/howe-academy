@@ -63,10 +63,10 @@ console.log("5. ✕ a jump-in before it's washed gives the slot back");
 console.log("6. The card + grid");
 { const c=mk({day:TUE,line:{caps:caps(2),asOf:MON,jump:{[MON]:{wt0:{label:"Dog stuff",at:1}},[TUE]:{wt1:{label:"Towels",at:1}}},bump:{[TUE]:{lucy:3}},log:{[MON]:{lincoln:{at:1}}}}});
   const h=c.llCardHTML(), cells=c.llWeekGridHTML(TUE,false,true).split('border-radius:8px;padding:4px 1px').slice(1);
-  ok("Lucy bumped and not in yet: ↩ Unbump; Ellis (the towels + Lucy filled cap 2) and Julian: ⏫ Today", /llBump\('lucy'\)"[^>]*>↩ Unbump/.test(h)&&/llBump\('julian'\)"[^>]*>⏫ Today/.test(h)&&/llBump\('ellis'\)"[^>]*>⏫ Today/.test(h)&&!/llBump\('lucy'\)"[^>]*>⏫/.test(h), h.match(/llBump\('\w+'\)"[^>]*>[^<]+/g));
+  ok("Lucy bumped and not in yet: ↩ Unbump; Ellis (the towels + Lucy filled cap 2) and Julian: ⏫ Today", /llBump\('lucy'\)"[^>]*>↩ Unbump/.test(h)&&/llBumpAskOpen\('julian'\)"[^>]*>⏫ Today/.test(h)&&/llBumpAskOpen\('ellis'\)"[^>]*>⏫ Today/.test(h)&&!/llBump\('lucy'\)"[^>]*>⏫/.test(h), h.match(/llBump\('\w+'\)"[^>]*>[^<]+/g));
   ok("Tuesday cell: 💦 Towels, ⏫ Lucy (with 🫧 Start) — cap 2 is full, Ellis waits", /💦<br>Towels/.test(cells[1])&&/⏫ Lucy/.test(cells[1])&&/llStart\('lucy'\)/.test(cells[1])&&!/Ellis/.test(cells[1]), cells[1]);
   ok("Monday (past): 💦 Dog stuff and ✓ Lincoln — a record of the day", /💦<br>Dog stuff/.test(cells[0])&&/✓<\/span> Lincoln/.test(cells[0]));
-  const m=mk({line:{caps:caps(2),asOf:MON}}).llCardHTML(); ok("a load already on today (Lincoln, Ellis on a plain Monday): no bump button", !/llBump\('lincoln'\)/.test(m)&&!/llBump\('ellis'\)/.test(m)&&/llBump\('lucy'\)/.test(m));
+  const m=mk({line:{caps:caps(2),asOf:MON}}).llCardHTML(); ok("a load already on today (Lincoln, Ellis on a plain Monday): no bump button", !/llBump(AskOpen)?\('lincoln'\)/.test(m)&&!/llBump(AskOpen)?\('ellis'\)/.test(m)&&/llBumpAskOpen\('lucy'\)/.test(m));   // ➕ LL_OVER: ⏫ Today asks first
   const k=mk({noMom:true,day:TUE,line:{caps:caps(2),asOf:MON}}); ok("kid's device: no bump buttons", !/llBump\(/.test(k.llCardHTML()));
 }
 console.log("7. Wiring");
