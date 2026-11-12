@@ -72879,6 +72879,7 @@ function mstCardHtml(session,card){
     r+='<div class="mast-flip-hint">\u{1F4A1} tap to flip back</div></div>';
     return r+'</div></div></div>';
   }
+  if(typeof mstSpellTypeOn==="function"&&mstSpellTypeOn(card)) return mstSpellTypeHtml(session,card,_lrn);   // ✍️ SPELLPRODUCE: typed, never heard-and-flipped
   if(typeof mstTilesOn==="function"&&mstTilesOn(session,card)) return mstTilesHtml(session,card,def,_lrn);   // 🔤 PATTILES (ahead of the spell-deck flip: a "tiles" day builds the word)
   if(mstIsSpellCard(card)){
     // 🔊 Spell deck: hear it, spell it out loud, flip to check — the word only on the back.
@@ -73383,6 +73384,7 @@ function renderMastStudy(opts){
       mstLockArm();   // MST_NAV: taps in the first 350 ms after this draw are swallowed
       if(typeof gameCardShown==="function") gameCardShown(card);   // ⏱ CARDSECS: the card is on screen — its clock starts at the first draw
       h+=mstCardHtml(session,card);
+      if(typeof mstSpellTypeOn==="function"&&mstSpellTypeOn(card)){ /* ✍️ SPELLPRODUCE: a typed spelling word — Check / Next live inside the card, no ✗/✓ */ } else
       if(typeof mstCopyOn==="function"&&mstCopyOn(session,card)){ /* 👀 PATCCC: Check / Next live inside the card */ } else
       if(mstCardMode(card)==="type"||(typeof mstTypeAnsOn==="function"&&mstTypeAnsOn(session,card))||(typeof mstPickOn==="function"&&mstPickOn(session,card))){   // ⌨️ MST_TYPEANS · 🎯 PATPICK
         // Check / Next live inside the card — no self-grading on a typed answer.
@@ -73655,6 +73657,7 @@ let mstTilesSt=null;   // {show, t:{word,tiles,placed,wrong,tries,done,first,fai
 function mstTilesWord(card){ return String((card&&card.name)||"").normalize("NFC").trim(); }
 function mstTilesWordOk(w){ w=String(w||""); return w.length>=2&&w.length<=SPELL_WORD_MAX&&/^\p{L}[\p{L}'’\-]*$/u.test(w); }
 function mstTilesOn(session,card){
+  if(card&&typeof mstSpellProduce==="function"){ const _sp=mstSpellProduce(card); if(_sp) return _sp==="tiles"; }   // ✍️ SPELLPRODUCE: a spell-deck word is built (learning) or typed (past learning), whatever its slot
   if(!card||card.mode!=="tiles") return false;
   if(!session||session.audio==="off") return false;   // he has to hear the word
   if(mstIsRuleCard(card)) return false;
@@ -73698,6 +73701,7 @@ function mstTilesHtml(session,card,def,lrn){
   if(clue) h+='<div class="mast-flip-def" style="font-size:20px;margin-top:6px">'+mstEsc(clue)+'</div>';
   h+='<div style="width:100%">'+spellBoardHtml(t,{color:"#7c3aed",pre:"mstTiles",msg:st.msg,lock:st.lock})+'</div>';
   if(st.lock&&st.msg==="right"&&!t.first) h+='<div style="margin-top:8px;font-size:14px;font-weight:700;color:#6d28d9">You\u{2019}ll see it again soon</div>';
+  if(st.reveal&&typeof mstSpellRevealHtml==="function") h+=mstSpellRevealHtml(t.word,"mstSpellTilesNext()");   // ✍️ SPELLPRODUCE
   return h+'</div></div></div></div>';
 }
 function mstTilesCtx(){
@@ -73730,7 +73734,9 @@ function mstTilesCheck(){
   const r=spellJudge(t);
   if(r==="again"){ try{ matchBonk(); }catch(e){} st.msg="again"; _mastRe(); mstTilesSay(c.cur); return; }
   if(r==="right"){ try{ matchDing(); }catch(e){} st.msg="right"; } else { try{ matchBonk(); }catch(e){} st.msg="fail"; }
-  st.lock=true; _mastRe();
+  st.lock=true;
+  if(r==="fail"&&typeof mstSpellProduce==="function"&&mstSpellProduce(c.cur)==="tiles"){ st.reveal=true; _mastRe(); return; }   // ✍️ SPELLPRODUCE: the word, then Next (a miss)
+  _mastRe();
   const grade=(r==="right"&&t.first)?"good":"again", tok=st, state=mstState, key=c.cur.key;
   setTimeout(function(){
     if(mstTilesSt!==tok||mstState!==state) return;   // ← Back / Quit during the beat
@@ -73741,6 +73747,78 @@ function mstTilesCheck(){
   },r==="right"?MST_TILES_BEAT_OK:MST_TILES_BEAT_MISS);
 }
 // PATTILES_END
+// SPELLPRODUCE_START — ✍️ A spelling word in a study sitting is PRODUCED, never heard-and-tapped (her ask 2026-11-12, dictated:
+//   "for Lincoln's study sessions, if it is a spelling word, he needs to either have the tiles with some of them, or he needs
+//   to type it in … him hearing it is he's just clicking through them and he's not actually learning the words"). Before, a
+//   spell-deck card (deck mode "spell": AAS Words, Spelling, SpellingYouSee) was 🔊 hear it → spell it out loud → flip →
+//   ✓ / ✗, so ✓ could be tapped without spelling anything. Now, for every kid's spell-deck cards in any 📚 study sitting:
+//   · still being learned (a new or learning card — the ⭐ Learning tag) → 🔤 Build it with letter tiles (PATTILES' own
+//     board and check, one more try after a wrong build);
+//   · past learning (a review card), or a word the tiles can't build (two words, too long) → ⌨️ type it: 🔊, a box, Check.
+//   Either way there is no ✓ / ✗ to tap: right first time = good; any wrong build or typing = again (the card goes to the
+//   back of the line, the sitting's own miss, saved by the sitting's own Save), and the word is shown after the miss with a
+//   Next → button. The word is never on screen before he has answered. A rule or picture card and every non-spelling card
+//   draw exactly as before. Writes nothing new.
+function mstSpellProduce(card){
+  if(!card||!mstIsSpellCard(card)) return "";
+  if(mstIsRuleCard(card)) return "";
+  if(typeof mstCardPic==="function"&&mstCardPic(card)) return "";
+  const w=mstTilesWord(card); if(!w) return "";
+  const lrn=card.kind==="new"||card.kind==="learning";
+  if(lrn&&typeof spellTiles==="function"&&typeof spellBoardHtml==="function"&&mstTilesWordOk(w)) return "tiles";
+  return "type";
+}
+function mstSpellTypeOn(card){ return mstSpellProduce(card)==="type"; }
+// Spelled right? Spaces at the ends and a curly vs straight apostrophe don't count; case counts only when the word has a
+// capital (a proper noun), so a capital first letter on a plain word isn't a miss.
+function mstSpellTypedOk(typed,word){
+  const n=v=>String(v==null?"":v).normalize("NFC").replace(/[‘’ʼ`´]/g,"'").replace(/\s+/g," ").trim();
+  const t=n(typed), w=n(word); if(!t||!w) return false;
+  return /\p{Lu}/u.test(w)?t===w:t.toLowerCase()===w.toLowerCase();
+}
+function mstSpellCur(){ if(!mstState) return null; try{ return mstCurrent(mstState); }catch(e){ return null; } }
+function mstSpellSayAgain(){ const c=mstSpellCur(); if(c&&c.name){ try{ mastSpeak(mstTilesWord(c),{spell:true}); }catch(e){} } }
+function mstSpellRevealHtml(word,next){
+  let h='<div style="margin-top:12px;font-size:13px;color:var(--muted);font-weight:700">The word is</div>';
+  h+='<div class="mast-slide-name" style="margin-top:2px">'+mstEsc(word)+'</div>';
+  return h+'<button onclick="'+next+'" style="margin-top:14px;min-height:52px;padding:0 36px;border-radius:14px;border:none;background:#dc2626;color:#fff;font-size:17px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Next →</button>';
+}
+function mstSpellTilesNext(){
+  const c=mstTilesCtx(); if(!c||!c.st.reveal) return;
+  if(mstLocked()) return;   // MST_NAV: the Check tap can't land on Next
+  mstTilesSt=null; mstTap("again");
+}
+function mstSpellTypeHtml(session,card,lrn){
+  const w=mstTilesWord(card);
+  let t='<div class="mast-slide"><div class="mast-flip-wrap"><div class="mast-flip-inner"><div class="mast-flip-front">';
+  t+='<div class="mast-slide-cat">'+mstEsc(card.deck||session.name||"")+(lrn||"")+'</div>';
+  t+='<div style="display:inline-block;margin-top:2px;padding:3px 10px;border-radius:999px;background:#ede9fe;color:#6d28d9;font-size:11px;font-weight:800">⌨️ Type the word</div>';
+  t+='<button onclick="mstSpellSayAgain()" style="margin:14px 0 4px;padding:14px 30px;border-radius:999px;border:2.5px solid #4f46e5;background:#eef2ff;color:#4f46e5;font-size:26px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F50A} Hear it</button>';
+  if(!mstChecked){
+    t+='<input id="mst-spell-in" type="text" value="'+mstEsc(mstTyped)+'" oninput="mstTyped=this.value" onkeydown="if(event.key===\'Enter\'){event.preventDefault();mstSpellTypeCheck();}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="type the word" style="margin-top:12px;width:100%;max-width:320px;box-sizing:border-box;padding:12px 14px;border-radius:12px;border:2px solid #c4b5fd;font-size:22px;text-align:center;font-family:\'DM Sans\',sans-serif">';
+    if(typeof typeKeysRowHtml==="function") t+=typeKeysRowHtml("mst-spell-in",typeKeysForDeck(card.deck,"name"));   // ⌨️ TYPEKEYS: the deck's own special letters
+    t+='<button onclick="mstSpellTypeCheck()" style="margin-top:12px;min-height:48px;padding:0 32px;border-radius:14px;border:none;background:#7c3aed;color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Check</button>';
+  } else if(mstChecked.ok){
+    t+='<div style="margin-top:12px;font-size:20px;font-weight:800;color:#16a34a">✓ Right!</div>';
+    t+='<div class="mast-slide-name" style="margin-top:6px">'+mstEsc(w)+'</div>';
+    t+='<button onclick="mstTap(\'good\')" style="margin-top:14px;min-height:52px;padding:0 36px;border-radius:14px;border:none;background:#16a34a;color:#fff;font-size:17px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Next →</button>';
+  } else {
+    t+='<div style="margin-top:12px;font-size:20px;font-weight:800;color:#dc2626">✗ Not quite</div>';
+    t+='<div style="margin-top:6px;font-size:13px;color:var(--muted);font-weight:600">You typed: <span style="text-decoration:line-through">'+mstEsc(mstChecked.typed)+'</span></div>';
+    t+=mstSpellRevealHtml(w,"mstTap(\'again\')");
+  }
+  return t+'</div></div></div></div>';
+}
+function mstSpellTypeCheck(){
+  const cur=mstSpellCur(); if(!cur||!mstSpellTypeOn(cur)||mstChecked) return;
+  try{ const el=(typeof document!=="undefined")&&document.getElementById("mst-spell-in"); if(el) mstTyped=el.value; }catch(e){}
+  if(!String(mstTyped||"").trim()) return;
+  const ok=mstSpellTypedOk(mstTyped,mstTilesWord(cur));
+  try{ if(ok) matchDing(); else matchBonk(); }catch(e){}
+  mstChecked={ok:ok,typed:String(mstTyped)};
+  _mastRe();
+}
+// SPELLPRODUCE_END
 
 // ── Save — writes touched/minted cards field-by-field (mirrors mastSaveResults), merges
 // today's session log, updates local state. All remote writes guarded by db.
