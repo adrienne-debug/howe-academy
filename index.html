@@ -8568,9 +8568,12 @@ function schedRegenerateNow(){
     }
     gwResult=null;               // don't let a stale preview commit if generation errors out
     try{ if(typeof pgAutoApplyAll==="function"){ const _pa=pgAutoApplyAll("regenerate"); if(_pa.length&&typeof gwShowToast==="function") gwShowToast("\u23F3 Re-averaged "+_pa.map(x=>cap(x.kid)+" "+x.sk+" \u2192 "+x.chunk+"/sitting").join(", ")); } }catch(e){}
+    _rtlRegen=true;              // 🌞 RTLIVE: mid-day, the rest of today is open for this build + commit
+    try{
     runGenerateWeek();           // sets gwResult / gwCursors (or toasts + leaves gwResult null)
     dbg("regen: generated "+(gwResult?"tasks="+((gwResult.tasks||[]).length):"NULL (generation failed/aborted)"));
     if(gwResult){ gwCommit(); dbg("regen: committed wk"+wn); if(typeof gwShowToast==="function") gwShowToast("Week "+wn+" regenerated from now ✓"); }
+    } finally { _rtlRegen=false; }
   };
   // This device takes the scheduler lock for the whole regenerate; everyone else
   // pauses their schedule writes + shows the banner until we release.
@@ -45108,6 +45111,53 @@ function _rlwModeToday(){
   }catch(e){ return "tomorrow"; }
 }
 // RELAY4_END
+// RTLIVE_START — 🌞 a Mom's rebuild (one subject, or Rebuild all) or week Regenerate done DURING the school day acts on the rest of
+// TODAY, not only tomorrow. Her four rules (2026-11-12: "we need the schedule live for changes current not tomorrow" → "yes"):
+//   1. during the school day a rebuild or regenerate treats the rest of today as open, from now until school ends;
+//   2. cards already checked or claimed stay exactly as they are (day, time, id, check);
+//   3. today's OPEN lesson cards stay on today — a regenerate never deletes them;
+//   4. a subject due today by its day rules (Days, or the no-co-op days in a week with no co-op — subjDaysFor) that has no card today
+//      gets one, laid after now, only if it fits before school ends; otherwise it goes to the next school day, as before.
+// Live (a family copy's week 6, Thu 11/12): the 10:32 AM Rebuild all re-laid from tomorrow (the build's re-lay ran in "tomorrow"
+// mode mid-day), so a subject due Thursday with no card got none; the 10:56 AM Regenerate removed two OPEN Thursday lesson cards
+// (11:29 AM, 2:50 PM) — the plan lays nothing on today once school has started and the commit kept only checked/claimed/started
+// cards — and laid neither again. Every other card was re-minted under a new id with its check.
+// Where each rule lives: rule 1 = the Builder's re-lay asks for today (cbApply → relayWeek today:true → _rlwModeToday); rules 3+4 on a
+// rebuild = _rpPatternWant / _reprojectPlan (dueToday) with a trial fit check in reprojectSubjectWeek; rule 3 on a regenerate =
+// _gwWeekConsumed (an open lesson card on today is held like a started one, so the generator serves the next lessons on later days
+// and the commit keeps it); rule 4 on a regenerate = gwReadWeekAutoAdvance (today joins the subject's days; a sitting the day can't
+// hold rolls to the next day, the generator's own cutoff rule); rule 2 = gwCommit (a re-attached check goes back onto its own card).
+// Before school and after school ends nothing here changes anything. Test: test_rebuild_today_live.js.
+function rtlDayOpen(){ return typeof _rlwModeToday==="function"&&_rlwModeToday()==="today"; }
+// The generator and the commit run for other doors too (a subject re-lay, the auto-build, a week handover) — those keep exactly what
+// they did: the regenerate-side rules apply only while Mom's 🔄 Regenerate runs (schedRegenerateNow sets this around its build + commit).
+let _rtlRegen=false;
+function rtlRegenOpen(){ return !!_rtlRegen&&rtlDayOpen(); }
+// Rule 4's question for one kid + Builder-paced subject. o = {todayDay, todayISO, tasks (the week as it stands)}.
+function rtlDueToday(kid,sk,o){
+  try{
+    const s=(((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid])||{})[sk]; if(!s||s.paused) return false;
+    if(!(typeof planBacked==="function"&&planBacked(kid,sk))) return false;
+    if(typeof fxIsClass==="function"&&fxIsClass(s)) return false;                 // a class meets on its own dates
+    if(typeof lnOf==="function"&&lnOf(kid,sk)) return false;                       // 🛤 a lane's rhythm decides its own days
+    if(typeof subjNoCarry==="function"&&subjNoCarry({who:kid,subjectKey:sk,title:s.display||sk})) return false;
+    const iso=o&&o.todayISO, td=o&&o.todayDay; if(!iso||!td) return false;
+    const ab=td.slice(0,1).toUpperCase()+td.slice(1,3);
+    const days=((typeof subjDaysFor==="function")?subjDaysFor(kid,s,iso):s.allowedDays)||[];
+    if(days.length&&days.map(String).indexOf(ab)<0) return false;
+    if(typeof smapIsKidOff==="function"&&smapIsKidOff(kid,iso)) return false;
+    if(typeof _ovOffX==="function"&&_ovOffX(kid,iso,false)) return false;
+    if(typeof _ovRmX==="function"&&_ovRmX(kid,iso,sk,false)) return false;         // ✕'d off for it, or a co-op day under the no-Mom rule
+    const ids=(typeof lidsFor==="function"?lidsFor(kid,sk):null)||s.lessonIds||[], done=(typeof lidDoneSet==="function"?lidDoneSet(kid,sk):null)||new Set();
+    if(!ids.some(function(l){ return l&&!done.has(l); })) return false;            // nothing left to lay
+    const mine=((o&&o.tasks)||[]).filter(function(t){ return t&&t.who===kid&&t.subjectKey===sk; });
+    if(mine.some(function(t){ return t.day===td; })) return false;                // it has a card today (open, done or in a box)
+    const tpw=parseInt((s.pacing&&s.pacing.tpw)||s.timesPerWeek,10)||0;
+    if(tpw>0&&mine.filter(function(t){ return !String(t.id||"").endsWith("_c")&&!t._eowOverflow; }).length>=tpw) return false;   // the week's sittings are all laid
+    return true;
+  }catch(e){ return false; }
+}
+// RTLIVE_END
 // CURRLIVE_START — 📚 THE CURRICULUM IS LIVE (slice A, 2026-11-08). Before: db.ref("curriculum").once("value") at boot — a grid edit on
 // one device did not reach another until it reloaded, and a kiosk open since Friday built Sunday's week from Friday's curriculum.
 // Now .on("value") through currOnValue: the FIRST arrival does exactly what the once did (fbCurrLoaded, the pace cumulatives,
@@ -55536,7 +55586,7 @@ function cbApply(){
   // (every rebuilt subject looked a week behind until an app reload or commit).
   try{ if(typeof buildCurrPaceCum==="function") buildCurrPaceCum(); }catch(e){}
   // Stage 3.4: the cells changed → this week's cards for the subject follow (plan-backed only).
-  try{ if(typeof relayWeek==="function") relayWeek("build",{label:"🧱 "+(s.display||sk)+" re-paced",subjects:[{kid:kid,sk:sk}]}); else if(typeof reprojectSubjectWeek==="function") reprojectSubjectWeek(kid,sk,"relay"); }catch(e){}   // 🔁 RELAY3: through the one door (pass B)
+  try{ if(typeof relayWeek==="function") relayWeek("build",{label:"🧱 "+(s.display||sk)+" re-paced",subjects:[{kid:kid,sk:sk}],today:true}); else if(typeof reprojectSubjectWeek==="function") reprojectSubjectWeek(kid,sk,"relay"); }catch(e){}   // 🔁 RELAY3: through the one door (pass B) · 🌞 RTLIVE rule 1: mid-day the rest of today is open (today:true → _rlwModeToday)
   cbPreviewRes=null; cbSubjKey=null; cbForm=null;
   renderAll();
 }
@@ -57730,7 +57780,7 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
   // squeezed into a day in progress — it goes to the next school day; if there is none this
   // week it is left for next week's build (the lesson isn't done, so it comes up first).
   const freedToday=(freed[opts.todayDay]||[]).filter(x=>x!=null&&!(opts.nowMin!=null&&opts.toMin(x)<=opts.nowMin)).length;
-  let todayBudget=freedToday;
+  let todayBudget=freedToday+(opts.dueToday?1:0);   // 🌞 RTLIVE rule 4: a subject due today with no card takes one sitting today
   summary.pushed=[]; summary.deferred=[];
   const landingDay=(w)=>{ if(w.day!==opts.todayDay||opts.freshToday) return w.day; /* 🌅 before school today is a normal day */ if(todayBudget>0){ todayBudget--; return w.day; } const nd=nextSchoolDay(w.day); if(nd) summary.pushed.push(w.id); else summary.deferred.push(w.id); return nd; };
   // additions (only onto today-forward days)
@@ -58017,6 +58067,7 @@ function _rpPatternWant(kid,sk,o){
     .sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:((a.dayNum||0)-(b.dayNum||0)); });
   const cap=Math.max(1,parseInt(o.dayCap,10)||1);
   const slots=[]; for(let i=0;i<Math.min(todaySlots,cap);i++) slots.push(o.todayDay);   // never more than the cap on today
+  if(o.dueToday&&o.mode==="today"&&!todaySlots) slots.push(o.todayDay);   // 🌞 RTLIVE rule 4: due today, no card today → one sitting today (the caller checked it fits)
   plan.forEach(function(a){ const d=dayOfISO[a.date]; if(!d) return; const di=_RP_DAYS.indexOf(d); if(di<tIx||(di===tIx&&o.mode!=="fresh")) return; if(blocked[d]) return; slots.push(d); });
   slots.sort(function(a,b){ return _RP_DAYS.indexOf(a)-_RP_DAYS.indexOf(b); });
   // Lessons in LIST order from the first one not done/held (the plan already skips done ones).
@@ -58140,9 +58191,29 @@ function reprojectSubjectWeek(kid,sk,why,opts){
       const _blockedDays=[]; try{ if(typeof calDateForWeekDay==="function"&&typeof _ovRmX==="function"){ _RP_DAYS.forEach(function(d){ const ds=calDateForWeekDay(d,wn); if(ds&&_ovRmX(kid,ds,sk,false)) _blockedDays.push(d); }); } }catch(e){}
       // ⏭ pattern-forward: the subject's days come from its plan, not the generator's balancer
       const _nowMin=nowD.getHours()*60+nowD.getMinutes();
-      const _pw=_dl?null:_rpPatternWant(kid,sk,{wn,todayDay,nowMin:_nowMin,toMin,mode:_rpMode,dayCap:_rpCap,blockedDays:_blockedDays,liveTasks:weekData.tasks,genTasks:gen.result.tasks,checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{}});
+      // 🌞 RTLIVE rule 4: mid-day ("today" mode) a subject due today with no card today gets one sitting today — only when it fits:
+      // a trial re-lay on copies (_reprojectPlan edits cards in place) plus the school-end guard must leave it on today, ending by
+      // the day's end; otherwise nothing is laid today and the plan's next school day takes it, as before.
+      const _pwOpt=due=>({wn,todayDay,nowMin:_nowMin,toMin,mode:_rpMode,dayCap:_rpCap,blockedDays:_blockedDays,liveTasks:weekData.tasks,genTasks:gen.result.tasks,checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{},dueToday:due});
+      const _rpOpt=(pw,due)=>({todayDay,nowMin:_nowMin,checked:checked||{},claimed:pw?pw.claimed:((typeof claimed!=="undefined"&&claimed)||{}),dayCtx,packAround,toMin,fromMin,dayCap:_rpCap,lidOrder:_subj.lessonIds||[],lsdSubj:(typeof lessonDayList==="function"&&lessonDayList(_subj).length)?_subj:null,allowedDays:_rpDays,doneLids:_doneLids,dropUnwanted:!!(opts&&opts.dropUnwanted)||!!pw,patternForward:!!pw,freshToday:!!pw&&_rpMode==="fresh",dueToday:due,blockedDays:_blockedDays});
+      let _pw=null, _rtlDue=false;
+      if(!_dl&&_rpMode==="today"&&typeof rtlDueToday==="function"&&rtlDueToday(kid,sk,{todayDay,todayISO:_tISO,tasks:weekData.tasks})){
+        try{
+          const _pwT=_rpPatternWant(kid,sk,_pwOpt(true));
+          if(_pwT){
+            const _copy=JSON.parse(JSON.stringify(weekData.tasks));
+            const _rT=_reprojectPlan(kid,sk,_copy,_pwT.desired,_rpOpt(_pwT,true));
+            if(typeof seGuardWeek==="function") seGuardWeek(_rT.tasksAfter,seGuardCtx({kids:[kid],checked:checked||{}}));
+            const _new=_rT.tasksAfter.find(t=>t&&t.who===kid&&t.subjectKey===sk&&t.day===todayDay&&_rT.summary.added.indexOf(t.id)>=0);
+            const _st=_new&&!_new._dayDrop&&!_new._eowOverflow?toMin(_new.time):null;
+            if(_st!=null&&_st>=_nowMin&&_st+(+_new.dur||+_subj.minutes||20)<=_dtE(todayDay)){ _pw=_pwT; _rtlDue=true; }
+            else dbg&&dbg("🌞 due today, doesn't fit before school ends: "+kid+"/"+sk+" — the next school day takes it");
+          }
+        }catch(eRT){ dbg&&dbg("🌞 due-today trial skip: "+eRT); }
+      }
+      if(!_rtlDue) _pw=_dl?null:_rpPatternWant(kid,sk,_pwOpt(false));
       const r=_dl?_rlwDailyDiff(kid,sk,weekData.tasks,_rlwDailyWant(kid,sk,gen,wn),{todayDay,nowMin:_nowMin,checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{},toMin,fromMin,dayCtx,packAround,mode:_rpMode,days:_RP_DAYS,rules:String(_subj.rules||"")})   // 🔁 RELAY3D: by day, never a phantom
-        :_reprojectPlan(kid,sk,weekData.tasks,_pw?_pw.desired:gen.result.tasks,{todayDay,nowMin:_nowMin,checked:checked||{},claimed:_pw?_pw.claimed:((typeof claimed!=="undefined"&&claimed)||{}),dayCtx,packAround,toMin,fromMin,dayCap:_rpCap,lidOrder:_subj.lessonIds||[],lsdSubj:(typeof lessonDayList==="function"&&lessonDayList(_subj).length)?_subj:null,allowedDays:_rpDays,doneLids:_doneLids,dropUnwanted:!!(opts&&opts.dropUnwanted)||!!_pw,patternForward:!!_pw,freshToday:!!_pw&&_rpMode==="fresh",blockedDays:_blockedDays});
+        :_reprojectPlan(kid,sk,weekData.tasks,_pw?_pw.desired:gen.result.tasks,_rpOpt(_pw,_rtlDue));
       try{ if(typeof seGuardWeek==="function"){ const _se=seGuardWeek(r.tasksAfter,seGuardCtx({kids:[kid],checked:checked||{}}));
         _rpMergeUpd(r.upd,_se.upd);   // RPMERGE: never a path beside its own child (Firebase rejects the whole save)
         r.summary.shifted=(r.summary.shifted||[]).concat(_se.retimed,_se.rolled,_se.dropped||[]); r.summary.removed=r.summary.removed.concat(_se.deferred); } }catch(eSE){ dbg&&dbg("school-end skip: "+eSE); }
@@ -86796,10 +86867,16 @@ function _gwWeekConsumed(kid,sk,dates,dayData,seen){
     return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }catch(e){ return null; } };
   seen=seen||{};                                               // filled in place: the caller's serve loop skips these refs
   const freeDate=dt=>{ if(dayData[dt]&&dayData[dt][kid]) delete dayData[dt][kid][sk]; };
+  // 🌞 RTLIVE rule 3: during the school day (Mom's Regenerate) an OPEN lesson card later today is held like a started one — it stays on today, the
+  // next lessons go to the later days, and the commit keeps it (the plan lays nothing on today once school has started, so
+  // without this the card was neither re-served nor kept: two open Thursday cards gone, live 2026-11-12). Builder-paced lesson
+  // cards only (a daily is laid fresh for today by the generator, as before); not a card in a box (didn't fit / carries).
+  let _rtlHold=false; try{ _rtlHold=typeof rtlRegenOpen==="function"&&rtlRegenOpen()&&typeof planBacked==="function"&&!!planBacked(kid,sk); }catch(eRT){ _rtlHold=false; }
+  const heldToday=t=>_rtlHold&&!t._dayDrop&&!String(t.id||"").endsWith("_c")&&/_L\d+$/.test(String(t.id||""))&&!!_todayISO&&isoOf(t)===_todayISO;
   weekData.tasks.forEach(t=>{
     if(!t||t.who!==kid||t.subjectKey!==sk) return;
     if(t._eowOverflow) return;                                   // rolls to next week; not a sitting
-    const done=isDone(t); const started=!done&&isStarted(t);
+    const done=isDone(t); const started=!done&&(isStarted(t)||heldToday(t));
     if(!done&&!started) return;
     const ref=taskLessonRef(t)||("#"+t.id);
     if(seen[ref]) return; seen[ref]=true;
@@ -86855,6 +86932,10 @@ function gwReadWeekAutoAdvance(weekNum,savedCursors,excludeWeek,ignoreAuto){
             const _yr=new Date().getFullYear(); const _has={};
             weekData.tasks.forEach(function(x){ if(!x||x.who!==kid||x.subjectKey!==sk||String(x.id||"").endsWith("_c")) return; const ds=DAY_DT[x.day]; if(!ds) return; const d=new Date(ds+", "+_yr); if(isNaN(d.getTime())) return; _has[d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")]=1; });
             _keep=_keep.filter(function(d){ return d===_t||_has[d]; }); } } }catch(e){}
+          // 🌞 RTLIVE rule 4: a mid-day regenerate of this week gives a subject due today with no card today a sitting today (laid
+          // from now by the generator; one the day can't hold rolls to the next day — its own cutoff rule). It counts against the quota.
+          try{ if(_keep.indexOf(_t)<0&&_live[_t]&&excludeWeek&&excludeWeek===("week"+weekNum)&&typeof weekData!=="undefined"&&weekData&&Array.isArray(weekData.tasks)
+            &&typeof rtlRegenOpen==="function"&&rtlRegenOpen()&&rtlDueToday(kid,sk,{todayDay:(typeof _todayDay==="string")?_todayDay:"",todayISO:_t,tasks:weekData.tasks})) _keep.push(_t); }catch(eRT){}
           let _next=_pjd.filter(function(d){ return d>_t&&_keep.indexOf(d)<0; });
           // A MID-WEEK regen re-spreads the subject's FULL weekly quota over only the days
           // that are left, on top of the days already kept: ellis Editor in Chief (tpw 3, no
@@ -88956,6 +89037,7 @@ function gwCommit(){
         if(stay.length) dbg("🏷 seqtags (regenerate): left in place, true id taken — "+stay.map(s=>s.o.who+" "+s.o.subjectKey+" "+s.o.id+" (lesson "+s.o.lid+")").join(", "));
       }
     })();
+    const _rtlFrom={};   // 🌞 RTLIVE rule 2: new card id → the old card its check came from (the three passes below)
     // Pass 0 (Stage 3c): re-attach by LESSON ID first — a done lesson keeps its check no
     // matter which day the regen lands it on, and a same-titled card for a different
     // lesson can never take it. Falls through to the title passes for cards without ids.
@@ -88964,7 +89046,7 @@ function gwCommit(){
       const lid=t.lid||((typeof lidForTask==="function")?lidForTask(t):null); if(!lid) return;
       const rec=oldByLid[(t.who||"")+"|"+(t.subjectKey||"")+"|"+lid];
       if(rec&&!rec.used){
-        rec.used=true; snapChecked[t.id]=rec.ts;
+        rec.used=true; snapChecked[t.id]=rec.ts; _rtlFrom[t.id]=rec.oldId;
         if(snapHist[rec.oldId]&&!snapHist[t.id]) snapHist[t.id]={...snapHist[rec.oldId],id:t.id};
       }
     });
@@ -88973,7 +89055,7 @@ function gwCommit(){
       const key=(t.title||"")+"|"+(t.who||"")+"|"+(t.day||"");
       if(oldLookup[key]&&!oldLookup[key].used){
         oldLookup[key].used=true;
-        snapChecked[t.id]=oldLookup[key].ts;
+        snapChecked[t.id]=oldLookup[key].ts; _rtlFrom[t.id]=oldLookup[key].oldId;
         if(snapHist[oldLookup[key].oldId]&&!snapHist[t.id])
           snapHist[t.id]={...snapHist[oldLookup[key].oldId],id:t.id};
       }
@@ -89013,7 +89095,7 @@ function gwCommit(){
         if(olds.length!==1||cands.length!==1) return;
         const t=cands[0];
         olds[0].used=true; // its check found a new home — the keep-pass below must skip it
-        snapChecked[t.id]=olds[0].ts;
+        snapChecked[t.id]=olds[0].ts; _rtlFrom[t.id]=olds[0].oldId;
         if(snapHist[olds[0].oldId]&&!snapHist[t.id])
           snapHist[t.id]={...snapHist[olds[0].oldId],id:t.id};
       });
@@ -89037,6 +89119,19 @@ function gwCommit(){
       });
     })();
     // GWC_MATCH_END
+    // 🌞 RTLIVE rule 2: during the school day (Mom's Regenerate) a checked card stays exactly as it is — its check goes back onto its OWN card (same
+    // id, day and time) in place of the newly minted one that took it (live 11/12: every checked card came back under a new id).
+    // Only where the old card's id is not in the new week already; claimed / started cards are kept as they were by the passes above.
+    try{ if(typeof rtlRegenOpen==="function"&&rtlRegenOpen()){ let _rtlN=0;
+      const _oldBy={}; (weekData.tasks||[]).forEach(o=>{ if(o&&o.id) _oldBy[o.id]=o; });
+      const _have=new Set(d.tasks.map(t=>t&&t.id));
+      Object.keys(_rtlFrom).forEach(nid=>{ const oid=_rtlFrom[nid], o=_oldBy[oid]; if(!o||oid===nid||_have.has(oid)||!snapChecked[nid]) return;
+        const i=d.tasks.findIndex(t=>t&&t.id===nid); if(i<0) return;
+        d.tasks[i]=Object.assign({},o); _have.delete(nid); _have.add(oid);
+        snapChecked[oid]=snapChecked[nid]; delete snapChecked[nid];
+        if(snapHist[nid]){ if(!snapHist[oid]) snapHist[oid]=Object.assign({},snapHist[nid],{id:oid}); delete snapHist[nid]; }
+        _rtlN++; });
+      if(_rtlN) dbg("🌞 regenerate mid-day: "+_rtlN+" checked card(s) kept as they were (own id, day, time)"); } }catch(eRT){ try{ dbg("checked-card keep skip: "+eRT); }catch(e2){} }
     try{ const _np=gwNoPastNew(d.tasks,weekData.tasks||[],{dates:d.dates||DAY_DT,checked:snapChecked,claimed:(typeof claimed!=="undefined"&&claimed)||{},noCarry:subjNoCarry,consumed:id=>_gwConsumedCard(id,d&&d.week)});   // REGENNOPAST
       if(_np.length) dbg("📅 past days (regenerate): left off "+_np.length+" new card(s) — "+_np.map(t=>t.who+" "+t.day.slice(0,3)+" "+(t.title||t.subjectKey||"")).join(", ")); }catch(eNP){ try{ dbg("past-day guard skip: "+eNP); }catch(e2){} }
     const snapSl=ld(activeWK+"_sl")||slState||{};
