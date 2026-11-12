@@ -45142,9 +45142,10 @@ function rtlDueToday(kid,sk,o){
     if(typeof lnOf==="function"&&lnOf(kid,sk)) return false;                       // 🛤 a lane's rhythm decides its own days
     if(typeof subjNoCarry==="function"&&subjNoCarry({who:kid,subjectKey:sk,title:s.display||sk})) return false;
     const iso=o&&o.todayISO, td=o&&o.todayDay; if(!iso||!td) return false;
+    const _mk=typeof rtlMakeupToday==="function"&&rtlMakeupToday(kid,sk,iso);      // 🌞 RTGAPS 1: Mom's ➕ make-up today rides on top of Days and ×/wk
     const ab=td.slice(0,1).toUpperCase()+td.slice(1,3);
     const days=((typeof subjDaysFor==="function")?subjDaysFor(kid,s,iso):s.allowedDays)||[];
-    if(days.length&&days.map(String).indexOf(ab)<0) return false;
+    if(!_mk&&days.length&&days.map(String).indexOf(ab)<0) return false;
     if(typeof smapIsKidOff==="function"&&smapIsKidOff(kid,iso)) return false;
     if(typeof _ovOffX==="function"&&_ovOffX(kid,iso,false)) return false;
     if(typeof _ovRmX==="function"&&_ovRmX(kid,iso,sk,false)) return false;         // ✕'d off for it, or a co-op day under the no-Mom rule
@@ -45152,12 +45153,70 @@ function rtlDueToday(kid,sk,o){
     if(!ids.some(function(l){ return l&&!done.has(l); })) return false;            // nothing left to lay
     const mine=((o&&o.tasks)||[]).filter(function(t){ return t&&t.who===kid&&t.subjectKey===sk; });
     if(mine.some(function(t){ return t.day===td; })) return false;                // it has a card today (open, done or in a box)
+    const _hd=(typeof rtlHandDone==="function"&&typeof _pjWeekKey==="function")?rtlHandDone(kid,sk,(o&&o.tasks)||[],_pjWeekKey(iso),iso):{};   // 🌞 RTGAPS 2
+    if(_hd[iso]) return false;                                                     // a lesson marked done today with no card is today's sitting
+    if(_mk) return true;
     const tpw=parseInt((s.pacing&&s.pacing.tpw)||s.timesPerWeek,10)||0;
-    if(tpw>0&&mine.filter(function(t){ return !String(t.id||"").endsWith("_c")&&!t._eowOverflow; }).length>=tpw) return false;   // the week's sittings are all laid
+    const _hdN=Object.keys(_hd).reduce(function(a,d){ return a+_hd[d]; },0);       // …and each one this week counts toward its ×/wk
+    if(tpw>0&&mine.filter(function(t){ return !String(t.id||"").endsWith("_c")&&!t._eowOverflow; }).length+_hdN>=tpw) return false;   // the week's sittings are all laid (or done by hand)
     return true;
   }catch(e){ return false; }
 }
 // RTLIVE_END
+// RTGAPS_START — 🌞 two gaps in RTLIVE (her "Yes, fix both" 2026-11-12), both found by a family copy testing mid-day Thu 2026-11-12:
+//   1. a ➕ make-up Mom adds on TODAY during the school day lays a card today — rule 4's placement (after now, ending by school end,
+//      the subject's next lesson). Live: ➕ on a subject's empty Thursday cell wrote scheduleOverrides/<today>/<kid>/added/<sk> and
+//      nothing re-laid, so no card ever came. A make-up rides on top of the subject's Days and ×/wk (as the projection treats it) and is
+//      still skipped on a day off, a ✕'d day or a co-op-blocked day. One that can't fit before school ends lays nothing and a toast
+//      says so (nothing else is moved to make room). Before school, after school end and on any other day: exactly as before.
+//   2. a lesson marked done FOR a date with no card is that day's sitting: it counts toward that ISO week's ×/wk (the Grid's dealt
+//      charge, plan._wkUsed) and, for today, as "today already has its sitting" for rule 4. Live: Mark done on lesson 10 with today's
+//      date re-paced the subject and rule 4 laid lesson 11 on today at 2:50 PM — a 5th sitting in a 4×/week week (Mon–Wed cards +
+//      the hand-marked Thursday). A ➕ make-up today is satisfied by a lesson marked done today, as by a card.
+// Test: test_rebuild_today_gaps.js.
+// Mom's ➕ make-up for this subject on this date (not one the projection wrote itself — subjects/…/pjExtras is its own output).
+function rtlMakeupToday(kid,sk,iso){
+  try{
+    const s=(((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid])||{})[sk]||{};
+    if((s.pjExtras||{})[iso]) return false;
+    const a=((((typeof scheduleOverrides!=="undefined"&&scheduleOverrides)||{})[iso]||{})[kid]||{}).added||{};
+    return a[sk]!==undefined&&a[sk]!==null&&a[sk]!==false;
+  }catch(e){ return false; }
+}
+// Lessons recorded done (curriculum/done) on a day fromISO..toISO that no card of this subject in `tasks` carries → {iso: n}.
+// A lesson done on a card is already that card's sitting; one marked done by hand with no card is a sitting of its own.
+function rtlHandDone(kid,sk,tasks,fromISO,toISO){
+  const out={};
+  try{
+    const node=((((typeof currData!=="undefined"&&currData)||{}).done||{})[kid]||{})[sk]||{};
+    const lids={}, ids={};
+    (tasks||[]).forEach(function(t){ if(!t||t.who!==kid||t.subjectKey!==sk) return; ids[t.id]=1;
+      if(t.lid) lids[t.lid]=1; (Array.isArray(t.lids)?t.lids:[]).forEach(function(l){ if(l) lids[l]=1; });
+      const m=String(t.id||"").match(/_(L\d+)(?:_c)?$/); if(m) lids[m[1]]=1; });
+    Object.keys(node).forEach(function(lid){
+      const r=node[lid], d=(r&&r.day)?String(r.day):"";
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||(fromISO&&d<fromISO)||(toISO&&d>toISO)) return;
+      if(lids[lid]||(r.taskId&&ids[r.taskId])) return;
+      out[d]=(out[d]||0)+1;
+    });
+  }catch(e){}
+  return out;
+}
+// Gap 1's door: lmAddSubj calls this after the ➕ is saved. Only mid-day, only today, only a Builder-paced subject — the same re-lay
+// a rebuild runs (relayWeek → pass B → reprojectSubjectWeek in "today" mode → rule 4, which now reads the make-up). One Undo takes
+// back the make-up and its card.
+function rtlMakeupRelay(kid,dateStr,sk){
+  try{
+    if(!rtlDayOpen()) return false;
+    const iso=(typeof _todayStr==="function")?_todayStr():""; if(!iso||dateStr!==iso) return false;
+    if(!rtlMakeupToday(kid,sk,iso)) return false;                                  // the tap took a make-up off
+    if(!(typeof planBacked==="function"&&planBacked(kid,sk))||typeof relayWeek!=="function") return false;
+    const s=(((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid])||{})[sk]||{};
+    relayWeek("makeup",{label:"➕ "+(s.display||sk)+" make-up today",subjects:[{kid:kid,sk:sk}],today:true,undo:[{p:"scheduleOverrides/"+iso+"/"+kid+"/added/"+sk,gone:true}]});
+    return true;
+  }catch(e){ return false; }
+}
+// RTGAPS_END
 // CURRLIVE_START — 📚 THE CURRICULUM IS LIVE (slice A, 2026-11-08). Before: db.ref("curriculum").once("value") at boot — a grid edit on
 // one device did not reach another until it reloaded, and a kiosk open since Friday built Sunday's week from Friday's curriculum.
 // Now .on("value") through currOnValue: the FIRST arrival does exactly what the once did (fbCurrLoaded, the pace cumulatives,
@@ -53995,6 +54054,9 @@ function planMaterialize(kid,sk,form,opts){
     // rule (a) still orders it.
     _dealtAll.forEach(function(dm){ Object.keys(dm||{}).forEach(function(d){ if(!_dealtMax||d>_dealtMax) _dealtMax=d; const wk=_pjWeekKey(d);
       _dealtWk[wk]=(_dealtWk[wk]||0)+1+(((dm[d]||{}).more||[]).length); }); });   // two sittings on a day charge two
+    // 🌞 RTGAPS 2: a lesson marked done for a day of this week with no card is that day's sitting — the week is charged for it too
+    try{ if(typeof rtlHandDone==="function"&&typeof weekData!=="undefined"&&weekData&&Array.isArray(weekData.tasks)){ const _t0=cbTodayISO(); const _hd=rtlHandDone(kid,sk,weekData.tasks,_pjWeekKey(_t0),_t0);
+      Object.keys(_hd).forEach(function(d){ const wk=_pjWeekKey(d); _dealtWk[wk]=(_dealtWk[wk]||0)+_hd[d]; }); } }catch(eHD){}
   }
   // Calendar: existing future rows + a dense extension past the grid end (weekdays; off days
   // via the calendar; existing dates never minted twice) — dayNums are minted later, in date
@@ -58207,7 +58269,8 @@ function reprojectSubjectWeek(kid,sk,why,opts){
             const _new=_rT.tasksAfter.find(t=>t&&t.who===kid&&t.subjectKey===sk&&t.day===todayDay&&_rT.summary.added.indexOf(t.id)>=0);
             const _st=_new&&!_new._dayDrop&&!_new._eowOverflow?toMin(_new.time):null;
             if(_st!=null&&_st>=_nowMin&&_st+(+_new.dur||+_subj.minutes||20)<=_dtE(todayDay)){ _pw=_pwT; _rtlDue=true; }
-            else dbg&&dbg("🌞 due today, doesn't fit before school ends: "+kid+"/"+sk+" — the next school day takes it");
+            else{ dbg&&dbg("🌞 due today, doesn't fit before school ends: "+kid+"/"+sk+" — the next school day takes it");
+              try{ if(typeof rtlMakeupToday==="function"&&rtlMakeupToday(kid,sk,_tISO)&&typeof gwShowToast==="function") gwShowToast("➕ "+(_subj.display||sk)+" make-up doesn’t fit before school ends today ("+fromMin(_dtE(todayDay))+") — no card was laid today."); }catch(eMK){} }   // 🌞 RTGAPS 1: said, never silent
           }
         }catch(eRT){ dbg&&dbg("🌞 due-today trial skip: "+eRT); }
       }
@@ -60320,6 +60383,7 @@ function lmAddSubj(kid,dateStr,sk){
     else { if(!o.added)o.added={}; o.added[sk]=true; }
   });
   lmAddOpen=null;
+  try{ if(typeof rtlMakeupRelay==="function") rtlMakeupRelay(kid,dateStr,sk); }catch(e){}   // 🌞 RTGAPS 1: mid-day, a make-up on TODAY lays its card today
   renderAll();
 }
 function lmOpenAdd(kid,dateStr){
