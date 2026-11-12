@@ -13,7 +13,8 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
-const CURRWORDS = src.slice(src.indexOf("// CURRWORDS_START"), src.indexOf("// CURRWORDS_END"));   // CURRWORDS (2026-11-11): the page's words come from cw() — load the label map with the code under test
+const CURRWORDS = src.slice(src.indexOf("// CURRWORDS_START"), src.indexOf("// CURRWORDS_END"))
+  + "\n" + src.slice(src.indexOf("// CURRTOOLS_START"), src.indexOf("// CURRTOOLS_END"));   // CURRTOOLS (2026-11-11): the toolbar's ⋯ More and the 🔍 Checks drawer   // CURRWORDS (2026-11-11): the page's words come from cw() — load the label map with the code under test
 
 function block(a, b) { const i = src.indexOf(a), j = src.indexOf(b, i); if (i < 0 || j < 0) throw new Error("markers " + a); return src.slice(i, j); }
 function braceSlice(name) {
@@ -94,7 +95,8 @@ function world(o) {
   ctx._lessons = lessons; ctx._dns = dns;
   return ctx;
 }
-function render(c) { const el = { innerHTML: "" }; c.renderCurrGrid(el); return el.innerHTML; }
+// CURRTOOLS (2026-11-11): the banners sit in the 🔍 Checks drawer — draw it open so they render as before
+function render(c) { vm.runInContext("ctChecksOpen=true;", c); const el = { innerHTML: "" }; c.renderCurrGrid(el); return el.innerHTML; }
 const cellRe = (dn, sk) => new RegExp('id="gv-c-' + dn + '-' + sk + '"[^>]*>([\\s\\S]*?)</td>');
 const cell = (h, dn, sk) => { const m = cellRe(dn, sk).exec(h); return m ? m[1] : null; };
 
