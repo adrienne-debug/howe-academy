@@ -8,7 +8,7 @@
  *   · a unit-labelled workbook has NO milestone books (its finish is the 🏆 subject finish)
  *   · MR5 → MR6 (pages start over) still milestones MR5; a same-label page reset still splits
  *   · volume-token subjects (5A/5B) and bookMilestones=false are unchanged
- *   · _bookRuns, page totals and progress are untouched (old _bookRuns replayed side by side)
+ *   · (2026-11-12 later: PAGECOUNT now joins those units inside _bookRuns too — see test_page_counts.js)
  *
  *   run:  node test_unit_not_book.js
  */
@@ -34,7 +34,7 @@ function ok(n, c, x) { if (c) { pass++; console.log("  ok  - " + n); } else { fa
 const ctx = { currData: { subjects: { kid: {} } }, SEQS: {} };
 vm.createContext(ctx);
 vm.runInContext([
-  slice("parsePageNum"), line("function _bookKey("), slice("_bookRuns"), block("UNIT_NOT_BOOK"),
+  slice("parsePageNum"), line("function _bookKey("), line("function _bookTok("), slice("_bookRuns"), block("UNIT_NOT_BOOK"),
   slice("_bankedPages"), slice("subjectCurrentBook"), slice("_lessonBookKey"), slice("_volumeRuns"), slice("subjectMilestoneBooks"),
   "function buildSubjectLessons(kid,sk){ return SEQS[sk]||[]; }",
 ].join("\n"), ctx);
@@ -52,10 +52,7 @@ const ssMs = R("subjectMilestoneBooks('kid','ss_geo')");
 ok("no 📖 milestone books → finishing Unit 1 plays nothing", ssMs.length === 0, ssMs);
 const joined = R("_milestonePageRuns(SEQS.ss_geo)");
 ok("…the 16 units join into one unnamed run", joined.length === 1 && joined[0].name === "" && joined[0].lastIdx === units.length - 1, joined.length);
-ok("_bookRuns itself is unchanged (still 16 runs — page totals and progress untouched)", R("_bookRuns(SEQS.ss_geo)").length === 16);
-const OLD_BOOKRUNS = 'function _bookRuns(seq){\n  const runs=[]; let prev=null;\n  (seq||[]).forEach((e,i)=>{\n    const p=parsePageNum(e.lesson); if(p===null) return;\n    const key=_bookKey(e.lesson).toLowerCase();\n    const last=runs[runs.length-1];\n    if(!last||last.key!==key||(prev!==null&&p<prev)) runs.push({name:_bookKey(e.lesson),key,firstIdx:i,lastIdx:i,maxPage:p});\n    else { last.lastIdx=i; if(p>last.maxPage) last.maxPage=p; }\n    prev=p;\n  });\n  return runs;\n}';
-ok("_bookRuns source is byte-identical to before", slice("_bookRuns").trim() === OLD_BOOKRUNS);
-ok("banked pages unchanged by this fix", R("_bankedPages(SEQS.ss_geo, 7)") === 12 + 20, R("_bankedPages(SEQS.ss_geo, 7)"));
+ok("_bookRuns also reads it as one book now (PAGECOUNT)", R("_bookRuns(SEQS.ss_geo)").length === 1);
 
 // ── MR5 → MR6: pages start over, so still two books and MR5 still celebrates ──
 const mr = [];
@@ -69,7 +66,7 @@ ok("MR5 is still a 📖 milestone (MR6, the last book, belongs to the 🏆 finis
 ok("MR6 progress resets to its own pages", R("subjectCurrentBook(SEQS.mr, 7)").bookNum === 2);
 
 // ── same label, page drops → still a new book ──
-setSubj("reset", ["Book p.10", "Book p.20", "Book p.30", "Book p.2", "Book p.12", "Book p.22"]);
+setSubj("reset", ["Book p.10", "Book p.20", "Book p.30", "Book p.1", "Book p.12", "Book p.22"]);
 ok("same label + page reset still two milestone runs", R("_milestonePageRuns(SEQS.reset)").length === 2);
 
 // ── a different label that starts lower is a new book even mid-number ──

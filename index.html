@@ -61945,21 +61945,27 @@ function parsePageNum(text){
 // each book's max page is banked so MR5→MR6 doesn't reset the count.
 // Label stem minus the page tokens — identifies the book ("MR5 pp.148"→"MR5").
 function _bookKey(t){ return String(t||'').replace(/\b(?:pp?|pg|pgs|page|pages)\.?\s*\d+\s*(?:[–\-]\s*\d+)?/ig,'').replace(/\s+/g,' ').trim(); }
-// Contiguous book runs in a subject's sequence. A new book starts on a label
-// change OR a page reset (the number drops — "starts back at 1"), which is how
-// multi-book subjects like MR5→MR6 are split. Non-page lessons are skipped.
+// Contiguous book runs in a subject's sequence. Non-page lessons are skipped.
+// PAGECOUNT_START — her ask 2026-11-12 ("fix page counts"): a new book used to start on EVERY label change, and most
+// labels name the lesson ("Lesson 12 · Ch 12 — Nouns (WB p.40)", "Unit 3 · Pg 21–22", "Ch 2 … (p.8) · day 2 of 2"), so
+// every lesson was its own "book" and "pages worked through" summed each one's page number (Ellis FLL 4: 20,180 for a
+// 379-page workbook). Now a new book starts only when the pages go back DOWN and either the book's name changes
+// (MR5 → MR6, Level A → Level B — not Lesson 1 → Lesson 2) or the count starts over at page 1. Lessons whose pages keep climbing — or jump around inside one workbook
+// (WriteShop Junior E) — stay one book; a book whose lessons carry different labels has no name of its own.
+function _bookTok(k){ const w=String(k||'').toLowerCase().match(/[a-z0-9]+/g)||[]; return /^(level|book|volume|vol|part|grade|year)$/.test(w[0]||'')?w.slice(0,2).join(' '):(w[0]||''); }   // the book's name: "mr5", or a series word + its mark ("level a", "book 2") — never "lesson 3"
 function _bookRuns(seq){
   const runs=[]; let prev=null;
   (seq||[]).forEach((e,i)=>{
     const p=parsePageNum(e.lesson); if(p===null) return;
     const key=_bookKey(e.lesson).toLowerCase();
     const last=runs[runs.length-1];
-    if(!last||last.key!==key||(prev!==null&&p<prev)) runs.push({name:_bookKey(e.lesson),key,firstIdx:i,lastIdx:i,maxPage:p});
-    else { last.lastIdx=i; if(p>last.maxPage) last.maxPage=p; }
+    if(!last||(prev!==null&&p<prev&&(_bookTok(key)!==_bookTok(last.key)||p<=1))) runs.push({name:_bookKey(e.lesson),key,firstIdx:i,lastIdx:i,maxPage:p});
+    else { if(last.key!==key&&!last.mixed){ last.mixed=true; last.name=''; } last.lastIdx=i; if(p>last.maxPage) last.maxPage=p; }
     prev=p;
   });
   return runs;
 }
+// PAGECOUNT_END
 // Pages worked through seq[0..uptoIdx], banked per book (each book starts at
 // page 1) so MR5→MR6 sums. null when not page-based. Lifetime total uses this.
 function _bankedPages(seq,uptoIdx){
