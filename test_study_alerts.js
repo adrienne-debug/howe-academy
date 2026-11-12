@@ -175,7 +175,7 @@ function sbWorld(entry, o) {
 }
 
 console.log("── wiring ──");
-ok("Mom's Day Now card calls it", /_momApprovalsHTML\(\); nowN\+=_ap\.n; h\+=_ap\.html; \}catch\(e\)\{\}\n  try\{ const _sa=mstAlertsNowHTML\(\); nowN\+=_sa\.n; h\+=_sa\.html;/.test(src));
+ok("Mom's Day Now card calls it (📚 STUDY_NOWONE: counted here, drawn in the one study row)", /_momApprovalsHTML\(\); nowN\+=_ap\.n; h\+=_ap\.html; \}catch\(e\)\{\}\n  let _stA=null, _stR=null;[^\n]*\n  try\{ const _sa=mstAlertsNowHTML\(\); nowN\+=_sa\.n; _stA=/.test(src));
 ok("Mom HQ calls it", /h\+=wsBannerHTML\(\);[^\n]*\n  try\{ h\+=mstAlertsHQHTML\(\); \}catch\(e\)\{\}/.test(src));
 ok("save keeps a before-copy of every card it scores", /_before\.push\(mstBeforeSnap\(it,_mintedIds\.has\(it\.id\)\)\)/.test(src) && /before:_before\}/.test(src) && /mstBeforeMerge\(prevLog\.before,_before\)/.test(src));
 ok("before-copy taken BEFORE the scores are applied", src.indexOf("_before.push(mstBeforeSnap") < src.indexOf("r=mastApplyScores(items,due,scores,pn,settings,{prevShown:prevShownIds"));

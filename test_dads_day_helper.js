@@ -178,10 +178,11 @@ ok("Dad's Day draws it under the helper card", /helperDadCardHTML\(\); \}catch\(
   ok("Mom's Start a load writes exactly what origin/main wrote (no by)", !("by" in run(src)) && (!old || JSON.stringify(Object.keys(run(src))) === JSON.stringify(Object.keys(run(old)))));
 }
 // LAUNDRY_NUDGE (2026-10-15, hole 3) rewrites renderMomsDay's 🔴 NOW laundry rows on purpose — test_laundry_nudges.js covers them.
+// 📚 STUDY_NOWONE (2026-11-11): the 🚩 + 🕒 study lines in 🔴 Now draw one row — tagged, normalized away; test_study_nowone.js covers them.
 const unnudge = s => String(s).replace(/  \/\/ Load sitting in the washer[\s\S]*?(?=  \/\/ Bills that can't wait)/, "  /*laundry nudge*/\n")
   .replace(/\n\s*h\+=mdCardLaundry\(true\);   \/\/ 🧺 LAUNDRYADD[^\n]*/g, "").replace(/\n\s*\/\/ 🧺 LL_MYDAY[^\n]*/g, "")   // 🧺 LL_MYDAY (2026-10-21): Mom's Day's running-loads card moved up into My day — that one line, normalized away on both sides
   .replace(/\n[^\n]*\/\/ STICKYSTACK[^\n]*/g, "")   // STICKYSTACK (2026-10-22): the Today section markers — whole new lines, each tagged — normalized away on both sides
-  .replace(/\n[^\n]*\/\/ ⏱ MINMINUTES[^\n]*/g, "").replace(/\n[^\n]*\/\/ 🕒 SREVIEW[^\n]*/g, "")   // ⏱ MINMINUTES (2026-10-23): one 🔴 Now line (timed-card alerts), tagged — normalized away so the guard still asks "nothing ELSE changed"
+  .replace(/\n[^\n]*\/\/ ⏱ MINMINUTES[^\n]*/g, "").replace(/\n[^\n]*\/\/ 🕒 SREVIEW[^\n]*/g, "").replace(/\n[^\n]*\/\/ 🚩 study sessions rushed[^\n]*/g, "").replace(/\n[^\n]*\/\/ 📚 STUDY_NOWONE[^\n]*/g, "")   // ⏱ MINMINUTES (2026-10-23): one 🔴 Now line (timed-card alerts), tagged — normalized away so the guard still asks "nothing ELSE changed"
   .replace(/\n[^\n]*\/\/ 🖨 PDGRADE[^\n]*/g, "")   // 🖨 PDGRADE (2026-10-28): one Mom's-list line (paper drills to grade), tagged — normalized away on both sides
   .replace(/\n[^\n]*\/\/ KITFLAG[^\n]*/g, "")   // 🍳 KITFLAG (2026-10-23): one 🔴 Now line (a meal the kids rate low → ✓ Got it · Swap…), tagged — normalized away on both sides
   .replace(/\n[^\n]*\/\/ LESSONRES: 🧺[^\n]*/g, "")
