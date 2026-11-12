@@ -69045,6 +69045,24 @@ function mstPile(kid, sid, pn, todayLog) {
       mastIsDue(item, pn) &&
       !scoredIds.has(item.id)
     );
+    // MIXONCE_START — her report 2026-11-12 (Lincoln): "on Daily Mix, it is repeating some of the cards multiple times, especially it
+    // seems like German … after it goes from the learning point, it shouldn't be doing it multiple times." Cause 1: a Both-directions
+    // twin (dir "prod", twinOf the base) has its base's deck + prompt, and the Mix has no Both directions switch of its own, so since
+    // MSTTWINMODE (10/27) the twin is drawn as the very same flip card — every logged Mix 10/26–11/04 showed 3–7 German cards twice, and
+    // the live pile for school day 217 had 6 pairs in its 60. Now the Mix takes ONE card per deck + prompt: the oldest due (the base on a
+    // tie); the other stays due and comes in a later Mix. A deck + prompt already scored in today's Mix is not drawn again (Keep going).
+    // Two live items with one prompt (duplicate data) are caught the same way. Cause 2 (a missed card back in line) is mstAnswer's. No writes.
+    const _mixKey = it => { const pr = String(it.prompt == null ? "" : it.prompt).trim(); return pr ? String(it.subject) + "|" + pr : "id:" + it.id; };   // no prompt → its own card
+    const _mixScored = new Set(log.filter(e => e && e.name != null && (e.result === "c" || e.result === "m")).map(e => String(e.deck) + "|" + String(e.name).trim()));
+    const _mixNd = x => (x.next_due == null ? -1 : x.next_due), _mixTw = x => (x.twinOf ? 1 : 0);
+    const _mixPick = {};
+    mixReviews.forEach(it => {
+      const k = _mixKey(it); if (_mixScored.has(k)) return;
+      const was = _mixPick[k];
+      if (!was || _mixNd(it) < _mixNd(was) || (_mixNd(it) === _mixNd(was) && (_mixTw(it) < _mixTw(was) || (_mixTw(it) === _mixTw(was) && _mstCmp(it.id, was.id) < 0)))) _mixPick[k] = it;
+    });
+    mixReviews = mixReviews.filter(it => _mixPick[_mixKey(it)] === it);
+    // MIXONCE_END
     // MIX_FINISH_START — her ask 2026-10-21: "he can go complete say the cap of 20 but he can keep going and those register … has to do
     // the 20 first to get to check it off and then can keep going to get his amount bottlenecking down". The Mix had no limit: every
     // graduated card lands here and all of them that are due show (Lincoln 10/21: ~36 of 96 due). Now a sitting is the oldest-due
@@ -69247,6 +69265,7 @@ function mstSittingInit(pile, session, opts) {
     const key = "r:" + item.id;
     cards[key] = { key, kind: "review", id: item.id, deck: item.subject, name: item.prompt, goods: 0, first: null, done: false };
     if (item.dir === "prod" && !!(session && session.bothWays)) cards[key].mode = "type";   // ↔ a 🇬🇧→🇩🇪 twin is typed in his own sitting — MSTTWINMODE: only while the session still has Both directions on (off → a plain flip card)
+    if (session && session.kind === "mix") cards[key].once = true;   // MIXONCE: a Daily Mix card is asked once (her rule 2026-11-12: after learning, not "multiple times")
     queue.push(key);
     counts.review++;
   });
@@ -69295,7 +69314,7 @@ function mstAnswer(state, key, ans) {
 
   if (card.kind === "review") {
     state.queue.splice(idx, 1);
-    if (ans === "good") {
+    if (ans === "good" || card.once) {   // MIXONCE: a Mix card's miss is scored ✗ (and joins the missed-card games list) — it does not go back in line
       card.done = true;
     } else {
       state.queue.push(key);
