@@ -62108,6 +62108,24 @@ function _volumeRuns(seq){
   for(const r of runs){ if(seen[r.key]) return []; seen[r.key]=1; }
   return runs;
 }
+// UNIT_NOT_BOOK_START — her report 2026-11-12 (Ellis): Skill Sharpeners labels every lesson "Unit 1 · Pg 5–6",
+// "Unit 2 · Pg 13–14"… and the pages keep climbing through ONE workbook. _bookRuns starts a new run on every label
+// change, so each finished unit minted a 📖 book trophy, paid 25 pts and played the song (Ellis Unit 1 today; Lincoln
+// Units 1–2 in Oct). For milestones only, a label change counts as a new book when the pages also start over
+// (MR5 → MR6); runs whose pages keep climbing join the run before them, and a joined run has no name.
+// _bookRuns itself is untouched — page totals and progress bars read it and are not part of this change.
+function _milestonePageRuns(seq){
+  const out=[];
+  _bookRuns(seq).forEach(r=>{
+    const last=out[out.length-1];
+    const first=parsePageNum(seq[r.firstIdx]&&seq[r.firstIdx].lesson);
+    if(last&&last.key!==r.key&&first!==null&&first>last.maxPage){
+      last.lastIdx=r.lastIdx; last.maxPage=Math.max(last.maxPage,r.maxPage); last.name='';
+    } else out.push(Object.assign({},r));
+  });
+  return out;
+}
+// UNIT_NOT_BOOK_END
 // Books eligible for 📖 milestone trophies in a subject: volume runs first (Singapore
 // 5A/5B), else page-run books (MR5→MR6). Same-key runs merge so a re-visited book can't
 // double-trophy. The FINAL book is excluded — its finish IS the subject finish, and the
@@ -62119,7 +62137,7 @@ function subjectMilestoneBooks(kid,sk){
   let runs=_volumeRuns(seq);
   // Page-run fallback (MR5→MR6): drop stem-noise runs — a milestone book needs a real
   // name and more than one page-labeled lesson (a lone "- p.12" line is not a book).
-  if(!runs.length) runs=_bookRuns(seq)
+  if(!runs.length) runs=_milestonePageRuns(seq)
     .filter(r=>/[a-z0-9]/i.test(r.name)&&r.lastIdx>r.firstIdx)
     .map(r=>({name:r.name,key:r.key,firstIdx:r.firstIdx,lastIdx:r.lastIdx}));
   const byKey={};
