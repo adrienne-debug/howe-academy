@@ -22629,7 +22629,13 @@ function _kitMvGet(iso,slot){
   if(slot==="d"){ const v=p.mid?{mid:p.mid}:(p.txt?{txt:p.txt}:null); if(v&&p.sides) v.sides=p.sides; if(v&&p.sideList) v.sideList=p.sideList; return v; }   // KITSIDES: the list rides along like the old text
   const v=p[slot]; return (v&&(v.mid||v.txt||(typeof kitSlotsHas==="function"&&kitSlotsHas(v))))?v:null;   // KITSLOTS: four parts move as the slot's one value
 }
-function _kitMvFixed(iso,slot){ const p=kitPlan[iso]; return (slot==="d"&&!!p&&!!(p.eaten||p.skipped))||(typeof kitOutIs==="function"&&kitOutIs(iso,slot)); }   // KITFLAG: an eating-out slot stays put — the slide hops it, nothing lands on it
+// MEAL_EATEN_HOP_START — a day marked ✓ eaten is lived: the slide hops it for EVERY slot, not just the dinner (her words
+// 2026-11-11: "if a day has been marked as eaten for a meal, that if things are shift forward, that day is skipped ... everything
+// will shift past that day when it gets to that day"). Live 2026-11-11: pushing Nov 10's breakfast/lunch/snack forward landed
+// them on Nov 11, already marked eaten — only the dinner hopped it. The eaten stamp is the day's (plan/{iso}/eaten; no slot has
+// its own). ✗ Didn't happen frees the day, so a skipped day still holds only its dinner fixed.
+function _kitMvFixed(iso,slot){ const p=kitPlan[iso]; return (!!p&&!!p.eaten)||(slot==="d"&&!!p&&!!p.skipped)||(typeof kitOutIs==="function"&&kitOutIs(iso,slot)); }   // KITFLAG: an eating-out slot stays put — the slide hops it, nothing lands on it
+// MEAL_EATEN_HOP_END
 // The slide for one category: [{iso,val}] in order — first = the day being moved, last = the
 // empty day that absorbs it. null when `iso` has nothing movable in that category.
 function kitMoveChain(iso,slot,to){   // MEAL_MOVE_TO: `to` = the day it lands on (the slide starts there; the days between stay put); none = the next day
@@ -22702,7 +22708,7 @@ function kitMoveForward(iso,slot,to){   // MEAL_MOVE_TO: kitMoveTo passes `to`
   });
   try{HA_LS.setItem('ha_kit_plan',JSON.stringify(kitPlan));}catch(e){}
   try{HA_LS.setItem('ha_kit_prepdone',JSON.stringify(kitPrepDone));}catch(e){}
-  if(typeof db!=='undefined'&&db){
+  if(typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun())){   // MEAL_EATEN_HOP: ?dryrun=1 stays inert here too, not only through the db.ref patch
     const pr=db.ref('kitchen').update(up); // targeted multi-path — never the whole node
     if(pr&&pr.catch) pr.catch(err=>{ if(typeof mwToast==='function') mwToast('\u26A0 Move didn\u2019t save \u2014 '+err.message); });
   }
@@ -24744,7 +24750,7 @@ function kitMvToPick(iso,slot){
       if(d<today) continue; n++;
       const dl=gwParseDate(d).toLocaleDateString("en-US",{weekday:"short",month:"numeric",day:"numeric"});
       const fx=slot!=="all"&&_kitMvFixed(d,slot), p=kitPlan[d]||{};
-      const what=fx?((slot==="d"&&p.eaten)?'✓ eaten — skipped over':((slot==="d"&&p.skipped)?'✗ didn’t happen — skipped over':'🍽 eating out — skipped over'))
+      const what=fx?(p.eaten?'✓ eaten — skipped over':((slot==="d"&&p.skipped)?'✗ didn’t happen — skipped over':'🍽 eating out — skipped over'))   // MEAL_EATEN_HOP: an eaten day reads ✓ eaten for every slot
         :(slot==="all"?KIT_MV_SLOTS.filter(x=>_kitMvGet(d,x[0])).map(x=>x[1]+' '+esc(_kitMvName(d,x[0]))).join(' · '):esc(_kitMvName(d,slot)));
       h+='<button '+(fx?'disabled ':'onclick="grPopClose();kitMoveTo(\''+iso+'\',\''+d+'\',\''+slot+'\')" ')+'style="'+GR_BTN+'display:flex;gap:10px;align-items:center;text-align:left;padding:10px 12px;border:1.5px solid '+(fx?'#e5e7eb':'#0f766e')+';background:#fff;color:'+(fx?'#9ca3af':'#1f2937')+(fx?';cursor:default':'')+'">'
         +'<span style="flex:0 0 74px">'+dl+'</span><span style="flex:1;font-weight:600;color:'+(what&&!fx?'#1f2937':'#9ca3af')+'">'+(what||'— empty')+'</span></button>';
