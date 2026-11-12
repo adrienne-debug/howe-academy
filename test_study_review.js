@@ -196,8 +196,8 @@ console.log("── dry run writes nothing ──");
 
 console.log("── wiring + no family literals ──");
 {
-  const now = src.indexOf("try{ const _sa=mstAlertsNowHTML(); nowN+=_sa.n; h+=_sa.html; }"), sr = src.indexOf("try{ const _sr=srNowHTML(); nowN+=_sr.n; h+=_sr.html; }");
-  ok("🔴 Now calls srNowHTML right after the 🚩 study alerts", now > 0 && sr > now && sr - now < 200);
+  const now = src.indexOf("try{ const _sa=mstAlertsNowHTML(); nowN+=_sa.n;"), sr = src.indexOf("try{ const _sr=srNowHTML(); nowN+=_sr.n;");   // 📚 STUDY_NOWONE: counted here, drawn in the one study row
+  ok("🔴 Now calls srNowHTML right after the 🚩 study alerts", now > 0 && sr > now && sr - now < 400);
   ok("srRows only reads (no db / storage writes)", !/db\.ref|\.set\(|\.update\(|HA_LS/.test(cut("function srRows(", "function srRowHTML(")));
   ok("every write in the block is behind _srLive()", (SR.match(/db\.ref\(/g) || []).length === (SR.match(/if\(_srLive\(\)\) db\.ref\(/g) || []).length);
   const fd = src.slice(src.indexOf("const FAMILY_DEFAULT"), src.indexOf("];", src.indexOf("const FAMILY_DEFAULT")));

@@ -8417,6 +8417,7 @@ function renderMomHQ(el,ah){
   h+='<div class="rules-sub">'+(_hqB?'What needs a look, and the tools with no chip of their own. Everything else is on the Mom\u2019s Day tabs now.':'Every Mom tool, one map. Tap a row to jump — everything still lives where it always has.')+'</div>';
   h+=wsBannerHTML();   // 📋 worksheets from Adrienne (tap to open — nothing pops up)
   try{ h+=mstAlertsHQHTML(); }catch(e){}   // 🚩 study sessions that need a look
+  try{ if(typeof studySitsHQHTML==="function") h+=studySitsHQHTML(); }catch(e){}   // 📚 STUDY_NOWONE: 🕒 Study sittings today, in full (moved here from 🔴 Now)
   try{ if(typeof stPendingHTML==="function") h+=stPendingHTML(); }catch(e){}   // 📝 spelling tests waiting to be graded
   try{ if(typeof pdPendingHTML==="function") h+=pdPendingHTML(); }catch(e){}   // 🖨 PDGRADE: paper drills waiting to be graded
   try{ if(typeof cbNudgeHTML==="function") h+=cbNudgeHTML(); }catch(e){}   // 🔁 graduated words came back
@@ -18475,8 +18476,10 @@ function renderMomsDay(el){
   // Book finishes, star-store asks, extra-job requests and unit-activity claims —
   // the same buttons that live on their own cards, gathered where she already looks.
   try{ const _ap=_momApprovalsHTML(); nowN+=_ap.n; h+=_ap.html; }catch(e){}
-  try{ const _sa=mstAlertsNowHTML(); nowN+=_sa.n; h+=_sa.html; }catch(e){}   // 🚩 study sessions rushed / missed / not done / stuck cards
-  try{ const _sr=srNowHTML(); nowN+=_sr.n; h+=_sr.html; }catch(e){}   // 🕒 SREVIEW: every finished study sitting today → 👍 Looks right · ↩ Too fast
+  let _stA=null, _stR=null;   // 📚 STUDY_NOWONE: the 🚩 study flags + 🕒 study sittings → ONE row, Open › → Home Base ▸ HQ (counts unchanged)
+  try{ const _sa=mstAlertsNowHTML(); nowN+=_sa.n; _stA=(typeof studyNowOneHTML==="function")?_mstAlertList:null; if(!_stA) h+=_sa.html; }catch(e){}   // 🚩 study sessions rushed / missed / not done / stuck cards
+  try{ const _sr=srNowHTML(); nowN+=_sr.n; _stR=(typeof studyNowOneHTML==="function")?_srRows:null; if(!_stR) h+=_sr.html; }catch(e){}   // 🕒 SREVIEW: every finished study sitting today → 👍 Looks right · ↩ Too fast
+  try{ if(_stA||_stR) h+=studyNowOneHTML(_stA||[],_stR||[]); }catch(e){}   // 📚 STUDY_NOWONE
   try{ const _mm=mmAlertsNowHTML(); nowN+=_mm.n; h+=_mm.html; }catch(e){}   // ⏱ MINMINUTES: an early check let through · a card open past double its time
   try{ const _lr=hhLevelReadyNowHTML(); nowN+=_lr.n; h+=_lr.html; }catch(e){}   // 🪜 LEVELREADY: a person's meter says move up
   try{ if(typeof mlsNowHTML==="function"){ const _ml=mlsNowHTML(); nowN+=_ml.n; h+=_ml.html; } }catch(e){}   // 🧠 MLSUGGEST: the load dial's one suggestion per kid → Apply · Not now
@@ -74004,6 +74007,40 @@ function srSetFloor(){
   });
 }
 // SREVIEW_END
+// STUDY_NOWONE_START — 📚 one study row in 🔴 Now (her ask 2026-11-11: "I like how on … the now area, you have where you can open it
+// and it shows you the thing. Could we do something similar for study sessions and study sittings today? Because it's very busy as
+// well on that same area of my page."). Her picks 2026-11-11: ONE combined row · Open › → Home Base ▸ HQ · all three families ·
+// ⏱ Timed cards / 🩺 Check-ups stay as they are · when nothing waits, a quiet gray "📚 Study today · all looked at", no red light.
+//   • 🔴 Now: the 🚩 Study sessions rows (MSTALERT) and the 🕒 Study sittings today rows (SREVIEW) become ONE row — a red light,
+//     "📚 Study needs you · N", each kid's items in one short line, Open › → Home Base ▸ HQ. N and nowN are the same counts as before
+//     (flags not ✅ redone + sittings not yet judged or sent back).
+//   • Home Base ▸ HQ: the 🚩 box as before, and under it the full 🕒 Study sittings today list (srNowHTML, unchanged — 👍 · ↩ · ✏️).
+//   • Unchanged: what gets flagged and counted, the Home Base badge (hbAlertItems), every schedule. Nothing is written.
+const STUDY_LIGHT_CSS="flex-shrink:0;display:inline-block;width:10px;height:10px;border-radius:50%;background:#dc2626;box-shadow:0 0 0 3px rgba(220,38,38,0.18)";
+// al = mstAlertsAll's rows, rows = srRows' rows. "" when there is no study flag and no sitting today.
+function studyNowOneHTML(al,rows){
+  al=al||[]; rows=rows||[]; if(!al.length&&!rows.length) return "";
+  const flags=al.filter(a=>a&&a.kind!=="redone"), judge=rows.filter(r=>r&&!r.back&&!r.judged), n=flags.length+judge.length;
+  const open='<button onclick="event.stopPropagation();studyNowOpen()" style="padding:4px 12px;border-radius:8px;border:none;background:'+(n?'#dc2626':'#94a3b8')+';color:#fff;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap">Open ›</button>';
+  if(!n) return '<div class="study-nowone" onclick="studyNowOpen()" style="display:flex;align-items:center;gap:9px;padding:7px 10px;background:#f8fafc;border-left:3px solid #94a3b8;border-radius:8px;margin-bottom:6px;cursor:pointer">'
+    +'<span style="flex:1;min-width:0;font-size:13px;font-weight:700;color:#64748b">📚 Study today · all looked at</span>'+open+'</div>';
+  const order=[], by={}, put=(k,t)=>{ if(!by[k]){ by[k]=[]; order.push(k); } by[k].push(t); };
+  flags.forEach(a=>{ const nm=String(a.text||"").split(": ")[0].replace(/^[^\p{L}\p{N}]+/u,""); put(a.kid,(MST_ALERT_ICON[a.kind]||"\u{1F6A9}")+" "+(nm||"study")); });
+  const jn={}; judge.forEach(r=>{ if(!jn[r.kid]) put(r.kid,null); jn[r.kid]=(jn[r.kid]||0)+1; });
+  const line=order.map(k=>esc(cap(k))+" "+by[k].filter(Boolean).map(esc).concat(jn[k]?["\u{1F552} "+jn[k]+" to judge"]:[]).join(", ")).join(" · ");
+  return '<div class="study-nowone" onclick="studyNowOpen()" style="display:flex;align-items:center;gap:9px;padding:8px 10px;background:#fef2f2;border-left:3px solid #dc2626;border-radius:8px;margin-bottom:6px;cursor:pointer">'
+    +'<span class="study-light" title="Needs a look" style="'+STUDY_LIGHT_CSS+'"></span>'
+    +'<span style="flex:1;min-width:0"><span style="display:block;font-size:13px;font-weight:800;color:#991b1b">📚 Study needs you · '+n+'</span>'
+    +'<span style="display:block;font-size:11.5px;color:#6b6560;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+line+'</span></span>'+open+'</div>';
+}
+// Open › → Home Base ▸ HQ, where the 🚩 box and the 🕒 list have every button.
+function studyNowOpen(){ if(typeof mpGoto==="function") mpGoto("hq"); }
+// Home Base ▸ HQ: the full 🕒 Study sittings today list — srNowHTML's own section, boxed like the 🚩 one. "" with no sittings today.
+function studySitsHQHTML(){
+  const r=srNowHTML(); if(!r||!r.html) return "";
+  return '<div class="study-sits-hq" style="background:#fff;border:1.5px solid #94a3b8;border-radius:12px;padding:0 12px 4px;margin:0 0 12px">'+r.html+'</div>';
+}
+// STUDY_NOWONE_END
 // ── MST_UI_END ──
 // ── MHQ_START ──
 // ── Mastery HQ — Mom-facing, READ-ONLY Anki-style deck browser over the existing
