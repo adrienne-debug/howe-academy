@@ -36,7 +36,10 @@ ok("LRPLANNER block appears once", src.split("// LRPLANNER_START").length === 2 
 {
   const i = src.indexOf("function cbRenderForm("), j = src.indexOf("// Mode chips", i);
   const head = src.slice(i, j);
-  ok("cbRenderForm hooks the planner in the Builder view only (not the embedded card form)", /if\(!embedded&&typeof lrpBuilderHTML==="function"\) h\+=lrpBuilderHTML\(kid,sk\);/.test(head));
+  // KIDYEAR 2026-11-11: the planner moved from the Builder tab (dead after slice 3) into the subject card's Links & supplies section
+  ok("cbRenderForm no longer draws the planner", !/h\+=lrpBuilderHTML\(/.test(head));
+  const card = src.slice(src.indexOf("function ceRenderEditSheet("), src.indexOf("// ── 8 · Rewards", src.indexOf("function ceRenderEditSheet(")));
+  ok("the subject card's Links & supplies section draws it", /h\+=_sec\(7,cw\("secLinks"\)\);[\s\S]*if\(typeof lrpBuilderHTML==="function"\) h\+=lrpBuilderHTML\(K,SK\);/.test(card));
   ok("the hook is the only place the planner is drawn", src.split("lrpBuilderHTML(").length === 3);   // definition + hook
 }
 ok("no 🔀 in the block", LRP.indexOf("🔀") < 0);

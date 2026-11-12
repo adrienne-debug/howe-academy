@@ -78,7 +78,7 @@ const grid = slice("renderCurrGrid");
   const rr = grid.indexOf("rsRestore()");
   ok(rr > 0, "renderCurrGrid calls rsRestore");
   ok(ih > 0 && rr > ih, "renderCurrGrid restores AFTER the panel markup is in the DOM");
-  ok(grid.indexOf("cbRenderRules(") > 0 && grid.indexOf("cbRenderRules(") < ih, "the Rules panel is part of the markup that lands before the restore");
+  ok(grid.indexOf("kyPanelHTML(") > 0 && grid.indexOf("kyPanelHTML(") < ih, "the Rules panel (📅 Kid’s year, KIDYEAR) is part of the markup that lands before the restore");
 }
 // 7 · the Builder uses the same helper; no bare scrollTop-only save/restore is left anywhere
 {
