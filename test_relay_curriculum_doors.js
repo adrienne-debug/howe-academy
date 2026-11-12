@@ -197,7 +197,7 @@ const undoStr=d=>d?d.u.map(u=>u.p+(u.gone?"=∅":"="+JSON.stringify(u.was))).joi
   const d=one(w.log);
   ok("Delete subject → the door with the kid's remaining subjects only (math, piano — never the deleted one, never the card-only one), the sweep too, no field Undo",d&&d.l==="🗑 Geo deleted"&&pairStr(d)==="kid_a/math,kid_a/piano"&&d.u.length===0&&d.o.sweep===true&&d.o.toast===false,w.log.door);
   ok("…its open card came off the week (targeted), the checked one stayed, the record is gone",w.ctx.weekData.tasks.map(t=>t.id).join()==="g1,m1"&&w.log.writes.some(x=>x[0]==="week5/tasks"&&x[1]==="update"&&x[2].g2===null)&&!w.ctx.currData.subjects.kid_a.geo); }
-{ const w=doorWorld({cbKid:"kid_a",cbSubjKey:"piano",cbMsg:"",buildSubjectLessons:()=>[],_lidAlign:()=>({ids:[],nextLid:1}),eqIsEggs:()=>false,cbSetKid:()=>{},cbOpenSubj:()=>{}},fn("cbCopyTo"));
+{ const w=doorWorld({cbKid:"kid_a",cbSubjKey:"piano",cbMsg:"",buildSubjectLessons:()=>[],_lidAlign:()=>({ids:[],nextLid:1}),eqIsEggs:()=>false,cbSetKid:()=>{},cbOpenSubj:()=>{},kyCopyLand:()=>{},cw:k=>k},fn("cbCopyTo"));
   w.call('cbCopyTo("kid_b")');
   const d=one(w.log); ok("Copy to another kid → the door for THAT kid's copy, Undo = the copy gone",d&&pairStr(d)==="kid_b/piano"&&/copied to Kid_b/.test(d.l)&&undoStr(d)==="curriculum/subjects/kid_b/piano=∅"&&d.o.toast===false,w.log.door); }
 { // lanes

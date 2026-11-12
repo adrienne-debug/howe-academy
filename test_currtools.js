@@ -12,7 +12,7 @@
  *   (c) every condition false: the drawer is absent, and the grid (.gv-wrap on) is the same with or without banners
  *   (d) every toolbar control (Appendix A #1–8, #44–47) is reachable by its handler string, on the toolbar or in ⋯ More;
  *       ↻ Lay everything out again = gvRebuildAll() with cbRebuildAll's confirm unchanged; select mode keeps its way out
- *   (e) the two kid-tool buttons are byte-identical to main 59b0b15 (slice 3 KIDYEAR replaces them — update the pin there)
+ *   (e) the 📅 Kid's year slot is slice 3 (KIDYEAR)'s own button, byte-identical to its branch be6d43d, then ⋯ More
  *   (f) open / closed is remembered per device, in try/catch; the block writes nothing; no new ref( pattern
  *   (g) CURRTOOLS_VS=<old index.html>: against the file before this slice — every banner's markup is byte-identical inside
  *       the drawer, every old onclick is still on the page, the grid render hashes equal, the whole file's ref( set is equal
@@ -205,7 +205,7 @@ console.log("\n(c) every condition false: no drawer, and the grid is the same");
   const onNoGhost = render(src, ALL_TRUE_OVER(), "ctChecksOpen=true;");
   ok("the grid (.gv-wrap on) is byte-identical with every banner on or off", sha(gridOf(off)) === sha(gridOf(onNoGhost)), [sha(gridOf(off)).slice(0, 12), sha(gridOf(onNoGhost)).slice(0, 12)]);
   ok("…and everything above the drawer too (toolbar, strips)", on.slice(0, on.indexOf('<div class="ct-checks"')) === off.slice(0, on.indexOf('<div class="ct-checks"')));
-  ok("the drawer sits under the toolbar, above the grid's own how-to line", on.indexOf("ct-checks") > on.indexOf("gvKidCfgToggle()") && on.indexOf("ct-checks") < on.indexOf("tap a cell to edit"));
+  ok("the drawer sits under the toolbar, above the grid's own how-to line", on.indexOf("ct-checks") > on.indexOf("gvRulesToggle()") && on.indexOf("ct-checks") < on.indexOf("tap a cell to edit"));
 }
 
 console.log("\n(d) every toolbar control is reachable — on the toolbar or in ⋯ More");
@@ -214,9 +214,9 @@ console.log("\n(d) every toolbar control is reachable — on the toolbar or in �
   const closed = render(src, full, "ctMoreOpen=false;");
   const open = render(src, full, "ctMoreOpen=true;");
   const menu = (() => { const i = open.indexOf('<div class="ct-more"'); return i < 0 ? "" : open.slice(i, open.indexOf("</div>", i)); })();
-  const TOOLBAR = ["gvSetKid('kid')", "gvSetKid('__fam')", "ceOpenAdd('kid')", "gvRulesToggle()", "gvKidCfgToggle()", "ctMoreToggle()", "cbUndo()", "cbMsg='';renderAll()"];
+  const TOOLBAR = ["gvSetKid('kid')", "gvSetKid('__fam')", "ceOpenAdd('kid')", "gvRulesToggle()", "ctMoreToggle()", "cbUndo()", "cbMsg='';renderAll()"];
   const MORE = ["gvTogglePast()", "gvToggleSelMode()", "gvEndSortToggle()", "gvSelUndoApply()", "gvRebuildAll()"];
-  ok("on the toolbar: kid chips · 🏡 Family · ＋ Add subject · the two 📅 buttons · ⋯ More · the result banner's ↩ Undo / ×", TOOLBAR.every(f => onclicks(closed).indexOf(f) >= 0), TOOLBAR.filter(f => onclicks(closed).indexOf(f) < 0));
+  ok("on the toolbar: kid chips · 🏡 Family · ＋ Add subject · 📅 Kid's year · ⋯ More · the result banner's ↩ Undo / ×", TOOLBAR.every(f => onclicks(closed).indexOf(f) >= 0), TOOLBAR.filter(f => onclicks(closed).indexOf(f) < 0));
   ok("in ⋯ More (open): Show past days · Edit many cells · Order columns by end date · ↩ Undo last · Lay everything out again", MORE.every(f => onclicks(menu).map(norm).indexOf(f) >= 0), MORE.filter(f => onclicks(menu).map(norm).indexOf(f) < 0));
   ok("…each item's onclick is the old handler, after closing the menu", onclicks(menu).every(f => /^ctMoreOpen=false;/.test(f)));
   ok("⋯ More closed: none of them is on the page", MORE.every(f => onclicks(closed).map(norm).indexOf(f) < 0));
@@ -245,13 +245,14 @@ console.log("\n(d) every toolbar control is reachable — on the toolbar or in �
   ok("ctMoreToggle opens the menu and re-renders", vm.runInContext("ctMoreOpen", c) === true && c._renders === 1);
 }
 
-console.log("\n(e) the two kid-tool buttons are untouched (slice 3 KIDYEAR replaces them — update this pin there)");
+console.log("\n(e) the 📅 Kid's year slot is slice 3 (KIDYEAR)'s button, kept exactly");
 {
   const lines = gridSrc(src).split("\n").filter(l => /^  h\+='<button onclick="gv(RulesToggle|KidCfgToggle)\(\)"/.test(l));
-  ok("both buttons drawn by the same two source lines as main 59b0b15", lines.length === 2 && sha(lines.join("\n") + "\n") === "b7dd90f47243e3378e892e613fa8186c1fa82d6698d72625622987ecef79906c", sha(lines.join("\n") + "\n"));
+  ok("one 📅 Kid's year button, the same source line as slice 3's branch be6d43d", lines.length === 1 && sha(lines.join("\n") + "\n") === "59a75d2b6279e30ce4d90b1b582691e5b399157e0b90651615ad6024a796f908", sha(lines.join("\n") + "\n"));
+  ok("no ⚙ second kid-tool button (gvKidCfgToggle) on the toolbar", gridSrc(src).indexOf('onclick="gvKidCfgToggle()"') < 0);
   const h = render(src, {}, "");
-  const btns = (h.match(/<button onclick="gv(?:RulesToggle|KidCfgToggle)\(\)"[\s\S]*?<\/button>/g) || []);
-  ok("…and they render side by side, then ⋯ More, in one row", btns.length === 2 && h.indexOf(btns[1]) + btns[1].length === h.indexOf('<button onclick="ctMoreToggle()"'));
+  const btns = (h.match(/<button onclick="gvRulesToggle\(\)"[\s\S]*?<\/button>/g) || []);
+  ok("…and it renders right before ⋯ More, in one row", btns.length === 1 && h.indexOf(btns[0]) + btns[0].length === h.indexOf('<button onclick="ctMoreToggle()"'));
 }
 
 console.log("\n(f) remembered per device; writes nothing; no new ref( pattern");
