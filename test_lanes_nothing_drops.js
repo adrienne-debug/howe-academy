@@ -24,7 +24,8 @@
  */
 const fs = require("fs"), path = require("path"), vm = require("vm");
 const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
-const CURRWORDS = src.slice(src.indexOf("// CURRWORDS_START"), src.indexOf("// CURRWORDS_END"));   // CURRWORDS (2026-11-11): the page's words come from cw() — load the label map with the code under test
+const CURRWORDS = src.slice(src.indexOf("// CURRWORDS_START"), src.indexOf("// CURRWORDS_END"))
+  + "\n" + src.slice(src.indexOf("// CURRTOOLS_START"), src.indexOf("// CURRTOOLS_END"));   // CURRTOOLS (2026-11-11): the toolbar's ⋯ More and the 🔍 Checks drawer   // CURRWORDS (2026-11-11): the page's words come from cw() — load the label map with the code under test
 const FX = JSON.parse(fs.readFileSync(path.join(__dirname, "test_fixture_lanes_live_2026-09-11.json"), "utf8"));
 const TODAY = "2026-09-11";
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

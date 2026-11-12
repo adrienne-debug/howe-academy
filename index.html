@@ -28052,6 +28052,12 @@ var CW={
   deleteSubject:"Delete Subject",                      // Delete Subject
   copyToKid:"Copy to another kid",                     // Copy to another kid
   setUnder:"set under",                                // (new) "— How long, set under The basics"
+  // CURRTOOLS (2026-11-11): the toolbar and the 🔍 Checks drawer (slice 4)
+  addSubject:"＋ Add subject",                         // + Add Subject
+  checks:"Checks",                                     // (new) the one drawer the housekeeping / audit banners sit in
+  allClear:"nothing needs you",                        // (new) the drawer's line when only the always-on panels draw
+  worthLook:"Worth a look",                            // (new group)
+  tidyUp:"Tidy-up — one-time fixes for an older curriculum", // (new group)
 };
 function cw(key,o){ var v=Object.prototype.hasOwnProperty.call(CW,key)?CW[key]:key; if(o) v=String(v).replace(/\{(\w+)\}/g,function(m,k){ return o[k]!=null?o[k]:m; }); return v; }
 // CURRWORDS_END
@@ -58839,6 +58845,67 @@ function gvAddMissingDays(){
   renderAll();
 }
 
+// CURRTOOLS_START — the Curriculum toolbar and the 🔍 Checks drawer (Curriculum streamline slice 4,
+// PLAN_curriculum_streamline_2026-11-10.md §3.1 / §4 row 4). Her words 2026-11-10: "i like the grid format i like the
+// lanes but its not easily navigateable for a new family … i dont want to take away any features".
+// Toolbar = kid chips · 🏡 Family · ＋ Add subject · [the 📅 Kid's year slot — slice 3 KIDYEAR turns the two kid-tool
+// buttons into one] · ⋯ More. What else sat on the toolbar — Show past days · Edit many cells at once · Order columns
+// by end date · ↩ Undo last · ↻ Lay everything out again (was ↻ Rebuild all) — is a ⋯ More item with its SAME handler
+// (the item only closes the menu first). Nothing removed. While select mode is on, its "✕ Done" button also stays where
+// it always was, so the way out is in sight.
+// The housekeeping / migration / audit banners render INSIDE one collapsed "🔍 Checks (n)" drawer under the toolbar, in
+// two groups (§3.5 row "🔍 N things to check …"): Worth a look (out-of-order · restore point · ⚖ Evening out · 🗓 Daily
+// cards missed · 🔍 audit · Align weeks · Add missing school days) and Tidy-up (pace leftovers · 🆔 ids / 📥 import ·
+// 🧹 skiplog · 🧢 caps · 📅 day rules · 🧭 make the list the record · deleted subjects' cells · no lesson list). Each
+// banner's markup, text and onclicks are exactly what renderCurrGrid drew before; the drawer only wraps them. n counts
+// the banners that need her: every banner that draws, except that ⚖ Evening out, 🗓 Daily cards missed and the 🔍 audit
+// line also draw when all is well ("(fits)", "every daily card done", "looks clean") — those count only when they flag
+// something. With nothing drawn the drawer is absent and the page is what it was. Open / closed is remembered per
+// device (HA_LS "ha_ct_checks"). Display only: nothing here writes to Firebase.
+let ctMoreOpen=false;
+let ctChecksOpen=null;   // null until read from this device
+function ctMoreToggle(){ ctMoreOpen=!ctMoreOpen; renderAll(); }
+function ctChecksIsOpen(){ if(ctChecksOpen===null){ ctChecksOpen=false; try{ ctChecksOpen=HA_LS.getItem("ha_ct_checks")==="1"; }catch(e){} } return ctChecksOpen; }
+function ctChecksToggle(){ ctChecksOpen=!ctChecksIsOpen(); try{ HA_LS.setItem("ha_ct_checks",ctChecksOpen?"1":"0"); }catch(e){} renderAll(); }
+const CT_WORTH=["order","restore","evening","daily","audit","align","missing"];
+const CT_TIDY=["pace","lids","skiplog","caps","days","plan","orphans","capture"];
+// does this drawn banner ask something of her? (the three always-on panels say so in their headline)
+function ctNeedsLook(k,html){
+  if(!html) return false;
+  if(k==="evening") return /more than the mornings hold|to look at<\/span>/.test(html);
+  if(k==="daily") return html.indexOf("every daily card done on its day")<0;
+  if(k==="audit") return html.indexOf(" to check</b>")>=0;
+  return true;
+}
+function ctCheckCount(ct){ return CT_WORTH.concat(CT_TIDY).filter(function(k){ return ctNeedsLook(k,(ct||{})[k]); }).length; }
+// the drawer: "" when no banner drew
+function ctChecksHTML(ct){
+  ct=ct||{};
+  const w=CT_WORTH.filter(function(k){ return ct[k]; }), t=CT_TIDY.filter(function(k){ return ct[k]; });
+  if(!w.length&&!t.length) return "";
+  const n=ctCheckCount(ct), open=ctChecksIsOpen();
+  let h='<div class="ct-checks" style="border:1px solid '+(n?'#fcd34d':'var(--border)')+';background:'+(n?'#fffbeb':'#fff')+';border-radius:10px;padding:6px 10px;margin:0 0 8px">';
+  h+='<button onclick="ctChecksToggle()" style="border:none;background:none;padding:2px 0;font-size:12px;font-weight:800;color:'+(n?'#92400e':'var(--muted)')+';cursor:pointer;font-family:\'DM Sans\',sans-serif">🔍 '+cw("checks")+(n?' ('+n+')':' · '+cw("allClear"))+' '+(open?'▾':'▸')+'</button>';
+  if(open){
+    const G='font-size:10.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin:8px 0 6px';
+    if(w.length) h+='<div class="ct-worth"><div style="'+G+'">'+cw("worthLook")+'</div>'+w.map(function(k){ return ct[k]; }).join("")+'</div>';
+    if(t.length) h+='<div class="ct-tidy"><div style="'+G+'">'+cw("tidyUp")+'</div>'+t.map(function(k){ return ct[k]; }).join("")+'</div>';
+  }
+  return h+'</div>';
+}
+// ⋯ More: the button, and under it (open) one row per item {fn, label, on, title}. "" when there is nothing to offer.
+function ctMoreHTML(items){
+  items=(items||[]).filter(Boolean);
+  if(!items.length) return "";
+  let h='<button onclick="ctMoreToggle()" style="padding:5px 12px;border-radius:10px;border:1px solid var(--border);background:'+(ctMoreOpen?'var(--bg)':'#fff')+';font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">⋯ '+cw("moreMenu")+' '+(ctMoreOpen?'▴':'▾')+'</button>';
+  if(!ctMoreOpen) return h;
+  h+='<div class="ct-more" style="flex-basis:100%;display:flex;flex-direction:column;align-items:flex-start;gap:2px;background:#fff;border:1px solid var(--border);border-radius:10px;padding:6px">';
+  items.forEach(function(it){
+    h+='<button onclick="ctMoreOpen=false;'+it.fn+'"'+(it.title?' title="'+esc(it.title)+'"':'')+' style="width:100%;text-align:left;padding:6px 10px;border:none;border-radius:8px;background:'+(it.on?'var(--bg)':'transparent')+';color:var(--text,#111);font-size:12px;font-weight:'+(it.on?'800':'600')+';cursor:pointer;font-family:\'DM Sans\',sans-serif">'+it.label+'</button>';
+  });
+  return h+'</div>';
+}
+// CURRTOOLS_END
 function renderCurrGrid(el){
   if(!currData||!currData.subjects){
     el.innerHTML+='<div style="padding:40px 20px;text-align:center;color:var(--muted)"><div style="font-size:36px;margin-bottom:8px">\u{1F4CA}</div><div style="font-weight:600;margin-bottom:4px">No curriculum yet</div><div style="font-size:12px">Upload an Excel file or build subjects first.</div></div>';
@@ -58856,7 +58923,7 @@ function renderCurrGrid(el){
     h+='<button onclick="gvSetKid(\''+kid+'\')" style="padding:5px 14px;border-radius:20px;border:1.5px solid '+(on?'transparent':'var(--border)')+';background:'+(on?c:'#fff')+';color:'+(on?'#fff':'var(--muted)')+';font-size:12px;font-weight:600;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cap(kid)+'</button>';
   });
   if(typeof famGridHTML==="function"){ const _fon=gvKid==="__fam"; h+='<button onclick="gvSetKid(\'__fam\')" style="padding:5px 14px;border-radius:20px;border:1.5px solid '+(_fon?'transparent':'#c4b5fd')+';background:'+(_fon?'#7c3aed':'#faf5ff')+';color:'+(_fon?'#fff':'#5b21b6')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+FAM_ICON+' Family</button>'; }
-  if(gvKid!=="__fam") h+='<button onclick="ceOpenAdd(\''+gvKid+'\')" style="margin-left:auto;padding:5px 14px;border-radius:20px;border:1.5px dashed var(--border);background:#fff;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">+ Add Subject</button>';
+  if(gvKid!=="__fam") h+='<button onclick="ceOpenAdd(\''+gvKid+'\')" style="margin-left:auto;padding:5px 14px;border-radius:20px;border:1.5px dashed var(--border);background:#fff;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cw("addSubject")+'</button>';
   h+='</div>';
   // 🏡 Family view: the split grid of family subjects (no kid tools, no lesson table)
   if(gvKid==="__fam"&&typeof famHomePanelHTML==="function") h+=famHomePanelHTML();   // 🏡 FAMEDITORHOME: the ⚙ Family time panel sits above the family grid
@@ -58867,13 +58934,15 @@ function renderCurrGrid(el){
   // ⚙ rules & day cap, and 🏁 target / Mom Check / school sessions.
   const _gcol=KID_COLOR[gvKid]||"#333";
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px">';
+  // CURRTOOLS: ↻ Lay everything out again is a ⋯ More item now (same gvRebuildAll, same confirm, same Mom gate).
+  let _ctRelay=null, _ctItems=[];
   if(momModeActive||adminPinUnlocked){
     const _gsubs=(currData.subjects||{})[gvKid]||{};
     const _pacedN=Object.keys(_gsubs).filter(sk=>(typeof cbRebuildable==="function")?cbRebuildable(gvKid,sk):false).length;
-    if(_pacedN) h+='<button onclick="gvRebuildAll()" style="padding:5px 12px;border-radius:10px;border:1px solid #bbf7d0;background:#f0fdf4;color:#15803d;font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">↻ '+cw("layAll")+' ('+_pacedN+')</button>';
+    if(_pacedN) _ctRelay={fn:"gvRebuildAll()",label:'↻ '+cw("layAll")+' ('+_pacedN+')'};
   }
   h+='<button onclick="gvRulesToggle()" style="padding:5px 12px;border-radius:10px;border:1px solid var(--border);background:'+(cbRulesOpen?'var(--bg)':'#fff')+';font-size:11.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cw("kidYear",{kid:cap(gvKid)})+' '+(cbRulesOpen?'▴':'▾')+'</button>';   // KIDYEAR: ONE 📅 Kid’s year button (was ⚙ Rules & day cap + 🏁 Target · Mom Check · Sessions)
-  h+='</div>';
+  h+='__CT_MORE__</div>';   // CURRTOOLS: ⋯ More — filled once its items are known (ctMoreHTML)
   if(cbMsg){
     h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:6px 10px;margin:0 0 8px;font-size:11.5px;color:#15803d"><span>'+esc(cbMsg)+'</span><span style="display:flex;gap:6px;flex-shrink:0">'+(cbLastBuild?'<button onclick="cbUndo()" style="border:1px solid #86efac;background:#fff;color:#15803d;border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">&#8617; Undo</button>':'')+'<button onclick="cbMsg=\'\';renderAll()" style="border:none;background:none;color:var(--muted);font-weight:700;cursor:pointer">&times;</button></span></div>';
   }
@@ -58931,10 +59000,16 @@ function renderCurrGrid(el){
   if(!dayNums.length||!cols.length){
     h+=(typeof famGridStripHTML==="function"?famGridStripHTML(gvKid):""); h+=_cardOnlyHtml; h+=_otherHtml; h+=_pausedHtml;
     h+='<div style="padding:30px;text-align:center;color:var(--muted);font-size:12px">'+cap(gvKid)+' has no lesson grid yet — build a subject in the Builder or upload Excel.</div></div>';
+    h=h.replace("__CT_MORE__",ctMoreHTML([_ctRelay]));   // CURRTOOLS
     el.innerHTML+=h;
     return;
   }
   h+=(typeof famGridStripHTML==="function"?famGridStripHTML(gvKid):""); h+=_cardOnlyHtml; h+=_otherHtml; h+=_pausedHtml;
+
+  // CURRTOOLS: every banner below draws into h as before; _ctCut files what it drew under its slot, and the slots
+  // are drawn inside the 🔍 Checks drawer (ctChecksHTML) right here, under the toolbar.
+  const _ctTop=h, _ct={}; h='';
+  const _ctCut=function(k){ if(h) _ct[k]=(_ct[k]||'')+h; h=''; };
 
   // Pace records for subjects that no longer exist. Harmless — nothing counts them —
   // but they are 204 lessons of a plan that isn't real, so offer the tidy-up.
@@ -58948,6 +59023,7 @@ function renderCurrGrid(el){
       h+='</div>';
     }
   }catch(e){}
+  _ctCut("pace");
 
   // Lesson identity (Stage 1): subjects whose master list has no ids yet. One tap, all
   // kids, pure bookkeeping — see LID_START. Shown until every list carries ids.
@@ -58969,6 +59045,7 @@ function renderCurrGrid(el){
       } else if(typeof _lidImportUndo!=="undefined"&&_lidImportUndo){
         h+='<div style="background:#eef2ff;border-left:4px solid #6366f1;border-radius:0 10px 10px 0;padding:7px 12px;margin:0 0 8px;font-size:12px;color:#3730a3">✓ Imported '+_lidImportUndo.n+' completions across '+_lidImportUndo.subjects+' subject'+(_lidImportUndo.subjects>1?'s':'')+'. <button onclick="gvImportDoneUndo()" style="border:1px solid #6366f1;background:#fff;color:#3730a3;border-radius:8px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px">↩ Undo</button></div>';
       }
+      _ctCut("lids");
       // The order rule, grid-wide: any subject with lessons finished AFTER an earlier one
       // that is still open. Decisions are hers, in the card (↩ per lesson / make contiguous).
       try{
@@ -58981,6 +59058,7 @@ function renderCurrGrid(el){
           h+='</div></div>';
         }
       }catch(e){}
+      _ctCut("order");
       // Stage 4.3: inert skiplog entries on plan-backed subjects — one tidy-up tap, with Undo.
       try{
         const _sl=(typeof skiplogLeftovers==="function")?skiplogLeftovers(gvKid):[];
@@ -58994,6 +59072,7 @@ function renderCurrGrid(el){
           h+='<div style="background:#f5f3ff;border-left:4px solid #7c3aed;border-radius:0 10px 10px 0;padding:7px 12px;margin:0 0 8px;font-size:12px;color:#5b21b6">🧹 Cleared '+_skiplogClearUndo.n+' leftover'+(_skiplogClearUndo.n>1?'s':'')+' on '+_skiplogClearUndo.subjects+' subject'+(_skiplogClearUndo.subjects>1?'s':'')+'. <button onclick="gvClearSkiplogUndo()" style="border:1px solid #7c3aed;background:#fff;color:#5b21b6;border-radius:8px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px">↩ Undo</button></div>';
         }
       }catch(e){}
+      _ctCut("skiplog");
       // Stage 6c-2: old max1 words + Max/day list → one Cap per subject, one tap (all kids), Undo.
       try{
         const _cl=(typeof capLeftovers==="function")?capLeftovers():{items:[],orphans:[],node:null};
@@ -59006,6 +59085,7 @@ function renderCurrGrid(el){
           h+='<div style="background:#fdf4ff;border-left:4px solid #a21caf;border-radius:0 10px 10px 0;padding:7px 12px;margin:0 0 8px;font-size:12px;color:#86198f">🧢 Folded caps onto '+_capMigUndo.n+' subject'+(_capMigUndo.n!==1?'s':'')+'. <button onclick="gvMigrateCapsUndo()" style="border:1px solid #a21caf;background:#fff;color:#86198f;border-radius:8px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px">↩ Undo</button></div>';
         }
       }catch(e){}
+      _ctCut("caps");
       // Stage 6c-1: leftover no-fri / mon-thu words → Days pins, one tap, Undo.
       try{
         const _dt=(typeof dayTokenLeftovers==="function")?dayTokenLeftovers(gvKid):[];
@@ -59018,6 +59098,7 @@ function renderCurrGrid(el){
           h+='<div style="background:#f0f9ff;border-left:4px solid #0284c7;border-radius:0 10px 10px 0;padding:7px 12px;margin:0 0 8px;font-size:12px;color:#075985">📅 Folded '+_dayTokUndo.n+' day rule'+(_dayTokUndo.n>1?'s':'')+' into Days pins. <button onclick="gvMigrateDayTokensUndo()" style="border:1px solid #0284c7;background:#fff;color:#075985;border-radius:8px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;margin-left:6px">↩ Undo</button></div>';
         }
       }catch(e){}
+      _ctCut("days");
       if(false){
       } else if(typeof planPending==="function"&&planPending().filter(x=>x.kid===gvKid).length){
         const _pp=planPending().filter(x=>x.kid===gvKid);
@@ -59035,6 +59116,7 @@ function renderCurrGrid(el){
       }
     }
   }catch(e){}
+  _ctCut("plan");
 
   // Deleted-but-orphaned subjects: card removed, but grid cells linger (pre-fix deletions,
   // e.g. lof/kumon). One-tap cleanup — clears Grid/Calendar/Lesson-Map, keeps history.
@@ -59050,6 +59132,7 @@ function renderCurrGrid(el){
     h+='<button onclick="gvPurgeOrphans()" style="border:1px solid #d97706;background:#fff;color:#b45309;border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Remove '+_orphans.length+' from grid</button>';
     h+='</div>';
   }
+  _ctCut("orphans");
 
   // Subjects with no master list — offer to capture one from the grid.
   try{
@@ -59062,16 +59145,51 @@ function renderCurrGrid(el){
       h+='</div>';
     }
   }catch(e){}
+  _ctCut("capture");
 
   // ↩ Restore point from an "Edit as a list" Save — the column that just emptied
   // is where you notice, so the offer belongs here as well as on the card.
   if(momModeActive||adminPinUnlocked){ try{ h+=ceConvUndoBanner(gvKid,"grid"); }catch(e){} }
+  _ctCut("restore");
 
   // 🔍 Sequence audit — skipped numbers, lessons booked twice, out-of-order work.
   // Sits with the other checks; only mom sees it, and only she can act on it.
   if(momModeActive||adminPinUnlocked){ try{ h+=fbRender(); }catch(e){} }
+  _ctCut("evening");
   if(momModeActive||adminPinUnlocked){ try{ h+=dmRender(); }catch(e){} }   // 🗓 daily cards missed (read-only)
+  _ctCut("daily");
   if(momModeActive||adminPinUnlocked){ try{ h+=gvAuditRender(gvKid,_gcol); }catch(e){} }
+  _ctCut("audit");
+
+  // Same calendar-drift nudge as the Lesson Map: a vacation added AFTER a build
+  // leaves lessons stranded on break days — surface it where the cells are.
+  try{
+    const _alignP=alignPlanPreview();
+    let _tot=0;
+    Object.values(_alignP.kids||{}).forEach(x=>{ _tot+=x.onBreak; });
+    if(_tot>0){
+      h+='<div style="background:#f5f3ff;border-left:4px solid #8b5cf6;border-radius:0 10px 10px 0;padding:10px 12px;margin:0 0 8px">';
+      h+='<div style="font-size:12px;color:#4c1d95;margin-bottom:6px"><b>'+_tot+' lesson'+(_tot>1?'s':'')+' sit on holiday/vacation days</b> (all kids). Aligning slides them to the next school days and renumbers weeks to the calendar — break weeks stay visible with nothing scheduled.</div>';
+      h+='<button onclick="alignPlanApply()" style="border:1px solid #8b5cf6;background:#fff;color:#6d28d9;border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Align weeks with calendar&hellip;</button>';
+      h+='</div>';
+    }
+  }catch(e){}
+
+  _ctCut("align");
+  // Mirror of Align: the calendar has school days this kid's map SKIPS — offer to add
+  // them and pull lessons forward (cadence-aware, rebuilds weekDays atomically).
+  try{
+    const _miss=gvMissingDays(gvKid);
+    if(_miss.length){
+      const _preview=_miss.slice(0,4).map(d=>{const t=gwParseDate(d);return t.toLocaleDateString("en-US",{month:"short",day:"numeric"});}).join(", ");
+      h+='<div style="background:#fffbeb;border-left:4px solid #d97706;border-radius:0 10px 10px 0;padding:10px 12px;margin:0 0 8px">';
+      h+='<div style="font-size:12px;color:#92400e;margin-bottom:6px"><b>'+cap(gvKid)+'\'s map skips '+_miss.length+' school day'+(_miss.length>1?'s':'')+'</b> the calendar has ('+esc(_preview)+(_miss.length>4?' …':'')+'). Adding them pulls '+cap(gvKid)+'\'s lessons forward into those days — everything finishes earlier.</div>';
+      h+='<button onclick="gvAddMissingDays()" style="border:1px solid #d97706;background:#fff;color:#b45309;border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Add missing school days&hellip;</button>';
+      h+='</div>';
+    }
+  }catch(e){}
+  _ctCut("missing");
+  h=_ctTop+ctChecksHTML(_ct);   // CURRTOOLS: the drawer ("" when no banner drew — the page as it was)
 
   const today=cbTodayISO();
   const cap_=cbDayCap(gvKid);
@@ -59121,12 +59239,16 @@ function renderCurrGrid(el){
     }
   }catch(e){}
 
-  h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">';
-  if(pastCount) h+='<button onclick="gvTogglePast()" style="padding:4px 12px;border-radius:14px;border:1px solid var(--border);background:'+(gvShowPast?'var(--header)':'#fff')+';color:'+(gvShowPast?'#fff':'var(--muted)')+';font-size:11px;font-weight:700;cursor:pointer">'+cw(gvShowPast?"hidePast":"showPast")+' ('+pastCount+')</button>';
-  h+='<button onclick="gvToggleSelMode()" style="padding:4px 12px;border-radius:14px;border:1px solid '+(gvSelMode?'transparent':'var(--border)')+';background:'+(gvSelMode?col:'#fff')+';color:'+(gvSelMode?'#fff':'var(--muted)')+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(gvSelMode?'✕ '+cw("doneSel"):'☑︎ '+cw("selCells"))+'</button>';
+  // CURRTOOLS: Show past days · Edit many cells at once · Order columns by end date · ↩ Undo last are ⋯ More items
+  // (same handlers, same conditions). The row keeps the how-to line, and "✕ Done" while select mode is on.
+  if(pastCount) _ctItems.push({fn:"gvTogglePast()",label:cw(gvShowPast?"hidePast":"showPast")+' ('+pastCount+')',on:gvShowPast});
+  _ctItems.push({fn:"gvToggleSelMode()",label:(gvSelMode?'✕ '+cw("doneSel"):'☑︎ '+cw("selCells")),on:gvSelMode});
   // GRIDEND: Mom-only "Sort by end date" — earliest-ending column first; per-device memory, no Firebase.
-  if((momModeActive||adminPinUnlocked)&&typeof gvEndSortToggle==="function") h+='<button onclick="gvEndSortToggle()" title="Order the columns by each subject\'s plan end date, earliest first (this device only)" style="padding:4px 12px;border-radius:14px;border:1px solid '+(gvEndSort?'transparent':'var(--border)')+';background:'+(gvEndSort?col:'#fff')+';color:'+(gvEndSort?'#fff':'var(--muted)')+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(gvEndSort?'✓ ':'')+cw("endSort")+'</button>';
-  if(gvSelUndo&&!gvSelMode) h+='<button onclick="gvSelUndoApply()" style="padding:4px 12px;border-radius:14px;border:1px solid #d97706;background:#fffbeb;color:#b45309;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">↩ Undo last</button>';
+  if((momModeActive||adminPinUnlocked)&&typeof gvEndSortToggle==="function") _ctItems.push({fn:"gvEndSortToggle()",title:"Order the columns by each subject's plan end date, earliest first (this device only)",label:(gvEndSort?'✓ ':'')+cw("endSort"),on:gvEndSort});
+  if(gvSelUndo&&!gvSelMode) _ctItems.push({fn:"gvSelUndoApply()",label:"↩ Undo last"});
+  h=h.replace("__CT_MORE__",ctMoreHTML(_ctItems.concat([_ctRelay])));
+  h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">';
+  if(gvSelMode) h+='<button onclick="gvToggleSelMode()" style="padding:4px 12px;border-radius:14px;border:1px solid '+(gvSelMode?'transparent':'var(--border)')+';background:'+(gvSelMode?col:'#fff')+';color:'+(gvSelMode?'#fff':'var(--muted)')+';font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(gvSelMode?'✕ '+cw("doneSel"):'☑︎ '+cw("selCells"))+'</button>';
   if(!gvSelMode) h+='<span style="font-size:11px;color:var(--muted)">__GV_DAYS__ days × '+cols.length+' subjects__GV_END__ · tap a cell to edit — Enter saves, blank clears · '+cw("openSubject")+'</span>';
   h+='</div>';
 
@@ -59143,33 +59265,6 @@ function renderCurrGrid(el){
     h+='<span style="font-size:10px;opacity:.9;flex-basis:100%;line-height:1.4">Tap cells to pick. Tap a <b>column header</b> for the whole subject, a <b>day</b> for the whole row. Tap two cells in one column to grab everything between them. <b>Clear</b> leaves the days blank; <b>Shift up</b> pulls the rest of the subject up to close the gap.</span>';
     h+='</div>';
   }
-
-  // Same calendar-drift nudge as the Lesson Map: a vacation added AFTER a build
-  // leaves lessons stranded on break days — surface it where the cells are.
-  try{
-    const _alignP=alignPlanPreview();
-    let _tot=0;
-    Object.values(_alignP.kids||{}).forEach(x=>{ _tot+=x.onBreak; });
-    if(_tot>0){
-      h+='<div style="background:#f5f3ff;border-left:4px solid #8b5cf6;border-radius:0 10px 10px 0;padding:10px 12px;margin:0 0 8px">';
-      h+='<div style="font-size:12px;color:#4c1d95;margin-bottom:6px"><b>'+_tot+' lesson'+(_tot>1?'s':'')+' sit on holiday/vacation days</b> (all kids). Aligning slides them to the next school days and renumbers weeks to the calendar — break weeks stay visible with nothing scheduled.</div>';
-      h+='<button onclick="alignPlanApply()" style="border:1px solid #8b5cf6;background:#fff;color:#6d28d9;border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Align weeks with calendar&hellip;</button>';
-      h+='</div>';
-    }
-  }catch(e){}
-
-  // Mirror of Align: the calendar has school days this kid's map SKIPS — offer to add
-  // them and pull lessons forward (cadence-aware, rebuilds weekDays atomically).
-  try{
-    const _miss=gvMissingDays(gvKid);
-    if(_miss.length){
-      const _preview=_miss.slice(0,4).map(d=>{const t=gwParseDate(d);return t.toLocaleDateString("en-US",{month:"short",day:"numeric"});}).join(", ");
-      h+='<div style="background:#fffbeb;border-left:4px solid #d97706;border-radius:0 10px 10px 0;padding:10px 12px;margin:0 0 8px">';
-      h+='<div style="font-size:12px;color:#92400e;margin-bottom:6px"><b>'+cap(gvKid)+'\'s map skips '+_miss.length+' school day'+(_miss.length>1?'s':'')+'</b> the calendar has ('+esc(_preview)+(_miss.length>4?' …':'')+'). Adding them pulls '+cap(gvKid)+'\'s lessons forward into those days — everything finishes earlier.</div>';
-      h+='<button onclick="gvAddMissingDays()" style="border:1px solid #d97706;background:#fff;color:#b45309;border-radius:8px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">Add missing school days&hellip;</button>';
-      h+='</div>';
-    }
-  }catch(e){}
 
   // ➡ Move mode banner: a source is armed — blue rows are eligible destinations.
   const _mvArmed=(typeof lmMovePick!=="undefined"&&lmMovePick&&lmMovePick.kid===gvKid);

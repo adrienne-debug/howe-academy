@@ -40,6 +40,8 @@ function _braceSlice(S, name) {
   throw new Error("unbalanced " + name);
 }
 function _cwBlock(S) { const i = S.indexOf("// CURRWORDS_START"), j = S.indexOf("// CURRWORDS_END"); return i < 0 ? "" : S.slice(i, j); }
+// CURRTOOLS (2026-11-11): the grid's toolbar draws ⋯ More and the 🔍 Checks drawer from their block — loaded with the code under test
+function _ctBlock(S) { const i = S.indexOf("// CURRTOOLS_START"), j = S.indexOf("// CURRTOOLS_END"); return i < 0 ? "" : S.slice(i, j); }
 // a top-level function's source: from its "function name(" to the next top-level "function " line
 function fnSrc(S, name) {
   const i = S.indexOf("\nfunction " + name + "("); if (i < 0) return null;
@@ -114,7 +116,7 @@ function world(S, o) {
     braceSlice("renderCurrGrid"),
   ].join("\n");
   vm.createContext(ctx);
-  new vm.Script(CURRWORDS + "\n" + CODE).runInContext(ctx);
+  new vm.Script(CURRWORDS + "\n" + _ctBlock(S) + "\n" + CODE).runInContext(ctx);
   ctx._lessons = lessons; ctx._dns = dns;
   return ctx;
 }
@@ -122,6 +124,7 @@ function renderGrid(S, identity) {
   const c = world(S);
   c.cbRebuildable = () => true;   // so the toolbar draws its Lay everything out again button
   if (identity) vm.runInContext("CW={};", c);
+  vm.runInContext("ctMoreOpen=true;", c);   // CURRTOOLS: the toolbar's words sit in the ⋯ More menu — draw it open
   const el = { innerHTML: "" }; c.renderCurrGrid(el); return el.innerHTML;
 }
 
