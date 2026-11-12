@@ -4533,6 +4533,7 @@ function initFb() {
       // showing (Mastery HQ, Editor-in-Chief cards, drill strips), not just the Mastery tab.
       if(_mastFirst){ try{ renderAllSoon(); }catch(e){} try{ if(typeof stHeal==="function") stHeal(); }catch(e){} } if(_mastFirst){ try{ if(typeof ckSpentHeal==="function") ckSpentHeal(); }catch(e){} }   // 📝 STHEAL: the records are in — the week's test cards can be checked now (live 2026-10-14: the cards arrived first, the heal waited, nothing re-ran it)
       else if(tab==="mastery"){const el=document.getElementById("content");if(el)renderMastery(el);}
+      try{ if(typeof sbBackChanged==="function"&&sbBackChanged(masteryData)&&!_mastFirst&&tab!=="mastery") renderAllSoon(); }catch(e){}   // ↩ SBREOPEN: a send-back / redo shows on every page, no reload
       try{ if(typeof reLoaded==="function") reLoaded("mastery"); }catch(e){}   // 🧠 REVIEWENGINE: the morning leveling
     });
     db.ref("config/anthropic_key").once("value",s=>{ if(s.val()) mastAIKey=s.val(); });
@@ -9700,6 +9701,7 @@ function finalizeDone(id, doneTs, score){
     if(_why){ if(typeof gwShowToast==="function") gwShowToast("⛔ Not yet — “"+_why+"” isn’t done. Lessons check off in order."); dbg("order guard blocked "+id+" ("+_why+")"); return false; } }catch(e){}
   // 📝 STTESTCARD: the lesson card unlocks when its spelling test is checked or graded
   try{ const _tg=weekData.tasks.find(x=>x.id===id); if(_tg&&typeof stLessonLock==="function"&&stLessonLock(_tg)){ if(typeof gwShowToast==="function") gwShowToast("📝 Spelling test first — then this lesson"); dbg("spelling test lock "+id); return false; } }catch(e){}
+  try{ const _tg=weekData.tasks.find(x=>x.id===id); if(_tg&&typeof sbKidLock==="function"&&sbKidLock(_tg)){ if(typeof gwShowToast==="function") gwShowToast("↩ Mom sent this back — do the study session again first"); dbg("sent-back lock "+id); return false; } }catch(e){}   // ↩ SBREOPEN
   checked[id]=doneTs; sv(WK+"_checked",checked); lastCheckedWrite=Date.now();
   manualUnchecks.delete(id);   // ✅ re-checked → cancel this session's earlier uncheck, else every FB snapshot strips it again (Makenzie AAS 4, DeWalt 2026-10-06)
   // Targeted child write — a whole-map set() here let a device with stale local state
@@ -46439,6 +46441,7 @@ function runCascade(){
   weekData.tasks.forEach(t=>{
     if(checked[t.id]) return;
     if(manualUnchecks.has(t.id)) return;
+    if(typeof sbHeld==="function"&&sbHeld(t)) return;   // ↩ SBREOPEN: sent back today — open until the redo, whatever a stale history says
     const h=histState[t.id];
     // _histOwnsCard: never "rescue" a check onto a card the record doesn't describe —
     // after an id collision a record for one kid's lesson can sit under an id now owned
@@ -74064,10 +74067,74 @@ function mstSendBackDo(kid,sid,opt){   // opt {sit} = ↩ from 🕒 Study sittin
   if(_arc) _nb.log=Object.assign({},_pb.log||{},{[_arc.id]:_arc.rec});
   masteryData.studyBack[kid][sid]=_nb;
   try{ HA_LS.setItem("ha_mastery",JSON.stringify(masteryData)); }catch(_){}
+  try{ if(typeof sbReopen==="function") sbReopen(kid,sid); }catch(_){}   // ↩ SBREOPEN: today's ✓ card opens again on every device
   if(typeof gwShowToast==="function") gwShowToast("↩ "+nm+" sent back to "+who);
   try{ if(typeof renderAll==="function") renderAll(); }catch(_){}
 }
 // MSTALERT_END
+// SBREOPEN_START — ↩ a sent-back study session puts its schedule card back, live (her ask 2026-11-12: "Can we make it where
+// these study sessions, when I send them back, it doesn't need a reload? It automatically auto-generates it and puts it back?
+// It did send them back when I reloaded it, but then it repopulated and made them disappear again."). The live day, Thu 11/12:
+// 12:54–12:55 PM Mom's ↩ on four of the oldest kid's sittings removed today's logs and reopened the sessions, but Send back
+// never touched the day — the four schedule cards stayed ✓ (checked 11:51–12:01) — and after its first load the mastery
+// listener repainted only the Mastery tab, so a kid's Day / Kids' Corner page showed nothing until a reload, and after the
+// reload the cards were still done (nothing re-saved or re-checked them; the logs stayed gone).
+// Now: (1) Send back un-ticks today's ✓ card of that session for that kid — the same targeted removes as the check dialog's
+// un-tick (WK/checked/<id>, WK/history/<id>, the lesson-done record, a got-ahead bonus, the spin held for the re-tick) — and
+// re-lays the day from now, so every device's checked listener shows it open again at once; (2) a change to mastery/studyBack
+// repaints every page; (3) until the redo sitting saves (its redoneTs), a card of a session sent back TODAY is never restored
+// from history by the cascade, and a kid's own ✓ on it is refused (toast). Mom's ✓ still works. Writes: only (1)'s targeted
+// paths, db && !_dryRun(). Not added to manualUnchecks — that would hide the kid's later re-tick on Mom's device all session.
+function sbCardSid(t){
+  try{ if(!t||!t.who||!t.subjectKey||typeof gwGetSubjects!=="function") return null; const s=(gwGetSubjects(t.who)||{})[t.subjectKey]; return (s&&s.study)||null; }catch(e){ return null; }
+}
+// Mom sent it back today and the redo sitting hasn't saved yet
+function sbPendingToday(kid,sid){
+  const b=((((typeof masteryData!=="undefined"&&masteryData&&masteryData.studyBack)||{})[kid])||{})[sid];
+  return !!(b&&b.ts&&!b.redoneTs&&_mstLocalKey(b.ts)===_todayStr().replace(/-/g,""));
+}
+function _sbCard(t){ return !!(t&&t.id&&!String(t.id).endsWith("_c")&&!t.famBlock); }
+// today's card of a session sent back today → held open (no history restore, no kid ✓)
+function sbHeld(t){
+  try{ if(!_sbCard(t)||effectiveDay(t)!==_todayDay) return false; const sid=sbCardSid(t); return !!sid&&sbPendingToday(t.who,sid); }catch(e){ return false; }
+}
+function sbKidLock(t){ try{ return !(typeof momHere==="function"&&momHere())&&sbHeld(t); }catch(e){ return false; } }
+// today's ✓ cards of that session for that kid
+function sbCardsFor(kid,sid){
+  if(typeof weekData==="undefined"||typeof checked==="undefined") return [];
+  return ((weekData&&weekData.tasks)||[]).filter(t=>_sbCard(t)&&t.who===kid&&checked[t.id]&&effectiveDay(t)===_todayDay&&sbCardSid(t)===sid);
+}
+function sbReopen(kid,sid){
+  const cards=sbCardsFor(kid,sid); if(!cards.length) return 0;
+  const live=typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun());
+  const hist=ld(WK+"_history")||{}, ck={}, hu={};
+  cards.forEach(t=>{
+    const id=t.id;
+    ckForget(id);
+    delete checked[id]; ck[id]=null;
+    delete hist[id]; delete histState[id]; hu[id]=null;
+    if(live){
+      try{ lidDoneRemove(t,id); }catch(e){ dbg("sent back: lid done remove skip: "+e); }
+      try{ if(Array.isArray(t.lids)) t.lids.forEach(function(l){ if(l&&l!==t.lid) lidDoneRemove(Object.assign({},t,{lid:l}),id); }); }catch(e){}
+      try{ const _sr=(ld(WK+"_spin_results")||{})[id]; spinRecParts(_sr).forEach(function(p){ if(p.gaBid&&typeof bankDirectRemove==="function") bankDirectRemove(p.kid||_sr.kid,p.gaBid); }); }catch(e){}
+    }
+    try{ if(typeof spinOnceTakeBack==="function") spinOnceTakeBack(id); }catch(e){ dbg("sent back: spin take-back: "+e); }   // held, restored on the re-tick
+  });
+  sv(WK+"_checked",checked); sv(WK+"_history",hist); lastCheckedWrite=Date.now();
+  if(live){ db.ref(WK+"/checked").update(ck); db.ref(WK+"/history").update(hu); }
+  dbg("↩ sent back "+kid+"/"+sid+": reopened "+cards.map(t=>t.id).join(","));
+  try{ if(typeof schedCascade==="function") schedCascade(); }catch(e){}
+  return cards.length;
+}
+// mastery listener: true when any send-back / redo stamp changed since the last snapshot (the first one only records)
+let _sbSig=null;
+function sbBackChanged(md){
+  const b=(md&&md.studyBack)||{}, parts=[];
+  Object.keys(b).sort().forEach(k=>{ const r=b[k]||{}; Object.keys(r).sort().forEach(sid=>{ const x=r[sid]||{}; parts.push(k+"/"+sid+":"+(x.ts||"")+":"+(x.redoneTs||"")); }); });
+  const sig=parts.join("|"), was=_sbSig; _sbSig=sig;
+  return was!==null&&was!==sig;
+}
+// SBREOPEN_END
 // SREVIEW_START — 🕒 Study sittings today, in 🔴 Now — needs you (her ask 2026-11-08: "for study sessions, a little section in
 // Mom Needed where it tells how long each session that day took, if it's not a mom required session, for every kid. And there
 // would be an option to say great, I agree with this … and then no, this should have taken longer, let's send it back, and keep
