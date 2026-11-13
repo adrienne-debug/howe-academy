@@ -17240,7 +17240,11 @@ function _ldsrSave(id,l,up,words){ const snap=(typeof luSnap==="function")?luSna
   ldsrMenu=null; if(typeof _leRe==="function") _leRe(); return up; }
 // Tap a stage: the load is there now. null = nothing moved (not Mom, gone, already there, not a stage of its row, or "Not yet" on the alert).
 function ldsrJump(id,t){ const l=(typeof laundryData!=="undefined"&&laundryData)?laundryData[id]:null; if(!ldsrOn(l)||t===ldsrCur(l)) return null;
-  if(ldsrSteps(l).map(function(x){ return x.t; }).indexOf(t)<0) return null;
+  const up=_ldsrJumpUp(l,t); if(!up) return null;
+  const m=(typeof laundryMeta==="function")?laundryMeta(Object.assign({},l,up)):(LAUNDRY_STAGE_META[up.stage]||["🧺",up.stage]);
+  return _ldsrSave(id,l,up,m[0]+" "+(l.label||"Load")+" — "+m[1]); }
+// The update that puts load l on t (null = not a stage of its row, or "Not yet" on the alert). Writes nothing.
+function _ldsrJumpUp(l,t){ if(ldsrSteps(l).map(function(x){ return x.t; }).indexOf(t)<0) return null;
   const up={ts:Date.now()};
   if(!_ldsrCyc(l)) up.stage=t;
   else { const S=lcSteps(l), j=/^s(\d+)$/.exec(t);
@@ -17250,8 +17254,7 @@ function ldsrJump(id,t){ const l=(typeof laundryData!=="undefined"&&laundryData)
     else { up.stage=t; up.step=S.length; } }   // basket · fold — after the last step, as laundryAdvance leaves it
   const out=["washer","prewash","bin"].indexOf(up.stage)<0;
   if(l.stage==="washer"&&out&&String(l.alert||"").trim()&&typeof confirm==="function"&&!confirm("⚠️ "+String(l.alert).trim()+"\n\nDone? OK moves it.")) return null;   // LAUNDRY_SPLIT W3: her alert when it leaves the washer
-  const m=(typeof laundryMeta==="function")?laundryMeta(Object.assign({},l,up)):(LAUNDRY_STAGE_META[up.stage]||["🧺",up.stage]);
-  return _ldsrSave(id,l,up,m[0]+" "+(l.label||"Load")+" — "+m[1]); }
+  return up; }
 // ＋ Air dry: where = "w" out of the washer (instead of the dryer) · "d" out of the dryer (after it) · "x" take it out (the dryer back).
 function ldsrAir(id,where){ const l=(typeof laundryData!=="undefined"&&laundryData)?laundryData[id]:null; if(!ldsrOn(l)||["w","d","x"].indexOf(where)<0) return null;
   if(l.stage==="fold"||l.stage==="basket"||(where==="x"&&!_ldsrCyc(l))) return null;   // past the machines · nothing to take out
@@ -17274,9 +17277,17 @@ function ldsrAir(id,where){ const l=(typeof laundryData!=="undefined"&&laundryDa
   if(l.stage==="bin") up.bin=true;   // so ↶ from its first step goes back to the bin
   return _ldsrSave(id,l,up,where==="x"?'🌀 '+(l.label||"Load")+' — the dryer again, no air dry':'🌬 '+(l.label||"Load")+' — air dry out of the '+(where==="w"?"washer":"dryer")); }
 // ＋ Basket: where = "w" the wet basket (out of the washer) · "d" the basket (out of the dryer) · "x" no basket.
+// LAUNDRY_BASKET_MOVES (her report 2026-11-13: "I clicked out of the dryer, and then it didn't register … those buttons should be
+// clicked, and then it should register at where it's supposed to be"): w / d put the load IN that basket now, one tap — bk and the
+// stage in one update (ldsrJump's way: clock now, blocks dropped, the washer alert asked). ✕ only takes the button away.
 function ldsrBk(id,where){ const l=(typeof laundryData!=="undefined"&&laundryData)?laundryData[id]:null; if(!ldsrOn(l)||["w","d","x"].indexOf(where)<0) return null;
-  const v=where==="x"?null:where; if((l.bk||null)===v){ ldsrMenu=null; if(typeof _leRe==="function") _leRe(); return null; }
-  return _ldsrSave(id,l,{bk:v},where==="x"?null:'🧺 '+(l.label||"Load")+' — a basket out of the '+(where==="w"?"washer":"dryer")); }
+  const v=where==="x"?null:where, t=where==="w"?"wetbasket":"basket";
+  if(where==="x"){ if(!l.bk){ ldsrMenu=null; if(typeof _leRe==="function") _leRe(); return null; } return _ldsrSave(id,l,{bk:null},null); }
+  let up={};
+  if(l.stage!==t){ up=_ldsrJumpUp(Object.assign({},l,{bk:v}),t); if(!up){ ldsrMenu=null; if(typeof _leRe==="function") _leRe(); return null; } }
+  if((l.bk||null)!==v) up.bk=v;
+  if(!Object.keys(up).length){ ldsrMenu=null; if(typeof _leRe==="function") _leRe(); return null; }
+  return _ldsrSave(id,l,up,'🧺 '+(l.label||"Load")+' — '+(where==="w"?"in the wet basket, waiting for the dryer":"in the basket, waiting to be folded")); }
 // LAUNDRY_STAGEROW_END
 function mdCardLaundry(noAdd,bare,jump){   // 🧺 LAUNDRYADD: noAdd = Mom's Day, where "Start a load" sits under the to-do box · LL_MYDAY: bare = inside 🏡 My day (no card chrome) · LAUNDRY_STAGEROW: jump = Household ▸ Laundry's stage buttons
   let h='';
