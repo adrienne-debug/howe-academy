@@ -126,16 +126,24 @@ console.log("── (3) ＋ Air dry ──");
 console.log("── (4) ＋ Basket ──");
 { const T=mk({laundry:plain("washer")}); T.run("ldsrMenuOpen('L1','bk')"); const H0=T.hh();
   ok("the menu: Out of washer — wet · Out of dryer — to fold", /ldsrBk\('L1','w'\)/.test(H0)&&/ldsrBk\('L1','d'\)/.test(H0), H0);
-  T.run("ldsrBk('L1','w')"); ok("Out of washer: laundry/L1 {bk:w}, Wet basket sits between Wash and Dryer", JSON.stringify(T.writes[0])===JSON.stringify(["update","laundry/L1",{bk:"w"}])&&JSON.stringify(chips(T.hh()).map(c=>c[0]))==='["prewash","washer","wetbasket","dryer","fold"]', [T.writes,chips(T.hh())]);
-  T.run("ldsrJump('L1','wetbasket')"); ok("…tap it: the load waits for the dryer", T.L(ID).stage==="wetbasket");
-  T.run("ldsrBk('L1','d')"); ok("…switch to Out of dryer: Basket between Dryer and Folded (still lit where it is)", JSON.stringify(chips(T.hh()).map(c=>c[0]))==='["prewash","washer","wetbasket","dryer","basket","fold"]', chips(T.hh()));
-  T.run("ldsrJump('L1','basket')"); ok("…tap Basket: dry, waiting to fold; the wet basket chip goes", T.L(ID).stage==="basket"&&JSON.stringify(chips(T.hh()).map(c=>c[0]))==='["prewash","washer","dryer","basket","fold"]', chips(T.hh()));
-  T.run("ldsrBk('L1','x')"); ok("…✕ Take basket out: bk removed (null)", JSON.stringify(T.writes[T.writes.length-1])===JSON.stringify(["update","laundry/L1",{bk:null}])&&T.L(ID).bk===undefined, T.writes); }
+  T.run("ldsrBk('L1','w')"); const w0=T.writes[0]||[];
+  ok("Out of washer: ONE tap — laundry/L1 {bk:w, stage:wetbasket, ts:now} (her 11/13 report: it has to register)", w0[1]==="laundry/L1"&&w0[2].bk==="w"&&w0[2].stage==="wetbasket"&&w0[2].ts>at(H(9,0))&&T.L(ID).stage==="wetbasket", T.writes);
+  ok("…Wet basket sits between Wash and Dryer, lit (where it is)", JSON.stringify(chips(T.hh()).map(c=>c[0]))==='["prewash","washer","wetbasket","dryer","fold"]'&&chips(T.hh())[2][1]==="#2563eb", chips(T.hh()));
+  T.run("ldsrBk('L1','d')"); ok("…Out of dryer: in the basket, waiting to fold — the wet basket chip goes", T.L(ID).stage==="basket"&&T.L(ID).bk==="d"&&JSON.stringify(chips(T.hh()).map(c=>c[0]))==='["prewash","washer","dryer","basket","fold"]', chips(T.hh()));
+  T.run("ldsrBk('L1','x')"); ok("…✕ Take basket out: bk removed (null), the load stays put", JSON.stringify(T.writes[T.writes.length-1])===JSON.stringify(["update","laundry/L1",{bk:null}])&&T.L(ID).bk===undefined&&T.L(ID).stage==="basket", T.writes); }
+{ const T=mk({laundry:plain("dryer")}); T.run("ldsrMenuOpen('L1','bk')"); T.run("ldsrBk('L1','d')");
+  ok("her tap: in the dryer → ＋ Basket ▸ Out of dryer → in the basket now", T.L(ID).stage==="basket"&&T.L(ID).bk==="d"&&T.writes.length===1&&T.run("ldsrMenu")===null, [T.L(ID),T.writes]); }
+{ const T=mk({laundry:plain("washer",{alert:"Pull the sweater"}),notYet:true}); T.run("ldsrBk('L1','d')");
+  ok("a ⚠️ alert load: 'Not yet' on the alert → nothing moves, nothing written", T.L(ID).stage==="washer"&&T.writes.length===0, T.writes); }
+{ const T=mk({laundry:plain("wetbasket",{bk:"w"})}); T.run("ldsrBk('L1','w')");
+  ok("already in the wet basket, Out of washer again: nothing written", T.writes.length===0); }
+{ const T=mk({laundry:{[ID]:{label:"Quick",stage:"dryer",step:1,ts:at(H(9,0)),cycle:[{k:"wash"},{k:"dry"}]}}}); T.run("ldsrBk('L1','d')");
+  ok("cycle load → ＋ Basket ▸ Out of dryer: {stage:basket, step:2, bk:d}", T.L(ID).stage==="basket"&&T.L(ID).step===2&&T.L(ID).bk==="d", T.L(ID)); }
 { const T=mk({laundry:{[ID]:{label:"Quick",stage:"dryer",step:1,ts:at(H(9,0)),cycle:[{k:"wash"},{k:"dry"}],bk:"d"}}});
   T.run("ldsrJump('L1','basket')"); ok("cycle load → Basket: {stage:basket, step:2} (laundryAdvance's way)", T.L(ID).stage==="basket"&&T.L(ID).step===2, T.L(ID)); }
 
 console.log("── (5) dry run ──");
 { const T=mk({laundry:plain("washer"),dry:true}); T.run("ldsrJump('L1','dryer')"); T.run("ldsrAir('L1','d')"); T.run("ldsrBk('L1','d')");
-  ok("dry run: the screen moves, nothing is written", T.writes.length===0&&T.L(ID).stage==="dryer"&&T.L(ID).bk==="d", T.writes); }
+  ok("dry run: the screen moves, nothing is written", T.writes.length===0&&T.L(ID).stage==="basket"&&T.L(ID).bk==="d", T.writes); }
 
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
