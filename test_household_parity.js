@@ -14,7 +14,7 @@ const cut=(a,b)=>{ const i=src.indexOf(a), j=src.indexOf(b,i); if(i<0||j<0) thro
 const BLOCK=cut("// HOUSEHOLD_START","// HOUSEHOLD_TAKEOVER_END");
 const CAD=cut("const _CAD_DOW=","function cadLabel(")+fn("cadLabel");
 const ROT="let rotationPeriod={};\n"+fn("_rotKey")+"\n"+fn("rtRotPeriod")+"\n"+fn("_rtRotHop")+"\n"+fn("rtApplyRot");
-const EDIT=fn("rtCfgSave")+"\n"+fn("rtCfgEnsure")+"\n"+fn("rtCfgSet")+"\n"+fn("rtCfgAdd")+"\n"+fn("rtCfgRemove")+"\n"+fn("rtCfgMove")+"\n"+fn("cpAddChore")+"\n"+fn("cpDelChore");
+const EDIT=fn("rtCfgSave")+"\n"+fn("rtCfgEnsure")+"\n"+fn("rtCfgSet")+"\n"+fn("rtCfgMove")+"\n"+fn("cpAddChore")+"\n"+fn("cpDelChore");
 const MOM=fn("mcEnsure")+"\n"+fn("mcAll")+"\n"+fn("mcAdd")+"\n"+fn("mcDel")+"\n"+fn("mcSetCad")+"\n"+fn("mcSetSlot")+"\n"+fn("mcSlotOf")+"\n"+fn("dcAll")+"\n"+fn("dcAdd")+"\n"+fn("dcDel")+"\n"+fn("dcSetCad")+"\n"+fn("dcSetSlot")+"\n"+fn("dcRepaint");
 const DAYS=["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
 // a realistic set of lists, shaped like hers on 2026-10-09 (trimmed): config for some, code defaults for others

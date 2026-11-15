@@ -108,7 +108,7 @@ function mkEnv(st) {
 
 // ── wiring ──
 ok("listener on helpRequests (newest 60)", /db\.ref\("helpRequests"\)\.orderByKey\(\)\.limitToLast\(60\)\.on\("value",s=>\{ hrOnValue\(s\.val\(\)\); \}\)/.test(src));
-const kcs = src.slice(src.indexOf("function kcSchoolHTML("), src.indexOf("function kcSubnav("));
+const kcs = src.slice(src.indexOf("function kcSchoolHTML("), src.indexOf("function kcChoresHTML("));
 ok("Kids' Corner / My Day school view has the button", kcs.includes("hrKidButtonHTML(k)"));
 const rs = src.slice(src.indexOf("function renderSchedule(el){"), src.indexOf("function renderSchedule(el){") + 20000);
 ok("Schedule tab: kid's page button (today only)", rs.includes('if(day===_todayDay&&kid!=="all"&&kid!=="mom"){ try{ h+=hrKidButtonHTML(kid); }catch(e){} }'));

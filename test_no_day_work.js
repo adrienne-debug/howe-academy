@@ -3,7 +3,7 @@
 // Run: node test_no_day_work.js
 const fs=require("fs"); const src=fs.readFileSync(__dirname+"/index.html","utf8");
 let fail=0; const ok=(c,m)=>{ if(!c){fail++;console.log("FAIL "+m);} else console.log("ok   "+m); };
-const a=src.indexOf("function kcSchoolHTML("), b=src.indexOf("// Their subnav");
+const a=src.indexOf("function kcSchoolHTML("), b=src.indexOf("function kcChoresHTML(");
 const fn=src.slice(a,b);
 function run(o){
   const env={_todayDay:"saturday",bbMomDraft:o.draft||null,tab:"kids",
