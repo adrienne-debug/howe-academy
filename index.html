@@ -72742,9 +72742,49 @@ function mstRestoreSitting(sid){
     if(typeof evo2SittingStale==="function"&&evo2SittingStale(masteryKid,obj)){ mstClearPersist(sid); return false; }   // EVENOUT2: untouched sitting from before Even out → start fresh
     mstState=mstRestore(obj.state); mstSid=obj.sid||sid; mstStartTs=obj.startTs||Date.now(); mstFlipped=false;
     mstHist=Array.isArray(obj.hist)?obj.hist:[]; mstRedo=Array.isArray(obj.redo)?obj.redo:[];   // MST_NAV
+    try{ mstRepickSitting(sid); }catch(e){}   // MSTREPICK: today's saved sitting follows the session's current learning pattern
     return true;
   }catch(e){ return false; }
 }
+// MSTREPICK_START — her ask 2026-11-16 (Lincoln's 🌿 quiz, day 3 = Type it): "I unchecked for learning the type it, but it did
+//   not directly reflect in his quiz today … he could still have his questions today just in one of the two other forms." Cause:
+//   mstSittingInit picks each learning/new card's step (card.mode, and PATSIDE's passes:1) once, when the sitting starts, and
+//   mstPersist saves them on the device; a resumed sitting (mstRestoreSitting) used the saved steps all day, so a pattern change
+//   only reached tomorrow's sitting. Fix: on restore, every UNFINISHED learning/new card gets its step again from the session's
+//   pattern as it is now (same mstPatternMode / mstPatternRepeatDay / dots / intro-dots rule as mstSittingInit) — in the sitting
+//   and in its ← Back / Forward → snapshots, so Back can't bring an old step back. Finished cards, grades, the queue, reviews
+//   (and a Both-directions twin's typed review) are untouched. Pattern now Off → the card is a plain flip, as at init.
+//   Nothing is written to the database; the device's saved sitting is re-saved by the next mstPersist as before.
+function mstRepickCards(st,pat,dotsOf,need){
+  const cards=st&&st.cards; if(!cards) return 0;
+  let n=0;
+  Object.keys(cards).forEach(k=>{
+    const c=cards[k]; if(!c||c.done||(c.kind!=="learning"&&c.kind!=="new")) return;
+    const d=c.kind==="new"?0:dotsOf(c), nd=need(c.deck);
+    const m0=c.mode, p0=c.passes;
+    if(pat){
+      c.mode=mstPatternMode(pat,d,nd);
+      if(c.kind==="learning"&&mstPatternRepeatDay(pat,d,nd)) c.passes=1; else delete c.passes;
+    } else { delete c.mode; delete c.passes; }
+    if(c.mode!==m0||c.passes!==p0) n++;
+  });
+  return n;
+}
+function mstRepickSitting(sid){
+  if(!mstState) return 0;
+  let sessions=[]; try{ sessions=mstSessions(masteryKid)||[]; }catch(e){ return 0; }
+  const session=sessions.find(s=>s.sid===sid); if(!session||session.kind==="mix"||session.kind==="checkup") return 0;
+  const pat=mstPatternClean(session.pattern);
+  let items=(typeof masteryData!=="undefined"&&masteryData&&masteryData[masteryKid])||[]; if(!Array.isArray(items)) items=Object.values(items);
+  const byId={}; items.forEach(i=>{ if(i&&i.id!=null) byId[i.id]=i; });
+  const dotsOf=c=>{ const it=byId[c.id]; return (it&&it.tally_dots)||0; };
+  let _ds=null; try{ _ds=mastDrillSettings(); }catch(e){}
+  const need=d=>{ try{ return mastIntroDotsFor(d,_ds); }catch(e){ return 5; } };
+  let n=mstRepickCards(mstState,pat,dotsOf,need);
+  [mstHist,mstRedo].forEach(arr=>{ (arr||[]).forEach(snap=>{ if(snap&&typeof snap==="object") mstRepickCards(snap,pat,dotsOf,need); }); });
+  return n;
+}
+// MSTREPICK_END
 function mstClearPersist(sid){ sid=sid||mstSid; if(!sid) return; try{ HA_LS.removeItem(mstStorageKey(masteryKid,sid)); }catch(e){} }
 // The card's direction for THIS showing. Say/type need the meaning to show on the front —
 // a card with no definition falls back to the normal German-first card.
