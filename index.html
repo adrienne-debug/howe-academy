@@ -69239,6 +69239,7 @@ function mstSittingInit(pile, session, opts) {
   const cards = {};
   const _pat = session && mstPatternClean(session.pattern);
   const _need = d => { try { return (opts && opts.dotsNeeded) ? opts.dotsNeeded(d) : 5; } catch (e) { return 5; } };
+  const _patFor = c => (typeof mstPatternFor === "function") ? mstPatternFor(_pat, c, opts && opts.noType) : _pat;   // ENVTYPE1 (guarded for harnesses that load mstSittingInit alone): no Type it for a card whose answer isn't one word
   const queue = [];
   const counts = { review: 0, learning: 0, new: 0 };
   (pile.reviews || []).forEach(item => {
@@ -69252,10 +69253,11 @@ function mstSittingInit(pile, session, opts) {
   (pile.learning || []).forEach(item => {
     const key = "l:" + item.id;
     cards[key] = { key, kind: "learning", id: item.id, deck: item.subject, name: item.prompt, goods: 0, first: null, done: false };
-    if (_pat) {
+    const _cp = _pat && _patFor(cards[key]);
+    if (_cp) {
       const _d = item.tally_dots || 0, _nd = _need(item.subject);
-      cards[key].mode = mstPatternMode(_pat, _d, _nd);
-      if (mstPatternRepeatDay(_pat, _d, _nd)) cards[key].passes = 1;   // PATSIDE: same side as yesterday → 1 right is enough
+      cards[key].mode = mstPatternMode(_cp, _d, _nd);
+      if (mstPatternRepeatDay(_cp, _d, _nd)) cards[key].passes = 1;   // PATSIDE: same side as yesterday → 1 right is enough
     }
     queue.push(key);
     counts.learning++;
@@ -69263,7 +69265,8 @@ function mstSittingInit(pile, session, opts) {
   (pile.newNames || []).forEach(n => {
     const key = "n:" + n.deck + "|" + n.name;
     cards[key] = { key, kind: "new", deck: n.deck, name: n.name, goods: 0, first: null, done: false };
-    if (_pat) cards[key].mode = mstPatternMode(_pat, 0, _need(n.deck));
+    const _cp = _pat && _patFor(cards[key]);
+    if (_cp) cards[key].mode = mstPatternMode(_cp, 0, _need(n.deck));
     queue.push(key);
     counts.new++;
   });
@@ -69379,6 +69382,16 @@ function mstPatternRepeatDay(pattern, dots, need) {
   return mstPatternMode(pattern, d, need) === mstPatternMode(pattern, d - 1, need);
 }
 // PATSIDE_END
+// ENVTYPE1 — her rule 2026-11-16 (Lincoln's 🌿 quiz): "type it can just come off for anything that isn't a one word answer." The
+// pattern a card learns on: the session's, or — when noType(card) says the card can't be typed — the same pattern with its Type it
+// slots taken out (stretched to the card's learning days as usual; a pattern that was only Type it → plain flip, null). Used for every
+// learning day of that card, so its repeat days (PATSIDE) follow the pattern it actually gets.
+function mstPatternFor(pattern, card, noType) {
+  const p = mstPatternClean(pattern);
+  if (!p || p.indexOf("type") === -1 || typeof noType !== "function") return p;
+  let off = false; try { off = !!noType(card); } catch (e) { off = false; }
+  return off ? mstPatternClean(p.filter(m => m !== "type")) : p;
+}
 function mstPatternMode(pattern, dots, need) {
   const p = mstPatternClean(pattern);
   if (!p) return "rec";
@@ -72755,16 +72768,16 @@ function mstRestoreSitting(sid){
 //   and in its ← Back / Forward → snapshots, so Back can't bring an old step back. Finished cards, grades, the queue, reviews
 //   (and a Both-directions twin's typed review) are untouched. Pattern now Off → the card is a plain flip, as at init.
 //   Nothing is written to the database; the device's saved sitting is re-saved by the next mstPersist as before.
-function mstRepickCards(st,pat,dotsOf,need){
+function mstRepickCards(st,pat,dotsOf,need,noType){
   const cards=st&&st.cards; if(!cards) return 0;
   let n=0;
   Object.keys(cards).forEach(k=>{
     const c=cards[k]; if(!c||c.done||(c.kind!=="learning"&&c.kind!=="new")) return;
     const d=c.kind==="new"?0:dotsOf(c), nd=need(c.deck);
-    const m0=c.mode, p0=c.passes;
-    if(pat){
-      c.mode=mstPatternMode(pat,d,nd);
-      if(c.kind==="learning"&&mstPatternRepeatDay(pat,d,nd)) c.passes=1; else delete c.passes;
+    const m0=c.mode, p0=c.passes, cp=pat&&mstPatternFor(pat,c,noType);   // ENVTYPE1
+    if(cp){
+      c.mode=mstPatternMode(cp,d,nd);
+      if(c.kind==="learning"&&mstPatternRepeatDay(cp,d,nd)) c.passes=1; else delete c.passes;
     } else { delete c.mode; delete c.passes; }
     if(c.mode!==m0||c.passes!==p0) n++;
   });
@@ -72780,8 +72793,9 @@ function mstRepickSitting(sid){
   const dotsOf=c=>{ const it=byId[c.id]; return (it&&it.tally_dots)||0; };
   let _ds=null; try{ _ds=mastDrillSettings(); }catch(e){}
   const need=d=>{ try{ return mastIntroDotsFor(d,_ds); }catch(e){ return 5; } };
-  let n=mstRepickCards(mstState,pat,dotsOf,need);
-  [mstHist,mstRedo].forEach(arr=>{ (arr||[]).forEach(snap=>{ if(snap&&typeof snap==="object") mstRepickCards(snap,pat,dotsOf,need); }); });
+  const noType=c=>(typeof mstEnvNoType==="function")&&mstEnvNoType(session,c);   // ENVTYPE1
+  let n=mstRepickCards(mstState,pat,dotsOf,need,noType);
+  [mstHist,mstRedo].forEach(arr=>{ (arr||[]).forEach(snap=>{ if(snap&&typeof snap==="object") mstRepickCards(snap,pat,dotsOf,need,noType); }); });
   return n;
 }
 // MSTREPICK_END
@@ -72990,8 +73004,24 @@ function mstCardHtml(session,card){
 // On for a session when the card has an answer. Picture, rule and spell cards keep their own faces
 // (their "answer" is a rule or the word itself) — renderMastStudy and mstCardHtml both ask this, so the
 // grade buttons and the card face always agree.
+// ENVTYPE1_START — her report 2026-11-16: on Lincoln's 🌿 quiz the ⌨️ Type it day "is giving him the answer, and then it wants him
+//   to type the whole question" — the "type" step is the German face (the meaning shown, the word typed), and an Envirothon card's
+//   word is its question. Her rule: Type it stays only for one-word answers, and then it is the question on the face and the answer
+//   typed (this Type-the-answer face, checked by mstTypeAnsOk). Every other 🌿 card learns on the pattern without Type it
+//   (mstPatternFor, at the sitting's start and on a resumed sitting). Only the 🌿 session (sid ENV_SESSION_SID); picture cards keep
+//   their own faces; German and every other session are unchanged. No database writes.
+function mstEnvTypeSess(session){ return !!(session&&typeof ENV_SESSION_SID!=="undefined"&&session.sid===ENV_SESSION_SID); }
+function mstOneWord(s){ const t=String(s==null?"":s).replace(/<[^>]*>/g," ").replace(/[.,!?;:"\u201C\u201D()]/g," ").trim(); return !!t&&!/\s/.test(t); }
+function mstEnvNoType(session,card){
+  if(!mstEnvTypeSess(session)||!card) return false;
+  if(typeof mstCardPic==="function"&&mstCardPic(card)) return false;
+  let d=""; try{ d=mstCardDef(card); }catch(e){ d=""; }
+  return !mstOneWord(d);
+}
+// ENVTYPE1_END
 function mstTypeAnsOn(session,card,def){
-  if(!session||!session.typeAnswer||!card) return false;
+  if(!session||!card) return false;
+  if(!session.typeAnswer&&!(typeof mstEnvTypeSess==="function"&&mstEnvTypeSess(session)&&card.mode==="type")) return false;   // ENVTYPE1: a 🌿 Type it card types the answer
   if(mstIsRuleCard(card)||mstIsSpellCard(card)) return false;
   if(typeof mstCardPic==="function"&&mstCardPic(card)) return false;
   const d=(def!=null)?def:mstCardDef(card);
@@ -73501,7 +73531,7 @@ function mstStart(){
   const todayLog=mstLogGet(kid,mstSid);
   let pile; try{ pile=mstPile(kid,mstSid,pn,todayLog); }catch(e){ pile=null; }
   if(!pile) return;
-  let state; try{ const _ds=mastDrillSettings(); state=mstSittingInit(pile,session,{dotsNeeded:d=>mastIntroDotsFor(d,_ds)}); }catch(e){ return; }
+  let state; try{ const _ds=mastDrillSettings(); state=mstSittingInit(pile,session,{dotsNeeded:d=>mastIntroDotsFor(d,_ds),noType:c=>mstEnvNoType(session,c)}); }catch(e){ return; }   // ENVTYPE1
   mstState=state; mstStartTs=Date.now(); mstFlipped=false; mstDone=null; mstNavReset();   // MST_NAV: a fresh sitting has nothing to go back to
   if(typeof unitPicNewSitting==="function") unitPicNewSitting();   // UNITMULTIPIC: a new sitting may pick other pictures
   mstPersist(); _mastRe(); mstAutoPlayCurrent(session);
