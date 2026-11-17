@@ -50113,29 +50113,36 @@ function wrHookedHtml(u,kid,ks,esc){
 //     with his four basic shapes live, and the Numbers/Counting decks at stage 2 with 1–10 and one–ten live).
 //   · Refuses a unit whose stage decks hold words in the bank with their backs on the bank (AAS: bankOnly/defsOnBank)
 //     — that unit gets its own step (order step 15).
+//   · GEOADOPT (2026-11-16, PLAN_geography_path_2026-11-10.md §4): the Geography Path has NO rows — uaSpec falls back to
+//     geoAdoptSpec, a row made from the kid's own live cards. Its extra fields, each absent on every row above (so their plans
+//     are unchanged): alsoDecks (more decks read for kept/stray), keepLater (a later-stage path card is kept, not stray),
+//     backs (an appended word with no saved back gets the path's, in definitions, unless the code's is the same), reorder (the "path's order from here"
+//     checkbox → <kid>_bank_order/<deck>), noCards (why a record without the stage can't hook up).
 const UA_ATTACH={ math_fluency_path:{ lucy:{stage:6,fill:true}, ellis:{stage:7,fill:true}, lincoln:{stage:8,fill:true,strayOk:true}, julian:{stage:2,fill:false} },
   letters_path:{ julian:{stage:1,fill:true} }, shapes_path:{ julian:{stage:2,fill:true} } };
-function uaSpec(u,kid){ if(!u) return null; const t=UA_ATTACH[u.id]||UA_ATTACH[u.starter]; return (t&&t[kid])||null; }
+function uaSpec(u,kid){ if(!u) return null; const t=UA_ATTACH[u.id]||UA_ATTACH[u.starter]; return (t&&t[kid])||(typeof geoAdoptSpec==="function"?geoAdoptSpec(u,kid):null); }   // 🏛🌐 GEOADOPT: a data-driven row, no kid named
 function uaHooked(u,kid){ return !!(u&&((u.enrolled||{})[kid]||(u.kidStage||{})[kid])); }
 function uaLocked(u,kid){ return !!(uaSpec(u,kid)&&!uaHooked(u,kid)); }
-function uaPlanAttach(unitId,kid,ts){
-  const P={unitId,kid,ok:false,why:"",writes:[],ts:ts||Date.now()}, name=cap(kid);
+function uaPlanAttach(unitId,kid,ts,opts){
+  const P={unitId,kid,ok:false,why:"",writes:[],ts:ts||Date.now()}, name=cap(kid); if(opts) P.opts=opts;   // 🏛🌐 GEOADOPT: {pathOrder}
   const us=(typeof unitStudies!=="undefined"&&unitStudies)||{}, u=us[unitId];
   const spec=uaSpec(u||{id:unitId},kid);
   if(!spec){ P.why=name+" hooks up in a later step."; return P; }
   if(!u||!Array.isArray(u.decks)){ P.why="Add this unit first (Units → Starter units → Add to our family)."; return P; }
   if(uaHooked(u,kid)){ P.why=name+" is already hooked up."; return P; }
-  const cards=_ustCards(u,spec.stage); if(!cards.length){ P.why="Stage "+spec.stage+" has no cards."; return P; }
+  const cards=_ustCards(u,spec.stage); if(!cards.length){ P.why=spec.noCards||("Stage "+spec.stage+" has no cards."); return P; }
   const dks=[]; cards.forEach(c=>{ if(dks.indexOf(c._dk)<0) dks.push(c._dk); });
   const deckOf={}; (u.decks||[]).forEach(d=>{ if(d&&d.key) deckOf[d.key]=d; });
   if(dks.some(k=>deckOf[k]&&(deckOf[k].bankOnly||deckOf[k].defsOnBank))){ P.why="This unit keeps its words in the bank with their backs — it hooks up through its own step."; return P; }
   let items=masteryData[kid]||[]; if(!Array.isArray(items)) items=Object.values(items);
   const pk=(d,n)=>d+"\u0001"+n;
-  const live={}; items.forEach(i=>{ if(i&&dks.indexOf(i.subject)>=0) live[pk(i.subject,i.prompt)]=i; });
+  const scan=dks.concat((spec.alsoDecks||[]).filter(k=>dks.indexOf(k)<0));   // 🏛🌐 GEOADOPT: the kid's other decks of this unit, read only
+  const live={}; items.forEach(i=>{ if(i&&scan.indexOf(i.subject)>=0) live[pk(i.subject,i.prompt)]=i; });
   const unitKey=new Set(cards.map(c=>pk(c._dk,c.name)));
-  const earlierKey=new Set(); dks.forEach(k=>{ ((deckOf[k]||{}).cards||[]).forEach(c=>{ if(c&&c.stage<spec.stage) earlierKey.add(pk(k,c.name)); }); });   // earlier stages of the same decks: kept, not stray
+  const earlierKey=new Set(), laterKey=new Set(); scan.forEach(k=>{ ((deckOf[k]||{}).cards||[]).forEach(c=>{ if(c&&c.stage<spec.stage) earlierKey.add(pk(k,c.name)); else if(c&&spec.keepLater&&c.stage>spec.stage) laterKey.add(pk(k,c.name)); }); });   // earlier stages of the same decks: kept, not stray
   const S=P.sum={stage:spec.stage,label:(_ustStageDef(u,spec.stage)||{}).label||"",decks:dks,total:cards.length,liveKept:0,learning:0,onLadder:0,earlier:0,backDiffers:[],stray:[],added:[],addedByDeck:{},next10Before:[],next10After:[]};
-  Object.keys(live).forEach(k=>{ const i=live[k]; if(!unitKey.has(k)){ if(earlierKey.has(k)){ S.earlier++; return; } S.stray.push(i.subject+" · "+i.prompt); return; }
+  if(spec.keepLater) S.later=0;
+  Object.keys(live).forEach(k=>{ const i=live[k]; if(!unitKey.has(k)){ if(earlierKey.has(k)){ S.earlier++; return; } if(laterKey.has(k)){ S.later++; return; } S.stray.push(i.subject+" · "+i.prompt); return; }
     S.liveKept++; if(i.status==="introduction") S.learning++; else if(i.status!=="parked") S.onLadder++; });
   cards.forEach(c=>{ const i=live[pk(c._dk,c.name)]; if(i&&c.def!=null&&i.answer!=null&&String(i.answer)!==String(c.def)) S.backDiffers.push(c.name+": “"+i.answer+"” on the card · “"+c.def+"” on the path"); });
   if(S.stray.length&&!spec.strayOk){ P.why=name+" has "+S.stray.length+" card"+(S.stray.length>1?"s":"")+" in "+dks.join(", ")+" that "+(S.stray.length>1?"aren’t":"isn’t")+" a stage-"+spec.stage+" card: "+S.stray.slice(0,6).join(", ")+(S.stray.length>6?" …":"")+". Nothing was changed."; return P; }
@@ -50148,21 +50155,35 @@ function uaPlanAttach(unitId,kid,ts){
   const have={}; dks.forEach(d=>{ have[d]=new Set(full[d]||[]); });
   const cust=masteryData[kid+"_custom_items"]||[], idxs=Object.keys(cust).filter(k=>/^\d+$/.test(k)).map(Number);
   let next=idxs.length?Math.max(...idxs)+1:0; const base="mastery/"+kid+"_custom_items/", addedIn={}; dks.forEach(d=>{ addedIn[d]=[]; });
+  const savedDefs=((masteryData[kid+"_settings"]||{}).definitions)||{};
+  if(spec.backs) S.backsAdded=[];
   if(spec.fill) cards.forEach(c=>{ if(have[c._dk].has(c.name)||liveNames[c._dk].has(c.name)) return; have[c._dk].add(c.name);
     W(base+(next++),{cat:c._dk,name:c.name},"adds "+c.name+" to the "+c._dk+" list");   // never a def, never ch
-    S.added.push(c.name); addedIn[c._dk].push(c.name); S.addedByDeck[c._dk]=(S.addedByDeck[c._dk]||0)+1; });
+    S.added.push(c.name); addedIn[c._dk].push(c.name); S.addedByDeck[c._dk]=(S.addedByDeck[c._dk]||0)+1;
+    // 🏛🌐 GEOADOPT backs: a word with no saved back gets the path's (as the stock enroll would) unless the code's back is already
+    // the same — so a capital (the code's own back) writes nothing, and a back the kid has saved is never replaced
+    if(spec.backs&&c.def!=null&&!savedDefs[c.name]&&((typeof MAST_VOCAB_DEFS!=="undefined")&&MAST_VOCAB_DEFS[String(c.name).toLowerCase()])!==String(c.def)&&(typeof mastDefKeyOk!=="function"||mastDefKeyOk(c.name))){
+      W("mastery/"+kid+"_settings/definitions/"+(typeof haKey==="function"?haKey(c.name):c.name),String(c.def),"saves the back of "+c.name); S.backsAdded.push(c.name); } });
+  // 🏛🌐 GEOADOPT reorder (Q4): offered when the path's order differs from the kid's list; written only with the checkbox on.
+  const reordered={};
+  if(spec.reorder){ S.reorderable=[]; dks.forEach(d=>{ const list=(full[d]||[]).concat(addedIn[d]).filter((n,ix,a)=>a.indexOf(n)===ix), path=cards.filter(c=>c._dk===d).map(c=>c.name);
+    const isLive=n=>liveNames[d].has(n), order=list.filter(isLive).concat(path.filter(n=>!isLive(n)&&list.indexOf(n)>=0),list.filter(n=>!isLive(n)&&path.indexOf(n)<0));
+    if(JSON.stringify(order)===JSON.stringify(list)) return;
+    S.reorderable.push(d);
+    if(opts&&opts.pathOrder){ reordered[d]=order; W("mastery/"+kid+"_bank_order/"+(typeof haKey==="function"?haKey(d):d),order,"new "+d+" cards come in the path’s order from here"); } }); }
   // What would start next: the auto-pull reads the list in order (gate applied) and skips what's a card already.
   dks.forEach(d=>{ const el=eligible(d), notLive=n=>!liveNames[d].has(n);
     S.next10Before=S.next10Before.concat(el.filter(notLive).slice(0,10));
-    S.next10After=S.next10After.concat(el.concat(addedIn[d]).filter(notLive).slice(0,10)); });
+    S.next10After=S.next10After.concat((reordered[d]||el.concat(addedIn[d])).filter(notLive).slice(0,10)); });
   P.ok=true; return P;
 }
 let uaAttachView=null;   // {unitId, kid, plan, msg}
 function uaAttachOpen(unitId,kid){ if(!momHere()) return; uaAttachView={unitId,kid,plan:uaPlanAttach(unitId,kid),msg:""}; const el=document.getElementById("content"); if(el) renderUnits(el); }
 function uaAttachClose(){ uaAttachView=null; const el=document.getElementById("content"); if(el) renderUnits(el); }
+function uaAttachReorder(on){ const V=uaAttachView; if(!momHere()||!V) return; V.plan=uaPlanAttach(V.unitId,V.kid,V.plan&&V.plan.ts,on?{pathOrder:true}:null); V.msg=""; const el=document.getElementById("content"); if(el) renderUnits(el); }   // 🏛🌐 GEOADOPT
 function uaApplyAttach(plan){
   if(!momHere()||!plan||!plan.ok) return false;
-  const again=uaPlanAttach(plan.unitId,plan.kid,plan.ts);
+  const again=uaPlanAttach(plan.unitId,plan.kid,plan.ts,plan.opts);
   if(JSON.stringify(again.writes)!==JSON.stringify(plan.writes)){ if(uaAttachView) uaAttachView={unitId:plan.unitId,kid:plan.kid,plan:again,msg:cap(plan.kid)+"’s data changed since the plan was made — here’s the new plan. Nothing was written."}; const el=document.getElementById("content"); if(el) renderUnits(el); return false; }
   if(!db||_dryRun()){ if(uaAttachView) uaAttachView.msg="Dry run — nothing was written."; const el=document.getElementById("content"); if(el) renderUnits(el); return false; }
   const up={}; plan.writes.forEach(w=>{ up[w.path]=w.value; });
@@ -50186,9 +50207,13 @@ function uaAttachHtml(u,kid,esc,btn){
   h+=li(JSON.stringify(S.next10Before)===JSON.stringify(S.next10After)?'The next new cards don’t change: '+list(S.next10After)+'.':'Next new cards: '+list(S.next10After)+' (today: '+list(S.next10Before)+').');
   if(S.backDiffers.length) h+=li('<b>'+S.backDiffers.length+' answer'+(S.backDiffers.length>1?'s':'')+' differ'+(S.backDiffers.length>1?'':'s')+'</b> from the path’s and stay as they are: '+list(S.backDiffers.slice(0,5))+(S.backDiffers.length>5?' …':'')+'.');
   if(S.earlier) h+=li(S.earlier+' card'+(S.earlier===1?'':'s')+' from earlier stages stay exactly as they are too.');
+  if(S.later) h+=li(S.later+' card'+(S.later===1?'':'s')+' from later stages of the path stay exactly as they are too — they count when '+esc(name)+' gets there.');   // 🏛🌐 GEOADOPT
+  if(S.backsAdded&&S.backsAdded.length) h+=li('Saves the back of <b>'+S.backsAdded.length+'</b> new word'+(S.backsAdded.length===1?'':'s')+' that '+(S.backsAdded.length===1?'has':'have')+' none yet. A back '+esc(name)+' already has is never replaced.');   // 🏛🌐 GEOADOPT
   if(S.stray.length) h+=li('Not part of this stage, left as they are: '+list(S.stray)+'.');
   h+=li('Not touched: the cards, the deck’s card style, how many start at a time, the answers, the notebook, every other kid.');
-  h+='</ul><details style="margin-top:6px"><summary style="font-size:11px;font-weight:700;color:var(--muted);cursor:pointer">'+P.writes.length+' saved changes</summary><div style="font-size:10.5px;color:#374151;line-height:1.45;margin-top:4px;max-height:220px;overflow:auto">'+P.writes.map(w=>esc(w.what)).join('<br>')+'</div></details>';
+  h+='</ul>';
+  if(S.reorderable&&S.reorderable.length){ const fams=_ustCards(u,S.stage).filter(c=>c._dk===S.reorderable[0]).map(c=>c.family).filter((f,ix,a)=>f&&a.indexOf(f)===ix).slice(0,3); h+='<label style="display:flex;gap:6px;align-items:flex-start;font-size:11.5px;color:#374151;line-height:1.4;margin-top:6px;cursor:pointer"><input type="checkbox"'+(P.opts&&P.opts.pathOrder?' checked':'')+' onchange="uaAttachReorder(this.checked)" style="margin-top:2px"><span>New '+list(S.reorderable)+' cards in the path’s order from here'+(fams.length?' ('+list(fams)+'…)':'')+'. Off: they keep coming in '+esc(name)+'’s list order.</span></label>'; }   // 🏛🌐 GEOADOPT (Q4)
+  h+='<details style="margin-top:6px"><summary style="font-size:11px;font-weight:700;color:var(--muted);cursor:pointer">'+P.writes.length+' saved changes</summary><div style="font-size:10.5px;color:#374151;line-height:1.45;margin-top:4px;max-height:220px;overflow:auto">'+P.writes.map(w=>esc(w.what)).join('<br>')+'</div></details>';
   h+='<div style="display:flex;gap:6px;margin-top:9px"><button onclick="uaApplyAttach(uaAttachView&&uaAttachView.plan)" style="'+btn("#2d6a4f","#fff","#2d6a4f")+'">✓ Yes, hook up '+esc(name)+'</button><button onclick="uaAttachClose()" style="'+btn("#fff","var(--muted)","var(--border)")+'">Cancel</button></div>';
   if(typeof _dryRun==="function"&&_dryRun()) h+='<div style="font-size:10.5px;color:#b45309;margin-top:5px">Dry run — Yes writes nothing.</div>';
   return h;
@@ -50307,12 +50332,12 @@ function geoUnitRecord(home){
   // My state is the family's own; a home that is already a far-away-states card (Alaska, Hawaii) is named once, in Our country.
   const myc=GEO_MY_COUNTRY.map(f=>[f[0],f[1].map(n=>n==="<home>"?home:n).filter(n=>n&&!(f[0]!=="Our country"&&n===home))]);
   _geoDeck(GEO_DECK_KEYS.country,"flash",myc,3,mine,o); _geoDeck(GEO_DECK_KEYS.words,"flip",GEO_WORDS[3],3,words,o);
-  const rec={ id:GEO_UNIT_ID, starter:GEO_UNIT_ID, starterVer:2, title:"Geography Path", emoji:"\u{1F30D}", picsInCode:"geo", home:home||"",
-    desc:"From the seven continents to the capitals of the world, one stage at a time — shape before name, name before capital. Continents first (Pre-K–1), then the oceans and globe words, then our own country, then the state shapes region by region from home and the countries of the world continent by continent — each with a drawn map on the card. Later stages add the capitals.",
+  const rec={ id:GEO_UNIT_ID, starter:GEO_UNIT_ID, starterVer:3, title:"Geography Path", emoji:"\u{1F30D}", picsInCode:"geo", home:home||"",
+    desc:"From the seven continents to the capitals of the world, one stage at a time — shape before name, name before capital. Continents first (Pre-K–1), then the oceans and globe words, then our own country, then the state shapes region by region from home and the countries of the world continent by continent, then the state capitals and the capitals of the world — each with a drawn map on the card.",
     stages:GEO_STAGES.map(s=>Object.assign({},s)),
     decks:[ {key:GEO_DECK_KEYS.continents,mode:"flash",introCap:2,groupBy:"family",cards:cont}, {key:GEO_DECK_KEYS.oceans,mode:"flash",introCap:2,groupBy:"family",cards:oce},
       {key:GEO_DECK_KEYS.words,mode:"flip",introCap:2,groupBy:"family",cards:words}, {key:GEO_DECK_KEYS.country,mode:"flash",introCap:2,groupBy:"family",cards:mine} ] };
-  return geoStatesAdd(rec,home,o);   // 🧩🗺 GEOSTATES: Stages 4 and 6
+  return geoAdoptAdd(geoStatesAdd(rec,home,o),home,o);   // 🧩🗺 GEOSTATES: Stages 4 and 6 · 🏛🌐 GEOADOPT: Stages 5 and 7
 }
 function geoPicsInCode(u){ return !!(u&&u.picsInCode==="geo"&&(u.starter===GEO_UNIT_ID||u.id===GEO_UNIT_ID)); }
 // Which HoweGeo picture a card gets: [kind, name, opts] — or null (a card Mom added that the data lacks keeps the unit emoji).
@@ -50328,6 +50353,8 @@ function geoPicOf(dk,name,u){
   }
   if(dk===GEO_DECK_KEYS.states) return GEO_REGION_OF[name]?["state",name,{region:GEO_REGION_OF[name],capital:false}]:null;   // 🧩 GEOSTATES: the outline in its region colour + the US inset
   if(dk===GEO_DECK_KEYS.countries) return ["country",name];   // 🗺 GEOSTATES: lit on its continent, a dot for the capital
+  if(dk===GEO_DECK_KEYS.capitals) return GEO_REGION_OF[name]?["state",name,{region:GEO_REGION_OF[name],capital:false}]:null;   // 🏛 GEOADOPT: Stage 4's outline — the capital is the back
+  if(dk===GEO_DECK_KEYS.world) return ["country",name];   // 🌐 GEOADOPT: Stage 6's picture
   return null;
 }
 // Put the code's pictures on this family's record — IN MEMORY ONLY, as {svg, credit}; the database record never holds one.
@@ -50336,13 +50363,15 @@ function geoHydrate(u,lib){
   lib=lib||((typeof window!=="undefined")&&window.HoweGeo)||null;
   if(!geoPicsInCode(u)||!lib||typeof lib.svg!=="function") return false;
   if(!u.visuals||typeof u.visuals!=="object") u.visuals={};
+  const memo={};   // 🏛🌐 GEOADOPT: Stage 4/5 and 6/7 draw the same picture — build it once, share the string
   (u.decks||[]).forEach(d=>{ if(!d||!d.key) return;
     const cards=Array.isArray(d.cards)?d.cards:Object.values(d.cards||{});
     cards.forEach(c=>{ if(!c||!c.name) return;
       const key=d.key+"_"+c.name, cur=u.visuals[key];
       if(cur&&!(typeof cur==="object"&&cur.svg)) return;   // Mom's own picture ({imageUrl}) or emoji wins
       const p=geoPicOf(d.key,c.name,u); if(!p) return;
-      let uri=null; try{ uri=lib.svg(p[0],p[1],p[2]); }catch(e){ uri=null; }
+      const mk=JSON.stringify(p); let uri=memo[mk];
+      if(uri===undefined){ uri=null; try{ uri=lib.svg(p[0],p[1],p[2]); }catch(e){ uri=null; } memo[mk]=uri; }
       if(!uri) return;
       u.visuals[key]={svg:String(uri),credit:String((typeof lib.credit==="function"&&lib.credit(p[0],p[1]))||"")}; }); });
   return true;
@@ -50427,6 +50456,76 @@ function geoStatesAdd(rec,home,o){
   return rec;
 }
 // GEOSTATES_END
+// GEOADOPT_START — 🏛🌐 GEOGRAPHY PATH, slice 3 (PLAN_geography_path_2026-11-10.md §9 row 3, §4; built 2026-11-16). Stage 5 ·
+// State capitals (3rd–6th) and Stage 7 · World capitals (5th and up), and the hook-up for a kid whose capitals or geography
+// words are already live cards — the path "pull[s] in the country capitals and the state capitals" (her words 2026-11-10)
+// instead of starting them over.
+//   · The two decks use the live deck keys EXACTLY — "State Capitals", "World Geography" — flip, 3 at a time. Names are the
+//     built-in spellings; every back is read from MAST_VOCAB_DEFS when the record is made, so it is the built-in back byte for
+//     byte ("St. Paul", "Pretoria (executive), Cape Town (legislative)"). The 30 capitals past the built-in list (Appendix B ★)
+//     join MAST_VOCAB_DEFS (geoVocabDefs: missing keys only) so a hooked-up kid's new card finds its back with nothing written.
+//   · State Capitals families = Stage 4's regions in Stage 4's order (from the family's home); World Geography families = the
+//     continents in Stage 6's order, the built-in countries first (built-in order), then the 30 more. Pictures: the same state
+//     outline / country picture as Stages 4 and 6 (geoPicOf); the capital is the back. readyAt 45 of 50 · 54 of 60.
+//   · ADOPTION IS DATA-DRIVEN (Q6's alternative — the repo is public, so no UA_ATTACH row names a kid): geoAdoptSpec(u,kid)
+//     gives the 🔗 Hook up to ANY kid with a live card in State Capitals, World Geography or Geography, at the stage the cards
+//     imply — World Geography → 7, else State Capitals → 5, else the highest stage holding one of their live path words (only
+//     non-path words → the first words stage). fill + strayOk; UNITATTACH writes enrolled + kidStage + bank appends — never a
+//     card, a deck's style or how many start. Their other geography decks are read too (alsoDecks): path cards from earlier or
+//     later stages are kept and counted, anything else is a stray left as it is. Until then the stock "+ Kid" stays closed.
+//   · A words-only kid's appended words need the back the stock enroll would have saved — written to definitions only where
+//     the kid has none saved and the code's back isn't already the path's (backs). Capitals never need one.
+//   · Q4 default: new cards keep coming in the kid's list order (nothing written). The plan's one checkbox, "in the path's order
+//     from here", writes <kid>_bank_order/<deck> once: their live cards first, then the stage in the path's order, then the rest.
+//   · A family that added the unit before this slice has no Stage 5/7 on its record: the kid stays closed to the stock enroll
+//     and the plan says why. Nothing in this block writes anything.
+// Appendix B ★ — the capitals past the built-in 30 (the built-in backs are MAST_VOCAB_DEFS's own).
+const GEO_MORE_CAPITALS={"Cuba":"Havana","Panama":"Panama City","Chile":"Santiago","Venezuela":"Caracas","Ecuador":"Quito","Ireland":"Dublin",
+  "Portugal":"Lisbon","Netherlands":"Amsterdam","Belgium":"Brussels","Switzerland":"Bern","Austria":"Vienna","Poland":"Warsaw","Czechia":"Prague",
+  "Hungary":"Budapest","Sweden":"Stockholm","Finland":"Helsinki","Denmark":"Copenhagen","Iceland":"Reykjavík","Ukraine":"Kyiv","Philippines":"Manila",
+  "Malaysia":"Kuala Lumpur","Afghanistan":"Kabul","Iran":"Tehran","Iraq":"Baghdad","Israel":"Jerusalem","Morocco":"Rabat","Ghana":"Accra",
+  "Ethiopia":"Addis Ababa","Tanzania":"Dodoma","Uganda":"Kampala"};
+// Stage 7 by continent, Stage 6's order: the built-in 30 first in the built-in order, then the ★ ones in Appendix B's order.
+const GEO_WORLD_CAPITALS=[
+  ["North America",["Mexico","Canada","Cuba","Panama"]],["South America",["Brazil","Argentina","Colombia","Peru","Chile","Venezuela","Ecuador"]],
+  ["Europe",["United Kingdom","France","Germany","Spain","Italy","Russia","Greece","Norway","Ireland","Portugal","Netherlands","Belgium","Switzerland","Austria","Poland","Czechia","Hungary","Sweden","Finland","Denmark","Iceland","Ukraine"]],
+  ["Asia",["Japan","China","India","South Korea","Saudi Arabia","Turkey","Thailand","Indonesia","Pakistan","Vietnam","Philippines","Malaysia","Afghanistan","Iran","Iraq","Israel"]],
+  ["Africa",["Egypt","South Africa","Nigeria","Kenya","Morocco","Ghana","Ethiopia","Tanzania","Uganda"]],["Oceania",["Australia","New Zealand"]]];
+const GEO_STAGES_3=[{n:5,label:"State capitals",weeklyFrom:0,readyAt:45},{n:7,label:"World capitals",weeklyFrom:0,readyAt:54}];
+const GEO_ADOPT_STAGE={"State Capitals":5,"World Geography":7};
+// The ★ backs MAST_VOCAB_DEFS lacks, lower-case as mastGetDef reads them — a back already there is never replaced.
+function geoVocabDefs(have){ const out={}; Object.keys(GEO_MORE_CAPITALS).forEach(n=>{ const k=n.toLowerCase(); if(!have||have[k]==null) out[k]=GEO_MORE_CAPITALS[n]; }); return out; }
+function geoCapitalOf(n){ const D=(typeof MAST_VOCAB_DEFS!=="undefined")?MAST_VOCAB_DEFS:geoVocabDefs(null); return D[String(n).toLowerCase()]; }
+// Called by geoUnitRecord: Stages 5 and 7 — State Capitals right after State Shapes, World Geography right after Countries.
+function geoAdoptAdd(rec,home,o){
+  const withCap=fams=>fams.map(f=>[f[0],f[1].map(n=>{ const c=geoCapitalOf(n); return c!=null?[n,c]:n; })]);
+  const caps=[], world=[];
+  _geoDeck(GEO_DECK_KEYS.capitals,"flip",withCap(geoRegionOrder(home)),5,caps,o);
+  _geoDeck(GEO_DECK_KEYS.world,"flip",withCap(GEO_WORLD_CAPITALS),7,world,o);
+  GEO_STAGES_3.forEach(s=>rec.stages.push(Object.assign({},s))); rec.stages.sort((a,b)=>a.n-b.n);
+  const after=k=>rec.decks.findIndex(d=>d.key===k)+1;
+  rec.decks.splice(after(GEO_DECK_KEYS.states),0,{key:GEO_DECK_KEYS.capitals,mode:"flip",introCap:3,groupBy:"family",cards:caps});
+  rec.decks.splice(after(GEO_DECK_KEYS.countries),0,{key:GEO_DECK_KEYS.world,mode:"flip",introCap:3,groupBy:"family",cards:world});
+  return rec;
+}
+// The data-driven hook-up row (read by uaSpec): null for a kid with no live geography card. Pure.
+function geoAdoptSpec(u,kid){
+  if(!u||(u.id!==GEO_UNIT_ID&&u.starter!==GEO_UNIT_ID)) return null;
+  let items=((typeof masteryData!=="undefined"&&masteryData)||{})[kid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  const K=GEO_DECK_KEYS, keys=[K.capitals,K.world,K.words], live={};
+  items.forEach(i=>{ if(i&&keys.indexOf(i.subject)>=0) (live[i.subject]=live[i.subject]||[]).push(i.prompt); });
+  const has=keys.filter(k=>live[k]); if(!has.length) return null;
+  const cardsOf=k=>(((u.decks||[]).find(d=>d&&d.key===k)||{}).cards||[]).filter(Boolean);
+  const stageOf=k=>{ const c=cardsOf(k)[0]; return c?c.stage:GEO_ADOPT_STAGE[k]; };
+  let stage;
+  if(live[K.world]) stage=stageOf(K.world);
+  else if(live[K.capitals]) stage=stageOf(K.capitals);
+  else { const wc=cardsOf(K.words), hit=wc.filter(c=>live[K.words].indexOf(c.name)>=0).map(c=>c.stage);
+    stage=hit.length?Math.max.apply(null,hit):(wc.length?Math.min.apply(null,wc.map(c=>c.stage)):2); }
+  return {stage,fill:true,strayOk:true,alsoDecks:has,keepLater:true,backs:true,reorder:true,
+    noCards:"This family’s Geography Path was added before Stage "+stage+" was part of it, so these cards can’t hook up yet. Nothing was changed."};
+}
+// GEOADOPT_END
 // ENVUNIT_START — 🌿 NC ENVIROTHON (her ask 2026-10-27: "a complete NC Envirothon unit for Lincoln that studies like any
 // other unit; separated into categories the teacher can send out like chapters; no made-up content"). PR 1 of 8 (ENVUNIT):
 // the unit record, every deck held, and Lincoln's own 🌿 study session. Release (the teacher's send-out), pre/post tests,
@@ -50958,7 +51057,7 @@ function _ustApply(u,kid,stageN,knows,subject,mapId){
   const started={}; Object.keys(decks).forEach(k=>{ started[k]=items.filter(i=>i&&i.subject===k&&i.status==="introduction").length; });
   const defs={};
   cards.forEach(c=>{ const dk=c._dk, d=decks[dk];
-    if(c.def!=null&&!d.defsOnBank&&(typeof mastDefKeyOk!=="function"||mastDefKeyOk(c.name))){ st.definitions[c.name]=c.def; defs[c.name]=c.def; }
+    if(c.def!=null&&!d.defsOnBank&&(typeof mastDefKeyOk!=="function"||mastDefKeyOk(c.name))&&st.definitions[c.name]==null){ st.definitions[c.name]=c.def; defs[c.name]=c.def; }   // 🏛🌐 GEOADOPT (§4): a back already saved — the kid's own, or Mom's edit — is never replaced
     const ch=(useMap&&dk===mapDeck)?_ustBookCh(mapId,c):(_cl&&c.lesson!=null)?(_clMulti?c.stage*100+c.lesson:c.lesson):null;
     const _builtIn=!!(d.defsOnBank&&!haveBank.has(pk(dk,c.name))&&(_fb[dk]||[]).indexOf(c.name)>=0);   // 📘 already in the kid's own catalog
     if(!haveBank.has(pk(dk,c.name))&&!_builtIn){ const be={cat:dk,name:c.name}; if(ch!=null) be.ch=ch;
@@ -62707,6 +62806,7 @@ chron:"time",morph:"form or shape",bene:"good",mal:"bad",omni:"all",poly:"many",
 "cell membrane":"the thin outer layer that controls what enters and leaves the cell",nucleus:"the control center of a cell that holds DNA",mitochondria:"the powerhouse of the cell — converts food into energy",cytoplasm:"the jelly-like substance filling the cell between the membrane and nucleus",chloroplast:"the part of a plant cell that captures sunlight for photosynthesis","cell wall":"the rigid outer layer of plant cells that provides structure and support",tissue:"a group of similar cells working together to perform a function",organ:"a structure made of tissues that performs a specific job in the body","organ system":"a group of organs working together — like the digestive or circulatory system","cellular respiration":"the process cells use to break down food and release energy","plate tectonics":"the theory that Earth's surface is made of moving plates","continental drift":"the idea that continents slowly move across Earth's surface over time","convergent boundary":"where two tectonic plates push toward each other","divergent boundary":"where two tectonic plates pull apart from each other","transform boundary":"where two tectonic plates slide past each other","kinetic energy":"the energy an object has because it is moving","potential energy":"stored energy an object has because of its position or condition","thermal energy":"heat energy from the movement of particles in matter",conduction:"heat transfer through direct contact between materials",convection:"heat transfer through the movement of liquids or gases",radiation:"heat transfer through electromagnetic waves, like sunlight",atom:"the smallest unit of an element that keeps its properties",element:"a pure substance made of only one type of atom",compound:"a substance made of two or more elements chemically bonded",mixture:"two or more substances combined but not chemically bonded","chemical change":"a change that creates a new substance — burning, rusting, cooking","physical change":"a change in form or appearance without creating a new substance",density:"how much mass is packed into a given volume","mass vs weight":"mass is the amount of matter (stays the same); weight is the pull of gravity (changes by location)",
 jamestown:"1607 — first permanent English settlement in North America","plymouth colony":"1620 — Pilgrims established a colony in Massachusetts seeking religious freedom","boston tea party":"1773 — colonists dumped British tea into the harbor to protest taxation without representation","declaration of independence":"1776 — declared the 13 colonies free from British rule, written primarily by Thomas Jefferson","constitutional convention":"1787 — delegates met in Philadelphia to write the U.S. Constitution","bill of rights":"1791 — the first 10 amendments to the Constitution protecting individual freedoms","louisiana purchase":"1803 — the U.S. bought a vast territory from France, doubling the nation's size","war of 1812":"1812–1815 — conflict between the U.S. and Britain over trade restrictions and impressment of sailors","trail of tears":"1830s — the forced relocation of Native American nations from southeastern states to Oklahoma","gold rush":"1849 — discovery of gold in California drew hundreds of thousands of settlers west","civil war":"1861–1865 — war between the Union (North) and Confederacy (South) over slavery and states' rights","emancipation proclamation":"1863 — Lincoln's order declaring enslaved people in Confederate states to be free",reconstruction:"1865–1877 — the period after the Civil War focused on rebuilding the South and integrating freed people","13th amendment":"1865 — abolished slavery throughout the United States","14th amendment":"1868 — granted citizenship and equal protection under the law to all persons born in the U.S.","15th amendment":"1870 — prohibited denying the right to vote based on race","industrial revolution":"late 1800s — a period of rapid growth in factories, railroads, and manufacturing","ellis island":"1892–1954 — the gateway for over 12 million immigrants entering the U.S.","spanish-american war":"1898 — a brief war that resulted in the U.S. gaining territories including Puerto Rico and the Philippines","19th amendment":"1920 — granted women the right to vote"};
 if(typeof _wrSlashDefs==="function") Object.assign(MAST_VOCAB_DEFS,_wrSlashDefs(MAST_VOCAB_DEFS));   // 🏛 WRATTACH: backs for root names with "/" (they can't be definitions keys)
+if(typeof geoVocabDefs==="function") Object.assign(MAST_VOCAB_DEFS,geoVocabDefs(MAST_VOCAB_DEFS));   // 🌐 GEOADOPT: the 30 world capitals past the built-in list (missing keys only)
 // Answers for the Math Facts banks. These are drilled as QUIZ cards, and a learning card
 // only flips to its answer when one exists (_learnFlip below) — with no answer anywhere the
 // card simply never flipped, which is what Lincoln hit: the bank words carry no answer, the

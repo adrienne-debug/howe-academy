@@ -158,7 +158,11 @@ console.log("\n── ➡ move up to Stage 1 (Forestry): held, coded keys for . 
   const M = w.G.masteryData, st = M.lincoln_settings, bank = M.lincoln_custom_items, items = M.lincoln || [];
   const forestry = CARDS.filter(c => c.stage === 1), unsafe = forestry.filter(c => /[.#$\[\]\/]/.test(c.name));
   ok("still ZERO cards minted; Forestry's " + COUNTS_U.sections.forestry.cards + " join the bank, held", items.length === 0 && bank.length === 90 + COUNTS_U.sections.forestry.cards && st.cat_hold["Forestry · Terms"] === true);
-  ok("Forestry backs saved: plain fronts under their name, . / fronts under their coded key (" + unsafe.length + " of them)", forestry.every(c => st.definitions[/[.#$\[\]\/]/.test(c.name) ? c.name.replace(/[.#$\[\]\/%]/g, ch => "%" + ch.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")) : c.name] === c.def) && unsafe.length > 0);
+  // 🏛🌐 GEOADOPT guard (2026-11-16, PLAN_geography_path_2026-11-10.md §4): a back already saved is never replaced — the three
+  // fronts Stage 0 shares with Forestry (Photosynthesis, Respiration, Transpiration) keep Stage 0's wording; the rest are Forestry's.
+  const s0 = {}; DECKS[0].cards.forEach(c => { s0[c.name] = c.def; });
+  const shared = forestry.filter(c => s0[c.name] != null && !/[.#$\[\]\/]/.test(c.name));
+  ok("Forestry backs saved: plain fronts under their name, . / fronts under their coded key (" + unsafe.length + " of them) — a front Stage 0 already saved keeps Stage 0's back (" + shared.map(c => c.name).join(", ") + ")", forestry.every(c => st.definitions[/[.#$\[\]\/]/.test(c.name) ? c.name.replace(/[.#$\[\]\/%]/g, ch => "%" + ch.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")) : c.name] === (s0[c.name] != null && !/[.#$\[\]\/]/.test(c.name) ? s0[c.name] : c.def)) && unsafe.length > 0 && shared.length === 3);
   ok("no definitions key carries . # $ [ ] /", Object.keys(st.definitions).every(k => !/[.#$\[\]\/]/.test(k)));
   let total = 0; w.G.writes.forEach(x => { total += bytes(x[2]); });
   console.log("     Stage 1 move-up write: " + total + " B (" + (total / 1024).toFixed(1) + " KB) across " + w.G.writes.length + " writes");
