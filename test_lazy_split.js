@@ -34,6 +34,8 @@ const SPLITS = {
   // and _gkEntries ask gamesLoaded first, gameLikeRound calls inside try/catch (both checked below)
   "games.js": { name: "games", sentinel: "buildJeopHtml", locals: [], tables: ["GAMES_LIST", "GAME_LIKE_STATE"] },
   "env.js": { name: "env", sentinel: "envSiteOn", locals: [] },
+  // 🚪 house.js — the Household plan preview (step 3 of DESIGN_household_rooms_2026-11-15): new code, born lazy (HH_PEOPLE is its door)
+  "house.js": { name: "house", sentinel: "hpPeople", locals: [] },
 };
 const rawL = raw.split("\n"), cmL = P.scanJs(raw).cm.split("\n");
 const mainA = rawL.lastIndexOf("<script>"), mainB = rawL.lastIndexOf("</script>");
