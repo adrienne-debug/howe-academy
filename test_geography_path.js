@@ -15,6 +15,8 @@
 //  · Stage 6 Countries: Appendix B's 87 once each, by continent, every one of Lincoln's 30 built-in countries in it + the 22
 //    world-landform and earth words; Ellis's 18 path terms byte-compared with the fixture below (his 6 others are not cards);
 //  · enroll at Stage 4, ➡ 4 → 6, every new card has a picture, writes targeted, dry run inert.
+// Slice 3 GEOADOPT (§9 row 3; 2026-11-16) adds Stage 5 State Capitals and Stage 7 World Geography: the counts below are the
+// seven-stage record (332 cards); ➡ walks 4 → 5 → 6 → 7; the hook-up itself is test_attach_geo_capitals.js / test_attach_geo_world.js.
 // UNITS_SRC=<path> runs it against another copy of index.html (geo.js and sw.js beside it).
 const fs = require("fs"), path = require("path");
 const FILE = process.env.UNITS_SRC || path.join(__dirname, "index.html"), DIR = path.dirname(FILE);
@@ -30,6 +32,8 @@ const sliceFn = (name) => { const s = src.indexOf("function " + name + "("); con
 const portraitLine = (() => { const s = src.indexOf("function _unitPortrait("); return src.slice(s, src.indexOf("\n", s) + 1); })();
 const unitpic = src.slice(src.indexOf("// UNITPIC_START"), src.indexOf("// UNITPIC_END"));
 const picsCode = portraitLine + "\n" + unitpic + "\n" + sliceFn("mastGetVisual");
+const VOCAB = src.slice(src.indexOf("const MAST_VOCAB_DEFS={"), src.indexOf('if(typeof _wrSlashDefs==="function") Object.assign(MAST_VOCAB_DEFS'));
+const VOCAB_GEO = (() => { const s = src.indexOf('if(typeof geoVocabDefs==="function")'); return src.slice(s, src.indexOf("\n", s)); })();   // 🌐 GEOADOPT
 
 function world(o) {
   o = o || {};
@@ -44,7 +48,9 @@ function world(o) {
     function renderUnits(){} const HA_LS={ setItem(){} }; const document={ getElementById:()=>G.content };
     function mastDefKeyOk(n){ return !/[.$#\\[\\]\\/]/.test(n); } function mastGateChapter(){ return null; }
     function haLazyLoad(name){ G.lazy.push(name); return G.lazyLoad?G.lazyLoad(name):Promise.reject(new Error("no loader")); }
+    ${VOCAB}
     ${block}
+    ${VOCAB_GEO}
     ${picsCode}
     return { STARTER_UNITS, STARTER_HOWTO, GEO_DECK_KEYS, GEO_STATES, GEO_REGION_OF, GEO_REGIONS, geoRegionOrder, geoNeighbours, geoUnitRecord, geoHydrate, geoHydrateAll, geoAddHomeSet, geoAddHomeHtml,
       geoPicOf, _starterUnitsHtml, starterUnitAdd, envHydrateAll, unitStageFormOpen, unitStageFormSet, unitStageEnroll, unitStageStatus, unitStageMoveUp,
@@ -73,21 +79,21 @@ const MY_COUNTRY = ["United States", "Washington DC", "North Carolina", "Canada"
 console.log("── the unit ──");
 { const w = world(), u = fresh(w);
   ok("id geography_path · title Geography Path · 🌍 · picsInCode 'geo' · nbInsert on · home North Carolina", u.id === "geography_path" && u.starter === "geography_path" && u.title === "Geography Path" && u.emoji === "\u{1F30D}" && u.picsInCode === "geo" && u.nbInsert === undefined && u.home === "North Carolina");
-  ok("5 stages: The seven continents · Oceans & globe words (ready at 16 of 18) · My country (ready at 22 of 24) · State shapes by region (57 of 64) · Countries by continent (96 of 109)", u.stages.map(s => s.n + ":" + s.label).join("|") === "1:The seven continents|2:Oceans & globe words|3:My country|4:State shapes by region|6:Countries by continent" && u.stages[0].readyAt == null && u.stages[1].readyAt === 16 && u.stages[2].readyAt === 22 && u.stages[3].readyAt === 57 && u.stages[4].readyAt === 96);
-  ok("6 decks, in this order: Continents flash · Oceans flash · Geography flip · My Country flash (2 at a time) · State Shapes flash · Countries flash (3 at a time) — grouped by family", u.decks.map(d => d.key + "/" + d.mode + "/" + d.introCap + "/" + d.groupBy).join("|") === "Continents/flash/2/family|Oceans/flash/2/family|Geography/flip/2/family|My Country/flash/2/family|State Shapes/flash/3/family|Countries/flash/3/family");
+  ok("7 stages: The seven continents · Oceans & globe words (ready at 16 of 18) · My country (ready at 22 of 24) · State shapes by region (57 of 64) · State capitals (45 of 50) · Countries by continent (96 of 109) · World capitals (54 of 60)", u.stages.map(s => s.n + ":" + s.label).join("|") === "1:The seven continents|2:Oceans & globe words|3:My country|4:State shapes by region|5:State capitals|6:Countries by continent|7:World capitals" && u.stages[0].readyAt == null && u.stages[1].readyAt === 16 && u.stages[2].readyAt === 22 && u.stages[3].readyAt === 57 && u.stages[4].readyAt === 45 && u.stages[5].readyAt === 96 && u.stages[6].readyAt === 54);
+  ok("8 decks, in this order: Continents flash · Oceans flash · Geography flip · My Country flash (2 at a time) · State Shapes flash · State Capitals flip · Countries flash · World Geography flip (3 at a time) — grouped by family", u.decks.map(d => d.key + "/" + d.mode + "/" + d.introCap + "/" + d.groupBy).join("|") === "Continents/flash/2/family|Oceans/flash/2/family|Geography/flip/2/family|My Country/flash/2/family|State Shapes/flash/3/family|State Capitals/flip/3/family|Countries/flash/3/family|World Geography/flip/3/family");
   ok("Stage 1: 7 continents in §5.2 order — North America · Africa, Antarctica, Australia · South America, Europe, Asia", names(u, "Continents").join(",") === "North America,Africa,Antarctica,Australia,South America,Europe,Asia" && deck(u, "Continents").cards.every(c => c.stage === 1 && c.def == null));
   ok("Stage 1 families: Where we live · Big, easy shapes · The rest", [...new Set(deck(u, "Continents").cards.map(c => c.family))].join("|") === "Where we live|Big, easy shapes|The rest");
   ok("Stage 2: 5 oceans (Q1 default: Southern Ocean in) — the two big ones first", names(u, "Oceans").join(",") === "Pacific Ocean,Atlantic Ocean,Indian Ocean,Arctic Ocean,Southern Ocean" && deck(u, "Oceans").cards.every(c => c.stage === 2));
   const wd = deck(u, "Geography");
-  ok("the words deck key is exactly 'Geography' (Ellis's deck — born under its final key), flip", wd.key === "Geography" && wd.mode === "flip" && u.decks.filter(d => /geograph/i.test(d.key)).length === 1);
+  ok("the words deck key is exactly 'Geography' (Ellis's deck — born under its final key), flip", wd.key === "Geography" && wd.mode === "flip" && u.decks.filter(d => d.key === "Geography").length === 1);
   ok("Stage 2 share: 13 globe words, Appendix C names AND backs byte for byte, The globe (9) then Directions (4)", JSON.stringify(wd.cards.filter(c => c.stage === 2).map(c => [c.name, c.def])) === JSON.stringify(WORDS2) && wd.cards.filter(c => c.stage === 2).map(c => c.family).join(",") === "The globe,".repeat(9).slice(0, -1) + "," + "Directions,".repeat(4).slice(0, -1));
   ok("Stage 3 share: 10 land and water words, Appendix C byte for byte, one family", JSON.stringify(wd.cards.filter(c => c.stage === 3).map(c => [c.name, c.def])) === JSON.stringify(WORDS3) && wd.cards.filter(c => c.stage === 3).every(c => c.family === "Land and water words"));
   ok("23 words in Stages 2–3, none of them one of Ellis's 24 (those come in Stages 4 and 6)", wd.cards.filter(c => c.stage <= 3).length === 23 && !wd.cards.filter(c => c.stage <= 3).some(c => ["tributaries", "glacier", "peak", "elevation", "contour lines", "cardinal directions", "intermediate directions", "lines of latitude", "lines of longitude", "atmosphere", "tectonic plates", "caldera", "geyser", "precipitation", "evaporation", "biome", "tundra", "taiga"].includes(c.name)));
   ok("Stage 3: My Country 14 = Appendix D with North Carolina as my state, flash, no backs", names(u, "My Country").join(",") === MY_COUNTRY.join(",") && deck(u, "My Country").cards.every(c => c.stage === 3 && c.def == null));
   ok("My Country families: Our country (3) · Our neighbours (2) · Water around us (5) · Land and far-away states (4)", deck(u, "My Country").cards.map(c => c.family).filter((f, i, A) => A.indexOf(f) === i).join("|") === "Our country|Our neighbours|Water around us|Land and far-away states" && deck(u, "My Country").cards.filter(c => c.family === "Our country").map(c => c.name).join(",") === "United States,Washington DC,North Carolina");
-  ok("222 cards (49 + 64 + 109), every name a legal database key (no . # $ [ ] /), order 1..222 across the unit", u.decks.reduce((s, d) => s + d.cards.length, 0) === 222 && u.decks.every(d => d.cards.every(c => !/[.#$\[\]\/]/.test(c.name))) && [].concat(...u.decks.map(d => d.cards)).map(c => c.order).sort((x, y) => x - y).join() === Array.from({ length: 222 }, (_, i) => i + 1).join());
-  ok("no Stage 5 or 7 yet (State Capitals / World Geography are slice 3 GEOADOPT — no deck under those keys) — but their keys are fixed: State Shapes · State Capitals · Countries · World Geography (and Geography)", !u.stages.some(s => s.n === 5 || s.n === 7) && !u.decks.some(d => d.key === "State Capitals" || d.key === "World Geography") && w.GEO_DECK_KEYS.states === "State Shapes" && w.GEO_DECK_KEYS.capitals === "State Capitals" && w.GEO_DECK_KEYS.countries === "Countries" && w.GEO_DECK_KEYS.world === "World Geography" && w.GEO_DECK_KEYS.words === "Geography");
-  ok("the record carries NO picture: no visuals, no data: URI, no <svg (pictures live in geo.js)", u.visuals === undefined && !/data:|<svg|imageUrl/.test(JSON.stringify(u)) && JSON.stringify(u).length < 24000);
+  ok("332 cards (49 + 64 + 50 + 109 + 60), every name a legal database key (no . # $ [ ] /), order 1..332 across the unit", u.decks.reduce((s, d) => s + d.cards.length, 0) === 332 && u.decks.every(d => d.cards.every(c => !/[.#$\[\]\/]/.test(c.name))) && [].concat(...u.decks.map(d => d.cards)).map(c => c.order).sort((x, y) => x - y).join() === Array.from({ length: 332 }, (_, i) => i + 1).join());
+  ok("Stages 5 and 7 (GEOADOPT) under the fixed keys: State Shapes · State Capitals · Countries · World Geography (and Geography)", deck(u, "State Capitals").cards.every(c => c.stage === 5) && deck(u, "World Geography").cards.every(c => c.stage === 7) && w.GEO_DECK_KEYS.states === "State Shapes" && w.GEO_DECK_KEYS.capitals === "State Capitals" && w.GEO_DECK_KEYS.countries === "Countries" && w.GEO_DECK_KEYS.world === "World Geography" && w.GEO_DECK_KEYS.words === "Geography");
+  ok("the record carries NO picture: no visuals, no data: URI, no <svg (pictures live in geo.js); < 32 KB", u.visuals === undefined && !/data:|<svg|imageUrl/.test(JSON.stringify(u)) && JSON.stringify(u).length < 32000);
   ok("50 states, each in one of the five regions (Appendix A); North Carolina Southeast, Maryland & Delaware Northeast", w.GEO_STATES.length === 50 && new Set(Object.values(w.GEO_REGION_OF)).size === 5 && w.GEO_REGION_OF["North Carolina"] === "Southeast" && w.GEO_REGION_OF.Maryland === "Northeast" && w.GEO_REGION_OF.Delaware === "Northeast" && w.GEO_STATES.every(s => HoweGeo.names("state").includes(s)));
   ok("STARTER_HOWTO has a Mom note + kid line for Continents, Oceans, Geography and My Country", ["Continents", "Oceans", "Geography", "My Country"].every(k => w.STARTER_HOWTO[k] && w.STARTER_HOWTO[k].main.length > 20 && w.STARTER_HOWTO[k].kid.length > 5));
 }
@@ -239,7 +245,7 @@ console.log("── Stage 6 · Countries by continent ──");
   ok("no card name repeats inside any deck", u.decks.every(d => new Set(d.cards.map(c => c.name)).size === d.cards.length));
 }
 
-console.log("── a 3rd-grader at Stage 4, then ➡ Stage 6 ──");
+console.log("── a 3rd-grader at Stage 4, then ➡ 5 ➡ 6 ➡ 7 ──");
 { const w = world(), u = fresh(w);
   w.unitStageFormOpen("geography_path", "kid"); w.unitStageFormSet("stage", "4"); w.unitStageEnroll();
   const st = w.G.masteryData.kid_settings, lrn = items(w, "kid").filter(i => i.status === "introduction");
@@ -247,23 +253,34 @@ console.log("── a 3rd-grader at Stage 4, then ➡ Stage 6 ──");
   ok("the bank gets the 14 words + 50 shapes — nothing from Stages 1–3 or 6", bank(w, "kid").length === 64 && bank(w, "kid").filter(c => c.cat === "State Shapes").length === 50 && bank(w, "kid").filter(c => c.cat === "Geography").map(c => c.name).join(",") === WORDS4.map(x => x[0]).join(",") && !bank(w, "kid").some(c => c.cat === "Countries" || c.cat === "My Country"));
   ok("settings: State Shapes flash · 3 at a time · How-to; Geography flip; the 14 backs saved exactly", st.cat_modes["State Shapes"] === "flash" && st.cat_intro_max["State Shapes"] === 3 && st.cat_modes.Geography === "flip" && st.cat_instructions["State Shapes"] === w.STARTER_HOWTO["State Shapes"].main && Object.keys(st.definitions).length === 14 && WORDS4.every(([n, d]) => st.definitions[n] === d) && !st.cat_modes.Countries);
   let s = w.unitStageStatus(u, "kid");
-  ok("row: Stage 4 · 64 cards · ready at 57 · next = Stage 6 (Stage 5 comes with GEOADOPT)", s.stage === 4 && s.total === 64 && s.need === 57 && s.next && s.next.n === 6 && /Start Stage 6: Countries by continent/.test(w._unitStageRowsHtml(u, ["kid"])));
+  ok("row: Stage 4 · 64 cards · ready at 57 · next = Stage 5 (GEOADOPT)", s.stage === 4 && s.total === 64 && s.need === 57 && s.next && s.next.n === 5 && /Start Stage 5: State capitals/.test(w._unitStageRowsHtml(u, ["kid"])));
   ok("the Stage 4 form's families: the two word families, then the five regions home first", /through the Reading a map[\s\S]*through the Land near home[\s\S]*through the Southeast[\s\S]*through the Northeast[\s\S]*through the West/.test((w.unitStageFormOpen("geography_path", "kid2"), w.unitStageFormSet("stage", "4"), w._unitStageRowsHtml(u, ["kid2"]))));
-  // 57 on the ladder → ready → ➡ Stage 6
-  const all = items(w, "kid"); all.forEach(i => { i.status = "active"; i.tier = "weekly"; });
-  bank(w, "kid").slice(0, 57).forEach((c, i) => { if (!all.some(x => x.subject === c.cat && x.prompt === c.name)) all.push({ id: "s4_" + i, subject: c.cat, prompt: c.name, status: "active", tier: "weekly" }); });
-  s = w.unitStageStatus(u, "kid");
+  // 57 on the ladder → ready → ➡ Stage 5
+  const all = items(w, "kid"); const ladder = (from, n, tag) => { all.forEach(i => { i.status = "active"; i.tier = "weekly"; });
+    bank(w, "kid").slice(from, from + n).forEach((c, i) => { if (!all.some(x => x.subject === c.cat && x.prompt === c.name)) all.push({ id: tag + i, subject: c.cat, prompt: c.name, status: "active", tier: "weekly" }); }); };
+  ladder(0, 57, "s4_"); s = w.unitStageStatus(u, "kid");
   ok("57 of 64 on the ladder → ✓ ready to move up", s.ready && s.on === 57);
-  w.G.writes.length = 0; w.unitStageMoveUp("geography_path", "kid");
-  const b6 = bank(w, "kid").slice(64), lrn6 = items(w, "kid").filter(i => i.status === "introduction");
-  ok("➡ Stage 6: the bank gains 22 words + 87 countries (109), in path order", b6.length === 109 && b6.filter(c => c.cat === "Countries").map(c => c.name).join(",") === [].concat(...APPX_B.map(r => r[1])).join(",") && b6.filter(c => c.cat === "Geography").map(c => c.name).join(",") === WORDS6.map(x => x[0]).join(","));
-  ok("➡ Stage 6: isthmus + archipelago and Canada, Mexico, Cuba start learning; Countries flash · 3; 36 definitions now", lrn6.map(i => i.subject + ":" + i.prompt).join(",") === "Geography:isthmus,Geography:archipelago,Countries:Canada,Countries:Mexico,Countries:Cuba" && st.cat_modes.Countries === "flash" && st.cat_intro_max.Countries === 3 && Object.keys(st.definitions).length === 36);
+  w.unitStageMoveUp("geography_path", "kid");
+  const b5 = bank(w, "kid").slice(64), lrn5 = items(w, "kid").filter(i => i.status === "introduction");
+  ok("➡ Stage 5: the bank gains the 50 states under State Capitals, in Stage 4's region order; North Carolina, South Carolina, Virginia start learning with their capitals", b5.length === 50 && b5.every(c => c.cat === "State Capitals") && b5.map(c => c.name).join(",") === [].concat(...APPX_A.map(r => r[1])).join(",") && lrn5.map(i => i.subject + ":" + i.prompt + "=" + i.answer).join(",") === "State Capitals:North Carolina=Raleigh,State Capitals:South Carolina=Columbia,State Capitals:Virginia=Richmond");
+  ok("➡ Stage 5: State Capitals flip · 3 at a time; 64 definitions now (14 words + 50 capitals, St. Paul as built in)", st.cat_modes["State Capitals"] === "flip" && st.cat_intro_max["State Capitals"] === 3 && Object.keys(st.definitions).length === 64 && st.definitions.Minnesota === "St. Paul");
   s = w.unitStageStatus(u, "kid");
-  ok("row: Stage 6 · 109 cards · ready at 96 · nothing after it yet", s.stage === 6 && s.total === 109 && s.need === 96 && s.next === null);
-  ok("➡ Stage 6 writes only targeted paths: bank indices 64..172, the kid's settings leaves, kidStage from:4", (() => { const bu = w.G.writes.find(x => x[1] === "mastery/kid_custom_items"); const ks = w.G.writes.find(x => x[1] === "unitStudies/geography_path/kidStage/kid");
-    return bu && Object.keys(bu[2]).join() === Array.from({ length: 109 }, (_, i) => i + 64).join() && ks && ks[2].stage === 6 && ks[2].from === 4 &&
+  ok("row: Stage 5 · 50 cards · ready at 45 · next = Stage 6", s.stage === 5 && s.total === 50 && s.need === 45 && s.next && s.next.n === 6);
+  ladder(64, 45, "s5_"); w.G.writes.length = 0; w.unitStageMoveUp("geography_path", "kid");
+  const b6 = bank(w, "kid").slice(114), lrn6 = items(w, "kid").filter(i => i.status === "introduction");
+  ok("➡ Stage 6: the bank gains 22 words + 87 countries (109), in path order", b6.length === 109 && b6.filter(c => c.cat === "Countries").map(c => c.name).join(",") === [].concat(...APPX_B.map(r => r[1])).join(",") && b6.filter(c => c.cat === "Geography").map(c => c.name).join(",") === WORDS6.map(x => x[0]).join(","));
+  ok("➡ Stage 6: isthmus + archipelago and Canada, Mexico, Cuba start learning; Countries flash · 3; 86 definitions now", lrn6.map(i => i.subject + ":" + i.prompt).join(",") === "Geography:isthmus,Geography:archipelago,Countries:Canada,Countries:Mexico,Countries:Cuba" && st.cat_modes.Countries === "flash" && st.cat_intro_max.Countries === 3 && Object.keys(st.definitions).length === 86);
+  s = w.unitStageStatus(u, "kid");
+  ok("row: Stage 6 · 109 cards · ready at 96 · next = Stage 7", s.stage === 6 && s.total === 109 && s.need === 96 && s.next && s.next.n === 7);
+  ok("➡ Stage 6 writes only targeted paths: bank indices 114..222, the kid's settings leaves, kidStage from:5", (() => { const bu = w.G.writes.find(x => x[1] === "mastery/kid_custom_items"); const ks = w.G.writes.find(x => x[1] === "unitStudies/geography_path/kidStage/kid");
+    return bu && Object.keys(bu[2]).join() === Array.from({ length: 109 }, (_, i) => i + 114).join() && ks && ks[2].stage === 6 && ks[2].from === 5 &&
       w.G.writes.every(x => x[0] === "update" ? /^mastery\/kid(_custom_items|_settings\/(cat_modes|cat_intro_max|definitions|cat_instructions|cat_instructions_kid))?$/.test(x[1]) : /^unitStudies\/geography_path\/(kidStage|enrolled)\/kid$/.test(x[1])); })());
-  ok("ids unique; every item in a unit deck", new Set(items(w, "kid").map(i => i.id)).size === items(w, "kid").length && items(w, "kid").every(i => ["Geography", "State Shapes", "Countries"].includes(i.subject)));
+  ladder(114, 96, "s6_"); w.unitStageMoveUp("geography_path", "kid");
+  const b7 = bank(w, "kid").slice(223), lrn7 = items(w, "kid").filter(i => i.status === "introduction");
+  ok("➡ Stage 7: the bank gains the 60 countries under World Geography, by continent; Mexico, Canada, Cuba start learning; 146 definitions", b7.length === 60 && b7.every(c => c.cat === "World Geography") && b7[0].name === "Mexico" && b7[59].name === "New Zealand" && lrn7.map(i => i.prompt + "=" + i.answer).join(",") === "Mexico=Mexico City,Canada=Ottawa,Cuba=Havana" && Object.keys(st.definitions).length === 146 && st.cat_modes["World Geography"] === "flip");
+  s = w.unitStageStatus(u, "kid");
+  ok("row: Stage 7 · 60 cards · ready at 54 · nothing after it yet", s.stage === 7 && s.total === 60 && s.need === 54 && s.next === null);
+  ok("ids unique; every item in a unit deck", new Set(items(w, "kid").map(i => i.id)).size === items(w, "kid").length && items(w, "kid").every(i => ["Geography", "State Shapes", "State Capitals", "Countries", "World Geography"].includes(i.subject)));
 }
 
 console.log("── Stage 4 / 6 pictures ──");
@@ -272,18 +289,19 @@ console.log("── Stage 4 / 6 pictures ──");
   ok("every State Shapes card: its outline in its region colour + the US inset, no capital dot (same picture as Stage 3's my-state card)", deck(u, "State Shapes").cards.every(c => u.visuals["State Shapes_" + c.name].svg === HoweGeo.svg("state", c.name, { region: w.GEO_REGION_OF[c.name], capital: false })) && u.visuals["State Shapes_North Carolina"].svg === u.visuals["My Country_North Carolina"].svg && /fill="#0072B2"/.test(dec("State Shapes_Maine")) && /fill="#CC79A7"/.test(dec("State Shapes_Oregon")));
   ok("every Countries card: lit on its continent (HoweGeo country picture, capital dot on)", deck(u, "Countries").cards.every(c => u.visuals["Countries_" + c.name].svg === HoweGeo.svg("country", c.name)));
   ok("Stage 4 and 6 words: their geo.js word picture; credits present", deck(u, "Geography").cards.filter(c => c.stage >= 4).every(c => u.visuals["Geography_" + c.name].svg === HoweGeo.svg("word", c.name) && u.visuals["Geography_" + c.name].credit));
+  ok("GEOADOPT: every State Capitals card has Stage 4's picture and every World Geography card Stage 6's — the very same string (built once)", deck(u, "State Capitals").cards.every(c => u.visuals["State Capitals_" + c.name].svg === u.visuals["State Shapes_" + c.name].svg) && deck(u, "World Geography").cards.every(c => u.visuals["World Geography_" + c.name].svg === u.visuals["Countries_" + c.name].svg));
   ok("Australia the continent and Australia the country are two different pictures (two decks)", u.visuals["Continents_Australia"].svg !== u.visuals["Countries_Australia"].svg);
   w.setKid("kid");
   ok("_unitPortrait and mastLiveVisual resolve a state, a country and a Stage-6 word", ["State Shapes:Rhode Island", "Countries:Czechia", "Geography:fjord"].every(x => { const [dk, n] = x.split(":"); const p = w._unitPortrait(u, "kid", dk, n), v = w.mastLiveVisual({ subject: dk, prompt: n }); return p && /^data:image\/svg/.test(p.img) && v && v.from === "live" && /^data:image\/svg/.test(v.img); }));
-  ok("the record still carries no picture and stays small (< 24 KB, 222 cards)", !/data:|<svg|imageUrl/.test(JSON.stringify(w.geoUnitRecord("North Carolina"))) && JSON.stringify(w.geoUnitRecord("North Carolina")).length < 24000);
+  ok("the record still carries no picture and stays small (< 32 KB, 332 cards)", !/data:|<svg|imageUrl/.test(JSON.stringify(w.geoUnitRecord("North Carolina"))) && JSON.stringify(w.geoUnitRecord("North Carolina")).length < 32000);
   ok("the GEOSTATES block writes nothing (no db.ref / .set( / .update( / storage) and names no kid", (() => { const b = src.slice(src.indexOf("// GEOSTATES_START"), src.indexOf("// GEOSTATES_END")); return b.length > 1000 && !/db\.ref\(|\.set\(|\.update\(|HA_LS|localStorage/.test(b) && !/\b(Julian|Lincoln|Ellis|Lucy)\b/.test(b.replace(/^\/\/.*$/gm, "")); })());
 }
 
 console.log("── pictures (geo.js → visuals, in memory) ──");
 { const w = world(), u = fresh(w);
   const t0 = Date.now(); const did = w.geoHydrate(u); const ms = Date.now() - t0;
-  console.log("  geoHydrate: 222 pictures in " + ms + " ms");
-  ok("geoHydrate ran and put a picture on every one of the 222 cards (places AND words)", did && u.visuals && Object.keys(u.visuals).length === 222 && u.decks.every(d => d.cards.every(c => u.visuals[d.key + "_" + c.name])));
+  console.log("  geoHydrate: 332 pictures in " + ms + " ms");
+  ok("geoHydrate ran and put a picture on every one of the 332 cards (places AND words)", did && u.visuals && Object.keys(u.visuals).length === 332 && u.decks.every(d => d.cards.every(c => u.visuals[d.key + "_" + c.name])));
   ok("every picture is {svg: an SVG data URI, credit} — NEVER imageUrl (the key the bank's mint copies onto a kid's item)", Object.values(u.visuals).every(v => typeof v === "object" && /^data:image\/svg\+xml;utf8,%3Csvg/.test(v.svg) && typeof v.credit === "string" && v.credit && !("imageUrl" in v)));
   ok("the mint still stamps only vis.imageUrl / a string — so a geography item never gets a picture written to mastery/<kid>", /else if\(vis\.imageUrl\) item\.imageUrl=vis\.imageUrl;/.test(src) && (() => { const vis = w.mastGetVisual("Continents", "Africa"); const item = {}; if (typeof vis === "string") item.emoji = vis; else if (vis.imageUrl) item.imageUrl = vis.imageUrl; return !("imageUrl" in item) && !("emoji" in item); })());
   const dec = k => decodeURIComponent(u.visuals[k].svg.slice("data:image/svg+xml;utf8,".length));
@@ -302,7 +320,7 @@ console.log("── pictures (geo.js → visuals, in memory) ──");
   u.visuals["Continents_Europe"] = { imageUrl: "https://example.org/europe.jpg", credit: "Mom" }; u.visuals["Geography_north"] = "\u{1F9ED}";
   deck(u, "My Country").cards.push({ name: "Outer Banks", family: "Our country", stage: 3, order: 99 });
   w.geoHydrate(u);
-  ok("re-hydrate: Mom's photo and her emoji stay; a card the data lacks gets no picture (unit emoji fallback); the rest redrawn", u.visuals["Continents_Europe"].imageUrl === "https://example.org/europe.jpg" && u.visuals["Geography_north"] === "\u{1F9ED}" && !u.visuals["My Country_Outer Banks"] && P("Continents", "Europe").img === "https://example.org/europe.jpg" && P("Geography", "north").emoji === "\u{1F9ED}" && P("My Country", "Outer Banks") === null && Object.keys(u.visuals).length === 222);
+  ok("re-hydrate: Mom's photo and her emoji stay; a card the data lacks gets no picture (unit emoji fallback); the rest redrawn", u.visuals["Continents_Europe"].imageUrl === "https://example.org/europe.jpg" && u.visuals["Geography_north"] === "\u{1F9ED}" && !u.visuals["My Country_Outer Banks"] && P("Continents", "Europe").img === "https://example.org/europe.jpg" && P("Geography", "north").emoji === "\u{1F9ED}" && P("My Country", "Outer Banks") === null && Object.keys(u.visuals).length === 332);
   ok("the kid's own _visuals override still wins over the drawn picture", (w.G.masteryData.kid_visuals = { "Continents_Asia": { imageUrl: "https://example.org/asia.jpg" } }, P("Continents", "Asia").img === "https://example.org/asia.jpg" && L("Continents", "Asia").img === "https://example.org/asia.jpg"));
   ok("a record with no geo.js in reach is left alone (no visuals invented); a unit that isn't this one is never touched", (() => { const w0 = world({ window: {} }); const u2 = w0.geoUnitRecord("Ohio"); return w0.geoHydrate(u2) === false && u2.visuals === undefined; })() && w.geoHydrate({ id: "sharks", decks: [] }, HoweGeo) === false);
 }
@@ -315,9 +333,9 @@ console.log("── loading: geoHydrateAll from envHydrateAll, geo.js fetched la
   ok("envHydrateAll calls geoHydrateAll; with no HoweGeo yet it asks haLazyLoad('geo') once and returns (no envirothon unit → false)", r === false && w.G.lazy.join() === "geo" && !u.visuals);
   return_after: {
     setTimeout(() => {
-      ok("after geo.js loads, the record is hydrated in place (222 pictures) — nothing written", resolved && u.visuals && Object.keys(u.visuals).length === 222 && w.G.writes.length === 0);
+      ok("after geo.js loads, the record is hydrated in place (332 pictures) — nothing written", resolved && u.visuals && Object.keys(u.visuals).length === 332 && w.G.writes.length === 0);
       const w2 = world(); fresh(w2); w2.envHydrateAll();
-      ok("with HoweGeo already in the page, hydration is immediate and no fetch is asked", Object.keys(w2.G.unitStudies.geography_path.visuals).length === 222 && w2.G.lazy.length === 0);
+      ok("with HoweGeo already in the page, hydration is immediate and no fetch is asked", Object.keys(w2.G.unitStudies.geography_path.visuals).length === 332 && w2.G.lazy.length === 0);
       const w3 = world({ window: {} }); w3.G.lazyLoad = () => Promise.reject(new Error("offline"));
       fresh(w3); w3.envHydrateAll();
       setTimeout(() => { ok("a failed fetch (offline) is swallowed: the unit still works, cards show the unit emoji, no throw", !w3.G.unitStudies.geography_path.visuals && w3.G.writes.length === 0); finish(); }, 0);

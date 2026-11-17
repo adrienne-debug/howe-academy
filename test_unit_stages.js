@@ -161,6 +161,14 @@ function julianMastery() {
   ok("Stage 5: partners start with the five-frame cards", JSON.stringify(items(w, "caleb").map(i => i.prompt + "=" + i.answer)) === JSON.stringify(["1 and ? make 5=4", "2 and ? make 5=3", "3 and ? make 5=2"]));
   ok("Stage 5 → next is Stage 6 (+ and − facts)", w.unitStageStatus(w.u, "caleb").next.n === 6); }
 
+// ── 🏛🌐 GEOADOPT guard (PLAN_geography_path_2026-11-10.md §4): a move-up never replaces a back the kid already has saved ──
+{ const w = world(); enroll(w, "kidg", 3, "");
+  const st = w.G.masteryData.kidg_settings; st.definitions["10 + 2"] = "twelve: ten and two more";   // Mom's own wording, saved before Stage 4
+  w.G.writes.length = 0; w.unitStageMoveUp("math_fluency_path", "kidg");
+  const dw = w.G.writes.find(x => x[1] === "mastery/kidg_settings/definitions");
+  ok("guard: ➡ Stage 4 keeps the saved back of 10 + 2 (in memory and in the write) and still saves the new ones (10 + 1)", st.definitions["10 + 2"] === "twelve: ten and two more" && dw && !("10 + 2" in dw[2]) && dw[2]["10 + 1"] === "11" && st.definitions["10 + 1"] === "11");
+  ok("guard: the line in _ustApply reads the saved back first", /mastDefKeyOk\(c\.name\)\)&&st\.definitions\[c\.name\]==null\)\{ st\.definitions\[c\.name\]=c\.def;/.test(src)); }
+
 // ── dry run ──
 { const w = world({ dry: true }); enroll(w, "taylor", 7, "× ÷ · 12s");
   ok("dry run: local only, nothing written", w.G.writes.length === 0 && items(w, "taylor").length === 313 && w.u.enrolled.taylor); }
