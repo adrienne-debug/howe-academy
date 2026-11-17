@@ -51572,6 +51572,14 @@ function _ustFamilies(u,n){ const out=[]; _ustCards(u,n).forEach(c=>{ if(out.ind
   if(u&&u.famSort) out.sort((a,b)=>(_ustFamNum({family:a})||0)-(_ustFamNum({family:b})||0));   // 📘 AAS: Lesson 1 … 24
   return out; }
 function _ustStageDef(u,n){ return (u.stages||[]).find(s=>s&&s.n===n)||null; }
+// UNITBOOK_START — her report 2026-11-16: "the geography and maybe others says math book as an option to link up which makes
+// zero sense." The Start form offered every staged unit a "Math book" picker, but a book link only DOES something in two
+// cases: a unit whose cards follow the kid's book lessons (cardLessons — All About Spelling), or a stage that has a book map
+// (UNIT_BOOK_MAPS — its deck must be in that stage). Everywhere else the pick was saved and never used. The row now shows
+// only where it works; a stage with no map lists no maps. Saved kid stages are untouched.
+function _ustBookMaps(u,stageN){ const dk=new Set(_ustCards(u,stageN).map(c=>c._dk)); return Object.keys(UNIT_BOOK_MAPS).filter(id=>{ const bm=UNIT_BOOK_MAPS[id]; return bm&&bm.stage===stageN&&dk.has(bm.deck||"Math Facts"); }); }
+function _ustUsesBook(u,stageN){ return !!(u&&(u.cardLessons||_ustBookMaps(u,stageN).length)); }
+// UNITBOOK_END
 function _ustStagesWithCards(u){ return (u.stages||[]).filter(s=>s&&_ustCards(u,s.n).length); }
 function _ustBookCh(mapId,c){ const m=UNIT_BOOK_MAPS[mapId]; if(!m||m.stage!==c.stage) return null;
   const f=_ustFamNum(c), op=/\+/.test(c.name)?"add":"sub"; const v=(m[op]||{})[f]; return v==null?null:v; }
@@ -51671,8 +51679,9 @@ function unitStageEnroll(){
   if(!momHere()||!unitStageForm) return; const f=unitStageForm; const u=unitStudies[f.unitId];
   if(!u||(u.enrolled||{})[f.kid]||!_ustCards(u,f.stage).length) return;
   if(typeof _wrEnrollLocked==="function"&&_wrEnrollLocked(u)) return;   // 🏛 WORDROOTS
-  const w=_ustApply(u,f.kid,f.stage,f.knows,f.subject,f.map); if(!w) return;
-  const rec={stage:f.stage,knows:f.knows||"",subject:f.subject||"",map:(w.gate?f.map:"")||"",ts:Date.now()};
+  const _sub=_ustUsesBook(u,f.stage)?(f.subject||""):"";   // UNITBOOK: a book picked for a stage that can't use one isn't saved
+  const w=_ustApply(u,f.kid,f.stage,f.knows,_sub,_sub?f.map:""); if(!w) return;
+  const rec={stage:f.stage,knows:f.knows||"",subject:_sub,map:(w.gate?f.map:"")||"",ts:Date.now()};
   _ustWrite(f.unitId,f.kid,w,rec); if(typeof envEnrollSession==="function") envEnrollSession(u,f.kid);   // 🌿 ENVUNIT: his own session, once
   if(typeof envMirrorOn==="function") envMirrorOn("enroll");   // 🌿 ENVMIRROR: enrolled → the first summary
   _ustDone(f.unitId,f.kid,rec);
@@ -51742,9 +51751,9 @@ function _unitStageRowsHtml(u,roster){
       } else {
       h+='<span>Already knows</span><select style="'+sel+'" onchange="unitStageFormSet(\'knows\',this.value)"><option value="">Nothing yet — start at the beginning</option>'+_ustFamilies(u,f.stage).map(fm=>'<option value="'+esc(fm)+'"'+(fm===f.knows?' selected':'')+'>through the '+esc(fm)+'</option>').join('')+'</select>';
       const subs=Object.keys((((currData||{}).subjects||{})[k])||{});
-      h+='<span>'+(u.cardLessons?'Their book (subject)':'Math book')+'</span><select style="'+sel+'" onchange="unitStageFormSet(\'subject\',this.value)"><option value="">No book link</option>'+subs.map(sk=>'<option value="'+esc(sk)+'"'+(sk===f.subject?' selected':'')+'>'+esc(subjName(k,sk))+'</option>').join('')+'</select>';
-      const maps=Object.keys(UNIT_BOOK_MAPS).filter(id=>UNIT_BOOK_MAPS[id].stage===f.stage);
-      if(f.subject&&!u.cardLessons) h+='<span>Book map</span><select style="'+sel+'" onchange="unitStageFormSet(\'map\',this.value)"><option value="">No map — next family opens when the last is learned</option>'+maps.map(id=>'<option value="'+esc(id)+'"'+(id===f.map?' selected':'')+'>'+esc(UNIT_BOOK_MAPS[id].label)+'</option>').join('')+'</select>';
+      if(_ustUsesBook(u,f.stage)) h+='<span>'+(u.cardLessons?'Their book (subject)':'Math book')+'</span><select style="'+sel+'" onchange="unitStageFormSet(\'subject\',this.value)"><option value="">No book link</option>'+subs.map(sk=>'<option value="'+esc(sk)+'"'+(sk===f.subject?' selected':'')+'>'+esc(subjName(k,sk))+'</option>').join('')+'</select>';   // UNITBOOK: only where a book link does something
+      const maps=_ustBookMaps(u,f.stage);   // UNITBOOK: maps whose deck is in this stage
+      if(f.subject&&!u.cardLessons&&maps.length) h+='<span>Book map</span><select style="'+sel+'" onchange="unitStageFormSet(\'map\',this.value)"><option value="">No map — next family opens when the last is learned</option>'+maps.map(id=>'<option value="'+esc(id)+'"'+(id===f.map?' selected':'')+'>'+esc(UNIT_BOOK_MAPS[id].label)+'</option>').join('')+'</select>';
       h+='</div>';
       const fams=_ustFamilies(u,f.stage), ki=f.knows?fams.indexOf(f.knows):-1, nxt=fams[ki+1];
       h+='<div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin:7px 0">'+(ki>=0?'Through the '+esc(f.knows)+' go straight to review. ':'')+(nxt?'Starts learning the '+esc(nxt)+'.':'Everything in this stage is review.')+'</div>';
