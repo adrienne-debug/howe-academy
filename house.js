@@ -10,6 +10,97 @@
 //     index.html — HH_ROTATE, HH_PROJECTS' view (HH_PROJSWEEP, HH_PROJVIEW), HH_ONCEPILE's view (HH_ONCEVIEW), HH_EDITOR,
 //     HH_ROOMPAGE and HH_CARD — each with its marker left where it stood. So the file now loads the first time the Household page
 //     opens: renderHousehold is the door (HOUSESLIM in index.html). HOUSEENG reads none of it (step 4 moves HOUSEENG to the page).
+// HH_ROTATE_START — 🔁 rotations on the Household tab (her "go" 2026-10-11, after "the rotation [isn't there]"). The rotation
+// itself is the old one, untouched: steps in the same slot sharing a rot tag, one per kid, take turns (rtApplyRot); a kid's
+// free:true step is a placeholder turn; config/rotationPeriod/<tag> is the cycle. This block only makes and edits those rows
+// from the tab. Start = the row gets the tag + a "Free day" placeholder row for each other kid (same slot, area and level, so
+// the gate treats the group as one) + the cycle. Join = another kid's own row takes the tag and their placeholder retires.
+// Leave = a placeholder retires, a real job drops its tag and stays that kid's own. Give to… on a member row hands that
+// kid's turn to another kid (their placeholder, if any, retires). Mom's and Dad's rows do not rotate.
+let hhRot={id:"",kids:{},period:"daily"};   // the open Rotate panel: the row, the kids picked, the cycle
+const HH_ROT_PERIODS=[["daily","Daily"],["weekly","Weekly (flips Mon)"],["2d","Every 2 days"],["3d","Every 3 days"]];
+function hhRotPeriodOf(tag){ return (typeof rtRotPeriod==="function")?rtRotPeriod(tag):"daily"; }
+function hhRotGroups(){
+  const jobs=hhJobs(), g={}; const kids=(typeof SL_KIDS!=="undefined")?SL_KIDS:ROSTER;
+  Object.keys(jobs).forEach(function(id){ const j=jobs[id]; if(!j.rot||j.status==="retired"||!hhIsKid(j.who)||SL_SLOTS.indexOf(j.slot)<0) return; const key=j.slot+"|"+j.rot; (g[key]=g[key]||{slot:j.slot,tag:j.rot,members:[]}).members.push({kid:j.who,id:id,job:j,free:!!j.free}); });
+  Object.keys(g).forEach(function(k){ g[k].members.sort(function(a,b){ return kids.indexOf(a.kid)-kids.indexOf(b.kid); }); });
+  return g;
+}
+function hhRotMember(slot,tag,kid){ const G=hhRotGroups()[slot+"|"+tag]; return G?G.members.find(function(m){ return m.kid===kid; })||null:null; }
+function hhRotName(G){ const names=G.members.filter(function(m){ return !m.free; }).map(function(m){ return (m.job.emoji?m.job.emoji+" ":"")+m.job.label; }); return names.length?names.join(" · "):"🔁 "+G.tag; }
+function _hhRotFree(j,kid,tag){ return {emoji:"😌",label:"Free day",pts:0,cad:"daily",rot:tag,free:true,slot:j.slot,who:kid,src:{kind:"new"},source:"Household tab",area:j.area||"pickup",floor:j.floor||"",room:j.room||"any",level:hhLevelOf(j),status:"active",verdict:"",note:"",order:_hhNextOrder(kid,j.slot),ts:Date.now()}; }
+function _hhRotNewId(){ return "hh"+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+function hhRotOpen(id){ const j=hhJobs()[id]; if(!j||!hhIsKid(j.who)) return; hhRot={id:id,kids:{},period:j.rot?hhRotPeriodOf(j.rot):"daily"}; hhRot.kids[j.who]=true; if(j.rot){ const G=hhRotGroups()[j.slot+"|"+j.rot]; if(G) G.members.forEach(function(m){ hhRot.kids[m.kid]=true; }); } hhGive=""; hhRender(); }
+function hhRotClose(){ hhRot={id:"",kids:{},period:"daily"}; hhRender(); }
+function hhRotKid(kid){ const j=hhJobs()[hhRot.id]; if(!j||kid===j.who) return; hhRot.kids[kid]=!hhRot.kids[kid]; hhRender(); }
+function hhRotPeriod(p){ if(HH_ROT_PERIODS.some(function(x){ return x[0]===p; })) hhRot.period=p; hhRender(); }
+function _hhRotPeriodWrite(upd,tag,p){ const key=(typeof _rotKey==="function")?_rotKey(tag):tag; upd["config/rotationPeriod/"+key]=p; if(typeof rotationPeriod!=="undefined"&&rotationPeriod) rotationPeriod[key]=p; }   // the cycle lives where the old editor keeps it
+function _hhRotCommit(upd,msg){ householdOnValue(householdData); if(Object.keys(upd).length&&_hhWrite()) db.ref().update(upd); if(msg&&typeof mwToast==="function") try{ mwToast(msg); }catch(e){} if(typeof renderAll==="function") renderAll(); else hhRender(); return upd; }
+// Start (or re-shape) a rotation from the open panel: this row + a placeholder for each other picked kid.
+function hhRotSave(){
+  if(typeof momHere==="function"&&!momHere()) return null;
+  const jobs=hhJobs(), id=hhRot.id, j=jobs[id]; if(!j||!hhIsKid(j.who)||SL_SLOTS.indexOf(j.slot)<0) return null;
+  const kids=Object.keys(hhRot.kids).filter(function(k){ return hhRot.kids[k]&&hhIsKid(k); }); if(kids.length<2){ if(typeof mwToast==="function") try{ mwToast("Pick at least one more kid"); }catch(e){} return null; }
+  let tag=j.rot; if(!tag){ const base="rot_"+j.slot+"_"+hhSlug(j.label).slice(0,24); tag=base; let n=2; const taken={}; Object.keys(jobs).forEach(function(k){ if(jobs[k].rot) taken[jobs[k].rot]=1; }); while(taken[tag]) tag=base+"_"+(n++); }
+  const upd={}, P="household/jobs/";
+  if(j.rot!==tag){ upd[P+id+"/rot"]=tag; j.rot=tag; }
+  const G=hhRotGroups()[j.slot+"|"+tag]||{members:[]};
+  kids.forEach(function(kid){ if(kid===j.who||G.members.some(function(m){ return m.kid===kid; })) return; const nid=_hhRotNewId(), row=_hhRotFree(j,kid,tag); upd[P+nid]=row; jobs[nid]=row; });
+  G.members.forEach(function(m){ if(kids.indexOf(m.kid)>=0) return; if(m.free){ upd[P+m.id+"/status"]="retired"; upd[P+m.id+"/verdict"]="retire"; m.job.status="retired"; m.job.verdict="retire"; } else { upd[P+m.id+"/rot"]=null; delete m.job.rot; } });   // un-picked: out of the group
+  _hhRotPeriodWrite(upd,tag,hhRot.period);
+  hhRot={id:"",kids:{},period:"daily"};
+  return _hhRotCommit(upd,"🔁 "+kids.map(hhWhoName).join(" → ")+" take turns");
+}
+// Another kid's own row joins a rotation already in that slot (their placeholder turn, if any, retires).
+function hhRotJoin(id,tag){
+  if(typeof momHere==="function"&&!momHere()) return null;
+  const jobs=hhJobs(), j=jobs[id]; if(!j||!hhIsKid(j.who)||j.rot===tag) return null;
+  const G=hhRotGroups()[j.slot+"|"+tag]; if(!G) return null; const mine=G.members.find(function(m){ return m.kid===j.who; });
+  if(mine&&!mine.free){ if(typeof mwToast==="function") try{ mwToast(hhWhoName(j.who)+" already has a job in that rotation"); }catch(e){} return null; }
+  const upd={}, P="household/jobs/"; upd[P+id+"/rot"]=tag; j.rot=tag;
+  if(mine){ upd[P+mine.id+"/status"]="retired"; upd[P+mine.id+"/verdict"]="retire"; mine.job.status="retired"; mine.job.verdict="retire"; }
+  hhRot={id:"",kids:{},period:"daily"}; hhGive="";
+  return _hhRotCommit(upd,"🔁 Joined");
+}
+function hhRotLeave(id){
+  if(typeof momHere==="function"&&!momHere()) return null;
+  const j=hhJobs()[id]; if(!j||!j.rot) return null; const upd={}, P="household/jobs/"+id+"/";
+  if(j.free){ upd[P+"status"]="retired"; upd[P+"verdict"]="retire"; j.status="retired"; j.verdict="retire"; } else { upd[P+"rot"]=null; delete j.rot; }
+  return _hhRotCommit(upd,j.free?"Turn removed":"Now "+hhWhoName(j.who)+"’s own chore");
+}
+function hhRotAddKid(slot,tag,kid){
+  if(typeof momHere==="function"&&!momHere()) return null;
+  const G=hhRotGroups()[slot+"|"+tag]; if(!G||!hhIsKid(kid)||G.members.some(function(m){ return m.kid===kid; })) return null;
+  const base=G.members.find(function(m){ return !m.free; })||G.members[0]; const nid=_hhRotNewId(), row=_hhRotFree(base.job,kid,tag); const upd={}; upd["household/jobs/"+nid]=row; hhJobs()[nid]=row;
+  return _hhRotCommit(upd,hhWhoName(kid)+" takes turns too");
+}
+function hhRotCycle(tag,p){ if(typeof momHere==="function"&&!momHere()) return null; if(!HH_ROT_PERIODS.some(function(x){ return x[0]===p; })) return null; const upd={}; _hhRotPeriodWrite(upd,tag,p); return _hhRotCommit(upd,""); }
+// ── on screen ──
+function hhRotPanelHTML(id){
+  if(hhRot.id!==id) return ""; const j=hhJobs()[id]||{}; const kids=(typeof SL_KIDS!=="undefined")?SL_KIDS:ROSTER;
+  const chip=function(on,txt,onclick,fixed){ return '<button onclick="'+(fixed?'':onclick)+'" style="padding:4px 9px;border-radius:8px;border:1.5px solid '+(on?'#2B7A78':'#e5e7eb')+';background:'+(on?'#2B7A78':'#fff')+';color:'+(on?'#fff':'#334155')+';font-size:11px;font-weight:800;cursor:'+(fixed?'default':'pointer')+';font-family:\'DM Sans\',sans-serif">'+txt+'</button>'; };
+  let h='<div style="margin-top:6px;padding:8px 10px;background:#fff7ed;border-radius:9px;border:1.5px solid #fed7aa">';
+  h+='<div style="font-size:11px;font-weight:800;color:#9a3412">🔁 Take turns with</div><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">'+kids.map(function(k){ return chip(!!hhRot.kids[k],esc(hhWhoName(k))+(k===j.who?' (has it now)':''),"hhRotKid('"+k+"')",k===j.who); }).join('')+'</div>';
+  h+='<div style="font-size:11px;font-weight:800;color:#9a3412;margin-top:8px">Cycle</div><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">'+HH_ROT_PERIODS.map(function(p){ return chip(hhRot.period===p[0],esc(p[1]),"hhRotPeriod('"+p[0]+"')"); }).join('')+'</div>';
+  const others=Object.keys(hhRotGroups()).map(function(k){ return hhRotGroups()[k]; }).filter(function(G){ return G.slot===j.slot&&G.tag!==j.rot&&!G.members.some(function(m){ return m.kid===j.who&&!m.free; }); });
+  if(others.length){ h+='<div style="font-size:11px;font-weight:800;color:#9a3412;margin-top:8px">Or join a rotation already in this slot</div><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">'+others.map(function(G){ return chip(false,'➕ '+esc(hhRotName(G))+' ('+G.members.map(function(m){ return hhWhoName(m.kid); }).join(" → ")+')',"hhRotJoin('"+id+"','"+G.tag+"')"); }).join('')+'</div>'; }
+  h+='<div style="font-size:11px;color:var(--muted);margin-top:8px">The job travels whole — words, emoji, stars. The other kids get a “Free day” turn until a job of theirs joins.</div>';
+  h+='<div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end">'+_hhBtn("hhRotClose()",'Cancel',false,'#94a3b8')+_hhBtn("hhRotSave()",'Save',true,'#2B7A78')+'</div></div>';
+  return h;
+}
+function hhRotationsHTML(){
+  const G=hhRotGroups(), keys=Object.keys(G); const kids=(typeof SL_KIDS!=="undefined")?SL_KIDS:ROSTER; const today=_hhIsoLocal(Date.now());
+  let h='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Each rotation: the kids in turn order, what each one holds today, and the cycle. Start one from any kid’s row: → Give to… then 🔁 Rotate.</div>';
+  if(!keys.length) return h+'<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:10px 12px;font-size:12px;color:var(--muted)">No rotations yet.</div>';
+  keys.sort().forEach(function(k){ const g=G[k], per=hhRotPeriodOf(g.tag), gated=g.members.some(function(m){ return !hhLevelOut(m.job); });
+    h+='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);margin-bottom:10px;overflow:hidden"><div style="padding:9px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:13px;font-weight:800">🔁 '+esc(hhRotName(g))+'</span>'+_hhChip(esc((typeof SL_SLBL!=="undefined"&&SL_SLBL[g.slot])||g.slot),'#f3f4f6','#475569')+(g.members.length<2?_hhChip('needs one more kid to rotate','#fee2e2','#991b1b'):'')+(gated?_hhChip('waits for the level','#fef3c7','#92400e'):'')+'</div>';
+    g.members.forEach(function(m){ const held=hhRotLabelOn(m.job,today), isFree=held==="Free day";
+      h+='<div style="padding:6px 12px;border-top:1px solid #eef2f0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12.5px"><span style="font-weight:800;min-width:60px">'+esc(hhWhoName(m.kid))+'</span><span style="color:var(--muted)">today:</span><span style="font-weight:700;'+(isFree?'color:#94a3b8':'')+'">'+esc(held)+'</span><span style="flex:1"></span>'+_hhChip(m.free?'placeholder turn':'own job: '+esc(m.job.label),m.free?'#f3f4f6':'#eff6ff',m.free?'#64748b':'#1d4ed8')+_hhBtn("hhRotLeave('"+m.id+"')",'Leave',false,'#64748b')+'</div>'; });
+    const outside=kids.filter(function(kd){ return !g.members.some(function(m){ return m.kid===kd; }); });
+    h+='<div style="padding:7px 12px;border-top:1px solid #eef2f0;display:flex;gap:4px;flex-wrap:wrap;align-items:center"><span style="font-size:10.5px;font-weight:800;color:#6b6560">Cycle:</span>'+HH_ROT_PERIODS.map(function(p){ return _hhBtn("hhRotCycle('"+g.tag+"','"+p[0]+"')",esc(p[1]),per===p[0],'#2B7A78'); }).join('')+(outside.length?'<span style="flex:1"></span><span style="font-size:10.5px;font-weight:800;color:#6b6560">Add:</span>'+outside.map(function(kd){ return _hhBtn("hhRotAddKid('"+g.slot+"','"+g.tag+"','"+kd+"')",'+ '+esc(hhWhoName(kd)),false,'#6B4C93'); }).join(''):'')+'</div></div>'; });
+  return h;
+}
+// HH_ROTATE_END
 // HH_PROJSWEEP_START — ☑️ the once-job sweep and the project setters (moved from HH_PROJECTS by HOUSESLIM 2026-11-17, unchanged): only renderHousehold runs the sweep, and only the Projects view's taps call hhProjSet.
 function hhOnceSweep(){
   if(typeof momHere==="function"&&!momHere()) return [];
