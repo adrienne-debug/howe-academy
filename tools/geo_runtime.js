@@ -46,6 +46,11 @@ function globe(view, o) {   // a whole globe (1000-box) or a zoom (viewBox aroun
 }
 // the frame a small thing is shown in: at least ~3× its own size, never past the continent's box
 function frameFor(own, contBox) { if (!own) return contBox; const s = Math.max(Math.max(own[2] - own[0], own[3] - own[1]) * 3.2, 150); const cs = Math.max(contBox[2] - contBox[0], contBox[3] - contBox[1]); if (s >= cs * 0.8) return contBox; const cx = (own[0] + own[2]) / 2, cy = (own[1] + own[3]) / 2; return [cx - s / 2, cy - s / 2, cx + s / 2, cy + s / 2]; }
+// GEOALL: a speck's box = its spots (each group's centre ± half its diagonal, + room for the ring) joined with whatever of it
+// the path still draws; its frame is at least 300 units (≈ 3,800 km) so the neighbours show around the ring (Italy round
+// Vatican City, the Lesser Antilles round Saint Lucia) and never cuts a ring off.
+function spotBox(sp, b) { let r = b ? b.slice() : [1e9, 1e9, -1e9, -1e9]; sp.forEach(s => { const m = s[2] + 36; r = [Math.min(r[0], s[0] - m), Math.min(r[1], s[1] - m), Math.max(r[2], s[0] + m), Math.max(r[3], s[1] + m)]; }); return r; }
+function spotFrame(own) { const s = Math.max(Math.max(own[2] - own[0], own[3] - own[1]) * 1.15, 300); const cx = (own[0] + own[2]) / 2, cy = (own[1] + own[3]) / 2; return [cx - s / 2, cy - s / 2, cx + s / 2, cy + s / 2]; }
 function silhouette(d, wh, size, fill, stroke, o) {   // a fitted shape (100-box) scaled into size×size and centred
   o = o || {}; const s = size / 100; const w = wh[0] * s, h = wh[1] * s; const tx = (size - w) / 2, ty = (size - h) / 2;
   return '<g transform="translate(' + num(tx) + ' ' + num(ty) + ') scale(' + num(s) + ')">' + edged(d, o.outline ? "none" : fill, stroke, (o.outline ? 2.4 : 1.6) / s, o.trace ? ' stroke-dasharray="' + num(6 / s) + ' ' + num(5 / s) + '"' : "", o.outline) + '</g>';
@@ -96,8 +101,10 @@ function countryCard(name, o) {   // the continent's globe view, zoomed to the c
   o = o || {}; const view = o.cont || contOf(name); if (!view) return null;
   const d = G.country[view][name]; const g = G.globe[view];
   const cap = G.cap[name];
-  const own = bboxOf(d); const frame = frameFor(own, g.box);   // the continent, or a small country with its neighbourhood
-  const extra = k => P(d, o.outline ? "none" : (o.fill || COL.lit), o.outline ? COL.ink : COL.litLine, 2.5 * k) + (cap && o.capital !== false && !o.outline ? dot(cap[0], cap[1], Math.max(1.2, 10 * k), "#111827", k) : "");
+  const spot = G.spot && G.spot[name];   // GEOALL: too small to see (Vatican City, Tuvalu, Bahrain…) → a ring around it, in a wider frame
+  const own = spot ? spotBox(spot, bboxOf(d)) : bboxOf(d); const frame = spot ? spotFrame(own) : frameFor(own, g.box);   // the continent, or a small country with its neighbourhood
+  const ring = k => spot ? spot.map(s => '<circle cx="' + num(s[0]) + '" cy="' + num(s[1]) + '" r="' + num(Math.max(73 * k, s[2] * 1.2 + 12 * k)) + '" fill="' + (o.outline ? "none" : COL.lit) + '" fill-opacity="0.22" stroke="' + (o.outline ? COL.ink : COL.lit) + '" stroke-width="' + num(5 * k) + '"/>').join("") : "";
+  const extra = k => ring(k) + P(d, o.outline ? "none" : (o.fill || COL.lit), o.outline ? COL.ink : COL.litLine, 2.5 * k) + (cap && o.capital !== false && !o.outline ? dot(cap[0], cap[1], Math.max(1.2, 10 * k), "#111827", k) : "");
   return globe(view, { borders: true, extra: extra, zoomBox: frame, pad: frame === g.box ? 0.08 : 0.05, size: o.size || 300 });
 }
 function featureCard(name, o) {   // a river, range, region, marine feature or lake lit on its continent globe (Stages 3, 9 and the landform words)
@@ -231,7 +238,7 @@ function names(kind) {
     case "continent": return G.lists.continents.slice();
     case "ocean": return G.lists.oceans.slice();
     case "state": return G.lists.states.slice();
-    case "country": return [].concat.apply([], G.lists.continents.map(c => (G.lists.countries[c] || []).filter(n => n !== "United States")));
+    case "country": return [].concat.apply([], G.lists.continents.map(c => (G.lists.countries[c] || []).slice()));   // GEOALL: all 195, the United States among them
     case "river": return G.lists.rivers.slice();
     case "range": return G.lists.ranges.slice();
     case "feature": return G.lists.rivers.concat(G.lists.ranges, G.lists.regions, Object.keys(G.marine), Object.keys(G.lake));

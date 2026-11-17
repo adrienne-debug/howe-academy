@@ -11,6 +11,9 @@
  *   · a kid with only Geography words hooks at the highest stage of a live path word; their new words get the path's back
  *     ONLY where they have none saved and the code's back isn't already the path's; only non-path words → the first words stage;
  *     dry run inert.
+ *   · GEOALL (her "Yes, add all", 2026-11-16): World Geography is 195 now — the 60 above stay FIRST in each continent with their
+ *     names and backs byte for byte (PIN_60, copied from main before GEOALL), the 135 more follow; the hook-up appends 165, and
+ *     still writes no back (every one of the 195 has its back in the code); the next ten new cards still don't change.
  *   run: node test_attach_geo_world.js
  */
 const fs = require("fs"), path = require("path");
@@ -54,45 +57,50 @@ function world(o) {
 }
 const snap = (G, k) => JSON.stringify([G.masteryData[k], G.masteryData[k + "_settings"], G.masteryData[k + "_bank_order"]]);
 const TS = 1763300000000;
+// The 60 World Geography cards as main had them before GEOALL — [family, name, back]. They must never change.
+const PIN_60 = [["North America","Mexico","Mexico City"],["North America","Canada","Ottawa"],["North America","Cuba","Havana"],["North America","Panama","Panama City"],["South America","Brazil","Brasília"],["South America","Argentina","Buenos Aires"],["South America","Colombia","Bogotá"],["South America","Peru","Lima"],["South America","Chile","Santiago"],["South America","Venezuela","Caracas"],["South America","Ecuador","Quito"],["Europe","United Kingdom","London"],["Europe","France","Paris"],["Europe","Germany","Berlin"],["Europe","Spain","Madrid"],["Europe","Italy","Rome"],["Europe","Russia","Moscow"],["Europe","Greece","Athens"],["Europe","Norway","Oslo"],["Europe","Ireland","Dublin"],["Europe","Portugal","Lisbon"],["Europe","Netherlands","Amsterdam"],["Europe","Belgium","Brussels"],["Europe","Switzerland","Bern"],["Europe","Austria","Vienna"],["Europe","Poland","Warsaw"],["Europe","Czechia","Prague"],["Europe","Hungary","Budapest"],["Europe","Sweden","Stockholm"],["Europe","Finland","Helsinki"],["Europe","Denmark","Copenhagen"],["Europe","Iceland","Reykjavík"],["Europe","Ukraine","Kyiv"],["Asia","Japan","Tokyo"],["Asia","China","Beijing"],["Asia","India","New Delhi"],["Asia","South Korea","Seoul"],["Asia","Saudi Arabia","Riyadh"],["Asia","Turkey","Ankara"],["Asia","Thailand","Bangkok"],["Asia","Indonesia","Jakarta"],["Asia","Pakistan","Islamabad"],["Asia","Vietnam","Hanoi"],["Asia","Philippines","Manila"],["Asia","Malaysia","Kuala Lumpur"],["Asia","Afghanistan","Kabul"],["Asia","Iran","Tehran"],["Asia","Iraq","Baghdad"],["Asia","Israel","Jerusalem"],["Africa","Egypt","Cairo"],["Africa","South Africa","Pretoria (executive), Cape Town (legislative)"],["Africa","Nigeria","Abuja"],["Africa","Kenya","Nairobi"],["Africa","Morocco","Rabat"],["Africa","Ghana","Accra"],["Africa","Ethiopia","Addis Ababa"],["Africa","Tanzania","Dodoma"],["Africa","Uganda","Kampala"],["Oceania","Australia","Canberra"],["Oceania","New Zealand","Wellington"]];
 
 (async () => {
-console.log("── the 30 more capitals ──");
+console.log("── the 165 more capitals (Appendix B ★ 30 + GEOALL 135) ──");
 { const w = world(), wg = w.u.decks.find(d => d.key === D).cards, more = wg.filter(c => !WORLD.includes(c.name));
-  ok("World Geography: 60 cards = the 30 built-in + 30 more (Appendix B ★), each once, Stage 7, flip, 3 at a time", wg.length === 60 && new Set(wg.map(c => c.name)).size === 60 && more.length === 30 && wg.every(c => c.stage === 7) && w.u.decks.find(d => d.key === D).mode === "flip" && w.u.decks.find(d => d.key === D).introCap === 3);
+  ok("GEOALL: the 60 that were there — names AND backs byte for byte, first in each continent, in their order", PIN_60.length === 60 && [...new Set(PIN_60.map(x => x[0]))].every(f => { const was = PIN_60.filter(x => x[0] === f); return JSON.stringify(wg.filter(c => c.family === f).slice(0, was.length).map(c => [c.family, c.name, c.def])) === JSON.stringify(was); }));
+  ok("GEOALL: every one of the 195 has a back, and the 135 new ones are none of the built-in keys", wg.every(c => typeof c.def === "string" && c.def.length > 1) && wg.filter(c => !PIN_60.some(x => x[1] === c.name)).length === 135 && wg.filter(c => !PIN_60.some(x => x[1] === c.name)).every(c => VD[c.name.toLowerCase()] === undefined));
+  ok("GEOALL: the country Georgia is “Georgia (country)” → Tbilisi; the built-in “georgia” back (the state's, Atlanta) is untouched", wg.find(c => c.name === "Georgia (country)").def === "Tbilisi" && !wg.some(c => c.name === "Georgia") && w.MAST_VOCAB_DEFS.georgia === VD.georgia && w.MAST_VOCAB_DEFS["georgia (country)"] === "Tbilisi");
+  ok("World Geography: 195 cards = the 30 built-in + 165 more, each once, Stage 7, flip, 3 at a time", wg.length === 195 && new Set(wg.map(c => c.name)).size === 195 && more.length === 165 && wg.every(c => c.stage === 7) && w.u.decks.find(d => d.key === D).mode === "flip" && w.u.decks.find(d => d.key === D).introCap === 3);
   ok("families = the continents in Stage 6's order; inside each, the built-in countries first in the built-in order", [...new Set(wg.map(c => c.family))].join("|") === "North America|South America|Europe|Asia|Africa|Oceania" &&
     [...new Set(wg.map(c => c.family))].every(f => { const fam = wg.filter(c => c.family === f).map(c => c.name), b = fam.filter(n => WORLD.includes(n)); return JSON.stringify(fam.slice(0, b.length)) === JSON.stringify(b) && JSON.stringify(b) === JSON.stringify(WORLD.filter(n => b.includes(n))); }));
   ok("every World Geography country is a Stage-6 Countries card too (same name, same picture key family)", wg.every(c => w.u.decks.find(d => d.key === "Countries").cards.some(x => x.name === c.name)));
-  ok("the 30 more: never one of the built-in backs' keys (nothing replaced); after the merge each resolves in MAST_VOCAB_DEFS to the path's back", more.every(c => VD[c.name.toLowerCase()] === undefined && w.MAST_VOCAB_DEFS[c.name.toLowerCase()] === c.def) && more.find(c => c.name === "Iceland").def === "Reykjavík");
-  ok("the merge only ADDS keys: every built-in back is unchanged", Object.keys(VD).every(k => w.MAST_VOCAB_DEFS[k] === VD[k]) && Object.keys(w.MAST_VOCAB_DEFS).length === Object.keys(VD).length + 30);
+  ok("the 165 more: never one of the built-in backs' keys (nothing replaced); after the merge each resolves in MAST_VOCAB_DEFS to the path's back", more.every(c => VD[c.name.toLowerCase()] === undefined && w.MAST_VOCAB_DEFS[c.name.toLowerCase()] === c.def) && more.find(c => c.name === "Iceland").def === "Reykjavík");
+  ok("the merge only ADDS keys: every built-in back is unchanged", Object.keys(VD).every(k => w.MAST_VOCAB_DEFS[k] === VD[k]) && Object.keys(w.MAST_VOCAB_DEFS).length === Object.keys(VD).length + 165);
 }
 
 console.log("\n── the plan ──");
 { const w = world(), before = snap(w.G, KID), P = w.uaPlanAttach(UNIT, KID, TS);
   const sp = w.uaSpec(w.u, KID);
   ok("data-driven row: live World Geography → Stage 7 · World capitals, fill, strayOk; stock + Kid closed", sp && sp.stage === 7 && sp.fill && sp.strayOk && w.uaLocked(w.u, KID) && P.ok && P.sum.label === "World capitals", P.why);
-  ok("7 cards kept: 6 on the ladder, 1 learning, of 60; no stray, nothing earlier, no back differs", P.sum.liveKept === 7 && P.sum.onLadder === 6 && P.sum.learning === 1 && P.sum.total === 60 && P.sum.stray.length === 0 && P.sum.earlier === 0 && P.sum.backDiffers.length === 0, P.sum);
+  ok("7 cards kept: 6 on the ladder, 1 learning, of 195; no stray, nothing earlier, no back differs", P.sum.liveKept === 7 && P.sum.onLadder === 6 && P.sum.learning === 1 && P.sum.total === 195 && P.sum.stray.length === 0 && P.sum.earlier === 0 && P.sum.backDiffers.length === 0, P.sum);
   const adds = P.writes.slice(2);
-  ok("writes: enrolled + kidStage (Stage 7, via attach) + 30 appends at 132…161 — nothing else", P.writes.length === 32 && P.writes[0].path === "unitStudies/geography_path/enrolled/" + KID && P.writes[1].value.stage === 7 && P.writes[1].value.via === "attach" &&
+  ok("writes: enrolled + kidStage (Stage 7, via attach) + 165 appends at 132…296 — nothing else", P.writes.length === 167 && P.writes[0].path === "unitStudies/geography_path/enrolled/" + KID && P.writes[1].value.stage === 7 && P.writes[1].value.via === "attach" &&
     adds.every((x, i) => x.path === "mastery/" + KID + "_custom_items/" + (132 + i) && JSON.stringify(Object.keys(x.value)) === JSON.stringify(["cat", "name"]) && x.value.cat === D), P.writes.map(x => x.path).slice(0, 4));
-  ok("the 30 appended are exactly the ★ capitals, in the path's order (Cuba, Panama, Chile …)", JSON.stringify(adds.map(x => x.value.name)) === JSON.stringify(w.u.decks.find(d => d.key === D).cards.filter(c => !WORLD.includes(c.name)).map(c => c.name)) && adds[0].value.name === "Cuba");
-  ok("NO back written (the code has all 60) — no definitions, no cat_modes, no card", P.sum.backsAdded.length === 0 && !P.writes.some(x => /_settings|^mastery\/kidb\/|^mastery\/kidb$/.test(x.path)));
+  ok("the 165 appended are exactly the capitals past the built-in 30, in the path's order (Cuba, Panama, Guatemala …)", JSON.stringify(adds.map(x => x.value.name)) === JSON.stringify(w.u.decks.find(d => d.key === D).cards.filter(c => !WORLD.includes(c.name)).map(c => c.name)) && adds[0].value.name === "Cuba" && adds[2].value.name === "Guatemala");
+  ok("NO back written (the code has all 195) — no definitions, no cat_modes, no card", P.sum.backsAdded.length === 0 && !P.writes.some(x => /_settings|^mastery\/kidb\/|^mastery\/kidb$/.test(x.path)));
   ok("next ten don't change: India, Brazil, Australia, Egypt, South Africa, Mexico, Canada, Russia, South Korea, Argentina", JSON.stringify(P.sum.next10Before) === JSON.stringify(P.sum.next10After) && P.sum.next10After.join(",") === "India,Brazil,Australia,Egypt,South Africa,Mexico,Canada,Russia,South Korea,Argentina", P.sum.next10After);
-  ok("the path's order is offered; ticked → +1 bank order: her 7 first, then Mexico, Canada, Cuba, Panama, Brazil …", (p => p.writes.length === 33 && p.writes[32].path === "mastery/" + KID + "_bank_order/World Geography" && p.writes[32].value.length === 60 && p.writes[32].value.slice(0, 7).join(",") === LIVE7.map(x => x[0]).join(",") && p.sum.next10After.slice(0, 5).join(",") === "Mexico,Canada,Cuba,Panama,Brazil")(w.uaPlanAttach(UNIT, KID, TS, { pathOrder: true })));
+  ok("the path's order is offered; ticked → +1 bank order: her 7 first, then Mexico, Canada, Cuba, Panama, Guatemala … (GEOALL: North America's new capitals before Brazil)", (p => p.writes.length === 168 && p.writes[167].path === "mastery/" + KID + "_bank_order/World Geography" && p.writes[167].value.length === 195 && p.writes[167].value.slice(0, 7).join(",") === LIVE7.map(x => x[0]).join(",") && p.sum.next10After.slice(0, 5).join(",") === "Mexico,Canada,Cuba,Panama,Guatemala")(w.uaPlanAttach(UNIT, KID, TS, { pathOrder: true })));
   ok("making the plans changed nothing", snap(w.G, KID) === before && w.G.writes.length === 0);
   w.uaAttachOpen(UNIT, KID); const h = w._unitStageRowsHtml(w.u, [KID]);
-  ok("Mom sees: 7 cards stay, Stage 7 marker, adds 30, next cards unchanged", /7 World Geography cards stay exactly as they are/.test(h) && /Stage 7 · World capitals<\/b> — 6 of 60 on the ladder, 1 learning/.test(h) && /Adds <b>30<\/b> stage words/.test(h) && /next new cards don’t change: India, Brazil/.test(h));
+  ok("Mom sees: 7 cards stay, Stage 7 marker, adds 165, next cards unchanged", /7 World Geography cards stay exactly as they are/.test(h) && /Stage 7 · World capitals<\/b> — 6 of 195 on the ladder, 1 learning/.test(h) && /Adds <b>165<\/b> stage words/.test(h) && /next new cards don’t change: India, Brazil/.test(h));
   const r = w.uaApplyAttach(w.view.plan); await new Promise(res => setTimeout(res, 0));
   const up = w.G.writes.find(x => x[1] === "");
-  ok("Yes: one update, 32 paths; her cards and settings byte-identical; the list now ends with the 30 more", r && w.G.writes.length === 1 && Object.keys(up[2]).length === 32 && snap(w.G, KID) === before && w.mastFullBank(KID)[D].length === 60 && w.mastFullBank(KID)[D].slice(0, 30).join() === WORLD.join());
+  ok("Yes: one update, 167 paths; her cards and settings byte-identical; the list now ends with the 165 more", r && w.G.writes.length === 1 && Object.keys(up[2]).length === 167 && snap(w.G, KID) === before && w.mastFullBank(KID)[D].length === 195 && w.mastFullBank(KID)[D].slice(0, 30).join() === WORLD.join());
   const st = w.unitStageStatus(w.u, KID);
-  ok("status: 6 of 60 on the ladder, learning Asia (China), ready at 54, nothing after Stage 7 yet", st.on === 6 && st.learn === 1 && st.fam === "Asia" && st.need === 54 && st.next === null, st);
+  ok("status: 6 of 195 on the ladder, learning Asia (China), ready at 175, nothing after Stage 7 yet", st.on === 6 && st.learn === 1 && st.fam === "Asia" && st.need === 175 && st.next === null, st);
 }
 
 console.log("\n── strays and earlier stages ──");
 { const w = world({ pre: G => { G.masteryData[KID].push({ id: "x_s", subject: D, prompt: "Scotland", answer: "Edinburgh", status: "active", tier: "weekly" }, { id: "x_c", subject: "State Capitals", prompt: "Ohio", answer: "Columbus", status: "active", tier: "monthly" }); } });
   const P = w.uaPlanAttach(UNIT, KID, TS);
   ok("an extra card the path lacks (Scotland) is a stray, kept — never refused (strayOk)", P.ok && JSON.stringify(P.sum.stray) === JSON.stringify(["World Geography · Scotland"]));
-  ok("a live State Capitals card is an earlier-stage card (Stage 5), kept — she still hooks at 7", P.sum.stage === 7 && P.sum.earlier === 1 && P.writes.length === 32);
+  ok("a live State Capitals card is an earlier-stage card (Stage 5), kept — she still hooks at 7", P.sum.stage === 7 && P.sum.earlier === 1 && P.writes.length === 167);
 }
 
 console.log("\n── a kid with only Geography words ──");
@@ -102,7 +110,7 @@ console.log("\n── a kid with only Geography words ──");
   ok("words only → the highest stage holding a live path word: fjord is Stage 6 → Stage 6; the stock + Kid is closed", sp && sp.stage === 6 && w.uaLocked(w.u, WK) && P.ok && P.sum.stage === 6);
   ok("kept: fjord (a Stage-6 card), peninsula (earlier); barge a stray", P.sum.liveKept === 1 && P.sum.earlier === 1 && JSON.stringify(P.sum.stray) === JSON.stringify(["Geography · barge"]));
   const defsW = P.writes.filter(x => /_settings\/definitions\//.test(x.path)), wordsAdded = P.sum.added.filter(n => w.u.decks.find(d => d.key === W).cards.some(c => c.name === n && c.stage === 6));
-  ok("appends the 87 countries + 21 Stage-6 words (fjord is live) — no def on a bank entry", P.sum.added.length === 108 && wordsAdded.length === 21 && P.writes.filter(x => /_custom_items\//.test(x.path)).every(x => Object.keys(x.value).join() === "cat,name"));
+  ok("appends the 195 countries + 21 Stage-6 words (fjord is live) — no def on a bank entry", P.sum.added.length === 216 && wordsAdded.length === 21 && P.writes.filter(x => /_custom_items\//.test(x.path)).every(x => Object.keys(x.value).join() === "cat,name"));
   const pathDef = n => w.u.decks.find(d => d.key === W).cards.find(c => c.name === n).def;
   ok("backs: the path's back for 18 of the 21 new words (not isthmus: hers is saved; not precipitation/evaporation: the code's back is already the path's; never a country); volcano gets the path's, not the code's science back", defsW.length === 18 && defsW.length === P.sum.backsAdded.length && !defsW.some(x => /isthmus$/.test(x.path)) && P.sum.backsAdded.every(n => wordsAdded.includes(n)) && defsW.every(x => x.value === pathDef(x.path.split("/").pop())) && defsW.some(x => /volcano$/.test(x.path) && VD.volcano && x.value !== VD.volcano));
   ok("…and a word whose code back IS the path's writes nothing (precipitation, evaporation)", !defsW.some(x => /(precipitation|evaporation)$/.test(x.path)) && pathDef("precipitation") === VD.precipitation);
