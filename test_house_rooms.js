@@ -76,7 +76,7 @@ function mk(o){
     cap:s=>s.charAt(0).toUpperCase()+s.slice(1), esc:s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;").replace(/>/g,"&gt;"), mwBanner:s=>"", mpSubnav:v=>"", mwToast:t=>toasts.push(t), renderAll:()=>{}, renderMomsPlan:()=>{},
     document:{getElementById:()=>null}, writes, toasts};
   vm.createContext(ctx);
-  vm.runInContext(fn("toMin")+"\n"+fn("to12h")+"\n"+fn("ampmTo24")+"\n"+CAD+"\n"+ROT+"\n"+fn("stepCycleOk")+"\n"+fn("rtStepsFor")+"\n"+fn("mcAll")+"\n"+fn("dcAll")+"\n"+(o.old?OLD:BLOCK), ctx);
+  vm.runInContext(fn("toMin")+"\n"+fn("to12h")+"\n"+fn("ampmTo24")+"\n"+CAD+"\n"+ROT+"\n"+fn("stepCycleOk")+"\n"+fn("rtStepsFor")+"\n"+fn("mcAll")+"\n"+fn("dcAll")+"\n"+fn("hcAdd")+"\n"+(o.old?OLD:BLOCK), ctx);   // hcAdd (HH_CARD, house.js since HOUSESLIM): the + Add button draws its tap only when the card code is there
   ctx.get=e=>vm.runInContext(e,ctx);
   const hd={jobs:JOBS(),cleanday:{[CLEAN]:{sent:1,plan:{w_days:{who:"cal",order:0,mins:15}},done:{w_days:{who:"cal",ts:atOf(CLEAN),min:15,pts:0}}}}};
   if(o.rooms) Object.assign(hd,JSON.parse(JSON.stringify(o.rooms)));
