@@ -209,7 +209,7 @@ function creditFor(deck, name) { const p = pic(deck, name); if (!p) return ""; i
   if (/^(colony|pin):/.test(p)) return D.credits.map.line; return D.credits.drawing.line; }
 const HoweUS = { version: D.v, data: D, unit: D.unit, stages: D.stages, decks: D.decks, cards: D.cards, card, pic, text, svg: svgFor, credit: creditFor,
   credits: D.credits, uscis: D.uscis, colors: COL, geo: null, pics: null, holidays: Object.keys(HOLIDAY), icons: Object.keys(ICON), amendIcons: Object.keys(AMEND).map(Number), badges: Object.keys(BADGE) };
-if (typeof window !== "undefined") window.HoweUS = HoweUS;
+if (typeof window !== "undefined") { window.HoweUS = HoweUS; window._haLazy_us = true; }   // _haLazy_us: haLazyReady("us") (USPATH)
 if (typeof module !== "undefined" && module.exports) module.exports = HoweUS;
 
 })();
