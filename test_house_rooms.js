@@ -8,7 +8,7 @@
  *   of this file with the step undone by hand.
  */
 const fs=require("fs"), path=require("path"), vm=require("vm");
-const src=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
+const src=require("./test_src.js")();   // 🪶 HOUSESLIM: the joined page — house.js's blocks back at their markers
 let pass=0, fail=0; const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  ("+JSON.stringify(x).slice(0,400)+")":"")); } };
 const fnOf=s=>name=>{ const i=s.indexOf("function "+name+"("); if(i<0) throw new Error("missing "+name); let d=0; for(let k=s.indexOf("{",i);k<s.length;k++){ if(s[k]==="{") d++; else if(s[k]==="}"&&--d===0) return s.slice(i,k+1); } throw new Error("unbalanced "+name); };
 const cutOf=s=>(a,b)=>{ const i=s.indexOf(a), j=s.indexOf(b,i); if(i<0||j<0) throw new Error("missing "+a+" / "+b); return s.slice(i,j); };
@@ -16,7 +16,7 @@ const fn=fnOf(src), cut=cutOf(src);
 const BLOCK=cut("// HOUSEHOLD_START","// HH_ROOMPAGE_END");
 // The code before this step: the given base file, else this file with the two new blocks taken out and every reader put back on HH_ROOMS.
 let OLD;
-if(process.env.BASE_HTML){ const b=fs.readFileSync(process.env.BASE_HTML,"utf8"); OLD=cutOf(b)("// HOUSEHOLD_START","// HH_EDITOR_END"); console.log("(base: "+process.env.BASE_HTML+")"); }
+if(process.env.BASE_HTML){ const b=require("./test_src.js")(process.env.BASE_HTML); OLD=cutOf(b)("// HOUSEHOLD_START","// HH_EDITOR_END"); console.log("(base: "+process.env.BASE_HTML+")"); }
 else { OLD=cut("// HOUSEHOLD_START","// HH_EDITOR_END"); const a=OLD.indexOf("// HH_ROOMDATA_START"), z=OLD.indexOf("// HH_ROOMDATA_END\n");
   OLD=OLD.slice(0,a)+OLD.slice(z+"// HH_ROOMDATA_END\n".length);
   OLD=OLD.replace('function hhRoomOf(j){ const R=(typeof hhRoomList==="function")?hhRoomList():HH_ROOMS; return (j&&j.room&&R.some(','function hhRoomOf(j){ return (j&&j.room&&HH_ROOMS.some(').replace(/   \/\/ HH_ROOMDATA: the family's rooms/,"").split("hhRoomList().").join("HH_ROOMS."); }

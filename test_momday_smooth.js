@@ -11,7 +11,7 @@
  *   run:  node test_momday_smooth.js
  */
 const fs = require("fs"), path = require("path");
-const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const src = require("./test_src.js")();   // 🪶 HOUSESLIM: the joined page — house.js's blocks back at their markers
 let pass = 0, fail = 0;
 const ok = (n, c, x) => { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  " + JSON.stringify(x) : "")); } };
 function slice(name) {

@@ -6,6 +6,10 @@
 //   · Loaded lazily (HA_LAZY_FILES.house, LAZYSPLIT) the first time Mom opens 👤 By person or a room page with the preview on —
 //     her standing words 2026-11-08: the LG got slow because the code grew, so new code must not weigh on every device.
 //   · test_src.js puts the blocks back at their marker in index.html (`// ⇢ house.js: HOUSEENG..HOUSEPREVIEW`) for the tests.
+//   · 🪶 HOUSESLIM (her "Yes, slim down" 2026-11-17, before step 4): the Household page's own code moved here unchanged from
+//     index.html — HH_ROTATE, HH_PROJECTS' view (HH_PROJSWEEP, HH_PROJVIEW), HH_ONCEPILE's view (HH_ONCEVIEW), HH_EDITOR,
+//     HH_ROOMPAGE and HH_CARD — each with its marker left where it stood. So the file now loads the first time the Household page
+//     opens: renderHousehold is the door (HOUSESLIM in index.html). HOUSEENG reads none of it (step 4 moves HOUSEENG to the page).
 // HOUSEENG_START — the hand-out engine, ONE pure function (DESIGN §6 "Hand-out": "one pure function (table, day, people,
 // overrides) → plan, used for today's stored plan and the grid's future"). No database, no DOM, no app globals: everything it
 // reads is passed in, nothing passed in is changed, the same input gives the same plan (test_house_engine.js checks all three).

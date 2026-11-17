@@ -7,7 +7,7 @@
 // partial history. Check-off writes are untouched.
 // Run: node test_routine_window.js
 const fs = require("fs"), path = require("path");
-const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+const src = require("./test_src.js")();   // 🪶 HOUSESLIM: the joined page — house.js's blocks back at their markers
 let pass = 0, fail = 0;
 function ok(name, cond, d) { if (cond) { pass++; console.log("  ok  - " + name); } else { fail++; console.log("  FAIL- " + name + (d ? "  → " + d : "")); } }
 const cut = (a, b) => { const i = src.indexOf(a), j = src.indexOf(b, i); if (i < 0 || j < 0) throw new Error("missing " + a); return src.slice(i, j); };
@@ -111,6 +111,7 @@ function load(env) {
     const f = new Function("E", `
       function rlHistReady(){ return false; } ${cut("function rlLoadingHTML(", "\n")}
       function hhOnceSweep(){ E.swept++; }
+      ${fnSrc("hhSlimReady")}   // 🪶 HOUSESLIM's door (no loader in this tiny world → the page draws as before)
       ${fnSrc("renderHousehold")}
       const el={ innerHTML:"" }; renderHousehold(el); return el;`);
     const el = f(E);

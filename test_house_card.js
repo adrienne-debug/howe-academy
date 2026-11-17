@@ -10,7 +10,7 @@
  *   file with the step undone by hand.
  */
 const fs=require("fs"), path=require("path"), vm=require("vm");
-const src=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
+const src=require("./test_src.js")();   // 🪶 HOUSESLIM: the joined page — house.js's blocks back at their markers
 let pass=0, fail=0; const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  ("+JSON.stringify(x).slice(0,500)+")":"")); } };
 const fnOf=s=>name=>{ const i=s.indexOf("function "+name+"("); if(i<0) throw new Error("missing "+name); let d=0; for(let k=s.indexOf("{",i);k<s.length;k++){ if(s[k]==="{") d++; else if(s[k]==="}"&&--d===0) return s.slice(i,k+1); } throw new Error("unbalanced "+name); };
 const cutOf=s=>(a,b)=>{ const i=s.indexOf(a), j=s.indexOf(b,i); if(i<0||j<0) throw new Error("missing "+a+" / "+b); return s.slice(i,j); };
@@ -19,7 +19,7 @@ const lineOf=(s,start)=>{ const i=s.indexOf(start); if(i<0) throw new Error("mis
 const HH=cut("// HOUSEHOLD_START","// HH_CARD_END"), KT=cut("// KITCHEN_TAB_START","// KITCHEN_TAB_END");
 // The code before this step: BASE_HTML's Household + Kitchen, else this file with the card block taken out and the re-points put back.
 let OLD;
-if(process.env.BASE_HTML){ const b=fs.readFileSync(process.env.BASE_HTML,"utf8"), bc=cutOf(b); OLD=bc("// HOUSEHOLD_START","// HH_ROOMPAGE_END")+"\n"+bc("// KITCHEN_TAB_START","// KITCHEN_TAB_END"); console.log("(base: "+process.env.BASE_HTML+")"); }
+if(process.env.BASE_HTML){ const b=require("./test_src.js")(process.env.BASE_HTML), bc=cutOf(b); OLD=bc("// HOUSEHOLD_START","// HH_ROOMPAGE_END")+"\n"+bc("// KITCHEN_TAB_START","// KITCHEN_TAB_END"); console.log("(base: "+process.env.BASE_HTML+")"); }
 else { const a=HH.indexOf("// HH_CARD_START"); let o=HH.slice(0,a); const R=[["_hhBtn(\"hcAdd()\",'+ Add a chore'","_hhBtn(\"hhAddToggle()\",'+ Add a chore'"],
     ["_hhBtn(\"hcOpen('\"+id+\"')\",'✎ Edit',typeof hcId!==\"undefined\"&&hcId===id,'#2B7A78'); }   // HH_CARD: ✎ Edit opens the chore card","_hhBtn(\"hhEditToggle('\"+id+\"')\",'✎ Edit',hhEditId===id,'#2B7A78'); }"],
     ["(mom?' onclick=\"hcOpen(\\''+id+'\\')\"':'')","(mom?' onclick=\"hhEditToggle(\\''+id+'\\')\"':'')"],
