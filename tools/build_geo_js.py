@@ -43,17 +43,47 @@ STATES = ["Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", 
           "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah", "Vermont", "Virginia",
           "Washington", "West Virginia", "Wisconsin", "Wyoming"]
 # card name → Natural Earth NAME (only where they differ)
-COUNTRY_NE = {"Dominican Republic": "Dominican Rep.", "Democratic Republic of the Congo": "Dem. Rep. Congo", "United States": "United States of America"}
+COUNTRY_NE = {"Dominican Republic": "Dominican Rep.", "Democratic Republic of the Congo": "Dem. Rep. Congo", "United States": "United States of America",
+              # GEOALL (2026-11-16): the 108 more — card name (US-classroom) → Natural Earth NAME
+              "Antigua and Barbuda": "Antigua and Barb.", "Saint Vincent and the Grenadines": "St. Vin. and Gren.", "Saint Kitts and Nevis": "St. Kitts and Nevis",
+              "Vatican City": "Vatican", "Bosnia and Herzegovina": "Bosnia and Herz.", "Georgia (country)": "Georgia", "East Timor": "Timor-Leste",
+              "Ivory Coast": "Côte d'Ivoire", "South Sudan": "S. Sudan", "Republic of the Congo": "Congo", "Central African Republic": "Central African Rep.",
+              "Equatorial Guinea": "Eq. Guinea", "Eswatini": "eSwatini", "Cape Verde": "Cabo Verde", "São Tomé and Príncipe": "São Tomé and Principe",
+              "Solomon Islands": "Solomon Is.", "Marshall Islands": "Marshall Is."}
+# Stage 6 by continent view: Appendix B's 87 first (their order never changes — a kid's next cards mustn't jump), then
+# GEOALL's 108 more (her "Yes, add all", 2026-11-16) — all 193 UN members + Vatican City + Palestine, most familiar first.
+# "United States" was already here (the Stage-3 globe's lit USA); it is now a Countries card too, first of North America's more.
+# Cyprus is drawn on Europe (Natural Earth files it under Asia; US classrooms teach it with Europe); the Caucasus stays in Asia.
 COUNTRIES = {
-    "North America": ["Canada", "Mexico", "Cuba", "Guatemala", "Panama", "Costa Rica", "Jamaica", "Haiti", "Dominican Republic", "Honduras", "United States"],
-    "South America": ["Brazil", "Argentina", "Chile", "Peru", "Colombia", "Venezuela", "Ecuador", "Bolivia", "Uruguay", "Paraguay"],
+    "North America": ["Canada", "Mexico", "Cuba", "Guatemala", "Panama", "Costa Rica", "Jamaica", "Haiti", "Dominican Republic", "Honduras",
+                      "United States", "El Salvador", "Nicaragua", "Belize", "Bahamas", "Trinidad and Tobago", "Barbados", "Grenada", "Saint Lucia",
+                      "Antigua and Barbuda", "Dominica", "Saint Vincent and the Grenadines", "Saint Kitts and Nevis"],
+    "South America": ["Brazil", "Argentina", "Chile", "Peru", "Colombia", "Venezuela", "Ecuador", "Bolivia", "Uruguay", "Paraguay",
+                      "Guyana", "Suriname"],
     "Europe": ["United Kingdom", "Ireland", "France", "Spain", "Portugal", "Italy", "Germany", "Netherlands", "Belgium", "Switzerland", "Austria", "Poland",
-               "Czechia", "Hungary", "Greece", "Norway", "Sweden", "Finland", "Denmark", "Iceland", "Ukraine", "Russia", "Romania"],
+               "Czechia", "Hungary", "Greece", "Norway", "Sweden", "Finland", "Denmark", "Iceland", "Ukraine", "Russia", "Romania",
+               "Croatia", "Serbia", "Bulgaria", "Vatican City", "Monaco", "Luxembourg", "Slovakia", "Slovenia", "Belarus", "Lithuania", "Latvia", "Estonia",
+               "Cyprus", "Malta", "Bosnia and Herzegovina", "Albania", "North Macedonia", "Montenegro", "Moldova", "San Marino", "Liechtenstein", "Andorra"],
     "Asia": ["China", "Japan", "South Korea", "North Korea", "India", "Pakistan", "Bangladesh", "Nepal", "Sri Lanka", "Vietnam", "Thailand", "Indonesia",
-             "Philippines", "Malaysia", "Singapore", "Mongolia", "Kazakhstan", "Afghanistan", "Iran", "Iraq", "Saudi Arabia", "Israel", "Turkey", "United Arab Emirates"],
+             "Philippines", "Malaysia", "Singapore", "Mongolia", "Kazakhstan", "Afghanistan", "Iran", "Iraq", "Saudi Arabia", "Israel", "Turkey", "United Arab Emirates",
+             "Myanmar", "Cambodia", "Laos", "Syria", "Jordan", "Lebanon", "Yemen", "Oman", "Qatar", "Kuwait", "Bahrain", "Palestine", "Georgia (country)",
+             "Armenia", "Azerbaijan", "Uzbekistan", "Turkmenistan", "Kyrgyzstan", "Tajikistan", "Bhutan", "Maldives", "Brunei", "East Timor"],
     "Africa": ["Egypt", "Morocco", "Algeria", "Libya", "Nigeria", "Ghana", "Ethiopia", "Kenya", "Tanzania", "Uganda", "Democratic Republic of the Congo",
-               "South Africa", "Madagascar", "Sudan", "Somalia", "Senegal"],
-    "Australia": ["Australia", "New Zealand", "Papua New Guinea", "Fiji"]}
+               "South Africa", "Madagascar", "Sudan", "Somalia", "Senegal",
+               "Tunisia", "Zimbabwe", "Zambia", "Angola", "Mozambique", "Namibia", "Botswana", "Rwanda", "Cameroon", "Ivory Coast", "Mali", "Niger", "Chad",
+               "South Sudan", "Eritrea", "Djibouti", "Burundi", "Malawi", "Republic of the Congo", "Gabon", "Central African Republic", "Mauritania",
+               "Burkina Faso", "Liberia", "Sierra Leone", "Guinea", "Guinea-Bissau", "Gambia", "Benin", "Togo", "Equatorial Guinea", "Lesotho", "Eswatini",
+               "Mauritius", "Seychelles", "Cape Verde", "Comoros", "São Tomé and Príncipe"],
+    "Australia": ["Australia", "New Zealand", "Papua New Guinea", "Fiji",
+                  "Solomon Islands", "Vanuatu", "Samoa", "Tonga", "Micronesia", "Palau", "Marshall Islands", "Kiribati", "Tuvalu", "Nauru"]}
+# The capital dot where Natural Earth's places file has no Admin-0 capital for the country, or names an older one:
+# card → (city, lon, lat). Ramallah is in the file as a region capital; the rest are the cities' published coordinates.
+CAPITAL_AT = {"Palestine": ("Ramallah", 35.206209, 31.902945), "South Sudan": ("Juba", 31.580026, 4.829975), "Nauru": ("Yaren", 166.9209, -0.5477),
+              "Burundi": ("Gitega", 29.9246, -3.4271), "Palau": ("Ngerulmud", 134.6243, 7.5006)}
+# A country this small (the square root of its area on the globe view, in 1000-box units; 1 unit ≈ 12.7 km) gets a ring
+# around it on its card, in a wider frame, so the place shows even where the land is a speck (Vatican City, Tuvalu, Bahrain…).
+SPOT_SIZE = 4.5
+SPOT_GAP = 30   # ≈ 380 km
 # Which continent view a country is drawn on (Russia and Turkey straddle; the card shows them on the continent the unit files them under).
 # Rivers (Appendix E): card name → (Natural Earth river name(s), continent view)
 RIVERS = {"Mississippi River": (["Mississippi"], "North America"), "Amazon River": (["Amazonas", "Amazon"], "South America"),
@@ -343,7 +373,7 @@ def build(data_dir):
     rivers_by = by_prop(rivers, "name")
     regions_by = by_prop(regions, "NAME")
 
-    D = {"v": 1, "globe": {}, "world": {}, "us": {}, "cont": {}, "state": {}, "country": {}, "river": {}, "range": {}, "region": {}, "marine": {}, "lake": {}, "cap": {}, "stcap": {}}
+    D = {"v": 1, "globe": {}, "world": {}, "us": {}, "cont": {}, "state": {}, "country": {}, "river": {}, "range": {}, "region": {}, "marine": {}, "lake": {}, "cap": {}, "stcap": {}, "spot": {}}
 
     # ── globe views (one per continent centre): all land (110m) + each continent's land (50m countries dissolved by colour, not geometry) ──
     print("globe views…", file=sys.stderr)
@@ -364,20 +394,42 @@ def build(data_dir):
         D["globe"][cont]["box"] = [round(v, 1) for v in b] if b else [0, 0, 1000, 1000]
         # every country of the continent in this view (for the grey outlines behind a lit country) — only the ones the path names, plus big neighbours
         D["country"].setdefault(cont, {})
-        wanted = set(COUNTRIES.get(cont, []))
+        wanted = COUNTRIES.get(cont, [])
         for card in sorted(wanted):
             f = c_by_name.get(COUNTRY_NE.get(card, card))
             if not f: print("  !! no country", card, file=sys.stderr); continue
             rs = project_rings(None, rings_of(f["geometry"]), ortho=proj, min_area=8, tol=3.0)
             if not rs: rs = project_rings(None, rings_of(f["geometry"]), ortho=proj, min_area=0.05, tol=0.3)   # a tiny country (Singapore) keeps its speck
+            if not rs: rs = project_rings(None, rings_of(f["geometry"]), ortho=proj, min_area=0.0005, tol=0.01)   # GEOALL: a micro-state or atoll keeps what it can
             D["country"][cont][card] = path_of_rings(rs, dec=1 if len(rs) and abs(ring_area(rs[0])) < 8 else 0)
+            # GEOALL: too small to see → its spots for the ring marker: the islands grouped (any two within SPOT_GAP join a group),
+            # each group [centre x, centre y, half its diagonal] — Kiribati's three far-apart groups get three rings, not one huge one
+            raw = [seg for r in rings_of(f["geometry"]) for seg in ortho_ring(proj, r) if len(seg) >= 3]
+            area = sum(abs(ring_area(seg)) for seg in raw)
+            if raw and math.sqrt(area) < SPOT_SIZE:
+                groups = [bbox([seg]) for seg in raw]
+                merged = True
+                while merged:
+                    merged = False
+                    for i in range(len(groups)):
+                        for j in range(i + 1, len(groups)):
+                            a, c = groups[i], groups[j]
+                            if max(a[0] - c[2], c[0] - a[2], a[1] - c[3], c[1] - a[3]) < SPOT_GAP:
+                                groups[i] = [min(a[0], c[0]), min(a[1], c[1]), max(a[2], c[2]), max(a[3], c[3])]; del groups[j]; merged = True; break
+                        if merged: break
+                groups.sort(key=lambda b: (b[0], b[1]))
+                D["spot"][card] = [[round((b[0] + b[2]) / 2, 1), round((b[1] + b[3]) / 2, 1), round(math.hypot(b[2] - b[0], b[3] - b[1]) / 2, 1)] for b in groups]
         # outlines of ALL countries on the continent (one path) so the lit one sits among its neighbours
         allc = project_rings(None, [r for f in feats for r in rings_of(f["geometry"])], ortho=proj, min_area=14, tol=5.0)
         D["globe"][cont]["borders"] = path_of_rings(allc)
         # capitals of the named countries (dot)
-        for card in wanted:
+        for card in wanted:   # in the list's order, so the build is byte-for-byte repeatable
             f = c_by_name.get(COUNTRY_NE.get(card, card))
             if not f: continue
+            if card in CAPITAL_AT:
+                nm, lon, lat = CAPITAL_AT[card]; x, y, c = proj(lon, lat)
+                if c > 0: D["cap"][card] = [round(x, 1), round(y, 1), nm]
+                continue
             a3 = f["properties"].get("ADM0_A3")
             cands = [p for p in places if p["properties"].get("featurecla") == "Admin-0 capital" and p["properties"].get("adm0_a3") == a3]
             if not cands: cands = [p for p in places if p["properties"].get("featurecla") in ("Admin-0 capital", "Admin-0 capital alt") and p["properties"].get("adm0_a3") == a3]

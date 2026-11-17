@@ -9,6 +9,9 @@
 //   · outline / trace variants (the notebook's colouring and tracing pages) carry no fill;
 //   · the Okabe–Ito colours, one credit line per picture, the file-size caps, no family or kid name anywhere, and the
 //     same output every time (the build is deterministic, so a rebuild without a data change is a no-op diff).
+//   · GEOALL (her "Yes, add all", 2026-11-16): every country — 195 = the 193 UN members + Vatican City + Palestine, Appendix B's
+//     87 first in each continent; each has shape data, a capital point and the credit line; no name twice; a country too small
+//     to see gets a ring (one per island group) in a frame wide enough to show its neighbours.
 //   run: node test_geo_data.js
 const fs = require("fs"), path = require("path"), zlib = require("zlib"), vm = require("vm");
 const file = path.join(__dirname, "geo.js");
@@ -32,6 +35,13 @@ const COUNTRIES = { "North America": ["Canada", "Mexico", "Cuba", "Guatemala", "
   "Asia": ["China", "Japan", "South Korea", "North Korea", "India", "Pakistan", "Bangladesh", "Nepal", "Sri Lanka", "Vietnam", "Thailand", "Indonesia", "Philippines", "Malaysia", "Singapore", "Mongolia", "Kazakhstan", "Afghanistan", "Iran", "Iraq", "Saudi Arabia", "Israel", "Turkey", "United Arab Emirates"],
   "Africa": ["Egypt", "Morocco", "Algeria", "Libya", "Nigeria", "Ghana", "Ethiopia", "Kenya", "Tanzania", "Uganda", "Democratic Republic of the Congo", "South Africa", "Madagascar", "Sudan", "Somalia", "Senegal"],
   "Australia": ["Australia", "New Zealand", "Papua New Guinea", "Fiji"] };
+// GEOALL — the 108 more, appended in each continent after Appendix B's.
+const MORE_108 = { "North America": ["United States", "El Salvador", "Nicaragua", "Belize", "Bahamas", "Trinidad and Tobago", "Barbados", "Grenada", "Saint Lucia", "Antigua and Barbuda", "Dominica", "Saint Vincent and the Grenadines", "Saint Kitts and Nevis"],
+  "South America": ["Guyana", "Suriname"],
+  "Europe": ["Croatia", "Serbia", "Bulgaria", "Vatican City", "Monaco", "Luxembourg", "Slovakia", "Slovenia", "Belarus", "Lithuania", "Latvia", "Estonia", "Cyprus", "Malta", "Bosnia and Herzegovina", "Albania", "North Macedonia", "Montenegro", "Moldova", "San Marino", "Liechtenstein", "Andorra"],
+  "Asia": ["Myanmar", "Cambodia", "Laos", "Syria", "Jordan", "Lebanon", "Yemen", "Oman", "Qatar", "Kuwait", "Bahrain", "Palestine", "Georgia (country)", "Armenia", "Azerbaijan", "Uzbekistan", "Turkmenistan", "Kyrgyzstan", "Tajikistan", "Bhutan", "Maldives", "Brunei", "East Timor"],
+  "Africa": ["Tunisia", "Zimbabwe", "Zambia", "Angola", "Mozambique", "Namibia", "Botswana", "Rwanda", "Cameroon", "Ivory Coast", "Mali", "Niger", "Chad", "South Sudan", "Eritrea", "Djibouti", "Burundi", "Malawi", "Republic of the Congo", "Gabon", "Central African Republic", "Mauritania", "Burkina Faso", "Liberia", "Sierra Leone", "Guinea", "Guinea-Bissau", "Gambia", "Benin", "Togo", "Equatorial Guinea", "Lesotho", "Eswatini", "Mauritius", "Seychelles", "Cape Verde", "Comoros", "São Tomé and Príncipe"],
+  "Australia": ["Solomon Islands", "Vanuatu", "Samoa", "Tonga", "Micronesia", "Palau", "Marshall Islands", "Kiribati", "Tuvalu", "Nauru"] };
 const LINCOLN_BUILT_IN = ["United Kingdom", "France", "Germany", "Spain", "Italy", "Japan", "China", "India", "Brazil", "Australia", "Egypt", "South Africa", "Mexico", "Canada", "Russia", "South Korea", "Argentina", "Nigeria", "Saudi Arabia", "Turkey", "Greece", "Norway", "Thailand", "Kenya", "Colombia", "Peru", "Indonesia", "Pakistan", "Vietnam", "New Zealand"];
 const RIVERS = ["Mississippi River", "Amazon River", "Nile River", "Congo River", "Danube River", "Rhine River", "Thames River", "Volga River", "Ganges River", "Yangtze River", "Mekong River", "Murray River"];
 const RANGES = ["Appalachian Mountains", "Rocky Mountains", "Sierra Nevada", "Andes Mountains", "Alps", "Pyrenees", "Ural Mountains", "Caucasus Mountains", "Himalayas", "Atlas Mountains", "Drakensberg", "Great Dividing Range"];
@@ -45,6 +55,8 @@ const ALL_WORDS = [].concat(WORDS[2], WORDS[3], WORDS[4], WORDS[6]);
 ok("Appendix C has 59 words (13 + 10 + 14 + 22)", ALL_WORDS.length === 59 && new Set(ALL_WORDS).size === 59);
 const allCountries = [].concat.apply([], CONTINENTS.map(c => COUNTRIES[c] || []));
 ok("Appendix B has 87 countries, every one of Lincoln's 30 built-in among them", allCountries.length === 87 && LINCOLN_BUILT_IN.every(n => allCountries.includes(n)), LINCOLN_BUILT_IN.filter(n => !allCountries.includes(n)));
+const all195 = [].concat.apply([], CONTINENTS.map(c => (COUNTRIES[c] || []).concat(MORE_108[c] || [])));
+ok("GEOALL: 195 countries (23 · 12 · 45 · 47 · 54 · 14), no name twice — not even by case", all195.length === 195 && new Set(all195.map(n => n.toLowerCase())).size === 195 && CONTINENTS.slice(0, 6).map(c => COUNTRIES[c].length + MORE_108[c].length).join() === "23,12,45,47,54,14");
 
 // ── every picture: a whole SVG, a data URI, a sane size ──
 function whole(t) {
@@ -64,7 +76,16 @@ function check(kind, names, o, cap) {
 let r = check("continent", CONTINENTS); ok("7 continent cards: silhouette + globe inset, whole SVGs", !r.bad.length && !r.big.length, r.bad.concat(r.big));
 r = check("ocean", OCEANS); ok("5 ocean cards: the world map with the ocean lit", !r.bad.length && !r.big.length, r.bad.concat(r.big));
 r = check("state", STATES, { region: "Southeast", capital: true }); ok("50 state cards: outline + US inset", !r.bad.length && !r.big.length, r.bad.concat(r.big));
-r = check("country", allCountries); ok("87 country cards: the country lit on its continent", !r.bad.length && !r.big.length, r.bad.concat(r.big));
+r = check("country", all195); ok("195 country cards (GEOALL): the country lit on its continent, whole SVGs", !r.bad.length && !r.big.length, r.bad.concat(r.big));
+const contOf = n => Object.keys(G.data.country).find(c => G.data.country[c][n] !== undefined);
+const capOk = n => { const c = G.data.cap[n]; return Array.isArray(c) && c.length === 3 && c[0] > 0 && c[0] < 1000 && c[1] > 0 && c[1] < 1000 && typeof c[2] === "string" && c[2].length > 1; };
+ok("GEOALL: every one of the 195 has shape data on the continent view the unit files it under, a capital point and the Natural Earth credit", all195.every(n => { const v = contOf(n); return v && (n === "Cyprus" ? v === "Europe" : (COUNTRIES[v] || []).concat(MORE_108[v] || []).includes(n)) && G.data.country[v][n].length > 10 && capOk(n) && /Natural Earth \(public domain\)/.test(G.credit("country", n)); }), all195.filter(n => { const v = contOf(n); return !v || !G.data.country[v][n] || !capOk(n); }));
+ok("GEOALL: every one of the 195 pictures is its own (no two the same) and dots its capital", new Set(all195.map(n => G.text("country", n))).size === 195 && all195.every(n => /<circle[^>]*fill="#111827"/.test(G.text("country", n))));
+const RING = /fill="#f97316" fill-opacity="0.22"/;
+ok("GEOALL: a speck gets a ring around it (Vatican City, Monaco, Tuvalu, Nauru, Bahrain, Saint Lucia); a country you can see doesn't (France, Chad, Cyprus)", ["Vatican City", "Monaco", "Tuvalu", "Nauru", "Bahrain", "Saint Lucia"].every(n => RING.test(G.text("country", n))) && ["France", "Chad", "Cyprus"].every(n => !RING.test(G.text("country", n))));
+ok("GEOALL: islands far apart get one ring per group — Kiribati's three groups, not one ocean-sized circle", (G.text("country", "Kiribati").match(/fill-opacity="0.22"/g) || []).length >= 3 && G.data.spot.Kiribati.every(s => s[2] < 40));
+ok("GEOALL: a speck's frame is wide enough to show its neighbours (≥ 300 of the 1000-unit globe) and keeps the whole ring in view", ["Vatican City", "Tuvalu", "Grenada"].every(n => +/viewBox="[^ ]+ [^ ]+ ([\d.]+)/.exec(G.text("country", n))[1] >= 300));
+ok("GEOALL: outline (the notebook's colouring page): the ring is a dark stroke with no fill", /<circle[^>]*fill="none" fill-opacity="0.22" stroke="#1f2937"/.test(G.text("country", "Vatican City", { outline: true })));
 ok("a country card dots its capital (Paris, Tokyo, Nairobi) and Singapore keeps its speck", ["France", "Japan", "Kenya"].every(n => /<circle[^>]*fill="#111827"/.test(G.text("country", n))) && !!G.text("country", "Singapore"));
 r = check("feature", RIVERS.concat(RANGES)); ok("12 rivers + 12 ranges lit on their continent (Appendix E)", !r.bad.length && !r.big.length, r.bad.concat(r.big));
 r = check("us", MY_COUNTRY); ok("Stage-3 My Country features on the US map", !r.bad.length && !r.big.length, r.bad.concat(r.big));
@@ -85,7 +106,7 @@ ok("the silhouette of a continent is ONE shape (edge under, fill over — no sea
 ok("Okabe–Ito continent colours (colour-blind safe) and the five region colours", G.colors.cont["North America"] === "#E69F00" && G.colors.cont.Africa === "#009E73" && Object.keys(G.colors.region).join() === "Northeast,Southeast,Midwest,Southwest,West");
 ok("a state card takes its region's colour", /fill="#0072B2"/.test(G.text("state", "Maine", { region: "Northeast" })) && /fill="#E69F00"/.test(G.text("state", "North Carolina", { region: "Southeast" })));
 ok("credit per kind: maps → Natural Earth; a drawn word → Howe Academy", /Natural Earth/.test(G.credit("state", "Ohio")) && /Natural Earth/.test(G.credit("country", "Peru")) && /Howe Academy/.test(G.credit("word", "volcano")));
-ok("names(): the plan's lists, in the plan's order", JSON.stringify(G.names("continent")) === JSON.stringify(CONTINENTS) && JSON.stringify(G.names("ocean")) === JSON.stringify(OCEANS) && JSON.stringify(G.names("state")) === JSON.stringify(STATES) && JSON.stringify(G.names("country")) === JSON.stringify(allCountries) && JSON.stringify(G.names("river")) === JSON.stringify(RIVERS) && JSON.stringify(G.names("range")) === JSON.stringify(RANGES));
+ok("names(): the plan's lists, in the plan's order", JSON.stringify(G.names("continent")) === JSON.stringify(CONTINENTS) && JSON.stringify(G.names("ocean")) === JSON.stringify(OCEANS) && JSON.stringify(G.names("state")) === JSON.stringify(STATES) && JSON.stringify(G.names("country")) === JSON.stringify(all195) && JSON.stringify(G.names("river")) === JSON.stringify(RIVERS) && JSON.stringify(G.names("range")) === JSON.stringify(RANGES));
 ok("names('word') covers every Appendix-C word", ALL_WORDS.every(w => G.names("word").includes(w)), ALL_WORDS.filter(w => !G.names("word").includes(w)));
 
 // ── the file itself ──
