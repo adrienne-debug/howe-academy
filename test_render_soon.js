@@ -114,6 +114,7 @@ const ALLOWED_FN=["cpuWatch",   // 📦 CPUNIT (2026-10-28): a unit's catalog en
   "cplntApplyOne","cplntAfter",   // 👩‍🏫 CPLINCOLNL3 (2026-10-29): a teacher's drill for Lincoln arriving (drills/<cid>/<sid> listener) and graded
   "cplnpLoad",   // 🌿 CPLINCOLNPARITY (2026-10-29): his class's card, trim and test layers arriving (read once through his mirror)
   "cpmcEnv","cpmcPaint",   // 🏫 CPMYCLASS (2026-11-10): env.js landing, and the class boards arriving (boards/<cid> listener through his mirror)
+  "cplpRelay",   // 🖼 CPLINCOLNPHOTOS (2026-11-17): a class photo that would not load — the pool laid again (his class's photo layers arrive through cpphKidRepaint, above)
   "cplkLoad","cplkPics",   // 🧩 CPLINCOLNSKILLS (2026-11-17): his class's skills layer arriving (classSkills/<cid>, read once through his mirror), and the picture index landing
   "amAttach",   // 🌅 SENDAM (2026-11-15): a kid's carried-to-morning items arriving (amCarry/<kid> listener)
   "currOnValue",   // 📚 CURRLIVE (2026-11-08): the curriculum arriving (first load, or another device's edit) — the listener's one helper

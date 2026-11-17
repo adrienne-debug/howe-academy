@@ -62,7 +62,7 @@ function cplnLoad(kid,cid,edb,sid){
     const rec={cid:cid,sid:sid,cls:null,plan:null,stu:null,ok:false,n:0,bad:false}; _cpln.kids[kid]=rec;
     const val=s=>(s&&typeof s.val==="function")?s.val():null;
     const done=(k,v,bad)=>{ if(_cpln.kids[kid]!==rec) return; if(bad) rec.bad=true; else rec[k]=(v&&typeof v==="object")?v:{}; if(++rec.n<3) return;
-      rec.ok=!rec.bad; if(rec.ok){ rec.at=Date.now(); try{ if(typeof cplnpReady==="function") cplnpReady(kid); }catch(e){} try{ if(typeof renderAllSoon==="function") renderAllSoon(); }catch(e){} } };   // 🌿 CPLINCOLNPARITY: his send-outs through CPSEND once his class is known
+      rec.ok=!rec.bad; if(rec.ok){ rec.at=Date.now(); try{ if(typeof cplnpReady==="function") cplnpReady(kid); }catch(e){} try{ if(typeof cplpReady==="function") cplpReady(kid); }catch(e){} try{ if(typeof renderAllSoon==="function") renderAllSoon(); }catch(e){} } };   // 🌿 CPLINCOLNPARITY: his send-outs through CPSEND once his class is known
     [["cls","classes/"+cid+"/settings"],["plan","classes/"+cid+"/plan"],["stu","students/"+sid+"/settings"]].forEach(p=>{
       try{ edb.ref(p[1]).once("value",s=>done(p[0],val(s)),()=>done(p[0],null,true)); }catch(e){ done(p[0],null,true); } });
     return true;
@@ -783,8 +783,8 @@ function cpmcGamesOff(){ _cpmc.gf=null; try{ if(typeof renderAll==="function") r
 //     under a running card sitting.
 //   · THE LAYER: classSkills/<cid> (the teacher's Hide / Make optional), read ONCE through his mirror from envmRelAttach's guarded line and
 //     kept in memory only. A refused or empty read is no layer: the unit's own skills, nothing breaks.
-//   · PICTURES: the repo set only (envirothon/pics, the pictures ID Flash already shows). A photo the teacher or Adrienne added on the class
-//     site (classPhotos / units/<id>/photos) is not read here — that is Plan D, its own piece.
+//   · PICTURES: the repo set (envirothon/pics, the pictures ID Flash already shows). A photo the teacher or Adrienne added on the class
+//     site (classPhotos / units/<id>/photos) is not read by THIS block — that is Plan D, its own piece: 🖼 CPLINCOLNPHOTOS, right below.
 //   · THE SAVE is CPSKILL's own and nothing new: at the end of a sitting ONE multi-path update on the family's mastery —
 //     <kid>_skills/<unitId>/<skill> + studyLog/<kid>/skills/<yyyymmdd> (its own sid like "idflash", so the 🌿 session's "Done today" is
 //     untouched) — through db, never under ?dryrun=1. Then CPSKILL's own call to the mirror ("study"): summary.skills joins what it already publishes, so
@@ -832,6 +832,101 @@ function cplkDoorHtml(kid,session){
   }catch(e){ return ""; }
 }
 // CPLINCOLNSKILLS_END
+// CPLINCOLNPHOTOS_START — 🖼 THE CLASS'S PHOTOS IN THE FAMILY APP (2026-11-17). Her words, after the skills went on Lincoln's page and the
+// report said photos added on the class site were not part of it: "lets do photos added on th eclass site". Plan D of
+// PLAN_cp_lincoln_parity_2026-10-29.md. A classmate on the class site sees ONE pool of pictures — repo ← unit ← class (CPPHOTOS): the
+// photos his teacher added (classPhotos/<cid>: hot-linked Commons pictures and her own uploads, her ⭐ main photo, the ones she hid) and
+// the ones Adrienne added for every class (units/<unitId>/photos). Lincoln, who studies 🌿 Envirothon in Howe, saw the repo set only.
+// Now his mirror reads the same two layers and CPPHOTOS lays them over the repo set here too — so the study card, ID Flash, the games
+// (envPicsFor) and the 🧩 skills (cpPhotos) show him what his class sees.
+//   · THE READS: classPhotos/<cid> and units/<unitId>/photos, ONCE each per class, through his mirror from envmRelAttach's guarded line;
+//     kept in memory only. A refused or empty read is no layer: the repo pictures, exactly as before (nothing is re-laid, nothing repaints).
+//   · WHOSE LAYER: the unit record's pictures are shared by every kid of the family who is in the unit, so the layer is on only when it is
+//     the SAME class for all of them — cplpLayer(): every enrolled kid has the class link on (CPLINCOLN's cplnOn) and the same class's
+//     layers in. Two kids in two classes, or one in the unit without the class → no layer for anyone (the repo set), never another class's.
+//   · WHEN THE LAYERS ARRIVE: CPPHOTOS' own cpphKidRepaint — the repo pictures ENVIDFLASH laid on the unit record IN MEMORY are laid again
+//     from the pool, then the page repaints. cplpReady (cplnLoad's guarded line) does the same if his class reads answer after the photos.
+//     Nothing here or there writes: the family's unitStudies record never holds these pictures (envPicsApply fills memory only; a picture
+//     Mom chose for a card stays).
+//   · ID FLASH CREDIT is untouched: a show is saved with the address of the picture he saw; "fluent" stays saved. A new class photo is one
+//     more picture to be shown; a hidden one stops being shown. Same code, same rule as his classmates.
+//   · A PHOTO THAT WILL NOT LOAD (a hot-link that moved, that host unreachable): cplpImgErr — a page-wide listener set only once a layer
+//     with photos is in, acting only on an address from his class's or the unit's layer — leaves that photo out for the rest of the visit
+//     (cplpBad, CPPHOTOS' guarded line in cpphRecPhoto), so the item's next picture shows, down to the repo set. An ID Flash show not yet
+//     answered gets another picture of the same item and its clock starts over (the saved show names the picture he really saw). The repo
+//     set and Mom's own pictures are never touched by it.
+//   · This block writes NOTHING, anywhere, and holds no kid's name: two reads, in memory. ?dryrun=1 changes nothing about it.
+//   · NOT HERE: adding, hiding or starring a photo (the class site's 📚 Cards, the teacher's and Adrienne's), a live listener (a photo
+//     added while his app is open shows the next time it opens).
+const _cplp={k:{},bad:{},n:0,err:false};
+// the ONE class whose layers this family app shows right now: {cid, C, U, urls} — or null (the repo set)
+function cplpLayer(){
+  try{
+    if(typeof envSiteOn==="function"&&envSiteOn()) return null;
+    if(typeof cplnOn!=="function"||typeof envmUnit!=="function") return null;
+    const u=envmUnit(), en=(u&&u.enrolled)||{}; let rec=null;
+    for(const kid in en){ if(!en[kid]) continue; if(!cplnOn(kid)) return null;
+      const r=_cplp.k[kid], c=_cpln.kids[kid]; if(!r||!r.done||!c||r.cid!==c.cid) return null;
+      if(rec&&rec.cid!==r.cid) return null; rec=rec||r; }
+    return rec;
+  }catch(e){ return null; }
+}
+// address → item key, for every photo the two layers hold (a load that fails is traced to its item)
+function cplpUrls(rec){
+  const add=L=>{ Object.keys(L||{}).forEach(k=>{ const I=L[k]; if(!I||typeof I!=="object") return;
+    Object.keys(I).forEach(id=>{ const p=I[id]; if(id.charAt(0)!=="_"&&p&&typeof p==="object"&&typeof p.url==="string"&&p.url) rec.urls[p.url]=k; }); }); };
+  add(rec.C); Object.keys(rec.U).forEach(x=>add(rec.U[x])); return Object.keys(rec.urls).length;
+}
+// ENVMIRROR's envmRelAttach (the class is known): the two reads, once per class. Refused → that layer is empty.
+function cplpLoad(kid,cid,edb){
+  try{
+    if(!kid||!cid||!edb||(typeof envSiteOn==="function"&&envSiteOn())) return false;
+    const cur=_cplp.k[kid]; if(cur&&cur.cid===cid) return false;
+    const unit=(typeof ENV_UNIT_ID!=="undefined")?ENV_UNIT_ID:"nc_envirothon", rec={cid:cid,C:{},U:{},urls:{},done:false}, val=s=>(s&&typeof s.val==="function")?s.val():null; let n=0;
+    rec.U[unit]={}; _cplp.k[kid]=rec;
+    const done=()=>{ if(++n<2||_cplp.k[kid]!==rec) return; rec.done=true; if(!cplpUrls(rec)&&!Object.keys(rec.C).length&&!Object.keys(rec.U[unit]).length) return;   // nothing added, hidden or starred: the repo set as before
+      cplpWatch(); cplpReady(kid); };
+    edb.ref("classPhotos/"+cid).once("value",s=>{ const v=val(s); if(v&&typeof v==="object") rec.C=v; done(); },()=>done());
+    edb.ref("units/"+unit+"/photos").once("value",s=>{ const v=val(s); if(v&&typeof v==="object") rec.U[unit]=v; done(); },()=>done());
+    return true;
+  }catch(e){ return false; }
+}
+// the layers are in AND his class link is on (whichever came second): CPPHOTOS lays the unit record's pictures again, in memory, and repaints
+function cplpReady(kid){
+  try{ const r=_cplp.k[kid]; if(!r||!r.done||!cplpLayer()) return false;
+    if(typeof cpphBump==="function") cpphBump(); return (typeof cpphKidRepaint==="function")?cpphKidRepaint():false; }catch(e){ return false; }
+}
+// ── a class photo that will not load
+function cplpBad(url){ return _cplp.n>0&&_cplp.bad[String(url||"")]===1; }
+function cplpWatch(){ try{ if(_cplp.err||typeof document==="undefined"||typeof document.addEventListener!=="function") return; _cplp.err=true; document.addEventListener("error",cplpImgErr,true); }catch(e){} }
+// the item's next picture, main first (the failed ones are already out of the pool)
+function cplpNext(k){ try{ const L=cpphLayeredK(k,{}).list.filter(p=>!p.hid); return L.length?String(cpphMainFirst(L)[0].url):""; }catch(e){ return ""; } }
+// an ID Flash show waiting for its answer on that picture: another picture of the same item, the clock from the start
+function cplpFlashFix(url){
+  try{ if(typeof envFlash==="undefined"||!envFlash||envFlash.done||envFlash.ans) return false;
+    const c=envFlash.cards[envFlash.i]; if(!c||!c.pic||String(c.pic.url)!==url||typeof envFlashPicFor!=="function") return false;
+    const left=(c.pics||[]).filter(p=>p&&!cplpBad(p.url)); if(!left.length) return false;
+    c.pics=left; c.pic=envFlashPicFor(c); envFlash.drawnAt=null; envFlash.shownAt=null; return true; }catch(e){ return false; }
+}
+// the pictures laid on the unit record in memory with that address come off, the pool is laid again, the page repaints
+function cplpRelay(url){
+  try{ if(typeof cpphBump==="function") cpphBump();
+    const us=(typeof unitStudies!=="undefined"&&unitStudies)||{};
+    Object.keys(us).forEach(k=>{ const u=us[k]; if(!u||!u.visuals||!(typeof envCardsInCode==="function"&&envCardsInCode(u))) return;
+      Object.keys(u.visuals).forEach(v=>{ const x=u.visuals[v]; if(x&&typeof x==="object"&&String(x.imageUrl||"")===url) delete u.visuals[v]; }); });
+    if(typeof envHydrateAll==="function") envHydrateAll(); if(typeof renderAllSoon==="function") renderAllSoon(); }catch(e){}
+}
+function cplpImgErr(ev){
+  try{
+    const t=ev&&ev.target; if(!t||String(t.tagName||"").toUpperCase()!=="IMG"||typeof t.getAttribute!=="function") return;
+    const url=String(t.getAttribute("src")||""), L=cplpLayer(), k=(url&&L)?L.urls[url]:null; if(!k) return;   // only a photo of his class's or the unit's layer
+    const first=_cplp.bad[url]!==1; if(first){ _cplp.bad[url]=1; _cplp.n++; }
+    if(/envFlashImgReady/.test(String(t.getAttribute("onload")||""))){ if(cplpFlashFix(url)&&typeof _mastRe==="function") _mastRe(); }
+    else { const nx=cplpNext(k); if(nx&&nx!==url) t.src=nx; }   // a picture that is only shown (a skill's, a card's): the item's next one, at once
+    if(first) cplpRelay(url);
+  }catch(e){}
+}
+// CPLINCOLNPHOTOS_END
 // CPGEAR_START — each role's ⚙️ shows only its own things (design §7g). Her answer 2026-10-28 (Q19): the bar color is the
 // class's, set by the teacher; kids and parents have no color option at all. So the 🎨 Color card is gone from every role
 // (kid, parent, teacher, admin) and envsSetColor with it; the color moves to 🏫 Class setup (CPCLASS).
@@ -4240,6 +4335,9 @@ function cptrHydrate(u){
 // INERT unless the Envirothon site's edition is on: Howe, DeWalt and Burris never reach a line of it, and Lincoln's ID Flash pictures in Howe
 // stay the repo set exactly as today (test_cp_photos.js). NO uploads here: 📷 camera / file and Firebase Storage are PR 30 (CPPHOTOUP,
 // after CPPHOTOTODO_END; its hooks here are typeof-guarded lines tagged 📷 CPPHOTOUP).
+//   · 2026-11-17, 🖼 CPLINCOLNPHOTOS (her words: "lets do photos added on th eclass site"): ONE exception to INERT — a family whose
+//     mirrored kid follows a class (Lincoln in Howe) gets the same two layers, read through his mirror, in cpphClassL / cpphUnitL /
+//     cpphPicsFor (three typeof-guarded lines). With no layer read, or an empty one, his pictures are the repo set exactly as before.
 //   · A PHOTO BELONGS TO AN ITEM: the card's `item` (the species, the gear name), else the front before " · " on an ID card, else the
 //     card's own front. Every card of "Bald Eagle" shares Bald Eagle's photos, as ENVIDFLASH does. The item's database key is
 //     cpphKey(item): lower case, spaces collapsed, . # $ [ ] / % coded.
@@ -4313,8 +4411,11 @@ function cpphRepoMap(){
   _cpph.rmemo=M; _cpph.rmemoSrc=D||idx; _cpph.rmemoKey=mk; return M; }
 // ── the unit's and the class's layers: the console's (live listeners while 📚 Cards is open; the demo's memory) or the kid's (read once)
 function cpphKidOn(){ try{ return cpphSite()&&!!_envs.kid&&(envsDemo()||_envs.role==="kid"||_envs.role==="parent"); }catch(e){ return false; } }
-function cpphClassL(){ if(cpphOn()) return _cpph.L[cpphCid()]||{}; if(envsDemo()) return _cpph.L[cpphCid()||_envs.cid]||{}; return _cpph.kidC||{}; }
-function cpphUnitL(){ const src=(cpphOn()||envsDemo())?_cpph.U:(_cpph.kidU||{}), out={};
+function cpphClassL(){ if(cpphOn()) return _cpph.L[cpphCid()]||{}; if(envsDemo()) return _cpph.L[cpphCid()||_envs.cid]||{};
+  { const h=(typeof cplpLayer==="function")?cplpLayer():null; if(h) return h.C; }   // 🖼 CPLINCOLNPHOTOS: a mirrored kid's class layer in the family app, as his mirror read it (null on the class site and for everyone else)
+  return _cpph.kidC||{}; }
+function cpphUnitL(){ const h=(!cpphOn()&&!envsDemo()&&typeof cplpLayer==="function")?cplpLayer():null;   // 🖼 CPLINCOLNPHOTOS: …and the unit's layer the same way
+  const src=h?h.U:((cpphOn()||envsDemo())?_cpph.U:(_cpph.kidU||{})), out={};
   Object.keys(src).forEach(u=>{ const L=src[u]; if(!L||typeof L!=="object") return; Object.keys(L).forEach(k=>{ if(L[k]&&typeof L[k]==="object") out[k]=Object.assign(out[k]||{},L[k]); }); });
   return out; }
 function cpphLayersAny(){ const C=cpphClassL(), U=cpphUnitL(); return Object.keys(C).length>0||Object.keys(U).length>0; }
@@ -4325,6 +4426,7 @@ function cpphStart(){
   return true; }
 function cpphRecPhoto(id,r,from){
   if(!r||typeof r!=="object"||!cpphUrlOk(r.url)) return null; const T=(r.tags&&typeof r.tags==="object")?r.tags:{};
+  if(typeof cplpBad==="function"&&cplpBad(r.url)) return null;   // 🖼 CPLINCOLNPHOTOS: a class photo that would not load in the family app this visit is left out (the next one shows)
   return {id,url:String(r.url),credit:String(r.credit||""),lic:CPPH_LIC.some(l=>l[0]===r.lic)?r.lic:"unknown",tags:Object.keys(T).filter(t=>T[t]===true&&CPPH_TAGS.indexOf(t)>=0),shot:"",item:String(r.item||""),how:String(r.how||""),from,by:String(r.by||""),ts:Number(r.ts)||0}; }
 // THE POOL for one item key: repo ← unit ← class → {list:[photo + {main, hid}], main}. Hidden photos stay in the list, marked (the teacher's strip).
 // o.noRepo: only the unit's and the class's (a card that is not an ID card never had repo photos). o.card: a card name for the index.
@@ -4345,7 +4447,7 @@ function cpphLayered(item,o){ return cpphLayeredK(cpphKey(item),Object.assign({i
 function cpphMainFirst(L){ return L.filter(p=>p.main).concat(L.filter(p=>!p.main)); }
 // ── THE LOOKUPS (skills, ID Flash, the mock, the trim)
 function cpPhotos(item,tag,opt){
-  if(!cpphSite()&&!(typeof cplkAny==="function"&&cplkAny())) return [];   // 🧩 CPLINCOLNSKILLS: a mirrored kid's skills in the family app draw the repo set (no unit / class layer is read there)
+  if(!cpphSite()&&!(typeof cplkAny==="function"&&cplkAny())) return [];   // 🧩 CPLINCOLNSKILLS: a mirrored kid's skills in the family app draw from the pool too (the repo set; + his class's and the unit's layers once 🖼 CPLINCOLNPHOTOS has read them)
   const want=(tag==null||tag==="")?null:(Array.isArray(tag)?tag:[tag]);
   let L=cpphLayered(item,{card:opt&&opt.card}).list.filter(p=>!p.hid); if(want) L=L.filter(p=>p.tags.some(t=>want.indexOf(t)>=0));
   return cpphMainFirst(L); }
@@ -4387,7 +4489,7 @@ function cpphKidItem(deck,name,isId){
   const n=String(name||""); return (isId&&n.indexOf(" · ")>0)?n.split(" · ")[0].trim():n.trim(); }
 // ⚡ envPicsFor (the study card, ID Flash, the games): the site kid's pictures of a card, layered — undefined = today's answer (the repo set)
 function cpphPicsFor(deck,name,idx){
-  if(!cpphKidOn()||!cpphLayersAny()) return undefined;
+  if(!(cpphKidOn()||(typeof cplpLayer==="function"&&!!cplpLayer()))||!cpphLayersAny()) return undefined;   // 🖼 CPLINCOLNPHOTOS: or a mirrored kid's layers in the family app
   if(!(typeof envPicsDeckOn==="function"&&envPicsDeckOn(deck))) return undefined;
   const isId=/· ID$/.test(String(deck||"")); if(isId&&!idx) return undefined;
   const P=cpphLayered(cpphKidItem(deck,name,isId),{card:isId?name:null,noRepo:!isId});
