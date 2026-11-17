@@ -61,7 +61,9 @@ console.log("\n── 1. the §6 list features, one check per hook ──");
   B.run("toggleMorningStep('kid_a',"+B.run("morningStepsFor('kid_a').findIndex(function(s){ return s.label==='Brush teeth'; })")+");toggleMorningStep('kid_a',"+B.run("morningStepsFor('kid_a').findIndex(function(s){ return s.label==='Feed the fish'; })")+")"); await w.flush();
   ok("…morningComplete stays false until it is checked", B.run("morningComplete('kid_a','monday')")===false);
   tick(B,"morning","kid_a",m); await w.flush(); ok("…and true once it is", B.run("morningComplete('kid_a','monday')")===true);
-  ok("the habits calendar reads a past plan row by chore", (await w.at(2026,11,17,7,0), A.run("_calHabitsDone('kid_c','"+MON+"')"))!==true&&A.run("_calChoresFor('kid_c','"+MON+"')").some(c=>c.house==="c_c_toys"));
+  tick(B,"chores","kid_c",idx(B,"chores","kid_c","c_c_toys")); B.run("toggleMorningStep('kid_c',morningStepsFor('kid_c').findIndex(function(s){ return s.label===\"Fill the dog's water\"; }))"); await w.flush();
+  await w.at(2026,11,17,7,0);
+  ok("the habits calendar reads a past plan row by chore (kid_c did everything on Monday → a done day)", A.run("_calChoresFor('kid_c','"+MON+"')").some(c=>c.house==="c_c_toys")&&A.run("_calHabitsDone('kid_c','"+MON+"')")===true, A.run("_calHabitsDone('kid_c','"+MON+"')"));
 }
 
 console.log("\n── 2. carry and the logged miss ──");

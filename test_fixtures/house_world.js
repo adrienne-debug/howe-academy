@@ -60,7 +60,7 @@ async function world(o){
   if(o.tree) Object.assign(fx,o.tree);
   const clock=S.makeClock(new Date(2026,10,15,0,0,30).getTime()); clock.boot=clock.now; const sched=S.makeScheduler(clock);
   const db=guarded(S.makeDb(fx,clock,sched),o.deny);
-  const index=o.index||path.join(__dirname,"..","index.html"), devs=[];
+  const index=o.index||process.env.HOUSE_INDEX||path.join(__dirname,"..","index.html")   /* HOUSE_INDEX: another copy (a mutation check) */, devs=[];
   const w={clock,sched,db,devs,index,
     boot(name,dev,bo){ bo=bo||{}; let seed=0; for(const ch of String(dev)) seed=(seed*31+ch.charCodeAt(0))%2147483647; seed=seed||7; const M=Object.create(Math); M.random=()=>{ seed=(seed*16807)%2147483647; return seed/2147483647; };   // the same keys on every run
       const d=S.bootDevice({name,dev,db,clock,sched,family:FX.family,indexPath:index,globals:{Math:M}}); if(bo.mom) d.momOn(); else d.run("try{ if(typeof haMomOff==='function') haMomOff(); }catch(e){}"); devs.push(d); return d; },
