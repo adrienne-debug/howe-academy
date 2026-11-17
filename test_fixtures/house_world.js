@@ -62,7 +62,8 @@ async function world(o){
   const db=guarded(S.makeDb(fx,clock,sched),o.deny);
   const index=o.index||path.join(__dirname,"..","index.html"), devs=[];
   const w={clock,sched,db,devs,index,
-    boot(name,dev,bo){ bo=bo||{}; const d=S.bootDevice({name,dev,db,clock,sched,family:FX.family,indexPath:index}); if(bo.mom) d.momOn(); else d.run("try{ if(typeof haMomOff==='function') haMomOff(); }catch(e){}"); devs.push(d); return d; },
+    boot(name,dev,bo){ bo=bo||{}; let seed=0; for(const ch of String(dev)) seed=(seed*31+ch.charCodeAt(0))%2147483647; seed=seed||7; const M=Object.create(Math); M.random=()=>{ seed=(seed*16807)%2147483647; return seed/2147483647; };   // the same keys on every run
+      const d=S.bootDevice({name,dev,db,clock,sched,family:FX.family,indexPath:index,globals:{Math:M}}); if(bo.mom) d.momOn(); else d.run("try{ if(typeof haMomOff==='function') haMomOff(); }catch(e){}"); devs.push(d); return d; },
     async flush(ms){ await sched.run(clock.now+(ms==null?5000:ms)); },
     async at(y,m,d,h,mi){ clock.now=new Date(y,m-1,d,h||0,mi||0,0).getTime(); for(const x of devs){ try{ x.fn("dayRollCheck")(); }catch(e){} } await w.flush(); for(const x of devs){ try{ x.run("typeof hdTick==='function'&&hdTick()"); }catch(e){} } await w.flush(); },
     async tick(){ for(const x of devs){ try{ x.run("typeof hdTick==='function'&&hdTick()"); }catch(e){} } await w.flush(); },

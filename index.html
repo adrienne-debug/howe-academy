@@ -14335,10 +14335,10 @@ function hdOv(iso,extraSkip){ const J=hhJobs(), r=houseDayData[iso]||{}, skip={}
   Object.keys(r.skip||{}).forEach(function(id){ skip[id]=1; }); Object.keys(extraSkip||{}).forEach(function(id){ skip[id]=1; });
   Object.keys(J).forEach(function(id){ const j=J[id]; if(hhIsHouse(j)&&!hdManaged(j)) skip[id]=1;   // laundry / after-meal / as needed: not the engine's
     const a=/^\d{4}-\d{2}-\d{2}$/.test(j.lastDone||"")?j.lastDone:"", b=/^\d{4}-\d{2}-\d{2}$/.test(j.lastSkip||"")?j.lastSkip:""; if(a||b) last[id]=a>b?a:b; });   // ✕ skip this time counts like done for "every N"
-  ((typeof amCarry!=="undefined"&&amCarry)?Object.keys(amCarry):[]).forEach(function(k){ const m=amCarry[k]||{}; Object.keys(m).forEach(function(c){ const it=m[c]; if(it&&it.house&&!it.done&&it.dueIso<=iso) skip[it.house]=1; }); });
+  const am={}; ((typeof amCarry!=="undefined"&&amCarry)?Object.keys(amCarry):[]).forEach(function(k){ const m=amCarry[k]||{}; Object.keys(m).forEach(function(c){ const it=m[c]; if(it&&it.house&&!it.done&&it.dueIso<=iso){ am[it.house]=1; if(/^\d+d$|^2w$/.test((J[it.house]||{}).cad||"")) skip[it.house]=1; } }); });   // 🌅 on a morning list: never carried; an every-N one is not due again until it is done
   ROSTER.forEach(function(k){ if(hdKidOff(k,iso)) off[k]=1; });
   const e=(householdData.meta&&householdData.meta.engine)||{};
-  return {kids:SL_KIDS.slice(),slots:SL_SLOTS.slice(),rotPeriod:Object.assign({},(typeof rotationPeriod!=="undefined"&&rotationPeriod)||{}),on:/^\d{4}-\d{2}-\d{2}$/.test(e.on||"")?e.on:iso,minDefault:HH_MIN_DEFAULT,lastDone:last,carry:hdCarryFrom(hdAdd(iso,-1),skip),skip:skip,off:off}; }
+  return {kids:SL_KIDS.slice(),slots:SL_SLOTS.slice(),rotPeriod:Object.assign({},(typeof rotationPeriod!=="undefined"&&rotationPeriod)||{}),on:/^\d{4}-\d{2}-\d{2}$/.test(e.on||"")?e.on:iso,minDefault:HH_MIN_DEFAULT,lastDone:last,carry:hdCarryFrom(hdAdd(iso,-1),Object.assign({},skip,am)),skip:skip,off:off}; }
 // One day's plan → the stored shape (house rows only; health and animals stay on their own lists, untouched).
 function hdShape(p){ const plan={}, over={}; Object.keys(p.plan).forEach(function(id){ const x=p.plan[id]; if(!x.house) return; const o={who:x.who,mins:x.mins,order:x.order,why:x.why,late:x.late||0,k:x.k,since:hdAdd(p.iso,-(x.late||0))}; if(x.from) o.from=x.from; plan[id]=o; });
   p.over.forEach(function(o){ over[o.id]={turn:o.turn,mins:o.mins,k:o.k,late:o.late||0,since:hdAdd(p.iso,-(o.late||0))}; }); return {plan:plan,over:over}; }
@@ -14358,7 +14358,7 @@ function hdEnsure(){
     if(hdOk(houseDayData[t])) return; const b=hdBuild(t), P="houseDay/"+t+"/", upd={}, at=Date.now();
     Object.keys(b.plan).forEach(function(id){ upd[P+"plan/"+id]=b.plan[id]; }); Object.keys(b.over).forEach(function(id){ upd[P+"over/"+id]=b.over[id]; }); Object.keys(b.miss).forEach(function(id){ upd[P+"miss/"+id]=b.miss[id]; });
     upd[P+"built/ok"]=at; upd[P+"built/sig"]=hdSig();
-    db.ref().update(upd).then(function(){ _hdBad=null; hdLogMisses(t,b.miss); },function(e){ hdRefused(t,e); }); }); }catch(e){ hdRefused(t,e); }
+    db.ref().update(upd).then(function(){ _hdBad=null; hdLogMisses(t,b.miss); },function(e){ hdRefused(t,e); }); }).catch(function(){}); }catch(e){ hdRefused(t,e); }   // a refused claim is answered in the callback
 }
 // A set-day chore dropped because its next day came: "— not done" in the Click-off Log under the day it was due (one key per chore and
 // day, so every device would write the same line), like _rtLogMiss.
@@ -14565,7 +14565,7 @@ function hdUnlist(slot,kid,id,iso){ const k=hdOwnerKey(id,iso), s=k&&slState[k],
   const fk=wk+"_"+day+"_"+owner+"_"+j.slot; if(j.slot==="morning") slState[fk]={done:morningComplete(owner,day),ts:""}; else { const all=rtComplete(j.slot,owner,day); slState[fk]={done:all,ts:all?nowTs():""}; }
   slSaveChanged(wk,_slB); renderSkylight(); return true; }
 // HOUSEDAY_END
-// ⇢ house.js: HOUSEPEOPLE..HOUSEPREVIEW
+// ⇢ house.js: HOUSEPEOPLE..HOUSESWITCH
 // KITCHEN_TAB_START — 🍳 Kitchen (her ask 2026-10-20: "a focused kitchen tab like the laundry but then id like it seperated in sections
 // that make sense and i like lots of settings … i also dont want repeats all over the chores … pull things in from other areas … check
 // off and reassign … send to the cleaning day"). ONE table, no copies: every row here IS a Household row (household/jobs) picked by

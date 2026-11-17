@@ -195,6 +195,7 @@ function bootDevice(o){
     firebase,Date:VDate,
     HA_FAMILY:o.family
   };
+  if(o.globals) Object.assign(sandbox,o.globals);   // a caller's extra globals (house_world.js: a seeded Math, so two runs write the same keys)
   vm.createContext(sandbox);
   sandbox.window=sandbox; sandbox.self=sandbox; sandbox.globalThis=sandbox; sandbox.top=sandbox; sandbox.parent=sandbox;
   const text=appScript(o.indexPath);

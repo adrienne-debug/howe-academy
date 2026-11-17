@@ -539,7 +539,7 @@ function hpFitSet(who,fit){
 }
 // Show the plan preview (true) / stop showing it (false). Writes household/meta/engine only.
 function hpEngineSet(on){
-  if(typeof momHere==="function"&&!momHere()) return null; const e=hpEngine(); if(!on&&e.mode!=="preview") return null;
+  if(typeof momHere==="function"&&!momHere()) return null; const e=hpEngine(); if(!on&&e.mode!=="preview") return null; if(e.mode==="on") return null;   // the real switch is HOUSESWITCH's
   const rec={mode:on?"preview":"off",on:hpIsIso(e.on)?e.on:hpToday()};
   householdData.meta=Object.assign({},householdData.meta,{engine:rec}); householdOnValue(householdData);
   if(_hhWrite()) db.ref("household/meta/engine").set(rec);
@@ -618,7 +618,8 @@ function hpBonusSet(slot,kid,v){ if(typeof momHere==="function"&&!momHere()) ret
 function hpPersonHTML(){
   const W=hpWho(); if(W.indexOf(hpSel)<0) hpSel=W[0]; const who=hpSel, J=hhJobs(), today=hpToday(), on=hhEngineMode()==="preview";
   let h='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'+W.map(function(w){ const sel=w===who, col=hhRmCol(w); return '<button onclick="hpPick(\''+w+'\')" style="padding:6px 11px;border-radius:20px;border:1.5px solid '+(sel?col:'#cbd5e1')+';background:'+(sel?col:'#fff')+';color:'+(sel?'#fff':'#334155')+';font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+esc(hhWhoName(w))+'</button>'; }).join('')+'</div>';
-  h+=hpPreviewSwitchHTML();
+  h+=(hhEngineMode()==='on')?'':hpPreviewSwitchHTML();   // the preview switch hides while the plan is on (HOUSESWITCH)
+  h+=(typeof hpOnHTML==='function')?hpOnHTML(who):'';   // 🚪 HOUSESWITCH: the real switch, and today's stored plan while it is on
   const run=on?hpRun():null, d0=run&&run[0];
   // Today
   h+='<div style="'+HP_CARD+'"><div style="padding:9px 12px;border-left:4px solid '+hhRmCol(who)+';font-size:14px;font-weight:800">📅 Today · '+esc(hhWhoName(who))+(d0?' <span style="font-size:11.5px;font-weight:700;color:var(--muted)">house '+d0.used[who]+' of '+d0.limit[who]+' min</span>':'')+'</div>';
@@ -665,5 +666,54 @@ function hpTomorrowHTML(){
   return h+'<div style="height:6px"></div></div>';
 }
 // HOUSEPREVIEW_END
+// HOUSESWITCH_START — 🚪 the real switch and today's stored plan on 👤 By person (Household by room, step 4; DESIGN §4.3 doors, §5 last
+// bullet, her yes 2026-11-17). Mom only. ON first PROVES a houseDay save works (houseDay/<today>/hello) and only then writes
+// household/meta/engine = {mode:"on", on:<today>} together with each house chore's last-done date filled once from the 8 weeks of
+// history the app already has (hhStats), in ONE update. A refused save leaves the switch as it was and says so in plain words.
+// OFF writes {mode:"off"} — every list goes back to the old path at once (HOUSEDAY's owner-row marks keep anything done under the
+// plan done there). While on: today's plan for the picked person with ✓ marks, → Give to…, ✕ Skip, what fit nobody, 🔁 Re-lay today,
+// and the "Re-lay today too / Keep today, start tomorrow" question after a card, limit or list edit. Every write is HOUSEDAY's or one
+// targeted path here, through _hhWrite() (inert under ?dryrun=1).
+function hpTell(msg){ if(typeof mwToast==="function") try{ mwToast(msg); return; }catch(e){} if(typeof alert==="function") alert(msg); }
+function hpLastFill(){ const J=hhJobs(), out={}; Object.keys(J).forEach(function(id){ const j=J[id]; if(!(typeof hdManaged==="function"&&hdManaged(j))||hpIsIso(j.lastDone)) return; let last=null; try{ last=hhStats(j).last; }catch(e){} if(hpIsIso(last)) out[id]=last; }); return out; }
+function hpSwitchOn(){
+  if(typeof momHere==="function"&&!momHere()) return null; const e=hpEngine(); if(e.mode==="on") return null;
+  if(!(typeof hhTakeoverOn==="function"&&hhTakeoverOn())){ hpTell("The plan needs 🏡 Take over on first (the lists have to come from the household table)."); return null; }
+  if(typeof rlHistReady==="function"&&!rlHistReady()){ hpTell("The chore history is still loading — try again in a moment."); return null; }
+  if(typeof confirm==="function"&&!confirm("Switch the plan ON?\n\nFrom now on the house chores on everyone's lists — the kids', yours and Dad's — come from one plan made each morning, within each person's limit. Health and animal chores stay exactly as they are.\n\nKids set to “school first” see their house chores on the Chores list once school work is done (or at the afternoon hour).\n\nYou can switch it off again here; nothing done is lost or paid twice.")) return null;
+  if(!_hhWrite()){ hpTell("Dry run — nothing was switched on."); return null; }
+  const t=hpToday(), fill=hpLastFill();
+  return db.ref("houseDay/"+t+"/hello").set({at:Date.now(),by:"mom"}).then(function(){
+    const rec={mode:"on",on:t}, upd={"household/meta/engine":rec}; Object.keys(fill).forEach(function(id){ upd["household/jobs/"+id+"/lastDone"]=fill[id]; hhJobs()[id].lastDone=fill[id]; });
+    householdData.meta=Object.assign({},householdData.meta,{engine:rec}); householdOnValue(householdData);
+    return db.ref().update(upd).then(function(){ hpTell("✅ The plan is on. Today's plan is being made now."); hhRender(); return rec; });
+  },function(err){ hpTell("The plan was NOT switched on: the database refused to save it. The database rules need one new line that allows “houseDay” (the same as household). Nothing changed. ("+String((err&&err.code)||err)+")"); return null; });
+}
+function hpSwitchOff(){
+  if(typeof momHere==="function"&&!momHere()) return null; const e=hpEngine(); if(e.mode!=="on") return null;
+  if(typeof confirm==="function"&&!confirm("Switch the plan OFF?\n\nEveryone's lists go back to their own house chores, as before. Chores already done today stay done.")) return null;
+  const rec={mode:"off",on:hpIsIso(e.on)?e.on:hpToday()}; householdData.meta=Object.assign({},householdData.meta,{engine:rec}); householdOnValue(householdData);
+  if(_hhWrite()) db.ref("household/meta/engine").set(rec); hhRender(); return rec;
+}
+function hpGiveSel(t,id,cur){ const can=HouseEng.canOf(hhJobs()[id]||{},hdPeople()); return '<select onchange="hdGive(\''+t+'\',\''+id+'\',this.value);hhRender()" style="padding:2px 4px;border:1.5px solid #e5e7eb;border-radius:7px;font-size:11px;font-family:\'DM Sans\',sans-serif"><option value="">→ Give to…</option>'+can.filter(function(w){ return w!==cur; }).map(function(w){ return '<option value="'+w+'">'+esc(hhWhoName(w))+'</option>'; }).join('')+'</select>'; }
+function hpOnHTML(who){
+  const mom=(typeof momHere!=="function")||momHere(), mode=hhEngineMode(), t=hpToday();
+  if(mode!=="on") return mom?'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#f0fdf4;border:1.5px dashed #86efac;border-radius:10px;padding:7px 10px;margin-bottom:10px;font-size:11.5px;color:#166534"><span style="flex:1">When you are ready, the plan can run everyone’s house chores for real: one plan each morning, within the limits below.</span>'+_hhBtn("hpSwitchOn()",'🚪 Switch the plan on',true,'#16a34a')+'</div>':'';
+  const r=(typeof hdLive==="function")?hdLive(t):null, J=hhJobs(), bad=(typeof _hdBad!=="undefined"&&_hdBad&&_hdBad.iso===t)?_hdBad:null;
+  let h='<div style="'+HP_CARD+'"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:9px 12px;background:#f0fdf4"><span style="font-size:14px;font-weight:800;flex:1;color:#166534">✅ The plan is on · '+esc(hhWhoName(who))+' today</span>'+(mom&&r?_hhBtn("hdRelay('"+t+"');hhRender()",'🔁 Re-lay today',false,'#2B7A78'):'')+(mom?_hhBtn("hpSwitchOff()",'Switch it off',false,'#64748b'):'')+'</div>';
+  if(bad) h+='<div style="padding:7px 12px;background:#fef2f2;color:#991b1b;font-size:12px;font-weight:700">Today’s plan could not be saved (the database said “'+esc(bad.why)+'”), so today’s lists are the old ones. The database rules need a line that allows “houseDay”.</div>';
+  if(!r) return h+'<div style="padding:8px 12px 10px;font-size:12px;color:var(--muted)">'+(bad?'':'Today’s plan is being made — the lists show the old chores until it is ready.')+'</div></div>';
+  if(mom&&typeof hdAsking==="function"&&hdAsking(t)) h+='<div style="padding:8px 12px;border-top:1px solid #eef2f0;background:#fffbeb"><div style="font-size:12px;font-weight:800;margin-bottom:5px">A chore, a limit or a list changed since today was laid.</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+_hhBtn("hdRelay('"+t+"');hhRender()",'Re-lay today too',true,'#2563eb')+_hhBtn("hdKeep('"+t+"');hhRender()",'Keep today, start tomorrow',false,'#475569')+'</div></div>';
+  const ids=Object.keys(r.plan||{}).filter(function(id){ return r.plan[id].who===who&&J[id]; }).sort(function(a,b){ return (r.plan[a].order||0)-(r.plan[b].order||0); });
+  const used=ids.reduce(function(a,id){ return a+(r.plan[id].mins||0); },0), lim=(typeof hdLimitOn==="function")?hdLimitOn(who,t):0;
+  h+='<div style="display:flex;gap:8px;align-items:center;padding:6px 12px 4px;font-size:11px;color:var(--muted)">'+hpBar(used,lim)+'<span>'+used+' / '+lim+' min</span></div>';
+  h+=ids.length?ids.map(function(id){ const x=r.plan[id], j=J[id], sk=!!(r.skip&&r.skip[id]), dn=hdDone(t,id);
+    return hpRow(id,j.emoji,j.label,(x.late>0?_hhChip(x.late+' day'+(x.late===1?'':'s')+' late','#fee2e2','#991b1b'):'')+(x.from?_hhChip('from '+hhWhoName(x.from),'#e0f2fe','#075985'):'')+(sk?_hhChip('skipped','#f3f4f6','#6b7280'):'')+_hhChip(x.mins+' min','#f3f4f6','#475569')
+      +(mom&&!dn?'<span onclick="event.stopPropagation()" style="display:flex;gap:4px">'+hpGiveSel(t,id,who)+_hhBtn("hdSkipToggle('"+t+"','"+id+"','"+who+"');hhRender()",sk?'Put back':'✕ Skip',false,'#94a3b8')+'</span>':''),dn); }).join(''):'<div style="padding:3px 12px 6px;font-size:12px;color:var(--muted)">No house chores for them today.</div>';
+  const over=Object.keys(r.over||{}).filter(function(id){ return J[id]; });
+  if(over.length) h+='<div style="'+HP_HEAD+';border-top:2px solid #fde68a;padding-top:8px">Didn’t fit anyone today ('+over.length+') — first in line tomorrow</div>'+over.map(function(id){ const o=r.over[id], j=J[id]; return hpRow(id,j.emoji,j.label,_hhChip(hhWhoName(o.turn)+'’s turn','#f3f4f6','#475569')+_hhChip(o.mins+' min','#f3f4f6','#475569')+(mom?'<span onclick="event.stopPropagation()">'+hpGiveSel(t,id,"")+'</span>':'')); }).join('');
+  return h+'<div style="height:6px"></div></div>';
+}
+// HOUSESWITCH_END
 // ── end of house.js — the flag below tells index.html the whole file ran (haLazyReady) ──
 if(typeof window!=="undefined") window._haLazy_house=true;
