@@ -90,7 +90,7 @@ console.log("\n── the plan-preview switch ──");
 }
 
 console.log("\n── every write this step can make ──");
-{ const files=fs.readFileSync(path.join(__dirname,"house.js"),"utf8")+"\n"+cut("// HH_PEOPLE_START","// HH_PEOPLE_END");
+{ const HJ=fs.readFileSync(path.join(__dirname,"house.js"),"utf8"), files=HJ.slice(HJ.indexOf("// HOUSEENG_START"),HJ.indexOf("// HOUSEPREVIEW_END"))+"\n"+cut("// HH_PEOPLE_START","// HH_PEOPLE_END");   // this step's blocks (HOUSESLIM moved older Household code into house.js too; its writes are unchanged and tested where they were)
   const refs=[...files.matchAll(/db\.ref\(([^)]*)\)/g)].map(m=>m[1]);
   ok("every db.ref in house.js and HH_PEOPLE is household/people/<who>/<field> or household/meta/engine", refs.length>0&&refs.every(r=>/^"household\/people\/"\+who\+"\/"\+field$|^"household\/people\/"\+who\+"\/fit"$|^"household\/meta\/engine"$/.test(r)), refs);
   ok("every one of them sits behind _hhWrite() on its line", files.split("\n").filter(l=>/db\.ref\(/.test(l)).every(l=>/if\(_hhWrite\(\)\)/.test(l)));

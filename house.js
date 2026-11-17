@@ -10,6 +10,59 @@
 //     index.html — HH_ROTATE, HH_PROJECTS' view (HH_PROJSWEEP, HH_PROJVIEW), HH_ONCEPILE's view (HH_ONCEVIEW), HH_EDITOR,
 //     HH_ROOMPAGE and HH_CARD — each with its marker left where it stood. So the file now loads the first time the Household page
 //     opens: renderHousehold is the door (HOUSESLIM in index.html). HOUSEENG reads none of it (step 4 moves HOUSEENG to the page).
+// HH_PROJVIEW_START — 🧰 the Projects view and its taps (moved from HH_PROJECTS by HOUSESLIM 2026-11-17, unchanged): drawn only on the Household page. hhIsOnce, hhIsProject and hhProjLog stay in index.html (the cleaning-day plan and its check-off use them).
+function hhProjLogFromForm(id){ const g=function(k){ const e=(typeof document!=="undefined"&&document.getElementById)?document.getElementById("hp-"+k+"-"+id):null; return e?String(e.value||""):""; }; return hhProjLog(id,g("min")||20,g("by"),g("note")); }
+function hhProjWork(j){ const w=(j&&j.work)||{}; const keys=Object.keys(w).sort(); let min=0; keys.forEach(function(k){ min+=parseInt(w[k].min,10)||0; }); return {min:min,n:keys.length,last:keys.length?w[keys[keys.length-1]].iso:null,first:keys.length?w[keys[0]].iso:null,list:keys.map(function(k){ return Object.assign({ts:k},w[k]); })}; }
+function hhProjStepAdd(id,el){
+  if(typeof momHere==="function"&&!momHere()) return null; const j=hhJobs()[id]; const label=String((el&&el.value)||"").trim().slice(0,120); if(!j||!label) return null;
+  const sid="s"+Date.now().toString(36)+Math.random().toString(36).slice(2,5), rec={label:label,done:"",order:Object.keys(j.steps||{}).length};
+  j.steps=Object.assign({},j.steps); j.steps[sid]=rec; householdOnValue(householdData); if(_hhWrite()) db.ref("household/jobs/"+id+"/steps/"+sid).set(rec); if(el) el.value=""; hhRender(); return sid;
+}
+function hhProjStep(id,sid){
+  if(typeof momHere==="function"&&!momHere()) return null; const j=hhJobs()[id]; const st=j&&j.steps&&j.steps[sid]; if(!st) return null;
+  const v=st.done?"":_hhIsoLocal(Date.now()); st.done=v; householdOnValue(householdData); if(_hhWrite()) db.ref("household/jobs/"+id+"/steps/"+sid+"/done").set(v); hhRender(); return v;
+}
+function hhProjSteps(j){ const S=(j&&j.steps)||{}; return Object.keys(S).sort(function(a,b){ return ((S[a].order||0)-(S[b].order||0))||(a<b?-1:1); }).map(function(k){ return Object.assign({id:k},S[k]); }); }
+function hhProjDone(id,on){
+  if(typeof momHere==="function"&&!momHere()) return null; const j=hhJobs()[id]; if(!j) return null; const upd={}, P="household/jobs/"+id+"/";
+  if(on){ upd[P+"status"]="retired"; upd[P+"done"]=_hhIsoLocal(Date.now()); j.status="retired"; j.done=upd[P+"done"]; } else { upd[P+"status"]="active"; upd[P+"done"]=null; upd[P+"verdict"]=""; j.status="active"; delete j.done; j.verdict=""; }
+  householdOnValue(householdData); if(_hhWrite()) db.ref().update(upd); hhRender(); return !!on;
+}
+function hhProjStatus(j){ if(j.status==="retired"&&j.done) return {k:"done",txt:"Done "+j.done.slice(5)}; const W=hhProjWork(j); if(W.n) return {k:"going",txt:"In progress since "+W.first.slice(5)+" · "+W.min+" min in "+W.n+" session"+(W.n===1?"":"s")+" · last "+W.last.slice(5)}; return {k:"new",txt:"Not started"}; }
+let hhProjOpen="";   // the project whose log and plan are unfolded
+function hhProjToggle(id){ hhProjOpen=(hhProjOpen===id)?"":id; hhRender(); }
+function hhProjectsHTML(){
+  const jobs=hhJobs(), mom=(typeof momHere==="function")?momHere():false;
+  const ids=Object.keys(jobs).filter(function(id){ return hhIsProject(jobs[id]); });   // HH_ONCEPILE: once-jobs have their own tab
+  let h='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Projects are the bigger things with a room and a target; a once-job is due until it is checked one time. '+(mom?'Add either with + Add a chore and the Kind row.':'')+'</div>';
+  if(!ids.length) return h+'<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:10px 12px;font-size:12px;color:var(--muted)">No projects or once-jobs yet.</div>';
+  const order=["mom","dad"].concat(HH_WHO.filter(w=>w!=="mom"&&w!=="dad"&&w!=="grab"),["grab"]);   // HHROSTER: the family's own kids
+  const sorted=ids.sort(function(a,b){ const A=jobs[a],B=jobs[b]; return (A.status==="retired")-(B.status==="retired")||(order.indexOf(A.who)-order.indexOf(B.who))||((A.target||"9999")<(B.target||"9999")?-1:1); });
+  sorted.forEach(function(id){ const j=jobs[id], S=hhProjStatus(j), W=hhProjWork(j), steps=hhProjSteps(j), nd=steps.filter(function(x){ return x.done; }).length, next=steps.find(function(x){ return !x.done; }), open=hhProjOpen===id, done=j.status==="retired";
+    const col=S.k==="done"?'#94a3b8':S.k==="going"?'#2B7A78':'#b45309';
+    h+='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);margin-bottom:10px;overflow:hidden;border-left:4px solid '+col+(done?';opacity:.65':'')+'">';
+    h+='<div onclick="hhProjToggle(\''+id+'\')" style="padding:10px 12px;cursor:pointer"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:14px;font-weight:800;'+(done?'text-decoration:line-through':'')+'">'+'🧰 '+esc(j.emoji?j.emoji+' ':'')+esc(j.label)+'</span>'
+      +_hhChip(esc(hhWhoName(j.who)),'#f3f4f6','#475569')+_hhChip('🚪 '+esc(hhRoomName(hhRoomOf(j))),'#f3f4f6','#475569')+(j.target?_hhChip('🎯 '+esc(j.target.slice(5)),(j.target<_hhIsoLocal(Date.now())&&!done)?'#fee2e2':'#eff6ff',(j.target<_hhIsoLocal(Date.now())&&!done)?'#991b1b':'#1d4ed8'):'')+(j.expect?_hhChip('~'+j.expect+' min','#f3f4f6','#475569'):'')+'<span style="flex:1"></span><span style="font-size:12px;color:var(--muted)">'+(open?'▾':'▸')+'</span></div>'
+      +'<div style="font-size:11.5px;font-weight:700;color:'+col+';margin-top:4px">'+esc(S.txt)+(steps.length?' · '+nd+' of '+steps.length+' steps':'')+(next?' · next: '+esc(next.label):'')+'</div></div>';
+    if(open&&mom){
+      h+='<div style="padding:0 12px 12px">';
+        h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><label style="font-size:11px;font-weight:800;color:#6b6560">🎯 Target <input type="date" value="'+esc(j.target||'')+'" onchange="hhProjSet(\''+id+'\',\'target\',this.value)" style="padding:5px 7px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif"></label>'
+          +'<label style="font-size:11px;font-weight:800;color:#6b6560">⏱ Expect <input type="number" min="0" max="6000" value="'+esc(j.expect||'')+'" placeholder="min" onchange="hhProjSet(\''+id+'\',\'expect\',this.value)" style="width:64px;padding:5px 7px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif"></label></div>';
+        h+='<div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:6px 0 4px">📝 Plan</div><textarea onchange="hhProjSet(\''+id+'\',\'plan\',this.value)" placeholder="What to buy, the order, measurements…" style="width:100%;box-sizing:border-box;min-height:64px;padding:7px 9px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:12.5px;font-family:\'DM Sans\',sans-serif">'+esc(j.plan||'')+'</textarea>';
+        h+='<div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:8px 0 4px">☑️ Steps · '+nd+' of '+steps.length+'</div>';
+        steps.forEach(function(x){ h+='<div class="sl-check-row'+(x.done?' done':'')+'" onclick="hhProjStep(\''+id+'\',\''+x.id+'\')" style="padding:5px 0"><div class="sl-checkbox'+(x.done?' done':'')+'">'+(x.done?'✓':'')+'</div><div style="flex:1;font-size:12.5px;font-weight:700;'+(x.done?'text-decoration:line-through;color:#6b6560':'')+'">'+esc(x.label)+(x.done?' <span style="font-weight:600;font-size:10.5px;color:#94a3b8">'+esc(x.done.slice(5))+'</span>':'')+'</div></div>'; });
+        h+='<div style="display:flex;gap:6px;margin-top:4px"><input type="text" id="hp-step-'+id+'" placeholder="Add a step…" onkeydown="if(event.key===\'Enter\') hhProjStepAdd(\''+id+'\',this)" style="flex:1;padding:6px 8px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif">'+_hhBtn("hhProjStepAdd('"+id+"',document.getElementById('hp-step-"+id+"'))",'+ Step',false,'#2B7A78')+'</div>';
+        h+='<div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:10px 0 4px">⏱ Work log · '+W.min+' min in '+W.n+' session'+(W.n===1?'':'s')+'</div>';
+        W.list.slice().reverse().forEach(function(x){ h+='<div style="font-size:12px;padding:3px 0;border-bottom:1px solid #f3f4f6"><b>'+esc(x.iso.slice(5))+'</b> · '+x.min+' min · '+esc(hhWhoName(x.by))+(x.note?' — '+esc(x.note):'')+'</div>'; });
+        h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center"><input type="number" id="hp-min-'+id+'" value="20" min="1" max="600" style="width:58px;padding:6px 8px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif"><span style="font-size:11px;color:var(--muted)">min</span>'
+          +'<select id="hp-by-'+id+'" style="padding:6px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif">'+HH_WHO.filter(function(w){ return w!=="grab"; }).map(function(w){ return '<option value="'+w+'"'+(w===j.who?' selected':'')+'>'+esc(hhWhoName(w))+'</option>'; }).join('')+'</select>'
+          +'<input type="text" id="hp-note-'+id+'" placeholder="What got done" style="flex:1;min-width:120px;padding:6px 8px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:12px;font-family:\'DM Sans\',sans-serif">'+_hhBtn("hhProjLogFromForm('"+id+"')",'➕ Worked on it',true,'#2B7A78')+'</div>';
+      h+='<div style="display:flex;gap:6px;margin-top:10px;justify-content:flex-end">'+(done?_hhBtn("hhProjDone('"+id+"',false)",'↩ Reopen',false,'#64748b'):_hhBtn("hhProjDone('"+id+"',true)",'✓ Done',true,'#16a34a'))+'</div></div>';
+    }
+    h+='</div>'; });
+  return h;
+}
+// HH_PROJVIEW_END
 // HOUSEENG_START — the hand-out engine, ONE pure function (DESIGN §6 "Hand-out": "one pure function (table, day, people,
 // overrides) → plan, used for today's stored plan and the grid's future"). No database, no DOM, no app globals: everything it
 // reads is passed in, nothing passed in is changed, the same input gives the same plan (test_house_engine.js checks all three).
