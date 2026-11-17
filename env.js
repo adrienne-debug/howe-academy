@@ -153,7 +153,7 @@ function envSummary(kid,ctx){
   if(typeof cprSumAns==="function") cprSumAns(kid,out,M);   // 📊 CPRESULTS: + each check-in's and the newest final's answers by question id (the site's students; Lincoln's Envirothon forms only, through his mirror)
   if(typeof cpAheadSum==="function"){ const ah=cpAheadSum(kid,M,u); if(ah) out.ahead=ah; }   // 🚀 CPAHEAD: summary.ahead, the cards learned beyond the assignment per day (the class site only; null for Howe and Lincoln)
   if(typeof cpPaceSumCore==="function") cpPaceSumCore(kid,out,ctx);   // 📅 CPPACE: the site kid's core cards per section (the site only; Lincoln's mirror in Howe is untouched)
-  if(typeof cpSkillSummary==="function"){ const sk=cpSkillSummary(kid,M,now); if(sk) out.skills=sk; }   // 🧩 CPSKILL: summary.skills on the class site only (null for Howe and Lincoln)
+  if(typeof cpSkillSummary==="function"){ const sk=cpSkillSummary(kid,M,now); if(sk) out.skills=sk; }   // 🧩 CPSKILL: summary.skills on the class site — and, 🧩 CPLINCOLNSKILLS 2026-11-17, for a mirrored kid whose skills are on (Lincoln); null for everyone else
   if(typeof cpWatchSum==="function"){ const rv=cpWatchSum(kid,M,now); if(rv) out.review=rv; }   // 🧠 CPWATCH: summary.review, the parent drill watch (the class site only; null for Howe and Lincoln)
   if(typeof cpWeekSum==="function") cpWeekSum(kid,out,M,u);   // 📊 CPWEEK: each day's cards split by section, days.<date>.by.<section> = {n,c,m,secs} (counts only; Lincoln's mirror too, §8.11)
   if(typeof cpPtsSum==="function") cpPtsSum(kid,out,M,u,ctx);   // ⭐ CPPOINTS: days.<date> + {due, done, cleared, extra, games, stars}, summary.stars (Lincoln's mirror too: his stars are what the scheme WOULD give, starsInfo)
@@ -254,6 +254,7 @@ function envmRelAttach(kid,_lz){
   if(typeof cplntAttach==="function") cplntAttach(kid,cid,_envm.edb,_envm.subs,envmSid(kid));   // 👩‍🏫 CPLINCOLNL3: the teacher's drills for him (drills/<cid>/<sid>), graded into Howe once each
   if(typeof cplnpLoad==="function") cplnpLoad(kid,cid,_envm.edb,envmSid(kid));   // 🌿 CPLINCOLNPARITY: his class's card, trim and test layers, read once (memory only)
   if(typeof cpmcAttach==="function") cpmcAttach(kid,cid,_envm.edb,_envm.subs,envmSid(kid));   // 🏫 CPMYCLASS: the class boards (boards/<cid>) for his 🌿 tile, one listener with the others (off the class site only)
+  if(typeof cplkLoad==="function") cplkLoad(kid,cid,_envm.edb);   // 🧩 CPLINCOLNSKILLS: his class's skills layer (classSkills/<cid>), read once (memory only; off the class site only)
 }
 // A release record {<deckKey>|<station>: truthy}: clear each matching deck's hold once — the family database's one targeted removal.
 function envmRelease(kid,rel){

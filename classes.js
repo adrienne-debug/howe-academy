@@ -768,6 +768,70 @@ function cpmcGamesChip(kid){
 }
 function cpmcGamesOff(){ _cpmc.gf=null; try{ if(typeof renderAll==="function") renderAll(); }catch(e){} }
 // CPMYCLASS_END
+// CPLINCOLNSKILLS_START — 🧩 SKILLS ON HIS 🌿 STUDY PAGE IN THE FAMILY APP (2026-11-17). Her words: "we need the skills built stat" — after
+// "also skills are not on lincolns study page correct?". The NC Envirothon unit's 13 skills (gear pictures, the biotic index sheet, the soil
+// texture triangle, label the diagram, ID by part and by sign, the Biltmore stick) were drawn on the class site only (CPSKILL: cpskOn =
+// envSiteOn), so Lincoln — who studies 🌿 Envirothon in Howe, mirrored into his class — never saw one, while the class's trim already takes
+// out the cards those skills replace. This is Plan B of PLAN_cp_lincoln_parity_2026-10-29.md, slice 1: the SAME engine, the same three
+// stages (👀 Watch it → ✍️ Finish it → 💪 On your own), the same learned rule, on his own 📚 Study page.
+//   · WHO: cplkKidOn(kid) — the class link is on for him (CPLINCOLN's cplnOn: a mirrored kid, the mirror signed in, his class reads in, not
+//     paused, never the class site) AND his class's skills layer has answered. Everyone else — the other Howe kids, DeWalt, Burris, the
+//     mirror signed out, the class site itself — gets "" / false / null from every function here, so their pages are byte for byte as before.
+//   · WHAT HE SEES: under his 🌿 start, the class site's own 🧩 Skills door (cpSkillDoorHtml) — the skills of the sections that are out to
+//     him (cpskReleased: a deck of the section with no hold, the rule his check-ins use). A running sitting takes the page, as ID Flash does
+//     (renderMastStudy's two guarded lines). Only on his own 📚 Study page (CPMYCLASS's cpmcStudyPage) — never Mom's Mastery tab — and never
+//     under a running card sitting.
+//   · THE LAYER: classSkills/<cid> (the teacher's Hide / Make optional), read ONCE through his mirror from envmRelAttach's guarded line and
+//     kept in memory only. A refused or empty read is no layer: the unit's own skills, nothing breaks.
+//   · PICTURES: the repo set only (envirothon/pics, the pictures ID Flash already shows). A photo the teacher or Adrienne added on the class
+//     site (classPhotos / units/<id>/photos) is not read here — that is Plan D, its own piece.
+//   · THE SAVE is CPSKILL's own and nothing new: at the end of a sitting ONE multi-path update on the family's mastery —
+//     <kid>_skills/<unitId>/<skill> + studyLog/<kid>/skills/<yyyymmdd> (its own sid like "idflash", so the 🌿 session's "Done today" is
+//     untouched) — through db, never under ?dryrun=1. Then CPSKILL's own call to the mirror ("study"): summary.skills joins what it already publishes, so
+//     his teacher's Skills fold and his "My scores" rows count him like any classmate.
+//   · NOT HERE (each its own piece, her yes first): the final waiting for the core skills (plan.<section>.skillsForFinal — cpskFinalMissing
+//     reads the class site's own plan, so it stays "no" for him), class-added photos (Plan D), the team mock (C), study days (E), 🚩 Flag it.
+//   · This block writes NOTHING and holds no kid's name: one read, in memory.
+const _cplk={k:{},picTry:false};
+function cplkKidOn(kid){ try{ if(!kid||typeof cplnOn!=="function"||!cplnOn(kid)) return false; const r=_cplk.k[kid], c=_cpln.kids[kid]; return !!(r&&r.layer&&c&&r.cid===c.cid); }catch(e){ return false; } }
+// is any mirrored kid's skills on? (CPSKILL's cpskOn and CPPHOTOS' cpPhotos ask; false at once for a family with no class link)
+function cplkAny(){ try{ if(typeof envmKids!=="function") return false; const K=envmKids()||[]; for(let i=0;i<K.length;i++){ if(cplkKidOn(K[i])) return true; } }catch(e){} return false; }
+// CPSKILL's cpskListFor: what his list is made from — the Envirothon unit's skills, his class's layer over them (null for everyone else)
+function cplkOpts(kid){ if(!cplkKidOn(kid)) return null; return {units:[(typeof ENV_UNIT_ID!=="undefined")?ENV_UNIT_ID:"nc_envirothon"],layer:_cplk.k[kid].layer}; }
+// ENVMIRROR's envmRelAttach (the class is known): the ONE read, once per class. Refused or empty → {} (the unit's own skills).
+function cplkLoad(kid,cid,edb){
+  try{
+    if(!kid||!cid||!edb||(typeof envSiteOn==="function"&&envSiteOn())) return false;
+    const cur=_cplk.k[kid]; if(cur&&cur.cid===cid) return false;
+    const rec={cid:cid,layer:null}; _cplk.k[kid]=rec;
+    const done=v=>{ if(_cplk.k[kid]!==rec) return; rec.layer=(v&&typeof v==="object")?v:{}; try{ if(typeof renderAllSoon==="function") renderAllSoon(); }catch(e){} };
+    edb.ref("classSkills/"+cid).once("value",s=>done((s&&typeof s.val==="function")?s.val():null),()=>done(null));
+    return true;
+  }catch(e){ return false; }
+}
+// his own 🌿 Study page? (the 🌿 session, the class link and the layer in, Kids' Corner / Dad's Day — never Mom's Mastery tab)
+function cplkPage(kid){ return cplkKidOn(kid)&&typeof cpmcStudyPage==="function"&&cpmcStudyPage(kid); }
+// the pictures a picture skill shows: ENVIDFLASH's index, asked for once if it isn't in yet (it normally is: the unit's cards loaded it)
+function cplkPics(){
+  try{ if(_cplk.picTry||typeof envPicsIndex!=="function"||envPicsIndex()||typeof envPicsLoad!=="function") return; _cplk.picTry=true;
+    envPicsLoad().then(()=>{ if(typeof cpphBump==="function") cpphBump(); if(typeof renderAllSoon==="function") renderAllSoon(); }).catch(()=>{}); }catch(e){}
+}
+// renderMastStudy's first guarded line: a running skill sitting takes the page ("" → the page as it was)
+function cplkRunHtml(kid){
+  try{
+    if(typeof _cpsk==="undefined"||!_cpsk.run||_cpsk.run.kid!==kid||!cplkPage(kid)) return "";
+    return (typeof cpSkillSittingHtml==="function")?cpSkillSittingHtml():"";   // 🧩 CPSKILL: the class site's own sitting, unchanged
+  }catch(e){ return ""; }
+}
+// renderMastStudy's second guarded line: the 🧩 Skills door under his 🌿 start ("" for every other kid, session, page or family)
+function cplkDoorHtml(kid,session){
+  try{
+    if(!kid||!session||typeof ENV_SESSION_SID==="undefined"||session.sid!==ENV_SESSION_SID||!cplkPage(kid)) return "";
+    cplkPics(); if(typeof envsCss==="function") envsCss();   // the class site's toast style ("Fill in every step first"); every rule is .envs-* or body.env-site
+    return (typeof cpSkillDoorHtml==="function")?cpSkillDoorHtml(kid):"";   // 🧩 CPSKILL: the class site's own door, unchanged
+  }catch(e){ return ""; }
+}
+// CPLINCOLNSKILLS_END
 // CPGEAR_START — each role's ⚙️ shows only its own things (design §7g). Her answer 2026-10-28 (Q19): the bar color is the
 // class's, set by the teacher; kids and parents have no color option at all. So the 🎨 Color card is gone from every role
 // (kid, parent, teacher, admin) and envsSetColor with it; the color moves to 🏫 Class setup (CPCLASS).
@@ -4281,7 +4345,8 @@ function cpphLayered(item,o){ return cpphLayeredK(cpphKey(item),Object.assign({i
 function cpphMainFirst(L){ return L.filter(p=>p.main).concat(L.filter(p=>!p.main)); }
 // ── THE LOOKUPS (skills, ID Flash, the mock, the trim)
 function cpPhotos(item,tag,opt){
-  if(!cpphSite()) return []; const want=(tag==null||tag==="")?null:(Array.isArray(tag)?tag:[tag]);
+  if(!cpphSite()&&!(typeof cplkAny==="function"&&cplkAny())) return [];   // 🧩 CPLINCOLNSKILLS: a mirrored kid's skills in the family app draw the repo set (no unit / class layer is read there)
+  const want=(tag==null||tag==="")?null:(Array.isArray(tag)?tag:[tag]);
   let L=cpphLayered(item,{card:opt&&opt.card}).list.filter(p=>!p.hid); if(want) L=L.filter(p=>p.tags.some(t=>want.indexOf(t)>=0));
   return cpphMainFirst(L); }
 function cpPhotoForCard(card){
@@ -4816,6 +4881,10 @@ function cpupCss(){
 // the ENGINE only; each item type (chart, table, sheet, label, id, scale, mock) is its own later PR and registers itself with
 // cpSkillTypeAdd from its own block. INERT unless ENVSITE's envEdition() says "envirothon": every function returns at once otherwise, so
 // Howe, DeWalt and Burris boot byte-identically, and Lincoln's mirror publishes exactly the summary it did (cpSkillSummary → null there).
+//   · 2026-11-17, 🧩 CPLINCOLNSKILLS (her words: "we need the skills built stat"): ONE exception — a mirrored kid whose class link is on
+//     (Lincoln in Howe) gets the same engine on his own 🌿 Study page. cpskOn also says yes for that family, cpskListFor(kid) builds his
+//     list from the unit under his class's layer, and the save is the same one write on the family's own mastery. Every other kid and
+//     family: as the line above says.
 //   · unit.skills — a unit lists skills next to its decks: {key, section, type, label, core, steps, data, tests, replaces} (§4.1b). They are
 //     read from the unit's catalog entry (CPU_UNITS / units/<id>/index), else from its loaded file (HoweUnits[id].unit.skills). A skill key
 //     may hold a "." (soils.triangle); as a database key every "." becomes ":" (cpskFb). Nothing in the shape is Envirothon-specific.
@@ -4856,7 +4925,7 @@ const CPSK_COST={tryMin:3,tries:8,reviewDays:CPSK_REVIEW_DAYS};   // the pace pl
 const CPSK_KEY_RE=/^[a-z0-9][a-z0-9_.-]{0,59}$/;
 const CPSK_TYPES={};
 const _cpsk={run:null,kid:null,kidAsked:"",L:{},demo:{}};
-function cpskOn(){ return typeof envSiteOn==="function"&&envSiteOn(); }
+function cpskOn(){ return (typeof envSiteOn==="function"&&envSiteOn())||(typeof cplkAny==="function"&&cplkAny()); }   // 🧩 CPLINCOLNSKILLS: …or a family whose mirrored kid follows a class (Howe: Lincoln)
 function cpskFb(k){ return String(k==null?"":k).replace(/\./g,":"); }
 function cpskEsc(v){ return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function cpskJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
@@ -4895,12 +4964,15 @@ function cpskLayer(){
 function cpSkillList(cls,layer,opts){
   if(!cpskOn()) return [];
   if(cls===undefined||cls===null) cls=(typeof cpCls==="function")?cpCls():_envs.cls; layer=layer||cpskLayer(); opts=opts||{};
-  const ids=(typeof cpuAttached==="function")?cpuAttached(cls):[], ord=((typeof envsStations==="function")?envsStations():[]).map(s=>s.id), out=[], seen={};
+  const ids=Array.isArray(opts.units)?opts.units:((typeof cpuAttached==="function")?cpuAttached(cls):[]), ord=((typeof envsStations==="function")?envsStations():[]).map(s=>s.id), out=[], seen={};   // opts.units: 🧩 CPLINCOLNSKILLS (off the class site no class is loaded, so no unit is "attached")
   ids.forEach(id=>{ cpskUnitSkills(id).forEach(s=>{ if(!cpSkillCheck(s,ord.length?ord:null).ok) return; const fb=cpskFb(s.key); if(seen[fb]) return; seen[fb]=1;
     const L=(layer&&layer[fb])||{}, hide=L.hide===true; if(hide&&!opts.all) return;
     out.push({key:s.key,fb,unit:id,section:s.section,type:s.type,label:s.label,core:typeof L.core==="boolean"?L.core:s.core===true,unitCore:s.core===true,steps:s.steps||[],data:s.data,tests:s.tests||[],replaces:s.replaces||[],hide}); }); });
   return out.sort((a,b)=>(ord.indexOf(a.section)-ord.indexOf(b.section))||String(a.label).localeCompare(String(b.label)));
 }
+// the list for THIS kid: the class site's own (cpSkillList, as before) — or, 🧩 CPLINCOLNSKILLS, a mirrored kid's in the family app: the
+// unit's skills under his class's hide / optional layer (cplkOpts → null for everyone else)
+function cpskListFor(kid){ const o=(typeof cplkOpts==="function")?cplkOpts(kid):null; return o?cpSkillList(null,o.layer,{units:o.units}):cpSkillList(); }
 // ── the practice rules (PURE)
 function cpSkillFresh(){ return {stage:"shown",fade:1,up:0,down:0,learned:false,at:null,next:null,rev:0,tries:[],miss:{}}; }
 function cpskState(st){
@@ -4935,7 +5007,7 @@ function cpSkillDue(st,now){ if(!st) return "new"; if(!st.learned) return "pract
 function cpSkillFrom(st,n){ const s=cpskState(st); return s.stage==="solo"?0:s.stage==="faded"?Math.max(0,n-Math.min(n,s.fade||1)):n; }
 function cpskStepOk(step,given){ if(!step) return false; const g=String(given==null?"":given).trim(); if(g==="") return false; return step.kind==="pick"?g===String(step.answer):Number(g)===Number(step.answer); }
 // ── the kid's side (the site's own kid only: a kid or parent login, or the demo's kid)
-function cpSkillKidOn(kid){ try{ if(!cpskOn()||!kid||typeof _envs==="undefined"||kid!==_envs.kid) return false; return envsDemo()||_envs.role==="kid"||_envs.role==="parent"; }catch(e){ return false; } }
+function cpSkillKidOn(kid){ try{ if(typeof cplkKidOn==="function"&&cplkKidOn(kid)) return true;   /* 🧩 CPLINCOLNSKILLS: a mirrored kid in the family app */ if(!cpskOn()||!kid||typeof _envs==="undefined"||kid!==_envs.kid) return false; return envsDemo()||_envs.role==="kid"||_envs.role==="parent"; }catch(e){ return false; } }
 function cpskKidStates(kid,M){ M=M||((typeof masteryData!=="undefined"&&masteryData)||{}); const S=M[kid+"_skills"]; return (S&&typeof S==="object")?S:{}; }
 function cpskKidState(kid,sk,M){ const u=cpskKidStates(kid,M)[sk.unit], e=u&&u[sk.fb]; return (e&&typeof e==="object")?e:null; }
 // a section is open to the kid when one of its decks has no hold (envtReleased's rule, for any unit's sections)
@@ -4945,7 +5017,7 @@ function cpskReleased(kid,section){
   if(!hold||typeof hold!=="object"){ let items=masteryData[kid]||[]; if(!Array.isArray(items)) items=Object.values(items); return st.decks.some(d=>items.some(i=>i&&i.subject===d.key)); }
   return st.decks.some(d=>!hold[d.key]);
 }
-function cpSkillsFor(kid){ if(!cpSkillKidOn(kid)) return []; const now=Date.now(); return cpSkillList().filter(s=>cpskReleased(kid,s.section)).map(s=>{ const st=cpskKidState(kid,s); return Object.assign({},s,{st,due:cpSkillDue(st,now)}); }); }
+function cpSkillsFor(kid){ if(!cpSkillKidOn(kid)) return []; const now=Date.now(); return cpskListFor(kid).filter(s=>cpskReleased(kid,s.section)).map(s=>{ const st=cpskKidState(kid,s); return Object.assign({},s,{st,due:cpSkillDue(st,now)}); }); }
 // the class's layer, read ONCE on a kid's (or parent's) app from the shared instance
 function cpSkillKidLoad(){
   if(!cpskOn()||envsDemo()||!(_envs.role==="kid"||_envs.role==="parent")||!_envs.cid||_cpsk.kidAsked===_envs.cid) return false;
@@ -4955,7 +5027,7 @@ function cpSkillKidLoad(){
 }
 // ── a sitting: up to CPSK_SITTING tries of one skill, in memory until the end
 function cpSkillOpen(kid,fb,seed){
-  if(!cpSkillKidOn(kid)) return false; const sk=cpSkillList().find(s=>s.fb===fb); if(!sk||!CPSK_TYPES[sk.type]) return false;
+  if(!cpSkillKidOn(kid)) return false; const sk=cpskListFor(kid).find(s=>s.fb===fb); if(!sk||!CPSK_TYPES[sk.type]) return false;
   const dry=!envsDemo()&&typeof _dryRun==="function"&&_dryRun();
   _cpsk.run={kid,sk,st:cpskState(cpskKidState(kid,sk)),tries:[],startedAt:Date.now(),seed:(seed!=null?seed:Date.now())>>>0,n:0,dry,done:null,moved:null};
   if(!cpskNewProblem(_cpsk.run)){ _cpsk.run=null; cpskToast("This skill can’t make a problem yet"); return false; }
@@ -5041,7 +5113,7 @@ function cpskStepRow(r,i){
     if(!ok) h+='<div style="font-size:12.5px;font-weight:700;color:#1f2937">\u2192 '+cpskEsc(S.answer)+(S.work?' <span style="color:var(--muted);font-weight:600">· '+cpskEsc(S.work)+'</span>':'')+'</div>';
     return h+'</div>'; }
   if(S.kind==="pick") return h+'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">'+(S.choices||[]).map(c=>{ const on=r.ans[i]===String(c); return '<button onclick="cpSkillPick('+i+',\''+cpskJ(c)+'\')" style="min-height:44px;padding:0 14px;border-radius:12px;border:2px solid '+(on?'#0f766e':'#d1d5db')+';background:'+(on?'#0f766e':'#fff')+';color:'+(on?'#fff':'#1f2937')+';font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+cpskEsc(c)+'</button>'; }).join("")+'</div></div>';
-  return h+'<input type="text" inputmode="numeric" autocomplete="off" value="'+cpskEsc(r.ans[i]==null?"":r.ans[i])+'" oninput="cpSkillInput('+i+',this.value)" aria-label="'+cpskEsc(S.label)+'" style="margin-top:6px;width:120px;min-height:44px;padding:0 12px;border:2px solid #d1d5db;border-radius:12px;font-size:16px;font-family:\'DM Sans\',sans-serif"></div>';
+  return h+'<input id="cpsk-in-'+i+'" type="text" inputmode="numeric" autocomplete="off" value="'+cpskEsc(r.ans[i]==null?"":r.ans[i])+'" oninput="cpSkillInput('+i+',this.value)" aria-label="'+cpskEsc(S.label)+'" style="margin-top:6px;width:120px;min-height:44px;padding:0 12px;border:2px solid #d1d5db;border-radius:12px;font-size:16px;font-family:\'DM Sans\',sans-serif"></div>';
 }
 function cpSkillMissLabel(sk,code){ const T=sk&&CPSK_TYPES[sk.type]; let t=null; try{ t=T&&T.missLabel?T.missLabel(String(code),sk):null; }catch(e){ t=null; } return t||String(code); }
 function cpSkillSittingHtml(){
@@ -5076,9 +5148,10 @@ function cpSkillStudyWrap(kid,body){
   if(_cpsk.run&&_cpsk.run.kid===kid) return cpSkillSittingHtml();
   return body+cpSkillDoorHtml(kid);
 }
-// ── what the mirror publishes (envSummary's one guarded line): counts and codes only; null off the site (Lincoln, Howe: unchanged)
+// ── what the mirror publishes (envSummary's one guarded line): counts and codes only; null off the site — but for a mirrored kid whose
+// skills are on (🧩 CPLINCOLNSKILLS, 2026-11-17: Lincoln), so his class sees his skills like any classmate's
 function cpSkillSummary(kid,M,now){
-  if(!cpskOn()) return null; const L=cpSkillList(); if(!L.length) return null; const out={};
+  if(!cpskOn()) return null; const L=cpskListFor(kid); if(!L.length) return null; const out={};
   L.forEach(s=>{ const o=out[s.section]||(out[s.section]={learned:0,total:0,miss:{},stage:{}}), st=cpskKidState(kid,s,M); o.total++;
     if(st&&st.learned) o.learned++;
     o.stage[s.fb]=!st?"new":st.learned?"learned":(CPSK_STAGES.indexOf(st.stage)>=0?st.stage:"shown");
