@@ -13,10 +13,10 @@
 const fs=require("fs"), os=require("os"), path=require("path"), cp=require("child_process"), W=require(path.join(__dirname,"test_fixtures","house_world.js"));
 let pass=0, fail=0; const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  ("+JSON.stringify(x).slice(0,700)+")":"")); } };
 let BASE=process.env.BASE_HTML;
-if(!BASE){ try{ const t=path.join(os.tmpdir(),"house_parity_base_"+process.pid+".html"); fs.writeFileSync(t,cp.execSync("git show origin/main:index.html",{cwd:__dirname,maxBuffer:64<<20})); BASE=t; }catch(e){ BASE=null; } }
+if(!BASE){ try{ const t=path.join(os.tmpdir(),"house_parity_base_"+process.pid+".html"); fs.writeFileSync(t,cp.execSync("git show origin/main:index.html",{cwd:__dirname,maxBuffer:64<<20,stdio:["ignore","pipe","ignore"]})); BASE=t; }catch(e){ BASE=null; } }
 console.log("(base: "+(BASE||"none — git show failed; comparing off with no switch at all on this branch")+")");
 const MON="2026-11-16";
-const strip=t=>{ const o=JSON.parse(JSON.stringify(t)); delete o.houseDay; return o; };
+const strip=t=>{ const o=JSON.parse(JSON.stringify(t)); delete o.houseDay; if(!BASE&&o.household&&o.household.meta) delete o.household.meta.engine; return o; };   // no base: the switch node itself is the one difference
 const tick=(d,slot,kid,label)=>d.run("(function(){ const s=rtStepsFor('"+slot+"','"+kid+"',false,day)||[]; const i=s.findIndex(function(x){ return x&&x.label==="+JSON.stringify(label)+"&&x.cad!=='none'; }); if(i<0) return -1; "+(slot==="morning"?"toggleMorningStep('"+kid+"',i)":"toggleRtStep('"+slot+"','"+kid+"',i)")+"; return i; })()");
 // the script of taps; each step returns a snapshot
 async function script(o){
