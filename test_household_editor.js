@@ -52,12 +52,12 @@ console.log("1. Every field, one targeted write each");
   const k=mk({noMom:true}); ok("not Mom → nothing", k.hhEditSet(VAC,"label","x")===null&&k.hhEditDay(WIPE,1)===null&&k.writes.length===0);
 }
 console.log("2. On screen");
-{ const c=mk(); const row=c.hhRowHTML(VAC,c.hhJobs()[VAC]); ok("✎ Edit on a Review row", /hhEditToggle\('rt_chores_lincoln_vacuum_kitchen'\)/.test(row)&&!/Time of day/.test(row));
+{ const c=mk(); const row=c.hhRowHTML(VAC,c.hhJobs()[VAC]); ok("✎ Edit on a Review row", /hcOpen\('rt_chores_lincoln_vacuum_kitchen'\)/.test(row)&&!/Time of day/.test(row));
   c.hhEditToggle(VAC); const e=c.hhEditHTML(VAC);
   ok("the editor: emoji row, words, stars, four kid slots, the days modes with Mon–Sun, minutes, start date, rooms, levels, areas, who can, Give to…, Retire, Done", /hhEditSet\('rt_chores_lincoln_vacuum_kitchen','emoji','🧹'\)/.test(e)&&/hhEditField\('rt_chores_lincoln_vacuum_kitchen','label',this\)/.test(e)&&/title="stars"/.test(e)&&/'slot','evening'/.test(e)&&/hhEditCadMode_set\('rt_chores_lincoln_vacuum_kitchen','wk'\)/.test(e)&&/hhEditDay\('rt_chores_lincoln_vacuum_kitchen',6\)/.test(e)&&/'minutes',this/.test(e)&&/type="date"/.test(e)&&/'room','living'/.test(e)&&/'level',3\)/.test(e)&&/'area','animals'/.test(e)&&/hhCanToggle\('rt_chores_lincoln_vacuum_kitchen','lucy'\)/.test(e)&&/hhGiveToggle\(/.test(e)&&/'verdict','retire'/.test(e)&&/Done</.test(e));
   ok("Wednesday is marked on the weekday chips", /background:#0e7490;color:#fff[^>]*>Wed</.test(e));
   c.hhEditToggle(MOM); const em=c.hhEditHTML(MOM); ok("Mom's editor: her four slots, no stars box", /'slot','night'/.test(em)&&!/title="stars"/.test(em));
-  const k=mk({noMom:true}); ok("a kid's device: no ✎, no editor", k.hhEditBtn(VAC)===""&&!/hhEditToggle/.test(k.hhRowHTML(VAC,k.hhJobs()[VAC])));
+  const k=mk({noMom:true}); ok("a kid's device: no ✎, no editor", k.hhEditBtn(VAC)===""&&!/hcOpen/.test(k.hhRowHTML(VAC,k.hhJobs()[VAC])));
 }
 console.log("3. Area and Room by person");
 { const c=mk(); const el={}; c.hhGo("area"); c.get('hhOpenArea="cleaning"'); c.renderHousehold(el); let h=el.innerHTML;
@@ -65,15 +65,15 @@ console.log("3. Area and Room by person");
   c.hhPersonToggle("area","cleaning","lincoln"); c.renderHousehold(el); h=el.innerHTML;
   ok("tap Lincoln: his time-of-day headings (Chores · 2), each folded, no rows yet; Lucy's stay folded", /hhPersonToggle\('area','cleaning','lincoln\|chores'\)/.test(h)&&/Chores<\/span><span[^>]*>2 · \d+ min/.test(h)&&!/hhEditToggle\('/.test(h)&&!/'lucy\|chores'/.test(h));
   c.hhPersonToggle("area","cleaning","lincoln|chores"); c.renderHousehold(el); h=el.innerHTML;
-  ok("tap Chores: his two chores rows open with ✎", /hhEditToggle\('rt_chores_lincoln_vacuum_kitchen'\)/.test(h)&&/hhEditToggle\('rt_chores_lincoln_wipe_table'\)/.test(h)&&!/hhEditToggle\('rt_chores_lucy_dust_dining_area'\)/.test(h));
+  ok("tap Chores: his two chores rows open with ✎", /hcOpen\('rt_chores_lincoln_vacuum_kitchen'\)/.test(h)&&/hcOpen\('rt_chores_lincoln_wipe_table'\)/.test(h)&&!/hcOpen\('rt_chores_lucy_dust_dining_area'\)/.test(h));
   c.get('hhOpenArea="pickup"'); c.hhPersonToggle("area","pickup","lincoln"); c.renderHousehold(el); ok("Pickup card: Lincoln's Afternoon group, folded", /hhPersonToggle\('area','pickup','lincoln\|afternoon'\)/.test(el.innerHTML)&&!/hhEditToggle\('rt_afternoon_lincoln_pickup_school_room'\)/.test(el.innerHTML));
   c.get('hhOpenArea="cleaning"'); c.hhPersonToggle("area","cleaning","mom"); c.renderHousehold(el); ok("Mom open: her Night group, named from her strip's slots", /hhPersonToggle\('area','cleaning','mom\|night'\)/.test(el.innerHTML)&&/Night<\/span>/.test(el.innerHTML));
   const RV=c.get('hhRoomOf(hhJobs()["'+VAC+'"])'), RD=c.get('hhRoomOf(hhJobs()["rt_chores_lucy_dust_dining_area"])');
   c.hhGo("room"); c.get('hhOpenRoom="'+RV+'"'); c.renderHousehold(el); let r=el.innerHTML; ok("the Room card: a folded heading per person, no rows", new RegExp("hhPersonToggle\\('room','"+RV+"','lincoln'\\)").test(r)&&!/hhEditToggle\('/.test(r));
   c.hhPersonToggle("room",RV,"lincoln"); c.renderHousehold(el); r=el.innerHTML; ok("tap Lincoln in that room: his Chores heading, folded", new RegExp("hhPersonToggle\\('room','"+RV+"','lincoln\\|chores'\\)").test(r)&&!/hhEditToggle\('rt_chores_lincoln_vacuum_kitchen'\)/.test(r));
-  c.hhPersonToggle("room",RV,"lincoln|chores"); c.renderHousehold(el); r=el.innerHTML; ok("tap Chores: his row with ✎", /hhEditToggle\('rt_chores_lincoln_vacuum_kitchen'\)/.test(r));
-  c.get('hhOpenRoom="'+RD+'"'); c.renderHousehold(el); r=el.innerHTML; ok("another room: Lucy folded there until tapped twice (person, then Chores)", !/hhEditToggle\('rt_chores_lucy_dust_dining_area'\)/.test(r)&&(c.hhPersonToggle("room",RD,"lucy"),c.hhPersonToggle("room",RD,"lucy|chores"),c.renderHousehold(el),/hhEditToggle\('rt_chores_lucy_dust_dining_area'\)/.test(el.innerHTML)));
-  c.get('hhOpenRoom="'+RV+'"'); c.hhSortToggle(); c.renderHousehold(el); ok("sorted most-behind-first: no headings at all, every row shows", !/hhPersonToggle\(/.test(el.innerHTML)&&/hhEditToggle\('rt_chores_lincoln_vacuum_kitchen'\)/.test(el.innerHTML));
+  c.hhPersonToggle("room",RV,"lincoln|chores"); c.renderHousehold(el); r=el.innerHTML; ok("tap Chores: his row with ✎", /hcOpen\('rt_chores_lincoln_vacuum_kitchen'\)/.test(r));
+  c.get('hhOpenRoom="'+RD+'"'); c.renderHousehold(el); r=el.innerHTML; ok("another room: Lucy folded there until tapped twice (person, then Chores)", !/hcOpen\('rt_chores_lucy_dust_dining_area'\)/.test(r)&&(c.hhPersonToggle("room",RD,"lucy"),c.hhPersonToggle("room",RD,"lucy|chores"),c.renderHousehold(el),/hcOpen\('rt_chores_lucy_dust_dining_area'\)/.test(el.innerHTML)));
+  c.get('hhOpenRoom="'+RV+'"'); c.hhSortToggle(); c.renderHousehold(el); ok("sorted most-behind-first: no headings at all, every row shows", !/hhPersonToggle\(/.test(el.innerHTML)&&/hcOpen\('rt_chores_lincoln_vacuum_kitchen'\)/.test(el.innerHTML));
 }
 ok("no 🔀", src.indexOf("🔀")<0);
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
