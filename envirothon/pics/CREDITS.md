@@ -1,6 +1,6 @@
 # ID Flash pictures — credits
 
-Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.json` + `~/Desktop/Envirothon/pics_staging` (checked Commons photos, each marked for the teacher to confirm) + `~/Desktop/Envirothon/pics_fill` (checked Commons photos, each marked for the teacher to confirm). 676 pictures, 28.4 MB, longest side 600 px, JPEG quality 70, metadata stripped. Pictures are per item (species / tool) and shared by every card of that item.
+Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.json` + `~/Desktop/Envirothon/pics_staging` (checked Commons photos, each marked for the teacher to confirm) + `~/Desktop/Envirothon/pics_fill` (checked Commons photos, each marked for the teacher to confirm) + `~/Desktop/Envirothon/pics_soils` (checked Commons photos, each marked for the teacher to confirm). 697 pictures, 29.6 MB, longest side 600 px, JPEG quality 70, metadata stripped. Pictures are per item (species / tool) and shared by every card of that item.
 
 ## Forestry · ID — 216 pictures
 
@@ -584,38 +584,58 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | aquatic_id/white_crappie/4.jpg | White crappie | caught NC | redrovertracy | CC BY 4.0 | [link](https://www.inaturalist.org/observations/205563985) |
 | aquatic_id/white_crappie/5.jpg | White crappie | live | uploader Harmil~commonswiki | Public domain | [link](https://commons.wikimedia.org/wiki/File:White_Crappie.jpg) |
 
-## Soils and Land Use · ID — 36 pictures
+## Soils and Land Use · ID — 57 pictures
 
 | picture | item | shot | author | licence | source |
 |---|---|---|---|---|---|
 | soils_id/a_horizon/1.jpg | A horizon | horizon | Photo by Lynn Betts, USDA Natural Resources Conservation Service. | Public domain | [link](https://commons.wikimedia.org/wiki/File:NRCSIA99344_-_Iowa_(3381)(NRCS_Photo_Gallery).jpg) |
 | soils_id/a_horizon/2.jpg | A horizon | horizon | Mclund | CC BY 4.0 | [link](https://commons.wikimedia.org/wiki/File:Soil_profile_0-125cm.jpg) |
+| soils_id/a_horizon/3.jpg | A horizon | horizon | Ivtorov | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:2018_chernozem_soil_on_limestone_.jpeg) |
 | soils_id/alfisols/1.jpg | Alfisols | profile | U.S. Department of Agriculture (USDA) | Public domain | [link](https://commons.wikimedia.org/wiki/File:Alfisol.jpg) |
 | soils_id/alfisols/2.jpg | Alfisols | profile | Plogeo | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Gleba_p%C5%82owa3.JPG) |
+| soils_id/alfisols/3.jpg | Alfisols | profile | author not stated on Commons (uploaded by Paleorthid) | Public domain | [link](https://commons.wikimedia.org/wiki/File:Alfisol_profile.jpg) |
 | soils_id/andisols/1.jpg | Andisols | profile | author not stated on Commons (uploaded by Bodenfreund) | Public domain | [link](https://commons.wikimedia.org/wiki/File:Andisol.jpg) |
 | soils_id/andisols/2.jpg | Andisols | profile | SoilScience.info | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Typic_Placudand_(Tentative)_-_Cochabamba,_Bolivia.jpg) |
+| soils_id/andisols/3.jpg | Andisols | profile | author not stated on Commons (uploaded by Paleorthid) | Public domain | [link](https://commons.wikimedia.org/wiki/File:Andisol_profile.jpg) |
 | soils_id/aridisols/1.jpg | Aridisols | profile | author not stated on Commons (uploaded by Bodenfreund) | Public domain | [link](https://commons.wikimedia.org/wiki/File:Aridisol.jpg) |
+| soils_id/aridisols/2.jpg | Aridisols | profile | author not stated on Commons (uploaded by Paleorthid) | Public domain | [link](https://commons.wikimedia.org/wiki/File:Aridisol_profile.jpg) |
+| soils_id/aridisols/3.jpg | Aridisols | profile | Rockwurm | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Haplic_Calcisol.JPG) |
 | soils_id/bt_horizon/1.jpg | Bt horizon | horizon | Cjrufe | CC0 | [link](https://commons.wikimedia.org/wiki/File:Soil_Profile_Containing_an_Argillic_Horizon.jpg) |
+| soils_id/bt_horizon/2.jpg | Bt horizon | horizon | Cultureel Gelderland | CC0 | [link](https://commons.wikimedia.org/wiki/File:Bodemprofiel_van_een_kuilbrikgrond.jpg) |
+| soils_id/bt_horizon/3.jpg | Bt horizon | horizon | U. Burkhardt | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Parabraunerde.jpg) |
 | soils_id/c_horizon/1.jpg | C horizon | horizon | Diorit | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Saprolite_central_Madagascar.JPG) |
 | soils_id/c_horizon/2.jpg | C horizon | horizon | James St. John | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Saprolitized_cataclastic_rocks_(Brevard_Zone;_Old_Fort,_McDowell_County,_North_Carolina,_USA)_1.jpg) |
+| soils_id/c_horizon/3.jpg | C horizon | horizon | James St. John | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Jointed_saprolite_(San_Augustin_Pass,_Organ_Mountains,_New_Mexico,_USA)_1.jpg) |
 | soils_id/e_horizon/1.jpg | E horizon | horizon | Ailith Stewart | CC BY-SA 2.0 | [link](https://commons.wikimedia.org/wiki/File:Podzol_-_geograph.org.uk_-_218892.jpg) |
 | soils_id/e_horizon/2.jpg | E horizon | horizon | The original uploader was Michaila vnuk at Ukrainian Wikipedia. | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Podzols.JPG) |
+| soils_id/e_horizon/3.jpg | E horizon | horizon | US gov | Public domain | [link](https://commons.wikimedia.org/wiki/File:AlbicHorizon.JPG) |
 | soils_id/entisols/1.jpg | Entisols | profile | author not stated on Commons (uploaded by Bodenfreund) | Public domain | [link](https://commons.wikimedia.org/wiki/File:Entisol.jpg) |
 | soils_id/entisols/2.jpg | Entisols | profile | http://soildatamart.nrcs.usda.gov/Manuscripts/GA035/0/Butts.pdf | Public domain | [link](https://commons.wikimedia.org/wiki/File:TypicUdipsamment.JPG) |
+| soils_id/entisols/3.jpg | Entisols | profile | author not stated on Commons (uploaded by Paleorthid) | Public domain | [link](https://commons.wikimedia.org/wiki/File:Entisol_profile.jpg) |
 | soils_id/gelisols/1.jpg | Gelisols | profile | author not stated on Commons (uploaded by Bodenfreund) | Public domain | [link](https://commons.wikimedia.org/wiki/File:Gelisol.jpg) |
+| soils_id/gelisols/2.jpg | Gelisols | profile | author not stated on Commons (uploaded by Paleorthid) | Public domain | [link](https://commons.wikimedia.org/wiki/File:Gelisol_profile.jpg) |
+| soils_id/gelisols/3.jpg | Gelisols | profile | author not stated on Commons (uploaded by Remulazz) | Public domain | [link](https://commons.wikimedia.org/wiki/File:Turbel.JPG) |
 | soils_id/histosols/1.jpg | Histosols | profile | author not stated on Commons (uploaded by Bodenfreund) | Public domain | [link](https://commons.wikimedia.org/wiki/File:Histosol.jpg) |
 | soils_id/histosols/2.jpg | Histosols | profile | Rockwurm | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Histosol2.JPG) |
+| soils_id/histosols/3.jpg | Histosols | profile | Berthier L. | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:F29026.jpg) |
 | soils_id/horizon_suffix_g/1.jpg | Horizon suffix g | horizon | Rockwurm | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Gleysol.JPG) |
 | soils_id/horizon_suffix_g/2.jpg | Horizon suffix g | horizon | Plorpy2 | CC0 | [link](https://commons.wikimedia.org/wiki/File:GleyClay.jpg) |
+| soils_id/horizon_suffix_g/3.jpg | Horizon suffix g | horizon | HolgerK at English Wikipedia | Public domain | [link](https://commons.wikimedia.org/wiki/File:Stagnogley.JPG) |
 | soils_id/inceptisols/1.jpg | Inceptisols | profile | author not stated on Commons (uploaded by Bodenfreund) | Public domain | [link](https://commons.wikimedia.org/wiki/File:Inzeptisol.jpg) |
 | soils_id/inceptisols/2.jpg | Inceptisols | profile | Soil Science | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Humic_Dystrudept_(Fine,_mixed,_semiactive,_isothermic)_--_Rwanda_16.jpg) |
+| soils_id/inceptisols/3.jpg | Inceptisols | profile | Plogeo | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:BEwygg.JPG) |
 | soils_id/mollisols/1.jpg | Mollisols | profile | author not stated on Commons (uploaded by Bodenfreund) | Public domain | [link](https://commons.wikimedia.org/wiki/File:Mollisol.jpg) |
 | soils_id/mollisols/2.jpg | Mollisols | profile | Soil Science from Raleigh | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Typic_Hapludoll_(fine,_mixed,_active_isohyperthermic)_(5140045787).jpg) |
+| soils_id/mollisols/3.jpg | Mollisols | profile | Soil Science from Raleigh | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Typic_Argiudoll_(Fine,_smectitic,_mesic)_--_Sharpsburg_(8740924267).jpg) |
 | soils_id/o_horizon/1.jpg | O horizon | horizon | CWALTER | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:35-for%C3%AAt-fougeres-humus-moder_(2).jpg) |
+| soils_id/o_horizon/2.jpg | O horizon | horizon | Gyrobo | Public domain | [link](https://commons.wikimedia.org/wiki/File:Apb_thick_o_horizon.jpg) |
+| soils_id/o_horizon/3.jpg | O horizon | horizon | Jfponge | CC0 | [link](https://commons.wikimedia.org/wiki/File:Moder_humus.jpg) |
 | soils_id/oxisols/1.jpg | Oxisols | profile | http://soils.usda.gov/technical/soil_orders/ - http://www.usda.gov/wps/portal/!ut/p/_s.7_0_A/7_0_1OB?navtype=FT&navid=PRIVACY_POLICY | Public domain | [link](https://commons.wikimedia.org/wiki/File:Oxisol.jpg) |
 | soils_id/oxisols/2.jpg | Oxisols | profile | USDAgov | Public domain | [link](https://commons.wikimedia.org/wiki/File:Soil_Survey_(20210204-SR-NRCS-001).jpg) |
+| soils_id/oxisols/3.jpg | Oxisols | profile | Rockwurm | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Ferralsol.JPG) |
 | soils_id/r_horizon/1.jpg | R horizon | horizon | Rockwurm | CC BY-SA 3.0 | [link](https://commons.wikimedia.org/wiki/File:Leptosol.JPG) |
 | soils_id/r_horizon/2.jpg | R horizon | horizon | Jan Nyssen | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Lithic_Leptosol_in_Agbe_Ethiopia_profile.jpg) |
+| soils_id/r_horizon/3.jpg | R horizon | horizon | K. Rilling | CC BY-SA 3.0 de | [link](https://commons.wikimedia.org/wiki/File:Rendzina_flachgruendig_Heufeld_Schwaebische-Alb.jpg) |
 | soils_id/spodosols/1.jpg | Spodosols | profile | author not stated on Commons (uploaded by Bodenfreund) | Public domain | [link](https://commons.wikimedia.org/wiki/File:Spodosol.jpg) |
 | soils_id/spodosols/2.jpg | Spodosols | profile | Plogeo | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Gleba_bielicowa.JPG) |
 | soils_id/spodosols/3.jpg | Spodosols | profile | http://soildatamart.nrcs.usda.gov/Manuscripts/FL121/0/Suwannee.pdf | Public domain | [link](https://commons.wikimedia.org/wiki/File:UlticAlaquod.JPG) |
@@ -624,6 +644,7 @@ Built by `envirothon/build_pics.py` from `~/Desktop/Envirothon/pics/pics_index.j
 | soils_id/ultisols/3.jpg | Ultisols | profile | Flickr user Soil-Science.info / Dr. David Lindbo of the Department of Soil Science at NC State University | CC BY 2.0 | [link](https://commons.wikimedia.org/wiki/File:Nc-red-clay-soil-1.jpg) |
 | soils_id/vertisols/1.jpg | Vertisols | profile | author not stated on Commons (uploaded by Bodenfreund) | Public domain | [link](https://commons.wikimedia.org/wiki/File:Vertisol.jpg) |
 | soils_id/vertisols/2.jpg | Vertisols | profile | Jan Nyssen | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Pellic_Vertisol_in_Taget_Ethiopia_profile.jpg) |
+| soils_id/vertisols/3.jpg | Vertisols | surface cracks | HarãHayder | CC BY-SA 4.0 | [link](https://commons.wikimedia.org/wiki/File:Fendilhamento_em_Vertissolo_(USDA).jpg) |
 
 ## Sampling gear (Aquatics) — 27 pictures
 
@@ -845,26 +866,9 @@ These are the pictures extracted from the official NCWRC species profiles. Their
 | Wildlife · ID | Wood Duck | wildlife_id/wood_duck/00_profile_p1_3.jpg | Official Envirothon resource (NCWRC profile); rights per credit line, educational use |
 | Wildlife · ID | Wood Duck | wildlife_id/wood_duck/00_profile_p2_5.jpg | Official Envirothon resource (NCWRC profile); rights per credit line, educational use |
 
-## Items under three pictures after the cut (41)
+## Items under three pictures after the cut (24)
 
 - Aquatic Ecology · ID · Horse fly larva — 1 picture
-- Soils and Land Use · ID · A horizon — 2 pictures
-- Soils and Land Use · ID · Alfisols — 2 pictures
-- Soils and Land Use · ID · Andisols — 2 pictures
-- Soils and Land Use · ID · Aridisols — 1 picture
-- Soils and Land Use · ID · Bt horizon — 1 picture
-- Soils and Land Use · ID · C horizon — 2 pictures
-- Soils and Land Use · ID · E horizon — 2 pictures
-- Soils and Land Use · ID · Entisols — 2 pictures
-- Soils and Land Use · ID · Gelisols — 1 picture
-- Soils and Land Use · ID · Histosols — 2 pictures
-- Soils and Land Use · ID · Horizon suffix g — 2 pictures
-- Soils and Land Use · ID · Inceptisols — 2 pictures
-- Soils and Land Use · ID · Mollisols — 2 pictures
-- Soils and Land Use · ID · O horizon — 1 picture
-- Soils and Land Use · ID · Oxisols — 2 pictures
-- Soils and Land Use · ID · R horizon — 2 pictures
-- Soils and Land Use · ID · Vertisols — 2 pictures
 - Sampling gear (Aquatics) · Dip net — 2 pictures
 - Sampling gear (Aquatics) · Eckman dredge — 1 picture
 - Sampling gear (Aquatics) · Price AA flow meter — 2 pictures
