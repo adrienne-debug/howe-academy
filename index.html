@@ -42835,6 +42835,7 @@ function utsRowHTML(u,isMom){
   h+='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:7px;font-size:11px">'+(enrolled.length?'<span style="color:#15803d;font-weight:700">\u2713 '+utsEsc(enrolled.map(utsCap).join(", "))+'</span>':'<span style="color:var(--muted)">nobody enrolled</span>')+(st?'<span data-uts-sched="1" style="color:'+(/not on|no days/.test(st)?'var(--muted)':'#5b21b6')+';font-weight:700">'+utsEsc(st)+'</span>':'')+'</div>';
   const src=[]; if(u.starter) src.push("starter"); if(u.author&&(u.author.family||u.author.first)) src.push("by "+String(u.author.first||u.author.family)); if(u.book) src.push(String(u.book)); if(u.version) src.push("v"+u.version);
   if(src.length) h+='<div style="font-size:10px;color:var(--muted);margin-top:4px">'+utsEsc(src.join(" \u00B7 "))+'</div>';
+  if(isMom&&typeof suRowHtml==="function") h+=suRowHtml(u);   // STARTERUP: the quiet ＋ Add the new stages row, only when there's something to add
   return h+'</div>';
 }
 function utsLibraryHTML(isMom){
@@ -51000,7 +51001,7 @@ const STARTER_UNITS={
     desc:"Basic shapes, then more flat shapes, then solid shapes (cube, sphere, cone, cylinder) — the kindergarten shape list, two new shapes at a time. Straight-sided shapes get the tap-each-side counting drill.",
     stages:SP_STAGES.map(st=>({n:st.n,label:st.label,weeklyFrom:0})),
     decks:_spDecks() }),
-  geography_path:()=>geoUnitRecord(),   // 🌍 GEOPATH: with the other paths on the Add card; the record is built in the GEOPATH block below
+  geography_path:fam=>geoUnitRecord(fam&&fam.home),   // 🌍 GEOPATH: with the other paths on the Add card; the record is built in the GEOPATH block below · STARTERUP: a family's own home when it catches up
   all_about_spelling:()=>({ id:"all_about_spelling", starter:"all_about_spelling", starterVer:1,   // 📘 AAS
     title:"All About Spelling", emoji:"\u{1F4D8}", nbInsert:false, cardLessons:true, famSort:true,
     desc:"All About Spelling, Levels 1–7 (Color Edition card boxes). Phonograms, spelling rules and sound-spelling cards open a few at a time as each lesson is reached. Word cards wait for the spelling test, a check-up or a problem word to put them on the ladder. Pick the kid’s AAS subject so every card opens at its lesson.",
@@ -51842,7 +51843,7 @@ function _ustStageDef(u,n){ return (u.stages||[]).find(s=>s&&s.n===n)||null; }
 function _ustBookMaps(u,stageN){ const dk=new Set(_ustCards(u,stageN).map(c=>c._dk)); return Object.keys(UNIT_BOOK_MAPS).filter(id=>{ const bm=UNIT_BOOK_MAPS[id]; return bm&&bm.stage===stageN&&dk.has(bm.deck||"Math Facts"); }); }
 function _ustUsesBook(u,stageN){ return !!(u&&(u.cardLessons||_ustBookMaps(u,stageN).length)); }
 // UNITBOOK_END
-function _ustStagesWithCards(u){ return (u.stages||[]).filter(s=>s&&_ustCards(u,s.n).length); }
+function _ustStagesWithCards(u){ return (u.stages||[]).filter(s=>s&&_ustCards(u,s.n).length).sort((a,b)=>(a.n||0)-(b.n||0)); }   // STARTERUP: a stage added later sits at the end of the saved list — ➡ and the Start form go by number
 function _ustBookCh(mapId,c){ const m=UNIT_BOOK_MAPS[mapId]; if(!m||m.stage!==c.stage) return null;
   const f=_ustFamNum(c), op=/\+/.test(c.name)?"add":"sub"; const v=(m[op]||{})[f]; return v==null?null:v; }
 function _ustSlug(name){ return String(name).replace(/\+/g,"p").replace(/-/g,"m").replace(/×/g,"x").replace(/÷/g,"d").replace(/[^a-z0-9]/gi,"_"); }
@@ -52035,6 +52036,177 @@ function _unitStageRowsHtml(u,roster){
   return '<div style="flex:1 1 100%;min-width:0">'+h+'</div>';  // sits inside the enroll box's flex row
 }
 // UNIT_STAGES_END
+// STARTERUP_START — ＋ Add the new stages: a starter unit a family already added catches up with the code (her go-ahead
+// 2026-11-17: "buil the us" — slice 0 of PLAN_us_unit_2026-11-16.md §9, shared with the Geography Path). starterUnitAdd writes
+// the record ONCE, create-only, so a family that tapped ＋ Add before a later slice merged never got it: two live families hold
+// Geography Path at starterVer 3 (87 Countries, 60 World Geography) while the code is 4 (195 and 195, Stages 6 and 7 ready at
+// 193 and 175, not 96 and 54).
+//   · suPlan(unitId) is pure: it builds the code's record for THIS family (STARTER_UNITS[id](u) — Geography reads u.home) and
+//     lists every write in plain words. Nothing is written until Mom taps Yes; Yes re-plans and must match, then ONE multi-path
+//     update, through db only when db && !_dryRun(). momHere() only.
+//   · Create-only, additive: a deck the copy lacks is added whole; a card is matched by deck key + NAME and a name the deck
+//     doesn't hold anywhere is appended at a new index, order after the deck's last; a stage the copy lacks is added. An
+//     existing card, back, bio, picture, visuals key, kid, enrolled, kidStage is never written. A NEW card's picture on the
+//     code's record (interest units) is added under a visuals key the copy lacks. A back that differs from the
+//     code's (Mom's edit, or an older wording) stays and the plan says how many.
+//   · Stage settings (label, readyAt, weeklyFrom) change only where the copy holds an OLD CODE value — one STARTERUP_WAS lists
+//     (from git) or none at all (no screen edits stage settings). Any other value is kept and the plan says so.
+//   · Kids: a kid on a stage at or past the new cards' stage, whose list already holds that deck's cards of that stage (so the
+//     stage was given to them), gets the new cards appended to their list as {cat,name}, after what's there, in the path's
+//     order — the next new cards don't jump. A back is saved only where the kid has none and the code's back differs
+//     (GEOADOPT's rule: the 135 capitals find theirs in MAST_VOCAB_DEFS → none written). A kid on an earlier stage gets them
+//     with ➡ like any stage card. Never a kid's live card, back, cat_modes, bank_order.
+//   · A plain (unstaged) starter unit gets the same: new cards in a deck, and every enrolled kid whose list has that deck gets
+//     them the way unitEnroll gives cards (bank fields + a back only where none is saved). A deck whose words wait in the bank
+//     with their backs (AAS) gets cards on the record but nothing in a kid's list. A unit whose cards live in the code
+//     (Envirothon) is skipped. Shows only when the code's starterVer is newer than the copy's AND something would be added.
+const STARTERUP_WAS={ geography_path:{ 6:{readyAt:[96]}, 7:{readyAt:[54]} } };   // values earlier code shipped (git: d37cfd01, 3036de47)
+const SU_STAGE_KEYS=["label","readyAt","weeklyFrom"];
+function _suRows(raw){ if(!raw) return []; if(Array.isArray(raw)) return raw.map((v,i)=>[i,v]).filter(e=>e[1]); return Object.keys(raw).filter(k=>/^\d+$/.test(k)).map(k=>[Number(k),raw[k]]).filter(e=>e[1]); }
+function _suNext(raw){ const ix=raw&&typeof raw==="object"?Object.keys(raw).filter(k=>/^\d+$/.test(k)).map(Number):[]; return ix.length?Math.max(...ix)+1:0; }   // past every index, a null hole too
+function suCode(u){
+  const id=u&&(u.starter||u.id), mk=id&&(typeof STARTER_UNITS!=="undefined")&&STARTER_UNITS[id]; if(!mk) return null;
+  try{ return mk(u); }catch(e){ return null; }
+}
+// The record half: what the copy lacks, as writes under unitStudies/<id>/. Pure.
+function _suUnitDiff(u,C){
+  const R={writes:[],newCards:[],decks:[],stages:[],settings:[],kept:[],backsMine:0,cards:0,famStage:{}}, base="unitStudies/"+u.id+"/";
+  const W=(p,v,what)=>R.writes.push({path:base+p,value:v,what});
+  const fDecks=_suRows(u.decks); let nextDeck=_suNext(u.decks);
+  fDecks.forEach(([,d])=>{ if(!d||!d.key) return; _suRows(d.cards).forEach(([,c])=>{ if(c&&c.stage!=null){ const k=d.key+"\u0001"+c.stage; (R.famStage[k]=R.famStage[k]||[]).push(c.name); } }); });
+  (C.decks||[]).forEach(cd=>{ if(!cd||!cd.key) return;
+    const cc=_suRows(cd.cards).map(e=>e[1]).sort((a,b)=>(a.order||0)-(b.order||0));
+    const fe=fDecks.find(e=>e[1]&&e[1].key===cd.key);
+    if(!fe){ if(!cc.length) return; const d=JSON.parse(JSON.stringify(cd)); W("decks/"+(nextDeck++),d,"adds the "+cd.key+" deck ("+cc.length+" card"+(cc.length===1?"":"s")+")");
+      R.decks.push({key:cd.key,added:cc.length,had:0,isNew:true}); R.cards+=cc.length; cc.forEach(c=>R.newCards.push({dk:cd.key,c,deck:cd})); return; }
+    const di=fe[0], fd=fe[1], fc=_suRows(fd.cards), have={}; fc.forEach(([,c])=>{ if(c&&c.name!=null) have[c.name]=c; });
+    let next=_suNext(fd.cards), order=fc.reduce((m,e)=>Math.max(m,(e[1]&&e[1].order)||0),0), n=0;
+    cc.forEach(c=>{ const mine=have[c.name];
+      if(mine){ if(c.def!=null&&mine.def!=null&&String(mine.def)!==String(c.def)) R.backsMine++; return; }
+      const nc=Object.assign({},c,{order:++order}); W("decks/"+di+"/cards/"+(next++),nc,"adds “"+c.name+"” to "+cd.key); have[c.name]=nc; n++; R.newCards.push({dk:cd.key,c:nc,deck:fd}); });
+    if(n){ R.decks.push({key:cd.key,added:n,had:fc.length}); R.cards+=n; } });
+  // A new card's picture that ships on the code's record (the interest units' emoji / photos) — a key the copy lacks only.
+  const fv=u.visuals||{}, hk=k=>(typeof haKey==="function"?haKey(k):k); R.newCards.forEach(({dk,c})=>{ const k=dk+"_"+c.name, v=(C.visuals||{})[k];
+    if(v==null||fv[k]!=null||fv[hk(k)]!=null) return; W("visuals/"+hk(k),v,"adds the picture for “"+c.name+"”"); });
+  const fSt=_suRows(u.stages); let nextSt=_suNext(u.stages);
+  (C.stages||[]).forEach(cs=>{ if(!cs||cs.n==null) return; const fe=fSt.find(e=>e[1]&&e[1].n===cs.n);
+    if(!fe){ W("stages/"+(nextSt++),Object.assign({},cs),"adds Stage "+cs.n+" · "+(cs.label||"")); R.stages.push({n:cs.n,label:cs.label||""}); return; }
+    const si=fe[0], fs=fe[1], was=(STARTERUP_WAS[u.starter||u.id]||{})[cs.n]||{};
+    SU_STAGE_KEYS.forEach(k=>{ if(cs[k]===undefined||cs[k]===fs[k]) return;
+      if(fs[k]===undefined||(was[k]||[]).indexOf(fs[k])>=0){ W("stages/"+si+"/"+k,cs[k],"Stage "+cs.n+": "+k+" "+(fs[k]===undefined?"(none)":fs[k])+" → "+cs[k]); R.settings.push({n:cs.n,label:fs.label||cs.label||"",k,from:fs[k],to:cs[k]}); }
+      else R.kept.push({n:cs.n,k,mine:fs[k],code:cs[k]}); }); });
+  return R;
+}
+// Cheap check for the row: memoised on what changes the answer. null = nothing to add.
+const _suMemo={};
+function suPending(u){
+  if(!u||!u.id||!u.starter||u.cardsInCode||typeof STARTER_UNITS==="undefined"||!STARTER_UNITS[u.starter]) return null;
+  const cnt=_suRows(u.decks).reduce((s,e)=>s+_suRows(e[1]&&e[1].cards).length,0);
+  const key=[u.starter,u.starterVer||0,u.home||"",cnt,_suRows(u.decks).length,JSON.stringify(u.stages||null)].join("|");
+  if(key in _suMemo) return _suMemo[key];
+  const C=suCode(u); let out=null;
+  if(C&&!C.cardsInCode&&(C.starterVer||0)>(u.starterVer||0)){ const R=_suUnitDiff(u,C); if(R.writes.length) out={cards:R.cards,stages:R.stages.length,settings:R.settings.length}; }
+  return (_suMemo[key]=out);
+}
+function suPlan(unitId,ts){
+  const P={unitId,ok:false,why:"",writes:[],ts:ts||Date.now()};
+  const us=(typeof unitStudies!=="undefined"&&unitStudies)||{}, u=us[unitId];
+  if(!u||!Array.isArray(u.decks)){ P.why="This unit isn’t in the database."; return P; }
+  if(!u.starter||!STARTER_UNITS[u.starter]){ P.why="Only a starter unit catches up with the code."; return P; }
+  if(u.cardsInCode){ P.why="This unit’s cards live in the code — it’s always the newest."; return P; }
+  const C=suCode(u); if(!C){ P.why="The code’s copy of this unit didn’t build. Nothing was changed."; return P; }
+  if((C.starterVer||0)<=(u.starterVer||0)){ P.why="Your copy is current — nothing to add."; return P; }
+  const R=_suUnitDiff(u,C);
+  const S=P.sum={title:u.title||u.id,decks:R.decks,stages:R.stages,settings:R.settings,kept:R.kept,backsMine:R.backsMine,cards:R.cards,kids:[],from:u.starterVer||0,to:C.starterVer};
+  if(!R.writes.length){ P.why="Your copy has everything the code has — nothing to add."; return P; }
+  P.writes=R.writes.slice();
+  // Kids: append each new card a kid's stage has already given them (see the header). Path order = R.newCards order.
+  const staged=!!(u.stages||C.stages), KS=u.kidStage||{}, EN=u.enrolled||{};
+  const kids=Object.keys(staged?KS:EN).filter(k=>staged?(KS[k]&&KS[k].stage!=null):EN[k]).sort();
+  const VD=(typeof MAST_VOCAB_DEFS!=="undefined")?MAST_VOCAB_DEFS:{};
+  kids.forEach(k=>{
+    const kst=staged?Number(KS[k].stage):Infinity, K={kid:k,stage:staged?kst:null,added:{},later:{},notGiven:{},backs:0};
+    let items=masteryData[k]||[]; if(!Array.isArray(items)) items=Object.values(items);
+    const full=(typeof mastFullBank==="function")?(mastFullBank(k)||{}):{};
+    const live=new Set(items.filter(Boolean).map(i=>i.subject+"\u0001"+i.prompt));
+    let next=_suNext(masteryData[k+"_custom_items"]);
+    const saved=((masteryData[k+"_settings"]||{}).definitions)||{}, inList={};
+    R.newCards.forEach(({dk,c,deck})=>{
+      if(deck&&(deck.bankOnly||deck.defsOnBank)) return;
+      const list=inList[dk]||(inList[dk]=new Set(full[dk]||[]));
+      if(staged){
+        if(c.stage==null) return;
+        if(c.stage>kst){ K.later[dk]=(K.later[dk]||0)+1; return; }
+        const had=R.famStage[dk+"\u0001"+c.stage]||[];
+        if(!had.some(n=>list.has(n)||live.has(dk+"\u0001"+n))){ K.notGiven[dk]=(K.notGiven[dk]||0)+1; return; }
+      } else if(!list.size) return;
+      if(list.has(c.name)||live.has(dk+"\u0001"+c.name)) return;
+      const be={cat:dk,name:c.name}; if(!staged) ["house","reign","order","year","sig","ch","def"].forEach(f=>{ if(c[f]!=null&&c[f]!=="") be[f]=c[f]; });   // as unitEnroll stamps them
+      P.writes.push({path:"mastery/"+k+"_custom_items/"+(next++),value:be,what:"adds "+c.name+" to "+cap(k)+"’s "+dk+" list"});
+      list.add(c.name); K.added[dk]=(K.added[dk]||0)+1;
+      if(c.def!=null&&saved[c.name]==null&&VD[String(c.name).toLowerCase()]!==String(c.def)&&(typeof mastDefKeyOk!=="function"||mastDefKeyOk(c.name))){
+        P.writes.push({path:"mastery/"+k+"_settings/definitions/"+(typeof haKey==="function"?haKey(c.name):c.name),value:String(c.def),what:"saves the back of "+c.name+" for "+cap(k)}); K.backs++; }
+    });
+    S.kids.push(K);
+  });
+  P.writes.push({path:"unitStudies/"+unitId+"/starterVer",value:C.starterVer,what:"marks the copy as version "+C.starterVer+" (was "+(u.starterVer||0)+")"});
+  P.ok=true; return P;
+}
+let suView=null;   // {unitId, plan, msg} while the panel is open
+function _suRe(){ const el=(typeof document!=="undefined")&&document.getElementById("content"); if(el) renderUnits(el); }
+function suOpen(unitId){ if(!momHere()) return; suView={unitId,plan:suPlan(unitId),msg:""}; if(typeof openUnit==="function") openUnit(unitId); else _suRe(); }
+function suClose(){ suView=null; _suRe(); }
+function suApply(plan){
+  if(!momHere()||!plan||!plan.ok) return false;
+  const again=suPlan(plan.unitId,plan.ts);
+  if(JSON.stringify(again.writes)!==JSON.stringify(plan.writes)){ suView={unitId:plan.unitId,plan:again,msg:"The unit or a kid’s list changed since the plan was made — here’s the new plan. Nothing was written."}; _suRe(); return false; }
+  if(!db||_dryRun()){ if(suView) suView.msg="Dry run — nothing was written."; _suRe(); return false; }
+  const up={}; plan.writes.forEach(w=>{ up[w.path]=w.value; });
+  db.ref().update(up).then(()=>{
+    plan.writes.forEach(w=>_wrSetLocal(w.path,w.value));
+    if(typeof envHydrateAll==="function") envHydrateAll();   // the new cards' code pictures (geoHydrate), in memory only
+    try{ HA_LS.setItem("ha_mastery",JSON.stringify(masteryData)); }catch(e){}
+    suView=null; _suRe();
+  }).catch(()=>{ if(suView) suView.msg="That didn’t save — nothing changed. Try again when you’re online."; _suRe(); });
+  return true;
+}
+const _suBtn=(bg,fg,bd)=>'padding:7px 14px;border-radius:10px;border:1.5px solid '+bd+';background:'+bg+';color:'+fg+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif';
+function _suLabel(n){ return n.cards?n.cards+" new card"+(n.cards===1?"":"s"):(n.stages?n.stages+" new stage"+(n.stages===1?"":"s"):"new settings"); }
+// The quiet row on the unit's card in Units (Mom only, only when there's something to add).
+function suRowHtml(u){
+  if(!(typeof momHere==="function"&&momHere())) return ""; const n=suPending(u); if(!n) return "";
+  const j=String(u.id).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;");
+  return '<div style="margin-top:7px"><button onclick="event.stopPropagation();suOpen(\''+j+'\')" style="padding:3px 9px;border-radius:9px;border:1.5px dashed var(--border);background:#fff;color:#2d6a4f;font-size:10.5px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">\uFF0B Add the new stages ('+_suLabel(n)+')</button></div>';
+}
+// The panel in the unit's Mom box: the row, or the plan with Yes / Cancel.
+function suHtml(u,esc){
+  if(!u||!(typeof momHere==="function"&&momHere())) return "";
+  esc=esc||(v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"));
+  const V=(suView&&suView.unitId===u.id)?suView:null;
+  if(!V){ const n=suPending(u); if(!n) return "";
+    return '<div style="margin-top:12px;padding-top:11px;border-top:1px solid var(--border);display:flex;align-items:center;gap:9px;flex-wrap:wrap"><span style="flex:1;min-width:150px;font-size:12px;font-weight:700;color:#1f2937">\u{1F195} The path grew<div style="font-size:10.5px;font-weight:600;color:var(--muted)">This unit has more in the app than your copy. Nothing changes until you look and say yes.</div></span><button onclick="suOpen(\''+esc(u.id)+'\')" style="'+_suBtn("#fff","#1f2937","var(--border)")+'">\uFF0B Add the new stages ('+_suLabel(n)+')</button></div>'; }
+  const P=V.plan, S=P.sum||{}, li=t=>'<li style="margin:3px 0">'+t+'</li>';
+  let h='<div style="margin-top:12px;padding-top:11px;border-top:1px solid var(--border)"><div style="font-size:12.5px;font-weight:800;color:#1f2937;margin-bottom:6px">Add the new stages to '+esc(u.title||u.id)+'</div>';
+  if(V.msg) h+='<div style="font-size:11.5px;font-weight:700;color:#b45309;margin-bottom:6px">'+esc(V.msg)+'</div>';
+  if(!P.ok) return h+'<div style="font-size:11.5px;color:#374151;line-height:1.5">'+esc(P.why)+'</div><div style="margin-top:8px"><button onclick="suClose()" style="'+_suBtn("#fff","var(--muted)","var(--border)")+'">Close</button></div></div>';
+  h+='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Here’s everything it does. Nothing is written until you tap Yes.</div><ul style="font-size:11.5px;color:#374151;line-height:1.45;padding-left:18px;margin:0">';
+  S.decks.forEach(d=>{ h+=li(d.isNew?'Adds the <b>'+esc(d.key)+'</b> deck — <b>'+d.added+'</b> card'+(d.added===1?'':'s')+'.':'<b>'+esc(d.key)+'</b>: <b>'+d.added+'</b> new card'+(d.added===1?'':'s')+', after the '+d.had+' already there.'); });
+  S.stages.forEach(s=>{ h+=li('Adds <b>Stage '+s.n+' · '+esc(s.label)+'</b>.'); });
+  const word={readyAt:"‘ready’ number",weeklyFrom:"weekly-review start",label:"name"};
+  S.settings.forEach(s=>{ h+=li('New '+(word[s.k]||s.k)+' for <b>Stage '+s.n+'</b> · '+esc(s.label)+': <b>'+esc(s.to)+'</b>'+(s.from===undefined?'':' (was '+esc(s.from)+')')+'.'); });
+  S.kept.forEach(s=>{ h+=li('Stage '+s.n+'’s '+(word[s.k]||s.k)+' is '+esc(s.mine)+' here — kept as it is (the path says '+esc(s.code)+').'); });
+  if(S.backsMine) h+=li(S.backsMine+' card'+(S.backsMine===1?'':'s')+' here '+(S.backsMine===1?'has a back':'have backs')+' that differ'+(S.backsMine===1?'s':'')+' from the path’s — kept as they are.');
+  S.kids.forEach(K=>{ const nm=esc(cap(K.kid)), add=Object.keys(K.added), lat=Object.keys(K.later), ng=Object.keys(K.notGiven);
+    if(add.length) h+=li('<b>'+nm+'</b>'+(K.stage!=null?' (Stage '+K.stage+')':'')+': '+add.map(dk=>'<b>'+K.added[dk]+'</b> new '+esc(dk)+' card'+(K.added[dk]===1?'':'s')).join(' · ')+' added to '+nm+'’s list, after what’s already there — the next new cards don’t change.'+(K.backs?' Saves '+K.backs+' back'+(K.backs===1?'':'s')+' '+nm+' doesn’t have yet.':''));
+    else h+=li('<b>'+nm+'</b>'+(K.stage!=null?' (Stage '+K.stage+')':'')+': nothing added to the list'+(lat.length?' — the new '+lat.map(esc).join(', ')+' cards come when '+nm+' gets to that stage':ng.length?' — '+nm+' wasn’t given that stage of '+ng.map(esc).join(', '):'')+'.');
+    if(add.length&&lat.length) h+=li(nm+': the new '+lat.map(esc).join(', ')+' cards come when '+nm+' gets to that stage.'); });
+  h+=li('Not touched: every card already here, its back, its picture, every kid’s cards and progress, who’s enrolled, each kid’s stage.');
+  h+='</ul><details style="margin-top:6px"><summary style="font-size:11px;font-weight:700;color:var(--muted);cursor:pointer">'+P.writes.length+' saved changes</summary><div style="font-size:10.5px;color:#374151;line-height:1.45;margin-top:4px;max-height:220px;overflow:auto">'+P.writes.map(w=>esc(w.what)).join('<br>')+'</div></details>';
+  h+='<div style="display:flex;gap:6px;margin-top:9px"><button onclick="suApply(suView&&suView.plan)" style="'+_suBtn("#2d6a4f","#fff","#2d6a4f")+'">\u2713 Yes, add them</button><button onclick="suClose()" style="'+_suBtn("#fff","var(--muted)","var(--border)")+'">Cancel</button></div>';
+  if(typeof _dryRun==="function"&&_dryRun()) h+='<div style="font-size:10.5px;color:#b45309;margin-top:5px">Dry run — Yes writes nothing.</div>';
+  return h+'</div>';
+}
+// STARTERUP_END
 // STARTER_UNITS_END
 function renderUnits(el){
   const con=el||document.getElementById("content"); if(!con) return;
@@ -52138,6 +52310,7 @@ function renderUnitDetail(u){
     h+=_unitPicsBtnHtml(u);   // UNIT_PICS: 🖼 Find pictures (Wikipedia, in this browser)
     if(typeof laIrrHtml==="function") h+=laIrrHtml(u,esc);   // LAIRR: ＋ Add Irregulars (Language Arts unit only; units step 9, 2026-10-26)
     if(typeof laGrowHtml==="function") h+=laGrowHtml(u,esc);   // LAGROW: ＋ Grow Language Arts (Language Arts unit only, 2026-11-02)
+    if(typeof suHtml==="function") h+=suHtml(u,esc);   // STARTERUP: ＋ Add the new stages (a starter unit the code has grown)
     if(typeof udelHtml==="function") h+=udelHtml(u,esc);   // UNITDEL: 🗑 Delete unit (a Builder unit nothing uses, two taps)
     h+='</div>';
   }
