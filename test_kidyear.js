@@ -362,7 +362,9 @@ function refs(S) { const out = new Set(); const re = /\.ref\(([^)]*)\)/g; let m;
   ["hours", "terms", "lanes", "all"].forEach(t => W.panel(t)); W.run("kySetTab('lanes')"); W.run("kyLane('kid','L1')");
   ok("drawing every tab, switching tabs and opening a lane writes nothing", W.log.length === 0, W.log);
   if (MAIN) {
-    const a = refs(src), b = refs(MAIN), added = a.filter(x => b.indexOf(x) < 0), gone = b.filter(x => a.indexOf(x) < 0);
+    // 🌅 SENDAM (2026-11-15) is a later feature with paths of its own (amCarry/<kid>/<id>, the log line and last week's check-off it writes) — not KIDYEAR's.
+    const SENDAM_REFS = ['"amCarry/"+kid', '"amCarry/"+kid+"/"+id', '"amCarry/"+kid+"/"+id+"/done"', '"routineLog/"+kid+"/"+it.fromWk+"/"+it.fromDay+"/"+lk', '"routineLog/"+kid+"/"+wk+"/"+d+"/"+lk', '"routineLog/"+kid+"/"+wk+"/"+dn', 'it.fromWk+"/sl/"+sk'];
+    const a = refs(src).filter(x => SENDAM_REFS.indexOf(x) < 0), b = refs(MAIN), added = a.filter(x => b.indexOf(x) < 0), gone = b.filter(x => a.indexOf(x) < 0);
     ok("the same ref() path patterns as main 59b0b15 across index.html — none added, none gone (" + a.length + ")", added.length === 0 && gone.length === 0, { added, gone });
   } else console.log("  (skip) main not available — pattern compare skipped");
 }

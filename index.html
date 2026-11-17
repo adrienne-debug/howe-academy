@@ -1937,6 +1937,7 @@ function mStepDoneOn(kid,d,i){ const s=slState[activeWk()+"_"+d+"_"+kid+"_mstep"
 // Morning is complete when every routine step is done. Kids with no routine defined fall back
 // to the legacy single Morning checkbox so nothing breaks.
 function morningComplete(kid,d){
+  if(typeof amBlocks==="function"&&amBlocks(kid,d)) return false;   // SENDAM: a carried-over item is still open
   const steps=morningStepsFor(kid);
   if(!steps.length){ const s=slState[activeWk()+"_"+d+"_"+kid+"_morning"]; return !!(s&&s.done); }
   const _bg=(typeof mealCfg!=="function")||mealCfg().breakfastGate, idx=morningDueIdx(kid,d).filter(i=>_bg||!mealOf("morning",steps[i]));
@@ -1980,21 +1981,22 @@ function toggleMorningStep(kid,i){
 }
 function mrIndividualHTML(kid){
   const steps=morningStepsFor(kid);
+  const _am=(typeof amFor==="function")?amFor(kid,day):[], _amIso=_am.length?amIso(day):null, _amDn=_am.filter(it=>amDoneBy(it,_amIso)).length;   // SENDAM
   if(!steps.length){
-    const s=getSlot(kid,"morning");
-    return '<div class="sl-check-row'+(s.done?" done":"")+'"'+(routineEditable()?' onclick="toggleSlot(\''+kid+'\',\'morning\')"':' style="opacity:.6"')+'>'+
+    const s=getSlot(kid,"morning"), _amH=_am.length?'<div class="mr-steps">'+amRowsHTML(kid,_am,routineEditable())+'</div>':'';   // SENDAM: a kid with no morning steps still sees what was sent, above the Morning box
+    return _amH+'<div class="sl-check-row'+(s.done?" done":"")+'"'+(routineEditable()?' onclick="toggleSlot(\''+kid+'\',\'morning\')"':' style="opacity:.6"')+'>'+
       '<div class="sl-checkbox'+(s.done?" done":"")+'">'+(s.done?"✓":"")+'</div>'+
       '<div><div class="sl-slot-name">Morning</div><div class="sl-slot-sub">'+SL_STIM.morning+'</div>'+
       (s.done&&s.ts?'<div class="sl-slot-ts">Checked '+s.ts+'</div>':'')+'</div></div>';
   }
   const _dueIdx=morningDueIdx(kid,day);
   const _optIdx=steps.map((st,i)=>i).filter(i=>steps[i].cad==="asneeded"&&stepWindowOk(steps[i],day)&&_dueIdx.indexOf(i)<0);   // ✋ shown, optional, paid
-  const doneCount=_dueIdx.filter(i=>mStepDoneOn(kid,day,i)).length;
-  const allDone=_dueIdx.length>0&&doneCount===_dueIdx.length;
+  const doneCount=_dueIdx.filter(i=>mStepDoneOn(kid,day,i)).length+_amDn;   // SENDAM: carried rows count
+  const allDone=(_dueIdx.length+_am.length)>0&&doneCount===_dueIdx.length+_am.length;
   const isOpen=mrOpen[kid]!==false;
   let h='<div class="sl-check-row'+(allDone?" done":"")+'" onclick="toggleMrOpen(\''+kid+'\')" style="cursor:pointer">'+
     '<div class="sl-checkbox'+(allDone?" done":"")+'">'+(allDone?"✓":"")+'</div>'+
-    '<div style="flex:1"><div class="sl-slot-name">Morning <span style="color:var(--muted);font-weight:700">'+doneCount+'/'+_dueIdx.length+'</span></div>'+
+    '<div style="flex:1"><div class="sl-slot-name">Morning <span style="color:var(--muted);font-weight:700">'+doneCount+'/'+(_dueIdx.length+_am.length)+'</span></div>'+
     '<div class="sl-slot-sub">'+((allDone||morningComplete(kid,day))?(gateClockHeld(day)?'✓ Done — school starts at '+fromMin(gateStartMin(day)):'✓ Schedule unlocked'):'Finish all to unlock your schedule')+'</div></div>'+
     '<div style="font-size:14px;color:var(--muted)">'+(isOpen?"▾":"▸")+'</div></div>';
   if(isOpen){
@@ -2002,6 +2004,7 @@ function mrIndividualHTML(kid){
     if(!_ed) h+=routineLockNote();
     h+='<div class="mr-steps"'+(_ed?'':' style="opacity:.6"')+'>';
     let _mHd=false;
+    if(_am.length) h+=amRowsHTML(kid,_am,_ed);   // SENDAM
     _dueIdx.filter(i=>!mealOf("morning",steps[i])).concat(_dueIdx.filter(i=>mealOf("morning",steps[i]))).forEach(i=>{ const st=steps[i], sd=mStepDoneOn(kid,day,i);
       if(!_mHd&&mealOf("morning",st)){ _mHd=true; h+=mealHeadHTML("breakfast",day); }
       const _wl=stepWindowLabel(st);
@@ -2256,6 +2259,235 @@ function mdKidTick(slot,kid,d,i){
   return true;
 }
 // WAVE_END
+// SENDAM_START — 🌅 "AM": Mom sends a kid's unfinished afternoon / chores / evening item to their NEXT MORNING list (her ask
+// 2026-11-15: "at the end of the day … if things did not get done in chores and afternoons and nighttime, for mom to be able to put
+// that on their morning checklist for them to have to do before they can do schoolwork"; and "make sure that it's also connected
+// to its completed history. So that way there's no issues with it not looking done"). Mom's Day / Dad's Day ▸ Kids today ▸ each
+// ☀️ 🧹 🌙 pop-up row gets 🌅 AM beside ✕ today (a second tap takes it back), and the pop-up gets "🌅 Send all N unfinished".
+// Record: amCarry/<kid>/<fromIso>_<a|c|e>step<i> = {slot,i,label,emoji,pts,fromIso,fromWk,fromDay,dueIso,ts,at,by} (+ done
+// {iso,ts,at,pts,bid,src} once checked). Keyed by DATE, so Saturday's item reaches Sunday's list across the week flip. From dueIso
+// (the next calendar day) on, it sits at the top of the kid's Morning list — "Left over — finish these first" — every day until it
+// is done, and morningComplete is false while one is open: the same gate that already holds the schedule (and the Morning-by-10
+// tech rule, the morning light, the ⏱ day start). The list it came from is NOT changed: that row stays as it was, still tickable.
+// DONE IS ONE FACT, written three ways by the same tap (amToggle): (1) the carry's own done; (2) the ORIGINAL step's check-off
+// on the day it was due (<fromWk>/sl/<fromWk>_<fromDay>_<kid>_<x>step<i>, with pts + bid + am:<iso>) — so that day's list, its
+// light, the late ledger and the live streak read it as done; (3) a routineLog "on" line filed under that same day with the step's
+// own slot + label (am:<iso>) — what the Click-off Log, the Household review and the streak history count. The step's own stars
+// are paid when it is checked (her July rule for late chores: full stars, the record shows it); the list / day bonus of the day it
+// was missed is not. An un-check reverses all three and the exact bank entry. Ticking the ORIGINAL row instead (that night, or Mom
+// later) closes the carry too, and un-ticking it re-opens it (amSourceSync). A weekday chore on the morning list is not ALSO shown
+// late on its own list (amCovers). Meal jobs (never carried — her rule 2026-10-02), laundry rows, as-needed and waved rows can't be
+// sent. Sending writes the carry + one log line (act "am"); every write is targeted and ?dryrun=1 writes nothing.
+let amCarry={}, _amIdx={}, _amDb=null;
+function _amToday(){ const n=new Date(); return n.getFullYear()+"-"+String(n.getMonth()+1).padStart(2,"0")+"-"+String(n.getDate()).padStart(2,"0"); }
+function _amIsoAdd(iso,n){ const d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()+n); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+// The calendar date of a day tab of the active week (prevWeek: the same weekday a week earlier). The week meta may date only
+// Mon–Fri, so the rest are counted from Monday — Sunday leads the week, the day before Monday. Unknown → null: callers stay quiet.
+function amIso(dn,prevWeek){
+  let iso=null; try{ iso=(typeof routineDateISO==="function")?routineDateISO(dn):null; }catch(e){}
+  if(!iso){ let mon=null; try{ mon=(typeof routineDateISO==="function")?routineDateISO("monday"):null; }catch(e){} const ix=DAYS_ALL.indexOf(dn); if(!mon||ix<0) return null; iso=_amIsoAdd(mon,ix===6?-1:ix); }
+  return prevWeek?_amIsoAdd(iso,-7):iso;
+}
+// Open carries, plus the ones sent in the last three weeks (the late ledger asks about those) — rebuilt whenever the data changes,
+// so morningComplete, which is asked constantly, walks a short list and usually an empty one.
+function _amReindex(){
+  _amIdx={}; let t=null; try{ t=amIso(_todayDay); }catch(e){} const cut=_amIsoAdd(t||_amToday(),-21);
+  Object.keys(amCarry||{}).forEach(function(kid){ const m=amCarry[kid]||{};
+    _amIdx[kid]=Object.keys(m).filter(function(id){ const r=m[id]; return r&&r.slot&&r.dueIso&&r.fromIso&&(!r.done||r.fromIso>=cut); }).map(function(id){ return Object.assign({id:id},m[id]); }); });
+}
+function amOnValue(v){ amCarry=v||{}; _amReindex(); try{ HA_LS.setItem('ha_amcarry',JSON.stringify(amCarry)); }catch(e){} }
+try{ amCarry=JSON.parse(HA_LS.getItem('ha_amcarry')||"{}")||{}; _amReindex(); }catch(e){}
+function _amWrite(){ return typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
+// One listener per kid, by key from 60 days back (the key starts with the date it was sent) — old finished ones never load.
+function amAttach(){
+  if(typeof db==="undefined"||!db||_amDb===db) return; _amDb=db; const cut=_amIsoAdd(_amToday(),-60);
+  [...ROSTER].forEach(function(kid){ try{ db.ref("amCarry/"+kid).orderByKey().startAt(cut).on("value",function(s){ const m=Object.assign({},amCarry); m[kid]=s.val()||{}; amOnValue(m); if(tab==="moms-plan"||tab==="kids"||tab==="schedule") renderAllSoon(); }); }catch(e){} });
+}
+function amKey(fromIso,slot,i){ return fromIso+"_"+RT_ABBR[slot]+"step"+i; }
+function amList(kid){ return _amIdx[kid]||[]; }
+function amGet(kid,slot,i,fromIso){ const m=(amCarry&&amCarry[kid])||{}; return (fromIso&&m[amKey(fromIso,slot,i)])||null; }
+function amDoneBy(it,iso){ return !!(it&&it.done&&it.done.iso&&(!iso||it.done.iso<=iso)); }
+// The carried items on the kid's Morning list for day tab d: due by then and not finished before it. Oldest first.
+function amFor(kid,d){
+  const L=amList(kid); if(!L.length) return []; const iso=amIso(d||day); if(!iso) return [];
+  return L.filter(function(it){ return it.dueIso<=iso&&!(it.done&&it.done.iso&&it.done.iso<iso); })
+    .sort(function(a,b){ return String(a.fromIso).localeCompare(String(b.fromIso))||(SL_SLOTS.indexOf(a.slot)-SL_SLOTS.indexOf(b.slot))||(a.i-b.i); });
+}
+// Is a carried item still open on day d? → the Morning list is not complete, so the schedule stays locked.
+function amBlocks(kid,d){
+  const L=amList(kid); if(!L.length) return false; const iso=amIso(d||day); if(!iso) return false;
+  return L.some(function(it){ return it.dueIso<=iso&&!(it.done&&it.done.iso&&it.done.iso<=iso); });
+}
+// A weekday chore sent to the morning list on or after the day it came due is the morning list's job — not ALSO late on its own list.
+function amCovers(kid,slot,i,dueIso){ return !!dueIso&&amList(kid).some(function(it){ return it.slot===slot&&it.i===i&&it.fromIso>=dueIso; }); }
+function amFromLbl(it){ try{ return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date(it.fromIso+"T12:00:00").getDay()]||""; }catch(e){ return ""; } }
+function amCanSend(slot,st){ return !!st&&RT_ABBR[slot]!==undefined&&!st.meal&&!st.line&&!st.laundry&&!(typeof laundryStarts==="function"&&laundryStarts(st))&&st.cad!=="asneeded"&&st.cad!=="none"; }
+function _amGrown(){ return (typeof momHere==="function"&&momHere())||(typeof dadAwardOk==="function"&&dadAwardOk()); }   // Mom, or an unlocked Dad — the ✕ today gate
+function _amRedraw(){ const el=(typeof document!=="undefined")?document.getElementById('content'):null; if(typeof tab!=="undefined"&&tab==="moms-plan"&&el&&typeof renderMomsPlan==="function") renderMomsPlan(el); else if(typeof renderAll==="function") renderAll(); }
+function _amLog(kid,wk,dn,rec){
+  let key="rl_"+Date.now()+"_"+Math.floor(Math.random()*1e6);
+  if(db){ try{ const r=db.ref("routineLog/"+kid+"/"+wk+"/"+dn).push(); key=r.key; obSet("routineLog/"+kid+"/"+wk+"/"+dn+"/"+key,rec,null); }catch(e){} }
+  routineLog[kid]=routineLog[kid]||{}; routineLog[kid][wk]=routineLog[kid][wk]||{}; routineLog[kid][wk][dn]=routineLog[kid][wk][dn]||{};
+  routineLog[kid][wk][dn][key]=rec;
+}
+// TODAY's Morning record follows the carries when one is added, taken back or closed from its own list — the same tail as
+// toggleMorningStep (list record, ⏱ day start, 🏁 list bonus, 🏆 day bonus), and only when done-ness actually flips.
+function _amSettleToday(kid){
+  const wk=activeWk(), d=_todayDay, mk=wk+"_"+d+"_"+kid+"_morning", prev=slState[mk], _pd=day;
+  try{ day=d;
+    const all=morningComplete(kid,d); if(!!(prev&&prev.done)===!!all) return;
+    slState[mk]={done:all,ts:all?nowTs():""};
+    if(all&&typeof dsAutoStart==="function") dsAutoStart(kid);
+    rtBonusSettle("morning",kid,wk,d,prev,all,morningDueIdx(kid,d).length);
+    if(typeof rtDayBonusSettle==="function") rtDayBonusSettle(kid,wk,d);
+  } finally { day=_pd; }
+}
+function _amSettleSave(kid){ const b=slBefore(); _amSettleToday(kid); slSaveChanged(activeWk(),b); }
+// 🌅 AM on a pop-up row: put step i of that day's list on the kid's next morning list. A second tap takes it back.
+function amSend(slot,kid,d,i,quiet){
+  if(!_amGrown()) return false;
+  const st=(rtStepsFor(slot,kid,false,d)||[])[i], fromIso=amIso(d); if(!st||!fromIso||!amCanSend(slot,st)) return false;
+  const wk=activeWk(), id=amKey(fromIso,slot,i);
+  if(amCarry[kid]&&amCarry[kid][id]){ const ok=amTakeBack(kid,id,true); if(ok&&!quiet) _amRedraw(); return ok; }
+  if(rtDoneOn(slot,kid,d,i)||(typeof rtWaved==="function"&&rtWaved(slot,kid,d,i))) return false;
+  const by=(typeof momHere==="function"&&!momHere())?"dad":"mom", lk="am_"+RT_ABBR[slot]+"step"+i;
+  const rec={slot:slot,i:i,label:st.label||"",emoji:st.emoji||"",pts:st.pts||0,fromIso:fromIso,fromWk:wk,fromDay:d,dueIso:_amIsoAdd(fromIso,1),ts:nowTs(),at:Date.now(),by:by};
+  const lrec={label:(st.label||"Chore")+" — sent to the next morning by "+(by==="dad"?"Dad":"Mom"),slot:slot,act:"am",ts:rec.ts,at:rec.at,pts:0};
+  amCarry[kid]=amCarry[kid]||{}; amCarry[kid][id]=rec;
+  routineLog[kid]=routineLog[kid]||{}; routineLog[kid][wk]=routineLog[kid][wk]||{}; routineLog[kid][wk][d]=routineLog[kid][wk][d]||{}; routineLog[kid][wk][d][lk]=lrec;
+  if(_amWrite()){ db.ref("amCarry/"+kid+"/"+id).set(rec); db.ref("routineLog/"+kid+"/"+wk+"/"+d+"/"+lk).set(lrec); }
+  amOnValue(amCarry);
+  if(rec.dueIso<=(amIso(_todayDay)||_amToday())) _amSettleSave(kid);   // sent from an earlier day → it is on THIS morning's list now
+  if(!quiet) _amRedraw();
+  return true;
+}
+// Take an open carry off the morning list (the row's second tap, or ✕ take off on the Morning pop-up). A done one stays — un-check it.
+function amTakeBack(kid,id,quiet){
+  if(!_amGrown()) return false;
+  const it=amCarry[kid]&&amCarry[kid][id]; if(!it||it.done) return false;
+  const lk="am_"+RT_ABBR[it.slot]+"step"+it.i;
+  delete amCarry[kid][id]; try{ delete routineLog[kid][it.fromWk][it.fromDay][lk]; }catch(e){}
+  if(_amWrite()){ db.ref("amCarry/"+kid+"/"+id).remove(); db.ref("routineLog/"+kid+"/"+it.fromWk+"/"+it.fromDay+"/"+lk).remove(); }
+  amOnValue(amCarry);
+  if(it.dueIso<=(amIso(_todayDay)||_amToday())) _amSettleSave(kid);
+  if(!quiet) _amRedraw();
+  return true;
+}
+// What "Send all" would send from day d: every open, sendable row of Afternoon, Chores and Evening (a late one rides along).
+function amRest(kid,d){
+  const out=[], fromIso=amIso(d); if(!fromIso) return out;
+  const act=(typeof activeSlots==="function")?activeSlots():SL_SLOTS;
+  ["afternoon","chores","evening"].forEach(function(slot){ if(act.indexOf(slot)<0) return;
+    (rtStepsFor(slot,kid,false,d)||[]).forEach(function(st,i){
+      if(!amCanSend(slot,st)||(typeof stepWindowOk==="function"&&!stepWindowOk(st,d))) return;
+      if(!cadDueOn(st.cad||"daily",d)&&!((typeof mdLateDays==="function")&&mdLateDays(slot,kid,d,i,st)>0)) return;
+      if(rtDoneOn(slot,kid,d,i)||(typeof rtWaved==="function"&&rtWaved(slot,kid,d,i))||amGet(kid,slot,i,fromIso)) return;
+      out.push({slot:slot,i:i}); }); });
+  return out;
+}
+function amSendRest(kid,d){
+  if(!_amGrown()) return 0;
+  const L=amRest(kid,d); if(!L.length) return 0;
+  let n=0; L.forEach(function(x){ if(amSend(x.slot,kid,d,x.i,true)) n++; });
+  if(n&&typeof gwShowToast==="function") gwShowToast("\u{1F305} "+n+" thing"+(n===1?"":"s")+" on "+cap(kid)+"'s next morning list");
+  _amRedraw(); return n;
+}
+// The kid's tap on a carried row of the Morning list (or Mom's, through amMomTick). See the three writes in the header.
+function amToggle(kid,id){
+  if(!routineEditable()){ _rtBlockedToast(); return; }
+  const it=amCarry[kid]&&amCarry[kid][id], iso=amIso(day); if(!it||!iso||!it.dueIso||it.dueIso>iso) return;
+  if(it.done&&!amDoneBy(it,iso)) return;                        // finished on a later day than the tab on screen
+  const now=!it.done, label=it.label||"Chore", wk=activeWk(), _slB=slBefore();
+  if(!now&&it.done.src==="list"){ if(typeof gwShowToast==="function") gwShowToast("That one was checked on the "+(SL_SLBL[it.slot]||it.slot)+" list — un-check it there"); return; }
+  const sk=it.fromWk+"_"+it.fromDay+"_"+kid+"_"+RT_ABBR[it.slot]+"step"+it.i;
+  const smap=(it.fromWk===wk)?slState:((typeof prevSlState!=="undefined"&&prevSlState&&typeof _prevWkKey==="function"&&it.fromWk===_prevWkKey())?prevSlState:null);
+  if(now&&smap&&smap[sk]&&smap[sk].done){                       // the original row is already ticked: close the carry, pay nothing twice
+    it.done={iso:iso,ts:nowTs(),at:Date.now(),src:"list"};
+    if(_amWrite()) db.ref("amCarry/"+kid+"/"+id+"/done").set(it.done);
+  } else {
+    const paid=now?(it.pts||0):((it.done.pts!=null)?it.done.pts:(it.pts||0)), full=(it.emoji?it.emoji+" ":"")+label; let bid=null;
+    if(paid>0){
+      if(now) bid=bankDirect(kid,paid,"\u{1F305} "+full+" (from "+amFromLbl(it)+")",(typeof choreVerifyOn==="function"&&choreVerifyOn(kid)));
+      else if(it.done.bid){ if(!(typeof cuUnpay==="function"&&cuUnpay(kid,it.done.bid,label))) bankDirectRemove(kid,it.done.bid); }
+      else bankDirect(kid,-paid,"↩ unchecked: "+label);
+    }
+    const by=(typeof _spBy==="function")?_spBy():null, ts=nowTs();
+    const srec=now?{done:true,ts:ts,pts:paid,bid:bid||null,am:iso}:{done:false,ts:"",pts:null,bid:null}; if(now&&by) srec.by=by;
+    if(now){ it.done={iso:iso,ts:ts,at:Date.now(),pts:paid,bid:bid||null,src:"am"}; if(by) it.done.by=by; } else delete it.done;
+    if(_amWrite()){ if(now) db.ref("amCarry/"+kid+"/"+id+"/done").set(it.done); else db.ref("amCarry/"+kid+"/"+id+"/done").remove(); }
+    // (2) the original step's own check-off, on the day it was due — this week's rides slSaveChanged below; last week's is one targeted write
+    if(it.fromWk===wk){ slState[sk]=srec;
+      const fk=wk+"_"+it.fromDay+"_"+kid+"_"+it.slot, fc=slState[fk]||{}, all=rtComplete(it.slot,kid,it.fromDay);
+      if(!!fc.done!==!!all) slState[fk]=Object.assign({},fc,{done:all,ts:all?ts:""}); }
+    else { if(smap) smap[sk]=srec; if(_amWrite()) db.ref(it.fromWk+"/sl/"+sk).set(srec); }
+    // (3) the history line, filed under that day with the step's own slot + label
+    _amLog(kid,it.fromWk,it.fromDay,{label:label,slot:it.slot,act:now?"on":"off",ts:ts,at:Date.now(),pts:paid,am:iso});
+  }
+  amOnValue(amCarry);
+  // the Morning list's own record — toggleMorningStep's tail, so the gate, ⏱ day start and 🏁 bonus behave exactly the same
+  const mk=wk+"_"+day+"_"+kid+"_morning", _prevSlot=slState[mk], allDone=morningComplete(kid,day);
+  slState[mk]={done:allDone,ts:allDone?nowTs():""};
+  if(allDone&&!(_prevSlot&&_prevSlot.done)&&day===_todayDay&&typeof dsAutoStart==="function") dsAutoStart(kid);
+  rtBonusSettle("morning",kid,wk,day,_prevSlot,allDone,morningDueIdx(kid,day).length);
+  if(typeof rtDayBonusSettle==="function") rtDayBonusSettle(kid,wk,day);
+  if(allDone) mrOpen[kid]=false;
+  slSaveChanged(wk,_slB);
+  renderSkylight();
+  if(tab==="schedule"){ const c=document.getElementById("content"); if(c) renderSchedule(c); }
+}
+// Mom's (or an unlocked Dad's) tick on a carried row of the Morning pop-up — the kid's own check-off, made with the day set to that row's day.
+function amMomTick(kid,id,d){
+  if(!_amGrown()) return false;
+  const _pd=(typeof day!=="undefined")?day:null; try{ day=d; amToggle(kid,id); } finally { if(_pd!==null) day=_pd; }
+  try{ const el=document.getElementById('content'); if(el&&typeof renderMomsPlan==="function") renderMomsPlan(el); }catch(e){}
+  return true;
+}
+// The ORIGINAL row was ticked (or un-ticked) on its own list — toggleRtStep calls this — so the carry follows and the two never disagree.
+function amSourceSync(slot,kid,d,i,now){
+  const iso=amIso(d), it=iso?amGet(kid,slot,i,iso):null; if(!it) return;
+  if(now){ if(it.done) return; it.done={iso:amIso(_todayDay)||_amToday(),ts:nowTs(),at:Date.now(),src:"list"}; }
+  else { if(!it.done) return; delete it.done; }
+  const id=amKey(iso,slot,i);
+  if(_amWrite()){ if(now) db.ref("amCarry/"+kid+"/"+id+"/done").set(it.done); else db.ref("amCarry/"+kid+"/"+id+"/done").remove(); }
+  amOnValue(amCarry);
+  if(it.dueIso<=(amIso(_todayDay)||_amToday())) _amSettleToday(kid);   // toggleRtStep's own slSaveChanged writes what this changed
+}
+// The carried rows at the top of the kid's Morning list.
+function amRowsHTML(kid,items,ed){
+  if(!items||!items.length) return '';
+  const iso=amIso(day);
+  let h='<div class="sl-slot-sub" style="padding:4px 0 2px;font-weight:800;color:#b45309">\u{1F305} Left over — finish these first</div>';
+  items.forEach(function(it){ const sd=amDoneBy(it,iso);
+    h+='<div class="mr-step'+(sd?" done":"")+'"'+(ed?' onclick="amToggle(\''+kid+'\',\''+it.id+'\')"':'')+'>'+
+       '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
+       '<div class="sl-slot-name">'+(it.emoji?it.emoji+" ":"")+esc(it.label||"Chore")+
+         ' <span class="cadtag" style="color:#b45309;border-color:#fde68a">from '+amFromLbl(it)+' · '+(SL_SLBL[it.slot]||it.slot)+'</span>'+
+         ((it.pts||0)>0?' <span class="cadtag" style="color:#b45309;border-color:#fde68a">+'+(it.pts||0)+' ⭐</span>':'')+
+       '</div></div>'; });
+  return h;
+}
+// Kids today pop-up, end of a row. Morning: a carried row gets Mom's ✓ done / ↩ undo and ✕ take off. Afternoon / Chores / Evening:
+// an open, sendable row gets 🌅 AM (amber + ✓ once sent; a second tap takes it back).
+function amPopBtnsHTML(r,slot,kid,d,ok){
+  if(!ok||!r) return '';
+  const B='padding:2px 8px;border-radius:7px;background:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;font-family:inherit;border:1.5px solid ';
+  const re="boardStatPop('"+kid+"','"+slot+"','"+d+"')";
+  if(r.am) return '<button onclick="event.stopPropagation();amMomTick(\''+kid+'\',\''+r.am+'\',\''+d+'\');'+re+'" style="'+B+'#d1d5db;color:#374151">'+(r.done?'↩ undo':'✓ done')+'</button>'+
+      (r.done?'':'<button onclick="event.stopPropagation();amTakeBack(\''+kid+'\',\''+r.am+'\');'+re+'" title="Take it off the morning list" style="'+B+'#d1d5db;color:#6b7280">✕ take off</button>');
+  if(r.i==null||r.done||r.wv||RT_ABBR[slot]===undefined) return '';
+  if(!amCanSend(slot,(rtStepsFor(slot,kid,false,d)||[])[r.i])) return '';
+  const sent=!!amGet(kid,slot,r.i,amIso(d));
+  return '<button onclick="event.stopPropagation();amSend(\''+slot+'\',\''+kid+'\',\''+d+'\','+r.i+');'+re+'" title="'+(sent?'On the next morning list — tap to take it back':'Put this on the next morning list — done before school')+'" style="'+B+(sent?'#b45309;color:#b45309':'#d1d5db;color:#6b7280')+'">\u{1F305} AM'+(sent?' ✓':'')+'</button>';
+}
+// Kids today pop-up, under the rows of ☀️ 🧹 🌙: one button for everything still open in all three lists.
+function amPopFootHTML(kid,slot,d){
+  if(RT_ABBR[slot]===undefined) return '';
+  const n=amRest(kid,d).length; if(!n) return '';
+  return '<div style="margin-top:10px;padding-top:9px;border-top:1px solid #f3f4f6">'+
+    '<button onclick="event.stopPropagation();amSendRest(\''+kid+'\',\''+d+'\');boardStatPop(\''+kid+'\',\''+slot+'\',\''+d+'\')" style="width:100%;padding:8px 10px;border-radius:9px;border:1.5px solid #fde68a;background:#fffbeb;color:#92400e;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">\u{1F305} Send all '+n+' unfinished to the next morning</button>'+
+    '<div style="font-size:10.5px;color:var(--muted);margin-top:4px">Afternoon, Chores and Evening together. They show first on the Morning list and hold school until done. \u{1F305} AM on a row sends just that one.</div></div>';
+}
+// SENDAM_END
 function rtDueOrLate(slot,kid,d,i,st){ if(typeof stepWindowOk==="function"&&!stepWindowOk(st,d)) return false; if(typeof rtWaved==="function"&&rtWaved(slot,kid,d,i)) return false; return cadDueOn((st&&st.cad)||"daily",d)||(d===_todayDay&&rtLateDays(slot,kid,i)>0); }   // WAVE: a waved step is not due
 function rtComplete(slot,kid,d){ const steps=rtStepsFor(slot,kid); if(!steps.length){ const s=slState[activeWk()+"_"+d+"_"+kid+"_"+slot]; return !!(s&&s.done); } return steps.every((st,i)=>!rtDueOrLate(slot,kid,d,i,st)||rtDoneOn(slot,kid,d,i)); }
 // ✅ CHORESEMPTY (her rule 2026-10-06: "if no chores then it's considered done"): a list counts as done when it was checked off — or
@@ -2415,6 +2647,7 @@ function toggleRtStep(slot,kid,i){
     if(now&&typeof _spBy==="function"&&_spBy()) slState[sk].by=_spBy();   // 🔎 SPOTCHECK: Mom's / Dad's tick isn't the kid's own
     rlogAppend(kid,slot,_st?_st.label:("Step "+(i+1)),now?"on":"off",_p,(!now&&typeof cuUndoTag==="function")?cuUndoTag():null);   // ↩︎ UNDOLISTS: the line says Mom / Dad undid it
     try{ if(typeof laundryKidHook==="function") laundryKidHook(kid,_st,sk,now); }catch(e){}   // 🧺 KIDLAUNDRY
+    try{ if(typeof amSourceSync==="function") amSourceSync(slot,kid,day,i,now); }catch(e){}   // 🌅 SENDAM: a row that was sent to the morning list closes (or re-opens) there too
   }
   const allDone=rtComplete(slot,kid,day), _prevSlot=slState[wk+"_"+day+"_"+kid+"_"+slot];
   slState[wk+"_"+day+"_"+kid+"_"+slot]={done:allDone,ts:allDone?nowTs():""};
@@ -2588,6 +2821,7 @@ function rtLateDays(slot,kid,i){
     if(typeof _rtOffCycle==="function"&&_rtOffCycle(st,DAYS_ALL[due],false)) return 0;   // LATE_CYCLE: that day was an off week for this chore
     if(typeof _rtBeforeFrom==="function"&&_rtBeforeFrom(st,DAYS_ALL[due],false)) return 0;   // LATE_FROM: it had not started yet on that day
     if(typeof rtWaved==="function"&&rtWaved(slot,kid,DAYS_ALL[due],i,wk)) return 0;   // WAVE: Mom waved it that day
+    if(typeof amCovers==="function"&&amCovers(kid,slot,i,amIso(DAYS_ALL[due]))) return 0;   // SENDAM: it is on the morning list
     for(let p=_rtPos(due);p<=tp;p++){ if(rtDoneOnWk(wk,slot,kid,DAYS_ALL[_rtIdx(p)],i)) return 0; }
     return tp-_rtPos(due);
   }
@@ -2604,6 +2838,7 @@ function rtLateDays(slot,kid,i){
   if(typeof _rtOffCycle==="function"&&_rtOffCycle(st,DAYS_ALL[pd],true)) return 0;   // LATE_CYCLE: last week was an off week for this chore
   if(typeof _rtBeforeFrom==="function"&&_rtBeforeFrom(st,DAYS_ALL[pd],true)) return 0;   // LATE_FROM: last week's due day was before it began
   if(typeof rtWaved==="function"&&rtWaved(slot,kid,DAYS_ALL[pd],i,pw)) return 0;   // WAVE
+  if(typeof amCovers==="function"&&amCovers(kid,slot,i,amIso(DAYS_ALL[pd],true))) return 0;   // SENDAM
   const pdue=_rtPos(pd);
   for(let p=pdue;p<=5;p++){ if(rtDoneOnWk(pw,slot,kid,DAYS_ALL[_rtIdx(p)],i)) return 0; }
   for(let p=-1;p<=tp;p++){ if(rtDoneOnWk(wk,slot,kid,DAYS_ALL[_rtIdx(p)],i)) return 0; }
@@ -2686,9 +2921,10 @@ function rtSlotHTML(slot,kid){
       const _wl=stepWindowLabel(st), winTag=_wl?' <span class="cadtag" style="color:#0e7490;border-color:#a5f3fc">\u{1F4C5} '+_wl+'</span>':'';
       const timeTag=st.time?' <span class="cadtag" style="color:#7c3aed;border-color:#ddd6fe">\u23f0 '+st.time+'</span>':'';
       const rotTag=st.rot?' <span class="cadtag" style="color:#c2410c;border-color:#fed7aa">🔄 rotates</span>':'';
+      const amTag=(!sd&&typeof amGet==="function"&&amGet(kid,slot,i,amIso(day)))?' <span class="cadtag" style="color:#b45309;border-color:#fde68a">🌅 on your next morning list</span>':'';   // SENDAM
       h+='<div class="mr-step'+(sd?" done":"")+(_lateTag?" is-late":"")+'"'+(_ed?' onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')"':'')+(_ok?'':' style="opacity:.5"')+'>'+
          '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
-         '<div class="sl-slot-name" style="flex:1">'+(st.emoji?st.emoji+" ":"")+st.label+_lateTag+cadTag+winTag+timeTag+rotTag+'</div>'+
+         '<div class="sl-slot-name" style="flex:1">'+(st.emoji?st.emoji+" ":"")+st.label+_lateTag+cadTag+winTag+timeTag+rotTag+amTag+'</div>'+
          (pts>0?'<span class="mr-pts">+'+pts+' ⭐</span>':'')+'</div>'; });
     optIdx.forEach(i=>{ const st=steps[i], sd=rtDoneOn(slot,kid,day,i), pts=st.pts||0;
       h+='<div class="mr-step'+(sd?" done":"")+'"'+(_ed?' onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')"':'')+' style="opacity:'+(sd?'1':'.75')+'">'+
@@ -4544,6 +4780,7 @@ function initFb() {
     db.ref("config/routineTimes").on("value",s=>{ routineTimes=Object.assign({eveningHour:18}, s.val()||{}); });
     if(typeof rlWindowAttach==="function") rlWindowAttach(activeWk());   // RLWIN: this week + last week live; older weeks load when first needed · typeof: the Envirothon build strips RLWIN (ENVBUILD 2026-11-08)
     db.ref("waved").on("value",s=>{ wavedOnValue(s.val()||{}); if(tab==="moms-plan"||tab==="kids"||tab==="schedule") renderAllSoon(); });   // WAVE
+    if(typeof amAttach==="function") amAttach();   // 🌅 SENDAM
     db.ref("spotChecks").on("value",s=>{ spotOnValue(s.val()||{}); if(tab==="moms-plan"&&momHere()) renderAllSoon(); });   // 🔎 SPOTCHECK
     db.ref("settings/spotCheck").on("value",s=>{ if(typeof spotSetOnValue==="function") spotSetOnValue(s.val()); if(tab==="moms-plan"&&momHere()) renderAllSoon(); });   // 🔎 SPOTCHECK ⚙
     db.ref("config/routineRules").on("value",s=>{ routineRules=Object.assign({loseTechEnabled:false,loseTechHour:10}, s.val()||{}); });
@@ -6517,11 +6754,11 @@ function chSettingsClickoffLogHTML(){
     if(!entries.length){ h+='<div style="font-size:12px;color:var(--muted);padding:6px 0">No check-offs recorded yet this week.</div>'; }
     entries.slice(0,60).forEach(function(e){
       var on=e.act==="on";
-      var icon=on?"✓":"↩";
+      var icon=on?"✓":(e.act==="am"?"🌅":"↩");   // SENDAM
       var slbl=(typeof SL_SLBL!=="undefined"&&SL_SLBL[e.slot])||e.slot||"";
       var dlbl=(typeof DAY_LBL!=="undefined"&&DAY_LBL[e._day])||e._day||"";
       h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)'+(e.flagged?';opacity:.6':'')+'">';
-      h+='<div style="font-size:13px;flex:1;min-width:0"><span style="'+(e.flagged?'text-decoration:line-through;':'')+'font-weight:600">'+icon+' '+(e.label||'')+'</span>'+(e.flagged?' <span style="color:#b91c1c;font-weight:800">−100</span>':'')+'<div style="font-size:10px;color:var(--muted)">'+slbl+' · '+(e.ts||'')+' · '+dlbl+'</div></div>';
+      h+='<div style="font-size:13px;flex:1;min-width:0"><span style="'+(e.flagged?'text-decoration:line-through;':'')+'font-weight:600">'+icon+' '+(e.label||'')+'</span>'+(e.flagged?' <span style="color:#b91c1c;font-weight:800">−100</span>':'')+'<div style="font-size:10px;color:var(--muted)">'+slbl+' · '+(e.ts||'')+' · '+dlbl+((on&&e.am)?' · 🌅 done on the morning list':'')+'</div></div>';
       if(on&&!e.flagged) h+='<button onclick="rlogFlag(\''+kid+'\',\''+_rlwk+'\',\''+e._day+'\',\''+e._key+'\')" title="Didn\'t actually do it — dock 100 points" style="flex-shrink:0;padding:4px 9px;border-radius:8px;border:1.5px solid #fca5a5;background:#fef2f2;color:#b91c1c;font-size:11px;font-weight:800;cursor:pointer">⚠️ −100</button>';
       h+='</div>';
     });
@@ -8856,6 +9093,7 @@ function boardStatPop(kid,slot,d){
   if(slot==="morning"){ title="🌅 Morning";
     // 🌅 only that day's steps (the kid's own list); an as-needed step shows only if it was done, marked as such
     const _mDue=morningDueIdx(kid,day);
+    if(typeof amFor==="function"){ const _ai=amIso(day); amFor(kid,day).forEach(it=>{ rows.push({lab:"🌅 "+(it.emoji?it.emoji+" ":"")+(it.label||"Chore")+" — from "+amFromLbl(it)+" "+(SL_SLBL[it.slot]||it.slot)+(it.pts?" +"+it.pts+" ⭐":""),done:amDoneBy(it,_ai),ts:(it.done&&it.done.ts)||"",am:it.id}); }); }   // SENDAM: carried rows first
     morningStepsFor(kid).forEach((st,i)=>{ const rec=slState[activeWk()+"_"+day+"_"+kid+"_mstep"+i]||{};
       const _due=_mDue.indexOf(i)>=0, _dn=mStepDoneOn(kid,day,i), _wv=(typeof rtWaved==="function")&&rtWaved("morning",kid,day,i);   // KIDROWS2: a waved step stays on the list, greyed, with undo
       if(!_due&&!_wv&&!(st.cad==="asneeded"&&_dn)) return;
@@ -8895,12 +9133,12 @@ function boardStatPop(kid,slot,d){
       '<span style="flex:1;min-width:0;'+(r.done?'':'color:var(--muted)')+(r.wv?';text-decoration:line-through':'')+'">'+esc(r.lab)+((r.late>0&&!r.done&&!r.wv)?'<span class="rt-late">'+r.late+' day'+(r.late>1?'s':'')+' late</span>':'')+'</span>'+   // KIDSLATE: the same tag Kids' Corner shows
       (r.amt!=null?'<span style="font-weight:800;color:'+(r.amt<0?"#b91c1c":"#b45309")+';white-space:nowrap">'+(r.amt<0?"−"+(-r.amt):"+"+r.amt)+' ⭐</span>':'')+
       (r.ts?'<span style="font-size:10.5px;color:var(--muted);white-space:nowrap">'+esc(r.ts)+'</span>':'')+
-      ((_waveOk&&r.i!=null&&!r.done)?kr2WaveBtnHTML(slot,kid,_d,r.i,!!r.wv):'')+'</div>').join('')   // KIDROWS2: ✕ today / undo
+      ((_waveOk&&r.i!=null&&!r.done)?kr2WaveBtnHTML(slot,kid,_d,r.i,!!r.wv):'')+((typeof amPopBtnsHTML==="function")?amPopBtnsHTML(r,slot,kid,_d,_tapOk):'')+'</div>').join('')   // KIDROWS2: ✕ today / undo
     :'<div style="font-size:12px;color:var(--muted);padding:8px 2px">'+(isStars?"no stars yet today":"nothing due today")+'</div>';
   const html='<div id="board-stat-pop" onclick="boardStatPopClose()" style="position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:9000;display:flex;align-items:center;justify-content:center;padding:20px">'+
     '<div onclick="event.stopPropagation()" style="background:#fff;border-radius:16px;max-width:420px;width:100%;max-height:75vh;overflow:auto;padding:16px 18px;box-shadow:0 20px 50px rgba(0,0,0,0.3)">'+
     '<div style="display:flex;align-items:center;margin-bottom:8px"><div style="font-family:\'Fraunces\',serif;font-weight:700;font-size:16px;flex:1">'+cap(kid)+' — '+title+' <span style="color:var(--muted);font-size:13px">('+hdrCount+')</span></div>'+
-    '<button onclick="boardStatPopClose()" style="border:none;background:#f3f4f6;border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer">✕</button></div>'+inner+'</div></div>';
+    '<button onclick="boardStatPopClose()" style="border:none;background:#f3f4f6;border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer">✕</button></div>'+inner+((_tapOk&&typeof amPopFootHTML==="function")?amPopFootHTML(kid,slot,_d):'')+'</div></div>';   // SENDAM: 🌅 Send all
   document.body.insertAdjacentHTML("beforeend",html);
 }
 // ── T2: read-only peek at the week that's built but hasn't started ──────────
@@ -12698,7 +12936,7 @@ function mdMine(who){
 // household/jobs/<id>/<field> per tap. Nothing in config/*, momChores, dadChores, week*/, routineLog or bank is touched.
 let householdData={};            // household/{jobs:{id:{…}}, meta:{imported,importedN}}
 try{ householdData=JSON.parse(HA_LS.getItem('ha_household')||"{}")||{}; }catch(e){}
-let hhView="review";             // "review" | "habits" | "week" | "area" | "room" | "levels" | "rot" | "laundry" | "kitchen" | "once" | "proj" | "today"
+let hhView="review";             // "review" | "habits" | "week" | "area" | "room" | "levels" | "rot" | "laundry" | "kitchen" | "once" | "proj" | "today" | "rooms" (HH_ROOMPAGE)
 let hhOpenWho="";                // Review: which person's group is expanded ("" = all collapsed to counts)
 function householdOnValue(v){ householdData=v||{}; try{ HA_LS.setItem('ha_household',JSON.stringify(householdData)); }catch(e){} if(typeof hhMaterialize==="function") hhMaterialize(); }   // 🏡 HOUSEHOLD_TAKEOVER
 function _hhWrite(){ return typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
@@ -12980,10 +13218,10 @@ function renderHousehold(el){
   if(typeof rlHistReady==="function"&&!rlHistReady()){ if(el) el.innerHTML=rlLoadingHTML("chore history"); return; }   // RLWIN: the numbers need every week (the sweep above waits for it on its own)
   let h='<div style="font-family:\'DM Sans\',sans-serif;padding-bottom:20px">'+mwBanner('Every chore in one place')+mpSubnav('house');
   const chip=function(v,lbl){ return '<button onclick="hhGo(\''+v+'\')" style="padding:7px 12px;border-radius:20px;border:1.5px solid '+(hhView===v?'#2B7A78':'#cbd5e1')+';background:'+(hhView===v?'#2B7A78':'#fff')+';color:'+(hhView===v?'#fff':'#334155')+';font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
-  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;padding:10px 12px 0">'+chip('review','📋 Review')+chip('habits','📈 Habits')+chip('week','📆 Week')+chip('area','🗂 Area')+chip('room','🚪 Room')+chip('levels','🪜 Levels')+(typeof hhRotationsHTML==="function"?chip('rot','🔁 Rotations'):'')+(typeof hhLaundryHTML==="function"?chip('laundry','🧺 Laundry'+((typeof laundryNowCount==="function"&&laundryNowCount())?' 🔴':'')):'')+(typeof hhKitchenHTML==="function"?chip('kitchen','🍳 Kitchen'):'')+(typeof hhOnceHTML==="function"?chip('once','☑️ Once'):'')+(typeof hhProjectsHTML==="function"?chip('proj','🧰 Projects'):'')+chip('today','📅 Today')+'</div>';   // 🧹 HOUSEHOLD_GRID chips · HH_ROTATE
+  h+='<div style="display:flex;gap:6px;flex-wrap:wrap;padding:10px 12px 0">'+(typeof hhRoomsPageHTML==="function"?chip('rooms','🗺 Rooms'):'')+chip('review','📋 Review')+chip('habits','📈 Habits')+chip('week','📆 Week')+chip('area','🗂 Area')+chip('room','🚪 Room')+chip('levels','🪜 Levels')+(typeof hhRotationsHTML==="function"?chip('rot','🔁 Rotations'):'')+(typeof hhLaundryHTML==="function"?chip('laundry','🧺 Laundry'+((typeof laundryNowCount==="function"&&laundryNowCount())?' 🔴':'')):'')+(typeof hhKitchenHTML==="function"?chip('kitchen','🍳 Kitchen'):'')+(typeof hhOnceHTML==="function"?chip('once','☑️ Once'):'')+(typeof hhProjectsHTML==="function"?chip('proj','🧰 Projects'):'')+chip('today','📅 Today')+'</div>';   // 🧹 HOUSEHOLD_GRID chips · HH_ROTATE
   if(typeof hhAddHTML==="function") h+=hhAddHTML();   // HH_ADDGIVE: + Add a chore
   if((hhView==='review'||hhView==='room')&&typeof hhSortChipHTML==="function") h+=hhSortChipHTML();   // HH_SETTINGS_METER
-  const body=(hhView==='today')?hhTodayHTML():(hhView==='habits')?hhHabitsHTML():(hhView==='week'&&typeof hhWeekHTML==="function")?hhWeekHTML():(hhView==='area'&&typeof hhAreaHTML==="function")?hhAreaHTML():(hhView==='room'&&typeof hhRoomHTML==="function")?hhRoomHTML():(hhView==='levels'&&typeof hhLevelsHTML==="function")?hhLevelsHTML():(hhView==='rot'&&typeof hhRotationsHTML==="function")?hhRotationsHTML():(hhView==='proj'&&typeof hhProjectsHTML==="function")?hhProjectsHTML():(hhView==='once'&&typeof hhOnceHTML==="function")?hhOnceHTML():(hhView==='laundry'&&typeof hhLaundryHTML==="function")?hhLaundryHTML():(hhView==='kitchen'&&typeof hhKitchenHTML==="function")?hhKitchenHTML():hhReviewHTML();
+  const body=(hhView==='rooms'&&typeof hhRoomsPageHTML==="function")?hhRoomsPageHTML():(hhView==='today')?hhTodayHTML():(hhView==='habits')?hhHabitsHTML():(hhView==='week'&&typeof hhWeekHTML==="function")?hhWeekHTML():(hhView==='area'&&typeof hhAreaHTML==="function")?hhAreaHTML():(hhView==='room'&&typeof hhRoomHTML==="function")?hhRoomHTML():(hhView==='levels'&&typeof hhLevelsHTML==="function")?hhLevelsHTML():(hhView==='rot'&&typeof hhRotationsHTML==="function")?hhRotationsHTML():(hhView==='proj'&&typeof hhProjectsHTML==="function")?hhProjectsHTML():(hhView==='once'&&typeof hhOnceHTML==="function")?hhOnceHTML():(hhView==='laundry'&&typeof hhLaundryHTML==="function")?hhLaundryHTML():(hhView==='kitchen'&&typeof hhKitchenHTML==="function")?hhKitchenHTML():hhReviewHTML();
   h+='<div style="padding:10px 12px 24px">'+((hhView==='kitchen'&&typeof ktAskSettingHTML==="function")?ktAskSettingHTML():'')+body+'</div></div>';   // 🍳 KITCHEN_ASK: the question-day chips sit above the Kitchen tab
   el.innerHTML=h;
 }
@@ -13001,6 +13239,62 @@ const HH_ROOMS=[["living","Living room","down"],["entry","Entry + hallway","down
   ["boys","Boys' room","up"],["lj","Lucy + Julian's room","up"],["playroom","Playroom","up"],["ours","Mom and Dad's room + bathroom","up"],["bathup","Top-of-stairs bathroom","up"],["stairs","Stairs + upstairs hallway","up"],["any","Not a room","-"]]
   .map(function(r){ if(typeof HA_IS_HOWE==="undefined"||HA_IS_HOWE) return r;   // HHROSTER: Howe's own house names stay Howe's; another family sees plain room names (same ids, so nothing saved moves)
     const L={boys:"Kids' room",lj:"Second kids' room",ours:"Parents' room + bathroom",bathup:"Upstairs bathroom",school:"School room"}; return L[r[0]]?[r[0],L[r[0]],r[2]]:r; });
+// HH_ROOMDATA_START — 🚪 rooms as data (Household by room, step 1 of DESIGN_household_rooms_2026-11-15 §9; her rule 2026-11-11:
+// "rooms across the top", and the design's "Rooms are data, not code", so each family has its own list). household/rooms/<id> =
+// {name, emoji, floor, order} and household/floors/<id> = {name, order}. A "floor" here is a room GROUP (Downstairs, Upstairs, any she
+// adds), not a chore's own floor field (HH_FLOORS). With nothing stored every reader gets the code list HH_ROOMS above, the same array,
+// so nothing on screen moves. The first edit on 🚪 Edit rooms copies that list in with the same ids in ONE multi-path update, so every
+// chore's stored room still matches; every later edit is one targeted path. Removing a room or group never writes a chore. Read from
+// householdData, which the household listener already brings: nothing new at boot.
+const HH_ROOM_EMOJI={living:"🛋",entry:"🚪",bathdown:"🚽",kitchen:"🍳",school:"📚",boys:"🛏",lj:"🧸",playroom:"🧩",ours:"🛏",bathup:"🛁",stairs:"🪜",any:"📦"};
+const HH_GROUPS_CODE=[["down","Downstairs"],["up","Upstairs"]];
+function hhRoomsStored(){ const r=householdData&&householdData.rooms; return !!(r&&typeof r==="object"&&Object.keys(r).length); }
+function _hhByOrder(o){ return function(a,b){ return ((+o[a].order||0)-(+o[b].order||0))||(a<b?-1:1); }; }
+function hhRoomGroups(){ if(!hhRoomsStored()) return HH_GROUPS_CODE; const f=(householdData.floors&&typeof householdData.floors==="object")?householdData.floors:{};
+  return Object.keys(f).filter(function(k){ return f[k]&&typeof f[k]==="object"; }).sort(_hhByOrder(f)).map(function(k){ return [k,String(f[k].name||k)]; }); }
+function hhRoomList(){ if(!hhRoomsStored()) return HH_ROOMS; const R=householdData.rooms, G=hhRoomGroups().map(function(g){ return g[0]; }), by=_hhByOrder(R);
+  const gi=function(id){ const i=G.indexOf(R[id].floor||""); return i<0?G.length:i; };   // rooms whose group is gone come last, "No group"
+  return Object.keys(R).filter(function(k){ return R[k]&&typeof R[k]==="object"; }).sort(function(a,b){ return (gi(a)-gi(b))||by(a,b); }).map(function(k){ return [k,String(R[k].name||k),String(R[k].floor||"")]; }); }
+function hhRoomEmoji(id){ const r=hhRoomsStored()&&householdData.rooms[id]; return (r&&r.emoji)||HH_ROOM_EMOJI[id]||"🚪"; }
+function hhGroupEmoji(g){ return g==="down"?"⬇️":g==="up"?"⬆️":"📍"; }
+function _hhRoomSeed(){ const upd={}, G=HH_GROUPS_CODE.map(function(g){ return g[0]; });
+  HH_ROOMS.forEach(function(r,i){ upd["household/rooms/"+r[0]]={name:r[1],emoji:HH_ROOM_EMOJI[r[0]]||"🚪",floor:G.indexOf(r[2])>=0?r[2]:"",order:i}; });
+  HH_GROUPS_CODE.forEach(function(g,i){ upd["household/floors/"+g[0]]={name:g[1],order:i}; }); return upd; }
+// rel = "rooms/<id>", "rooms/<id>/<field>", "floors/<id>" or "floors/<id>/<field>"; val null removes. Returns the update it wrote (tests read it).
+function hhRoomEdit(rel,val){
+  if(typeof momHere==="function"&&!momHere()) return null;
+  const p=String(rel||"").split("/"); if((p[0]!=="rooms"&&p[0]!=="floors")||!p[1]||p.length>3) return null;
+  const seed=!hhRoomsStored(); let upd={};
+  if(seed){ upd=_hhRoomSeed(); householdData.rooms={}; householdData.floors={}; Object.keys(upd).forEach(function(k){ const q=k.split("/"); householdData[q[1]][q[2]]=Object.assign({},upd[k]); }); }
+  const node=householdData[p[0]]=householdData[p[0]]||{};
+  if(p.length===2){ if(val===null) delete node[p[1]]; else node[p[1]]=val; } else { node[p[1]]=Object.assign({},node[p[1]]); node[p[1]][p[2]]=val; }
+  if(seed){ upd={}; ["rooms","floors"].forEach(function(n){ Object.keys(householdData[n]).forEach(function(id){ upd["household/"+n+"/"+id]=householdData[n][id]; }); }); }   // the copy with this edit in it
+  else upd["household/"+rel]=val;
+  householdOnValue(householdData); if(_hhWrite()) db.ref().update(upd); hhRender(); return upd;
+}
+function _hhRoomRows(){ const st=hhRoomsStored(); return hhRoomList().map(function(r,i){ const s=st?householdData.rooms[r[0]]:null; return {id:r[0],name:r[1],floor:r[2],order:s?(+s.order||0):i}; }); }
+function _hhGroupRows(){ const st=hhRoomsStored(); return hhRoomGroups().map(function(g,i){ const s=st?householdData.floors[g[0]]:null; return {id:g[0],name:g[1],order:s?(+s.order||0):i}; }); }
+function _hhNewId(pre){ return pre+Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
+function _hhStepOrder(rows,id,dir){ const i=rows.findIndex(function(r){ return r.id===id; }), n=rows[i+dir]; if(i<0||!n) return null; const b=rows[i+2*dir]; return b?(n.order+b.order)/2:n.order+dir; }   // one path: between the next two
+function hhRoomAdd(name,group){ name=String(name||"").trim().slice(0,40); if(!name){ if(typeof mwToast==="function") try{ mwToast("Give the room a name first"); }catch(e){} return null; }
+  group=hhRoomGroups().some(function(g){ return g[0]===group; })?group:""; const same=_hhRoomRows().filter(function(r){ return r.floor===group; });
+  return hhRoomEdit("rooms/"+_hhNewId("rm"),{name:name,emoji:"🚪",floor:group,order:same.length?Math.max.apply(null,same.map(function(r){ return r.order; }))+1:0}); }
+function hhRoomSet(id,field,val){ const r=hhRoomList().find(function(x){ return x[0]===id; }); if(!r) return null; val=String(val==null?"":val).trim();
+  if(field==="name"){ val=val.slice(0,40); if(!val||val===r[1]) return null; } else if(field==="emoji"){ val=val.slice(0,4); if(val===hhRoomEmoji(id)) return null; }
+  else if(field==="floor"){ if(val&&!hhRoomGroups().some(function(g){ return g[0]===val; })) return null; if(val===r[2]) return null; } else return null;
+  return hhRoomEdit("rooms/"+id+"/"+field,val); }
+function hhRoomStep(id,dir){ const r=_hhRoomRows().find(function(x){ return x.id===id; }); if(!r) return null; const o=_hhStepOrder(_hhRoomRows().filter(function(x){ return x.floor===r.floor; }),id,dir); return o===null?null:hhRoomEdit("rooms/"+id+"/order",o); }
+function hhRoomRemove(id){ const L=hhRoomList(), r=L.find(function(x){ return x[0]===id; }); if(!r) return null;
+  if(L.length<2){ if(typeof mwToast==="function") try{ mwToast("Keep at least one room"); }catch(e){} return null; }
+  if(typeof confirm==="function"&&!confirm('Remove the room "'+r[1]+'"?\n\nIts chores stay as they are and show under No room until you move them.')) return null;
+  if(typeof hhRmSel!=="undefined"&&hhRmSel===id) hhRmSel=""; return hhRoomEdit("rooms/"+id,null); }
+function hhGroupAdd(name){ name=String(name||"").trim().slice(0,30); if(!name){ if(typeof mwToast==="function") try{ mwToast("Give the group a name first"); }catch(e){} return null; }
+  const G=_hhGroupRows(); return hhRoomEdit("floors/"+_hhNewId("fl"),{name:name,order:G.length?Math.max.apply(null,G.map(function(g){ return g.order; }))+1:0}); }
+function hhGroupSet(id,field,val){ const g=hhRoomGroups().find(function(x){ return x[0]===id; }); if(!g||field!=="name") return null; val=String(val||"").trim().slice(0,30); if(!val||val===g[1]) return null; return hhRoomEdit("floors/"+id+"/name",val); }
+function hhGroupStep(id,dir){ const o=_hhStepOrder(_hhGroupRows(),id,dir); return o===null?null:hhRoomEdit("floors/"+id+"/order",o); }
+function hhGroupRemove(id){ const g=hhRoomGroups().find(function(x){ return x[0]===id; }); if(!g) return null;
+  if(typeof confirm==="function"&&!confirm('Remove the group "'+g[1]+'"?\n\nIts rooms stay, under No group.')) return null; return hhRoomEdit("floors/"+id,null); }
+// HH_ROOMDATA_END
 let hhGridSel="";                // Week: "who|iso" of the open cell
 let hhOpenArea="", hhOpenRoom=""; // Area / Room: which card is expanded
 let hhOpenPerson={};              // HH_PERSONFOLD (her ask 2026-10-11): "<view>|<card>|<who>" → open; everyone starts folded so a person is easy to pick
@@ -13039,7 +13333,7 @@ function hhGuessRoom(j){
   if(/entry|hallway|front door|front hallway|shoes by|baseboards|glass front/.test(l)) return "entry";
   return "any";
 }
-function hhRoomOf(j){ return (j&&j.room&&HH_ROOMS.some(function(r){ return r[0]===j.room; }))?j.room:hhGuessRoom(j); }
+function hhRoomOf(j){ const R=(typeof hhRoomList==="function")?hhRoomList():HH_ROOMS; return (j&&j.room&&R.some(function(r){ return r[0]===j.room; }))?j.room:hhGuessRoom(j); }   // HH_ROOMDATA: the family's rooms
 // HH_PICKERS (her report 2026-10-09: "i clicked the thing in livingroom and it disappeared"): a tap on area / floor / room /
 // level used to jump the row to the NEXT value, which moved it out of the card she was looking at. Now a tap opens a row of
 // choices under the row; nothing changes until she picks one.
@@ -13051,7 +13345,7 @@ function hhPickHTML(id,field){
   const j=hhJobs()[id]||{}; let opts=[], cur="";
   if(field==="area"){ opts=Object.keys(HH_AREAS).map(function(k){ return [k,HH_AREAS[k][0]+" "+HH_AREAS[k][1]]; }); cur=j.area||"cleaning"; }
   else if(field==="floor"){ opts=Object.keys(HH_FLOORS).map(function(k){ return [k,HH_FLOORS[k]]; }); cur=j.floor||"ask"; }
-  else if(field==="room"){ opts=HH_ROOMS.map(function(r){ return [r[0],(r[2]==="up"?"⬆️ ":r[2]==="down"?"⬇️ ":"")+r[1]]; }); cur=hhRoomOf(j); }
+  else if(field==="room"){ opts=hhRoomList().map(function(r){ return [r[0],(r[2]==="up"?"⬆️ ":r[2]==="down"?"⬇️ ":"")+r[1]]; }); cur=hhRoomOf(j); }
   else if(field==="level"){ opts=[[1,"Level 1"],[2,"Level 2"],[3,"Level 3"]]; cur=hhLevelOf(j); }
   else if(field==="can"){ const c=hhCanOf(j); let h2='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;padding:6px 8px;background:#f8fafc;border-radius:9px;align-items:center"><span style="font-size:11px;font-weight:800;color:#475569">Can do:</span>';   // HH_SETTINGS_METER: many may
     HH_WHO.forEach(function(w){ if(w==="grab") return; const on=c.indexOf(w)>=0, own=w===j.who; h2+='<button onclick="'+(own?'':"hhCanToggle('"+id+"','"+w+"')")+'" style="padding:4px 9px;border-radius:8px;border:1.5px solid '+(on?'#2B7A78':'#e5e7eb')+';background:'+(on?'#2B7A78':'#fff')+';color:'+(on?'#fff':'#334155')+';font-size:11px;font-weight:800;cursor:'+(own?'default':'pointer')+';font-family:\'DM Sans\',sans-serif">'+esc(hhWhoName(w))+(own?' (owner)':'')+'</button>'; });
@@ -13061,7 +13355,7 @@ function hhPickHTML(id,field){
   opts.forEach(function(o){ const on=String(o[0])===String(cur); h+='<button onclick="hhPickSet(\''+id+'\',\''+field+'\','+(typeof o[0]==="number"?o[0]:"'"+o[0]+"'")+')" style="padding:4px 9px;border-radius:8px;border:1.5px solid '+(on?'#2B7A78':'#e5e7eb')+';background:'+(on?'#2B7A78':'#fff')+';color:'+(on?'#fff':'#334155')+';font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+esc(o[1])+'</button>'; });
   return h+_hhBtn("hhPickToggle('"+id+"','"+field+"')",'✕',false,'#94a3b8')+'</div>';
 }
-function hhRoomName(id){ const r=HH_ROOMS.find(function(x){ return x[0]===id; }); return r?r[1]:id; }
+function hhRoomName(id){ const r=hhRoomList().find(function(x){ return x[0]===id; }); return r?r[1]:id; }
 function hhLayerOf(j){
   if(j.who==="grab") return "grab"; if(j.layer==="project") return "project";
   const l=String(j.label||"").toLowerCase(), cad=hhPlanCad(j);
@@ -13124,11 +13418,11 @@ function hhAreaHTML(){
   return h;
 }
 // ── Room ──
-function hhRoomCycle(id){ const j=hhJobs()[id]; if(!j) return; const ids=HH_ROOMS.map(function(r){ return r[0]; }); hhSet(id,"room",ids[(ids.indexOf(hhRoomOf(j))+1)%ids.length]); }
+function hhRoomCycle(id){ const j=hhJobs()[id]; if(!j) return; const ids=hhRoomList().map(function(r){ return r[0]; }); hhSet(id,"room",ids[(ids.indexOf(hhRoomOf(j))+1)%ids.length]); }
 function hhRoomHTML(){
   const jobs=hhJobs(), ids=Object.keys(jobs); if(!ids.length) return '<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:10px 12px;font-size:12px;color:var(--muted)">Bring in every chore on 📋 Review first.</div>';
   let h='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Downstairs left → right from the front door, then upstairs. A room’s room is a guess from the words until you tap it.</div>'; let lastFloor="";
-  HH_ROOMS.forEach(function(r){ const rid=r[0]; const mine=ids.filter(function(id){ return jobs[id].status!=="retired"&&hhRoomOf(jobs[id])===rid; });
+  hhRoomList().forEach(function(r){ const rid=r[0]; const mine=ids.filter(function(id){ return jobs[id].status!=="retired"&&hhRoomOf(jobs[id])===rid; });
     if(r[2]!==lastFloor){ lastFloor=r[2]; h+='<div style="padding:4px 2px 6px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#2B7A78">'+(r[2]==="up"?"⬆️ Upstairs":r[2]==="down"?"⬇️ Downstairs":"—")+'</div>'; }
     const weeklyOwned=mine.some(function(id){ return /^(wk:|sat|sun)/.test(hhPlanCad(jobs[id])); });
     h+='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);margin-bottom:10px;overflow:hidden"><div onclick="hhOpenRoom=(hhOpenRoom===\''+rid+'\')?\'\':\''+rid+'\';hhRender()" style="display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer"><span style="font-size:14px;font-weight:800">'+esc(r[1])+'</span><span style="font-size:11px;color:var(--muted)">'+mine.length+' jobs</span>'+((rid!=="any"&&!weeklyOwned)?_hhChip('no weekly job owns this room','#fee2e2','#991b1b'):'')+'<span style="flex:1"></span><span style="font-size:12px;color:var(--muted)">'+(hhOpenRoom===rid?'▾':'▸')+'</span></div>';
@@ -13351,7 +13645,7 @@ function hhAddSet(k,v){ _hhAddGrab(); hhAdd[k]=v; if(k==="who"){ hhAdd.slot=hhIs
 function hhAddCan(w){ _hhAddGrab(); if(w===hhAdd.who||HH_WHO.indexOf(w)<0||w==="grab") return; hhAdd.can=Object.assign({},hhAdd.can); hhAdd.can[w]=!hhAdd.can[w]; hhRender(); }   // HH_SETTINGS_METER
 function hhAddField(k,el){ hhAdd[k]=String((el&&el.value)||""); }
 function _hhNextOrder(who,slot,skip){ const jobs=hhJobs(); let o=-1; Object.keys(jobs).forEach(function(id){ const j=jobs[id]; if(id!==skip&&j.who===who&&j.status!=="retired"&&(!hhIsKid(who)||j.slot===slot)) o=Math.max(o,j.order||0); }); return o+1; }   // skip = the row being given (its who is already the new one)
-function _hhRoomFloor(room){ const r=HH_ROOMS.find(function(x){ return x[0]===room; }); return (r&&(r[2]==="up"||r[2]==="down"))?r[2]:""; }
+function _hhRoomFloor(room){ const r=hhRoomList().find(function(x){ return x[0]===room; }); return (r&&(r[2]==="up"||r[2]==="down"))?r[2]:""; }
 function hhAddSave(){
   if(typeof momHere==="function"&&!momHere()) return null;
   const g=function(id,k){ const e=(typeof document!=="undefined"&&document.getElementById)?document.getElementById(id):null; return (e&&e.value!==undefined)?String(e.value||""):String(hhAdd[k]||""); };
@@ -13362,7 +13656,7 @@ function hhAddSave(){
   const cad=kind==="once"?"once":kind==="project"?"asneeded":((HH_ADD_CADS.some(function(c){ return c[0]===hhAdd.cad; })||/^wk:[0-6](,[0-6])*$/.test(hhAdd.cad||""))?hhAdd.cad:"daily");   // 📅 CAD_CHIPS: several days
   const slot=kid?(SL_SLOTS.indexOf(hhAdd.slot)>=0?hhAdd.slot:"chores"):(HH_MC_SLOTS.some(function(c){ return c[0]===hhAdd.slot; })?hhAdd.slot:"");
   const pts=kid?Math.max(0,Math.min(500,parseInt(g("hh-add-pts","pts"),10)||0)):0;
-  const room=HH_ROOMS.some(function(r){ return r[0]===hhAdd.room; })?hhAdd.room:"any";
+  const room=hhRoomList().some(function(r){ return r[0]===hhAdd.room; })?hhAdd.room:"any";
   const level=(hhAdd.level>=1&&hhAdd.level<=3)?hhAdd.level:hhLevelCurFor(who);
   const now=Date.now(), id="hh"+now.toString(36)+Math.random().toString(36).slice(2,6), area=HH_AREAS[hhAdd.area]?hhAdd.area:hhGuessArea(label,slot,"");   // HH_ADD_FORM: her pick, else the guess
   const job={label:label,cad:cad,slot:slot,pts:pts,who:who,src:kid?{kind:"new"}:{kind:(who==="dad"?"dadChore":"momChore"),id:id},source:"Household tab",area:area,floor:(area==="cleaning"||area==="pickup")?(_hhRoomFloor(room)||hhGuessFloor(label,"")):"",room:room,level:level,status:"active",verdict:"",note:"",order:_hhNextOrder(who,slot),ts:now};
@@ -13398,7 +13692,7 @@ function hhAddHTML(){
     h+=lab('Days')+'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">'+HH_ADD_MODES.map(function(x){ return '<button onclick="hhAddCadMode(\''+x[0]+'\')" style="'+cadChipStyle(_md===x[0])+'">'+x[1]+'</button>'; }).join('')+'</div>'
       +(_wk?'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">'+CAD_DAYL.map(function(n,i){ return '<button onclick="hhAddDay('+i+')" style="'+cadChipStyle(_d.indexOf(i)>=0)+'">'+n+'</button>'; }).join('')+'</div>':''); }
   else h+='<div style="font-size:11px;color:var(--muted);margin-top:6px">'+(hhAdd.kind==="once"?'Due every day until it is checked one time, then it leaves the list.':'Never due on its own. Lives on 🧰 Projects with a target, a plan, steps and a work log.')+'</div>';
-  h+=lab('Room')+pick("room",HH_ROOMS.map(function(r){ return [r[0],(r[2]==="up"?"⬆️ ":r[2]==="down"?"⬇️ ":"")+r[1]]; }));
+  h+=lab('Room')+pick("room",hhRoomList().map(function(r){ return [r[0],(r[2]==="up"?"⬆️ ":r[2]==="down"?"⬇️ ":"")+r[1]]; }));
   h+=lab('Level')+pick("level",[[0,"Now (Level "+lvNow+")"],[1,"Level 1"],[2,"Level 2"],[3,"Level 3"]]);
   h+='<div style="display:flex;gap:6px;margin-top:10px;align-items:center"><span style="font-size:11px;color:var(--muted);flex:1">One row in the table; on the list right away under Take over'+(kid?' (a weekday chore starts today, never late)':'')+'.</span>'+_hhBtn("hhAddToggle()",'Cancel',false,'#94a3b8')+_hhBtn("hhAddSave()",'Save',true,'#2B7A78')+'</div></div>';
   return h;
@@ -13570,7 +13864,7 @@ function hhCleanRows(who,iso,dn){
       if(!cadDueOn(j.cad||"daily",dn)) return; const doneOn=(who==="dad")?(typeof dcDoneOn==="function"?dcDoneOn:null):(typeof mcDoneOn==="function"?mcDoneOn:null);
       out.push({id:id,job:j,label:j.label,emoji:j.emoji||"",pts:0,mins:hhMinutesOf(j),done:doneOn?doneOn(iso,key):false,late:false,on:(who==="dad"?"dcToggle('":"mcToggle('")+key+"')"}); }
   });
-  const order=HH_ROOMS.map(function(r){ return r[0]; });
+  const order=hhRoomList().map(function(r){ return r[0]; });
   out.sort(function(a,b){ return (order.indexOf(hhRoomOf(a.job))-order.indexOf(hhRoomOf(b.job)))||((a.job.order||0)-(b.job.order||0)); });
   return out;
 }
@@ -13854,7 +14148,7 @@ function hhPlanCandidates(iso){
 }
 function hhPlanBudget(R){ const lunch=Math.max(0,Math.min(R.end,R.lunchEnd)-Math.max(R.start,R.lunchStart)); const span=Math.max(0,(R.end-R.start)-lunch); const b={}; HH_WHO.forEach(function(w){ if(w!=="grab") b[w]=Math.min(R.minutes[w],span); }); return b; }
 function hhPlanOrder(plan){
-  const jobs=hhJobs(), rooms=HH_ROOMS.map(function(r){ return r[0]; }), by={};
+  const jobs=hhJobs(), rooms=hhRoomList().map(function(r){ return r[0]; }), by={};
   Object.keys(plan).forEach(function(id){ if(jobs[id]) (by[plan[id].who]=by[plan[id].who]||[]).push(id); });
   Object.keys(by).forEach(function(w){ by[w].sort(function(a,b){ return ((hhIsProject(jobs[a])?1:0)-(hhIsProject(jobs[b])?1:0))||(rooms.indexOf(hhRoomOf(jobs[a]))-rooms.indexOf(hhRoomOf(jobs[b])))||((jobs[a].order||0)-(jobs[b].order||0))||(a<b?-1:1); }).forEach(function(id,i){ plan[id].order=i; }); });
   return plan;
@@ -13994,7 +14288,7 @@ function hhOnceHold(id){
 function hhOnceRows(){ const jobs=hhJobs(); return Object.keys(jobs).filter(function(id){ return hhIsOnce(jobs[id]); }); }
 function _hhOnceSendBtns(id,j){ const can=hhCanOf(j); return '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center"><span style="font-size:10.5px;font-weight:800;color:#6b6560">Send to</span>'+can.map(function(w){ return _hhBtn("hhOnceSend('"+id+"','"+w+"')",esc(hhWhoName(w)),w===j.who,'#2B7A78'); }).join('')+'</div>'; }
 function hhOnceHTML(){
-  const jobs=hhJobs(), mom=(typeof momHere==="function")?momHere():false, ids=hhOnceRows(), rooms=HH_ROOMS.map(function(r){ return r[0]; });
+  const jobs=hhJobs(), mom=(typeof momHere==="function")?momHere():false, ids=hhOnceRows(), rooms=hhRoomList().map(function(r){ return r[0]; });
   let h='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">A once-job waits here, off every list, until you send it to someone. It stays on their list until they check it once, then it retires with the date.'+(mom?' Add one with + Add a chore and Kind = Once.':'')+'</div>';
   if(!ids.length) return h+'<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:10px 12px;font-size:12px;color:var(--muted)">The pile is empty.</div>';
   const held=ids.filter(function(id){ return hhOnceHeld(jobs[id])&&jobs[id].status!=="retired"; }), out=ids.filter(function(id){ return !jobs[id].hold&&jobs[id].status!=="retired"; }), done=ids.filter(function(id){ return jobs[id].status==="retired"; });
@@ -14051,7 +14345,7 @@ function hhEditHTML(id){
   if(mode==="wk") h+='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">'+["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(function(d,i){ return chip(days.indexOf(i)>=0,d,"hhEditDay('"+id+"',"+i+")",'#0e7490'); }).join('')+'</div>';
   if(mode==="nd") h+='<div style="font-size:12px;color:var(--muted);margin-top:4px">Every <input type="number" min="1" max="99" value="'+(parseInt(cad,10)||3)+'" onchange="hhEditSet(\''+id+'\',\'cad\',this.value+\'d\')" '+inp+' style="width:54px"> days</div>';
   h+='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;align-items:flex-end"><label style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560">Minutes<br><input type="number" min="1" max="240" value="'+esc(hhMinutesOf(j))+'" onchange="hhEditField(\''+id+'\',\'minutes\',this)" '+inp+' style="width:70px"></label><label style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560">Starts<br><input type="date" value="'+esc(j.from||'')+'" onchange="hhEditField(\''+id+'\',\'from\',this)" '+inp+'></label></div>';
-  h+=lab('Room')+'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">'+HH_ROOMS.map(function(r){ return chip(hhRoomOf(j)===r[0],(r[2]==="up"?"⬆️ ":r[2]==="down"?"⬇️ ":"")+esc(r[1]),"hhEditSet('"+id+"','room','"+r[0]+"')"); }).join('')+'</div>';
+  h+=lab('Room')+'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">'+hhRoomList().map(function(r){ return chip(hhRoomOf(j)===r[0],(r[2]==="up"?"⬆️ ":r[2]==="down"?"⬇️ ":"")+esc(r[1]),"hhEditSet('"+id+"','room','"+r[0]+"')"); }).join('')+'</div>';
   h+=lab('Level')+'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">'+[1,2,3].map(function(L){ return chip(hhLevelOf(j)===L,"Level "+L,"hhEditSet('"+id+"','level',"+L+")"); }).join('')+'</div>';
   h+=lab('Area')+'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">'+Object.keys(HH_AREAS).map(function(k){ return chip((j.area||"cleaning")===k,HH_AREAS[k][0]+" "+HH_AREAS[k][1],"hhEditSet('"+id+"','area','"+k+"')"); }).join('')+'</div>';
   if(j.who!=="grab"){ const can=hhCanOf(j); h+=lab('Who can do it')+'<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">'+HH_WHO.filter(function(w){ return w!=="grab"; }).map(function(w){ const own=w===j.who; return chip(can.indexOf(w)>=0,esc(hhWhoName(w))+(own?' (owner)':''),own?'':"hhCanToggle('"+id+"','"+w+"')"); }).join('')+'</div>'; }
@@ -14059,6 +14353,124 @@ function hhEditHTML(id){
   return h;
 }
 // HH_EDITOR_END
+// HH_ROOMPAGE_START — 🗺 Rooms on the Household tab (Household by room, step 1 of DESIGN_household_rooms_2026-11-15; her direction
+// 2026-11-11: "ONE grid, chores across, dates down", rooms across the top, Downstairs and Upstairs fold). READ-ONLY on every chore and
+// list: a room's chores across in lanes (Daily · Weekly · Every few weeks · Seasonal · One-time, from each chore's own timing), dates
+// down: the past days from the history the Household tab already loaded (rlHistReady — the whole routineLog, momday, the cleaning
+// days) and today from the lists as they stand now. A square = who did it (✓) or who has it, in their colour. No future, no late
+// badge, no lines yet (those need the engine, step 3). A tap opens the existing ✎ Edit. 🏠 Whole house = every room, most behind
+// first. 🚪 Edit rooms (Mom) writes only household/rooms/* and household/floors/* (HH_ROOMDATA). Works only while the view is open.
+let hhRmSel="", hhRmFold={}, hhRmLane={}, hhRmEditing=false, hhRmLong=false;   // room id ("" = 🏠 Whole house, "__none" = No room) · open groups · open lanes · Edit rooms · 8 weeks
+const HH_LANES=[["daily","Daily"],["weekly","Weekly"],["few","Every few weeks"],["season","Seasonal"],["once","One-time"]];
+function hhRmGo(id){ hhRmSel=id; hhRmEditing=false; hhEditId=""; hhRender(); }
+function hhRmFoldToggle(g,open){ hhRmFold[g]=!open; hhRender(); }
+function hhRmLaneToggle(k){ hhRmLane[k]=!hhRmLane[k]; hhRender(); }
+function hhRmEditToggle(){ if(typeof momHere==="function"&&!momHere()) return; hhRmEditing=!hhRmEditing; hhRender(); }
+function hhRmLongToggle(){ hhRmLong=!hhRmLong; hhRender(); }
+// The lane, from the chore's own timing (planCad first, like the need meter): once-jobs and projects → One-time; as needed (no set
+// date) → Seasonal; else by how often: every day → Daily, up to a week → Weekly, under 60 days → Every few weeks, longer → Seasonal.
+function hhLaneOf(j){ const cad=hhPlanCad(j); if(hhIsProject(j)||cad==="once") return "once"; if(cad==="asneeded"||cad==="none") return "season"; const iv=hhInterval(j)||7; return iv<=1?"daily":iv<=7?"weekly":iv<60?"few":"season"; }
+function hhTimesAWeek(j){ const cad=hhPlanCad(j); if(hhLaneOf(j)==="once"||cad==="asneeded"||cad==="none") return 0;
+  let n=/^wk:/.test(cad)?(cad.slice(3).split(",").filter(function(x){ return x!==""; }).length||1):(cad==="sat"||cad==="sun")?1:(cad==="daily")?7:7/(hhInterval(j)||7);
+  if(j.cycW) n=n/Math.max(1,parseInt(j.cycN,10)||4); return n; }   // 🗓 4-week cycle: one week in N
+// The room a chore shows under here: its stored room if that room still exists, else (no stored room) the guess; "" = No room.
+function hhRoomOn(j){ const L=hhRoomList(), has=function(r){ return L.some(function(x){ return x[0]===r; }); }; if(j&&j.room&&!has(j.room)) return ""; const r=hhRoomOf(j); return has(r)?r:""; }
+function hhRoomChores(){ const J=hhJobs(), out={__none:[]}; hhRoomList().forEach(function(r){ out[r[0]]=[]; });
+  Object.keys(J).forEach(function(id){ const j=J[id]; if(!j||j.status==="retired"||j.free) return; out[hhRoomOn(j)||"__none"].push(id); }); return out; }
+function hhRoomStats(ids){ const J=hhJobs(), t=_hhDayNum(_hhIsoLocal(Date.now())); let due=0, ok=0, late=0, mins=0;
+  ids.forEach(function(id){ const j=J[id], st=hhStats(j); due+=st.due8; ok+=st.done8-st.late8; mins+=hhMinutesOf(j)*hhTimesAWeek(j);
+    if(hhLaneOf(j)!=="once"&&!j.hold){ const n=hhNeed(j); if(n&&(n.never?!(j.from&&t-_hhDayNum(j.from)<=n.interval):n.pct>100)) late++; } });   // late = past its interval (the need meter)
+  return {n:ids.length,pct:due?Math.round(100*ok/due):null,late:late,mins:Math.round(mins)}; }
+// 🏠 Whole house order: most late first, then lowest on time, then the room list's order.
+function hhHouseOrder(byRoom){ const L=hhRoomList().map(function(r){ return r[0]; }).concat(byRoom.__none.length?["__none"]:[]);
+  return L.map(function(id,i){ return {id:id,i:i,s:hhRoomStats(byRoom[id]||[])}; }).sort(function(a,b){ return (b.s.late-a.s.late)||((a.s.pct===null?101:a.s.pct)-(b.s.pct===null?101:b.s.pct))||(a.i-b.i); }); }
+function hhRmCol(w){ return (typeof KID_COLOR!=="undefined"&&KID_COLOR[w])||(w==="mom"?"#6B4C93":w==="dad"?"#2C5F8A":"#A0622D"); }
+function hhRmShort(w){ return w==="mom"?"Mom":w==="dad"?"Dad":w==="grab"?"Grab":String(hhWhoName(w)).slice(0,2); }
+// One square: {who, done} or null (not due, not done). A cleaning-day plan names who had it and who did it; a rotation row is
+// done by the kid whose turn it was (the inverse of hhRotLabelOn); "has it" asks what the lists ask (cad, dates, cycle, held,
+// level), not the Week grid's moved day. On past days an every-N chore shows only its ✓: its past due dates are not trustworthy
+// today (DESIGN §2.3 #1, the engine's job in step 3).
+function hhRmCell(id,iso,today,S,rc){
+  const j=hhJobs()[id], cd=householdData&&householdData.cleanday&&householdData.cleanday[iso], dn=_HH_DN[new Date(iso+"T12:00:00Z").getUTCDay()];
+  if(cd&&cd.done&&cd.done[id]) return {who:cd.done[id].who||j.who,done:true};
+  let who=(cd&&cd.sent&&cd.plan&&cd.plan[id]&&cd.plan[id].who)||j.who, done=false, rot=false;
+  if(!(cd&&cd.sent&&cd.plan&&cd.plan[id])&&j.rot&&j.src&&j.src.kind==="routine"&&hhIsKid(j.who)){ const k=j.src.slot+"|"+j.rot, g=rc[k]||(rc[k]=hhRotGroup(j.src.slot,j.rot)), mi=g.findIndex(function(x){ return x.kid===j.who; });
+    if(mi>=0&&g.length>1){ const hop=(typeof _rtRotHop==="function")?_rtRotHop(j.rot,_hhDayNum(iso)):_hhDayNum(iso); who=g[(((mi-hop)%g.length)+g.length)%g.length].kid; rot=true;
+      const st=S.state[who+"|"+j.slot+"|"+_hhNorm(g[mi].label)+"|"+iso]; done=!!(st&&st.act==="on"); } }
+  if(!rot) done=(who===j.who)?hhDoneOnDay(j,iso,S):false;
+  if(done) return {who:who,done:true};
+  if(cd&&cd.sent&&cd.plan&&cd.plan[id]) return {who:who,done:false};
+  if(hhLaneOf(j)==="once"||j.hold||!hhLevelOut(j)||(typeof stepCycleOk==="function"&&!stepCycleOk(j,iso))) return null;
+  const cad=j.cad||"daily"; let due;
+  if(iso===today) due=cad!=="asneeded"&&cad!=="none"&&cadDueOn(cad,dn)&&!(j.from&&iso<j.from)&&!(j.to&&iso>j.to);
+  else due=/^(daily|wk:|sat$|sun$)/.test(cad)&&!!_hhDayCheck(j,_hhDayNum(iso),S);
+  return due?{who:who,done:false}:null;
+}
+function _hhRmSq(c,full){ if(!c) return ''; return '<span style="font-size:10.5px;font-weight:800;white-space:nowrap;color:'+hhRmCol(c.who)+(c.done?'':';opacity:.45')+'">'+esc(full?hhWhoName(c.who):hhRmShort(c.who))+(c.done?' ✓':'')+'</span>'; }
+function hhRoomGridHTML(rid,ids){
+  const J=hhJobs(), mom=(typeof momHere!=="function")||momHere(), today=_hhIsoLocal(Date.now()), t=_hhDayNum(today), S=hhLogState(), rc={}, DL=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const lanes=HH_LANES.map(function(L){ return {k:L[0],name:L[1],ids:ids.filter(function(id){ return hhLaneOf(J[id])===L[0]; }).sort(function(a,b){ return ((J[a].order||0)-(J[b].order||0))||String(J[a].label).localeCompare(String(J[b].label)); })}; }).filter(function(L){ return L.ids.length; });
+  const open=function(L){ return !!hhRmLane[rid+"|"+L.k]; }, anyOpen=lanes.some(open), th='padding:5px 6px;font-size:10.5px;font-weight:800;color:#475569;border-bottom:1px solid #e5e7eb;text-align:left;cursor:pointer;white-space:nowrap';
+  let h='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);overflow:auto"><table style="border-collapse:collapse;min-width:100%;font-size:11px"><tr><th style="'+th+';cursor:default"></th>';
+  lanes.forEach(function(L){ h+='<th onclick="hhRmLaneToggle(\''+rid+'|'+L.k+'\')"'+(open(L)?' colspan="'+L.ids.length+'"':'')+' style="'+th+';background:#f8fafc;border-left:1px solid #e5e7eb">'+esc(L.name)+' · '+L.ids.length+' '+(open(L)?'▾':'▸')+'</th>'; });
+  h+='</tr>';
+  if(anyOpen){ h+='<tr><th style="'+th+';cursor:default"></th>'; lanes.forEach(function(L){ if(!open(L)){ h+='<th style="'+th+';border-left:1px solid #e5e7eb;cursor:default"></th>'; return; }
+      L.ids.forEach(function(id,i){ const j=J[id]; h+='<th'+(mom?' onclick="hhEditToggle(\''+id+'\')"':'')+' style="'+th+';font-weight:700;max-width:110px;overflow:hidden;text-overflow:ellipsis'+(i?'':';border-left:1px solid #e5e7eb')+(hhEditId===id?';background:#e6f4f3':'')+'" title="'+esc(j.label)+'">'+esc((j.emoji||'☐')+' '+j.label)+'</th>'; }); }); h+='</tr>'; }
+  for(let n=t-(hhRmLong?56:14);n<=t;n++){ const iso=_hhIsoOf(n), now=iso===today;
+    h+='<tr style="'+(now?'background:#e6f4f3':'')+'"><td style="padding:4px 6px;font-weight:800;white-space:nowrap;border-bottom:1px solid #f1f5f4;color:'+(now?'#2B7A78':'#6b6560')+'">'+DL[_hhDow(iso)]+' '+(+iso.slice(5,7))+'/'+(+iso.slice(8))+'</td>';
+    lanes.forEach(function(L){
+      if(!open(L)){ const sq=L.ids.map(function(id){ return hhRmCell(id,iso,today,S,rc); }).filter(Boolean); h+='<td onclick="hhRmLaneToggle(\''+rid+'|'+L.k+'\')" style="padding:4px 6px;border-bottom:1px solid #f1f5f4;border-left:1px solid #e5e7eb;cursor:pointer">'+sq.slice(0,6).map(function(c){ return _hhRmSq(c,false); }).join(' ')+(sq.length>6?' <span style="font-size:10px;color:var(--muted)">+'+(sq.length-6)+'</span>':'')+'</td>'; return; }
+      L.ids.forEach(function(id,i){ h+='<td'+(mom?' onclick="hhEditToggle(\''+id+'\')"':'')+' style="padding:4px 6px;border-bottom:1px solid #f1f5f4;'+(i?'':'border-left:1px solid #e5e7eb;')+(mom?'cursor:pointer':'')+'">'+_hhRmSq(hhRmCell(id,iso,today,S,rc),true)+'</td>'; }); });
+    h+='</tr>'; }
+  h+='</table></div><div style="display:flex;gap:6px;align-items:center;margin-top:6px"><span style="font-size:11px;color:var(--muted);flex:1">Past days are the record: ✓ = done that day; pale = it was theirs that day and not checked (every-few-weeks chores show only their ✓ for now). Today is from the lists as they are now.</span>'+_hhBtn("hhRmLongToggle()",hhRmLong?'Show 2 weeks':'Show 8 weeks',false,'#64748b')+'</div>';
+  if(hhEditId&&ids.indexOf(hhEditId)>=0&&J[hhEditId]){ const j=J[hhEditId]; h+='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);margin-top:10px;padding:9px 12px"><div style="font-size:13px;font-weight:800">'+esc((j.emoji||'☐')+' '+j.label)+' <span style="font-weight:600;color:var(--muted);font-size:11px">'+esc(hhWhoName(j.who))+' · '+esc(cadLabel(hhPlanCad(j)))+'</span></div>'+(typeof _hhGiveOrRot==="function"?_hhGiveOrRot(hhEditId):'')+hhEditHTML(hhEditId)+'</div>'; }   // HH_EDITOR: the one that exists
+  return h;
+}
+function hhRmHouseHTML(byRoom){
+  let h='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);overflow:hidden"><div style="padding:9px 12px;font-size:14px;font-weight:800">🏠 Whole house <span style="font-size:11px;font-weight:600;color:var(--muted)">most behind first · on time over 8 weeks · late = past its usual gap now</span></div>';
+  hhHouseOrder(byRoom).forEach(function(x){ const s=x.s, none=x.id==="__none", r=none?null:hhRoomList().find(function(y){ return y[0]===x.id; }), col=s.pct===null?'#cbd5e1':s.pct>=80?'#16a34a':s.pct>=50?'#d97706':'#dc2626';
+    h+='<div onclick="hhRmGo(\''+x.id+'\')" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid #eef2f0;cursor:pointer;font-size:12.5px"><span>'+(none?'❔':hhRoomEmoji(x.id))+'</span><span style="flex:0 0 38%;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(none?'No room':r[1])+'</span>'
+      +'<div style="flex:1;height:8px;border-radius:4px;background:#eef2f0;overflow:hidden"><div style="height:8px;width:'+(s.pct||0)+'%;background:'+col+'"></div></div><span style="width:34px;text-align:right;font-size:11px;font-weight:800">'+(s.pct===null?'–':s.pct+'%')+'</span>'
+      +(s.late?_hhChip(s.late+' late','#fee2e2','#991b1b'):'')+_hhChip(s.mins+' min/wk','#f3f4f6','#475569')+'</div>'; });
+  return h+'</div>';
+}
+function hhRmEditHTML(){
+  if(typeof momHere==="function"&&!momHere()) return '';
+  const G=hhRoomGroups(), L=hhRoomList(), gids=G.map(function(g){ return g[0]; }), inp='padding:5px 7px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:12.5px;font-family:\'DM Sans\',sans-serif;box-sizing:border-box';
+  const sel=function(cur,on,idAttr){ return '<select'+(idAttr?' id="'+idAttr+'"':'')+(on?' onchange="'+on+'"':'')+' style="'+inp+'">'+G.map(function(g){ return '<option value="'+esc(g[0])+'"'+(g[0]===cur?' selected':'')+'>'+esc(g[1])+'</option>'; }).join('')+'<option value=""'+(gids.indexOf(cur)<0?' selected':'')+'>No group</option></select>'; };
+  const room=function(r){ return '<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;padding:5px 12px 5px 22px;border-top:1px solid #f3f4f6"><input value="'+esc(hhRoomEmoji(r[0]))+'" onchange="hhRoomSet(\''+r[0]+'\',\'emoji\',this.value)" style="'+inp+';width:44px;text-align:center"><input value="'+esc(r[1])+'" onchange="hhRoomSet(\''+r[0]+'\',\'name\',this.value)" style="'+inp+';flex:1;min-width:120px">'
+    +sel(r[2],"hhRoomSet('"+r[0]+"','floor',this.value)")+_hhBtn("hhRoomStep('"+r[0]+"',-1)",'▲',false,'#64748b')+_hhBtn("hhRoomStep('"+r[0]+"',1)",'▼',false,'#64748b')+_hhBtn("hhRoomRemove('"+r[0]+"')",'🗑',false,'#b91c1c')+'</div>'; };
+  let h='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);overflow:hidden;margin-bottom:10px"><div style="padding:9px 12px"><div style="font-size:14px;font-weight:800">🚪 Edit rooms</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Your family’s rooms and the groups they fold into. Removing a room never touches a chore: its chores show under No room until you move them in ✎ Edit.'+(hhRoomsStored()?'':' The first change copies today’s list in, same rooms, so nothing moves.')+'</div></div>';
+  G.forEach(function(g){ h+='<div style="display:flex;gap:5px;align-items:center;padding:7px 12px;border-top:2px solid #e6f4f3"><span>'+hhGroupEmoji(g[0])+'</span><input value="'+esc(g[1])+'" onchange="hhGroupSet(\''+g[0]+'\',\'name\',this.value)" style="'+inp+';flex:1;font-weight:800">'+_hhBtn("hhGroupStep('"+g[0]+"',-1)",'▲',false,'#64748b')+_hhBtn("hhGroupStep('"+g[0]+"',1)",'▼',false,'#64748b')+_hhBtn("hhGroupRemove('"+g[0]+"')",'🗑',false,'#b91c1c')+'</div>';
+    L.filter(function(r){ return r[2]===g[0]; }).forEach(function(r){ h+=room(r); }); });
+  const loose=L.filter(function(r){ return gids.indexOf(r[2])<0; }); if(loose.length){ h+='<div style="padding:7px 12px;border-top:2px solid #e6f4f3;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560">No group</div>'; loose.forEach(function(r){ h+=room(r); }); }
+  h+='<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;padding:9px 12px;border-top:2px solid #e6f4f3"><input id="hh-rm-new" placeholder="New room" style="'+inp+';flex:1;min-width:120px">'+sel(gids[0]||"","","hh-rm-newg")+_hhBtn("hhRoomAdd(document.getElementById('hh-rm-new').value,document.getElementById('hh-rm-newg').value)",'+ Add room',true)+'</div>'
+    +'<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;padding:0 12px 10px"><input id="hh-rm-newgrp" placeholder="Another group (Outside, Garage…)" style="'+inp+';flex:1;min-width:120px">'+_hhBtn("hhGroupAdd(document.getElementById('hh-rm-newgrp').value)",'+ Add group',false)+'</div>';
+  return h+'</div>';
+}
+function hhRoomsPageHTML(){
+  const J=hhJobs(); if(!Object.keys(J).length) return '<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:10px 12px;font-size:12px;color:var(--muted)">Bring in every chore on 📋 Review first.</div>';
+  const mom=(typeof momHere!=="function")||momHere(), G=hhRoomGroups(), L=hhRoomList(), gids=G.map(function(g){ return g[0]; }), byRoom=hhRoomChores();
+  if(hhRmSel&&hhRmSel!=="__none"&&!L.some(function(r){ return r[0]===hhRmSel; })) hhRmSel="";
+  if(hhRmSel==="__none"&&!byRoom.__none.length) hhRmSel="";
+  const pill=function(on,txt,click,color){ color=color||'#2B7A78'; return '<button onclick="'+click+'" style="padding:6px 11px;border-radius:20px;border:1.5px solid '+(on?color:'#cbd5e1')+';background:'+(on?color:'#fff')+';color:'+(on?'#fff':'#334155')+';font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+txt+'</button>'; };
+  const chip=function(r){ return pill(hhRmSel===r[0],hhRoomEmoji(r[0])+' '+esc(r[1])+' <span style="opacity:.7;font-weight:600">'+byRoom[r[0]].length+'</span>',"hhRmGo('"+r[0]+"')",'#0e7490'); };
+  const isOpen=function(g,i){ return hhRmFold[g]===undefined?i===0:!!hhRmFold[g]; };
+  let h='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">';
+  G.forEach(function(g,i){ const o=isOpen(g[0],i); h+=pill(o,hhGroupEmoji(g[0])+' '+esc(g[1])+' '+(o?'▾':'▸'),"hhRmFoldToggle('"+g[0]+"',"+o+")",'#475569'); });
+  L.filter(function(r){ return gids.indexOf(r[2])<0; }).forEach(function(r){ h+=chip(r); });   // rooms in no group sit in the top row
+  if(byRoom.__none.length) h+=pill(hhRmSel==="__none",'❔ No room <span style="opacity:.7;font-weight:600">'+byRoom.__none.length+'</span>',"hhRmGo('__none')",'#b45309');
+  h+=pill(!hhRmSel&&!hhRmEditing,'🏠 Whole house',"hhRmGo('')")+(mom?pill(hhRmEditing,'🚪 Edit rooms',"hhRmEditToggle()",'#6B4C93'):'')+'</div>';
+  G.forEach(function(g,i){ if(!isOpen(g[0],i)) return; const rs=L.filter(function(r){ return r[2]===g[0]; }); h+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px;padding-left:6px">'+(rs.length?rs.map(chip).join(''):'<span style="font-size:11px;color:var(--muted)">No rooms in '+esc(g[1])+' yet.</span>')+'</div>'; });
+  if(hhRmEditing&&mom) return h+hhRmEditHTML();
+  if(!hhRmSel) return h+hhRmHouseHTML(byRoom);
+  const none=hhRmSel==="__none", r=none?null:L.find(function(x){ return x[0]===hhRmSel; }), ids=byRoom[hhRmSel]||[], s=hhRoomStats(ids);
+  h+='<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:4px 2px 8px"><span style="font-size:16px;font-weight:800">'+(none?'❔ No room':hhRoomEmoji(r[0])+' '+esc(r[1]))+'</span><span style="font-size:12px;color:var(--muted);font-weight:700">'+s.n+' chore'+(s.n===1?'':'s')+' · '+s.mins+' min a week · on time '+(s.pct===null?'–':s.pct+'%')+'</span></div>';
+  if(none) h+='<div style="font-size:11px;color:var(--muted);margin:-4px 2px 8px">These chores are filed under a room that is no longer on your list. Open ✎ Edit to give each one a room.</div>';
+  if(!ids.length) return h+'<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:10px 12px;font-size:12px;color:var(--muted)">No chores in this room yet. Give a chore this room in its ✎ Edit.</div>';
+  return h+hhRoomGridHTML(hhRmSel,ids);
+}
+// HH_ROOMPAGE_END
 // KITCHEN_TAB_START — 🍳 Kitchen (her ask 2026-10-20: "a focused kitchen tab like the laundry but then id like it seperated in sections
 // that make sense and i like lots of settings … i also dont want repeats all over the chores … pull things in from other areas … check
 // off and reassign … send to the cleaning day"). ONE table, no copies: every row here IS a Household row (household/jobs) picked by
@@ -14147,7 +14559,7 @@ function hhKitchenHTML(){ const J=hhJobs(), ids=ktRows(), mom=(typeof momHere===
     +ov.map(function(o){ return '<div style="padding:6px 12px;border-top:1px solid #eef2f0;font-size:12px"><div>'+esc(J[o[0]].emoji||'')+' <b>'+esc(J[o[0]].label)+'</b> <span style="color:var(--muted)">· '+esc(hhWhoName(J[o[0]].who))+' · '+esc(cadLabel(hhPlanCad(J[o[0]])||J[o[0]].cad))+'</span></div><div style="margin-top:2px">'+esc(J[o[1]].emoji||'')+' <b>'+esc(J[o[1]].label)+'</b> <span style="color:var(--muted)">· '+esc(hhWhoName(J[o[1]].who))+' · '+esc(cadLabel(hhPlanCad(J[o[1]])||J[o[1]].cad))+'</span></div><div style="margin-top:4px;display:flex;gap:5px;flex-wrap:wrap;align-items:center"><span style="font-size:11px;color:var(--muted)">first:</span>'+ktActsHTML(o[0])+'<span style="font-size:11px;color:var(--muted);margin-left:6px">second:</span>'+ktActsHTML(o[1])+'</div>'+hhEditHTML(o[0])+hhEditHTML(o[1])+'</div>'; }   /* KT_EDITALL: ✎ + 🚫 on both */).join(''));
   // ➕ pull in
   const pc=ktPullCandidates(); if(mom) h+=card('<div onclick="ktPullOpen=!ktPullOpen;hhRender()" style="display:flex;align-items:center;gap:6px;padding:9px 12px;cursor:pointer"><span style="font-size:13px;font-weight:800;flex:1">➕ Pull in from other rooms <span style="font-weight:600;color:var(--muted);font-size:11px">· '+pc.length+'</span></span><span style="font-size:11px;color:var(--muted)">'+(ktPullOpen?'▾':'▸')+'</span></div>'
-    +(ktPullOpen?(pc.length?'<div style="padding:0 12px 6px;font-size:11px;color:var(--muted)">Rows filed in another room whose words say kitchen. One tap moves the row here — it is the same row, not a copy.</div>'+pc.map(function(id){ const j=J[id], r=HH_ROOMS.find(function(x){ return x[0]===hhRoomOf(j); }); return '<div style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-top:1px solid #eef2f0;font-size:12.5px"><span>'+esc(j.emoji||'☐')+'</span><span style="flex:1;font-weight:700">'+esc(j.label)+'</span>'+_hhChip(esc(hhWhoName(j.who)),'#f3f4f6','#475569')+_hhChip(esc(r?r[1]:'—'),'#f8fafc','#94a3b8')+_hhBtn("hhSet('"+id+"','room','kitchen')",'→ Kitchen',false,'#2B7A78')+_hhBtn("ktPullDismiss('"+id+"')",'✕ Dismiss',false,'#64748b')+'</div>'; }).join('')
+    +(ktPullOpen?(pc.length?'<div style="padding:0 12px 6px;font-size:11px;color:var(--muted)">Rows filed in another room whose words say kitchen. One tap moves the row here — it is the same row, not a copy.</div>'+pc.map(function(id){ const j=J[id], r=hhRoomList().find(function(x){ return x[0]===hhRoomOf(j); }); return '<div style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-top:1px solid #eef2f0;font-size:12.5px"><span>'+esc(j.emoji||'☐')+'</span><span style="flex:1;font-weight:700">'+esc(j.label)+'</span>'+_hhChip(esc(hhWhoName(j.who)),'#f3f4f6','#475569')+_hhChip(esc(r?r[1]:'—'),'#f8fafc','#94a3b8')+_hhBtn("hhSet('"+id+"','room','kitchen')",'→ Kitchen',false,'#2B7A78')+_hhBtn("ktPullDismiss('"+id+"')",'✕ Dismiss',false,'#64748b')+'</div>'; }).join('')
       +'<div style="padding:6px 12px 10px;display:flex;justify-content:flex-end">'+_hhBtn("ktPullDismissRest()",'✕ Dismiss the rest',false,'#64748b')+'</div>'   // KT_PULLDISMISS
       :'<div style="padding:4px 12px 10px;font-size:12px;color:var(--muted)">Nothing filed elsewhere looks like kitchen.</div>')
       +(function(){ const ds=ktPullDismissed(); if(!ds.length) return ''; let x='<div onclick="ktPullDisOpen=!ktPullDisOpen;hhRender()" style="padding:6px 12px;border-top:1px solid #eef2f0;font-size:11.5px;color:var(--muted);cursor:pointer">Dismissed · '+ds.length+' '+(ktPullDisOpen?'▾':'▸')+'</div>';
@@ -17904,6 +18316,9 @@ function ckLogToday(){
       const day=(((routineLog[kid]||{})[wk]||{})[today])||{};
       Object.keys(day).forEach(key=>{ const r=day[key]; if(!r||(r.act!=="on"&&r.act!=="wave")) return;
         out.push({kind:(r.act==="wave")?"wave":"step",kid:kid,label:(r.label||"Chore"),ts:String(r.ts||"").replace(/\s+[A-Z][a-z]{2}\s+\d+$/,""),at:r.at||0,ref:wk+"/"+today+"/"+key,flagged:!!r.flagged,pts:r.pts||0}); });   // WAVE lines ride along
+      if(typeof amIso==="function"){ const _ti=amIso(today); [wk,(typeof _prevWkKey==="function")?_prevWkKey():null].forEach(w=>{ const wl=w?((routineLog[kid]||{})[w]||{}):{};   // SENDAM
+        Object.keys(wl).forEach(dn=>{ if(w===wk&&dn===today) return; Object.keys(wl[dn]||{}).forEach(key=>{ const r=wl[dn][key]; if(!r||r.act!=="on"||!_ti||r.am!==_ti) return;
+          out.push({kind:"step",kid:kid,label:"🌅 "+(r.label||"Chore"),ts:String(r.ts||"").replace(/\s+[A-Z][a-z]{2}\s+\d+$/,""),at:r.at||0,ref:w+"/"+dn+"/"+key,flagged:!!r.flagged,pts:r.pts||0}); }); }); }); }
     });
   }catch(e){}
   return out.sort((a,b)=>(b.at||0)-(a.at||0));
@@ -17993,6 +18408,7 @@ function mdCardKidsToday(today,isSchoolDay,bank,dadCtl){   // bank=true: Mom's D
       // step put Tuesday/Friday cricket jobs and as-needed rows on Ellis's Wednesday (7 of 10, never complete).
       const _mDue=morningDueIdx(kid,_kd); mT=_mDue.length;
       _mDue.forEach(i=>{ if(mStepDoneOn(kid,_kd,i)) mD++; });
+      if(typeof amFor==="function"){ const _a=amFor(kid,_kd), _ai=amIso(_kd); mT+=_a.length; _a.forEach(it=>{ if(amDoneBy(it,_ai)) mD++; }); }   // SENDAM: carried rows count
       mDone=morningComplete(kid,_kd);
       af=mdSlotCounts("afternoon",kid,_kd); ch=mdSlotCounts("chores",kid,_kd); ev=mdSlotCounts("evening",kid,_kd);
       pts=earnedDayTotal(kid,_kd);
@@ -43823,15 +44239,17 @@ function kcPointsHTML(k){
       const steps=(isM&&typeof morningStepsFor==="function")?(morningStepsFor(k)||[]):(rtStepsFor(slot,k,false,dn)||[]);
       const due=(isM&&typeof morningDueIdx==="function")?morningDueIdx(k,dn)
         :steps.map(function(st,i){ return i; }).filter(function(i){ const st=steps[i]; return st&&stepWindowOk(st,dn)&&(cadDueOn(st.cad||"daily",dn)||(typeof rtLateDays==="function"&&rtLateDays(slot,k,i)>0)); });
-      if(!due.length) return;
+      const _am=(isM&&typeof amFor==="function")?amFor(k,dn):[], _ai=_am.length?amIso(dn):null, _amD=_am.filter(function(it){ return amDoneBy(it,_ai); }).length;   // SENDAM
+      if(!due.length&&!_am.length) return;
       const isDone=function(i){ return isM?(typeof mStepDoneOn==="function"&&mStepDoneOn(k,dn,i)):rtDoneOn(slot,k,dn,i); };
       const done=due.filter(isDone);
       let left=0; due.forEach(function(i){ if(!isDone(i)) left+=((steps[i]||{}).pts||0); });
-      const allDone=done.length===due.length;
+      _am.forEach(function(it){ if(!amDoneBy(it,_ai)) left+=(it.pts||0); });   // SENDAM
+      const allDone=done.length===due.length&&_amD===_am.length;
       const bonus=(typeof rtBonusFor==="function")?rtBonusFor(slot,k):0;
       if(!allDone){ anyOpen=true; left+=bonus; }
       toGet+=left;
-      lists.push({slot:slot,lbl:(SL_SLBL[slot]||slot),done:done.length,total:due.length,left:left,allDone:allDone,bonus:bonus});
+      lists.push({slot:slot,lbl:(SL_SLBL[slot]||slot),done:done.length+_amD,total:due.length+_am.length,left:left,allDone:allDone,bonus:bonus});
     });
     const dayBonus=(typeof rtBonusFor==="function")?rtBonusFor("day",k):0;
     if(anyOpen&&dayBonus) toGet+=dayBonus;
