@@ -85,7 +85,7 @@ console.log("\n── the plan-preview switch ──");
   c.writes.length=0; c.hpEngineSet("on"); c.hpEngineSet(2);
   ok("it can never write mode \"on\" (that is step 4)", c.writes.every(w=>w[2].mode==="preview"));
   const c2=mk(); c2.hpEngineSet(false); ok("off when it was never on → nothing written", c2.writes.length===0);
-  const c3=mk({hh:{jobs:{},meta:{takeover:5,engine:{mode:"on",on:"2026-11-01"}}}}); ok("a stored mode other than preview reads as off here (nothing in step 3 acts on 'on')", c3.hhEngineMode()==="off");
+  const c3=mk({hh:{jobs:{},meta:{takeover:5,engine:{mode:"on",on:"2026-11-01"}}}}); ok("a stored mode 'on' reads as on (house step 4, HOUSEDAY); nothing in step 3's preview acts on it", c3.hhEngineMode()==="on"); { const c4=mk({hh:{jobs:{},meta:{takeover:5,engine:{mode:"maybe"}}}}); ok("any other stored mode reads as off", c4.hhEngineMode()==="off"); }
   ok("the switch keeps every other meta field (takeover stays)", (c3.hpEngineSet(true),c3.householdData.meta.takeover===5));
 }
 

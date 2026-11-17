@@ -95,7 +95,7 @@ console.log("6. The ledger card is gone from Mom's Day");
   ok("the ledger functions are gone; choreUndo / choreRedo / laundryUnputaway stay (spResolve, LAUNDRYUNDO use them)", !/function (mdCardChoreLedger|cuLedgerRows|cuLedgerToggle)\(/.test(src)&&/function choreUndo\(/.test(src)&&/function choreRedo\(/.test(src)&&/function laundryUnputaway\(/.test(src)&&/choreUndo\(p\.slot,kid,p\.d,i\)/.test(src));
   ok("What's new no longer points at Today's ledger; it says uncheck on the list, Mom undid / Dad undid", !/\["↩︎ Undo a check-off · Today's ledger"/.test(src)&&/\["↩︎ Undo a check-off",\["In Mom mode, uncheck a checked chore on any list:[^\]]*↩︎ Dad undid/.test(src));
   ok("UNDOLISTS is marked in the CHOREUNDO block with her words", /\/\/ UNDOLISTS \(her words 2026-10-24: "do we need the ledger/.test(CU));
-  ok("both check-offs tag the log through cuUndoTag", (src.match(/\(!now&&typeof cuUndoTag==="function"\)\?cuUndoTag\(\):null\)/g)||[]).length===2);
+  ok("both check-offs (and HOUSEDAY's check-off by chore, house step 4) tag the log through cuUndoTag", (src.match(/\(!now&&typeof cuUndoTag==="function"\)\?cuUndoTag\(\):null\)/g)||[]).length===3);
   ok("no 🔀", src.indexOf("🔀")<0);
 }
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);
