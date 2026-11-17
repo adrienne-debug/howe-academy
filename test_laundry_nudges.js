@@ -24,13 +24,15 @@ function mk(stored){
 const T0=new Date(2026,9,15,9,0,0).getTime(), MIN=60000;   // Thursday 9:00 AM
 const kinds=(T,now,only)=>T.run("laundryNudgeList("+now+(only?","+JSON.stringify(only):"")+").map(x=>x.id+':'+x.kind).join(',')");
 const badge=T=>T.run("hbAlertItems().filter(x=>/^remind:wash_/.test(x.key)).map(x=>x.key).join(',')");
+// LAUNDRY_SINCEDAY (2026-11-17): a "since" time that is not today now carries its day, so a row is drawn with the clock on the scene's own day.
+const rowAt=(now,f)=>{ const real=Date.now; Date.now=()=>now; try{ return f(); } finally{ Date.now=real; } };
 
 console.log("── (a) a prewash joins the washer nudge ──");
 { const T=mk();   // defaults: wash 60, grace 30
   T.ctx.laundryData={p:{label:"💦 Sheets (king) · 7:40 AM",stage:"prewash",ts:T0,wet:true,by:"mom"}};
   ok("8:29 in (89 min): no nudge yet", kinds(T,T0+89*MIN)==="");
   ok("90 min (wash 60 + grace 30): 🫧 washer nudge", kinds(T,T0+90*MIN)==="p:washer");
-  const row=T.run("laundryNudgeRowHTML(laundryNudgeList("+(T0+90*MIN)+")[0])");
+  const row=rowAt(T0+90*MIN,()=>T.run("laundryNudgeRowHTML(laundryNudgeList("+(T0+90*MIN)+")[0])"));
   ok("says it's in the washer since 9:00 — move it before it sours", /🫧 <b>💦 Sheets \(king\) · 7:40 AM<\/b> has been in the washer since 9:00 AM — move it before it sours/.test(row), row);
   ok("its button is the existing next step (🫧 Second wash) through laundryAdvance", /onclick="laundryAdvance\('p'\)"/.test(row)&&/>🫧 Second wash<\/button>/.test(row), row);
   T.run("laundryTimesOnValue({wash:50,grace:5})");
@@ -42,7 +44,7 @@ console.log("── washer and dryer unchanged ──");
   T.ctx.laundryData={w:{label:"Towels",stage:"washer",ts:T0},d:{label:"Darks",stage:"dryer",ts:T0}};
   ok("89 min: neither", kinds(T,T0+89*MIN)==="");
   ok("90 min: both (washer + dryer)", kinds(T,T0+90*MIN)==="w:washer,d:dryer");
-  const rows=T.run("laundryNudgeList("+(T0+90*MIN)+").map(laundryNudgeRowHTML).join('')");
+  const rows=rowAt(T0+90*MIN,()=>T.run("laundryNudgeList("+(T0+90*MIN)+").map(laundryNudgeRowHTML).join('')"));
   ok("washer row: move it before it sours [→ Dryer]", /Towels<\/b> has been in the washer since 9:00 AM — move it before it sours/.test(rows)&&/laundryAdvance\('w'\)"[^>]*>→ Dryer</.test(rows), rows);
   ok("dryer row: time to fold it [Folded ✓] (LAUNDRY_FOLDED, PR 62 merged)", /Darks<\/b> has been in the dryer since 9:00 AM — time to fold it/.test(rows)&&/laundryAdvance\('d'\)"[^>]*>Folded ✓</.test(rows), rows);
 }
@@ -53,7 +55,7 @@ console.log("── (b) the fold pile gets its own nudge ──");
   ok("default is 3 hours", T.run("laundryFoldHrs()")===3);
   ok("2:14 PM (2 h 59): no nudge", kinds(T,F+179*MIN)==="");
   ok("2:15 PM (3 h): 🧺 fold nudge", kinds(T,F+180*MIN)==="f:fold");
-  const row=T.run("laundryNudgeRowHTML(laundryNudgeList("+(F+180*MIN)+")[0])");
+  const row=rowAt(F+180*MIN,()=>T.run("laundryNudgeRowHTML(laundryNudgeList("+(F+180*MIN)+")[0])"));
   ok("'🧺 <load> has been folded since 11:15 AM — put it away'", /🧺 <b>Taylor started laundry<\/b> has been folded since 11:15 AM — put it away/.test(row), row);
   ok("[✓ Put away] calls laundryAdvance (the existing put-away path)", /onclick="laundryAdvance\('f'\)"[^>]*>✓ Put away<\/button>/.test(row), row);
   T.run("laundryAdvance('f')"); ok("…tapping it reaches laundryAdvance with the load's id", T.advanced[0]==="f");
