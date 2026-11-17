@@ -141,6 +141,11 @@ console.log("\n── 5. the doors ──");
   ok("🔁 Re-lay today: Straighten the beds now fits kid_c", (w.get("houseDay/"+MON+"/plan/c_c_beds")||{}).who==="kid_c"&&!w.get("houseDay/"+MON+"/over/c_c_beds"));
   ok("…one update of targeted houseDay paths only", w.since(m0).filter(l=>l.op!=="tx").every(l=>(l.keys||[l.path]).every(k=>/^houseDay\/2026-11-16\/(plan|over)\/\w+$|^houseDay\/2026-11-16\/(built\/sig|keep)$/.test(k))), w.since(m0).map(l=>l.keys||l.path));
   ok("…a kid's device can't re-lay", B.run("hdRelay('"+MON+"')")===null);
+  // the 🏡 House card on a kid's day and Mom's house blocks read the plan
+  { const kc=A.run("hhCleanRows('kid_a','"+MON+"','monday')").map(x=>x.id), mr=A.run("hhCleanRows('mom','"+MON+"','monday')").map(x=>x.id);
+    const pl=w.get("houseDay/"+MON+"/plan")||{}, mine=Object.keys(pl).filter(id=>pl[id].who==="kid_a").sort();
+    ok("🏡 House card (hhCleanRows): exactly kid_a's plan rows (after the hand-overs above), once each, plus the rows the engine never hands out", JSON.stringify(kc.filter(x=>x!=="c_a_fold").sort())===JSON.stringify(mine)&&kc.indexOf("c_a_fold")>=0, [kc,mine]);
+    ok("…Mom's house blocks: her plan row once", mr.filter(x=>x==="m_fridge").length===1, mr); }
   // Mom's and Dad's own lists
   ok("Mom's list: her own rows + today's plan row (by chore, today only)", (function(){ const m=A.run("mcAll()"); return m.tea&&m.fridge&&m.fridge.hd==="m_fridge"&&m.fridge.cad==="wk:0"; })(), A.run("mcAll()"));
   A.run("mcToggle('fridge')"); await w.flush(); const md=w.get("houseDay/"+MON+"/done/m_fridge")||{};
