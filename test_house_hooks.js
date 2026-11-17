@@ -79,7 +79,24 @@ console.log("\n── 2. carry and the logged miss ──");
   w.db.api("t").ref("household/people/kid_a/school").set(5); await w.flush(); await w.at(2026,11,18,7,0);
   await w.at(2026,11,19,7,0);
   ok("Thursday (its own next day): Monday's Vacuum is dropped — not on Thursday twice", !!(w.get("houseDay/2026-11-19/over/c_a_vac")||w.get("houseDay/2026-11-19/plan/c_a_vac"))&&!!w.get("houseDay/2026-11-19/miss/c_a_vac"));
-  ok("…and logged “— not done” under the day it was due", logOf(w,A,"kid_a","monday").some(x=>x.act==="miss"&&/Vacuum the den — not done/.test(x.label))||Object.values(((w.get("routineLog/kid_a")||{})[A.get("activeWk()")]||{})).some(dd=>Object.values(dd).some(x=>x.act==="miss"&&x.house==="c_a_vac")), w.get("houseDay/2026-11-19/miss/c_a_vac"));
+  ok("…it fit nobody on Wednesday (kid_a's limit cut to 5), so Thursday's drop is Mom's to see — no kid gets a “— not done” line", (w.get("houseDay/2026-11-19/miss/c_a_vac")||{}).nobody===1&&!Object.values(((w.get("routineLog/kid_a")||{})[A.get("activeWk()")]||{})).some(dd=>Object.keys(dd).some(k=>k==="miss_h_c_a_vac")), w.get("houseDay/2026-11-19/miss/c_a_vac"));
+}
+
+console.log("\n── 2b. a miss is a kid's only if the chore was on that kid's list (hub review 2026-11-17) ──");
+{ const allMiss=w=>{ const out=[]; const RL=w.get("routineLog")||{}; Object.keys(RL).forEach(k=>Object.keys(RL[k]||{}).forEach(wk=>Object.keys(RL[k][wk]||{}).forEach(dn=>Object.keys(RL[k][wk][dn]||{}).forEach(key=>{ if(/^miss_h_/.test(key)) out.push(k+"/"+dn+"/"+key); })))); return out; };
+  const w=await W.world({mode:"on"}); const A=w.boot("A","devA",{mom:true}); await w.flush(); await w.at(2026,11,16,7,0);
+  ok("Monday: Straighten the beds (daily) fits nobody — it is on no list", !!w.get("houseDay/"+MON+"/over/c_c_beds")&&!w.get("houseDay/"+MON+"/plan/c_c_beds"));
+  await w.at(2026,11,17,7,0);
+  const m=w.get("houseDay/"+TUE+"/miss/c_c_beds");
+  ok("Tuesday (its next day): no “— not done” line for anyone — it was never on a kid's list", allMiss(w).length===0, allMiss(w));
+  ok("…Mom still sees it dropped (miss marked fit nobody, no who)", !!m&&m.nobody===1&&!m.who, m);
+  const w2=await W.world({mode:"on"}); const B=w2.boot("B","devB",{mom:true}); await w2.flush();
+  w2.db.api("t").ref("household/people/kid_a/school").set(60); await w2.flush(); await w2.at(2026,11,16,7,0);
+  ok("Monday: Vacuum the den (Mon + Thu) is on kid_a's list", (w2.get("houseDay/"+MON+"/plan/c_a_vac")||{}).who==="kid_a");
+  await w2.at(2026,11,17,7,0); await w2.at(2026,11,18,7,0); await w2.at(2026,11,19,7,0);
+  const L=allMiss(w2).filter(x=>/miss_h_c_a_vac$/.test(x));
+  ok("left undone and dropped Thursday (its next day): exactly one line, kid_a's, under Monday (the day it was due)", L.length===1&&L[0]==="kid_a/monday/miss_h_c_a_vac", allMiss(w2));
+  ok("…and no other kid line at all (every other drop that week only ever fit nobody)", allMiss(w2).length===1, allMiss(w2));
 }
 
 console.log("\n── 3. 🌅 Send to next morning (§12) ──");
