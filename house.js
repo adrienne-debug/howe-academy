@@ -10,6 +10,24 @@
 //     index.html — HH_ROTATE, HH_PROJECTS' view (HH_PROJSWEEP, HH_PROJVIEW), HH_ONCEPILE's view (HH_ONCEVIEW), HH_EDITOR,
 //     HH_ROOMPAGE and HH_CARD — each with its marker left where it stood. So the file now loads the first time the Household page
 //     opens: renderHousehold is the door (HOUSESLIM in index.html). HOUSEENG reads none of it (step 4 moves HOUSEENG to the page).
+// HH_PROJSWEEP_START — ☑️ the once-job sweep and the project setters (moved from HH_PROJECTS by HOUSESLIM 2026-11-17, unchanged): only renderHousehold runs the sweep, and only the Projects view's taps call hhProjSet.
+function hhOnceSweep(){
+  if(typeof momHere==="function"&&!momHere()) return [];
+  if(typeof rlHistFull==="function"&&!rlHistFull()) return [];   // RLWIN: never retire from partial history
+  const jobs=hhJobs(), upd={}, out=[];
+  Object.keys(jobs).forEach(function(id){ const j=jobs[id]; if(!hhIsOnce(j)||j.status==="retired") return; let st=null; try{ st=hhStats(j); }catch(e){} if(!st||!st.last) return;
+    upd["household/jobs/"+id+"/status"]="retired"; upd["household/jobs/"+id+"/done"]=st.last; j.status="retired"; j.done=st.last; out.push(id); });
+  if(out.length){ householdOnValue(householdData); if(_hhWrite()) db.ref().update(upd); }
+  return out;
+}
+function hhProjSet(id,field,val){
+  if(typeof momHere==="function"&&!momHere()) return null; const j=hhJobs()[id]; if(!j||["target","plan","expect"].indexOf(field)<0) return null;
+  if(field==="target"){ val=String(val||""); if(val&&!/^\d{4}-\d{2}-\d{2}$/.test(val)) return null; }
+  if(field==="plan") val=String(val||"").slice(0,2000);
+  if(field==="expect"){ val=parseInt(val,10); if(!(val>=0&&val<=6000)) return null; }
+  j[field]=val; householdOnValue(householdData); if(_hhWrite()) db.ref("household/jobs/"+id+"/"+field).set(val===""?null:val); hhRender(); return val;
+}
+// HH_PROJSWEEP_END
 // HH_PROJVIEW_START — 🧰 the Projects view and its taps (moved from HH_PROJECTS by HOUSESLIM 2026-11-17, unchanged): drawn only on the Household page. hhIsOnce, hhIsProject and hhProjLog stay in index.html (the cleaning-day plan and its check-off use them).
 function hhProjLogFromForm(id){ const g=function(k){ const e=(typeof document!=="undefined"&&document.getElementById)?document.getElementById("hp-"+k+"-"+id):null; return e?String(e.value||""):""; }; return hhProjLog(id,g("min")||20,g("by"),g("note")); }
 function hhProjWork(j){ const w=(j&&j.work)||{}; const keys=Object.keys(w).sort(); let min=0; keys.forEach(function(k){ min+=parseInt(w[k].min,10)||0; }); return {min:min,n:keys.length,last:keys.length?w[keys[keys.length-1]].iso:null,first:keys.length?w[keys[0]].iso:null,list:keys.map(function(k){ return Object.assign({ts:k},w[k]); })}; }
