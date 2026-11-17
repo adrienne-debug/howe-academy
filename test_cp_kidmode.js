@@ -88,7 +88,7 @@ const withProvider=w=>{ w.firebase.auth.EmailAuthProvider={credential:(e,p)=>({e
   ok("…and no parent switch, no kid tabs", !/envs-swap/.test(h)&&!/envs-kids/.test(h));
   ok("role stays parent underneath", w._envs.role==="parent");
   w._envs.view="settings"; w.renderAll(); const st=w.G.content;
-  ok("⚙️ in kid view: no Parent PIN card, no Sign out", !/Parent PIN/.test(st)&&!/envsSignOut/.test(st)&&/in Ada’s view/.test(st));
+  ok("⚙️ in kid view: no Parent PIN card; Sign out shows (her yes 2026-11-17)", !/Parent PIN/.test(st)&&/onclick="envsSignOut\(\)"/.test(st)&&/in Ada’s view/.test(st));
   w._envs.view="study";
   const r=w.envsGoKid("henry");
   ok("kid → kid (swap on): Go to Henry stores kid:henry and reloads, no password", r===true&&w.HA_LS.getItem("envs_mode")==="kid:henry"&&w.G.reloads===1);

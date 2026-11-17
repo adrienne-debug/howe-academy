@@ -4,7 +4,7 @@
  *  · Household ▸ Review: 🗑 Delete for good (one targeted null, after a confirm; a rotating row must be retired first)
  *  · the kitchen-question chip row says what it is.   run: node test_kitchen_edit_all.js */
 const fs=require("fs"), path=require("path"), vm=require("vm");
-const src=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
+const src=require("./test_src.js")();   // 🪶 HOUSESLIM: the joined page — house.js's blocks back at their markers
 let pass=0, fail=0; const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  ("+JSON.stringify(x).slice(0,300)+")":"")); } };
 const fnIn=name=>{ const i=src.indexOf("function "+name+"("); if(i<0) throw new Error("missing "+name); let d=0; for(let k=src.indexOf("{",i);k<src.length;k++){ if(src[k]==="{") d++; else if(src[k]==="}"&&--d===0) return src.slice(i,k+1); } throw new Error("unterminated "+name); };
 function mk(o){ o=o||{}; const writes=[], toasts=[], confirms=[];

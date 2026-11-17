@@ -4,7 +4,7 @@
  *                                                                                        run: node test_house_projects.js
  */
 const fs=require("fs"), path=require("path"), vm=require("vm");
-const src=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
+const src=require("./test_src.js")();   // 🪶 HOUSESLIM: the joined page — house.js's blocks back at their markers
 let pass=0, fail=0; const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  ("+JSON.stringify(x).slice(0,300)+")":"")); } };
 const fn=name=>{ const i=src.indexOf("function "+name+"("); if(i<0) throw new Error("missing "+name); let d=0; for(let k=src.indexOf("{",i);k<src.length;k++){ if(src[k]==="{") d++; else if(src[k]==="}"&&--d===0) return src.slice(i,k+1); } throw new Error("unbalanced "+name); };
 const cut=(a,b)=>{ const i=src.indexOf(a), j=src.indexOf(b,i); if(i<0||j<0) throw new Error("missing "+a); return src.slice(i,j); };
@@ -48,7 +48,7 @@ console.log("1. Just once");
   ok("it leaves his list; the latch and the table stay", c.rtStepsFor("chores","lincoln",true).map(s=>s.label).join("|")==="Fix the gate latch|Wipe table");
   c.writes.length=0; ok("the sweep is quiet the second time", c.hhOnceSweep().length===0&&c.writes.length===0);
   const k=mk({noMom:true}); ok("a kid's device never sweeps", k.hhOnceSweep().length===0&&k.writes.length===0);
-  ok("the tab runs the sweep when it opens", /function renderHousehold\(el\)\{\n\s*try\{ if\(typeof hhOnceSweep==="function"\) hhOnceSweep\(\); \}catch\(e\)\{\}/.test(src));
+  ok("the tab runs the sweep when it opens (first thing once house.js is there — HOUSESLIM's door is the line before it)", /function renderHousehold\(el\)\{\n\s*if\(!hhSlimReady\(el\)\) return;[^\n]*\n\s*try\{ if\(typeof hhOnceSweep==="function"\) hhOnceSweep\(\); \}catch\(e\)\{\}/.test(src));
 }
 console.log("2. Projects");
 { const c=mk({noTap:true}); c.hhAddToggle(); c.hhAddSet("who","mom"); c.hhAddSet("kind","project"); c.hhAddSet("room","living"); c.dom["hh-add-label"]={value:"The art cabinet"}; const id=c.hhAddSave(); const j=c.hhJobs()[id];

@@ -39,7 +39,7 @@ ok("no speech code, no confetti, no 🔀 in the block — the name after an answ
 console.log("\n── the pictures (envirothon/pics) ──");
 const ID_DECKS = ["Forestry · ID", "Wildlife · ID", "Aquatic Ecology · ID"];
 const idCards = LIB.unit.decks.filter(d => ID_DECKS.indexOf(d.key) >= 0).flatMap(d => d.cards.map(c => ({ deck: d.key, name: c.name, item: c.item })));
-const CHECKED = 216 + 99;   // build_pics.py --extra: the staged set (245 less 28 already in, 1 near-copy) + the gap fill (pics_fill, 99)
+const CHECKED = 216 + 99 + 21;   // build_pics.py --extra: the staged set (245 less 28 already in, 1 near-copy) + the gap fill (pics_fill, 99) + Soils ID to three an item (pics_soils, 21, 2026-11-16)
 const SHORT = { "Horse fly larva": 1 };   // the official-profile extracts were left out (CREDITS.md)
 ok("index parses: an object keyed by card name, no meta keys", IDX && typeof IDX === "object" && !Array.isArray(IDX) && Object.keys(IDX).every(k => !k.startsWith("_")));
 ok("every card of the three pictured ID decks is in the index (" + idCards.length + " cards)", idCards.every(c => Array.isArray(IDX[c.name])), idCards.filter(c => !IDX[c.name]).map(c => c.name).slice(0, 5));
