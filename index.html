@@ -1933,7 +1933,7 @@ let morningRoutineCfg={}; // config/morningRoutine — Mom-edited per-kid routin
 // through unchanged — same order, so _mstep<i> check-off keys never shift.
 function _mrLegacySteps(kid){ const c=morningRoutineCfg[kid]; const src=(Array.isArray(c)&&c.length)?c:(MORNING_STEPS_DEFAULT[kid]||[]); return src.map(st=>Object.assign({pts:0,cad:"daily"},st)); }
 function morningStepsFor(kid){ return (typeof rtStepsFor==="function")?rtStepsFor("morning",kid,false):_mrLegacySteps(kid); }
-function mStepDoneOn(kid,d,i){ const s=slState[activeWk()+"_"+d+"_"+kid+"_mstep"+i]; return !!(s&&s.done); }
+function mStepDoneOn(kid,d,i){ const _h=(typeof hdAt==="function")?hdAt("morning",kid,d,i):null; if(_h) return hdDone(_h.iso,_h.id);   /* 🚪 HOUSEDAY: a plan row is done by chore */ const s=slState[activeWk()+"_"+d+"_"+kid+"_mstep"+i]; return !!(s&&s.done); }
 // Morning is complete when every routine step is done. Kids with no routine defined fall back
 // to the legacy single Morning checkbox so nothing breaks.
 function morningComplete(kid,d){
@@ -1947,6 +1947,8 @@ function morningComplete(kid,d){
 function toggleMrOpen(kid){ mrOpen[kid]=(mrOpen[kid]!==false)?false:true; renderSkylight(); }
 function toggleMorningStep(kid,i){
   if(!routineEditable()){ _rtBlockedToast(); return; }
+  { const _hs=morningStepsFor(kid)[i], _mk=slState[activeWk()+"_"+day+"_"+kid+"_mstep"+i]; if(_hs&&_hs.house&&typeof hdToggle==="function"){ hdToggle("morning",kid,i,_hs); return; }   // 🚪 HOUSEDAY: a plan row is checked by chore
+    if(_mk&&_mk.done&&_mk.hd&&typeof hdUnmark==="function"&&hdUnmark("morning",kid,i,_mk)) return; }   // …and an old row the plan marked done un-checks through the plan (no double pay across OFF / ON)
   const wk=activeWk(), _slB=slBefore();   // SLTARGET
   const sk=wk+"_"+day+"_"+kid+"_mstep"+i, cur=slState[sk], now=!(cur&&cur.done);
   const _obPrev={}; _obPrev[sk]=cur||null; _obPrev[wk+"_"+day+"_"+kid+"_morning"]=slState[wk+"_"+day+"_"+kid+"_morning"]||null;   // 📮
@@ -2160,7 +2162,8 @@ function rtStepsFor(slot,kid,raw,dayName){
   const steps=(Array.isArray(c)&&c.length)?c:(slot==="morning"?_mrLegacySteps(kid):(((RT_DEFAULT[slot]||{})[kid])||[]));
   if(raw) return steps;                    // editor/config seeding must NEVER see a rotated label
   const _r=rtApplyRot(slot,kid,steps,dayName);
-  return (typeof llRtSteps==="function")?llRtSteps(slot,kid,_r,dayName):_r;   // 🧺 LINE_CHORES: the line's rows appended, old laundry rows hidden (indices kept)
+  const _l=(typeof llRtSteps==="function")?llRtSteps(slot,kid,_r,dayName):_r;   // 🧺 LINE_CHORES: the line's rows appended, old laundry rows hidden (indices kept)
+  return (typeof hdRtSteps==="function")?hdRtSteps(slot,kid,_l,dayName):_l;   // 🚪 HOUSEDAY: with the plan on, its house rows hidden in place and the day's plan rows appended last
 }
 // ── 🔁 Room rotation: steps sharing a rot tag (one per kid) swap daily, so the
 // jobs cycle instead of each kid owning one. The job travels WHOLE — emoji, label,
@@ -2208,7 +2211,7 @@ function rtApplyRot(slot,kid,steps,dayName){
     return o;
   });
 }
-function rtDoneOn(slot,kid,d,i){ const s=slState[activeWk()+"_"+d+"_"+kid+"_"+RT_ABBR[slot]+"step"+i]; return !!(s&&s.done); }
+function rtDoneOn(slot,kid,d,i){ const _h=(typeof hdAt==="function")?hdAt(slot,kid,d,i):null; if(_h) return hdDone(_h.iso,_h.id);   /* 🚪 HOUSEDAY */ const s=slState[activeWk()+"_"+d+"_"+kid+"_"+RT_ABBR[slot]+"step"+i]; return !!(s&&s.done); }
 // A step counts toward "complete" if it's due today OR carried over late (a missed chore keeps showing on the
 // list, so it must keep the list open too — 2026-08-18: Julian's grid dot said ✓ while his list said 0/1).
 // rtLateDays is bound to the viewed day, so the late clause only applies when d is that day.
@@ -2224,9 +2227,10 @@ try{ wavedData=JSON.parse(HA_LS.getItem('ha_waved')||"{}")||{}; }catch(e){}
 function wavedOnValue(v){ wavedData=v||{}; try{ HA_LS.setItem('ha_waved',JSON.stringify(wavedData)); }catch(e){} }
 function _wvWrite(){ return typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
 function rtWaveKey(slot,i){ return slot+"step"+i; }
-function rtWaved(slot,kid,d,i,wk){ wk=wk||activeWk(); const w=wavedData&&wavedData[wk]; return !!(w&&w[d]&&w[d][kid]&&w[d][kid][rtWaveKey(slot,i)]); }
+function rtWaved(slot,kid,d,i,wk){ const _h=(typeof hdAt==="function")?hdAt(slot,kid,d,i):null; if(_h) return hdSkipped(_h.iso,_h.id);   /* 🚪 HOUSEDAY: ✕ today = skip this time */ wk=wk||activeWk(); const w=wavedData&&wavedData[wk]; return !!(w&&w[d]&&w[d][kid]&&w[d][kid][rtWaveKey(slot,i)]); }
 function rtWave(slot,kid,d,i){
   const wk=activeWk(), key=rtWaveKey(slot,i), steps=(slot==="morning"&&typeof morningStepsFor==="function")?morningStepsFor(kid):(rtStepsFor(slot,kid,false,d)||[]), st=steps[i]; if(!st) return;
+  if(st.house&&typeof hdSkipToggle==="function"){ hdSkipToggle(st.hdIso,st.house,kid); _amRedraw(); return; }   // 🚪 HOUSEDAY: a plan row is skipped by chore
   if(typeof momHere==="function"&&!momHere()&&!(typeof dadAwardOk==="function"&&dadAwardOk())) return;   // LISTS_TAP: Mom, or an unlocked Dad (Dad's Day has the pop-ups too)
   const _by=(typeof momHere==="function"&&!momHere())?"dad":"mom";
   const on=!rtWaved(slot,kid,d,i);
@@ -2305,7 +2309,7 @@ function amAttach(){
 }
 function amKey(fromIso,slot,i){ return fromIso+"_"+RT_ABBR[slot]+"step"+i; }
 function amList(kid){ return _amIdx[kid]||[]; }
-function amGet(kid,slot,i,fromIso){ const m=(amCarry&&amCarry[kid])||{}; return (fromIso&&m[amKey(fromIso,slot,i)])||null; }
+function amGet(kid,slot,i,fromIso){ const m=(amCarry&&amCarry[kid])||{}, _h=(fromIso&&typeof hdIdAt==="function")?hdIdAt(slot,kid,fromIso,i):null; return (fromIso&&m[_h?amKeyH(fromIso,slot,_h):amKey(fromIso,slot,i)])||null; }   // 🚪 HOUSEDAY: a plan row by chore
 function amDoneBy(it,iso){ return !!(it&&it.done&&it.done.iso&&(!iso||it.done.iso<=iso)); }
 // The carried items on the kid's Morning list for day tab d: due by then and not finished before it. Oldest first.
 function amFor(kid,d){
@@ -2347,11 +2351,11 @@ function _amSettleSave(kid){ const b=slBefore(); _amSettleToday(kid); slSaveChan
 function amSend(slot,kid,d,i,quiet){
   if(!_amGrown()) return false;
   const st=(rtStepsFor(slot,kid,false,d)||[])[i], fromIso=amIso(d); if(!st||!fromIso||!amCanSend(slot,st)) return false;
-  const wk=activeWk(), id=amKey(fromIso,slot,i);
+  const wk=activeWk(), id=st.house?amKeyH(fromIso,slot,st.house):amKey(fromIso,slot,i);   // 🚪 HOUSEDAY: a plan row by chore
   if(amCarry[kid]&&amCarry[kid][id]){ const ok=amTakeBack(kid,id,true); if(ok&&!quiet) _amRedraw(); return ok; }
   if(rtDoneOn(slot,kid,d,i)||(typeof rtWaved==="function"&&rtWaved(slot,kid,d,i))) return false;
-  const by=(typeof momHere==="function"&&!momHere())?"dad":"mom", lk="am_"+RT_ABBR[slot]+"step"+i;
-  const rec={slot:slot,i:i,label:st.label||"",emoji:st.emoji||"",pts:st.pts||0,fromIso:fromIso,fromWk:wk,fromDay:d,dueIso:_amIsoAdd(fromIso,1),ts:nowTs(),at:Date.now(),by:by};
+  const by=(typeof momHere==="function"&&!momHere())?"dad":"mom", lk=st.house?"am_"+RT_ABBR[slot]+"h_"+st.house:"am_"+RT_ABBR[slot]+"step"+i;
+  const rec={slot:slot,i:i,label:st.label||"",emoji:st.emoji||"",pts:st.pts||0,fromIso:fromIso,fromWk:wk,fromDay:d,dueIso:_amIsoAdd(fromIso,1),ts:nowTs(),at:Date.now(),by:by}; if(st.house) rec.house=st.house;
   const lrec={label:(st.label||"Chore")+" — sent to the next morning by "+(by==="dad"?"Dad":"Mom"),slot:slot,act:"am",ts:rec.ts,at:rec.at,pts:0};
   amCarry[kid]=amCarry[kid]||{}; amCarry[kid][id]=rec;
   routineLog[kid]=routineLog[kid]||{}; routineLog[kid][wk]=routineLog[kid][wk]||{}; routineLog[kid][wk][d]=routineLog[kid][wk][d]||{}; routineLog[kid][wk][d][lk]=lrec;
@@ -2365,7 +2369,7 @@ function amSend(slot,kid,d,i,quiet){
 function amTakeBack(kid,id,quiet){
   if(!_amGrown()) return false;
   const it=amCarry[kid]&&amCarry[kid][id]; if(!it||it.done) return false;
-  const lk="am_"+RT_ABBR[it.slot]+"step"+it.i;
+  const lk=it.house?"am_"+RT_ABBR[it.slot]+"h_"+it.house:"am_"+RT_ABBR[it.slot]+"step"+it.i;
   delete amCarry[kid][id]; try{ delete routineLog[kid][it.fromWk][it.fromDay][lk]; }catch(e){}
   if(_amWrite()){ db.ref("amCarry/"+kid+"/"+id).remove(); db.ref("routineLog/"+kid+"/"+it.fromWk+"/"+it.fromDay+"/"+lk).remove(); }
   amOnValue(amCarry);
@@ -2399,6 +2403,7 @@ function amToggle(kid,id){
   if(it.done&&!amDoneBy(it,iso)) return;                        // finished on a later day than the tab on screen
   const now=!it.done, label=it.label||"Chore", wk=activeWk(), _slB=slBefore();
   if(!now&&it.done.src==="list"){ if(typeof gwShowToast==="function") gwShowToast("That one was checked on the "+(SL_SLBL[it.slot]||it.slot)+" list — un-check it there"); return; }
+  if(it.house&&typeof hdAmToggle==="function"){ hdAmToggle(kid,id,it,now,iso); return; }   // 🚪 HOUSEDAY: a plan row's carry is finished by chore
   const sk=it.fromWk+"_"+it.fromDay+"_"+kid+"_"+RT_ABBR[it.slot]+"step"+it.i;
   const smap=(it.fromWk===wk)?slState:((typeof prevSlState!=="undefined"&&prevSlState&&typeof _prevWkKey==="function"&&it.fromWk===_prevWkKey())?prevSlState:null);
   if(now&&smap&&smap[sk]&&smap[sk].done){                       // the original row is already ticked: close the carry, pay nothing twice
@@ -2555,7 +2560,7 @@ function mealCfg(){
 function mealOf(slot,st){ return (st&&st.meal&&MEAL_SLOT[st.meal]===slot)?st.meal:""; }
 function mealHour(meal){ const c=mealCfg(); return meal==="lunch"?c.lunchHour:meal==="supper"?c.supperHour:null; }
 function mealOpen(meal,d){ const h=mealHour(meal); return h==null||d!==_todayDay||new Date().getHours()>=h; }
-function rtStepAvail(slot,kid,d,st){ const m=mealOf(slot,st); return m?mealOpen(m,d):rtAvailable(slot,kid,d); }
+function rtStepAvail(slot,kid,d,st){ if(st&&st.house&&typeof hdLocked==="function"&&hdLocked(slot,kid,d)) return false;   /* 🚪 HOUSEDAY: school first */ const m=mealOf(slot,st); return m?mealOpen(m,d):rtAvailable(slot,kid,d); }
 function mealHeadHTML(meal,d){
   const h=mealHour(meal), open=mealOpen(meal,d);
   return '<div style="font-size:11.5px;font-weight:800;color:#9a3412;margin:6px 0 0;padding-top:6px;border-top:1.5px dashed #fed7aa">'+
@@ -2620,10 +2625,13 @@ function toggleRtStep(slot,kid,i){
     if(typeof gwShowToast==="function"){
       if(slot==="afternoon") gwShowToast("Afternoon unlocks when school work is done, or at "+rtFmtHour(rtAfternoonHour())+" \uD83D\uDCDA");
       else if(slot==="evening") gwShowToast("Evening opens at "+rtFmtHour(rtEveningHour())+" \uD83C\uDF19");
+      else if(slot==="chores") gwShowToast("House chores open when school work is done, or at "+rtFmtHour(rtAfternoonHour())+" \uD83D\uDCDA");   // 🚪 HOUSEDAY: school first
     }
     return;
   }
   if(!routineEditable()){ _rtBlockedToast(); return; }  // stars ride this path too — a stray tap paid the wrong day
+  { const _hs=rtStepsFor(slot,kid)[i], _mk=slState[activeWk()+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i]; if(_hs&&_hs.house&&typeof hdToggle==="function"){ hdToggle(slot,kid,i,_hs); return; }   // 🚪 HOUSEDAY: a plan row is checked by chore
+    if(_mk&&_mk.done&&_mk.hd&&typeof hdUnmark==="function"&&hdUnmark(slot,kid,i,_mk)) return; }   // …and an old row the plan marked done un-checks through the plan (no double pay across OFF / ON)
   const wk=activeWk(), sk=wk+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i, cur=slState[sk], now=!(cur&&cur.done), _slB=slBefore();   // SLTARGET
   const _obPrev={}; _obPrev[sk]=cur||null; _obPrev[wk+"_"+day+"_"+kid+"_"+slot]=slState[wk+"_"+day+"_"+kid+"_"+slot]||null;   // 📮
   { const _st0=rtStepsFor(slot,kid)[i], _b0=_st0?(_st0.pts||0):0;
@@ -2797,6 +2805,7 @@ function _rtOffCycle(st,dayName,prevWeek){
 // LATE_CYCLE_END
 function rtLateDays(slot,kid,i){
   const steps=rtStepsFor(slot,kid), st=steps[i]; if(!st) return 0;
+  if(st.house) return st.hdLate||0;                 // 🚪 HOUSEDAY: the plan's own late (carried chores, overdue every-N)
   const cad=st.cad||"daily";
   if(cad==="daily") return 0;                       // a fresh one each day — "late" means nothing
   if(st.meal) return 0;                             // 🍽 after-meal jobs belong to that meal only — never late, never carried (her rule 2026-10-02)
@@ -9095,7 +9104,7 @@ function boardStatPop(kid,slot,d){
     // 🌅 only that day's steps (the kid's own list); an as-needed step shows only if it was done, marked as such
     const _mDue=morningDueIdx(kid,day);
     if(typeof amFor==="function"){ const _ai=amIso(day); amFor(kid,day).forEach(it=>{ rows.push({lab:"🌅 "+(it.emoji?it.emoji+" ":"")+(it.label||"Chore")+" — from "+amFromLbl(it)+" "+(SL_SLBL[it.slot]||it.slot)+(it.pts?" +"+it.pts+" ⭐":""),done:amDoneBy(it,_ai),ts:(it.done&&it.done.ts)||"",am:it.id}); }); }   // SENDAM: carried rows first
-    morningStepsFor(kid).forEach((st,i)=>{ const rec=slState[activeWk()+"_"+day+"_"+kid+"_mstep"+i]||{};
+    morningStepsFor(kid).forEach((st,i)=>{ const rec=((typeof hdSlRec==="function")?hdSlRec("morning",kid,day,i):slState[activeWk()+"_"+day+"_"+kid+"_mstep"+i])||{};   /* 🚪 HOUSEDAY */
       const _due=_mDue.indexOf(i)>=0, _dn=mStepDoneOn(kid,day,i), _wv=(typeof rtWaved==="function")&&rtWaved("morning",kid,day,i);   // KIDROWS2: a waved step stays on the list, greyed, with undo
       if(!_due&&!_wv&&!(st.cad==="asneeded"&&_dn)) return;
       rows.push({lab:(st.emoji?st.emoji+" ":"")+(st.label||("Step "+(i+1)))+((_due||_wv)?"":" (as needed)"),done:_dn,ts:rec.ts||"",i:i,wv:_wv}); });   // LISTS_TAP: i → the ○/✅ is a tap
@@ -9112,7 +9121,7 @@ function boardStatPop(kid,slot,d){
   } else { const names={afternoon:"☀️ Afternoon",chores:"🧹 Chores",evening:"🌙 Evening"}; title=names[slot]||slot;
     const steps=rtStepsFor(slot,kid,false,day);
     steps.forEach((st,i)=>{ const _ln=(typeof mdLateDays==="function")?mdLateDays(slot,kid,day,i,st):0;   // KIDSLATE: carried-over rows too, as Kids' Corner lists them
-      if(!cadDueOn(st.cad||"daily",day)&&!(_ln>0)) return; const rec=slState[activeWk()+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i]||{};
+      if(!cadDueOn(st.cad||"daily",day)&&!(_ln>0)) return; const rec=((typeof hdSlRec==="function")?hdSlRec(slot,kid,day,i):slState[activeWk()+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i])||{};   /* 🚪 HOUSEDAY */
       rows.push({lab:(st.emoji?st.emoji+" ":"")+st.label+(st.pts?" +"+st.pts+" ⭐":""),done:rtDoneOn(slot,kid,day,i),ts:rec.ts||"",i:i,wv:(typeof rtWaved==="function")&&rtWaved(slot,kid,day,i),late:_ln}); });   // LISTS_TAP; KIDROWS2: wv
   }
   // LISTS_TAP (her ask 2026-10-21: "make on both mom and dads day all the lists clickable but do not change the look or size on any" —
@@ -12621,6 +12630,7 @@ function dcToggle(id){
     if(on) db.ref('dadday/'+iso+'/chores/'+id).set(ch[id]);
     else db.ref('dadday/'+iso+'/chores/'+id).remove();
   }
+  try{ if(typeof hdParentTick==="function") hdParentTick("dad",id,on); }catch(e){}   // 🚪 HOUSEDAY
   dcRepaint();
 }
 // 👨 DADMYDAY: his chores due today, oldest first — the mcDueToday rule against dadChores.
@@ -12796,6 +12806,7 @@ function mcToggle(id){
     if(on) db.ref('momday/'+iso+'/chores/'+id).set(ch[id]);
     else db.ref('momday/'+iso+'/chores/'+id).remove();
   }
+  try{ if(typeof hdParentTick==="function") hdParentTick("mom",id,on); }catch(e){}   // 🚪 HOUSEDAY: a plan row's record by chore
   // On the bathroom kiosk #content is hidden, and renderMomsPlan is the whole heavy
   // Mom's Day build — repaint just the lane instead.
   if(typeof _kioskR==="function"&&_kioskR()){ renderKioskPerson(); return; }
@@ -12939,7 +12950,7 @@ let householdData={};            // household/{jobs:{id:{…}}, meta:{imported,i
 try{ householdData=JSON.parse(HA_LS.getItem('ha_household')||"{}")||{}; }catch(e){}
 let hhView="review";             // "review" | "habits" | "week" | "area" | "room" | "levels" | "rot" | "laundry" | "kitchen" | "once" | "proj" | "today" | "rooms" (HH_ROOMPAGE)
 let hhOpenWho="";                // Review: which person's group is expanded ("" = all collapsed to counts)
-function householdOnValue(v){ householdData=v||{}; try{ HA_LS.setItem('ha_household',JSON.stringify(householdData)); }catch(e){} if(typeof hhMaterialize==="function") hhMaterialize(); }   // 🏡 HOUSEHOLD_TAKEOVER
+function householdOnValue(v){ householdData=v||{}; try{ HA_LS.setItem('ha_household',JSON.stringify(householdData)); }catch(e){} if(typeof hhMaterialize==="function") hhMaterialize(); try{ if(typeof hdAttach==="function") hdAttach(); }catch(e){} }   // 🏡 HOUSEHOLD_TAKEOVER · 🚪 HOUSEDAY: listen once the switch reads on
 function _hhWrite(){ return typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
 function hhJobs(){ return (householdData&&householdData.jobs)||{}; }
 const HH_AREAS={health:["🧼","Health"],animals:["🐾","Animals"],pickup:["🧹","Pickup"],cleaning:["🧽","Cleaning"]};
@@ -13511,7 +13522,7 @@ function hhStepOf(job,id){ const o=_hhPickStep(job); Object.defineProperty(o,"_h
 function hhLevelOut(j){ return !(j.area==="cleaning"||j.area==="pickup")||hhLevelOf(j)<=hhLevelCurFor(j.who); }   // HH_LEVEL_PERSON
 function hhKidJobIds(slot,kid){ const jobs=hhJobs(); return Object.keys(jobs).filter(function(id){ const j=jobs[id]; return _hhIsKidJob(j)&&j.who===kid&&j.slot===slot&&j.status!=="retired"&&hhLevelOut(j)&&!j.hold; }).sort(function(a,b){ return ((jobs[a].order||0)-(jobs[b].order||0))||(a<b?-1:1); }); }
 function hhDeriveKids(){ const jobs=hhJobs(), out={}; SL_SLOTS.forEach(function(slot){ out[slot]={}; ROSTER.forEach(function(kid){ const ids=hhKidJobIds(slot,kid); if(ids.length) out[slot][kid]=ids.map(function(id){ return hhStepOf(jobs[id],id); }); }); }); return out; }
-function hhDerivePerson(who){ const jobs=hhJobs(), out={_seeded:true}; Object.keys(jobs).filter(function(id){ const j=jobs[id]; return j.who===who&&j.status!=="retired"&&hhLevelOut(j)&&!j.hold; }).sort(function(a,b){ return ((jobs[a].order||0)-(jobs[b].order||0))||(a<b?-1:1); }).forEach(function(id){ const j=jobs[id], key=(j.src&&j.src.id)||id, c={label:j.label||"",cad:j.cad||"daily",ts:(j.srcTs!==undefined?j.srcTs:(j.ts||0))}; if(j.slot) c.slot=j.slot; out[key]=c; }); return out; }
+function hhDerivePerson(who){ const jobs=hhJobs(), out={_seeded:true}; Object.keys(jobs).filter(function(id){ const j=jobs[id]; return j.who===who&&j.status!=="retired"&&hhLevelOut(j)&&!j.hold; }).sort(function(a,b){ return ((jobs[a].order||0)-(jobs[b].order||0))||(a<b?-1:1); }).forEach(function(id){ const j=jobs[id], key=(j.src&&j.src.id)||id, c={label:j.label||"",cad:j.cad||"daily",ts:(j.srcTs!==undefined?j.srcTs:(j.ts||0))}; if(j.slot) c.slot=j.slot; out[key]=c; }); return (typeof hdOn==="function"&&hdOn())?hdDerivePerson(who,out,jobs):out; }   // 🚪 HOUSEDAY: + today's plan rows
 function _hhRefill(target,v){ Object.keys(target).forEach(function(k){ delete target[k]; }); Object.keys(v||{}).forEach(function(k){ target[k]=v[k]; }); }
 function hhMaterialize(){
   if(hhTakeoverOn()){ _hhWasOn=true; routineCfg2=hhDeriveKids(); morningRoutineCfg={}; _hhRefill(momChoresData,hhDerivePerson("mom")); _hhRefill(dadChoresData,hhDerivePerson("dad")); }
@@ -13795,7 +13806,7 @@ function hhCleanRows(who,iso,dn){
   });
   const order=hhRoomList().map(function(r){ return r[0]; });
   out.sort(function(a,b){ return (order.indexOf(hhRoomOf(a.job))-order.indexOf(hhRoomOf(b.job)))||((a.job.order||0)-(b.job.order||0)); });
-  return out;
+  return (typeof hdOn==="function"&&hdOn())?hdCleanRows(who,iso,dn,out):out;   // 🚪 HOUSEDAY: the day's plan rows
 }
 function hhCleanPanelHTML(who,iso,dn,title){
   if(hhCleanDay(iso)&&typeof hhPlanSent==="function"&&!title){ if(hhPlanSent(iso)) return hhPlanPanelHTML(who,iso); if(!(typeof momHere==="function"&&momHere())) return hhPlanWaitHTML(); }   // 🧽 HH_CLEANPLAN: the sent plan, or the wait
@@ -14147,7 +14158,7 @@ function hhOnceHeld(j){ return hhIsOnce(j)&&!!j.hold; }
 // time Mom opens By person or turns the preview on — nothing outside the Household tab reads household/meta/engine or house.js.
 function hhPeopleOf(who){ const p=householdData&&householdData.people&&householdData.people[who]; return (p&&typeof p==="object")?p:{}; }
 function hhPeopleLim(who,weekend){ const v=hhPeopleOf(who)[weekend?"weekend":"school"]; if(v===undefined||v===null||v==="") return null; const n=parseInt(v,10); return (n>=0&&n<=600)?n:null; }
-function hhEngineMode(){ const e=householdData&&householdData.meta&&householdData.meta.engine; return (e&&e.mode==="preview")?"preview":"off"; }   // "on" is step 4
+function hhEngineMode(){ const e=householdData&&householdData.meta&&householdData.meta.engine; return (e&&e.mode==="on")?"on":(e&&e.mode==="preview")?"preview":"off"; }   // "on" = step 4 (HOUSEDAY)
 // Ready → true; else start fetching house.js (one <script>, see haLazyLoad), draw again when it lands, and say so meanwhile.
 function hhHouseReady(){ if(typeof haLazyReady==="function"&&haLazyReady("house")) return true; if(typeof haLazyLoad==="function") haLazyLoad("house").then(function(){ hhRender(); },function(){}); return false; }
 function hhHouseLoadingHTML(){ return '<div style="padding:8px 2px;font-size:12px;color:var(--muted)">Loading the plan preview…</div>'; }
@@ -14157,7 +14168,392 @@ function hhRoomFuture(){ return (hhEngineMode()==="preview"&&hhHouseReady()&&typ
 function hhRoomsTailHTML(){ if(hhEngineMode()!=="preview") return ''; return (hhHouseReady()&&typeof hpTomorrowHTML==="function")?hpTomorrowHTML():hhHouseLoadingHTML(); }
 function hhEngineTap(on){ if(typeof momHere==="function"&&!momHere()) return; if(typeof haLazyLoad==="function") haLazyLoad("house").then(function(){ if(typeof hpEngineSet==="function") hpEngineSet(!!on); },function(){}); }
 // HH_PEOPLE_END
-// ⇢ house.js: HOUSEENG..HOUSEPREVIEW
+// HOUSEENG_START — the hand-out engine, ONE pure function (DESIGN §6 "Hand-out": "one pure function (table, day, people,
+// overrides) → plan, used for today's stored plan and the grid's future"). No database, no DOM, no app globals: everything it
+// reads is passed in, nothing passed in is changed, the same input gives the same plan (test_house_engine.js checks all three).
+//   HouseEng.day(table, iso, people, ov) → one day's plan
+//     table  = {jobs:{id:row}}                    the household table (household/jobs)
+//     people = {who:{school, weekend, level}}      each person's limits (minutes of HOUSE work) and their Cleaning level
+//     ov     = {kids:[…], slots:[…], rotPeriod:{tag:p}, on:"<iso>", minDefault:{area:min}, lastDone:{id:iso},
+//               carry:[…], skip:{id:1}, off:{who:1}}
+//   HouseEng.run(table, startIso, days, people, ov) → [plans], day after day, each chore assumed done on its planned day.
+// What is due (§4.1): daily · on its weekday(s) · "every N since last done" (lastDone + N; never done → N after the switch-on
+// date `on`, her decision §10.2) · the 4-week cycle rows as they work today (stepCycleOk) · the start / end dates. Never handed
+// out: one-time jobs and projects (the pile and Projects stay as they are), Up for Grabs rows (the grabs pool), "Free day"
+// placeholders, held, retired, as needed / not scheduled, and house rows above the owner's level (hhLevelOut).
+// Whose turn (§4.2, step 3 part): the owner, except a row in a rotation group: then the kid rtApplyRot gives that row's job on
+// that date (same group order, same hop), on that kid's own row's timing — the job travels, the slot stays.
+// Limits and order (§4.3 steps 1–5): carried first (most days late first) → daily → on-its-days → every-N (most overdue
+// first); the person whose turn it is if their minutes left fit it; else the person in who-can with the most minutes left;
+// else it OVERFLOWS (shown only: "would go to Up for Grabs"). Health and animal rows go to their owner, never count against a
+// limit and never overflow.
+// Carry (§4.1 table): an every-N chore stays due until it is done (so it is first in line, more days late, every day after); a
+// daily or on-its-days chore that overflows carries to the next day first in line, and is dropped (a miss, as today) when its
+// own next day arrives — so a daily never carries (tomorrow has its own) and no chore is ever on a day twice.
+const HouseEng=(function(){
+  const dnum=function(s){ const p=String(s).split("-").map(Number); return Math.round(Date.UTC(p[0],p[1]-1,p[2])/864e5); };
+  const isoOf=function(n){ return new Date(n*864e5).toISOString().slice(0,10); };
+  const dowOf=function(s){ return (new Date(s+"T12:00:00Z").getUTCDay()+6)%7; };   // Mon=0 … Sun=6, as _hhDow
+  const isIso=function(s){ return /^\d{4}-\d{2}-\d{2}$/.test(String(s||"")); };
+  const isHouse=function(j){ return !!j&&(j.area==="pickup"||j.area==="cleaning"); };             // hhIsHouse
+  const levelOf=function(j){ const l=parseInt(j&&j.level,10); return (l>=1&&l<=3)?l:1; };         // hhLevelOf
+  const levelOut=function(j,people){ const p=people[j.who]; return !isHouse(j)||levelOf(j)<=((p&&p.level)||1); };   // hhLevelOut
+  const minsOf=function(j,def){ const m=parseInt(j&&j.minutes,10); return (m>0)?m:((def&&def[j&&j.area])||10); };   // hhMinutesOf
+  const limitOf=function(people,who,s){ const p=people[who]; if(!p) return 0; const v=dowOf(s)>=5?p.weekend:p.school; return (typeof v==="number"&&v>=0)?v:0; };
+  // hhCanOf: the owner first, then who else can, each a real person, once.
+  function canOf(j,people){ const c=[], add=function(w){ if(w&&w!=="grab"&&people[w]&&c.indexOf(w)<0) c.push(w); }; add(j.who); (Array.isArray(j.can)?j.can:[]).forEach(add); return c; }
+  // stepCycleOk, as it works today: cycW = the week (1..cycN) the row runs, counted in whole weeks from cycStart.
+  function cycleOk(j,s){ if(!j.cycW||!j.cycStart) return true; const n=Math.max(1,parseInt(j.cycN,10)||4), a=Date.parse(j.cycStart+"T12:00:00"), b=Date.parse(s+"T12:00:00"); if(isNaN(a)||isNaN(b)) return true; const wk=Math.floor(Math.round((b-a)/864e5)/7); return (((wk%n)+n)%n)+1===parseInt(j.cycW,10); }
+  function everyN(cad){ if(/^\d+d$/.test(cad)) return Math.max(1,parseInt(cad,10)); if(cad==="2w") return 14; return 0; }
+  // Rows that are never handed out (see the header).
+  function never(j,people){ return !j||typeof j!=="object"||j.status==="retired"||j.free||j.hold||j.cad==="once"||j.layer==="project"||j.who==="grab"||!people[j.who]; }
+  // Is a row due on s, and how? cad = the cadence the list uses (a rotation slot's own); last = last-done iso; on = switch-on iso.
+  // → null | {k:"daily"|"set"|"every", late:<days past its due day>, at:<due day number>}
+  function dueOf(j,cad,s,last,on){
+    cad=cad||"daily"; if(cad==="asneeded"||cad==="none"||cad==="once") return null;
+    if(j.from&&s<j.from) return null; if(j.to&&s>j.to) return null; if(!cycleOk(j,s)) return null;
+    const d=dowOf(s), n=dnum(s);
+    if(cad==="daily") return {k:"daily",late:0,at:n};
+    if(cad==="sat"||cad==="sun"||cad.indexOf("wk:")===0){ const days=cad==="sat"?[5]:cad==="sun"?[6]:cad.slice(3).split(",").filter(function(x){ return x!==""; }).map(Number); return days.indexOf(d)>=0?{k:"set",late:0,at:n}:null; }
+    const N=everyN(cad); if(N){ const base=isIso(last)?dnum(last)+N:(isIso(on)?dnum(on)+N:null); return (base!==null&&n>=base)?{k:"every",late:n-base,at:base}:null; }
+    return {k:"daily",late:0,at:n};   // cadDueOn reads an unknown cadence as due
+  }
+  // The rotation groups, built the way rtApplyRot builds them from the lists hhDeriveKids makes: per list (slot), each kid in
+  // roster order, their rows in list order (order, then id), every row with a rot tag. A group of 2+ rotates.
+  function groupsOf(jobs,people,ov){
+    const kids=ov.kids||[], slots=ov.slots||[], G={};
+    slots.forEach(function(slot){ kids.forEach(function(kid){
+      Object.keys(jobs).filter(function(id){ const j=jobs[id]; return j&&j.who===kid&&(!j.src||j.src.kind==="routine"||j.src.kind==="new")&&j.slot===slot&&j.status!=="retired"&&levelOut(j,people)&&!j.hold; })
+        .sort(function(a,b){ return ((jobs[a].order||0)-(jobs[b].order||0))||(a<b?-1:1); })
+        .forEach(function(id){ const j=jobs[id]; if(j.rot){ const k=slot+"|"+j.rot; (G[k]=G[k]||{slot:slot,tag:j.rot,m:[]}).m.push({kid:kid,id:id}); } });
+    }); });
+    Object.keys(G).forEach(function(k){ if(G[k].m.length<2) delete G[k]; });
+    return G;
+  }
+  function hopOf(tag,n,rp){ const key=String(tag||"").replace(/[.#$\[\]\/]/g,"_"), p=rp&&rp[key]; if(p==="weekly") return Math.floor((n+3)/7); if(/^\d+d$/.test(p||"")) return Math.floor(n/Math.max(1,parseInt(p,10))); return n; }   // _rtRotHop
+  // On date s, which job each rotating row shows and on whose list: [{kid, row (the kid's own row id), pick (the job's id), cad}].
+  function rotOn(jobs,s,people,ov){
+    const G=groupsOf(jobs,people,ov), n=dnum(s), out=[], members={};
+    Object.keys(G).forEach(function(k){ const g=G[k].m, hop=hopOf(G[k].tag,n,ov.rotPeriod);
+      g.forEach(function(x){ members[x.id]=1; });
+      g.forEach(function(x){ const mi=g.findIndex(function(y){ return y.kid===x.kid; }), p=g[(mi+hop)%g.length], pj=jobs[p.id], own=jobs[x.id];
+        let cad=own.cad||"daily"; if(pj.free) cad="none"; else if(pj.cad==="asneeded") cad="asneeded"; else if(own.cad==="asneeded") cad="daily";
+        out.push({kid:x.kid,row:x.id,pick:p.id,cad:cad}); }); });
+    return {list:out,members:members};
+  }
+  // Who has each rotating job on s (the inverse of rtApplyRot, for the 60-day check): {jobId: kid}.
+  function rotHolders(table,s,people,ov){ const r=rotOn((table&&table.jobs)||{},s,people,ov||{}), o={}; r.list.forEach(function(x){ if(o[x.pick]===undefined&&!(table.jobs[x.pick]||{}).free) o[x.pick]=x.kid; }); return o; }
+  const RANK={daily:1,set:2,every:3};
+  function day(table,s,people,ov){
+    ov=ov||{}; const jobs=(table&&table.jobs)||{}, last=ov.lastDone||{}, skip=ov.skip||{}, off=ov.off||{}, n=dnum(s);
+    const lastOf=function(id){ return last[id]!==undefined?last[id]:(jobs[id]&&jobs[id].lastDone); };
+    const due={}, cands=[], routine=[];
+    const consider=function(id,turn,cad){ const j=jobs[id]; if(due[id]||skip[id]||never(j,people)) return; if(isHouse(j)&&!levelOut(j,people)) return;
+      const d=dueOf(j,cad,s,lastOf(id),ov.on); if(!d) return; due[id]=1;
+      const c={id:id,turn:turn,mins:minsOf(j,ov.minDefault),k:d.k,late:d.late,carried:d.k==="every"&&d.late>0};
+      if(isHouse(j)) cands.push(c); else routine.push(c); };
+    const R=rotOn(jobs,s,people,ov);
+    R.list.forEach(function(x){ if(people[x.kid]) consider(x.pick,x.kid,x.cad); });
+    Object.keys(jobs).sort().forEach(function(id){ if(!R.members[id]) consider(id,jobs[id]&&jobs[id].who,jobs[id]&&jobs[id].cad); });
+    // Yesterday's overflow: first in line, unless its own next day has come (then it is a miss, as on the lists today).
+    const missed=[];
+    (Array.isArray(ov.carry)?ov.carry:[]).forEach(function(c){ const j=jobs[c.id];
+      if(due[c.id]||never(j,people)||!isHouse(j)||skip[c.id]){ missed.push({id:c.id,since:c.since,why:due[c.id]?"its next day came":"no longer handed out"}); return; }
+      due[c.id]=1; cands.push({id:c.id,turn:people[c.turn]?c.turn:j.who,mins:minsOf(j,ov.minDefault),k:c.k,late:n-dnum(c.since),carried:true,since:c.since}); });
+    const ord=function(id){ return (jobs[id]&&+jobs[id].order)||0; };
+    cands.sort(function(a,b){ return ((b.carried?1:0)-(a.carried?1:0))||(a.carried?(b.late-a.late):0)||(RANK[a.k]-RANK[b.k])||(b.late-a.late)||(ord(a.id)-ord(b.id))||(a.id<b.id?-1:1); });
+    const limit={}, left={}; Object.keys(people).forEach(function(w){ limit[w]=off[w]?0:limitOf(people,w,s); left[w]=limit[w]; });
+    const plan={}, list={}, over=[], carryOut=[], put=function(id,o){ plan[id]=o; (list[o.who]=list[o.who]||[]).push(id); o.order=list[o.who].length-1; };
+    routine.forEach(function(c){ if(!off[c.turn]) put(c.id,{who:c.turn,mins:c.mins,why:"routine",late:0,k:c.k,house:false}); });
+    cands.forEach(function(c){
+      let who=null, why=c.carried?"carried":"turn";
+      if(left[c.turn]!==undefined&&left[c.turn]>=c.mins) who=c.turn;
+      else { let best=-1; canOf(jobs[c.id],people).forEach(function(w){ if(w===c.turn) return; const r=left[w]; if(r!==undefined&&r>=c.mins&&r>best){ best=r; who=w; } }); if(who) why="moved"; }
+      if(!who){ const can=canOf(jobs[c.id],people).filter(function(w){ return (ov.kids||[]).indexOf(w)>=0; });
+        over.push({id:c.id,turn:c.turn,mins:c.mins,k:c.k,late:c.late,can:can});
+        if(c.k!=="every") carryOut.push({id:c.id,turn:c.turn,k:c.k,since:c.since||s});
+        return; }
+      left[who]-=c.mins; const o={who:who,mins:c.mins,why:why,late:c.late,k:c.k,house:true}; if(who!==c.turn) o.from=c.turn; put(c.id,o); });
+    const used={}; Object.keys(limit).forEach(function(w){ used[w]=limit[w]-left[w]; });
+    return {iso:s,plan:plan,list:list,over:over,carryOut:carryOut,missed:missed,limit:limit,used:used};
+  }
+  function run(table,start,days,people,ov){
+    ov=ov||{}; const jobs=(table&&table.jobs)||{}, last={}, out=[];
+    Object.keys(jobs).forEach(function(id){ if(jobs[id]&&isIso(jobs[id].lastDone)) last[id]=jobs[id].lastDone; });
+    Object.keys(ov.lastDone||{}).forEach(function(id){ last[id]=ov.lastDone[id]; });
+    let carry=(ov.carry||[]).slice(), n0=dnum(start);
+    for(let i=0;i<days;i++){ const s=isoOf(n0+i), p=day(table,s,people,Object.assign({},ov,{lastDone:Object.assign({},last),carry:carry}));
+      Object.keys(p.plan).forEach(function(id){ last[id]=s; }); carry=p.carryOut; out.push(p); }
+    return out;
+  }
+  return {day:day,run:run,dueOf:dueOf,rotHolders:rotHolders,canOf:canOf,dnum:dnum,isoOf:isoOf};
+})();
+// HOUSEENG_END
+// HOUSEDAY_START — 🚪 the plan switched ON (Household by room, step 4 of DESIGN_household_rooms_2026-11-15 §4.3–4.5, §5, §6, §12; her
+// yes to "Switch on" 2026-11-17). Only when household/meta/engine.mode is "on" AND Take over is on (the lists come from the table):
+// with "off" or "preview" not one line below runs past its first test, so every list and every write is as it was.
+//  • The day's plan is STORED at houseDay/<iso> (§5): built {dev,at,ok,sig} · plan/<jobId> {who,mins,order,why,late,k,since,from} ·
+//    over/<jobId> (fits nobody today: shown to Mom, first in line tomorrow; Up for Grabs at double is step 6) · miss/<jobId> ·
+//    done/<jobId> {who,ts,at,pts,bid,prev} · skip/<jobId> · keep (sig). Built once a day by whichever device is open first: a claim on
+//    houseDay/<iso>/built in _abClaimTx's style, then HouseEng.day on the table, the limits, yesterday's carry, the ✕ skips, 😷 Kid Off
+//    and the 🌅 morning carries. Every device listens to today + the last 14 days and shows the same stored plan. Future days are
+//    never stored. A refused save keeps that day on the old lists and tells Mom why (hdBad).
+//  • The kids' four lists (hdRtSteps, called by rtStepsFor): every house row the engine hands out stays at its position, hidden
+//    (cad "none" — like LINE_CHORES' laundry rows), so health and animal rows keep their positions and check marks; the day's plan
+//    rows for that kid and list are APPENDED last (after the laundry line's rows), each carrying its chore id (st.house). A house row
+//    is done by CHORE (houseDay/<iso>/done/<id>), never by position: rtDoneOn / mStepDoneOn / rtWaved / rtLateDays / the toggles ask
+//    hdAt for the row's id. Rows the engine never hands out (as needed, once, projects, laundry and after-meal jobs) stay as they were.
+//  • Mom's and Dad's lists (hdDerivePerson, called by hhDerivePerson): their own rows + today's plan rows, keyed by chore as before.
+//  • Switching OFF again is safe: a check under the plan also marks the OWNER's old row done with 0 ⭐ (the mark §6 proposed to drop is
+//    kept for this), so the old list never pays twice; and a row checked on the old list reads as done on the plan (hdDoneRec src
+//    "list"), so the plan never pays twice either.
+let houseDayData={}, _hdDb=null, _hdHeard=false, _hdBad=null, _hdIdx={}, _hdM={}, _hdBusy={}, _hdDay="";
+function hdOn(){ try{ return hhEngineMode()==="on"&&typeof hhTakeoverOn==="function"&&hhTakeoverOn()&&!!houseDayData; }catch(e){ return false; } }   // false while the page is still starting
+function hdOk(r){ return !!(r&&typeof r==="object"&&r.built&&r.built.ok); }
+function hdLive(iso){ if(!iso||!hdOn()) return null; const r=houseDayData[iso]; return hdOk(r)?r:null; }
+function hdIsoOf(dn){ try{ return (typeof amIso==="function")?amIso(dn||day):null; }catch(e){ return null; } }
+function hdAdd(iso,n){ return HouseEng.isoOf(HouseEng.dnum(iso)+n); }
+// Rows the engine hands out (and so hides from the old list): a scheduled house row — not as needed / once / none, not a project, a
+// grab, held or retired, not a laundry or after-meal job (those keep their own rules). A house row in a rotation (free day included)
+// is the engine's too: rotOn hands the job to whoever's turn it is.
+function hdManaged(j){ if(!j||!hhIsHouse(j)||j.status==="retired"||j.hold||j.who==="grab"||j.layer==="project"||j.meal||j.laundry) return false;
+  if(typeof llOldLaundryRow==="function"&&llOldLaundryRow(j)) return false; if(j.rot) return true; if(j.free) return false; const c=j.cad||"daily"; return c!=="once"&&c!=="asneeded"&&c!=="none"; }
+function hdSlotOf(j){ return SL_SLOTS.indexOf(j&&j.slot)>=0?j.slot:"chores"; }
+function hdKidOff(kid,iso){ const o=((typeof calendarData!=="undefined"&&calendarData&&calendarData.kidOverrides)||{})[kid]; return !!(o&&o[iso]&&o[iso].school===false); }   // 😷 Kid Off
+function hdFitOf(w){ const f=hhPeopleOf(w).fit; return (f==="mixed"||f==="school")?f:(hhIsKid(w)?"school":"mixed"); }
+// The engine's inputs — the same readers as the preview (hpPeople / hpOv), so the stored day and the preview agree.
+function hdPeople(){ const P={}; HH_WHO.forEach(function(w){ if(w!=="grab") P[w]={school:hhBudget(w,"2026-11-16"),weekend:hhBudget(w,"2026-11-21"),level:hhLevelCurFor(w),fit:hdFitOf(w)}; }); return P; }
+function hdSig(){ const J=hhJobs(), K=["who","can","cad","area","level","status","hold","minutes","slot","rot","free","from","to","cycW","cycN","cycStart","layer","pts"], o={}; Object.keys(J).sort().forEach(function(id){ const j=J[id]; if(!hhIsHouse(j)) return; o[id]=K.map(function(k){ return j[k]===undefined?null:j[k]; }); });
+  const s=JSON.stringify([hdPeople(),o]); let h=5381; for(let i=0;i<s.length;i++) h=((h*33)^s.charCodeAt(i))>>>0; return h.toString(36); }
+// Yesterday's unfinished set-day chores and its overflow carry (first in line, late badge); a daily is gone at night and an
+// every-N chore stays due through its last-done date, so neither is carried. A chore on a 🌅 morning list is the morning's job.
+function hdCarryFrom(y,skip){ const r=hdLive(y), out=[]; if(!r) return out;
+  Object.keys(r.plan||{}).forEach(function(id){ const p=r.plan[id]; if(!p||(r.done||{})[id]||(r.skip||{})[id]||skip[id]||p.k==="daily"||p.k==="every"||hdDoneRec(y,id)) return; out.push({id:id,turn:p.who,k:p.k,since:p.since||y,listed:1}); });   // listed: it WAS on that person's list yesterday
+  Object.keys(r.over||{}).forEach(function(id){ const o=r.over[id]; if(!o||o.k==="every"||(r.skip||{})[id]||skip[id]) return; out.push({id:id,turn:o.turn,k:o.k,since:o.since||y}); });
+  return out; }
+function hdOv(iso,extraSkip){ const J=hhJobs(), r=houseDayData[iso]||{}, skip={}, last={}, off={};
+  Object.keys(r.skip||{}).forEach(function(id){ skip[id]=1; }); Object.keys(extraSkip||{}).forEach(function(id){ skip[id]=1; });
+  Object.keys(J).forEach(function(id){ const j=J[id]; if(hhIsHouse(j)&&!hdManaged(j)) skip[id]=1;   // laundry / after-meal / as needed: not the engine's
+    const a=/^\d{4}-\d{2}-\d{2}$/.test(j.lastDone||"")?j.lastDone:"", b=/^\d{4}-\d{2}-\d{2}$/.test(j.lastSkip||"")?j.lastSkip:""; if(a||b) last[id]=a>b?a:b; });   // ✕ skip this time counts like done for "every N"
+  const am={}; ((typeof amCarry!=="undefined"&&amCarry)?Object.keys(amCarry):[]).forEach(function(k){ const m=amCarry[k]||{}; Object.keys(m).forEach(function(c){ const it=m[c]; if(it&&it.house&&!it.done&&it.dueIso<=iso){ am[it.house]=1; if(/^\d+d$|^2w$/.test((J[it.house]||{}).cad||"")) skip[it.house]=1; } }); });   // 🌅 on a morning list: never carried; an every-N one is not due again until it is done
+  ROSTER.forEach(function(k){ if(hdKidOff(k,iso)) off[k]=1; });
+  const e=(householdData.meta&&householdData.meta.engine)||{};
+  return {kids:SL_KIDS.slice(),slots:SL_SLOTS.slice(),rotPeriod:Object.assign({},(typeof rotationPeriod!=="undefined"&&rotationPeriod)||{}),on:/^\d{4}-\d{2}-\d{2}$/.test(e.on||"")?e.on:iso,minDefault:HH_MIN_DEFAULT,lastDone:last,carry:hdCarryFrom(hdAdd(iso,-1),Object.assign({},skip,am)),skip:skip,off:off}; }
+// One day's plan → the stored shape (house rows only; health and animals stay on their own lists, untouched).
+function hdShape(p){ const plan={}, over={}; Object.keys(p.plan).forEach(function(id){ const x=p.plan[id]; if(!x.house) return; const o={who:x.who,mins:x.mins,order:x.order,why:x.why,late:x.late||0,k:x.k,since:hdAdd(p.iso,-(x.late||0))}; if(x.from) o.from=x.from; plan[id]=o; });
+  p.over.forEach(function(o){ over[o.id]={turn:o.turn,mins:o.mins,k:o.k,late:o.late||0,since:hdAdd(p.iso,-(o.late||0))}; }); return {plan:plan,over:over}; }
+function hdBuild(iso){ const ov=hdOv(iso), p=HouseEng.day({jobs:hhJobs()},iso,hdPeople(),ov), s=hdShape(p), miss={};
+  p.missed.forEach(function(m){ if(m.why==="its next day came"){ const c=ov.carry.find(function(x){ return x.id===m.id; }); miss[m.id]=(c&&c.listed)?{who:c.turn||"",since:m.since||""}:{nobody:1,since:m.since||""}; } });   // a chore that fit nobody was on no one's list: Mom sees it here, no kid gets a "— not done" line (hub review 2026-11-17)
+  return {plan:s.plan,over:s.over,miss:miss}; }
+function hdClaimTx(cur,dev,now){ if(cur&&cur.ok) return; return _abClaimTx(cur,dev,now); }
+function _hdWrite(){ return typeof _hhWrite==="function"&&_hhWrite(); }
+function hdRefused(iso,err){ _hdBad={iso:iso,at:Date.now(),why:String((err&&(err.code||err.message))||err||"refused")}; if(typeof renderAllSoon==="function") renderAllSoon(); }
+// The day's builder: any device, once (the claim), never under ?dryrun=1, only once the table and houseDay have both been heard.
+function hdEnsure(){
+  if(!hdOn()||!_hdHeard||!_hdWrite()||!Object.keys(hhJobs()).length) return; const t=_todayStr();
+  if(hdOk(houseDayData[t])){ if(typeof momHere==="function"&&momHere()) hdSweepOff(t); return; }
+  if(_hdBusy[t]&&Date.now()-_hdBusy[t]<AUTOBUILD_CLAIM_MS) return; _hdBusy[t]=Date.now();
+  try{ db.ref("houseDay/"+t+"/built").transaction(function(cur){ return hdClaimTx(cur,HA_DEV_ID,Date.now()); },function(err,committed){
+    if(err){ hdRefused(t,err); return; } if(!committed) return;   // another device holds the claim, or it is built: the listener brings it
+    if(hdOk(houseDayData[t])) return; const b=hdBuild(t), P="houseDay/"+t+"/", upd={}, at=Date.now();
+    Object.keys(b.plan).forEach(function(id){ upd[P+"plan/"+id]=b.plan[id]; }); Object.keys(b.over).forEach(function(id){ upd[P+"over/"+id]=b.over[id]; }); Object.keys(b.miss).forEach(function(id){ upd[P+"miss/"+id]=b.miss[id]; });
+    upd[P+"built/ok"]=at; upd[P+"built/sig"]=hdSig();
+    db.ref().update(upd).then(function(){ _hdBad=null; hdLogMisses(t,b.miss); },function(e){ hdRefused(t,e); }); }).catch(function(){}); }catch(e){ hdRefused(t,e); }   // a refused claim is answered in the callback
+}
+// A set-day chore dropped because its next day came: "— not done" in the Click-off Log under the day it was due (one key per chore and
+// day, so every device would write the same line), like _rtLogMiss.
+function hdWkDay(iso){ for(let i=0;i<DAYS_ALL.length;i++){ const dn=DAYS_ALL[i]; if(amIso(dn)===iso) return {wk:activeWk(),dn:dn}; if(typeof _prevWkKey==="function"&&_prevWkKey()&&amIso(dn,true)===iso) return {wk:_prevWkKey(),dn:dn}; } return null; }
+function hdLogMisses(t,miss){ const J=hhJobs(); Object.keys(miss||{}).forEach(function(id){ const m=miss[id], j=J[id]; if(!j||!hhIsKid(m.who)||!m.since) return; const w=hdWkDay(m.since); if(!w) return;
+  const key="miss_h_"+id, rec={label:(j.label||"Chore")+" — not done",slot:hdSlotOf(j),act:"miss",ts:nowTs(),at:Date.now(),pts:j.pts||0,missed:true,house:id};
+  routineLog[m.who]=routineLog[m.who]||{}; routineLog[m.who][w.wk]=routineLog[m.who][w.wk]||{}; routineLog[m.who][w.wk][w.dn]=routineLog[m.who][w.wk][w.dn]||{};
+  if(routineLog[m.who][w.wk][w.dn][key]) return; routineLog[m.who][w.wk][w.dn][key]=rec; if(_hdWrite()) db.ref("routineLog/"+m.who+"/"+w.wk+"/"+w.dn+"/"+key).set(rec); }); }
+// Listen to today and the last 14 days (§5). Attached the first time the switch reads "on" on this device — never before.
+function hdAttach(){
+  if(typeof db==="undefined"||!db||_hdDb===db||!hdOn()) return; _hdDb=db; const cut=hdAdd(_todayStr(),-14);
+  try{ db.ref("houseDay").orderByKey().startAt(cut).on("value",function(s){ houseDayData=s.val()||{}; _hdHeard=true; _hdM={}; try{ hhMaterialize(); }catch(e){} hdEnsure(); if(typeof renderAllSoon==="function") renderAllSoon(); },function(err){ hdRefused(_todayStr(),err); }); }catch(e){ hdRefused(_todayStr(),e); }
+}
+function hdTick(){ if(!hdOn()) return; hdAttach(); const t=_todayStr(); if(t!==_hdDay){ _hdDay=t; _hdM={}; try{ hhMaterialize(); }catch(e){} } hdEnsure(); }
+try{ if(typeof setInterval==="function") setInterval(function(){ try{ hdTick(); }catch(e){} },60000); }catch(e){}
+// ── the kids' lists ──
+function hdStep(id,p,iso){ const j=hhJobs()[id]||{}, o=hhStepOf(j,id); ["from","to","cycW","cycN","cycStart","rot","since","free"].forEach(function(k){ delete o[k]; });
+  o.cad="daily"; o.house=id; o.hdIso=iso; o.hdLate=p.late||0; if(p.from) o.hdFrom=p.from; return o; }
+function hdRtSteps(slot,kid,steps,dn){ try{
+  if(!hdOn()) return steps; dn=dn||day; const iso=hdIsoOf(dn), r=hdLive(iso); if(!r) return steps;
+  const key=slot+"|"+kid+"|"+dn, m=_hdM[key], J=hhJobs(); if(m&&m.s===steps&&m.r===r&&m.J===J) return m.v;
+  const raw=(routineCfg2&&routineCfg2[slot]&&routineCfg2[slot][kid])||[];
+  const out=steps.map(function(st,i){ const rw=raw[i], j=rw&&rw._hh&&J[rw._hh]; return (st&&j&&hdManaged(j))?Object.assign({},st,{cad:"none",hdHidden:true}):st; });
+  const idx={}; Object.keys(r.plan||{}).filter(function(id){ const p=r.plan[id]; return p&&p.who===kid&&J[id]&&hdSlotOf(J[id])===slot; })
+    .sort(function(a,b){ return ((r.plan[a].order||0)-(r.plan[b].order||0))||(a<b?-1:1); }).forEach(function(id){ idx[out.length]=id; out.push(hdStep(id,r.plan[id],iso)); });
+  _hdIdx[key]={iso:iso,r:r,idx:idx}; _hdM[key]={s:steps,r:r,J:J,v:out}; return out;
+}catch(e){ return steps; } }
+// The chore id of row i on that list and day, or null (not a plan row / the switch is off).
+function hdAt(slot,kid,d,i){ if(!hdOn()) return null; d=d||day; const key=slot+"|"+kid+"|"+d; let e=_hdIdx[key]; const iso=hdIsoOf(d), r=hdLive(iso); if(!r) return null;
+  if(!e||e.r!==r){ try{ rtStepsFor(slot,kid,false,d); }catch(x){} e=_hdIdx[key]; } const id=e&&e.r===r&&e.idx[i]; return id?{iso:iso,id:id}:null; }
+// Done by chore. src "list": checked on the owner's OLD row (before the switch, or while it was off) or on Mom's / Dad's own stamp.
+function hdDoneRec(iso,id){ const r=houseDayData[iso], d=r&&r.done&&r.done[id]; if(d) return d; const j=hhJobs()[id]; if(!j) return null;
+  if(j.who==="mom"||j.who==="dad"){ const key=(j.src&&j.src.id)||id, D=(j.who==="mom"?momdayData:daddayData)||{}; return (((D[iso]||{}).chores)||{})[key]?{who:j.who,src:"list"}:null; }
+  const o=hdOwnerKey(id,iso); const s=o&&slState[o]; return (s&&s.done&&!s.hd)?{who:j.who,src:"list",ts:s.ts||"",pts:s.pts||0,by:s.by}:null; }
+function hdDone(iso,id){ return !!hdDoneRec(iso,id); }
+function hdSkipped(iso,id){ const r=hdLive(iso); return !!(r&&r.skip&&r.skip[id]); }
+// The owner's own old row for a kid's chore, as a check-off key of the active week ("" when it is not on a kid's list this week).
+function hdOwnerKey(id,iso){ const j=hhJobs()[id]; if(!j||!hhIsKid(j.who)) return ""; const w=hdWkDay(iso); if(!w||w.wk!==activeWk()) return ""; const raw=(routineCfg2[j.slot]&&routineCfg2[j.slot][j.who])||[];
+  let i=-1; raw.forEach(function(st,k){ if(i<0&&st&&st._hh===id) i=k; }); if(i<0) return ""; return w.wk+"_"+w.dn+"_"+j.who+"_"+(j.slot==="morning"?"m":RT_ABBR[j.slot])+"step"+i; }
+// A list row's check-off record, for the readers that show its time or who ticked it (Kids today pop-up, spot check).
+function hdSlRec(slot,kid,d,i){ const h=hdAt(slot,kid,d,i); if(!h){ return slState[activeWk()+"_"+d+"_"+kid+"_"+(slot==="morning"?"m":RT_ABBR[slot])+"step"+i]||null; } const x=hdDoneRec(h.iso,h.id); return x?{done:true,ts:x.ts||"",pts:x.pts||0,bid:x.bid||null,by:x.by||(x.src==="list"?x.by:undefined)}:null; }
+// 🏫 school first (§4.5, §10.7): for a kid set to school first, house chores on the Chores list open when school work is done, at the
+// afternoon hour, or when school is off — like the Afternoon list. A Morning-time chore is on the Morning list and stays open.
+function hdLocked(slot,kid,d){ if(slot!=="chores"||!hdOn()||!hhIsKid(kid)||hdFitOf(kid)!=="school") return false; return !rtAvailable("afternoon",kid,d)&&!hdKidOff(kid,hdIsoOf(d)); }
+// ✓ / un-✓ a plan row (toggleRtStep / toggleMorningStep hand it over after their own locks): the old toggle's pay, hold, log, bonuses
+// and tail, with the record kept by chore. Un-✓ takes back exactly the stored amount and puts lastDone / lastBy / counters back.
+function hdToggle(slot,kid,i,st){
+  if(!(typeof _rtMomTick!=="undefined"&&_rtMomTick)&&hdLocked(slot,kid,day)){ if(typeof gwShowToast==="function") gwShowToast("House chores open when school work is done, or at "+rtFmtHour(rtAfternoonHour())+" 📚"); return; }
+  const iso=st.hdIso, id=st.house, r=hdLive(iso), j=hhJobs()[id]; if(!r||!j) return;
+  const d0=hdDoneRec(iso,id); if(d0&&d0.src==="list"){ if(!hdUnlist(slot,kid,id,iso)&&typeof gwShowToast==="function") gwShowToast("That one was checked off on Mom’s or Dad’s own list"); return; }
+  const now=!d0, wk=activeWk(), _slB=slBefore(), P="houseDay/"+iso+"/done/"+id, b0=st.pts||0, label=st.label||j.label||"Chore", upd={};
+  const paid=now?(b0+((typeof zoneBonusFor==="function")?zoneBonusFor(st.zone,b0):0)):((d0.pts!=null)?d0.pts:b0); let bid=null;
+  if(paid>0){
+    if(now) bid=bankDirect(kid,paid,(st.emoji?st.emoji+" ":"")+label,(typeof choreVerifyOn==="function"&&choreVerifyOn(kid)));
+    else if(d0.bid){ if(!(typeof cuUnpay==="function"&&cuUnpay(kid,d0.bid,label))) bankDirectRemove(kid,d0.bid); }   // ↶ CHOREUNDO / UNDOLISTS
+    else bankDirect(kid,-paid,"↩ unchecked: "+label);
+  }
+  r.done=Object.assign({},r.done);
+  if(now){ const rec={who:kid,ts:nowTs(),at:Date.now(),min:(typeof _lbNowMin==="function")?_lbNowMin():null,pts:paid,bid:bid||null,slot:slot,prev:{lastDone:j.lastDone||null,lastBy:j.lastBy||null,doneN:j.doneN||0,kidRun:j.kidRun||0}};
+    if(typeof _spBy==="function"&&_spBy()) rec.by=_spBy(); r.done[id]=rec; upd[P]=rec; hdStamp(id,iso,kid,upd); }
+  else { delete r.done[id]; upd[P]=null; hdUnstamp(id,iso,d0,upd); }
+  hdOwnerMark(id,iso,now,kid);
+  rlogAppend(kid,slot,label,now?"on":"off",paid,(!now&&typeof cuUndoTag==="function")?cuUndoTag():null);   // ↩︎ UNDOLISTS
+  try{ if(typeof amSourceSyncKey==="function") amSourceSyncKey(kid,amKeyH(iso,slot,id),now); }catch(e){}   // 🌅 SENDAM: sent to the morning list → closes there too
+  householdOnValue(householdData); if(_hdWrite()) db.ref().update(upd);
+  if(slot==="morning"){ const mk=wk+"_"+day+"_"+kid+"_morning", prev=slState[mk], all=morningComplete(kid,day); slState[mk]={done:all,ts:all?nowTs():""};
+    if(all&&!(prev&&prev.done)&&day===_todayDay&&typeof dsAutoStart==="function") dsAutoStart(kid);
+    rtBonusSettle("morning",kid,wk,day,prev,all,morningDueIdx(kid,day).length); if(all) mrOpen[kid]=false; }
+  else { const fk=wk+"_"+day+"_"+kid+"_"+slot, prev=slState[fk], all=rtComplete(slot,kid,day); slState[fk]={done:all,ts:all?nowTs():""};
+    rtBonusSettle(slot,kid,wk,day,prev,all,rtStepsFor(slot,kid).filter(function(s,k){ return rtDueOrLate(slot,kid,day,k,s); }).length); delete rtOpen[rtOpenKey(slot,kid)]; }
+  if(typeof rtDayBonusSettle==="function") rtDayBonusSettle(kid,wk,day);
+  slSaveChanged(wk,_slB); renderSkylight();
+  if(tab==="schedule"){ const c=document.getElementById("content"); if(c) renderSchedule(c); }
+}
+// last-done, by whom and the turn counters (§5), written with the check-off; un-check puts back what was there.
+function hdStamp(id,iso,who,upd){ const j=hhJobs()[id]; if(!j) return; const J="household/jobs/"+id+"/";
+  if(!j.lastDone||j.lastDone<=iso){ j.lastDone=iso; j.lastBy=who; upd[J+"lastDone"]=iso; upd[J+"lastBy"]=who; }
+  j.doneN=(j.doneN||0)+1; upd[J+"doneN"]=j.doneN; j.kidRun=hhIsKid(who)?(j.kidRun||0)+1:0; upd[J+"kidRun"]=j.kidRun; }
+function hdUnstamp(id,iso,d0,upd){ const j=hhJobs()[id], pv=(d0&&d0.prev)||{}; if(!j) return; const J="household/jobs/"+id+"/";
+  if(j.lastDone===iso){ if(pv.lastDone){ j.lastDone=pv.lastDone; j.lastBy=pv.lastBy||null; } else { delete j.lastDone; delete j.lastBy; } upd[J+"lastDone"]=pv.lastDone||null; upd[J+"lastBy"]=pv.lastDone?(pv.lastBy||null):null; }
+  j.doneN=pv.doneN||0; j.kidRun=pv.kidRun||0; upd[J+"doneN"]=j.doneN||null; upd[J+"kidRun"]=j.kidRun||null; }
+// The owner's own (hidden) old row reads done too, with 0 ⭐ and hd:<iso> — so switching OFF never shows it open to be paid again.
+function hdOwnerMark(id,iso,on,by){ const k=hdOwnerKey(id,iso); if(!k) return; const cur=slState[k];
+  if(on){ if(!(cur&&cur.done)) slState[k]={done:true,ts:nowTs(),pts:0,bid:null,by:by,hd:iso}; } else if(cur&&cur.hd) slState[k]={done:false,ts:"",pts:null,bid:null}; }
+// ✕ today on a plan row = ✕ Skip this time (houseDay/<iso>/skip/<id>, and the chore's lastSkip so an every-N chore counts from today);
+// a second tap puts it back. The kid's Click-off Log gets the same "waved" line as ✕ today. Mom (or an unlocked Dad).
+function hdSkipToggle(iso,id,kid){
+  if(typeof momHere==="function"&&!momHere()&&!(typeof dadAwardOk==="function"&&dadAwardOk())) return false; const r=hdLive(iso), j=hhJobs()[id]; if(!r||!j||hdDone(iso,id)) return false;
+  const by=(typeof momHere==="function"&&!momHere())?"dad":"mom", on=!(r.skip&&r.skip[id]), upd={}, P="houseDay/"+iso+"/skip/"+id; r.skip=Object.assign({},r.skip);
+  if(on){ const rec={at:Date.now(),by:by,prev:j.lastSkip||null}; r.skip[id]=rec; upd[P]=rec; j.lastSkip=iso; upd["household/jobs/"+id+"/lastSkip"]=iso; }
+  else { const pv=(r.skip[id]&&r.skip[id].prev)||null; delete r.skip[id]; upd[P]=null; if(j.lastSkip===iso){ if(pv) j.lastSkip=pv; else delete j.lastSkip; upd["household/jobs/"+id+"/lastSkip"]=pv; } }
+  const w=kid&&hhIsKid(kid)?hdWkDay(iso):null; if(w){ const lk="wave_h_"+id; routineLog[kid]=routineLog[kid]||{}; routineLog[kid][w.wk]=routineLog[kid][w.wk]||{}; routineLog[kid][w.wk][w.dn]=routineLog[kid][w.wk][w.dn]||{};
+    if(on){ const l={label:(j.label||"Chore")+" — waved by "+(by==="dad"?"Dad":"Mom"),slot:hdSlotOf(j),act:"wave",ts:nowTs(),at:Date.now(),pts:0}; routineLog[kid][w.wk][w.dn][lk]=l; upd["routineLog/"+kid+"/"+w.wk+"/"+w.dn+"/"+lk]=l; }
+    else { delete routineLog[kid][w.wk][w.dn][lk]; upd["routineLog/"+kid+"/"+w.wk+"/"+w.dn+"/"+lk]=null; } }
+  _hdM={}; householdOnValue(householdData); if(_hdWrite()) db.ref().update(upd); return on; }
+// Mom's and Dad's lists: their own rows, minus the house rows the engine hands out, plus today's plan rows for them (keyed by chore,
+// as their stamps already are; due today only).
+function hdDerivePerson(who,out,jobs){ try{
+  const t=_todayStr(), r=hdLive(t); if(!r) return out; const o={};
+  Object.keys(out).forEach(function(k){ if(k.charAt(0)==="_"){ o[k]=out[k]; return; } const id=Object.keys(jobs).find(function(x){ return jobs[x].who===who&&((jobs[x].src&&jobs[x].src.id)||x)===k; }); if(!(id&&hdManaged(jobs[id]))) o[k]=out[k]; });
+  Object.keys(r.plan||{}).filter(function(id){ return r.plan[id].who===who&&jobs[id]; }).sort(function(a,b){ return (r.plan[a].order||0)-(r.plan[b].order||0); }).forEach(function(id){ const j=jobs[id], key=(j.src&&j.src.id)||id;
+    const c={label:j.label||"",cad:"wk:"+_hhDow(t),ts:(j.srcTs!==undefined?j.srcTs:(j.ts||0)),hd:id}; if(MC_SLOTS[j.slot]) c.slot=j.slot; o[key]=c; });
+  return o; }catch(e){ return out; } }
+// Mom's / Dad's own tick on a plan row (mcToggle / dcToggle, after their stamp): the plan's record, last-done and the counters; the
+// kid owner's old row is marked too. No stars (grown-ups are not paid).
+function hdParentTick(who,key,on){ try{ const t=_todayStr(), r=hdLive(t); if(!r) return; const J=hhJobs(), id=Object.keys(r.plan||{}).find(function(x){ return r.plan[x].who===who&&J[x]&&((J[x].src&&J[x].src.id)||x)===key; }); if(!id) return;
+  const upd={}, P="houseDay/"+t+"/done/"+id, d0=r.done&&r.done[id]; r.done=Object.assign({},r.done); const j=J[id];
+  if(on&&!d0){ const rec={who:who,ts:nowTs(),at:Date.now(),pts:0,bid:null,prev:{lastDone:j.lastDone||null,lastBy:j.lastBy||null,doneN:j.doneN||0,kidRun:j.kidRun||0}}; r.done[id]=rec; upd[P]=rec; hdStamp(id,t,who,upd); hdOwnerMark(id,t,true,who); }
+  else if(!on&&d0){ delete r.done[id]; upd[P]=null; hdUnstamp(id,t,d0,upd); hdOwnerMark(id,t,false,who); } else return;
+  const b=slBefore(); householdOnValue(householdData); if(_hdWrite()) db.ref().update(upd); slSaveChanged(activeWk(),b); }catch(e){} }
+// ── the doors (§4.3): Kid Off here (it must run without house.js); → Give to…, 🔁 Re-lay today and the "Re-lay today too / Keep today"
+// question are Mom's taps on 👤 By person, so they live in house.js (HOUSESWITCH) ──
+function hdMom(){ return typeof momHere!=="function"||momHere(); }
+function hdUsed(r,skipId){ const u={}; Object.keys(r.plan||{}).forEach(function(id){ if(id===skipId) return; const p=r.plan[id]; u[p.who]=(u[p.who]||0)+(p.mins||0); }); return u; }
+function hdLimitOn(who,iso){ const P=hdPeople()[who]; if(!P) return 0; return _hhDow(iso)>=5?P.weekend:P.school; }
+// 😷 Kid Off (§4.3): a kid marked off today has their unstarted house chores handed out again — each to the person ticked on its card
+// with the most minutes left today, else onto "fit nobody" (first in line tomorrow). Run on Mom's device; idempotent.
+function hdSweepOff(iso){ const r=hdLive(iso); if(!r||!_hdWrite()) return 0; const J=hhJobs(), P=hdPeople(), upd={}; let n=0;
+  Object.keys(r.plan||{}).forEach(function(id){ const p=r.plan[id]; if(!p||!hhIsKid(p.who)||!hdKidOff(p.who,iso)||hdDone(iso,id)||!J[id]) return;
+    const used=hdUsed(r,id); let best=null, bl=-1; HouseEng.canOf(J[id],P).forEach(function(w){ if(w===p.who||(hhIsKid(w)&&hdKidOff(w,iso))) return; const l=hdLimitOn(w,iso)-(used[w]||0); if(l>=(p.mins||0)&&l>bl){ bl=l; best=w; } });
+    r.plan=Object.assign({},r.plan); n++;
+    if(best){ const rec=Object.assign({},p,{who:best,why:"moved",from:p.from||p.who}); r.plan[id]=rec; upd["houseDay/"+iso+"/plan/"+id]=rec; }
+    else { delete r.plan[id]; r.over=Object.assign({},r.over); r.over[id]={turn:p.who,mins:p.mins,k:p.k,late:p.late||0,since:p.since||iso}; upd["houseDay/"+iso+"/plan/"+id]=null; upd["houseDay/"+iso+"/over/"+id]=r.over[id]; } });
+  if(n){ _hdM={}; try{ hhMaterialize(); }catch(e){} db.ref().update(upd); if(typeof renderAllSoon==="function") renderAllSoon(); } return n; }
+// 🌅 SENDAM with a plan row (§12): sent and finished by chore id — amCarry/<kid>/<fromIso>_<a|c|e>h_<id> (rec.house = id) — writing
+// the same three records: the carry's done, the chore's done on the day it was due (houseDay/<fromIso>/done/<id>, with pts + bid +
+// am:<iso>, last-done and counters), and the routineLog "on" line under that day. A carry opened before switch-on keeps its
+// position key and still points at its own (hidden, same-position) row.
+function amKeyH(fromIso,slot,id){ return fromIso+"_"+RT_ABBR[slot]+"h_"+id; }
+function hdIdAt(slot,kid,iso,i){ if(!hdOn()) return null; for(let k=0;k<DAYS_ALL.length;k++){ if(amIso(DAYS_ALL[k])===iso){ const h=hdAt(slot,kid,DAYS_ALL[k],i); return h?h.id:null; } } return null; }
+function amSourceSyncKey(kid,key,now){ const it=amCarry[kid]&&amCarry[kid][key]; if(!it) return;
+  if(now){ if(it.done) return; it.done={iso:amIso(_todayDay)||_amToday(),ts:nowTs(),at:Date.now(),src:"list"}; } else { if(!it.done) return; delete it.done; }
+  if(_amWrite()){ if(now) db.ref("amCarry/"+kid+"/"+key+"/done").set(it.done); else db.ref("amCarry/"+kid+"/"+key+"/done").remove(); }
+  amOnValue(amCarry); if(it.dueIso<=(amIso(_todayDay)||_amToday())) _amSettleToday(kid); }
+function hdAmToggle(kid,cid,it,now,iso){
+  const label=it.label||"Chore", wk=activeWk(), _slB=slBefore(), id=it.house, j=hhJobs()[id], d0=hdDoneRec(it.fromIso,id), upd={}, P="houseDay/"+it.fromIso+"/done/"+id;
+  if(now&&d0){ it.done={iso:iso,ts:nowTs(),at:Date.now(),src:"list"}; if(_amWrite()) db.ref("amCarry/"+kid+"/"+cid+"/done").set(it.done); }   // already done by chore: close the carry, pay nothing twice
+  else {
+    const paid=now?(it.pts||0):((it.done.pts!=null)?it.done.pts:(it.pts||0)), full=(it.emoji?it.emoji+" ":"")+label; let bid=null;
+    if(paid>0){
+      if(now) bid=bankDirect(kid,paid,"\u{1F305} "+full+" (from "+amFromLbl(it)+")",(typeof choreVerifyOn==="function"&&choreVerifyOn(kid)));
+      else if(it.done.bid){ if(!(typeof cuUnpay==="function"&&cuUnpay(kid,it.done.bid,label))) bankDirectRemove(kid,it.done.bid); }
+      else bankDirect(kid,-paid,"↩ unchecked: "+label);
+    }
+    const by=(typeof _spBy==="function")?_spBy():null, ts=nowTs(), fr=houseDayData[it.fromIso]=houseDayData[it.fromIso]||{}; fr.done=Object.assign({},fr.done);
+    if(now){ it.done={iso:iso,ts:ts,at:Date.now(),pts:paid,bid:bid||null,src:"am"}; if(by) it.done.by=by; } else delete it.done;
+    if(_amWrite()){ if(now) db.ref("amCarry/"+kid+"/"+cid+"/done").set(it.done); else db.ref("amCarry/"+kid+"/"+cid+"/done").remove(); }
+    if(now){ const rec={who:kid,ts:ts,at:Date.now(),pts:paid,bid:bid||null,am:iso,slot:it.slot,prev:{lastDone:(j&&j.lastDone)||null,lastBy:(j&&j.lastBy)||null,doneN:(j&&j.doneN)||0,kidRun:(j&&j.kidRun)||0}}; if(by) rec.by=by; fr.done[id]=rec; upd[P]=rec; hdStamp(id,it.fromIso,kid,upd); }
+    else { const dd=fr.done[id]; delete fr.done[id]; upd[P]=null; hdUnstamp(id,it.fromIso,dd,upd); }
+    hdOwnerMark(id,it.fromIso,now,kid);
+    _amLog(kid,it.fromWk,it.fromDay,{label:label,slot:it.slot,act:now?"on":"off",ts:ts,at:Date.now(),pts:paid,am:iso,house:id});
+    householdOnValue(householdData); if(_hdWrite()) db.ref().update(upd);
+  }
+  amOnValue(amCarry);
+  const mk=wk+"_"+day+"_"+kid+"_morning", _prevSlot=slState[mk], allDone=morningComplete(kid,day);
+  slState[mk]={done:allDone,ts:allDone?nowTs():""};
+  if(allDone&&!(_prevSlot&&_prevSlot.done)&&day===_todayDay&&typeof dsAutoStart==="function") dsAutoStart(kid);
+  rtBonusSettle("morning",kid,wk,day,_prevSlot,allDone,morningDueIdx(kid,day).length);
+  if(typeof rtDayBonusSettle==="function") rtDayBonusSettle(kid,wk,day);
+  if(allDone) mrOpen[kid]=false;
+  slSaveChanged(wk,_slB); renderSkylight();
+  if(tab==="schedule"){ const c=document.getElementById("content"); if(c) renderSchedule(c); }
+}
+// OFF again, or a day the plan has no record for: un-checking an old row the PLAN marked done (hd:<iso>) is the plan's un-check — the
+// exact stored amount comes back off the kid who did it, last-done and counters go back — so nothing is paid twice across a flip.
+// Reads the day's record from the listener, or once from the database when this device never listened.
+function hdUnmark(slot,kid,i,mk){ const raw=(routineCfg2[slot]&&routineCfg2[slot][kid])||[], id=raw[i]&&raw[i]._hh, iso=mk&&mk.hd; if(!id||!iso) return false;
+  const go=function(d0){ const wk=activeWk(), _slB=slBefore(), upd={}, j=hhJobs()[id], label=(j&&j.label)||"Chore", who=(d0&&d0.who)||kid;
+    if(d0){ if(hhIsKid(who)&&(d0.pts||0)>0){ if(d0.bid){ if(!(typeof cuUnpay==="function"&&cuUnpay(who,d0.bid,label))) bankDirectRemove(who,d0.bid); } else bankDirect(who,-d0.pts,"↩ unchecked: "+label); }
+      if(hhIsKid(who)) rlogAppend(who,d0.slot||slot,label,"off",d0.pts||0,(typeof cuUndoTag==="function")?cuUndoTag():null);
+      const r=houseDayData[iso]; if(r&&r.done) delete r.done[id]; upd["houseDay/"+iso+"/done/"+id]=null; hdUnstamp(id,iso,d0,upd); }
+    slState[wk+"_"+day+"_"+kid+"_"+(slot==="morning"?"m":RT_ABBR[slot])+"step"+i]={done:false,ts:"",pts:null,bid:null};
+    if(slot==="morning"){ const mk2=wk+"_"+day+"_"+kid+"_morning"; slState[mk2]={done:morningComplete(kid,day),ts:""}; } else { const fk=wk+"_"+day+"_"+kid+"_"+slot, all=rtComplete(slot,kid,day); slState[fk]={done:all,ts:all?nowTs():""}; }
+    householdOnValue(householdData); if(_hdWrite()&&Object.keys(upd).length) db.ref().update(upd); slSaveChanged(wk,_slB); renderSkylight(); };
+  const r=houseDayData[iso]; if(r&&r.done&&r.done[id]){ go(r.done[id]); return true; }
+  if(typeof db!=="undefined"&&db) db.ref("houseDay/"+iso+"/done/"+id).once("value").then(function(s){ go(s.val()); },function(){ go(null); }); else go(null);
+  return true; }
+// ON, and the chore was checked on the old list (before the switch, or while it was off): un-checking its plan row is that old
+// row's un-check — the same reversal toggleRtStep would make on the owner's list.
+function hdUnlist(slot,kid,id,iso){ const k=hdOwnerKey(id,iso), s=k&&slState[k], j=hhJobs()[id]; if(!s||!s.done||s.hd||!j) return false; const owner=j.who, wk=activeWk(), _slB=slBefore(), label=j.label||"Chore";
+  if(s.bid){ if(!(typeof cuUnpay==="function"&&cuUnpay(owner,s.bid,label))) bankDirectRemove(owner,s.bid); } else if((s.pts||0)>0) bankDirect(owner,-s.pts,"↩ unchecked: "+label);
+  slState[k]={done:false,ts:"",pts:null,bid:null}; rlogAppend(owner,j.slot,label,"off",s.pts||0,(typeof cuUndoTag==="function")?cuUndoTag():null);
+  const fk=wk+"_"+day+"_"+owner+"_"+j.slot; if(j.slot==="morning") slState[fk]={done:morningComplete(owner,day),ts:""}; else { const all=rtComplete(j.slot,owner,day); slState[fk]={done:all,ts:all?nowTs():""}; }
+  slSaveChanged(wk,_slB); renderSkylight(); return true; }
+// 🏡 The House card on a kid's day and Mom's / Dad's house blocks (hhCleanRows) read the day's plan (§7 "reads the day's plan"): the
+// person's plan rows with that day's done marks, in room walking order; the rows the engine hands out leave as they leave the lists.
+function hdCleanRows(who,iso,dn,out){ try{ const r=hdLive(hdIsoOf(dn)); if(!r) return out; const J=hhJobs(), o=out.filter(function(x){ return !hdManaged(x.job); });
+  if(hhIsKid(who)) SL_SLOTS.forEach(function(slot){ (rtStepsFor(slot,who,false,dn)||[]).forEach(function(st,i){ if(!st||!st.house||!J[st.house]) return; if(rtWaved(slot,who,dn,i)) return;
+      o.push({id:st.house,job:J[st.house],label:st.label,emoji:st.emoji||"",pts:st.pts||0,mins:(r.plan[st.house]||{}).mins||hhMinutesOf(J[st.house]),done:slot==="morning"?mStepDoneOn(who,dn,i):rtDoneOn(slot,who,dn,i),late:false,on:slot==="morning"?"toggleMorningStep('"+who+"',"+i+")":"toggleRtStep('"+slot+"','"+who+"',"+i+")"}); }); });
+  else { const list=(who==="dad")?dcAll():mcAll(), doneOn=(who==="dad")?dcDoneOn:mcDoneOn; Object.keys(list).forEach(function(k){ const c=list[k], j=c&&c.hd&&J[c.hd]; if(!j) return;
+      o.push({id:c.hd,job:j,label:j.label,emoji:j.emoji||"",pts:0,mins:(r.plan[c.hd]||{}).mins||hhMinutesOf(j),done:doneOn(iso,k),late:false,on:(who==="dad"?"dcToggle('":"mcToggle('")+k+"')"}); }); }
+  const order=hhRoomList().map(function(x){ return x[0]; }); o.sort(function(a,b){ return (order.indexOf(hhRoomOf(a.job))-order.indexOf(hhRoomOf(b.job)))||((a.job.order||0)-(b.job.order||0)); });
+  return o; }catch(e){ return out; } }
+// HOUSEDAY_END
+// ⇢ house.js: HOUSEPEOPLE..HOUSESWITCH
 // KITCHEN_TAB_START — 🍳 Kitchen (her ask 2026-10-20: "a focused kitchen tab like the laundry but then id like it seperated in sections
 // that make sense and i like lots of settings … i also dont want repeats all over the chores … pull things in from other areas … check
 // off and reassign … send to the cleaning day"). ONE table, no copies: every row here IS a Household row (household/jobs) picked by
@@ -16785,7 +17181,7 @@ function spPool(kid,d){
     const steps=(slot==="morning"&&typeof morningStepsFor==="function")?morningStepsFor(kid):(rtStepsFor(slot,kid,false,d)||[]);
     steps.forEach(function(st,i){ if(!st) return;
       if(typeof rtWaved==="function"&&rtWaved(slot,kid,d,i)) return;   // WAVE: waved, not checked
-      const s=slState[wk+"_"+d+"_"+kid+"_"+(slot==="morning"?"m":RT_ABBR[slot])+"step"+i];
+      const s=(typeof hdSlRec==="function"&&typeof hdAt==="function"&&hdAt(slot,kid,d,i))?hdSlRec(slot,kid,d,i):slState[wk+"_"+d+"_"+kid+"_"+(slot==="morning"?"m":RT_ABBR[slot])+"step"+i];   // 🚪 HOUSEDAY: a plan row's record
       if(!s||!s.done||s.by) return;   // not done, or Mom / Dad ticked it
       if(!T[spStepType(st)]) return;   // ⚙ that type is switched off
       out.push({k:"s:"+slot+":"+i,kind:"step",slot:slot,i:i,d:d,label:st.label||"",emoji:st.emoji||"",type:spStepType(st),ts:_spTs(s.ts),pts:s.pts||0}); });
@@ -43388,10 +43784,11 @@ function _calChoresFor(kid,iso){
       const steps=rtStepsFor(slot,kid,false,dn)||[];
       steps.forEach(function(st,i){
         if(!st) return;
+        if(st.house&&st.hdIso!==iso) return;   // 🚪 HOUSEDAY: a plan row belongs to its own date
         if(st.from&&iso<st.from) return; if(st.to&&iso>st.to) return;
         if(typeof stepCycleOk==="function"&&!stepCycleOk(st,iso)) return;
         if(!_calCadDueOn(st.cad||"daily",dn,iso)) return;
-        out.push({i:i,slot:slot,label:st.label||"Chore",emoji:st.emoji||"",pts:st.pts||0,
+        out.push({i:i,slot:slot,label:st.label||"Chore",emoji:st.emoji||"",pts:st.pts||0,house:st.house||"",
           done:isToday&&(slot==="morning"?(typeof mStepDoneOn==="function"&&mStepDoneOn(kid,dn,i)):(typeof rtDoneOn==="function"&&rtDoneOn(slot,kid,dn,i)))});
       });
     });
@@ -43418,7 +43815,7 @@ function _calHabitsDone(kid,iso){
     let any=false;
     for(let j=0;j<due.length;j++){
       const c=due[j], key=wk+"_"+dn+"_"+kid+"_"+(c.slot==="morning"?"mstep":RT_ABBR[c.slot]+"step")+c.i;
-      const st=map[key]; if(st) any=true;
+      const st=c.house?((typeof hdDone==="function"&&hdDone(iso,c.house))?{done:true}:null):map[key]; if(st) any=true;   // 🚪 HOUSEDAY: by chore
       if(!(st&&st.done)) return (any||Object.keys(map).some(function(k){ return k.indexOf(wk+"_"+dn+"_"+kid+"_")===0; }))?false:null;
     }
     return true;

@@ -73,7 +73,7 @@ console.log("── 🕵️ Mom-checked chores, per kid ──");
   ok("…and off removes the key", s.call("choreVerifyOn('julian')") === false && s.ctx.removes.indexOf("config/choreVerify/julian") >= 0);
   const k = world({}); k.call("choreVerifySet('julian',true)");
   ok("a kid device cannot flip the setting", k.call("choreVerifyOn('julian')") === false && k.ctx.writes.length === 0);
-  ok("all five chore pay sites pass the kid's switch (the fifth: 🌅 SENDAM 2026-11-15 — a carried chore checked on the Morning list)", (src.match(/,\(typeof choreVerifyOn==="function"&&choreVerifyOn\(kid\)\)\)/g) || []).length === 5);
+  ok("all seven chore pay sites pass the kid's switch (the fifth: 🌅 SENDAM 2026-11-15 — a carried chore checked on the Morning list; the sixth and seventh: 🚪 HOUSEDAY 2026-11-17 — a plan row checked by chore, and its 🌅 carry)", (src.match(/,\(typeof choreVerifyOn==="function"&&choreVerifyOn\(kid\)\)\)/g) || []).length === 7);
   ok("grabs, books, ribbons, units still pay at the tap (not gated)", !/bankDirect\(kid, _paid,[^)]*choreVerifyOn/.test(src));
 }
 console.log("\n── 🛍 store: the same item within a minute is refused ──");
