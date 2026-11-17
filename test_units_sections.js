@@ -22,6 +22,9 @@ function extract(startPat) {
   return src.slice(i + 1, k + 1);
 }
 const code = extract("function renderUnitDetail(");
+// 🖼 UNITDRAWN: the tile asks the real picture chain (unitCardFace → _mastVisNorm …), so those helpers are loaded for real.
+const lineOf = (needle) => { const s = src.indexOf(needle); return src.slice(s, src.indexOf("\n", s) + 1); };
+const picCode = lineOf("function _mastVisNorm(") + lineOf("function mastItemStampVisual(") + src.slice(src.indexOf("// UNITDRAWN_START"), src.indexOf("// UNITDRAWN_END"));
 function render(u, mom) {
   const stubs = `const ROSTER=["lincoln","ellis","lucy","julian"]; function momHere(){ return ${!!mom}; }
     function cap(s){ return s; } function unitCardStatus(){ return {lbl:"",c:"#ccc"}; }
@@ -29,7 +32,7 @@ function render(u, mom) {
   // Any helper this screen calls that the test doesn't care about (mom lock, plan rows, sprint chips…)
   // resolves to a no-op returning "" — real JS globals (Object, JSON, String…) pass straight through.
   const shim = new Proxy({}, { has: (t, k) => typeof k === "string" && !(k in globalThis), get: (t, k) => (k === Symbol.unscopables ? undefined : () => "") });
-  return new Function("SHIM", "with(SHIM){\n" + stubs + "\n" + code + "\nreturn renderUnitDetail;\n}")(shim)(u);
+  return new Function("SHIM", "with(SHIM){\n" + stubs + "\n" + picCode + "\n" + code + "\nreturn renderUnitDetail;\n}")(shim)(u);
 }
 const text = h => h.replace(/<[^>]+>/g, "|");
 const heads = h => [...h.matchAll(/color:#2d6a4f;margin:12px 0 6px[^>]*>([^<]*) <span[^>]*>· (\d+)</g)].map(m => [m[1], +m[2]]);

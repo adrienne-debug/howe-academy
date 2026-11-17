@@ -49743,6 +49743,45 @@ try{ if(/[?&]workbook=/.test(location.search)) window.addEventListener("load",()
 // ── GENERIC UNIT PAGES: any unit → status page, tap-to-read bio, printed insert ──
 function haKidUnits(kid){ const out=[]; if(typeof unitStudies==="undefined"||!unitStudies) return out; for(const id in unitStudies){ const u=unitStudies[id]; if(u&&u.id&&u.enrolled&&u.enrolled[kid]) out.push(u); } return out; }
 function _unitCharDeck(u){ return (u.decks||[]).find(d=>d&&d.groupBy)||(u.decks||[])[0]||null; }
+// UNITDRAWN_START — her rule 2026-11-16: "It needs to show in the units page what it is going to show on the actual drills
+// and study sessions for all units … if someone uploads something into units, that needs to be able to be shown." (Her
+// report: every Geography Path tile showed the unit's 🌍 — its pictures are code-drawn {svg}, in memory only, and the Units
+// tile and the Mom card sheet only knew a photo or an emoji. A family's earlier report, 2026-11-08, was the reverse case —
+// UNITPIC made the cards read the unit's picture live.) The Units page now asks the SAME chain the kids' cards use
+// (mastLiveVisual → mastItemVis), minus the one per-kid step it can't show for everyone at once:
+//   1. the unit's own picture — a photo Mom uploaded (the first one of several), an emoji, or a code-drawn picture;
+//   2. else the picture stamped on an enrolled kid's own card (what his card falls back to when the unit has none);
+//   3. else the built-in drawing the drill card draws by name: an animal emoji, a colour swatch, a shape.
+// A kid's own picture (mastery/<kid>_visuals, set from the Mastery page) still wins on HIS cards — the card sheet says
+// so by name, so an upload here never silently misses him. Display only: nothing here writes.
+function unitDrawnPic(v){ return (v&&typeof v==="object"&&!v.imageUrl&&typeof v.svg==="string"&&v.svg)?v.svg:""; }
+const _ucfIdx=new WeakMap();   // one subject|prompt → item index per kid's card list (rebuilt when the list object changes)
+function _ucfItem(kid,deckKey,name){
+  const L=(typeof masteryData!=="undefined"&&masteryData)?masteryData[kid]:null; if(!L||typeof L!=="object") return null;
+  let ix=_ucfIdx.get(L); if(!ix){ ix=new Map(); (Array.isArray(L)?L:Object.values(L)).forEach(it=>{ if(it&&it.subject!=null&&it.prompt!=null){ const k=it.subject+"\u0001"+it.prompt; if(!ix.has(k)) ix.set(k,it); } }); _ucfIdx.set(L,ix); }
+  return ix.get(deckKey+"\u0001"+name)||null;
+}
+function unitCardFace(u,deckKey,name){
+  const v=((u&&u.visuals)||{})[deckKey+"_"+name];
+  const shared=(typeof _mastVisNorm==="function")?_mastVisNorm(v,"unit"):null;
+  if(shared) return shared;
+  const kids=Object.keys((u&&u.enrolled)||{}).filter(k=>u.enrolled[k]);
+  for(const k of kids){ const f=(typeof mastItemStampVisual==="function")?mastItemStampVisual(_ucfItem(k,deckKey,name)):null; if(f) return f; }
+  if(typeof MAST_ANIMAL_EMOJI!=="undefined"&&MAST_ANIMAL_EMOJI[name]) return {emoji:MAST_ANIMAL_EMOJI[name],from:"builtin"};
+  if(deckKey==="Colors"&&typeof MAST_COLOR_MAP!=="undefined"&&MAST_COLOR_MAP[name]) return {html:'<div style="width:62%;height:62%;border-radius:50%;background:'+MAST_COLOR_MAP[name]+';border:1.5px solid '+(typeof mastColorBorder==="function"?mastColorBorder(name):"rgba(0,0,0,0.1)")+'"></div>',from:"builtin"};
+  if(deckKey==="Shapes"&&typeof mastShapeVis==="function"){ const h=mastShapeVis(name,26); if(h) return {html:h,from:"builtin"}; }
+  return null;
+}
+function unitFaceHTML(f,px,radius,border){
+  const e=x=>String(x==null?"":x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+  const box='width:'+px+'px;height:'+px+'px;border-radius:'+radius+'px;border:'+border+';';
+  if(f&&f.img){ const drawn=/^data:image\/svg/i.test(f.img); return '<img src="'+e(f.img)+'" alt="" style="'+box+'object-fit:'+(drawn?'contain;background:#fff':'cover')+';display:block">'; }
+  const inner=(f&&f.emoji)?e(f.emoji):((f&&f.html)||"");
+  return '<div style="'+box+'background:#faf7f2;display:flex;align-items:center;justify-content:center;font-size:'+Math.round(px*0.5)+'px;overflow:hidden">'+inner+'</div>';
+}
+// Enrolled kids whose own picture (mastery/<kid>_visuals) shows on this card instead of the unit's.
+function unitOwnPicKids(u,key){ return Object.keys((u&&u.enrolled)||{}).filter(k=>u.enrolled[k]&&typeof masteryData!=="undefined"&&masteryData&&masteryData[k+"_visuals"]&&masteryData[k+"_visuals"][key]); }
+// UNITDRAWN_END
 function _unitPortrait(u,kid,deckKey,name){ const vis=Object.assign({}, u.visuals||{}, masteryData[kid+"_visuals"]||{}); const v=vis[deckKey+"_"+name]; if(v){ if(typeof v==="string") return {emoji:v}; if(v.imageUrl) return {img:v.imageUrl}; if(v.svg) return {img:v.svg}; } return null; }   // 🌍 GEOPATH: .svg = a code-drawn picture (geo.js), in memory only
 // Insight for the notebook insert (learning/learned/next + extras), generic over units.
 function haBuildUnitInsight(kid,u){
@@ -51998,7 +52037,7 @@ function renderUnitDetail(u){
     _gCards[_g].forEach(c=>{
       const vv=(u.visuals||{})[d.key+"_"+c.name];
       let thumb='<div style="width:46px;height:46px;border-radius:7px;border:1px solid var(--border);background:#faf7f2;display:flex;align-items:center;justify-content:center;font-size:22px">'+esc(u.emoji||"👑")+'</div>';  // no photo → the unit's own emoji
-      if(vv){ if(typeof vv==="string") thumb='<div style="width:46px;height:46px;border-radius:7px;border:1px solid var(--border);background:#faf7f2;display:flex;align-items:center;justify-content:center;font-size:24px">'+vv+'</div>'; else if(vv.imageUrl) thumb='<img src="'+esc(vv.imageUrl)+'" style="width:46px;height:46px;object-fit:cover;border-radius:7px;border:1px solid var(--border)">'; }
+      { const _f=unitCardFace(u,d.key,c.name); if(_f) thumb=unitFaceHTML(_f,46,7,'1px solid var(--border)'); }   // UNITDRAWN: the same picture the kids' cards show
       const _enr=Object.keys(u.enrolled||{}).filter(k=>(u.enrolled||{})[k]);
       let _dots=''; _enr.forEach(k=>{ const st=unitCardStatus(k,d.key,c.name); _dots+='<span title="'+esc(cap(k))+': '+st.lbl+'" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+st.c+';margin:0 1px"></span>'; });
       const _tap=isMom?('unitEditCard(\''+u.id+'\',\''+esc(d.key)+'\','+(c.order||0)+')'):('showUnitCardBio(\''+u.id+'\',\''+esc(d.key)+'\','+(c.order||0)+')');
@@ -52791,8 +52830,12 @@ function _unitEditOverlay(){
   const key=deck.key+"_"+card.name;
   const existing=(u.visuals||{})[key];
   const cur=unitEdit.newImg || (existing&&typeof existing==="object"&&existing.imageUrl) || null;
+  const _f=cur?null:unitCardFace(u,deck.key,card.name);   // UNITDRAWN: no photo → what the kids' cards show (drawn, emoji, built-in)
   const face=cur ? '<img src="'+esc(cur)+'" style="width:96px;height:96px;object-fit:cover;border-radius:12px;border:2px solid #b7e4c7">'
+    : _f ? unitFaceHTML(_f,96,12,'2px solid #b7e4c7')
     : '<div style="width:96px;height:96px;border-radius:12px;border:2px solid #b7e4c7;background:#f2faf5;display:flex;align-items:center;justify-content:center;font-size:48px">'+esc(u.emoji||"👑")+'</div>';
+  const _own=unitOwnPicKids(u,key);   // UNITDRAWN: a kid's own picture beats the unit's on his cards — say so
+  const _ownNote=_own.length?'<div style="font-size:10.5px;color:#b45309;margin-top:6px;line-height:1.4">🧒 '+esc(_own.map(k=>cap(k)).join(", "))+(_own.length>1?" have":" has")+' a picture of '+(_own.length>1?"their":"their")+' own on this card (set on the Mastery page) — that one shows on '+(_own.length>1?"their":"their")+' cards, not this.</div>':'';
   const _enr=Object.keys(u.enrolled||{}).filter(k=>(u.enrolled||{})[k]);
   let statusHtml="";
   if(_enr.length){
@@ -52808,7 +52851,7 @@ function _unitEditOverlay(){
     statusHtml+
     '<div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:12px">'+face+
       '<div style="flex:1"><label style="display:inline-block;padding:8px 14px;border-radius:9px;border:1.5px dashed #2d6a4f;background:#f2faf5;color:#2d6a4f;font-size:12px;font-weight:700;cursor:pointer">📷 '+(cur?"Change photo":"Add photo")+'<input type="file" accept="image/*" onchange="unitEditPhoto(this)" style="display:none"></label>'+
-      '<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.4">Shows on the drill card, the Royal Line page &amp; the printed notebook — for every kid using this unit.</div>'+(typeof unitMorePicsHtml==="function"?unitMorePicsHtml(u,key,cur):"")+'</div></div>'+   // UNITMULTIPIC: ＋ another picture
+      '<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.4">Shows on the drill card, the Royal Line page &amp; the printed notebook — for every kid using this unit.</div>'+_ownNote+(typeof unitMorePicsHtml==="function"?unitMorePicsHtml(u,key,cur):"")+'</div></div>'+   // UNITMULTIPIC: ＋ another picture
     '<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:4px">🎯 Drill card — the facts he’s quizzed on <span style="font-weight:500;color:var(--muted)">(the flip answer)</span></div>'+
     '<textarea id="unit-edit-def" style="width:100%;box-sizing:border-box;min-height:64px;padding:9px 11px;border:1.5px solid var(--border);border-radius:9px;font-size:13px;font-family:\'DM Sans\',sans-serif;line-height:1.5;margin-bottom:12px">'+esc(card.def||"")+'</textarea>'+
     '<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:4px">📖 Bio / story <span style="font-weight:500;color:var(--muted)">(the longer read)</span></div>'+
@@ -67808,6 +67851,9 @@ function mastLiveVisual(it,kid){
   if(typeof mastGetVisual==="function"){ const _mk=masteryKid; if(kid) masteryKid=kid; try{ v=mastGetVisual(it.subject,it.prompt); }catch(e){ v=null; } finally{ masteryKid=_mk; } }
   return _mastVisNorm(v,"live")||_mastVisNorm(it.imageUrl?{imageUrl:it.imageUrl}:it.emoji,"item");
 }
+// The picture stamped on the item itself (imageUrl / emoji) — mastLiveVisual's last fallback, asked on its own by UNITDRAWN
+// for a unit card with no picture of its own, so the Units page shows what the kid's card falls back to.
+function mastItemStampVisual(it){ return it?_mastVisNorm(it.imageUrl?{imageUrl:it.imageUrl}:it.emoji,"item"):null; }
 function mastLiveImg(it,kid){ const lv=mastLiveVisual(it,kid); return (lv&&lv.img)||""; }
 // UNITPIC_END
 // Flip "face" mode for a deck: "desc" (name+pic front → description back, default)
@@ -77372,6 +77418,7 @@ function mastAdminBankCatHtml(cat,allNames,status,opts){
       let vis='<span style="font-size:18px;color:#9ca3af">+</span>';
       if(avVis&&typeof avVis==="string") vis='<span style="font-size:18px;opacity:0.4">'+avVis+'</span>';
       else if(avVis&&avVis.imageUrl) vis='<img src="'+avVis.imageUrl+'" style="width:22px;height:22px;border-radius:4px;object-fit:cover;opacity:0.5">';
+      else if(unitDrawnPic(avVis)) vis='<img src="'+unitDrawnPic(avVis)+'" alt="" style="width:22px;height:22px;border-radius:4px;object-fit:contain;background:#fff;opacity:0.6">';   // UNITDRAWN
       else if((cat==="Animals"||cat==="Dinosaurs")&&MAST_ANIMAL_EMOJI[name]) vis='<span style="font-size:18px;opacity:0.4">'+MAST_ANIMAL_EMOJI[name]+'</span>';
       else if(cat==="Colors"&&MAST_COLOR_MAP[name]) vis='<div style="width:22px;height:22px;border-radius:50%;background:'+MAST_COLOR_MAP[name]+';opacity:0.35;margin:0 auto;border:1px solid '+mastColorBorder(name)+'"></div>';
       else if(cat==="Shapes") vis='<span style="font-size:18px;opacity:0.35">'+mastShapeVis(name,12)+'</span>';
@@ -77575,6 +77622,7 @@ function mastAdminVisualHtml(){
     h+='<div style="text-align:center;font-size:48px;margin:10px 0">';
     if(curVis&&typeof curVis==="string") h+=curVis;
     else if(curVis&&curVis.imageUrl) h+='<img src="'+curVis.imageUrl+'" style="width:64px;height:64px;border-radius:12px;object-fit:cover">';
+    else if(unitDrawnPic(curVis)) h+='<img src="'+unitDrawnPic(curVis)+'" alt="" style="width:64px;height:64px;border-radius:12px;object-fit:contain;background:#fff">';   // UNITDRAWN
     else{ const ai=MAST_ANIMAL_EMOJI[vk.name]; if(ai) h+=ai; else h+='<span style="color:#d1d5db">\u{2014}</span>'; }
     h+='</div>';
     if(curVis) h+='<div style="text-align:center;margin-bottom:10px"><button class="mast-img-btn" onclick="mastVisEditSet(null)" style="color:#dc2626">\u{2715} Remove Visual</button></div>';
