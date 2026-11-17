@@ -14469,17 +14469,11 @@ function hdParentTick(who,key,on){ try{ const t=_todayStr(), r=hdLive(t); if(!r)
   if(on&&!d0){ const rec={who:who,ts:nowTs(),at:Date.now(),pts:0,bid:null,prev:{lastDone:j.lastDone||null,lastBy:j.lastBy||null,doneN:j.doneN||0,kidRun:j.kidRun||0}}; r.done[id]=rec; upd[P]=rec; hdStamp(id,t,who,upd); hdOwnerMark(id,t,true,who); }
   else if(!on&&d0){ delete r.done[id]; upd[P]=null; hdUnstamp(id,t,d0,upd); hdOwnerMark(id,t,false,who); } else return;
   const b=slBefore(); householdOnValue(householdData); if(_hdWrite()) db.ref().update(upd); slSaveChanged(activeWk(),b); }catch(e){} }
-// ── the doors (§4.3): → Give to…, Kid Off, 🔁 Re-lay today, and the "Re-lay today too / Keep today" question ──
+// ── the doors (§4.3): Kid Off here (it must run without house.js); → Give to…, 🔁 Re-lay today and the "Re-lay today too / Keep today"
+// question are Mom's taps on 👤 By person, so they live in house.js (HOUSESWITCH) ──
 function hdMom(){ return typeof momHere!=="function"||momHere(); }
 function hdUsed(r,skipId){ const u={}; Object.keys(r.plan||{}).forEach(function(id){ if(id===skipId) return; const p=r.plan[id]; u[p.who]=(u[p.who]||0)+(p.mins||0); }); return u; }
 function hdLimitOn(who,iso){ const P=hdPeople()[who]; if(!P) return 0; return _hhDow(iso)>=5?P.weekend:P.school; }
-// → Give to… a chore on today's plan (or one that fit nobody) — only to someone ticked on its card. One plan path (+ the over path).
-function hdGive(iso,id,who){ if(!hdMom()) return null; const r=hdLive(iso), j=hhJobs()[id]; if(!r||!j||hdDone(iso,id)) return null;
-  if(HouseEng.canOf(j,hdPeople()).indexOf(who)<0) return null; const p=(r.plan||{})[id], o=(r.over||{})[id]; if(!p&&!o) return null;
-  const mx=Object.keys(r.plan||{}).filter(function(x){ return r.plan[x].who===who; }).reduce(function(a,x){ return Math.max(a,(r.plan[x].order||0)+1); },0);
-  const rec=p?Object.assign({},p,{who:who,order:mx,why:"given"}):{who:who,mins:o.mins,order:mx,why:"given",late:o.late||0,k:o.k,since:o.since}; const from=p?(p.from||p.who):o.turn; if(from&&from!==who) rec.from=from; else delete rec.from;
-  r.plan=Object.assign({},r.plan); r.plan[id]=rec; const upd={}; upd["houseDay/"+iso+"/plan/"+id]=rec; if(o){ r.over=Object.assign({},r.over); delete r.over[id]; upd["houseDay/"+iso+"/over/"+id]=null; }
-  _hdM={}; try{ hhMaterialize(); }catch(e){} if(_hdWrite()) db.ref().update(upd); if(typeof renderAll==="function") renderAll(); return rec; }
 // 😷 Kid Off (§4.3): a kid marked off today has their unstarted house chores handed out again — each to the person ticked on its card
 // with the most minutes left today, else onto "fit nobody" (first in line tomorrow). Run on Mom's device; idempotent.
 function hdSweepOff(iso){ const r=hdLive(iso); if(!r||!_hdWrite()) return 0; const J=hhJobs(), P=hdPeople(), upd={}; let n=0;
@@ -14489,21 +14483,6 @@ function hdSweepOff(iso){ const r=hdLive(iso); if(!r||!_hdWrite()) return 0; con
     if(best){ const rec=Object.assign({},p,{who:best,why:"moved",from:p.from||p.who}); r.plan[id]=rec; upd["houseDay/"+iso+"/plan/"+id]=rec; }
     else { delete r.plan[id]; r.over=Object.assign({},r.over); r.over[id]={turn:p.who,mins:p.mins,k:p.k,late:p.late||0,since:p.since||iso}; upd["houseDay/"+iso+"/plan/"+id]=null; upd["houseDay/"+iso+"/over/"+id]=r.over[id]; } });
   if(n){ _hdM={}; try{ hhMaterialize(); }catch(e){} db.ref().update(upd); if(typeof renderAllSoon==="function") renderAllSoon(); } return n; }
-// 🔁 Re-lay today (Mom; also "Re-lay today too"): everything not done is handed out again from the same rules; done chores stay where
-// they are and their minutes still count. Writes only the plan / over paths that change, plus built/sig.
-function hdRelay(iso){ if(!hdMom()) return null; const r=hdLive(iso); if(!r) return null; const P=hdPeople(), done={}, upd={}, B="houseDay/"+iso+"/";
-  Object.keys(r.plan||{}).forEach(function(id){ if(hdDone(iso,id)) done[id]=r.plan[id]; });
-  const ov=hdOv(iso,done), u={}; Object.keys(done).forEach(function(id){ u[done[id].who]=(u[done[id].who]||0)+(done[id].mins||0); });
-  Object.keys(P).forEach(function(w){ P[w]=Object.assign({},P[w],{school:Math.max(0,P[w].school-(u[w]||0)),weekend:Math.max(0,P[w].weekend-(u[w]||0))}); });
-  const s=hdShape(HouseEng.day({jobs:hhJobs()},iso,P,ov)), plan=Object.assign({},done), base={}; Object.keys(done).forEach(function(id){ base[done[id].who]=Math.max(base[done[id].who]||0,(done[id].order||0)+1); });
-  Object.keys(s.plan).forEach(function(id){ const x=s.plan[id]; x.order=(x.order||0)+(base[x.who]||0); plan[id]=x; });
-  Object.keys(Object.assign({},r.plan,plan)).forEach(function(id){ if(JSON.stringify((r.plan||{})[id]||null)!==JSON.stringify(plan[id]||null)) upd[B+"plan/"+id]=plan[id]||null; });
-  Object.keys(Object.assign({},r.over,s.over)).forEach(function(id){ if(JSON.stringify((r.over||{})[id]||null)!==JSON.stringify(s.over[id]||null)) upd[B+"over/"+id]=s.over[id]||null; });
-  upd[B+"built/sig"]=hdSig(); upd[B+"keep"]=null; r.plan=plan; r.over=s.over; r.built=Object.assign({},r.built,{sig:upd[B+"built/sig"]}); delete r.keep;
-  _hdM={}; try{ hhMaterialize(); }catch(e){} if(_hdWrite()) db.ref().update(upd); if(typeof renderAll==="function") renderAll(); return upd; }
-// A chore card, a limit or a list changed after today was laid → Mom is asked once: "Re-lay today too / Keep today, start tomorrow".
-function hdAsking(iso){ const r=hdLive(iso); if(!r||!hdMom()) return false; const s=hdSig(); return !!(r.built&&r.built.sig&&r.built.sig!==s&&r.keep!==s); }
-function hdKeep(iso){ if(!hdMom()) return; const r=hdLive(iso); if(!r) return; r.keep=hdSig(); if(_hdWrite()) db.ref("houseDay/"+iso+"/keep").set(r.keep); if(typeof renderAll==="function") renderAll(); }
 // 🌅 SENDAM with a plan row (§12): sent and finished by chore id — amCarry/<kid>/<fromIso>_<a|c|e>h_<id> (rec.house = id) — writing
 // the same three records: the carry's done, the chore's done on the day it was due (houseDay/<fromIso>/done/<id>, with pts + bid +
 // am:<iso>, last-done and counters), and the routineLog "on" line under that day. A carry opened before switch-on keeps its

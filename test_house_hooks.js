@@ -122,6 +122,7 @@ console.log("\n── 4. school first ──");
 
 console.log("\n── 5. the doors ──");
 { const w=await W.world({mode:"on"}); const A=w.boot("A","devA",{mom:true}), B=w.boot("B","devB"); await w.flush(); await w.at(2026,11,16,8,0);
+  A.run(HJS); B.run(HJS);   // Give to…, Re-lay and the question are Mom's taps on the Household page (house.js)
   ok("→ Give to… someone not ticked on the card is refused", A.run("hdGive('"+MON+"','c_c_beds','kid_a')")===null);
   const g=A.run("hdGive('"+MON+"','c_a_dishes','kid_b')"); await w.flush();
   ok("→ Give to… kid_b (ticked on the card): one plan path, from kid_a", g&&w.get("houseDay/"+MON+"/plan/c_a_dishes/who")==="kid_b"&&w.get("houseDay/"+MON+"/plan/c_a_dishes/from")==="kid_a");

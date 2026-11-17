@@ -714,6 +714,29 @@ function hpOnHTML(who){
   if(over.length) h+='<div style="'+HP_HEAD+';border-top:2px solid #fde68a;padding-top:8px">Didn’t fit anyone today ('+over.length+') — first in line tomorrow</div>'+over.map(function(id){ const o=r.over[id], j=J[id]; return hpRow(id,j.emoji,j.label,_hhChip(hhWhoName(o.turn)+'’s turn','#f3f4f6','#475569')+_hhChip(o.mins+' min','#f3f4f6','#475569')+(mom?'<span onclick="event.stopPropagation()">'+hpGiveSel(t,id,"")+'</span>':'')); }).join('');
   return h+'<div style="height:6px"></div></div>';
 }
+// The doors only Mom taps here (DESIGN §4.3), on HOUSEDAY's stored day (index.html).
+// → Give to… a chore on today's plan (or one that fit nobody) — only to someone ticked on its card. One plan path (+ the over path).
+function hdGive(iso,id,who){ if(!hdMom()) return null; const r=hdLive(iso), j=hhJobs()[id]; if(!r||!j||hdDone(iso,id)) return null;
+  if(HouseEng.canOf(j,hdPeople()).indexOf(who)<0) return null; const p=(r.plan||{})[id], o=(r.over||{})[id]; if(!p&&!o) return null;
+  const mx=Object.keys(r.plan||{}).filter(function(x){ return r.plan[x].who===who; }).reduce(function(a,x){ return Math.max(a,(r.plan[x].order||0)+1); },0);
+  const rec=p?Object.assign({},p,{who:who,order:mx,why:"given"}):{who:who,mins:o.mins,order:mx,why:"given",late:o.late||0,k:o.k,since:o.since}; const from=p?(p.from||p.who):o.turn; if(from&&from!==who) rec.from=from; else delete rec.from;
+  r.plan=Object.assign({},r.plan); r.plan[id]=rec; const upd={}; upd["houseDay/"+iso+"/plan/"+id]=rec; if(o){ r.over=Object.assign({},r.over); delete r.over[id]; upd["houseDay/"+iso+"/over/"+id]=null; }
+  _hdM={}; try{ hhMaterialize(); }catch(e){} if(_hdWrite()) db.ref().update(upd); if(typeof renderAll==="function") renderAll(); return rec; }
+// 🔁 Re-lay today (Mom; also "Re-lay today too"): everything not done is handed out again from the same rules; done chores stay where
+// they are and their minutes still count. Writes only the plan / over paths that change, plus built/sig.
+function hdRelay(iso){ if(!hdMom()) return null; const r=hdLive(iso); if(!r) return null; const P=hdPeople(), done={}, upd={}, B="houseDay/"+iso+"/";
+  Object.keys(r.plan||{}).forEach(function(id){ if(hdDone(iso,id)) done[id]=r.plan[id]; });
+  const ov=hdOv(iso,done), u={}; Object.keys(done).forEach(function(id){ u[done[id].who]=(u[done[id].who]||0)+(done[id].mins||0); });
+  Object.keys(P).forEach(function(w){ P[w]=Object.assign({},P[w],{school:Math.max(0,P[w].school-(u[w]||0)),weekend:Math.max(0,P[w].weekend-(u[w]||0))}); });
+  const s=hdShape(HouseEng.day({jobs:hhJobs()},iso,P,ov)), plan=Object.assign({},done), base={}; Object.keys(done).forEach(function(id){ base[done[id].who]=Math.max(base[done[id].who]||0,(done[id].order||0)+1); });
+  Object.keys(s.plan).forEach(function(id){ const x=s.plan[id]; x.order=(x.order||0)+(base[x.who]||0); plan[id]=x; });
+  Object.keys(Object.assign({},r.plan,plan)).forEach(function(id){ if(JSON.stringify((r.plan||{})[id]||null)!==JSON.stringify(plan[id]||null)) upd[B+"plan/"+id]=plan[id]||null; });
+  Object.keys(Object.assign({},r.over,s.over)).forEach(function(id){ if(JSON.stringify((r.over||{})[id]||null)!==JSON.stringify(s.over[id]||null)) upd[B+"over/"+id]=s.over[id]||null; });
+  upd[B+"built/sig"]=hdSig(); upd[B+"keep"]=null; r.plan=plan; r.over=s.over; r.built=Object.assign({},r.built,{sig:upd[B+"built/sig"]}); delete r.keep;
+  _hdM={}; try{ hhMaterialize(); }catch(e){} if(_hdWrite()) db.ref().update(upd); if(typeof renderAll==="function") renderAll(); return upd; }
+// A chore card, a limit or a list changed after today was laid → Mom is asked once: "Re-lay today too / Keep today, start tomorrow".
+function hdAsking(iso){ const r=hdLive(iso); if(!r||!hdMom()) return false; const s=hdSig(); return !!(r.built&&r.built.sig&&r.built.sig!==s&&r.keep!==s); }
+function hdKeep(iso){ if(!hdMom()) return; const r=hdLive(iso); if(!r) return; r.keep=hdSig(); if(_hdWrite()) db.ref("houseDay/"+iso+"/keep").set(r.keep); if(typeof renderAll==="function") renderAll(); }
 // HOUSESWITCH_END
 // ── end of house.js — the flag below tells index.html the whole file ran (haLazyReady) ──
 if(typeof window!=="undefined") window._haLazy_house=true;
