@@ -155,7 +155,8 @@ console.log("\n── only the Household tab reaches the preview ──");
   const P=require("./perf_budget_measure.js"), cm=P.scanJs(RAW).cm;   // comments and strings blanked by the same scanner the perf guard uses
   const L=cm.split("\n");
   const enclosing=i=>{ for(let k=i;k>=0;k--){ const m=/^\s*(?:async\s+)?function\s+([\w$]+)\s*\(/.exec(L[k]); if(m) return m[1]; if(/^(const|let) HA_LAZY_FILES|^function haLazyReady/.test(L[k])) return "LAZYSPLIT"; } return "?"; };
-  const hpNames=[...new Set([...HJS.matchAll(/^(?:function\s+([\w$]+)|(?:const|let)\s+([\w$]+))/gm)].map(m=>m[1]||m[2]))];
+  const hpNames=[...new Set([...HJS.slice(HJS.indexOf("// HOUSEENG_START"),HJS.indexOf("// HOUSEPREVIEW_END")).matchAll(/^(?:function\s+([\w$]+)|(?:const|let)\s+([\w$]+))/gm)].map(m=>m[1]||m[2]))];
+  // ↑ the preview's own blocks (step 3). The Household page code HOUSESLIM moved into house.js has its own door and its own check (test_house_slim.js).
   const glue=["hhEngineMode","hhHouseReady","hhHouseLoadingHTML","hhRoomFuture","hhRoomsTailHTML","hhPersonDoor","hhEngineTap"];
   const allowed=new Set(["renderHousehold","hhRoomGridHTML","hhRoomsPageHTML","_hhRmSq","haLazyReady","LAZYSPLIT"].concat(glue));
   const bad=[]; L.forEach((l,i)=>{ hpNames.concat(glue).forEach(n=>{ if(new RegExp("(^|[^\\w$.])"+n.replace(/\$/g,"\\$")+"\\s*\\(").test(l)&&!new RegExp("function\\s+"+n+"\\s*\\(").test(l)){ const f=enclosing(i); if(!allowed.has(f)) bad.push((i+1)+" "+n+" in "+f); } }); });
@@ -163,7 +164,7 @@ console.log("\n── only the Household tab reaches the preview ──");
   const eng=[]; RAW.split("\n").forEach((l,i)=>{ if(/meta\.engine|meta&&householdData\.meta\.engine|household\/meta\/engine/.test(l.replace(/\/\/.*$/,""))){ const f=enclosing(i); if(f!=="hhEngineMode") eng.push((i+1)+" "+f); } });
   ok("index.html reads household/meta/engine in one place only (hhEngineMode)", eng.length===0, eng);
   ok("renderHousehold is the Household tab's renderer (its banner and subnav are the Household ones)", /mpSubnav\('house'\)/.test(fnOf(RAW)("renderHousehold")));
-  ok("haLazyLoad(\"house\") is asked only by the glue (hhHouseReady, hhEngineTap)", [...RAW.matchAll(/haLazyLoad\("house"\)/g)].length===2&&/haLazyLoad\("house"\)/.test(fnOf(RAW)("hhHouseReady"))&&/haLazyLoad\("house"\)/.test(fnOf(RAW)("hhEngineTap")));
+  ok("haLazyLoad(\"house\") is asked only by the glue (hhHouseReady, hhEngineTap) and HOUSESLIM's page door (hhSlimReady)", [...RAW.matchAll(/haLazyLoad\("house"\)/g)].length===3&&/haLazyLoad\("house"\)/.test(fnOf(RAW)("hhSlimReady"))&&/haLazyLoad\("house"\)/.test(fnOf(RAW)("hhHouseReady"))&&/haLazyLoad\("house"\)/.test(fnOf(RAW)("hhEngineTap")));
   ok("the kids' lists, the Mom loop, check-offs and the cleaning-day plan don't mention any of it", ["rtStepsFor","hhDeriveKids","hhDerivePerson","hhSyncKids","rtCfgSave","hhPlanBuild","hhPlanCheck","hhMaterialize","momSchedHouse","hhHouseCardHTML"].every(f=>!/hhEngine|hhPeople|hhHouse(Ready|Loading)|hhRoomFuture|hpPeople|HouseEng|house\.js/.test(fnOf(RAW)(f))));
 }
 

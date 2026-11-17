@@ -2,7 +2,7 @@
  * family — another family never sees Lincoln/Ellis/Lucy/Julian (or "Lucy + Julian's room"); Howe's lists come out identical.
  * run: node test_household_roster.js */
 const fs=require("fs"), path=require("path"), vm=require("vm");
-const src=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
+const src=require("./test_src.js")();   // 🪶 HOUSESLIM: the joined page — house.js's blocks back at their markers
 let pass=0, fail=0; const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  ("+JSON.stringify(x).slice(0,300)+")":"")); } };
 const line=start=>{ const i=src.indexOf(start); if(i<0) throw new Error("missing "+start); return src.slice(i,src.indexOf("\n",i)+1); };
 const stmt=(start,end)=>{ const i=src.indexOf(start); const j=src.indexOf(end,i); if(i<0||j<0) throw new Error("missing "+start); return src.slice(i,j+end.length); };

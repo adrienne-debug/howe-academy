@@ -8,7 +8,7 @@
  *                                                                                  run: node test_house_sync_keeps_held.js
  */
 const fs=require("fs"), path=require("path"), vm=require("vm");
-const src=fs.readFileSync(process.env.BASE_HTML||path.join(__dirname,"index.html"),"utf8");
+const src=require("./test_src.js")(process.env.BASE_HTML||undefined);   // 🪶 HOUSESLIM: the joined page — house.js's blocks back at their markers
 let pass=0, fail=0; const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  ("+JSON.stringify(x).slice(0,300)+")":"")); } };
 const fn=name=>{ const i=src.indexOf("function "+name+"("); if(i<0) throw new Error("missing "+name); let d=0; for(let k=src.indexOf("{",i);k<src.length;k++){ if(src[k]==="{") d++; else if(src[k]==="}"&&--d===0) return src.slice(i,k+1); } throw new Error("unbalanced "+name); };
 const cut=(a,b)=>{ const i=src.indexOf(a), j=src.indexOf(b,i); if(i<0||j<0) throw new Error("missing "+a); return src.slice(i,j); };
