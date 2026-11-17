@@ -1937,6 +1937,7 @@ function mStepDoneOn(kid,d,i){ const s=slState[activeWk()+"_"+d+"_"+kid+"_mstep"
 // Morning is complete when every routine step is done. Kids with no routine defined fall back
 // to the legacy single Morning checkbox so nothing breaks.
 function morningComplete(kid,d){
+  if(typeof amBlocks==="function"&&amBlocks(kid,d)) return false;   // SENDAM: a carried-over item is still open
   const steps=morningStepsFor(kid);
   if(!steps.length){ const s=slState[activeWk()+"_"+d+"_"+kid+"_morning"]; return !!(s&&s.done); }
   const _bg=(typeof mealCfg!=="function")||mealCfg().breakfastGate, idx=morningDueIdx(kid,d).filter(i=>_bg||!mealOf("morning",steps[i]));
@@ -1980,21 +1981,22 @@ function toggleMorningStep(kid,i){
 }
 function mrIndividualHTML(kid){
   const steps=morningStepsFor(kid);
+  const _am=(typeof amFor==="function")?amFor(kid,day):[], _amIso=_am.length?amIso(day):null, _amDn=_am.filter(it=>amDoneBy(it,_amIso)).length;   // SENDAM
   if(!steps.length){
-    const s=getSlot(kid,"morning");
-    return '<div class="sl-check-row'+(s.done?" done":"")+'"'+(routineEditable()?' onclick="toggleSlot(\''+kid+'\',\'morning\')"':' style="opacity:.6"')+'>'+
+    const s=getSlot(kid,"morning"), _amH=_am.length?'<div class="mr-steps">'+amRowsHTML(kid,_am,routineEditable())+'</div>':'';   // SENDAM: a kid with no morning steps still sees what was sent, above the Morning box
+    return _amH+'<div class="sl-check-row'+(s.done?" done":"")+'"'+(routineEditable()?' onclick="toggleSlot(\''+kid+'\',\'morning\')"':' style="opacity:.6"')+'>'+
       '<div class="sl-checkbox'+(s.done?" done":"")+'">'+(s.done?"✓":"")+'</div>'+
       '<div><div class="sl-slot-name">Morning</div><div class="sl-slot-sub">'+SL_STIM.morning+'</div>'+
       (s.done&&s.ts?'<div class="sl-slot-ts">Checked '+s.ts+'</div>':'')+'</div></div>';
   }
   const _dueIdx=morningDueIdx(kid,day);
   const _optIdx=steps.map((st,i)=>i).filter(i=>steps[i].cad==="asneeded"&&stepWindowOk(steps[i],day)&&_dueIdx.indexOf(i)<0);   // ✋ shown, optional, paid
-  const doneCount=_dueIdx.filter(i=>mStepDoneOn(kid,day,i)).length;
-  const allDone=_dueIdx.length>0&&doneCount===_dueIdx.length;
+  const doneCount=_dueIdx.filter(i=>mStepDoneOn(kid,day,i)).length+_amDn;   // SENDAM: carried rows count
+  const allDone=(_dueIdx.length+_am.length)>0&&doneCount===_dueIdx.length+_am.length;
   const isOpen=mrOpen[kid]!==false;
   let h='<div class="sl-check-row'+(allDone?" done":"")+'" onclick="toggleMrOpen(\''+kid+'\')" style="cursor:pointer">'+
     '<div class="sl-checkbox'+(allDone?" done":"")+'">'+(allDone?"✓":"")+'</div>'+
-    '<div style="flex:1"><div class="sl-slot-name">Morning <span style="color:var(--muted);font-weight:700">'+doneCount+'/'+_dueIdx.length+'</span></div>'+
+    '<div style="flex:1"><div class="sl-slot-name">Morning <span style="color:var(--muted);font-weight:700">'+doneCount+'/'+(_dueIdx.length+_am.length)+'</span></div>'+
     '<div class="sl-slot-sub">'+((allDone||morningComplete(kid,day))?(gateClockHeld(day)?'✓ Done — school starts at '+fromMin(gateStartMin(day)):'✓ Schedule unlocked'):'Finish all to unlock your schedule')+'</div></div>'+
     '<div style="font-size:14px;color:var(--muted)">'+(isOpen?"▾":"▸")+'</div></div>';
   if(isOpen){
@@ -2002,6 +2004,7 @@ function mrIndividualHTML(kid){
     if(!_ed) h+=routineLockNote();
     h+='<div class="mr-steps"'+(_ed?'':' style="opacity:.6"')+'>';
     let _mHd=false;
+    if(_am.length) h+=amRowsHTML(kid,_am,_ed);   // SENDAM
     _dueIdx.filter(i=>!mealOf("morning",steps[i])).concat(_dueIdx.filter(i=>mealOf("morning",steps[i]))).forEach(i=>{ const st=steps[i], sd=mStepDoneOn(kid,day,i);
       if(!_mHd&&mealOf("morning",st)){ _mHd=true; h+=mealHeadHTML("breakfast",day); }
       const _wl=stepWindowLabel(st);
@@ -2256,6 +2259,235 @@ function mdKidTick(slot,kid,d,i){
   return true;
 }
 // WAVE_END
+// SENDAM_START — 🌅 "AM": Mom sends a kid's unfinished afternoon / chores / evening item to their NEXT MORNING list (her ask
+// 2026-11-15: "at the end of the day … if things did not get done in chores and afternoons and nighttime, for mom to be able to put
+// that on their morning checklist for them to have to do before they can do schoolwork"; and "make sure that it's also connected
+// to its completed history. So that way there's no issues with it not looking done"). Mom's Day / Dad's Day ▸ Kids today ▸ each
+// ☀️ 🧹 🌙 pop-up row gets 🌅 AM beside ✕ today (a second tap takes it back), and the pop-up gets "🌅 Send all N unfinished".
+// Record: amCarry/<kid>/<fromIso>_<a|c|e>step<i> = {slot,i,label,emoji,pts,fromIso,fromWk,fromDay,dueIso,ts,at,by} (+ done
+// {iso,ts,at,pts,bid,src} once checked). Keyed by DATE, so Saturday's item reaches Sunday's list across the week flip. From dueIso
+// (the next calendar day) on, it sits at the top of the kid's Morning list — "Left over — finish these first" — every day until it
+// is done, and morningComplete is false while one is open: the same gate that already holds the schedule (and the Morning-by-10
+// tech rule, the morning light, the ⏱ day start). The list it came from is NOT changed: that row stays as it was, still tickable.
+// DONE IS ONE FACT, written three ways by the same tap (amToggle): (1) the carry's own done; (2) the ORIGINAL step's check-off
+// on the day it was due (<fromWk>/sl/<fromWk>_<fromDay>_<kid>_<x>step<i>, with pts + bid + am:<iso>) — so that day's list, its
+// light, the late ledger and the live streak read it as done; (3) a routineLog "on" line filed under that same day with the step's
+// own slot + label (am:<iso>) — what the Click-off Log, the Household review and the streak history count. The step's own stars
+// are paid when it is checked (her July rule for late chores: full stars, the record shows it); the list / day bonus of the day it
+// was missed is not. An un-check reverses all three and the exact bank entry. Ticking the ORIGINAL row instead (that night, or Mom
+// later) closes the carry too, and un-ticking it re-opens it (amSourceSync). A weekday chore on the morning list is not ALSO shown
+// late on its own list (amCovers). Meal jobs (never carried — her rule 2026-10-02), laundry rows, as-needed and waved rows can't be
+// sent. Sending writes the carry + one log line (act "am"); every write is targeted and ?dryrun=1 writes nothing.
+let amCarry={}, _amIdx={}, _amDb=null;
+function _amToday(){ const n=new Date(); return n.getFullYear()+"-"+String(n.getMonth()+1).padStart(2,"0")+"-"+String(n.getDate()).padStart(2,"0"); }
+function _amIsoAdd(iso,n){ const d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()+n); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+// The calendar date of a day tab of the active week (prevWeek: the same weekday a week earlier). The week meta may date only
+// Mon–Fri, so the rest are counted from Monday — Sunday leads the week, the day before Monday. Unknown → null: callers stay quiet.
+function amIso(dn,prevWeek){
+  let iso=null; try{ iso=(typeof routineDateISO==="function")?routineDateISO(dn):null; }catch(e){}
+  if(!iso){ let mon=null; try{ mon=(typeof routineDateISO==="function")?routineDateISO("monday"):null; }catch(e){} const ix=DAYS_ALL.indexOf(dn); if(!mon||ix<0) return null; iso=_amIsoAdd(mon,ix===6?-1:ix); }
+  return prevWeek?_amIsoAdd(iso,-7):iso;
+}
+// Open carries, plus the ones sent in the last three weeks (the late ledger asks about those) — rebuilt whenever the data changes,
+// so morningComplete, which is asked constantly, walks a short list and usually an empty one.
+function _amReindex(){
+  _amIdx={}; let t=null; try{ t=amIso(_todayDay); }catch(e){} const cut=_amIsoAdd(t||_amToday(),-21);
+  Object.keys(amCarry||{}).forEach(function(kid){ const m=amCarry[kid]||{};
+    _amIdx[kid]=Object.keys(m).filter(function(id){ const r=m[id]; return r&&r.slot&&r.dueIso&&r.fromIso&&(!r.done||r.fromIso>=cut); }).map(function(id){ return Object.assign({id:id},m[id]); }); });
+}
+function amOnValue(v){ amCarry=v||{}; _amReindex(); try{ HA_LS.setItem('ha_amcarry',JSON.stringify(amCarry)); }catch(e){} }
+try{ amCarry=JSON.parse(HA_LS.getItem('ha_amcarry')||"{}")||{}; _amReindex(); }catch(e){}
+function _amWrite(){ return typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
+// One listener per kid, by key from 60 days back (the key starts with the date it was sent) — old finished ones never load.
+function amAttach(){
+  if(typeof db==="undefined"||!db||_amDb===db) return; _amDb=db; const cut=_amIsoAdd(_amToday(),-60);
+  [...ROSTER].forEach(function(kid){ try{ db.ref("amCarry/"+kid).orderByKey().startAt(cut).on("value",function(s){ const m=Object.assign({},amCarry); m[kid]=s.val()||{}; amOnValue(m); if(tab==="moms-plan"||tab==="kids"||tab==="schedule") renderAllSoon(); }); }catch(e){} });
+}
+function amKey(fromIso,slot,i){ return fromIso+"_"+RT_ABBR[slot]+"step"+i; }
+function amList(kid){ return _amIdx[kid]||[]; }
+function amGet(kid,slot,i,fromIso){ const m=(amCarry&&amCarry[kid])||{}; return (fromIso&&m[amKey(fromIso,slot,i)])||null; }
+function amDoneBy(it,iso){ return !!(it&&it.done&&it.done.iso&&(!iso||it.done.iso<=iso)); }
+// The carried items on the kid's Morning list for day tab d: due by then and not finished before it. Oldest first.
+function amFor(kid,d){
+  const L=amList(kid); if(!L.length) return []; const iso=amIso(d||day); if(!iso) return [];
+  return L.filter(function(it){ return it.dueIso<=iso&&!(it.done&&it.done.iso&&it.done.iso<iso); })
+    .sort(function(a,b){ return String(a.fromIso).localeCompare(String(b.fromIso))||(SL_SLOTS.indexOf(a.slot)-SL_SLOTS.indexOf(b.slot))||(a.i-b.i); });
+}
+// Is a carried item still open on day d? → the Morning list is not complete, so the schedule stays locked.
+function amBlocks(kid,d){
+  const L=amList(kid); if(!L.length) return false; const iso=amIso(d||day); if(!iso) return false;
+  return L.some(function(it){ return it.dueIso<=iso&&!(it.done&&it.done.iso&&it.done.iso<=iso); });
+}
+// A weekday chore sent to the morning list on or after the day it came due is the morning list's job — not ALSO late on its own list.
+function amCovers(kid,slot,i,dueIso){ return !!dueIso&&amList(kid).some(function(it){ return it.slot===slot&&it.i===i&&it.fromIso>=dueIso; }); }
+function amFromLbl(it){ try{ return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date(it.fromIso+"T12:00:00").getDay()]||""; }catch(e){ return ""; } }
+function amCanSend(slot,st){ return !!st&&RT_ABBR[slot]!==undefined&&!st.meal&&!st.line&&!st.laundry&&!(typeof laundryStarts==="function"&&laundryStarts(st))&&st.cad!=="asneeded"&&st.cad!=="none"; }
+function _amGrown(){ return (typeof momHere==="function"&&momHere())||(typeof dadAwardOk==="function"&&dadAwardOk()); }   // Mom, or an unlocked Dad — the ✕ today gate
+function _amRedraw(){ const el=(typeof document!=="undefined")?document.getElementById('content'):null; if(typeof tab!=="undefined"&&tab==="moms-plan"&&el&&typeof renderMomsPlan==="function") renderMomsPlan(el); else if(typeof renderAll==="function") renderAll(); }
+function _amLog(kid,wk,dn,rec){
+  let key="rl_"+Date.now()+"_"+Math.floor(Math.random()*1e6);
+  if(db){ try{ const r=db.ref("routineLog/"+kid+"/"+wk+"/"+dn).push(); key=r.key; obSet("routineLog/"+kid+"/"+wk+"/"+dn+"/"+key,rec,null); }catch(e){} }
+  routineLog[kid]=routineLog[kid]||{}; routineLog[kid][wk]=routineLog[kid][wk]||{}; routineLog[kid][wk][dn]=routineLog[kid][wk][dn]||{};
+  routineLog[kid][wk][dn][key]=rec;
+}
+// TODAY's Morning record follows the carries when one is added, taken back or closed from its own list — the same tail as
+// toggleMorningStep (list record, ⏱ day start, 🏁 list bonus, 🏆 day bonus), and only when done-ness actually flips.
+function _amSettleToday(kid){
+  const wk=activeWk(), d=_todayDay, mk=wk+"_"+d+"_"+kid+"_morning", prev=slState[mk], _pd=day;
+  try{ day=d;
+    const all=morningComplete(kid,d); if(!!(prev&&prev.done)===!!all) return;
+    slState[mk]={done:all,ts:all?nowTs():""};
+    if(all&&typeof dsAutoStart==="function") dsAutoStart(kid);
+    rtBonusSettle("morning",kid,wk,d,prev,all,morningDueIdx(kid,d).length);
+    if(typeof rtDayBonusSettle==="function") rtDayBonusSettle(kid,wk,d);
+  } finally { day=_pd; }
+}
+function _amSettleSave(kid){ const b=slBefore(); _amSettleToday(kid); slSaveChanged(activeWk(),b); }
+// 🌅 AM on a pop-up row: put step i of that day's list on the kid's next morning list. A second tap takes it back.
+function amSend(slot,kid,d,i,quiet){
+  if(!_amGrown()) return false;
+  const st=(rtStepsFor(slot,kid,false,d)||[])[i], fromIso=amIso(d); if(!st||!fromIso||!amCanSend(slot,st)) return false;
+  const wk=activeWk(), id=amKey(fromIso,slot,i);
+  if(amCarry[kid]&&amCarry[kid][id]){ const ok=amTakeBack(kid,id,true); if(ok&&!quiet) _amRedraw(); return ok; }
+  if(rtDoneOn(slot,kid,d,i)||(typeof rtWaved==="function"&&rtWaved(slot,kid,d,i))) return false;
+  const by=(typeof momHere==="function"&&!momHere())?"dad":"mom", lk="am_"+RT_ABBR[slot]+"step"+i;
+  const rec={slot:slot,i:i,label:st.label||"",emoji:st.emoji||"",pts:st.pts||0,fromIso:fromIso,fromWk:wk,fromDay:d,dueIso:_amIsoAdd(fromIso,1),ts:nowTs(),at:Date.now(),by:by};
+  const lrec={label:(st.label||"Chore")+" — sent to the next morning by "+(by==="dad"?"Dad":"Mom"),slot:slot,act:"am",ts:rec.ts,at:rec.at,pts:0};
+  amCarry[kid]=amCarry[kid]||{}; amCarry[kid][id]=rec;
+  routineLog[kid]=routineLog[kid]||{}; routineLog[kid][wk]=routineLog[kid][wk]||{}; routineLog[kid][wk][d]=routineLog[kid][wk][d]||{}; routineLog[kid][wk][d][lk]=lrec;
+  if(_amWrite()){ db.ref("amCarry/"+kid+"/"+id).set(rec); db.ref("routineLog/"+kid+"/"+wk+"/"+d+"/"+lk).set(lrec); }
+  amOnValue(amCarry);
+  if(rec.dueIso<=(amIso(_todayDay)||_amToday())) _amSettleSave(kid);   // sent from an earlier day → it is on THIS morning's list now
+  if(!quiet) _amRedraw();
+  return true;
+}
+// Take an open carry off the morning list (the row's second tap, or ✕ take off on the Morning pop-up). A done one stays — un-check it.
+function amTakeBack(kid,id,quiet){
+  if(!_amGrown()) return false;
+  const it=amCarry[kid]&&amCarry[kid][id]; if(!it||it.done) return false;
+  const lk="am_"+RT_ABBR[it.slot]+"step"+it.i;
+  delete amCarry[kid][id]; try{ delete routineLog[kid][it.fromWk][it.fromDay][lk]; }catch(e){}
+  if(_amWrite()){ db.ref("amCarry/"+kid+"/"+id).remove(); db.ref("routineLog/"+kid+"/"+it.fromWk+"/"+it.fromDay+"/"+lk).remove(); }
+  amOnValue(amCarry);
+  if(it.dueIso<=(amIso(_todayDay)||_amToday())) _amSettleSave(kid);
+  if(!quiet) _amRedraw();
+  return true;
+}
+// What "Send all" would send from day d: every open, sendable row of Afternoon, Chores and Evening (a late one rides along).
+function amRest(kid,d){
+  const out=[], fromIso=amIso(d); if(!fromIso) return out;
+  const act=(typeof activeSlots==="function")?activeSlots():SL_SLOTS;
+  ["afternoon","chores","evening"].forEach(function(slot){ if(act.indexOf(slot)<0) return;
+    (rtStepsFor(slot,kid,false,d)||[]).forEach(function(st,i){
+      if(!amCanSend(slot,st)||(typeof stepWindowOk==="function"&&!stepWindowOk(st,d))) return;
+      if(!cadDueOn(st.cad||"daily",d)&&!((typeof mdLateDays==="function")&&mdLateDays(slot,kid,d,i,st)>0)) return;
+      if(rtDoneOn(slot,kid,d,i)||(typeof rtWaved==="function"&&rtWaved(slot,kid,d,i))||amGet(kid,slot,i,fromIso)) return;
+      out.push({slot:slot,i:i}); }); });
+  return out;
+}
+function amSendRest(kid,d){
+  if(!_amGrown()) return 0;
+  const L=amRest(kid,d); if(!L.length) return 0;
+  let n=0; L.forEach(function(x){ if(amSend(x.slot,kid,d,x.i,true)) n++; });
+  if(n&&typeof gwShowToast==="function") gwShowToast("\u{1F305} "+n+" thing"+(n===1?"":"s")+" on "+cap(kid)+"'s next morning list");
+  _amRedraw(); return n;
+}
+// The kid's tap on a carried row of the Morning list (or Mom's, through amMomTick). See the three writes in the header.
+function amToggle(kid,id){
+  if(!routineEditable()){ _rtBlockedToast(); return; }
+  const it=amCarry[kid]&&amCarry[kid][id], iso=amIso(day); if(!it||!iso||!it.dueIso||it.dueIso>iso) return;
+  if(it.done&&!amDoneBy(it,iso)) return;                        // finished on a later day than the tab on screen
+  const now=!it.done, label=it.label||"Chore", wk=activeWk(), _slB=slBefore();
+  if(!now&&it.done.src==="list"){ if(typeof gwShowToast==="function") gwShowToast("That one was checked on the "+(SL_SLBL[it.slot]||it.slot)+" list — un-check it there"); return; }
+  const sk=it.fromWk+"_"+it.fromDay+"_"+kid+"_"+RT_ABBR[it.slot]+"step"+it.i;
+  const smap=(it.fromWk===wk)?slState:((typeof prevSlState!=="undefined"&&prevSlState&&typeof _prevWkKey==="function"&&it.fromWk===_prevWkKey())?prevSlState:null);
+  if(now&&smap&&smap[sk]&&smap[sk].done){                       // the original row is already ticked: close the carry, pay nothing twice
+    it.done={iso:iso,ts:nowTs(),at:Date.now(),src:"list"};
+    if(_amWrite()) db.ref("amCarry/"+kid+"/"+id+"/done").set(it.done);
+  } else {
+    const paid=now?(it.pts||0):((it.done.pts!=null)?it.done.pts:(it.pts||0)), full=(it.emoji?it.emoji+" ":"")+label; let bid=null;
+    if(paid>0){
+      if(now) bid=bankDirect(kid,paid,"\u{1F305} "+full+" (from "+amFromLbl(it)+")",(typeof choreVerifyOn==="function"&&choreVerifyOn(kid)));
+      else if(it.done.bid){ if(!(typeof cuUnpay==="function"&&cuUnpay(kid,it.done.bid,label))) bankDirectRemove(kid,it.done.bid); }
+      else bankDirect(kid,-paid,"↩ unchecked: "+label);
+    }
+    const by=(typeof _spBy==="function")?_spBy():null, ts=nowTs();
+    const srec=now?{done:true,ts:ts,pts:paid,bid:bid||null,am:iso}:{done:false,ts:"",pts:null,bid:null}; if(now&&by) srec.by=by;
+    if(now){ it.done={iso:iso,ts:ts,at:Date.now(),pts:paid,bid:bid||null,src:"am"}; if(by) it.done.by=by; } else delete it.done;
+    if(_amWrite()){ if(now) db.ref("amCarry/"+kid+"/"+id+"/done").set(it.done); else db.ref("amCarry/"+kid+"/"+id+"/done").remove(); }
+    // (2) the original step's own check-off, on the day it was due — this week's rides slSaveChanged below; last week's is one targeted write
+    if(it.fromWk===wk){ slState[sk]=srec;
+      const fk=wk+"_"+it.fromDay+"_"+kid+"_"+it.slot, fc=slState[fk]||{}, all=rtComplete(it.slot,kid,it.fromDay);
+      if(!!fc.done!==!!all) slState[fk]=Object.assign({},fc,{done:all,ts:all?ts:""}); }
+    else { if(smap) smap[sk]=srec; if(_amWrite()) db.ref(it.fromWk+"/sl/"+sk).set(srec); }
+    // (3) the history line, filed under that day with the step's own slot + label
+    _amLog(kid,it.fromWk,it.fromDay,{label:label,slot:it.slot,act:now?"on":"off",ts:ts,at:Date.now(),pts:paid,am:iso});
+  }
+  amOnValue(amCarry);
+  // the Morning list's own record — toggleMorningStep's tail, so the gate, ⏱ day start and 🏁 bonus behave exactly the same
+  const mk=wk+"_"+day+"_"+kid+"_morning", _prevSlot=slState[mk], allDone=morningComplete(kid,day);
+  slState[mk]={done:allDone,ts:allDone?nowTs():""};
+  if(allDone&&!(_prevSlot&&_prevSlot.done)&&day===_todayDay&&typeof dsAutoStart==="function") dsAutoStart(kid);
+  rtBonusSettle("morning",kid,wk,day,_prevSlot,allDone,morningDueIdx(kid,day).length);
+  if(typeof rtDayBonusSettle==="function") rtDayBonusSettle(kid,wk,day);
+  if(allDone) mrOpen[kid]=false;
+  slSaveChanged(wk,_slB);
+  renderSkylight();
+  if(tab==="schedule"){ const c=document.getElementById("content"); if(c) renderSchedule(c); }
+}
+// Mom's (or an unlocked Dad's) tick on a carried row of the Morning pop-up — the kid's own check-off, made with the day set to that row's day.
+function amMomTick(kid,id,d){
+  if(!_amGrown()) return false;
+  const _pd=(typeof day!=="undefined")?day:null; try{ day=d; amToggle(kid,id); } finally { if(_pd!==null) day=_pd; }
+  try{ const el=document.getElementById('content'); if(el&&typeof renderMomsPlan==="function") renderMomsPlan(el); }catch(e){}
+  return true;
+}
+// The ORIGINAL row was ticked (or un-ticked) on its own list — toggleRtStep calls this — so the carry follows and the two never disagree.
+function amSourceSync(slot,kid,d,i,now){
+  const iso=amIso(d), it=iso?amGet(kid,slot,i,iso):null; if(!it) return;
+  if(now){ if(it.done) return; it.done={iso:amIso(_todayDay)||_amToday(),ts:nowTs(),at:Date.now(),src:"list"}; }
+  else { if(!it.done) return; delete it.done; }
+  const id=amKey(iso,slot,i);
+  if(_amWrite()){ if(now) db.ref("amCarry/"+kid+"/"+id+"/done").set(it.done); else db.ref("amCarry/"+kid+"/"+id+"/done").remove(); }
+  amOnValue(amCarry);
+  if(it.dueIso<=(amIso(_todayDay)||_amToday())) _amSettleToday(kid);   // toggleRtStep's own slSaveChanged writes what this changed
+}
+// The carried rows at the top of the kid's Morning list.
+function amRowsHTML(kid,items,ed){
+  if(!items||!items.length) return '';
+  const iso=amIso(day);
+  let h='<div class="sl-slot-sub" style="padding:4px 0 2px;font-weight:800;color:#b45309">\u{1F305} Left over — finish these first</div>';
+  items.forEach(function(it){ const sd=amDoneBy(it,iso);
+    h+='<div class="mr-step'+(sd?" done":"")+'"'+(ed?' onclick="amToggle(\''+kid+'\',\''+it.id+'\')"':'')+'>'+
+       '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
+       '<div class="sl-slot-name">'+(it.emoji?it.emoji+" ":"")+esc(it.label||"Chore")+
+         ' <span class="cadtag" style="color:#b45309;border-color:#fde68a">from '+amFromLbl(it)+' · '+(SL_SLBL[it.slot]||it.slot)+'</span>'+
+         ((it.pts||0)>0?' <span class="cadtag" style="color:#b45309;border-color:#fde68a">+'+(it.pts||0)+' ⭐</span>':'')+
+       '</div></div>'; });
+  return h;
+}
+// Kids today pop-up, end of a row. Morning: a carried row gets Mom's ✓ done / ↩ undo and ✕ take off. Afternoon / Chores / Evening:
+// an open, sendable row gets 🌅 AM (amber + ✓ once sent; a second tap takes it back).
+function amPopBtnsHTML(r,slot,kid,d,ok){
+  if(!ok||!r) return '';
+  const B='padding:2px 8px;border-radius:7px;background:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;font-family:inherit;border:1.5px solid ';
+  const re="boardStatPop('"+kid+"','"+slot+"','"+d+"')";
+  if(r.am) return '<button onclick="event.stopPropagation();amMomTick(\''+kid+'\',\''+r.am+'\',\''+d+'\');'+re+'" style="'+B+'#d1d5db;color:#374151">'+(r.done?'↩ undo':'✓ done')+'</button>'+
+      (r.done?'':'<button onclick="event.stopPropagation();amTakeBack(\''+kid+'\',\''+r.am+'\');'+re+'" title="Take it off the morning list" style="'+B+'#d1d5db;color:#6b7280">✕ take off</button>');
+  if(r.i==null||r.done||r.wv||RT_ABBR[slot]===undefined) return '';
+  if(!amCanSend(slot,(rtStepsFor(slot,kid,false,d)||[])[r.i])) return '';
+  const sent=!!amGet(kid,slot,r.i,amIso(d));
+  return '<button onclick="event.stopPropagation();amSend(\''+slot+'\',\''+kid+'\',\''+d+'\','+r.i+');'+re+'" title="'+(sent?'On the next morning list — tap to take it back':'Put this on the next morning list — done before school')+'" style="'+B+(sent?'#b45309;color:#b45309':'#d1d5db;color:#6b7280')+'">\u{1F305} AM'+(sent?' ✓':'')+'</button>';
+}
+// Kids today pop-up, under the rows of ☀️ 🧹 🌙: one button for everything still open in all three lists.
+function amPopFootHTML(kid,slot,d){
+  if(RT_ABBR[slot]===undefined) return '';
+  const n=amRest(kid,d).length; if(!n) return '';
+  return '<div style="margin-top:10px;padding-top:9px;border-top:1px solid #f3f4f6">'+
+    '<button onclick="event.stopPropagation();amSendRest(\''+kid+'\',\''+d+'\');boardStatPop(\''+kid+'\',\''+slot+'\',\''+d+'\')" style="width:100%;padding:8px 10px;border-radius:9px;border:1.5px solid #fde68a;background:#fffbeb;color:#92400e;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">\u{1F305} Send all '+n+' unfinished to the next morning</button>'+
+    '<div style="font-size:10.5px;color:var(--muted);margin-top:4px">Afternoon, Chores and Evening together. They show first on the Morning list and hold school until done. \u{1F305} AM on a row sends just that one.</div></div>';
+}
+// SENDAM_END
 function rtDueOrLate(slot,kid,d,i,st){ if(typeof stepWindowOk==="function"&&!stepWindowOk(st,d)) return false; if(typeof rtWaved==="function"&&rtWaved(slot,kid,d,i)) return false; return cadDueOn((st&&st.cad)||"daily",d)||(d===_todayDay&&rtLateDays(slot,kid,i)>0); }   // WAVE: a waved step is not due
 function rtComplete(slot,kid,d){ const steps=rtStepsFor(slot,kid); if(!steps.length){ const s=slState[activeWk()+"_"+d+"_"+kid+"_"+slot]; return !!(s&&s.done); } return steps.every((st,i)=>!rtDueOrLate(slot,kid,d,i,st)||rtDoneOn(slot,kid,d,i)); }
 // ✅ CHORESEMPTY (her rule 2026-10-06: "if no chores then it's considered done"): a list counts as done when it was checked off — or
@@ -2415,6 +2647,7 @@ function toggleRtStep(slot,kid,i){
     if(now&&typeof _spBy==="function"&&_spBy()) slState[sk].by=_spBy();   // 🔎 SPOTCHECK: Mom's / Dad's tick isn't the kid's own
     rlogAppend(kid,slot,_st?_st.label:("Step "+(i+1)),now?"on":"off",_p,(!now&&typeof cuUndoTag==="function")?cuUndoTag():null);   // ↩︎ UNDOLISTS: the line says Mom / Dad undid it
     try{ if(typeof laundryKidHook==="function") laundryKidHook(kid,_st,sk,now); }catch(e){}   // 🧺 KIDLAUNDRY
+    try{ if(typeof amSourceSync==="function") amSourceSync(slot,kid,day,i,now); }catch(e){}   // 🌅 SENDAM: a row that was sent to the morning list closes (or re-opens) there too
   }
   const allDone=rtComplete(slot,kid,day), _prevSlot=slState[wk+"_"+day+"_"+kid+"_"+slot];
   slState[wk+"_"+day+"_"+kid+"_"+slot]={done:allDone,ts:allDone?nowTs():""};
@@ -2588,6 +2821,7 @@ function rtLateDays(slot,kid,i){
     if(typeof _rtOffCycle==="function"&&_rtOffCycle(st,DAYS_ALL[due],false)) return 0;   // LATE_CYCLE: that day was an off week for this chore
     if(typeof _rtBeforeFrom==="function"&&_rtBeforeFrom(st,DAYS_ALL[due],false)) return 0;   // LATE_FROM: it had not started yet on that day
     if(typeof rtWaved==="function"&&rtWaved(slot,kid,DAYS_ALL[due],i,wk)) return 0;   // WAVE: Mom waved it that day
+    if(typeof amCovers==="function"&&amCovers(kid,slot,i,amIso(DAYS_ALL[due]))) return 0;   // SENDAM: it is on the morning list
     for(let p=_rtPos(due);p<=tp;p++){ if(rtDoneOnWk(wk,slot,kid,DAYS_ALL[_rtIdx(p)],i)) return 0; }
     return tp-_rtPos(due);
   }
@@ -2604,6 +2838,7 @@ function rtLateDays(slot,kid,i){
   if(typeof _rtOffCycle==="function"&&_rtOffCycle(st,DAYS_ALL[pd],true)) return 0;   // LATE_CYCLE: last week was an off week for this chore
   if(typeof _rtBeforeFrom==="function"&&_rtBeforeFrom(st,DAYS_ALL[pd],true)) return 0;   // LATE_FROM: last week's due day was before it began
   if(typeof rtWaved==="function"&&rtWaved(slot,kid,DAYS_ALL[pd],i,pw)) return 0;   // WAVE
+  if(typeof amCovers==="function"&&amCovers(kid,slot,i,amIso(DAYS_ALL[pd],true))) return 0;   // SENDAM
   const pdue=_rtPos(pd);
   for(let p=pdue;p<=5;p++){ if(rtDoneOnWk(pw,slot,kid,DAYS_ALL[_rtIdx(p)],i)) return 0; }
   for(let p=-1;p<=tp;p++){ if(rtDoneOnWk(wk,slot,kid,DAYS_ALL[_rtIdx(p)],i)) return 0; }
@@ -2686,9 +2921,10 @@ function rtSlotHTML(slot,kid){
       const _wl=stepWindowLabel(st), winTag=_wl?' <span class="cadtag" style="color:#0e7490;border-color:#a5f3fc">\u{1F4C5} '+_wl+'</span>':'';
       const timeTag=st.time?' <span class="cadtag" style="color:#7c3aed;border-color:#ddd6fe">\u23f0 '+st.time+'</span>':'';
       const rotTag=st.rot?' <span class="cadtag" style="color:#c2410c;border-color:#fed7aa">🔄 rotates</span>':'';
+      const amTag=(!sd&&typeof amGet==="function"&&amGet(kid,slot,i,amIso(day)))?' <span class="cadtag" style="color:#b45309;border-color:#fde68a">🌅 on your next morning list</span>':'';   // SENDAM
       h+='<div class="mr-step'+(sd?" done":"")+(_lateTag?" is-late":"")+'"'+(_ed?' onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')"':'')+(_ok?'':' style="opacity:.5"')+'>'+
          '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
-         '<div class="sl-slot-name" style="flex:1">'+(st.emoji?st.emoji+" ":"")+st.label+_lateTag+cadTag+winTag+timeTag+rotTag+'</div>'+
+         '<div class="sl-slot-name" style="flex:1">'+(st.emoji?st.emoji+" ":"")+st.label+_lateTag+cadTag+winTag+timeTag+rotTag+amTag+'</div>'+
          (pts>0?'<span class="mr-pts">+'+pts+' ⭐</span>':'')+'</div>'; });
     optIdx.forEach(i=>{ const st=steps[i], sd=rtDoneOn(slot,kid,day,i), pts=st.pts||0;
       h+='<div class="mr-step'+(sd?" done":"")+'"'+(_ed?' onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')"':'')+' style="opacity:'+(sd?'1':'.75')+'">'+
@@ -4544,6 +4780,7 @@ function initFb() {
     db.ref("config/routineTimes").on("value",s=>{ routineTimes=Object.assign({eveningHour:18}, s.val()||{}); });
     if(typeof rlWindowAttach==="function") rlWindowAttach(activeWk());   // RLWIN: this week + last week live; older weeks load when first needed · typeof: the Envirothon build strips RLWIN (ENVBUILD 2026-11-08)
     db.ref("waved").on("value",s=>{ wavedOnValue(s.val()||{}); if(tab==="moms-plan"||tab==="kids"||tab==="schedule") renderAllSoon(); });   // WAVE
+    if(typeof amAttach==="function") amAttach();   // 🌅 SENDAM
     db.ref("spotChecks").on("value",s=>{ spotOnValue(s.val()||{}); if(tab==="moms-plan"&&momHere()) renderAllSoon(); });   // 🔎 SPOTCHECK
     db.ref("settings/spotCheck").on("value",s=>{ if(typeof spotSetOnValue==="function") spotSetOnValue(s.val()); if(tab==="moms-plan"&&momHere()) renderAllSoon(); });   // 🔎 SPOTCHECK ⚙
     db.ref("config/routineRules").on("value",s=>{ routineRules=Object.assign({loseTechEnabled:false,loseTechHour:10}, s.val()||{}); });
@@ -6517,11 +6754,11 @@ function chSettingsClickoffLogHTML(){
     if(!entries.length){ h+='<div style="font-size:12px;color:var(--muted);padding:6px 0">No check-offs recorded yet this week.</div>'; }
     entries.slice(0,60).forEach(function(e){
       var on=e.act==="on";
-      var icon=on?"✓":"↩";
+      var icon=on?"✓":(e.act==="am"?"🌅":"↩");   // SENDAM
       var slbl=(typeof SL_SLBL!=="undefined"&&SL_SLBL[e.slot])||e.slot||"";
       var dlbl=(typeof DAY_LBL!=="undefined"&&DAY_LBL[e._day])||e._day||"";
       h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)'+(e.flagged?';opacity:.6':'')+'">';
-      h+='<div style="font-size:13px;flex:1;min-width:0"><span style="'+(e.flagged?'text-decoration:line-through;':'')+'font-weight:600">'+icon+' '+(e.label||'')+'</span>'+(e.flagged?' <span style="color:#b91c1c;font-weight:800">−100</span>':'')+'<div style="font-size:10px;color:var(--muted)">'+slbl+' · '+(e.ts||'')+' · '+dlbl+'</div></div>';
+      h+='<div style="font-size:13px;flex:1;min-width:0"><span style="'+(e.flagged?'text-decoration:line-through;':'')+'font-weight:600">'+icon+' '+(e.label||'')+'</span>'+(e.flagged?' <span style="color:#b91c1c;font-weight:800">−100</span>':'')+'<div style="font-size:10px;color:var(--muted)">'+slbl+' · '+(e.ts||'')+' · '+dlbl+((on&&e.am)?' · 🌅 done on the morning list':'')+'</div></div>';
       if(on&&!e.flagged) h+='<button onclick="rlogFlag(\''+kid+'\',\''+_rlwk+'\',\''+e._day+'\',\''+e._key+'\')" title="Didn\'t actually do it — dock 100 points" style="flex-shrink:0;padding:4px 9px;border-radius:8px;border:1.5px solid #fca5a5;background:#fef2f2;color:#b91c1c;font-size:11px;font-weight:800;cursor:pointer">⚠️ −100</button>';
       h+='</div>';
     });
@@ -8856,6 +9093,7 @@ function boardStatPop(kid,slot,d){
   if(slot==="morning"){ title="🌅 Morning";
     // 🌅 only that day's steps (the kid's own list); an as-needed step shows only if it was done, marked as such
     const _mDue=morningDueIdx(kid,day);
+    if(typeof amFor==="function"){ const _ai=amIso(day); amFor(kid,day).forEach(it=>{ rows.push({lab:"🌅 "+(it.emoji?it.emoji+" ":"")+(it.label||"Chore")+" — from "+amFromLbl(it)+" "+(SL_SLBL[it.slot]||it.slot)+(it.pts?" +"+it.pts+" ⭐":""),done:amDoneBy(it,_ai),ts:(it.done&&it.done.ts)||"",am:it.id}); }); }   // SENDAM: carried rows first
     morningStepsFor(kid).forEach((st,i)=>{ const rec=slState[activeWk()+"_"+day+"_"+kid+"_mstep"+i]||{};
       const _due=_mDue.indexOf(i)>=0, _dn=mStepDoneOn(kid,day,i), _wv=(typeof rtWaved==="function")&&rtWaved("morning",kid,day,i);   // KIDROWS2: a waved step stays on the list, greyed, with undo
       if(!_due&&!_wv&&!(st.cad==="asneeded"&&_dn)) return;
@@ -8895,12 +9133,12 @@ function boardStatPop(kid,slot,d){
       '<span style="flex:1;min-width:0;'+(r.done?'':'color:var(--muted)')+(r.wv?';text-decoration:line-through':'')+'">'+esc(r.lab)+((r.late>0&&!r.done&&!r.wv)?'<span class="rt-late">'+r.late+' day'+(r.late>1?'s':'')+' late</span>':'')+'</span>'+   // KIDSLATE: the same tag Kids' Corner shows
       (r.amt!=null?'<span style="font-weight:800;color:'+(r.amt<0?"#b91c1c":"#b45309")+';white-space:nowrap">'+(r.amt<0?"−"+(-r.amt):"+"+r.amt)+' ⭐</span>':'')+
       (r.ts?'<span style="font-size:10.5px;color:var(--muted);white-space:nowrap">'+esc(r.ts)+'</span>':'')+
-      ((_waveOk&&r.i!=null&&!r.done)?kr2WaveBtnHTML(slot,kid,_d,r.i,!!r.wv):'')+'</div>').join('')   // KIDROWS2: ✕ today / undo
+      ((_waveOk&&r.i!=null&&!r.done)?kr2WaveBtnHTML(slot,kid,_d,r.i,!!r.wv):'')+((typeof amPopBtnsHTML==="function")?amPopBtnsHTML(r,slot,kid,_d,_tapOk):'')+'</div>').join('')   // KIDROWS2: ✕ today / undo
     :'<div style="font-size:12px;color:var(--muted);padding:8px 2px">'+(isStars?"no stars yet today":"nothing due today")+'</div>';
   const html='<div id="board-stat-pop" onclick="boardStatPopClose()" style="position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:9000;display:flex;align-items:center;justify-content:center;padding:20px">'+
     '<div onclick="event.stopPropagation()" style="background:#fff;border-radius:16px;max-width:420px;width:100%;max-height:75vh;overflow:auto;padding:16px 18px;box-shadow:0 20px 50px rgba(0,0,0,0.3)">'+
     '<div style="display:flex;align-items:center;margin-bottom:8px"><div style="font-family:\'Fraunces\',serif;font-weight:700;font-size:16px;flex:1">'+cap(kid)+' — '+title+' <span style="color:var(--muted);font-size:13px">('+hdrCount+')</span></div>'+
-    '<button onclick="boardStatPopClose()" style="border:none;background:#f3f4f6;border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer">✕</button></div>'+inner+'</div></div>';
+    '<button onclick="boardStatPopClose()" style="border:none;background:#f3f4f6;border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer">✕</button></div>'+inner+((_tapOk&&typeof amPopFootHTML==="function")?amPopFootHTML(kid,slot,_d):'')+'</div></div>';   // SENDAM: 🌅 Send all
   document.body.insertAdjacentHTML("beforeend",html);
 }
 // ── T2: read-only peek at the week that's built but hasn't started ──────────
@@ -18078,6 +18316,9 @@ function ckLogToday(){
       const day=(((routineLog[kid]||{})[wk]||{})[today])||{};
       Object.keys(day).forEach(key=>{ const r=day[key]; if(!r||(r.act!=="on"&&r.act!=="wave")) return;
         out.push({kind:(r.act==="wave")?"wave":"step",kid:kid,label:(r.label||"Chore"),ts:String(r.ts||"").replace(/\s+[A-Z][a-z]{2}\s+\d+$/,""),at:r.at||0,ref:wk+"/"+today+"/"+key,flagged:!!r.flagged,pts:r.pts||0}); });   // WAVE lines ride along
+      if(typeof amIso==="function"){ const _ti=amIso(today); [wk,(typeof _prevWkKey==="function")?_prevWkKey():null].forEach(w=>{ const wl=w?((routineLog[kid]||{})[w]||{}):{};   // SENDAM
+        Object.keys(wl).forEach(dn=>{ if(w===wk&&dn===today) return; Object.keys(wl[dn]||{}).forEach(key=>{ const r=wl[dn][key]; if(!r||r.act!=="on"||!_ti||r.am!==_ti) return;
+          out.push({kind:"step",kid:kid,label:"🌅 "+(r.label||"Chore"),ts:String(r.ts||"").replace(/\s+[A-Z][a-z]{2}\s+\d+$/,""),at:r.at||0,ref:w+"/"+dn+"/"+key,flagged:!!r.flagged,pts:r.pts||0}); }); }); }); }
     });
   }catch(e){}
   return out.sort((a,b)=>(b.at||0)-(a.at||0));
@@ -18167,6 +18408,7 @@ function mdCardKidsToday(today,isSchoolDay,bank,dadCtl){   // bank=true: Mom's D
       // step put Tuesday/Friday cricket jobs and as-needed rows on Ellis's Wednesday (7 of 10, never complete).
       const _mDue=morningDueIdx(kid,_kd); mT=_mDue.length;
       _mDue.forEach(i=>{ if(mStepDoneOn(kid,_kd,i)) mD++; });
+      if(typeof amFor==="function"){ const _a=amFor(kid,_kd), _ai=amIso(_kd); mT+=_a.length; _a.forEach(it=>{ if(amDoneBy(it,_ai)) mD++; }); }   // SENDAM: carried rows count
       mDone=morningComplete(kid,_kd);
       af=mdSlotCounts("afternoon",kid,_kd); ch=mdSlotCounts("chores",kid,_kd); ev=mdSlotCounts("evening",kid,_kd);
       pts=earnedDayTotal(kid,_kd);
@@ -43997,15 +44239,17 @@ function kcPointsHTML(k){
       const steps=(isM&&typeof morningStepsFor==="function")?(morningStepsFor(k)||[]):(rtStepsFor(slot,k,false,dn)||[]);
       const due=(isM&&typeof morningDueIdx==="function")?morningDueIdx(k,dn)
         :steps.map(function(st,i){ return i; }).filter(function(i){ const st=steps[i]; return st&&stepWindowOk(st,dn)&&(cadDueOn(st.cad||"daily",dn)||(typeof rtLateDays==="function"&&rtLateDays(slot,k,i)>0)); });
-      if(!due.length) return;
+      const _am=(isM&&typeof amFor==="function")?amFor(k,dn):[], _ai=_am.length?amIso(dn):null, _amD=_am.filter(function(it){ return amDoneBy(it,_ai); }).length;   // SENDAM
+      if(!due.length&&!_am.length) return;
       const isDone=function(i){ return isM?(typeof mStepDoneOn==="function"&&mStepDoneOn(k,dn,i)):rtDoneOn(slot,k,dn,i); };
       const done=due.filter(isDone);
       let left=0; due.forEach(function(i){ if(!isDone(i)) left+=((steps[i]||{}).pts||0); });
-      const allDone=done.length===due.length;
+      _am.forEach(function(it){ if(!amDoneBy(it,_ai)) left+=(it.pts||0); });   // SENDAM
+      const allDone=done.length===due.length&&_amD===_am.length;
       const bonus=(typeof rtBonusFor==="function")?rtBonusFor(slot,k):0;
       if(!allDone){ anyOpen=true; left+=bonus; }
       toGet+=left;
-      lists.push({slot:slot,lbl:(SL_SLBL[slot]||slot),done:done.length,total:due.length,left:left,allDone:allDone,bonus:bonus});
+      lists.push({slot:slot,lbl:(SL_SLBL[slot]||slot),done:done.length+_amD,total:due.length+_am.length,left:left,allDone:allDone,bonus:bonus});
     });
     const dayBonus=(typeof rtBonusFor==="function")?rtBonusFor("day",k):0;
     if(anyOpen&&dayBonus) toGet+=dayBonus;

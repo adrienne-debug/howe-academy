@@ -114,6 +114,7 @@ const ALLOWED_FN=["cpuWatch",   // 📦 CPUNIT (2026-10-28): a unit's catalog en
   "cplntApplyOne","cplntAfter",   // 👩‍🏫 CPLINCOLNL3 (2026-10-29): a teacher's drill for Lincoln arriving (drills/<cid>/<sid> listener) and graded
   "cplnpLoad",   // 🌿 CPLINCOLNPARITY (2026-10-29): his class's card, trim and test layers arriving (read once through his mirror)
   "cpmcEnv","cpmcPaint",   // 🏫 CPMYCLASS (2026-11-10): env.js landing, and the class boards arriving (boards/<cid> listener through his mirror)
+  "amAttach",   // 🌅 SENDAM (2026-11-15): a kid's carried-to-morning items arriving (amCarry/<kid> listener)
   "currOnValue",   // 📚 CURRLIVE (2026-11-08): the curriculum arriving (first load, or another device's edit) — the listener's one helper
   "attachWeekListeners","initFb","_loadPrevSl","mmAttachWeek","momBlocksListen","peekLoad","lrListen","rbLogListen","wsOnValue","hrOnValue","helpersOnValue","helperDaysOnValue","helperGiveOnValue","famProgOnValue","msgOnValue","pagesApply","envmRelease","envtFinalAttach","envsReadShared","envsHomeReadHowe","envcSub","envClsKidLoad"];   // 🌿 ENVMIRROR / ENVSITE: listener-attach helpers whose arrivals combine; the teacher's release listener (data arrived)
 const stray=[]; { let cur=null; html.split("\n").forEach((l,i)=>{ const m=l.match(/^(?:async\s+)?function\s+([\w$]+)/); if(m) cur=m[1];
