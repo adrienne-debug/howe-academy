@@ -155,7 +155,7 @@ function anthemCard() { const note = (x, y) => '<ellipse cx="' + x + '" cy="' + 
 function geoLib() { return (typeof HoweUS !== "undefined" && HoweUS.geo) || (typeof window !== "undefined" && window.HoweGeo) || null; }
 function bboxOf(d) { const nums = String(d || "").match(/-?\d+(\.\d+)?/g); if (!nums || nums.length < 4) return null; let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
   for (let i = 0; i + 1 < nums.length; i += 2) { const x = +nums[i], y = +nums[i + 1]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } return [x0, y0, x1, y1]; }
-const COLONIES = {}; D.cards.forEach(c => { if (c.deck === "13 Colonies") COLONIES[c.name] = c.family; });
+const COLONIES = {}; D.cards.forEach(c => { if (c.deck === "13 Colonies") COLONIES[c.pic.slice(7)] = c.family; });   // keyed by the state ("colony:North Carolina"), not the front ("North Carolina Colony")
 function usLayers(statesFill, extra) { const L = geoLib(); const U = L.data.us; let st = ""; for (const n in U.state) st += U.state[n];
   return R(0, 0, U.wh[0], U.wh[1], "#dbeafe") + P(U.neighbours, "#f3f4f6", { s: "#9ca3af", sw: 1.5 }) + P(st, statesFill || "#e5e7eb", { s: "#ffffff", sw: 2 }) + P(U.lakes, "#bfdbfe", { s: "#93c5fd", sw: 1 }) + (extra || ""); }
 function colonyCard(name) {

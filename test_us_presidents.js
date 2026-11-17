@@ -12,6 +12,7 @@ const fs = require("fs"), path = require("path"), vm = require("vm");
 const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 const nb = fs.readFileSync(path.join(__dirname, "notebooks.js"), "utf8");
 const usSrc = fs.readFileSync(path.join(__dirname, "us.js"), "utf8"), p1Src = fs.readFileSync(path.join(__dirname, "us_pics_1.js"), "utf8"), p2Src = fs.readFileSync(path.join(__dirname, "us_pics_2.js"), "utf8");
+const PIN = { ver: 2, stages: [1, 2, 3, 4, 7] };   // USPRES's release (Stages 1–4 and 7); USHIST ships 1–9 at version 3
 let pass = 0, fail = 0;
 function ok(name, cond, extra) { if (cond) { pass++; console.log("  ok  - " + name); } else { fail++; console.log("  FAIL- " + name + (extra !== undefined ? "  " + JSON.stringify(extra).slice(0, 500) : "")); } }
 function lit(s, start, open, close) { const i = s.indexOf(start); if (i < 0) return null; let j = s.indexOf(open, i), d = 0, q = null;
@@ -64,6 +65,7 @@ function world(o) {
     return { STARTER_UNITS, STARTER_HOWTO, US_PATH_SHIP, US_PATH_STAGES, US_PATH_STAGE_CARDS, usUnitRecord, usHydrate, usLazyWant, _starterUnitsHtml,
       unitStageFormOpen, unitStageFormSet, unitStageEnroll, unitStageStatus, unitStageMoveUp, _unitStageRowsHtml, unitCardFace, mastGetVisual,
       mastGetDef, MAST_VOCAB_DEFS, MAST_MATH_ANS, geoUnitRecord, suPending, suPlan };`)(G, db);
+  api.STARTER_UNITS.us_path = fam => api.usUnitRecord(fam, PIN);   // this file pins the USPRES release; test_us_history.js pins today's
   api.G = G; return api;
 }
 const deck = (u, k) => u.decks.find(d => d.key === k);
@@ -75,12 +77,12 @@ const W2 = loadUS(2), L = W2.HoweUS;
 
 console.log("── what ships ──");
 { const w = world();
-  ok("version 2, Stages 1–4 and 7 (5–6 wait for USHIST)", w.US_PATH_SHIP.ver === 2 && w.US_PATH_SHIP.stages.join() === "1,2,3,4,7");
+  ok("the code still ships Stage 7 (USHIST added 5, 6, 8, 9 around it at version 3 — this file pins USPRES's release, version 2)", w.US_PATH_SHIP.stages.includes(7) && w.US_PATH_SHIP.ver > PIN.ver);
   const s = w.STARTER_UNITS.us_path();
   ok("the shell (before us.js) lists Stage 7, 128 cards", s._shell && s.stages.map(x => x.n).join() === "1,2,3,4,7" && s.cardCount === 128 && w.US_PATH_STAGE_CARDS[7] === 47);
   ok("the shell's Stage 7 is us.js's (label, readyAt 42)", JSON.stringify(s.stages[4]) === JSON.stringify({ n: 7, label: "Presidents in order", weeklyFrom: 0, readyAt: 42 }) && L.stages.find(x => x.n === 7).readyAt === 42 && L.stages.find(x => x.n === 7).label === "Presidents in order");
   ok("the Starter units list: “… · 4. How our government works · 7. Presidents in order” and “128 cards”", /4\. How our government works · 7\. Presidents in order/.test(w._starterUnitsHtml()) && /128 cards/.test(w._starterUnitsHtml()));
-  ok("the description now names every president in order among what's here", /how our government works, and every president in order/.test(s.desc) && !/Later stages bring[^.]*president/.test(s.desc));
+  ok("the description names every president in order among what's here", /every president in order/.test(s.desc) && !/(Later stages bring|comes later)[^.]*president/.test(s.desc));
   const H = w.STARTER_HOWTO.Presidents, names = NBP.map(p => p[1]);
   ok("a How-to note for Presidents (Mom's and the kid's), naming no president — the app never gives the answer", H && H.main.length > 60 && H.kid && names.every(n => { const last = n.split(" ").pop(); return [H.main, H.kid].every(t => t.indexOf(n) < 0 && t.indexOf(last) < 0); }), names.filter(n => (H.main + H.kid).indexOf(n.split(" ").pop()) >= 0));
   ok("Famous Presidents keeps the “president now” note (Mom changes that card when it changes)", /president now/.test(w.STARTER_HOWTO["Famous Presidents"].main)); }

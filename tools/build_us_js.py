@@ -174,11 +174,13 @@ CIVICS = [
 for st, fam, rows in CIVICS:
     for n, d, p in rows: C("Civics", st, fam, n, d, p)
 
-# Stage 5 · 13 Colonies (flash, 13) — today's state lines (plan Q12)
+# Stage 5 · 13 Colonies (flash, 13) — today's state lines (plan Q12). The front is "<name> Colony" (USHIST 2026-11-17, the hub's
+# default): a bare state name ("North Carolina") is a built-in back's key (the state capitals), so Mom-says, the paper drill and
+# read-aloud would show "Raleigh" as a colony's answer. The map still lights the state by its own name.
 for fam, rows in [("New England", ["New Hampshire", "Massachusetts", "Rhode Island", "Connecticut"]),
                   ("Middle", ["New York", "New Jersey", "Pennsylvania", "Delaware"]),
                   ("Southern", ["North Carolina", "Virginia", "South Carolina", "Georgia", "Maryland"])]:
-    for n in rows: C("13 Colonies", 5, fam, n, None, "colony:" + n)
+    for n in rows: C("13 Colonies", 5, fam, n + " Colony", None, "colony:" + n)
 
 # U.S. History (flip, 48 — 20 built-in (B), backs byte-identical to MAST_VOCAB_DEFS)
 HISTORY = [
@@ -422,7 +424,7 @@ CT = [
     (78, "Who wrote the Declaration of Independence?", "Thomas Jefferson", ["U.S. History|Declaration of Independence"]),
     (79, "When was the Declaration of Independence adopted?", "July 4, 1776", ["American Holidays|Independence Day"]),
     (80, "The American Revolution had many important events — name one", "Bunker Hill · the Declaration of Independence · Washington crossing the Delaware · Saratoga · Valley Forge · Yorktown", ["American Battles|Yorktown", "American Battles|Saratoga"]),
-    (81, "There were 13 original states — name five", "Five of: New Hampshire, Massachusetts, Rhode Island, Connecticut, New York, New Jersey, Pennsylvania, Delaware, Maryland, Virginia, North Carolina, South Carolina, Georgia", ["13 Colonies|North Carolina"]),
+    (81, "There were 13 original states — name five", "Five of: New Hampshire, Massachusetts, Rhode Island, Connecticut, New York, New Jersey, Pennsylvania, Delaware, Maryland, Virginia, North Carolina, South Carolina, Georgia", ["13 Colonies|North Carolina Colony"]),
     (82, "What founding document was written in 1787?", "The Constitution", ["U.S. History|Constitutional Convention"]),
     (83, "The Federalist Papers supported passing the Constitution — name one of the writers", "James Madison · Alexander Hamilton · John Jay", ["Famous Americans|Alexander Hamilton"]),
     (84, "Why were the Federalist Papers important?", "They helped people understand the Constitution and supported passing it", ["Famous Americans|Alexander Hamilton"]),
