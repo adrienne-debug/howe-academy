@@ -176,5 +176,88 @@ function hpRun(){
   const run=HouseEng.run(table,t,29,people,ov); _hpMemo={sig:sig,run:run}; return run;
 }
 // HOUSEPEOPLE_END
+// HOUSEPERSON_START — 👤 By person (DESIGN §3.4; §12 asks it to show 🌅 Send to next morning carries). One chip per person; for the
+// picked one: Today (their health and animal rows as they are on their lists NOW, anything 🌅 carried to their morning, and the house
+// chores the preview plan WOULD give them, minutes against the limit), the next seven days as bars with what moved off them, their
+// Settings, and their Habits. Every chore opens the step 2 chore card (hcOpen). Read-only on every list; the only writes are the
+// Settings controls, each calling an existing setter (hhLevelSetFor, rtBonusSet) or HOUSEPEOPLE's.
+let hpSel="";
+function hpPick(w){ hpSel=w; hhRender(); }
+const HP_CARD='background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);margin-bottom:10px;overflow:hidden';
+const HP_HEAD='padding:6px 12px 2px;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560';
+function hpDay(iso){ return ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][_hhDow(iso)]+" "+(+iso.slice(5,7))+"/"+(+iso.slice(8)); }
+function hpRow(id,emoji,label,extra,done){ const J=hhJobs(), tap=id&&J[id]&&(typeof momHere!=="function"||momHere()); return '<div'+(tap?' onclick="hcOpen(\''+id+'\')"':'')+' style="display:flex;align-items:center;gap:7px;padding:5px 12px;border-top:1px solid #f3f4f6;font-size:12.5px;font-weight:600'+(tap?';cursor:pointer':'')+(done?';color:#6b6560;text-decoration:line-through':'')+'"><span>'+(done===undefined?'':done?'✅':'☐')+'</span><span>'+(emoji||'')+'</span><span style="flex:1">'+esc(label)+'</span>'+(extra||'')+'</div>'; }
+function hpBar(used,lim){ const pct=lim>0?Math.min(100,Math.round(100*used/lim)):(used>0?100:0); return '<div style="flex:1;height:8px;border-radius:4px;background:#eef2f0;overflow:hidden"><div style="height:8px;width:'+pct+'%;background:'+(used>lim?'#dc2626':pct>=90?'#d97706':'#2B7A78')+'"></div></div>'; }
+// The routine rows (health, animals) on this person's lists today, from the lists themselves (hhTodayHTML's way).
+function hpRoutineNow(who){
+  const J=hhJobs(), dn=(typeof _todayDay!=="undefined")?_todayDay:"monday", iso=(typeof _todayStr==="function")?_todayStr():hpToday(), out=[];
+  const areaOf=function(id,label,slot,rot){ const j=id&&J[id]; return (j&&j.area)||hhGuessArea(label,slot,rot); };
+  const byLabel=function(w,label){ return Object.keys(J).find(function(id){ return J[id].who===w&&J[id].label===label; })||""; };
+  if(hhIsKid(who)){ SL_SLOTS.forEach(function(slot){ (rtStepsFor(slot,who,false,dn)||[]).forEach(function(st,i){ if(!st) return; if(typeof stepWindowOk==="function"&&!stepWindowOk(st,dn)) return; if(!cadDueOn(st.cad||"daily",dn)) return;
+      const id=st._hh||byLabel(who,st.label), a=areaOf(id,st.label,slot,st.rot); if(a!=="health"&&a!=="animals") return;
+      const done=(slot==="morning")?((typeof mStepDoneOn==="function")?mStepDoneOn(who,dn,i):false):((typeof rtDoneOn==="function")?rtDoneOn(slot,who,dn,i):false);
+      out.push({id:id,emoji:st.emoji,label:st.label,done:done,slot:slot}); }); }); return out; }
+  const list=(who==="mom")?((typeof mcAll==="function")?mcAll():{}):((typeof dcAll==="function")?dcAll():{}), doneOn=(who==="mom")?((typeof mcDoneOn==="function")?mcDoneOn:null):((typeof dcDoneOn==="function")?dcDoneOn:null);
+  Object.keys(list).forEach(function(k){ const c=list[k]; if(!c||!cadDueOn(c.cad||"daily",dn)) return; const id=Object.keys(J).find(function(x){ return J[x].who===who&&((J[x].src&&J[x].src.id)||x)===k; })||"", a=areaOf(id,c.label,c.slot,null);
+    if(a==="health"||a==="animals") out.push({id:id,emoji:"",label:c.label,done:doneOn?doneOn(iso,k):false,slot:c.slot||""}); });
+  return out;
+}
+// Where this person's turns went on one planned day: "→ Ben", "→ Grabs".
+function hpMovedOff(p,who){ const out=[]; Object.keys(p.plan).forEach(function(id){ const x=p.plan[id]; if(x.from===who) out.push({id:id,to:x.who}); }); p.over.forEach(function(o){ if(o.turn===who) out.push({id:o.id,to:"grab",can:o.can}); }); return out; }
+function hpMovedTxt(m){ return m.to==="grab"?'→ Grabs':'→ '+esc(hhWhoName(m.to)); }
+function hpPreviewSwitchHTML(){
+  const mom=(typeof momHere!=="function")||momHere(), on=hhEngineMode()==="preview";
+  if(on) return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#ecfeff;border:1.5px solid #a5f3fc;border-radius:10px;padding:7px 10px;margin-bottom:10px;font-size:11.5px;color:#155e75"><b>🔭 Plan preview</b><span style="flex:1">What the new hand-out WOULD do with your limits — shown only here, to you. Nobody’s list changes.</span>'+(mom?_hhBtn("hhEngineTap(false)",'Stop showing it',false,'#64748b'):'')+'</div>';
+  return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#f8fafc;border:1.5px dashed #cbd5e1;border-radius:10px;padding:7px 10px;margin-bottom:10px;font-size:11.5px;color:#475569"><span style="flex:1">The plan preview works out who would do each house chore — today, this week and the next 4 weeks — from the limits below. It is shown only on this page; nothing changes on anyone’s list.</span>'+(mom?_hhBtn("hhEngineTap(true)",'🔭 Show the plan preview',true,'#0e7490'):'')+'</div>';
+}
+function hpSettingsHTML(who){
+  const mom=(typeof momHere!=="function")||momHere(), P=hhPeopleOf(who), fit=hpFitOf(who), inp='width:62px;padding:4px 6px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:12.5px';
+  const lim=function(f,label,ex){ const own=hhPeopleLim(who,f==="weekend"), cur=hhBudget(who,f==="weekend"?HP_SAT:HP_MON);
+    return '<div style="display:flex;align-items:center;gap:8px;padding:5px 12px;border-top:1px solid #f3f4f6;font-size:12.5px"><span style="flex:1">'+label+' <span style="font-size:11px;color:var(--muted)">'+ex+'</span></span>'
+      +(mom?'<input type="number" min="0" max="600" value="'+(own===null?'':own)+'" placeholder="'+cur+'" onchange="hpLimitSet(\''+who+'\',\''+f+'\',this.value)" style="'+inp+'">':'<b>'+cur+'</b>')+' min'+(own===null?' <span style="font-size:10.5px;color:var(--muted)">(as before)</span>':'')+'</div>'; };
+  let h='<div style="'+HP_CARD+'"><div style="padding:9px 12px;font-size:14px;font-weight:800">⚙ Settings</div>';
+  h+=lim("school","School-day limit","house chores, Mon–Fri")+lim("weekend","Weekend limit","Sat and Sun");
+  h+='<div style="padding:6px 12px;border-top:1px solid #f3f4f6;font-size:12.5px"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span style="flex:1">Chores and school</span>'+[["mixed","Mixed in"],["school","School first"]].map(function(x){ return mom?_hhBtn("hpFitSet('"+who+"','"+x[0]+"')",x[1],fit===x[0]):_hhChip(x[1],fit===x[0]?'#2B7A78':'#f3f4f6',fit===x[0]?'#fff':'#475569'); }).join('')+'</div>'
+    +'<div style="font-size:10.5px;color:var(--muted);margin-top:3px">Saved for later: nothing uses this yet. It starts to matter when the plan is switched on for real (mixed in = chores fill open time; school first = chores after school).</div></div>';
+  const own=hhLevelOwn(who); h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:6px 12px;border-top:1px solid #f3f4f6;font-size:12.5px"><span style="flex:1">🪜 Cleaning level <span style="font-size:11px;color:var(--muted)">now '+hhLevelCurFor(who)+'</span></span>'
+    +[[0,"Family"],[1,"1"],[2,"2"],[3,"3"]].map(function(x){ return mom?_hhBtn("hhLevelSetFor('"+who+"',"+x[0]+")",x[1],own===x[0]):''; }).join('')+'</div>';
+  if(hhIsKid(who)&&typeof rtBonusFor==="function"){
+    h+='<div style="'+HP_HEAD+';border-top:1px solid #f3f4f6;padding-top:7px">⭐ Bonuses</div>';
+    SL_SLOTS.concat(["day"]).forEach(function(sl){ const v=rtBonusFor(sl,who);
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:4px 12px;font-size:12.5px"><span style="flex:1">'+(sl==="day"?'🏆 Whole-day bonus':'🏁 Whole-list bonus · '+esc((typeof SL_SLBL!=="undefined"&&SL_SLBL[sl])||sl))+'</span>'+(mom?'<input type="number" min="0" value="'+v+'" onchange="hpBonusSet(\''+sl+'\',\''+who+'\',this.value)" style="'+inp+'">':'<b>'+v+'</b>')+' ⭐</div>'; });
+  }
+  h+='<div style="padding:6px 12px 9px;font-size:10.5px;color:var(--muted);border-top:1px solid #f3f4f6">To change the order of '+esc(hhWhoName(who))+'’s rows, use ⭐ Chores &amp; Stars ▸ Lists for now.</div>';
+  return h+'</div>';
+}
+// The whole-list / whole-day bonus through its own setter (rtBonusSet, Chores & Stars). That setter writes whenever the database is
+// there, so from here it is called only when writes are on — ?dryrun=1 stays inert.
+function hpBonusSet(slot,kid,v){ if(typeof momHere==="function"&&!momHere()) return; if(!_hhWrite()||typeof rtBonusSet!=="function") return; rtBonusSet(slot,kid,v); }
+function hpPersonHTML(){
+  const W=hpWho(); if(W.indexOf(hpSel)<0) hpSel=W[0]; const who=hpSel, J=hhJobs(), today=hpToday(), on=hhEngineMode()==="preview";
+  let h='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'+W.map(function(w){ const sel=w===who, col=hhRmCol(w); return '<button onclick="hpPick(\''+w+'\')" style="padding:6px 11px;border-radius:20px;border:1.5px solid '+(sel?col:'#cbd5e1')+';background:'+(sel?col:'#fff')+';color:'+(sel?'#fff':'#334155')+';font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+esc(hhWhoName(w))+'</button>'; }).join('')+'</div>';
+  h+=hpPreviewSwitchHTML();
+  const run=on?hpRun():null, d0=run&&run[0];
+  // Today
+  h+='<div style="'+HP_CARD+'"><div style="padding:9px 12px;border-left:4px solid '+hhRmCol(who)+';font-size:14px;font-weight:800">📅 Today · '+esc(hhWhoName(who))+(d0?' <span style="font-size:11.5px;font-weight:700;color:var(--muted)">house '+d0.used[who]+' of '+d0.limit[who]+' min</span>':'')+'</div>';
+  const R=hpRoutineNow(who); h+='<div style="'+HP_HEAD+'">🧼 Health and 🐾 animals — on their lists now</div>'+(R.length?R.map(function(r){ return hpRow(r.id,r.emoji,r.label,'',!!r.done); }).join(''):'<div style="padding:3px 12px 6px;font-size:12px;color:var(--muted)">Nothing due today.</div>');
+  if(hhIsKid(who)&&typeof amList==="function"){ const C=amList(who).filter(function(c){ return !c.done&&c.dueIso<=today; });
+    if(C.length) h+='<div style="'+HP_HEAD+'">🌅 Sent to the morning list</div>'+C.map(function(c){ return hpRow("",c.emoji,c.label,_hhChip('from '+hpDay(c.fromIso),'#fef3c7','#92400e')); }).join(''); }
+  if(d0){ const mine=(d0.list[who]||[]).filter(function(id){ return d0.plan[id].house; }), mv=hpMovedOff(d0,who);
+    h+='<div style="'+HP_HEAD+'">🔭 House chores the plan WOULD give today — preview</div><div style="display:flex;gap:8px;align-items:center;padding:2px 12px 4px;font-size:11px;color:var(--muted)">'+hpBar(d0.used[who],d0.limit[who])+'<span>'+d0.used[who]+' / '+d0.limit[who]+' min</span></div>';
+    h+=mine.length?mine.map(function(id){ const x=d0.plan[id], j=J[id]||{}; return hpRow(id,j.emoji,j.label,(x.late>0?_hhChip(x.late+' day'+(x.late===1?'':'s')+' late','#fee2e2','#991b1b'):'')+(x.from?_hhChip('from '+hhWhoName(x.from),'#e0f2fe','#075985'):'')+_hhChip(x.mins+' min','#f3f4f6','#475569')); }).join(''):'<div style="padding:3px 12px 6px;font-size:12px;color:var(--muted)">No house chores for them today.</div>';
+    if(mv.length) h+='<div style="'+HP_HEAD+'">Moved off them today</div>'+mv.map(function(m){ const j=J[m.id]||{}; return hpRow(m.id,j.emoji,j.label,_hhChip(hpMovedTxt(m)+(m.to==="grab"?(m.can.length?' · for '+m.can.map(hhWhoName).join(', '):' · no kid can'):''),m.to==="grab"?'#fef3c7':'#e0f2fe',m.to==="grab"?'#92400e':'#075985')); }).join('');
+  }
+  h+='<div style="height:6px"></div></div>';
+  // The next seven days
+  if(run){ h+='<div style="'+HP_CARD+'"><div style="padding:9px 12px;font-size:14px;font-weight:800">📆 This week <span style="font-size:11px;font-weight:600;color:var(--muted)">today and the 6 days after · house minutes vs limit · preview</span></div>';
+    run.slice(0,7).forEach(function(p){ const mv=hpMovedOff(p,who), cnt={}; mv.forEach(function(m){ cnt[m.to]=(cnt[m.to]||0)+1; });
+      h+='<div style="display:flex;align-items:center;gap:8px;padding:5px 12px;border-top:1px solid #f3f4f6;font-size:12px"><span style="width:62px;font-weight:800;color:'+(p.iso===today?'#2B7A78':'#475569')+'">'+hpDay(p.iso)+'</span>'+hpBar(p.used[who],p.limit[who])+'<span style="width:58px;text-align:right;font-weight:700">'+p.used[who]+' / '+p.limit[who]+'</span></div>'
+        +(mv.length?'<div style="padding:0 12px 5px 82px;font-size:11px;color:#475569">'+Object.keys(cnt).map(function(t){ return hpMovedTxt({to:t})+(cnt[t]>1?' ×'+cnt[t]:''); }).join(' · ')+'</div>':''); });
+    h+='</div>'; }
+  h+=hpSettingsHTML(who);
+  h+='<div style="font-size:14px;font-weight:800;margin:4px 2px 6px">📈 Habits</div>'+hhHabitsHTML(who);
+  return h;
+}
+// HOUSEPERSON_END
 // ── end of house.js — the flag below tells index.html the whole file ran (haLazyReady) ──
 if(typeof window!=="undefined") window._haLazy_house=true;
