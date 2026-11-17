@@ -7358,7 +7358,7 @@ function eicPanelOpen(kid){
 //     typeof-guarded, nothing at boot reads one, sw.js keeps an offline copy of each file.
 //   · Same loading pattern as notebooks.js / envirothon.js: a classic <script> (its functions and top-level const/let join this
 //     page's one global scope), cache-bust only on GitHub Pages. A file that fails to load is tried again on the next need.
-const HA_LAZY_FILES={env:"env.js",classes:"classes.js",games:"games.js",geo:"geo.js"};   // 🌍 GEOPATH: geo.js = the Geography Path's pictures (HoweGeo), fetched only by a family that has the unit
+const HA_LAZY_FILES={env:"env.js",classes:"classes.js",games:"games.js",geo:"geo.js",house:"house.js"};   // 🌍 GEOPATH: geo.js = the Geography Path's pictures (HoweGeo), fetched only by a family that has the unit · 🚪 house.js = the Household plan preview (HH_PEOPLE), fetched only when Mom opens it
 const HA_LAZY_NEEDS={classes:"env"};   // loaded first, in this order (classes.js's top-level lines read ENVCS_FIELDS from env.js)
 const _haLazyP={};
 // Ready = the file ran (its last line sets window._haLazy_<name>) — or its code is already in this page: a one-page copy (the
@@ -7368,6 +7368,7 @@ function haLazyReady(name){
   if(name==="env") return typeof envSiteOn==="function";   // ENVSITE (env.js)
   if(name==="classes") return typeof cpSeason==="function";   // CPCLASS (classes.js)
   if(name==="games") return typeof buildJeopHtml==="function";   // JEOPARDY (games.js)
+  if(name==="house") return typeof hpPeople==="function";   // 🚪 HOUSEPEOPLE (house.js)
   if(name==="geo") return !!(typeof window!=="undefined"&&window.HoweGeo);   // 🌍 GEOPATH (geo.js is an IIFE that sets window.HoweGeo — no sentinel function)
   return false;
 }
@@ -13376,7 +13377,7 @@ function hhDueOnPlan(j,iso){
   return true;
 }
 function hhCellJobs(who,iso){ const jobs=hhJobs(); return Object.keys(jobs).filter(function(id){ const j=jobs[id]; return j.who===who&&hhDueOnPlan(j,iso); }).sort(function(a,b){ const A=jobs[a],B=jobs[b]; return (SL_SLOTS.indexOf(A.slot)-SL_SLOTS.indexOf(B.slot))||((A.order||0)-(B.order||0)); }); }
-function hhBudget(who,iso){ const b=HH_BUDGET[who]||[20,40]; const d=_hhDow(iso); if(d>=5&&typeof hhCleanRules==="function"){ const m=hhCleanRules().minutes[who]; if(m!==undefined) return m; } return d>=5?b[1]:b[0]; }   // HH_SETTINGS_METER: weekends read Settings ▸ Cleaning Day
+function hhBudget(who,iso){ const b=HH_BUDGET[who]||[20,40]; const d=_hhDow(iso); const own=(typeof hhPeopleLim==="function")?hhPeopleLim(who,d>=5):null; if(own!==null) return own;   /* HH_PEOPLE: her number once she sets one */ if(d>=5&&typeof hhCleanRules==="function"){ const m=hhCleanRules().minutes[who]; if(m!==undefined) return m; } return d>=5?b[1]:b[0]; }   // HH_SETTINGS_METER: weekends read Settings ▸ Cleaning Day
 function hhIsHouse(j){ return j&&(j.area==="pickup"||j.area==="cleaning"); }
 function hhCellMins(ids){ const jobs=hhJobs(); let house=0, routine=0; ids.forEach(function(id){ const m=hhMinutesOf(jobs[id]); if(hhIsHouse(jobs[id])) house+=m; else routine+=m; }); return {house:house,routine:routine}; }
 function hhGridPick(who,iso){ hhGridSel=(hhGridSel===who+"|"+iso)?"":who+"|"+iso; hhRender(); }
@@ -14608,6 +14609,20 @@ function hcRoomToolsHTML(rid,ids){ const C=hcChecks(rid,ids), ro=!!hcRm[rid+"|ru
   if(ro&&ids.length) h+=hcRulesHTML(rid,ids);
   return h; }
 // HH_CARD_END
+// HH_PEOPLE_START — 👤 limits as data + the door to the plan preview (Household by room, step 3 of DESIGN_household_rooms_2026-11-15
+// §9 row 3, her "Go" 2026-11-16; §5: household/people/<who> = {school, weekend, fit}). hhBudget reads a person's own number first;
+// until Mom sets one it gives exactly what it gave before (HH_BUDGET on a school day, Settings ▸ 🧽 Cleaning Day on a weekend).
+// The engine, 👤 By person, the grid's future and "Tomorrow would look like this" live in house.js (LAZYSPLIT), fetched the first
+// time Mom opens By person or turns the preview on — nothing outside the Household tab reads household/meta/engine or house.js.
+function hhPeopleOf(who){ const p=householdData&&householdData.people&&householdData.people[who]; return (p&&typeof p==="object")?p:{}; }
+function hhPeopleLim(who,weekend){ const v=hhPeopleOf(who)[weekend?"weekend":"school"]; if(v===undefined||v===null||v==="") return null; const n=parseInt(v,10); return (n>=0&&n<=600)?n:null; }
+function hhEngineMode(){ const e=householdData&&householdData.meta&&householdData.meta.engine; return (e&&e.mode==="preview")?"preview":"off"; }   // "on" is step 4
+// Ready → true; else start fetching house.js (one <script>, see haLazyLoad), draw again when it lands, and say so meanwhile.
+function hhHouseReady(){ if(typeof haLazyReady==="function"&&haLazyReady("house")) return true; if(typeof haLazyLoad==="function") haLazyLoad("house").then(function(){ hhRender(); },function(){}); return false; }
+function hhHouseLoadingHTML(){ return '<div style="padding:8px 2px;font-size:12px;color:var(--muted)">Loading the plan preview…</div>'; }
+function hhEngineTap(on){ if(typeof momHere==="function"&&!momHere()) return; if(typeof haLazyLoad==="function") haLazyLoad("house").then(function(){ if(typeof hpEngineSet==="function") hpEngineSet(!!on); },function(){}); }
+// HH_PEOPLE_END
+// ⇢ house.js: HOUSEENG..HOUSEPEOPLE
 // KITCHEN_TAB_START — 🍳 Kitchen (her ask 2026-10-20: "a focused kitchen tab like the laundry but then id like it seperated in sections
 // that make sense and i like lots of settings … i also dont want repeats all over the chores … pull things in from other areas … check
 // off and reassign … send to the cleaning day"). ONE table, no copies: every row here IS a Household row (household/jobs) picked by

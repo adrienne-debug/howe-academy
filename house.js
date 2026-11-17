@@ -127,5 +127,54 @@ const HouseEng=(function(){
   return {day:day,run:run,dueOf:dueOf,rotHolders:rotHolders,canOf:canOf,dnum:dnum,isoOf:isoOf};
 })();
 // HOUSEENG_END
+// HOUSEPEOPLE_START — 👤 each person's limits and the plan-preview switch (DESIGN §5: household/people/<who> = {school, weekend,
+// fit:"mixed"|"school"}; household/meta/engine = {mode:"preview"|"off", on:"<iso>"}). Mom only; one targeted path per tap, through
+// _hhWrite() so ?dryrun=1 writes nothing; nothing else in the database is touched. A limit nobody has set reads exactly what
+// hhBudget gave before (HH_PEOPLE in index.html). `fit` (mixed in / school first, §4.5) is stored and shown; nothing acts on it
+// until steps 4 and 7. Mode "on" (the real switch, step 4) cannot be set here. Turning the preview off keeps its `on` date, so a
+// never-done every-N chore keeps the same first date if she turns it back on (§10.2: N after switch-on).
+function hpWho(){ return HH_WHO.filter(function(w){ return w!=="grab"; }); }
+function hpToday(){ return _hhIsoLocal(Date.now()); }
+function hpIsIso(s){ return /^\d{4}-\d{2}-\d{2}$/.test(String(s||"")); }
+function hpEngine(){ const e=householdData&&householdData.meta&&householdData.meta.engine; return (e&&typeof e==="object")?e:{}; }
+function hpFitOf(who){ const f=hhPeopleOf(who).fit; return (f==="mixed"||f==="school")?f:(hhIsKid(who)?"school":"mixed"); }   // §4.5 defaults: the kids school first, Mom and Dad mixed in
+function _hpPerson(who){ householdData.people=householdData.people||{}; householdData.people[who]=Object.assign({},householdData.people[who]); return householdData.people[who]; }
+// One limit: "" clears it (back to the old number); else whole minutes 0–600.
+function hpLimitSet(who,field,val){
+  if(typeof momHere==="function"&&!momHere()) return null; if(hpWho().indexOf(who)<0||(field!=="school"&&field!=="weekend")) return null;
+  const clear=(val===""||val===null||val===undefined); let v=null;
+  if(!clear){ v=Number(val); if(!(Number.isInteger(v)&&v>=0&&v<=600)) return null; }
+  const p=_hpPerson(who); if(clear) delete p[field]; else p[field]=v; householdOnValue(householdData);
+  if(_hhWrite()){ const r=db.ref("household/people/"+who+"/"+field); if(clear) r.remove(); else r.set(v); }
+  hhRender(); return clear?"":v;
+}
+function hpFitSet(who,fit){
+  if(typeof momHere==="function"&&!momHere()) return null; if(hpWho().indexOf(who)<0||(fit!=="mixed"&&fit!=="school")) return null;
+  _hpPerson(who).fit=fit; householdOnValue(householdData);
+  if(_hhWrite()) db.ref("household/people/"+who+"/fit").set(fit);
+  hhRender(); return fit;
+}
+// Show the plan preview (true) / stop showing it (false). Writes household/meta/engine only.
+function hpEngineSet(on){
+  if(typeof momHere==="function"&&!momHere()) return null; const e=hpEngine(); if(!on&&e.mode!=="preview") return null;
+  const rec={mode:on?"preview":"off",on:hpIsIso(e.on)?e.on:hpToday()};
+  householdData.meta=Object.assign({},householdData.meta,{engine:rec}); householdOnValue(householdData);
+  if(_hhWrite()) db.ref("household/meta/engine").set(rec);
+  hhRender(); return rec;
+}
+// The engine's inputs, from the app's own readers: each person's limits (hhBudget, which reads household/people first), their
+// Cleaning level (hhLevelCurFor), the rotation order and cycles (SL_KIDS, SL_SLOTS, config/rotationPeriod) and the switch-on date.
+const HP_MON="2026-11-16", HP_SAT="2026-11-21";   // hhBudget only asks which day of the week: any Monday, any Saturday
+function hpPeople(){ const P={}; hpWho().forEach(function(w){ P[w]={school:hhBudget(w,HP_MON),weekend:hhBudget(w,HP_SAT),level:hhLevelCurFor(w),fit:hpFitOf(w)}; }); return P; }
+function hpOv(){ return {kids:(typeof SL_KIDS!=="undefined"?SL_KIDS:ROSTER).slice(),slots:SL_SLOTS.slice(),rotPeriod:Object.assign({},(typeof rotationPeriod!=="undefined"&&rotationPeriod)||{}),on:hpIsIso(hpEngine().on)?hpEngine().on:hpToday(),minDefault:HH_MIN_DEFAULT}; }
+// Today and the next 4 weeks (§4.3: "for the next 4 weeks the names respect the limits"), worked out when drawn and kept until the
+// table, a limit, a level, a cycle or the date changes.
+let _hpMemo=null;
+function hpRun(){
+  const people=hpPeople(), ov=hpOv(), t=hpToday(), table={jobs:hhJobs()}, sig=JSON.stringify([t,people,ov,table.jobs]);
+  if(_hpMemo&&_hpMemo.sig===sig) return _hpMemo.run;
+  const run=HouseEng.run(table,t,29,people,ov); _hpMemo={sig:sig,run:run}; return run;
+}
+// HOUSEPEOPLE_END
 // ── end of house.js — the flag below tells index.html the whole file ran (haLazyReady) ──
 if(typeof window!=="undefined") window._haLazy_house=true;
