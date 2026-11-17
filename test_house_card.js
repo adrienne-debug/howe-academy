@@ -215,10 +215,14 @@ console.log("5. ⚙ Rules: one pill per setting, each the card's own control and
   ok("'same as the row above' writes only that chore's can, the row above's people (+ its own owner)", c.writes.length===1&&c.writes[0][0]==="set"&&c.writes[0][1]==="household/jobs/"+id+"/can"&&same(c.writes[0][2],want)&&JSON.stringify(c.hhJobs()[above])===before, [c.writes,want]);
   const d=mk({dry:true}); d.run(h); const n=mk({noMom:true}); n.run(h); ok("…nothing under dry run or without Mom", d.writes.length===0&&n.writes.length===0); }
 
-console.log("6. 🔍 Checks: each fires on a room built for it, quiet otherwise; each line opens the card");
+console.log("6. 🔍 Checks: each fires on a room built for it, quiet otherwise; each line opens the card (one-person: one folded line → ⚙ Rules)");
 { const c=mk(), by=c.hhRoomChores(), kinds=r=>c.hcChecks(r,by[r]||[]).map(x=>x.k);
   const K1=kinds("kitchen"), find=(r,k,id)=>c.hcChecks(r,by[r]).some(x=>x.k===k&&x.id===id);
-  ok("only one person can do it: Mop (Ben only) — not the counters (Ava, Ben), not Up for Grabs", find("kitchen","one","k_mop")&&!find("kitchen","one","k_counter")&&!find("living","one","g_shelves"));
+  const oneIds=r=>(by[r]||[]).filter(id=>{ const j=c.hhJobs()[id]; return j.who!=="grab"&&c.hhCanOf(j).length<2; }), oneOf=r=>c.hcChecks(r,by[r]||[]).filter(x=>x.k==="one");
+  ok("only one person can do it: ONE line for the room, no chore on it, opening ⚙ Rules", oneOf("kitchen").length===1&&oneOf("kitchen")[0].id===""&&oneOf("kitchen")[0].rules===1&&oneIds("kitchen").indexOf("k_mop")>=0&&oneIds("kitchen").indexOf("k_counter")<0);
+  ok("…its count is that room's one-person chores (Mop counted, the counters and Up for Grabs not)", oneIds("kitchen").length>=1&&oneOf("kitchen")[0].txt===oneIds("kitchen").length+(oneIds("kitchen").length===1?" chore":" chores")+" only one person can do — fill in who-can in ⚙ Rules", oneOf("kitchen")[0].txt);
+  ok("…'1 chore' when there is one; no line at all when the count is 0", (()=>{ const ok1=Object.keys(by).find(r=>oneIds(r).length===1), ok0=Object.keys(by).find(r=>r!=="__none"&&(by[r]||[]).length&&oneIds(r).length===0); return !!ok1&&/^1 chore only one person can do/.test(oneOf(ok1)[0].txt)&&!!ok0&&oneOf(ok0).length===0; })());
+  ok("…and goes once everyone is filled in", (()=>{ const x=mk(); x.hhRoomChores().kitchen.forEach(id=>{ const j=x.hhJobs()[id]; if(j.who!=="grab") j.can=["ava","ben"]; }); return x.hcChecks("kitchen",x.hhRoomChores().kitchen).every(y=>y.k!=="one"); })());
   ok("no weekly chore owns this room: School (a once-job only) and Living (daily only) — not Kitchen", kinds("school").indexOf("weekly")>=0&&kinds("living").indexOf("weekly")>=0&&K1.indexOf("weekly")<0);
   ok("…never for Not a room", c.hcChecks("any",[]).length===0);
   ok("the same chore twice: the two sweeps, both ways", find("kitchen","twice","k_sweep")&&find("kitchen","twice","k_sweep2")&&kinds("bathup").indexOf("twice")<0);
@@ -226,7 +230,11 @@ console.log("6. 🔍 Checks: each fires on a room built for it, quiet otherwise;
   ok("above the level: the grout (Level 3, family on 1) — and quiet once the family is on 3", find("kitchen","level","k_grout")&&mk({levels:{cleaning:{current:3}}}).hcChecks("kitchen",by.kitchen).every(x=>x.k!=="level"));
   ok("a room with nothing to say: no Checks at all, no Checks button", kinds("bathup").length===0&&!/🔍 Checks/.test(c.hcRoomToolsHTML("bathup",by.bathup))&&/⚙ Rules/.test(c.hcRoomToolsHTML("bathup",by.bathup)));
   c.hcFold("kitchen|checks"); const T1=c.hcRoomToolsHTML("kitchen",by.kitchen); const lines=handlers(T1).filter(x=>/^hcOpen\(/.test(x));
-  ok("unfolded: a line per check, each opening that chore's card", lines.length===c.hcChecks("kitchen",by.kitchen).length&&(c.run(lines[0]),c.get("hcId")===/'([^']+)'/.exec(lines[0])[1]));
+  ok("unfolded: a line per other check, each opening that chore's card", lines.length===c.hcChecks("kitchen",by.kitchen).filter(x=>x.id).length&&(c.run(lines[0]),c.get("hcId")===/'([^']+)'/.exec(lines[0])[1]));
+  ok("…the Checks count is lines, the one-person line counted once", /🔍 Checks \(\d+\)/.exec(T1)[0]==="🔍 Checks ("+c.hcChecks("kitchen",by.kitchen).length+")");
+  const RO=pick(T1,"hcRulesOn('kitchen')"), roBefore=c.hcRoomToolsHTML("kitchen",by.kitchen);
+  ok("the one-person line opens this room's ⚙ Rules (and keeps it open on a second tap)", RO==="hcRulesOn('kitchen')"&&!/<table/.test(roBefore)&&(c.run(RO),c.run(RO),/<table/.test(c.hcRoomToolsHTML("kitchen",by.kitchen)))&&/👥 Who can/.test(T1));
+  ok("the other checks are as before: one line per chore", ["twice","guess","level"].every(k=>{ const L=c.hcChecks("kitchen",by.kitchen).filter(x=>x.k===k); return L.length&&L.every(x=>x.id&&T1.indexOf("hcOpen('"+x.id+"')")>0); }));
   c.hcFold("school|checks"); ok("'no weekly chore' opens an empty card for this room", pick(c.hcRoomToolsHTML("school",by.school),"hcAdd('school')")==="hcAdd('school')");
   ok("Checks only read", c.writes.length===0); }
 
