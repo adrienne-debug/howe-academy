@@ -256,6 +256,7 @@ function envmRelAttach(kid,_lz){
   if(typeof cpmcAttach==="function") cpmcAttach(kid,cid,_envm.edb,_envm.subs,envmSid(kid));   // 🏫 CPMYCLASS: the class boards (boards/<cid>) for his 🌿 tile, one listener with the others (off the class site only)
   if(typeof cplkLoad==="function") cplkLoad(kid,cid,_envm.edb);   // 🧩 CPLINCOLNSKILLS: his class's skills layer (classSkills/<cid>), read once (memory only; off the class site only)
   if(typeof cplpLoad==="function") cplpLoad(kid,cid,_envm.edb);   // 🖼 CPLINCOLNPHOTOS: his class's and the unit's photo layers (classPhotos/<cid>, units/<unit>/photos), read once (memory only; off the class site only)
+  if(typeof cpprepLoad==="function") cpprepLoad(kid,cid,_envm.edb);   // 🎯 CPTESTPREP: his class's goal list (classes/<cid>/goals), read once (memory only; off the class site only)
 }
 // A release record {<deckKey>|<station>: truthy}: clear each matching deck's hold once — the family database's one targeted removal.
 function envmRelease(kid,rel){

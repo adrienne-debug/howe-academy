@@ -69522,6 +69522,7 @@ function nbBudgetCardHtml(kid,pn){
 // ⇢ classes.js: CPSHARE
 // ⇢ classes.js: CPSECTIONS
 // ⇢ classes.js: CPSPECIALIST
+// ⇢ classes.js: CPTESTPREP
 // ── MST_ENGINE_START ──
 // Mastery "study sessions" — pure functions, no DOM, no writes.
 // Relies on globals already defined elsewhere in index.html:
@@ -69928,6 +69929,8 @@ function mstPile(kid, sid, pn, todayLog) {
     }
   }
 
+  { const _tp = (typeof cpprepPick === "function") ? cpprepPick(kid, session, items, scoredIds, todayLog) : null;   // 🎯 CPTESTPREP: before the test, today's share of the learned (graduated) cards rides on top as reviews, after Reviews a sitting (the 🌿 sitting only; null for everyone else)
+    if (_tp) { const _p = (typeof cpReviewCapPile === "function" && session.reviewCap > 0) ? cpReviewCapPile(session, { reviews, learning, newNames }) : { reviews, learning, newNames }; return Object.assign({}, _p, { reviews: _p.reviews.concat(_tp), prep: _tp.length }); } }
   if (typeof cpReviewCapPile === "function" && session.reviewCap > 0) return cpReviewCapPile(session, { reviews, learning, newNames });   // 🔁 CPREVIEW: Reviews a sitting — the oldest due first, Keep going for the rest
   return { reviews, learning, newNames };
 }
@@ -74170,6 +74173,7 @@ function renderMastStudy(opts){
   h+='<div style="font-size:14px;color:var(--muted);font-weight:600">'+((session.kind==="mix")
     ? ((pile.reviews||[]).length+' due')
     : ((pile.newNames||[]).length+' new · '+(pile.reviews||[]).length+' due · '+(pile.learning||[]).length+' learning'))+'</div>';
+  if(typeof cpprepStartHtml==="function") h+=cpprepStartHtml(kid,session);   // 🎯 CPTESTPREP: "🎯 State in 12 days · 9 learned cards come back today" while the before-the-test window is open ("" for everyone else)
   if(typeof mstSentBackPending==="function"&&mstSentBackPending(kid,session.sid)) h+='<div style="margin-top:10px;padding:10px 12px;background:#fffbeb;border:2px solid #f59e0b;border-radius:12px;font-size:14px;font-weight:800;color:#b45309">\u21A9\uFE0F Mom sent this back. Do it again \u2014 slowly. Read every card before you flip it.</div>';   // ↩ MSTALERT
   if(typeof tmapStudyHtml==="function") h+=tmapStudyHtml(kid,session,(mstState&&mstSid===session.sid)?"run":(mstDone?"done":"start"));   // 🗺 TMAP: one map per deck — before the sitting and after the save, never during
   if(todayLog) h+='<div style="margin-top:8px;font-size:13px;color:#16a34a;font-weight:700">Done today: '+(todayLog.total||0)+' cards'+(todayLog.miss?', '+todayLog.miss+' again':'')+'</div>';
@@ -74679,6 +74683,7 @@ function _mstSaveInner(){
   const _wasLearning=new Set(items.filter(i=>i&&i.status==="introduction").map(i=>i.id));
   let r; try{ r=mastApplyScores(items,due,scores,pn,settings,{prevShown:prevShownIds,autoPull:false,chain:false}); }catch(e){ r={touched:[],minted:[],changes:0}; }
   const touched=r.touched||[];
+  const _tp=(typeof cpprepStamp==="function")?cpprepStamp(kid,sid,items,scores,_before):null;   // 🎯 CPTESTPREP: a learned card back before the test gets prep = the goal date (right stays graduated; a miss went where miss_drop sends it)
   try{ if(typeof scStudyWw==="function") scStudyWw(items,scores,touched); }catch(e){}   // 📚 STUDYCOUNTS → 🏋️ a spelling miss in a sitting counts for Word Workout
   try{ if(typeof mpAfterStudy==="function") mpAfterStudy(kid,items,mstState,touched); }catch(e){}   // 🎮 MISSPLAY: wrong 2+ times in the sitting → the practice list
   const mintedAll=minted.slice();
@@ -74745,6 +74750,7 @@ function _mstSaveInner(){
       upd[ix+"/dynFromTier"]=it.dynamic?(it.dynFromTier||null):null; upd[ix+"/dynAddedAt"]=it.dynamic?(it.dynAddedAt||null):null;
       if(it.ww) upd[ix+"/ww"]=it.ww;   // 🏋️ STUDYCOUNTS: Word Workout miss days, as the drill save writes them
       if(it.gp!==undefined) upd[ix+"/gp"]=it.gp||null;   // 🎮 MISSPLAY: the practice list, as the drill save writes it
+      if(_tp&&_tp.indexOf(it)>=0) upd[ix+"/prep"]=it.prep;   // 🎯 CPTESTPREP: the one new field, in this same targeted update
     });
     mintedAll.forEach(it=>{ const ix=items.indexOf(it); if(ix>=0) upd[ix]=JSON.parse(JSON.stringify(it)); });  // strips undefined fields Firebase would refuse
     if(Object.keys(upd).length) db.ref("mastery/"+kid).update(upd);

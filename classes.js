@@ -11191,5 +11191,148 @@ function cpSpecSetHtml(){
   }catch(e){ return ""; }
 }
 // CPSPECIALIST_END
+// CPTESTPREP_START — 🎯 EVERY LEARNED CARD COMES BACK ONCE BEFORE THE TEST, in the 🌿 sitting. The gap (the hub's check 2026-11-17 on main
+// 959f617a + Lincoln's live data): a graduated card never comes back (MAST_TIER_INT graduated = null, so mastIsDue is false; CPREVIEW's
+// cpReviewOwns stops below graduated). Start to graduated is about 6 weeks, so a card learned in November graduates around New Year and goes
+// 2–3 months unseen before the April competition (~200–300 such cards by April 1). Her answer 2026-11-17 to "Build a 'before the test' pass
+// that brings every graduated card back once?": "Yes, build it". Only that — no ladder change, no Learned level, no other deck.
+//   · WHO: the 🌿 Envirothon session (ENV_SESSION_SID) only — the class site's own kid (CPREVIEW's cpReviewOn: kid / parent login, or the
+//     demo's kid) and Lincoln's mirrored 🌿 session in the family app (CPLINCOLN's cplnOn). Every other session, deck, kid and family, Mom's
+//     drill, the Daily Mix and the games: nothing changes.
+//   · THE DATE: the class's next goal date on or after today, from 🏫 Class setup's goal list (cppGoals). The site reads the class record it
+//     already listens to; Lincoln's mirror reads classes/<cid>/goals once per class (cpprepLoad, memory only, from ENVMIRROR's envmRelAttach;
+//     the same classes/$cid read rule as his class settings, so no rules change). No goal date → inert.
+//   · THE WINDOW: N days before the goal through the day before it. N = ⚙️ Class settings ▸ "Learned cards come back before the test"
+//     (prepDays, 0–60, default 21, 0 = off), a class value with the per-student override and Adrienne's locks like every other row (the row
+//     is added from here, by name, after "Hands off to the drill at"; the ENVCS_FIELDS literal is untouched). Lincoln follows his class's
+//     value and his own override, read off the layers CPLINCOLN already holds.
+//   · WHICH CARDS: active, graduated, in the 🌿 session's decks (after CPCARDSEDIT's hidden cards and CPSECTIONS' Off sections — mstPile's
+//     own list), not parked, not never-drill, and not stamped for this goal date (prep). Cards still on the ladder are left alone.
+//   · HOW MANY A DAY: on a study day, (cards still waiting + the ones already back today) ÷ the study days left before the goal (today
+//     included), rounded up, less the ones already back today. Study days = the student's class calendar on the site (cpStudyDays), every
+//     day for Lincoln. A day off brings none, unless no study day is left before the goal (then all that wait come). A skipped day needs
+//     nothing: the share is worked out fresh each day. Longest unseen first (the last day a study log or drill log graded it), then by id,
+//     so the same day always gives the same cards.
+//   · IN THE SITTING: they ride on top as review cards, after Reviews a sitting's cut (they don't use up Cards a sitting or Reviews a sitting).
+//     A card answered today is not drawn again today.
+//   · THE RESULT: graded by the sitting's own save (mastApplyScores, as any review). Right → it stays graduated; a miss → what a miss does to
+//     a review (miss_drop) and the ladder has it from there. Either way ONE new field, prep = the goal date, rides the save's own targeted
+//     update (mastery/<kid>/<ix>/prep), so the card doesn't come back for this goal. ?dryrun=1 writes nothing (the db.ref patch).
+//   · WHAT THE KID SEES: one line on the 🌿 start card while the window is open: "🎯 State in 12 days · 9 learned cards come back today".
+const CPPREP_ROW={name:"prepDays",part:"study",sect:"moves",kind:"int",min:0,max:60,def:21,zero:"off",label:"Learned cards come back before the test",means:"In the last days before the class’s next goal date, each learned card comes back once in the \u{1F33F} sitting, a few each study day (0 = off)."};
+// the guarded update of ENVCLASSSET's settings list (by name, never by position): the row after "Hands off to the drill at"
+function cpprepFields(){
+  if(typeof ENVCS_FIELDS==="undefined"||!Array.isArray(ENVCS_FIELDS)) return false;
+  if(!ENVCS_FIELDS.some(f=>f&&f.name===CPPREP_ROW.name)){ const i=ENVCS_FIELDS.findIndex(f=>f&&f.name==="handOffAt"); ENVCS_FIELDS.splice(i<0?ENVCS_FIELDS.length:i+1,0,Object.assign({},CPPREP_ROW)); }
+  return true;
+}
+const CPPREP_FIELDS_SET=cpprepFields();
+const _cpprep={g:{},seen:null};
+// ENVMIRROR's envmRelAttach: Lincoln's class goal list, ONE once per class on the mirror's app, kept in memory (never on the class site).
+// A refused or failed read leaves the list empty: the pass stays off for him.
+function cpprepLoad(kid,cid,edb){
+  try{
+    if(!kid||!cid||!edb||(typeof envSiteOn==="function"&&envSiteOn())) return false;
+    const cur=_cpprep.g[kid]; if(cur&&cur.cid===cid) return false;
+    const rec={cid:cid,goals:null}; _cpprep.g[kid]=rec;
+    edb.ref("classes/"+cid+"/goals").once("value",s=>{ if(_cpprep.g[kid]!==rec) return; const v=(s&&typeof s.val==="function")?s.val():null;
+      rec.goals=(typeof cppGoals==="function")?cppGoals({goals:v}):[]; try{ if(typeof renderAllSoon==="function") renderAllSoon(); }catch(e){} },()=>{});
+    return true;
+  }catch(e){ return false; }
+}
+// "site" (the class site's own kid), "mirror" (Lincoln's class link) or "" (everyone else: inert)
+function cpprepWho(kid){
+  try{ if(typeof cplnOn==="function"&&cplnOn(kid)) return "mirror"; if(typeof cpReviewOn==="function"&&cpReviewOn(kid)) return "site"; }catch(e){}
+  return "";
+}
+// N: the class's value, then the student's override (a bad value is skipped); 0 while the site's layers haven't arrived
+function cpprepDays(kid,who){
+  const f=(typeof envClsField==="function")?envClsField("prepDays"):null; if(!f) return 0;
+  const L=who==="mirror"?cplnLayers(kid):((typeof envClsLayers==="function")?envClsLayers():null); if(!L) return 0;
+  let v=f.def; L.forEach(x=>{ const y=x&&x.study&&x.study.prepDays; if(y==null) return; const c=envClsCheck("prepDays",y); if(c.ok) v=c.v; });
+  return v;
+}
+// the window for today → {who, goal:{name,date}, from, to, today, n} or null (inert)
+function cpprepWindow(kid,session){
+  try{
+    if(!session||typeof ENV_SESSION_SID==="undefined"||session.sid!==ENV_SESSION_SID) return null;
+    const who=cpprepWho(kid); if(!who) return null;
+    const N=cpprepDays(kid,who); if(!(N>0)) return null;
+    const today=who==="site"?cpcalToday():_todayStr(); if(!cpcalOk(today)) return null;
+    let goals;
+    if(who==="mirror"){ const r=_cpprep.g[kid], l=_cpln.kids[kid]; goals=(r&&l&&r.cid===l.cid&&Array.isArray(r.goals))?r.goals:[]; }
+    else goals=cppGoals(cpcalCls()||{});
+    const next=goals.filter(g=>g&&cpcalOk(g.date)&&g.date>=today).sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0)[0];
+    if(!next) return null;
+    const from=cppAdd(next.date,-N), to=cppAdd(next.date,-1);
+    if(today<from||today>to) return null;
+    return {who:who,goal:{name:String(next.name||""),date:next.date},from:from,to:to,today:today,n:N};
+  }catch(e){ return null; }
+}
+// is `s` a study day? the student's class calendar on the site; every day for Lincoln (his family app has no class calendar)
+function cpprepStudyFn(w){
+  try{ if(w.who==="site"&&typeof cpStudyDays==="function"&&typeof _envs!=="undefined"&&_envs.sid){ const c=cpStudyDays(_envs.sid); if(c) return s=>cpCalStudy(c,s); } }catch(e){}
+  return ()=>true;
+}
+// the last day each card was graded (study logs + drill logs, "YYYYMMDD"), once per kid per day
+function cpprepSeen(kid){
+  const day=(typeof mstTodayKey==="function")?mstTodayKey():"", vals=o=>Array.isArray(o)?o:(o&&typeof o==="object"?Object.values(o):[]);
+  const SL=((typeof masteryData!=="undefined"&&masteryData.studyLog)||{})[kid]||{}, H=((typeof masteryData!=="undefined"&&masteryData.history)||{})[kid]||{};
+  let n=0; Object.keys(SL).forEach(s=>{ n+=Object.keys(SL[s]||{}).length; }); n+=Object.keys(H).length;
+  const key=kid+"|"+day+"|"+n; if(_cpprep.seen&&_cpprep.seen.key===key) return _cpprep.seen.m;
+  const m={}, see=(dk,e)=>{ vals(e&&e.items).forEach(it=>{ if(it&&it.id!=null&&(it.result==="c"||it.result==="m"||it.result==="~")&&(!m[it.id]||m[it.id]<dk)) m[it.id]=dk; }); };
+  Object.keys(SL).forEach(s=>{ const D=SL[s]||{}; Object.keys(D).forEach(dk=>see(String(dk),D[dk])); });
+  Object.keys(H).forEach(dk=>see(String(dk),H[dk]));
+  _cpprep.seen={key:key,m:m}; return m;
+}
+// THE day's pass → null (inert) or {w, today:[cards to bring back now], waiting, done, days}
+function cpprepState(kid,session,items,scoredIds,todayLog){
+  const w=cpprepWindow(kid,session); if(!w) return null;
+  const decks=new Set(session.decks||[]), scored=scoredIds||new Set();
+  const mine=it=>it&&decks.has(it.subject)&&!mastIsParked(it)&&!mastIsNeverDrill(it);
+  const L=(items||[]).filter(mine);
+  const waiting=L.filter(it=>it.status==="active"&&it.tier==="graduated"&&it.prep!==w.goal.date&&!scored.has(it.id));
+  // back today = graduated when today's first sitting began (the save's `before` snapshot) and stamped for this goal since
+  const was=new Set(((todayLog&&todayLog.before)?(Array.isArray(todayLog.before)?todayLog.before:Object.values(todayLog.before)):[]).filter(b=>b&&b.st&&b.st.tier==="graduated").map(b=>b.id));
+  const done=L.filter(it=>it.prep===w.goal.date&&was.has(it.id)).length;
+  const study=cpprepStudyFn(w); let left=0; for(let s=w.today;s<=w.to;s=cppAdd(s,1)) if(study(s)) left++;
+  let k;
+  if(!study(w.today)) k=left?0:waiting.length;   // a day off: none, unless no study day is left before the goal
+  else k=Math.max(0,Math.ceil((waiting.length+done)/left)-done);
+  const seen=cpprepSeen(kid), sn=it=>seen[it.id]||"";
+  const pick=waiting.slice().sort((a,b)=>(sn(a)<sn(b)?-1:sn(a)>sn(b)?1:0)||_mstCmp(a.id,b.id)).slice(0,k);
+  const days=cpcalDays(w.today,w.goal.date);
+  return {w:w,today:pick,waiting:waiting.length,done:done,days:days};
+}
+// mstPile's hook: today's cards to bring back, or null (the pile is built exactly as before)
+function cpprepPick(kid,session,items,scoredIds,todayLog){
+  try{ const st=cpprepState(kid,session,items,scoredIds,todayLog); return (st&&st.today.length)?st.today:null; }catch(e){ return null; }
+}
+// _mstSaveInner's hook, right after the grading: every card that was graduated before this sitting and was graded in it gets prep = the goal
+// date (a right that left it off graduated — a ladder without the graduated rung — is put back). → the stamped cards, for the save's update.
+function cpprepStamp(kid,sid,items,scores,before){
+  try{
+    const session=(mstSessions(kid)||[]).find(s=>s.sid===sid), w=cpprepWindow(kid,session); if(!w) return null;
+    const decks=new Set(session.decks||[]), was=new Set((before||[]).filter(b=>b&&b.st&&b.st.tier==="graduated").map(b=>b.id)), out=[];
+    (items||[]).forEach(it=>{ if(!it||!was.has(it.id)||!decks.has(it.subject)) return; const sc=scores&&scores[it.id]; if(sc!=="c"&&sc!=="m"&&sc!=="~") return;
+      if(sc==="c"&&it.tier!=="graduated"){ it.tier="graduated"; delete it.next_due; }
+      it.prep=w.goal.date; out.push(it); });
+    return out.length?out:null;
+  }catch(e){ return null; }
+}
+// the 🌿 start card's one line while the window is open ("" otherwise)
+function cpprepStartHtml(kid,session){
+  try{
+    if(!session||typeof ENV_SESSION_SID==="undefined"||session.sid!==ENV_SESSION_SID) return "";
+    let items=masteryData[kid]||[]; if(!Array.isArray(items)) items=Object.values(items); items=items.filter(Boolean);
+    if(typeof cpceItems==="function") items=cpceItems(kid,items); if(typeof cpSecItems==="function") items=cpSecItems(kid,items);
+    const log=mstLogGet(kid,session.sid), scored=new Set(((log&&log.items)||[]).filter(e=>e&&e.id!=null&&(e.result==="c"||e.result==="m")).map(e=>e.id));
+    const st=cpprepState(kid,session,items,scored,log); if(!st) return "";
+    const n=st.today.length, when=st.days===1?"tomorrow":"in "+st.days+" days";
+    const tail=n?n+" learned card"+(n===1?" comes":"s come")+" back today":(st.done?"today’s learned cards are done ✓":(st.waiting?st.waiting+" learned card"+(st.waiting===1?"":"s")+" still to come back":"every learned card has come back ✓"));
+    return '<div data-cpprep="line" style="margin-top:6px;font-size:13px;color:#7c3aed;font-weight:700">\u{1F3AF} '+envsEsc(st.w.goal.name)+' '+when+' · '+tail+'</div>';
+  }catch(e){ return ""; }
+}
+// CPTESTPREP_END
 // ── end of classes.js — the flag below tells index.html the whole file ran (haLazyReady) ──
 if(typeof window!=="undefined") window._haLazy_classes=true;
