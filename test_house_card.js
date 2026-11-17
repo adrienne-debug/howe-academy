@@ -20,7 +20,7 @@ const HH=cut("// HOUSEHOLD_START","// HH_CARD_END"), KT=cut("// KITCHEN_TAB_STAR
 // The code before this step: BASE_HTML's Household + Kitchen, else this file with the card block taken out and the re-points put back.
 let OLD;
 if(process.env.BASE_HTML){ const b=require("./test_src.js")(process.env.BASE_HTML), bc=cutOf(b); OLD=bc("// HOUSEHOLD_START","// HH_ROOMPAGE_END")+"\n"+bc("// KITCHEN_TAB_START","// KITCHEN_TAB_END"); console.log("(base: "+process.env.BASE_HTML+")"); }
-else { const a=HH.indexOf("// HH_CARD_START"); let o=HH.slice(0,a); const R=[["_hhBtn(\"hcAdd()\",'+ Add a chore'","_hhBtn(\"hhAddToggle()\",'+ Add a chore'"],
+else { const a=HH.indexOf("// HH_CARD_START"); let o=HH.slice(0,a); const R=[["_hhBtn(typeof hcAdd===\"function\"?\"hcAdd()\":\"\",'+ Add a chore',true,'#2B7A78')+'</div>';   // 🪶 HOUSESLIM: hcAdd is in house.js (HH_CARD) — always there under renderHousehold's door","_hhBtn(\"hhAddToggle()\",'+ Add a chore',true,'#2B7A78')+'</div>';"],
     ["_hhBtn(\"hcOpen('\"+id+\"')\",'✎ Edit',typeof hcId!==\"undefined\"&&hcId===id,'#2B7A78'); }   // HH_CARD: ✎ Edit opens the chore card","_hhBtn(\"hhEditToggle('\"+id+\"')\",'✎ Edit',hhEditId===id,'#2B7A78'); }"],
     ["(mom?' onclick=\"hcOpen(\\''+id+'\\')\"':'')","(mom?' onclick=\"hhEditToggle(\\''+id+'\\')\"':'')"],
     ["  el.innerHTML=h+(typeof hcCardHTML===\"function\"?hcCardHTML():\"\");   // HH_CARD: the chore card, only while open\n  if(typeof hcKeep===\"function\") hcKeep(el);\n","  el.innerHTML=h;\n"],

@@ -26,7 +26,7 @@ function mk(o){
     MC_DEFAULT:{}, mcDoneOn:()=>false, dcDoneOn:()=>false, gbList:()=>[],
     routineLog:{}, momdayData:{}, daddayData:{}, momChoresData:{_seeded:true,mc_a:{label:"🌙 Kitchen close-down",cad:"daily",ts:1}}, dadChoresData:{dc_a:{label:"Dishes",cad:"daily",ts:1}}, activeWk:()=>"week26", _todayDay:"saturday", _todayStr:()=>TODAY,
     cap:s=>s.charAt(0).toUpperCase()+s.slice(1), esc:s=>String(s==null?"":s), mwBanner:s=>"", mpSubnav:v=>"", mwToast:()=>{}, renderAll:()=>{}, renderMomsPlan:()=>{}, document:{getElementById:id=>dom[id]||null}, dom, writes};
-  vm.createContext(ctx); vm.runInContext(CAD+"\n"+ROT+"\n"+fn("rtStepsFor")+"\n"+fn("mcAll")+"\n"+fn("dcAll")+"\n"+fn("_mcDb")+"\n"+BLOCK, ctx);
+  vm.createContext(ctx); vm.runInContext(CAD+"\n"+ROT+"\n"+fn("rtStepsFor")+"\n"+fn("mcAll")+"\n"+fn("dcAll")+"\n"+fn("_mcDb")+"\n"+fn("hcAdd")+"\n"+BLOCK, ctx);   // hcAdd (HH_CARD, house.js since HOUSESLIM): the + Add button draws its tap only when the card code is there
   ctx.get=expr=>vm.runInContext(expr,ctx);   // `let` state (hhAdd, hhAddOpen) is not on the global
   ctx.hhImport(); ctx.hhTakeover(true); ctx.writes.length=0; return ctx;
 }
