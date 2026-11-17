@@ -15,7 +15,7 @@ const HJS=fs.readFileSync(path.join(__dirname,"house.js"),"utf8"), SRC=fs.readFi
 const block=(s,name)=>{ const a=s.indexOf("// "+name+"_START"), b=s.indexOf("// "+name+"_END"); if(a<0||b<a) throw new Error("missing "+name); return s.slice(a,s.indexOf("\n",b)); };
 const fnOf=s=>name=>{ const i=s.indexOf("function "+name+"("); if(i<0) throw new Error("missing "+name); let d=0; for(let k=s.indexOf("{",i);k<s.length;k++){ if(s[k]==="{") d++; else if(s[k]==="}"&&--d===0) return s.slice(i,k+1); } throw new Error("unbalanced "+name); };
 const fn=fnOf(SRC), lineOf=st=>{ const i=SRC.indexOf(st); if(i<0) throw new Error("missing "+st); return SRC.slice(i,SRC.indexOf("\n",i)); };
-const ENG=block(HJS,"HOUSEENG");
+const ENG=block(SRC,"HOUSEENG");   // step 4 moved the engine into index.html, unchanged (any device builds the day)
 // The engine runs in a bare world: no window, no db, no document, no app globals.
 const bare={}; vm.createContext(bare); vm.runInContext(ENG+"\nthis.HouseEng=HouseEng;",bare); const E=bare.HouseEng;
 const dnum=E.dnum, isoOf=E.isoOf, dowOf=s=>(new Date(s+"T12:00:00Z").getUTCDay()+6)%7;

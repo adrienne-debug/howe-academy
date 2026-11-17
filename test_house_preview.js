@@ -155,7 +155,7 @@ console.log("\n── only the Household tab reaches the preview ──");
   const P=require("./perf_budget_measure.js"), cm=P.scanJs(RAW).cm;   // comments and strings blanked by the same scanner the perf guard uses
   const L=cm.split("\n");
   const enclosing=i=>{ for(let k=i;k>=0;k--){ const m=/^\s*(?:async\s+)?function\s+([\w$]+)\s*\(/.exec(L[k]); if(m) return m[1]; if(/^(const|let) HA_LAZY_FILES|^function haLazyReady/.test(L[k])) return "LAZYSPLIT"; } return "?"; };
-  const hpNames=[...new Set([...HJS.slice(HJS.indexOf("// HOUSEENG_START"),HJS.indexOf("// HOUSEPREVIEW_END")).matchAll(/^(?:function\s+([\w$]+)|(?:const|let)\s+([\w$]+))/gm)].map(m=>m[1]||m[2]))];
+  const hpNames=[...new Set([...(RAW.slice(RAW.indexOf("// HOUSEENG_START"),RAW.indexOf("// HOUSEENG_END"))+"\n"+HJS.slice(HJS.indexOf("// HOUSEPEOPLE_START"),HJS.indexOf("// HOUSEPREVIEW_END"))).matchAll(/^(?:function\s+([\w$]+)|(?:const|let)\s+([\w$]+))/gm)].map(m=>m[1]||m[2]))];
   // ↑ the preview's own blocks (step 3). The Household page code HOUSESLIM moved into house.js has its own door and its own check (test_house_slim.js).
   const glue=["hhEngineMode","hhHouseReady","hhHouseLoadingHTML","hhRoomFuture","hhRoomsTailHTML","hhPersonDoor","hhEngineTap"];
   const allowed=new Set(["renderHousehold","hhRoomGridHTML","hhRoomsPageHTML","_hhRmSq","haLazyReady","LAZYSPLIT"].concat(glue));
