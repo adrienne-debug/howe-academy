@@ -154,7 +154,7 @@ console.log("4. Mom only, inert under dry run, never the whole node");
   ok("?dryrun=1: nothing written by seed, add, group or remove", d.writes.length===0);
   const n=mk({noMom:true}); const r=[n.hhRoomSet("kitchen","name","Cook room"),n.hhRoomAdd("Shed","down"),n.hhGroupAdd("Outside"),n.hhRoomRemove("living"),n.hhRoomStep("kitchen",1),n.hhGroupSet("down","name","Lower")];
   ok("not Mom: every edit returns null, nothing written, nothing stored", r.every(x=>x===null)&&n.writes.length===0&&!n.get("hhRoomsStored()"));
-  ok("not Mom: no 🚪 Edit rooms button and no tap-to-edit on the page", (()=>{ n.get('hhView="rooms"; hhRmSel="kitchen"; hhRmLane["kitchen|daily"]=true;'); const el={}; n.renderHousehold(el); return !/Edit rooms/.test(el.innerHTML)&&!/hhEditToggle\(/.test(el.innerHTML)&&/Wipe the counters/.test(el.innerHTML); })());
+  ok("not Mom: no 🚪 Edit rooms button and no tap-to-edit on the page", (()=>{ n.get('hhView="rooms"; hhRmSel="kitchen"; hhRmLane["kitchen|daily"]=true;'); const el={}; n.renderHousehold(el); return !/Edit rooms/.test(el.innerHTML)&&!/hcOpen\(/.test(el.innerHTML)&&/Wipe the counters/.test(el.innerHTML); })());
   const z=mk(); const bad=[z.hhRoomEdit("jobs/w_daily/room","x"),z.hhRoomEdit("",1),z.hhRoomEdit("rooms",{}),z.hhRoomEdit("rooms/a/b/c",1)];
   ok("hhRoomEdit refuses any path outside rooms/<id> and floors/<id>", bad.every(x=>x===null)&&z.writes.length===0);
   const s=src.slice(src.indexOf("// HH_ROOMDATA_START"),src.indexOf("// HH_ROOMDATA_END"))+src.slice(src.indexOf("// HH_ROOMPAGE_START"),src.indexOf("// HH_ROOMPAGE_END"));
@@ -201,9 +201,9 @@ console.log("7. The grid: past squares from the history already loaded, today fr
   ok("folded Daily lane squares show the person (Av ✓) in Ava's colour", /color:#aa1111">Av ✓/.test(H));
   ok("no late badge, no future, no long lines", !/days late|late<\/span>|▏/.test(H.slice(H.indexOf("<table"))));
   c.hhRmLaneToggle("kitchen|daily"); c.renderHousehold(el); const H2=el.innerHTML;
-  ok("an unfolded lane = one column per chore, titles open ✎ Edit", /colspan="3"/.test(H2)&&/hhEditToggle\('w_daily'\)"[^>]*title="Wipe the counters">🧽 Wipe the counters/.test(H2));
-  ok("its squares open ✎ Edit and show the full name", /<td onclick="hhEditToggle\('w_daily'\)"[^>]*><span[^>]*color:#aa1111">Ava ✓<\/span>/.test(H2));
-  c.hhEditToggle("w_daily"); c.renderHousehold(el); ok("tapping opens the EXISTING editor under the grid", el.innerHTML.indexOf(c.hhEditHTML("w_daily"))>0&&c.hhEditHTML("w_daily").length>100);
+  ok("an unfolded lane = one column per chore, titles open the chore card (HH_CARD, step 2)", /colspan="3"/.test(H2)&&/hcOpen\('w_daily'\)"[^>]*title="Wipe the counters">🧽 Wipe the counters/.test(H2));
+  ok("its squares open the chore card (HH_CARD, step 2) and show the full name", /<td onclick="hcOpen\('w_daily'\)"[^>]*><span[^>]*color:#aa1111">Ava ✓<\/span>/.test(H2));
+  c.hhEditToggle("w_daily"); c.renderHousehold(el); ok("the old editor under the grid still draws when hhEditId is set (nothing on the tab sets it since step 2)", el.innerHTML.indexOf(c.hhEditHTML("w_daily"))>0&&c.hhEditHTML("w_daily").length>100);
   c.hhRmLongToggle(); c.renderHousehold(el); ok("Show 8 weeks = 56 past days + today", (el.innerHTML.match(/<tr style="/g)||[]).length===57);
   ok("nothing was written by drawing", c.writes.length===0); }
 

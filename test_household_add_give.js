@@ -82,7 +82,7 @@ console.log("Give to…");
 }
 console.log("On screen");
 { const c=mk(); const el={}; c.renderHousehold(el);
-  ok("the + Add a chore button sits under the view chips", /hhAddToggle\(\)/.test(el.innerHTML)&&el.innerHTML.indexOf("hhAddToggle()")>el.innerHTML.indexOf("hhGo('today')"));
+  ok("the + Add a chore button sits under the view chips", /hcAdd\(\)/.test(el.innerHTML)&&el.innerHTML.indexOf("hcAdd()")>el.innerHTML.indexOf("hhGo('today')"));
   c.hhAddToggle(); c.renderHousehold(el); ok("open: a name box, who / time / days / room / level pickers, Save", /id="hh-add-label"/.test(el.innerHTML)&&/hhAddSet\('who','lucy'\)/.test(el.innerHTML)&&/hhAddCadMode\('days'\)/.test(el.innerHTML)&&/hhAddSet\('room','living'\)/.test(el.innerHTML)&&/hhAddSet\('level',2\)/.test(el.innerHTML)&&/hhAddSave\(\)/.test(el.innerHTML));
   const row=c.hhRowHTML(LINC,c.hhJobs()[LINC]); ok("a Review row has → Give to…", /hhGiveToggle\('rt_chores_lincoln_vacuum_kitchen'\)/.test(row));
   c.hhGiveToggle(LINC); const g=c.hhGiveHTML(LINC); ok("the picker lists everyone but Lincoln and the pool", /hhGiveTo\('rt_chores_lincoln_vacuum_kitchen','lucy'\)/.test(g)&&/'mom'\)/.test(g)&&!/'lincoln'\)/.test(g)&&!/'grab'\)/.test(g));
