@@ -259,5 +259,28 @@ function hpPersonHTML(){
   return h;
 }
 // HOUSEPERSON_END
+// HOUSEPREVIEW_START — the room pages with the preview on (DESIGN §3.2 "future days are the plan"; §4.3 "for the next 4 weeks the
+// names respect the limits"): the grid's next 28 days, one square per chore = who the plan WOULD give it to (dashed, in their colour;
+// "2d" = carried 2 days late; "Grab" = it would overflow to Up for Grabs), and "Tomorrow would look like this": each person's list
+// for tomorrow, minutes against the limit, and where every overflow would go. Shown only while household/meta/engine is "preview".
+// Worked out when drawn (hpRun, memoised); nothing is stored and nothing is sent to the grabs pool.
+function hpFuture(){ return hpRun().map(function(p){ const m={}; Object.keys(p.plan).forEach(function(id){ const x=p.plan[id]; m[id]={who:x.who,done:false,fut:true,late:x.late,from:x.from||""}; }); p.over.forEach(function(o){ m[o.id]={who:o.turn,done:false,fut:true,over:true,late:o.late}; }); return m; }); }
+function hpSqHTML(c,full){
+  if(c.over) return '<span title="Nobody who can has room: would go to Up for Grabs" style="font-size:10.5px;font-weight:800;white-space:nowrap;color:#b45309">'+(full?'→ Grabs':'Grab')+'</span>';
+  const col=hhRmCol(c.who); return '<span title="Plan preview" style="font-size:10.5px;font-weight:800;white-space:nowrap;color:'+col+';border-bottom:1.5px dashed '+col+'">'+esc(full?hhWhoName(c.who):hhRmShort(c.who))+(c.late>0?' <span style="color:#dc2626">'+c.late+'d</span>':'')+'</span>';
+}
+function hpGridNoteHTML(){ return ' Days after today are the 🔭 plan preview: who the plan WOULD give each chore, within everyone’s limits (dashed; “2d” = 2 days late; “Grab” = nobody who can has room, so it would go to Up for Grabs). Nothing is on anyone’s list.'; }
+function hpTomorrowHTML(){
+  const run=hpRun(), p=run[1], J=hhJobs(), mom=(typeof momHere!=="function")||momHere(); if(!p) return '';
+  let h='<div style="'+HP_CARD+';margin-top:10px"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:9px 12px;background:#ecfeff"><span style="font-size:14px;font-weight:800;flex:1">🔭 Tomorrow would look like this · '+hpDay(p.iso)+'</span>'+(mom?_hhBtn("hhEngineTap(false)",'Stop showing the preview',false,'#64748b'):'')+'</div>'
+    +'<div style="padding:4px 12px 2px;font-size:11px;color:var(--muted)">A preview of the new hand-out with today’s limits. Nobody’s list changes; nothing goes to Up for Grabs.</div>';
+  hpWho().forEach(function(w){ const ids=(p.list[w]||[]).filter(function(id){ return p.plan[id].house; });
+    h+='<div style="display:flex;gap:8px;align-items:center;padding:7px 12px 2px;border-top:1px solid #eef2f0;font-size:12.5px"><span style="width:62px;font-weight:800;color:'+hhRmCol(w)+'">'+esc(hhWhoName(w))+'</span>'+hpBar(p.used[w],p.limit[w])+'<span style="width:62px;text-align:right;font-size:11px;font-weight:700">'+p.used[w]+' / '+p.limit[w]+' min</span></div>';
+    h+=ids.length?ids.map(function(id){ const x=p.plan[id], j=J[id]||{}; return hpRow(id,j.emoji,j.label,(x.late>0?_hhChip(x.late+'d late','#fee2e2','#991b1b'):'')+(x.from?_hhChip('from '+hhWhoName(x.from),'#e0f2fe','#075985'):'')+_hhChip(x.mins+' min','#f3f4f6','#475569')); }).join(''):'<div style="padding:0 12px 4px 82px;font-size:11px;color:var(--muted)">No house chores.</div>'; });
+  h+='<div style="'+HP_HEAD+';border-top:2px solid #fde68a;padding-top:8px">Would go to Up for Grabs ('+p.over.length+')</div>';
+  h+=p.over.length?p.over.map(function(o){ const j=J[o.id]||{}; return hpRow(o.id,j.emoji,j.label,_hhChip(hhWhoName(o.turn)+'’s turn','#f3f4f6','#475569')+_hhChip(o.can.length?'for: '+o.can.map(hhWhoName).join(', '):'no kid can','#fef3c7','#92400e')+_hhChip(o.mins+' min','#f3f4f6','#475569')); }).join(''):'<div style="padding:0 12px 6px;font-size:12px;color:var(--muted)">Nothing — everything fits.</div>';
+  return h+'<div style="height:6px"></div></div>';
+}
+// HOUSEPREVIEW_END
 // ── end of house.js — the flag below tells index.html the whole file ran (haLazyReady) ──
 if(typeof window!=="undefined") window._haLazy_house=true;
