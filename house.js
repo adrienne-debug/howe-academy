@@ -81,6 +81,38 @@ function hhProjectsHTML(){
   return h;
 }
 // HH_PROJVIEW_END
+// HH_ONCEVIEW_START — ☑️ the Once pile view and its taps (moved from HH_ONCEPILE by HOUSESLIM 2026-11-17, unchanged): drawn only on the Household page. hhOnceHeld stays in index.html (the cleaning-day plan reads it).
+function hhOnceSend(id,who){
+  if(typeof momHere==="function"&&!momHere()) return null; const j=hhJobs()[id]; if(!j||!hhIsOnce(j)||j.status==="retired") return null;
+  who=who||j.who; if(hhCanOf(j).indexOf(who)<0) return null;
+  if(who!==j.who){ if(hhGiveTo(id,who)===null) return null; }   // its own targeted update (who, slot, src, order, from)
+  j.hold=false; if(!j.from) j.from=_hhIsoLocal(Date.now()); householdOnValue(householdData);
+  if(_hhWrite()) db.ref().update({["household/jobs/"+id+"/hold"]:null,["household/jobs/"+id+"/from"]:j.from});
+  if(typeof mwToast==="function") try{ mwToast("☑️ On "+hhWhoName(who)+"’s list until it’s done"); }catch(e){}
+  if(typeof renderAll==="function") renderAll(); return who;
+}
+function hhOnceHold(id){
+  if(typeof momHere==="function"&&!momHere()) return null; const j=hhJobs()[id]; if(!j||!hhIsOnce(j)||j.status==="retired") return null;
+  j.hold=true; householdOnValue(householdData); if(_hhWrite()) db.ref("household/jobs/"+id+"/hold").set(true);
+  if(typeof renderAll==="function") renderAll(); return true;
+}
+function hhOnceRows(){ const jobs=hhJobs(); return Object.keys(jobs).filter(function(id){ return hhIsOnce(jobs[id]); }); }
+function _hhOnceSendBtns(id,j){ const can=hhCanOf(j); return '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center"><span style="font-size:10.5px;font-weight:800;color:#6b6560">Send to</span>'+can.map(function(w){ return _hhBtn("hhOnceSend('"+id+"','"+w+"')",esc(hhWhoName(w)),w===j.who,'#2B7A78'); }).join('')+'</div>'; }
+function hhOnceHTML(){
+  const jobs=hhJobs(), mom=(typeof momHere==="function")?momHere():false, ids=hhOnceRows(), rooms=hhRoomList().map(function(r){ return r[0]; });
+  let h='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">A once-job waits here, off every list, until you send it to someone. It stays on their list until they check it once, then it retires with the date.'+(mom?' Add one with + Add a chore and Kind = Once.':'')+'</div>';
+  if(!ids.length) return h+'<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:10px 12px;font-size:12px;color:var(--muted)">The pile is empty.</div>';
+  const held=ids.filter(function(id){ return hhOnceHeld(jobs[id])&&jobs[id].status!=="retired"; }), out=ids.filter(function(id){ return !jobs[id].hold&&jobs[id].status!=="retired"; }), done=ids.filter(function(id){ return jobs[id].status==="retired"; });
+  const byRoom=function(list){ return list.sort(function(a,b){ return (rooms.indexOf(hhRoomOf(jobs[a]))-rooms.indexOf(hhRoomOf(jobs[b])))||(HH_WHO.indexOf(jobs[a].who)-HH_WHO.indexOf(jobs[b].who))||(a<b?-1:1); }); };
+  const row=function(id,extra){ const j=jobs[id]; return '<div style="padding:7px 12px;border-top:1px solid #eef2f0"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px;font-weight:700"><span>'+(j.emoji||'☑️')+'</span><span style="flex:1;min-width:120px;'+(j.status==="retired"?'text-decoration:line-through;color:#6b6560':'')+'">'+esc(j.label)+'</span>'+_hhChip(esc(hhWhoName(j.who)),'#f3f4f6','#475569')+_hhChip('⏱ '+hhMinutesOf(j)+' min','#f3f4f6','#475569')+(j.pts?_hhChip(j.pts+' ⭐','#fef3c7','#92400e'):'')+'</div>'+(extra||'')+'</div>'; };
+  const section=function(title,sub,list,extraFn){ h+='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);margin-bottom:10px;overflow:hidden"><div style="padding:9px 12px;font-size:13px;font-weight:800">'+title+' <span style="font-weight:600;color:var(--muted);font-size:11px">'+sub+'</span></div>';
+    if(!list.length) h+='<div style="padding:0 12px 8px;font-size:12px;color:var(--muted)">Nothing here.</div>'; let room=null; byRoom(list).forEach(function(id){ const rm=hhRoomOf(jobs[id]); if(rm!==room){ room=rm; h+='<div style="padding:6px 12px 0;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560">🚪 '+esc(hhRoomName(rm))+'</div>'; } h+=row(id,mom?extraFn(id):''); }); h+='</div>'; };
+  section('☑️ The pile',held.length+' waiting · '+held.reduce(function(a,id){ return a+hhMinutesOf(jobs[id]); },0)+' min',held,function(id){ return '<div style="margin-top:5px">'+_hhOnceSendBtns(id,jobs[id])+'</div>'; });
+  section('📋 On a list',out.length+' sent, not yet done',out,function(id){ return '<div style="margin-top:5px;display:flex;gap:6px;align-items:center"><span style="font-size:11px;color:var(--muted)">on '+esc(hhWhoName(jobs[id].who))+'’s list</span>'+_hhBtn("hhOnceHold('"+id+"')",'⏸ Back to the pile',false,'#64748b')+'</div>'; });
+  if(done.length) section('✓ Done',done.length,done,function(id){ return '<div style="font-size:11px;color:#94a3b8;margin-top:3px">done '+esc((jobs[id].done||'').slice(5))+'</div>'; });
+  return h;
+}
+// HH_ONCEVIEW_END
 // HOUSEENG_START — the hand-out engine, ONE pure function (DESIGN §6 "Hand-out": "one pure function (table, day, people,
 // overrides) → plan, used for today's stored plan and the grid's future"). No database, no DOM, no app globals: everything it
 // reads is passed in, nothing passed in is changed, the same input gives the same plan (test_house_engine.js checks all three).
