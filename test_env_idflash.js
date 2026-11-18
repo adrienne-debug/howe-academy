@@ -288,6 +288,45 @@ console.log("\n── the pictures on the cards (envPicsOn / envPicsApply / envP
   const stP2 = pickSit(true);
   ok("… one more quick Pick right makes three in a row on three pictures → fluent", stP2.fluent === true && new Set(stP2.shows.slice(-3).map(s => s.pic)).size === 3, stP2.shows);
 
+  console.log("\n── IDFLASH_KEEP: Keep practicing once a deck is all fluent (2026-11-17) ──");
+  {
+    const W7 = family({ release: ["Forestry · ID"] });
+    await W7.envPicsLoad(fakeFetch); W7.envHydrate(W7.us.nc_envirothon, LIB);
+    const items7 = W7.envFlashDecks("kidA")[0].items, DAY = 864e5;
+    const fl = (e, at, misses) => ({ shows: e.pics.slice(0, 3).map((p, i) => ({ pic: p.url, ok: !(i < misses), secs: 2, at: at, mode: "pick" })).concat([0, 1].map(i => ({ pic: e.pics[i % e.pics.length].url, ok: true, secs: 2, at: at, mode: "pick" }))), fluent: true, at: at });
+    // 23 fluent: the first item is still open
+    W7.G.masteryData.kidA_idflash = { "Forestry · ID": {} };
+    items7.slice(1).forEach((e, i) => { W7.G.masteryData.kidA_idflash["Forestry · ID"][e.key] = fl(e, 10 * DAY + i, 0); });
+    const door23 = W7.envFlashDoorHtml("kidA", null);
+    ok("23 of 24 fluent: Go as before, no Keep practicing", door23.includes("⚡ 23 of 24 fluent") && door23.includes("envFlashOpen('kidA','Forestry · ID')\"") && !door23.includes("Keep practicing") && !door23.includes("All fluent"));
+    const normal23 = W7.envFlashOpen("kidA", "Forestry · ID");
+    ok("… and a normal sitting is unchanged: only the open item", normal23 && normal23.cards.length === 1 && normal23.cards[0].item === items7[0].item && !normal23.keep); W7.envFlashQuit();
+    ok("envFlashPool(keep) takes only the fluent items", W7.envFlashPool("kidA", W7.envFlashDecks("kidA"), 30, () => 0.5, true).length === 23 && W7.envFlashPool("kidA", W7.envFlashDecks("kidA"), 30, () => 0.5, true).every(c => c.st && c.st.fluent));
+    // all 24 fluent: three on an older day (one with 2 misses kept, one with 1), the rest later
+    const ST = W7.G.masteryData.kidA_idflash["Forestry · ID"];
+    ST[items7[0].key] = fl(items7[0], 12 * DAY, 0);
+    ST[items7[5].key] = fl(items7[5], 2 * DAY + 50, 0); ST[items7[6].key] = fl(items7[6], 2 * DAY + 40, 1); ST[items7[7].key] = fl(items7[7], 2 * DAY + 60, 2);
+    const door = W7.envFlashDoorHtml("kidA", null);
+    ok("24 of 24: All fluent ✓ and a Keep practicing button (no Go)", door.includes("⚡ 24 of 24 fluent") && door.includes("All fluent ✓") && door.includes("Keep practicing") && door.includes("envFlashOpen('kidA','Forestry · ID',true)") && !door.includes(">Go<"));
+    ok("a normal open of an all-fluent deck still gives nothing", W7.envFlashOpen("kidA", "Forestry · ID") === null && W7.flash === null);
+    const k = W7.envFlashOpen("kidA", "Forestry · ID", true);
+    ok("Keep practicing: a normal-size sitting (12), all fluent items, each with a picture and 4 chips, nothing written yet", k && k.keep === true && k.cards.length === 12 && new Set(k.cards.map(c => c.item)).size === 12 && k.cards.every(c => c.st.fluent && c.pic && c.pic.url && c.lures.length === 4) && W7.G.writes.length === 0);
+    ok("… oldest day first, and on that day the most misses first (2, 1, 0), then the rest by last show", k.cards[0].item === items7[7].item && k.cards[1].item === items7[6].item && k.cards[2].item === items7[5].item && k.cards[3].item === items7[1].item, k.cards.map(c => c.item).slice(0, 4));
+    ok("the running screen says Keep practicing, 1 of 12", W7.envFlashRunningHtml("kidA").includes("Keep practicing · 1 of 12"));
+    // every answer wrong (and one right but slow)
+    k.cards.forEach((c, i) => { k.shownAt = Date.now() - (i === 1 ? 12000 : 1500); W7.envFlashPickTap(c.lures.findIndex(l => i === 1 ? l.ok : !l.ok)); W7.envFlashNextCard(); });
+    const ws7 = W7.G.writes;
+    ok("finished: 12 shows, 1 right, 11 missed, saved", k.done && k.done.total === 12 && k.done.correct === 1 && k.done.miss === 11 && k.done.saved === true && k.done.newly.length === 0);
+    ok("the same two writes as any sitting (one multi-path update + the day's study-log entry)", ws7.length === 2 && ws7[0][0] === "update" && ws7[0][1] === "mastery/kidA_idflash" && ws7[1][0] === "set" && ws7[1][1] === "mastery/studyLog/kidA/idflash/20261027");
+    ok("fluent stays fluent: every updated item still fluent, the miss in its kept shows (last 5)", Object.keys(ws7[0][2]).length === 12 && Object.values(ws7[0][2]).every(v => v.fluent === true && v.shows.length === 5 && Object.keys(v).sort().join() === "at,fluent,shows") && ws7[0][2]["Forestry · ID/" + k.cards[0].key].shows[4].ok === false);
+    ok("the study-log entry counts the misses like any sitting (items {id,name,deck,result}, 11 m)", ws7[1][2].items.length === 12 && ws7[1][2].items.filter(x => x.result === "m").length === 11 && ws7[1][2].items.every(x => x.id.startsWith("idflash:") && x.deck === "Forestry · ID"));
+    ok("the deck line still says 24 of 24 and the door still offers Keep practicing", (W7.envFlashQuit(), W7.envFlashDoorHtml("kidA", null).includes("⚡ 24 of 24 fluent") && W7.envFlashDoorHtml("kidA", null).includes("Keep practicing")));
+    const k2 = W7.envFlashOpen("kidA", "Forestry · ID", true);
+    ok("the next Keep practicing sitting starts with the 12 not shown today", k2.cards.every(c => !k.cards.some(x => x.item === c.item))); W7.envFlashQuit();
+    const sh1 = { pic: "p9", ok: false, secs: 2, at: 99, mode: "pick" };
+    ok("envFlashNext: a miss keeps fluent only in a keep sitting (the normal rule is untouched)", W7.envFlashNext(ST[items7[2].key], sh1, true).fluent === true && W7.envFlashNext(ST[items7[2].key], sh1, false).fluent === false && W7.envFlashNext({ shows: [], fluent: false }, sh1, true).fluent === false);
+  }
+
   console.log("\n── dry run ──");
   const W5 = family({ release: ["Forestry · ID", "Wildlife · ID"], dry: true });
   await W5.envPicsLoad(fakeFetch); W5.envHydrate(W5.us.nc_envirothon, LIB);

@@ -51485,6 +51485,7 @@ function envHydrate(u,lib){
   if(typeof cptrHydrate==="function") cptrHydrate(u);   // ✂️ CPTRIM: a card made optional (her class, Adrienne's unit) stays, no longer core — site kids only
   if(typeof cplnpHydrate==="function") cplnpHydrate(u);   // 🌿 CPLINCOLNPARITY: the same for Lincoln's class in Howe (the core flag only, in memory)
   if(typeof envPicsOn==="function") envPicsOn(u);   // ⚡ ENVIDFLASH: the ID decks' pictures, in memory, from envirothon/pics/index.json
+  if(typeof envStageCardsRetry==="function") envStageCardsRetry();   // 📥 CPSENDCARDS: a send-out read before the cards arrived
   return true;
 }
 // Called when unitStudies arrives (and after 📚 Add): hydrate every code-held unit, loading envirothon.js first if needed.
@@ -51514,6 +51515,57 @@ function envEnrollHold(u,st,cards,hold,modes,intro,defs){
     const k=mastDefKey(c.name); st.definitions[k]=String(c.def); defs[k]=String(c.def); });
   return true;
 }
+// 📥 CPSENDCARDS (her "yes build all of them" 2026-11-17): a teacher's send-out brings the station's cards for a mirrored kid in the
+// FAMILY app. Live 11/17: Forestry and Soils were sent out, but a Howe kid's station cards only enter his bank when Mom taps ➡ Start
+// Stage N on the Units page — he was on stage 0, so the released decks had no cards to study. (The class site never needs this:
+// envsAutoEnroll applies every stage.) envmRelease calls it on every release read — a listener's arrival, a due scheduled send-out,
+// each app start — so a station sent out BEFORE this change catches up the next time the release is read.
+//   · rel = {<station> | <deck key> | <station>~<Key Concept>: truthy}. For each station it names whose stage cards are not all in
+//     his bank: the bank entries {cat, name} and the backs _ustApply writes for that stage (definitions/<front>; the coded key,
+//     mastDefKey, for a front with . / # $ [ ]) — that station's decks only, and nothing else: no hold, no mode, no study card (the
+//     new-cards flow mints them), kidStage and the Units row untouched. What is already in the bank, or already has a back, is skipped.
+//   · Writes: ONE targeted update on mastery/<kid>_custom_items (next index → entry, as _ustWrite) and one on …/definitions, only
+//     with db && !_dryRun(); never on the class site, never in the demo, only for a kid enrolled through the Units page (kidStage),
+//     only once his bank has arrived. Cards still loading → the release waits in memory and envHydrate tries it again.
+const _envScPend={};
+function envStageCardsFor(kid,rel,u){
+  if(!kid||!rel||typeof rel!=="object"||!u||u.starter!==ENV_UNIT_ID) return 0;
+  if((typeof envSiteOn==="function"&&envSiteOn())||(typeof envsDemo==="function"&&envsDemo())) return 0;   // the class site / demo: envsAutoEnroll's job
+  if(typeof db==="undefined"||!db||(typeof _dryRun==="function"&&_dryRun())) return 0;
+  if(!(u.enrolled&&u.enrolled[kid])||!(u.kidStage&&u.kidStage[kid])) return 0;
+  const raw=(typeof masteryData!=="undefined"&&masteryData)?masteryData[kid+"_custom_items"]:null;
+  if(!raw||typeof raw!=="object"||(typeof _haMastReady!=="undefined"&&!_haMastReady)) return 0;   // never append to a bank not read yet
+  if(_envScPend[kid]){ rel=Object.assign({},_envScPend[kid],rel); delete _envScPend[kid]; }   // the other listener's release, read before the cards arrived
+  const stOf=k=>{ k=String(k); const i=k.indexOf("~"); if(i>0) return k.slice(0,i); const d=(u.decks||[]).find(x=>x&&(x.station===k||x.key===k)); return d?d.station:null; };
+  const sts=[]; Object.keys(rel).forEach(k=>{ if(!rel[k]) return; const s=stOf(k); if(s&&sts.indexOf(s)<0) sts.push(s); });
+  if(!sts.length) return 0;
+  const dks=s=>(u.decks||[]).filter(d=>d&&d.key&&d.station===s);
+  if(sts.some(s=>dks(s).some(d=>!Array.isArray(d.cards)))){ _envScPend[kid]=Object.assign({},_envScPend[kid]||{},rel); return 0; }   // the cards are still loading (envirothon.js): both listeners' releases wait
+  delete _envScPend[kid];
+  const arr=Array.isArray(raw), list=arr?raw:Object.values(raw);
+  let next=arr?raw.length:(Object.keys(raw).reduce((m,k)=>/^\d+$/.test(k)?Math.max(m,+k+1):m,0));   // the next index — never one already used
+  const pk=(dk,n)=>dk+"\u0001"+n, have=new Set(list.filter(Boolean).map(c=>pk(c.cat,c.name)));
+  const st=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={}), defs=st.definitions||(st.definitions={});
+  const bu={}, du={};
+  sts.forEach(s=>{ const D={}; dks(s).forEach(d=>{ D[d.key]=d; });
+    const ns=[]; Object.keys(D).forEach(k=>{ const n=D[k].stage; if(n!=null&&ns.indexOf(n)<0) ns.push(n); });
+    const cards=[]; ns.forEach(n=>{ (typeof _ustCards==="function"?_ustCards(u,n):[]).forEach(c=>{ if(D[c._dk]) cards.push(c); }); });
+    if(!cards.some(c=>!have.has(pk(c._dk,c.name)))) return;   // all in the bank already
+    cards.forEach(c=>{
+      if(!have.has(pk(c._dk,c.name))){ bu[next++]={cat:c._dk,name:c.name}; have.add(pk(c._dk,c.name)); }
+      if(c.def==null||D[c._dk].defsOnBank) return;
+      const ok=(typeof mastDefKeyOk!=="function")||mastDefKeyOk(c.name), k=ok?c.name:mastDefKey(c.name);
+      if(defs[k]==null&&du[k]==null) du[k]=ok?c.def:String(c.def); }); });
+  const n=Object.keys(bu).length; if(!n) return 0;
+  Object.keys(bu).forEach(i=>{ if(arr) raw.push(bu[i]); else raw[i]=bu[i]; });
+  Object.keys(du).forEach(k=>{ defs[k]=du[k]; });
+  db.ref("mastery/"+kid+"_custom_items").update(bu);
+  if(Object.keys(du).length) db.ref("mastery/"+kid+"_settings/definitions").update((typeof haKeys==="function"?haKeys(du):du));
+  return n;
+}
+// envHydrate's line: a release that came in before the cards did, tried again now.
+function envStageCardsRetry(){ Object.keys(_envScPend).forEach(kid=>{ const rel=_envScPend[kid], u=(typeof envmUnit==="function")?envmUnit():null; if(!u){ return; }
+  if(envStageCardsFor(kid,rel,u)&&typeof envmSchedule==="function") envmSchedule("release"); }); }   // no repaint here: the cards' arrival redraws what shows them
 // Lincoln's 🌿 session: auto-graded steps only (pick with lures → key ideas → type), modest load. handOffAt matches his
 // other deck sessions' default (bi_weekly). Create-only: if a session "envirothon" already exists, nothing is written.
 const ENV_SESSION_SID="envirothon";
@@ -53478,6 +53530,13 @@ function unitPicsSave(){
 //     day's entry under mastery/studyLog/<kid>/idflash/<yyyymmdd> in the shape _mstSaveInner writes (items {id,name,deck,
 //     result} merged into the day), so Scores, the streak and the weekly report count it. Dry run: runs and scores on the
 //     screen, writes nothing, says so. No confetti; the name after an answer only with the kid's 🔊 Auto (ENVREADALOUD). A kid without the unit sees every screen byte-identical.
+//   · KEEP PRACTICING (IDFLASH_KEEP, her "yes build all of them" 2026-11-17 — a kid with Forestry 24 of 24 fluent found the deck closed
+//     and wanted more): a deck whose items are ALL fluent shows "All fluent ✓" and a Keep practicing button. It runs a normal sitting
+//     (same size, timer, Pick/Type) drawn from the fluent items — the ones last shown on the oldest day first, then the ones with misses
+//     in their kept shows. Fluent stays fluent (a miss there never takes it away); the shows and the day's study-log entry are written
+//     exactly as in any sitting, so the class site's "right in the last 14 days" counts them. ID Flash awards no stars (it writes no
+//     gameLog and has its own study-log sid), so nothing here can be farmed. How an item BECOMES fluent, and every sitting while a deck
+//     still has open items, are unchanged.
 const ENVFLASH_SECS=10, ENVFLASH_SITTING=12, ENVFLASH_KEEP=5, ENVFLASH_NEED=3, ENVFLASH_SID="idflash";
 const ENVPICS_URL="envirothon/pics/index.json";
 let _envPicsIdx=null, _envPicsP=null, _envPicsFail=false;
@@ -53572,12 +53631,18 @@ function envFlashFluent(shows){
   if(three(all.filter(s=>s.ok===true&&s.mode==="type").slice(-ENVFLASH_NEED))) return true;
   return three(all.slice(-ENVFLASH_NEED));
 }
-function envFlashNext(prev,show){ const shows=envFlashShows(prev).concat([show]).slice(-ENVFLASH_KEEP); return {shows:shows,fluent:envFlashFluent(shows),at:show.at}; }
+function envFlashNext(prev,show,keep){ const shows=envFlashShows(prev).concat([show]).slice(-ENVFLASH_KEEP); return {shows:shows,fluent:(!!keep&&!!(prev&&prev.fluent))||envFlashFluent(shows),at:show.at}; }   // IDFLASH_KEEP: a keep-practicing show never un-fluents
 function envFlashCount(kid,d){ let f=0; (d.items||[]).forEach(e=>{ const st=envFlashState(kid,d.key,e.key); if(st&&st.fluent) f++; }); return {fluent:f,total:(d.items||[]).length}; }
 function envFlashLine(kid,d){ const c=envFlashCount(kid,d); return "\u26A1 "+c.fluent+" of "+c.total+" fluent"; }
 // A sitting's items: never a fluent one; the ones already started first (oldest show first), then unseen ones shuffled.
-function envFlashPool(kid,decks,n,rnd){
+// IDFLASH_KEEP: a keep-practicing sitting (keep) takes ONLY the fluent items — the oldest day shown first, then the most misses kept.
+function envFlashPool(kid,decks,n,rnd,keep){
   rnd=rnd||Math.random; const seen=[], fresh=[];
+  if(keep){ const kp=[], day=at=>Math.floor((+at||0)/864e5), miss=st=>envFlashShows(st).filter(x=>x.ok!==true).length;
+    (decks||[]).forEach(d=>{ (d.items||[]).forEach(e=>{ const st=envFlashState(kid,d.key,e.key); if(!(st&&st.fluent)) return;
+      kp.push({deck:d.key,item:e.item,key:e.key,names:e.names,pics:e.pics,st:st,at:st.at||0}); }); });
+    kp.sort((a,b)=>(day(a.at)-day(b.at))||(miss(b.st)-miss(a.st))||(a.at-b.at)||(a.item<b.item?-1:a.item>b.item?1:0));
+    return kp.slice(0,n||ENVFLASH_SITTING); }
   (decks||[]).forEach(d=>{ (d.items||[]).forEach(e=>{ const st=envFlashState(kid,d.key,e.key); if(st&&st.fluent) return;
     const c={deck:d.key,item:e.item,key:e.key,names:e.names,pics:e.pics,st:st,at:(st&&st.at)||0};
     (st&&envFlashShows(st).length?seen:fresh).push(c); }); });
@@ -53612,12 +53677,12 @@ function envFlashNameOk(typed,names){
 let envFlash=null;        // the sitting on this device: {kid, deckKeys, mode, cards:[{deck,item,key,names,pics,pic,lures,st}], i, startedAt, drawnAt, shownAt, ans, picked, results:[{deck,item,key,pic,ok,secs,at}], done, timer, dry}
 const envFlashMode={};    // kid → "pick" | "type", this device only
 function envFlashSetMode(kid,m){ envFlashMode[kid]=(m==="type")?"type":"pick"; if(typeof _mastRe==="function") _mastRe(); }
-function envFlashOpen(kid,deckKey){
+function envFlashOpen(kid,deckKey,keep){
   const decks=envFlashDecks(kid).filter(d=>!deckKey||deckKey==="all"||d.key===deckKey); if(!decks.length) return null;
-  const cards=envFlashPool(kid,decks); if(!cards.length) return null;
+  const cards=envFlashPool(kid,decks,null,null,!!keep); if(!cards.length) return null;   // IDFLASH_KEEP: keep → the fluent items
   cards.forEach(c=>{ c.pic=envFlashPicFor(c); c.lures=envFlashLures(c,decks); });
   envFlash={kid:kid,deckKeys:decks.map(d=>d.key),mode:envFlashMode[kid]||"pick",cards:cards,i:0,startedAt:Date.now(),drawnAt:null,shownAt:null,ans:null,picked:null,results:[],done:null,timer:null,
-    dry:!!((typeof _dryRun==="function")&&_dryRun())};
+    dry:!!((typeof _dryRun==="function")&&_dryRun()),keep:!!keep};
   if(typeof _mastRe==="function") _mastRe();
   return envFlash;
 }
@@ -53661,7 +53726,7 @@ function envFlashFinish(){
   const f=envFlash, kid=f.kid, res=f.results, dry=f.dry, md=masteryData;
   const live=!!((typeof db!=="undefined")&&db&&!dry&&res.length);
   const upd={}, newly=[]; let states=md[kid+"_idflash"]; if(!states||typeof states!=="object") states=md[kid+"_idflash"]={};
-  res.forEach(r=>{ const prev=envFlashState(kid,r.deck,r.key); const next=envFlashNext(prev,{pic:r.pic,ok:r.ok,secs:r.secs,at:r.at,mode:r.mode});
+  res.forEach(r=>{ const prev=envFlashState(kid,r.deck,r.key); const next=envFlashNext(prev,{pic:r.pic,ok:r.ok,secs:r.secs,at:r.at,mode:r.mode},f.keep);
     if(!states[r.deck]||typeof states[r.deck]!=="object") states[r.deck]={}; states[r.deck][r.key]=next; upd[r.deck+"/"+r.key]=next;
     if(next.fluent&&!(prev&&prev.fluent)&&newly.indexOf(r.item)<0) newly.push(r.item); });
   const secs=Math.max(1,Math.round((Date.now()-f.startedAt)/1000));
@@ -53678,7 +53743,8 @@ function envFlashFinish(){
     if(!md.studyLog) md.studyLog={}; if(!md.studyLog[kid]) md.studyLog[kid]={}; if(!md.studyLog[kid][ENVFLASH_SID]) md.studyLog[kid][ENVFLASH_SID]={};
     md.studyLog[kid][ENVFLASH_SID][todayKey]=entry;
   }
-  if(live){ db.ref("mastery/"+kid+"_idflash").update(upd); db.ref("mastery/studyLog/"+kid+"/"+ENVFLASH_SID+"/"+todayKey).set(entry); }
+  if(live){ db.ref("mastery/"+kid+"_idflash").update(upd); db.ref("mastery/studyLog/"+kid+"/"+ENVFLASH_SID+"/"+todayKey).set(entry);
+    if(typeof envMirrorOn==="function") envMirrorOn("study"); }   // 🌿 ENVMIRROR / ⚡ CPFLUENT: a saved sitting → the Envirothon summary (its ⚡ count, its 14-day right; debounced; inert without the config block)
   f.done={total:total,correct:correct,miss:miss,secs:secs,newly:newly,dry:dry,saved:live,upd:upd,entry:total?entry:null};
   if(typeof _mastRe==="function") _mastRe();
   return f.done;
@@ -53701,7 +53767,8 @@ function envFlashDoorHtml(kid,session){
   let open=0;
   decks.forEach(d=>{ const c=envFlashCount(kid,d), left=c.total-c.fluent; if(left) open++;
     h+='<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #dcfce7"><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:800;color:#1f2937">'+esc(d.key)+'</div><div style="font-size:12px;font-weight:700;color:#15803d">'+esc(envFlashLine(kid,d))+'</div></div>'
-      +(left?'<button onclick="envFlashOpen(\''+js(kid)+'\',\''+js(d.key)+'\')" style="'+_ENVFLASH_BTN+';min-height:44px;padding:0 18px;font-size:14px">Go</button>':'<span style="font-size:12px;font-weight:800;color:#15803d">All fluent \u2713</span>')+'</div>'; });
+      +(left?'<button onclick="envFlashOpen(\''+js(kid)+'\',\''+js(d.key)+'\')" style="'+_ENVFLASH_BTN+';min-height:44px;padding:0 18px;font-size:14px">Go</button>':'<span style="font-size:12px;font-weight:800;color:#15803d">All fluent \u2713</span>'
+        +'<button onclick="envFlashOpen(\''+js(kid)+'\',\''+js(d.key)+'\',true)" style="min-height:44px;padding:0 14px;border-radius:14px;border:2px solid #16a34a;background:#fff;color:#166534;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Keep practicing</button>')+'</div>'; });   // IDFLASH_KEEP
   if(decks.length>1&&open>1) h+='<div style="text-align:center;margin-top:10px"><button onclick="envFlashOpen(\''+js(kid)+'\',\'all\')" style="min-height:44px;padding:0 22px;border-radius:14px;border:2px solid #16a34a;background:#fff;color:#166534;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Mix the decks</button></div>';
   return h+'</div>';
 }
@@ -53720,7 +53787,7 @@ function envFlashSittingHtml(){
   const c=f.cards[f.i]; if(!c) return "";
   if(!f.drawnAt) f.drawnAt=Date.now();
   let h='<div style="font-family:\'DM Sans\',sans-serif">';
-  h+='<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--muted);font-weight:700;margin-bottom:8px"><span>\u26A1 ID Flash \u00b7 '+(f.i+1)+' of '+f.cards.length+'</span><span>'+esc(c.deck)+'</span></div>';
+  h+='<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--muted);font-weight:700;margin-bottom:8px"><span>\u26A1 ID Flash \u00b7 '+(f.keep?'Keep practicing \u00b7 ':'')+(f.i+1)+' of '+f.cards.length+'</span><span>'+esc(c.deck)+'</span></div>';
   h+='<div style="height:10px;border-radius:5px;background:#e5e7eb;overflow:hidden"><div id="envflash-bar" style="height:100%;width:'+(f.ans?'0':'100')+'%;background:#16a34a"></div></div>';
   h+='<div id="envflash-secs" style="text-align:right;font-size:12px;font-weight:800;color:var(--muted);margin:4px 0 8px">'+(f.ans?(f.ans.secs+' s'):(ENVFLASH_SECS+' s'))+'</div>';
   h+='<div style="background:#fff;border:2px solid #e5e7eb;border-radius:18px;padding:12px;text-align:center"><img src="'+esc(c.pic.url)+'" alt="" onload="envFlashImgReady()" style="max-width:100%;max-height:52vh;border-radius:12px;object-fit:contain"></div>';
