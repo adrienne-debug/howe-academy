@@ -56,7 +56,7 @@ console.log("\n── plan on preview: the same as off ──");
   ok("preview: the Now card is byte-identical to the plan off", a.rnNowHTML("kitchen") === b.rnNowHTML("kitchen"));
   ok("…its rows are the grid's today squares", S(asMap(b.rnRows("kitchen").rows)) === S(sq(b, "kitchen")));
   roomPage(b, "kitchen"); roomPage(b, ""); ok("…drawing the room and Whole house wrote nothing", b.writes.length === 0, b.writes);
-  ok("🏠 Whole house and ❔ No room have no Now / To do cards (a single room only)", !/🔴 Now/.test(roomPage(a, "")) && !/📝 To do/.test(roomPage(a, "")));
+  ok("🏠 Whole house has no single-room Now / To do card (it has its own, slice E)", !/>today, from the lists<\/span>/.test(roomPage(a, "")) && !/one-time jobs for this room/.test(roomPage(a, "")) && /every room/.test(roomPage(a, "")));
   const c = mk({ jobs: Object.assign(JOBS(), { x_lost: K({ label: "Lost chore", who: "ada", slot: "chores", cad: "daily", room: "attic_gone" }) }), hd: { meta: { takeover: 1 }, rooms: { kitchen: { name: "Kitchen", floor: "down", order: 1 } } } });
   const nh = roomPage(c, "__none"); ok("…the No room page draws no cards", /No room/.test(nh) && !/🔴 Now/.test(nh) && !/📝 To do/.test(nh));
 }
