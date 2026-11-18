@@ -120,7 +120,7 @@ console.log("A kid's 'Start a load' undone by Mom takes the load off (KIDLAUNDRY
   c.choreUndo("chores","lucy","thursday",0); ok("undo: the load is gone and the +10 reversed", !c.laundryData[id]&&bal(c,"lucy")===0);
 }
 console.log("(7) Wiring");
-ok("both check-offs route the uncheck through cuUnpay and tag the log line", (src.match(/cuUnpay\(kid,cur\.bid,/g)||[]).length===2&&(src.match(/\(!now&&typeof cuUndoTag==="function"\)\?cuUndoTag\(\):null\)/g)||[]).length===2);
+ok("both check-offs route the uncheck through cuUnpay and tag the log line (and HOUSEDAY's check-off by chore, house step 4)", (src.match(/cuUnpay\(kid,cur\.bid,/g)||[]).length===2&&(src.match(/cuUnpay\(kid,d0\.bid,/g)||[]).length===1&&(src.match(/\(!now&&typeof cuUndoTag==="function"\)\?cuUndoTag\(\):null\)/g)||[]).length===3);
 ok("rlogAppend takes the extra fields", /function rlogAppend\(kid,slot,label,act,pts,extra\)/.test(src));
 ok("the ledger no longer renders anywhere (Kids today, Mom's Day, Dad's Day)", !/mdCardChoreLedger/.test(src));
 ok("Laundry card: a ↶ before the forward button; ✓ Put away remembers the load", /laundryBackBtnHTML\(id,l\)/.test(src)&&/laundryAwayRemember\(id,l\)/.test(slice("laundryAdvance")));

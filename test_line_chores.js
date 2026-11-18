@@ -139,7 +139,7 @@ console.log("5e. ✓ Done (her ask 2026-10-19): washed and put up for real, noth
   ok("Today's line buttons and Dad's card have ✓ too", /llMarkDone\(/.test(c.llStripHTML(""))&&/llMarkDone\('ellis','dad'\)|llMarkDone\('lincoln','dad'\)/.test(c.llDadCardHTML()));
 }
 console.log("6. Wiring");
-ok("rtStepsFor appends the line's rows; the raw (editor) path is untouched", /if\(raw\) return steps;[^\n]*\n\s*const _r=rtApplyRot\(slot,kid,steps,dayName\);\n\s*return \(typeof llRtSteps==="function"\)\?llRtSteps\(slot,kid,_r,dayName\):_r;/.test(src));
+ok("rtStepsFor appends the line's rows; the raw (editor) path is untouched", /if\(raw\) return steps;[^\n]*\n\s*const _r=rtApplyRot\(slot,kid,steps,dayName\);\n\s*const _l=\(typeof llRtSteps==="function"\)\?llRtSteps\(slot,kid,_r,dayName\):_r;[^\n]*\n\s*return \(typeof hdRtSteps==="function"\)\?hdRtSteps\(slot,kid,_l,dayName\):_l;/.test(src));   // 🚪 HOUSEDAY (house step 4) runs after the line, on the line's output
 ok("Morning's ✓ calls the laundry hook only for the line's own row", /if\(_st&&_st\.line&&typeof laundryKidHook==="function"\) laundryKidHook\(kid,_st,sk,now\);/.test(fn("toggleMorningStep")));
 ok("the laundry hook hands line rows over first", /^function laundryKidHook\(kid,st,sk,now\)\{\n  if\(st&&st\.line&&typeof llKidRowHook==="function"\)\{ llKidRowHook\(kid,st,now\); return; \}/.test(fn("laundryKidHook")));
 ok("no 🔀", src.indexOf("🔀")<0);

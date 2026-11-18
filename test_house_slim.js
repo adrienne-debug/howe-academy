@@ -158,7 +158,7 @@ const topNames = js => { const out = new Set(), cm = P.scanJs(js).cm;
   return out; };
 const HNAMES = [...topNames(HJS)].filter(n => n.length >= 3);
 const blockOf = (js, a, b) => js.slice(js.indexOf("// " + a + "_START"), js.indexOf("// " + b + "_END"));
-const STEP3 = topNames(blockOf(HJS, "HOUSEENG", "HOUSEPREVIEW")), MOVED = HNAMES.filter(n => !STEP3.has(n));
+const STEP3 = topNames(blockOf(HJS, "HOUSEPEOPLE", "HOUSEPREVIEW"))   /* HOUSEENG moved into index.html (step 4) */, MOVED = HNAMES.filter(n => !STEP3.has(n));
 ok("house.js declares the moved blocks' names (" + MOVED.length + " of them, read from the file itself)", MOVED.length >= 90 && ["hcCardHTML", "hhRoomsPageHTML", "hhRotationsHTML", "hhProjectsHTML", "hhOnceHTML", "hhEditHTML", "hhOnceSweep"].every(n => MOVED.includes(n)), MOVED.length);
 ok("…and the ones the plan and the lists need stayed in index.html (hhIsOnce, hhIsProject, hhProjLog, hhOnceHeld)", ["hhIsOnce", "hhIsProject", "hhProjLog", "hhOnceHeld"].every(n => !HNAMES.includes(n) && new RegExp("^function " + n + "\\(", "m").test(RAW)));
 // units: every top-level declaration of index.html's main script and of the other .js files
@@ -203,7 +203,7 @@ function reach(raw) {
   ok("every mention of a house.js name in index.html is typeof-guarded on its line", bare.length === 0, bare.slice(0, 8));
   const others = []; OTHER.forEach(f => { const t = P.scanJs(fs.readFileSync(path.join(DIR, f), "utf8")).cm; MOVED.forEach(n => { if (mention(t, n)) others.push(f + " " + n); }); });
   ok("no other .js file (" + OTHER.length + " of them) mentions a moved name", others.length === 0, others);
-  const eng = P.scanJs(blockOf(HJS, "HOUSEENG", "HOUSEENG")).cm, engUse = MOVED.filter(n => mention(eng, n));
+  const eng = P.scanJs(blockOf(RAW, "HOUSEENG", "HOUSEENG")).cm, engUse = MOVED.filter(n => mention(eng, n));
   ok("HOUSEENG (step 4 moves it into the page) reads none of the moved names", eng.length > 1000 && engUse.length === 0, engUse);
 }
 

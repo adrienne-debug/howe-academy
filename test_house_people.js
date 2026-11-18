@@ -85,12 +85,12 @@ console.log("\n── the plan-preview switch ──");
   c.writes.length=0; c.hpEngineSet("on"); c.hpEngineSet(2);
   ok("it can never write mode \"on\" (that is step 4)", c.writes.every(w=>w[2].mode==="preview"));
   const c2=mk(); c2.hpEngineSet(false); ok("off when it was never on → nothing written", c2.writes.length===0);
-  const c3=mk({hh:{jobs:{},meta:{takeover:5,engine:{mode:"on",on:"2026-11-01"}}}}); ok("a stored mode other than preview reads as off here (nothing in step 3 acts on 'on')", c3.hhEngineMode()==="off");
+  const c3=mk({hh:{jobs:{},meta:{takeover:5,engine:{mode:"on",on:"2026-11-01"}}}}); ok("a stored mode 'on' reads as on (house step 4, HOUSEDAY); nothing in step 3's preview acts on it", c3.hhEngineMode()==="on"); { const c4=mk({hh:{jobs:{},meta:{takeover:5,engine:{mode:"maybe"}}}}); ok("any other stored mode reads as off", c4.hhEngineMode()==="off"); }
   ok("the switch keeps every other meta field (takeover stays)", (c3.hpEngineSet(true),c3.householdData.meta.takeover===5));
 }
 
 console.log("\n── every write this step can make ──");
-{ const HJ=fs.readFileSync(path.join(__dirname,"house.js"),"utf8"), files=HJ.slice(HJ.indexOf("// HOUSEENG_START"),HJ.indexOf("// HOUSEPREVIEW_END"))+"\n"+cut("// HH_PEOPLE_START","// HH_PEOPLE_END");   // this step's blocks (HOUSESLIM moved older Household code into house.js too; its writes are unchanged and tested where they were)
+{ const HJ=fs.readFileSync(path.join(__dirname,"house.js"),"utf8"), files=cut("// HOUSEENG_START","// HOUSEENG_END")+"\n"+HJ.slice(HJ.indexOf("// HOUSEPEOPLE_START"),HJ.indexOf("// HOUSEPREVIEW_END"))+"\n"+cut("// HH_PEOPLE_START","// HH_PEOPLE_END");   // HOUSEENG now lives in index.html (step 4 moved it, unchanged)   // this step's blocks (HOUSESLIM moved older Household code into house.js too; its writes are unchanged and tested where they were)
   const refs=[...files.matchAll(/db\.ref\(([^)]*)\)/g)].map(m=>m[1]);
   ok("every db.ref in house.js and HH_PEOPLE is household/people/<who>/<field> or household/meta/engine", refs.length>0&&refs.every(r=>/^"household\/people\/"\+who\+"\/"\+field$|^"household\/people\/"\+who\+"\/fit"$|^"household\/meta\/engine"$/.test(r)), refs);
   ok("every one of them sits behind _hhWrite() on its line", files.split("\n").filter(l=>/db\.ref\(/.test(l)).every(l=>/if\(_hhWrite\(\)\)/.test(l)));
