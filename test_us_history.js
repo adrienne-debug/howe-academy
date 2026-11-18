@@ -28,6 +28,7 @@ const MATH = src.slice(src.indexOf("const MAST_MATH_ANS={"), src.indexOf("};", s
 const VD = new Function(VOCAB + "\nreturn MAST_VOCAB_DEFS;")();
 const BUILT = JSON.parse(/"U\.S\. History":(\[[^\]]*\])/.exec(src)[1]);   // the built-in list, read from the page
 const H = "U.S. History", UNIT = "us_path";
+const PIN = { ver: 3, stages: [1, 2, 3, 4, 5, 6, 7, 8, 9] };   // USHIST's release (Stages 1–9); USCIVTEST ships 1–10 at version 4
 const KID = "kida", LISTONLY = "kidb", NEW = "kidc", LATE = "kidd";
 
 function loadAll(o) {   // the browser's way: geo.js, the photo files, us.js — classic scripts on one window
@@ -76,6 +77,7 @@ function world(o) {
       unitStageEnroll, mastFullBank, mastGetDef, MAST_VOCAB_DEFS, MAST_MATH_ANS, geoUnitRecord, suPending, suPlan, get view(){ return uaAttachView; } };`)(G, db,
     { [KID]: { [H]: BUILT.slice(), Vocabulary: ["harbor"] }, [LISTONLY]: { [H]: BUILT.slice() }, [NEW]: {}, [LATE]: { [H]: BUILT.slice() } });
   fixture(G);
+  w.STARTER_UNITS.us_path = fam => w.usUnitRecord(fam, PIN);   // this file pins the USHIST release; test_us_civtest.js pins today's
   if (!o.noUnit) { const u = o.copy || w.STARTER_UNITS.us_path(); u.addedTs = 1; G.unitStudies[UNIT] = u; w.u = u; }
   w.G = G; return w;
 }
@@ -87,13 +89,13 @@ const flush = async () => { for (let i = 0; i < 10; i++) await tick(); };
 (async () => {
 console.log("── what ships ──");
 const w0 = world(), U = w0.u;
-ok("version 3, Stages 1–9 (the citizen's test, Stage 10, comes with USCIVTEST)", w0.US_PATH_SHIP.ver === 3 && w0.US_PATH_SHIP.stages.join() === "1,2,3,4,5,6,7,8,9");
+ok("the code still ships Stages 1–9 (USCIVTEST added 10 at version 4 — this file pins USHIST's release, version 3)", PIN.stages.every(n => w0.US_PATH_SHIP.stages.includes(n)) && w0.US_PATH_SHIP.ver > PIN.ver && U.starterVer === PIN.ver);
 { const s = world({ window: {}, noUnit: true }).STARTER_UNITS.us_path();
   ok("the shell (before us.js): 9 stages, 246 cards", s._shell && s.stages.map(x => x.n).join() === "1,2,3,4,5,6,7,8,9" && s.cardCount === 246);
-  ok("the shell's labels, readyAt and per-stage counts are us.js's", JSON.stringify(w0.US_PATH_STAGES.map(x => [x.n, x.label, x.readyAt || 0])) === JSON.stringify(L.stages.filter(x => x.n <= 9).map(x => [x.n, x.label, x.readyAt || 0])) &&
+  ok("the shell's labels, readyAt and per-stage counts are us.js's", JSON.stringify(w0.US_PATH_STAGES.filter(x => x.n <= 9).map(x => [x.n, x.label, x.readyAt || 0])) === JSON.stringify(L.stages.filter(x => x.n <= 9).map(x => [x.n, x.label, x.readyAt || 0])) &&
     [1, 2, 3, 4, 5, 6, 7, 8, 9].every(n => w0.US_PATH_STAGE_CARDS[n] === L.cards.filter(c => c.stage === n).length));
   ok("the Starter units list names all nine stages and “246 cards”", /5\. Colonies, Revolution &amp; Constitution · 6\. The Bill of Rights &amp; all 27 amendments · 7\. Presidents in order · 8\. A growing nation &amp; the Civil War · 9\. America in the world, 1865–today/.test(world({ window: {}, noUnit: true })._starterUnitsHtml()) && /246 cards/.test(world({ window: {}, noUnit: true })._starterUnitsHtml())); }
-ok("the description: the colonies, the amendments, the Civil War are here now; only the citizen's test comes later", /the 13 colonies and the founding, all 27 amendments/.test(U.desc) && /Civil War/.test(U.desc) && /citizen's test comes later/.test(U.desc));
+ok("the description: the colonies, the amendments, the Civil War are among what's here", /the 13 colonies and the founding, all 27 amendments/.test(U.desc) && /Civil War/.test(U.desc));
 ok("How-to notes for the four new decks, each fits the 240-character box", ["13 Colonies", H, "American Battles", "Amendments"].every(k => { const t = w0.STARTER_HOWTO[k]; return t && t.main.length > 60 && t.main.length <= 240 && t.kid; }));
 
 console.log("── the record ──");
