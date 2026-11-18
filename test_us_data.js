@@ -132,6 +132,14 @@ ok("every 'taught by' card sits in an earlier stage than the test", CTc.every(c 
 const UNTAUGHT = [12, 30, 39, 45, 47, 48, 49, 54, 55, 56, 57, 67, 72, 124];
 ok("the questions no earlier card teaches are known and pinned (economic system, Speaker, VP, judges, Cabinet, Electoral College, Court, Oath, Selective Service, the motto)", JSON.stringify(U.uscis.untaught) === JSON.stringify(UNTAUGHT), U.uscis.untaught);
 
+// USCIVTEST (slice 5): the plan's three pins — 124 = 128 − 4, the ★ family is USCIS's starred list, every changes:true card listed
+ok("124 + the four 'your state' questions = USCIS's 1–128, each once", (qs => qs.length === 128 && qs.every((q, i) => q === i + 1))(CTc.map(c => teach[c.name].q).concat(Object.keys(U.uscis.local).map(Number)).sort((x, y) => x - y)));
+ok("the ★ family's questions are exactly USCIS's starred list less the 'your state' ★61", JSON.stringify(CTc.filter(c => c.family === "The big twenty").map(c => teach[c.name].q)) === JSON.stringify(STAR.filter(q => !U.uscis.local[q])));
+const CHANGES = [["Famous Presidents", "Donald Trump"], ["Civics Test", "What is the name of the Speaker of the House of Representatives now?"], ["Civics Test", "What is the name of the President of the United States now?"],
+  ["Civics Test", "What is the name of the Vice President of the United States now?"], ["Civics Test", "Who is the Chief Justice of the United States now?"]];   // R4: where to look when an officeholder changes
+ok("every changes:true card, listed (update these when an officeholder changes)", JSON.stringify(cards.filter(c => c.changes).map(c => [c.deck, c.name])) === JSON.stringify(CHANGES), cards.filter(c => c.changes).map(c => [c.deck, c.name]));
+ok("…each Civics Test one says “(as of November 2026” on its back", cards.filter(c => c.changes && c.deck === "Civics Test").every(c => /\(as of November 2026/.test(c.def)));
+
 // ── size and names ──
 ok("us.js under 250 KB, us_pics_1.js under 700 KB, us_pics_2.js under 1.2 MB", usSrc.length < 250 * 1024 && p1Src.length < 700 * 1024 && p2Src.length < 1200 * 1024, [usSrc.length, p1Src.length, p2Src.length]);
 const HIST = /abraham lincoln|lincoln memorial|lincoln's|lincolnatgettysburg|lincoln o-77|ellis island|andrew jackson|andrew johnson|zachary taylor|david hume kennerly|david valdez|david bachrach|camp david|howe academy|andrew j\. russell|ellis_island/gi;
