@@ -51485,6 +51485,7 @@ function envHydrate(u,lib){
   if(typeof cptrHydrate==="function") cptrHydrate(u);   // ✂️ CPTRIM: a card made optional (her class, Adrienne's unit) stays, no longer core — site kids only
   if(typeof cplnpHydrate==="function") cplnpHydrate(u);   // 🌿 CPLINCOLNPARITY: the same for Lincoln's class in Howe (the core flag only, in memory)
   if(typeof envPicsOn==="function") envPicsOn(u);   // ⚡ ENVIDFLASH: the ID decks' pictures, in memory, from envirothon/pics/index.json
+  if(typeof envStageCardsRetry==="function") envStageCardsRetry();   // 📥 CPSENDCARDS: a send-out read before the cards arrived
   return true;
 }
 // Called when unitStudies arrives (and after 📚 Add): hydrate every code-held unit, loading envirothon.js first if needed.
@@ -51514,6 +51515,57 @@ function envEnrollHold(u,st,cards,hold,modes,intro,defs){
     const k=mastDefKey(c.name); st.definitions[k]=String(c.def); defs[k]=String(c.def); });
   return true;
 }
+// 📥 CPSENDCARDS (her "yes build all of them" 2026-11-17): a teacher's send-out brings the station's cards for a mirrored kid in the
+// FAMILY app. Live 11/17: Forestry and Soils were sent out, but a Howe kid's station cards only enter his bank when Mom taps ➡ Start
+// Stage N on the Units page — he was on stage 0, so the released decks had no cards to study. (The class site never needs this:
+// envsAutoEnroll applies every stage.) envmRelease calls it on every release read — a listener's arrival, a due scheduled send-out,
+// each app start — so a station sent out BEFORE this change catches up the next time the release is read.
+//   · rel = {<station> | <deck key> | <station>~<Key Concept>: truthy}. For each station it names whose stage cards are not all in
+//     his bank: the bank entries {cat, name} and the backs _ustApply writes for that stage (definitions/<front>; the coded key,
+//     mastDefKey, for a front with . / # $ [ ]) — that station's decks only, and nothing else: no hold, no mode, no study card (the
+//     new-cards flow mints them), kidStage and the Units row untouched. What is already in the bank, or already has a back, is skipped.
+//   · Writes: ONE targeted update on mastery/<kid>_custom_items (next index → entry, as _ustWrite) and one on …/definitions, only
+//     with db && !_dryRun(); never on the class site, never in the demo, only for a kid enrolled through the Units page (kidStage),
+//     only once his bank has arrived. Cards still loading → the release waits in memory and envHydrate tries it again.
+const _envScPend={};
+function envStageCardsFor(kid,rel,u){
+  if(!kid||!rel||typeof rel!=="object"||!u||u.starter!==ENV_UNIT_ID) return 0;
+  if((typeof envSiteOn==="function"&&envSiteOn())||(typeof envsDemo==="function"&&envsDemo())) return 0;   // the class site / demo: envsAutoEnroll's job
+  if(typeof db==="undefined"||!db||(typeof _dryRun==="function"&&_dryRun())) return 0;
+  if(!(u.enrolled&&u.enrolled[kid])||!(u.kidStage&&u.kidStage[kid])) return 0;
+  const raw=(typeof masteryData!=="undefined"&&masteryData)?masteryData[kid+"_custom_items"]:null;
+  if(!raw||typeof raw!=="object"||(typeof _haMastReady!=="undefined"&&!_haMastReady)) return 0;   // never append to a bank not read yet
+  if(_envScPend[kid]){ rel=Object.assign({},_envScPend[kid],rel); delete _envScPend[kid]; }   // the other listener's release, read before the cards arrived
+  const stOf=k=>{ k=String(k); const i=k.indexOf("~"); if(i>0) return k.slice(0,i); const d=(u.decks||[]).find(x=>x&&(x.station===k||x.key===k)); return d?d.station:null; };
+  const sts=[]; Object.keys(rel).forEach(k=>{ if(!rel[k]) return; const s=stOf(k); if(s&&sts.indexOf(s)<0) sts.push(s); });
+  if(!sts.length) return 0;
+  const dks=s=>(u.decks||[]).filter(d=>d&&d.key&&d.station===s);
+  if(sts.some(s=>dks(s).some(d=>!Array.isArray(d.cards)))){ _envScPend[kid]=Object.assign({},_envScPend[kid]||{},rel); return 0; }   // the cards are still loading (envirothon.js): both listeners' releases wait
+  delete _envScPend[kid];
+  const arr=Array.isArray(raw), list=arr?raw:Object.values(raw);
+  let next=arr?raw.length:(Object.keys(raw).reduce((m,k)=>/^\d+$/.test(k)?Math.max(m,+k+1):m,0));   // the next index — never one already used
+  const pk=(dk,n)=>dk+"\u0001"+n, have=new Set(list.filter(Boolean).map(c=>pk(c.cat,c.name)));
+  const st=masteryData[kid+"_settings"]||(masteryData[kid+"_settings"]={}), defs=st.definitions||(st.definitions={});
+  const bu={}, du={};
+  sts.forEach(s=>{ const D={}; dks(s).forEach(d=>{ D[d.key]=d; });
+    const ns=[]; Object.keys(D).forEach(k=>{ const n=D[k].stage; if(n!=null&&ns.indexOf(n)<0) ns.push(n); });
+    const cards=[]; ns.forEach(n=>{ (typeof _ustCards==="function"?_ustCards(u,n):[]).forEach(c=>{ if(D[c._dk]) cards.push(c); }); });
+    if(!cards.some(c=>!have.has(pk(c._dk,c.name)))) return;   // all in the bank already
+    cards.forEach(c=>{
+      if(!have.has(pk(c._dk,c.name))){ bu[next++]={cat:c._dk,name:c.name}; have.add(pk(c._dk,c.name)); }
+      if(c.def==null||D[c._dk].defsOnBank) return;
+      const ok=(typeof mastDefKeyOk!=="function")||mastDefKeyOk(c.name), k=ok?c.name:mastDefKey(c.name);
+      if(defs[k]==null&&du[k]==null) du[k]=ok?c.def:String(c.def); }); });
+  const n=Object.keys(bu).length; if(!n) return 0;
+  Object.keys(bu).forEach(i=>{ if(arr) raw.push(bu[i]); else raw[i]=bu[i]; });
+  Object.keys(du).forEach(k=>{ defs[k]=du[k]; });
+  db.ref("mastery/"+kid+"_custom_items").update(bu);
+  if(Object.keys(du).length) db.ref("mastery/"+kid+"_settings/definitions").update((typeof haKeys==="function"?haKeys(du):du));
+  return n;
+}
+// envHydrate's line: a release that came in before the cards did, tried again now.
+function envStageCardsRetry(){ Object.keys(_envScPend).forEach(kid=>{ const rel=_envScPend[kid], u=(typeof envmUnit==="function")?envmUnit():null; if(!u){ return; }
+  if(envStageCardsFor(kid,rel,u)&&typeof envmSchedule==="function") envmSchedule("release"); }); }   // no repaint here: the cards' arrival redraws what shows them
 // Lincoln's 🌿 session: auto-graded steps only (pick with lures → key ideas → type), modest load. handOffAt matches his
 // other deck sessions' default (bi_weekly). Create-only: if a session "envirothon" already exists, nothing is written.
 const ENV_SESSION_SID="envirothon";

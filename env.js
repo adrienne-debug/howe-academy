@@ -279,6 +279,7 @@ function envmRelAttach(kid,_lz){
 function envmRelease(kid,rel){
   if(!envmCfg()||!rel||typeof rel!=="object") return 0;
   const u=envmUnit(); if(!u) return 0;
+  if(typeof envStageCardsFor==="function"&&envStageCardsFor(kid,rel,u)){ envmSchedule("release"); if(typeof renderAllSoon==="function") renderAllSoon(); }   // 📥 CPSENDCARDS: a sent-out station's cards into his bank (family app only; idempotent; catches up an older send-out)
   if(typeof cpsdRelease==="function"){ const _n=cpsdRelease(kid,rel,u); if(_n!=null){ if(_n&&typeof renderAllSoon==="function") renderAllSoon(); return _n; } }   // 📤 CPSEND: the class site's apply (Key Concepts, cat_open); null off the site
   const M=(typeof masteryData!=="undefined"&&masteryData)||{}, st=M[kid+"_settings"], hold=(st&&st.cat_hold)||null; if(!hold) return 0;
   const open=[];
