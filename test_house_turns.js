@@ -65,6 +65,14 @@ if (MAIN) for (const p of ["daily", "weekly", "2d"]) {
 if (MAIN) { const b = mk({ hd: { meta: { takeover: 0 } } }), m = mkMain({ hd: { meta: { takeover: 0 } } }); b.get("householdData.rotations=" + J({ pick3: { v: { [TMR]: { people: ["cal", "ben", "ada"], period: "daily", chores: { p_a: 0 } } }, conv: { rot: "pick3", slot: "afternoon" } } }));
   let bad = 0; for (let n = T0; n < T0 + 60; n++) if (rows(b, n) !== rows(m, n)) bad++;
   ok("Take over off: a switched wheel is not read — the lists are main's (60 days)", bad === 0, bad); }
+// The same with rows on the lists (Take over off reads config/routines; here those are the table's own rows) and a stored wheel that
+// WOULD give other lists if read: another order and a weekly cycle where config/rotationPeriod says daily (hub review 2026-11-18).
+if (MAIN) { const W2 = J({ pick3: { v: { [V.isoOf(T0 - 1)]: { people: ["ada", "ben", "cal"], period: "weekly", chores: { p_a: 0, p_b: 1, p_c: 2 } } }, conv: { rot: "pick3", slot: "afternoon" } } });
+  const b = mk({ hd: { meta: { takeover: 0 } } }), m = mkMain({ hd: { meta: { takeover: 0 } } }), on = mk(); [b, m, on].forEach(c => c.get("routineCfg2=hhDeriveKids()")); b.get("householdData.rotations=" + W2); on.get("householdData.rotations=" + W2);
+  let differs = 0; for (let n = T0; n < T0 + 60; n++) if (rows(on, n) !== rows(m, n)) differs++;
+  ok("(sanity) with Take over on, that stored wheel does change the lists (" + differs + " of 60 days)", differs >= 30, differs);
+  let bad = 0; for (let n = T0; n < T0 + 60; n++) if (rows(b, n) !== rows(m, n)) bad++;
+  ok("Take over off, rows on the lists and a wheel that would change them: the lists are still main's (60 days)", bad === 0 && Object.keys(b.routineCfg2.afternoon || {}).length === 3, bad); }
 if (MAIN) { const b = mk(), m = mkMain(); b.htOn("w_sink"); b.htOn("w_tub"); b.htJoin("w_mirror", "t_w_tub"); let bad = 0; for (let n = T0; n < T0 + 60; n++) if (rows(b, n) !== rows(m, n)) bad++;
   ok("wheels made on the card never touch the old lists (60 days)", bad === 0 && b.writes.length === 3, [bad, b.writes.length]); }
 if (MAIN) { const b = mk({ per: PER("weekly") }), m = mkMain({ per: PER("weekly") }), MV = m.get("HouseEng"), BV = b.get("HouseEng");
