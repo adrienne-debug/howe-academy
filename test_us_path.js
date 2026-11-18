@@ -17,6 +17,7 @@
 const fs = require("fs"), path = require("path"), vm = require("vm");
 const src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
 const usSrc = fs.readFileSync(path.join(__dirname, "us.js"), "utf8"), p1Src = fs.readFileSync(path.join(__dirname, "us_pics_1.js"), "utf8"), p2Src = fs.readFileSync(path.join(__dirname, "us_pics_2.js"), "utf8");
+const PIN = { ver: 2, stages: [1, 2, 3, 4, 7] };   // USPRES's release (Stages 1–4 and 7); USHIST ships 1–9 at version 3
 let pass = 0, fail = 0;
 function ok(name, cond, extra) { if (cond) { pass++; console.log("  ok  - " + name); } else { fail++; console.log("  FAIL- " + name + (extra !== undefined ? "  " + JSON.stringify(extra).slice(0, 500) : "")); } }
 const a = src.indexOf("// STARTER_UNITS_START"), b = src.indexOf("// STARTER_UNITS_END");
@@ -67,6 +68,7 @@ function world(o) {
       _starterUnitsHtml, starterUnitAdd, envHydrateAll, unitStageFormOpen, unitStageFormSet, unitStageEnroll, unitStageStatus, unitStageMoveUp,
       _unitStageRowsHtml, _unitPortrait, mastGetVisual, _mastVisNorm, unitCardFace, mastGetDef, MAST_VOCAB_DEFS, MAST_MATH_ANS, geoUnitRecord,
       suPending, suPlan, suCode, setKid(k){ masteryKid=k; } };`)(G, db);
+  api.STARTER_UNITS.us_path = fam => api.usUnitRecord(fam, PIN);   // this file pins the USPRES release; test_us_history.js pins today's
   api.G = G; return api;
 }
 const deck = (u, k) => u.decks.find(d => d.key === k);
@@ -86,7 +88,7 @@ ok("the three generated files set their haLazyReady flag (window._haLazy_us / _u
 { const w = world();
   ok("STARTER_LAZY: us_path waits for us.js", w.STARTER_LAZY.us_path === "us");
   ok("How-to notes for the five Stage 1–4 decks", Object.keys(DECKS4).every(k => w.STARTER_HOWTO[k] && w.STARTER_HOWTO[k].main.length > 40 && w.STARTER_HOWTO[k].kid));
-  ok("ships Stages 1–4 (and Stage 7 since USPRES, version 2)", w.US_PATH_SHIP.ver === 2 && w.US_PATH_SHIP.stages.join() === "1,2,3,4,7"); }
+  ok("the code ships Stages 1–4 (and more since USPRES / USHIST — pinned in their own tests)", [1, 2, 3, 4].every(n => w.US_PATH_SHIP.stages.includes(n)) && w.US_PATH_SHIP.ver >= 2); }
 
 console.log("── before us.js: the shell ──");
 { const w = world();
@@ -123,7 +125,7 @@ console.log("── ＋ Add waits for us.js ──");
 console.log("── the record (us.js loaded) ──");
 const W1 = loadUS(1);
 { const w = world({ window: W1 }), L = W1.HoweUS, u = w.STARTER_UNITS.us_path();
-  ok("id, starter, the shipped version, picsInCode us, nbInsert on, the plan's description", u.id === "us_path" && u.starter === "us_path" && u.starterVer === w.US_PATH_SHIP.ver && u.picsInCode === "us" && u.nbInsert === true && /Liberty Bell/.test(u.desc) && !u._shell);
+  ok("id, starter, the shipped version, picsInCode us, nbInsert on, the plan's description", u.id === "us_path" && u.starter === "us_path" && u.starterVer === PIN.ver && u.picsInCode === "us" && u.nbInsert === true && /Liberty Bell/.test(u.desc) && !u._shell);
   ok("Stages 1–4, readyAt 14 · 21 · 27 (Stage 1 needs all 11)", JSON.stringify(u.stages.filter(s => s.n <= 4)) === JSON.stringify([{ n: 1, label: "Symbols of America", weeklyFrom: 0 }, { n: 2, label: "Holidays & presidents to know", weeklyFrom: 0, readyAt: 14 }, { n: 3, label: "Famous Americans", weeklyFrom: 0, readyAt: 21 }, { n: 4, label: "How our government works", weeklyFrom: 0, readyAt: 27 }]));
   ok("five Stage 1–4 decks with the plan's counts, modes and intro caps", JSON.stringify(u.decks.slice(0, 5).map(d => [d.key, d.mode, d.introCap, d.cards.length])) === JSON.stringify([["American Symbols", "flash", 2, 11], ["American Holidays", "flash", 2, 11], ["Famous Presidents", "flash", 2, 5], ["Famous Americans", "flip", 2, 24], ["Civics", "flip", 3, 30]]));
   ok("stage counts 11 · 16 · 24 · 30 = 81", [1, 2, 3, 4].every(n => u.decks.reduce((t, d) => t + d.cards.filter(c => c.stage === n).length, 0) === SHIP[n]));
