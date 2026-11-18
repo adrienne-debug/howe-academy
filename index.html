@@ -73181,9 +73181,80 @@ function trainFinish(st){
 // song — the kid sings along. The level-play letters are still said by name (_trainSay → trainSpoken).
 let _trainOsc=[];   // this device's scheduled tones (stopped when the song is)
 let _trainRun=0;   // the song now running (a stop moves it on: every light checks it)
+// TRAINWAV_START — 🔊 the ABC song as a sound file (her go-ahead 2026-11-17: "make the sound file"). On her Mac (Safari 18.3) the
+// song's WebAudio tones were scheduled on a context that read "running", its clock moving, Safari counting the tab as playing — and
+// the speakers got silence (5 of the 6 finishes ever logged, all on that Mac; a reload didn't fix it, a new tab did: WebKit bugs
+// 276687 / 291892, a tab's WebAudio silent while it claims to run; an audio element keeps sounding). The app can't see that state,
+// so the song no longer leans on WebAudio alone: the same notes (trainSongTimes on TRAIN_HZ, a triangle wave, _trainTones' shape —
+// a quick rise to 0.16, down to near nothing at max(0.12, d×0.92)) are drawn ONCE a page into a 16-bit mono WAV in memory (a Blob
+// URL: nothing fetched, nothing stored) and played through ONE audio element. The file starts with TRAINWAV_LEAD s of silence (the
+// tones' own 0.15 s lead), so the kid's first car tap / drop of the page can prime the element (play + pause inside that gesture,
+// on silence, once) and the finish may then start it from script. The lights start when the element really starts (its "playing"
+// event or play()'s promise, whichever comes first). No Audio / Blob, a browser that says it can't play a WAV or errors on it (the
+// old TV browser), play() refused, or nothing started within TRAINWAV_WAIT_MS → today's tones + timers, exactly once (the element is
+// paused first: never both, never a doubled song). Song only — the dings, the Brain Break alarm, bbAudioUnlock and the shared
+// context are untouched. Read-only: no writes (one more dbg breadcrumb).
+const TRAINWAV_SR=22050, TRAINWAV_LEAD=0.15, TRAINWAV_WAIT_MS=1000;
+// PURE: the song as WAV bytes (a Uint8Array: the 44-byte header + 16-bit mono PCM) — TRAINWAV_LEAD s of silence, then every note at its time
+function trainWavBytes(notes,sr){
+  notes=notes||trainSongTimes(); sr=sr||TRAINWAV_SR;
+  const last=notes[notes.length-1], n=Math.round((TRAINWAV_LEAD+(last?last.t+last.d:0))*sr), pcm=new Float32Array(n);
+  notes.forEach(x=>{
+    const hz=TRAIN_HZ[x.n]||440, a=Math.round((TRAINWAV_LEAD+x.t)*sr), len=Math.max(0.12,x.d*0.92), rise=Math.round(0.03*sr), fall=Math.max(1,Math.round(len*sr)-rise);
+    const up=Math.pow(0.16/0.001,1/rise), down=Math.pow(0.001/0.16,1/fall);   // the exponential ramps of _trainTones, a sample at a time
+    let g=0.001, ph=0;
+    for(let k=0;k<rise+fall&&a+k<n;k++){
+      const v=ph<0.25?4*ph:ph<0.75?2-4*ph:4*ph-4;   // a triangle starting at 0, rising (as WebAudio's)
+      pcm[a+k]+=g*v; g*=(k<rise?up:down); ph+=hz/sr; if(ph>=1) ph-=1;
+    }
+  });
+  const buf=new ArrayBuffer(44+n*2), dv=new DataView(buf), w4=(o,t)=>{ for(let i=0;i<4;i++) dv.setUint8(o+i,t.charCodeAt(i)); };
+  w4(0,"RIFF"); dv.setUint32(4,36+n*2,true); w4(8,"WAVE"); w4(12,"fmt "); dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,1,true);
+  dv.setUint32(24,sr,true); dv.setUint32(28,sr*2,true); dv.setUint16(32,2,true); dv.setUint16(34,16,true); w4(36,"data"); dv.setUint32(40,n*2,true);
+  for(let i=0;i<n;i++){ const v=Math.max(-1,Math.min(1,pcm[i])); dv.setInt16(44+i*2,Math.round(v*32767),true); }
+  return new Uint8Array(buf);
+}
+let _trainWavUrl=null, _trainWavA=null, _trainWavNo=false, _trainWavPrimed=false;
+// The song's one audio element, its file made on first use (null: no Audio / Blob / URL, or a browser that can't play a WAV — the tones then)
+function _trainWavEl(){
+  if(_trainWavA||_trainWavNo) return _trainWavA;
+  try{
+    if(typeof Audio!=="function"||typeof Blob!=="function"||typeof URL==="undefined"||!URL||typeof URL.createObjectURL!=="function"){ _trainWavNo=true; return null; }
+    const a=new Audio();
+    if(typeof a.canPlayType==="function"&&!a.canPlayType("audio/wav")){ _trainWavNo=true; return null; }
+    if(!_trainWavUrl) _trainWavUrl=URL.createObjectURL(new Blob([trainWavBytes()],{type:"audio/wav"}));
+    a.preload="auto"; a.src=_trainWavUrl; _trainWavA=a;
+  }catch(e){ _trainWavNo=true; _trainWavA=null; }
+  return _trainWavA;
+}
+// Inside the kid's first tap / drop of the page (from _trainUnlock, its first line — ahead of the ding and the spoken letter): play +
+// pause on the file's silent lead, so a later play() from the finish is allowed. Once a page; a failed prime only means the tones.
+function _trainWavPrime(){
+  if(_trainWavPrimed) return; _trainWavPrimed=true;
+  try{ const a=_trainWavEl(); if(!a) return; const p=a.play(); if(p&&typeof p.catch==="function") p.catch(function(){}); a.pause(); a.currentTime=0; }catch(e){}
+}
+// Stop: pause and rewind (from _trainStopSong)
+function _trainWavStop(){ const a=_trainWavA; if(!a) return; try{ a.onplaying=null; a.onerror=null; a.pause(); a.currentTime=0; }catch(e){} }
+// Start the file for a song run: onStart() when it really starts (once), onFail(why) when it can't (once, and never after a start).
+// Returns the run's record for the breadcrumb ({play, why}) or null when there is no file here.
+function _trainWavPlay(alive,onStart,onFail){
+  const a=_trainWavEl(); if(!a) return null;
+  const f={play:"pending",why:""}; let went=false, fell=false;
+  const go=()=>{ if(!alive()) return; if(fell){ try{ a.pause(); }catch(e){} return; } if(went) return; went=true; let ct=0; try{ ct=+a.currentTime||0; }catch(e){} onStart(ct); };
+  const back=why=>{ if(went||fell||!alive()) return; fell=true; f.why=why; try{ a.onplaying=null; a.onerror=null; a.pause(); a.currentTime=0; }catch(e){} onFail(why); };
+  a.onplaying=go; a.onerror=()=>{ _trainWavNo=true; _trainWavA=null; back("error"); };   // a file this browser can't play: the tones from now on
+  try{ a.currentTime=0; }catch(e){}
+  let p=null; try{ p=a.play(); }catch(e){ f.play="threw"; back("threw"); return f; }
+  if(p&&typeof p.then==="function") p.then(()=>{ f.play="resolved"; go(); },e=>{ f.play="rejected"+(e&&e.name?" "+e.name:""); back("rejected"); });
+  else f.play="no promise";
+  setTimeout(()=>back("no start"),TRAINWAV_WAIT_MS);
+  return f;
+}
+// TRAINWAV_END
 function _trainStopSong(){
   _trainRun++;
   _trainOsc.forEach(o=>{ try{ o.stop(); }catch(e){} }); _trainOsc=[];
+  _trainWavStop();   // TRAINWAV: the song's file, paused and rewound
 }
 // ABCTRAIN_AUDIO_START — 🔊 the song ran but made no sound (her report 2026-11-11: "all things work on the song properly but
 // no sound"). The tones are scheduled on the shared AudioContext (bbAlarmCtx); a browser that keeps that context suspended
@@ -73193,6 +73264,7 @@ function _trainStopSong(){
 // finish shows "🔊 Tap for sound" — that tap unlocks the context and starts the song again from A, inside a gesture where
 // every browser allows it. A context that is running shows nothing new. Read-only: no writes.
 function _trainUnlock(){
+  if(typeof _trainWavPrime==="function") _trainWavPrime();   // TRAINWAV: once a page, first — the song's file may then start from the finish
   try{
     if(typeof bbAudioUnlock==="function") bbAudioUnlock();
     const ctx=(typeof bbAlarmCtx!=="undefined")?bbAlarmCtx:null; if(!ctx||ctx.state==="closed") return;
@@ -73206,6 +73278,7 @@ function _trainCtxRunning(){ try{ const ctx=(typeof bbAlarmCtx!=="undefined")?bb
 function trainSound(){
   const st=trainState; if(!st||st.phase!=="done"||!st.song) return;
   _trainUnlock();
+  if(typeof _trainWavEl==="function"&&_trainWavEl()){ trainSing(st); _mastRe(); return; }   // TRAINWAV: the file starts inside this tap (its tones fallback stays)
   setTimeout(()=>{ if(trainState!==st||st.phase!=="done") return; if(_trainCtxRunning()!==false){ trainSing(st); } st.song.muted=(_trainCtxRunning()===false); _mastRe(); },60);
 }
 // ABCTRAIN_AUDIO_END
@@ -73243,9 +73316,26 @@ function trainSing(st){
   const seq=++st.seq;
   st.song={i:-1,end:false,tones:false,run:_trainRun};
   const alive=()=>trainState===st&&st.seq===seq&&st.song&&st.song.run===_trainRun;
-  const notes=trainSongTimes();
-  st.song.tones=_trainTones(notes);
-  st.song.muted=(_trainCtxRunning()===false);   // ABCTRAIN_AUDIO: tones scheduled on a context that cannot sound yet
+  const notes=trainSongTimes(), last=notes[notes.length-1];
+  // the lights on the song's clock, its first note `zero` s from now
+  const lights=zero=>{
+    notes.forEach((x,i)=>{
+      setTimeout(()=>{ if(!alive()||_trainLeft(st)) return;
+        st.song.i=i; _trainSongPaint(st); },Math.round((x.t+zero)*1000));
+    });
+    setTimeout(()=>{ if(!alive()) return; st.song.i=notes.length; st.song.end=true; _mastRe(); },Math.round((last.t+last.d+zero+0.25)*1000));   // the train stays lit, Play again shows
+  };
+  const tones=()=>{
+    st.song.path="tones";
+    st.song.tones=_trainTones(notes);
+    st.song.muted=(_trainCtxRunning()===false);   // ABCTRAIN_AUDIO: tones scheduled on a context that cannot sound yet
+    setTimeout(()=>{ if(!alive()||st.song.end) return; const m=(_trainCtxRunning()===false); if(m!==st.song.muted){ st.song.muted=m; _mastRe(); } },700);   // ABCTRAIN_AUDIO: a resume that lands late
+    lights(0.15);
+  };
+  // TRAINWAV: the file first — the lights from its real start; it can't → the tones, once
+  st.song.file=_trainWavPlay(alive,ct=>lights(TRAINWAV_LEAD-ct),()=>{ tones(); if(!st.song.tones||st.song.muted) _mastRe(); });
+  if(st.song.file){ if(!st.song.path){ st.song.path="file"; st.song.tones="file"; st.song.muted=false; } }   // "file": the song sounds (no "Sing along!", no 🔊 hint)
+  else tones();
   // ABCTRAIN_AUDIO2_START — her report 2026-11-11, after ABCTRAIN_AUDIO: "the video looks great, but it's no sound". Two breadcrumbs in _debug so one
   // play on the iPad says what the device saw: the context's state and whether its clock moves, the tones flag, the oscillator count,
   // and whether the speech engine was still talking. Read-only breadcrumbs (dbg); nothing else changes.
@@ -73254,13 +73344,10 @@ function trainSing(st){
     setTimeout(()=>{ try{ if(!alive()) return; dbg("train song +1.2s: ctx="+(c?c.state:"none")+" clock "+(c?(c.currentTime-t0).toFixed(2):"-")+"s moved · tts="+_trainTtsBusy()+" muted="+st.song.muted); }catch(e){} },1200);
   }catch(e){}
   // ABCTRAIN_AUDIO2_END
-  setTimeout(()=>{ if(!alive()||st.song.end) return; const m=(_trainCtxRunning()===false); if(m!==st.song.muted){ st.song.muted=m; _mastRe(); } },700);   // ABCTRAIN_AUDIO: a resume that lands late
-  notes.forEach((x,i)=>{
-    setTimeout(()=>{ if(!alive()||_trainLeft(st)) return;
-      st.song.i=i; _trainSongPaint(st); },Math.round((x.t+0.15)*1000));
-  });
-  const last=notes[notes.length-1];
-  setTimeout(()=>{ if(!alive()) return; st.song.i=notes.length; st.song.end=true; _mastRe(); },Math.round((last.t+last.d+0.4)*1000));   // the train stays lit, Play again shows
+  // TRAINWAV: a third breadcrumb — which path played; for the file, play()'s answer and how far the element's clock had moved
+  try{ const f=st.song.file, a=_trainWavA;
+    setTimeout(()=>{ try{ if(!alive()) return; dbg("train song path: "+st.song.path+(f?" · file play="+f.play+(f.why?" fell back ("+f.why+")":"")+" · el "+(a?(+a.currentTime||0).toFixed(2):"-")+"s moved":" · no file here")); }catch(e){} },1200);
+  }catch(e){}
 }
 // One note on screen without a re-render (so the train can glide): the shift, the lit car(s), the big letter
 function _trainSongPaint(st){
