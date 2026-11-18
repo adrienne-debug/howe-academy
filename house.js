@@ -366,6 +366,7 @@ function hhRoomsPageHTML(){
   h+=pill(!hhRmSel&&!hhRmEditing,'🏠 Whole house',"hhRmGo('')")+(mom?pill(hhRmEditing,'🚪 Edit rooms',"hhRmEditToggle()",'#6B4C93'):'')+'</div>';
   G.forEach(function(g,i){ if(!isOpen(g[0],i)) return; const rs=L.filter(function(r){ return r[2]===g[0]; }); h+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px;padding-left:6px">'+(rs.length?rs.map(chip).join(''):'<span style="font-size:11px;color:var(--muted)">No rooms in '+esc(g[1])+' yet.</span>')+'</div>'; });
   if(hhRmEditing&&mom) return h+hhRmEditHTML();
+  if(!hhRmSel) h+=(typeof htNowHTML==="function"&&typeof htdHTML==="function")?htNowHTML()+htdHTML():'';   // HOUSETODO: 🔴 Now · 📝 To do, every room
   if(!hhRmSel) return h+(typeof hwCardHTML==="function"?hwCardHTML():'')+hhRmHouseHTML(byRoom)+(typeof hhRoomsTailHTML==="function"?hhRoomsTailHTML():'');   // HOUSEWEEK: 📅 the week, set to Everything
   const none=hhRmSel==="__none", r=none?null:L.find(function(x){ return x[0]===hhRmSel; }), ids=byRoom[hhRmSel]||[], s=hhRoomStats(ids);
   h+='<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:4px 2px 8px"><span style="font-size:16px;font-weight:800">'+(none?'❔ No room':hhRoomEmoji(r[0])+' '+esc(r[1]))+'</span><span style="font-size:12px;color:var(--muted);font-weight:700">'+s.n+' chore'+(s.n===1?'':'s')+' · '+s.mins+' min a week · on time '+(s.pct===null?'–':s.pct+'%')+'</span></div>';
@@ -633,6 +634,7 @@ function hpPersonHTML(){
     if(mv.length) h+='<div style="'+HP_HEAD+'">Moved off them today</div>'+mv.map(function(m){ const j=J[m.id]||{}; return hpRow(m.id,j.emoji,j.label,_hhChip(hpMovedTxt(m)+(m.to==="grab"?(m.can.length?' · for '+m.can.map(hhWhoName).join(', '):' · no kid can'):''),m.to==="grab"?'#fef3c7':'#e0f2fe',m.to==="grab"?'#92400e':'#075985')); }).join('');
   }
   h+='<div style="height:6px"></div></div>';
+  h+=(typeof htdPersonHTML==="function")?htdPersonHTML(who):'';   // HOUSETODO: 📝 their one-time jobs, under Today
   // The next seven days
   if(run){ h+='<div style="'+HP_CARD+'"><div style="padding:9px 12px;font-size:14px;font-weight:800">📆 This week <span style="font-size:11px;font-weight:600;color:var(--muted)">today and the 6 days after · house minutes vs limit · preview</span></div>';
     run.slice(0,7).forEach(function(p){ const mv=hpMovedOff(p,who), cnt={}; mv.forEach(function(m){ cnt[m.to]=(cnt[m.to]||0)+1; });
@@ -735,14 +737,16 @@ function rtdHTML(rid){
   let h='<div style="'+HP_CARD+'"><div style="display:flex;gap:8px;align-items:center;padding:9px 12px"><span style="font-size:14px;font-weight:800;flex:1">📝 To do <span style="font-size:11px;font-weight:600;color:var(--muted)">one-time jobs for this room</span></span>'+(mom?_hhBtn("rtdToggleForm('"+rid+"')",rtdOpen[rid]?'Cancel':'＋ To-do',false,'#7c3aed'):'')+'</div>';
   if(mom&&rtdOpen[rid]) h+='<div style="display:flex;gap:5px;align-items:center;padding:0 12px 8px"><input id="rtd-emoji" placeholder="📝" style="'+inp+';width:44px;text-align:center"><input id="rtd-label" placeholder="What needs doing?" style="'+inp+';flex:1;min-width:120px">'+_hhBtn("rtdSave('"+rid+"')",'Save',true,'#7c3aed')+'</div>';
   if(!ids.length) return h+'<div style="padding:0 12px 9px;font-size:12px;color:var(--muted)">Nothing waiting here.</div></div>';
-  ids.forEach(function(id){ const j=J[id], tick=rtdTicked(j,t), wait=tick||hhOnceHeld(j);
-    if(!wait){ h+='<div style="display:flex;align-items:center;gap:7px;padding:5px 12px;border-top:1px solid #f3f4f6;font-size:12px;color:#6b6560"><span>'+(j.emoji||'☑️')+'</span><span style="flex:1">'+esc(j.label)+' · on '+esc(hhWhoName(j.who))+'’s list</span>'+(mom?_hhBtn("hhOnceHold('"+id+"')",'⏸ Back to the pile',false,'#64748b'):'')+'</div>'; return; }
-    h+='<div style="padding:5px 12px;border-top:1px solid #f3f4f6'+(tick?';opacity:.6':'')+'"><div style="display:flex;align-items:center;gap:7px;font-size:12.5px">'
-      +(mom?'<button onclick="rtdTick(\''+id+'\')" title="'+(tick?'Not done after all':'I did it myself')+'" style="flex:none;width:22px;height:22px;border-radius:6px;border:1.5px solid #7c3aed;background:'+(tick?'#7c3aed':'#fff')+';color:#fff;font-size:12px;font-weight:800;cursor:pointer;padding:0">'+(tick?'✓':'')+'</button>':'')
-      +'<span>'+(j.emoji||'☑️')+'</span><span style="flex:1;font-weight:700'+(tick?';text-decoration:line-through':'')+'">'+esc(j.label)+'<span style="font-weight:400;color:#6b6560">'+(tick?' · done today':rtdFrom(j.from,t))+'</span></span></div>'
-      +(mom&&!tick?'<div style="margin:4px 0 2px 29px">'+_hhOnceSendBtns(id,j)+'</div>':'')+'</div>'; });
+  ids.forEach(function(id){ h+=rtdRowHTML(id,J[id],mom,t); });
   return h+'<div style="height:4px"></div></div>';
 }
+// One row of the card (HOUSETODO draws the same rows on 🏠 Whole house): a sent one quietly, a waiting or ticked-today one with ✓ and Send to….
+function rtdRowHTML(id,j,mom,t){ const tick=rtdTicked(j,t), wait=tick||hhOnceHeld(j);
+  if(!wait) return '<div style="display:flex;align-items:center;gap:7px;padding:5px 12px;border-top:1px solid #f3f4f6;font-size:12px;color:#6b6560"><span>'+(j.emoji||'☑️')+'</span><span style="flex:1">'+esc(j.label)+' · on '+esc(hhWhoName(j.who))+'’s list</span>'+(mom?_hhBtn("hhOnceHold('"+id+"')",'⏸ Back to the pile',false,'#64748b'):'')+'</div>';
+  return '<div style="padding:5px 12px;border-top:1px solid #f3f4f6'+(tick?';opacity:.6':'')+'"><div style="display:flex;align-items:center;gap:7px;font-size:12.5px">'
+      +(mom?'<button onclick="rtdTick(\''+id+'\')" title="'+(tick?'Not done after all':'I did it myself')+'" style="flex:none;width:22px;height:22px;border-radius:6px;border:1.5px solid #7c3aed;background:'+(tick?'#7c3aed':'#fff')+';color:#fff;font-size:12px;font-weight:800;cursor:pointer;padding:0">'+(tick?'✓':'')+'</button>':'')
+      +'<span>'+(j.emoji||'☑️')+'</span><span style="flex:1;font-weight:700'+(tick?';text-decoration:line-through':'')+'">'+esc(j.label)+'<span style="font-weight:400;color:#6b6560">'+(tick?' · done today':rtdFrom(j.from,t))+'</span></span></div>'
+      +(mom&&!tick?'<div style="margin:4px 0 2px 29px">'+_hhOnceSendBtns(id,j)+'</div>':'')+'</div>'; }
 // ＋ To-do: the Add form's draft set to a one-time job in this room for Mom, anyone can do it; hhAddSave makes and writes the record.
 function rtdSave(rid,label,emoji){
   if(typeof momHere==="function"&&!momHere()) return null; if(!hhRoomList().some(function(r){ return r[0]===rid; })) return null;
@@ -885,6 +889,88 @@ function hwLaundryCardHTML(){ try{ if(hwFilter().k!=="laundry") return hwCardHTM
   try{ r='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">'+hwChips(hwF)+'</div>'; }catch(e){ r=''; }
   return (i<13||!r)?c:c.slice(0,i)+r+c.slice(i); }
 // HOUSEWEEK_LAUNDRY_END
+// HOUSETODO_START — 🔴 Now and 📝 To do on 🏠 Whole house, and 📝 To do on 👤 By person (DESIGN_now_todo_schedule_2026-11-17 §7,
+// slice E; her rule 2026-11-17 "Yes, every area" — every Household page gets 🔴 Now · 📝 To do · 📅 Schedule — and her go, "c is
+// merged so go to next"). Built only from what the room pages already draw, so the pages never disagree:
+//   · 🔴 Now (Whole house): today across the house in a few lines, from each room's own 🔴 Now rows (rnRows: today's stored plan when
+//     the plan is ON and stored, else the lists). One line per room with something open today — "5 left · 2 late · 3 done", most late
+//     first, a tap opens that room (hhRmGo) — one quiet line for the rooms that are clear, and with the plan ON what fit nobody, with
+//     the room card's own → Give to… (hdGive, Mom only). The "most behind first" list under it is 8 weeks of on-time and "past its
+//     usual gap" for every chore, due today or not; this card is only today's. Nothing else on it writes.
+//   · 📝 To do (Whole house): every room's 📝 To do together, the same rows drawn by the same code (rtdIds, rtdRowHTML: "from Tue",
+//     Send to…, ✓ I did it myself, sent ones quietly with ⏸ Back to the pile), rooms in the page's order, ❔ No room last. A room
+//     with more than 4 folds to its first 4 and "+N more" (a plain variable; nothing saved). ＋ To-do asks which room and saves through
+//     the room card's own rtdSave (so the one saver, hhAddSave). No "No room" choice: hhAddSave files a job with no room under the
+//     room its words suggest, so it would never show as No room.
+//   · 📝 To do (By person, under 📅 Today): the one-time jobs on this person's list now (⏸ Back to the pile), then the waiting ones
+//     they can do — hhCanOf: the job's owner and everyone ticked on it, the same test for Mom and Dad as for a kid — each with one
+//     "Give to <Name>" (hhOnceSend). No ✓ here (it means Mom did it herself: the room and Whole house cards have it) and no ＋ To-do
+//     (a to-do needs a room).
+// Writes: only the room card's (rtdSave → hhAddSave, rtdTick, hhOnceSend, hhOnceHold, hdGive), Mom only, through _hhWrite() so
+// ?dryrun=1 writes nothing. Drawing writes nothing. Not Mom: the same rows, no buttons.
+let htdOpen=false, htdMore={};
+const HT_FOLD=4, HT_PFOLD=6;
+// Today's rows for one line: a room, or "__none" = the chores in no room (the lists' "__none" and the plan's "", as the week card does).
+function htRows(rid){ if(rid!=="__none") return rnRows(rid); const a=rnRows("__none"), b=rnRows(""); return {iso:a.iso,plan:a.plan||b.plan,rows:a.rows.concat(b.rows),over:a.over.concat(b.over)}; }
+function htNowData(){ let iso=hpToday(), plan=false, over=[];
+  const rooms=hhRoomList().map(function(r){ return r[0]; }).concat(["__none"]).map(function(rid,i){ const R=htRows(rid), open=R.rows.filter(function(x){ return !x.done; });
+    iso=R.iso; plan=plan||R.plan; R.over.forEach(function(o){ over.push(Object.assign({rid:rid},o)); });
+    return {rid:rid,i:i,left:open.length,late:open.filter(function(x){ return x.late; }).length,done:R.rows.length-open.length,over:R.over.length}; });
+  return {iso:iso,plan:plan,rooms:rooms,over:over}; }
+function htRoomLabel(rid){ return (!rid||rid==="__none")?'❔ No room':hhRoomEmoji(rid)+' '+hhRoomName(rid); }
+function htNowHTML(){
+  const D=htNowData(), J=hhJobs(), mom=(typeof momHere!=="function")||momHere();
+  const open=D.rooms.filter(function(x){ return x.left||x.over; }).sort(function(a,b){ return (b.late-a.late)||(b.left-a.left)||(a.i-b.i); }), clear=D.rooms.filter(function(x){ return !x.left&&!x.over&&x.done; }), quiet=D.rooms.filter(function(x){ return !x.left&&!x.over&&!x.done&&x.rid!=="__none"; }).length;
+  let h='<div style="'+HP_CARD+'"><div style="padding:9px 12px;font-size:14px;font-weight:800">🔴 Now <span style="font-size:11px;font-weight:600;color:var(--muted)">'+(D.plan?'today’s plan':'today, from the lists')+' · every room · tap one to open it</span></div>';
+  h+=open.map(function(x){ return '<div onclick="hhRmGo(\''+x.rid+'\')" style="display:flex;align-items:center;gap:7px;padding:6px 12px;border-top:1px solid #f3f4f6;font-size:12.5px;cursor:pointer"><span style="flex:1;font-weight:700">'+esc(htRoomLabel(x.rid))+'</span>'
+    +(x.left?'<span style="font-weight:800">'+x.left+' left</span>':'')+(x.late?_hhChip(x.late+' late','#fee2e2','#991b1b'):'')+(x.over?_hhChip(x.over+' didn’t fit','#fef3c7','#92400e'):'')+(x.done?'<span style="font-size:11px;color:#6b6560">'+x.done+' done</span>':'')+'<span style="color:#94a3b8">›</span></div>'; }).join('');
+  if(!open.length) h+='<div style="padding:6px 12px 2px;border-top:1px solid #f3f4f6;font-size:12.5px;font-weight:700;color:#166534">'+(clear.length?'Nothing left anywhere today.':'Nothing on anyone’s list in a room today.')+'</div>';
+  if(clear.length||quiet) h+='<div style="padding:5px 12px 7px;border-top:1px solid #f3f4f6;font-size:11.5px;color:#6b6560">'+(clear.length?'✅ Clear today: '+clear.map(function(x){ return esc(htRoomLabel(x.rid))+' ('+x.done+' done)'; }).join(' · '):'')+(quiet?(clear.length?' · ':'')+quiet+' room'+(quiet===1?'':'s')+' with nothing today':'')+'</div>';
+  if(D.over.length) h+='<div style="'+HP_HEAD+';border-top:2px solid #fde68a;padding-top:8px">Didn’t fit anyone today ('+D.over.length+')</div>'+D.over.map(function(o){ const j=J[o.id];
+    return hpRow(o.id,j.emoji,j.label,_hhChip(esc(htRoomLabel(o.rid)),'#f3f4f6','#475569')+_hhChip(esc(hhWhoName(o.turn))+'’s turn','#f3f4f6','#475569')+_hhChip(o.mins+' min','#f3f4f6','#475569')+(mom?'<span onclick="event.stopPropagation()">'+hpGiveSel(D.iso,o.id,"")+'</span>':'')); }).join('');
+  return h+'</div>';
+}
+function htdToggleForm(){ if(typeof momHere==="function"&&!momHere()) return; htdOpen=!htdOpen; hhRender(); }
+function htdFold(k){ htdMore[k]=!htdMore[k]; hhRender(); }
+// Every room's To do: [{rid, ids}] in the page's room order, "" (No room) last; rooms with nothing left out.
+function htdGroups(){ return hhRoomList().map(function(r){ return r[0]; }).concat([""]).map(function(rid){ return {rid:rid,ids:rtdIds(rid)}; }).filter(function(g){ return g.ids.length; }); }
+function _htdFoldHTML(k,n,cap){ return n<=cap?'':'<div onclick="htdFold(\''+k+'\')" style="padding:4px 12px 6px;font-size:11.5px;font-weight:800;color:#7c3aed;cursor:pointer">'+(htdMore[k]?'Show fewer':'+'+(n-cap)+' more')+'</div>'; }
+function htdHTML(){
+  const J=hhJobs(), mom=(typeof momHere!=="function")||momHere(), t=_hhIsoLocal(Date.now()), G=htdGroups(), inp='padding:5px 7px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:12.5px;font-family:\'DM Sans\',sans-serif;box-sizing:border-box';
+  const all=G.reduce(function(a,g){ return a.concat(g.ids); },[]), live=all.filter(function(id){ return J[id].status!=="retired"; }), wait=live.filter(function(id){ return hhOnceHeld(J[id]); }).length;
+  let h='<div style="'+HP_CARD+'"><div style="display:flex;gap:8px;align-items:center;padding:9px 12px"><span style="font-size:14px;font-weight:800;flex:1">📝 To do <span style="font-size:11px;font-weight:600;color:var(--muted)">one-time jobs, every room'+(live.length?' · '+wait+' waiting'+(live.length>wait?' · '+(live.length-wait)+' sent':''):'')+'</span></span>'+(mom?_hhBtn("htdToggleForm()",htdOpen?'Cancel':'＋ To-do',false,'#7c3aed'):'')+'</div>';
+  if(mom&&htdOpen) h+='<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;padding:0 12px 8px"><input id="htd-emoji" placeholder="📝" style="'+inp+';width:44px;text-align:center"><input id="htd-label" placeholder="What needs doing?" style="'+inp+';flex:1;min-width:120px"><select id="htd-room" style="'+inp+'"><option value="">Which room?</option>'
+    +hhRoomList().map(function(r){ return '<option value="'+esc(r[0])+'">'+esc(hhRoomEmoji(r[0])+' '+r[1])+'</option>'; }).join('')+'</select>'+_hhBtn("htdSave()",'Save',true,'#7c3aed')+'</div>';
+  if(!G.length) return h+'<div style="padding:0 12px 9px;font-size:12px;color:var(--muted)">Nothing waiting in any room.</div></div>';
+  G.forEach(function(g){ const k=g.rid||"__none", ids=(g.ids.length>HT_FOLD&&!htdMore[k])?g.ids.slice(0,HT_FOLD):g.ids;
+    h+='<div onclick="hhRmGo(\''+k+'\')" style="'+HP_HEAD+';border-top:1px solid #eef2f0;padding-top:7px;cursor:pointer">'+esc(htRoomLabel(g.rid))+' · '+g.ids.length+'</div>'+ids.map(function(id){ return rtdRowHTML(id,J[id],mom,t); }).join('')+_htdFoldHTML(k,g.ids.length,HT_FOLD); });
+  return h+'<div style="height:4px"></div></div>';
+}
+// ＋ To-do on Whole house: the room card's own save for the room she picks.
+function htdSave(rid,label,emoji){
+  if(typeof momHere==="function"&&!momHere()) return null;
+  const val=function(id){ const e=(typeof document!=="undefined"&&document.getElementById)?document.getElementById(id):null; return (e&&e.value!==undefined)?String(e.value||""):""; };
+  if(rid===undefined) rid=val("htd-room"); if(label===undefined) label=val("htd-label"); if(emoji===undefined) emoji=val("htd-emoji");
+  if(!String(label||"").trim()){ hpTell("Write the to-do first"); return null; }
+  if(!hhRoomList().some(function(r){ return r[0]===rid; })){ hpTell("Pick a room first"); return null; }
+  const id=rtdSave(rid,label,emoji); if(id){ htdOpen=false; hhRender(); } return id;
+}
+// 👤 By person: {sent: on their list now, can: waiting, they can do it}, oldest first.
+function htdPersonIds(who){ const J=hhJobs(), ord=function(a,b){ return String(J[a].from||"").localeCompare(String(J[b].from||""))||((J[a].ts||0)-(J[b].ts||0))||(a<b?-1:1); };
+  const live=Object.keys(J).filter(function(id){ return hhIsOnce(J[id])&&J[id].status!=="retired"; });
+  return {sent:live.filter(function(id){ return !hhOnceHeld(J[id])&&J[id].who===who; }).sort(ord),can:live.filter(function(id){ return hhOnceHeld(J[id])&&hhCanOf(J[id]).indexOf(who)>=0; }).sort(ord)}; }
+function htdPersonHTML(who){
+  const J=hhJobs(), mom=(typeof momHere!=="function")||momHere(), t=_hhIsoLocal(Date.now()), P=htdPersonIds(who), nm=esc(hhWhoName(who)), k="p|"+who;
+  const row=function(id,quiet,btn){ const j=J[id]; return '<div style="display:flex;align-items:center;gap:7px;padding:5px 12px;border-top:1px solid #f3f4f6;font-size:'+(quiet?'12px;color:#6b6560':'12.5px')+'"><span>'+(j.emoji||'☑️')+'</span><span style="flex:1'+(quiet?'':';font-weight:700')+'">'+esc(j.label)
+    +'<span style="font-weight:400;color:#6b6560"> · '+esc(htRoomLabel(hhRoomOn(j)))+'</span>'+(quiet?'':'<span style="font-weight:400;color:#6b6560">'+rtdFrom(j.from,t)+'</span>')+'</span>'+(mom?btn:'')+'</div>'; };
+  let h='<div style="'+HP_CARD+'"><div style="padding:9px 12px;font-size:14px;font-weight:800">📝 To do <span style="font-size:11px;font-weight:600;color:var(--muted)">one-time jobs for '+nm+'</span></div>';
+  if(!P.sent.length&&!P.can.length) return h+'<div style="padding:0 12px 9px;font-size:12px;color:var(--muted)">Nothing on '+nm+'’s list, and nothing waiting that '+nm+' can do.</div></div>';
+  if(P.sent.length) h+='<div style="'+HP_HEAD+'">On '+nm+'’s list now ('+P.sent.length+')</div>'+P.sent.map(function(id){ return row(id,true,_hhBtn("hhOnceHold('"+id+"')",'⏸ Back to the pile',false,'#64748b')); }).join('');
+  if(P.can.length){ const ids=(P.can.length>HT_PFOLD&&!htdMore[k])?P.can.slice(0,HT_PFOLD):P.can;
+    h+='<div style="'+HP_HEAD+(P.sent.length?';border-top:1px solid #eef2f0;padding-top:7px':'')+'">Waiting — '+nm+' can do ('+P.can.length+')</div>'+ids.map(function(id){ return row(id,false,_hhBtn("hhOnceSend('"+id+"','"+who+"')",'Give to '+nm,false,'#2B7A78')); }).join('')+_htdFoldHTML(k,P.can.length,HT_PFOLD); }
+  return h+'<div style="height:4px"></div></div>';
+}
+// HOUSETODO_END
 // HOUSESWITCH_START — 🚪 the real switch and today's stored plan on 👤 By person (Household by room, step 4; DESIGN §4.3 doors, §5 last
 // bullet, her yes 2026-11-17). Mom only. ON first PROVES a houseDay save works (houseDay/<today>/hello) and only then writes
 // household/meta/engine = {mode:"on", on:<today>} together with each house chore's last-done date filled once from the 8 weeks of
