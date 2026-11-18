@@ -14193,10 +14193,10 @@ function hhEngineTap(on){ if(typeof momHere==="function"&&!momHere()) return; if
 // daily or on-its-days chore that overflows carries to the next day first in line, and is dropped (a miss, as today) when its
 // own next day arrives — so a daily never carries (tomorrow has its own) and no chore is ever on a day twice.
 // Turns (§4.2, step 5): ov.rotations = household/rotations (passed only while Take over is on). A wheel's v/<iso> = {people, period,
-// chores:{id:seat}} holds FROM that date. A CONVERTED rotation (conv {rot, slot}) keeps the old rows as its seats: member i (the
-// wheel's people who have a row of it on that list) does member (i + hop)'s chore — rtApplyRot's own formula on the stored order,
-// so converting changes nothing for anyone. A wheel made on the card names the person at (seat − step): step = the date's hop, or
-// for an "every N" chore how many times it has been done (doneN). The grown-up turn: a house chore with deepEvery N whose kid
+// chores:{id:seat}} holds FROM that date; people are in the order a chore travels: the chore at seat k goes to people[k + step].
+// A CONVERTED rotation (conv {rot, slot}) keeps the old rows as its seats (member i does member (i − hop)'s chore; the switch stores
+// rtApplyRot's group as g0, g(n−1) … g1, so this IS rtApplyRot's formula and converting changes nothing for anyone). A wheel made
+// on the card steps by the date's hop, or for an "every N" chore by how many times it has been done (doneN). The grown-up turn: a house chore with deepEvery N whose kid
 // check-offs since a grown-up's (kidRun) have reached N goes to a grown-up ticked on it (two → not the one in deepBy), why "deep".
 // ov.count = {id:{doneN,kidRun,deepBy}} overrides the table's counters (run() counts each planned day as done by its person).
 const HouseEng=(function(){
@@ -14230,12 +14230,12 @@ const HouseEng=(function(){
   function seatOn(jobs,people,ov,k,V,n,out,members){ const slot=k.slice(0,k.indexOf("|")), tag=k.slice(k.indexOf("|")+1), seat={}, live={};
     (ov.kids||[]).forEach(function(kid){ listIds(jobs,people,slot,kid).forEach(function(id){ if(jobs[id].rot!==tag) return; members[id]=1; if(!jobs[id].free) live[id]=1; if(seat[kid]===undefined) seat[kid]=id; }); });
     const M=seatsOf(V,function(w){ return seat[w]!==undefined; },function(id){ return !!live[id]; }), hop=hopP(V.period,n);
-    M.forEach(function(x,i){ const p=M[(i+hop)%M.length], own=jobs[seat[x.who]], pick=p.job||seat[p.who], pj=jobs[pick];
+    M.forEach(function(x,i){ const m=M.length, p=M[(((i-hop)%m)+m)%m], own=jobs[seat[x.who]], pick=p.job||seat[p.who], pj=jobs[pick];
       let cad=own.cad||"daily"; if(!p.job) cad="none"; else if(pj.cad==="asneeded") cad="asneeded"; else if(own.cad==="asneeded") cad="daily";
       const o={kid:x.who,row:seat[x.who],pick:pick,cad:cad}; if(!p.job) o.empty=1; out.push(o); }); }
   function countOf(jobs,id,ov){ const o=ov&&ov.count&&ov.count[id], j=jobs[id]||{}; return o?{doneN:+o.doneN||0,kidRun:+o.kidRun||0,deepBy:o.deepBy||""}:{doneN:+j.doneN||0,kidRun:+j.kidRun||0,deepBy:j.deepBy||""}; }
-  function cardTurn(V,id,step){ const P=listOf(V&&V.people), n=P.length, i=parseInt(((V&&V.chores)||{})[id],10); if(!n||!(i>=0)) return ""; return P[(((i-step)%n)+n)%n]; }
-  // A wheel made on the card (no conv): each of its chores to the person at (seat − step), on the chore's own timing.
+  function cardTurn(V,id,step){ const P=listOf(V&&V.people), n=P.length, i=parseInt(((V&&V.chores)||{})[id],10); if(!n||!(i>=0)) return ""; return P[(((i+step)%n)+n)%n]; }
+  // A wheel made on the card (no conv): each of its chores to the person at (seat + step), on the chore's own timing.
   function cardOn(jobs,s,people,ov,members){ const R=(ov&&ov.rotations)||{}, out=[], n=dnum(s);
     Object.keys(R).sort().forEach(function(k){ if(!R[k]||R[k].conv) return; const V=verOf(R[k],s); if(!V||!V.chores) return;
       Object.keys(V.chores).sort().forEach(function(id){ const j=jobs[id]; if(!j||members[id]||j.rot) return; members[id]=1;
@@ -14347,7 +14347,7 @@ function rtTurnsRows(slot,kid,dayName){
   const seat={}, live={}, hold={}, seen={};
   SL_KIDS.forEach(function(k){ (((routineCfg2&&routineCfg2[slot])||{})[k]||[]).forEach(function(st){ if(!st||!W[st.rot]) return; if(st._hh&&!st.free) live[st._hh]=st; const s0=seat[st.rot]=seat[st.rot]||{}; if(!s0[k]) s0[k]=st; }); });
   Object.keys(W).forEach(function(tag){ const s0=seat[tag]||{}, M=HouseEng.seatsOf(W[tag],function(w){ return !!s0[w]; },function(id){ return !!live[id]&&live[id].rot===tag; }), hop=HouseEng.hop(W[tag].period,dt);
-    M.forEach(function(x,i){ const p=M[(i+hop)%M.length]; hold[tag+"|"+x.who]=p.job?live[p.job]:Object.assign({},s0[p.who],{free:true}); }); });   // no chore = a free turn
+    M.forEach(function(x,i){ const m=M.length, p=M[(((i-hop)%m)+m)%m]; hold[tag+"|"+x.who]=p.job?live[p.job]:Object.assign({},s0[p.who],{free:true}); }); });   // no chore = a free turn
   return {has:function(tag){ return !!W[tag]; },row:function(s){ const h=seen[s.rot]?null:hold[s.rot+"|"+kid]; seen[s.rot]=1; if(!h) return Object.assign({},s,{cad:"none"});   // not in the wheel (or a second row): hidden in place
     const o=Object.assign({},s,{emoji:h.emoji,label:h.label,pts:(h.pts||0),free:!!h.free});   // the job travels whole, as in rtApplyRot
     if(h.free) o.cad="none"; else if(h.cad==="asneeded") o.cad="asneeded"; else if(s.cad==="asneeded") o.cad="daily";

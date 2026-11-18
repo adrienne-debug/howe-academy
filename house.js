@@ -1009,11 +1009,11 @@ function htPut(key,V,msg){
   householdData.rotations=Object.assign({},householdData.rotations); const node=householdData.rotations[key]=Object.assign({},householdData.rotations[key]); node.v=Object.assign({},node.v); node.v[t]=W;
   householdOnValue(householdData); if(_hhWrite()) db.ref("household/rotations/"+key+"/v/"+t).set(W); if(msg) htToast(msg); hhRender(); return W; }
 function htFreeSeat(V){ const n=htPeople(V).length, used={}; Object.keys(V.chores||{}).forEach(function(id){ used[V.chores[id]]=1; }); for(let i=0;i<n;i++) if(!used[i]) return i; return -1; }
-// Takes turns ON: a wheel of the kids ticked on the card (who-can order); tomorrow it is the owner's turn (or the first kid's).
+// Takes turns ON: a wheel of the kids ticked on the card (who-can order = the order it goes round); tomorrow it is the owner's turn.
 function htOn(id){ const j=hhJobs()[id]; if(!htMom()||!htTk()||!htCan(j)||htOf(id)) return null;
   const L=htLast("t_"+id); if(L&&L.V.chores&&Object.keys(L.V.chores).length&&!(htAll()["t_"+id]||{}).conv) return htJoin(id,"t_"+id);   // its own wheel still turns other chores: back into it
   const P=hhCanOf(j).filter(hhIsKid); if(P.length<2){ htToast("Tick at least two kids under “Who else can do it” first"); return null; }
-  const t=htTmr(), step=htEveryN(j.cad)?(+j.doneN||0):HouseEng.hop("daily",_hhDayNum(t)), at=Math.max(0,P.indexOf(j.who)), ch={}; ch[id]=(((at+step)%P.length)+P.length)%P.length;
+  const t=htTmr(), step=htEveryN(j.cad)?(+j.doneN||0):HouseEng.hop("daily",_hhDayNum(t)), at=Math.max(0,P.indexOf(j.who)), ch={}; ch[id]=(((at-step)%P.length)+P.length)%P.length;
   return htPut("t_"+id,{people:P,period:"daily",chores:ch},"Turns start tomorrow"); }
 function htOff(id){ const w=htOf(id); if(!htMom()||!htTk()||!w||w.conv) return null; const V=htCopy(w.V); delete V.chores[id]; if(!Object.keys(V.chores).length) delete V.chores; return htPut(w.key,V,"Turns stop tomorrow"); }
 function htJoin(id,key){ const j=hhJobs()[id], L=htLast(key); if(!htMom()||!htTk()||!htCan(j)||htOf(id)||!L||(htAll()[key]||{}).conv) return null;
@@ -1046,7 +1046,7 @@ function htPlan(id){
   if(M.some(function(m){ return !m.id||!J[m.id]; })) why.push("A row of it is not in the household table.");
   if(M.some(function(m,i){ return M.findIndex(function(x){ return x.kid===m.kid; })!==i; })) why.push("One kid has two rows of it on the same list.");
   if(Object.keys(J).some(function(x){ const y=J[x]; return y&&y.rot===tag&&y.status!=="retired"&&y.slot!==slot; })) why.push("The same rotation is on two different lists.");
-  const people=M.map(function(m){ return m.kid; }), chores={}; M.forEach(function(m,i){ if(!m.free&&m.id) chores[m.id]=i; });
+  const W=M.length?[M[0]].concat(M.slice(1).reverse()):[], people=W.map(function(m){ return m.kid; }), chores={}; W.forEach(function(m,i){ if(!m.free&&m.id) chores[m.id]=i; });   // the order a chore travels (rtApplyRot hands it to the kid before)
   if(!Object.keys(chores).length) why.push("It has no chore in it, only “Free day” rows.");
   const V={people:people,period:(typeof rtRotPeriod==="function")?rtRotPeriod(tag):"daily",chores:chores}, can={};
   Object.keys(chores).forEach(function(c){ const j=J[c], cur=hhCanOf(j), add=people.filter(function(k){ return cur.indexOf(k)<0; }); if(add.length) can[c]={was:Array.isArray(j.can)?j.can.slice():false,now:hhCanOf(Object.assign({},j,{can:cur.concat(add)})),add:add}; });
@@ -1061,14 +1061,14 @@ function htClose(){ htSheet=null; hhRender(); }
 // who-can rows it ticks. Free day rows and every list row are left exactly where they are.
 function htConvert(id){
   if(!htMom()) return null; const p=htPlan(id); if(!p) return null; if(!p.ok){ htToast(p.why[0]); return null; }
-  const J=hhJobs(), upd={}, R="household/rotations/"+p.key+"/", cv={at:Date.now(),from:p.from,rot:p.tag,slot:p.slot,by:"mom"};
+  const J=hhJobs(), upd={}, R="household/rotations/"+p.key+"/", cv={at:Date.now(),from:p.from,rot:p.tag,slot:p.slot,by:"mom",v:p.V};
   upd[R+"v/"+p.from]=p.V;
   if(Object.keys(p.can).length){ cv.can={}; Object.keys(p.can).forEach(function(c){ cv.can[c]={was:p.can[c].was,now:p.can[c].now}; upd["household/jobs/"+c+"/can"]=p.can[c].now; J[c].can=p.can[c].now.slice(); }); }
   upd[R+"conv"]=cv; householdData.rotations=Object.assign({},householdData.rotations); householdData.rotations[p.key]={v:{},conv:cv}; householdData.rotations[p.key].v[p.from]=p.V;
   htSheet=null; householdOnValue(householdData); if(_hhWrite()) db.ref().update(upd); htToast("Switched — it starts tomorrow. Nothing changes on anyone’s list."); hhRender(); return upd; }
 // ↩ Undo: only while the wheel and the who-can rows are still exactly what the switch wrote; then every row goes back as it was.
-function htUndoWhy(key){ const n=htAll()[key], c=n&&n.conv; if(!c) return "Nothing to undo."; const v=n.v||{}, first=JSON.stringify(htCopy(v[c.from])), J=hhJobs(), arr=function(x){ return Array.isArray(x)?x:HouseEng.listOf(x); };
-  if(!v[c.from]||Object.keys(v).some(function(k){ return v[k]&&JSON.stringify(htCopy(v[k]))!==first; })) return "The turn was changed after the switch, so it cannot simply go back.";
+function htUndoWhy(key){ const n=htAll()[key], c=n&&n.conv; if(!c) return "Nothing to undo."; const v=n.v||{}, first=JSON.stringify(htCopy(c.v)), J=hhJobs(), arr=function(x){ return Array.isArray(x)?x:HouseEng.listOf(x); };
+  if(!c.v||!v[c.from]||Object.keys(v).some(function(k){ return v[k]&&JSON.stringify(htCopy(v[k]))!==first; })) return "The turn was changed after the switch, so it cannot simply go back.";
   if(Object.keys(c.can||{}).some(function(id){ return !J[id]||JSON.stringify(arr(J[id].can))!==JSON.stringify(arr(c.can[id].now)); })) return "Who can do it was changed after the switch, so it cannot simply go back.";
   return ""; }
 function htUndo(key){
