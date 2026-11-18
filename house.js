@@ -780,8 +780,8 @@ function rtdTick(id){
 // day and the grid's fold are plain variables; nothing here writes, on a draw or on any tap.
 let hwKey="", hwF=null, hwWk=0, hwDay="", hwGrid={};
 const HW_BACK=8, HW_RUN=29, HW_BOX=6, HW_MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-// The page's own setting: a room page → that room; 👤 By person → that person; 🏠 Whole house → Everything.
-function hwHome(){ if(hhView==="person") return {key:"p|"+hpSel,f:{k:"who",id:hpSel}};
+// The page's own setting: a room page → that room; 👤 By person → that person; 🏠 Whole house → Everything; 🧺 Laundry → Laundry (slice C).
+function hwHome(){ if(hhView==="laundry") return {key:"l",f:{k:"laundry"}}; if(hhView==="person") return {key:"p|"+hpSel,f:{k:"who",id:hpSel}};
   if(hhView==="rooms"&&hhRmSel&&hhRmSel!=="__none") return {key:"r|"+hhRmSel,f:{k:"room",id:hhRmSel}}; return {key:"h|"+hhView+"|"+hhRmSel,f:{k:"all"}}; }
 // Another room, person or page → back to that page's own setting, this week, no day open.
 function hwFilter(){ const p=hwHome(); if(p.key!==hwKey||!hwF){ hwKey=p.key; hwF=p.f; hwWk=0; hwDay=""; } return hwF; }
@@ -825,16 +825,19 @@ function hwWeekLbl(mon,sun){ const m=function(iso){ return HW_MON[+iso.slice(5,7
 function hwWeekData(f,wk){ const t=hpToday(), mode=hhEngineMode(), mon=_hhIsoOf(_hhDayNum(t)-_hhDow(t)+7*wk), days=[0,1,2,3,4,5,6].map(function(d){ return _hhIsoOf(_hhDayNum(mon)+d); });
   const X={t:t,S:hhLogState(),rc:{},ids:hwIds(f),run:(mode!=="off"&&days[6]>t)?(function(){ try{ return hpRun(); }catch(e){ return null; } })():null,ll:f.k==="all"?hwLL(t,wk):null};
   return days.map(function(iso){ return {iso:iso,cells:hwCells(iso,f,X),loads:hwLoads(iso,X)}; }); }
+// The chips: Everything · 🧺 Laundry · 🚪 Room ▾ · 👤 Person ▾ (the picked one filled teal).
+function hwChips(f){
+  const pill=function(on,txt,click){ return '<button onclick="'+click+'" style="padding:5px 10px;border-radius:20px;border:1.5px solid '+(on?'#2B7A78':'#cbd5e1')+';background:'+(on?'#2B7A78':'#fff')+';color:'+(on?'#fff':'#334155')+';font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+txt+'</button>'; };
+  const pick=function(k,on,lbl,opts){ return '<select onchange="hwPick(\''+k+'\',this.value)" style="padding:5px 8px;border-radius:20px;border:1.5px solid '+(on?'#2B7A78':'#cbd5e1')+';background:'+(on?'#2B7A78':'#fff')+';color:'+(on?'#fff':'#334155')+';font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;max-width:46vw"><option value="">'+lbl+'</option>'+opts.map(function(o){ return '<option value="'+esc(o[0])+'"'+(on&&f.id===o[0]?' selected':'')+'>'+esc(o[1])+'</option>'; }).join('')+'</select>'; };
+  return pill(f.k==="all",'Everything',"hwPick('all')")+pill(f.k==="laundry",'🧺 Laundry',"hwPick('laundry')")
+    +pick("room",f.k==="room",'🚪 Room ▾',hhRoomList().map(function(r){ return [r[0],hhRoomEmoji(r[0])+' '+r[1]]; }))+pick("who",f.k==="who",'👤 Person ▾',hpWho().map(function(w){ return [w,hhWhoName(w)]; })); }
 function hwCardHTML(){
   const f=hwFilter(), mode=hhEngineMode(), mom=hcMom(), J=hhJobs(), t=hpToday(), b=hwBounds(); hwWk=Math.max(b[0],Math.min(b[1],hwWk));
   const mon=_hhIsoOf(_hhDayNum(t)-_hhDow(t)+7*hwWk), days=[0,1,2,3,4,5,6].map(function(d){ return _hhIsoOf(_hhDayNum(mon)+d); }), lau=f.k==="laundry";
-  const pill=function(on,txt,click){ return '<button onclick="'+click+'" style="padding:5px 10px;border-radius:20px;border:1.5px solid '+(on?'#2B7A78':'#cbd5e1')+';background:'+(on?'#2B7A78':'#fff')+';color:'+(on?'#fff':'#334155')+';font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+txt+'</button>'; };
-  const pick=function(k,on,lbl,opts){ return '<select onchange="hwPick(\''+k+'\',this.value)" style="padding:5px 8px;border-radius:20px;border:1.5px solid '+(on?'#2B7A78':'#cbd5e1')+';background:'+(on?'#2B7A78':'#fff')+';color:'+(on?'#fff':'#334155')+';font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;max-width:46vw"><option value="">'+lbl+'</option>'+opts.map(function(o){ return '<option value="'+esc(o[0])+'"'+(on&&f.id===o[0]?' selected':'')+'>'+esc(o[1])+'</option>'; }).join('')+'</select>'; };
   const nb=function(d,txt,dis){ return '<button onclick="hwWeek('+d+')"'+(dis?' disabled':'')+' style="padding:1px 9px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;font-size:13px;font-weight:800;cursor:pointer;'+(dis?'opacity:.3':'')+'">'+txt+'</button>'; };
   let h='<div style="'+HP_CARD+'"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:9px 12px 4px"><span style="font-size:14px;font-weight:800;flex:1">📅 Schedule</span>'
     +(lau?'':nb(-1,'‹',hwWk<=b[0])+'<span style="font-size:11.5px;font-weight:800;white-space:nowrap">'+hwWeekLbl(days[0],days[6])+'</span>'+nb(1,'›',hwWk>=b[1]))+'</div>';
-  h+='<div style="display:flex;gap:5px;flex-wrap:wrap;padding:2px 12px 8px">'+pill(f.k==="all",'Everything',"hwPick('all')")+pill(lau,'🧺 Laundry',"hwPick('laundry')")
-    +pick("room",f.k==="room",'🚪 Room ▾',hhRoomList().map(function(r){ return [r[0],hhRoomEmoji(r[0])+' '+r[1]]; }))+pick("who",f.k==="who",'👤 Person ▾',hpWho().map(function(w){ return [w,hhWhoName(w)]; }))+'</div>';
+  h+='<div style="display:flex;gap:5px;flex-wrap:wrap;padding:2px 12px 8px">'+hwChips(f)+'</div>';
   if(lau){ let g=''; try{ g=llWeekGridHTML(llToday(),llNowMin()>=LL_SWEEP_MIN,false); }catch(e){ g=''; }
     return h+'<div style="padding:0 12px 10px">'+(g||'<div style="font-size:12px;color:var(--muted)">The laundry schedule is not loaded on this page yet. Open 🧺 Laundry.</div>')+'</div></div>'; }
   const D=hwWeekData(f,hwWk);
@@ -870,6 +873,18 @@ function hwDayHTML(d,mode,t){ const J=hhJobs(), ids=d.cells?hwOrder(J,d.cells):[
 function hwRoomHTML(rid,ids){ const open=!!hwGrid[rid]||(!!hhEditId&&ids.indexOf(hhEditId)>=0);
   return hwCardHTML()+'<div onclick="hwGridToggle(\''+rid+'\')" style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:8px 12px;margin-bottom:'+(open?'6px':'10px')+';font-size:12.5px;font-weight:800;color:#475569;cursor:pointer">'+(open?'▾ The big grid <span style="font-weight:600;color:var(--muted)">· tap to fold it</span>':'▸ The big grid <span style="font-weight:600;color:var(--muted)">· every chore, day by day · tap to open</span>')+'</div><div'+(open?'':' style="display:none"')+'>'+hhRoomGridHTML(rid,ids)+'</div>'; }
 // HOUSEWEEK_END
+// HOUSEWEEK_LAUNDRY_START — 📅 slice C: the same chips on the Laundry page's own schedule (DESIGN_now_todo_schedule_2026-11-17 §3, §5 row
+// C; her "Yes, start C" 2026-11-17 — "the schedule could also be merged to show all the things or just the laundry"; her rule: the Laundry
+// page loses and changes nothing). The Laundry page is one of the card's homes and opens on 🧺 Laundry, which IS today's card: what
+// llWeekCardHTML draws (📅 The laundry schedule, Mom's 🫧 Start / ✓ Done / ↩︎, its own ‹ › 0–8 weeks), with only the row of chips put in
+// under its title. Everything, a room or a person = slice B's card (hwCardHTML: 📅 Schedule, its own ‹ ›, no laundry buttons); a tap on a
+// load there puts this card back on 🧺 Laundry (hwToLaundry → hhGo('laundry') → this page's home). A VIEW: nothing is written on a draw
+// or a tap. index.html's hhLaundryHTML calls this only when house.js is here; without it the card is exactly today's.
+function hwLaundryCardHTML(){ try{ if(hwFilter().k!=="laundry") return hwCardHTML(); }catch(e){}
+  const c=llWeekCardHTML(), i=c.indexOf('</span></div>')+13; let r='';
+  try{ r='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">'+hwChips(hwF)+'</div>'; }catch(e){ r=''; }
+  return (i<13||!r)?c:c.slice(0,i)+r+c.slice(i); }
+// HOUSEWEEK_LAUNDRY_END
 // HOUSESWITCH_START — 🚪 the real switch and today's stored plan on 👤 By person (Household by room, step 4; DESIGN §4.3 doors, §5 last
 // bullet, her yes 2026-11-17). Mom only. ON first PROVES a houseDay save works (houseDay/<today>/hello) and only then writes
 // household/meta/engine = {mode:"on", on:<today>} together with each house chore's last-done date filled once from the 8 weeks of
