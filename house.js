@@ -370,6 +370,7 @@ function hhRoomsPageHTML(){
   const none=hhRmSel==="__none", r=none?null:L.find(function(x){ return x[0]===hhRmSel; }), ids=byRoom[hhRmSel]||[], s=hhRoomStats(ids);
   h+='<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:4px 2px 8px"><span style="font-size:16px;font-weight:800">'+(none?'❔ No room':hhRoomEmoji(r[0])+' '+esc(r[1]))+'</span><span style="font-size:12px;color:var(--muted);font-weight:700">'+s.n+' chore'+(s.n===1?'':'s')+' · '+s.mins+' min a week · on time '+(s.pct===null?'–':s.pct+'%')+'</span></div>';
   if(none) h+='<div style="font-size:11px;color:var(--muted);margin:-4px 2px 8px">These chores are filed under a room that is no longer on your list. Open ✎ Edit to give each one a room.</div>';
+  if(!none&&typeof rnNowHTML==="function"&&typeof rtdHTML==="function") h+=rnNowHTML(hhRmSel)+rtdHTML(hhRmSel);   // ROOMNOW · ROOMTODO: 🔴 Now and 📝 To do, a single room only
   if(mom&&typeof hcRoomToolsHTML==="function") h+=hcRoomToolsHTML(hhRmSel,ids);   // HH_CARD: 🔍 Checks · ⚙ Rules
   if(!ids.length) return h+'<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:10px 12px;font-size:12px;color:var(--muted)">No chores in this room yet. Give a chore this room in its ✎ Edit.</div>';
   return h+hhRoomGridHTML(hhRmSel,ids)+(typeof hhRoomsTailHTML==="function"?hhRoomsTailHTML():'');
@@ -666,6 +667,104 @@ function hpTomorrowHTML(){
   return h+'<div style="height:6px"></div></div>';
 }
 // HOUSEPREVIEW_END
+// ROOMNOW_START — 🔴 Now at the top of a room page (DESIGN_now_todo_schedule_2026-11-17 §2, slice A; her words 2026-11-17: "I like
+// with the laundry system how I have the laundry active area and the laundry to do, and then it also has the laundry schedule … if
+// those could be incorporated into all the rooms", and "Yes, build A"). What is live in this room today: every chore in it that is
+// on someone's list today — who (in their colour), the time of day, done or not; late ones first with the red late badge; done ones
+// folded into one quiet line. With the plan switched on and today's plan stored (hdLive), a chore the plan hands out reads the stored
+// day (plan · done · skip · over, and → Give to… on what fit nobody, Mom only); every other chore in the room — and every chore with
+// the plan off, on preview, or not stored yet — reads the room grid's own today square (hhRmCell), so this card and the grid's today
+// row never disagree. Late off the plan = the grid's own "past its usual gap" (hhRoomStats). Room clear → the next chore due here,
+// from the run the page already works out (hpRun, 29 days). DISPLAY ONLY: no check-off and no write; a ✅ is a mark, not a button.
+const RN_DAY=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+function rnSlot(j,who){ const s=(j&&j.slot)||""; if(hhIsKid(who)) return SL_SLBL[SL_SLOTS.indexOf(s)>=0?s:"chores"]||"";
+  const m=HH_MC_SLOTS.find(function(x){ return x[0]===s; }); return m?m[1]:(SL_SLBL[s]||""); }
+// Days past its usual gap (hhRoomStats' own test): 0 = not late, -1 = late and never done in 8 weeks.
+function rnLate(j,t){ if(hhLaneOf(j)==="once"||j.hold) return 0; const n=hhNeed(j); if(!n) return 0;
+  if(n.never) return (j.from&&t-_hhDayNum(j.from)<=n.interval)?0:-1; return n.pct>100?Math.max(1,n.days-n.interval):0; }
+function rnRows(rid){
+  const J=hhJobs(), t0=_hhIsoLocal(Date.now()), t=_hhDayNum(t0), r=(typeof hdLive==="function")?hdLive(t0):null, S=hhLogState(), rc={}, rows=[], over=[];
+  const here=function(id){ return !!J[id]&&hhRoomOn(J[id])===rid; };
+  if(r){ Object.keys(r.plan||{}).filter(here).forEach(function(id){ const x=r.plan[id]; rows.push({id:id,who:x.who,done:hdDone(t0,id),late:x.late||0,skip:!!(r.skip&&r.skip[id])}); });
+    Object.keys(r.over||{}).filter(here).forEach(function(id){ over.push({id:id,turn:r.over[id].turn,mins:r.over[id].mins}); }); }
+  (hhRoomChores()[rid]||[]).forEach(function(id){ const j=J[id]; if(r&&hdManaged(j)) return;   // the plan's own: only as the stored day has it
+    const c=hhRmCell(id,t0,t0,S,rc); if(c) rows.push({id:id,who:c.who,done:!!c.done,late:c.done?0:rnLate(j,t)}); });
+  const L=function(x){ return x.late<0?1e4:x.late; };
+  rows.sort(function(a,b){ return (L(b)-L(a))||(SL_SLOTS.indexOf(J[a.id].slot)-SL_SLOTS.indexOf(J[b.id].slot))||String(J[a.id].label).localeCompare(String(J[b.id].label))||(a.id<b.id?-1:1); });
+  return {iso:t0,plan:!!r,rows:rows,over:over};
+}
+// The next chore due in this room after today, from the engine's run: {iso, id, who, n (days from today)} or null.
+function rnNext(rid){ let run=null; try{ run=hpRun(); }catch(e){ return null; } const J=hhJobs();
+  for(let i=1;i<(run||[]).length;i++){ const p=run[i], ids=Object.keys(p.plan||{}).filter(function(id){ return J[id]&&hhRoomOn(J[id])===rid; }).sort(function(a,b){ return ((p.plan[a].order||0)-(p.plan[b].order||0))||(a<b?-1:1); });
+    if(ids.length) return {iso:p.iso,id:ids[0],who:p.plan[ids[0]].who,n:i}; }
+  return null; }
+function rnNowHTML(rid){
+  const J=hhJobs(), mom=(typeof momHere!=="function")||momHere(), R=rnRows(rid), open=R.rows.filter(function(x){ return !x.done; }), done=R.rows.filter(function(x){ return x.done; });
+  const who=function(w){ return '<span style="font-size:11px;font-weight:800;white-space:nowrap;color:'+hhRmCol(w)+'">'+esc(hhWhoName(w))+'</span>'; };
+  let h='<div style="'+HP_CARD+'"><div style="padding:9px 12px;font-size:14px;font-weight:800">🔴 Now <span style="font-size:11px;font-weight:600;color:var(--muted)">'+(R.plan?'today’s plan':'today, from the lists')+'</span></div>';
+  h+=open.map(function(x){ const j=J[x.id], sl=rnSlot(j,x.who);
+    return hpRow(x.id,j.emoji,j.label,(x.late?_hhChip(x.late<0?'late':x.late+' day'+(x.late===1?'':'s')+' late','#fee2e2','#991b1b'):'')+(x.skip?_hhChip('skipped','#f3f4f6','#6b7280'):'')+who(x.who)+(sl?_hhChip(esc(sl),'#f3f4f6','#475569'):''),false); }).join('');
+  if(R.over.length) h+='<div style="'+HP_HEAD+';border-top:2px solid #fde68a;padding-top:8px">Didn’t fit anyone today ('+R.over.length+')</div>'+R.over.map(function(o){ const j=J[o.id];
+    return hpRow(o.id,j.emoji,j.label,_hhChip(esc(hhWhoName(o.turn))+'’s turn','#f3f4f6','#475569')+_hhChip(o.mins+' min','#f3f4f6','#475569')+(mom?'<span onclick="event.stopPropagation()">'+hpGiveSel(R.iso,o.id,"")+'</span>':'')); }).join('');
+  if(!open.length&&!R.over.length){ const n=rnNext(rid), j=n&&J[n.id];
+    h+='<div style="padding:6px 12px 8px;border-top:1px solid #f3f4f6;font-size:12.5px;font-weight:700;color:#166534">Nothing left in '+esc(hhRoomEmoji(rid)+' '+hhRoomName(rid))+' today.'+(j?' <span style="font-weight:600;color:#475569">Next: '+esc(j.label)+', '+RN_DAY[_hhDow(n.iso)]+(n.n>6?' '+(+n.iso.slice(5,7))+'/'+(+n.iso.slice(8)):'')+' ('+esc(hhWhoName(n.who))+').</span>':'')+'</div>'; }
+  if(done.length) h+='<div style="padding:5px 12px 7px;border-top:1px solid #f3f4f6;font-size:11.5px;color:#6b6560">✅ '+done.length+' done: '+done.map(function(x){ return esc(J[x.id].label)+' ('+esc(hhWhoName(x.who))+')'; }).join(', ')+'</div>';
+  return h+'</div>';
+}
+// ROOMNOW_END
+// ROOMTODO_START — 📝 To do on a room page (DESIGN_now_todo_schedule_2026-11-17 §2, slice A; her "Yes, build A" 2026-11-17 with the
+// hub's picks: "laundry to do" = the 📝 checklist; a room's To do is that room's part of the ☑️ One-time pile, with a quick ＋ To-do and
+// a ✓ "I did it myself"). Rows: this room's one-time chores (hhIsOnce, the room it shows under on this page), not retired. Waiting
+// ones: the note, "from Tue" (the laundry to-do's wording, llTdListRow: the weekday, plus the date once it is more than 6 days old)
+// and the pile's own Send to… (hhOnceSend); sent ones, quietly: "on Ben's list" and ⏸ Back to the pile (hhOnceHold). ＋ To-do saves
+// through the ONE add save (hhAddSave, ＋ Add chore ▸ One time) with this room, Mom's, anyone can do it — and puts the Add form's own
+// draft back as it was. ✓ (Mom, a waiting row) ends it the way a finished one-time chore ends — status "retired" + done <today>, no
+// stars to anyone — and keeps what it changed in doneSelf {on, was}, so the row stays ticked until the day ends and a second tap puts
+// the record back exactly. Only household/jobs/<id>/{status,done,doneSelf}, one update, through _hhWrite() (?dryrun=1 writes nothing).
+// The full ☑️ pile under ⋯ More is unchanged.
+let rtdOpen={};
+function rtdTicked(j,t){ return !!(j&&j.status==="retired"&&j.doneSelf&&j.doneSelf.on===t); }
+function rtdIds(rid){ const J=hhJobs(), t=_hhIsoLocal(Date.now()), grp=function(j){ return (j.hold||j.status==="retired")?0:1; };
+  return Object.keys(J).filter(function(id){ const j=J[id]; return hhIsOnce(j)&&hhRoomOn(j)===rid&&(j.status!=="retired"||rtdTicked(j,t)); })
+    .sort(function(a,b){ const A=J[a], B=J[b]; return (grp(A)-grp(B))||String(A.from||"").localeCompare(String(B.from||""))||((A.ts||0)-(B.ts||0))||(a<b?-1:1); }); }
+function rtdFrom(iso,t){ if(!hpIsIso(iso)||iso>=t) return ''; const n=_hhDayNum(t)-_hhDayNum(iso); return ' · <span style="color:#b45309">from '+["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][_hhDow(iso)]+(n>6?' '+(+iso.slice(5,7))+'/'+(+iso.slice(8)):'')+'</span>'; }
+function rtdToggleForm(rid){ if(typeof momHere==="function"&&!momHere()) return; rtdOpen[rid]=!rtdOpen[rid]; hhRender(); }
+function rtdHTML(rid){
+  const J=hhJobs(), mom=(typeof momHere!=="function")||momHere(), t=_hhIsoLocal(Date.now()), ids=rtdIds(rid), inp='padding:5px 7px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:12.5px;font-family:\'DM Sans\',sans-serif;box-sizing:border-box';
+  let h='<div style="'+HP_CARD+'"><div style="display:flex;gap:8px;align-items:center;padding:9px 12px"><span style="font-size:14px;font-weight:800;flex:1">📝 To do <span style="font-size:11px;font-weight:600;color:var(--muted)">one-time jobs for this room</span></span>'+(mom?_hhBtn("rtdToggleForm('"+rid+"')",rtdOpen[rid]?'Cancel':'＋ To-do',false,'#7c3aed'):'')+'</div>';
+  if(mom&&rtdOpen[rid]) h+='<div style="display:flex;gap:5px;align-items:center;padding:0 12px 8px"><input id="rtd-emoji" placeholder="📝" style="'+inp+';width:44px;text-align:center"><input id="rtd-label" placeholder="What needs doing?" style="'+inp+';flex:1;min-width:120px">'+_hhBtn("rtdSave('"+rid+"')",'Save',true,'#7c3aed')+'</div>';
+  if(!ids.length) return h+'<div style="padding:0 12px 9px;font-size:12px;color:var(--muted)">Nothing waiting here.</div></div>';
+  ids.forEach(function(id){ const j=J[id], tick=rtdTicked(j,t), wait=tick||hhOnceHeld(j);
+    if(!wait){ h+='<div style="display:flex;align-items:center;gap:7px;padding:5px 12px;border-top:1px solid #f3f4f6;font-size:12px;color:#6b6560"><span>'+(j.emoji||'☑️')+'</span><span style="flex:1">'+esc(j.label)+' · on '+esc(hhWhoName(j.who))+'’s list</span>'+(mom?_hhBtn("hhOnceHold('"+id+"')",'⏸ Back to the pile',false,'#64748b'):'')+'</div>'; return; }
+    h+='<div style="padding:5px 12px;border-top:1px solid #f3f4f6'+(tick?';opacity:.6':'')+'"><div style="display:flex;align-items:center;gap:7px;font-size:12.5px">'
+      +(mom?'<button onclick="rtdTick(\''+id+'\')" title="'+(tick?'Not done after all':'I did it myself')+'" style="flex:none;width:22px;height:22px;border-radius:6px;border:1.5px solid #7c3aed;background:'+(tick?'#7c3aed':'#fff')+';color:#fff;font-size:12px;font-weight:800;cursor:pointer;padding:0">'+(tick?'✓':'')+'</button>':'')
+      +'<span>'+(j.emoji||'☑️')+'</span><span style="flex:1;font-weight:700'+(tick?';text-decoration:line-through':'')+'">'+esc(j.label)+'<span style="font-weight:400;color:#6b6560">'+(tick?' · done today':rtdFrom(j.from,t))+'</span></span></div>'
+      +(mom&&!tick?'<div style="margin:4px 0 2px 29px">'+_hhOnceSendBtns(id,j)+'</div>':'')+'</div>'; });
+  return h+'<div style="height:4px"></div></div>';
+}
+// ＋ To-do: the Add form's draft set to a one-time job in this room for Mom, anyone can do it; hhAddSave makes and writes the record.
+function rtdSave(rid,label,emoji){
+  if(typeof momHere==="function"&&!momHere()) return null; if(!hhRoomList().some(function(r){ return r[0]===rid; })) return null;
+  const el=function(id){ return (typeof document!=="undefined"&&document.getElementById)?document.getElementById(id):null; }, val=function(id){ const e=el(id); return (e&&e.value!==undefined)?String(e.value||""):""; };
+  if(label===undefined) label=val("rtd-label"); if(emoji===undefined) emoji=val("rtd-emoji");
+  if(!String(label||"").trim()){ hpTell("Write the to-do first"); return null; }
+  if(el("hh-add-label")){ hpTell("Close the chore card first"); return null; }   // hhAddSave reads the open card's fields before its draft
+  const keep=JSON.parse(JSON.stringify(hhAdd)), keepOpen=hhAddOpen, can={}; hpWho().forEach(function(w){ if(w!=="mom") can[w]=true; });
+  Object.assign(hhAdd,{label:String(label),emoji:String(emoji||""),pts:"",who:"mom",slot:"",kind:"once",room:rid,level:0,area:"",can:can});
+  let id=null; try{ id=hhAddSave(); } finally { Object.keys(hhAdd).forEach(function(k){ delete hhAdd[k]; }); Object.assign(hhAdd,keep); hhAddOpen=keepOpen; }
+  if(id){ rtdOpen[rid]=false; hhRender(); } return id;
+}
+// ✓ I did it myself / tap again: not done after all (today only). Returns the update it wrote.
+function rtdTick(id){
+  if(typeof momHere==="function"&&!momHere()) return null; const j=hhJobs()[id], t=_hhIsoLocal(Date.now()); if(!j||!hhIsOnce(j)) return null;
+  const P="household/jobs/"+id+"/", upd={};
+  if(rtdTicked(j,t)){ const was=j.doneSelf.was||{}; ["status","done"].forEach(function(k){ const v=(was[k]===undefined)?null:was[k]; upd[P+k]=v; if(v===null) delete j[k]; else j[k]=v; }); upd[P+"doneSelf"]=null; delete j.doneSelf; }
+  else { if(j.status==="retired"||!hhOnceHeld(j)) return null; const was={}; ["status","done"].forEach(function(k){ if(j[k]!==undefined) was[k]=j[k]; });
+    j.status="retired"; j.done=t; j.doneSelf={on:t,was:was}; upd[P+"status"]="retired"; upd[P+"done"]=t; upd[P+"doneSelf"]=j.doneSelf; }
+  householdOnValue(householdData); if(_hhWrite()) db.ref().update(upd);
+  if(typeof renderAll==="function") renderAll(); else hhRender(); return upd;
+}
+// ROOMTODO_END
 // HOUSESWITCH_START — 🚪 the real switch and today's stored plan on 👤 By person (Household by room, step 4; DESIGN §4.3 doors, §5 last
 // bullet, her yes 2026-11-17). Mom only. ON first PROVES a houseDay save works (houseDay/<today>/hello) and only then writes
 // household/meta/engine = {mode:"on", on:<today>} together with each house chore's last-done date filled once from the 8 weeks of
