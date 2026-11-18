@@ -30,7 +30,7 @@ function hhRotMember(slot,tag,kid){ const G=hhRotGroups()[slot+"|"+tag]; return 
 function hhRotName(G){ const names=G.members.filter(function(m){ return !m.free; }).map(function(m){ return (m.job.emoji?m.job.emoji+" ":"")+m.job.label; }); return names.length?names.join(" · "):"🔁 "+G.tag; }
 function _hhRotFree(j,kid,tag){ return {emoji:"😌",label:"Free day",pts:0,cad:"daily",rot:tag,free:true,slot:j.slot,who:kid,src:{kind:"new"},source:"Household tab",area:j.area||"pickup",floor:j.floor||"",room:j.room||"any",level:hhLevelOf(j),status:"active",verdict:"",note:"",order:_hhNextOrder(kid,j.slot),ts:Date.now()}; }
 function _hhRotNewId(){ return "hh"+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
-function hhRotOpen(id){ const j=hhJobs()[id]; if(!j||!hhIsKid(j.who)) return; hhRot={id:id,kids:{},period:j.rot?hhRotPeriodOf(j.rot):"daily"}; hhRot.kids[j.who]=true; if(j.rot){ const G=hhRotGroups()[j.slot+"|"+j.rot]; if(G) G.members.forEach(function(m){ hhRot.kids[m.kid]=true; }); } hhGive=""; hhRender(); }
+function hhRotOpen(id){ const j=hhJobs()[id]; if(!j||!hhIsKid(j.who)) return; if(typeof _hhRotDone==="function"&&_hhRotDone(j.rot)) return; /* HOUSETURNS_UI: switched → the card */ hhRot={id:id,kids:{},period:j.rot?hhRotPeriodOf(j.rot):"daily"}; hhRot.kids[j.who]=true; if(j.rot){ const G=hhRotGroups()[j.slot+"|"+j.rot]; if(G) G.members.forEach(function(m){ hhRot.kids[m.kid]=true; }); } hhGive=""; hhRender(); }
 function hhRotClose(){ hhRot={id:"",kids:{},period:"daily"}; hhRender(); }
 function hhRotKid(kid){ const j=hhJobs()[hhRot.id]; if(!j||kid===j.who) return; hhRot.kids[kid]=!hhRot.kids[kid]; hhRender(); }
 function hhRotPeriod(p){ if(HH_ROT_PERIODS.some(function(x){ return x[0]===p; })) hhRot.period=p; hhRender(); }
@@ -39,7 +39,7 @@ function _hhRotCommit(upd,msg){ householdOnValue(householdData); if(Object.keys(
 // Start (or re-shape) a rotation from the open panel: this row + a placeholder for each other picked kid.
 function hhRotSave(){
   if(typeof momHere==="function"&&!momHere()) return null;
-  const jobs=hhJobs(), id=hhRot.id, j=jobs[id]; if(!j||!hhIsKid(j.who)||SL_SLOTS.indexOf(j.slot)<0) return null;
+  const jobs=hhJobs(), id=hhRot.id, j=jobs[id]; if(!j||!hhIsKid(j.who)||SL_SLOTS.indexOf(j.slot)<0) return null; if(typeof _hhRotDone==="function"&&_hhRotDone(j.rot)) return null;
   const kids=Object.keys(hhRot.kids).filter(function(k){ return hhRot.kids[k]&&hhIsKid(k); }); if(kids.length<2){ if(typeof mwToast==="function") try{ mwToast("Pick at least one more kid"); }catch(e){} return null; }
   let tag=j.rot; if(!tag){ const base="rot_"+j.slot+"_"+hhSlug(j.label).slice(0,24); tag=base; let n=2; const taken={}; Object.keys(jobs).forEach(function(k){ if(jobs[k].rot) taken[jobs[k].rot]=1; }); while(taken[tag]) tag=base+"_"+(n++); }
   const upd={}, P="household/jobs/";
@@ -54,7 +54,7 @@ function hhRotSave(){
 // Another kid's own row joins a rotation already in that slot (their placeholder turn, if any, retires).
 function hhRotJoin(id,tag){
   if(typeof momHere==="function"&&!momHere()) return null;
-  const jobs=hhJobs(), j=jobs[id]; if(!j||!hhIsKid(j.who)||j.rot===tag) return null;
+  const jobs=hhJobs(), j=jobs[id]; if(!j||!hhIsKid(j.who)||j.rot===tag) return null; if(typeof _hhRotDone==="function"&&(_hhRotDone(tag)||_hhRotDone(j.rot))) return null;
   const G=hhRotGroups()[j.slot+"|"+tag]; if(!G) return null; const mine=G.members.find(function(m){ return m.kid===j.who; });
   if(mine&&!mine.free){ if(typeof mwToast==="function") try{ mwToast(hhWhoName(j.who)+" already has a job in that rotation"); }catch(e){} return null; }
   const upd={}, P="household/jobs/"; upd[P+id+"/rot"]=tag; j.rot=tag;
@@ -64,17 +64,17 @@ function hhRotJoin(id,tag){
 }
 function hhRotLeave(id){
   if(typeof momHere==="function"&&!momHere()) return null;
-  const j=hhJobs()[id]; if(!j||!j.rot) return null; const upd={}, P="household/jobs/"+id+"/";
+  const j=hhJobs()[id]; if(!j||!j.rot) return null; if(typeof _hhRotDone==="function"&&_hhRotDone(j.rot)) return null; const upd={}, P="household/jobs/"+id+"/";
   if(j.free){ upd[P+"status"]="retired"; upd[P+"verdict"]="retire"; j.status="retired"; j.verdict="retire"; } else { upd[P+"rot"]=null; delete j.rot; }
   return _hhRotCommit(upd,j.free?"Turn removed":"Now "+hhWhoName(j.who)+"’s own chore");
 }
 function hhRotAddKid(slot,tag,kid){
   if(typeof momHere==="function"&&!momHere()) return null;
-  const G=hhRotGroups()[slot+"|"+tag]; if(!G||!hhIsKid(kid)||G.members.some(function(m){ return m.kid===kid; })) return null;
+  const G=hhRotGroups()[slot+"|"+tag]; if(!G||!hhIsKid(kid)||G.members.some(function(m){ return m.kid===kid; })) return null; if(typeof _hhRotDone==="function"&&_hhRotDone(tag)) return null;
   const base=G.members.find(function(m){ return !m.free; })||G.members[0]; const nid=_hhRotNewId(), row=_hhRotFree(base.job,kid,tag); const upd={}; upd["household/jobs/"+nid]=row; hhJobs()[nid]=row;
   return _hhRotCommit(upd,hhWhoName(kid)+" takes turns too");
 }
-function hhRotCycle(tag,p){ if(typeof momHere==="function"&&!momHere()) return null; if(!HH_ROT_PERIODS.some(function(x){ return x[0]===p; })) return null; const upd={}; _hhRotPeriodWrite(upd,tag,p); return _hhRotCommit(upd,""); }
+function hhRotCycle(tag,p){ if(typeof momHere==="function"&&!momHere()) return null; if(typeof _hhRotDone==="function"&&_hhRotDone(tag)) return null; if(!HH_ROT_PERIODS.some(function(x){ return x[0]===p; })) return null; const upd={}; _hhRotPeriodWrite(upd,tag,p); return _hhRotCommit(upd,""); }
 // ── on screen ──
 function hhRotPanelHTML(id){
   if(hhRot.id!==id) return ""; const j=hhJobs()[id]||{}; const kids=(typeof SL_KIDS!=="undefined")?SL_KIDS:ROSTER;
@@ -93,11 +93,12 @@ function hhRotationsHTML(){
   let h='<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Each rotation: the kids in turn order, what each one holds today, and the cycle. Start one from any kid’s row: → Give to… then 🔁 Rotate.</div>';
   if(!keys.length) return h+'<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:10px 12px;font-size:12px;color:var(--muted)">No rotations yet.</div>';
   keys.sort().forEach(function(k){ const g=G[k], per=hhRotPeriodOf(g.tag), gated=g.members.some(function(m){ return !hhLevelOut(m.job); });
+    const sw=(typeof htRotViewHTML==="function")?htRotViewHTML(g):""; if(sw){ h+=sw; return; }   // HOUSETURNS_UI: switched to the new turns — shown, not edited here
     h+='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);margin-bottom:10px;overflow:hidden"><div style="padding:9px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:13px;font-weight:800">🔁 '+esc(hhRotName(g))+'</span>'+_hhChip(esc((typeof SL_SLBL!=="undefined"&&SL_SLBL[g.slot])||g.slot),'#f3f4f6','#475569')+(g.members.length<2?_hhChip('needs one more kid to rotate','#fee2e2','#991b1b'):'')+(gated?_hhChip('waits for the level','#fef3c7','#92400e'):'')+'</div>';
     g.members.forEach(function(m){ const held=hhRotLabelOn(m.job,today), isFree=held==="Free day";
       h+='<div style="padding:6px 12px;border-top:1px solid #eef2f0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12.5px"><span style="font-weight:800;min-width:60px">'+esc(hhWhoName(m.kid))+'</span><span style="color:var(--muted)">today:</span><span style="font-weight:700;'+(isFree?'color:#94a3b8':'')+'">'+esc(held)+'</span><span style="flex:1"></span>'+_hhChip(m.free?'placeholder turn':'own job: '+esc(m.job.label),m.free?'#f3f4f6':'#eff6ff',m.free?'#64748b':'#1d4ed8')+_hhBtn("hhRotLeave('"+m.id+"')",'Leave',false,'#64748b')+'</div>'; });
     const outside=kids.filter(function(kd){ return !g.members.some(function(m){ return m.kid===kd; }); });
-    h+='<div style="padding:7px 12px;border-top:1px solid #eef2f0;display:flex;gap:4px;flex-wrap:wrap;align-items:center"><span style="font-size:10.5px;font-weight:800;color:#6b6560">Cycle:</span>'+HH_ROT_PERIODS.map(function(p){ return _hhBtn("hhRotCycle('"+g.tag+"','"+p[0]+"')",esc(p[1]),per===p[0],'#2B7A78'); }).join('')+(outside.length?'<span style="flex:1"></span><span style="font-size:10.5px;font-weight:800;color:#6b6560">Add:</span>'+outside.map(function(kd){ return _hhBtn("hhRotAddKid('"+g.slot+"','"+g.tag+"','"+kd+"')",'+ '+esc(hhWhoName(kd)),false,'#6B4C93'); }).join(''):'')+'</div></div>'; });
+    h+='<div style="padding:7px 12px;border-top:1px solid #eef2f0;display:flex;gap:4px;flex-wrap:wrap;align-items:center"><span style="font-size:10.5px;font-weight:800;color:#6b6560">Cycle:</span>'+HH_ROT_PERIODS.map(function(p){ return _hhBtn("hhRotCycle('"+g.tag+"','"+p[0]+"')",esc(p[1]),per===p[0],'#2B7A78'); }).join('')+(outside.length?'<span style="flex:1"></span><span style="font-size:10.5px;font-weight:800;color:#6b6560">Add:</span>'+outside.map(function(kd){ return _hhBtn("hhRotAddKid('"+g.slot+"','"+g.tag+"','"+kd+"')",'+ '+esc(hhWhoName(kd)),false,'#6B4C93'); }).join(''):'')+(typeof htConvBtn==="function"?htConvBtn(g):'')+'</div></div>'; });
   return h;
 }
 // HH_ROTATE_END
@@ -296,7 +297,9 @@ function hhRmCell(id,iso,today,S,rc){
   const j=hhJobs()[id], cd=householdData&&householdData.cleanday&&householdData.cleanday[iso], dn=_HH_DN[new Date(iso+"T12:00:00Z").getUTCDay()];
   if(cd&&cd.done&&cd.done[id]) return {who:cd.done[id].who||j.who,done:true};
   let who=(cd&&cd.sent&&cd.plan&&cd.plan[id]&&cd.plan[id].who)||j.who, done=false, rot=false;
-  if(!(cd&&cd.sent&&cd.plan&&cd.plan[id])&&j.rot&&j.src&&j.src.kind==="routine"&&hhIsKid(j.who)){ const k=j.src.slot+"|"+j.rot, g=rc[k]||(rc[k]=hhRotGroup(j.src.slot,j.rot)), mi=g.findIndex(function(x){ return x.kid===j.who; });
+  const tw=(!(cd&&cd.sent&&cd.plan&&cd.plan[id])&&typeof htHolder==="function")?htHolder(id,iso):"";   // HOUSETURNS_UI: a switched rotation → whose turn it is that day
+  if(tw){ who=tw; rot=true; const st=S.state[who+"|"+j.slot+"|"+_hhNorm(j.label)+"|"+iso]; done=!!(st&&st.act==="on"); }
+  if(!rot&&!(cd&&cd.sent&&cd.plan&&cd.plan[id])&&j.rot&&j.src&&j.src.kind==="routine"&&hhIsKid(j.who)){ const k=j.src.slot+"|"+j.rot, g=rc[k]||(rc[k]=hhRotGroup(j.src.slot,j.rot)), mi=g.findIndex(function(x){ return x.kid===j.who; });
     if(mi>=0&&g.length>1){ const hop=(typeof _rtRotHop==="function")?_rtRotHop(j.rot,_hhDayNum(iso)):_hhDayNum(iso); who=g[(((mi-hop)%g.length)+g.length)%g.length].kid; rot=true;
       const st=S.state[who+"|"+j.slot+"|"+_hhNorm(g[mi].label)+"|"+iso]; done=!!(st&&st.act==="on"); } }
   if(!rot) done=(who===j.who)?hhDoneOnDay(j,iso,S):false;
@@ -458,10 +461,12 @@ function hcCtl(id,f,t){
     case "minutes": { if(add) return ""; const m=hhMinutesOf(j); if(!t) return _hcIn("hhEditField("+q+",'minutes',this)",m,"number","70px",' min="1" max="240"')+' min';
       const st=[2,3,5,10,15,20,30,45,60]; if(st.indexOf(m)<0) st.push(m); return sel(st.sort(function(a,b){ return a-b; }).map(function(x){ return [x,x+" min"]; }),m,"minutes"); }
     case "note": return add?"":'<input class="ce-sheet-input" value="'+esc(j.note||'')+'" placeholder="Note" onchange="hhNote('+q+',this)">';
+    case "turns": case "deep": return (!add&&typeof htCtl==="function")?htCtl(id,f,t):"";   // HOUSETURNS_UI
   }
   return "";
 }
 function hcCardHTML(){
+  const _ht=(typeof htSheetHTML==="function")?htSheetHTML():""; if(_ht) return _ht;   // HOUSETURNS_UI: the switch screen, while it is open
   if(!hcId||!hcMom()) return ""; const add=hcId==="__add", id=add?"":hcId, J=hhJobs(), j=add?hhAdd:J[id]; if(!j){ hcId=""; return ""; }
   const kid=hhIsKid(j.who), tk=typeof hhTakeoverOn==="function"&&hhTakeoverOn();
   const sec=function(n,l){ return '<div style="margin-top:16px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;font-weight:800;color:#2B7A78">'+n+' · '+l+'</div>'; };
@@ -475,8 +480,9 @@ function hcCardHTML(){
   h+=lbl('Week of 4',hcCtl(id,"cycle"))+lbl('Starts',hcCtl(id,"from"))+lbl('Ends',hcCtl(id,"to"))+lbl('Time of day',hcCtl(id,"slot"))+lbl('Clock time',hcCtl(id,"time"))+lbl('After a meal',hcCtl(id,"meal"))+lbl('Laundry',hcCtl(id,"laundry"));
   if(!add&&kid&&!hcAt(id)) h+='<div style="font-size:11px;color:var(--muted);margin-top:6px">'+(tk?'End date, clock time, meal and week of 4 change while the chore is on '+esc(hhWhoName(j.who))+'’s list.':'End date, clock time, meal and week of 4 are set on Chores &amp; Stars ▸ Lists until Take over.')+'</div>';
   h+=sec(3,'Who')+lbl(add?'Usually':'Usually (the owner)',hcCtl(id,"who"))+(add?'':_hhGiveOrRot(id))+lbl('Who else can do it',hcCtl(id,"can"));
-  if(!add&&j.rot){ const g=hhRotGroup(j.slot,j.rot).map(function(x){ return hhWhoName(x.kid); }), per=(HH_ROT_PERIODS.find(function(p){ return p[0]===hhRotPeriodOf(j.rot); })||[0,"daily"])[1];
-    h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:12px">🔁 Takes turns'+(g.length>1?' with '+esc(g.filter(function(n){ return n!==hhWhoName(j.who); }).join(', ')):'')+' · '+esc(String(per).toLowerCase())+'<span style="flex:1"></span>'+_hhBtn("hcId='';hhGo('rot')",'🔁 Rotations',false,'#c2410c')+'</div>'; }
+  if(!add&&j.rot&&!(typeof htOf==="function"&&htOf(id))){ const g=hhRotGroup(j.slot,j.rot).map(function(x){ return hhWhoName(x.kid); }), per=(HH_ROT_PERIODS.find(function(p){ return p[0]===hhRotPeriodOf(j.rot); })||[0,"daily"])[1];
+    h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:12px">🔁 Takes turns'+(g.length>1?' with '+esc(g.filter(function(n){ return n!==hhWhoName(j.who); }).join(', ')):'')+' · '+esc(String(per).toLowerCase())+'<span style="flex:1"></span>'+(typeof htConvBtnId==="function"?htConvBtnId(id):'')+_hhBtn("hcId='';hhGo('rot')",'🔁 Rotations',false,'#c2410c')+'</div>'; }
+  if(!add&&typeof htWhoHTML==="function") h+=htWhoHTML(id);   // HOUSETURNS_UI: takes turns · the grown-up turn
   if(!add) h+=sec(4,'How long')+lbl('Minutes',hcCtl(id,"minutes"));
   if(!add){ const st=hhStats(j); let last=st.last, by=j.who==="grab"?"":j.who; if(j.lastDone&&/^\d{4}-\d{2}-\d{2}$/.test(j.lastDone)&&(!last||j.lastDone>last)){ last=j.lastDone; by=j.lastBy||""; }
     h+=sec(5,'History')+'<div style="font-size:12.5px;font-weight:700;margin-top:8px">'+(last?'Last done '+(+last.slice(5,7))+'/'+(+last.slice(8))+(by?' by '+esc(hhWhoName(by)):''):'Not done in the last 8 weeks')+'</div>'
@@ -498,11 +504,12 @@ function hcChecks(rid,ids){ const J=hhJobs(), out=[], line=function(k,txt,id){ o
   return out; }
 function hcRulesHTML(rid,ids){ const J=hhJobs(), th='padding:4px 6px;font-size:10px;font-weight:800;color:#475569;text-align:left;white-space:nowrap;border-bottom:1px solid #e5e7eb';
   const rows=ids.slice().sort(function(a,b){ return (HH_LANES.findIndex(function(L){ return L[0]===hhLaneOf(J[a]); })-HH_LANES.findIndex(function(L){ return L[0]===hhLaneOf(J[b]); }))||((J[a].order||0)-(J[b].order||0))||String(J[a].label).localeCompare(String(J[b].label)); });
-  let h='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);overflow:auto;margin-bottom:10px"><table style="border-collapse:collapse;min-width:100%;font-size:11px"><tr>'+['Chore','How often','Minutes','Who can','Time of day','Level','Room'].map(function(x){ return '<th style="'+th+'">'+x+'</th>'; }).join('')+'</tr>';
+  let h='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);overflow:auto;margin-bottom:10px"><table style="border-collapse:collapse;min-width:100%;font-size:11px"><tr>'+['Chore','How often','Minutes','Who can','Turns','Time of day','Level','Room'].map(function(x){ return '<th style="'+th+'">'+x+'</th>'; }).join('')+'</tr>';
   rows.forEach(function(id,n){ const j=J[id], td='<td style="padding:4px 6px;border-bottom:1px solid #f1f5f4;vertical-align:top">', up=n&&J[rows[n-1]].who!=="grab"&&j.who!=="grab";
     h+='<tr>'+td+'<span onclick="hcOpen(\''+id+'\')" style="cursor:pointer;font-weight:800;white-space:nowrap">'+esc((j.emoji||'☐')+' '+j.label)+'</span><div style="font-size:10px;color:var(--muted)">'+esc(hhWhoName(j.who))+'</div></td>'
       +td+hcCtl(id,"when",1)+'<div style="margin-top:2px">'+hcCtl(id,"days",1)+'</div></td>'+td+hcCtl(id,"minutes",1)+'</td>'
       +td+'<span style="white-space:nowrap">'+hcCtl(id,"can",1)+(up?' '+_hcChip(false,'↑ same',"hcCanSame('"+id+"','"+rows[n-1]+"')",1).replace('<button','<button title="Same people as the row above"'):'')+'</span></td>'
+      +td+hcCtl(id,"turns",1)+'<div style="margin-top:2px">'+hcCtl(id,"deep",1)+'</div></td>'
       +td+hcCtl(id,"slot",1)+'</td>'+td+hcCtl(id,"level",1)+'</td>'+td+hcCtl(id,"room",1)+'</td></tr>'; });
   return h+'</table></div>'; }
 function hcRoomToolsHTML(rid,ids){ const C=hcChecks(rid,ids), ro=!!hcRm[rid+"|rules"], co=!!hcRm[rid+"|checks"]; if(!C.length&&!ids.length) return "";
@@ -551,7 +558,7 @@ function hpEngineSet(on){
 // Cleaning level (hhLevelCurFor), the rotation order and cycles (SL_KIDS, SL_SLOTS, config/rotationPeriod) and the switch-on date.
 const HP_MON="2026-11-16", HP_SAT="2026-11-21";   // hhBudget only asks which day of the week: any Monday, any Saturday
 function hpPeople(){ const P={}; hpWho().forEach(function(w){ P[w]={school:hhBudget(w,HP_MON),weekend:hhBudget(w,HP_SAT),level:hhLevelCurFor(w),fit:hpFitOf(w)}; }); return P; }
-function hpOv(){ return {kids:(typeof SL_KIDS!=="undefined"?SL_KIDS:ROSTER).slice(),slots:SL_SLOTS.slice(),rotPeriod:Object.assign({},(typeof rotationPeriod!=="undefined"&&rotationPeriod)||{}),on:hpIsIso(hpEngine().on)?hpEngine().on:hpToday(),minDefault:HH_MIN_DEFAULT}; }
+function hpOv(){ return {rotations:(typeof hhTurnsAll==="function"&&hhTurnsAll())||{},kids:(typeof SL_KIDS!=="undefined"?SL_KIDS:ROSTER).slice(),slots:SL_SLOTS.slice(),rotPeriod:Object.assign({},(typeof rotationPeriod!=="undefined"&&rotationPeriod)||{}),on:hpIsIso(hpEngine().on)?hpEngine().on:hpToday(),minDefault:HH_MIN_DEFAULT}; }
 // Today and the next 4 weeks (§4.3: "for the next 4 weeks the names respect the limits"), worked out when drawn and kept until the
 // table, a limit, a level, a cycle or the date changes.
 let _hpMemo=null;
@@ -630,7 +637,7 @@ function hpPersonHTML(){
     if(C.length) h+='<div style="'+HP_HEAD+'">🌅 Sent to the morning list</div>'+C.map(function(c){ return hpRow("",c.emoji,c.label,_hhChip('from '+hpDay(c.fromIso),'#fef3c7','#92400e')); }).join(''); }
   if(d0){ const mine=(d0.list[who]||[]).filter(function(id){ return d0.plan[id].house; }), mv=hpMovedOff(d0,who);
     h+='<div style="'+HP_HEAD+'">🔭 House chores the plan WOULD give today — preview</div><div style="display:flex;gap:8px;align-items:center;padding:2px 12px 4px;font-size:11px;color:var(--muted)">'+hpBar(d0.used[who],d0.limit[who])+'<span>'+d0.used[who]+' / '+d0.limit[who]+' min</span></div>';
-    h+=mine.length?mine.map(function(id){ const x=d0.plan[id], j=J[id]||{}; return hpRow(id,j.emoji,j.label,(x.late>0?_hhChip(x.late+' day'+(x.late===1?'':'s')+' late','#fee2e2','#991b1b'):'')+(x.from?_hhChip('from '+hhWhoName(x.from),'#e0f2fe','#075985'):'')+_hhChip(x.mins+' min','#f3f4f6','#475569')); }).join(''):'<div style="padding:3px 12px 6px;font-size:12px;color:var(--muted)">No house chores for them today.</div>';
+    h+=mine.length?mine.map(function(id){ const x=d0.plan[id], j=J[id]||{}; return hpRow(id,j.emoji,j.label,(x.why==="deep"?_hhChip('✨ grown-up turn','#ede9fe','#5b21b6'):'')+(x.late>0?_hhChip(x.late+' day'+(x.late===1?'':'s')+' late','#fee2e2','#991b1b'):'')+(x.from?_hhChip('from '+hhWhoName(x.from),'#e0f2fe','#075985'):'')+_hhChip(x.mins+' min','#f3f4f6','#475569')); }).join(''):'<div style="padding:3px 12px 6px;font-size:12px;color:var(--muted)">No house chores for them today.</div>';
     if(mv.length) h+='<div style="'+HP_HEAD+'">Moved off them today</div>'+mv.map(function(m){ const j=J[m.id]||{}; return hpRow(m.id,j.emoji,j.label,_hhChip(hpMovedTxt(m)+(m.to==="grab"?(m.can.length?' · for '+m.can.map(hhWhoName).join(', '):' · no kid can'):''),m.to==="grab"?'#fef3c7':'#e0f2fe',m.to==="grab"?'#92400e':'#075985')); }).join('');
   }
   h+='<div style="height:6px"></div></div>';
@@ -652,10 +659,10 @@ function hpPersonHTML(){
 // "2d" = carried 2 days late; "Grab" = it would overflow to Up for Grabs), and "Tomorrow would look like this": each person's list
 // for tomorrow, minutes against the limit, and where every overflow would go. Shown only while household/meta/engine is "preview".
 // Worked out when drawn (hpRun, memoised); nothing is stored and nothing is sent to the grabs pool.
-function hpFuture(){ return hpRun().map(function(p){ const m={}; Object.keys(p.plan).forEach(function(id){ const x=p.plan[id]; m[id]={who:x.who,done:false,fut:true,late:x.late,from:x.from||""}; }); p.over.forEach(function(o){ m[o.id]={who:o.turn,done:false,fut:true,over:true,late:o.late}; }); return m; }); }
+function hpFuture(){ return hpRun().map(function(p){ const m={}; Object.keys(p.plan).forEach(function(id){ const x=p.plan[id]; m[id]={who:x.who,done:false,fut:true,late:x.late,from:x.from||""}; if(x.why==="deep") m[id].deep=1; }); p.over.forEach(function(o){ m[o.id]={who:o.turn,done:false,fut:true,over:true,late:o.late}; }); return m; }); }
 function hpSqHTML(c,full){
   if(c.over) return '<span title="Nobody who can has room: would go to Up for Grabs" style="font-size:10.5px;font-weight:800;white-space:nowrap;color:#b45309">'+(full?'→ Grabs':'Grab')+'</span>';
-  const col=hhRmCol(c.who); return '<span title="Plan preview" style="font-size:10.5px;font-weight:800;white-space:nowrap;color:'+col+';border-bottom:1.5px dashed '+col+'">'+esc(full?hhWhoName(c.who):hhRmShort(c.who))+(c.late>0?' <span style="color:#dc2626">'+c.late+'d</span>':'')+'</span>';
+  const col=hhRmCol(c.who); return '<span title="Plan preview" style="font-size:10.5px;font-weight:800;white-space:nowrap;color:'+col+';border-bottom:1.5px dashed '+col+'">'+esc(full?hhWhoName(c.who):hhRmShort(c.who))+(c.deep?' ✨':'')+(c.late>0?' <span style="color:#dc2626">'+c.late+'d</span>':'')+'</span>';
 }
 function hpGridNoteHTML(){ return ' Days after today are the 🔭 plan preview: who the plan WOULD give each chore, within everyone’s limits (dashed; “2d” = 2 days late; “Grab” = nobody who can has room, so it would go to Up for Grabs). Nothing is on anyone’s list.'; }
 function hpTomorrowHTML(){
@@ -664,7 +671,7 @@ function hpTomorrowHTML(){
     +'<div style="padding:4px 12px 2px;font-size:11px;color:var(--muted)">A preview of the new hand-out with today’s limits. Nobody’s list changes; nothing goes to Up for Grabs.</div>';
   hpWho().forEach(function(w){ const ids=(p.list[w]||[]).filter(function(id){ return p.plan[id].house; });
     h+='<div style="display:flex;gap:8px;align-items:center;padding:7px 12px 2px;border-top:1px solid #eef2f0;font-size:12.5px"><span style="width:62px;font-weight:800;color:'+hhRmCol(w)+'">'+esc(hhWhoName(w))+'</span>'+hpBar(p.used[w],p.limit[w])+'<span style="width:62px;text-align:right;font-size:11px;font-weight:700">'+p.used[w]+' / '+p.limit[w]+' min</span></div>';
-    h+=ids.length?ids.map(function(id){ const x=p.plan[id], j=J[id]||{}; return hpRow(id,j.emoji,j.label,(x.late>0?_hhChip(x.late+'d late','#fee2e2','#991b1b'):'')+(x.from?_hhChip('from '+hhWhoName(x.from),'#e0f2fe','#075985'):'')+_hhChip(x.mins+' min','#f3f4f6','#475569')); }).join(''):'<div style="padding:0 12px 4px 82px;font-size:11px;color:var(--muted)">No house chores.</div>'; });
+    h+=ids.length?ids.map(function(id){ const x=p.plan[id], j=J[id]||{}; return hpRow(id,j.emoji,j.label,(x.why==="deep"?_hhChip('✨ grown-up turn','#ede9fe','#5b21b6'):'')+(x.late>0?_hhChip(x.late+'d late','#fee2e2','#991b1b'):'')+(x.from?_hhChip('from '+hhWhoName(x.from),'#e0f2fe','#075985'):'')+_hhChip(x.mins+' min','#f3f4f6','#475569')); }).join(''):'<div style="padding:0 12px 4px 82px;font-size:11px;color:var(--muted)">No house chores.</div>'; });
   h+='<div style="'+HP_HEAD+';border-top:2px solid #fde68a;padding-top:8px">Would go to Up for Grabs ('+p.over.length+')</div>';
   h+=p.over.length?p.over.map(function(o){ const j=J[o.id]||{}; return hpRow(o.id,j.emoji,j.label,_hhChip(hhWhoName(o.turn)+'’s turn','#f3f4f6','#475569')+_hhChip(o.can.length?'for: '+o.can.map(hhWhoName).join(', '):'no kid can','#fef3c7','#92400e')+_hhChip(o.mins+' min','#f3f4f6','#475569')); }).join(''):'<div style="padding:0 12px 6px;font-size:12px;color:var(--muted)">Nothing — everything fits.</div>';
   return h+'<div style="height:6px"></div></div>';
@@ -808,7 +815,7 @@ function hwCells(iso,f,X){
   if(iso<X.t){ const out={}; X.ids.forEach(function(id){ const c=hhRmCell(id,iso,X.t,X.S,X.rc); if(c) out[id]={who:c.who,done:!!c.done}; }); return hwWho(out,f); }
   if(iso===X.t) return X.td||(X.td=hwToday(f));
   const p=X.run&&X.run[_hhDayNum(iso)-_hhDayNum(X.t)]; if(!p) return null; const inS={}, out={}; X.ids.forEach(function(id){ inS[id]=1; });
-  Object.keys(p.plan).forEach(function(id){ if(!inS[id]) return; const x=p.plan[id]; out[id]={who:x.who,done:false,fut:true,late:x.late||0,from:x.from||""}; });
+  Object.keys(p.plan).forEach(function(id){ if(!inS[id]) return; const x=p.plan[id]; out[id]={who:x.who,done:false,fut:true,late:x.late||0,from:x.from||""}; if(x.why==="deep") out[id].deep=1; });
   p.over.forEach(function(o){ if(inS[o.id]) out[o.id]={who:o.turn,done:false,fut:true,over:true,late:o.late||0}; }); return hwWho(out,f); }
 // The laundry line's loads on a day (Everything): what really went in on a past day (llLog), else the line's lay (llProject) — the
 // laundry schedule's own two sources, read the way llWeekGridHTML reads them.
@@ -971,6 +978,184 @@ function htdPersonHTML(who){
   return h+'<div style="height:4px"></div></div>';
 }
 // HOUSETODO_END
+// HOUSETURNS_UI_START — 🔁 turns and the grown-up turn on the chore card and in a room's ⚙ Rules table, and the screen that switches
+// an old rotation over (Household by room, step 5 of DESIGN_household_rooms_2026-11-15 §3.3 "Who", §3.2 Rules "takes turns · grown-up
+// every Nth", §4.2, §5; her "Yes, start step 5" 2026-11-18). Mom only. Every card or Rules tap writes ONE path through _hhWrite() (so
+// ?dryrun=1 writes nothing): a change to a wheel is household/rotations/<key>/v/<tomorrow> — it takes hold at the next day start, so a
+// kid's list never changes under them — and the grown-up turn is household/jobs/<id>/deepEvery. Switching an old rotation over is her
+// tap on a screen that first shows who is in the wheel, which rows change (who-can), which "Free day" rows are no longer needed and the
+// next 14 days the old way and the new way side by side (they must match, or it will not switch); then ONE multi-path update. The old
+// rows stay where they are as the wheel's seats (HOUSETURNS in index.html), so no check mark moves. ↩ Undo puts every row back exactly,
+// while the wheel is still as it was switched. Nothing here runs on load or on a draw. No real family's names.
+let htSheet=null;   // the open switch screen: {id} = a row of the old rotation
+function htMom(){ return typeof momHere!=="function"||momHere(); }
+function htTk(){ return typeof hhTakeoverOn==="function"&&hhTakeoverOn(); }
+function htAll(){ const R=householdData&&householdData.rotations; return (R&&typeof R==="object")?R:{}; }
+function htTmr(){ return _hhIsoOf(_hhDayNum(hpToday())+1); }
+function htEveryN(cad){ return /^\d+d$/.test(cad||"")||cad==="2w"; }
+function htToast(m){ if(typeof mwToast==="function") try{ mwToast(m); }catch(e){} }
+function htPeople(V){ return HouseEng.listOf(V&&V.people); }
+function htCopy(V){ const o={people:htPeople(V),period:(V&&V.period)||"daily"}, ch={}; Object.keys((V&&V.chores)||{}).forEach(function(id){ ch[id]=parseInt(V.chores[id],10); }); if(Object.keys(ch).length) o.chores=ch; return o; }
+// A wheel's newest version (today's, or tomorrow's change) and the wheel a chore is in from now on.
+function htLast(key){ const v=(htAll()[key]||{}).v||{}, ks=Object.keys(v).filter(function(k){ return hpIsIso(k)&&v[k]&&typeof v[k]==="object"; }).sort(); return ks.length?{iso:ks[ks.length-1],V:v[ks[ks.length-1]]}:null; }
+function htOf(id){ const R=htAll(); let out=null; Object.keys(R).sort().some(function(k){ const L=htLast(k); if(L&&L.V.chores&&L.V.chores[id]!==undefined){ out={key:k,V:L.V,iso:L.iso,conv:(R[k]&&R[k].conv)||null}; return true; } return false; }); return out; }
+function htConvKey(tag){ const R=htAll(); return Object.keys(R).sort().find(function(k){ const c=R[k]&&R[k].conv; return !!(c&&tag&&c.rot===tag); })||""; }
+function _hhRotDone(tag){ return !!htConvKey(tag); }   // HH_ROTATE leaves a switched rotation alone
+// A house chore that can take turns on the card: not an old rotation row, not Up for Grabs, a one-time job or a project.
+function htCan(j){ return !!j&&j.who!=="grab"&&hhIsHouse(j)&&!j.rot&&!j.free&&j.cad!=="once"&&j.layer!=="project"&&j.status!=="retired"; }
+// ── the wheel: one path, from tomorrow ──
+function htPut(key,V,msg){
+  if(!htMom()||!htTk()) return null; const t=htTmr(), W=htCopy(V);
+  householdData.rotations=Object.assign({},householdData.rotations); const node=householdData.rotations[key]=Object.assign({},householdData.rotations[key]); node.v=Object.assign({},node.v); node.v[t]=W;
+  householdOnValue(householdData); if(_hhWrite()) db.ref("household/rotations/"+key+"/v/"+t).set(W); if(msg) htToast(msg); hhRender(); return W; }
+function htFreeSeat(V){ const n=htPeople(V).length, used={}; Object.keys(V.chores||{}).forEach(function(id){ used[V.chores[id]]=1; }); for(let i=0;i<n;i++) if(!used[i]) return i; return -1; }
+// Takes turns ON: a wheel of the kids ticked on the card (who-can order); tomorrow it is the owner's turn (or the first kid's).
+function htOn(id){ const j=hhJobs()[id]; if(!htMom()||!htTk()||!htCan(j)||htOf(id)) return null;
+  const L=htLast("t_"+id); if(L&&L.V.chores&&Object.keys(L.V.chores).length&&!(htAll()["t_"+id]||{}).conv) return htJoin(id,"t_"+id);   // its own wheel still turns other chores: back into it
+  const P=hhCanOf(j).filter(hhIsKid); if(P.length<2){ htToast("Tick at least two kids under “Who else can do it” first"); return null; }
+  const t=htTmr(), step=htEveryN(j.cad)?(+j.doneN||0):HouseEng.hop("daily",_hhDayNum(t)), at=Math.max(0,P.indexOf(j.who)), ch={}; ch[id]=(((at+step)%P.length)+P.length)%P.length;
+  return htPut("t_"+id,{people:P,period:"daily",chores:ch},"Turns start tomorrow"); }
+function htOff(id){ const w=htOf(id); if(!htMom()||!htTk()||!w||w.conv) return null; const V=htCopy(w.V); delete V.chores[id]; if(!Object.keys(V.chores).length) delete V.chores; return htPut(w.key,V,"Turns stop tomorrow"); }
+function htJoin(id,key){ const j=hhJobs()[id], L=htLast(key); if(!htMom()||!htTk()||!htCan(j)||htOf(id)||!L||(htAll()[key]||{}).conv) return null;
+  const V=htCopy(L.V), s=htFreeSeat(V); if(s<0){ htToast("Everyone in that turn already has a chore — add someone to it first"); return null; } V.chores=V.chores||{}; V.chores[id]=s; return htPut(key,V,"Turns together from tomorrow"); }
+function htMove(key,i,dir){ const L=htLast(key); if(!L) return null; const V=htCopy(L.V), k=i+dir; if(i<0||k<0||k>=V.people.length) return null; const x=V.people[i]; V.people[i]=V.people[k]; V.people[k]=x; return htPut(key,V,"New order from tomorrow"); }
+function htOut(key,who){ const L=htLast(key); if(!L) return null; const V=htCopy(L.V), r=V.people.indexOf(who), ch=V.chores||{}, ids=Object.keys(ch); if(r<0) return null;
+  if(ids.length>V.people.length-1||V.people.length<2){ htToast("Each chore needs someone — add another person first"); return null; }
+  V.people.splice(r,1); const lost=ids.filter(function(id){ if(ch[id]===r) return true; if(ch[id]>r) ch[id]--; return false; }); lost.forEach(function(id){ delete ch[id]; ch[id]=htFreeSeat(V); });
+  return htPut(key,V,hhWhoName(who)+" is out of the turn from tomorrow"); }
+// Who can come in: a switched rotation — a kid with a row of it on that list (their seat); a wheel made here — a kid ticked under
+// "Who else can do it" on one of its chores.
+function htInOk(key,V){ const c=(htAll()[key]||{}).conv, P=htPeople(V), J=hhJobs(), out=[];
+  if(c){ (typeof SL_KIDS!=="undefined"?SL_KIDS:ROSTER).forEach(function(k){ if(P.indexOf(k)<0&&(((typeof routineCfg2!=="undefined"&&routineCfg2[c.slot])||{})[k]||[]).some(function(st){ return st&&st.rot===c.rot; })) out.push(k); }); return out; }
+  Object.keys(V.chores||{}).forEach(function(id){ if(J[id]) hhCanOf(J[id]).forEach(function(w){ if(hhIsKid(w)&&P.indexOf(w)<0&&out.indexOf(w)<0) out.push(w); }); }); return out; }
+function htIn(key,who){ const L=htLast(key); if(!L||htInOk(key,L.V).indexOf(who)<0) return null; const V=htCopy(L.V); V.people.push(who); return htPut(key,V,hhWhoName(who)+" joins the turn from tomorrow"); }
+function htCycle(key,p){ const L=htLast(key); if(!L||!HH_ROT_PERIODS.some(function(x){ return x[0]===p; })) return null; const V=htCopy(L.V); if(V.period===p) return null; V.period=p; return htPut(key,V,"New cycle from tomorrow"); }
+// The grown-up turn: after N kid check-offs, the next time goes to Mom or Dad (whoever is ticked; both → they alternate). One path.
+function htDeep(id,n){ if(!htMom()) return null; const j=hhJobs()[id]; if(!j||!hhIsHouse(j)||j.who==="grab") return null; n=parseInt(n,10); const v=(n>=1&&n<=20)?n:null; if((parseInt(j.deepEvery,10)||null)===v) return null;
+  if(v) j.deepEvery=v; else delete j.deepEvery; householdOnValue(householdData); if(_hhWrite()) db.ref("household/jobs/"+id+"/deepEvery").set(v); hhRender(); return v===null?"":v; }
+// ── switching an old rotation over ──
+// The rotation as rtApplyRot sees it today: each kid's rows of it on that list, in roster order.
+function htGroup(slot,tag){ const out=[]; (typeof SL_KIDS!=="undefined"?SL_KIDS:ROSTER).forEach(function(k){ (((typeof routineCfg2!=="undefined"&&routineCfg2[slot])||{})[k]||[]).forEach(function(st){ if(st&&st.rot===tag) out.push({kid:k,id:st._hh||"",free:!!st.free}); }); }); return out; }
+// What the switch would do, worked out (nothing written): the wheel, the who-can rows it ticks, the Free day rows no longer needed,
+// and the next 14 days the old way and the new way by the engine's rotHolders (the lists' own formula: test_house_turns_convert.js).
+function htPlan(id){
+  const J=hhJobs(), j0=J[id]; if(!j0||!j0.rot) return null; const slot=j0.slot, tag=j0.rot, M=htGroup(slot,tag), key=(typeof _rotKey==="function")?_rotKey(tag):tag, from=htTmr(), why=[];
+  if(!htTk()) why.push("🏡 Take over is off, so the kids’ lists come from Chores & Stars, not from this table.");
+  if(htConvKey(tag)) why.push("It has already been switched."); else if(htAll()[key]) why.push("A turn with this name is already saved.");
+  if(M.length<2) why.push("Fewer than two kids have a row of it on their list today.");
+  if(M.some(function(m){ return !m.id||!J[m.id]; })) why.push("A row of it is not in the household table.");
+  if(M.some(function(m,i){ return M.findIndex(function(x){ return x.kid===m.kid; })!==i; })) why.push("One kid has two rows of it on the same list.");
+  if(Object.keys(J).some(function(x){ const y=J[x]; return y&&y.rot===tag&&y.status!=="retired"&&y.slot!==slot; })) why.push("The same rotation is on two different lists.");
+  const people=M.map(function(m){ return m.kid; }), chores={}; M.forEach(function(m,i){ if(!m.free&&m.id) chores[m.id]=i; });
+  if(!Object.keys(chores).length) why.push("It has no chore in it, only “Free day” rows.");
+  const V={people:people,period:(typeof rtRotPeriod==="function")?rtRotPeriod(tag):"daily",chores:chores}, can={};
+  Object.keys(chores).forEach(function(c){ const j=J[c], cur=hhCanOf(j), add=people.filter(function(k){ return cur.indexOf(k)<0; }); if(add.length) can[c]={was:Array.isArray(j.can)?j.can.slice():false,now:hhCanOf(Object.assign({},j,{can:cur.concat(add)})),add:add}; });
+  const P=hpPeople(), ov0=hpOv(), R1=Object.assign({},ov0.rotations), days=[]; R1[key]={v:{},conv:{rot:tag,slot:slot}}; R1[key].v[from]=V; const ov1=Object.assign({},ov0,{rotations:R1});
+  for(let d=0;d<14;d++){ const iso=_hhIsoOf(_hhDayNum(from)+d), a=HouseEng.rotHolders({jobs:J},iso,P,ov0), b=HouseEng.rotHolders({jobs:J},iso,P,ov1), o={}, n={};
+    Object.keys(chores).forEach(function(c){ o[c]=a[c]||""; n[c]=b[c]||""; }); days.push({iso:iso,old:o,neu:n,same:JSON.stringify(o)===JSON.stringify(n)}); }
+  if(!why.length&&!days.every(function(x){ return x.same; })) why.push("The new way would not give the same kid the same chore every day, so it will not switch.");
+  return {ok:!why.length,why:why,slot:slot,tag:tag,key:key,from:from,V:V,can:can,frees:M.filter(function(m){ return m.free; }),people:people,days:days}; }
+function htOpen(id){ if(!htMom()) return; htSheet={id:id}; hhRender(); }
+function htClose(){ htSheet=null; hhRender(); }
+// ✨ Switch: ONE multi-path update — the wheel from tomorrow, its record (with what the who-can rows were, for ↩ Undo), and the
+// who-can rows it ticks. Free day rows and every list row are left exactly where they are.
+function htConvert(id){
+  if(!htMom()) return null; const p=htPlan(id); if(!p) return null; if(!p.ok){ htToast(p.why[0]); return null; }
+  const J=hhJobs(), upd={}, R="household/rotations/"+p.key+"/", cv={at:Date.now(),from:p.from,rot:p.tag,slot:p.slot,by:"mom"};
+  upd[R+"v/"+p.from]=p.V;
+  if(Object.keys(p.can).length){ cv.can={}; Object.keys(p.can).forEach(function(c){ cv.can[c]={was:p.can[c].was,now:p.can[c].now}; upd["household/jobs/"+c+"/can"]=p.can[c].now; J[c].can=p.can[c].now.slice(); }); }
+  upd[R+"conv"]=cv; householdData.rotations=Object.assign({},householdData.rotations); householdData.rotations[p.key]={v:{},conv:cv}; householdData.rotations[p.key].v[p.from]=p.V;
+  htSheet=null; householdOnValue(householdData); if(_hhWrite()) db.ref().update(upd); htToast("Switched — it starts tomorrow. Nothing changes on anyone’s list."); hhRender(); return upd; }
+// ↩ Undo: only while the wheel and the who-can rows are still exactly what the switch wrote; then every row goes back as it was.
+function htUndoWhy(key){ const n=htAll()[key], c=n&&n.conv; if(!c) return "Nothing to undo."; const v=n.v||{}, first=JSON.stringify(htCopy(v[c.from])), J=hhJobs(), arr=function(x){ return Array.isArray(x)?x:HouseEng.listOf(x); };
+  if(!v[c.from]||Object.keys(v).some(function(k){ return v[k]&&JSON.stringify(htCopy(v[k]))!==first; })) return "The turn was changed after the switch, so it cannot simply go back.";
+  if(Object.keys(c.can||{}).some(function(id){ return !J[id]||JSON.stringify(arr(J[id].can))!==JSON.stringify(arr(c.can[id].now)); })) return "Who can do it was changed after the switch, so it cannot simply go back.";
+  return ""; }
+function htUndo(key){
+  if(!htMom()||!htTk()) return null; const why=htUndoWhy(key); if(why){ htToast(why); return null; }
+  if(typeof confirm==="function"&&!confirm("Put this rotation back the old way?\n\nEvery row goes back exactly as it was. Nothing on anyone’s list changes.")) return null;
+  const n=htAll()[key], c=n.conv, J=hhJobs(), upd={};
+  Object.keys(n.v||{}).forEach(function(k){ upd["household/rotations/"+key+"/v/"+k]=null; }); upd["household/rotations/"+key+"/conv"]=null;
+  Object.keys(c.can||{}).forEach(function(id){ const was=c.can[id].was; upd["household/jobs/"+id+"/can"]=was||null; if(was) J[id].can=HouseEng.listOf(was); else delete J[id].can; });
+  householdData.rotations=Object.assign({},householdData.rotations); delete householdData.rotations[key];
+  householdOnValue(householdData); if(_hhWrite()) db.ref().update(upd); htToast("Back the old way."); hhRender(); return upd; }
+// ── whose turn, worked out for the card and the room grid (nothing stored) ──
+let _htH=null;
+function htHold(iso){ const J=hhJobs(), R=htAll(); if(!_htH||_htH.J!==J||_htH.R!==R||Date.now()-_htH.t>5000) _htH={J:J,R:R,t:Date.now(),m:{}}; return _htH.m[iso]||(_htH.m[iso]=HouseEng.rotHolders({jobs:J},iso,hpPeople(),hpOv())); }
+// A switched rotation's chore on a day its wheel holds: the kid whose turn it is ("" = not switched that day → the old reading).
+function htHolder(id,iso){ const j=hhJobs()[id]; if(!j||!j.rot||typeof rtTurnsConv!=="function") return ""; const key=rtTurnsConv(j.rot); if(!key||!HouseEng.verOf(htAll()[key],iso)) return ""; return htHold(iso)[id]||""; }
+function htNext(id,w){ const out=[], t=hpToday(), node=htAll()[w.key], j=hhJobs()[id]||{};
+  for(let d=0;d<7;d++){ const iso=_hhIsoOf(_hhDayNum(t)+d); let who="";
+    if(w.conv) who=htHold(iso)[id]||"";
+    else { const V=HouseEng.verOf(node,iso); if(V&&V.chores&&V.chores[id]!==undefined) who=htEveryN(j.cad)?(d?"":HouseEng.cardTurn(V,id,+j.doneN||0)):HouseEng.cardTurn(V,id,HouseEng.hop(V.period,_hhDayNum(iso))); else who=d?"":j.who; }
+    out.push({iso:iso,who:who}); }
+  return out; }
+// ── on the card and in ⚙ Rules (hcCtl's "turns" and "deep": the same control in both places) ──
+function htCtl(id,f,t){
+  const j=hhJobs()[id]; if(!j||j.who==="grab") return "";
+  if(f==="deep"){ if(!hhIsHouse(j)) return ""; const cur=parseInt(j.deepEvery,10)||0, o=[0,1,2,3,4,5,6,8,10]; if(cur&&o.indexOf(cur)<0) o.push(cur);
+    if(t) return _hcSel("htDeep('"+id+"',this.value)",o.map(function(n){ return [n,n?"Grown-up after "+n:"Grown-up off"]; }),cur);
+    return o.map(function(n){ return _hcChip(n===cur,n?"after "+n:"Off","htDeep('"+id+"',"+n+")"); }).join('')+(cur?' <span style="font-size:11px;color:var(--muted)">kid turns</span>':''); }
+  if(f!=="turns") return ""; const w=htOf(id);
+  if(j.rot&&!w) return t?_hcChip(false,'🔁 old way',"hcOpen('"+id+"')",1):"";
+  if(w&&w.conv) return t?_hcChip(true,'🔁 '+htPeople(w.V).length+' kids',"hcOpen('"+id+"')",1):_hcChip(true,'On','',t)+(htMom()&&!htUndoWhy(w.key)?' '+_hhBtn("htUndo('"+w.key+"')",'↩ Undo the switch',false,'#64748b'):'');
+  if(!htCan(j)) return "";
+  return _hcChip(!w,'Off',w?"htOff('"+id+"')":"",t)+_hcChip(!!w,'On',w?"":"htOn('"+id+"')",t); }
+function htMini(on,txt,tip){ return '<button onclick="'+on+'" title="'+tip+'" style="border:none;background:none;cursor:pointer;font-size:11px;padding:0 2px;color:#475569">'+txt+'</button>'; }
+function htWhoHTML(id){
+  const j=hhJobs()[id]; if(!j||j.who==="grab"||j.status==="retired") return ""; const w=htOf(id), mom=htMom()&&htTk(), J=hhJobs();
+  const lbl=function(l,x){ return x?'<div class="ce-sheet-lbl" style="margin:10px 0 4px">'+l+'</div><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">'+x+'</div>':''; };
+  const note=function(x){ return '<div style="font-size:11px;color:var(--muted);margin-top:4px">'+x+'</div>'; };
+  let h='';
+  if(w){ const P=htPeople(w.V), add=htInOk(w.key,w.V), per=HH_ROT_PERIODS.some(function(x){ return x[0]===w.V.period; })?HH_ROT_PERIODS:HH_ROT_PERIODS.concat([[w.V.period,"Every "+parseInt(w.V.period,10)+" days"]]);
+    h+=lbl('Takes turns',htCtl(id,"turns"));
+    h+=lbl('In the turn, in order',P.map(function(p,i){ return '<span style="display:inline-flex;gap:1px;align-items:center;border:1.5px solid '+hhRmCol(p)+';border-radius:8px;padding:2px 5px;font-size:11.5px;font-weight:800;color:'+hhRmCol(p)+'">'+(i+1)+'. '+esc(hhWhoName(p))+(mom?(i?htMini("htMove('"+w.key+"',"+i+",-1)","◀","Earlier"):"")+(i<P.length-1?htMini("htMove('"+w.key+"',"+i+",1)","▶","Later"):"")+htMini("htOut('"+w.key+"','"+p+"')","✕","Take out of the turn"):"")+'</span>'; }).join(' ')+(mom?add.map(function(k){ return _hcChip(false,'＋ '+esc(hhWhoName(k)),"htIn('"+w.key+"','"+k+"')"); }).join(''):''));
+    h+=lbl('Changes',htEveryN(j.cad)?'<span style="font-size:12px">each time it is done</span>':per.map(function(x){ return _hcChip(w.V.period===x[0],esc(x[1]),mom&&w.V.period!==x[0]?"htCycle('"+w.key+"','"+x[0]+"')":""); }).join(''));
+    const others=Object.keys(w.V.chores||{}).filter(function(x){ return x!==id&&J[x]; }), free=P.length-Object.keys(w.V.chores||{}).length;
+    h+=lbl('Turns together with',(others.length?others.map(function(x){ return _hcChip(false,esc((J[x].emoji?J[x].emoji+" ":"")+J[x].label),"hcOpen('"+x+"')"); }).join(''):'<span style="font-size:12px">nothing else</span>')+(free>0?' <span style="font-size:11px;color:var(--muted)">· '+free+' free turn'+(free===1?'':'s')+' a day</span>':''));
+    h+=lbl('Whose turn',htNext(id,w).filter(function(x){ return x.who; }).map(function(x,i){ return '<span style="font-size:11.5px;font-weight:800;color:'+hhRmCol(x.who)+'">'+(i?hpDay(x.iso).split(" ")[0]:'Today')+' '+esc(hhWhoName(x.who))+'</span>'; }).join(' · ')||'<span style="font-size:12px;color:var(--muted)">—</span>');
+    if(w.iso>hpToday()) h+=note('Changes start '+hpDay(w.iso)+'. Today’s lists stay as they are.');
+    h+=note(w.conv?'Switched from the old rotation. Each kid keeps their own row on their list, and it shows the chore that is theirs that day — so no check mark moves.':(hhEngineMode()==="on"?'The day’s plan gives it to whoever’s turn it is.':'Shown here and in the 🔭 preview. The kids’ lists follow when the plan is switched on (👤 By person).'));
+    if(!htTk()) h+=note('Changes need 🏡 Take over on.'); }
+  else if(htCan(j)){ h+=lbl('Takes turns',htCtl(id,"turns"));
+    const R=htAll(), o=Object.keys(R).sort().filter(function(k){ const L=htLast(k); return !R[k].conv&&L&&L.V.chores&&Object.keys(L.V.chores).length&&htFreeSeat(htCopy(L.V))>=0; });
+    if(o.length&&mom) h+=lbl('…or together with',o.map(function(k){ const L=htLast(k); return _hcChip(false,'＋ '+Object.keys(L.V.chores).filter(function(x){ return J[x]; }).map(function(x){ return esc(J[x].label); }).join(' · '),"htJoin('"+id+"','"+k+"')"); }).join(''));
+    if(!hhCanOf(j).filter(hhIsKid).length) h+=note('Tick the kids under “Who else can do it” first.'); }
+  if(hhIsHouse(j)){ h+=lbl('Grown-up turn',htCtl(id,"deep")); const N=parseInt(j.deepEvery,10)||0;
+    if(N){ const G=hhCanOf(j).filter(function(w2){ return !hhIsKid(w2); });
+      h+=note('After '+N+' kid check-off'+(N===1?'':'s')+' the next time goes to '+(G.length>1?G.map(hhWhoName).join(' and ')+' (in turn)':G.length?hhWhoName(G[0]):'a grown-up')+'. So far: '+(+j.kidRun||0)+' of '+N+'.'+(hhEngineMode()==="on"?'':' It moves the chore only when the plan is on; until then the 🔭 preview shows where it would fall.'));
+      if(!G.length) h+=note('<b style="color:#b45309">Tick Mom or Dad under “Who else can do it” — no grown-up can do it yet.</b>'); } }
+  return h; }
+// The card's line for an old rotation row: the switch button (beside 🔁 Rotations).
+function htConvBtnId(id){ return htMom()?_hhBtn("htOpen('"+id+"')",'✨ Switch to the new turns',false,'#7c3aed'):''; }
+// ── the old 🔁 Rotations page: a switched rotation is shown, not edited; an old one gets the switch button ──
+function htRotViewHTML(g){ const key=htConvKey(g.tag); if(!key) return ""; const n=htAll()[key], L=htLast(key), P=L?htPeople(L.V):[], J=hhJobs();
+  return '<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);margin-bottom:10px;overflow:hidden"><div style="padding:9px 12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span style="font-size:13px;font-weight:800">🔁 '+esc(hhRotName(g))+'</span>'+_hhChip(esc((typeof SL_SLBL!=="undefined"&&SL_SLBL[g.slot])||g.slot),'#f3f4f6','#475569')+_hhChip('✨ on the chore card','#ede9fe','#5b21b6')+'</div>'
+    +'<div style="padding:6px 12px 9px;border-top:1px solid #eef2f0;font-size:12px">'+esc(P.map(hhWhoName).join(' → '))+' <span style="color:var(--muted)">· switched to the new turns '+(n.conv&&n.conv.from?'from '+hpDay(n.conv.from):'')+'. Who is in it, the order and the cycle are on each chore’s card now.</span><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">'
+    +Object.keys((L&&L.V.chores)||{}).filter(function(x){ return J[x]; }).map(function(x){ return _hhBtn("hcOpen('"+x+"')",esc((J[x].emoji?J[x].emoji+" ":"")+J[x].label),false,'#2B7A78'); }).join('')+'</div></div></div>'; }
+function htConvBtn(g){ if(htConvKey(g.tag)||!htMom()) return ""; const m=g.members.find(function(x){ return !x.free; }); return m?'<span style="flex:1"></span>'+htConvBtnId(m.id):""; }
+// ── the switch screen (drawn by hcCardHTML in place of the card while it is open) ──
+function htSheetHTML(){
+  if(!htSheet||!htMom()) return ""; const p=htPlan(htSheet.id); if(!p){ htSheet=null; return ""; } const J=hhJobs(), ids=Object.keys(p.V.chores), nm=function(w){ return esc(hhWhoName(w)); };
+  const per=(HH_ROT_PERIODS.find(function(x){ return x[0]===p.V.period; })||[0,"Every "+parseInt(p.V.period,10)+" days"])[1], list=(typeof SL_SLBL!=="undefined"&&SL_SLBL[p.slot])||p.slot;
+  const sec=function(l){ return '<div style="margin-top:14px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;font-weight:800;color:#2B7A78">'+l+'</div>'; }, li=function(x){ return '<div style="font-size:12.5px;margin-top:5px">'+x+'</div>'; };
+  let h='<div class="ce-sheet open" onclick="if(event.target===this)htClose()"><div class="ce-sheet-box hc-box">';
+  h+='<div style="display:flex;align-items:center;gap:8px"><div class="ce-sheet-title" style="flex:1;margin-bottom:0">✨ Switch to the new turns</div><button onclick="htClose()" style="border:1px solid var(--border);background:#fff;border-radius:8px;width:30px;height:30px;font-size:15px;cursor:pointer;color:var(--muted)">✕</button></div>';
+  h+='<div style="font-size:12px;color:var(--muted);margin-top:6px">Now each kid has a row on their '+esc(list)+' list and the chores swap between those rows. After the switch the same chores go round a wheel you change on each chore’s card: who is in it, the order, how often it changes, and a grown-up turn.</div>';
+  h+=sec('Who takes turns')+li('<b>'+p.people.map(nm).join(' → ')+'</b> · changes '+esc(String(per).toLowerCase()));
+  h+=sec('The chores')+li(ids.map(function(c){ return '<b>'+esc((J[c].emoji?J[c].emoji+" ":"")+J[c].label)+'</b>'; }).join(' · ')+(p.people.length>ids.length?' <span style="color:var(--muted)">· '+(p.people.length-ids.length)+' free turn'+(p.people.length-ids.length===1?'':'s')+' a day</span>':''));
+  h+=sec('What changes in the table');
+  Object.keys(p.can).forEach(function(c){ h+=li('✔ '+esc(J[c].label)+': '+p.can[c].add.map(nm).join(' and ')+' ticked under “Who else can do it”.'); });
+  if(p.frees.length) h+=li('😌 The “Free day” row'+(p.frees.length>1?'s':'')+' of '+p.frees.map(function(m){ return nm(m.kid); }).join(' and ')+': not needed any more (a wheel can have more people than chores). '+(p.frees.length>1?'They stay':'It stays')+' out of sight on '+(p.frees.length>1?'those lists':'that list')+', so no check mark moves.');
+  h+=li('Nothing else. Every row stays where it is on every list.');
+  h+=sec('The next 14 days — today’s way and the new way')+'<div style="overflow:auto;margin-top:6px"><table style="border-collapse:collapse;font-size:11px;min-width:100%"><tr><th style="text-align:left;padding:3px 5px;border-bottom:1px solid #e5e7eb">Day</th>'+ids.map(function(c){ return '<th style="text-align:left;padding:3px 5px;border-bottom:1px solid #e5e7eb">'+esc(J[c].emoji||'☐')+' '+esc(J[c].label)+'</th>'; }).join('')+'<th style="padding:3px 5px;border-bottom:1px solid #e5e7eb"></th></tr>';
+  p.days.forEach(function(d){ h+='<tr><td style="padding:3px 5px;font-weight:800;white-space:nowrap">'+hpDay(d.iso)+'</td>'+ids.map(function(c){ const a=d.old[c], b=d.neu[c]; return '<td style="padding:3px 5px;white-space:nowrap">'+(a===b?(a?'<span style="color:'+hhRmCol(a)+';font-weight:800">'+nm(a)+'</span>':'—'):'<span style="color:#b91c1c;font-weight:800">'+(a?nm(a):'—')+' → '+(b?nm(b):'—')+'</span>')+'</td>'; }).join('')+'<td style="padding:3px 5px">'+(d.same?'✓':'✗')+'</td></tr>'; });
+  h+='</table></div>'+li(p.days.every(function(d){ return d.same; })?'✓ The same kid has the same chore on every one of those days.':'<b style="color:#b91c1c">Not the same every day.</b>');
+  h+=sec('When it starts')+li('Tomorrow, '+hpDay(p.from)+'. Today’s lists stay exactly as they are, and every check mark already made stays on its own chore.');
+  if(!p.ok) h+='<div style="margin-top:10px;padding:8px 10px;background:#fef2f2;border-radius:9px;font-size:12px;color:#991b1b;font-weight:700">It can’t switch yet: '+p.why.map(esc).join(' ')+'</div>';
+  h+='<div style="display:flex;gap:6px;justify-content:flex-end;margin-top:14px">'+_hhBtn("htClose()",'Cancel',false,'#94a3b8')+(p.ok?_hhBtn("htConvert('"+htSheet.id+"')",'✨ Switch',true,'#7c3aed'):'')+'</div>';
+  return h+'</div></div>'; }
+// HOUSETURNS_UI_END
 // HOUSESWITCH_START — 🚪 the real switch and today's stored plan on 👤 By person (Household by room, step 4; DESIGN §4.3 doors, §5 last
 // bullet, her yes 2026-11-17). Mom only. ON first PROVES a houseDay save works (houseDay/<today>/hello) and only then writes
 // household/meta/engine = {mode:"on", on:<today>} together with each house chore's last-done date filled once from the 8 weeks of
@@ -1013,7 +1198,7 @@ function hpOnHTML(who){
   const used=ids.reduce(function(a,id){ return a+(r.plan[id].mins||0); },0), lim=(typeof hdLimitOn==="function")?hdLimitOn(who,t):0;
   h+='<div style="display:flex;gap:8px;align-items:center;padding:6px 12px 4px;font-size:11px;color:var(--muted)">'+hpBar(used,lim)+'<span>'+used+' / '+lim+' min</span></div>';
   h+=ids.length?ids.map(function(id){ const x=r.plan[id], j=J[id], sk=!!(r.skip&&r.skip[id]), dn=hdDone(t,id);
-    return hpRow(id,j.emoji,j.label,(x.late>0?_hhChip(x.late+' day'+(x.late===1?'':'s')+' late','#fee2e2','#991b1b'):'')+(x.from?_hhChip('from '+hhWhoName(x.from),'#e0f2fe','#075985'):'')+(sk?_hhChip('skipped','#f3f4f6','#6b7280'):'')+_hhChip(x.mins+' min','#f3f4f6','#475569')
+    return hpRow(id,j.emoji,j.label,(x.why==="deep"?_hhChip('✨ grown-up turn','#ede9fe','#5b21b6'):'')+(x.late>0?_hhChip(x.late+' day'+(x.late===1?'':'s')+' late','#fee2e2','#991b1b'):'')+(x.from?_hhChip('from '+hhWhoName(x.from),'#e0f2fe','#075985'):'')+(sk?_hhChip('skipped','#f3f4f6','#6b7280'):'')+_hhChip(x.mins+' min','#f3f4f6','#475569')
       +(mom&&!dn?'<span onclick="event.stopPropagation()" style="display:flex;gap:4px">'+hpGiveSel(t,id,who)+_hhBtn("hdSkipToggle('"+t+"','"+id+"','"+who+"');hhRender()",sk?'Put back':'✕ Skip',false,'#94a3b8')+'</span>':''),dn); }).join(''):'<div style="padding:3px 12px 6px;font-size:12px;color:var(--muted)">No house chores for them today.</div>';
   const over=Object.keys(r.over||{}).filter(function(id){ return J[id]; });
   if(over.length) h+='<div style="'+HP_HEAD+';border-top:2px solid #fde68a;padding-top:8px">Didn’t fit anyone today ('+over.length+') — first in line tomorrow</div>'+over.map(function(id){ const o=r.over[id], j=J[id]; return hpRow(id,j.emoji,j.label,_hhChip(hhWhoName(o.turn)+'’s turn','#f3f4f6','#475569')+_hhChip(o.mins+' min','#f3f4f6','#475569')+(mom?'<span onclick="event.stopPropagation()">'+hpGiveSel(t,id,"")+'</span>':'')); }).join('');

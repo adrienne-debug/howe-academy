@@ -2184,12 +2184,13 @@ function _rtRotDayNum(dayName){
 let rotationPeriod={};
 function _rotKey(tag){ return String(tag||"").replace(/[.#$\[\]\/]/g,"_"); }
 function rtRotPeriod(tag){ const p=rotationPeriod&&rotationPeriod[_rotKey(tag)]; return (p==="weekly"||/^\d+d$/.test(p||""))?p:"daily"; }
-function rtRotPeriodSet(tag,p){ if(!momHere()) return; if(!(p==="daily"||p==="weekly"||/^\d+d$/.test(p))) p="daily"; rotationPeriod[_rotKey(tag)]=p; if(db) db.ref("config/rotationPeriod/"+_rotKey(tag)).set(p); renderAll(); }
+function rtRotPeriodSet(tag,p){ if(!momHere()) return; if(typeof rtTurnsConv==="function"&&rtTurnsConv(tag)) return; if(!(p==="daily"||p==="weekly"||/^\d+d$/.test(p))) p="daily"; rotationPeriod[_rotKey(tag)]=p; if(db) db.ref("config/rotationPeriod/"+_rotKey(tag)).set(p); renderAll(); }
 function rtRotPeriodLabel(tag){ const p=rtRotPeriod(tag); return p==="daily"?"cycles daily":p==="weekly"?"cycles weekly (flips Mon)":("cycles every "+parseInt(p)+" days"); }
 // Day number → hop index for this tag. Weekly is Monday-aligned (epoch day 0 was a Thursday, so +3).
 function _rtRotHop(tag,dt){ const p=rtRotPeriod(tag); if(p==="weekly") return Math.floor((dt+3)/7); if(/^\d+d$/.test(p)) return Math.floor(dt/Math.max(1,parseInt(p))); return dt; }
 function rtApplyRot(slot,kid,steps,dayName){
   if(!steps.some(s=>s&&s.rot)) return steps;
+  const _tw=(typeof rtTurnsRows==="function")?rtTurnsRows(slot,kid,dayName):null;   // 🔁 HOUSETURNS (step 5): a CONVERTED rotation's rows read its stored wheel
   const groups={};
   SL_KIDS.forEach(k=>{
     const rawS=(routineCfg2[slot]&&Array.isArray(routineCfg2[slot][k])&&routineCfg2[slot][k].length)?routineCfg2[slot][k]:(((RT_DEFAULT[slot]||{})[k])||[]);
@@ -2197,6 +2198,7 @@ function rtApplyRot(slot,kid,steps,dayName){
   });
   const dt=_rtRotDayNum(dayName);
   return steps.map(s=>{
+    if(_tw&&s&&s.rot&&_tw.has(s.rot)) return _tw.row(s);
     if(!s||!s.rot||!groups[s.rot]||groups[s.rot].length<2) return s;
     const g=groups[s.rot], mi=g.findIndex(x=>x.kid===kid);
     if(mi<0) return s;
@@ -14190,6 +14192,13 @@ function hhEngineTap(on){ if(typeof momHere==="function"&&!momHere()) return; if
 // Carry (§4.1 table): an every-N chore stays due until it is done (so it is first in line, more days late, every day after); a
 // daily or on-its-days chore that overflows carries to the next day first in line, and is dropped (a miss, as today) when its
 // own next day arrives — so a daily never carries (tomorrow has its own) and no chore is ever on a day twice.
+// Turns (§4.2, step 5): ov.rotations = household/rotations (passed only while Take over is on). A wheel's v/<iso> = {people, period,
+// chores:{id:seat}} holds FROM that date. A CONVERTED rotation (conv {rot, slot}) keeps the old rows as its seats: member i (the
+// wheel's people who have a row of it on that list) does member (i + hop)'s chore — rtApplyRot's own formula on the stored order,
+// so converting changes nothing for anyone. A wheel made on the card names the person at (seat − step): step = the date's hop, or
+// for an "every N" chore how many times it has been done (doneN). The grown-up turn: a house chore with deepEvery N whose kid
+// check-offs since a grown-up's (kidRun) have reached N goes to a grown-up ticked on it (two → not the one in deepBy), why "deep".
+// ov.count = {id:{doneN,kidRun,deepBy}} overrides the table's counters (run() counts each planned day as done by its person).
 const HouseEng=(function(){
   const dnum=function(s){ const p=String(s).split("-").map(Number); return Math.round(Date.UTC(p[0],p[1]-1,p[2])/864e5); };
   const isoOf=function(n){ return new Date(n*864e5).toISOString().slice(0,10); };
@@ -14205,6 +14214,36 @@ const HouseEng=(function(){
   // stepCycleOk, as it works today: cycW = the week (1..cycN) the row runs, counted in whole weeks from cycStart.
   function cycleOk(j,s){ if(!j.cycW||!j.cycStart) return true; const n=Math.max(1,parseInt(j.cycN,10)||4), a=Date.parse(j.cycStart+"T12:00:00"), b=Date.parse(s+"T12:00:00"); if(isNaN(a)||isNaN(b)) return true; const wk=Math.floor(Math.round((b-a)/864e5)/7); return (((wk%n)+n)%n)+1===parseInt(j.cycW,10); }
   function everyN(cad){ if(/^\d+d$/.test(cad)) return Math.max(1,parseInt(cad,10)); if(cad==="2w") return 14; return 0; }
+  // ── 🔁 turns (step 5) ──
+  function verOf(node,s){ const v=node&&node.v; if(!v||typeof v!=="object") return null; let k=""; Object.keys(v).forEach(function(x){ if(isIso(x)&&x<=s&&x>k&&v[x]&&typeof v[x]==="object") k=x; }); return k?v[k]:null; }   // the wheel in effect on s
+  function listOf(a){ return (Array.isArray(a)?a:(a&&typeof a==="object")?Object.keys(a).sort(function(x,y){ return x-y; }).map(function(k){ return a[k]; }):[]).filter(function(x){ return typeof x==="string"&&x!==""; }); }
+  function hopP(p,n){ if(p==="weekly") return Math.floor((n+3)/7); if(/^\d+d$/.test(p||"")) return Math.floor(n/Math.max(1,parseInt(p,10))); return n; }   // _rtRotHop on a stored cycle
+  // A converted wheel on one list: the members are the wheel's people with a row of it there (their seat), in the wheel's order, each
+  // with the chore at their seat or none (a free turn); a chore whose seat has nobody on the list that day goes to the first free turn.
+  function seatsOf(V,hasSeat,live){ const P=listOf(V&&V.people), ch=(V&&V.chores)||{}, at={}, M=[], used={};
+    Object.keys(ch).sort().forEach(function(id){ const i=parseInt(ch[id],10); if(i>=0&&at[i]===undefined&&live(id)) at[i]=id; });
+    P.forEach(function(w,i){ if(hasSeat(w)&&!M.some(function(m){ return m.who===w; })){ M.push({who:w,job:at[i]||null}); if(at[i]) used[at[i]]=1; } });
+    Object.keys(at).map(Number).sort(function(a,b){ return a-b; }).forEach(function(i){ const id=at[i]; if(used[id]) return; const f=M.find(function(m){ return !m.job; }); if(f){ f.job=id; used[id]=1; } });
+    return M; }
+  function convOn(ov,s){ const R=(ov&&ov.rotations)||{}, C={}; Object.keys(R).sort().forEach(function(k){ const c=R[k]&&R[k].conv; if(!c||!c.rot||!c.slot) return; const V=verOf(R[k],s); if(V&&!C[c.slot+"|"+c.rot]) C[c.slot+"|"+c.rot]=V; }); return C; }
+  function listIds(jobs,people,slot,kid){ return Object.keys(jobs).filter(function(id){ const j=jobs[id]; return j&&j.who===kid&&(!j.src||j.src.kind==="routine"||j.src.kind==="new")&&j.slot===slot&&j.status!=="retired"&&levelOut(j,people)&&!j.hold; }).sort(function(a,b){ return ((jobs[a].order||0)-(jobs[b].order||0))||(a<b?-1:1); }); }
+  function seatOn(jobs,people,ov,k,V,n,out,members){ const slot=k.slice(0,k.indexOf("|")), tag=k.slice(k.indexOf("|")+1), seat={}, live={};
+    (ov.kids||[]).forEach(function(kid){ listIds(jobs,people,slot,kid).forEach(function(id){ if(jobs[id].rot!==tag) return; members[id]=1; if(!jobs[id].free) live[id]=1; if(seat[kid]===undefined) seat[kid]=id; }); });
+    const M=seatsOf(V,function(w){ return seat[w]!==undefined; },function(id){ return !!live[id]; }), hop=hopP(V.period,n);
+    M.forEach(function(x,i){ const p=M[(i+hop)%M.length], own=jobs[seat[x.who]], pick=p.job||seat[p.who], pj=jobs[pick];
+      let cad=own.cad||"daily"; if(!p.job) cad="none"; else if(pj.cad==="asneeded") cad="asneeded"; else if(own.cad==="asneeded") cad="daily";
+      const o={kid:x.who,row:seat[x.who],pick:pick,cad:cad}; if(!p.job) o.empty=1; out.push(o); }); }
+  function countOf(jobs,id,ov){ const o=ov&&ov.count&&ov.count[id], j=jobs[id]||{}; return o?{doneN:+o.doneN||0,kidRun:+o.kidRun||0,deepBy:o.deepBy||""}:{doneN:+j.doneN||0,kidRun:+j.kidRun||0,deepBy:j.deepBy||""}; }
+  function cardTurn(V,id,step){ const P=listOf(V&&V.people), n=P.length, i=parseInt(((V&&V.chores)||{})[id],10); if(!n||!(i>=0)) return ""; return P[(((i-step)%n)+n)%n]; }
+  // A wheel made on the card (no conv): each of its chores to the person at (seat − step), on the chore's own timing.
+  function cardOn(jobs,s,people,ov,members){ const R=(ov&&ov.rotations)||{}, out=[], n=dnum(s);
+    Object.keys(R).sort().forEach(function(k){ if(!R[k]||R[k].conv) return; const V=verOf(R[k],s); if(!V||!V.chores) return;
+      Object.keys(V.chores).sort().forEach(function(id){ const j=jobs[id]; if(!j||members[id]||j.rot) return; members[id]=1;
+        const who=cardTurn(V,id,everyN(j.cad||"")?countOf(jobs,id,ov).doneN:hopP(V.period,n)); out.push({id:id,turn:people[who]?who:j.who,cad:j.cad}); }); });
+    return out; }
+  function deepOf(jobs,id,turn,people,ov){ const j=jobs[id], N=parseInt(j&&j.deepEvery,10), kids=ov.kids||[]; if(!(N>0)||!isHouse(j)||kids.indexOf(turn)<0) return "";
+    const c=countOf(jobs,id,ov); if(c.kidRun<N) return ""; const G=canOf(j,people).filter(function(w){ return kids.indexOf(w)<0; }); if(!G.length) return "";
+    return G.find(function(w){ return w!==c.deepBy; })||G[0]; }
   // Rows that are never handed out (see the header).
   function never(j,people){ return !j||typeof j!=="object"||j.status==="retired"||j.free||j.hold||j.cad==="once"||j.layer==="project"||j.who==="grab"||!people[j.who]; }
   // Is a row due on s, and how? cad = the cadence the list uses (a rotation slot's own); last = last-done iso; on = switch-on iso.
@@ -14233,7 +14272,8 @@ const HouseEng=(function(){
   function hopOf(tag,n,rp){ const key=String(tag||"").replace(/[.#$\[\]\/]/g,"_"), p=rp&&rp[key]; if(p==="weekly") return Math.floor((n+3)/7); if(/^\d+d$/.test(p||"")) return Math.floor(n/Math.max(1,parseInt(p,10))); return n; }   // _rtRotHop
   // On date s, which job each rotating row shows and on whose list: [{kid, row (the kid's own row id), pick (the job's id), cad}].
   function rotOn(jobs,s,people,ov){
-    const G=groupsOf(jobs,people,ov), n=dnum(s), out=[], members={};
+    const G=groupsOf(jobs,people,ov), n=dnum(s), out=[], members={}, C=convOn(ov,s);
+    Object.keys(C).forEach(function(k){ delete G[k]; seatOn(jobs,people,ov,k,C[k],n,out,members); });   // 🔁 a converted rotation: its stored wheel
     Object.keys(G).forEach(function(k){ const g=G[k].m, hop=hopOf(G[k].tag,n,ov.rotPeriod);
       g.forEach(function(x){ members[x.id]=1; });
       g.forEach(function(x){ const mi=g.findIndex(function(y){ return y.kid===x.kid; }), p=g[(mi+hop)%g.length], pj=jobs[p.id], own=jobs[x.id];
@@ -14242,7 +14282,7 @@ const HouseEng=(function(){
     return {list:out,members:members};
   }
   // Who has each rotating job on s (the inverse of rtApplyRot, for the 60-day check): {jobId: kid}.
-  function rotHolders(table,s,people,ov){ const r=rotOn((table&&table.jobs)||{},s,people,ov||{}), o={}; r.list.forEach(function(x){ if(o[x.pick]===undefined&&!(table.jobs[x.pick]||{}).free) o[x.pick]=x.kid; }); return o; }
+  function rotHolders(table,s,people,ov){ const r=rotOn((table&&table.jobs)||{},s,people,ov||{}), o={}; r.list.forEach(function(x){ if(o[x.pick]===undefined&&!x.empty&&!(table.jobs[x.pick]||{}).free) o[x.pick]=x.kid; }); return o; }
   const RANK={daily:1,set:2,every:3};
   function day(table,s,people,ov){
     ov=ov||{}; const jobs=(table&&table.jobs)||{}, last=ov.lastDone||{}, skip=ov.skip||{}, off=ov.off||{}, n=dnum(s);
@@ -14250,10 +14290,11 @@ const HouseEng=(function(){
     const due={}, cands=[], routine=[];
     const consider=function(id,turn,cad){ const j=jobs[id]; if(due[id]||skip[id]||never(j,people)) return; if(isHouse(j)&&!levelOut(j,people)) return;
       const d=dueOf(j,cad,s,lastOf(id),ov.on); if(!d) return; due[id]=1;
-      const c={id:id,turn:turn,mins:minsOf(j,ov.minDefault),k:d.k,late:d.late,carried:d.k==="every"&&d.late>0};
+      const g=deepOf(jobs,id,turn,people,ov), c={id:id,turn:g||turn,mins:minsOf(j,ov.minDefault),k:d.k,late:d.late,carried:d.k==="every"&&d.late>0}; if(g) c.deep=1;   // 🔁 the grown-up turn
       if(isHouse(j)) cands.push(c); else routine.push(c); };
     const R=rotOn(jobs,s,people,ov);
     R.list.forEach(function(x){ if(people[x.kid]) consider(x.pick,x.kid,x.cad); });
+    cardOn(jobs,s,people,ov,R.members).forEach(function(x){ consider(x.id,x.turn,x.cad); });   // 🔁 wheels made on the card
     Object.keys(jobs).sort().forEach(function(id){ if(!R.members[id]) consider(id,jobs[id]&&jobs[id].who,jobs[id]&&jobs[id].cad); });
     // Yesterday's overflow: first in line, unless its own next day has come (then it is a miss, as on the lists today).
     const missed=[];
@@ -14266,7 +14307,7 @@ const HouseEng=(function(){
     const plan={}, list={}, over=[], carryOut=[], put=function(id,o){ plan[id]=o; (list[o.who]=list[o.who]||[]).push(id); o.order=list[o.who].length-1; };
     routine.forEach(function(c){ if(!off[c.turn]) put(c.id,{who:c.turn,mins:c.mins,why:"routine",late:0,k:c.k,house:false}); });
     cands.forEach(function(c){
-      let who=null, why=c.carried?"carried":"turn";
+      let who=null, why=c.carried?"carried":c.deep?"deep":"turn";
       if(left[c.turn]!==undefined&&left[c.turn]>=c.mins) who=c.turn;
       else { let best=-1; canOf(jobs[c.id],people).forEach(function(w){ if(w===c.turn) return; const r=left[w]; if(r!==undefined&&r>=c.mins&&r>best){ best=r; who=w; } }); if(who) why="moved"; }
       if(!who){ const can=canOf(jobs[c.id],people).filter(function(w){ return (ov.kids||[]).indexOf(w)>=0; });
@@ -14281,14 +14322,38 @@ const HouseEng=(function(){
     ov=ov||{}; const jobs=(table&&table.jobs)||{}, last={}, out=[];
     Object.keys(jobs).forEach(function(id){ if(jobs[id]&&isIso(jobs[id].lastDone)) last[id]=jobs[id].lastDone; });
     Object.keys(ov.lastDone||{}).forEach(function(id){ last[id]=ov.lastDone[id]; });
-    let carry=(ov.carry||[]).slice(), n0=dnum(start);
-    for(let i=0;i<days;i++){ const s=isoOf(n0+i), p=day(table,s,people,Object.assign({},ov,{lastDone:Object.assign({},last),carry:carry}));
-      Object.keys(p.plan).forEach(function(id){ last[id]=s; }); carry=p.carryOut; out.push(p); }
+    let carry=(ov.carry||[]).slice(), n0=dnum(start); const cnt={}, kids=ov.kids||[];
+    Object.keys(ov.count||{}).forEach(function(id){ cnt[id]=Object.assign({},ov.count[id]); });
+    for(let i=0;i<days;i++){ const s=isoOf(n0+i), p=day(table,s,people,Object.assign({},ov,{lastDone:Object.assign({},last),carry:carry,count:JSON.parse(JSON.stringify(cnt))}));
+      Object.keys(p.plan).forEach(function(id){ last[id]=s; const x=p.plan[id], c=cnt[id]||(cnt[id]=countOf(jobs,id,null)); c.doneN++; if(kids.indexOf(x.who)>=0) c.kidRun++; else { c.kidRun=0; c.deepBy=x.who; } }); carry=p.carryOut; out.push(p); }
     return out;
   }
-  return {day:day,run:run,dueOf:dueOf,rotHolders:rotHolders,canOf:canOf,dnum:dnum,isoOf:isoOf};
+  return {day:day,run:run,dueOf:dueOf,rotHolders:rotHolders,canOf:canOf,dnum:dnum,isoOf:isoOf,verOf:verOf,seatsOf:seatsOf,hop:hopP,cardTurn:cardTurn,listOf:listOf};
 })();
 // HOUSEENG_END
+// HOUSETURNS_START — 🔁 turns on the kids' lists (Household by room, step 5 of DESIGN_household_rooms_2026-11-15 §4.2, §5; her "Yes,
+// start step 5" 2026-11-18). household/rotations/<key>: v/<iso> = {people, period, chores:{jobId:seat}} = the wheel FROM that date
+// (every change is written for the NEXT day, so a list never changes under a kid) · conv = {at, from, rot, slot, can} when Mom
+// converted an old rotation (house.js HOUSETURNS_UI). A converted rotation keeps its old rows as its SEATS: every row stays where it
+// is (check marks are by position) and shows the chore the stored wheel gives that kid, by rtApplyRot's own formula (HouseEng.seatsOf,
+// the engine's own) — so the same kid has the same chore on the same day, and nothing moves. A wheel made on the card reaches the
+// lists through the day's plan (HOUSEDAY) only. Nothing here writes. No household/rotations, or Take over off → null → main's lists.
+function hhTurnsAll(){ try{ const R=(typeof hhTakeoverOn==="function"&&hhTakeoverOn()&&householdData)?householdData.rotations:null; return (R&&typeof R==="object")?R:null; }catch(e){ return null; } }
+function rtTurnsConv(tag){ const R=hhTurnsAll()||{}; return Object.keys(R).sort().find(function(k){ const c=R[k]&&R[k].conv; return !!(c&&tag&&c.rot===tag); })||""; }
+function rtTurnsRows(slot,kid,dayName){
+  const R=hhTurnsAll(); if(!R) return null; const dt=_rtRotDayNum(dayName), iso=HouseEng.isoOf(dt), W={};
+  Object.keys(R).sort().forEach(function(k){ const c=R[k]&&R[k].conv; if(!c||c.slot!==slot||!c.rot||W[c.rot]) return; const V=HouseEng.verOf(R[k],iso); if(V) W[c.rot]=V; });
+  if(!Object.keys(W).length) return null;
+  const seat={}, live={}, hold={}, seen={};
+  SL_KIDS.forEach(function(k){ (((routineCfg2&&routineCfg2[slot])||{})[k]||[]).forEach(function(st){ if(!st||!W[st.rot]) return; if(st._hh&&!st.free) live[st._hh]=st; const s0=seat[st.rot]=seat[st.rot]||{}; if(!s0[k]) s0[k]=st; }); });
+  Object.keys(W).forEach(function(tag){ const s0=seat[tag]||{}, M=HouseEng.seatsOf(W[tag],function(w){ return !!s0[w]; },function(id){ return !!live[id]&&live[id].rot===tag; }), hop=HouseEng.hop(W[tag].period,dt);
+    M.forEach(function(x,i){ const p=M[(i+hop)%M.length]; hold[tag+"|"+x.who]=p.job?live[p.job]:Object.assign({},s0[p.who],{free:true}); }); });   // no chore = a free turn
+  return {has:function(tag){ return !!W[tag]; },row:function(s){ const h=seen[s.rot]?null:hold[s.rot+"|"+kid]; seen[s.rot]=1; if(!h) return Object.assign({},s,{cad:"none"});   // not in the wheel (or a second row): hidden in place
+    const o=Object.assign({},s,{emoji:h.emoji,label:h.label,pts:(h.pts||0),free:!!h.free});   // the job travels whole, as in rtApplyRot
+    if(h.free) o.cad="none"; else if(h.cad==="asneeded") o.cad="asneeded"; else if(s.cad==="asneeded") o.cad="daily";
+    return o; }};
+}
+// HOUSETURNS_END
 // HOUSEDAY_START — 🚪 the plan switched ON (Household by room, step 4 of DESIGN_household_rooms_2026-11-15 §4.3–4.5, §5, §6, §12; her
 // yes to "Switch on" 2026-11-17). Only when household/meta/engine.mode is "on" AND Take over is on (the lists come from the table):
 // with "off" or "preview" not one line below runs past its first test, so every list and every write is as it was.
@@ -14338,7 +14403,7 @@ function hdOv(iso,extraSkip){ const J=hhJobs(), r=houseDayData[iso]||{}, skip={}
   const am={}; ((typeof amCarry!=="undefined"&&amCarry)?Object.keys(amCarry):[]).forEach(function(k){ const m=amCarry[k]||{}; Object.keys(m).forEach(function(c){ const it=m[c]; if(it&&it.house&&!it.done&&it.dueIso<=iso){ am[it.house]=1; if(/^\d+d$|^2w$/.test((J[it.house]||{}).cad||"")) skip[it.house]=1; } }); });   // 🌅 on a morning list: never carried; an every-N one is not due again until it is done
   ROSTER.forEach(function(k){ if(hdKidOff(k,iso)) off[k]=1; });
   const e=(householdData.meta&&householdData.meta.engine)||{};
-  return {kids:SL_KIDS.slice(),slots:SL_SLOTS.slice(),rotPeriod:Object.assign({},(typeof rotationPeriod!=="undefined"&&rotationPeriod)||{}),on:/^\d{4}-\d{2}-\d{2}$/.test(e.on||"")?e.on:iso,minDefault:HH_MIN_DEFAULT,lastDone:last,carry:hdCarryFrom(hdAdd(iso,-1),Object.assign({},skip,am)),skip:skip,off:off}; }
+  return {rotations:hhTurnsAll()||{},kids:SL_KIDS.slice(),slots:SL_SLOTS.slice(),rotPeriod:Object.assign({},(typeof rotationPeriod!=="undefined"&&rotationPeriod)||{}),on:/^\d{4}-\d{2}-\d{2}$/.test(e.on||"")?e.on:iso,minDefault:HH_MIN_DEFAULT,lastDone:last,carry:hdCarryFrom(hdAdd(iso,-1),Object.assign({},skip,am)),skip:skip,off:off}; }
 // One day's plan → the stored shape (house rows only; health and animals stay on their own lists, untouched).
 function hdShape(p){ const plan={}, over={}; Object.keys(p.plan).forEach(function(id){ const x=p.plan[id]; if(!x.house) return; const o={who:x.who,mins:x.mins,order:x.order,why:x.why,late:x.late||0,k:x.k,since:hdAdd(p.iso,-(x.late||0))}; if(x.from) o.from=x.from; plan[id]=o; });
   p.over.forEach(function(o){ over[o.id]={turn:o.turn,mins:o.mins,k:o.k,late:o.late||0,since:hdAdd(p.iso,-(o.late||0))}; }); return {plan:plan,over:over}; }
@@ -14436,10 +14501,13 @@ function hdToggle(slot,kid,i,st){
 // last-done, by whom and the turn counters (§5), written with the check-off; un-check puts back what was there.
 function hdStamp(id,iso,who,upd){ const j=hhJobs()[id]; if(!j) return; const J="household/jobs/"+id+"/";
   if(!j.lastDone||j.lastDone<=iso){ j.lastDone=iso; j.lastBy=who; upd[J+"lastDone"]=iso; upd[J+"lastBy"]=who; }
-  j.doneN=(j.doneN||0)+1; upd[J+"doneN"]=j.doneN; j.kidRun=hhIsKid(who)?(j.kidRun||0)+1:0; upd[J+"kidRun"]=j.kidRun; }
+  j.doneN=(j.doneN||0)+1; upd[J+"doneN"]=j.doneN; j.kidRun=hhIsKid(who)?(j.kidRun||0)+1:0; upd[J+"kidRun"]=j.kidRun;
+  if(j.deepEvery&&!hhIsKid(who)){ j.deepBy=who; upd[J+"deepBy"]=who; } }   // 🔁 HOUSETURNS: which grown-up did the last grown-up turn (so Mom and Dad alternate)
+function hdPrev(j){ const p={lastDone:j.lastDone||null,lastBy:j.lastBy||null,doneN:j.doneN||0,kidRun:j.kidRun||0}; if(j.deepEvery) p.deepBy=j.deepBy||""; return p; }
 function hdUnstamp(id,iso,d0,upd){ const j=hhJobs()[id], pv=(d0&&d0.prev)||{}; if(!j) return; const J="household/jobs/"+id+"/";
   if(j.lastDone===iso){ if(pv.lastDone){ j.lastDone=pv.lastDone; j.lastBy=pv.lastBy||null; } else { delete j.lastDone; delete j.lastBy; } upd[J+"lastDone"]=pv.lastDone||null; upd[J+"lastBy"]=pv.lastDone?(pv.lastBy||null):null; }
-  j.doneN=pv.doneN||0; j.kidRun=pv.kidRun||0; upd[J+"doneN"]=j.doneN||null; upd[J+"kidRun"]=j.kidRun||null; }
+  j.doneN=pv.doneN||0; j.kidRun=pv.kidRun||0; upd[J+"doneN"]=j.doneN||null; upd[J+"kidRun"]=j.kidRun||null;
+  if(typeof pv.deepBy==="string"){ if(pv.deepBy) j.deepBy=pv.deepBy; else delete j.deepBy; upd[J+"deepBy"]=pv.deepBy||null; } }
 // The owner's own (hidden) old row reads done too, with 0 ⭐ and hd:<iso> — so switching OFF never shows it open to be paid again.
 function hdOwnerMark(id,iso,on,by){ const k=hdOwnerKey(id,iso); if(!k) return; const cur=slState[k];
   if(on){ if(!(cur&&cur.done)) slState[k]={done:true,ts:nowTs(),pts:0,bid:null,by:by,hd:iso}; } else if(cur&&cur.hd) slState[k]={done:false,ts:"",pts:null,bid:null}; }
@@ -14466,7 +14534,7 @@ function hdDerivePerson(who,out,jobs){ try{
 // kid owner's old row is marked too. No stars (grown-ups are not paid).
 function hdParentTick(who,key,on){ try{ const t=_todayStr(), r=hdLive(t); if(!r) return; const J=hhJobs(), id=Object.keys(r.plan||{}).find(function(x){ return r.plan[x].who===who&&J[x]&&((J[x].src&&J[x].src.id)||x)===key; }); if(!id) return;
   const upd={}, P="houseDay/"+t+"/done/"+id, d0=r.done&&r.done[id]; r.done=Object.assign({},r.done); const j=J[id];
-  if(on&&!d0){ const rec={who:who,ts:nowTs(),at:Date.now(),pts:0,bid:null,prev:{lastDone:j.lastDone||null,lastBy:j.lastBy||null,doneN:j.doneN||0,kidRun:j.kidRun||0}}; r.done[id]=rec; upd[P]=rec; hdStamp(id,t,who,upd); hdOwnerMark(id,t,true,who); }
+  if(on&&!d0){ const rec={who:who,ts:nowTs(),at:Date.now(),pts:0,bid:null,prev:hdPrev(j)}; r.done[id]=rec; upd[P]=rec; hdStamp(id,t,who,upd); hdOwnerMark(id,t,true,who); }
   else if(!on&&d0){ delete r.done[id]; upd[P]=null; hdUnstamp(id,t,d0,upd); hdOwnerMark(id,t,false,who); } else return;
   const b=slBefore(); householdOnValue(householdData); if(_hdWrite()) db.ref().update(upd); slSaveChanged(activeWk(),b); }catch(e){} }
 // ── the doors (§4.3): Kid Off here (it must run without house.js); → Give to…, 🔁 Re-lay today and the "Re-lay today too / Keep today"
@@ -83699,6 +83767,7 @@ function rtCfgReset(slot,kid){ if(routineCfg2[slot]) delete routineCfg2[slot][ki
 function rtRotMembers(slot,tag){ const out=[]; SL_KIDS.forEach(k=>{ const st=rtStepsFor(slot,k,true)||[]; if(st.some(x=>x&&x.rot===tag)) out.push(k); }); return out; }
 function rtRotChipLabel(slot,tag){ const m=rtRotMembers(slot,tag); if(m.length<2) return "Rotates — tag a step on another kid"; return "Rotates: "+m.map(k=>KID_NAME[k]||cap(k)).join(" → "); }
 function cpRotAddFree(slot,tag,selId){
+  if(typeof rtTurnsConv==="function"&&rtTurnsConv(tag)){ if(typeof mwToast==="function") mwToast("This one takes turns on its chore card now (Household)"); return; }   // 🔁 HOUSETURNS
   const sel=document.getElementById(selId); if(!sel||!sel.value) return;
   const kid=sel.value;
   rtCfgEnsure(slot,kid);
@@ -83707,6 +83776,7 @@ function cpRotAddFree(slot,tag,selId){
 }
 function rtRotToggle(slot,kid,i){
   rtCfgEnsure(slot,kid); const it=routineCfg2[slot][kid][i]; if(!it) return;
+  if(typeof rtTurnsConv==="function"){ const _t=it.rot||SL_KIDS.map(k=>((rtStepsFor(slot,k,true)||[]).find(x=>x&&x.rot)||{}).rot).find(Boolean); if(_t&&rtTurnsConv(_t)){ if(typeof mwToast==="function") mwToast("This one takes turns on its chore card now (Household)"); return; } }   // 🔁 HOUSETURNS
   if(it.rot){ delete it.rot; }
   else {
     let tag=null;
