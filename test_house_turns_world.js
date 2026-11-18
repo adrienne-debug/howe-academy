@@ -43,12 +43,12 @@ const dOf = n => new Date(2026, 10, 16 + n);   // day n of the replay (day 0 = M
 const isoN = n => { const d = dOf(n); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
 const go = (w, n, h, mi) => { const d = dOf(n); return w.at(d.getFullYear(), d.getMonth() + 1, d.getDate(), h, mi || 0); };
 const tick = (d, slot, kid, label) => d.run("(function(){ const s=rtStepsFor('" + slot + "','" + kid + "',false,day)||[]; const i=s.findIndex(function(x){ return x&&x.label===" + J(label) + "&&x.cad!=='none'; }); if(i<0) return -1; " + (slot === "morning" ? "toggleMorningStep('" + kid + "',i)" : "toggleRtStep('" + slot + "','" + kid + "',i)") + "; return i; })()");
-// tick whatever a kid's row of a rotation shows today (the seat row)
-const tickRot = (d, slot, kid, tag) => d.run("(function(){ const s=rtStepsFor('" + slot + "','" + kid + "',false,day)||[]; const i=s.findIndex(function(x){ return x&&x.rot==='" + tag + "'&&x.cad!=='none'&&!x.free; }); if(i<0) return -1; " + (slot === "morning" ? "toggleMorningStep('" + kid + "',i)" : "toggleRtStep('" + slot + "','" + kid + "',i)") + "; return i; })()");
+// tick whatever a kid's row of a rotation shows today (the seat row; with the plan ON, the plan's row of one of its chores)
+const tickRot = (d, slot, kid, tag) => d.run("(function(){ const s=rtStepsFor('" + slot + "','" + kid + "',false,day)||[]; const i=s.findIndex(function(x){ return x&&(x.rot==='" + tag + "'||(x.house&&(hhJobs()[x.house]||{}).rot==='" + tag + "'))&&x.cad!=='none'&&!x.free; }); if(i<0) return -1; " + (slot === "morning" ? "toggleMorningStep('" + kid + "',i)" : "toggleRtStep('" + slot + "','" + kid + "',i)") + "; return i; })()");
 // who holds each switched chore on the lists today: {label: kid}
 const listHold = (d, dn) => J(JSON.parse(d.run("(function(){ const o={}; ROSTER.forEach(function(k){ SL_SLOTS.forEach(function(s){ (rtStepsFor(s,k,false," + J(dn) + ")||[]).forEach(function(x){ if(x&&(x.rot==='bins'||x.rot==='tank'||x.rot==='pick3')&&!x.free&&x.cad!=='none') o[x.label]=k; }); }); }); return JSON.stringify(o); })()")));
 const engHold = (A, iso) => JSON.parse(A.run("JSON.stringify((function(){ const h=HouseEng.rotHolders({jobs:hhJobs()}," + J(iso) + ",hpPeople(),hpOv()), o={}; " + J(SW) + ".forEach(function(id){ if(h[id]) o[hhJobs()[id].label]=h[id]; }); return o; })())"));
-const strip = t => { const o = clone(t); const h = o.household || {}; delete h.rotations; Object.keys(h.jobs || {}).forEach(id => { delete h.jobs[id].can; }); return J(o); };
+const strip = t => { const o = clone(t); const h = o.household || {}; delete h.rotations; return J(o); };   // everything but the switch's own node
 const writes = (w, m) => w.since(m).map(l => l.op + " " + l.path + " " + (l.keys || []).join(","));
 const listsDay = (B, n) => J(W.lists(B, { days: [DN[dOf(n).getDay()]] }));
 // Mom's page drawn once (its own side effects — the day's 🔎 spot-check draw — happen first, in both worlds alike)
@@ -82,16 +82,16 @@ for (const mode of ["preview", "on"]) {
   for (const S of [X, Y]) { await go(S.w, 0, 7, 0); tickRot(S.B, "morning", "kid_b", "tank"); tickRot(S.B, "morning", "kid_c", "tank"); tick(S.B, "morning", "kid_a", "Brush teeth"); tick(S.B, "morning", "kid_c", "Fill the dog's water");
     await go(S.w, 0, 13, 50); tickRot(S.B, "chores", "kid_a", "bins"); tick(S.B, "chores", "kid_b", "Wipe the bathroom sink"); await S.w.flush(); await go(S.w, 0, 14, 0); await drawn(S); }
   const done0 = Object.values(W.lists(X.B)).reduce((a, r) => a + (Array.isArray(r) ? r.filter(x => x && x._done && (x.rot === "bins" || x.rot === "tank" || SW.includes(x.house))).length : 0), 0);
-  ok(mode + " · (sanity) the ticks landed: rows of the bins and tank rotations (or, with the plan ON, the bins' plan row) are checked today", done0 >= 2, done0);
+  ok(mode + " · (sanity) the ticks landed: rows of the rotations are checked today" + (mode === "on" ? " (the Chores list waits for school with the plan on: the tank only)" : ""), done0 >= (mode === "on" ? 1 : 2), done0);
   const L0 = J(W.lists(X.B)), T0 = J(X.w.db.tree.root), m0 = X.w.mark(), byMom = JSON.parse(X.A.run("JSON.stringify(" + J(CONV) + ".map(function(id){ const p=htPlan(id); return {ok:p.ok,why:p.why,from:p.from}; }))"));
   ok(mode + " · each of the three can switch (its 14 days match)", byMom.every(p => p.ok && p.from === isoN(1)), byMom);
   CONV.forEach(id => X.A.run("htConvert('" + id + "')")); await X.w.flush();
   const wr = writes(X.w, m0);
-  ok(mode + " · the only writes are the three switches, each ONE update of the wheel, its record and who-can", wr.length === 3 && wr.every(l => /^update  /.test(l) && l.split(" ")[2].split(",").every(k => /^household\/rotations\/(bins|tank|pick3)\/(v\/2026-11-17|conv)$|^household\/jobs\/r_(bins|tank|pick3)_[abc]\/can$/.test(k))), wr);
+  ok(mode + " · the only writes are the three switches, each ONE update of the wheel and its record (no chore row)", wr.length === 3 && wr.every(l => /^update  /.test(l) && l.split(" ")[2].split(",").sort().join() === ["household/rotations/X/conv", "household/rotations/X/v/2026-11-17"].join().replace(/X/g, l.split("/")[2])), wr);
   ok(mode + " · every kid's lists (every weekday, raw and shown), Mom's and Dad's, with every check mark: exactly as before", J(W.lists(X.B)) === L0);
   ok(mode + " · the rest of the database — stars, the Click-off Log, check-offs, every list row — byte for byte as before", strip(X.w.db.tree.root) === strip(JSON.parse(T0)));
   ok(mode + " · …and it is the same as the world that did not switch", strip(X.w.db.tree.root) === strip(Y.w.db.tree.root) && J(W.lists(X.B)) === J(W.lists(Y.B)));
-  ok(mode + " · no Free day row was touched (still there, still free)", ["r_bins_free", "r_tank_free"].every(id => { const j = X.w.get("household/jobs/" + id); return j && j.free && j.status === "active" && !j.can; }));
+  ok(mode + " · no chore row was touched: household/jobs is byte for byte as before (Free day rows still there, still free)", J(X.w.get("household/jobs")) === J(JSON.parse(T0).household.jobs) && ["r_bins_free", "r_tank_free"].every(id => { const j = X.w.get("household/jobs/" + id); return j && j.free && j.status === "active"; }));
   ok(mode + " · the tank switch is the as-needed animal one; its 2-day cycle was kept", J(X.w.get("household/rotations/tank/v/2026-11-17")) === J({ people: ["kid_b", "kid_c"], period: "2d", chores: { r_tank_b: 0 } }), X.w.get("household/rotations/tank"));
   { const Z = await mkW(); await go(Z.w, 0, 16, 45); tickRot(Z.B, "afternoon", "kid_a", "pick3"); tickRot(Z.B, "afternoon", "kid_b", "pick3"); tick(Z.B, "afternoon", "kid_b", "Pickup the porch"); await Z.w.flush(); await drawn(Z);
     const l = J(W.lists(Z.B)), t = strip(Z.w.db.tree.root); CONV.forEach(id => Z.A.run("htConvert('" + id + "')")); await Z.w.flush();
@@ -103,20 +103,19 @@ for (const mode of ["preview", "on"]) {
     for (const S of [X, Y]) { await go(S.w, n, 7, 0); tickRot(S.B, "morning", "kid_b", "tank"); tickRot(S.B, "morning", "kid_c", "tank");
       await go(S.w, n, 16, 40); tickRot(S.B, "afternoon", "kid_a", "pick3"); tickRot(S.B, "afternoon", "kid_c", "pick3"); tickRot(S.B, "chores", "kid_a", "bins"); tickRot(S.B, "chores", "kid_b", "bins"); await S.w.flush(); }
     const dn = DN[dOf(n).getDay()];
-    if (mode === "preview") { if (listsDay(X.B, n) !== listsDay(Y.B, n)) bad.push(isoN(n)); }
-    else { const hx = JSON.parse(listHold(X.B, dn)), hy = JSON.parse(listHold(Y.B, dn)); if (hx["Refill the lizard's water"] !== hy["Refill the lizard's water"]) bad.push(isoN(n) + " tank"); }
+    if (listsDay(X.B, n) !== listsDay(Y.B, n)) bad.push(isoN(n));
     const lh = JSON.parse(listHold(X.B, dn)), eh = engHold(X.A, isoN(n)), real = realDay(X.B, n); if (real) daysE++;
     if (mode === "preview" && real) Object.keys(lh).forEach(lb => { if (eh[lb] !== lh[lb]) badE.push(isoN(n) + " " + lb + " " + eh[lb] + "≠" + lh[lb]); });
     if (mode === "on") { const px = X.w.get("houseDay/" + isoN(n)) || {}, py = Y.w.get("houseDay/" + isoN(n)) || {}, turn = (r, id) => { const p = (r.plan || {})[id], o = (r.over || {})[id]; return p ? (p.from || p.who) : o ? o.turn : ""; };
       ["r_bins_a", "r_pick3_a", "r_pick3_b", "r_pick3_c"].forEach(id => { if (turn(px, id) !== turn(py, id)) badP.push(isoN(n) + " " + id + " " + turn(px, id) + "≠" + turn(py, id)); });
       ["r_pick3_a", "r_pick3_b", "r_pick3_c"].forEach(id => { const t = turn(px, id); if (t && t !== eh[X.w.get("household/jobs/" + id).label]) badE.push(isoN(n) + " " + id); }); }
-    if (n === 6) { ok(mode + " · the switched week (Tue–Sun): " + (mode === "preview" ? "every list and check mark = the world that never switched" : "the animal rotation's rows = the world that never switched"), bad.length === 0, bad.slice(0, 3));
-      ok(mode + " · …and the whole database but the switch itself (stars, logs, check-offs)", mode === "on" || strip(X.w.db.tree.root) === strip(Y.w.db.tree.root)); }
+    if (n === 6) { ok(mode + " · the switched week (Tue–Sun): every kid's lists, Mom's and Dad's, every check mark = the world that never switched", bad.length === 0, bad.slice(0, 3));
+      ok(mode + " · …and the whole database but the switch itself (stars, the Click-off Log, check-offs" + (mode === "on" ? ", the stored day plans" : "") + ")", strip(X.w.db.tree.root) === strip(Y.w.db.tree.root)); }
   }
-  ok(mode + " · 60 days after the switch: " + (mode === "preview" ? "every list and check mark" : "the animal rotation's rows") + " = the world that never switched", bad.length === 0, bad.slice(0, 3));
+  ok(mode + " · 60 days after the switch: every list and check mark = the world that never switched", bad.length === 0, bad.slice(0, 3));
   ok(mode + " · …and HouseEng names the same kid as the lists for every switched chore, every day (" + daysE + " days the lists read their own date)", badE.length === 0 && daysE >= 30, [daysE, badE.slice(0, 4)]);
   if (mode === "on") ok("on · the day's stored plan names the same turn kid for every switched house chore as the world that never switched (60 days)", badP.length === 0, badP.slice(0, 4));
-  if (mode === "preview") ok("preview · …and the database (stars, logs, check-offs) after 60 days = the world that never switched", strip(X.w.db.tree.root) === strip(Y.w.db.tree.root));
+  ok(mode + " · …and the database (stars, logs, check-offs" + (mode === "on" ? ", plans" : "") + ") after 60 days = the world that never switched", strip(X.w.db.tree.root) === strip(Y.w.db.tree.root));
 
   console.log("\n── D · ↩ Undo (" + mode + ") ──");
   { const Z = await mkW(); await go(Z.w, 0, 9, 0); tickRot(Z.B, "morning", "kid_b", "tank"); await Z.w.flush(); await drawn(Z); const t0 = J(Z.w.db.tree.root), l0 = J(W.lists(Z.B));

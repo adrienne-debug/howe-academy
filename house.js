@@ -983,10 +983,11 @@ function htdPersonHTML(who){
 // every Nth", §4.2, §5; her "Yes, start step 5" 2026-11-18). Mom only. Every card or Rules tap writes ONE path through _hhWrite() (so
 // ?dryrun=1 writes nothing): a change to a wheel is household/rotations/<key>/v/<tomorrow> — it takes hold at the next day start, so a
 // kid's list never changes under them — and the grown-up turn is household/jobs/<id>/deepEvery. Switching an old rotation over is her
-// tap on a screen that first shows who is in the wheel, which rows change (who-can), which "Free day" rows are no longer needed and the
-// next 14 days the old way and the new way side by side (they must match, or it will not switch); then ONE multi-path update. The old
-// rows stay where they are as the wheel's seats (HOUSETURNS in index.html), so no check mark moves. ↩ Undo puts every row back exactly,
-// while the wheel is still as it was switched. Nothing here runs on load or on a draw. No real family's names.
+// tap on a screen that first shows who is in the wheel, that no chore row changes, which "Free day" rows are no longer needed and the
+// next 14 days the old way and the new way side by side (they must match, or it will not switch); then ONE multi-path update of the
+// wheel and its record — no chore row is written (her rule: the kids' checklists never silently change; ticking who-can could move a
+// chore when the plan is on, so the screen only suggests it). The old rows stay where they are as the wheel's seats (HOUSETURNS in
+// index.html), so no check mark moves. ↩ Undo removes the wheel again while it is still as switched. Nothing runs on load or a draw.
 let htSheet=null;   // the open switch screen: {id} = a row of the old rotation
 function htMom(){ return typeof momHere!=="function"||momHere(); }
 function htTk(){ return typeof hhTakeoverOn==="function"&&hhTakeoverOn(); }
@@ -1036,7 +1037,8 @@ function htDeep(id,n){ if(!htMom()) return null; const j=hhJobs()[id]; if(!j||!h
 // ── switching an old rotation over ──
 // The rotation as rtApplyRot sees it today: each kid's rows of it on that list, in roster order.
 function htGroup(slot,tag){ const out=[]; (typeof SL_KIDS!=="undefined"?SL_KIDS:ROSTER).forEach(function(k){ (((typeof routineCfg2!=="undefined"&&routineCfg2[slot])||{})[k]||[]).forEach(function(st){ if(st&&st.rot===tag) out.push({kid:k,id:st._hh||"",free:!!st.free}); }); }); return out; }
-// What the switch would do, worked out (nothing written): the wheel, the who-can rows it ticks, the Free day rows no longer needed,
+// What the switch would do, worked out (nothing written): the wheel, who is in it but not ticked under who-can (a suggestion only), the
+// Free day rows no longer needed,
 // and the next 14 days the old way and the new way by the engine's rotHolders (the lists' own formula: test_house_turns_convert.js).
 function htPlan(id){
   const J=hhJobs(), j0=J[id]; if(!j0||!j0.rot) return null; const slot=j0.slot, tag=j0.rot, M=htGroup(slot,tag), key=(typeof _rotKey==="function")?_rotKey(tag):tag, from=htTmr(), why=[];
@@ -1049,7 +1051,7 @@ function htPlan(id){
   const W=M.length?[M[0]].concat(M.slice(1).reverse()):[], people=W.map(function(m){ return m.kid; }), chores={}; W.forEach(function(m,i){ if(!m.free&&m.id) chores[m.id]=i; });   // the order a chore travels (rtApplyRot hands it to the kid before)
   if(!Object.keys(chores).length) why.push("It has no chore in it, only “Free day” rows.");
   const V={people:people,period:(typeof rtRotPeriod==="function")?rtRotPeriod(tag):"daily",chores:chores}, can={};
-  Object.keys(chores).forEach(function(c){ const j=J[c], cur=hhCanOf(j), add=people.filter(function(k){ return cur.indexOf(k)<0; }); if(add.length) can[c]={was:Array.isArray(j.can)?j.can.slice():false,now:hhCanOf(Object.assign({},j,{can:cur.concat(add)})),add:add}; });
+  Object.keys(chores).forEach(function(c){ const cur=hhCanOf(J[c]), add=people.filter(function(k){ return cur.indexOf(k)<0; }); if(add.length) can[c]=add; });
   const P=hpPeople(), ov0=hpOv(), R1=Object.assign({},ov0.rotations), days=[]; R1[key]={v:{},conv:{rot:tag,slot:slot}}; R1[key].v[from]=V; const ov1=Object.assign({},ov0,{rotations:R1});
   for(let d=0;d<14;d++){ const iso=_hhIsoOf(_hhDayNum(from)+d), a=HouseEng.rotHolders({jobs:J},iso,P,ov0), b=HouseEng.rotHolders({jobs:J},iso,P,ov1), o={}, n={};
     Object.keys(chores).forEach(function(c){ o[c]=a[c]||""; n[c]=b[c]||""; }); days.push({iso:iso,old:o,neu:n,same:JSON.stringify(o)===JSON.stringify(n)}); }
@@ -1057,26 +1059,20 @@ function htPlan(id){
   return {ok:!why.length,why:why,slot:slot,tag:tag,key:key,from:from,V:V,can:can,frees:M.filter(function(m){ return m.free; }),people:people,days:days}; }
 function htOpen(id){ if(!htMom()) return; htSheet={id:id}; hhRender(); }
 function htClose(){ htSheet=null; hhRender(); }
-// ✨ Switch: ONE multi-path update — the wheel from tomorrow, its record (with what the who-can rows were, for ↩ Undo), and the
-// who-can rows it ticks. Free day rows and every list row are left exactly where they are.
+// ✨ Switch: ONE multi-path update — the wheel from tomorrow and its record. No chore row, Free day row or list row is written.
 function htConvert(id){
   if(!htMom()) return null; const p=htPlan(id); if(!p) return null; if(!p.ok){ htToast(p.why[0]); return null; }
-  const J=hhJobs(), upd={}, R="household/rotations/"+p.key+"/", cv={at:Date.now(),from:p.from,rot:p.tag,slot:p.slot,by:"mom",v:p.V};
-  upd[R+"v/"+p.from]=p.V;
-  if(Object.keys(p.can).length){ cv.can={}; Object.keys(p.can).forEach(function(c){ cv.can[c]={was:p.can[c].was,now:p.can[c].now}; upd["household/jobs/"+c+"/can"]=p.can[c].now; J[c].can=p.can[c].now.slice(); }); }
-  upd[R+"conv"]=cv; householdData.rotations=Object.assign({},householdData.rotations); householdData.rotations[p.key]={v:{},conv:cv}; householdData.rotations[p.key].v[p.from]=p.V;
+  const upd={}, R="household/rotations/"+p.key+"/", cv={at:Date.now(),from:p.from,rot:p.tag,slot:p.slot,by:"mom",v:p.V};
+  upd[R+"v/"+p.from]=p.V; upd[R+"conv"]=cv; householdData.rotations=Object.assign({},householdData.rotations); householdData.rotations[p.key]={v:{},conv:cv}; householdData.rotations[p.key].v[p.from]=p.V;
   htSheet=null; householdOnValue(householdData); if(_hhWrite()) db.ref().update(upd); htToast("Switched — it starts tomorrow. Nothing changes on anyone’s list."); hhRender(); return upd; }
-// ↩ Undo: only while the wheel and the who-can rows are still exactly what the switch wrote; then every row goes back as it was.
-function htUndoWhy(key){ const n=htAll()[key], c=n&&n.conv; if(!c) return "Nothing to undo."; const v=n.v||{}, first=JSON.stringify(htCopy(c.v)), J=hhJobs(), arr=function(x){ return Array.isArray(x)?x:HouseEng.listOf(x); };
+// ↩ Undo: only while the wheel is still exactly what the switch wrote (then the old rotation's own reading is the same on every day).
+function htUndoWhy(key){ const n=htAll()[key], c=n&&n.conv; if(!c) return "Nothing to undo."; const v=n.v||{}, first=JSON.stringify(htCopy(c.v));
   if(!c.v||!v[c.from]||Object.keys(v).some(function(k){ return v[k]&&JSON.stringify(htCopy(v[k]))!==first; })) return "The turn was changed after the switch, so it cannot simply go back.";
-  if(Object.keys(c.can||{}).some(function(id){ return !J[id]||JSON.stringify(arr(J[id].can))!==JSON.stringify(arr(c.can[id].now)); })) return "Who can do it was changed after the switch, so it cannot simply go back.";
   return ""; }
 function htUndo(key){
   if(!htMom()||!htTk()) return null; const why=htUndoWhy(key); if(why){ htToast(why); return null; }
-  if(typeof confirm==="function"&&!confirm("Put this rotation back the old way?\n\nEvery row goes back exactly as it was. Nothing on anyone’s list changes.")) return null;
-  const n=htAll()[key], c=n.conv, J=hhJobs(), upd={};
-  Object.keys(n.v||{}).forEach(function(k){ upd["household/rotations/"+key+"/v/"+k]=null; }); upd["household/rotations/"+key+"/conv"]=null;
-  Object.keys(c.can||{}).forEach(function(id){ const was=c.can[id].was; upd["household/jobs/"+id+"/can"]=was||null; if(was) J[id].can=HouseEng.listOf(was); else delete J[id].can; });
+  if(typeof confirm==="function"&&!confirm("Put this rotation back the old way?\n\nThe chores go back to swapping between the kids’ rows. Nothing on anyone’s list changes.")) return null;
+  const n=htAll()[key], upd={}; Object.keys(n.v||{}).forEach(function(k){ upd["household/rotations/"+key+"/v/"+k]=null; }); upd["household/rotations/"+key+"/conv"]=null;
   householdData.rotations=Object.assign({},householdData.rotations); delete householdData.rotations[key];
   householdOnValue(householdData); if(_hhWrite()) db.ref().update(upd); htToast("Back the old way."); hhRender(); return upd; }
 // ── whose turn, worked out for the card and the room grid (nothing stored) ──
@@ -1115,6 +1111,7 @@ function htWhoHTML(id){
     h+=lbl('Turns together with',(others.length?others.map(function(x){ return _hcChip(false,esc((J[x].emoji?J[x].emoji+" ":"")+J[x].label),"hcOpen('"+x+"')"); }).join(''):'<span style="font-size:12px">nothing else</span>')+(free>0?' <span style="font-size:11px;color:var(--muted)">· '+free+' free turn'+(free===1?'':'s')+' a day</span>':''));
     h+=lbl('Whose turn',htNext(id,w).filter(function(x){ return x.who; }).map(function(x,i){ return '<span style="font-size:11.5px;font-weight:800;color:'+hhRmCol(x.who)+'">'+(i?hpDay(x.iso).split(" ")[0]:'Today')+' '+esc(hhWhoName(x.who))+'</span>'; }).join(' · ')||'<span style="font-size:12px;color:var(--muted)">—</span>');
     if(w.iso>hpToday()) h+=note('Changes start '+hpDay(w.iso)+'. Today’s lists stay as they are.');
+    const unt=P.filter(function(k){ return hhCanOf(j).indexOf(k)<0; }); if(unt.length) h+=note('Not ticked under “Who else can do it”: '+unt.map(hhWhoName).map(esc).join(', ')+' — tick them if they may cover for each other when the plan is on.');
     h+=note(w.conv?'Switched from the old rotation. Each kid keeps their own row on their list, and it shows the chore that is theirs that day — so no check mark moves.':(hhEngineMode()==="on"?'The day’s plan gives it to whoever’s turn it is.':'Shown here and in the 🔭 preview. The kids’ lists follow when the plan is switched on (👤 By person).'));
     if(!htTk()) h+=note('Changes need 🏡 Take over on.'); }
   else if(htCan(j)){ h+=lbl('Takes turns',htCtl(id,"turns"));
@@ -1144,10 +1141,10 @@ function htSheetHTML(){
   h+='<div style="font-size:12px;color:var(--muted);margin-top:6px">Now each kid has a row on their '+esc(list)+' list and the chores swap between those rows. After the switch the same chores go round a wheel you change on each chore’s card: who is in it, the order, how often it changes, and a grown-up turn.</div>';
   h+=sec('Who takes turns')+li('<b>'+p.people.map(nm).join(' → ')+'</b> · changes '+esc(String(per).toLowerCase()));
   h+=sec('The chores')+li(ids.map(function(c){ return '<b>'+esc((J[c].emoji?J[c].emoji+" ":"")+J[c].label)+'</b>'; }).join(' · ')+(p.people.length>ids.length?' <span style="color:var(--muted)">· '+(p.people.length-ids.length)+' free turn'+(p.people.length-ids.length===1?'':'s')+' a day</span>':''));
-  h+=sec('What changes in the table');
-  Object.keys(p.can).forEach(function(c){ h+=li('✔ '+esc(J[c].label)+': '+p.can[c].add.map(nm).join(' and ')+' ticked under “Who else can do it”.'); });
+  h+=sec('What changes in the table')+li('No chore row changes. One new record: the wheel above.');
   if(p.frees.length) h+=li('😌 The “Free day” row'+(p.frees.length>1?'s':'')+' of '+p.frees.map(function(m){ return nm(m.kid); }).join(' and ')+': not needed any more (a wheel can have more people than chores). '+(p.frees.length>1?'They stay':'It stays')+' out of sight on '+(p.frees.length>1?'those lists':'that list')+', so no check mark moves.');
-  h+=li('Nothing else. Every row stays where it is on every list.');
+  h+=li('Every row stays where it is on every list.');
+  if(Object.keys(p.can).length) h+=li('<span style="color:var(--muted)">Later, if you want, tick the kids in the turn under “Who else can do it” on each chore, so that when the plan is on and someone is out of minutes another kid in the turn can take it. Not ticked: '+Object.keys(p.can).map(function(c){ return esc(J[c].label)+' — '+p.can[c].map(nm).join(', '); }).join(' · ')+'.</span>');
   h+=sec('The next 14 days — today’s way and the new way')+'<div style="overflow:auto;margin-top:6px"><table style="border-collapse:collapse;font-size:11px;min-width:100%"><tr><th style="text-align:left;padding:3px 5px;border-bottom:1px solid #e5e7eb">Day</th>'+ids.map(function(c){ return '<th style="text-align:left;padding:3px 5px;border-bottom:1px solid #e5e7eb">'+esc(J[c].emoji||'☐')+' '+esc(J[c].label)+'</th>'; }).join('')+'<th style="padding:3px 5px;border-bottom:1px solid #e5e7eb"></th></tr>';
   p.days.forEach(function(d){ h+='<tr><td style="padding:3px 5px;font-weight:800;white-space:nowrap">'+hpDay(d.iso)+'</td>'+ids.map(function(c){ const a=d.old[c], b=d.neu[c]; return '<td style="padding:3px 5px;white-space:nowrap">'+(a===b?(a?'<span style="color:'+hhRmCol(a)+';font-weight:800">'+nm(a)+'</span>':'—'):'<span style="color:#b91c1c;font-weight:800">'+(a?nm(a):'—')+' → '+(b?nm(b):'—')+'</span>')+'</td>'; }).join('')+'<td style="padding:3px 5px">'+(d.same?'✓':'✗')+'</td></tr>'; });
   h+='</table></div>'+li(p.days.every(function(d){ return d.same; })?'✓ The same kid has the same chore on every one of those days.':'<b style="color:#b91c1c">Not the same every day.</b>');
