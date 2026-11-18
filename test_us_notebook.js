@@ -84,11 +84,11 @@ console.log("── the pages ──");
 const gen = (kid, us, ex) => NB.generate(kid, mk(kid, [USINS(us)], ex)).student;
 const text = h => h.replace(/<img[^>]*>/g, "").replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&lt;/g, "<");
 { const p1 = pageOf(gen("julian", usRec(1, "Pre-K")), 1), p1b = pageOf(gen("lincoln", usRec(1, "6th Grade")), 1);
-  ok("Stage 1: an outline flag (13 stripes, 50 stars, all white) and a Liberty Bell to colour", (p1.match(/<rect [^>]*height="[\d.]+" fill="#fff"/g) || []).length >= 13 && (p1.match(/<polygon /g) || []).length === 50 && !/fill="#(b91c1c|1e3a8a|dc2626)"/.test(p1.slice(p1.indexOf("<svg"))) && /Liberty Bell/.test(p1));
+  ok("Stage 1: an outline flag (13 stripes, 50 stars, all white) and a Liberty Bell to color", (p1.match(/<rect [^>]*height="[\d.]+" fill="#fff"/g) || []).length >= 13 && (p1.match(/<polygon /g) || []).length === 50 && !/fill="#(b91c1c|1e3a8a|dc2626)"/.test(p1.slice(p1.indexOf("<svg"))) && /Liberty Bell/.test(p1));
   ok("…Pre-K traces “USA”; an older kid writes how many stripes and stars (numbers not printed)", /#U#S#A/.test(p1) && !/#U#S#A/.test(p1b) && /stripes\./.test(text(p1b)) && !/\b13 stripes|\b50 stars/.test(text(p1b))); }
 { const us = usRec(2, "1st Grade"), p2 = pageOf(gen("lucy", us), 2), shown = us.cards.filter(c => c.deck === "American Holidays" && c.status).slice(0, 5);
   ok("Stage 2: this week's holidays (learning, then review), all 12 months, a line to draw", shown.every(c => p2.indexOf(c.name.replace(/'/g, "'")) >= 0) && ["January", "June", "December"].every(m => p2.indexOf(m) >= 0) && /Draw a line/.test(p2));
-  ok("…1st grade traces the Pledge's first words; 4th grade writes about a favourite holiday", /#I #p#l#e#d#g#e/.test(p2) && !/#I #p#l#e#d#g#e/.test(pageOf(gen("ellis", usRec(2, "4th Grade")), 2)) && /favourite holiday/.test(pageOf(gen("ellis", usRec(2, "4th Grade")), 2)));
+  ok("…1st grade traces the Pledge's first words; 4th grade writes about a favorite holiday", /#I #p#l#e#d#g#e/.test(p2) && !/#I #p#l#e#d#g#e/.test(pageOf(gen("ellis", usRec(2, "4th Grade")), 2)) && /favorite holiday/.test(pageOf(gen("ellis", usRec(2, "4th Grade")), 2)));
   ok("…the month each holiday falls in is never printed beside it", !/· (January|February|May|June|July|September|October|November|December)/.test(p2)); }
 { const us = usRec(3, "6th Grade"), p3 = pageOf(gen("lincoln", us), 3), ppl = us.cards.filter(c => c.deck === "Famous Americans" && c.status).slice(0, 4);
   ok("Stage 3: up to four of this week's Americans, portrait + name + lines; what they did is not printed", ppl.length === 4 && ppl.every(c => p3.indexOf(c.name) >= 0 && p3.indexOf(c.def.slice(0, 30)) < 0) && (p3.match(/<img /g) || []).length === 4);
@@ -114,6 +114,8 @@ const text = h => h.replace(/<img[^>]*>/g, "").replace(/<[^>]+>/g, " ").replace(
   ok("…a kid just starting (3 learning) gets those 3, not questions they haven't met", (pageOf(gen("lincoln", few), 10).match(/font-size:12\.5px;font-weight:700;line-height:1\.3">/g) || []).length === 3); }
 { const p2o = pageOf(gen("lucy", usRec(2, "1st Grade", { noPics: true })), 2), p3o = pageOf(gen("lucy", usRec(3, "1st Grade", { noPics: true })), 3);
   ok("pictures not loaded: holidays show 🎉, Americans print without a portrait — no empty picture box", !/<img /.test(p2o) && (p2o.match(/🎉/g) || []).length === 5 && !/<img /.test(p3o) && /Pocahontas/.test(p3o)); }
+
+ok("American spelling on every US page (the rest of the notebook says “color”, “favorite”): no “colour”, no “favourite”", (() => { let all = ""; GENS.forEach(([kid, ex]) => BUILT.forEach(n => { all += pageOf(gen(kid, usRec(n, GRADE[kid]), ex), n) || ""; all += pageOf(gen(kid, usRec(n, GRADE[kid], { noPics: true }), ex), n) || ""; })); return all.length > 100000 && !/olour|avourite/i.test(all) && /Color the Flag/.test(all) && /favorite holiday/.test(all); })());
 
 console.log("── the Memory Work page ──");
 const mw = h => { const i = h.indexOf("Memory Work &amp; Civics"); const a = h.lastIndexOf('<div class="page', i); return h.slice(a, h.indexOf("I Can Recite These", i) + 2000); };

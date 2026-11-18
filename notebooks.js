@@ -3705,7 +3705,7 @@ ${extraStrip || ""}
   // via the hub: "Yes, start it"). The app hands each enrolled kid's US Path insert an `us` record (index.html USNB: usNbCtx —
   // {stage, label, grade, cards:[{deck, name, family, order, def, status:"learning"|"review"|"", img}]}, the stage's cards with
   // the pictures us.js put on the unit IN MEMORY) and this prints ONE page for the kid's stage, after the unit's usual insert:
-  //   1 Colour the flag (+ the Liberty Bell; Pre-K/K trace "USA") · 2 My holiday calendar (line to the month; to 1st grade, trace
+  //   1 Color the flag (+ the Liberty Bell; Pre-K/K trace "USA") · 2 My holiday calendar (line to the month; to 1st grade, trace
   //   the Pledge's first line) · 3 Who am I? (this week's Americans: lines, or a drawing box to 1st grade) · 4 The three branches
   //   tree + How a bill becomes a law (word banks) · 6 Bill of Rights match-up (number ↔ picture) + "Which amendment…?" ·
   //   7 Presidents timeline (this week's era: portrait, number, years printed, the name to write) · 10 Citizen's quiz (10 of the
@@ -3761,7 +3761,7 @@ ${extraStrip || ""}
       '<span style="font-size:10px;font-weight:800;color:' + T.GOLDD + ';letter-spacing:0.08em;text-transform:uppercase;align-self:center;margin-right:2px">Word bank</span>' +
       words.map(function (w) { return '<span style="border:1.5px solid ' + T.GL + ';background:#fff;border-radius:7px;padding:2px 8px;font-size:12px;font-weight:700">' + usNbEsc(w) + '</span>'; }).join("") + '</div>';
   }
-  // ── the outline drawings (colour-in) ──
+  // ── the outline drawings (color-in) ──
   function usNbFlagSvg(w) {
     var h = Math.round(w / 1.9), sh = h / 13, cw = w * 0.4, ch = sh * 7, s = "";
     for (var i = 0; i < 13; i++) s += '<rect x="0" y="' + (i * sh).toFixed(1) + '" width="' + w + '" height="' + sh.toFixed(1) + '" fill="#fff" stroke="#1c1c1e" stroke-width="1.6"/>';
@@ -3785,20 +3785,20 @@ ${extraStrip || ""}
       '<path d="M104 128 L98 146 L108 158 L100 176 L106 186" fill="none" stroke="' + k + '" stroke-width="3"/>' +   // the crack
       '<circle cx="100" cy="206" r="8" fill="#fff" stroke="' + k + '" stroke-width="3"/></svg>';
   }
-  // ── Stage 1 · Colour the flag ──
+  // ── Stage 1 · Color the flag ──
   function usNbStage1(us, T, wn, g) {
     var little = g != null && g <= 0, body = "";
-    body += usNbLead(T, "🖍 Colour our flag") + usNbNote("Colour the top stripe red, the next one white, and keep going — red, white, red, white — all the way down. Colour the box blue and leave the stars white.");
+    body += usNbLead(T, "🖍 Color our flag") + usNbNote("Color the top stripe red, the next one white, and keep going — red, white, red, white — all the way down. Color the box blue and leave the stars white.");
     body += '<div style="display:flex;justify-content:center">' + usNbFlagSvg(560) + '</div>';
     body += '<div style="display:flex;gap:18px;align-items:center">' +
       '<div style="flex-shrink:0">' + usNbBellSvg(190) + '</div>' +
-      '<div style="flex:1;display:flex;flex-direction:column;gap:10px">' + usNbLead(T, "🔔 Colour the Liberty Bell") +
-      usNbNote("It rang in Philadelphia for freedom. Colour it brown or gold — and don't forget its crack!") +
+      '<div style="flex:1;display:flex;flex-direction:column;gap:10px">' + usNbLead(T, "🔔 Color the Liberty Bell") +
+      usNbNote("It rang in Philadelphia for freedom. Color it brown or gold — and don't forget its crack!") +
       (little ? '<div style="margin-top:6px">' + usNbLead(T, "✏️ Trace it") + usNbTrace("USA USA", 64, "#a8a29e") + '</div>'
         : '<div style="font-size:13px;line-height:2.1;margin-top:4px">Our flag has ' + usNbBlank(70, T.GL) + ' stripes.<br>It has ' + usNbBlank(70, T.GL) + ' stars — one for each ' + usNbBlank(120, T.GL) + '.</div>') +
       '</div></div>';
     body += '<div style="flex:1;min-height:120px;display:flex;flex-direction:column;gap:5px">' + usNbLead(T, "🎨 Draw our flag waving in the wind") + '<div style="flex:1;border:2px dashed ' + T.GL + ';border-radius:12px;background:#fff"></div></div>';
-    return usNbPage(us, T, wn, "🇺🇸 Colour the Flag", body);
+    return usNbPage(us, T, wn, "🇺🇸 Color the Flag", body);
   }
   // ── Stage 2 · My holiday calendar ──
   var US_NB_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -3812,9 +3812,9 @@ ${extraStrip || ""}
     var right = US_NB_MONTHS.map(function (m) { return '<div style="display:flex;align-items:center;gap:8px;height:38px"><span style="width:11px;height:11px;border-radius:50%;border:2px solid ' + T.GM + ';flex-shrink:0"></span><span style="border:1.5px solid ' + T.GL + ';background:#fff;border-radius:7px;padding:3px 10px;font-size:13px;font-weight:700;min-width:118px">' + m + '</span></div>'; }).join("");
     var body = usNbLead(T, "🗓 Which month is it in?") + usNbNote("Draw a line from each holiday to the month it comes in.") +
       '<div style="display:grid;grid-template-columns:1.25fr 0.35fr 1fr;align-items:center"><div>' + left + '</div><div></div><div>' + right + '</div></div>';
-    body += '<div style="flex:1;min-height:110px;display:flex;flex-direction:column;gap:5px">' + usNbLead(T, little ? "🎨 Draw how your family celebrates one of them" : "⭐ My favourite holiday") +
+    body += '<div style="flex:1;min-height:110px;display:flex;flex-direction:column;gap:5px">' + usNbLead(T, little ? "🎨 Draw how your family celebrates one of them" : "⭐ My favorite holiday") +
       (little ? '<div style="flex:1;border:2px dashed ' + T.GL + ';border-radius:12px;background:#fff"></div>'
-        : '<div style="font-size:12.5px;line-height:1.5">My favourite holiday is ' + usNbBlank(190, T.GL) + ' because…</div><div style="flex:1;' + usNbRuled(T.GL) + '"></div>') + '</div>';
+        : '<div style="font-size:12.5px;line-height:1.5">My favorite holiday is ' + usNbBlank(190, T.GL) + ' because…</div><div style="flex:1;' + usNbRuled(T.GL) + '"></div>') + '</div>';
     if (little) body += '<div style="border:1.5px solid ' + T.GL + ';background:' + T.GP + ';border-radius:11px;padding:8px 14px">' + usNbLead(T, "✋ Trace the Pledge's first words") + usNbTrace("I pledge allegiance", 40, "#a8a29e") + usNbTrace("to the Flag", 40, "#a8a29e") + '</div>';
     return usNbPage(us, T, wn, "🎆 My Holiday Calendar", body);
   }
