@@ -366,14 +366,14 @@ function hhRoomsPageHTML(){
   h+=pill(!hhRmSel&&!hhRmEditing,'🏠 Whole house',"hhRmGo('')")+(mom?pill(hhRmEditing,'🚪 Edit rooms',"hhRmEditToggle()",'#6B4C93'):'')+'</div>';
   G.forEach(function(g,i){ if(!isOpen(g[0],i)) return; const rs=L.filter(function(r){ return r[2]===g[0]; }); h+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px;padding-left:6px">'+(rs.length?rs.map(chip).join(''):'<span style="font-size:11px;color:var(--muted)">No rooms in '+esc(g[1])+' yet.</span>')+'</div>'; });
   if(hhRmEditing&&mom) return h+hhRmEditHTML();
-  if(!hhRmSel) return h+hhRmHouseHTML(byRoom)+(typeof hhRoomsTailHTML==="function"?hhRoomsTailHTML():'');
+  if(!hhRmSel) return h+(typeof hwCardHTML==="function"?hwCardHTML():'')+hhRmHouseHTML(byRoom)+(typeof hhRoomsTailHTML==="function"?hhRoomsTailHTML():'');   // HOUSEWEEK: 📅 the week, set to Everything
   const none=hhRmSel==="__none", r=none?null:L.find(function(x){ return x[0]===hhRmSel; }), ids=byRoom[hhRmSel]||[], s=hhRoomStats(ids);
   h+='<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:4px 2px 8px"><span style="font-size:16px;font-weight:800">'+(none?'❔ No room':hhRoomEmoji(r[0])+' '+esc(r[1]))+'</span><span style="font-size:12px;color:var(--muted);font-weight:700">'+s.n+' chore'+(s.n===1?'':'s')+' · '+s.mins+' min a week · on time '+(s.pct===null?'–':s.pct+'%')+'</span></div>';
   if(none) h+='<div style="font-size:11px;color:var(--muted);margin:-4px 2px 8px">These chores are filed under a room that is no longer on your list. Open ✎ Edit to give each one a room.</div>';
   if(!none&&typeof rnNowHTML==="function"&&typeof rtdHTML==="function") h+=rnNowHTML(hhRmSel)+rtdHTML(hhRmSel);   // ROOMNOW · ROOMTODO: 🔴 Now and 📝 To do, a single room only
   if(mom&&typeof hcRoomToolsHTML==="function") h+=hcRoomToolsHTML(hhRmSel,ids);   // HH_CARD: 🔍 Checks · ⚙ Rules
   if(!ids.length) return h+'<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:10px 12px;font-size:12px;color:var(--muted)">No chores in this room yet. Give a chore this room in its ✎ Edit.</div>';
-  return h+hhRoomGridHTML(hhRmSel,ids)+(typeof hhRoomsTailHTML==="function"?hhRoomsTailHTML():'');
+  return h+(typeof hwRoomHTML==="function"?hwRoomHTML(hhRmSel,ids):hhRoomGridHTML(hhRmSel,ids))+(typeof hhRoomsTailHTML==="function"?hhRoomsTailHTML():'');   // HOUSEWEEK: 📅 the week, then the big grid folded
 }
 // HH_ROOMPAGE_END
 // HH_CARD_START — the chore card, the room ⚙ Rules table and 🔍 Checks (Household by room, step 2 of DESIGN_household_rooms_2026-11-15
@@ -639,6 +639,7 @@ function hpPersonHTML(){
       h+='<div style="display:flex;align-items:center;gap:8px;padding:5px 12px;border-top:1px solid #f3f4f6;font-size:12px"><span style="width:62px;font-weight:800;color:'+(p.iso===today?'#2B7A78':'#475569')+'">'+hpDay(p.iso)+'</span>'+hpBar(p.used[who],p.limit[who])+'<span style="width:58px;text-align:right;font-weight:700">'+p.used[who]+' / '+p.limit[who]+'</span></div>'
         +(mv.length?'<div style="padding:0 12px 5px 82px;font-size:11px;color:#475569">'+Object.keys(cnt).map(function(t){ return hpMovedTxt({to:t})+(cnt[t]>1?' ×'+cnt[t]:''); }).join(' · ')+'</div>':''); });
     h+='</div>'; }
+  h+=(typeof hwCardHTML==="function")?hwCardHTML():'';   // HOUSEWEEK: 📅 the week, set to this person
   h+=hpSettingsHTML(who);
   h+='<div style="font-size:14px;font-weight:800;margin:4px 2px 6px">📈 Habits</div>'+hhHabitsHTML(who);
   return h;
@@ -765,6 +766,110 @@ function rtdTick(id){
   if(typeof renderAll==="function") renderAll(); else hhRender(); return upd;
 }
 // ROOMTODO_END
+// HOUSEWEEK_START — 📅 Schedule: ONE week card with a filter, on every room page, 🏠 Whole house and 👤 By person
+// (DESIGN_now_todo_schedule_2026-11-17 §2 "Schedule", §3 and §5 row B; her "Yes, start B" 2026-11-17, with her picks: one schedule
+// drawn by one piece of code, each page opens it set to itself; keep the room's big grid, folded shut under the week, decide later).
+// Chips Everything · 🧺 Laundry · 🚪 Room ▾ · 👤 Person ▾ and ‹ week › (Mon–Sun, today outlined). A day box: laundry loads first
+// (Everything), then each chore that is not daily on its own short line (who in their colour, ✓ when done), then the dailies folded
+// into one line ("6 daily · 5 ✓"); a tap on the day opens everything on it under the week, a tap on a chore opens its card (hcOpen),
+// a tap on a load opens 🧺 Laundry (hhGo). Where each day reads from, so it agrees with the page: past days = the room grid's own
+// squares (hhRmCell: the Click-off Log, the cleaning days); today = 🔴 Now's rows (rnRows: today's stored plan when the plan is ON and
+// stored, else the lists); after today = the plan's run (hpRun, memoised, 29 days; dashed while it is a preview) — with the plan off
+// nothing is worked out ahead (the grid draws no days ahead then either) and the engine is not run. 🧺 Laundry = the laundry code's
+// own week (llWeekGridHTML, its read-only form: no 🫧 Start / ✓ Done here) with its own ‹ ›. A VIEW: the filter, the week, the open
+// day and the grid's fold are plain variables; nothing here writes, on a draw or on any tap.
+let hwKey="", hwF=null, hwWk=0, hwDay="", hwGrid={};
+const HW_BACK=8, HW_RUN=29, HW_BOX=6, HW_MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+// The page's own setting: a room page → that room; 👤 By person → that person; 🏠 Whole house → Everything.
+function hwHome(){ if(hhView==="person") return {key:"p|"+hpSel,f:{k:"who",id:hpSel}};
+  if(hhView==="rooms"&&hhRmSel&&hhRmSel!=="__none") return {key:"r|"+hhRmSel,f:{k:"room",id:hhRmSel}}; return {key:"h|"+hhView+"|"+hhRmSel,f:{k:"all"}}; }
+// Another room, person or page → back to that page's own setting, this week, no day open.
+function hwFilter(){ const p=hwHome(); if(p.key!==hwKey||!hwF){ hwKey=p.key; hwF=p.f; hwWk=0; hwDay=""; } return hwF; }
+function hwPick(k,id){ hwFilter(); if(k==="room"&&!hhRoomList().some(function(r){ return r[0]===id; })) return; if(k==="who"&&hpWho().indexOf(id)<0) return;
+  if(k!=="all"&&k!=="laundry"&&k!=="room"&&k!=="who") return; hwF=(k==="all"||k==="laundry")?{k:k}:{k:k,id:id}; hwDay=""; hhRender(); }
+// Back 8 weeks (the grid's longest look back, the history's 8 weeks); forward to the week of the plan's last day (29 days); plan off → this week.
+function hwBounds(){ return [-HW_BACK,hhEngineMode()==="off"?0:Math.floor((_hhDow(hpToday())+HW_RUN-1)/7)]; }
+function hwWeek(d){ hwFilter(); const b=hwBounds(); hwWk=Math.max(b[0],Math.min(b[1],hwWk+d)); hwDay=""; hhRender(); }
+function hwDayTap(iso){ hwDay=(hwDay===iso)?"":String(iso); hhRender(); }
+function hwGridToggle(rid){ hwGrid[rid]=!hwGrid[rid]; hhRender(); }
+function hwToLaundry(){ hwKey=""; if(typeof hhGo==="function") hhGo("laundry"); }   // the page's own 🧺 Laundry chip
+function hwIds(f){ const B=hhRoomChores(); if(f.k==="room") return (B[f.id]||[]).slice(); return Object.keys(B).reduce(function(a,r){ return a.concat(B[r]); },[]); }
+function hwWho(m,f){ if(f.k!=="who") return m; const out={}; Object.keys(m).forEach(function(id){ if(m[id].who===f.id&&!m[id].over) out[id]=m[id]; }); return out; }
+// Today = the 🔴 Now card's rows, room by room ("" and "__none" = the chores in no room: the plan's and the lists').
+function hwToday(f){ const out={}; (f.k==="room"?[f.id]:hhRoomList().map(function(r){ return r[0]; }).concat(["__none",""])).forEach(function(rid){ const R=rnRows(rid);
+    R.rows.forEach(function(x){ out[x.id]={who:x.who,done:!!x.done,late:x.late||0,skip:!!x.skip}; }); R.over.forEach(function(o){ out[o.id]={who:o.turn,done:false,over:true}; }); });
+  return hwWho(out,f); }
+// One day's squares for this filter, {id: {who, done, fut, over, late, skip}}; null = not worked out (plan off, or past its reach).
+function hwCells(iso,f,X){
+  if(iso<X.t){ const out={}; X.ids.forEach(function(id){ const c=hhRmCell(id,iso,X.t,X.S,X.rc); if(c) out[id]={who:c.who,done:!!c.done}; }); return hwWho(out,f); }
+  if(iso===X.t) return X.td||(X.td=hwToday(f));
+  const p=X.run&&X.run[_hhDayNum(iso)-_hhDayNum(X.t)]; if(!p) return null; const inS={}, out={}; X.ids.forEach(function(id){ inS[id]=1; });
+  Object.keys(p.plan).forEach(function(id){ if(!inS[id]) return; const x=p.plan[id]; out[id]={who:x.who,done:false,fut:true,late:x.late||0,from:x.from||""}; });
+  p.over.forEach(function(o){ if(inS[o.id]) out[o.id]={who:o.turn,done:false,fut:true,over:true,late:o.late||0}; }); return hwWho(out,f); }
+// The laundry line's loads on a day (Everything): what really went in on a past day (llLog), else the line's lay (llProject) — the
+// laundry schedule's own two sources, read the way llWeekGridHTML reads them.
+function hwLL(t,wk){ try{ if(typeof llWeekGridHTML!=="function"||typeof laundryLine==="undefined") return null; const by={};
+  if(wk>=0) llProject(t,7*(wk+1)-llDow(t),llNowMin()>=LL_SWEEP_MIN).forEach(function(r){ by[r.iso]=r; }); return {it:llAll(),by:by}; }catch(e){ return null; } }
+function hwLoads(iso,X){ const L=X.ll; if(!L) return []; let out=[]; try{
+  const one=function(id,mark,r){ return L.it[id]?{emoji:L.it[id].emoji||'🧺',name:(r&&r.sh&&r.sh[id])||llShortFull(id),mark:mark}:null; };
+  out=llJumps(iso).map(function(j){ return {emoji:'💦',name:String(j.label).replace(/^💦\s*/,"").replace(/\s·.*$/,""),mark:""}; });
+  if(iso<X.t) return out.concat(llLog(iso).map(function(id){ return one(id,"done"); }).filter(Boolean));
+  const r=L.by[iso]; if(r) out=out.concat(r.loads.map(function(id){ return one(id,r.started.indexOf(id)>=0?"done":(r.moved.indexOf(id)>=0||r.waited.indexOf(id)>=0)?"moved":"",r); }).filter(Boolean));
+  }catch(e){} return out; }
+const HW_LANE={weekly:1,few:2,season:3,once:4,daily:5};
+function hwOrder(J,cells){ return Object.keys(cells).filter(function(id){ return J[id]; }).sort(function(a,b){ return (HW_LANE[hhLaneOf(J[a])]-HW_LANE[hhLaneOf(J[b])])||((J[a].order||0)-(J[b].order||0))||String(J[a].label).localeCompare(String(J[b].label))||(a<b?-1:1); }); }
+// Who, as the room grid draws a square: pale = not done; ✓ done; dashed = the preview; "Grab" = it would fit nobody.
+function hwSq(c,mode,full){ if(c.over||(c.fut&&mode==="preview")) return hpSqHTML(c,full); return _hhRmSq({who:c.who,done:c.done},full)+(c.late?' <span style="font-size:10px;font-weight:800;color:#dc2626">'+(c.late<0?'late':c.late+'d')+'</span>':''); }
+function hwWeekLbl(mon,sun){ const m=function(iso){ return HW_MON[+iso.slice(5,7)-1]; }; return m(mon)+' '+(+mon.slice(8))+' – '+(m(sun)===m(mon)?'':m(sun)+' ')+(+sun.slice(8)); }
+// The week's seven days for a filter: [{iso, cells, loads}]. The engine only when a day after today is shown and the plan is not off.
+function hwWeekData(f,wk){ const t=hpToday(), mode=hhEngineMode(), mon=_hhIsoOf(_hhDayNum(t)-_hhDow(t)+7*wk), days=[0,1,2,3,4,5,6].map(function(d){ return _hhIsoOf(_hhDayNum(mon)+d); });
+  const X={t:t,S:hhLogState(),rc:{},ids:hwIds(f),run:(mode!=="off"&&days[6]>t)?(function(){ try{ return hpRun(); }catch(e){ return null; } })():null,ll:f.k==="all"?hwLL(t,wk):null};
+  return days.map(function(iso){ return {iso:iso,cells:hwCells(iso,f,X),loads:hwLoads(iso,X)}; }); }
+function hwCardHTML(){
+  const f=hwFilter(), mode=hhEngineMode(), mom=hcMom(), J=hhJobs(), t=hpToday(), b=hwBounds(); hwWk=Math.max(b[0],Math.min(b[1],hwWk));
+  const mon=_hhIsoOf(_hhDayNum(t)-_hhDow(t)+7*hwWk), days=[0,1,2,3,4,5,6].map(function(d){ return _hhIsoOf(_hhDayNum(mon)+d); }), lau=f.k==="laundry";
+  const pill=function(on,txt,click){ return '<button onclick="'+click+'" style="padding:5px 10px;border-radius:20px;border:1.5px solid '+(on?'#2B7A78':'#cbd5e1')+';background:'+(on?'#2B7A78':'#fff')+';color:'+(on?'#fff':'#334155')+';font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+txt+'</button>'; };
+  const pick=function(k,on,lbl,opts){ return '<select onchange="hwPick(\''+k+'\',this.value)" style="padding:5px 8px;border-radius:20px;border:1.5px solid '+(on?'#2B7A78':'#cbd5e1')+';background:'+(on?'#2B7A78':'#fff')+';color:'+(on?'#fff':'#334155')+';font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;max-width:46vw"><option value="">'+lbl+'</option>'+opts.map(function(o){ return '<option value="'+esc(o[0])+'"'+(on&&f.id===o[0]?' selected':'')+'>'+esc(o[1])+'</option>'; }).join('')+'</select>'; };
+  const nb=function(d,txt,dis){ return '<button onclick="hwWeek('+d+')"'+(dis?' disabled':'')+' style="padding:1px 9px;border-radius:7px;border:1px solid #cbd5e1;background:#fff;font-size:13px;font-weight:800;cursor:pointer;'+(dis?'opacity:.3':'')+'">'+txt+'</button>'; };
+  let h='<div style="'+HP_CARD+'"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:9px 12px 4px"><span style="font-size:14px;font-weight:800;flex:1">📅 Schedule</span>'
+    +(lau?'':nb(-1,'‹',hwWk<=b[0])+'<span style="font-size:11.5px;font-weight:800;white-space:nowrap">'+hwWeekLbl(days[0],days[6])+'</span>'+nb(1,'›',hwWk>=b[1]))+'</div>';
+  h+='<div style="display:flex;gap:5px;flex-wrap:wrap;padding:2px 12px 8px">'+pill(f.k==="all",'Everything',"hwPick('all')")+pill(lau,'🧺 Laundry',"hwPick('laundry')")
+    +pick("room",f.k==="room",'🚪 Room ▾',hhRoomList().map(function(r){ return [r[0],hhRoomEmoji(r[0])+' '+r[1]]; }))+pick("who",f.k==="who",'👤 Person ▾',hpWho().map(function(w){ return [w,hhWhoName(w)]; }))+'</div>';
+  if(lau){ let g=''; try{ g=llWeekGridHTML(llToday(),llNowMin()>=LL_SWEEP_MIN,false); }catch(e){ g=''; }
+    return h+'<div style="padding:0 12px 10px">'+(g||'<div style="font-size:12px;color:var(--muted)">The laundry schedule is not loaded on this page yet. Open 🧺 Laundry.</div>')+'</div></div>'; }
+  const D=hwWeekData(f,hwWk);
+  h+='<div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;padding:0 8px">';
+  D.forEach(function(d,i){ const iso=d.iso, now=iso===t, past=iso<t, ids=d.cells?hwOrder(J,d.cells):[], dly=ids.filter(function(id){ return hhLaneOf(J[id])==="daily"; }), rest=ids.filter(function(id){ return hhLaneOf(J[id])!=="daily"; });
+    const lines=d.loads.map(function(l){ return '<div onclick="event.stopPropagation();hwToLaundry()" title="Open 🧺 Laundry" style="font-size:10px;line-height:1.25;padding:1px 2px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer'+(l.mark==="moved"?';opacity:.45':'')+'">'+esc(l.emoji)+' '+(l.mark==="moved"?'→ ':'')+esc(l.name)+(l.mark==="done"?' <span style="color:#16a34a">✓</span>':'')+'</div>'; })
+      .concat(rest.map(function(id){ const j=J[id]; return '<div'+(mom?' onclick="event.stopPropagation();hcOpen(\''+id+'\')"':'')+' title="'+esc(j.label)+'" style="display:flex;gap:2px;align-items:baseline;font-size:10px;line-height:1.25;padding:1px 2px;min-width:0'+(mom?';cursor:pointer':'')+'"><span>'+esc(j.emoji||'☐')+'</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">'+esc(j.label)+'</span>'+hwSq(d.cells[id],mode,false)+'</div>'; }));
+    const nd=dly.filter(function(id){ return d.cells[id].done; }).length;
+    h+='<div onclick="hwDayTap(\''+iso+'\')" style="border:1.5px solid '+(hwDay===iso?'#0e7490':now?'#2B7A78':'#eef2f0')+';border-radius:8px;padding:4px 2px;min-height:64px;min-width:0;cursor:pointer;background:'+(past?'#f8fafc':now?'#f0fdfa':'#fff')+'">'
+      +'<div style="text-align:center;font-size:10px;color:'+(now?'#2B7A78':'#6b6560')+';font-weight:'+(now?'800':'600')+'">'+(now?'Today':["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][i])+'<div style="font-weight:400">'+(+iso.slice(5,7))+'/'+(+iso.slice(8))+'</div></div>'
+      +lines.slice(0,HW_BOX).join('')+(lines.length>HW_BOX?'<div style="font-size:10px;color:var(--muted);padding:1px 2px">+'+(lines.length-HW_BOX)+' more</div>':'')
+      +(dly.length?'<div style="font-size:10px;font-weight:800;padding:2px 2px 0;color:'+(nd===dly.length&&iso<=t?'#16a34a':'#475569')+'">'+dly.length+' daily'+(nd===dly.length&&iso<=t?' ✓':nd?' · '+nd+' ✓':'')+'</div>':'')
+      +(!d.cells?'<div style="text-align:center;font-size:10px;color:#9ca3af;padding-top:4px">'+(mode==="off"?'—':'past the plan')+'</div>':(!lines.length&&!dly.length)?'<div style="text-align:center;font-size:10px;color:#9ca3af;padding-top:4px">—</div>':'')+'</div>'; });
+  h+='</div>';
+  const fut=days[6]>t, far=D.filter(function(d){ return !d.cells; }), td=days[0]<=t&&days[6]>=t;
+  h+='<div style="padding:6px 12px 8px;font-size:11px;color:var(--muted)">'+(days[0]<t?'Past days are the record: ✓ = done; pale = theirs that day and not checked. ':'')+(td?'Today is '+((typeof hdLive==="function"&&hdLive(t))?'today’s plan':'from the lists as they are now')+'. ':'')
+    +(fut?(mode==="off"?'The plan is off, so days after today are not worked out.':mode==="preview"?'Days after today are the 🔭 plan preview (dashed): who the plan WOULD give each chore. Nobody’s list changes.':'Days after today are the plan as it would lay them now; each day’s own plan is made that morning.')
+      +(mode!=="off"&&far.length?' The plan looks 4 weeks ahead, so days after '+hpDay(_hhIsoOf(_hhDayNum(t)+HW_RUN-1))+' are not worked out yet.':''):'')+'</div>';
+  if(hwDay&&days.indexOf(hwDay)>=0) h+=hwDayHTML(D[days.indexOf(hwDay)],mode,t);
+  return h+'</div>';
+}
+// The open day: every load and every chore on it, dailies too.
+function hwDayHTML(d,mode,t){ const J=hhJobs(), ids=d.cells?hwOrder(J,d.cells):[];
+  let h='<div style="border-top:1.5px solid #e6f4f3"><div style="'+HP_HEAD+';padding-top:8px">'+(d.iso===t?'Today · ':'')+esc(hpDay(d.iso))+' · everything on it</div>';
+  h+=d.loads.map(function(l){ return '<div onclick="hwToLaundry()" style="display:flex;align-items:center;gap:7px;padding:5px 12px;border-top:1px solid #f3f4f6;font-size:12.5px;font-weight:600;cursor:pointer'+(l.mark==="moved"?';color:#6b6560':'')+'"><span>'+(l.mark==="done"?'✅':'')+'</span><span>'+esc(l.emoji)+'</span><span style="flex:1">'+esc(l.name)+(l.mark==="moved"?' · moved on':'')+'</span>'+_hhChip('🧺 Laundry','#f3f4f6','#475569')+'</div>'; }).join('');
+  h+=ids.map(function(id){ const c=d.cells[id], j=J[id];
+    return hpRow(id,j.emoji,j.label,(c.skip?_hhChip('skipped','#f3f4f6','#6b7280'):'')+hwSq(c,mode,true),d.iso<=t?!!c.done:undefined); }).join('');
+  if(!d.cells) h+='<div style="padding:3px 12px 8px;font-size:12px;color:var(--muted)">'+(mode==="off"?'The plan is off, so who does what on this day is not worked out.':'This day is past the plan’s 4 weeks: not worked out yet.')+'</div>';
+  else if(!ids.length&&!d.loads.length) h+='<div style="padding:3px 12px 8px;font-size:12px;color:var(--muted)">Nothing on this day.</div>';
+  return h+'<div style="height:6px"></div></div>'; }
+// A room page: the week, then the room's big grid folded shut behind one line (open while a chore of this room is in ✎ Edit there).
+// Shut = still drawn, hidden (display:none), so the page holds the very grid it holds today and slice A's checks still find it.
+function hwRoomHTML(rid,ids){ const open=!!hwGrid[rid]||(!!hhEditId&&ids.indexOf(hhEditId)>=0);
+  return hwCardHTML()+'<div onclick="hwGridToggle(\''+rid+'\')" style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:8px 12px;margin-bottom:'+(open?'6px':'10px')+';font-size:12.5px;font-weight:800;color:#475569;cursor:pointer">'+(open?'▾ The big grid <span style="font-weight:600;color:var(--muted)">· tap to fold it</span>':'▸ The big grid <span style="font-weight:600;color:var(--muted)">· every chore, day by day · tap to open</span>')+'</div><div'+(open?'':' style="display:none"')+'>'+hhRoomGridHTML(rid,ids)+'</div>'; }
+// HOUSEWEEK_END
 // HOUSESWITCH_START — 🚪 the real switch and today's stored plan on 👤 By person (Household by room, step 4; DESIGN §4.3 doors, §5 last
 // bullet, her yes 2026-11-17). Mom only. ON first PROVES a houseDay save works (houseDay/<today>/hello) and only then writes
 // household/meta/engine = {mode:"on", on:<today>} together with each house chore's last-done date filled once from the 8 weeks of
