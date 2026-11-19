@@ -14394,7 +14394,7 @@ function hdSig(){ const J=hhJobs(), K=["who","can","cad","area","level","status"
 // every-N chore stays due through its last-done date, so neither is carried. A chore on a 🌅 morning list is the morning's job.
 function hdCarryFrom(y,skip){ const r=hdLive(y), out=[]; if(!r) return out;
   Object.keys(r.plan||{}).forEach(function(id){ const p=r.plan[id]; if(!p||(r.done||{})[id]||(r.skip||{})[id]||skip[id]||p.k==="daily"||p.k==="every"||hdDoneRec(y,id)) return; out.push({id:id,turn:p.who,k:p.k,since:p.since||y,listed:1}); });   // listed: it WAS on that person's list yesterday
-  Object.keys(r.over||{}).forEach(function(id){ const o=r.over[id]; if(!o||o.k==="every"||(r.skip||{})[id]||skip[id]) return; out.push({id:id,turn:o.turn,k:o.k,since:o.since||y}); });
+  Object.keys(r.over||{}).forEach(function(id){ const o=r.over[id]; if(!o||o.k==="every"||(r.skip||{})[id]||skip[id]||(r.done||{})[id]) return;   /* 🙌 HOUSEOVER: done as a ×2 grab → not carried */ out.push({id:id,turn:o.turn,k:o.k,since:o.since||y}); });
   return out; }
 function hdOv(iso,extraSkip){ const J=hhJobs(), r=houseDayData[iso]||{}, skip={}, last={}, off={};
   Object.keys(r.skip||{}).forEach(function(id){ skip[id]=1; }); Object.keys(extraSkip||{}).forEach(function(id){ skip[id]=1; });
@@ -14409,7 +14409,7 @@ function hdShape(p){ const plan={}, over={}; Object.keys(p.plan).forEach(functio
   p.over.forEach(function(o){ over[o.id]={turn:o.turn,mins:o.mins,k:o.k,late:o.late||0,since:hdAdd(p.iso,-(o.late||0))}; }); return {plan:plan,over:over}; }
 function hdBuild(iso){ const ov=hdOv(iso), p=HouseEng.day({jobs:hhJobs()},iso,hdPeople(),ov), s=hdShape(p), miss={};
   p.missed.forEach(function(m){ if(m.why==="its next day came"){ const c=ov.carry.find(function(x){ return x.id===m.id; }); miss[m.id]=(c&&c.listed)?{who:c.turn||"",since:m.since||""}:{nobody:1,since:m.since||""}; } });   // a chore that fit nobody was on no one's list: Mom sees it here, no kid gets a "— not done" line (hub review 2026-11-17)
-  return {plan:s.plan,over:s.over,miss:miss}; }
+  return {plan:s.plan,over:s.over,miss:miss,grabs:(typeof hdGrabsOf==="function")?hdGrabsOf(p.over,ov.off):{}}; }   // 🙌 HOUSEOVER: what fit nobody, offered ×2 to the kids who can
 function hdClaimTx(cur,dev,now){ if(cur&&cur.ok) return; return _abClaimTx(cur,dev,now); }
 function _hdWrite(){ return typeof _hhWrite==="function"&&_hhWrite(); }
 function hdRefused(iso,err){ _hdBad={iso:iso,at:Date.now(),why:String((err&&(err.code||err.message))||err||"refused")}; if(typeof renderAllSoon==="function") renderAllSoon(); }
@@ -14421,7 +14421,7 @@ function hdEnsure(){
   try{ db.ref("houseDay/"+t+"/built").transaction(function(cur){ return hdClaimTx(cur,HA_DEV_ID,Date.now()); },function(err,committed){
     if(err){ hdRefused(t,err); return; } if(!committed) return;   // another device holds the claim, or it is built: the listener brings it
     if(hdOk(houseDayData[t])) return; const b=hdBuild(t), P="houseDay/"+t+"/", upd={}, at=Date.now();
-    Object.keys(b.plan).forEach(function(id){ upd[P+"plan/"+id]=b.plan[id]; }); Object.keys(b.over).forEach(function(id){ upd[P+"over/"+id]=b.over[id]; }); Object.keys(b.miss).forEach(function(id){ upd[P+"miss/"+id]=b.miss[id]; });
+    Object.keys(b.plan).forEach(function(id){ upd[P+"plan/"+id]=b.plan[id]; }); Object.keys(b.over).forEach(function(id){ upd[P+"over/"+id]=b.over[id]; }); Object.keys(b.miss).forEach(function(id){ upd[P+"miss/"+id]=b.miss[id]; }); Object.keys(b.grabs||{}).forEach(function(id){ upd[P+"grabs/"+id]=b.grabs[id]; });
     upd[P+"built/ok"]=at; upd[P+"built/sig"]=hdSig();
     db.ref().update(upd).then(function(){ _hdBad=null; hdLogMisses(t,b.miss); },function(e){ hdRefused(t,e); }); }).catch(function(){}); }catch(e){ hdRefused(t,e); }   // a refused claim is answered in the callback
 }
@@ -14544,13 +14544,13 @@ function hdUsed(r,skipId){ const u={}; Object.keys(r.plan||{}).forEach(function(
 function hdLimitOn(who,iso){ const P=hdPeople()[who]; if(!P) return 0; return _hhDow(iso)>=5?P.weekend:P.school; }
 // 😷 Kid Off (§4.3): a kid marked off today has their unstarted house chores handed out again — each to the person ticked on its card
 // with the most minutes left today, else onto "fit nobody" (first in line tomorrow). Run on Mom's device; idempotent.
-function hdSweepOff(iso){ const r=hdLive(iso); if(!r||!_hdWrite()) return 0; const J=hhJobs(), P=hdPeople(), upd={}; let n=0;
+function hdSweepOff(iso){ const r=hdLive(iso); if(!r||!_hdWrite()) return 0; const J=hhJobs(), P=hdPeople(), upd={}, ng=[]; let n=0;
   Object.keys(r.plan||{}).forEach(function(id){ const p=r.plan[id]; if(!p||!hhIsKid(p.who)||!hdKidOff(p.who,iso)||hdDone(iso,id)||!J[id]) return;
     const used=hdUsed(r,id); let best=null, bl=-1; HouseEng.canOf(J[id],P).forEach(function(w){ if(w===p.who||(hhIsKid(w)&&hdKidOff(w,iso))) return; const l=hdLimitOn(w,iso)-(used[w]||0); if(l>=(p.mins||0)&&l>bl){ bl=l; best=w; } });
     r.plan=Object.assign({},r.plan); n++;
     if(best){ const rec=Object.assign({},p,{who:best,why:"moved",from:p.from||p.who}); r.plan[id]=rec; upd["houseDay/"+iso+"/plan/"+id]=rec; }
-    else { delete r.plan[id]; r.over=Object.assign({},r.over); r.over[id]={turn:p.who,mins:p.mins,k:p.k,late:p.late||0,since:p.since||iso}; upd["houseDay/"+iso+"/plan/"+id]=null; upd["houseDay/"+iso+"/over/"+id]=r.over[id]; } });
-  if(n){ _hdM={}; try{ hhMaterialize(); }catch(e){} db.ref().update(upd); if(typeof renderAllSoon==="function") renderAllSoon(); } return n; }
+    else { delete r.plan[id]; r.over=Object.assign({},r.over); r.over[id]={turn:p.who,mins:p.mins,k:p.k,late:p.late||0,since:p.since||iso}; upd["houseDay/"+iso+"/plan/"+id]=null; upd["houseDay/"+iso+"/over/"+id]=r.over[id]; ng.push(id); } });
+  if(n){ _hdM={}; try{ hhMaterialize(); }catch(e){} db.ref().update(upd); if(typeof hdGrabSwept==="function") hdGrabSwept(iso,ng,P); if(typeof renderAllSoon==="function") renderAllSoon(); } return n; }
 // 🌅 SENDAM with a plan row (§12): sent and finished by chore id — amCarry/<kid>/<fromIso>_<a|c|e>h_<id> (rec.house = id) — writing
 // the same three records: the carry's done, the chore's done on the day it was due (houseDay/<fromIso>/done/<id>, with pts + bid +
 // am:<iso>, last-done and counters), and the routineLog "on" line under that day. A carry opened before switch-on keeps its
@@ -14597,7 +14597,8 @@ function hdUnmark(slot,kid,i,mk){ const raw=(routineCfg2[slot]&&routineCfg2[slot
   const go=function(d0){ const wk=activeWk(), _slB=slBefore(), upd={}, j=hhJobs()[id], label=(j&&j.label)||"Chore", who=(d0&&d0.who)||kid;
     if(d0){ if(hhIsKid(who)&&(d0.pts||0)>0){ if(d0.bid){ if(!(typeof cuUnpay==="function"&&cuUnpay(who,d0.bid,label))) bankDirectRemove(who,d0.bid); } else bankDirect(who,-d0.pts,"↩ unchecked: "+label); }
       if(hhIsKid(who)) rlogAppend(who,d0.slot||slot,label,"off",d0.pts||0,(typeof cuUndoTag==="function")?cuUndoTag():null);
-      const r=houseDayData[iso]; if(r&&r.done) delete r.done[id]; upd["houseDay/"+iso+"/done/"+id]=null; hdUnstamp(id,iso,d0,upd); }
+      const r=houseDayData[iso]; if(r&&r.done) delete r.done[id]; upd["houseDay/"+iso+"/done/"+id]=null; hdUnstamp(id,iso,d0,upd);
+      if(d0.grab) ["by","at","done"].forEach(function(k){ upd["houseDay/"+iso+"/grabs/"+id+"/"+k]=null; }); }   // 🙌 HOUSEOVER: a ×2 grab un-done here is open again
     slState[wk+"_"+day+"_"+kid+"_"+(slot==="morning"?"m":RT_ABBR[slot])+"step"+i]={done:false,ts:"",pts:null,bid:null};
     if(slot==="morning"){ const mk2=wk+"_"+day+"_"+kid+"_morning"; slState[mk2]={done:morningComplete(kid,day),ts:""}; } else { const fk=wk+"_"+day+"_"+kid+"_"+slot, all=rtComplete(slot,kid,day); slState[fk]={done:all,ts:all?nowTs():""}; }
     householdOnValue(householdData); if(_hdWrite()&&Object.keys(upd).length) db.ref().update(upd); slSaveChanged(wk,_slB); renderSkylight(); };
@@ -14621,6 +14622,87 @@ function hdCleanRows(who,iso,dn,out){ try{ const r=hdLive(hdIsoOf(dn)); if(!r) r
   const order=hhRoomList().map(function(x){ return x[0]; }); o.sort(function(a,b){ return (order.indexOf(hhRoomOf(a.job))-order.indexOf(hhRoomOf(b.job)))||((a.job.order||0)-(b.job.order||0)); });
   return o; }catch(e){ return out; } }
 // HOUSEDAY_END
+// HOUSEOVER_START — 🙌 ×2 a house chore the day's plan could give to nobody goes to THAT DAY's Up for Grabs at double stars, only
+// for the kids who can do it; not grabbed → first in line tomorrow (Household by room, step 6b of DESIGN_household_rooms_2026-11-15
+// §1 rule 5, §4.3 step 4, §4.4, §4.7, §5; her "Yes, start 6b" 2026-11-18). Only with the plan ON and today's plan stored (hdLive): off,
+// preview, or a day where everything fit → not one line below draws, writes or pays anything.
+//  • The offer: houseDay/<iso>/grabs/<jobId> = {pts, can:[kids]} — pts = DOUBLE the chore's stars when the day was laid, can = the
+//    kids ticked on its card (HouseEng's over[].can: the owner and who-can, kids only) minus anyone marked off. Written with the day's
+//    plan (hdBuild → hdEnsure, under the builder's claim), by 😷 Kid Off when it sends a chore to "fit nobody" (hdSweepOff) and by Mom's
+//    🔁 Re-lay (house.js). A chore no kid can do gets no offer: it stays "Didn't fit anyone today" for Mom.
+//  • Once the day is laid an offer only changes by a TRANSACTION on its own node, so two taps never both win: a kid's 🔖 Grab for
+//    later (by, at), let go, ✓ done (done), ↩ undo — and Mom's → Give to… / Re-lay, which take an offer back only while nobody has
+//    done it (a hold is let go). "One at a time" counts both kinds of grab (gbHasActive). Taps act on TODAY's offers only.
+//  • ✓ done (I did it now / Mark done), once the transaction commits: the kid is paid the stored double + the zone bonus the chore
+//    gets on a list today (zoneBonusFor on its own stars, once), held for Mom's check if that is on for the kid; the done record is
+//    houseDay/<iso>/done/<jobId> {who,ts,at,min,pts (paid),bid,slot,grab (the offer),prev} — the record every plan reader asks
+//    (hdDone), so the chore is done for the day everywhere; last-done and the turn counters are stamped (hdStamp), the owner's hidden
+//    old row is marked (hdOwnerMark) and the Click-off Log line is the chore's own, on its own list. ↩ undo (the kid who did it, or
+//    Mom / Dad on that kid's Up for Grabs) takes back exactly the stored amount and puts last-done and the counters back, as does
+//    un-checking the old row once the plan is switched off (hdUnmark). Not done by night: nothing is paid; hdCarryFrom carries it.
+function hdGrabsOf(over,off){ const J=hhJobs(), g={}; (over||[]).forEach(function(o){ const j=J[o.id], can=(o.can||[]).filter(function(k){ return !(off&&off[k]); }); if(j&&can.length) g[o.id]={pts:2*Math.max(0,parseInt(j.pts,10)||0),can:can}; }); return g; }
+function hdGrabAt(iso,id){ const r=hdLive(iso), g=r&&r.grabs&&r.grabs[id]; return (g&&typeof g==="object"&&r.over&&r.over[id]&&!(r.plan&&r.plan[id]))?g:null; }
+function hdGrabCan(g){ return HouseEng.listOf(g&&g.can); }
+function hdGrabDay(){ return (typeof _todayDay==="string"&&_todayDay)?_todayDay:day; }
+function hdGrabPay(id,g){ const p=(g&&g.pts)||0, j=hhJobs()[id]||{}; return p+((typeof zoneBonusFor==="function")?zoneBonusFor(j.zone,Math.floor(p/2),hdGrabDay()):0); }
+// Today's ×2 offers on one kid's Up for Grabs: open ones they can do, one they hold, one they did (Mom's view of a kid: also a
+// sibling's hold or done one that kid could do). A chore done some other way is not up for grabs.
+function hdGrabRows(kid,momView){ const t=_todayStr(), r=hdLive(t); if(!r||!r.grabs||ROSTER.indexOf(kid)<0) return []; const J=hhJobs(), out=[];
+  Object.keys(r.grabs).sort(function(a,b){ return (((J[a]||{}).order||0)-((J[b]||{}).order||0))||(a<b?-1:1); }).forEach(function(id){ const g=hdGrabAt(t,id), j=J[id]; if(!g||!j) return;
+    const d=hdDoneRec(t,id), can=hdGrabCan(g);
+    if(d){ if(d.grab&&(d.who===kid||(momView&&can.indexOf(kid)>=0))) out.push({id:id,g:g,j:j,d:d}); return; }
+    if(g.by!==kid&&(can.indexOf(kid)<0||(g.by&&!momView))) return; out.push({id:id,g:g,j:j,d:null}); });
+  return out; }
+function hdGrabHeld(kid){ const t=_todayStr(), r=hdLive(t); return !!(r&&r.grabs)&&Object.keys(r.grabs).some(function(id){ const g=hdGrabAt(t,id); return !!(g&&g.by===kid&&!g.done&&!hdDoneRec(t,id)); }); }
+function hdGrabOpenN(kid,momView){ return hdGrabRows(kid,momView).filter(function(x){ return !x.d&&!x.g.by; }).length; }
+function hdGrabsHTML(kid,momView){ const L=hdGrabRows(kid,momView); if(!L.length) return ""; const t=_todayStr(), grown=!!momView||(typeof cuWho==="function"&&!!cuWho());
+  return L.map(function(x){ const g=x.g, j=x.j, q="('"+kid+"','"+t+"','"+x.id+"')", pay=x.d?(x.d.pts||0):hdGrabPay(x.id,g), zb=x.d?0:pay-(g.pts||0), mine=g.by===kid&&!x.d, taken=!!g.by&&!mine&&!x.d;
+    let h='<div class="grab-card'+((taken||x.d)?' taken':'')+'" style="border:2px solid #f59e0b"><div class="gc-top"><span class="gc-emoji">'+esc(j.emoji||"🎁")+'</span><span class="gc-pts">+'+pay+' ⭐<span class="gc-boost" style="color:#b45309">×2'+(zb?' · zone +'+zb:'')+'</span></span></div><div class="gc-name">'+esc(j.label||"")+'</div><div style="font-size:10.5px;font-weight:800;color:#b45309;margin:1px 0 5px">Double stars · today only</div>';
+    if(x.d) h+='<div class="gc-taken">✓ '+(x.d.who===kid?'Done':esc(cap(x.d.who))+' did it')+'</div>'+((x.d.who===kid||grown)?'<button class="gc-let" onclick="hdGrabUndo(\''+x.d.who+'\',\''+t+'\',\''+x.id+'\')">undo</button>':'');
+    else if(mine) h+='<button class="gc-done" onclick="hdGrabDone'+q+'">✓ Mark done (+'+pay+')</button><button class="gc-let" onclick="hdGrabLetGo'+q+'">let go</button>';
+    else if(taken){ h+='<div class="gc-taken">🔒 '+esc(cap(g.by))+' grabbed it</div>'; if(momView) h+='<button class="gc-let" onclick="hdGrabLetGo(\''+g.by+'\',\''+t+'\',\''+x.id+'\')">release</button>'; }
+    else { h+='<button class="gc-done" onclick="hdGrabDone'+q+'">✓ I did it now (+'+pay+')</button><button class="gc-grab" onclick="hdGrabHold'+q+'">🔖 Grab for later</button>';
+      if(momView) h+='<div class="gc-assign">assign: '+hdGrabCan(g).map(function(k){ return '<button onclick="hdGrabHold(\''+k+'\',\''+t+'\',\''+x.id+'\')" title="'+esc(cap(k))+'">'+esc(cap(k).charAt(0))+'</button>'; }).join("")+'</div>'; }
+    return h+'</div>'; }).join(""); }
+function _hdGrabSay(m){ if(m&&typeof gwShowToast==="function") gwShowToast(m); if(typeof renderAll==="function") renderAll(); return null; }
+// A kid's tap: today's offer, still offered, a real write (?dryrun=1 is inert). → the offer, or null (said why).
+function _hdGrabOk(kid,iso,id){ if(ROSTER.indexOf(kid)<0) return null; if(iso!==_todayStr()) return _hdGrabSay("That one was for yesterday.");
+  const g=hdGrabAt(iso,id); if(!g) return _hdGrabSay("That one isn’t up for grabs any more."); if(!_hdWrite()) return _hdGrabSay("Dry run — nothing was saved."); return g; }
+// The one way an offer changes after the day is laid: a transaction on its node. then(v) once committed; refused → no(…) or a redraw.
+function hdGrabTx(iso,id,fn,then,no){ try{ db.ref("houseDay/"+iso+"/grabs/"+id).transaction(function(c){ return fn(c||null); },function(err,ok,s){
+    if(err||!ok){ if(typeof no==="function") no(); else _hdGrabSay(no||""); return; }
+    const v=(s&&typeof s.val==="function")?s.val():null, r=houseDayData[iso]; if(r){ r.grabs=Object.assign({},r.grabs); if(v) r.grabs[id]=v; else delete r.grabs[id]; } if(then) then(v); }); }catch(e){} }
+function hdGrabHold(kid,iso,id){ const g=_hdGrabOk(kid,iso,id); if(!g||g.by||hdDoneRec(iso,id)||hdGrabCan(g).indexOf(kid)<0) return;
+  if(gbHasActive(kid)){ if(typeof gwShowToast==="function") gwShowToast("One at a time — finish your grabbed chore first!"); return; }
+  hdGrabTx(iso,id,function(c){ if(!c||c.by||c.done) return; return Object.assign({},c,{by:kid,at:Date.now()}); },function(){ renderAll(); },"That one was just taken."); }
+function hdGrabLetGo(kid,iso,id){ const g=_hdGrabOk(kid,iso,id); if(!g||g.by!==kid||g.done||hdDoneRec(iso,id)) return;
+  hdGrabTx(iso,id,function(c){ if(!c||c.done||c.by!==kid) return; const o=Object.assign({},c); delete o.by; delete o.at; return o; },function(){ renderAll(); }); }
+function hdGrabDone(kid,iso,id){ const g=_hdGrabOk(kid,iso,id); if(!g||(g.by&&g.by!==kid)||hdDoneRec(iso,id)||(g.by!==kid&&hdGrabCan(g).indexOf(kid)<0)) return;
+  hdGrabTx(iso,id,function(c){ if(!c||c.done||(c.by&&c.by!==kid)) return; return Object.assign({},c,{by:kid,at:c.at||Date.now(),done:Date.now()}); },function(v){ hdGrabPaid(kid,iso,id,v); },"That one was just taken."); }
+function hdGrabPaid(kid,iso,id,v){ const j=hhJobs()[id], r=hdLive(iso); if(!j||!r||!v) return; const d0=day; day=hdGrabDay(); let paid=0;
+  try{ const wk=activeWk(), _slB=slBefore(), slot=hdSlotOf(j), label=j.label||"Chore", zb=(typeof zoneBonusFor==="function")?zoneBonusFor(j.zone,Math.floor((v.pts||0)/2),day):0, upd={}; paid=(v.pts||0)+zb;
+    const bid=paid>0?bankDirect(kid,paid,(j.emoji?j.emoji+" ":"")+label+" (×2 Up for Grabs"+(zb?", zone bonus +"+zb:"")+")",(typeof choreVerifyOn==="function"&&choreVerifyOn(kid))):null;
+    const rec={who:kid,ts:nowTs(),at:Date.now(),min:(typeof _lbNowMin==="function")?_lbNowMin():null,pts:paid,bid:bid||null,slot:slot,grab:v.pts||0,prev:hdPrev(j)}; if(typeof _spBy==="function"&&_spBy()) rec.by=_spBy();
+    r.done=Object.assign({},r.done); r.done[id]=rec; upd["houseDay/"+iso+"/done/"+id]=rec; hdStamp(id,iso,kid,upd); hdOwnerMark(id,iso,true,kid);
+    rlogAppend(kid,slot,label,"on",paid,{house:id,x2:1});
+    householdOnValue(householdData); db.ref().update(upd); slSaveChanged(wk,_slB); } finally { day=d0; }
+  renderAll(); if(typeof gwShowToast==="function") gwShowToast("Nice! +"+paid+" ⭐ — double!"); }
+function hdGrabUndo(who,iso,id){ const r=hdLive(iso), d0=r&&r.done&&r.done[id]; if(iso!==_todayStr()||!d0||!d0.grab||d0.who!==who||!_hdWrite()) return;
+  hdGrabTx(iso,id,function(c){ if(!c||!c.done||c.by!==who) return; const o=Object.assign({},c); delete o.by; delete o.at; delete o.done; return o; },function(){
+    const r2=hdLive(iso), d=r2&&r2.done&&r2.done[id], j=hhJobs()[id]; if(!d||!j) return; const d1=day; day=hdGrabDay();
+    try{ const label=j.label||"Chore", wk=activeWk(), _slB=slBefore(), upd={};
+      if((d.pts||0)>0){ if(d.bid){ if(!(typeof cuUnpay==="function"&&cuUnpay(who,d.bid,label))) bankDirectRemove(who,d.bid); } else bankDirect(who,-d.pts,"↩ unchecked: "+label); }   // exactly what was paid
+      rlogAppend(who,d.slot||hdSlotOf(j),label,"off",d.pts||0,(typeof cuUndoTag==="function")?cuUndoTag():null);
+      r2.done=Object.assign({},r2.done); delete r2.done[id]; upd["houseDay/"+iso+"/done/"+id]=null; hdUnstamp(id,iso,d,upd); hdOwnerMark(id,iso,false,who);
+      householdOnValue(householdData); db.ref().update(upd); slSaveChanged(wk,_slB); } finally { day=d1; }
+    renderAll(); }); }
+// Mom's side (→ Give to…, 🔁 Re-lay, 😷 Kid Off): take an offer back while nobody has done it, then go on (then); put / refresh one
+// nobody has taken. Dry run: no transaction, then() at once (the caller keeps it local, as its own writes are).
+function hdGrabTakeBack(iso,id,then){ if(!_hdWrite()){ then(); return; } hdGrabTx(iso,id,function(c){ if(c&&c.done) return; return null; },function(){ then(); },function(){ if(typeof hpTell==="function") hpTell("A kid has already done that one as a ×2 grab, so it stays theirs."); if(typeof renderAll==="function") renderAll(); }); }
+function hdGrabPut(iso,id,o){ if(!_hdWrite()) return; hdGrabTx(iso,id,function(c){ if(c&&(c.by||c.done)) return; return o?{pts:o.pts,can:o.can.slice()}:null; },null,function(){}); }
+function hdGrabSwept(iso,ids,P){ const J=hhJobs(); (ids||[]).forEach(function(id){ const j=J[id]; if(!j) return; const can=HouseEng.canOf(j,P).filter(function(k){ return SL_KIDS.indexOf(k)>=0&&!hdKidOff(k,iso); });
+  if(can.length) hdGrabPut(iso,id,{pts:2*Math.max(0,parseInt(j.pts,10)||0),can:can}); }); }
+// HOUSEOVER_END
 // ⇢ house.js: HOUSEPEOPLE..HOUSESWITCH
 // KITCHEN_TAB_START — 🍳 Kitchen (her ask 2026-10-20: "a focused kitchen tab like the laundry but then id like it seperated in sections
 // that make sense and i like lots of settings … i also dont want repeats all over the chores … pull things in from other areas … check
@@ -31352,7 +31434,7 @@ function gbCur(i){
   return r;
 }
 function gbGet(i){ return grabClaims[_gbKey(i)]||null; }
-function gbHasActive(kid){ return gbRows().some(x=>{ var s=grabClaims[_gbKey(x.i)]; return s&&s.by===kid&&!s.done; }); }
+function gbHasActive(kid){ return gbRows().some(x=>{ var s=grabClaims[_gbKey(x.i)]; return s&&s.by===kid&&!s.done; })||(typeof hdGrabHeld==="function"&&hdGrabHeld(kid)); }   // 🙌 HOUSEOVER: a ×2 grab held counts too
 function _gbWrite(i,rec){ var k=_gbKey(i);
   const _gw=grabClaims[k];
   if(rec===null){ delete grabClaims[k]; obRemove("grabClaims/"+k,_gw); }
@@ -31558,14 +31640,14 @@ function gbPool(kid,momView){
   });
 }
 function _grabsHTML(kid,momView){
-  const gbDue=gbPool(kid,momView);
+  const gbDue=gbPool(kid,momView), _x2=(typeof hdGrabsHTML==="function")?hdGrabsHTML(kid,momView):"";   // 🙌 HOUSEOVER: today's ×2 grabs first
   let h='<div class="grab-sec"><div class="grab-hd">🙌 Up for Grabs <span>extra stars · yours once you grab it · resets each week</span></div>';
   // GRAB_EMPTY_START — a family with no grab list at all (not Howe, nothing saved yet): say so, and give
   // Mom the existing add button right here. Kids see the line only. (2026-10-07)
-  if(!(typeof gbRows==="function"?gbRows():gbList()).length) return h+'<div style="font-size:13px;color:var(--muted);padding:10px 2px">No jobs yet — Mom, add your first one.</div>'+((typeof momHere==="function"&&momHere())?'<button class="se-add" onclick="gbAdd()">+ Add grab chore</button>':'')+'</div>';
+  if(!_x2&&!(typeof gbRows==="function"?gbRows():gbList()).length) return h+'<div style="font-size:13px;color:var(--muted);padding:10px 2px">No jobs yet — Mom, add your first one.</div>'+((typeof momHere==="function"&&momHere())?'<button class="se-add" onclick="gbAdd()">+ Add grab chore</button>':'')+'</div>';
   // GRAB_EMPTY_END
-  if(!gbDue.length) return h+'<div style="font-size:12px;color:var(--muted);padding:8px 2px">Nothing up for grabs right now — check back when the next one comes round.</div></div>';
-  h+='<div class="grab-grid">';
+  if(!_x2&&!gbDue.length) return h+'<div style="font-size:12px;color:var(--muted);padding:8px 2px">Nothing up for grabs right now — check back when the next one comes round.</div></div>';
+  h+='<div class="grab-grid">'+_x2;
   gbDue.forEach(({g,i})=>{
     var st=gbCur(i)||{}, mine=st.by===kid, taken=st.by&&!mine, q=(typeof i==="number")?i:"'"+i+"'";
     var _gp=gbPayout(i), _gb=_gp-(g.pts||0);
@@ -63985,7 +64067,7 @@ function renderPace(el){
     const _mv=momModeActive;
     // The two doors sit in a column beside the bank — what they can spend, right next
     // to what they have. Narrow screens wrap them above it.
-    let _gn=0; try{ _gn=gbPool(kid,_mv).filter(x=>!(gbCur(x.i)||{}).by).length; }catch(e){}
+    let _gn=0; try{ _gn=gbPool(kid,_mv).filter(x=>!(gbCur(x.i)||{}).by).length+((typeof hdGrabOpenN==="function")?hdGrabOpenN(kid,_mv):0); }catch(e){}
     const _btn=(view,lab,st)=>'<button onclick="popOpen(\''+kid+'\',\''+view+'\')" style="'+st+';padding:11px 10px;border-radius:11px;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;text-align:center">'+lab+'</button>';
     h+='<div style="display:flex;gap:10px;align-items:stretch;flex-wrap:wrap;margin-bottom:12px">'
       +'<div style="flex:0 1 148px;min-width:132px;display:flex;flex-direction:column;gap:8px">'
