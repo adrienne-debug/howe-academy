@@ -14668,7 +14668,7 @@ function hdGrabPay(id,g){ const p=(g&&g.pts)||0, j=hhJobs()[id]||{}; return p+((
 // sibling's hold or done one that kid could do). A chore done some other way is not up for grabs.
 function hdGrabRows(kid,momView){ const t=_todayStr(), r=hdLive(t); if(!r||!r.grabs||ROSTER.indexOf(kid)<0) return []; const J=hhJobs(), out=[];
   Object.keys(r.grabs).sort(function(a,b){ return (((J[a]||{}).order||0)-((J[b]||{}).order||0))||(a<b?-1:1); }).forEach(function(id){ const g=hdGrabAt(t,id), j=J[id]; if(!g||!j) return;
-    const d=hdDoneRec(t,id), can=hdGrabCan(g);
+    const d=hdDoneRec(t,id), can=hdGrabCan(g).filter(function(k){ return gbLvFor(j,k); });   // HOUSEGRABLV
     if(d){ if(d.grab&&(d.who===kid||(momView&&can.indexOf(kid)>=0))) out.push({id:id,g:g,j:j,d:d}); return; }
     if(g.by!==kid&&(can.indexOf(kid)<0||(g.by&&!momView))) return; out.push({id:id,g:g,j:j,d:null}); });
   return out; }
@@ -14681,7 +14681,7 @@ function hdGrabsHTML(kid,momView){ const L=hdGrabRows(kid,momView); if(!L.length
     else if(mine) h+='<button class="gc-done" onclick="hdGrabDone'+q+'">✓ Mark done (+'+pay+')</button><button class="gc-let" onclick="hdGrabLetGo'+q+'">let go</button>';
     else if(taken){ h+='<div class="gc-taken">🔒 '+esc(cap(g.by))+' grabbed it</div>'; if(momView) h+='<button class="gc-let" onclick="hdGrabLetGo(\''+g.by+'\',\''+t+'\',\''+x.id+'\')">release</button>'; }
     else { h+='<button class="gc-done" onclick="hdGrabDone'+q+'">✓ I did it now (+'+pay+')</button><button class="gc-grab" onclick="hdGrabHold'+q+'">🔖 Grab for later</button>';
-      if(momView) h+='<div class="gc-assign">assign: '+hdGrabCan(g).map(function(k){ return '<button onclick="hdGrabHold(\''+k+'\',\''+t+'\',\''+x.id+'\')" title="'+esc(cap(k))+'">'+esc(cap(k).charAt(0))+'</button>'; }).join("")+'</div>'; }
+      if(momView) h+='<div class="gc-assign">assign: '+hdGrabCan(g).filter(function(k){ return gbLvFor(j,k); }).map(function(k){ return '<button onclick="hdGrabHold(\''+k+'\',\''+t+'\',\''+x.id+'\')" title="'+esc(cap(k))+'">'+esc(cap(k).charAt(0))+'</button>'; }).join("")+'</div>'; }
     return h+'</div>'; }).join(""); }
 function _hdGrabSay(m){ if(m&&typeof gwShowToast==="function") gwShowToast(m); if(typeof renderAll==="function") renderAll(); return null; }
 // A kid's tap: today's offer, still offered, a real write (?dryrun=1 is inert). → the offer, or null (said why).
@@ -14691,12 +14691,12 @@ function _hdGrabOk(kid,iso,id){ if(ROSTER.indexOf(kid)<0) return null; if(iso!==
 function hdGrabTx(iso,id,fn,then,no){ try{ db.ref("houseDay/"+iso+"/grabs/"+id).transaction(function(c){ return fn(c||null); },function(err,ok,s){
     if(err||!ok){ if(typeof no==="function") no(); else _hdGrabSay(no||""); return; }
     const v=(s&&typeof s.val==="function")?s.val():null, r=houseDayData[iso]; if(r){ r.grabs=Object.assign({},r.grabs); if(v) r.grabs[id]=v; else delete r.grabs[id]; } if(then) then(v); }); }catch(e){} }
-function hdGrabHold(kid,iso,id){ const g=_hdGrabOk(kid,iso,id); if(!g||g.by||hdDoneRec(iso,id)||hdGrabCan(g).indexOf(kid)<0) return;
+function hdGrabHold(kid,iso,id){ const g=_hdGrabOk(kid,iso,id); if(!g||g.by||hdDoneRec(iso,id)||hdGrabCan(g).indexOf(kid)<0) return; if(!gbLvFor(hhJobs()[id],kid)) return _hdGrabSay("That one isn’t up for grabs any more.");
   if(gbHasActive(kid)){ if(typeof gwShowToast==="function") gwShowToast("One at a time — finish your grabbed chore first!"); return; }
   hdGrabTx(iso,id,function(c){ if(!c||c.by||c.done) return; return Object.assign({},c,{by:kid,at:Date.now()}); },function(){ renderAll(); },"That one was just taken."); }
 function hdGrabLetGo(kid,iso,id){ const g=_hdGrabOk(kid,iso,id); if(!g||g.by!==kid||g.done||hdDoneRec(iso,id)) return;
   hdGrabTx(iso,id,function(c){ if(!c||c.done||c.by!==kid) return; const o=Object.assign({},c); delete o.by; delete o.at; return o; },function(){ renderAll(); }); }
-function hdGrabDone(kid,iso,id){ const g=_hdGrabOk(kid,iso,id); if(!g||(g.by&&g.by!==kid)||hdDoneRec(iso,id)||(g.by!==kid&&hdGrabCan(g).indexOf(kid)<0)) return;
+function hdGrabDone(kid,iso,id){ const g=_hdGrabOk(kid,iso,id); if(!g||(g.by&&g.by!==kid)||hdDoneRec(iso,id)||(g.by!==kid&&hdGrabCan(g).indexOf(kid)<0)) return; if(g.by!==kid&&!gbLvFor(hhJobs()[id],kid)) return _hdGrabSay("That one isn’t up for grabs any more.");
   hdGrabTx(iso,id,function(c){ if(!c||c.done||(c.by&&c.by!==kid)) return; return Object.assign({},c,{by:kid,at:c.at||Date.now(),done:Date.now()}); },function(v){ hdGrabPaid(kid,iso,id,v); },"That one was just taken."); }
 function hdGrabPaid(kid,iso,id,v){ const j=hhJobs()[id], r=hdLive(iso); if(!j||!r||!v) return; const d0=day; day=hdGrabDay(); let paid=0;
   try{ const wk=activeWk(), _slB=slBefore(), slot=hdSlotOf(j), label=j.label||"Chore", zb=(typeof zoneBonusFor==="function")?zoneBonusFor(j.zone,Math.floor((v.pts||0)/2),day):0, upd={}; paid=(v.pts||0)+zb;
@@ -31410,7 +31410,12 @@ function gbRows(){ if(!gbSwOn()) return gbList().map(function(g,i){ return {g:g,
   out.forEach(function(x){ k.set(x.i,x.g); }); _gbM={h:householdData,j:householdData.jobs,r:out,k:k}; return out; }
 function gbAt(i){ if(!gbSwOn()) return gbList()[i]; gbRows(); return _gbM.k.get(i); }
 function gbCanKids(j){ const c=Array.isArray(j&&j.can)?j.can:[]; return c.length?c.filter(function(w){ return ROSTER.indexOf(w)>=0; }):ROSTER.slice(); }
-function gbCanGrab(i,kid){ if(!gbSwOn()||ROSTER.indexOf(kid)<0) return true; const g=gbAt(i); return !g||gbCanKids(g).indexOf(kid)>=0; }
+function gbCanGrab(i,kid){ if(!gbSwOn()||ROSTER.indexOf(kid)<0) return true; const g=gbAt(i); return !g||gbCanKids(g).indexOf(kid)>=0&&gbLvFor(g,kid); }
+// HOUSEGRABLV (design §13, her "i think so" 2026-11-18): a grab also follows the Cleaning level. A cleaning or pickup chore opens to a kid
+// only at or below THAT kid's own level (hhLevelCurFor(kid): the kid looking, never the owner "grab"); health and animal never wait
+// (hhLevelOut's rule). Read on every draw and tap, so it opens up by itself; a grab a kid holds stays theirs. The old pool has no levels.
+function gbLvFor(j,kid){ return !j||!(j.area==="cleaning"||j.area==="pickup")||hhLevelOf(j)<=hhLevelCurFor(kid); }
+function _gbLvNo(i,kid){ if(!gbSwOn()||ROSTER.indexOf(kid)<0||gbLvFor(gbAt(i),kid)) return false; if(typeof gwShowToast==="function") gwShowToast("That one isn’t up for grabs any more."); renderAll(); return true; }
 // A tap on a chore the switch left out (on a screen drawn before the switch arrived) writes nothing; the screen redraws.
 function _gbGone(i){ if(!gbSwOn()||gbAt(i)) return false; if(typeof gwShowToast==="function") gwShowToast("That one isn’t up for grabs any more."); renderAll(); return true; }
 // The old editors (Star Store ▸ 🙌, Chores & Stars ▸ Up for Grabs) on a switched pool write nothing and point to the card.
@@ -31488,8 +31493,8 @@ function _gbEarn(i,kid){ var g=gbAt(i); if(!g) return;
   if(_paid>0 && typeof bankDirect==="function") bankDirect(kid, _paid, (g.emoji?g.emoji+" ":"")+(g.label||"grab")+(_bonus?" (zone bonus +"+_bonus+")":""));
   if(typeof rlogAppend==="function") rlogAppend(kid,"grab",(g.emoji?g.emoji+" ":"")+(g.label||"grab")+(_bonus?" (zone bonus +"+_bonus+")":""),"on",_paid); }
 function gbPayout(i){ var g=gbAt(i)||{}; return (g.pts||0)+zoneBonusFor(g.zone,g.pts||0); }
-function gbInstant(kid,i){ var s=gbCur(i); if(s&&s.done) return; if(_gbGone(i)) return; _gbWrite(i,{by:kid,done:true,ts:nowTs()}); _gbStampDone(i,kid); _gbEarn(i,kid); try{ if(typeof gbLaundryMove==="function") gbLaundryMove(kid,i); }catch(e){} renderAll(); if(typeof gwShowToast==="function") gwShowToast("Nice! +"+((gbAt(i)||{}).pts||0)+" ⭐"); }
-function gbClaim(kid,i){ var s=gbCur(i); if(s&&s.by&&s.by!==kid) return; if(_gbGone(i)) return;
+function gbInstant(kid,i){ var s=gbCur(i); if(s&&s.done) return; if(_gbGone(i)) return; if(!(s&&s.by===kid)&&_gbLvNo(i,kid)) return; _gbWrite(i,{by:kid,done:true,ts:nowTs()}); _gbStampDone(i,kid); _gbEarn(i,kid); try{ if(typeof gbLaundryMove==="function") gbLaundryMove(kid,i); }catch(e){} renderAll(); if(typeof gwShowToast==="function") gwShowToast("Nice! +"+((gbAt(i)||{}).pts||0)+" ⭐"); }
+function gbClaim(kid,i){ var s=gbCur(i); if(s&&s.by&&s.by!==kid) return; if(_gbGone(i)) return; if(!(s&&s.by===kid)&&_gbLvNo(i,kid)) return;
   if(gbHasActive(kid)){ if(typeof gwShowToast==="function") gwShowToast("One at a time — finish your grabbed chore first!"); return; }
   _gbWrite(i,{by:kid,done:false,ts:nowTs()}); renderAll(); }
 function gbMarkDone(kid,i){ var s=gbCur(i); if(!s||s.by!==kid||s.done) return; if(_gbGone(i)) return; _gbWrite(i,{by:kid,done:true,ts:nowTs()}); _gbStampDone(i,kid); _gbEarn(i,kid); try{ if(typeof gbLaundryMove==="function") gbLaundryMove(kid,i); }catch(e){} renderAll(); if(typeof gwShowToast==="function") gwShowToast("Done! +"+((gbAt(i)||{}).pts||0)+" ⭐"); }
