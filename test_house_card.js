@@ -252,7 +252,7 @@ console.log("7. The card: every section, history, rotation in words");
 console.log("8. Card never opened: every Household view and the 🗺 Rooms page are as before, apart from the re-pointed doors");
 { const views=["rooms","review","habits","week","area","room","levels","rot","kitchen","once","proj","today"];
   const prep='Object.keys(hhJobs()).forEach(function(id){ const j=hhJobs()[id]; ["room|"+hhRoomOf(j),"area|"+(j.area||"cleaning"),"review|"+j.who].forEach(function(k){ hhOpenPerson[k+"|"+j.who]=true; const sl=hhSlotsFor(j.who); hhOpenPerson[k+"|"+j.who+"|"+(sl.indexOf(j.slot||"")>=0?(j.slot||""):sl[0])]=true; }); });hhOpenWho="ava";hhOpenArea="cleaning";hhOpenRoom="kitchen";hhGridSel="ava|'+isoOf(MON+2)+'";';
-  const back=h=>h.split("hcOpen(").join("hhEditToggle(").split('_hhBtn("hcAdd()"').join('_hhBtn("hhAddToggle()"').split('onclick="hcAdd()"').join('onclick="hhAddToggle()"');
+  const back=h=>h.replace(/hcOpen\((?!'[^']*'\)" style="cursor:pointer[;"])/g,"hhEditToggle(").split('_hhBtn("hcAdd()"').join('_hhBtn("hhAddToggle()"').split('onclick="hcAdd()"').join('onclick="hhAddToggle()"');
   [false,true].forEach(noMom=>{
     views.concat(["rooms:kitchen","rooms:kitchen:lanes","rooms:living","rooms:__none"]).forEach(v=>{ const N=mk({noMom}), O=mk({noMom,old:true}); const p=v.split(":");
       [N,O].forEach(c=>{ c.get(prep+'hhView="'+p[0]+'";'+(p[1]?'hhRmSel="'+p[1]+'";':'')+(p[2]?'hhRmLane["kitchen|daily"]=true;hhRmLane["kitchen|weekly"]=true;':'')); });
