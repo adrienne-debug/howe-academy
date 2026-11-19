@@ -126,7 +126,7 @@ function outside(c) {
   T("plan", () => JSON.stringify(c.hhPlanBuild(TODAY)));
   T("planSend", () => { c.hhPlanSend(TODAY); const w = norm(c.writes); c.writes.length = 0; return JSON.stringify([w, c.hhPlanRec(TODAY), c.hhPlanLay(TODAY, "ada"), c.hhPlanLay(TODAY, "mom")]); });
   T("momAgenda", () => JSON.stringify([c.hhHouseBlocksOpen(), c.momSchedHouse(TDN, [])]));
-  T("kidCheck", () => { const plan = c.hhPlanRec(TODAY).plan, ids = Object.keys(plan).sort(), id = ids.find(i => plan[i].who === "ada") || ids[0];
+  T("kidCheck", () => { const plan = c.hhPlanRec(TODAY).plan, ids = Object.keys(plan).sort(), id = ids.find(i => plan[i].who === "ada" && JOBS()[i].who !== "grab") || ids[0];   // Ada's own chore, not an Up for Grabs she took: g_win (wk:5) is on Saturdays' plan as Ada's and sorts first, so this failed on Saturdays (fix 2026-11-19; grabCheck covers the grab)
     c.isMom = false; c.get('kcKid="' + plan[id].who + '"'); const card = c.hhCleanCardHTML ? c.hhCleanCardHTML() : "", up = c.hhPlanCheck(TODAY, id);
     const panel = c.hhCleanPanelHTML(plan[id].who, TODAY, TDN, "House"); c.isMom = true; c.get('kcKid=""'); return JSON.stringify([id, card, norm(up), panel, norm(c.bank), norm(c.rlog), norm(c.grabsDone)]); });
   T("grabCheck", () => { const plan = c.hhPlanRec(TODAY).plan; if (!plan.g_win) return "no grab on the plan"; const up = c.hhPlanCheck(TODAY, "g_win"); return JSON.stringify([norm(up), norm(c.grabsDone)]); });

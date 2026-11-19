@@ -13,6 +13,11 @@
  *   run: node test_house_week.js
  */
 "use strict";
+// One fixed day for this file (fix 2026-11-19): Wed 2026-11-18. The week card needs days ahead of today and a laundry load today; on a
+// Thu–Sun run the checks on those flipped (Fri–Sun: no laundry/no days ahead), so the result hung on the day it ran. The clock is
+// pinned before the fixtures load (house_vm.js reads "today" from it); it still ticks, so the timing check below measures real time.
+{ const RealDate = Date, PIN = new RealDate(2026, 10, 18, 12, 0, 0).getTime(), t0 = RealDate.now(), now = () => PIN + (RealDate.now() - t0);
+  global.Date = class extends RealDate { constructor(...a) { if (a.length) super(...a); else super(now()); } static now() { return now(); } }; }
 const path = require("path"), vm = require("vm"), V = require(path.join(__dirname, "test_fixtures", "house_vm.js")), W = require(path.join(__dirname, "test_fixtures", "house_world.js"));
 const { K, TODAY, T, ago, DOW, mk, roomPage, handlers, dayNum } = V;
 let pass = 0, fail = 0; const ok = (n, c, x) => { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  (" + JSON.stringify(x).slice(0, 600) + ")" : "")); } };
@@ -177,7 +182,7 @@ console.log("\n── a day box: laundry first, chores, the dailies folded ─�
   roomPage(c, ""); c.get("hwDayTap('" + TODAY + "')"); h = c.hwCardHTML();
   const open = h.slice(h.indexOf("everything on it")), want = Object.keys(ad.cells);
   ok("tap a day: everything on it opens under the week — every chore, dailies too, each opening its card", want.length > 0 && want.every(id => open.indexOf("hcOpen('" + id + "')") > 0), want);
-  ok("…the loads too, each to 🧺 Laundry", ad.loads.every(l => open.indexOf(l.name) > 0) && /onclick="hwToLaundry\(\)"/.test(open));
+  ok("…the loads too, each to 🧺 Laundry", ad.loads.every(l => open.indexOf(c.esc(l.name)) > 0) &&/onclick="hwToLaundry\(\)"/.test(open));
   ok("…done ones ✅, open ones ☐ (today)", /✅<\/span><span><\/span><span style="flex:1">Wipe the fridge/.test(open) && /☐<\/span>/.test(open));
   c.get("hwDayTap('" + TODAY + "')"); ok("tap again: it closes", !/everything on it/.test(c.hwCardHTML()));
   c.get("hwDayTap('" + V.isoOf(T - DOW + 6 + (DOW === 6 ? 7 : 0)) + "')"); const fo = c.hwCardHTML();
