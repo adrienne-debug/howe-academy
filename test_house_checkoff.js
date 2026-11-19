@@ -28,7 +28,7 @@ console.log("\n── two devices open on the same morning ──");
   const tx=w.since(m).filter(l=>l.op==="tx"&&l.path==="houseDay/"+MON+"/built");
   ok("both devices asked for the claim; exactly one won", tx.length>=2&&tx.filter(l=>l.committed).length===1, tx.map(l=>[l.dev,l.committed]));
   const ups=w.since(m).filter(l=>l.op==="update"&&(l.keys||[]).some(k=>k.indexOf("houseDay/"+MON+"/plan/")===0));
-  ok("the day was written once, by the winner, in one update of targeted paths", ups.length===1&&ups[0].keys.every(k=>/^houseDay\/2026-11-16\/(plan|over|miss)\/[\w]+$|^houseDay\/2026-11-16\/built\/(ok|sig)$/.test(k)), ups.map(u=>[u.dev,u.keys.length]));
+  ok("the day was written once, by the winner, in one update of targeted paths", ups.length===1&&ups[0].keys.every(k=>/^houseDay\/2026-11-16\/(plan|over|miss|grabs)\/[\w]+$|^houseDay\/2026-11-16\/built\/(ok|sig)$/.test(k)), ups.map(u=>[u.dev,u.keys.length]));
   const pa=A.run("JSON.stringify(houseDayData['"+MON+"'].plan)"), pb=B.run("JSON.stringify(houseDayData['"+MON+"'].plan)");
   ok("both devices show the same stored plan", pa===pb&&pa.length>20);
   await w.tick(); ok("a later tick builds nothing again", w.since(m).filter(l=>l.op==="update"&&(l.keys||[]).some(k=>k.indexOf("/plan/")>0)).length===1);
