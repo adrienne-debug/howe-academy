@@ -3,7 +3,8 @@
 // tools/us_runtime.js), geo.js, notebooks.js (every generator) and index.html's usNbMap / usNbCtx. Made-up kids only:
 //  · the maps: HoweUS.colonyMap() = the 13 colonies numbered 1–13 north to south, each number inside its own colony or out in
 //    the sea; HoweUS.battleMap(names) = numbered pins in the order given (U.S. map, or the world map when a pin is abroad —
-//    pinsWorld puts Pearl Harbor there); no place or battle name is ever drawn on a map; no two numbers overlap;
+//    pinsWorld puts Pearl Harbor there); no place or battle name is ever drawn on a map; no two numbers overlap; no two leader
+//    lines cross, a leader starts at a dot in its own place and crosses no other land, and its circle is nearest its own place;
 //  · the record: usNbCtx gives a Stage 5 / 8 / 9 kid record.map = {kind, names, img} (read-only), other stages none;
 //  · the pages: one per stage; each name only once (the word bank) — never beside its number; the timeline prints the years,
 //    the events only in the bank; grade bands (≤1st: color / point / draw, no blanks; 4th+: the battle's year too);
@@ -22,6 +23,7 @@ const ringsOf = d => String(d).split("M").slice(1).map(r => { const n = r.match(
 const inside = (rings, x, y) => { let c = false; rings.forEach(r => { for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const a = r[i], b = r[j]; if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } }); return c; };
 // the numbers on a map: <circle …/><text x y>n</text> (the number's circle is the one drawn right before its text)
 const nums = t => { const out = []; const re = /<circle cx="([\d.-]+)" cy="([\d.-]+)" r="([\d.]+)"[^>]*\/><text x="[\d.-]+" y="[\d.-]+"[^>]*>(\d+)<\/text>/g; let m; while ((m = re.exec(t))) out.push({ x: +m[1], y: +m[2], r: +m[3], n: +m[4] }); return out; };
+const edgeD = (rings, x, y) => { let m = 1e9; rings.forEach(r => { for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const a = r[i], b = r[j], dx = b[0] - a[0], dy = b[1] - a[1], l = dx * dx + dy * dy, t = l ? Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / l)) : 0; m = Math.min(m, Math.hypot(a[0] + t * dx - x, a[1] + t * dy - y)); } }); return m; };
 const texts = t => (t.match(/<text[^>]*>[^<]*<\/text>/g) || []).map(x => x.replace(/<[^>]+>/g, ""));
 const vbOf = t => t.match(/viewBox="([^"]+)"/)[1].split(" ").map(Number);
 const battles = s => L.cards.filter(c => c.deck === "American Battles" && c.stage === s).map(c => c.name);
@@ -35,9 +37,9 @@ ok("colonyOrder = the 13 Colonies deck's colonies, north to south (New Hampshire
 const cm = L.colonyMap({ w: 330, aspect: 0.66 }), cn = nums(cm);
 ok("colonyMap: an SVG with the numbers 1–13 and no other words on it", /^<svg/.test(cm) && cn.map(q => q.n).join() === "1,2,3,4,5,6,7,8,9,10,11,12,13" && texts(cm).every(x => /^\d+$/.test(x)), texts(cm));
 ok("…no colony or state name drawn anywhere on it", !L.colonyOrder.concat(["Colony", "Maine", "Vermont"]).some(n => cm.indexOf(n) >= 0));
-ok("…each number sits inside its own colony, or wholly out in the sea (a speck like Rhode Island or Delaware gets a leader line)", cn.every(q => {
-  const own = ringsOf(U.state[L.colonyOrder[q.n - 1]]); if (inside(own, q.x, q.y)) return true;
-  return [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].every(d => !Object.keys(U.state).some(s => inside(ringsOf(U.state[s]), q.x + d[0] * q.r, q.y + d[1] * q.r))); }), cn);
+ok("…each number sits inside its own colony (a circle wholly inside it), or out on a leader where no other colony's land is under it", cn.every(q => {
+  const own = ringsOf(U.state[L.colonyOrder[q.n - 1]]), rim = [[0, 0]].concat([...Array(16).keys()].map(i => [Math.cos(i * Math.PI / 8), Math.sin(i * Math.PI / 8)]));
+  return rim.every(d => { const x = q.x + d[0] * q.r, y = q.y + d[1] * q.r; return inside(own, x, y) || !Object.keys(U.state).some(s => inside(ringsOf(U.state[s]), x, y)); }); }), cn);
 ok("…no two numbers overlap", cn.every((a, i) => cn.every((b, j) => i === j || Math.hypot(a.x - b.x, a.y - b.y) >= a.r + b.r)));
 ok("…the page's size: width 330, the asked aspect", /width="330"/.test(cm) && (v => Math.abs(v[2] / v[3] - 0.66) < 0.01)(vbOf(cm)));
 ok("…the same drawing every time (a reprint matches)", L.colonyMap({ w: 330, aspect: 0.66 }) === cm);
@@ -54,6 +56,41 @@ ok("pinsWorld: every pin in the U.S. or Hawaii frame has a world spot (Pearl Har
 ok("battleMap: a name with no pin, a route, or nothing → null", L.battleMap(["Nowhere"]) === null && L.battleMap(["Trail of Tears"]) === null && L.battleMap([]) === null);
 { const geo = L.geo; L.geo = null; const w0 = win.HoweGeo; win.HoweGeo = undefined;
   ok("without geo.js both maps are null (the page prints its no-map version)", L.colonyMap() === null && L.battleMap(battles(8)) === null); L.geo = geo; win.HoweGeo = w0; }
+
+console.log("── the leader lines (hub check 2026-11-18: 2 / 3 crossed off New England) ──");
+// one <g> per number: [leader path] [dot circle] label circle + number
+const marks = t => (t.match(/<g>.*?<\/g>/g) || []).map(x => { const ld = (x.match(/<path d="M([\d.-]+) ([\d.-]+) L([\d.-]+) ([\d.-]+)"/) || []).slice(1).map(Number);
+  const cs = [...x.matchAll(/<circle cx="([\d.-]+)" cy="([\d.-]+)" r="([\d.]+)"/g)].map(m => m.slice(1).map(Number)), c = cs[cs.length - 1];
+  return { n: +x.match(/>(\d+)<\/text>/)[1], a: ld.length ? [ld[0], ld[1]] : null, e: ld.length ? [ld[2], ld[3]] : null, dot: cs.length > 1 ? cs[0] : null, x: c[0], y: c[1], r: c[2] }; });
+const segX = (a, b, c, d) => { const o = (p, q, s) => (q[0] - p[0]) * (s[1] - p[1]) - (q[1] - p[1]) * (s[0] - p[0]); return o(c, d, a) * o(c, d, b) < 0 && o(a, b, c) * o(a, b, d) < 0; };
+const segPt = (a, b, p) => { const dx = b[0] - a[0], dy = b[1] - a[1], l = dx * dx + dy * dy, t = l ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l)) : 0; return Math.hypot(a[0] + t * dx - p[0], a[1] + t * dy - p[1]); };
+const SHIP = { 5: { w: 736, aspect: 2.05 }, 8: { w: 736, aspect: 2.05 }, 9: { w: 736, aspect: 2.2 } };   // the sizes index.html's US_NB_MAP asks for
+const shipped = [["the colonies map", L.colonyMap({ w: 330, aspect: 0.66 }), null]].concat([5, 8, 9].map(s => ["the Stage " + s + " battle map", L.battleMap(battles(s), SHIP[s]), battles(s)]));
+ok("the sizes checked here are the ones index.html ships (US_NB_MAP)", /const US_NB_MAP=\{5:\{w:330,aspect:0\.66\},8:\{w:736,aspect:2\.05\},9:\{w:736,aspect:2\.2\}\};/.test(src));
+shipped.forEach(([what, t, names]) => {
+  const g = marks(t), led = g.filter(q => q.a);
+  ok(what + ": no two leader lines cross (every pair checked)", led.every((p, i) => led.every((q, j) => j <= i || !segX(p.a, p.e, q.a, q.e))), led.map(q => q.n));
+  ok("…no leader runs through another number's circle", led.every(p => g.every(q => q === p || segPt(p.a, p.e, [q.x, q.y]) >= q.r)));
+  if (!names) {
+    const col = L.colonyOrder.map(n => ringsOf(U.state[n]));
+    ok("…" + led.length + " leaders (Rhode Island, Delaware); each starts at a dot wholly inside its own colony", led.map(q => q.n).join() === "3,8" && led.every(q => q.dot && inside(col[q.n - 1], q.a[0], q.a[1]) &&
+      [0, 1, 2, 3, 4, 5, 6, 7].every(i => inside(col[q.n - 1], q.a[0] + Math.cos(i * Math.PI / 4) * q.dot[2], q.a[1] + Math.sin(i * Math.PI / 4) * q.dot[2]))), led.map(q => q.n));
+    ok("…a leader crosses no other state's land on its way out (no Long Island, no Delmarva)", led.every(q => Object.keys(U.state).filter(s => s !== L.colonyOrder[q.n - 1]).every(s => ringsOf(U.state[s]).every(rg => rg.every((p, i) => !segX(q.a, q.e, p, rg[(i + 1) % rg.length]))))));
+    ok("…a pulled-out circle stays clear of other land by at least an outline's width (no touching Long Island or Maryland)", led.every(q => Object.keys(U.state).filter(s => s !== L.colonyOrder[q.n - 1]).every(s => { const rg = ringsOf(U.state[s]); return !inside(rg, q.x, q.y) && edgeD(rg, q.x, q.y) >= q.r + 1.4; })));
+    const near = q => { const d = col.map(rg => inside(rg, q.x, q.y) ? 0 : edgeD(rg, q.x, q.y)); return { own: d[q.n - 1], other: Math.min(...d.filter((_, i) => i !== q.n - 1)) }; };
+    ok("…Rhode Island's circle is nearer Rhode Island than any other colony", (z => !!z && z.own < z.other)(g[2] && near(g[2])), g[2] && near(g[2]));
+    ok("…Delaware's is no nearer any other colony than Delaware (its short sea coast is fenced by Cape May and Maryland — a tie at that corner is the best there is)", (z => !!z && z.own <= z.other + 1e-6)(g[7] && near(g[7])), g[7] && near(g[7]));
+    ok("…every other number sits inside its own colony, no leader", g.filter(q => !q.a).every(q => inside(col[q.n - 1], q.x, q.y) && edgeD(col[q.n - 1], q.x, q.y) >= q.r * 0.95));
+  } else {
+    const usOnly = names.every(n => L.data.pins[n][0] === "us");   // else the world map: pinsWorld for the U.S. / Hawaii pins
+    const P = names.map(n => { const p = L.data.pins[n]; return usOnly || p[0] === "world" ? [p[1], p[2]] : L.data.pinsWorld[n]; });
+    ok("…every number has a leader from a red dot right at its own battle's place", g.length === names.length && g.every(q => q.a && Math.hypot(q.a[0] - P[q.n - 1][0], q.a[1] - P[q.n - 1][1]) < 0.11 && q.dot), g.map(q => q.a));
+    ok("…each circle is nearer its own battle than any other battle on the map", g.every(q => P.every((p, i) => i === q.n - 1 || Math.hypot(q.x - p[0], q.y - p[1]) > Math.hypot(q.x - P[q.n - 1][0], q.y - P[q.n - 1][1]))));
+  }
+});
+{ const g = marks(shipped[3][1]), m = g[0], b = g[4];   // Meuse-Argonne (1) and the Bulge (5): 2.7 map units apart
+  ok("Stage 9: Meuse-Argonne and the Bulge — circles on opposite sides, and two dots that don't cover each other", !!(m && b && m.a && b.a && m.dot && b.dot) && (m.x - m.a[0]) * (b.x - b.a[0]) + (m.y - m.a[1]) * (b.y - b.a[1]) < 0 &&
+    Math.hypot(m.a[0] - b.a[0], m.a[1] - b.a[1]) >= m.dot[2] + b.dot[2], { m, b }); }
 
 console.log("── the record (index.html) ──");
 const m0 = src.indexOf("const US_NB_MAP="), m1 = src.indexOf("// USNB_END");
