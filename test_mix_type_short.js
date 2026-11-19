@@ -263,5 +263,13 @@ const EB = { daily_mix: { name: "Daily Mix", emoji: "🧠", kind: "mix", who: "s
 { const c = mkEd(Object.assign({}, EB, { daily_mix: Object.assign({}, EB.daily_mix, { typeAnswer: true }) })); c.get("mhqSessOpen('daily_mix')"); c.get("mhqSessSave()");
   ok("Type the answer on a Mix still saves as before (typeAnswer:true, no mixType)", lastSet(c)[2].typeAnswer === true && !("mixType" in lastSet(c)[2]), lastSet(c)); }
 
+// ── The one-line instructions above the cards (her "Fix it first" 2026-11-19): a Mix with the switch On names both kinds of card ──
+{ const C = new Function(fn("mstControlsHtml") + "; return mstControlsHtml;")();
+  const mixOn = C({ sid: "daily_mix", kind: "mix", mixType: true }), mixOff = C({ sid: "daily_mix", kind: "mix" });
+  ok("controls line, Mix with Type short answers On: the box + Check AND the flip cards' ✓ / ✗", /A card with a box: type the answer and tap Check/.test(mixOn) && /Other cards: tap to see the answer · ✓ got it · ✗ not yet/.test(mixOn) && /← Back undoes the last one/.test(mixOn), mixOn);
+  ok("controls line, Mix with the switch Off: exactly the flip line as before", mixOff === C({ sid: "x" }) && /Tap the card to see the answer/.test(mixOff) && !/A card with a box/.test(mixOff));
+  ok("controls line, a deck or Daily Study record carrying mixType: the flip line (Mix only)", C({ sid: "w", kind: "deck", mixType: true }) === C({ sid: "x" }) && C({ sid: "ds", kind: "all", mixType: true }) === C({ sid: "x" }));
+  ok("controls line, Type the answer on (any kind, even a Mix with both): the typed line as before", C({ sid: "daily_mix", kind: "mix", mixType: true, typeAnswer: true }) === C({ sid: "x", typeAnswer: true }) && /Type the answer and tap Check · Next moves on/.test(C({ sid: "x", typeAnswer: true }))); }
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
