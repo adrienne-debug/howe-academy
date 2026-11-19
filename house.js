@@ -196,7 +196,7 @@ function hhOnceHTML(){
   if(!ids.length) return h+'<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:10px 12px;font-size:12px;color:var(--muted)">The pile is empty.</div>';
   const held=ids.filter(function(id){ return hhOnceHeld(jobs[id])&&jobs[id].status!=="retired"; }), out=ids.filter(function(id){ return !jobs[id].hold&&jobs[id].status!=="retired"; }), done=ids.filter(function(id){ return jobs[id].status==="retired"; });
   const byRoom=function(list){ return list.sort(function(a,b){ return (rooms.indexOf(hhRoomOf(jobs[a]))-rooms.indexOf(hhRoomOf(jobs[b])))||(HH_WHO.indexOf(jobs[a].who)-HH_WHO.indexOf(jobs[b].who))||(a<b?-1:1); }); };
-  const row=function(id,extra){ const j=jobs[id]; return '<div style="padding:7px 12px;border-top:1px solid #eef2f0"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px;font-weight:700"><span>'+(j.emoji||'☑️')+'</span><span style="flex:1;min-width:120px;'+(j.status==="retired"?'text-decoration:line-through;color:#6b6560':'')+'">'+esc(j.label)+'</span>'+_hhChip(esc(hhWhoName(j.who)),'#f3f4f6','#475569')+_hhChip('⏱ '+hhMinutesOf(j)+' min','#f3f4f6','#475569')+(j.pts?_hhChip(j.pts+' ⭐','#fef3c7','#92400e'):'')+'</div>'+(extra||'')+'</div>'; };
+  const row=function(id,extra){ const j=jobs[id]; return '<div style="padding:7px 12px;border-top:1px solid #eef2f0"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px;font-weight:700"><span'+hoTap(id,mom)+'>'+(j.emoji||'☑️')+'</span><span'+hoTap(id,mom,'flex:1;min-width:120px;'+(j.status==="retired"?'text-decoration:line-through;color:#6b6560':''))+'>'+esc(j.label)+'</span>'+_hhChip(esc(hhWhoName(j.who)),'#f3f4f6','#475569')+_hhChip('⏱ '+hhMinutesOf(j)+' min','#f3f4f6','#475569')+(j.pts?_hhChip(j.pts+' ⭐','#fef3c7','#92400e'):'')+'</div>'+(extra||'')+'</div>'; };
   const section=function(title,sub,list,extraFn){ h+='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);margin-bottom:10px;overflow:hidden"><div style="padding:9px 12px;font-size:13px;font-weight:800">'+title+' <span style="font-weight:600;color:var(--muted);font-size:11px">'+sub+'</span></div>';
     if(!list.length) h+='<div style="padding:0 12px 8px;font-size:12px;color:var(--muted)">Nothing here.</div>'; let room=null; byRoom(list).forEach(function(id){ const rm=hhRoomOf(jobs[id]); if(rm!==room){ room=rm; h+='<div style="padding:6px 12px 0;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560">🚪 '+esc(hhRoomName(rm))+'</div>'; } h+=row(id,mom?extraFn(id):''); }); h+='</div>'; };
   section('☑️ The pile',held.length+' waiting · '+held.reduce(function(a,id){ return a+hhMinutesOf(jobs[id]); },0)+' min',held,function(id){ return '<div style="margin-top:5px">'+_hhOnceSendBtns(id,jobs[id])+'</div>'; });
@@ -204,6 +204,14 @@ function hhOnceHTML(){
   if(done.length) section('✓ Done',done.length,done,function(id){ return '<div style="font-size:11px;color:#94a3b8;margin-top:3px">done '+esc((jobs[id].done||'').slice(5))+'</div>'; });
   return h;
 }
+// ONCETAP_START — a one-time job's row opens its chore card (DESIGN_household_rooms_2026-11-15 §14; her rule 2026-11-18: "whenever
+// there is a [chore], it to be clickable and editable, and that edit reflects everywhere that it is"; her "all go" 2026-11-18, piece 1).
+// The emoji and the name on a row of a room's 📝 To do and 🏠 Whole house's (rtdRowHTML), 👤 By person's 📝 To do (htdPersonHTML) and
+// the ☑️ pile under ⋯ More (hhOnceHTML) open hcOpen(id), as a 🔴 Now row does. Only those two spans carry the tap, so ✓, Send to…,
+// ⏸ Back to the pile and Give to <Name> (beside them, never inside) still do only their own thing. Mom only: not Mom, the span is
+// exactly as before. A tap writes nothing; an edit on the card is the card's own write, and every one of these rows reads that row.
+function hoTap(id,mom,css){ return mom?' onclick="hcOpen(\''+id+'\')" style="cursor:pointer'+(css?';'+css:'')+'"':(css?' style="'+css+'"':''); }
+// ONCETAP_END
 // HH_ONCEVIEW_END
 // HH_EDITOR_START — ✎ Edit on every row, and the Area / Room views by person (her 2026-10-11: "in area could we make subsections
 // for each person and then make all the things editable to all the options like days of week"). The editor sits under the row,
@@ -754,10 +762,10 @@ function rtdHTML(rid){
 }
 // One row of the card (HOUSETODO draws the same rows on 🏠 Whole house): a sent one quietly, a waiting or ticked-today one with ✓ and Send to….
 function rtdRowHTML(id,j,mom,t){ const tick=rtdTicked(j,t), wait=tick||hhOnceHeld(j);
-  if(!wait) return '<div style="display:flex;align-items:center;gap:7px;padding:5px 12px;border-top:1px solid #f3f4f6;font-size:12px;color:#6b6560"><span>'+(j.emoji||'☑️')+'</span><span style="flex:1">'+esc(j.label)+' · on '+esc(hhWhoName(j.who))+'’s list</span>'+(mom?_hhBtn("hhOnceHold('"+id+"')",'⏸ Back to the pile',false,'#64748b'):'')+'</div>';
+  if(!wait) return '<div style="display:flex;align-items:center;gap:7px;padding:5px 12px;border-top:1px solid #f3f4f6;font-size:12px;color:#6b6560"><span'+hoTap(id,mom)+'>'+(j.emoji||'☑️')+'</span><span'+hoTap(id,mom,'flex:1')+'>'+esc(j.label)+' · on '+esc(hhWhoName(j.who))+'’s list</span>'+(mom?_hhBtn("hhOnceHold('"+id+"')",'⏸ Back to the pile',false,'#64748b'):'')+'</div>';
   return '<div style="padding:5px 12px;border-top:1px solid #f3f4f6'+(tick?';opacity:.6':'')+'"><div style="display:flex;align-items:center;gap:7px;font-size:12.5px">'
       +(mom?'<button onclick="rtdTick(\''+id+'\')" title="'+(tick?'Not done after all':'I did it myself')+'" style="flex:none;width:22px;height:22px;border-radius:6px;border:1.5px solid #7c3aed;background:'+(tick?'#7c3aed':'#fff')+';color:#fff;font-size:12px;font-weight:800;cursor:pointer;padding:0">'+(tick?'✓':'')+'</button>':'')
-      +'<span>'+(j.emoji||'☑️')+'</span><span style="flex:1;font-weight:700'+(tick?';text-decoration:line-through':'')+'">'+esc(j.label)+'<span style="font-weight:400;color:#6b6560">'+(tick?' · done today':rtdFrom(j.from,t))+'</span></span></div>'
+      +'<span'+hoTap(id,mom)+'>'+(j.emoji||'☑️')+'</span><span'+hoTap(id,mom,'flex:1;font-weight:700'+(tick?';text-decoration:line-through':''))+'>'+esc(j.label)+'<span style="font-weight:400;color:#6b6560">'+(tick?' · done today':rtdFrom(j.from,t))+'</span></span></div>'
       +(mom&&!tick?'<div style="margin:4px 0 2px 29px">'+_hhOnceSendBtns(id,j)+'</div>':'')+'</div>'; }
 // ＋ To-do: the Add form's draft set to a one-time job in this room for Mom, anyone can do it; hhAddSave makes and writes the record.
 function rtdSave(rid,label,emoji){
@@ -973,7 +981,7 @@ function htdPersonIds(who){ const J=hhJobs(), ord=function(a,b){ return String(J
   return {sent:live.filter(function(id){ return !hhOnceHeld(J[id])&&J[id].who===who; }).sort(ord),can:live.filter(function(id){ return hhOnceHeld(J[id])&&hhCanOf(J[id]).indexOf(who)>=0; }).sort(ord)}; }
 function htdPersonHTML(who){
   const J=hhJobs(), mom=(typeof momHere!=="function")||momHere(), t=_hhIsoLocal(Date.now()), P=htdPersonIds(who), nm=esc(hhWhoName(who)), k="p|"+who;
-  const row=function(id,quiet,btn){ const j=J[id]; return '<div style="display:flex;align-items:center;gap:7px;padding:5px 12px;border-top:1px solid #f3f4f6;font-size:'+(quiet?'12px;color:#6b6560':'12.5px')+'"><span>'+(j.emoji||'☑️')+'</span><span style="flex:1'+(quiet?'':';font-weight:700')+'">'+esc(j.label)
+  const row=function(id,quiet,btn){ const j=J[id]; return '<div style="display:flex;align-items:center;gap:7px;padding:5px 12px;border-top:1px solid #f3f4f6;font-size:'+(quiet?'12px;color:#6b6560':'12.5px')+'"><span'+hoTap(id,mom)+'>'+(j.emoji||'☑️')+'</span><span'+hoTap(id,mom,'flex:1'+(quiet?'':';font-weight:700'))+'>'+esc(j.label)
     +'<span style="font-weight:400;color:#6b6560"> · '+esc(htRoomLabel(hhRoomOn(j)))+'</span>'+(quiet?'':'<span style="font-weight:400;color:#6b6560">'+rtdFrom(j.from,t)+'</span>')+'</span>'+(mom?btn:'')+'</div>'; };
   let h='<div style="'+HP_CARD+'"><div style="padding:9px 12px;font-size:14px;font-weight:800">📝 To do <span style="font-size:11px;font-weight:600;color:var(--muted)">one-time jobs for '+nm+'</span></div>';
   if(!P.sent.length&&!P.can.length) return h+'<div style="padding:0 12px 9px;font-size:12px;color:var(--muted)">Nothing on '+nm+'’s list, and nothing waiting that '+nm+' can do.</div></div>';
