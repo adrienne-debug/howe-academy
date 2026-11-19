@@ -52614,7 +52614,7 @@ function unitStageMoveUp(unitId,kid,book){
     if(!confirm(cap(kid)+" isn\u2019t ready yet ("+(st.on||0)+" of "+(st.need||st.total)+" on the ladder). Start "+st.next.label+" anyway? "+_cur+" keeps going too.")) return; }
   const ks=u.kidStage[kid]; const sub=book?book:ks.subject;   // UNITMOVEBOOK: the book Mom picked (same book = today's move-up)
   const w=_ustApply(u,kid,st.next.n,"",sub,ks.map); if(!w) return;
-  const rec={stage:st.next.n,knows:"",subject:sub||"",map:(w.gate?ks.map:"")||"",ts:Date.now(),from:ks.stage};
+  const rec=Object.assign(_unbKeep(ks),{stage:st.next.n,knows:"",subject:sub||"",map:(w.gate?ks.map:"")||"",ts:Date.now(),from:ks.stage});   // UNITNEXTBOOK: the kid's settings ride along
   unitMoveForm=null; _ustWrite(unitId,kid,w,rec); _ustDone(unitId,kid,rec);
 }
 // UNITMOVEBOOK_START — her "yes" 2026-11-19 (beta family: a kid finished his Level 1 spelling book; his Level 2 book is a NEW
@@ -52641,6 +52641,72 @@ function _umbHtml(u,k,ks,next,sel,btn,esc,subjName){
   return h+'</div>';
 }
 // UNITMOVEBOOK_END
+// UNITNEXTBOOK_START — her ask 2026-11-19: "i would like it to link up with the lessons for the spelling test and it should
+// recognize new book new level in the units" (design approved the same day: Units shows the new book and offers ONE Mom tap
+// to start the next level; practice and test settings carry over; not automatic). Beta family: a kid finished his Level 1
+// spelling book and his Level 2 book was added as a NEW subject; the unit stayed on Level 1 with the finished book linked,
+// so the Level 2 lesson cards got no spelling test and his practice words stayed on Level 1.
+// 1. The offer. On a unit whose cards follow the kid's book (cardLessons), Mom sees on the kid's row "<Kid> finished <book>.
+//    <next book> is on the schedule — ➡ Start <next stage> with it" when ALL of: the kid has a next stage; every lesson of
+//    the linked book is done by the curriculum's own done record (lidDoneIdx — not card checks); and exactly ONE other
+//    subject of the kid's is clearly the next level's book — its lessons name that level ("L2-7", stParseLesson), or, when
+//    its lessons carry no level, its key or name is the linked book's with the next stage's number ("…_1" → "…_2"). It must
+//    still have lessons to do and not be paused. A book linked to any unit is never offered. None or several → no line
+//    (➡ and "Which book?" stay as they are). The tap = "Which book?" → Start with that book picked: the same "isn't ready
+//    yet" question, the same writes. Nothing happens without the tap; a kid's screen shows nothing new.
+// 2. The move keeps the kid's settings. _ustWrite .set()s the whole kidStage record and the move-up's record carried only
+//    stage/knows/subject/map, so every ➡ wiped practice (which card carries word practice), testRight (where a ✓ word
+//    lands), path (Practice Week / Test First), the notebook options (nbWords, nbPractice) and the check-up line (checkup).
+//    Each is still right at the next stage, so every field the move doesn't set now rides along. knows resets as before (it
+//    names a family of the OLD stage), and map is decided as before (a book map belongs to one stage).
+const UNB_MOVE_SETS=["stage","knows","subject","map","ts","from"];
+function _unbKeep(ks){ const out={}; Object.keys(ks||{}).forEach(k=>{ if(UNB_MOVE_SETS.indexOf(k)<0&&ks[k]!=null) out[k]=ks[k]; }); return out; }
+function _unbSubj(kid,sk){ return ((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid]||{})[sk]||null; }
+// Every lesson on the book's list is done (done-by-id). Unstamped / empty list → unknown → false.
+function _unbFinished(kid,sk){
+  const s=_unbSubj(kid,sk), seq=(s&&s.lessonSeq)||[]; if(!seq.length||typeof lidDoneIdx!=="function") return false;
+  const done=lidDoneIdx(kid,sk); if(!done) return false;
+  for(let i=0;i<seq.length;i++) if(!done.has(i)) return false;
+  return true;
+}
+// "all_about_spelling_2" / "All About Spelling 2" / "AAS 4" → {stem, n}; no trailing number → null.
+function _unbStem(t){ const m=/^(.*\D)\s*(\d+)$/.exec(String(t==null?"":t).toLowerCase().replace(/[^a-z0-9]+/g," ").trim()); return m&&m[1].trim()?{stem:m[1].trim(),n:+m[2]}:null; }
+function _unbIsNext(sk,s,linkedSk,linked,n){
+  const lv=new Set(); (s.lessonSeq||[]).forEach(t=>{ const p=(typeof stParseLesson==="function")?stParseLesson(t):null; if(p&&p.level!=null) lv.add(p.level); });
+  if(lv.size) return lv.size===1&&lv.has(n);   // its lessons say which level
+  const mine=[sk,s.display].map(_unbStem).filter(Boolean), theirs=[linkedSk,linked&&linked.display].map(_unbStem).filter(Boolean);
+  return mine.some(a=>a.n===n&&theirs.some(b=>b.stem===a.stem));
+}
+// {sk, from, next} when the offer shows, else null.
+function unitNextBook(u,kid){
+  try{
+    if(!u||!u.cardLessons) return null; const ks=((u.kidStage||{})[kid])||null; if(!ks||!ks.subject) return null;
+    const st=unitStageStatus(u,kid); if(!st||!st.next) return null;
+    if(!_unbFinished(kid,ks.subject)) return null;
+    const linked=new Set(); const us=(typeof unitStudies!=="undefined"&&unitStudies)||{};
+    Object.keys(us).forEach(id=>{ const x=((((us[id]||{}).kidStage)||{})[kid]||{}).subject; if(x) linked.add(x); });
+    const subs=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[kid])||{};
+    const hits=Object.keys(subs).filter(sk=>{ const s=subs[sk];
+      if(!s||linked.has(sk)||s.paused||!(s.lessonSeq||[]).length||_unbFinished(kid,sk)) return false;
+      return _unbIsNext(sk,s,ks.subject,subs[ks.subject],st.next.n); });
+    return hits.length===1?{sk:hits[0],from:ks.subject,next:st.next}:null;
+  }catch(e){ return null; }
+}
+function unitNextBookHtml(u,k,btn,esc,subjName){
+  if(typeof momHere!=="function"||!momHere()) return "";
+  if(unitMoveForm&&unitMoveForm.unitId===u.id&&unitMoveForm.kid===k) return "";   // "Which book?" is open — it says the same
+  const nb=unitNextBook(u,k); if(!nb) return "";
+  const lbl=nb.next.label||("Stage "+nb.next.n);
+  return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;padding:7px 10px;border-radius:10px;background:#f0fdf4;border:1.5px solid #bbf7d0">'
+    +'<span style="font-size:11.5px;color:#14532d;font-weight:700;line-height:1.4">'+esc(cap(k))+' finished '+esc(subjName(k,nb.from))+'. '+esc(subjName(k,nb.sk))+' is on the schedule —</span>'
+    +'<button onclick="unitNextBookGo(\''+esc(u.id)+'\',\''+esc(k)+'\')" style="'+btn("#2d6a4f","#fff","#2d6a4f")+'">➡ Start '+esc(lbl)+' with it</button></div>';
+}
+// The tap re-checks (the page may be old) and goes through ➡ with the book picked.
+function unitNextBookGo(unitId,kid){
+  if(typeof momHere!=="function"||!momHere()) return; const u=(unitStudies||{})[unitId]; const nb=unitNextBook(u,kid); if(!nb) return;
+  unitStageMoveUp(unitId,kid,nb.sk);
+}
+// UNITNEXTBOOK_END
 function _unitStageRowsHtml(u,roster){
   const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
   const sel='padding:5px 8px;border-radius:8px;border:1.5px solid var(--border);font-size:11.5px;font-family:\'DM Sans\',sans-serif;background:#fff;max-width:100%';
@@ -52661,6 +52727,7 @@ function _unitStageRowsHtml(u,roster){
       if(st.next) h+='<button onclick="unitStageMoveUp(\''+esc(u.id)+'\',\''+esc(k)+'\')" style="margin-left:auto;'+(st.ready?btn("#2d6a4f","#fff","#2d6a4f"):btn("#fff","#2d6a4f","var(--border)"))+'">➡ Start Stage '+st.next.n+': '+esc(st.next.label)+'</button>';
       h+='</div>';
       h+=_umbHtml(u,k,ks,st.next,sel,btn,esc,subjName);   // UNITMOVEBOOK: "Which book?"
+      h+=unitNextBookHtml(u,k,btn,esc,subjName);   // UNITNEXTBOOK: finished the book → the next level's book, one tap
       if(typeof mastCountEmoji==="function"&&(u.decks||[]).some(d=>d&&d.key==="Counting")){ const ce=mastCountEmoji(k);
         h+='<div style="display:flex;align-items:center;gap:3px;flex-wrap:wrap;margin-top:5px"><span style="font-size:10.5px;color:var(--muted);font-weight:700;margin-right:4px">Counts</span>';
         MAST_COUNT_PICS.forEach(p=>{ const on=p[0]===ce; h+='<button title="'+p[1]+'" onclick="mastSetCountEmoji(\''+esc(k)+'\',\''+p[0]+'\')" style="width:28px;height:28px;padding:0;border-radius:8px;border:1.5px solid '+(on?'#2d6a4f':'transparent')+';background:'+(on?'#f2faf5':'transparent')+';font-size:16px;cursor:pointer;line-height:1">'+p[0]+'</button>'; });
