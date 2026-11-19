@@ -52437,16 +52437,42 @@ function unitStageStatus(u,kid){
   const sd=_ustStageDef(u,ks.stage)||{}, need=(sd.readyAt>0&&sd.readyAt<cards.length)?sd.readyAt:cards.length;   // LETTERS_PATH: readyAt (20 of 26 little letters)
   return {stage:ks.stage,total:cards.length,on,learn,fam,need,ready:cards.length>0&&on>=need,next};
 }
-function unitStageMoveUp(unitId,kid){
+function unitStageMoveUp(unitId,kid,book){
   if(!momHere()) return; const u=unitStudies[unitId]; if(!u) return; const st=unitStageStatus(u,kid); if(!st||!st.next) return;
   if(typeof _wrEnrollLocked==="function"&&_wrEnrollLocked(u)) return;   // 🏛 WORDROOTS
+  if(book===undefined&&_umbAsks(u,u.kidStage[kid])){ unitMoveForm={unitId,kid,subject:u.kidStage[kid].subject}; const el=document.getElementById("content"); if(el) renderUnits(el); return; }   // UNITMOVEBOOK: "Which book?" first
   // UNITS_CALM (10/4): an early tap asks first — the white button looked tappable and started letter sounds early
   if(!st.ready&&typeof confirm==="function"){ const _cur=(_ustStageDef(u,st.stage)||{}).label||("Stage "+st.stage);
     if(!confirm(cap(kid)+" isn\u2019t ready yet ("+(st.on||0)+" of "+(st.need||st.total)+" on the ladder). Start "+st.next.label+" anyway? "+_cur+" keeps going too.")) return; }
-  const ks=u.kidStage[kid]; const w=_ustApply(u,kid,st.next.n,"",ks.subject,ks.map); if(!w) return;
-  const rec={stage:st.next.n,knows:"",subject:ks.subject||"",map:(w.gate?ks.map:"")||"",ts:Date.now(),from:ks.stage};
-  _ustWrite(unitId,kid,w,rec); _ustDone(unitId,kid,rec);
+  const ks=u.kidStage[kid]; const sub=book?book:ks.subject;   // UNITMOVEBOOK: the book Mom picked (same book = today's move-up)
+  const w=_ustApply(u,kid,st.next.n,"",sub,ks.map); if(!w) return;
+  const rec={stage:st.next.n,knows:"",subject:sub||"",map:(w.gate?ks.map:"")||"",ts:Date.now(),from:ks.stage};
+  unitMoveForm=null; _ustWrite(unitId,kid,w,rec); _ustDone(unitId,kid,rec);
 }
+// UNITMOVEBOOK_START — her "yes" 2026-11-19 (beta family: a kid finished his Level 1 spelling book; his Level 2 book is a NEW
+// subject). ➡ Start Stage N carried the OLD book into the next stage, so the new level's cards (cat_gate), the lesson-day
+// spelling test and word practice all kept reading the finished book. On a unit whose cards follow the kid's book
+// (cardLessons) and a kid with a book linked, ➡ now opens "Which book?" in the kid's row — the Start form's own picker (the
+// kid's subjects), the current book chosen. Start → the "isn't ready yet" question (unchanged) → _ustApply with the picked
+// book, saved as the kid's subject. Same book = today's move-up exactly; Cancel changes nothing. A book-map link
+// (UNIT_BOOK_MAPS) is left alone: each map belongs to ONE stage, so a move-up never uses it.
+let unitMoveForm=null;   // {unitId,kid,subject} — the open "Which book?" row
+function _umbAsks(u,ks){ return !!(u&&u.cardLessons&&ks&&ks.subject); }
+function unitMoveBookSet(val){ if(!momHere()||!unitMoveForm) return; unitMoveForm.subject=String(val||""); }
+function unitMoveBookClose(){ unitMoveForm=null; const el=document.getElementById("content"); if(el) renderUnits(el); }
+function unitMoveBookGo(){ if(!momHere()||!unitMoveForm) return; const f=unitMoveForm; if(!f.subject) return; unitStageMoveUp(f.unitId,f.kid,f.subject); }
+function _umbHtml(u,k,ks,next,sel,btn,esc,subjName){
+  const f=unitMoveForm; if(!f||f.unitId!==u.id||f.kid!==k||!next) return "";
+  const books=Object.keys((((currData||{}).subjects||{})[k])||{}); if(ks.subject&&books.indexOf(ks.subject)<0) books.unshift(ks.subject);
+  let h='<div style="margin-top:7px;padding:9px 10px;border:1.5px solid var(--border);border-radius:10px;background:#fafaf9">';
+  h+='<div style="font-size:12.5px;font-weight:800;color:#1f2937;margin-bottom:6px">Which book?</div>';
+  h+='<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;font-size:11px;color:#374151;font-weight:700">';
+  h+='<span>Their book (subject)</span><select style="'+sel+'" onchange="unitMoveBookSet(this.value)">'+books.map(sk=>'<option value="'+esc(sk)+'"'+(sk===f.subject?' selected':'')+'>'+esc(subjName(k,sk))+'</option>').join('')+'</select>';
+  h+='</div><div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin:7px 0">Stage '+next.n+'’s cards, spelling test and practice follow this book. Pick the new book if Stage '+next.n+' has its own.</div>';
+  h+='<div style="display:flex;gap:6px"><button onclick="unitMoveBookGo()" style="'+btn("#2d6a4f","#fff","#2d6a4f")+'">Start Stage '+next.n+'</button><button onclick="unitMoveBookClose()" style="'+btn("#fff","var(--muted)","var(--border)")+'">Cancel</button></div>';
+  return h+'</div>';
+}
+// UNITMOVEBOOK_END
 function _unitStageRowsHtml(u,roster){
   const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
   const sel='padding:5px 8px;border-radius:8px;border:1.5px solid var(--border);font-size:11.5px;font-family:\'DM Sans\',sans-serif;background:#fff;max-width:100%';
@@ -52466,6 +52492,7 @@ function _unitStageRowsHtml(u,roster){
         :'<span style="font-size:10.5px;color:var(--muted);font-weight:700">'+(st.on||0)+' of '+(st.total||0)+' on the ladder'+(st.need&&st.need<st.total?' · ready at '+st.need:'')+(st.fam?' · learning '+esc(st.fam):'')+'</span>';
       if(st.next) h+='<button onclick="unitStageMoveUp(\''+esc(u.id)+'\',\''+esc(k)+'\')" style="margin-left:auto;'+(st.ready?btn("#2d6a4f","#fff","#2d6a4f"):btn("#fff","#2d6a4f","var(--border)"))+'">➡ Start Stage '+st.next.n+': '+esc(st.next.label)+'</button>';
       h+='</div>';
+      h+=_umbHtml(u,k,ks,st.next,sel,btn,esc,subjName);   // UNITMOVEBOOK: "Which book?"
       if(typeof mastCountEmoji==="function"&&(u.decks||[]).some(d=>d&&d.key==="Counting")){ const ce=mastCountEmoji(k);
         h+='<div style="display:flex;align-items:center;gap:3px;flex-wrap:wrap;margin-top:5px"><span style="font-size:10.5px;color:var(--muted);font-weight:700;margin-right:4px">Counts</span>';
         MAST_COUNT_PICS.forEach(p=>{ const on=p[0]===ce; h+='<button title="'+p[1]+'" onclick="mastSetCountEmoji(\''+esc(k)+'\',\''+p[0]+'\')" style="width:28px;height:28px;padding:0;border-radius:8px;border:1.5px solid '+(on?'#2d6a4f':'transparent')+';background:'+(on?'#f2faf5':'transparent')+';font-size:16px;cursor:pointer;line-height:1">'+p[0]+'</button>'; });
