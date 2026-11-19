@@ -16,7 +16,7 @@ const CONSTS=src.slice(src.indexOf("const LAUNDRY_STAGES"), src.indexOf("\n", sr
 const CYCLE=cut("// LAUNDRY_CYCLE_START","// LAUNDRY_CYCLE_END"), SPLIT=cut("// LAUNDRY_SPLIT_START","// LAUNDRY_SPLIT_END"), BASKET=cut("// BASKET_START","// BASKET_END");
 const H=h=>h*3600000, M=m=>m*60000;
 const FNS=["laundryAdvance","laundryAdvanceLabel","laundryBackStage","laundryBack","_cuCycleMin","_cuMomOk","_cuStageName","laundryNudgeKind","laundryNudgeList","laundryNudgeRowHTML","laundryT","laundryFoldHrs","laundryDoneAt","laundryDoneTxt",
-  "laundryKidMovePick","laundryBlockStep","laundryMeta","laundryTimesEditorHTML","laundryTimesSave","laundryEditSheetHTML","laundryEditSave","_leHM","_leRe","_leCycleTok","_leCycleOpts",
+  "laundryKidMovePick","laundryBlockStep","laundryMeta","laundryTimesEditorHTML","laundryTimesSave","laundryEditSheetHTML","laundryEditSave","_leHM","_leRe","_leCycleTok","_leCycleOpts","_leStageOpts","_leBackLineOk",
   "_lbQ","llLoadStage","llKidRowLineDone","llParentTick","llPutAway","llNoteAway","llAwayDay","llUnputawayLine","llAwayStageWords","llStart","llEdSave","llEdLoadHTML"];
 // A small world: the loads, Mom here, every write recorded, a DOM that remembers what was painted, the laundry line with one item (Towels) started today.
 function mk(o){
