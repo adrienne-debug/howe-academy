@@ -18,10 +18,11 @@
  *   9 mutation checks: each guard, the pool's and the ×2 filter, whose level, the held grab — removed or bent in a copy of index.html,
  *     the check that protects it fails
  *  10 the pool NOT switched (saved, built-in, none) with levels set everywhere: 14 days × preview / ON, every kid's Up for Grabs, Mom's
- *     view, the card and Checks, every write and the whole database = main's
+ *     view, the card and Checks, every write and the whole database = the app before this change's (37e81600)
  *  11 switched, every chore at Level 1 (her data): 60 days × off / preview / ON with grabs and ×2 grabs every day — every kid's Up for
- *     Grabs, Mom's view, every write and the whole database = main's
- *   BASE_HTML=/path/to/main/index.html BASE_HOUSE=/path/to/main/house.js node test_house_grab_level.js   (default: `git show origin/main:…`)
+ *     Grabs, Mom's view, every write and the whole database = the app before this change's (37e81600)
+ *   BASE_HTML=/path/to/before/index.html BASE_HOUSE=/path/to/before/house.js node test_house_grab_level.js   (default: `git show 37e81600:…`, the
+ *   commit just before this change — pinned, so 10 and 11 mean the same before and after it is on main; no such commit → 10 and 11 are skipped)
  *   HOUSE_INDEX=/path/to/other/index.html node test_house_grab_level.js   (a mutation check from outside)
  */
 "use strict";
@@ -30,11 +31,12 @@ const F = require(path.join(__dirname, "test_fixtures", "house_grabs_world.js"))
 const HJS = fs.readFileSync(path.join(__dirname, "house.js"), "utf8"), IDX = process.env.HOUSE_INDEX || undefined;
 const SRC_IDX = fs.readFileSync(IDX || path.join(__dirname, "index.html"), "utf8");
 let pass = 0, fail = 0; const ok = (n, c, x) => { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  (" + JSON.stringify(x).slice(0, 700) + ")" : "")); } };
-const show = f => { try { return cp.execSync("git show origin/main:" + f, { cwd: __dirname, maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { return null; } };
+const BEFORE = "37e81600", WAS = "the app before the level rule's";   // the commit before HOUSEGRABLV (main d040aecb has it)
+const show = f => { try { return cp.execSync("git show " + BEFORE + ":" + f, { cwd: __dirname, maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "ignore"] }); } catch (e) { return null; } };
 let BASE = process.env.BASE_HTML, BHJS = process.env.BASE_HOUSE ? fs.readFileSync(process.env.BASE_HOUSE, "utf8") : null;
 if (!BASE) { const b = show("index.html"); if (b) { BASE = path.join(os.tmpdir(), "house_grablv_base_" + process.pid + ".html"); fs.writeFileSync(BASE, b); } }
 if (!BHJS) { const b = show("house.js"); if (b) BHJS = b.toString("utf8"); }
-console.log("(base: " + (BASE && BHJS ? BASE : "none — git show failed; parts 10 and 11 are skipped") + ")");
+console.log("(base: " + (BASE && BHJS ? BASE : "none — git show " + BEFORE + " failed; parts 10 and 11 are skipped") + ")");
 const J = o => JSON.stringify(o), clone = o => o == null ? o : JSON.parse(J(o)), KIDS = F.KIDS;
 const R = (d, expr) => JSON.parse(d.run("JSON.stringify((function(){ " + expr + " })())"));
 const text = h => String(h).replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/\s+/g, " ");
@@ -289,7 +291,7 @@ console.log("\n── 9 · mutation checks: remove or bend each piece, the check
 }
 
 // ── 10 ──
-console.log("\n── 10 · NOT switched, levels set everywhere: = main's ──");
+console.log("\n── 10 · NOT switched, levels set everywhere: = " + WAS + " ──");
 const dOf = n => new Date(2026, 10, 16 + n), isoN = n => { const d = dOf(n); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
 const go = (w, n, h, mi) => { const d = dOf(n); return w.at(d.getFullYear(), d.getMonth() + 1, d.getDate(), h, mi || 0); };
 const snap = S => J({ kid: F.kidHTML(S.B), mom: F.kidHTML(S.A, true) });
@@ -315,9 +317,9 @@ const replay = async (kind, mode, days, hh, sw, index, hjs) => { const S = await
   return { shots, writes: writes(S.w, 0).join("\n"), tree: J(S.w.db.tree.root), gc: Object.keys(S.w.get("grabClaims") || {}).length, x2: J(S.w.get("houseDay") || {}).split('"grab":').length - 1, ex }; };
 const cmp = (label, N, B0, days) => {
   const bad = N.shots.map((s, i) => s === B0.shots[i] ? null : isoN(i)).filter(Boolean);
-  ok(label + " · every kid's Up for Grabs (their screen and Mom's) = main's on all " + days + " days", bad.length === 0, bad.slice(0, 3));
-  ok(label + " · every write = main's, in order (" + N.writes.split("\n").length + " writes)", N.writes === B0.writes, (() => { const x = N.writes.split("\n"), y = B0.writes.split("\n"); const i = x.findIndex((l, j) => l !== y[j]); return [i, x[i], y[i]]; })());
-  ok(label + " · the whole database = main's, byte for byte", N.tree === B0.tree);
+  ok(label + " · every kid's Up for Grabs (their screen and Mom's) = " + WAS + " on all " + days + " days", bad.length === 0, bad.slice(0, 3));
+  ok(label + " · every write = " + WAS + ", in order (" + N.writes.split("\n").length + " writes)", N.writes === B0.writes, (() => { const x = N.writes.split("\n"), y = B0.writes.split("\n"); const i = x.findIndex((l, j) => l !== y[j]); return [i, x[i], y[i]]; })());
+  ok(label + " · the whole database = " + WAS + ", byte for byte", N.tree === B0.tree);
 };
 // levels everywhere: every Up for Grabs row of the table at 2 or 3, two kid chores at 2, kids' own dials 1–3, the family on 1
 const lvHH = (mode, kind) => () => O.household(mode, { over: true, extra: h => { Object.keys(h.jobs).forEach((id, n) => { if (h.jobs[id].who === "grab") h.jobs[id].level = 2 + (n % 2); });
@@ -325,16 +327,16 @@ const lvHH = (mode, kind) => () => O.household(mode, { over: true, extra: h => {
 if (BASE && BHJS) for (const kind of ["saved", "builtin", "none"]) for (const mode of ["preview", "on"]) {
   const N = await replay(kind, mode, 14, lvHH(mode, kind), false, IDX, HJS), B0 = await replay(kind, mode, 14, lvHH(mode, kind), false, BASE, BHJS);
   cmp(kind + " · " + mode + " · not switched" + (mode === "on" ? " (every ×2 chore's ticked kids at its level; part 8 has one that is not)" : ""), N, B0, 14);
-  ok(kind + " · " + mode + " · not switched · Mom's card and 🔍 Checks for every Up for Grabs row = main's", N.ex === B0.ex);
+  ok(kind + " · " + mode + " · not switched · Mom's card and 🔍 Checks for every Up for Grabs row = " + WAS, N.ex === B0.ex);
   ok(kind + " · " + mode + " · (sanity) " + (kind === "none" ? "no grab was written" : "the kids grabbed (" + N.gc + " grab records)") + (mode === "on" ? ", ×2 grabs done: " + N.x2 : ""), (kind === "none" ? N.gc === 0 : N.gc >= 8) && (mode !== "on" || N.x2 >= 5), [N.gc, N.x2]);
 }
 
 // ── 11 ──
-console.log("\n── 11 · switched, every chore at Level 1 (her data): 60 days = main's ──");
+console.log("\n── 11 · switched, every chore at Level 1 (her data): 60 days = " + WAS + " ──");
 if (BASE && BHJS) for (const kind of ["saved", "builtin"]) for (const mode of ["off", "preview", "on"]) {
   const hh = () => O.household(mode, {}), N = await replay(kind, mode, 60, hh, true, IDX, HJS), B0 = await replay(kind, mode, 60, hh, true, BASE, BHJS);
   cmp(kind + " · " + mode + " · switched, all Level 1", N, B0, 60);
-  ok(kind + " · " + mode + " · switched, all Level 1 · Mom's card and 🔍 Checks for every Up for Grabs row: only the new 🪜 line differs from main's", (() => { const a = JSON.parse(N.ex), b = JSON.parse(B0.ex); return a.every((x, i) => J(x[1]) === J(b[i][1]) && x[0].replace(/<div style="width:100%;font-size:11\.5px;color:#7c2d12;margin-top:4px">🪜 [^<]*<\/div>/, "") === b[i][0]); })());
+  ok(kind + " · " + mode + " · switched, all Level 1 · Mom's card and 🔍 Checks for every Up for Grabs row: only the new 🪜 line differs from " + WAS, (() => { const a = JSON.parse(N.ex), b = JSON.parse(B0.ex); return a.every((x, i) => J(x[1]) === J(b[i][1]) && x[0].replace(/<div style="width:100%;font-size:11\.5px;color:#7c2d12;margin-top:4px">🪜 [^<]*<\/div>/, "") === b[i][0]); })());
   ok(kind + " · " + mode + " · (sanity) switched; the kids grabbed (" + N.gc + " records)" + (mode === "on" ? ", ×2 grabs done: " + N.x2 : ""), N.gc >= 30 && (mode !== "on" || N.x2 >= 20) && /gb_/.test(N.tree) && /"grabs":\{"on"/.test(N.tree), [N.gc, N.x2]);
 }
 
