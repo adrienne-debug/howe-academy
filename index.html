@@ -70646,6 +70646,32 @@ function mstDeckInSession(kid, deck) {
   return null;
 }
 
+// UNITSEAT_START — a unit's opened cards start in a study session too (her approval 2026-11-19, Sara's Thanksgiving unit).
+// The live incident (DeWalt, week of 11/16): Family Time unit item imwcjdfwd had opened Days 1–4 (6 cards), and cat_gate on
+// every kid pointed the Thanksgiving deck at it. The kid with no study session got his card from GATESTART on a drill save;
+// the three on 📚 Daily Study (Decks at once 3) never did — GATESTART skips decks a session owns ("they mint their own"), and
+// the session opens new decks in alphabetical order inside its seat cap, so "Thanksgiving" never got a seat. Now: a deck whose
+// cat_gate is a UNIT gate ({fam,item}, or {subject} of a kid's subject laid from a unit) that the gate can read (psGateUpto not
+// null — when the gate can't tell, the deck is left exactly as before rather than opening its whole bank), not held, with
+// opened cards not yet started or cards still being learned, gets a seat ahead of the others, beyond Decks at once, and brings
+// its own share of cards (the sitting grows by one deck's share), so a full backlog can't starve it either. Its new cards are
+// still only mastBankEligible's — the days the unit has opened. No unit gate → [] → mstPile runs exactly as before. Reads only.
+function mstUnitSeats(kid, session, items, existingByDeck, loggedNames, learnByDeck) {
+  if (typeof psGateUpto !== "function" || typeof mastBankEligible !== "function") return [];
+  const st = masteryData[kid + "_settings"] || {}, gates = st.cat_gate || {}, holds = st.cat_hold || {};
+  const subs = ((((typeof currData !== "undefined" && currData && currData.subjects) || {})[kid]) || {});
+  const out = [];
+  (session.decks || []).forEach(deck => {
+    const g = gates[deck]; if (!g || holds[deck]) return;
+    const unit = g.fam || (g.subject && subs[g.subject] && subs[g.subject].unit && subs[g.subject].unit.id);
+    if (!unit || psGateUpto(kid, deck) == null) return;
+    const have = existingByDeck[deck];
+    const fresh = mastBankEligible(kid, deck).some(n => !(have && have.has(n)) && !loggedNames.has(n));
+    if (fresh || (learnByDeck[deck] || 0) > 0) out.push(deck);
+  });
+  return out;
+}
+// UNITSEAT_END
 // 6. The pile of cards a session presents today.
 function mstPile(kid, sid, pn, todayLog) {
   const empty = { reviews: [], learning: [], newNames: [] };
@@ -70768,6 +70794,8 @@ function mstPile(kid, sid, pn, todayLog) {
     if (shownIds.has(item.id)) shownByDeck[item.subject] = (shownByDeck[item.subject] || 0) + 1;
   });
   let focusDecks = session.decks || [];
+  const _ux = mstUnitSeats(kid, session, items, existingByDeck, loggedNames, learnByDeck);   // UNITSEAT: a unit's decks with opened cards (none → [])
+  const _uxFirst = list => _ux.length ? _ux.concat(list.filter(d => _ux.indexOf(d) < 0)) : list;   // UNITSEAT
   if (session.focusDecks > 0) {
     const started = focusDecks.filter(d => (learnByDeck[d] || 0) > 0)
       .sort((a, b) => _mstCmp(learnByDeck[b], learnByDeck[a]) || _mstCmp(a, b));
@@ -70778,15 +70806,16 @@ function mstPile(kid, sid, pn, todayLog) {
     if (typeof cplnFocus === "function") focusDecks = cplnFocus(kid, session, focusDecks, started, fresh, existingByDeck, loggedNames);   // 🌿 CPLINCOLNPARITY: in Lincoln's 🌿 sitting (L1 on), a deck with nothing to hand out gives up its seat (the same list back otherwise)
     if (typeof cpAheadFocus === "function") focusDecks = cpAheadFocus(kid, session, focusDecks, started, fresh);   // 🚀 CPAHEAD: a section opened early takes no focus seat from the assignment; while the 🚀 extra runs it comes first (the same list back otherwise)
     const inFocus = new Set(focusDecks);
-    learning = learning.filter(item => inFocus.has(item.subject));
+    learning = learning.filter(item => inFocus.has(item.subject) || _ux.indexOf(item.subject) >= 0);   // UNITSEAT: a unit's cards being learned keep their seat
   }
+  focusDecks = _uxFirst(focusDecks);   // UNITSEAT: a unit's decks first, beyond the cap and ahead of the alphabet
   // How many of ONE deck's cards may be in flight: the sitting shared out over the decks
   // that are open (12 cards across 3 decks = 4 each). Off when either dial is off.
   const perDeck = (_maxCards > 0 && session.focusDecks > 0)
     ? Math.max(1, Math.ceil(_maxCards / session.focusDecks)) : Infinity;
   // Seats left today: a second sitting on the same day doesn't hand out a fresh 12.
   const doneToday = log.filter(e => e && (e.id != null || e.name != null)).length;
-  const seats = _maxCards > 0 ? Math.max(0, _maxCards - doneToday) : Infinity;
+  const seats = _maxCards > 0 ? Math.max(0, _maxCards + (perDeck !== Infinity ? _ux.length * perDeck : 0) - doneToday) : Infinity;   // UNITSEAT: a unit's seat brings its own share
 
   // Cards already being learned get the seats first — the backlog he started comes before
   // anything new. Closest to graduating first inside a deck (they finish and free their
