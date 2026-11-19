@@ -16710,13 +16710,13 @@ function momSchedPrep(dayName){
     const doneBtn=_kpBtn('✓ Done',"kitMarkPrep('"+_lbQ(s.iso)+"','"+_lbQ(s.mid+"_"+s.idx)+"')",true);
     if(s.done){
       const ts=((kitPrepDone[s.iso]||{})[s.mid+"_"+s.idx]), dm=(typeof ts==="number")?_lbMin(ts):x.at;
-      out.push({m:(dm>=0&&dm<24*60)?dm:x.at,o:3,html:_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#64748b">✓ '+(nb?'🌙 ':'🍳 ')+lbl+'</span>')});
+      out.push({m:(dm>=0&&dm<24*60)?dm:x.at,o:3,html:_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#64748b">✓ '+(nb?'🌙 ':'🍳 ')+lbl+'</span>'+(typeof nowRecipeBtn==="function"?nowRecipeBtn(s.mid):''))});
       return;
     }
     const b=kitPrepBlockRec(s);
-    if(b&&b.at==="skip"){ out.push({m:x.at,o:1,html:_lbBox('#fff7ed','#fdba74','<span style="flex:1;font-size:13px">'+(nb?'🌙 ':'⏲ ')+lbl+'</span>'+doneBtn)}); return; }
+    if(b&&b.at==="skip"){ out.push({m:x.at,o:1,html:_lbBox('#fff7ed','#fdba74','<span style="flex:1;font-size:13px">'+(nb?'🌙 ':'⏲ ')+lbl+'</span>'+doneBtn+(typeof nowRecipeBtn==="function"?nowRecipeBtn(s.mid):''))}); return; }
     const st=kitPrepStartMin(s,x.at), mins=kitPrepMins(s);
-    out.push({m:st,o:2,html:_lbBox('#fff7ed','#ea580c','<span style="flex:1;font-size:13px">'+(nb?'🌙 ':'🍳 ')+lbl+' · '+mins+' min'+_kpCd(st,st+mins)+'</span>'+doneBtn+_kpLaterBtns(s))});
+    out.push({m:st,o:2,html:_lbBox('#fff7ed','#ea580c','<span style="flex:1;font-size:13px">'+(nb?'🌙 ':'🍳 ')+lbl+' · '+mins+' min'+_kpCd(st,st+mins)+'</span>'+doneBtn+(typeof nowRecipeBtn==="function"?nowRecipeBtn(s.mid):'')+_kpLaterBtns(s))});
   });
   return out.sort(function(a,b2){ return (a.m-b2.m)||(a.o-b2.o); });
 }
@@ -19459,6 +19459,22 @@ function kitPrepSteps(iso){
   return pl.meal.prep.map((s,i)=>({iso:iso,mid:pl.mid,idx:i,when:s.when,label:s.label||"",mins:kitPrepMins(s),
     mealName:pl.meal.name||"",done:!!done[pl.mid+"_"+i]}));
 }
+// NOWRECIPE_START — 📖 a meal in a Now / day list opens its recipe in a pop-up (her ask 2026-11-19: "on the now section of
+//   the page, when it shows a meal and it has a recipe linked to it, I would like it to be able to be clickable and it pop up
+//   the recipe … a fix that goes everywhere"). Her case: ⏲ "Start the crock pot, low 8 hours" for the planned dinner sat in
+//   🔴 Now with no way to the recipe. One helper, used by every list that draws these rows: Mom's Day 🔴 Now and Dad's Day
+//   🔴 Kitchen Now (both kitDuePrepHTML), Mom's agenda prep rows (momSchedPrep) and the ⚠ low-rated meal row in 🔴 Now
+//   (kitFlagNowHTML). The 📖 Recipe button is its own tap target beside ✓ Done — a tap never ticks the row — and it opens the
+//   grocery list's read-only recipe pop-up (grMealPop; Close returns to the same screen), so there is no second viewer and
+//   nothing is written. A row whose meal is not a kitchen recipe (typed text, a deleted meal) gets no button and is unchanged.
+function nowRecipeHas(mid){ return !!(mid&&typeof kitMeals!=="undefined"&&kitMeals&&kitMeals[mid]&&typeof grMealPop==="function"); }
+function nowRecipeBtn(mid){
+  if(!nowRecipeHas(mid)) return '';
+  const q=String(mid).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+  return '<button class="now-recipe" onclick="event.stopPropagation();nowRecipeOpen(\''+esc(q)+'\')" title="Open the recipe" aria-label="Open the recipe" style="padding:4px 10px;border-radius:8px;border:1.5px solid #fdba74;background:#fff;color:#c2410c;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">📖 Recipe</button>';
+}
+function nowRecipeOpen(mid){ if(!nowRecipeHas(mid)) return; grMealPop(mid); }   // display only — the pop-up reads kitMeals and writes nothing
+// NOWRECIPE_END
 // Steps due RIGHT NOW: today's timed steps whose time has arrived, plus
 // tomorrow's night-before steps once the afternoon turns (KIT_NB_HOUR).
 // nowMin is injectable for tests; real callers omit it.
@@ -19472,7 +19488,7 @@ function kitDuePrepHTML(){
     const _kb=(typeof kitPrepRowExtras==="function")?kitPrepRowExtras(s):{cd:'',btns:''};   // 🍳 MEALPREP_BLOCK: ⏱ + ⏰ 10 min later / Not now
     html+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:#fff7ed;border-left:3px solid #ea580c;border-radius:8px;margin-bottom:6px">'
       +'<span style="flex:1;font-size:13px">'+(nb?'🌙':'⏲')+' <b>'+esc(s.label)+'</b> <span style="color:#6b6560">· '+esc(s.mealName)+(nb?' (tomorrow)':' · '+kitWhenLabel(s.when))+'</span>'+_kb.cd+'</span>'
-      +'<button onclick="kitMarkPrep(\''+s.iso+'\',\''+s.mid+'_'+s.idx+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#ea580c;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Done</button>'+_kb.btns+'</div>';
+      +'<button onclick="kitMarkPrep(\''+s.iso+'\',\''+s.mid+'_'+s.idx+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#ea580c;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Done</button>'+(typeof nowRecipeBtn==="function"?nowRecipeBtn(s.mid):'')+_kb.btns+'</div>';
   });
   return {html:html,n:n};
 }
@@ -24593,6 +24609,7 @@ function kitFlagNowHTML(){
     html+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:#fffbeb;border-left:3px solid #b45309;border-radius:8px;margin-bottom:6px">'
       +'<span style="flex:1;font-size:13px">⚠ <b>'+esc((m.emoji?m.emoji+' ':'')+(m.name||"This meal"))+'</b> isn’t landing — '+kitFlagStars(a.avg)+' over the last '+KIT_FLAG_N+'. '
       +(rs?'Swap it in '+esc((rs.emoji?rs.emoji+' ':'')+rs.name)+'?':(nd?'Swap it on '+esc(kitFlagFmt(nd))+'?':'Swap it for something else?'))+'</span>'
+      +(typeof nowRecipeBtn==="function"?nowRecipeBtn(mid):'')
       +'<button onclick="kitFlagGotIt(\''+mid+'\')" style="'+b+'border:none;background:#b45309;color:#fff">✓ Got it</button>'
       +'<button onclick="kitFlagSwap(\''+mid+'\')" style="'+b+'border:1.5px solid #b45309;background:#fff;color:#b45309">Swap…</button></div>';
   });
