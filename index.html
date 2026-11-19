@@ -14208,6 +14208,8 @@ function hhEngineTap(on){ if(typeof momHere==="function"&&!momHere()) return; if
 // first); the person whose turn it is if their minutes left fit it; else the person in who-can with the most minutes left;
 // else it OVERFLOWS (shown only: "would go to Up for Grabs"). Health and animal rows go to their owner, never count against a
 // limit and never overflow.
+// HOUSEMOVELV (her "Yes, fix that" 2026-11-19): a MOVE goes only to someone in who-can whose OWN Cleaning level (people[w].level,
+// as the owner's above) is at or above the chore's level; nobody at its level with room → it overflows, as with no who-can at all.
 // Carry (§4.1 table): an every-N chore stays due until it is done (so it is first in line, more days late, every day after); a
 // daily or on-its-days chore that overflows carries to the next day first in line, and is dropped (a miss, as today) when its
 // own next day arrives — so a daily never carries (tomorrow has its own) and no chore is ever on a day twice.
@@ -14226,6 +14228,7 @@ const HouseEng=(function(){
   const isHouse=function(j){ return !!j&&(j.area==="pickup"||j.area==="cleaning"); };             // hhIsHouse
   const levelOf=function(j){ const l=parseInt(j&&j.level,10); return (l>=1&&l<=3)?l:1; };         // hhLevelOf
   const levelOut=function(j,people){ const p=people[j.who]; return !isHouse(j)||levelOf(j)<=((p&&p.level)||1); };   // hhLevelOut
+  const levelFor=function(j,w,people){ const p=people[w]; return !isHouse(j)||levelOf(j)<=((p&&p.level)||1); };   // HOUSEMOVELV: w's own level
   const minsOf=function(j,def){ const m=parseInt(j&&j.minutes,10); return (m>0)?m:((def&&def[j&&j.area])||10); };   // hhMinutesOf
   const limitOf=function(people,who,s){ const p=people[who]; if(!p) return 0; const v=dowOf(s)>=5?p.weekend:p.school; return (typeof v==="number"&&v>=0)?v:0; };
   // hhCanOf: the owner first, then who else can, each a real person, once.
@@ -14328,7 +14331,7 @@ const HouseEng=(function(){
     cands.forEach(function(c){
       let who=null, why=c.carried?"carried":c.deep?"deep":"turn";
       if(left[c.turn]!==undefined&&left[c.turn]>=c.mins) who=c.turn;
-      else { let best=-1; canOf(jobs[c.id],people).forEach(function(w){ if(w===c.turn) return; const r=left[w]; if(r!==undefined&&r>=c.mins&&r>best){ best=r; who=w; } }); if(who) why="moved"; }
+      else { let best=-1; canOf(jobs[c.id],people).forEach(function(w){ if(w===c.turn||!levelFor(jobs[c.id],w,people)) return; const r=left[w]; if(r!==undefined&&r>=c.mins&&r>best){ best=r; who=w; } }); if(who) why="moved"; }
       if(!who){ const can=canOf(jobs[c.id],people).filter(function(w){ return (ov.kids||[]).indexOf(w)>=0; });
         over.push({id:c.id,turn:c.turn,mins:c.mins,k:c.k,late:c.late,can:can});
         if(c.k!=="every") carryOut.push({id:c.id,turn:c.turn,k:c.k,since:c.since||s});
