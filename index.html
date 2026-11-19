@@ -42030,6 +42030,26 @@ function dcFeature(g){
 function dcLinks(g){ try{ const rec=(typeof frCardRec==="function")?frCardRec(g.first):null; return (typeof lrLinksFor==="function")?lrLinksFor(g.first,null,"",rec||undefined):[]; }catch(e){ return []; } }
 function dcLinkBtn(l){ const vid=/youtu|vimeo|video/i.test(String(l.url+" "+(l.label||""))); return '<a href="'+dcEsc(l.url)+'" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:8px;padding:12px 18px;border-radius:14px;background:'+(vid?'#7c3aed':'#1d4ed8')+';color:#fff;font-size:18px;font-weight:800;text-decoration:none;font-family:\'DM Sans\',sans-serif">'+(vid?'\u25B6':'\u{1F517}')+' '+dcEsc(l.label||"Open")+'</a>'; }
 function dcActivity(g){ const d=g.day; if(!d||!d.nb||!d.nb.activity||!g.u) return null; const acts=(typeof _unitActs==="function")?_unitActs(g.u):[]; return acts.find(a=>a&&a.key===d.nb.activity)||null; }
+// UNITACTCHK_START — ✓ a unit's activity right on today's card (a beta mom's ask 2026-11-19, Adrienne's yes: cross the day's
+//   activity off from the card instead of leaving the day for the Units page). Under 🎨 Today's activity: one small chip per kid
+//   enrolled in the unit. Mom's tap calls the Units page's own ✓ Done (unitActivityDone → unitStudies/<id>/activityLog/<kid>/<key>,
+//   points as there), so the card and the Units page are ONE record both ways, and tapping again un-checks the same way. Mom-only
+//   (momHere(), as the Units page's ✓ Done); a kid sees each name's state (✓ done · ⏳ claimed · ○ not yet), nothing to tap.
+//   No new data or path; dry run stays inert through the app's db patch. A card with no unit day or no activity draws as before.
+function dcActKids(u){ const en=(u&&u.enrolled)||{}; const R=(typeof ROSTER!=="undefined"&&Array.isArray(ROSTER))?ROSTER:Object.keys(en); return R.filter(k=>en[k]); }
+function dcActTap(uid,kid,key){ if(!(typeof momHere==="function"&&momHere())||typeof unitActivityDone!=="function") return false; unitActivityDone(uid,kid,key); return true; }
+function dcActChecksHTML(g,act){
+  const u=g&&g.u, uid=g&&g.day&&g.day.uid; if(!u||!uid||!act||!act.key) return ""; const kids=dcActKids(u); if(!kids.length) return "";
+  const mom=(typeof momHere==="function")&&momHere(), log=u.activityLog||{}, cl=u.activityClaims||{};
+  let h='<div data-dc-actchk="1" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">';
+  kids.forEach(k=>{ const done=!!(log[k]||{})[act.key], wait=!done&&!!(cl[k]||{})[act.key];
+    const st='display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;border:2px solid '+(done?'#4ade80':(wait?'#fcd34d':'rgba(255,255,255,.25)'))+';background:'+(done?'#166534':'transparent')+';color:#fff;font-size:15px;font-weight:800;font-family:\'DM Sans\',sans-serif';
+    const inner=dcEsc(dcName(k))+' <span>'+(done?'✓':(wait?'⏳':'○'))+'</span>';
+    if(mom) h+='<button data-dc-actkid="'+dcEsc(k)+'" onclick="dcActTap(\''+dcJ(uid)+'\',\''+dcJ(k)+'\',\''+dcJ(act.key)+'\')" style="'+st+';cursor:pointer">'+inner+'</button>';
+    else h+='<span data-dc-actkid="'+dcEsc(k)+'" style="'+st+'">'+inner+'</span>'; });
+  return h+'</div>';
+}
+// UNITACTCHK_END
 function dcSection(title,inner,extra){ return '<section style="margin-top:22px'+(extra||"")+'"><div style="font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:#a5b4fc">'+title+'</div><div style="margin-top:8px">'+inner+'</div></section>'; }
 function dcRungsHTML(g){
   const d=g.day; if(!d||!d.rungs) return ""; const lv=DC_LEVELS.filter(l=>d.rungs[l]); if(!lv.length) return "";
@@ -42076,7 +42096,7 @@ function dcDayHTML(g){
   const books=(d.res&&d.res.books)||[]; if(books.length) h+=dcSection("\u{1F4DA} The book",books.map(b=>'<div style="font-size:24px;font-weight:800;color:#fff">'+dcEsc(b.title)+(b.by?' <span style="font-size:16px;font-weight:600;color:#cbd5e1">by '+dcEsc(b.by)+'</span>':'')+'</div>').join(""));
   const links=dcLinks(g); if(links.length) h+=dcSection("\u25B6 Watch \u00B7 open",'<div style="display:flex;gap:10px;flex-wrap:wrap">'+links.map(dcLinkBtn).join("")+'</div>');
   if(typeof uxDocsCardHTML==="function") h+=uxDocsCardHTML(g);   // UNITDAY_EXTRAS: 🖼 Pictures & documents
-  const act=dcActivity(g); if(act) h+=dcSection("\u{1F3A8} Today\u2019s activity",'<div style="font-size:24px;font-weight:800;color:#fff">'+dcEsc((act.emoji||"\u{1F3A8}")+" "+act.title)+(act.points?' <span style="font-size:15px;color:#fde68a">\u00B7 '+act.points+' \u2B50</span>':'')+'</div>'+(act.desc?'<div style="font-size:17px;color:#e2e8f0;margin-top:4px">'+dcEsc(act.desc)+'</div>':''));
+  const act=dcActivity(g); if(act) h+=dcSection("\u{1F3A8} Today\u2019s activity",'<div style="font-size:24px;font-weight:800;color:#fff">'+dcEsc((act.emoji||"\u{1F3A8}")+" "+act.title)+(act.points?' <span style="font-size:15px;color:#fde68a">\u00B7 '+act.points+' \u2B50</span>':'')+'</div>'+(act.desc?'<div style="font-size:17px;color:#e2e8f0;margin-top:4px">'+dcEsc(act.desc)+'</div>':'')+dcActChecksHTML(g,act));   // UNITACTCHK: ✓ per kid
   h+=dcCardsHTML(g); if(typeof crCardHTML==="function") h+=crCardHTML(g); if(typeof uxSnackCardHTML==="function") h+=uxSnackCardHTML(g); if(typeof ugmCardHTML==="function") h+=ugmCardHTML(g); h+=dcRungsHTML(g); h+=dcWordsHTML(g); h+=dcReadHTML(g);   // CRAFT (B3): the steps, big · UNITDAY_EXTRAS: 🍎 Snack under ✂️ Craft · UNITDAY_GAME: 🎲 Game after 🍎 Snack
   if(d.note) h+=dcSection("\u{1F4DD} Note",'<div style="font-size:17px;line-height:1.5;color:#e2e8f0;background:rgba(255,255,255,.06);border-radius:14px;padding:12px 16px">'+dcEsc(d.note)+'</div>');
   return h;
