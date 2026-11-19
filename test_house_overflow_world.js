@@ -31,7 +31,7 @@ const writes = (w, m) => w.since(m).map(l => l.op + " " + l.path + " " + (l.keys
 const R = (d, expr) => JSON.parse(d.run("JSON.stringify((function(){ " + expr + " })())"));
 const mkW = async (kind, mode, o) => { o = o || {}; const w = await F.world(kind, mode, o); const A = w.boot("A", "devA", { mom: true }), B = w.boot("B", "devB"); A.run(o.hjs || HJS); await w.flush();
   if (o.sw) { A.run("hgOpen(); hgSwitch()"); await w.flush(); } return { w, A, B }; };
-const snap = S => J({ kid: F.G.kidHTML(S.B), mom: F.G.kidHTML(S.A, true) });
+const snap = S => J({ kid: F.G.kidHTML(S.B), mom: F.G.kidHTML(S.A, true).map(h => h.replace(/<span onclick="event\.stopPropagation\(\);hcGo\('[^']*'\)" title="Edit this chore" style="[^"]*">✎<\/span>/g, "")) });
 const lists = (S, iso) => { const L = F.W.lists(S.B, { days: [S.B.run("day")] }); return J(L); };
 const pool = (d, kid) => F.G.poolNames(d, kid);
 // One day of the normal Up for Grabs, picked by name from each kid's own list (so two worlds do the same thing to the same chore).

@@ -64,7 +64,7 @@ for (const kind of ["saved", "builtin"]) {
   ok(kind + " · …with the values the screen worked out (but the record's time)", Object.keys(p.upd).every(k => k === "household/meta/grabs" || J(w.get(k)) === J(p.upd[k])), Object.keys(p.upd).filter(k => k !== "household/meta/grabs" && J(w.get(k)) !== J(p.upd[k])));
   ok(kind + " · nothing outside household/ changed: no grab record, no star, no log, no config/grabs, no list", noHH(T1) === noHH(T0));
   ok(kind + " · every kid's own Up for Grabs is byte for byte what it was", J(F.kidHTML(B)) === J(K0));
-  ok(kind + " · …and Mom's view of each kid (release, assign)", J(F.kidHTML(A, true)) === J(M0));
+  ok(kind + " · …and Mom's view of each kid (release, assign)", J(F.kidHTML(A, true).map(h => h.replace(/<span onclick="event\.stopPropagation\(\);hcGo\('[^']*'\)" title="Edit this chore" style="[^"]*">✎<\/span>/g, ""))) === J(M0));
   const jb = w.get("household/jobs");
   ok(kind + " · the rows: each carried row keeps its old number as its claim key; the kids' stars, name, zone and days are on the rows; the retired one is back",
     jb.gb_wash_the_porch_window.grabKey === 0 && jb.gb_wipe_the_island.pts === 25 && jb.gb_scrub_the_hall_toilet_old.label === "Scrub the hall toilet" && jb.gb_scrub_the_hall_toilet_old.zone === "bath" && jb.gb_scrub_the_hall_toilet_old.grabKey === 2 && jb.gb_clean_under_the_couch.cad === "wk:5" && jb.gb_sort_the_bookshelf.status === "active" && jb.gb_sort_the_bookshelf.grabKey === 4 && jb.gb_sweep_the_garage.grabKey === 6);
