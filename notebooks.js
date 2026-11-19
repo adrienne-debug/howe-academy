@@ -3709,7 +3709,8 @@ ${extraStrip || ""}
   //   the Pledge's first line) · 3 Who am I? (this week's Americans: lines, or a drawing box to 1st grade) · 4 The three branches
   //   tree + How a bill becomes a law (word banks) · 6 Bill of Rights match-up (number ↔ picture) + "Which amendment…?" ·
   //   7 Presidents timeline (this week's era: portrait, number, years printed, the name to write) · 10 Citizen's quiz (10 of the
-  //   kid's learning and review questions + the four "find out with Mom" lines, blank). Stages 5, 8 and 9 (maps) come later.
+  //   kid's learning and review questions + the four "find out with Mom" lines, blank). Part 2: 5 The 13 colonies (map to color
+  //   and label + timeline) · 8 A growing nation / 9 America in the world (timeline + the stage's battles as numbered pins).
   // A page never prints what the child is meant to write (word banks are fine). A picture that isn't loaded yet (us.js / the
   // photo files are lazy) is left out cleanly: the Americans and presidents print without a portrait, the holidays with 🎉,
   // and the Bill of Rights match-up uses short phrases instead of pictures. The Memory Work page (Lincoln / Ellis generators)
@@ -3905,7 +3906,69 @@ ${extraStrip || ""}
       '<div style="font-size:11px;color:#6b7280;margin:2px 0 4px">These are different for every family, and they change with elections. Look them up together.</div>' + mom + '</div>';
     return usNbPage(us, T, wn, "🗳 Citizen's Quiz", body);
   }
-  var US_NB_STAGES = { 1: usNbStage1, 2: usNbStage2, 3: usNbStage3, 4: usNbStage4, 6: usNbStage6, 7: usNbStage7, 10: usNbStage10 };
+  // ── part 2 (her "Yes, build maps" 2026-11-18 via the hub): Stages 5, 8 and 9 — a map to color / label + this week's timeline.
+  // The map comes on the record (index.html usNbMap: us.map = {kind, names, img}, numbers only — no names on it); the page prints
+  // the numbered blanks and a word bank, never which name goes with which number. No map (us.js / geo.js not loaded yet) → the
+  // no-map version: the colonies as a list to write, the battles by name with "where / when" to write.
+  function usNbYear(def) { var m = String(def || "").match(/^([^—]*\d[^—]*?)\s*—/); return m ? m[1].trim() : ""; }   // "1754–1763 — …" → "1754–1763"
+  function usNbNum(i, T) { return '<span style="width:21px;height:21px;border-radius:50%;background:' + T.GM + ';color:#fff;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">' + i + '</span>'; }
+  function usNbNumBlanks(n, T, cols, year) {   // 1 ______ (year ____) … in `cols` columns
+    var cells = []; for (var i = 1; i <= n; i++) cells.push('<div style="display:flex;align-items:flex-end;gap:7px;height:27px">' + usNbNum(i, T) + '<span style="flex:1;border-bottom:1.5px solid ' + T.GL + ';height:20px"></span>' +
+      (year ? '<span style="font-size:10.5px;color:#6b7280;flex-shrink:0">year</span><span style="width:46px;border-bottom:1.5px solid ' + T.GL + ';height:20px;flex-shrink:0"></span>' : '') + '</div>');
+    return '<div style="display:grid;grid-template-columns:repeat(' + cols + ',1fr);gap:2px 16px">' + cells.join("") + '</div>';
+  }
+  // this week's events on a line: the years printed in order, the kid writes each event above its year (word bank)
+  function usNbTimeline(us, T, wn, little) {
+    var ev = usNbPick(usNbDeck(us, "U.S. History"), 6, true).sort(function (a, b) { return a.order - b.order; }), e = usNbEsc;
+    if (!ev.length) return "";
+    if (little) return '<div style="flex:1;min-height:150px;display:flex;flex-direction:column;gap:6px">' + usNbLead(T, "🎨 This week's story") + usNbNote("Pick one and draw it. Tell Mom what happened.") +
+      '<div style="display:flex;flex-wrap:wrap;gap:5px 7px">' + ev.map(function (c) { return '<span style="border:1.5px solid ' + T.GL + ';background:' + T.GP + ';border-radius:7px;padding:2px 9px;font-size:12px;font-weight:700">' + e(c.name) + '</span>'; }).join("") + '</div>' +
+      '<div style="flex:1;border:2px dashed ' + T.GL + ';border-radius:12px;background:#fff"></div></div>';
+    // zigzag: event 1 above the line, 2 below, 3 above… so each writing box is two steps wide; the year sits on the other side
+    var n = ev.length, bw = Math.min(2 / n * 100 - 1.6, 44), cells = ev.map(function (c, i) {
+      var y = usNbYear(c.def), x = (i + 0.5) / n * 100, up = i % 2 === 0, left = Math.max(0, x - bw / 2), w = Math.min(100, x + bw / 2) - left;   // the end boxes stop at the edge
+      return '<div style="position:absolute;left:' + left.toFixed(2) + '%;width:' + w.toFixed(2) + '%;top:' + (up ? 0 : 100) + 'px;height:46px;box-sizing:border-box;border:1.5px solid ' + T.GL + ';border-radius:8px;background:#fff;padding:0 8px">' + usNbLines(2, 21, T.GL) + '</div>' +
+        '<div style="position:absolute;left:calc(' + x.toFixed(2) + '% - 1.5px);top:' + (up ? 46 : 75) + 'px;width:3px;height:25px;background:' + T.GD + '"></div>' +
+        '<div style="position:absolute;left:calc(' + x.toFixed(2) + '% - 60px);width:120px;top:' + (up ? 80 : 54) + 'px;text-align:center;font-family:\'DM Mono\',monospace;font-size:10.5px;font-weight:700;color:' + T.GD + ';line-height:16px">' + (y ? e(y) : usNbBlank(56, T.GL)) + '</div>';
+    }).join("");
+    return usNbLead(T, "🕰 This week's timeline") + usNbNote("Write each event in the box joined to its year.") + usNbBank(T, usNbShuffle(ev.map(function (c) { return c.name; }), wn + 5)) +
+      '<div style="position:relative;height:146px;flex-shrink:0"><div style="position:absolute;left:0;right:0;top:71px;height:4px;border-radius:2px;background:' + T.GD + '"></div>' + cells + '</div>';
+  }
+  var US_NB_REGIONS = ["New England", "Middle", "Southern"];
+  function usNbStage5(us, T, wn, g) {
+    var little = g != null && g <= 1, e = usNbEsc, m = us.map && us.map.kind === "colonies" && us.map.img ? us.map : null;
+    var names = m ? m.names : usNbDeck(us, "13 Colonies").map(function (c) { return c.name.replace(/ Colony$/, ""); });
+    var key = '<div style="border:1.5px solid ' + T.GL + ';background:' + T.GP + ';border-radius:11px;padding:8px 12px">' + usNbLead(T, "🖍 Color by region") +
+      '<div style="font-size:11px;line-height:1.4;color:#4b5563;margin:2px 0 4px">Pick a color for each region, then color its colonies to match.</div>' +
+      US_NB_REGIONS.map(function (r) { return '<div style="display:flex;align-items:center;gap:9px;height:25px"><span style="width:34px;height:20px;border:2px solid #1c1c1e;border-radius:5px;background:#fff;flex-shrink:0"></span><span style="font-size:12.5px;font-weight:700">' + r + ' Colonies</span></div>'; }).join("") + '</div>';
+    var body = usNbNote(m ? (little ? "Color the colonies. Point to each number and count them with Mom." : "Write each colony's name by its number — the word bank has them all. Then color the regions.")
+      : (little ? "Draw a ship sailing across the ocean to the colonies." : "Write the 13 colonies from north to south — the word bank has them all."));
+    if (m) body += '<div style="display:flex;gap:16px;align-items:flex-start"><img src="' + e(m.img) + '" alt="" style="width:330px;height:auto;display:block;border:2px solid ' + T.GL + ';border-radius:10px;flex-shrink:0;background:#fff">' +
+      '<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:10px">' + key + (little ? '<div style="margin-top:6px">' + usNbLead(T, "✏️ Trace it") + usNbTrace("colony", 52, "#a8a29e") + '</div>' : usNbNumBlanks(names.length, T, 1, false)) + '</div></div>';
+    else body += little ? '<div style="height:330px;border:2px dashed ' + T.GL + ';border-radius:12px;background:#fff"></div>' : usNbNumBlanks(names.length, T, 2, false);
+    if (!little) body += usNbBank(T, usNbShuffle(names, wn + 5));
+    body += usNbTimeline(us, T, wn, little);
+    return usNbPage(us, T, wn, "📜 The 13 Colonies", body);
+  }
+  function usNbBattlePage(us, T, wn, g, title) {
+    var little = g != null && g <= 1, e = usNbEsc, m = us.map && us.map.kind === "battles" && us.map.img ? us.map : null, year = g == null || g >= 4;
+    var names = m ? m.names : usNbDeck(us, "American Battles").map(function (c) { return c.name; });
+    var body = usNbTimeline(us, T, wn, little);
+    if (names.length) {
+      body += '<div style="margin-top:2px">' + usNbLead(T, "📍 Where were the battles?") + '</div>';
+      if (m) body += usNbNote(little ? "Point to each number. Can you tell Mom which battle was fought there?" : "Write each battle's name by its number" + (year ? ", and the year it was fought" : "") + ". The word bank has them all.") +
+        '<img src="' + e(m.img) + '" alt="" style="width:100%;height:auto;display:block;border:2px solid ' + T.GL + ';border-radius:10px;background:#fff">' +
+        (little ? "" : usNbBank(T, usNbShuffle(names, wn + 8)) + usNbNumBlanks(names.length, T, 3, year));
+      else body += usNbNote(little ? "Tell Mom about one of these battles." : "Where was each one fought, and when?") +
+        '<div style="display:flex;flex-direction:column;gap:3px">' + names.map(function (n) {
+          return '<div style="display:flex;align-items:flex-end;gap:8px;height:29px;font-size:12.5px;font-weight:700"><span style="width:182px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + e(n) + '</span>' +
+            (little ? '' : '<span style="font-size:10.5px;color:#6b7280;font-weight:400">where</span><span style="flex:1;border-bottom:1.5px solid ' + T.GL + ';height:20px"></span><span style="font-size:10.5px;color:#6b7280;font-weight:400">when</span><span style="width:80px;border-bottom:1.5px solid ' + T.GL + ';height:20px"></span>') + '</div>'; }).join("") + '</div>';
+    }
+    return usNbPage(us, T, wn, title, body);
+  }
+  function usNbStage8(us, T, wn, g) { return usNbBattlePage(us, T, wn, g, "🗺 A Growing Nation"); }
+  function usNbStage9(us, T, wn, g) { return usNbBattlePage(us, T, wn, g, "🌎 America in the World"); }
+  var US_NB_STAGES = { 1: usNbStage1, 2: usNbStage2, 3: usNbStage3, 4: usNbStage4, 5: usNbStage5, 6: usNbStage6, 7: usNbStage7, 8: usNbStage8, 9: usNbStage9, 10: usNbStage10 };
   function usStagePages(ins, weekNum, theme) {
     var us = ins && ins.us; if (!us || !us.stage || !US_NB_STAGES[us.stage]) return [];
     var p = US_NB_STAGES[us.stage](us, theme || UNIT_INSERT_THEMES.lincoln, weekNum, usNbGrade(us.grade));

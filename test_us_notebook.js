@@ -3,7 +3,7 @@
 // (usNbCtx / usNbAttach / usNbAmendPic, with the real STARTER_UNITS block, us.js, the photo files and geo.js). Made-up kids only:
 //  · NOT ENROLLED = BYTE FOR BYTE: notebooks.js with its USNB block and "// USNB" lines stripped is main's file, and every
 //    generator (Lincoln, Ellis, Lucy, Julian, Caleb, a themed Pre-K, the starter notebook) prints the same notebook from both;
-//  · enrolled at Stage n: one stage page for 1, 2, 3, 4, 6, 7, 10 (none yet for 5, 8, 9 — the map pages are part 2);
+//  · enrolled at Stage n: one stage page for every stage, 1–10 (5, 8, 9 = the map pages, part 2: test_us_notebook_maps.js);
 //  · a page never prints what the child writes: no president's name on Stage 7, no answer on the quiz or Who am I?, the
 //    match-up pictures carry no number, the four "find out with Mom" lines are blank;
 //  · pictures not loaded → no empty picture boxes (portraits left out, 🎉 for a holiday, phrases for the Bill of Rights);
@@ -70,11 +70,11 @@ GENS.forEach(([kid, ex]) => {
 console.log("── enrolled: one page for the stage ──");
 const pageOf = (html, n) => { const lab = "United States Path — Stage " + n + " "; const i = html.indexOf(lab); if (i < 0) return null; const j = html.indexOf('<div class="page-label">', i + 10); return html.slice(i, j < 0 ? html.length : j); };
 const countPages = html => (html.match(/<div class="page-label">United States Path — Stage /g) || []).length;
-const BUILT = [1, 2, 3, 4, 6, 7, 10], GRADE = { lincoln: "6th Grade", ellis: "4th Grade", lucy: "1st Grade", julian: "Pre-K", caleb: "Kindergarten", kidp: "Pre-K", kidz: "" };
+const BUILT = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], GRADE = { lincoln: "6th Grade", ellis: "4th Grade", lucy: "1st Grade", julian: "Pre-K", caleb: "Kindergarten", kidp: "Pre-K", kidz: "" };
 GENS.forEach(([kid, ex]) => {
   const got = [];
   for (let n = 1; n <= 10; n++) { const h = NB.generate(kid, mk(kid, [USINS(usRec(n, GRADE[kid])), OTHER], ex)).student; got.push(countPages(h) + (pageOf(h, n) ? "" : "-")); }
-  ok(kid + ": Stages 1, 2, 3, 4, 6, 7, 10 each print exactly one page; 5, 8, 9 none yet", got.join() === "1,1,1,1,0-,1,1,0-,0-,1", got);
+  ok(kid + ": Stages 1–10 each print exactly one page (5, 8, 9 since part 2)", got.join() === "1,1,1,1,1,1,1,1,1,1", got);
 });
 { const a = NB.generate("lincoln", mk("lincoln", [USINS(usRec(4, "6th Grade")), OTHER])).student, b = NB0.generate("lincoln", mk("lincoln", [USINS(usRec(4, "6th Grade")), OTHER])).student;
   ok("the stage page rides right after the unit's usual insert, and nothing else in the notebook moves", a.indexOf("Unit Study — United States Path") < a.indexOf("United States Path — Stage 4") &&

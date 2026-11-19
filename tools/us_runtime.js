@@ -184,6 +184,88 @@ function pinCard(name) {
   return svg(R(0, 0, W.wh[0], W.wh[1], "#dbeafe") + P(W.land, "#e5e7eb", { s: "#9ca3af", sw: 1.2 }) + mark(20, 0.8), num(vx) + " " + num(vy) + " " + s + " " + s);
 }
 
+// ── the notebook's maps (USNB part 2; her "Yes, build maps" 2026-11-18): outlines a child colors and labels — no place or
+// battle names are printed on them, only numbers the page asks about. colonyMap() = the 13 colonies, white, numbered 1–13
+// north to south (COLONY_ORDER), the rest of the coast pale; battleMap(names) = the named pins as numbered circles in the order
+// given, on the U.S. map when every pin is in the lower 48, else on the world map (pinsWorld puts Pearl Harbor and the U.S.
+// pins there). A number that would sit on a speck of a state or on another pin is pulled out into open space with a leader
+// line. o.w = the width the page shows it at (px), so the numbers print the same size on every map. null without geo.js.
+const COLONY_ORDER = ["New Hampshire", "Massachusetts", "Rhode Island", "Connecticut", "New York", "New Jersey", "Pennsylvania", "Delaware",
+  "Maryland", "Virginia", "North Carolina", "South Carolina", "Georgia"];
+function ringsOf(d) { return String(d || "").split("M").slice(1).map(r => { const n = r.match(/-?\d+(\.\d+)?/g) || [], pts = []; for (let i = 0; i + 1 < n.length; i += 2) pts.push([+n[i], +n[i + 1]]); return pts; }).filter(r => r.length > 2); }
+function inRings(rings, x, y) { let inside = false;
+  rings.forEach(r => { for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const a = r[i], b = r[j]; if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) inside = !inside; } });
+  return inside; }
+function edgeDist(rings, x, y) { let m = 1e9;
+  rings.forEach(r => { for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const a = r[i], b = r[j], dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy;
+    const t = L ? Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / L)) : 0, ex = a[0] + t * dx - x, ey = a[1] + t * dy - y; m = Math.min(m, ex * ex + ey * ey); } });
+  return Math.sqrt(m); }
+function poleOf(rings) {   // the inside point farthest from the border (where a number fits best): a coarse grid, then a fine one
+  const b = bboxOf(rings.map(r => r.map(p => p.join(" ")).join(" ")).join(" ")); let best = [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2, -1];
+  const scan = (x0, y0, x1, y1, n) => { for (let i = 0; i <= n; i++) for (let j = 0; j <= n; j++) { const x = x0 + (x1 - x0) * i / n, y = y0 + (y1 - y0) * j / n;
+    if (inRings(rings, x, y)) { const d = edgeDist(rings, x, y); if (d > best[2]) best = [x, y, d]; } } };
+  scan(b[0], b[1], b[2], b[3], 24); const sx = (b[2] - b[0]) / 24, sy = (b[3] - b[1]) / 24; scan(best[0] - sx, best[1] - sy, best[0] + sx, best[1] + sy, 8);
+  return best; }
+// numbers: [{x, y (the spot), dot (draw a small dot at the spot)}] → each gets {lx, ly} where its circle goes (r = circle radius)
+function placeNums(items, r, box, isLand) {
+  const placed = [], gap = r * 0.35;
+  const free = (x, y, self) => x - r >= box[0] && x + r <= box[2] && y - r >= box[1] && y + r <= box[3] &&
+    placed.every(p => Math.hypot(p.lx - x, p.ly - y) >= 2 * r + gap) && items.every((q, k) => k === self || Math.hypot(q.x - x, q.y - y) >= r + gap * 2);
+  items.forEach((it, k) => {
+    let at = null;
+    if (it.fits && free(it.x, it.y, k)) at = [it.x, it.y];
+    for (let ring = 1; !at && ring <= 9; ring++) { const d = r * (1.6 + ring * 0.9);
+      for (let s = 0; s < 24 && !at; s++) { const a = (it.pref || 0) + (s % 2 ? 1 : -1) * Math.ceil(s / 2) * Math.PI / 12, x = it.x + d * Math.cos(a), y = it.y + d * Math.sin(a);
+        if (free(x, y, k) && !(isLand && isLand(x, y))) at = [x, y]; } }
+    if (!at) at = [it.x, it.y];
+    it.lx = at[0]; it.ly = at[1]; placed.push(it); });
+  return items; }
+function numMarks(items, r, sw) { let lines = "", dots = "", marks = "";
+  items.forEach((it, i) => { const out = Math.hypot(it.lx - it.x, it.ly - it.y) > 0.5;
+    if (out) { const a = Math.atan2(it.ly - it.y, it.lx - it.x); lines += P("M" + num(it.x) + " " + num(it.y) + " L" + num(it.lx - r * Math.cos(a)) + " " + num(it.ly - r * Math.sin(a)), "none", { s: "#1f2937", sw: sw * 0.8 }); }
+    if (it.dot) dots += Cc(it.x, it.y, r * 0.32, "#dc2626", { s: "#ffffff", sw: sw * 0.6 });
+    marks += Cc(it.lx, it.ly, r, "#ffffff", { s: it.dot ? "#dc2626" : "#1f2937", sw: sw * 1.1 }) + T(it.lx, it.ly + r * 0.36, String(i + 1), num(r * 1.05), "#1f2937"); });
+  return lines + dots + marks; }
+function fitBox(b, aspect, frame) {   // grow [x0,y0,x1,y1] to the page's aspect (w/h), kept inside the frame where it can be
+  let w = b[2] - b[0], h = b[3] - b[1]; if (w / h < aspect) w = h * aspect; else h = w / aspect;
+  w = Math.min(w, frame[0]); h = Math.min(h, frame[1]); if (w / h < aspect) h = w / aspect; else w = h * aspect;
+  const cx = (b[0] + b[2]) / 2, cy = (b[1] + b[3]) / 2, x0 = Math.max(0, Math.min(frame[0] - w, cx - w / 2)), y0 = Math.max(0, Math.min(frame[1] - h, cy - h / 2));
+  return [x0, y0, x0 + w, y0 + h]; }
+function clipD(d, vb) {   // keep only the outlines that reach into the view (a cropped map stays small to print and send)
+  return String(d || "").split("M").slice(1).filter(r => { const b = bboxOf(r); return b && b[2] >= vb[0] && b[0] <= vb[2] && b[3] >= vb[1] && b[1] <= vb[3]; }).map(r => "M" + r).join(""); }
+function mapOut(body, vb, wpx) { const w = vb[2] - vb[0], h = vb[3] - vb[1];
+  return svg(body, num(vb[0]) + " " + num(vb[1]) + " " + num(w) + " " + num(h), Math.round(wpx), Math.round(wpx * h / w)); }
+function colonyMap(o) {
+  o = o || {}; const L = geoLib(); if (!L || !L.data || !L.data.us) return null; const U = L.data.us; if (COLONY_ORDER.some(n => !U.state[n])) return null;
+  const all = COLONY_ORDER.map(n => U.state[n]).join(" "), b = bboxOf(all), pad = 14;
+  const vb = fitBox([b[0] - pad, b[1] - pad, b[2] + pad + 26, b[3] + pad], o.aspect || 0.72, U.wh), wpx = o.w || 330, k = (vb[2] - vb[0]) / wpx, r = 11 * k;
+  let st = ""; for (const n in U.state) if (COLONY_ORDER.indexOf(n) < 0) st += clipD(U.state[n], vb);
+  const land = []; for (const n in U.state) land.push(ringsOf(U.state[n]));
+  const items = COLONY_ORDER.map(n => { const p = poleOf(ringsOf(U.state[n])); return { x: p[0], y: p[1], fits: p[2] >= r * 1.05, pref: 0 }; });
+  placeNums(items, r, vb, (x, y) => [[0, 0]].concat([0, 1, 2, 3, 4, 5, 6, 7].map(i => [Math.cos(i * Math.PI / 4), Math.sin(i * Math.PI / 4)]))   // a pulled-out number sits wholly in the sea
+    .some(q => land.some(rg => inRings(rg, x + q[0] * r * 1.1, y + q[1] * r * 1.1))));
+  const body = R(vb[0], vb[1], vb[2] - vb[0], vb[3] - vb[1], "#e0f2fe") + P(clipD(U.neighbours, vb), "#f3f4f6", { s: "#cbd5e1", sw: 1.2 * k }) + P(st, "#f3f4f6", { s: "#cbd5e1", sw: 1.2 * k }) +
+    P(clipD(U.lakes, vb), "#e0f2fe", { s: "#93c5fd", sw: 0.8 * k }) + P(all, "#ffffff", { s: "#1f2937", sw: 1.6 * k }) + numMarks(items, r, 1.6 * k);
+  return mapOut(body, vb, wpx);
+}
+function battleMap(names, o) {
+  o = o || {}; const L = geoLib(); if (!L || !L.data) return null;
+  const pts = (names || []).map(n => D.pins[n]).filter(p => p && p[0] !== "route"); if (!pts.length || pts.length !== (names || []).length) return null;
+  const us = pts.every(p => p[0] === "us"), wpx = o.w || 700, aspect = o.aspect || 1.7;
+  const xy = us ? pts.map(p => [p[1], p[2]]) : (names || []).map((n, i) => pts[i][0] === "world" ? [pts[i][1], pts[i][2]] : (D.pinsWorld || {})[n]);
+  if (xy.some(p => !p)) return null;
+  const frame = us ? L.data.us.wh : L.data.world.wh; let b = [1e9, 1e9, -1e9, -1e9];
+  xy.forEach(p => { b = [Math.min(b[0], p[0]), Math.min(b[1], p[1]), Math.max(b[2], p[0]), Math.max(b[3], p[1])]; });
+  const pad = us ? 70 : 60; const vb = fitBox([b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad], aspect, frame), k = (vb[2] - vb[0]) / wpx, r = 11 * k;
+  const items = xy.map(p => ({ x: p[0], y: p[1], dot: true, fits: false, pref: -Math.PI / 2 }));
+  placeNums(items, r, vb, null);
+  let base;
+  if (us) { const U = L.data.us; let st = ""; for (const n in U.state) st += clipD(U.state[n], vb);
+    base = R(vb[0], vb[1], vb[2] - vb[0], vb[3] - vb[1], "#e0f2fe") + P(clipD(U.neighbours, vb), "#f3f4f6", { s: "#cbd5e1", sw: 1.2 * k }) + P(st, "#ffffff", { s: "#9ca3af", sw: 1.2 * k }) + P(clipD(U.lakes, vb), "#e0f2fe", { s: "#93c5fd", sw: 0.8 * k }); }
+  else { const W = L.data.world; base = R(vb[0], vb[1], vb[2] - vb[0], vb[3] - vb[1], "#e0f2fe") + P(clipD(W.land, vb), "#ffffff", { s: "#6b7280", sw: 1.1 * k }); }
+  return mapOut(base + numMarks(items, r, 1.6 * k), vb, wpx);
+}
+
 // ── the API ──
 const BY = {}; D.cards.forEach(c => { BY[c.deck + "\u0001" + c.name] = c; });
 function card(deck, name) { return BY[deck + "\u0001" + name] || null; }
@@ -203,6 +285,7 @@ function svgFor(deck, name) { const p = pic(deck, name); if (!p) return null; if
 function creditFor(deck, name) { const p = pic(deck, name); if (!p) return ""; if (p.indexOf("photo:") === 0) { const c = D.credits[p]; return c ? c.line : ""; }
   if (/^(colony|pin):/.test(p)) return D.credits.map.line; return D.credits.drawing.line; }
 const HoweUS = { version: D.v, data: D, unit: D.unit, stages: D.stages, decks: D.decks, cards: D.cards, card, pic, text, svg: svgFor, credit: creditFor,
-  credits: D.credits, uscis: D.uscis, colors: COL, geo: null, pics: null, holidays: Object.keys(HOLIDAY), icons: Object.keys(ICON), amendIcons: Object.keys(AMEND).map(Number), badges: Object.keys(BADGE) };
+  credits: D.credits, uscis: D.uscis, colors: COL, geo: null, pics: null, holidays: Object.keys(HOLIDAY), icons: Object.keys(ICON), amendIcons: Object.keys(AMEND).map(Number), badges: Object.keys(BADGE),
+  colonyMap, battleMap, colonyOrder: COLONY_ORDER };   // USNB part 2: the notebook's maps
 if (typeof window !== "undefined") { window.HoweUS = HoweUS; window._haLazy_us = true; }   // _haLazy_us: haLazyReady("us") (USPATH)
 if (typeof module !== "undefined" && module.exports) module.exports = HoweUS;

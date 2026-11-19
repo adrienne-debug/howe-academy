@@ -726,6 +726,7 @@ def build(cache, out_dir):
                    ("def", c["def"]), ("about", c["about"]), ("more", c["more"]), ("changes", c["changes"] or None), ("builtin", c.get("builtin")),
                    ("pic", c["pic"])) if v not in (None, False)} for c in CARDS],
         "pins": pins,
+        "pinsWorld": project_pins_world(),
         "credits": dict(credits, **{"drawing": {"line": "Drawing: Howe Academy"}, "map": {"line": "Map data: Natural Earth (public domain) · naturalearthdata.com"}}),
         "uscis": {"version": "2025 civics test (M-1778, 09/25), 128 questions", "star": sorted(STAR), "local": {str(k): v for k, v in LOCAL.items()},
                   "teach": {front: {"q": q, "cards": t} for front, (q, t) in teach.items()},
@@ -767,6 +768,16 @@ def project_pins(cache):
         x, y = B.robinson(lon, lat); return ("world", round(x, 1), round(y, 1))
     for n, (lat, lon) in sorted(PINS.items()): out[n] = place(lat, lon)
     for n, pts in ROUTES.items(): out[n] = ["route"] + [list(place(lat, lon)[1:]) for lat, lon in pts]
+    return out
+
+def project_pins_world():
+    """USNB part 2 (the notebook's battle map): the same pins' spot on the Robinson world map, for the ones placed in the US or
+    Hawaii frame — so a page mixing Pearl Harbor with Midway, Normandy or Iwo Jima can put them all on one world map."""
+    sys.path.insert(0, TOOLS); import build_geo_js as B
+    out = {}
+    for n, (lat, lon) in sorted(PINS.items()):
+        if (18 < lat < 23 and -161 < lon < -154) or (24 < lat < 50 and -125 < lon < -66):
+            x, y = B.robinson(lon, lat); out[n] = [round(x, 1), round(y, 1)]
     return out
 
 def main():
