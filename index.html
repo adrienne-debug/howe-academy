@@ -12952,7 +12952,7 @@ let householdData={};            // household/{jobs:{id:{…}}, meta:{imported,i
 try{ householdData=JSON.parse(HA_LS.getItem('ha_household')||"{}")||{}; }catch(e){}
 let hhView="review";             // "review" | "habits" | "week" | "area" | "room" | "levels" | "rot" | "laundry" | "kitchen" | "once" | "proj" | "today" | "rooms" (HH_ROOMPAGE)
 let hhOpenWho="";                // Review: which person's group is expanded ("" = all collapsed to counts)
-function householdOnValue(v){ householdData=v||{}; try{ HA_LS.setItem('ha_household',JSON.stringify(householdData)); }catch(e){} if(typeof hhMaterialize==="function") hhMaterialize(); try{ if(typeof hdAttach==="function") hdAttach(); }catch(e){} }   // 🏡 HOUSEHOLD_TAKEOVER · 🚪 HOUSEDAY: listen once the switch reads on
+function householdOnValue(v){ householdData=v||{}; if(typeof gbMemoReset==="function") gbMemoReset(); try{ HA_LS.setItem('ha_household',JSON.stringify(householdData)); }catch(e){} if(typeof hhMaterialize==="function") hhMaterialize(); try{ if(typeof hdAttach==="function") hdAttach(); }catch(e){} }   // 🏡 HOUSEHOLD_TAKEOVER · 🚪 HOUSEDAY: listen once the switch reads on
 function _hhWrite(){ return typeof db!=='undefined'&&db&&!(typeof _dryRun==="function"&&_dryRun()); }
 function hhJobs(){ return (householdData&&householdData.jobs)||{}; }
 const HH_AREAS={health:["🧼","Health"],animals:["🐾","Animals"],pickup:["🧹","Pickup"],cleaning:["🧽","Cleaning"]};
@@ -31284,10 +31284,13 @@ function storeGiven(kid,id){ if(!momHere())return; _rwSet(kid,id,{status:"given"
 // Who can grab it (§13): the row's `can` kids; none chosen = every kid, as before. A kid keeps a grab they hold if Mom unticks them.
 function gbSwOn(){ const m=typeof householdData!=="undefined"&&householdData&&householdData.meta&&householdData.meta.grabs; return !!(m&&m.on)&&typeof hhTakeoverOn==="function"&&hhTakeoverOn(); }
 function gbKeyOf(id,j){ return (j&&typeof j.grabKey==="number")?j.grabKey:id; }
-function gbRows(){ if(!gbSwOn()) return gbList().map(function(g,i){ return {g:g,i:i}; }); const J=hhJobs(), out=[];
-  Object.keys(J).forEach(function(id){ const j=J[id]; if(j&&j.who==="grab"&&j.status!=="retired") out.push({g:j,i:gbKeyOf(id,j),id:id}); });
-  return out.sort(function(a,b){ const x=typeof a.i==="number", y=typeof b.i==="number"; return (x&&y)?a.i-b.i:(x!==y)?(x?-1:1):((a.g.ts||0)-(b.g.ts||0))||(a.id<b.id?-1:1); }); }   // the old order, then new chores as added
-function gbAt(i){ if(!gbSwOn()) return gbList()[i]; const r=gbRows().find(function(x){ return x.i===i; }); return r?r.g:undefined; }
+let _gbM=null;   // the switched pool, worked out once per household value (householdOnValue clears it; a different householdData misses it)
+function gbMemoReset(){ _gbM=null; }
+function gbRows(){ if(!gbSwOn()) return gbList().map(function(g,i){ return {g:g,i:i}; }); if(_gbM&&_gbM.h===householdData&&_gbM.j===householdData.jobs) return _gbM.r;
+  const J=hhJobs(), out=[], k=new Map(); Object.keys(J).forEach(function(id){ const j=J[id]; if(j&&j.who==="grab"&&j.status!=="retired") out.push({g:j,i:gbKeyOf(id,j),id:id}); });
+  out.sort(function(a,b){ const x=typeof a.i==="number", y=typeof b.i==="number"; return (x&&y)?a.i-b.i:(x!==y)?(x?-1:1):((a.g.ts||0)-(b.g.ts||0))||(a.id<b.id?-1:1); });   // the old order, then new chores as added
+  out.forEach(function(x){ k.set(x.i,x.g); }); _gbM={h:householdData,j:householdData.jobs,r:out,k:k}; return out; }
+function gbAt(i){ if(!gbSwOn()) return gbList()[i]; gbRows(); return _gbM.k.get(i); }
 function gbCanKids(j){ const c=Array.isArray(j&&j.can)?j.can:[]; return c.length?c.filter(function(w){ return ROSTER.indexOf(w)>=0; }):ROSTER.slice(); }
 function gbCanGrab(i,kid){ if(!gbSwOn()||ROSTER.indexOf(kid)<0) return true; const g=gbAt(i); return !g||gbCanKids(g).indexOf(kid)>=0; }
 // A tap on a chore the switch left out (on a screen drawn before the switch arrived) writes nothing; the screen redraws.
