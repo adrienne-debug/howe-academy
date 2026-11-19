@@ -5,7 +5,8 @@
  * Firebase, one virtual clock, the made-up family kid_a … kid_d) against main (git show 9cd01552:index.html; house.js is unchanged).
  * The places: 🏡 My day on Mom's Day and on Dad's Day (_mcRow), a kid's list as Mom's / Dad's Day open it (boardStatPop), and a kid's
  * 🙌 Up for Grabs as Mom sees it (_grabsHTML with the switch on, hdGrabsHTML's ×2 offers with the plan ON).
- *   A  Mom: a ✎ on every row that is a row of household/jobs (its id = the chore the row shows) and on no other row
+ *   A  Mom: a ✎ on every row that is a row of household/jobs (its id = the chore the row shows) and on no other row; never in a
+ *      kid's own Up for Grabs view (momView false), which Up for Grabs' switch compares before and after (A2)
  *   B  a tap: house.js not loaded before, ONE <script> after; the Household page opens with that exact card, on its room; ✕ leaves her
  *      in that room; nothing written; with house.js already there it opens at once; a pop-up it came from is closed
  *   C  every existing tap is main's: same handlers in the same order, ✎ never inside a tap; each one run in a branch and a main world
@@ -116,7 +117,7 @@ for (const kind of ["plan", "lists"]) {
       const exp = Object.keys(JB).filter(x => JB[x].label === l && JB[x].status !== "retired"); if (!(exp.length === 1 && got.length === 1 && got[0] === exp[0])) bad.push([l, exp, got]); n++; }));
     ok(kind + " · every Up for Grabs card Mom sees (" + n + (kind === "plan" ? ", with the ×2 offers" : "") + ") has one ✎, for its table row", n > 4 && bad.length === 0 && (kind !== "plan" || p.x2.some(h => ids(h).length)), bad);
   }
-  ok(kind + " · a kid's own Up for Grabs (momView false) on Mom's device in Mom mode: the same ✎ (Mom is here)", J(p.grabsKid.map(ids)) !== "[[],[],[],[]]");
+  ok(kind + " · a kid's own Up for Grabs (momView false), even on Mom's device in Mom mode: no ✎ (Up for Grabs' switch compares that screen)", p.grabsKid.every(h => ids(h).length === 0) && p.grabs.some(h => ids(h).length));
 }
 
 // ── B ──
@@ -226,6 +227,11 @@ if (BASE) {
   }
   ok("every person's lists each day, every write and the whole database = main's (the ✎ drawn " + drawn + " times, never tapped)", same && drawn > 50, bad);
 }
+
+// ── A2 ──
+console.log("\n── A2 · Up for Grabs' own switch still finds every kid's screen the same (it runs on Mom's device, in Mom mode) ──");
+{ const w = await mk("old", IDX), d = await dev(w, "mom"); d.run(HJS); const p = R(d, "const p=hgPlan({}); return {ok:p.ok,why:p.why,same:p.same};");
+  ok("hgPlan on the old pool: every kid's Up for Grabs the same now and after, nothing in the way", p.ok && p.same.length === 4 && p.same.every(Boolean), p); }
 
 // ── H ──
 console.log("\n── H · hcGo refuses: not Mom, not a table row, Take over off ──");
