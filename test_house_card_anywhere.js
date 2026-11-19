@@ -65,7 +65,7 @@ function places(d) {
   o.x2 = KIDS.map(k => d.run("hdGrabsHTML('" + k + "',true)"));
   return o;
 }
-const flat = p => [p.momStrip, p.dadStrip].concat(p.momRows.map(x => x[1]), p.dadRows.map(x => x[1]), Object.values(p.pops), p.grabs, p.grabsKid, p.x2);
+const flat = p => [p.momStrip, p.dadStrip].concat(p.momRows.map(x => x[1]), p.dadRows.map(x => x[1]), Object.values(p.pops), p.grabs, p.grabsKid, p.x2).map(h => typeof h === "string" ? h.replace(/<span style="font-size:9\.5px;font-weight:700;color:#9ca3af;white-space:nowrap">[^<]*<\/span>/g, "") : h);   // 🚪 PLANDAYS: a plan row's days tag shows its own days now (not main's wk:<today>)
 const allIds = p => flat(p).reduce((a, h) => a.concat(ids(h)), []);
 // the onclick handlers of an HTML string, in order
 const unq = s => s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
