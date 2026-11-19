@@ -65,7 +65,7 @@ if (BASE) for (const mode of ["off", "preview", "on"]) {
     for (let n = 0; n < 60; n++) { await go(w, n, 7, 0); tickRot(B, "morning", "kid_b", "tank"); tick(B, "morning", "kid_a", "Brush teeth");
       await go(w, n, 16, 40); tickRot(B, "afternoon", "kid_a", "pick3"); tickRot(B, "afternoon", "kid_c", "pick3"); tickRot(B, "chores", "kid_a", "bins"); tick(B, "chores", "kid_a", "Unload the dishwasher"); await w.flush();
       snaps.push(listsDay(B, n)); }
-    return { snaps, writes: writes(w, 0).join("\n"), tree: J(w.db.tree.root), built: Object.keys(w.db.tree.root.houseDay || {}).length }; };
+    return { snaps, writes: w.since(0).filter(l => !/\/grabs\//.test(l.path)).map(l => l.op + " " + l.path + " " + (l.keys || []).filter(k => !/\/grabs\//.test(k)).join(",")).join("\n"), tree: JSON.stringify(w.db.tree.root, (k, v) => /^\d{4}-\d\d-\d\d$/.test(k) && v && v.built ? Object.assign({}, v, { grabs: undefined }) : v), built:   /* step 6b: ON with chores that fit nobody also stores their ×2 offers (houseDay/<iso>/grabs) — everything else = main */ Object.keys(w.db.tree.root.houseDay || {}).length }; };
   const N = await replay(undefined), O = await replay(BASE);
   const bad = N.snaps.map((s, i) => s === O.snaps[i] ? null : isoN(i)).filter(Boolean);
   ok(mode + " · every kid's four lists, Mom's and Dad's, with their check marks: main's on all 60 days", bad.length === 0, bad.slice(0, 3));

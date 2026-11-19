@@ -55,7 +55,7 @@ async function dayOf(S, n) {
 // ── A ──
 console.log("\n── A · nothing switched: 60 days, every kid's Up for Grabs, every write, the whole database = main's ──");
 if (BASE && BHJS) for (const kind of ["builtin", "saved", "none"]) for (const mode of ["off", "preview", "on"]) {
-  const replay = async (index, hjs) => { const S = await mkW(kind, mode, { index, hjs }), shots = [];
+  const replay = async (index, hjs) => { const S = await mkW(kind, mode, { index, hjs, extra: mode === "on" ? h => Object.keys(h.people).forEach(k => { h.people[k] = { school: 300, weekend: 300 }; }) : undefined }), shots = [];   // step 6b: ON = main only where nothing fits nobody (what does is test_house_overflow_world B)
     for (let n = 0; n < 60; n++) { await dayOf(S, n); shots.push(snap(S)); }
     return { shots, writes: writes(S.w, 0).join("\n"), tree: J(S.w.db.tree.root), gc: Object.keys(S.w.get("grabClaims") || {}).length }; };
   const N = await replay(undefined, HJS), O = await replay(BASE, BHJS);

@@ -227,7 +227,7 @@ ok("stars bank through the outbox", /obSet\("bank\/"\+kid\+"\/adjustments\/"\+id
 ok("un-check removes stars through the outbox", /obRemove\("bank\/"\+kid\+"\/adjustments\/"\+id,_bw\)/.test(src));
 ok("chore log through the outbox", /obSet\("routineLog\/"\+kid\+"\/"\+wk\+"\/"\+day\+"\/"\+key,rec,null\)/.test(src));
 // SLTARGET (2026-10-16): the toggles save only their changed keys; slSaveChanged notes every one of them
-ok("all four routine toggles save through slSaveChanged (the fourth: 🌅 SENDAM 2026-11-15 — amToggle, a carried chore on the Morning list), and HOUSEDAY's four (house step 4: a plan row, its 🌅 carry, the OFF un-mark, the old-list un-check)", (src.match(/slSaveChanged\(wk,_slB\)/g) || []).length === 8);
+ok("all four routine toggles save through slSaveChanged (the fourth: 🌅 SENDAM 2026-11-15 — amToggle, a carried chore on the Morning list), and HOUSEDAY's four (house step 4: a plan row, its 🌅 carry, the OFF un-mark, the old-list un-check)", (src.match(/slSaveChanged\(wk,_slB\)/g) || []).length === 10);   // + HOUSEOVER's two (a ×2 grab done, and undone; step 6b)
 ok("slSaveChanged notes each changed key in the outbox", /obNoteSl\(wk,p,prev\)/.test(src.slice(src.indexOf("// SLTARGET_START"), src.indexOf("// SLTARGET_END"))));
 ok("Mom-check claims: set with the checked guard", /obSet\(WK\+"\/claimed\/"\+id,ts,_cw0,\{u:WK\+"\/checked\/"\+id\}\)/.test(src));
 ok("no raw claimed writes left", !/db\.ref\(WK\+"\/claimed\/"/.test(src));
