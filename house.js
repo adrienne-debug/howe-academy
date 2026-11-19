@@ -395,7 +395,7 @@ function hcMom(){ return typeof momHere!=="function"||momHere(); }
 function hcOpen(id){ if(!hcMom()||!hhJobs()[id]) return; hcId=id; hcScr=0; hhGive=""; hhPick=""; hhRender(); }
 function hcAdd(room){ if(!hcMom()) return; if(room&&hhRoomList().some(function(r){ return r[0]===room; })) hhAdd.room=room; hcId="__add"; hcScr=0; hhGive=""; hhRender(); }
 function hcClose(){ hcId=""; hhGive=""; hhRender(); }
-function hcAddSave(){ const id=hhAddSave(); if(id){ hcId=""; hhRender(); } return id; }
+function hcAddSave(){ const id=(hhAdd.who==="grab"&&typeof hgAddSave==="function")?hgAddSave():hhAddSave(); if(id){ hcId=""; hhRender(); } return id; }
 function hcKeep(el){ if(hcId&&el&&el.querySelector){ const b=el.querySelector(".hc-box"); if(b) b.scrollTop=hcScr; } }
 function hcFold(k){ hcRm[k]=!hcRm[k]; hhRender(); }
 function hcRulesOn(rid){ hcRm[rid+"|rules"]=true; hhRender(); }
@@ -430,21 +430,22 @@ function hcCtl(id,f,t){
     case "label": return add?'<input class="ce-sheet-input" id="hh-add-label" value="'+esc(j.label)+'" placeholder="What is the chore?" onchange="hhAddField(\'label\',this)">':'<input class="ce-sheet-input" value="'+esc(j.label||'')+'" onchange="hhEditField('+q+',\'label\',this)">';
     case "emoji": return '<input class="ce-sheet-input"'+(add?' id="hh-add-emoji" onchange="hhAddField(\'emoji\',this)"':' onchange="hhEditField('+q+',\'emoji\',this)"')+' value="'+esc(j.emoji||'')+'" placeholder="🧽" style="flex:none;width:48px;text-align:center">';
     case "emojis": return '<div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:6px">'+HH_EMOJI.map(function(e){ return '<button onclick="'+E("emoji","'"+e+"'")+'" style="width:30px;height:28px;border-radius:7px;border:1.5px solid '+(e===j.emoji?'#2B7A78':'#e5e7eb')+';background:'+(e===j.emoji?'#e6f4f3':'#fff')+';font-size:16px;padding:0;cursor:pointer">'+e+'</button>'; }).join('')+'</div>';
-    case "pts": if(add?!kid:!(kid||j.who==="grab")) return ""; return add?'<input type="number" class="ce-sheet-input" id="hh-add-pts" value="'+esc(j.pts)+'" placeholder="⭐" min="0" onchange="hhAddField(\'pts\',this)" style="flex:none;width:64px">':_hcIn("hhEditField("+q+",'pts',this)",j.pts||0,"number","64px",' min="0" max="500" title="stars"');
+    case "pts": if(add?!(kid||j.who==="grab"):!(kid||j.who==="grab")) return ""; return add?'<input type="number" class="ce-sheet-input" id="hh-add-pts" value="'+esc(j.pts)+'" placeholder="⭐" min="0" onchange="hhAddField(\'pts\',this)" style="flex:none;width:64px">':_hcIn("hhEditField("+q+",'pts',this)",j.pts||0,"number","64px",' min="0" max="500" title="stars"');
     case "room": { const cur=add?j.room:hhRoomOf(j); return t?sel(rooms,cur,"room"):chips(rooms,cur,"room"); }
     case "area": { const o=Object.keys(HH_AREAS).map(function(k){ return [k,HH_AREAS[k][0]+" "+HH_AREAS[k][1]]; }); return add?chips([["","Guess ("+HH_AREAS[hhGuessArea(j.label,j.slot,"")][1]+")"]].concat(o),j.area,"area"):chips(o,j.area||"cleaning","area"); }
     case "level": { if(add) return chips([[0,"Now (Level "+hhLevelCurFor(j.who)+")"],[1,"Level 1"],[2,"Level 2"],[3,"Level 3"]],j.level,"level"); const o=[[1,"Level 1"],[2,"Level 2"],[3,"Level 3"]]; return t?sel(o,hhLevelOf(j),"level"):chips(o,hhLevelOf(j),"level"); }
     case "slot": { const o=hcSlots(j); if(!o.length) return ""; const cur=j.slot||""; return t?sel(o,cur,"slot"):chips(o,cur,"slot"); }
-    case "when": {
+    case "when": { const gb=j.who==="grab"&&(typeof hgOn==="function"&&hgOn()), gbOk=function(x){ return !gb||["daily","days","wk","2w"].indexOf(x[0])>=0; };   // HOUSEGRABS_UI: only what the kids' Up for Grabs understands
       if(add){ const md=hhAdd.kind!=="chore"?hhAdd.kind:(/^wk:/.test(j.cad||"")?"days":(HC_ADDWHEN.some(function(x){ return x[0]===j.cad; })?j.cad:"daily"));
+        if(gb) return HC_ADDWHEN.filter(gbOk).map(function(x){ return _hcChip(md===x[0],x[1],"hhAddCadMode('"+x[0]+"')"); }).join('');
         return HC_ADDWHEN.map(function(x){ return _hcChip(md===x[0],x[1],(hhAdd.kind!=="chore"?"hhAddSet('kind','chore');":"")+"hhAddCadMode('"+x[0]+"')"); }).join('')+_hcChip(md==="once","One time","hhAddSet('kind','once')")+_hcChip(md==="project","🧰 Project","hhAddSet('kind','project')"); }
-      const md=hhEditCadMode(j.cad), o=HC_MODES.map(function(x){ return [x[0],x[0]==="nd"&&md==="nd"?"Every "+parseInt(j.cad,10)+" days":x[1]]; });
+      const md=hhEditCadMode(j.cad), o=HC_MODES.filter(function(x){ return gbOk(x)||x[0]===md; }).map(function(x){ return [x[0],x[0]==="nd"&&md==="nd"?"Every "+parseInt(j.cad,10)+" days":x[1]]; });
       if(j.cad==="none") o.unshift(["none","Not scheduled"]);
       return t?_hcSel("hhEditCadMode_set("+q+",this.value)",o,j.cad==="none"?"none":md):o.map(function(x){ return x[0]==="none"?_hcChip(true,x[1],"",t):_hcChip(md===x[0],x[1],"hhEditCadMode_set("+q+",'"+x[0]+"')",t); }).join(''); }
     case "days": { if(add){ if(hhAdd.kind!=="chore"||!/^wk:/.test(j.cad||"")) return ""; const d=cadChipDays(j.cad); return CAD_DAYL.map(function(n,i){ return _hcChip(d.indexOf(i)>=0,n,"hhAddDay("+i+")"); }).join(''); }
       if(hhEditCadMode(j.cad)!=="wk") return ""; const d=hhEditDays(j.cad); return CAD_DAYL.map(function(n,i){ return _hcChip(d.indexOf(i)>=0,t?n.charAt(0):n,"hhEditDay("+q+","+i+")",t); }).join(''); }
     case "every": return (add||hhEditCadMode(j.cad)!=="nd")?"":'Every '+_hcIn("hhEditSet("+q+",'cad',this.value+'d')",parseInt(j.cad,10)||3,"number","60px",' min="1" max="99"')+' days';
-    case "from": return add?"":_hcIn("hhEditField("+q+",'from',this)",j.from,"date");
+    case "from": return (add||(j.who==="grab"&&(typeof hgOn==="function"&&hgOn())))?"":_hcIn("hhEditField("+q+",'from',this)",j.from,"date");
     case "to": case "time": case "cycle": case "meal": case "laundry": {
       if(add||!kid) return ""; const L=hcAt(id), ro=function(v){ return v?'<span style="font-size:12px;font-weight:700">'+esc(v)+'</span> ':''; };
       if(f==="meal"){ const ms=Object.keys(MEAL_SLOT).filter(function(m){ return MEAL_SLOT[m]===j.slot; }); if(!ms.length) return ""; if(!L) return ro(j.meal?"After "+mealCfg()[j.meal]:"");
@@ -454,9 +455,9 @@ function hcCtl(id,f,t){
       if(f==="cycle"){ const cw=parseInt(j.cycW,10)||0; if(!L) return ro(cw?"week "+cw+" of "+(j.cycN||4):"");
         return [0,1,2,3,4].map(function(w){ return _hcChip(w===cw,w?"Wk "+w:"Every week","hcList("+q+",'cycW',"+w+")"); }).join('')+(cw?' <span style="font-size:11px;color:var(--muted)">week 1 starts</span> '+_hcIn("hcList("+q+",'cycStart',this.value)",j.cycStart,"date"):''); }
       if(!L) return ro(j[f]); return _hcIn("hcList("+q+",'"+f+"',this.value)",j[f],f==="to"?"date":"text",f==="time"?"110px":"",f==="time"?' placeholder="e.g. 6 AM"':''); }
-    case "who": if(add) return chips(HH_WHO.filter(function(w){ return w!=="grab"; }).map(function(w){ return [w,hhWhoName(w)]; }),j.who,"who");
+    case "who": if(add) return chips(HH_WHO.filter(function(w){ return w!=="grab"||(typeof hgOn==="function"&&hgOn()); }).map(function(w){ return [w,hhWhoName(w)]; }),j.who,"who");
       return '<span style="font-size:13px;font-weight:800;margin-right:6px">'+esc(hhWhoName(j.who))+'</span>'+(j.who!=="grab"?hhGiveBtn(id):'');
-    case "can": { if(j.who==="grab") return ""; const c=add?[j.who].concat(Object.keys(j.can||{}).filter(function(w){ return j.can[w]; })):hhCanOf(j);
+    case "can": { if(j.who==="grab") return (typeof hgCanCtl==="function")?hgCanCtl(id,t):""; /* HOUSEGRABS_UI: who can grab it */ const c=add?[j.who].concat(Object.keys(j.can||{}).filter(function(w){ return j.can[w]; })):hhCanOf(j);
       return HH_WHO.filter(function(w){ return w!=="grab"; }).map(function(w){ const own=w===j.who; return _hcChip(c.indexOf(w)>=0,t?hcIni(w):esc(hhWhoName(w))+(own?" (usually)":""),own?"":(add?"hhAddCan('"+w+"')":"hhCanToggle("+q+",'"+w+"')"),t).replace('<button','<button title="'+esc(hhWhoName(w))+'"'); }).join(''); }
     case "minutes": { if(add) return ""; const m=hhMinutesOf(j); if(!t) return _hcIn("hhEditField("+q+",'minutes',this)",m,"number","70px",' min="1" max="240"')+' min';
       const st=[2,3,5,10,15,20,30,45,60]; if(st.indexOf(m)<0) st.push(m); return sel(st.sort(function(a,b){ return a-b; }).map(function(x){ return [x,x+" min"]; }),m,"minutes"); }
@@ -467,6 +468,7 @@ function hcCtl(id,f,t){
 }
 function hcCardHTML(){
   const _ht=(typeof htSheetHTML==="function")?htSheetHTML():""; if(_ht) return _ht;   // HOUSETURNS_UI: the switch screen, while it is open
+  const _hg=(typeof hgSheetHTML==="function")?hgSheetHTML():""; if(_hg) return _hg;   // HOUSEGRABS_UI: the Up for Grabs switch screen
   if(!hcId||!hcMom()) return ""; const add=hcId==="__add", id=add?"":hcId, J=hhJobs(), j=add?hhAdd:J[id]; if(!j){ hcId=""; return ""; }
   const kid=hhIsKid(j.who), tk=typeof hhTakeoverOn==="function"&&hhTakeoverOn();
   const sec=function(n,l){ return '<div style="margin-top:16px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;font-weight:800;color:#2B7A78">'+n+' · '+l+'</div>'; };
@@ -479,7 +481,8 @@ function hcCardHTML(){
   if(add&&hhAdd.kind!=="chore") h+='<div style="font-size:11px;color:var(--muted);margin-top:6px">'+(hhAdd.kind==="once"?'Due every day until it is checked one time, then it leaves the list. It waits in ☑️ Once until you send it.':'Never due on its own. Lives on 🧰 Projects with a target, a plan, steps and a work log.')+'</div>';
   h+=lbl('Week of 4',hcCtl(id,"cycle"))+lbl('Starts',hcCtl(id,"from"))+lbl('Ends',hcCtl(id,"to"))+lbl('Time of day',hcCtl(id,"slot"))+lbl('Clock time',hcCtl(id,"time"))+lbl('After a meal',hcCtl(id,"meal"))+lbl('Laundry',hcCtl(id,"laundry"));
   if(!add&&kid&&!hcAt(id)) h+='<div style="font-size:11px;color:var(--muted);margin-top:6px">'+(tk?'End date, clock time, meal and week of 4 change while the chore is on '+esc(hhWhoName(j.who))+'’s list.':'End date, clock time, meal and week of 4 are set on Chores &amp; Stars ▸ Lists until Take over.')+'</div>';
-  h+=sec(3,'Who')+lbl(add?'Usually':'Usually (the owner)',hcCtl(id,"who"))+(add?'':_hhGiveOrRot(id))+lbl('Who else can do it',hcCtl(id,"can"));
+  h+=sec(3,'Who')+lbl(add?'Usually':'Usually (the owner)',hcCtl(id,"who"))+(add?'':_hhGiveOrRot(id))+lbl(j.who==="grab"?'Who can grab it':'Who else can do it',hcCtl(id,"can"));
+  if(typeof hgWhoHTML==="function") h+=hgWhoHTML(id);   // HOUSEGRABS_UI: the switch, or the kids see it · ↩ Undo
   if(!add&&j.rot&&!(typeof htOf==="function"&&htOf(id))){ const g=hhRotGroup(j.slot,j.rot).map(function(x){ return hhWhoName(x.kid); }), per=(HH_ROT_PERIODS.find(function(p){ return p[0]===hhRotPeriodOf(j.rot); })||[0,"daily"])[1];
     h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:12px">🔁 Takes turns'+(g.length>1?' with '+esc(g.filter(function(n){ return n!==hhWhoName(j.who); }).join(', ')):'')+' · '+esc(String(per).toLowerCase())+'<span style="flex:1"></span>'+(typeof htConvBtnId==="function"?htConvBtnId(id):'')+_hhBtn("hcId='';hhGo('rot')",'🔁 Rotations',false,'#c2410c')+'</div>'; }
   if(!add&&typeof htWhoHTML==="function") h+=htWhoHTML(id);   // HOUSETURNS_UI: takes turns · the grown-up turn
@@ -498,6 +501,7 @@ function hcChecks(rid,ids){ const J=hhJobs(), out=[], line=function(k,txt,id){ o
   if(rid!=="__none"&&rid!=="any"&&!ids.some(function(id){ return /^(wk:|sat|sun)/.test(hhPlanCad(J[id])); })) line("weekly","No weekly chore owns this room","");
   const one=ids.filter(function(id){ const j=J[id]; return j.who!=="grab"&&hhCanOf(j).length<2; }).length;
   if(one) out.push({k:"one",txt:one+(one===1?' chore':' chores')+' only one person can do — fill in who-can in ⚙ Rules',id:"",rules:1});
+  if(typeof hgChecks==="function") hgChecks(ids).forEach(function(c){ out.push(c); });   // HOUSEGRABS_UI
   if(typeof ktOverlaps==="function") ktOverlaps(ids).forEach(function(o){ line("twice",'Might be the same chore twice: '+J[o[1]].label,o[0]); line("twice",'Might be the same chore twice: '+J[o[0]].label,o[1]); });
   if(rid!=="__none") ids.forEach(function(id){ if(!J[id].room) line("guess",'No room saved — here by a guess from the words',id); });
   ids.forEach(function(id){ const j=J[id]; if(!hhLevelOut(j)) line("level",'Level '+hhLevelOf(j)+' — above '+hhWhoName(j.who)+'’s Level '+hhLevelCurFor(j.who)+', not on a list yet',id); });
@@ -1153,6 +1157,158 @@ function htSheetHTML(){
   h+='<div style="display:flex;gap:6px;justify-content:flex-end;margin-top:14px">'+_hhBtn("htClose()",'Cancel',false,'#94a3b8')+(p.ok?_hhBtn("htConvert('"+htSheet.id+"')",'✨ Switch',true,'#7c3aed'):'')+'</div>';
   return h+'</div></div>'; }
 // HOUSETURNS_UI_END
+// HOUSEGRABS_UI_START — 🙌 Up for Grabs kept in the chore table (Household by room, step 6a of DESIGN_household_rooms_2026-11-15 §2.3
+// problem 7, §4.7, §13; her "Yes, start 6a" 2026-11-18). Mom only. ✨ The switch is her tap on a screen that first shows, side by side,
+// the kids' Up for Grabs now and after (every chore, its stars with any zone bonus, its days, its order, and each kid's own list today)
+// and every difference between the kids' pool and the table's Up for Grabs rows, each with a choice; the choices it starts on keep every
+// kid's list exactly as it is. Then ONE multi-path update under household/: each carried row's claim key (grabKey = its old number, so
+// this week's grabs stay on their chore), the fields she chose, new rows for chores only the kids had, rows only the table had retired
+// (or kept), and the record household/meta/grabs {on, by, src, n, sig, was, made} that ↩ Undo reads to put every one of those paths
+// back. No grab, no config/grabs, no star and no list is written. 👥 Who can grab it: the kids as chips on the card and in ⚙ Rules, ONE
+// path per tap (household/jobs/<id>/can); every kid ticked = nothing stored (everyone, as before); the last kid cannot be unticked (to
+// stop offering a chore, Retire it). Everything goes through _hhWrite(), so ?dryrun=1 writes nothing. Nothing runs on load or a draw.
+let hgSheet=null;   // the open switch screen: {ch:{<choice key>:<pick>}}
+const HG_F=["label","emoji","pts","cad","zone","laundry"], HG_FN={label:"name",emoji:"emoji",pts:"stars",cad:"days",zone:"zone",laundry:"laundry link"};
+function hgMom(){ return typeof momHere!=="function"||momHere(); }
+function hgOn(){ return typeof gbSwOn==="function"&&gbSwOn(); }
+function hgTk(){ return typeof hhTakeoverOn==="function"&&hhTakeoverOn(); }
+function hgRec(){ const m=householdData&&householdData.meta&&householdData.meta.grabs; return (m&&m.on)?m:null; }
+function hgToast(m){ if(typeof mwToast==="function") try{ mwToast(m); }catch(e){} }
+function hgV(x,f){ const v=x?x[f]:null; return f==="pts"?(parseInt(v,10)||0):f==="cad"?(v||"daily"):f==="laundry"?(typeof v==="string"?v:""):(v==null?"":String(v)); }
+function hgDays(cad){ cad=cad||"daily"; if(cad==="daily") return "every day"; const m=/^wk:(.+)$/.exec(cad); if(m) return m[1].split(",").map(function(d){ return ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][+d]||""; }).join(" ");
+  return cad==="2w"?"every 2 weeks":"once a week"; }
+function hgSrc(){ return (Array.isArray(grabs)&&grabs.length)?"config":(typeof gbDefault==="function"&&gbDefault().length)?"default":"none"; }
+function hgSig(){ return JSON.stringify(gbRows().map(function(r){ return [r.i].concat(HG_F.map(function(f){ return hgV(r.g,f); })); })); }   // what the kids' pool is made of
+// Paths under household/ applied to a household object (the screen's "after" on a copy; the switch and Undo on the real one).
+function hgApply(H,upd){ Object.keys(upd).forEach(function(k){ const p=k.split("/").slice(1); let o=H; for(let i=0;i<p.length-1;i++){ if(!o[p[i]]||typeof o[p[i]]!=="object") o[p[i]]={}; o=o[p[i]]; }
+  if(upd[k]===null) delete o[p[p.length-1]]; else o[p[p.length-1]]=JSON.parse(JSON.stringify(upd[k])); }); return H; }
+function hgSim(upd,fn){ const H=householdData; householdData=hgApply(JSON.parse(JSON.stringify(H||{})),upd); try{ return fn(); } finally{ householdData=H; } }
+// What the kids see, read through the real pool code: the whole list in order, and each kid's own Up for Grabs today.
+function hgView(){ return {list:gbRows().map(function(r){ const st=gbCur(r.i)||{}; return {i:r.i,id:r.id||"",e:r.g.emoji||"🎁",l:r.g.label||"",pay:gbPayout(r.i),pts:r.g.pts||0,cad:r.g.cad||"daily",lau:hgV(r.g,"laundry"),by:st.by||"",done:!!st.done}; }),
+  kid:ROSTER.map(function(k){ return {k:k,pool:gbPool(k,false).map(function(x){ return (x.g.label||"")+" +"+gbPayout(x.i); }),html:_grabsHTML(k,false)}; })}; }
+function hgPlan(ch){
+  ch=ch||{}; const J=hhJobs(), now=Date.now(), used={}, made={}, was={}, upd={}, diffs=[], why=[];
+  const pool=(typeof gbList==="function"?gbList():[]).map(function(g,p){ return {g:g||{},p:p,id:""}; }), gids=Object.keys(J).filter(function(id){ return J[id]&&J[id].who==="grab"; }).sort();
+  pool.forEach(function(x){ const id="gb_"+hhSlug(x.g.label); if(J[id]&&J[id].who==="grab"&&!used[id]){ used[id]=1; x.id=id; } });   // the same chore: Bring in named it gb_<its name>
+  pool.forEach(function(x){ if(x.id) return; const id=gids.find(function(k){ const s=J[k].src; return !used[k]&&s&&s.kind==="grab"&&s.i===x.p; }); if(id){ used[id]=1; x.id=id; } });   // …or renamed in the table since
+  const put=function(id,f,v){ const j=J[id]; was[id]=was[id]||{}; if(!(f in was[id])) was[id][f]=(j&&j[f]!==undefined)?j[f]:null; upd["household/jobs/"+id+"/"+f]=v; };
+  const pick=function(k,d){ return ch[k]||d; };
+  pool.forEach(function(x){ const g=x.g;
+    if(x.id){ const j=J[x.id], ret=j.status==="retired", fs=HG_F.filter(function(f){ return hgV(g,f)!==hgV(j,f); });
+      if(ret) diffs.push({k:"k"+x.p,kind:"retired",x:x,d:"keep"}); x.keep=!ret||pick("k"+x.p,"keep")==="keep";
+      fs.forEach(function(f){ diffs.push({k:"f"+x.p+"_"+f,kind:"field",f:f,x:x,d:"kids",a:hgV(g,f),b:hgV(j,f)}); });
+      if(!x.keep) return; x.row=x.id;
+      if(j.grabKey!==x.p) put(x.id,"grabKey",x.p);
+      if(ret){ put(x.id,"status","active"); put(x.id,"verdict","keep"); }
+      fs.forEach(function(f){ if(pick("f"+x.p+"_"+f,"kids")==="kids"){ const v=hgV(g,f); put(x.id,f,f==="pts"?v:(v===""?null:v)); } });
+    } else { diffs.push({k:"a"+x.p,kind:"pool",x:x,d:"add"}); x.keep=pick("a"+x.p,"add")==="add"; if(!x.keep) return;
+      let id="gb_"+hhSlug(g.label), n=2; while(J[id]||made[id]) id="gb_"+hhSlug(g.label)+"_"+(n++);
+      const area=hhGuessArea(g.label), row={label:g.label||"",emoji:g.emoji||"",pts:g.pts||0,cad:g.cad||"daily"};   // the row 📥 Bring in makes for a grab
+      if(g.zone) row.zone=g.zone; if(typeof g.laundry==="string"&&g.laundry) row.laundry=g.laundry;
+      Object.assign(row,{who:"grab",src:{kind:"grab",i:x.p},source:"Up for Grabs",area:area,floor:(area==="cleaning"||area==="pickup")?hhGuessFloor(g.label,g.zone):"",status:"active",verdict:"",note:"",order:x.p,ts:now,grabKey:x.p});
+      made[id]=1; x.row=id; upd["household/jobs/"+id]=row; } });
+  const extra=[]; gids.forEach(function(id){ if(used[id]||J[id].status==="retired") return; diffs.push({k:"t"+id,kind:"table",id:id,d:"out"});
+    if(pick("t"+id,"out")==="out"){ put(id,"status","retired"); put(id,"verdict","retire"); } else extra.push(id); });
+  const asDef=diffs.every(function(d){ return pick(d.k,d.d)===d.d; });
+  const now0=hgView(), probe=Object.assign({},upd,{"household/meta/grabs":{on:now}}), aft=hgSim(probe,hgView), sig=hgSim(probe,hgSig);
+  const W={}; Object.keys(was).forEach(function(id){ W[id]=JSON.stringify(was[id]); });
+  const rec={on:now,by:"mom",src:hgSrc(),n:aft.list.length,sig:sig}; if(Object.keys(W).length) rec.was=W; if(Object.keys(made).length) rec.made=made;
+  upd["household/meta/grabs"]=rec;
+  const same=ROSTER.map(function(k,n){ return now0.kid[n].html===aft.kid[n].html; });
+  if(!hgMom()) why.push("Only Mom can switch it.");
+  if(!hgTk()) why.push("Turn on 🏡 Take over first (the kids’ lists must come from the table).");
+  if(hgRec()) why.push("Up for Grabs already comes from the table.");
+  if(asDef&&same.some(function(v){ return !v; })) why.push("A kid’s Up for Grabs would not stay the same, so it will not switch.");
+  return {ok:!why.length,why:why,upd:upd,rec:rec,pool:pool,extra:extra,diffs:diffs,asDef:asDef,now:now0,aft:aft,same:same,
+    n:{key:Object.keys(upd).filter(function(k){ return /\/grabKey$/.test(k); }).length,made:Object.keys(made).length,ret:diffs.filter(function(d){ return (d.kind==="table"&&pick(d.k,d.d)==="out"); }).length,
+      chg:diffs.filter(function(d){ return d.kind==="field"&&pick(d.k,d.d)==="kids"&&d.x.keep; }).length}}; }
+function hgOpen(){ if(!hgMom()) return; hgSheet={ch:{}}; hhRender(); }
+function hgClose(){ hgSheet=null; hhRender(); }
+function hgPick(k,v){ if(!hgSheet) return; hgSheet.ch[k]=v; hhRender(); }
+// 🙌 Switch: ONE multi-path update of exactly what the screen showed.
+function hgSwitch(){
+  if(!hgMom()) return null; const p=hgPlan(hgSheet&&hgSheet.ch); if(!p.ok){ hgToast(p.why[0]); return null; }
+  hgSheet=null; hgApply(householdData,p.upd); householdOnValue(householdData); if(_hhWrite()) db.ref().update(p.upd);
+  hgToast("Switched. The kids’ Up for Grabs comes from these chores now."); if(typeof renderAll==="function") renderAll(); else hhRender(); return p.upd; }
+// ↩ Undo: only while the kids' Up for Grabs is exactly what the switch made (then every grab is where it was, under the same key).
+function hgUndoWhy(){ const r=hgRec(); if(!r) return "Nothing to undo."; if(!hgTk()) return "Turn on 🏡 Take over first.";
+  const J=hhJobs(); if(hgSig()!==r.sig||Object.keys(r.made||{}).some(function(id){ return !J[id]; })) return "Up for Grabs was changed after the switch (a chore added, edited or retired), so it cannot simply go back.";
+  return ""; }
+function hgUndo(){
+  if(!hgMom()) return null; const why=hgUndoWhy(); if(why){ hgToast(why); return null; }
+  if(typeof confirm==="function"&&!confirm("Put Up for Grabs back the old way?\n\nThe kids see the old list again, with every grab where it is. The chore rows go back to how they were before the switch.")) return null;
+  const r=hgRec(), upd={}; Object.keys(r.was||{}).forEach(function(id){ let o={}; try{ o=JSON.parse(r.was[id])||{}; }catch(e){} Object.keys(o).forEach(function(f){ upd["household/jobs/"+id+"/"+f]=o[f]; }); });
+  Object.keys(r.made||{}).forEach(function(id){ upd["household/jobs/"+id]=null; }); upd["household/meta/grabs"]=null;
+  hgApply(householdData,upd); householdOnValue(householdData); if(_hhWrite()) db.ref().update(upd); hgToast("Back the old way."); if(typeof renderAll==="function") renderAll(); else hhRender(); return upd; }
+// 👥 Who can grab it — one path per tap. Every kid ticked = nothing stored ("everyone", as before).
+function hgCan(id,kid){
+  if(!hgMom()||!hgOn()) return null; const j=hhJobs()[id]; if(!j||j.who!=="grab"||ROSTER.indexOf(kid)<0) return null;
+  let c=gbCanKids(j); c=(c.indexOf(kid)>=0)?c.filter(function(w){ return w!==kid; }):c.concat([kid]); c=ROSTER.filter(function(w){ return c.indexOf(w)>=0; });
+  if(!c.length){ hgToast("At least one kid stays ticked. To stop offering it, 🚫 Retire it."); return null; }
+  const v=(c.length===ROSTER.length)?null:c; if(v) j.can=v; else delete j.can; householdOnValue(householdData); if(_hhWrite()) db.ref("household/jobs/"+id+"/can").set(v); hhRender(); return v||"everyone"; }
+function hgAddKids(){ const o=hhAdd.can||{}, c=ROSTER.filter(function(w){ return o[w]; }); return c.length?c:ROSTER.slice(); }
+function hgAddCan(w){ if(typeof _hhAddGrab==="function") _hhAddGrab(); if(ROSTER.indexOf(w)<0) return; let c=hgAddKids(); c=(c.indexOf(w)>=0)?c.filter(function(x){ return x!==w; }):c.concat([w]);
+  if(!c.length){ hgToast("At least one kid stays ticked."); return; } const o={}; if(c.length<ROSTER.length) c.forEach(function(x){ o[x]=true; }); hhAdd.can=o; hhRender(); }
+function hgCanCtl(id,t){ const add=!id, j=add?hhAdd:hhJobs()[id]; if(!j||j.who!=="grab"||!hgOn()) return ""; const on=add?hgAddKids():gbCanKids(j);
+  return ROSTER.map(function(w){ return _hcChip(on.indexOf(w)>=0,t?hcIni(w):esc(hhWhoName(w)),add?"hgAddCan('"+w+"')":"hgCan('"+id+"','"+w+"')",t).replace('<button','<button title="'+esc(hhWhoName(w))+'"'); }).join('')
+    +((!t&&on.length===ROSTER.length)?' <span style="font-size:11px;color:var(--muted)">everyone'+((add||Array.isArray(j.can)&&j.can.length)?'':' (nobody chosen yet)')+'</span>':''); }
+// ＋ Add chore with "Up for Grabs" (switched only): one row, one targeted write.
+function hgAddSave(){
+  if(!hgMom()||!hgOn()) return null; if(typeof _hhAddGrab==="function") _hhAddGrab();
+  const label=String(hhAdd.label||"").trim().slice(0,80), emoji=String(hhAdd.emoji||"").trim().slice(0,4); if(!label){ hgToast("Give it a name first"); return null; }
+  const cad=(hhAdd.cad==="daily"||hhAdd.cad==="2w"||/^wk:[0-6](,[0-6])*$/.test(hhAdd.cad||""))?hhAdd.cad:"daily", pts=Math.max(0,Math.min(500,parseInt(hhAdd.pts,10)||0));
+  const room=hhRoomList().some(function(r){ return r[0]===hhAdd.room; })?hhAdd.room:"any", area=HH_AREAS[hhAdd.area]?hhAdd.area:hhGuessArea(label,"",""), now=Date.now(), id="hh"+now.toString(36)+Math.random().toString(36).slice(2,6);
+  const job={label:label,cad:cad,slot:"",pts:pts,who:"grab",src:{kind:"grab"},source:"Household tab",area:area,floor:(area==="cleaning"||area==="pickup")?(_hhRoomFloor(room)||hhGuessFloor(label,"")):"",room:room,level:(hhAdd.level>=1&&hhAdd.level<=3)?hhAdd.level:1,status:"active",verdict:"",note:"",order:_hhNextOrder("grab",""),ts:now};
+  if(emoji) job.emoji=emoji; const c=hgAddKids(); if(c.length<ROSTER.length) job.can=c;
+  householdData.jobs=householdData.jobs||{}; householdData.jobs[id]=job; householdOnValue(householdData); if(_hhWrite()) db.ref("household/jobs/"+id).set(job);
+  hgToast("Added to Up for Grabs"); hhAdd.label=""; hhAdd.emoji=""; hhAdd.pts=""; hhAdd.area=""; hhAdd.can={}; hhAdd.kind="chore"; hhAddOpen=false; if(typeof renderAll==="function") renderAll(); else hhRender(); return id; }
+// 🔍 Checks (design §13): a switched Up for Grabs chore that no kid can see.
+function hgChecks(ids){ if(!hgOn()) return []; const J=hhJobs(); return ids.filter(function(id){ const j=J[id]; return j&&j.who==="grab"&&j.status!=="retired"&&!gbCanKids(j).length; }).map(function(id){ return {k:"grab0",txt:"Up for Grabs, and nobody is ticked — no kid sees it",id:id}; }); }
+// The card, 3 · Who: before the switch the way in; after it, since when and ↩ Undo.
+function hgWhoHTML(id){ const j=hhJobs()[id]; if(!j||j.who!=="grab"||!hgMom()) return "";
+  const box=function(x){ return '<div style="margin-top:8px;padding:8px 10px;border-radius:9px;background:#fff7ed;font-size:12px;color:#7c2d12">'+x+'</div>'; };
+  if(!hgOn()){ const src=hgSrc(), n=(typeof gbList==="function")?gbList().length:0, what=src==="config"?'the list saved in the Star Store ('+n+')':src==="default"?'the built-in list ('+n+')':'empty';
+    return box('🙌 The kids don’t see these rows. Their Up for Grabs is '+what+', so changing this chore here changes nothing they see.'+(hgRec()?' <b>Switched, but 🏡 Take over is off</b>, so they see the old list.':'')
+      +'<div style="margin-top:6px">'+(hgRec()?'':hgTk()?_hhBtn("hgOpen()",'🙌 Switch Up for Grabs to the table…',false,'#A0622D'):'<span style="color:var(--muted)">Turn on 🏡 Take over first to switch Up for Grabs to the table.</span>')+'</div>'); }
+  const r=hgRec(), why=hgUndoWhy(), d=new Date(r.on), on=(d.getMonth()+1)+'/'+d.getDate();
+  return box(j.status==="retired"?'🙌 Retired, so it is not in Up for Grabs. ↩ Bring back puts it there again.':'🙌 The kids see this chore in Up for Grabs. What you change here is what they see.')
+    +'<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;font-size:11px;color:var(--muted)">Up for Grabs comes from the table since '+on+'.<span style="flex:1"></span>'+(why?esc(why):_hhBtn("hgUndo()",'↩ Undo the switch',false,'#64748b'))+'</div>'; }
+// ── the switch screen (drawn by hcCardHTML in place of the card while it is open) ──
+function hgSheetHTML(){
+  if(!hgSheet||!hgMom()) return ""; const p=hgPlan(hgSheet.ch), J=hhJobs(), ch=hgSheet.ch;
+  const sec=function(l){ return '<div style="margin-top:14px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;font-weight:800;color:#A0622D">'+l+'</div>'; }, li=function(x){ return '<div style="font-size:12.5px;margin-top:5px">'+x+'</div>'; };
+  const nm=function(g){ return '<b>'+esc((g.emoji||'🎁')+' '+(g.label||''))+'</b>'; }, zn=function(z){ const o=(typeof zoneList==="function"?zoneList():[]).find(function(x){ return x.id===z; }); return z?esc(o?(o.emoji||'')+' '+o.name:z):'none'; };
+  const fv=function(f,v){ return f==="pts"?v+' ⭐':f==="cad"?esc(hgDays(v)):f==="zone"?zn(v):f==="laundry"?(v?'🧺 '+esc(v):'none'):('“'+esc(v)+'”'); };
+  const chips=function(k,d,opts){ const cur=ch[k]||d; return '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">'+opts.map(function(o){ return _hcChip(cur===o[0],o[1],"hgPick('"+k+"','"+o[0]+"')"); }).join('')+'</div>'; };
+  const claim=function(x){ const s=(typeof gbCur==="function")?gbCur(x.p):null; return s&&s.by?' <span style="color:#b45309">('+esc(hhWhoName(s.by))+(s.done?' did it this week':' is holding it for later')+' — leaving it out '+(s.done?'drops it from the list':'lets it go')+')</span>':''; };
+  const kn=function(k){ return esc(hhWhoName(k)); };
+  let h='<div class="ce-sheet open" onclick="if(event.target===this)hgClose()"><div class="ce-sheet-box hc-box">';
+  h+='<div style="display:flex;align-items:center;gap:8px"><div class="ce-sheet-title" style="flex:1;margin-bottom:0">🙌 Switch Up for Grabs to the table</div><button onclick="hgClose()" style="border:1px solid var(--border);background:#fff;border-radius:8px;width:30px;height:30px;font-size:15px;cursor:pointer;color:var(--muted)">✕</button></div>';
+  const src=hgSrc(), gN=Object.keys(J).filter(function(id){ return J[id].who==="grab"&&J[id].status!=="retired"; }).length;
+  h+='<div style="font-size:12px;color:var(--muted);margin-top:6px">Now the kids’ Up for Grabs is '+(src==="config"?'the list saved in the Star Store':src==="default"?'the built-in list':'empty')+' ('+p.pool.length+' chore'+(p.pool.length===1?'':'s')+'). The table’s '+gN+' Up for Grabs row'+(gN===1?'':'s')+' are a copy: changing one changes nothing the kids see. After the switch the kids read the table: what you change on a chore’s card is what they see, and you choose who can grab each one.</div>';
+  h+=sec('What is different ('+p.diffs.length+')');
+  if(!p.diffs.length) h+=li('Nothing — the table already matches the kids’ list.');
+  p.diffs.forEach(function(d){
+    if(d.kind==="field") h+=li(nm(d.x.g)+' — '+HG_FN[d.f]+': the kids '+(d.f==="label"?'see ':'have ')+fv(d.f,d.a)+', the table '+(d.f==="label"?'says ':'has ')+fv(d.f,d.b)+(d.x.keep?'':' <span style="color:var(--muted)">(left out below)</span>')+chips(d.k,d.d,[["kids","Keep the kids’ "+HG_FN[d.f]],["table","Use the table’s"]]));
+    else if(d.kind==="retired") h+=li(nm(d.x.g)+' is retired in the table, but the kids still see it.'+claim(d.x)+chips(d.k,d.d,[["keep","Keep it for the kids"],["out","Leave it out"]]));
+    else if(d.kind==="pool") h+=li(nm(d.x.g)+' is only in the kids’ list.'+claim(d.x)+chips(d.k,d.d,[["add","Add it to the table"],["out","Leave it out"]]));
+    else h+=li(nm(J[d.id])+' is only in the table — the kids have never seen it.'+chips(d.k,d.d,[["out","Leave it out (retire it)"],["add","Add it to Up for Grabs"]])); });
+  const row=function(v){ return v?esc(v.e+' '+v.l)+' <span style="color:#A0622D;font-weight:800">+'+v.pay+' ⭐</span>'+(v.pay!==v.pts?' <span style="font-size:10.5px">zone +'+(v.pay-v.pts)+'</span>':'')+' <span style="color:var(--muted)">· '+esc(hgDays(v.cad))+(v.lau?' · 🧺':'')+'</span>'+(v.by?' <span style="font-size:10.5px;color:#b45309">'+(v.done?'✓ '+kn(v.by)+' did it':'🔒 '+kn(v.by)+' has it')+'</span>':''):'<span style="color:var(--muted)">—</span>'; };
+  const key=function(v){ return v?[v.e,v.l,v.pay,v.cad,v.lau,v.by,v.done].join("|"):""; };
+  const A={}; p.aft.list.forEach(function(v){ A[String(v.i)]=v; }); const B={}; p.now.list.forEach(function(v){ B[String(v.i)]=v; });
+  const keys=p.now.list.map(function(v){ return String(v.i); }).concat(p.aft.list.map(function(v){ return String(v.i); }).filter(function(k){ return !B[k]; }));
+  h+=sec('The kids’ Up for Grabs — now and after')+'<div style="overflow:auto;margin-top:6px"><table style="border-collapse:collapse;font-size:11px;min-width:100%"><tr><th style="text-align:left;padding:3px 5px;border-bottom:1px solid #e5e7eb">#</th><th style="text-align:left;padding:3px 5px;border-bottom:1px solid #e5e7eb">Now</th><th style="text-align:left;padding:3px 5px;border-bottom:1px solid #e5e7eb">After</th><th style="border-bottom:1px solid #e5e7eb"></th></tr>';
+  keys.forEach(function(k,n){ const a=B[k], b=A[k], s=key(a)===key(b); h+='<tr><td style="padding:3px 5px;color:var(--muted)">'+(n+1)+'</td><td style="padding:3px 5px">'+row(a)+'</td><td style="padding:3px 5px'+(s?'':';background:#fef2f2')+'">'+(s?'<span style="color:var(--muted)">the same</span>':row(b))+'</td><td style="padding:3px 5px">'+(s?'✓':'≠')+'</td></tr>'; });
+  const bad=keys.filter(function(k){ return key(B[k])!==key(A[k]); }).length;
+  h+='</table></div>'+li(bad?'<b style="color:#b91c1c">'+bad+' line'+(bad===1?'':'s')+' change'+(bad===1?'s':'')+'</b>, as chosen above.':'✓ Every chore, its stars, its days and its order stay the same.');
+  h+=sec('Each kid today')+ROSTER.map(function(k,n){ const a=p.now.kid[n], b=p.aft.kid[n]; return li('<b>'+kn(k)+'</b>: now '+a.pool.length+' · after '+b.pool.length+' — '+(p.same[n]?'✓ exactly the same screen':'<span style="color:#b91c1c;font-weight:700">different'+(function(){ const plus=b.pool.filter(function(x){ return a.pool.indexOf(x)<0; }), minus=a.pool.filter(function(x){ return b.pool.indexOf(x)<0; }); return (plus.length?': gains '+esc(plus.join(', ')):'')+(minus.length?(plus.length?'; ':': ')+'loses '+esc(minus.join(', ')):''); })()+'</span>')); }).join('');
+  h+=sec('What changes in the table')+li(p.n.key+' row'+(p.n.key===1?' gets':'s get')+' a lasting claim number, so a grab can never move to another chore'+(p.n.chg?' · '+p.n.chg+' change'+(p.n.chg===1?'':'s')+' to the kids’ version':'')+(p.n.made?' · '+p.n.made+' new row'+(p.n.made===1?'':'s'):'')+(p.n.ret?' · '+p.n.ret+' retired':'')+' · one record for ↩ Undo.')
+    +li('<span style="color:var(--muted)">Nothing else: no grab, no star, no list and not the old Up for Grabs list is written. The Star Store and Chores &amp; Stars stop editing Up for Grabs and point here.</span>');
+  h+=sec('When it starts')+li('Right away, on every device as soon as it hears of it. A grab already pulled or done this week stays with the same kid, done, in its cooldown and in the Click-off Log. A screen that has not heard yet keeps the old list, and its taps land on the same chores.');
+  if(!p.ok) h+='<div style="margin-top:10px;padding:8px 10px;background:#fef2f2;border-radius:9px;font-size:12px;color:#991b1b;font-weight:700">It can’t switch: '+p.why.map(esc).join(' ')+'</div>';
+  h+='<div style="display:flex;gap:6px;justify-content:flex-end;margin-top:14px">'+_hhBtn("hgClose()",'Cancel',false,'#94a3b8')+(p.ok?_hhBtn("hgSwitch()",'🙌 Switch',true,'#A0622D'):'')+'</div>';
+  return h+'</div></div>'; }
+// HOUSEGRABS_UI_END
 // HOUSESWITCH_START — 🚪 the real switch and today's stored plan on 👤 By person (Household by room, step 4; DESIGN §4.3 doors, §5 last
 // bullet, her yes 2026-11-17). Mom only. ON first PROVES a houseDay save works (houseDay/<today>/hello) and only then writes
 // household/meta/engine = {mode:"on", on:<today>} together with each house chore's last-done date filled once from the 8 weeks of
