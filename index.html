@@ -14668,7 +14668,7 @@ function hdGrabPay(id,g){ const p=(g&&g.pts)||0, j=hhJobs()[id]||{}; return p+((
 // sibling's hold or done one that kid could do). A chore done some other way is not up for grabs.
 function hdGrabRows(kid,momView){ const t=_todayStr(), r=hdLive(t); if(!r||!r.grabs||ROSTER.indexOf(kid)<0) return []; const J=hhJobs(), out=[];
   Object.keys(r.grabs).sort(function(a,b){ return (((J[a]||{}).order||0)-((J[b]||{}).order||0))||(a<b?-1:1); }).forEach(function(id){ const g=hdGrabAt(t,id), j=J[id]; if(!g||!j) return;
-    const d=hdDoneRec(t,id), can=hdGrabCan(g);
+    const d=hdDoneRec(t,id), can=hdGrabCan(g).filter(function(k){ return gbLvFor(j,k); });   // HOUSEGRABLV
     if(d){ if(d.grab&&(d.who===kid||(momView&&can.indexOf(kid)>=0))) out.push({id:id,g:g,j:j,d:d}); return; }
     if(g.by!==kid&&(can.indexOf(kid)<0||(g.by&&!momView))) return; out.push({id:id,g:g,j:j,d:null}); });
   return out; }
@@ -14681,7 +14681,7 @@ function hdGrabsHTML(kid,momView){ const L=hdGrabRows(kid,momView); if(!L.length
     else if(mine) h+='<button class="gc-done" onclick="hdGrabDone'+q+'">✓ Mark done (+'+pay+')</button><button class="gc-let" onclick="hdGrabLetGo'+q+'">let go</button>';
     else if(taken){ h+='<div class="gc-taken">🔒 '+esc(cap(g.by))+' grabbed it</div>'; if(momView) h+='<button class="gc-let" onclick="hdGrabLetGo(\''+g.by+'\',\''+t+'\',\''+x.id+'\')">release</button>'; }
     else { h+='<button class="gc-done" onclick="hdGrabDone'+q+'">✓ I did it now (+'+pay+')</button><button class="gc-grab" onclick="hdGrabHold'+q+'">🔖 Grab for later</button>';
-      if(momView) h+='<div class="gc-assign">assign: '+hdGrabCan(g).map(function(k){ return '<button onclick="hdGrabHold(\''+k+'\',\''+t+'\',\''+x.id+'\')" title="'+esc(cap(k))+'">'+esc(cap(k).charAt(0))+'</button>'; }).join("")+'</div>'; }
+      if(momView) h+='<div class="gc-assign">assign: '+hdGrabCan(g).filter(function(k){ return gbLvFor(j,k); }).map(function(k){ return '<button onclick="hdGrabHold(\''+k+'\',\''+t+'\',\''+x.id+'\')" title="'+esc(cap(k))+'">'+esc(cap(k).charAt(0))+'</button>'; }).join("")+'</div>'; }
     return h+'</div>'; }).join(""); }
 function _hdGrabSay(m){ if(m&&typeof gwShowToast==="function") gwShowToast(m); if(typeof renderAll==="function") renderAll(); return null; }
 // A kid's tap: today's offer, still offered, a real write (?dryrun=1 is inert). → the offer, or null (said why).
@@ -14691,12 +14691,12 @@ function _hdGrabOk(kid,iso,id){ if(ROSTER.indexOf(kid)<0) return null; if(iso!==
 function hdGrabTx(iso,id,fn,then,no){ try{ db.ref("houseDay/"+iso+"/grabs/"+id).transaction(function(c){ return fn(c||null); },function(err,ok,s){
     if(err||!ok){ if(typeof no==="function") no(); else _hdGrabSay(no||""); return; }
     const v=(s&&typeof s.val==="function")?s.val():null, r=houseDayData[iso]; if(r){ r.grabs=Object.assign({},r.grabs); if(v) r.grabs[id]=v; else delete r.grabs[id]; } if(then) then(v); }); }catch(e){} }
-function hdGrabHold(kid,iso,id){ const g=_hdGrabOk(kid,iso,id); if(!g||g.by||hdDoneRec(iso,id)||hdGrabCan(g).indexOf(kid)<0) return;
+function hdGrabHold(kid,iso,id){ const g=_hdGrabOk(kid,iso,id); if(!g||g.by||hdDoneRec(iso,id)||hdGrabCan(g).indexOf(kid)<0) return; if(!gbLvFor(hhJobs()[id],kid)) return _hdGrabSay("That one isn’t up for grabs any more.");
   if(gbHasActive(kid)){ if(typeof gwShowToast==="function") gwShowToast("One at a time — finish your grabbed chore first!"); return; }
   hdGrabTx(iso,id,function(c){ if(!c||c.by||c.done) return; return Object.assign({},c,{by:kid,at:Date.now()}); },function(){ renderAll(); },"That one was just taken."); }
 function hdGrabLetGo(kid,iso,id){ const g=_hdGrabOk(kid,iso,id); if(!g||g.by!==kid||g.done||hdDoneRec(iso,id)) return;
   hdGrabTx(iso,id,function(c){ if(!c||c.done||c.by!==kid) return; const o=Object.assign({},c); delete o.by; delete o.at; return o; },function(){ renderAll(); }); }
-function hdGrabDone(kid,iso,id){ const g=_hdGrabOk(kid,iso,id); if(!g||(g.by&&g.by!==kid)||hdDoneRec(iso,id)||(g.by!==kid&&hdGrabCan(g).indexOf(kid)<0)) return;
+function hdGrabDone(kid,iso,id){ const g=_hdGrabOk(kid,iso,id); if(!g||(g.by&&g.by!==kid)||hdDoneRec(iso,id)||(g.by!==kid&&hdGrabCan(g).indexOf(kid)<0)) return; if(g.by!==kid&&!gbLvFor(hhJobs()[id],kid)) return _hdGrabSay("That one isn’t up for grabs any more.");
   hdGrabTx(iso,id,function(c){ if(!c||c.done||(c.by&&c.by!==kid)) return; return Object.assign({},c,{by:kid,at:c.at||Date.now(),done:Date.now()}); },function(v){ hdGrabPaid(kid,iso,id,v); },"That one was just taken."); }
 function hdGrabPaid(kid,iso,id,v){ const j=hhJobs()[id], r=hdLive(iso); if(!j||!r||!v) return; const d0=day; day=hdGrabDay(); let paid=0;
   try{ const wk=activeWk(), _slB=slBefore(), slot=hdSlotOf(j), label=j.label||"Chore", zb=(typeof zoneBonusFor==="function")?zoneBonusFor(j.zone,Math.floor((v.pts||0)/2),day):0, upd={}; paid=(v.pts||0)+zb;
@@ -16710,13 +16710,13 @@ function momSchedPrep(dayName){
     const doneBtn=_kpBtn('✓ Done',"kitMarkPrep('"+_lbQ(s.iso)+"','"+_lbQ(s.mid+"_"+s.idx)+"')",true);
     if(s.done){
       const ts=((kitPrepDone[s.iso]||{})[s.mid+"_"+s.idx]), dm=(typeof ts==="number")?_lbMin(ts):x.at;
-      out.push({m:(dm>=0&&dm<24*60)?dm:x.at,o:3,html:_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#64748b">✓ '+(nb?'🌙 ':'🍳 ')+lbl+'</span>')});
+      out.push({m:(dm>=0&&dm<24*60)?dm:x.at,o:3,html:_lbBox('#f8fafc','#94a3b8','<span style="flex:1;font-size:12.5px;color:#64748b">✓ '+(nb?'🌙 ':'🍳 ')+lbl+'</span>'+(typeof nowRecipeBtn==="function"?nowRecipeBtn(s.mid):''))});
       return;
     }
     const b=kitPrepBlockRec(s);
-    if(b&&b.at==="skip"){ out.push({m:x.at,o:1,html:_lbBox('#fff7ed','#fdba74','<span style="flex:1;font-size:13px">'+(nb?'🌙 ':'⏲ ')+lbl+'</span>'+doneBtn)}); return; }
+    if(b&&b.at==="skip"){ out.push({m:x.at,o:1,html:_lbBox('#fff7ed','#fdba74','<span style="flex:1;font-size:13px">'+(nb?'🌙 ':'⏲ ')+lbl+'</span>'+doneBtn+(typeof nowRecipeBtn==="function"?nowRecipeBtn(s.mid):''))}); return; }
     const st=kitPrepStartMin(s,x.at), mins=kitPrepMins(s);
-    out.push({m:st,o:2,html:_lbBox('#fff7ed','#ea580c','<span style="flex:1;font-size:13px">'+(nb?'🌙 ':'🍳 ')+lbl+' · '+mins+' min'+_kpCd(st,st+mins)+'</span>'+doneBtn+_kpLaterBtns(s))});
+    out.push({m:st,o:2,html:_lbBox('#fff7ed','#ea580c','<span style="flex:1;font-size:13px">'+(nb?'🌙 ':'🍳 ')+lbl+' · '+mins+' min'+_kpCd(st,st+mins)+'</span>'+doneBtn+(typeof nowRecipeBtn==="function"?nowRecipeBtn(s.mid):'')+_kpLaterBtns(s))});
   });
   return out.sort(function(a,b2){ return (a.m-b2.m)||(a.o-b2.o); });
 }
@@ -19459,6 +19459,22 @@ function kitPrepSteps(iso){
   return pl.meal.prep.map((s,i)=>({iso:iso,mid:pl.mid,idx:i,when:s.when,label:s.label||"",mins:kitPrepMins(s),
     mealName:pl.meal.name||"",done:!!done[pl.mid+"_"+i]}));
 }
+// NOWRECIPE_START — 📖 a meal in a Now / day list opens its recipe in a pop-up (her ask 2026-11-19: "on the now section of
+//   the page, when it shows a meal and it has a recipe linked to it, I would like it to be able to be clickable and it pop up
+//   the recipe … a fix that goes everywhere"). Her case: ⏲ "Start the crock pot, low 8 hours" for the planned dinner sat in
+//   🔴 Now with no way to the recipe. One helper, used by every list that draws these rows: Mom's Day 🔴 Now and Dad's Day
+//   🔴 Kitchen Now (both kitDuePrepHTML), Mom's agenda prep rows (momSchedPrep) and the ⚠ low-rated meal row in 🔴 Now
+//   (kitFlagNowHTML). The 📖 Recipe button is its own tap target beside ✓ Done — a tap never ticks the row — and it opens the
+//   grocery list's read-only recipe pop-up (grMealPop; Close returns to the same screen), so there is no second viewer and
+//   nothing is written. A row whose meal is not a kitchen recipe (typed text, a deleted meal) gets no button and is unchanged.
+function nowRecipeHas(mid){ return !!(mid&&typeof kitMeals!=="undefined"&&kitMeals&&kitMeals[mid]&&typeof grMealPop==="function"); }
+function nowRecipeBtn(mid){
+  if(!nowRecipeHas(mid)) return '';
+  const q=String(mid).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+  return '<button class="now-recipe" onclick="event.stopPropagation();nowRecipeOpen(\''+esc(q)+'\')" title="Open the recipe" aria-label="Open the recipe" style="padding:4px 10px;border-radius:8px;border:1.5px solid #fdba74;background:#fff;color:#c2410c;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">📖 Recipe</button>';
+}
+function nowRecipeOpen(mid){ if(!nowRecipeHas(mid)) return; grMealPop(mid); }   // display only — the pop-up reads kitMeals and writes nothing
+// NOWRECIPE_END
 // Steps due RIGHT NOW: today's timed steps whose time has arrived, plus
 // tomorrow's night-before steps once the afternoon turns (KIT_NB_HOUR).
 // nowMin is injectable for tests; real callers omit it.
@@ -19472,7 +19488,7 @@ function kitDuePrepHTML(){
     const _kb=(typeof kitPrepRowExtras==="function")?kitPrepRowExtras(s):{cd:'',btns:''};   // 🍳 MEALPREP_BLOCK: ⏱ + ⏰ 10 min later / Not now
     html+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:#fff7ed;border-left:3px solid #ea580c;border-radius:8px;margin-bottom:6px">'
       +'<span style="flex:1;font-size:13px">'+(nb?'🌙':'⏲')+' <b>'+esc(s.label)+'</b> <span style="color:#6b6560">· '+esc(s.mealName)+(nb?' (tomorrow)':' · '+kitWhenLabel(s.when))+'</span>'+_kb.cd+'</span>'
-      +'<button onclick="kitMarkPrep(\''+s.iso+'\',\''+s.mid+'_'+s.idx+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#ea580c;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Done</button>'+_kb.btns+'</div>';
+      +'<button onclick="kitMarkPrep(\''+s.iso+'\',\''+s.mid+'_'+s.idx+'\')" style="padding:4px 10px;border-radius:8px;border:none;background:#ea580c;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Done</button>'+(typeof nowRecipeBtn==="function"?nowRecipeBtn(s.mid):'')+_kb.btns+'</div>';
   });
   return {html:html,n:n};
 }
@@ -24593,6 +24609,7 @@ function kitFlagNowHTML(){
     html+='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:#fffbeb;border-left:3px solid #b45309;border-radius:8px;margin-bottom:6px">'
       +'<span style="flex:1;font-size:13px">⚠ <b>'+esc((m.emoji?m.emoji+' ':'')+(m.name||"This meal"))+'</b> isn’t landing — '+kitFlagStars(a.avg)+' over the last '+KIT_FLAG_N+'. '
       +(rs?'Swap it in '+esc((rs.emoji?rs.emoji+' ':'')+rs.name)+'?':(nd?'Swap it on '+esc(kitFlagFmt(nd))+'?':'Swap it for something else?'))+'</span>'
+      +(typeof nowRecipeBtn==="function"?nowRecipeBtn(mid):'')
       +'<button onclick="kitFlagGotIt(\''+mid+'\')" style="'+b+'border:none;background:#b45309;color:#fff">✓ Got it</button>'
       +'<button onclick="kitFlagSwap(\''+mid+'\')" style="'+b+'border:1.5px solid #b45309;background:#fff;color:#b45309">Swap…</button></div>';
   });
@@ -31393,7 +31410,15 @@ function gbRows(){ if(!gbSwOn()) return gbList().map(function(g,i){ return {g:g,
   out.forEach(function(x){ k.set(x.i,x.g); }); _gbM={h:householdData,j:householdData.jobs,r:out,k:k}; return out; }
 function gbAt(i){ if(!gbSwOn()) return gbList()[i]; gbRows(); return _gbM.k.get(i); }
 function gbCanKids(j){ const c=Array.isArray(j&&j.can)?j.can:[]; return c.length?c.filter(function(w){ return ROSTER.indexOf(w)>=0; }):ROSTER.slice(); }
-function gbCanGrab(i,kid){ if(!gbSwOn()||ROSTER.indexOf(kid)<0) return true; const g=gbAt(i); return !g||gbCanKids(g).indexOf(kid)>=0; }
+function gbCanGrab(i,kid){ if(!gbSwOn()||ROSTER.indexOf(kid)<0) return true; const g=gbAt(i); return !g||gbCanKids(g).indexOf(kid)>=0&&gbLvFor(g,kid); }
+// HOUSEGRABLV (design §13, her "i think so" 2026-11-18): a grab also follows the Cleaning level. A cleaning or pickup chore opens to a kid
+// only at or below THAT kid's own level (hhLevelCurFor(kid): the kid looking, never the owner "grab"); health and animal never wait
+// (hhLevelOut's rule). Read on every draw and tap, so it opens up by itself; a grab a kid holds stays theirs. The old pool has no levels.
+function gbLvFor(j,kid){ return !j||!(j.area==="cleaning"||j.area==="pickup")||hhLevelOf(j)<=hhLevelCurFor(kid); }
+function _gbLvNo(i,kid){ if(!gbSwOn()||ROSTER.indexOf(kid)<0||gbLvFor(gbAt(i),kid)) return false; if(typeof gwShowToast==="function") gwShowToast("That one isn’t up for grabs any more."); renderAll(); return true; }
+// HOUSEGRABCAN (her "Yes, fix it" 2026-11-19): who can grab it is checked on the tap too, not only on the screen, so a kid Mom unticked who
+// taps from a screen drawn before (or Mom's assign from one) is refused; a grab they already hold stays theirs. Nobody stored = every kid.
+function _gbCanNo(i,kid){ const g=gbSwOn()&&ROSTER.indexOf(kid)>=0&&gbAt(i); if(!g||gbCanKids(g).indexOf(kid)>=0) return false; if(typeof gwShowToast==="function") gwShowToast("That one isn’t up for grabs any more."); renderAll(); return true; }
 // A tap on a chore the switch left out (on a screen drawn before the switch arrived) writes nothing; the screen redraws.
 function _gbGone(i){ if(!gbSwOn()||gbAt(i)) return false; if(typeof gwShowToast==="function") gwShowToast("That one isn’t up for grabs any more."); renderAll(); return true; }
 // The old editors (Star Store ▸ 🙌, Chores & Stars ▸ Up for Grabs) on a switched pool write nothing and point to the card.
@@ -31471,8 +31496,8 @@ function _gbEarn(i,kid){ var g=gbAt(i); if(!g) return;
   if(_paid>0 && typeof bankDirect==="function") bankDirect(kid, _paid, (g.emoji?g.emoji+" ":"")+(g.label||"grab")+(_bonus?" (zone bonus +"+_bonus+")":""));
   if(typeof rlogAppend==="function") rlogAppend(kid,"grab",(g.emoji?g.emoji+" ":"")+(g.label||"grab")+(_bonus?" (zone bonus +"+_bonus+")":""),"on",_paid); }
 function gbPayout(i){ var g=gbAt(i)||{}; return (g.pts||0)+zoneBonusFor(g.zone,g.pts||0); }
-function gbInstant(kid,i){ var s=gbCur(i); if(s&&s.done) return; if(_gbGone(i)) return; _gbWrite(i,{by:kid,done:true,ts:nowTs()}); _gbStampDone(i,kid); _gbEarn(i,kid); try{ if(typeof gbLaundryMove==="function") gbLaundryMove(kid,i); }catch(e){} renderAll(); if(typeof gwShowToast==="function") gwShowToast("Nice! +"+((gbAt(i)||{}).pts||0)+" ⭐"); }
-function gbClaim(kid,i){ var s=gbCur(i); if(s&&s.by&&s.by!==kid) return; if(_gbGone(i)) return;
+function gbInstant(kid,i){ var s=gbCur(i); if(s&&s.done) return; if(!(s&&s.by===kid)&&_gbCanNo(i,kid)) return; if(_gbGone(i)) return; if(!(s&&s.by===kid)&&_gbLvNo(i,kid)) return; _gbWrite(i,{by:kid,done:true,ts:nowTs()}); _gbStampDone(i,kid); _gbEarn(i,kid); try{ if(typeof gbLaundryMove==="function") gbLaundryMove(kid,i); }catch(e){} renderAll(); if(typeof gwShowToast==="function") gwShowToast("Nice! +"+((gbAt(i)||{}).pts||0)+" ⭐"); }
+function gbClaim(kid,i){ var s=gbCur(i); if(s&&s.by&&s.by!==kid) return; if(!(s&&s.by===kid)&&_gbCanNo(i,kid)) return; if(_gbGone(i)) return; if(!(s&&s.by===kid)&&_gbLvNo(i,kid)) return;
   if(gbHasActive(kid)){ if(typeof gwShowToast==="function") gwShowToast("One at a time — finish your grabbed chore first!"); return; }
   _gbWrite(i,{by:kid,done:false,ts:nowTs()}); renderAll(); }
 function gbMarkDone(kid,i){ var s=gbCur(i); if(!s||s.by!==kid||s.done) return; if(_gbGone(i)) return; _gbWrite(i,{by:kid,done:true,ts:nowTs()}); _gbStampDone(i,kid); _gbEarn(i,kid); try{ if(typeof gbLaundryMove==="function") gbLaundryMove(kid,i); }catch(e){} renderAll(); if(typeof gwShowToast==="function") gwShowToast("Done! +"+((gbAt(i)||{}).pts||0)+" ⭐"); }
@@ -38642,7 +38667,7 @@ function famRunDates(b,it){ return famGridDates().map(function(r){ return r.date
 let _famRdCache={t:0,v:{}};
 function famRunDatesC(b,id,it){
   const now=Date.now(); if(now-_famRdCache.t>1500) _famRdCache={t:now,v:{}};
-  const k=id+"|"+it.key+"|"+JSON.stringify([(typeof uftTr==="function"&&uftTr(it))?[it.track.startDate||null,it.track.perWeek||null,!!it.track.paused]:null,b.days,it.days,it.kids,b.kids,b.at,b.off,b.items&&famList(b.items).map(function(x){ return x&&[x.key,x.minutes]; }),b.atByDay||null]);   // 🕰 FAMDAYSTART: a day's own start is part of the key · UNITFT: a unit's start / pace / pause too
+  const k=id+"|"+it.key+"|"+JSON.stringify([(typeof uftTr==="function"&&uftTr(it))?[it.track.startDate||null,it.track.perWeek||null,!!it.track.paused,it.track.pauseFrom||null,it.track.resumeOn||null,it.track.pausedBefore||null]:null,b.days,it.days,it.kids,b.kids,b.at,b.off,b.items&&famList(b.items).map(function(x){ return x&&[x.key,x.minutes]; }),b.atByDay||null]);   // 🕰 FAMDAYSTART: a day's own start is part of the key · UNITFT: a unit's start / pace / pause too
   if(!_famRdCache.v[k]) _famRdCache.v[k]=famRunDates(b,it);
   return _famRdCache.v[k];
 }
@@ -38849,12 +38874,13 @@ function famLessonsEditorHTML(id,b,it,i,ed){
   const box=function(inner){ return '<div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:#fff;border:1px dashed #ddd6fe">'+inner+'</div>'; };
   const inp='padding:4px 7px;border:1.5px solid var(--border);border-radius:7px;font-size:12px;font-family:\'DM Sans\',sans-serif';
   const btn=function(lbl,fn,prim){ return '<button onclick="'+fn+'" style="padding:4px 11px;border-radius:8px;border:'+(prim?'none':'1.5px solid #c4b5fd')+';background:'+(prim?'#7c3aed':'#fff')+';color:'+(prim?'#fff':'#5b21b6')+';font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
-  if(!tr) return ed?box('<span style="font-size:10px;color:var(--muted);margin-right:6px">\u{1F4DA} Lessons</span>'+btn('＋ In order (a list)',"famTrackStart('"+J(id)+"',"+i+",'seq')")+' '+btn('＋ Week by week (like BiblioPlan)',"famTrackStart('"+J(id)+"',"+i+",'week')")):'';
+  const _pw=(typeof uftWords==="function")?uftWords(it):"";   // FTPAUSE: "⏸ Paused Dec 1 – Jan 3" where Mom manages Family Time
+  if(!tr) return ed?box('<span style="font-size:10px;color:var(--muted);margin-right:6px">\u{1F4DA} Lessons</span>'+btn('＋ In order (a list)',"famTrackStart('"+J(id)+"',"+i+",'seq')")+' '+btn('＋ Week by week (like BiblioPlan)',"famTrackStart('"+J(id)+"',"+i+",'week')")+(typeof uftControlsHTML==="function"?uftControlsHTML(id,it.key):"")):(_pw?box('<span style="font-size:11px;font-weight:800;color:#b45309">'+esc(_pw)+'</span>'):'');   // FTPAUSE: the pause row on a subject with no lessons
   const m=famLessonMap(b,id,it);
-  const status='<div style="font-size:11px;font-weight:700;color:#5b21b6;padding-bottom:4px">\u{1F4DA} '+(m.now?'Next: '+esc(m.now):'Nothing scheduled yet')+(m.ends?' · ends '+famFmtDate(m.ends):'')+((m.owed&&m.owed.length)?' · <span style="color:#b45309">'+m.owed.length+' to make up</span>':'')+(typeof famBoMissedWords==="function"?' · <span style="font-weight:600;color:var(--muted)">'+esc(famBoMissedWords(tr))+'</span>':'')+'</div>';   // 🚫 FAMBLOCKOUT: the setting in plain words
+  const status='<div style="font-size:11px;font-weight:700;color:#5b21b6;padding-bottom:4px">\u{1F4DA} '+(m.now?'Next: '+esc(m.now):'Nothing scheduled yet')+(m.ends?' · ends '+famFmtDate(m.ends):'')+((m.owed&&m.owed.length)?' · <span style="color:#b45309">'+m.owed.length+' to make up</span>':'')+(typeof famBoMissedWords==="function"?' · <span style="font-weight:600;color:var(--muted)">'+esc(famBoMissedWords(tr))+'</span>':'')+(_pw?' · <span style="color:#b45309">'+esc(_pw)+'</span>':'')+'</div>';   // FTPAUSE   // 🚫 FAMBLOCKOUT: the setting in plain words
   if(!ed) return box(status);
   let h=status;
-  if(typeof uftControlsHTML==="function") h+=uftControlsHTML(id,it.key);   // UNITFT: Starts on · Runs on · Pause for a unit item
+  if(typeof uftControlsHTML==="function") h+=uftControlsHTML(id,it.key);   // UNITFT: Starts on · Runs on · Pause for a unit item · FTPAUSE: Pause for every subject
   if(tr.mode==="seq"){
     const sit=famSittings(it), done=famDoneN(id,it.key);
     h+='<div style="font-size:10px;color:var(--muted)">One lesson per line. End a line with ×3 for 3 days on it (“day 1 of 3”…). New books just go underneath.</div>';
@@ -41774,7 +41800,7 @@ function uftEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/"
 function uftJ(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"); }
 // ── the gate ──
 function uftIsUnit(it){ const tr=it&&it.track; if(!tr) return false; if(tr.unit&&tr.unit.id) return true; return tr.mode==="seq"&&famList(tr.list).some(function(l){ return l&&l.u&&l.u.id; }); }
-function uftTr(it){ if(!uftIsUnit(it)) return null; const tr=it.track; return (tr.startDate||tr.perWeek||tr.paused)?tr:null; }
+function uftTr(it){ const tr=it&&it.track; if(!tr) return null; if(!uftIsUnit(it)) return (tr.paused||tr.pausedBefore)?tr:null; return (tr.startDate||tr.perWeek||tr.paused||tr.pausedBefore)?tr:null; }   // FTPAUSE: every family item can pause; start and pace stay unit-only
 let _uftSd={t:0,v:null,n:0};
 function uftSchoolSet(){   // the family's school dates (the Grid's rows), cached a moment
   const now=Date.now(); if(_uftSd.v&&now-_uftSd.t<1500) return _uftSd;
@@ -41789,13 +41815,15 @@ function uftBaseRuns(b,it,ds){
 }
 function uftOnDay(b,it,dayName,ds){
   const tr=uftTr(it); if(!tr) return true;
-  if(tr.paused) return false;
+  if(tr.paused&&!uftOk(tr.pauseFrom)) return false;   // FTPAUSE: a pause with no dates (from before) = every day, as before
   if(!uftOk(ds)){ try{ ds=(typeof routineDateISO==="function")?routineDateISO(dayName):""; }catch(e){ ds=""; } }   // a board card's day → its date
-  if(!uftOk(ds)) return true;   // no date to judge by → as before
+  if(!uftOk(ds)) return !uftPausedOn(tr,uftToday());   // no date to judge by → as before (FTPAUSE: a dated pause judges by today)
+  if(uftPausedOn(tr,ds)) return false;   // FTPAUSE: a paused day — no card, no lesson, not a run day (so never missed, never counted)
+  if(!uftIsUnit(it)) return true;   // FTPAUSE: start and pace are a unit's only
   if(uftOk(tr.startDate)&&ds<tr.startDate) return false;
   const pw=parseInt(tr.perWeek,10)||0; if(!pw||tr.mode!=="seq") return true;
   const mon=uftMonOf(ds); let n=0;   // the pace: the first pw run days of this Mon–Sun week, from the start
-  for(let k=0;k<7;k++){ const d=uftAdd(mon,k); if(d>ds) break; if(uftOk(tr.startDate)&&d<tr.startDate) continue; if(d===ds||uftBaseRuns(b,it,d)) n++; }
+  for(let k=0;k<7;k++){ const d=uftAdd(mon,k); if(d>ds) break; if(uftOk(tr.startDate)&&d<tr.startDate) continue; if(d===ds||(uftBaseRuns(b,it,d)&&!uftPausedOn(tr,d))) n++; }   // FTPAUSE: a paused day is not one of the week's runs
   return n<=pw;
 }
 // the dates an item lays on from `from` for `weeks` Mon–Sun weeks — the Grid's rows + its own famCellState (so, the gate) → ["YYYY-MM-DD"…]
@@ -41807,7 +41835,8 @@ function uftPlanDates(b,it,from,weeks){
 // The Grid / strip words: "starts Thu, Nov 12" until then · "paused"
 function uftWords(it){
   const tr=uftTr(it); if(!tr) return "";
-  if(tr.paused) return "\u23F8 paused";
+  const pw=uftPauseWords(tr); if(pw) return pw;   // FTPAUSE: "⏸ Paused Dec 1 – Jan 3"
+  if(!uftIsUnit(it)) return "";
   return (uftOk(tr.startDate)&&tr.startDate>uftToday())?"starts "+uftFmtLong(tr.startDate):"";
 }
 function uftGridTag(it,col){ const w=uftWords(it); return w?'<div style="font-size:9px;font-weight:800;color:'+(col||"#5b21b6")+'">'+uftEsc(w)+'</div>':''; }
@@ -41870,7 +41899,7 @@ function uftWrite(id,key,sub,val,label){
   return true;
 }
 function uftSetStart(id,key,v){ if(!uftOk(v)) return false; const at=uftItemAt(id,key); if(!at.it) return false; return uftWrite(id,key,"track/startDate",v,"\u{1F5D3} "+(at.it.name||"")+" starts "+uftFmtLong(v)); }
-function uftPause(id,key,on){ const at=uftItemAt(id,key); if(!at.it) return false; return uftWrite(id,key,"track/paused",on?true:null,(on?"\u23F8 ":"\u25B6 ")+(at.it.name||"")+(on?" paused":" resumed")); }
+function uftPause(id,key,on){ return on?uftPauseDates(id,key,uftToday(),null):uftResume(id,key); }   // FTPAUSE: ⏸ = from today until ▶ Resume
 function uftRunDays(b){ return FAM_DAYS.filter(function(d){ return famRunsOn(b.days,FAM_DN[d]); }); }
 function uftToggleDay(id,key,d){
   const at=uftItemAt(id,key); if(!at.it||!at.b) return false; const bd=uftRunDays(at.b);
@@ -41882,7 +41911,7 @@ function uftToggleDay(id,key,d){
 // re-saving the lessons keeps the start, the pace, the pause, and each line's unit day (matched by its words)
 function uftKeep(oldTr,newTr){
   if(!oldTr||!newTr) return newTr;
-  ["startDate","perWeek","paused"].forEach(function(f){ if(oldTr[f]!=null&&newTr[f]==null) newTr[f]=oldTr[f]; });
+  ["startDate","perWeek","paused","pauseFrom","resumeOn","pausedBefore"].forEach(function(f){ if(oldTr[f]!=null&&newTr[f]==null) newTr[f]=oldTr[f]; });
   if(newTr.mode==="seq"&&oldTr.mode==="seq"){ const old=famList(oldTr.list); famList(newTr.list).forEach(function(l){ if(!l||l.u) return; const m=old.find(function(o){ return o&&o.u&&o.t===l.t; }); if(m) l.u=m.u; }); }
   return newTr;
 }
@@ -41896,16 +41925,16 @@ function uftAfterApply(id,key,joined,title){
 // ── the controls: the Family Time editor (ed) and the unit's row in the Units tab ──
 function uftControlsHTML(id,key){
   if(typeof momHere==="function"&&!momHere()) return "";
-  const at=uftItemAt(id,key), b=at.b, it=at.it; if(!b||!it||!uftIsUnit(it)) return "";
+  const at=uftItemAt(id,key), b=at.b, it=at.it; if(!b||!it) return "";
+  if(!uftIsUnit(it)) return '<div data-uft="1" onclick="event.stopPropagation()" style="margin-top:6px;padding:7px 9px;border-radius:9px;background:#faf5ff;border:1.5px solid #ddd6fe;font-size:11.5px">'+uftPauseRowHTML(id,key,b,it)+'</div>';   // FTPAUSE: any family subject — the pause row only
   const tr=it.track, a="'"+uftJ(id)+"','"+uftJ(key)+"'", bd=uftRunDays(b), mine=famList(it.days).length?famList(it.days):bd;
   const inp='padding:4px 7px;border:1.5px solid var(--border);border-radius:7px;font-size:12px;font-family:\'DM Sans\',sans-serif;background:#fff';
   let h='<div data-uft="1" onclick="event.stopPropagation()" style="margin-top:6px;padding:7px 9px;border-radius:9px;background:#faf5ff;border:1.5px solid #ddd6fe;font-size:11.5px">';
-  h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-weight:800;color:#5b21b6">Starts on</span><input type="date" value="'+uftEsc(uftOk(tr.startDate)?tr.startDate:"")+'" onchange="uftSetStart('+a+',this.value)" style="'+inp+'">'+
-    '<button onclick="uftPause('+a+','+(tr.paused?'false':'true')+')" style="margin-left:auto;padding:4px 11px;border-radius:8px;border:1.5px solid #c4b5fd;background:'+(tr.paused?'#5b21b6':'#fff')+';color:'+(tr.paused?'#fff':'#5b21b6')+';font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(tr.paused?'\u25B6 Resume':'\u23F8 Pause')+'</button></div>';
+  h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-weight:800;color:#5b21b6">Starts on</span><input type="date" value="'+uftEsc(uftOk(tr.startDate)?tr.startDate:"")+'" onchange="uftSetStart('+a+',this.value)" style="'+inp+'"></div>';   // FTPAUSE: the Pause button moved to the pause row below
   h+='<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:5px"><span style="font-weight:800;color:#5b21b6;margin-right:4px">Runs on</span>'+bd.map(function(d){ return _famChip(mine.indexOf(d)>=0,d,"uftToggleDay("+a+",'"+d+"')",true); }).join("")+'</div>';
   const today=uftToday();
-  if(tr.paused) h+='<div style="margin-top:5px;color:#b45309;font-weight:700">\u23F8 Paused \u2014 nothing goes on the schedule until you resume. It picks up where you left off.</div>';
-  else { let m=null; try{ m=famLessonMap(b,id,it); }catch(e){ m=null; }
+  h+='<div style="margin-top:6px">'+uftPauseRowHTML(id,key,b,it)+'</div>';   // FTPAUSE: ⏸ Pause from · Resume on — the same row as every family subject; below it the next days, unless paused with no way back yet
+  if(!(tr.paused&&(!uftOk(tr.pauseFrom)||(uftPausedOn(tr,today)&&!uftOk(tr.resumeOn))))){ let m=null; try{ m=famLessonMap(b,id,it); }catch(e){ m=null; }
     const ds=m?Object.keys(m.byDate||{}).filter(function(d){ return d>=today&&!/^\u2713/.test(m.byDate[d]); }).sort():[];
     const sh=function(d){ return String((m.short&&m.short[d])||m.byDate[d]).split(" \u2014 ")[0]; };
     h+='<div style="margin-top:5px;color:#4c1d95">'+(ds.length?ds.slice(0,6).map(function(d){ return '<b>'+uftEsc(uftFmt(d))+'</b> \u00B7 '+uftEsc(sh(d)); }).join(' \u00A0 ')+(ds.length>6?' \u2026 last: <b>'+uftEsc(uftFmtLong(ds[ds.length-1]))+'</b>':''):'Nothing left to put on the schedule.')+'</div>'; }
@@ -41943,6 +41972,99 @@ function uftPreviewHTML(u,f){
     (last?'<div style="font-size:10.5px;color:var(--muted);margin-top:3px">\u2026 last day: <b>'+uftEsc(uftFmtLong(last.date))+'</b> \u00B7 '+uftEsc(last.label)+'</div>':'')+
     '<div style="font-size:10px;color:var(--muted);margin-top:3px">'+(P.mode==="seq"?utPerWeek(u)+' a week at most, on the days picked; school days only. ':'')+'Change the First day or the days and this updates \u2014 nothing is saved until Put it on.</div></div>';
 }
+// FTPAUSE_START — ⏸ PAUSE / ▶ RESUME, WITH DATES, FOR EVERY FAMILY TIME SUBJECT (beta mom's ask 2026-11-19, approved by Adrienne:
+//   the family does "Christmas school" in December — pause Science and History for the month, pick up where they left off in
+//   January. Only a unit item could pause; her Science (in order) and History (week by week) could not.)
+// One mechanism — the unit's: the leaves under config/rules/familyBlocks/<id>/items/<i>/track/ and the gate uftOnDay above:
+//   · paused: true          — a pause exists (as before; alone, with no pauseFrom, it means every day — the old unit pause)
+//   · pauseFrom: "YYYY-MM-DD" — the first paused day (⏸ with no date = today; never a past day)
+//   · resumeOn: "YYYY-MM-DD"  — the first day back (optional; without it, paused until ▶ Resume)
+//   · pausedBefore/<from>: "<resumeOn>" — an earlier pause, kept when a new one starts, so its days stay paused for good.
+//   A paused day is not a run day: famLayout lays no card (the block shrinks or goes), famCellState says no, so the lesson map
+//   never gives it a lesson — week by week counts only weeks it runs, in order hands the next lesson to the next run day — and
+//   famOwedList never calls it missed. The dates stay after the pause is over, so past weeks keep counting right.
+//   ▶ Resume after the pause began writes resumeOn = today (the paused days stay paused); before it began (or the same day)
+//   it removes the leaves. Each write is famWrite (Mom only, dry-run inert) and then the one re-lay door (pass F), with an Undo.
+function uftPausedOn(tr,ds){   // is this a paused day for the track?
+  if(!tr||!uftOk(ds)) return false;
+  const pb=tr.pausedBefore; if(pb&&typeof pb==="object"&&Object.keys(pb).some(function(f){ return uftOk(f)&&ds>=f&&(!uftOk(pb[f])||ds<pb[f]); })) return true;
+  if(!tr.paused) return false;
+  if(uftOk(tr.pauseFrom)&&ds<tr.pauseFrom) return false;
+  if(uftOk(tr.resumeOn)&&ds>=tr.resumeOn) return false;
+  return true;
+}
+function uftMD(s){ const d=uftParse(s); return UFT_MON[d.getMonth()]+" "+d.getDate(); }
+// the pause now or ahead → its words; one that is over → ""
+function uftPauseWords(tr){
+  if(!tr||!tr.paused) return "";
+  if(!uftOk(tr.pauseFrom)) return "\u23F8 paused";
+  if(uftOk(tr.resumeOn)&&tr.resumeOn<=uftToday()) return "";
+  return "\u23F8 Paused "+(uftOk(tr.resumeOn)?uftMD(tr.pauseFrom)+" \u2013 "+uftMD(uftAdd(tr.resumeOn,-1)):"from "+uftMD(tr.pauseFrom));
+}
+function uftPauseLive(tr){ return !!uftPauseWords(tr); }   // a pause now or ahead (the row shows it, not the Pause button)
+// several leaves under the item in one go (each its own famWrite), then the re-lay with an Undo of every leaf as it was
+function uftWriteLeaves(id,key,leaves,label){
+  if(typeof momHere==="function"&&!momHere()) return false;
+  const at=uftItemAt(id,key); if(!at.it) return false; const undo=[];
+  for(const sub of Object.keys(leaves)){
+    const rel=id+"/items/"+at.i+"/"+sub, P="config/rules/familyBlocks/"+rel, val=leaves[sub];
+    let was; try{ was=sub.split("/").reduce(function(o,k){ return o==null?undefined:o[k]; },at.it); }catch(e){ was=undefined; }
+    if(was===undefined&&(val===null||val===undefined)) continue;   // nothing there, nothing to remove
+    undo.push((was===undefined||was===null)?{p:P,gone:true}:{p:P,was:JSON.parse(JSON.stringify(was))});
+    if(!famWrite(rel,(val===undefined)?null:val)) return false;
+  }
+  try{ _famLmMemo={}; _famRdCache={t:0,v:{}}; }catch(e){}
+  if(undo.length&&typeof relayWeek==="function") relayWeek("famtime",{label:label,fams:[{id:id,key:key}],undo:undo});
+  return true;
+}
+// ⏸ Pause from `from` (default today, never before today) · back on `back` (optional, after `from`)
+function uftPauseDates(id,key,from,back){
+  const at=uftItemAt(id,key); if(!at.it) return false; const tr=at.it.track||{}, today=uftToday();
+  from=(uftOk(from)&&from>today)?from:today; back=uftOk(back)?back:null;
+  if(back&&back<=from) return false;
+  const L={"track/paused":true,"track/pauseFrom":from,"track/resumeOn":back};
+  if(tr.paused&&uftOk(tr.pauseFrom)&&uftOk(tr.resumeOn)&&tr.resumeOn<=today&&tr.pauseFrom<tr.resumeOn) L["track/pausedBefore/"+tr.pauseFrom]=tr.resumeOn;   // the last pause is over: keep its days paused
+  return uftWriteLeaves(id,key,L,"\u23F8 "+(at.it.name||"")+" paused "+uftMD(from)+(back?" \u2013 "+uftMD(uftAdd(back,-1)):""));
+}
+function uftResume(id,key){
+  const at=uftItemAt(id,key); if(!at.it) return false; const tr=at.it.track||{}, today=uftToday(), nm="\u25B6 "+(at.it.name||"")+" resumed";
+  if(!tr.paused) return false;
+  if(uftOk(tr.pauseFrom)&&tr.pauseFrom<today) return uftWriteLeaves(id,key,{"track/resumeOn":today},nm);   // the paused days so far stay paused
+  return uftWriteLeaves(id,key,{"track/paused":null,"track/pauseFrom":null,"track/resumeOn":null},nm);   // not begun (or begun today): no pause at all
+}
+// change one date of the pause now or ahead (Pause from: not begun yet, today or later · Resume on: today or later, after the start; blank = until ▶ Resume)
+function uftPauseSet(id,key,field,v){
+  const at=uftItemAt(id,key); if(!at.it) return false; const tr=at.it.track||{}, today=uftToday();
+  if(!tr.paused||!uftOk(tr.pauseFrom)) return false;
+  if(field==="pauseFrom"){ if(!uftOk(v)||v<today||tr.pauseFrom<today||(uftOk(tr.resumeOn)&&tr.resumeOn<=v)) return false; return uftWriteLeaves(id,key,{"track/pauseFrom":v},"\u23F8 "+(at.it.name||"")+" paused from "+uftMD(v)); }
+  if(field==="resumeOn"){ if(v&&(!uftOk(v)||v<today||v<=tr.pauseFrom)) return false; return uftWriteLeaves(id,key,{"track/resumeOn":v||null},"\u25B6 "+(at.it.name||"")+(v?" back "+uftMD(v):" paused until you resume")); }
+  return false;
+}
+// a week-by-week item whose pause starts or ends partway through a week it runs in: that book week is cut short
+function uftPauseCuts(b,it,tr){
+  if(!b||!it||!tr||tr.mode!=="week") return false;
+  const cut=function(d){ if(!uftOk(d)) return false; for(let x=uftMonOf(d);x<d;x=uftAdd(x,1)) if(uftBaseRuns(b,it,x)) return true; return false; };
+  return cut(tr.pauseFrom)||cut(tr.resumeOn);
+}
+// the row: ⏸ Pause from [date] · Resume on [date] [⏸ Pause] — or, while a pause is on or ahead, its words, its dates and ▶ Resume
+function uftPauseRowHTML(id,key,b,it){
+  const tr=(it&&it.track)||{}, a="'"+uftJ(id)+"','"+uftJ(key)+"'", today=uftToday(), nm=uftEsc(it.name||"This subject");
+  const inp='padding:4px 7px;border:1.5px solid var(--border);border-radius:7px;font-size:12px;font-family:\'DM Sans\',sans-serif;background:#fff';
+  const bt=function(lbl,fn,on){ return '<button onclick="'+fn+'" style="margin-left:auto;padding:4px 11px;border-radius:8px;border:1.5px solid #c4b5fd;background:'+(on?'#5b21b6':'#fff')+';color:'+(on?'#fff':'#5b21b6')+';font-size:11px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>'; };
+  const L='<span style="font-weight:800;color:#5b21b6">';
+  if(!uftPauseLive(tr)) return '<div data-uftp="1" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'+L+'\u23F8 Pause from</span><input data-uftp="f" type="date" min="'+today+'" value="'+today+'" style="'+inp+'">'+
+    L+'Resume on</span><input data-uftp="r" type="date" min="'+uftAdd(today,1)+'" value="" title="Leave it blank to stay paused until you tap Resume" style="'+inp+'">'+
+    bt('\u23F8 Pause',"var p=this.parentNode;uftPauseDates("+a+",p.querySelector('[data-uftp=f]').value,p.querySelector('[data-uftp=r]').value)",false)+'</div>';
+  const legacy=!uftOk(tr.pauseFrom), begun=legacy||tr.pauseFrom<=today;
+  let h='<div data-uftp="1" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span style="font-weight:800;color:#b45309">'+uftEsc(uftPauseWords(tr))+'</span>'+
+    bt(begun?'\u25B6 Resume':'\u2715 Don\u2019t pause',"uftResume("+a+")",true)+'</div>';
+  if(!legacy) h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px">'+L+'Pause from</span><input type="date" min="'+today+'" value="'+uftEsc(tr.pauseFrom)+'"'+(tr.pauseFrom<today?' disabled':'')+' onchange="uftPauseSet('+a+',\'pauseFrom\',this.value)" style="'+inp+'">'+
+    L+'Resume on</span><input type="date" min="'+uftAdd(tr.pauseFrom>today?tr.pauseFrom:today,tr.pauseFrom>=today?1:0)+'" value="'+uftEsc(uftOk(tr.resumeOn)?tr.resumeOn:"")+'" onchange="uftPauseSet('+a+',\'resumeOn\',this.value)" style="'+inp+'"></div>';
+  h+='<div style="margin-top:4px;color:#92400e">'+nm+' goes on no one\u2019s schedule on those days, and nothing counts as missed. '+(uftOk(tr.resumeOn)?'It':'When you tap \u25B6 Resume it')+' picks up with the next lesson.</div>';
+  if(uftPauseCuts(b,it,tr)) h+='<div style="margin-top:3px;color:#92400e">Week by week: this pause starts or ends in the middle of a week, so that book week is cut short. Pause from a Monday and resume on a Monday to keep every book week whole.</div>';
+  return h;
+}
+// FTPAUSE_END
 // UNITFT_END
 // DAYCARD_START — 📺 today's day card on one screen, for the whole family ("One shape" §3 Screen in both examples, §5 the board;
 //   BRIEF_units_build_2026-10-27.md B2; her answers 2026-10-26: 3 "rungs only on a day where Mom adds a question", 4 "logging is
@@ -42049,6 +42171,26 @@ function dcFeature(g){
 function dcLinks(g){ try{ const rec=(typeof frCardRec==="function")?frCardRec(g.first):null; return (typeof lrLinksFor==="function")?lrLinksFor(g.first,null,"",rec||undefined):[]; }catch(e){ return []; } }
 function dcLinkBtn(l){ const vid=/youtu|vimeo|video/i.test(String(l.url+" "+(l.label||""))); return '<a href="'+dcEsc(l.url)+'" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:8px;padding:12px 18px;border-radius:14px;background:'+(vid?'#7c3aed':'#1d4ed8')+';color:#fff;font-size:18px;font-weight:800;text-decoration:none;font-family:\'DM Sans\',sans-serif">'+(vid?'\u25B6':'\u{1F517}')+' '+dcEsc(l.label||"Open")+'</a>'; }
 function dcActivity(g){ const d=g.day; if(!d||!d.nb||!d.nb.activity||!g.u) return null; const acts=(typeof _unitActs==="function")?_unitActs(g.u):[]; return acts.find(a=>a&&a.key===d.nb.activity)||null; }
+// UNITACTCHK_START — ✓ a unit's activity right on today's card (a beta mom's ask 2026-11-19, Adrienne's yes: cross the day's
+//   activity off from the card instead of leaving the day for the Units page). Under 🎨 Today's activity: one small chip per kid
+//   enrolled in the unit. Mom's tap calls the Units page's own ✓ Done (unitActivityDone → unitStudies/<id>/activityLog/<kid>/<key>,
+//   points as there), so the card and the Units page are ONE record both ways, and tapping again un-checks the same way. Mom-only
+//   (momHere(), as the Units page's ✓ Done); a kid sees each name's state (✓ done · ⏳ claimed · ○ not yet), nothing to tap.
+//   No new data or path; dry run stays inert through the app's db patch. A card with no unit day or no activity draws as before.
+function dcActKids(u){ const en=(u&&u.enrolled)||{}; const R=(typeof ROSTER!=="undefined"&&Array.isArray(ROSTER))?ROSTER:Object.keys(en); return R.filter(k=>en[k]); }
+function dcActTap(uid,kid,key){ if(!(typeof momHere==="function"&&momHere())||typeof unitActivityDone!=="function") return false; unitActivityDone(uid,kid,key); return true; }
+function dcActChecksHTML(g,act){
+  const u=g&&g.u, uid=g&&g.day&&g.day.uid; if(!u||!uid||!act||!act.key) return ""; const kids=dcActKids(u); if(!kids.length) return "";
+  const mom=(typeof momHere==="function")&&momHere(), log=u.activityLog||{}, cl=u.activityClaims||{};
+  let h='<div data-dc-actchk="1" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">';
+  kids.forEach(k=>{ const done=!!(log[k]||{})[act.key], wait=!done&&!!(cl[k]||{})[act.key];
+    const st='display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;border:2px solid '+(done?'#4ade80':(wait?'#fcd34d':'rgba(255,255,255,.25)'))+';background:'+(done?'#166534':'transparent')+';color:#fff;font-size:15px;font-weight:800;font-family:\'DM Sans\',sans-serif';
+    const inner=dcEsc(dcName(k))+' <span>'+(done?'✓':(wait?'⏳':'○'))+'</span>';
+    if(mom) h+='<button data-dc-actkid="'+dcEsc(k)+'" onclick="dcActTap(\''+dcJ(uid)+'\',\''+dcJ(k)+'\',\''+dcJ(act.key)+'\')" style="'+st+';cursor:pointer">'+inner+'</button>';
+    else h+='<span data-dc-actkid="'+dcEsc(k)+'" style="'+st+'">'+inner+'</span>'; });
+  return h+'</div>';
+}
+// UNITACTCHK_END
 function dcSection(title,inner,extra){ return '<section style="margin-top:22px'+(extra||"")+'"><div style="font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:#a5b4fc">'+title+'</div><div style="margin-top:8px">'+inner+'</div></section>'; }
 function dcRungsHTML(g){
   const d=g.day; if(!d||!d.rungs) return ""; const lv=DC_LEVELS.filter(l=>d.rungs[l]); if(!lv.length) return "";
@@ -42095,7 +42237,7 @@ function dcDayHTML(g){
   const books=(d.res&&d.res.books)||[]; if(books.length) h+=dcSection("\u{1F4DA} The book",books.map(b=>'<div style="font-size:24px;font-weight:800;color:#fff">'+dcEsc(b.title)+(b.by?' <span style="font-size:16px;font-weight:600;color:#cbd5e1">by '+dcEsc(b.by)+'</span>':'')+'</div>').join(""));
   const links=dcLinks(g); if(links.length) h+=dcSection("\u25B6 Watch \u00B7 open",'<div style="display:flex;gap:10px;flex-wrap:wrap">'+links.map(dcLinkBtn).join("")+'</div>');
   if(typeof uxDocsCardHTML==="function") h+=uxDocsCardHTML(g);   // UNITDAY_EXTRAS: 🖼 Pictures & documents
-  const act=dcActivity(g); if(act) h+=dcSection("\u{1F3A8} Today\u2019s activity",'<div style="font-size:24px;font-weight:800;color:#fff">'+dcEsc((act.emoji||"\u{1F3A8}")+" "+act.title)+(act.points?' <span style="font-size:15px;color:#fde68a">\u00B7 '+act.points+' \u2B50</span>':'')+'</div>'+(act.desc?'<div style="font-size:17px;color:#e2e8f0;margin-top:4px">'+dcEsc(act.desc)+'</div>':''));
+  const act=dcActivity(g); if(act) h+=dcSection("\u{1F3A8} Today\u2019s activity",'<div style="font-size:24px;font-weight:800;color:#fff">'+dcEsc((act.emoji||"\u{1F3A8}")+" "+act.title)+(act.points?' <span style="font-size:15px;color:#fde68a">\u00B7 '+act.points+' \u2B50</span>':'')+'</div>'+(act.desc?'<div style="font-size:17px;color:#e2e8f0;margin-top:4px">'+dcEsc(act.desc)+'</div>':'')+dcActChecksHTML(g,act));   // UNITACTCHK: ✓ per kid
   h+=dcCardsHTML(g); if(typeof crCardHTML==="function") h+=crCardHTML(g); if(typeof uxSnackCardHTML==="function") h+=uxSnackCardHTML(g); if(typeof ugmCardHTML==="function") h+=ugmCardHTML(g); h+=dcRungsHTML(g); h+=dcWordsHTML(g); h+=dcReadHTML(g);   // CRAFT (B3): the steps, big · UNITDAY_EXTRAS: 🍎 Snack under ✂️ Craft · UNITDAY_GAME: 🎲 Game after 🍎 Snack
   if(d.note) h+=dcSection("\u{1F4DD} Note",'<div style="font-size:17px;line-height:1.5;color:#e2e8f0;background:rgba(255,255,255,.06);border-radius:14px;padding:12px 16px">'+dcEsc(d.note)+'</div>');
   return h;
@@ -52423,16 +52565,42 @@ function unitStageStatus(u,kid){
   const sd=_ustStageDef(u,ks.stage)||{}, need=(sd.readyAt>0&&sd.readyAt<cards.length)?sd.readyAt:cards.length;   // LETTERS_PATH: readyAt (20 of 26 little letters)
   return {stage:ks.stage,total:cards.length,on,learn,fam,need,ready:cards.length>0&&on>=need,next};
 }
-function unitStageMoveUp(unitId,kid){
+function unitStageMoveUp(unitId,kid,book){
   if(!momHere()) return; const u=unitStudies[unitId]; if(!u) return; const st=unitStageStatus(u,kid); if(!st||!st.next) return;
   if(typeof _wrEnrollLocked==="function"&&_wrEnrollLocked(u)) return;   // 🏛 WORDROOTS
+  if(book===undefined&&_umbAsks(u,u.kidStage[kid])){ unitMoveForm={unitId,kid,subject:u.kidStage[kid].subject}; const el=document.getElementById("content"); if(el) renderUnits(el); return; }   // UNITMOVEBOOK: "Which book?" first
   // UNITS_CALM (10/4): an early tap asks first — the white button looked tappable and started letter sounds early
   if(!st.ready&&typeof confirm==="function"){ const _cur=(_ustStageDef(u,st.stage)||{}).label||("Stage "+st.stage);
     if(!confirm(cap(kid)+" isn\u2019t ready yet ("+(st.on||0)+" of "+(st.need||st.total)+" on the ladder). Start "+st.next.label+" anyway? "+_cur+" keeps going too.")) return; }
-  const ks=u.kidStage[kid]; const w=_ustApply(u,kid,st.next.n,"",ks.subject,ks.map); if(!w) return;
-  const rec={stage:st.next.n,knows:"",subject:ks.subject||"",map:(w.gate?ks.map:"")||"",ts:Date.now(),from:ks.stage};
-  _ustWrite(unitId,kid,w,rec); _ustDone(unitId,kid,rec);
+  const ks=u.kidStage[kid]; const sub=book?book:ks.subject;   // UNITMOVEBOOK: the book Mom picked (same book = today's move-up)
+  const w=_ustApply(u,kid,st.next.n,"",sub,ks.map); if(!w) return;
+  const rec={stage:st.next.n,knows:"",subject:sub||"",map:(w.gate?ks.map:"")||"",ts:Date.now(),from:ks.stage};
+  unitMoveForm=null; _ustWrite(unitId,kid,w,rec); _ustDone(unitId,kid,rec);
 }
+// UNITMOVEBOOK_START — her "yes" 2026-11-19 (beta family: a kid finished his Level 1 spelling book; his Level 2 book is a NEW
+// subject). ➡ Start Stage N carried the OLD book into the next stage, so the new level's cards (cat_gate), the lesson-day
+// spelling test and word practice all kept reading the finished book. On a unit whose cards follow the kid's book
+// (cardLessons) and a kid with a book linked, ➡ now opens "Which book?" in the kid's row — the Start form's own picker (the
+// kid's subjects), the current book chosen. Start → the "isn't ready yet" question (unchanged) → _ustApply with the picked
+// book, saved as the kid's subject. Same book = today's move-up exactly; Cancel changes nothing. A book-map link
+// (UNIT_BOOK_MAPS) is left alone: each map belongs to ONE stage, so a move-up never uses it.
+let unitMoveForm=null;   // {unitId,kid,subject} — the open "Which book?" row
+function _umbAsks(u,ks){ return !!(u&&u.cardLessons&&ks&&ks.subject); }
+function unitMoveBookSet(val){ if(!momHere()||!unitMoveForm) return; unitMoveForm.subject=String(val||""); }
+function unitMoveBookClose(){ unitMoveForm=null; const el=document.getElementById("content"); if(el) renderUnits(el); }
+function unitMoveBookGo(){ if(!momHere()||!unitMoveForm) return; const f=unitMoveForm; if(!f.subject) return; unitStageMoveUp(f.unitId,f.kid,f.subject); }
+function _umbHtml(u,k,ks,next,sel,btn,esc,subjName){
+  const f=unitMoveForm; if(!f||f.unitId!==u.id||f.kid!==k||!next) return "";
+  const books=Object.keys((((currData||{}).subjects||{})[k])||{}); if(ks.subject&&books.indexOf(ks.subject)<0) books.unshift(ks.subject);
+  let h='<div style="margin-top:7px;padding:9px 10px;border:1.5px solid var(--border);border-radius:10px;background:#fafaf9">';
+  h+='<div style="font-size:12.5px;font-weight:800;color:#1f2937;margin-bottom:6px">Which book?</div>';
+  h+='<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;font-size:11px;color:#374151;font-weight:700">';
+  h+='<span>Their book (subject)</span><select style="'+sel+'" onchange="unitMoveBookSet(this.value)">'+books.map(sk=>'<option value="'+esc(sk)+'"'+(sk===f.subject?' selected':'')+'>'+esc(subjName(k,sk))+'</option>').join('')+'</select>';
+  h+='</div><div style="font-size:10.5px;color:var(--muted);line-height:1.45;margin:7px 0">Stage '+next.n+'’s cards, spelling test and practice follow this book. Pick the new book if Stage '+next.n+' has its own.</div>';
+  h+='<div style="display:flex;gap:6px"><button onclick="unitMoveBookGo()" style="'+btn("#2d6a4f","#fff","#2d6a4f")+'">Start Stage '+next.n+'</button><button onclick="unitMoveBookClose()" style="'+btn("#fff","var(--muted)","var(--border)")+'">Cancel</button></div>';
+  return h+'</div>';
+}
+// UNITMOVEBOOK_END
 function _unitStageRowsHtml(u,roster){
   const esc=v=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
   const sel='padding:5px 8px;border-radius:8px;border:1.5px solid var(--border);font-size:11.5px;font-family:\'DM Sans\',sans-serif;background:#fff;max-width:100%';
@@ -52452,6 +52620,7 @@ function _unitStageRowsHtml(u,roster){
         :'<span style="font-size:10.5px;color:var(--muted);font-weight:700">'+(st.on||0)+' of '+(st.total||0)+' on the ladder'+(st.need&&st.need<st.total?' · ready at '+st.need:'')+(st.fam?' · learning '+esc(st.fam):'')+'</span>';
       if(st.next) h+='<button onclick="unitStageMoveUp(\''+esc(u.id)+'\',\''+esc(k)+'\')" style="margin-left:auto;'+(st.ready?btn("#2d6a4f","#fff","#2d6a4f"):btn("#fff","#2d6a4f","var(--border)"))+'">➡ Start Stage '+st.next.n+': '+esc(st.next.label)+'</button>';
       h+='</div>';
+      h+=_umbHtml(u,k,ks,st.next,sel,btn,esc,subjName);   // UNITMOVEBOOK: "Which book?"
       if(typeof mastCountEmoji==="function"&&(u.decks||[]).some(d=>d&&d.key==="Counting")){ const ce=mastCountEmoji(k);
         h+='<div style="display:flex;align-items:center;gap:3px;flex-wrap:wrap;margin-top:5px"><span style="font-size:10.5px;color:var(--muted);font-weight:700;margin-right:4px">Counts</span>';
         MAST_COUNT_PICS.forEach(p=>{ const on=p[0]===ce; h+='<button title="'+p[1]+'" onclick="mastSetCountEmoji(\''+esc(k)+'\',\''+p[0]+'\')" style="width:28px;height:28px;padding:0;border-radius:8px;border:1.5px solid '+(on?'#2d6a4f':'transparent')+';background:'+(on?'#f2faf5':'transparent')+';font-size:16px;cursor:pointer;line-height:1">'+p[0]+'</button>'; });
@@ -70698,6 +70867,32 @@ function mstDeckInSession(kid, deck) {
   return null;
 }
 
+// UNITSEAT_START — a unit's opened cards start in a study session too (her approval 2026-11-19, Sara's Thanksgiving unit).
+// The live incident (DeWalt, week of 11/16): Family Time unit item imwcjdfwd had opened Days 1–4 (6 cards), and cat_gate on
+// every kid pointed the Thanksgiving deck at it. The kid with no study session got his card from GATESTART on a drill save;
+// the three on 📚 Daily Study (Decks at once 3) never did — GATESTART skips decks a session owns ("they mint their own"), and
+// the session opens new decks in alphabetical order inside its seat cap, so "Thanksgiving" never got a seat. Now: a deck whose
+// cat_gate is a UNIT gate ({fam,item}, or {subject} of a kid's subject laid from a unit) that the gate can read (psGateUpto not
+// null — when the gate can't tell, the deck is left exactly as before rather than opening its whole bank), not held, with
+// opened cards not yet started or cards still being learned, gets a seat ahead of the others, beyond Decks at once, and brings
+// its own share of cards (the sitting grows by one deck's share), so a full backlog can't starve it either. Its new cards are
+// still only mastBankEligible's — the days the unit has opened. No unit gate → [] → mstPile runs exactly as before. Reads only.
+function mstUnitSeats(kid, session, items, existingByDeck, loggedNames, learnByDeck) {
+  if (typeof psGateUpto !== "function" || typeof mastBankEligible !== "function") return [];
+  const st = masteryData[kid + "_settings"] || {}, gates = st.cat_gate || {}, holds = st.cat_hold || {};
+  const subs = ((((typeof currData !== "undefined" && currData && currData.subjects) || {})[kid]) || {});
+  const out = [];
+  (session.decks || []).forEach(deck => {
+    const g = gates[deck]; if (!g || holds[deck]) return;
+    const unit = g.fam || (g.subject && subs[g.subject] && subs[g.subject].unit && subs[g.subject].unit.id);
+    if (!unit || psGateUpto(kid, deck) == null) return;
+    const have = existingByDeck[deck];
+    const fresh = mastBankEligible(kid, deck).some(n => !(have && have.has(n)) && !loggedNames.has(n));
+    if (fresh || (learnByDeck[deck] || 0) > 0) out.push(deck);
+  });
+  return out;
+}
+// UNITSEAT_END
 // 6. The pile of cards a session presents today.
 function mstPile(kid, sid, pn, todayLog) {
   const empty = { reviews: [], learning: [], newNames: [] };
@@ -70820,6 +71015,8 @@ function mstPile(kid, sid, pn, todayLog) {
     if (shownIds.has(item.id)) shownByDeck[item.subject] = (shownByDeck[item.subject] || 0) + 1;
   });
   let focusDecks = session.decks || [];
+  const _ux = mstUnitSeats(kid, session, items, existingByDeck, loggedNames, learnByDeck);   // UNITSEAT: a unit's decks with opened cards (none → [])
+  const _uxFirst = list => _ux.length ? _ux.concat(list.filter(d => _ux.indexOf(d) < 0)) : list;   // UNITSEAT
   if (session.focusDecks > 0) {
     const started = focusDecks.filter(d => (learnByDeck[d] || 0) > 0)
       .sort((a, b) => _mstCmp(learnByDeck[b], learnByDeck[a]) || _mstCmp(a, b));
@@ -70830,15 +71027,16 @@ function mstPile(kid, sid, pn, todayLog) {
     if (typeof cplnFocus === "function") focusDecks = cplnFocus(kid, session, focusDecks, started, fresh, existingByDeck, loggedNames);   // 🌿 CPLINCOLNPARITY: in Lincoln's 🌿 sitting (L1 on), a deck with nothing to hand out gives up its seat (the same list back otherwise)
     if (typeof cpAheadFocus === "function") focusDecks = cpAheadFocus(kid, session, focusDecks, started, fresh);   // 🚀 CPAHEAD: a section opened early takes no focus seat from the assignment; while the 🚀 extra runs it comes first (the same list back otherwise)
     const inFocus = new Set(focusDecks);
-    learning = learning.filter(item => inFocus.has(item.subject));
+    learning = learning.filter(item => inFocus.has(item.subject) || _ux.indexOf(item.subject) >= 0);   // UNITSEAT: a unit's cards being learned keep their seat
   }
+  focusDecks = _uxFirst(focusDecks);   // UNITSEAT: a unit's decks first, beyond the cap and ahead of the alphabet
   // How many of ONE deck's cards may be in flight: the sitting shared out over the decks
   // that are open (12 cards across 3 decks = 4 each). Off when either dial is off.
   const perDeck = (_maxCards > 0 && session.focusDecks > 0)
     ? Math.max(1, Math.ceil(_maxCards / session.focusDecks)) : Infinity;
   // Seats left today: a second sitting on the same day doesn't hand out a fresh 12.
   const doneToday = log.filter(e => e && (e.id != null || e.name != null)).length;
-  const seats = _maxCards > 0 ? Math.max(0, _maxCards - doneToday) : Infinity;
+  const seats = _maxCards > 0 ? Math.max(0, _maxCards + (perDeck !== Infinity ? _ux.length * perDeck : 0) - doneToday) : Infinity;   // UNITSEAT: a unit's seat brings its own share
 
   // Cards already being learned get the seats first — the backlog he started comes before
   // anything new. Closest to graduating first inside a deck (they finish and free their
