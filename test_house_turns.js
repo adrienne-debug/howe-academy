@@ -203,7 +203,9 @@ console.log("\n── 7 · what the pages show; drawing writes nothing ──");
   ok("…and its old buttons do nothing to a switched rotation", c.writes.length === 0 && c.get("hhRot.id") === "");
   const tm = V.isoOf(V.T + 1), S0 = c.hhLogState(), held = listHold(c, V.T + 1)["Pickup the living room"];
   ok("the room grid / 🔴 Now square: a switched chore names the kid whose turn it is (tomorrow: " + held + ")", c.hhRmCell("p_a", tm, V.TODAY, S0, {}).who === held && !!held);
-  ok("…today (before it takes hold) reads the old way, as before", c.hhRmCell("p_a", V.TODAY, V.TODAY, S0, {}).who === listHold(c, V.T)["Pickup the living room"]);
+  // "as before" = the square on the same page with nothing switched, same day (fix 2026-11-19): p_a is a table row (src "new"), so the
+  // old grid names its own kid — matching today's daily-turning list holder only one day in three, so this failed by the day it ran
+  const u = mk(); ok("…today (before it takes hold) reads the old way, as before", J(c.hhRmCell("p_a", V.TODAY, V.TODAY, S0, {})) === J(u.hhRmCell("p_a", V.TODAY, V.TODAY, u.hhLogState(), {})) && !!c.hhRmCell("p_a", V.TODAY, V.TODAY, S0, {}).who, [c.hhRmCell("p_a", V.TODAY, V.TODAY, S0, {}), u.hhRmCell("p_a", V.TODAY, V.TODAY, u.hhLogState(), {})]);
   c.get('hhView="rooms"; hhRmSel="kitchen"; hcRm["kitchen|rules"]=true'); c.writes.length = 0;
   const pages = [c.hhRoomsPageHTML(), (c.get('hhRmSel=""'), c.hhRoomsPageHTML()), (c.get('hpSel="ada"'), c.hpPersonHTML()), card("w_sink"), card("p_b"), (c.htOpen("q_a"), c.hcCardHTML()), (c.htClose(), c.hhRotationsHTML())];
   ok("drawing every page that shows turns writes nothing (rooms, Whole house, By person, cards, Rules, Rotations, the switch screen)", c.writes.length === 0 && pages.every(h => typeof h === "string" && h.length > 100), c.writes);

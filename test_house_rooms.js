@@ -180,7 +180,10 @@ console.log("7. The grid: past squares from the history already loaded, today fr
   ok("2 days ago: hers and not checked → Ava, pale", JSON.stringify(cell("w_daily",T-2))===JSON.stringify({who:"ava",done:false}));
   ok("today, not yet checked → Ava has it", JSON.stringify(cell("w_daily",T))===JSON.stringify({who:"ava",done:false}));
   ok("today, checked → Ava ✓", (()=>{ const d=mk({doneToday:true}); return JSON.stringify(d.hhRmCell("w_daily",TODAY,TODAY,d.hhLogState(),{}))===JSON.stringify({who:"ava",done:true}); })());
-  const notMop=[1,2,3,4,5,6,7].map(k=>T-k).find(n=>dow(isoOf(n))!==0&&dow(isoOf(n))!==3&&n!==T-5);
+  // the mop's own days, read from its cad the way the app reads it ("wk:1,4" = Tue+Fri, Mon=0 like _CAD_DOW and dow here) —
+  // the old hard-coded 0/3 (Mon+Thu) picked a mop day on Wednesdays and Saturdays, so this failed by the day it ran (fix 2026-11-19)
+  const mopDays=JOBS().w_days.cad.slice(3).split(",").map(Number);
+  const notMop=[1,2,3,4,5,6,7].map(k=>T-k).find(n=>!mopDays.includes(dow(isoOf(n)))&&n!==T-5);
   ok("a day the mop is not due and not done → empty", cell("w_days",notMop)===null);
   ok("the cleaning day: Cal had the mop and did it → Cal ✓ (not Ben)", JSON.stringify(cell("w_days",T-5))===JSON.stringify({who:"cal",done:true}));
   ok("Mom's oven racks 9 days ago → Mom ✓ (from her day stamps)", JSON.stringify(cell("w_cyc",T-9))===JSON.stringify({who:"mom",done:true}));

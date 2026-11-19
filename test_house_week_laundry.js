@@ -13,6 +13,11 @@
  *   run: node test_house_week_laundry.js
  */
 "use strict";
+// One fixed day for this file (fix 2026-11-19): Wed 2026-11-18. Mom's laundry-button checks need a day the laundry line lays loads;
+// on a Saturday or Sunday there are none, so those checks flipped by the day the file ran. The clock is pinned before the fixtures
+// load (house_vm.js reads "today" from it); it still ticks.
+{ const RealDate = Date, PIN = new RealDate(2026, 10, 18, 12, 0, 0).getTime(), t0 = RealDate.now(), now = () => PIN + (RealDate.now() - t0);
+  global.Date = class extends RealDate { constructor(...a) { if (a.length) super(...a); else super(now()); } static now() { return now(); } }; }
 const fs = require("fs"), os = require("os"), path = require("path"), vm = require("vm");
 const V = require(path.join(__dirname, "test_fixtures", "house_vm.js")), W = require(path.join(__dirname, "test_fixtures", "house_world.js"));
 const { K, TODAY, ago, DOW, roomPage, handlers } = V;
