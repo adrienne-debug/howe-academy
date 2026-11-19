@@ -184,6 +184,7 @@ const unnudge = s => String(s).replace(/  \/\/ Load sitting in the washer[\s\S]*
   .replace(/\n[^\n]*\/\/ STICKYSTACK[^\n]*/g, "")   // STICKYSTACK (2026-10-22): the Today section markers — whole new lines, each tagged — normalized away on both sides
   .replace(/\n[^\n]*\/\/ ⏱ MINMINUTES[^\n]*/g, "").replace(/\n[^\n]*\/\/ 🕒 SREVIEW[^\n]*/g, "").replace(/\n[^\n]*\/\/ 🚩 study sessions rushed[^\n]*/g, "").replace(/\n[^\n]*\/\/ 📚 STUDY_NOWONE[^\n]*/g, "")   // ⏱ MINMINUTES (2026-10-23): one 🔴 Now line (timed-card alerts), tagged — normalized away so the guard still asks "nothing ELSE changed"
   .replace(/\n[^\n]*\/\/ 🖨 PDGRADE[^\n]*/g, "")   // 🖨 PDGRADE (2026-10-28): one Mom's-list line (paper drills to grade), tagged — normalized away on both sides
+  .replace(/\+\(typeof nowRecipeBtn==="function"\?nowRecipeBtn\([^)]*\):''\)/g, "")   // 📖 NOWRECIPE (2026-11-19): the 📖 Recipe button on Mom's agenda prep rows — that one expression, normalized away on both sides (test_now_recipe.js covers it)
   .replace(/\n[^\n]*\/\/ KITFLAG[^\n]*/g, "")   // 🍳 KITFLAG (2026-10-23): one 🔴 Now line (a meal the kids rate low → ✓ Got it · Swap…), tagged — normalized away on both sides
   .replace(/\n[^\n]*\/\/ LESSONRES: 🧺[^\n]*/g, "")
   .replace(/\n[^\n]*\/\/ 🌿 CPLINCOLNPARITY[^\n]*/g, "")   // 🌿 CPLINCOLNPARITY (2026-10-29): one My day line (Brittany's drills with Lincoln this week, Q23), tagged — normalized away on both sides
