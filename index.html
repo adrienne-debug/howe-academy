@@ -45518,6 +45518,7 @@ function relayWeek(why,info){
     try{ if(!u.gone&&u.was!=null&&JSON.stringify(u.was).length>((typeof RLW_UNDO_MAX_JSON!=="undefined")?RLW_UNDO_MAX_JSON:16000)){ dbg("relay undo: "+u.p+" too big to keep — the cards still come back"); return; } }catch(e){}   // 🔁 RELAY4
     _rlwPend.undo.push(u.gone?{p:u.p,gone:true}:{p:u.p,was:(u.was===undefined?null:u.was)}); });
   (info.subjects||[]).forEach(function(s){ if(s&&s.kid&&s.sk&&!_rlwPend.subjects.some(x=>x.kid===s.kid&&x.sk===s.sk)) _rlwPend.subjects.push({kid:s.kid,sk:s.sk}); });   // 🔁 RELAY3: pass B — the subjects re-laid after the sweep, one after another
+  if(info.mvt){ if(!_rlwPend.mvt) _rlwPend.mvt=[]; _rlwPend.mvt.push(info.mvt); }   // 📅 MVTRELAY: the moved card and the slot it left
   (info.fams||[]).forEach(function(f){ if(!f||!f.id||!f.key) return; if(!_rlwPend.fams) _rlwPend.fams=[]; if(!_rlwPend.fams.some(x=>x.id===f.id&&x.key===f.key)) _rlwPend.fams.push({id:f.id,key:f.key}); });   // UNITFT: pass F — family items laid into the board week
   try{ clearTimeout(_rlwTimer); }catch(e){}
   _rlwTimer=setTimeout(function(){ _rlwFire(0); },RLW_WAIT_MS);
@@ -45536,7 +45537,8 @@ function _rlwFire(att){
     let _rel=false; const _done=function(){ if(_rel) return; _rel=true; try{ release(); }catch(e){} };
     // 🔁 RELAY3: pass A (the sweep), then pass B (the listed subjects, chained through each re-lay's then) — one snapshot,
     // one diff, one log line for both; the lock is released when the chain is over
-    try{ _rlwRun(pend,function(fin){ if(typeof uftRelayFams==="function") uftRelayFams(pend); cascadeIntraWeek(); if(typeof runCascade==="function") runCascade(); _rlwGuard(pend); _rlwChain(pend.subjects||[],pend,fin); },_done); }   // UNITFT: pass F before the sweep, so the sweep and the guard pack around the new family cards
+    try{ if(typeof _rlwMvtOnly==="function"&&_rlwMvtOnly(pend)) _rlwRun(pend,function(fin){ _rlwChain(pend.subjects||[],pend,fin); },_done);   // 📅 MVTRELAY: a move-only run is pass B alone
+      else _rlwRun(pend,function(fin){ if(typeof uftRelayFams==="function") uftRelayFams(pend); cascadeIntraWeek(); if(typeof runCascade==="function") runCascade(); _rlwGuard(pend); _rlwChain(pend.subjects||[],pend,fin); },_done); }   // UNITFT: pass F before the sweep, so the sweep and the guard pack around the new family cards
     catch(e){ dbg("relay run: "+e); _done(); }
   });
 }
@@ -45590,6 +45592,7 @@ function _rlwDiff(before,tasks){
 function _rlwWords(e){
   if(!e) return "";
   if(e.built) return String(e.label||"");   // 🗓 AUTOBUILD: "Week N built itself (…) — N cards, …" — the words are the label
+  if(e.mvt&&e.mvt.line) return "📅 "+e.mvt.line+(e.locked&&e.locked.length?" · ⚠ "+e.locked.length+" held card"+(e.locked.length===1?"":"s")+" changed":"")+(e.undone?" · undone":"");   // 📅 MVTRELAY
   const per={}; (e.moves||[]).forEach(function(m){ per[m.who]=(per[m.who]||0)+1; });
   const kids=Object.keys(per).map(function(k){ return cap(k)+" "+per[k]; }).join(", ");
   const nm=(e.moves||[]).length, nr=(e.removed||[]).length;
@@ -45623,6 +45626,8 @@ function _rlwRun(pend,fn,after){
   if(d.added&&d.added.length) e.added=d.added.slice(0,RLW_MAX_MOVES);   // RELAY3D
   if(d.boxed&&d.boxed.length) e.boxed=d.boxed.slice(0,RLW_MAX_MOVES);   // 🃏🎯 DMSLOT
   if(pend.undo&&pend.undo.length) e.undo=pend.undo;
+  try{ if(typeof _rlwMvtOnly==="function"&&_rlwMvtOnly(pend)){ const _m0=pend.mvt[0]; const _sj=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[_m0.kid]||{})[_m0.sk]||{};
+    e.mvt={ids:pend.mvt.map(function(m){ return m.id; }),line:_mvtRelayLine(d,_afterTasks,pend.mvt,pend.mvt.length===1?(_sj.display||_m0.sk):"")}; } }catch(err){ dbg("move line: "+err); }   // 📅 MVTRELAY
   relayLogData=Object.assign({},relayLogData); relayLogData[String(at)]=e;
   const keys=Object.keys(relayLogData).sort(); const drop=[];
   while(keys.length>RLW_KEEP) drop.push(keys.shift());
@@ -45652,7 +45657,7 @@ function _rlwLast(){
   if(a.toDateString()!==n.toDateString()) return null;
   return e;
 }
-function _rlwCanUndo(e,nowMs){ return !!(e&&e.undo&&e.undo.length&&!e.undone&&((nowMs||Date.now())-e.at)<RLW_UNDO_MS); }
+function _rlwCanUndo(e,nowMs){ return !!(e&&((e.undo&&e.undo.length)||e.mvt)&&!e.undone&&((nowMs||Date.now())-e.at)<RLW_UNDO_MS); }   // 📅 MVTRELAY: a move's re-lay has no trigger path, only its cards to put back
 // the day banner line (Mom lens): what the last re-lay moved today, with Undo while it is still possible
 function relayLineHTML(){
   if(typeof momHere==="function"&&!momHere()) return "";
@@ -45732,12 +45737,13 @@ function _rlwModeNoAsk(){
   }catch(e){ return "tomorrow"; }
 }
 function _rlwChain(list,pend,fin){
-  const q=(list||[]).slice(); const mode=(pend&&pend.today&&typeof RLW_CURR_TODAY!=="undefined"&&RLW_CURR_TODAY&&typeof _rlwModeToday==="function")?_rlwModeToday():_rlwModeNoAsk(); const why=(pend&&pend.whys&&pend.whys[0])||"relay";   // 🔁 RELAY4: a curriculum run may take today too
+  const _mvt=(typeof _rlwMvtOnly==="function"&&_rlwMvtOnly(pend));   // 📅 MVTRELAY: today stays as the move left it, from tomorrow on
+  const q=(list||[]).slice(); const mode=_mvt?"tomorrow":(pend&&pend.today&&typeof RLW_CURR_TODAY!=="undefined"&&RLW_CURR_TODAY&&typeof _rlwModeToday==="function")?_rlwModeToday():_rlwModeNoAsk(); const why=(pend&&pend.whys&&pend.whys[0])||"relay";   // 🔁 RELAY4: a curriculum run may take today too
   const next=function(){
     const s=q.shift(); if(!s){ fin(); return; }
     let pb=false, dl=false; try{ pb=(typeof planBacked==="function")&&planBacked(s.kid,s.sk); dl=!pb&&_rlwDailyOk(s.kid,s.sk); }catch(e){ pb=false; dl=false; }
     if((!pb&&!dl)||typeof reprojectSubjectWeek!=="function"){ next(); return; }
-    try{ reprojectSubjectWeek(s.kid,s.sk,why,dl?{relayFrom:mode,daily:true,then:function(){ next(); }}:{relayFrom:mode,then:function(){ next(); }}); }   // RELAY3D: a daily takes its own diff inside the same shell
+    try{ reprojectSubjectWeek(s.kid,s.sk,why,dl?{relayFrom:mode,daily:true,then:function(){ next(); }}:{relayFrom:mode,freed:(typeof _rlwMvtFreed==="function")?_rlwMvtFreed(pend,s.kid,s.sk):[],then:function(){ next(); }}); }   // RELAY3D: a daily takes its own diff inside the same shell
     catch(e){ dbg("relay pass B skip "+s.kid+"/"+s.sk+": "+e); next(); }
   };
   next();
@@ -59578,6 +59584,11 @@ function _reprojectPlan(kid,sk,liveTasks,desired,opts){
   const upd={}; const summary={added:[],moved:[],removed:[],retitled:[],kept:[],unboxed:[]};
   const after=(liveTasks||[]).slice();
   const freed={};   // day → [time] slots this subject just vacated (removed / moved away) — the next lesson takes the finished one's slot
+  // 📅 MVTRELAY: the slot a Move to today just took this subject's card out of (a later day) — still free of the kid's other cards
+  (opts.freedHint||[]).forEach(h=>{ const d=String((h&&h.day)||"").toLowerCase(); if(!h||!h.time||dayIx(d)<=tIx) return; const a=opts.toMin(h.time); if(a==null) return;
+    const dur=+((live.find(t=>+t.dur>0)||{}).dur)||20;
+    if((liveTasks||[]).some(t=>t&&t.who===kid&&t.day===d&&t.time!=null&&!String(t.id||"").endsWith("_c")&&!t._eowOverflow&&!t._dayDrop&&opts.toMin(t.time)<a+dur&&opts.toMin(t.time)+(+t.dur||20)>a)) return;
+    (freed[d]=freed[d]||[]).push(h.time); });
   // Firebase multi-path forbids a path that is a prefix of another: drop any `<id>/field`
   // writes before writing `<id>: null` for the same card.
   const _rmPaths=id=>{ Object.keys(upd).forEach(k=>{ if(k.indexOf(id+"/")===0) delete upd[k]; }); };
@@ -60055,7 +60066,7 @@ function reprojectSubjectWeek(kid,sk,why,opts){
       // a trial re-lay on copies (_reprojectPlan edits cards in place) plus the school-end guard must leave it on today, ending by
       // the day's end; otherwise nothing is laid today and the plan's next school day takes it, as before.
       const _pwOpt=due=>({wn,todayDay,nowMin:_nowMin,toMin,mode:_rpMode,dayCap:_rpCap,blockedDays:_blockedDays,liveTasks:weekData.tasks,genTasks:gen.result.tasks,checked:checked||{},claimed:(typeof claimed!=="undefined"&&claimed)||{},dueToday:due});
-      const _rpOpt=(pw,due)=>({todayDay,nowMin:_nowMin,checked:checked||{},claimed:pw?pw.claimed:((typeof claimed!=="undefined"&&claimed)||{}),dayCtx,packAround,toMin,fromMin,dayCap:_rpCap,lidOrder:_subj.lessonIds||[],lsdSubj:(typeof lessonDayList==="function"&&lessonDayList(_subj).length)?_subj:null,allowedDays:_rpDays,doneLids:_doneLids,dropUnwanted:!!(opts&&opts.dropUnwanted)||!!pw,patternForward:!!pw,freshToday:!!pw&&_rpMode==="fresh",dueToday:due,blockedDays:_blockedDays});
+      const _rpOpt=(pw,due)=>({todayDay,nowMin:_nowMin,checked:checked||{},claimed:pw?pw.claimed:((typeof claimed!=="undefined"&&claimed)||{}),dayCtx,packAround,toMin,fromMin,dayCap:_rpCap,lidOrder:_subj.lessonIds||[],lsdSubj:(typeof lessonDayList==="function"&&lessonDayList(_subj).length)?_subj:null,allowedDays:_rpDays,doneLids:_doneLids,dropUnwanted:!!(opts&&opts.dropUnwanted)||!!pw,patternForward:!!pw,freshToday:!!pw&&_rpMode==="fresh",dueToday:due,freedHint:(opts&&opts.freed)||null,blockedDays:_blockedDays});   // 📅 MVTRELAY: freedHint = the slot a Move to today left
       let _pw=null, _rtlDue=false;
       if(!_dl&&_rpMode==="today"&&typeof rtlDueToday==="function"&&rtlDueToday(kid,sk,{todayDay,todayISO:_tISO,tasks:weekData.tasks})){
         try{
@@ -61910,6 +61921,7 @@ function momMoveToToday(id){
     db.ref(WK+"/tasks").update(upd);                      // targeted multi-path — never the whole node
   }
   dbg("📅 move to today: "+id+" "+p.from+" → "+_todayDay+" "+t.time+" ("+Object.keys(upd).length+" paths)");
+  try{ if(typeof mvtRelaySubject==="function") mvtRelaySubject(t,p.from,rec.fromTime); }catch(e){ dbg("move-to-today subject re-lay skip: "+e); }   // 📅 MVTRELAY
   closeDlg(); renderAll();
   if(typeof gwShowToast==="function") gwShowToast("📅 Moved to today at "+t.time+" ✓");
 }
@@ -61938,6 +61950,46 @@ function mvtUndo(id,rec){
   if(db&&!_dryRun()) db.ref(WK+"/tasks").update(upd);
 }
 // MOVETODAY_END
+// MVTRELAY_START — 📅 after a Move to today the rest of THAT subject's week slides up (her approval 2026-11-19, from a beta family's
+// report: Mom moved a kid's math Wed→Tue on 11/17 and Fri→Wed on 11/18; the kid worked ahead, lessons 62–65 were all checked by
+// Wednesday and Friday had no math card — the move took one card and nothing followed it, so the next lesson came only through
+// "📘 From the plan → Pull next"). Now the move hands that one kid + subject to the week's own re-lay door (relayWeek → pass B →
+// reprojectSubjectWeek, "start from tomorrow": today stays exactly as the move left it): the subject's open lessons slide up into its
+// own days and the plan's next lesson fills the freed day. The slot the moved card left is handed over as a freed slot, so the
+// lesson that takes that day goes into that exact hole and nothing else on the day moves. Nothing else re-lays: no sweep, no
+// school-end pass over other kids (a move-only run skips pass A), other subjects and checked cards are never touched (the
+// engine's own rules). One line says what moved — "Arithmetic 2: Lesson 65 → Wed, Lesson 66 → Fri" — and its Undo puts those
+// cards back exactly where they were before the re-lay (the moved card stays on today; its own ↩ Undo move takes it back).
+// Builder-paced subjects only (a daily or a card-only subject has no next lesson to deal). Test: test_mvt_relay.js.
+function mvtRelaySubject(t,fromDay,fromTime){
+  if(!t||!t.who||!t.subjectKey||typeof relayWeek!=="function") return false;
+  if(!(typeof planBacked==="function"&&planBacked(t.who,t.subjectKey))) return false;
+  const s=((((typeof currData!=="undefined"&&currData)||{}).subjects||{})[t.who]||{})[t.subjectKey]||{};
+  relayWeek("movetoday",{label:"📅 "+(s.display||t.subjectKey)+" moved to today",subjects:[{kid:t.who,sk:t.subjectKey}],
+    mvt:{id:t.id,kid:t.who,sk:t.subjectKey,freed:(fromDay&&fromTime)?[{day:fromDay,time:fromTime}]:[]}});
+  return true;
+}
+// a run made only of Move-to-today re-lays (nothing else asked for in the same 2 s)
+function _rlwMvtOnly(pend){ return !!(pend&&pend.mvt&&pend.mvt.length&&(pend.whys||[]).every(function(w){ return w==="movetoday"; })); }
+// the slots the moved card(s) of this kid + subject left
+function _rlwMvtFreed(pend,kid,sk){ const out=[]; ((pend&&pend.mvt)||[]).forEach(function(m){ if(m&&m.kid===kid&&m.sk===sk) (m.freed||[]).forEach(function(f){ if(f&&f.day&&f.time) out.push({day:f.day,time:f.time}); }); }); return out; }
+// pure: the line for a move-only run → "Arithmetic 2: Lesson 65 → Wed, Lesson 66 → Fri" (+ " · N other cards moved" when the
+// re-lay shifted anything else — it never should, but the line never hides it)
+function _mvtRelayLine(d,tasks,mvt,subjName){
+  const byId={}; (tasks||[]).forEach(function(t){ if(t&&t.id) byId[t.id]=t; });
+  const mine=function(id){ const t=byId[id]; return !!t&&(mvt||[]).some(function(m){ return m&&t.who===m.kid&&t.subjectKey===m.sk; }); };
+  const ref=function(t,ti){ let r=""; try{ if(t&&typeof taskLessonRef==="function") r=taskLessonRef(t)||""; }catch(e){} if(!r){ const x=String((t&&t.title)||ti||""); r=x.indexOf(" — ")>=0?x.split(" — ").slice(1).join(" — "):x; } return r.trim(); };
+  const dd=function(day){ day=String(day||""); return day.charAt(0).toUpperCase()+day.slice(1,3); };
+  const parts=[]; let other=0;
+  (d.moves||[]).forEach(function(m){ if(mine(m.id)) parts.push(ref(byId[m.id],m.ti)+" → "+dd(m.to.d)); else other++; });
+  (d.added||[]).forEach(function(id){ if(mine(id)) parts.push(ref(byId[id])+" → "+dd(byId[id].day)); else other++; });
+  (d.removed||[]).forEach(function(c){ if(c&&(mvt||[]).some(function(m){ return m&&c.who===m.kid&&c.subjectKey===m.sk; })) parts.push(ref(c)+" → next week"); else other++; });
+  (d.boxed||[]).forEach(function(b){ if(mine(b.id)) parts.push(ref(byId[b.id],b.ti)+" didn't fit "+dd(b.d)); else other++; });
+  let s=(subjName?subjName+": ":"")+(parts.length?parts.join(", "):"nothing moved");
+  if(other) s+=" · "+other+" other card"+(other===1?"":"s")+" moved";
+  return s;
+}
+// MVTRELAY_END
 
 // ── SCHEDULE OVERRIDES: manual Lesson Map edits (per date, per kid) ──────────
 function schedOv(dateStr,kid){ return ((scheduleOverrides||{})[dateStr]||{})[kid]||null; }
