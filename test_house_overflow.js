@@ -7,6 +7,7 @@
  *   2 who sees it and how it looks: each kid's own screen, Mom's view of a kid, the Today card's count, no pool at all
  *   3 ✓ I did it now: paid exactly double once, done everywhere the plan is read, last-done and counters, the Click-off Log line
  *   4 🔖 Grab for later, let go, Mark done, one at a time (both kinds of grab), a sibling after it is taken, Mom's assign / release
+ *   4b a kid NOT ticked on the chore taps I did it now / Grab for later: nothing written or paid; the kid it is for still can
  *   5 ↩ undo (the kid's own, Mom's) — the exact reversal; Mom's check hold
  *   6 → Give to… before a kid takes it, after a kid holds it, after a kid did it, and when Mom's screen has not heard yet
  *   7 not grabbed → first in line tomorrow (on its days), every N stays due, never on a day twice, never paid and laid again
@@ -125,6 +126,20 @@ console.log("\n── 4 · Grab for later, let go, Mark done, one at a time, a s
   await kidDo(S, S.B, "hdGrabHold", "kid_a", MON, "c_a_vac"); const a0 = F.bal(S.w, "kid_a"); await kidDo(S, S.B, "hdGrabDone", "kid_a", MON, "c_a_vac"); await kidDo(S, S.B, "hdGrabDone", "kid_a", MON, "c_a_vac");
   ok("hold → Mark done: +30 once (a second tap pays nothing)", F.bal(S.w, "kid_a") - a0 === 30 && notes(S, "kid_a", /Vacuum the den/).length === 1);
   ok("…and Kid A is free to grab again (one at a time is about holds)", S.B.run("gbHasActive('kid_a')") === false);
+}
+
+// ── 4b ──
+console.log("\n── 4b · a kid NOT ticked on the chore (a stale screen, or the function called directly) ──");
+{ const S = await mk(); await at(S, 16, 9);
+  const g0 = J(day(S, MON).grabs.c_b_tub), c0 = F.bal(S.w, "kid_c"), d0 = F.bal(S.w, "kid_d"), m = S.w.mark();
+  await kidDo(S, S.B, "hdGrabDone", "kid_c", MON, "c_b_tub"); await kidDo(S, S.B, "hdGrabHold", "kid_d", MON, "c_b_tub");
+  await kidDo(S, S.A, "hdGrabDone", "kid_d", MON, "c_b_tub"); await kidDo(S, S.A, "hdGrabHold", "kid_c", MON, "c_b_tub");
+  ok("Kid C / Kid D (not on the tub's card) tap I did it now and Grab for later, from a kid's screen and from Mom's: nothing is written", S.w.since(m).length === 0, S.w.since(m).map(l => l.op + " " + l.path));
+  ok("…nothing is paid, nothing is done", F.bal(S.w, "kid_c") === c0 && F.bal(S.w, "kid_d") === d0 && !(day(S, MON).done || {}).c_b_tub && notes(S, "kid_c", /tub/).length + notes(S, "kid_d", /tub/).length === 0);
+  ok("…the offer is unchanged (no one holds it)", J(day(S, MON).grabs.c_b_tub) === g0);
+  ok("…and neither of them is now holding a grab", S.B.run("gbHasActive('kid_c')") === false && S.B.run("gbHasActive('kid_d')") === false);
+  const b0 = F.bal(S.w, "kid_b"); await kidDo(S, S.B, "hdGrabHold", "kid_b", MON, "c_b_tub"); await kidDo(S, S.B, "hdGrabDone", "kid_b", MON, "c_b_tub");
+  ok("the kid it is for (Kid B) can still grab it and do it: +30", (day(S, MON).grabs.c_b_tub || {}).by === "kid_b" && F.bal(S.w, "kid_b") - b0 === 30 && (day(S, MON).done.c_b_tub || {}).who === "kid_b");
 }
 
 // ── 5 ──
