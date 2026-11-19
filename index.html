@@ -36743,6 +36743,7 @@ function haNbContext(kid){
     }
   } }catch(e){}
   let units=[]; try{ units=haKidUnits(kid).filter(u=>u&&u.nbInsert!==false).map(u=>haBuildUnitInsight(kid,u)).filter(Boolean); }catch(e){}
+  try{ if(typeof usNbAttach==="function") usNbAttach(kid,units); }catch(e){}   // 🇺🇸 USNB: the US Path's stage pages read ins.us
   // Recent drill misses per item ("m"/"~" results over the last few sessions) so the notebook's
   // review flag can resurface letters/numbers Julian struggled with this week. Kept separate from
   // the item's lifetime drop_count — this ages out as he recovers.
@@ -51618,6 +51619,63 @@ function usAdoptSpec(u,kid){
 const US_NO_TYPE_DECKS=["Civics Test"];
 function usNoTyped(x){ const d=(x&&typeof x==="object")?(x.deck!=null?x.deck:x.subject):x; return d!=null&&US_NO_TYPE_DECKS.indexOf(String(d))>=0; }
 // USCIVTEST_END
+// USNB_START — 🇺🇸 UNITED STATES PATH, slice 6 part 1: what the notebook's stage pages need (PLAN_us_unit_2026-11-16.md §7,
+// §9 row 6; her go 2026-11-17 via the hub: "Yes, start it"). The generic unit insert reads only the unit's first deck, so for
+// the US Path the notebook gets one more record on that kid's insert — ins.us = {stage, label, grade, cards} — and notebooks.js
+// (USNB) prints the stage's page from it (and President of the Week / a recite line on the Memory Work page). cards = the kid's
+// current stage's cards (+ any Presidents card they're learning), each {deck, name, family, order, def (the kid's saved back,
+// else the unit's), status: "learning" | "review" | "", img}. img only for the decks a page shows a picture of, and only what
+// usHydrate already put on the unit IN MEMORY (_unitPortrait — nothing fetched or written here); a picture not loaded yet is
+// "" and the page leaves it out. Read-only: no write, no Firebase. A kid not enrolled (or no stage) → no record, nothing changes.
+const US_NB_PIC_DECKS={"American Holidays":1,"Famous Americans":1,"Amendments":1,"Presidents":1};
+function usNbCtx(kid,u){
+  if(!u||(u.id!==US_UNIT_ID&&u.starter!==US_UNIT_ID)) return null;
+  const ks=((u.kidStage||{})[kid])||null, n=ks&&Number(ks.stage); if(!n||!(u.enrolled||{})[kid]) return null;
+  const md=(typeof masteryData!=="undefined"&&masteryData)||{};
+  let items=md[kid]||[]; if(!Array.isArray(items)) items=Object.values(items);
+  const by={}; items.forEach(i=>{ if(i&&i.subject!=null&&i.prompt!=null) by[i.subject+"\u0001"+i.prompt]=i; });
+  const defs=((md[kid+"_settings"]||{}).definitions)||{};
+  const cards=[];
+  (u.decks||[]).forEach(d=>{ if(!d||!d.key) return;
+    (Array.isArray(d.cards)?d.cards:Object.values(d.cards||{})).forEach(c=>{ if(!c||!c.name) return;
+      const it=by[d.key+"\u0001"+c.name], st=!it?"":it.status==="introduction"?"learning":(it.status==="parked"||!it.status)?"":"review";
+      if(Number(c.stage)!==n&&!(d.key==="Presidents"&&st==="learning")) return;
+      const p=(US_NB_PIC_DECKS[d.key]&&Number(c.stage)===n&&typeof _unitPortrait==="function")?_unitPortrait(u,kid,d.key,c.name):null;
+      let img=(p&&p.img)||""; if(d.key==="Amendments"&&/^data:image\/svg/.test(img)) img=usNbAmendPic(c.name);   // the match-up can't show the number
+      cards.push({deck:d.key,name:c.name,family:c.family||"",order:c.order||0,def:(typeof defs[c.name]==="string"&&defs[c.name])||c.def||"",status:st,img:img}); }); });
+  cards.sort((a,b)=>a.order-b.order);
+  const sd=(u.stages||[]).find(x=>x&&Number(x.n)===n)||{};
+  return {stage:n,label:sd.label||"",grade:(typeof nbGradeOf==="function"&&nbGradeOf(kid))||"",cards:cards,map:usNbMap(n,cards)};
+}
+// Part 2 (her "Yes, build maps" 2026-11-18 via the hub): the map a Stage 5 / 8 / 9 page shows, drawn by us.js (HoweUS.colonyMap /
+// battleMap, with geo.js) — {kind:"colonies"|"battles", names: what each number on it is (the page never prints these next to the
+// numbers), img}. Stage 5 = the 13 colonies numbered north to south; 8 / 9 = every battle of the stage as a numbered pin, in path
+// order. w / aspect = the size notebooks.js shows it at, so the numbers print the same size. null when us.js / geo.js isn't loaded
+// yet — the page then prints its no-map version. Read-only, like the rest of this block.
+const US_NB_MAP={5:{w:330,aspect:0.66},8:{w:736,aspect:2.05},9:{w:736,aspect:2.2}};
+function usNbMap(n,cards){
+  const o=US_NB_MAP[n], L=o&&(typeof usLib==="function")?usLib():null; if(!L) return null;
+  try{
+    if(n===5){ const t=typeof L.colonyMap==="function"?L.colonyMap(o):null; return t?{kind:"colonies",names:(L.colonyOrder||[]).slice(),img:"data:image/svg+xml;utf8,"+encodeURIComponent(t)}:null; }
+    const names=(cards||[]).filter(c=>c.deck==="American Battles").map(c=>c.name);
+    const t=(names.length&&typeof L.battleMap==="function")?L.battleMap(names,o):null;
+    return t?{kind:"battles",names:names,img:"data:image/svg+xml;utf8,"+encodeURIComponent(t)}:null;
+  }catch(e){ return null; }
+}
+// The drawn amendment picture WITHOUT its number badge ("3rd") — the Bill of Rights match-up asks for that number. A picture
+// Mom gave the card herself is kept as it is (only the code's own drawing is re-drawn). "" when us.js isn't here.
+function usNbAmendPic(name){
+  const L=(typeof usLib==="function")?usLib():null, m=/^(\d+)/.exec(String(name||"")); if(!L||typeof L.text!=="function"||!m) return "";
+  let t=""; try{ t=L.text("amend:"+m[1])||""; }catch(e){ t=""; }
+  const bare=t.replace(/<rect x="14" y="14" width="86" height="46"[^>]*\/><text[^>]*>[^<]*<\/text><\/svg>$/,"</svg>");
+  return (bare&&bare!==t)?"data:image/svg+xml;utf8,"+encodeURIComponent(bare):"";
+}
+// Called from haNbContext with the kid's built inserts: the US Path's insert gets its record (or none).
+function usNbAttach(kid,units){
+  (units||[]).forEach(ins=>{ if(!ins||!ins.unitId) return; const u=(typeof unitStudies!=="undefined"&&unitStudies)?unitStudies[ins.unitId]:null; const x=usNbCtx(kid,u); if(x) ins.us=x; });
+  return units;
+}
+// USNB_END
 // GEOALL_START — 🌍 GEOGRAPHY PATH: every country (her words 2026-11-16: "does the geography unit cover all of the countries?" …
 // "Yes, add all"). Stage 6 Countries 87 → 195 — the 193 UN members + Vatican City + Palestine — and Stage 7 World Geography
 // 60 → 195, a capital card for every one.

@@ -184,6 +184,132 @@ function pinCard(name) {
   return svg(R(0, 0, W.wh[0], W.wh[1], "#dbeafe") + P(W.land, "#e5e7eb", { s: "#9ca3af", sw: 1.2 }) + mark(20, 0.8), num(vx) + " " + num(vy) + " " + s + " " + s);
 }
 
+// ── the notebook's maps (USNB part 2; her "Yes, build maps" 2026-11-18): outlines a child colors and labels — no place or
+// battle names are printed on them, only numbers the page asks about. colonyMap() = the 13 colonies, white, numbered 1–13
+// north to south (COLONY_ORDER), the rest of the coast pale; battleMap(names) = the named pins as numbered circles in the order
+// given, on the U.S. map when every pin is in the lower 48, else on the world map (pinsWorld puts Pearl Harbor and the U.S.
+// pins there). A number that won't fit inside its colony, and every battle number, sits out on a leader line (rules below).
+// o.w = the width the page shows it at (px), so the numbers print the same size on every map. null without geo.js.
+const COLONY_ORDER = ["New Hampshire", "Massachusetts", "Rhode Island", "Connecticut", "New York", "New Jersey", "Pennsylvania", "Delaware",
+  "Maryland", "Virginia", "North Carolina", "South Carolina", "Georgia"];
+function ringsOf(d) { return String(d || "").split("M").slice(1).map(r => { const n = r.match(/-?\d+(\.\d+)?/g) || [], pts = []; for (let i = 0; i + 1 < n.length; i += 2) pts.push([+n[i], +n[i + 1]]); return pts; }).filter(r => r.length > 2); }
+function inRings(rings, x, y) { let inside = false;
+  rings.forEach(r => { for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const a = r[i], b = r[j]; if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) inside = !inside; } });
+  return inside; }
+function edgeDist(rings, x, y) { let m = 1e9;
+  rings.forEach(r => { for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const a = r[i], b = r[j], dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy;
+    const t = L ? Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / L)) : 0, ex = a[0] + t * dx - x, ey = a[1] + t * dy - y; m = Math.min(m, ex * ex + ey * ey); } });
+  return Math.sqrt(m); }
+function poleOf(rings) {   // the inside point farthest from the border (where a number fits best): a coarse grid, then a fine one
+  const b = bboxOf(rings.map(r => r.map(p => p.join(" ")).join(" ")).join(" ")); let best = [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2, -1];
+  const scan = (x0, y0, x1, y1, n) => { for (let i = 0; i <= n; i++) for (let j = 0; j <= n; j++) { const x = x0 + (x1 - x0) * i / n, y = y0 + (y1 - y0) * j / n;
+    if (inRings(rings, x, y)) { const d = edgeDist(rings, x, y); if (d > best[2]) best = [x, y, d]; } } };
+  scan(b[0], b[1], b[2], b[3], 24); const sx = (b[2] - b[0]) / 24, sy = (b[3] - b[1]) / 24; scan(best[0] - sx, best[1] - sy, best[0] + sx, best[1] + sy, 8);
+  return best; }
+// numbers (hub check 2026-11-18: leaders crossed — 2 / 3 off New England read as each other's): every number either sits inside its
+// own place, or out in open space on a leader line from a dot at its own place, and then — on every map — no two leaders cross, a
+// leader passes over no other land or number, and each pulled-out circle is nearer its own place than any other numbered place.
+// items: [{x, y (the place), fixed: true + lx, ly, r (a number inside its place) | r, cands: [{lx, ly, r?, ax, ay (the leader's dot), cost}]}]
+function segX(a, b, c, d) { const o = (p, q, s) => (q[0] - p[0]) * (s[1] - p[1]) - (q[1] - p[1]) * (s[0] - p[0]);
+  return o(c, d, a) * o(c, d, b) < 0 && o(a, b, c) * o(a, b, d) < 0; }
+function segPt(a, b, p) { const dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy, t = L ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L)) : 0;
+  return Math.hypot(a[0] + t * dx - p[0], a[1] + t * dy - p[1]); }
+function solveNums(items, gap) {
+  const free = items.filter(it => !it.fixed), fixed = items.filter(it => it.fixed);
+  const clash = (c, p) => Math.hypot(c.lx - p.lx, c.ly - p.ly) < c.r + p.r + gap ||
+    (p.ax != null && segPt([p.ax, p.ay], [p.lx, p.ly], [c.lx, c.ly]) < c.r + gap) || (p.ax != null && Math.hypot(c.lx - p.ax, c.ly - p.ay) < c.r + gap) ||
+    (c.ax != null && segPt([c.ax, c.ay], [c.lx, c.ly], [p.lx, p.ly]) < p.r + gap) ||
+    (c.ax != null && p.ax != null && segX([c.ax, c.ay], [c.lx, c.ly], [p.ax, p.ay], [p.lx, p.ly]));
+  const run = order => { const placed = fixed.slice(), pick = []; let total = 0;
+    for (const it of order) { const c = it.cands.find(q => placed.every(p => !clash(Object.assign({ r: it.r }, q), p))); if (!c) return null;
+      const got = Object.assign({ r: it.r }, c); placed.push(got); pick.push([it, got]); total += c.cost; }
+    return { pick, total }; };
+  const orders = []; let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  if (free.length <= 6) { const perm = (a, k) => { if (k === a.length) { orders.push(a.slice()); return; } for (let i = k; i < a.length; i++) { [a[k], a[i]] = [a[i], a[k]]; perm(a, k + 1); [a[k], a[i]] = [a[i], a[k]]; } }; perm(free.slice(), 0); }
+  else { orders.push(free.slice(), free.slice().reverse(), free.slice().sort((a, b) => a.cands.length - b.cands.length));
+    for (let i = 0; i < 400; i++) { const a = free.slice(); for (let j = a.length - 1; j > 0; j--) { const k = Math.floor(rnd() * (j + 1)); [a[j], a[k]] = [a[k], a[j]]; } orders.push(a); } }
+  let best = null; orders.forEach(o => { const s = run(o); if (s && (!best || s.total < best.total - 1e-9)) best = s; });
+  if (best) best.pick.forEach(([it, c]) => { it.lx = c.lx; it.ly = c.ly; it.ax = c.ax; it.ay = c.ay; it.r = c.r; });
+  else free.forEach(it => { const c = it.cands[0] || { lx: it.x, ly: it.y, ax: null, ay: null }; it.lx = c.lx; it.ly = c.ly; it.ax = c.ax; it.ay = c.ay; it.r = c.r || it.r; });   // never expected
+  return items; }
+// one <g> per number: leader (to the circle's edge), its dot, the circle, the number
+function numMarks(items, sw) { return items.map((it, i) => { let g = "";
+    if (it.ax != null) { const a = Math.atan2(it.ly - it.ay, it.lx - it.ax); g += P("M" + num(it.ax) + " " + num(it.ay) + " L" + num(it.lx - it.r * Math.cos(a)) + " " + num(it.ly - it.r * Math.sin(a)), "none", { s: "#1f2937", sw: sw * 0.8 }); }
+    if (it.ax != null) g += Cc(it.ax, it.ay, it.rd, it.pin ? "#dc2626" : "#1f2937", { s: "#ffffff", sw: Math.min(sw * 0.6, it.rd * 0.5) });
+    return "<g>" + g + Cc(it.lx, it.ly, it.r, "#ffffff", { s: it.pin ? "#dc2626" : "#1f2937", sw: sw * 1.1 }) + T(it.lx, it.ly + it.r * 0.36, String(i + 1), num(it.r * 1.05), "#1f2937") + "</g>"; }).join(""); }
+function fitBox(b, aspect, frame) {   // grow [x0,y0,x1,y1] to the page's aspect (w/h), kept inside the frame where it can be
+  let w = b[2] - b[0], h = b[3] - b[1]; if (w / h < aspect) w = h * aspect; else h = w / aspect;
+  w = Math.min(w, frame[0]); h = Math.min(h, frame[1]); if (w / h < aspect) h = w / aspect; else w = h * aspect;
+  const cx = (b[0] + b[2]) / 2, cy = (b[1] + b[3]) / 2, x0 = Math.max(0, Math.min(frame[0] - w, cx - w / 2)), y0 = Math.max(0, Math.min(frame[1] - h, cy - h / 2));
+  return [x0, y0, x0 + w, y0 + h]; }
+function clipD(d, vb) {   // keep only the outlines that reach into the view (a cropped map stays small to print and send)
+  return String(d || "").split("M").slice(1).filter(r => { const b = bboxOf(r); return b && b[2] >= vb[0] && b[0] <= vb[2] && b[3] >= vb[1] && b[1] <= vb[3]; }).map(r => "M" + r).join(""); }
+function mapOut(body, vb, wpx) { const w = vb[2] - vb[0], h = vb[3] - vb[1];
+  return svg(body, num(vb[0]) + " " + num(vb[1]) + " " + num(w) + " " + num(h), Math.round(wpx), Math.round(wpx * h / w)); }
+function colonyMap(o) {
+  o = o || {}; const L = geoLib(); if (!L || !L.data || !L.data.us) return null; const U = L.data.us; if (COLONY_ORDER.some(n => !U.state[n])) return null;
+  const all = COLONY_ORDER.map(n => U.state[n]).join(" "), b = bboxOf(all), pad = 14;
+  const vb = fitBox([b[0] - pad, b[1] - pad, b[2] + pad + 26, b[3] + pad], o.aspect || 0.72, U.wh), wpx = o.w || 330, k = (vb[2] - vb[0]) / wpx, r = 11 * k;
+  let st = ""; for (const n in U.state) if (COLONY_ORDER.indexOf(n) < 0) st += clipD(U.state[n], vb);
+  const land = Object.keys(U.state).map(n => { const rg = ringsOf(U.state[n]); return { n, rg, b: bboxOf(U.state[n]) }; });
+  const onLand = (x, y) => land.some(s => x >= s.b[0] && x <= s.b[2] && y >= s.b[1] && y <= s.b[3] && inRings(s.rg, x, y));
+  const crossesLand = (a, z, own) => land.some(s => s.n !== own && Math.max(a[0], z[0]) >= s.b[0] && Math.min(a[0], z[0]) <= s.b[2] && Math.max(a[1], z[1]) >= s.b[1] && Math.min(a[1], z[1]) <= s.b[3] &&
+    (inRings(s.rg, z[0], z[1]) || s.rg.some(rr => rr.some((q, i) => segX(a, z, q, rr[(i + 1) % rr.length])))));
+  const RIM = [[0, 0]].concat([...Array(16).keys()].map(i => [Math.cos(i * Math.PI / 8), Math.sin(i * Math.PI / 8)]));
+  const overOwn = (x, y, rr, c) => {   // how much of the circle lies on its own colony (-1 = off the map, or other land under it or within an outline's width)
+    if (x - rr < vb[0] || x + rr > vb[2] || y - rr < vb[1] || y + rr > vb[3]) return -1; const clear = rr + 1.6 * k;
+    if (land.some(s => s.n !== c.n && x + clear >= s.b[0] && x - clear <= s.b[2] && y + clear >= s.b[1] && y - clear <= s.b[3] && (inRings(s.rg, x, y) || edgeDist(s.rg, x, y) < clear))) return -1;
+    let own = 0; for (const q of RIM) if (inRings(c.rg, x + q[0] * rr, y + q[1] * rr)) own++;
+    return own; };
+  const col = COLONY_ORDER.map(n => { const rg = ringsOf(U.state[n]); return { n, rg, b: bboxOf(U.state[n]), p: poleOf(rg) }; });
+  const items = col.map(c => {   // a number fits inside its colony if a circle of at least 0.75 r does (MA, CT, NJ, MD just shrink a little)
+    if (c.p[2] >= r * 0.75 * 1.05) return { x: c.p[0], y: c.p[1], fixed: true, lx: c.p[0], ly: c.p[1], r: Math.min(r, c.p[2] / 1.05), ax: null };
+    const rd = Math.min(r * 0.28, c.p[2] * 0.75), anchors = [[c.p[0], c.p[1]]];   // the leader's dot: anywhere well inside the colony
+    for (let i = 0; i <= 14; i++) for (let j = 0; j <= 14; j++) { const x = c.b[0] + (c.b[2] - c.b[0]) * i / 14, y = c.b[1] + (c.b[3] - c.b[1]) * j / 14; if (inRings(c.rg, x, y) && edgeDist(c.rg, x, y) >= rd) anchors.push([x, y]); }
+    const cands = [], st = r * 0.25;
+    // nearer its own colony than any other; only where no such spot exists (Delaware: Cape May and Maryland's coast fence in its
+    // short Atlantic shore) the rule loosens in steps (tol) — the leader and its dot inside the colony then say whose number it is
+    for (let tol = 0; tol <= r * 1.2 + 1e-9 && !cands.length; tol += r * 0.3)
+    for (let x = c.b[0] - 4.5 * r; x <= c.b[2] + 4.5 * r; x += st) for (let y = c.b[1] - 4.5 * r; y <= c.b[3] + 4.5 * r; y += st) {
+      const dOwn = inRings(c.rg, x, y) ? 0 : edgeDist(c.rg, x, y); if (dOwn > 4 * r || col.some(o => o !== c && edgeDist(o.rg, x, y) <= dOwn - tol)) continue;
+      for (const rr of [r, r * 0.85, r * 0.75]) {   // full size first; a little smaller only where the coast is tight
+        const own = overOwn(x, y, rr, c); if (own < 0 || own > 7) continue;   // in the sea, or partly over its own colony — never on other land
+        const A = anchors.slice().sort((p, q) => Math.hypot(p[0] - x, p[1] - y) - Math.hypot(q[0] - x, q[1] - y)).find(a => Math.hypot(a[0] - x, a[1] - y) > rr + rd * 2 && !crossesLand(a, [x, y], c.n));
+        if (A) { cands.push({ lx: x, ly: y, r: rr, ax: A[0], ay: A[1], tol, cost: Math.hypot(A[0] - x, A[1] - y) + own * r * 0.75 + (r - rr) * 4 }); break; } } }
+    cands.sort((p, q) => p.cost - q.cost);
+    return { x: c.p[0], y: c.p[1], r, rd, cands: cands.slice(0, 200) }; });
+  solveNums(items, r * 0.3);
+  const body = R(vb[0], vb[1], vb[2] - vb[0], vb[3] - vb[1], "#e0f2fe") + P(clipD(U.neighbours, vb), "#f3f4f6", { s: "#cbd5e1", sw: 1.2 * k }) + P(st, "#f3f4f6", { s: "#cbd5e1", sw: 1.2 * k }) +
+    P(clipD(U.lakes, vb), "#e0f2fe", { s: "#93c5fd", sw: 0.8 * k }) + P(all, "#ffffff", { s: "#1f2937", sw: 1.6 * k }) + numMarks(items, 1.6 * k);
+  return mapOut(body, vb, wpx);
+}
+function battleMap(names, o) {
+  o = o || {}; const L = geoLib(); if (!L || !L.data) return null;
+  const pts = (names || []).map(n => D.pins[n]).filter(p => p && p[0] !== "route"); if (!pts.length || pts.length !== (names || []).length) return null;
+  const us = pts.every(p => p[0] === "us"), wpx = o.w || 700, aspect = o.aspect || 1.7;
+  const xy = us ? pts.map(p => [p[1], p[2]]) : (names || []).map((n, i) => pts[i][0] === "world" ? [pts[i][1], pts[i][2]] : (D.pinsWorld || {})[n]);
+  if (xy.some(p => !p)) return null;
+  const frame = us ? L.data.us.wh : L.data.world.wh; let b = [1e9, 1e9, -1e9, -1e9];
+  xy.forEach(p => { b = [Math.min(b[0], p[0]), Math.min(b[1], p[1]), Math.max(b[2], p[0]), Math.max(b[3], p[1])]; });
+  const pad = us ? 70 : 60; const vb = fitBox([b[0] - pad, b[1] - pad, b[2] + pad, b[3] + pad], aspect, frame), k = (vb[2] - vb[0]) / wpx, r = 11 * k;
+  const gap = r * 0.3, rds = xy.map((p, i) => Math.max(r * 0.08, Math.min(r * 0.32, 0.45 * Math.min(...xy.map((q, j) => j === i ? 1e9 : Math.hypot(p[0] - q[0], p[1] - q[1]))))));
+  const items = xy.map((p, i) => {   // every battle number sits out on a leader from its red dot; nearer its own dot than any other
+    const cands = [];
+    for (let j = 0; j <= 12; j++) for (let s = 0; s < 36; s++) { const d = r * (1.8 + 0.55 * j), a = s * Math.PI / 18, x = p[0] + d * Math.cos(a), y = p[1] + d * Math.sin(a);
+      if (x - r < vb[0] || x + r > vb[2] || y - r < vb[1] || y + r > vb[3]) continue;
+      if (xy.some((q, k) => k !== i && (Math.hypot(x - q[0], y - q[1]) < r + rds[k] + gap || Math.hypot(x - q[0], y - q[1]) < d + 0.3 * Math.min(Math.hypot(p[0] - q[0], p[1] - q[1]), r) ||
+        (segPt(p, [x, y], q) < rds[k] + gap * 0.5 && (x - p[0]) * (q[0] - p[0]) + (y - p[1]) * (q[1] - p[1]) > 0)))) continue;   // (a leader heading away from a next-door dot is fine)
+      cands.push({ lx: x, ly: y, ax: p[0], ay: p[1], cost: d + r * 0.12 * (1 + Math.sin(a)) }); }
+    cands.sort((u, v) => u.cost - v.cost);
+    return { x: p[0], y: p[1], r, rd: rds[i], pin: true, cands }; });
+  solveNums(items, gap);
+  let base;
+  if (us) { const U = L.data.us; let st = ""; for (const n in U.state) st += clipD(U.state[n], vb);
+    base = R(vb[0], vb[1], vb[2] - vb[0], vb[3] - vb[1], "#e0f2fe") + P(clipD(U.neighbours, vb), "#f3f4f6", { s: "#cbd5e1", sw: 1.2 * k }) + P(st, "#ffffff", { s: "#9ca3af", sw: 1.2 * k }) + P(clipD(U.lakes, vb), "#e0f2fe", { s: "#93c5fd", sw: 0.8 * k }); }
+  else { const W = L.data.world; base = R(vb[0], vb[1], vb[2] - vb[0], vb[3] - vb[1], "#e0f2fe") + P(clipD(W.land, vb), "#ffffff", { s: "#6b7280", sw: 1.1 * k }); }
+  return mapOut(base + numMarks(items, 1.6 * k), vb, wpx);
+}
+
 // ── the API ──
 const BY = {}; D.cards.forEach(c => { BY[c.deck + "\u0001" + c.name] = c; });
 function card(deck, name) { return BY[deck + "\u0001" + name] || null; }
@@ -203,6 +329,7 @@ function svgFor(deck, name) { const p = pic(deck, name); if (!p) return null; if
 function creditFor(deck, name) { const p = pic(deck, name); if (!p) return ""; if (p.indexOf("photo:") === 0) { const c = D.credits[p]; return c ? c.line : ""; }
   if (/^(colony|pin):/.test(p)) return D.credits.map.line; return D.credits.drawing.line; }
 const HoweUS = { version: D.v, data: D, unit: D.unit, stages: D.stages, decks: D.decks, cards: D.cards, card, pic, text, svg: svgFor, credit: creditFor,
-  credits: D.credits, uscis: D.uscis, colors: COL, geo: null, pics: null, holidays: Object.keys(HOLIDAY), icons: Object.keys(ICON), amendIcons: Object.keys(AMEND).map(Number), badges: Object.keys(BADGE) };
+  credits: D.credits, uscis: D.uscis, colors: COL, geo: null, pics: null, holidays: Object.keys(HOLIDAY), icons: Object.keys(ICON), amendIcons: Object.keys(AMEND).map(Number), badges: Object.keys(BADGE),
+  colonyMap, battleMap, colonyOrder: COLONY_ORDER };   // USNB part 2: the notebook's maps
 if (typeof window !== "undefined") { window.HoweUS = HoweUS; window._haLazy_us = true; }   // _haLazy_us: haLazyReady("us") (USPATH)
 if (typeof module !== "undefined" && module.exports) module.exports = HoweUS;

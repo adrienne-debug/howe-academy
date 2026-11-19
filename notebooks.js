@@ -3428,10 +3428,12 @@ ${extraStrip || ""}
     var wk = Math.max(parseInt(weekNum, 10) || 1, 1);
     var sc = E.states_capitals, start = ((wk - 1) * 5) % sc.length;
     var pres = E.presidents[(wk - 1) % E.presidents.length];
+    if (_usNb) pres = usNbPres(_usNb) || pres;   // USNB: the kid's learning Presidents card
     var five = []; for (var i = 0; i < 5; i++) five.push(sc[(start + i) % sc.length]);
     var learn = five.slice(0, 3).map(function (s) { return '<div style="font-size:11.5px;color:' + t.ink + ';padding:2px 0;"><strong>' + s[0] + '</strong> → ' + s[1] + '</div>'; }).join("");
     var quiz = five.slice(3).map(function (s) { return '<div style="font-size:11.5px;color:' + t.ink + ';padding:2px 0;">' + s[0] + ' → <span style="display:inline-block;border-bottom:2px solid ' + t.line + ';min-width:120px;height:15px;"></span></div>'; }).join("");
     var recite = ["The Pledge of Allegiance", "The Preamble to the Constitution", "The 3 Branches of Government", "This week's 5 states &amp; capitals"];
+    if (_usNb) recite = recite.concat(usNbRecite(_usNb));   // USNB: the stage's say-it line
     var recRows = recite.map(function (r) { return '<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:' + t.ink + ';padding:3px 0;"><span style="width:15px;height:15px;border:2px solid ' + t.accent + ';border-radius:4px;flex-shrink:0;"></span>' + r + '</div>'; }).join("");
     var body = `    <div style="background:${t.pale};border:1.5px solid ${t.card_bd};border-radius:11px;padding:9px 15px;flex-shrink:0;">
       ${enSlabel(t, "🇺🇸 The Pledge of Allegiance — hand over your heart")}
@@ -3698,9 +3700,297 @@ ${extraStrip || ""}
     });
     return (onePage ? [p12] : [p1, p2]).concat(actPages);
   }
+  // USNB_START — 🇺🇸 UNITED STATES PATH, slice 6 part 1: the stage pages (PLAN_us_unit_2026-11-16.md §7, §9 row 6; her words
+  // 2026-11-16: "id also like to make a us unit so, presidents, american battles admendments governments etc"; her go 2026-11-17
+  // via the hub: "Yes, start it"). The app hands each enrolled kid's US Path insert an `us` record (index.html USNB: usNbCtx —
+  // {stage, label, grade, cards:[{deck, name, family, order, def, status:"learning"|"review"|"", img}]}, the stage's cards with
+  // the pictures us.js put on the unit IN MEMORY) and this prints ONE page for the kid's stage, after the unit's usual insert:
+  //   1 Color the flag (+ the Liberty Bell; Pre-K/K trace "USA") · 2 My holiday calendar (line to the month; to 1st grade, trace
+  //   the Pledge's first line) · 3 Who am I? (this week's Americans: lines, or a drawing box to 1st grade) · 4 The three branches
+  //   tree + How a bill becomes a law (word banks) · 6 Bill of Rights match-up (number ↔ picture) + "Which amendment…?" ·
+  //   7 Presidents timeline (this week's era: portrait, number, years printed, the name to write) · 10 Citizen's quiz (10 of the
+  //   kid's learning and review questions + the four "find out with Mom" lines, blank). Part 2: 5 The 13 colonies (map to color
+  //   and label + timeline) · 8 A growing nation / 9 America in the world (timeline + the stage's battles as numbered pins).
+  // A page never prints what the child is meant to write (word banks are fine). A picture that isn't loaded yet (us.js / the
+  // photo files are lazy) is left out cleanly: the Americans and presidents print without a portrait, the holidays with 🎉,
+  // and the Bill of Rights match-up uses short phrases instead of pictures. The Memory Work page (Lincoln / Ellis generators)
+  // reads the same record: President of the Week = the kid's learning Presidents card, and one recite line for the stage.
+  // No `us` record (a kid not on the path, or no unit) = no page and no change anywhere — test_us_notebook.js pins every
+  // generator byte for byte with this block stripped.
+  var _usNb = null;   // the US record of the notebook being built (set by generateLincoln / generateEllis for enPageMemoryCivics)
+  function usNbOf(ctx) { var u = ((ctx && ctx.units) || []).filter(function (x) { return x && x.us && x.us.stage; })[0]; return u ? u.us : null; }
+  function usNbGrade(g) {   // -1 Pre-K · 0 K · n grade n · null unknown
+    g = String(g || "").trim(); if (!g) return null;
+    if (/pre-?\s*k/i.test(g)) return -1; if (/^k$|kinder/i.test(g)) return 0;
+    var m = g.match(/(\d+)/); return m ? parseInt(m[1], 10) : null;
+  }
+  function usNbEsc(v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+  function usNbDeck(us, deck) { return (us.cards || []).filter(function (c) { return c && c.deck === deck; }); }
+  // learning first, then review, each in path order; then (fill) the rest in order
+  function usNbPick(cards, n, fill) {
+    var L = cards.filter(function (c) { return c.status === "learning"; }), R = cards.filter(function (c) { return c.status === "review"; });
+    var out = L.concat(R); if (fill) out = out.concat(cards.filter(function (c) { return !c.status; }));
+    return out.slice(0, n);
+  }
+  function usNbBack(def) { return String(def || "").replace(/^[^—]*\d[^—]*—\s*/, ""); }   // "1791 — freedom of …" → "freedom of …"
+  function usNbTrace(text, size, color) {
+    if (FONTS_OK) return '<div style="font-family:\'NoTears\',\'Nunito\',sans-serif;font-size:' + size + 'px;line-height:1.35;white-space:nowrap;color:' + color + '">' + dotted(text) + '</div>';
+    return '<div style="font-family:\'Nunito\',sans-serif;font-weight:800;font-size:' + size + 'px;line-height:1.35;white-space:nowrap;color:' + color + ';opacity:0.45">' + usNbEsc(text) + '</div>';
+  }
+  function usNbLines(n, h, col) { var s = ""; for (var i = 0; i < n; i++) s += '<div style="border-bottom:1.5px solid ' + col + ';height:' + h + 'px"></div>'; return s; }
+  function usNbRuled(col) { return 'background:repeating-linear-gradient(#fff 0,#fff 28px,' + col + ' 28px,' + col + ' 29.5px)'; }
+  function usNbBlank(w, col) { return '<span style="display:inline-block;border-bottom:1.5px solid ' + col + ';min-width:' + w + 'px;height:16px;vertical-align:bottom"></span>'; }
+  function usNbShuffle(arr, seed) {   // the same order for the same week (a reprint matches)
+    var a = arr.slice(), s = (seed | 0) * 9301 + 49297;
+    for (var i = a.length - 1; i > 0; i--) { s = (s * 9301 + 49297) % 233280; var j = Math.floor(s / 233280 * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; }
+    return a;
+  }
+  function usNbPage(us, T, weekNum, title, body) {
+    var e = usNbEsc;
+    return '<div class="page-label">United States Path — Stage ' + e(us.stage) + (us.label ? ' · ' + e(us.label) : '') + '</div>\n<div class="page">\n' +
+      '<div style="background:' + T.GD + ';padding:14px 40px;display:flex;justify-content:space-between;align-items:flex-end;flex-shrink:0">' +
+      '<div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.2em;text-transform:uppercase;color:' + T.GL + ';opacity:0.85;margin-bottom:3px">United States Path · Stage ' + e(us.stage) + '</div>' +
+      '<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:#fff;line-height:1">' + title + '</div></div>' +
+      '<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:600;color:' + T.GOLD + '">Week ' + e(weekNum) + '</div></div>' +
+      '<div style="height:5px;flex-shrink:0;background:repeating-linear-gradient(90deg,#b91c1c 0,#b91c1c 18px,#fff 18px,#fff 22px,#1e3a8a 22px,#1e3a8a 40px)"></div>' +
+      '<div style="padding:14px 40px 16px;flex:1;display:flex;flex-direction:column;gap:11px;overflow:hidden;color:#1c1c1e">' + body + '</div>\n</div>';
+  }
+  function usNbLead(T, t) { return '<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700;color:' + T.GD + '">' + t + '</div>'; }
+  function usNbNote(t) { return '<div style="font-size:11.5px;line-height:1.45;color:#4b5563">' + t + '</div>'; }
+  function usNbBank(T, words) {
+    return '<div style="display:flex;flex-wrap:wrap;gap:5px 7px;border:1.5px dashed ' + T.GOLD + ';background:' + T.CREAM + ';border-radius:10px;padding:7px 10px">' +
+      '<span style="font-size:10px;font-weight:800;color:' + T.GOLDD + ';letter-spacing:0.08em;text-transform:uppercase;align-self:center;margin-right:2px">Word bank</span>' +
+      words.map(function (w) { return '<span style="border:1.5px solid ' + T.GL + ';background:#fff;border-radius:7px;padding:2px 8px;font-size:12px;font-weight:700">' + usNbEsc(w) + '</span>'; }).join("") + '</div>';
+  }
+  // ── the outline drawings (color-in) ──
+  function usNbFlagSvg(w) {
+    var h = Math.round(w / 1.9), sh = h / 13, cw = w * 0.4, ch = sh * 7, s = "";
+    for (var i = 0; i < 13; i++) s += '<rect x="0" y="' + (i * sh).toFixed(1) + '" width="' + w + '" height="' + sh.toFixed(1) + '" fill="#fff" stroke="#1c1c1e" stroke-width="1.6"/>';
+    s += '<rect x="0" y="0" width="' + cw.toFixed(1) + '" height="' + ch.toFixed(1) + '" fill="#fff" stroke="#1c1c1e" stroke-width="2"/>';
+    for (var r = 0; r < 9; r++) for (var k = 0; k < (r % 2 ? 5 : 6); k++) {
+      var cx = cw / 12 * (2 * k + 1 + (r % 2)), cy = ch / 10 * (r + 1), rr = Math.min(cw / 30, ch / 22), p = [];
+      for (var q = 0; q < 10; q++) { var a = -Math.PI / 2 + q * Math.PI / 5, d = q % 2 ? rr * 0.42 : rr; p.push((cx + d * Math.cos(a)).toFixed(1) + "," + (cy + d * Math.sin(a)).toFixed(1)); }
+      s += '<polygon points="' + p.join(" ") + '" fill="#fff" stroke="#1c1c1e" stroke-width="0.9"/>';
+    }
+    s += '<rect x="0" y="0" width="' + w + '" height="' + h + '" fill="none" stroke="#1c1c1e" stroke-width="3"/>';
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 -2 ' + (w + 4) + ' ' + (h + 4) + '" width="' + (w + 4) + '" height="' + (h + 4) + '">' + s + '</svg>';
+  }
+  function usNbBellSvg(px) {
+    var k = '#1c1c1e';
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 220" width="' + px + '" height="' + Math.round(px * 1.1) + '">' +
+      '<rect x="40" y="6" width="120" height="16" rx="5" fill="#fff" stroke="' + k + '" stroke-width="3"/>' +   // the yoke
+      '<rect x="88" y="22" width="24" height="18" fill="#fff" stroke="' + k + '" stroke-width="3"/>' +
+      '<path d="M100 40 C 62 40 56 70 54 110 C 52 150 40 170 26 186 L 174 186 C 160 170 148 150 146 110 C 144 70 138 40 100 40 Z" fill="#fff" stroke="' + k + '" stroke-width="3.5"/>' +
+      '<rect x="20" y="186" width="160" height="14" rx="6" fill="#fff" stroke="' + k + '" stroke-width="3.5"/>' +
+      '<path d="M66 92 Q100 86 134 92 M62 120 Q100 114 138 120" fill="none" stroke="' + k + '" stroke-width="2"/>' +
+      '<path d="M104 128 L98 146 L108 158 L100 176 L106 186" fill="none" stroke="' + k + '" stroke-width="3"/>' +   // the crack
+      '<circle cx="100" cy="206" r="8" fill="#fff" stroke="' + k + '" stroke-width="3"/></svg>';
+  }
+  // ── Stage 1 · Color the flag ──
+  function usNbStage1(us, T, wn, g) {
+    var little = g != null && g <= 0, body = "";
+    body += usNbLead(T, "🖍 Color our flag") + usNbNote("Color the top stripe red, the next one white, and keep going — red, white, red, white — all the way down. Color the box blue and leave the stars white.");
+    body += '<div style="display:flex;justify-content:center">' + usNbFlagSvg(560) + '</div>';
+    body += '<div style="display:flex;gap:18px;align-items:center">' +
+      '<div style="flex-shrink:0">' + usNbBellSvg(190) + '</div>' +
+      '<div style="flex:1;display:flex;flex-direction:column;gap:10px">' + usNbLead(T, "🔔 Color the Liberty Bell") +
+      usNbNote("It rang in Philadelphia for freedom. Color it brown or gold — and don't forget its crack!") +
+      (little ? '<div style="margin-top:6px">' + usNbLead(T, "✏️ Trace it") + usNbTrace("USA USA", 64, "#a8a29e") + '</div>'
+        : '<div style="font-size:13px;line-height:2.1;margin-top:4px">Our flag has ' + usNbBlank(70, T.GL) + ' stripes.<br>It has ' + usNbBlank(70, T.GL) + ' stars — one for each ' + usNbBlank(120, T.GL) + '.</div>') +
+      '</div></div>';
+    body += '<div style="flex:1;min-height:120px;display:flex;flex-direction:column;gap:5px">' + usNbLead(T, "🎨 Draw our flag waving in the wind") + '<div style="flex:1;border:2px dashed ' + T.GL + ';border-radius:12px;background:#fff"></div></div>';
+    return usNbPage(us, T, wn, "🇺🇸 Color the Flag", body);
+  }
+  // ── Stage 2 · My holiday calendar ──
+  var US_NB_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  function usNbStage2(us, T, wn, g) {
+    var hol = usNbPick(usNbDeck(us, "American Holidays"), 5, true), little = g != null && g <= 1, e = usNbEsc;
+    var left = hol.map(function (c) {
+      var pic = c.img ? '<img src="' + e(c.img) + '" alt="" style="width:62px;height:62px;object-fit:contain;border-radius:9px;border:1.5px solid ' + T.GL + ';background:#fff">'
+        : '<div style="width:62px;height:62px;border-radius:9px;border:1.5px solid ' + T.GL + ';background:' + T.GP + ';display:flex;align-items:center;justify-content:center;font-size:30px">🎉</div>';
+      return '<div style="display:flex;align-items:center;gap:10px;height:' + Math.floor(456 / Math.max(hol.length, 5)) + 'px">' + pic + '<div style="flex:1;font-family:\'Fraunces\',serif;font-size:15px;font-weight:700;color:' + T.GD + '">' + e(c.name) + '</div><span style="width:12px;height:12px;border-radius:50%;background:' + T.GM + ';flex-shrink:0"></span></div>';
+    }).join("");
+    var right = US_NB_MONTHS.map(function (m) { return '<div style="display:flex;align-items:center;gap:8px;height:38px"><span style="width:11px;height:11px;border-radius:50%;border:2px solid ' + T.GM + ';flex-shrink:0"></span><span style="border:1.5px solid ' + T.GL + ';background:#fff;border-radius:7px;padding:3px 10px;font-size:13px;font-weight:700;min-width:118px">' + m + '</span></div>'; }).join("");
+    var body = usNbLead(T, "🗓 Which month is it in?") + usNbNote("Draw a line from each holiday to the month it comes in.") +
+      '<div style="display:grid;grid-template-columns:1.25fr 0.35fr 1fr;align-items:center"><div>' + left + '</div><div></div><div>' + right + '</div></div>';
+    body += '<div style="flex:1;min-height:110px;display:flex;flex-direction:column;gap:5px">' + usNbLead(T, little ? "🎨 Draw how your family celebrates one of them" : "⭐ My favorite holiday") +
+      (little ? '<div style="flex:1;border:2px dashed ' + T.GL + ';border-radius:12px;background:#fff"></div>'
+        : '<div style="font-size:12.5px;line-height:1.5">My favorite holiday is ' + usNbBlank(190, T.GL) + ' because…</div><div style="flex:1;' + usNbRuled(T.GL) + '"></div>') + '</div>';
+    if (little) body += '<div style="border:1.5px solid ' + T.GL + ';background:' + T.GP + ';border-radius:11px;padding:8px 14px">' + usNbLead(T, "✋ Trace the Pledge's first words") + usNbTrace("I pledge allegiance", 40, "#a8a29e") + usNbTrace("to the Flag", 40, "#a8a29e") + '</div>';
+    return usNbPage(us, T, wn, "🎆 My Holiday Calendar", body);
+  }
+  // ── Stage 3 · Who am I? ──
+  function usNbStage3(us, T, wn, g) {
+    var ppl = usNbPick(usNbDeck(us, "Famous Americans"), 4, false), little = g != null && g <= 1, e = usNbEsc;
+    if (!ppl.length) ppl = usNbPick(usNbDeck(us, "Famous Americans"), 3, true);
+    var rows = ppl.map(function (c) {
+      var pic = c.img ? '<img src="' + e(c.img) + '" alt="" style="width:96px;height:118px;object-fit:cover;border-radius:10px;border:2px solid ' + T.GL + ';flex-shrink:0;background:#fff">' : "";
+      return '<div style="flex:1;display:flex;gap:14px;align-items:stretch;border:1.5px solid ' + T.GL + ';background:' + T.GP + ';border-radius:12px;padding:10px 14px">' + pic +
+        '<div style="flex:1;display:flex;flex-direction:column;min-width:0"><div style="font-family:\'Fraunces\',serif;font-size:17px;font-weight:700;color:' + T.GD + '">' + e(c.name) + '</div>' +
+        (little ? '<div style="font-size:11px;color:#6b7280;margin:2px 0 5px">Draw what they did.</div><div style="flex:1;min-height:92px;border:2px dashed ' + T.GL + ';border-radius:9px;background:#fff"></div>'
+          : '<div style="font-size:11px;color:#6b7280;margin:2px 0 2px">What did they do?</div><div style="flex:1;min-height:88px;' + usNbRuled(T.GL) + '"></div>') + '</div></div>';
+    }).join("");
+    return usNbPage(us, T, wn, "⭐ Who Am I?", usNbLead(T, "This week's famous Americans") + usNbNote(little ? "Look at each one. Tell Mom what they did, then draw it." : "Write what each one did, in your own words.") + '<div style="flex:1;display:flex;flex-direction:column;gap:11px">' + rows + '</div>');
+  }
+  // ── Stage 4 · The three branches + how a bill becomes a law ──
+  function usNbStage4(us, T, wn, g) {
+    var box = function () { return '<div style="flex:1;border:2px solid ' + T.GM + ';border-radius:12px;background:#fff;padding:8px 10px;font-size:11.5px;line-height:2.15">Branch: ' + usNbBlank(118, T.GL) + '<br>Who: ' + usNbBlank(134, T.GL) + '<br>Job: ' + usNbBlank(138, T.GL) + '</div>'; };
+    var tree = '<div style="display:flex;gap:10px">' + box() + box() + box() + '</div>' +
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 90" width="100%" height="90" preserveAspectRatio="none" style="display:block">' +
+      '<path d="M350 90 L350 40 M350 40 L117 0 M350 40 L350 0 M350 40 L583 0" fill="none" stroke="#92400e" stroke-width="14" stroke-linecap="round"/></svg>' +
+      '<div style="align-self:center;background:#92400e;color:#fff;border-radius:10px;padding:6px 22px;font-family:\'Fraunces\',serif;font-size:14px;font-weight:700;margin-top:-4px">The Constitution</div>';
+    var steps = usNbShuffle(["Someone in Congress writes a bill", "The House and the Senate vote yes", "The President signs it", "It becomes a law"], wn);
+    var arrow = '<div style="align-self:center;font-size:18px;color:' + T.GM + '">➜</div>';
+    var four = '<div style="flex:1;display:flex;gap:6px;align-items:stretch">' + [1, 2, 3, 4].map(function (i) { return '<div style="flex:1;border:2px solid ' + T.GL + ';border-radius:10px;background:#fff;min-height:132px;padding:6px 8px;display:flex;flex-direction:column"><div style="width:22px;height:22px;border-radius:50%;background:' + T.GM + ';color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + i + '</div><div style="flex:1;margin-top:4px;' + usNbRuled(T.GL) + '"></div></div>'; }).join(arrow) + '</div>';
+    var body = usNbLead(T, "🌳 The three branches tree") + usNbNote("Fill in each branch from the word bank: its name, who is in it, and its job.") +
+      usNbBank(T, ["Legislative", "Executive", "Judicial", "Congress", "the President", "the Supreme Court", "makes the laws", "carries out the laws", "decides what laws mean"]) + tree +
+      '<div style="margin-top:4px">' + usNbLead(T, "📜 How a bill becomes a law") + '</div>' + usNbNote("Put the steps in order — write one in each box (or draw it).") + usNbBank(T, steps) + four;
+    return usNbPage(us, T, wn, "🏛 How Our Government Works", body);
+  }
+  // ── Stage 6 · Bill of Rights match-up ──
+  function usNbStage6(us, T, wn, g) {
+    var e = usNbEsc, am = usNbDeck(us, "Amendments");
+    var bor = []; for (var i = 1; i <= 10; i++) { var nm = (i === 1 ? "1st" : i === 2 ? "2nd" : i === 3 ? "3rd" : i + "th") + " Amendment"; var c = am.filter(function (x) { return x.name === nm; })[0]; if (c) bor.push(c); }
+    var pics = bor.length === 10 && bor.every(function (c) { return !!c.img; });
+    var right = usNbShuffle(bor, wn + 6).map(function (c) {
+      return '<div style="display:flex;align-items:center;gap:8px;height:' + (pics ? 68 : 48) + 'px"><span style="width:11px;height:11px;border-radius:50%;border:2px solid ' + T.GM + ';flex-shrink:0"></span>' +
+        (pics ? '<img src="' + e(c.img) + '" alt="" style="width:58px;height:58px;object-fit:contain;border-radius:8px;border:1.5px solid ' + T.GL + ';background:#fff">'
+          : '<span style="font-size:11px;line-height:1.3">' + e(usNbBack(c.def)) + '</span>') + '</div>';
+    }).join("");
+    var left = bor.map(function (c) { return '<div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;height:' + (pics ? 68 : 48) + 'px"><span style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700;color:' + T.GD + '">' + e(c.name.replace(" Amendment", "")) + '</span><span style="width:11px;height:11px;border-radius:50%;background:' + T.GM + ';flex-shrink:0"></span></div>'; }).join("");
+    var qs = usNbPick(am, 4, false);
+    var qh = qs.map(function (c) { return '<div style="font-size:12px;line-height:1.4;padding:3px 0">Which amendment says: <i>' + e(usNbBack(c.def)) + '</i>? ' + usNbBlank(90, T.GL) + '</div>'; }).join("");
+    var body = usNbLead(T, "🔗 The Bill of Rights — the first 10 amendments") + usNbNote("Draw a line from each amendment to " + (pics ? "its picture." : "what it says.")) +
+      '<div style="display:grid;grid-template-columns:0.55fr 0.5fr ' + (pics ? "0.8fr" : "2fr") + ';align-items:center"><div>' + left + '</div><div></div><div>' + right + '</div></div>' +
+      (qh ? '<div style="border:1.5px solid ' + T.GL + ';background:' + T.GP + ';border-radius:11px;padding:8px 14px;margin-top:auto">' + usNbLead(T, "⚖️ Which amendment?") + qh + '</div>' : "");
+    return usNbPage(us, T, wn, "⚖️ Bill of Rights Match-Up", body);
+  }
+  // ── Stage 7 · Presidents timeline ──
+  function usNbPresParts(c) { var p = String(c.def || "").split(" · "); return { num: String(c.name || "").replace(/\s*President$/, ""), name: p[0] || "", years: p[1] || "", fact: p.slice(2).join(" · ") }; }
+  function usNbStage7(us, T, wn, g) {
+    var pr = usNbDeck(us, "Presidents"), e = usNbEsc;
+    var cur = pr.filter(function (c) { return c.status === "learning"; })[0] || pr.filter(function (c) { return !c.status; })[0] || pr[pr.length - 1];
+    if (!cur) return null;
+    var fam = pr.filter(function (c) { return c.family === cur.family; }).slice(0, 8);
+    var cells = fam.map(function (c) {
+      var P = usNbPresParts(c);
+      return '<div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center">' +
+        (c.img ? '<img src="' + e(c.img) + '" alt="" style="width:100%;max-width:120px;aspect-ratio:4/5;object-fit:cover;border-radius:9px;border:2px solid ' + T.GL + ';background:#fff">' : '<div style="height:6px"></div>') +
+        '<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700;color:' + T.GD + '">' + e(P.num) + '</div>' +
+        '<div style="font-family:\'DM Mono\',monospace;font-size:10px;color:#6b7280">' + e(P.years) + '</div>' +
+        '<div style="width:92%;border-bottom:1.5px solid ' + T.GL + ';height:26px"></div><div style="width:92%;border-bottom:1.5px solid ' + T.GL + ';height:22px"></div></div>';
+    });
+    var rowsH = ""; for (var i = 0; i < cells.length; i += 4) rowsH += '<div style="display:flex;gap:12px;align-items:flex-start;position:relative">' + cells.slice(i, i + 4).join("") + '</div>';
+    var body = usNbLead(T, "🎩 " + e(cur.family)) + usNbNote("Write each president's name under the number. The years in office are printed for you.") +
+      '<div style="height:6px;border-radius:3px;background:repeating-linear-gradient(90deg,#b91c1c 0,#b91c1c 14px,#fff 14px,#fff 17px,#1e3a8a 17px,#1e3a8a 31px)"></div>' +
+      '<div style="display:flex;flex-direction:column;gap:16px">' + rowsH + '</div>' +
+      '<div style="flex:1;min-height:90px;display:flex;flex-direction:column;gap:4px">' + usNbLead(T, "✏️ Pick one of them. What did he do as president?") + '<div style="flex:1;' + usNbRuled(T.GL) + '"></div></div>' +
+      '<div style="border:1.5px dashed ' + T.GOLD + ';background:' + T.CREAM + ';border-radius:11px;padding:8px 14px">' + usNbLead(T, "🎯 Say them in order") +
+      '<div style="font-size:11.5px;line-height:1.45">Start at the 1st President and say every one, in order, up to the last one on this page.</div></div>';
+    return usNbPage(us, T, wn, "🎩 Presidents Timeline", body);
+  }
+  // ── Stage 10 · Citizen's quiz ──
+  function usNbStage10(us, T, wn, g) {
+    var qs = usNbPick(usNbDeck(us, "Civics Test"), 10, false), e = usNbEsc;
+    var rows = qs.map(function (c, i) {
+      return '<div style="display:flex;gap:9px;align-items:flex-start"><div style="width:21px;height:21px;border-radius:50%;background:' + T.GM + ';color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px">' + (i + 1) + '</div>' +
+        '<div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:700;line-height:1.3">' + e(c.name) + '</div>' + usNbLines(2, 22, T.GL) + '</div></div>';
+    }).join("");
+    var mom = [["My state's governor", 1], ["My state's two U.S. senators", 2], ["My U.S. representative", 1], ["My state's capital", 1]].map(function (r) {
+      return '<div style="display:flex;align-items:flex-end;gap:8px;font-size:12px;font-weight:700;height:27px"><span style="flex-shrink:0">' + r[0] + ':</span>' +
+        (r[1] === 2 ? '<span style="flex:1;border-bottom:1.5px solid ' + T.GL + ';height:20px"></span><span style="flex-shrink:0">and</span>' : '') + '<span style="flex:1;border-bottom:1.5px solid ' + T.GL + ';height:20px"></span></div>';
+    }).join("");
+    var body = usNbLead(T, "🗳 This week's questions") + usNbNote("Answer each question in your own words. Then check your cards.") +
+      '<div style="display:flex;flex-direction:column;gap:8px">' + rows + '</div>' +
+      '<div style="margin-top:auto;border:2px dashed ' + T.GOLD + ';background:' + T.CREAM + ';border-radius:12px;padding:9px 15px">' + usNbLead(T, "🔎 Find out with Mom") +
+      '<div style="font-size:11px;color:#6b7280;margin:2px 0 4px">These are different for every family, and they change with elections. Look them up together.</div>' + mom + '</div>';
+    return usNbPage(us, T, wn, "🗳 Citizen's Quiz", body);
+  }
+  // ── part 2 (her "Yes, build maps" 2026-11-18 via the hub): Stages 5, 8 and 9 — a map to color / label + this week's timeline.
+  // The map comes on the record (index.html usNbMap: us.map = {kind, names, img}, numbers only — no names on it); the page prints
+  // the numbered blanks and a word bank, never which name goes with which number. No map (us.js / geo.js not loaded yet) → the
+  // no-map version: the colonies as a list to write, the battles by name with "where / when" to write.
+  function usNbYear(def) { var m = String(def || "").match(/^([^—]*\d[^—]*?)\s*—/); return m ? m[1].trim() : ""; }   // "1754–1763 — …" → "1754–1763"
+  function usNbNum(i, T) { return '<span style="width:21px;height:21px;border-radius:50%;background:' + T.GM + ';color:#fff;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">' + i + '</span>'; }
+  function usNbNumBlanks(n, T, cols, year) {   // 1 ______ (year ____) … in `cols` columns
+    var cells = []; for (var i = 1; i <= n; i++) cells.push('<div style="display:flex;align-items:flex-end;gap:7px;height:27px">' + usNbNum(i, T) + '<span style="flex:1;border-bottom:1.5px solid ' + T.GL + ';height:20px"></span>' +
+      (year ? '<span style="font-size:10.5px;color:#6b7280;flex-shrink:0">year</span><span style="width:46px;border-bottom:1.5px solid ' + T.GL + ';height:20px;flex-shrink:0"></span>' : '') + '</div>');
+    return '<div style="display:grid;grid-template-columns:repeat(' + cols + ',1fr);gap:2px 16px">' + cells.join("") + '</div>';
+  }
+  // this week's events on a line: the years printed in order, the kid writes each event above its year (word bank)
+  function usNbTimeline(us, T, wn, little) {
+    var ev = usNbPick(usNbDeck(us, "U.S. History"), 6, true).sort(function (a, b) { return a.order - b.order; }), e = usNbEsc;
+    if (!ev.length) return "";
+    if (little) return '<div style="flex:1;min-height:150px;display:flex;flex-direction:column;gap:6px">' + usNbLead(T, "🎨 This week's story") + usNbNote("Pick one and draw it. Tell Mom what happened.") +
+      '<div style="display:flex;flex-wrap:wrap;gap:5px 7px">' + ev.map(function (c) { return '<span style="border:1.5px solid ' + T.GL + ';background:' + T.GP + ';border-radius:7px;padding:2px 9px;font-size:12px;font-weight:700">' + e(c.name) + '</span>'; }).join("") + '</div>' +
+      '<div style="flex:1;border:2px dashed ' + T.GL + ';border-radius:12px;background:#fff"></div></div>';
+    // zigzag: event 1 above the line, 2 below, 3 above… so each writing box is two steps wide; the year sits on the other side
+    var n = ev.length, bw = Math.min(2 / n * 100 - 1.6, 44), cells = ev.map(function (c, i) {
+      var y = usNbYear(c.def), x = (i + 0.5) / n * 100, up = i % 2 === 0, left = Math.max(0, x - bw / 2), w = Math.min(100, x + bw / 2) - left;   // the end boxes stop at the edge
+      return '<div style="position:absolute;left:' + left.toFixed(2) + '%;width:' + w.toFixed(2) + '%;top:' + (up ? 0 : 100) + 'px;height:46px;box-sizing:border-box;border:1.5px solid ' + T.GL + ';border-radius:8px;background:#fff;padding:0 8px">' + usNbLines(2, 21, T.GL) + '</div>' +
+        '<div style="position:absolute;left:calc(' + x.toFixed(2) + '% - 1.5px);top:' + (up ? 46 : 75) + 'px;width:3px;height:25px;background:' + T.GD + '"></div>' +
+        '<div style="position:absolute;left:calc(' + x.toFixed(2) + '% - 60px);width:120px;top:' + (up ? 80 : 54) + 'px;text-align:center;font-family:\'DM Mono\',monospace;font-size:10.5px;font-weight:700;color:' + T.GD + ';line-height:16px">' + (y ? e(y) : usNbBlank(56, T.GL)) + '</div>';
+    }).join("");
+    return usNbLead(T, "🕰 This week's timeline") + usNbNote("Write each event in the box joined to its year.") + usNbBank(T, usNbShuffle(ev.map(function (c) { return c.name; }), wn + 5)) +
+      '<div style="position:relative;height:146px;flex-shrink:0"><div style="position:absolute;left:0;right:0;top:71px;height:4px;border-radius:2px;background:' + T.GD + '"></div>' + cells + '</div>';
+  }
+  var US_NB_REGIONS = ["New England", "Middle", "Southern"];
+  function usNbStage5(us, T, wn, g) {
+    var little = g != null && g <= 1, e = usNbEsc, m = us.map && us.map.kind === "colonies" && us.map.img ? us.map : null;
+    var names = m ? m.names : usNbDeck(us, "13 Colonies").map(function (c) { return c.name.replace(/ Colony$/, ""); });
+    var key = '<div style="border:1.5px solid ' + T.GL + ';background:' + T.GP + ';border-radius:11px;padding:8px 12px">' + usNbLead(T, "🖍 Color by region") +
+      '<div style="font-size:11px;line-height:1.4;color:#4b5563;margin:2px 0 4px">Pick a color for each region, then color its colonies to match.</div>' +
+      US_NB_REGIONS.map(function (r) { return '<div style="display:flex;align-items:center;gap:9px;height:25px"><span style="width:34px;height:20px;border:2px solid #1c1c1e;border-radius:5px;background:#fff;flex-shrink:0"></span><span style="font-size:12.5px;font-weight:700">' + r + ' Colonies</span></div>'; }).join("") + '</div>';
+    var body = usNbNote(m ? (little ? "Color the colonies. Point to each number and count them with Mom." : "Write each colony's name by its number — the word bank has them all. Then color the regions.")
+      : (little ? "Draw a ship sailing across the ocean to the colonies." : "Write the 13 colonies from north to south — the word bank has them all."));
+    if (m) body += '<div style="display:flex;gap:16px;align-items:flex-start"><img src="' + e(m.img) + '" alt="" style="width:330px;height:auto;display:block;border:2px solid ' + T.GL + ';border-radius:10px;flex-shrink:0;background:#fff">' +
+      '<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:10px">' + key + (little ? '<div style="margin-top:6px">' + usNbLead(T, "✏️ Trace it") + usNbTrace("colony", 52, "#a8a29e") + '</div>' : usNbNumBlanks(names.length, T, 1, false)) + '</div></div>';
+    else body += little ? '<div style="height:330px;border:2px dashed ' + T.GL + ';border-radius:12px;background:#fff"></div>' : usNbNumBlanks(names.length, T, 2, false);
+    if (!little) body += usNbBank(T, usNbShuffle(names, wn + 5));
+    body += usNbTimeline(us, T, wn, little);
+    return usNbPage(us, T, wn, "📜 The 13 Colonies", body);
+  }
+  function usNbBattlePage(us, T, wn, g, title) {
+    var little = g != null && g <= 1, e = usNbEsc, m = us.map && us.map.kind === "battles" && us.map.img ? us.map : null, year = g == null || g >= 4;
+    var names = m ? m.names : usNbDeck(us, "American Battles").map(function (c) { return c.name; });
+    var body = usNbTimeline(us, T, wn, little);
+    if (names.length) {
+      body += '<div style="margin-top:2px">' + usNbLead(T, "📍 Where were the battles?") + '</div>';
+      if (m) body += usNbNote(little ? "Point to each number. Can you tell Mom which battle was fought there?" : "Write each battle's name by its number" + (year ? ", and the year it was fought" : "") + ". The word bank has them all.") +
+        '<img src="' + e(m.img) + '" alt="" style="width:100%;height:auto;display:block;border:2px solid ' + T.GL + ';border-radius:10px;background:#fff">' +
+        (little ? "" : usNbBank(T, usNbShuffle(names, wn + 8)) + usNbNumBlanks(names.length, T, 3, year));
+      else body += usNbNote(little ? "Tell Mom about one of these battles." : "Where was each one fought, and when?") +
+        '<div style="display:flex;flex-direction:column;gap:3px">' + names.map(function (n) {
+          return '<div style="display:flex;align-items:flex-end;gap:8px;height:29px;font-size:12.5px;font-weight:700"><span style="width:182px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + e(n) + '</span>' +
+            (little ? '' : '<span style="font-size:10.5px;color:#6b7280;font-weight:400">where</span><span style="flex:1;border-bottom:1.5px solid ' + T.GL + ';height:20px"></span><span style="font-size:10.5px;color:#6b7280;font-weight:400">when</span><span style="width:80px;border-bottom:1.5px solid ' + T.GL + ';height:20px"></span>') + '</div>'; }).join("") + '</div>';
+    }
+    return usNbPage(us, T, wn, title, body);
+  }
+  function usNbStage8(us, T, wn, g) { return usNbBattlePage(us, T, wn, g, "🗺 A Growing Nation"); }
+  function usNbStage9(us, T, wn, g) { return usNbBattlePage(us, T, wn, g, "🌎 America in the World"); }
+  var US_NB_STAGES = { 1: usNbStage1, 2: usNbStage2, 3: usNbStage3, 4: usNbStage4, 5: usNbStage5, 6: usNbStage6, 7: usNbStage7, 8: usNbStage8, 9: usNbStage9, 10: usNbStage10 };
+  function usStagePages(ins, weekNum, theme) {
+    var us = ins && ins.us; if (!us || !us.stage || !US_NB_STAGES[us.stage]) return [];
+    var p = US_NB_STAGES[us.stage](us, theme || UNIT_INSERT_THEMES.lincoln, weekNum, usNbGrade(us.grade));
+    return p ? [p] : [];
+  }
+  // The Memory Work & Civics page (enPageMemoryCivics): President of the Week and one recite line, from the same record
+  function usNbPres(us) {
+    var c = (us.cards || []).filter(function (x) { return x.deck === "Presidents" && x.status === "learning"; }).sort(function (a, b) { return a.order - b.order; })[0];
+    if (!c) return null; var P = usNbPresParts(c); if (!P.name) return null;
+    return [usNbEsc(P.num), usNbEsc(P.name), usNbEsc(P.years), usNbEsc(P.fact)];
+  }
+  var US_NB_RECITE = { 1: "This week's American symbols", 2: "The holidays in order, January to December", 3: "This week's famous Americans and what they did",
+    4: "How a bill becomes a law, in four steps", 5: "The 13 colonies, north to south", 6: "The Bill of Rights by number, 1st to 10th",
+    7: "The presidents in order, up to this week's", 8: "This week's events and their years", 9: "This week's events and their years", 10: "This week's civics questions" };
+  function usNbRecite(us) { return US_NB_RECITE[us.stage] ? [US_NB_RECITE[us.stage]] : []; }
+  var _unitInsertPagesBase = unitInsertPages;
+  unitInsertPages = function (ins, weekNum, theme) { return _unitInsertPagesBase(ins, weekNum, theme).concat(usStagePages(ins, weekNum, theme)); };
+  // USNB_END
 
   function generateLincoln(ctx) {
     ctx = ctx || {};
+    _usNb = usNbOf(ctx);   // USNB
     var weekData = ctx.weekData || {};
     if (Array.isArray(weekData)) weekData = weekData[0] || {};
     if (Array.isArray(weekData)) weekData = weekData[0] || {};
@@ -4451,6 +4741,7 @@ ${ellFooter("Howe Academy · Parent Guide · Full Keys · Week " + weekNum)}
 
   function generateEllis(ctx) {
     ctx = ctx || {};
+    _usNb = usNbOf(ctx);   // USNB
     var weekData = ctx.weekData || {};
     if (Array.isArray(weekData)) weekData = weekData[0] || {};
     var weekNum = ctx.weekNum;
