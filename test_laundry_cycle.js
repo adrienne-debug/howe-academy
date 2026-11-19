@@ -10,7 +10,7 @@ let pass=0, fail=0; const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n)
 const fn=name=>{ const i=src.indexOf("function "+name+"("); if(i<0) throw new Error("missing "+name); let d=0; for(let k=src.indexOf("{",i);k<src.length;k++){ if(src[k]==="{") d++; else if(src[k]==="}"&&--d===0) return src.slice(i,k+1); } throw new Error("unbalanced "+name); };
 const cut=(a,b)=>{ const i=src.indexOf(a), j=src.indexOf(b,i); if(i<0||j<0) throw new Error("missing "+a); return src.slice(i,j); };
 const CORE=cut("const LAUNDRY_STAGES=","// LAUNDRY_NUDGE_END");
-const MORE=["_cuRe","laundryBackStage","_cuStageName","_cuCycleMin","_cuDropBlock","laundryBack","laundryKidMovePick","laundryKidMove","_leHM","_leRe","_leCycleTok","_leCycleOpts","laundryEditSheetHTML","laundryEditSave",
+const MORE=["_cuRe","laundryBackStage","_cuStageName","_cuCycleMin","_cuDropBlock","laundryBack","laundryKidMovePick","laundryKidMove","_leHM","_leRe","_leCycleTok","_leCycleOpts","_leStageOpts","_leBackLineOk","laundryEditSheetHTML","laundryEditSave",
   "laundryBlockStep","laundryBlockDefault","momBlockKey","momBlockFor","_lbMin","_lbQ","_lbBtn","_lbQBtn","_lbNotLoadBtn","momSchedNextMom","momSchedLaundry","dadSchedLaundry","_lbBox"].map(fn).join("\n")
   +"\nconst LAUNDRY_KIDMOVE_FROM={dryer:\"washer\",fold:\"dryer\",putaway:\"fold\"};\nconst LAUNDRY_EDIT_STAGES=[\"bin\",\"prewash\",\"washer\",\"dryer\",\"fold\"];\nconst LAUNDRY_FOLDED_BTN=\"Folded ✓\";\nlet laundryEditId=null, _lbWhenOpen={}, _mlBlkLaid={}, momBlocks={}, laundryBlockMins={};";
 const T0=new Date(2026,9,17,9,0).getTime();

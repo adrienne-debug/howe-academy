@@ -15293,8 +15293,8 @@ function llStart(item,by){ const it=llAll()[item]; if(!it) return; const t=llTod
   try{ if(_lu) luNote(_lu); }catch(e){}   // ↩︎ LAUNDRYUNDO: the undo bar
   if(typeof mwToast==="function") mwToast('🫧 '+laundryData[lid].label+((riders.length||_bl||typeof llLabelTag!=="function")?"":llLabelTag(item))+' — in the washer'); llRerender(); }   // LAUNDRY_SYNC: "· Wed" / "· Sat" on a twin
 // ✕ on a line load still in the washer (a mistake) takes its log entry back, so the line puts it back where it was.
-function llUnlog(lid,l){ if(l&&l.wet&&l.jumpDay&&(l.stage==="bin"||l.stage==="prewash")){ const j=laundryLine.jump&&laundryLine.jump[l.jumpDay]; if(j&&j[lid]){ delete j[lid]; llStore(); const u={}; u["jump/"+l.jumpDay+"/"+lid]=null; llWrite(u); } return; }   // 💦 a jump-in ✕'d before it was washed gives its slot back
-  if(!l||!l.line||!l.lineDay) return; if((typeof lcHas==="function"&&lcHas(l))?lcStep(l)!==0:l.stage!=="washer") return;   /* 🌀 a cycle load: still on its first step */ const e=laundryLine.log&&laundryLine.log[l.lineDay]&&laundryLine.log[l.lineDay][l.line];
+function llUnlog(lid,l,any){ if(l&&l.wet&&l.jumpDay&&(l.stage==="bin"||l.stage==="prewash")){ const j=laundryLine.jump&&laundryLine.jump[l.jumpDay]; if(j&&j[lid]){ delete j[lid]; llStore(); const u={}; u["jump/"+l.jumpDay+"/"+lid]=null; llWrite(u); } return; }   // 💦 a jump-in ✕'d before it was washed gives its slot back
+  if(!l||!l.line||!l.lineDay) return; if(!any&&((typeof lcHas==="function"&&lcHas(l))?lcStep(l)!==0:l.stage!=="washer")) return;   /* 🌀 a cycle load: still on its first step · any = ✎ Edit's ↩ back on the line (LE_BACKLINE) */ const e=laundryLine.log&&laundryLine.log[l.lineDay]&&laundryLine.log[l.lineDay][l.line];
   if(!e||e.load!==lid) return; delete laundryLine.log[l.lineDay][l.line]; const u={}; u["log/"+l.lineDay+"/"+l.line]=null;
   Object.keys(laundryLine.log[l.lineDay]||{}).forEach(function(r){ const x=laundryLine.log[l.lineDay][r]; if(x&&x.load===lid&&x.with){ delete laundryLine.log[l.lineDay][r]; u["log/"+l.lineDay+"/"+r]=null;
     const bx=laundryLine.extras&&laundryLine.extras[r]; if(bx&&bx.last===l.lineDay){ bx.last=x.prevLast||null; u["extras/"+r+"/last"]=bx.last; if(x.prevEst){ bx.est=true; u["extras/"+r+"/est"]=true; } if(x.prevNext){ bx.next=x.prevNext; u["extras/"+r+"/next"]=x.prevNext; } } } });   // 🔗 its riders / 🛏 its blanket come out too   // 🔗 its riders come out too
@@ -15653,11 +15653,11 @@ function llParentRowHTML(r,who){ const done=r.done, on="llParentTick('"+r.id+"',
 // ↶ Un-start (her report 2026-10-19: "lincoln clicked his clothes and now 3 are in the washer" — un-✓ put the line load back in line
 // but left laundry/<id> in the washer, so every re-✓ started another: 9:14:05, 9:14:09, 10:41). Taking a Start back now removes the
 // load too — only while it's still on its first step, like ✕ in the washer — with no confirm box. One laundry/<id> remove + the log null.
-function llUnstart(lid){ const LD=(typeof laundryData!=="undefined"&&laundryData)||{}, l=LD[lid]; if(!l) return false;
-  if((typeof lcHas==="function"&&lcHas(l))?lcStep(l)!==0:l.stage!=="washer") return false;   // it moved on — keep it
+function llUnstart(lid,any){ const LD=(typeof laundryData!=="undefined"&&laundryData)||{}, l=LD[lid]; if(!l) return false;
+  if(!any&&((typeof lcHas==="function"&&lcHas(l))?lcStep(l)!==0:l.stage!=="washer")) return false;   // it moved on — keep it (any = only ✎ Edit's ↩ back on the line, LE_BACKLINE)
   try{ if(typeof _cuDropBlock==="function") _cuDropBlock(lid,l.stage); }catch(x){}
   delete LD[lid]; try{ HA_LS.setItem('ha_laundry',JSON.stringify(LD)); }catch(x){} if(typeof _lbWrite==="function"&&_lbWrite()) db.ref('laundry/'+lid).remove();
-  llUnlog(lid,l); return true; }
+  llUnlog(lid,l,any); return true; }
 // FOLD_BACK_START — her ask 2026-10-21 (Lucy ticked "Fold" while her clothes were still in the washer; the load vanished from Machines now
 // and the un-tick did nothing): un-ticking a Fold row brings the load back, to the machine it was really in, from ANY device. Putting a line
 // load away now leaves a note beside its own day-log entry — log/<day>/<item>/away = {at, load:<the load as it was>} — the un-tick reads
@@ -17775,8 +17775,43 @@ function laundryEditBtnHTML(id){
 }
 // LAUNDRY_CYCLE: a cycle load's Stage list is its own steps (value s<j>), plus the bin it may have started in and the fold pile.
 function _leCycleTok(l){ return l.stage==="bin"?"bin":l.stage==="fold"?"fold":l.stage==="basket"?"basket":"s"+lcStep(l); }
-function _leCycleOpts(l,opt){ const S=lcSteps(l), t=_leCycleTok(l); return ((l.bin||l.wet||l.stage==="bin")?opt("bin","🪣 Wash today",t==="bin"):"")
+function _leCycleOpts(l,opt,noBin){ const S=lcSteps(l), t=_leCycleTok(l); return ((!noBin&&(l.bin||l.wet||l.stage==="bin"))?opt("bin","🪣 Wash today",t==="bin"):"")
   +S.map(function(x,j){ return opt("s"+j,LC_KINDS[x.k][0]+' '+esc(lcStepName(x))+' ('+(j+1)+' of '+S.length+')',t==="s"+j); }).join("")+opt("fold","🧺 Folded — put away",t==="fold"); }
+// LE_BACKLINE_START — ↩ Not started — back on the laundry line (her words 2026-11-19: Lincoln ticked "Start your laundry: Lincoln's
+// clothes" at 10:05 without doing it; ✎ → 🪣 Wash today left the load under "On the machines now" and the line still read it 🫧 in the
+// washer, so no Start / Done: "It should go back to the laundry line and change the in the washer status back, so that way it will show
+// the options for done and start again."). A load the line started TODAY — today's log entry for its item points at it, not a 🔗 rider,
+// not a split half, not a 💦 jump-in — gets this choice in place of 🪣 Wash today, at ANY stage; its stage now is still shown honestly
+// (marked "where it is now", selected) so the picker never lands on the new choice by itself. Every other load keeps today's list.
+// Save = the line's own un-start, llUnstart(id,true) (its other callers keep the first-step guard): laundry/<id> removed, its Mom block
+// dropped, laundryLine log/<today>/<item> (+ riders) nulled → the line offers 🫧 Start again; an auto-ticked kid row un-ticks itself
+// (llSyncKidRows), and a kid's own tick of that Start row is un-ticked the way Mom's ↩︎ undo does it (choreUndo → the list's own
+// uncheck: stars back off through cuUnpay, the list's done flag and 🏁 bonus settle). Dry-run inert (every write is behind _lbWrite /
+// the check-off's own guards). Mom only, like the rest of ✎ Edit.
+function _leBackLineOk(id){ const l=(typeof laundryData!=="undefined"&&laundryData)?laundryData[id]:null;
+  if(!l||!l.line||l.split||l.jumpDay||typeof llToday!=="function"||typeof llUnstart!=="function"||typeof laundryLine==="undefined"||!laundryLine) return false;
+  const t=llToday(); if(l.lineDay!==t) return false; const e=laundryLine.log&&laundryLine.log[t]&&laundryLine.log[t][l.line];
+  return !!(e&&e.load===id&&!e.with); }
+function _leStageOpts(id,l,opt){ const cyc=typeof lcHas==="function"&&lcHas(l), st=function(s){ const m=LAUNDRY_STAGE_META[s]; return opt(s,m[0]+' '+m[1],s===l.stage); };
+  if(!_leBackLineOk(id)) return cyc?_leCycleOpts(l,opt):LAUNDRY_EDIT_STAGES.map(st).join("");   // not from today's line: exactly as before
+  let h=cyc?_leCycleOpts(l,opt,true):LAUNDRY_EDIT_STAGES.filter(function(s){ return s!=="bin"; }).map(st).join("");
+  if(h.indexOf(' selected>')<0){ const m=LAUNDRY_STAGE_META[l.stage]; h=opt(cyc?_leCycleTok(l):esc(l.stage||""),(m?m[0]+' '+m[1]:esc(l.stage||"Now"))+' (where it is now)',true)+h; }   // 🪣 bin (her live case) or another stage the list leaves out: shown, selected, unchanged on Save
+  return opt("line","↩ Not started — back on the laundry line",false)+h; }
+// The Start rows ticked by hand (a kid's own tick, or Mom's from her lists) for this item today: [slot, kid, i]. Auto ticks are llSyncKidRows'.
+function _leBackLineRows(item){ const out=[]; if(typeof rtStepsFor!=="function"||typeof _todayDay!=="string"||typeof slState==="undefined"||typeof activeWk!=="function") return out;
+  const wk=activeWk(), R=(typeof llPeople==="function")?llPeople().slice(2):((typeof ROSTER!=="undefined"&&ROSTER)||[]);
+  R.forEach(function(kid){ [["morning","mstep"],["afternoon",((typeof RT_ABBR!=="undefined"&&RT_ABBR.afternoon)||"a")+"step"]].forEach(function(p){
+    (rtStepsFor(p[0],kid,false,_todayDay)||[]).forEach(function(s,i){ if(!s||s.line!==item||s.laundry!==true) return; const c=slState[wk+"_"+_todayDay+"_"+kid+"_"+p[1]+i]; if(c&&c.done&&c.auto!=="line") out.push([p[0],kid,i]); }); }); });
+  return out; }
+function laundryEditBackLine(id){
+  if(!(typeof momHere==="function"&&momHere())||!_leBackLineOk(id)) return false;
+  const l=laundryData[id], rows=_leBackLineRows(l.line);   // found while the row still reads started
+  if(!llUnstart(id,true)) return false;
+  laundryEditId=null;
+  rows.forEach(function(r){ try{ if(typeof choreUndo==="function") choreUndo(r[0],r[1],_todayDay,r[2]); }catch(e){} });   // the log is gone, so the row's own laundry hook finds nothing more to do
+  if(typeof mwToast==='function') mwToast('↩ '+(l.label||'Load')+' is back on the laundry line');
+  _leRe(); return true; }
+// LE_BACKLINE_END
 function laundryEditSheetHTML(id){
   if(laundryEditId!==id||!(typeof momHere==="function"&&momHere())) return "";
   const l=laundryData[id]; if(!l) return "";
@@ -17790,7 +17825,7 @@ function laundryEditSheetHTML(id){
   if(by!=="mom"&&by!=="dad"&&ro.indexOf(by)<0) who+=opt(esc(by),esc(cap(by)),true);
   return '<div class="laundry-edit" style="flex:1 1 100%;padding:8px 10px;margin-top:4px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px">'
     +row('Name','<input id="le-name-'+k+'" type="text" value="'+esc(l.label||"")+'" style="flex:1;'+inp+'">')
-    +row('Stage','<select id="le-stage-'+k+'" style="'+inp+'">'+((typeof lcHas==="function"&&lcHas(l))?_leCycleOpts(l,opt):LAUNDRY_EDIT_STAGES.map(function(s){ const m=LAUNDRY_STAGE_META[s]; return opt(s,m[0]+' '+m[1],s===l.stage); }).join(""))+'</select>')
+    +row('Stage','<select id="le-stage-'+k+'" style="'+inp+'">'+_leStageOpts(id,l,opt)+'</select>')   // LE_BACKLINE: ↩ back on the line for today's line loads
     +row('Started at','<input id="le-ts-'+k+'" type="time" value="'+_leHM(l.ts)+'" style="'+inp+'">')
     +row('Whose','<select id="le-by-'+k+'" style="'+inp+'">'+who+'</select>')
     +row('💦 Wet','<input id="le-wet-'+k+'" type="checkbox"'+(l.wet?' checked':'')+'> <span style="font-weight:600;color:#475569">Wet or soiled (washed twice)</span>')
@@ -17806,6 +17841,7 @@ function laundryEditSave(id){
   const up={};
   const name=String((nameEl&&nameEl.value)||"").trim(); if(name&&name!==(l.label||"")) up.label=name;
   const st=stEl&&stEl.value;
+  if(st==="line"&&laundryEditBackLine(id)) return {backLine:true};   // LE_BACKLINE: never started — nothing else to save
   if(typeof lcHas==="function"&&lcHas(l)){ if(st&&st!==_leCycleTok(l)){ const S=lcSteps(l), j=/^s(\d+)$/.exec(st);   // LAUNDRY_CYCLE
       if(j&&+j[1]<S.length){ up.stage=lcStageOf(S,+j[1]); up.step=+j[1]; } else if(st==="fold"){ up.stage="fold"; up.step=S.length; } else if(st==="bin"){ up.stage="bin"; up.step=null; } } }
   else if(st&&LAUNDRY_EDIT_STAGES.indexOf(st)>=0&&st!==l.stage) up.stage=st;
