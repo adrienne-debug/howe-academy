@@ -36,7 +36,7 @@ function world(o){
 
 console.log("── the menu row ──");
 { const w=world(); const h=w.api.mpSubnav('plan');
-  ok("🎓 School sits between Kitchen and Weigh-In and reopens the last School page", /🍳 Kitchen<\/button><button onclick="mpSchoolOpen\(mpSchoolLast\(\)\)"[^>]*>🎓 School<\/button><button onclick="mpGoto\('weigh'\)/.test(h));
+  ok("🎓 School sits between Kitchen and 💰 Budget (GIFTS 2026-11-20; Weigh-In after it) and reopens the last School page", /🍳 Kitchen<\/button><button onclick="mpSchoolOpen\(mpSchoolLast\(\)\)"[^>]*>🎓 School<\/button><button onclick="mpGoto\('gifts'\)"[^>]*>💰 Budget<\/button><button onclick="mpGoto\('weigh'\)/.test(h));
   ok("grey on Home Base, no School sub-row there", /color:#9ca3af;background:transparent[^>]*>🎓 School/.test(h)&&h.indexOf("mp-school-row")<0);
   ok("the sticky element holds the button row (.mp-row) and nothing else when no sub-row is wanted", /^<div id="mp-subnav" style="background:#fff;border-bottom:2px solid #DEF2F1"><div class="mp-row" style="display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px">[\s\S]*<\/button><\/div><\/div>$/.test(h));
 }
