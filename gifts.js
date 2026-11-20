@@ -36,6 +36,9 @@
 //   💭 Add as an idea → a present with wish:"<kid>/<wid>". Nothing is ever written under wishes/ about a present (the secret).
 // GIFTS slice 5 (⏰ reminders, plan §3.6) — see GIFTS_REMIND_START: computed lines at the top of Gifts and in Home Base's 🔴 NOW
 //   (window.giftNowLines — Mom only, never a present's name). gifts/occasions/<oid>.orderBy = her "order the last presents by" date.
+// GIFTS_GROUPS (her ask + "yes" 2026-11-20) — see GIFTS_GROUPS_START: 👧 Kids · <each group> buttons on People (always opens on Kids);
+//   gifts/groups/<gid>/secs/<sid> {name, emoji, order}  a group's OWN sections, kept across occasions (none = one 🎁 Gifts, unsaved);
+//   the kids keep the occasion's sections. Section choices follow the (first) person's group.
 // Totals are COMPUTED here, never stored (the esa.js rule). A gift for several people splits its cost evenly between them and
 // counts once for each (🤝). Every write = one set/update/remove of ONE record (+ a log line). Nothing here touches schedules.
 (function(){
@@ -154,11 +157,12 @@ function peopleView(o){
   const star=occStar(o);   // GIFTS_OCC: a birthday's person first and open; everyone else folds under "Others giving or getting"
   if(star)h+=starCard(o,star)+othersBtn(o,star);
   const P=people().filter(p=>p.id!==star);
-  if(!star||gfOthersOpen===o.id)groups().forEach(g=>{
+  if(!star||gfOthersOpen===o.id)h+=grpBar();   // GIFTS_GROUPS: 👧 Kids · each group · ＋ Group
+  if(!star||gfOthersOpen===o.id)groups().filter(g=>g.id===curGrp()).forEach(g=>{   // GIFTS_GROUPS: only the group she picked
     const ps=P.filter(p=>(p.group||"other")===g.id);if(!ps.length)return;
     const T=groupTot(o.id,g.id);
     h+='<div class="gf-card"><div class="gf-ghd"><span>'+esc(g.emoji||"")+' '+esc(g.name)+'</span><span class="gf-gsum">'+money(T.paid)+(T.budget!=null?' / '+money(T.budget):'')+'</span>'+
-      '<button class="gf-tool" onclick="gfGroupBudget(\''+esc(g.id)+'\')">💲</button></div>'+(T.budget!=null?'<div style="padding:0 14px">'+bar(T)+'</div>':'')+'<div class="gf-bd">';
+      '<button class="gf-tool" onclick="gfGroupBudget(\''+esc(g.id)+'\')">💲</button></div>'+(T.budget!=null?'<div style="padding:0 14px">'+bar(T)+'</div>':'')+grpSecLine(g)+'<div class="gf-bd">';   // GIFTS_GROUPS
     ps.forEach(p=>{const PT=personTot(o.id,p.id);
       h+='<button class="gf-prow" onclick="gfOpenPerson(\''+esc(p.id)+'\')"><span class="gf-dot" style="background:'+esc(p.color||"#94a3b8")+'"></span>'+
         '<span class="gf-pn">'+esc(p.name)+'<span class="gf-pc">'+(PT.count?PT.count+' present'+(PT.count===1?'':'s')+' · '+counts(PT):'nothing yet')+'</span>'+bar(PT)+'</span>'+
@@ -167,7 +171,7 @@ function peopleView(o){
   });
   const nobody=items(o.id).filter(it=>!pidsOf(it).length);
   if(nobody.length)h+='<div class="gf-card"><div class="gf-ghd"><span>💭 Not for anyone yet</span></div><div class="gf-bd">'+nobody.map(it=>itemRow(it,null)).join("")+'</div></div>';
-  h+='<div class="gf-acts"><button class="gf-tool" onclick="gfNewItem(null,null)">＋ Present</button><button class="gf-tool" onclick="gfNewPerson()">＋ Person</button><button class="gf-tool" onclick="gfNewGroup()">＋ Group</button></div>';
+  h+='<div class="gf-acts"><button class="gf-tool" onclick="gfNewItem(null,null)">＋ Present</button><button class="gf-tool" onclick="gfNewPerson()">＋ Person</button></div>';   // GIFTS_GROUPS: ＋ Group is on the group bar
   return h;
 }
 function needsChips(it){const n=it.needs||{};return (n.batt?'<span>🔋 '+esc(n.batt===true?"batteries":n.batt)+'</span>':'')+(n.build?'<span>🔧 assemble</span>':'')+(n.charge?'<span>🔌 charge</span>':'');}
@@ -186,7 +190,7 @@ function itemRow(it,pid){
 }
 function personView(o,pid){
   const p=person(pid);if(!p){gfView="people";return peopleView(o);}
-  const T=personTot(o.id,pid),S=secsOf(o),mine=items(o.id).filter(it=>pidsOf(it).indexOf(pid)>=0);
+  const T=personTot(o.id,pid),S=secsFor(o,[pid]),mine=items(o.id).filter(it=>pidsOf(it).indexOf(pid)>=0);
   let h='<button class="gf-tool" style="margin-bottom:8px" onclick="gfBack()">← Everyone</button>';
   h+='<div class="gf-card"><div class="gf-hd" style="background:'+esc(p.color||"#475569")+'"><span>'+esc(p.name)+' · '+esc(o.name)+'</span><button class="gf-tool gf-hdb" onclick="gfEditPerson(\''+esc(pid)+'\')">✏️</button></div>'+
     '<div class="gf-bd">'+bar(T)+'<div class="gf-line">'+sumLine(T)+'</div><div class="gf-line" style="color:#475569">'+T.count+' present'+(T.count===1?'':'s')+(T.shared?' · 🤝 '+T.shared+' shared':'')+(p.paper?' · 🎀 '+esc(p.paper):'')+'</div>'+
@@ -331,7 +335,7 @@ function forPicker(){
   return h+'</div></div>';
 }
 function secPicker(oid){
-  const f=gfEdit.form;const S=secsOf(occ(oid));
+  const f=gfEdit.form;const S=secsFor(occ(oid),f.pids);   // GIFTS_GROUPS: the first person's group's sections
   return '<div class="gf-f wide"><span>Section</span><div class="gf-picks">'+S.map(s=>'<button class="gf-pick'+(f.sec===s.id?" on":"")+'" onclick="gfSetDraw(\'sec\',\''+esc(s.id)+'\')">'+esc((s.emoji||"")+" "+s.name)+'</button>').join("")+'</div></div>';
 }
 function itemSheet(){
@@ -363,7 +367,7 @@ function personSheet(){
 }
 function budgetSheet(){
   const f=gfEdit.form,o=occ(f.occ);let h='<div class="gf-form">'+field("budget","Budget for "+esc((o||{}).name||"this occasion"),"","money");
-  if(f.secs)secsOf(o).forEach(s=>{h+='<label class="gf-f"><span>'+esc((s.emoji||"")+" "+s.name)+' (optional)</span><input inputmode="decimal" value="'+esc(f.secs[s.id]||"")+'" oninput="gfSecBudget(\''+esc(s.id)+'\',this.value)"></label>';});
+  if(f.secs)secsFor(o,[f.key]).forEach(s=>{h+='<label class="gf-f"><span>'+esc((s.emoji||"")+" "+s.name)+' (optional)</span><input inputmode="decimal" value="'+esc(f.secs[s.id]||"")+'" oninput="gfSecBudget(\''+esc(s.id)+'\',this.value)"></label>';});   // GIFTS_GROUPS: a person in a group gets that group's sections
   return h+'</div>';
 }
 function evenSheet(){return '<div class="gf-form"><div class="gf-sub wide">Flag a kid as behind when they are more than…</div>'+field("pct","% behind in dollars","15","money")+field("n","gifts behind","2","money")+'</div>';}
@@ -379,7 +383,7 @@ function occSheet(){   // OCCFIX (2026-11-20): editing an occasion shows its Sec
     h+='<label class="gf-f wide" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" style="width:auto"'+(f.closed?" checked":"")+' onchange="gfSet(\'closed\',this.checked)"> Done — move it to 📜 Past</label>';}
   return h+'</div>';
 }
-const SHEETS={even:["⚖️ When is a kid behind?",evenSheet],item:["Present",itemSheet],move:["↪ Move to…",moveSheet],person:["Person",personSheet],budget:["💲 Budget",budgetSheet],group:["Group",groupSheet],occ:["Occasion",occSheet],rcpt:["Receipt",rcptSheet]};
+const SHEETS={gsecs:["Sections",grpSecsSheet],even:["⚖️ When is a kid behind?",evenSheet],item:["Present",itemSheet],move:["↪ Move to…",moveSheet],person:["Person",personSheet],budget:["💲 Budget",budgetSheet],group:["Group",groupSheet],occ:["Occasion",occSheet],rcpt:["Receipt",rcptSheet]};
 function sheet(){return gfEdit?'<div id="gf-sheet" onclick="if(event.target.id===\'gf-sheet\')gfCancel()"><div class="gf-sh">'+sheetInner()+'</div></div>':"";}
 function sheetInner(){   // what's inside the pop-up (SHEETINPLACE redraws only this when the same pop-up stays open)
   const S=SHEETS[gfEdit.kind];const id=gfEdit.id;
@@ -405,7 +409,7 @@ function gfOpenPerson(pid){gfPid=pid;gfView="person";gfDraw();try{window.scrollT
 function gfBack(){gfView="people";gfDraw();}
 function defaultPaper(pids,sec,oid){const s=((occ(oid)||{}).secs||{})[sec];if(s&&s.paper)return s.paper;const p=person(pids[0]);return (p&&p.paper)||"";}
 function gfNewItem(pid,sid){
-  const oid=curOcc();if(!oid)return;const S=secsOf(occ(oid));const pids=pid?[pid]:[];const sec=sid||(S[0]&&S[0].id)||"";
+  const oid=curOcc();if(!oid)return;const pids=pid?[pid]:[];const S=secsFor(occ(oid),pids);const sec=sid||(S[0]&&S[0].id)||"";
   gfEdit={kind:"item",id:null,form:{occ:oid,name:"",pids,sec,status:"idea",plan:"",paid:"",store:"",link:"",due:"",where:"",paper:defaultPaper(pids,sec,oid),note:"",needs:{},batt:""}};gfDraw();
 }
 function gfEditItem(id){const it=(gfData.items||{})[id];if(!it)return;const f={occ:it.occ,pids:pidsOf(it).slice(),sec:it.sec||"",status:it.status||"idea"};
@@ -417,12 +421,12 @@ function gfMove(id){const it=(gfData.items||{})[id];if(!it)return;gfEdit={kind:"
 function gfSet(k,v){if(!gfEdit)return;gfEdit.form[k]=v;if(k==="name")gfEdit.form.autoName=false;if(k==="date")gfEdit.form.autoDate=false;}
 function gfSetDraw(k,v){if(!gfEdit)return;const f=gfEdit.form;
   if(k==="sec"&&gfEdit.kind==="item"&&!gfEdit.id&&(!f.paper||f.paper===defaultPaper(f.pids,f.sec,f.occ))){f.sec=v;f.paper=defaultPaper(f.pids,v,f.occ);}
-  f[k]=v;if(k==="occ"){const S=secsOf(occ(v));if(!S.some(s=>s.id===f.sec))f.sec=(S[0]&&S[0].id)||"";}
+  f[k]=v;if(k==="occ"){const S=secsFor(occ(v),f.pids);if(!S.some(s=>s.id===f.sec))f.sec=(S[0]&&S[0].id)||"";}
   if(k==="kind"&&!f.id&&(!f.name||f.autoName)){f.name=GF_KINDS[v].label.replace(/^\S+\s/,"")+" "+today().slice(0,4);f.autoName=true;}
   if(k==="kind")occAuto(f);   // GIFTS_OCC
   gfDraw();}
 function gfTogglePid(pid){if(!gfEdit)return;const f=gfEdit.form;const auto=gfEdit.kind==="item"&&!gfEdit.id&&(!f.paper||f.paper===defaultPaper(f.pids,f.sec,f.occ));
-  const i=f.pids.indexOf(pid);if(i>=0)f.pids.splice(i,1);else f.pids.push(pid);if(auto)f.paper=defaultPaper(f.pids,f.sec,f.occ);gfDraw();}
+  const i=f.pids.indexOf(pid);if(i>=0)f.pids.splice(i,1);else f.pids.push(pid);grpSecFix(f);if(auto)f.paper=defaultPaper(f.pids,f.sec,f.occ);gfDraw();}
 function gfSecBudget(sid,v){if(gfEdit&&gfEdit.form.secs)gfEdit.form.secs[sid]=v;}
 function gfSecEdit(i,k,v){if(gfEdit&&gfEdit.form.secs[i])gfEdit.form.secs[i][k]=v;}
 function gfSecAdd(){if(!gfEdit)return;gfEdit.form.secs.push({id:null,emoji:"🎁",name:""});gfDraw();}
@@ -443,6 +447,7 @@ function gfSave(){
     const iid=id||uid();node("items")[iid]=rec;write("gifts/items/"+iid,rec,"set");
     log((id?"Edited: ":"Added: ")+name+" → "+names(f.pids)+(rec.paid!=null?" "+money(rec.paid):""));
   }else if(kind==="rcpt"){if(!rcptSave())return;   // GIFTS_RCPT
+  }else if(kind==="gsecs"){grpSecsSave(f);   // GIFTS_GROUPS
   }else if(kind==="even"){
     const rec={pct:Math.max(0,num(f.pct)==null?15:num(f.pct)),n:Math.max(1,num(f.n)==null?2:Math.round(num(f.n)))};
     node("settings").even=rec;write("gifts/settings/even",rec,"set");log("Even-steven: "+rec.pct+"% or "+rec.n+" gifts");
@@ -514,7 +519,7 @@ function gfLineDel(id){const oid=curOcc(),L=eveNode(oid).lines||{};if(!L[id])ret
 function gfLinesCopy(from){const oid=curOcc();if(!oid)return;const L=eveNode(oid).lines=eveNode(oid).lines||{};
   eveLines(from).forEach((l,i)=>{const id=uid()+i,rec={text:l.text,order:i};L[id]=rec;write("gifts/eve/"+oid+"/lines/"+id,rec,"set");});log("Copied the Christmas Eve list from "+((occ(from)||{}).name||""));gfDraw();}
 function gfEvenEdit(){const E=evenSet();gfEdit={kind:"even",id:null,form:{pct:String(E.pct),n:String(E.n)}};gfDraw();}
-function gfNewPerson(){gfEdit={kind:"person",id:null,form:{name:"",group:"mom",paper:"",birthday:"",sizes:"",note:""}};gfDraw();}
+function gfNewPerson(){gfEdit={kind:"person",id:null,form:{name:"",group:curGrp()!=="kids"?curGrp():"mom",paper:"",birthday:"",sizes:"",note:""}};gfDraw();}
 function gfEditPerson(pid){const p=person(pid);if(!p)return;gfEdit={kind:"person",id:pid,form:{name:p.name||"",group:p.group||"other",paper:p.paper||"",birthday:p.birthday||"",sizes:p.sizes||"",note:p.note||""}};gfDraw();}
 function gfBudget(pid){const oid=curOcc(),p=plan(oid,pid),secs={};Object.keys(p.sec||{}).forEach(k=>{secs[k]=String(p.sec[k]);});
   gfEdit={kind:"budget",id:pid,form:{occ:oid,key:pid,label:(person(pid)||{}).name||pid,budget:p.budget==null?"":String(p.budget),secs}};gfDraw();}
@@ -634,7 +639,7 @@ function matchIdea(line,guess,oid,used){   // Claude's pick first (exact name), 
   L.forEach(it=>{const w=toks(it.name);if(!w.length)return;const s=w.filter(x=>lt.indexOf(x)>=0).length/w.length;if(s>bs){bs=s;best=it.id;}});
   return bs>=0.6?best:null;
 }
-function rcRow(oid,t,p){const S=secsOf(occ(oid));return {t:t||"",p:p==null?"":String(p),pids:[],sec:(S[0]&&S[0].id)||"",nog:false,idea:null,useIdea:false,taxed:null,of:""};}
+function rcRow(oid,t,p){const S=secsFor(occ(oid),[]);return {t:t||"",p:p==null?"":String(p),pids:[],sec:(S[0]&&S[0].id)||"",nog:false,idea:null,useIdea:false,taxed:null,of:""};}
 // RCPTTAX (her ask 2026-11-20: "is there a way to include in a receipt and figure out the tax per item … one item I had three of, and it
 // just did it as one thing … maybe it should pull it out three different times also so it could do the tax as well"):
 //  · a line Claude reads as qty N (2–12) becomes N rows, each 1/N of the line's price (cents split so they add up exactly), "1 of 3"…
@@ -770,7 +775,7 @@ function rcptSheet(){
       h+='<div class="gf-picks">';groups().forEach(g=>{people().filter(p=>(p.group||"other")===g.id).forEach(p=>{const on=r.pids.indexOf(p.id)>=0;
         h+='<button class="gf-pick'+(on?" on":"")+'" style="'+(on?"background:"+esc(p.color||"#0f172a")+";border-color:"+esc(p.color||"#0f172a"):"")+'" onclick="gfRcPid('+i+',\''+esc(p.id)+'\')">'+esc(p.name)+'</button>';});});
       h+='<button class="gf-pick'+(!r.nog&&!r.pids.length?" on":"")+'" onclick="gfRcNone('+i+')">🗄 No one yet</button><button class="gf-pick'+(r.nog?" on":"")+'" onclick="gfRcNog('+i+')">✕ Not a gift</button></div>';
-      if(!r.nog&&r.pids.length)h+='<div class="gf-picks">'+S.map(s=>'<button class="gf-pick'+(r.sec===s.id?" on":"")+'" onclick="gfRcSec('+i+',\''+esc(s.id)+'\')">'+esc((s.emoji||"")+" "+s.name)+'</button>').join("")+'</div>';
+      if(!r.nog&&r.pids.length)h+='<div class="gf-picks">'+rcSecs(o,r).map(s=>'<button class="gf-pick'+(r.sec===s.id?" on":"")+'" onclick="gfRcSec('+i+',\''+esc(s.id)+'\')">'+esc((s.emoji||"")+" "+s.name)+'</button>').join("")+'</div>';
     }
     if(!r.nog&&I.length)h+='<select class="gf-sel" style="margin-top:6px" onchange="gfRcIdea('+i+',this.value)"><option value="">'+(r.idea?"Not one of my ideas":"Or it\'s one of my 💭 ideas…")+'</option>'+I.map(it=>'<option value="'+esc(it.id)+'"'+(it.id===r.idea?" selected":"")+'>'+esc(it.name)+(pidsOf(it).length?' — '+esc(names(pidsOf(it))):'')+'</option>').join("")+'</select>';
     h+='</div>';
@@ -915,7 +920,7 @@ function occForPicker(f){
 function gfOccFor(pid){if(!gfEdit||gfEdit.kind!=="occ")return;const f=gfEdit.form;f.for=f.for===pid?null:pid;occAuto(f);gfDraw();}
 function occStar(o){return o&&o.kind==="birthday"&&o.for&&people().some(p=>p.id===o.for)?o.for:null;}
 function starCard(o,pid){
-  const p=person(pid),T=personTot(o.id,pid),S=secsOf(o),ord=s=>{const i=S.findIndex(x=>x.id===s);return i<0?99:i;};
+  const p=person(pid),T=personTot(o.id,pid),S=secsFor(o,[pid]),ord=s=>{const i=S.findIndex(x=>x.id===s);return i<0?99:i;};
   const mine=items(o.id).filter(it=>pidsOf(it).indexOf(pid)>=0).sort((a,b)=>ord(a.sec)-ord(b.sec)||(a.ts||0)-(b.ts||0));
   const nb=nextBday(p.birthday,o.date||today());
   let h='<div class="gf-card"><div class="gf-hd" style="background:'+esc(p.color||"#475569")+'"><span>🎂 '+esc(p.name)+(nb&&nb.age!=null&&nb.iso===o.date?' · turns '+nb.age:'')+'</span>'+
@@ -1069,6 +1074,78 @@ Object.assign(window,{gfRemGo,giftNowLines,giftReminders});
 window._gfRemTest={giftReminders,orderByOf,retBy,remDate,nowWant:()=>gfNowWant,setNowWant:v=>{gfNowWant=!!v;},setLoaded:v=>{gfLoaded=!!v;},on:()=>gfOn,setOn:v=>{gfOn=!!v;}};
 // GIFTS_REMIND_END
 
+// GIFTS_GROUPS_START — group buttons + each group's own sections (her ask 2026-11-20: "I do like having the four kids there easy
+// because they're the ones I'm going to be buying for the most. But then maybe a button beside it that has the other group … if you
+// click that button, it then shows that group and makes like the kids disappear unless you click back to the kids button, but the
+// kids should be open … And then those wouldn't have the categories that the kids have … connect those with whatever groups that
+// particular group has made" — and her "yes" to this design the same day).
+//   · 👨‍👩‍👧 People: a row of buttons — 👧 Kids · each group that has people · ＋ Group. Gifts always OPENS on Kids (a fresh visit;
+//     a redraw while she's on the page keeps her pick). A group's button shows only that group (its people, its total + budget bar);
+//     the occasion card on top keeps the whole occasion's total (everyone).
+//   · A group other than Kids has its OWN sections, kept across occasions: gifts/groups/<gid>/secs/<sid> {name, emoji, order}.
+//     None saved = one section 🎁 Gifts (id "gifts", nothing written until she edits). ✏️ Sections in that group's view adds and
+//     renames — ONE update per section that changed (when a group has none saved yet, 🎁 Gifts is saved with her first change, so
+//     presents already in it stay in it). The kids keep the occasion's sections (gifts/occasions/<oid>/secs).
+//   · Section choices follow the person (the first one picked): a kid → the occasion's sections, anyone else → their group's — in
+//     the present sheet, ↪ Move, the person page, their 💲 budget sheet and the receipt check screen's per-line chips. A present
+//     whose section isn't in its person's list shows under 📦 No section (as before).
+const GRP_GIFTS={id:"gifts",emoji:"🎁",name:"Gifts",order:0};
+let gfGrp="kids";   // the group button she picked (People view)
+function grpSecs(gid){
+  const s=(((gfData.groups||{})[gid])||{}).secs||{};
+  const L=Object.keys(s).filter(id=>s[id]&&typeof s[id]==="object").map(id=>Object.assign({id},s[id])).sort((a,b)=>(a.order||0)-(b.order||0));
+  return L.length?L:[Object.assign({virtual:true},GRP_GIFTS)];
+}
+function grpOfPids(pids){const p=(pids||[]).length?person(pids[0]):null;return p?(p.group||"other"):"kids";}   // no one yet → the occasion's
+function secsFor(o,pids){const g=grpOfPids(pids);return g==="kids"?secsOf(o):grpSecs(g);}
+function grpSecFix(f){const S=secsFor(occ(f.occ),f.pids);if(!S.some(s=>s.id===f.sec))f.sec=(S[0]&&S[0].id)||"";}   // a new person → their group's first section
+function rcSecs(o,r){const S=secsFor(o,r.pids);if(!S.some(s=>s.id===r.sec))r.sec=(S[0]&&S[0].id)||"";return S;}   // a receipt line's chips follow its person
+function grpTabs(){const P=people();return groups().filter(g=>g.id!=="kids"&&P.some(p=>(p.group||"other")===g.id));}
+function curGrp(){return gfGrp!=="kids"&&grpTabs().some(g=>g.id===gfGrp)?gfGrp:"kids";}
+function grpOpen(el){let here=false;try{here=!!(el&&el.querySelector&&el.querySelector("#gf-page"));}catch(e){}if(!here)gfGrp="kids";}
+function grpBar(){
+  const cur=curGrp(),K=groups().find(g=>g.id==="kids")||{emoji:"👧",name:"Kids"};
+  const b=(id,g)=>'<button class="gf-grp'+(cur===id?" on":"")+'" onclick="gfGroup(\''+esc(id)+'\')">'+esc((g.emoji?g.emoji+" ":"")+g.name)+'</button>';
+  return '<div class="gf-grps">'+b("kids",K)+grpTabs().map(g=>b(g.id,g)).join("")+'<button class="gf-grp add" onclick="gfNewGroup()">＋ Group</button></div>';
+}
+function grpSecLine(g){
+  if(g.id==="kids")return "";
+  return '<div class="gf-grpsec"><span>'+grpSecs(g.id).map(s=>esc((s.emoji||"")+" "+s.name)).join(" · ")+'</span><button class="gf-tool gf-mini" onclick="gfGrpSecs(\''+esc(g.id)+'\')">✏️ Sections</button></div>';
+}
+function gfGroup(gid){gfGrp=gid||"kids";gfDraw();}
+function gfGrpSecs(gid){gfEdit={kind:"gsecs",id:gid,form:{gid,secs:grpSecs(gid).map(s=>({id:s.id,emoji:s.emoji||"",name:s.name||"",virtual:!!s.virtual}))}};gfDraw();}
+function grpSecsSheet(){
+  const f=gfEdit.form,g=groups().find(x=>x.id===f.gid)||{};
+  return '<div class="gf-form"><div class="gf-sub wide" style="margin:0">'+esc((g.emoji?g.emoji+" ":"")+(g.name||""))+' — these sections are for everyone in this group, every occasion. The kids keep the occasion\'s own sections.</div>'+
+    '<div class="gf-f wide"><span>Sections</span>'+f.secs.map((s,i)=>'<div style="display:flex;gap:6px;margin-top:4px"><input style="width:56px" value="'+esc(s.emoji)+'" oninput="gfSecEdit('+i+',\'emoji\',this.value)"><input value="'+esc(s.name)+'" placeholder="e.g. Stocking" oninput="gfSecEdit('+i+',\'name\',this.value)"></div>').join("")+
+    '<button class="gf-tool" style="margin-top:6px;align-self:flex-start" onclick="gfSecAdd()">＋ Section</button></div></div>';
+}
+function grpSecsSave(f){   // ONE update per section that changed, under gifts/groups/<gid>/secs/<sid>
+  const gid=f.gid,G=node("groups"),g=G[gid]=Object.assign({},G[gid]||{}),secs=g.secs=Object.assign({},g.secs||{});
+  const rows=f.secs.map(s=>({s,nm:String(s.name||"").trim().slice(0,40),em:String(s.emoji||"").trim()||"🎁"})).filter(x=>x.nm);
+  const same=(x,old)=>old&&old.name===x.nm&&old.emoji===x.em;
+  const any=rows.some(x=>!x.s.id||!same(x,x.s.virtual?GRP_GIFTS:secs[x.s.id]));   // anything new or renamed?
+  let next=Math.max(Object.keys(secs).reduce((m,k)=>Math.max(m,+(secs[k].order)||0),-1)+1,rows.some(x=>x.s.virtual)?1:0),n=0;   // 🎁 Gifts keeps 0
+  rows.forEach(x=>{
+    if(!any)return;const old=x.s.virtual?null:secs[x.s.id];if(old&&same(x,old))return;
+    const sid=x.s.id||newId2(secs,slug(x.nm)),rec={name:x.nm,emoji:x.em,order:old?(+old.order||0):x.s.virtual?0:next++};
+    secs[sid]=Object.assign({},old||{},rec);write("gifts/groups/"+gid+"/secs/"+sid,rec,"update");n++;
+  });
+  if(!Object.keys(secs).length)delete g.secs;
+  if(n)log("Sections for "+((groups().find(x=>x.id===gid)||{}).name||gid)+": "+grpSecs(gid).map(s=>s.name).join(", "));
+}
+const GRP_CSS=`
+.gf-grps{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.gf-grp{padding:8px 14px;border-radius:12px;border:1.5px solid var(--border);background:#fff;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;color:#334155}
+.gf-grp.on{background:#0f172a;color:#fff;border-color:#0f172a}
+.gf-grp.add{border-style:dashed;color:#64748b;font-size:12px}
+.gf-grpsec{display:flex;align-items:center;gap:8px;padding:2px 14px 0;font-size:11.5px;color:#64748b;font-weight:600}
+.gf-grpsec span{flex:1;min-width:0}
+`;
+Object.assign(window,{gfGroup,gfGrpSecs});
+const GRP_TEST={secsFor,grpSecs,grpTabs,cur:()=>curGrp(),set:g=>{gfGrp=g;},open:grpOpen};
+// GIFTS_GROUPS_END
+
 function gfDraw(){
   if(!gfRoot)return;
   let body;
@@ -1178,10 +1255,11 @@ const GF_CSS=`
 `;
 window.renderGifts=function(el,ah){
   if(typeof momHere==="function"&&!momHere()){el.innerHTML=(ah||"")+'<div class="gf-empty" style="padding:40px">🔒 Mom only.</div>';return;}   // the presents are a secret: no data loads without Mom
-  if(!document.getElementById("gf-style")){const s=document.createElement("style");s.id="gf-style";s.textContent=GF_CSS+RC_CSS+OCC_CSS;document.head.appendChild(s);}
+  if(!document.getElementById("gf-style")){const s=document.createElement("style");s.id="gf-style";s.textContent=GF_CSS+RC_CSS+OCC_CSS+GRP_CSS;document.head.appendChild(s);}
+  grpOpen(el);   // GIFTS_GROUPS: a fresh visit opens on 👧 Kids
   gfRoot=el;gfAh=ah||"";gfListen();gfDraw();
 };
 Object.assign(window,{gfGo,gfSelToggle,gfPick,gfBulk,gfBulkIds,gfGather,gfEveTick,gfLineAdd,gfLineTick,gfLineDel,gfLinesCopy,gfEvenEdit,gfNeed,gfStartOcc,gfPickOcc,gfOpenPerson,gfBack,gfNewItem,gfEditItem,gfMove,gfSet,gfSetDraw,gfTogglePid,gfSecBudget,gfSecEdit,gfSecAdd,gfCancel,gfSave,gfDelete,gfNext,gfNewPerson,gfEditPerson,gfBudget,gfGroupBudget,gfNewGroup,gfNewOcc,gfOccEdit});
 window._gfTest={evenData,behind,evenSet,sel:()=>gfSel,selOn:()=>gfSelOn,data:()=>gfData,setData:d=>{gfData=d||{};gfLoaded=true;},people,groups,occs,secsOf,items,personTot,groupTot,occTot,left,share,curOcc,
-  setOcc:o=>{gfOcc=o;},view:()=>gfView,edit:()=>gfEdit,draw:gfDraw,setRoot:(el,ah)=>{gfRoot=el;gfAh=ah||"";},reset:()=>{gfOcc=null;gfView="people";gfPid=null;gfEdit=null;gfRcOpen=null;gfOthersOpen=null;},rc:RC_TEST,oc:OCC_TEST};
+  setOcc:o=>{gfOcc=o;},view:()=>gfView,edit:()=>gfEdit,draw:gfDraw,setRoot:(el,ah)=>{gfRoot=el;gfAh=ah||"";},reset:()=>{gfGrp="kids";gfOcc=null;gfView="people";gfPid=null;gfEdit=null;gfRcOpen=null;gfOthersOpen=null;},rc:RC_TEST,oc:OCC_TEST,gr:GRP_TEST};
 })();
