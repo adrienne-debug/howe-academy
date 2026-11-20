@@ -4462,7 +4462,7 @@ function initFb() {
     db.ref("readingLog").on("value",s=>{ readingLog=s.val()||{}; });
     db.ref("esa").on("value",s=>{ esaData=s.val()||{}; try{ if(adminSubTab==="purchases"||(tab==="moms-plan"&&mpSubView==="purch")) renderAllSoon(); }catch(e){} });   // SCHOOLPAGES: + Mom's Day ▸ School ▸ Purchases
     db.ref("plans").on("value",s=>{ roadmapData=s.val()||{}; try{ if(tab==="moms-plan"||adminSubTab==="curriculum") renderAllSoon(); }catch(e){} });
-    db.ref("digest").on("value",s=>{ digestData=s.val()||{}; });
+    // 📋 digest/ loads when the weekly report opens (DIGESTLAZY, 2026-11-19), not at every start
     db.ref("scheduleOverrides").on("value",s=>{
       scheduleOverrides=s.val()||{};
       _soBase=_soSnap(scheduleOverrides);   // Stage 4: what this device last SAW — saves diff against it
@@ -4501,7 +4501,7 @@ function initFb() {
     });
     db.ref("together").on("value",s=>{ together=s.val()||{}; if(tab==="kids"||tab==="moms-plan") renderAllSoon(); });   // 🤝 Together — both devices follow the same session
     db.ref("mathSprints").on("value",s=>{ mathSprints=s.val()||{}; if(tab==="mastery"||tab==="schedule") renderAllSoon(); });   // 🔢 Book Sprints
-    db.ref("library/scans").on("value",s=>{ lbScansMS=s.val()||{}; if(tab==="mastery"&&typeof _mastRe==="function") _mastRe(); });   // 🔢 sprint titles (editable in the panel)
+    // 🔢 sprint titles: library/scans/<book> loads one book at a time when a sprint list is first read (SCANLAZY, 2026-11-19)
     db.ref("reviews").on("value",s=>{ reviews=s.val()||{}; try{ rvHeal(); }catch(e){} if(tab==="schedule"&&typeof renderAllSoon==="function") renderAllSoon(); });   // 📅 Review with Mom
     db.ref("brainBreaks").on("value",s=>{
       brainBreaks=s.val()||{};
@@ -4735,6 +4735,13 @@ function initFb() {
       if(tab==="pace"){const el=document.getElementById("content");if(el)renderPace(el);}
       try{ if(typeof reLoaded==="function") reLoaded("pace"); }catch(e){}   // 🧠 REVIEWENGINE: school days need the pace plans
     });
+    // 📚 CURRLIVE (2026-11-08): the curriculum is LIVE — was .once("value"). The first arrival does exactly what the once did;
+    // a later one is this device's own echo (skipped) or another device's change (the copy + a redraw, never a re-lay).
+    db.ref("curriculum").on("value",s=>{ currOnValue(s.val()); });
+    // DONEORDER (2026-11-19, her "Yes, start 3a"; REPORT_phone_battery_2026-11-09.md step 3a): curriculum/done is attached AFTER
+    // the whole-curriculum listener above. Attached first, the Firebase library asked the server for done on its own and then
+    // again inside curriculum (~90 KB twice at every start); attached after, it is served from the curriculum copy already
+    // coming down (the SDK never opens a server listen under a whole-node one). Both still fire on every change, as before.
     // Lesson-identity done records (Stage 1.3) live under curriculum/done but must stay
     // LIVE — the curriculum node itself is loaded once per device and kiosks sit open for
     // days. Kept in currData.done so every reader sees the same object.
@@ -4749,9 +4756,6 @@ function initFb() {
         }
       }catch(e){}
     });
-    // 📚 CURRLIVE (2026-11-08): the curriculum is LIVE — was .once("value"). The first arrival does exactly what the once did;
-    // a later one is this device's own echo (skipped) or another device's change (the copy + a redraw, never a re-lay).
-    db.ref("curriculum").on("value",s=>{ currOnValue(s.val()); });
     db.ref("config/helpers").on("value",s=>{ helpersOnValue(s.val()); });
     db.ref("settings/laundryTimes").on("value",s=>{ if(typeof laundryTimesOnValue==="function") laundryTimesOnValue(s.val()); });   // 🧺 LAUNDRYTIMES
     db.ref("settings/laundry").on("value",s=>{ if(typeof laundrySplitSettingsOnValue==="function") laundrySplitSettingsOnValue(s.val()); });   // 🧺 LAUNDRY_SPLIT: wetBasketMins, airDryHours
@@ -27344,10 +27348,25 @@ function digestWeekOver(){
   if(!ds.length) return false;
   return ds.every(d=>d<bbTodayKey());
 }
+// DIGESTLAZY_START — 📋 digest/ (frozen weekly reports + seen + mute, ~190 KB) loads when the weekly report opens, not at every
+// start (her "Yes, start 3a" 2026-11-19; REPORT_phone_battery_2026-11-09.md step 3a). Only History ▸ Report reads it. Until it has
+// arrived the report says Loading and nothing freezes or writes, so a frozen week is never overwritten by an empty copy.
+let _digestState=0;   // 0 never asked · 1 loading · 2 here
+function digestEnsure(){
+  if(_digestState===2) return true;
+  if(!db) return true;   // no connection object: the report works on what it has, as before
+  if(_digestState===0){
+    _digestState=1;
+    db.ref("digest").on("value",s=>{ digestData=s.val()||{}; const first=_digestState!==2; _digestState=2; if(first&&typeof renderAllSoon==="function") renderAllSoon(); });
+  }
+  return false;
+}
+// DIGESTLAZY_END
 // Archived week: return the frozen report, freezing it now if this is the first
 // Mom view since close. Current week: always computed live by the renderer.
 function digestFreezeIfNeeded(wkKey){
   if(wkKey===WK) return null;
+  if(typeof digestEnsure==="function"&&!digestEnsure()) return null;   // DIGESTLAZY: never freeze before digest/ has arrived
   const have=((digestData||{}).report||{})[wkKey];
   if(have) return have;
   if(!archive[wkKey]) return null;
@@ -27406,6 +27425,7 @@ function digestToggleKid(k){ digestKidOpen[k]=!digestKidOpen[k];
 
 function renderHistoryReport(){
   if(!momHere()) return '<div style="text-align:center;color:var(--muted);padding:40px 20px">📋 The weekly report is a Mom-only view.<br>Unlock Mom mode to read it.</div>';
+  if(typeof digestEnsure==="function"&&!digestEnsure()) return '<div style="text-align:center;color:var(--muted);padding:40px 20px">📋 Loading the weekly report…</div>';   // DIGESTLAZY
   const KC={lincoln:"#2a78d6",ellis:"#1baf7a",lucy:"#eda100",julian:"#9333ea"};
   const kName=k=>cap(k); // KIDNAME_ROSTER
   const wk=digestWkSel||WK, isCur=wk===WK;
@@ -86017,8 +86037,32 @@ const MS_SHEETS=[{k:"a1",l:"A · 1st half",goal:"Standard: at least half the pro
   {k:"b2",l:"B · 2nd half",goal:"Honors: at least a third done in 60 s, 70% of those right"}];
 function msTodayISO(){ try{ return (typeof cbTodayISO==="function")?cbTodayISO():new Date().toISOString().slice(0,10); }catch(e){ return new Date().toISOString().slice(0,10); } }
 function msBookMeta(id){ return MS_BOOKS.find(b=>b.id===id)||null; }
+// SCANLAZY_START — 🔢 Book Sprints read ONE book's lesson list, library/scans/<book> (~2 KB), when a sprint list is first read,
+// instead of all of library/scans (69 scans, ~108 KB) at every start (her "Yes, start 3a" 2026-11-19; REPORT_phone_battery_2026-11-09.md
+// step 3a). The listener stays on, so an edit from another device still arrives. Old boot listener: lbScansMS=whole node, _mastRe on Mastery.
+const _msScanOn={};
+function msScanReady(bookId){ const w=_msScanOn[String(bookId||"")]; return !!(w&&w.ready); }
+function msScanEnsure(bookId){
+  bookId=String(bookId||"");
+  if(!/^[A-Za-z0-9_-]{1,64}$/.test(bookId)||typeof db==="undefined"||!db) return Promise.resolve();
+  let w=_msScanOn[bookId]; if(w) return w.p;
+  w=_msScanOn[bookId]={ready:false,p:null};
+  w.p=new Promise(function(res){
+    try{
+      db.ref("library/scans/"+bookId).on("value",function(s){
+        const v=s.val(); if(v) lbScansMS[bookId]=v; else delete lbScansMS[bookId];
+        const first=!w.ready; w.ready=true; res();
+        if((tab==="mastery"||tab==="kids")&&typeof _mastRe==="function") _mastRe();
+        else if(first&&typeof renderAllSoon==="function") renderAllSoon();
+      },function(){ w.ready=true; res(); });
+    }catch(e){ w.ready=true; res(); }   // never take a render down with it
+  });
+  return w.p;
+}
+// SCANLAZY_END
 // → [{n,title}] from the library list "Sprint 407 · Title (p. 43)"; a missing title becomes "Sprint 407"
 function msBookList(bookId){
+  msScanEnsure(bookId);   // SCANLAZY
   const sc=(lbScansMS||{})[bookId]; const L=(sc&&Array.isArray(sc.lessons))?sc.lessons:[]; const out=[];
   L.forEach(x=>{ const m=/Sprint\s+(\d+)\s*(?:·|:|-|—)?\s*(.*)$/i.exec(String(x||"").trim()); if(m) out.push({n:+m[1],title:String(m[2]||"").replace(/\s*\(p\.[^)]*\)\s*$/,"").trim()}); });
   return out.sort((a,b)=>a.n-b.n);
@@ -86064,6 +86108,7 @@ function msTodayRuns(kid){ const st=msState(kid); if(!st||!st.log) return 0; con
 function msNextSprintN(kid,n){ const st=msState(kid); const L=msBookList(st.book); const i=L.findIndex(x=>x.n===n); return (i>=0&&i+1<L.length)?L[i+1].n:null; }
 function msSetPosition(kid,book,cur,why){
   if(!momHere()||!kid||!book) return;
+  if(!msScanReady(book)&&!(lbScansMS||{})[book]&&typeof db!=="undefined"&&db){ msScanEnsure(book).then(function(){ if(msScanReady(book)) msSetPosition(kid,book,cur,why); }); return; }   // SCANLAZY: a book not read yet loads first, so its first sprint is known (never cur:null)
   const st=(mathSprints[kid]=mathSprints[kid]||{}); const from={book:st.book||null,cur:st.cur||null};
   const L=msBookList(book); if(!cur||!L.some(x=>x.n===cur)) cur=(L[0]||{}).n||null;
   st.book=book; st.cur=cur; st.moves=st.moves||[]; const mv={at:Date.now(),ts:nowTs(),from:from,to:{book:book,cur:cur},why:why||"set by Mom"}; st.moves.push(mv);
