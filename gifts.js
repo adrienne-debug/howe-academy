@@ -34,6 +34,8 @@
 //   🎂 nudge (birthday within 30 days, no occasion yet — nothing written until she taps) · 🕰 Last time strip · 📜 Past with totals.
 // GIFTS slice 7 (kids' wish lists, plan §3.7 / §4) — see GIFTS_WISH_START: a kid's page shows their own wishes/<kid> list;
 //   💭 Add as an idea → a present with wish:"<kid>/<wid>". Nothing is ever written under wishes/ about a present (the secret).
+// GIFTS slice 5 (⏰ reminders, plan §3.6) — see GIFTS_REMIND_START: computed lines at the top of Gifts and in Home Base's 🔴 NOW
+//   (window.giftNowLines — Mom only, never a present's name). gifts/occasions/<oid>.orderBy = her "order the last presents by" date.
 // Totals are COMPUTED here, never stored (the esa.js rule). A gift for several people splits its cost evenly between them and
 // counts once for each (🤝). Every write = one set/update/remove of ONE record (+ a log line). Nothing here touches schedules.
 (function(){
@@ -371,6 +373,7 @@ function occSheet(){   // OCCFIX (2026-11-20): editing an occasion shows its Sec
   if(!gfEdit.id)h+='<div class="gf-f wide"><span>Kind</span><div class="gf-picks">'+Object.keys(GF_KINDS).map(k=>'<button class="gf-pick'+(f.kind===k?" on":"")+'" onclick="gfSetDraw(\'kind\',\''+k+'\')">'+esc(GF_KINDS[k].label)+'</button>').join("")+'</div></div>';
   h+=occForPicker(f);   // GIFTS_OCC: whose birthday
   h+=field("name","Name","e.g. a birthday 2027")+field("date","Date","","date")+field("budget","Whole budget (optional)","","money");
+  h+=remOrderField(f);   // GIFTS_REMIND: 🚚 her order-by date
   if(gfEdit.id){h+='<div class="gf-f wide"><span>Sections</span>'+f.secs.map((s,i)=>'<div style="display:flex;gap:6px;margin-top:4px"><input style="width:56px" value="'+esc(s.emoji)+'" oninput="gfSecEdit('+i+',\'emoji\',this.value)"><input value="'+esc(s.name)+'" oninput="gfSecEdit('+i+',\'name\',this.value)"></div>').join("")+
     '<button class="gf-tool" style="margin-top:6px;align-self:flex-start" onclick="gfSecAdd()">＋ Section</button></div>';
     h+='<label class="gf-f wide" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" style="width:auto"'+(f.closed?" checked":"")+' onchange="gfSet(\'closed\',this.checked)"> Done — move it to 📜 Past</label>';}
@@ -471,6 +474,7 @@ function gfSave(){
     if(!id){gfEdit=null;gfStartOcc(f.kind||"other",name,f.date||"",occExtra(f));return;}   // GIFTS_OCC: for + budget in the ONE set
     const up={name,date:f.date||"",budget:num(f.budget),closed:f.closed?true:null};
     if(f.kind==="birthday")up.for=f.for||null;   // GIFTS_OCC
+    if(f.orderBy!==undefined)up.orderBy=isIso(f.orderBy)?f.orderBy:null;   // GIFTS_REMIND: in the same ONE update
     const o=gfData.occasions[id];Object.keys(up).forEach(k=>{if(up[k]==null)delete o[k];else o[k]=up[k];});write("gifts/occasions/"+id,up,"update");
     const secs=o.secs=o.secs||{};let nextOrder=Object.keys(secs).reduce((m,k)=>Math.max(m,+(secs[k].order)||0),-1)+1;
     f.secs.forEach((s,i)=>{const nm=String(s.name||"").trim();if(!nm)return;const sid=s.id||newId2(secs,slug(nm));const rec={name:nm,emoji:String(s.emoji||"").trim()||"🎁",order:s.id?((secs[s.id]||{}).order||0):nextOrder++};
@@ -518,7 +522,7 @@ function gfGroupBudget(gid){const oid=curOcc(),p=plan(oid,"g_"+gid),g=groups().f
   gfEdit={kind:"budget",id:"g_"+gid,form:{occ:oid,key:"g_"+gid,label:g.name||gid,budget:p.budget==null?"":String(p.budget),secs:null}};gfDraw();}
 function gfNewGroup(){gfEdit={kind:"group",id:null,form:{name:"",emoji:"👥"}};gfDraw();}
 function gfNewOcc(){gfEdit={kind:"occ",id:null,form:{kind:"birthday",name:"",date:"",budget:"",autoName:true}};gfSetDraw("kind","birthday");}
-function gfOccEdit(){const o=occ(curOcc());if(!o)return;gfEdit={kind:"occ",id:o.id,form:{kind:o.kind||"other",for:o.for||null,name:o.name||"",date:o.date||"",budget:o.budget==null?"":String(o.budget),closed:!!o.closed,secs:secsOf(o).map(s=>({id:s.id,emoji:s.emoji||"",name:s.name||""}))}};gfDraw();}
+function gfOccEdit(){const o=occ(curOcc());if(!o)return;gfEdit={kind:"occ",id:o.id,form:{kind:o.kind||"other",for:o.for||null,name:o.name||"",date:o.date||"",budget:o.budget==null?"":String(o.budget),orderBy:o.orderBy||"",closed:!!o.closed,secs:secsOf(o).map(s=>({id:s.id,emoji:s.emoji||"",name:s.name||""}))}};gfDraw();}
 
 // GIFTS_WISH_START — 💌 a kid's own wish list on their page, slice 7 (her answer "Kids' wish lists → yes, later" + her yes to
 // building it, 2026-11-20; plan §3.7 + §4 slice 7: "Mom sees them as 💭 ideas on that kid's page. The kid's list never shows what
@@ -948,6 +952,119 @@ Object.assign(window,{gfBdayStart,gfOccFor,gfOthers});
 const OCC_TEST={nextBday,nudges,pastGifts,occStar,bdayName,pastLabel,othersOpen:()=>gfOthersOpen};
 // GIFTS_OCC_END
 
+// GIFTS_REMIND_START — ⏰ Reminders, slice 5 (plan §3.6 "Reminders (inside Mom's Day only)" + §4 slice 5: "⏰ return windows (and
+// early buys whose window ends before the 25th) · 📦 late orders · 🚚 order-by date · 🎀 left to wrap · 🔎 Jan 2 'never marked given'
+// — on the Budget tab and in 🔴 NOW on Home Base"). Computed from the presents + receipts every time, never stored. Each reminder is
+// {kind, text, n, view, occ}; a tap opens that view on that occasion.
+//   🌙 eve     Christmas Eve from 5 PM: time to gather → 🌙 Eve
+//   ⏰ return  a present's return window (its own returnBy, else its receipt's) closes within 7 days; a receipt with no present on it
+//              counts on its own · given / returned / dropped presents never nag → 🧾 Receipts
+//   📦 late    ordered presents past their 📦 coming-by date ("3 orders should have come by now") → 📦 Coming
+//   🚚 orderby from 7 days before the occasion's order-by date: "Order the last presents by Tue Dec 15 — N ideas not bought yet" → 🛍 Shop.
+//              The date is hers: gifts/occasions/<oid>.orderBy, set on ✏️ (Christmas with none = Dec 15; USPS Ground's 2025 cut-off
+//              was Dec 17, so Dec 15 leaves two days' room)
+//   🎀 wrap    the 7 days before an occasion: presents here and not wrapped → 🎀 To wrap
+//   ⏰ early   bought early: a return window that ends BEFORE the occasion (plan §3.6 "anything bought before November gets a nudge if
+//              its normal return window ends before the 25th") — once it's 7 days off it moves to the ⏰ return line → 🧾 Receipts
+//   🔎 hidden  Jan 2–10 after a Christmas: presents bought but never marked given — "still hidden?" (55% of parents find one later) → 📍 Where
+// The SAME lines show at the top of Gifts and in 🔴 NOW on Mom's Day ▸ 🏡 Home Base: index.html never reads gifts/ itself (plan §3.7) —
+// it asks window.giftNowLines(), which answers [] for anyone but Mom and on Dad's TV (?kiosk=dad), starts the gifts/ listener only for
+// Mom, answers [] until gifts/ is in, then asks Home Base to repaint ONCE (giftNowRepaint, index.html's GIFTS block).
+// SECRET: a line says "presents", never a present's name or who it's for — Home Base can be seen by a kid walking by. Names stay
+// inside Gifts. Her rule 2026-11-20 ("reword the santa section in case a kid sees it … so the reminders don't pop up saying it"):
+// no reminder ever names a section either (no "Santa") — only counts and neutral words (presents, orders, ideas, to wrap).
+// Data: only gifts/occasions/<oid>.orderBy, inside the occasion sheet's ONE update.
+const REM_DAYS=7, REM_EVE_HOUR=17, REM_ORDER_BY="12-15";
+const REM_KINDS=["eve","return","late","orderby","wrap","early","hidden"];   // most urgent first
+const REM_WD=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"], REM_MO=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+let gfNowWant=false;   // Home Base asked for its lines → repaint it once when gifts/ first arrives
+function isIso(v){return /^\d{4}-\d{2}-\d{2}$/.test(String(v||""));}
+function dayDiff(a,b){return Math.round((new Date(String(b)+"T12:00:00")-new Date(String(a)+"T12:00:00"))/864e5);}
+function addDays(iso,n){const d=new Date(String(iso)+"T12:00:00");d.setDate(d.getDate()+n);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+function remDate(iso){const d=new Date(String(iso)+"T12:00:00");return isNaN(d)?String(iso):REM_WD[d.getDay()]+" "+REM_MO[d.getMonth()]+" "+d.getDate();}
+function remWhen(t,iso){const d=dayDiff(t,iso);return d===0?"today":d===1?"tomorrow":remDate(iso);}
+function plural(n,w){return n+" "+w+(n===1?"":"s");}
+function occWord(o){return o.kind==="christmas"?"Christmas":o.kind==="birthday"?"the birthday":o.kind==="easter"?"Easter":"the day";}   // never the occasion's own name on Home Base
+function orderByOf(o){if(!o)return "";if(isIso(o.orderBy))return o.orderBy;return o.kind==="christmas"&&isIso(o.date)?o.date.slice(0,4)+"-"+REM_ORDER_BY:"";}
+function retBy(it){if(isIso(it.returnBy))return it.returnBy;const r=it.rcpt&&(gfData.receipts||{})[it.rcpt];return r&&isIso(r.returnBy)?r.returnBy:"";}
+function bareRcpts(oid){   // receipts for this occasion that no present came from (she typed just the total) — their window still matters
+  const R=gfData.receipts||{},I=gfData.items||{};
+  return Object.keys(R).map(id=>Object.assign({id},R[id])).filter(r=>r.occ===oid&&isIso(r.returnBy)&&!(r.lines||[]).some(l=>l&&l.item&&I[l.item])&&!Object.keys(I).some(k=>I[k].rcpt===r.id));
+}
+function giftReminders(t,hour){
+  t=isIso(t)?t:today();if(hour==null)hour=new Date().getHours();
+  const out=[],byOcc={},md=t.slice(5);
+  items().forEach(it=>{(byOcc[it.occ]=byOcc[it.occ]||[]).push(it);});
+  const add=(kind,o,n,view,text)=>{out.push({kind,text,n,view,occ:o.id,occName:o.name||"",date:o.date||""});};
+  occs().forEach(o=>{
+    const L=(byOcc[o.id]||[]).filter(live),open=!o.closed,dd=isIso(o.date)?dayDiff(t,o.date):null,word=occWord(o);
+    const unGiven=L.filter(it=>(it.status||"idea")!=="given"),inHouse=L.filter(it=>it.status==="here"||it.status==="wrapped");
+    // 🌙 Christmas Eve, from 5 PM
+    if(open&&o.kind==="christmas"&&dd===1&&hour>=REM_EVE_HOUR&&L.length)add("eve",o,inHouse.length,"eve","🌙 Time to gather"+(inHouse.length?" — "+plural(inHouse.length,"present")+" to set out":"")+" · open 🌙 Eve");
+    // ⏰ a return window closes within 7 days
+    const soon=unGiven.filter(it=>it.status!=="idea"&&retBy(it)&&dayDiff(t,retBy(it))>=0&&dayDiff(t,retBy(it))<=REM_DAYS);
+    const bare=bareRcpts(o.id).filter(r=>dayDiff(t,r.returnBy)>=0&&dayDiff(t,r.returnBy)<=REM_DAYS);
+    if(soon.length||bare.length){
+      const n=soon.length+bare.length,first=soon.map(retBy).concat(bare.map(r=>r.returnBy)).sort()[0];
+      const what=[soon.length?plural(soon.length,"present"):"",bare.length?plural(bare.length,"receipt"):""].filter(Boolean).join(" and ");
+      add("return",o,n,"receipts",n===1?"⏰ The return window for "+what+" closes "+remWhen(t,first):"⏰ Return windows close this week for "+what+" — the first "+remWhen(t,first));
+    }
+    // 📦 ordered and should be here by now
+    const late=L.filter(it=>it.status==="ordered"&&isIso(it.due)&&it.due<t);
+    if(late.length)add("late",o,late.length,"coming","📦 "+plural(late.length,"order")+" should have come by now");
+    // 🚚 her order-by date, from 7 days before it
+    const ob=orderByOf(o),dob=ob?dayDiff(t,ob):null,ideasLeft=L.filter(it=>(it.status||"idea")==="idea");
+    if(open&&ob&&dob>=0&&dob<=REM_DAYS&&(dd==null||dd>=0)&&ideasLeft.length)
+      add("orderby",o,ideasLeft.length,"shop","🚚 Order the last presents by "+remWhen(t,ob)+" — "+plural(ideasLeft.length,"idea")+" not bought yet");
+    // 🎀 the week of: still to wrap
+    const toWrap=L.filter(it=>it.status==="here");
+    if(open&&dd!=null&&dd>=0&&dd<=REM_DAYS&&toWrap.length)
+      add("wrap",o,toWrap.length,"wrap","🎀 "+plural(toWrap.length,"present")+" still to wrap — "+word+(dd===0?" is today":dd===1?" is tomorrow":" in "+dd+" days"));
+    // ⏰ bought early: the window ends before the day (and isn't this week's ⏰ line yet)
+    const early=open&&dd!=null&&dd>0?unGiven.filter(it=>{const r=retBy(it);return it.status!=="idea"&&r&&r<o.date&&dayDiff(t,r)>REM_DAYS;}):[];
+    if(early.length){const first=early.map(retBy).sort()[0];
+      add("early",o,early.length,"receipts",early.length===1?"⏰ 1 present's return window ends "+remDate(first)+" — before "+word:"⏰ "+early.length+" presents' return windows end before "+word+" — the first "+remDate(first));}
+    // 🔎 Jan 2–10 after Christmas: bought, never marked given
+    if(o.kind==="christmas"&&isIso(o.date)&&o.date<t&&md>="01-02"&&md<="01-10"&&+t.slice(0,4)===+o.date.slice(0,4)+1&&inHouse.length)
+      add("hidden",o,inHouse.length,"where","🔎 "+plural(inHouse.length,"present")+" never got marked given — still hidden?");
+  });
+  return out.sort((a,b)=>REM_KINDS.indexOf(a.kind)-REM_KINDS.indexOf(b.kind)||String(a.date).localeCompare(String(b.date)));
+}
+function giftNowLines(){   // 🔴 NOW on Home Base — Mom only, never Dad's TV; [] until gifts/ is in
+  try{if(typeof momHere!=="function"||!momHere())return [];if(typeof _kioskD==="function"&&_kioskD())return [];}catch(e){return [];}
+  gfNowWant=true;gfListen();if(!gfLoaded)return [];
+  return giftReminders(today()).map(r=>({kind:r.kind,text:r.text,n:r.n,view:r.view,occ:r.occ}));   // no occasion name, no present names
+}
+function nowRepaint(){if(!gfNowWant)return;try{if(typeof giftNowRepaint==="function")giftNowRepaint();}catch(e){}}
+function gfRemGo(view,oid,quiet){   // a reminder tapped (here, or on Home Base with quiet = index.html opens Gifts itself)
+  if(oid&&occ(oid)){gfOcc=oid;try{HA_LS.setItem("ha_gf_occ",oid);}catch(e){}}
+  gfView=GF_VIEWS.some(v=>v[0]===view)?view:"people";gfSelOn=false;gfSel={};gfEdit=null;
+  if(!quiet){gfDraw();try{window.scrollTo(0,0);}catch(e){}}
+}
+function remCard(){   // top of the Gifts page, above the occasions + views
+  if(!gfLoaded)return "";const R=giftReminders(today());if(!R.length)return "";
+  if(typeof document!=="undefined"&&document.getElementById&&!document.getElementById("gf-rem-style")){try{const s=document.createElement("style");s.id="gf-rem-style";s.textContent=REM_CSS;document.head.appendChild(s);}catch(e){}}
+  const many=occs().filter(o=>!o.closed).length>1,cur=curOcc();
+  return '<div class="gf-card gf-rem"><div class="gf-bd">'+R.map(r=>'<button class="gf-remrow'+(r.view===gfView&&r.occ===cur?" on":"")+'" onclick="gfRemGo(\''+esc(r.view)+'\',\''+esc(r.occ)+'\')"><span class="gf-pn">'+esc(r.text)+
+    (many||r.occ!==cur?'<span class="gf-pc">'+esc(r.occName)+'</span>':'')+'</span><span class="gf-remgo">›</span></button>').join("")+'</div></div>';
+}
+function remOrderField(f){   // ✏️ occasion (gfEdit.id — the form itself has no id): her own order-by date (Christmas with none = Dec 15)
+  if(!gfEdit||!gfEdit.id)return "";const def=f.kind==="christmas"&&isIso(f.date)?f.date.slice(0,4)+"-"+REM_ORDER_BY:"";
+  return field("orderBy","🚚 Order the last presents by"+(def?" (empty = "+shortDate(def)+")":""),"","date");
+}
+const REM_CSS=`
+.gf-rem{border:2px solid #fcd34d;box-shadow:none}
+.gf-rem .gf-bd{padding:4px 12px}
+.gf-remrow{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:none;border-top:1px solid #fef3c7;padding:8px 0;cursor:pointer;font:inherit;color:inherit}
+.gf-remrow:first-child{border-top:none}
+.gf-remrow .gf-pn{font-size:13px;font-weight:700}
+.gf-remrow.on .gf-pn{color:#92400e}
+.gf-remgo{font-size:18px;font-weight:800;color:#b45309}
+`;
+Object.assign(window,{gfRemGo,giftNowLines,giftReminders});
+window._gfRemTest={giftReminders,orderByOf,retBy,remDate,nowWant:()=>gfNowWant,setNowWant:v=>{gfNowWant=!!v;},setLoaded:v=>{gfLoaded=!!v;},on:()=>gfOn,setOn:v=>{gfOn=!!v;}};
+// GIFTS_REMIND_END
+
 function gfDraw(){
   if(!gfRoot)return;
   let body;
@@ -955,6 +1072,7 @@ function gfDraw(){
   else{const oid=curOcc(),o=oid&&occ(oid);
     const V={even:evenView,wrap:wrapView,where:whereView,coming:comingView,shop:shopView,closet:closetView,eve:eveView,receipts:rcptView};
     body=(!o||gfView==="people"?bdayNudges():"")+   // GIFTS_OCC: 🎂 at the top of Gifts
+      remCard()+   // GIFTS_REMIND: ⏰ reminders above the occasions + views
       (o?occBar()+viewNav()+(gfView==="person"&&gfPid?personView(o,gfPid):V[gfView]?V[gfView](o):peopleView(o)):emptyView());}
   // SHEETSCROLL (her report 2026-11-20, adding a receipt: "every time I click something, it jumps it back up to the top"): every tap
   // redraws the page AND the open pop-up, and a fresh pop-up starts scrolled to the top. Keep the pop-up's place when the SAME pop-up
@@ -979,7 +1097,8 @@ function gfDraw(){
 function gfListen(){
   if(gfOn)return;gfOn=true;
   if(typeof db==="undefined"||!db){gfLoaded=true;return;}
-  db.ref("gifts").on("value",s=>{gfData=s.val()||{};gfLoaded=true;try{if(typeof tab!=="undefined"&&tab==="moms-plan"&&typeof mpSubView!=="undefined"&&mpSubView==="gifts"&&!gfEdit)gfDraw();}catch(e){}});
+  db.ref("gifts").on("value",s=>{const first=!gfLoaded;gfData=s.val()||{};gfLoaded=true;try{if(typeof tab!=="undefined"&&tab==="moms-plan"&&typeof mpSubView!=="undefined"&&mpSubView==="gifts"&&!gfEdit)gfDraw();}catch(e){}
+    if(first)nowRepaint();});   // GIFTS_REMIND: Home Base asked before gifts/ was in → its 🔴 NOW lines, once
 }
 const GF_CSS=`
 .gf-wrap{padding:10px 12px 40px;max-width:760px;margin:0 auto;font-family:'DM Sans',sans-serif}
