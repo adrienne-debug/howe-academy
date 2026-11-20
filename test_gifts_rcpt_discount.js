@@ -69,11 +69,15 @@ console.log("\n# her Woot order (2026-11-20): subtotal 150.72 · Prime discount 
   ok("everything adds back to the receipt's 64.48", Math.round(paid.reduce((a, b) => a + b, 0) * 100) === 6448, paid);
   const h = root.innerHTML;
   ok("check screen: Order discount field, '− $10.95 off' on the Venator, ✓ adds up to the receipt", /Order discount \$/.test(h) && /− \$10\.95 off/.test(h) && /✓ Items \$150\.72 − \$90\.46 off \+ \$4\.22 tax = \$64\.48 — matches the receipt/.test(h), (h.match(/[✓⚠] Items[^<]*/) || [])[0]);
+  ok("RCPTNET: the Venator's line spells out $18.24 − $10.95 off + $0.51 tax = $7.80 before Save", /<span>\$18\.24<\/span><span[^>]*>− \$10\.95 off<\/span><button[^>]*>\+ \$0\.51 tax<\/button><span class="gf-rcnet">= \$7\.80<\/span>/.test(h), (h.match(/<span>\$18\.24<\/span>.{0,300}/) || [])[0]);
+  ok("…and each domino set shows its real cost (= $13.27 or $13.26)", (h.match(/<span class="gf-rcnet">= \$13\.2[67]<\/span>/g) || []).length === 3);
   W.gfRcPid(0, "k_lucy"); [1, 2, 3, 4, 5].forEach(i => W.gfRcNog(i));
   writes.length = 0; W.gfSave();
   const v = writes.find(w => w.op === "set" && /^gifts\/items\//.test(w.path)).val;
   ok("the Venator present saves paid 7.80, disc 10.95, tax 0.51", v.paid === 7.8 && v.disc === 10.95 && v.tax === 0.51, v);
   const rc = writes.find(w => w.op === "set" && /^gifts\/receipts\//.test(w.path)).val;
+  T.draw();   // Save leaves the 🧾 list open on the receipt it just saved
+  ok("RCPTNET: the 🧾 list leads with the real cost — $7.80 ($18.24 − $10.95 off + $0.51 tax)", /\$7\.80<small> \(\$18\.24 − \$10\.95 off \+ \$0\.51 tax\)<\/small>/.test(root.innerHTML));
   ok("the receipt keeps discount 90.46, tax 4.22, total 64.48, and each line's discount", rc.discount === 90.46 && rc.tax === 4.22 && rc.total === 64.48 && rc.lines[0].disc === 10.95);
 }
 

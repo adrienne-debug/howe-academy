@@ -649,6 +649,8 @@ function rcRow(oid,t,p){const S=secsOf(occ(oid));return {t:t||"",p:p==null?"":St
 //    shared on what each line cost after its discount;  a present's paid = price − its discount share + its tax share.
 //  · "N @ $X" read as $X for the whole line: when the prices only add up to the printed subtotal as each × N, they are each × N.
 //  · the check screen adds it up — items − discount + tax — against the receipt's total: ✓ when it matches, ⚠ when it doesn't.
+// RCPTNET (her ask 2026-11-20: "id rather see the real number i think other families will be confused"): each line on the check
+// screen spells out "$17.99 − $10.80 off + $0.50 tax = $7.69" before Save, and the 🧾 list leads with what each line really cost.
 function rcShares(rows,amt,on,base){   // share a cents amount across rows by weight (base cents), leftover cents to the nearest-next
   const T=Math.round((num(amt)||0)*100),out=rows.map(()=>0);if(!T)return out;const sum=base.reduce((a,b,i)=>a+(on[i]?b:0),0);if(!sum)return out;
   const fr=[];let given=0;rows.forEach((r,i)=>{if(!on[i])return;const x=T*base[i]/sum;out[i]=Math.floor(x);given+=out[i];fr.push([x-out[i],i]);});
@@ -761,7 +763,8 @@ function rcptSheet(){
     const idea=r.idea&&(gfData.items||{})[r.idea];
     h+='<div class="gf-rcrow'+(r.nog?" nog":"")+'"><div style="display:flex;gap:6px;align-items:center"><input class="gf-in" value="'+esc(r.t)+'" placeholder="What is it?" oninput="gfRcSet('+i+',\'t\',this.value)">'+
       '<input class="gf-in" style="flex:none;width:76px" inputmode="decimal" value="'+esc(r.p)+'" placeholder="$" oninput="gfRcSet('+i+',\'p\',this.value)" onchange="gfRcRedraw()"><button class="gf-tool gf-mini" title="Take this line off" onclick="gfRcDel('+i+')">✕</button></div>';
-    if(r.of||anyTax||anyDisc)h+='<div class="gf-im" style="margin-top:0">'+(r.of?chip("×"+r.of.split(" of ")[1]+" · "+r.of,"#0e7490"):'')+(anyDisc&&dsh[i]?chip("− "+money(dsh[i])+" off","#15803d"):'')+(anyTax?'<button class="gf-pick" style="padding:2px 9px;font-size:11px" onclick="gfRcTaxed('+i+')">'+(shares[i]?'+ '+money(shares[i])+' tax':'no tax')+'</button>':'')+'</div>';   // RCPTTAX
+    const pn=num(r.p),net=pn==null?null:Math.round((pn-(dsh[i]||0)+(shares[i]||0))*100)/100;   // RCPTNET: the real cost, shown before Save
+    if(r.of||anyTax||anyDisc)h+='<div class="gf-im" style="margin-top:0">'+(r.of?chip("×"+r.of.split(" of ")[1]+" · "+r.of,"#0e7490"):'')+(pn!=null&&(anyDisc||anyTax)?'<span>'+money(pn)+'</span>':'')+(anyDisc&&dsh[i]?'<span style="color:#15803d;font-weight:700">− '+money(dsh[i])+' off</span>':'')+(anyTax?'<button class="gf-pick" style="padding:2px 9px;font-size:11px" onclick="gfRcTaxed('+i+')">'+(shares[i]?'+ '+money(shares[i])+' tax':'no tax')+'</button>':'')+(net!=null&&(anyDisc||anyTax)?'<span class="gf-rcnet">= '+money(net)+'</span>':'')+'</div>';   // RCPTTAX · RCPTDISC · RCPTNET
     if(idea)h+='<button class="gf-tick'+(r.useIdea?" on":"")+'" onclick="gfRcUseIdea('+i+')"><span class="gf-box">'+(r.useIdea?'✓':'')+'</span><span>💭 That\'s your idea <b>'+esc(idea.name)+'</b>'+(pidsOf(idea).length?' ('+esc(names(pidsOf(idea)))+')':'')+' — mark it bought</span></button>';
     if(!(r.useIdea&&idea)){
       h+='<div class="gf-picks">';groups().forEach(g=>{people().filter(p=>(p.group||"other")===g.id).forEach(p=>{const on=r.pids.indexOf(p.id)>=0;
@@ -830,7 +833,7 @@ function rcptView(o){
       '<span class="gf-amt">'+(r.total!=null?money(r.total):'—')+'</span></button>';
     if(on){h+='<div class="gf-bd">'+rcptPhotos(r)+(r.lines||[]).map(l=>{const it=l&&l.item&&I[l.item];if(!l)return "";
         const where=it?(pidsOf(it).length?names(pidsOf(it)):"🗄 no one yet")+(((o.secs||{})[it.sec]||{}).name?" · "+((o.secs||{})[it.sec].emoji||"")+" "+o.secs[it.sec].name:""):(l.item?"present deleted":"✕ not a gift");
-        return '<div class="gf-rcline">'+(it?'<button class="gf-ib" onclick="gfEditItem(\''+esc(l.item)+'\')"><b>'+esc(l.t)+'</b>':'<span style="flex:1;color:#94a3b8">'+esc(l.t))+'<span class="gf-pc">'+esc(where)+'</span>'+(it?'</button>':'</span>')+'<span class="gf-amt">'+(l.p!=null?money(l.p):'')+(l.disc?'<small> − '+money(l.disc)+' off</small>':'')+(l.tax?'<small> + '+money(l.tax)+' tax</small>':'')+'</span></div>';}).join("")+'</div>';}
+        return '<div class="gf-rcline">'+(it?'<button class="gf-ib" onclick="gfEditItem(\''+esc(l.item)+'\')"><b>'+esc(l.t)+'</b>':'<span style="flex:1;color:#94a3b8">'+esc(l.t))+'<span class="gf-pc">'+esc(where)+'</span>'+(it?'</button>':'</span>')+'<span class="gf-amt">'+(l.p!=null&&(l.disc||l.tax)?money(Math.round((l.p-(l.disc||0)+(l.tax||0))*100)/100)+'<small> ('+money(l.p)+(l.disc?' − '+money(l.disc)+' off':'')+(l.tax?' + '+money(l.tax)+' tax':'')+')</small>':(l.p!=null?money(l.p):''))+'</span></div>';}).join("")+'</div>';}
     h+='</div>';});
   return h;
 }
@@ -848,6 +851,7 @@ const RC_CSS=`
 .gf-rcrow .gf-tick.on span:last-child{color:#0f172a;text-decoration:none}
 .gf-rcbig{display:flex;flex-direction:column;gap:8px;margin:4px 0 8px}
 .gf-rcbig img{width:100%;border-radius:8px;border:1px solid #e2e8f0}
+.gf-rcnet{font-weight:900;color:#0f172a;font-size:12.5px}
 .gf-rcline{display:flex;align-items:center;gap:8px;border-top:1px solid #f1f5f9;padding:7px 0;font-size:13px}
 .gf-rcline .gf-pc{display:block;font-weight:500;font-size:11.5px;color:#64748b}
 `;
