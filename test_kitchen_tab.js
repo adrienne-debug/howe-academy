@@ -26,7 +26,7 @@ function world(o){
 
 console.log("── the menu row ──");
 { const w=world(); const h=w.api.mpSubnav('plan');
-  ok("six tabs: Home Base · Schedule · Household · 🍳 Kitchen · 🎓 School · ❤️ Health", /mpGoto\('plan'\)[^>]*>🏡 Home Base<\/button><button onclick="mpGoto\('cal'\)[^>]*>🗓 Schedule<\/button><button onclick="mpGoto\('house'\)[^>]*>🧹 Household<\/button><button onclick="mpGoto\(mpKitchenLast\(\)\)"[^>]*>🍳 Kitchen<\/button><button onclick="mpSchoolOpen\(mpSchoolLast\(\)\)"[^>]*>🎓 School<\/button><button onclick="mpGoto\('weigh'\)[^>]*>❤️ Health<\/button>/.test(h));
+  ok("seven tabs: Home Base · Schedule · Household · 🍳 Kitchen · 🎓 School · 💰 Budget (GIFTS 2026-11-20) · ❤️ Health", /mpGoto\('plan'\)[^>]*>🏡 Home Base<\/button><button onclick="mpGoto\('cal'\)[^>]*>🗓 Schedule<\/button><button onclick="mpGoto\('house'\)[^>]*>🧹 Household<\/button><button onclick="mpGoto\(mpKitchenLast\(\)\)"[^>]*>🍳 Kitchen<\/button><button onclick="mpSchoolOpen\(mpSchoolLast\(\)\)"[^>]*>🎓 School<\/button><button onclick="mpGoto\('gifts'\)"[^>]*>💰 Budget<\/button><button onclick="mpGoto\('weigh'\)[^>]*>❤️ Health<\/button>/.test(h));
   ok("Meals / Shopping List / Prep are no longer on the menu row", !/mpGoto\('meals'\)|mpGoto\('grocery'\)|mpGoto\('prep'\)/.test(h));
   ok("no Kitchen sub-row on Home Base", h.indexOf("mp-kitchen-row")<0);
   ok("Kitchen is grey there (not the lit tab)", /🍳 Kitchen/.test(h)&&/color:#9ca3af;background:transparent[^>]*>🍳 Kitchen/.test(h));
