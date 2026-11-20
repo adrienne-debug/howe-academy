@@ -32,6 +32,8 @@
 //   gifts/occasions/<oid>.for = <pid>   a birthday is about ONE person (their People view puts them first; everyone else folds away)
 //   gifts/people/<pid>.sizes            "shirt 8 · pants 8 slim · shoe 1Y", shown on their page
 //   🎂 nudge (birthday within 30 days, no occasion yet — nothing written until she taps) · 🕰 Last time strip · 📜 Past with totals.
+// GIFTS slice 7 (kids' wish lists, plan §3.7 / §4) — see GIFTS_WISH_START: a kid's page shows their own wishes/<kid> list;
+//   💭 Add as an idea → a present with wish:"<kid>/<wid>". Nothing is ever written under wishes/ about a present (the secret).
 // Totals are COMPUTED here, never stored (the esa.js rule). A gift for several people splits its cost evenly between them and
 // counts once for each (🤝). Every write = one set/update/remove of ONE record (+ a log line). Nothing here touches schedules.
 (function(){
@@ -189,6 +191,7 @@ function personView(o,pid){
     (p.sizes?'<div class="gf-line">👕 '+esc(p.sizes)+'</div>':'')+   // GIFTS_OCC
     '<div style="margin-top:6px"><button class="gf-tool" onclick="gfBudget(\''+esc(pid)+'\')">💲 Budget</button></div></div></div>';
   h+=lastTime(o,pid);   // GIFTS_OCC: 🕰 what they got before
+  h+=wishCard(o,pid);   // GIFTS_WISH: 💌 a kid's own wish list
   const known=S.map(s=>s.id);
   S.concat(mine.some(it=>known.indexOf(it.sec)<0)?[{id:"",emoji:"📦",name:"No section"}]:[]).forEach(s=>{
     const L=mine.filter(it=>s.id?it.sec===s.id:known.indexOf(it.sec)<0),ST=s.id?personTot(o.id,pid,s.id):null;
@@ -432,6 +435,7 @@ function gfSave(){
     const nd={};if(f.needs&&f.needs.batt)nd.batt=String(f.batt||"").trim()||true;if(f.needs&&f.needs.build)nd.build=true;if(f.needs&&f.needs.charge)nd.charge=true;if(Object.keys(nd).length)rec.needs=nd;
     ["plan","paid"].forEach(k=>{const v=num(f[k]);if(v!=null)rec[k]=v;});
     if(!rec.pids.length)delete rec.pids;
+    if(!id&&f.wish)rec.wish=f.wish;   // GIFTS_WISH: the kid's wish it came from ("<kid>/<wid>")
     const iid=id||uid();node("items")[iid]=rec;write("gifts/items/"+iid,rec,"set");
     log((id?"Edited: ":"Added: ")+name+" → "+names(f.pids)+(rec.paid!=null?" "+money(rec.paid):""));
   }else if(kind==="rcpt"){if(!rcptSave())return;   // GIFTS_RCPT
@@ -514,6 +518,80 @@ function gfGroupBudget(gid){const oid=curOcc(),p=plan(oid,"g_"+gid),g=groups().f
 function gfNewGroup(){gfEdit={kind:"group",id:null,form:{name:"",emoji:"👥"}};gfDraw();}
 function gfNewOcc(){gfEdit={kind:"occ",id:null,form:{kind:"birthday",name:"",date:"",budget:"",autoName:true}};gfSetDraw("kind","birthday");}
 function gfOccEdit(){const o=occ(curOcc());if(!o)return;gfEdit={kind:"occ",id:o.id,form:{kind:o.kind||"other",for:o.for||null,name:o.name||"",date:o.date||"",budget:o.budget==null?"":String(o.budget),closed:!!o.closed,secs:secsOf(o).map(s=>({id:s.id,emoji:s.emoji||"",name:s.name||""}))}};gfDraw();}
+
+// GIFTS_WISH_START — 💌 a kid's own wish list on their page, slice 7 (her answer "Kids' wish lists → yes, later" + her yes to
+// building it, 2026-11-20; plan §3.7 + §4 slice 7: "Mom sees them as 💭 ideas on that kid's page. The kid's list never shows what
+// was bought."). The kids write wishes/<kid>/<wid> {text?, stars?, hasPhoto?, ts} from Kids' Corner (wishes.js); the picture is
+// wishPhotos/<kid>/<wid>, read here only when she taps it. Mom only (this file only runs for Mom inside Mom's Day):
+//   · "💌 Their wish list" card on a kid's page — words, ⭐s, 🖼 picture on tap, newest first
+//   · 💭 Add as an idea → the normal new-present sheet, prefilled (the wish's words, for that kid, this occasion); the present it
+//     makes keeps wish:"<kid>/<wid>" (gifts/items, ONE set as always) and the wish then shows "✓ on your list" — HERE only.
+//   · ✕ Remove → one multi-path remove of the wish + its photo (it goes off the kid's list too — she's asked first).
+// THE SECRET: nothing about a present is ever written under wishes/ — the kid's list can't change because of what she did here.
+let gfWishes={}, gfWishOn=false, gfWishLoaded=false, gfWishPic=null, gfWishAll={};   // all kids' wishes · the picture open (kid/wid) · kids whose whole list is unfolded
+const gfWishPh={};   // "kid/wid" → dataURL | "loading" | "err"
+const WISH_SHOW=5;
+function wishListen(){
+  if(gfWishOn)return;gfWishOn=true;
+  if(typeof db==="undefined"||!db){gfWishLoaded=true;return;}
+  db.ref("wishes").on("value",s=>{gfWishes=s.val()||{};gfWishLoaded=true;if(gfView==="person"&&!gfEdit)gfDraw();});
+}
+function wishesOf(kid){const o=(gfWishes||{})[kid]||{};return Object.keys(o).filter(w=>o[w]&&typeof o[w]==="object").map(w=>Object.assign({id:w},o[w])).sort((a,b)=>(b.ts||0)-(a.ts||0));}
+function wishLinked(kid,wid){const key=kid+"/"+wid;return items().filter(it=>it.wish===key&&live(it));}   // any occasion
+function wishStyle(){if(typeof document==="undefined"||document.getElementById("gf-wish-style"))return;const s=document.createElement("style");s.id="gf-wish-style";s.textContent=WISH_CSS;document.head.appendChild(s);}
+function wishRow(kid,w){
+  const key=kid+"/"+w.id,L=wishLinked(kid,w.id),on=gfWishPic===key,P=gfWishPh[key];
+  const when=w.ts?new Date(w.ts).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"";
+  let h='<div class="gf-wish"><div class="gf-wrow">'+(w.hasPhoto?'<button class="gf-wpic" title="See the picture" onclick="gfWishPicShow(\''+esc(kid)+'\',\''+esc(w.id)+'\')">🖼</button>':'')+
+    '<span class="gf-pn">'+(w.text?esc(w.text):'<i style="font-weight:600;color:#64748b">a picture</i>')+'<span class="gf-pc">'+(w.stars?"⭐".repeat(Math.min(3,+w.stars||0))+" · ":"")+esc(when)+'</span></span>'+
+    (L.length?chip("✓ on your list · "+st(L[0].status)[1],"#16a34a"):'<button class="gf-tool gf-mini" onclick="gfWishAdd(\''+esc(kid)+'\',\''+esc(w.id)+'\')">💭 Add as an idea</button>')+
+    '<button class="gf-tool gf-mini" title="Remove this wish" onclick="gfWishDel(\''+esc(kid)+'\',\''+esc(w.id)+'\')">✕</button></div>';
+  if(on)h+='<div class="gf-wbig">'+(P&&P!=="loading"&&P!=="err"?'<img src="'+esc(P)+'" alt="">':'<div class="gf-sub" style="margin:4px 0">'+(P==="err"?"The picture couldn't load right now.":"Loading the picture…")+'</div>')+'</div>';
+  return h+'</div>';
+}
+function wishCard(o,pid){
+  const p=person(pid);if(!p||!p.kid)return "";wishListen();wishStyle();
+  const kid=p.kid,W=wishesOf(kid),all=!!gfWishAll[kid],show=all?W:W.slice(0,WISH_SHOW);
+  let h='<div class="gf-card"><div class="gf-ghd"><span>💌 Their wish list</span><span class="gf-gsum">'+(gfWishLoaded?W.length:'')+'</span></div><div class="gf-bd">';
+  if(!gfWishLoaded)h+='<div class="gf-empty">Loading…</div>';
+  else if(!W.length)h+='<div class="gf-empty">'+esc(p.name)+' hasn\'t added any wishes yet — Kids\' Corner ▸ 🎁 My wish list.</div>';
+  else{h+=show.map(w=>wishRow(kid,w)).join("");
+    if(W.length>WISH_SHOW)h+='<button class="gf-tool" style="margin-top:6px" onclick="gfWishMore(\''+esc(kid)+'\')">'+(all?"Show fewer":"Show all "+W.length)+'</button>';}
+  return h+'</div></div>';
+}
+function gfWishPicShow(kid,wid){
+  const key=kid+"/"+wid;gfWishPic=gfWishPic===key?null:key;
+  if(gfWishPic&&gfWishPh[key]===undefined){
+    if(typeof db==="undefined"||!db)gfWishPh[key]="err";
+    else{gfWishPh[key]="loading";db.ref("wishPhotos/"+kid+"/"+wid).once("value").then(s=>{gfWishPh[key]=s.val()||"err";if(!gfEdit)gfDraw();}).catch(()=>{gfWishPh[key]="err";if(!gfEdit)gfDraw();});}
+  }
+  gfDraw();
+}
+function gfWishMore(kid){gfWishAll[kid]=!gfWishAll[kid];gfDraw();}
+function gfWishAdd(kid,wid){
+  const w=wishesOf(kid).find(x=>x.id===wid);if(!w)return;
+  gfNewItem("k_"+kid);if(!gfEdit||gfEdit.kind!=="item")return;   // this occasion, its first section, for that kid, their paper
+  gfEdit.form.name=String(w.text||"").slice(0,140);gfEdit.form.wish=kid+"/"+wid;gfDraw();
+}
+function gfWishDel(kid,wid){
+  const w=((gfWishes||{})[kid]||{})[wid];if(!w)return;const nm=(person("k_"+kid)||{}).name||"their";
+  if(!confirm("Take "+(w.text?"\""+w.text+"\"":"this picture")+" off "+nm+"'s wish list? It goes off their list too."))return;
+  delete gfWishes[kid][wid];delete gfWishPh[kid+"/"+wid];if(gfWishPic===kid+"/"+wid)gfWishPic=null;
+  if(typeof db!=="undefined"&&db&&!dry()){const up={};up["wishes/"+kid+"/"+wid]=null;if(w.hasPhoto)up["wishPhotos/"+kid+"/"+wid]=null;db.ref().update(up);}
+  gfDraw();
+}
+const WISH_CSS=`
+.gf-wish{border-top:1px solid #f1f5f9;padding:7px 0}
+.gf-wish:first-child{border-top:none}
+.gf-wrow{display:flex;align-items:center;gap:8px}
+.gf-wrow .gf-pn{flex:1;min-width:0;word-wrap:break-word}
+.gf-wrow .gf-chip{white-space:normal;text-align:center}
+.gf-wpic{border:1.5px solid var(--border);background:#f8fafc;border-radius:9px;width:36px;height:36px;font-size:17px;cursor:pointer;flex:none}
+.gf-wbig img{width:100%;max-width:420px;border-radius:10px;border:1px solid #e2e8f0;margin-top:6px;display:block}
+`;
+Object.assign(window,{gfWishPicShow,gfWishMore,gfWishAdd,gfWishDel});
+window._gfWishTest={setWishes:d=>{gfWishes=d||{};gfWishLoaded=true;},wishes:()=>gfWishes,wishesOf,wishLinked,photos:gfWishPh,on:()=>gfWishOn};
+// GIFTS_WISH_END
 
 // GIFTS_RCPT_START — 📸 Receipts, slice 3 (her ask 2026-11-20: "submit receipts, like have a picture"; plan §3.5; her answer to
 // question 6: "each line gets its own person"). Snap up to 6 photos (shrunk on this device, ≈⅓ MB each) or pick a PDF / screenshot

@@ -204,7 +204,7 @@ console.log("\n# dry-run + secrecy");
   mom = true;
   const html = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
   ok("index.html never reads gifts/ or giftPhotos/ itself", html.indexOf('db.ref("giftPhotos') < 0 && html.indexOf("giftPhotos") < 0 && html.indexOf('db.ref("gifts') < 0);
-  ok("gifts.js reads giftPhotos only in the open-a-receipt path", (SRC.match(/giftPhotos\/"\+rid\)\.once/g) || []).length === 1 && (SRC.match(/\.once\(/g) || []).length === 1);
+  ok("gifts.js reads giftPhotos only in the open-a-receipt path", (SRC.match(/giftPhotos\/"\+rid\)\.once/g) || []).length === 1 && (SRC.replace(/\/\/ GIFTS_WISH_START[\s\S]*?\/\/ GIFTS_WISH_END/, "").match(/\.once\(/g) || []).length === 1);   // GIFTS_WISH: a wish's picture-on-tap read lives in its own block (test_gifts_wishes.js)
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");
