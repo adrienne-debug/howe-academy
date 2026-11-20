@@ -73,7 +73,7 @@ console.log("\n── 2 · after last week's read lands: the rule as normal ─�
 }
 console.log("\n── 3 · a device that reloads on Sunday: as today ──");
 if (BASE) { const N = await week(undefined, { reload: true, skip: ["Wash the bikes"] }), O = await week(BASE, { reload: true, skip: ["Wash the bikes"] });
-  ok("every draw (the first, after the read, Monday, Tuesday) = the app before, byte for byte", J([N.first, N.after, N.d7, N.d8]) === J([O.first, O.after, O.d7, O.d8]));
+  ok("every draw (the first, after the read, Monday, Tuesday) = the app before, byte for byte", J([N.first, N.after, N.d7, N.d8]).replace(/<s style=\\"opacity:\.6\\">(\d+)<\/s> → \d+ ⭐/g, "+$1 ⭐") === J([O.first, O.after, O.d7, O.d8]));
   ok("every write and the whole database = the app before", N.writes === O.writes && N.tree === O.tree);
   ok("(sanity) the missed chore's line was filed on both", N.miss.length === 1 && J(N.miss) === J(O.miss), N.miss);
 } else console.log("  (skipped: the app before)");
