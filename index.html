@@ -36828,6 +36828,7 @@ function haNbContext(kid){
   } }catch(e){}
   let units=[]; try{ units=haKidUnits(kid).filter(u=>u&&u.nbInsert!==false).map(u=>haBuildUnitInsight(kid,u)).filter(Boolean); }catch(e){}
   try{ if(typeof usNbAttach==="function") usNbAttach(kid,units); }catch(e){}   // 🇺🇸 USNB: the US Path's stage pages read ins.us
+  try{ if(typeof uwAttach==="function") units=uwAttach(kid,units,tasks,dates); }catch(e){}   // 🧾 UNITWEEK: "This week we will…" on each unit page (ins.week)
   // Recent drill misses per item ("m"/"~" results over the last few sessions) so the notebook's
   // review flag can resurface letters/numbers Julian struggled with this week. Kept separate from
   // the item's lifetime drop_count — this ages out as he recovers.
@@ -50157,6 +50158,84 @@ function haBuildUnitInsight(kid,u){
     activities.push(spec); });
   return { unitId:u.id,title:u.title,emoji:u.emoji||"📘",days:nbUnitDays(kid,u.id),learning,learned,next:next.slice(0,6),extras,extrasTitle,activity:activities[0]||null,activities };
 }
+// UNITWEEK_START — 🧾 "This week we will…" on the kids' weekly unit notebook page (PLAN_unit_sheet_2026-11-19.md §4.1, §5 row 1;
+// her "Yes, build it" 2026-11-19 after seeing the picture). A beta mom's ask: the sheet that goes with a unit should gather
+// the things — the books, video clips, activities — "for in their notebooks". The insert read only one deck of cards; this block
+// hands it one more record, ins.week = {rows:[{dn, label, chips[]}], more}, one row per unit day laid on this kid's TARGET week,
+// in weekday order: "Mon" · "Day 3 — the title" · 📚 the book · ▶ video · 🎨 each activity · ✂️ craft · 🍎 snack · 🎲 game.
+//   · Which day a card is = utDayForTask, the same question Today's card (dcDayHTML) and the Sunday list ask. A notebook printed for
+//     a PARKED next week (nbWeekOverride) can't ask it as-is for a family card: utDayForTask dates the card from DAY_DT, the ACTIVE
+//     week, so a Monday card next week would read this Monday's lesson. Such a card asks the family lesson map for its own date
+//     (the parked week's dates) and hands that label to utDayForFam — the same two steps utDayForTask takes. A kid's own unit
+//     subject needs no date (its lesson id says the day). A card whose day can't be found is left off; no day found = no list.
+//   · A day's activities: the one the day's notebook activity names (nb.activity, what Today's card shows) + every activity whose
+//     `day` is that day's number (the gatherer rule, plan §4.0).
+//   · Never on the page: a web address (a video is just "▶ video"), a supply (Mom's or the kids'), a document, a rung question, the
+//     words, a card's definition — nothing the child must produce.
+//   · A unit with days this week but no card in learning / learned / next (or no deck at all) gets a bare insert so its page prints
+//     (notebooks.js UNITWEEK: the list, then a "My page" box). Not on the schedule, or no unit day this week → no record at all, and
+//     the notebook is main's byte for byte.
+// Read-only: nothing here writes, and no database call — it reads the week's tasks haNbContext already holds.
+const UW_DN=["monday","tuesday","wednesday","thursday","friday","saturday","sunday"], UW_MAX=5;
+// "November 23" (a week's meta date) → "2026-11-23". The year is this year's, or next year's when that lands closer (a week parked
+// in late December that starts in January).
+function uwISO(s){
+  const now=new Date(), iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  let d=new Date(String(s||"")+", "+now.getFullYear()); if(isNaN(d.getTime())) return "";
+  if(d.getTime()<now.getTime()-180*864e5){ const n=new Date(String(s)+", "+(now.getFullYear()+1)); if(!isNaN(n.getTime())) d=n; }
+  return iso(d);
+}
+// The unit day one card of the target week points at — {uid, …day} — or null.
+function uwDayFor(t,dates){
+  if(!t) return null;
+  if(t.famBlock&&dates&&dates[t.day]&&typeof routineDateISO==="function"){
+    const ds=uwISO(dates[t.day]);
+    if(ds&&ds!==routineDateISO(t.day)){   // a parked week: the card's own date, not the active week's
+      const b=(typeof famDefs==="function")?famDefs()[t.famBlock]:null; const it=(b&&typeof famList==="function")?famList(b.items).find(x=>x&&x.key===t.famItem):null; if(!it) return null;
+      let lbl=""; try{ lbl=(typeof famLessonMap==="function")?(famLessonMap(b,t.famBlock,it).byDate||{})[ds]||"":""; }catch(e){ lbl=""; }
+      return (lbl&&typeof utDayForFam==="function")?utDayForFam(t.famBlock,it,ds,lbl):null;
+    }
+  }
+  return (typeof utDayForTask==="function")?utDayForTask(t):null;
+}
+// One day's chips: names only, never an address.
+function uwChips(u,d){
+  const out=[], s=v=>String(v==null?"":v).trim();
+  (((d.res||{}).books)||[]).forEach(b=>{ if(b&&s(b.title)) out.push("\u{1F4DA} "+s(b.title)); });
+  if((((d.res||{}).links)||[]).some(l=>l&&l.kind==="video")) out.push("▶ video");
+  const acts=(typeof _unitActs==="function")?_unitActs(u):[], seen={};
+  acts.filter(a=>a&&a.key&&((d.nb&&d.nb.activity===a.key)||(d.n&&utInt(a.day)===d.n))).forEach(a=>{ if(seen[a.key]||!s(a.title)) return; seen[a.key]=1; out.push((s(a.emoji)||"\u{1F3A8}")+" "+s(a.title)); });
+  const cr=d.craft||d._unitCraft; if(cr) out.push("✂️ "+(s(cr.title)||"craft"));
+  if(d.snack) out.push("\u{1F34E} "+(s(d.snack.title)||"snack"));
+  if(d.game) out.push("\u{1F3B2} "+(s(d.game.title)||"game"));
+  return out;
+}
+// This kid's week of one unit → {rows, more}, or null when no card this week points at one of its days.
+function uwWeekOf(kid,u,tasks,dates){
+  if(!u||!u.id||!(typeof utHasDays==="function"&&utHasDays(u))) return null;
+  const hits=[], seen={};
+  (tasks||[]).filter(t=>t&&t.who===kid&&UW_DN.indexOf(t.day)>=0).slice().sort((a,b)=>(UW_DN.indexOf(a.day)-UW_DN.indexOf(b.day))||((typeof toMin==="function")?(toMin(a.time)-toMin(b.time)):0)).forEach(t=>{
+    let r=null; try{ r=uwDayFor(t,dates); }catch(e){ r=null; }
+    if(!r||r.uid!==u.id||r.off||seen[r.id]) return; seen[r.id]=1; hits.push({t:t,d:r}); });
+  if(!hits.length) return null;
+  const rows=hits.slice(0,UW_MAX).map(h=>{ const d=h.d, head=d.n?"Day "+d.n:(d.role||(d.wk?"Week "+d.wk:""));
+    return {dn:h.t.day.charAt(0).toUpperCase()+h.t.day.slice(1,3),label:[head,d.t||""].filter(Boolean).join(" — "),chips:uwChips(u,d)}; });
+  return {rows:rows,more:hits.length-rows.length};
+}
+// Called from haNbContext with the kid's built inserts: each unit with days this week gets ins.week; a unit with days this week
+// but no insert (no deck) gets a bare one. Nothing this week → the same array, untouched.
+function uwAttach(kid,units,tasks,dates){
+  units=units||[]; let add=false; const out=[];
+  ((typeof haKidUnits==="function")?haKidUnits(kid):[]).filter(u=>u&&u.nbInsert!==false).forEach(u=>{
+    const ins=units.find(x=>x&&x.unitId===u.id); const wk=uwWeekOf(kid,u,tasks,dates);
+    if(ins){ if(wk) ins.week=wk; out.push(ins); return; }
+    if(!wk) return; add=true;
+    out.push({unitId:u.id,title:u.title,emoji:u.emoji||"\u{1F4D8}",days:(typeof nbUnitDays==="function")?nbUnitDays(kid,u.id):{},learning:[],learned:[],next:[],extras:[],extrasTitle:"",activity:null,activities:[],week:wk}); });
+  if(!add) return units;
+  units.forEach(x=>{ if(out.indexOf(x)<0) out.push(x); });   // an insert not in the kid's list (none today) stays, at the end
+  return out;
+}
+// UNITWEEK_END
 // In-app status page(s) for every unit a kid is enrolled in.
 // Notebook tab shows a status card per enrolled unit — but only for units set to go to the
 // notebook (nbInsert !== false). A unit shelved from notebooks (Units tab toggle off) drops
