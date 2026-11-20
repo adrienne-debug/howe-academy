@@ -4,9 +4,10 @@
  * Click-off Log built by hand, so every answer is known:
  *   · a weekly chore done on its day, one and five days late, not done, waved, with the kid off, and still inside its wait;
  *     a chore ticked then un-ticked; a "— not done" line on a chore that was then done (done late, not dropped); a daily chore's
- *     count; a renamed chore; a chore that started three weeks ago; Mom's and Dad's chores with and without ticks; "no record yet"
- *     for each kind that has none;
- *   · every mark agrees with the room grid's own squares (hhRmCell) for the same chore and day; the room line's % by hand;
+ *     count; a renamed chore; a chore that started three weeks ago; Mom's, Dad's and Up for Grabs chores with and without ticks
+ *     (never dropped: "checked off N times"; hub's call 2026-11-19); "no record yet" for each kind that has none;
+ *   · every mark agrees with the room grid's own squares (hhRmCell) for the same chore and day; the split line (Daily chores % of days ·
+ *     Weekly chores N of M · K dropped) by hand, and "dropped" never holds a daily chore's un-ticked days;
  *   · each filter shows only its own chores, a chip changes it, another page puts it back; least done first; Show all;
  *   · the chore card's History line = the card's row for that chore; not Mom: no taps; ZERO writes on every draw and tap;
  *   · the rest of 🏠 Whole house, a room page, 👤 By person and the chore card byte for byte the app before this change
@@ -43,14 +44,15 @@ const JOBS = () => ({
   k_hood: K({ label: "Degrease the hood", who: "ben", slot: "chores", cad: "wk:4", level: 3, room: "kitchen", minutes: 15 }),
   k_spill: K({ label: "Mop up spills", who: "ada", slot: "chores", cad: "asneeded", room: "kitchen", minutes: 5 }),
   k_base: K({ label: "Wipe the baseboards", who: "grab", slot: "", cad: "wk:5", room: "kitchen", minutes: 15, pts: 10 }),
+  k_win: K({ label: "Wipe the windows", emoji: "🪟", who: "grab", slot: "", cad: "daily", room: "kitchen", minutes: 10, pts: 8 }),
   k_paint: K({ label: "Touch up the paint", who: "mom", slot: "", cad: "once", room: "kitchen", minutes: 30 })
 });
 // ── the Click-off Log, by hand: routineLog/<kid>/<week>/<day>/<key> = {act, at, label, slot} ──
 const DNS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 function mkLog() {
   const L = {}; let seq = 0;
-  const put = (kid, n, label, act, hour) => { const iso = isoOf(n), d = new Date(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8), hour || 9, 0, 0), w = "w" + isoOf(n - d.getDay()), dn = DNS[d.getDay()];
-    ((L[kid] = L[kid] || {})[w] = L[kid][w] || {})[dn] = L[kid][w][dn] || {}; L[kid][w][dn]["e" + (++seq)] = { act, at: d.getTime(), label, slot: "chores", pts: 1 }; };
+  const put = (kid, n, label, act, hour, slot) => { const iso = isoOf(n), d = new Date(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8), hour || 9, 0, 0), w = "w" + isoOf(n - d.getDay()), dn = DNS[d.getDay()];
+    ((L[kid] = L[kid] || {})[w] = L[kid][w] || {})[dn] = L[kid][w][dn] || {}; L[kid][w][dn]["e" + (++seq)] = { act, at: d.getTime(), label, slot: slot || "chores", pts: 1 }; };
   const TUE = k => prev(1, k), THU = k => prev(3, k), MON = k => prev(0, k);
   // Mop the floor (Ben, Tuesdays), oldest first: on its day · 1 day late · 5 days late · not done · a "— not done" line, then done 2 days late ·
   // waved by Mom · Ben off that day, not done · last Tuesday (yesterday) not done yet: still inside its wait
@@ -65,6 +67,8 @@ function mkLog() {
   for (let b = 1; b <= 28; b++) if (b % 3) put("ada", T - b, "Wipe the counters", "on");
   // Dust the den (Ben, Thursdays): renamed 3 weeks ago; the older 5 Thursdays are ticked under the old name "Dust the shelves"
   for (let k = 0; k < 8; k++) put("ben", THU(k), k < 3 ? "Dust the den" : "Dust the shelves", "on");
+  // Wipe the windows (Up for Grabs, daily): grabbed 3 times in the last 4 weeks (a grab's log line carries the emoji)
+  put("ada", T - 3, "🪟 Wipe the windows", "on", 9, "grab"); put("ben", T - 10, "🪟 Wipe the windows", "on", 9, "grab"); put("cal", T - 20, "🪟 Wipe the windows", "on", 9, "grab");
   // Clean the mirror (Ada, Mondays, started 21 days ago): done every Monday since it started
   for (let k = 0; k < 3; k++) put("ada", MON(k), "Clean the mirror", "on");
   // Empty the trash (Ben, Mon Wed Fri): done on its day except the two oldest of the last 4 weeks; the third oldest one day late
@@ -116,10 +120,11 @@ console.log("\n── each mark, from the ticks ──");
   const mir = R("b_mirror");
   ok("Clean the mirror, started 3 weeks ago: – before it started, then ● ● ●", marks(mir) === "–––––●●●" && textOf(c, "b_mirror") === "3 of the last 3 · 5 not counted", [marks(mir), textOf(c, "b_mirror")]);
   const fr = R("m_fridge");
-  ok("Mom's daily with ticks: “7 of the last 28 days”", fr.form === "count" && textOf(c, "m_fridge") === "7 of the last 28 days", textOf(c, "m_fridge"));
+  ok("Mom's daily with ticks: never dropped — “checked off 7 times · last 4 weeks”, only the ticked days kept", fr.form === "ticks" && textOf(c, "m_fridge") === "checked off 7 times · last 4 weeks" && fr.marks.length === 7 && fr.marks.every(x => x.m === "on"), textOf(c, "m_fridge"));
   ok("Mom's weekly with no ticks: no record yet (never 0%)", R("m_plants").form === "none" && textOf(c, "m_plants") === "no record yet · no check-offs");
   const cu = R("d_curb");
-  ok("Dad's weekly with ticks: ● ○ ◐ ○ ○ ○ ○ ○ — “2 of the last 8 · 1 late · 6 dropped”", marks(cu) === "●○◐○○○○○" && textOf(c, "d_curb") === "2 of the last 8 · 1 late · 6 dropped", [marks(cu), textOf(c, "d_curb")]);
+  ok("Dad's weekly with ticks (one on the day, one a day late, six Wednesdays un-ticked): “checked off 2 times · last 8 weeks”, no marks, no dropped", cu.form === "ticks" && marks(cu) === "●◐" && textOf(c, "d_curb") === "checked off 2 times · last 8 weeks" && c.get("hoMarksHTML(hoRec('d_curb',hoX()))") === "", [marks(cu), textOf(c, "d_curb")]);
+  ok("Up for Grabs with a few ticks: “checked off 3 times · last 4 weeks”", R("k_win").form === "ticks" && textOf(c, "k_win") === "checked off 3 times · last 4 weeks", textOf(c, "k_win"));
   ok("Dad's with no ticks: no record yet", textOf(c, "d_gutter") === "no record yet · no check-offs");
   ok("Up for Grabs with no ticks: no record yet", textOf(c, "k_base") === "no record yet · no check-offs");
   ok("every 14 days: no record yet", textOf(c, "k_oven") === "no record yet · every 14 days", textOf(c, "k_oven"));
@@ -134,11 +139,12 @@ console.log("\n── every mark agrees with the room grid's squares (hhRmCell),
 { const c = mkC(), S = c.hhLogState(), rc = {}, cell = (id, n) => c.hhRmCell(id, isoOf(n), TODAY, S, rc), Jb = c.hhJobs(), bad = [];
   Object.keys(Jb).forEach(id => { const r = recOf(c, id); if (!r || r.form === "none") return; const ds = c.hoDays(Jb[id].cad), due = n => ds.includes(dow(n)), by = {};
     r.marks.forEach(m => { by[m.n] = m; });
-    for (let n = T - (r.form === "count" ? 28 : 56); n < T; n++) { if (!due(n)) continue; let nx = n + 1; while (!due(nx)) nx++; const m = by[n], c0 = cell(id, n);
+    for (let n = T - (r.form === "ticks" ? 7 * r.wk : r.form === "count" ? 28 : 56); n < T; n++) { if (!due(n)) continue; let nx = n + 1; while (!due(nx)) nx++; const m = by[n], c0 = cell(id, n);
       let later = 0; for (let k = n + 1; k < nx && k <= T; k++) { const d = cell(id, k); if (d && d.done) { later = k - n; break; } }
-      const want = !c0 ? "skip" : c0.done ? "on" : later ? "late" : c.hdKidOff(c0.who, isoOf(n)) ? "skip" : nx <= T ? "drop" : "none";
+      let want = !c0 ? "skip" : c0.done ? "on" : later ? "late" : c.hdKidOff(c0.who, isoOf(n)) ? "skip" : nx <= T ? "drop" : "none";
+      if (r.form === "ticks" && want !== "on" && want !== "late") want = "none";   // a grown-up's / grab's: only the times checked off
       if ((m ? m.m : "none") !== want || (m && m.m === "late" && m.q !== later) || (m && m.m !== "skip" && m.who !== c0.who)) bad.push([id, isoOf(n), m && m.m, want]); } });
-  ok("each time due: ● = a ✓ square that day, ◐ = a pale square then a ✓ before its next day (same days late), ○ = no ✓ by its next day, – = no square (or the kid off), nothing = still waiting; who = the square's", bad.length === 0, bad);
+  ok("each time due: ● = a ✓ square that day (grown-ups and grabs: only these and ◐ are kept), ◐ = a pale square then a ✓ before its next day (same days late), ○ = no ✓ by its next day, – = no square (or the kid off), nothing = still waiting; who = the square's", bad.length === 0, bad);
   const all = rowsOf(c, { k: "all" }), n4 = all.reduce((a, x) => a.concat(x.r.marks.filter(m => m.n >= T - 28)), []);
   ok("…and the times counted are exactly the marks (no extra, none missing)", all.every(x => x.s.n === x.r.marks.filter(m => m.m !== "skip").length));
   ok("…every row's numbers add up (done = ● + ◐, of = done + ○)", all.every(x => x.s.done === x.s.on + x.s.late && x.s.n === x.s.done + x.s.drop) && n4.length > 0);
@@ -146,26 +152,34 @@ console.log("\n── every mark agrees with the room grid's squares (hhRmCell),
 
 console.log("\n── the line for the filter, worked by hand ──");
 { const c = mkC();
-  // Kitchen, the last 28 days (T-28 … T-1). Mop the floor: Tuesdays T-22 ◐ (the "not done" line, then done T-20), T-15 – waved, T-8 – Ben off,
-  // T-1 still waiting → 1 done of 1, 0 dropped. Wipe the counters 19 of 28 (9 dropped). Empty the trash 10 of 12 (2 dropped). Mom's fridge 7 of 28
-  // (21 dropped). No record yet: oven, fan, grout, hood, spills, baseboards (6). Done 1+19+10+7 = 37 of 1+28+12+28 = 69 → 53.6 → 54%;
-  // dropped 0+9+2+21 = 32.
+  // Kitchen, the last 28 days (T-28 … T-1). Daily chores (3+ a week, kids'): Wipe the counters 19 of 28, Empty the trash 10 of 12 → 29 of 40
+  // = 72.5 → 73% of days. Weekly chores: Mop the floor's Tuesdays T-22 ◐ (the "not done" line, then done T-20), T-15 – waved, T-8 – Ben off,
+  // T-1 still waiting → 1 of 1, nothing dropped. Out of the line: Mom's fridge and the windows grab (checked off), and 6 with no record yet
+  // (oven, fan, grout, hood, spills, baseboards). The counters' 9 and the trash's 2 un-ticked days are NOT "dropped".
   roomPage(c, "kitchen"); const h = c.hoCardHTML(), L = JSON.parse(c.get("JSON.stringify(hoLine(hoRows(hoF,hoX()),hoX()))"));
-  ok("Kitchen: 37 done of 69 times due in the last 4 weeks = 54%, 32 not done by their next day", L.done === 37 && L.n === 69 && L.pct === 54 && L.drop === 32, L);
-  ok("…drawn as “🍳 Kitchen + dining · 54% done · last 4 weeks · 32 dropped”", strip(h).indexOf("Kitchen + dining · 54% done · last 4 weeks · 32 dropped") >= 0, strip(h).slice(0, 300));
-  ok("…and the note says what is left out: not counted, the 6 with no record yet, anything still inside its wait", /The % counts 37 done of 69 times due in the last 4 weeks; it leaves out what was not counted, the 6 with no record yet and any chore still inside its wait/.test(strip(h)));
+  ok("Kitchen: daily chores 29 of 40 days = 73%; weekly chores 1 of 1, 0 dropped; 2 checked-off rows and 6 no-record rows left out", J(L) === J({ dl: { pct: 73, done: 29, n: 40 }, wk: { done: 1, n: 1, drop: 0 }, none: 6, ticks: 2 }), L);
+  const lt = strip(c.get("hoLineTxt(hoLine(hoRows(hoF,hoX()),hoX()))"));
+  ok("…drawn as “🍳 Kitchen + dining · last 4 weeks · Daily chores 73% of days · Weekly chores 1 of 1” — no “dropped” (no ○ in those weeks)", lt === "last 4 weeks · Daily chores 73% of days · Weekly chores 1 of 1" && strip(h).indexOf("🍳 Kitchen + dining · " + lt + " ") >= 0, [lt, strip(h).slice(0, 300)]);
+  ok("…and the note says exactly what is counted and what is left out", strip(h).indexOf("The top line is the last 4 weeks: daily chores (3 or more times a week) as the share of their days done (29 of 40); weekly chores (once or twice a week) as times done of times due, dropped = not done by its next day. Late counts as done. Mom’s, Dad’s and Up for Grabs chores are never counted as dropped: they show how often they were checked off and stay out of the top line (2 here). Left out too: what was not counted, the 6 with no record yet and any chore still inside its wait.") >= 0, strip(h).slice(strip(h).indexOf("The top line")));
   ok("…and how far back it looks", /Looks back 8 weeks \(3 or more times a week: 4 weeks\)/.test(strip(h)) && /the last 8 weeks of check-offs/.test(h));
+  // Whole house: daily as the kitchen (29 of 40 = 73%). Weekly, the last 4 weeks: mop 1 of 1 · rug T-1, T-8, T-15, T-22 all ● → 4 of 4 · den T-6,
+  // T-13, T-20 ● and T-27 ○ (ticked under its old name) → 3 of 4 · mirror T-2, T-9, T-16 ●, T-23 – (before it started) → 3 of 3 = 11 of 12, 1 dropped.
+  roomPage(c, ""); const w = strip(c.hoCardHTML()), LW = JSON.parse(c.get("JSON.stringify(hoLine(hoRows(hoF,hoX()),hoX()))"));
+  ok("Whole house: “last 4 weeks · Daily chores 73% of days · Weekly chores 11 of 12 · 1 dropped”", /Whole house · last 4 weeks · Daily chores 73% of days · Weekly chores 11 of 12 · 1 dropped/.test(w) && J(LW.wk) === J({ done: 11, n: 12, drop: 1 }), [w.slice(0, 200), LW]);
+  ok("…“dropped” = the weekly ○ marks only: the dailies' 11 un-ticked days and the grown-ups' un-ticked days are not in it", LW.wk.drop === 1 && LW.dl.n - LW.dl.done === 11);
   roomPage(c, "entry"); const e = strip(c.hoCardHTML());
-  ok("Entry: Dad's curb ticks are 6 and 8 weeks back; the last 4 Wednesdays have none → 0% · 4 dropped (the gutter: no record yet)", /Entry \+ hallway · 0% done · last 4 weeks · 4 dropped/.test(e), e.slice(0, 200));
+  ok("Entry: only Dad's chores (curb checked off twice, gutter none) → the line says “no record yet”, the curb row “checked off 2 times · last 8 weeks”", /Entry \+ hallway · no record yet/.test(e) && /Trash to the curb Dad · Weekly · Wed checked off 2 times · last 8 weeks/.test(e) && !/dropped/.test(e.slice(0, e.indexOf("●"))), e.slice(0, 300));
+  c.get('hhView="person"; hpSel="mom"'); c.hpPersonHTML(); const m = strip(c.hoCardHTML());
+  ok("👤 Mom: “no record yet” on the line; her fridge “checked off 7 times”; no % and no dropped about her", /👤 Mom · no record yet/.test(m) && /Wipe the fridge Mom · Daily checked off 7 times · last 4 weeks/.test(m) && !/% of days|dropped/.test(m.slice(0, m.indexOf("●"))), m.slice(0, 300));
 }
 
 console.log("\n── filters: each shows its own chores; a chip changes it; another page puts it back ──");
 { const c = mkC(), Jb = c.hhJobs();
   roomPage(c, "kitchen"); ok("a room page → that room", J(F(c)) === J({ k: "room", id: "kitchen" }));
   const kit = rowsOf(c, { k: "room", id: "kitchen" });
-  ok("a room: only that room's chores (one-time jobs left out)", kit.length === 10 && kit.every(x => c.hhRoomOn(Jb[x.id]) === "kitchen"), kit.map(x => x.id));
+  ok("a room: only that room's chores (one-time jobs left out)", kit.length === 11 && kit.every(x => c.hhRoomOn(Jb[x.id]) === "kitchen"), kit.map(x => x.id));
   roomPage(c, ""); ok("🏠 Whole house → Everything", J(F(c)) === J({ k: "all" }));
-  const all = rowsOf(c, { k: "all" }); ok("Everything: every chore with a schedule, every room", all.length === 16 && ["kitchen", "living", "bathdown", "entry"].every(r => all.some(x => c.hhRoomOn(Jb[x.id]) === r)), all.length);
+  const all = rowsOf(c, { k: "all" }); ok("Everything: every chore with a schedule, every room", all.length === 17 && ["kitchen", "living", "bathdown", "entry"].every(r => all.some(x => c.hhRoomOn(Jb[x.id]) === r)), all.length);
   person(c, "ben"); ok("👤 By person → that person", J(F(c)) === J({ k: "who", id: "ben" }));
   const ben = rowsOf(c, { k: "who", id: "ben" });
   ok("a person: only the times that were theirs, from every room", ben.length && ben.every(x => x.r.marks.every(m => m.who === "ben")) && ben.some(x => Jb[x.id].room === "living") && ben.some(x => Jb[x.id].room === "kitchen"), ben.map(x => x.id));
@@ -185,12 +199,13 @@ console.log("\n── filters: each shows its own chores; a chip changes it; ano
 
 console.log("\n── least done first, and Show all ──");
 { const c = mkC(); roomPage(c, ""); const rows = rowsOf(c, { k: "all" }), rate = x => x.rate;
-  ok("rows go least done first; the 8 with no record yet last", rows.every((x, i) => !i || rate(rows[i - 1]) <= rate(x)) && rows.filter(x => x.rate === 2).length === 8 && rows.slice(-8).every(x => x.rate === 2), rows.map(x => [x.id, x.rate]));
-  ok("…a tie (Mom's fridge 7 of 28, Dad's curb 2 of 8: both 25%) goes to the one with more dropped (21 before 6); then Dust the den 3 of 8", rows[0].id === "m_fridge" && rows[1].id === "d_curb" && rows[2].id === "l_dust", rows.slice(0, 3).map(x => x.id));
+  ok("rows go least done first; then the 3 grown-up / grab rows that were checked off; the 8 with no record yet last", rows.every((x, i) => !i || rate(rows[i - 1]) <= rate(x)) && J(rows.map(x => x.rate === 2 ? "none" : x.rate === 1.5 ? "ticks" : "kid")) === J(Array(6).fill("kid").concat(Array(3).fill("ticks"), Array(8).fill("none"))), rows.map(x => [x.id, x.rate]));
+  ok("…the kids': Dust the den 3/8, the counters 19/28, Mop 4/5, the trash 10/12, the rug 7/8, the mirror 3/3", J(rows.slice(0, 6).map(x => x.id)) === J(["l_dust", "k_counter", "k_mop", "k_trash", "l_rug", "b_mirror"]), rows.slice(0, 6).map(x => x.id));
+  ok("…then the checked-off ones by name: Trash to the curb, Wipe the fridge, Wipe the windows", J(rows.slice(6, 9).map(x => x.id)) === J(["d_curb", "m_fridge", "k_win"]), rows.slice(6, 9).map(x => x.id));
   let h = c.hoCardHTML(), drawn = (h.match(/hcOpen\('/g) || []).length;
-  ok("8 rows shown, then “Show all 16”", drawn === 8 && /Show all 16/.test(h), drawn);
+  ok("8 rows shown, then “Show all 17”", drawn === 8 && /Show all 17/.test(h), drawn);
   c.get("hoMore()"); h = roomPage(c, ""), drawn = (c.hoCardHTML().match(/hcOpen\('/g) || []).length;
-  ok("Show all → all 16 rows, and “Show fewer”", drawn === 16 && /Show fewer/.test(c.hoCardHTML()));
+  ok("Show all → all 17 rows, and “Show fewer”", drawn === 17 && /Show fewer/.test(c.hoCardHTML()));
   roomPage(c, "kitchen"); roomPage(c, ""); ok("…another page folds it again", c.get("hoAll") === false);
   const order = rows.map(x => x.id), html = c.hoCardHTML(); c.get("hoMore()"); const H = c.hoCardHTML(); let last = -1, good = true;
   order.forEach(id => { const i = H.indexOf("hcOpen('" + id + "')"); if (i < last) good = false; last = i; });
@@ -199,14 +214,17 @@ console.log("\n── least done first, and Show all ──");
 
 console.log("\n── the chore card ▸ History ──");
 { const c = mkC(); roomPage(c, "kitchen");
-  for (const id of ["k_mop", "k_counter", "d_curb", "k_oven", "m_plants"]) {
+  for (const id of ["k_mop", "k_counter", "d_curb", "m_fridge", "k_win", "k_oven", "m_plants"]) {
     c.get("hcId=" + J(id)); const card = c.hcCardHTML(), line = c.hoHistHTML(id), r = "hoRec(" + J(id) + ",hoX())", want = c.get("hoMarksHTML(" + r + ")") + '<span style="color:#475569">' + c.get("hoText(" + r + ")") + "</span>";
     c.get("hoF={k:'all'},hoAll=true"); const row = c.hoCardHTML(), ri = row.indexOf("hcOpen('" + id + "')"), rowHtml = row.slice(ri, row.indexOf("</div>", ri));
     ok(id + ": the card's History holds this chore's line, the same marks and words as its row on the 📊 card", card.indexOf(line) > 0 && line.indexOf(want) > 0 && rowHtml.indexOf(c.get("hoMarksHTML(" + r + ")") + '<span style="font-size:11px') > 0 && strip(rowHtml).endsWith(strip(c.get("hoText(" + r + ")"))), strip(line));
   }
-  c.get("hcId='k_mop'"); ok("Mop the floor: “Last done 10/29 by Ben” (Thu, the late finish of 10/27's; nothing since)", /Last done 10\/29 by Ben/.test(c.hoHistHTML("k_mop")), strip(c.hoHistHTML("k_mop")));
-  ok("Shake the rug: “Last done 11/17 by Cal”", /Last done 11\/17 by Cal/.test(c.hoHistHTML("l_rug")));
-  ok("Clean the oven (no record yet, never ticked): “Not done in the last 8 weeks”", /no record yet · every 14 days/.test(strip(c.hoHistHTML("k_oven"))) && /Not done in the last 8 weeks/.test(c.hoHistHTML("k_oven")));
+  c.get("hcId='k_mop'"); const mc = strip(c.hcCardHTML());
+  ok("Mop the floor: the new line says “Last checked off 10/29 by Ben” (ticked Thu, the late finish of 10/27's) and never “Last done”", /Last checked off 10\/29 by Ben/.test(c.hoHistHTML("k_mop")) && !/Last done/.test(c.hoHistHTML("k_mop")), strip(c.hoHistHTML("k_mop")));
+  ok("…today's “Last done 10/27 by Ben” line (hhStats, the day the time was due) is still there, untouched", mc.indexOf("History Last done 10/27 by Ben on time 4 wk") >= 0, mc.slice(mc.indexOf("History"), mc.indexOf("History") + 120));
+  ok("Shake the rug: “Last checked off 11/17 by Cal”", /Last checked off 11\/17 by Cal/.test(c.hoHistHTML("l_rug")));
+  ok("Wipe the windows (a grab): “Last checked off 11/15 by Up for Grabs”, the line “checked off 3 times · last 4 weeks”", /Last checked off 11\/15 by Up for Grabs/.test(c.hoHistHTML("k_win")) && /checked off 3 times · last 4 weeks/.test(c.hoHistHTML("k_win")), strip(c.hoHistHTML("k_win")));
+  ok("Clean the oven (no record yet, never ticked): “Not checked off in the last 8 weeks”", /no record yet · every 14 days/.test(strip(c.hoHistHTML("k_oven"))) && /Not checked off in the last 8 weeks/.test(c.hoHistHTML("k_oven")));
   ok("the old History chips and badges are still there", /on time 4 wk/.test(c.hcCardHTML()) && /Last done/.test(c.hcCardHTML()));
 }
 

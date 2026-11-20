@@ -927,8 +927,11 @@ function hwLaundryCardHTML(){ try{ if(hwFilter().k!=="laundry") return hwCardHTM
 //   kid was off (😷 Kid Off) and did not do it. A time still inside its wait and not done yet is not marked.
 // Weekly and twice-a-week chores: a mark per time, the last 8 weeks. 3+ times a week: a count, the last 28 days. No record yet: every-N
 // and every-2-weeks chores and the 4-week cycle (the grid shows only their ✓), above the level, as needed, and Mom's, Dad's and Up for
-// Grabs chores with no tick in the time it looks back (they rarely tick: no tick is no record, not "never"). The line for the filter =
-// done (on the day + late) over the times counted in the last 28 days. A VIEW: the filter and "show all" are plain variables; nothing
+// Grabs chores with no tick in the time it looks back. A chore that is not a kid's own (Mom, Dad, Up for Grabs) is NEVER counted as
+// dropped (hub's call 2026-11-19 on her real table: they rarely tick, so un-ticked days are not a record): with ticks it says only
+// "checked off N times", stays out of the line and sorts after the kids' counted rows. The filter's line, last 4 weeks, in two parts:
+// "Daily chores 72% of days" (3+ times a week: days done of days due) · "Weekly chores 12 of 17 · 5 dropped" (once or twice a week;
+// dropped = the ○ marks only — never a daily chore's un-ticked days). A VIEW: the filter and "show all" are plain variables; nothing
 // here writes, on a draw or on any tap.
 let hoKey="", hoF=null, hoAll=false;
 const HO_WK=56, HO_DAYS=28, HO_FOLD=8, HO_MARK={on:["●","#16a34a"],late:["◐","#d97706"],drop:["○","#64748b"],skip:["–","#cbd5e1"]};
@@ -958,13 +961,15 @@ function hoRec(id,X){
     if(q) marks.push({n:n,m:"late",who:c.who,q:q,by:by});
     else if(hhIsKid(c.who)&&typeof hdKidOff==="function"&&hdKidOff(c.who,_hhIsoOf(n))) marks.push({n:n,m:"skip",who:c.who,off:1});
     else if(nx<=X.t) marks.push({n:n,m:"drop",who:c.who}); }   // else: still inside its wait, not done yet → no mark
-  if(!hhIsKid(j.who)&&!marks.some(function(x){ return x.m==="on"||x.m==="late"; })) return none("no check-offs");
+  if(!hhIsKid(j.who)){ const d=marks.filter(function(x){ return x.m==="on"||x.m==="late"; }); if(!d.length) return none("no check-offs");
+    return {form:"ticks",wk:cnt?4:8,marks:d}; }   // a grown-up's or a grab's: the times checked off, never a dropped one
   return {form:cnt?"count":"marks",daily:cad==="daily",marks:marks};
 }
 // The record seen through a filter: a person keeps only the times that were theirs (who had it that day).
-function hoSee(r,f){ if(!r||f.k!=="who"||r.form==="none") return r; return {form:r.form,daily:r.daily,marks:r.marks.filter(function(x){ return x.who===f.id; })}; }
+function hoSee(r,f){ if(!r||f.k!=="who"||r.form==="none") return r; return {form:r.form,daily:r.daily,wk:r.wk,marks:r.marks.filter(function(x){ return x.who===f.id; })}; }
 function hoSum(ms){ const s={on:0,late:0,drop:0,skip:0}; ms.forEach(function(x){ s[x.m]++; }); s.done=s.on+s.late; s.n=s.done+s.drop; return s; }
 function hoText(r){ if(r.form==="none") return 'no record yet · '+esc(r.why); const s=hoSum(r.marks);
+  if(r.form==="ticks") return s.done?'checked off '+s.done+' time'+(s.done===1?'':'s')+' · last '+r.wk+' weeks':'no record yet · no check-offs';
   if(!s.n) return 'no record yet · '+(s.skip?s.skip+' not counted':'nothing due yet');
   return s.done+' of the last '+s.n+(r.form==="count"?(r.daily?' days':' times'):'')+(s.late?' · '+s.late+' late':'')+(r.form==="marks"&&s.drop?' · '+s.drop+' dropped':'')+(s.skip?' · '+s.skip+' not counted':''); }
 function hoMarksHTML(r){ if(r.form!=="marks") return ''; return '<span style="font-size:12px;letter-spacing:1px;white-space:nowrap">'+r.marks.map(function(x){ const M=HO_MARK[x.m], iso=_hhIsoOf(x.n);
@@ -973,10 +978,14 @@ function hoMarksHTML(r){ if(r.form!=="marks") return ''; return '<span style="fo
 // The rows for a filter, least done first (no record yet last), and the filter's line.
 function hoRows(f,X){ const J=hhJobs(), out=[];
   hwIds(f.k==="who"?{k:"all"}:f).forEach(function(id){ const r0=hoRec(id,X); if(!r0) return; const r=hoSee(r0,f);
-    if(f.k==="who"&&!(r.marks.length||J[id].who===f.id)) return; const s=hoSum(r.marks); out.push({id:id,r:r,s:s,rate:(r.form==="none"||!s.n)?2:s.done/s.n}); });
+    if(f.k==="who"&&!(r.marks.length||J[id].who===f.id)) return; const s=hoSum(r.marks); out.push({id:id,r:r,s:s,rate:(r.form==="none"||!s.n)?2:r.form==="ticks"?1.5:s.done/s.n}); });   // grown-ups' ticks after the kids' counted rows
   return out.sort(function(a,b){ return (a.rate-b.rate)||(b.s.drop-a.s.drop)||String(J[a.id].label).localeCompare(String(J[b.id].label))||(a.id<b.id?-1:1); }); }
-function hoLine(rows,X){ const ms=[]; let nr=0; rows.forEach(function(x){ if(x.rate===2) nr++; x.r.marks.forEach(function(m){ if(m.n>=X.t-HO_DAYS) ms.push(m); }); }); const s=hoSum(ms);
-  return {pct:s.n?Math.round(100*s.done/s.n):null,drop:s.drop,n:s.n,done:s.done,skip:s.skip,none:nr}; }
+// The filter's line, last 28 days: dl = the chores done 3+ times a week (days done of days due), wk = once or twice a week (times, ○ = dropped).
+function hoLine(rows,X){ const D=[], W=[]; let nr=0, nt=0; rows.forEach(function(x){ if(x.rate===2){ nr++; return; } if(x.r.form==="ticks"){ nt++; return; }
+    x.r.marks.forEach(function(m){ if(m.n>=X.t-HO_DAYS) (x.r.form==="count"?D:W).push(m); }); });
+  const d=hoSum(D), w=hoSum(W); return {dl:d.n?{pct:Math.round(100*d.done/d.n),done:d.done,n:d.n}:null,wk:w.n?{done:w.done,n:w.n,drop:w.drop}:null,none:nr,ticks:nt}; }
+function hoLineTxt(L){ const p=[]; if(L.dl) p.push('Daily chores '+L.dl.pct+'% of days'); if(L.wk) p.push('Weekly chores '+L.wk.done+' of '+L.wk.n+(L.wk.drop?' · '+L.wk.drop+' dropped':''));
+  return p.length?'last 4 weeks · '+p.join(' · '):'<span style="color:#94a3b8">no record yet</span>'; }
 function hoRowHTML(x,mom){ const j=hhJobs()[x.id], tap=mom?' onclick="hcOpen(\''+x.id+'\')"':'';
   return '<div'+tap+' style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:5px 12px;border-top:1px solid #f3f4f6;font-size:12.5px'+(mom?';cursor:pointer':'')+'"><span>'+esc(j.emoji||'☐')+'</span>'
     +'<span style="flex:1;min-width:120px;font-weight:700">'+esc(j.label)+' <span style="font-size:11px;font-weight:600;color:var(--muted)"><span style="color:'+hhRmCol(j.who)+'">'+esc(hhWhoName(j.who))+'</span> · '+esc(cadLabel(hhPlanCad(j)))+'</span></span>'
@@ -986,11 +995,12 @@ function hoCardHTML(){
   const name=f.k==="room"?hhRoomEmoji(f.id)+' '+hhRoomName(f.id):f.k==="who"?'👤 '+hhWhoName(f.id):'🏠 Whole house';
   let h='<div style="'+HP_CARD+'"><div style="padding:9px 12px 4px"><span style="font-size:14px;font-weight:800">📊 How often</span> <span style="font-size:11px;font-weight:600;color:var(--muted)">least done first · the last 8 weeks of check-offs</span></div>';
   h+='<div style="display:flex;gap:5px;flex-wrap:wrap;padding:2px 12px 8px">'+hwChips(f,"hoPick")+'</div>';
-  h+='<div style="padding:6px 12px;border-top:1px solid #eef2f0;font-size:12.5px;font-weight:800">'+esc(name)+' · '+(L.pct===null?'<span style="color:#94a3b8">no record yet</span>':L.pct+'% done · last 4 weeks · '+L.drop+' dropped')+'</div>';
+  h+='<div style="padding:6px 12px;border-top:1px solid #eef2f0;font-size:12.5px;font-weight:800">'+esc(name)+' · '+hoLineTxt(L)+'</div>';
   h+=rows.length?show.map(function(x){ return hoRowHTML(x,mom); }).join(''):'<div style="padding:3px 12px 8px;font-size:12px;color:var(--muted)">No chores here.</div>';
   if(rows.length>HO_FOLD) h+='<div onclick="hoMore()" style="padding:6px 12px;border-top:1px solid #f3f4f6;font-size:12px;font-weight:800;color:#2B7A78;cursor:pointer">'+(hoAll?'Show fewer':'Show all '+rows.length)+'</div>';
   h+='<div style="padding:6px 12px 8px;font-size:11px;color:var(--muted)">● done on its day · ◐ done late, before its next day · ○ not done by its next day · – not counted (you waved it, the kid was off, or it had not started). Looks back 8 weeks (3 or more times a week: 4 weeks), from the check-offs — not from the “not done” lines. '
-    +'The % counts '+L.done+' done of '+L.n+' times due in the last 4 weeks; it leaves out what was not counted'+(L.none?', the '+L.none+' with no record yet':'')+' and any chore still inside its wait. A renamed chore starts fresh: the log knows a chore by its name.</div>';
+    +'The top line is the last 4 weeks: daily chores (3 or more times a week) as the share of their days done'+(L.dl?' ('+L.dl.done+' of '+L.dl.n+')':'')+'; weekly chores (once or twice a week) as times done of times due, dropped = not done by its next day. Late counts as done. '
+    +'Mom’s, Dad’s and Up for Grabs chores are never counted as dropped: they show how often they were checked off and stay out of the top line'+(L.ticks?' ('+L.ticks+' here)':'')+'. Left out too: what was not counted'+(L.none?', the '+L.none+' with no record yet':'')+' and any chore still inside its wait. A renamed chore starts fresh: the log knows a chore by its name.</div>';
   return h+'</div>';
 }
 // The chore card ▸ History: this chore's own line (the card's row, unfiltered) and the last time the grid shows it done, by whom.
@@ -998,7 +1008,7 @@ function hoHistHTML(id){ const j=hhJobs()[id]; if(!j) return ''; const X=hoX(), 
   for(let n=X.t;n>=X.t-HO_WK;n--){ const c=hoCell(id,n,X); if(c&&c.done){ last={iso:_hhIsoOf(n),by:c.who}; break; } }
   if(j.lastDone&&/^\d{4}-\d{2}-\d{2}$/.test(j.lastDone)&&(!last||j.lastDone>last.iso)) last={iso:j.lastDone,by:j.lastBy||""};
   return '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:12px;font-weight:700">📊 '+(r?hoMarksHTML(r)+'<span style="color:#475569">'+hoText(r)+'</span>':'<span style="color:#475569">a one-time job</span>')+'</div>'
-    +'<div style="font-size:12px;font-weight:700;margin-top:4px">'+(last?'Last done '+(+last.iso.slice(5,7))+'/'+(+last.iso.slice(8))+(last.by?' by '+esc(hhWhoName(last.by)):''):'Not done in the last 8 weeks')+'</div>'; }
+    +'<div style="font-size:12px;font-weight:700;margin-top:4px">'+(last?'Last checked off '+(+last.iso.slice(5,7))+'/'+(+last.iso.slice(8))+(last.by?' by '+esc(hhWhoName(last.by)):''):'Not checked off in the last 8 weeks')+'</div>'; }
 // HOWOFTEN_END
 // HOUSETODO_START — 🔴 Now and 📝 To do on 🏠 Whole house, and 📝 To do on 👤 By person (DESIGN_now_todo_schedule_2026-11-17 §7,
 // slice E; her rule 2026-11-17 "Yes, every area" — every Household page gets 🔴 Now · 📝 To do · 📅 Schedule — and her go, "c is
