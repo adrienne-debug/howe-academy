@@ -88,7 +88,7 @@ const RED = /rt-late|is-late|#b91c1c|#ef4444|#fca5a5|#fef2f2|#fffafa/;
 console.log("\n── A · the wait, by how often (rtWaitDays: a third of the gap, at most 7) ──");
 { const { w, A } = await mkWorld("preview"); const wt = st => A.run("rtWaitDays(" + J(st) + ")");
   ok("daily → none", wt({ cad: "daily" }) === 0);
-  ok("3 or more times a week (Mon Wed Fri) → none", wt({ cad: "wk:0,2,4" }) === 0 && wt({ cad: "wk:0,1,2,3,4" }) === 0);
+  ok("3 or more times a week (Mon Wed Fri) → as before: until its next day (6, cut by its next day), told apart by rtWaitAsBefore", wt({ cad: "wk:0,2,4" }) === 6 && wt({ cad: "wk:0,1,2,3,4" }) === 6 && A.run("rtWaitAsBefore({cad:'wk:0,2,4'})&&rtWaitAsBefore({cad:'wk:1,3,5',cycW:2,cycN:4})&&!rtWaitAsBefore({cad:'wk:1,4'})&&!rtWaitAsBefore({cad:'wk:1'})&&!rtWaitAsBefore({cad:'daily'})") === true);
   ok("twice a week (Tue Fri) → 1 day", wt({ cad: "wk:1,4" }) === 1);
   ok("weekly (Tue) → 2 days", wt({ cad: "wk:1" }) === 2 && wt({ cad: "wk:5" }) === 2);
   ok("every 2 weeks (a 2-week cycle) → 4 days", wt({ cad: "wk:1", cycW: 1, cycN: 2, cycStart: "2026-11-16" }) === 4);
@@ -100,18 +100,18 @@ console.log("\n── A · the wait, by how often (rtWaitDays: a third of the ga
 // ── B ──
 console.log("\n── B · 14 days, nothing done (preview, her setting): on its day and its wait, then gone, back on its next day ──");
 const EXPECT = {   // the days (n) each chore is on its kid's Chores list
-  a_vac: [1, 2, 3, 8, 9, 10], a_mirror: [1, 2, 4, 5, 8, 9, 11, 12], a_trash: [0, 2, 4, 7, 9, 11],
+  a_vac: [1, 2, 3, 8, 9, 10], a_mirror: [1, 2, 4, 5, 8, 9, 11, 12], a_trash: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
   c_plants: [1, 2, 3, 8, 9, 10], b_bikes: [5, 6, 7, 12, 13], b_blinds: [1, 2, 3, 4, 5], b_tub: [2, 3, 4, 5, 6], b_cage: [3, 4, 5, 10, 11, 12],
   a_table: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], b_sink: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
 };
 // every missed time: [kid, chore, due day n, drop day n]; filed under the due day's week and weekday
-const DROPS = [["kid_a", "a_trash", 0, 1], ["kid_a", "a_mirror", 1, 3], ["kid_a", "a_vac", 1, 4], ["kid_a", "a_trash", 2, 3], ["kid_a", "a_trash", 4, 5],
-  ["kid_a", "a_mirror", 4, 6], ["kid_a", "a_trash", 7, 8], ["kid_a", "a_mirror", 8, 10], ["kid_a", "a_vac", 8, 11], ["kid_a", "a_trash", 9, 10],
-  ["kid_a", "a_trash", 11, 12], ["kid_a", "a_mirror", 11, 13],
+const DROPS = [["kid_a", "a_trash", 0, 2], ["kid_a", "a_mirror", 1, 3], ["kid_a", "a_vac", 1, 4], ["kid_a", "a_trash", 2, 4], ["kid_a", "a_trash", 4, 7],
+  ["kid_a", "a_mirror", 4, 6], ["kid_a", "a_trash", 7, 9], ["kid_a", "a_mirror", 8, 10], ["kid_a", "a_vac", 8, 11], ["kid_a", "a_trash", 9, 11],
+  ["kid_a", "a_mirror", 11, 13],
   ["kid_c", "c_plants", 1, 2], ["kid_c", "c_plants", 2, 4], ["kid_c", "c_plants", 8, 9], ["kid_c", "c_plants", 9, 11],
   ["kid_b", "b_blinds", 1, 6], ["kid_b", "b_tub", 2, 7], ["kid_b", "b_cage", 3, 6], ["kid_b", "b_bikes", 5, 8], ["kid_b", "b_cage", 10, 13]];
 const B1 = {};
-{ const { w, A, B, C } = await mkWorld("preview"); const wkOf = {}; const seen = {}, html = {}, twoOf = [], mom = {}, kidPop = {}, holds = {};
+{ const { w, A, B, C } = await mkWorld("preview"); const wkOf = {}; const seen = {}, html = {}, twoOf = [], mom = {}, kidPop = {}, holds = {}; let house3 = "";
   for (let n = 0; n < 14; n++) {
     await go(w, n, 7, 0); wkOf[n] = B.run("activeWk()");
     // two kid devices draw in the same moment (neither has heard the other yet), then again after they have
@@ -119,7 +119,7 @@ const B1 = {};
     draw(B, "chores", "kid_a"); draw(C, "chores", "kid_b"); pop(A, "kid_a", "chores"); pop(A, "kid_b", "chores"); await w.flush();   // Mom's device is open too
     draw(B, "chores", "kid_c"); await w.flush();
     await go(w, n, 17, 0); const a = draw(B, "chores", "kid_a"), b = draw(B, "chores", "kid_b"), c = draw(B, "chores", "kid_c"); await w.flush();
-    html[n] = { kid_a: a, kid_b: b, kid_c: c }; holds[n] = A.run("(function(){ day=_todayDay; const s=rtStepsFor('chores','kid_a',false,day), i=s.findIndex(function(x){ return x.label==='Vacuum the den'; }); return rtDueOrLate('chores','kid_a',day,i,s[i]); })()");
+    html[n] = { kid_a: a, kid_b: b, kid_c: c }; if (n === 3) house3 = B.run("hhCleanPanelHTML('kid_a',_todayStr(),_todayDay,'House')"); holds[n] = A.run("(function(){ day=_todayDay; const s=rtStepsFor('chores','kid_a',false,day), i=s.findIndex(function(x){ return x.label==='Vacuum the den'; }); return rtDueOrLate('chores','kid_a',day,i,s[i]); })()");
     Object.keys(EXPECT).forEach(id => { const h = id[0] === "a" ? a : id[0] === "b" ? b : c; const k = onList(h, id); (seen[id] = seen[id] || []); if (k) seen[id].push(n); if (k > 1) twoOf.push([id, n, k]); });
     if (hA[0] !== hA[1] || hB[0] !== hB[1]) twoOf.push(["devices disagree", n]);
     mom[n] = { kid_a: pop(A, "kid_a", "chores"), kid_b: pop(A, "kid_b", "chores"), kid_c: pop(A, "kid_c", "chores") }; kidPop[n] = { kid_a: pop(B, "kid_a", "chores"), kid_b: pop(B, "kid_b", "chores") };
@@ -143,9 +143,14 @@ const B1 = {};
   ok("Vacuum the den on wait days 1 and 2 = its row on Tuesday, byte for byte", !!vTue && vWed === vTue && vThu === vTue, [vTue, vWed]);
   const tTue = rowOf(html[5].kid_b, LBL.b_bikes)[0], tSun = rowOf(html[6].kid_b, LBL.b_bikes)[0], tMon = rowOf(html[7].kid_b, LBL.b_bikes)[0];
   ok("Wash the bikes on Sunday and Monday (into the next week) = its Saturday row, byte for byte", !!tTue && tSun === tTue && tMon === tTue, [tTue, tSun]);
-  const all = Object.keys(html).map(n => html[n].kid_a + html[n].kid_b).join("");
-  ok("no list on any day says \"late\" or \"from \", or carries the red of the old tag", !/late/i.test(all) && all.indexOf("from ") < 0 && !RED.test(all));
-  ok("…what differs between its day and a wait day is only the list's own count (Chores 0/3 on Tue, 0/2 on Thu)", /Chores <span[^>]*>0\/3</.test(html[1].kid_a) && /Chores <span[^>]*>0\/2</.test(html[3].kid_a), [html[1].kid_a.slice(0, 400)]);
+  // the plain-row kinds (everything but the 3-a-week Empty the trash): no word, no red, anywhere on a list
+  const all = Object.keys(html).map(n => [html[n].kid_a, html[n].kid_b, html[n].kid_c].map(h => h.slice(0, h.indexOf('<div class="mr-steps"')) + rowsOf(h).filter(r => r.indexOf(LBL.a_trash) < 0).join("")).join("")).join("");
+  ok("no list on any day says \"late\" or \"from \", or carries the red of the old tag, on any row but the 3-a-week one", !/late/i.test(all) && all.indexOf("from ") < 0 && !RED.test(all));
+  const tr = n => rowOf(html[n].kid_a, LBL.a_trash)[0] || "";
+  ok("Empty the trash (Mon Wed Fri, 3 a week) keeps the old tag on every day it is late: red edge + \"1 day late\" Tue, Thu, Sat; \"2 days late\" Sun", [1, 3, 5].every(n => /^<div class="mr-step is-late"/.test(tr(n)) && /Empty the trash<span class="rt-late">1 day late<\/span>/.test(tr(n))) && /<span class="rt-late">2 days late<\/span>/.test(tr(6)), [tr(1), tr(6)]);
+  ok("the 🧽 house panel on Thursday: the \"late\" chip on Empty the trash (as before), none on the waiting Vacuum the den", (house3.match(/>late</g) || []).length === 1 && /Empty the trash<\/span>[^]*?>late</.test(house3.slice(house3.indexOf("Empty the trash"), house3.indexOf("Empty the trash") + 900)) && /Vacuum the den/.test(house3), house3.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 400));
+  ok("…and on its own days it is a plain row (Monday's turn ends when Wednesday comes)", [0, 2, 4, 7].every(n => !/rt-late|is-late/.test(tr(n))), tr(2));
+  ok("…what differs between its day and a wait day is only the list's own count (Chores 0/4 on Tue, 0/3 on Thu — the late 3-a-week row counts as before)", /Chores <span[^>]*>0\/4</.test(html[1].kid_a) && /Chores <span[^>]*>0\/3</.test(html[3].kid_a), [html[1].kid_a.slice(0, 400)]);
   ok("a waiting chore holds the list (and its bonus) open as today: Wed and Thu yes; dropped (Fri … Mon) it does not", holds[2] === true && holds[3] === true && [4, 5, 6, 7].every(n => holds[n] === false) && holds[8] === true, holds);
   ok("the day it drops it is just not there (Friday: no Vacuum the den, nothing in its place)", onList(html[4].kid_a, "a_vac") === 0 && rowsOf(html[4].kid_a).length === 3, rowsOf(html[4].kid_a).length);
   // Mom's notes
@@ -156,7 +161,9 @@ const B1 = {};
   ok("…a chore on its own day has no note (Shine the mirror on Friday: Tuesday's turn has already dropped)", /Shine the mirror \+4 ⭐<\/span>/.test(mom[4].kid_a) && mom[4].kid_a.indexOf("from Tue") < 0);
   ok("…never past its next day: Water the plants (Tue + Wed) has no \"from Tue\" on Wednesday — Tuesday's dropped when Wednesday came; Thursday says \"from Wed · day 1 of 1\"", /Water the plants \+3 ⭐<\/span>/.test(mom[2].kid_c) && /Water the plants \+3 ⭐<span[^>]*>from Wed · day 1 of 1</.test(mom[3].kid_c), [mom[2].kid_c.slice(0, 700)]);
   const kp = Object.keys(kidPop).map(n => kidPop[n].kid_a + kidPop[n].kid_b).join("");
-  ok("a kid's device opening the same pop-up: no note, no \"late\", no red", kp.indexOf("from ") < 0 && !/late/.test(kp) && !RED.test(kp) && /Vacuum the den/.test(kidPop[2].kid_a));
+  const kpPlain = kp.replace(/Empty the trash \+3 ⭐<span class="rt-late">\d days? late<\/span>/g, "");
+  ok("a kid's device opening the same pop-up: no note, and no \"late\" or red but the 3-a-week row's own tag (kids too, as before)", kp.indexOf("from ") < 0 && !/late/.test(kpPlain) && !RED.test(kpPlain) && /Vacuum the den/.test(kidPop[2].kid_a) && /Empty the trash \+3 ⭐<span class="rt-late">1 day late<\/span>/.test(kidPop[1].kid_a));
+  ok("Mom's pop-up: the 3-a-week row has the red tag as before (Tue \"1 day late\"), not the note", /Empty the trash \+3 ⭐<span class="rt-late">1 day late<\/span>/.test(mom[1].kid_a) && !/Empty the trash \+3 ⭐<span style/.test(mom[1].kid_a));
   Object.assign(B1, { html, mom });
 }
 
@@ -211,13 +218,13 @@ if (BASE) { const run = async index => { const { w, A, B } = await mkWorld("prev
       if (n === 1) { const m = w.mark(); A.run("rtWave('chores','kid_a',_todayDay," + stepIdx(A, "chores", "kid_a", "Vacuum the den") + ")"); await w.flush(); out.wave = writes(w, m); }
       if (n === 5) { const m = w.mark(); A.run("amSend('chores','kid_b',_todayDay," + stepIdx(A, "chores", "kid_b", "Wash the bikes") + ")"); await w.flush(); out.send = writes(w, m); }
       await go(w, n, 17, 0); teeth(B); await w.flush(); const a = draw(B, "chores", "kid_a"), b = draw(B, "chores", "kid_b"), pa = draw(B, "afternoon", "kid_a"), pb = draw(B, "afternoon", "kid_b");
-      const keep = h => rowsOf(h).filter(r => /Wipe the table|Rinse the sink|Pickup the|opacity:\.55|text-decoration:line-through/.test(r)).join("");
+      const keep = h => rowsOf(h).filter(r => /Wipe the table|Rinse the sink|Pickup the|opacity:\.55|text-decoration:line-through/.test(r) || (r.indexOf(LBL.a_trash) >= 0 && [0, 2, 4].indexOf((dOf(n).getDay() + 6) % 7) < 0)).join("");   // + the 3-a-week row on its late days
       out.day.push(J([keep(a0), keep(b0), keep(a), keep(b), pa, pb, B.run("JSON.stringify(typeof amFor==='function'?amFor('kid_b',_todayDay):[])"), B.run("typeof mrIndividualHTML==='function'?mrIndividualHTML('kid_b'):''")]));
       out.vacOn = (out.vacOn || []).concat(onList(a, "a_vac") ? [n] : []); out.bikesOn = (out.bikesOn || []).concat(onList(b, "b_bikes") ? [n] : []); await w.flush(); }
     out.miss = misses(w); out.am = J(w.get("amCarry")); out.waved = J(w.get("waved")); return out; };
   const N = await run(undefined), O = await run(BASE);
   const bad = N.day.map((s, i) => s === O.day[i] ? null : isoN(i)).filter(Boolean);
-  ok("the daily rows (Wipe the table, Rinse the sink), the turn wheel's rows (Pickup the den / porch), the waved row, the 🌅 morning list: the app before on all 10 days", bad.length === 0, bad);
+  ok("the daily rows (Wipe the table, Rinse the sink), the turn wheel's rows (Pickup the den / porch), the 3-a-week row on its late days (tag and all), the waved row, the 🌅 morning list: the app before on all 10 days", bad.length === 0, bad);
   ok("✕ today on Vacuum the den (Tuesday): the same writes as before (the wave record + its log line)", J(N.wave) === J(O.wave) && N.waved === O.waved, [N.wave, O.wave]);
   ok("…it does not wait: off the list from Tuesday, back next Tuesday (and then waits as usual)", J(N.vacOn) === J([8, 9]), N.vacOn);
   ok("🌅 Send to next morning on Wash the bikes (Saturday): the same writes as before, the same morning list", J(N.send) === J(O.send) && N.am === O.am, [N.send, O.send]);
