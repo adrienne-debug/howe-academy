@@ -164,6 +164,9 @@ console.log("\n# people, budgets, groups, occasions");
   W.gfSet("name", "Lucy's birthday 2027"); W.gfSet("date", "2027-03-02"); W.gfSave();
   const s = writes.find(w => w.op === "set");
   ok("a birthday gets its own sections (Main · Party · Small)", s.path === "gifts/occasions/lucy-s-birthday-2027" && s.val.secs.main && s.val.secs.party && s.val.secs.small);
+  T.setOcc("christmas-2026"); T.setRoot(root, "<nav/>"); W.gfOccEdit();
+  ok("OCCFIX: ✏️ an occasion shows its Sections (rename a section there) + Done, and no Kind picker", /<span>Sections<\/span>/.test(root.innerHTML) && /Done — move it/.test(root.innerHTML) && !/<span>Kind<\/span>/.test(root.innerHTML) && /value="Santa"/.test(root.innerHTML));
+  W.gfCancel(); W.gfNewOcc(); ok("…a NEW occasion shows Kind and no Sections", /<span>Kind<\/span>/.test(root.innerHTML) && !/<span>Sections<\/span>/.test(root.innerHTML)); W.gfCancel();
   writes.length = 0; T.setOcc("christmas-2026"); W.gfOccEdit(); W.gfSecAdd(); T.edit().form.secs[4].name = "Sibling gifts"; W.gfSet("closed", true); W.gfSave();
   ok("✏️ occasion: ＋ Section writes only the new section; Done → closed", writes.some(w => w.path === "gifts/occasions/christmas-2026/secs/sibling-gifts" && w.val.order === 4) &&
     writes.filter(w => /\/secs\//.test(w.path)).length === 1 && writes.find(w => w.path === "gifts/occasions/christmas-2026").val.closed === true);

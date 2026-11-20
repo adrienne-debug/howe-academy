@@ -366,12 +366,12 @@ function budgetSheet(){
 }
 function evenSheet(){return '<div class="gf-form"><div class="gf-sub wide">Flag a kid as behind when they are more than…</div>'+field("pct","% behind in dollars","15","money")+field("n","gifts behind","2","money")+'</div>';}
 function groupSheet(){return '<div class="gf-form">'+field("emoji","Emoji","🏡")+field("name","Group name","e.g. Neighbors")+'</div>';}
-function occSheet(){
+function occSheet(){   // OCCFIX (2026-11-20): editing an occasion shows its Sections + Done again — the checks read f.id, which the form never has, so they hid since slice 1
   const f=gfEdit.form;let h='<div class="gf-form">';
-  if(!f.id)h+='<div class="gf-f wide"><span>Kind</span><div class="gf-picks">'+Object.keys(GF_KINDS).map(k=>'<button class="gf-pick'+(f.kind===k?" on":"")+'" onclick="gfSetDraw(\'kind\',\''+k+'\')">'+esc(GF_KINDS[k].label)+'</button>').join("")+'</div></div>';
+  if(!gfEdit.id)h+='<div class="gf-f wide"><span>Kind</span><div class="gf-picks">'+Object.keys(GF_KINDS).map(k=>'<button class="gf-pick'+(f.kind===k?" on":"")+'" onclick="gfSetDraw(\'kind\',\''+k+'\')">'+esc(GF_KINDS[k].label)+'</button>').join("")+'</div></div>';
   h+=occForPicker(f);   // GIFTS_OCC: whose birthday
   h+=field("name","Name","e.g. a birthday 2027")+field("date","Date","","date")+field("budget","Whole budget (optional)","","money");
-  if(f.id){h+='<div class="gf-f wide"><span>Sections</span>'+f.secs.map((s,i)=>'<div style="display:flex;gap:6px;margin-top:4px"><input style="width:56px" value="'+esc(s.emoji)+'" oninput="gfSecEdit('+i+',\'emoji\',this.value)"><input value="'+esc(s.name)+'" oninput="gfSecEdit('+i+',\'name\',this.value)"></div>').join("")+
+  if(gfEdit.id){h+='<div class="gf-f wide"><span>Sections</span>'+f.secs.map((s,i)=>'<div style="display:flex;gap:6px;margin-top:4px"><input style="width:56px" value="'+esc(s.emoji)+'" oninput="gfSecEdit('+i+',\'emoji\',this.value)"><input value="'+esc(s.name)+'" oninput="gfSecEdit('+i+',\'name\',this.value)"></div>').join("")+
     '<button class="gf-tool" style="margin-top:6px;align-self:flex-start" onclick="gfSecAdd()">＋ Section</button></div>';
     h+='<label class="gf-f wide" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" style="width:auto"'+(f.closed?" checked":"")+' onchange="gfSet(\'closed\',this.checked)"> Done — move it to 📜 Past</label>';}
   return h+'</div>';
