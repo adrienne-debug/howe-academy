@@ -34,6 +34,10 @@
 //   🎂 nudge (birthday within 30 days, no occasion yet — nothing written until she taps) · 🕰 Last time strip · 📜 Past with totals.
 // GIFTS slice 7 (kids' wish lists, plan §3.7 / §4) — see GIFTS_WISH_START: a kid's page shows their own wishes/<kid> list;
 //   💭 Add as an idea → a present with wish:"<kid>/<wid>". Nothing is ever written under wishes/ about a present (the secret).
+// GIFTS_DAD (👨 Dad sharing, her answer "dad can too if given permission from mom and that can be per person per holiday", plan §5.1)
+//   — see GIFTS_DAD_START: gifts/share/<oid>/<pid> = "look"|"edit" (absent = off) · gifts/people/<pid>.isDad · giftShare/<oid> = true
+//   (own top node, no names — all Dad's Day reads before his code). The ONE other way this file's data loads: Dad's Day ▸ 🎁 Gifts,
+//   after Dad's code is typed that visit (window.renderGiftsDad) — only what Mom shared is ever drawn there.
 // GIFTS slice 5 (⏰ reminders, plan §3.6) — see GIFTS_REMIND_START: computed lines at the top of Gifts and in Home Base's 🔴 NOW
 //   (window.giftNowLines — Mom only, never a present's name). gifts/occasions/<oid>.orderBy = her "order the last presents by" date.
 // GIFTS_GROUPS (her ask + "yes" 2026-11-20) — see GIFTS_GROUPS_START: 👧 Kids · <each group> buttons on People (always opens on Kids);
@@ -150,6 +154,7 @@ function occHead(o){
   return '<div class="gf-card"><div class="gf-hd"><span>'+esc(o.name)+'</span>'+(o.date?'<span class="gf-days">'+daysTo(o.date)+'</span>':'')+
     '<button class="gf-tool gf-hdb" onclick="gfOccEdit()">✏️</button></div><div class="gf-bd">'+bar(T)+'<div class="gf-line">'+sumLine(T)+'</div>'+
     '<div class="gf-line" style="color:#475569">'+T.count+' present'+(T.count===1?'':'s')+(T.count?' · '+counts(T):'')+'</div>'+
+    dadSeesLine(o)+   // GIFTS_DAD: 👨 Dad sees: …
     (o.closed?'<div class="gf-line" style="color:#64748b">📜 Past — ✏️ and untick Done to reopen it.</div>':'')+'</div></div>';   // GIFTS_OCC
 }
 function daysTo(iso){const a=new Date(today()+"T12:00:00"),b=new Date(String(iso)+"T12:00:00");const d=Math.round((b-a)/864e5);return isNaN(d)?"":d>1?d+" days to go":d===1?"tomorrow":d===0?"today":"";}
@@ -163,7 +168,7 @@ function peopleView(o){
     const ps=P.filter(p=>(p.group||"other")===g.id);if(!ps.length)return;
     const T=groupTot(o.id,g.id);
     h+='<div class="gf-card"><div class="gf-ghd"><span>'+esc(g.emoji||"")+' '+esc(g.name)+'</span><span class="gf-gsum">'+money(T.paid)+(T.budget!=null?' / '+money(T.budget):'')+'</span>'+
-      '<button class="gf-tool" onclick="gfGroupBudget(\''+esc(g.id)+'\')">💲</button></div>'+(T.budget!=null?'<div style="padding:0 14px">'+bar(T)+'</div>':'')+grpSecLine(g)+'<div class="gf-bd">';   // GIFTS_GROUPS
+      '<button class="gf-tool" onclick="gfGroupBudget(\''+esc(g.id)+'\')">💲</button></div>'+(T.budget!=null?'<div style="padding:0 14px">'+bar(T)+'</div>':'')+grpSecLine(g)+dadGroupRow(o,g)+'<div class="gf-bd">';   // GIFTS_GROUPS · GIFTS_DAD: 👨 share the whole group
     ps.forEach(p=>{const PT=personTot(o.id,p.id);
       h+='<button class="gf-prow" onclick="gfOpenPerson(\''+esc(p.id)+'\')"><span class="gf-dot" style="background:'+esc(p.color||"#94a3b8")+'"></span>'+
         '<span class="gf-pn">'+esc(p.name)+'<span class="gf-pc">'+(PT.count?PT.count+' present'+(PT.count===1?'':'s')+(PT.shared?' · 👤 '+(PT.count-PT.shared)+' own · 🤝 '+PT.shared+' shared':'')+' · '+counts(PT):'nothing yet')+'</span>'+bar(PT)+'</span>'+
@@ -198,6 +203,7 @@ function personView(o,pid){
     '<div class="gf-bd">'+bar(T)+'<div class="gf-line">'+sumLine(T)+'</div><div class="gf-line" style="color:#475569">'+T.count+' present'+(T.count===1?'':'s')+(T.shared?' · 👤 '+(T.count-T.shared)+' just theirs · 🤝 '+T.shared+' shared':'')+(p.paper?' · 🎀 '+esc(p.paper):'')+'</div>'+
     (p.sizes?'<div class="gf-line">👕 '+esc(p.sizes)+'</div>':'')+   // GIFTS_OCC
     '<div style="margin-top:6px"><button class="gf-tool" onclick="gfBudget(\''+esc(pid)+'\')">💲 Budget</button></div></div></div>';
+  h+=dadShareCard(o,pid);   // GIFTS_DAD: 👨 Share with Dad — off · look · edit, this holiday
   h+=lastTime(o,pid);   // GIFTS_OCC: 🕰 what they got before
   h+=wishCard(o,pid);   // GIFTS_WISH: 💌 a kid's own wish list
   h+=ownSharedRow(mine);   // OWNSHARED: All · Just theirs · Shared (by how many kids)
@@ -1075,6 +1081,248 @@ Object.assign(window,{gfBdayStart,gfOccFor,gfOthers});
 const OCC_TEST={nextBday,nudges,pastGifts,occStar,bdayName,pastLabel,othersOpen:()=>gfOthersOpen};
 // GIFTS_OCC_END
 
+// GIFTS_DAD_START — 👨 Dad sharing (her answer 2026-11-20 to "Who can see the gift list?": "dad can too if given permission from
+// mom and that can be per person per holiday etc"; plan §5 answer 1. She never picked look-only or edit, so Mom picks per share:
+// off · 👀 look · ✏️ edit).
+// MOM'S SIDE (inside Gifts, Mom only as always):
+//   · a person's page: 👨 Share with Dad — Off · 👀 Look · ✏️ Edit, for THIS holiday.   gifts/share/<oid>/<pid> = "look" | "edit"
+//     (absent = off) — ONE targeted set / remove per person. A new holiday starts with nothing shared.
+//   · a group card: the same three buttons set everyone in the group — one write EACH, only for the people whose share changes.
+//   · the occasion card: "👨 Dad sees: <name> (edit), <name> (look)".
+//   · "👨 This person is Dad" tick on a person who isn't a kid: gifts/people/<pid>.isDad (ONE update). That person can never be
+//     shared (ticking it takes his shares away, one remove each), and a present whose pids include him NEVER renders on Dad's side,
+//     whatever else is shared. One Dad at a time (ticking another unticks the first).
+//   · giftShare/<oid> = true — its OWN top node (the giftPhotos pattern), no names: "something is shared for this holiday". Written
+//     only when a holiday goes from nothing shared to something (set) or back (remove). It is all index.html reads to decide whether
+//     Dad's Day shows "🎁 Gifts 🔒" — index.html still never reads gifts/.
+// DAD'S SIDE (Dad's Day ▸ 🎁 Gifts → window.renderGiftsDad, drawn by this block only):
+//   · THE SECRET: nothing under gifts/ is read until Dad's code has been typed THIS visit — index.html's giftDadOpen() (dadPinOk at
+//     its lock screen; his ?kiosk=dad link alone is never enough, nor are his 🔒 Star controls). renderGiftsDad draws nothing and
+//     starts no listener without it. Leaving the page, the screen sleeping, or 5 quiet minutes locks it again (index.html) and
+//     gfDadLock() then stops the gifts/ listener and drops the data from this device's memory (unless Mom is using this device).
+//   · he sees ONLY the holidays with someone shared, ONLY those people, ONLY their presents for that holiday: name, status,
+//     planned / paid, 📍 where, 🎀 paper — and that person's own budget bar. A present shared with someone who is NOT shared with him
+//     shows as "🤝 shared" and names only the people he is shared on (the safer pick: never a name he wasn't given).
+//   · his totals add up only the presents he can see (so a hidden one can't be worked out from the sum).
+//   · 👀 look = rows with no buttons at all (a present that is also for an ✏️ person is still read-only on the 👀 person's page).
+//     ✏️ edit = ＋ a present for that person (ONE set: occ, pids:[that person], sec, name,
+//     status, plan?, paid?, store?, where?, paper?, by:"dad") and, on a present, status / where / paper / paid (ONE update of just
+//     the fields he changed). He can't move, re-assign, rename or delete anything. A 📜 Past holiday is look-only.
+//   · never on his side: people not shared, ⚖️ Even, 🧾 receipts, the 🗄 Stash, presents for no one, wish lists, group / holiday
+//     budgets and totals, reminders, notes, links — or anything for HIM.
+//   · every change he makes is logged "Dad: …" in gifts/log.
+// Honest limit: the database has one lock per family, so once unlocked Dad's device downloads the whole gifts/ node — the app just
+// never shows him the rest. And the gift view is only as secret as Dad's code.
+const GD_MODES=[["","Off"],["look","👀 Look"],["edit","✏️ Edit"]];
+let gdRoot=null, gdAh="", gdOcc=null, gdPid=null, gdEdit=null;
+function dadIds(){const S=gfData.people||{},o={};Object.keys(S).forEach(id=>{if(S[id]&&S[id].isDad&&!S[id].gone&&!/^k_/.test(id))o[id]=1;});return o;}
+function shareRaw(oid,pid){const v=((gfData.share||{})[oid]||{})[pid];return v==="look"||v==="edit"?v:"";}
+function shareMode(oid,pid){if(!oid||!pid||dadIds()[pid])return "";return people().some(p=>p.id===pid)?shareRaw(oid,pid):"";}   // what Dad really gets: never Dad himself, never someone taken off the list
+function sharedPeople(oid){return people().filter(p=>shareMode(oid,p.id));}
+function shareAny(oid){return sharedPeople(oid).length>0;}
+function modeWord(m){return m==="edit"?"edit":m==="look"?"look":"off";}
+function flagSync(oid,was){const now=shareAny(oid);if(now!==was)write("giftShare/"+oid,now?true:null,now?"set":"remove");}   // the no-names flag Dad's Day reads
+function setShare(oid,pid,mode){   // ONE targeted write for this person — false when nothing changed
+  mode=mode==="look"||mode==="edit"?mode:"";if(dadIds()[pid])mode="";
+  if(shareRaw(oid,pid)===mode)return false;
+  const S=node("share"),O=S[oid]=S[oid]||{};
+  if(mode){O[pid]=mode;write("gifts/share/"+oid+"/"+pid,mode,"set");}
+  else{delete O[pid];if(!Object.keys(O).length)delete S[oid];write("gifts/share/"+oid+"/"+pid,null,"remove");}
+  return true;
+}
+function gfShareDad(pid,mode){
+  const oid=curOcc(),o=occ(oid),p=person(pid);if(!o||!p)return;
+  if(dadIds()[pid]){toast("That's Dad — his presents are never shared");return;}
+  const was=shareAny(oid);
+  if(setShare(oid,pid,mode)){flagSync(oid,was);log("👨 Dad + "+p.name+" for "+o.name+": "+modeWord(shareRaw(oid,pid)));}
+  gfDraw();
+}
+function gfShareGroup(gid,mode){
+  const oid=curOcc(),o=occ(oid);if(!o)return;const g=groups().find(x=>x.id===gid)||{},D=dadIds();
+  const P=people().filter(p=>(p.group||"other")===gid&&!D[p.id]),was=shareAny(oid);let n=0;
+  P.forEach(p=>{if(setShare(oid,p.id,mode))n++;});   // one write each, only where it changes
+  if(n){flagSync(oid,was);const m=mode==="look"||mode==="edit"?mode:"";log("👨 Dad + "+(g.name||gid)+" ("+n+") for "+o.name+": "+modeWord(m));toast("✓ "+(g.name||"Group")+" — "+(m?"Dad can "+m:"not shared"));}
+  gfDraw();
+}
+function gfDadIs(pid,on){   // "👨 This person is Dad" — never a kid; his shares go, everywhere
+  const P=node("people"),cur=P[pid];if(!cur||/^k_/.test(pid))return;on=!!on;
+  const was={};occs().forEach(o=>{was[o.id]=shareAny(o.id);});
+  if(on){
+    Object.keys(dadIds()).forEach(x=>{if(x!==pid){delete P[x].isDad;write("gifts/people/"+x,{isDad:null},"update");}});   // one Dad at a time
+    cur.isDad=true;write("gifts/people/"+pid,{isDad:true},"update");
+    Object.keys(gfData.share||{}).forEach(oid=>{if(shareRaw(oid,pid))setShare(oid,pid,"");});
+  }else{if(!cur.isDad)return;delete cur.isDad;write("gifts/people/"+pid,{isDad:null},"update");}
+  occs().forEach(o=>flagSync(o.id,was[o.id]));
+  log("👨 "+(cur.name||pid)+(on?" is Dad — presents for him never show on his side":" is no longer marked as Dad"));gfDraw();
+}
+function dadStyle(){
+  if(typeof document==="undefined"||!document.getElementById)return;
+  try{if(!document.getElementById("gf-style")){const s=document.createElement("style");s.id="gf-style";s.textContent=GF_CSS+RC_CSS+OCC_CSS+GRP_CSS;document.head.appendChild(s);}   // Dad's side opens without Mom's page ever drawing
+    if(!document.getElementById("gf-dad-style")){const s=document.createElement("style");s.id="gf-dad-style";s.textContent=DAD_CSS;document.head.appendChild(s);}}catch(e){}
+}
+function dadPickRow(cur,call){return GD_MODES.map(m=>'<button class="gf-pick'+(cur===m[0]?" on":"")+'" onclick="'+call(m[0])+'">'+m[1]+'</button>').join("");}
+function dadShareCard(o,pid){   // Mom: on a person's page
+  const p=person(pid);if(!o||!p)return "";dadStyle();
+  const kid=/^k_/.test(pid),isD=!!dadIds()[pid],m=shareMode(o.id,pid),nm=esc(p.name),on=esc(o.name);
+  let h='<div class="gf-card gf-dadc"><div class="gf-ghd"><span>👨 Share with Dad</span><span class="gf-gsum">'+on+'</span></div><div class="gf-bd">';
+  if(isD)h+='<div class="gf-sub" style="margin:0">This is Dad. Presents for him never show on his side, and he can\'t be shared.</div>';
+  else{h+='<div class="gf-picks">'+dadPickRow(m,v=>"gfShareDad('"+esc(pid)+"','"+v+"')")+'</div><div class="gf-sub" style="margin:6px 0 0">'+
+      (m==="edit"?"✏️ Dad sees "+nm+"'s presents for "+on+" and can add one, or change a present's status, spot, paper and what was paid."
+       :m==="look"?"👀 Dad sees "+nm+"'s presents for "+on+" — looking only."
+       :"Off — Dad doesn't see "+nm+" for "+on+".")+
+      ' He opens it from Dad\'s Day ▸ 🎁 Gifts with his code. Every holiday starts with nothing shared.</div>';
+    if(!Object.keys(dadIds()).length)h+='<div class="gf-sub" style="margin:6px 0 0;color:#b45309">Is Dad on your list? Open his page and tick “This person is Dad” so presents for him never show on his side.</div>';}
+  if(!kid&&(gfData.people||{})[pid])h+='<label class="gf-dadis"><input type="checkbox"'+(isD?" checked":"")+' onchange="gfDadIs(\''+esc(pid)+'\',this.checked)"> 👨 This person is Dad</label>';
+  return h+'</div></div>';
+}
+function dadGroupRow(o,g){   // Mom: on a group card — the whole group in one tap
+  if(!o||!g)return "";const D=dadIds(),P=people().filter(p=>(p.group||"other")===g.id&&!D[p.id]);if(!P.length)return "";dadStyle();
+  const M=P.map(p=>shareMode(o.id,p.id)),all=M.every(x=>x===M[0])?M[0]:null,n=M.filter(Boolean).length;
+  return '<div class="gf-dadg"><span>👨 Share all with Dad'+(n&&all===null?' · '+n+' of '+P.length+' shared':'')+'</span>'+dadPickRow(all,v=>"gfShareGroup('"+esc(g.id)+"','"+v+"')")+'</div>';
+}
+function dadSeesLine(o){   // Mom: on the occasion card
+  if(!o)return "";const P=sharedPeople(o.id);if(!P.length)return "";
+  return '<div class="gf-line">👨 Dad sees: '+P.map(p=>esc(p.name)+' ('+modeWord(shareMode(o.id,p.id))+')').join(", ")+'</div>';
+}
+// ── Dad's side ──
+function dadIn(){try{return typeof giftDadOpen==="function"&&giftDadOpen()===true;}catch(e){return false;}}   // his code, typed this visit (index.html)
+function dadOccs(){return occs().filter(o=>shareAny(o.id));}
+function dadCurOcc(){
+  const O=dadOccs();if(gdOcc&&O.some(o=>o.id===gdOcc))return gdOcc;
+  const t=today(),open=O.filter(o=>!o.closed),next=open.find(o=>String(o.date||"")>=t)||open[open.length-1]||O[O.length-1];
+  return gdOcc=next?next.id:null;
+}
+function dadSees(it,oid){const D=dadIds(),P=pidsOf(it);return !!it&&it.occ===oid&&P.length>0&&!P.some(x=>D[x])&&P.some(x=>shareMode(oid,x));}   // never one for Dad, never one for no one
+function dadItems(oid,pid){return items(oid).filter(it=>dadSees(it,oid)&&(!pid||pidsOf(it).indexOf(pid)>=0));}
+function dadCanEdit(it,pid){   // on <pid>'s page: only when THAT person is shared as ✏️ edit — a 👀 look page is read-only all the way down
+  const o=it&&occ(it.occ);return !!o&&!o.closed&&dadSees(it,it.occ)&&!!pid&&pidsOf(it).indexOf(pid)>=0&&shareMode(it.occ,pid)==="edit";}
+function dadTot(oid,pid){const T=tally(dadItems(oid,pid),it=>share(it,pid));T.budget=num(plan(oid,pid).budget);return T;}   // only what he can see + that person's own budget
+function dadModeChip(m){return m==="edit"?chip("✏️ you can edit","#2C5F8A"):chip("👀 look only","#64748b");}
+function dadRow(it,pid,oid){
+  const s=st(it.status),others=pidsOf(it).filter(x=>x!==pid),seen=others.filter(x=>shareMode(oid,x)).map(x=>(person(x)||{}).name||"?");
+  const who=others.length?chip("🤝 shared"+(seen.length?" with "+seen.join(", "):""),"#0e7490"):"";   // only names he was given
+  const paid=num(it.paid),pl=num(it.plan),can=dadCanEdit(it,pid);
+  const amt=paid!=null?money(paid):(pl!=null?'<span style="color:#64748b">plan '+money(pl)+'</span>':'—');
+  const inner='<div class="gf-it"><b>'+esc(it.name)+'</b></div><div class="gf-im">'+chip(s[1],s[2])+who+(it.where?'<span>📍 '+esc(it.where)+'</span>':'')+(it.paper?'<span>🎀 '+esc(it.paper)+'</span>':'')+(paid!=null&&pl!=null?'<span>planned '+money(pl)+'</span>':'')+'</div>';
+  return '<div class="gf-item'+(live(it)?'':' dead')+'">'+(can?'<button class="gf-ib" onclick="gdEditItem(\''+esc(it.id)+'\')">'+inner+'</button>':'<div class="gf-ib gd-ro">'+inner+'</div>')+
+    '<div class="gf-ia"><div class="gf-amt">'+amt+'</div>'+(can?'<span class="gd-pen">✏️</span>':'')+'</div></div>';
+}
+function dadOccBar(){const O=dadOccs(),cur=dadCurOcc();if(O.length<2)return "";
+  return '<div class="gf-occs">'+O.map(o=>'<button class="gf-occ'+(o.id===cur?" on":"")+'" onclick="gdPickOcc(\''+esc(o.id)+'\')">'+esc(o.name)+'</button>').join("")+'</div>';}
+function dadListView(o){
+  const P=sharedPeople(o.id);
+  let h='<div class="gf-card"><div class="gf-hd"><span>'+esc(o.name)+'</span>'+(o.date&&!o.closed?'<span class="gf-days">'+daysTo(o.date)+'</span>':'')+'</div><div class="gf-bd"><div class="gf-line" style="color:#475569">Mom shared '+P.length+' '+(P.length===1?'person':'people')+' with you'+(o.closed?' — this one is over, so it\'s look only':'')+'. Everything else stays a surprise.</div></div></div>';
+  h+='<div class="gf-card"><div class="gf-bd">'+P.map(p=>{const T=dadTot(o.id,p.id),m=o.closed?"look":shareMode(o.id,p.id);
+    return '<button class="gf-prow" onclick="gdOpen(\''+esc(p.id)+'\')"><span class="gf-dot" style="background:'+esc(p.color||"#94a3b8")+'"></span>'+
+      '<span class="gf-pn">'+esc(p.name)+' '+dadModeChip(m)+'<span class="gf-pc">'+(T.count?T.count+' present'+(T.count===1?'':'s')+' · '+counts(T):'nothing yet')+'</span>'+bar(T)+'</span>'+
+      '<span class="gf-amt">'+money(T.paid)+(T.budget!=null?'<small> / '+money(T.budget)+'</small>':'')+'</span></button>';}).join("")+'</div></div>';
+  return h;
+}
+function dadPersonView(o,pid){
+  const p=person(pid),m0=shareMode(o.id,pid);if(!p||!m0){gdPid=null;return dadListView(o);}
+  const m=o.closed?"look":m0,T=dadTot(o.id,pid),S=secsFor(o,[pid]),mine=dadItems(o.id,pid),known=S.map(s=>s.id);
+  let h='<button class="gf-tool" style="margin-bottom:8px" onclick="gdBack()">← Everyone shared</button>';
+  h+='<div class="gf-card"><div class="gf-hd" style="background:'+esc(p.color||"#475569")+'"><span>'+esc(p.name)+' · '+esc(o.name)+'</span></div><div class="gf-bd">'+bar(T)+'<div class="gf-line">'+sumLine(T)+'</div>'+
+    '<div class="gf-line" style="color:#475569">'+T.count+' present'+(T.count===1?'':'s')+' · '+dadModeChip(m)+'</div>'+
+    (m==="edit"?'<div class="gf-sub" style="margin:6px 0 0">Tap a present to change its status, spot, paper or what was paid. ＋ adds one for '+esc(p.name)+'.</div>':'')+'</div></div>';
+  S.concat(mine.some(it=>known.indexOf(it.sec)<0)?[{id:"",emoji:"📦",name:"No section"}]:[]).forEach(s=>{
+    const L=mine.filter(it=>s.id?it.sec===s.id:known.indexOf(it.sec)<0);if(!L.length&&m!=="edit")return;
+    h+='<div class="gf-card"><div class="gf-ghd"><span>'+esc(s.emoji||"")+' '+esc(s.name)+'</span><span class="gf-gsum"></span>'+(m==="edit"&&s.id?'<button class="gf-tool" onclick="gdNew(\''+esc(pid)+'\',\''+esc(s.id)+'\')">＋</button>':'')+'</div>'+
+      '<div class="gf-bd">'+(L.length?L.map(it=>dadRow(it,pid,o.id)).join(""):'<div class="gf-empty">Nothing here yet.</div>')+'</div></div>';});
+  if(!mine.length&&m!=="edit")h+='<div class="gf-card"><div class="gf-empty">No presents for '+esc(p.name)+' yet.</div></div>';
+  return h;
+}
+function gdField(k,label,ph,type){const f=gdEdit.form;return '<label class="gf-f"><span>'+label+'</span><input id="gd-f-'+k+'"'+(type==="money"?' inputmode="decimal"':'')+' value="'+esc(f[k])+'" placeholder="'+esc(ph||"")+'" oninput="gdSet(\''+k+'\',this.value)"></label>';}
+function gdSheetInner(){   // every box has an id (gd-f-<field>) so the app's own repaint (_preserveUI) puts his cursor back mid-typing
+  const E=gdEdit,f=E.form,nw=E.kind==="new",o=occ(dadCurOcc()),it=nw?null:(gfData.items||{})[E.id];
+  let h='<button class="gf-x" onclick="gdCancel()">✕</button><div style="font-weight:800;font-size:15px;margin-bottom:8px">'+(nw?"➕ New present for "+esc((person(E.pid)||{}).name||""):"✏️ "+esc((it||{}).name||"Present"))+'</div><div class="gf-form">';
+  if(nw){h+='<label class="gf-f wide"><span>What</span><input id="gd-f-name" value="'+esc(f.name)+'" placeholder="e.g. LEGO treehouse" oninput="gdSet(\'name\',this.value)"></label>';
+    h+='<div class="gf-f wide"><span>Section</span><div class="gf-picks">'+secsFor(o,[E.pid]).map(s=>'<button class="gf-pick'+(f.sec===s.id?" on":"")+'" onclick="gdSetDraw(\'sec\',\''+esc(s.id)+'\')">'+esc((s.emoji||"")+" "+s.name)+'</button>').join("")+'</div></div>';}
+  h+='<div class="gf-f wide"><span>Status</span><div class="gf-picks">'+GF_STATUS.map(s=>'<button class="gf-pick'+(f.status===s[0]?" on":"")+'" onclick="gdSetDraw(\'status\',\''+s[0]+'\')">'+esc(s[1])+'</button>').join("")+'</div></div>';
+  if(nw)h+=gdField("plan","Planned $","","money");
+  h+=gdField("paid","Paid $","","money");
+  if(nw)h+=gdField("store","Store","e.g. Target");
+  h+='<div class="gf-f wide">'+gdField("where","📍 Where it's hidden","e.g. garage, top shelf")+'</div><div class="gf-f wide">'+gdField("paper","🎀 Wrapping paper","e.g. gold stars")+'</div></div>';
+  return h+'<div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap"><button class="gf-tool gf-save" onclick="gdSave()">Save</button><button class="gf-tool" onclick="gdCancel()">Cancel</button></div>';
+}
+function gdSheet(){return gdEdit?'<div id="gd-sheet" onclick="if(event.target.id===\'gd-sheet\')gdCancel()"><div class="gf-sh">'+gdSheetInner()+'</div></div>':"";}
+function gdDraw(){
+  if(!gdRoot)return;
+  if(!dadIn()){gdEdit=null;gdRoot.innerHTML=gdAh+'<div class="gf-empty" style="padding:40px">🔒 Locked.</div>';return;}
+  let body;
+  if(!gfLoaded)body='<div class="gf-empty" style="padding:40px">Loading…</div>';
+  else{const oid=dadCurOcc(),o=oid&&occ(oid);
+    body=o?dadOccBar()+(gdPid?dadPersonView(o,gdPid):dadListView(o)):'<div class="gf-card"><div class="gf-empty" style="padding:24px">Nothing is shared with you right now.</div></div>';
+    if(!o)gdEdit=null;}
+  gdRoot.innerHTML=gdAh+'<div id="gd-page"><div class="gf-wrap"><div class="gf-title">🎁 Gifts <span class="gd-tag">shared with Dad</span></div>'+body+'</div></div>'+gdSheet();
+}
+function dadOnData(){if(gdRoot&&!gdEdit)gdDraw();}   // gifts/ changed (Mom shared or bought something) while he's looking
+function gdPickOcc(id){gdOcc=id;gdPid=null;gdEdit=null;gdDraw();}
+function gdOpen(pid){gdPid=pid;gdEdit=null;gdDraw();try{window.scrollTo(0,0);}catch(e){}}
+function gdBack(){gdPid=null;gdEdit=null;gdDraw();}
+function gdCancel(){gdEdit=null;gdDraw();}
+function gdSet(k,v){if(gdEdit)gdEdit.form[k]=v;}
+function gdSetDraw(k,v){if(!gdEdit)return;gdEdit.form[k]=v;let sh=null;try{sh=gdRoot&&gdRoot.querySelector&&gdRoot.querySelector("#gd-sheet .gf-sh");}catch(e){}
+  if(sh){const keep=sh.scrollTop||0;sh.innerHTML=gdSheetInner();try{sh.scrollTop=keep;}catch(e){}}else gdDraw();}   // the pop-up keeps its place (SHEETINPLACE)
+function gdEditItem(id){
+  const it=(gfData.items||{})[id];if(!dadIn()||!it||!dadCanEdit(Object.assign({id},it),gdPid))return;
+  gdEdit={kind:"edit",id,pid:gdPid,form:{status:it.status||"idea",where:it.where||"",paper:it.paper||"",paid:it.paid==null?"":String(it.paid)}};gdDraw();
+}
+function gdNew(pid,sid){
+  const oid=dadCurOcc(),o=occ(oid);if(!dadIn()||!o||o.closed||shareMode(oid,pid)!=="edit")return;
+  const S=secsFor(o,[pid]),sec=S.some(s=>s.id===sid)?sid:((S[0]&&S[0].id)||"");
+  gdEdit={kind:"new",id:null,pid,form:{name:"",sec,status:"idea",plan:"",paid:"",store:"",where:"",paper:defaultPaper([pid],sec,oid)}};gdDraw();
+}
+function gdSave(){
+  if(!gdEdit)return;if(!dadIn()){gdEdit=null;return gdDraw();}
+  const E=gdEdit,f=E.form,stOk=GF_STATUS.some(s=>s[0]===f.status);
+  if(E.kind==="edit"){
+    const it=(gfData.items||{})[E.id];if(!it||!dadCanEdit(Object.assign({id:E.id},it),E.pid)){gdEdit=null;return gdDraw();}
+    const up={},said=[];   // ONLY status / where / paper / paid, and only what he changed
+    if(stOk&&f.status!==(it.status||"idea")){up.status=f.status;said.push(st(f.status)[1]);}
+    [["where","📍"],["paper","🎀"]].forEach(x=>{const v=String(f[x[0]]||"").trim().slice(0,80);if(v!==String(it[x[0]]||"")){up[x[0]]=v||null;said.push(x[1]+" "+(v||"cleared"));}});
+    const pd=num(f.paid);if(pd!==num(it.paid)){up.paid=pd;said.push(pd==null?"paid cleared":"paid "+money(pd));}
+    if(Object.keys(up).length){Object.keys(up).forEach(k=>{if(up[k]==null)delete it[k];else it[k]=up[k];});
+      write("gifts/items/"+E.id,up,"update");log("Dad: "+it.name+" — "+said.join(" · "));toast("✓ Saved");}
+  }else{
+    const pid=E.pid,oid=dadCurOcc(),o=occ(oid),p=person(pid);if(!o||o.closed||!p||shareMode(oid,pid)!=="edit"){gdEdit=null;return gdDraw();}
+    const name=String(f.name||"").trim().slice(0,140);if(!name){toast("What is it?");return;}
+    const S=secsFor(o,[pid]),rec={occ:oid,pids:[pid],sec:S.some(s=>s.id===f.sec)?f.sec:((S[0]&&S[0].id)||""),name,status:stOk?f.status:"idea",ts:Date.now(),by:"dad"};
+    ["store","where","paper"].forEach(k=>{const v=String(f[k]||"").trim().slice(0,80);if(v)rec[k]=v;});
+    ["plan","paid"].forEach(k=>{const v=num(f[k]);if(v!=null)rec[k]=v;});
+    const iid=uid();node("items")[iid]=rec;write("gifts/items/"+iid,rec,"set");
+    log("Dad: added "+name+" → "+p.name+(rec.paid!=null?" "+money(rec.paid):""));toast("✓ Added");
+  }
+  gdEdit=null;gdDraw();
+}
+function gfDadLock(){   // index.html: he left the page, the screen slept, or 5 quiet minutes — forget it all on this device
+  gdRoot=null;gdEdit=null;gdPid=null;gdOcc=null;
+  let mom=false;try{mom=typeof momHere==="function"&&momHere();}catch(e){}
+  if(mom||!gfOn)return;   // Mom's own Gifts on this device keeps its listener
+  try{if(typeof db!=="undefined"&&db){const r=db.ref("gifts");if(r&&typeof r.off==="function")r.off();}}catch(e){}
+  gfData={};gfLoaded=false;gfOn=false;
+}
+window.renderGiftsDad=function(el,ah){
+  if(!el)return;
+  if(!dadIn()){gdRoot=null;el.innerHTML=(ah||"")+'<div class="gf-empty" style="padding:40px">🔒 Dad\'s code first.</div>';return;}   // no code this visit → nothing is read, nothing is drawn
+  dadStyle();gdRoot=el;gdAh=ah||"";gfListen();gdDraw();
+};
+const DAD_CSS=`
+.gf-dadc .gf-bd{padding-top:4px}
+.gf-dadis{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;font-weight:700;color:#334155;cursor:pointer}
+.gf-dadis input{width:18px;height:18px;flex:none}
+.gf-dadg{display:flex;flex-wrap:wrap;align-items:center;gap:5px;padding:4px 14px 0;font-size:11.5px;color:#64748b;font-weight:700}
+.gf-dadg span{flex:1;min-width:120px}
+.gf-dadg .gf-pick{padding:3px 9px;font-size:11.5px}
+#gd-sheet{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:300;display:flex;align-items:flex-end;justify-content:center}
+.gd-tag{font-family:'DM Sans',sans-serif;font-size:11px;font-weight:800;color:#2C5F8A;background:#e0ecf7;border-radius:99px;padding:2px 9px;vertical-align:middle;margin-left:6px}
+.gd-ro{cursor:default}
+.gd-pen{font-size:12px;opacity:.6}
+`;
+Object.assign(window,{gfShareDad,gfShareGroup,gfDadIs,gfDadLock,gdPickOcc,gdOpen,gdBack,gdCancel,gdSet,gdSetDraw,gdEditItem,gdNew,gdSave});
+window._gfDadTest={shareMode,shareRaw,shareAny,sharedPeople,dadIds,dadOccs,dadItems,dadSees,dadCanEdit,dadTot,dadSeesLine,dadGroupRow,dadShareCard,edit:()=>gdEdit,pid:()=>gdPid,root:()=>gdRoot,on:()=>gfOn,loaded:()=>gfLoaded,draw:gdDraw};
+// GIFTS_DAD_END
+
 // GIFTS_REMIND_START — ⏰ Reminders, slice 5 (plan §3.6 "Reminders (inside Mom's Day only)" + §4 slice 5: "⏰ return windows (and
 // early buys whose window ends before the 25th) · 📦 late orders · 🚚 order-by date · 🎀 left to wrap · 🔎 Jan 2 'never marked given'
 // — on the Budget tab and in 🔴 NOW on Home Base"). Computed from the presents + receipts every time, never stored. Each reminder is
@@ -1295,6 +1543,7 @@ function gfListen(){
   if(gfOn)return;gfOn=true;
   if(typeof db==="undefined"||!db){gfLoaded=true;return;}
   db.ref("gifts").on("value",s=>{const first=!gfLoaded;gfData=s.val()||{};gfLoaded=true;try{if(typeof tab!=="undefined"&&tab==="moms-plan"&&typeof mpSubView!=="undefined"&&mpSubView==="gifts"&&!gfEdit)gfDraw();}catch(e){}
+    dadOnData();   // GIFTS_DAD: Dad's own view (only ever mounted after his code) repaints too
     if(first)nowRepaint();});   // GIFTS_REMIND: Home Base asked before gifts/ was in → its 🔴 NOW lines, once
 }
 const GF_CSS=`

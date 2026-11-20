@@ -120,6 +120,7 @@ const ALLOWED_FN=["cpuWatch",   // 📦 CPUNIT (2026-10-28): a unit's catalog en
   "amAttach",   // 🌅 SENDAM (2026-11-15): a kid's carried-to-morning items arriving (amCarry/<kid> listener)
   "hdAttach","hdRefused","hdSweepOff",   // 🚪 HOUSEDAY (house step 4, 2026-11-17): the day's plan arriving (houseDay listener), a refused save's answer, Kid Off's re-hand from the minute tick — never a tap
   "digestEnsure","msScanEnsure",   // ⚡ 3a (2026-11-19): digest/ arriving when the weekly report opens (DIGESTLAZY), one sprint book's list arriving (SCANLAZY) — listener callbacks, never a tap
+  "giftDadFlagListen",   // 🎁 GIFTS_DAD (2026-11-20): the no-names flag giftShare arriving (Mom shared / unshared something) — Dad's Day redraws its "🎁 Gifts 🔒" row; a listener, never a tap
   "currOnValue",   // 📚 CURRLIVE (2026-11-08): the curriculum arriving (first load, or another device's edit) — the listener's one helper
   "attachWeekListeners","initFb","_loadPrevSl","mmAttachWeek","momBlocksListen","peekLoad","lrListen","rbLogListen","wsOnValue","hrOnValue","helpersOnValue","helperDaysOnValue","helperGiveOnValue","famProgOnValue","msgOnValue","pagesApply","envmRelease","envtFinalAttach","envsReadShared","envsHomeReadHowe","envcSub","envClsKidLoad"];   // 🌿 ENVMIRROR / ENVSITE: listener-attach helpers whose arrivals combine; the teacher's release listener (data arrived)
 const stray=[]; { let cur=null; html.split("\n").forEach((l,i)=>{ const m=l.match(/^(?:async\s+)?function\s+([\w$]+)/); if(m) cur=m[1];

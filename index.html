@@ -5182,7 +5182,7 @@ function navStackSync(){
 // _mdwCan: Mom's page is hers (momHere); Dad's can be set from his link, his unlocked Day, or by Mom.
 // Navigation + display only: no scheduler, no kid data.
 let ssOrderData=null; try{ ssOrderData=JSON.parse(HA_LS.getItem('ha_day_order')||"null"); }catch(e){}
-const SS_OTHER_VIEWS=["prep","house","weigh","grocery","meals","cal","dadcal","dadall","dadmast","curr","sset","hist","wins","scor","mhq","chores","hq","gen","budget","esa","gifts"];   // SCHOOLPAGES: + the School pages · MPGROUPS: + Chores & Stars, HQ, Generate Week · BUDGETTAB: + Budget ▸ Overview / ESA (purch gone)   // every Mom's Day sub-view that is NOT a Today page (renderMomsPlanView's routes)
+const SS_OTHER_VIEWS=["prep","house","weigh","grocery","meals","cal","dadcal","dadall","dadmast","dadgifts","curr","sset","hist","wins","scor","mhq","chores","hq","gen","budget","esa","gifts"];   // SCHOOLPAGES: + the School pages · MPGROUPS: + Chores & Stars, HQ, Generate Week · BUDGETTAB: + Budget ▸ Overview / ESA (purch gone)   // every Mom's Day sub-view that is NOT a Today page (renderMomsPlanView's routes)
 let _ssIds={}, _ssD=null;
 var _navStackRO, _navStackSeen;   // var: navStackWire (above) sets the observer before this line runs
 function ssJumpOn(){ try{ return tab==="moms-plan"&&!momSchedView&&SS_OTHER_VIEWS.indexOf(mpSubView)<0; }catch(e){ return false; } }   // Mom's Day ▸ Today (plan / null) or ▸ Dad's Day ('dad')
@@ -7363,12 +7363,12 @@ function renderMPGifts(el){
   el.innerHTML=top+'<div style="padding:40px;text-align:center;color:var(--muted)">Loading presents\u2026</div>';
   giftsLoad(()=>{ el.innerHTML=top+'<div style="padding:40px;text-align:center;color:var(--muted)">Couldn\'t load the gift list \u2014 check the internet and tap 💰 Budget again.</div>'; });
 }
-function giftsLoad(onErr){   // the one gifts.js loader — 💰 Budget ▸ Gifts and (GIFTS_NOW) Home Base's 🔴 NOW, both behind the Mom door
+function giftsLoad(onErr){   // the one gifts.js loader — 💰 Budget ▸ Gifts and (GIFTS_NOW) Home Base's 🔴 NOW, both behind the Mom door · GIFTS_DAD: and Dad's Day ▸ Gifts, only after Dad's code
   if(window.renderGifts||window._gfLoading) return; window._gfLoading=true;
   const s=document.createElement("script");
   s.src=/github\.io$/.test(location.hostname)?("gifts.js?v="+Date.now()):"gifts.js";
-  s.onload=()=>{ if(tab==="moms-plan"&&(mpSubView==="gifts"||giftHomeBase())) renderAll(); };
-  s.onerror=()=>{ window._gfLoading=false; if(onErr&&tab==="moms-plan"&&mpSubView==="gifts") onErr(); };
+  s.onload=()=>{ if(tab==="moms-plan"&&(mpSubView==="gifts"||mpSubView==="dadgifts"||giftHomeBase())) renderAll(); };
+  s.onerror=()=>{ window._gfLoading=false; if(onErr&&tab==="moms-plan"&&(mpSubView==="gifts"||mpSubView==="dadgifts")) onErr(); };
   document.head.appendChild(s);
 }
 // GIFTS_NOW (slice 5, plan §3.6 "on the Budget tab, and as 🔴 NOW lines on Mom's Day Home Base (which is behind the door)"): the gift
@@ -7391,6 +7391,98 @@ function giftNowHTML(){
 function giftNowOpen(view,oid){ try{ if(typeof window.gfRemGo==="function") window.gfRemGo(view,oid,true); }catch(e){} mpGoto('gifts'); }
 function giftNowRepaint(){ if(!giftHomeBase()) return; const el=document.getElementById("content"); if(el) renderMomsPlan(el); }
 // GIFTS_END
+// GIFTS_DAD_START — 👨 Dad's Day ▸ 🎁 Gifts: what Mom shared with Dad (her answer 2026-11-20 to "Who can see the gift list?":
+// "dad can too if given permission from mom and that can be per person per holiday etc"). The list itself is drawn by gifts.js
+// (GIFTS_DAD there); this block is only the entry on Dad's Day, the lock, and the loader call.
+// THE SECRET (plan §3.7 — kids use this app all day on shared iPads, Dad's Day is NOT behind Mom's door, and there is a Dad TV link):
+//  · Dad's Day shows "🎁 Gifts 🔒" only when Mom has shared something — known from giftShare/<oid> = true, a tiny top node of its
+//    own with no names in it (gifts.js writes it on Mom's side). This page still never reads gifts/ (tests assert it). The entry
+//    never shows a name or a count.
+//  · The page asks for Dad's code EVERY visit (dadPinOk — Dad's code or the admin code). His ?kiosk=dad link alone never opens it,
+//    nor do his 🔒 Star controls, nor Mom mode. gifts.js is not even loaded until the code is right, and it re-checks giftDadOpen()
+//    before it reads or draws anything.
+//  · It locks again — and gifts.js drops the data from this device's memory — when he taps ← Dad's Day, when anything else is
+//    drawn in its place, when the screen sleeps or the app goes to the background, and after 5 quiet minutes. No clock ticks for
+//    this (PERF_BUDGET: no new short setInterval): a MutationObserver on #content sees the page being replaced, every tap / key
+//    re-checks, and the 5 minutes are ONE timeout restarted by each tap.
+//  · 5 wrong codes → a one-minute wait (remembered on the device, so a reload doesn't reset it).
+// Writes nothing. Honest limit: the database has one lock per family; once unlocked, Dad's device holds the gifts/ node until it locks.
+let giftDadIn=false, giftDadFlag=null, giftDadFlagOn=false, giftDadIdleT=null, giftDadObs=null, giftDadWired=false;
+const GIFT_DAD_IDLE_MS=5*60*1000, GIFT_DAD_TRIES=5, GIFT_DAD_WAIT_MS=60*1000;
+function giftDadFlagListen(){
+  if(giftDadFlagOn||typeof db==="undefined"||!db) return; giftDadFlagOn=true;
+  db.ref("giftShare").on("value",s=>{ const was=giftDadShared(); giftDadFlag=s.val()||{};
+    try{ if(giftDadShared()!==was&&tab==="moms-plan"&&mpSubView==="dad") renderAllSoon(); }catch(e){} });
+}
+function giftDadShared(){ const f=giftDadFlag; return !!f&&typeof f==="object"&&Object.keys(f).some(k=>f[k]===true); }
+function giftDadEntryHTML(){   // on Dad's Day, top of his column
+  if(giftDadIn) giftDadLock();   // Dad's Day is on screen → the gift page isn't
+  giftDadFlagListen(); if(!giftDadShared()) return "";
+  return '<div style="margin:10px 12px 0"><button onclick="mpGoto(\'dadgifts\')" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:#fff;border:none;border-radius:12px;padding:11px 14px;box-shadow:0 4px 20px rgba(43,122,120,0.13);font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;color:#2C5F8A">'
+    +'<span style="flex:1">🎁 Gifts 🔒</span><span style="font-size:16px">›</span></button></div>';
+}
+function giftDadOpen(){ try{ return giftDadIn===true&&tab==="moms-plan"&&mpSubView==="dadgifts"; }catch(e){ return false; } }   // gifts.js asks this before every read and draw
+function giftDadLock(){
+  giftDadIn=false;
+  if(giftDadIdleT){ try{ clearTimeout(giftDadIdleT); }catch(e){} giftDadIdleT=null; }
+  if(giftDadObs){ try{ giftDadObs.disconnect(); }catch(e){} giftDadObs=null; }
+  try{ if(typeof window.gfDadLock==="function") window.gfDadLock(); }catch(e){}   // stop the gifts/ listener, forget the data
+}
+function giftDadRepaint(){ try{ if(tab==="moms-plan"&&mpSubView==="dadgifts"){ const el=document.getElementById("content"); if(el) renderMomsPlan(el); } }catch(e){} }
+function giftDadHere(){ try{ return tab==="moms-plan"&&mpSubView==="dadgifts"&&!(typeof momSchedView!=="undefined"&&momSchedView)&&!!document.getElementById("gd-page")&&!document.hidden; }catch(e){ return false; } }
+function giftDadCheck(){ if(giftDadIn&&!giftDadHere()){ giftDadLock(); giftDadRepaint(); } }   // still his gift page on screen? — asked when #content is redrawn and on every tap / key, never by a clock
+function giftDadIdle(){   // (re)start the 5 quiet minutes — ONE timeout, not an interval
+  if(giftDadIdleT){ try{ clearTimeout(giftDadIdleT); }catch(e){} }
+  giftDadIdleT=setTimeout(function(){ giftDadIdleT=null; if(giftDadIn){ giftDadLock(); giftDadRepaint(); } },GIFT_DAD_IDLE_MS);
+}
+function giftDadWatch(){   // called once the unlocked page is drawn
+  giftDadIdle();
+  try{ if(!giftDadObs&&typeof MutationObserver==="function"){ const c=document.getElementById("content"); if(c){ giftDadObs=new MutationObserver(giftDadCheck); giftDadObs.observe(c,{childList:true}); } } }catch(e){}
+  if(giftDadWired) return; giftDadWired=true;
+  try{
+    document.addEventListener("visibilitychange",function(){ if(document.hidden&&giftDadIn){ giftDadLock(); giftDadRepaint(); } });
+    window.addEventListener("pagehide",function(){ if(giftDadIn) giftDadLock(); });
+    ["pointerdown","keydown"].forEach(function(ev){ document.addEventListener(ev,function(){ if(!giftDadIn) return; giftDadCheck(); if(giftDadIn) giftDadIdle(); },true); });
+  }catch(e){}
+}
+function giftDadTries(){ try{ const v=JSON.parse(HA_LS.getItem("ha_gd_try")||"null"); if(v&&typeof v==="object") return {n:+v.n||0,until:+v.until||0}; }catch(e){} return {n:0,until:0}; }
+function giftDadTry(){
+  const i=document.getElementById("gd-pin"), e=document.getElementById("gd-pin-err"); if(!i) return;
+  const say=function(t){ if(e) e.textContent=t; };
+  if(!DAD_PIN&&!ADMIN_PIN){ say("Mom hasn't set a Dad code yet."); return; }
+  const T=giftDadTries();
+  if(Date.now()<T.until){ i.value=""; say("Too many tries — wait a minute."); return; }
+  if(dadPinOk(i.value)){
+    try{ HA_LS.removeItem("ha_gd_try"); }catch(x){}
+    giftDadIn=true; giftDadRepaint(); giftDadWatch(); return;
+  }
+  T.n++; if(T.n>=GIFT_DAD_TRIES){ T.n=0; T.until=Date.now()+GIFT_DAD_WAIT_MS; }
+  try{ HA_LS.setItem("ha_gd_try",JSON.stringify(T)); }catch(x){}
+  i.value=""; say(T.until>Date.now()?"Too many tries — wait a minute.":"Not right — try again.");
+}
+function giftDadBack(){ giftDadLock(); mpSubView='dad'; const el=document.getElementById('content'); if(el) renderMomsPlan(el); try{ window.scrollTo(0,0); }catch(e){} }
+function renderDadGifts(el){
+  if(!el){ el=document.getElementById("content"); if(!el) return; }
+  const top='<div id="mp-subnav" style="padding:10px 14px;display:flex;align-items:center;gap:10px;background:#fff;border-bottom:2px solid #DEF2F1">'
+    +'<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:#2C5F8A">🎁 Gifts</div><span style="flex:1"></span>'
+    +'<button onclick="giftDadBack()" style="border:1.5px solid #2C5F8A;background:#fff;color:#2C5F8A;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+(giftDadIn?'🔒 Lock · ':'')+'← Dad’s Day</button></div>';
+  if(!giftDadIn){   // the lock — nothing about the gifts is on this screen, and nothing has been read
+    el.innerHTML=top+'<div style="font-family:\'DM Sans\',sans-serif;min-height:50vh;display:flex;align-items:center;justify-content:center;padding:24px">'
+      +'<div style="background:#fff;border-radius:16px;box-shadow:0 4px 20px rgba(43,122,120,0.13);padding:24px 22px;max-width:320px;width:100%;text-align:center">'
+      +'<div style="font-size:38px">🔒</div>'
+      +'<div style="font-family:\'Fraunces\',serif;font-size:21px;font-weight:700;margin:6px 0 2px">Dad’s code</div>'
+      +'<div style="font-size:12.5px;color:var(--muted);margin-bottom:14px">It opens what Mom shared with you, and locks again when you leave this page.</div>'
+      +'<input id="gd-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" onkeydown="if(event.key===\'Enter\')giftDadTry()" style="width:140px;text-align:center;font-size:22px;letter-spacing:6px;padding:8px;border:2px solid #2C5F8A;border-radius:12px;font-family:\'DM Sans\',sans-serif">'
+      +'<div id="gd-pin-err" style="color:#b91c1c;font-size:12px;font-weight:700;min-height:16px;margin-top:8px"></div>'
+      +'<button onclick="giftDadTry()" style="margin-top:6px;border:none;background:#2C5F8A;color:#fff;border-radius:10px;padding:9px 22px;font-size:14px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">Open</button>'
+      +'</div></div>';
+    return;
+  }
+  if(window.renderGiftsDad){ window.renderGiftsDad(el,top); return; }
+  el.innerHTML=top+'<div id="gd-page" style="padding:40px;text-align:center;color:var(--muted)">Loading…</div>';
+  giftsLoad(()=>{ el.innerHTML=top+'<div id="gd-page" style="padding:40px;text-align:center;color:var(--muted)">Couldn\'t load the gift list — check the internet and try again.</div>'; });
+}
+// GIFTS_DAD_END
 // EIC_START — ✏️ Editor in Chief skill engine lives in eic.js (lazy, like esa.js). Slice 2, 2026-09-20.
 // 🗓 THE SCHEDULE LINK (her ask 2026-09-22): when a kid's ✏️ switch is on, their Editor in Chief card drops its page
 // numbers, and its button opens the engine's next page. Mom saving a score checks off today's card.
@@ -12342,6 +12434,7 @@ function renderDadsDay(el){
     (_kioskD()?'':'<button onclick="mpSubView=null;renderMomsPlan(document.getElementById(\'content\'))" style="border:1.5px solid var(--border);background:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">← Mom\'s Day</button>')+'</div>';
   h+=_ss('jump');   // STICKYSTACK: the jump row goes here, right under his row
   h+='<div class="ss-col ss-col-dad" style="padding-bottom:28px">';   // STICKYSTACK: one column for every card (each carries its own 10px 12px margins), so any of them can be dragged anywhere
+  try{ if(typeof giftDadEntryHTML==="function") h+=giftDadEntryHTML(); }catch(e){}   // 🎁 GIFTS_DAD: "🎁 Gifts 🔒" — only when Mom shared something; never a name or a count
 
   // ── ⏲ kitchen prep due now — same rows Mom's Day puts in 🔴 NOW ──
   h+=_ss('kitchen','🔴 Kitchen');   // STICKYSTACK
@@ -12420,6 +12513,7 @@ function momGateOpen(){
   if(typeof momHere==="function"&&momHere()) return true;   // MOMSWITCH: the switch is on (was: + momDayIn, the code at the door every visit)
   if(typeof _kioskD==="function"&&_kioskD()) return true;
   if(mpSubView==='dad'||mpSubView==='dadcal'||mpSubView==='dadall'||mpSubView==='dadmast') return true;   // 👨 DADFIX: ▸ All is Dad's side · KC_PLAY: his 📚 Drills · 🎮 Games
+  if(mpSubView==='dadgifts') return true;   // 🎁 GIFTS_DAD: Dad's Day ▸ Gifts — its own lock (Dad's code, every visit) is drawn by renderDadGifts
   if(grFromDad&&(mpSubView==='grocery'||mpSubView==='meals')) return true;    // Dad's Day → his list / meals
   if(mpSubView==='meals'&&kitView&&!kitEditId) return true;                    // tonight's dinner → just reading the recipe
   return false;
@@ -12466,6 +12560,7 @@ function renderMomsPlanView(el){
   if(mpSubView==='dadcal'){ return renderDadCalendar(el); }
   if(mpSubView==='dadall'){ return renderDadAll(el); }   // 👨 DADFIX
   if(mpSubView==='dadmast'){ return renderDadMast(el); }   // 📚🎮 KC_PLAY: a kid's Drills · Games inside Dad's Day
+  if(mpSubView==='dadgifts'){ return renderDadGifts(el); }   // 🎁 GIFTS_DAD: what Mom shared with Dad — behind Dad's code, typed every visit
   renderMomsDay(el);
 }
 
