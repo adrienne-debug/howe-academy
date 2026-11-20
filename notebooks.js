@@ -3584,6 +3584,7 @@ ${extraStrip || ""}
   }
   // SPELLPAGE_END
   function unitInsertPages(ins, weekNum, theme) {
+    if (ins && uwRowsOf(ins).length && !uwHasCards(ins)) return uwOnlyPage(ins, weekNum, theme);   // UNITWEEK
     if (!ins || !((ins.learning && ins.learning.length) || (ins.learned && ins.learned.length) || (ins.next && ins.next.length))) return [];
     var esc = function (v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
     var _t = theme || UNIT_INSERT_THEMES.lincoln;
@@ -3610,11 +3611,13 @@ ${extraStrip || ""}
     estH += 34 + (learnedN + nextN ? 74 : 0) + (learnedN > 12 ? 20 : 0);
     if (extrasList.length) estH += 22 + Math.ceil(extrasList.length / 2) * (extrasList.some(function (e) { return String(e.text || "").length > 70; }) ? 30 : 17);
     estH += 78;   // challenge box
+    estH += uwHeight(ins);   // UNITWEEK
     var onePage = estH <= 880;
     var tot = (onePage ? 1 : 2) + acts.length;
     var p1 = '<div class="page-label">Unit Study — ' + esc(title) + ' (1/' + tot + ')</div>\n<div class="page">\n' + hdr(emoji + " This Week", "Week " + weekNum) +
       '<div style="padding:16px 40px;flex:1;display:flex;flex-direction:column;gap:11px;overflow:hidden">' +
       '<div style="font-size:11px;color:' + MUT + '">What you’re learning right now — read each one’s story.</div>';
+    if (uwRowsOf(ins).length && uwPlace(ins).page === 1) p1 = uwInto(p1, uwBlockHTML(ins, _t, uwPlace(ins).n));   // UNITWEEK
     (ins.learning || []).slice(0, 5).forEach(function (m) {
       var subline = [(m.group || ""), (m.sub || "")].filter(Boolean).map(esc).join(" · ");
       p1 += '<div style="display:flex;gap:13px;align-items:flex-start;border:1.5px solid ' + GL + ';background:' + GP + ';border-radius:11px;padding:10px 13px">' + face(m.portrait, 64) +
@@ -3626,6 +3629,7 @@ ${extraStrip || ""}
     p1 += '</div></div>';
     var p2 = '<div class="page-label">Unit Study — ' + esc(title) + ' (2/' + tot + ')</div>\n<div class="page">\n' + hdr("Your Journey", "Week " + weekNum) +
       '<div style="padding:16px 40px;flex:1;display:flex;flex-direction:column;gap:14px;overflow:hidden">';
+    if (uwRowsOf(ins).length && uwPlace(ins).page === 2) p2 = uwInto(p2, uwBlockHTML(ins, _t, uwPlace(ins).n));   // UNITWEEK
     p2 += '<div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:' + GM + ';margin-bottom:7px">✅ Learned so far (' + ((ins.learned || []).length) + ')</div>';
     if ((ins.learned || []).length) { p2 += '<div style="display:flex;flex-wrap:wrap;gap:9px">'; ins.learned.forEach(function (m) { p2 += '<div style="width:74px;text-align:center">' + face(m.portrait, 52) + '<div style="font-size:9px;font-weight:700;color:' + INK + ';margin-top:3px;line-height:1.15">' + esc(m.name) + '</div></div>'; }); p2 += '</div>'; } else p2 += '<div style="font-size:11px;color:' + MUT + '">None finished yet — keep going!</div>';
     p2 += '</div>';
@@ -3641,6 +3645,7 @@ ${extraStrip || ""}
       p12 = '<div class="page-label">Unit Study — ' + esc(title) + ' (1/' + tot + ')</div>\n<div class="page">\n' + hdr(emoji + " This Week", "Week " + weekNum) +
         '<div style="padding:12px 40px 14px;flex:1;display:flex;flex-direction:column;gap:8px;overflow:hidden">' +
         '<div style="font-size:10.5px;color:' + MUT + '">What you’re learning right now — read each one’s story.</div>';
+      p12 = uwInto(p12, uwBlockHTML(ins, _t));   // UNITWEEK
       learnList.forEach(function (m) {
         var subline = [(m.group || ""), (m.sub || "")].filter(Boolean).map(esc).join(" · ");
         p12 += '<div style="display:flex;gap:11px;align-items:flex-start;border:1.5px solid ' + GL + ';background:' + GP + ';border-radius:10px;padding:7px 11px">' + face(m.portrait, 48) +
@@ -3700,6 +3705,100 @@ ${extraStrip || ""}
     });
     return (onePage ? [p12] : [p1, p2]).concat(actPages);
   }
+  // UNITWEEK_START — 🧾 "This week we will…" on the unit insert (PLAN_unit_sheet_2026-11-19.md §4.1, §5 row 1; her "Yes, build it"
+  // 2026-11-19). index.html (UNITWEEK: uwAttach) hands an insert ins.week = {rows:[{dn, label, chips[]}], more} — the unit days laid
+  // on this kid's week, in order. The list prints under the header, above the cards: a ☐, the weekday, "Day 3 — the title", then
+  // one line of chips (📚 book · ▶ video · 🎨 activity · ✂️ craft · 🍎 snack · 🎲 game). Pages clip (8.5×11in, overflow:hidden),
+  // so: at most 5 rows (index.html caps; "+ N more" past that), every row two fixed lines (31px), a long title or chip line ends in
+  // "…" on its one line, never wraps; the block's height joins the page's own estimate, so a full card list still falls to two
+  // pages, and there the list goes where it fits (uwPlace). A unit with days this week but no card prints one page: the list, then a "My page" box. No ins.week → nothing here
+  // runs and the insert is main's, byte for byte.
+  var UW_ROW_H = 31, UW_ROOM = 950;   // the content box under the header is 988px (measured); 38px kept spare
+  function uwRowsOf(ins, max) { var R = (ins && ins.week && ins.week.rows) || []; return R.slice(0, Math.min(5, max == null ? 5 : max)); }
+  function uwMoreOf(ins, shown) { return (ins.week.more > 0 ? ins.week.more : 0) + Math.max(0, Math.min(ins.week.rows.length, 5) - shown); }
+  function uwHasCards(ins) { return !!((ins.learning && ins.learning.length) || (ins.learned && ins.learned.length) || (ins.next && ins.next.length)); }
+  // The block's own height for n rows (measured: 58 / 120 / 182 px for 1 / 3 / 5 rows, + 12 for "+ N more"), the gap under it included.
+  function uwBlockH(ins, n) { if (n == null) n = uwRowsOf(ins).length; return n ? 40 + n * UW_ROW_H + (uwMoreOf(ins, n) > 0 ? 12 : 0) : 0; }
+  // What the one-page estimate adds with the list. The estimate under-counts "Your Journey" (74px for up to 12 learned faces that
+  // wrap five to a row beside "Coming up next") — harmless while the page had room to spare (its 880 limit leaves ~108px of the
+  // real 988), not once the list takes ~190px of it (measured 2026-11-19: a full one-page insert clipped by 20px). So with the list
+  // the faces are counted row by row (60px a row + the label), and 40px of that spare room is given back, so a short list doesn't
+  // push a page that fits onto two. No list → 0, and the estimate is main's.
+  function uwHeight(ins) {
+    var bh = uwBlockH(ins); if (!bh) return 0;
+    var ln = Math.min((ins.learned || []).length, 12), nn = (ins.next || []).length, per = nn ? 5 : 11;
+    var faces = (ln + nn) ? 16 + 60 * Math.max(Math.ceil(ln / per), Math.ceil(nn / 5)) : 0;
+    return bh + Math.max(0, faces - ((ln + nn) ? 74 : 0) - ((ins.learned || []).length > 12 ? 20 : 0)) - 40;
+  }
+  // Two-page inserts have no height check of their own: five long stories fill page 1 ("This Week"), and page 2 ("Your Journey")
+  // shows every learned face. Each page is estimated at its printed sizes (page 1: 64px picture, the name, the group line, the
+  // story at ~110 letters a line of 16.5px; page 2: faces eight to a row of ~77px, names that wrap, the lore, the Challenge box)
+  // and the list goes where it fits whole — page 1 first, else page 2. Neither: as many rows as fit on the roomier one, "+ N more"
+  // under them; not even one row (page 1 already over-full with five very long stories, page 2 with dozens of faces) → no list on
+  // that insert, rather than a clipped page.
+  function uwP1Used(ins) {
+    var h = 32 + 15, L = (ins.learning || []).slice(0, 5);
+    L.forEach(function (m) { var sub = m.group || m.sub; h += 11 + 23 + Math.max(64, Math.ceil(String(m.name || "").length / 40) * 18 + (sub ? 18 : 3) + Math.ceil(String(m.bio || "").length / 110) * 16.5); });
+    return L.length ? h : h + 11 + 16;
+  }
+  function uwFaceRows(list, per) { var r = [], i; for (i = 0; i < list.length; i += per) r.push(list.slice(i, i + per)); return r.reduce(function (h, row) { return h + 9 + 56 + 3 + 10.5 * Math.max.apply(null, row.map(function (m) { return Math.ceil(String(m.name || "").length / 12) || 1; })); }, -9); }
+  function uwP2Used(ins) {
+    var ld = ins.learned || [], nx = ins.next || [], ex = (ins.extras || []).slice(0, 5);
+    var h = 32 + 17 + (ld.length ? uwFaceRows(ld, 8) : 14);
+    if (nx.length) h += 14 + 17 + uwFaceRows(nx, 8);
+    if (ex.length) h += 14 + 16 + ex.reduce(function (a, e) { return a + 5 + 15 * Math.ceil((String(e.name || "").length + String(e.text || "").length + 12) / 80); }, 0);
+    return h + 14 + 131;
+  }
+  function uwPlace(ins) {
+    var full = uwRowsOf(ins).length, f1 = UW_ROOM - uwP1Used(ins), f2 = UW_ROOM - uwP2Used(ins);
+    if (uwBlockH(ins, full) <= f1) return { page: 1, n: full };
+    if (uwBlockH(ins, full) <= f2) return { page: 2, n: full };
+    var pg = f1 >= f2 ? 1 : 2, f = Math.max(f1, f2), n = full;
+    while (n > 0 && uwBlockH(ins, n) > f) n--;
+    return { page: pg, n: n };
+  }
+  function uwBlockHTML(ins, theme, max) {
+    var rows = uwRowsOf(ins, max); if (!rows.length) return "";
+    var more = uwMoreOf(ins, rows.length);
+    var esc = function (v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
+    var _t = theme || UNIT_INSERT_THEMES.lincoln, GM = _t.GM, GL = _t.GL, INK = "#1c1c1e", MUT = "#6b7280";
+    var one = "white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
+    var h = '<div data-uw="1" style="flex-shrink:0;border:1.5px solid ' + GL + ';border-radius:10px;padding:6px 12px 5px">' +
+      '<div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:' + GM + ';line-height:12px;margin-bottom:2px">This week we will</div>';
+    rows.forEach(function (r) {
+      h += '<div style="display:flex;gap:8px;align-items:flex-start;height:' + UW_ROW_H + 'px;padding-top:2px;box-sizing:border-box;overflow:hidden">' +
+        '<span style="width:12px;height:12px;border:2px solid ' + GM + ';border-radius:3px;flex-shrink:0;margin-top:1px;box-sizing:border-box"></span>' +
+        '<span style="width:28px;flex-shrink:0;font-family:\'DM Mono\',monospace;font-size:10px;font-weight:700;color:' + GM + ';line-height:15px">' + esc(r.dn) + '</span>' +
+        '<div style="flex:1;min-width:0"><div style="font-size:11.5px;font-weight:700;color:' + INK + ';line-height:15px;' + one + '">' + esc(r.label) + '</div>' +
+        '<div style="font-size:9.5px;color:' + MUT + ';line-height:12px;' + one + '">' + esc((r.chips || []).join(" · ")) + '</div></div></div>';
+    });
+    if (more > 0) h += '<div style="font-size:9px;color:' + MUT + ';line-height:12px;padding-left:48px">+ ' + more + ' more this week</div>';
+    return h + '</div>';
+  }
+  // The block goes first inside the page's content box (the first overflow:hidden box after the header; titles are escaped, so no
+  // title can carry that text).
+  function uwInto(page, block) {
+    var k = 'overflow:hidden">', i = page.indexOf(k);
+    return (block && i >= 0) ? page.slice(0, i + k.length) + block + page.slice(i + k.length) : page;
+  }
+  // A unit with days this week and no card: one page — the insert's own header (drawn as unitInsertPages draws it), the list, a
+  // "My page" box. Activity pages keep today's rule (a unit with no card prints none).
+  function uwOnlyPage(ins, weekNum, theme) {
+    var esc = function (v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
+    var _t = theme || UNIT_INSERT_THEMES.lincoln, GD = _t.GD, GM = _t.GM, GL = _t.GL, GOLD = _t.GOLD, MUT = "#6b7280";
+    var emoji = ins.emoji || "📘", title = ins.title || "Unit Study";
+    var hdr = '<div style="background:' + GD + ';padding:14px 40px;display:flex;justify-content:space-between;align-items:flex-end;flex-shrink:0">' +
+      '<div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.2em;text-transform:uppercase;color:' + GL + ';opacity:0.85;margin-bottom:3px">' + esc(title) + ' · Unit Study</div>' +
+      '<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:#fff;line-height:1">' + esc(emoji + " This Week") + '</div></div>' +
+      '<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:600;color:' + GOLD + '">' + esc("Week " + weekNum) + '</div></div>' +
+      '<div style="height:5px;flex-shrink:0;background:repeating-linear-gradient(90deg,' + GM + ' 0,' + GM + ' 18px,' + GOLD + ' 18px,' + GOLD + ' 22px,' + GM + ' 22px,' + GM + ' 40px)"></div>';
+    return ['<div class="page-label">Unit Study — ' + esc(title) + ' (1/1)</div>\n<div class="page">\n' + hdr +
+      '<div style="padding:16px 40px;flex:1;display:flex;flex-direction:column;gap:11px;overflow:hidden">' + uwBlockHTML(ins, theme) +
+      '<div style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700;color:' + GD + '">✏️ My page</div>' +
+      '<div style="flex:1;min-height:200px;border:2px dashed ' + GM + ';border-radius:12px"></div>' +
+      '<div style="font-size:10px;color:' + MUT + '">Draw or write about something you did this week.</div></div>\n</div>'];
+  }
+  // UNITWEEK_END
   // USNB_START — 🇺🇸 UNITED STATES PATH, slice 6 part 1: the stage pages (PLAN_us_unit_2026-11-16.md §7, §9 row 6; her words
   // 2026-11-16: "id also like to make a us unit so, presidents, american battles admendments governments etc"; her go 2026-11-17
   // via the hub: "Yes, start it"). The app hands each enrolled kid's US Path insert an `us` record (index.html USNB: usNbCtx —
