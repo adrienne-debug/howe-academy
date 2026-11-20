@@ -45,13 +45,13 @@ console.log("1. Today (Thursday): a missed Tuesday chore is on the card, as in K
   ok("…a waved late chore is left off", !L.some(s=>/Wipe sink/.test(s)), L);
   ok("…a chore whose course ended never comes back as late", !L.some(s=>/Fold towels/.test(s)), L);
   const h=c.pop("chores","thursday");
-  ok("pop-up: Sweep porch has the Kids' Corner tag", /Sweep porch<span class="rt-late">2 days late<\/span>/.test(h), h.slice(0,600));
+  ok("pop-up: Sweep porch is a plain row, no red Kids' Corner tag (CHOREWAIT 2026-11-19: kids see nothing; Mom's note is pinned in test_chore_wait.js)", /Sweep porch<\/span>/.test(h)&&!/rt-late/.test(h), h.slice(0,600));
   ok("…Feed fish is done, so no late tag but it counts as done (✅)", /Feed fish<\/span>/.test(h)&&!/Feed fish<span class="rt-late"/.test(h)&&/>✅</.test(h));
   ok("…the waved one stays greyed (as before) with no late tag", /Wipe sink<\/span>/.test(h)&&!/Wipe sink<span class="rt-late"/.test(h)&&/>–</.test(h));
   ok("…the ended one is not a row", !/Fold towels/.test(h));
   ok("…the header count matches the pill: (1/3)", /\(1\/3\)/.test(h), (h.match(/\(\d+\/\d+\)/)||[])[0]);
   ok("…a late row's ○ is still a tap by its step index (mdKidTick … ,0)", /mdKidTick\('chores','kid','thursday',0\)/.test(h));
-  ok("1 day → '1 day late' (singular)", (()=>{ const c2=mk(); c2.LATE[0]=1; return /Sweep porch<span class="rt-late">1 day late<\/span>/.test(c2.pop("chores","thursday"))&&c2.run("choreList('kid','thursday')").indexOf("🧹 Sweep porch (1 day late)")>=0; })());
+  ok("1 day → no tag on the pop-up (CHOREWAIT); the card's own list keeps '(1 day late)'", (()=>{ const c2=mk(); c2.LATE[0]=1; return !/rt-late/.test(c2.pop("chores","thursday"))&&c2.run("choreList('kid','thursday')").indexOf("🧹 Sweep porch (1 day late)")>=0; })());
 }
 console.log("2. Another day's tab: due-only, never late");
 { const c=mk(); c._todayDay="thursday";
@@ -73,7 +73,7 @@ console.log("4. Read-only, scoped");
 { ok("the KIDSLATE block, mdSlotCounts, the card and the pop-up call no _rtLogLateMiss / _rtLogMiss", ![BLOCK,fn("mdSlotCounts"),KT,fn("boardStatPop")].some(s=>/_rtLogLateMiss\(|_rtLogMiss\(/.test(s)));
   ok("…and write nothing to Firebase", ![BLOCK,fn("mdSlotCounts"),fn("boardStatPop")].some(s=>/db\.ref|\.set\(|\.update\(/.test(s)));
   ok("the morning rows still come from morningDueIdx only", /const _mDue=morningDueIdx\(kid,day\);/.test(fn("boardStatPop")));
-  ok("Kids' Corner still files the miss itself (unchanged)", /_rtLogLateMiss\(slot,kid,i,cad,st\.label,pts\);/.test(fn("rtSlotHTML")));
+  ok("Kids' Corner still files the miss itself — the day the chore drops (CHOREWAIT)", /_rtLogLateMiss\(slot,kid,i,st\.cad\|\|"daily",st\.label,st\.pts\|\|0\)/.test(fn("rtSlotHTML")));
   ok("the old 🗂 Board's slotCounts is untouched (no KIDSLATE in it)", !/KIDSLATE|mdLateDays/.test(fn("slotCounts")));
 }
 ok("no 🔀", src.indexOf("🔀")<0);

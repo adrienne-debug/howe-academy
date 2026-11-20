@@ -74,7 +74,7 @@ console.log("\n── 2. carry and the logged miss ──");
   const pa=Object.values(w.get("houseDay/"+TUE+"/plan")||{}).filter(x=>x.who==="kid_a");
   ok("Tuesday: it is carried, first in line among kid_a's house chores, 1 day late", p.who==="kid_a"&&p.why==="carried"&&p.late===1&&pa.every(x=>x===p||x.order>p.order), p);
   const i=idx(B,"chores","kid_a","c_a_vac","tuesday"); ok("rtLateDays gives the plan's late (the red badge)", i>=0&&B.run("(function(){ const d=day; day='tuesday'; try{ return rtLateDays('chores','kid_a',"+i+"); } finally{ day=d; } })()")===1);
-  ok("…and the list draws the late badge", /1 day late/.test(B.run("(function(){ const d=day; day='tuesday'; try{ return rtSlotHTML('chores','kid_a'); } finally{ day=d; } })()")));
+  ok("…and the list draws no late badge (CHOREWAIT: kids see nothing; the plan's own count stays in rtLateDays)", !/day late/.test(B.run("(function(){ const d=day; day='tuesday'; try{ return rtSlotHTML('chores','kid_a'); } finally{ day=d; } })()")));
   const b=w.get("houseDay/"+TUE+"/plan/c_b_mop")||{}; ok("an every-N chore past its date stays due and gets later (no carry record needed)", b.k==="every"&&b.late===3&&b.since==="2026-11-14", b);
   w.db.api("t").ref("household/people/kid_a/school").set(5); await w.flush(); await w.at(2026,11,18,7,0);
   await w.at(2026,11,19,7,0);
