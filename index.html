@@ -191,8 +191,6 @@ body.ha-dragging,body.ha-dragging *{user-select:none!important;-webkit-user-sele
 .mr-step.done{background:#f0fdf4;border-color:#86efac}
 .mr-pts{font-size:11px;font-weight:800;color:#b45309;background:#fef3c7;border-radius:999px;padding:2px 8px;flex-shrink:0}
 .cadtag{font-size:10px;font-weight:700;color:var(--muted);background:var(--bg);border:1px solid var(--border);border-radius:999px;padding:1px 7px;white-space:nowrap}
-.rt-late{font-size:10px;font-weight:800;color:#b91c1c;background:#fef2f2;border:1px solid #fca5a5;border-radius:999px;padding:1px 7px;margin-left:5px;white-space:nowrap}
-.mr-step.is-late{background:#fffafa;box-shadow:inset 3px 0 0 #ef4444}
 .bcard{background:var(--card,#fff);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px}
 .peek-tab{background:#f5f3ff!important;color:#7c5295!important;font-weight:800}
 .ev-banner{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}
@@ -256,7 +254,6 @@ body.ha-dragging,body.ha-dragging *{user-select:none!important;-webkit-user-sele
 .kc-big .sl-slot-sub{font-size:13px}
 .kc-big .mr-pts{font-size:14px;padding:4px 10px}
 .kc-big .cadtag{display:none}
-.kc-big .rt-late{font-size:12px}
 .kc-quick{display:flex;flex-direction:column;align-items:center;gap:4px;width:84px;padding:10px 6px!important;font-size:12px!important}
 .kc-quick-e{font-size:30px;line-height:1}
 @media (max-width:640px){.kc-little .gcal-month-day.lay{min-height:64px} .kc-little .gcal-month-day.lay .gmd-line{width:11px;height:11px}}
@@ -2810,7 +2807,34 @@ function _rtOffCycle(st,dayName,prevWeek){
   return !stepCycleOk(st,iso);
 }
 // LATE_CYCLE_END
-function rtLateDays(slot,kid,i){
+// CHOREWAIT_START — her rule 2026-11-19 (missed-chores design, slice C1): a chore is like a daily school card, not a lesson in a
+// row: "there needs to be a buffer for that so that way we're not getting lots of things backed up. Because once it reaches that
+// grace window, then that one's just going to be dropped." A chore on its days that is not done stays on the list for its wait, then
+// leaves it until its next day (rtLateDays says 0 from then on, so it no longer holds the list or its bonus). "kids see nothing but
+// mom view sees the notes": a waiting row is a plain row on every list; only her Kids today pop-up says "from Tue · day 2 of 2".
+// Its "— not done" is filed the day it drops (rtSlotHTML → _rtLogLateMiss), no longer the first time it is late.
+// The chore's wait in days. Auto = a third of its gap, at most 7: daily or 3+ a week none · twice a week 1 · weekly 2 · every 2
+// weeks 4 · 4-week cycle 7. Never past its next day (rtWaitCut), as the old lists' late rule was. One function, so a later slice
+// can read a per-chore setting here.
+function rtWaitDays(st){
+  const cad=(st&&st.cad)||"daily"; let gap=1;
+  if(cad.indexOf("wk:")===0) gap=7/Math.max(1,cad.slice(3).split(",").filter(function(x){ return x!==""; }).length);
+  else if(cad==="sat"||cad==="sun") gap=7; else if(cad==="2w") gap=14; else if(/^\d+d$/.test(cad)) gap=parseInt(cad,10);
+  if(st&&st.cycW) gap*=Math.max(1,parseInt(st.cycN,10)||4);
+  return Math.min(7,Math.floor(gap/3));
+}
+// n days since its missed day → n while it waits, 0 once dropped: past its wait, or its next day has come (today is one of its
+// days). The plan's own rows (st.house) keep the plan's count.
+function rtWaitCut(st,n){ if(!n||(st&&st.house)) return n; return (n<=rtWaitDays(st)&&!cadDueOn((st&&st.cad)||"daily",_todayDay))?n:0; }
+// Mom's note on a waiting row: the day it was due and where it is in its wait ("from Tue · day 2 of 2"). The wait as it will run:
+// its next day, or a new 4-week-cycle week (they start on a Monday), ends it sooner. Never on a kid's list.
+function rtWaitNote(n,st){
+  const d=((DAYS_ALL.indexOf(_todayDay)-n)%7+7)%7, dn=DAYS_ALL[d]||""; let w=0;
+  for(let k=1;k<=rtWaitDays(st);k++){ const x=(d+k)%7; if(cadDueOn((st&&st.cad)||"daily",DAYS_ALL[x])||(st&&st.cycW&&x===0)) break; w=k; }
+  return "from "+dn.charAt(0).toUpperCase()+dn.slice(1,3)+" \u00b7 day "+n+" of "+w;
+}
+// CHOREWAIT_END
+function rtLateDays(slot,kid,i,raw){   // raw (CHOREWAIT): the days since it was missed, wait or not — rtSlotHTML's drop check
   const steps=rtStepsFor(slot,kid), st=steps[i]; if(!st) return 0;
   if(st.house) return st.hdLate||0;                 // 🚪 HOUSEDAY: the plan's own late (carried chores, overdue every-N)
   const cad=st.cad||"daily";
@@ -2839,7 +2863,7 @@ function rtLateDays(slot,kid,i){
     if(typeof rtWaved==="function"&&rtWaved(slot,kid,DAYS_ALL[due],i,wk)) return 0;   // WAVE: Mom waved it that day
     if(typeof amCovers==="function"&&amCovers(kid,slot,i,amIso(DAYS_ALL[due]))) return 0;   // SENDAM: it is on the morning list
     for(let p=_rtPos(due);p<=tp;p++){ if(rtDoneOnWk(wk,slot,kid,DAYS_ALL[_rtIdx(p)],i)) return 0; }
-    return tp-_rtPos(due);
+    const n=tp-_rtPos(due); return (raw||typeof rtWaitCut!=="function")?n:rtWaitCut(st,n);   // CHOREWAIT: past its wait it is dropped
   }
   // Due TODAY and not yet due earlier this week — that is due, not overdue. Without this
   // the wrap below fired for e.g. a Monday chore viewed on Monday and called it 7 days late.
@@ -2858,7 +2882,7 @@ function rtLateDays(slot,kid,i){
   const pdue=_rtPos(pd);
   for(let p=pdue;p<=5;p++){ if(rtDoneOnWk(pw,slot,kid,DAYS_ALL[_rtIdx(p)],i)) return 0; }
   for(let p=-1;p<=tp;p++){ if(rtDoneOnWk(wk,slot,kid,DAYS_ALL[_rtIdx(p)],i)) return 0; }
-  return (tp+7)-pdue;
+  const n=(tp+7)-pdue; return (raw||typeof rtWaitCut!=="function")?n:rtWaitCut(st,n);   // CHOREWAIT: past its wait it is dropped
 }
 // Record the miss once, filed under the day it was actually missed. The key is deterministic so
 // several devices noticing the same miss write the same entry instead of piling up duplicates.
@@ -2869,8 +2893,9 @@ function _rtLogMiss(kid,slot,i,dueDay,label,pts,wkIn){
   if(routineLog[kid][wk][dueDay][key]) return;      // already recorded
   const rec={label:(label||"Chore")+" — not done",slot:slot,act:"miss",ts:nowTs(),at:Date.now(),pts:pts||0,missed:true};
   routineLog[kid][wk][dueDay][key]=rec;
-  if(db){ try{ db.ref("routineLog/"+kid+"/"+wk+"/"+dueDay+"/"+key).set(rec); }catch(e){} }
+  if(db&&!(typeof _dryRun==="function"&&_dryRun())){ try{ db.ref("routineLog/"+kid+"/"+wk+"/"+dueDay+"/"+key).set(rec); }catch(e){} }
 }
+// CHOREWAIT (2026-11-19): called the day a chore drops, after its wait — no longer the first time it is late.
 // LATE_XWEEK (her ask 2026-10-04): file a late chore's miss under the day it was missed. A miss from LAST
 // week (e.g. Friday's chore, still undone on Sunday) used to be skipped — only same-week misses were logged,
 // so a chore skipped Fri + Sat never reached the Click-off Log. It is filed under last week's key and day.
@@ -2897,7 +2922,13 @@ function rtSlotHTML(slot,kid){
   // Due today OR carried over from a day it was missed — a skipped chore must not just vanish.
   // stepWindowOk is an AND, not an OR: a course that has ended must not come back as "late".
   const wavedIdx=steps.map((st,i)=>i).filter(i=>typeof rtWaved==="function"&&rtWaved(slot,kid,day,i));   // WAVE: shown greyed, never due
-  const dueIdx=steps.map((st,i)=>i).filter(i=>wavedIdx.indexOf(i)<0&&stepWindowOk(steps[i],day)&&(cadDueOn(steps[i].cad||"daily",day)||(day===_todayDay&&rtLateDays(slot,kid,i)>0)));   // carry-overs only on today's tab
+  // CHOREWAIT: on today's tab, the days since each step was missed (raw) and the same while it waits (0 = dropped). A dropped step
+  // is off the list, and its "— not done" is filed (one key per chore and due day, so every device writes the same line) — also
+  // when its 4-week-cycle week has ended (the step is out of its window today, but not out of its dates).
+  const _raw=steps.map((st,i)=>(day===_todayDay&&wavedIdx.indexOf(i)<0)?rtLateDays(slot,kid,i,true):0);
+  const _wait=_raw.map((n,i)=>(n>0&&stepWindowOk(steps[i],day))?((typeof rtWaitCut==="function")?rtWaitCut(steps[i],n):n):0);
+  _raw.forEach((n,i)=>{ const st=steps[i]; if(n>0&&!_wait[i]&&(stepWindowOk(st,day)||(st.cycW&&stepWindowOk(Object.assign({},st,{cycW:0}),day)))) _rtLogLateMiss(slot,kid,i,st.cad||"daily",st.label,st.pts||0); });
+  const dueIdx=steps.map((st,i)=>i).filter(i=>wavedIdx.indexOf(i)<0&&stepWindowOk(steps[i],day)&&(cadDueOn(steps[i].cad||"daily",day)||_wait[i]>0));   // carry-overs only on today's tab
   const total=dueIdx.length;
   // ✋ as-needed rows: shown, tappable, paid — but never part of total/allDone.
   const optIdx=steps.map((st,i)=>i).filter(i=>(steps[i].cad==="asneeded")&&stepWindowOk(steps[i],day)&&dueIdx.indexOf(i)<0);
@@ -2928,19 +2959,14 @@ function rtSlotHTML(slot,kid){
     dueIdx.filter(i=>!mealOf(slot,steps[i])).concat(dueIdx.filter(i=>mealOf(slot,steps[i]))).forEach(i=>{ const st=steps[i], sd=rtDoneOn(slot,kid,day,i), pts=st.pts||0, cad=st.cad||"daily";
       const _ml=mealOf(slot,st), _ok=rtStepAvail(slot,kid,day,st);
       if(_ml&&!_mHd){ _mHd=true; h+=mealHeadHTML(_ml,day); }
-      const _lateN=(day===_todayDay)?rtLateDays(slot,kid,i):0;
-      if(_lateN>0&&!sd){
-        _rtLogLateMiss(slot,kid,i,cad,st.label,pts);
-      }
-      const _lateTag=(_lateN>0&&!sd)?('<span class="rt-late">'+_lateN+' day'+(_lateN>1?'s':'')+' late</span>'):'';
       const cadTag=cad!=="daily"?' <span class="cadtag">'+cadLabel(cad)+'</span>':'';
       const _wl=stepWindowLabel(st), winTag=_wl?' <span class="cadtag" style="color:#0e7490;border-color:#a5f3fc">\u{1F4C5} '+_wl+'</span>':'';
       const timeTag=st.time?' <span class="cadtag" style="color:#7c3aed;border-color:#ddd6fe">\u23f0 '+st.time+'</span>':'';
       const rotTag=st.rot?' <span class="cadtag" style="color:#c2410c;border-color:#fed7aa">🔄 rotates</span>':'';
       const amTag=(!sd&&typeof amGet==="function"&&amGet(kid,slot,i,amIso(day)))?' <span class="cadtag" style="color:#b45309;border-color:#fde68a">🌅 on your next morning list</span>':'';   // SENDAM
-      h+='<div class="mr-step'+(sd?" done":"")+(_lateTag?" is-late":"")+'"'+(_ed?' onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')"':'')+(_ok?'':' style="opacity:.5"')+'>'+
+      h+='<div class="mr-step'+(sd?" done":"")+'"'+(_ed?' onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')"':'')+(_ok?'':' style="opacity:.5"')+'>'+   // CHOREWAIT: a waiting row is a plain row — no late tag, no red edge
          '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
-         '<div class="sl-slot-name" style="flex:1">'+(st.emoji?st.emoji+" ":"")+st.label+_lateTag+cadTag+winTag+timeTag+rotTag+amTag+'</div>'+
+         '<div class="sl-slot-name" style="flex:1">'+(st.emoji?st.emoji+" ":"")+st.label+cadTag+winTag+timeTag+rotTag+amTag+'</div>'+
          (pts>0?'<span class="mr-pts">+'+pts+' ⭐</span>':'')+'</div>'; });
     optIdx.forEach(i=>{ const st=steps[i], sd=rtDoneOn(slot,kid,day,i), pts=st.pts||0;
       h+='<div class="mr-step'+(sd?" done":"")+'"'+(_ed?' onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')"':'')+' style="opacity:'+(sd?'1':'.75')+'">'+
@@ -9145,9 +9171,10 @@ function boardStatPop(kid,slot,d){
   const total=rows.reduce((n,r)=>n+(r.amt||0),0);
   const hdrCount=isStars?(total+" ⭐"):(dn+"/"+_live.length);
   const _waveOk=_tapOk&&(typeof kr2WaveBtnHTML==="function");
+  const _note=typeof rtWaitNote==="function"&&((typeof momHere==="function"&&momHere())||(typeof _kioskD==="function"&&_kioskD()));   // CHOREWAIT: the notes are for Mom (and Dad's own link), never a kid
   let inner=rows.length?rows.map(r=>'<div style="display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid #f3f4f6;font-size:13px'+(r.wv?';opacity:.55':'')+'">'+
       (isStars?'':'<span'+((_tapOk&&r.i!=null&&!r.wv)?' onclick="event.stopPropagation();mdKidTick(\''+slot+'\',\''+kid+'\',\''+_d+'\','+r.i+');boardStatPop(\''+kid+'\',\''+slot+'\',\''+_d+'\')" style="width:20px;text-align:center;cursor:pointer"':' style="width:20px;text-align:center"')+'>'+(r.done?"✅":r.wv?"–":"○")+'</span>')+   // LISTS_TAP; KIDROWS2: a waved row has no tick
-      '<span style="flex:1;min-width:0;'+(r.done?'':'color:var(--muted)')+(r.wv?';text-decoration:line-through':'')+'">'+esc(r.lab)+((r.late>0&&!r.done&&!r.wv)?'<span class="rt-late">'+r.late+' day'+(r.late>1?'s':'')+' late</span>':'')+'</span>'+   // KIDSLATE: the same tag Kids' Corner shows
+      '<span style="flex:1;min-width:0;'+(r.done?'':'color:var(--muted)')+(r.wv?';text-decoration:line-through':'')+'">'+esc(r.lab)+((r.late>0&&!r.done&&!r.wv&&_note)?'<span style="font-size:10.5px;font-weight:700;color:#6b7280;margin-left:6px;white-space:nowrap">'+rtWaitNote(r.late,r.hs)+'</span>':'')+'</span>'+   // CHOREWAIT: Mom's note on a waiting row ("from Tue · day 2 of 2"); a kid's screen shows nothing
       (r.amt!=null?'<span style="font-weight:800;color:'+(r.amt<0?"#b91c1c":"#b45309")+';white-space:nowrap">'+(r.amt<0?"−"+(-r.amt):"+"+r.amt)+' ⭐</span>':'')+
       (r.ts?'<span style="font-size:10.5px;color:var(--muted);white-space:nowrap">'+esc(r.ts)+'</span>':'')+
       ((_waveOk&&r.i!=null&&!r.done)?kr2WaveBtnHTML(slot,kid,_d,r.i,!!r.wv):'')+((typeof amPopBtnsHTML==="function")?amPopBtnsHTML(r,slot,kid,_d,_tapOk):'')+(typeof hcGoBtn==="function"?hcGoBtn(r.hs):'')+'</div>').join('')   // KIDROWS2: ✕ today / undo
@@ -13847,7 +13874,7 @@ function hhCleanPanelHTML(who,iso,dn,title){
   rows.forEach(function(r){ const rm=hhRoomOf(r.job); if(rm!==room){ room=rm; h+='<div style="padding:7px 12px 2px;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560">🚪 '+esc(hhRoomName(rm))+'</div>'; }
     h+='<div class="sl-check-row'+(r.done?' done':'')+'" onclick="'+r.on+'" style="padding:7px 12px"><div class="sl-checkbox'+(r.done?' done':'')+'">'+(r.done?'✓':'')+'</div>'
       +'<div style="flex:1;display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span>'+r.emoji+'</span><span style="font-weight:700;'+(r.done?'text-decoration:line-through;color:#6b6560':'')+'">'+esc(r.label)+'</span>'
-      +'<span style="font-size:10.5px;font-weight:800;padding:1px 6px;border-radius:7px;background:#f3f4f6;color:#475569">⏱ '+r.mins+' min</span>'+(r.pts?'<span style="font-size:10.5px;font-weight:800;padding:1px 6px;border-radius:7px;background:#fef3c7;color:#92400e">'+r.pts+' ⭐</span>':'')+(r.late?'<span style="font-size:10.5px;font-weight:800;padding:1px 6px;border-radius:7px;background:#fee2e2;color:#991b1b">late</span>':'')+'</div></div>'; });
+      +'<span style="font-size:10.5px;font-weight:800;padding:1px 6px;border-radius:7px;background:#f3f4f6;color:#475569">⏱ '+r.mins+' min</span>'+(r.pts?'<span style="font-size:10.5px;font-weight:800;padding:1px 6px;border-radius:7px;background:#fef3c7;color:#92400e">'+r.pts+' ⭐</span>':'')+'</div></div>'; })   // CHOREWAIT: no late chip — this panel is on the kids' pages;
   if(all) h+='<div style="padding:10px 12px;font-size:13px;font-weight:800;color:#166534;text-align:center">All done — the house thanks you 🎉</div>';
   return h+'</div>';
 }
