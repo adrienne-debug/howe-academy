@@ -66,12 +66,12 @@ console.log("\n# 🎀 To wrap · 📍 Where · 📦 Coming · 🛍 Shop · 🗄 
 {
   reset(D()); T.setOcc("x"); T.setRoot(root, "<nav/>");
   W.gfGo("wrap"); let h = root.innerHTML;
-  ok("To wrap: only 'here' presents, grouped by paper (Pink snow + pink snow together)", /Treehouse/.test(h) && /Dino/.test(h) && /Spare puzzle/.test(h) && !/Filament/.test(h) && !/Trampoline/.test(h) && (h.match(/<span>🎀 Pink snow<\/span><span class="gf-gsum">/g) || []).length === 1 && !/<span>🎀 pink snow<\/span><span class="gf-gsum">/.test(h) && /No paper picked yet/.test(h));
+  ok("To wrap (JOURNEY 2026-11-20): everything bought and not wrapped — here AND ordered — grouped by paper (Pink snow + pink snow together); wrapped ones left out", /Treehouse/.test(h) && /Dino/.test(h) && /Spare puzzle/.test(h) && !/Filament/.test(h) && /Trampoline/.test(h) && /Candy/.test(h) && (h.match(/<span>🎀 Pink snow<\/span><span class="gf-gsum">/g) || []).length === 1 && !/<span>🎀 pink snow<\/span><span class="gf-gsum">/.test(h) && /No paper picked yet/.test(h));
   ok("rows say who it's for", /👤 Lucy/.test(h) && /🗄 no one yet/.test(h));
   writes.length = 0; W.gfBulkIds("a,e", "wrapped");
   ok("'All wrapped' = one update per present + one log", writes.filter(w => w.op === "update").length === 2 && writes.every(w => w.op !== "update" || (Object.keys(w.val).join() === "status" && w.val.status === "wrapped")) && writes.filter(w => w.op === "push").length === 1);
   reset(D()); T.setOcc("x"); W.gfGo("where"); h = root.innerHTML;
-  ok("Where: in-house presents by spot (Closet + closet together), ideas/given left out", (h.match(/<span>📍 Closet<\/span><span class="gf-gsum">/g) || []).length === 1 && !/<span>📍 closet<\/span><span class="gf-gsum">/.test(h) && /Van/.test(h) && /Not written down/.test(h) && !/Socks/.test(h));
+  ok("Where: in-house presents by spot (Closet + closet together), ideas/given left out", (h.match(/<span>📍 Closet<\/span><span class="gf-gsum">/g) || []).length === 1 && !/<span>📍 closet<\/span><span class="gf-gsum">/.test(h) && /Van/.test(h) && /📍 Needs a spot/.test(h) && /gfSpotPick\('f'\)">📍 Put in…/.test(h) && /📦 Not here yet/.test(h) && !/Socks/.test(h));   // JOURNEY: no-spot presents wait in "Needs a spot"; ordered ones in "Not here yet"
   W.gfGo("coming"); h = root.innerHTML;
   ok("Coming: ordered only, late on top", /⏰ Late/.test(h) && h.indexOf("Trampoline") < h.indexOf("Candy") && !/Treehouse/.test(h) && /late — due Nov 15/.test(h) && /by Dec 10/.test(h));
   W.gfGo("shop"); h = root.innerHTML;
@@ -94,9 +94,9 @@ console.log("\n# ☑ Select → change several at once");
 console.log("\n# 🌙 Christmas Eve");
 {
   reset(D()); T.setOcc("x"); T.setRoot(root, "<nav/>"); W.gfGo("eve"); let h = root.innerHTML;
-  ok("gather list: in-house presents by spot, 0 of 4 out", /0 of 4 out/.test(h) && /Treehouse/.test(h) && /not wrapped/.test(h) && !/Socks/.test(h));
+  ok("gather list: in-house presents by spot, 0 of 4 under the tree", /0 of 4 under the tree/.test(h) && /Treehouse/.test(h) && /not wrapped/.test(h) && !/Socks/.test(h));
   writes.length = 0; W.gfGather("d");
-  ok("tick = ONE update: given, remembers it was wrapped", writes[0].path === "gifts/items/d" && writes[0].val.status === "given" && writes[0].val.wasStatus === "wrapped" && /1 of 4 out/.test(root.innerHTML));
+  ok("tick = ONE update: 🎄 under the tree (status out — not given yet, JOURNEY), remembers it was wrapped", writes[0].path === "gifts/items/d" && writes[0].val.status === "out" && writes[0].val.wasStatus === "wrapped" && /1 of 4 under the tree/.test(root.innerHTML) && /✅ All opened/.test(root.innerHTML));
   writes.length = 0; W.gfGather("d");
   ok("untick = back to wrapped, the memory cleared", writes[0].val.status === "wrapped" && writes[0].val.wasStatus === null && T.data().items.d.status === "wrapped" && !("wasStatus" in T.data().items.d));
   h = root.innerHTML;

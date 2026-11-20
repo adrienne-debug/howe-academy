@@ -177,7 +177,7 @@ console.log("\n# 🕰 Last time on a person's page");
   ok("newest first, 8 at most", L.length === 8 && names[0] === "Returned one" && names.indexOf("Bike helmet") > names.indexOf("Scooter") && names.indexOf("Bike helmet") < names.indexOf("Small 5"), names);
   ok("each row: name, paid, status, which occasion, shared", L.find(r => r.name === "Board game").shared && L.find(r => r.name === "Scooter").paid === 60 && L.find(r => r.name === "Scooter").occ === "Christmas 2025" && L.find(r => r.name === "Scooter").status === "given");
   W.gfOpenPerson("k_lucy"); const h = root.innerHTML, i = h.indexOf("🕰 Last time"), strip = h.slice(i, h.indexOf('<div class="gf-card">', i + 1));
-  ok("her page shows the strip", i > 0 && /Scooter/.test(strip) && /Christmas 2025/.test(strip) && /\$60/.test(strip) && /🎄 Given/.test(strip) && /🤝 shared/.test(strip));
+  ok("her page shows the strip", i > 0 && /Scooter/.test(strip) && /Christmas 2025/.test(strip) && /\$60/.test(strip) && /✅ Given/.test(strip) && /🤝 shared/.test(strip));
   ok("…read-only: no buttons in it", !/onclick/.test(strip));
   ok("opening it wrote nothing", writes.length === 0);
   const d4 = JSON.parse(JSON.stringify(d)); d4.occasions.lb26 = { name: "Lucy's birthday 2026", kind: "birthday", for: "k_lucy", date: "2026-12-15", secs: BSECS };
