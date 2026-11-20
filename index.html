@@ -4501,7 +4501,7 @@ function initFb() {
     db.ref("pointClaims").on("value",s=>{ pointClaims=s.val()||{}; pointClaimsLoaded=true; });
     db.ref("bank").on("value",s=>{ bank=s.val()||{}; });
     db.ref("readingLog").on("value",s=>{ readingLog=s.val()||{}; });
-    db.ref("esa").on("value",s=>{ esaData=s.val()||{}; try{ if(adminSubTab==="purchases"||(tab==="moms-plan"&&mpSubView==="purch")) renderAllSoon(); }catch(e){} });   // SCHOOLPAGES: + Mom's Day ▸ School ▸ Purchases
+    db.ref("esa").on("value",s=>{ esaData=s.val()||{}; try{ if(adminSubTab==="purchases"||(tab==="moms-plan"&&(mpSubView==="esa"||mpSubView==="budget"))) renderAllSoon(); }catch(e){} });   // SCHOOLPAGES · BUDGETTAB: Mom's Day ▸ 💰 Budget ▸ ESA & purchases / Overview (was School ▸ Purchases)
     db.ref("plans").on("value",s=>{ roadmapData=s.val()||{}; try{ if(tab==="moms-plan"||adminSubTab==="curriculum") renderAllSoon(); }catch(e){} });
     // 📋 digest/ loads when the weekly report opens (DIGESTLAZY, 2026-11-19), not at every start
     db.ref("scheduleOverrides").on("value",s=>{
@@ -5181,7 +5181,7 @@ function navStackSync(){
 // _mdwCan: Mom's page is hers (momHere); Dad's can be set from his link, his unlocked Day, or by Mom.
 // Navigation + display only: no scheduler, no kid data.
 let ssOrderData=null; try{ ssOrderData=JSON.parse(HA_LS.getItem('ha_day_order')||"null"); }catch(e){}
-const SS_OTHER_VIEWS=["prep","house","weigh","grocery","meals","cal","dadcal","dadall","dadmast","curr","sset","purch","hist","wins","scor","mhq","chores","hq","gen","gifts"];   // SCHOOLPAGES: + the School pages · MPGROUPS: + Chores & Stars, HQ, Generate Week   // every Mom's Day sub-view that is NOT a Today page (renderMomsPlanView's routes)
+const SS_OTHER_VIEWS=["prep","house","weigh","grocery","meals","cal","dadcal","dadall","dadmast","curr","sset","hist","wins","scor","mhq","chores","hq","gen","budget","esa","gifts"];   // SCHOOLPAGES: + the School pages · MPGROUPS: + Chores & Stars, HQ, Generate Week · BUDGETTAB: + Budget ▸ Overview / ESA (purch gone)   // every Mom's Day sub-view that is NOT a Today page (renderMomsPlanView's routes)
 let _ssIds={}, _ssD=null;
 var _navStackRO, _navStackSeen;   // var: navStackWire (above) sets the observer before this line runs
 function ssJumpOn(){ try{ return tab==="moms-plan"&&!momSchedView&&SS_OTHER_VIEWS.indexOf(mpSubView)<0; }catch(e){ return false; } }   // Mom's Day ▸ Today (plan / null) or ▸ Dad's Day ('dad')
@@ -7334,17 +7334,21 @@ function _hqGroup(emoji,title,rows){
   return '<div class="rules-card"><div style="display:flex;align-items:center;gap:8px;padding:12px 14px;font-family:\'Fraunces\',serif;font-size:15px;font-weight:700">'+
     '<span style="font-size:18px">'+emoji+'</span>'+title+'</div>'+rows.join('')+'</div>';
 }
-// PURCHASES_START — 💰 Mom HQ ▸ Purchases lives in esa.js (lazy, like Books/library.js). Stage C, 2026-09-13.
+// PURCHASES_START — 💰 Purchases & ESA lives in esa.js (lazy, like Books/library.js). Stage C, 2026-09-13. Since BUDGETTAB (2026-11-20)
+// its door is Mom's Day ▸ 💰 Budget ▸ ESA & purchases (mpSubView 'esa'); the Overview's grant card loads it too (esaLoad).
+function esaLoad(fail){
+  if(window._esLoading) return; window._esLoading=true;
+  const s=document.createElement("script");
+  s.src=/github\.io$/.test(location.hostname)?("esa.js?v="+Date.now()):"esa.js";
+  s.onload=()=>{ if(adminSubTab==="purchases"||(typeof mpSubView!=="undefined"&&tab==="moms-plan"&&(mpSubView==="esa"||mpSubView==="budget"))) renderAll(); };   // SCHOOLPAGES · BUDGETTAB: Budget ▸ ESA / Overview
+  s.onerror=()=>{ window._esLoading=false; if(fail) fail(); };
+  document.head.appendChild(s);
+}
 function renderPurchasesView(el,ah){
   if(!el){el=document.getElementById("content");if(!el)return;}
   if(window.renderPurchases){ renderPurchases(el,ah); return; }
   el.innerHTML=(ah||"")+'<div style="padding:40px;text-align:center;color:var(--muted)">Loading purchases…</div>';
-  if(window._esLoading) return; window._esLoading=true;
-  const s=document.createElement("script");
-  s.src=/github\.io$/.test(location.hostname)?("esa.js?v="+Date.now()):"esa.js";
-  s.onload=()=>{ if(adminSubTab==="purchases"||(typeof mpSubView!=="undefined"&&tab==="moms-plan"&&mpSubView==="purch")) renderAll(); };   // SCHOOLPAGES
-  s.onerror=()=>{ window._esLoading=false; el.innerHTML=(ah||"")+'<div style="padding:40px;text-align:center;color:var(--muted)">Couldn\'t load purchases.</div>'; };
-  document.head.appendChild(s);
+  esaLoad(()=>{ el.innerHTML=(ah||"")+'<div style="padding:40px;text-align:center;color:var(--muted)">Couldn\'t load purchases.</div>'; });
 }
 // PURCHASES_END
 // GIFTS_START — 🎁 Mom's Day ▸ 💰 Budget: the present tracker lives in gifts.js (lazy, like esa.js). Slice 1 (her ask + "Yes, start
@@ -8764,9 +8768,8 @@ function renderMomHQ(el,ah){
   h+=_hqB?'':_hqGroup("⭐","Stars & Rewards",[   // MPGROUPS: School ▸ Wins
     _hqRow("wins","🌟","Wins · Star Bank · Store","Claims, give/dock, withdrawals, forfeited, store editor — tap ✓ Mom on the kid bar for Mom tools")
   ]);
-  h+=_hqB?'':_hqGroup("👪","Family & App",[   // MPGROUPS: School ▸ Settings / Purchases
-    _hqRow("settings","⚙️","Settings","Kids & colors, PIN, babysitter, page switches, family rules, slots & on-time spins, songs"),
-    pageOn("purchases")?_hqRowFn("setAdminSub('purchases')","💰","Purchases & ESA","Orders, wishlist, two budgets — the ESA grant and family money"):""
+  h+=_hqB?'':_hqGroup("👪","Family & App",[   // MPGROUPS: School ▸ Settings · BUDGETTAB (her pick "Budget only" 2026-11-20): the Purchases & ESA row is gone — ESA lives in Mom's Day ▸ 💰 Budget
+    _hqRow("settings","⚙️","Settings","Kids & colors, PIN, babysitter, page switches, family rules, slots & on-time spins, songs")
   ]);
   h+=_hqB?'':_hqGroup("📊","Reports",[   // MPGROUPS: School ▸ History
     _hqRow("history","📜","History Log","Completed work, by time or by subject"),
@@ -12423,6 +12426,8 @@ function renderMomsPlanView(el){
   if(mpSubView==='house'){ return renderHousehold(el); }   // 🏡 HOUSEHOLD
   if(mpSubView==='weigh'){ return renderMPWeigh(el); }
   if(mpSubView==='gifts'){ return renderMPGifts(el); }   // 🎁 GIFTS: Mom's Day ▸ 💰 Budget (gifts.js, lazy)
+  if(mpSubView==='budget'){ return renderMPBudget(el); }   // 📊 BUDGETTAB: Mom's Day ▸ 💰 Budget ▸ Overview
+  if(mpSubView==='esa'){ return renderMPEsa(el); }         // 💰 BUDGETTAB: Mom's Day ▸ 💰 Budget ▸ ESA & purchases (esa.js, lazy)
   if(mpSubView!=='grocery') grFromDad=(mpSubView==='dad'||mpSubView==='dadcal'||mpSubView==='dadall'||mpSubView==='dadmast');   // 👨 DADFIX   // 🛒 the list remembers which page opened it
   if(mpSubView==='grocery'){ return renderGrocery(el); }
   if(mpSubView==='meals'){ return renderKitchen(el); }
@@ -26208,8 +26213,9 @@ function mpSubnav(active){
   const kbtn=tbtn(kit,"mpGoto(mpKitchenLast())",'🍳 Kitchen'), sbtn=tbtn(sch,"mpSchoolOpen(mpSchoolLast())",'🎓 School');
   const home=(active==='plan'||active==='hq'||active==='gen'), house=(active==='house'||active==='chores'), hlth=(active==='weigh');   // MPGROUPS: each top tab with a sub-row
   const hbtn=tbtn(home,"mpGoto('plan')",'🏡 Home Base'), hsbtn=tbtn(house,"mpGoto('house')",'🧹 Household'), hlbtn=tbtn(hlth,"mpGoto('weigh')",'❤️ Health');   // ❤️ Health (was ⚖️ Weigh-In — now its first sub-tab)
-  const gbtn=tbtn(active==='gifts',"mpGoto('gifts')",'💰 Budget');   // GIFTS (her ask 2026-11-20: "a new tab in Mom's Day called budget")
-  const sub=(kit&&typeof mpKitchenRow==="function")?mpKitchenRow(active):((sch&&typeof mpSchoolRow==="function")?mpSchoolRow(active):((typeof mpGroupRow==="function")?mpGroupRow(active):''));   // MPSUBROW: inside the sticky element
+  const bud=(typeof MP_BUDGET!=="undefined")?MP_BUDGET.indexOf(active)>=0:active==='gifts';   // BUDGETTAB: on Overview / Gifts / ESA the 💰 Budget tab is the lit one
+  const gbtn=tbtn(bud,(typeof mpBudgetLast==="function")?"mpGoto(mpBudgetLast())":"mpGoto('gifts')",'💰 Budget');   // GIFTS (her ask 2026-11-20: "a new tab in Mom's Day called budget") · BUDGETTAB: reopens the last Budget page
+  const sub=(kit&&typeof mpKitchenRow==="function")?mpKitchenRow(active):((sch&&typeof mpSchoolRow==="function")?mpSchoolRow(active):((bud&&typeof mpBudgetRow==="function")?mpBudgetRow(active):((typeof mpGroupRow==="function")?mpGroupRow(active):'')));   // MPSUBROW: inside the sticky element
   return `<div id="mp-subnav" style="background:#fff;border-bottom:2px solid #DEF2F1"><div class="mp-row" style="display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px">${hbtn}${btn('cal','🗓 Schedule')}${hsbtn}${kbtn}${sbtn}${gbtn}${hlbtn}</div>${sub}</div>`;
 }
 // KITCHENTAB_START — one 🍳 Kitchen tab on Mom's Day's menu row in place of Meals · Shopping List · Prep; those three become its own
@@ -26241,9 +26247,10 @@ function mpKitchenRow(active){
 // functions the Schedule's Admin hub draws, under her banner + this menu, with none of the Schedule's bars — Curriculum "opens up
 // just the curriculum … not the today, the week, the month … the schedule, the wins, the history, admin … you wouldn't need it
 // to say grid". Display + navigation only: no Firebase writes of their own.
-const MP_SCHOOL=['notebook','mastery','units','curriculum','settings','purchases','history','wins','scores','mhq'];   // SCORESPAGE: + 📊 Scores   // 'mhq' = Mastery ▸ Settings (lit under Mastery)
-const MP_SCHOOL_VIEWS={curr:'curriculum',sset:'settings',purch:'purchases',hist:'history',wins:'wins',scor:'scores',mhq:'mhq'};   // SCORESPAGE: scor → 📊 Scores   // Mom's Day sub-view → School chip
-const MP_SCHOOL_SUBS={curriculum:'The whole curriculum \u2014 grid, subject cards, pacing, rules',settings:'Kids, codes, page switches, family rules',purchases:'Orders, wishlist, the ESA grant and family money',history:'Completed work, trends, attendance, the weekly report',wins:'Stars, trophies and book progress',scores:'Where each kid is \u2014 right %, ladder, week, minutes, load',mhq:'Mastery settings \u2014 rules, decks, sessions, cards'};
+// BUDGETTAB (her pick "Budget only" 2026-11-20): 💰 Purchases left this row — it is Mom's Day ▸ 💰 Budget ▸ ESA & purchases now.
+const MP_SCHOOL=['notebook','mastery','units','curriculum','settings','history','wins','scores','mhq'];   // SCORESPAGE: + 📊 Scores   // 'mhq' = Mastery ▸ Settings (lit under Mastery)
+const MP_SCHOOL_VIEWS={curr:'curriculum',sset:'settings',hist:'history',wins:'wins',scor:'scores',mhq:'mhq'};   // SCORESPAGE: scor → 📊 Scores   // Mom's Day sub-view → School chip
+const MP_SCHOOL_SUBS={curriculum:'The whole curriculum \u2014 grid, subject cards, pacing, rules',settings:'Kids, codes, page switches, family rules',history:'Completed work, trends, attendance, the weekly report',wins:'Stars, trophies and book progress',scores:'Where each kid is \u2014 right %, ladder, week, minutes, load',mhq:'Mastery settings \u2014 rules, decks, sessions, cards'};
 function mpSchoolSub(t){ for(const k in MP_SCHOOL_VIEWS) if(MP_SCHOOL_VIEWS[k]===t) return k; return null; }   // chip → its Mom's Day sub-view, null for a framed tab
 function mpSchoolLast(){ let v=null; try{ v=HA_LS.getItem('ha_mp_school'); }catch(e){} return MP_SCHOOL.indexOf(v)>=0?v:'notebook'; }
 function mpSchoolNote(t){ if(MP_SCHOOL.indexOf(t)<0) return; try{ HA_LS.setItem('ha_mp_school',t); }catch(e){} }
@@ -26251,12 +26258,13 @@ function mpSchoolRow(active){
   const chip=(on,t,lbl)=>`<button onclick="mpSchoolOpen('${t}')" style="flex:0 0 auto;white-space:nowrap;padding:6px 12px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;border:1.5px solid ${on?'#2B7A78':'transparent'};border-radius:20px;cursor:pointer;color:${on?'#1f5e5c':'#6b7280'};background:${on?'#DEF2F1':'transparent'}">${lbl}</button>`;
   const b=(t,lbl)=>chip(active===t,t,lbl);
   const mast=(active==='mastery'||active==='mhq');
-  const mhqOn=(typeof pageOn!=="function")||pageOn("mastery"), purchOn=(typeof pageOn!=="function")||pageOn("purchases");
-  let h=`<div id="mp-school-row" class="mp-sub">${b('notebook','📓 Notebooks')}${chip(mast,'mastery','🧠 Mastery')}${b('units','📚 Units')}${b('curriculum','📖 Curriculum')}${b('settings','⚙️ Settings')}${purchOn?b('purchases','💰 Purchases'):''}${b('history','📜 History')}${b('wins','🌟 Wins')}${b('scores','📊 Scores')}</div>`;   // SCORESPAGE: the 📊 Scores chip
+  const mhqOn=(typeof pageOn!=="function")||pageOn("mastery");
+  let h=`<div id="mp-school-row" class="mp-sub">${b('notebook','📓 Notebooks')}${chip(mast,'mastery','🧠 Mastery')}${b('units','📚 Units')}${b('curriculum','📖 Curriculum')}${b('settings','⚙️ Settings')}${b('history','📜 History')}${b('wins','🌟 Wins')}${b('scores','📊 Scores')}</div>`;   // SCORESPAGE: the 📊 Scores chip
   if(mast) h+=`<div id="mp-mastery-row" class="mp-sub mp-sub2">${b('mastery','🧠 Mastery')}${mhqOn?b('mhq','⚙️ Settings'):''}</div>`;   // the two masteries, one place
   return h;
 }
 function mpSchoolOpen(t){
+  if(t==='purchases'&&typeof mpEsaOpen==="function"){ mpEsaOpen(); return; }   // BUDGETTAB: an old Purchases door lands in 💰 Budget
   if(MP_SCHOOL.indexOf(t)<0) t='notebook';
   mpSchoolNote(t);
   const v=mpSchoolSub(t);
@@ -26268,8 +26276,9 @@ function mpSchoolOpen(t){
 function mpCurrBare(){ try{ return tab==="moms-plan"&&mpSubView==="curr"; }catch(e){ return false; } }
 // Links that used to land on the Schedule's Admin hub land on the School page instead while she is on a Mom's Day page.
 function mpAdminRoute(sub){
+  if(sub==='purchases'&&typeof mpEsaOpen==="function"&&((typeof pageOn!=="function")||pageOn("purchases"))){ mpEsaOpen(); return true; }   // BUDGETTAB: from anywhere (the Schedule's Admin 💰 tab too) → Mom's Day ▸ 💰 Budget ▸ ESA & purchases
   try{ if(tab!=="moms-plan"||momSchedView) return false; }catch(e){ return false; }
-  const v=({curriculum:'curr',settings:'sset',rules:'sset',purchases:'purch',mastery:'mhq',chores:'chores',hq:'hq',generate:'gen'})[sub]; if(!v) return false;   // MPGROUPS: + chores / hq / generate
+  const v=({curriculum:'curr',settings:'sset',rules:'sset',purchases:'esa',mastery:'mhq',chores:'chores',hq:'hq',generate:'gen'})[sub]; if(!v) return false;   // MPGROUPS: + chores / hq / generate · BUDGETTAB: purchases → esa
   mpGoto(v); return true;
 }
 // All · each kid, for the pages that read the Schedule's kid pick (History) and have no kid row of their own here.
@@ -26282,7 +26291,6 @@ function renderMPSchool(el){
   const top=mwBanner(MP_SCHOOL_SUBS[key]||'')+mpSubnav(key);
   if(key==='curriculum'){ renderCurriculumView(el,top); return; }   // bare (mpCurrBare): no Grid bar, stickies under the menu
   if(key==='settings'){ renderSettings(el,top); return; }
-  if(key==='purchases'){ renderPurchasesView(el,top); return; }
   if(key==='mhq'){ renderMasteryHQ(el,top); return; }
   if(key==='scores'&&typeof renderMPScores==="function"){ renderMPScores(el,top); return; }   // SCORESPAGE: the Overall card + Load meter, read-only
   el.innerHTML=top+(key==='history'?mpSchoolKidRow():'')+'<div id="mp-school-body"></div>';   // History / Wins draw into a box under the menu (they take no header)
@@ -26318,7 +26326,102 @@ function renderMPGroupPage(el){
   renderMomHQ(el,mwBanner('Alerts, Generate Week, links and doors')+mpSubnav('hq'));
 }
 // MPGROUPS_END
+// BUDGETTAB_START — 💰 Budget gets a sub-row of its own, like Kitchen and School: 📊 Overview · 🎁 Gifts · 💰 ESA & purchases
+// (her ask 2026-11-20: "this is also where the ESA grant and stuff … a new tab in Mom's Day called budget"; her pick "Budget only" —
+// the ESA page moves in and Mom HQ loses its row. Slices 4 + 8 of PLAN_gift_tracker_budget_2026-11-20.md.)
+//  · 🎁 Gifts is mpSubView 'gifts' (renderMPGifts → gifts.js), unchanged.
+//  · 💰 ESA & purchases is the Purchases page (renderPurchasesView → esa.js) under her banner + this menu, mpSubView 'esa' (it was
+//    School ▸ 💰 Purchases, 'purch'). Every old door — setAdminSub('purchases'), the Schedule Admin hub's 💰 tab — lands here
+//    (mpAdminRoute). pageOn("purchases") still switches it off for a family that doesn't use it.
+//  · 📊 Overview (mpSubView 'budget') is the plan's money page (§3.1): one card per pot of money, each tappable into its page.
+//    Read-only — the grant numbers come from esa.js's own esBalance, groceries from the trips + budgets the Grocery List keeps,
+//    bills from bills/. It never reads gifts/: the presents load only inside 🎁 Gifts (the secret stays behind that door).
+// The tab reopens whichever of the three was used last on THIS device (HA_LS, never synced); first time it's the Overview — the
+// money page the plan opens on, with Gifts one tap away. Overview and ESA are Mom's, like Gifts (momHere). No Firebase writes.
+const MP_BUDGET=['budget','gifts','esa'];
+function mpBudgetEsaOn(){ return (typeof pageOn!=="function")||pageOn("purchases"); }
+function mpBudgetLast(){ let v=null; try{ v=HA_LS.getItem('ha_mp_budget'); }catch(e){} if(v==='esa'&&!mpBudgetEsaOn()) v=null; return MP_BUDGET.indexOf(v)>=0?v:'budget'; }
+function mpBudgetNote(v){ if(MP_BUDGET.indexOf(v)<0) return; try{ HA_LS.setItem('ha_mp_budget',v); }catch(e){} }
+function mpBudgetRow(active){
+  const b=(v,lbl)=>`<button onclick="mpGoto('${v}')" style="flex:0 0 auto;white-space:nowrap;padding:6px 12px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:800;border:1.5px solid ${active===v?'#2B7A78':'transparent'};border-radius:20px;cursor:pointer;color:${active===v?'#1f5e5c':'#6b7280'};background:${active===v?'#DEF2F1':'transparent'}">${lbl}</button>`;
+  return `<div id="mp-budget-row" class="mp-sub">${b('budget','📊 Overview')}${b('gifts','🎁 Gifts')}${mpBudgetEsaOn()?b('esa','💰 ESA & purchases'):''}</div>`;
+}
+function mpEsaOpen(){ mpGoto(mpBudgetEsaOn()?'esa':'budget'); }
+function _budMomOnly(el,top){ if(typeof momHere==="function"&&momHere()) return false; el.innerHTML=top+'<div style="padding:40px;text-align:center;color:var(--muted)">\u{1F512} Mom only.</div>'; return true; }
+function renderMPEsa(el){
+  if(!el){el=document.getElementById("content");if(!el)return;}
+  if(!mpBudgetEsaOn()){ mpSubView='budget'; renderMPBudget(el); return; }   // the family switched Purchases off
+  const top=mwBanner('Orders, wishlist, the ESA grant and family money')+mpSubnav('esa');
+  if(_budMomOnly(el,top)) return;
+  renderPurchasesView(el,top);
+}
+// ── 📊 the Overview's numbers (each one read-only) ──
+function _budUsd(n){ n=Math.round((+n||0)*100)/100; return "$"+(n%1?n.toFixed(2):String(n)).replace(/\B(?=(\d{3})+(?!\d))/g,","); }
+function _budAmt(v){ return parseFloat(String(v==null?"":v).replace(/[^0-9.]/g,""))||0; }   // a bill's amount is what she typed ("$120", "89.50")
+// 💳 this month's bills: a monthly bill every month, a yearly one in its own month; paid = paidThrough has reached this cycle
+function budBillsMonth(iso){
+  const ym=iso.slice(0,7), yy=iso.slice(0,4), mm=+iso.slice(5,7), B=(typeof billsData!=="undefined"&&billsData)||{};
+  const r={n:0,nDue:0,nPaid:0,due:0,paid:0,noAmt:0,all:0};
+  Object.keys(B).forEach(id=>{ const b=B[id]; if(!b||!b.name) return; r.all++;
+    const yearly=b.freq==="yearly"; if(yearly&&(+b.dueMonth||1)!==mm) return;
+    const paid=!!b.paidThrough&&String(b.paidThrough)>=(yearly?yy:ym), a=_budAmt(b.amt);
+    if(!a) r.noAmt++;
+    r.n++; if(paid){ r.nPaid++; r.paid+=a; } else { r.nDue++; r.due+=a; } });
+  r.total=r.due+r.paid; return r;
+}
+// 🛒 each grocery budget against its own week or month, plus every trip this week / month (the Grocery List's own helpers)
+function budGrocery(iso){
+  const out={rows:[],week:0,month:0,trips:0};
+  if(typeof grData==="undefined"||!grData||typeof grBudgets!=="function") return out;
+  grBudgets().forEach(b=>{ const per=b.per==="month"?"month":"week"; out.rows.push({emoji:b.emoji||"🛒",name:b.name,amt:+b.amt||0,per:per,spent:grSpentBudget(b.id,grPeriodStart(per))}); });
+  out.week=grSpent(grWeekStart()); out.month=grSpent(iso.slice(0,8)+"01"); out.trips=Object.keys(grData.trips||{}).length;
+  return out;
+}
+function budBillsOpen(){ mpGoto('plan'); setTimeout(function(){ try{ if(typeof ssJumpTo==="function") ssJumpTo('bills'); }catch(e){} },120); }   // the 💳 Bills card on Home Base
+function renderMPBudget(el){
+  if(!el){el=document.getElementById("content");if(!el)return;}
+  const top=mwBanner('Every pot of money at a glance')+mpSubnav('budget');
+  if(_budMomOnly(el,top)) return;
+  const iso=_todayStr();
+  const card=(id,click,col,title,body)=>'<div id="bud-'+id+'" role="button" onclick="'+click+'" style="cursor:pointer;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(43,122,120,0.13);overflow:hidden">'
+    +'<div style="display:flex;align-items:center;gap:8px;padding:11px 14px;background:'+col+';color:#fff;font-weight:800;font-size:13px">'+title+'<span style="margin-left:auto;font-size:16px;opacity:.9">›</span></div>'
+    +'<div style="padding:10px 14px 12px;font-size:13px">'+body+'</div></div>';
+  const row=(l,v,c,big)=>'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:2px 0"><span style="color:#6b6560">'+l+'</span><b style="white-space:nowrap;'+(c?'color:'+c+';':'')+(big?'font-size:16px':'')+'">'+v+'</b></div>';
+  const note=t=>'<div style="font-size:11.5px;color:var(--muted);margin-top:4px">'+t+'</div>';
+  let h='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:12px;padding:12px;max-width:900px;margin:0 auto;box-sizing:border-box">';
+  // 🎁 Gifts — a door only; the presents load inside it
+  h+=card('gifts',"mpGoto('gifts')","#b5394a","🎁 Gifts",'<div style="color:#6b6560">Presents, budgets and hiding spots.</div><div style="margin-top:8px;font-weight:800;color:#b5394a">Open gifts →</div>');
+  // 💰 ESA grant — esa.js's own balance
+  if(mpBudgetEsaOn()){
+    let b='';
+    if(typeof esBalance!=="function"){ if(typeof esaLoad==="function") esaLoad(); b='<div style="color:var(--muted)">Loading…</div>'; }
+    else{ const E=esBalance('esa'), F=esBalance('family');
+      if(E.total){ b+=row('<b>Remaining</b>',_budUsd(E.remaining),E.remaining<0?'#b91c1c':'#1f5e5c',true)+row('Grant total',_budUsd(E.total))+row('Approved / arrived',_budUsd(E.committed),'#16a34a'); if(E.pending) b+=row('Pending approval',_budUsd(E.pending),'#d97706'); }
+      else if(E.count){ b+=row('<b>Spent</b>',_budUsd(E.committed),null,true); if(E.pending) b+=row('Pending',_budUsd(E.pending),'#d97706'); b+=note('No grant total set yet.'); }
+      else b+='<div style="color:var(--muted)">No orders yet.</div>';
+      if(F.count||F.total) b+=row('💳 Family money spent',_budUsd(F.committed)+(F.total?' of '+_budUsd(F.total):''));
+      if(E.year) b='<div style="font-size:11.5px;color:var(--muted);margin-bottom:4px">School year '+esc(E.year)+'</div>'+b; }
+    h+=card('esa',"mpGoto('esa')","#2563eb","💰 ESA grant",b);
+  }
+  // 🛒 Groceries — the trips the Grocery List already logs
+  { const G=budGrocery(iso); let b='';
+    G.rows.forEach(r=>{ if(r.amt) b+=row(esc(r.emoji+' '+r.name)+' · this '+r.per,_budUsd(r.spent)+' of '+_budUsd(r.amt),r.spent>r.amt?'#b91c1c':'#1f5e5c'); });
+    if(G.trips){ b+=row('All trips this week',_budUsd(G.week),null,!b)+row('All trips this month',_budUsd(G.month)); }
+    else b+='<div style="color:var(--muted)">No trips yet — checking out on the list adds them.</div>';
+    h+=card('grocery',"mpGoto('grocery')","#15803d","🛒 Groceries",b); }
+  // 💳 Bills — this month: due · paid · total
+  { const B=budBillsMonth(iso); let b='';
+    if(!B.all) b='<div style="color:var(--muted)">No bills yet — add them on 🏡 Home Base.</div>';
+    else if(!B.n) b='<div style="color:var(--muted)">No bills this month.</div>';
+    else{ b+=row('Still due ('+B.nDue+')',_budUsd(B.due),B.nDue?'#b45309':'#16a34a')+row('Paid ('+B.nPaid+')',_budUsd(B.paid),'#16a34a')+row('<b>This month</b>',_budUsd(B.total),null,true);
+      if(B.noAmt) b+=note(B.noAmt+' with no amount typed'); }
+    h+=card('bills',"budBillsOpen()","#2C5F8A","💳 Bills",b); }
+  h+='</div><div style="text-align:center;font-size:11.5px;color:var(--muted);padding:0 16px 20px">Tap a card to open it.</div>';
+  el.innerHTML=top+h;
+}
+// BUDGETTAB_END
 function mpGoto(v){ mpSubView=v; if(typeof mpKitchenNote==="function") mpKitchenNote(v);   // KITCHENTAB: the Kitchen tab reopens this page next time
+  if(typeof mpBudgetNote==="function") mpBudgetNote(v);   // BUDGETTAB: …and the 💰 Budget tab its own
   if(mdSmoothCalNow(v)){ msvEnter(); try{window.scrollTo(0,0);}catch(e){} return; }   // MDSMOOTH: ▸ Schedule (Today) opens the Schedule view in this same tick
   if(momSchedView||tab!=="moms-plan"){ showTab("moms-plan"); try{window.scrollTo(0,0);}catch(e){} return; }   // 👩 MSV: leave the Schedule view
   const el=document.getElementById('content'); if(el) renderMomsPlan(el); try{window.scrollTo(0,0);}catch(e){} }

@@ -182,7 +182,7 @@ console.log("\n# index.html wiring");
   const blk = src.slice(src.indexOf("// GIFTS_START"), src.indexOf("// GIFTS_END"));
   ok("GIFTS block: lazy gifts.js loader", /function renderMPGifts\(el\)/.test(blk) && /gifts\.js/.test(blk));
   ok("loader checks Mom BEFORE loading anything", blk.indexOf("momHere()") > 0 && blk.indexOf("momHere()") < blk.indexOf("createElement(\"script\")"));
-  ok("💰 Budget tab on Mom's Day's menu row", /tbtn\(active==='gifts',"mpGoto\('gifts'\)",'💰 Budget'\)/.test(src) && /\$\{sbtn\}\$\{gbtn\}\$\{hlbtn\}/.test(src));
+  ok("💰 Budget tab on Mom's Day's menu row (BUDGETTAB 2026-11-20: lit on any Budget page, reopens the last one)", /const gbtn=tbtn\(bud,\(typeof mpBudgetLast==="function"\)\?"mpGoto\(mpBudgetLast\(\)\)":"mpGoto\('gifts'\)",'💰 Budget'\);/.test(src) && /\$\{sbtn\}\$\{gbtn\}\$\{hlbtn\}/.test(src));
   ok("dispatch: mpSubView 'gifts' → renderMPGifts", /if\(mpSubView==='gifts'\)\{ return renderMPGifts\(el\); \}/.test(src));
   ok("'gifts' is not a Today view (SS_OTHER_VIEWS)", /SS_OTHER_VIEWS=\[[^\]]*"gifts"\]/.test(src));
   ok("gifts/ is never read by index.html itself (no boot listener — the secret stays off kid devices)", !/db\.ref\(["']gifts/.test(src));

@@ -97,7 +97,7 @@ console.log("\n# index.html wiring");
   ok("global esaData + esa listener", /let esaData=\{\}/.test(src) && /db\.ref\("esa"\)\.on\("value"/.test(src));
   ok("sub-tab list has purchases with 💰 label", /\["hq","settings","curriculum","mastery","chores","purchases"\]/.test(src) && /s==="purchases"\?"💰"/.test(src));
   ok("dispatch → renderPurchasesView", /adminSubTab==="purchases"\)\{ renderPurchasesView\(el,ah\); \}/.test(src));
-  ok("Mom HQ hub row", /_hqRowFn\("setAdminSub\('purchases'\)","💰","Purchases & ESA"/.test(src));
+  ok("no Mom HQ hub row (her pick \"Budget only\" 2026-11-20 — ESA lives in Mom's Day ▸ 💰 Budget; BUDGETTAB)", !/_hqRowFn\("setAdminSub\('purchases'\)"/.test(src) && /mpGoto\(mpBudgetEsaOn\(\)\?'esa':'budget'\)/.test(src));
   ok("lazy loader loads esa.js with cache-bust on github.io", /PURCHASES_START/.test(src) && /"esa\.js\?v="\+Date\.now\(\)/.test(src));
 }
 console.log("\n" + pass + " passed, " + fail + " failed");

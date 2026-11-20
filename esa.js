@@ -1,4 +1,5 @@
-// 💰 Mom HQ ▸ Purchases — orders, wishlist and TWO budgets (ESA grant · family money). Stage C, 2026-09-13.
+// 💰 Purchases & ESA — orders, wishlist and TWO budgets (ESA grant · family money). Stage C, 2026-09-13.
+// Its door: Mom's Day ▸ 💰 Budget ▸ ESA & purchases (BUDGETTAB, her pick "Budget only" 2026-11-20 — Mom HQ lost its row).
 // Data (all under esa/, loaded by index.html into the global `esaData`; this file is lazy-loaded by
 // renderPurchasesView the first time the tab opens, like library.js for Books):
 //   esa/orders/<id>   {n, vendor, items, amount, fund:"esa"|"family", category, status, placed, arrived, classwallet, risk, notes, books?, bins?}
@@ -7,7 +8,7 @@
 //   esa/budget/esa    {year, total}          esa/budget/family {year, total?}
 //   esa/log/<push>    {at, text}
 // Balances are COMPUTED here, never stored. Every write = one set/update/remove of ONE record (+ a log line).
-// Mom HQ is already behind the Admin code, so there is no second gate. Nothing here touches schedules.
+// Mom's Day is already behind the Mom switch (and the Budget pages check momHere), so there is no second gate. Nothing here touches schedules.
 (function(){
 "use strict";
 let esView="balance", esFund="all", esStatus="all", esEdit=null, esQ="";
@@ -191,6 +192,7 @@ window.renderPurchases=function(el,ah){
   if(!document.getElementById("es-style")){const st=document.createElement("style");st.id="es-style";st.textContent=ES_CSS;document.head.appendChild(st);}
   esRoot=el;esAh=ah||"";esDraw();
 };
+window.esBalance=esBalance;   // BUDGETTAB: 💰 Budget ▸ 📊 Overview's grant card reads the same numbers (read-only)
 window.esGo=esGo;window.esFilter=esFilter;window.esNew=esNew;window.esEditStart=esEditStart;window.esSet=esSet;window.esSave=esSave;window.esCancel=esCancel;window.esDelete=esDelete;window.esBuy=esBuy;window.esBudgetEdit=esBudgetEdit;
 window._esTest={esBalance,esRecord,slug,newId,list,money,view:()=>esView,edit:()=>esEdit,setView:v=>{esView=v;},draw:esDraw,setRoot:(el,ah)=>{esRoot=el;esAh=ah||"";}};
 })();
