@@ -24,6 +24,10 @@
 //   gifts/eve/<oid>/done/<iid>_<batt|build|charge> = ts      a ticked Christmas Eve job
 //   gifts/eve/<oid>/lines/<id> {text, order, done?}           her own Christmas Eve lines
 //   gifts/settings/even {pct, n}                              when ⚖️ flags a kid behind (default 15% or 2 gifts)
+// GIFTS slice 3 (📸 Receipts, her ask "submit receipts, like have a picture" 2026-11-20) — see GIFTS_RCPT_START below:
+//   gifts/receipts/<rid> {store, iso, orderNo?, total?, returnBy?, lines:[{t, p?, item?}], photoCount, occ, ts}
+//   giftPhotos/<rid> [dataURL, …]  ← its own top node, read only when she opens that receipt
+//   New on a present: rcpt (the receipt it came from) · returnBy · orderNo.
 // Totals are COMPUTED here, never stored (the esa.js rule). A gift for several people splits its cost evenly between them and
 // counts once for each (🤝). Every write = one set/update/remove of ONE record (+ a log line). Nothing here touches schedules.
 (function(){
@@ -164,7 +168,7 @@ function itemRow(it,pid){
   const amt=num(it.paid)!=null?money(num(it.paid)):(num(it.plan)!=null?'<span style="color:#64748b">plan '+money(num(it.plan))+'</span>':'—');
   const nx=GF_NEXT[it.status||"idea"],picked=!!gfSel[it.id];
   return '<div class="gf-item'+(live(it)?'':' dead')+(picked?' picked':'')+'"><button class="gf-ib" onclick="'+(gfSelOn?'gfPick':'gfEditItem')+'(\''+esc(it.id)+'\')">'+(gfSelOn?'<span class="gf-box">'+(picked?'✓':'')+'</span>':'')+'<div class="gf-it"><b>'+esc(it.name)+'</b></div><div class="gf-im">'+chip(s[1],s[2])+who+
-    dueChip(it)+(it.where?'<span>📍 '+esc(it.where)+'</span>':'')+(it.paper?'<span>🎀 '+esc(it.paper)+'</span>':'')+(it.store?'<span>🏬 '+esc(it.store)+'</span>':'')+needsChips(it)+'</div></button>'+
+    dueChip(it)+(it.where?'<span>📍 '+esc(it.where)+'</span>':'')+(it.paper?'<span>🎀 '+esc(it.paper)+'</span>':'')+(it.store?'<span>🏬 '+esc(it.store)+'</span>':'')+rcptChip(it)+needsChips(it)+'</div></button>'+
     '<div class="gf-ia"><div class="gf-amt">'+amt+(P.length>1&&pid&&num(it.paid)!=null?'<small> ('+money(num(it.paid)/P.length)+' each)</small>':'')+'</div>'+(gfSelOn?'':'<div style="display:flex;gap:4px">'+
     (nx?'<button class="gf-tool gf-mini" title="Next: '+esc(st(nx)[1])+'" onclick="gfNext(\''+esc(it.id)+'\')">'+st(nx)[1].split(" ")[0]+'</button>':'')+
     '<button class="gf-tool gf-mini" title="Move to…" onclick="gfMove(\''+esc(it.id)+'\')">↪</button></div>')+'</div></div>';
@@ -187,10 +191,10 @@ function personView(o,pid){
 }
 
 // ── the Christmas views (slice 2) ─────────────────────────────────────────────
-const GF_VIEWS=[["people","👨‍👩‍👧 People"],["even","⚖️ Even"],["wrap","🎀 To wrap"],["where","📍 Where"],["coming","📦 Coming"],["shop","🛍 Shop"],["closet","🗄 Closet"],["eve","🌙 Eve"]];
+const GF_VIEWS=[["people","👨‍👩‍👧 People"],["even","⚖️ Even"],["wrap","🎀 To wrap"],["where","📍 Where"],["coming","📦 Coming"],["shop","🛍 Shop"],["closet","🗄 Closet"],["eve","🌙 Eve"],["receipts","🧾 Receipts"]];
 const GF_SELECTABLE=["person","wrap","where","coming","shop","closet"];
 function viewNav(){
-  return '<div class="gf-views">'+GF_VIEWS.map(v=>'<button class="gf-vw'+((gfView===v[0]||(gfView==="person"&&v[0]==="people"))?" on":"")+'" onclick="gfGo(\''+v[0]+'\')">'+v[1]+'</button>').join("")+
+  return '<div class="gf-views">'+GF_VIEWS.map(v=>'<button class="gf-vw'+((gfView===v[0]||(gfView==="person"&&v[0]==="people"))?" on":"")+'" onclick="gfGo(\''+v[0]+'\')">'+v[1]+'</button>').join("")+'<button class="gf-vw add" onclick="gfRcptNew()">📸 Add a receipt</button>'+
     (GF_SELECTABLE.indexOf(gfView)>=0?'<button class="gf-vw sel'+(gfSelOn?" on":"")+'" onclick="gfSelToggle()">'+(gfSelOn?"✕ Done picking":"☑ Select")+'</button>':'')+'</div>';
 }
 function groupBy(list,keyFn,emptyLabel){
@@ -358,7 +362,7 @@ function occSheet(){
     h+='<label class="gf-f wide" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" style="width:auto"'+(f.closed?" checked":"")+' onchange="gfSet(\'closed\',this.checked)"> Done — move it to 📜 Past</label>';}
   return h+'</div>';
 }
-const SHEETS={even:["⚖️ When is a kid behind?",evenSheet],item:["Present",itemSheet],move:["↪ Move to…",moveSheet],person:["Person",personSheet],budget:["💲 Budget",budgetSheet],group:["Group",groupSheet],occ:["Occasion",occSheet]};
+const SHEETS={even:["⚖️ When is a kid behind?",evenSheet],item:["Present",itemSheet],move:["↪ Move to…",moveSheet],person:["Person",personSheet],budget:["💲 Budget",budgetSheet],group:["Group",groupSheet],occ:["Occasion",occSheet],rcpt:["Receipt",rcptSheet]};
 function sheet(){
   if(!gfEdit)return "";const S=SHEETS[gfEdit.kind];const id=gfEdit.id;
   const title=gfEdit.kind==="move"||gfEdit.kind==="budget"||gfEdit.kind==="even"?S[0]:(id?"✏️ "+S[0]:"➕ New "+S[0].toLowerCase());
@@ -418,6 +422,7 @@ function gfSave(){
     if(!rec.pids.length)delete rec.pids;
     const iid=id||uid();node("items")[iid]=rec;write("gifts/items/"+iid,rec,"set");
     log((id?"Edited: ":"Added: ")+name+" → "+names(f.pids)+(rec.paid!=null?" "+money(rec.paid):""));
+  }else if(kind==="rcpt"){if(!rcptSave())return;   // GIFTS_RCPT
   }else if(kind==="even"){
     const rec={pct:Math.max(0,num(f.pct)==null?15:num(f.pct)),n:Math.max(1,num(f.n)==null?2:Math.round(num(f.n)))};
     node("settings").even=rec;write("gifts/settings/even",rec,"set");log("Even-steven: "+rec.pct+"% or "+rec.n+" gifts");
@@ -497,12 +502,225 @@ function gfNewGroup(){gfEdit={kind:"group",id:null,form:{name:"",emoji:"👥"}};
 function gfNewOcc(){gfEdit={kind:"occ",id:null,form:{kind:"birthday",name:"",date:"",budget:"",autoName:true}};gfSetDraw("kind","birthday");}
 function gfOccEdit(){const o=occ(curOcc());if(!o)return;gfEdit={kind:"occ",id:o.id,form:{name:o.name||"",date:o.date||"",budget:o.budget==null?"":String(o.budget),closed:!!o.closed,secs:secsOf(o).map(s=>({id:s.id,emoji:s.emoji||"",name:s.name||""}))}};gfDraw();}
 
+// GIFTS_RCPT_START — 📸 Receipts, slice 3 (her ask 2026-11-20: "submit receipts, like have a picture"; plan §3.5; her answer to
+// question 6: "each line gets its own person"). Snap up to 6 photos (shrunk on this device, ≈⅓ MB each) or pick a PDF / screenshot
+// (an Amazon order page) → the family Claude key reads store, date, order #, total, every line and a printed return-by date, and
+// says which 💭 idea a line probably is → a check screen, one row per line: who it's for (tap 2+ = 🤝 shared) · section · 🗄 no one
+// yet · ✕ not a gift; a line that is one of her ideas offers "mark that idea bought" instead of a new present. NOTHING saves until
+// she taps Save. No Claude key → she still attaches the photos and types the total (and any lines) by hand.
+//   gifts/receipts/<rid>  {store, iso, orderNo?, total?, returnBy?, lines:[{t, p?, item?}], photoCount, occ, ts}
+//                         (p = the line's price: the plan wrote "$", but Firebase forbids "$" in a key; item = the present it became)
+//   giftPhotos/<rid>      [dataURL, …]  its OWN top node, read only when she opens that receipt — never at start (the page-size /
+//                         LG-speed rule; the messages/messagePhotos pattern). A PDF is kept as a data:application/pdf URL.
+//   each present it made or marked bought gets paid, store, status (🛒 on the way / 📦 here — her pick on the check screen),
+//   rcpt:<rid>, returnBy?, orderNo?  — one targeted set (new) or update (an idea) per present.
+const RC_MAX=6, RC_PDF_MAX=4*1024*1024;
+let gfRcOpen=null;const gfPhotos={};   // the receipt open in the list · photos read so far this visit (rid → [urls] | "loading" | "err")
+const RC_PROMPT='Read this receipt or online order (photos of ONE paper receipt, a screenshot, or a PDF such as an Amazon order page). The items are holiday presents. Reply with ONLY strict JSON, no prose:\n'
+  +'{"store":"store name","date":"YYYY-MM-DD or null","orderNo":"order number as printed, or null","total":number or null,"returnBy":"YYYY-MM-DD or null","lines":[{"text":"the item as printed","name":"a short plain name for it (a few words)","price":number,"idea":"the exact idea name from her list below, or null"}]}\n'
+  +'price = what was actually paid for that line after any discount — always the LINE total (2 @ 9.99 = 19.98). returnBy = only a return-by date or the end of a return window that is PRINTED on it; never work one out yourself. '
+  +'Several photos are one receipt from top to bottom and neighbouring photos may overlap: list each line ONCE. Skip tax, subtotal, total, shipping, bag fees, payment and change lines. Never invent lines or prices.';
+function claudeKey(){try{return (typeof kitCapKey==="function"&&kitCapKey())||"";}catch(e){return "";}}
+function firstJson(txt){   // the first complete top-level {…} (the grocery reader's rule, GR_RCPTLONG) — null when it never closed
+  const t=String(txt==null?"":txt),i=t.indexOf("{");if(i<0)return null;let depth=0,inStr=false,bs=false;
+  for(let j=i;j<t.length;j++){const c=t[j];if(inStr){if(bs)bs=false;else if(c==="\\")bs=true;else if(c==='"')inStr=false;continue;}
+    if(c==='"')inStr=true;else if(c==="{")depth++;else if(c==="}"){depth--;if(depth===0)return t.slice(i,j+1);}}
+  return null;
+}
+function isoOk(v){v=String(v||"").trim();return /^\d{4}-\d{2}-\d{2}$/.test(v)?v:"";}
+function ideas(oid){return items(oid).filter(it=>(it.status||"idea")==="idea");}
+const RC_SKIP=["the","and","for","with","set","pack","pk","kit","new","toy","toys","kids","gift"];
+function toks(s){return String(s||"").toLowerCase().replace(/[^a-z0-9 ]+/g," ").split(/\s+/).filter(w=>w.length>=3&&RC_SKIP.indexOf(w)<0);}
+function matchIdea(line,guess,oid,used){   // Claude's pick first (exact name), else most of the idea's words are in the line
+  const L=ideas(oid).filter(it=>used.indexOf(it.id)<0),g=String(guess||"").trim().toLowerCase();
+  if(g){const hit=L.find(it=>String(it.name||"").trim().toLowerCase()===g);if(hit)return hit.id;}
+  const lt=toks(line);let best=null,bs=0;
+  L.forEach(it=>{const w=toks(it.name);if(!w.length)return;const s=w.filter(x=>lt.indexOf(x)>=0).length/w.length;if(s>bs){bs=s;best=it.id;}});
+  return bs>=0.6?best:null;
+}
+function rcRow(oid,t,p){const S=secsOf(occ(oid));return {t:t||"",p:p==null?"":String(p),pids:[],sec:(S[0]&&S[0].id)||"",nog:false,idea:null,useIdea:false};}
+function rcptLoad(f,d,oid){   // Claude's answer → the form; what she already typed wins
+  d=d||{};if(!String(f.store||"").trim()&&d.store)f.store=String(d.store).slice(0,60);
+  if((!f.iso||f.iso===today())&&isoOk(d.date))f.iso=isoOk(d.date);   // the sheet starts on today; the printed date beats that
+  if(!String(f.orderNo||"").trim()&&d.orderNo)f.orderNo=String(d.orderNo).slice(0,60);
+  if(num(f.total)==null&&num(d.total)!=null)f.total=String(num(d.total));if(!f.returnBy&&isoOk(d.returnBy))f.returnBy=isoOk(d.returnBy);
+  if(!f.statusSet)f.status=f.orderNo?"ordered":"here";
+  const used=[];f.rows=(Array.isArray(d.lines)?d.lines:[]).filter(l=>l&&(l.name||l.text)).map(l=>{
+    const r=rcRow(oid,String(l.name||l.text).trim().slice(0,140),num(l.price));const iid=matchIdea((l.text||"")+" "+(l.name||""),l.idea,oid,used);
+    if(iid){used.push(iid);r.idea=iid;r.useIdea=true;}return r;});
+  f.read=true;
+}
+function dataParts(url){const m=/^data:([^;,]+);base64,(.*)$/.exec(String(url||""));return m?{type:m[1],b64:m[2]}:null;}
+async function gfRcptRead(){
+  const E=gfEdit;if(!E||E.kind!=="rcpt")return;const f=E.form,key=claudeKey(),oid=curOcc();
+  if(!key){f.msg="Reading needs the family Claude key (Admin ▸ Settings ▸ ✨ AI key). You can still type it in below.";return gfDraw();}
+  if(!f.files.length){f.msg="Add a photo or a PDF first.";return gfDraw();}
+  f.busy=true;f.msg="";gfDraw();
+  try{
+    const imgs=f.files.filter(x=>!x.pdf),pdfs=f.files.filter(x=>x.pdf),content=[];
+    imgs.forEach((x,i)=>{const d=dataParts(x.url);if(!d)return;if(imgs.length>1)content.push({type:"text",text:"Photo "+(i+1)+" of "+imgs.length+(i===0?" (top of the receipt)":i===imgs.length-1?" (bottom)":"")});
+      content.push({type:"image",source:{type:"base64",media_type:d.type,data:d.b64}});});
+    pdfs.forEach((x,i)=>{const d=dataParts(x.url);if(!d)return;content.push({type:"text",text:"PDF"+(pdfs.length>1?" "+(i+1)+" of "+pdfs.length:"")});content.push({type:"document",source:{type:"base64",media_type:"application/pdf",data:d.b64}});});
+    const I=ideas(oid).map(it=>JSON.stringify(String(it.name||"")));
+    content.push({type:"text",text:RC_PROMPT+(I.length?"\nHer present ideas (name a line's idea ONLY when it is clearly that item): "+I.join("; "):"\nShe has no ideas on her list — idea is always null.")});
+    const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
+      headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model:"claude-sonnet-5",max_tokens:8000,messages:[{role:"user",content}]})});
+    if(!resp.ok){const t=await resp.text();throw new Error("Claude "+resp.status+" — "+String(t).slice(0,120));}
+    const data=await resp.json();
+    if(data.stop_reason==="max_tokens")throw new Error("That receipt came back incomplete — try again, or fewer photos at a time.");
+    const txt=(data.content||[]).filter(b=>b&&b.type==="text").map(b=>b.text).join(""),js=firstJson(txt);
+    if(js==null)throw new Error("Claude didn't send back a receipt — try a clearer photo.");
+    let d;try{d=JSON.parse(js);}catch(pe){throw new Error("Claude's answer didn't come out readable — try again.");}
+    rcptLoad(f,d,oid);
+    f.msg=f.rows.length?"✓ Read "+f.rows.length+" line"+(f.rows.length===1?"":"s")+" — say who each is for, then Save.":"Claude found no lines — type them in below, or just the total.";
+  }catch(e){f.msg=String(e&&e.message||e);}
+  f.busy=false;if(gfEdit===E)gfDraw();
+}
+function shrinkTo(file,max,q){return new Promise((res,rej)=>{const img=new Image(),url=URL.createObjectURL(file);
+  img.onload=()=>{try{const r=Math.min(1,max/Math.max(img.width,img.height)),c=document.createElement("canvas");c.width=Math.round(img.width*r);c.height=Math.round(img.height*r);c.getContext("2d").drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);res(c.toDataURL("image/jpeg",q));}catch(e){rej(e);}};
+  img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error("Couldn't read a photo."));};img.src=url;});}
+async function shrink(file){let out=await shrinkTo(file,1600,0.78);if(out.length>420000)out=await shrinkTo(file,1280,0.65);return out;}   // msgShrink's sizes
+function readUrl(file){return new Promise((res,rej)=>{const rd=new FileReader();rd.onload=()=>res(String(rd.result||""));rd.onerror=()=>rej(new Error("Couldn't open that file."));rd.readAsDataURL(file);});}
+async function gfRcptPick(input){
+  const E=gfEdit;if(!E||E.kind!=="rcpt")return;const f=E.form,files=[].slice.call((input&&input.files)||[]);try{input.value="";}catch(e){}
+  const room=RC_MAX-f.files.length;f.msg=files.length>room?"Only "+RC_MAX+" fit on one receipt — the first "+Math.max(0,room)+" were added.":"";f.adding=true;gfDraw();
+  for(const x of files.slice(0,Math.max(0,room))){
+    try{if(/pdf/i.test(x.type||"")||/\.pdf$/i.test(x.name||"")){if(x.size>RC_PDF_MAX){f.msg="That PDF is too big to keep (over 4 MB) — a screenshot of the order page works too.";continue;}f.files.push({url:await readUrl(x),pdf:true});}
+      else f.files.push({url:await shrink(x),pdf:false});}catch(e){f.msg="One file couldn't be read — try a different one.";}
+  }
+  f.adding=false;if(gfEdit===E)gfDraw();
+}
+function rcF(){return gfEdit&&gfEdit.kind==="rcpt"?gfEdit.form:null;}
+function rcR(i){const f=rcF();return f&&f.rows[i];}
+function gfRcptNew(){if(!curOcc())return;gfEdit={kind:"rcpt",id:null,form:{files:[],store:"",iso:today(),orderNo:"",total:"",returnBy:"",status:"here",statusSet:false,rows:[],read:false,busy:false,adding:false,msg:""}};gfDraw();}
+function gfRcptDrop(i){const f=rcF();if(!f)return;f.files.splice(i,1);gfDraw();}
+function gfRcSet(i,k,v){const r=rcR(i);if(r)r[k]=v;}
+function gfRcPid(i,pid){const r=rcR(i);if(!r)return;r.nog=false;const j=r.pids.indexOf(pid);if(j>=0)r.pids.splice(j,1);else r.pids.push(pid);gfDraw();}
+function gfRcNone(i){const r=rcR(i);if(!r)return;r.pids=[];r.nog=false;gfDraw();}
+function gfRcNog(i){const r=rcR(i);if(!r)return;r.nog=!r.nog;if(r.nog){r.pids=[];r.useIdea=false;}gfDraw();}
+function gfRcSec(i,sid){const r=rcR(i);if(r)r.sec=sid;gfDraw();}
+function gfRcUseIdea(i){const r=rcR(i);if(!r||!r.idea)return;r.useIdea=!r.useIdea;if(r.useIdea)r.nog=false;gfDraw();}
+function gfRcIdea(i,iid){const f=rcF(),r=rcR(i);if(!r)return;f.rows.forEach((o,j)=>{if(j!==i&&iid&&o.idea===iid){o.idea=null;o.useIdea=false;}});r.idea=iid||null;r.useIdea=!!iid;if(iid)r.nog=false;gfDraw();}
+function gfRcAdd(){const f=rcF();if(!f)return;f.rows.push(rcRow(curOcc(),"",null));gfDraw();}
+function gfRcDel(i){const f=rcF();if(!f)return;f.rows.splice(i,1);gfDraw();}
+function gfRcStatus(s){const f=rcF();if(!f)return;f.status=s;f.statusSet=true;gfDraw();}
+function rcptSheet(){
+  const f=gfEdit.form,oid=curOcc(),o=occ(oid),S=secsOf(o),key=claudeKey(),I=ideas(oid);
+  let h='<div class="gf-form"><div class="gf-f wide"><span>📸 Photos of the receipt, or a PDF / screenshot of the order ('+f.files.length+' of '+RC_MAX+')</span><div class="gf-rcph">'+
+    f.files.map((x,i)=>'<div class="gf-rcth">'+(x.pdf?'<div class="gf-rcpdf">📄 PDF</div>':'<img src="'+esc(x.url)+'">')+'<button onclick="gfRcptDrop('+i+')">✕</button></div>').join("")+
+    (f.files.length<RC_MAX?'<label class="gf-rcadd"><input type="file" accept="image/*,application/pdf,.pdf" multiple onchange="gfRcptPick(this)" style="display:none">'+(f.adding?'⏳':'＋ 📸')+'</label>':'')+'</div></div>';
+  h+=key?'<div class="gf-f wide"><button class="gf-tool gf-save" style="align-self:flex-start"'+(f.busy||!f.files.length?' disabled':'')+' onclick="gfRcptRead()">'+(f.busy?'⏳ Reading…':'✨ Read it')+'</button></div>'
+    :'<div class="gf-sub wide" style="color:#92400e;margin:0">No Claude key on this device, so it can\'t read the receipt — type the total (and the presents, if you like) below. The photos still save as proof for returns.</div>';
+  if(f.msg)h+='<div class="gf-sub wide" style="margin:0;font-weight:700;color:'+(/^✓/.test(f.msg)?"#15803d":"#b45309")+'">'+esc(f.msg)+'</div>';
+  h+=field("store","Store","e.g. Target")+field("iso","Date","","date")+field("total","Total $","","money")+field("orderNo","Order #","optional")+field("returnBy","⏰ Return by","","date");
+  if(f.rows.length){
+    h+='<div class="gf-f wide"><span>These presents are…</span><div class="gf-picks">'+[["ordered","🛒 On the way"],["here","📦 Here"]].map(s=>'<button class="gf-pick'+(f.status===s[0]?" on":"")+'" onclick="gfRcStatus(\''+s[0]+'\')">'+s[1]+'</button>').join("")+'</div></div>';
+    h+='<div class="gf-sub wide" style="margin:4px 0 0">Each line: who it\'s for (tap two or more = 🤝 shared), the section — or 🗄 no one yet, or ✕ not a gift.</div>';
+  }
+  f.rows.forEach((r,i)=>{
+    const idea=r.idea&&(gfData.items||{})[r.idea];
+    h+='<div class="gf-rcrow'+(r.nog?" nog":"")+'"><div style="display:flex;gap:6px;align-items:center"><input class="gf-in" value="'+esc(r.t)+'" placeholder="What is it?" oninput="gfRcSet('+i+',\'t\',this.value)">'+
+      '<input class="gf-in" style="flex:none;width:76px" inputmode="decimal" value="'+esc(r.p)+'" placeholder="$" oninput="gfRcSet('+i+',\'p\',this.value)"><button class="gf-tool gf-mini" title="Take this line off" onclick="gfRcDel('+i+')">✕</button></div>';
+    if(idea)h+='<button class="gf-tick'+(r.useIdea?" on":"")+'" onclick="gfRcUseIdea('+i+')"><span class="gf-box">'+(r.useIdea?'✓':'')+'</span><span>💭 That\'s your idea <b>'+esc(idea.name)+'</b>'+(pidsOf(idea).length?' ('+esc(names(pidsOf(idea)))+')':'')+' — mark it bought</span></button>';
+    if(!(r.useIdea&&idea)){
+      h+='<div class="gf-picks">';groups().forEach(g=>{people().filter(p=>(p.group||"other")===g.id).forEach(p=>{const on=r.pids.indexOf(p.id)>=0;
+        h+='<button class="gf-pick'+(on?" on":"")+'" style="'+(on?"background:"+esc(p.color||"#0f172a")+";border-color:"+esc(p.color||"#0f172a"):"")+'" onclick="gfRcPid('+i+',\''+esc(p.id)+'\')">'+esc(p.name)+'</button>';});});
+      h+='<button class="gf-pick'+(!r.nog&&!r.pids.length?" on":"")+'" onclick="gfRcNone('+i+')">🗄 No one yet</button><button class="gf-pick'+(r.nog?" on":"")+'" onclick="gfRcNog('+i+')">✕ Not a gift</button></div>';
+      if(!r.nog&&r.pids.length)h+='<div class="gf-picks">'+S.map(s=>'<button class="gf-pick'+(r.sec===s.id?" on":"")+'" onclick="gfRcSec('+i+',\''+esc(s.id)+'\')">'+esc((s.emoji||"")+" "+s.name)+'</button>').join("")+'</div>';
+    }
+    if(!r.nog&&I.length)h+='<select class="gf-sel" style="margin-top:6px" onchange="gfRcIdea('+i+',this.value)"><option value="">'+(r.idea?"Not one of my ideas":"Or it\'s one of my 💭 ideas…")+'</option>'+I.map(it=>'<option value="'+esc(it.id)+'"'+(it.id===r.idea?" selected":"")+'>'+esc(it.name)+(pidsOf(it).length?' — '+esc(names(pidsOf(it))):'')+'</option>').join("")+'</select>';
+    h+='</div>';
+  });
+  h+='<div class="gf-f wide"><button class="gf-tool" style="align-self:flex-start" onclick="gfRcAdd()">＋ A line by hand</button></div>';
+  return h+'</div>';
+}
+function rcptSave(){   // photos (own node) → the receipt (ONE set) → one set/update per present it made or marked bought
+  const f=gfEdit.form,oid=curOcc();if(f.busy||f.adding){toast("Still reading — one moment");return false;}
+  const rows=f.rows.filter(r=>String(r.t||"").trim()||num(r.p)!=null);
+  if(rows.some(r=>!r.nog&&!(r.useIdea&&r.idea)&&!String(r.t||"").trim())){toast("Each present needs a name");return false;}
+  if(!f.files.length&&!rows.length&&num(f.total)==null){toast("Add a photo or type the total");return false;}
+  const rid=uid(),store=String(f.store||"").trim().slice(0,60),ord=String(f.orderNo||"").trim().slice(0,60),ret=isoOk(f.returnBy),status=f.status==="ordered"?"ordered":"here";
+  if(f.files.length){const urls=f.files.map(x=>x.url);gfPhotos[rid]=urls;write("giftPhotos/"+rid,urls,"set");}
+  const lines=[],todo=[];let made=0,bought=0;
+  rows.forEach(r=>{const t=String(r.t||"").trim().slice(0,140),p=num(r.p),line={t};if(p!=null)line.p=p;
+    if(!r.nog){const fill={status,rcpt:rid};if(p!=null)fill.paid=p;if(store)fill.store=store;if(ret)fill.returnBy=ret;if(ord)fill.orderNo=ord;
+      const idea=r.useIdea&&r.idea&&(gfData.items||{})[r.idea];
+      if(idea){line.item=r.idea;todo.push(()=>{Object.assign(idea,fill);write("gifts/items/"+r.idea,fill,"update");});bought++;}
+      else{const iid=uid()+lines.length,pids=r.pids.slice(),rec=Object.assign({occ:oid,sec:r.sec||"",name:t,ts:Date.now()},fill);if(pids.length)rec.pids=pids;
+        const pp=defaultPaper(pids,rec.sec,oid);if(pp)rec.paper=pp;line.item=iid;todo.push(()=>{node("items")[iid]=rec;write("gifts/items/"+iid,rec,"set");});made++;}}
+    lines.push(line);});
+  const sum=lines.reduce((a,l)=>a+(l.p||0),0),total=num(f.total)!=null?num(f.total):(lines.some(l=>l.p!=null)?Math.round(sum*100)/100:null);
+  const rec={store,iso:isoOk(f.iso)||today(),lines,photoCount:f.files.length,occ:oid,ts:Date.now()};if(total!=null)rec.total=total;if(ord)rec.orderNo=ord;if(ret)rec.returnBy=ret;
+  node("receipts")[rid]=rec;write("gifts/receipts/"+rid,rec,"set");todo.forEach(fn=>fn());
+  log("🧾 Receipt: "+(store||"a store")+(total!=null?" "+money(total):"")+(made?" · "+made+" new present"+(made===1?"":"s"):"")+(bought?" · "+bought+" idea"+(bought===1?"":"s")+" bought":""));
+  gfView="receipts";gfRcOpen=rid;return true;
+}
+function rcpts(oid){
+  const R=gfData.receipts||{},I=gfData.items||{},t=today(),open=r=>r.returnBy&&r.returnBy>=t;
+  return Object.keys(R).map(id=>Object.assign({id},R[id])).filter(r=>r.occ===oid||(r.lines||[]).some(l=>l&&l.item&&I[l.item]&&I[l.item].occ===oid))
+    .sort((a,b)=>(open(b)?1:0)-(open(a)?1:0)||(open(a)?String(a.returnBy).localeCompare(String(b.returnBy)):String(b.iso||"").localeCompare(String(a.iso||"")))||(b.ts||0)-(a.ts||0));
+}
+function retChip(iso,label){if(!iso)return "";const t=today();if(iso<t)return '<span style="color:#94a3b8">⏰ return window closed</span>';
+  const d=Math.round((new Date(iso+"T12:00:00")-new Date(t+"T12:00:00"))/864e5);return d<=7?chip("⏰ "+(label||"return by")+" "+shortDate(iso)+(d===0?" — today":" — "+d+" day"+(d===1?"":"s")),"#d97706"):'<span>⏰ '+esc((label||"return by")+" "+shortDate(iso))+'</span>';}
+function rcptChip(it){if(!it.rcpt)return "";return '<span>🧾 receipt</span>'+(it.returnBy&&live(it)&&it.status!=="given"?retChip(it.returnBy):"");}
+function gfRcptToggle(rid){
+  gfRcOpen=gfRcOpen===rid?null:rid;const r=(gfData.receipts||{})[rid];
+  if(gfRcOpen&&r&&r.photoCount&&!gfPhotos[rid]){
+    if(typeof db==="undefined"||!db)gfPhotos[rid]="err";
+    else{gfPhotos[rid]="loading";db.ref("giftPhotos/"+rid).once("value").then(s=>{gfPhotos[rid]=[].concat(s.val()||[]).filter(Boolean);if(!gfEdit)gfDraw();}).catch(()=>{gfPhotos[rid]="err";if(!gfEdit)gfDraw();});}
+  }
+  gfDraw();
+}
+function gfRcptPdf(rid,i){const u=(gfPhotos[rid]||[])[i];if(!u)return;try{fetch(u).then(r=>r.blob()).then(b=>{window.open(URL.createObjectURL(b),"_blank");});}catch(e){}}
+function rcptPhotos(r){
+  const P=gfPhotos[r.id];if(!r.photoCount)return '<div class="gf-sub" style="margin:4px 0">No photos — typed in by hand.</div>';
+  if(P==="loading"||!P)return '<div class="gf-sub" style="margin:4px 0">Loading '+r.photoCount+' photo'+(r.photoCount===1?'':'s')+'…</div>';
+  if(P==="err"||!P.length)return '<div class="gf-sub" style="margin:4px 0">The photos couldn\'t load right now.</div>';
+  return '<div class="gf-rcbig">'+P.map((u,i)=>/^data:application\/pdf/.test(u)?'<button class="gf-tool" onclick="gfRcptPdf(\''+esc(r.id)+'\','+i+')">📄 Open the PDF</button>':'<img src="'+esc(u)+'">').join("")+'</div>';
+}
+function rcptView(o){
+  const L=rcpts(o.id),I=gfData.items||{};
+  let h=intro("Every receipt for "+esc(o.name)+" — the ones whose return window closes soonest on top. Tap one for its photos and lines.");
+  h+='<div class="gf-acts" style="margin-bottom:10px"><button class="gf-tool gf-save" onclick="gfRcptNew()">📸 Add a receipt</button></div>';
+  if(!L.length)return h+'<div class="gf-card"><div class="gf-empty">No receipts yet. Snap one (or pick an Amazon order PDF) and Claude fills in what you paid.</div></div>';
+  L.forEach(r=>{const on=gfRcOpen===r.id,its=(r.lines||[]).map(l=>l&&l.item&&I[l.item]).filter(Boolean);
+    h+='<div class="gf-card"><button class="gf-prow" style="border:none;padding:10px 14px" onclick="gfRcptToggle(\''+esc(r.id)+'\')"><span style="font-size:20px">🧾</span><span class="gf-pn">'+esc(r.store||"Receipt")+
+      '<span class="gf-pc">'+esc(shortDate(r.iso))+(r.orderNo?' · #'+esc(r.orderNo):'')+' · '+(its.length?its.map(it=>esc(it.name)).join(", "):'no presents')+'</span><span class="gf-im" style="margin-top:2px">'+retChip(r.returnBy)+'</span></span>'+
+      '<span class="gf-amt">'+(r.total!=null?money(r.total):'—')+'</span></button>';
+    if(on){h+='<div class="gf-bd">'+rcptPhotos(r)+(r.lines||[]).map(l=>{const it=l&&l.item&&I[l.item];if(!l)return "";
+        const where=it?(pidsOf(it).length?names(pidsOf(it)):"🗄 no one yet")+(((o.secs||{})[it.sec]||{}).name?" · "+((o.secs||{})[it.sec].emoji||"")+" "+o.secs[it.sec].name:""):(l.item?"present deleted":"✕ not a gift");
+        return '<div class="gf-rcline">'+(it?'<button class="gf-ib" onclick="gfEditItem(\''+esc(l.item)+'\')"><b>'+esc(l.t)+'</b>':'<span style="flex:1;color:#94a3b8">'+esc(l.t))+'<span class="gf-pc">'+esc(where)+'</span>'+(it?'</button>':'</span>')+'<span class="gf-amt">'+(l.p!=null?money(l.p):'')+'</span></div>';}).join("")+'</div>';}
+    h+='</div>';});
+  return h;
+}
+const RC_CSS=`
+.gf-rcph{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.gf-rcth{position:relative;width:64px;height:64px;border-radius:9px;overflow:hidden;border:1.5px solid var(--border)}
+.gf-rcth img{width:100%;height:100%;object-fit:cover;display:block}
+.gf-rcth button{position:absolute;top:2px;right:2px;border:none;border-radius:99px;width:20px;height:20px;font-size:10px;background:rgba(15,23,42,.7);color:#fff;cursor:pointer;padding:0}
+.gf-rcpdf{display:flex;align-items:center;justify-content:center;height:100%;font-size:12px;font-weight:800;color:#b91c1c;background:#fef2f2}
+.gf-rcadd{display:flex;align-items:center;justify-content:center;width:64px;height:64px;border-radius:9px;border:1.5px dashed #94a3b8;font-size:13px;font-weight:800;color:#334155;cursor:pointer;background:#f8fafc}
+.gf-rcrow{grid-column:1/-1;border:1.5px solid var(--border);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.gf-rcrow.nog{opacity:.6;background:#f8fafc}
+.gf-rcrow .gf-in{min-width:0}
+.gf-rcrow .gf-tick{border-top:none;padding:2px 0}
+.gf-rcrow .gf-tick.on span:last-child{color:#0f172a;text-decoration:none}
+.gf-rcbig{display:flex;flex-direction:column;gap:8px;margin:4px 0 8px}
+.gf-rcbig img{width:100%;border-radius:8px;border:1px solid #e2e8f0}
+.gf-rcline{display:flex;align-items:center;gap:8px;border-top:1px solid #f1f5f9;padding:7px 0;font-size:13px}
+.gf-rcline .gf-pc{display:block;font-weight:500;font-size:11.5px;color:#64748b}
+`;
+Object.assign(window,{gfRcptNew,gfRcptPick,gfRcptDrop,gfRcptRead,gfRcSet,gfRcPid,gfRcNone,gfRcNog,gfRcSec,gfRcUseIdea,gfRcIdea,gfRcAdd,gfRcDel,gfRcStatus,gfRcptToggle,gfRcptPdf});
+const RC_TEST={prompt:RC_PROMPT,firstJson,matchIdea,ideas,rcpts,photos:gfPhotos,open:()=>gfRcOpen,addFile:(url,pdf)=>{const f=rcF();if(f)f.files.push({url,pdf:!!pdf});}};
+// GIFTS_RCPT_END
+
 function gfDraw(){
   if(!gfRoot)return;
   let body;
   if(!gfLoaded)body='<div class="gf-empty" style="padding:40px">Loading presents…</div>';
   else{const oid=curOcc(),o=oid&&occ(oid);
-    const V={even:evenView,wrap:wrapView,where:whereView,coming:comingView,shop:shopView,closet:closetView,eve:eveView};
+    const V={even:evenView,wrap:wrapView,where:whereView,coming:comingView,shop:shopView,closet:closetView,eve:eveView,receipts:rcptView};
     body=o?occBar()+viewNav()+(gfView==="person"&&gfPid?personView(o,gfPid):V[gfView]?V[gfView](o):peopleView(o)):emptyView();}
   gfRoot.innerHTML=gfAh+'<div class="gf-wrap"><div class="gf-title">🎁 Gifts</div>'+body+'</div>'+selBar()+sheet();
 }
@@ -564,6 +782,7 @@ const GF_CSS=`
 .gf-vw{padding:6px 10px;border-radius:99px;border:1.5px solid transparent;background:none;font-weight:800;font-size:12px;cursor:pointer;font-family:inherit;color:#6b7280}
 .gf-vw.on{background:#DEF2F1;border-color:#2B7A78;color:#1f5e5c}
 .gf-vw.sel{margin-left:auto;border-color:var(--border);background:#fff;color:#0f172a}
+.gf-vw.add{border-color:var(--border);background:#fff;color:#0f172a}
 .gf-vw.sel.on{background:#0f172a;color:#fff;border-color:#0f172a}
 .gf-even{width:100%;border-collapse:collapse;font-size:12.5px}
 .gf-even th,.gf-even td{padding:7px 4px;border-bottom:1px solid #f1f5f9;text-align:center;white-space:nowrap}
@@ -584,10 +803,10 @@ const GF_CSS=`
 `;
 window.renderGifts=function(el,ah){
   if(typeof momHere==="function"&&!momHere()){el.innerHTML=(ah||"")+'<div class="gf-empty" style="padding:40px">🔒 Mom only.</div>';return;}   // the presents are a secret: no data loads without Mom
-  if(!document.getElementById("gf-style")){const s=document.createElement("style");s.id="gf-style";s.textContent=GF_CSS;document.head.appendChild(s);}
+  if(!document.getElementById("gf-style")){const s=document.createElement("style");s.id="gf-style";s.textContent=GF_CSS+RC_CSS;document.head.appendChild(s);}
   gfRoot=el;gfAh=ah||"";gfListen();gfDraw();
 };
 Object.assign(window,{gfGo,gfSelToggle,gfPick,gfBulk,gfBulkIds,gfGather,gfEveTick,gfLineAdd,gfLineTick,gfLineDel,gfLinesCopy,gfEvenEdit,gfNeed,gfStartOcc,gfPickOcc,gfOpenPerson,gfBack,gfNewItem,gfEditItem,gfMove,gfSet,gfSetDraw,gfTogglePid,gfSecBudget,gfSecEdit,gfSecAdd,gfCancel,gfSave,gfDelete,gfNext,gfNewPerson,gfEditPerson,gfBudget,gfGroupBudget,gfNewGroup,gfNewOcc,gfOccEdit});
 window._gfTest={evenData,behind,evenSet,sel:()=>gfSel,selOn:()=>gfSelOn,data:()=>gfData,setData:d=>{gfData=d||{};gfLoaded=true;},people,groups,occs,secsOf,items,personTot,groupTot,occTot,left,share,curOcc,
-  setOcc:o=>{gfOcc=o;},view:()=>gfView,edit:()=>gfEdit,draw:gfDraw,setRoot:(el,ah)=>{gfRoot=el;gfAh=ah||"";},reset:()=>{gfOcc=null;gfView="people";gfPid=null;gfEdit=null;}};
+  setOcc:o=>{gfOcc=o;},view:()=>gfView,edit:()=>gfEdit,draw:gfDraw,setRoot:(el,ah)=>{gfRoot=el;gfAh=ah||"";},reset:()=>{gfOcc=null;gfView="people";gfPid=null;gfEdit=null;gfRcOpen=null;},rc:RC_TEST};
 })();
