@@ -273,6 +273,29 @@ function hhEditHTML(id){
 // first. 🚪 Edit rooms (Mom) writes only household/rooms/* and household/floors/* (HH_ROOMDATA). Works only while the view is open.
 let hhRmSel="", hhRmFold={}, hhRmLane={}, hhRmEditing=false, hhRmLong=false;   // room id ("" = 🏠 Whole house, "__none" = No room) · open groups · open lanes · Edit rooms · 8 weeks
 const HH_LANES=[["daily","Daily"],["weekly","Weekly"],["few","Every few weeks"],["season","Seasonal"],["once","One-time"]];
+// HOUSEFAST_START — one draw of a Rooms page (🏠 Whole house, a room) works each shared thing out ONCE (hub brief 2026-11-19: Whole
+// house took ~170 ms on a real-size table because 🔴 Now, 📅 Schedule, 📊 How often and the "most behind first" list each walked every
+// chore again — rnRows for every room twice, hhRoomChores 31 times, hhStats 3 times a chore). hhRoomsPageHTML opens the memo (hfDraw)
+// for the length of that one call and drops it when the call returns or throws; nothing is kept between draws, so a tick, an edit or
+// a new to-do is always read fresh on the next draw. Outside a draw every helper calls straight through, exactly as before. Drawing
+// writes nothing, so nothing these read can change inside one draw. Kept: the chores by room, each room's 🔴 Now rows, each chore's
+// stats and need. Callers get their own arrays (a copy), so one card can never change what the next one reads. Same page, faster.
+let _hfD=null;
+function hfDraw(fn){ if(_hfD) return fn(); _hfD={}; try{ return fn(); }finally{ _hfD=null; } }
+function hfMemo(k,f){ return Object.prototype.hasOwnProperty.call(_hfD,k)?_hfD[k]:(_hfD[k]=f()); }
+// One chore's 8 weeks (hhStats) and its need (hhNeed), by its id in the table (j = that row).
+function hfStats(id,j){ if(!_hfD||id===undefined) return hhStats(j); return hfMemo("st|"+id,function(){ return hhStats(j); }); }
+function hfNeed(id,j){ if(!_hfD||id===undefined) return hhNeed(j); return hfMemo("nd|"+id,function(){ return _hfNeedOf(id,j); }); }
+// The need meter's own arithmetic (hhNeed in index.html, line for line) from this draw's stats, so a chore's 8 weeks are walked once,
+// not twice. test_house_fast.js checks it equals hhNeed on every chore, and fails if hhNeed's text changes (then change this too).
+function _hfNeedOf(id,j){
+  const iv=hhInterval(j); if(!iv) return null; const st=hfStats(id,j); const today=_hhDayNum(_hhIsoLocal(Date.now()));
+  let last=st.last; if(j.lastDone&&/^\d{4}-\d{2}-\d{2}$/.test(j.lastDone)&&(!last||j.lastDone>last)) last=j.lastDone;
+  if(!last) return {pct:Infinity,days:null,interval:iv,last:null,never:true,label:"never in 8 wk"};
+  const days=today-_hhDayNum(last), pct=Math.round(100*days/iv);
+  return {pct:pct,days:days,interval:iv,last:last,never:false,label:pct+"% · "+days+" d / "+iv};
+}
+// HOUSEFAST_END
 function hhRmGo(id){ hhRmSel=id; hhRmEditing=false; hhEditId=""; hhRender(); }
 function hhRmFoldToggle(g,open){ hhRmFold[g]=!open; hhRender(); }
 function hhRmLaneToggle(k){ hhRmLane[k]=!hhRmLane[k]; hhRender(); }
@@ -286,11 +309,12 @@ function hhTimesAWeek(j){ const cad=hhPlanCad(j); if(hhLaneOf(j)==="once"||cad==
   if(j.cycW) n=n/Math.max(1,parseInt(j.cycN,10)||4); return n; }   // 🗓 4-week cycle: one week in N
 // The room a chore shows under here: its stored room if that room still exists, else (no stored room) the guess; "" = No room.
 function hhRoomOn(j){ const L=hhRoomList(), has=function(r){ return L.some(function(x){ return x[0]===r; }); }; if(j&&j.room&&!has(j.room)) return ""; const r=hhRoomOf(j); return has(r)?r:""; }
-function hhRoomChores(){ const J=hhJobs(), out={__none:[]}; hhRoomList().forEach(function(r){ out[r[0]]=[]; });
+function hhRoomChores(){ if(!_hfD) return _hhRoomChores(); const M=hfMemo("rooms",_hhRoomChores), out={}; Object.keys(M).forEach(function(k){ out[k]=M[k].slice(); }); return out; }   // HOUSEFAST
+function _hhRoomChores(){ const J=hhJobs(), out={__none:[]}; hhRoomList().forEach(function(r){ out[r[0]]=[]; });
   Object.keys(J).forEach(function(id){ const j=J[id]; if(!j||j.status==="retired"||j.free) return; out[hhRoomOn(j)||"__none"].push(id); }); return out; }
 function hhRoomStats(ids){ const J=hhJobs(), t=_hhDayNum(_hhIsoLocal(Date.now())); let due=0, ok=0, late=0, mins=0;
-  ids.forEach(function(id){ const j=J[id], st=hhStats(j); due+=st.due8; ok+=st.done8-st.late8; mins+=hhMinutesOf(j)*hhTimesAWeek(j);
-    if(hhLaneOf(j)!=="once"&&!j.hold){ const n=hhNeed(j); if(n&&(n.never?!(j.from&&t-_hhDayNum(j.from)<=n.interval):n.pct>100)) late++; } });   // late = past its interval (the need meter)
+  ids.forEach(function(id){ const j=J[id], st=hfStats(id,j); due+=st.due8; ok+=st.done8-st.late8; mins+=hhMinutesOf(j)*hhTimesAWeek(j);
+    if(hhLaneOf(j)!=="once"&&!j.hold){ const n=hfNeed(id,j); if(n&&(n.never?!(j.from&&t-_hhDayNum(j.from)<=n.interval):n.pct>100)) late++; } });   // late = past its interval (the need meter)
   return {n:ids.length,pct:due?Math.round(100*ok/due):null,late:late,mins:Math.round(mins)}; }
 // 🏠 Whole house order: most late first, then lowest on time, then the room list's order.
 function hhHouseOrder(byRoom){ const L=hhRoomList().map(function(r){ return r[0]; }).concat(byRoom.__none.length?["__none"]:[]);
@@ -363,7 +387,7 @@ function hhRmEditHTML(){
     +'<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;padding:0 12px 10px"><input id="hh-rm-newgrp" placeholder="Another group (Outside, Garage…)" style="'+inp+';flex:1;min-width:120px">'+_hhBtn("hhGroupAdd(document.getElementById('hh-rm-newgrp').value)",'+ Add group',false)+'</div>';
   return h+'</div>';
 }
-function hhRoomsPageHTML(){
+function hhRoomsPageHTML(){ if(!_hfD) return hfDraw(hhRoomsPageHTML);   // HOUSEFAST: one draw, one memo
   const J=hhJobs(); if(!Object.keys(J).length) return '<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:10px 12px;font-size:12px;color:var(--muted)">Bring in every chore on 📋 Review first.</div>';
   const mom=(typeof momHere!=="function")||momHere(), G=hhRoomGroups(), L=hhRoomList(), gids=G.map(function(g){ return g[0]; }), byRoom=hhRoomChores();
   if(hhRmSel&&hhRmSel!=="__none"&&!L.some(function(r){ return r[0]===hhRmSel; })) hhRmSel="";
@@ -707,15 +731,16 @@ const RN_DAY=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sun
 function rnSlot(j,who){ const s=(j&&j.slot)||""; if(hhIsKid(who)) return SL_SLBL[SL_SLOTS.indexOf(s)>=0?s:"chores"]||"";
   const m=HH_MC_SLOTS.find(function(x){ return x[0]===s; }); return m?m[1]:(SL_SLBL[s]||""); }
 // Days past its usual gap (hhRoomStats' own test): 0 = not late, -1 = late and never done in 8 weeks.
-function rnLate(j,t){ if(hhLaneOf(j)==="once"||j.hold) return 0; const n=hhNeed(j); if(!n) return 0;
+function rnLate(j,t,id){ if(hhLaneOf(j)==="once"||j.hold) return 0; const n=hfNeed(id,j); if(!n) return 0;
   if(n.never) return (j.from&&t-_hhDayNum(j.from)<=n.interval)?0:-1; return n.pct>100?Math.max(1,n.days-n.interval):0; }
-function rnRows(rid){
+function rnRows(rid){ if(!_hfD) return _rnRows(rid); const R=hfMemo("rn|"+rid,function(){ return _rnRows(rid); }); return {iso:R.iso,plan:R.plan,rows:R.rows.slice(),over:R.over.slice()}; }   // HOUSEFAST
+function _rnRows(rid){
   const J=hhJobs(), t0=_hhIsoLocal(Date.now()), t=_hhDayNum(t0), r=(typeof hdLive==="function")?hdLive(t0):null, S=hhLogState(), rc={}, rows=[], over=[];
   const here=function(id){ return !!J[id]&&hhRoomOn(J[id])===rid; };
   if(r){ Object.keys(r.plan||{}).filter(here).forEach(function(id){ const x=r.plan[id]; rows.push({id:id,who:x.who,done:hdDone(t0,id),late:x.late||0,skip:!!(r.skip&&r.skip[id])}); });
     Object.keys(r.over||{}).filter(here).forEach(function(id){ const d=(typeof hdDoneRec==="function")?hdDoneRec(t0,id):null; if(d&&d.grab){ rows.push({id:id,who:d.who,done:true,late:0,grab:1}); return; } over.push({id:id,turn:r.over[id].turn,mins:r.over[id].mins}); }); }   // 🙌 HOUSEOVER
   (hhRoomChores()[rid]||[]).forEach(function(id){ const j=J[id]; if(r&&hdManaged(j)) return;   // the plan's own: only as the stored day has it
-    const c=hhRmCell(id,t0,t0,S,rc); if(c) rows.push({id:id,who:c.who,done:!!c.done,late:c.done?0:rnLate(j,t)}); });
+    const c=hhRmCell(id,t0,t0,S,rc); if(c) rows.push({id:id,who:c.who,done:!!c.done,late:c.done?0:rnLate(j,t,id)}); });
   const L=function(x){ return x.late<0?1e4:x.late; };
   rows.sort(function(a,b){ return (L(b)-L(a))||(SL_SLOTS.indexOf(J[a.id].slot)-SL_SLOTS.indexOf(J[b.id].slot))||String(J[a.id].label).localeCompare(String(J[b.id].label))||(a.id<b.id?-1:1); });
   return {iso:t0,plan:!!r,rows:rows,over:over};
