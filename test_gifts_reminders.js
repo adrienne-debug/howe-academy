@@ -103,7 +103,7 @@ console.log("\n# 🎀 the week of · 🌙 Christmas Eve from 5 PM · 🔎 Jan 2�
 {
   ok("Dec 17 (8 days): no 🎀", !one(at("2026-12-17"), "wrap", "x"));
   const w = one(at("2026-12-18"), "wrap", "x");
-  ok("Dec 18 (7 days): '3 presents still to wrap — Christmas in 7 days' → 🎀 To wrap", w && w.text === "🎀 3 presents still to wrap — Christmas in 7 days" && w.view === "wrap" && w.n === 3, w);
+  ok("Dec 18 (7 days): '5 presents still to wrap — Christmas in 7 days' → 🎀 To wrap (JOURNEY: here + ordered both still need wrapping)", w && w.text === "🎀 5 presents still to wrap — Christmas in 7 days" && w.view === "wrap" && w.n === 5, w);
   ok("Christmas Eve: '… is tomorrow' · the day: '… is today' · Dec 26: gone", /is tomorrow$/.test(one(at("2026-12-24"), "wrap", "x").text) && /is today$/.test(one(at("2026-12-25"), "wrap", "x").text) && !one(at("2026-12-26"), "wrap", "x"));
   ok("a birthday says 'the birthday', never its name", (one(at("2026-11-28"), "wrap", "bd") || {}).text === "🎀 1 present still to wrap — the birthday in 3 days");
   ok("Christmas Eve 4 PM: no 🌙", !one(at("2026-12-24", 16), "eve"));
