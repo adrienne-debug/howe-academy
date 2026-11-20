@@ -43,7 +43,7 @@ const GF_STATUS=[["idea","💭 Idea","#64748b"],["ordered","🛒 Ordered","#d977
 const GF_NEXT={idea:"ordered",ordered:"here",here:"wrapped",wrapped:"given"};
 const GF_DEAD=["returned","dropped"];   // no longer counts toward money or gift counts
 const GF_KINDS={
-  christmas:{label:"🎄 Christmas",secs:[["santa","🎅","Santa"],["parents","🎁","From Mom & Dad"],["stocking","🧦","Stocking"],["eve","🌙","Christmas Eve box"]]},   // her pick 2026-11-20
+  christmas:{label:"🎄 Christmas",secs:[["special","⭐","Special"],["parents","🎁","From Mom & Dad"],["stocking","🧦","Stocking"],["eve","🌙","Christmas Eve box"]]},   // her pick 2026-11-20 · NOSANTA (her ask 2026-11-20: "reword the santa section in case a kid sees it while working"; her word "⭐ Special")
   birthday:{label:"🎂 Birthday",secs:[["main","🎁","Main gift"],["party","🎈","Party"],["small","🧁","Small things"]]},
   easter:{label:"🐣 Easter",secs:[["basket","🧺","Basket"],["main","🎁","Gift"]]},
   other:{label:"🎁 Other",secs:[["gifts","🎁","Gifts"]]}};
