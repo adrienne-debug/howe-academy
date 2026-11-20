@@ -87,10 +87,11 @@ console.log("\n── the editor state belongs to one kid ──");
 console.log("\n── Save can never cross kids ──");
 {
   const w = world();
-  w.run("retrAdminCycleDay('mon',2);");                 // Lincoln edit pending
+  w.run("retrAdminCycleDay('mon',2);");                 // Lincoln edit (RETRSAVE 2026-11-19: the tap saves Lincoln at once)
+  const before = JSON.stringify(w.writes);
   w.run("masteryKid='lucy';");                          // switch WITHOUT rendering
   w.run("retrAdminSave();");
-  ok("a stale-kid Save writes nothing", Object.keys(w.writes).length === 0, w.writes);
+  ok("a stale-kid Save writes nothing", JSON.stringify(w.writes) === before && !w.writes["mastery/retrievalPlan/lucy"], w.writes);
   ok("and it reloads the editor for the kid on screen", w.get().kid === "lucy", w.get().kid);
 }
 {

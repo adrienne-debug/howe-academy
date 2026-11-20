@@ -45559,6 +45559,7 @@ function relayWeek(why,info){
     _rlwPend.undo.push(u.gone?{p:u.p,gone:true}:{p:u.p,was:(u.was===undefined?null:u.was)}); });
   (info.subjects||[]).forEach(function(s){ if(s&&s.kid&&s.sk&&!_rlwPend.subjects.some(x=>x.kid===s.kid&&x.sk===s.sk)) _rlwPend.subjects.push({kid:s.kid,sk:s.sk}); });   // 🔁 RELAY3: pass B — the subjects re-laid after the sweep, one after another
   if(info.mvt){ if(!_rlwPend.mvt) _rlwPend.mvt=[]; _rlwPend.mvt.push(info.mvt); }   // 📅 MVTRELAY: the moved card and the slot it left
+  (info.retr||[]).forEach(function(k){ if(!k) return; if(!_rlwPend.retr) _rlwPend.retr=[]; if(_rlwPend.retr.indexOf(k)<0) _rlwPend.retr.push(k); });   // 🃏 RETRLIVE: pass R — the kids whose practice days changed
   (info.fams||[]).forEach(function(f){ if(!f||!f.id||!f.key) return; if(!_rlwPend.fams) _rlwPend.fams=[]; if(!_rlwPend.fams.some(x=>x.id===f.id&&x.key===f.key)) _rlwPend.fams.push({id:f.id,key:f.key}); });   // UNITFT: pass F — family items laid into the board week
   try{ clearTimeout(_rlwTimer); }catch(e){}
   _rlwTimer=setTimeout(function(){ _rlwFire(0); },RLW_WAIT_MS);
@@ -45578,10 +45579,12 @@ function _rlwFire(att){
     // 🔁 RELAY3: pass A (the sweep), then pass B (the listed subjects, chained through each re-lay's then) — one snapshot,
     // one diff, one log line for both; the lock is released when the chain is over
     try{ if(typeof _rlwMvtOnly==="function"&&_rlwMvtOnly(pend)) _rlwRun(pend,function(fin){ _rlwChain(pend.subjects||[],pend,fin); },_done);   // 📅 MVTRELAY: a move-only run is pass B alone
+      else if(_rlwRetrOnly(pend)) _rlwRun(pend,function(){},_done);   // 🃏 RETRLIVE: a practice-days-only run is pass R alone (inside _rlwRun) — nothing else is re-laid
       else _rlwRun(pend,function(fin){ if(typeof uftRelayFams==="function") uftRelayFams(pend); cascadeIntraWeek(); if(typeof runCascade==="function") runCascade(); _rlwGuard(pend); _rlwChain(pend.subjects||[],pend,fin); },_done); }   // UNITFT: pass F before the sweep, so the sweep and the guard pack around the new family cards
     catch(e){ dbg("relay run: "+e); _done(); }
   });
 }
+function _rlwRetrOnly(pend){ return !!(pend&&pend.retr&&pend.retr.length&&(pend.whys||[]).every(function(w){ return w==="retrieval"; })); }   // 🃏 RETRLIVE
 // ⏰ RELAYGUARD (slice E demo run, 2026-11-08): the school-end guard runs on pass A even when the sweep had nothing to sweep. The
 // cascade's quiet path (no card from a past day to move) heals and re-packs but never calls seGuardWeek — only its sweeping path
 // does, inside safeWriteTasks — so ⏰ a shorter Thursday (11:00–2:30) set on Wednesday left a kid's Typing 2:20–2:35 and Closing
@@ -45637,9 +45640,11 @@ function _rlwWords(e){
   const kids=Object.keys(per).map(function(k){ return cap(k)+" "+per[k]; }).join(", ");
   const nm=(e.moves||[]).length, nr=(e.removed||[]).length;
   const nSat=(String(e.why||"").split(",").indexOf("saturday")>=0)?(e.removed||[]).filter(function(c){ return c&&c.day==="saturday"&&!c.lid; }).length:0;   // 📅 TWSSAT: a Saturday daily taken off is not "to next week"
+  const nRetr=(String(e.why||"").split(",").indexOf("retrieval")>=0)?(e.removed||[]).filter(function(c){ return c&&c.subjectKey==="retrieval"; }).length:0;   // 🃏 RETRLIVE: a practice card taken off is not "to next week"
   let s=(e.label||"Re-laid")+" → "+nm+" card"+(nm===1?"":"s")+" moved"+(kids?" ("+kids+")":"");
-  if(nr-nSat) s+=" · "+(nr-nSat)+" to next week";
+  if(nr-nSat-nRetr) s+=" · "+(nr-nSat-nRetr)+" to next week";
   if(nSat) s+=" · "+nSat+" off Saturday";
+  if(nRetr) s+=" · "+nRetr+" taken off";
   const na=(e.added||[]).length; if(na) s+=" · "+na+" added";   // RELAY3D
   const nb=(e.boxed||[]).length; if(nb) s+=" · "+nb+" didn't fit (in the day's box)";   // 🃏🎯 DMSLOT
   if(e.locked&&e.locked.length) s+=" · ⚠ "+e.locked.length+" held card"+(e.locked.length===1?"":"s")+" changed";
@@ -45680,6 +45685,7 @@ function _rlwRun(pend,fn,after){
   if(typeof renderAll==="function") renderAll();
   return d;
   };
+  if(pend.retr&&pend.retr.length&&typeof retrLiveRelay==="function") retrLiveRelay(pend);   // 🃏 RETRLIVE: pass R — after the snapshot, before the run's own step (a sweep packs around the new cards)
   // 🔁 RELAY3: a step written as fn(fin) is asynchronous (the subject re-lays take their own lock and read the server) —
   // it finishes when it calls fin; a plain step finishes at once. A fin that never comes (a re-lay that died) is closed
   // after 45 s so the log line and the lock never hang.
@@ -85112,12 +85118,14 @@ function retrAdminNum(key,val){
   const v=String(val).trim();
   if(v==="") delete retrAdminLocal.settings[key];
   else { const n=parseFloat(v); if(!isNaN(n)) retrAdminLocal.settings[key]=n; }
+  retrAdminSave({quiet:true});   // 💾 RETRSAVE: saves at once, no repaint (the box keeps its focus)
 }
 function retrAdminLadder(val){
   if(!retrAdminLocal||retrAdminLocal.kid!==masteryKid) retrAdminInit();
   const arr=String(val).split(/[,\s]+/).map(x=>parseInt(x,10)).filter(x=>x>0);
   if(arr.length) retrAdminLocal.settings.recheck_ladder=arr;
   else delete retrAdminLocal.settings.recheck_ladder;
+  retrAdminSave({quiet:true});   // 💾 RETRSAVE
 }
 function retrAdminToggle(key,a,b){
   if(!retrAdminLocal||retrAdminLocal.kid!==masteryKid) retrAdminInit();
@@ -85125,7 +85133,7 @@ function retrAdminToggle(key,a,b){
   if(cur===undefined) retrAdminLocal.settings[key]=a;         // inherit -> a
   else if(cur===a) retrAdminLocal.settings[key]=b;            // a -> b
   else delete retrAdminLocal.settings[key];                    // b -> inherit
-  _mastRe();
+  retrAdminSave();   // 💾 RETRSAVE: saves, then the one repaint
 }
 function retrAdminCycleDay(day,row){
   if(!retrAdminLocal||retrAdminLocal.kid!==masteryKid) retrAdminInit();
@@ -85133,24 +85141,44 @@ function retrAdminCycleDay(day,row){
   const map=(row===2)?retrAdminLocal.week2:retrAdminLocal.week;
   const cur=map[day]||"off";
   map[day]=RETR_DAY_KINDS[(RETR_DAY_KINDS.indexOf(cur)+1)%RETR_DAY_KINDS.length];
-  _mastRe();
+  retrAdminSave({rhythm:true});   // 💾 RETRSAVE: saves this tap; the live week follows once the tapping settles (RETRLIVE)
 }
-function retrAdminSave(){
-  if(!retrAdminLocal) return;
+// RETRSAVE_START — 💾 the Retrieval Plan saves by itself (her ask 2026-11-19: "could we just auto save to avoid this"). Live: a
+// family mom tapped two kids' Weekly rhythm days; one kid's days never reached the database because "Save Retrieval Plan" was
+// missed. Now every day tap (Row 1 / Row 2), number box, re-check ladder box and toggle saves at once for the kid on screen —
+// the same payload the button wrote (settings, the whole week row as shown, week2 with off / same-as-Row-1 days dropped), the
+// same targeted update() at mastery/retrievalPlan/<kid>, the same wrong-kid guard. The editor state is KEPT after a save (the
+// button used to null it and re-read the stored plan): re-reading would turn a Row 2 day that matches Row 1 back to off
+// mid-cycle and flip the shown days. A number box saves without a repaint, so it keeps its focus. "Saved ✓" shows by the
+// rhythm. o.rhythm = a day tap → the live week follows (RETRLIVE, once the tapping settles). Test: test_retr_autosave.js.
+let retrAdminSavedKid=null;
+function retrAdminSave(o){
+  o=o||{};
+  if(!retrAdminLocal) return false;
   // Belt and braces: never write one kid's editor state onto another, whatever the UI did.
-  if(retrAdminLocal.kid&&retrAdminLocal.kid!==masteryKid){ retrAdminInit(); _mastRe(); return; }
+  if(retrAdminLocal.kid&&retrAdminLocal.kid!==masteryKid){ retrAdminInit(); _mastRe(); return false; }
   const kid=masteryKid;
+  // the whole row as shown — a day with nothing on it is stored as "off", so one tap never leaves the other days to the defaults
+  const w1={}; RETR_DAYS.forEach(d=>{ w1[d]=retrAdminLocal.week[d]||"off"; });
   // Row 2 keeps only real extras: off / same-as-Row-1 days are dropped (the generator
   // would collapse them anyway); an emptied Row 2 saves as {} which clears the node.
-  const w2={}; RETR_DAYS.forEach(d=>{ const k=(retrAdminLocal.week2||{})[d]; if(k&&k!=="off"&&k!==retrAdminLocal.week[d]) w2[d]=k; });
-  const payload={settings:retrAdminLocal.settings,week:retrAdminLocal.week,week2:w2};
+  const w2={}; RETR_DAYS.forEach(d=>{ const k=(retrAdminLocal.week2||{})[d]; if(k&&k!=="off"&&k!==w1[d]) w2[d]=k; });
+  const payload={settings:JSON.parse(JSON.stringify(retrAdminLocal.settings||{})),week:w1,week2:w2};
   if(!masteryData.retrievalPlan) masteryData.retrievalPlan={};
-  masteryData.retrievalPlan[kid]=payload;
-  if(db) db.ref("mastery/retrievalPlan/"+kid).update(payload);
+  masteryData.retrievalPlan[kid]=Object.assign({},masteryData.retrievalPlan[kid]||{},JSON.parse(JSON.stringify(payload)));   // update() keeps the kid's other keys — the mirror does too
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("mastery/retrievalPlan/"+kid).update(payload);
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
-  retrAdminLocal=null;
-  _mastRe();
+  retrAdminSavedKid=kid;
+  if(o.rhythm&&typeof retrLiveQueue==="function") retrLiveQueue(kid);
+  if(o.quiet){ try{ const el=(typeof document!=="undefined")?document.getElementById("retrAdminSaved"):null; if(el) el.innerHTML=retrAdminSavedHtml(kid); }catch(e){} }
+  else _mastRe();
+  return true;
 }
+function retrAdminSavedHtml(kid){
+  if(retrAdminSavedKid!==kid) return 'changes save by themselves';
+  return '<b style="color:#15803d">Saved ✓</b>'+((typeof retrLivePending==="function"&&retrLivePending(kid))?' · this week’s cards update in a moment':'');
+}
+// RETRSAVE_END
 function retrAdminReset(){
   if(!confirm("Reset "+SL_KLBL[masteryKid]+"'s retrieval plan to the built-in defaults?")) return;
   const kid=masteryKid;
@@ -85158,6 +85186,7 @@ function retrAdminReset(){
   if(db) db.ref("mastery/retrievalPlan/"+kid).remove();
   try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
   retrAdminLocal=null;
+  if(typeof retrLiveQueue==="function") retrLiveQueue(kid);   // 🃏 RETRLIVE: back to the built-in rhythm — this week's cards follow too
   _mastRe();
 }
 function retrAdminHtml(){
@@ -85198,7 +85227,8 @@ function retrAdminHtml(){
   h+='<div class="mast-edit-row"><span class="mast-edit-label">Match suggestion'+(mr!==undefined?' <span style="font-size:8px;font-weight:800;color:#b45309">SET</span>':'')+'</span>'
     +'<button onclick="retrAdminToggle(\'match_rotation\',\'manual\',\'heatmap\')" style="padding:6px 12px;border-radius:8px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif">'
     +(mrShow==="heatmap"?"heat-map (worst deck)":"manual (off)")+'</button></div>';
-  h+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c;margin:12px 0 6px">Weekly rhythm — tap a day to cycle</div>';
+  h+='<div style="display:flex;align-items:baseline;gap:8px;margin:12px 0 6px"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#78716c">Weekly rhythm — tap a day to cycle</span>'
+    +'<span id="retrAdminSaved" style="flex:1;text-align:right;font-size:10.5px;color:var(--muted)">'+retrAdminSavedHtml(kid)+'</span></div>';   // 💾 RETRSAVE
   h+='<div style="display:flex;gap:5px">';
   RETR_DAYS.forEach(d=>{
     const k=retrAdminLocal.week[d]||"off";
@@ -85218,8 +85248,7 @@ function retrAdminHtml(){
       +'<div style="font-size:8.5px;font-weight:700;color:#57534e">'+k+'</div></button>';
   });
   h+='</div>';
-  h+='<div style="display:flex;gap:8px;margin-top:12px">';
-  h+='<button class="mast-edit-save" style="flex:1" onclick="retrAdminSave()">Save Retrieval Plan</button>';
+  h+='<div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">';   // 💾 RETRSAVE: no Save button — every change saves itself
   h+='<button onclick="retrAdminReset()" style="padding:8px 14px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-size:11px;font-weight:700;cursor:pointer;color:#b5394a;font-family:\'DM Sans\',sans-serif">Reset</button>';
   h+='</div></div></div>';
   return h;
@@ -91234,6 +91263,129 @@ function gwInjectRetrieval(allTasks,sortedDates,WDAY_MAP,skipSet,dates,dayOfYear
   });
 }
 // GWRETR_END
+// RETRLIVE_START — 🃏 a Retrieval Plan rhythm change reaches the live week by itself (her words 2026-11-19: "it needs to be live
+// and it is added to live week"). Live: a family mom saved a kid's Weekly rhythm and no 🃏 Daily Drill card showed — the cards
+// are made only when the week is built (gwInjectRetrieval), so a saved rhythm waited for the next build or 🔄 Regenerate.
+// Now, once Mom's tapping settles (RETR_LIVE_WAIT_MS after the last day tap, then the re-lay door's own 2 s wait), ONLY that
+// kid's retrieval cards on today and the later days of the active week are added or taken off, through the ONE RE-LAY DOOR
+// (relayWeek "retrieval" → its lock, its snapshot / diff, its what-moved line; a retrieval-only run skips the sweep, so nothing
+// else is re-laid). Each card is made exactly as the builder makes it (same id, title, detail, minutes, Mom, device, subject,
+// the same slot finder seRetrSlot inside that date's school day, the kid's Closing Notebook re-timed to stay last, no room →
+// the day's "Didn't fit today" box), so the next full build gives the same ids. Never on a day before today; today only while
+// the day is still open by the app's own rule (_rlwModeToday: before school, or mid-day from now). No card on a day the kid
+// has no other cards or is off. A day turned off / to another kind takes the old card off unless it is checked, claimed or its
+// Mom part is done. Mom only, never in ?dryrun=1, never from a listener (only her tap queues it — a kid's device re-reading the
+// plan never does), and the door's lock + this pass being a diff (a card already there is never added twice) keep two open
+// devices from doubling it. Test: test_retr_autosave.js.
+const RETR_LIVE_WAIT_MS=6000;
+const RETR_LIVE_DAYS=["monday","tuesday","wednesday","thursday","friday"];
+let _retrLivePend=[], _retrLiveTimer=null;
+function retrLivePending(kid){ return _retrLivePend.indexOf(kid)>=0; }
+function retrLiveQueue(kid){
+  if(!kid||(typeof momHere==="function"&&!momHere())) return false;
+  if(typeof _dryRun==="function"&&_dryRun()) return false;
+  if(_retrLivePend.indexOf(kid)<0) _retrLivePend.push(kid);
+  try{ clearTimeout(_retrLiveTimer); }catch(e){}
+  _retrLiveTimer=setTimeout(retrLiveFlush,RETR_LIVE_WAIT_MS);
+  return true;
+}
+function retrLiveFlush(){
+  try{ clearTimeout(_retrLiveTimer); }catch(e){}
+  _retrLiveTimer=null;
+  const kids=_retrLivePend.slice(); _retrLivePend=[];
+  if(!kids.length||typeof relayWeek!=="function") return;
+  if(typeof momHere==="function"&&!momHere()) return;
+  const nm=k=>((typeof SL_KLBL!=="undefined"&&SL_KLBL&&SL_KLBL[k])||(typeof cap==="function"?cap(k):k));
+  relayWeek("retrieval",{label:"\u{1F0CF} "+kids.map(nm).join(" & ")+" practice days",retr:kids});
+  try{ const el=(typeof document!=="undefined")?document.getElementById("retrAdminSaved"):null; if(el&&typeof retrAdminSavedHtml==="function"&&typeof masteryKid!=="undefined") el.innerHTML=retrAdminSavedHtml(masteryKid); }catch(e){}
+}
+// builder's own day number (generateWeek's dayOfYear) — the id has to be byte-identical to a full build's
+function retrLiveDoy(dt){ const jan1=new Date(dt.getFullYear(),0,0); return Math.floor((dt-jan1)/86400000); }
+function retrLiveId(kid,kind,iso){ const d=gwParseDate(iso); return d.getFullYear()+"d"+retrLiveDoy(d)+"_retr_"+kind+"_"+kid; }
+// ── pure: what this kid's retrieval cards should be on the open days of the week ──
+// o = {dayISO(dn), todayISO, todayOpen, nowMin, win(dn,iso), kidOff(kid,dn), checked, claimed, on, kinds(dn3)→[kind],
+//      minutes(kind), mom(kind), toMin, fromMin, slot(tasks,card,W,x)}
+// → {upd:{<id>:card|null, <closingId>/time:t}, added:[card], removed:[id], retimed:[{id,from,to}]} — week<N>/tasks children only
+function retrLiveDiff(kid,tasks,o){
+  o=o||{}; const out={upd:{},added:[],removed:[],retimed:[]};
+  const tm=o.toMin, fm=o.fromMin, ck=o.checked||{}, cl=o.claimed||{};
+  const held=t=>!!ck[t.id]||!!cl[t.id]||!!t.momPartDone;
+  let work=(tasks||[]).filter(Boolean);
+  RETR_LIVE_DAYS.forEach(function(dn){
+    const iso=o.dayISO?o.dayISO(dn):null; if(!iso||!o.todayISO) return;
+    if(iso<o.todayISO) return;                                   // a past day never changes
+    const isToday=(iso===o.todayISO); if(isToday&&!o.todayOpen) return;
+    const want=(o.on?(o.kinds(dn.slice(0,3))||[]):[]).filter(k=>k&&k!=="off"&&RETR_SLOT_TITLE[k]);
+    // 1. off / changed kind → the open card goes
+    RETR_DAY_KINDS.forEach(function(kind){
+      if(kind==="off"||want.indexOf(kind)>=0) return;
+      const id=retrLiveId(kid,kind,iso);
+      const t=work.find(x=>x.id===id); if(!t||held(t)) return;
+      work=work.filter(x=>x!==t); out.upd[id]=null; out.removed.push(id);
+    });
+    // 2. a wanted kind with no card → the builder's card
+    if(o.kidOff&&o.kidOff(kid,dn)) return;
+    want.forEach(function(kind){
+      const id=retrLiveId(kid,kind,iso);
+      if(work.some(x=>x.id===id)) return;                       // already there (any day, any state) — never twice
+      const mine=work.filter(t=>t.who===kid&&t.day===dn&&!String(t.id||"").endsWith("_c")&&t.subjectKey!=="retrieval");
+      if(!mine.length) return;                                  // the kid has nothing that day → off, like the builder
+      const slot={id:id,who:kid,day:dn,time:null,dur:o.minutes(kind),title:RETR_SLOT_TITLE[kind],detail:RETR_SLOT_DETAIL[kind],
+        mom:o.mom(kind),cascade:true,device:"paper",subjectKey:"retrieval",retrieval:kind};
+      let m=null; try{ const W=o.win(dn,iso); m=W?o.slot(work,slot,W,{toMin:tm,floor:isToday?o.nowMin:0}):null; }catch(e){ m=null; }
+      if(m!=null){
+        slot.time=fm(m);
+        const slotEnd=m+slot.dur;                               // keep the kid's Closing Notebook the last thing of the day (the builder's rule)
+        work=work.map(function(c){
+          if(c.who!==kid||c.day!==dn||!((c.title||"").indexOf("Closing Notebook")>=0||c.subjectKey==="closing_nb")||held(c)||tm(c.time)>=slotEnd) return c;
+          const c2=Object.assign({},c,{time:fm(slotEnd)}); out.upd[c.id+"/time"]=c2.time; out.retimed.push({id:c.id,from:c.time,to:c2.time}); return c2;
+        });
+      } else {
+        let lastEnd=0; work.forEach(t=>{ if(t.who!==kid||t.day!==dn) return; const e=tm(t.time)+(t.dur||20); if(e>lastEnd) lastEnd=e; });
+        slot.time=fm(lastEnd); slot._dayDrop=true;
+      }
+      work.push(slot); out.upd[id]=slot; out.added.push(slot);
+    });
+  });
+  return out;
+}
+// the app's context for retrLiveDiff (the builder's: retrOn / retrDayKinds / retrSlotMinutes / retrSlotMom / seGuardCtx().win)
+function retrLiveCtx(kid){
+  const g=(typeof seGuardCtx==="function")?seGuardCtx():null;
+  const n=new Date(), iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  return {
+    dayISO:dn=>{ try{ const s=(typeof DAY_DT==="object"&&DAY_DT)?DAY_DT[dn]:null; if(!s) return null; const d=new Date(s+", "+n.getFullYear()); return isNaN(d.getTime())?null:iso(d); }catch(e){ return null; } },
+    todayISO:iso(n), todayOpen:(typeof _rlwModeToday==="function")?(_rlwModeToday()!=="tomorrow"):false,
+    nowMin:Math.ceil((n.getHours()*60+n.getMinutes())/5)*5,     // the builder's running-day floor
+    win:(dn,ds)=>g?g.win(dn,ds):null, kidOff:(k,dn)=>!!(g&&g.kidOff(k,dn)),
+    checked:(typeof checked!=="undefined"&&checked)||{}, claimed:(typeof claimed!=="undefined"&&claimed)||{},
+    on:(typeof retrTracks==="function")&&((typeof retrOn==="function")?retrOn(kid):retrTracks(kid).length>0),
+    kinds:dk=>retrDayKinds(kid,dk), minutes:k=>((typeof retrSlotMinutes==="function")?retrSlotMinutes(kid,k):15),
+    mom:k=>((typeof retrSlotMom==="function")?retrSlotMom(k):"required"),
+    toMin:toMin, fromMin:fromMin, slot:(ts,c,W,x)=>seRetrSlot(ts,c,W,x)};
+}
+// pass R inside relayWeek's run (its lock, its snapshot before and diff after): this device's memory first, then ONE targeted
+// multi-path update of week<N>/tasks children — never the node
+function retrLiveRelay(pend){
+  const kids=(pend&&pend.retr)||[]; if(!kids.length) return null;
+  try{
+    if(typeof weekData==="undefined"||!weekData||!Array.isArray(weekData.tasks)) return null;
+    const all={upd:{},added:[],removed:[],retimed:[]};
+    kids.forEach(function(kid){
+      const d=retrLiveDiff(kid,weekData.tasks,retrLiveCtx(kid));
+      d.removed.forEach(function(id){ const k=weekData.tasks.findIndex(t=>t&&t.id===id); if(k>=0) weekData.tasks.splice(k,1); });
+      d.retimed.forEach(function(r){ const t=weekData.tasks.find(x=>x&&x.id===r.id); if(t) t.time=r.to; });
+      d.added.forEach(function(c){ weekData.tasks.push(Object.assign({},c)); });
+      Object.assign(all.upd,d.upd); all.added=all.added.concat(d.added); all.removed=all.removed.concat(d.removed); all.retimed=all.retimed.concat(d.retimed);
+    });
+    if(!Object.keys(all.upd).length) return all;
+    try{ sv(WK+"_tasks",weekData.tasks); }catch(e){}
+    if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())){ lastTasksWrite=Date.now(); db.ref(WK+"/tasks").update(all.upd); }   // targeted: one leaf per card
+    try{ dbg("\u{1F0CF} practice days on the live week ("+kids.join(" ")+"): +"+all.added.length+" −"+all.removed.length+(all.retimed.length?" · Closing re-timed "+all.retimed.length:"")); }catch(e){}
+    return all;
+  }catch(e){ try{ dbg("retrlive pass R: "+e); }catch(x){} return null; }
+}
+// RETRLIVE_END
 
 function runGenerateWeek(){
   if(!gwConfig.weekNum){
