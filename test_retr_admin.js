@@ -37,7 +37,7 @@ function extractFn(name) {
 const a = src.indexOf("// RETRWEEK_START"), b = src.indexOf("// RETRWEEK_END");
 if (a < 0 || b < 0) throw new Error("RETRWEEK markers not found");
 const BLOCK = src.slice(a, b) + "\n" +
-  ["retrAdminInit", "retrAdminCycleDay", "retrAdminSave"].map(extractFn).join("\n") +
+  ["retrAdminInit", "retrAdminCycleDay", "retrAdminSave", "drPlanWrite"].map(extractFn).join("\n") +
   "\nlet retrAdminLocal=null;";
 
 let pass = 0, fail = 0;

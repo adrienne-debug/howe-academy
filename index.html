@@ -85388,12 +85388,8 @@ function retrAdminSave(o){
   // would collapse them anyway); an emptied Row 2 saves as {} which clears the node.
   const w2={}; RETR_DAYS.forEach(d=>{ const k=(retrAdminLocal.week2||{})[d]; if(k&&k!=="off"&&k!==w1[d]) w2[d]=k; });
   const payload={settings:JSON.parse(JSON.stringify(retrAdminLocal.settings||{})),week:w1,week2:w2};
-  if(!masteryData.retrievalPlan) masteryData.retrievalPlan={};
-  masteryData.retrievalPlan[kid]=Object.assign({},masteryData.retrievalPlan[kid]||{},JSON.parse(JSON.stringify(payload)));   // update() keeps the kid's other keys — the mirror does too
-  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("mastery/retrievalPlan/"+kid).update(payload);
-  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  if(!drPlanWrite(kid,payload,{rhythm:o.rhythm})) return false;   // 🃏 DRILLSAVE: the one plan write, told the kid
   retrAdminSavedKid=kid;
-  if(o.rhythm&&typeof retrLiveQueue==="function") retrLiveQueue(kid);
   if(o.quiet){ try{ const el=(typeof document!=="undefined")?document.getElementById("retrAdminSaved"):null; if(el) el.innerHTML=retrAdminSavedHtml(kid); }catch(e){} }
   else _mastRe();
   return true;
@@ -85402,6 +85398,26 @@ function retrAdminSavedHtml(kid){
   if(retrAdminSavedKid!==kid) return 'changes save by themselves';
   return '<b style="color:#15803d">Saved ✓</b>'+((typeof retrLivePending==="function"&&retrLivePending(kid))?' · this week’s cards update in a moment':'');
 }
+// DRILLSAVE_START — 🃏 one drill-plan write that is told which child (her yes 2026-11-20 to slice 2 of
+// DESIGN_drill_rows_curriculum_2026-11-19.md: "the plan write becomes one function that takes the child"). The Mastery panel's
+// save was welded to "whoever Mastery is showing"; the Curriculum rows (a later slice) need to save a named child. Nothing on
+// screen changes: retrAdminSave builds the same payload and hands it here. This does only the storage part — the local mirror
+// (Object.assign keeps the kid's other keys, as update() does), the targeted update() at mastery/retrievalPlan/<kid> only when
+// db && !_dryRun(), the ha_mastery copy, and the live-week pass (retrLiveQueue) when o.rhythm. It writes only the keys it is
+// handed (a caller may pass week/week2 without settings), never a whole-node set(), and refuses a missing kid (an empty kid
+// would have updated mastery/retrievalPlan itself). Test: test_drill_plan_write.js.
+function drPlanWrite(kid,payload,o){
+  o=o||{};
+  if(!kid||typeof kid!=="string"||/[.#$\[\]\/]/.test(kid)) return false;
+  if(!payload||typeof payload!=="object"||Array.isArray(payload)||!Object.keys(payload).length) return false;
+  if(!masteryData.retrievalPlan) masteryData.retrievalPlan={};
+  masteryData.retrievalPlan[kid]=Object.assign({},masteryData.retrievalPlan[kid]||{},JSON.parse(JSON.stringify(payload)));   // update() keeps the kid's other keys — the mirror does too
+  if(typeof db!=="undefined"&&db&&!(typeof _dryRun==="function"&&_dryRun())) db.ref("mastery/retrievalPlan/"+kid).update(payload);
+  try{HA_LS.setItem("ha_mastery",JSON.stringify(masteryData));}catch(e){}
+  if(o.rhythm&&typeof retrLiveQueue==="function") retrLiveQueue(kid);
+  return true;
+}
+// DRILLSAVE_END
 // RETRSAVE_END
 function retrAdminReset(){
   if(!confirm("Reset "+SL_KLBL[masteryKid]+"'s retrieval plan to the built-in defaults?")) return;
