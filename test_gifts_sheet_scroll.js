@@ -38,5 +38,26 @@ ok("…and keeps its own place once you scroll it", sheetEl.scrollTop === 150);
 W.gfCancel(); W.gfRcptNew(); sheetEl.scrollTop = 900; W.gfRcAdd(); W.gfRcPid(0, "k_a");
 ok("the receipt pop-up: ＋ a line, then picking a kid keeps the place (900)", sheetEl.scrollTop === 900);
 
+
+// SHEETINPLACE (her report 2026-11-20: "it was fixed and now not working again"): while the same pop-up stays open, the pop-up box
+// itself is never rebuilt — only the page behind it and the pop-up's insides are redrawn — so no browser can reset its scroll.
+{
+  let rootSets = 0, pageSets = 0, shSets = 0;
+  const pageEl = { set innerHTML(v) { pageSets++; } }, shBox = { scrollTop: 0, set innerHTML(v) { shSets++; } };
+  let hasSheet = false;
+  const root2 = { style: {}, set innerHTML(v) { rootSets++; hasSheet = /class="gf-sh"/.test(v); sheetEl = hasSheet ? shBox : null; },
+    querySelector(q) { if (q === "#gf-page") return rootSets ? pageEl : null; if (q === "#gf-sheet .gf-sh") return hasSheet ? shBox : null; return null; } };
+  T.reset(); T.setOcc("x"); T.setRoot(root2, "");
+  W.gfRcptNew(); const opened = rootSets;
+  ok("opening the receipt pop-up builds it once", opened === 1 && hasSheet);
+  shBox.scrollTop = 777; W.gfRcAdd(); W.gfRcPid(0, "k_a"); W.gfRcNog(0); W.gfRcNog(0);
+  ok("＋ a line, a kid, ✕ Not a gift (twice) → the pop-up box is never rebuilt (page + insides redrawn in place)", rootSets === 1 && pageSets === 4 && shSets === 4, { rootSets, pageSets, shSets });
+  ok("…and its scroll is untouched (777)", shBox.scrollTop === 777);
+  W.gfCancel(); ok("closing rebuilds without a pop-up", rootSets === 2 && !hasSheet);
+  W.gfNewItem("k_a", "parents"); ok("a new pop-up is built fresh", rootSets === 3 && hasSheet);
+  W.gfEditItem("i1"); ok("switching to a DIFFERENT pop-up (edit a present) rebuilds it", rootSets === 4);
+  W.gfCancel();
+}
+
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
