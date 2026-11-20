@@ -34,6 +34,6 @@ ok(run({today:"thursday",view:"thursday"},"rtLateDays('chores','lucy',2)")===1,"
 ok(run({today:"thursday",view:"thursday",cur:{"week25_thursday_lucy_cstep2":{done:true}}},"rtLateDays('chores','lucy',2)")===0,"caught up today → not late");
 console.log("rtSlotHTML only shows/logs carry-overs on today's tab:");
 const rs=slice("rtSlotHTML");
-ok(/day===_todayDay&&rtLateDays\(slot,kid,i\)>0/.test(rs),"due list: late rows only when the tab is today");
-ok(/_lateN=\(day===_todayDay\)\?rtLateDays\(slot,kid,i\):0/.test(rs),"late badge + miss logging only when the tab is today");
+ok(/\(day===_todayDay&&wavedIdx\.indexOf\(i\)<0\)\?rtLateDays\(slot,kid,i,true\):0/.test(rs)&&/\|\|_wait\[i\]>0\)\)/.test(rs),"due list: late rows only when the tab is today");
+ok(/_raw\.forEach\(\(n,i\)=>\{ const st=steps\[i\]; if\(n>0&&!_wait\[i\]/.test(rs)&&/_lateTag=\(_wait\[i\]>0&&!sd/.test(rs),"late badge (3+ a week) + miss logging (the day it drops) only when the tab is today (CHOREWAIT)");
 console.log("\n"+pass+" passed, "+fail+" failed"); process.exit(fail?1:0);

@@ -24,7 +24,7 @@ const W = require(path.join(__dirname, "test_fixtures", "house_world.js")), OV =
 const HJS = fs.readFileSync(path.join(__dirname, "house.js"), "utf8"), IDX = process.env.HOUSE_INDEX || path.join(__dirname, "index.html");
 let pass = 0, fail = 0; const ok = (n, c, x) => { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  (" + JSON.stringify(x).slice(0, 700) + ")" : "")); } };
 let BASE = process.env.BASE_HTML;
-if (!BASE) { try { const b = cp.execSync("git show 9cd01552:index.html", { cwd: __dirname, maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "ignore"] }); BASE = path.join(os.tmpdir(), "hcgo_base_" + process.pid + ".html"); fs.writeFileSync(BASE, b); } catch (e) { BASE = null; } }
+if (!BASE) { try { const b = cp.execSync("git show 9cd01552:index.html", { cwd: __dirname, maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "ignore"] }); BASE = path.join(os.tmpdir(), "hcgo_base_" + process.pid + ".html"); fs.writeFileSync(BASE, b); cp.execSync("git diff 2faffd06 ba14133b -- index.html | patch -s -p1 " + BASE, { cwd: __dirname, stdio: ["pipe", "ignore", "ignore"] }); } catch (e) { BASE = null; } }   // main then + CHOREWAIT (its lists drop missed chores now)
 console.log("(main: " + (BASE || "none — git show failed; the checks against main are skipped") + ")");
 const J = o => JSON.stringify(o), KIDS = ["kid_a", "kid_b", "kid_c", "kid_d"], SLOTS = ["morning", "afternoon", "chores", "evening"];
 const ED = /<span onclick="event\.stopPropagation\(\);hcGo\('([^']*)'\)" title="Edit this chore" style="[^"]*">✎<\/span>/g;
