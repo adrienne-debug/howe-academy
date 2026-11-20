@@ -117,8 +117,8 @@ console.log("\n── an edit on the card shows in all four places ──");
   ok("an emoji picked on the card (a sent job) shows on all four", c.writes.length === 1 && all2.every(h => taps(h).some(x => x[0] === "o_sent" && x[1] === "🧹")), [e, c.writes]); }
 
 console.log("\n── apart from the tap, every row and page is as before ──");
-const pages = c => { const o = { "kitchen page": roomPage(c, "kitchen"), "living page": roomPage(c, "living"), "❔ No room page": roomPage(c, "__none"), "🏠 Whole house": roomPage(c, "") };
-  PEOPLE.forEach(w => { o["👤 " + w] = person(c, w); }); o["☑️ pile"] = c.hhOnceHTML(); return o; };
+const pages = c => { const x = h => h.replace(c.hoCardHTML ? c.hoCardHTML() : "", ""), o = { "kitchen page": x(roomPage(c, "kitchen")), "living page": x(roomPage(c, "living")), "❔ No room page": roomPage(c, "__none"), "🏠 Whole house": x(roomPage(c, "")) };
+  PEOPLE.forEach(w => { o["👤 " + w] = x(person(c, w)); }); o["☑️ pile"] = c.hhOnceHTML(); return o; };
 const STATES = [["as is", () => mkT()], ["ticked today", () => ticked()], ["after Send to Ada", () => { const c = mkT(); c.hhOnceSend("o_drawer", "ada"); c.writes.length = 0; return c; }]];
 for (const [sname, make] of STATES) {
   const c = make(), A = pages(c), keep = c.hoTap; c.hoTap = (id, mom, css) => keep(id, false, css); const B = pages(c); c.hoTap = keep;

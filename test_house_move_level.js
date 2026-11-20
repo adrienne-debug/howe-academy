@@ -157,7 +157,7 @@ async function replay(mode, L, days, index, hjs) {
   for (let n = 0; n < days; n++) { const d = new Date(2026, 10, 16 + n), dn = DN[d.getDay()], at = (h) => S.w.at(d.getFullYear(), d.getMonth() + 1, d.getDate(), h, 0);
     await at(7); shots.push(J(W.lists(S.B, { days: [dn] })));
     await at(16); for (const k of ["kid_a", "kid_b", "kid_c"]) { S.B.run("(function(){ const st=rtStepsFor('chores','" + k + "',false,'" + dn + "')||[]; const i=st.findIndex(function(s){ return s&&s.house; }); if(i>=0) toggleRtStep('chores','" + k + "',i); })()"); await S.w.flush(); }
-    await at(18); shots.push(J(W.lists(S.B, { days: [dn] })) + S.A.run("try{ hhRender(); }catch(e){} ['kid_a','kid_b','kid_c','mom'].map(function(w){ hpSel=w; return hpPersonHTML(); }).join('')")); }
+    await at(18); shots.push(J(W.lists(S.B, { days: [dn] })) + S.A.run("try{ hhRender(); }catch(e){} ['kid_a','kid_b','kid_c','mom'].map(function(w){ hpSel=w; return hpPersonHTML().replace(typeof hoCardHTML==='function'?hoCardHTML():'',''); }).join('')")); }
   const H = J(S.w.get("houseDay") || {});
   return { shots, writes: writes(S.w, 0).join("\n"), tree: J(S.w.db.tree.root), moved: H.split('"why":"moved"').length - 1, done: H.split('"done":{').length - 1 }; }
 

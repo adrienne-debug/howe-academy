@@ -313,7 +313,7 @@ const mkW = async (kind, mode, o) => { const w = await F.world(kind, mode, { ind
 const replay = async (kind, mode, days, hh, sw, index, hjs) => { const S = await mkW(kind, mode, { index, hjs, household: hh() }), shots = [];
   await go(S.w, 0, 7, 0); if (sw) { S.A.run("hgOpen(); hgSwitch()"); await S.w.flush(); }
   for (let n = 0; n < days; n++) { await dayOf(S, n); shots.push(snap(S)); }
-  const ex = J(R(S.A, "return " + J(ID) + ".filter(function(id){ return !!hhJobs()[id]; }).map(function(id){ hcOpen(id); return [hcCardHTML(), hcChecks('__none',[id])]; });")); S.A.run("hcClose()");
+  const ex = J(R(S.A, "return " + J(ID) + ".filter(function(id){ return !!hhJobs()[id]; }).map(function(id){ hcOpen(id); return [hcCardHTML().replace(typeof hoHistHTML==='function'?hoHistHTML(id):'',''), hcChecks('__none',[id])]; });")); S.A.run("hcClose()");
   return { shots, writes: writes(S.w, 0).join("\n"), tree: J(S.w.db.tree.root), gc: Object.keys(S.w.get("grabClaims") || {}).length, x2: J(S.w.get("houseDay") || {}).split('"grab":').length - 1, ex }; };
 const cmp = (label, N, B0, days) => {
   const bad = N.shots.map((s, i) => s === B0.shots[i] ? null : isoN(i)).filter(Boolean);
