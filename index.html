@@ -5182,7 +5182,7 @@ function navStackSync(){
 // _mdwCan: Mom's page is hers (momHere); Dad's can be set from his link, his unlocked Day, or by Mom.
 // Navigation + display only: no scheduler, no kid data.
 let ssOrderData=null; try{ ssOrderData=JSON.parse(HA_LS.getItem('ha_day_order')||"null"); }catch(e){}
-const SS_OTHER_VIEWS=["prep","house","weigh","grocery","meals","cal","dadcal","dadall","dadmast","curr","sset","hist","wins","scor","mhq","chores","hq","gen","budget","esa","gifts"];   // SCHOOLPAGES: + the School pages · MPGROUPS: + Chores & Stars, HQ, Generate Week · BUDGETTAB: + Budget ▸ Overview / ESA (purch gone)   // every Mom's Day sub-view that is NOT a Today page (renderMomsPlanView's routes)
+const SS_OTHER_VIEWS=["prep","house","weigh","grocery","meals","cal","dadcal","dadall","dadmast","curr","sset","hist","wins","scor","mhq","chores","hq","gen","seasons","budget","esa","gifts"];   // 🎉 SEASONS: + Schedule ▸ Seasons & Events (listed ahead of the Budget three)   // SCHOOLPAGES: + the School pages · MPGROUPS: + Chores & Stars, HQ, Generate Week · BUDGETTAB: + Budget ▸ Overview / ESA (purch gone)   // every Mom's Day sub-view that is NOT a Today page (renderMomsPlanView's routes)
 let _ssIds={}, _ssD=null;
 var _navStackRO, _navStackSeen;   // var: navStackWire (above) sets the observer before this line runs
 function ssJumpOn(){ try{ return tab==="moms-plan"&&!momSchedView&&SS_OTHER_VIEWS.indexOf(mpSubView)<0; }catch(e){ return false; } }   // Mom's Day ▸ Today (plan / null) or ▸ Dad's Day ('dad')
@@ -7391,6 +7391,37 @@ function giftNowHTML(){
 function giftNowOpen(view,oid){ try{ if(typeof window.gfRemGo==="function") window.gfRemGo(view,oid,true); }catch(e){} mpGoto('gifts'); }
 function giftNowRepaint(){ if(!giftHomeBase()) return; const el=document.getElementById("content"); if(el) renderMomsPlan(el); }
 // GIFTS_END
+// SEASONS_START — 🎉 Mom's Day ▸ 🗓 Schedule ▸ Seasons & Events: a bucket list for a season or an event whose ideas get a 📅 Schedule
+// button onto the family calendar (her ask 2026-11-20: "a planner for either an event or for a season, like Christmas season … all
+// the things that each person wants to do. And then did it get scheduled, and like a schedule button"; her answer the same day:
+// it lives at "Mom's Day ▸ 🗓 Schedule ▸ 🎉 Seasons & Events"; PLAN_season_planner_2026-11-20.md, slice 1). The page itself is
+// seasons.js — lazy, like gifts.js: it and the seasons/ + seasonSecret/ data it reads load only here, for Mom inside Mom's Day
+// (momHere), never at app start and never on a kid's device (surprises are kept in seasonSecret/). Only the way in lives here:
+// one pill under the Schedule page's Today · Week · Month chips, the route, and the loader. No calendar or scheduler code changes —
+// a scheduled idea is an ordinary calendar/events record, which this app only ever displays.
+function mpSeasonsPill(on,pad){
+  return '<div style="padding:'+(pad||'8px 12px 0')+';max-width:520px;margin:0 auto"><button id="mp-seasons-pill" onclick="mpGoto(\'seasons\')" style="width:100%;padding:8px 10px;border-radius:20px;border:2px solid #2B7A78;background:'+(on?'#2B7A78':'#fff')+';color:'+(on?'#fff':'#2B7A78')+';font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F389} Seasons &amp; Events</button></div>';
+}
+function mpSeasonsBar(){   // the Schedule page's own chips (none lit — this is its fourth page) + the lit pill
+  const tb=(v,lbl)=>'<button onclick="mpSchSet(\''+v+'\')" style="flex:1;padding:8px 10px;border-radius:20px;border:2px solid #2B7A78;background:#fff;color:#2B7A78;font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
+  return '<div style="display:flex;gap:8px;padding:12px 12px 0;max-width:520px;margin:0 auto">'+tb('today','\u{1F4C6} Today')+tb('week','\u{1F5D3} Week')+tb('month','\u{1F5D3} Month')+'</div>'+mpSeasonsPill(true);
+}
+function renderMPSeasons(el){
+  const top=mwBanner('Bucket lists that get onto the calendar')+mpSubnav('cal')+mpSeasonsBar();
+  if(!(typeof momHere==="function"&&momHere())){ el.innerHTML=top+'<div style="padding:40px;text-align:center;color:var(--muted)">\u{1F512} Mom only.</div>'; return; }
+  if(window.renderSeasons){ renderSeasons(el,top); return; }
+  el.innerHTML=top+'<div style="padding:40px;text-align:center;color:var(--muted)">Opening Seasons &amp; Events…</div>';
+  seasonsLoad(()=>{ el.innerHTML=top+'<div style="padding:40px;text-align:center;color:var(--muted)">Couldn\'t load Seasons &amp; Events — check the internet and tap it again.</div>'; });
+}
+function seasonsLoad(onErr){   // the one seasons.js loader — only ever called from renderMPSeasons, behind momHere
+  if(window.renderSeasons||window._snLoading) return; window._snLoading=true;
+  const s=document.createElement("script");
+  s.src=/github\.io$/.test(location.hostname)?("seasons.js?v="+Date.now()):"seasons.js";
+  s.onload=()=>{ if(tab==="moms-plan"&&mpSubView==="seasons") renderAll(); };
+  s.onerror=()=>{ window._snLoading=false; if(onErr&&tab==="moms-plan"&&mpSubView==="seasons") onErr(); };
+  document.head.appendChild(s);
+}
+// SEASONS_END
 // EIC_START — ✏️ Editor in Chief skill engine lives in eic.js (lazy, like esa.js). Slice 2, 2026-09-20.
 // 🗓 THE SCHEDULE LINK (her ask 2026-09-22): when a kid's ✏️ switch is on, their Editor in Chief card drops its page
 // numbers, and its button opens the engine's next page. Mom saving a score checks off today's card.
@@ -12451,6 +12482,7 @@ function renderMomsPlanView(el){
   if(mpSubView==='gifts'){ return renderMPGifts(el); }   // 🎁 GIFTS: Mom's Day ▸ 💰 Budget (gifts.js, lazy)
   if(mpSubView==='budget'){ return renderMPBudget(el); }   // 📊 BUDGETTAB: Mom's Day ▸ 💰 Budget ▸ Overview
   if(mpSubView==='esa'){ return renderMPEsa(el); }         // 💰 BUDGETTAB: Mom's Day ▸ 💰 Budget ▸ ESA & purchases (esa.js, lazy)
+  if(mpSubView==='seasons'){ return renderMPSeasons(el); }   // 🎉 SEASONS: Mom's Day ▸ 🗓 Schedule ▸ Seasons & Events (seasons.js, lazy)
   if(mpSubView!=='grocery') grFromDad=(mpSubView==='dad'||mpSubView==='dadcal'||mpSubView==='dadall'||mpSubView==='dadmast');   // 👨 DADFIX   // 🛒 the list remembers which page opened it
   if(mpSubView==='grocery'){ return renderGrocery(el); }
   if(mpSubView==='meals'){ return renderKitchen(el); }
@@ -25884,6 +25916,7 @@ function msvBarHTML(){
   let give=''; try{ give=helperGiveBtnsHTML(); }catch(e){}   // 🙋 HELPERGIVE moved here from 🏡 Home Base — it's a Mom tool
   let ban=''; try{ ban=mwBanner('Your day and the kids\u2019 schedule'); }catch(e){}   // MDBANNER: same banner as every Mom's Day section — scrolls away; the sub-menu after it stays sticky
   return ban+mpSubnav('cal')+'<div style="display:flex;gap:8px;padding:8px 12px;max-width:520px;margin:0 auto">'+tb('today','\u{1F4C6} Today')+tb('week','\u{1F5D3} Week')+tb('month','\u{1F5D3} Month')+'</div>'
+    +((typeof mpSeasonsPill==="function")?mpSeasonsPill(false,'0 12px 8px'):'')   // 🎉 SEASONS: the way in to Seasons & Events
     +(give?'<div style="padding:0 12px 8px">'+give+'</div>':'');
 }
 function renderMPCalendar(el){
@@ -25961,6 +25994,7 @@ function mpSchBody(){
   let h='';
   const tb=(v,lbl)=>'<button onclick="mpSchSet(\''+v+'\')" style="flex:1;padding:8px 10px;border-radius:20px;border:2px solid #2B7A78;background:'+(mode===v?'#2B7A78':'#fff')+';color:'+(mode===v?'#fff':'#2B7A78')+';font-size:13px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
   h+='<div style="display:flex;gap:8px;padding:12px 12px 0;max-width:520px;margin:0 auto">'+tb('today','\u{1F4C6} Today')+tb('week','\u{1F5D3} Week')+tb('month','\u{1F5D3} Month')+'</div>';
+  if(typeof mpSeasonsPill==="function") h+=mpSeasonsPill(false);   // 🎉 SEASONS: the way in to Seasons & Events
   const wb=(w,lbl,col)=>'<button onclick="mpSchWhoSet(\''+w+'\')" style="padding:5px 12px;border-radius:20px;border:1.5px solid '+col+';background:'+(who===w?col:'#fff')+';color:'+(who===w?'#fff':col)+';font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">'+lbl+'</button>';
   h+='<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;padding:10px 12px 0">'+wb('mom','\u{1F469} Mom','#b5394a')+wb('all','\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466} All','#2B7A78')
     +ROSTER.map(function(k){ return wb(k,kcEmoji(k)+' '+esc(KID_NAME[k]||cap(k)),SL_KCOL[k]||'#64748b'); }).join('')+'</div>';
