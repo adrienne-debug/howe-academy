@@ -379,14 +379,14 @@ function hhRoomsPageHTML(){
   G.forEach(function(g,i){ if(!isOpen(g[0],i)) return; const rs=L.filter(function(r){ return r[2]===g[0]; }); h+='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px;padding-left:6px">'+(rs.length?rs.map(chip).join(''):'<span style="font-size:11px;color:var(--muted)">No rooms in '+esc(g[1])+' yet.</span>')+'</div>'; });
   if(hhRmEditing&&mom) return h+hhRmEditHTML();
   if(!hhRmSel) h+=(typeof htNowHTML==="function"&&typeof htdHTML==="function")?htNowHTML()+htdHTML():'';   // HOUSETODO: 🔴 Now · 📝 To do, every room
-  if(!hhRmSel) return h+(typeof hwCardHTML==="function"?hwCardHTML():'')+hhRmHouseHTML(byRoom)+(typeof hhRoomsTailHTML==="function"?hhRoomsTailHTML():'');   // HOUSEWEEK: 📅 the week, set to Everything
+  if(!hhRmSel) return h+(typeof hwCardHTML==="function"?hwCardHTML():'')+(typeof hoCardHTML==="function"?hoCardHTML():'')+hhRmHouseHTML(byRoom)+(typeof hhRoomsTailHTML==="function"?hhRoomsTailHTML():'');   // HOUSEWEEK: 📅 the week, set to Everything
   const none=hhRmSel==="__none", r=none?null:L.find(function(x){ return x[0]===hhRmSel; }), ids=byRoom[hhRmSel]||[], s=hhRoomStats(ids);
   h+='<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:4px 2px 8px"><span style="font-size:16px;font-weight:800">'+(none?'❔ No room':hhRoomEmoji(r[0])+' '+esc(r[1]))+'</span><span style="font-size:12px;color:var(--muted);font-weight:700">'+s.n+' chore'+(s.n===1?'':'s')+' · '+s.mins+' min a week · on time '+(s.pct===null?'–':s.pct+'%')+'</span></div>';
   if(none) h+='<div style="font-size:11px;color:var(--muted);margin:-4px 2px 8px">These chores are filed under a room that is no longer on your list. Open ✎ Edit to give each one a room.</div>';
   if(!none&&typeof rnNowHTML==="function"&&typeof rtdHTML==="function") h+=rnNowHTML(hhRmSel)+rtdHTML(hhRmSel);   // ROOMNOW · ROOMTODO: 🔴 Now and 📝 To do, a single room only
   if(mom&&typeof hcRoomToolsHTML==="function") h+=hcRoomToolsHTML(hhRmSel,ids);   // HH_CARD: 🔍 Checks · ⚙ Rules
   if(!ids.length) return h+'<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:10px 12px;font-size:12px;color:var(--muted)">No chores in this room yet. Give a chore this room in its ✎ Edit.</div>';
-  return h+(typeof hwRoomHTML==="function"?hwRoomHTML(hhRmSel,ids):hhRoomGridHTML(hhRmSel,ids))+(typeof hhRoomsTailHTML==="function"?hhRoomsTailHTML():'');   // HOUSEWEEK: 📅 the week, then the big grid folded
+  return h+(typeof hwRoomHTML==="function"?hwRoomHTML(hhRmSel,ids):hhRoomGridHTML(hhRmSel,ids))+((!none&&typeof hoCardHTML==="function")?hoCardHTML():'')+(typeof hhRoomsTailHTML==="function"?hhRoomsTailHTML():'');   // HOUSEWEEK: 📅 the week, then the big grid folded
 }
 // HH_ROOMPAGE_END
 // HH_CARD_START — the chore card, the room ⚙ Rules table and 🔍 Checks (Household by room, step 2 of DESIGN_household_rooms_2026-11-15
@@ -498,7 +498,7 @@ function hcCardHTML(){
   if(!add) h+=sec(4,'How long')+lbl('Minutes',hcCtl(id,"minutes"));
   if(!add){ const st=hhStats(j); let last=st.last, by=j.who==="grab"?"":j.who; if(j.lastDone&&/^\d{4}-\d{2}-\d{2}$/.test(j.lastDone)&&(!last||j.lastDone>last)){ last=j.lastDone; by=j.lastBy||""; }
     h+=sec(5,'History')+'<div style="font-size:12.5px;font-weight:700;margin-top:8px">'+(last?'Last done '+(+last.slice(5,7))+'/'+(+last.slice(8))+(by?' by '+esc(hhWhoName(by)):''):'Not done in the last 8 weeks')+'</div>'
-      +'<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">'+_hhChip('on time 4 wk '+st.done4+'/'+st.due4+' ('+hhPct(st.done4,st.due4)+')','#f3f4f6','#1f2937')+_hhChip('8 wk '+st.done8+'/'+st.due8+' ('+hhPct(st.done8,st.due8)+')','#f3f4f6','#1f2937')+_hhChip('late '+st.late8,st.late8?'#fef3c7':'#f3f4f6',st.late8?'#92400e':'#64748b')+(st.miss8?_hhChip('missed '+st.miss8,'#fee2e2','#991b1b'):'')+hhNeedChip(j)+'</div>'+lbl('Note',hcCtl(id,"note")); }
+      +'<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">'+_hhChip('on time 4 wk '+st.done4+'/'+st.due4+' ('+hhPct(st.done4,st.due4)+')','#f3f4f6','#1f2937')+_hhChip('8 wk '+st.done8+'/'+st.due8+' ('+hhPct(st.done8,st.due8)+')','#f3f4f6','#1f2937')+_hhChip('late '+st.late8,st.late8?'#fef3c7':'#f3f4f6',st.late8?'#92400e':'#64748b')+(st.miss8?_hhChip('missed '+st.miss8,'#fee2e2','#991b1b'):'')+hhNeedChip(j)+'</div>'+(typeof hoHistHTML==="function"?hoHistHTML(id):'')+lbl('Note',hcCtl(id,"note")); }   // HOWOFTEN: this chore's line
   h+=sec(add?4:6,add?'Save':'Actions')+'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">';
   if(add) h+='<span style="flex:1;font-size:11px;color:var(--muted)">One row in the table; on the list right away under Take over.</span>'+_hhBtn("hcClose()",'Cancel',false,'#94a3b8')+_hhBtn("hcAddSave()",'Save',true,'#2B7A78');
   else if(j.status==="retired") h+=_hhBtn("hhSet('"+id+"','verdict','keep')",'↩ Bring back',false,'#2B7A78')+_hhBtn("hhDeleteForGood('"+id+"')",'🗑 Delete for good',false,'#b91c1c');
@@ -665,6 +665,7 @@ function hpPersonHTML(){
         +(mv.length?'<div style="padding:0 12px 5px 82px;font-size:11px;color:#475569">'+Object.keys(cnt).map(function(t){ return hpMovedTxt({to:t})+(cnt[t]>1?' ×'+cnt[t]:''); }).join(' · ')+'</div>':''); });
     h+='</div>'; }
   h+=(typeof hwCardHTML==="function")?hwCardHTML():'';   // HOUSEWEEK: 📅 the week, set to this person
+  h+=(typeof hoCardHTML==="function")?hoCardHTML():'';   // HOWOFTEN: 📊 how often, set to this person
   h+=hpSettingsHTML(who);
   h+='<div style="font-size:14px;font-weight:800;margin:4px 2px 6px">📈 Habits</div>'+hhHabitsHTML(who);
   return h;
@@ -852,11 +853,12 @@ function hwWeekLbl(mon,sun){ const m=function(iso){ return HW_MON[+iso.slice(5,7
 function hwWeekData(f,wk){ const t=hpToday(), mode=hhEngineMode(), mon=_hhIsoOf(_hhDayNum(t)-_hhDow(t)+7*wk), days=[0,1,2,3,4,5,6].map(function(d){ return _hhIsoOf(_hhDayNum(mon)+d); });
   const X={t:t,S:hhLogState(),rc:{},ids:hwIds(f),run:(mode!=="off"&&days[6]>t)?(function(){ try{ return hpRun(); }catch(e){ return null; } })():null,ll:f.k==="all"?hwLL(t,wk):null};
   return days.map(function(iso){ return {iso:iso,cells:hwCells(iso,f,X),loads:hwLoads(iso,X)}; }); }
-// The chips: Everything · 🧺 Laundry · 🚪 Room ▾ · 👤 Person ▾ (the picked one filled teal).
-function hwChips(f){
+// The chips: Everything · 🧺 Laundry · 🚪 Room ▾ · 👤 Person ▾ (the picked one filled teal). fn = another card's setter (📊 How
+// often: hoPick, and no 🧺 Laundry chip); without it, exactly the Schedule card's chips.
+function hwChips(f,fn){ const P=fn||"hwPick";
   const pill=function(on,txt,click){ return '<button onclick="'+click+'" style="padding:5px 10px;border-radius:20px;border:1.5px solid '+(on?'#2B7A78':'#cbd5e1')+';background:'+(on?'#2B7A78':'#fff')+';color:'+(on?'#fff':'#334155')+';font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+txt+'</button>'; };
-  const pick=function(k,on,lbl,opts){ return '<select onchange="hwPick(\''+k+'\',this.value)" style="padding:5px 8px;border-radius:20px;border:1.5px solid '+(on?'#2B7A78':'#cbd5e1')+';background:'+(on?'#2B7A78':'#fff')+';color:'+(on?'#fff':'#334155')+';font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;max-width:46vw"><option value="">'+lbl+'</option>'+opts.map(function(o){ return '<option value="'+esc(o[0])+'"'+(on&&f.id===o[0]?' selected':'')+'>'+esc(o[1])+'</option>'; }).join('')+'</select>'; };
-  return pill(f.k==="all",'Everything',"hwPick('all')")+pill(f.k==="laundry",'🧺 Laundry',"hwPick('laundry')")
+  const pick=function(k,on,lbl,opts){ return '<select onchange="'+P+'(\''+k+'\',this.value)" style="padding:5px 8px;border-radius:20px;border:1.5px solid '+(on?'#2B7A78':'#cbd5e1')+';background:'+(on?'#2B7A78':'#fff')+';color:'+(on?'#fff':'#334155')+';font-size:11.5px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;max-width:46vw"><option value="">'+lbl+'</option>'+opts.map(function(o){ return '<option value="'+esc(o[0])+'"'+(on&&f.id===o[0]?' selected':'')+'>'+esc(o[1])+'</option>'; }).join('')+'</select>'; };
+  return pill(f.k==="all",'Everything',P+"('all')")+(fn?'':pill(f.k==="laundry",'🧺 Laundry',"hwPick('laundry')"))
     +pick("room",f.k==="room",'🚪 Room ▾',hhRoomList().map(function(r){ return [r[0],hhRoomEmoji(r[0])+' '+r[1]]; }))+pick("who",f.k==="who",'👤 Person ▾',hpWho().map(function(w){ return [w,hhWhoName(w)]; })); }
 function hwCardHTML(){
   const f=hwFilter(), mode=hhEngineMode(), mom=hcMom(), J=hhJobs(), t=hpToday(), b=hwBounds(); hwWk=Math.max(b[0],Math.min(b[1],hwWk));
@@ -912,6 +914,92 @@ function hwLaundryCardHTML(){ try{ if(hwFilter().k!=="laundry") return hwCardHTM
   try{ r='<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">'+hwChips(hwF)+'</div>'; }catch(e){ r=''; }
   return (i<13||!r)?c:c.slice(0,i)+r+c.slice(i); }
 // HOUSEWEEK_LAUNDRY_END
+// HOWOFTEN_START — 📊 How often: her record of how often each chore really gets done (DESIGN_missed_chores_2026-11-19 §7 and §10 row
+// A; her words 2026-11-19: "There needs to be a record of like how often things are being completed for the mom. But I mean, the idea
+// isn't to have every single thing completed"; her "Yes, start it" 2026-11-19). ONE card with the 📅 Schedule card's chips (Everything ·
+// 🚪 Room ▾ · 👤 Person ▾, no 🧺 Laundry): on 🏠 Whole house (Everything), a room page (that room) and 👤 By person (that person), plus
+// this chore's line in the chore card's History. Least done first; 8 rows, then "Show all".
+// Worked out from the room grid's own squares (hhRmCell: the Click-off Log's ticks, Mom's and Dad's day stamps, the cleaning days), so
+// it cannot disagree with the grid about a past day — NEVER from the log's "— not done" lines (§2: 82 of 112 sit on chores that were
+// done). For each time a chore was due (its days in its cad; the grid's own rule: daily / weekdays / Sat / Sun):
+//   ● the grid shows it done that day · ◐ done on a later day before its next day (the lists' late rule, live then) · ○ not done by its
+//   next day (dropped) · – not counted: the grid shows nothing that day (Mom waved it, before its start date, after its end), or the
+//   kid was off (😷 Kid Off) and did not do it. A time still inside its wait and not done yet is not marked.
+// Weekly and twice-a-week chores: a mark per time, the last 8 weeks. 3+ times a week: a count, the last 28 days. No record yet: every-N
+// and every-2-weeks chores and the 4-week cycle (the grid shows only their ✓), above the level, as needed, and Mom's, Dad's and Up for
+// Grabs chores with no tick in the time it looks back (they rarely tick: no tick is no record, not "never"). The line for the filter =
+// done (on the day + late) over the times counted in the last 28 days. A VIEW: the filter and "show all" are plain variables; nothing
+// here writes, on a draw or on any tap.
+let hoKey="", hoF=null, hoAll=false;
+const HO_WK=56, HO_DAYS=28, HO_FOLD=8, HO_MARK={on:["●","#16a34a"],late:["◐","#d97706"],drop:["○","#64748b"],skip:["–","#cbd5e1"]};
+// The page's own setting (the Schedule card's homes, without 🧺 Laundry); another room, person or page → back to it, folded.
+function hoHome(){ if(hhView==="person") return {key:"p|"+hpSel,f:{k:"who",id:hpSel}};
+  if(hhView==="rooms"&&hhRmSel&&hhRmSel!=="__none") return {key:"r|"+hhRmSel,f:{k:"room",id:hhRmSel}}; return {key:"h|"+hhView+"|"+hhRmSel,f:{k:"all"}}; }
+function hoFilter(){ const p=hoHome(); if(p.key!==hoKey||!hoF){ hoKey=p.key; hoF=p.f; hoAll=false; } return hoF; }
+function hoPick(k,id){ hoFilter(); if(k==="room"&&!hhRoomList().some(function(r){ return r[0]===id; })) return; if(k==="who"&&hpWho().indexOf(id)<0) return;
+  if(k!=="all"&&k!=="room"&&k!=="who") return; hoF=(k==="all")?{k:k}:{k:k,id:id}; hoAll=false; hhRender(); }
+function hoMore(){ hoFilter(); hoAll=!hoAll; hhRender(); }
+// One draw's shared reads: today, the log state, the grid's rotation cache, and each chore's squares as they are asked for.
+function hoX(){ const t=hpToday(); return {today:t,t:_hhDayNum(t),S:hhLogState(),rc:{},sq:{}}; }
+function hoCell(id,n,X){ const m=X.sq[id]||(X.sq[id]={}); if(m[n]===undefined) m[n]=hhRmCell(id,_hhIsoOf(n),X.today,X.S,X.rc)||0; return m[n]; }
+function hoDays(cad){ return cad==="daily"?[0,1,2,3,4,5,6]:cad==="sat"?[5]:cad==="sun"?[6]:/^wk:/.test(cad)?cad.slice(3).split(",").filter(function(x){ return x!==""; }).map(Number):[]; }
+// One chore's record: {form:"marks"|"count"|"none", why, daily, marks:[{n, m:"on"|"late"|"drop"|"skip", who, q (days late), by}]}; null = a one-time job (📝 To do).
+function hoRec(id,X){
+  const j=hhJobs()[id]; if(!j||hhLaneOf(j)==="once") return null; const cad=j.cad||"daily", none=function(w){ return {form:"none",why:w,marks:[]}; };
+  if(cad==="asneeded"||cad==="none") return none("as needed");
+  if(!/^(daily|wk:|sat$|sun$)/.test(cad)) return none(String(cadLabel(cad)).toLowerCase());
+  if(j.cycW) return none("4-week cycle"); if(!hhLevelOut(j)) return none("above the level");
+  const ds=hoDays(cad); if(!ds.length) return none("no days set");
+  const cnt=ds.length>=3, due=function(n){ return ds.indexOf((n+3)%7)>=0; }, marks=[];   // day 0 (1970-01-01) was a Thursday: (n+3)%7 = Mon 0 … Sun 6
+  for(let n=X.t-(cnt?HO_DAYS:HO_WK);n<X.t;n++){ if(!due(n)) continue; let nx=n+1; while(!due(nx)) nx++;
+    const c=hoCell(id,n,X); if(!c){ marks.push({n:n,m:"skip",who:j.who}); continue; }
+    if(c.done){ marks.push({n:n,m:"on",who:c.who,by:c.who}); continue; }
+    let q=0, by=""; for(let k=n+1;k<nx&&k<=X.t;k++){ const d=hoCell(id,k,X); if(d&&d.done){ q=k-n; by=d.who; break; } }
+    if(q) marks.push({n:n,m:"late",who:c.who,q:q,by:by});
+    else if(hhIsKid(c.who)&&typeof hdKidOff==="function"&&hdKidOff(c.who,_hhIsoOf(n))) marks.push({n:n,m:"skip",who:c.who,off:1});
+    else if(nx<=X.t) marks.push({n:n,m:"drop",who:c.who}); }   // else: still inside its wait, not done yet → no mark
+  if(!hhIsKid(j.who)&&!marks.some(function(x){ return x.m==="on"||x.m==="late"; })) return none("no check-offs");
+  return {form:cnt?"count":"marks",daily:cad==="daily",marks:marks};
+}
+// The record seen through a filter: a person keeps only the times that were theirs (who had it that day).
+function hoSee(r,f){ if(!r||f.k!=="who"||r.form==="none") return r; return {form:r.form,daily:r.daily,marks:r.marks.filter(function(x){ return x.who===f.id; })}; }
+function hoSum(ms){ const s={on:0,late:0,drop:0,skip:0}; ms.forEach(function(x){ s[x.m]++; }); s.done=s.on+s.late; s.n=s.done+s.drop; return s; }
+function hoText(r){ if(r.form==="none") return 'no record yet · '+esc(r.why); const s=hoSum(r.marks);
+  if(!s.n) return 'no record yet · '+(s.skip?s.skip+' not counted':'nothing due yet');
+  return s.done+' of the last '+s.n+(r.form==="count"?(r.daily?' days':' times'):'')+(s.late?' · '+s.late+' late':'')+(r.form==="marks"&&s.drop?' · '+s.drop+' dropped':'')+(s.skip?' · '+s.skip+' not counted':''); }
+function hoMarksHTML(r){ if(r.form!=="marks") return ''; return '<span style="font-size:12px;letter-spacing:1px;white-space:nowrap">'+r.marks.map(function(x){ const M=HO_MARK[x.m], iso=_hhIsoOf(x.n);
+    const tip=hpDay(iso)+' · '+(x.m==="on"?'done that day':x.m==="late"?'done '+x.q+' day'+(x.q===1?'':'s')+' late':x.m==="drop"?'not done by its next day':x.off?'off that day':'not counted')+(x.by?' by '+hhWhoName(x.by):'');
+    return '<span title="'+esc(tip)+'" style="color:'+M[1]+'">'+M[0]+'</span>'; }).join('')+'</span>'; }
+// The rows for a filter, least done first (no record yet last), and the filter's line.
+function hoRows(f,X){ const J=hhJobs(), out=[];
+  hwIds(f.k==="who"?{k:"all"}:f).forEach(function(id){ const r0=hoRec(id,X); if(!r0) return; const r=hoSee(r0,f);
+    if(f.k==="who"&&!(r.marks.length||J[id].who===f.id)) return; const s=hoSum(r.marks); out.push({id:id,r:r,s:s,rate:(r.form==="none"||!s.n)?2:s.done/s.n}); });
+  return out.sort(function(a,b){ return (a.rate-b.rate)||(b.s.drop-a.s.drop)||String(J[a.id].label).localeCompare(String(J[b.id].label))||(a.id<b.id?-1:1); }); }
+function hoLine(rows,X){ const ms=[]; let nr=0; rows.forEach(function(x){ if(x.rate===2) nr++; x.r.marks.forEach(function(m){ if(m.n>=X.t-HO_DAYS) ms.push(m); }); }); const s=hoSum(ms);
+  return {pct:s.n?Math.round(100*s.done/s.n):null,drop:s.drop,n:s.n,done:s.done,skip:s.skip,none:nr}; }
+function hoRowHTML(x,mom){ const j=hhJobs()[x.id], tap=mom?' onclick="hcOpen(\''+x.id+'\')"':'';
+  return '<div'+tap+' style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:5px 12px;border-top:1px solid #f3f4f6;font-size:12.5px'+(mom?';cursor:pointer':'')+'"><span>'+esc(j.emoji||'☐')+'</span>'
+    +'<span style="flex:1;min-width:120px;font-weight:700">'+esc(j.label)+' <span style="font-size:11px;font-weight:600;color:var(--muted)"><span style="color:'+hhRmCol(j.who)+'">'+esc(hhWhoName(j.who))+'</span> · '+esc(cadLabel(hhPlanCad(j)))+'</span></span>'
+    +hoMarksHTML(x.r)+'<span style="font-size:11px;font-weight:700;color:'+(x.rate===2?'#94a3b8':'#475569')+';white-space:nowrap">'+hoText(x.r)+'</span></div>'; }
+function hoCardHTML(){
+  const f=hoFilter(), mom=hcMom(), X=hoX(), rows=hoRows(f,X), L=hoLine(rows,X), show=hoAll?rows:rows.slice(0,HO_FOLD);
+  const name=f.k==="room"?hhRoomEmoji(f.id)+' '+hhRoomName(f.id):f.k==="who"?'👤 '+hhWhoName(f.id):'🏠 Whole house';
+  let h='<div style="'+HP_CARD+'"><div style="padding:9px 12px 4px"><span style="font-size:14px;font-weight:800">📊 How often</span> <span style="font-size:11px;font-weight:600;color:var(--muted)">least done first · the last 8 weeks of check-offs</span></div>';
+  h+='<div style="display:flex;gap:5px;flex-wrap:wrap;padding:2px 12px 8px">'+hwChips(f,"hoPick")+'</div>';
+  h+='<div style="padding:6px 12px;border-top:1px solid #eef2f0;font-size:12.5px;font-weight:800">'+esc(name)+' · '+(L.pct===null?'<span style="color:#94a3b8">no record yet</span>':L.pct+'% done · last 4 weeks · '+L.drop+' dropped')+'</div>';
+  h+=rows.length?show.map(function(x){ return hoRowHTML(x,mom); }).join(''):'<div style="padding:3px 12px 8px;font-size:12px;color:var(--muted)">No chores here.</div>';
+  if(rows.length>HO_FOLD) h+='<div onclick="hoMore()" style="padding:6px 12px;border-top:1px solid #f3f4f6;font-size:12px;font-weight:800;color:#2B7A78;cursor:pointer">'+(hoAll?'Show fewer':'Show all '+rows.length)+'</div>';
+  h+='<div style="padding:6px 12px 8px;font-size:11px;color:var(--muted)">● done on its day · ◐ done late, before its next day · ○ not done by its next day · – not counted (you waved it, the kid was off, or it had not started). Looks back 8 weeks (3 or more times a week: 4 weeks), from the check-offs — not from the “not done” lines. '
+    +'The % counts '+L.done+' done of '+L.n+' times due in the last 4 weeks; it leaves out what was not counted'+(L.none?', the '+L.none+' with no record yet':'')+' and any chore still inside its wait. A renamed chore starts fresh: the log knows a chore by its name.</div>';
+  return h+'</div>';
+}
+// The chore card ▸ History: this chore's own line (the card's row, unfiltered) and the last time the grid shows it done, by whom.
+function hoHistHTML(id){ const j=hhJobs()[id]; if(!j) return ''; const X=hoX(), r=hoRec(id,X); let last=null;
+  for(let n=X.t;n>=X.t-HO_WK;n--){ const c=hoCell(id,n,X); if(c&&c.done){ last={iso:_hhIsoOf(n),by:c.who}; break; } }
+  if(j.lastDone&&/^\d{4}-\d{2}-\d{2}$/.test(j.lastDone)&&(!last||j.lastDone>last.iso)) last={iso:j.lastDone,by:j.lastBy||""};
+  return '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:12px;font-weight:700">📊 '+(r?hoMarksHTML(r)+'<span style="color:#475569">'+hoText(r)+'</span>':'<span style="color:#475569">a one-time job</span>')+'</div>'
+    +'<div style="font-size:12px;font-weight:700;margin-top:4px">'+(last?'Last done '+(+last.iso.slice(5,7))+'/'+(+last.iso.slice(8))+(last.by?' by '+esc(hhWhoName(last.by)):''):'Not done in the last 8 weeks')+'</div>'; }
+// HOWOFTEN_END
 // HOUSETODO_START — 🔴 Now and 📝 To do on 🏠 Whole house, and 📝 To do on 👤 By person (DESIGN_now_todo_schedule_2026-11-17 §7,
 // slice E; her rule 2026-11-17 "Yes, every area" — every Household page gets 🔴 Now · 📝 To do · 📅 Schedule — and her go, "c is
 // merged so go to next"). Built only from what the room pages already draw, so the pages never disagree:
