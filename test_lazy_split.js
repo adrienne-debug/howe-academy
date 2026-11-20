@@ -106,7 +106,7 @@ for (const [file, cfg] of Object.entries(SPLITS)) {
   const sw = fs.readFileSync(path.join(DIR, "sw.js"), "utf8");
   const swRe = /const lazyM = req\.method === 'GET' && (\/[^\n]*\/)\.exec\(new URL\(req\.url\)\.pathname\);/.exec(sw);
   const swPat = swRe ? eval(swRe[1]) : null;
-  ok("sw.js keeps an offline copy of " + file + " (network-first, keyed by name — the ?v= cache-bust never piles up)", !!(swPat && swPat.test("/howe-academy/" + file) && !swPat.test("/howe-academy/x" + file) && /cache\.put\(key, fresh\.clone\(\)\)/.test(sw)));
+  ok("sw.js keeps an offline copy of " + file + " (network-first, keyed by name — the ?v= cache-bust never piles up)", !!(swPat && swPat.test("/howe-academy/" + file) && !swPat.test("/howe-academy/x" + file) && /cache\.put\(key, fresh\.clone\(\)\)|swKeep\(key, fresh\)/.test(sw)));   // SWREVAL (2026-11-19): the copy is kept through swKeep (rewritten only when the deploy changed)
 }
 
 console.log("\n── the loader (haLazyLoad), in a tiny world ──");
