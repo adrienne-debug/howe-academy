@@ -210,9 +210,9 @@ for (const [name, o] of [["preview", { meta: PREVIEW }], ["plan off", {}], ["ON"
   ok(name + ": the room page = before, with the grid swapped for the week card + the fold line", before.split(grid).length === 2 && after === before.replace(grid, () => c.hwRoomHTML("kitchen", ids)) && c.hwRoomHTML("kitchen", ids).indexOf(c.hwCardHTML()) === 0);
   c.get("hwGridToggle('kitchen')"); const opened = roomPage(c, "kitchen"); c.get("hwGridToggle('kitchen')");
   ok(name + ": …opened, the page = before + the card and the line above the very same grid", opened.replace(c.hwCardHTML(), "").replace(/<div onclick="hwGridToggle\('kitchen'\)"[^>]*>▾ The big grid <span[^>]*>[^<]*<\/span><\/div><div>/, "").replace(grid + "</div>", grid) === before);
-  const bh = noHW(() => roomPage(c, "")), ah = roomPage(c, ""), hh = c.hhRmHouseHTML(c.hhRoomChores());
+  const bh = noHW(() => roomPage(c, "")).replace(c.hoCardHTML(), ""), ah = roomPage(c, "").replace(c.hoCardHTML(), ""), hh = c.hhRmHouseHTML(c.hhRoomChores());
   ok(name + ": Whole house = before, with the card above what it shows now", ah === bh.replace(hh, () => c.hwCardHTML() + hh));
-  const bp = noHW(() => person(c, "ben")), ap = person(c, "ben"), st = c.hpSettingsHTML("ben");
+  const bp = noHW(() => person(c, "ben")).replace(c.hoCardHTML(), ""), ap = person(c, "ben").replace(c.hoCardHTML(), ""), st = c.hpSettingsHTML("ben");
   ok(name + ": By person = before (Today · This week · Settings · Habits), with the card just above ⚙ Settings", ap === bp.replace(st, () => c.hwCardHTML() + st) && /📅 Today/.test(ap) && /📈 Habits/.test(ap));
   ok(name + ": drawing all three wrote nothing", c.writes.length === 0 && c.lsw.length === 0);
 }

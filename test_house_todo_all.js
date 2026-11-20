@@ -204,7 +204,7 @@ for (const [name, o] of MODES) {
 
 console.log("\n── nothing else changes: Whole house, By person, a room, the pile, the laundry schedule ──");
 for (const [name, o] of MODES) {
-  const c = withLaundry(mkT(o)), bh = without(c, () => house(c)), ah = house(c), now = c.htNowHTML(), td = c.htdHTML();
+  const c = withLaundry(mkT(o)), bh = without(c, () => house(c)).replace(c.hoCardHTML(), ""), ah = house(c).replace(c.hoCardHTML(), ""), now = c.htNowHTML(), td = c.htdHTML();
   ok(name + ": Whole house = before, with 🔴 Now + 📝 To do just above the 📅 Schedule card", ah === bh.replace(c.hwCardHTML() + c.hhRmHouseHTML(c.hhRoomChores()), () => now + td + c.hwCardHTML() + c.hhRmHouseHTML(c.hhRoomChores())) && ah.length === bh.length + now.length + td.length);
   const bp = without(c, () => person(c, "ben")), ap = person(c, "ben"), pc = c.htdPersonHTML("ben"), at = ap.indexOf(pc);
   ok(name + ": By person = before (Today · This week · Schedule · Settings · Habits), with 📝 To do under 📅 Today", at > 0 && ap.slice(0, at) + ap.slice(at + pc.length) === bp && ap.slice(0, at).indexOf("📅 Today") > 0 && ap.slice(at + pc.length).indexOf("📈 Habits") > 0);
