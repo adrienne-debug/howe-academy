@@ -153,7 +153,7 @@ function occHead(o){
 }
 function daysTo(iso){const a=new Date(today()+"T12:00:00"),b=new Date(String(iso)+"T12:00:00");const d=Math.round((b-a)/864e5);return isNaN(d)?"":d>1?d+" days to go":d===1?"tomorrow":d===0?"today":"";}
 function peopleView(o){
-  let h=occHead(o);
+  let h=occHead(o)+stashCard(o);   // STASH: presents on hold, offered to this holiday
   const star=occStar(o);   // GIFTS_OCC: a birthday's person first and open; everyone else folds under "Others giving or getting"
   if(star)h+=starCard(o,star)+othersBtn(o,star);
   const P=people().filter(p=>p.id!==star);
@@ -182,7 +182,8 @@ function itemRow(it,pid){
   const who=pid?(P.length>1?chip("🤝 with "+P.filter(x=>x!==pid).map(nm).join(", "),"#0e7490"):""):(P.length?chip((P.length>1?"🤝 ":"👤 ")+P.map(nm).join(", "),P.length>1?"#0e7490":"#334155"):chip("🗄 no one yet","#64748b"));
   const amt=num(it.paid)!=null?money(num(it.paid)):(num(it.plan)!=null?'<span style="color:#64748b">plan '+money(num(it.plan))+'</span>':'—');
   const nx=GF_NEXT[it.status||"idea"],picked=!!gfSel[it.id];
-  return '<div class="gf-item'+(live(it)?'':' dead')+(picked?' picked':'')+'"><button class="gf-ib" onclick="'+(gfSelOn?'gfPick':'gfEditItem')+'(\''+esc(it.id)+'\')">'+(gfSelOn?'<span class="gf-box">'+(picked?'✓':'')+'</span>':'')+'<div class="gf-it"><b>'+esc(it.name)+'</b></div><div class="gf-im">'+chip(s[1],s[2])+who+
+  const onHold=it.occ===GF_HOLD?chip("🗄 on hold","#7c3aed"):"";   // STASH
+  return '<div class="gf-item'+(live(it)?'':' dead')+(picked?' picked':'')+'"><button class="gf-ib" onclick="'+(gfSelOn?'gfPick':'gfEditItem')+'(\''+esc(it.id)+'\')">'+(gfSelOn?'<span class="gf-box">'+(picked?'✓':'')+'</span>':'')+'<div class="gf-it"><b>'+esc(it.name)+'</b></div><div class="gf-im">'+chip(s[1],s[2])+onHold+who+
     dueChip(it)+(it.where?'<span>📍 '+esc(it.where)+'</span>':'')+(it.paper?'<span>🎀 '+esc(it.paper)+'</span>':'')+(it.store?'<span>🏬 '+esc(it.store)+'</span>':'')+rcptChip(it)+needsChips(it)+'</div></button>'+
     '<div class="gf-ia"><div class="gf-amt">'+amt+(P.length>1&&pid&&num(it.paid)!=null?'<small> ('+money(num(it.paid)/P.length)+' each)</small>':'')+'</div>'+(gfSelOn?'':'<div style="display:flex;gap:4px">'+
     (nx?'<button class="gf-tool gf-mini" title="Next: '+esc(st(nx)[1])+'" onclick="gfNext(\''+esc(it.id)+'\')">'+st(nx)[1].split(" ")[0]+'</button>':'')+
@@ -227,7 +228,7 @@ function gfShareSize(n){gfShF="shared";gfShN=+n||0;gfDraw();}
 // OWNSHARED_END
 
 // ── the Christmas views (slice 2) ─────────────────────────────────────────────
-const GF_VIEWS=[["people","👨‍👩‍👧 People"],["even","⚖️ Even"],["wrap","🎀 To wrap"],["where","📍 Where"],["coming","📦 Coming"],["shop","🛍 Shop"],["closet","🗄 Closet"],["eve","🌙 Eve"],["receipts","🧾 Receipts"]];
+const GF_VIEWS=[["people","👨‍👩‍👧 People"],["even","⚖️ Even"],["wrap","🎀 To wrap"],["where","📍 Where"],["coming","📦 Coming"],["shop","🛍 Shop"],["closet","🗄 Stash"],["eve","🌙 Eve"],["receipts","🧾 Receipts"]];
 const GF_SELECTABLE=["person","wrap","where","coming","shop","closet"];
 function viewNav(){
   return '<div class="gf-views">'+GF_VIEWS.map(v=>'<button class="gf-vw'+((gfView===v[0]||(gfView==="person"&&v[0]==="people"))?" on":"")+'" onclick="gfGo(\''+v[0]+'\')">'+v[1]+'</button>').join("")+'<button class="gf-vw add" onclick="gfRcptNew()">📸 Add a receipt</button>'+
@@ -273,7 +274,7 @@ function wrapView(o){
   return h;
 }
 function whereView(o){
-  const L=items(o.id).filter(it=>live(it)&&it.status!=="given"&&it.status!=="idea");
+  const L=items(o.id).filter(it=>live(it)&&it.status!=="given"&&it.status!=="idea").concat(held().filter(it=>it.status!=="idea"));   // STASH: held presents are still in the house
   let h=intro("Every present in the house, by where it's hidden.");
   if(!L.length)return h+'<div class="gf-card"><div class="gf-empty">Nothing in the house yet.</div></div>';
   groupBy(L,it=>it.where,"📍 Not written down").forEach(g=>{h+=listCard((g.key?"📍 ":"")+esc(g.label),g.items.length+"",g.items);});
@@ -295,14 +296,47 @@ function shopView(o){
   groupBy(L,it=>it.store,"🏬 No store yet").forEach(g=>{const sum=g.items.reduce((a,it)=>a+(num(it.plan)||0),0);h+=listCard((g.key?"🏬 ":"")+esc(g.label),sum?"plan "+money(sum):"",g.items);});
   return h;
 }
-function closetView(){
-  const L=items().filter(it=>live(it)&&!pidsOf(it).length);
+function closetView(o){
+  const H=held();   // STASH: on hold for a future holiday
+  let hh="";
+  if(H.length){hh+=intro("🗄 On hold for a future holiday — bought already, waiting for its day. Bring one into "+esc((o&&o.name)||"this holiday")+" and give it a person and section.");
+    hh+='<div class="gf-acts" style="margin-bottom:8px"><button class="gf-tool gf-save" onclick="gfBringIn(\''+H.map(it=>it.id).join(",")+'\')">Bring all '+H.length+' into '+esc((o&&o.name)||"this holiday")+'</button></div>';
+    hh+='<div class="gf-card"><div class="gf-ghd"><span>🗄 On hold</span><span class="gf-gsum">'+H.length+' · '+money(H.reduce((a,it)=>a+(num(it.paid)||0),0))+' paid</span></div><div class="gf-bd">'+
+      H.map(it=>itemRow(it,null).replace('<div class="gf-ia">','<div class="gf-ia"><button class="gf-tool gf-mini" onclick="gfBringIn(\''+esc(it.id)+'\')">Bring in</button>')).join("")+'</div></div>';}
+  const L=items().filter(it=>live(it)&&!pidsOf(it).length&&it.occ!==GF_HOLD);
+  if(!L.length&&H.length)return hh+'<div class="gf-acts"><button class="gf-tool" onclick="gfNewItem(null,null)">＋ Closet present</button></div>';
+  return hh+closetNoOne(L);
+}
+function closetNoOne(L){
   let h=intro("Bought ahead or saved for later, not for anyone yet. ↪ hands one to a person (or another occasion) when its day comes.");
   h+='<div class="gf-acts" style="margin-bottom:10px"><button class="gf-tool" onclick="gfNewItem(null,null)">＋ Closet present</button></div>';
   if(!L.length)return h+'<div class="gf-card"><div class="gf-empty">The gift closet is empty.</div></div>';
   groupBy(L,it=>(occ(it.occ)||{}).name,"").forEach(g=>{h+=listCard("🗄 "+esc(g.label),g.items.length+"",g.items);});
   return h;
 }
+// STASH_START (her ask + yes 2026-11-20: "every year … I end up buying a few extra things that I end up keeping to use for other holidays …
+// push send to, and it could be a different holiday, or it can even be like hold for another holiday, and then when a new holiday is
+// picked or created, then I could pull that out"): 📤 Send to… on a present = ↪ Move with the holiday picker first, plus
+// "🗄 Hold for a future holiday". A held present has occ "_hold" (+ heldFrom): it leaves every holiday's totals, counts, Even, Eve and
+// reminders, but stays on 📍 Where (it's still in the house). 🗄 Stash lists them with "Bring in"; a card on People offers them whenever
+// any are waiting. Bringing one in = ONE update {occ, sec} on that present (its person stays; the section becomes the holiday's first one
+// for that person when its old one isn't there). What she paid then counts toward the holiday it joins.
+const GF_HOLD="_hold";
+function held(){return items().filter(it=>it.occ===GF_HOLD&&live(it)).sort((a,b)=>(b.ts||0)-(a.ts||0));}
+function gfSendTo(id){gfMove(id);}
+function gfBringIn(csv){
+  const oid=curOcc(),o=occ(oid);if(!o)return;const S=secsOf(o),ids=String(csv||"").split(",").filter(Boolean);let n=0;
+  ids.forEach(id=>{const it=(gfData.items||{})[id];if(!it||it.occ!==GF_HOLD)return;
+    const sec=S.some(s=>s.id===it.sec)?it.sec:((S[0]&&S[0].id)||"");const up={occ:oid,sec,heldFrom:null};
+    it.occ=oid;it.sec=sec;delete it.heldFrom;write("gifts/items/"+id,up,"update");n++;});
+  if(n){log("🗄 Brought "+n+" present"+(n===1?"":"s")+" from the Stash into "+o.name);toast("✓ "+n+" in "+o.name+" — give "+(n===1?"it":"them")+" a person and section");}
+  gfDraw();
+}
+function stashCard(o){
+  const H=held();if(!H.length||!o||o.closed)return "";
+  return '<div class="gf-card"><div class="gf-bd" style="display:flex;align-items:center;gap:10px"><span style="font-size:22px">🗄</span><span style="flex:1;font-size:13px">You have <b>'+H.length+' present'+(H.length===1?'':'s')+' on hold</b> — bring any into '+esc(o.name)+'?</span><button class="gf-tool" onclick="gfGo(\'closet\')">Open Stash</button></div></div>';
+}
+// STASH_END
 function eveDone(oid,key){return !!(((gfData.eve||{})[oid]||{}).done||{})[key];}
 function eveLines(oid){const L=(((gfData.eve||{})[oid]||{}).lines)||{};return Object.keys(L).map(id=>Object.assign({id},L[id])).sort((a,b)=>(a.order||0)-(b.order||0));}
 function eveView(o){
@@ -370,9 +404,11 @@ function itemSheet(){
   return h+'</div>';
 }
 function moveSheet(){
-  const f=gfEdit.form;
-  return '<div class="gf-form"><div class="gf-sub wide">Pick who it\'s for now — everything else (what you paid, where it is, its status) goes with it.</div>'+forPicker()+
-    '<label class="gf-f wide"><span>Occasion</span><select onchange="gfSetDraw(\'occ\',this.value)">'+occs().map(o=>'<option value="'+esc(o.id)+'"'+(o.id===f.occ?" selected":"")+'>'+esc(o.name)+'</option>').join("")+'</select></label>'+secPicker(f.occ)+'</div>';
+  const f=gfEdit.form,held=f.occ===GF_HOLD;
+  return '<div class="gf-form"><div class="gf-sub wide">Who it\'s for and which holiday — everything else (what you paid, where it is, its status, its receipt) goes with it.</div>'+
+    '<label class="gf-f wide"><span>📤 Send to</span><select onchange="gfSetDraw(\'occ\',this.value)">'+occs().filter(o=>!o.closed||o.id===f.occ).map(o=>'<option value="'+esc(o.id)+'"'+(o.id===f.occ?" selected":"")+'>'+esc(o.name)+'</option>').join("")+
+    '<option value="'+GF_HOLD+'"'+(held?" selected":"")+'>🗄 Hold for a future holiday (Stash)</option></select></label>'+
+    (held?'<div class="gf-sub wide" style="margin:0">It leaves this holiday\'s totals and lists and waits in 🗄 Stash — still on 📍 Where. Bring it into any holiday later.</div>':forPicker()+secPicker(f.occ))+'</div>';
 }
 function personSheet(){
   const f=gfEdit.form,kid=/^k_/.test(f.id||"");
@@ -409,7 +445,7 @@ function sheetInner(){   // what's inside the pop-up (SHEETINPLACE redraws only 
   const del=id&&(gfEdit.kind==="item"||(gfEdit.kind==="person"&&!/^k_/.test(id))||gfEdit.kind==="group");
   return '<button class="gf-x" onclick="gfCancel()">✕</button><div style="font-weight:800;font-size:15px;margin-bottom:8px">'+esc(title)+'</div>'+S[1]()+
     '<div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap"><button class="gf-tool gf-save" onclick="gfSave()">Save</button><button class="gf-tool" onclick="gfCancel()">Cancel</button>'+
-    (gfEdit.kind==="item"&&id?'<button class="gf-tool" onclick="gfMove(\''+esc(id)+'\')">↪ Move to…</button>':'')+
+    (gfEdit.kind==="item"&&id?'<button class="gf-tool" onclick="gfMove(\''+esc(id)+'\')">↪ Move to…</button><button class="gf-tool" onclick="gfSendTo(\''+esc(id)+'\')">📤 Send to…</button>':'')+
     (del?'<button class="gf-tool" style="margin-left:auto;color:#b5394a;border-color:#fecaca" onclick="gfDelete()">Delete</button>':'')+'</div>';
 }
 
@@ -471,10 +507,11 @@ function gfSave(){
     node("settings").even=rec;write("gifts/settings/even",rec,"set");log("Even-steven: "+rec.pct+"% or "+rec.n+" gifts");
   }else if(kind==="move"){
     const it=gfData.items[id];if(!it){gfEdit=null;return gfDraw();}
-    const up={pids:f.pids.length?f.pids.slice():null,occ:f.occ,sec:f.sec||""};
+    const held=f.occ===GF_HOLD,up={pids:f.pids.length?f.pids.slice():null,occ:f.occ,sec:held?(it.sec||""):(f.sec||"")};   // STASH: held keeps its person + section until it's brought in
+    if(held&&f.was.occ!==GF_HOLD)up.heldFrom=f.was.occ;
     if(it.paper&&it.paper===defaultPaper(f.was.pids,f.was.sec,f.was.occ)){const np=defaultPaper(f.pids,f.sec,f.occ);if(np)up.paper=np;}   // auto paper follows the new person
     Object.keys(up).forEach(k=>{if(up[k]==null)delete it[k];else it[k]=up[k];});write("gifts/items/"+id,up,"update");
-    log("Moved: "+it.name+": "+names(f.was.pids)+" → "+names(f.pids)+(f.occ!==f.was.occ?" ("+((occ(f.occ)||{}).name||"")+")":""));
+    log(f.occ===GF_HOLD?"🗄 On hold: "+it.name+" (from "+((occ(f.was.occ)||{}).name||"")+")":"Moved: "+it.name+": "+names(f.was.pids)+" → "+names(f.pids)+(f.occ!==f.was.occ?" ("+((occ(f.occ)||{}).name||"")+")":""));
   }else if(kind==="person"){
     const pid=id||newId("people","p-"+slug(f.name));const kid=/^k_/.test(pid);
     const name=kid?f.name:String(f.name||"").trim();if(!name){toast("Needs a name");return;}
@@ -1277,7 +1314,7 @@ window.renderGifts=function(el,ah){
   grpOpen(el);   // GIFTS_GROUPS: a fresh visit opens on 👧 Kids
   gfRoot=el;gfAh=ah||"";gfListen();gfDraw();
 };
-Object.assign(window,{gfShareSet,gfShareSize,gfGo,gfSelToggle,gfPick,gfBulk,gfBulkIds,gfGather,gfEveTick,gfLineAdd,gfLineTick,gfLineDel,gfLinesCopy,gfEvenEdit,gfNeed,gfStartOcc,gfPickOcc,gfOpenPerson,gfBack,gfNewItem,gfEditItem,gfMove,gfSet,gfSetDraw,gfTogglePid,gfSecBudget,gfSecEdit,gfSecAdd,gfCancel,gfSave,gfDelete,gfNext,gfNewPerson,gfEditPerson,gfBudget,gfGroupBudget,gfNewGroup,gfNewOcc,gfOccEdit});
-window._gfTest={evenData,behind,evenSet,sel:()=>gfSel,selOn:()=>gfSelOn,data:()=>gfData,setData:d=>{gfData=d||{};gfLoaded=true;},people,groups,occs,secsOf,items,personTot,groupTot,occTot,left,share,curOcc,
+Object.assign(window,{gfSendTo,gfBringIn,gfShareSet,gfShareSize,gfGo,gfSelToggle,gfPick,gfBulk,gfBulkIds,gfGather,gfEveTick,gfLineAdd,gfLineTick,gfLineDel,gfLinesCopy,gfEvenEdit,gfNeed,gfStartOcc,gfPickOcc,gfOpenPerson,gfBack,gfNewItem,gfEditItem,gfMove,gfSet,gfSetDraw,gfTogglePid,gfSecBudget,gfSecEdit,gfSecAdd,gfCancel,gfSave,gfDelete,gfNext,gfNewPerson,gfEditPerson,gfBudget,gfGroupBudget,gfNewGroup,gfNewOcc,gfOccEdit});
+window._gfTest={held,evenData,behind,evenSet,sel:()=>gfSel,selOn:()=>gfSelOn,data:()=>gfData,setData:d=>{gfData=d||{};gfLoaded=true;},people,groups,occs,secsOf,items,personTot,groupTot,occTot,left,share,curOcc,
   setOcc:o=>{gfOcc=o;},view:()=>gfView,edit:()=>gfEdit,draw:gfDraw,setRoot:(el,ah)=>{gfRoot=el;gfAh=ah||"";},reset:()=>{gfGrp="kids";gfOcc=null;gfView="people";gfPid=null;gfEdit=null;gfRcOpen=null;gfOthersOpen=null;},rc:RC_TEST,oc:OCC_TEST,gr:GRP_TEST};
 })();
