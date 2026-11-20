@@ -1,5 +1,5 @@
 /*
- * Node tests for 🎁 Gifts — slice 1 (2026-11-20): gifts.js + its wiring in index.html (Mom's Day ▸ 💰 Budget).
+ * Node tests for 🎁 Gifts — slice 1 (2026-11-20; NOSANTA: Christmas starts with ⭐ Special, her word): gifts.js + its wiring in index.html (Mom's Day ▸ 💰 Budget).
  *   · people: the kids come from the family list (virtual until saved), her own people, groups (starter + hers), gone = hidden
  *   · Start Christmas = ONE set on gifts/occasions/<id> with the four sections (Santa · From Mom & Dad · Stocking · Eve) + a log
  *   · a present = ONE set on gifts/items/<id>; edits keep fields this sheet doesn't show; amounts numeric; needs a name
@@ -63,7 +63,8 @@ console.log("\n# start Christmas");
   ok("ONE set on gifts/occasions/christmas-2026 + one log line", s.length === 1 && s[0].path === "gifts/occasions/christmas-2026" && writes.filter(w => w.op === "push" && w.path === "gifts/log").length === 1, writes.map(w => w.path));
   const secs = s[0].val.secs;
   ok("dated Dec 25, kind christmas, her four sections in order", s[0].val.date === "2026-12-25" && s[0].val.kind === "christmas" &&
-    ["santa", "parents", "stocking", "eve"].every((k, i) => secs[k] && secs[k].order === i) && secs.stocking.name === "Stocking" && secs.eve.name === "Christmas Eve box");
+    ["special", "parents", "stocking", "eve"].every((k, i) => secs[k] && secs[k].order === i) && secs.special.name === "Special" && secs.special.emoji === "⭐" && secs.stocking.name === "Stocking" && secs.eve.name === "Christmas Eve box");
+  ok("NOSANTA: a new Christmas never says Santa anywhere (her ask 2026-11-20 — a kid may see the screen)", !/santa/i.test(JSON.stringify(s[0].val)) && !/santa/i.test(root.innerHTML));
   ok("the page now lists everyone by group", /Lincoln/.test(root.innerHTML) && /Kids/.test(root.innerHTML) && /Christmas 2026/.test(root.innerHTML));
 }
 
@@ -163,6 +164,9 @@ console.log("\n# people, budgets, groups, occasions");
   W.gfSet("name", "Lucy's birthday 2027"); W.gfSet("date", "2027-03-02"); W.gfSave();
   const s = writes.find(w => w.op === "set");
   ok("a birthday gets its own sections (Main · Party · Small)", s.path === "gifts/occasions/lucy-s-birthday-2027" && s.val.secs.main && s.val.secs.party && s.val.secs.small);
+  T.setOcc("christmas-2026"); T.setRoot(root, "<nav/>"); W.gfOccEdit();
+  ok("OCCFIX: ✏️ an occasion shows its Sections (rename a section there) + Done, and no Kind picker", /<span>Sections<\/span>/.test(root.innerHTML) && /Done — move it/.test(root.innerHTML) && !/<span>Kind<\/span>/.test(root.innerHTML) && /value="Santa"/.test(root.innerHTML));
+  W.gfCancel(); W.gfNewOcc(); ok("…a NEW occasion shows Kind and no Sections", /<span>Kind<\/span>/.test(root.innerHTML) && !/<span>Sections<\/span>/.test(root.innerHTML)); W.gfCancel();
   writes.length = 0; T.setOcc("christmas-2026"); W.gfOccEdit(); W.gfSecAdd(); T.edit().form.secs[4].name = "Sibling gifts"; W.gfSet("closed", true); W.gfSave();
   ok("✏️ occasion: ＋ Section writes only the new section; Done → closed", writes.some(w => w.path === "gifts/occasions/christmas-2026/secs/sibling-gifts" && w.val.order === 4) &&
     writes.filter(w => /\/secs\//.test(w.path)).length === 1 && writes.find(w => w.path === "gifts/occasions/christmas-2026").val.closed === true);
