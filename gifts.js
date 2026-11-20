@@ -377,14 +377,15 @@ function occSheet(){   // OCCFIX (2026-11-20): editing an occasion shows its Sec
   return h+'</div>';
 }
 const SHEETS={even:["⚖️ When is a kid behind?",evenSheet],item:["Present",itemSheet],move:["↪ Move to…",moveSheet],person:["Person",personSheet],budget:["💲 Budget",budgetSheet],group:["Group",groupSheet],occ:["Occasion",occSheet],rcpt:["Receipt",rcptSheet]};
-function sheet(){
-  if(!gfEdit)return "";const S=SHEETS[gfEdit.kind];const id=gfEdit.id;
+function sheet(){return gfEdit?'<div id="gf-sheet" onclick="if(event.target.id===\'gf-sheet\')gfCancel()"><div class="gf-sh">'+sheetInner()+'</div></div>':"";}
+function sheetInner(){   // what's inside the pop-up (SHEETINPLACE redraws only this when the same pop-up stays open)
+  const S=SHEETS[gfEdit.kind];const id=gfEdit.id;
   const title=gfEdit.kind==="move"||gfEdit.kind==="budget"||gfEdit.kind==="even"?S[0]:(id?"✏️ "+S[0]:"➕ New "+S[0].toLowerCase());
   const del=id&&(gfEdit.kind==="item"||(gfEdit.kind==="person"&&!/^k_/.test(id))||gfEdit.kind==="group");
-  return '<div id="gf-sheet" onclick="if(event.target.id===\'gf-sheet\')gfCancel()"><div class="gf-sh"><button class="gf-x" onclick="gfCancel()">✕</button><div style="font-weight:800;font-size:15px;margin-bottom:8px">'+esc(title)+'</div>'+S[1]()+
+  return '<button class="gf-x" onclick="gfCancel()">✕</button><div style="font-weight:800;font-size:15px;margin-bottom:8px">'+esc(title)+'</div>'+S[1]()+
     '<div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap"><button class="gf-tool gf-save" onclick="gfSave()">Save</button><button class="gf-tool" onclick="gfCancel()">Cancel</button>'+
     (gfEdit.kind==="item"&&id?'<button class="gf-tool" onclick="gfMove(\''+esc(id)+'\')">↪ Move to…</button>':'')+
-    (del?'<button class="gf-tool" style="margin-left:auto;color:#b5394a;border-color:#fecaca" onclick="gfDelete()">Delete</button>':'')+'</div></div></div>';
+    (del?'<button class="gf-tool" style="margin-left:auto;color:#b5394a;border-color:#fecaca" onclick="gfDelete()">Delete</button>':'')+'</div>';
 }
 
 // ── actions ──────────────────────────────────────────────────────────────────
@@ -938,9 +939,20 @@ function gfDraw(){
   // SHEETSCROLL (her report 2026-11-20, adding a receipt: "every time I click something, it jumps it back up to the top"): every tap
   // redraws the page AND the open pop-up, and a fresh pop-up starts scrolled to the top. Keep the pop-up's place when the SAME pop-up
   // is still open after the redraw (a different one — ↪ Move from a present, say — still starts at the top).
+  // SHEETINPLACE (her report 2026-11-20, after SHEETSCROLL went live: "it was fixed and now not working again" — tapping ✕ Not a gift
+  // on a receipt still bounced to the top): putting the scroll back after rebuilding the pop-up isn't enough on every browser (a
+  // phone/iPad browser can reset it after the rebuild). So while the SAME pop-up stays open, the pop-up itself is never rebuilt:
+  // the page behind it and the pop-up's insides are redrawn in place, and the pop-up box — and its scroll — simply stays.
   const shKey=gfEdit?gfEdit.kind+":"+(gfEdit.id||""):"";let shTop=0;
+  const page=gfAh+'<div class="gf-wrap"><div class="gf-title">🎁 Gifts</div>'+body+'</div>'+selBar();
+  let pageEl=null,shEl=null;try{pageEl=gfRoot.querySelector&&gfRoot.querySelector("#gf-page");shEl=gfRoot.querySelector&&gfRoot.querySelector("#gf-sheet .gf-sh");}catch(e){}
+  if(gfEdit&&shKey&&shKey===gfShKey&&pageEl&&shEl){
+    const keep=shEl.scrollTop||0;pageEl.innerHTML=page;shEl.innerHTML=sheetInner();
+    if((shEl.scrollTop||0)!==keep){try{shEl.scrollTop=keep;}catch(e){}}
+    return;
+  }
   try{const old=document.querySelector&&document.querySelector(".gf-sh");if(old&&shKey&&shKey===gfShKey)shTop=old.scrollTop||0;}catch(e){}
-  gfRoot.innerHTML=gfAh+'<div class="gf-wrap"><div class="gf-title">🎁 Gifts</div>'+body+'</div>'+selBar()+sheet();
+  gfRoot.innerHTML='<div id="gf-page">'+page+'</div>'+sheet();
   gfShKey=shKey;
   if(shTop){try{const nw=document.querySelector&&document.querySelector(".gf-sh");if(nw)nw.scrollTop=shTop;}catch(e){}}
 }
