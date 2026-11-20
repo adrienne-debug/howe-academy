@@ -94,7 +94,7 @@ console.log("\n── the wiring ──");
 ok("🔢 Book sprints pill on the Sprint tab", /opt\("book","\\u\{1F522\} Book sprints"\)/.test(src));
 ok("the book panel renders before the phonogram gate", /if\(sprintSource==="book"\) return h\+buildSprintBookHtml\(color\);/.test(src));
 ok("a Math Sprints card opens today's sprint", /msIsCard\(t\)&&typeof msState==="function"&&msState\(t\.who\)/.test(src) && /wbRow\+eicRow\+rvRow\+msRow\+/.test(src));
-ok("mathSprints and library/scans are listened to", /db\.ref\("mathSprints"\)\.on\("value"/.test(src) && /db\.ref\("library\/scans"\)\.on\("value"/.test(src));
+ok("mathSprints and library/scans are listened to", /db\.ref\("mathSprints"\)\.on\("value"/.test(src) && /db\.ref\("library\/scans\/"\+bookId\)\.on\("value"/.test(src));   // SCANLAZY (2026-11-19): one book at a time, not the whole node
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
