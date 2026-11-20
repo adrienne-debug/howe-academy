@@ -111,7 +111,7 @@ const DROPS = [["kid_a", "a_trash", 0, 2], ["kid_a", "a_mirror", 1, 3], ["kid_a"
   ["kid_c", "c_plants", 1, 2], ["kid_c", "c_plants", 2, 4], ["kid_c", "c_plants", 8, 9], ["kid_c", "c_plants", 9, 11],
   ["kid_b", "b_blinds", 1, 6], ["kid_b", "b_tub", 2, 7], ["kid_b", "b_cage", 3, 6], ["kid_b", "b_bikes", 5, 8], ["kid_b", "b_cage", 10, 13]];
 const B1 = {};
-{ const { w, A, B, C } = await mkWorld("preview"); const wkOf = {}; const seen = {}, html = {}, twoOf = [], mom = {}, kidPop = {}, holds = {}; let house3 = "";
+{ const { w, A, B, C } = await mkWorld("preview"); const wkOf = {}; const seen = {}, html = {}, twoOf = [], mom = {}, kidPop = {}, holds = {}, card = {}; let house3 = "";
   for (let n = 0; n < 14; n++) {
     await go(w, n, 7, 0); wkOf[n] = B.run("activeWk()");
     // two kid devices draw in the same moment (neither has heard the other yet), then again after they have
@@ -122,6 +122,7 @@ const B1 = {};
     html[n] = { kid_a: a, kid_b: b, kid_c: c }; if (n === 3) house3 = B.run("hhCleanPanelHTML('kid_a',_todayStr(),_todayDay,'House')"); holds[n] = A.run("(function(){ day=_todayDay; const s=rtStepsFor('chores','kid_a',false,day), i=s.findIndex(function(x){ return x.label==='Vacuum the den'; }); return rtDueOrLate('chores','kid_a',day,i,s[i]); })()");
     Object.keys(EXPECT).forEach(id => { const h = id[0] === "a" ? a : id[0] === "b" ? b : c; const k = onList(h, id); (seen[id] = seen[id] || []); if (k) seen[id].push(n); if (k > 1) twoOf.push([id, n, k]); });
     if (hA[0] !== hA[1] || hB[0] !== hB[1]) twoOf.push(["devices disagree", n]);
+    card[n] = { mom: A.run("mdCardKidsToday(_todayDay,true)"), kid: B.run("mdCardKidsToday(_todayDay,true)") };
     mom[n] = { kid_a: pop(A, "kid_a", "chores"), kid_b: pop(A, "kid_b", "chores"), kid_c: pop(A, "kid_c", "chores") }; kidPop[n] = { kid_a: pop(B, "kid_a", "chores"), kid_b: pop(B, "kid_b", "chores") };
     teeth(B); await w.flush();
   }
@@ -160,6 +161,10 @@ const B1 = {};
   ok("…the note is grey and plain (no red, no \"late\")", !RED.test(mom[2].kid_a) && !/late/.test(mom[2].kid_a));
   ok("…a chore on its own day has no note (Shine the mirror on Friday: Tuesday's turn has already dropped)", /Shine the mirror \+4 ⭐<\/span>/.test(mom[4].kid_a) && mom[4].kid_a.indexOf("from Tue") < 0);
   ok("…never past its next day: Water the plants (Tue + Wed) has no \"from Tue\" on Wednesday — Tuesday's dropped when Wednesday came; Thursday says \"from Wed · day 1 of 1\"", /Water the plants \+3 ⭐<\/span>/.test(mom[2].kid_c) && /Water the plants \+3 ⭐<span[^>]*>from Wed · day 1 of 1</.test(mom[3].kid_c), [mom[2].kid_c.slice(0, 700)]);
+  const line = (n, who) => ((card[n][who].match(/🧹 [^<]*Wipe the table[^<]*/) || [""])[0]).replace(/&middot;|&#183;/g, "·");
+  ok("Mom's 🧒 Kids today card, the chore-name line: \"Vacuum the den (from Tue · day 1 of 2)\" Wed, \"(from Tue · day 2 of 2)\" Thu, in place of \"(N days late)\"", line(2, "mom").indexOf("Vacuum the den (from Tue · day 1 of 2)") >= 0 && line(3, "mom").indexOf("Vacuum the den (from Tue · day 2 of 2)") >= 0 && !/Vacuum the den \(\d day/.test(line(2, "mom") + line(3, "mom")), [line(2, "mom"), line(3, "mom")]);
+  ok("…the 3-a-week row keeps \"(1 day late)\" there: \"Empty the trash (1 day late)\" Tue and Thu", line(1, "mom").indexOf("Empty the trash (1 day late)") >= 0 && line(3, "mom").indexOf("Empty the trash (1 day late)") >= 0, [line(1, "mom")]);
+  ok("…the same card drawn on a kid's device: no note on the waiting row", line(2, "kid").indexOf("Vacuum the den") >= 0 && line(2, "kid").indexOf("from ") < 0, line(2, "kid"));
   const kp = Object.keys(kidPop).map(n => kidPop[n].kid_a + kidPop[n].kid_b).join("");
   const kpPlain = kp.replace(/Empty the trash \+3 ⭐<span class="rt-late">\d days? late<\/span>/g, "");
   ok("a kid's device opening the same pop-up: no note, and no \"late\" or red but the 3-a-week row's own tag (kids too, as before)", kp.indexOf("from ") < 0 && !/late/.test(kpPlain) && !RED.test(kpPlain) && /Vacuum the den/.test(kidPop[2].kid_a) && /Empty the trash \+3 ⭐<span class="rt-late">1 day late<\/span>/.test(kidPop[1].kid_a));
