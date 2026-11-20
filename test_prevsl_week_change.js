@@ -8,7 +8,8 @@
  *   1 · a device left open across the week change: no "— not done" line, no late or waiting row from the stale week — and the app
  *       before this fix (git show 6b3fe607:index.html) did file them (so the check means something);
  *   2 · after last week's read lands: the rule as normal — a Saturday chore really missed waits Sun and Mon, drops Tuesday, one line;
- *   3 · a device that reloads on Sunday: every draw and every write = the app before, byte for byte.
+ *   3 · a device that reloads on Sunday: every draw and every write = the app before, byte for byte;
+ *   4 · a read for last week still in flight when the week moves on again never lands as "last week" (the newer answer first, then the older one late).
  *   run: node test_prevsl_week_change.js        HOUSE_INDEX=<a copy> → the branch side (a mutation check)
  */
 "use strict";
@@ -76,6 +77,24 @@ if (BASE) { const N = await week(undefined, { reload: true, skip: ["Wash the bik
   ok("every write and the whole database = the app before", N.writes === O.writes && N.tree === O.tree);
   ok("(sanity) the missed chore's line was filed on both", N.miss.length === 1 && J(N.miss) === J(O.miss), N.miss);
 } else console.log("  (skipped: the app before)");
+
+console.log("\n── 4 · a read for last week still in flight when the week moves on again never lands as \"last week\" ──");
+{ const w = await W.world({ household: household() }); const B = w.boot("B", "devB"); await w.flush();
+  // hold every read of a week's check-offs (week<N>/sl) on this device until the test lets it go
+  B.run("(function(){ globalThis.__held=[]; const r0=db.ref; db.ref=function(p){ const r=r0.call(db,p); if(/^week\\d+\\/sl$/.test(String(p))){ const o=r.once; r.once=function(ev,cb){ __held.push({p:String(p),go:function(){ o.call(r,ev,cb); }}); }; } return r; }; })()");
+  const release = p => B.run("(function(){ const i=__held.findIndex(function(h){ return h.p===" + J(p) + "; }); if(i<0) return false; const h=__held.splice(i,1)[0]; h.go(); return true; })()");
+  for (let n = 0; n < 13; n++) { await go(w, n, 7); draw(B, "kid_a"); draw(B, "kid_b"); await w.flush(); await go(w, n, 17); doAll(B, n === 12 ? ["Wash the bikes"] : []); await w.flush(); draw(B, "kid_a"); draw(B, "kid_b"); await w.flush(); }
+  const wk2 = B.run("__held.some(function(h){ return h.p==='week2/sl'; })");
+  await go(w, 13, 7); draw(B, "kid_b"); await w.flush();   // Sunday 11/29: the week moves on again; week3's read is asked for (held too)
+  const wk3 = B.run("__held.some(function(h){ return h.p==='week3/sl'; })");
+  ok("(set-up) the read for week2 (asked on Sun 11/22) is still in flight when the week moves on again and week3's is asked", wk2 === true && wk3 === true);
+  release("week3/sl"); await w.flush(); release("week2/sl"); await w.flush();   // the newer answer first, then the older one, late
+  const keys = JSON.parse(B.run("JSON.stringify(Object.keys(prevSlState||{}))"));
+  ok("last week's check-offs are week3's only: the late answer for week2 is ignored", keys.length > 0 && keys.every(k => /^week3_/.test(k)), keys.slice(0, 4));
+  const m = w.mark(); const a = draw(B, "kid_a"), b = draw(B, "kid_b"); await w.flush();
+  ok("…so the lists show no row from a week of done chores (only today's dailies) and the really missed Wash the bikes, waiting", rows(a).every(r => /Wipe the table/.test(r)) && rows(b).filter(r => /Wash the bikes/.test(r)).length === 1 && rows(b).every(r => /Wash the bikes|Rinse the sink/.test(r)), [rows(a), rows(b)]);
+  ok("…and no \"— not done\" is written for a chore that was done", !w.since(m).some(l => /miss_/.test(l.path || "")) && misses(w).length === 0, misses(w));
+}
 
 if (BASE) try { fs.unlinkSync(BASE); } catch (e) {}
 console.log("\n" + pass + " passed, " + fail + " failed");
