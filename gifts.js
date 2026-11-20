@@ -609,8 +609,8 @@ window._gfWishTest={setWishes:d=>{gfWishes=d||{};gfWishLoaded=true;},wishes:()=>
 const RC_MAX=6, RC_PDF_MAX=4*1024*1024;
 let gfRcOpen=null;const gfPhotos={};   // the receipt open in the list · photos read so far this visit (rid → [urls] | "loading" | "err")
 const RC_PROMPT='Read this receipt or online order (photos of ONE paper receipt, a screenshot, or a PDF such as an Amazon order page). The items are holiday presents. Reply with ONLY strict JSON, no prose:\n'
-  +'{"store":"store name","date":"YYYY-MM-DD or null","orderNo":"order number as printed, or null","total":number or null,"returnBy":"YYYY-MM-DD or null","tax":number or null,"lines":[{"text":"the item as printed","name":"a short plain name for it (a few words)","qty":whole number,"price":number,"taxed":true or false or null,"idea":"the exact idea name from her list below, or null"}]}\n'
-  +'price = what was actually paid for that line after any discount — always the LINE total (2 @ 9.99 = 19.98). qty = how many of the item that line is (2 @ 9.99 → 2; 1 when no count is printed). tax = the sales tax total printed on it (null if none is shown). taxed = whether that line is marked as taxed (stores print a letter such as T, X or A beside taxed lines; false when it is marked not taxed; null when the receipt does not show). returnBy = only a return-by date or the end of a return window that is PRINTED on it; never work one out yourself. '
+  +'{"store":"store name","date":"YYYY-MM-DD or null","orderNo":"order number as printed, or null","total":number or null,"returnBy":"YYYY-MM-DD or null","subtotal":number or null,"discount":number or null,"tax":number or null,"lines":[{"text":"the item as printed","name":"a short plain name for it (a few words)","qty":whole number,"price":number,"taxed":true or false or null,"idea":"the exact idea name from her list below, or null"}]}\n'
+  +'price = what was paid for that line after any discount printed ON THAT LINE — always the LINE total for all of its items: when it prints "N @ $X", X is the price of ONE, so price = N × X (2 @ 9.99 = 19.98; 3 @ $30.99 = 92.97). A crossed-out or "reference" price is never the price. subtotal = the items subtotal printed (null if none). discount = the total of the ORDER-LEVEL discounts printed below the items — coupons, promo codes, "Prime discount", savings, rewards — as a POSITIVE number (90.46 for "-$90.46"); never a discount already taken off a line, never a gift card or payment; null if none. qty = how many of the item that line is (2 @ 9.99 → 2; 1 when no count is printed). tax = the sales tax total printed on it (null if none is shown). taxed = whether that line is marked as taxed (stores print a letter such as T, X or A beside taxed lines; false when it is marked not taxed; null when the receipt does not show). returnBy = only a return-by date or the end of a return window that is PRINTED on it; never work one out yourself. '
   +'Several photos are one receipt from top to bottom and neighbouring photos may overlap: list each line ONCE. Skip tax, subtotal, total, shipping, bag fees, payment and change lines. Never invent lines or prices.';
 function claudeKey(){try{return (typeof kitCapKey==="function"&&kitCapKey())||"";}catch(e){return "";}}
 function firstJson(txt){   // the first complete top-level {…} (the grocery reader's rule, GR_RCPTLONG) — null when it never closed
@@ -638,8 +638,21 @@ function rcRow(oid,t,p){const S=secsOf(occ(oid));return {t:t||"",p:p==null?"":St
 //    only carry their own share; lines marked not taxed get none (when the receipt marks none either way, every line is taxed).
 //    The shares are worked out in whole cents (leftover cents to the lines nearest the next cent), so they add up to the tax exactly.
 //  · a present's paid = its price + its tax share (what it really cost — her pick 2026-11-20), and its tax share is kept on it as tax.
-function rcTaxShares(rows,tax){
-  const T=Math.round((num(tax)||0)*100),P=rows.map(r=>Math.round((num(r.p)||0)*100)),out=rows.map(()=>0);if(!T)return out;
+// RCPTDISC (her report 2026-11-20, a Woot order: "it didnt account for the discount and accounted for the price before the discount
+// which was significant" — a −$90.46 "Prime discount" below the items was skipped, and "3 @ $30.99" was read as $30.99 for all three):
+//  · Claude also reads the items subtotal and the order-level discount (coupons, promos, "Prime discount" — never a gift card).
+//  · the discount is shared across the lines by price, in whole cents that add up exactly (the tax rule's way), and the TAX is then
+//    shared on what each line cost after its discount;  a present's paid = price − its discount share + its tax share.
+//  · "N @ $X" read as $X for the whole line: when the prices only add up to the printed subtotal as each × N, they are each × N.
+//  · the check screen adds it up — items − discount + tax — against the receipt's total: ✓ when it matches, ⚠ when it doesn't.
+function rcShares(rows,amt,on,base){   // share a cents amount across rows by weight (base cents), leftover cents to the nearest-next
+  const T=Math.round((num(amt)||0)*100),out=rows.map(()=>0);if(!T)return out;const sum=base.reduce((a,b,i)=>a+(on[i]?b:0),0);if(!sum)return out;
+  const fr=[];let given=0;rows.forEach((r,i)=>{if(!on[i])return;const x=T*base[i]/sum;out[i]=Math.floor(x);given+=out[i];fr.push([x-out[i],i]);});
+  fr.sort((a,b)=>b[0]-a[0]||a[1]-b[1]).slice(0,T-given).forEach(z=>{out[z[1]]++;});return out.map(c=>c/100);
+}
+function rcDiscShares(rows,disc){const P=rows.map(r=>Math.round((num(r.p)||0)*100));return rcShares(rows,disc,P.map(p=>p>0),P);}
+function rcTaxShares(rows,tax,disc){
+  const D=rcDiscShares(rows,disc),T=Math.round((num(tax)||0)*100),P=rows.map((r,i)=>Math.max(0,Math.round((num(r.p)||0)*100)-Math.round(D[i]*100))),out=rows.map(()=>0);if(!T)return out;
   const marked=rows.some(r=>r.taxed===true||r.taxed===false),on=rows.map((r,i)=>P[i]>0&&(marked?r.taxed!==false:true));
   const base=P.reduce((a,p,i)=>a+(on[i]?p:0),0);if(!base)return out;
   const fr=[];let given=0;rows.forEach((r,i)=>{if(!on[i])return;const x=T*P[i]/base;out[i]=Math.floor(x);given+=out[i];fr.push([x-out[i],i]);});
@@ -653,10 +666,14 @@ function rcptLoad(f,d,oid){   // Claude's answer → the form; what she already 
   if(!String(f.orderNo||"").trim()&&d.orderNo)f.orderNo=String(d.orderNo).slice(0,60);
   if(num(f.total)==null&&num(d.total)!=null)f.total=String(num(d.total));if(!f.returnBy&&isoOk(d.returnBy))f.returnBy=isoOk(d.returnBy);
   if(num(f.tax)==null&&num(d.tax)!=null)f.tax=String(num(d.tax));   // RCPTTAX
+  if(num(f.discount)==null&&num(d.discount)!=null&&num(d.discount)>0)f.discount=String(num(d.discount));   // RCPTDISC
+  const L0=(Array.isArray(d.lines)?d.lines:[]).filter(l=>l&&(l.name||l.text)),sub=num(d.subtotal);   // RCPTDISC: "3 @ $30.99" read as the line → each × 3
+  const qOf=l=>Math.max(1,Math.min(12,Math.round(+l.qty)||1)),s1=L0.reduce((a,l)=>a+(num(l.price)||0),0),s2=L0.reduce((a,l)=>a+(num(l.price)||0)*qOf(l),0);
+  const each=sub!=null&&Math.abs(s1-sub)>0.015&&Math.abs(s2-sub)<=0.02;
   if(!f.statusSet)f.status=f.orderNo?"ordered":"here";
   const used=[];f.rows=[];(Array.isArray(d.lines)?d.lines:[]).filter(l=>l&&(l.name||l.text)).forEach(l=>{
     const nm=String(l.name||l.text).trim().slice(0,140),q=Math.max(1,Math.min(12,Math.round(+l.qty)||1)),tx=l.taxed===true||l.taxed===false?l.taxed:null;   // RCPTTAX: ×3 → three rows
-    const prices=num(l.price)==null?Array(q).fill(null):rcSplit(l.price,q);
+    const prices=num(l.price)==null?Array(q).fill(null):(each?Array(q).fill(num(l.price)):rcSplit(l.price,q));
     prices.forEach((p,k)=>{const r=rcRow(oid,nm,p);r.taxed=tx;if(q>1)r.of=(k+1)+" of "+q;
       const iid=matchIdea((l.text||"")+" "+(l.name||""),k?null:l.idea,oid,used);if(iid){used.push(iid);r.idea=iid;r.useIdea=true;}
       f.rows.push(r);});});
@@ -705,7 +722,7 @@ async function gfRcptPick(input){
 }
 function rcF(){return gfEdit&&gfEdit.kind==="rcpt"?gfEdit.form:null;}
 function rcR(i){const f=rcF();return f&&f.rows[i];}
-function gfRcptNew(){if(!curOcc())return;gfEdit={kind:"rcpt",id:null,form:{files:[],store:"",iso:today(),orderNo:"",total:"",tax:"",returnBy:"",status:"here",statusSet:false,rows:[],read:false,busy:false,adding:false,msg:""}};gfDraw();}
+function gfRcptNew(){if(!curOcc())return;gfEdit={kind:"rcpt",id:null,form:{files:[],store:"",iso:today(),orderNo:"",total:"",tax:"",discount:"",returnBy:"",status:"here",statusSet:false,rows:[],read:false,busy:false,adding:false,msg:""}};gfDraw();}
 function gfRcptDrop(i){const f=rcF();if(!f)return;f.files.splice(i,1);gfDraw();}
 function gfRcSet(i,k,v){const r=rcR(i);if(r)r[k]=v;}
 function gfRcPid(i,pid){const r=rcR(i);if(!r)return;r.nog=false;const j=r.pids.indexOf(pid);if(j>=0)r.pids.splice(j,1);else r.pids.push(pid);gfDraw();}
@@ -727,17 +744,20 @@ function rcptSheet(){
   h+=key?'<div class="gf-f wide"><button class="gf-tool gf-save" style="align-self:flex-start"'+(f.busy||!f.files.length?' disabled':'')+' onclick="gfRcptRead()">'+(f.busy?'⏳ Reading…':'✨ Read it')+'</button></div>'
     :'<div class="gf-sub wide" style="color:#92400e;margin:0">No Claude key on this device, so it can\'t read the receipt — type the total (and the presents, if you like) below. The photos still save as proof for returns.</div>';
   if(f.msg)h+='<div class="gf-sub wide" style="margin:0;font-weight:700;color:'+(/^✓/.test(f.msg)?"#15803d":"#b45309")+'">'+esc(f.msg)+'</div>';
-  h+=field("store","Store","e.g. Target")+field("iso","Date","","date")+field("total","Total $","","money")+field("tax","Tax $","","money")+field("orderNo","Order #","optional")+field("returnBy","⏰ Return by","","date");
+  h+=field("store","Store","e.g. Target")+field("iso","Date","","date")+field("total","Total $","","money")+field("tax","Tax $","","money")+field("discount","Order discount $","","money")+field("orderNo","Order #","optional")+field("returnBy","⏰ Return by","","date");
   if(f.rows.length){
     h+='<div class="gf-f wide"><span>These presents are…</span><div class="gf-picks">'+[["ordered","🛒 On the way"],["here","📦 Here"]].map(s=>'<button class="gf-pick'+(f.status===s[0]?" on":"")+'" onclick="gfRcStatus(\''+s[0]+'\')">'+s[1]+'</button>').join("")+'</div></div>';
     h+='<div class="gf-sub wide" style="margin:4px 0 0">Each line: who it\'s for (tap two or more = 🤝 shared), the section — or 🗄 no one yet, or ✕ not a gift.</div>';
   }
-  const shares=rcTaxShares(f.rows,f.tax),anyTax=num(f.tax)>0;   // RCPTTAX
+  const shares=rcTaxShares(f.rows,f.tax,f.discount),anyTax=num(f.tax)>0,dsh=rcDiscShares(f.rows,f.discount),anyDisc=num(f.discount)>0;   // RCPTTAX · RCPTDISC
+  if(f.rows.length){const it=f.rows.reduce((a,r)=>a+(num(r.p)||0),0),calc=Math.round((it-(num(f.discount)||0)+(num(f.tax)||0))*100)/100,tot=num(f.total);   // RCPTDISC: does it add up?
+    const okSum=tot==null||Math.abs(calc-tot)<=0.02;
+    h+='<div class="gf-sub wide" style="margin:2px 0 0;font-weight:700;color:'+(okSum?'#15803d':'#b45309')+'">'+(okSum?'✓ ':'⚠ ')+'Items '+money(it)+(anyDisc?' − '+money(num(f.discount))+' off':'')+(anyTax?' + '+money(num(f.tax))+' tax':'')+' = '+money(calc)+(tot!=null?(okSum?' — matches the receipt':' — the receipt says '+money(tot)+'. Check the prices, the discount and the tax before you save.'):'')+'</div>';}
   f.rows.forEach((r,i)=>{
     const idea=r.idea&&(gfData.items||{})[r.idea];
     h+='<div class="gf-rcrow'+(r.nog?" nog":"")+'"><div style="display:flex;gap:6px;align-items:center"><input class="gf-in" value="'+esc(r.t)+'" placeholder="What is it?" oninput="gfRcSet('+i+',\'t\',this.value)">'+
       '<input class="gf-in" style="flex:none;width:76px" inputmode="decimal" value="'+esc(r.p)+'" placeholder="$" oninput="gfRcSet('+i+',\'p\',this.value)" onchange="gfRcRedraw()"><button class="gf-tool gf-mini" title="Take this line off" onclick="gfRcDel('+i+')">✕</button></div>';
-    if(r.of||anyTax)h+='<div class="gf-im" style="margin-top:0">'+(r.of?chip("×"+r.of.split(" of ")[1]+" · "+r.of,"#0e7490"):'')+(anyTax?'<button class="gf-pick" style="padding:2px 9px;font-size:11px" onclick="gfRcTaxed('+i+')">'+(shares[i]?'+ '+money(shares[i])+' tax':'no tax')+'</button>':'')+'</div>';   // RCPTTAX
+    if(r.of||anyTax||anyDisc)h+='<div class="gf-im" style="margin-top:0">'+(r.of?chip("×"+r.of.split(" of ")[1]+" · "+r.of,"#0e7490"):'')+(anyDisc&&dsh[i]?chip("− "+money(dsh[i])+" off","#15803d"):'')+(anyTax?'<button class="gf-pick" style="padding:2px 9px;font-size:11px" onclick="gfRcTaxed('+i+')">'+(shares[i]?'+ '+money(shares[i])+' tax':'no tax')+'</button>':'')+'</div>';   // RCPTTAX
     if(idea)h+='<button class="gf-tick'+(r.useIdea?" on":"")+'" onclick="gfRcUseIdea('+i+')"><span class="gf-box">'+(r.useIdea?'✓':'')+'</span><span>💭 That\'s your idea <b>'+esc(idea.name)+'</b>'+(pidsOf(idea).length?' ('+esc(names(pidsOf(idea)))+')':'')+' — mark it bought</span></button>';
     if(!(r.useIdea&&idea)){
       h+='<div class="gf-picks">';groups().forEach(g=>{people().filter(p=>(p.group||"other")===g.id).forEach(p=>{const on=r.pids.indexOf(p.id)>=0;
@@ -758,16 +778,16 @@ function rcptSave(){   // photos (own node) → the receipt (ONE set) → one se
   if(!f.files.length&&!rows.length&&num(f.total)==null){toast("Add a photo or type the total");return false;}
   const rid=uid(),store=String(f.store||"").trim().slice(0,60),ord=String(f.orderNo||"").trim().slice(0,60),ret=isoOk(f.returnBy),status=f.status==="ordered"?"ordered":"here";
   if(f.files.length){const urls=f.files.map(x=>x.url);gfPhotos[rid]=urls;write("giftPhotos/"+rid,urls,"set");}
-  const lines=[],todo=[],shares=rcTaxShares(rows,f.tax),tax=num(f.tax);let made=0,bought=0;   // RCPTTAX: each line's share of the tax
-  rows.forEach((r,ri)=>{const t=String(r.t||"").trim().slice(0,140),p=num(r.p),sh=shares[ri]||0,line={t};if(p!=null)line.p=p;if(sh)line.tax=sh;
-    if(!r.nog){const fill={status,rcpt:rid};if(p!=null)fill.paid=Math.round((p+sh)*100)/100;if(sh)fill.tax=sh;if(store)fill.store=store;if(ret)fill.returnBy=ret;if(ord)fill.orderNo=ord;
+  const lines=[],todo=[],shares=rcTaxShares(rows,f.tax,f.discount),dsh=rcDiscShares(rows,f.discount),tax=num(f.tax),disc=num(f.discount)>0?num(f.discount):null;let made=0,bought=0;   // RCPTTAX · RCPTDISC
+  rows.forEach((r,ri)=>{const t=String(r.t||"").trim().slice(0,140),p=num(r.p),sh=shares[ri]||0,ds=dsh[ri]||0,line={t};if(p!=null)line.p=p;if(ds)line.disc=ds;if(sh)line.tax=sh;
+    if(!r.nog){const fill={status,rcpt:rid};if(p!=null)fill.paid=Math.round((p-ds+sh)*100)/100;if(ds)fill.disc=ds;if(sh)fill.tax=sh;if(store)fill.store=store;if(ret)fill.returnBy=ret;if(ord)fill.orderNo=ord;
       const idea=r.useIdea&&r.idea&&(gfData.items||{})[r.idea];
       if(idea){line.item=r.idea;todo.push(()=>{Object.assign(idea,fill);write("gifts/items/"+r.idea,fill,"update");});bought++;}
       else{const iid=uid()+lines.length,pids=r.pids.slice(),rec=Object.assign({occ:oid,sec:r.sec||"",name:t,ts:Date.now()},fill);if(pids.length)rec.pids=pids;
         const pp=defaultPaper(pids,rec.sec,oid);if(pp)rec.paper=pp;line.item=iid;todo.push(()=>{node("items")[iid]=rec;write("gifts/items/"+iid,rec,"set");});made++;}}
     lines.push(line);});
-  const sum=lines.reduce((a,l)=>a+(l.p||0),0)+(tax||0),total=num(f.total)!=null?num(f.total):(lines.some(l=>l.p!=null)?Math.round(sum*100)/100:null);
-  const rec={store,iso:isoOk(f.iso)||today(),lines,photoCount:f.files.length,occ:oid,ts:Date.now()};if(total!=null)rec.total=total;if(tax)rec.tax=tax;if(ord)rec.orderNo=ord;if(ret)rec.returnBy=ret;
+  const sum=lines.reduce((a,l)=>a+(l.p||0),0)-(disc||0)+(tax||0),total=num(f.total)!=null?num(f.total):(lines.some(l=>l.p!=null)?Math.round(sum*100)/100:null);
+  const rec={store,iso:isoOk(f.iso)||today(),lines,photoCount:f.files.length,occ:oid,ts:Date.now()};if(total!=null)rec.total=total;if(tax)rec.tax=tax;if(disc)rec.discount=disc;if(ord)rec.orderNo=ord;if(ret)rec.returnBy=ret;
   node("receipts")[rid]=rec;write("gifts/receipts/"+rid,rec,"set");todo.forEach(fn=>fn());
   log("🧾 Receipt: "+(store||"a store")+(total!=null?" "+money(total):"")+(made?" · "+made+" new present"+(made===1?"":"s"):"")+(bought?" · "+bought+" idea"+(bought===1?"":"s")+" bought":""));
   gfView="receipts";gfRcOpen=rid;return true;
@@ -806,7 +826,7 @@ function rcptView(o){
       '<span class="gf-amt">'+(r.total!=null?money(r.total):'—')+'</span></button>';
     if(on){h+='<div class="gf-bd">'+rcptPhotos(r)+(r.lines||[]).map(l=>{const it=l&&l.item&&I[l.item];if(!l)return "";
         const where=it?(pidsOf(it).length?names(pidsOf(it)):"🗄 no one yet")+(((o.secs||{})[it.sec]||{}).name?" · "+((o.secs||{})[it.sec].emoji||"")+" "+o.secs[it.sec].name:""):(l.item?"present deleted":"✕ not a gift");
-        return '<div class="gf-rcline">'+(it?'<button class="gf-ib" onclick="gfEditItem(\''+esc(l.item)+'\')"><b>'+esc(l.t)+'</b>':'<span style="flex:1;color:#94a3b8">'+esc(l.t))+'<span class="gf-pc">'+esc(where)+'</span>'+(it?'</button>':'</span>')+'<span class="gf-amt">'+(l.p!=null?money(l.p):'')+(l.tax?'<small> + '+money(l.tax)+' tax</small>':'')+'</span></div>';}).join("")+'</div>';}
+        return '<div class="gf-rcline">'+(it?'<button class="gf-ib" onclick="gfEditItem(\''+esc(l.item)+'\')"><b>'+esc(l.t)+'</b>':'<span style="flex:1;color:#94a3b8">'+esc(l.t))+'<span class="gf-pc">'+esc(where)+'</span>'+(it?'</button>':'</span>')+'<span class="gf-amt">'+(l.p!=null?money(l.p):'')+(l.disc?'<small> − '+money(l.disc)+' off</small>':'')+(l.tax?'<small> + '+money(l.tax)+' tax</small>':'')+'</span></div>';}).join("")+'</div>';}
     h+='</div>';});
   return h;
 }
@@ -828,7 +848,7 @@ const RC_CSS=`
 .gf-rcline .gf-pc{display:block;font-weight:500;font-size:11.5px;color:#64748b}
 `;
 Object.assign(window,{gfRcTaxed,gfRcRedraw,gfRcptNew,gfRcptPick,gfRcptDrop,gfRcptRead,gfRcSet,gfRcPid,gfRcNone,gfRcNog,gfRcSec,gfRcUseIdea,gfRcIdea,gfRcAdd,gfRcDel,gfRcStatus,gfRcptToggle,gfRcptPdf});
-const RC_TEST={taxShares:rcTaxShares,split:rcSplit,load:rcptLoad,prompt:RC_PROMPT,firstJson,matchIdea,ideas,rcpts,photos:gfPhotos,open:()=>gfRcOpen,addFile:(url,pdf)=>{const f=rcF();if(f)f.files.push({url,pdf:!!pdf});}};
+const RC_TEST={discShares:rcDiscShares,taxShares:rcTaxShares,split:rcSplit,load:rcptLoad,prompt:RC_PROMPT,firstJson,matchIdea,ideas,rcpts,photos:gfPhotos,open:()=>gfRcOpen,addFile:(url,pdf)=>{const f=rcF();if(f)f.files.push({url,pdf:!!pdf});}};
 // GIFTS_RCPT_END
 
 // GIFTS_OCC_START — any occasion + history + birthdays, slice 6 (her ask 2026-11-20: "being able to pick other things besides
