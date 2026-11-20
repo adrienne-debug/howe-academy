@@ -43,7 +43,7 @@
 // counts once for each (🤝). Every write = one set/update/remove of ONE record (+ a log line). Nothing here touches schedules.
 (function(){
 "use strict";
-let gfShKey="", gfData={}, gfOn=false, gfLoaded=false, gfOcc=null, gfView="people", gfPid=null, gfEdit=null, gfRoot=null, gfAh="", gfSelOn=false, gfSel={};
+let gfShF="all", gfShN=0, gfShKey="", gfData={}, gfOn=false, gfLoaded=false, gfOcc=null, gfView="people", gfPid=null, gfEdit=null, gfRoot=null, gfAh="", gfSelOn=false, gfSel={};
 const GF_STATUS=[["idea","💭 Idea","#64748b"],["ordered","🛒 Ordered","#d97706"],["here","📦 Here","#0f766e"],["wrapped","🎀 Wrapped","#be185d"],["given","🎄 Given","#16a34a"],["returned","↩ Returned","#7c3aed"],["dropped","✕ Dropped","#94a3b8"]];
 const GF_NEXT={idea:"ordered",ordered:"here",here:"wrapped",wrapped:"given"};
 const GF_DEAD=["returned","dropped"];   // no longer counts toward money or gift counts
@@ -165,7 +165,7 @@ function peopleView(o){
       '<button class="gf-tool" onclick="gfGroupBudget(\''+esc(g.id)+'\')">💲</button></div>'+(T.budget!=null?'<div style="padding:0 14px">'+bar(T)+'</div>':'')+grpSecLine(g)+'<div class="gf-bd">';   // GIFTS_GROUPS
     ps.forEach(p=>{const PT=personTot(o.id,p.id);
       h+='<button class="gf-prow" onclick="gfOpenPerson(\''+esc(p.id)+'\')"><span class="gf-dot" style="background:'+esc(p.color||"#94a3b8")+'"></span>'+
-        '<span class="gf-pn">'+esc(p.name)+'<span class="gf-pc">'+(PT.count?PT.count+' present'+(PT.count===1?'':'s')+' · '+counts(PT):'nothing yet')+'</span>'+bar(PT)+'</span>'+
+        '<span class="gf-pn">'+esc(p.name)+'<span class="gf-pc">'+(PT.count?PT.count+' present'+(PT.count===1?'':'s')+(PT.shared?' · 👤 '+(PT.count-PT.shared)+' own · 🤝 '+PT.shared+' shared':'')+' · '+counts(PT):'nothing yet')+'</span>'+bar(PT)+'</span>'+
         '<span class="gf-amt">'+money(PT.paid)+(PT.budget!=null?'<small> / '+money(PT.budget)+'</small>':'')+'</span></button>';});
     h+='</div></div>';
   });
@@ -193,20 +193,38 @@ function personView(o,pid){
   const T=personTot(o.id,pid),S=secsFor(o,[pid]),mine=items(o.id).filter(it=>pidsOf(it).indexOf(pid)>=0);
   let h='<button class="gf-tool" style="margin-bottom:8px" onclick="gfBack()">← Everyone</button>';
   h+='<div class="gf-card"><div class="gf-hd" style="background:'+esc(p.color||"#475569")+'"><span>'+esc(p.name)+' · '+esc(o.name)+'</span><button class="gf-tool gf-hdb" onclick="gfEditPerson(\''+esc(pid)+'\')">✏️</button></div>'+
-    '<div class="gf-bd">'+bar(T)+'<div class="gf-line">'+sumLine(T)+'</div><div class="gf-line" style="color:#475569">'+T.count+' present'+(T.count===1?'':'s')+(T.shared?' · 🤝 '+T.shared+' shared':'')+(p.paper?' · 🎀 '+esc(p.paper):'')+'</div>'+
+    '<div class="gf-bd">'+bar(T)+'<div class="gf-line">'+sumLine(T)+'</div><div class="gf-line" style="color:#475569">'+T.count+' present'+(T.count===1?'':'s')+(T.shared?' · 👤 '+(T.count-T.shared)+' just theirs · 🤝 '+T.shared+' shared':'')+(p.paper?' · 🎀 '+esc(p.paper):'')+'</div>'+
     (p.sizes?'<div class="gf-line">👕 '+esc(p.sizes)+'</div>':'')+   // GIFTS_OCC
     '<div style="margin-top:6px"><button class="gf-tool" onclick="gfBudget(\''+esc(pid)+'\')">💲 Budget</button></div></div></div>';
   h+=lastTime(o,pid);   // GIFTS_OCC: 🕰 what they got before
   h+=wishCard(o,pid);   // GIFTS_WISH: 💌 a kid's own wish list
+  h+=ownSharedRow(mine);   // OWNSHARED: All · Just theirs · Shared (by how many kids)
   const known=S.map(s=>s.id);
   S.concat(mine.some(it=>known.indexOf(it.sec)<0)?[{id:"",emoji:"📦",name:"No section"}]:[]).forEach(s=>{
-    const L=mine.filter(it=>s.id?it.sec===s.id:known.indexOf(it.sec)<0),ST=s.id?personTot(o.id,pid,s.id):null;
+    const L=mine.filter(it=>(s.id?it.sec===s.id:known.indexOf(it.sec)<0)&&ownSharedPass(it)),ST=s.id?personTot(o.id,pid,s.id):null;
     h+='<div class="gf-card"><div class="gf-ghd"><span>'+esc(s.emoji||"")+' '+esc(s.name)+'</span><span class="gf-gsum">'+(ST?money(ST.paid)+(ST.budget!=null?' / '+money(ST.budget):''):'')+'</span>'+
       (s.id?'<button class="gf-tool" onclick="gfNewItem(\''+esc(pid)+'\',\''+esc(s.id)+'\')">＋</button>':'')+'</div>'+(ST&&ST.budget!=null?'<div style="padding:0 14px">'+bar(ST)+'</div>':'')+
-      '<div class="gf-bd">'+(L.length?L.map(it=>itemRow(it,pid)).join(""):'<div class="gf-empty">Nothing here yet.</div>')+'</div></div>';
+      '<div class="gf-bd">'+(L.length?L.map(it=>itemRow(it,pid)).join(""):'<div class="gf-empty">'+(gfShF==="all"?'Nothing here yet.':'None of these here.')+'</div>')+'</div></div>';
   });
   return h;
 }
+// OWNSHARED_START (her ask + yes 2026-11-20: "when you … click on the kid, I would like the option to see all those things separated for
+// the things that are individual … how many individual items they have as well versus how many group items. And then there should also
+// be a filter for like the group items if it has, all 4 kids or if it just has 2 kids"): a kid's page counts 👤 just theirs vs 🤝 shared,
+// and filters the list — All · 👤 Just theirs · 🤝 Shared, then by how many kids share it. Opens on All every time (gfOpenPerson);
+// display only — the money is unchanged (a kid still carries their share of a shared present).
+function ownSharedPass(it){const n=pidsOf(it).length;if(gfShF==="own")return n===1;if(gfShF==="shared")return n>1&&(!gfShN||n===gfShN);return true;}
+function ownSharedRow(mine){
+  const L=mine.filter(live),own=L.filter(it=>pidsOf(it).length===1).length,sh=L.filter(it=>pidsOf(it).length>1);if(!sh.length)return "";   // nothing shared → no filter
+  const b=(on,click,lbl)=>'<button class="gf-vw'+(on?" on":"")+'" onclick="'+click+'">'+lbl+'</button>';
+  let h='<div class="gf-views" style="margin:0 0 8px">'+b(gfShF==="all","gfShareSet('all')","All ("+L.length+")")+b(gfShF==="own","gfShareSet('own')","👤 Just theirs ("+own+")")+b(gfShF==="shared","gfShareSet('shared')","🤝 Shared ("+sh.length+")")+'</div>';
+  if(gfShF==="shared"){const kidsN=kids().length,by={};sh.forEach(it=>{const n=pidsOf(it).length;by[n]=(by[n]||0)+1;});
+    h+='<div class="gf-views" style="margin:-4px 0 10px">'+b(!gfShN,"gfShareSize(0)","All shared")+Object.keys(by).map(Number).sort((a,b)=>b-a).map(n=>b(gfShN===n,"gfShareSize("+n+")",(n===kidsN?"With everyone ("+n+")":n+" kids")+" · "+by[n])).join("")+'</div>';}
+  return h;
+}
+function gfShareSet(f){gfShF=f;gfShN=0;gfDraw();}
+function gfShareSize(n){gfShF="shared";gfShN=+n||0;gfDraw();}
+// OWNSHARED_END
 
 // ── the Christmas views (slice 2) ─────────────────────────────────────────────
 const GF_VIEWS=[["people","👨‍👩‍👧 People"],["even","⚖️ Even"],["wrap","🎀 To wrap"],["where","📍 Where"],["coming","📦 Coming"],["shop","🛍 Shop"],["closet","🗄 Closet"],["eve","🌙 Eve"],["receipts","🧾 Receipts"]];
@@ -405,7 +423,7 @@ function gfStartOcc(kind,name,date,extra){   // extra (GIFTS_OCC) = {for?, budge
   gfOcc=id;try{HA_LS.setItem("ha_gf_occ",id);}catch(e){}gfView="people";gfDraw();
 }
 function gfPickOcc(id){gfOcc=id;try{HA_LS.setItem("ha_gf_occ",id);}catch(e){}gfView="people";gfDraw();}
-function gfOpenPerson(pid){gfPid=pid;gfView="person";gfDraw();try{window.scrollTo(0,0);}catch(e){}}
+function gfOpenPerson(pid){gfPid=pid;gfView="person";gfShF="all";gfShN=0;gfDraw();try{window.scrollTo(0,0);}catch(e){}}
 function gfBack(){gfView="people";gfDraw();}
 function defaultPaper(pids,sec,oid){const s=((occ(oid)||{}).secs||{})[sec];if(s&&s.paper)return s.paper;const p=person(pids[0]);return (p&&p.paper)||"";}
 function gfNewItem(pid,sid){
@@ -1259,7 +1277,7 @@ window.renderGifts=function(el,ah){
   grpOpen(el);   // GIFTS_GROUPS: a fresh visit opens on 👧 Kids
   gfRoot=el;gfAh=ah||"";gfListen();gfDraw();
 };
-Object.assign(window,{gfGo,gfSelToggle,gfPick,gfBulk,gfBulkIds,gfGather,gfEveTick,gfLineAdd,gfLineTick,gfLineDel,gfLinesCopy,gfEvenEdit,gfNeed,gfStartOcc,gfPickOcc,gfOpenPerson,gfBack,gfNewItem,gfEditItem,gfMove,gfSet,gfSetDraw,gfTogglePid,gfSecBudget,gfSecEdit,gfSecAdd,gfCancel,gfSave,gfDelete,gfNext,gfNewPerson,gfEditPerson,gfBudget,gfGroupBudget,gfNewGroup,gfNewOcc,gfOccEdit});
+Object.assign(window,{gfShareSet,gfShareSize,gfGo,gfSelToggle,gfPick,gfBulk,gfBulkIds,gfGather,gfEveTick,gfLineAdd,gfLineTick,gfLineDel,gfLinesCopy,gfEvenEdit,gfNeed,gfStartOcc,gfPickOcc,gfOpenPerson,gfBack,gfNewItem,gfEditItem,gfMove,gfSet,gfSetDraw,gfTogglePid,gfSecBudget,gfSecEdit,gfSecAdd,gfCancel,gfSave,gfDelete,gfNext,gfNewPerson,gfEditPerson,gfBudget,gfGroupBudget,gfNewGroup,gfNewOcc,gfOccEdit});
 window._gfTest={evenData,behind,evenSet,sel:()=>gfSel,selOn:()=>gfSelOn,data:()=>gfData,setData:d=>{gfData=d||{};gfLoaded=true;},people,groups,occs,secsOf,items,personTot,groupTot,occTot,left,share,curOcc,
   setOcc:o=>{gfOcc=o;},view:()=>gfView,edit:()=>gfEdit,draw:gfDraw,setRoot:(el,ah)=>{gfRoot=el;gfAh=ah||"";},reset:()=>{gfGrp="kids";gfOcc=null;gfView="people";gfPid=null;gfEdit=null;gfRcOpen=null;gfOthersOpen=null;},rc:RC_TEST,oc:OCC_TEST,gr:GRP_TEST};
 })();
