@@ -28,6 +28,10 @@
 //   gifts/receipts/<rid> {store, iso, orderNo?, total?, returnBy?, lines:[{t, p?, item?}], photoCount, occ, ts}
 //   giftPhotos/<rid> [dataURL, …]  ← its own top node, read only when she opens that receipt
 //   New on a present: rcpt (the receipt it came from) · returnBy · orderNo.
+// GIFTS slice 6 (any occasion + history + birthdays, plan §3.2 / §4 "Lucy turns 9 in 30 days — start her list?") — see GIFTS_OCC_START:
+//   gifts/occasions/<oid>.for = <pid>   a birthday is about ONE person (their People view puts them first; everyone else folds away)
+//   gifts/people/<pid>.sizes            "shirt 8 · pants 8 slim · shoe 1Y", shown on their page
+//   🎂 nudge (birthday within 30 days, no occasion yet — nothing written until she taps) · 🕰 Last time strip · 📜 Past with totals.
 // Totals are COMPUTED here, never stored (the esa.js rule). A gift for several people splits its cost evenly between them and
 // counts once for each (🤝). Every write = one set/update/remove of ONE record (+ a log line). Nothing here touches schedules.
 (function(){
@@ -123,7 +127,7 @@ function occBar(){
   let h='<div class="gf-occs">'+O.filter(o=>!o.closed||o.id===cur).map(o=>'<button class="gf-occ'+(o.id===cur?" on":"")+'" onclick="gfPickOcc(\''+esc(o.id)+'\')">'+esc(o.name)+'</button>').join("");
   h+='<button class="gf-occ" onclick="gfNewOcc()">＋ Occasion</button>';
   const past=O.filter(o=>o.closed&&o.id!==cur);
-  if(past.length)h+='<select class="gf-sel" onchange="if(this.value)gfPickOcc(this.value)"><option value="">📜 Past…</option>'+past.map(o=>'<option value="'+esc(o.id)+'">'+esc(o.name)+'</option>').join("")+'</select>';
+  if(past.length)h+='<select class="gf-sel" onchange="if(this.value)gfPickOcc(this.value)"><option value="">📜 Past…</option>'+past.slice().reverse().map(o=>'<option value="'+esc(o.id)+'">'+esc(pastLabel(o))+'</option>').join("")+'</select>';   // GIFTS_OCC: totals, newest first
   return h+'</div>';
 }
 function emptyView(){
@@ -137,13 +141,16 @@ function occHead(o){
   const T=occTot(o.id);
   return '<div class="gf-card"><div class="gf-hd"><span>'+esc(o.name)+'</span>'+(o.date?'<span class="gf-days">'+daysTo(o.date)+'</span>':'')+
     '<button class="gf-tool gf-hdb" onclick="gfOccEdit()">✏️</button></div><div class="gf-bd">'+bar(T)+'<div class="gf-line">'+sumLine(T)+'</div>'+
-    '<div class="gf-line" style="color:#475569">'+T.count+' present'+(T.count===1?'':'s')+(T.count?' · '+counts(T):'')+'</div></div></div>';
+    '<div class="gf-line" style="color:#475569">'+T.count+' present'+(T.count===1?'':'s')+(T.count?' · '+counts(T):'')+'</div>'+
+    (o.closed?'<div class="gf-line" style="color:#64748b">📜 Past — ✏️ and untick Done to reopen it.</div>':'')+'</div></div>';   // GIFTS_OCC
 }
 function daysTo(iso){const a=new Date(today()+"T12:00:00"),b=new Date(String(iso)+"T12:00:00");const d=Math.round((b-a)/864e5);return isNaN(d)?"":d>1?d+" days to go":d===1?"tomorrow":d===0?"today":"";}
 function peopleView(o){
   let h=occHead(o);
-  const P=people();
-  groups().forEach(g=>{
+  const star=occStar(o);   // GIFTS_OCC: a birthday's person first and open; everyone else folds under "Others giving or getting"
+  if(star)h+=starCard(o,star)+othersBtn(o,star);
+  const P=people().filter(p=>p.id!==star);
+  if(!star||gfOthersOpen===o.id)groups().forEach(g=>{
     const ps=P.filter(p=>(p.group||"other")===g.id);if(!ps.length)return;
     const T=groupTot(o.id,g.id);
     h+='<div class="gf-card"><div class="gf-ghd"><span>'+esc(g.emoji||"")+' '+esc(g.name)+'</span><span class="gf-gsum">'+money(T.paid)+(T.budget!=null?' / '+money(T.budget):'')+'</span>'+
@@ -179,7 +186,9 @@ function personView(o,pid){
   let h='<button class="gf-tool" style="margin-bottom:8px" onclick="gfBack()">← Everyone</button>';
   h+='<div class="gf-card"><div class="gf-hd" style="background:'+esc(p.color||"#475569")+'"><span>'+esc(p.name)+' · '+esc(o.name)+'</span><button class="gf-tool gf-hdb" onclick="gfEditPerson(\''+esc(pid)+'\')">✏️</button></div>'+
     '<div class="gf-bd">'+bar(T)+'<div class="gf-line">'+sumLine(T)+'</div><div class="gf-line" style="color:#475569">'+T.count+' present'+(T.count===1?'':'s')+(T.shared?' · 🤝 '+T.shared+' shared':'')+(p.paper?' · 🎀 '+esc(p.paper):'')+'</div>'+
+    (p.sizes?'<div class="gf-line">👕 '+esc(p.sizes)+'</div>':'')+   // GIFTS_OCC
     '<div style="margin-top:6px"><button class="gf-tool" onclick="gfBudget(\''+esc(pid)+'\')">💲 Budget</button></div></div></div>';
+  h+=lastTime(o,pid);   // GIFTS_OCC: 🕰 what they got before
   const known=S.map(s=>s.id);
   S.concat(mine.some(it=>known.indexOf(it.sec)<0)?[{id:"",emoji:"📦",name:"No section"}]:[]).forEach(s=>{
     const L=mine.filter(it=>s.id?it.sec===s.id:known.indexOf(it.sec)<0),ST=s.id?personTot(o.id,pid,s.id):null;
@@ -343,7 +352,8 @@ function personSheet(){
   let h='<div class="gf-form">'+(kid?'<div class="gf-f wide"><span>Name</span><b style="font-size:14px;color:#0f172a">'+esc(f.name)+'</b></div>':field("name","Name","e.g. Grandma Jo"));
   if(!kid)h+='<label class="gf-f"><span>Group</span><select onchange="gfSet(\'group\',this.value)">'+groups().filter(g=>g.id!=="kids").map(g=>'<option value="'+esc(g.id)+'"'+(g.id===f.group?" selected":"")+'>'+esc(g.emoji+" "+g.name)+'</option>').join("")+'</select></label>';
   h+=field("paper","🎀 Their paper (fills in on new presents)","e.g. pink snowflakes")+field("birthday","Birthday","","date");
-  h+='<label class="gf-f wide"><span>Sizes, likes, notes</span><textarea rows="2" oninput="gfSet(\'note\',this.value)">'+esc(f.note)+'</textarea></label>';
+  h+='<div class="gf-f wide">'+field("sizes","👕 Sizes","e.g. shirt 8 · pants 8 slim · shoe 1Y")+'</div>';   // GIFTS_OCC
+  h+='<label class="gf-f wide"><span>Likes, notes</span><textarea rows="2" oninput="gfSet(\'note\',this.value)">'+esc(f.note)+'</textarea></label>';
   return h+'</div>';
 }
 function budgetSheet(){
@@ -356,6 +366,7 @@ function groupSheet(){return '<div class="gf-form">'+field("emoji","Emoji","🏡
 function occSheet(){
   const f=gfEdit.form;let h='<div class="gf-form">';
   if(!f.id)h+='<div class="gf-f wide"><span>Kind</span><div class="gf-picks">'+Object.keys(GF_KINDS).map(k=>'<button class="gf-pick'+(f.kind===k?" on":"")+'" onclick="gfSetDraw(\'kind\',\''+k+'\')">'+esc(GF_KINDS[k].label)+'</button>').join("")+'</div></div>';
+  h+=occForPicker(f);   // GIFTS_OCC: whose birthday
   h+=field("name","Name","e.g. a birthday 2027")+field("date","Date","","date")+field("budget","Whole budget (optional)","","money");
   if(f.id){h+='<div class="gf-f wide"><span>Sections</span>'+f.secs.map((s,i)=>'<div style="display:flex;gap:6px;margin-top:4px"><input style="width:56px" value="'+esc(s.emoji)+'" oninput="gfSecEdit('+i+',\'emoji\',this.value)"><input value="'+esc(s.name)+'" oninput="gfSecEdit('+i+',\'name\',this.value)"></div>').join("")+
     '<button class="gf-tool" style="margin-top:6px;align-self:flex-start" onclick="gfSecAdd()">＋ Section</button></div>';
@@ -374,11 +385,11 @@ function sheet(){
 }
 
 // ── actions ──────────────────────────────────────────────────────────────────
-function gfStartOcc(kind,name,date){
+function gfStartOcc(kind,name,date,extra){   // extra (GIFTS_OCC) = {for?, budget?} — rides in the same ONE set
   kind=GF_KINDS[kind]?kind:"other";const t=today();
   if(kind==="christmas"&&!name){const y=+t.slice(0,4)+((t.slice(5)>"12-25")?1:0);name="Christmas "+y;date=y+"-12-25";}
   const secs={};GF_KINDS[kind].secs.forEach((s,i)=>{secs[s[0]]={emoji:s[1],name:s[2],order:i};});
-  const id=newId("occasions",slug(name));const rec={name,kind,date:date||"",secs,ts:Date.now()};
+  const id=newId("occasions",slug(name));const rec=Object.assign({name,kind,date:date||"",secs,ts:Date.now()},extra||{});
   node("occasions")[id]=rec;write("gifts/occasions/"+id,rec,"set");log("Started "+name);
   gfOcc=id;try{HA_LS.setItem("ha_gf_occ",id);}catch(e){}gfView="people";gfDraw();
 }
@@ -396,11 +407,12 @@ function gfEditItem(id){const it=(gfData.items||{})[id];if(!it)return;const f={o
   gfEdit={kind:"item",id,form:f};gfDraw();}
 function gfNeed(k){if(!gfEdit||!gfEdit.form.needs)return;gfEdit.form.needs[k]=!gfEdit.form.needs[k];gfDraw();}
 function gfMove(id){const it=(gfData.items||{})[id];if(!it)return;gfEdit={kind:"move",id,form:{occ:it.occ,pids:pidsOf(it).slice(),sec:it.sec||"",was:{pids:pidsOf(it).slice(),occ:it.occ,sec:it.sec||""}}};gfDraw();}
-function gfSet(k,v){if(!gfEdit)return;gfEdit.form[k]=v;if(k==="name")gfEdit.form.autoName=false;}
+function gfSet(k,v){if(!gfEdit)return;gfEdit.form[k]=v;if(k==="name")gfEdit.form.autoName=false;if(k==="date")gfEdit.form.autoDate=false;}
 function gfSetDraw(k,v){if(!gfEdit)return;const f=gfEdit.form;
   if(k==="sec"&&gfEdit.kind==="item"&&!gfEdit.id&&(!f.paper||f.paper===defaultPaper(f.pids,f.sec,f.occ))){f.sec=v;f.paper=defaultPaper(f.pids,v,f.occ);}
   f[k]=v;if(k==="occ"){const S=secsOf(occ(v));if(!S.some(s=>s.id===f.sec))f.sec=(S[0]&&S[0].id)||"";}
   if(k==="kind"&&!f.id&&(!f.name||f.autoName)){f.name=GF_KINDS[v].label.replace(/^\S+\s/,"")+" "+today().slice(0,4);f.autoName=true;}
+  if(k==="kind")occAuto(f);   // GIFTS_OCC
   gfDraw();}
 function gfTogglePid(pid){if(!gfEdit)return;const f=gfEdit.form;const auto=gfEdit.kind==="item"&&!gfEdit.id&&(!f.paper||f.paper===defaultPaper(f.pids,f.sec,f.occ));
   const i=f.pids.indexOf(pid);if(i>=0)f.pids.splice(i,1);else f.pids.push(pid);if(auto)f.paper=defaultPaper(f.pids,f.sec,f.occ);gfDraw();}
@@ -435,7 +447,7 @@ function gfSave(){
   }else if(kind==="person"){
     const pid=id||newId("people","p-"+slug(f.name));const kid=/^k_/.test(pid);
     const name=kid?f.name:String(f.name||"").trim();if(!name){toast("Needs a name");return;}
-    const up={paper:String(f.paper||"").trim()||null,birthday:f.birthday||null,note:String(f.note||"").trim()||null};
+    const up={paper:String(f.paper||"").trim()||null,birthday:f.birthday||null,sizes:String(f.sizes||"").trim().slice(0,120)||null,note:String(f.note||"").trim()||null};   // sizes: GIFTS_OCC
     if(!kid){up.name=name;up.group=f.group||"other";}else{up.group="kids";up.kid=pid.slice(2);}
     if(!id)up.ts=Date.now();
     const cur=node("people")[pid]=Object.assign({},node("people")[pid]||{});Object.keys(up).forEach(k=>{if(up[k]==null)delete cur[k];else cur[k]=up[k];});
@@ -451,8 +463,9 @@ function gfSave(){
     node("groups")[gid]=Object.assign({},node("groups")[gid]||{},up);write("gifts/groups/"+gid,up,"update");log((id?"Renamed group: ":"Added group: ")+name);
   }else if(kind==="occ"){
     const name=String(f.name||"").trim();if(!name){toast("Needs a name");return;}
-    if(!id){gfEdit=null;gfStartOcc(f.kind||"other",name,f.date||"");const o=occ(gfOcc);const b=num(f.budget);if(o&&b!=null){gfData.occasions[gfOcc].budget=b;write("gifts/occasions/"+gfOcc+"/budget",b,"set");}return;}
+    if(!id){gfEdit=null;gfStartOcc(f.kind||"other",name,f.date||"",occExtra(f));return;}   // GIFTS_OCC: for + budget in the ONE set
     const up={name,date:f.date||"",budget:num(f.budget),closed:f.closed?true:null};
+    if(f.kind==="birthday")up.for=f.for||null;   // GIFTS_OCC
     const o=gfData.occasions[id];Object.keys(up).forEach(k=>{if(up[k]==null)delete o[k];else o[k]=up[k];});write("gifts/occasions/"+id,up,"update");
     const secs=o.secs=o.secs||{};let nextOrder=Object.keys(secs).reduce((m,k)=>Math.max(m,+(secs[k].order)||0),-1)+1;
     f.secs.forEach((s,i)=>{const nm=String(s.name||"").trim();if(!nm)return;const sid=s.id||newId2(secs,slug(nm));const rec={name:nm,emoji:String(s.emoji||"").trim()||"🎁",order:s.id?((secs[s.id]||{}).order||0):nextOrder++};
@@ -492,15 +505,15 @@ function gfLineDel(id){const oid=curOcc(),L=eveNode(oid).lines||{};if(!L[id])ret
 function gfLinesCopy(from){const oid=curOcc();if(!oid)return;const L=eveNode(oid).lines=eveNode(oid).lines||{};
   eveLines(from).forEach((l,i)=>{const id=uid()+i,rec={text:l.text,order:i};L[id]=rec;write("gifts/eve/"+oid+"/lines/"+id,rec,"set");});log("Copied the Christmas Eve list from "+((occ(from)||{}).name||""));gfDraw();}
 function gfEvenEdit(){const E=evenSet();gfEdit={kind:"even",id:null,form:{pct:String(E.pct),n:String(E.n)}};gfDraw();}
-function gfNewPerson(){gfEdit={kind:"person",id:null,form:{name:"",group:"mom",paper:"",birthday:"",note:""}};gfDraw();}
-function gfEditPerson(pid){const p=person(pid);if(!p)return;gfEdit={kind:"person",id:pid,form:{name:p.name||"",group:p.group||"other",paper:p.paper||"",birthday:p.birthday||"",note:p.note||""}};gfDraw();}
+function gfNewPerson(){gfEdit={kind:"person",id:null,form:{name:"",group:"mom",paper:"",birthday:"",sizes:"",note:""}};gfDraw();}
+function gfEditPerson(pid){const p=person(pid);if(!p)return;gfEdit={kind:"person",id:pid,form:{name:p.name||"",group:p.group||"other",paper:p.paper||"",birthday:p.birthday||"",sizes:p.sizes||"",note:p.note||""}};gfDraw();}
 function gfBudget(pid){const oid=curOcc(),p=plan(oid,pid),secs={};Object.keys(p.sec||{}).forEach(k=>{secs[k]=String(p.sec[k]);});
   gfEdit={kind:"budget",id:pid,form:{occ:oid,key:pid,label:(person(pid)||{}).name||pid,budget:p.budget==null?"":String(p.budget),secs}};gfDraw();}
 function gfGroupBudget(gid){const oid=curOcc(),p=plan(oid,"g_"+gid),g=groups().find(x=>x.id===gid)||{};
   gfEdit={kind:"budget",id:"g_"+gid,form:{occ:oid,key:"g_"+gid,label:g.name||gid,budget:p.budget==null?"":String(p.budget),secs:null}};gfDraw();}
 function gfNewGroup(){gfEdit={kind:"group",id:null,form:{name:"",emoji:"👥"}};gfDraw();}
 function gfNewOcc(){gfEdit={kind:"occ",id:null,form:{kind:"birthday",name:"",date:"",budget:"",autoName:true}};gfSetDraw("kind","birthday");}
-function gfOccEdit(){const o=occ(curOcc());if(!o)return;gfEdit={kind:"occ",id:o.id,form:{name:o.name||"",date:o.date||"",budget:o.budget==null?"":String(o.budget),closed:!!o.closed,secs:secsOf(o).map(s=>({id:s.id,emoji:s.emoji||"",name:s.name||""}))}};gfDraw();}
+function gfOccEdit(){const o=occ(curOcc());if(!o)return;gfEdit={kind:"occ",id:o.id,form:{kind:o.kind||"other",for:o.for||null,name:o.name||"",date:o.date||"",budget:o.budget==null?"":String(o.budget),closed:!!o.closed,secs:secsOf(o).map(s=>({id:s.id,emoji:s.emoji||"",name:s.name||""}))}};gfDraw();}
 
 // GIFTS_RCPT_START — 📸 Receipts, slice 3 (her ask 2026-11-20: "submit receipts, like have a picture"; plan §3.5; her answer to
 // question 6: "each line gets its own person"). Snap up to 6 photos (shrunk on this device, ≈⅓ MB each) or pick a PDF / screenshot
@@ -715,13 +728,111 @@ Object.assign(window,{gfRcptNew,gfRcptPick,gfRcptDrop,gfRcptRead,gfRcSet,gfRcPid
 const RC_TEST={prompt:RC_PROMPT,firstJson,matchIdea,ideas,rcpts,photos:gfPhotos,open:()=>gfRcOpen,addFile:(url,pdf)=>{const f=rcF();if(f)f.files.push({url,pdf:!!pdf});}};
 // GIFTS_RCPT_END
 
+// GIFTS_OCC_START — any occasion + history + birthdays, slice 6 (her ask 2026-11-20: "being able to pick other things besides
+// Christmas, like birthdays"; plan §3.2 "old occasions are kept (closed), never deleted — that is how 'what did we give Grandma last
+// year?' works" + §4 slice 6 "a person's birthday → 'Lucy turns 9 in 30 days — start her list?'; close an occasion; 'last year'
+// strip on each person; sizes").
+//   · A birthday is about ONE person: gifts/occasions/<oid>.for = <pid>, picked with the person chips when it's made (the name fills
+//     in "<name>'s birthday <year>" and the date from their birthday, next one coming). Its People view puts that person first and
+//     open — presents, budget, ＋ Present — and folds everyone else under "Others giving or getting" (closed until she opens it).
+//   · 🎂 nudge at the top of Gifts: a person whose birthday is within 30 days and who has no occasion for it yet. NOTHING is written
+//     until she taps it; the tap = ONE set of the birthday occasion (with for). Age only when the birth year is known.
+//   · 🕰 Last time on a person's page: their presents from earlier occasions of the same kind (and their last birthday), newest
+//     first, 8 at most — read-only.
+//   · gifts/people/<pid>.sizes — saved in the person's ONE update, shown on their page.
+//   · 📜 Past lists each closed occasion with what was paid and how many presents; reopening = ✏️, untick Done.
+const OCC_DAYS=30, OCC_PAST_MAX=8;
+let gfOthersOpen=null;   // the birthday occasion whose "Others giving or getting" is unfolded (closed by default)
+function pad2(n){return String(n).padStart(2,"0");}
+function bdayOn(m,d,y){if(m===2&&d===29&&!(y%4===0&&(y%100!==0||y%400===0)))d=28;return y+"-"+pad2(m)+"-"+pad2(d);}
+function nextBday(b,from){   // "YYYY-MM-DD" (or "--MM-DD" / "MM-DD" with no year) → the next one on or after `from`
+  const m=/^(?:(\d{4})-|--)?(\d{1,2})-(\d{1,2})$/.exec(String(b||"").trim());if(!m)return null;
+  const mo=+m[2],da=+m[3];if(mo<1||mo>12||da<1||da>31)return null;from=from||today();
+  let y=+from.slice(0,4),iso=bdayOn(mo,da,y);if(iso<from)iso=bdayOn(mo,da,++y);
+  const by=m[1]?+m[1]:0,age=by>=1900&&y-by>=1?y-by:null;
+  return {iso,year:y,age,days:Math.round((new Date(iso+"T12:00:00")-new Date(from+"T12:00:00"))/864e5)};
+}
+function bdayName(p,year){return String((p&&p.name)||"").trim()+"'s birthday "+year;}
+function bdayOcc(pid,iso){const t=today();return occs().find(o=>o.kind==="birthday"&&o.for===pid&&(o.date===iso||(!o.closed&&String(o.date||"")>=t)))||null;}
+function nudges(){
+  return people().filter(p=>p.birthday).map(p=>({p,nb:nextBday(p.birthday)})).filter(x=>x.nb&&x.nb.days<=OCC_DAYS&&!bdayOcc(x.p.id,x.nb.iso))
+    .sort((a,b)=>a.nb.days-b.nb.days||String(a.p.name).localeCompare(String(b.p.name)));
+}
+function whenTxt(d){return d===0?"today":d===1?"tomorrow":"in "+d+" days";}
+function bdayNudges(){
+  return nudges().map(x=>{const p=x.p,nb=x.nb;
+    return '<div class="gf-card gf-nudge"><button class="gf-prow" onclick="gfBdayStart(\''+esc(p.id)+'\')"><span style="font-size:22px">🎂</span><span class="gf-pn">'+
+      esc(p.name)+(nb.age!=null?' turns '+nb.age:"'s birthday is")+' on '+esc(shortDate(nb.iso))+' — start their list?<span class="gf-pc">'+whenTxt(nb.days)+' · one tap makes '+esc(bdayName(p,nb.year))+'</span></span>'+
+      '<span class="gf-tool">Start</span></button></div>';}).join("");
+}
+function gfBdayStart(pid){
+  const p=person(pid),nb=p&&nextBday(p.birthday);if(!nb)return;
+  const have=bdayOcc(pid,nb.iso);if(have)return gfPickOcc(have.id);
+  gfStartOcc("birthday",bdayName(p,nb.year),nb.iso,{for:pid});
+}
+function occExtra(f){const x={},b=num(f.budget);if(f.kind==="birthday"&&f.for)x.for=f.for;if(b!=null)x.budget=b;return x;}
+function occAuto(f){   // a new birthday with its person picked: name + date fill in until she types her own
+  if(f.id||f.kind!=="birthday"||!f.for)return;const p=person(f.for);if(!p)return;
+  const nb=nextBday(p.birthday);if(nb&&(f.autoDate||!f.date)){f.date=nb.iso;f.autoDate=true;}
+  if(f.autoName||!f.name){f.name=bdayName(p,(f.date||today()).slice(0,4));f.autoName=true;}
+}
+function occForPicker(f){
+  if(f.kind!=="birthday")return "";
+  return '<div class="gf-f wide"><span>Whose birthday?</span><div class="gf-picks">'+people().map(p=>{const on=f.for===p.id;
+    return '<button class="gf-pick'+(on?" on":"")+'" style="'+(on?"background:"+esc(p.color||"#0f172a")+";border-color:"+esc(p.color||"#0f172a"):"")+'" onclick="gfOccFor(\''+esc(p.id)+'\')">'+esc(p.name)+(p.birthday?' 🎂':'')+'</button>';}).join("")+'</div></div>';
+}
+function gfOccFor(pid){if(!gfEdit||gfEdit.kind!=="occ")return;const f=gfEdit.form;f.for=f.for===pid?null:pid;occAuto(f);gfDraw();}
+function occStar(o){return o&&o.kind==="birthday"&&o.for&&people().some(p=>p.id===o.for)?o.for:null;}
+function starCard(o,pid){
+  const p=person(pid),T=personTot(o.id,pid),S=secsOf(o),ord=s=>{const i=S.findIndex(x=>x.id===s);return i<0?99:i;};
+  const mine=items(o.id).filter(it=>pidsOf(it).indexOf(pid)>=0).sort((a,b)=>ord(a.sec)-ord(b.sec)||(a.ts||0)-(b.ts||0));
+  const nb=nextBday(p.birthday,o.date||today());
+  let h='<div class="gf-card"><div class="gf-hd" style="background:'+esc(p.color||"#475569")+'"><span>🎂 '+esc(p.name)+(nb&&nb.age!=null&&nb.iso===o.date?' · turns '+nb.age:'')+'</span>'+
+    '<button class="gf-tool gf-hdb" onclick="gfOpenPerson(\''+esc(pid)+'\')">Their page →</button></div><div class="gf-bd">'+bar(T)+'<div class="gf-line">'+sumLine(T)+'</div>'+
+    (p.sizes?'<div class="gf-line">👕 '+esc(p.sizes)+'</div>':'')+
+    '<div class="gf-acts" style="margin:6px 0 8px"><button class="gf-tool" onclick="gfNewItem(\''+esc(pid)+'\','+(S[0]?'\''+esc(S[0].id)+'\'':'null')+')">＋ Present</button><button class="gf-tool" onclick="gfBudget(\''+esc(pid)+'\')">💲 Budget</button></div>';
+  h+=mine.length?mine.map(it=>itemRow(it,pid)).join(""):'<div class="gf-empty">Nothing on their list yet.</div>';
+  return h+'</div></div>';
+}
+function othersBtn(o,pid){
+  const n=items(o.id).filter(it=>pidsOf(it).some(x=>x!==pid)).length,on=gfOthersOpen===o.id;
+  return '<button class="gf-tool gf-others" onclick="gfOthers()">'+(on?'▾':'▸')+' Others giving or getting'+(n?' · '+n+' present'+(n===1?'':'s'):'')+'</button>';
+}
+function gfOthers(){const oid=curOcc();gfOthersOpen=gfOthersOpen===oid?null:oid;gfDraw();}
+function pastGifts(o,pid){   // their presents from earlier occasions of the same kind + their last birthday, newest first
+  const t=today(),d=String(o.date||t),ref=d<t?d:t,before=x=>x&&x.id!==o.id&&String(x.date||"")<ref;   // already happened: before this occasion AND before today
+  const lastB=occs().filter(x=>before(x)&&x.kind==="birthday"&&x.for===pid).pop();
+  const O={};occs().forEach(x=>{if(before(x)&&(x.kind===o.kind||(lastB&&x.id===lastB.id)))O[x.id]=x;});
+  return items().filter(it=>O[it.occ]&&pidsOf(it).indexOf(pid)>=0&&["idea","dropped"].indexOf(it.status||"idea")<0)
+    .sort((a,b)=>String(O[b.occ].date||"").localeCompare(String(O[a.occ].date||""))||(b.ts||0)-(a.ts||0)).slice(0,OCC_PAST_MAX)
+    .map(it=>({id:it.id,name:it.name,paid:num(it.paid),status:it.status||"idea",occ:O[it.occ].name,shared:pidsOf(it).length>1}));
+}
+function lastTime(o,pid){
+  const L=pastGifts(o,pid);if(!L.length)return "";
+  return '<div class="gf-card"><div class="gf-ghd"><span>🕰 Last time</span><span class="gf-gsum">'+L.length+'</span></div><div class="gf-bd">'+L.map(r=>{const s=st(r.status);
+    return '<div class="gf-past"><span class="gf-pn">'+esc(r.name)+'<span class="gf-pc">'+esc(r.occ)+(r.shared?' · 🤝 shared':'')+' · '+esc(s[1])+'</span></span><span class="gf-amt">'+(r.paid!=null?money(r.paid):'—')+'</span></div>';}).join("")+'</div></div>';
+}
+function pastLabel(o){const T=occTot(o.id);return o.name+" — "+money(T.paid)+" paid · "+T.count+" present"+(T.count===1?"":"s");}
+const OCC_CSS=`
+.gf-nudge{border:2px solid #f9a8d4;box-shadow:none}
+.gf-nudge .gf-prow{border-top:none;padding:10px 12px}
+.gf-nudge .gf-tool{background:#be185d;color:#fff;border-color:#be185d}
+.gf-others{display:block;width:100%;text-align:left;margin:0 0 10px;padding:9px 12px;color:#475569}
+.gf-past{display:flex;align-items:center;gap:8px;border-top:1px solid #f1f5f9;padding:7px 0}
+.gf-past .gf-pn{font-size:13px;font-weight:700}
+`;
+Object.assign(window,{gfBdayStart,gfOccFor,gfOthers});
+const OCC_TEST={nextBday,nudges,pastGifts,occStar,bdayName,pastLabel,othersOpen:()=>gfOthersOpen};
+// GIFTS_OCC_END
+
 function gfDraw(){
   if(!gfRoot)return;
   let body;
   if(!gfLoaded)body='<div class="gf-empty" style="padding:40px">Loading presents…</div>';
   else{const oid=curOcc(),o=oid&&occ(oid);
     const V={even:evenView,wrap:wrapView,where:whereView,coming:comingView,shop:shopView,closet:closetView,eve:eveView,receipts:rcptView};
-    body=o?occBar()+viewNav()+(gfView==="person"&&gfPid?personView(o,gfPid):V[gfView]?V[gfView](o):peopleView(o)):emptyView();}
+    body=(!o||gfView==="people"?bdayNudges():"")+   // GIFTS_OCC: 🎂 at the top of Gifts
+      (o?occBar()+viewNav()+(gfView==="person"&&gfPid?personView(o,gfPid):V[gfView]?V[gfView](o):peopleView(o)):emptyView());}
   gfRoot.innerHTML=gfAh+'<div class="gf-wrap"><div class="gf-title">🎁 Gifts</div>'+body+'</div>'+selBar()+sheet();
 }
 function gfListen(){
@@ -803,10 +914,10 @@ const GF_CSS=`
 `;
 window.renderGifts=function(el,ah){
   if(typeof momHere==="function"&&!momHere()){el.innerHTML=(ah||"")+'<div class="gf-empty" style="padding:40px">🔒 Mom only.</div>';return;}   // the presents are a secret: no data loads without Mom
-  if(!document.getElementById("gf-style")){const s=document.createElement("style");s.id="gf-style";s.textContent=GF_CSS+RC_CSS;document.head.appendChild(s);}
+  if(!document.getElementById("gf-style")){const s=document.createElement("style");s.id="gf-style";s.textContent=GF_CSS+RC_CSS+OCC_CSS;document.head.appendChild(s);}
   gfRoot=el;gfAh=ah||"";gfListen();gfDraw();
 };
 Object.assign(window,{gfGo,gfSelToggle,gfPick,gfBulk,gfBulkIds,gfGather,gfEveTick,gfLineAdd,gfLineTick,gfLineDel,gfLinesCopy,gfEvenEdit,gfNeed,gfStartOcc,gfPickOcc,gfOpenPerson,gfBack,gfNewItem,gfEditItem,gfMove,gfSet,gfSetDraw,gfTogglePid,gfSecBudget,gfSecEdit,gfSecAdd,gfCancel,gfSave,gfDelete,gfNext,gfNewPerson,gfEditPerson,gfBudget,gfGroupBudget,gfNewGroup,gfNewOcc,gfOccEdit});
 window._gfTest={evenData,behind,evenSet,sel:()=>gfSel,selOn:()=>gfSelOn,data:()=>gfData,setData:d=>{gfData=d||{};gfLoaded=true;},people,groups,occs,secsOf,items,personTot,groupTot,occTot,left,share,curOcc,
-  setOcc:o=>{gfOcc=o;},view:()=>gfView,edit:()=>gfEdit,draw:gfDraw,setRoot:(el,ah)=>{gfRoot=el;gfAh=ah||"";},reset:()=>{gfOcc=null;gfView="people";gfPid=null;gfEdit=null;gfRcOpen=null;},rc:RC_TEST};
+  setOcc:o=>{gfOcc=o;},view:()=>gfView,edit:()=>gfEdit,draw:gfDraw,setRoot:(el,ah)=>{gfRoot=el;gfAh=ah||"";},reset:()=>{gfOcc=null;gfView="people";gfPid=null;gfEdit=null;gfRcOpen=null;gfOthersOpen=null;},rc:RC_TEST,oc:OCC_TEST};
 })();
