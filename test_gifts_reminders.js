@@ -129,6 +129,23 @@ console.log("\n# no names in any line");
   ok("no present, person, store or occasion name in " + all.length + " lines", !leak.length, leak);
 }
 
+console.log("\n# her rule 2026-11-20: no reminder ever says a section name or 'Santa' (a kid may see it while working)");
+{
+  const d = () => { const x = D(); x.occasions.x.secs.stocking = { name: "Stocking from Santa", emoji: "🧦", order: 1 }; x.occasions.x.orderBy = "2026-12-20";
+    x.items.s1 = { occ: "x", pids: ["k_ava"], sec: "stocking", name: "Santa hat", status: "here", paid: 5, returnBy: "2026-12-21" };
+    x.items.s2 = { occ: "x", pids: ["k_ben"], sec: "santa", name: "Letter from Santa", status: "ordered", paid: 3, due: "2026-12-01" };
+    x.items.s3 = { occ: "x", pids: ["k_ben"], sec: "santa", name: "Santa sleigh", status: "idea", plan: 20 }; return x; };
+  const days = [["2026-11-20", 10], ["2026-12-14", 10], ["2026-12-18", 10], ["2026-12-24", 18], ["2027-01-03", 10]];
+  const texts = []; days.forEach(([dy, h]) => at(dy, h, d()).forEach(r => texts.push(r.text)));
+  ok("an occasion with a 'Santa' section + Santa-named presents: " + texts.length + " lines, none matches /santa/i", texts.length >= 6 && !texts.some(t => /santa/i.test(t)), texts.filter(t => /santa/i.test(t)));
+  ok("…and no section name at all (Stocking, Main gift)", !texts.some(t => /stocking|main gift/i.test(t)));
+  const G = gworld({ today: "2026-12-18" }); G.T.setData(d()); G.T.reset(); G.T.setOcc("x"); const root = el("content"); G.T.setRoot(root, ""); G.ctx.gfGo("people");
+  const card = (root.innerHTML.match(/<div class="gf-card gf-rem">[\s\S]*?<\/div><\/div>/) || [""])[0];
+  ok("the Gifts page's reminders card: no /santa/i either", card.length > 0 && !/santa/i.test(card), card.slice(0, 200));
+  const M = gworld({ today: "2026-12-18" }); M.ctx.giftNowLines(); M.fire(d()); const L = M.ctx.giftNowLines();
+  ok("Home Base NOW lines: no /santa/i", L.length > 0 && !L.some(r => /santa/i.test(JSON.stringify(r))), L);
+}
+
 console.log("\n# ✏️ occasion: the order-by date — ONE update");
 {
   T.setData(D()); T.reset(); T.setOcc("x"); W.writes.length = 0;

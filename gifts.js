@@ -971,7 +971,9 @@ const OCC_TEST={nextBday,nudges,pastGifts,occStar,bdayName,pastLabel,othersOpen:
 // it asks window.giftNowLines(), which answers [] for anyone but Mom and on Dad's TV (?kiosk=dad), starts the gifts/ listener only for
 // Mom, answers [] until gifts/ is in, then asks Home Base to repaint ONCE (giftNowRepaint, index.html's GIFTS block).
 // SECRET: a line says "presents", never a present's name or who it's for — Home Base can be seen by a kid walking by. Names stay
-// inside Gifts. Data: only gifts/occasions/<oid>.orderBy, inside the occasion sheet's ONE update.
+// inside Gifts. Her rule 2026-11-20 ("reword the santa section in case a kid sees it … so the reminders don't pop up saying it"):
+// no reminder ever names a section either (no "Santa") — only counts and neutral words (presents, orders, ideas, to wrap).
+// Data: only gifts/occasions/<oid>.orderBy, inside the occasion sheet's ONE update.
 const REM_DAYS=7, REM_EVE_HOUR=17, REM_ORDER_BY="12-15";
 const REM_KINDS=["eve","return","late","orderby","wrap","early","hidden"];   // most urgent first
 const REM_WD=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"], REM_MO=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
