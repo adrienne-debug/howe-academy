@@ -38,7 +38,7 @@
 // counts once for each (🤝). Every write = one set/update/remove of ONE record (+ a log line). Nothing here touches schedules.
 (function(){
 "use strict";
-let gfData={}, gfOn=false, gfLoaded=false, gfOcc=null, gfView="people", gfPid=null, gfEdit=null, gfRoot=null, gfAh="", gfSelOn=false, gfSel={};
+let gfShKey="", gfData={}, gfOn=false, gfLoaded=false, gfOcc=null, gfView="people", gfPid=null, gfEdit=null, gfRoot=null, gfAh="", gfSelOn=false, gfSel={};
 const GF_STATUS=[["idea","💭 Idea","#64748b"],["ordered","🛒 Ordered","#d97706"],["here","📦 Here","#0f766e"],["wrapped","🎀 Wrapped","#be185d"],["given","🎄 Given","#16a34a"],["returned","↩ Returned","#7c3aed"],["dropped","✕ Dropped","#94a3b8"]];
 const GF_NEXT={idea:"ordered",ordered:"here",here:"wrapped",wrapped:"given"};
 const GF_DEAD=["returned","dropped"];   // no longer counts toward money or gift counts
@@ -911,7 +911,14 @@ function gfDraw(){
     const V={even:evenView,wrap:wrapView,where:whereView,coming:comingView,shop:shopView,closet:closetView,eve:eveView,receipts:rcptView};
     body=(!o||gfView==="people"?bdayNudges():"")+   // GIFTS_OCC: 🎂 at the top of Gifts
       (o?occBar()+viewNav()+(gfView==="person"&&gfPid?personView(o,gfPid):V[gfView]?V[gfView](o):peopleView(o)):emptyView());}
+  // SHEETSCROLL (her report 2026-11-20, adding a receipt: "every time I click something, it jumps it back up to the top"): every tap
+  // redraws the page AND the open pop-up, and a fresh pop-up starts scrolled to the top. Keep the pop-up's place when the SAME pop-up
+  // is still open after the redraw (a different one — ↪ Move from a present, say — still starts at the top).
+  const shKey=gfEdit?gfEdit.kind+":"+(gfEdit.id||""):"";let shTop=0;
+  try{const old=document.querySelector&&document.querySelector(".gf-sh");if(old&&shKey&&shKey===gfShKey)shTop=old.scrollTop||0;}catch(e){}
   gfRoot.innerHTML=gfAh+'<div class="gf-wrap"><div class="gf-title">🎁 Gifts</div>'+body+'</div>'+selBar()+sheet();
+  gfShKey=shKey;
+  if(shTop){try{const nw=document.querySelector&&document.querySelector(".gf-sh");if(nw)nw.scrollTop=shTop;}catch(e){}}
 }
 function gfListen(){
   if(gfOn)return;gfOn=true;
