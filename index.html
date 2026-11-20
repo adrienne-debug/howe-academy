@@ -5111,6 +5111,7 @@ function showTab(t,keepMsv){
   if(typeof kcStudyKid!=="undefined") kcStudyKid=null;   // 🧒📚 KC_MASTERY: a tab tap always lands on the page itself
   try{ if(typeof luLgLeave==="function") luLgLeave(); }catch(e){}   // 📒 LAUNDRY_LEDGER: leaving the page folds the ledger
   if(typeof kcPlay!=="undefined"&&kcPlay) kcPlayClose();   // 📚🎮 KC_PLAY: …and leaves a kid's Drills / Games (a sitting is kept, as Quit for now)
+  if(typeof wlClose==="function") wlClose();   // 🎁 WISHES: …and closes a kid's wish list (its listener stops)
   if(typeof mdFrameTab!=="undefined"){ mdFrameTab=(_mdFrameWant===t)?t:null; _mdFrameWant=null; }   // 📚🎮 KC_PLAY: a page framed by Mom's Day only through mdFrameOpen
   if(typeof dcState!=="undefined") dcState=null;   // 📺 DAYCARD: a tab tap closes the board
   mastAddMode=false; mastLogMode=false; mastLogScores={};
@@ -45078,13 +45079,53 @@ function renderKidsCorner(el){
       +'</div>'+((typeof tsStripHTML==="function")?tsStripHTML(k):'')+'</div>';   // TROPHYSHELF (her decisions 2026-10-22): 🏆 Trophies + the streak nudge in the top strip
     {
       if(typeof tsShelfHTML==="function"&&typeof tsOpenKid!=="undefined"&&tsOpenKid===k) h+=tsShelfHTML(k);   // TROPHYSHELF: the shelf section, inside the Corner, when open
-      h+=kcCalToggleHTML(k);
-      h+=kcModeBodyHTML(k);   // KC_LISTS: Today | My Lists | Month
+      if(typeof wlOn==="function"&&wlOn(k)) h+=wlPageHTML(k);   // 🎁 WISHES: the kid's wish list, in place of the buttons + page
+      else {
+        h+=kcCalToggleHTML(k);
+        if(typeof wlTileHTML==="function") h+=wlTileHTML(k);   // 🎁 WISHES: the 🎁 My wish list button
+        h+=kcModeBodyHTML(k);   // KC_LISTS: Today | My Lists | Month
+      }
     }
   }
   h+='</div>';
   el.innerHTML=h;
 }
+// WISHES_START — 🎁 Kids' Corner ▸ My wish list (gift tracker slice 7: her answer "Kids' wish lists → yes, later" and her yes to
+// building it, 2026-11-20; PLAN_gift_tracker_budget_2026-11-20.md §3.7 + §4 slice 7). The page lives in wishes.js (lazy, like
+// gifts.js); this block is only the button, the open / close state and the loader. A kid adds wishes — a few words, a picture or
+// both, and ⭐–⭐⭐⭐ — and removes their own. THE SECRET (§3.7): wishes.js never reads gifts/ and nothing about presents is ever written
+// under wishes/, so the list never changes because Mom bought something. It listens to wishes/<this kid> ONLY, only while open.
+//   wishes/<kid>/<wid> {text?, stars?, hasPhoto?, ts}   ·   wishPhotos/<kid>/<wid> dataURL (its own node, read one at a time)
+// Mom sees each kid's list in Mom's Day ▸ 💰 Budget ▸ 🎁 Gifts, on that kid's page (gifts.js GIFTS_WISH). Every family, every kid.
+var wlKid=null;   // the Kids' Corner kid whose wish list is open (page state, never saved — a reload lands on their usual page)
+function wlOn(k){ if(wlKid&&(wlKid!==k||typeof tab==="undefined"||tab!=="kids")) wlClose(); return !!wlKid&&wlKid===k; }
+function wlTileHTML(k){
+  const col=KID_COLOR[k]||"#2B7A78", big=kcLittle(k);
+  return '<div style="display:flex;padding:8px 12px 0;max-width:640px;margin:0 auto"><button onclick="wlOpen(\''+k+'\')" style="flex:1;padding:'+(big?'10px':'7px')+' 6px;border-radius:20px;border:2px dashed '+col+';background:#fff;color:'+col+';font-size:'+(big?'15px':'13px')+';font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u{1F381} My wish list</button></div>';
+}
+function wlOpen(k){
+  if(!k||ROSTER.indexOf(k)<0) return;
+  if(typeof kcPlay!=="undefined"&&kcPlay) kcPlayClose();
+  wlKid=k; window._wlErr=false;
+  if(!window.wishesPageHTML&&!window._wlLoading){
+    window._wlLoading=true;
+    const s=document.createElement("script");
+    s.src=/github\.io$/.test(location.hostname)?("wishes.js?v="+Date.now()):"wishes.js";
+    s.onload=()=>{ if(wlKid) renderAll(); };
+    s.onerror=()=>{ window._wlLoading=false; window._wlErr=true; if(wlKid) renderAll(); };
+    document.head.appendChild(s);
+  }
+  renderAll(); try{ window.scrollTo(0,0); }catch(e){}
+}
+function wlClose(){ if(!wlKid) return; wlKid=null; try{ if(window.wishesStop) wishesStop(); }catch(e){} }
+function wlBack(){ wlClose(); renderAll(); try{ window.scrollTo(0,0); }catch(e){} }
+function wlPageHTML(k){
+  if(window.wishesPageHTML) return wishesPageHTML(k);
+  const col=KID_COLOR[k]||"#2B7A78";
+  return '<div style="padding:12px;max-width:720px;margin:0 auto"><button onclick="wlBack()" style="padding:10px 14px;border-radius:14px;border:2px solid '+col+';background:#fff;color:'+col+';font-size:15px;font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif">\u2190 Back</button>'+
+    '<div style="padding:30px;text-align:center;color:var(--muted);font-size:15px;font-weight:600">'+(window._wlErr?'Couldn\u2019t open your wish list \u2014 check the internet and try again.':'Opening your wish list\u2026')+'</div></div>';
+}
+// WISHES_END
 function kcAddOpen(iso){ kcAddIso=(kcAddIso===iso)?null:iso; kcConfirmDel=null; renderAll(); setTimeout(function(){ const e=document.getElementById("kc-ev-title"); if(e) e.focus(); },60); }
 function kcSaveEvent(){
   _kcLoadKid(); const kid=kcKid; if(!kid||!kcAddIso) return;

@@ -87,7 +87,7 @@ console.log("One body for Kids' Corner and the General tablet");
   ok("mode lists → the My Lists page", /kc-big/.test(c.kcModeBodyHTML("lucy"))&&c.calls.some(x=>x[0]==="chores"));
   c.kcCalSet("today","lucy"); c.calls.length=0; ok("mode today → kcTodayHTML", c.kcModeBodyHTML("lucy")==="TODAY"&&c.calls.some(x=>x[0]==="today"));
   c.kcCalSet("month","lucy"); c.calls.length=0; ok("mode month → the month preview, little flag passed", /MONTH/.test(c.kcModeBodyHTML("lucy"))&&c.calls.some(x=>x[0]==="month"&&x[1]==="lucy"&&x[2]===false));
-  ok("renderKidsCorner draws the toggle then kcModeBodyHTML", /h\+=kcCalToggleHTML\(k\);\s*\n\s*h\+=kcModeBodyHTML\(k\);/.test(src));
+  ok("renderKidsCorner draws the toggle then kcModeBodyHTML", /h\+=kcCalToggleHTML\(k\);\s*\n(\s*if\(typeof wlTileHTML==="function"\) h\+=wlTileHTML\(k\);[^\n]*\n)?\s*h\+=kcModeBodyHTML\(k\);/.test(src));   // 🎁 WISHES: the wish-list button may sit between
   ok("the General tablet's My Day branch draws the same toggle and body", /kcCalToggleHTML\(kid\)\s*\n\s*\+kcModeBodyHTML\(kid\)\+'<\/div>';/.test(src));
   ok("no caller is left on the old no-kid kcCalGet()", !/kcCalGet\(\)/.test(src.replace(block,"")));
   ok("the Kids' Corner header has a line for the lists mode", /\(kcCalGet\(k\)==="lists"\)\?'Your lists for today/.test(src));
