@@ -130,6 +130,9 @@ for (let n = 0; n <= 14; n++) {
     ["kid_a", "kid_b", "kid_c", "kid_d"].forEach(k => { S.days[n].bank[k] = bankDay(w, k, wk, dn); S.days[n]["x_" + k] = data(A, k, 0); });
     S.days[n].html = LG(A, "lgShow()"); S.days[n].phone = S.days[n].html;
     S.days[n].week = LG(A, "lgGo('',0,1)"); S.days[n].weekX = JSON.parse(A.run("(function(){ const t=lgNow(), o=[]; for(let k=-(t+1);k<=0;k++) o.push(lgDayData('kid_a',k)); return JSON.stringify(o); })()"));
+    if (process.env.LEDGER_DUMP && (n === 10 || n === 12)) {   // the preview page's drawings (nothing else reads them)
+      S.dump = S.dump || {}; S.dump["d" + n] = { day: S.days[n].html, week: S.days[n].week, empty: LG(A, "lgGo('kid_d',0,0)") };
+      A.run("HA_LS.setItem('ha_ledger_hello','1');1"); S.dump["d" + n].plain = LG(A, "lgGo('kid_a',0,0)"); A.run("HA_LS.removeItem('ha_ledger_hello');1"); }
     A.run("lgClose();1");
     // J · every other screen = the app before, byte for byte, but the button
     if (BW) {
@@ -186,7 +189,7 @@ const T = S.days[10], th = T.html, X = T.x;
   ok("…earned 27 = the bank lines kid_a got on Thursday (src earn, this week, thursday, not held); held 3 = the held line", X.earned === 27 && T.bank.kid_a.paid === 27 && T.bank.kid_a.held === 3 && X.held === 3, [X.earned, T.bank.kid_a]);
   ok("✅ done on its day, with the time and what it paid: \"✅ 🛏 Make the bed +2 ⭐ <time>\"", /^✅ 🛏 Make the bed \+2 ⭐ \d{1,2}:\d\d [AP]M$/.test(r("Make the bed")), r("Make the bed"));
   ok("✅ done late, for less: \"✅ 🧹 Vacuum the den paid 6 of 10 ⭐ · due Tue +6 ⭐ <time>\"", /^✅ 🧹 Vacuum the den paid 6 of 10 ⭐ · due Tue \+6 ⭐ /.test(r("Vacuum the den")), r("Vacuum the den"));
-  ok("⏳ in its wait: \"⏳ 🪶 Dust the shelves still on Kid A's list from Wed · pays 8 of 10 ⭐ today 8 ⭐\" (and the lists say 1 day: mdLateDays)", r("Dust the shelves") === "⏳ 🪶 Dust the shelves still on Kid A's list from Wed · pays 8 of 10 ⭐ today 8 ⭐" && T.raw["Dust the shelves"] === 1, r("Dust the shelves"));
+  ok("⏳ in its wait: \"⏳ 🪶 Dust the shelves still on Kid A's list from Wed · pays 8 of 10 ⭐ today\" (and the lists say 1 day: mdLateDays)", r("Dust the shelves") === "⏳ 🪶 Dust the shelves still on Kid A's list from Wed · pays 8 of 10 ⭐ today" && T.raw["Dust the shelves"] === 1, r("Dust the shelves"));
   ok("○ not done yet (today): \"○ 🍽 Wipe the table not done yet 2 ⭐\" and \"○ 👕 Lay out clothes not done yet\"", r("Wipe the table") === "○ 🍽 Wipe the table not done yet 2 ⭐" && r("Lay out clothes") === "○ 👕 Lay out clothes not done yet", [r("Wipe the table"), r("Lay out clothes")]);
   ok("➖ excused, a line only: \"➖ 🐟 Feed the fish excused (✕ today)\"; 🌅 \"🌅 🍂 Rake the leaves sent to tomorrow morning\"", r("Feed the fish") === "➖ 🐟 Feed the fish excused (✕ today)" && r("Rake the leaves") === "🌅 🍂 Rake the leaves sent to tomorrow morning", [r("Feed the fish"), r("Rake the leaves")]);
   ok("⏸ held pay, a line only: \"⏸ 🪴 Water the plants waiting for your ✓ · 3 ⭐ <time>\"", /^⏸ 🪴 Water the plants waiting for your ✓ · 3 ⭐ \d/.test(r("Water the plants")), r("Water the plants"));
@@ -315,5 +318,6 @@ else {
   const t1 = process.hrtime.bigint(); for (const k of ["kid_a", "kid_b", "kid_c", "kid_d"]) LG(A4, "lgGo('" + k + "',0,1)"); const ms = Number(process.hrtime.bigint() - t1) / 1e6;
   S.notes.draw = { first, week4: ms }; console.log("\n(draw time on this machine, Sat 11/28: the first open " + first.toFixed(1) + " ms; This week Sun … Sat for all four kids " + ms.toFixed(1) + " ms in all, ≈ " + (ms / 28).toFixed(2) + " ms a kid-day)"); }
 
+if (process.env.LEDGER_DUMP) fs.writeFileSync(process.env.LEDGER_DUMP, J(S.dump));
 console.log("\n" + pass + " passed, " + fail + " failed"); process.exit(fail ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

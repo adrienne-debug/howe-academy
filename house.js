@@ -1529,7 +1529,7 @@ function lgRow(slot,kid,D,i,st){
     return Object.assign(r,{ic:"✖",note:"not done"+(!f?"":f.done?" · done "+lgWd(f.done.iso)+", late (see that day)":f.gone?" · gone from "+who+"'s list "+lgWd(f.gone.iso):" · still on "+who+"'s list today")}); }
   if(D.k===0){ const n=(typeof mdLateDays==="function")?mdLateDays(slot,kid,D.dn,i,st):0;
     if(n>0){ const pay=rtFallPay(st,n);
-      return Object.assign(r,{ic:"⏳",c:0,want:pay,note:(rtWaitAsBefore(st)?n+" day"+(n>1?"s":"")+" late":"still on "+who+"'s list "+rtWaitNote(n,st).split(" · ")[0])+(pay<full?" · pays "+pay+" of "+full+" ⭐ today":"")}); } }
+      return Object.assign(r,{ic:"⏳",c:0,note:(rtWaitAsBefore(st)?n+" day"+(n>1?"s":"")+" late":"still on "+who+"'s list "+rtWaitNote(n,st).split(" · ")[0])+(pay<full?" · pays "+pay+" of "+full+" ⭐ today":"")}); } }
   return null;
 }
 // a bonus record (🏁 list / 🏆 day) → its row, or null
@@ -1604,7 +1604,7 @@ function lgHTML(){
     +'<span style="display:inline-flex;gap:5px">'+chip(!lgWeek&&lgOff===0,'Today',"lgGo('',0,0)")+chip(!lgWeek&&lgOff===-1,'Yesterday',"lgGo('',-1,0)")+chip(lgWeek,'This week',"lgGo('',"+(lgWeek?lgOff:0)+",1)")+'</span></div>';
   if(lgHelloOpen()) h+='<div style="position:relative;margin:8px 0 4px;padding:10px 34px 10px 12px;background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px;font-size:12.5px;line-height:1.5;color:#44403c">'
     +'<button onclick="lgHelloClose()" title="Close for good" style="position:absolute;top:6px;right:6px;border:none;background:none;font-size:14px;cursor:pointer;color:#78716c">✕</button>'
-    +'<b>📒 This is everything on '+esc(cap(kid))+'\'s lists '+(lgOff===0&&!lgWeek?'today':'that day')+'.</b><br>✅ done · ○ not done yet · ⏳ still on the list from an earlier day (it pays a little less each day) · ✖ gone from the list (not done in time).<br>'
+    +'<b>📒 This is everything on '+esc(cap(kid))+'\'s lists '+(lgWeek?'this week':lgOff===0?'today':'that day')+'.</b><br>✅ done · ○ not done yet · ⏳ still on the list from an earlier day (it pays a little less each day) · ✖ gone from the list (not done in time).<br>'
     +'The line on top adds up the stars.'+((typeof hcGoMom==="function"&&hcGoMom())?' To change how a chore works, tap its name.':'')+'</div>';
   h+=lgWeek?lgWeekHTML(kid):lgDayHTML(kid,lgOff);
   return h+'</div></div>'; }
