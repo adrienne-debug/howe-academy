@@ -72108,6 +72108,27 @@ function mstSittingInit(pile, session, opts) {
   return { cards, queue, passes, counts };
 }
 
+// COMEBACK20_START — a card that needs another look in THIS sitting comes back about 20 cards later, not at the end of the
+// whole line. Her yes 2026-11-21 to: "a card the child is still learning comes back 10–30 cards later instead of at the end of the
+// whole line." Why (memory note project_howe_sitting_size_research.md, 11/17): in a 75–90 card 🌿 sitting a learning card's 2nd
+// look came 75–90 cards after its 1st; the studies she was given found repeats spaced ~10–30 cards apart did best (Karpicke &
+// Bauernschmidt 2011; Pyc & Rawson 2009), nothing was tested past ~30–34 apart, and back-to-back repeats did worst.
+// 20 is OUR choice inside that tested 10–30 range — it is not a number from the research.
+// The rule: the card goes back with MST_COMEBACK_GAP other cards ahead of it; when that many aren't left, it goes to the end of
+// the line exactly as before (so a short sitting is unchanged). Two cards sent back one after the other keep their order and each
+// still has 20 cards between its looks. Order only: how many rights a card needs, what a miss does, passes, Mix's once-through,
+// scoring and what is saved are all as before, and a saved sitting from the old build resumes as it is (the queue is just a list).
+const MST_COMEBACK_GAP = 20;
+// line = the queue WITHOUT the card (already taken out at pos) · pos = where it was · returns a new line with key put back.
+function mstComeback(line, pos, key, gap) {
+  const out = (line || []).slice();
+  const g = (gap == null) ? MST_COMEBACK_GAP : Math.max(0, gap | 0);
+  const at = Math.max(0, pos | 0) + g;
+  if (at >= out.length) out.push(key);   // fewer than `gap` cards left → the end of the line, as before
+  else out.splice(at, 0, key);
+  return out;
+}
+// COMEBACK20_END
 function mstAnswer(state, key, ans) {
   const card = state.cards[key];
   if (!card || card.done) return state;
@@ -72115,6 +72136,12 @@ function mstAnswer(state, key, ans) {
   if (idx === -1) return state;
   if (card.first === null) card.first = ans;
   if (typeof gameCardAnswered === "function") gameCardAnswered(card);   // ⏱ CARDSECS: the first grade stops the card's clock (no-op without gameCardShown)
+  // COMEBACK20: a card that needs another look goes back ~20 cards ahead (end of the line when fewer are left). Guarded so a
+  // harness that loads mstAnswer alone keeps the old push.
+  const _back = () => {
+    if (typeof mstComeback === "function") { const nq = mstComeback(state.queue, idx, key); state.queue.length = 0; nq.forEach(k => state.queue.push(k)); }
+    else state.queue.push(key);
+  };
   if (ans !== "good") card.misses = (card.misses | 0) + 1;   // 🎮 MISSPLAY: how often this card was missed in the sitting (study misses join the practice list)
 
   if (card.kind === "review") {
@@ -72122,7 +72149,7 @@ function mstAnswer(state, key, ans) {
     if (ans === "good" || card.once) {   // MIXONCE: a Mix card's miss is scored ✗ (and joins the missed-card games list) — it does not go back in line
       card.done = true;
     } else {
-      state.queue.push(key);
+      _back();
     }
   } else {
     state.queue.splice(idx, 1);
@@ -72131,11 +72158,11 @@ function mstAnswer(state, key, ans) {
       if (card.goods >= (card.passes != null ? card.passes : state.passes)) {   // PATSIDE: a repeat-side day asks for 1
         card.done = true;
       } else {
-        state.queue.push(key);
+        _back();
       }
     } else {
       card.goods = 0;
-      state.queue.push(key);
+      _back();
     }
   }
   return state;
