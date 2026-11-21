@@ -1493,6 +1493,8 @@ function lgPrevSteps(slot,kid,D){ const s=rtStepsFor(slot,kid,false,D.dn)||[], c
   if(slot==="afternoon") llKidFoldLoads(kid,D.iso).forEach(function(id){ if(A[id]) out.push(llFoldRow(kid,id,D.iso)); });
   return out; }
 function lgHeld(kid,bid){ const a=bid&&bank[kid]&&bank[kid].adjustments&&bank[kid].adjustments[bid]; return !!(a&&a.held); }
+// a held line Mom turned down (✗ on ⏸ Claims: bankHeldReject removes the line, the tick stays): the check-off names a line the bank no longer has
+function lgUnpaid(kid,bid){ return !!(bid&&bank[kid]&&bank[kid].adjustments&&!bank[kid].adjustments[bid]); }
 function lgWd(iso){ const d=new Date(iso+"T12:00:00"); return LG_WD[d.getDay()]||""; }
 function lgName(kid){ return cap(kid); }
 // A turn due on day D and not done that day: what became of it, by the lists' wait rule walked day by day (rtLateDays / rtWaitCut):
@@ -1515,6 +1517,7 @@ function lgRow(slot,kid,D,i,st){
   if(dn&&rec.am) return Object.assign(r,{ic:"✅",note:"🌅 done the next morning ("+lgWd(rec.am)+") · its stars are on that day",c:1});
   if(dn){ const p=rec.pts||0; r.ts=rec.ts||""; r.c=1;
     if(lgHeld(kid,rec.bid)) return Object.assign(r,{ic:"⏸",note:"waiting for your ✓ · "+p+" ⭐",held:p});
+    if(lgUnpaid(kid,rec.bid)) return Object.assign(r,{ic:"✅",note:"not paid (your ✗ on its stars)"});
     r.ic="✅"; r.pts=p;
     if(due) return r;
     if(!/^wk:/.test(cad)){ if(cad==="asneeded") r.note="as needed"; return r; }

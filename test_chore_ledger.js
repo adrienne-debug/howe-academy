@@ -114,9 +114,10 @@ for (let n = 0; n <= 14; n++) {
     if (n === 10) { tick(B, "chores", "kid_a", "Vacuum the den");        // Tuesday's, 2 days late: 6 of 10
       wave(A, "chores", "kid_a", "Feed the fish"); send(A, "chores", "kid_a", "Rake the leaves"); }
     if (n >= 6 && n <= 12 && n !== 10) { tick(B, "afternoon", "kid_a", "Water the plants"); tick(B, "afternoon", "kid_a", "Pick up the den"); tick(B, "evening", "kid_a", "Lay out clothes"); }
-    if (n === 10) { B.run("choreVerify={kid_a:true};1"); tick(B, "afternoon", "kid_a", "Water the plants"); B.run("choreVerify={};1"); tick(B, "afternoon", "kid_a", "Pick up the den"); }   // held, then the list completes (🏁 not held)
+    if (n === 10) { B.run("choreVerify=Object.assign({},choreVerify,{kid_a:true});1"); tick(B, "afternoon", "kid_a", "Water the plants"); B.run("choreVerify=Object.assign({},choreVerify);delete choreVerify.kid_a;1"); tick(B, "afternoon", "kid_a", "Pick up the den"); }   // held, then the list completes (🏁 not held)
     if (n < 6) { tick(B, "afternoon", "kid_a", "Water the plants"); tick(B, "afternoon", "kid_a", "Pick up the den"); tick(B, "evening", "kid_a", "Lay out clothes"); }
     if (n === 13) tick(B, "chores", "kid_a", "Make the bed");
+    if (n === 11) { const wk0 = A.run("activeWk()"), hid = Object.keys(adj(w, "kid_b")).find(id => { const a = adj(w, "kid_b")[id]; return a && a.held && a.day === "friday" && a.wk === wk0; }); A.run("bankHeldReject('kid_b'," + J(hid) + ")"); }   // Mom's ✗ on Friday's porch
     await w.flush();
     await go(w, n, 18);
     // the kids' lists drawn on the real today (they file the "— not done" lines), and Mom's Kids today card (it makes the lists' read of last week)
@@ -204,6 +205,8 @@ const T = S.days[10], th = T.html, X = T.x;
   ok("never \"drop\" / \"wait\" in a row's words; \"late\" only on the 3-a-week row", !/\bdrop|\bwait(?!ing for your)/i.test(txt(th)) && !/ late/.test(rowsH(th).filter(x => !/Empty the trash/.test(x)).join("|")));
   ok("no button, switch, ⚙ or disabled placeholder on a row (L2–L5 are not drawn)", rowsH(th).every(x => !/⭐ Give|➖ Excuse|↩ Send|⚙/.test(x)) && !/<button[^>]*disabled[^>]*>(?!‹|›)/.test(th) && !/⚙/.test(th));
   ok("held pay on kid_b (Mom checks before pay): \"⏸ 🧺 Sweep the porch waiting for your ✓ · 6 ⭐\", earned 0, the bank's held 6", T.x_kid_b.held === 6 && T.x_kid_b.earned === 0 && T.bank.kid_b.held === 6);
+  { const F = S.days[11], r = F.x_kid_b.lists.flatMap(L => L.rows).find(x => /Sweep the porch/.test(x.nm)) || {};
+    ok("Mom's ✗ on a held claim (kid_b's porch, Friday): \"✅ 🧺 Sweep the porch not paid (your ✗ on its stars)\", no stars, nothing held; = the bank (0 paid, 0 held)", r.ic === "✅" && r.note === "not paid (your ✗ on its stars)" && !r.pts && !r.held && F.x_kid_b.earned === 0 && F.x_kid_b.held === 0 && F.bank.kid_b.paid === 0 && F.bank.kid_b.held === 0, [r, F.bank.kid_b]); }
   ok("kid_c: \"🏁 List complete bonus +2\" under Chores and \"🏆 Whole day complete +3\" as its own row; earned 8 = the bank's 8", T.x_kid_c.earned === 8 && T.bank.kid_c.paid === 8 && T.x_kid_c.lists.some(L => L.slot === "day" && L.rows[0].pts === 3), T.x_kid_c);
 }
 
