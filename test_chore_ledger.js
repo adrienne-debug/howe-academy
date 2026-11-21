@@ -23,7 +23,7 @@
  * change, with last week's check-offs loaded and not yet loaded; the empty day; the not-on-this-device day · G the chips, arrows and
  * kid chips move the view and write nothing; no database read or write, no log line, no bank change, through all of it · H the chore
  * name opens its card for Mom, not for Dad · I the first-minute card once per device, its one local flag · J every other screen =
- * the app before (git show 9b74d9af:index.html), byte for byte, apart from the button.
+ * the app before (git show abb03281:index.html), byte for byte, apart from the button.
  * LEDGER_INDEX / LEDGER_HJS = other copies of index.html / house.js (the mutation checks).   run: node test_chore_ledger.js
  */
 "use strict";
@@ -32,7 +32,7 @@ const W = require(path.join(__dirname, "test_fixtures", "house_world.js"));
 let pass = 0, fail = 0; const ok = (n, c, x) => { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  (" + JSON.stringify(x).slice(0, 900) + ")" : "")); } };
 const J = x => JSON.stringify(x), clone = x => JSON.parse(J(x));
 const IDX = process.env.LEDGER_INDEX || path.join(__dirname, "index.html"), HJS = fs.readFileSync(process.env.LEDGER_HJS || path.join(__dirname, "house.js"), "utf8");
-const BASE_SHA = "9b74d9af";
+const BASE_SHA = "abb03281";
 let BASE = null; try { const t = path.join(os.tmpdir(), "chore_ledger_base_" + process.pid + ".html"); fs.writeFileSync(t, cp.execSync("git show " + BASE_SHA + ":index.html", { cwd: __dirname, maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "ignore"] })); BASE = t; } catch (e) { BASE = null; }
 console.log("(the app before: " + (BASE ? BASE_SHA : "none — git show " + BASE_SHA + " failed; the checks against it are SKIPPED") + ")");
 
