@@ -3008,7 +3008,7 @@ function rtSlotHTML(slot,kid){
     optIdx.forEach(i=>{ const st=steps[i], sd=rtDoneOn(slot,kid,day,i), pts=st.pts||0;
       h+='<div class="mr-step'+(sd?" done":"")+'"'+(_ed?' onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')"':'')+' style="opacity:'+(sd?'1':'.75')+'">'+
          '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
-         '<div class="sl-slot-name" style="flex:1">'+(st.emoji?st.emoji+" ":"")+st.label+' <span class="cadtag" style="color:#0e7490;border-color:#a5f3fc">\u270B as needed</span></div>'+
+         '<div class="sl-slot-name" style="flex:1">'+(st.emoji?st.emoji+" ":"")+st.label+(st.foldReady?(sd?'':' <span class="cadtag" style="color:#15803d;border-color:#bbf7d0">🧺 ready to fold</span>'):' <span class="cadtag" style="color:#0e7490;border-color:#a5f3fc">\u270B as needed</span>')+'</div>'   /* FOLDREADY: a ready Fold row says so, not "as needed" */+
          (pts>0?'<span class="mr-pts">+'+pts+' ⭐</span>':'')+'</div>'; });
     if(typeof rtWavedRowHTML==="function") wavedIdx.forEach(i=>{ h+=rtWavedRowHTML(steps[i]); });   // WAVE
     h+='</div>';
@@ -15872,6 +15872,33 @@ function llKidDayLoads(kid,iso){ const t=llToday(); if(!iso) return [];
   const r=llProject(t,n+1,false)[n], out=r.loads.filter(function(id){ return llWho(id,iso).who===kid&&r.waited.indexOf(id)<0; });
   _llKidMemo[key]={at:now,v:JSON.stringify(laundryLine).length,r:out}; return out; }
 function llKidFoldLoads(kid,iso){ const L=llDayLog(iso); return Object.keys(L).filter(function(id){ return llKnown(id)&&L[id]&&!L[id].with&&(L[id].by===kid||llWho(id,iso).who===kid); }); }
+// FOLDREADY_START — 👕 a kid's "Fold + put away" row waits until the load is ready to fold, and never holds the Afternoon list (her
+// report 2026-11-20: a child started his laundry and his Afternoon list already said "Fold + put away" while the load had not been
+// through the dryer — "I don't want … for him to get a penalty because it might not be ready for him to fold. I think it shouldn't
+// show up until it says that it is in the basket or out of the dryer on mom's end"; her picks 2026-11-21: "Show it, never hold the
+// list", and "Fold line first" = her yes to build it).
+//   · Ready = the load's stage is "fold" (out of the dryer: the fold pile — also where a custom cycle's last step and a hung load
+//     taken down land) or "basket" (the dry basket after the dryer). Pre-wash, washer, the wet basket, dryer, air-drying, a custom
+//     step, the wash-today bin = not ready, whoever's device reads it. A split load is ready only when every half still out is.
+//   · Not ready → the row keeps its place (rows are ticked by index, so nothing after it moves) as cad "none": not drawn, can't be
+//     ticked, never due, never late, no "— not done", not in any total / allDone / 🏁 bonus / Kids today count.
+//   · Ready, or already put away → cad "asneeded": shown on the Afternoon list, tappable, pays its own stars; ✓ puts the load away
+//     and un-✓ brings it back (FOLD_BACK) exactly as before — but it is never part of the list's total / allDone / bonus, so the list
+//     never waits on it and a row turning up after the list was finished takes nothing back.
+//   · A load not put away by tomorrow is a row on the kid's "🧺 Your laundry" card (llKidOutLoads, fold / basket), as before.
+// Nothing is written; a family without the laundry line never gets here (llDrivesKid).
+function llFoldReady(l){ return !!l&&(l.stage==="fold"||l.stage==="basket"); }   // THE test: this load record is ready to fold
+// The loads a day's Fold row stands for: that day's log load for the item (+ its hung half, LAUNDRY_SPLIT); none left → the item's
+// newest earlier load still out — the one ✓ would put away (LAUNDRY_SYNC, llKidRowHook). [] = everything put away.
+function llFoldRowLoads(id,iso){ const LD=(typeof laundryData!=="undefined"&&laundryData)||{}, e=llDayLog(iso)[id]||{};
+  const ks=e.load?[e.load,(typeof laundrySplitHalfId==="function")?laundrySplitHalfId(e.load):e.load+"_h"]:Object.keys(LD).filter(function(k){ return LD[k]&&LD[k].line===id&&LD[k].lineDay===iso; });
+  let r=ks.filter(function(k){ return !!LD[k]; }).map(function(k){ return LD[k]; });
+  if(!r.length&&typeof llOutFor==="function"){ const o=llOutFor(id,iso); if(o&&o.l) r=[o.l]; }
+  return r; }
+function llFoldRowWaits(id,iso){ return !llFoldRowLoads(id,iso).every(llFoldReady); }
+function llFoldRow(kid,id,iso){ const w=llFoldRowWaits(id,iso), st={emoji:"👕",label:"Fold + put away: "+llLabelFull(id),pts:llKidPts(kid,"fold"),cad:w?"none":"asneeded",laundry:"lineFold",line:id};
+  if(w) st.llHidden=true; else st.foldReady=true; return st; }
+// FOLDREADY_END
 function llRtSteps(slot,kid,steps,dayName){ if(typeof window==="undefined") return _llRtStepsRaw(slot,kid,steps,dayName);   // ⚡ LL_MEMO: same input steps → same list
   const dn=dayName||(typeof day!=="undefined"?day:""), key="R|"+slot+"|"+kid+"|"+dn+"|"+llToday(), m=_llM[key], now=Date.now();
   if(m&&m.s===steps&&now-m.t<15000) return m.v; const v=_llRtStepsRaw(slot,kid,steps,dayName); _llM[key]={t:now,v:v,s:steps}; return v; }
@@ -15880,7 +15907,7 @@ function _llRtStepsRaw(slot,kid,steps,dayName){ if(!llDrivesKid(kid)) return ste
   const dn=dayName||(typeof day!=="undefined"?day:""), iso=(dn&&typeof calDateForWeekDay==="function")?calDateForWeekDay(dn):null; if(!iso) return out;
   const A=llAll();
   if(slot==="morning"||slot==="afternoon") llKidDayLoads(kid,iso).forEach(function(id){ if(A[id]&&llWhen(id)===slot) out.push({emoji:A[id].emoji||"🧺",label:"Start your laundry: "+llLabelFull(id),pts:llKidPts(kid,"start"),cad:"daily",laundry:true,line:id}); });   // 🌤 LL_WHEN: an Afternoon load's Start row goes ahead of the Fold rows (they only grow at the end, so no tick key moves)
-  if(slot==="afternoon") llKidFoldLoads(kid,iso).forEach(function(id){ if(A[id]) out.push({emoji:"👕",label:"Fold + put away: "+llLabelFull(id),pts:llKidPts(kid,"fold"),cad:"daily",laundry:"lineFold",line:id}); });
+  if(slot==="afternoon") llKidFoldLoads(kid,iso).forEach(function(id){ if(A[id]) out.push(llFoldRow(kid,id,iso)); });   // FOLDREADY: hidden in place until ready; then shown, never holding the list
   return out; }
 // LL_WHEN_START — 🌅 / 🌤 which list a load's Start row goes on (Sara DeWalt's report 2026-11-02, via Adrienne: "I would like to do 2 for
 // the day but then Kenzie's school would not open because she couldn't check off the morning chore of putting in a load when there was
