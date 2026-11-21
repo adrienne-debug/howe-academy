@@ -12,6 +12,9 @@
 //   · GEOALL (her "Yes, add all", 2026-11-16): every country — 195 = the 193 UN members + Vatican City + Palestine, Appendix B's
 //     87 first in each continent; each has shape data, a capital point and the credit line; no name twice; a country too small
 //     to see gets a ring (one per island group) in a frame wide enough to show its neighbours.
+//   · GEOEXTRA (slice 5): geoflags.js — 193 Stage-8 flags from Commons, every one public domain (Oman's file is not → left out;
+//     Afghanistan disputed → left out until Mom says), per-file credit, every SVG parses, size caps — and the Stage-10 photo credits
+//     (PD / CC0 / CC BY only; the photos themselves are not in the repo). The 24 rivers and ranges are checked above.
 //   run: node test_geo_data.js
 const fs = require("fs"), path = require("path"), zlib = require("zlib"), vm = require("vm");
 const file = path.join(__dirname, "geo.js");
@@ -119,6 +122,40 @@ const noCredit = src.replace(/Howe Academy/g, "");
 ok("no family or kid names in the file (the credit line aside)", !names.test(noCredit), (noCredit.match(names) || [])[0]);
 ok("deterministic: the same picture text twice", G.text("country", "Brazil") === G.text("country", "Brazil") && G.text("word", "delta") === G.text("word", "delta"));
 ok("the runtime never touches the DOM or the app (no document / db / masteryData / fetch in it)", !/\b(document\.|db\.|masteryData|unitStudies|fetch\(|XMLHttpRequest|localStorage)/.test(src.slice(src.indexOf("const G = GEO_DATA"))));
+
+// ── 🏳️🗽 GEOEXTRA (slice 5): geoflags.js — the Stage-8 flags — and the Stage-10 photos' credits ──
+{ const ff = path.join(__dirname, "geoflags.js"), fsrc = fs.readFileSync(ff, "utf8");
+  const fw = {}; vm.runInNewContext(fsrc, { window: fw, module: undefined, console });
+  const F = require(ff), D = F.names().map(n => [n, F.text(n), F.svg(n)]);
+  ok("geoflags.js loads as a classic script → window.HoweGeoFlags, and as a Node module", !!(fw.HoweGeoFlags && F.svg && F.credit && F.names && F.left));
+  ok("193 flags: every Stages-6 country but the two left out — Oman (its Commons file is not public domain) and Afghanistan (disputed, Mom's call)", F.names().length === 193 && all195.filter(n => !F.has(n)).sort().join() === "Afghanistan,Oman" && JSON.stringify(Object.keys(F.left()).sort()) === '["Afghanistan","Oman"]' && /not public domain/.test(F.left().Oman));
+  ok("EVERY flag is public domain, with its Commons file and page (the plan's rule: PD only, per-file credit)", F.names().every(n => { const f = F.file(n); return f && f.license === "Public domain" && /^Flag of .+\.svg$/.test(f.file) && /^https:\/\/commons\.wikimedia\.org\/wiki\/File:Flag_of_/.test(f.url); }));
+  ok("credit on every flag: “Flag: <file> · Public domain · Wikimedia Commons” (no person's name copied in)", F.names().every(n => /^Flag: Flag of .+\.svg · Public domain · Wikimedia Commons$/.test(F.credit(n))));
+  const svgOk = t => { if (!/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"[^>]* viewBox="[-\d. ]+"[^>]*>/.test(t) || !t.endsWith("</svg>")) return "not an <svg …viewBox…>…</svg>";
+    if (/NaN|undefined|Infinity|<script|foreignObject|<image|\son[a-z]+=|href="(?!#)/i.test(t)) return "NaN / script / image / outside link";
+    const tags = t.replace(/<style[^>]*>[\s\S]*?<\/style>/g, "<style/>").match(/<\/?[a-zA-Z][^>]*>/g) || [], st = [];
+    for (const g of tags) { if (/\/>$/.test(g)) continue; const m = /^<(\/?)([a-zA-Z:]+)/.exec(g); if (m[1]) { if (st.pop() !== m[2]) return "unbalanced at " + g.slice(0, 30); } else st.push(m[2]); }
+    return st.length ? "unclosed " + st.join() : ""; };
+  const vec = D.filter(x => x[1]), png = D.filter(x => !x[1]);
+  const badV = vec.map(x => [x[0], svgOk(x[1])]).filter(x => x[1]);
+  ok(vec.length + " vector flags: every SVG parses (balanced tags, a viewBox, no script / image / outside link / NaN)", vec.length >= 150 && !badV.length, badV.slice(0, 5));
+  const pngInfo = b64 => { const b = Buffer.from(b64, "base64"); return b.slice(0, 8).toString("hex") === "89504e470d0a1a0a" ? { w: b.readUInt32BE(16), h: b.readUInt32BE(20), n: b.length } : null; };
+  const badP = png.map(x => [x[0], pngInfo(x[2].split(",")[1])]).filter(x => !x[1] || x[1].w > 480 || x[1].h > 480 || x[1].n > 18000);
+  ok(png.length + " detailed coats of arms (Mexico, Spain, Ecuador…) as small PNGs: real PNG data, ≤ 480 px, ≤ 18 KB each", png.length > 0 && png.length <= 40 && !badP.length && png.every(x => /^data:image\/png;base64,/.test(x[2])), badP.slice(0, 5));
+  ok("size caps: a vector flag ≤ 12 KB; the flags' shapes keep their own proportions (Nepal tall, Switzerland and Vatican City square, Qatar long)", vec.every(x => x[1].length <= 12 * 1024) && F.ratio("Nepal") < 1 && F.ratio("Switzerland") === 1 && F.ratio("Vatican City") === 1 && F.ratio("Qatar") > 2.4);
+  const fgz = zlib.gzipSync(fsrc).length;
+  console.log("  geoflags.js " + (fsrc.length / 1024).toFixed(0) + " KB raw · " + (fgz / 1024).toFixed(0) + " KB gzip · " + vec.length + " vector + " + png.length + " PNG");
+  ok("geoflags.js under its caps: 480 KB raw, 260 KB gzip (its own lazy file — over the 400 KB line for riding in geo.js)", fsrc.length < 480 * 1024 && fgz < 260 * 1024, [fsrc.length, fgz]);
+  ok("generated header names its build; the build is in tools/", /GENERATED by tools\/build_geo_flags\.py/.test(fsrc.slice(0, 300)) && fs.existsSync(path.join(__dirname, "tools", "build_geo_flags.py")));
+  ok("no family or kid names in geoflags.js", !names.test(fsrc), (fsrc.match(names) || [])[0]);
+  ok("its runtime never touches the DOM or the app", !/\b(document\.|db\.|masteryData|unitStudies|fetch\(|XMLHttpRequest|localStorage)/.test(fsrc.slice(fsrc.indexOf("const enc ="))));
+  ok("a flag comes back as a data URI <img src> can show; a name with no flag → null", /^data:image\/svg\+xml;utf8,%3Csvg/.test(F.svg("France")) && F.svg("Oman") === null && F.svg("Atlantis") === null);
+  // the photos (Stage 10) are NOT in the repo — their credits are
+  const PH = JSON.parse(fs.readFileSync(path.join(__dirname, "tools", "geo_landmark_photos.json"), "utf8")).photos;
+  ok("24 landmark photo credits: PD / CC0 / CC BY only (no share-alike), each with file, title, author, licence, source page, size", PH.length === 24 && PH.every(p => /^(Public domain|CC0|CC BY \d\.\d)$/.test(p.license) && p.file && p.title && p.author && /^https:\/\/commons\.wikimedia\.org\/wiki\/File:/.test(p.source) && p.bytes > 10000 && p.bytes < 200000 && p.px[0] <= 800 && p.px[1] <= 800));
+  ok("no photo in the repo (data URIs or image files) — they wait outside it for Mom's word", !/data:image/.test(JSON.stringify(PH)) && !fs.readdirSync(__dirname).some(f => /^landmarks_.*\.jpe?g$/i.test(f)) && !fs.existsSync(path.join(__dirname, "tools", "landmarks")));
+  ok("no family or kid names in the photo credits", !names.test(JSON.stringify(PH).replace(/Howe Academy/g, "")), (JSON.stringify(PH).match(names) || [])[0]);
+}
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);

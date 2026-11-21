@@ -20,6 +20,11 @@
 // GEOALL (her "Yes, add all", 2026-11-16) — every country: Countries 87 → 195 (193 UN members + Vatican City + Palestine) and World
 // Geography 60 → 195. Appendix B's 87 stay first in their own order in each continent, the 108 more follow; the 60 capitals stay
 // first, the 135 more follow in Stage 6's order — 575 cards; every new card has a picture and every new capital a back.
+// GEOEXTRA (slice 5, §9 row 5; "def do the optionals") adds Stage 8 Flags (193 — the Countries minus Oman, not public domain, and
+// Afghanistan, disputed), Stage 9 Rivers & mountains (24) and Stage 10 Landmarks (24, opens early from Stage 3) — 816 cards,
+// starterVer 5: decks and names byte for byte, pictures (geoflags.js loaded only when wanted; rivers from geo.js; landmarks none
+// until Mom's photos), the stage rules (early jump and back, never offered twice, 8–10 never count toward an earlier stage),
+// targeted writes, dry run inert, and a mutation check that each rule, broken in a copy of the code, is caught.
 // UNITS_SRC=<path> runs it against another copy of index.html (geo.js and sw.js beside it).
 const fs = require("fs"), path = require("path");
 const FILE = process.env.UNITS_SRC || path.join(__dirname, "index.html"), DIR = path.dirname(FILE);
@@ -38,24 +43,34 @@ const picsCode = portraitLine + "\n" + unitpic + "\n" + sliceFn("mastGetVisual")
 const VOCAB = src.slice(src.indexOf("const MAST_VOCAB_DEFS={"), src.indexOf('if(typeof _wrSlashDefs==="function") Object.assign(MAST_VOCAB_DEFS'));
 const VOCAB_GEO = (() => { const s = src.indexOf('if(typeof geoVocabDefs==="function")'); return src.slice(s, src.indexOf("\n", s)); })();   // 🌐 GEOADOPT
 
+// The code a world runs: from index.html, or (o.src) a mutated copy — GEOEXTRA's mutation check below.
+function parts(S) {
+  const a = S.indexOf("// STARTER_UNITS_START"), b = S.indexOf("// STARTER_UNITS_END");
+  const sliceFn = (name) => { const s = S.indexOf("function " + name + "("); const e = S.indexOf("\n}\n", s); return S.slice(s, e + 3); };
+  const portraitLine = (() => { const s = S.indexOf("function _unitPortrait("); return S.slice(s, S.indexOf("\n", s) + 1); })();
+  const unitpic = S.slice(S.indexOf("// UNITPIC_START"), S.indexOf("// UNITPIC_END"));
+  return { block: S.slice(a, b), picsCode: portraitLine + "\n" + unitpic + "\n" + sliceFn("mastGetVisual"),
+    VOCAB: S.slice(S.indexOf("const MAST_VOCAB_DEFS={"), S.indexOf('if(typeof _wrSlashDefs==="function") Object.assign(MAST_VOCAB_DEFS')),
+    VOCAB_GEO: (() => { const s = S.indexOf('if(typeof geoVocabDefs==="function")'); return S.slice(s, S.indexOf("\n", s)); })() };
+}
 function world(o) {
-  o = o || {};
+  o = o || {}; const PT = parts(o.src || src);
   const G = { masteryData: o.mastery || {}, currData: { subjects: {} }, writes: [], dry: !!o.dry, unitStudies: {}, content: { innerHTML: "" },
     window: o.window || { HoweGeo }, lazy: [] };
   const db = { ref(p) { return { update(v) { G.writes.push(["update", p, v]); }, set(v) { G.writes.push(["set", p, v]); },
     transaction(fn) { const v = fn(null); G.writes.push(["transaction", p, v]); return Promise.resolve({ committed: true }); } }; } };
   const api = new Function("G", "db", `
-    const masteryData=G.masteryData, currData=G.currData; let unitStudies=G.unitStudies; let masteryKid="julian";
+    const masteryData=G.masteryData, currData=G.currData; let unitStudies=G.unitStudies; let masteryKid="julian"; let unitOpenId=null;
     const window=G.window;
     function momHere(){ return true; } function _dryRun(){ return G.dry; } function cap(s){ return s[0].toUpperCase()+s.slice(1); }
     function renderUnits(){} const HA_LS={ setItem(){} }; const document={ getElementById:()=>G.content };
     function mastDefKeyOk(n){ return !/[.$#\\[\\]\\/]/.test(n); } function mastGateChapter(){ return null; }
     function haLazyLoad(name){ G.lazy.push(name); return G.lazyLoad?G.lazyLoad(name):Promise.reject(new Error("no loader")); }
-    ${VOCAB}
-    ${block}
-    ${VOCAB_GEO}
-    ${picsCode}
-    return { STARTER_UNITS, STARTER_HOWTO, GEO_DECK_KEYS, GEO_STATES, GEO_REGION_OF, GEO_REGIONS, geoRegionOrder, geoNeighbours, geoUnitRecord, geoHydrate, geoHydrateAll, geoAddHomeSet, geoAddHomeHtml,
+    ${PT.VOCAB}
+    ${PT.block}
+    ${PT.VOCAB_GEO}
+    ${PT.picsCode}
+    return { GEO_FLAGS_LEFT, GEO_LANDMARKS, GEO_RIVERS_MOUNTAINS, GEO_COUNTRIES, geoxNext, geoxSide, geoxFlagsWanted, geoxOnOpen, setOpen(id){ unitOpenId=id; }, STARTER_UNITS, STARTER_HOWTO, GEO_DECK_KEYS, GEO_STATES, GEO_REGION_OF, GEO_REGIONS, geoRegionOrder, geoNeighbours, geoUnitRecord, geoHydrate, geoHydrateAll, geoAddHomeSet, geoAddHomeHtml,
       geoPicOf, _starterUnitsHtml, starterUnitAdd, envHydrateAll, unitStageFormOpen, unitStageFormSet, unitStageEnroll, unitStageStatus, unitStageMoveUp,
       _unitStageRowsHtml, _unitPortrait, mastLiveVisual, mastGetVisual, _mastVisNorm, setKid(k){ masteryKid=k; } };`)(G, db);
   api.G = G; return api;
@@ -82,8 +97,8 @@ const MY_COUNTRY = ["United States", "Washington DC", "North Carolina", "Canada"
 console.log("── the unit ──");
 { const w = world(), u = fresh(w);
   ok("id geography_path · title Geography Path · 🌍 · picsInCode 'geo' · nbInsert on · home North Carolina", u.id === "geography_path" && u.starter === "geography_path" && u.title === "Geography Path" && u.emoji === "\u{1F30D}" && u.picsInCode === "geo" && u.nbInsert === undefined && u.home === "North Carolina");
-  ok("7 stages: The seven continents · Oceans & globe words (ready at 16 of 18) · My country (ready at 22 of 24) · State shapes by region (57 of 64) · State capitals (45 of 50) · Countries by continent (193 of 217) · World capitals (175 of 195)", u.stages.map(s => s.n + ":" + s.label).join("|") === "1:The seven continents|2:Oceans & globe words|3:My country|4:State shapes by region|5:State capitals|6:Countries by continent|7:World capitals" && u.stages[0].readyAt == null && u.stages[1].readyAt === 16 && u.stages[2].readyAt === 22 && u.stages[3].readyAt === 57 && u.stages[4].readyAt === 45 && u.stages[5].readyAt === 193 && u.stages[6].readyAt === 175);
-  ok("8 decks, in this order: Continents flash · Oceans flash · Geography flip · My Country flash (2 at a time) · State Shapes flash · State Capitals flip · Countries flash · World Geography flip (3 at a time) — grouped by family", u.decks.map(d => d.key + "/" + d.mode + "/" + d.introCap + "/" + d.groupBy).join("|") === "Continents/flash/2/family|Oceans/flash/2/family|Geography/flip/2/family|My Country/flash/2/family|State Shapes/flash/3/family|State Capitals/flip/3/family|Countries/flash/3/family|World Geography/flip/3/family");
+  ok("10 stages: The seven continents · Oceans & globe words (ready at 16 of 18) · My country (ready at 22 of 24) · State shapes by region (57 of 64) · State capitals (45 of 50) · Countries by continent (193 of 217) · World capitals (175 of 195) · GEOEXTRA: Flags (174 of 193) · Rivers & mountains (22 of 24) · Landmarks (22 of 24, opens from Stage 3)", u.stages.map(s => s.n + ":" + s.label).join("|") === "1:The seven continents|2:Oceans & globe words|3:My country|4:State shapes by region|5:State capitals|6:Countries by continent|7:World capitals|8:Flags|9:Rivers & mountains|10:Landmarks" && u.stages[7].readyAt === 174 && u.stages[8].readyAt === 22 && u.stages[9].readyAt === 22 && u.stages[9].openFrom === 3 && u.stages.filter(s => s.openFrom != null).length === 1 && u.stages[0].readyAt == null && u.stages[1].readyAt === 16 && u.stages[2].readyAt === 22 && u.stages[3].readyAt === 57 && u.stages[4].readyAt === 45 && u.stages[5].readyAt === 193 && u.stages[6].readyAt === 175);
+  ok("11 decks, in this order: Continents flash · Oceans flash · Geography flip · My Country flash (2 at a time) · State Shapes flash · State Capitals flip · Countries flash · World Geography flip · Flags flash · Rivers & Mountains flash · Landmarks flip (3 at a time) — grouped by family", u.decks.map(d => d.key + "/" + d.mode + "/" + d.introCap + "/" + d.groupBy).join("|") === "Continents/flash/2/family|Oceans/flash/2/family|Geography/flip/2/family|My Country/flash/2/family|State Shapes/flash/3/family|State Capitals/flip/3/family|Countries/flash/3/family|World Geography/flip/3/family|Flags/flash/3/family|Rivers & Mountains/flash/3/family|Landmarks/flip/3/family");
   ok("Stage 1: 7 continents in §5.2 order — North America · Africa, Antarctica, Australia · South America, Europe, Asia", names(u, "Continents").join(",") === "North America,Africa,Antarctica,Australia,South America,Europe,Asia" && deck(u, "Continents").cards.every(c => c.stage === 1 && c.def == null));
   ok("Stage 1 families: Where we live · Big, easy shapes · The rest", [...new Set(deck(u, "Continents").cards.map(c => c.family))].join("|") === "Where we live|Big, easy shapes|The rest");
   ok("Stage 2: 5 oceans (Q1 default: Southern Ocean in) — the two big ones first", names(u, "Oceans").join(",") === "Pacific Ocean,Atlantic Ocean,Indian Ocean,Arctic Ocean,Southern Ocean" && deck(u, "Oceans").cards.every(c => c.stage === 2));
@@ -94,9 +109,9 @@ console.log("── the unit ──");
   ok("23 words in Stages 2–3, none of them one of Ellis's 24 (those come in Stages 4 and 6)", wd.cards.filter(c => c.stage <= 3).length === 23 && !wd.cards.filter(c => c.stage <= 3).some(c => ["tributaries", "glacier", "peak", "elevation", "contour lines", "cardinal directions", "intermediate directions", "lines of latitude", "lines of longitude", "atmosphere", "tectonic plates", "caldera", "geyser", "precipitation", "evaporation", "biome", "tundra", "taiga"].includes(c.name)));
   ok("Stage 3: My Country 14 = Appendix D with North Carolina as my state, flash, no backs", names(u, "My Country").join(",") === MY_COUNTRY.join(",") && deck(u, "My Country").cards.every(c => c.stage === 3 && c.def == null));
   ok("My Country families: Our country (3) · Our neighbours (2) · Water around us (5) · Land and far-away states (4)", deck(u, "My Country").cards.map(c => c.family).filter((f, i, A) => A.indexOf(f) === i).join("|") === "Our country|Our neighbours|Water around us|Land and far-away states" && deck(u, "My Country").cards.filter(c => c.family === "Our country").map(c => c.name).join(",") === "United States,Washington DC,North Carolina");
-  ok("575 cards (49 + 64 + 50 + 217 + 195), every name a legal database key (no . # $ [ ] /), order 1..575 across the unit", u.decks.reduce((s, d) => s + d.cards.length, 0) === 575 && u.decks.every(d => d.cards.every(c => !/[.#$\[\]\/]/.test(c.name))) && [].concat(...u.decks.map(d => d.cards)).map(c => c.order).sort((x, y) => x - y).join() === Array.from({ length: 575 }, (_, i) => i + 1).join());
+  ok("816 cards (49 + 64 + 50 + 217 + 195 + GEOEXTRA 193 + 24 + 24), every name a legal database key (no . # $ [ ] /), order 1..816 across the unit", u.decks.reduce((s, d) => s + d.cards.length, 0) === 816 && u.decks.every(d => d.cards.every(c => !/[.#$\[\]\/]/.test(c.name))) && [].concat(...u.decks.map(d => d.cards)).map(c => c.order).sort((x, y) => x - y).join() === Array.from({ length: 816 }, (_, i) => i + 1).join());
   ok("Stages 5 and 7 (GEOADOPT) under the fixed keys: State Shapes · State Capitals · Countries · World Geography (and Geography)", deck(u, "State Capitals").cards.every(c => c.stage === 5) && deck(u, "World Geography").cards.every(c => c.stage === 7) && w.GEO_DECK_KEYS.states === "State Shapes" && w.GEO_DECK_KEYS.capitals === "State Capitals" && w.GEO_DECK_KEYS.countries === "Countries" && w.GEO_DECK_KEYS.world === "World Geography" && w.GEO_DECK_KEYS.words === "Geography");
-  ok("the record carries NO picture: no visuals, no data: URI, no <svg (pictures live in geo.js); < 48 KB (GEOALL: 195 countries + 195 capitals)", u.visuals === undefined && !/data:|<svg|imageUrl/.test(JSON.stringify(u)) && JSON.stringify(u).length < 48000);
+  ok("the record carries NO picture: no visuals, no data: URI, no <svg (pictures live in geo.js / geoflags.js); < 64 KB (GEOALL: 195 countries + 195 capitals; GEOEXTRA: + 241 cards)", u.visuals === undefined && !/data:|<svg|imageUrl/.test(JSON.stringify(u)) && JSON.stringify(u).length < 64000);
   ok("50 states, each in one of the five regions (Appendix A); North Carolina Southeast, Maryland & Delaware Northeast", w.GEO_STATES.length === 50 && new Set(Object.values(w.GEO_REGION_OF)).size === 5 && w.GEO_REGION_OF["North Carolina"] === "Southeast" && w.GEO_REGION_OF.Maryland === "Northeast" && w.GEO_REGION_OF.Delaware === "Northeast" && w.GEO_STATES.every(s => HoweGeo.names("state").includes(s)));
   ok("STARTER_HOWTO has a Mom note + kid line for Continents, Oceans, Geography and My Country", ["Continents", "Oceans", "Geography", "My Country"].every(k => w.STARTER_HOWTO[k] && w.STARTER_HOWTO[k].main.length > 20 && w.STARTER_HOWTO[k].kid.length > 5));
 }
@@ -293,7 +308,7 @@ console.log("── a 3rd-grader at Stage 4, then ➡ 5 ➡ 6 ➡ 7 ──");
   const b7 = bank(w, "kid").slice(331), lrn7 = items(w, "kid").filter(i => i.status === "introduction");
   ok("➡ Stage 7: the bank gains the 195 countries under World Geography, by continent; Mexico, Canada, Cuba start learning; 281 definitions", b7.length === 195 && b7.every(c => c.cat === "World Geography") && b7[0].name === "Mexico" && b7[194].name === "Nauru" && lrn7.map(i => i.prompt + "=" + i.answer).join(",") === "Mexico=Mexico City,Canada=Ottawa,Cuba=Havana" && Object.keys(st.definitions).length === 281 && st.cat_modes["World Geography"] === "flip");
   s = w.unitStageStatus(u, "kid");
-  ok("row: Stage 7 · 195 cards · ready at 175 · nothing after it yet", s.stage === 7 && s.total === 195 && s.need === 175 && s.next === null);
+  ok("row: Stage 7 · 195 cards · ready at 175 · next = Stage 8 Flags (GEOEXTRA); beside it, Landmarks early (open from Stage 3 on)", s.stage === 7 && s.total === 195 && s.need === 175 && s.next && s.next.n === 8 && s.next.label === "Flags" && s.side && s.side.n === 10);
   ok("GEOALL: Georgia the country saved Tbilisi and Georgia the state kept Atlanta — two fronts, two backs", st.definitions["Georgia (country)"] === "Tbilisi" && st.definitions.Georgia === "Atlanta");
   ok("ids unique; every item in a unit deck", new Set(items(w, "kid").map(i => i.id)).size === items(w, "kid").length && items(w, "kid").every(i => ["Geography", "State Shapes", "State Capitals", "Countries", "World Geography"].includes(i.subject)));
 }
@@ -309,15 +324,15 @@ console.log("── Stage 4 / 6 pictures ──");
   ok("Australia the continent and Australia the country are two different pictures (two decks)", u.visuals["Continents_Australia"].svg !== u.visuals["Countries_Australia"].svg);
   w.setKid("kid");
   ok("_unitPortrait and mastLiveVisual resolve a state, a country and a Stage-6 word", ["State Shapes:Rhode Island", "Countries:Czechia", "Geography:fjord"].every(x => { const [dk, n] = x.split(":"); const p = w._unitPortrait(u, "kid", dk, n), v = w.mastLiveVisual({ subject: dk, prompt: n }); return p && /^data:image\/svg/.test(p.img) && v && v.from === "live" && /^data:image\/svg/.test(v.img); }));
-  ok("the record still carries no picture and stays small (< 48 KB, 575 cards)", !/data:|<svg|imageUrl/.test(JSON.stringify(w.geoUnitRecord("North Carolina"))) && JSON.stringify(w.geoUnitRecord("North Carolina")).length < 48000);
+  ok("the record still carries no picture and stays small (< 64 KB, 816 cards)", !/data:|<svg|imageUrl/.test(JSON.stringify(w.geoUnitRecord("North Carolina"))) && JSON.stringify(w.geoUnitRecord("North Carolina")).length < 64000);
   ok("the GEOSTATES block writes nothing (no db.ref / .set( / .update( / storage) and names no kid", (() => { const b = src.slice(src.indexOf("// GEOSTATES_START"), src.indexOf("// GEOSTATES_END")); return b.length > 1000 && !/db\.ref\(|\.set\(|\.update\(|HA_LS|localStorage/.test(b) && !/\b(Julian|Lincoln|Ellis|Lucy)\b/.test(b.replace(/^\/\/.*$/gm, "")); })());
 }
 
 console.log("── pictures (geo.js → visuals, in memory) ──");
 { const w = world(), u = fresh(w);
   const t0 = Date.now(); const did = w.geoHydrate(u); const ms = Date.now() - t0;
-  console.log("  geoHydrate: 575 pictures in " + ms + " ms");
-  ok("geoHydrate ran and put a picture on every one of the 575 cards (places AND words)", did && u.visuals && Object.keys(u.visuals).length === 575 && u.decks.every(d => d.cards.every(c => u.visuals[d.key + "_" + c.name])));
+  console.log("  geoHydrate: 599 pictures in " + ms + " ms");
+  ok("geoHydrate ran and put a picture on every one of the 575 cards of Stages 1–7 (places AND words) + the 24 rivers and mountains (GEOEXTRA); flags wait for geoflags.js, landmarks for their photos", did && u.visuals && Object.keys(u.visuals).length === 599 && u.decks.filter(d => !["Flags", "Landmarks"].includes(d.key)).every(d => d.cards.every(c => u.visuals[d.key + "_" + c.name])) && !Object.keys(u.visuals).some(k => /^(Flags|Landmarks)_/.test(k)));
   ok("every picture is {svg: an SVG data URI, credit} — NEVER imageUrl (the key the bank's mint copies onto a kid's item)", Object.values(u.visuals).every(v => typeof v === "object" && /^data:image\/svg\+xml;utf8,%3Csvg/.test(v.svg) && typeof v.credit === "string" && v.credit && !("imageUrl" in v)));
   ok("the mint still stamps only vis.imageUrl / a string — so a geography item never gets a picture written to mastery/<kid>", /else if\(vis\.imageUrl\) item\.imageUrl=vis\.imageUrl;/.test(src) && (() => { const vis = w.mastGetVisual("Continents", "Africa"); const item = {}; if (typeof vis === "string") item.emoji = vis; else if (vis.imageUrl) item.imageUrl = vis.imageUrl; return !("imageUrl" in item) && !("emoji" in item); })());
   const dec = k => decodeURIComponent(u.visuals[k].svg.slice("data:image/svg+xml;utf8,".length));
@@ -336,9 +351,127 @@ console.log("── pictures (geo.js → visuals, in memory) ──");
   u.visuals["Continents_Europe"] = { imageUrl: "https://example.org/europe.jpg", credit: "Mom" }; u.visuals["Geography_north"] = "\u{1F9ED}";
   deck(u, "My Country").cards.push({ name: "Outer Banks", family: "Our country", stage: 3, order: 99 });
   w.geoHydrate(u);
-  ok("re-hydrate: Mom's photo and her emoji stay; a card the data lacks gets no picture (unit emoji fallback); the rest redrawn", u.visuals["Continents_Europe"].imageUrl === "https://example.org/europe.jpg" && u.visuals["Geography_north"] === "\u{1F9ED}" && !u.visuals["My Country_Outer Banks"] && P("Continents", "Europe").img === "https://example.org/europe.jpg" && P("Geography", "north").emoji === "\u{1F9ED}" && P("My Country", "Outer Banks") === null && Object.keys(u.visuals).length === 575);
+  ok("re-hydrate: Mom's photo and her emoji stay; a card the data lacks gets no picture (unit emoji fallback); the rest redrawn", u.visuals["Continents_Europe"].imageUrl === "https://example.org/europe.jpg" && u.visuals["Geography_north"] === "\u{1F9ED}" && !u.visuals["My Country_Outer Banks"] && P("Continents", "Europe").img === "https://example.org/europe.jpg" && P("Geography", "north").emoji === "\u{1F9ED}" && P("My Country", "Outer Banks") === null && Object.keys(u.visuals).length === 599);
   ok("the kid's own _visuals override still wins over the drawn picture", (w.G.masteryData.kid_visuals = { "Continents_Asia": { imageUrl: "https://example.org/asia.jpg" } }, P("Continents", "Asia").img === "https://example.org/asia.jpg" && L("Continents", "Asia").img === "https://example.org/asia.jpg"));
   ok("a record with no geo.js in reach is left alone (no visuals invented); a unit that isn't this one is never touched", (() => { const w0 = world({ window: {} }); const u2 = w0.geoUnitRecord("Ohio"); return w0.geoHydrate(u2) === false && u2.visuals === undefined; })() && w.geoHydrate({ id: "sharks", decks: [] }, HoweGeo) === false);
+}
+
+console.log("── 🏳️🏔🗽 GEOEXTRA: Stages 8 · Flags, 9 · Rivers & mountains, 10 · Landmarks ──");
+{ const HoweGeoFlags = require(path.join(DIR, "geoflags.js"));
+  const PHOTOS = JSON.parse(fs.readFileSync(path.join(DIR, "tools", "geo_landmark_photos.json"), "utf8")).photos;
+  const RM = [["Mississippi River", "North America — the United States"], ["Amazon River", "South America"], ["Nile River", "Africa"], ["Congo River", "Africa"], ["Danube River", "Europe"], ["Rhine River", "Europe"],
+    ["Thames River", "Europe — England"], ["Volga River", "Europe — Russia"], ["Ganges River", "Asia — India"], ["Yangtze River", "Asia — China"], ["Mekong River", "Asia — Southeast Asia"], ["Murray River", "Australia"],
+    ["Appalachian Mountains", "North America — the United States"], ["Rocky Mountains", "North America"], ["Sierra Nevada", "North America — the United States"], ["Andes Mountains", "South America"], ["Alps", "Europe"], ["Pyrenees", "Europe"],
+    ["Ural Mountains", "Europe and Asia — Russia"], ["Caucasus Mountains", "Europe and Asia"], ["Himalayas", "Asia"], ["Atlas Mountains", "Africa"], ["Drakensberg", "Africa — South Africa"], ["Great Dividing Range", "Australia"]];   // Appendix E's 12 + 12, its order
+  const LM = ["Statue of Liberty", "Golden Gate Bridge", "Grand Canyon", "Mount Rushmore", "Washington Monument", "Niagara Falls", "Chichén Itzá", "Machu Picchu", "Christ the Redeemer", "Eiffel Tower", "Big Ben", "Colosseum",
+    "Leaning Tower of Pisa", "Parthenon", "Neuschwanstein Castle", "Sagrada Família", "Pyramids of Giza", "Victoria Falls", "Table Mountain", "Taj Mahal", "Great Wall of China", "Mount Fuji", "Petra", "Sydney Opera House"];   // Appendix E's 24, its order
+  const w = world(), u = fresh(w), fl = deck(u, "Flags"), rm = deck(u, "Rivers & Mountains"), lm = deck(u, "Landmarks");
+  const six = deck(u, "Countries").cards.map(c => c.name);
+  ok("Flags: one card per Countries card in Stage 6's order, minus the two left out (Oman — not public domain; Afghanistan — disputed, Mom's call): 193, flash, no backs, families = continents", fl.cards.length === 193 && JSON.stringify(fl.cards.map(c => c.name)) === JSON.stringify(six.filter(n => n !== "Oman" && n !== "Afghanistan")) && fl.mode === "flash" && fl.cards.every(c => c.stage === 8 && c.def == null && c.family === deck(u, "Countries").cards.find(x => x.name === c.name).family));
+  ok("Flags left out = exactly the ones geoflags.js leaves out, each with its reason", JSON.stringify(Object.keys(w.GEO_FLAGS_LEFT).sort()) === JSON.stringify(Object.keys(HoweGeoFlags.left()).sort()) && /not public domain/.test(w.GEO_FLAGS_LEFT.Oman) && /disputed/.test(w.GEO_FLAGS_LEFT.Afghanistan));
+  ok("every Flags card has its flag in geoflags.js, and every flag there is a card — no orphan either way", fl.cards.every(c => HoweGeoFlags.has(c.name)) && HoweGeoFlags.names().length === 193 && HoweGeoFlags.names().every(n => fl.cards.some(c => c.name === n)));
+  ok("Rivers & Mountains: Appendix E's 12 rivers then 12 mountains, its order and names, a back naming the continent (and country), flash", JSON.stringify(rm.cards.map(c => [c.name, c.def])) === JSON.stringify(RM) && rm.mode === "flash" && rm.cards.every(c => c.stage === 9) && rm.cards.slice(0, 12).every(c => c.family === "Rivers of the world") && rm.cards.slice(12).every(c => c.family === "Mountains of the world"));
+  ok("…every one of them drawn already in geo.js (Natural Earth): names match geo.js's rivers + ranges exactly", JSON.stringify(rm.cards.map(c => c.name)) === JSON.stringify(HoweGeo.names("river").concat(HoweGeo.names("range"))));
+  ok("Landmarks: Appendix E's 24 in its order, the US first; flip (name → where) with no flipFace until the photos are in; families = continents", JSON.stringify(lm.cards.map(c => c.name)) === JSON.stringify(LM) && lm.mode === "flip" && lm.flipFace === undefined && lm.cards.every(c => c.stage === 10 && c.def && c.def.length > 3) && [...new Set(lm.cards.map(c => c.family))].join("|") === "North America|South America|Europe|Africa|Asia|Oceania" && lm.cards.slice(0, 6).every(c => /United States/.test(c.def)));
+  ok("the photos' credit manifest names exactly these 24 cards, in order; PD / CC0 / CC BY only (no share-alike); one credit each", JSON.stringify(PHOTOS.map(p => p.card)) === JSON.stringify(LM) && PHOTOS.every(p => /^(Public domain|CC0|CC BY \d\.\d)$/.test(p.license) && !/SA/.test(p.license) && /^Photo: .+ · .+ · Wikimedia Commons$/.test(p.credit) && /^https:\/\/commons\.wikimedia\.org\/wiki\/File:/.test(p.source) && /^[0-9a-f]{64}$/.test(p.sha256)));
+  ok("a CC BY photo carries its author and the licence link (the licence's terms); US photos lean on the National Park Service", PHOTOS.filter(p => /^CC BY/.test(p.license)).every(p => p.author && /^https:\/\/creativecommons\.org\/licenses\/by\//.test(p.licenseUrl)) && PHOTOS.filter(p => /National Park|NPS/.test(p.author)).length >= 3);
+  ok("How-to notes for the three new decks (Mom's and the kid's line)", ["Flags", "Rivers & Mountains", "Landmarks"].every(k => w.STARTER_HOWTO[k] && w.STARTER_HOWTO[k].main && w.STARTER_HOWTO[k].kid));
+  ok("starterVer 5 (the earlier families are offered Stages 8–10 by ＋ Add the new stages — test_starter_update.js)", u.starterVer === 5);
+
+  // pictures
+  w.geoHydrate(u);
+  ok("rivers and mountains: their geo.js picture (the feature lit on its continent), credit Natural Earth", rm.cards.every(c => u.visuals["Rivers & Mountains_" + c.name] && u.visuals["Rivers & Mountains_" + c.name].svg === HoweGeo.svg("feature", c.name) && /Natural Earth/.test(u.visuals["Rivers & Mountains_" + c.name].credit)));
+  ok("without geoflags.js: no Flags picture (the unit emoji meanwhile); Landmarks never get a code picture", !Object.keys(u.visuals).some(k => /^(Flags|Landmarks)_/.test(k)));
+  const wf = world({ window: { HoweGeo, HoweGeoFlags } }), uf = fresh(wf); wf.geoHydrate(uf);
+  ok("with geoflags.js: every one of the 193 Flags cards has its flag, its credit (file · Public domain · Wikimedia Commons), never an imageUrl", fl.cards.every(c => { const v = uf.visuals["Flags_" + c.name]; return v && v.svg === HoweGeoFlags.svg(c.name) && /^Flag: Flag of .+ · Public domain · Wikimedia Commons$/.test(v.credit) && !("imageUrl" in v); }));
+  ok("a flag reaches the drill and the Units tab like every other picture (mastLiveVisual, _unitPortrait)", (wf.setKid("kid"), ["Canada", "Mexico", "Nepal"].every(n => { const p = wf._unitPortrait(uf, "kid", "Flags", n), v = wf.mastLiveVisual({ subject: "Flags", prompt: n }); return p && /^data:image\/(svg\+xml|png)/.test(p.img) && v && v.from === "live" && v.img === p.img; })));
+  uf.visuals["Landmarks_Eiffel Tower"] = { imageUrl: "https://example.org/eiffel.jpg", credit: "Photo: x · CC0 · Wikimedia Commons" }; wf.geoHydrate(uf);
+  ok("an imported landmark photo is Mom's picture: it shows (Units tab, drill) and hydration never touches it", uf.visuals["Landmarks_Eiffel Tower"].imageUrl === "https://example.org/eiffel.jpg" && wf._unitPortrait(uf, "kid", "Landmarks", "Eiffel Tower").img === "https://example.org/eiffel.jpg" && wf.mastLiveVisual({ subject: "Landmarks", prompt: "Eiffel Tower" }).img === "https://example.org/eiffel.jpg");
+  ok("the record still holds no picture (flags and photos live outside it)", !/data:|<svg|imageUrl/.test(JSON.stringify(w.geoUnitRecord("North Carolina"))));
+
+  // loading geoflags.js only when it is wanted
+  const wl = world({ window: { HoweGeo } }), ul = fresh(wl);
+  wl.envHydrateAll();
+  ok("no kid on Flags: geoflags.js is not fetched", wl.G.lazy.indexOf("geoflags") < 0 && wl.geoxFlagsWanted([ul]) === false);
+  ul.kidStage = { kid: { stage: 7 } }; wl.G.masteryData.kid = [{ subject: "World Geography", prompt: "France", status: "active" }];
+  ok("a kid on Stage 7 with no Flags card: still not wanted", wl.geoxFlagsWanted([ul]) === false);
+  wl.setOpen("geography_path"); ok("Mom has the unit's page open: wanted (the Flags deck shows its pictures)", wl.geoxFlagsWanted([ul]) === true); wl.setOpen(null);
+  wl.G.masteryData.kid.push({ subject: "Flags", prompt: "Canada", status: "introduction" });
+  ok("a kid holding a Flags card (or on Stage 8): wanted", wl.geoxFlagsWanted([ul]) === true && wl.geoxFlagsWanted([{ id: "g", kidStage: { k: { stage: 8 } } }]) === true);
+  wl.G.lazyLoad = name => { if (name === "geoflags") { wl.G.window.HoweGeoFlags = HoweGeoFlags; return Promise.resolve(true); } return Promise.reject(new Error("x")); };
+  wl.envHydrateAll();
+  ok("envHydrateAll then fetches geoflags.js once, through haLazyLoad", wl.G.lazy.filter(n => n === "geoflags").length === 1);
+  Promise.resolve().then(() => Promise.resolve()).then(() => {
+    ok("…and once it is here the Flags cards are hydrated in place — nothing written", ul.visuals && fl.cards.every(c => ul.visuals["Flags_" + c.name]) && wl.G.writes.length === 0);
+  });
+  ok("geoflags.js is a lazy file the service worker keeps offline; haLazyReady knows it", /geoflags:"geoflags\.js"/.test(src) && /name==="geoflags"\) return !!\(typeof window!=="undefined"&&window\.HoweGeoFlags\)/.test(src) && /\|geoflags\|/.test(fs.readFileSync(path.join(DIR, "sw.js"), "utf8")));
+}
+
+console.log("── 🗽 GEOEXTRA: the stage rules — Stage 10 early from Stage 3; 8–10 never count toward an earlier stage ──");
+const startAt = (w, n) => { w.unitStageFormOpen("geography_path", "kid"); w.unitStageFormSet("stage", String(n)); w.unitStageEnroll(); };
+const allOn = (w, u, n) => { const all = items(w, "kid"); w.G.unitStudies.geography_path.decks.forEach(d => d.cards.filter(c => c.stage === n).forEach(c => { const it = all.find(i => i.subject === d.key && i.prompt === c.name); if (it) { it.status = "active"; it.tier = "weekly"; } else all.push({ id: "on_" + d.key + c.name, subject: d.key, prompt: c.name, status: "active", tier: "weekly" }); })); };
+{ const w = world(), u = fresh(w); startAt(w, 2);
+  let s = w.unitStageStatus(u, "kid");
+  ok("a kid on Stage 2: ➡ Stage 3, nothing early (Landmarks opens from Stage 3)", s.next && s.next.n === 3 && s.side === null && !/\(early\)/.test(w._unitStageRowsHtml(u, ["kid"])));
+}
+{ const w = world(), u = fresh(w); startAt(w, 3);
+  let s = w.unitStageStatus(u, "kid");
+  ok("a kid on Stage 3: ➡ Stage 4 AND “or ➡ Stage 10: Landmarks (early)” beside it", s.next && s.next.n === 4 && s.side && s.side.n === 10 && /or ➡ Stage 10: Landmarks \(early\)/.test(w._unitStageRowsHtml(u, ["kid"])) && /unitStageMoveUp\('geography_path','kid',undefined,10\)/.test(w._unitStageRowsHtml(u, ["kid"])));
+  ok("Stage 3's ready counts Stage 3's 24 cards only — a Rivers & Mountains “Mississippi River” card on the ladder doesn't count", (items(w, "kid").push({ id: "rm1", subject: "Rivers & Mountains", prompt: "Mississippi River", status: "active" }), s = w.unitStageStatus(u, "kid"), s.total === 24 && s.on === 0));
+  const b0 = bank(w, "kid").length, before = items(w, "kid").map(i => i.id + i.status).join();
+  w.unitStageMoveUp("geography_path", "kid", undefined, 9);
+  ok("asking for a stage that isn't the early one (9) does nothing", bank(w, "kid").length === b0 && u.kidStage.kid.stage === 3);
+  w.G.writes.length = 0; w.unitStageMoveUp("geography_path", "kid", undefined, 10);
+  const b10 = bank(w, "kid").slice(b0);
+  ok("Stage 10 early: the 24 landmarks join the bank, the first 3 start learning, their backs saved; the kid is on Stage 10, from 3", u.kidStage.kid.stage === 10 && u.kidStage.kid.from === 3 && b10.length === 24 && b10.every(c => c.cat === "Landmarks") &&
+    items(w, "kid").filter(i => i.subject === "Landmarks" && i.status === "introduction").map(i => i.prompt).join() === "Statue of Liberty,Golden Gate Bridge,Grand Canyon" && w.G.masteryData.kid_settings.definitions["Eiffel Tower"] === "Paris, France" && w.G.masteryData.kid_settings.cat_modes.Landmarks === "flip");
+  ok("…Stage 3's cards untouched (the old stage keeps reviewing)", items(w, "kid").filter(i => i.subject !== "Landmarks").map(i => i.id + i.status).join() === before);
+  ok("…writes only the targeted paths (mastery/kid lists and settings leaves, kidStage, enrolled)", w.G.writes.length > 0 && w.G.writes.every(x => x[0] === "update" ? /^mastery\/kid(_custom_items|_settings\/(cat_modes|cat_intro_max|definitions|cat_instructions|cat_instructions_kid))?$/.test(x[1]) : /^unitStudies\/geography_path\/(kidStage|enrolled)\/kid$/.test(x[1])));
+  s = w.unitStageStatus(u, "kid");
+  ok("on Stage 10 (came early): 24 cards, ready at 22; ➡ goes BACK to Stage 4 (where the path was left); nothing early now", s.total === 24 && s.need === 22 && s.next && s.next.n === 4 && s.side === null);
+  w.unitStageMoveUp("geography_path", "kid");
+  s = w.unitStageStatus(u, "kid");
+  ok("➡ Stage 4: from 10; ➡ then Stage 5; Landmarks not offered again (already given)", u.kidStage.kid.stage === 4 && u.kidStage.kid.from === 10 && s.next.n === 5 && s.side === null);
+  [5, 6, 7, 8].forEach(() => { allOn(w, u, u.kidStage.kid.stage); w.unitStageMoveUp("geography_path", "kid"); });
+  s = w.unitStageStatus(u, "kid");
+  ok("walking on: 5 → 6 → 7 → 8 → Stage 8 Flags (193 cards, ready at 174), next = 9", u.kidStage.kid.stage === 8 && s.total === 193 && s.need === 174 && s.next.n === 9);
+  allOn(w, u, 8); w.unitStageMoveUp("geography_path", "kid"); s = w.unitStageStatus(u, "kid");
+  ok("on Stage 9: 24 cards, ready at 22 — and no ➡ to Landmarks (already given): the path ends here", u.kidStage.kid.stage === 9 && s.total === 24 && s.need === 22 && s.next === null && s.side === null);
+  ok("no card twice in the kid's bank or list across the whole walk", (() => { const k = bank(w, "kid").map(c => c.cat + "|" + c.name), l = items(w, "kid").map(i => i.subject + "|" + i.prompt); return new Set(k).size === k.length && new Set(l).size === l.length; })());
+}
+{ const w = world(), u = fresh(w); startAt(w, 9);
+  const s = w.unitStageStatus(u, "kid");
+  ok("a kid started straight at Stage 9: ➡ Stage 10 the ordinary way; nothing early", s.next && s.next.n === 10 && s.side === null);
+  allOn(w, u, 9); w.unitStageMoveUp("geography_path", "kid");
+  ok("➡ 9 → 10 (from 9): the end of the path", u.kidStage.kid.stage === 10 && u.kidStage.kid.from === 9 && w.unitStageStatus(u, "kid").next === null);
+}
+{ const w = world(), u = fresh(w); startAt(w, 7); allOn(w, u, 7);
+  const s = w.unitStageStatus(u, "kid");
+  ok("Stage 7 is ready on its own 195 (175 needed) — the 241 cards of Stages 8–10 never count toward it", s.total === 195 && s.ready && s.on === 195 && s.next.n === 8);
+}
+{ const w = world({ dry: true }), u = fresh(w); startAt(w, 3); w.unitStageMoveUp("geography_path", "kid", undefined, 10);
+  ok("?dryrun=1: the early jump writes nothing", w.G.writes.length === 0 && u.kidStage.kid.stage === 10);
+}
+{ const w = world(); const u = { id: "plain", stages: [{ n: 1, label: "A" }, { n: 2, label: "B" }], decks: [{ key: "D", mode: "flash", cards: [{ name: "a", stage: 1, family: "f", order: 1 }, { name: "b", stage: 2, family: "f", order: 2 }] }] };
+  w.G.unitStudies.plain = u; w.unitStageFormOpen("plain", "kid"); w.unitStageEnroll();
+  const s = w.unitStageStatus(u, "kid");
+  ok("a unit with no early stage: ➡ exactly as before, no side button", s.next && s.next.n === 2 && s.side === null && !/\(early\)/.test(w._unitStageRowsHtml(u, ["kid"])));
+}
+ok("the GEOEXTRA block writes nothing (no db.ref / .set( / .update( / storage) and names no kid", (() => { const b = src.slice(src.indexOf("// GEOEXTRA_START"), src.indexOf("// GEOEXTRA_END")); return b.length > 3000 && src.indexOf("// GEOEXTRA_START", src.indexOf("// GEOEXTRA_START") + 1) < 0 && !/db\.ref\(|\.set\(|\.update\(|HA_LS|localStorage|storage\(\)/.test(b) && !/\b(Julian|Lincoln|Ellis|Lucy|Adrienne|Sara|Caleb|Taylor|Andrew|Makenzie|Melanie)\b/.test(b.replace(/^\/\/.*$/gm, "")); })());
+
+console.log("── 🧪 GEOEXTRA mutation check: each rule, broken on purpose in a copy of the code, is caught ──");
+{ const kidAt3Side = S => { const w = world({ src: S }), u = fresh(w); startAt(w, 3); const s = w.unitStageStatus(u, "kid"); return !!(s.side && s.side.n === 10); };
+  const backTo4 = S => { const w = world({ src: S }), u = fresh(w); startAt(w, 3); w.unitStageMoveUp("geography_path", "kid", undefined, 10); const s = w.unitStageStatus(u, "kid"); return !!(s && s.next && s.next.n === 4); };
+  const flagsPdOnly = S => { const w = world({ src: S }), u = fresh(w); return !deck(u, "Flags").cards.some(c => c.name === "Oman"); };
+  const ver5 = S => { const w = world({ src: S }); return w.STARTER_UNITS.geography_path().starterVer === 5; };
+  const noSideTwice = S => { const w = world({ src: S }), u = fresh(w); startAt(w, 3); w.unitStageMoveUp("geography_path", "kid", undefined, 10); w.unitStageMoveUp("geography_path", "kid"); return w.unitStageStatus(u, "kid").side === null; };
+  const M = [["Stage 10's openFrom:3 removed", s => s.replace(",readyAt:22,openFrom:3}", ",readyAt:22}"), kidAt3Side],
+    ["➡ after an early stage no longer goes back", s => s.replace("const cand=(sd.openFrom!=null&&ks.from!=null&&from<cur-1)?", "const cand=false?"), backTo4],
+    ["Oman's non-PD flag let in", s => s.replace('const GEO_FLAGS_LEFT={"Oman":', 'const GEO_FLAGS_LEFT={"Oman_":'), flagsPdOnly],
+    ["starterVer left at 4", s => s.replace("starterVer:5, title:\"Geography Path\"", "starterVer:4, title:\"Geography Path\""), ver5],
+    ["an early stage offered again after it was given", s => s.replace("&&!_geoxGiven(u,kid,s.n))||null;\n}\n// GEOEXTRA_END", ")||null;\n}\n// GEOEXTRA_END"), noSideTwice]];
+  M.forEach(([what, mut, rule]) => { const S2 = mut(src);
+    ok("mutant “" + what + "”: the copy differs, the real code passes the rule, the mutant fails it", S2 !== src && rule(src) === true && rule(S2) === false); });
 }
 
 console.log("── loading: geoHydrateAll from envHydrateAll, geo.js fetched lazily ──");
@@ -349,9 +482,9 @@ console.log("── loading: geoHydrateAll from envHydrateAll, geo.js fetched la
   ok("envHydrateAll calls geoHydrateAll; with no HoweGeo yet it asks haLazyLoad('geo') once and returns (no envirothon unit → false)", r === false && w.G.lazy.join() === "geo" && !u.visuals);
   return_after: {
     setTimeout(() => {
-      ok("after geo.js loads, the record is hydrated in place (575 pictures) — nothing written", resolved && u.visuals && Object.keys(u.visuals).length === 575 && w.G.writes.length === 0);
+      ok("after geo.js loads, the record is hydrated in place (599 pictures) — nothing written; no kid on Flags → geoflags.js not asked for", resolved && u.visuals && Object.keys(u.visuals).length === 599 && w.G.writes.length === 0 && w.G.lazy.join() === "geo");
       const w2 = world(); fresh(w2); w2.envHydrateAll();
-      ok("with HoweGeo already in the page, hydration is immediate and no fetch is asked", Object.keys(w2.G.unitStudies.geography_path.visuals).length === 575 && w2.G.lazy.length === 0);
+      ok("with HoweGeo already in the page, hydration is immediate and no fetch is asked", Object.keys(w2.G.unitStudies.geography_path.visuals).length === 599 && w2.G.lazy.length === 0);
       const w3 = world({ window: {} }); w3.G.lazyLoad = () => Promise.reject(new Error("offline"));
       fresh(w3); w3.envHydrateAll();
       setTimeout(() => { ok("a failed fetch (offline) is swallowed: the unit still works, cards show the unit emoji, no throw", !w3.G.unitStudies.geography_path.visuals && w3.G.writes.length === 0); finish(); }, 0);
