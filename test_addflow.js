@@ -2,8 +2,10 @@
  * ADDFLOW — the guided ＋ Add subject (Curriculum streamline slice 5, PLAN_curriculum_streamline_2026-11-10.md §3.7, §4 row 5).
  * Runs the REAL code on stubs: the ADDFLOW block, ceOpenAdd / ceRenderAddSheet / ceAddSave and the Add-sheet handlers, the
  * card's ceCardPreview (CURRCARD), and the Builder's cbDefaultForm → _cbEngine → cbMaterialize → cbBuildGate → cbApply.
- * "Today" is replayed with origin/main's own ceAddSave and ceRenderAddSheet (read with git), so "the same as today" is
- * checked against the code that is live, not against a copy.
+ * "Today" is replayed from test_addflow_today_abb03281.json: ceOpenAdd / ceRenderAddSheet / ceAddSave copied verbatim from
+ * main abb03281 (the commit ADDFLOW branched from). Pinned in the repo, so the test needs no git and does not move when
+ * origin/main does (hub review 2026-11-21: a git-compare test goes red the day its own branch merges).
+ * The whole-file "nothing else changed" check is build-time only: ADDFLOW_VS_MAIN=1 compares against `git show abb03281`.
  *
  * Asserts (plan row 5):
  *   1. for the same answers, the subject record step 3 writes equals today's ceAddSave record, and the build writes equal
@@ -19,7 +21,7 @@
  */
 const fs = require("fs"), path = require("path"), vm = require("vm"), cp = require("child_process");
 const SRC = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
-let MAIN = ""; try { MAIN = cp.execSync("git show origin/main:index.html", { cwd: __dirname, encoding: "utf8", maxBuffer: 1 << 28 }); } catch (e) { MAIN = ""; }
+const TODAY = JSON.parse(fs.readFileSync(path.join(__dirname, "test_addflow_today_abb03281.json"), "utf8"));   // today's three functions, pinned
 let pass = 0, fail = 0;
 const ok = (n, c, x) => { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  " + JSON.stringify(x).slice(0, 600) : "")); } };
 const J = x => JSON.stringify(x);
@@ -84,8 +86,8 @@ function world(src, o) {
   const pre = "var ceAddKid=null, ceAddForm={}, ceAddMsg='', ceBuildOpen=null, ceEditKid=null, ceEditKey=null, ceCloseTimer=null, ceGen={prefix:'Lesson',count:0};\n" +
     "var cbKid=null, cbSubjKey=null, cbForm=null, cbPreviewRes=null, cbGate=null, cbMsg='', cbLastBuild=null, cbBacklogStash={}, cbDecisions={}, cbScanStatus='', _rbInAll=false, _gvDelUndo=null;\n";
   const parts = [pre, block(src, "// CURRWORDS_START", "// CURRWORDS_END"), "const LESSON_DAY_RE=/\\s*·\\s*day \\d+ of \\d+\\s*$/i;",
-    fnIn(src, "famWhoPicks"), ...BUILDER.map(n => fnIn(src, n)),
-    fnIn(o.saveSrc || src, "ceAddSave"), fnIn(o.renderSrc || src, "ceRenderAddSheet")];
+    fnIn(src, "famWhoPicks"), ...BUILDER.filter(n => n !== "ceOpenAdd").map(n => fnIn(src, n)),
+    o.today ? TODAY.ceOpenAdd : fnIn(src, "ceOpenAdd"), o.today ? TODAY.ceAddSave : fnIn(src, "ceAddSave"), (o.today || o.todayRender) ? TODAY.ceRenderAddSheet : fnIn(src, "ceRenderAddSheet")];
   if (!o.noFlow) parts.push(block(src, "// ADDFLOW_START", "// ADDFLOW_END"));
   vm.runInContext(parts.join("\n"), ctx);
   const run = e => vm.runInContext(e, ctx);
@@ -97,7 +99,7 @@ const BOOK = { name: "Saxon Math", minutes: 30, days: "Mon Wed Fri", timesPerWee
 // today: the one-page sheet (origin/main's own renderer and save), Add Subject, the card re-opens, Put it on the schedule → Preview → ✓
 function today(form, o) {
   o = o || {};
-  const w = world(SRC, { saveSrc: MAIN, renderSrc: MAIN, noFlow: true, currData: o.currData });
+  const w = world(SRC, { today: true, noFlow: true, currData: o.currData });
   w.run("ceOpenAdd('kid_a')");
   Object.assign(w.ctx.ceAddForm, form); w.type("ce-add-name", form.name);
   w.run("ceAddSave()");
@@ -130,7 +132,7 @@ function flow(form, o, src) {
 const subjWrites = w => w.writes.filter(x => /^curriculum\/subjects\//.test(x[1]));
 const buildWrites = w => w.writes.filter(x => x[1] === "curriculum" && x[0] === "update");
 
-if (!MAIN) { ok("origin/main readable (git show origin/main:index.html) — needed to replay today", false); process.exit(1); }
+ok("the pinned 'today' fixture holds abb03281's ceOpenAdd, ceRenderAddSheet and ceAddSave", TODAY.commit === "abb03281" && ["ceOpenAdd", "ceRenderAddSheet", "ceAddSave"].every(n => typeof TODAY[n] === "string" && TODAY[n].indexOf("function " + n + "(") === 0) && !/afSaved|afStep|afReset/.test(TODAY.ceAddSave + TODAY.ceRenderAddSheet + TODAY.ceOpenAdd));
 
 console.log("── 0. the block and its hooks ──");
 {
@@ -141,9 +143,12 @@ console.log("── 0. the block and its hooks ──");
   ok("hook: ceRenderAddSheet draws a step when afStep is set, else today's sheet", /const col=KID_COLOR\[kid\]\|\|"#333";\n  if\(typeof afStep!=="undefined"&&afStep\)\{ afMount\(w,afSheetHTML\(kid,f,col\)\); return; \}/.test(fnIn(SRC, "ceRenderAddSheet")));
   ok("hook: ceAddSave hands over after its writes and its week update, before it closes the sheet", /_rlwCurrDoor\("📚 "[^\n]*\n  if\(typeof afSaved==="function"&&afSaved\(kid,key,subj\)\) return;[^\n]*\n  ceCloseSheet\(\);/.test(fnIn(SRC, "ceAddSave")));
   const strip = s => s.replace(/\n  if\(typeof afReset==="function"\) afReset\(\);[^\n]*/, "").replace(/\n  if\(typeof afStep!=="undefined"&&afStep\)\{[^\n]*/, "").replace(/\n  if\(typeof afSaved==="function"&&afSaved\(kid,key,subj\)\) return;[^\n]*/, "");
-  ok("apart from the three hook lines, ceOpenAdd / ceRenderAddSheet / ceAddSave are byte-identical to origin/main",
-    ["ceOpenAdd", "ceRenderAddSheet", "ceAddSave"].every(n => strip(fnIn(SRC, n)) === fnIn(MAIN, n)));
-  ok("outside the block and the three hooks, index.html is byte-identical to origin/main", strip(SRC.replace(AF + "\n", "")) === MAIN.replace(/\r/g, "") || strip(SRC.replace(AF + "\n", "")) === MAIN);
+  ok("apart from the three hook lines, ceOpenAdd / ceRenderAddSheet / ceAddSave are byte-identical to today's (abb03281, pinned)",
+    ["ceOpenAdd", "ceRenderAddSheet", "ceAddSave"].every(n => strip(fnIn(SRC, n)) === TODAY[n]), ["ceOpenAdd", "ceRenderAddSheet", "ceAddSave"].filter(n => strip(fnIn(SRC, n)) !== TODAY[n]));
+  if (process.env.ADDFLOW_VS_MAIN === "1") {   // build-time only: the branch against the commit it was cut from
+    let base = ""; try { base = cp.execSync("git show abb03281:index.html", { cwd: __dirname, encoding: "utf8", maxBuffer: 1 << 28 }); } catch (e) { base = ""; }
+    ok("(ADDFLOW_VS_MAIN) outside the block and the three hooks, index.html is byte-identical to abb03281", !!base && strip(SRC.replace(AF + "\n", "")) === base);
+  } else console.log("  SKIPPED - outside the block, index.html byte-identical to abb03281 (build-time only: ADDFLOW_VS_MAIN=1)");
   const code = AF.split("\n").filter(l => !/^\s*\/\//.test(l)).join("\n");
   ok("the block writes nothing itself: no db.ref, no .set / .update / .remove", !/db\.ref|\.set\(|\.update\(|\.remove\(/.test(code));
   ok("no kid names anywhere in the block (the roster draws the chips)", !/lincoln|ellis|lucy|julian|taylor|makenzie|andrew|caleb/i.test(AF));
@@ -262,9 +267,9 @@ console.log("\n── 5. what she sees ──");
   ok("the backdrop on any step goes through afClose (step 4 = Not now)", /onclick="if\(event\.target===this\)afClose\(\)"/.test(h1));
   // Show all options at once = today's sheet, byte-identical
   const forms = [{}, { tracking: "daily" }, { fixedTime: "1:00 PM", fixedDates: ["2026-12-02"] }, { lessonSource: "manual", manualLessons: "a\nb", rules: "sequential, sticky" }];
-  ok("Show all options at once: today's one-page sheet, byte-identical to origin/main's, for 4 shapes of the form", forms.every(fo => {
+  ok("Show all options at once: today's one-page sheet, byte-identical to abb03281's, for 4 shapes of the form", forms.every(fo => {
     const a = world(SRC); a.run("ceOpenAdd('kid_a')"); Object.assign(a.ctx.ceAddForm, fo); a.run("afAll()");
-    const b = world(SRC, { renderSrc: MAIN, noFlow: true }); b.run("ceOpenAdd('kid_a')"); Object.assign(b.ctx.ceAddForm, fo); b.run("ceRenderAddSheet()");
+    const b = world(SRC, { todayRender: true, noFlow: true }); b.run("ceOpenAdd('kid_a')"); Object.assign(b.ctx.ceAddForm, fo); b.run("ceRenderAddSheet()");
     return a.html() === b.html() && /Add Subject for Kid_a/.test(a.html()) && /ceAddSave\(\)">Add Subject</.test(a.html()); }));
   ok("   …and its Add Subject is today's ending: the card re-opens, nothing is built", (() => { const a = world(SRC); a.run("ceOpenAdd('kid_a')"); a.type("ce-add-name", "Saxon Math"); Object.assign(a.ctx.ceAddForm, BOOK); a.run("afAll();ceAddSave()"); return a.log.opened.length === 1 && buildWrites(a).length === 0 && a.ctx.cbForm && a.ctx.ceBuildOpen === "kid_a|saxon_math"; })());
   // the words: none of the §3.5 before words in the block's strings
