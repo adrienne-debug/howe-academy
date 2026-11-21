@@ -172,7 +172,8 @@ if (BASE) {
     const kinds = [...new Set(H.map(h => h.replace(/^event\.stopPropagation\(\);/, "").split("(")[0]))];
     ok(kind + " · each of the " + H.length + " taps (" + kinds.join(", ").slice(0, 160) + ") writes what main writes and leaves the same database (" + wrote + " writes)", same && wrote > 10, firstBad);
     ok(kind + " · …those taps include the check-offs, Mom's and Dad's ticks and the grabs", ["mcToggle", "dcToggle", "mdKidTick", "gbInstant", "gbClaim"].every(k => kinds.indexOf(k) >= 0) && (kind !== "plan" || kinds.indexOf("hdGrabDone") >= 0), kinds);
-    ok(kind + " · after all of them, Mom's view with the ✎ taken out is still main's", J(flat(places(a)).map(strip)) === J(flat(places(b))));
+    a.run("ldsrOn=function(){ return false; };laundryNeedsYou=function(){ return false; };1");   // LAUNDRY_MYDAY3 (her words 2026-11-21: "So those buttons, I would love them to be on mom and dad's day"): a tap above starts a load, and My day's 🫧 Machines now now draws Household's stage row, 🔴 light and hold key on purpose — set aside here, the rest must still be main's
+    ok(kind + " · after all of them, Mom's view with the ✎ taken out is still main's (My day's laundry stage buttons aside — LAUNDRY_MYDAY3)", J(flat(places(a)).map(strip).map(h => typeof h === "string" ? h.replace(/data-lho="jbnc"/g, 'data-lho="bnc"') : h)) === J(flat(places(b))));
   }
 }
 

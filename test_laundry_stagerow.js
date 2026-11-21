@@ -45,7 +45,7 @@ function mk(o){
   const T={ctx,writes,toasts,renders,asked,run:e=>vm.runInContext(e,ctx)};
   T.hh=()=>T.run("mdCardLaundry(true,false,true)");   // Household ▸ Laundry
   T.home=()=>T.run("mdCardLaundry(true)");            // Mom's Day / Home Base
-  T.myday=()=>T.run("mdCardLaundry(true,true)");      // 🏡 My day
+  T.myday=()=>T.run("mdCardLaundry(true,true,true)"); // 🏡 My day — passes jump since LAUNDRY_MYDAY3 (2026-11-21)
   T.L=id=>T.ctx.laundryData[id];
   return T;
 }
@@ -61,7 +61,7 @@ console.log("── (1) where the row shows ──");
   ok("…＋ 🌬 Air dry and ＋ 🧺 Basket buttons", /ldsrMenuOpen\('L1','air'\)[^>]*>＋ 🌬 Air dry</.test(T.hh())&&/ldsrMenuOpen\('L1','bk'\)[^>]*>＋ 🧺 Basket</.test(T.hh()));
   ok("…the → button, ✎ and ✕ stay", /laundryAdvance\('L1'\)/.test(T.hh())&&/laundryEditLoad/.test(T.hh())&&/laundryDel\('L1'\)/.test(T.hh()));
   ok("Home Base / Mom's Day: no stage buttons (plain trail)", !/ldsrJump/.test(T.home())&&/🫧 washer/.test(T.home()), T.home());
-  ok("🏡 My day: no stage buttons", !/ldsrJump/.test(T.myday()));
+  ok("🏡 My day: the same stage buttons and ＋ menu as Household (LAUNDRY_MYDAY3, her words 2026-11-21: \"So those buttons, I would love them to be on mom and dad's day\")", JSON.stringify(chips(T.myday()))===JSON.stringify(C)&&/ldsrMenuOpen\('L1','air'\)/.test(T.myday())&&/ldsrMenuOpen\('L1','bk'\)/.test(T.myday()), chips(T.myday()));
 }
 { const T=mk({laundry:plain("washer"),notMom:true}); ok("not Mom: the plain trail, and ldsrJump moves nothing", !/ldsrJump/.test(T.hh())&&T.run("ldsrJump('L1','dryer')")===null&&T.writes.length===0); }
 { const T=mk({laundry:{L1:{label:"Towels — dryer half",stage:"dryer",ts:at(H(9,0)),split:{part:"dryer",half:"L1_h"}},L1_h:{label:"Towels — hanging",stage:"airdry",ts:at(H(9,0)),hang:true,cycle:[{k:"airdry"}],step:0,split:{of:"L1",part:"hang"}}}});

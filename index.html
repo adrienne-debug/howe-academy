@@ -2550,7 +2550,7 @@ function rtSetAlwaysOpenDay(d){
   if(db) db.ref("config/routineTimes").set(routineTimes);
   renderAll();
 }
-function rtAvailable(slot,kid,d){ if(slot==="afternoon") return rtAlwaysOpen(d)||(d===_todayDay&&typeof hhCleanOn==="function"&&hhCleanOn(_todayStr()))||rtSchoolworkDone(kid,d)||(d!==_todayDay)||(new Date().getHours()>=rtAfternoonHour()); if(slot==="evening") return (d!==_todayDay)||(new Date().getHours()>=rtEveningHour()); return true; }
+function rtAvailable(slot,kid,d){ if(slot==="afternoon") return rtAlwaysOpen(d)||(d===_todayDay&&typeof hhCleanOn==="function"&&hhCleanOn(_todayStr()))||rtSchoolworkDone(kid,d)||(d===_todayDay&&typeof openPmToday==="function"&&openPmToday(kid))||(d!==_todayDay)||(new Date().getHours()>=rtAfternoonHour()); if(slot==="evening") return (d!==_todayDay)||(new Date().getHours()>=rtEveningHour()); return true; }
 // MEALS_START — after-meal jobs (her ask 2026-10-02, DeWalt table-jobs chart: set/clear/wipe table, sweep,
 // dishwasher after every meal). A step tagged st.meal sits in its meal's list under its own heading:
 // breakfast → Morning, lunch → Afternoon, supper → Evening. Lunch and Supper open at their OWN hour
@@ -14126,6 +14126,54 @@ function hhCleanHomeHTML(iso,dn){
 }
 // The cleaning-days list (hhCleanDaysEditorHTML) moved to the ONECAL block as calCleaningSectionHTML (2026-10-23): same rows, same hhCleanDayToggle.
 // CLEANINGDAY_END
+// OPENPM_START — 🔓 Mom's "open afternoons" switch (her ask 2026-11-20: "when we don't have a school day that I want their
+// afternoon chores, a quick switch … on the mom's day above their names … okay, open their afternoons. So that way everybody can
+// see their afternoons really fast. Maybe per kid and maybe an all kid thing too." Her picks 2026-11-21: today only, it opens
+// Afternoon + House chores together, "Yes, start it too"). Mom's Day ▸ 🧒 Kids today: "🔓 Open afternoons" above the names for
+// everyone, and a small one on each kid's row. A tap = that kid's Afternoon list opens now, as if school were done AS FAR AS THE
+// LOCK GOES: rtAvailable("afternoon",kid,today) answers true, so the Afternoon list and the House chores (hdLocked follows it)
+// open, with no lock message. A second tap closes it (back to: school done, or the afternoon hour). The all-kids tap opens
+// everyone who isn't open; when everyone is open it closes everyone. School is untouched — no card is checked, claimed, moved,
+// dropped or re-laid; rtSchoolworkDone is not changed (the day-end celebration, the Mom loop, spins, the store read it).
+// Storage — one small mark per kid per day beside the Go-clean tap: household/today/<iso>/openPM/<kid> = ms timestamp,
+// removed when turned off. Keyed by the date, so tomorrow it simply doesn't count (no clean-up, no timer). Mom only (momHere);
+// writes are targeted (one kid = set/remove on its own path; all kids = one multi-path update) and only when db && !_dryRun().
+function openPmOn(kid,iso){ const t=(typeof householdData!=="undefined"&&householdData&&householdData.today)||{}; const m=t[iso]&&t[iso].openPM; return !!(m&&typeof m==="object"&&kid&&m[kid]); }
+function openPmToday(kid){ return openPmOn(kid,_todayStr()); }
+function _openPmKids(){ return (typeof SL_KIDS!=="undefined"&&Array.isArray(SL_KIDS))?SL_KIDS.slice():[]; }
+// The local copy first (shows at once, saved like Go clean), then the write. kids = the ones that change.
+function _openPmSet(kids,on,iso){
+  const now=Date.now(); householdData.today=Object.assign({},householdData.today); const dayRec=Object.assign({},householdData.today[iso]); const m=Object.assign({},dayRec.openPM);
+  const upd={}; kids.forEach(function(k){ if(on) m[k]=now; else delete m[k]; upd["household/today/"+iso+"/openPM/"+k]=on?now:null; });
+  if(Object.keys(m).length) dayRec.openPM=m; else delete dayRec.openPM;
+  householdData.today[iso]=dayRec; householdOnValue(householdData);
+  if(_hhWrite()&&kids.length){ if(kids.length===1){ const r=db.ref("household/today/"+iso+"/openPM/"+kids[0]); if(on) r.set(now); else r.remove(); } else db.ref().update(upd); }
+}
+function openPmToggle(kid){
+  if(typeof momHere!=="function"||!momHere()) return null; if(_openPmKids().indexOf(kid)<0) return null;
+  const iso=_todayStr(); if(!_hhIsoOk(iso)) return null; const on=!openPmOn(kid,iso);
+  _openPmSet([kid],on,iso);
+  if(typeof mwToast==="function") try{ mwToast(on?"🔓 "+cap(kid)+"'s afternoon is open today":cap(kid)+"'s afternoon is back to the normal rule"); }catch(e){}
+  if(typeof renderAll==="function") renderAll(); return on;
+}
+function openPmToggleAll(){
+  if(typeof momHere!=="function"||!momHere()) return null; const kids=_openPmKids(); if(!kids.length) return null;
+  const iso=_todayStr(); if(!_hhIsoOk(iso)) return null; const shut=kids.filter(function(k){ return !openPmOn(k,iso); });
+  const on=shut.length>0; _openPmSet(on?shut:kids,on,iso);
+  if(typeof mwToast==="function") try{ mwToast(on?"🔓 Afternoons are open for everyone today":"Afternoons are back to the normal rule"); }catch(e){}
+  if(typeof renderAll==="function") renderAll(); return on;
+}
+function _openPmBtn(onclick,label,on,big){ return '<button onclick="'+onclick+'" style="padding:'+(big?'5px 12px':'1px 8px')+';border-radius:'+(big?'10px':'9px')+';font-size:'+(big?'12px':'10px')+';font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;border:1.5px solid '+(on?'#16a34a':'#cbd5e1')+';background:'+(on?'#16a34a':'#fff')+';color:'+(on?'#fff':'#475569')+'">'+label+'</button>'; }
+// Above the names (Mom's Day, today only): on = every kid open.
+function openPmAllHTML(){
+  if(typeof momHere!=="function"||!momHere()) return ""; const kids=_openPmKids(); if(!kids.length) return ""; const iso=_todayStr();
+  const n=kids.filter(function(k){ return openPmOn(k,iso); }).length, all=n===kids.length;
+  return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0 2px">'+_openPmBtn("openPmToggleAll()",all?'✓ Afternoons open — everyone':'🔓 Open afternoons',all,true)
+    +'<span style="font-size:10.5px;color:var(--muted)">'+(all?'Tap to close them all again':(n?n+' of '+kids.length+' open today · tap to open everyone':'Afternoon + House chores, today only'))+'</span></div>';
+}
+// On a kid's row: on = that kid open.
+function openPmKidBtnHTML(kid){ if(typeof momHere!=="function"||!momHere()) return ""; const on=openPmToday(kid); return _openPmBtn("openPmToggle('"+kid+"')",on?'✓ Afternoon open':'🔓 Afternoon',on,false); }
+// OPENPM_END
 // HOUSECARDS_START — 🏡 house work on the timelines (PR 5 of the Household plan; her "go" 2026-10-11, the DERIVED card).
 // Kids: one trailing "🏡 House" card drawn on the kid's Day page after their last laid card, at max(school end, last card end),
 // from their house rows for that day (hhCleanRows). It is derived — never written into week*/tasks — so the generator, the
@@ -15619,7 +15667,7 @@ function llDadCardHTML(by,bare){ if(!laundryLine||!Object.keys(laundryLine).leng
         +((!st&&!wtd)?'<button onclick="llMarkDone(\''+id+'\',\''+by+'\')" style="padding:3px 8px;border-radius:8px;border:1.5px solid #16a34a;background:#f0fdf4;color:#15803d;font-size:11px;font-weight:700;cursor:pointer;margin-right:4px">✓ Done</button>':'')   // ✓ DONE
         +((!st&&!wtd&&(!mv||llLateStartOK(r,id)))?'<button onclick="llStart(\''+id+'\',\''+by+'\')" style="padding:3px 9px;border-radius:8px;border:1.5px solid #2563eb;background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:700;cursor:pointer">🫧 Start</button>':'')+'</div>'; }).join('')   // 🫧 LL_LATESTART: after 8 PM too
     :'<div style="font-size:12px;color:#6b6560">No laundry today.</div>';
-  if(typeof llStillOutHTML==="function") h+=llStillOutHTML(t);   // LAUNDRY_SYNC: every load still out from an earlier day — the same loads 🔴 NOW nudges
+  if(!bare&&typeof llStillOutHTML==="function") h+=llStillOutHTML(t);   // LAUNDRY_SYNC: every load still out from an earlier day — the same loads 🔴 NOW nudges · LAUNDRY_MYDAY3 (her words 2026-11-21: "still out could just be removed since it's up at the top for machines now"): not in 🏡 My day (bare) — those loads are in 🫧 Machines now
   return h+(bare?'':'<div style="margin-top:8px">'+llWeekGridHTML(t,llNowMin()>=LL_SWEEP_MIN,true,by)+'</div>')+'</div>'; }   // LL_MYDAY: no week grid inside My day (her 2026-10-21: "i do not like the this week laundry thing in my day") — it stays on the Laundry tab
 // LL_MYDAY_START — 🧺 her ask 2026-10-21: "on the bottom of Dad's Day and Mom's … the laundry where it shows what's currently active and not
 // active. Can we move that up to be merged into the bottom of my day? … for both Mom and for Dad. That way we can really clearly see what is
@@ -15627,9 +15675,16 @@ function llDadCardHTML(by,bare){ if(!laundryLine||!Object.keys(laundryLine).leng
 // loads — mdCardLaundry bare) and 🧺 The laundry line (today's loads with ✓ Done / 🫧 Start, the asks, the to-dos, the week grid — llDadCardHTML
 // bare, as that parent). The two cards left the bottom of Dad's Day and Mom's Day so nothing shows twice. Nothing new is written; every tap
 // is the same function it was. llStripHTML (the old Today chips) is kept for the tests that replay it; My day no longer draws it.
+// LAUNDRY_MYDAY3 (her words 2026-11-21, Mom's and Dad's 🏡 My day): "I would like the laundry line today to go above the machines now. So that
+// way it shows like what needs to get done today, because that's what I'm going to be looking at first" → 🧺 The laundry line (bare: its
+// asks + Today, nothing else) is drawn FIRST, then 🫧 Machines now (with a dashed line between). The whole bare line card moves, not just
+// its Today list: inside My day it is only the header (🤒), today's asks ("who's doing X?" / "what got wet?" — about today's loads) and
+// Today, so cutting Today away from its own asks would split one thing in two. "on the machines now, I want the buttons where I can click
+// through real quickly where it's at in the line, like it is on household" → Machines now passes jump (LAUNDRY_STAGEROW's stage row +
+// ＋ Air dry / ＋ Basket menu, and Household's needs-you-first order + 🔴 light); "All these changes need to be on mom and dad's."
 function llMyDayLaundryHTML(who){ let h=""; who=who==="dad"?"dad":"mom";
-  try{ if(typeof mdCardLaundry==="function") h+=mdCardLaundry(true,true); }catch(e){}
-  try{ if(typeof laundryLine!=="undefined"&&laundryLine&&Object.keys(laundryLine).length) h+=llDadCardHTML(who,true); }catch(e){}
+  try{ if(typeof laundryLine!=="undefined"&&laundryLine&&Object.keys(laundryLine).length) h+=llDadCardHTML(who,true); }catch(e){}   // LAUNDRY_MYDAY3: today's line on top
+  try{ if(typeof mdCardLaundry==="function"){ const mc=mdCardLaundry(true,true,true); if(mc) h+=h?'<div style="margin-top:8px;border-top:1px dashed var(--border)">'+mc+'</div>':mc; } }catch(e){}   // LAUNDRY_MYDAY3: then 🫧 Machines now, with Household's stage buttons (jump)
   try{ if(typeof luLgHTML==="function") h+=luLgHTML(true); }catch(e){}   // 📒 LAUNDRY_LEDGER: under the laundry card (put-aways listed there)
   return h; }
 // LL_MYDAY_END
@@ -16084,7 +16139,7 @@ function hhLaundryHTML(){
   // schedule → the line's settings → ⚡ quick buttons.
   // machines now
   const L=(typeof laundryData!=="undefined"&&laundryData)||{}; const inM=Object.keys(L).filter(function(k){ const l=L[k]; return l&&(l.stage==="washer"||l.stage==="prewash"||l.stage==="dryer"||l.stage==="fold"||l.stage==="airdry"||l.stage==="custom"||l.stage==="basket"); });   // airdry, custom = LAUNDRY_CYCLE · basket = BASKET
-  if(typeof mdCardLaundry==="function"){ let mc=""; try{ mc=mdCardLaundry(true,false,true); }catch(e){}   // LAUNDRY_STAGEROW: the stage buttons live here only (her pick 2026-11-11)
+  if(typeof mdCardLaundry==="function"){ let mc=""; try{ mc=mdCardLaundry(true,false,true); }catch(e){}   // LAUNDRY_STAGEROW: the stage buttons (her pick 2026-11-11) — and on 🏡 My day's Machines now too since LAUNDRY_MYDAY3 (2026-11-21)
     h+='<div style="margin-bottom:10px">'+(mc||'<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:11px 14px;font-size:12.5px;color:var(--muted)"><b style="color:#1f2937">🧺 Laundry</b> — nothing in the machines. Start a load from 🏡 My day.</div>')+'</div>'; }
   else h+='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(43,122,120,0.10);padding:9px 12px;margin-bottom:10px"><div style="font-size:12px;font-weight:800">🧺 In the machines now</div>'+(inM.length?inM.map(function(k){ const l=L[k]; return '<div style="font-size:12px;padding:3px 0">'+((typeof lcMeta==="function"&&lcMeta(l))?lcMeta(l)[0]+' ':l.stage==="dryer"?'🌀 ':l.stage==="fold"?'🧺 ':'🫧 ')+esc(l.label||"Load")+' <span style="color:var(--muted)">· '+((typeof lcMeta==="function"&&lcMeta(l))?esc(lcMeta(l)[1]):l.stage==="prewash"?"washer (prewash)":l.stage)+(l.ts?' · since '+esc((typeof laundrySince==="function")?laundrySince(l.ts):""):'')+'</span></div>'; }).join(''):'<div style="font-size:12px;color:var(--muted);padding:3px 0">Nothing running. Start a load from Home Base.</div>')+'</div>';
   try{ if(typeof luLgHTML==="function") h+=luLgHTML(); }catch(e){}   // 📒 LAUNDRY_LEDGER: under the laundry to-do list, collapsed
@@ -18157,7 +18212,7 @@ function laundryEditSave(id){
 // pre-wash, a wash, a dryer, a folded, and then we could have like an add air dry, and then when you click that, it could be out of
 // washer or out of dryer, and then an add basket button with the same option"). Her picks 2026-11-11: Household ▸ Laundry only
 // (Home Base and My day keep the plain trail) · ＋ Air dry moves the WHOLE load, not the hang-some split. Mom only (momHere()), the
-// ✎ sheet's rule.
+// ✎ sheet's rule. [LAUNDRY_MYDAY3 2026-11-21: now also on Mom's and Dad's 🏡 My day Machines now, and for Dad on his link — ldsrPersonOk.]
 //   • Each load's row: 🫧 Pre-wash · 🫧 Wash · 🌀 Dryer · 🧺 Folded (a cycle load: its own steps, then Folded; ＋ Pre-wash in front
 //     when it has none). Where it is now is blue, steps behind it green. Tap any other and the load jumps there, its clock starting
 //     now — the same targeted update ✎ Edit's Stage saves (laundry/<id> {stage,ts[,step]}), the same Mom blocks dropped (old and new
@@ -18172,7 +18227,13 @@ function laundryEditSave(id){
 //     buttons. A load in the bin ("wash today") lights nothing until it starts.
 // Every write is targeted on laundry/<id> and dry-run inert (_lbWrite).
 let ldsrMenu=null;   // {id, kind:"air"|"bk"} — the one open ＋ menu
-function ldsrOn(l){ return !!l&&!l.split&&!l.hang&&typeof momHere==="function"&&momHere(); }
+// LAUNDRY_MYDAY3_START — her words 2026-11-21: "So those buttons, I would love them to be on mom and dad's day. All these changes need to be on
+// mom and dad's." The stage row and its ＋ menu were Mom only (momHere()); Dad on his own link (_kioskD(), the same test the 📒 ledger's luWho
+// uses to sign a move "Dad") gets exactly those too. His link only opens his Day, so in practice that is his 🏡 My day. Nothing else opens
+// up: ✎ Edit (laundryEditBtnHTML / laundryEditLoad) stays momHere() only. A kid's device has neither → the plain chips, no taps.
+function ldsrPersonOk(){ return (typeof momHere==="function"&&momHere())||(typeof _kioskD==="function"&&!!_kioskD()); }
+// LAUNDRY_MYDAY3_END
+function ldsrOn(l){ return !!l&&!l.split&&!l.hang&&ldsrPersonOk(); }   // LAUNDRY_MYDAY3: Mom, or Dad on his link (was momHere() only)
 function _ldsrCyc(l){ return typeof lcHas==="function"&&lcHas(l); }
 function _ldsrLastWash(S){ let w=-1; S.forEach(function(x,j){ if(x.k==="wash"||x.k==="prewash") w=j; }); return w; }
 // The row: [{t, e, n}] — t is what ldsrJump takes: a stage (a plain load), "s<j>" (a cycle step), "pre+" (add a pre-wash), or
@@ -18288,7 +18349,7 @@ function mdCardLaundry(noAdd,bare,jump){   // 🧺 LAUNDRYADD: noAdd = Mom's Day
         return '<span style="font-size:10px;font-weight:800;padding:1px 7px;border-radius:8px;background:'+(s===l.stage?'#dbeafe':(on?'#f0fdf4':'#f3f4f6'))+';color:'+(s===l.stage?'#1d4ed8':(on?'#166534':'#9ca3af'))+'">'+(LAUNDRY_STAGE_META[s][0])+' '+(s==="fold"?"folded":s==="wetbasket"?"wet basket":s)+'</span>';
       }).join('');
       h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#f8fafc;border-left:3px solid #2563eb;border-radius:8px;margin-bottom:6px;flex-wrap:wrap">'
-        +((_ny&&_ny[id])?laundryLightHTML():'')+'<span style="font-size:13px;font-weight:700">'+esc(l.label)+'</span>'+((jump&&typeof ldsrOn==="function"&&ldsrOn(l))?ldsrRowHTML(id,l):trail)   // LAUNDRY_STAGEROW
+        +((_ny&&_ny[id])?laundryLightHTML():'')+'<span style="font-size:13px;font-weight:700">'+esc(l.label)+'</span>'+((jump&&typeof ldsrOn==="function"&&ldsrOn(l))?ldsrRowHTML(id,l):trail)   // LAUNDRY_STAGEROW (jump = Household ▸ Laundry and, LAUNDRY_MYDAY3, 🏡 My day)
         +'<span style="font-size:10px;color:var(--muted)">'+meta[1]+' since '+laundrySince(l.ts)+laundryDoneTxt(l)+'</span>'
         +'<span style="flex:1"></span>'
         +((typeof laundryBackBtnHTML==="function")?laundryBackBtnHTML(id,l):'')+'<button onclick="laundryAdvance(\''+id+'\')" style="padding:4px 12px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">'+laundryAdvanceLabel(l.stage,l)+'</button>'
@@ -18978,6 +19039,8 @@ function mdCardKidsToday(today,isSchoolDay,bank,dadCtl){   // bank=true: Mom's D
   });
   h+='</div>';
   h+='<div style="padding:4px 14px 8px">';
+  const _opm=bank&&dadCtl===undefined&&_kToday&&typeof openPmAllHTML==="function";   // 🔓 OPENPM: Mom's Day, today only
+  if(_opm) h+=openPmAllHTML();
   // 🧒 KIDBAR: phone — name + notes on the first line, every fraction + light on the line under it.
   if(bank) h+='<style>@media (max-width:600px){.kt-sp{display:none}.kt-pills{flex:1 1 100%}}</style>';
   const _ktSig=(typeof ktPaceSig==="function")?ktPaceSig():null;   // KIDSTODAYCACHE: one fingerprint for the whole card
@@ -19026,6 +19089,7 @@ function mdCardKidsToday(today,isSchoolDay,bank,dadCtl){   // bank=true: Mom's D
     h+='<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px">'
       +'<b style="color:'+col+';font-size:14px;flex:0 0 60px">'+cap(kid)+'</b>'+chip
       +(lost?'<span style="font-size:10px;font-weight:800;padding:1px 8px;border-radius:10px;background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5">🚫 No tech</span>':'')
+      +(_opm?openPmKidBtnHTML(kid):'')   // 🔓 OPENPM
       +'<span'+(bank?' class="kt-sp"':'')+' style="flex:1"></span>'
       +(bank?'<span class="kt-pills" style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px">':'')   // 🧒 KIDBAR: on a phone the pills drop under the name
       +seg("🌅",mD,mT,mDone,"morning")

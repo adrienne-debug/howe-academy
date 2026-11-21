@@ -61,12 +61,12 @@ console.log("2. The line's Today list (Mom's / Dad's My day) — Still out, and 
   const row=h.split("</div>").find(s=>/King \+ queen sheets/.test(s)&&/font-weight:700/.test(s))||"";
   ok("the sheets row reads '· 🧺 in the basket since Fri' — not 🫧 Start, not ✓ Done", /King \+ queen sheets.*🧺 in the basket since Fri/.test(h)&&!/llStart\('sheets'/.test(h)&&!/llMarkDone\('sheets'/.test(h), h.slice(h.indexOf("King"),h.indexOf("King")+260));
   ok("Ellis's clothes (nothing out) still offers ✓ Done and 🫧 Start", /llMarkDone\('ellis','mom'\)/.test(h)&&/llStart\('ellis','mom'\)/.test(h));
-  const so=h.slice(h.indexOf("Still out"));
-  ok("a 'Still out' group sits under Today", h.indexOf("Still out")>h.indexOf(">Today<"));
+  const so=c.llStillOutHTML(TUE);   // LAUNDRY_MYDAY3 (her words 2026-11-21: "still out could just be removed since it's up at the top for machines now"): My day no longer draws it — the list itself is read straight from llStillOutHTML
+  ok("LAUNDRY_MYDAY3: My day's line (bare) has no 'Still out' group; llStillOutHTML still builds it", h.indexOf("Still out")<0&&/Still out/.test(so));
   ok("it lists the earlier-day loads NOW nudges — Lincoln's Bed, the sheets, Mom & Dad's, Julian's, in the order they went in — with laundryAdvance on each", so.indexOf("Lincoln's Bed")<so.indexOf("King + queen")&&so.indexOf("King + queen")<so.indexOf("Mom & Dad")&&so.indexOf("Mom & Dad")<so.indexOf("Julian's")&&/Lincoln's Bed/.test(so)&&/King \+ queen sheets/.test(so)&&/Mom & Dad's clothes/.test(so)&&/Julian's clothes/.test(so)&&["lB","lS","lM","lJ"].every(id=>new RegExp("laundryAdvance\\('"+id+"'\\)").test(so)), so);
   ok("each with the same stage words and the nudge's button: baskets say 'in the basket since' + Folded ✓, the dryer says 'in the dryer since Sat' + Folded ✓", /in the basket since Fri<\/span><\/span><button[^>]*>Folded ✓/.test(so)&&/🌀 in the dryer since Sat<\/span><\/span><button[^>]*>Folded ✓/.test(so), so);
   ok("Julian's row names Julian as the doer (👤 Julian), the sheets Mom", /Julian's clothes.*👤 Julian/.test(so)&&/King \+ queen sheets.*👤 Mom/.test(so));
-  ok("a load started today never sits under Still out", (()=>{ const d=mk(); d.get("laundryData.lE={label:\"Ellis's clothes\",stage:'washer',ts:"+NOW+",line:'ellis',lineDay:'"+TUE+"'}"); const x=d.llDadCardHTML("mom",true); return !/Still out[\s\S]*Ellis's clothes/.test(x)&&/Ellis's clothes.*🫧 in the washer/.test(x); })());
+  ok("a load started today never sits under Still out", (()=>{ const d=mk(); d.get("laundryData.lE={label:\"Ellis's clothes\",stage:'washer',ts:"+NOW+",line:'ellis',lineDay:'"+TUE+"'}"); const x=d.llDadCardHTML("mom",true); return !/Ellis's clothes/.test(d.llStillOutHTML(TUE))&&/Ellis's clothes.*🫧 in the washer/.test(x); })());
   const ids=c.laundryNudgeList(NOW+6*3600e3).map(x=>x.id).sort().join(), sids=["lB","lS","lM","lJ"].filter(id=>new RegExp("laundryAdvance\\('"+id+"'\\)").test(so)).sort().join();
   ok("NOW's nudge list and Still out name the same load ids", ids===sids&&ids==="lB,lJ,lM,lS", [ids,sids]);
   c.laundryAdvance("lS"); ok("Folded ✓ on the sheets' Still out row is the very same laundryAdvance: basket → fold, one laundry/lS set", c.get("laundryData.lS.stage")==="fold"&&c.writes.filter(w=>w[0]==="set"&&w[1]==="laundry/lS").length===1, c.writes);
@@ -106,7 +106,7 @@ console.log("5. Same-name items — 'Mom & Dad's clothes · Wed' / '· Sat', mat
   const nudge=c.laundryNudgeRowHTML({id:"lM",l:c.get("laundryData.lM"),kind:"basket"});
   ok("the NOW nudge row names the twin: 'Mom & Dad's clothes · Wed has been in the basket since …'", /<b>Mom & Dad's clothes · Wed<\/b> has been in the basket since/.test(nudge), nudge);
   ok("a lone label's nudge row is as before", /<b>Julian's clothes<\/b> has been in the dryer/.test(c.laundryNudgeRowHTML({id:"lJ",l:c.get("laundryData.lJ"),kind:"dryer"})));
-  ok("Still out names it '· Wed' (in the basket since Wed — 6 days back reads as the weekday)", /Mom & Dad's clothes · Wed .*🧺 in the basket since Wed/.test(c.llDadCardHTML("mom",true)), c.llDadCardHTML("mom",true).slice(c.llDadCardHTML("mom",true).indexOf("Still out")));
+  ok("Still out names it '· Wed' (in the basket since Wed — 6 days back reads as the weekday)", /Mom & Dad's clothes · Wed .*🧺 in the basket since Wed/.test(c.llStillOutHTML(TUE)), c.llStillOutHTML(TUE));   // LAUNDRY_MYDAY3: read from llStillOutHTML (My day no longer draws it)
   // Wednesday: momdad on its home day with last week's load still in the basket; the Sat one bumped onto today
   const w=mk({day:WED,dayName:"wednesday",line:{asOf:WED,bump:{[WED]:{i_mom_dad_s_clothes:1}}}}); const r0=w.llProjectNow(1)[0], h=w.llDadCardHTML("dad",true);
   ok("Wednesday's lay holds both Mom & Dad's loads", r0.loads.indexOf("momdad")>=0&&r0.loads.indexOf("i_mom_dad_s_clothes")>=0, r0.loads);
