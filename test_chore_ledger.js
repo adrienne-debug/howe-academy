@@ -5,7 +5,7 @@
  * something that is working".
  * The WHOLE app runs per device (test_fixtures/house_world.js: one shared in-memory Firebase, one virtual clock) on a made-up family
  * (kid_a … kid_d), the clock moved day by day from Mon 11/16 (day 0) to Mon 11/30 (day 14). A hand-built week, so every number is known:
- *   kid_a  🌅 Brush teeth (daily, 0 ⭐) · Start your laundry (the line's Thursday load, 10 ⭐)
+ *   kid_a  🌅 Brush teeth (daily, 0 ⭐) · Feed the rabbit (Mon Wed Fri, 15) · Start your laundry (the line's Thursday load, 10 ⭐)
  *          🧹 Make the bed (daily 2) · Wipe the table (daily 2) · Vacuum the den (Tue 10) · Dust the shelves (Wed 10) · Wipe the baseboards
  *             (Mon 10) · Empty the trash (Mon Wed Fri 5) · Feed the fish (Thu 3) · Rake the leaves (Thu 8)
  *          ☀️ Water the plants (daily 3) · Pick up the den (daily 5), list bonus 4 · 🌙 Lay out clothes (daily 0)
@@ -13,7 +13,7 @@
  *   kid_d  nothing at all (the empty day)
  * Week 1 (before the falling stars' blank slate 11/22): every row on its day, except Vacuum the den (Tue 11/17), ticked Thu 11/19 in full.
  * Week 2: Mon 11/23 the baseboards missed (gone Thu) and the trash's Monday turn ticked Tue (4 of 5, 1 day late); Tue the vacuum missed,
- * ticked Thu (6 of 10); Wed the dust missed (still on the list Thu and Fri, gone Sat) and the bed not made; Thu (THE day): the laundry
+ * ticked Thu (6 of 10); the rabbit (a Morning row) not fed Mon 11/23 — the Morning list never carries it; Wed the dust missed (still on the list Thu and Fri, gone Sat) and the bed not made; Thu (THE day): the laundry
  * started, the plants ticked while Mom checks before pay (held 3), the den → the 🏁 bonus, the fish ✕ today, the leaves 🌅 sent to Friday
  * morning (ticked there: 8), the table and the clothes not done yet; Fri the trash missed (1 day late Sat, 2 Sun, gone Mon 11/30).
  * Checks: A the button (Mom, Dad's link; not a kid device, a kiosk, Mom's device out of Mom mode) · B the first tap asks for house.js
@@ -39,6 +39,7 @@ console.log("(the app before: " + (BASE ? BASE_SHA : "none — git show " + BASE
 const K = o => Object.assign({ src: { kind: "routine" }, status: "active", area: "cleaning", verdict: "", note: "", level: 1, minutes: 5 }, o);
 const FAM = () => ({
   a_teeth: K({ label: "Brush teeth", emoji: "🪥", who: "kid_a", slot: "morning", cad: "daily", area: "health", order: 0 }),
+  a_rabbit: K({ label: "Feed the rabbit", emoji: "🐇", who: "kid_a", slot: "morning", cad: "wk:0,2,4", pts: 15, area: "animals", order: 0 }),
   a_bed: K({ label: "Make the bed", emoji: "🛏", who: "kid_a", slot: "chores", cad: "daily", pts: 2, order: 1 }),
   a_table: K({ label: "Wipe the table", emoji: "🍽", who: "kid_a", slot: "chores", cad: "daily", pts: 2, order: 2 }),
   a_vac: K({ label: "Vacuum the den", emoji: "🧹", who: "kid_a", slot: "chores", cad: "wk:1", pts: 10, order: 3 }),
@@ -102,7 +103,7 @@ const DUE = { vac: 1, dust: 2, base: 0, fish: 3, rake: 3 };
 for (let n = 0; n <= 14; n++) {
   await both(async ({ w, A, B, Dd }) => {
     await go(w, n, 8); const dow = (dOf(n).getDay() + 6) % 7;   // 0 = Monday
-    daily(B, n); await w.flush();
+    daily(B, n); if ([0, 2, 4].includes(dow) && n !== 7) tick(B, "morning", "kid_a", "Feed the rabbit"); await w.flush();
     if (n === 10) { tick(B, "morning", "kid_a", "Start your laundry"); await w.flush(); }
     if (n === 11) { const id = B.run("(function(){ const L=amFor('kid_a',_todayDay)||[]; return (L[0]||{}).id||''; })()"); B.run("(function(){ day=_todayDay; amToggle('kid_a'," + J(id) + "); })()"); await w.flush(); }
     await go(w, n, 16);
@@ -129,6 +130,9 @@ for (let n = 0; n <= 14; n++) {
     const misses = []; Object.entries((w.get("routineLog/kid_a") || {})).forEach(([wkk, days]) => Object.entries(days || {}).forEach(([dd, L]) => Object.entries(L || {}).forEach(([key, r]) => { if (r && r.act === "miss") misses.push(wkk + "/" + dd + "/" + r.label + "/" + r.at); })));
     S.days[n] = { wk, dn, raw, misses, x: data(A, "kid_a", 0), xs: [-1, -2, -3, -4, -5, -6, -7, -8].map(k => data(A, "kid_a", k)), bank: {} };
     ["kid_a", "kid_b", "kid_c", "kid_d"].forEach(k => { S.days[n].bank[k] = bankDay(w, k, wk, dn); S.days[n]["x_" + k] = data(A, k, 0); });
+    S.days[n].mraw = A.run("(function(){ day=_todayDay; const s=rtStepsFor('morning','kid_a',false,day), i=s.findIndex(function(x){ return x.label==='Feed the rabbit'; }); return i<0?-1:mdLateDays('morning','kid_a',day,i,s[i]); })()");
+    S.days[n].kidMorning = B.run("(function(){ const d0=day; day=_todayDay; try{ return mrIndividualHTML('kid_a'); } finally{ day=d0; } })()");
+    S.days[n].kidMorningDue = JSON.parse(B.run("JSON.stringify(morningDueIdx('kid_a',_todayDay).map(function(i){ return morningStepsFor('kid_a')[i].label; }))"));
     S.days[n].html = LG(A, "lgShow()"); S.days[n].phone = S.days[n].html;
     S.days[n].week = LG(A, "lgGo('',0,1)"); S.days[n].weekX = JSON.parse(A.run("(function(){ const t=lgNow(), o=[]; for(let k=-(t+1);k<=0;k++) o.push(lgDayData('kid_a',k)); return JSON.stringify(o); })()"));
     if (process.env.LEDGER_DUMP && (n === 10 || n === 12)) {   // the preview page's drawings (nothing else reads them)
@@ -245,6 +249,19 @@ console.log("\n── E · a missed turn's fate agrees with the lists' own rule,
   ok("Tuesday's vacuum seen from Friday: \"not done · done Thu, late (see that day)\" (its stars on Thursday, never twice)", tueSeen === "not done · done Thu, late (see that day)" && !(S.days[11].xs[2].lists.flatMap(L => L.rows).find(r => /Vacuum the den/.test(r.nm)) || {}).pts, tueSeen);
   const fri = S.days[11].x.lists.find(L => L.slot === "morning");
   ok("Friday morning: the carried leaves \"✅ 🌅 🍂 Rake the leaves from Thu Chores\" +8, counted on Friday (= Friday's bank line)", fri && fri.rows.some(r => /🌅 🍂 Rake the leaves/.test(r.nm) && r.pts === 8 && /from Thu Chores/.test(r.note)) && S.days[11].bank.kid_a.lines.some(l => /Rake the leaves/.test(l[0]) && l[1] === 8), fri);
+}
+
+// ── K ──
+console.log("\n── K · a Morning row is never carried: not done is just not done ──");
+{ const all = (x) => x.lists.flatMap(L => L.rows), rab = x => all(x).filter(r => /Feed the rabbit/.test(r.nm)), Tu = S.days[8];
+  ok("Tue 11/24: the rabbit (Mon Wed Fri Morning row, missed Monday) is not on the kid's Morning list (morningDueIdx: Brush teeth only; the list reads \"Morning 1/1\"), though rtLateDays would say 1 (" + Tu.mraw + ")", J(Tu.kidMorningDue) === J(["Brush teeth"]) && /Morning 1\/1/.test(txt(Tu.kidMorning)) && !/Feed the rabbit/.test(Tu.kidMorning) && Tu.mraw === 1, [Tu.kidMorningDue, txt(Tu.kidMorning).slice(0, 80), Tu.mraw]);
+  ok("…and not in the ledger on Tuesday: no ⏳, no \"still on the list\", no \"pays\", no \"late\" row for it", rab(Tu.x).length === 0 && !/Feed the rabbit/.test(txt(Tu.html)), rab(Tu.x));
+  const mon = rab(S.days[10].xs[2])[0] || {};   // Mon 11/23 seen from Thu 11/26
+  ok("its own day, seen later: \"✖ 🐇 Feed the rabbit not done\", 15 ⭐ wanted, no \"gone from …\" tail", mon.ic === "✖" && mon.note === "not done" && mon.want === 15 && rowT(LG(A, "lgGo('kid_a',-7,0)"), "Feed the rabbit") === "✖ 🐇 Feed the rabbit not done 15 ⭐", [mon, rowT(LG(A, "lgGo('kid_a',-7,0)"), "Feed the rabbit")]);
+  ok("…never in a \"Gone from the list\" block, on any day Sun 11/22 … Mon 11/30", [6, 7, 8, 9, 10, 11, 12, 13, 14].every(n => !S.days[n].x.gone.some(r => /Feed the rabbit/.test(r.nm)) && !S.days[n].xs.some(x => x.gone && x.gone.some(r => /Feed the rabbit/.test(r.nm)))));
+  const we = rab(S.days[10].xs[0])[0] || {}, wedBank = S.days[9].bank.kid_a.lines.filter(l => /Feed the rabbit/.test(l[0]));
+  ok("its next due day (Wed 11/25) ticked: pays in full and shows in full, \"✅ 🐇 Feed the rabbit +15 ⭐\" (= Wednesday's bank line 15)", we.ic === "✅" && we.pts === 15 && !we.note && !we.sh && J(wedBank) === J([["🐇 Feed the rabbit", 15]]), [we, wedBank]);
+  ok("…This week's \"fell short\" (Sat) does not count it: no Morning row falls short on any day of the week", S.days[12].weekX.every(x => !x.lists || x.lists.filter(L => L.slot === "morning").every(L => L.rows.every(r => !r.sh && r.ic !== "⏳"))));
 }
 
 // ── F ──

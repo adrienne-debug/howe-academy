@@ -1500,7 +1500,7 @@ function lgName(kid){ return cap(kid); }
 // A turn due on day D and not done that day: what became of it, by the lists' wait rule walked day by day (rtLateDays / rtWaitCut):
 // {done:T} ticked on day T in its wait · {gone:T} off the list on day T (its wait ran out, its next day came, or its dates ended) ·
 // {wait:1} still on the list today · null: never waits (daily, meal, as-needed, the plan's own rows, ✕ / 🌅) or a day not on the device
-function lgFate(slot,kid,i,st,D,to){ const cad=(st&&st.cad)||"daily"; if(!/^wk:/.test(cad)||st.meal||st.house) return null;
+function lgFate(slot,kid,i,st,D,to){ const cad=(st&&st.cad)||"daily"; if(!lgCarried(slot)||!/^wk:/.test(cad)||st.meal||st.house) return null;
   if(typeof amCovers==="function"&&amCovers(kid,slot,i,D.iso)) return null;
   const W=rtWaitDays(st); to=(to==null)?0:to;
   for(let k=D.k+1;k<=to;k++){ const T=lgDay(k); if(!T||!lgMap(T)) return null;
@@ -1508,6 +1508,11 @@ function lgFate(slot,kid,i,st,D,to){ const cad=(st&&st.cad)||"daily"; if(!/^wk:/
     const r=lgRec(slot,kid,T,i); if(r&&r.done) return {done:T}; }
   return to===0?{wait:1}:null; }
 // the most recent day before D on which this row was due (a late tick's own day)
+// Does this list carry a missed row? Only the lists rtSlotHTML draws (Afternoon, Chores, Evening: rtIsMulti, RT_ABBR) keep a missed
+// turn on in its wait (CHOREWAIT). The Morning list (mrIndividualHTML, every screen) lists only what is due that day (morningDueIdx) and
+// pays its stars in full (toggleMorningStep): a Morning row not done on its day was simply not done — never ⏳, never gone, never late
+// (hub's check 11/21: a Mon/Wed/Fri Morning row read "⏳ 1 day late · pays 12 of 15" on Tuesday; rtLateDays answers for any slot).
+function lgCarried(slot){ return typeof rtIsMulti==="function"&&rtIsMulti(slot); }
 function lgDueBefore(st,D){ for(let j=1;j<=7;j++){ const E=lgDay(D.k-j); if(!E) return null; if(lgDue(st,E)) return E; } return null; }
 // One row of a kid's list on day D → {ic, nm, note, pts (paid that day), sh (fell short), held, ts, c: 1 done · 0 not done · undefined a line}
 function lgRow(slot,kid,D,i,st){
@@ -1520,7 +1525,7 @@ function lgRow(slot,kid,D,i,st){
     if(lgUnpaid(kid,rec.bid)) return Object.assign(r,{ic:"✅",note:"not paid (your ✗ on its stars)"});
     r.ic="✅"; r.pts=p;
     if(due) return r;
-    if(!/^wk:/.test(cad)){ if(cad==="asneeded") r.note="as needed"; return r; }
+    if(!/^wk:/.test(cad)||!lgCarried(slot)){ if(cad==="asneeded") r.note="as needed"; return r; }
     const E=lgDueBefore(st,D), n=E?D.k-E.k:0; r.sh=Math.max(0,full-p);
     r.note=(p<full?"paid "+p+" of "+full+" ⭐":"done late")+(E?" · due "+lgWd(E.iso):"")+((E&&rtWaitAsBefore(st))?" · "+n+" day"+(n>1?"s":"")+" late":"");
     return r; }
@@ -1530,7 +1535,7 @@ function lgRow(slot,kid,D,i,st){
     if(D.k===0) return Object.assign(r,{ic:"○",note:"not done yet"});
     const f=lgFate(slot,kid,i,st,D);
     return Object.assign(r,{ic:"✖",note:"not done"+(!f?"":f.done?" · done "+lgWd(f.done.iso)+", late (see that day)":f.gone?" · gone from "+who+"'s list "+lgWd(f.gone.iso):" · still on "+who+"'s list today")}); }
-  if(D.k===0){ const n=(typeof mdLateDays==="function")?mdLateDays(slot,kid,D.dn,i,st):0;
+  if(D.k===0&&lgCarried(slot)){ const n=(typeof mdLateDays==="function")?mdLateDays(slot,kid,D.dn,i,st):0;
     if(n>0){ const pay=rtFallPay(st,n);
       return Object.assign(r,{ic:"⏳",c:0,note:(rtWaitAsBefore(st)?n+" day"+(n>1?"s":"")+" late":"still on "+who+"'s list "+rtWaitNote(n,st).split(" · ")[0])+(pay<full?" · pays "+pay+" of "+full+" ⭐ today":"")}); } }
   return null;
@@ -1557,7 +1562,7 @@ function lgDayData(kid,k){
       const b=lgBonus(kid,m[D.wk+"_"+D.dn+"_"+kid+"_"+slot],"🏁","List complete bonus"); if(b) rows.push(b);
       if(rows.length) out.lists.push({slot:slot,title:LG_LIST[slot]||slot,rows:rows,done:rows.filter(function(r){ return r.c===1; }).length,tot:rows.filter(function(r){ return r.c===0||r.c===1; }).length});
       // gone from the list that day: the turn due on its last day before this one left the list today
-      steps.forEach(function(st,i){ if(!st||st.house||!/^wk:/.test(st.cad||"")) return; const E=lgDueBefore(st,D); if(!E||!lgMap(E)) return;
+      if(lgCarried(slot)) steps.forEach(function(st,i){ if(!st||st.house||!/^wk:/.test(st.cad||"")) return; const E=lgDueBefore(st,D); if(!E||!lgMap(E)) return;
         const er=lgRec(slot,kid,E,i); if((er&&er.done)||lgWaved(slot,kid,E,i)) return;
         const f=lgFate(slot,kid,i,st,E,D.k); if(f&&f.gone&&f.gone.k===D.k) out.gone.push({ic:"✖",nm:(st.emoji?st.emoji+" ":"")+(st.label||"Chore"),id:st.house||st._hh||"",note:"due "+lgWd(E.iso)+", not done in time"}); });
     });
