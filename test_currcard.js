@@ -482,6 +482,7 @@ console.log("\n(h) no new Firebase write path in the curriculum region");
   "\"notebookSettings/\"+kid+\"/notebookTheme\"",
   "\"notebookSettings/\"+kid+\"/numberCursor\"",
   "\"notebookSettings/\"+kid+\"/reviewCap\"",
+  "\"notebookSettings/\"+kid+\"/wordCursor\"",   // LU_WORDS_WIRE (her go-ahead 2026-11-21): Lucy's sight-word cursor, one targeted path
   "\"notebookSettings/\"+kid+\"/unitDays/\"+unitId",
   "\"notebookSettings/\"+v.kid+\"/checks/\"+v.wk+\"/\"+a.day+\"/\"+a.slot",
   "\"notebookSettings/bindingMargin\"",
