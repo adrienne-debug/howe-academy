@@ -95,7 +95,7 @@ console.log("── (4) not changed; nothing written ──");
   ok("no Firebase write from any of it", c._writes.length === 0, c._writes);
   ok("no db / storage in the block", !/db\.ref|HA_LS|\.set\(|\.update\(/.test(ONE));
   if (base) {
-    ok("MSTALERT + SREVIEW (what's flagged, what's counted, the HQ 🚩 box) are byte-for-byte main's", cut("// MSTALERT_START", "// SREVIEW_END", base) === CODE);
+    ok("MSTALERT + SREVIEW (what's flagged, what's counted, the HQ 🚩 box) are byte-for-byte main's", cut("// MSTALERT_START", "// SREVIEW_END", base).replace(/[^\n]*MIXMISSING[^\n]*\n/g, "").replace(/,mixmissing:"⚠️"\};   \/\/ ⚠️ MIXMISSING/, "};") === CODE.replace(/[^\n]*MIXMISSING: cards waiting[^\n]*\n/g, "").replace(/,mixmissing:"⚠️"\};   \/\/ ⚠️ MIXMISSING/, "};"));   // ⚠️ MIXMISSING (2026-11-21) adds a ⚠️ row kind on purpose
     ok("the Home Base badge list (hbAlertItems) is byte-for-byte main's", sliceFn("hbAlertItems", base) === sliceFn("hbAlertItems"));
     ok("⏱ MINMINUTES Now rows (mmAlertsNowHTML) are main's", sliceFn("mmAlertsNowHTML", base) === sliceFn("mmAlertsNowHTML"));
     ["REPROJ", "MOMLOOP", "DAYSTART", "SCHOOLEND"].forEach(k => ok("schedule block " + k + " is byte-for-byte main's", cut("// " + k + "_START", "// " + k + "_END", base) === cut("// " + k + "_START", "// " + k + "_END")));
