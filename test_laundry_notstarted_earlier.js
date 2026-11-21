@@ -5,13 +5,14 @@
  * "↩ Not started <Day> — back on the laundry line". Save = the line's own un-start for THAT day + the kid's tick on that day undone
  * the way Mom's ↩︎ undo does it (choreUndo). A tick in an earlier WEEK is left (slState holds this week only), and the toast says so.
  * Runs the real LAUNDRYLINE, LAUNDRYEDIT, CHOREUNDO, toggleMorningStep, mdKidTick and rtBonusSettle in a vm, on fixed dates.
- * "Byte-for-byte as before" compares against index.html at commit 5f47ff42 (pinned, never origin/main).
+ * "Byte-for-byte as before" (skipped with a note if that commit is missing) compares against index.html at commit 5f47ff42 (pinned, never origin/main).
  * Made-up family (amos, bea, cy, dee).                                       run: node test_laundry_notstarted_earlier.js
  */
 const fs=require("fs"), path=require("path"), vm=require("vm"), cp=require("child_process");
 const SRC=fs.readFileSync(path.join(__dirname,"index.html"),"utf8");
 const PIN="5f47ff42";   // the app before this change
-let OLD=null; try{ OLD=cp.execSync("git show "+PIN+":index.html",{cwd:__dirname,maxBuffer:64<<20}).toString("utf8"); }catch(e){}
+let OLD=null; try{ OLD=cp.execSync("git show "+PIN+":index.html",{cwd:__dirname,maxBuffer:64<<20,stdio:["ignore","pipe","ignore"]}).toString("utf8"); }catch(e){ OLD=null; }
+console.log("(the app before: "+(OLD?PIN:"none — git show "+PIN+" failed; the checks against it are skipped")+")");
 let pass=0, fail=0; const ok=(n,c,x)=>{ if(c){ pass++; console.log("  ok  - "+n); } else { fail++; console.log("  FAIL- "+n+(x!==undefined?"  ("+JSON.stringify(x).slice(0,700)+")":"")); } };
 const J=JSON.stringify; const CJ=v=>J(v,(k,x)=>(x&&typeof x==="object"&&!Array.isArray(x))?Object.keys(x).sort().reduce((o,q)=>(o[q]=x[q],o),{}):x);   // key order never matters
 
@@ -168,8 +169,8 @@ console.log("── (c) across the week change: tick Saturday (week7), fix Sunda
 }
 
 console.log("── (d) NOT offered: Edit list byte-for-byte as before (pinned "+PIN+") ──");
-if(!OLD){ ok("git show "+PIN+":index.html is readable", false); }
-else {
+if(!OLD) console.log("  (skipped: the byte-for-byte comparisons — no "+PIN+"; the not-offered checks still run)");
+{
   const cases=[
     ["an earlier-day load moved on: 🌀 dryer", T=>{ T.run("laundryData[ID].stage='dryer'"); }],
     ["an earlier-day load moved on: 🧺 basket", T=>{ T.run("laundryData[ID].stage='basket'"); }],
@@ -184,19 +185,20 @@ else {
   ];
   cases.forEach(function(c){
     const run=src=>{ const T=mk({src}); T.kidDay("fri"); const id=T.loadId(); T.next("sat"); T.run("var ID="+J(id)); c[1](T); T.clear(); const h=T.sheet(id), O=T.opts(id); T.save(id,"line"); return {h,O,w:T.writes,t:T.toasts,has:!!T.run("laundryData[ID]")}; };
-    const a=run(SRC), b=run(OLD);
-    ok(c[0]+": no ↩ choice; the sheet HTML is byte-for-byte the pinned app's", !a.O.some(x=>x.v==="line")&&a.h===b.h, [a.O,b.O]);
-    ok(c[0]+": a hand-made 'line' value on Save does the same as before", J(a.w)===J(b.w)&&J(a.t)===J(b.t)&&a.has===b.has, [a.w,b.w]);
+    const a=run(SRC), b=OLD?run(OLD):null;
+    ok(c[0]+": no ↩ choice"+(b?"; the sheet HTML is byte-for-byte the pinned app's":""), !a.O.some(x=>x.v==="line")&&(!b||a.h===b.h), [a.O,b&&b.O]);
+    if(b) ok(c[0]+": a hand-made 'line' value on Save does the same as before", J(a.w)===J(b.w)&&J(a.t)===J(b.t)&&a.has===b.has, [a.w,b.w]);
   });
   // a 🌀 cycle load: step 0 earlier day → offered; step 1 → not, byte-for-byte
   { const L=LINE(); L.items.bea.cycle=[{k:"wash"},{k:"dry"}];
     const T=mk({line:L}); T.kidDay("fri"); const id=T.loadId(); T.next("sat");
     ok("a 🌀 cycle load on step 0 from Friday: offered (s0 selected)", T.run("lcStep(laundryData['"+id+"'])")===0&&T.opts(id)[0].t==="↩ Not started Friday — back on the laundry line"&&T.opts(id).find(x=>x.sel).v==="s0", T.opts(id));
     const run=src=>{ const T=mk({src,line:L}); T.kidDay("fri"); const id=T.loadId(); T.next("sat"); T.run("laundryData['"+id+"'].step=1; laundryData['"+id+"'].stage=lcStageOf(lcSteps(laundryData['"+id+"']),1)"); return T.sheet(id); };
-    const a=run(SRC), b=run(OLD); ok("a 🌀 cycle load on step 1 from Friday: not offered, sheet byte-for-byte the pinned app's", a===b&&a.indexOf('value="line"')<0); }
+    const a=run(SRC), b=OLD?run(OLD):null; ok("a 🌀 cycle load on step 1 from Friday: not offered"+(b?", sheet byte-for-byte the pinned app's":""), (b==null||a===b)&&a.indexOf('value="line"')<0); }
 }
 
 console.log("── (e) a load started TODAY: everything exactly as before (pinned "+PIN+") ──");
+if(!OLD) console.log("  (skipped: no "+PIN+" to compare against)");
 if(OLD){
   const scen=[["kid's own tick today, ↩ from the washer",T=>{ T.kidDay("sat"); T.ctx.setDay("sat",14,30); return T.loadId(); },null],
     ["kid's own tick today, Mom moved it to the dryer, ↩",T=>{ T.kidDay("sat"); T.ctx.setDay("sat",14,30); const id=T.loadId(); T.save(id,"dryer"); return id; },null],
