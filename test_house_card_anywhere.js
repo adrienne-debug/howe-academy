@@ -147,7 +147,7 @@ console.log("\n── B · a tap opens the Household page with that exact card �
   }
   // house.js already here: the next ✎ opens its card at once, no second <script>
   { const d = await dev(w, "mom"); d.run(HJS); d.run("mpGoto('plan');1"); const m = w.mark(); const oc = handlers(d.run("momDayStripHTML(_todayStr(),mdTodayName())")).find(x => /hcGo\('m_tea'\)/.test(x));
-    run(d, oc); const r = R(d, "return {id:hcId,tags:__tags.filter(function(s){ return !/gifts\\.js/.test(s.src); }).length,sub:mpSubView};");   // 🎁 GIFTS_NOW (2026-11-20): Home Base now asks for gifts.js for Mom (her 🔴 Now gift reminders) — this counts house.js loads only
+    run(d, oc); const r = R(d, "return {id:hcId,tags:__tags.filter(function(s){ return !/(gifts|seasons)\\.js/.test(s.src); }).length,sub:mpSubView};");   // 🎁 GIFTS_NOW (2026-11-20): Home Base now asks for gifts.js for Mom (her 🔴 Now gift reminders) — this counts house.js loads only · 🎉 SEASONS_NOW (2026-11-20): and for seasons.js, the same way
     ok("house.js already loaded: the ✎ opens the card in the same tap, no <script>, nothing written", r.id === "m_tea" && r.tags === 0 && r.sub === "house" && w.since(m).length === 0, r);
     d.run("hcClose();mpGoto('plan');1"); const oc2 = handlers(d.run("__pop='';boardStatPop('kid_c','chores',mdTodayName());__pop")).find(x => /hcGo\(/.test(x)) || ""; if (oc2) run(d, oc2);
     ok("…and again from a kid's list (the list pop-up closed first)", !!oc2 && R(d, "return hcId;") === /hcGo\('([^']*)'/.exec(oc2)[1]); }
