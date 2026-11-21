@@ -280,6 +280,39 @@ console.log("\n# 🤫 a surprise keeps its name to itself");
   ok("a row that is not this idea's own (linked with 'the same one') is never re-labelled", o.grPuts.length === 0);
 }
 
+console.log("\n# SEASONRELABEL: renaming the SEASON re-labels rows already on the Shopping List");
+{
+  o.set(SEASON()); T.draw();
+  W.snLine("sup", "g1", ""); W.snSet("name", "kits"); W.snSave(); const a = ID(o.last(), /sup\/([^\/]+)$/)[0];
+  W.snViewSet("sup"); W.snLine("sup", "", ""); W.snSet("name", "wrapping paper"); W.snSave(); const b = ID(o.last(), /sup\/([^\/]+)$/)[0];
+  W.snLine("sup", "g1", ""); W.snSet("name", "frosting"); W.snSave();   // never sent to the list
+  W.snSupList("xmas", "g1", a); W.snSupList("xmas", "", b);
+  const G = o.ctx.grData.items, ids = Object.keys(G), ga = ids.find(i => G[i].name === "kits"), gb = ids.find(i => G[i].name === "wrapping paper");
+  ok("(before: an idea's row names season + idea; a whole-season row names the season)", ids.length === 2 && G[ga].src[0].lbl === "🎄 Christmas 2026 · Gingerbread houses" && G[gb].src[0].lbl === "🎄 Christmas 2026", ids.map(i => G[i].src[0].lbl));
+  G[ga].done = true; G[ga].stores = ["s1"];   // what the Kitchen has since put on the row must ride along untouched
+  o.grPuts.length = 0; o.writes.length = 0; W.snEditSeason(); W.snSet("name", "Our Christmas"); W.snSave();
+  ok("the season's own save is still one field", o.writes.length === 1 && paths(o.last()).join() === "seasons/list/xmas/name", o.writes.map(w => paths(w)));
+  ok("both rows follow the new name — the idea's row keeps its idea", o.grPuts.length === 2 && G[ga].src[0].lbl === "🎄 Our Christmas · Gingerbread houses" && G[gb].src[0].lbl === "🎄 Our Christmas", o.grPuts.map(x => x.it.src[0].lbl));
+  ok("everything else on the row is kept (ticked, store, name, back-link)", G[ga].done === true && G[ga].stores.join() === "s1" && G[ga].name === "kits" && G[ga].ref.sn === "xmas/g1/" + a && G[gb].ref.sn === "xmas/-/" + b);
+  o.grPuts.length = 0; W.snEditSeason(); W.snSet("emoji", "🎅"); W.snSave();
+  ok("a new emoji re-labels too", o.grPuts.length === 2 && G[gb].src[0].lbl === "🎅 Our Christmas");
+  o.grPuts.length = 0; W.snEditSeason(); W.snSet("end", "2026-12-31"); W.snSave();
+  ok("a save that changes neither name nor emoji touches no row", o.grPuts.length === 0);
+  o.grPuts.length = 0; W.snEditSeason(); W.snSet("name", "Our Christmas"); W.snSave();
+  ok("saving the same name again touches no row", o.grPuts.length === 0);
+  // a 🤫 idea's row carries the season only — before and after
+  W.snOpenIdea("g1"); W.snHide("none"); W.snSave(); o.grPuts.length = 0;
+  W.snEditSeason(); W.snSet("name", "Christmas"); W.snSave();
+  ok("a 🤫 idea's row gets the new season name and still never the idea", o.grPuts.length === 2 && G[ga].src[0].lbl === "🎅 Christmas" && JSON.stringify(o.ctx.grData).indexOf("Gingerbread houses") < 0, o.grPuts.map(x => x.it.src[0].lbl));
+  // a row that is not this line's own (linked with "It's the same one") is left alone
+  G[gb].ref = { lr: "other" }; o.grPuts.length = 0; W.snEditSeason(); W.snSet("name", "Yule"); W.snSave();
+  ok("a row linked with 'the same one' is never re-labelled", o.grPuts.length === 1 && o.grPuts[0].id === ga && G[gb].src[0].lbl === "🎅 Christmas", o.grPuts.map(x => x.id));
+  // dry run: nothing
+  o.dry = true; o.grPuts.length = 0; o.writes.length = 0; W.snEditSeason(); W.snSet("name", "Dry"); W.snSave();
+  ok("?dryrun=1 → no Shopping List row is touched", o.grPuts.length === 0);
+  o.dry = false;
+}
+
 console.log("\n# 🔴 NOW on Home Base");
 {
   o.set(SEASON(), {}, { ev2: { title: "Gingerbread houses", date: "2026-11-22", time: "", who: "family", emoji: "🏠" } });
