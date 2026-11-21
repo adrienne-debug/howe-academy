@@ -20,7 +20,7 @@ const block = src.slice(a, b);
 const nb0 = block.indexOf("// UNITNEXTBOOK_START"), nb1 = block.indexOf("// UNITNEXTBOOK_END");
 ok("UNITNEXTBOOK sits inside the STARTER_UNITS block", nb0 > 0 && nb1 > nb0);
 ok("the kid's row draws the offer (tagged line)", /h\+=unitNextBookHtml\(u,k,btn,esc,subjName\);\s+\/\/ UNITNEXTBOOK/.test(block));
-ok("the move-up's record keeps the kid's settings (tagged line)", /const rec=Object\.assign\(_unbKeep\(ks\),\{stage:st\.next\.n,[^\n]*\/\/ UNITNEXTBOOK/.test(block));
+ok("the move-up's record keeps the kid's settings (tagged line)", /const rec=Object\.assign\(_unbKeep\(ks\),\{stage:(st\.next|tgt)\.n,[^\n]*\/\/ UNITNEXTBOOK/.test(block));
 const FNS = ["mastGateChapter", "mastBankEligible", "mastFullBank", "lidStamped", "lidDoneSet", "lidDoneIdx", "lidsFor",
   "stEnroll", "stPath", "stParseLesson", "stIsLessonDay", "stWords", "stTarget", "stLessonTest", "prLastTaught", "prCardInfo", "stRightTier",
   "_stRevHash", "_stRevShuffle", "stReviewPool", "stReviewWords", "stReviewDayIdx"].map(slice).join("\n");

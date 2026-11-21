@@ -363,7 +363,7 @@ console.log("── 🏳️🏔🗽 GEOEXTRA: Stages 8 · Flags, 9 · Rivers & m
     ["Thames River", "Europe — England"], ["Volga River", "Europe — Russia"], ["Ganges River", "Asia — India"], ["Yangtze River", "Asia — China"], ["Mekong River", "Asia — Southeast Asia"], ["Murray River", "Australia"],
     ["Appalachian Mountains", "North America — the United States"], ["Rocky Mountains", "North America"], ["Sierra Nevada", "North America — the United States"], ["Andes Mountains", "South America"], ["Alps", "Europe"], ["Pyrenees", "Europe"],
     ["Ural Mountains", "Europe and Asia — Russia"], ["Caucasus Mountains", "Europe and Asia"], ["Himalayas", "Asia"], ["Atlas Mountains", "Africa"], ["Drakensberg", "Africa — South Africa"], ["Great Dividing Range", "Australia"]];   // Appendix E's 12 + 12, its order
-  const LM = ["Statue of Liberty", "Golden Gate Bridge", "Grand Canyon", "Mount Rushmore", "Washington Monument", "Niagara Falls", "Chichén Itzá", "Machu Picchu", "Christ the Redeemer", "Eiffel Tower", "Big Ben", "Colosseum",
+  const LM = ["The Statue of Liberty", "Golden Gate Bridge", "Grand Canyon", "Mount Rushmore National Memorial", "The Washington Monument", "Niagara Falls", "Chichén Itzá", "Machu Picchu", "Christ the Redeemer", "Eiffel Tower", "Big Ben", "Colosseum",
     "Leaning Tower of Pisa", "Parthenon", "Neuschwanstein Castle", "Sagrada Família", "Pyramids of Giza", "Victoria Falls", "Table Mountain", "Taj Mahal", "Great Wall of China", "Mount Fuji", "Petra", "Sydney Opera House"];   // Appendix E's 24, its order
   const w = world(), u = fresh(w), fl = deck(u, "Flags"), rm = deck(u, "Rivers & Mountains"), lm = deck(u, "Landmarks");
   const six = deck(u, "Countries").cards.map(c => c.name);
@@ -424,7 +424,7 @@ const allOn = (w, u, n) => { const all = items(w, "kid"); w.G.unitStudies.geogra
   w.G.writes.length = 0; w.unitStageMoveUp("geography_path", "kid", undefined, 10);
   const b10 = bank(w, "kid").slice(b0);
   ok("Stage 10 early: the 24 landmarks join the bank, the first 3 start learning, their backs saved; the kid is on Stage 10, from 3", u.kidStage.kid.stage === 10 && u.kidStage.kid.from === 3 && b10.length === 24 && b10.every(c => c.cat === "Landmarks") &&
-    items(w, "kid").filter(i => i.subject === "Landmarks" && i.status === "introduction").map(i => i.prompt).join() === "Statue of Liberty,Golden Gate Bridge,Grand Canyon" && w.G.masteryData.kid_settings.definitions["Eiffel Tower"] === "Paris, France" && w.G.masteryData.kid_settings.cat_modes.Landmarks === "flip");
+    items(w, "kid").filter(i => i.subject === "Landmarks" && i.status === "introduction").map(i => i.prompt).join() === "The Statue of Liberty,Golden Gate Bridge,Grand Canyon" && w.G.masteryData.kid_settings.definitions["Eiffel Tower"] === "Paris, France" && w.G.masteryData.kid_settings.cat_modes.Landmarks === "flip");
   ok("…Stage 3's cards untouched (the old stage keeps reviewing)", items(w, "kid").filter(i => i.subject !== "Landmarks").map(i => i.id + i.status).join() === before);
   ok("…writes only the targeted paths (mastery/kid lists and settings leaves, kidStage, enrolled)", w.G.writes.length > 0 && w.G.writes.every(x => x[0] === "update" ? /^mastery\/kid(_custom_items|_settings\/(cat_modes|cat_intro_max|definitions|cat_instructions|cat_instructions_kid))?$/.test(x[1]) : /^unitStudies\/geography_path\/(kidStage|enrolled)\/kid$/.test(x[1])));
   s = w.unitStageStatus(u, "kid");
