@@ -443,7 +443,7 @@ const M = new Function(block + `; return {stpAskGo:(typeof stpAskGo==="function"
   ok("laundry add writes laundry/{id} in washer", dbWrites.length === 1 && /^laundry\/l[a-z0-9]+$/.test(lw[0]) && lw[1].stage === "washer" && lw[1].label === "Towels", dbWrites);
   const lid = lw[0].split("/").pop();
   M.renderMomsDay(elStub);
-  ok("laundry card shows load + stage trail", elStub.innerHTML.includes("Towels") && elStub.innerHTML.includes("🫧 washer") && elStub.innerHTML.includes("→ Dryer"), null);
+  ok("laundry card shows load + its stages (LAUNDRY_MYDAY3 2026-11-21: Mom's 🏡 My day shows Household's stage buttons, Wash lit, in place of the plain trail)", elStub.innerHTML.includes("Towels") && elStub.innerHTML.includes("ldsrJump('" + lid + "','dryer')") && elStub.innerHTML.includes("🫧 Wash") && elStub.innerHTML.includes("→ Dryer"), null);
   ok("fresh washer load: no NOW nudge", !elStub.innerHTML.includes("Laundry needs you"), null);   // LAUNDRY_NOWONE (2026-11-11): one row, not "before it sours"
   M.laundryData[lid].ts = Date.now() - 2 * 3600 * 1000; // sat 2h
   M.renderMomsDay(elStub);
