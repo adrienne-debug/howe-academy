@@ -1452,6 +1452,168 @@ function hgSheetHTML(){
   h+='<div style="display:flex;gap:6px;justify-content:flex-end;margin-top:14px">'+_hhBtn("hgClose()",'Cancel',false,'#94a3b8')+(p.ok?_hhBtn("hgSwitch()",'🙌 Switch',true,'#A0622D'):'')+'</div>';
   return h+'</div></div>'; }
 // HOUSEGRABS_UI_END
+// LEDGERVIEW_START — 📒 the Ledger, look only (DESIGN_chore_ledger_2026-11-21 §2 and §8, slice L1; her "go" 2026-11-21). Her words
+// 11/21: "a good ledger for mom to really look at the deductions and everything that was daily … a whole like command ledger of
+// everything that the kids did … really intuitive and easy for a new mom to come in and understand it"; "moms day as a button to a pop
+// up"; "Dad gets it too"; "i dont want to mess up something that is working". ledgerOpen (index.html, LEDGER) opens it from the 📒 on
+// 🧒 Kids today, Mom mode or Dad's own link. One kid, one day (or This week): every row that was on that kid's lists, in plain words,
+// the stars added up on top. It WRITES NOTHING — no database, no bank, no log line. The one thing kept is on this device:
+// HA_LS "ha_ledger_hello" = "1" once the first-minute card's ✕ is tapped.
+// Every row is read with the lists' own readers, so it says what the kid's list and the bank say: rtStepsFor (the rows of that day),
+// cadDueOn + stepWindowOk (due that day), the check-off's own stored pts / ts / bid (what it paid, when; never worked out again), the
+// bank line's held (⏸ Mom checks before pay), rtWaved (➖ ✕ today), amGet / amCarry (🌅), mdLateDays → rtLateDays + rtWaitNote +
+// rtFallPay (⏳ on today), rtWaitDays + cadDueOn (the day a missed turn left the list: the wait rule walked day by day, CHOREWAIT),
+// the list record's bonusPts (🏁 🏆). The global `day` is pinned to the day being read, as boardStatPop and mdLateDays do.
+// How far back: this week (its Sunday to today) from slState, and last week's seven days from prevSlState once the lists' own read
+// (_loadPrevSl) has brought it. Nothing older is kept on a device, and the ledger reads nothing new: an older day says so.
+let lgKid="", lgOff=0, lgWeek=false;   // the pop-up's place (memory only): kid, days from today, This week
+const LG_HELLO="ha_ledger_hello";
+const LG_WD=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+function lgNow(){ return _rtPos(DAYS_ALL.indexOf(_todayDay)); }   // today's place in its week: Sunday −1, Monday 0 … Saturday 5
+function lgMin(){ return -(lgNow()+9); }   // one day before last week's Sunday: the "not on this device" day
+// k days from today (0 today, −1 yesterday …) → that day of this week or last week, or null
+function lgDay(k){ const p=lgNow()+k; if(k>0||p<-8) return null; const prev=p<-1, wk=prev?_prevWkKey():activeWk(); if(!wk) return null;
+  const dn=DAYS_ALL[_rtIdx(prev?p+7:p)]; return {k:k,dn:dn,iso:amIso(dn,prev),wk:wk,prev:prev}; }
+// the check-offs of that day's week: this week's, or last week's once the lists' read has it (else null: not on this device yet)
+function lgMap(D){ return D.prev?((typeof prevSlState!=="undefined"&&prevSlState&&_prevSlWk===D.wk)?prevSlState:null):slState; }
+function lgRec(slot,kid,D,i){ if(!D.prev&&typeof hdSlRec==="function") return hdSlRec(slot,kid,D.dn,i); const m=lgMap(D); return (m&&m[D.wk+"_"+D.dn+"_"+kid+"_"+(slot==="morning"?"m":RT_ABBR[slot])+"step"+i])||null; }
+function lgWaved(slot,kid,D,i){ if(!D.prev) return rtWaved(slot,kid,D.dn,i); const w=wavedData&&wavedData[D.wk]; return !!(w&&w[D.dn]&&w[D.dn][kid]&&w[D.dn][kid][rtWaveKey(slot,i)]); }
+function lgWin(st,iso){ return !st||!iso||((!st.from||iso>=st.from)&&(!st.to||iso<=st.to)&&(!st.cycW||typeof stepCycleOk!=="function"||stepCycleOk(st,iso))); }
+// due that day: the lists' cadDueOn + window; last week's every-N-days rows count from that week's own dates
+function lgDue(st,D){ const cad=(st&&st.cad)||"daily";
+  if(!D.prev) return stepWindowOk(st,D.dn)&&cadDueOn(cad,D.dn);
+  if(!lgWin(st,D.iso)) return false;
+  if(/^\d+d$/.test(cad)||cad==="2w"){ const n=cadDateNum(D.dn); return n==null||(n-7)%(cad==="2w"?14:parseInt(cad,10))===0; }
+  return cadDueOn(cad,D.dn); }
+// Last week's rows: the lists' own rows, but the laundry line's Start / Fold rows laid for THAT week's date (llRtSteps lays them by this
+// week's dates) — the same three lines as _llRtStepsRaw, given the date. The plan's appended rows are left out (this week only).
+function lgPrevSteps(slot,kid,D){ const s=rtStepsFor(slot,kid,false,D.dn)||[], c=s.findIndex(function(st){ return st&&st.line; }), out=c<0?s.slice():s.slice(0,c);
+  if(typeof llDrivesKid!=="function"||!llDrivesKid(kid)) return out; const A=llAll();
+  if(slot==="morning"||slot==="afternoon") llKidDayLoads(kid,D.iso).forEach(function(id){ if(A[id]&&llWhen(id)===slot) out.push({emoji:A[id].emoji||"🧺",label:"Start your laundry: "+llLabelFull(id),pts:llKidPts(kid,"start"),cad:"daily",laundry:true,line:id}); });
+  if(slot==="afternoon") llKidFoldLoads(kid,D.iso).forEach(function(id){ if(A[id]) out.push(llFoldRow(kid,id,D.iso)); });
+  return out; }
+function lgHeld(kid,bid){ const a=bid&&bank[kid]&&bank[kid].adjustments&&bank[kid].adjustments[bid]; return !!(a&&a.held); }
+function lgWd(iso){ const d=new Date(iso+"T12:00:00"); return LG_WD[d.getDay()]||""; }
+function lgName(kid){ return cap(kid); }
+// A turn due on day D and not done that day: what became of it, by the lists' wait rule walked day by day (rtLateDays / rtWaitCut):
+// {done:T} ticked on day T in its wait · {gone:T} off the list on day T (its wait ran out, its next day came, or its dates ended) ·
+// {wait:1} still on the list today · null: never waits (daily, meal, as-needed, the plan's own rows, ✕ / 🌅) or a day not on the device
+function lgFate(slot,kid,i,st,D,to){ const cad=(st&&st.cad)||"daily"; if(!/^wk:/.test(cad)||st.meal||st.house) return null;
+  if(typeof amCovers==="function"&&amCovers(kid,slot,i,D.iso)) return null;
+  const W=rtWaitDays(st); to=(to==null)?0:to;
+  for(let k=D.k+1;k<=to;k++){ const T=lgDay(k); if(!T||!lgMap(T)) return null;
+    if(lgDue(st,T)||k-D.k>W||!lgWin(st,T.iso)) return {gone:T};
+    const r=lgRec(slot,kid,T,i); if(r&&r.done) return {done:T}; }
+  return to===0?{wait:1}:null; }
+// the most recent day before D on which this row was due (a late tick's own day)
+function lgDueBefore(st,D){ for(let j=1;j<=7;j++){ const E=lgDay(D.k-j); if(!E) return null; if(lgDue(st,E)) return E; } return null; }
+// One row of a kid's list on day D → {ic, nm, note, pts (paid that day), sh (fell short), held, ts, c: 1 done · 0 not done · undefined a line}
+function lgRow(slot,kid,D,i,st){
+  const rec=lgRec(slot,kid,D,i), dn=!!(rec&&rec.done), due=lgDue(st,D), full=st.pts||0, cad=st.cad||"daily", who=lgName(kid);
+  const r={nm:(st.emoji?st.emoji+" ":"")+(st.label||"Chore"),id:st.house||st._hh||""};
+  if(lgWaved(slot,kid,D,i)) return Object.assign(r,{ic:"➖",note:"excused (✕ today)"});
+  if(dn&&rec.am) return Object.assign(r,{ic:"✅",note:"🌅 done the next morning ("+lgWd(rec.am)+") · its stars are on that day",c:1});
+  if(dn){ const p=rec.pts||0; r.ts=rec.ts||""; r.c=1;
+    if(lgHeld(kid,rec.bid)) return Object.assign(r,{ic:"⏸",note:"waiting for your ✓ · "+p+" ⭐",held:p});
+    r.ic="✅"; r.pts=p;
+    if(due) return r;
+    if(!/^wk:/.test(cad)){ if(cad==="asneeded") r.note="as needed"; return r; }
+    const E=lgDueBefore(st,D), n=E?D.k-E.k:0; r.sh=Math.max(0,full-p);
+    r.note=(p<full?"paid "+p+" of "+full+" ⭐":"done late")+(E?" · due "+lgWd(E.iso):"")+((E&&rtWaitAsBefore(st))?" · "+n+" day"+(n>1?"s":"")+" late":"");
+    return r; }
+  if(due){
+    if(typeof amGet==="function"&&amGet(kid,slot,i,D.iso)) return Object.assign(r,{ic:"🌅",note:"sent to "+(D.k===0?"tomorrow":"the next")+" morning"});
+    r.c=0; r.want=full;
+    if(D.k===0) return Object.assign(r,{ic:"○",note:"not done yet"});
+    const f=lgFate(slot,kid,i,st,D);
+    return Object.assign(r,{ic:"✖",note:"not done"+(!f?"":f.done?" · done "+lgWd(f.done.iso)+", late (see that day)":f.gone?" · gone from "+who+"'s list "+lgWd(f.gone.iso):" · still on "+who+"'s list today")}); }
+  if(D.k===0){ const n=(typeof mdLateDays==="function")?mdLateDays(slot,kid,D.dn,i,st):0;
+    if(n>0){ const pay=rtFallPay(st,n);
+      return Object.assign(r,{ic:"⏳",c:0,want:pay,note:(rtWaitAsBefore(st)?n+" day"+(n>1?"s":"")+" late":"still on "+who+"'s list "+rtWaitNote(n,st).split(" · ")[0])+(pay<full?" · pays "+pay+" of "+full+" ⭐ today":"")}); } }
+  return null;
+}
+// a bonus record (🏁 list / 🏆 day) → its row, or null
+function lgBonus(kid,rec,ic,nm){ if(!rec||!rec.bonusBid||!rec.bonusPts) return null; const h=lgHeld(kid,rec.bonusBid);
+  return h?{ic:"⏸",nm:ic+" "+nm,note:"waiting for your ✓ · "+rec.bonusPts+" ⭐",held:rec.bonusPts}:{ic:"✅",nm:ic+" "+nm,pts:rec.bonusPts,ts:rec.ts||""}; }
+const LG_LIST={morning:"🌅 Morning",afternoon:"☀️ Afternoon",chores:"🧹 Chores",evening:"🌙 Evening"};
+// One kid, one day → {D, lists:[{slot,title,rows,done,tot}], gone:[rows], earned, short, open, held} · {none:1} · {notYet:D}
+function lgDayData(kid,k){
+  const D=lgDay(k); if(!D) return {none:1}; if(!lgMap(D)) return {notYet:D};
+  const out={D:D,lists:[],gone:[],earned:0,short:0,open:0,held:0}, m=lgMap(D), pd=day, pw=_prevSlWk; day=D.dn;
+  try{ if(typeof _prevWkKey==="function") _prevSlWk=_prevWkKey();   // the lists' read of last week is theirs to make: the ledger never starts one (rtLateDays then says nothing, as before the read lands)
+    ((typeof activeSlots==="function")?activeSlots():SL_SLOTS).forEach(function(slot){
+      const rows=[], steps=D.prev?lgPrevSteps(slot,kid,D):(rtStepsFor(slot,kid,false,D.dn)||[]);
+      if(slot==="morning") ((typeof amList==="function")?amList(kid):[]).filter(function(it){ return it.dueIso<=D.iso&&!(it.done&&it.done.iso&&it.done.iso<D.iso); }).forEach(function(it){   // 🌅 the carries on that morning's list (amFor's own rule)
+        const r={nm:"🌅 "+(it.emoji?it.emoji+" ":"")+(it.label||"Chore"),note:"from "+amFromLbl(it)+" "+(SL_SLBL[it.slot]||it.slot)}, x=it.done;
+        if(x&&x.iso===D.iso){ r.c=1; r.ts=x.ts||""; if(x.src==="list"){ r.ic="✅"; r.note+=" · ticked on its own list"; } else if(lgHeld(kid,x.bid)){ r.ic="⏸"; r.held=x.pts||0; r.note+=" · waiting for your ✓"; } else { r.ic="✅"; r.pts=x.pts||0; } }
+        else { r.c=0; r.ic=D.k===0?"○":"✖"; r.note+=D.k===0?" · not done yet":" · not done"; }
+        rows.push(r); });
+      steps.forEach(function(st,i){ if(!st||(D.prev&&st.house)) return; const r=lgRow(slot,kid,D,i,st); if(!r) return;
+        if(D.prev&&st.rot) r.nm="🔄 a job that takes turns";   // last week's turn is not worked out again here (rtApplyRot reads this week's dates)
+        rows.push(r); });
+      const b=lgBonus(kid,m[D.wk+"_"+D.dn+"_"+kid+"_"+slot],"🏁","List complete bonus"); if(b) rows.push(b);
+      if(rows.length) out.lists.push({slot:slot,title:LG_LIST[slot]||slot,rows:rows,done:rows.filter(function(r){ return r.c===1; }).length,tot:rows.filter(function(r){ return r.c===0||r.c===1; }).length});
+      // gone from the list that day: the turn due on its last day before this one left the list today
+      steps.forEach(function(st,i){ if(!st||st.house||!/^wk:/.test(st.cad||"")) return; const E=lgDueBefore(st,D); if(!E||!lgMap(E)) return;
+        const er=lgRec(slot,kid,E,i); if((er&&er.done)||lgWaved(slot,kid,E,i)) return;
+        const f=lgFate(slot,kid,i,st,E,D.k); if(f&&f.gone&&f.gone.k===D.k) out.gone.push({ic:"✖",nm:(st.emoji?st.emoji+" ":"")+(st.label||"Chore"),id:st.house||st._hh||"",note:"due "+lgWd(E.iso)+", not done in time"}); });
+    });
+    const db2=lgBonus(kid,m[D.wk+"_"+D.dn+"_"+kid+"_day"],"🏆","Whole day complete"); if(db2) out.lists.push({slot:"day",title:"🏆 Whole day",rows:[db2],done:0,tot:0});
+  } finally { day=pd; _prevSlWk=pw; }
+  out.lists.forEach(function(L){ L.rows.forEach(function(r){ out.earned+=r.pts||0; out.short+=r.sh||0; out.held+=r.held||0; if(r.c===0) out.open++; }); });
+  return out;
+}
+// ── drawing ──
+function lgHelloOpen(){ try{ return HA_LS.getItem(LG_HELLO)!=="1"; }catch(e){ return true; } }
+function lgHelloClose(){ try{ HA_LS.setItem(LG_HELLO,"1"); }catch(e){} lgDraw(); }
+function lgDate(iso,long){ const d=new Date(iso+"T12:00:00"); return isNaN(d.getTime())?"":d.toLocaleDateString("en-US",long?{weekday:"long"}:{weekday:"short",month:"short",day:"numeric"}); }
+function lgStar(n){ return n+" ⭐"; }
+function lgSum(x,today){ return "earned "+lgStar(x.earned)+(x.short?" · fell short "+lgStar(x.short):"")+(x.open?" · "+x.open+" not done"+(today?" yet":""):"")+(x.held?" · ⏸ "+lgStar(x.held)+" waiting for your ✓":""); }
+function lgRowHTML(r){
+  const nm=(r.id&&typeof hcGoOk==="function"&&hcGoOk(r.id))?'<span onclick="lgClose();hcGo(\''+r.id+'\')" style="cursor:pointer;text-decoration:underline dotted #94a3b8">'+esc(r.nm)+'</span>':esc(r.nm);
+  return '<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;padding:5px 2px;border-bottom:1px solid #f3f4f6;font-size:13px'+(r.c===0||r.ic==="➖"?';color:#6b7280':'')+'">'
+    +'<span style="width:18px;text-align:center;flex-shrink:0">'+r.ic+'</span><span style="flex:1 1 180px;min-width:0">'+nm+(r.note?' <span style="font-size:11.5px;color:#6b7280">'+esc(r.note)+'</span>':'')+'</span>'
+    +(r.pts?'<span style="font-weight:800;color:#b45309;white-space:nowrap">+'+lgStar(r.pts)+'</span>':(r.c===0&&r.want?'<span style="color:#9ca3af;white-space:nowrap">'+lgStar(r.want)+'</span>':''))
+    +(r.ts?'<span style="font-size:10.5px;color:#9ca3af;white-space:nowrap">'+esc(String(r.ts).replace(/\s+[A-Z][a-z]{2} \d{1,2}$/,""))+'</span>':'')+'</div>'; }   // the time: the stamp's date is the day on screen
+function lgListsHTML(x,kid){
+  let h='';
+  x.lists.forEach(function(L){ h+='<div style="margin-top:9px;font-size:12.5px;font-weight:800;color:#374151">'+L.title+(L.tot?' <span style="font-weight:700;color:#9ca3af">'+L.done+' of '+L.tot+'</span>':'')+'</div>'+L.rows.map(lgRowHTML).join(''); });
+  if(x.gone.length) h+='<div style="margin-top:9px;font-size:12.5px;font-weight:800;color:#374151">Gone from '+esc(lgName(kid))+'\'s list '+(x.D.k===0?'this morning':'that morning')+'</div>'+x.gone.map(lgRowHTML).join('');
+  return h||'<div style="font-size:13px;color:#6b7280;padding:12px 2px">Nothing was on '+esc(lgName(kid))+'\'s lists this day.</div>'; }
+function lgFar(why){ return '<div style="font-size:13px;color:#6b7280;padding:12px 2px">'+why+'</div>'; }
+const LG_FAR="Only this week and last week are on this device.", LG_NOTYET="Last week's check-offs are not on this device yet. Open a kid's list and come back.";
+function lgDayHTML(kid,k){
+  const x=lgDayData(kid,k); if(x.none) return lgFar(LG_FAR); if(x.notYet) return lgFar(LG_NOTYET);
+  const lbl=k===0?"Today":k===-1?"Yesterday":lgDate(x.D.iso,true);
+  return '<div style="font-size:13.5px;padding:6px 2px 2px"><b>'+lbl+':</b> '+lgSum(x,k===0)+'</div>'+lgListsHTML(x,kid); }
+// This week = Sunday … today (or last week's Sunday … Saturday): every day's rows under its date, the week's totals on top
+function lgWeekHTML(kid){
+  const t=lgNow(), last=lgDay(lgOff)&&lgDay(lgOff).prev, a=last?-(t+8):-(t+1), b=last?-(t+2):0, days=[], tot={earned:0,short:0,open:0,held:0};
+  for(let k=a;k<=b;k++){ const x=lgDayData(kid,k); if(x.notYet) return lgFar(LG_NOTYET); if(x.none) continue; days.push(x); ["earned","short","open","held"].forEach(function(f){ tot[f]+=x[f]; }); }
+  return '<div style="font-size:13.5px;padding:6px 2px 2px"><b>'+(last?'Last week':'This week')+':</b> '+lgSum(tot,!last)+'</div>'
+    +days.map(function(x){ return '<div style="margin-top:12px;padding:5px 8px;background:#f8fafc;border-radius:8px;font-size:12.5px"><b>'+(x.D.k===0?'Today':lgDate(x.D.iso))+'</b> <span style="color:#6b7280">'+lgSum(x,x.D.k===0)+'</span></div>'+lgListsHTML(x,kid); }).join(''); }
+function lgHTML(){
+  const kid=lgKid, D=lgDay(lgOff), chip=function(on,lab,js){ return '<span onclick="'+js+'" style="cursor:pointer;font-size:12px;font-weight:'+(on?'800':'600')+';padding:3px 10px;border-radius:12px;border:1.5px solid '+(on?'#2B7A78':'var(--border)')+';background:'+(on?'#e6f4f3':'#fff')+';color:'+(on?'#2B7A78':'#6b7280')+'">'+lab+'</span>'; };
+  const arrow=function(lab,to,off){ return '<button '+(off?'disabled ':'onclick="lgGo(\'\','+to+')" ')+'style="border:1.5px solid var(--border);background:#fff;border-radius:8px;padding:2px 10px;font-size:14px;font-weight:800;cursor:'+(off?'default;opacity:.35':'pointer')+'">'+lab+'</button>'; };
+  const lo=lgMin(), t=lgNow(), last=!!(D&&D.prev), when=lgWeek?((D&&D.prev)?'Last week':'This week'):(D?lgDate(D.iso):'Earlier');
+  let h='<div id="lg-pop" onclick="lgClose()" style="position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:9000;display:flex;align-items:center;justify-content:center;padding:12px">'
+    +'<div onclick="event.stopPropagation()" style="background:#fff;border-radius:16px;max-width:560px;width:100%;max-height:88vh;overflow:auto;padding:14px 14px 16px;box-shadow:0 20px 50px rgba(0,0,0,0.3)">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><div style="font-family:\'Fraunces\',serif;font-weight:700;font-size:17px;flex:1">📒 Ledger</div><button onclick="lgClose()" style="border:none;background:#f3f4f6;border-radius:8px;padding:4px 10px;font-size:13px;cursor:pointer">✕</button></div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">'+SL_KIDS.map(function(k){ const on=k===kid, col=SL_KCOL[k]||"#666"; return '<span onclick="lgGo(\''+k+'\')" style="cursor:pointer;font-size:13px;font-weight:800;padding:4px 12px;border-radius:14px;border:2px solid '+col+';background:'+(on?col:'#fff')+';color:'+(on?'#fff':col)+'">'+esc(cap(k))+'</span>'; }).join('')+'</div>'
+    +'<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-bottom:4px"><span style="display:inline-flex;align-items:center;gap:6px">'+(lgWeek?arrow('‹',-(t+2),last):arrow('‹',lgOff-1,lgOff<=lo))+'<b style="font-size:13px;min-width:92px;text-align:center">'+when+'</b>'+(lgWeek?arrow('›',0,!last):arrow('›',lgOff+1,lgOff>=0))+'</span>'
+    +'<span style="display:inline-flex;gap:5px">'+chip(!lgWeek&&lgOff===0,'Today',"lgGo('',0,0)")+chip(!lgWeek&&lgOff===-1,'Yesterday',"lgGo('',-1,0)")+chip(lgWeek,'This week',"lgGo('',"+(lgWeek?lgOff:0)+",1)")+'</span></div>';
+  if(lgHelloOpen()) h+='<div style="position:relative;margin:8px 0 4px;padding:10px 34px 10px 12px;background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px;font-size:12.5px;line-height:1.5;color:#44403c">'
+    +'<button onclick="lgHelloClose()" title="Close for good" style="position:absolute;top:6px;right:6px;border:none;background:none;font-size:14px;cursor:pointer;color:#78716c">✕</button>'
+    +'<b>📒 This is everything on '+esc(cap(kid))+'\'s lists '+(lgOff===0&&!lgWeek?'today':'that day')+'.</b><br>✅ done · ○ not done yet · ⏳ still on the list from an earlier day (it pays a little less each day) · ✖ gone from the list (not done in time).<br>'
+    +'The line on top adds up the stars.'+((typeof hcGoMom==="function"&&hcGoMom())?' To change how a chore works, tap its name.':'')+'</div>';
+  h+=lgWeek?lgWeekHTML(kid):lgDayHTML(kid,lgOff);
+  return h+'</div></div>'; }
+function lgDraw(){ lgClose(); document.body.insertAdjacentHTML("beforeend",lgHTML()); }
+function lgClose(){ const o=document.getElementById("lg-pop"); if(o) o.remove(); }
+// Open: on today, on the kid looked at last (the first kid the first time). Mom mode or Dad's own link only.
+function lgShow(){ if(!((typeof momHere==="function"&&momHere())||(typeof _kioskD==="function"&&_kioskD()))) return; if(SL_KIDS.indexOf(lgKid)<0) lgKid=SL_KIDS[0]; lgOff=0; lgWeek=false; lgDraw(); }
+function lgGo(kid,k,w){ if(kid&&SL_KIDS.indexOf(kid)>=0) lgKid=kid; if(k!=null) lgOff=Math.max(lgMin(),Math.min(0,k)); if(w!=null) lgWeek=!!w; lgDraw(); }
+// LEDGERVIEW_END
 // HOUSESWITCH_START — 🚪 the real switch and today's stored plan on 👤 By person (Household by room, step 4; DESIGN §4.3 doors, §5 last
 // bullet, her yes 2026-11-17). Mom only. ON first PROVES a houseDay save works (houseDay/<today>/hello) and only then writes
 // household/meta/engine = {mode:"on", on:<today>} together with each house chore's last-done date filled once from the 8 weeks of
