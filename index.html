@@ -71791,6 +71791,78 @@ function mstMixSession(kid) {
   return null;
 }
 
+// MIXMISSING_START — ⚠ cards waiting for a Daily Mix that is not on the schedule (her yes 2026-11-21: "warn Mom when a child has
+// weekly cards waiting in a Daily Mix that is not on their schedule" — a warning only, no automatic fix). The incident (another
+// family, found 2026-11-19): a child had a Daily Mix study session but no schedule card that opens it. Cards that climb to the
+// Mix's rungs belong to the Mix (mstMixOwns) and Mom's drill skips them (mstOwnedIds, because a Mix exists), so 56 weekly cards
+// showed nowhere — nothing crashed and nothing said so. A kid with NO Mix session is not stranded: the drill keeps those cards.
+// THE RULE (mixMissingCount, pure): the kid has a Mix session (kind "mix") AND it is not on the schedule AND n > 0, where
+//   n = the kid's cards mstMixOwns owns right now (the app's own rule, no copy — active, not parked/never-drill, at or above a
+//       deck session's mixInAt and below its handOffAt), due today or not: none of them comes up anywhere else, ever.
+//   "on the schedule" = one of the kid's curriculum subjects opens this Mix (subject.study === the Mix's sid — the link a
+//       schedule card follows to open a sitting, sbCardSid / the day list) and that subject is not ⏸ paused and not set to
+//       0 times a week. That subject is what the week builder lays as cards, and it is exactly what the fix adds, so the
+//       warning goes away the moment Mom adds it (no second subject by mistake); the card itself comes with the next week
+//       build / Regenerate.
+// Shown (Mom only — momHere, never Kids' Corner): one line at the top of that kid's Mastery page (Drills and 📚 Study views),
+// and one row in the 🚩 Study sessions — needs a look list (MSTALERT: 🔴 Now, Mom HQ, the Home Base badge). Cost: memoized per kid
+// on the card / session / settings / subject objects (60 s at most), and it stops before touching a card when the kid has no
+// Mix or the Mix is linked. Reads only — nothing is written, nothing about any pile, drill or schedule changes.
+function mixOnSchedule(sid,subjects){
+  return Object.keys(subjects||{}).some(k=>{ const s=subjects[k];
+    return !!(s&&typeof s==="object"&&s.study===sid&&!s.paused&&String(s.timesPerWeek)!=="0"); });
+}
+// sessions = mstSessions(kid), items = the kid's cards (array), ladder = the kid's drill ladder, subjects = curriculum/subjects/<kid>
+// → null (nothing to say) or {sid, name, emoji, n}
+function mixMissingCount(sessions,items,ladder,subjects){
+  const mix=(sessions||[]).find(s=>s&&s.kind==="mix"); if(!mix) return null;
+  if(mixOnSchedule(mix.sid,subjects)) return null;
+  let n=0; (items||[]).forEach(it=>{ if(it&&mstMixOwns(sessions,it,ladder)) n++; });
+  return n>0?{sid:mix.sid,name:String(mix.name||"Daily Mix"),emoji:String(mix.emoji||""),n:n}:null;
+}
+let _mixMissMemo={};
+function mixMissingFor(kid){
+  if(!kid||typeof masteryData==="undefined"||!masteryData) return null;
+  const raw=masteryData[kid], ses=masteryData[kid+"_sessions"], st=masteryData[kid+"_settings"];
+  const subs=(typeof gwGetSubjects==="function")?gwGetSubjects(kid):{};
+  if(!ses||typeof ses!=="object") return null;
+  const now=Date.now(), m=_mixMissMemo[kid];
+  if(m&&m.raw===raw&&m.ses===ses&&m.st===st&&m.subs===subs&&now-m.t<60000) return m.out;
+  let out=null;
+  try{
+    // cheap exits first: no Mix record, or the Mix is linked → no card is looked at
+    const mixSid=Object.keys(ses).find(k=>ses[k]&&ses[k].kind==="mix");
+    if(mixSid!=null&&!mixOnSchedule(mixSid,subs)){
+      const sessions=mstSessions(kid)||[];
+      let items=raw||[]; if(!Array.isArray(items)) items=Object.values(items); items=items.filter(Boolean);
+      const _mk=masteryKid; let ladder; masteryKid=kid; try{ ladder=mastDrillSettings().ladder; } finally { masteryKid=_mk; }
+      out=mixMissingCount(sessions,items,ladder,subs);
+    }
+  }catch(e){ out=null; }
+  _mixMissMemo[kid]={raw:raw,ses:ses,st:st,subs:subs,t:now,out:out};
+  return out;
+}
+// The real menu words (cw — a family's own wording follows): Curriculum ▸ ＋ Add subject ▸ The same every day ▸ 📚 Study session ▸ <the Mix>
+function mixMissingPath(o){
+  const w=k=>(typeof cw==="function")?cw(k):k;
+  return "School ▸ Curriculum ▸ "+w("addSubject")+" ▸ "+w("daily")+" ▸ \u{1F4DA} Study session ▸ "+o.name;
+}
+// The Mastery page line (plain text; the caller escapes)
+function mixMissingLine(kid,o){
+  return "⚠ "+o.n+" card"+(o.n===1?" is":"s are")+" waiting for a "+o.name+", but "+cap(kid)+" has no "+o.name+" on the schedule. Add it: "+mixMissingPath(o)+".";
+}
+// The 🚩 alert row's text (the row puts the kid's name in front; "<Mix>: …" names it in 🔴 Now's short line)
+function mixMissingAlertText(o){
+  return o.name+": "+o.n+" card"+(o.n===1?"":"s")+" waiting, but it is not on the schedule. Add it: "+mixMissingPath(o)+".";
+}
+function mixMissingHtml(kid){
+  const mom=(typeof momHereCards==="function")?momHereCards():((typeof momHere==="function")&&momHere());
+  if(!mom) return "";
+  const o=mixMissingFor(kid); if(!o) return "";
+  return '<div class="mix-missing" style="margin:10px 0 12px;padding:8px 12px;background:#fffbeb;border-left:4px solid #f59e0b;border-radius:8px;font-size:13px;font-weight:700;color:#92400e;font-family:\'DM Sans\',sans-serif">'+esc(mixMissingLine(kid,o))+'</div>';
+}
+// MIXMISSING_END
+
 // 5. The session that owns `deck`, or null.
 function mstDeckInSession(kid, deck) {
   const sessions = mstSessions(kid);
@@ -77046,7 +77118,7 @@ function _mstSaveInner(){
 // "Mom sent this back"; the redo stamps redoneTs and the row turns into ✅ redone. A sitting saved before
 // this shipped has no `before` — Send back then reopens it but can't take back what it moved (Mom is told).
 const MST_ALERT_FAST_SECS=3, MST_ALERT_MIN_CARDS=5, MST_ALERT_PCT=60, MST_ALERT_DROPS=3, MST_ALERT_STUCK_DAYS=7;
-const MST_ALERT_ICON={fast:"⚡",miss:"❌",notdone:"⏰",stuck:"\u{1F501}",sentback:"↩️",redone:"✅"};
+const MST_ALERT_ICON={fast:"⚡",miss:"❌",notdone:"⏰",stuck:"\u{1F501}",sentback:"↩️",redone:"✅",mixmissing:"⚠️"};   // ⚠️ MIXMISSING
 const MST_BACK_FIELDS=["tier","consecutive_correct","cycle","drop_count","status","tally_dots","next_due","dynamic","dynSource","dynFromTier","dynAddedAt"];
 let _mstAlertList=[];
 function mstAlertKids(){
@@ -77122,6 +77194,7 @@ function mstAlertsFor(kid,nowMin){
       .sort((a,b)=>(b.drop_count||0)-(a.drop_count||0));
     if(stuck.length) out.push({kind:"stuck",text:"Keeps missing: "+stuck.slice(0,6).map(i=>_mstAlertPlain(i.prompt)+" ("+i.drop_count+"×)").join(", ")+(stuck.length>6?" +"+(stuck.length-6)+" more":"")});
   }catch(e){}
+  try{ const _mm=(typeof mixMissingFor==="function")?mixMissingFor(kid):null; if(_mm) out.push({kind:"mixmissing",sid:_mm.sid,text:mixMissingAlertText(_mm)}); }catch(e){}   // ⚠️ MIXMISSING: cards waiting for a Daily Mix that is not on the schedule
   return out;
 }
 function mstAlertsAll(){
@@ -80358,6 +80431,7 @@ function _renderMasteryInner(el){
   // MASTSET (her yes 2026-11-02): the ADMIN VIEW (PIN box, the "everything moved" card, the Retrieval Plan) is gone from this page —
   // mastView 'admin' is turned into 'drill' at the top of this function; renderMastAdmin / mastAdminCheckPin stay for the record.
 
+  if(!(typeof mastBare!=="undefined"&&mastBare)&&(mastView==="drill"||mastView==="study")&&typeof mixMissingHtml==="function"){ try{ h+=mixMissingHtml(masteryKid); }catch(e){} }   // ⚠️ MIXMISSING: Mom only — cards waiting for a Daily Mix that is not on the schedule
   // ── 📚 STUDY VIEW (study sessions: learn a deck Anki-style, own pile, own pace) ──
   if(mastView==="study"){
     h+=(typeof renderMastStudy==="function")?renderMastStudy():'';
