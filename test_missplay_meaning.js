@@ -42,6 +42,10 @@ function sandbox(md,o){
   o=o||{};
   const L={writes:[],spoken:[]};
   const ctx={console,Math,Object,Array,String,JSON,Number,Set,Date,RegExp,setTimeout:()=>0,masteryKid:Object.keys(md)[0],masteryData:md,
+    // A fixed day key. The stub gameLogDay below never took effect: the sandboxed WHICHONE block declares its own
+    // gameLogDay(), which asks mstTodayKey() and otherwise reads the real clock — so the game-log path was
+    // mastery/gameLog/k4/<today> and the write check passed only on 2026-11-11. mstTodayKey is what it asks first.
+    mstTodayKey:()=>"20261111",
     mastSchoolDayNum:()=>200, gameLogDay:()=>"20261111", HA_LS:{setItem(){}}, _dryRun:()=>false,
     db:{ref:p=>({set:v=>L.writes.push([p,"set",v]),update:v=>L.writes.push([p,"update",v]),push:v=>L.writes.push([p,"push",v]),remove:()=>L.writes.push([p,"remove"])})},
     mastSpeak:t=>L.spoken.push(t), matchDing(){}, matchBonk(){}, bbAudioUnlock(){},
