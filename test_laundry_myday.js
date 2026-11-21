@@ -36,11 +36,11 @@ function mk(o){
   ctx.get=e=>vm.runInContext(e,ctx); return ctx;
 }
 
-console.log("1. Mom's 🏡 My day: machines now, then the line, as Mom");
+console.log("1. Mom's 🏡 My day: the line, then machines now (LAUNDRY_MYDAY3 2026-11-21), as Mom");
 { const c=mk({line:LINE,loads:LOADS}); const h=c.get("llMyDayLaundryHTML('mom')");
   const iM=h.indexOf("🫧 Machines now"), iL=h.indexOf("🧺 The laundry line"), iT=h.indexOf(">Today<"), iG=h.indexOf("llWeekNav(");
-  ok("order: 🫧 Machines now → 🧺 The laundry line → Today — and NO week grid inside My day (her 2026-10-21: \"i do not like the this week laundry thing in my day\")", iM>=0&&iL>iM&&iT>iL&&iG<0, [iM,iL,iT,iG]);
-  ok("machines now shows Lincoln's clothes in the dryer with its Move button, no blue card header", /Lincoln's clothes/.test(h.slice(iM,iL))&&/laundryAdvance\('l1'\)/.test(h)&&!/<span>🧺<\/span> Laundry<span style="flex:1">/.test(h));
+  ok("order: 🧺 The laundry line → Today → 🫧 Machines now (LAUNDRY_MYDAY3, her words 2026-11-21: \"I would like the laundry line today to go above the machines now\") — and NO week grid inside My day (her 2026-10-21: \"i do not like the this week laundry thing in my day\")", iL>=0&&iT>iL&&iM>iT&&iG<0, [iL,iT,iM,iG]);
+  ok("machines now shows Lincoln's clothes in the dryer with its Move button, no blue card header", /Lincoln's clothes/.test(h.slice(iM))&&/laundryAdvance\('l1'\)/.test(h)&&!/<span>🧺<\/span> Laundry<span style="flex:1">/.test(h));
   ok("the line: Ellis is today's open load with ✓ Done and 🫧 Start — logged as MOM", /llMarkDone\('ellis','mom'\)/.test(h)&&/llStart\('ellis','mom'\)/.test(h)&&!/'dad'\)/.test(h));
   ok("the started load shows in the line too, with its stage, and no buttons", /Lincoln's clothes <span[^>]*>· 👤 [^<]*· 🌀/.test(h)&&!/llStart\('lincoln'/.test(h), h.match(/Lincoln's clothes <span[^<]*/g));
   ok("bare: no white card chrome of its own (a dashed divider inside the section instead)", !/box-shadow:0 2px 10px/.test(h)&&/border-top:1px dashed var\(--border\)/.test(h));
