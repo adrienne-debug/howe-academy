@@ -40,6 +40,11 @@
 // by itself when the idea moves. A to-do is done when it is ticked here OR its copy on Mom's list is ticked.
 // 🤫 A SURPRISE'S NAME NEVER LEAVES THIS PAGE: its Shopping List label is the season only, its 🔴 NOW line is a count with no
 // words, and its copy on Mom's list says only "A surprise to-do". (The supply's own name is what she chose to put on the list.)
+//
+// SEASONS slice 3 (her "Yes, kids' page" 2026-11-21): seasons/list/<sid>.kids = true opens ONE season to the kids — off until she
+// taps 🧒 Open it to the kids (one field, its only home is the season's header). The kids' page is its own file (seasonkid.js, in
+// Kids' Corner ▸ ✨ Our plans): it reads seasons/list and that season's seasons/ideas only, so nothing in seasonSecret/ can reach it.
+// A kid's idea arrives here as an ordinary idea with by:<kid>; this page marks it "💡 <name>'s idea".
 (function(){
 "use strict";
 let snData={}, snSecret={}, snOn=false, snLoaded=false, snGot=0, snSid=null, snFilter="all", snEdit=null, snRoot=null, snAh="", snFor={}, snPast=false, snFocus=false;
@@ -192,6 +197,7 @@ function shopLabel(sid,it){const s=season(sid)||{};return ((s.emoji||"🎉")+" "
 function whoChip(id,star){const p=who(id);return '<span class="sn-who" style="background:'+esc(p.color)+'">'+esc(p.name)+(star?" ⭐":"")+'</span>';}
 function whenTxt(w){return fmtDay(w.d)+(w.time?" · "+esc(w.time):"");}
 function hideChip(it){const h=hideOf(it);return h==="hint"?'<span class="sn-chip sec">✨ surprise, hint</span>':(h==="none"?'<span class="sn-chip sec">🤐 surprise, no hint</span>':"");}
+function byChip(it){const k=roster().find(r=>r.id===it.by);return k?'<span class="sn-chip kid">💡 '+esc(k.name)+'’s idea</span>':"";}   // slice 3: a kid added it in Kids' Corner
 function sizeChip(it){const z=SN_SIZES.find(x=>x[0]===it.size);return z?'<span class="sn-chip">'+z[1]+" "+z[2]+'</span>':"";}
 function statusLine(it,st,W){
   if(st==="skip")return '<span class="sn-st skip">🌙 not this year</span>';
@@ -210,7 +216,7 @@ function itemHTML(it){
   else if(st==="past")b='<button class="sn-go" onclick="snDid(\''+id+'\')">✓ Yes</button><button class="sn-tool" onclick="snSched(\''+id+'\',\''+esc(W[W.length-1].id)+'\')">↪ Move</button><button class="sn-tool" onclick="snSkip(\''+id+'\')">🌙</button>';
   else if(st==="skip")b='<button class="sn-tool" onclick="snUnskip(\''+id+'\')">↩ Bring back</button>';
   return '<div class="sn-item'+(st==="skip"||st==="done"?" dim":"")+'"><button class="sn-ib" onclick="snOpenIdea(\''+id+'\')">'
-    +'<div class="sn-it">'+esc(it.emoji||"")+(it.emoji?" ":"")+'<b>'+esc(it.t||"(no name)")+'</b> '+hideChip(it)+sizeChip(it)+'</div>'
+    +'<div class="sn-it">'+esc(it.emoji||"")+(it.emoji?" ":"")+'<b>'+esc(it.t||"(no name)")+'</b> '+hideChip(it)+sizeChip(it)+byChip(it)+'</div>'
     +'<div class="sn-im">'+wants.map(w=>whoChip(w,it.star&&it.star[w])).join("")+statusLine(it,st,W)+(st==="skip"?"":extraChips(it))+'</div>'
     +(it.note?'<div class="sn-note">'+esc(it.note)+'</div>':"")+'</button>'+(b?'<div class="sn-ia">'+b+'</div>':"")+'</div>';
 }
@@ -308,6 +314,8 @@ function headHTML(s){
     if(c.past)h+='<div class="sn-line" style="color:#b45309">'+c.past+' went by — did '+(c.past===1?"it":"they")+' happen?</div>';
     if(P.length)h+='<div class="sn-picks"><span class="sn-pl">Everyone’s picks</span>'+P.map(x=>'<span class="sn-pick'+(x.warn?" warn":"")+'"><i style="background:'+esc(x.color)+'"></i>'+esc(x.name)+' '+x.got+' of '+x.n+(x.stars?' ⭐'+(x.stMiss?"":"✓"):"")+(x.warn?" ⚠":"")+'</span>').join("")+'</div>';
   }
+  if(!s.closed)h+='<div class="sn-kids'+(s.kids?" on":"")+'"><span>'+(s.kids?"🧒 <b>Open to the kids.</b> They see it in Kids’ Corner ▸ ✨ Our plans, add ideas, ✋ and ⭐. Surprises never show there.":"🧒 Only you see this list.")+'</span>'
+    +'<button class="sn-tool" onclick="snKids()">'+(s.kids?"Close it to the kids":"Open it to the kids")+'</button></div>';
   return h+'</div></div>';
 }
 function addHTML(){
@@ -363,7 +371,7 @@ function seasonSheet(){
 function ideaSheet(){
   const f=snEdit.form,sid=snEdit.sid,it=idea(sid,snEdit.id),s=season(sid),max=starMax(s);
   const P=people().concat([SN_FAM]);
-  let h='<div class="sn-h2">'+esc(f.emoji||"")+" "+esc(f.t||"Idea")+'</div><div class="sn-form">'+field("t","What","Gingerbread houses","","wide")+field("emoji","Picture","🎄")+'</div>';
+  let h='<div class="sn-h2">'+esc(f.emoji||"")+" "+esc(f.t||"Idea")+'</div>'+(it&&byChip(it)?'<div class="sn-sub">'+byChip(it)+' — added in Kids’ Corner.</div>':"")+'<div class="sn-form">'+field("t","What","Gingerbread houses","","wide")+field("emoji","Picture","🎄")+'</div>';
   h+='<div class="sn-lab">Who wants it <small>— tap a name, then ☆ for the ones that matter most ('+max+' ⭐ each)</small></div><div class="sn-chips">'
     +P.map(p=>{const on=!!f.want[p.id],st=!!f.star[p.id];
       return '<span class="sn-wp"><button class="sn-pchip'+(on?" on":"")+'" style="--c:'+esc(p.color)+'" onclick="snWant(\''+esc(p.id)+'\')">'+esc(p.name)+'</button>'
@@ -490,6 +498,10 @@ function snDelSeason(){
   if(ideasOf(snEdit.id).length){snEdit.msg="It still has ideas on it. Move it to 📜 Past instead.";draw();return;}
   if(!snEdit.ask){snEdit.ask=true;draw();return;}
   const up={};up["seasons/list/"+snEdit.id]=null;if((snData.extra||{})[snEdit.id])up["seasons/extra/"+snEdit.id]=null;apply(up);snEdit=null;snSid=null;draw();
+}
+function snKids(){   // slice 3: ONE field — is this season open to the kids? (off until she taps)
+  const s=season(curSid());if(!s||s.closed)return;const up={};up["seasons/list/"+s.id+"/kids"]=s.kids?null:true;apply(up);
+  toast(s.kids?"🧒 Closed to the kids":"🧒 The kids can see it now — never the surprises");draw();
 }
 function snPick(sid){snSid=sid;try{HA_LS.setItem("ha_sn_sid",sid);}catch(e){}snFilter="all";snAsk=null;draw();}
 function snViewSet(v){snView=(v==="sup"||v==="todo")?v:"ideas";snAsk=null;draw();}
@@ -872,6 +884,10 @@ const SN_CSS=`
 .sn-gt{flex:1;min-width:0;text-align:left;background:none;border:none;padding:0;font:inherit;font-size:13.5px;cursor:pointer;color:inherit}
 .sn-gh2{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#64748b;margin:12px 0 6px}
 .sn-gh2.late{color:#b91c1c}
+.sn-chip.kid{border-color:#93c5fd;color:#1d4ed8;background:#eff6ff}
+.sn-kids{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:10px;padding-top:8px;border-top:1px solid #f1f5f9;font-size:12.5px;line-height:1.4;color:#475569}
+.sn-kids span{flex:1 1 200px}
+.sn-kids.on span{color:#0f766e}
 .sn-chip.warn{border-color:#f59e0b;color:#92400e;background:#fffbeb}
 `;
 window.renderSeasons=function(el,ah){
@@ -881,7 +897,7 @@ window.renderSeasons=function(el,ah){
 };
 Object.assign(window,{snNewSeason,snKind,snEditSeason,snDelSeason,snPick,snPastToggle,snFilterSet,snForToggle,snQuickAdd,snOpenIdea,snSet,snWant,snStar,snSize,snHide,snSave,snCancel,snDelIdea,
   snSched,snDaysOpen,snDaysMore,snPickAny,snPickDay,snUnsched,snDid,snUndid,snSkip,snUnskip,
-  snViewSet,snLine,snLineWho,snLineDel,snSupHave,snSupList,snSupSame,snAskNo,snSupAll,snTodoTick,snTodoMine,snBooked,snNowOpen,seasonNowLines});
+  snKids,snViewSet,snLine,snLineWho,snLineDel,snSupHave,snSupList,snSupSame,snAskNo,snSupAll,snTodoTick,snTodoMine,snBooked,snNowOpen,seasonNowLines});
 window._snTest={data:()=>snData,secret:()=>snSecret,setData:(d,s)=>{snData=d||{};snSecret=s||{};snLoaded=true;},reset:()=>{snSid=null;snFilter="all";snEdit=null;snFor={};snPast=false;snView="ideas";snAsk=null;},
   lines,line,tdDue,tdState,tdDone,supState,bookState,shopLabel,nowItems,ideaDay,view:()=>snView,ask:()=>snAsk,
   setRoot:(el,ah)=>{snRoot=el;snAh=ah||"";},draw,edit:()=>snEdit,seasons,season,ideasOf,idea,whens,state,counts,picks,openDays,dayInfo,mins,starsUsed,starMax,apply,schedRange,kindDefaults,fmtDay,curSid,OK:SN_OK};
