@@ -18076,28 +18076,38 @@ function _leCycleOpts(l,opt,noBin){ const S=lcSteps(l), t=_leCycleTok(l); return
 // (llSyncKidRows), and a kid's own tick of that Start row is un-ticked the way Mom's ↩︎ undo does it (choreUndo → the list's own
 // uncheck: stars back off through cuUnpay, the list's done flag and 🏁 bonus settle). Dry-run inert (every write is behind _lbWrite /
 // the check-off's own guards). Mom only, like the rest of ✎ Edit.
+// Her "Yes, fix it" 2026-11-21 (Start ticked Friday, not done; Saturday's ✎ had no choice): an EARLIER day's line load gets it too
+// while on its first step, its own day's log entry pointing at it. Its tick is undone first (that day's log puts the row on its list);
+// an earlier week's tick (slState holds this week only) and its stars are left, and the toast says so.
 function _leBackLineOk(id){ const l=(typeof laundryData!=="undefined"&&laundryData)?laundryData[id]:null;
   if(!l||!l.line||l.split||l.jumpDay||typeof llToday!=="function"||typeof llUnstart!=="function"||typeof laundryLine==="undefined"||!laundryLine) return false;
-  const t=llToday(); if(l.lineDay!==t) return false; const e=laundryLine.log&&laundryLine.log[t]&&laundryLine.log[t][l.line];
+  const t=llToday(), d=l.lineDay; if(d!==t&&!(d<t&&((typeof lcHas==="function"&&lcHas(l))?lcStep(l)===0:l.stage==="washer"))) return false; const e=laundryLine.log&&laundryLine.log[d]&&laundryLine.log[d][l.line];
   return !!(e&&e.load===id&&!e.with); }
+function _leDayWord(d){ const x=new Date(d+"T12:00"), n=Math.round((new Date(llToday()+"T12:00")-x)/864e5); return n<7?cap(DAYS_ALL[(x.getDay()+6)%7]):(x.getMonth()+1)+"/"+x.getDate(); }
+// Its Start row's weekday, if in this week; else null.
+function _leBackLineDn(l){ if(l.lineDay===llToday()) return _todayDay; const n=DAYS_ALL[(new Date(l.lineDay+"T12:00").getDay()+6)%7];
+  return (typeof calDateForWeekDay==="function"&&calDateForWeekDay(n)===l.lineDay)?n:null; }
 function _leStageOpts(id,l,opt){ const cyc=typeof lcHas==="function"&&lcHas(l), st=function(s){ const m=LAUNDRY_STAGE_META[s]; return opt(s,m[0]+' '+m[1],s===l.stage); };
   if(!_leBackLineOk(id)) return cyc?_leCycleOpts(l,opt):LAUNDRY_EDIT_STAGES.map(st).join("");   // not from today's line: exactly as before
   let h=cyc?_leCycleOpts(l,opt,true):LAUNDRY_EDIT_STAGES.filter(function(s){ return s!=="bin"; }).map(st).join("");
   if(h.indexOf(' selected>')<0){ const m=LAUNDRY_STAGE_META[l.stage]; h=opt(cyc?_leCycleTok(l):esc(l.stage||""),(m?m[0]+' '+m[1]:esc(l.stage||"Now"))+' (where it is now)',true)+h; }   // 🪣 bin (her live case) or another stage the list leaves out: shown, selected, unchanged on Save
-  return opt("line","↩ Not started — back on the laundry line",false)+h; }
-// The Start rows ticked by hand (a kid's own tick, or Mom's from her lists) for this item today: [slot, kid, i]. Auto ticks are llSyncKidRows'.
-function _leBackLineRows(item){ const out=[]; if(typeof rtStepsFor!=="function"||typeof _todayDay!=="string"||typeof slState==="undefined"||typeof activeWk!=="function") return out;
+  return opt("line","↩ Not started"+(l.lineDay!==llToday()?" "+_leDayWord(l.lineDay):"")+" — back on the laundry line",false)+h; }
+// The Start rows ticked by hand (a kid's own tick, or Mom's from her lists) for this item on day dn (today): [slot, kid, i]. Auto ticks are llSyncKidRows'.
+function _leBackLineRows(item,dn){ dn=dn||_todayDay; const out=[]; if(typeof rtStepsFor!=="function"||typeof _todayDay!=="string"||typeof slState==="undefined"||typeof activeWk!=="function") return out;
   const wk=activeWk(), R=(typeof llPeople==="function")?llPeople().slice(2):((typeof ROSTER!=="undefined"&&ROSTER)||[]);
   R.forEach(function(kid){ [["morning","mstep"],["afternoon",((typeof RT_ABBR!=="undefined"&&RT_ABBR.afternoon)||"a")+"step"]].forEach(function(p){
-    (rtStepsFor(p[0],kid,false,_todayDay)||[]).forEach(function(s,i){ if(!s||s.line!==item||s.laundry!==true) return; const c=slState[wk+"_"+_todayDay+"_"+kid+"_"+p[1]+i]; if(c&&c.done&&c.auto!=="line") out.push([p[0],kid,i]); }); }); });
+    (rtStepsFor(p[0],kid,false,dn)||[]).forEach(function(s,i){ if(!s||s.line!==item||s.laundry!==true) return; const c=slState[wk+"_"+dn+"_"+kid+"_"+p[1]+i]; if(c&&c.done&&c.auto!=="line") out.push([p[0],kid,i]); }); }); });
   return out; }
 function laundryEditBackLine(id){
   if(!(typeof momHere==="function"&&momHere())||!_leBackLineOk(id)) return false;
-  const l=laundryData[id], rows=_leBackLineRows(l.line);   // found while the row still reads started
+  const l=laundryData[id], dn=_leBackLineDn(l), old=dn!==_todayDay, rows=dn?_leBackLineRows(l.line,dn):[];   // found while the row still reads started
+  const un=function(){ rows.forEach(function(r){ try{ if(typeof choreUndo==="function") choreUndo(r[0],r[1],dn,r[2]); }catch(e){} }); };
+  if(old) un();   // an earlier day: before its log entry goes
   if(!llUnstart(id,true)) return false;
   laundryEditId=null;
-  rows.forEach(function(r){ try{ if(typeof choreUndo==="function") choreUndo(r[0],r[1],_todayDay,r[2]); }catch(e){} });   // the log is gone, so the row's own laundry hook finds nothing more to do
-  if(typeof mwToast==='function') mwToast('↩ '+(l.label||'Load')+' is back on the laundry line');
+  if(!old) un();   // the log is gone, so the row's own laundry hook finds nothing more to do
+  const k=l.by, w=(!dn&&llPeople().indexOf(k)>=2)?'. Any ⭐ '+((typeof KID_NAME!=="undefined"&&KID_NAME[k])||cap(k))+' got for it on '+_leDayWord(l.lineDay)+' were left — take them off in the Star Bank if you want':'';
+  if(typeof mwToast==='function') mwToast('↩ '+(l.label||'Load')+' is back on the laundry line'+w);
   _leRe(); return true; }
 // LE_BACKLINE_END
 function laundryEditSheetHTML(id){
