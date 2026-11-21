@@ -24,9 +24,27 @@
 // never writes holidays, vacations, co-ops, kid days off or Family Time.
 // Every write is ONE multi-path update of exact records/fields (db.ref().update), and only when !_dryRun() (?dryrun=1 stays inert).
 // who = a roster kid id, "mom", "dad" or "family". Counts, open days and Everyone's picks are worked out on screen, never stored.
+//
+// SEASONS slice 2 (her "Planner slice 2" 2026-11-20; plan §4.3 🎟/🧺/✅, §4.6, §4.8; her answers 8 + 10): supplies, to-dos and a
+// book-by date on an idea, supplies and to-dos for the whole season, the 🧺 Supplies and ✅ To-dos views, and the due ones in
+// 🔴 NOW on Home Base (window.seasonNowLines — Mom only, never Dad's TV).
+//   on an idea (so a 🤫 surprise's lines live in seasonSecret/ with it):
+//       bookBy?:"YYYY-MM-DD", booked?:true,
+//       sup/<id>   {name, qty?, have?:true, gr?:<its Shopping List row id>}
+//       todo/<id>  {t, who, due?:"YYYY-MM-DD" | before?:<days before the idea's day>, done?:"YYYY-MM-DD", list?:"YYYY-MM-DD"}
+//   seasons/extra/<sid>/sup/<id> · seasons/extra/<sid>/todo/<id>     the same lines for the whole season (no `before`)
+//   momday/<iso>/todos/sn<todoId>  {text, done, ts, src:"season", sn}   ONLY from "→ My list today": one copy on Mom's own daily list
+//   kitchen/grocery/items/<id>     ONLY through the Kitchen's own grCreate (🛒 To the list — her answer 8: "one tap", never by itself)
+//                                  with ref:{sn:"<sid>/<iid|->/<supId>"} and src {k:"season", lbl}; this file keeps just `gr`.
+// "N days before" is never turned into a date in the data: the due day is worked out from the idea's day each time, so it moves
+// by itself when the idea moves. A to-do is done when it is ticked here OR its copy on Mom's list is ticked.
+// 🤫 A SURPRISE'S NAME NEVER LEAVES THIS PAGE: its Shopping List label is the season only, its 🔴 NOW line is a count with no
+// words, and its copy on Mom's list says only "A surprise to-do". (The supply's own name is what she chose to put on the list.)
 (function(){
 "use strict";
 let snData={}, snSecret={}, snOn=false, snLoaded=false, snGot=0, snSid=null, snFilter="all", snEdit=null, snRoot=null, snAh="", snFor={}, snPast=false, snFocus=false;
+let snView="ideas", snAsk=null, snNowWant=false;
+const SN_BOOK_DAYS=7, SN_NOW_MAX=5;   // 🎟 a book-by date shows in 🔴 NOW from a week ahead · NOW lists at most this many lines
 const SN_STARS=3;   // her answer 2026-11-20: "three ⭐ each per season"
 const SN_KINDS=[["holiday","🎄","Holiday season"],["summer","☀️","Summer bucket list"],["season","🍂","A season"],["trip","🧳","Trip"],["party","🎂","Party or event"],["someday","💭","Someday list"]];
 const SN_SIZES=[["quick","⚡","Quick"],["home","🏠","At home"],["out","🚗","Outing"]];
@@ -57,7 +75,8 @@ function clone(v){return v==null?v:JSON.parse(JSON.stringify(v));}
 // ── the one door for writes ──────────────────────────────────────────────────
 // up = {"full/path": value | null}. Mirrors it locally, then ONE multi-path update. Any path outside this feature's own two nodes
 // and the calendar's family events is refused — nothing here can reach the school schedule.
-const SN_OK=/^(seasons\/(list|ideas)\/[^\/]+|seasonSecret\/[^\/]+\/[^\/]+|calendar\/events\/[^\/]+)(\/|$)/;
+// Slice 2 adds two: seasons/extra/<sid> (whole-season lines) and ONE kind of record on Mom's own to-do list — momday/<day>/todos/sn<id>.
+const SN_OK=/^(seasons\/(list|ideas|extra)\/[^\/]+|seasonSecret\/[^\/]+\/[^\/]+|calendar\/events\/[^\/]+|momday\/\d{4}-\d{2}-\d{2}\/todos\/sn[^\/]+)(\/|$)/;
 function setIn(o,parts,v){
   for(let i=0;i<parts.length-1;i++){if(o[parts[i]]==null||typeof o[parts[i]]!=="object"){if(v==null)return;o[parts[i]]={};}o=o[parts[i]];}
   const k=parts[parts.length-1];if(v==null)delete o[k];else o[k]=clone(v);
@@ -70,6 +89,7 @@ function apply(up){
   P.forEach(p=>{const a=p.split("/"),v=up[p];
     if(a[0]==="seasons")setIn(snData,a.slice(1),v);
     else if(a[0]==="seasonSecret")setIn(snSecret,a.slice(1),v);
+    else if(a[0]==="momday"){try{if(typeof momdayData!=="undefined"&&momdayData){setIn(momdayData,a.slice(1),v);if(!dry())HA_LS.setItem("momday_data",JSON.stringify(momdayData));}}catch(e){}}
     else{const c=cal();if(!c.events)c.events={};setIn(c.events,a.slice(2),v);}});
   if(live())db.ref().update(up);
   return true;
@@ -138,6 +158,36 @@ function openDays(s){
   return n;
 }
 
+// ── lines: supplies and to-dos, on an idea or on the whole season (slice 2) ──
+// A line = {id, sid, iid ("" = the whole season), it (its idea or null), r (the record)}.
+function ideaLines(it,kind){const o=(it&&it[kind])||{};return Object.keys(o).filter(id=>o[id]&&typeof o[id]==="object").map(id=>({id,sid:it.sid,iid:it.id,it,r:o[id]}));}
+function lines(sid,kind){
+  const X=((snData.extra||{})[sid]||{})[kind]||{};
+  let out=Object.keys(X).filter(id=>X[id]&&typeof X[id]==="object").map(id=>({id,sid,iid:"",it:null,r:X[id]}));
+  ideasOf(sid).forEach(it=>{out=out.concat(ideaLines(it,kind));});
+  return out;
+}
+function line(sid,iid,kind,lid){return lines(sid,kind).find(L=>L.id===lid&&L.iid===(iid||""))||null;}
+function lineBase(L,kind){return (L.iid?base(L.sid,L.iid,hideOf(L.it)):"seasons/extra/"+L.sid)+"/"+kind+"/"+L.id;}
+function parked(L){return !!(L.it&&L.it.skip);}   // 🌙 not this year: its lines rest too
+function ideaDay(it){if(!it)return "";const W=whens(it),t=today(),up=W.filter(w=>w.d>=t)[0];return up?up.d:(W.length?W[W.length-1].d:"");}
+// ✅ a to-do's day: its own date, or N days before the idea's day — worked out now, so it moves when the idea moves
+function tdDue(L){const r=L.r;if(isIso(r.due))return r.due;if(L.it&&r.before!=null&&+r.before>=0){const d=ideaDay(L.it);return d?addDays(d,-Math.floor(+r.before)):"";}return "";}
+function mdTodos(iso){try{return ((typeof momdayData!=="undefined"&&momdayData&&momdayData[iso])||{}).todos||{};}catch(e){return {};}}
+function tdCopy(L){return isIso(L.r.list)?(mdTodos(L.r.list)["sn"+L.id]||null):null;}   // its copy on Mom's own list, if she made one and it's still there
+function tdDone(L){const c=tdCopy(L);return !!(L.r.done||(c&&c.done));}
+function tdState(L){   // done · late (its day went by) · due (today) · open
+  if(tdDone(L))return "done";if(L.it&&L.it.did)return "open";
+  const d=tdDue(L),t=today();return !d?"open":(d<t?"late":(d===t?"due":"open"));
+}
+// 🧺 a supply: have · list (its row is on the Shopping List) · was (it was sent and the row is gone: bought?) · need
+function grItems(){try{return (typeof grData!=="undefined"&&grData&&grData.items)||{};}catch(e){return {};}}
+function supState(L){const r=L.r;if(r.have)return "have";if(r.gr)return grItems()[r.gr]?"list":"was";return "need";}
+// 🎟 book by: "" none · booked · late · soon (within a week) · later
+function bookState(it){if(!it||!isIso(it.bookBy))return "";if(it.booked)return "booked";const n=daysTo(today(),it.bookBy);return n<0?"late":(n<=SN_BOOK_DAYS?"soon":"later");}
+// What a Shopping List row says it is for. 🤫 A surprise names the season only — never the idea.
+function shopLabel(sid,it){const s=season(sid)||{};return ((s.emoji||"🎉")+" "+(s.name||"")).trim()+((it&&!hideOf(it)&&it.t)?" · "+it.t:"");}
+
 // ── drawing ──────────────────────────────────────────────────────────────────
 function whoChip(id,star){const p=who(id);return '<span class="sn-who" style="background:'+esc(p.color)+'">'+esc(p.name)+(star?" ⭐":"")+'</span>';}
 function whenTxt(w){return fmtDay(w.d)+(w.time?" · "+esc(w.time):"");}
@@ -161,8 +211,78 @@ function itemHTML(it){
   else if(st==="skip")b='<button class="sn-tool" onclick="snUnskip(\''+id+'\')">↩ Bring back</button>';
   return '<div class="sn-item'+(st==="skip"||st==="done"?" dim":"")+'"><button class="sn-ib" onclick="snOpenIdea(\''+id+'\')">'
     +'<div class="sn-it">'+esc(it.emoji||"")+(it.emoji?" ":"")+'<b>'+esc(it.t||"(no name)")+'</b> '+hideChip(it)+sizeChip(it)+'</div>'
-    +'<div class="sn-im">'+wants.map(w=>whoChip(w,it.star&&it.star[w])).join("")+statusLine(it,st,W)+'</div>'
+    +'<div class="sn-im">'+wants.map(w=>whoChip(w,it.star&&it.star[w])).join("")+statusLine(it,st,W)+(st==="skip"?"":extraChips(it))+'</div>'
     +(it.note?'<div class="sn-note">'+esc(it.note)+'</div>':"")+'</button>'+(b?'<div class="sn-ia">'+b+'</div>':"")+'</div>';
+}
+function bookChip(it){const b=bookState(it);return !b?"":(b==="booked"?'<span class="sn-chip">🎟 booked</span>':'<span class="sn-chip'+(b==="later"?"":" warn")+'">🎟 book by '+fmtShort(it.bookBy)+(b==="late"?" — late":"")+'</span>');}
+function extraChips(it){   // on an idea's row: what it still needs
+  const S=ideaLines(it,"sup").filter(L=>{const x=supState(L);return x==="need"||x==="was";}).length,T=ideaLines(it,"todo").filter(L=>!tdDone(L)),late=T.some(L=>{const x=tdState(L);return x==="late"||x==="due";});
+  return (S?'<span class="sn-chip">🧺 '+S+' to get</span>':"")+(T.length?'<span class="sn-chip'+(late?" warn":"")+'">✅ '+T.length+' to do</span>':"")+bookChip(it);
+}
+// One supply line: ☐ have it · its name (tap to change) · 🛒 To the list. The "already on the list / in the pantry" say-so comes first.
+function supRow(L){
+  const st=supState(L),a="'"+esc(L.sid)+"','"+esc(L.iid)+"','"+esc(L.id)+"'",ask=(snAsk&&snAsk.key===L.sid+"/"+L.iid+"/"+L.id)?snAsk:null;
+  let h='<div class="sn-ln'+(st==="have"?" dim":"")+'"><button class="sn-tick'+(st==="have"?" on":"")+'" onclick="snSupHave('+a+')">'+(st==="have"?"☑":"☐")+'</button>'
+    +'<button class="sn-lt" onclick="snLine(\'sup\',\''+esc(L.iid)+'\',\''+esc(L.id)+'\')">'+esc(L.r.name)+(+L.r.qty>0?' <b>× '+(+L.r.qty)+'</b>':"")
+    +'<small>'+(st==="have"?"have it":(st==="list"?"🛒 on the Shopping List":(st==="was"?"was on the Shopping List — got it? tick the box":"")))+'</small></button>';
+  if(st==="need"||st==="was")h+='<button class="sn-tool" onclick="snSupList('+a+')">🛒 '+(st==="was"?"Again":"To the list")+'</button>';
+  h+='</div>';
+  if(ask)h+='<div class="sn-ask"><span>'+(ask.why==="on"?"“"+esc(L.r.name)+"” is already on the Shopping List.":"You may already have it ("+esc(ask.txt)+").")+'</span>'
+    +(ask.dup?'<button class="sn-tool" onclick="snSupSame('+a+')">✓ It’s the same one</button>':"")+(ask.why==="have"?'<button class="sn-tool" onclick="snSupHave('+a+')">☑ Have it</button>':"")
+    +'<button class="sn-tool" onclick="snSupList('+a+',1)">🛒 Add anyway</button><button class="sn-tool" onclick="snAskNo()">Leave it</button></div>';
+  return h;
+}
+function beforeTxt(n){n=Math.floor(+n);return n===0?"on its day":n+" day"+(n===1?"":"s")+" before";}
+function dueTxt(L){
+  const r=L.r,d=tdDue(L),rel=!!(L.it&&r.before!=null&&!isIso(r.due));
+  if(!d)return rel?beforeTxt(r.before)+" — no day yet":"";
+  const n=daysTo(today(),d);return (n===0?"today":(n===1?"tomorrow":fmtDay(d)))+(rel?" ("+beforeTxt(r.before)+")":"");
+}
+// One to-do line: ☐ done · its words (tap to change) · who · when · → My list today
+function todoRow(L,showFor){
+  const st=tdState(L),a="'"+esc(L.sid)+"','"+esc(L.iid)+"','"+esc(L.id)+"'",w=who(L.r.who||"mom"),due=dueTxt(L),s=season(L.sid)||{};
+  const bits=[esc(w.name)];if(due)bits.push((st==="late"?"overdue · ":"")+esc(due));
+  if(showFor)bits.push(L.it?esc((L.it.emoji?L.it.emoji+" ":"")+(L.it.t||""))+(hideOf(L.it)?" 🤫":""):"all of "+esc(s.name||""));
+  let h='<div class="sn-ln'+(st==="done"?" dim":"")+(st==="late"?" late":"")+'"><button class="sn-tick'+(st==="done"?" on":"")+'" onclick="snTodoTick('+a+')">'+(st==="done"?"☑":"☐")+'</button>'
+    +'<button class="sn-lt" onclick="snLine(\'todo\',\''+esc(L.iid)+'\',\''+esc(L.id)+'\')">'+esc(L.r.t)+'<small>'+bits.join(" · ")+'</small></button>';
+  if(st!=="done")h+=tdCopy(L)?'<span class="sn-chip">✓ on your list</span>':'<button class="sn-tool" onclick="snTodoMine('+a+')">→ My list today</button>';
+  return h+'</div>';
+}
+function supSort(A){return A.slice().sort((a,b)=>(supState(a)==="have")-(supState(b)==="have"));}
+function todoSort(A){const rank={late:0,due:1,open:2,done:3};return A.map(L=>({L,st:tdState(L),d:tdDue(L)})).sort((a,b)=>rank[a.st]-rank[b.st]||String(a.d||"9999").localeCompare(String(b.d||"9999")));}
+function sendAllBtn(sid,iid,A){const n=A.filter(L=>supState(L)==="need").length;return n>1?'<button class="sn-tool" onclick="snSupAll(\''+esc(sid)+'\',\''+esc(iid)+'\')">🛒 Send all '+n+'</button>':"";}
+function viewsHTML(s){
+  const S=lines(s.id,"sup").filter(L=>!parked(L)),T=lines(s.id,"todo").filter(L=>!parked(L));
+  const need=S.filter(L=>{const x=supState(L);return x==="need"||x==="was";}).length,open=T.filter(L=>!tdDone(L)).length,late=T.filter(L=>tdState(L)==="late").length;
+  const V=[["ideas","💡 Ideas",""],["sup","🧺 Supplies",need?need+" to get":""],["todo","✅ To-dos",open?open+" open"+(late?" · "+late+" overdue":""):""]];
+  return '<div class="sn-views">'+V.map(v=>'<button class="sn-v'+(snView===v[0]?" on":"")+(v[0]==="todo"&&late?" late":"")+'" onclick="snViewSet(\''+v[0]+'\')">'+v[1]+(v[2]?'<small>'+v[2]+'</small>':"")+'</button>').join("")+'</div>';
+}
+// 🧺 Supplies: each idea's lines, soonest day first, then "Not scheduled yet", then the ones for the whole season.
+function supViewHTML(s){
+  const all=lines(s.id,"sup").filter(L=>!parked(L)),own=all.filter(L=>!L.iid),by={};
+  all.filter(L=>L.iid).forEach(L=>{(by[L.iid]=by[L.iid]||{it:L.it,L:[]}).L.push(L);});
+  const G=Object.keys(by).map(k=>Object.assign(by[k],{day:ideaDay(by[k].it)})).sort((a,b)=>String(a.day||"9999").localeCompare(String(b.day||"9999"))||(a.it.ts||0)-(b.it.ts||0));
+  let h='<div class="sn-sub">What each idea needs. <b>🛒 To the list</b> puts one line on the Shopping List. Nothing goes there by itself.</div>',none=false;
+  G.forEach(g=>{
+    if(!g.day&&!none){none=true;h+='<div class="sn-gh2">Not scheduled yet</div>';}
+    h+='<div class="sn-grp"><div class="sn-gh"><button class="sn-gt" onclick="snOpenIdea(\''+esc(g.it.id)+'\')">'+(g.day?"For "+fmtDay(g.day)+" — ":"")+esc(g.it.emoji||"")+' <b>'+esc(g.it.t||"")+'</b> '+hideChip(g.it)+'</button>'
+      +sendAllBtn(s.id,g.it.id,g.L)+'</div>'+supSort(g.L).map(supRow).join("")+'</div>';
+  });
+  h+='<div class="sn-gh2">For all of '+esc(s.name||"it")+'</div><div class="sn-grp">'+(own.length?'<div class="sn-gh"><span class="sn-gt"></span>'+sendAllBtn(s.id,"",own)+'</div>':"")
+    +supSort(own).map(supRow).join("")+'<div class="sn-acts"><button class="sn-tool" onclick="snLine(\'sup\',\'\',\'\')">＋ Add supplies</button></div></div>';
+  if(!G.length)h+='<div class="sn-empty">To add what one idea needs, open the idea in 💡 Ideas.</div>';
+  return h;
+}
+// ✅ To-dos: overdue on top, then soonest first, then the ones with no day yet, then done.
+function todoViewHTML(s){
+  const A=todoSort(lines(s.id,"todo").filter(L=>!parked(L))),name={late:"Overdue",due:"Today",soon:"Coming up",none:"No day yet",done:"Done"};
+  let h='<div class="sn-acts" style="margin:0 0 4px"><button class="sn-go" onclick="snLine(\'todo\',\'\',\'\')">＋ Add a to-do</button></div>'
+    +'<div class="sn-sub">This adds one for all of '+esc(s.name||"it")+'. For one idea, open the idea in 💡 Ideas.</div>',last="";
+  if(!A.length)return h+'<div class="sn-empty">No to-dos yet.</div>';
+  A.forEach(x=>{const g=x.st==="open"?(x.d?"soon":"none"):x.st;
+    if(g!==last){h+=(last?'</div>':"")+'<div class="sn-gh2'+(g==="late"?" late":"")+'">'+name[g]+'</div><div class="sn-grp">';last=g;}
+    h+=todoRow(x.L,true);});
+  return h+'</div>';
 }
 function order(I){   // needs a tap first → not scheduled (most ⭐ first) → scheduled, soonest first → done → 🌙
   const rank={past:0,todo:1,sched:2,done:3,skip:4},t=today();
@@ -222,7 +342,7 @@ function draw(){
   else{
     const S=seasons(),sid=curSid(),s=sid?season(sid):null;
     if(!S.length)h+=startHTML();
-    else{h+=barHTML(S,sid);if(s)h+=headHTML(s)+(s.closed?"":addHTML())+listHTML(s);}
+    else{h+=barHTML(S,sid);if(s)h+=headHTML(s)+viewsHTML(s)+(snView==="sup"?supViewHTML(s):(snView==="todo"?todoViewHTML(s):(s.closed?"":addHTML())+listHTML(s)));}
   }
   snRoot.innerHTML=h+'</div>'+sheetHTML();
   if(snFocus){snFocus=false;try{const e=document.getElementById("sn-new");if(e&&e.focus)e.focus();}catch(e){}}
@@ -261,6 +381,13 @@ function ideaSheet(){
     h+='<div class="sn-acts">'+(st==="skip"?"":'<button class="sn-go" onclick="snSched(\''+id+'\')">'+(W.length?"＋ Another day":"📅 Schedule")+'</button>')
       +(st==="done"?'<button class="sn-tool" onclick="snUndid(\''+id+'\')">↩ Not done after all</button>':(st==="skip"?"":'<button class="sn-tool" onclick="snDid(\''+id+'\')">✓ We did it</button>'))
       +(st==="skip"?'<button class="sn-tool" onclick="snUnskip(\''+id+'\')">↩ Bring it back</button>':(st==="done"?"":'<button class="sn-tool" onclick="snSkip(\''+id+'\')">🌙 Not this year</button>'))+'</div>';
+    // slice 2: 🎟 book by · 🧺 supplies · ✅ to-dos
+    const SU=supSort(ideaLines(it,"sup")),TD=todoSort(ideaLines(it,"todo")).map(x=>x.L);
+    h+='<div class="sn-lab">🎟 Book by <small>— tickets, a table, a sitter (optional)</small></div><div class="sn-form">'+field("bookBy","Book it by","","date")
+      +'<label class="sn-check"><input type="checkbox"'+(f.booked?" checked":"")+' onchange="snSet(\'booked\',this.checked)"> Booked</label></div>';
+    h+='<div class="sn-lab">🧺 Supplies</div>'+(hideOf(it)&&SU.length?'<div class="sn-sub">🤫 On the Shopping List these say only “'+esc(shopLabel(sid,it))+'”, never this idea’s name. The thing’s own name does show there.</div>':"")
+      +SU.map(supRow).join("")+'<div class="sn-acts"><button class="sn-tool" onclick="snLine(\'sup\',\''+id+'\',\'\')">＋ Add supplies</button>'+sendAllBtn(sid,it.id,SU)+'</div>';
+    h+='<div class="sn-lab">✅ To-dos</div>'+TD.map(L=>todoRow(L,false)).join("")+'<div class="sn-acts"><button class="sn-tool" onclick="snLine(\'todo\',\''+id+'\',\'\')">＋ Add a to-do</button></div>';
   }
   h+='<div class="sn-acts sn-foot"><button class="sn-tool sn-save" onclick="snSave()">Save</button><button class="sn-tool" onclick="snCancel()">Cancel</button>'
     +'<button class="sn-tool sn-del" onclick="snDelIdea()">'+(snEdit.ask?"Tap again to delete":"Delete")+'</button></div>';
@@ -298,9 +425,29 @@ function schedSheet(){
     +'<div class="sn-acts sn-foot"><button class="sn-tool" onclick="snCancel()">Cancel</button></div>';
   return h+(e.msg?'<div class="sn-msg">'+esc(e.msg)+'</div>':"");
 }
+// The pop-up for ONE supply or to-do line (new or a change), for an idea or for the whole season.
+function lineSheet(){
+  const e=snEdit,f=e.form,it=e.iid?idea(e.sid,e.iid):null,s=season(e.sid)||{},isNew=!e.id;
+  const whose='<div class="sn-sub">For '+(it?esc((it.emoji?it.emoji+" ":"")+(it.t||"")):"all of "+esc(s.name||"it"))+'.</div>';
+  let h;
+  if(e.kind==="sup"){
+    h='<div class="sn-h2">🧺 '+(isNew?"Add supplies":"Supply")+'</div>'+whose+'<div class="sn-form">'
+      +(isNew?field("name","What do you need?","4 gingerbread kits, frosting, gumdrops","","wide"):field("name","What","","","wide")+field("qty","How many (optional)","","number"))+'</div>'
+      +(isNew?'<div class="sn-sub">Commas make more than one line. A number in front is how many.</div>':"");
+  }else{
+    const day=it?ideaDay(it):"";
+    h='<div class="sn-h2">✅ To-do</div>'+whose+'<div class="sn-form">'+field("t","What needs doing","Print the scavenger hunt","","wide")+'</div>'
+      +'<div class="sn-lab">Who</div><div class="sn-chips">'+people().map(p=>'<button class="sn-pchip'+(f.who===p.id?" on":"")+'" style="--c:'+esc(p.color)+'" onclick="snLineWho(\''+esc(p.id)+'\')">'+esc(p.name)+'</button>').join("")+'</div>'
+      +'<div class="sn-form">'+field("due","When — a date (optional)","","date")+(it?field("before","…or days before its day","3","number"):"")+'</div>'
+      +(it?'<div class="sn-sub">“Days before” moves by itself when the idea moves. '+(day?"Its day is "+fmtDay(day)+" right now.":"It has no day yet, so the to-do waits for one.")+'</div>':"");
+  }
+  h+='<div class="sn-acts sn-foot"><button class="sn-tool sn-save" onclick="snSave()">'+(isNew?"Add":"Save")+'</button><button class="sn-tool" onclick="snCancel()">Cancel</button>'
+    +(isNew?"":'<button class="sn-tool sn-del" onclick="snLineDel()">'+(e.ask?"Tap again to delete":"Delete")+'</button>')+'</div>';
+  return h+(e.msg?'<div class="sn-msg">'+esc(e.msg)+'</div>':"");
+}
 function sheetHTML(){
   if(!snEdit)return "";
-  const inner=snEdit.type==="season"?seasonSheet():(snEdit.type==="sched"?schedSheet():ideaSheet());
+  const inner=snEdit.type==="season"?seasonSheet():(snEdit.type==="sched"?schedSheet():(snEdit.type==="line"?lineSheet():ideaSheet()));
   return '<div id="sn-sheet" onclick="if(event.target.id===\'sn-sheet\')snCancel()"><div class="sn-sh"><button class="sn-x" onclick="snCancel()">✕</button>'+inner+'</div></div>';
 }
 
@@ -325,7 +472,7 @@ function saveSeason(){
   if(start&&end&&end<start){snEdit.msg="It ends before it starts — check the two dates.";draw();return;}
   const emoji=String(f.emoji||"").trim().slice(0,8)||"🎉",up={};
   if(!snEdit.id){
-    let sid=slug(name),n=2;const L=snData.list||{};while(L[sid]||snSecret[sid]||(snData.ideas||{})[sid])sid=slug(name)+"-"+(n++);
+    let sid=slug(name),n=2;const L=snData.list||{};while(L[sid]||snSecret[sid]||(snData.ideas||{})[sid]||(snData.extra||{})[sid])sid=slug(name)+"-"+(n++);
     const rec={name,emoji,kind:f.kind||"season",ts:Date.now()};if(start)rec.start=start;if(end)rec.end=end;
     up["seasons/list/"+sid]=rec;apply(up);snSid=sid;try{HA_LS.setItem("ha_sn_sid",sid);}catch(e){}
     snEdit=null;snFilter="all";snFocus=true;toast("Started "+emoji+" "+name);draw();return;
@@ -340,9 +487,10 @@ function snDelSeason(){
   if(!snEdit||snEdit.type!=="season"||!snEdit.id)return;
   if(ideasOf(snEdit.id).length){snEdit.msg="It still has ideas on it. Move it to 📜 Past instead.";draw();return;}
   if(!snEdit.ask){snEdit.ask=true;draw();return;}
-  const up={};up["seasons/list/"+snEdit.id]=null;apply(up);snEdit=null;snSid=null;draw();
+  const up={};up["seasons/list/"+snEdit.id]=null;if((snData.extra||{})[snEdit.id])up["seasons/extra/"+snEdit.id]=null;apply(up);snEdit=null;snSid=null;draw();
 }
-function snPick(sid){snSid=sid;try{HA_LS.setItem("ha_sn_sid",sid);}catch(e){}snFilter="all";draw();}
+function snPick(sid){snSid=sid;try{HA_LS.setItem("ha_sn_sid",sid);}catch(e){}snFilter="all";snAsk=null;draw();}
+function snViewSet(v){snView=(v==="sup"||v==="todo")?v:"ideas";snAsk=null;draw();}
 function snPastToggle(){snPast=!snPast;draw();}
 function snFilterSet(f){snFilter=SN_FILTERS.some(x=>x[0]===f)?f:"all";draw();}
 function snForToggle(w){if(snFor[w])delete snFor[w];else snFor[w]=true;const e=(typeof document!=="undefined")?document.getElementById("sn-new"):null,v=e?e.value:"";draw();
@@ -360,7 +508,7 @@ function snQuickAdd(){
 }
 function snOpenIdea(iid){
   const sid=curSid(),it=idea(sid,iid);if(!it)return;
-  snEdit={type:"idea",sid,id:iid,form:{t:it.t||"",emoji:it.emoji||"",want:clone(it.want)||{},star:clone(it.star)||{},size:it.size||"",note:it.note||"",hide:hideOf(it)}};draw();
+  snEdit={type:"idea",sid,id:iid,form:{t:it.t||"",emoji:it.emoji||"",want:clone(it.want)||{},star:clone(it.star)||{},size:it.size||"",note:it.note||"",hide:hideOf(it),bookBy:it.bookBy||"",booked:!!it.booked}};draw();
 }
 function snSet(k,v){if(!snEdit)return;snEdit.form[k]=v;if(k==="name")snEdit.form.auto=false;}
 function snWant(w){if(!snEdit||snEdit.type!=="idea")return;const f=snEdit.form;if(f.want[w]){delete f.want[w];delete f.star[w];}else f.want[w]=true;snEdit.msg="";draw();}
@@ -388,16 +536,17 @@ function saveIdea(){
   const emoji=String(f.emoji||"").trim().slice(0,8),note=String(f.note||"").trim().slice(0,400),size=SN_SIZES.some(z=>z[0]===f.size)?f.size:"";
   const want={},star={};keys(f.want).forEach(k=>{want[k]=true;});keys(f.star).forEach(k=>{if(want[k]&&k!=="family")star[k]=true;});
   const h0=((snSecret[sid]||{})[iid])?(hideOf(old)||"none"):"",h1=(f.hide==="hint"||f.hide==="none")?f.hide:"",up={},E=evs();
-  const liveEv=keys(old.ev).filter(id=>E[id]);
+  const liveEv=keys(old.ev).filter(id=>E[id]),t0=old.t,bookBy=isIso(f.bookBy)?f.bookBy:"",booked=!!(bookBy&&f.booked);
   if(h0===h1){
     const b=base(sid,iid,h0)+"/";
     if(t!==old.t)up[b+"t"]=t;if(emoji!==(old.emoji||""))up[b+"emoji"]=emoji||null;if(note!==(old.note||""))up[b+"note"]=note||null;
     if(size!==(old.size||""))up[b+"size"]=size||null;
+    if(bookBy!==(old.bookBy||""))up[b+"bookBy"]=bookBy||null;if(booked!==!!old.booked)up[b+"booked"]=booked?true:null;
     if(!sameMap(want,old.want))up[b+"want"]=keys(want).length?want:null;if(!sameMap(star,old.star))up[b+"star"]=keys(star).length?star:null;
     if(h0===""&&(t!==old.t||emoji!==(old.emoji||"")))liveEv.forEach(id=>{up["calendar/events/"+id+"/title"]=t.slice(0,60);up["calendar/events/"+id+"/emoji"]=emoji||"🎉";});
   }else{
     const rec=clone(old);rec.t=t;
-    [["emoji",emoji],["note",note],["size",size]].forEach(p=>{if(p[1])rec[p[0]]=p[1];else delete rec[p[0]];});
+    [["emoji",emoji],["note",note],["size",size],["bookBy",bookBy],["booked",booked]].forEach(p=>{if(p[1])rec[p[0]]=p[1];else delete rec[p[0]];});
     if(keys(want).length)rec.want=want;else delete rec.want;if(keys(star).length)rec.star=star;else delete rec.star;
     delete rec.hide;delete rec.ev;delete rec.on;
     const ev={},on={},oldOn=old.on||{};
@@ -411,11 +560,13 @@ function saveIdea(){
     if(h1)rec.hide=h1;if(keys(ev).length)rec.ev=ev;if(Object.keys(on).length)rec.on=on;
     up[base(sid,iid,h1)]=rec;if(base(sid,iid,h1)!==base(sid,iid,h0))up[base(sid,iid,h0)]=null;
   }
-  apply(up);return true;
+  apply(up);
+  if(t!==t0||h0!==h1){const now=idea(sid,iid);if(now)relabel(now);}   // rows it already sent to the Shopping List follow its name and its 🤫 switch
+  return true;
 }
-function snSave(){if(!snEdit)return;if(snEdit.type==="season"){saveSeason();return;}if(snEdit.type!=="idea")return;if(saveIdea()){snEdit=null;draw();}}
+function snSave(){if(!snEdit)return;if(snEdit.type==="season"){saveSeason();return;}if(snEdit.type==="line"){saveLine();return;}if(snEdit.type!=="idea")return;if(saveIdea()){snEdit=null;draw();}}
 function flush(iid){return !(snEdit&&snEdit.type==="idea"&&snEdit.id===iid)||saveIdea();}   // a button inside the idea pop-up keeps what she typed first
-function snCancel(){snEdit=null;draw();}
+function snCancel(){if(snEdit&&snEdit.type==="line"){lineClose();return;}snEdit=null;snAsk=null;draw();}
 function snDelIdea(){
   if(!snEdit||snEdit.type!=="idea")return;
   if(!snEdit.ask){snEdit.ask=true;draw();return;}
@@ -468,12 +619,150 @@ function snSkip(iid){   // 🌙 Not this year: parked without guilt — and off 
 }
 function snUnskip(iid){const sid=curSid();if(!flush(iid))return;const it=idea(sid,iid);if(!it)return;const up={};up[base(sid,iid,hideOf(it))+"/skip"]=null;apply(up);snEdit=null;draw();}
 
-// ── loading: only for Mom, only once this page is opened ─────────────────────
+// ── slice 2: supplies · to-dos · book by ─────────────────────────────────────
+function atHome(){try{return typeof tab!=="undefined"&&tab==="moms-plan"&&!(typeof momSchedView!=="undefined"&&momSchedView)&&(typeof mpSubView==="undefined"||!mpSubView||mpSubView==="plan");}catch(e){return false;}}
+function homeRepaint(){if(!atHome())return;try{const el=document.getElementById("content");if(el&&typeof renderMomsPlan==="function")renderMomsPlan(el);}catch(e){}}
+function repaint(){if(onPage())draw();else homeRepaint();}   // these buttons are tapped on this page, or in 🔴 NOW on Home Base
+function snLine(kind,iid,lid){   // open the pop-up: lid "" = a new line · iid "" = for the whole season
+  const sid=curSid();if(!sid||(kind!=="sup"&&kind!=="todo"))return;
+  const back=!!(iid&&snEdit&&snEdit.type==="idea"&&snEdit.id===iid);if(back&&!flush(iid))return;
+  if(iid&&!idea(sid,iid))return;const L=lid?line(sid,iid,kind,lid):null;if(lid&&!L)return;const r=L?L.r:{};
+  snAsk=null;snEdit={type:"line",kind,sid,iid:iid||"",id:lid||null,back,form:kind==="sup"?{name:r.name||"",qty:(+r.qty>0)?String(r.qty):""}
+    :{t:r.t||"",who:r.who||"mom",due:isIso(r.due)?r.due:"",before:(r.before!=null&&!isIso(r.due))?String(r.before):""}};draw();
+}
+function lineClose(){const e=snEdit;snEdit=null;if(e&&e.back&&e.iid&&idea(e.sid,e.iid)){snOpenIdea(e.iid);return;}draw();}
+function snLineWho(w){if(!snEdit||snEdit.type!=="line"||snEdit.kind!=="todo")return;snEdit.form.who=w;draw();}
+function saveLine(){
+  const e=snEdit,f=e.form,it=e.iid?idea(e.sid,e.iid):null;if(e.iid&&!it){snEdit=null;draw();return;}
+  const L=e.id?line(e.sid,e.iid,e.kind,e.id):null;if(e.id&&!L){lineClose();return;}
+  const b=(it?base(e.sid,e.iid,hideOf(it)):"seasons/extra/"+e.sid)+"/"+e.kind+"/",up={};
+  if(e.kind==="sup"){
+    if(!L){
+      const parts=String(f.name||"").split(/[,\n]/).map(x=>x.trim()).filter(Boolean).slice(0,30);
+      if(!parts.length){e.msg="Type what you need first.";draw();return;}
+      parts.forEach((p,i)=>{const m=/^(\d{1,3})\s*x?\s+(.+)$/i.exec(p),rec={name:(m?m[2]:p).slice(0,80)};if(m&&+m[1]>0)rec.qty=+m[1];up[b+rid("u")+i]=rec;});
+    }else{
+      const name=String(f.name||"").trim().slice(0,80),q=Math.max(0,Math.floor(+f.qty)||0);
+      if(!name){e.msg="It needs a name.";draw();return;}
+      if(name!==L.r.name)up[b+e.id+"/name"]=name;if(q!==(+L.r.qty||0))up[b+e.id+"/qty"]=q>0?q:null;
+    }
+  }else{
+    const t=String(f.t||"").trim().slice(0,120);if(!t){e.msg="It needs a few words.";draw();return;}
+    const w=people().some(p=>p.id===f.who)?f.who:"mom",bn=String(f.before==null?"":f.before).trim()===""?null:Math.floor(+f.before);
+    const before=(it&&bn!=null&&bn>=0&&bn<=365)?bn:null,due=(before==null&&isIso(f.due))?f.due:"";
+    if(!L){const rec={t,who:w};if(before!=null)rec.before=before;else if(due)rec.due=due;up[b+rid("t")]=rec;}
+    else{
+      const r=L.r,p=b+e.id+"/";
+      if(t!==r.t)up[p+"t"]=t;if(w!==(r.who||"mom"))up[p+"who"]=w;
+      if(due!==(isIso(r.due)?r.due:""))up[p+"due"]=due||null;if(before!==(r.before!=null?Math.floor(+r.before):null))up[p+"before"]=before;
+    }
+  }
+  apply(up);lineClose();
+}
+function snLineDel(){
+  const e=snEdit;if(!e||e.type!=="line"||!e.id)return;if(!e.ask){e.ask=true;draw();return;}
+  const L=line(e.sid,e.iid,e.kind,e.id);if(L){const up={};up[lineBase(L,e.kind)]=null;apply(up);}lineClose();
+}
+// 🧺 ☐ have it — her own tick (plan §4.6: "First version: you tick 'have it' yourself")
+function snSupHave(sid,iid,lid){const L=line(sid,iid,"sup",lid);if(!L)return;const up={};up[lineBase(L,"sup")+"/have"]=L.r.have?null:true;apply(up);snAsk=null;repaint();}
+// 🛒 To the list — ONE TAP per line, never by itself (her answer 8). The Shopping List row is made by the Kitchen's own grCreate, with
+// a back-link (ref.sn) and a label; here only the row's id is kept on the line. If the list already has it, or the pantry or staples
+// say she has it, the line SAYS SO FIRST and nothing is sent until she picks.
+function canShop(){
+  if(dry()){toast("Dry run — nothing is sent");return false;}
+  if(typeof grCreate!=="function"){toast("The Shopping List isn’t ready — try again in a moment");return false;}
+  return true;
+}
+function shopCheck(name){let dup=null,have="";try{if(typeof grFindDup==="function")dup=grFindDup(name)||null;}catch(e){}try{if(typeof grHaveIt==="function")have=grHaveIt(name)||"";}catch(e){}return {dup,have};}
+function shopSend(L){
+  const p={name:String(L.r.name||"").slice(0,80),ref:{sn:L.sid+"/"+(L.iid||"-")+"/"+L.id}};if(+L.r.qty>0)p.qty=+L.r.qty;
+  let gid="";try{gid=grCreate(p,{k:"season",lbl:shopLabel(L.sid,L.it)},null);}catch(e){gid="";}
+  if(!gid)return false;const up={};up[lineBase(L,"sup")+"/gr"]=gid;apply(up);return true;
+}
+function snSupList(sid,iid,lid,force){
+  const L=line(sid,iid,"sup",lid);if(!L)return;
+  if(supState(L)==="list"){toast("Already on the Shopping List");return;}
+  if(!canShop())return;
+  if(!force){const c=shopCheck(L.r.name);if(c.dup||c.have){snAsk={key:sid+"/"+(iid||"")+"/"+lid,why:c.dup?"on":"have",txt:c.have,dup:(c.dup&&c.dup.kind==="item"&&c.dup.id)||""};repaint();return;}}
+  snAsk=null;if(shopSend(L))toast("🛒 "+L.r.name+" → Shopping List");repaint();
+}
+function snSupSame(sid,iid,lid){   // "It's the same one": link this line to the row that is already on the list — nothing new is added
+  const L=line(sid,iid,"sup",lid),g=snAsk&&snAsk.dup;if(!L||!g||!grItems()[g])return;
+  const up={};up[lineBase(L,"sup")+"/gr"]=g;apply(up);snAsk=null;repaint();
+}
+function snAskNo(){snAsk=null;repaint();}
+function snSupAll(sid,iid){   // "send all for this idea": every line still needed — the ones the list or the house may already have are left to ask one by one
+  if(!canShop())return;let sent=0,held=0;
+  lines(sid,"sup").filter(L=>L.iid===(iid||"")&&supState(L)==="need").forEach(L=>{const c=shopCheck(L.r.name);if(c.dup||c.have){held++;return;}if(shopSend(L))sent++;});
+  snAsk=null;toast("🛒 "+sent+" sent to the Shopping List"+(held?" · "+held+" may already be there or in the house — tap those":""));repaint();
+}
+function relabel(it){   // an idea was renamed or its 🤫 switch changed: its own rows on the Shopping List get the label they should have now
+  if(dry()||typeof grPut!=="function")return;const G=grItems(),lbl=shopLabel(it.sid,it),mine=it.sid+"/"+it.id+"/";
+  ideaLines(it,"sup").forEach(L=>{const g=L.r.gr&&G[L.r.gr];
+    if(!g||!g.ref||String(g.ref.sn||"").indexOf(mine)!==0||!Array.isArray(g.src)||!g.src.some(x=>x&&x.k==="season"&&x.lbl!==lbl))return;
+    const c=clone(g);c.src.forEach(x=>{if(x&&x.k==="season")x.lbl=lbl;});try{grPut(L.r.gr,c);}catch(e){}});
+}
+// ✅ tick a to-do. If it has a copy on Mom's own list, that copy is ticked in the SAME update (and un-ticked the same way).
+function snTodoTick(sid,iid,lid){
+  const L=line(sid,iid,"todo",lid);if(!L)return;const on=!tdDone(L),t=today(),up={};
+  up[lineBase(L,"todo")+"/done"]=on?t:null;
+  if(tdCopy(L)){const m="momday/"+L.r.list+"/todos/sn"+lid+"/";up[m+"done"]=on;up[m+"doneOn"]=on?t:null;}
+  apply(up);repaint();
+}
+// → My list today: ONE copy onto Mom's own daily to-do list (her answer 10, Mom's half). The to-do remembers the day (`list`), so it
+// can't be copied twice; a 🤫 surprise's copy never carries its words.
+function mineText(L){
+  if(L.it&&hideOf(L.it))return "🤫 A surprise to-do — see 🎉 Seasons & Events";
+  const s=season(L.sid)||{};return String(L.r.t||"").slice(0,120)+" ("+(L.it?((L.it.emoji?L.it.emoji+" ":"")+(L.it.t||"")):((s.emoji||"🎉")+" "+(s.name||""))).trim()+")";
+}
+function snTodoMine(sid,iid,lid){
+  const L=line(sid,iid,"todo",lid);if(!L||tdDone(L))return;
+  if(tdCopy(L)){toast("It’s already on your list");return;}
+  const t=today(),up={};
+  up["momday/"+t+"/todos/sn"+lid]={text:mineText(L),done:false,ts:Date.now(),src:"season",sn:sid+"/"+(iid||"-")+"/"+lid};
+  up[lineBase(L,"todo")+"/list"]=t;apply(up);toast("→ On your list today");repaint();
+}
+function snBooked(sid,iid){const it=idea(sid,iid);if(!it||!isIso(it.bookBy))return;const up={};up[base(sid,iid,hideOf(it))+"/booked"]=it.booked?null:true;apply(up);repaint();}
+
+// ── 🔴 NOW on Home Base (Mom only; index.html's SEASONS block asks for this) ──
+// Due = a to-do whose day is today or went by; a 🎟 book-by date within a week or past. Not for 🌙 or done ideas, not for a 📜 past
+// season, and not a to-do that already sits on Mom's own list. A 🤫 surprise is only COUNTED here — a kid may walk past Home Base.
+function nowItems(){
+  const out=[];
+  seasons().filter(s=>!s.closed).forEach(s=>{
+    lines(s.id,"todo").forEach(L=>{if(parked(L)||(L.it&&L.it.did)||tdCopy(L))return;const st=tdState(L);if(st==="late"||st==="due")out.push({k:"todo",sid:s.id,L,d:tdDue(L),late:st==="late",sec:!!(L.it&&hideOf(L.it))});});
+    ideasOf(s.id).forEach(it=>{if(it.skip||it.did)return;const b=bookState(it);if(b==="late"||b==="soon")out.push({k:"book",sid:s.id,it,d:it.bookBy,late:b==="late",sec:!!hideOf(it)});});
+  });
+  return out.sort((a,b)=>String(a.d).localeCompare(String(b.d)));
+}
+function seasonNowLines(){
+  const none={n:0,html:""};
+  try{if(typeof momHere!=="function"||!momHere())return none;if(typeof _kioskD==="function"&&_kioskD())return none;}catch(e){return none;}
+  snNowWant=true;snListen();if(!snLoaded)return none;
+  const A=nowItems();if(!A.length)return none;
+  const open=A.filter(x=>!x.sec),sec=A.filter(x=>x.sec),row='display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:7px 10px;background:#f0fdfa;border-left:3px solid #2B7A78;border-radius:8px;margin-bottom:6px';
+  const btn=(fn,lbl,solid)=>'<button onclick="'+fn+'" style="padding:4px 10px;border-radius:8px;border:'+(solid?"none;background:#16a34a;color:#fff":"1.5px solid #99f6e4;background:#fff;color:#0f766e")+';font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit">'+lbl+'</button>';
+  const txt=(main,sub,late,full)=>'<span style="flex:1 1 '+(full?"100%":"170px")+';min-width:0;font-size:13px;font-weight:700">'+main+' <span style="font-weight:700;color:'+(late?"#b91c1c":"#6b6560")+'">· '+sub+'</span></span>';
+  const when=x=>{const n=daysTo(today(),x.d);return x.late?"overdue · "+fmtDay(x.d):(n===0?"today":(n===1?"tomorrow":fmtDay(x.d)));};
+  let h='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560;margin:10px 0 6px">🎉 Seasons &amp; Events</div>';
+  open.slice(0,SN_NOW_MAX).forEach(x=>{
+    if(x.k==="todo"){const L=x.L,a="'"+esc(L.sid)+"','"+esc(L.iid)+"','"+esc(L.id)+"'",w=L.r.who&&L.r.who!=="mom"?who(L.r.who).name+" · ":"";
+      h+='<div style="'+row+'">'+txt("✅ "+esc(L.r.t)+' <span style="color:#6b6560">· '+esc(L.it?(L.it.t||""):((season(L.sid)||{}).name||""))+'</span>',esc(w)+when(x),x.late,true)+btn("snTodoMine("+a+")","→ My list today")+btn("snTodoTick("+a+")","✓ Done",true)+'</div>';}
+    else h+='<div style="'+row+'">'+txt("🎟 Book "+esc(x.it.t||""),"by "+fmtDay(x.d)+(x.late?" — late":""),x.late)+btn("snBooked('"+esc(x.sid)+"','"+esc(x.it.id)+"')","✓ Booked",true)+'</div>';
+  });
+  const more=Math.max(0,open.length-SN_NOW_MAX),first=(sec[0]||open[SN_NOW_MAX]||open[0]);
+  if(more||sec.length)h+='<div style="'+row+'">'+'<span style="flex:1 1 170px;min-width:0;font-size:13px;font-weight:700">'+[more?"+"+more+" more":"",sec.length?"🤫 "+sec.length+" surprise thing"+(sec.length===1?" needs":"s need")+" you":""].filter(Boolean).join(" · ")+'</span>'
+    +btn("snNowOpen('"+esc(first.sid)+"')","Open ›")+'</div>';
+  return {n:A.length,html:h};
+}
+function snNowOpen(sid){if(sid&&season(sid)){snSid=sid;try{HA_LS.setItem("ha_sn_sid",sid);}catch(e){}}snView="todo";snEdit=null;snAsk=null;try{if(typeof mpGoto==="function")mpGoto("seasons");}catch(e){}}
+
+// ── loading: only for Mom — when this page is opened, or when Home Base asks for its 🔴 NOW lines ──
 function onPage(){try{return typeof tab!=="undefined"&&tab==="moms-plan"&&typeof mpSubView!=="undefined"&&mpSubView==="seasons";}catch(e){return false;}}
 function snListen(){
   if(snOn)return;snOn=true;
   if(typeof db==="undefined"||!db){snLoaded=true;return;}
-  const got=()=>{if(++snGot>=2)snLoaded=true;if(snLoaded&&onPage()&&!snEdit)draw();};
+  const got=()=>{if(++snGot>=2&&!snLoaded){snLoaded=true;if(snNowWant)homeRepaint();}if(snLoaded&&onPage()&&!snEdit)draw();};   // Home Base asked for its lines → repaint it ONCE when the data is in
   let a=false,b=false;
   db.ref("seasons").on("value",s=>{snData=s.val()||{};if(!a){a=true;got();}else if(onPage()&&!snEdit)draw();});
   db.ref("seasonSecret").on("value",s=>{snSecret=s.val()||{};if(!b){b=true;got();}else if(onPage()&&!snEdit)draw();});
@@ -556,6 +845,28 @@ const SN_CSS=`
 .sn-day.open{border-color:#86efac;background:#f0fdf4}
 .sn-day.open span{color:#15803d;font-weight:700}
 .sn-day.cur{border-color:#2B7A78;border-width:2.5px}
+.sn-views{display:flex;gap:6px;margin-bottom:10px}
+.sn-v{flex:1;min-width:0;padding:7px 4px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-weight:800;font-size:12.5px;cursor:pointer;font-family:inherit;color:#475569}
+.sn-v small{display:block;font-size:10.5px;font-weight:700;color:#64748b;margin-top:1px}
+.sn-v.late small{color:#b91c1c}
+.sn-v.on{background:#2B7A78;color:#fff;border-color:#2B7A78}
+.sn-v.on small{color:#d1fae5}
+.sn-ln{display:flex;align-items:center;gap:6px;padding:6px 0;border-top:1px solid #f1f5f9}
+.sn-ln.dim{opacity:.55}
+.sn-tick{flex:none;border:none;background:none;font-size:21px;line-height:1;cursor:pointer;padding:2px 4px;color:#475569;font-family:inherit}
+.sn-tick.on{color:#15803d}
+.sn-lt{flex:1;min-width:0;text-align:left;background:none;border:none;padding:0;cursor:pointer;font:inherit;font-size:13.5px;color:inherit}
+.sn-lt small{display:block;font-size:11px;color:#64748b;font-weight:600;margin-top:1px}
+.sn-ln.late .sn-lt small{color:#b91c1c;font-weight:800}
+.sn-ask{display:flex;flex-wrap:wrap;gap:6px;align-items:center;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:9px;padding:7px 9px;margin:2px 0 6px;font-size:12.5px;font-weight:700;color:#92400e}
+.sn-ask span{flex:1 1 100%}
+.sn-grp{background:#fff;border:1.5px solid var(--border);border-radius:10px;padding:6px 10px;margin-bottom:8px}
+.sn-grp .sn-acts{margin:6px 0 2px}
+.sn-gh{display:flex;align-items:center;gap:8px;padding:2px 0 4px}
+.sn-gt{flex:1;min-width:0;text-align:left;background:none;border:none;padding:0;font:inherit;font-size:13.5px;cursor:pointer;color:inherit}
+.sn-gh2{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#64748b;margin:12px 0 6px}
+.sn-gh2.late{color:#b91c1c}
+.sn-chip.warn{border-color:#f59e0b;color:#92400e;background:#fffbeb}
 `;
 window.renderSeasons=function(el,ah){
   if(typeof momHere==="function"&&!momHere()){el.innerHTML=(ah||"")+'<div class="sn-empty" style="padding:40px;text-align:center">🔒 Mom only.</div>';return;}   // surprises live here: nothing loads without Mom
@@ -563,7 +874,9 @@ window.renderSeasons=function(el,ah){
   snRoot=el;snAh=ah||"";snListen();draw();
 };
 Object.assign(window,{snNewSeason,snKind,snEditSeason,snDelSeason,snPick,snPastToggle,snFilterSet,snForToggle,snQuickAdd,snOpenIdea,snSet,snWant,snStar,snSize,snHide,snSave,snCancel,snDelIdea,
-  snSched,snDaysOpen,snDaysMore,snPickAny,snPickDay,snUnsched,snDid,snUndid,snSkip,snUnskip});
-window._snTest={data:()=>snData,secret:()=>snSecret,setData:(d,s)=>{snData=d||{};snSecret=s||{};snLoaded=true;},reset:()=>{snSid=null;snFilter="all";snEdit=null;snFor={};snPast=false;},
+  snSched,snDaysOpen,snDaysMore,snPickAny,snPickDay,snUnsched,snDid,snUndid,snSkip,snUnskip,
+  snViewSet,snLine,snLineWho,snLineDel,snSupHave,snSupList,snSupSame,snAskNo,snSupAll,snTodoTick,snTodoMine,snBooked,snNowOpen,seasonNowLines});
+window._snTest={data:()=>snData,secret:()=>snSecret,setData:(d,s)=>{snData=d||{};snSecret=s||{};snLoaded=true;},reset:()=>{snSid=null;snFilter="all";snEdit=null;snFor={};snPast=false;snView="ideas";snAsk=null;},
+  lines,line,tdDue,tdState,tdDone,supState,bookState,shopLabel,nowItems,ideaDay,view:()=>snView,ask:()=>snAsk,
   setRoot:(el,ah)=>{snRoot=el;snAh=ah||"";},draw,edit:()=>snEdit,seasons,season,ideasOf,idea,whens,state,counts,picks,openDays,dayInfo,mins,starsUsed,starMax,apply,schedRange,kindDefaults,fmtDay,curSid,OK:SN_OK};
 })();
