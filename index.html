@@ -36386,6 +36386,7 @@ function ceOpenAdd(kid){
   ceAddKid=kid;
   ceAddForm={name:"",device:"paper",mom:"none",minutes:25,days:"Mon Tue Wed Thu Fri",rules:"sequential",total:50,startAt:1,lessonSource:"auto",prefix:"Lesson",manualLessons:"",daysPerLesson:1,allowedDays:[],priority:"normal",carryoverCap:2,stickyWith:"",stickyOrder:"after",tracking:"sequenced",timesPerWeek:5,fixedTime:"",fixedDates:[],joinUrl:""};
   ceAddMsg="";
+  if(typeof afReset==="function") afReset();   // ADDFLOW: ＋ Add subject opens on the guided steps
   ceRenderAddSheet();
 }
 
@@ -36394,6 +36395,7 @@ function ceRenderAddSheet(){
   const kid=ceAddKid;
   const f=ceAddForm;
   const col=KID_COLOR[kid]||"#333";
+  if(typeof afStep!=="undefined"&&afStep){ afMount(w,afSheetHTML(kid,f,col)); return; }   // ADDFLOW: steps 1–4; afStep 0 = today's one-page sheet below
 
   let h='<div class="ce-sheet" onclick="if(event.target===this)ceCloseSheet()"><div class="ce-sheet-box">';
   h+='<div class="ce-sheet-title">Add Subject for '+cap(kid)+'</div>';
@@ -36713,6 +36715,7 @@ function ceAddSave(){
   // gone again); a new sequenced subject is born plan-backed (ADDPB) — it lays here by its days, and again when she Builds it below
   // (cbApply → the same door)
   try{ if(typeof _rlwCurrDoor==="function") _rlwCurrDoor("📚 "+(subj.display||key)+" added",[{kid:kid,sk:key}],[{p:"curriculum/subjects/"+kid+"/"+key,gone:true}],{toast:false}); }catch(e){}
+  if(typeof afSaved==="function"&&afSaved(kid,key,subj)) return;   // ADDFLOW: the guided steps stay open on step 4 (the plan) — the card does not re-open
   ceCloseSheet();
   // A new SEQUENCED subject flows straight into pacing: its card sheet reopens
   // with 🧱 already expanded — set the mode, Preview, Build, done. (Dailies
@@ -36725,6 +36728,188 @@ function ceAddSave(){
   }
   renderAll();
 }
+// ADDFLOW_START — ＋ Add subject as four short steps that end ON the schedule (Curriculum streamline slice 5,
+//   PLAN_curriculum_streamline_2026-11-10.md §3.7, §3.8, §4 row 5). Her words 2026-11-10: "simple enough another mom could
+//   figure this out and set it up for her kid … except setup of a new subject etc all the options could be in one spot", and
+//   "i want to get away from builder except for the initial setup" — so the lay-out form lives here and only here. Her pick
+//   2026-11-10 (question 5): the last button reads "Put it on the schedule". Hub go-ahead for the remaining slices 2026-11-21.
+//   1 What is it? (who · name · kind) → 2 The lessons (books only) → 3 When (+ More options: every other field of the old
+//   sheet) → 4 Here's the plan. Step 3's button runs ceAddSave UNCHANGED (same record, same writes, same week update); its
+//   one hook (afSaved) keeps this sheet open on step 4 instead of re-opening the card: today's arming (cbDefaultForm) + the
+//   staged answers of step 3 (finish by · start on) → cbRunPreview → the Builder's own preview card, whose ✓ runs
+//   cbBuildGate (a legacy subject still gets the Keep/Dismiss sheet) → cbApply — what the card's Put it on the schedule runs.
+//   Pages: a brand-new subject is born with a lesson list, and a list-backed subject lays that LIST (planMaterialize) — the
+//   Builder's pages pattern only re-cuts it when a finish date is set (pgAutoOn). So "go by pages" / 📸 chapters become the
+//   lesson list itself ("pp. 1–3" …, one line a sitting) — the record today's sheet writes for the same typed list.
+//   A daily skips steps 2 and 4 (ceAddSave's own week update lays it); two kids or more → famWhoSave, as today. "Show all
+//   options at once" (step 1) draws today's one-page sheet, byte-identical, with today's ending (the card re-opens).
+//   Writes nothing of its own: every write is ceAddSave's, famWhoSave's or cbApply's. No kid names: the roster draws the chips.
+let afStep=0, afMore=false, afPace=null, afBusy="";   // afStep 0 = the one-page sheet; afPace = the staged lay-out answers
+function afReset(){ afStep=1; afMore=false; afBusy=""; afPace={pages:false,targetDate:"",startDate:"",firstPage:1,lastPage:"",patternStr:"",units:null}; }
+function afKind(f){ return (f.fixedTime&&String(f.fixedTime).trim())?"class":(f.tracking==="daily"?"daily":"book"); }
+function afFam(){ return typeof famWhoPicks==="function"&&famWhoPicks(ceAddForm).length>1; }
+function afDays(){ return String(ceAddForm.days||"").split(/[\s,]+/).filter(Boolean); }
+function afGrab(){ const n=document.getElementById("ce-add-name"), t=document.getElementById("ce-add-lessons"); if(n) ceAddForm.name=n.value; if(t) ceAddForm.manualLessons=t.value; }
+function afLessons(){ const f=ceAddForm; return f.lessonSource==="auto"?Math.max(0,(parseInt(f.total,10)||0)-Math.max(1,parseInt(f.startAt,10)||1)+1):String(f.manualLessons||"").split("\n").filter(x=>x.trim()).length; }
+function afPath(){ return ceAddForm.tracking==="daily"?[1,3]:(afFam()?[1,2,3]:[1,2,3,4]); }
+function afPagesList(){   // the pages answers as lesson lines: one per sitting (pattern cycles), or one per scanned chapter
+  const p=afPace, out=[], pp=(a,b)=>a===b?"p. "+a:"pp. "+a+"\u2013"+b;
+  if(p.units&&p.units.length) return p.units.map(u=>(u.label?u.label+" — ":"")+pp(u.startPage,u.endPage||u.startPage));
+  const a=Math.max(1,parseInt(p.firstPage,10)||1), b=parseInt(p.lastPage,10)||0, pat=cbParsePattern(p.patternStr);
+  for(let x=a,i=0;pat.length&&x<=b&&out.length<2000;i++){ const y=Math.min(b,x+pat[i%pat.length]-1); out.push(pp(x,y)); x=y+1; }
+  return out;
+}
+function afSetKind(k){ const f=ceAddForm; f.tracking=k==="daily"?"daily":"sequenced"; if(k==="class"){ if(!f.fixedTime) f.fixedTime="10:00 AM"; } else { f.fixedTime=""; f.fixedDates=[]; } afGrab(); ceRenderAddSheet(); }
+function afSrc(v){ afGrab(); afPace.pages=v==="pages"; if(v!=="pages") ceAddForm.lessonSource=v; ceRenderAddSheet(); }
+function afSet(k,v){ afPace[k]=v; ceRenderAddSheet(); }
+function afDay(d){ const f=ceAddForm, n=afDays().length, on=afDays().indexOf(d)>=0; if((parseInt(f.timesPerWeek,10)||0)>=n) f.timesPerWeek=Math.max(1,Math.min(7,n+(on?-1:1))); ceAddToggleDay(d); }   // times a week follows the days lit until she makes it fewer
+function afTpw(d){ ceAddForm.timesPerWeek=Math.max(1,Math.min(7,(parseInt(ceAddForm.timesPerWeek,10)||1)+d)); ceRenderAddSheet(); }
+function afAll(){ afGrab(); afStep=0; ceRenderAddSheet(); }
+function afGo(n){
+  afGrab(); const f=ceAddForm;
+  if(afStep===1&&n>1){
+    const name=String(f.name||"").trim(); if(!name){ alert("Enter a subject name."); return; }
+    const p=(typeof famWhoPicks==="function")?famWhoPicks(f):[], kid=p.length===1?p[0]:ceAddKid, key=name.toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"");
+    if(p.length<2&&((((currData||{}).subjects||{})[kid])||{})[key]){ alert("“"+name+"” is already one of "+cap(kid)+"’s subjects."); return; }
+    if(f.tracking==="daily") n=3;
+  }
+  if(afStep===2&&n>2&&afPace.pages){ const l=afPagesList(); if(!l.length){ alert("Fill in the last page and how many pages a day."); return; } f.lessonSource="manual"; f.manualLessons=l.join("\n"); }
+  if(afStep===2&&n>2&&afLessons()<1){ alert("Add at least one lesson."); return; }
+  if(afStep===3&&n===2&&f.tracking==="daily") n=1;
+  afStep=n; afMore=false; ceRenderAddSheet();
+}
+function afSave(){ afGrab(); ceAddSave(); }   // today's save, unchanged: famWhoSave for 2+ kids, else the subject record + the week update
+// ceAddSave's hook, after its writes and before it closes the sheet. true = the guided steps carry on (step 4); false = today's ending.
+function afSaved(kid,key,subj){
+  if(!afStep) return false;
+  if(subj.tracking==="daily"){ afStep=0; try{ gwShowToast("✓ "+(subj.display||key)+" is on the schedule. Tap its name on the grid any time to change it."); }catch(e){} return false; }
+  ceBuildOpen=kid+"|"+key; cbKid=kid; cbSubjKey=key; cbForm=cbDefaultForm(kid,key); cbPreviewRes=null;   // today's arming, line for line
+  const p=afPace||{};
+  if(p.targetDate){ cbForm.mode="targetDate"; cbForm.targetDate=p.targetDate; }   // the card's Finish by a date, chosen before the first lay-out
+  if(p.startDate) cbForm.startDate=p.startDate;   // Start on: the one field that stays staged — it only means anything at the first lay-out
+  afStep=4; cbRunPreview(); ceRenderAddSheet(); return true;
+}
+function afPut(){
+  if(!cbPreviewRes||cbPreviewRes.error) return;
+  afStep=0; cbBuildGate();   // the Builder's own door: a new subject goes straight to cbApply; a legacy one gets the Keep/Dismiss sheet
+  ceCloseSheet();            // back on the grid — the Keep/Dismiss sheet, if it opened, draws there above everything
+  if(!cbGate) try{ gwShowToast("✓ On the schedule. Tap its name on the grid any time to change it."); }catch(e){}
+}
+function afLater(){ const s=((((currData||{}).subjects||{})[cbKid])||{})[cbSubjKey]; afStep=0; cbPreviewRes=null; cbSubjKey=null; cbForm=null; ceCloseSheet();
+  if(s) try{ gwShowToast((s.display||"It")+" is saved but not on the schedule yet — tap its name on the grid, then Put it on the schedule."); }catch(e){} }
+function afClose(){ if(afStep===4) afLater(); else { afStep=0; ceCloseSheet(); } }
+async function afScan(input){   // 📸 the Builder's own book scan (cbScanBook, unchanged) — its chapters become the lesson list
+  const k0=cbKid, s0=cbSubjKey, f0=cbForm, tmp={units:null,startPage:1,totalPages:0};
+  cbKid=ceAddKid; cbSubjKey=null; cbForm=tmp; afPace.pages=true; cbScanStatus=""; afBusy="Reading the photos…";
+  const run=cbScanBook(input); ceRenderAddSheet();
+  try{ await run; }catch(e){}
+  if(cbForm===tmp){ cbKid=k0; cbSubjKey=s0; cbForm=f0; }
+  if(tmp.units&&tmp.units.length) afPace.units=tmp.units;
+  afBusy=cbScanStatus||""; if(afStep===2) ceRenderAddSheet();
+}
+function afSheetHTML(kid,f,col){
+  const L=t=>'<div class="ce-sheet-lbl">'+t+'</div>', H=t=>'<div style="font-size:10px;color:var(--muted);margin-top:4px">'+t+'</div>';
+  const C=(on,click,lbl)=>'<div class="ce-chip'+(on?" sel":"")+'" onclick="'+click+'">'+lbl+'</div>';
+  const B=(click,lbl,main)=>'<button class="'+(main?"ce-btn-save":"ce-btn-cancel")+'" onclick="'+click+'">'+lbl+'</button>';
+  const kind=afKind(f), fam=afFam(), path=afPath(), pos=Math.max(1,path.indexOf(afStep)+1), p=afPace||{};
+  const stepper=(minus,val,plus,id)=>'<div class="ce-stepper"><button onclick="'+minus+'">&minus;</button><span'+(id?' id="'+id+'"':'')+'>'+val+'</span><button onclick="'+plus+'">+</button></div>';
+  let h='<div class="ce-sheet" onclick="if(event.target===this)afClose()"><div class="ce-sheet-box">';
+  h+='<div class="ce-sheet-title">'+["","What is it?","The lessons","When","Here’s the plan"][afStep]+'</div>';
+  h+='<div style="font-size:11px;color:var(--muted);margin:-6px 0 6px">New subject for '+esc(cap(kid))+' · step '+pos+' of '+path.length+'</div>';
+  let nav='';
+  if(afStep===1){
+    if(typeof famWhoRowHTML==="function") h+=famWhoRowHTML(f);
+    h+=L("What is it called?")+'<input class="ce-sheet-input" id="ce-add-name" value="'+esc(f.name)+'" placeholder="e.g. Math, Piano Practice" oninput="ceAddForm.name=this.value">';
+    h+=L("What kind?")+'<div class="ce-chips" style="flex-direction:column;align-items:stretch">';
+    h+=C(kind==="book","afSetKind('book')","📖 A book or course with lessons in order");
+    h+=C(kind==="daily","afSetKind('daily')","🔁 Something they do every school day");
+    h+=C(kind==="class","afSetKind('class')","⏰ "+cw("setTime"))+'</div>';
+    nav=B("afClose()","Cancel")+B("afGo(2)","Next",1);
+    h+='<div class="ce-sheet-actions">'+nav+'</div><div style="text-align:center;margin-top:10px"><button onclick="afAll()" style="border:none;background:none;color:var(--muted);font-size:12px;text-decoration:underline;cursor:pointer">Show all options at once</button></div>';
+    nav='';
+  } else if(afStep===2){
+    const src=p.pages?"pages":f.lessonSource, key=(typeof mastAIKey!=="undefined"&&mastAIKey)||(typeof haGetKey==="function"&&haGetKey());
+    h+='<div class="ce-chips">'+C(src==="auto","afSrc('auto')","Number them for me")+C(src==="manual","afSrc('manual')","Type the list")+C(src==="pages","afSrc('pages')","It’s a workbook — go by pages");
+    if(key) h+='<label class="ce-chip">'+cw("scanToc")+'<input type="file" accept="image/*" multiple style="display:none" onchange="afScan(this)"></label>';
+    h+='</div>';
+    if(afBusy) h+=H(esc(afBusy));
+    if(src==="auto"){
+      h+=L("How many lessons?")+'<div class="ce-stepper"><button onclick="ceAddForm.total=Math.max(1,ceAddForm.total-10);ceRenderAddSheet()">&minus;10</button><input type="number" class="ce-stepnum" min="1" max="500" value="'+f.total+'" onchange="ceAddSetTotal(this.value)"><button onclick="ceAddForm.total=Math.min(500,ceAddForm.total+10);ceRenderAddSheet()">+10</button></div>';
+      h+=L("They’re called")+'<div class="ce-chips">';
+      ["Lesson","pg","Ch.","Unit","Module","Week","Ex."].forEach(x=>{ h+=C(f.prefix===x,"ceAddForm.prefix='"+x+"';ceRenderAddSheet()",x); });
+      h+='</div>'+L("Start at")+'<input type="number" class="ce-stepnum" min="1" max="500" value="'+(f.startAt||1)+'" onchange="ceAddForm.startAt=Math.max(1,parseInt(this.value,10)||1);ceRenderAddSheet()">';
+      h+=H(esc(f.prefix)+' '+(f.startAt||1)+' &rarr; '+esc(f.prefix)+' '+f.total+' — start later than 1 if they’re partway through the book.');
+    } else if(src==="manual"){
+      h+=L("One lesson per line")+'<textarea id="ce-add-lessons" class="ce-sheet-input" style="min-height:100px;resize:vertical;font-size:12px;line-height:1.6" placeholder="pg 1-3&#10;pg 4-6&#10;Chapter 2 Review" oninput="ceAddForm.manualLessons=this.value">'+esc(f.manualLessons||"")+'</textarea>';
+    } else if(p.units&&p.units.length){
+      h+=H('<b>'+p.units.length+' chapters</b> from the photo, pp. '+p.units[0].startPage+'–'+p.units[p.units.length-1].endPage+' — one a day. Next shows them as the lesson list.');
+      h+='<div class="ce-chips" style="margin-top:6px">'+C(false,"afSet('units',null)","Clear — use pages a day instead")+'</div>';
+    } else {
+      h+='<div style="display:flex;gap:10px"><div style="flex:1">'+L("First page")+'<input type="number" class="ce-sheet-input" value="'+esc(p.firstPage)+'" onchange="afSet(\'firstPage\',this.value)"></div>';
+      h+='<div style="flex:1">'+L("Last page")+'<input type="number" class="ce-sheet-input" value="'+esc(p.lastPage)+'" onchange="afSet(\'lastPage\',this.value)"></div></div>';
+      h+=L("Pages a day")+'<input class="ce-sheet-input" placeholder="e.g. 3, or a cycle like 3, 4, 5" value="'+esc(p.patternStr)+'" onchange="afSet(\'patternStr\',this.value)">';
+      const pl=afPagesList(); if(pl.length) h+=H(pl.length+' sittings: '+esc(pl[0])+(pl.length>1?' … '+esc(pl[pl.length-1]):''));
+    }
+    {
+      h+='<div style="margin-top:12px"><button onclick="afMore=!afMore;ceRenderAddSheet()" style="border:none;background:none;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;padding:0">More options '+(afMore?"▴":"▾")+'</button></div>';
+      if(afMore){ const n=Math.max(1,parseInt(f.daysPerLesson,10)||1);
+        h+=L("Days per lesson")+stepper("ceAddForm.daysPerLesson=Math.max(1,(parseInt(ceAddForm.daysPerLesson,10)||1)-1);ceRenderAddSheet()",n,"ceAddForm.daysPerLesson=Math.min(10,(parseInt(ceAddForm.daysPerLesson,10)||1)+1);ceRenderAddSheet()");
+        h+=H(n>1?('Each lesson takes '+n+' days — '+afLessons()+' lessons → <b>'+(afLessons()*n)+' days of work</b>.'):'1 = each lesson is done in one day.'); }
+    }
+    nav=B("afGo(1)","Back")+B("afGo(3)","Next",1);
+  } else if(afStep===3){
+    const ds=afDays();
+    h+=L(cw("days"))+'<div class="ce-chips">'; ["Mon","Tue","Wed","Thu","Fri","Sat"].forEach(d=>{ h+=C(ds.indexOf(d)>=0,"afDay('"+d+"')",d); }); h+='</div>';
+    h+=L(cw("tpw"))+stepper("afTpw(-1)",f.timesPerWeek,"afTpw(1)");
+    if(f.tracking!=="daily"&&afLessons()&&f.timesPerWeek>0) h+=H(afLessons()+' lessons ÷ '+f.timesPerWeek+' a week ≈ '+Math.ceil(afLessons()/f.timesPerWeek)+' weeks');
+    h+=L(cw("duration")+" (minutes)")+stepper("ceAddStepMin(-5)",f.minutes,"ceAddStepMin(5)","ce-add-min-val");
+    if(!fam){
+      h+=L(cw("momReq"))+'<div class="ce-chips">'; [["none","momNone"],["maybe","momMaybe"],["required","momRequired"]].forEach(([v,w])=>{ h+=C(f.mom===v,"ceAddForm.mom='"+v+"';ceRenderAddSheet()",cw(w)); }); h+='</div>';
+      if(kind==="class") h+=L("Starts at")+'<input type="time" class="rules-time" value="'+esc(ampmTo24(f.fixedTime||""))+'" onchange="ceAddSetClassTime(this.value)">';
+      if(f.tracking!=="daily"){
+        h+=L("Finish by <span style=\"font-weight:400;color:var(--muted)\">(optional)</span>")+'<input type="date" class="ce-sheet-input" value="'+esc(p.targetDate||"")+'" onchange="afSet(\'targetDate\',this.value)">';
+        h+=H(p.targetDate?'The app works out how many times a week it needs to finish by then.':'Blank = '+f.timesPerWeek+' a week on the days above, until it’s done.');
+      }
+      h+='<div style="margin-top:12px"><button onclick="afMore=!afMore;ceRenderAddSheet()" style="border:none;background:none;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;padding:0">More options '+(afMore?"▴":"▾")+'</button></div>';
+      if(afMore){
+        if(f.tracking!=="daily") h+=L("Start on <span style=\"font-weight:400;color:var(--muted)\">"+cw("startOnHint")+"</span>")+'<input type="date" class="ce-sheet-input" value="'+esc(p.startDate||"")+'" onchange="afSet(\'startDate\',this.value)">';
+        h+=L(cw("device"))+'<div class="ce-chips">'; ["paper","computer","ipad/phone","book","keyboard"].forEach(d=>{ h+=C(f.device===d,"ceAddForm.device='"+d+"';ceRenderAddSheet()",(CURR_DEV_EMOJI[d]||"")+" "+(CURR_DEV_LABEL[d]||cap(d))); }); h+='</div>';
+        const rp=String(f.rules||"").split(",").map(x=>x.trim()).filter(Boolean);
+        h+=L(cw("schedRules"))+'<div class="ce-chips">'; ["sequential","sticky","first","last","lastOwn"].forEach(r=>{ h+=C(rp.indexOf(r)>=0,"ceAddToggleRule('"+r+"')",RULE_LABEL[r]||r); }); h+='</div>';
+        if(rp.indexOf("sticky")>=0){ const subs=((currData||{}).subjects||{})[ceAddKid]||{};
+          h+='<select class="ce-sheet-input" style="margin-top:6px" onchange="ceAddForm.stickyWith=this.value;ceRenderAddSheet()"><option value="">— pick a subject —</option>';
+          Object.keys(subs).filter(k=>!subs[k].paused).sort().forEach(k=>{ h+='<option value="'+k+'"'+(f.stickyWith===k?' selected':'')+'>'+esc(subs[k].display||k)+'</option>'; });
+          h+='</select><div class="ce-chips" style="margin-top:6px">'+C(f.stickyOrder==="before","ceAddForm.stickyOrder='before';ceRenderAddSheet()",cw("stickBefore"))+C(f.stickyOrder!=="before","ceAddForm.stickyOrder='after';ceRenderAddSheet()",cw("stickAfter"))+'</div>'; }
+        if(kind==="class"){ const fd=Array.isArray(f.fixedDates)?f.fixedDates:[];
+          h+=L(cw("tracking"))+'<div class="ce-chips">'+C(f.tracking!=="daily","ceAddForm.tracking='sequenced';ceRenderAddSheet()",cw("seqd"))+C(f.tracking==="daily","ceAddForm.tracking='daily';ceRenderAddSheet()",cw("daily"))+'</div>';
+          h+=L(cw("meetDates")+' <span style="font-weight:400;color:var(--muted)">— optional</span>')+'<textarea class="ce-sheet-input" rows="3" placeholder="2026-09-16&#10;2026-09-23" style="width:100%;box-sizing:border-box;font-family:ui-monospace,monospace;font-size:11px" onchange="ceAddSetClassDates(this.value)">'+esc(fd.join("\n"))+'</textarea>';
+          h+=H(ceAddMsg?esc(ceAddMsg):(fd.length?fd.length+' meetings — no card lands on any other day.':'Empty = it meets every day lit above, holiday weeks too.'));
+          h+=L('Join link <span style="font-weight:400;color:var(--muted)">— optional</span>')+'<input class="ce-sheet-input" placeholder="https://…" value="'+esc(f.joinUrl||"")+'" oninput="ceAddForm.joinUrl=this.value">'; }
+        const ss=(typeof mstSessions==="function")?mstSessions(ceAddKid):[];
+        if(ss.length){ h+=L("📚 Study session")+'<div class="ce-chips">'+C(!f.study,"ceAddForm.study='';ceRenderAddSheet()","None"); ss.forEach(x=>{ h+=C(f.study===x.sid,"ceAddForm.study='"+esc(x.sid)+"';ceRenderAddSheet()",esc((x.emoji||"")+" "+(x.name||x.sid))); }); h+='</div>'; }
+        if(f.tracking!=="daily"){
+          h+=L(cw("priority"))+'<div class="ce-chips">'; ["low","normal","high"].forEach(x=>{ h+=C(f.priority===x,"ceAddForm.priority='"+x+"';ceRenderAddSheet()",cw({low:"prLow",normal:"prNormal",high:"prHigh"}[x])); }); h+='</div>';
+          h+=L(cw("carryCap"))+stepper("ceAddForm.carryoverCap=Math.max(0,ceAddForm.carryoverCap-1);ceRenderAddSheet()",f.carryoverCap,"ceAddForm.carryoverCap=Math.min(5,ceAddForm.carryoverCap+1);ceRenderAddSheet()");
+        }
+      }
+    }
+    nav=B("afGo(2)","Back")+B("afSave()",fam?"Add it":(f.tracking==="daily"?cw("putOn"):"Next — see the plan"),1);
+  } else {
+    const s=((((currData||{}).subjects||{})[cbKid])||{})[cbSubjKey]||{};
+    h+=H('Saved to '+esc(cap(kid))+'’s subjects — not on the schedule until you tap <b>'+cw("putOn")+'</b>.');
+    if(cbPreviewRes) h+='<div style="margin-top:10px">'+cbPreviewCardHTML(col,s).replace('onclick="cbBuildGate()"','onclick="afPut()"').replace('onclick="cbPreviewRes=null;renderAll()" style="padding:11px 16px;border-radius:10px;border:1px solid var(--border);background:#fff;font-size:13px;cursor:pointer">Cancel<','onclick="afLater()" style="padding:11px 16px;border-radius:10px;border:1px solid var(--border);background:#fff;font-size:13px;cursor:pointer">Not now<')+'</div>';
+    if(!cbPreviewRes||cbPreviewRes.error) nav=B("afLater()","Close");
+  }
+  if(nav) h+='<div class="ce-sheet-actions">'+nav+'</div>';
+  return h+'</div></div>';
+}
+function afMount(w,h){   // ceRenderAddSheet's own mount: re-render in place without replaying the slide-in, keep the scroll
+  const was=!!w.querySelector(".ce-sheet.open"), box=w.querySelector(".ce-sheet-box"), top=box?box.scrollTop:0;
+  w.innerHTML=was?h.replace('class="ce-sheet"','class="ce-sheet open"'):h; w.style.display="block"; document.body.style.overflow="hidden";
+  if(was){ const nb=w.querySelector(".ce-sheet-box"); if(nb) nb.scrollTop=top; }
+  else requestAnimationFrame(()=>{ const sh=w.querySelector(".ce-sheet"); if(sh) sh.classList.add("open"); });
+}
+// ADDFLOW_END
 
 // ── CURRICULUM UPLOAD ─────────────────────────────────────────────
 function currParseDetectFormat(rows){

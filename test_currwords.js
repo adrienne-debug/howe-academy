@@ -230,7 +230,7 @@ const PAGE_FNS = ("renderCurriculumView ceBuildCard ceRenderSessions ceRenderEdi
   "ceMomPartSectionHTML mmEditorSectionHTML lnRenderSection cbRenderSummary cbRenderRules cbRenderGate renderCurrBuilder cbRenderForm renderCurrGrid " +
   "gvAuditRender gvMarkMenuHTML _ceMarkDoneAsk gvMakePlan gvMakePlanAll gvMakePlanUndo ceUnfinishLesson ceConvApply rlSet gvAuditFixGap " +
   "gvReconcileAdopt gvOpenCell gvMarkNotDone gvDeleteLesson ceRelayRemaining ceWalkApply ceSetCap cwdUseMonThu lnPauseRelay cbApply cbRebuildAll " +
-  "gvMenuDone gvSelShiftUp ckLogDock mdCardCheckLog mmRulesCardHTML rulesFamilyCardsHTML").split(" ");
+  "gvMenuDone gvSelShiftUp ckLogDock mdCardCheckLog mmRulesCardHTML rulesFamilyCardsHTML afSheetHTML afSaved afPut afLater afGo").split(" ");   // ADDFLOW (slice 5): the guided Add steps
 
 // ── 1. the block and cw() ────────────────────────────────────────────────────────────────
 console.log("── 1. the block and cw() ──");
