@@ -2550,7 +2550,7 @@ function rtSetAlwaysOpenDay(d){
   if(db) db.ref("config/routineTimes").set(routineTimes);
   renderAll();
 }
-function rtAvailable(slot,kid,d){ if(slot==="afternoon") return rtAlwaysOpen(d)||(d===_todayDay&&typeof hhCleanOn==="function"&&hhCleanOn(_todayStr()))||rtSchoolworkDone(kid,d)||(d!==_todayDay)||(new Date().getHours()>=rtAfternoonHour()); if(slot==="evening") return (d!==_todayDay)||(new Date().getHours()>=rtEveningHour()); return true; }
+function rtAvailable(slot,kid,d){ if(slot==="afternoon") return rtAlwaysOpen(d)||(d===_todayDay&&typeof hhCleanOn==="function"&&hhCleanOn(_todayStr()))||rtSchoolworkDone(kid,d)||(d===_todayDay&&typeof openPmToday==="function"&&openPmToday(kid))||(d!==_todayDay)||(new Date().getHours()>=rtAfternoonHour()); if(slot==="evening") return (d!==_todayDay)||(new Date().getHours()>=rtEveningHour()); return true; }
 // MEALS_START — after-meal jobs (her ask 2026-10-02, DeWalt table-jobs chart: set/clear/wipe table, sweep,
 // dishwasher after every meal). A step tagged st.meal sits in its meal's list under its own heading:
 // breakfast → Morning, lunch → Afternoon, supper → Evening. Lunch and Supper open at their OWN hour
@@ -14126,6 +14126,54 @@ function hhCleanHomeHTML(iso,dn){
 }
 // The cleaning-days list (hhCleanDaysEditorHTML) moved to the ONECAL block as calCleaningSectionHTML (2026-10-23): same rows, same hhCleanDayToggle.
 // CLEANINGDAY_END
+// OPENPM_START — 🔓 Mom's "open afternoons" switch (her ask 2026-11-20: "when we don't have a school day that I want their
+// afternoon chores, a quick switch … on the mom's day above their names … okay, open their afternoons. So that way everybody can
+// see their afternoons really fast. Maybe per kid and maybe an all kid thing too." Her picks 2026-11-21: today only, it opens
+// Afternoon + House chores together, "Yes, start it too"). Mom's Day ▸ 🧒 Kids today: "🔓 Open afternoons" above the names for
+// everyone, and a small one on each kid's row. A tap = that kid's Afternoon list opens now, as if school were done AS FAR AS THE
+// LOCK GOES: rtAvailable("afternoon",kid,today) answers true, so the Afternoon list and the House chores (hdLocked follows it)
+// open, with no lock message. A second tap closes it (back to: school done, or the afternoon hour). The all-kids tap opens
+// everyone who isn't open; when everyone is open it closes everyone. School is untouched — no card is checked, claimed, moved,
+// dropped or re-laid; rtSchoolworkDone is not changed (the day-end celebration, the Mom loop, spins, the store read it).
+// Storage — one small mark per kid per day beside the Go-clean tap: household/today/<iso>/openPM/<kid> = ms timestamp,
+// removed when turned off. Keyed by the date, so tomorrow it simply doesn't count (no clean-up, no timer). Mom only (momHere);
+// writes are targeted (one kid = set/remove on its own path; all kids = one multi-path update) and only when db && !_dryRun().
+function openPmOn(kid,iso){ const t=(typeof householdData!=="undefined"&&householdData&&householdData.today)||{}; const m=t[iso]&&t[iso].openPM; return !!(m&&typeof m==="object"&&kid&&m[kid]); }
+function openPmToday(kid){ return openPmOn(kid,_todayStr()); }
+function _openPmKids(){ return (typeof SL_KIDS!=="undefined"&&Array.isArray(SL_KIDS))?SL_KIDS.slice():[]; }
+// The local copy first (shows at once, saved like Go clean), then the write. kids = the ones that change.
+function _openPmSet(kids,on,iso){
+  const now=Date.now(); householdData.today=Object.assign({},householdData.today); const dayRec=Object.assign({},householdData.today[iso]); const m=Object.assign({},dayRec.openPM);
+  const upd={}; kids.forEach(function(k){ if(on) m[k]=now; else delete m[k]; upd["household/today/"+iso+"/openPM/"+k]=on?now:null; });
+  if(Object.keys(m).length) dayRec.openPM=m; else delete dayRec.openPM;
+  householdData.today[iso]=dayRec; householdOnValue(householdData);
+  if(_hhWrite()&&kids.length){ if(kids.length===1){ const r=db.ref("household/today/"+iso+"/openPM/"+kids[0]); if(on) r.set(now); else r.remove(); } else db.ref().update(upd); }
+}
+function openPmToggle(kid){
+  if(typeof momHere!=="function"||!momHere()) return null; if(_openPmKids().indexOf(kid)<0) return null;
+  const iso=_todayStr(); if(!_hhIsoOk(iso)) return null; const on=!openPmOn(kid,iso);
+  _openPmSet([kid],on,iso);
+  if(typeof mwToast==="function") try{ mwToast(on?"🔓 "+cap(kid)+"'s afternoon is open today":cap(kid)+"'s afternoon is back to the normal rule"); }catch(e){}
+  if(typeof renderAll==="function") renderAll(); return on;
+}
+function openPmToggleAll(){
+  if(typeof momHere!=="function"||!momHere()) return null; const kids=_openPmKids(); if(!kids.length) return null;
+  const iso=_todayStr(); if(!_hhIsoOk(iso)) return null; const shut=kids.filter(function(k){ return !openPmOn(k,iso); });
+  const on=shut.length>0; _openPmSet(on?shut:kids,on,iso);
+  if(typeof mwToast==="function") try{ mwToast(on?"🔓 Afternoons are open for everyone today":"Afternoons are back to the normal rule"); }catch(e){}
+  if(typeof renderAll==="function") renderAll(); return on;
+}
+function _openPmBtn(onclick,label,on,big){ return '<button onclick="'+onclick+'" style="padding:'+(big?'5px 12px':'1px 8px')+';border-radius:'+(big?'10px':'9px')+';font-size:'+(big?'12px':'10px')+';font-weight:800;cursor:pointer;font-family:\'DM Sans\',sans-serif;border:1.5px solid '+(on?'#16a34a':'#cbd5e1')+';background:'+(on?'#16a34a':'#fff')+';color:'+(on?'#fff':'#475569')+'">'+label+'</button>'; }
+// Above the names (Mom's Day, today only): on = every kid open.
+function openPmAllHTML(){
+  if(typeof momHere!=="function"||!momHere()) return ""; const kids=_openPmKids(); if(!kids.length) return ""; const iso=_todayStr();
+  const n=kids.filter(function(k){ return openPmOn(k,iso); }).length, all=n===kids.length;
+  return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0 2px">'+_openPmBtn("openPmToggleAll()",all?'✓ Afternoons open — everyone':'🔓 Open afternoons',all,true)
+    +'<span style="font-size:10.5px;color:var(--muted)">'+(all?'Tap to close them all again':(n?n+' of '+kids.length+' open today · tap to open everyone':'Afternoon + House chores, today only'))+'</span></div>';
+}
+// On a kid's row: on = that kid open.
+function openPmKidBtnHTML(kid){ if(typeof momHere!=="function"||!momHere()) return ""; const on=openPmToday(kid); return _openPmBtn("openPmToggle('"+kid+"')",on?'✓ Afternoon open':'🔓 Afternoon',on,false); }
+// OPENPM_END
 // HOUSECARDS_START — 🏡 house work on the timelines (PR 5 of the Household plan; her "go" 2026-10-11, the DERIVED card).
 // Kids: one trailing "🏡 House" card drawn on the kid's Day page after their last laid card, at max(school end, last card end),
 // from their house rows for that day (hhCleanRows). It is derived — never written into week*/tasks — so the generator, the
@@ -18978,6 +19026,8 @@ function mdCardKidsToday(today,isSchoolDay,bank,dadCtl){   // bank=true: Mom's D
   });
   h+='</div>';
   h+='<div style="padding:4px 14px 8px">';
+  const _opm=bank&&dadCtl===undefined&&_kToday&&typeof openPmAllHTML==="function";   // 🔓 OPENPM: Mom's Day, today only
+  if(_opm) h+=openPmAllHTML();
   // 🧒 KIDBAR: phone — name + notes on the first line, every fraction + light on the line under it.
   if(bank) h+='<style>@media (max-width:600px){.kt-sp{display:none}.kt-pills{flex:1 1 100%}}</style>';
   const _ktSig=(typeof ktPaceSig==="function")?ktPaceSig():null;   // KIDSTODAYCACHE: one fingerprint for the whole card
@@ -19026,6 +19076,7 @@ function mdCardKidsToday(today,isSchoolDay,bank,dadCtl){   // bank=true: Mom's D
     h+='<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px">'
       +'<b style="color:'+col+';font-size:14px;flex:0 0 60px">'+cap(kid)+'</b>'+chip
       +(lost?'<span style="font-size:10px;font-weight:800;padding:1px 8px;border-radius:10px;background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5">🚫 No tech</span>':'')
+      +(_opm?openPmKidBtnHTML(kid):'')   // 🔓 OPENPM
       +'<span'+(bank?' class="kt-sp"':'')+' style="flex:1"></span>'
       +(bank?'<span class="kt-pills" style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px">':'')   // 🧒 KIDBAR: on a phone the pills drop under the name
       +seg("🌅",mD,mT,mDone,"morning")
