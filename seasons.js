@@ -481,7 +481,9 @@ function saveSeason(){
   if(name!==s.name)up[b+"name"]=name;if(emoji!==(s.emoji||""))up[b+"emoji"]=emoji;
   if(start!==(s.start||""))up[b+"start"]=start||null;if(end!==(s.end||""))up[b+"end"]=end||null;
   if(!!f.closed!==!!s.closed)up[b+"closed"]=f.closed?true:null;
-  apply(up);snEdit=null;draw();
+  const sidNow=snEdit.id,renamed=name!==s.name||emoji!==(s.emoji||"");
+  apply(up);if(renamed)relabelSeason(sidNow);   // SEASONRELABEL: rows already on the Shopping List follow the season's new name
+  snEdit=null;draw();
 }
 function snDelSeason(){
   if(!snEdit||snEdit.type!=="season"||!snEdit.id)return;
@@ -696,12 +698,16 @@ function snSupAll(sid,iid){   // "send all for this idea": every line still need
   lines(sid,"sup").filter(L=>L.iid===(iid||"")&&supState(L)==="need").forEach(L=>{const c=shopCheck(L.r.name);if(c.dup||c.have){held++;return;}if(shopSend(L))sent++;});
   snAsk=null;toast("🛒 "+sent+" sent to the Shopping List"+(held?" · "+held+" may already be there or in the house — tap those":""));repaint();
 }
-function relabel(it){   // an idea was renamed or its 🤫 switch changed: its own rows on the Shopping List get the label they should have now
-  if(dry()||typeof grPut!=="function")return;const G=grItems(),lbl=shopLabel(it.sid,it),mine=it.sid+"/"+it.id+"/";
-  ideaLines(it,"sup").forEach(L=>{const g=L.r.gr&&G[L.r.gr];
+function relabelLines(Ls){   // these supply lines' OWN rows on the Shopping List get the label they should have now (a row linked with "the same one" is never touched)
+  if(dry()||typeof grPut!=="function")return;const G=grItems();
+  Ls.forEach(L=>{const g=L.r.gr&&G[L.r.gr],lbl=shopLabel(L.sid,L.it),mine=L.sid+"/"+(L.iid||"-")+"/";
     if(!g||!g.ref||String(g.ref.sn||"").indexOf(mine)!==0||!Array.isArray(g.src)||!g.src.some(x=>x&&x.k==="season"&&x.lbl!==lbl))return;
     const c=clone(g);c.src.forEach(x=>{if(x&&x.k==="season")x.lbl=lbl;});try{grPut(L.r.gr,c);}catch(e){}});
 }
+function relabel(it){relabelLines(ideaLines(it,"sup"));}   // an idea was renamed or its 🤫 switch changed
+// SEASONRELABEL (her "fix this" 2026-11-21): the SEASON was renamed (or its emoji changed) — every row it already sent to the Shopping
+// List follows: its ideas' lines and its whole-season lines. A 🤫 idea's rows still carry the season only, never the idea.
+function relabelSeason(sid){relabelLines(lines(sid,"sup"));}
 // ✅ tick a to-do. If it has a copy on Mom's own list, that copy is ticked in the SAME update (and un-ticked the same way).
 function snTodoTick(sid,iid,lid){
   const L=line(sid,iid,"todo",lid);if(!L)return;const on=!tdDone(L),t=today(),up={};

@@ -2642,10 +2642,12 @@ function toggleRtStep(slot,kid,i){
   const wk=activeWk(), sk=wk+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i, cur=slState[sk], now=!(cur&&cur.done), _slB=slBefore();   // SLTARGET
   const _obPrev={}; _obPrev[sk]=cur||null; _obPrev[wk+"_"+day+"_"+kid+"_"+slot]=slState[wk+"_"+day+"_"+kid+"_"+slot]||null;   // 📮
   { const _st0=rtStepsFor(slot,kid)[i], _b0=_st0?(_st0.pts||0):0;
+    // CHOREFALL: a row in its wait pays what it is worth today (the base a bonus room doubles); on its own day it is never late
+    const _bf=(now&&_b0>0&&typeof rtFallPay==="function"&&day===_todayDay&&!cadDueOn(_st0.cad||"daily",day)&&stepWindowOk(_st0,day))?rtFallPay(_st0,rtLateDays(slot,kid,i)):_b0;
     // Pay base + any focus-zone bonus, and RECORD the total on the check-off. Unchecking reverses
     // that stored number rather than recomputing — the zone or bonus may have changed since, and
     // recomputing would reverse a different amount than was paid.
-    const _paid = now ? (_b0 + zoneBonusFor(_st0&&_st0.zone,_b0)) : ((cur&&cur.pts!=null)?cur.pts:_b0);
+    const _paid = now ? (_bf + zoneBonusFor(_st0&&_st0.zone,_bf)) : ((cur&&cur.pts!=null)?cur.pts:_b0);
     var _p=_paid;
     const _st=_st0;
     // ⭐ WAGES, not winnings: routine stars bank the moment the step is checked — straight
@@ -2848,6 +2850,26 @@ function rtWaitNote(n,st){
   return "from "+dn.charAt(0).toUpperCase()+dn.slice(1,3)+" \u00b7 day "+n+" of "+w;
 }
 // CHOREWAIT_END
+// CHOREFALL_START \u2014 her rule 2026-11-19 (missed-chores design \u00a72.1, slice C2): "if skipped it stays with them and they lose 20% of the
+// original points value a day"; the kid's row: "i think let them know the original. versus the now so they are motivated in the future
+// to do it the first day"; 3+ a week (11/20): "Yes, same rules". A chore on a kid's own list in its wait today (rtLateDays > 0) pays
+// 100% on its day, then 80 \u00b7 60 \u00b7 40 \u00b7 20 \u00b7 0%. Nothing is ever taken from a bank here; un-check takes back the stored amount, as always.
+// Blank slate (hub's call 2026-11-20): only a turn due on or after RT_FALL_FROM falls; an older one pays in full for as long as it waits.
+const RT_FALL_FROM="2026-11-22";
+// What a step pays n days late, given its original stars: a step is 20% of the original, to the nearest whole star, at least 1.
+// 10 \u2b50: 8 6 4 2 0 \u00b7 15 \u2b50: 12 9 6 3 0 \u00b7 22 \u2b50: 18 13 9 4 0 \u00b7 5 \u2b50: 4 3 2 1 0. The one function every payer and display calls.
+function rtFallPts(pts,n){ pts=pts||0; if(!(n>0)||!(pts>0)) return pts; return Math.max(0,pts-Math.max(n,Math.round(pts*n/5))); }
+// The late days that count (0 = full stars). n = rtLateDays on today's tab (daily, as-needed, waved and \ud83c\udf05-sent rows are already 0).
+// Not the plan's own rows (slice E), not a turn whose own day was before RT_FALL_FROM.
+function rtFallDays(st,n){
+  if(!(n>0)||!st||st.house) return 0;
+  const t=new Date(), d=new Date(t.getFullYear(),t.getMonth(),t.getDate()-n,12);
+  return (d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"))>=RT_FALL_FROM?n:0;
+}
+function rtFallPay(st,n){ return rtFallPts((st&&st.pts)||0,rtFallDays(st,n)); }
+// The star pill on a kid's row: "+10 \u2b50" as before; a falling row shows the original struck through, then what it pays: "10 \u2192 6 \u2b50".
+function rtFallPill(st,n){ const p=(st&&st.pts)||0, f=rtFallPay(st,n); return f===p?'<span class="mr-pts">+'+p+' \u2b50</span>':'<span class="mr-pts"><s style="opacity:.6">'+p+'</s> \u2192 '+f+' \u2b50</span>'; }
+// CHOREFALL_END
 function rtLateDays(slot,kid,i,raw){   // raw (CHOREWAIT): the days since it was missed, wait or not — rtSlotHTML's drop check
   const steps=rtStepsFor(slot,kid), st=steps[i]; if(!st) return 0;
   if(st.house) return st.hdLate||0;                 // 🚪 HOUSEDAY: the plan's own late (carried chores, overdue every-N)
@@ -2982,11 +3004,11 @@ function rtSlotHTML(slot,kid){
       h+='<div class="mr-step'+(sd?" done":"")+(_lateTag?" is-late":"")+'"'+(_ed?' onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')"':'')+(_ok?'':' style="opacity:.5"')+'>'+
          '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
          '<div class="sl-slot-name" style="flex:1">'+(st.emoji?st.emoji+" ":"")+st.label+_lateTag+cadTag+winTag+timeTag+rotTag+amTag+'</div>'+
-         (pts>0?'<span class="mr-pts">+'+pts+' ⭐</span>':'')+'</div>'; });
+         (pts>0?((typeof rtFallPill==="function")?rtFallPill(st,sd?0:_wait[i]):'<span class="mr-pts">+'+pts+' ⭐</span>'):'')+'</div>'; });   // CHOREFALL: "10 → 6 ⭐" on a falling row
     optIdx.forEach(i=>{ const st=steps[i], sd=rtDoneOn(slot,kid,day,i), pts=st.pts||0;
       h+='<div class="mr-step'+(sd?" done":"")+'"'+(_ed?' onclick="toggleRtStep(\''+slot+'\',\''+kid+'\','+i+')"':'')+' style="opacity:'+(sd?'1':'.75')+'">'+
          '<div class="sl-checkbox'+(sd?" done":"")+'" style="width:20px;height:20px;font-size:12px">'+(sd?"✓":"")+'</div>'+
-         '<div class="sl-slot-name" style="flex:1">'+(st.emoji?st.emoji+" ":"")+st.label+' <span class="cadtag" style="color:#0e7490;border-color:#a5f3fc">\u270B as needed</span></div>'+
+         '<div class="sl-slot-name" style="flex:1">'+(st.emoji?st.emoji+" ":"")+st.label+(st.foldReady?(sd?'':' <span class="cadtag" style="color:#15803d;border-color:#bbf7d0">🧺 ready to fold</span>'):' <span class="cadtag" style="color:#0e7490;border-color:#a5f3fc">\u270B as needed</span>')+'</div>'   /* FOLDREADY: a ready Fold row says so, not "as needed" */+
          (pts>0?'<span class="mr-pts">+'+pts+' ⭐</span>':'')+'</div>'; });
     if(typeof rtWavedRowHTML==="function") wavedIdx.forEach(i=>{ h+=rtWavedRowHTML(steps[i]); });   // WAVE
     h+='</div>';
@@ -9348,7 +9370,8 @@ function boardStatPop(kid,slot,d){
     const steps=rtStepsFor(slot,kid,false,day);
     steps.forEach((st,i)=>{ const _ln=(typeof mdLateDays==="function")?mdLateDays(slot,kid,day,i,st):0;   // KIDSLATE: carried-over rows too, as Kids' Corner lists them
       if(!cadDueOn(st.cad||"daily",day)&&!(_ln>0)) return; const rec=((typeof hdSlRec==="function")?hdSlRec(slot,kid,day,i):slState[activeWk()+"_"+day+"_"+kid+"_"+RT_ABBR[slot]+"step"+i])||{};   /* 🚪 HOUSEDAY */
-      rows.push({lab:(st.emoji?st.emoji+" ":"")+st.label+(st.pts?" +"+st.pts+" ⭐":""),done:rtDoneOn(slot,kid,day,i),ts:rec.ts||"",i:i,wv:(typeof rtWaved==="function")&&rtWaved(slot,kid,day,i),late:_ln,hs:st}); });   // LISTS_TAP; KIDROWS2: wv
+      const _f=(typeof rtFallPay==="function")?rtFallPay(st,_ln):(st.pts||0);   // CHOREFALL: a falling row shows both numbers, as on the kid's row
+      rows.push({lab:(st.emoji?st.emoji+" ":"")+st.label+(st.pts?(_f!==st.pts?" "+st.pts+" → "+_f+" ⭐":" +"+st.pts+" ⭐"):""),done:rtDoneOn(slot,kid,day,i),ts:rec.ts||"",i:i,wv:(typeof rtWaved==="function")&&rtWaved(slot,kid,day,i),late:_ln,hs:st,pay:_f}); });   // LISTS_TAP; KIDROWS2: wv
   }
   // LISTS_TAP (her ask 2026-10-21: "make on both mom and dads day all the lists clickable but do not change the look or size on any" —
   // "each individual list you can open for each kid like morning etc"): the ○/✅ on a morning / afternoon / chores / evening row is the
@@ -9367,7 +9390,7 @@ function boardStatPop(kid,slot,d){
   const _note=typeof rtWaitNote==="function"&&((typeof momHere==="function"&&momHere())||(typeof _kioskD==="function"&&_kioskD()));   // CHOREWAIT: the notes are for Mom (and Dad's own link), never a kid
   let inner=rows.length?rows.map(r=>'<div style="display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid #f3f4f6;font-size:13px'+(r.wv?';opacity:.55':'')+'">'+
       (isStars?'':'<span'+((_tapOk&&r.i!=null&&!r.wv)?' onclick="event.stopPropagation();mdKidTick(\''+slot+'\',\''+kid+'\',\''+_d+'\','+r.i+');boardStatPop(\''+kid+'\',\''+slot+'\',\''+_d+'\')" style="width:20px;text-align:center;cursor:pointer"':' style="width:20px;text-align:center"')+'>'+(r.done?"✅":r.wv?"–":"○")+'</span>')+   // LISTS_TAP; KIDROWS2: a waved row has no tick
-      '<span style="flex:1;min-width:0;'+(r.done?'':'color:var(--muted)')+(r.wv?';text-decoration:line-through':'')+'">'+esc(r.lab)+((r.late>0&&!r.done&&!r.wv)?((typeof rtWaitAsBefore==="function"&&rtWaitAsBefore(r.hs))?'<span class="rt-late">'+r.late+' day'+(r.late>1?'s':'')+' late</span>':(_note?'<span style="font-size:10.5px;font-weight:700;color:#6b7280;margin-left:6px;white-space:nowrap">'+rtWaitNote(r.late,r.hs)+'</span>':'')):'')+'</span>'+   // CHOREWAIT: 3+ a week: the red tag, as before; other waiting rows: Mom's note ("from Tue · day 2 of 2"), a kid's screen nothing
+      '<span style="flex:1;min-width:0;'+(r.done?'':'color:var(--muted)')+(r.wv?';text-decoration:line-through':'')+'">'+esc(r.lab)+((r.late>0&&!r.done&&!r.wv)?((typeof rtWaitAsBefore==="function"&&rtWaitAsBefore(r.hs))?'<span class="rt-late">'+r.late+' day'+(r.late>1?'s':'')+' late</span>':(_note?'<span style="font-size:10.5px;font-weight:700;color:#6b7280;margin-left:6px;white-space:nowrap">'+rtWaitNote(r.late,r.hs)+((r.pay!==((r.hs&&r.hs.pts)||0))?' \u00b7 pays '+r.pay+' of '+r.hs.pts+' ⭐':'')+'</span>':'')):'')+'</span>'+   // CHOREWAIT: 3+ a week: the red tag, as before; other waiting rows: Mom's note ("from Tue · day 2 of 2"), a kid's screen nothing
       (r.amt!=null?'<span style="font-weight:800;color:'+(r.amt<0?"#b91c1c":"#b45309")+';white-space:nowrap">'+(r.amt<0?"−"+(-r.amt):"+"+r.amt)+' ⭐</span>':'')+
       (r.ts?'<span style="font-size:10.5px;color:var(--muted);white-space:nowrap">'+esc(r.ts)+'</span>':'')+
       ((_waveOk&&r.i!=null&&!r.done)?kr2WaveBtnHTML(slot,kid,_d,r.i,!!r.wv):'')+((typeof amPopBtnsHTML==="function")?amPopBtnsHTML(r,slot,kid,_d,_tapOk):'')+(typeof hcGoBtn==="function"?hcGoBtn(r.hs):'')+'</div>').join('')   // KIDROWS2: ✕ today / undo
@@ -14053,7 +14076,9 @@ function hhCleanRows(who,iso,dn){
       if(typeof rtWaved==="function"&&rtWaved(slot,who,dn,idx)) return;
       const due=(typeof stepWindowOk!=="function"||stepWindowOk(st,dn))&&cadDueOn(st.cad||"daily",dn); const late=(dn===today&&typeof rtLateDays==="function")?(rtLateDays(slot,who,idx)>0):false;
       if(!due&&!late) return;
-      out.push({id:id,job:j,label:st.label||j.label,emoji:st.emoji||j.emoji||"",pts:st.pts||0,mins:hhMinutesOf(j),done:(typeof rtDoneOn==="function")?rtDoneOn(slot,who,dn,idx):false,late:late&&!due,on:"toggleRtStep('"+slot+"','"+who+"',"+idx+")"});
+      const row={id:id,job:j,label:st.label||j.label,emoji:st.emoji||j.emoji||"",pts:st.pts||0,mins:hhMinutesOf(j),done:(typeof rtDoneOn==="function")?rtDoneOn(slot,who,dn,idx):false,late:late&&!due,on:"toggleRtStep('"+slot+"','"+who+"',"+idx+")"};
+      if(late&&!due&&!row.done&&typeof rtFallPay==="function"){ const f=rtFallPay(st,rtLateDays(slot,who,idx)); if(f!==row.pts) row.fall=f; }   // CHOREFALL: what it pays today, when that is less
+      out.push(row);
     } else { const key=(j.src&&j.src.id)||id; const list=(who==="dad")?((typeof dcAll==="function")?dcAll():{}):((typeof mcAll==="function")?mcAll():{}); if(!list[key]) return;
       if(!cadDueOn(j.cad||"daily",dn)) return; const doneOn=(who==="dad")?(typeof dcDoneOn==="function"?dcDoneOn:null):(typeof mcDoneOn==="function"?mcDoneOn:null);
       out.push({id:id,job:j,label:j.label,emoji:j.emoji||"",pts:0,mins:hhMinutesOf(j),done:doneOn?doneOn(iso,key):false,late:false,on:(who==="dad"?"dcToggle('":"mcToggle('")+key+"')"}); }
@@ -14074,7 +14099,7 @@ function hhCleanPanelHTML(who,iso,dn,title){
   rows.forEach(function(r){ const rm=hhRoomOf(r.job); if(rm!==room){ room=rm; h+='<div style="padding:7px 12px 2px;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#6b6560">🚪 '+esc(hhRoomName(rm))+'</div>'; }
     h+='<div class="sl-check-row'+(r.done?' done':'')+'" onclick="'+r.on+'" style="padding:7px 12px"><div class="sl-checkbox'+(r.done?' done':'')+'">'+(r.done?'✓':'')+'</div>'
       +'<div style="flex:1;display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span>'+r.emoji+'</span><span style="font-weight:700;'+(r.done?'text-decoration:line-through;color:#6b6560':'')+'">'+esc(r.label)+'</span>'
-      +'<span style="font-size:10.5px;font-weight:800;padding:1px 6px;border-radius:7px;background:#f3f4f6;color:#475569">⏱ '+r.mins+' min</span>'+(r.pts?'<span style="font-size:10.5px;font-weight:800;padding:1px 6px;border-radius:7px;background:#fef3c7;color:#92400e">'+r.pts+' ⭐</span>':'')+((r.late&&typeof rtWaitAsBefore==="function"&&rtWaitAsBefore(r.job))?'<span style="font-size:10.5px;font-weight:800;padding:1px 6px;border-radius:7px;background:#fee2e2;color:#991b1b">late</span>':'')+'</div></div>'; });   // CHOREWAIT: the late chip only on 3+-a-week rows (as before); a waiting weekly row is plain — this panel is on the kids' pages
+      +'<span style="font-size:10.5px;font-weight:800;padding:1px 6px;border-radius:7px;background:#f3f4f6;color:#475569">⏱ '+r.mins+' min</span>'+(r.pts?'<span style="font-size:10.5px;font-weight:800;padding:1px 6px;border-radius:7px;background:#fef3c7;color:#92400e">'+(r.fall!=null?'<s style="opacity:.6">'+r.pts+'</s> → '+r.fall:r.pts)+' ⭐</span>':'')+((r.late&&typeof rtWaitAsBefore==="function"&&rtWaitAsBefore(r.job))?'<span style="font-size:10.5px;font-weight:800;padding:1px 6px;border-radius:7px;background:#fee2e2;color:#991b1b">late</span>':'')+'</div></div>'; });   // CHOREWAIT: the late chip only on 3+-a-week rows (as before); a waiting weekly row is plain — this panel is on the kids' pages
   if(all) h+='<div style="padding:10px 12px;font-size:13px;font-weight:800;color:#166534;text-align:center">All done — the house thanks you 🎉</div>';
   return h+'</div>';
 }
@@ -15895,6 +15920,33 @@ function llKidDayLoads(kid,iso){ const t=llToday(); if(!iso) return [];
   const r=llProject(t,n+1,false)[n], out=r.loads.filter(function(id){ return llWho(id,iso).who===kid&&r.waited.indexOf(id)<0; });
   _llKidMemo[key]={at:now,v:JSON.stringify(laundryLine).length,r:out}; return out; }
 function llKidFoldLoads(kid,iso){ const L=llDayLog(iso); return Object.keys(L).filter(function(id){ return llKnown(id)&&L[id]&&!L[id].with&&(L[id].by===kid||llWho(id,iso).who===kid); }); }
+// FOLDREADY_START — 👕 a kid's "Fold + put away" row waits until the load is ready to fold, and never holds the Afternoon list (her
+// report 2026-11-20: a child started his laundry and his Afternoon list already said "Fold + put away" while the load had not been
+// through the dryer — "I don't want … for him to get a penalty because it might not be ready for him to fold. I think it shouldn't
+// show up until it says that it is in the basket or out of the dryer on mom's end"; her picks 2026-11-21: "Show it, never hold the
+// list", and "Fold line first" = her yes to build it).
+//   · Ready = the load's stage is "fold" (out of the dryer: the fold pile — also where a custom cycle's last step and a hung load
+//     taken down land) or "basket" (the dry basket after the dryer). Pre-wash, washer, the wet basket, dryer, air-drying, a custom
+//     step, the wash-today bin = not ready, whoever's device reads it. A split load is ready only when every half still out is.
+//   · Not ready → the row keeps its place (rows are ticked by index, so nothing after it moves) as cad "none": not drawn, can't be
+//     ticked, never due, never late, no "— not done", not in any total / allDone / 🏁 bonus / Kids today count.
+//   · Ready, or already put away → cad "asneeded": shown on the Afternoon list, tappable, pays its own stars; ✓ puts the load away
+//     and un-✓ brings it back (FOLD_BACK) exactly as before — but it is never part of the list's total / allDone / bonus, so the list
+//     never waits on it and a row turning up after the list was finished takes nothing back.
+//   · A load not put away by tomorrow is a row on the kid's "🧺 Your laundry" card (llKidOutLoads, fold / basket), as before.
+// Nothing is written; a family without the laundry line never gets here (llDrivesKid).
+function llFoldReady(l){ return !!l&&(l.stage==="fold"||l.stage==="basket"); }   // THE test: this load record is ready to fold
+// The loads a day's Fold row stands for: that day's log load for the item (+ its hung half, LAUNDRY_SPLIT); none left → the item's
+// newest earlier load still out — the one ✓ would put away (LAUNDRY_SYNC, llKidRowHook). [] = everything put away.
+function llFoldRowLoads(id,iso){ const LD=(typeof laundryData!=="undefined"&&laundryData)||{}, e=llDayLog(iso)[id]||{};
+  const ks=e.load?[e.load,(typeof laundrySplitHalfId==="function")?laundrySplitHalfId(e.load):e.load+"_h"]:Object.keys(LD).filter(function(k){ return LD[k]&&LD[k].line===id&&LD[k].lineDay===iso; });
+  let r=ks.filter(function(k){ return !!LD[k]; }).map(function(k){ return LD[k]; });
+  if(!r.length&&typeof llOutFor==="function"){ const o=llOutFor(id,iso); if(o&&o.l) r=[o.l]; }
+  return r; }
+function llFoldRowWaits(id,iso){ return !llFoldRowLoads(id,iso).every(llFoldReady); }
+function llFoldRow(kid,id,iso){ const w=llFoldRowWaits(id,iso), st={emoji:"👕",label:"Fold + put away: "+llLabelFull(id),pts:llKidPts(kid,"fold"),cad:w?"none":"asneeded",laundry:"lineFold",line:id};
+  if(w) st.llHidden=true; else st.foldReady=true; return st; }
+// FOLDREADY_END
 function llRtSteps(slot,kid,steps,dayName){ if(typeof window==="undefined") return _llRtStepsRaw(slot,kid,steps,dayName);   // ⚡ LL_MEMO: same input steps → same list
   const dn=dayName||(typeof day!=="undefined"?day:""), key="R|"+slot+"|"+kid+"|"+dn+"|"+llToday(), m=_llM[key], now=Date.now();
   if(m&&m.s===steps&&now-m.t<15000) return m.v; const v=_llRtStepsRaw(slot,kid,steps,dayName); _llM[key]={t:now,v:v,s:steps}; return v; }
@@ -15903,7 +15955,7 @@ function _llRtStepsRaw(slot,kid,steps,dayName){ if(!llDrivesKid(kid)) return ste
   const dn=dayName||(typeof day!=="undefined"?day:""), iso=(dn&&typeof calDateForWeekDay==="function")?calDateForWeekDay(dn):null; if(!iso) return out;
   const A=llAll();
   if(slot==="morning"||slot==="afternoon") llKidDayLoads(kid,iso).forEach(function(id){ if(A[id]&&llWhen(id)===slot) out.push({emoji:A[id].emoji||"🧺",label:"Start your laundry: "+llLabelFull(id),pts:llKidPts(kid,"start"),cad:"daily",laundry:true,line:id}); });   // 🌤 LL_WHEN: an Afternoon load's Start row goes ahead of the Fold rows (they only grow at the end, so no tick key moves)
-  if(slot==="afternoon") llKidFoldLoads(kid,iso).forEach(function(id){ if(A[id]) out.push({emoji:"👕",label:"Fold + put away: "+llLabelFull(id),pts:llKidPts(kid,"fold"),cad:"daily",laundry:"lineFold",line:id}); });
+  if(slot==="afternoon") llKidFoldLoads(kid,iso).forEach(function(id){ if(A[id]) out.push(llFoldRow(kid,id,iso)); });   // FOLDREADY: hidden in place until ready; then shown, never holding the list
   return out; }
 // LL_WHEN_START — 🌅 / 🌤 which list a load's Start row goes on (Sara DeWalt's report 2026-11-02, via Adrienne: "I would like to do 2 for
 // the day but then Kenzie's school would not open because she couldn't check off the morning chore of putting in a load when there was
@@ -45117,7 +45169,7 @@ function kcPointsHTML(k){
       if(!due.length&&!_am.length) return;
       const isDone=function(i){ return isM?(typeof mStepDoneOn==="function"&&mStepDoneOn(k,dn,i)):rtDoneOn(slot,k,dn,i); };
       const done=due.filter(isDone);
-      let left=0; due.forEach(function(i){ if(!isDone(i)) left+=((steps[i]||{}).pts||0); });
+      let left=0; due.forEach(function(i){ if(!isDone(i)) left+=((!isM&&typeof rtFallPay==="function"&&!cadDueOn((steps[i]||{}).cad||"daily",dn))?rtFallPay(steps[i],rtLateDays(slot,k,i)):((steps[i]||{}).pts||0)); });   // CHOREFALL: a falling row counts what it pays today
       _am.forEach(function(it){ if(!amDoneBy(it,_ai)) left+=(it.pts||0); });   // SENDAM
       const allDone=done.length===due.length&&_amD===_am.length;
       const bonus=(typeof rtBonusFor==="function")?rtBonusFor(slot,k):0;
