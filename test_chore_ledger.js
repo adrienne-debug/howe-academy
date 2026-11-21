@@ -23,7 +23,8 @@
  * change, with last week's check-offs loaded and not yet loaded; the empty day; the not-on-this-device day · G the chips, arrows and
  * kid chips move the view and write nothing; no database read or write, no log line, no bank change, through all of it · H the chore
  * name opens its card for Mom, not for Dad · I the first-minute card once per device, its one local flag · J every other screen =
- * the app before (git show abb03281:index.html), byte for byte, apart from the button.
+ * the app before (this tree's index.html with the LEDGER block and its one header call taken out, house.js not loaded there), byte for
+ * byte, apart from the button.
  * LEDGER_INDEX / LEDGER_HJS = other copies of index.html / house.js (the mutation checks).   run: node test_chore_ledger.js
  */
 "use strict";
@@ -32,9 +33,17 @@ const W = require(path.join(__dirname, "test_fixtures", "house_world.js"));
 let pass = 0, fail = 0; const ok = (n, c, x) => { if (c) { pass++; console.log("  ok  - " + n); } else { fail++; console.log("  FAIL- " + n + (x !== undefined ? "  (" + JSON.stringify(x).slice(0, 900) + ")" : "")); } };
 const J = x => JSON.stringify(x), clone = x => JSON.parse(J(x));
 const IDX = process.env.LEDGER_INDEX || path.join(__dirname, "index.html"), HJS = fs.readFileSync(process.env.LEDGER_HJS || path.join(__dirname, "house.js"), "utf8");
-const BASE_SHA = "abb03281";
-let BASE = null; try { const t = path.join(os.tmpdir(), "chore_ledger_base_" + process.pid + ".html"); fs.writeFileSync(t, cp.execSync("git show " + BASE_SHA + ":index.html", { cwd: __dirname, maxBuffer: 64 << 20, stdio: ["ignore", "pipe", "ignore"] })); BASE = t; } catch (e) { BASE = null; }
-console.log("(the app before: " + (BASE ? BASE_SHA : "none — git show " + BASE_SHA + " failed; the checks against it are SKIPPED") + ")");
+// "The app before" = THIS tree with the ledger taken out (no git, no pinned commit, so a later merge that changes another screen changes
+// both sides alike): index.html beside this file minus the LEDGER block and the one call in the Kids today header (each must match
+// exactly once — renamed or moved, the test stops loudly), and house.js not loaded on that side (LEDGERVIEW is only reached through it).
+const BASE = (() => { let src = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+  const blk = /^\/\/ LEDGER_START[^\n]*\n[\s\S]*?^\/\/ LEDGER_END\n/gm, call = "+(typeof ledgerBtn===\"function\"?ledgerBtn(_kToday):'')+'</div>';   // 📒 LEDGER";
+  const nb = (src.match(blk) || []).length, nc = src.split(call).length - 1;
+  if (nb !== 1 || nc !== 1) throw new Error("test_chore_ledger: the app before cannot be built — LEDGER block found " + nb + "×, the header call " + nc + "× (each must be exactly once)");
+  src = src.replace(blk, "").replace(call, "+'</div>';");
+  if (/ledgerBtn|ledgerOpen|^\/\/ LEDGER_(START|END)/m.test(src)) throw new Error("test_chore_ledger: the app before still mentions the ledger");
+  const t = path.join(os.tmpdir(), "chore_ledger_before_" + process.pid + ".html"); fs.writeFileSync(t, src); return t; })();
+console.log("(the app before: this tree's index.html with the LEDGER block and its header call taken out; house.js not loaded there)");
 
 const K = o => Object.assign({ src: { kind: "routine" }, status: "active", area: "cleaning", verdict: "", note: "", level: 1, minutes: 5 }, o);
 const FAM = () => ({
@@ -93,7 +102,7 @@ const kidsToday = (d, dad) => d.run("mdCardKidsToday(mdTodayName(),true,true" + 
 
 (async () => {
 const { w, A, B, Dd, Kk, Mo } = await mkWorld(IDX);
-const BW = BASE ? await mkWorld(BASE) : null;   // the app before, the same replay, never a ledger tap
+const BW = await mkWorld(BASE);   // the app before, the same replay, never a ledger tap
 const S = { days: {}, fate: [], weekOf: {}, screens: [], dbSame: [], notes: {} };
 // one replay, both worlds in step
 const both = async (fn) => { await fn(w.__dev || { w, A, B, Dd }); if (BW) await fn(BW.__dev); };
@@ -296,7 +305,7 @@ console.log("\n── G · chips, arrows, kid chips move the view and write noth
   const s = seen(A);
   ok("…no database ref at all (no read, no write), no localStorage key, no write in the database's log, the app's own state unchanged", s.refs.length === 0 && s.ls.length === 0 && w.since(m).length === 0 && appState(A) === s0, [s.refs.slice(0, 4), s.ls, w.since(m).slice(0, 3)]);
   A.run("lgClose();1");
-  ok("the whole replay: the database the same as the app before's (every write the same), on all " + S.dbSame.length + " days", !BW || S.dbSame.every(x => x[1] && x[2]), S.dbSame.filter(x => !(x[1] && x[2])));
+  ok("the whole replay: the database the same as the app before's (every write the same), on all " + S.dbSame.length + " days", S.dbSame.length === 9 && S.dbSame.every(x => x[1] && x[2]), S.dbSame.filter(x => !(x[1] && x[2])));
 }
 
 // ── H ──
@@ -324,9 +333,8 @@ console.log("\n── I · the first-minute card: once per device, one local fla
 }
 
 // ── J ──
-console.log("\n── J · every other screen = the app before (" + BASE_SHA + "), byte for byte, but the button ──");
-if (!BW) console.log("  (SKIPPED: git show " + BASE_SHA + " could not be read)");
-else {
+console.log("\n── J · every other screen = the app before (this tree without the ledger), byte for byte, but the button ──");
+{
   ok("Sun 11/22 … Mon 11/30, at 6 PM each day: Mom's and Dad's Kids today (button taken out), every kid's pop-up (morning … stars), every kid's lists, the whole Mom's Day and Dad's Day pages, Kids' Corner, the Click-off Log, 🧾 Today's check-offs, every Star Bank = the app before", S.screens.every(x => x[1].length === 0), S.screens.filter(x => x[1].length));
   ok("the Kids today card's only change is the button: taking it out gives the app before's HTML", S.screens.length === 9);
   const L = S.lastScr; ok("(those are real pages: Mom's Day " + L.momsDay.length + " chars with Kids today, Dad's Day " + L.dadsDay.length + ", Kids' Corner " + L.corner.length + ", none threw)", L.momsDay.length > 5000 && /Kids today/.test(L.momsDay) && L.dadsDay.length > 3000 && /Kids today/.test(L.dadsDay) && L.corner.length > 1000 && ![L.momsDay, L.dadsDay, L.corner].some(x => /^threw/.test(x)), [L.momsDay.slice(0, 80), L.dadsDay.slice(0, 80), L.corner.slice(0, 80)]);
