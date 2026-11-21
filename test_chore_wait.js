@@ -166,7 +166,7 @@ const B1 = {};
   ok("…the 3-a-week row keeps \"(1 day late)\" there: \"Empty the trash (1 day late)\" Tue and Thu", line(1, "mom").indexOf("Empty the trash (1 day late)") >= 0 && line(3, "mom").indexOf("Empty the trash (1 day late)") >= 0, [line(1, "mom")]);
   ok("…the same card drawn on a kid's device: no note on the waiting row", line(2, "kid").indexOf("Vacuum the den") >= 0 && line(2, "kid").indexOf("from ") < 0, line(2, "kid"));
   const kp = Object.keys(kidPop).map(n => kidPop[n].kid_a + kidPop[n].kid_b).join("");
-  const kpPlain = kp.replace(/Empty the trash \+3 ⭐<span class="rt-late">\d days? late<\/span>/g, "");
+  const kpPlain = kp.replace(/Empty the trash (?:\+3|3 → \d) ⭐<span class="rt-late">\d days? late<\/span>/g, "");
   ok("a kid's device opening the same pop-up: no note, and no \"late\" or red but the 3-a-week row's own tag (kids too, as before)", kp.indexOf("from ") < 0 && !/late/.test(kpPlain) && !RED.test(kpPlain) && /Vacuum the den/.test(kidPop[2].kid_a) && /Empty the trash \+3 ⭐<span class="rt-late">1 day late<\/span>/.test(kidPop[1].kid_a));
   ok("Mom's pop-up: the 3-a-week row has the red tag as before (Tue \"1 day late\"), not the note", /Empty the trash \+3 ⭐<span class="rt-late">1 day late<\/span>/.test(mom[1].kid_a) && !/Empty the trash \+3 ⭐<span style/.test(mom[1].kid_a));
   Object.assign(B1, { html, mom });
@@ -223,7 +223,7 @@ if (BASE) { const run = async index => { const { w, A, B } = await mkWorld("prev
       if (n === 1) { const m = w.mark(); A.run("rtWave('chores','kid_a',_todayDay," + stepIdx(A, "chores", "kid_a", "Vacuum the den") + ")"); await w.flush(); out.wave = writes(w, m); }
       if (n === 5) { const m = w.mark(); A.run("amSend('chores','kid_b',_todayDay," + stepIdx(A, "chores", "kid_b", "Wash the bikes") + ")"); await w.flush(); out.send = writes(w, m); }
       await go(w, n, 17, 0); teeth(B); await w.flush(); const a = draw(B, "chores", "kid_a"), b = draw(B, "chores", "kid_b"), pa = draw(B, "afternoon", "kid_a"), pb = draw(B, "afternoon", "kid_b");
-      const keep = h => rowsOf(h).filter(r => /Wipe the table|Rinse the sink|Pickup the|opacity:\.55|text-decoration:line-through/.test(r) || (r.indexOf(LBL.a_trash) >= 0 && [0, 2, 4].indexOf((dOf(n).getDay() + 6) % 7) < 0)).join("");   // + the 3-a-week row on its late days
+      const keep = h => rowsOf(h).filter(r => /Wipe the table|Rinse the sink|Pickup the|opacity:\.55|text-decoration:line-through/.test(r) || (r.indexOf(LBL.a_trash) >= 0 && [0, 2, 4].indexOf((dOf(n).getDay() + 6) % 7) < 0)).join("").replace(/<s style="opacity:\.6">(\d+)<\/s> → \d+ ⭐/g, "+$1 ⭐");   // + the 3-a-week row on its late days
       out.day.push(J([keep(a0), keep(b0), keep(a), keep(b), pa, pb, B.run("JSON.stringify(typeof amFor==='function'?amFor('kid_b',_todayDay):[])"), B.run("typeof mrIndividualHTML==='function'?mrIndividualHTML('kid_b'):''")]));
       out.vacOn = (out.vacOn || []).concat(onList(a, "a_vac") ? [n] : []); out.bikesOn = (out.bikesOn || []).concat(onList(b, "b_bikes") ? [n] : []); await w.flush(); }
     out.miss = misses(w); out.am = J(w.get("amCarry")); out.waved = J(w.get("waved")); return out; };
