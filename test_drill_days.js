@@ -3,18 +3,19 @@
  * card-practice line on the Curriculum page → a sheet with Mon–Fri on/off for that kind. Against code sliced out of index.html
  * (RETRWEEK + RETRFAM, GWRETR, retrSlotMinutes, DRILLROWS, DRILLDAYS, and the Mastery panel's editor with RETRSAVE +
  * DRILLSAVE inside it):
- *   1. drDaysMap (pure): every §3.7 case — on/off on an empty day, a one-kind day, a two-kind day; the two-a-day refusal;
+ *   1. drDaysMap (pure): every §3.7 case — on/off on an empty day, a one-kind day, a two-kind day; the refusal (three a day
+ *      since DRILLTHREE, slice 9 — a two-kind day's third kind takes week3; test_drill_three.js);
  *      the same kind never stored twice; week always all five days, week2 cleaned
  *   2. a day tap hands drPlanWrite exactly {week, week2} (never settings) with {rhythm:true}: one targeted update() at
  *      mastery/retrievalPlan/<kid>, the live pass queued for that child
- *   3. the two-a-day message: nothing saved, both kinds named, their lines offered
+ *   3. the full-day message (three a day, DRILLTHREE): nothing saved, all three kinds named, their lines offered
  *   4. Mom only; ?dryrun=1 sends nothing to the database
  *   5. the stale-copy trap: a day changed in the sheet, then a number saved in the Mastery panel → the new days survive
  *      (and the control: with the old editor copy put back, the old days WOULD come back — the drop is what saves them)
  *   6. a child running on the built-in starting days: the first tap saves the whole row as shown
  *   7. the sheet shows the saved days (the builder's own reader), the line's minutes and with Mom / on their own
  *   8. greyed "can't run" lines stay pointers to Mastery (the empty chip: Card practice, slice 4); an ok line opens the sheet
- *   9. random taps: only the tapped kind on the tapped day changes, never a duplicate, never a third kind
+ *   9. random taps: only the tapped kind on the tapped day changes, never a duplicate, never a fourth kind
  *   run:  node test_drill_days.js
  */
 const fs = require("fs"), path = require("path"), vm = require("vm");
@@ -101,7 +102,10 @@ console.log("1. drDaysMap — §3.7 onto the two slots");
   r = M(wk("off", "off", "off", "off", "off"), { mon: "match" }, "mon", "drill", true);
   ok("first slot off, second full → the first slot (week first); the second stays", r.ok && r.week.mon === "drill" && J(r.week2) === J({ mon: "match" }), r);
   r = M(wk("sprint", "off", "off", "off", "off"), { mon: "drill" }, "mon", "match", true);
-  ok("two-kind day, a third → refused, names both (week, week2)", r.ok === false && J(r.full) === J(["sprint", "drill"]) && !r.week, r);
+  // DRILLTHREE (slice 9, her pick 2026-11-22 "Allow three"): a third kind now takes the third slot; four is the refusal
+  ok("two-kind day, a third → the third slot (week3); the first two not moved", r.ok && r.changed && r.week.mon === "sprint" && J(r.week2) === J({ mon: "drill" }) && J(r.week3) === J({ mon: "match" }), r);
+  r = clone(w.drDaysMap(wk("sprint", "off", "off", "off", "off"), { mon: "drill" }, "mon", "match", true, { mon: "recheck" }));
+  ok("three-kind day, a fourth → refused, names all three (week, week2, week3)", r.ok === false && J(r.full) === J(["sprint", "drill", "recheck"]) && !r.week, r);
   r = M(wk("drill", "off", "off", "off", "off"), {}, "mon", "drill", true);
   ok("already there → nothing to save", r.ok && r.changed === false && r.week.mon === "drill", r);
   r = M(wk("sprint", "off", "off", "off", "off"), { mon: "drill" }, "mon", "drill", true);
@@ -156,29 +160,29 @@ console.log("2. a day tap → drPlanWrite({week, week2}, {rhythm:true})");
   ok("no-ladder child, Match on Tue → week.tue", J(w.writes[0].v) === J({ week: wk("match", "match", "match", "off", "match"), week2: {} }), w.writes[0] && w.writes[0].v);
 }
 
-console.log("3. the two-a-day message — never a silent drop");
+console.log("3. the three-a-day message — never a silent drop");   // DRILLTHREE: was two a day
 {
-  const plan = { kida: { week: wk("sprint", "off", "off", "off", "off"), week2: { mon: "drill" } } };
+  const plan = { kida: { week: wk("sprint", "off", "off", "off", "off"), week2: { mon: "drill" }, week3: { mon: "recheck" } } };
   const w = world({ plan });
   w.drDaysOpen("kida", "match");
-  ok("Match on Mon (Sprint + Drill already) → refused", w.drDaysTap("mon") === false);
+  ok("Match on Mon (Sprint + Drill + Re-checks already) → refused", w.drDaysTap("mon") === false);
   ok("nothing written, nothing queued", w.writes.length === 0 && w.queued.length === 0);
   ok("the plan is unchanged", J(w.masteryData.retrievalPlan) === J(plan));
   const h = sheet(w);
-  ok("message names the day and both kinds", h.indexOf("Monday already has two: \u{1F3C3} Sprint and \u{1F0CF} Daily Drill. Turn one of those off for Monday first.") >= 0, h.slice(h.indexOf("dr-full"), h.indexOf("dr-full") + 300));
-  ok("offers both lines to tap", /onclick="drDaysOpen\('kida','sprint'\)"/.test(h) && /onclick="drDaysOpen\('kida','drill'\)"/.test(h));
+  ok("message names the day and all three kinds", h.indexOf("Monday already has three: \u{1F3C3} Sprint, \u{1F0CF} Daily Drill and \u{1F4C5} Sprint Re-checks. Turn one of those off for Monday first.") >= 0, h.slice(h.indexOf("dr-full"), h.indexOf("dr-full") + 300));
+  ok("offers all three lines to tap", /onclick="drDaysOpen\('kida','sprint'\)"/.test(h) && /onclick="drDaysOpen\('kida','drill'\)"/.test(h) && /onclick="drDaysOpen\('kida','recheck'\)"/.test(h));
   ok("Match still off on Mon", litIn(h).indexOf("mon") < 0);
   w.drDaysOpen("kida", "drill"); w.drDaysTap("mon");
-  ok("follow the offer: Drill off on Mon → saved", w.writes.length === 1 && J(w.writes[0].v.week2) === "{}" && w.writes[0].v.week.mon === "sprint");
+  ok("follow the offer: Drill off on Mon → saved; the third slot carried", w.writes.length === 1 && J(w.writes[0].v.week2) === "{}" && w.writes[0].v.week.mon === "sprint" && J(w.writes[0].v.week3) === J({ mon: "recheck" }), w.writes[0] && w.writes[0].v);
   w.drDaysOpen("kida", "match");
   ok("…the message is gone on the next sheet", sheet(w).indexOf("dr-full") < 0);
-  ok("…and now Match fits on Mon (second slot)", w.drDaysTap("mon") === true && J(w.writes[1].v.week2) === J({ mon: "match" }), w.writes[1] && w.writes[1].v);
+  ok("…and now Match fits on Mon (the freed second slot)", w.drDaysTap("mon") === true && J(w.writes[1].v.week2) === J({ mon: "match" }) && J(w.writes[1].v.week3) === J({ mon: "recheck" }), w.writes[1] && w.writes[1].v);
 }
 {
-  // no-ladder child with a dead Sprint saved on a day: it still fills a slot, and is offered as a pointer to Mastery
-  const w = world({ plan: { kidb: { week: wk("sprint", "off", "off", "off", "off"), week2: { mon: "match" } } } });
+  // no-ladder child with a dead Sprint + Re-checks saved on a day: they still fill slots, and are offered as pointers to Mastery
+  const w = world({ plan: { kidb: { week: wk("sprint", "off", "off", "off", "off"), week2: { mon: "match" }, week3: { mon: "recheck" } } } });
   w.drDaysOpen("kidb", "drill");
-  ok("dead Sprint + Match → Drill refused, not silently dropped", w.drDaysTap("mon") === false && w.writes.length === 0);
+  ok("dead Sprint + Match + dead Re-checks → Drill refused, not silently dropped", w.drDaysTap("mon") === false && w.writes.length === 0);
   const h = sheet(w);
   ok("the Sprint that can't run points to Mastery; Match opens its sheet", /can’t run for Kid B yet · change in Mastery →/.test(h) && /onclick="drDaysOpen\('kidb','match'\)"/.test(h));
 }
@@ -298,9 +302,9 @@ console.log("9. random taps keep the rules");
   const K = ["drill", "match", "sprint", "recheck"], pick = a => a[Math.floor(Math.random() * a.length)];
   let bad = 0, refused = 0, n = 0;
   for (let i = 0; i < 400; i++) {
-    const w1 = {}, w2 = {};
-    DAYS.forEach(d => { w1[d] = pick(K.concat(["off", "off"])); if (Math.random() < .6) w2[d] = pick(K.concat(["off"])); });
-    const plan = { kida: { week: w1, week2: w2 } };
+    const w1 = {}, w2 = {}, w3 = {};   // DRILLTHREE: + a third row on some plans
+    DAYS.forEach(d => { w1[d] = pick(K.concat(["off", "off"])); if (Math.random() < .6) w2[d] = pick(K.concat(["off"])); if (Math.random() < .4) w3[d] = pick(K.concat(["off"])); });
+    const plan = { kida: { week: w1, week2: w2 } }; if (i % 2) plan.kida.week3 = w3;
     const w = world({ plan });
     const k = pick(K), d = pick(DAYS);
     w.drDaysOpen("kida", k);
@@ -309,8 +313,8 @@ console.log("9. random taps keep the rules");
     const res = w.drDaysTap(d); n++;
     const after = {}; DAYS.forEach(x => { after[x] = w.retrDayKinds("kida", x).slice().sort(); });
     if (!res) {
-      // refused: the day already held two other kinds; nothing written
-      if (wasOn || before[d].length !== 2 || w.writes.length) bad++; else refused++;
+      // refused: the day already held three other kinds; nothing written (DRILLTHREE: was two)
+      if (wasOn || before[d].length !== 3 || w.writes.length) bad++; else refused++;
       continue;
     }
     const want = wasOn ? before[d].filter(x => x !== k) : before[d].concat([k]).sort();
@@ -318,16 +322,17 @@ console.log("9. random taps keep the rules");
     if (DAYS.some(x => x !== d && J(after[x]) !== J(before[x]))) bad++;
     const p = w.writes[0].v;
     if (J(Object.keys(p.week)) !== J(DAYS) || Object.keys(p.week2).some(x => p.week2[x] === p.week[x] || p.week2[x] === "off") || "settings" in p) bad++;
-    if (after[d].length > 2) bad++;
+    if (p.week3 && Object.keys(p.week3).some(x => p.week3[x] === p.week[x] || p.week3[x] === p.week2[x] || p.week3[x] === "off")) bad++;   // DRILLTHREE
+    if (after[d].length > 3) bad++;
   }
-  ok("400 random taps: only that kind on that day moves, ≤2 a day, no duplicates, whole row, never settings (" + refused + " refused)", bad === 0, bad);
+  ok("400 random taps: only that kind on that day moves, ≤3 a day, no duplicates, whole row, never settings (" + refused + " refused)", bad === 0, bad);
 }
 
 console.log("10. source");
 {
   const code = DRILLDAYS.replace(/^\s*\/\/.*$/gm, "");
   ok("block writes only through drPlanWrite (no db.ref, no set/update/remove)", !/db\.ref|\.set\(|\.update\(|\.remove\(/.test(code.replace(/classList\.remove\(/g, "")));
-  ok("drPlanWrite is handed week + week2 only, rhythm on", /drPlanWrite\(kid,\{week:week,week2:week2\},\{rhythm:true\}\)/.test(code));
+  ok("drPlanWrite is handed week + week2 (+ week3 when used — DRILLTHREE) only, rhythm on", /const pl=\{week:week,week2:week2\}; if\(drThreeIn\(kid,week3\)\) pl\.week3=week3;/.test(code) && /drPlanWrite\(kid,pl,\{rhythm:true\}\)/.test(code));
   ok("no 🔀 emoji", DRILLDAYS.indexOf("\u{1F500}") < 0);
   ok("no kid names in the block", !/lincoln|ellis|lucy|julian|caleb|andrew|taylor|makenzie/i.test(code));
   ok("builder untouched: retrDayKinds still the RETRFAM filter", /function retrDayKinds\(kid,dk\)\{\n  const out=\[\], lad=retrHasLadder\(kid\);/.test(src));
