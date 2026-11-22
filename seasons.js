@@ -72,6 +72,15 @@
 // ticked is history: re-wording, re-assigning or deleting the to-do never touches it, so its stars are never stranded or doubled.
 // 🤫 a surprise's to-dos never go to a kid. Nothing here ever gates school, the morning gate, a routine or a missed chore — this is
 // its own list on its own page.
+//
+// SEASONREPEAT slice 7 (her "Repeating nights" 2026-11-22; her words 11/21: "multiple options even pick the days and add them as well"):
+// the 📅 Schedule pop-up has three ways — One day (as before) · Every week (the next 2–12 of one weekday) · Pick days (tap up to 20,
+// then add them all at once). EACH DAY IS ITS OWN ORDINARY calendar/events/<id> record — the same one a single tap makes — linked
+// in the idea's ev:{} (🤐: its own date in on:{}). Nothing new is stored and no calendar code changes: the calendar has no
+// "repeating" events. A day the idea is already on is skipped, never doubled; a day that went by can't be added. ✕ Take off still
+// works per day, and "✕ Take all N days off" clears them together; deleting or 🌙 parking the idea takes every day off.
+// "Its day" = the next day still to come (today counts), else the last one — for its row, the kids' countdown and the sort. Its
+// to-dos ("N days before", Dad's list, a kid's jobs, 🔴 NOW) count back from its FIRST day: a to-do happens once, not every night.
 (function(){
 "use strict";
 let snData={}, snSecret={}, snOn=false, snLoaded=false, snGot=0, snSid=null, snFilter="all", snEdit=null, snRoot=null, snAh="", snFor={}, snPast=false, snFocus=false;
@@ -80,12 +89,14 @@ let snDdFresh=false;   // SEASONJOBS fix (hub review 11/21): Dad's list has come
 let snJobs={}, snJobsOk=false;   // SEASONJOBS step B: seasonJobs/ (every kid's season jobs) — Mom's device only
 const SN_BOOK_DAYS=7, SN_NOW_MAX=5;   // 🎟 a book-by date shows in 🔴 NOW from a week ahead · NOW lists at most this many lines
 const SN_STARS=3;   // her answer 2026-11-20: "three ⭐ each per season"
+const SN_WEEKS_MIN=2, SN_WEEKS_MAX=12, SN_PICK_MAX=20;   // SEASONREPEAT: "every week" puts 2–12 on · "pick days" adds up to 20 at once
 const SN_KINDS=[["holiday","🎄","Holiday season"],["summer","☀️","Summer bucket list"],["season","🍂","A season"],["trip","🧳","Trip"],["party","🎂","Party or event"],["someday","💭","Someday list"]];
 const SN_SIZES=[["quick","⚡","Quick"],["home","🏠","At home"],["out","🚗","Outing"]];
 const SN_HIDE=[["","👀","Everyone can see it"],["hint","✨","Surprise, with a hint"],["none","🤐","Surprise, no hint"]];
 const SN_HINT_TITLE="A surprise", SN_HINT_EMOJI="✨";
 const SN_FILTERS=[["all","All"],["todo","Not scheduled yet"],["sched","Scheduled"],["done","Done"],["skip","🌙 Not this year"]];
 const SN_MOM={id:"mom",name:"Mom",color:"#b5394a"}, SN_DAD={id:"dad",name:"Dad",color:"#1d4ed8"}, SN_FAM={id:"family",name:"Everyone",color:"#2B7A78"};
+const SN_MODES=[["one","One day"],["week","Every week"],["pick","Pick days"]], SN_DOWL=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"], MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
@@ -209,8 +220,13 @@ function line(sid,iid,kind,lid){return lines(sid,kind).find(L=>L.id===lid&&L.iid
 function lineBase(L,kind){return (L.iid?base(L.sid,L.iid,hideOf(L.it)):"seasons/extra/"+L.sid)+"/"+kind+"/"+L.id;}
 function parked(L){return !!(L.it&&L.it.skip);}   // 🌙 not this year: its lines rest too
 function ideaDay(it){if(!it)return "";const W=whens(it),t=today(),up=W.filter(w=>w.d>=t)[0];return up?up.d:(W.length?W[W.length-1].d:"");}
+// SEASONREPEAT: an idea on several days. Its to-dos count back from its FIRST day (a to-do happens once, not every night — and one
+// that was missed stays "late" instead of hopping to the next night). With one day, first day = its day, exactly as before.
+function firstDay(it){const W=it?whens(it):[];return W.length?W[0].d:"";}
+function nightsOf(it){const m={};whens(it).forEach(w=>{m[w.d]=true;});return m;}   // the days it is already on
+function weekDates(from,dow,n){let d=from,i=0;while(dOf(d).getUTCDay()!==dow&&i++<7)d=addDays(d,1);const out=[];for(let k=0;k<n;k++)out.push(addDays(d,7*k));return out;}
 // ✅ a to-do's day: its own date, or N days before the idea's day — worked out now, so it moves when the idea moves
-function tdDue(L){const r=L.r;if(isIso(r.due))return r.due;if(L.it&&r.before!=null&&+r.before>=0){const d=ideaDay(L.it);return d?addDays(d,-Math.floor(+r.before)):"";}return "";}
+function tdDue(L){const r=L.r;if(isIso(r.due))return r.due;if(L.it&&r.before!=null&&+r.before>=0){const d=firstDay(L.it);return d?addDays(d,-Math.floor(+r.before)):"";}return "";}
 function mdTodos(iso){try{return ((typeof momdayData!=="undefined"&&momdayData&&momdayData[iso])||{}).todos||{};}catch(e){return {};}}
 function tdCopy(L){return isIso(L.r.list)?(mdTodos(L.r.list)["sn"+L.id]||null):null;}   // its copy on Mom's own list, if she made one and it's still there
 function tdDone(L){const c=tdCopy(L),d=dadCopy(L),j=kidCopy(L);return !!(L.r.done||(c&&c.done)||(d&&d.done)||(j&&j.done));}
@@ -323,7 +339,7 @@ function statusLine(it,st,W){
   if(st==="skip")return '<span class="sn-st skip">🌙 not this year</span>';
   if(st==="done")return '<span class="sn-st done">✅ did it'+(isIso(it.did)?" · "+fmtDay(it.did):"")+'</span>';
   if(st==="todo")return '<span class="sn-st todo">not scheduled yet</span>';
-  const up=W.filter(w=>w.d>=today()),w=(st==="sched"?up[0]:W[W.length-1]),more=W.length-1;
+  const up=W.filter(w=>w.d>=today()),w=(st==="sched"?up[0]:W[W.length-1]),more=up.length-1;   // SEASONREPEAT: "+N more" = days still to come
   const tail=hideOf(it)==="none"?" · not on the calendar":(hideOf(it)==="hint"?" · calendar says ✨ "+SN_HINT_TITLE:"");
   if(st==="past")return '<span class="sn-st past">📅 was '+whenTxt(w)+' — did it happen?</span>';
   return '<span class="sn-st sched">'+(hideOf(it)==="none"?"🤐 ":"📅 ")+whenTxt(w)+(more>0?" +"+more+" more":"")+tail+'</span>';
@@ -508,6 +524,7 @@ function ideaSheet(){
     h+='<div class="sn-lab">When</div>';
     if(!W.length)h+='<div class="sn-sub">'+(st==="skip"?"🌙 Not this year.":"Not scheduled yet.")+'</div>';
     W.forEach(w=>{h+='<div class="sn-when"><span>'+(w.k==="on"?"🤐 ":"📅 ")+whenTxt(w)+'</span><button class="sn-tool" onclick="snSched(\''+id+'\',\''+esc(w.id)+'\')">↪ Move</button><button class="sn-tool" onclick="snUnsched(\''+id+'\',\''+esc(w.id)+'\')">✕ Take off</button></div>';});
+    if(W.length>1)h+='<div class="sn-acts"><button class="sn-tool sn-del" onclick="snUnschedAll(\''+id+'\')">'+(snEdit.askOff?"Tap again to take all "+W.length+" off":"✕ Take all "+W.length+" days off")+'</button></div>';   // SEASONREPEAT
     h+='<div class="sn-acts">'+(st==="skip"?"":'<button class="sn-go" onclick="snSched(\''+id+'\')">'+(W.length?"＋ Another day":"📅 Schedule")+'</button>')
       +(st==="done"?'<button class="sn-tool" onclick="snUndid(\''+id+'\')">↩ Not done after all</button>':(st==="skip"?"":'<button class="sn-tool" onclick="snDid(\''+id+'\')">✓ We did it</button>'))
       +(st==="skip"?'<button class="sn-tool" onclick="snUnskip(\''+id+'\')">↩ Bring it back</button>':(st==="done"?"":'<button class="sn-tool" onclick="snSkip(\''+id+'\')">🌙 Not this year</button>'))+'</div>';
@@ -535,25 +552,47 @@ function schedSheet(){
   const s=season(e.sid),h0=hideOf(it),mv=e.move?whens(it).find(w=>w.id===e.move):null,R=schedRange(s,e.more||0),own=evOwner();
   let h='<div class="sn-h2">'+(mv?"↪ Move":"📅 Schedule")+' — '+esc(it.t)+'</div>';
   h+='<div class="sn-sub">'+(mv?"Now on "+whenTxt(mv)+". ":"")+(h0==="hint"?"✨ The family calendar will only say “"+SN_HINT_TITLE+"”."
-    :(h0==="none"?"🤐 Nothing goes on the family calendar. Only you see the day, here.":"Tap a day. It goes on the family calendar for everyone."))+'</div>';
+    :(h0==="none"?"🤐 Nothing goes on the family calendar. Only you see the day, here.":((!mv&&e.mode&&e.mode!=="one")?"Each day goes on the family calendar for everyone.":"Tap a day. It goes on the family calendar for everyone.")))+'</div>';
   h+='<div class="sn-form">'+field("time","Time (optional)","2:00 PM");
   if(h0!=="none")h+='<label class="sn-fl"><span>For</span><select onchange="snSet(\'who\',this.value)"><option value="family"'+(e.form.who==="family"?" selected":"")+'>The whole family</option>'
     +roster().map(k=>'<option value="'+esc(k.id)+'"'+(e.form.who===k.id?" selected":"")+'>'+esc(k.name)+'</option>').join("")+'</select></label>';
-  h+='</div><div class="sn-chips"><button class="sn-f'+(e.openOnly?"":" on")+'" onclick="snDaysOpen(false)">All days</button><button class="sn-f'+(e.openOnly?" on":"")+'" onclick="snDaysOpen(true)">Open days only</button></div><div class="sn-daylist">';
+  h+='</div>';
+  const mode=mv?"one":(e.mode||"one"),had=nightsOf(it),t=today(),foot='<div class="sn-acts sn-foot"><button class="sn-tool" onclick="snCancel()">Cancel</button></div>';
+  // SEASONREPEAT: one day (as before) · the same weekday for some weeks · several days picked by hand. Moving is always one day.
+  if(!mv)h+='<div class="sn-chips sn-modes">'+SN_MODES.map(m=>'<button class="sn-f'+(mode===m[0]?" on":"")+'" onclick="snMode(\''+m[0]+'\')">'+m[1]+'</button>').join("")+'</div>';
+  if(mode==="week"){
+    const f=e.form,n=f.n,D=weekDates(R.from,f.dow,n),add=D.filter(d=>!had[d]);
+    h+='<div class="sn-lab">Which day</div><div class="sn-chips">'+DOW.map((x,i)=>'<button class="sn-f'+(f.dow===i?" on":"")+'" onclick="snDow('+i+')">'+x+'</button>').join("")+'</div>'
+      +'<div class="sn-lab">How many weeks</div><div class="sn-chips sn-n"><button class="sn-f" onclick="snWeeks(-1)"'+(n<=SN_WEEKS_MIN?" disabled":"")+'>−</button><b>'+n+'</b><button class="sn-f" onclick="snWeeks(1)"'+(n>=SN_WEEKS_MAX?" disabled":"")+'>＋</button></div>'
+      +'<div class="sn-sub">The next '+n+' '+SN_DOWL[f.dow]+'s, starting '+fmtDay(D[0])+'. Each one goes on as its own day.</div><div class="sn-daylist">'
+      +D.map(d=>dayRow(d,dayInfo(d,own),had[d]?" had":"","",had[d]?"already on — skipped":(s&&isIso(s.end)&&d>s.end?"after the season ends":""))).join("")+'</div>'
+      +'<div class="sn-acts"><button class="sn-go" onclick="snPutWeeks()"'+(add.length?"":" disabled")+'>📅 Put '+add.length+' on</button></div>'+foot;
+    return h+(e.msg?'<div class="sn-msg">'+esc(e.msg)+'</div>':"");
+  }
+  const pick=mode==="pick",S=pick?keys(e.form.sel).filter(d=>!had[d]&&d>=t).sort():[];
+  h+='<div class="sn-chips"><button class="sn-f'+(e.openOnly?"":" on")+'" onclick="snDaysOpen(false)">All days</button><button class="sn-f'+(e.openOnly?" on":"")+'" onclick="snDaysOpen(true)">Open days only</button></div>';
+  if(pick)h+='<div class="sn-sub">Tap the days you want (up to '+SN_PICK_MAX+'), then add them all at once.'+(S.length?' Picked: '+S.map(fmtShort).join(", ")+'.':"")+'</div>'
+    +'<div class="sn-acts"><button class="sn-go" onclick="snPutPicked()"'+(S.length?"":" disabled")+'>📅 Add '+S.length+' day'+(S.length===1?"":"s")+'</button></div>';
+  h+='<div class="sn-daylist">';
   let d=R.from,i=0,shown=0;
   while(d<=R.to&&i++<200){
     const x=dayInfo(d,own),cur=mv&&mv.d===d;
     if(!e.openOnly||x.open){shown++;
-      const bits=x.events.map(v=>esc(v.emoji)+" "+esc(v.title)+(v.real?" ("+esc(v.real)+")":"")+(v.time?" "+esc(v.time):"")).concat(x.secret.map(v=>"🤐 "+esc(v.t)+(v.time?" "+esc(v.time):""))).concat(x.coops.map(c=>"🏫 "+esc(c)));
-      h+='<button class="sn-day'+(x.open?" open":"")+(cur?" cur":"")+'" onclick="snPickDay(\''+d+'\')"><b>'+fmtDay(d)+(d===today()?" · today":"")+'</b>'
-        +'<span>'+(x.open?"nothing on":bits.join(" · "))+(x.breaks.length?' <i>'+esc(x.breaks.join(", "))+'</i>':"")+(x.n>=2?' <em>already '+x.n+' things</em>':"")+'</span></button>';}
+      h+=!pick?dayRow(d,x,cur?" cur":"","snPickDay"):(had[d]?dayRow(d,x," had","","already on"):dayRow(d,x,e.form.sel[d]?" pick":"","snPickToggle",e.form.sel[d]?"✓ picked":""));}
     d=addDays(d,1);
   }
   if(!shown)h+='<div class="sn-empty">No open days in these dates.</div>';
   h+='</div><div class="sn-acts"><button class="sn-tool" onclick="snDaysMore()">Show 4 more weeks</button></div>'
-    +'<div class="sn-form">'+field("any","Or any other day","","date")+'<div class="sn-fl"><span>&nbsp;</span><button class="sn-tool" onclick="snPickAny()">Put it there</button></div></div>'
-    +'<div class="sn-acts sn-foot"><button class="sn-tool" onclick="snCancel()">Cancel</button></div>';
+    +'<div class="sn-form">'+field("any","Or any other day","","date")+'<div class="sn-fl"><span>&nbsp;</span><button class="sn-tool" onclick="snPickAny()">'+(pick?"Pick it":"Put it there")+'</button></div></div>'
+    +foot;
   return h+(e.msg?'<div class="sn-msg">'+esc(e.msg)+'</div>':"");
+}
+// One day in the Schedule pop-up, with what is already on it — so she sees busy days before she adds. fn "" = not tappable.
+function dayRow(d,x,cls,fn,note){
+  const bits=x.events.map(v=>esc(v.emoji)+" "+esc(v.title)+(v.real?" ("+esc(v.real)+")":"")+(v.time?" "+esc(v.time):"")).concat(x.secret.map(v=>"🤐 "+esc(v.t)+(v.time?" "+esc(v.time):""))).concat(x.coops.map(c=>"🏫 "+esc(c)));
+  const T=fn?"button":"div";
+  return '<'+T+' class="sn-day'+(x.open?" open":"")+cls+'"'+(fn?' onclick="'+fn+'(\''+d+'\')"':"")+'><b>'+fmtDay(d)+(d===today()?" · today":"")+(note?" · "+note:"")+'</b>'
+    +'<span>'+(x.open?"nothing on":bits.join(" · "))+(x.breaks.length?' <i>'+esc(x.breaks.join(", "))+'</i>':"")+(x.n>=2?' <em>already '+x.n+' things</em>':"")+'</span></'+T+'>';
 }
 // The pop-up for ONE supply or to-do line (new or a change), for an idea or for the whole season.
 function lineSheet(){
@@ -565,11 +604,11 @@ function lineSheet(){
       +(isNew?field("name","What do you need?","4 gingerbread kits, frosting, gumdrops","","wide"):field("name","What","","","wide")+field("qty","How many (optional)","","number"))+'</div>'
       +(isNew?'<div class="sn-sub">Commas make more than one line. A number in front is how many.</div>':"");
   }else{
-    const day=it?ideaDay(it):"";
+    const day=it?firstDay(it):"",many=it?whens(it).length>1:false;
     h='<div class="sn-h2">✅ To-do</div>'+whose+'<div class="sn-form">'+field("t","What needs doing","Print the scavenger hunt","","wide")+'</div>'
       +'<div class="sn-lab">Who</div><div class="sn-chips">'+people().map(p=>'<button class="sn-pchip'+(f.who===p.id?" on":"")+'" style="--c:'+esc(p.color)+'" onclick="snLineWho(\''+esc(p.id)+'\')">'+esc(p.name)+'</button>').join("")+'</div>'
       +'<div class="sn-form">'+field("due","When — a date (optional)","","date")+(it?field("before","…or days before its day","3","number"):"")+'</div>'
-      +(it?'<div class="sn-sub">“Days before” moves by itself when the idea moves. '+(day?"Its day is "+fmtDay(day)+" right now.":"It has no day yet, so the to-do waits for one.")+'</div>':"")
+      +(it?'<div class="sn-sub">“Days before” moves by itself when the idea moves. '+(many?"It’s on more than one day, so this counts back from the first one, "+fmtDay(day)+". The to-do happens once, not every time.":(day?"Its day is "+fmtDay(day)+" right now.":"It has no day yet, so the to-do waits for one."))+'</div>':"")
       +(isKidId(f.who)?((it&&hideOf(it))?'<div class="sn-sub">🤫 This idea is a surprise, so its to-dos stay on this page. They never go to a kid.</div>'
         :'<div class="sn-form">'+field("ahead","Show it to "+esc(who(f.who).name)+" early — days ahead","0","number")+field("stars","⭐ for doing it (optional)","0","number")+'</div><div class="sn-sub">'+esc(who(f.who).name)+' sees it in Kids’ Corner ▸ ✨ Our plans ▸ Your jobs, on the day it’s due (or this many days ahead), and ticks it there. Stars pay only if you put a number here — on the tick, the same way a chore pays.</div>'):"")
       +(f.who==="dad"?((it&&hideOf(it))?'<div class="sn-sub">🤫 This idea is a surprise, so its to-dos stay on this page. They never go to Dad’s list.</div>'
@@ -719,22 +758,61 @@ function snDelIdea(){
 function snSched(iid,moveId){
   const sid=curSid();if(!flush(iid))return;const it=idea(sid,iid);if(!it)return;
   const mv=moveId?whens(it).find(w=>w.id===moveId):null,E=evs();
-  snEdit={type:"sched",sid,id:iid,move:mv?mv.id:null,openOnly:false,more:0,form:{time:mv?mv.time:"",who:(mv&&mv.k==="ev"&&E[mv.id]&&E[mv.id].who)||"family",any:""}};draw();
+  const dow=dOf(ideaDay(it)||schedRange(season(sid),0).from).getUTCDay();   // "every week" starts on its own weekday, else today's
+  snEdit={type:"sched",sid,id:iid,move:mv?mv.id:null,mode:"one",openOnly:false,more:0,form:{time:mv?mv.time:"",who:(mv&&mv.k==="ev"&&E[mv.id]&&E[mv.id].who)||"family",any:"",dow,n:4,sel:{}}};draw();
 }
 function snDaysOpen(v){if(!snEdit||snEdit.type!=="sched")return;snEdit.openOnly=!!v;draw();}
 function snDaysMore(){if(!snEdit||snEdit.type!=="sched")return;snEdit.more=(snEdit.more||0)+1;draw();}
-function snPickAny(){if(!snEdit||snEdit.type!=="sched")return;const d=snEdit.form.any;if(!isIso(d)){snEdit.msg="Pick a date first.";draw();return;}snPickDay(d);}
+function snPickAny(){if(!snEdit||snEdit.type!=="sched")return;const d=snEdit.form.any;if(!isIso(d)){snEdit.msg="Pick a date first.";draw();return;}if(snEdit.mode==="pick"&&!snEdit.move){snPickToggle(d);return;}snPickDay(d);}
+// ── SEASONREPEAT (slice 7): one idea on several days ──
+function schedMany(){return !!(snEdit&&snEdit.type==="sched"&&!snEdit.move);}
+function snMode(m){if(!schedMany())return;snEdit.mode=(m==="week"||m==="pick")?m:"one";snEdit.msg="";draw();}
+function snDow(i){if(!schedMany())return;i=Math.floor(+i);if(i>=0&&i<7)snEdit.form.dow=i;draw();}
+function snWeeks(dn){if(!schedMany())return;const f=snEdit.form;f.n=Math.max(SN_WEEKS_MIN,Math.min(SN_WEEKS_MAX,(Math.floor(+f.n)||4)+(Math.sign(+dn)||0)));draw();}
+function snPickToggle(d){
+  if(!schedMany()||!isIso(d))return;const e=snEdit,S=e.form.sel,it=idea(e.sid,e.id);e.msg="";
+  if(S[d])delete S[d];
+  else if(d<today())e.msg="That day has gone by.";
+  else if(it&&nightsOf(it)[d])e.msg="It’s already on that day.";
+  else if(keys(S).length>=SN_PICK_MAX)e.msg="That’s "+SN_PICK_MAX+". Add these first, then pick more.";
+  else S[d]=true;
+  draw();
+}
+function snPutWeeks(){if(!schedMany())return 0;const e=snEdit;return putNights(weekDates(schedRange(season(e.sid),0).from,e.form.dow,e.form.n));}
+function snPutPicked(){if(!schedMany())return 0;return putNights(keys(snEdit.form.sel));}
+// Several days at once: each is its OWN ordinary calendar event (the same record one tap makes; a ✨ hint's says only "A surprise"),
+// or for 🤐 its own date kept here — all in ONE update. A day it is already on is skipped, never doubled; a day gone by is never added.
+function putNights(D){
+  const e=snEdit,it=idea(e.sid,e.id);if(!it){snEdit=null;draw();return 0;}
+  const h=hideOf(it),b=base(e.sid,e.id,h),have=nightsOf(it),t=today(),up={},got=[];let skip=0;
+  D.slice().sort().forEach(d=>{if(!isIso(d)||d<t)return;if(have[d]){skip++;return;}if(got.length>=SN_PICK_MAX)return;have[d]=true;got.push(d);nightPaths(it,h,b,d,schedTime(e),schedWho(e),up);});
+  if(!got.length){e.msg=skip?"It’s already on "+(skip===1?"that day.":"those days."):"Pick a day first.";draw();return 0;}
+  if(it.skip)up[b+"/skip"]=null;
+  apply(up);snEdit=null;toast((h==="none"?"🤐 ":"📅 ")+(it.t||"Idea")+" → "+got.length+" day"+(got.length===1?"":"s")+(skip?" ("+skip+" already on)":""));draw();
+  return got.length;
+}
+function snUnschedAll(iid){   // take every day off at once (one ✕ per day is still on each row)
+  if(!snEdit||snEdit.type!=="idea"||snEdit.id!==iid)return;
+  if(!snEdit.askOff){snEdit.askOff=true;draw();return;}
+  snUnsched(iid);
+}
+function schedTime(e){return String(e.form.time||"").trim().slice(0,12);}
+function schedWho(e){return (e.form.who&&e.form.who!=="family"&&roster().some(k=>k.id===e.form.who))?e.form.who:"family";}
+function nightPaths(it,h,b,d,time,forWho,up){   // ONE new day for an idea: a calendar event + the idea's link to it, or a 🤐 date
+  if(h==="none"){let k;do k=rid("o");while(up[b+"/on/"+k]);const o={d};if(time)o.time=time;up[b+"/on/"+k]=o;}
+  else{let id;do id=newEvId(d);while(up["calendar/events/"+id]);up["calendar/events/"+id]=eventFor(it,h,d,time,forWho);up[b+"/ev/"+id]=true;}
+  return up;
+}
 // One tap on a day. An idea everyone can see (or a ✨ hint) → ONE family event + the idea's link to it. A 🤐 → its date kept here only.
 // Moving = the SAME event gets its new date (the calendar stays the one truth).
 function snPickDay(d){
   const e=snEdit;if(!e||e.type!=="sched"||!isIso(d))return;
   const it=idea(e.sid,e.id);if(!it){snEdit=null;draw();return;}
-  const h=hideOf(it),b=base(e.sid,e.id,h),time=String(e.form.time||"").trim().slice(0,12),forWho=(e.form.who&&e.form.who!=="family"&&roster().some(k=>k.id===e.form.who))?e.form.who:"family",up={};
+  const h=hideOf(it),b=base(e.sid,e.id,h),time=schedTime(e),forWho=schedWho(e),up={};
   const mv=e.move?whens(it).find(w=>w.id===e.move):null;
   if(mv&&mv.k==="ev"){up["calendar/events/"+mv.id+"/date"]=d;up["calendar/events/"+mv.id+"/time"]=time;up["calendar/events/"+mv.id+"/who"]=forWho;}
   else if(mv){const o={d};if(time)o.time=time;up[b+"/on/"+mv.id]=o;}
-  else if(h==="none"){const o={d};if(time)o.time=time;up[b+"/on/"+rid("o")]=o;}
-  else{const id=newEvId(d);up["calendar/events/"+id]=eventFor(it,h,d,time,forWho);up[b+"/ev/"+id]=true;}
+  else nightPaths(it,h,b,d,time,forWho,up);
   if(it.skip)up[b+"/skip"]=null;
   apply(up);snEdit=null;toast((h==="none"?"🤐 ":"📅 ")+(it.t||"Idea")+" → "+fmtDay(d));draw();
 }
@@ -1001,6 +1079,10 @@ const SN_CSS=`
 .sn-day.open{border-color:#86efac;background:#f0fdf4}
 .sn-day.open span{color:#15803d;font-weight:700}
 .sn-day.cur{border-color:#2B7A78;border-width:2.5px}
+.sn-day.pick{border-color:#2B7A78;border-width:2.5px;background:#DEF2F1}
+.sn-day.had{opacity:.6;cursor:default}
+.sn-modes{margin-top:12px}.sn-n{align-items:center}.sn-n b{min-width:28px;text-align:center;font-size:15px}
+.sn-f:disabled,.sn-go:disabled{opacity:.45;cursor:default}
 .sn-views{display:flex;gap:6px;margin-bottom:10px}
 .sn-v{flex:1;min-width:0;padding:7px 4px;border-radius:10px;border:1.5px solid var(--border);background:#fff;font-weight:800;font-size:12.5px;cursor:pointer;font-family:inherit;color:#475569}
 .sn-v small{display:block;font-size:10.5px;font-weight:700;color:#64748b;margin-top:1px}
@@ -1037,11 +1119,11 @@ window.renderSeasons=function(el,ah){
   snRoot=el;snAh=ah||"";snListen();draw();
 };
 Object.assign(window,{snNewSeason,snKind,snEditSeason,snDelSeason,snPick,snPastToggle,snFilterSet,snForToggle,snQuickAdd,snOpenIdea,snSet,snWant,snStar,snSize,snHide,snSave,snCancel,snDelIdea,
-  snSched,snDaysOpen,snDaysMore,snPickAny,snPickDay,snUnsched,snDid,snUndid,snSkip,snUnskip,
+  snSched,snDaysOpen,snDaysMore,snPickAny,snPickDay,snUnsched,snMode,snDow,snWeeks,snPickToggle,snPutWeeks,snPutPicked,snUnschedAll,snDid,snUndid,snSkip,snUnskip,
   snKids,snViewSet,snLine,snLineWho,snLineDel,snSupHave,snSupList,snSupSame,snAskNo,snSupAll,snTodoTick,snTodoMine,snBooked,snNowOpen,seasonNowLines});
 window._snTest={data:()=>snData,secret:()=>snSecret,setData:(d,s)=>{snData=d||{};snSecret=s||{};snLoaded=true;},reset:()=>{snSid=null;snFilter="all";snEdit=null;snFor={};snPast=false;snView="ideas";snAsk=null;},
   lines,line,tdDue,tdState,tdDone,supState,bookState,shopLabel,nowItems,ideaDay,view:()=>snView,ask:()=>snAsk,
   setRoot:(el,ah)=>{snRoot=el;snAh=ah||"";},draw,edit:()=>snEdit,seasons,season,ideasOf,idea,whens,state,counts,picks,openDays,dayInfo,mins,starsUsed,starMax,apply,schedRange,kindDefaults,fmtDay,curSid,OK:SN_OK,
   dadSync,dadPlan,dadWhy,dadCopy,dadNote,showDay,tdDue,tdDone,line,lines,syncPending:()=>!!snSyncT,ddFresh:v=>{if(v!==undefined)snDdFresh=!!v;return snDdFresh;},
-  kidWhy,kidCopy,kidNote,jobRec,jobStars,jobs:()=>snJobs,setJobs:j=>{snJobs=j||{};snJobsOk=!!j;}};
+  kidWhy,kidCopy,kidNote,jobRec,jobStars,firstDay,nightsOf,weekDates,putNights,jobs:()=>snJobs,setJobs:j=>{snJobs=j||{};snJobsOk=!!j;}};
 })();
