@@ -81,6 +81,21 @@
 // works per day, and "✕ Take all N days off" clears them together; deleting or 🌙 parking the idea takes every day off.
 // "Its day" = the next day still to come (today counts), else the last one — for its row, the kids' countdown and the sort. Its
 // to-dos ("N days before", Dad's list, a kid's jobs, 🔴 NOW) count back from its FIRST day: a to-do happens once, not every night.
+//
+// SEASONFOOD slice 4 (her "Food → Kitchen" 2026-11-22; plan §4.7): an idea can hold FOOD lines — a recipe from the family's own
+// Kitchen, or just words:   food/<id>  {name, mid?:<kitchen/meals id>, ts, menu?:{<"YYYY-MM-DD">:{s:"d"|"b"|"l"|"s", side?:true}}}
+// (on the idea, so a 🤫 surprise's food lives in seasonSecret/ with it). Things to buy for word-food are ordinary supply lines.
+// THE KITCHEN IS WRITTEN ONLY THROUGH ITS OWN FUNCTIONS — nothing under kitchen/ is in SN_OK:
+//   🛒 Ingredients → grIngRows + grImpOpen, the Kitchen's own tick sheet (what grFromRecipe opens: the pantry, staples and what is
+//      already on the list start unticked), labelled like supplies ("🎄 Season · Idea"; a 🤫 idea: the season only).
+//   🍽 Put on the Menu → kitRotDaySet(day, slot, {mid}|{txt}) for the meal itself, kitSideAddMid / kitSideChange for a dinner side.
+//      It picks one of the idea's days still to come (the next one first) and Dinner/Breakfast/Lunch/Snack. If that spot already has
+//      something it ASKS: replace · add as a side (dinner) · leave it — never a quiet overwrite. menu/<day> remembers where it went
+//      only after the Kitchen really has it, so the row can say "On the Menu — Fri Dec 5, snack" and ✕ take it off again.
+//   Nothing on the Menu or the Shopping List is ever moved or removed by itself: the idea's day moving, a day taken off, the food
+//   line deleted, the idea deleted or 🌙 parked — its Menu spots stay and the row (or a toast) says so plainly, with a ✕.
+//   🤫 A SURPRISE'S FOOD NEVER GOES ON THE MENU (every device shows the Menu); its ingredients may go to the list, labelled with the
+//   season only — the same rule supplies follow.
 (function(){
 "use strict";
 let snData={}, snSecret={}, snOn=false, snLoaded=false, snGot=0, snSid=null, snFilter="all", snEdit=null, snRoot=null, snAh="", snFor={}, snPast=false, snFocus=false;
@@ -96,6 +111,7 @@ const SN_HIDE=[["","👀","Everyone can see it"],["hint","✨","Surprise, with a
 const SN_HINT_TITLE="A surprise", SN_HINT_EMOJI="✨";
 const SN_FILTERS=[["all","All"],["todo","Not scheduled yet"],["sched","Scheduled"],["done","Done"],["skip","🌙 Not this year"]];
 const SN_MOM={id:"mom",name:"Mom",color:"#b5394a"}, SN_DAD={id:"dad",name:"Dad",color:"#1d4ed8"}, SN_FAM={id:"family",name:"Everyone",color:"#2B7A78"};
+const SN_MEALS=[["d","🍽","Dinner"],["b","🌅","Breakfast"],["l","☀️","Lunch"],["s","🍎","Snack"]];   // SEASONFOOD: the Kitchen's own slots
 const SN_MODES=[["one","One day"],["week","Every week"],["pick","Pick days"]], SN_DOWL=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"], MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
@@ -359,7 +375,8 @@ function itemHTML(it){
 function bookChip(it){const b=bookState(it);return !b?"":(b==="booked"?'<span class="sn-chip">🎟 booked</span>':'<span class="sn-chip'+(b==="later"?"":" warn")+'">🎟 book by '+fmtShort(it.bookBy)+(b==="late"?" — late":"")+'</span>');}
 function extraChips(it){   // on an idea's row: what it still needs
   const S=ideaLines(it,"sup").filter(L=>{const x=supState(L);return x==="need"||x==="was";}).length,T=ideaLines(it,"todo").filter(L=>!tdDone(L)),late=T.some(L=>{const x=tdState(L);return x==="late"||x==="due";});
-  return (S?'<span class="sn-chip">🧺 '+S+' to get</span>':"")+(T.length?'<span class="sn-chip'+(late?" warn":"")+'">✅ '+T.length+' to do</span>':"")+bookChip(it);
+  const F=ideaLines(it,"food").length;   // SEASONFOOD: only when it has food — an idea with none looks as before
+  return (S?'<span class="sn-chip">🧺 '+S+' to get</span>':"")+(F?'<span class="sn-chip">🍿 '+F+' food</span>':"")+(T.length?'<span class="sn-chip'+(late?" warn":"")+'">✅ '+T.length+' to do</span>':"")+bookChip(it);
 }
 // One supply line: ☐ have it · its name (tap to change) · 🛒 To the list. The "already on the list / in the pantry" say-so comes first.
 function supRow(L){
@@ -397,7 +414,8 @@ function sendAllBtn(sid,iid,A){const n=A.filter(L=>supState(L)==="need").length;
 function viewsHTML(s){
   const S=lines(s.id,"sup").filter(L=>!parked(L)),T=lines(s.id,"todo").filter(L=>!parked(L));
   const need=S.filter(L=>{const x=supState(L);return x==="need"||x==="was";}).length,open=T.filter(L=>!tdDone(L)).length,late=T.filter(L=>tdState(L)==="late").length;
-  const V=[["ideas","💡 Ideas",""],["sup","🧺 Supplies",need?need+" to get":""],["todo","✅ To-dos",open?open+" open"+(late?" · "+late+" overdue":""):""]];
+  const nf=lines(s.id,"food").filter(L=>!parked(L)).length;
+  const V=[["ideas","💡 Ideas",""],["sup","🧺 Supplies",need?need+" to get":""],["food","🍿 Food",nf?nf+"":""],["todo","✅ To-dos",open?open+" open"+(late?" · "+late+" overdue":""):""]];
   return '<div class="sn-views">'+V.map(v=>'<button class="sn-v'+(snView===v[0]?" on":"")+(v[0]==="todo"&&late?" late":"")+'" onclick="snViewSet(\''+v[0]+'\')">'+v[1]+(v[2]?'<small>'+v[2]+'</small>':"")+'</button>').join("")+'</div>';
 }
 // 🧺 Supplies: each idea's lines, soonest day first, then "Not scheduled yet", then the ones for the whole season.
@@ -488,7 +506,7 @@ function draw(){
   else{
     const S=seasons(),sid=curSid(),s=sid?season(sid):null;
     if(!S.length)h+=startHTML();
-    else{h+=barHTML(S,sid);if(s)h+=headHTML(s)+viewsHTML(s)+(snView==="sup"?supViewHTML(s):(snView==="todo"?todoViewHTML(s):(s.closed?"":addHTML())+listHTML(s)));}
+    else{h+=barHTML(S,sid);if(s)h+=headHTML(s)+viewsHTML(s)+(snView==="sup"?supViewHTML(s):snView==="food"?foodViewHTML(s):(snView==="todo"?todoViewHTML(s):(s.closed?"":addHTML())+listHTML(s)));}
   }
   snRoot.innerHTML=h+'</div>'+sheetHTML();
   if(snFocus){snFocus=false;try{const e=document.getElementById("sn-new");if(e&&e.focus)e.focus();}catch(e){}}
@@ -534,6 +552,7 @@ function ideaSheet(){
       +'<label class="sn-check"><input type="checkbox"'+(f.booked?" checked":"")+' onchange="snSet(\'booked\',this.checked)"> Booked</label></div>';
     h+='<div class="sn-lab">🧺 Supplies</div>'+(hideOf(it)&&SU.length?'<div class="sn-sub">🤫 On the Shopping List these say only “'+esc(shopLabel(sid,it))+'”, never this idea’s name. The thing’s own name does show there.</div>':"")
       +SU.map(supRow).join("")+'<div class="sn-acts"><button class="sn-tool" onclick="snLine(\'sup\',\''+id+'\',\'\')">＋ Add supplies</button>'+sendAllBtn(sid,it.id,SU)+'</div>';
+    h+='<div class="sn-lab">🍿 Food</div>'+ideaLines(it,"food").sort(foodSort).map(L=>foodRow(L,false)).join("")+'<div class="sn-acts"><button class="sn-tool" onclick="snLine(\'food\',\''+id+'\',\'\')">＋ Add food</button></div>';   // SEASONFOOD
     h+='<div class="sn-lab">✅ To-dos</div>'+TD.map(L=>todoRow(L,false)).join("")+'<div class="sn-acts"><button class="sn-tool" onclick="snLine(\'todo\',\''+id+'\',\'\')">＋ Add a to-do</button></div>';
   }
   h+='<div class="sn-acts sn-foot"><button class="sn-tool sn-save" onclick="snSave()">Save</button><button class="sn-tool" onclick="snCancel()">Cancel</button>'
@@ -599,7 +618,8 @@ function lineSheet(){
   const e=snEdit,f=e.form,it=e.iid?idea(e.sid,e.iid):null,s=season(e.sid)||{},isNew=!e.id;
   const whose='<div class="sn-sub">For '+(it?esc((it.emoji?it.emoji+" ":"")+(it.t||"")):"all of "+esc(s.name||"it"))+'.</div>';
   let h;
-  if(e.kind==="sup"){
+  if(e.kind==="food")h=foodSheet(e,f,it,whose,isNew);
+  else if(e.kind==="sup"){
     h='<div class="sn-h2">🧺 '+(isNew?"Add supplies":"Supply")+'</div>'+whose+'<div class="sn-form">'
       +(isNew?field("name","What do you need?","4 gingerbread kits, frosting, gumdrops","","wide"):field("name","What","","","wide")+field("qty","How many (optional)","","number"))+'</div>'
       +(isNew?'<div class="sn-sub">Commas make more than one line. A number in front is how many.</div>':"");
@@ -620,7 +640,7 @@ function lineSheet(){
 }
 function sheetHTML(){
   if(!snEdit)return "";
-  const inner=snEdit.type==="season"?seasonSheet():(snEdit.type==="sched"?schedSheet():(snEdit.type==="line"?lineSheet():ideaSheet()));
+  const inner=snEdit.type==="season"?seasonSheet():snEdit.type==="menu"?menuSheet():(snEdit.type==="sched"?schedSheet():(snEdit.type==="line"?lineSheet():ideaSheet()));
   return '<div id="sn-sheet" onclick="if(event.target.id===\'sn-sheet\')snCancel()"><div class="sn-sh"><button class="sn-x" onclick="snCancel()">✕</button>'+inner+'</div></div>';
 }
 
@@ -669,7 +689,7 @@ function snKids(){   // slice 3: ONE field — is this season open to the kids? 
   toast(s.kids?"🧒 Closed to the kids":"🧒 The kids can see it now — never the surprises");draw();
 }
 function snPick(sid){snSid=sid;try{HA_LS.setItem("ha_sn_sid",sid);}catch(e){}snFilter="all";snAsk=null;draw();}
-function snViewSet(v){snView=(v==="sup"||v==="todo")?v:"ideas";snAsk=null;draw();}
+function snViewSet(v){snView=(v==="sup"||v==="todo"||v==="food")?v:"ideas";snAsk=null;draw();}
 function snPastToggle(){snPast=!snPast;draw();}
 function snFilterSet(f){snFilter=SN_FILTERS.some(x=>x[0]===f)?f:"all";draw();}
 function snForToggle(w){if(snFor[w])delete snFor[w];else snFor[w]=true;const e=(typeof document!=="undefined")?document.getElementById("sn-new"):null,v=e?e.value:"";draw();
@@ -745,13 +765,13 @@ function saveIdea(){
 }
 function snSave(){if(!snEdit)return;if(snEdit.type==="season"){saveSeason();return;}if(snEdit.type==="line"){saveLine();return;}if(snEdit.type!=="idea")return;if(saveIdea()){snEdit=null;draw();}}
 function flush(iid){return !(snEdit&&snEdit.type==="idea"&&snEdit.id===iid)||saveIdea();}   // a button inside the idea pop-up keeps what she typed first
-function snCancel(){if(snEdit&&snEdit.type==="line"){lineClose();return;}snEdit=null;snAsk=null;draw();}
+function snCancel(){if(snEdit&&(snEdit.type==="line"||snEdit.type==="menu")){lineClose();return;}snEdit=null;snAsk=null;draw();}
 function snDelIdea(){
   if(!snEdit||snEdit.type!=="idea")return;
   if(!snEdit.ask){snEdit.ask=true;draw();return;}
   const sid=snEdit.sid,iid=snEdit.id,it=idea(sid,iid),up={};if(!it){snEdit=null;draw();return;}
   keys(it.ev).forEach(id=>{if(evs()[id])up["calendar/events/"+id]=null;});
-  up[base(sid,iid,hideOf(it))]=null;apply(up);snEdit=null;toast("Removed "+(it.t||"the idea"));draw();
+  up[base(sid,iid,hideOf(it))]=null;apply(up);snEdit=null;toast("Removed "+(it.t||"the idea"));stillOn(ideaLines(it,"food"));draw();
 }
 
 // ── 📅 Schedule ──────────────────────────────────────────────────────────────
@@ -833,7 +853,7 @@ function snDid(iid){
 function snUndid(iid){const sid=curSid();if(!flush(iid))return;const it=idea(sid,iid);if(!it)return;const up={};up[base(sid,iid,hideOf(it))+"/did"]=null;apply(up);snEdit=null;draw();}
 function snSkip(iid){   // 🌙 Not this year: parked without guilt — and off the calendar
   const sid=curSid();if(!flush(iid))return;const it=idea(sid,iid);if(!it)return;
-  const b=base(sid,iid,hideOf(it)),up=offPaths(it,b,null,{});up[b+"/skip"]=true;apply(up);snEdit=null;toast("🌙 Not this year");draw();
+  const b=base(sid,iid,hideOf(it)),up=offPaths(it,b,null,{});up[b+"/skip"]=true;apply(up);snEdit=null;toast("🌙 Not this year");stillOn(ideaLines(it,"food"));draw();
 }
 function snUnskip(iid){const sid=curSid();if(!flush(iid))return;const it=idea(sid,iid);if(!it)return;const up={};up[base(sid,iid,hideOf(it))+"/skip"]=null;apply(up);snEdit=null;draw();}
 
@@ -842,19 +862,21 @@ function atHome(){try{return typeof tab!=="undefined"&&tab==="moms-plan"&&!(type
 function homeRepaint(){if(!atHome())return;try{const el=document.getElementById("content");if(el&&typeof renderMomsPlan==="function")renderMomsPlan(el);}catch(e){}}
 function repaint(){if(onPage())draw();else homeRepaint();}   // these buttons are tapped on this page, or in 🔴 NOW on Home Base
 function snLine(kind,iid,lid){   // open the pop-up: lid "" = a new line · iid "" = for the whole season
-  const sid=curSid();if(!sid||(kind!=="sup"&&kind!=="todo"))return;
+  const sid=curSid();if(!sid||(kind!=="sup"&&kind!=="todo"&&kind!=="food")||(kind==="food"&&!iid))return;   // SEASONFOOD: food belongs to an idea
   const back=!!(iid&&snEdit&&snEdit.type==="idea"&&snEdit.id===iid);if(back&&!flush(iid))return;
   if(iid&&!idea(sid,iid))return;const L=lid?line(sid,iid,kind,lid):null;if(lid&&!L)return;const r=L?L.r:{};
-  snAsk=null;snEdit={type:"line",kind,sid,iid:iid||"",id:lid||null,back,form:kind==="sup"?{name:r.name||"",qty:(+r.qty>0)?String(r.qty):""}
+  snAsk=null;snEdit={type:"line",kind,sid,iid:iid||"",id:lid||null,back,form:kind==="food"?{name:r.name||"",mid:r.mid||""}:kind==="sup"?{name:r.name||"",qty:(+r.qty>0)?String(r.qty):""}
     :{t:r.t||"",who:r.who||"mom",due:isIso(r.due)?r.due:"",before:(r.before!=null&&!isIso(r.due))?String(r.before):"",ahead:ahead(r)?String(ahead(r)):"",stars:jobStars(r)?String(jobStars(r)):""}};draw();
 }
 function lineClose(){const e=snEdit;snEdit=null;if(e&&e.back&&e.iid&&idea(e.sid,e.iid)){snOpenIdea(e.iid);return;}draw();}
 function snLineWho(w){if(!snEdit||snEdit.type!=="line"||snEdit.kind!=="todo")return;snEdit.form.who=w;draw();}
+function snFoodMid(v){if(!snEdit||snEdit.type!=="line"||snEdit.kind!=="food")return;const f=snEdit.form,m=recipes()[v];f.mid=m?v:"";if(m&&!String(f.name||"").trim())f.name=String(m.name||"").slice(0,80);snEdit.msg="";draw();}
 function saveLine(){
   const e=snEdit,f=e.form,it=e.iid?idea(e.sid,e.iid):null;if(e.iid&&!it){snEdit=null;draw();return;}
   const L=e.id?line(e.sid,e.iid,e.kind,e.id):null;if(e.id&&!L){lineClose();return;}
   const b=(it?base(e.sid,e.iid,hideOf(it)):"seasons/extra/"+e.sid)+"/"+e.kind+"/",up={};
-  if(e.kind==="sup"){
+  if(e.kind==="food"){if(!foodSave(e,f,L,b,up))return;}
+  else if(e.kind==="sup"){
     if(!L){
       const parts=String(f.name||"").split(/[,\n]/).map(x=>x.trim()).filter(Boolean).slice(0,30);
       if(!parts.length){e.msg="Type what you need first.";draw();return;}
@@ -882,7 +904,7 @@ function saveLine(){
 }
 function snLineDel(){
   const e=snEdit;if(!e||e.type!=="line"||!e.id)return;if(!e.ask){e.ask=true;draw();return;}
-  const L=line(e.sid,e.iid,e.kind,e.id);if(L){const up={};up[lineBase(L,e.kind)]=null;apply(up);}lineClose();
+  const L=line(e.sid,e.iid,e.kind,e.id);if(L){const up={};up[lineBase(L,e.kind)]=null;apply(up);if(e.kind==="food")stillOn([L]);}lineClose();
 }
 // 🧺 ☐ have it — her own tick (plan §4.6: "First version: you tick 'have it' yourself")
 function snSupHave(sid,iid,lid){const L=line(sid,iid,"sup",lid);if(!L)return;const up={};up[lineBase(L,"sup")+"/have"]=L.r.have?null:true;apply(up);snAsk=null;repaint();}
@@ -954,6 +976,156 @@ function snTodoMine(sid,iid,lid){
   up[lineBase(L,"todo")+"/list"]=t;apply(up);toast("→ On your list today");repaint();
 }
 function snBooked(sid,iid){const it=idea(sid,iid);if(!it||!isIso(it.bookBy))return;const up={};up[base(sid,iid,hideOf(it))+"/booked"]=it.booked?null:true;apply(up);repaint();}
+
+// ── 🍿 SEASONFOOD slice 4: food → the Kitchen (plan §4.7) ──────────────────────
+// Reads the Kitchen's own data (kitMeals, kitPlan / kitPlanRec); writes it ONLY through the Kitchen's own functions.
+function recipes(){try{return (typeof kitMeals!=="undefined"&&kitMeals)||{};}catch(e){return {};}}
+function kRec(iso){try{if(typeof kitPlanRec==="function")return kitPlanRec(iso)||{};return ((typeof kitPlan!=="undefined"&&kitPlan)||{})[iso]||{};}catch(e){return {};}}
+function sidesOf(iso){let p={};try{p=((typeof kitPlan!=="undefined"&&kitPlan)||{})[iso]||{};if(typeof kitSideStart==="function")return kitSideStart(p)||[];}catch(e){}return Array.isArray(p.sideList)?p.sideList:[];}   // the list kitSideRemove counts in
+function recipeOf(L){const m=L.r.mid&&recipes()[L.r.mid];return m||null;}
+function foodVal(L){return recipeOf(L)?{mid:L.r.mid}:{txt:String(L.r.name||"").slice(0,80)};}   // what goes on the Menu: the recipe, or the words
+function foodSort(a,b){return (a.r.ts||0)-(b.r.ts||0)||String(a.r.name).localeCompare(String(b.r.name));}
+function mealName(t){const m=SN_MEALS.find(x=>x[0]===t);return m?m[2].toLowerCase():"";}
+function sameVal(x,v){if(!x||typeof x!=="object"||!v)return false;if(x.parts&&x.parts.main)x=x.parts.main;
+  return v.mid?x.mid===v.mid:(!x.mid&&String(x.txt||"").trim().toLowerCase()===String(v.txt||"").trim().toLowerCase()&&!!String(v.txt||"").trim());}
+function slotVal(rec,t){return t==="d"?((rec.mid||rec.txt)?{mid:rec.mid,txt:rec.txt}:null):(rec[t]||null);}
+function slotName(rec,t){
+  try{if(typeof kitRotRecName==="function"){const n=kitRotRecName(rec,t);if(n)return n;}}catch(e){}
+  const v=slotVal(rec,t);if(!v)return "";const m=v.mid&&recipes()[v.mid];return m?(m.name||"a meal"):(v.txt||(v.parts?"a meal":(v.mid?"a meal":"")));
+}
+// Is this food really on the Menu there now? (v = what was put on; a placement is matched by what it put, so renaming the line
+// or changing its recipe later never makes a real Menu entry look gone)
+function menuAt(iso,t,side,v){if(side)return sidesOf(iso).some(x=>sameVal(x,v));return sameVal(slotVal(kRec(iso),t),v);}
+function placeVal(p){return p&&p.mid?{mid:p.mid}:{txt:p&&p.txt};}
+function menuDays(it){const t=today(),o=[];(it?whens(it):[]).forEach(w=>{if(w.d>=t&&o.indexOf(w.d)<0)o.push(w.d);});return o;}   // its days still to come, today counts
+function nokit(){toast("The Kitchen isn’t ready — try again in a moment");}
+function foodRow(L,showFor){
+  const a="'"+esc(L.sid)+"','"+esc(L.iid)+"','"+esc(L.id)+"'",m=recipeOf(L),sec=!!(L.it&&hideOf(L.it)),D=menuDays(L.it),t=today(),mine=L.it?nightsOf(L.it):{};
+  const bits=[];if(L.r.mid)bits.push(m?"📖 Kitchen recipe":"📖 recipe gone from the Kitchen — words now");if(sec)bits.push("🤫 stays off the Menu");
+  if(showFor&&L.it)bits.push(esc((L.it.emoji?L.it.emoji+" ":"")+(L.it.t||"")));
+  let h='<div class="sn-ln wrap"><button class="sn-lt" onclick="snLine(\'food\',\''+esc(L.iid)+'\',\''+esc(L.id)+'\')">'+esc(L.r.name)+(bits.length?'<small>'+bits.join(" · ")+'</small>':"")+'</button>';
+  if(m)h+='<button class="sn-tool" onclick="snFoodShop('+a+')">🛒 Ingredients</button>';
+  if(!sec)h+=D.length?'<button class="sn-tool" onclick="snMenu('+a+')">🍽 Menu</button>':'<span class="sn-chip">🍽 Menu waits for a day</span>';
+  h+='</div>';
+  const M=L.r.menu||{};
+  Object.keys(M).filter(isIso).sort().forEach(iso=>{const p=M[iso];if(!p||typeof p!=="object")return;
+    const on=menuAt(iso,p.s,!!p.side,placeVal(p)),late=iso<t,stray=on&&!late&&!mine[iso],ask=snAsk&&snAsk.key==="off/"+L.id+"/"+iso;
+    const txt=!on?"Was on the Menu for "+fmtDay(iso)+" — not there now (changed in the Kitchen)"
+      :(late?"Was on the Menu — ":"On the Menu — ")+fmtDay(iso)+", "+mealName(p.s)+(p.side?" (a side)":"")+(stray?" · still there, but it’s not one of this idea’s days now":"");
+    const btn=!on?'<button class="sn-tool" onclick="snMenuOff('+a+',\''+iso+'\')">✕ Forget it</button>'
+      :(late?"":'<button class="sn-tool" onclick="snMenuOff('+a+',\''+iso+'\')">'+(ask?"Tap again — that dinner’s sides come off too":"✕ Take it off the Menu")+'</button>');
+    h+='<div class="sn-mn'+(!on||stray?" old":"")+'"><span>🍽 '+txt+'</span>'+btn+'</div>';});
+  return h;
+}
+// The 🍿 Food view: every food with its day — a holiday menu at a glance.
+function foodViewHTML(s){
+  const all=lines(s.id,"food").filter(L=>!parked(L)&&L.it),by={};
+  all.forEach(L=>{(by[L.iid]=by[L.iid]||{it:L.it,L:[]}).L.push(L);});
+  const G=Object.keys(by).map(k=>Object.assign(by[k],{day:ideaDay(by[k].it)})).sort((a,b)=>String(a.day||"9999").localeCompare(String(b.day||"9999"))||(a.it.ts||0)-(b.it.ts||0));
+  let h='<div class="sn-sub">Every food with its day. To add food, open an idea in 💡 Ideas. Nothing goes on the Menu or the Shopping List by itself.</div>',none=false;
+  G.forEach(g=>{
+    if(!g.day&&!none){none=true;h+='<div class="sn-gh2">Not scheduled yet</div>';}
+    const more=menuDays(g.it).length-1;
+    h+='<div class="sn-grp"><div class="sn-gh"><button class="sn-gt" onclick="snOpenIdea(\''+esc(g.it.id)+'\')">'+(g.day?fmtDay(g.day)+(more>0?" +"+more+" more":"")+" — ":"")+esc(g.it.emoji||"")+' <b>'+esc(g.it.t||"")+'</b> '+hideChip(g.it)+'</button></div>'
+      +g.L.sort(foodSort).map(L=>foodRow(L,false)).join("")+'</div>';
+  });
+  if(!G.length)h+='<div class="sn-empty">No food yet. Open an idea in 💡 Ideas and tap ＋ Add food.</div>';
+  return h;
+}
+// The food pop-up: a recipe from the Kitchen, or just words. Never a dead end when the Kitchen has no recipes yet.
+function foodSheet(e,f,it,whose,isNew){
+  const R=recipes(),ids=Object.keys(R).filter(k=>R[k]&&R[k].name).sort((a,b)=>String(R[a].name).localeCompare(String(R[b].name))),gone=!!(f.mid&&!R[f.mid]);
+  let h='<div class="sn-h2">🍿 '+(isNew?"Add food":"Food")+'</div>'+whose;
+  if(ids.length)h+='<div class="sn-form"><label class="sn-fl wide"><span>A recipe from the Kitchen (optional)</span><select onchange="snFoodMid(this.value)"><option value="">— no recipe, just words —</option>'
+    +ids.map(k=>'<option value="'+esc(k)+'"'+(f.mid===k?" selected":"")+'>'+esc((R[k].emoji?R[k].emoji+" ":"")+R[k].name)+'</option>').join("")+'</select></label></div>';
+  h+='<div class="sn-form">'+field("name","What food",ids.length?"Picked above, or type it":"Popcorn","","wide")+'</div>';
+  if(gone)h+='<div class="sn-sub">📖 Its recipe was taken out of the Kitchen, so it is just words now. Pick another recipe, or keep the words.</div>';
+  h+=ids.length?'<div class="sn-sub">With a recipe, 🛒 sends its ingredients to the Shopping List (you tick what you need). With words only, add what to buy as 🧺 supplies.</div>'
+    :'<div class="sn-sub">No recipes in the Kitchen yet. That’s fine: type the food and it works the same. Recipes live in Mom’s Day ▸ 🍽 Meals ▸ 📚 Meal library. Add one there and you can pick it here.</div>';
+  if(it&&hideOf(it))h+='<div class="sn-sub">🤫 This idea is a surprise, so its food stays on this page. It never goes on the Menu, because the whole family sees the Menu.</div>';
+  return h;
+}
+function foodSave(e,f,L,b,up){
+  const R=recipes(),name=String(f.name||"").trim().slice(0,80),mid=(f.mid&&(R[f.mid]||(L&&L.r.mid===f.mid)))?String(f.mid):"";
+  if(!name){e.msg="Pick a recipe or type the food.";draw();return false;}
+  if(!L){const rec={name,ts:Date.now()};if(mid)rec.mid=mid;up[b+rid("f")]=rec;}
+  else{if(name!==L.r.name)up[b+e.id+"/name"]=name;if(mid!==(L.r.mid||""))up[b+e.id+"/mid"]=mid||null;}
+  return true;
+}
+// 🛒 Ingredients: the Kitchen's own tick sheet for ONE recipe (what grFromRecipe opens), labelled like the supplies.
+function snFoodShop(sid,iid,lid){
+  const L=line(sid,iid,"food",lid),m=L&&recipeOf(L);if(!m)return;
+  if(dry()){toast("Dry run — nothing is sent");return;}
+  if(typeof grIngRows!=="function"||typeof grImpOpen!=="function"){toast("The Shopping List isn’t ready — try again in a moment");return;}
+  grImpOpen("Add ingredients — "+(m.name||L.r.name),grIngRows([{lines:m.ing,lbl:shopLabel(sid,L.it)}]),"This recipe has no ingredients yet. Add them in 🍽 Meals ▸ 📚 Meal library.");
+}
+// 🍽 Put on the Menu: one of the idea's days still to come (the next one first) · dinner / breakfast / lunch / snack.
+function snMenu(sid,iid,lid){
+  const L=line(sid,iid,"food",lid);if(!L||!L.it)return;
+  if(hideOf(L.it)){toast("🤫 A surprise’s food stays on this page");return;}
+  const D=menuDays(L.it);if(!D.length){toast("It needs a day first — 📅 Schedule the idea");return;}
+  const back=!!(snEdit&&snEdit.type==="idea"&&snEdit.id===iid);if(back&&!flush(iid))return;
+  const M=L.r.menu||{},last=Object.keys(M).sort().map(k=>M[k]).filter(p=>p&&SN_MEALS.some(x=>x[0]===p.s)).pop();
+  snAsk=null;snEdit={type:"menu",sid,iid,id:lid,back,day:D[0],slot:last?last.s:"d"};draw();
+}
+function snMenuDay(d){if(!snEdit||snEdit.type!=="menu"||!isIso(d))return;const it=idea(snEdit.sid,snEdit.iid);if(menuDays(it).indexOf(d)<0)return;snEdit.day=d;snEdit.msg="";draw();}
+function snMenuSlot(t){if(!snEdit||snEdit.type!=="menu"||!SN_MEALS.some(x=>x[0]===t))return;snEdit.slot=t;snEdit.msg="";draw();}
+function menuHere(L,d){const p=(L.r.menu||{})[d];return (p&&menuAt(d,p.s,!!p.side,placeVal(p)))?p:null;}   // already on the Menu that day (any meal)
+function menuSheet(){
+  const e=snEdit,L=line(e.sid,e.iid,"food",e.id),foot='<div class="sn-acts sn-foot"><button class="sn-tool" onclick="snCancel()">Cancel</button></div>';
+  if(!L||!L.it)return '<div class="sn-sub">That food is gone.</div>'+foot;
+  const D=menuDays(L.it),m=recipeOf(L);if(D.indexOf(e.day)<0)e.day=D[0]||"";
+  let h='<div class="sn-h2">🍽 Put on the Menu — '+esc(L.r.name)+'</div><div class="sn-sub">For '+esc((L.it.emoji?L.it.emoji+" ":"")+(L.it.t||""))+". "+(m?"It goes on as the Kitchen’s recipe.":"It goes on as words (no recipe).")+'</div>';
+  if(!e.day||hideOf(L.it))return h+'<div class="sn-empty">'+(hideOf(L.it)?"🤫 A surprise’s food stays on this page.":"It has no day still to come. 📅 Schedule the idea first.")+'</div>'+foot;
+  h+='<div class="sn-lab">Which day</div><div class="sn-chips">'+D.map(d=>'<button class="sn-f'+(e.day===d?" on":"")+'" onclick="snMenuDay(\''+d+'\')">'+fmtDay(d)+'</button>').join("")+'</div>';
+  h+='<div class="sn-lab">Which meal</div><div class="sn-chips">'+SN_MEALS.map(x=>'<button class="sn-f'+(e.slot===x[0]?" on":"")+'" onclick="snMenuSlot(\''+x[0]+'\')">'+x[1]+" "+x[2]+'</button>').join("")+'</div>';
+  const rec=kRec(e.day),cur=slotName(rec,e.slot),sides=e.slot==="d"?sidesOf(e.day):[],busy=!!cur||sides.length>0,here=menuHere(L,e.day);
+  const now=cur?esc(cur)+(sides.length?" + "+sides.length+" side"+(sides.length===1?"":"s"):""):(sides.length?sides.length+" side"+(sides.length===1?"":"s")+", no main dish":"nothing yet");
+  h+='<div class="sn-sub"><b>'+fmtDay(e.day)+", "+mealName(e.slot)+' now:</b> '+now+'</div>';
+  if(here)h+='<div class="sn-msg">It’s already on the Menu that day ('+mealName(here.s)+(here.side?", a side":"")+'). Take it off from the food’s row first to move it.</div>';
+  else if(!busy)h+='<div class="sn-acts"><button class="sn-go" onclick="snMenuGo(\'put\')">🍽 Put it on</button></div>';
+  else h+='<div class="sn-ask"><span>That spot already has '+now+'. What should happen?</span><button class="sn-tool" onclick="snMenuGo(\'replace\')">Replace it'+(sides.length?" (its sides come off too)":"")+'</button>'
+    +(e.slot==="d"?'<button class="sn-tool" onclick="snMenuGo(\'side\')">＋ Add as a side</button>':"")+'<button class="sn-tool" onclick="snCancel()">Leave it</button></div>';
+  return h+foot+(e.msg?'<div class="sn-msg">'+esc(e.msg)+'</div>':"");
+}
+// put = the spot is empty · replace = she chose it · side = a dinner side. NEVER a quiet overwrite: "put" on a busy spot asks instead.
+function snMenuGo(how){
+  const e=snEdit;if(!e||e.type!=="menu")return false;const L=line(e.sid,e.iid,"food",e.id);if(!L||!L.it||hideOf(L.it))return false;
+  const d=e.day,t=e.slot,side=how==="side";
+  if(menuDays(L.it).indexOf(d)<0||!SN_MEALS.some(x=>x[0]===t)||(side&&t!=="d")||menuHere(L,d))return false;
+  if(dry()){toast("Dry run — nothing is sent");return false;}
+  const rec=kRec(d),busy=!!slotName(rec,t)||(t==="d"&&sidesOf(d).length>0);
+  if(how==="put"&&busy){e.msg="That spot has something on it now. Pick one of the choices.";draw();return false;}
+  const v=foodVal(L);
+  try{
+    if(side){if(v.mid&&typeof kitSideAddMid==="function")kitSideAddMid(d,v.mid);else if(typeof kitSideChange==="function")kitSideChange(d,l=>l.some(x=>sameVal(x,v))?null:l.concat([v]));else{nokit();return false;}}
+    else{if(typeof kitRotDaySet!=="function"){nokit();return false;}kitRotDaySet(d,t,v);}
+  }catch(x){nokit();return false;}
+  if(!menuAt(d,t,side,v)){e.msg="The Menu didn’t change.";draw();return false;}   // e.g. the Kitchen asked for a PIN first
+  const p={s:t};if(side)p.side=true;Object.assign(p,v);const up={};up[lineBase(L,"food")+"/menu/"+d]=p;apply(up);
+  toast("🍽 "+L.r.name+" → "+fmtDay(d)+", "+mealName(t)+(side?" (a side)":""));lineClose();return true;
+}
+// ✕ off the Menu — only what this food put there, and only if it is still there (else the planner just forgets it).
+function snMenuOff(sid,iid,lid,iso){
+  const L=line(sid,iid,"food",lid);if(!L)return;const p=(L.r.menu||{})[iso];if(!p)return;
+  if(dry()){toast("Dry run — nothing is sent");return;}
+  const v=placeVal(p),side=!!p.side,on=menuAt(iso,p.s,side,v);
+  if(on){
+    if(iso<today())return;
+    if(side){if(typeof kitSideRemove!=="function"){nokit();return;}kitSideRemove(iso,sidesOf(iso).findIndex(x=>sameVal(x,v)));}
+    else{if(typeof kitRotDaySet!=="function"){nokit();return;}
+      const k="off/"+L.id+"/"+iso;if(p.s==="d"&&sidesOf(iso).length&&!(snAsk&&snAsk.key===k)){snAsk={key:k};repaint();return;}   // a dinner's sides come off with it: ask once
+      kitRotDaySet(iso,p.s,null);}
+    if(menuAt(iso,p.s,side,v)){snAsk=null;repaint();return;}   // the Kitchen didn't take it off (a PIN was asked) — keep the record
+  }
+  snAsk=null;const up={};up[lineBase(L,"food")+"/menu/"+iso]=null;apply(up);toast(on?"🍽 Taken off the Menu":"Forgotten");repaint();
+}
+// Deleting a food line, deleting or 🌙 parking its idea never touches the Menu — it says so.
+function stillOn(Ls){
+  const t=today(),A=[];Ls.forEach(L=>{const M=L.r.menu||{};Object.keys(M).filter(isIso).forEach(d=>{const p=M[d];if(p&&d>=t&&menuAt(d,p.s,!!p.side,placeVal(p)))A.push(fmtShort(d));});});
+  if(A.length)toast("🍽 Its food is still on the Menu ("+A.join(", ")+"). Change it in 🍽 Meals if you want it off.");
+  return A.length;
+}
 
 // ── 🔴 NOW on Home Base (Mom only; index.html's SEASONS block asks for this) ──
 // Due = a to-do whose day is today or went by; a 🎟 book-by date within a week or past. Not for 🌙 or done ideas, not for a 📜 past
@@ -1107,6 +1279,8 @@ const SN_CSS=`
 .sn-chip.kid{border-color:#93c5fd;color:#1d4ed8;background:#eff6ff}
 .sn-chip.dad{white-space:normal;flex:0 1 auto;max-width:150px;line-height:1.3;padding:2px 7px}
 .sn-ln.wrap{flex-wrap:wrap}
+.sn-mn{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;margin:-2px 0 6px 6px;font-size:11.5px;font-weight:700;color:#166534}
+.sn-mn.old{color:#92400e}.sn-mn .sn-tool{padding:2px 8px;font-size:11px}
 .sn-secnote{flex:1 0 100%;font-size:11px;font-weight:700;color:#6d28d9;padding:0 0 0 34px;line-height:1.35}
 .sn-kids{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:10px;padding-top:8px;border-top:1px solid #f1f5f9;font-size:12.5px;line-height:1.4;color:#475569}
 .sn-kids span{flex:1 1 200px}
@@ -1120,10 +1294,10 @@ window.renderSeasons=function(el,ah){
 };
 Object.assign(window,{snNewSeason,snKind,snEditSeason,snDelSeason,snPick,snPastToggle,snFilterSet,snForToggle,snQuickAdd,snOpenIdea,snSet,snWant,snStar,snSize,snHide,snSave,snCancel,snDelIdea,
   snSched,snDaysOpen,snDaysMore,snPickAny,snPickDay,snUnsched,snMode,snDow,snWeeks,snPickToggle,snPutWeeks,snPutPicked,snUnschedAll,snDid,snUndid,snSkip,snUnskip,
-  snKids,snViewSet,snLine,snLineWho,snLineDel,snSupHave,snSupList,snSupSame,snAskNo,snSupAll,snTodoTick,snTodoMine,snBooked,snNowOpen,seasonNowLines});
+  snKids,snViewSet,snLine,snLineWho,snLineDel,snFoodMid,snFoodShop,snMenu,snMenuDay,snMenuSlot,snMenuGo,snMenuOff,snSupHave,snSupList,snSupSame,snAskNo,snSupAll,snTodoTick,snTodoMine,snBooked,snNowOpen,seasonNowLines});
 window._snTest={data:()=>snData,secret:()=>snSecret,setData:(d,s)=>{snData=d||{};snSecret=s||{};snLoaded=true;},reset:()=>{snSid=null;snFilter="all";snEdit=null;snFor={};snPast=false;snView="ideas";snAsk=null;},
   lines,line,tdDue,tdState,tdDone,supState,bookState,shopLabel,nowItems,ideaDay,view:()=>snView,ask:()=>snAsk,
   setRoot:(el,ah)=>{snRoot=el;snAh=ah||"";},draw,edit:()=>snEdit,seasons,season,ideasOf,idea,whens,state,counts,picks,openDays,dayInfo,mins,starsUsed,starMax,apply,schedRange,kindDefaults,fmtDay,curSid,OK:SN_OK,
   dadSync,dadPlan,dadWhy,dadCopy,dadNote,showDay,tdDue,tdDone,line,lines,syncPending:()=>!!snSyncT,ddFresh:v=>{if(v!==undefined)snDdFresh=!!v;return snDdFresh;},
-  kidWhy,kidCopy,kidNote,jobRec,jobStars,firstDay,nightsOf,weekDates,putNights,jobs:()=>snJobs,setJobs:j=>{snJobs=j||{};snJobsOk=!!j;}};
+  kidWhy,kidCopy,kidNote,jobRec,jobStars,firstDay,nightsOf,weekDates,putNights,recipes,menuAt,menuDays,foodRow,menuSheet,menuGo:snMenuGo,jobs:()=>snJobs,setJobs:j=>{snJobs=j||{};snJobsOk=!!j;}};
 })();
