@@ -1528,6 +1528,7 @@ function lgRow(slot,kid,D,i,st){
     if(!/^wk:/.test(cad)||!lgCarried(slot)){ if(cad==="asneeded") r.note="as needed"; return r; }
     const E=lgDueBefore(st,D), n=E?D.k-E.k:0; r.sh=Math.max(0,full-p);
     r.note=(p<full?"paid "+p+" of "+full+" ⭐":"done late")+(E?" · due "+lgWd(E.iso):"")+((E&&rtWaitAsBefore(st))?" · "+n+" day"+(n>1?"s":"")+" late":"");
+    if(typeof lgGbRow==="function") lgGbRow(r,slot,kid,D,i,st,E,p,full);   // ⭐ LEDGERGB (L2): the row's give-back button, or what was given back
     return r; }
   if(due){
     if(typeof amGet==="function"&&amGet(kid,slot,i,D.iso)) return Object.assign(r,{ic:"🌅",note:"sent to "+(D.k===0?"tomorrow":"the next")+" morning"});
@@ -1568,7 +1569,7 @@ function lgDayData(kid,k){
     });
     const db2=lgBonus(kid,m[D.wk+"_"+D.dn+"_"+kid+"_day"],"🏆","Whole day complete"); if(db2) out.lists.push({slot:"day",title:"🏆 Whole day",rows:[db2],done:0,tot:0});
   } finally { day=pd; _prevSlWk=pw; }
-  out.lists.forEach(function(L){ L.rows.forEach(function(r){ out.earned+=r.pts||0; out.short+=r.sh||0; out.held+=r.held||0; if(r.c===0) out.open++; }); });
+  out.lists.forEach(function(L){ L.rows.forEach(function(r){ out.earned+=(r.pts||0)+(r.gb||0); out.short+=r.sh||0; out.held+=r.held||0; if(r.c===0) out.open++; }); });
   return out;
 }
 // ── drawing ──
@@ -1582,7 +1583,7 @@ function lgRowHTML(r){
   return '<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;padding:5px 2px;border-bottom:1px solid #f3f4f6;font-size:13px'+(r.c===0||r.ic==="➖"?';color:#6b7280':'')+'">'
     +'<span style="width:18px;text-align:center;flex-shrink:0">'+r.ic+'</span><span style="flex:1 1 180px;min-width:0">'+nm+(r.note?' <span style="font-size:11.5px;color:#6b7280">'+esc(r.note)+'</span>':'')+'</span>'
     +(r.pts?'<span style="font-weight:800;color:#b45309;white-space:nowrap">+'+lgStar(r.pts)+'</span>':(r.c===0&&r.want?'<span style="color:#9ca3af;white-space:nowrap">'+lgStar(r.want)+'</span>':''))
-    +(r.ts?'<span style="font-size:10.5px;color:#9ca3af;white-space:nowrap">'+esc(String(r.ts).replace(/\s+[A-Z][a-z]{2} \d{1,2}$/,""))+'</span>':'')+'</div>'; }   // the time: the stamp's date is the day on screen
+    +(r.ts?'<span style="font-size:10.5px;color:#9ca3af;white-space:nowrap">'+esc(String(r.ts).replace(/\s+[A-Z][a-z]{2} \d{1,2}$/,""))+'</span>':'')+(r.gbH||'')+'</div>'; }   // the time: the stamp's date is the day on screen
 function lgListsHTML(x,kid){
   let h='';
   x.lists.forEach(function(L){ h+='<div style="margin-top:9px;font-size:12.5px;font-weight:800;color:#374151">'+L.title+(L.tot?' <span style="font-weight:700;color:#9ca3af">'+L.done+' of '+L.tot+'</span>':'')+'</div>'+L.rows.map(lgRowHTML).join(''); });
@@ -1622,6 +1623,50 @@ function lgClose(){ const o=document.getElementById("lg-pop"); if(o) o.remove();
 function lgShow(){ if(!((typeof momHere==="function"&&momHere())||(typeof _kioskD==="function"&&_kioskD()))) return; if(SL_KIDS.indexOf(lgKid)<0) lgKid=SL_KIDS[0]; lgOff=0; lgWeek=false; lgDraw(); }
 function lgGo(kid,k,w){ if(kid&&SL_KIDS.indexOf(kid)>=0) lgKid=kid; if(k!=null) lgOff=Math.max(lgMin(),Math.min(0,k)); if(w!=null) lgWeek=!!w; lgDraw(); }
 // LEDGERVIEW_END
+// LEDGERGB_START — ⭐ Give stars back on a 📒 Ledger row (DESIGN_chore_ledger_2026-11-21 §3, slice L2; her "go" 2026-11-21). Her words
+// 11/21: "adjust if there was mistakes and say like, no, let's don't take that away for this one". A row whose tick paid less than the
+// chore's stars because it was late (CHOREFALL: "paid 6 of 10 ⭐ · due Tue") gets one button. One tap pays the missing stars as ONE plus
+// line in that kid's Star Bank ("⭐ Mom gave back: 🧹 Vacuum the den", +4). The row still reads as late; only the stars change. The same
+// spot then says what was given and offers Undo, which removes that line. Mom mode or Dad's own link only (the pop-up's own gate).
+// The line has a FIXED name, lgb_<the tick's check-off key> (bank/<kid>/adjustments/lgb_<wk>_<day>_<kid>_<a|c|e>step<i>): one per kid,
+// chore and day, so a second tap or a second device writes the same line, never a second one, and an un-tick on a list finds it
+// (toggleRtStep, LEDGERGB line in index.html: the un-tick removes it with the tick's own pay). Written only when db && !_dryRun().
+// Only a ticked row the falling-stars rule paid less: a list that carries (never Morning), a weekday chore done after its day, its due
+// day on or after RT_FALL_FROM, stars above 0, paid below them, not a plan row, not held or turned down (lgRow returns those earlier).
+function lgGbId(wk,dn,kid,slot,i){ return "lgb_"+wk+"_"+dn+"_"+kid+"_"+RT_ABBR[slot]+"step"+i; }
+function lgGbLine(kid,id){ return (bank[kid]&&bank[kid].adjustments&&bank[kid].adjustments[id])||null; }
+function lgGbOk(){ return (typeof momHere==="function"&&momHere())||(typeof _kioskD==="function"&&_kioskD()); }
+function lgGbRow(r,slot,kid,D,i,st,E,p,full){
+  if(!(r.sh>0)||!(p<full)||!E||!(E.iso>=RT_FALL_FROM)||st.house||!RT_ABBR[slot]) return;
+  const id=lgGbId(D.wk,D.dn,kid,slot,i), a=lgGbLine(kid,id), js="('"+kid+"','"+D.wk+"','"+D.dn+"','"+slot+"',"+i+")", ok=lgGbOk();
+  r.gbI=i; r.gbId=id; r.gbAmt=r.sh;
+  const bs='border:1.5px solid #f59e0b;background:#fffbeb;color:#92400e;border-radius:8px;padding:2px 9px;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap';
+  if(a){ r.gb=a.amount||0; r.sh=Math.max(0,r.sh-r.gb);
+    r.gbH='<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span style="font-size:11.5px;font-weight:800;color:#b45309">⭐ '+(a.by==="dad"?"Dad":"Mom")+' gave back +'+lgStar(r.gb)+'</span>'+(ok?'<button onclick="lgGiveUndo'+js+'" style="border:1.5px solid var(--border);background:#fff;color:#374151;border-radius:8px;padding:2px 9px;font-size:11.5px;font-weight:700;cursor:pointer">Undo</button>':'')+'</span>'; }
+  else if(ok) r.gbH='<button onclick="lgGive'+js+'" title="Pay the '+r.sh+' ⭐ this late tick did not pay. It still counts as late." style="'+bs+'">⭐ Give stars back</button>'; }
+// The ledger's own row for that tick, read again now (never trusted from the drawing): {r} or null
+function lgGbFind(kid,wk,dn,slot,i){
+  for(let k=0;k>=lgMin();k--){ const D=lgDay(k); if(!D||D.wk!==wk||D.dn!==dn) continue; const x=lgDayData(kid,k); if(!x.lists) return null;
+    for(const L of x.lists){ if(L.slot!==slot) continue; for(const r of L.rows) if(r.gbI===i) return r; }
+    return null; }
+  return null; }
+function lgGbDone(){ if(typeof renderAll==="function"){ try{ renderAll(); }catch(e){} } if(document.getElementById("lg-pop")) lgDraw(); }
+function lgGive(kid,wk,dn,slot,i){
+  if(!lgGbOk()) return false;
+  const r=lgGbFind(kid,wk,dn,slot,i);
+  if(!r||!r.gbId||lgGbLine(kid,r.gbId)||!(r.gbAmt>0)){ lgGbDone(); return false; }   // already given (this device or another), or no longer short
+  const by=(typeof momHere==="function"&&momHere())?"mom":"dad";
+  const rec={amount:r.gbAmt,note:"⭐ "+(by==="dad"?"Dad":"Mom")+" gave back: "+r.nm,ts:nowTs(),iso:new Date().toISOString(),src:"earn",wk:wk,day:dn,by:by};
+  bank[kid]=bank[kid]||{}; bank[kid].adjustments=bank[kid].adjustments||{}; bank[kid].adjustments[r.gbId]=rec;
+  if(db&&!_dryRun()) obSet("bank/"+kid+"/adjustments/"+r.gbId,rec,null);
+  lgGbDone(); return true; }
+function lgGiveUndo(kid,wk,dn,slot,i){
+  if(!lgGbOk()||!RT_ABBR[slot]) return false;
+  const id=lgGbId(wk,dn,kid,slot,i), a=lgGbLine(kid,id); if(!a){ lgGbDone(); return false; }
+  delete bank[kid].adjustments[id];
+  if(db&&!_dryRun()) obRemove("bank/"+kid+"/adjustments/"+id,a);
+  lgGbDone(); return true; }
+// LEDGERGB_END
 // HOUSESWITCH_START — 🚪 the real switch and today's stored plan on 👤 By person (Household by room, step 4; DESIGN §4.3 doors, §5 last
 // bullet, her yes 2026-11-17). Mom only. ON first PROVES a houseDay save works (houseDay/<today>/hello) and only then writes
 // household/meta/engine = {mode:"on", on:<today>} together with each house chore's last-done date filled once from the 8 weeks of
