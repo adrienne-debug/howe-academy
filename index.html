@@ -43595,16 +43595,17 @@ function uapWritePdf(uid,key,pdf){
 async function uapUpload(uid,key,file,kk){
   if(!utMom()) return false;
   if(uapDry()){ uapSay(kk,"Dry run — nothing uploaded, nothing written."); return false; }
-  const title=uapName(file); let url="";
+  const title=uapName(file); let url="", pth="";
   uapSay(kk,"Saving the PDF…");
   try{
     if(typeof firebase==="undefined"||!firebase||typeof firebase.storage!=="function") throw new Error("Storage isn’t ready on this device");
-    const ref=firebase.storage().ref(uapPdfPath(uid,key,file.name));
+    const ref=firebase.storage().ref(pth=uapPdfPath(uid,key,file.name));
     await ref.put(file,{contentType:"application/pdf",cacheControl:"public,max-age=31536000"}); url=await ref.getDownloadURL();
     if(!/^https:\/\//i.test(String(url||""))) throw new Error("no link came back — nothing saved");   // never a data URI in the record
   }catch(e){ uapSay(kk,"Didn’t save: "+((e&&e.message)||e)); return false; }
   if(!uapWritePdf(uid,key,{url:url,title:title})){ uapSay(kk,"Didn’t save: that activity isn’t on the unit any more."); return false; }
-  uapSay(kk,"✓ Saved the PDF: "+title); utaaRe(); return true;
+  const more=(typeof uapgPages==="function")?uapgLine(await uapgPages(uid,key,file,pth,url,kk)):"";   // UACTPAGES (4b): its pages, ≤ 20
+  uapSay(kk,"✓ Saved the PDF: "+title+more); utaaRe(); return true;
 }
 // ── Today's card: the activity's row (UACTLINK's uakCardHTML hands a non-link activity here) ──
 function uapCardHTML(g,act){
@@ -43670,6 +43671,65 @@ function uapSundayAdd(kids,all,w0,w1,today,roster,sig){
   return n;
 }
 // UACTPRINT_END
+// UACTPAGES_START — 📄 a Printable's pages, made at upload (piece 4b of PLAN_unit_activity_types_2026-11-19 §6.5, §6.7 row 4b, §6.10 Q3:
+//   "Pages at upload, always, up to 20 pages (so the switch can flip later; longer PDFs stay paper-only)"; a beta mom 2026-11-20: a
+//   page done "Either. I'd pick page by page" — so a printable needs its pages before the on-screen switch (4c) can offer it;
+//   her go 2026-11-22: "go with her answers and build").
+//   · WHEN: right after UACTPRINT has stored the PDF and written …/pdf. Mom's device reads the SAME local file with pdf.js — loaded
+//     here, on demand (nbLoadPdfJs: cdnjs 3.11.174, as 📕 Workbooks; never on a kid's device) — and draws each page the way
+//     wbAddBook does (scale 1.6, white under the page, JPEG 0.84). Why now and why pictures: a Storage link carries no
+//     cross-origin header, so pdf.js can never read the PDF back later; an <img> can show the page anywhere (wbAddBook's note).
+//   · STORAGE: pictures/units/<unitId>/activities/<key>/<the PDF's own stamped name>_p<n>.jpg — beside the PDF, so a replaced PDF
+//     never overwrites a page another device may be showing (stamped names are never reused; old files stay, as UNITDAY_EXTRAS's).
+//   · THE WRITE: ONE update, one leaf per page — unitStudies/<id>/activities/<j>/pdf/pages/<n> = <https link> (the workbook's
+//     imgs{n:url} shape) — only once every page is in Storage, and only if the activity still holds the PDF these pages came from.
+//     A page that fails, a link that is not https, or no pdf.js (offline) → no pages at all: the printable stays paper only.
+//   · At most UAPG_MAX (20) pages: a longer PDF makes none. On screen: nothing new except the upload line — "… — and N pages.",
+//     "… — over 20 pages (N), so paper only.", or why the pages didn't make. Mom only (UACTPRINT's gate); dry run: nothing.
+//     Nothing reads pages yet (the on-screen viewer is 4c). No kid's or family's name in code.
+const UAPG_MAX=20;
+function uapgRender(doc,p){
+  return doc.getPage(p).then(page=>{ const vp=page.getViewport({scale:1.6});   // 1.6: small print stays readable under a finger or a pen
+    const cv=document.createElement("canvas"); cv.width=Math.round(vp.width); cv.height=Math.round(vp.height);
+    const c2=cv.getContext("2d"); c2.fillStyle="#fff"; c2.fillRect(0,0,cv.width,cv.height);
+    return page.render({canvasContext:c2,viewport:vp}).promise.then(()=>new Promise(res=>cv.toBlob(res,"image/jpeg",0.84))); });
+}
+// → {n} pages made · {over: numPages} · {err: why}
+async function uapgPages(uid,key,file,pdfPath,pdfUrl,kk){
+  if(!utMom()||uapDry()) return {err:"nothing made in a dry run"};
+  let doc=null;
+  try{
+    if(typeof nbLoadPdfJs!=="function") throw new Error("the PDF reader isn’t in this app");
+    const lib=(await nbLoadPdfJs())||(typeof window!=="undefined"&&window.pdfjsLib); if(!lib||typeof lib.getDocument!=="function") throw new Error("the PDF reader didn’t load");
+    doc=await lib.getDocument({data:await file.arrayBuffer()}).promise;
+    const total=parseInt(doc&&doc.numPages,10)||0;
+    if(total>UAPG_MAX) return {over:total};
+    if(total<1) throw new Error("no pages in it");
+    const base=String(pdfPath||"").replace(/\.pdf$/i,""), urls={};
+    for(let p=1;p<=total;p++){
+      uapSay(kk,"Making the pages… ("+p+"/"+total+")");
+      const blob=await uapgRender(doc,p); if(!blob) throw new Error("page "+p+" didn’t draw");
+      const ref=firebase.storage().ref(base+"_p"+p+".jpg");
+      await ref.put(blob,{contentType:"image/jpeg",cacheControl:"public,max-age=31536000"}); const url=await ref.getDownloadURL();
+      if(!/^https:\/\//i.test(String(url||""))) throw new Error("no link came back for page "+p);   // never a data URI in the record
+      urls[p]=url;
+    }
+    const x=utaaActs(utUnits()[uid]).find(y=>y.a.key===key);
+    if(!x||!x.a.pdf||x.a.pdf.url!==pdfUrl) throw new Error("the activity has another PDF now");
+    const upd={}, at="unitStudies/"+uid+"/activities/"+x.k+"/pdf/pages/", pages={};
+    Object.keys(urls).forEach(n=>{ upd[at+n]=urls[n]; pages[n]=urls[n]; });
+    x.a.pdf.pages=pages;
+    if(utaaLive()) db.ref().update(upd);
+    return {n:total};
+  }catch(e){ return {err:(e&&e.message)||String(e)}; }
+  finally{ try{ if(doc&&typeof doc.destroy==="function") doc.destroy(); }catch(e){} }
+}
+function uapgLine(r){
+  if(!r) return ""; if(r.n) return " — and "+r.n+" page"+(r.n===1?"":"s")+".";
+  if(r.over) return " — over "+UAPG_MAX+" pages ("+r.over+"), so paper only.";
+  return " — the pages didn’t make ("+r.err+"), so paper only for now.";
+}
+// UACTPAGES_END
 // UNITDAY_EXTRAS_START — 🖼 Pictures & documents and 🍎 Snack on a unit day (her words 2026-11-11, for Sara, a beta mom: "Sarah would
 //   like to add on day 6 a gratitude scavenger hunt. She has a picture of it. So it would be good if on each day another section that
 //   they could add to that is pictures and documents that would open when they click it on that day. Also, a section for snacks that
