@@ -155,7 +155,7 @@ console.log("\n── with a track: the Sunday list carries the unit's items und
 console.log("\n── haBuildUnitInsight: identical before and after a track ──");
 {
   const mk = () => { const ctx = { console, JSON, Object, Array, String, Math, masteryData: { caleb: [{ id: "cal_a", subject: "Thanksgiving", prompt: "Wampanoag", status: "active", tier: "monthly" }] }, MAST_MASTERY_TIER_DEFAULT: "monthly", mastTierAtLeast: (a, b) => a === "monthly" || a === "graduated", _unitPortrait: () => "", _nbActKeys: () => ["turkey"], unitActPoints: a => a.points || 0, nbUnitDays: () => [] }; vm.createContext(ctx);
-    vm.runInContext(fnIn(src, "haBuildUnitInsight") + "\n" + fnIn(src, "_unitCharDeck") + "\n" + fnIn(src, "_unitActs"), ctx); return ctx; };
+    vm.runInContext(fnIn(src, "haBuildUnitInsight") + "\n" + fnIn(src, "uapSpec") + "\n" + fnIn(src, "_unitCharDeck") + "\n" + fnIn(src, "_unitActs"), ctx); return ctx; };
   const c = mk(); const before = J(c.haBuildUnitInsight("caleb", UNITS(false).thanksgiving)), after = J(c.haBuildUnitInsight("caleb", UNITS(true).thanksgiving));
   ok("the insight (learning · learned · next · extras · activities) does not change when a track is added", before === after && before.indexOf("Wampanoag") > 0);
 }
