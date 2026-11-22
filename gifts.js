@@ -1639,7 +1639,7 @@ const GF_CSS=`
 .gf-ia{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
 .gf-it{font-size:13px;line-height:1.3}
 .gf-im{display:flex;flex-wrap:wrap;gap:4px 8px;margin-top:4px;font-size:11px;color:#475569;align-items:center}
-.gf-chip{font-size:10px;font-weight:700;border:1px solid;border-radius:99px;padding:1px 7px;max-width:100%;box-sizing:border-box}
+.gf-chip{font-size:10px;font-weight:700;border:1px solid;border-radius:99px;padding:1px 7px;white-space:nowrap}
 .gf-tool{border:1.5px solid var(--border);background:#fff;border-radius:9px;padding:5px 10px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;color:#0f172a}
 .gf-mini{padding:3px 8px;font-size:13px}
 .gf-save{background:#111827;color:#fff;border-color:#111827;padding:8px 16px}
