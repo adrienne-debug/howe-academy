@@ -288,8 +288,13 @@ console.log("\n# the ✨ Our plans button counts today's jobs (index.html SEASON
   ok("← Back from the page reads again, and shows no stale count meanwhile", X.reads.filter(p => p === "seasonJobs/ava").length === 2 && /✨ Our plans<\/button>/.test(h));
   const d0 = X.draws; X.fire["seasonJobs/ava"]({ j1: Object.assign({}, J.j1, { done: TODAY }), j2: Object.assign({}, J.j2, { done: TODAY }) });
   ok("all ticked → the count is gone (nothing to redraw)", /✨ Our plans<\/button>/.test(F.skTileHTML("ava")) && X.draws === d0);
-  X.now += 61000; F.skTileHTML("ava"); X.tab = "today"; X.fire["seasonJobs/ava"](J);
-  ok("after a minute it reads again; an answer while the kid is on another tab doesn't redraw", X.reads.filter(p => p === "seasonJobs/ava").length === 3 && X.draws === d0);
+  // hub review: the answer lands AFTER skClose wiped the cache (kid opened the page and went ← Back while the read was in flight)
+  X.now += 61000; X.tab = "kids"; F.skTileHTML("ben"); F.skOpen("ben"); F.skClose();
+  let threw = null; try { X.fire["seasonJobs/ben"]({ b1: { t: "x", show: TODAY }, b2: { t: "y", show: TODAY } }); } catch (e) { threw = e.message; }
+  ok("an answer that lands after ← Back cleared the cache doesn't throw", threw === null, threw);
+  ok("…and the next draw shows the right count", /🧹 2 jobs<\/button>/.test(F.skTileHTML("ben")));
+  const d1 = X.draws; F.skTileHTML("ava"); X.tab = "today"; X.fire["seasonJobs/ava"](J);
+  ok("after a minute it reads again; an answer while the kid is on another tab doesn't redraw", X.reads.filter(p => p === "seasonJobs/ava").length === 3 && X.draws === d1);
 }
 
 console.log("\n" + pass + " passed, " + fail + " failed");
