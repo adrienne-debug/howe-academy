@@ -242,7 +242,8 @@
     lucy: [
       { key: "months",     label: "Months of the Year", emoji: "📅" },
       { key: "thisMonth",  label: "This Month",         emoji: "🗒️" },
-      { key: "allAboutMe", label: "All About Me",       emoji: "🙋" }
+      { key: "allAboutMe", label: "All About Me",       emoji: "🙋" },
+      { key: "myWords",    label: "My Words",           emoji: "🔤" }   // LU_WORDS: the Sight Word of the Day + its page; off = neither prints
     ],
     julian: [
       { key: "abc",         label: "ABC Practice",   emoji: "🔤" },
@@ -5162,8 +5163,9 @@ ${luFooter("Howe Academy · Lucy Howe · Keep this private 🔒", weekDates)}
 </div>`;
   }
 
-  function luPageDaily(weekNum, day, dateStr, tasks, blend, subProblems, badge, year, extraStrip) {
+  function luPageDaily(weekNum, day, dateStr, tasks, blend, subProblems, badge, year, extraStrip, word) {
     var dayTasks = luTasksForDay(tasks, day);
+    var luWordApps = word ? luWordAppsCard(dayTasks, word) : null;   // LU_WORDS: no word → the apps card exactly as before
     var pills = dayTasks.map(function (t) { return '<span class="pill ' + luPillType(t.title) + '">' + String(t.title || "").split(" — ")[0] + '</span>\n'; }).join("");
     var rows = dayTasks.map(function (t) { return '<tr><td>' + luSubjectName(t.title) + '</td><td><span class="bubble"></span></td><td><span class="bubble"></span></td><td><span class="bubble"></span></td></tr>\n'; }).join("");
     var subHtml = (subProblems || []).map(function (ab) { return '<div class="sub-problem"><span class="sub-num">' + ab[0] + '</span><span class="sub-op">−</span><span class="sub-num">' + ab[1] + '</span><span class="sub-eq">=</span><span class="sub-blank"></span></div>\n'; }).join("");
@@ -5229,10 +5231,10 @@ ${extraStrip || ""}
 
   <div class="col2" style="flex:2.35;min-height:0;">
     <div class="left-col">
-      <div class="card card-plain" style="flex:1;padding:8px 12px;">
+      ${luWordApps || `<div class="card card-plain" style="flex:1;padding:8px 12px;">
         <div class="slabel">Today's apps and work — check off as you go</div>
         <div>${pills}</div>
-      </div>
+      </div>`}
     </div>
     <div class="blend-card${phOn ? " ph" : ""}" style="display:flex;flex-direction:column;">
       <div class="slabel${phOn ? " ph" : ""}">${phLabel}</div>
@@ -5610,7 +5612,7 @@ ${luFooter("Howe Academy · Lucy Howe · End of Week", "Week " + weekNum + " · 
 </div>`;
   }
 
-  function luPageTeachingCompanion(weekNum, weekDates, days, tasks, blends, subtraction, teachNotes) {
+  function luPageTeachingCompanion(weekNum, weekDates, days, tasks, blends, subtraction, teachNotes, words) {
     var DAY_NAMES = { monday: "Monday", tuesday: "Tuesday", wednesday: "Wednesday", thursday: "Thursday", friday: "Friday" };
     var subKeyRows = "";
     (days || []).forEach(function (day, i) {
@@ -5697,7 +5699,7 @@ ${luFooter("Howe Academy · Lucy Howe · End of Week", "Week " + weekNum + " · 
       <div class="key-section">
         <div class="key-head">Blend Teaching Tips — This Week's Digraphs</div>
         <div class="key-body">${blendTipRows}</div>
-      </div>
+      </div>${luWordsCompanion(words, (days || []).map(function (d) { return DAY_NAMES[d] || cap(d); }))}
       <div class="carry-box">
         <div class="carry-title">Quick wins to celebrate this week</div>
         <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
@@ -5799,6 +5801,142 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
   function luPhonoTip(pg) { var e = LU_PHONO[pg]; return e ? e.tip : ""; }
   // LU_PHONO_END
 
+  // LU_WORDS_START — 🔤 Sight Word of the Day + a "My Words" page, from Lucy's own decks (her ask 2026-11-10: "keep her
+  // activity pages but really feel her notebook is lacking a bit"; her go-ahead to build 2026-11-21 — slice 1 of
+  // PLAN_notebook_lucy_2026-11-10.md, every §6 default). Her Sight Words deck is drilled in the app and never reached paper.
+  //  • Each daily page's apps column now ends with a Sight Word of the Day: the word, trace it, write it, read it to a
+  //    grown-up. The week's words walk her deck in order and keep their own place (notebookSettings/<kid>/wordCursor =
+  //    {week, idx, adv}, saved by the app after each print / PDF / tablet send, like Julian's letter cursor). A word she
+  //    has been missing in drills comes back first, marked 🔁 — through Julian's letter path (juWeekPicks), not a copy.
+  //    The very first print opens on the words she is learning now (status introduction / parked).
+  //  • A "My Words" page (Notebook tab ▸ extra pages ▸ My Words): this week's words, three lines each, plus the
+  //    Spelling-deck words she is learning, printed by the shared Spelling page (spellNbPages). It goes right after End of
+  //    Week, so the daily-page / activity-back pairs and the tablet's page numbers don't move. A kid with a real Spelling
+  //    page (ctx.spelling, All About Spelling) keeps that page instead.
+  //  • The Companion lists the week's words day by day, new / review.
+  // No Sight Words deck → nothing prints and nothing changes, byte for byte — unless Mom turns My Words on, which walks the
+  // Dolch pre-primer + primer list instead. My Words turned off → nothing changes, deck or not. The student page shows the
+  // word to read and copy (copywork, like the Spelling page); nothing else is filled in for her.
+  var LU_DOLCH = ["a", "and", "away", "big", "blue", "can", "come", "down", "find", "for", "funny", "go", "help", "here", "I", "in",
+    "is", "it", "jump", "little", "look", "make", "me", "my", "not", "one", "play", "red", "run", "said", "see", "the", "three",
+    "to", "two", "up", "we", "where", "yellow", "you",   // pre-primer (40)
+    "all", "am", "are", "at", "ate", "be", "black", "brown", "but", "came", "did", "do", "eat", "four", "get", "good", "have",
+    "he", "into", "like", "must", "new", "no", "now", "on", "our", "out", "please", "pretty", "ran", "ride", "saw", "say", "she",
+    "so", "soon", "that", "there", "they", "this", "too", "under", "want", "was", "well", "went", "what", "white", "who",
+    "will", "with", "yes"];   // primer (52)
+  var LU_WORDS_CSS = "\n  .lw-apps { display:flex; flex-direction:column; min-height:0; }\n" +
+    "  .lw-chips { line-height:1; }\n" +
+    "  .lw-chips .pill { font-size:9px; padding:2px 7px; margin:1px 2px 1px 0; }\n" +
+    "  .lw-word { margin-top:auto; background:white; border:1.5px solid var(--lu-plight); border-radius:9px; padding:4px 10px 5px; }\n" +
+    "  .lw-head { display:flex; align-items:center; gap:6px; }\n" +
+    "  .lw-head .slabel { margin:0; }\n" +
+    "  .lw-rev { margin-left:auto; font-size:9px; font-weight:800; color:var(--lu-gold); white-space:nowrap; }\n" +
+    "  .lw-big { font-family:'Fraunces',serif; font-size:28px; font-weight:700; color:var(--lu-dark); line-height:1.05; }\n" +
+    "  .lw-trace { margin:0; }\n" +
+    "  .lw-write { display:flex; align-items:flex-end; gap:6px; font-size:10px; font-weight:800; color:var(--lu-mid); }\n" +
+    "  .lw-write .lw-line { flex:1; border-bottom:2px solid #d1d5db; height:22px; }\n" +
+    "  .lw-cap { font-size:10px; font-weight:700; color:var(--muted); margin-top:3px; }\n";
+  function luDeckOf(items, subject) {
+    return (items || []).filter(function (it) { return it && String(it.subject || "").trim().toLowerCase() === subject && String(it.prompt || "").trim(); });
+  }
+  // A deck mapped onto the shape juCurriculumFromMastery builds for letters: {list, flag, flagScore} — the deck is handed to
+  // it AS the Letters subject, so the 🔁 rule (recentMiss > 0, or demoted and not yet back to a slow tier; score
+  // recentMiss*3 + drop_count*2) lives in one place. front = the first word she is learning now; null = none. Pure.
+  function luWordsFromMastery(items, subject) {
+    var deck = luDeckOf(items, subject || "sight words");
+    if (!deck.length) return null;
+    var cur = juCurriculumFromMastery(deck.map(function (it) { return Object.assign({}, it, { subject: "Letters" }); }));
+    var status = {}, front = null;
+    deck.forEach(function (it, i) {
+      var p = String(it.prompt).trim(); status[p] = it.status || "";
+      if (front == null && (it.status === "introduction" || it.status === "parked")) front = i;
+    });
+    return { list: cur.letters, flag: cur.flag.letters, flagScore: cur.flagScore.letters, front: front, status: status };
+  }
+  // Where this week's words start: the saved place (juLetterStart's arithmetic, called), or — first print, no cursor yet —
+  // the first word she is learning; no such word → juLetterStart's ((week-1)*5) bootstrap.
+  function luWordStart(cursor, wk, n, front) {
+    if ((!cursor || cursor.idx == null) && front != null && n) return front % n;
+    return juLetterStart(cursor, wk, n);
+  }
+  // The week's words, one per school day: {src:"deck"|"dolch", days:[{word, review, isNew}], cursor:{week, idx, adv},
+  // practice:[Spelling-deck words being learned]} — or null when nothing should print (see the block note).
+  function luWordsWeek(ctx, dayCount) {
+    ctx = ctx || {};
+    var conf = (ctx.extraPages || {}).myWords;
+    if ((conf && conf.on === false) || !(dayCount > 0)) return null;
+    var m = luWordsFromMastery(ctx.masteryItems, "sight words"), src = "deck";
+    if (!m) {
+      if (!(conf && conf.on === true)) return null;
+      m = { list: LU_DOLCH.slice(), flag: {}, flagScore: {}, front: null, status: {} }; src = "dolch";
+    }
+    var wkS = String(ctx.weekNum == null ? "" : ctx.weekNum).replace(/\D/g, ""), wk = parseInt(wkS, 10) || 1;
+    var cap = (ctx.reviewCap == null) ? JU_REVIEW_CAP : Math.max(0, Math.min(5, parseInt(ctx.reviewCap, 10) || 0));
+    var start = luWordStart(ctx.wordCursor, wk, m.list.length, m.front);
+    var picks = juWeekPicks(wk, { letters: m.list, flag: { letters: m.flag }, flagScore: { letters: m.flagScore } }, dayCount, cap, null, start);
+    var days = (picks.letters || []).map(function (p) {
+      var w = m.list[p.idx], st = m.status[w];
+      return { word: w, review: !!p.review, isNew: !p.review && (src === "dolch" || st === "introduction" || st === "parked") };
+    });
+    // the Spelling-deck words she is learning (new ones first, then ones she has been missing) for the My Words page
+    var practice = [], seen = {};
+    days.forEach(function (d) { seen[d.word.toLowerCase()] = 1; });
+    var sp = luWordsFromMastery(ctx.masteryItems, "spelling");
+    if (sp) {
+      var learn = sp.list.filter(function (w) { return sp.status[w] === "introduction" || sp.status[w] === "parked"; });
+      var missed = sp.list.filter(function (w) { return sp.flag[w]; }).sort(function (a, b) { return (sp.flagScore[b] || 0) - (sp.flagScore[a] || 0); });
+      learn.concat(missed).forEach(function (w) { var k = w.toLowerCase(); if (!seen[k] && practice.length < 9) { seen[k] = 1; practice.push(w); } });
+    }
+    return { src: src, days: days, practice: practice, cursor: { week: wk, idx: picks._letters.start, adv: picks._letters.adv } };
+  }
+  // The daily page's apps column when the words print: the same pills, compact, then the Sight Word card at the bottom.
+  // The trace is two copies on one line for a short word and one copy for a long one (a 10-letter word fits the column).
+  function luWordAppsCard(dayTasks, w) {
+    var esc = function (v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
+    var chips = dayTasks.map(function (t) { return '<span class="pill ' + luPillType(t.title) + '">' + String(t.title || "").split(" — ")[0] + '</span>'; }).join("");
+    var word = String(w.word), len = word.length, two = len <= 6;
+    var tr = FONTS_OK
+      ? '<div class="nt-trace lw-trace" style="font-size:' + (len <= 8 ? 26 : 22) + 'px;">' + esc(dotted(word)) + (two ? '&nbsp;&nbsp;&nbsp;' + esc(dotted(word)) : '') + '</div>'
+      : '<div class="lw-write" style="margin-bottom:4px;"><span>Trace:</span><span class="lw-line"></span></div>';
+    return '<div class="card card-plain lw-apps" style="flex:1;padding:7px 12px;">\n' +
+      '        <div class="slabel">Today\'s apps and work — check off as you go</div>\n' +
+      '        <div class="lw-chips">' + chips + '</div>\n' +
+      '        <div class="lw-word">\n' +
+      '          <div class="lw-head"><span class="slabel">🔤 Sight word of the day</span>' + (w.review ? '<span class="lw-rev">🔁 practice again</span>' : '') + '</div>\n' +
+      '          <div class="lw-big">' + esc(word) + '</div>\n' +
+      '          ' + tr + '\n' +
+      '          <div class="lw-write"><span>Write it:</span><span class="lw-line"></span></div>\n' +
+      '          <div class="lw-cap">📖 Read it to a grown-up &nbsp;☐</div>\n' +
+      '        </div>\n' +
+      '      </div>';
+  }
+  // The "My Words" page, through the shared Spelling page — only for a kid with no real Spelling page this week.
+  function luMyWordsPages(ctx, words, wn) {
+    if (!words || spellNbPages(ctx, UNIT_INSERT_THEMES.lucy).length) return [];
+    var list = [], seen = {};
+    words.days.forEach(function (d) { var k = d.word.toLowerCase(); if (!seen[k]) { seen[k] = 1; list.push(d.word); } });
+    return spellNbPages({ weekNum: wn, spelling: { title: "My Words", sections: [{ label: "This week's sight words", words: list }], practice: words.practice || [] } }, UNIT_INSERT_THEMES.lucy)
+      .map(function (pg) { return pg.replace('<div class="page-label">Spelling — ', '<div class="page-label">My Words — '); });   // the on-screen label too
+  }
+  // The Companion's section (compact — the right column has ~180px free with the book's phonogram tips): each day's word,
+  // new / review (🔁 = missed in drills), where the words came from, and the Spelling words on the My Words page.
+  function luWordsCompanion(words, dayNames) {
+    if (!words) return "";
+    var chips = words.days.map(function (d, i) {
+      var tag = d.review ? "🔁 missed in drills" : (d.isNew ? "new" : "review");
+      return '<span style="white-space:nowrap;"><span class="key-label" style="min-width:0;">' + String(dayNames[i] || "").slice(0, 3) + '</span> <span class="key-ans">' +
+        String(d.word).replace(/</g, "&lt;") + '</span> <span style="font-size:9.5px;color:var(--muted);">' + tag + '</span></span>';
+    }).join("");
+    var src = words.src === "dolch" ? "Dolch pre-primer + primer list (no Sight Words deck yet — add one in Mastery and her words take over)."
+      : "Her Sight Words deck, in order — next week picks up where this one stops.";
+    var prac = (words.practice || []).length ? " My Words page also has her Spelling words: " + words.practice.join(", ") + "." : "";
+    return '\n      <div class="key-section">\n        <div class="key-head">🔤 Sight Words This Week</div>\n        <div class="key-body">' +
+      '<div style="display:flex;flex-wrap:wrap;gap:3px 12px;font-size:11px;">' + chips + '</div>' +
+      '<div style="font-size:10px;color:var(--muted);line-height:1.4;padding-top:4px;">She reads it, traces it, writes it, reads it to you. Stuck? Say it, she says it back, move on. ' +
+      src + prac + '</div></div>\n      </div>';
+  }
+  // LU_WORDS_END
+
   function generateLucy(ctx) {
     ctx = ctx || {};
     var weekData = ctx.weekData || {};
@@ -5813,6 +5951,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     var phono = luPhonoWeek(ctx.loe, days.length);   // LU_PHONO: the book's phonograms, or null → the static list
     var blends = phono || LUCY_DATA.blends, focus = LUCY_DATA.focus, pace = (ctx.pace && ctx.pace.length) ? ctx.pace : LUCY_DATA.pace;
     var subtraction = luSubWeek(wn, days.length);
+    var words = luWordsWeek(ctx, days.length);   // LU_WORDS: the week's sight words, or null → nothing new prints
     var prevStats = ctx.prevStats || {};   // dashes until the shared history wiring
     var category = LUCY_DATA.category_order[((wn - 1) % LUCY_DATA.category_order.length + LUCY_DATA.category_order.length) % LUCY_DATA.category_order.length];
     var curMonth = days.length ? monthFromDate(dates[days[0]] || "") : "";
@@ -5831,7 +5970,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       var subPrbs = subtraction[i] || [];
       var badge = LUCY_DATA.day_badges[day] || "🦄 Great Work!";
       parts.push(luPageDaily(wn, day, dateStr, tasks, blend, subPrbs, badge, year,
-        xpStrip(pagesForDay(ctx, "lucy", day), "#f472b6", "#fdf2f8", "#be185d")));
+        xpStrip(pagesForDay(ctx, "lucy", day), "#f472b6", "#fdf2f8", "#be185d"), words ? words.days[i] : null));
       if (day === "monday") parts.push(luPageBb1(wn, ctx.dotdot || null));
       else if (day === "tuesday") parts.push(luPageBb2Coloring(wn, ctx.coloring || null, category));
       else if (day === "wednesday") parts.push(luPageBb3(wn, ctx.symmetry || null, ctx.pattern || null));
@@ -5839,6 +5978,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       else if (day === "friday") parts.push(luPageCreative(wn));
     });
     parts.push(luPageEndOfWeek(wn, weekDates, blends, subtraction, days, tasks));
+    luMyWordsPages(ctx, words, wn).forEach(function (p) { parts.push(p); });   // LU_WORDS: after End of Week, so the day/back pairs don't move
 
     // Paper dolls — doll figure (always) + this week's outfit, each on its OWN sheet with a blank
     // back so Lucy can cut them out without losing anything on the reverse. Goes last in the book.
@@ -5849,10 +5989,13 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
       if (dolls.outfit) { parts.push(luPageDoll(dolls.outfit, "Outfit — cut me out!")); parts.push(luBlankPage()); }
     }
 
-    var student = luShell(parts.join("\n"), "Lucy's Notebook — Week " + wn, phono ? LU_PHONO_CSS : "");
-    var companion = luPageTeachingCompanion(wn, weekDates, days, tasks, blends, subtraction, ctx.teachNotes || "");
-    var parent = luShell(companion, "Lucy's Parent Companion — Week " + wn, phono ? LU_PHONO_CSS : "");
-    return { student: student, parent: parent };
+    var luCss = (phono ? LU_PHONO_CSS : "") + (words ? LU_WORDS_CSS : "");   // LU_WORDS
+    var student = luShell(parts.join("\n"), "Lucy's Notebook — Week " + wn, luCss);
+    var companion = luPageTeachingCompanion(wn, weekDates, days, tasks, blends, subtraction, ctx.teachNotes || "", words);
+    var parent = luShell(companion, "Lucy's Parent Companion — Week " + wn, luCss);
+    var out = { student: student, parent: parent };
+    if (words) out.wordCursor = words.cursor;   // LU_WORDS: the app saves it (notebookSettings/<kid>/wordCursor) so next week continues
+    return out;
   }
 
   /* ============================================================================
@@ -6319,6 +6462,6 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     dgStart: dgStart,                   // Daily Grams: first Day of a week from the stored cursor (Notebook tab card + prefetch)
 
     // exposed for testing
-    _internal: { generateGeneric: generateGeneric, spellNbPages: spellNbPages, juCurriculumFromMastery: juCurriculumFromMastery, generateJulian: generateJulian, generatePreK: generatePreK, nbThemeKey: nbThemeKey, pkLevel: pkLevel, pkSpec: pkSpec, pkCurriculum: pkCurriculum, JU_LEVEL: JU_LEVEL, CB_LEVEL: CB_LEVEL, JU_THEME: JU_THEME, CB_THEME: CB_THEME, PK_LEVEL_DEFAULT: PK_LEVEL_DEFAULT, generateCaleb: generateCaleb, cbCurriculum: cbCurriculum, dgWeekPlan: dgWeekPlan, nbCalendarDays: nbCalendarDays, generateLucy: generateLucy, luPhonoWeek: luPhonoWeek, LU_PHONO: LU_PHONO }
+    _internal: { generateGeneric: generateGeneric, spellNbPages: spellNbPages, juCurriculumFromMastery: juCurriculumFromMastery, generateJulian: generateJulian, generatePreK: generatePreK, nbThemeKey: nbThemeKey, pkLevel: pkLevel, pkSpec: pkSpec, pkCurriculum: pkCurriculum, JU_LEVEL: JU_LEVEL, CB_LEVEL: CB_LEVEL, JU_THEME: JU_THEME, CB_THEME: CB_THEME, PK_LEVEL_DEFAULT: PK_LEVEL_DEFAULT, generateCaleb: generateCaleb, cbCurriculum: cbCurriculum, dgWeekPlan: dgWeekPlan, nbCalendarDays: nbCalendarDays, generateLucy: generateLucy, luPhonoWeek: luPhonoWeek, LU_PHONO: LU_PHONO, luWordsWeek: luWordsWeek, luWordsFromMastery: luWordsFromMastery, LU_DOLCH: LU_DOLCH }
   };
 })();
