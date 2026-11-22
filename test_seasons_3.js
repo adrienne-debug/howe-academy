@@ -260,7 +260,7 @@ console.log("\n# Mom's page: one switch, and whose idea it is");
   ok("the idea's pop-up says who added it", /💡 Ava’s idea<\/span> — added in Kids’ Corner/.test(root.innerHTML));
   const closed = LIST(); closed.xmas.closed = true; T.setData({ list: closed, ideas: IDEAS() }, {}); T.reset(); T.draw(); writes.length = 0; W.snKids();
   ok("a 📜 past season has no switch", !/snKids\(\)/.test(root.innerHTML) && writes.length === 0);
-  ok("Mom's file has three listeners (seasonJobs: SEASONJOBS step B) and ONE update door", (MSRC.replace(/^\s*\/\/.*$/gm, "").match(/db\.ref\(/g) || []).length === 4);
+  ok("Mom's file has three listeners (seasonJobs: SEASONJOBS step B), the once-read of Dad's list, and ONE update door", (MSRC.replace(/^\s*\/\/.*$/gm, "").match(/db\.ref\(/g) || []).length === 5);
 }
 
 console.log("\n# index.html: the button, the open/close state, the loader — nothing more");

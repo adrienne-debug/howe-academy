@@ -36,7 +36,7 @@ function momWorld() {
   const document = { getElementById(id) { return nodes[id] || (nodes[id] = el(id)); }, createElement(t) { return el(t); }, head: { appendChild() {} } };
   const db = { ref(p) { const P = p === undefined ? "" : p; return {
     update(v) { o.writes.push({ op: "update", path: P, val: JSON.parse(JSON.stringify(v)) }); }, set(v) { o.writes.push({ op: "set", path: P, val: v }); }, remove() { o.writes.push({ op: "remove", path: P }); },
-    on(ev, fn) { o.listens.push(P); } }; } };
+    on(ev, fn) { o.listens.push(P); }, once() {} }; } };
   const ctx = Object.assign({ console: { log: console.log, warn() {} }, Date, Math, JSON, document, db, _todayStr: () => TODAY, _dryRun: () => o.dry, momHere: () => o.mom, _kioskD: () => false,
     gwShowToast() {}, HA_LS: { getItem: k => (k in o.LS ? o.LS[k] : null), setItem: (k, v) => { o.LS[k] = String(v); } },
     tab: "moms-plan", mpSubView: "seasons", momSchedView: false, renderMomsPlan() {}, mpGoto() {},
@@ -46,7 +46,7 @@ function momWorld() {
   vm.runInContext(MSRC, ctx);
   o.W = ctx; o.T = ctx._snTest; o.cal = () => vm.runInContext("calendarData", ctx);
   o.set = (d, sec, ev, jobs) => { o.timers.splice(0).forEach(f => f()); o.writes.length = 0; o.bank.length = 0; o.T.setData(d || {}, sec || {}); o.T.reset(); o.cal().events = ev || {};
-    o.T.setJobs(jobs === undefined ? {} : jobs); o.T.setRoot(root, ""); };
+    o.T.setJobs(jobs === undefined ? {} : jobs); o.T.setRoot(root, ""); o.T.ddFresh(true); };
   o.sync = () => { o.writes.length = 0; return o.T.dadSync(); };
   o.last = () => o.writes[o.writes.length - 1];
   return o;
@@ -68,7 +68,7 @@ console.log("\n# Mom's side: the guard and the listener");
   ok("refused: a kid's whole jobs node, the bank, chore settings", bad.every(p => { const u = {}; u[p] = { x: 1 }; return T.apply(u) === false; }), bad.filter(p => T.OK.test(p)));
   const code = MSRC.replace(/^\s*\/\/.*$/gm, "");
   ok("the bank is reached ONLY through the app's own bankDirect / bankDirectRemove / cuUnpay", !/["'`]bank\//.test(code) && /bankDirect\(k,\+c\.stars,jobLabel\(c\.t\),\(typeof choreVerifyOn==="function"&&choreVerifyOn\(k\)\)\)/.test(code));
-  ok("one more listener on Mom's device: seasonJobs (all kids' jobs come back to her page)", (code.match(/db\.ref\(/g) || []).length === 4 && /db\.ref\("seasonJobs"\)\.on\(/.test(code));
+  ok("one more listener on Mom's device: seasonJobs (all kids' jobs come back to her page)", (code.match(/db\.ref\(/g) || []).length === 5 && /db\.ref\("seasonJobs"\)\.on\(/.test(code));
 }
 
 console.log("\n# a kid's to-do goes to their jobs");

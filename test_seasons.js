@@ -299,7 +299,7 @@ console.log("\n# seasons.js itself");
   ok("it never says Santa (a kid may see the screen)", !/santa/i.test(SRC));
   ok("no 🔀 emoji", SRC.indexOf("\u{1F500}") < 0);
   ok("it never names the calendar nodes that change school, or the school's own data", !/calendar\/(holidays|vacations|kidOverrides|coops|coopMomDays|cleaningDays)|config\/rules|familyBlocks|curriculum\/|\/tasks|\/checked/.test(SRC.replace(/^\/\/.*$/gm, "")));
-  ok("its only database calls: three listeners (seasonJobs since SEASONJOBS step B) and ONE update door", (SRC.replace(/^\/\/.*$/gm, "").match(/db\.ref\(/g) || []).length === 4 && /db\.ref\("seasonJobs"\)\.on\(/.test(SRC) && /db\.ref\("seasons"\)\.on\(/.test(SRC) && /db\.ref\("seasonSecret"\)\.on\(/.test(SRC) && /if\(live\(\)\)db\.ref\(\)\.update\(up\);/.test(SRC));
+  ok("its only database calls: three listeners (seasonJobs since SEASONJOBS step B), ONE once-read of Dad's list (is it fresh?) and ONE update door", (SRC.replace(/^\/\/.*$/gm, "").match(/db\.ref\(/g) || []).length === 5 && /db\.ref\("dadday"\)\.once\("value"/.test(SRC) && /db\.ref\("seasonJobs"\)\.on\(/.test(SRC) && /db\.ref\("seasons"\)\.on\(/.test(SRC) && /db\.ref\("seasonSecret"\)\.on\(/.test(SRC) && /if\(live\(\)\)db\.ref\(\)\.update\(up\);/.test(SRC));
   ok("it never reads the gift list", !/gifts\//.test(SRC.replace(/^\/\/.*$/gm, "")) && !/db\.ref\("gifts/.test(SRC));
 }
 
