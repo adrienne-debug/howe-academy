@@ -3757,8 +3757,109 @@ ${extraStrip || ""}
     return pg + '</div>\n</div>';
   }
   // UNITACTPG_END
+  // UNITKEEP_START — 📗 the unit's two closing pages, the end of the kid's unit book (PLAN_unit_sheet_2026-11-19.md §4.4 re-shaped by
+  // §8.2 "Closing pages (slice 5)", §5 row 5; her words 2026-11-22: "build as many in as many sessions you need to get done. go with
+  // her answers and build"). A beta mom's keepsake answer 11/20: "A cover page, Books we read, Things I made, My favorite part, A spot
+  // to glue a photo" — "They aren't going to care about vocab … I could see them wanting pictures of what they made or ate or did."
+  // index.html (UNITKEEP: ukAttach) hands the insert of the week that holds the unit's LAST day ins.keep =
+  //   {title, emoji, band (little · early · middle · upper), books:[{t, by}] (10 at most), booksMore,
+  //    acts:[{e, t, done, date}] (12 at most), actsMore, words:[{name, portrait}] (12 at most, only when Mom ticked "Words and facts I
+  //    know" on and the kid has learned some), wordsMore}
+  // and this prints TWO pages after the unit's usual pages (after its cover too, when the first and last day share a week):
+  //   1 · "What we did": 📚 Books we read (each title with five outline stars to colour) and 🎨 Things I made and did (✓ and the date
+  //       for each one done, ☐ for the rest), each beside a small photo box. No books / no activities → blank lines to fill in.
+  //   2 · "My favorite part": a drawing box (the stretchy part) and TWO glue-in photo boxes ("Something we made, ate or did"); with
+  //       the words on, the words take the place of one photo box — the card's picture and name with a blank line (little kids:
+  //       pictures to circle). A card's definition is never handed in and never printed.
+  // Every writing space is blank; the stars are outlines. Worked out fresh each time, nothing stored. No ins.keep → nothing here runs
+  // and the insert is the one without it, byte for byte. Mom's "🖨 Print <kid>'s unit book" (Units tab) prints the cover + these two
+  // pages through unitClosingPages, in the kid's own notebook colours.
+  var UK_BOOKS = 10, UK_ACTS = 12, UK_WORDS = 12;
+  function ukKeepPages(ins, weekNum, theme) {
+    return unitInsertPages(Object.assign({}, ins, { keep: null }), weekNum, theme).concat(ukClosingPages(ins.keep, theme));
+  }
+  function ukClosingPages(kp, theme) {
+    kp = kp || {};
+    var T = theme || UNIT_INSERT_THEMES.lincoln, GD = T.GD, GM = T.GM, GL = T.GL, GOLD = T.GOLD, INK = "#1c1c1e", MUT = "#6b7280";
+    var esc = ucEsc, title = kp.title || "Unit Study", emoji = kp.emoji || "📘", little = kp.band === "little";
+    var one = "white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
+    var mono = "font-family:'DM Mono',monospace;font-size:9px;letter-spacing:0.18em;text-transform:uppercase;color:" + GM;
+    var stripe = '<div style="height:6px;flex-shrink:0;background:repeating-linear-gradient(90deg,' + GL + ' 0,' + GL + ' 18px,' + GOLD + ' 18px,' + GOLD + ' 22px,' + GL + ' 22px,' + GL + ' 40px)"></div>';
+    var plural = function (n, a, b) { return n + " " + (n === 1 ? a : b); };
+    var tfs = title.length <= 34 ? 24 : (title.length <= 60 ? 19 : 17);   // a title up to 80 letters (the Builder's limit) fits: 2 lines, 3 past 60
+    var head = function (sub) {
+      return '<div style="flex-shrink:0;display:flex;align-items:center;gap:14px;border-bottom:1.5px solid ' + GL + ';padding-bottom:10px">' +
+        '<div style="font-size:40px;line-height:1;flex-shrink:0">' + esc(emoji) + '</div><div style="flex:1;min-width:0">' +
+        '<div style="' + mono + '">' + esc(sub) + '</div>' +
+        '<div style="font-family:\'Fraunces\',serif;font-size:' + tfs + 'px;font-weight:700;color:' + GD + ';line-height:1.15;max-height:' + Math.ceil(tfs * 1.15 * (title.length <= 60 ? 2 : 3) + 1) + 'px;overflow:hidden;overflow-wrap:anywhere">' + esc(title) + '</div></div></div>';
+    };
+    var sect = function (t, note) { return '<div style="flex-shrink:0;display:flex;align-items:baseline;gap:10px;margin-bottom:6px"><span style="font-family:\'Fraunces\',serif;font-size:15px;font-weight:700;color:' + GD + '">' + t + '</span>' + (note ? '<span style="font-size:10.5px;color:' + MUT + '">' + note + '</span>' : '') + '</div>'; };
+    var photo = function (lbl, w, minH) {
+      return '<div data-ukphoto="1" style="' + (w ? 'width:' + w + 'px;flex-shrink:0' : 'flex:1;min-width:0') + ';min-height:' + minH + 'px;border:2px dashed ' + GM + ';border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:8px;text-align:center">' +
+        '<div style="font-size:26px;line-height:1;opacity:0.55">📷</div><div style="font-size:10.5px;font-weight:700;color:' + MUT + ';line-height:1.3">' + lbl + '</div></div>';
+    };
+    var line = '<span style="flex:1;min-width:30px;height:18px;border-bottom:1.5px solid ' + MUT + '"></span>';
+    var star = '<svg width="17" height="17" viewBox="0 0 24 24" style="flex-shrink:0"><path d="M12 2.6l2.9 6 6.6.9-4.8 4.6 1.2 6.6L12 17.5l-5.9 3.2 1.2-6.6-4.8-4.6 6.6-.9z" fill="none" stroke="' + GM + '" stroke-width="1.7" stroke-linejoin="round"/></svg>';
+    var stars = '<span style="display:flex;gap:3px;flex-shrink:0">' + star + star + star + star + star + '</span>';
+    var box = function (done) { return '<span style="width:15px;height:15px;border:2px solid ' + GM + ';border-radius:3px;flex-shrink:0;box-sizing:border-box;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;line-height:1;color:' + GM + '">' + (done ? '✓' : '') + '</span>'; };
+    var more = function (n, a, b) { return n > 0 ? '<div style="font-size:10px;color:' + MUT + ';padding-left:2px;margin-top:2px">+ ' + plural(n, a, b) + '</div>' : ''; };
+    var row = function (inner, h) { return '<div style="display:flex;align-items:center;gap:8px;height:' + h + 'px;min-width:0;overflow:hidden">' + inner + '</div>'; };
+    // ── page 1: what we did ──
+    var allB = kp.books || [], books = allB.slice(0, UK_BOOKS), bMore = Math.max(0, (kp.booksMore > 0 ? kp.booksMore : 0) + allB.length - books.length);
+    var allA = kp.acts || [], acts = allA.slice(0, UK_ACTS), aMore = Math.max(0, (kp.actsMore > 0 ? kp.actsMore : 0) + allA.length - acts.length);
+    var bRows = books.length ? books.map(function (b) {
+      return row('<span style="flex:1;min-width:0;font-size:13px;color:' + INK + ';' + one + '"><b>' + esc(b.t) + '</b>' + (b.by ? '<span style="color:' + MUT + ';font-size:11px"> · ' + esc(b.by) + '</span>' : '') + '</span>' + stars, 30);
+    }).join("") + more(bMore, "more book", "more books")
+      : [0, 1, 2].map(function () { return row(line + stars, 34); }).join("");
+    var aRows = acts.length ? acts.map(function (a) {
+      return row(box(a.done) + '<span style="width:18px;text-align:center;font-size:14px;line-height:1;flex-shrink:0">' + esc(a.e || "") + '</span>' +
+        '<span style="flex:1;min-width:0;font-size:13px;color:' + INK + ';' + one + '">' + esc(a.t) + '</span>' +
+        (a.date ? '<span style="flex-shrink:0;font-family:\'DM Mono\',monospace;font-size:10.5px;color:' + GM + '">' + esc(a.date) + '</span>' : ''), 28);
+    }).join("") + more(aMore, "more", "more")
+      : [0, 1, 2, 3].map(function () { return row(box(false) + line, 32); }).join("");
+    var p1 = '<div class="page-label">Unit Study — ' + esc(title) + ' (closing 1/2)</div>\n<div class="page">\n' + stripe +
+      '<div data-uk="1" style="padding:24px 48px 30px;flex:1;display:flex;flex-direction:column;gap:14px;overflow:hidden">' + head("What we did") +
+      '<div style="flex-shrink:0;display:flex;flex-direction:column">' + sect("📚 Books we read", "Colour the stars — how much did you like it?") +
+        '<div style="display:flex;gap:16px;align-items:stretch"><div style="flex:1;min-width:0;display:flex;flex-direction:column">' + bRows + '</div>' + photo("A photo or a drawing", 190, 150) + '</div></div>' +
+      '<div style="flex:1;min-height:0;display:flex;flex-direction:column">' + sect("🎨 Things I made and did", acts.length ? "" : "Write them in") +
+        '<div style="flex:1;min-height:150px;display:flex;gap:16px;align-items:stretch"><div style="flex:1;min-width:0;display:flex;flex-direction:column">' + aRows + '</div>' + photo("A photo of something I made", 190, 150) + '</div></div>' +
+      '</div>\n</div>';
+    // ── page 2: my favorite part ──
+    var allW = kp.words || [], words = allW.slice(0, UK_WORDS), wMore = Math.max(0, (kp.wordsMore > 0 ? kp.wordsMore : 0) + allW.length - words.length);
+    var face = function (m, sz) {
+      var p = m && m.portrait;
+      if (p && p.img) return '<img src="' + esc(p.img) + '" style="width:' + sz + 'px;height:' + sz + 'px;object-fit:cover;border-radius:7px;border:1.5px solid ' + GL + ';flex-shrink:0">';
+      return '<div style="width:' + sz + 'px;height:' + sz + 'px;border-radius:7px;border:1.5px solid ' + GL + ';display:flex;align-items:center;justify-content:center;font-size:' + Math.round(sz * 0.55) + 'px;flex-shrink:0">' + esc((p && p.emoji) || emoji) + '</div>';
+    };
+    var bottom;
+    if (words.length) {
+      var wl = little
+        ? '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px 8px">' + words.map(function (m) {
+            return '<div style="height:76px;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0;overflow:hidden">' + face(m, 50) + '<div style="font-size:10px;font-weight:700;color:' + INK + ';max-width:100%;' + one + '">' + esc(m.name) + '</div></div>';
+          }).join("") + '</div>'
+        : '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">' + words.map(function (m) {
+            return '<div style="height:40px;display:flex;align-items:center;gap:7px;min-width:0;overflow:hidden">' + face(m, 30) +
+              '<div style="flex:1;min-width:0;display:flex;flex-direction:column"><div style="font-size:11.5px;font-weight:700;color:' + INK + ';' + one + '">' + esc(m.name) + '</div>' +
+              '<div style="height:16px;border-bottom:1.5px solid ' + MUT + '"></div></div></div>';
+          }).join("") + '</div>';
+      bottom = '<div style="flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden">' +
+        sect("🃏 Words and facts I know", little ? "Circle the ones you know" : "Write what you know") + wl + more(wMore, "more", "more") + '</div>' +
+        photo("Glue a photo here<br>Something we made, ate or did", 230, 0);
+    } else {
+      bottom = photo("Glue a photo here<br>Something we made, ate or did", 0, 0) + photo("Glue a photo here<br>Something we made, ate or did", 0, 0);
+    }
+    var p2 = '<div class="page-label">Unit Study — ' + esc(title) + ' (closing 2/2)</div>\n<div class="page">\n' + stripe +
+      '<div data-uk="2" style="padding:24px 48px 30px;flex:1;display:flex;flex-direction:column;gap:14px;overflow:hidden">' + head("My favorite part") +
+      '<div style="flex:1;min-height:0;display:flex;flex-direction:column">' + sect("⭐ My favorite part", "Draw it") +
+        '<div style="flex:1;min-height:200px;display:flex;border:2px solid ' + GM + ';border-radius:12px;padding:4px"><div style="flex:1;border:1px solid ' + GL + ';border-radius:9px"></div></div></div>' +
+      '<div style="flex-shrink:0;height:300px;display:flex;gap:16px;align-items:stretch">' + bottom + '</div>' +
+      '</div>\n</div>';
+    return [p1, p2];
+  }
+  // UNITKEEP_END
   function unitInsertPages(ins, weekNum, theme) {
     if (ins && ins.cover) return ucCoverPages(ins, weekNum, theme);   // UNITCOVER
+    if (ins && ins.keep) return ukKeepPages(ins, weekNum, theme);   // UNITKEEP
     if (ins && uwRowsOf(ins).length && !uwHasCards(ins)) return uwOnlyPage(ins, weekNum, theme);   // UNITWEEK
     if (!ins || !((ins.learning && ins.learning.length) || (ins.learned && ins.learned.length) || (ins.next && ins.next.length))) return [];
     var esc = function (v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
@@ -6608,6 +6709,7 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     dgStart: dgStart,                   // Daily Grams: first Day of a week from the stored cursor (Notebook tab card + prefetch)
     unitCoverPage: ucCoverPage, unitPageTheme: ucThemeOf, unitPrintDoc: ucPrintDoc,   // UNITCOVER
     unitActivityPage: uapPage,   // UNITACTPG
+    unitClosingPages: ukClosingPages,   // UNITKEEP
 
     // exposed for testing
     _internal: { generateGeneric: generateGeneric, spellNbPages: spellNbPages, juCurriculumFromMastery: juCurriculumFromMastery, generateJulian: generateJulian, generatePreK: generatePreK, nbThemeKey: nbThemeKey, pkLevel: pkLevel, pkSpec: pkSpec, pkCurriculum: pkCurriculum, JU_LEVEL: JU_LEVEL, CB_LEVEL: CB_LEVEL, JU_THEME: JU_THEME, CB_THEME: CB_THEME, PK_LEVEL_DEFAULT: PK_LEVEL_DEFAULT, generateCaleb: generateCaleb, cbCurriculum: cbCurriculum, dgWeekPlan: dgWeekPlan, nbCalendarDays: nbCalendarDays, generateLucy: generateLucy, luPhonoWeek: luPhonoWeek, LU_PHONO: LU_PHONO, luWordsWeek: luWordsWeek, luWordsFromMastery: luWordsFromMastery, LU_DOLCH: LU_DOLCH }

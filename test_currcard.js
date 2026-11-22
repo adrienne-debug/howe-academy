@@ -520,6 +520,7 @@ console.log("\n(h) no new Firebase write path in the curriculum region");
   "\"unitStudies/\"+unitId+\"/decks\"",   // CHECKFIX 2026-11-22: ＋ Add cards → a new deck, ONE transaction appending the Builder's deck shape
   "\"unitStudies/\"+unitId+\"/decks/\"+di+\"/flipFace\"",
   "\"unitStudies/\"+unitId+\"/enrolled/\"+kid",
+  "\"unitStudies/\"+unitId+\"/keepWords\"",   // UNITKEEP (2026-11-22): 🃏 Words and facts I know tick, Mom only
   "\"unitStudies/\"+unitId+\"/kidStage/\"+kid",
   "\"unitStudies/\"+unitId+\"/nbActivity/\"+kid",
   "\"unitStudies/\"+unitId+\"/nbInsert\"",

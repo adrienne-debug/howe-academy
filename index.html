@@ -37721,6 +37721,7 @@ function haNbContext(kid){
   try{ if(typeof usNbAttach==="function") usNbAttach(kid,units); }catch(e){}   // 🇺🇸 USNB: the US Path's stage pages read ins.us
   try{ if(typeof uwAttach==="function") units=uwAttach(kid,units,tasks,dates); }catch(e){}   // 🧾 UNITWEEK: "This week we will…" on each unit page (ins.week)
   try{ if(typeof ucAttach==="function") units=ucAttach(kid,units,tasks,dates); }catch(e){}   // 📕 UNITCOVER: the unit's cover in the week of its first day (ins.cover)
+  try{ if(typeof ukAttach==="function") units=ukAttach(kid,units,tasks,dates); }catch(e){}   // 📗 UNITKEEP: the closing pages in the week of the unit's last day (ins.keep)
   // Recent drill misses per item ("m"/"~" results over the last few sessions) so the notebook's
   // review flag can resurface letters/numbers Julian struggled with this week. Kept separate from
   // the item's lifetime drop_count — this ages out as he recovers.
@@ -53814,6 +53815,103 @@ function ucPrintWin(build){
   Promise.resolve(p).then(go,fail);
 }
 // UNITCOVER_END
+// UNITKEEP_START — 📗 the unit book's closing pages (PLAN_unit_sheet_2026-11-19.md §4.4 re-shaped by §8.2 "Closing pages (slice 5)", §5
+// row 5; her words 2026-11-22: "build as many in as many sessions you need to get done. go with her answers and build"). A beta mom's
+// keepsake answer 11/20: "A cover page, Books we read, Things I made, My favorite part, A spot to glue a photo" — "They aren't going to
+// care about vocab … I could see them wanting pictures of what they made or ate or did."
+//   · Which week: the mirror of the cover's — the kid's TARGET week has a card that points at the unit's LAST day that is on (asked
+//     through UNITWEEK's uwDayFor, as the cover asks for the first). The same week printed twice → the same pages. A unit switched out
+//     of the notebooks (📓 off) gets none; a unit with no insert that week gets a bare one so its pages still print.
+//   · What they hold (ukKeepOf, worked out fresh): the books and the activities as unitGather reads them (off days left out, each
+//     book once, an activity on no day still counted), each activity ✓ with its date when activityLog says it is done (the date the
+//     app recorded on approve / Mom's tick), else ☐. Caps: 10 books, 12 activities (notebooks.js prints "+ N more").
+//   · 🃏 "Words and facts I know": a tick on the unit page, OFF by default (her beta mom: "They aren't going to care about vocab"). On =
+//     up to 12 cards the kid has learned (haBuildUnitInsight's learned list), the picture and the name only — never a definition. It
+//     takes the place of one of page 2's two photo boxes. Off, absent, or nothing learned = no words anywhere.
+//   · 🖨 Print <kid>'s unit book (Mom, Units tab): the cover (UNITCOVER's page) + the two closing pages for one kid, in that kid's
+//     notebook colours, through ucPrintWin (it loads notebooks.js first). Any unit, any time — one with no days, or one that ended last
+//     month. Nobody enrolled → one "🖨 Print the unit book" with no kid's marks.
+// One stored field: unitStudies/<id>/keepWords = true while the tick is on; turning it off removes the field. ONE targeted set, Mom
+// only (momHere), live only (db && !_dryRun()). Nothing else here writes.
+const UK_MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function ukWordsOn(u){ return !!(u&&u.keepWords===true); }
+function ukDate(ts){ const n=Number(ts); if(!isFinite(n)||n<=0) return ""; const d=new Date(n); return isNaN(d.getTime())?"":UK_MON[d.getMonth()]+" "+d.getDate(); }
+function ukKeepOf(kid,u){
+  if(!u||!u.id||typeof unitGather!=="function") return null;
+  const g=unitGather(u), log=(kid&&u.activityLog&&u.activityLog[kid])||{};
+  const books=g.totals.books.map(b=>({t:b.title,by:b.by||""}));
+  const seen={}, acts=[];
+  g.days.forEach(d=>d.acts.forEach(a=>{ if(!seen[a.key]){ seen[a.key]=1; acts.push(a); } })); g.loose.forEach(a=>{ if(!seen[a.key]){ seen[a.key]=1; acts.push(a); } });
+  const A=acts.map(a=>{ const lg=log[a.key]; return {e:a.emoji||"",t:a.title,done:!!lg,date:lg?ukDate(lg.ts):""}; });
+  let words=[];
+  if(kid&&ukWordsOn(u)&&typeof haBuildUnitInsight==="function"){ let ins=null; try{ ins=haBuildUnitInsight(kid,u); }catch(e){ ins=null; }
+    words=((ins&&ins.learned)||[]).map(m=>{ const p=m.portrait; return {name:String(m.name==null?"":m.name),portrait:(p&&p.img)?{img:p.img}:((p&&p.emoji)?{emoji:p.emoji}:null)}; }); }
+  return {title:g.unit.title||"Unit Study",emoji:u.emoji||"\u{1F4D8}",band:(kid&&typeof dcLevel==="function")?dcLevel(kid):"middle",
+    books:books.slice(0,10),booksMore:Math.max(0,books.length-10),acts:A.slice(0,12),actsMore:Math.max(0,A.length-12),
+    words:words.slice(0,12),wordsMore:Math.max(0,words.length-12)};
+}
+// Does this kid's target week hold the unit's last day that is on?
+function ukLastWeek(kid,u,tasks,dates){
+  const on=(typeof utDaysOn==="function")?utDaysOn(u):[], last=on[on.length-1]; if(!last) return false;
+  return (tasks||[]).some(t=>{ if(!t||t.who!==kid) return false; let r=null;
+    try{ r=(typeof uwDayFor==="function")?uwDayFor(t,dates):((typeof utDayForTask==="function")?utDayForTask(t):null); }catch(e){ r=null; }
+    return !!(r&&r.uid===u.id&&r.id===last.id); });
+}
+// Called from haNbContext after the cover: each unit whose last day is this week gets ins.keep.
+function ukAttach(kid,units,tasks,dates){
+  units=units||[]; const add=[];
+  ((typeof haKidUnits==="function")?haKidUnits(kid):[]).filter(u=>u&&u.nbInsert!==false).forEach(u=>{
+    if(!ukLastWeek(kid,u,tasks,dates)) return;
+    const kp=ukKeepOf(kid,u); if(!kp) return;
+    const ins=units.find(x=>x&&x.unitId===u.id);
+    if(ins) ins.keep=kp;
+    else add.push({unitId:u.id,title:u.title,emoji:u.emoji||"\u{1F4D8}",days:(typeof nbUnitDays==="function")?nbUnitDays(kid,u.id):{},learning:[],learned:[],next:[],extras:[],extrasTitle:"",activity:null,activities:[],keep:kp}); });
+  return add.length?units.concat(add):units;
+}
+function ukHasCards(u){ return ((u&&u.decks)||[]).some(d=>d&&d.cards&&(Array.isArray(d.cards)?d.cards.length:Object.keys(d.cards).length)); }
+function ukBookHtml(u,esc){
+  if(!(typeof momHere==="function"&&momHere())||!u||!u.id) return "";
+  const q=v=>String(v).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,"&quot;"), id=q(u.id);
+  const kids=((typeof utsRoster==="function")?utsRoster():[]).filter(k=>(u.enrolled||{})[k]);
+  const btn='padding:7px 14px;border-radius:10px;border:1.5px solid var(--border);background:#fff;color:#1f2937;font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap';
+  const nm=k=>(typeof cap==="function")?cap(k):k;
+  let h='<div data-ukbook="1" style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:12px;padding-top:11px;border-top:1px solid var(--border)">'+
+    '<span style="flex:1;min-width:150px;font-size:12px;font-weight:700;color:#1f2937">\u{1F4D7} The unit book<div style="font-size:10.5px;font-weight:600;color:var(--muted);line-height:1.4;margin-top:2px">The cover and two closing pages: books we read, things they made and did, their favorite part, and photo boxes to glue in. The closing pages print by themselves in the notebook of the week with the unit’s last day.</div></span>'+
+    '<span style="display:flex;gap:6px;flex-wrap:wrap">'+
+    (kids.length?kids.map(k=>'<button onclick="ukPrintBook(\''+id+'\',\''+q(k)+'\')" style="'+btn+'">\u{1F5A8} Print '+esc(nm(k))+'’s unit book</button>').join("")
+      :'<button onclick="ukPrintBook(\''+id+'\',\'\')" style="'+btn+'">\u{1F5A8} Print the unit book</button>')+'</span></div>';
+  if(ukHasCards(u)){ const on=ukWordsOn(u);
+    h+='<div data-ukwords="1" style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:10px">'+
+      '<span style="flex:1;min-width:150px;font-size:12px;font-weight:700;color:#1f2937">\u{1F0CF} Words and facts I know'+(on?'':' <span style="font-weight:800;color:#b45309">\u00B7 off</span>')+
+      '<div style="font-size:10.5px;font-weight:600;color:var(--muted);line-height:1.4;margin-top:2px">Adds up to 12 cards they’ve learned to the unit book’s last page — the picture and the name, with a line to write. It takes the place of one photo box.</div></span>'+
+      '<button onclick="ukToggleWords(\''+id+'\')" style="padding:7px 14px;border-radius:10px;border:1.5px solid '+(on?'#86efac':'var(--border)')+';background:'+(on?'#f0fdf4':'#fff')+';color:'+(on?'#15803d':'#b45309')+';font-size:12px;font-weight:700;cursor:pointer;font-family:\'DM Sans\',sans-serif;white-space:nowrap">'+(on?'\u2713 On':'\u25CB Off')+'</button></div>'; }
+  return h;
+}
+function ukToggleWords(unitId){
+  if(!(typeof momHere==="function"&&momHere())) return false;   // what's in the book is Mom's call
+  const u=((typeof unitStudies!=="undefined"&&unitStudies)||{})[unitId]; if(!u) return false;
+  const next=!ukWordsOn(u);
+  if(next) u.keepWords=true; else delete u.keepWords;
+  const live=(typeof db!=="undefined"&&!!db&&!_dryRun());
+  if(live) db.ref("unitStudies/"+unitId+"/keepWords").set(next?true:null);   // ONE targeted set; off = the field removed
+  else if(typeof gwShowToast==="function") gwShowToast("\u{1F0CF} Words and facts I know "+(next?"on":"off")+" (dry run \u2014 nothing saved)");
+  if(typeof renderAll==="function") renderAll();
+  return true;
+}
+// One kid's unit book: UNITCOVER's cover + the two closing pages, in the kid's notebook colours. "" when notebooks.js isn't there.
+function ukBookDoc(u,kid){
+  const NB=window.HoweNotebooks; if(!u||!NB||!NB.unitCoverPage||!NB.unitClosingPages||!NB.unitPrintDoc||typeof ucCoverOf!=="function") return "";
+  kid=kid||null; const th=NB.unitPageTheme?NB.unitPageTheme(kid,(kid&&typeof ucLook==="function")?ucLook(kid):{}):null;
+  const kp=ukKeepOf(kid,u); if(!kp) return "";
+  return NB.unitPrintDoc((u.title||"Unit")+" — unit book",[NB.unitCoverPage(ucCoverOf(kid,u),th)].concat(NB.unitClosingPages(kp,th)));
+}
+function ukPrintBook(unitId,kid){
+  if(!(typeof momHere==="function"&&momHere())) return;
+  const u=(typeof unitStudies!=="undefined"&&unitStudies)?unitStudies[unitId]:null; if(!u) return;
+  if(kid&&!(u.enrolled||{})[kid]) return;
+  ucPrintWin(()=>ukBookDoc(u,kid||null));   // UNITCOVER's print window: loads notebooks.js first when it isn't loaded yet
+}
+// UNITKEEP_END
 // GEOALL_START — 🌍 GEOGRAPHY PATH: every country (her words 2026-11-16: "does the geography unit cover all of the countries?" …
 // "Yes, add all"). Stage 6 Countries 87 → 195 — the 193 UN members + Vatican City + Palestine — and Stage 7 World Geography
 // 60 → 195, a capital card for every one.
@@ -55096,6 +55194,7 @@ function renderUnitDetail(u){
     if(typeof laIrrHtml==="function") h+=laIrrHtml(u,esc);   // LAIRR: ＋ Add Irregulars (Language Arts unit only; units step 9, 2026-10-26)
     if(typeof laGrowHtml==="function") h+=laGrowHtml(u,esc);   // LAGROW: ＋ Grow Language Arts (Language Arts unit only, 2026-11-02)
     if(typeof ucCoverBtnHtml==="function") h+=ucCoverBtnHtml(u,esc);   // UNITCOVER: 📕 🖨 Print the cover
+    if(typeof ukBookHtml==="function") h+=ukBookHtml(u,esc);   // UNITKEEP: 📗 🖨 Print <kid>'s unit book + 🃏 Words and facts I know
     if(typeof suHtml==="function") h+=suHtml(u,esc);   // STARTERUP: ＋ Add the new stages (a starter unit the code has grown)
     if(typeof udelHtml==="function") h+=udelHtml(u,esc);   // UNITDEL: 🗑 Delete unit (a Builder unit nothing uses, two taps)
     h+='</div>';
