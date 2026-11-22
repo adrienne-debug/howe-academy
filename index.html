@@ -62473,9 +62473,10 @@ function drPlanFor(kid){
   const live=(typeof retrOn==="function")?retrOn(kid):true;
   const rp=((typeof masteryData!=="undefined"&&masteryData&&masteryData.retrievalPlan)||{})[kid]||{};
   const w1=(rp.week&&typeof rp.week==="object")?rp.week:{}, w2=(rp.week2&&typeof rp.week2==="object")?rp.week2:{};
+  const w3=(rp.week3&&typeof rp.week3==="object")?rp.week3:{};   // DRILLTHREE
   RETR_DAYS.forEach(function(d){
     on[d]=live?retrDayKinds(kid,d):[];
-    saved[d]=[w1[d],w2[d]].filter(function(k){ return k&&k!=="off"; });
+    saved[d]=[w1[d],w2[d],w3[d]].filter(function(k){ return k&&k!=="off"; });   // DRILLTHREE: + the third row
   });
   return {on:on,saved:saved};
 }
@@ -62541,29 +62542,34 @@ const DR_KIND_ABOUT={drill:"You show the cards, {k} answers.",match:"A matching 
 // Pure. w1 / w2 = the two slots as the builder reads them (retrWeek / retrWeek2); turn `kind` on (on=true) or off for `day`.
 // → {ok:true, changed, week, week2} with week = all five days ("off" stored) and week2 cleaned (off / same-as-week dropped),
 //   or {ok:false, full:[kind in week, kind in week2]} when the day already holds two other kinds (nothing to save).
-function drDaysMap(w1,w2,day,kind,on){
+// DRILLTHREE: w3 = the third slot (retrWeek3; leaving it out = an empty third slot) → also week3, cleaned like week2 (off /
+// same as week or week2 dropped); a day is full only with THREE other kinds, and full names all three.
+function drDaysMap(w1,w2,day,kind,on,w3){
   const days=(typeof RETR_DAYS!=="undefined")?RETR_DAYS:["mon","tue","wed","thu","fri"];
-  const a={}, b={};
+  const a={}, b={}, c={};
   days.forEach(function(d){
     a[d]=((w1||{})[d])||"off";
     const x=((w2||{})[d])||"off"; b[d]=(x===a[d])?"off":x;   // the same kind twice is never kept
+    const y=((w3||{})[d])||"off"; c[d]=(y===a[d]||y===b[d])?"off":y;   // DRILLTHREE
   });
   let changed=false;
   if(days.indexOf(day)>=0&&kind&&kind!=="off"){
     if(on){
-      if(a[day]!==kind&&b[day]!==kind){
+      if(a[day]!==kind&&b[day]!==kind&&c[day]!==kind){   // DRILLTHREE
         if(a[day]==="off"){ a[day]=kind; changed=true; }
         else if(b[day]==="off"){ b[day]=kind; changed=true; }
-        else return {ok:false,full:[a[day],b[day]]};
+        else if(c[day]==="off"){ c[day]=kind; changed=true; }   // DRILLTHREE: the third slot
+        else return {ok:false,full:[a[day],b[day],c[day]]};   // DRILLTHREE
       }
     } else {
       if(a[day]===kind){ a[day]="off"; changed=true; }
       if(b[day]===kind){ b[day]="off"; changed=true; }
+      if(c[day]===kind){ c[day]="off"; changed=true; }   // DRILLTHREE
     }
   }
-  const week={}, week2={};
-  days.forEach(function(d){ week[d]=a[d]; if(b[d]!=="off"&&b[d]!==a[d]) week2[d]=b[d]; });
-  return {ok:true,changed:changed,week:week,week2:week2};
+  const week={}, week2={}, week3={};   // DRILLTHREE
+  days.forEach(function(d){ week[d]=a[d]; if(b[d]!=="off"&&b[d]!==a[d]) week2[d]=b[d]; if(c[d]!=="off"&&c[d]!==a[d]&&c[d]!==b[d]) week3[d]=c[d]; });   // DRILLTHREE
+  return {ok:true,changed:changed,week:week,week2:week2,week3:week3};   // DRILLTHREE
 }
 function _drMom(){ return typeof momHere==="function"&&!!momHere(); }
 function _drCanRun(kid,kind){ return DR_KINDS.indexOf(kind)>=0&&((typeof retrHasLadder!=="function")||retrHasLadder(kid)||!!(typeof RETR_NOLADDER_KINDS!=="undefined"&&RETR_NOLADDER_KINDS[kind])); }
@@ -62575,9 +62581,10 @@ function drDaysLit(kid,kind){
 let drDaysKid=null, drDaysKind=null, drDaysFull=null, drDaysSaved=null, _drDaysTimer=null;
 // The one write from this sheet: week + week2 through drPlanWrite (never settings), the live pass queued, and the Mastery
 // panel's in-memory editor copy for this child dropped so it can never write the old days back (§4).
-function drDaysWrite(kid,week,week2){
+function drDaysWrite(kid,week,week2,week3){
   if(!_drMom()) return false;
-  if(!drPlanWrite(kid,{week:week,week2:week2},{rhythm:true})) return false;
+  const pl={week:week,week2:week2}; if(drThreeIn(kid,week3)) pl.week3=week3;   // DRILLTHREE: week3 only when used (drThreeIn)
+  if(!drPlanWrite(kid,pl,{rhythm:true})) return false;
   try{ if(retrAdminLocal&&retrAdminLocal.kid===kid) retrAdminLocal=null; }catch(e){}
   return true;
 }
@@ -62585,11 +62592,11 @@ function drDaysTap(day){
   const kid=drDaysKid, kind=drDaysKind;
   if(!kid||!kind||!DR_DAY_SHORT[day]||!_drMom()||!_drCanRun(kid,kind)) return false;
   const lit=drDaysLit(kid,kind).indexOf(day)>=0;
-  const r=drDaysMap(retrWeek(kid),retrWeek2(kid),day,kind,!lit);
+  const r=drDaysMap(retrWeek(kid),retrWeek2(kid),day,kind,!lit,retrWeek3(kid));   // DRILLTHREE
   drDaysFull=null;
   let saved=false;
   if(!r.ok) drDaysFull={day:day,kinds:r.full};
-  else if(r.changed&&drDaysWrite(kid,r.week,r.week2)){ drDaysSaved=kid+"|"+kind; saved=true; }
+  else if(r.changed&&drDaysWrite(kid,r.week,r.week2,r.week3)){ drDaysSaved=kid+"|"+kind; saved=true; }   // DRILLTHREE
   drDaysRender();
   return saved;
 }
@@ -62612,7 +62619,7 @@ function drDaysHtml(kid,kind){
     const ks=drDaysFull.kinds, dl=DR_DAY_LONG[drDaysFull.day]||drDaysFull.day;
     const tt=function(k){ return (typeof RETR_SLOT_TITLE!=="undefined"&&RETR_SLOT_TITLE[k])||k; };
     h+='<div class="dr-full" style="margin-top:10px;padding:8px 10px;border-radius:10px;background:#fef3c7;border:1px solid #fcd34d;font-size:12px;color:#92400e">'
-      +esc(dl)+' already has two: '+esc(tt(ks[0]))+' and '+esc(tt(ks[1]))+'. Turn one of those off for '+esc(dl)+' first.<div style="margin-top:6px">';
+      +esc(dl)+' already has three: '+esc(drAnd(ks.map(tt)))+'. Turn one of those off for '+esc(dl)+' first.<div style="margin-top:6px">';   // DRILLTHREE
     ks.forEach(function(k){
       h+=_drCanRun(kid,k)
         ?'<button class="ce-chip" onclick="drDaysOpen(\''+arg+'\',\''+k+'\')" style="margin:2px 4px 0 0">'+esc(tt(k))+' →</button>'
@@ -62720,26 +62727,26 @@ function daInfo(kid){
   return {has:has,cards:daCardCount(kid),matchDecks:daMatchDeckCount(kid),ladder:(typeof retrHasLadder!=="function")||!!retrHasLadder(kid),old:daOldDrills(kid)};
 }
 // Pure. Which days have room for `kind`, by drDaysMap itself → {mon:true | [the kinds filling it] …}.
-function daRoom(w1,w2,kind){
+function daRoom(w1,w2,kind,w3){   // DRILLTHREE: + w3
   const out={};
-  Object.keys(DR_DAY_SHORT).forEach(function(d){ const r=drDaysMap(w1,w2,d,kind,true); out[d]=r.ok?true:r.full; });
+  Object.keys(DR_DAY_SHORT).forEach(function(d){ const r=drDaysMap(w1,w2,d,kind,true,w3); out[d]=r.ok?true:r.full; });
   return out;
 }
 // Pure. Turn `kind` on for each of `days` in turn, by drDaysMap's own rule → {week (all five days), week2 (cleaned),
 // on:[days placed], full:[days refused], changed}.
-function daPlan(w1,w2,kind,days){
-  let a=w1||{}, b=w2||{}, changed=false; const on=[], full=[];
-  (days||[]).forEach(function(d){ const r=drDaysMap(a,b,d,kind,true); if(!r.ok){ full.push(d); return; } a=r.week; b=r.week2; if(r.changed) changed=true; on.push(d); });
-  const z=drDaysMap(a,b,"",kind,true);   // no day: just the shape every save writes
-  return {week:z.week,week2:z.week2,on:on,full:full,changed:changed};
+function daPlan(w1,w2,kind,days,w3){   // DRILLTHREE: + w3 → + week3
+  let a=w1||{}, b=w2||{}, c=w3||{}, changed=false; const on=[], full=[];
+  (days||[]).forEach(function(d){ const r=drDaysMap(a,b,d,kind,true,c); if(!r.ok){ full.push(d); return; } a=r.week; b=r.week2; c=r.week3; if(r.changed) changed=true; on.push(d); });
+  const z=drDaysMap(a,b,"",kind,true,c);   // no day: just the shape every save writes
+  return {week:z.week,week2:z.week2,week3:z.week3,on:on,full:full,changed:changed};
 }
 function daState(kid){
   const info=daInfo(kid), list=daKindsFrom(info), offer=list.filter(function(x){ return x.ok; }).map(function(x){ return x.kind; });
   const kind=offer.indexOf(daKind)>=0?daKind:(offer[0]||null);
-  const w1=retrWeek(kid), w2=retrWeek2(kid), room=kind?daRoom(w1,w2,kind):{};
+  const w1=retrWeek(kid), w2=retrWeek2(kid), w3=retrWeek3(kid), room=kind?daRoom(w1,w2,kind,w3):{};   // DRILLTHREE
   const roomDays=Object.keys(DR_DAY_SHORT).filter(function(d){ return room[d]===true; });
   const lit=(daDays||roomDays).filter(function(d){ return room[d]===true; });
-  return {info:info,list:list,kind:kind,w1:w1,w2:w2,room:room,roomDays:roomDays,lit:lit};
+  return {info:info,list:list,kind:kind,w1:w1,w2:w2,w3:w3,room:room,roomDays:roomDays,lit:lit};   // DRILLTHREE
 }
 function daChoose(on){
   if(on&&!_drMom()) return false;
@@ -62767,9 +62774,9 @@ function daSave(){
   const say=function(m){ daMsg=m; ceRenderAddSheet(); return false; };
   if(!st.kind) return say("There’s no kind of card practice to add right now.");
   if(!st.lit.length) return say("Pick at least one day.");
-  const p=daPlan(st.w1,st.w2,st.kind,st.lit);
+  const p=daPlan(st.w1,st.w2,st.kind,st.lit,st.w3);   // DRILLTHREE
   if(!p.on.length||!p.changed) return say("Nothing to save — those days already have it.");
-  if(!drDaysWrite(kid,p.week,p.week2)) return say("Not saved — try again.");
+  if(!drDaysWrite(kid,p.week,p.week2,p.week3)) return say("Not saved — try again.");   // DRILLTHREE
   const name=(typeof cap==="function")?cap(kid):kid, dt=p.on.map(function(d){ return DR_DAY_SHORT[d]; }).join(" ");
   const pend=(typeof retrLivePending==="function"&&retrLivePending(kid))?" This week’s cards update in a moment.":"";
   daClose();
@@ -62829,7 +62836,7 @@ function daSheetHTML(kid,col){
     const full=Object.keys(DR_DAY_SHORT).filter(function(d){ return st.room[d]!==true; });
     if(full.length===5) h+=note("da-fulls","Every day already has its practice cards. Turn one off on its line in the purple strip first.",true);
     else if(full.length) h+='<div class="da-fulls" style="margin-top:6px;font-size:11px;color:var(--muted)">'+full.map(function(d){
-      return esc((DR_DAY_LONG[d]||d)+" is full: "+(st.room[d]||[]).map(_daTitle).join(" and ")+".");
+      return esc((DR_DAY_LONG[d]||d)+" is full: "+drAnd((st.room[d]||[]).map(_daTitle))+".");   // DRILLTHREE: all three named
     }).join(" ")+' Turn one off on its line to make room.</div>';
     else h+='<div style="margin-top:6px;font-size:11px;color:var(--muted)">Tap a day to leave it out.</div>';
   }
@@ -86998,6 +87005,32 @@ function retrWeek2(kid){
   const rp=(masteryData.retrievalPlan||{})[kid]||{};
   return Object.assign({},RETR_WEEK2_DEFAULT[kid]||{},rp.week2||{});
 }
+// DRILLTHREE_START — 🃏 a third practice card a day (her pick 2026-11-22: "Allow three", asked with the trade-offs laid out;
+// slice 9 of DESIGN_drill_rows_curriculum_2026-11-19.md). A third slot per day at mastery/retrievalPlan/<kid>/week3, the same
+// shape as week2: a kind per day, off / absent = none, no built-in defaults, the same kind twice on a day never kept
+// (retrDayKinds dedupes). No migration: a plan with no week3 reads, builds and saves exactly as before. The week builder
+// (gwInjectRetrieval) and the live-week pass (RETRLIVE) read the day's kinds only through retrDayKinds, so the third card is
+// laid by the second card's rule, unchanged: after the child's last card, before the Closing Notebook; else the earliest free
+// gap inside the day; else the day's "Didn't fit today" box. Its id is <year>d<day>_retr_<kind>_<kid> like the others — a
+// kind is on a day at most once, so no id can collide. The Grid's Min column and the Day page's brain-work strip read
+// retrDayKinds / retrTodayKinds and follow. The Curriculum lines and ＋ Add subject ▸ Card practice set it (drDaysMap's third slot); the
+// old Mastery ▸ Settings day buttons keep their two rows and never touch week3 (their save hands drPlanWrite settings /
+// week / week2 only, and update() keeps the rest). Test: test_drill_three.js.
+function retrWeek3(kid){
+  const rp=(masteryData.retrievalPlan||{})[kid]||{};
+  return Object.assign({},(rp.week3&&typeof rp.week3==="object")?rp.week3:{});
+}
+// A save carries week3 only when it holds a kind or the child has one saved now (so turning the last one off clears it):
+// a plan that never used the third slot is written exactly as before — {week, week2}.
+function drThreeIn(kid,week3){
+  if(!week3||typeof week3!=="object") return false;
+  if(Object.keys(week3).length) return true;
+  const rp=(masteryData.retrievalPlan||{})[kid]||{};
+  return !!(rp.week3&&typeof rp.week3==="object"&&Object.keys(rp.week3).length);
+}
+// "A and B" / "A, B and C" — a full day names every kind on it.
+function drAnd(xs){ xs=xs||[]; return xs.length<2?xs.join(""):xs.slice(0,-1).join(", ")+" and "+xs[xs.length-1]; }
+// DRILLTHREE_END
 // RETRFAM_START — drill/match cards for every family (her yes 2026-11-03, "yes to all and go to all"). Sara saved Andrew's
 // rhythm (drill Mon/Tue/Thu/Fri + match every day) and regenerated: no card came, because the week builder only let in a kid
 // with a sprint ladder (retrTracks), and only the Howe kids have ladders. Daily Drill and Match never read a ladder, so the
@@ -87012,12 +87045,12 @@ function retrHasLadder(kid){
 function retrOn(kid){
   if(retrHasLadder(kid)) return true;
   const rp=((typeof masteryData!=="undefined"&&masteryData&&masteryData.retrievalPlan)||{})[kid]||{};
-  return [rp.week,rp.week2].some(w=>w&&typeof w==="object"&&RETR_DAYS.some(d=>w[d]&&w[d]!=="off"));
+  return [rp.week,rp.week2,rp.week3].some(w=>w&&typeof w==="object"&&RETR_DAYS.some(d=>w[d]&&w[d]!=="off"));   // DRILLTHREE: + the third row
 }
 // RETRFAM_END
 function retrDayKinds(kid,dk){
   const out=[], lad=retrHasLadder(kid);
-  [retrWeek(kid)[dk],retrWeek2(kid)[dk]].forEach(k=>{ if(k&&k!=="off"&&out.indexOf(k)<0&&(lad||RETR_NOLADDER_KINDS[k])) out.push(k); });   // 🧠 RETRFAM: no ladder → drill + match only
+  [retrWeek(kid)[dk],retrWeek2(kid)[dk],retrWeek3(kid)[dk]].forEach(k=>{ if(k&&k!=="off"&&out.indexOf(k)<0&&(lad||RETR_NOLADDER_KINDS[k])) out.push(k); });   // 🧠 RETRFAM: no ladder → drill + match only · DRILLTHREE: + the third row
   return out;
 }
 function retrTodayKinds(kid){
@@ -93236,6 +93269,7 @@ function gwInjectRetrieval(allTasks,sortedDates,WDAY_MAP,skipSet,dates,dayOfYear
       if(!((typeof retrOn==="function")?retrOn(kid):retrTracks(kid).length)) continue;   // 🧠 RETRFAM: a ladder OR a saved rhythm
       // Row 1 + optional Row 2 (retrievalPlan/{kid}/week2) — up to two slots that day,
       // never the same kind twice (retrDayKinds dedupes). Template keys are mon/tue/….
+      // DRILLTHREE: + optional Row 3 (…/week3) — up to three; each laid by this same loop, after the one before it.
       const kinds=(typeof retrDayKinds==="function")?retrDayKinds(kid,dn.slice(0,3))
                   :[((retrWeek(kid)||{})[dn.slice(0,3)]||"off")];
       for(const kind of kinds){

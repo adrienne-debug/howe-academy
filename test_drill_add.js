@@ -43,7 +43,10 @@ const card = (subject, status, x) => Object.assign({ id: subject + "_" + Math.ra
 const deck = (subject, n, status) => Array.from({ length: n }, () => card(subject, status));
 
 // The feature taken out again: the block, the three ADDFLOW hook lines, the empty chip's door and the two DRILLROWS notes.
+// DRILLTHREE (slice 9) is taken out first, the same way on both sides (test_drill_three.js's stripThree; a no-op on a tree without it).
+const { stripThree } = require("./test_drill_three.js");
 function strip(s) {
+  s = stripThree(s);
   const a = s.indexOf("// DRILLADD_START"), b = s.indexOf("// DRILLADD_END");
   if (a >= 0 && b > a) s = s.slice(0, a) + s.slice(b + "// DRILLADD_END\n".length);
   return s
@@ -195,9 +198,10 @@ console.log("2. the data readers");
 console.log("3. room and placement are drDaysMap's");
 {
   const w = world();
-  let r = w.daRoom(wk("sprint", "match", "off", "drill", "off"), { mon: "recheck", wed: "sprint" }, "drill");
-  ok("a day with two other kinds is full (names them); a free slot or the kind itself = room", r.mon.join() === "sprint,recheck" && r.tue === true && r.wed === true && r.thu === true && r.fri === true, r);
-  let p = clone(w.daPlan(wk("sprint", "match", "off", "off", "off"), { mon: "recheck" }, "drill", DAYS));
+  // DRILLTHREE (her pick 2026-11-22 "Allow three"): a day is full with THREE other kinds (week, week2, week3)
+  let r = w.daRoom(wk("sprint", "match", "off", "drill", "off"), { mon: "recheck", wed: "sprint" }, "drill", { mon: "match", tue: "recheck" });
+  ok("a day with three other kinds is full (names them); a free slot or the kind itself = room", r.mon.join() === "sprint,recheck,match" && r.tue === true && r.wed === true && r.thu === true && r.fri === true, r);
+  let p = clone(w.daPlan(wk("sprint", "match", "off", "off", "off"), { mon: "recheck" }, "drill", DAYS, { mon: "match" }));
   ok("daPlan places on every day with room, refuses the full one", J(p.on) === J(["tue", "wed", "thu", "fri"]) && J(p.full) === J(["mon"]) && p.changed, p);
   ok("…week = all five days, the free first slot used first; week2 takes the second", J(p.week) === J(wk("sprint", "match", "drill", "drill", "drill")) && J(p.week2) === J({ mon: "recheck", tue: "drill" }), p);
   p = clone(w.daPlan({}, {}, "match", ["mon", "wed"]));
@@ -211,17 +215,17 @@ console.log("3. room and placement are drDaysMap's");
   const KS = ["drill", "match", "sprint", "recheck", "off"], pick = x => x[Math.floor(Math.random() * x.length)];
   let bad = 0, n = 0;
   for (let i = 0; i < 600; i++) {
-    const w1 = {}, w2 = {}; DAYS.forEach(d => { if (Math.random() < .9) w1[d] = pick(KS); if (Math.random() < .5) w2[d] = pick(KS); });
+    const w1 = {}, w2 = {}, w3 = {}; DAYS.forEach(d => { if (Math.random() < .9) w1[d] = pick(KS); if (Math.random() < .5) w2[d] = pick(KS); if (Math.random() < .5) w3[d] = pick(KS); });   // DRILLTHREE: + w3
     const kind = pick(KS.slice(0, 4)), days = DAYS.filter(() => Math.random() < .7);
-    const room = w.daRoom(w1, w2, kind), plan = w.daPlan(w1, w2, kind, days);
-    let A = w1, B = w2; const on = [];
-    days.forEach(d => { const r = w.drDaysMap(A, B, d, kind, true); if (r.ok) { A = r.week; B = r.week2; on.push(d); } });
-    const ref = w.drDaysMap(A, B, "", kind, true);
+    const room = w.daRoom(w1, w2, kind, w3), plan = w.daPlan(w1, w2, kind, days, w3);
+    let A = w1, B = w2, C = w3; const on = [];
+    days.forEach(d => { const r = w.drDaysMap(A, B, d, kind, true, C); if (r.ok) { A = r.week; B = r.week2; C = r.week3; on.push(d); } });
+    const ref = w.drDaysMap(A, B, "", kind, true, C);
     n++;
-    if (J(plan.week) !== J(ref.week) || J(plan.week2) !== J(ref.week2) || J(plan.on) !== J(on)) bad++;
-    if (DAYS.some(d => (room[d] === true) !== w.drDaysMap(w1, w2, d, kind, true).ok)) bad++;
-    DAYS.forEach(d => { const ks = [plan.week[d], plan.week2[d]].filter(k => k && k !== "off"); if (new Set(ks).size !== ks.length) bad++; });
-    if (plan.on.some(d => plan.week[d] !== kind && plan.week2[d] !== kind)) bad++;
+    if (J(plan.week) !== J(ref.week) || J(plan.week2) !== J(ref.week2) || J(plan.week3) !== J(ref.week3) || J(plan.on) !== J(on)) bad++;
+    if (DAYS.some(d => (room[d] === true) !== w.drDaysMap(w1, w2, d, kind, true, w3).ok)) bad++;
+    DAYS.forEach(d => { const ks = [plan.week[d], plan.week2[d], plan.week3[d]].filter(k => k && k !== "off"); if (new Set(ks).size !== ks.length) bad++; });
+    if (plan.on.some(d => plan.week[d] !== kind && plan.week2[d] !== kind && plan.week3[d] !== kind)) bad++;
   }
   ok("600 random plans: daPlan = drDaysMap tap by tap, daRoom = drDaysMap's answer, never a duplicate, the kind on every placed day", bad === 0, { bad, n });
 }
@@ -229,7 +233,7 @@ console.log("3. room and placement are drDaysMap's");
 console.log("4. what Mom sees");
 {
   const items = { kida: deck("Math", 6), kidb: deck("Colors", 2) };
-  const w = world({ items, plan: { kida: { week: wk("sprint", "off", "sprint", "match", "recheck"), week2: { mon: "match" } } } });
+  const w = world({ items, plan: { kida: { week: wk("sprint", "off", "sprint", "match", "recheck"), week2: { mon: "match" }, week3: { mon: "recheck" } } } });   // DRILLTHREE: Mon full = three kinds
   w.run = c => vm.runInContext(c, w);
   w.run("ceOpenAdd('kida')");
   const s1 = w.html();
@@ -240,7 +244,7 @@ console.log("4. what Mom sees");
   ok("no name, device, minutes or tracking to fill in", !/ce-add-name|<input|<textarea|ce-stepper|What kind\?|device|Starts at/.test(h));
   ok("kinds this child can run and doesn't have: Daily Drill (picked first), Re-checks is on already, Sprint / Match too", J(kindsIn(h)) === J(["drill*"]), kindsIn(h));
   ok("…each with its one line and minutes", /You show the cards, Kid A answers\. About 5 min\./.test(h));
-  ok("Mon–Fri pre-lit on every day with room; Monday (Sprint + Match) is full and named", J(litIn(h)) === J(["tue", "wed", "thu", "fri"]) && J(fullIn(h)) === J(["Mon"]) && /Monday is full: \u{1F3C3} Sprint and \u{1F3AF} Match &amp; Play\./u.test(h), { lit: litIn(h), full: fullIn(h) });
+  ok("Mon–Fri pre-lit on every day with room; Monday (Sprint + Match + Re-checks) is full and named", J(litIn(h)) === J(["tue", "wed", "thu", "fri"]) && J(fullIn(h)) === J(["Mon"]) && /Monday is full: \u{1F3C3} Sprint, \u{1F3AF} Match &amp; Play and \u{1F4C5} Sprint Re-checks\./u.test(h), { lit: litIn(h), full: fullIn(h) });
   ok("Save and Cancel", /onclick="daSave\(\)">Save</.test(h) && /onclick="daClose\(\)">Cancel</.test(h));
   ok("the backdrop closes it; the sheet keeps the class afMount re-opens in place", /<div class="ce-sheet" onclick="if\(event\.target===this\)daClose\(\)">/.test(h));
   w.run("daToggleDay('wed')");
@@ -275,7 +279,7 @@ console.log("4. what Mom sees");
   f.run("ceOpenAdd('kidb');daChoose(true)");
   ok("every kind it can run already on → says so, no Save", /Every kind of card practice Kid B can run is already on the week/.test(f.html()) && !/daSave/.test(f.html()));
 
-  const g = world({ items: { kida: deck("Math", 6) }, plan: { kida: { week: wk("sprint", "sprint", "sprint", "sprint", "sprint"), week2: wk("match", "match", "match", "match", "match") } } }); g.run = c => vm.runInContext(c, g);
+  const g = world({ items: { kida: deck("Math", 6) }, plan: { kida: { week: wk("sprint", "sprint", "sprint", "sprint", "sprint"), week2: wk("match", "match", "match", "match", "match"), week3: wk("recheck", "recheck", "recheck", "recheck", "recheck") } } }); g.run = c => vm.runInContext(c, g);   // DRILLTHREE: three a day = full
   g.run("ceOpenAdd('kida');daChoose(true)");
   const hg = g.html();
   ok("every day full → one line, Save can't be used", J(litIn(hg)) === "[]" && fullIn(hg).length === 5 && /Every day already has its practice cards/.test(hg) && /onclick="daSave\(\)" disabled/.test(hg));
@@ -289,7 +293,7 @@ console.log("5. Save");
   const plan = { kida: { settings: { gate_pct: 80 }, week: wk("sprint", "off", "sprint", "match", "recheck"), week2: { mon: "match" } } };
   const w = world({ items: { kida: deck("Math", 6) }, plan }); w.run = c => vm.runInContext(c, w);
   w.__setAdmin({ kid: "kida", week: wk("off", "off", "off", "off", "off") });
-  w.run("ceOpenAdd('kida');daChoose(true);daToggleDay('fri')");
+  w.run("ceOpenAdd('kida');daChoose(true);daToggleDay('fri');daToggleDay('mon')");   // DRILLTHREE: Mon (two kinds) has room now — left out here, so this stays the two-row save
   ok("nothing written while she picks", w.writes.length === 0 && w.sets.length === 0 && w.queued.length === 0);
   ok("Save → true", w.daSave() === true);
   ok("one targeted update() at mastery/retrievalPlan/kida; no set() / remove()", w.writes.length === 1 && w.writes[0].p === "mastery/retrievalPlan/kida" && w.sets.length === 0, w.writes);
