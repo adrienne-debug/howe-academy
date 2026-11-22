@@ -318,7 +318,7 @@ function gfFromPick(v){if(!gfEdit||gfEdit.kind!=="item")return;const f=gfEdit.fo
 function gfFromFormTick(k){if(!gfEdit||gfEdit.kind!=="item"||!gfEdit.form.from||(k!=="told"&&k!=="got"))return;const f=gfEdit.form;f[k]=f[k]?"":today();gfDraw();}
 function fromResolve(f){   // the giver to save: a typed name wins (an existing person by that name, else a new one) · "" = us
   const typed=String(f.fromNew||"").trim().slice(0,60);if(!typed)return f.from||"";
-  const hit=people().find(p=>(p.group||"other")!=="kids"&&String(p.name||"").trim().toLowerCase()===typed.toLowerCase());if(hit)return hit.id;
+  const hit=people().find(p=>(p.group||"other")!=="kids"&&String(p.name||"").trim().toLowerCase()===typed.toLowerCase());if(hit){if(dadIds()[hit.id]){toast(hit.name+" is “us” — it stays one of your own presents");return "";}return hit.id;}   // Dad typed in = us, so the money can't leave her totals by accident
   const pid=newId("people","p-"+slug(typed)),up={name:typed,group:"other",ts:Date.now()};
   node("people")[pid]=Object.assign({},up);write("gifts/people/"+pid,up,"update");log("Added person: "+typed);return pid;
 }

@@ -201,7 +201,10 @@ console.log("\n# 1 · Who's buying it? on the present");
   ok("…logs: Added person, then the present", logs()[0] === "Added person: Aunt Mo" && /Added: Telescope → Ben · 🎁 Aunt Mo is buying it/.test(logs()[1]), logs());
   W.gfNewItem("k_cal", "special"); W.gfSet("name", "Yo-yo"); W.gfSet("fromNew", "  gma rose "); writes.length = 0; W.gfSave();
   ok("a typed name that's already on her list = that person, nothing new made", nonLog().length === 1 && nonLog()[0].val.from === "p-gma", nonLog());
-  W.gfEditItem(nonLog()[0].path.split("/")[2]); W.gfFromFormTick("got"); W.gfSet("fromNew", "Aunt Mo"); writes.length = 0; W.gfSave();
+  const yoyo = nonLog()[0].path.split("/")[2];
+  W.gfNewItem("k_ben", "special"); W.gfSet("name", "Kite"); W.gfSet("fromNew", " sam "); writes.length = 0; W.gfSave();
+  ok("a typed name that is Dad = us: the present is saved as her own, no giver, no new person (hub fix)", nonLog().length === 1 && /^gifts\/items\//.test(nonLog()[0].path) && !("from" in nonLog()[0].val), nonLog());
+  W.gfEditItem(yoyo); W.gfFromFormTick("got"); W.gfSet("fromNew", "Aunt Mo"); writes.length = 0; W.gfSave();
   ok("typing a different giver drops ticks made for the old one", nonLog().length === 1 && nonLog()[0].val.from === "p-aunt-mo" && !("got" in nonLog()[0].val), nonLog());
 }
 {
