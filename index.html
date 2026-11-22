@@ -43642,7 +43642,8 @@ function wbdBarHTML(v,btn){
     '<span style="font-size:11px;color:#64748b">scratch \u00B7 \u2715 wipes it</span><span style="flex:1"></span>'+
     btn("\u25A2 Blank","wbdBg(\'blank\')",v.bg!=="grid")+btn("\u25A6 Grid","wbdBg(\'grid\')",v.bg==="grid")+
     btn("\u270F\uFE0F","wbTool(\'pen\')",v.tool==="pen")+btn("\u{1FA79} Erase","wbTool(\'erase\')",v.tool==="erase")+
-    btn("\u21A9\uFE0E Undo","wbUndo()")+btn("\u{1F9FD} Clear","wbClear()")+btn(v.penOnly?"\u270D\uFE0F Pencil only":"\u{1F446} Finger too","wbTogglePen()",v.penOnly);
+    btn("\u21A9\uFE0E Undo","wbUndo()")+btn("\u{1F9FD} Clear","wbClear()")+btn(v.penOnly?"\u270D\uFE0F Pencil only":"\u{1F446} Finger too","wbTogglePen()",v.penOnly)+
+    ((typeof wbdSaveBtnHTML==="function")?wbdSaveBtnHTML(v,btn):"");   // WBDSAVE: 💾 Save — Mom, from Today's card on a unit day
 }
 // DAYCARD's hook: the door in the card's top bar (the unit day rides along for Save)
 function wbdDoorHTML(g){
@@ -43651,6 +43652,53 @@ function wbdDoorHTML(g){
 }
 try{ window.addEventListener("resize",function(){ if(typeof wbView!=="undefined"&&wbView&&wbView.scratch) wbdFit(); }); }catch(e){}   // a device with no ResizeObserver (the LG) still re-fits on a turn
 // WBOARD_END
+// WBDSAVE_START — 💾 Save on the whiteboard (Sara's answer 2026-11-20: a board is kept only "when someone taps Save"; PLAN §7.2;
+//   Adrienne's "go with her answers and build" 2026-11-22). Scratch stays the default — nothing is written until Save is tapped.
+//   · WHO: Mom (momHere()), on a board opened from Today's card with a unit day (wbdOpen({uid, dayId})). Not on a board opened
+//     from an activity row (opts.key): the kid's own Save (unitWork/<kid>/<unitId>/<key>/board) waits for the row door — not built.
+//   · WHAT IT WRITES: the board becomes a JPEG made from the canvas (white, the grid when on, the ink; at most WBD_MAX_W px wide,
+//     0.85 — picStore's size), uploaded by picStore to Storage pictures/units/<unitId>/days/<dayId>/whiteboard_<stamp>.jpg (the
+//     folder UNITDAY_EXTRAS puts a day's pictures in), then uxDocAdd adds {kind:"image", title:"Whiteboard · 10:42 AM", url} to
+//     that day's 🖼 Pictures & documents: ONE set of unitStudies/<unitId>/track/days/<i>/res/docs (UNITDAY_EXTRAS's own write,
+//     Mom-only, db && !_dryRun). She can rename or take it off on the Days table; the day's card shows it next time.
+//   · REFUSED, said plainly, the drawing left on the board: the upload fails, times out or there is no internet (picStore hands
+//     the data URL back — it is never saved as text in the database), dry run, nothing drawn, the day is gone, 24 on the day.
+//   · Saving again after more drawing adds a second picture; "✓ Saved" until the next stroke. No kid's name in code.
+const WBD_MAX_W=1600;
+function wbdCanSave(v){ return !!(v&&v.scratch&&v.uid&&v.dayId&&!v.key&&typeof momHere==="function"&&momHere()&&typeof uxDocAdd==="function"); }
+function wbdSaveBtnHTML(v,btn){
+  if(!wbdCanSave(v)) return ""; const saved=!!v.savedRev&&v.savedRev===v._rev;
+  return btn(v.saving?"Saving…":(saved?"✓ Saved":"\u{1F4BE} Save"),"wbdSave()",!saved&&!v.saving)+
+    ((v.msg&&(v.saving||v.msgRev===v._rev))?'<span data-wbd-msg="1" style="font-size:12px;font-weight:700;color:'+(v.msgOk?'#15803d':'#b91c1c')+'">'+uxEsc(v.msg)+'</span>':'');
+}
+function wbdSay(v,msg,good){ v.msg=msg; v.msgOk=!!good; v.msgRev=v._rev; if(typeof wbView!=="undefined"&&wbView===v) wbBarRender(); return false; }   // the line lasts until the next stroke
+function wbdJpeg(v){
+  const ink=document.getElementById("wb-ink"); if(!ink||!(ink.width>1)) return "";
+  const s=Math.min(1,WBD_MAX_W/ink.width), W=Math.round(ink.width*s), H=Math.round(ink.height*s);
+  const c=document.createElement("canvas"); c.width=W; c.height=H; const g=c.getContext("2d");
+  g.fillStyle="#fff"; g.fillRect(0,0,W,H);
+  if(v.bg==="grid"){ const st=W/WBD_GRID; g.strokeStyle="#bfdbfe"; g.lineWidth=Math.max(1,W/800); g.beginPath();
+    for(let x=st;x<W-1;x+=st){ g.moveTo(x,0); g.lineTo(x,H); } for(let y=st;y<H-1;y+=st){ g.moveTo(0,y); g.lineTo(W,y); } g.stroke(); }
+  g.drawImage(ink,0,0,W,H);
+  return c.toDataURL("image/jpeg",0.85);
+}
+function wbdTitle(){ let t=""; try{ t=new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}); }catch(e){} return "Whiteboard"+(t?" · "+t:""); }
+async function wbdSave(){
+  const v=(typeof wbView!=="undefined")?wbView:null; if(!wbdCanSave(v)||v.saving) return false;
+  if(!v.strokes.length) return wbdSay(v,"Nothing on the board yet.");
+  if(typeof _dryRun==="function"&&_dryRun()) return wbdSay(v,"Dry run — nothing uploaded, nothing written.");
+  if(!uxRawDay(v.uid,v.dayId)) return wbdSay(v,"That unit day isn’t there any more — nothing saved.");
+  if(uxDocsOf(v.uid,v.dayId).length>=UX_MAX_DOCS) return wbdSay(v,"That day has "+UX_MAX_DOCS+" pictures & documents already — take one off first.");
+  let data=""; try{ data=wbdJpeg(v); }catch(e){ data=""; }
+  if(!/^data:image\/jpeg/.test(String(data))) return wbdSay(v,"This device couldn’t make the picture — nothing saved.");
+  const rev=v._rev||0; v.saving=true; wbdSay(v,"Saving the board…",true);
+  let url=""; try{ url=(typeof picStore==="function")?await picStore(data,["units",v.uid,"days",v.dayId,"whiteboard"]):""; }catch(e){ url=""; }
+  v.saving=false;
+  if(!/^https:\/\//i.test(String(url||""))) return wbdSay(v,"Didn’t save: the upload didn’t go through (no internet?). Nothing was saved — try again.");
+  if(!uxDocAdd(v.uid,v.dayId,{kind:"image",title:wbdTitle(),url:url})) return wbdSay(v,"Didn’t save — the day wasn’t updated.");
+  v.savedRev=rev; wbdSay(v,"Saved to the day’s \u{1F5BC} Pictures & documents",true); return true;
+}
+// WBDSAVE_END
 // UNITDAY_GAME_START — 🎲 a Game on a unit day (her words 2026-11-11: "use those to build what she's envisioning please" — Sara, a
 //   beta mom, answered the games worksheet 2026-11-11: her leaf-blowing competition, minute-to-win-it at Christmas; a game is
 //   "something we all do together, off-screen, with the rules on the day card"; notebook activities stay separate, "maybe having the
