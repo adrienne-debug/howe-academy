@@ -51,6 +51,7 @@ function load(env) {
     ${extract("function _unitActs(")}
     ${extract("function unitActPoints(")}
     ${extract("function haBuildUnitInsight(")}
+    ${extract("function uapSpec(")}
     return { STARTER_UNITS, _starterUnitsHtml, starterUnitAdd, _unitStagedEnrollPending, unitEnroll, haBuildUnitInsight, RG_PICS, INTEREST_WIKI,
       get us(){ return unitStudies; } };`);
   const api = fn(G, db); api.G = G; return api;

@@ -55,11 +55,29 @@ function guarded(db,deny){
       return wrap(r); }; return a; };
   return db;
 }
+// ARCHCORE (PLAN_archive_window slice 3, 2026-11-22): these worlds compare every write and the whole database with OLDER copies of
+// the app, which don't keep the smaller past-weeks copy (archiveCore/). A past-weeks write is now ONE update with both halves; here
+// the archiveCore half is left out (never stored, never logged — nothing in these worlds reads it) and the archive half is written
+// the way those copies wrote it (set, or remove for a null), so the comparisons still catch every other difference.
+// test_archive_core_sync.js tests the copy itself.
+function archBlind(db){
+  const api0=db.api;
+  db.api=function(dev){ const a=api0.call(db,dev), ref=a.ref;
+    a.ref=function(p){ const r=ref(p); if(String(p==null?"":p).replace(/^\/+|\/+$/g,"")!=="") return r;
+      const upd=r.update;
+      r.update=function(m){ const ks=Object.keys(m||{}); if(!ks.some(k=>/^archiveCore\//.test(k))) return upd.call(r,m);
+        const rest=ks.filter(k=>!/^archiveCore\//.test(k));
+        if(rest.length&&rest.every(k=>/^archive\//.test(k))){ rest.forEach(k=>{ const x=a.ref(k); if(m[k]===null||m[k]===undefined) x.remove(); else x.set(m[k]); }); return Promise.resolve(); }
+        const o={}; rest.forEach(k=>{ o[k]=m[k]; }); return rest.length?upd.call(r,o):Promise.resolve(); };
+      return r; };
+    return a; };
+  return db;
+}
 async function world(o){
   o=o||{}; const fx=JSON.parse(JSON.stringify(FX.db)); fx.household=o.household||household(o.mode);
   if(o.tree) Object.assign(fx,o.tree);
   const clock=S.makeClock(new Date(2026,10,15,0,0,30).getTime()); clock.boot=clock.now; const sched=S.makeScheduler(clock);
-  const db=guarded(S.makeDb(fx,clock,sched),o.deny);
+  const db=archBlind(guarded(S.makeDb(fx,clock,sched),o.deny));   // ARCHCORE: blind to the smaller past-weeks copy (above)
   const index=o.index||process.env.HOUSE_INDEX||path.join(__dirname,"..","index.html")   /* HOUSE_INDEX: another copy (a mutation check) */, devs=[];
   const w={clock,sched,db,devs,index,
     boot(name,dev,bo){ bo=bo||{}; let seed=0; for(const ch of String(dev)) seed=(seed*31+ch.charCodeAt(0))%2147483647; seed=seed||7; const M=Object.create(Math); M.random=()=>{ seed=(seed*16807)%2147483647; return seed/2147483647; };   // the same keys on every run
@@ -79,4 +97,4 @@ const SLOTS=["morning","afternoon","chores","evening"], DAYS=["monday","tuesday"
 function lists(d,o){ o=o||{}; return JSON.parse(d.run("(function(){ const out={}; ROSTER.forEach(function(k){ "+JSON.stringify(SLOTS)+".forEach(function(s){ out[s+'/'+k+'/raw']=rtStepsFor(s,k,true); "
   +JSON.stringify(o.days||DAYS)+".forEach(function(dn){ const st=rtStepsFor(s,k,false,dn)||[]; out[s+'/'+k+'/'+dn]=st.map(function(x,i){ return Object.assign({},x,{_done:s==='morning'?mStepDoneOn(k,dn,i):rtDoneOn(s,k,dn,i),_waved:rtWaved(s,k,dn,i)}); }); }); }); });"
   +" out.mom=mcAll(); out.dad=dcAll(); return JSON.stringify(out); })()")); }
-module.exports={world,household,jobs,PEOPLE,lists,SLOTS,DAYS,guarded,FX};
+module.exports={world,household,jobs,PEOPLE,lists,SLOTS,DAYS,guarded,archBlind,FX};

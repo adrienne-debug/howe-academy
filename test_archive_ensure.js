@@ -105,7 +105,8 @@ const MINUS = minusFeature(SRC);
 const MINUS_PATH = path.join(os.tmpdir(), "ha_archensure_minus_" + process.pid + ".html");
 fs.writeFileSync(MINUS_PATH, MINUS);
 process.on("exit", () => { try { fs.unlinkSync(MINUS_PATH); } catch (e) {} });
-ok("the baseline has no trace of the feature", !/archiveEnsureAll|archiveWhenAll|_archAllArrived|_archWait/.test(MINUS), (MINUS.match(/.*(archiveEnsureAll|archiveWhenAll|_archAllArrived|_archWait).*/) || [""])[0].trim());
+const MINUS_NO_CORE = MINUS.replace(/\/\/ ARCHCORE_START[\s\S]*?\/\/ ARCHCORE_END/, "");   // ARCHCORE (slice 3) uses the wait too, typeof-guarded
+ok("the baseline has no trace of the feature", !/archiveEnsureAll|archiveWhenAll|_archAllArrived|_archWait/.test(MINUS_NO_CORE), (MINUS_NO_CORE.match(/.*(archiveEnsureAll|archiveWhenAll|_archAllArrived|_archWait).*/) || [""])[0].trim());
 
 // ── worlds: the whole app, with the archive listener held back until we say ───────────────────────────────────────────────
 function heldDb(tree, clock, sched, holding) {

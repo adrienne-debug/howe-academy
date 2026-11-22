@@ -3584,7 +3584,181 @@ ${extraStrip || ""}
       '<div style="padding:14px 40px;flex:1;display:flex;flex-direction:column;overflow:hidden">' + intro + sec + prH + '</div>\n</div>'];
   }
   // SPELLPAGE_END
+  // UNITCOVER_START — 📕 the unit's cover page (PLAN_unit_sheet_2026-11-19.md §4.2, §5 row 3; her words 2026-11-22: "go with her
+  // answers and build" — pick 3 as recommended: the cover prints by itself in the notebook of the week that holds the unit's first
+  // day; a beta mom's answer 11/20 put "A cover page" first on her keepsake list). index.html (UNITCOVER: ucAttach) hands that week's
+  // insert ins.cover = {title, emoji, pic:{img}|null, nDays, days:[{dn, t}] (20 at most), more, counts:{books, cards, acts, crafts}}
+  // and this prints ONE page in front of the unit's usual pages: the picture (the first card's photo, else the unit's emoji; under
+  // 2.5in), the title, "A unit study · N days", "This book belongs to ____", "Started ____ Finished ____", the days in two columns to
+  // tick (20 at most, then "+ N more days"; every row one line, a long title ends in "…"), a counts line, and "Before we start — draw
+  // or write what you already know" (the one stretchy box). Outline style: no dark band, one thin tinted stripe. Every line on it is
+  // a title, a prompt or a blank — nothing the child must produce. Worked out fresh each time, nothing stored: the same week printed
+  // twice gives the same pages. No ins.cover → nothing here runs and the insert is main's, byte for byte.
+  // Mom's "🖨 Print the cover" (Units tab) asks for the very same page: unitCoverPage, in the kid's own colours (unitPageTheme),
+  // wrapped by unitPrintDoc.
+  var UC_MAX_DAYS = 20;
+  function ucEsc(v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
+  function ucCoverPages(ins, weekNum, theme) {
+    return [ucCoverPage(ins.cover, theme)].concat(unitInsertPages(Object.assign({}, ins, { cover: null }), weekNum, theme));
+  }
+  function ucCoverPage(cv, theme) {
+    cv = cv || {};
+    var T = theme || UNIT_INSERT_THEMES.lincoln, GD = T.GD, GM = T.GM, GL = T.GL, GOLD = T.GOLD, INK = "#1c1c1e", MUT = "#6b7280";
+    var esc = ucEsc, title = cv.title || "Unit Study", emoji = cv.emoji || "📘";
+    var all = cv.days || [], days = all.slice(0, UC_MAX_DAYS), more = Math.max(0, (cv.more > 0 ? cv.more : 0) + all.length - days.length);
+    var many = days.length > 10, picH = many ? 150 : 190, rowH = many ? 21 : 24;
+    var tfs = title.length <= 24 ? 32 : (title.length <= 44 ? 26 : 21);   // a title up to 80 letters (the Builder's limit) fits in three lines
+    var one = "white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
+    var stripe = '<div style="height:6px;flex-shrink:0;background:repeating-linear-gradient(90deg,' + GL + ' 0,' + GL + ' 18px,' + GOLD + ' 18px,' + GOLD + ' 22px,' + GL + ' 22px,' + GL + ' 40px)"></div>';
+    var pic = (cv.pic && cv.pic.img)
+      ? '<img src="' + esc(cv.pic.img) + '" style="max-width:240px;max-height:' + picH + 'px;object-fit:contain;border-radius:12px;border:2px solid ' + GL + '">'
+      : '<div style="font-size:' + Math.round(picH * 0.62) + 'px;line-height:1">' + esc(emoji) + '</div>';
+    var blank = function (lbl, w) { return '<span style="white-space:nowrap">' + lbl + ' <span style="display:inline-block;width:' + w + 'px;height:18px;border-bottom:1.5px solid ' + MUT + ';vertical-align:bottom"></span></span>'; };
+    var row = function (d) {
+      return '<div style="display:flex;gap:7px;align-items:center;height:' + rowH + 'px;min-width:0;overflow:hidden">' +
+        '<span style="width:12px;height:12px;border:2px solid ' + GM + ';border-radius:3px;flex-shrink:0;box-sizing:border-box"></span>' +
+        '<span style="flex-shrink:0;min-width:46px;font-family:\'DM Mono\',monospace;font-size:10px;font-weight:700;color:' + GM + '">' + esc(d.dn) + '</span>' +
+        '<span style="flex:1;min-width:0;font-size:' + (many ? 11 : 12) + 'px;color:' + INK + ';' + one + '">' + esc(d.t || "") + '</span></div>';
+    };
+    var half = Math.ceil(days.length / 2), col = function (L) { return '<div style="min-width:0;display:flex;flex-direction:column">' + L.map(row).join("") + '</div>'; };
+    var c = cv.counts || {}, plural = function (n, one, many) { return n + " " + (n === 1 ? one : many); };
+    var counts = [c.books ? "📚 " + plural(c.books, "book", "books") : "", c.cards ? "🃏 " + plural(c.cards, "card", "cards") : "",
+      c.acts ? "🎨 " + plural(c.acts, "project", "projects") : "", c.crafts ? "✂️ " + plural(c.crafts, "craft", "crafts") : ""].filter(Boolean).join(" · ");
+    var h = '<div class="page-label">Unit Study — ' + esc(title) + ' (cover)</div>\n<div class="page">\n' + stripe +
+      '<div data-uc="1" style="padding:26px 56px 34px;flex:1;display:flex;flex-direction:column;gap:12px;overflow:hidden">' +
+      '<div style="flex-shrink:0;height:' + picH + 'px;display:flex;align-items:center;justify-content:center">' + pic + '</div>' +
+      '<div style="flex-shrink:0;text-align:center;font-family:\'Fraunces\',serif;font-size:' + tfs + 'px;font-weight:700;color:' + GD + ';line-height:1.12;max-height:' + Math.ceil(tfs * 1.12 * 3 + 1) + 'px;overflow:hidden;overflow-wrap:anywhere">' + esc(title) + '</div>' +
+      '<div style="flex-shrink:0;text-align:center;font-family:\'DM Mono\',monospace;font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:' + GM + '">A unit study' + (cv.nDays ? ' · ' + plural(cv.nDays, "day", "days") : '') + '</div>' +
+      '<div style="flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:4px;font-size:13px;color:' + INK + '">' +
+        blank("This book belongs to", 260) + '<div style="display:flex;gap:30px">' + blank("Started", 130) + blank("Finished", 130) + '</div></div>';
+    if (days.length) {
+      h += '<div style="flex-shrink:0;border:1.5px solid ' + GL + ';border-radius:12px;padding:8px 16px 9px">' +
+        '<div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:' + GM + ';margin-bottom:3px">In this unit</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 22px">' + col(days.slice(0, half)) + col(days.slice(half)) + '</div>' +
+        (more > 0 ? '<div style="font-size:9.5px;color:' + MUT + ';margin-top:2px;padding-left:19px">+ ' + plural(more, "more day", "more days") + '</div>' : '') + '</div>';
+    }
+    if (counts) h += '<div style="flex-shrink:0;text-align:center;font-size:11.5px;font-weight:600;color:' + INK + ';' + one + '">' + esc(counts) + '</div>';
+    h += '<div style="flex-shrink:0;font-family:\'Fraunces\',serif;font-size:14px;font-weight:700;color:' + GD + '">Before we start — draw or write what you already know</div>' +
+      '<div style="flex:1;min-height:110px;display:flex;border:2px solid ' + GM + ';border-radius:12px;padding:4px"><div style="flex:1;border:1px solid ' + GL + ';border-radius:9px"></div></div>';
+    return h + '</div>\n</div>';
+  }
+  // The insert theme a kid's own notebook draws unit pages in, so a page Mom prints from the Units tab matches the notebook's: a
+  // Pre-K look → its unitTheme (as generatePreK reads it); a kid with a notebook of their own → the insert theme of the same key (as
+  // each custom generator passes it); anyone else → the starter notebook's. test_unit_cover.js checks it against every generator.
+  // look = {notebookTheme, nbLevel} (the app's nbThemeOf / nbLevelOf).
+  function ucThemeOf(kid, look) {
+    look = look || {};
+    var sp = pkSpec(kid, look);
+    if (sp) { var T = sp.T || (NB_THEMES[sp.key] && NB_THEMES[sp.key].theme(look, sp.L)); return (T && UNIT_INSERT_THEMES[T.unitTheme]) || UNIT_INSERT_THEMES.lincoln; }
+    if (GENERATORS[kid] && UNIT_INSERT_THEMES[kid]) return UNIT_INSERT_THEMES[kid];
+    return UNIT_INSERT_THEMES.generic;
+  }
+  // A printable document of loose notebook pages — the starter notebook's wrapper, with the notebook's own Safari fit and emoji fix.
+  function ucPrintDoc(title, pages) {
+    return emojiToImages(applySafariPrintFit(lnFullHtml(ucEsc(title || "Notebook page"), (pages || []).join("\n\n\n"))));
+  }
+  // UNITCOVER_END
+  // UNITACTPG_START — 🎨 the activity page, one renderer (PLAN_unit_sheet_2026-11-19.md §4.3, §5 row 4; her words 2026-11-22: "go with
+  // her answers and build"). A queued activity's notebook page and the 🖨 Print button on the Units tab were two copies of the same
+  // four layouts (sheet / bio / compare / timeline) that could drift, and the print's footer said one family's school name on every
+  // family's page. Now both come from here: unitInsertPages asks uapPage for each queued activity, and the app's unitPrintActivity
+  // asks unitActivityPage (the same function) with the same spec (index.html UNITACTPG: uapSpec) and wraps it with unitPrintDoc.
+  //   · Every layout gains "Name ____  Date ____" under the header. No footer, no family or school name.
+  //   · The box page ("sheet") is a real page: a framed box (a frame, not a fill) and, under it, the same two prompts for every
+  //     activity — "What I did" and "One thing I learned" — sized by the kid's grade band (act.band, the day card's own little ·
+  //     early · middle · upper): little = the box is most of the page + one line "I made ____"; early = box + 3 tall lines; middle /
+  //     upper = a smaller box + 7 lines. Mom's own line count (act.lines, set on code units) replaces the band's for early and up.
+  //   · bio, compare and timeline keep their layouts (and the name line).
+  //   · Pages clip (8.5×11in, overflow:hidden): Mom's line is held to 4 lines and each step to 2; 6 steps at most ("+ N more steps
+  //     on the card"). The rest of the page is estimated from those (uapTopH, measured in headless Chrome): the box gives up its
+  //     band size before it would push the prompts off the page (never under 120px); a timeline lists as many as fit, 28 at most
+  //     ("+ N more"); bio / compare write-lines sit in a box that keeps only the whole blank lines that fit.
+  //   · The prompts are the same on every page and every blank is empty: the app supplies nothing the child must produce.
+  var UAP_STEPS = 6, UAP_TIMELINE = 28;
+  var UAP_BANDS = {   // box: its smallest height; lines: [What I did, One thing I learned]; h: a line's height
+    little: { box: 420, h: 38 }, early: { box: 300, lines: [2, 1], h: 32 }, middle: { box: 200, lines: [4, 3], h: 25 }, upper: { box: 200, lines: [4, 3], h: 25 } };
+  function uapBand(b) { return UAP_BANDS[b] ? b : "middle"; }
+  // The content box's height (page 1056 − header − stripe − padding) and what the parts above the layout take, gaps included.
+  function uapAvail(act) { return String((act.emoji || "🎨") + " " + (act.title || "")).length > 46 ? 922 : 946; }
+  function uapTopH(act) {
+    var n = 1, h = 19;
+    if (act.points) { n++; h += 25; }
+    if (act.desc) { n++; h += Math.min(4, Math.ceil(String(act.desc).length / 100)) * 17.25; }
+    var st = act.steps || [];
+    st.slice(0, UAP_STEPS).forEach(function (x) { n++; h += Math.min(2, Math.ceil(String(x).length / 95) || 1) * 16; });
+    if (st.length > UAP_STEPS) { n++; h += 14; }
+    return h + n * 10;
+  }
+  // o = {title, emoji, weekNum, theme, pool:[{name, portrait}] (the kid's learned cards, for bio / compare)}. Returns the page
+  // without its page-label line (the notebook numbers its pages; a print labels its own).
+  function uapPage(act, o) {
+    act = act || {}; o = o || {};
+    var esc = function (v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
+    var T = o.theme || UNIT_INSERT_THEMES.lincoln, GD = T.GD, GM = T.GM, GL = T.GL, GP = T.GP, GOLD = T.GOLD, GOLDD = T.GOLDD, CREAM = T.CREAM, INK = "#1c1c1e", MUT = "#6b7280";
+    var title = o.title || "Unit Study", emoji = o.emoji || "📘";
+    var clamp = function (n) { return "display:-webkit-box;-webkit-line-clamp:" + n + ";-webkit-box-orient:vertical;overflow:hidden"; };
+    var face = function (p, sz) {
+      if (p && p.img) return '<img src="' + esc(p.img) + '" style="width:' + sz + 'px;height:' + sz + 'px;object-fit:cover;border-radius:8px;border:2px solid ' + GL + '">';
+      return '<div style="width:' + sz + 'px;height:' + sz + 'px;border-radius:8px;border:2px solid ' + GL + ';background:' + GP + ';display:flex;align-items:center;justify-content:center;font-size:' + Math.round(sz * 0.5) + 'px">' + ((p && p.emoji) || emoji) + '</div>';
+    };
+    var wline = function (n, h) { var x = ""; for (var i = 0; i < n; i++) x += '<div style="flex-shrink:0;border-bottom:1.5px solid #cbd5d1;height:' + (h || 22) + 'px"></div>'; return x; };
+    var blank = function (lbl, w) { return '<span style="white-space:nowrap">' + lbl + ' <span style="display:inline-block;width:' + w + 'px;height:16px;border-bottom:1.5px solid ' + MUT + ';vertical-align:bottom"></span></span>'; };
+    var label = function (t, c) { return '<div style="flex-shrink:0;font-family:\'DM Mono\',monospace;font-size:8.5px;letter-spacing:0.18em;text-transform:uppercase;color:' + (c || GM) + '">' + t + '</div>'; };
+    var pg = '<div class="page">\n' +
+      '<div style="background:' + GD + ';padding:14px 40px;display:flex;justify-content:space-between;align-items:flex-end;flex-shrink:0">' +
+      '<div style="min-width:0"><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.2em;text-transform:uppercase;color:' + GL + ';opacity:0.85;margin-bottom:3px">' + esc(title) + ' · Unit Study</div>' +
+      '<div style="font-family:\'Fraunces\',serif;font-size:22px;font-weight:700;color:#fff;line-height:1.1;' + clamp(2) + '">' + esc((act.emoji || "🎨") + " " + (act.title || "")) + '</div></div>' +
+      (o.weekNum ? '<div style="flex-shrink:0;font-family:\'Fraunces\',serif;font-size:15px;font-weight:600;color:' + GOLD + '">Week ' + esc(o.weekNum) + '</div>' : '') + '</div>' +
+      '<div style="height:5px;flex-shrink:0;background:repeating-linear-gradient(90deg,' + GM + ' 0,' + GM + ' 18px,' + GOLD + ' 18px,' + GOLD + ' 22px,' + GM + ' 22px,' + GM + ' 40px)"></div>' +
+      '<div data-uap="1" style="padding:14px 40px 18px;flex:1;display:flex;flex-direction:column;gap:10px;overflow:hidden">' +
+      '<div style="flex-shrink:0;display:flex;gap:28px;font-size:12px;font-weight:600;color:' + INK + '">' + blank("Name", 250) + blank("Date", 130) + '</div>';
+    if (act.points) pg += '<div style="flex-shrink:0;align-self:flex-start;border:1.5px solid ' + GOLD + ';background:' + CREAM + ';border-radius:9px;padding:4px 12px;font-size:11px;font-weight:800;color:' + GOLDD + '">⭐ Worth ' + esc(act.points) + ' points — show Mom your finished work, then tap “I finished it!” in the app</div>';
+    if (act.desc) pg += '<div style="flex-shrink:0;font-size:11.5px;line-height:1.5;color:' + INK + ';' + clamp(4) + '">' + esc(act.desc) + '</div>';
+    var steps = act.steps || [], shown = steps.slice(0, UAP_STEPS);
+    shown.forEach(function (st) {
+      pg += '<div style="flex-shrink:0;display:flex;gap:8px;align-items:flex-start;font-size:11px;line-height:1.45;color:' + INK + '"><span style="width:13px;height:13px;border:2px solid ' + GM + ';border-radius:4px;flex-shrink:0;margin-top:1px;box-sizing:border-box"></span><span style="' + clamp(2) + '">' + esc(st) + '</span></div>';
+    });
+    if (steps.length > shown.length) pg += '<div style="flex-shrink:0;font-size:10px;color:' + MUT + ';padding-left:21px">+ ' + (steps.length - shown.length) + ' more step' + (steps.length - shown.length === 1 ? '' : 's') + ' on the card</div>';
+    if (act.kind === "timeline") {
+      var ents = act.entries || [], fit = Math.floor((uapAvail(act) - uapTopH(act) - 34) / 21);
+      var es = ents.slice(0, Math.max(3, Math.min(UAP_TIMELINE, fit)));
+      pg += '<div style="flex-shrink:0;display:flex;flex-direction:column">';
+      es.forEach(function (e) {
+        pg += '<div style="flex-shrink:0;height:21px;box-sizing:border-box;display:flex;gap:9px;align-items:baseline;font-size:10.5px;border-bottom:1px solid #eef2f0;padding:2px 0;min-width:0"><span style="font-weight:800;color:' + GM + ';min-width:64px;white-space:nowrap">' + esc(e.year) + '</span><span style="font-weight:700;width:180px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(e.name) + '</span><span style="flex:1;border-bottom:1.5px solid #cbd5d1;height:14px"></span></div>';
+      });
+      pg += '</div>';
+      if (ents.length > es.length) pg += '<div style="flex-shrink:0;font-size:10px;color:' + MUT + '">+ ' + (ents.length - es.length) + ' more</div>';
+    } else if (act.kind === "bio" || act.kind === "compare") {
+      var pool = o.pool || [];
+      pg += label(act.kind === "compare" ? "Pick two you’ve learned" : "Pick one you’ve learned");
+      if (pool.length) { pg += '<div style="flex-shrink:0;display:flex;flex-wrap:wrap;gap:7px">'; pool.slice(0, 12).forEach(function (m) { pg += '<div style="width:58px;text-align:center">' + face(m.portrait, 42) + '<div style="font-size:8px;font-weight:700;color:' + INK + ';margin-top:2px;line-height:1.1;max-height:18px;overflow:hidden">' + esc(m.name) + '</div></div>'; }); pg += '</div>'; }
+      // the write-lines: a box that shrinks to the room left and keeps only whole lines (a cut-off blank line simply isn't drawn)
+      var fill = '<div data-uap-lines="1" style="flex:1 1 auto;min-height:0;overflow:hidden;display:flex;flex-direction:column">';
+      if (act.kind === "compare") {
+        pg += fill + '<div style="flex-shrink:0;display:grid;grid-template-columns:1fr 1fr;gap:12px">';
+        for (var ci = 0; ci < 2; ci++) pg += '<div><div style="border-bottom:2px solid ' + GM + ';height:22px;margin-bottom:6px"></div>' + wline(Math.min(10, Math.max(4, Math.round((act.lines || 8) / 2)))) + '</div>';
+        pg += '</div></div>' + label("What do they share?", GOLDD) + wline(3);
+      } else pg += fill + '<div style="flex-shrink:0;border-bottom:2px solid ' + GM + ';height:22px;margin-bottom:2px"></div>' + wline(Math.min(22, act.lines || 10)) + '</div>';
+    } else {   // "sheet" — a framed box, then the two prompts by grade band
+      var bk = uapBand(act.band), B = UAP_BANDS[bk];
+      var L = B.lines, n = Math.max(0, parseInt(act.lines, 10) || 0);
+      if (L && n) { n = Math.min(10, Math.max(2, n)); L = [Math.ceil(n / 2), Math.floor(n / 2)]; }
+      var below = L ? 20 + (bk === "early" ? 22 : 19) * 2 + (L[0] + L[1]) * B.h : 10 + 40;   // the prompts and their lines, gaps included
+      var boxMin = Math.max(120, Math.min(B.box, Math.floor(uapAvail(act) - uapTopH(act) - below - 10 - 16)));
+      pg += '<div style="flex:1;min-height:' + boxMin + 'px;display:flex;border:2px solid ' + GM + ';border-radius:12px;padding:4px"><div style="flex:1;border:1px solid ' + GL + ';border-radius:9px"></div></div>';
+      if (bk === "little") {
+        pg += '<div style="flex-shrink:0;display:flex;align-items:flex-end;gap:10px;font-family:\'Fraunces\',serif;font-size:20px;font-weight:700;color:' + GD + '">I made <span style="flex:1;border-bottom:2px solid ' + MUT + ';height:' + B.h + 'px"></span></div>';
+      } else {
+        var prompt = function (t) { return '<div style="font-family:\'Fraunces\',serif;font-size:' + (bk === "early" ? 15 : 13) + 'px;font-weight:700;color:' + GD + '">' + t + '</div>'; };
+        pg += '<div style="flex-shrink:0;display:flex;flex-direction:column">' + prompt("What I did") + wline(L[0], B.h) + '</div>' +
+          '<div style="flex-shrink:0;display:flex;flex-direction:column">' + prompt("One thing I learned") + wline(L[1], B.h) + '</div>';
+      }
+    }
+    return pg + '</div>\n</div>';
+  }
+  // UNITACTPG_END
   function unitInsertPages(ins, weekNum, theme) {
+    if (ins && ins.cover) return ucCoverPages(ins, weekNum, theme);   // UNITCOVER
     if (ins && uwRowsOf(ins).length && !uwHasCards(ins)) return uwOnlyPage(ins, weekNum, theme);   // UNITWEEK
     if (!ins || !((ins.learning && ins.learning.length) || (ins.learned && ins.learned.length) || (ins.next && ins.next.length))) return [];
     var esc = function (v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); };
@@ -3675,35 +3849,7 @@ ${extraStrip || ""}
       p12 += '</div></div>';
     }
     if (!acts.length) return onePage ? [p12] : [p1, p2];
-    var wline = function (n) { var s = ""; for (var i = 0; i < n; i++) s += '<div style="border-bottom:1.5px solid #cbd5d1;height:22px"></div>'; return s; };
-    var actPages = acts.map(function (act, ai) {
-      var pg = '<div class="page-label">Unit Study — ' + esc(title) + ' (' + ((onePage ? 2 : 3) + ai) + '/' + tot + ')</div>\n<div class="page">\n' + hdr((act.emoji || "🎨") + " " + esc(act.title), "Week " + weekNum) +
-        '<div style="padding:16px 40px;flex:1;display:flex;flex-direction:column;gap:10px;overflow:hidden">';
-      if (act.points) pg += '<div style="align-self:flex-start;border:1.5px solid ' + GOLD + ';background:'+CREAM+';border-radius:9px;padding:4px 12px;font-size:11px;font-weight:800;color:'+GOLDD+'">⭐ Worth ' + act.points + ' points — show Mom your finished work, then tap “I finished it!” in the app</div>';
-      if (act.desc) pg += '<div style="font-size:11.5px;line-height:1.5;color:' + INK + '">' + esc(act.desc) + '</div>';
-      (act.steps || []).forEach(function (st) {
-        pg += '<div style="display:flex;gap:8px;align-items:flex-start;font-size:11px;line-height:1.45;color:' + INK + '"><span style="width:13px;height:13px;border:2px solid ' + GM + ';border-radius:4px;flex-shrink:0;margin-top:1px"></span><span>' + esc(st) + '</span></div>';
-      });
-      if (act.kind === "timeline") {
-        (act.entries || []).forEach(function (e) {
-          pg += '<div style="display:flex;gap:9px;align-items:baseline;font-size:10.5px;border-bottom:1px solid #eef2f0;padding:2px 0"><span style="font-weight:800;color:' + GM + ';min-width:64px">' + esc(e.year) + '</span><span style="font-weight:700;min-width:140px">' + esc(e.name) + '</span><span style="flex:1;border-bottom:1.5px solid #cbd5d1;height:14px"></span></div>';
-        });
-      } else if (act.kind === "bio" || act.kind === "compare") {
-        var pool = ins.learned || [];
-        pg += '<div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:' + GM + '">' + (act.kind === "compare" ? "Pick two you’ve learned" : "Pick one you’ve learned") + '</div>';
-        if (pool.length) { pg += '<div style="display:flex;flex-wrap:wrap;gap:7px">'; pool.slice(0, 12).forEach(function (m) { pg += '<div style="width:58px;text-align:center">' + face(m.portrait, 42) + '<div style="font-size:8px;font-weight:700;color:' + INK + ';margin-top:2px;line-height:1.1">' + esc(m.name) + '</div></div>'; }); pg += '</div>'; }
-        if (act.kind === "compare") {
-          pg += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
-          for (var ci = 0; ci < 2; ci++) pg += '<div><div style="border-bottom:2px solid ' + GM + ';height:22px;margin-bottom:6px"></div>' + wline(Math.max(4, Math.round((act.lines || 8) / 2))) + '</div>';
-          pg += '</div><div style="font-family:\'DM Mono\',monospace;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:'+GOLDD+'">What do they share?</div>' + wline(3);
-        } else pg += '<div style="border-bottom:2px solid ' + GM + ';height:22px;margin-bottom:2px"></div>' + wline(act.lines || 10);
-      } else { // "sheet"
-        pg += '<div style="border:2px dashed ' + GM + ';border-radius:12px;flex:1;min-height:300px"></div>';
-        if (act.lines) pg += wline(act.lines);
-      }
-      pg += '</div></div>';
-      return pg;
-    });
+    var actPages = acts.map(function (act, ai) { return '<div class="page-label">Unit Study — ' + esc(title) + ' (' + ((onePage ? 2 : 3) + ai) + '/' + tot + ')</div>\n' + uapPage(act, { title: title, emoji: emoji, weekNum: weekNum, theme: _t, pool: ins.learned || [] }); });   // UNITACTPG
     return (onePage ? [p12] : [p1, p2]).concat(actPages);
   }
   // UNITWEEK_START — 🧾 "This week we will…" on the unit insert (PLAN_unit_sheet_2026-11-19.md §4.1, §5 row 1; her "Yes, build it"
@@ -6460,6 +6606,8 @@ ${luFooter("Howe Academy · Teaching Companion · Not for Lucy", "Week " + weekN
     cogatBankPlan: lnCogatBankPlan,     // Lincoln's CogAT verbal bank: same, for the Q1 slot
     wordBankPlan: lnWordBankPlan,       // Lincoln's word bank: which words a week prints + the cursor to store (Notebook tab card)
     dgStart: dgStart,                   // Daily Grams: first Day of a week from the stored cursor (Notebook tab card + prefetch)
+    unitCoverPage: ucCoverPage, unitPageTheme: ucThemeOf, unitPrintDoc: ucPrintDoc,   // UNITCOVER
+    unitActivityPage: uapPage,   // UNITACTPG
 
     // exposed for testing
     _internal: { generateGeneric: generateGeneric, spellNbPages: spellNbPages, juCurriculumFromMastery: juCurriculumFromMastery, generateJulian: generateJulian, generatePreK: generatePreK, nbThemeKey: nbThemeKey, pkLevel: pkLevel, pkSpec: pkSpec, pkCurriculum: pkCurriculum, JU_LEVEL: JU_LEVEL, CB_LEVEL: CB_LEVEL, JU_THEME: JU_THEME, CB_THEME: CB_THEME, PK_LEVEL_DEFAULT: PK_LEVEL_DEFAULT, generateCaleb: generateCaleb, cbCurriculum: cbCurriculum, dgWeekPlan: dgWeekPlan, nbCalendarDays: nbCalendarDays, generateLucy: generateLucy, luPhonoWeek: luPhonoWeek, LU_PHONO: LU_PHONO, luWordsWeek: luWordsWeek, luWordsFromMastery: luWordsFromMastery, LU_DOLCH: LU_DOLCH }
