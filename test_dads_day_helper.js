@@ -188,6 +188,7 @@ const unnudge = s => String(s).replace(/  \/\/ Load sitting in the washer[\s\S]*
   .replace(/\n[^\n]*\/\/ KITFLAG[^\n]*/g, "")   // 🍳 KITFLAG (2026-10-23): one 🔴 Now line (a meal the kids rate low → ✓ Got it · Swap…), tagged — normalized away on both sides
   .replace(/\n[^\n]*\/\/ LESSONRES: 🧺[^\n]*/g, "")
   .replace(/\n[^\n]*\/\/ 🎁 GIFTS_NOW[^\n]*/g, "")   // 🎁 GIFTS_NOW (2026-11-20, gifts slice 5): one 🔴 Now line (gift reminders, asked of gifts.js), tagged — normalized away on both sides
+  .replace(/\n[^\n]*\/\/ 🎉 EVDAY[^\n]*/g, "")   // 🎉 EVDAY (2026-11-22): a calendar event's row in Mom's agenda — whole new lines, each tagged — normalized away on both sides (test_event_day_note.js covers them)
   .replace(/\n[^\n]*\/\/ 🎉 SEASONS_NOW[^\n]*/g, "")   // 🎉 SEASONS_NOW (2026-11-20, seasons slice 2): one 🔴 Now line (due season to-dos + book-by dates, asked of seasons.js), tagged — normalized away on both sides
   .replace(/\n[^\n]*\/\/ 🌿 CPLINCOLNPARITY[^\n]*/g, "")   // 🌿 CPLINCOLNPARITY (2026-10-29): one My day line (Brittany's drills with Lincoln this week, Q23), tagged — normalized away on both sides
   .replace(/\n[^\n]*\/\/ 🧠 MLSUGGEST[^\n]*/g, "")   // 🧠 MLSUGGEST (2026-11-08): one 🔴 Now line (the load dial's suggestion per kid), tagged — normalized away on both sides

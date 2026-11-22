@@ -86,7 +86,7 @@ console.log("4. The Mom loop steps over a house block (replay)");
   const e=mk({tasks:TASKS}); e.hhHouseBlockSet("mc_mc_a","skip"); const at3=lay(e); ok("Not now holds nothing: back to the control", at3(m1.id)==="10:00 AM"&&at3(e1.id)==="10:40 AM");
 }
 console.log("5. Wiring");
-ok("the kid's Day page draws the card after the lunch line, single-kid views only", /h\+=lunchBlock\(\);\n\s*if\(_singleKid&&typeof hhHouseCardHTML==="function"\)\{ try\{ h\+=hhHouseCardHTML\(kid,day,tasks\); \}catch\(e\)\{\} \}/.test(src));
+ok("the kid's Day page draws the card after the lunch line, single-kid views only", /h\+=lunchBlock\(\);\n(?:[^\n]*\/\/ 🎉 EVDAY[^\n]*\n)?\s*if\(_singleKid&&typeof hhHouseCardHTML==="function"\)\{ try\{ h\+=hhHouseCardHTML\(kid,day,tasks\); \}catch\(e\)\{\} \}/.test(src));
 ok("the Mom agenda takes the house rows beside laundry and prep", /\.concat\(\(typeof momSchedHouse==="function"\)\?momSchedHouse\(day,dayTasks\):\[\]\);/.test(src));
 ok("the Mom loop lays around house blocks on momBlockOpen's path", /momBlockOpen\(\)\.concat\(\(typeof hhHouseBlocksOpen==="function"\)\?hhHouseBlocksOpen\(\):\[\]\)\.forEach\(function\(b\)\{/.test(src));
 ok("gwBuildDayTasks, seGuardWeek and the sweep are untouched by this PR (no house reference)", !/house|hhHouse/i.test(fn("gwBuildDayTasks"))&&!/hhHouse/.test(fn("seGuardWeek")));
