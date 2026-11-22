@@ -45,10 +45,24 @@
 // taps 🧒 Open it to the kids (one field, its only home is the season's header). The kids' page is its own file (seasonkid.js, in
 // Kids' Corner ▸ ✨ Our plans): it reads seasons/list and that season's seasons/ideas only, so nothing in seasonSecret/ can reach it.
 // A kid's idea arrives here as an ordinary idea with by:<kid>; this page marks it "💡 <name>'s idea".
+//
+// SEASONJOBS step A (her yes to "Dad & kid to-dos" 2026-11-21; her answers: a to-do shows on its DUE DAY, with a per-to-do option to
+// show it some days ahead · Dad's land on his list BY THEMSELVES, no tap): a to-do whose who is "dad" and that has a day goes onto
+// Dad's OWN running to-do list as ONE copy, the same shape as Mom's copy:
+//   dadday/<show day>/todos/sn<todoId>  {text, done, ts, src:"season", sn:"<sid>/<iid|->/<todoId>"}   show day = due day − ahead
+//   on the to-do:  ahead?:<days early, 1–30>   dadOn?:"YYYY-MM-DD" (the day its copy was put on; so a copy Dad ✕'d is not sent again)
+// No new reader: Dad's list already shows today's plus unfinished ones from earlier days and hides later days (index.html tdRunning),
+// so a copy put on a later day simply appears on that day. dadSync() (Mom's device only, after everything has loaded, never in a dry
+// run) works out what his list SHOULD hold and fixes the difference: it adds, re-words, moves (removing the old day's copy), and takes
+// off any unticked copy whose to-do was deleted, done here, re-assigned, lost its day, became a 🤫 surprise, or whose idea/season was
+// deleted, 🌙 parked, ✓ done or 📜 closed. A copy Dad ticked is never touched or re-added; his tick makes the to-do done here, and
+// Mom's tick here ticks his copy in the same update. 🤫 A SURPRISE'S TO-DOS NEVER GO TO DAD'S LIST (dadday is read by every device);
+// the row says so.
 (function(){
 "use strict";
 let snData={}, snSecret={}, snOn=false, snLoaded=false, snGot=0, snSid=null, snFilter="all", snEdit=null, snRoot=null, snAh="", snFor={}, snPast=false, snFocus=false;
 let snView="ideas", snAsk=null, snNowWant=false;
+let snDdFresh=false;   // SEASONJOBS fix (hub review 11/21): Dad's list has come from the server at least once — never sync against a stale copy
 const SN_BOOK_DAYS=7, SN_NOW_MAX=5;   // 🎟 a book-by date shows in 🔴 NOW from a week ahead · NOW lists at most this many lines
 const SN_STARS=3;   // her answer 2026-11-20: "three ⭐ each per season"
 const SN_KINDS=[["holiday","🎄","Holiday season"],["summer","☀️","Summer bucket list"],["season","🍂","A season"],["trip","🧳","Trip"],["party","🎂","Party or event"],["someday","💭","Someday list"]];
@@ -81,7 +95,8 @@ function clone(v){return v==null?v:JSON.parse(JSON.stringify(v));}
 // up = {"full/path": value | null}. Mirrors it locally, then ONE multi-path update. Any path outside this feature's own two nodes
 // and the calendar's family events is refused — nothing here can reach the school schedule.
 // Slice 2 adds two: seasons/extra/<sid> (whole-season lines) and ONE kind of record on Mom's own to-do list — momday/<day>/todos/sn<id>.
-const SN_OK=/^(seasons\/(list|ideas|extra)\/[^\/]+|seasonSecret\/[^\/]+\/[^\/]+|calendar\/events\/[^\/]+|momday\/\d{4}-\d{2}-\d{2}\/todos\/sn[^\/]+)(\/|$)/;
+// SEASONJOBS step A adds ONE more: the same kind of sn-record on Dad's own to-do list — dadday/<day>/todos/sn<id>.
+const SN_OK=/^(seasons\/(list|ideas|extra)\/[^\/]+|seasonSecret\/[^\/]+\/[^\/]+|calendar\/events\/[^\/]+|(momday|dadday)\/\d{4}-\d{2}-\d{2}\/todos\/sn[^\/]+)(\/|$)/;
 function setIn(o,parts,v){
   for(let i=0;i<parts.length-1;i++){if(o[parts[i]]==null||typeof o[parts[i]]!=="object"){if(v==null)return;o[parts[i]]={};}o=o[parts[i]];}
   const k=parts[parts.length-1];if(v==null)delete o[k];else o[k]=clone(v);
@@ -95,6 +110,7 @@ function apply(up){
     if(a[0]==="seasons")setIn(snData,a.slice(1),v);
     else if(a[0]==="seasonSecret")setIn(snSecret,a.slice(1),v);
     else if(a[0]==="momday"){try{if(typeof momdayData!=="undefined"&&momdayData){setIn(momdayData,a.slice(1),v);if(!dry())HA_LS.setItem("momday_data",JSON.stringify(momdayData));}}catch(e){}}
+    else if(a[0]==="dadday"){try{if(typeof daddayData!=="undefined"&&daddayData){setIn(daddayData,a.slice(1),v);if(!dry())HA_LS.setItem("ha_dadday",JSON.stringify(daddayData));}}catch(e){}}
     else{const c=cal();if(!c.events)c.events={};setIn(c.events,a.slice(2),v);}});
   if(live())db.ref().update(up);
   return true;
@@ -180,7 +196,57 @@ function ideaDay(it){if(!it)return "";const W=whens(it),t=today(),up=W.filter(w=
 function tdDue(L){const r=L.r;if(isIso(r.due))return r.due;if(L.it&&r.before!=null&&+r.before>=0){const d=ideaDay(L.it);return d?addDays(d,-Math.floor(+r.before)):"";}return "";}
 function mdTodos(iso){try{return ((typeof momdayData!=="undefined"&&momdayData&&momdayData[iso])||{}).todos||{};}catch(e){return {};}}
 function tdCopy(L){return isIso(L.r.list)?(mdTodos(L.r.list)["sn"+L.id]||null):null;}   // its copy on Mom's own list, if she made one and it's still there
-function tdDone(L){const c=tdCopy(L);return !!(L.r.done||(c&&c.done));}
+function tdDone(L){const c=tdCopy(L),d=dadCopy(L);return !!(L.r.done||(c&&c.done)||(d&&d.done));}
+// ── 👨 a to-do for Dad on his own list (SEASONJOBS step A) ──
+const SN_AHEAD_MAX=30;
+function ddTodos(iso){try{return ((typeof daddayData!=="undefined"&&daddayData&&daddayData[iso])||{}).todos||{};}catch(e){return {};}}
+function dadCopy(L){return isIso(L.r.dadOn)?(ddTodos(L.r.dadOn)["sn"+L.id]||null):null;}   // its copy on Dad's list, if it's still there
+function ahead(r){const n=Math.floor(+r.ahead);return n>0?Math.min(n,SN_AHEAD_MAX):0;}
+function showDay(L){const d=tdDue(L);return d?addDays(d,-ahead(L.r)):"";}   // her answer 1: its due day, or "ahead" days before it
+// Why a to-do is NOT on Dad's list ("" = it should be). The one rule the sync and Mom's row both use.
+function dadWhy(L){
+  if((L.r.who||"mom")!=="dad")return "who";
+  const s=season(L.sid);if(!s||s.closed)return "closed";
+  if(L.it&&hideOf(L.it))return "secret";
+  if(L.it&&(L.it.skip||L.it.did))return "rest";
+  if(tdDone(L))return "done";
+  return showDay(L)?"":"noday";
+}
+function lineOf(sn,lid){const p=String(sn||"").split("/");return p.length===3&&p[2]===lid?line(p[0],p[1]==="-"?"":p[1],"todo",lid):null;}
+function dadPlan(){const want={};seasons().forEach(s=>lines(s.id,"todo").forEach(L=>{if(!dadWhy(L))want[showDay(L)+"/sn"+L.id]=L;}));return want;}
+// Make Dad's list hold exactly what dadPlan says — ONE update, only the differences, never a copy he ticked.
+// Mom's device only, once the planner AND the calendar have loaded ("N days before" needs the calendar), and never in a dry run.
+function dadSync(){
+  if(!snLoaded||!live()||!snDdFresh)return 0;   // never on a stale copy of Dad's list (a ✕'d copy could come back as a ghost; a ticked one could be removed)
+  try{if(typeof momHere!=="function"||!momHere())return 0;if(typeof _kioskD==="function"&&_kioskD())return 0;}catch(e){return 0;}
+  const c0=cal();if(!c0.events||typeof c0.events!=="object")return 0;
+  let D={};try{D=(typeof daddayData!=="undefined"&&daddayData)||{};}catch(e){}
+  const want=dadPlan(),up={};
+  Object.keys(D).forEach(iso=>{if(!isIso(iso))return;const T=(D[iso]||{}).todos||{};
+    Object.keys(T).forEach(k=>{const c=T[k];if(k.indexOf("sn")!==0||!c||typeof c!=="object"||c.src!=="season"||c.done||want[iso+"/"+k])return;
+      up["dadday/"+iso+"/todos/"+k]=null;   // its to-do is gone, changed, moved, done here or no longer Dad's
+      const L=lineOf(c.sn,k.slice(2));if(L&&L.r.dadOn===iso)up[lineBase(L,"todo")+"/dadOn"]=null;});});
+  Object.keys(want).forEach(key=>{const L=want[key],iso=key.slice(0,10),k=key.slice(11),c=ddTodos(iso)[k],txt=mineText(L),b=lineBase(L,"todo")+"/dadOn";
+    if(c&&typeof c==="object"){if(c.text!==txt)up["dadday/"+iso+"/todos/"+k+"/text"]=txt;if(L.r.dadOn!==iso)up[b]=iso;return;}
+    if(L.r.dadOn===iso)return;   // it was put there and Dad ✕'d it off his own list: not sent again unless its day changes
+    up["dadday/"+iso+"/todos/"+k]={text:txt,done:false,ts:Date.now(),src:"season",sn:L.sid+"/"+(L.iid||"-")+"/"+L.id};up[b]=iso;});
+  if(!Object.keys(up).length)return 0;
+  apply(up);return Object.keys(up).length;
+}
+let snSyncT=null;
+function syncSoon(){if(snSyncT)return;try{snSyncT=setTimeout(()=>{snSyncT=null;try{dadSync();}catch(e){}},80);}catch(e){snSyncT=null;}}
+// What Mom's row says about Dad's list.
+function dadNote(L){
+  if((L.r.who||"mom")!=="dad")return "";
+  const why=dadWhy(L),c=dadCopy(L),sd=showDay(L),t=today(),chip=x=>'<span class="sn-chip dad">'+x+'</span>';
+  if(why==="secret")return '<div class="sn-secnote">🤫 Stays here. A surprise’s to-dos never go to Dad’s list.</div>';
+  if(why==="done")return (c&&c.done&&!L.r.done)?chip("✓ Dad ticked it"):"";
+  if(why==="noday")return chip("Goes on Dad’s list once it has a day");
+  if(why)return "";
+  if(c&&L.r.dadOn===sd)return chip(sd>t?"On Dad’s list from "+esc(fmtShort(sd)):"✓ On Dad’s list");
+  if(L.r.dadOn===sd)return chip("Dad took it off his list");
+  return chip("Going on Dad’s list");
+}
 function tdState(L){   // done · late (its day went by) · due (today) · open
   if(tdDone(L))return "done";if(L.it&&L.it.did)return "open";
   const d=tdDue(L),t=today();return !d?"open":(d<t?"late":(d===t?"due":"open"));
@@ -249,10 +315,11 @@ function todoRow(L,showFor){
   const st=tdState(L),a="'"+esc(L.sid)+"','"+esc(L.iid)+"','"+esc(L.id)+"'",w=who(L.r.who||"mom"),due=dueTxt(L),s=season(L.sid)||{};
   const bits=[esc(w.name)];if(due)bits.push((st==="late"?"overdue · ":"")+esc(due));
   if(showFor)bits.push(L.it?esc((L.it.emoji?L.it.emoji+" ":"")+(L.it.t||""))+(hideOf(L.it)?" 🤫":""):"all of "+esc(s.name||""));
-  let h='<div class="sn-ln'+(st==="done"?" dim":"")+(st==="late"?" late":"")+'"><button class="sn-tick'+(st==="done"?" on":"")+'" onclick="snTodoTick('+a+')">'+(st==="done"?"☑":"☐")+'</button>'
+  const dn=dadNote(L),toDad=dn&&!(L.it&&hideOf(L.it));   // SEASONJOBS: a Dad to-do goes on HIS list by itself — no "→ My list today"
+  let h='<div class="sn-ln'+(st==="done"?" dim":"")+(st==="late"?" late":"")+(dn&&!toDad?" wrap":"")+'"><button class="sn-tick'+(st==="done"?" on":"")+'" onclick="snTodoTick('+a+')">'+(st==="done"?"☑":"☐")+'</button>'
     +'<button class="sn-lt" onclick="snLine(\'todo\',\''+esc(L.iid)+'\',\''+esc(L.id)+'\')">'+esc(L.r.t)+'<small>'+bits.join(" · ")+'</small></button>';
-  if(st!=="done")h+=tdCopy(L)?'<span class="sn-chip">✓ on your list</span>':'<button class="sn-tool" onclick="snTodoMine('+a+')">→ My list today</button>';
-  return h+'</div>';
+  if(st!=="done"&&!toDad)h+=tdCopy(L)?'<span class="sn-chip">✓ on your list</span>':'<button class="sn-tool" onclick="snTodoMine('+a+')">→ My list today</button>';
+  return h+dn+'</div>';
 }
 function supSort(A){return A.slice().sort((a,b)=>(supState(a)==="have")-(supState(b)==="have"));}
 function todoSort(A){const rank={late:0,due:1,open:2,done:3};return A.map(L=>({L,st:tdState(L),d:tdDue(L)})).sort((a,b)=>rank[a.st]-rank[b.st]||String(a.d||"9999").localeCompare(String(b.d||"9999")));}
@@ -345,6 +412,7 @@ function startHTML(){
 }
 function draw(){
   if(!snRoot)return;
+  if(snLoaded)syncSoon();
   let h=snAh+'<div class="sn-wrap" id="sn-page"><div class="sn-title">🎉 Seasons &amp; Events</div>';
   if(!snLoaded)h+='<div class="sn-empty" style="padding:30px">Opening…</div>';
   else{
@@ -447,7 +515,9 @@ function lineSheet(){
     h='<div class="sn-h2">✅ To-do</div>'+whose+'<div class="sn-form">'+field("t","What needs doing","Print the scavenger hunt","","wide")+'</div>'
       +'<div class="sn-lab">Who</div><div class="sn-chips">'+people().map(p=>'<button class="sn-pchip'+(f.who===p.id?" on":"")+'" style="--c:'+esc(p.color)+'" onclick="snLineWho(\''+esc(p.id)+'\')">'+esc(p.name)+'</button>').join("")+'</div>'
       +'<div class="sn-form">'+field("due","When — a date (optional)","","date")+(it?field("before","…or days before its day","3","number"):"")+'</div>'
-      +(it?'<div class="sn-sub">“Days before” moves by itself when the idea moves. '+(day?"Its day is "+fmtDay(day)+" right now.":"It has no day yet, so the to-do waits for one.")+'</div>':"");
+      +(it?'<div class="sn-sub">“Days before” moves by itself when the idea moves. '+(day?"Its day is "+fmtDay(day)+" right now.":"It has no day yet, so the to-do waits for one.")+'</div>':"")
+      +(f.who==="dad"?((it&&hideOf(it))?'<div class="sn-sub">🤫 This idea is a surprise, so its to-dos stay on this page. They never go to Dad’s list.</div>'
+        :'<div class="sn-form">'+field("ahead","Show it on Dad’s list early — days ahead","0","number")+'</div><div class="sn-sub">Dad’s to-dos go on his own list by themselves, on the day they’re due (or this many days ahead). When he ticks it, it’s ticked here too.</div>'):"");
   }
   h+='<div class="sn-acts sn-foot"><button class="sn-tool sn-save" onclick="snSave()">'+(isNew?"Add":"Save")+'</button><button class="sn-tool" onclick="snCancel()">Cancel</button>'
     +(isNew?"":'<button class="sn-tool sn-del" onclick="snLineDel()">'+(e.ask?"Tap again to delete":"Delete")+'</button>')+'</div>';
@@ -642,7 +712,7 @@ function snLine(kind,iid,lid){   // open the pop-up: lid "" = a new line · iid 
   const back=!!(iid&&snEdit&&snEdit.type==="idea"&&snEdit.id===iid);if(back&&!flush(iid))return;
   if(iid&&!idea(sid,iid))return;const L=lid?line(sid,iid,kind,lid):null;if(lid&&!L)return;const r=L?L.r:{};
   snAsk=null;snEdit={type:"line",kind,sid,iid:iid||"",id:lid||null,back,form:kind==="sup"?{name:r.name||"",qty:(+r.qty>0)?String(r.qty):""}
-    :{t:r.t||"",who:r.who||"mom",due:isIso(r.due)?r.due:"",before:(r.before!=null&&!isIso(r.due))?String(r.before):""}};draw();
+    :{t:r.t||"",who:r.who||"mom",due:isIso(r.due)?r.due:"",before:(r.before!=null&&!isIso(r.due))?String(r.before):"",ahead:ahead(r)?String(ahead(r)):""}};draw();
 }
 function lineClose(){const e=snEdit;snEdit=null;if(e&&e.back&&e.iid&&idea(e.sid,e.iid)){snOpenIdea(e.iid);return;}draw();}
 function snLineWho(w){if(!snEdit||snEdit.type!=="line"||snEdit.kind!=="todo")return;snEdit.form.who=w;draw();}
@@ -664,11 +734,13 @@ function saveLine(){
     const t=String(f.t||"").trim().slice(0,120);if(!t){e.msg="It needs a few words.";draw();return;}
     const w=people().some(p=>p.id===f.who)?f.who:"mom",bn=String(f.before==null?"":f.before).trim()===""?null:Math.floor(+f.before);
     const before=(it&&bn!=null&&bn>=0&&bn<=365)?bn:null,due=(before==null&&isIso(f.due))?f.due:"";
-    if(!L){const rec={t,who:w};if(before!=null)rec.before=before;else if(due)rec.due=due;up[b+rid("t")]=rec;}
+    const ah=w==="dad"?ahead({ahead:f.ahead}):0;   // SEASONJOBS: days early on Dad's list (blank = on its day)
+    if(!L){const rec={t,who:w};if(before!=null)rec.before=before;else if(due)rec.due=due;if(ah)rec.ahead=ah;up[b+rid("t")]=rec;}
     else{
       const r=L.r,p=b+e.id+"/";
       if(t!==r.t)up[p+"t"]=t;if(w!==(r.who||"mom"))up[p+"who"]=w;
       if(due!==(isIso(r.due)?r.due:""))up[p+"due"]=due||null;if(before!==(r.before!=null?Math.floor(+r.before):null))up[p+"before"]=before;
+      if(ah!==ahead(r))up[p+"ahead"]=ah||null;
     }
   }
   apply(up);lineClose();
@@ -725,6 +797,9 @@ function snTodoTick(sid,iid,lid){
   const L=line(sid,iid,"todo",lid);if(!L)return;const on=!tdDone(L),t=today(),up={};
   up[lineBase(L,"todo")+"/done"]=on?t:null;
   if(tdCopy(L)){const m="momday/"+L.r.list+"/todos/sn"+lid+"/";up[m+"done"]=on;up[m+"doneOn"]=on?t:null;}
+  if(dadCopy(L)){const m="dadday/"+L.r.dadOn+"/todos/sn"+lid;
+    if(on&&L.r.dadOn>t){up[m]=null;up[lineBase(L,"todo")+"/dadOn"]=null;}   // SEASONJOBS fix: not showing yet → off his list (her un-tick lets the sync put it back)
+    else{up[m+"/done"]=on;up[m+"/doneOn"]=on?t:null;}}   // showing → crossed off today, gone tomorrow, like anything he ticks
   apply(up);repaint();
 }
 // → My list today: ONE copy onto Mom's own daily to-do list (her answer 10, Mom's half). The to-do remembers the day (`list`), so it
@@ -748,7 +823,7 @@ function snBooked(sid,iid){const it=idea(sid,iid);if(!it||!isIso(it.bookBy))retu
 function nowItems(){
   const out=[];
   seasons().filter(s=>!s.closed).forEach(s=>{
-    lines(s.id,"todo").forEach(L=>{if(parked(L)||(L.it&&L.it.did)||tdCopy(L))return;const st=tdState(L);if(st==="late"||st==="due")out.push({k:"todo",sid:s.id,L,d:tdDue(L),late:st==="late",sec:!!(L.it&&hideOf(L.it))});});
+    lines(s.id,"todo").forEach(L=>{if(parked(L)||(L.it&&L.it.did)||tdCopy(L)||(!dadWhy(L)&&dadCopy(L)))return;const st=tdState(L);if(st==="late"||st==="due")out.push({k:"todo",sid:s.id,L,d:tdDue(L),late:st==="late",sec:!!(L.it&&hideOf(L.it))});});
     ideasOf(s.id).forEach(it=>{if(it.skip||it.did)return;const b=bookState(it);if(b==="late"||b==="soon")out.push({k:"book",sid:s.id,it,d:it.bookBy,late:b==="late",sec:!!hideOf(it)});});
   });
   return out.sort((a,b)=>String(a.d).localeCompare(String(b.d)));
@@ -757,6 +832,7 @@ function seasonNowLines(){
   const none={n:0,html:""};
   try{if(typeof momHere!=="function"||!momHere())return none;if(typeof _kioskD==="function"&&_kioskD())return none;}catch(e){return none;}
   snNowWant=true;snListen();if(!snLoaded)return none;
+  syncSoon();   // SEASONJOBS: Home Base redraws when Dad's list or the planner changes — Dad's copies catch up here
   const A=nowItems();if(!A.length)return none;
   const open=A.filter(x=>!x.sec),sec=A.filter(x=>x.sec),row='display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:7px 10px;background:#f0fdfa;border-left:3px solid #2B7A78;border-radius:8px;margin-bottom:6px';
   const btn=(fn,lbl,solid)=>'<button onclick="'+fn+'" style="padding:4px 10px;border-radius:8px;border:'+(solid?"none;background:#16a34a;color:#fff":"1.5px solid #99f6e4;background:#fff;color:#0f766e")+';font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit">'+lbl+'</button>';
@@ -782,8 +858,9 @@ function snListen(){
   if(typeof db==="undefined"||!db){snLoaded=true;return;}
   const got=()=>{if(++snGot>=2&&!snLoaded){snLoaded=true;if(snNowWant)homeRepaint();}if(snLoaded&&onPage()&&!snEdit)draw();};   // Home Base asked for its lines → repaint it ONCE when the data is in
   let a=false,b=false;
-  db.ref("seasons").on("value",s=>{snData=s.val()||{};if(!a){a=true;got();}else if(onPage()&&!snEdit)draw();});
-  db.ref("seasonSecret").on("value",s=>{snSecret=s.val()||{};if(!b){b=true;got();}else if(onPage()&&!snEdit)draw();});
+  try{db.ref("dadday").once("value",()=>{snDdFresh=true;syncSoon();});}catch(e){}   // SEASONJOBS fix: wait for the server's answer for Dad's list (the app's own listener keeps daddayData current after)
+  db.ref("seasons").on("value",s=>{snData=s.val()||{};if(!a){a=true;got();}else if(onPage()&&!snEdit)draw();if(snLoaded)syncSoon();});
+  db.ref("seasonSecret").on("value",s=>{snSecret=s.val()||{};if(!b){b=true;got();}else if(onPage()&&!snEdit)draw();if(snLoaded)syncSoon();});
 }
 const SN_CSS=`
 .sn-wrap{padding:10px 12px 40px;max-width:760px;margin:0 auto;font-family:'DM Sans',sans-serif}
@@ -885,6 +962,9 @@ const SN_CSS=`
 .sn-gh2{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#64748b;margin:12px 0 6px}
 .sn-gh2.late{color:#b91c1c}
 .sn-chip.kid{border-color:#93c5fd;color:#1d4ed8;background:#eff6ff}
+.sn-chip.dad{white-space:normal;flex:0 1 auto;max-width:150px;line-height:1.3;padding:2px 7px}
+.sn-ln.wrap{flex-wrap:wrap}
+.sn-secnote{flex:1 0 100%;font-size:11px;font-weight:700;color:#6d28d9;padding:0 0 0 34px;line-height:1.35}
 .sn-kids{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:10px;padding-top:8px;border-top:1px solid #f1f5f9;font-size:12.5px;line-height:1.4;color:#475569}
 .sn-kids span{flex:1 1 200px}
 .sn-kids.on span{color:#0f766e}
@@ -900,5 +980,6 @@ Object.assign(window,{snNewSeason,snKind,snEditSeason,snDelSeason,snPick,snPastT
   snKids,snViewSet,snLine,snLineWho,snLineDel,snSupHave,snSupList,snSupSame,snAskNo,snSupAll,snTodoTick,snTodoMine,snBooked,snNowOpen,seasonNowLines});
 window._snTest={data:()=>snData,secret:()=>snSecret,setData:(d,s)=>{snData=d||{};snSecret=s||{};snLoaded=true;},reset:()=>{snSid=null;snFilter="all";snEdit=null;snFor={};snPast=false;snView="ideas";snAsk=null;},
   lines,line,tdDue,tdState,tdDone,supState,bookState,shopLabel,nowItems,ideaDay,view:()=>snView,ask:()=>snAsk,
-  setRoot:(el,ah)=>{snRoot=el;snAh=ah||"";},draw,edit:()=>snEdit,seasons,season,ideasOf,idea,whens,state,counts,picks,openDays,dayInfo,mins,starsUsed,starMax,apply,schedRange,kindDefaults,fmtDay,curSid,OK:SN_OK};
+  setRoot:(el,ah)=>{snRoot=el;snAh=ah||"";},draw,edit:()=>snEdit,seasons,season,ideasOf,idea,whens,state,counts,picks,openDays,dayInfo,mins,starsUsed,starMax,apply,schedRange,kindDefaults,fmtDay,curSid,OK:SN_OK,
+  dadSync,dadPlan,dadWhy,dadCopy,dadNote,showDay,tdDue,tdDone,line,lines,syncPending:()=>!!snSyncT,ddFresh:v=>{if(v!==undefined)snDdFresh=!!v;return snDdFresh;}};
 })();

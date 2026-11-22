@@ -57,7 +57,7 @@ console.log("\n# the guard: two new kinds of path, nothing wider");
 {
   o.set(SEASON());
   ok("allowed: a whole-season line, and one sn-record on Mom's own to-do list", T.OK.test("seasons/extra/xmas/todo/t1") && T.OK.test("seasons/extra/xmas/sup/u1/have") && T.OK.test("seasons/extra/xmas") && T.OK.test("momday/2026-11-20/todos/snt1") && T.OK.test("momday/2026-11-20/todos/snt1/done"));
-  const bad = ["momday/2026-11-20/todos/t123", "momday/2026-11-20/todos", "momday/2026-11-20/win", "momday/2026-11-20", "momday/today/todos/snx", "dadday/2026-11-20/todos/snx", "kitchen/grocery/items/g1", "kitchen/grocery/items/g1/src", "kitchen/plan/2026-11-20", "seasons/extra", "calendar/holidays/x", "week32/tasks/t1"];
+  const bad = ["momday/2026-11-20/todos/t123", "momday/2026-11-20/todos", "momday/2026-11-20/win", "momday/2026-11-20", "momday/today/todos/snx", "dadday/2026-11-20/todos/t123", "dadday/2026-11-20/chores/x", "kitchen/grocery/items/g1", "kitchen/grocery/items/g1/src", "kitchen/plan/2026-11-20", "seasons/extra", "calendar/holidays/x", "week32/tasks/t1"];
   ok("refused: any other record on Mom's day, Dad's day, the Kitchen, school", bad.every(p => { const u = {}; u[p] = { x: 1 }; return T.apply(u) === false; }) && o.writes.length === 0, bad.filter(p => T.OK.test(p)));
 }
 
@@ -398,9 +398,9 @@ console.log("\n# the idea rows, deleting, and a whole session inside the guard")
 console.log("\n# seasons.js itself");
 {
   const code = SRC.replace(/^\s*\/\/.*$/gm, "");
-  ok("still only two listeners and ONE update door", (code.match(/db\.ref\(/g) || []).length === 3);
+  ok("still only two listeners (+ SEASONJOBS' once-read of Dad's list) and ONE update door", (code.match(/db\.ref\(/g) || []).length === 4 && /db\.ref\("dadday"\)\.once\(/.test(code));
   ok("the Kitchen is only reached through its own grCreate / grPut — this file never writes kitchen/ itself", !/["'`]kitchen\//.test(code) && (code.match(/grCreate\(/g) || []).length === 1 && (code.match(/grPut\(/g) || []).length === 1);
-  ok("the only path it builds on Mom's day is todos/sn<id>", (code.match(/"momday\//g) || []).length === 2 && (code.match(/"momday\/"\+[A-Za-z.]+\+"\/todos\/sn"/g) || []).length === 2 && !/dadday\//.test(code));
+  ok("the only path it builds on Mom's day is todos/sn<id>", (code.match(/"momday\//g) || []).length === 2 && (code.match(/"momday\/"\+[A-Za-z.]+\+"\/todos\/sn"/g) || []).length === 2 && !/dadday\/(?!"\+)/.test(code));   // SEASONJOBS step A: Dad's day only through the sn-record rule (test_seasons_4.js)
   ok("no family's names, no Santa, no 🔀", !/lincoln|ellis|\blucy\b|julian|howe|dewalt|burris|polar|disney|santa/i.test(SRC) && SRC.indexOf("\u{1F500}") < 0);
   ok("it never names the calendar nodes that change school, or the school's own data", !/calendar\/(holidays|vacations|kidOverrides|coops|coopMomDays|cleaningDays)|config\/rules|familyBlocks|curriculum\/|\/tasks|\/checked/.test(code));
   ok("no confirm()/alert()/prompt() pop-ups", !/\b(confirm|alert|prompt)\(/.test(code));
