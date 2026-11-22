@@ -401,8 +401,7 @@ console.log("\n(h) no new Firebase write path in the curriculum region");
   const WAS = [
   "",
   "\"act_favs\"",
-  "\"archive/\"+it.wk+\"/checked/\"+it.doneKey",
-  "\"archive/\"+it.wk+\"/history/\"+it.doneKey",
+  // (the walk-back's two archive/ removes moved into archWrite — ARCHCORE slice 3, 2026-11-22: same write + the smaller copy)
   "\"calendar/coopMomDays/\"+ds",
   "\"calendar/coops/\"+id",
   "\"calendar/coops/\"+id+\"/noMomBase\"",
