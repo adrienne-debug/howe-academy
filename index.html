@@ -9568,7 +9568,7 @@ function calEventBanner(dayName,whoFilter){
 // nothing to tap, check or earn, never in week*/tasks, so no count, clock or lay sees it. Who / waiting ones: calEventsOn's rules.
 // evMin: "2:30 PM", "2pm" → minutes; no AM/PM, 24-hour, words, "" → null (no row; the chip at the top stays). Writes nothing.
 function evMin(s){ const m=/^\s*(\d{1,2})(?::(\d\d))?\s*([ap])\.?m\.?\s*$/i.exec(s==null?"":String(s)), h=m?+m[1]:0, n=m?+(m[2]||0):0; return (!m||h<1||h>12||n>59)?null:(h%12+(/p/i.test(m[3])?12:0))*60+n; }
-function evLbl(e,nm){ return esc(e.emoji||"🎉")+' '+esc(e.title||"Event")+(e.time?' · '+esc(e.time):'')+(nm&&e.who&&e.who!=="family"?' · '+esc(cap(e.who)):''); }
+function evLbl(e,nm){ return esc(e.emoji||"🎉")+' '+esc(e.title||"Event")+(e.time?' · '+esc(e.time)+(typeof evEndTxt==="function"?evEndTxt(e):''):'')+(nm&&e.who&&e.who!=="family"?' · '+esc(cap(e.who)):''); }
 function evQ(iso,who){ const q=[]; try{ calEventsOn(iso,who).forEach(e=>{ const m=evMin(e.time); if(m!=null) q.push({m:m,e:e}); }); }catch(x){} return q.sort((a,b)=>a.m-b.m); }
 // the rows due up to minute `to` (none given = every one left), taken off the queue. span "all" / "mom" = an agenda grid row; none = a time-row
 function evRows(q,to,span){ let h=''; while(q.length&&(to==null||q[0].m<=to)){ const x=q.shift(), t=fromMin(x.m).split(' '), b='<div class="ev-blk"'+(span?' style="grid-column:'+(span==="all"?'2/-1':'2/4')+'"':'')+'>'+evLbl(x.e,span)+'</div>';
@@ -9576,6 +9576,50 @@ function evRows(q,to,span){ let h=''; while(q.length&&(to==null||q[0].m<=to)){ c
 function evDayRows(iso,who,span){ const q=evQ(iso,who); return to=>evRows(q,to,span); }   // one day's rows, handed out in time order
 function evWk(iso,who){ let h=''; try{ calEventsOn(iso,who).forEach(e=>{ h+='<div class="ev-blk ev-sm">'+evLbl(e,who==="all"||who==="mom")+'</div>'; }); }catch(x){} return h; }
 // EVDAY_END
+// EVHOLD_START — ⏰ a calendar event can HOLD its time (her choices 2026-11-22: "Holds the time" · "Before and after" · "Only that
+// kid" · "Re-plan right away"). calendar/events/<id> gains  mins:<minutes it lasts>  and  hold:true  (only ever written true;
+// missing = off, so no existing event holds and nothing below runs for it). A held block is a WINDOW — the path a fixed-time
+// class and family time use (packDay's ctx.busy) — not a co-op's "out until" cursor: school is laid before it AND after it.
+// Held = hold, not waiting for Mom, a start evMin can read, a length. The family's = every kid; one kid's = that kid only.
+// Read by: generation (gwBuildDayTasks) · every re-pack that names its date (packAround) · the school-end guard (open work
+// inside a block is "not fine" → that kid's open cards re-lay around it; what no longer fits rolls on / "didn't fit today",
+// as always) · today's live lay (lunchOf) · the balancer's room · "who can take Mom now". Never moved: checked, claimed,
+// started, classes, family time, ⏰ set-time and Mom-moved cards. Writes: the event record (calSaveEvent's one set) — and when a
+// held block on the built week appears, changes or goes, the ONE re-lay door (relayWeek "calendar": its lock, log line, Undo).
+// The planner: write {mins:evHoldMins(time,end), hold:true} only when evHoldMins(time,end) is not null.
+function evHoldMins(time,end){ const s=evMin(time), e=evMin(end); return (s!=null&&e!=null&&e>s)?e-s:null; }
+function evHeld(e){ const s=(e&&e.hold===true&&!e.pending)?evMin(e.time):null, n=(s==null)?0:+e.mins; return (n>0&&s+n<=1440)?[s,s+n]:null; }   // → [start,end] minutes, or null
+function evEndTxt(e){ const s=evMin(e.time), n=+e.mins; return (s!=null&&n>0&&s+n<=1440)?'–'+fromMin(s+n)+(evHeld(e)?' ⏰':''):''; }
+function evHoldFor(kid,iso){ const out=[], all=calEvents(); if(iso) for(const id in all){ const e=all[id]; if(e&&e.hold===true&&e.date===iso&&(!e.who||e.who==="family"||e.who===kid)){ const w=evHeld(e); if(w) out.push(w); } } return out; }
+// a packer ctx with this date's held blocks added to busy (copy-on-write; no held block → the very same ctx)
+function evHoldCtx(ctx,iso){ let busy=null; ROSTER.forEach(k=>{ evHoldFor(k,iso).forEach(w=>{ if(!busy){ busy={}; for(const x in (ctx.busy||{})) busy[x]=ctx.busy[x].slice(); } (busy[k]=busy[k]||[]).push({s:w[0],e:w[1]}); }); }); return busy?Object.assign({},ctx,{busy:busy}):ctx; }
+// minutes of the school window st–en (lunch aside) this kid is held that date — taken off the balancer's room
+function evHoldLoss(kid,iso,st,en,ls,le){ let n=0; evHoldFor(kid,iso).forEach(w=>{ const a=Math.max(st,w[0]), b=Math.min(en,w[1]); if(b>a) n+=(b-a)-Math.max(0,Math.min(b,le)-Math.max(a,ls)); }); return n; }
+// the form (Mom's lens only): an end time and the switch, off unless the event already holds
+function evHoldFormRow(ex){ if(!momHere()) return ''; const s=ex?evMin(ex.time):null, end=(s!=null&&+ex.mins>0&&s+ +ex.mins<=1440)?fromMin(s+ +ex.mins):"";
+  return '<div class="gcal-form-row"><label>Ends</label><input type="text" id="cal-ev-end" placeholder="4:00 PM" maxlength="12" value="'+esc(end)+'"></div>'+
+    '<div class="gcal-form-row"><label style="width:auto;display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="cal-ev-hold"'+(evHeld(ex)?' checked':'')+' onchange="evHoldTick(this)"> ⏰ Hold this time — school is planned around it</label></div>'+
+    '<div id="cal-ev-hold-why" style="font-size:11px;color:var(--muted);margin:-2px 0 8px">To hold the time, give a start and an end like 2:30 PM and 4:00 PM.</div>'; }
+function evHoldTick(el){ if(!el.checked) return; const v=i=>((document.getElementById(i)||{}).value||"").trim(); if(evHoldMins(v("cal-ev-time"),v("cal-ev-end"))!=null) return;
+  el.checked=false; const y=document.getElementById("cal-ev-hold-why"); if(y){ y.style.color="#b91c1c"; y.style.fontWeight="700"; } }   // can't be turned on yet — the line under it says why
+// the form's end + switch onto the record about to be saved. false = said why, nothing saved. Not Mom's lens → what the event had stays.
+function evHoldEntry(entry,was){ const eEl=document.getElementById("cal-ev-end"), hEl=document.getElementById("cal-ev-hold");
+  if(!eEl||!hEl||!momHere()){ if(was&&+was.mins>0) entry.mins=+was.mins; if(was&&was.hold===true) entry.hold=true; return true; }
+  const n=evHoldMins(entry.time,(eEl.value||"").trim());
+  if(hEl.checked&&n==null){ alert("To hold the time, give a start and an end like 2:30 PM and 4:00 PM."); return false; }
+  if(n!=null) entry.mins=n; if(hEl.checked) entry.hold=true; return true; }
+// A save / delete / OK that makes, changes or removes a held block on a day of the built week → the one re-lay door.
+// was / now = the record before / after (null = not there). Undo: a block that is NEW goes back to "not held" (the event stays
+// as saved, so nothing moves again); a block that changed or went comes back as it was. Nothing held before or after → no door.
+function evHoldRelay(id,was,now,undo){
+  const a=evHeld(was), b=evHeld(now); if(!a&&!b) return false;
+  if(a&&b&&a[0]===b[0]&&a[1]===b[1]&&was.date===now.date&&(was.who||"family")===(now.who||"family")) return false;   // the block itself is the same (a new name or icon)
+  if(typeof relayWeek!=="function"||typeof _rlwOnBoard!=="function"||!((a&&_rlwOnBoard(was.date))||(b&&_rlwOnBoard(now.date)))) return false;
+  const p="calendar/events/"+id, r=b?now:was;
+  relayWeek("calendar",{label:"⏰ "+(r.title||"Event")+(b?" "+fromMin(b[0])+"–"+fromMin(b[1]):" — time no longer held"),
+    undo:[undo||((b&&!a)?{p:p+"/hold",gone:true}:{p:p,was:JSON.parse(JSON.stringify(was))})]});
+  return true; }
+// EVHOLD_END
 function renderWeekPeek(el){
   if(!el){el=document.getElementById("content");if(!el)return;}
   const wn=currWeekNum()+1, r=(typeof gwWeekDateRange==="function")?gwWeekDateRange(wn):null;
@@ -46016,6 +46060,7 @@ function calApproveEvent(id){
   const ev=calEvents()[id]; if(!ev||!ev.pending) return;
   if(calendarData.events&&calendarData.events[id]) delete calendarData.events[id].pending;
   if(db) db.ref("calendar/events/"+id+"/pending").remove();
+  if(typeof evHoldRelay==="function") evHoldRelay(id,Object.assign({},ev,{pending:true}),ev,{p:"calendar/events/"+id+"/pending",was:true});   // ⏰ EVHOLD
   renderAll();
   if(typeof gwShowToast==="function") gwShowToast("OK'd "+(ev.emoji||"")+" "+(ev.title||"event"));
 }
@@ -46110,6 +46155,7 @@ function calRenderEventForm(){
       '<label>Icon</label><input type="text" id="cal-ev-emoji" style="width:52px;text-align:center" value="'+esc((ex&&ex.emoji)||"🎉")+'"></div>'+
     '<div class="gcal-form-row"><label>Date</label><input type="date" id="cal-ev-date" value="'+esc((ex&&ex.date)||calPrefillDate||"")+'">'+
       '<label>Time</label><input type="text" id="cal-ev-time" placeholder="2:00 PM" value="'+esc((ex&&ex.time)||"")+'"></div>'+
+    ((typeof evHoldFormRow==="function")?evHoldFormRow(ex):'')+   // ⏰ EVHOLD
     '<div class="gcal-form-row"><label>Who</label><select id="cal-ev-who">'+
       '<option value="family"'+(who==="family"?" selected":"")+'>Whole family</option>'+
       ROSTER.map(function(k){ return '<option value="'+k+'"'+(who===k?" selected":"")+'>'+esc(cap(k))+'</option>'; }).join("")+
@@ -46131,10 +46177,12 @@ function calSaveEvent(){
   const title=g("cal-ev-title"), date=g("cal-ev-date");
   if(!title||!date){ alert("Give the event a name and a date."); return; }
   const entry={title:title,date:date,time:g("cal-ev-time"),who:g("cal-ev-who")||"family",emoji:g("cal-ev-emoji")||"🎉"};
+  const _evWas=calEditId?JSON.parse(JSON.stringify(calEvents()[calEditId]||null)):null; if(typeof evHoldEntry==="function"&&!evHoldEntry(entry,_evWas)) return;   // ⏰ EVHOLD
   const id=calEditId||("ev_"+date.replace(/-/g,"")+"_"+Math.random().toString(36).slice(2,7));
   if(!calendarData.events) calendarData.events={};
   calendarData.events[id]=entry;
   if(db) db.ref("calendar/events/"+id).set(entry);
+  if(typeof evHoldRelay==="function") evHoldRelay(id,_evWas,entry);   // ⏰ EVHOLD
   calAddMode=null; calEditId=null; calPrefillDate=""; renderAll();
   if(typeof gwShowToast==="function") gwShowToast("Saved "+title);
 }
@@ -46143,6 +46191,7 @@ function calDeleteEvent(id){
   if(!confirm('Remove "'+((ev&&ev.title)||"this event")+'"?')) return;
   if(calendarData.events) delete calendarData.events[id];
   if(db) db.ref("calendar/events/"+id).remove();
+  if(typeof evHoldRelay==="function") evHoldRelay(id,ev,null);   // ⏰ EVHOLD
   renderAll();
 }
 function calRenderEventForm_END(){}
@@ -83851,6 +83900,7 @@ function _mlQueueLayCore(tasks){
     const lunchOf=function(k){
       return tasks.filter(function(x){ return isToday(x)&&x.who===k&&(/lunch/i.test(x.title||"")||((x.famBlock||(typeof fdtHeld==="function"&&fdtHeld(x))||_mlIsClass(x))&&!_mlFinished(x.id,x))); })   // a checked family card is over at its check (fixedOf has it) · ⏰ FIXEDDAYTIME: a set-time card holds like family time · FXPIN: so does a class
         .map(function(x){ const a=(_famLay[x.id]!==undefined)?_famLay[x.id]:toMin(x.time); return [a,a+(x.dur||30)]; })
+        .concat((typeof evHoldFor==="function"&&typeof routineDateISO==="function")?evHoldFor(k,routineDateISO(_todayDay)):[])   // ⏰ EVHOLD
         .concat(_lw?[_lw]:[]);
     };
     // Cards already checked today never move — and nothing is laid on top of them.
@@ -84274,6 +84324,7 @@ function mlOnCheck(t){
 // in a timed co-op before its end time.
 function _mlOnTimedCoop(kid){
   try{
+    if(typeof evHoldFor==="function"&&typeof routineDateISO==="function"){ const n=_mlNowMin(); if(evHoldFor(kid,routineDateISO(_todayDay)).some(w=>n>=w[0]&&n<w[1])) return true; }   // ⏰ EVHOLD: …or inside a held block right now
     if(typeof coopTimedEndMin!=="function"||typeof routineDateISO!=="function") return false;
     const e=coopTimedEndMin(kid,routineDateISO(_todayDay)); return e>0&&_mlNowMin()<e;
   }catch(e){ return false; }
@@ -90479,6 +90530,7 @@ function packAround(existing, newTasks, ctx){
       ctx=fxCtxWithClasses(ctx,_fxE.pinned.concat(_fxN.pinned));
     }
   }
+  if(ctx&&ctx.fxDate&&typeof evHoldCtx==="function") ctx=evHoldCtx(ctx,ctx.fxDate);   // ⏰ EVHOLD
   if(!newTasks || !newTasks.length) return [];
   function laneOf(t){ var dv=t.device||taskDevice(t); if(dv==="ipad"&&t.who==="lucy") return "ipadLucy"; if(dv==="ipad"||dv==="phone"||dv==="ipad/phone") return "screen"; return dv; }
   var dStart=ctx.start;
@@ -90828,6 +90880,7 @@ function gwBuildDayTasks(kidAssignments,dayConfig,prefix,counter){
     if(_ln&&_ln!=="paper") (fxLaneBusy[_ln]=fxLaneBusy[_ln]||[]).push({s:w.s,e:w.e});
   });
 
+  if(dayConfig.dateStr&&typeof evHoldFor==="function") KIDS.forEach(function(k){ evHoldFor(k,dayConfig.dateStr).forEach(function(w){ (fxBusy[k]=fxBusy[k]||[]).push({s:w[0],e:w[1]}); }); });   // ⏰ EVHOLD
   // 👨‍👩‍👧 Family time (FAMBLOCK): every member gets the block's cards at the block's own time — even a kid with no
   // subjects of his own yet (DeWalt's Caleb is in all three) — unless marked off or still at co-op. A window for
   // each kid and ONE for Mom (she leads it), stepped over exactly like a class.
@@ -90975,6 +91028,7 @@ function gwAutoBalance(dayData,lateStart,skipDays,todayISO){
         const _st=Math.max(toMin(startStr),_ce);
         const capacity=(_ce>toMin(startStr))?(DAY_END_D-_st-Math.max(0,Math.min(DAY_END_D,_rr.lunchEnd)-Math.max(_st,_rr.lunchStart))):(DAY_END_D-toMin(startStr)-LUNCH);
         let room=capacity-dayTotals[dk];
+        if(typeof evHoldLoss==="function") room-=evHoldLoss(kid,dk,_st,DAY_END_D,_rr.lunchStart,_rr.lunchEnd);   // ⏰ EVHOLD
         // 🏫 COOP_FAMROOM (her yes 2026-10-04): on a co-op day the hour after co-op also holds this kid's family time
         // (Fact Review 15, scheduler picks). Uncounted, Andrew's Thursday looked 20 min free and took Monday's
         // Independent Reading — two that day, none Monday, Piano past 4:00. Days without a timed co-op: unchanged.
@@ -92748,11 +92802,13 @@ function seGuardWeek(tasks,o){
       // away never takes the start with it
       const _m0=tasks.filter(t=>!skip(t)&&t.who===kid&&dIx(t)===di&&!fixed(t)).map(t=>tm(t.time)); if(!_m0.length) return;
       const S0=Math.max(W.start,Math.min.apply(null,_m0),(di===ti&&o.nowMin!=null)?o.nowMin:0);
+      const _H=(o.holds&&o.holds(kid,day))||[];   // ⏰ EVHOLD
       for(let pass=0;pass<30;pass++){
         const mine=tasks.filter(t=>!skip(t)&&t.who===kid&&dIx(t)===di);
         const mov=mine.filter(t=>!fixed(t)); if(!mov.length) return;
         const iv=mine.map(t=>[tm(t.time),tm(t.time)+dur(t),t]).sort((a,b)=>a[0]-b[0]);
         let stacked=false; for(let i=1;i<iv.length;i++) if(iv[i][0]<iv[i-1][1]) stacked=true;
+        if(_H.length&&mov.some(t=>_H.some(h=>tm(t.time)<h[1]&&h[0]<tm(t.time)+dur(t)))) stacked=true;   // ⏰ EVHOLD: open work inside a held block is not fine either
         const late=mov.some(t=>tm(t.time)+dur(t)>W.end);
         const early=mov.some(t=>tm(t.time)<W.start);   // RELAY_EARLY (2026-11-03): open work laid BEFORE the day's start (⏰ a later start for this date) is not fine either — it re-lays from the start
         // 📓 live 9/24: the 8 PM sweep carried Lincoln's pulled Eggspress back to Thursday's first slot, AHEAD of his
@@ -92788,6 +92844,7 @@ function seGuardWeek(tasks,o){
         // re-lay this kid's open cards in their current order
         const busy=mine.filter(fixed).map(t=>[tm(t.time),tm(t.time)+dur(t)]);
         if(W.lunchEnd>W.lunchStart) busy.push([W.lunchStart,W.lunchEnd]);
+        _H.forEach(h=>busy.push(h));   // ⏰ EVHOLD
         const momBusy=tasks.filter(t=>!skip(t)&&t.who!==kid&&dIx(t)===di&&t.mom==="required").map(t=>(typeof mlMomSpan==="function")?mlMomSpan(t,tm(t.time),dur(t)):[tm(t.time),tm(t.time)+dur(t)]);   // 👩 MOMPART3
         const order=mov.map((t,i)=>({t,i})).sort((a,b)=>(isMorn(b.t)-isMorn(a.t))||(isClose(a.t)-isClose(b.t))||(tm(a.t.time)-tm(b.t.time))||(a.i-b.i)).map(x=>x.t);   // 📓 notebook first · Closing last
         const lay=list=>{ let at=S0; const plan=new Map(); let over=false;
@@ -92890,6 +92947,7 @@ function seGuardCtx(extra){
       return {start:toMin((typeof dtS==="function")?dtS(day,_vs,iso):_vs),end:toMin((typeof dtE==="function")?dtE(day,_ve,iso):_ve),lunchStart:_w?_w.s:_r.lunchStart,lunchEnd:_w?_w.e:_r.lunchEnd}; },
     retrSlot:(tasks,card,W,x)=>seRetrSlot(tasks,card,W,Object.assign({toMin:toMin,fromMin:fromMin},x||{})),   // 🃏🎯 DMSLOT
     kidOff:(kid,day)=>{ try{ const ds=iso(day); return !!(ds&&typeof smapIsKidOff==="function"&&smapIsKidOff(kid,ds)); }catch(e){ return false; } },
+    holds:(kid,day)=>{ try{ const ds=iso(day); return (ds&&typeof evHoldFor==="function")?evHoldFor(kid,ds):[]; }catch(e){ return []; } },   // ⏰ EVHOLD
     isClass:t=>{ try{ return !!(t&&t.famBlock)||(typeof mvtHeldToday==="function"&&mvtHeldToday(t))||   // 📅 MOVETODAY: held where Mom put it today
       (typeof fxIsClass==="function"&&fxIsClass(subj(t)))||(typeof fdtHeld==="function"&&fdtHeld(t)); }catch(e){ return false; } },   // 👨‍👩‍👧 family time too · ⏰ FIXEDDAYTIME: a set-time card
     // FXPIN: a class's own clock time on this plan week's date of its day (null = not a class, or it doesn't meet that day)
